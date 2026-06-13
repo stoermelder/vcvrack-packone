@@ -16,6 +16,8 @@ struct Settings {
 	int mbDataSourceFavoriteIndex = -1;
 	float mbSearchThreshold = 0.5f;
 	bool mbMagnifierEnabled = false;
+	bool mbApplyLibraryWhitelist = false;
+	bool mbShowDeprecated = false;
 
 	NVGcolor overlayTextColor = bndGetTheme()->menuTheme.textColor;
 	int overlayHpos = 0;

@@ -226,10 +226,12 @@ struct MidiStepModule : Module {
 			ccs[i] = -1;
 		}
 
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 		mode = (MODE)json_integer_value(json_object_get(rootJ, "mode"));
 #ifndef METAMODULE
-		polyphonicOutput = json_boolean_value(json_object_get(rootJ, "polyphonicOutput"));
+		json_t* polyphonicOutputJ = json_object_get(rootJ, "polyphonicOutput");
+		if (polyphonicOutputJ) polyphonicOutput = json_boolean_value(polyphonicOutputJ);
 #else
 		polyphonicOutput = false;
 #endif

@@ -30,6 +30,7 @@ struct IntermixEnvModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < PORTS; i++) {
 			configOutput(OUTPUT + i, string::f("Envelope %i", i + 1));
+			outputInfos[OUTPUT + i]->description = "Scaled 0..10V envelope of the selected input row's mix levels into the matching output column.";
 		}
 
 		ResetEvent re;
@@ -65,8 +66,10 @@ struct IntermixEnvModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		input = json_integer_value(json_object_get(rootJ, "input"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* inputJ = json_object_get(rootJ, "input");
+		if (inputJ) input = json_integer_value(inputJ);
 	}
 };
 

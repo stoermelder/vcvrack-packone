@@ -31,10 +31,13 @@ struct InfixModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_POLY, "Polyphonic");
+		inputInfos[INPUT_POLY]->description = "Polyphonic input. Channels without a mono replacement are passed through unchanged.";
 		for (int i = 0; i < CHANNELS; i++) {
 			configInput(INPUT_MONO + i, string::f("Channel %i replacement", i + 1));
+			inputInfos[INPUT_MONO + i]->description = "Optional mono signal that replaces channel " + std::to_string(i + 1) + " of the polyphonic input.";
 		}
 		configOutput(OUTPUT_POLY, "Polyphonic");
+		outputInfos[OUTPUT_POLY]->description = "Polyphonic output assembled from the poly input and any mono replacements.";
 
 		ResetEvent re;
 		onReset(re);
@@ -71,7 +74,8 @@ struct InfixModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 	}
 };
 

@@ -14,10 +14,11 @@
 namespace StoermelderPackOne {
 namespace Mb {
 
+// Model DB
+
 fuzzysearch::Database<plugin::Model*> modelDb;
 bool searchDescriptions = false;
 bool sortBySearchScore = true;
-bool favoriteHighlight = true;
 
 void modelDbInit() {
 	modelDb = fuzzysearch::Database<plugin::Model*>();
@@ -44,14 +45,40 @@ void modelDbInit() {
 	}
 }
 
-std::set<Model*> favoriteModels;
-std::set<Model*> hiddenModels;
-std::map<Model*, ModelUsage*> modelUsage;
-std::map<std::string, std::set<Model*>> customTagModels;
-std::map<Model*, std::set<int>> predefinedTagsAdded;
-std::map<Model*, std::set<int>> predefinedTagsRemoved;
+ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser) {
+	// Create Module
+	engine::Module* addedModule = model->createModule();
+	APP->engine->addModule(addedModule);
 
+	// Create ModuleWidget
+	ModuleWidget* moduleWidget = model->createModuleWidget(addedModule);
+	assert(moduleWidget);
+	APP->scene->rack->addModuleAtMouse(moduleWidget);
+
+	// Load template preset
+	moduleWidget->loadTemplate();
+
+	// Push ModuleAdd history action
+	history::ModuleAdd* h = new history::ModuleAdd;
+	h->name = "create module";
+	h->setModule(moduleWidget);
+	APP->history->push(h);
+
+	// Hide Module Browser
+	if (hideBrowser) APP->scene->browser->hide();
+
+	// Update usage data
+	modelUsageTouch(model);
+
+	return moduleWidget;
+}
+
+
+// Favorites
+
+std::set<Model*> favoriteModels;
 FavoriteMode favoriteMode = FavoriteMode::VCVRACK;
+bool favoriteHighlight = true;
 
 bool isModelFavorite(Model* model) {
 	switch (favoriteMode) {
@@ -81,8 +108,34 @@ void setModelFavorite(Model* model, bool favorite) {
 	}
 }
 
+
+// Hidden
+
+std::set<Model*> hiddenModels;
+
+void toggleModelHidden(Model* model) {
+	auto it = hiddenModels.find(model);
+	if (it != hiddenModels.end()) 
+		hiddenModels.erase(model);
+	else 
+		hiddenModels.insert(model);
+}
+
+void hiddenModelsReset() {
+	hiddenModels.clear();
+}
+
+bool isModelHidden(plugin::Model* model) {
+	return hiddenModels.find(model) != hiddenModels.end();
+}
+
+
+// Custom Tags
+
+std::map<std::string, std::set<Model*>> customTagModels;
+
 // Returns the existing map key that matches tag case-insensitively, or tag itself.
-static std::string customTagResolveKey(const std::string& tag) {
+std::string customTagResolveKey(const std::string& tag) {
 	std::string lower = string::lowercase(tag);
 	for (auto& pair : customTagModels) {
 		if (string::lowercase(pair.first) == lower)
@@ -92,6 +145,8 @@ static std::string customTagResolveKey(const std::string& tag) {
 }
 
 void customTagAdd(Model* model, const std::string& tag) {
+	if (!isValidCustomTag(tag))
+		return;
 	customTagModels[customTagResolveKey(tag)].insert(model);
 }
 
@@ -103,6 +158,17 @@ void customTagRemove(Model* model, const std::string& tag) {
 		customTagModels.erase(it);
 }
 
+bool isValidCustomTag(const std::string& tag) {
+	std::string trimmed = rack::string::trim(tag);
+	// Check for empty or whitespace-only tags
+	if (trimmed.empty())
+		return false;
+	// Maximum tag length to prevent UI overflow and JSON issues
+	if (trimmed.length() > 64)
+		return false;
+	return true;
+}
+
 bool customTagHas(Model* model, const std::string& tag, bool resolveKey) {
 	const std::string _tag = resolveKey ? customTagResolveKey(tag) : tag;
 	auto it = customTagModels.find(_tag);
@@ -112,6 +178,10 @@ bool customTagHas(Model* model, const std::string& tag, bool resolveKey) {
 
 void customTagDelete(const std::string& tag) {
 	customTagModels.erase(customTagResolveKey(tag));
+}
+
+void customTagReset() {
+	customTagModels.clear();
 }
 
 std::set<std::string> customTagsForModel(Model* model) {
@@ -126,12 +196,16 @@ std::set<std::string> customTagsForModel(Model* model) {
 
 // Predefined tag modifications
 
+std::map<Model*, std::set<int>> predefinedTagsAdded;
+std::map<Model*, std::set<int>> predefinedTagsRemoved;
+
 void predefinedTagAdd(Model* model, int tagId) {
 	predefinedTagsAdded[model].insert(tagId);
 	// Remove from removed list if it was there
 	predefinedTagsRemoved[model].erase(tagId);
 	if (predefinedTagsRemoved[model].empty())
 		predefinedTagsRemoved.erase(model);
+	effectiveTagIdsCacheInvalidate(model);
 }
 
 void predefinedTagRemove(Model* model, int tagId) {
@@ -140,6 +214,7 @@ void predefinedTagRemove(Model* model, int tagId) {
 	predefinedTagsAdded[model].erase(tagId);
 	if (predefinedTagsAdded[model].empty())
 		predefinedTagsAdded.erase(model);
+	effectiveTagIdsCacheInvalidate(model);
 }
 
 bool predefinedTagHasAdded(Model* model, int tagId) {
@@ -156,16 +231,51 @@ bool predefinedTagHasRemoved(Model* model, int tagId) {
 
 void predefinedTagDelete(int tagId) {
 	// Remove from all models' added lists
-	for (auto& pair : predefinedTagsAdded) {
-		pair.second.erase(tagId);
+	for (auto it = predefinedTagsAdded.begin(); it != predefinedTagsAdded.end(); ) {
+		it->second.erase(tagId);
+		if (it->second.empty())
+			it = predefinedTagsAdded.erase(it);
+		else
+			++it;
 	}
 	// Remove from all models' removed lists
-	for (auto& pair : predefinedTagsRemoved) {
-		pair.second.erase(tagId);
+	for (auto it = predefinedTagsRemoved.begin(); it != predefinedTagsRemoved.end(); ) {
+		it->second.erase(tagId);
+		if (it->second.empty())
+			it = predefinedTagsRemoved.erase(it);
+		else
+			++it;
 	}
+	// Invalidate cache for all models since any could be affected
+	effectiveTagIdsCacheInvalidateAll();
+}
+
+void predefinedTagsReset() {
+	predefinedTagsAdded.clear();
+	predefinedTagsRemoved.clear();
+	effectiveTagIdsCacheInvalidateAll();
+}
+
+// Cache for effective tag IDs
+std::map<Model*, TagIdCache> effectiveTagIdsCache;
+uint64_t effectiveTagIdsVersion = 0;
+
+void effectiveTagIdsCacheInvalidate(Model* model) {
+	effectiveTagIdsCache.erase(model);
+}
+
+void effectiveTagIdsCacheInvalidateAll() {
+	effectiveTagIdsCache.clear();
+	effectiveTagIdsVersion++;
 }
 
 std::set<int> getEffectiveTagIds(Model* model) {
+	// Check cache first
+	auto itCached = effectiveTagIdsCache.find(model);
+	if (itCached != effectiveTagIdsCache.end() && itCached->second.version == effectiveTagIdsVersion) {
+		return itCached->second.tagIds;
+	}
+
 	std::set<int> result;
 	
 	// Add original tags
@@ -182,6 +292,12 @@ std::set<int> getEffectiveTagIds(Model* model) {
 			result.insert(tagId);
 		}
 	}
+	
+	// Store in cache
+	TagIdCache cache;
+	cache.tagIds = result;
+	cache.version = effectiveTagIdsVersion;
+	effectiveTagIdsCache[model] = cache;
 	
 	return result;
 }
@@ -215,6 +331,8 @@ static int findTagIdByName(const std::string& name) {
 
 json_t* moduleBrowserToJson(bool includeUsageData) {
 	json_t* rootJ = json_object();
+
+	json_object_set_new(rootJ, "version", json_integer(1));
 
 	json_t* favoritesJ = json_array();
 	for (Model* model : favoriteModels) {
@@ -376,6 +494,11 @@ void moduleBrowserFromJson(json_t* rootJ) {
 	predefinedTagsAdded.clear();
 	predefinedTagsRemoved.clear();
 	
+	// Version check for migration
+	json_t* versionJ = json_object_get(rootJ, "version");
+	int version = versionJ ? json_integer_value(versionJ) : 0;
+	(void)version; // Reserved for future migrations
+	
 	// New format: "predefinedTags" with "added" and "removed" arrays
 	json_t* predefinedTagsJ = json_object_get(rootJ, "predefinedTags");
 	if (predefinedTagsJ) {
@@ -422,12 +545,14 @@ void moduleBrowserFromJson(json_t* rootJ) {
 		}
 	}
 
+	// Cleanup existing modelUsage entries before loading new data
+	for (auto t : modelUsage) {
+		delete t.second;
+	}
+	modelUsage.clear();
+
 	json_t* usageJ = json_object_get(rootJ, "usage");
 	if (usageJ) {
-		for (auto t : modelUsage) {
-			delete t.second;
-		}
-		modelUsage.clear();
 		size_t i;
 		json_t* slugJ;
 		json_array_foreach(usageJ, i, slugJ) {
@@ -451,6 +576,8 @@ void moduleBrowserFromJson(json_t* rootJ) {
 
 
 // Usage data
+
+std::map<Model*, ModelUsage*> modelUsage;
 
 void modelUsageTouch(Model* model) {
 	ModelUsage* mu = modelUsage[model];
@@ -685,7 +812,6 @@ struct MbModule : Module {
 	}
 };
 
-
 struct MbMenuButton : ui::Button {
 	ModuleWidget* mw;
 	MbMenuButton() {
@@ -901,20 +1027,14 @@ struct MbWidget : ModuleWidget {
 			[]() { return pluginSettings.mbMagnifierEnabled; },
 			[]() { pluginSettings.mbMagnifierEnabled ^= true; }
 		));
+		menu->addChild(createBoolPtrMenuItem("Apply VCV Libray Whitelist", "", &pluginSettings.mbApplyLibraryWhitelist));
+		menu->addChild(createBoolPtrMenuItem("Show deprecated models", "", &pluginSettings.mbShowDeprecated));
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Custom tags for modules"));
 		menu->addChild(createMenuItem("Auto-generate custom tags", "", []() {
 			auto result = std::make_shared<AutoTagResult>(customTagAuto());
-			if (result->total == 0) {
-				osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
-				return;
-			}
-			ui::MenuOverlay* overlay = new ui::MenuOverlay;
-			overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
-			AutoTagConfirmWidget* w = new AutoTagConfirmWidget(result);
-			overlay->addChild(w);
-			APP->scene->addChild(overlay);
+			openAutoTagConfirmDialog(result);
 		}));
 		menu->addChild(createMenuItem("Auto-generate 'MetaModule' tag", "", []() {
 			if (!osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, "This will connect to https://metamodule.info and download the module list. Continue?"))
@@ -925,13 +1045,13 @@ struct MbWidget : ModuleWidget {
 			loadingOverlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
 			APP->scene->addChild(loadingOverlay);
 
-			AsyncTagResultWidget* asyncWidget = new AsyncTagResultWidget(loadingOverlay);
+			AsyncTagResultWidget* asyncWidget = makeAsyncAutoTagWidget(loadingOverlay);
 			APP->scene->addChild(asyncWidget);
 
 			// Run on background thread to avoid blocking UI
 			std::thread([asyncWidget]() {
 				auto result = std::make_shared<AutoTagResult>(customTagMetamodule());
-				asyncWidget->result = result;
+				setAutoTagResult(asyncWidget, result);
 			}).detach();
 		}));
 
@@ -947,12 +1067,7 @@ struct MbWidget : ModuleWidget {
 								string::f("No untagged modules found for \"%s\"", query.c_str()).c_str());
 						}
 						else {
-							auto resultWrap = std::make_shared<AutoTagResult>(preview);
-							ui::MenuOverlay* overlay = new ui::MenuOverlay;
-							overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
-							AutoTagConfirmWidget* w = new AutoTagConfirmWidget(resultWrap);
-							overlay->addChild(w);
-							APP->scene->addChild(overlay);
+							openAutoTagConfirmDialog(std::make_shared<AutoTagResult>(preview));
 						}
 					}
 					e.consume(this);
@@ -970,22 +1085,19 @@ struct MbWidget : ModuleWidget {
 		}));
 
 		auto unsortedTags = customTagsAll();
-		if (!unsortedTags.empty()) {
-			menu->addChild(new MenuSeparator());
-			std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
-			std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
-				return string::lowercase(a) < string::lowercase(b);
-			});
-			if (!tags.empty()) {
-				menu->addChild(createSubmenuItem("Delete custom tag", "",
-					[tags](Menu* menu) {
-						Rack::addGroupedMenuItems<std::string>(menu, tags, [](const std::string& tag) -> ui::MenuItem* {
-							MenuItem* item = createMenuItem(tag, "", [tag]() { customTagDelete(tag); });
-							return item;
-						});
-					}
-				));
-			}
+		std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
+		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
+			return string::lowercase(a) < string::lowercase(b);
+		});
+		if (!tags.empty()) {
+			menu->addChild(createSubmenuItem("Delete custom tag", "",
+				[tags](Menu* menu) {
+					Rack::addGroupedMenuItems<std::string>(menu, tags, [](const std::string& tag) {
+						MenuItem* item = createMenuItem(tag, "", [tag]() { customTagDelete(tag); });
+						return item;
+					}, 20);
+				}
+			));
 		}
 
 		menu->addChild(new MenuSeparator());
@@ -995,6 +1107,9 @@ struct MbWidget : ModuleWidget {
 				menu->addChild(createMenuItem("Import", "", [&]() { this->importSettingsDialog(); }));
 				menu->addChild(new MenuSeparator());
 				menu->addChild(createMenuItem("Reset usage data", "", []() { modelUsageReset(); }));
+				menu->addChild(createMenuItem("Reset hidden modules", "", []() { hiddenModelsReset(); }));
+				menu->addChild(createMenuItem("Reset custom tags", "", []() { customTagReset(); }));
+				menu->addChild(createMenuItem("Reset predefined tags", "", []() { predefinedTagsReset(); }));
 			}
 		));
 
@@ -1014,8 +1129,9 @@ struct MbWidget : ModuleWidget {
 
 		FILE* file = fopen(filename.c_str(), "w");
 		if (!file) {
-			std::string message = string::f("Could not write to patch file %s", filename.c_str());
+			std::string message = string::f("Could not write to file %s", filename.c_str());
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			return;
 		}
 		DEFER({
 			fclose(file);

@@ -6,53 +6,12 @@
 #include <thread>
 #include <algorithm>
 #include <numeric>
+#include <random>
 
 namespace StoermelderPackOne {
 namespace Mb {
 namespace v2 {
 
-static ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser = true) {
-	engine::Module* addedModule = model->createModule();
-	APP->engine->addModule(addedModule);
-
-	ModuleWidget* moduleWidget = model->createModuleWidget(addedModule);
-	assert(moduleWidget);
-	APP->scene->rack->addModuleAtMouse(moduleWidget);
-
-	moduleWidget->loadTemplate();
-
-	history::ModuleAdd* h = new history::ModuleAdd;
-	h->name = "create module";
-	h->setModule(moduleWidget);
-	APP->history->push(h);
-
-	if (hideBrowser) APP->scene->browser->hide();
-	modelUsageTouch(model);
-	return moduleWidget;
-}
-
-static void toggleModelFavorite(plugin::Model* model) {
-	setModelFavorite(model, !isModelFavorite(model));
-
-	ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-	if (browser && browser->favorite)
-		browser->refresh();
-}
-
-static void toggleModelHidden(plugin::Model* model) {
-	auto it = hiddenModels.find(model);
-	if (it != hiddenModels.end())
-		hiddenModels.erase(model);
-	else
-		hiddenModels.insert(model);
-
-	ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-	if (browser) browser->refresh();
-}
-
-static bool isModelHidden(plugin::Model* model) {
-	return hiddenModels.find(model) != hiddenModels.end();
-}
 
 
 // Tag toggle menu item for predefined tags
@@ -208,6 +167,7 @@ struct ModelBox : widget::OpaqueWidget {
 			magnifier->initialized = true;
 			magnifier->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
 			magnifier->sourceSize = box.size;
+			magnifier->magnification = 3.f / zoomWidget->getZoom();
 		}
 		OpaqueWidget::onHover(e);
 	}
@@ -226,6 +186,8 @@ struct ModelBox : widget::OpaqueWidget {
 
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
 			toggleModelFavorite(model);
+			ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+			if (browser && browser->favorite) browser->refresh();
 			e.consume(this);
 		}
 
@@ -238,14 +200,20 @@ struct ModelBox : widget::OpaqueWidget {
 	void onHoverKey(const event::HoverKey& e) override {
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
 			switch (e.key) {
-				case GLFW_KEY_F:
+				case GLFW_KEY_F: {
 					toggleModelFavorite(model);
+					ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+					if (browser && browser->favorite) browser->refresh();
 					e.consume(this);
 					break;
-				case GLFW_KEY_H:
+				}
+				case GLFW_KEY_H: {
 					toggleModelHidden(model);
+					ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+					if (browser) browser->refresh();
 					e.consume(this);
 					break;
+				}
 			}
 		}
 		OpaqueWidget::onHoverKey(e);
@@ -255,7 +223,8 @@ struct ModelBox : widget::OpaqueWidget {
 		std::string text = model->plugin->brand + " " + model->name;
 		text += "\nTags: ";
 		int i = 0;
-		for (int tagId : model->tagIds) {
+		std::set<int> effectiveTagIds = getEffectiveTagIds(model);
+		for (int tagId : effectiveTagIds) {
 			if (i++ > 0) text += ", ";
 			text += rack::tag::tagAliases[tagId][0];
 		}
@@ -304,10 +273,12 @@ struct ModelBox : widget::OpaqueWidget {
 		menu->addChild(createMenuLabel(model->name.c_str()));
 		menu->addChild(createSubmenuItem("Details", "", [this](Menu* menu) {
 			model->appendContextMenu(menu, true);
-			// Remove "Favorite" menu item
-			auto f = menu->children.back();
-			menu->removeChild(f);
-			delete f;
+			// Remove "Favorite" menu item - but only if items were added
+			if (!menu->children.empty()) {
+				auto f = menu->children.back();
+				menu->removeChild(f);
+				delete f;
+			}
 		}));
 		menu->addChild(createMenuItem(string::f("Filter by \"%s\"", model->plugin->brand.c_str()), "", [&]() {
 			ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
@@ -320,11 +291,19 @@ struct ModelBox : widget::OpaqueWidget {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createCheckMenuItem("Favorite", RACK_MOD_CTRL_NAME "+F",
 			[&]() { return isModelFavorite(model); },
-			[&]() { toggleModelFavorite(model); }
+			[&]() { 
+				toggleModelFavorite(model);
+				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+				if (browser && browser->favorite) browser->refresh();
+			}
 		));
 		menu->addChild(createCheckMenuItem("Hidden", RACK_MOD_CTRL_NAME "+H",
 			[&]() { return modelHidden; },
-			[&]() { toggleModelHidden(model); }
+			[&]() { 
+				toggleModelHidden(model);
+				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+				if (browser) browser->refresh();
+			}
 		));
 
 		menu->addChild(new MenuSeparator);
@@ -335,8 +314,8 @@ struct ModelBox : widget::OpaqueWidget {
 
 			void onSelectKey(const event::SelectKey& e) override {
 				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-					std::string tag = string::trim(text);
-					if (!tag.empty()) {
+					std::string tag = rack::string::trim(text);
+					if (isValidCustomTag(tag)) {
 						customTagAdd(model, tag);
 						ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
 						if (browser) browser->refresh();
@@ -423,6 +402,39 @@ struct ModelBox : widget::OpaqueWidget {
 };
 
 
+
+bool handleLayoutMenuKeyEvent(const Widget::SelectKeyEvent& e, Widget* currentContainer = nullptr) {
+	if (!e.isConsumed() && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+		switch (e.key) {
+			case GLFW_KEY_1: {
+				if (currentContainer) currentContainer->parent->requestDelete();
+				event::Action a;
+				auto browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+				browser->brandButton->onAction(a);
+				e.consume(browser);
+				return true;
+			}
+			case GLFW_KEY_2: {
+				if (currentContainer) currentContainer->parent->requestDelete();
+				event::Action a;
+				auto browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+				browser->tagButton->onAction(a);
+				e.consume(browser);
+				return true;
+			}
+			case GLFW_KEY_3: {
+				if (currentContainer) currentContainer->parent->requestDelete();
+				event::Action a;
+				auto browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+				browser->customTagButton->onAction(a);
+				e.consume(browser);
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 struct BrowserSearchField : ui::TextField {
 	ModuleBrowser* browser;
 	DropdownChoiceContainer* dropDown = nullptr;
@@ -484,30 +496,9 @@ struct BrowserSearchField : ui::TextField {
 					}
 					break;
 				}
-				case GLFW_KEY_1:
-					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
-						event::Action a;
-						browser->brandButton->onAction(a);
-						e.consume(this);
-						return;
-					}
-					break;
-				case GLFW_KEY_2:
-					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
-						event::Action a;
-						browser->tagButton->onAction(a);
-						e.consume(this);
-						return;
-					}
-					break;
-				case GLFW_KEY_3:
-					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
-						event::Action a;
-						browser->customTagButton->onAction(a);
-						e.consume(this);
-						return;
-					}
-					break;
+			}
+			if (handleLayoutMenuKeyEvent(e)) {
+				return;
 			}
 		}
 	
@@ -587,7 +578,21 @@ struct BrandButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu<ModuleBrowser>(this, items);
+		struct Container : DropdownChoiceContainer {
+			void onSelectKey(const SelectKeyEvent& e) override {
+				if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_1) {
+					e.consume(this);
+					parent->requestDelete();
+					return;
+				}
+				else if (handleLayoutMenuKeyEvent(e, this)) {
+					return;
+				}
+				DropdownChoiceContainer::onSelectKey(e);
+			}
+		};
+
+		openLayoutMenu<ModuleBrowser, Container>(this, items);
 	}
 
 	void step() override {
@@ -643,7 +648,21 @@ struct TagButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu<ModuleBrowser>(this, items);
+		struct Container : DropdownChoiceContainer {
+			void onSelectKey(const SelectKeyEvent& e) override {
+				if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_2) {
+					e.consume(this);
+					parent->requestDelete();
+					return;
+				}
+				else if (handleLayoutMenuKeyEvent(e, this)) {
+					return;
+				}
+				DropdownChoiceContainer::onSelectKey(e);
+			}
+		};
+
+		openLayoutMenu<ModuleBrowser, Container>(this, items);
 	}
 
 	void step() override {
@@ -711,7 +730,21 @@ struct CustomTagButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu<ModuleBrowser>(this, items);
+		struct Container : DropdownChoiceContainer {
+			void onSelectKey(const SelectKeyEvent& e) override {
+				if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_3) {
+					e.consume(this);
+					parent->requestDelete();
+					return;
+				}
+				else if (handleLayoutMenuKeyEvent(e, this)) {
+					return;
+				}
+				DropdownChoiceContainer::onSelectKey(e);
+			}
+		};
+
+		openLayoutMenu<ModuleBrowser, Container>(this, items);
 	}
 
 	void step() override {
@@ -850,7 +883,9 @@ struct ZoomButton : ui::ChoiceButton {
 template <typename F>
 static void sortModelContainer(ui::SequentialLayout* container, F f) {
 	container->children.sort([&](Widget* w1, Widget* w2) {
+		assert(dynamic_cast<ModelBox*>(w1));
 		ModelBox* m1 = reinterpret_cast<ModelBox*>(w1);
+		assert(dynamic_cast<ModelBox*>(w2));
 		ModelBox* m2 = reinterpret_cast<ModelBox*>(w2);
 		return f(m1) < f(m2);
 	});
@@ -969,22 +1004,48 @@ void ModuleBrowser::draw(const DrawArgs& args) {
 }
 
 bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter) {
-	if (favorite && !isModelFavorite(model))
+	// Filter if not whitelisted by library
+	if (pluginSettings.mbApplyLibraryWhitelist) {
+		if (!settings::isModuleWhitelisted(model->plugin->slug, model->slug)) {
+			return false;
+		}
+	}
+
+	// Filter deprecated modules
+	if (!pluginSettings.mbShowDeprecated) {
+		if (model->hidden) {
+			return false;
+		}
+	}
+
+	// Filter favorite
+	if (favorite && !isModelFavorite(model)) {
 		return false;
-	if (!brand.empty() && model->plugin->brand != brand)
+	}
+
+	// Filter brand
+	if (!brand.empty() && model->plugin->brand != brand) {
 		return false;
+	}
+
 	// Use effective tag IDs (with predefined tag modifications applied)
 	std::set<int> effectiveTagIds = getEffectiveTagIds(model);
 	for (int tagId : tagIds) {
 		if (effectiveTagIds.find(tagId) == effectiveTagIds.end())
 			return false;
 	}
+
+	// Filter custom tags
 	for (const auto& ct : customTagFilter) {
 		if (!customTagHas(model, ct))
 			return false;
 	}
-	if (!hidden && hiddenModels.find(model) != hiddenModels.end())
+
+	// Filter hidden modules (does not use the Rack's "hidden" property)
+	if (!hidden && hiddenModels.find(model) != hiddenModels.end()) {
 		return false;
+	}
+
 	return true;
 }
 
@@ -1054,7 +1115,9 @@ void ModuleBrowser::refresh() {
 		}
 		else if (settings::browserSort == settings::BROWSER_SORT_RANDOM) {
 			std::vector<std::reference_wrapper<Widget*>> vec(modelContainer->children.begin(), modelContainer->children.end());
-			std::random_shuffle(vec.begin(), vec.end());
+			std::random_device rd;
+			std::mt19937 g(rd());
+			std::shuffle(vec.begin(), vec.end(), g);
 			std::list<Widget*> s(vec.begin(), vec.end());
 			modelContainer->children.swap(s);
 		}

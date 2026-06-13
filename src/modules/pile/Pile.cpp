@@ -53,12 +53,19 @@ struct PileModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_SLEW, "Slew CV");
+		inputInfos[INPUT_SLEW]->description = "CV controlling the slew-limiting of the output (overrides the SLEW knob).";
 		configInput(INPUT_INC, "Increment"),
+		inputInfos[INPUT_INC]->description = "Adds one step to the output voltage on each trigger.";
 		configInput(INPUT_DEC, "Decrement");
+		inputInfos[INPUT_DEC]->description = "Subtracts one step from the output voltage on each trigger.";
 		configInput(INPUT_RESET, "Reset");
+		inputInfos[INPUT_RESET]->description = "When connected, the output continuously tracks this CV; otherwise it stays at its current value.";
 		configOutput(OUTPUT, "Voltage");
+		outputInfos[OUTPUT]->description = "The accumulated voltage, clamped to the range selected on the context menu (default UNI_10V).";
 		configParam(PARAM_SLEW, 0.f, 5.f, 0.f, "Slew limiting", "s");
+		paramQuantities[PARAM_SLEW]->description = "Slew-rate limiting applied to the output. Effective only when SLEW-CV is not connected.";
 		configParam(PARAM_STEP, 0.f, 5.f, 0.2f, "Stepsize", "V");
+		paramQuantities[PARAM_STEP]->description = "Voltage added/subtracted by each trigger on INC/DEC.";
 		processDivider.setDivision(32);
 
 		Module::ResetEvent re;
@@ -124,10 +131,15 @@ struct PileModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		range = (RANGE)json_integer_value(json_object_get(rootJ, "range"));
-		currentVoltage = lastResetVoltage = json_real_value(json_object_get(rootJ, "currentVoltage"));
-		slewLimiter.out = currentVoltage;
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* rangeJ = json_object_get(rootJ, "range");
+		if (rangeJ) range = (RANGE)json_integer_value(rangeJ);
+		json_t* currentVoltageJ = json_object_get(rootJ, "currentVoltage");
+		if (currentVoltageJ) {
+			currentVoltage = lastResetVoltage = json_real_value(currentVoltageJ);
+			slewLimiter.out = currentVoltage;
+		}
 	}
 };
 

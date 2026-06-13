@@ -84,6 +84,22 @@ struct MidiEsxModule : Module, MidiEsxMessageHandler {
 		unsubscribe(portGroupId, this);
 	}
 	
+	void resetPort(int portIndex) {
+		if (portIndex >= 0 && portIndex < 8) {
+			// Clear the bit queue for this port
+			while (port[portIndex].bitQueue.size() > 0) {
+				port[portIndex].bitQueue.shift();
+			}
+			port[portIndex].locked = false;
+		}
+	}
+	
+	void resetAllPorts() {
+		for (int i = 0; i < 8; i++) {
+			resetPort(i);
+		}
+	}
+	
 	void process(const ProcessArgs& args) override {
 		if (args.sampleRate != 48000.f) return;
 
@@ -106,7 +122,8 @@ struct MidiEsxModule : Module, MidiEsxMessageHandler {
 
 	void dataFromJson(json_t* rootJ) override {
 		unsubscribe(portGroupId, this);
-		portGroupId = json_integer_value(json_object_get(rootJ, "portGroupId"));
+		json_t* portGroupIdJ = json_object_get(rootJ, "portGroupId");
+		if (portGroupIdJ) portGroupId = json_integer_value(portGroupIdJ);
 		subscribe(portGroupId, this);
 	}
 
@@ -137,6 +154,23 @@ struct MidiEsxWidget : ThemedModuleWidget<MidiEsxModule> {
 
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MidiEsxModule>::appendContextMenu(menu);
+
+		menu->addChild(new MenuSeparator());	
+		menu->addChild(createSubmenuItem("MIDI Reset", "", [=](Menu* menu) {
+			for (int i = 0; i < 8; ++i) {
+				menu->addChild(createBoolMenuItem(
+					string::f("Port %i", i + 1), "",
+					[=]() { return false; },
+					[=](bool) { module->resetPort(i); }
+				));
+			}	
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createBoolMenuItem(
+				"Reset all ports", "",
+				[=]() { return false; },
+				[=](bool) { module->resetAllPorts(); }
+			));
+		}));
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createBoolMenuItem("Driver active", "",

@@ -13,10 +13,12 @@ namespace Transit {
  *
  * Placement
  * ---------
- * TransitCtrl must be placed immediately to the right of Transit, before any
- * TransitEx expanders:  [Transit] [TransitCtrl] [TransitEx] ...
+ * TransitCtrl must be placed at the end of the Transit chain, after all
+ * TransitEx expanders:  [Transit] [TransitEx] ... [TransitEx] [TransitCtrl]
+ * (It can also be placed immediately to the right of Transit if no TransitEx
+ * is present:  [Transit] [TransitCtrl].)
  * Transit detects this in its process() loop (when expandersChanged) and pushes
- * its own TransitCtrlSender pointer into TransitCtrl via TransitCtrlReceiver::setTransitCtrl().
+ * its own TransitCtrlMaster pointer into TransitCtrl via TransitCtrlReceiver::setTransitCtrl().
  * When the modules are separated, TransitCtrl::onExpanderChange() clears all proxy
  * targets so the knobs become inert.
  *
@@ -24,7 +26,7 @@ namespace Transit {
  * -------------------------------------
  * Each knob on TransitCtrl owns a ProxyParamQuantity. Its min/max/default and all
  * display/label/unit methods are delegated to the corresponding mapped parameter's
- * ParamQuantity (accessed via TransitCtrlSender::getCtrlParamQuantity), so the knob
+ * ParamQuantity (accessed via TransitCtrlMaster::getCtrlParamQuantity), so the knob
  * behaves identically to the mapped parameter from the UI's perspective (correct
  * drag range, tooltip text, context-menu value entry, etc.).
  * getValue/setValue are left as the default ParamQuantity implementations: the local
@@ -43,7 +45,7 @@ namespace Transit {
  * TransitCtrlModule::process() compares each params[i].value against lastParamValues[i].
  * Any mismatch — whether from a knob drag (ParamQuantity::setValue) or a direct
  * Param::setValue call by an external CV mapper — is treated as a "control event"
- * and pushed into Transit's dsp::RingBuffer via TransitCtrlSender::pushCtrlChange,
+ * and pushed into Transit's dsp::RingBuffer via TransitCtrlMaster::pushCtrlChange,
  * using handleIndex as the Transit-side param index.
  * Transit drains that queue at the top of its own process() and writes the value to the
  * target parameter.  The queue is one-directional; Transit never calls pushCtrlChange
@@ -73,7 +75,7 @@ namespace Transit {
  *  so that the local param is self-contained storage. Changes are detected in process()
  *  and forwarded to Transit via pushCtrlChange(), avoiding any write-back oscillation. */
 struct ProxyParamQuantity : ParamQuantity {
-	TransitCtrlSender* transitCtrl = nullptr;
+	TransitCtrlMaster* transitCtrl = nullptr;
 	int handleIndex = 0;
 
 	ParamQuantity* getTargetPQ() {
@@ -227,7 +229,7 @@ struct TransitCtrlModule : Module, TransitCtrlReceiver {
 		}
 	}
 
-	void setTransitCtrl(TransitCtrlSender* ctrl) override {
+	void setTransitCtrl(TransitCtrlMaster* ctrl) override {
 		for (int i = 0; i < NUM_CTRL; i++) {
 			ppqs[i]->transitCtrl = ctrl;
 			ppqs[i]->handleIndex = mapping[i];

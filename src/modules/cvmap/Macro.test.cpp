@@ -18,3 +18,16 @@ TEST_CASE("Construction and initialization", "[Macro]") {
 	Test::destroyWidget(mw);
 	Test::destroyModule(m);
 }
+
+TEST_CASE("Preset JSON null-guards", "[Macro][JSON]") {
+	auto module = Test::createModule<MacroModule>("Macro");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}

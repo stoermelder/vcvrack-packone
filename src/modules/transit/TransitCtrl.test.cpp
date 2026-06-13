@@ -7,16 +7,19 @@
 using namespace StoermelderPackOne::Transit;
 
 SYNC_MODEL(modelTransit, "Transit");
+SYNC_MODEL(modelTransitEx, "TransitEx");
 SYNC_MODEL(modelTransitCtrl, "TransitCtrl");
 Test::TestContext<> testContext;
 
+static const int NUM_CTRL = 16;
+
 // ---------------------------------------------------------------------------
-// MockSenderModule — a minimal Module that also implements TransitCtrlSender.
+// MockSenderModule — a minimal Module that also implements TransitCtrlMaster.
 // Using a real Module gives ParamQuantity::getParam() a valid module+paramId
 // pair, which is required by the polling code in TransitCtrlModule::process().
 // No engine registration is needed: we pass the pointer directly.
 // ---------------------------------------------------------------------------
-struct MockSenderModule : rack::Module, TransitCtrlSender {
+struct MockSenderModule : rack::Module, TransitCtrlMaster {
 	struct Change { int index; float value; };
 	std::vector<Change> changes;
 
@@ -108,6 +111,20 @@ TEST_CASE("Construction and initialization", "[TransitCtrl]") {
 	}
 
 	Test::destroyModule(ctrl);
+}
+
+
+TEST_CASE("Preset JSON null-guards", "[TransitCtrl][JSON]") {
+	auto module = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
 }
 
 
@@ -435,6 +452,119 @@ TEST_CASE("Integration - Transit discovers TransitCtrl as immediate right expand
 		REQUIRE(ctrl->ppqs[0]->transitCtrl == nullptr);
 	}
 
+	Test::destroyModule(ctrl);
+	Test::destroyModule(transit);
+}
+
+
+// ---------------------------------------------------------------------------
+// Helper: create a TransitEx module via the plugin factory (mirrors the helper
+// in TransitEx.test.cpp). Returns the raw Module* pointer alongside a
+// TransitBase<12>* view if requested.
+// ---------------------------------------------------------------------------
+static Module* createExModule(TransitBase<12>** baseOut = nullptr) {
+	Model* model = pluginInstance->getModel("TransitEx");
+	REQUIRE(model != nullptr);
+	Module* m = model->createModule();
+	m->id = Test::getModuleId();
+
+	Module::SampleRateChangeEvent e;
+	e.sampleRate = APP->engine->getSampleRate();
+	e.sampleTime = 1.0f / e.sampleRate;
+	m->onSampleRateChange(e);
+
+	if (baseOut) {
+		*baseOut = dynamic_cast<TransitBase<12>*>(m);
+		REQUIRE(*baseOut != nullptr);
+	}
+	return m;
+}
+
+// Helper: wire the chain [Transit] [TransitEx] [TransitCtrl] and trigger
+// the listener callbacks so Transit re-scans and picks up the ctrl.
+template<typename T>
+static void connectExThenCtrl(T& engine, TransitModule<12>* transit, Module* exModule, TransitCtrlModule<16>* ctrl) {
+	transit->rightExpander.module = exModule;
+	transit->rightExpander.moduleId = exModule->id;
+	exModule->leftExpander.module = transit;
+	exModule->leftExpander.moduleId = transit->id;
+	exModule->rightExpander.module = ctrl;
+	exModule->rightExpander.moduleId = ctrl->id;
+	ctrl->leftExpander.module = exModule;
+	ctrl->leftExpander.moduleId = exModule->id;
+	Module::ExpanderChangeEvent e;
+	ctrl->onExpanderChange(e);     // clears old transitCtrl; notifies Transit (expandersChanged=true)
+	exModule->onExpanderChange(e); // notifies Transit again (idempotent)
+	transit->onExpanderChange(e);  // notifies Transit (idempotent)
+	engine.stepBlock(1);           // Transit re-scans: walks TransitEx, then discovers TransitCtrl
+}
+
+
+TEST_CASE("Integration - Transit discovers TransitCtrl placed after TransitEx", "[TransitCtrl]") {
+	Test::SimpleEngine engine;
+	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
+	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
+	TransitBase<12>* exBase = nullptr;
+	Module* exModule = createExModule(&exBase);
+	engine.registerModules(transit, exModule, ctrl);
+
+	SECTION("Before connection, ctrl has no transitCtrl") {
+		REQUIRE(ctrl->ppqs[0]->transitCtrl == nullptr);
+	}
+
+	SECTION("After connecting [Transit] [TransitEx] [TransitCtrl], Transit discovers the ctrl") {
+		connectExThenCtrl(engine, transit, exModule, ctrl);
+		REQUIRE(ctrl->ppqs[0]->transitCtrl == transit);
+	}
+
+	SECTION("TransitEx is still discovered and counted in presetTotal") {
+		connectExThenCtrl(engine, transit, exModule, ctrl);
+		REQUIRE(transit->presetTotal == 24);
+		REQUIRE(exBase->ctrlOffset == 1);
+	}
+
+	SECTION("Removing TransitEx but keeping TransitCtrl re-binds ctrl to Transit directly") {
+		connectExThenCtrl(engine, transit, exModule, ctrl);
+		REQUIRE(ctrl->ppqs[0]->transitCtrl == transit);
+
+		// Disconnect TransitEx: re-wire transit.rightExpander -> ctrl directly
+		transit->rightExpander.module = ctrl;
+		transit->rightExpander.moduleId = ctrl->id;
+		exModule->leftExpander.module = nullptr;
+		exModule->leftExpander.moduleId = -1;
+		exModule->rightExpander.module = nullptr;
+		exModule->rightExpander.moduleId = -1;
+		ctrl->leftExpander.module = transit;
+		ctrl->leftExpander.moduleId = transit->id;
+		Module::ExpanderChangeEvent e;
+		ctrl->onExpanderChange(e);
+		transit->onExpanderChange(e);
+		engine.stepBlock(1);
+
+		REQUIRE(transit->presetTotal == 12);
+		REQUIRE(ctrl->ppqs[0]->transitCtrl == transit);
+	}
+
+	SECTION("Removing TransitCtrl from the [Transit][TransitEx][TransitCtrl] chain clears transitCtrl") {
+		connectExThenCtrl(engine, transit, exModule, ctrl);
+		REQUIRE(ctrl->ppqs[0]->transitCtrl == transit);
+
+		// Disconnect TransitCtrl only
+		exModule->rightExpander.module = nullptr;
+		exModule->rightExpander.moduleId = -1;
+		ctrl->leftExpander.module = nullptr;
+		ctrl->leftExpander.moduleId = -1;
+		Module::ExpanderChangeEvent e;
+		ctrl->onExpanderChange(e);    // clears transitCtrl; notifies Transit
+		exModule->onExpanderChange(e);
+		transit->onExpanderChange(e);
+		engine.stepBlock(1);
+
+		REQUIRE(ctrl->ppqs[0]->transitCtrl == nullptr);
+		REQUIRE(transit->presetTotal == 24);
+	}
+
+	delete exModule;
 	Test::destroyModule(ctrl);
 	Test::destroyModule(transit);
 }

@@ -21,6 +21,19 @@ TEST_CASE("Construction and initialization", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[Ahab][JSON]") {
+	auto module = Test::createModule<AhabModule>("Ahab");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 // Mock MIDI OutputDevice for testing MIDI output messages
 struct MockMidiOutputDevice : public rack::midi::OutputDevice {
 	std::vector<rack::midi::Message> sentMessages;
@@ -270,6 +283,111 @@ TEST_CASE("Run/stop toggle", "[Ahab]") {
 	
 	// Should start
 	REQUIRE(m->simRunning == true);
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Reset input triggers tick counter reset", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	m->process({});
+	
+	// Manually advance the tick counter several times via clock button
+	m->params[AhabModule::CLK_PARAM].setValue(0.0f);
+	m->process({});
+	m->params[AhabModule::CLK_PARAM].setValue(1.0f);
+	m->process({});
+	m->params[AhabModule::CLK_PARAM].setValue(0.0f);
+	m->process({});
+	
+	// Get tick number after several advances
+	Usz ticks_before = m->sim->getTickNumber();
+	REQUIRE(ticks_before > 0);
+	
+	// Trigger reset input with low-to-high transition
+	m->inputs[AhabModule::RESET_INPUT].channels = 1;
+	m->inputs[AhabModule::RESET_INPUT].setVoltage(0.0f);
+	m->process({});
+	m->inputs[AhabModule::RESET_INPUT].setVoltage(5.0f);
+	m->process({});
+	
+	// Tick counter should be reset to 0
+	REQUIRE(m->sim->getTickNumber() == 0);
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Reset input responds to edge detection", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	m->process({});
+	
+	// Advance tick counter
+	m->params[AhabModule::CLK_PARAM].setValue(1.0f);
+	m->process({});
+	Usz ticks_after_advance = m->sim->getTickNumber();
+	REQUIRE(ticks_after_advance > 0);
+	
+	// Apply reset voltage but don't release (no edge yet)
+	m->inputs[AhabModule::RESET_INPUT].channels = 1;
+	m->inputs[AhabModule::RESET_INPUT].setVoltage(5.0f);
+	m->process({});
+	m->process({});
+	m->process({});
+	
+	// Tick counter should remain at 0 (held in reset state)
+	REQUIRE(m->sim->getTickNumber() == 0);
+	
+	// Release reset and advance again
+	m->inputs[AhabModule::RESET_INPUT].setVoltage(0.0f);
+	m->process({});
+	
+	// Now trigger clock to advance
+	m->params[AhabModule::CLK_PARAM].setValue(0.0f);
+	m->process({});
+	m->params[AhabModule::CLK_PARAM].setValue(1.0f);
+	m->process({});
+	
+	// Tick should have incremented from 0
+	REQUIRE(m->sim->getTickNumber() > 0);
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Reset input with gate signal (continuous voltage)", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	m->process({});
+	
+	// Advance ticks
+	for (int i = 0; i < 5; i++) {
+		m->params[AhabModule::CLK_PARAM].setValue(1.0f);
+		m->process({});
+		m->params[AhabModule::CLK_PARAM].setValue(0.0f);
+		m->process({});
+	}
+	Usz ticks_advanced = m->sim->getTickNumber();
+	REQUIRE(ticks_advanced > 0);
+	
+	// Apply reset gate signal (gate voltage held high)
+	m->inputs[AhabModule::RESET_INPUT].channels = 1;
+	m->inputs[AhabModule::RESET_INPUT].setVoltage(8.0f);
+	m->process({});
+	
+	// Reset should trigger on the rising edge
+	REQUIRE(m->sim->getTickNumber() == 0);
+	
+	// Further processing with gate held high should NOT reset again
+	// (edge detector should not trigger on continued high voltage)
+	m->process({});
+	m->process({});
+	REQUIRE(m->sim->getTickNumber() == 0);
 	
 	Test::unregisterModule(m);
 	Test::destroyModule(m);

@@ -141,7 +141,9 @@ struct EightFaceModule : Module {
 		configInput(SLOT_INPUT, "Slot selection");
 		inputInfos[SLOT_INPUT]->description = "Operating mode is set on the context menu.";
 		configInput(RESET_INPUT, "Reset");
+		inputInfos[RESET_INPUT]->description = "Resets the sequencer to the first slot (depending on the selected CV mode).";
 		configSwitch(CTRLMODE_PARAM, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
+		paramQuantities[CTRLMODE_PARAM]->description = "Read: load a slot manually.\nAuto: auto-save on snapshot-change.\nWrite: snapshot the currently mapped parameters into a slot.";
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			configSwitch(PRESET_PARAM + i, 0.f, 1.f, 0.f, string::f("Preset slot %d", i + 1));
 			typeButtons[i].param = &params[PRESET_PARAM + i];
@@ -322,7 +324,8 @@ struct EightFaceModule : Module {
 										for (int i = 0; i < presetCount; i++) {
 											slotCvModeShuffle.push_back(i);
 										}
-										std::random_shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle));
+										std::mt19937 rng(random::u32());
+										std::shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle), rng);
 									}
 									int p = std::min(std::max(0, slotCvModeShuffle.back()), presetCount - 1);
 									slotCvModeShuffle.pop_back();
@@ -559,28 +562,34 @@ struct EightFaceModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* guiSafeModeJ = json_object_get(rootJ, "guiSafeMode");
 		guiSafeMode = guiSafeModeJ ? (GUISAFEMODE)json_integer_value(guiSafeModeJ) : GUISAFEMODE::WORKER;
 	
 		json_t* sideJ = json_object_get(rootJ, "mode");
 		if (sideJ) side = (SIDE)json_integer_value(sideJ);
-		pluginSlug = json_string_value(json_object_get(rootJ, "pluginSlug"));
-		modelSlug = json_string_value(json_object_get(rootJ, "modelSlug"));
+		json_t* pluginSlugJ = json_object_get(rootJ, "pluginSlug");
+		if (pluginSlugJ && json_is_string(pluginSlugJ)) pluginSlug = json_string_value(pluginSlugJ);
+		json_t* modelSlugJ = json_object_get(rootJ, "modelSlug");
+		if (modelSlugJ && json_is_string(modelSlugJ)) modelSlug = json_string_value(modelSlugJ);
 
 		json_t* realPluginSlugJ = json_object_get(rootJ, "realPluginSlug");
-		if (realPluginSlugJ) realPluginSlug = json_string_value(realPluginSlugJ);
+		if (realPluginSlugJ && json_is_string(realPluginSlugJ)) realPluginSlug = json_string_value(realPluginSlugJ);
 		json_t* realModelSlugJ = json_object_get(rootJ, "realModelSlug");
-		if (realModelSlugJ) realModelSlug = json_string_value(realModelSlugJ);
+		if (realModelSlugJ && json_is_string(realModelSlugJ)) realModelSlug = json_string_value(realModelSlugJ);
 		auto it = guiModuleSlugs.find(std::make_tuple(realPluginSlug, realModelSlug));
 		workerGui = it != guiModuleSlugs.end();
 
 		json_t* moduleNameJ = json_object_get(rootJ, "moduleName");
-		if (moduleNameJ) moduleName = json_string_value(json_object_get(rootJ, "moduleName"));
-		slotCvMode = (SLOTCVMODE)json_integer_value(json_object_get(rootJ, "slotCvMode"));
-		preset = json_integer_value(json_object_get(rootJ, "preset"));
-		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
+		if (moduleNameJ && json_is_string(moduleNameJ)) moduleName = json_string_value(moduleNameJ);
+		json_t* slotCvModeJ = json_object_get(rootJ, "slotCvMode");
+		if (slotCvModeJ) slotCvMode = (SLOTCVMODE)json_integer_value(slotCvModeJ);
+		json_t* presetJ = json_object_get(rootJ, "preset");
+		if (presetJ) preset = json_integer_value(presetJ);
+		json_t* presetCountJ = json_object_get(rootJ, "presetCount");
+		if (presetCountJ) presetCount = json_integer_value(presetCountJ);
 		json_t* presetCountLongPressJ = json_object_get(rootJ, "presetCountLongPress");
 		if (presetCountLongPressJ) presetCountLongPress = json_boolean_value(presetCountLongPressJ);
 
@@ -593,11 +602,15 @@ struct EightFaceModule : Module {
 		}
 
 		json_t* presetsJ = json_object_get(rootJ, "presets");
-		json_t* presetJ;
-		size_t presetIndex;
-		json_array_foreach(presetsJ, presetIndex, presetJ) {
-			presetSlotUsed[presetIndex] = json_boolean_value(json_object_get(presetJ, "slotUsed"));
-			presetSlot[presetIndex] = json_deep_copy(json_object_get(presetJ, "slot"));
+		if (presetsJ) {
+			json_t* presetItemJ;
+			size_t presetIndex;
+			json_array_foreach(presetsJ, presetIndex, presetItemJ) {
+				json_t* slotUsedJ = json_object_get(presetItemJ, "slotUsed");
+				if (slotUsedJ) presetSlotUsed[presetIndex] = json_boolean_value(slotUsedJ);
+				json_t* slotJ = json_object_get(presetItemJ, "slot");
+				if (slotJ) presetSlot[presetIndex] = json_deep_copy(slotJ);
+			}
 		}
 
 		presetPrev = -1;

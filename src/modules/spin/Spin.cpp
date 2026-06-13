@@ -47,9 +47,13 @@ struct SpinModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configOutput(OUTPUT_DEC, "Mouse wheel down trigger");
+		outputInfos[OUTPUT_DEC]->description = "Trigger sent when the mouse wheel is scrolled down over a parameter.";
 		configOutput(OUTPUT_INC, "Mouse wheel up trigger");
+		outputInfos[OUTPUT_INC]->description = "Trigger sent when the mouse wheel is scrolled up over a parameter.";
 		configOutput(OUTPUT_CLICK, "Middle mouse button trigger");
+		outputInfos[OUTPUT_CLICK]->description = "Trigger or gate sent on middle-mouse click; behavior depends on the click mode on the context menu.";
 		configSwitch(PARAM_ONLY, 0.f, 1.f, 1.f, "Only active while parameter-hovering");
+		paramQuantities[PARAM_ONLY]->description = "When on, mouse-wheel/click events are only captured while hovering a parameter.";
 
 		Module::ResetEvent re;
 		onReset(re);
@@ -120,10 +124,14 @@ struct SpinModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		mods = json_integer_value(json_object_get(rootJ, "mods"));
-		clickMode = (CLICK_MODE)json_integer_value(json_object_get(rootJ, "clickMode"));
-		clickHigh = json_boolean_value(json_object_get(rootJ, "clickHigh"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* modsJ = json_object_get(rootJ, "mods");
+		if (modsJ) mods = json_integer_value(modsJ);
+		json_t* clickModeJ = json_object_get(rootJ, "clickMode");
+		if (clickModeJ) clickMode = (CLICK_MODE)json_integer_value(clickModeJ);
+		json_t* clickHighJ = json_object_get(rootJ, "clickHigh");
+		if (clickHighJ) clickHigh = json_boolean_value(clickHighJ);
 	}
 };
 

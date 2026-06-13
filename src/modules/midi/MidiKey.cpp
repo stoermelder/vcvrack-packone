@@ -256,15 +256,18 @@ struct MidiKeyModule : Module, MidiTrackingProcessorHandler {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		clearMaps();
 		json_t* mapsJ = json_object_get(rootJ, "maps");
 		json_t* mapJ;
 		size_t i;
 		json_array_foreach(mapsJ, i, mapJ) {
-			slot.v[i].key = json_integer_value(json_object_get(mapJ, "key"));
-			slot.v[i].mods = json_integer_value(json_object_get(mapJ, "mods"));
+			json_t* keyJ = json_object_get(mapJ, "key");
+			if (keyJ) slot.v[i].key = json_integer_value(keyJ);
+			json_t* modsJ = json_object_get(mapJ, "mods");
+			if (modsJ) slot.v[i].mods = json_integer_value(modsJ);
 			json_t* moduleIdJ = json_object_get(mapJ, "moduleId");
 			if (moduleIdJ) slot.v[i].moduleId = json_integer_value(moduleIdJ);
 		}

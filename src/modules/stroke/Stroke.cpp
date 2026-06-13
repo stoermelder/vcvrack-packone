@@ -101,6 +101,7 @@ struct StrokeModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < PORTS; i++) {
 			configOutput(OUTPUT + i, string::f("Hotkey %i trigger/gate", i + 1));
+			outputInfos[OUTPUT + i]->description = "Fires a short trigger, or stays high as a gate, when the corresponding hotkey is pressed.";
 		}
 
 		ResetEvent re;
@@ -201,16 +202,22 @@ struct StrokeModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* keysJ = json_object_get(rootJ, "keys");
 		for (int i = 0; i < PORTS; i++) {
 			json_t* keyJ = json_array_get(keysJ, i);
-			keys[i].button = json_integer_value(json_object_get(keyJ, "button"));
-			keys[i].key = keyFix(json_integer_value(json_object_get(keyJ, "key")));
-			keys[i].mods = json_integer_value(json_object_get(keyJ, "mods")) & (GLFW_MOD_ALT | RACK_MOD_CTRL | GLFW_MOD_SHIFT);
-			keys[i].mode = (KEY_MODE)json_integer_value(json_object_get(keyJ, "mode"));
-			keys[i].high = json_boolean_value(json_object_get(keyJ, "high"));
+			json_t* buttonJ = json_object_get(keyJ, "button");
+			if (buttonJ) keys[i].button = json_integer_value(buttonJ);
+			json_t* keyJ2 = json_object_get(keyJ, "key");
+			if (keyJ2) keys[i].key = keyFix(json_integer_value(keyJ2));
+			json_t* modsJ = json_object_get(keyJ, "mods");
+			if (modsJ) keys[i].mods = json_integer_value(modsJ) & (GLFW_MOD_ALT | RACK_MOD_CTRL | GLFW_MOD_SHIFT);
+			json_t* modeJ = json_object_get(keyJ, "mode");
+			if (modeJ) keys[i].mode = (KEY_MODE)json_integer_value(modeJ);
+			json_t* highJ = json_object_get(keyJ, "high");
+			if (highJ) keys[i].high = json_boolean_value(highJ);
 			json_t* dataJ = json_object_get(keyJ, "data");
 			if (dataJ) keys[i].data = json_string_value(dataJ);
 		}

@@ -464,45 +464,64 @@ struct MazeModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* gridJ = json_object_get(rootJ, "grid");
-		for (int i = 0; i < SIZE; i++) {
-			for (int j = 0; j < SIZE; j++) {
-				grid[i][j] = (GRIDSTATE)json_integer_value(json_array_get(gridJ, i * SIZE + j));
+		if (gridJ) {
+			for (int i = 0; i < SIZE; i++) {
+				for (int j = 0; j < SIZE; j++) {
+					grid[i][j] = (GRIDSTATE)json_integer_value(json_array_get(gridJ, i * SIZE + j));
+				}
 			}
 		}
 		
 		json_t* gridCvJ = json_object_get(rootJ, "gridCv");
-		for (int i = 0; i < SIZE; i++) {
-			for (int j = 0; j < SIZE; j++) {
-				gridCv[i][j] = json_real_value(json_array_get(gridCvJ, i * SIZE + j));
+		if (gridCvJ) {
+			for (int i = 0; i < SIZE; i++) {
+				for (int j = 0; j < SIZE; j++) {
+					gridCv[i][j] = json_real_value(json_array_get(gridCvJ, i * SIZE + j));
+				}
 			}
 		}
 
 		json_t* portsJ = json_object_get(rootJ, "ports");
-		json_t* portJ;
-		size_t portIndex;
-		json_array_foreach(portsJ, portIndex, portJ) {
-			xStartPos[portIndex] = json_integer_value(json_object_get(portJ, "xStartPos"));
-			yStartPos[portIndex] = json_integer_value(json_object_get(portJ, "yStartPos"));
-			xStartDir[portIndex] = json_integer_value(json_object_get(portJ, "xStartDir"));
-			yStartDir[portIndex] = json_integer_value(json_object_get(portJ, "yStartDir"));
-			xPos[portIndex] = json_integer_value(json_object_get(portJ, "xPos"));
-			yPos[portIndex] = json_integer_value(json_object_get(portJ, "yPos"));
-			xDir[portIndex] = json_integer_value(json_object_get(portJ, "xDir"));
-			yDir[portIndex] = json_integer_value(json_object_get(portJ, "yDir"));
-			turnMode[portIndex] = (TURNMODE)json_integer_value(json_object_get(portJ, "turnMode"));
-			outMode[portIndex] = (OUTMODE)json_integer_value(json_object_get(portJ, "outMode"));
-			ratchetingEnabled[portIndex] = (RATCHETMODE)json_integer_value(json_object_get(portJ, "ratchetingEnabled"));
+		if (portsJ) {
+			json_t* portJ;
+			size_t portIndex;
+			json_array_foreach(portsJ, portIndex, portJ) {
+				json_t* xStartPosJ = json_object_get(portJ, "xStartPos");
+				if (xStartPosJ) xStartPos[portIndex] = json_integer_value(xStartPosJ);
+				json_t* yStartPosJ = json_object_get(portJ, "yStartPos");
+				if (yStartPosJ) yStartPos[portIndex] = json_integer_value(yStartPosJ);
+				json_t* xStartDirJ = json_object_get(portJ, "xStartDir");
+				if (xStartDirJ) xStartDir[portIndex] = json_integer_value(xStartDirJ);
+				json_t* yStartDirJ = json_object_get(portJ, "yStartDir");
+				if (yStartDirJ) yStartDir[portIndex] = json_integer_value(yStartDirJ);
+				json_t* xPosJ = json_object_get(portJ, "xPos");
+				if (xPosJ) xPos[portIndex] = json_integer_value(xPosJ);
+				json_t* yPosJ = json_object_get(portJ, "yPos");
+				if (yPosJ) yPos[portIndex] = json_integer_value(yPosJ);
+				json_t* xDirJ = json_object_get(portJ, "xDir");
+				if (xDirJ) xDir[portIndex] = json_integer_value(xDirJ);
+				json_t* yDirJ = json_object_get(portJ, "yDir");
+				if (yDirJ) yDir[portIndex] = json_integer_value(yDirJ);
+				json_t* turnModeJ = json_object_get(portJ, "turnMode");
+				if (turnModeJ) turnMode[portIndex] = (TURNMODE)json_integer_value(turnModeJ);
+				json_t* outModeJ = json_object_get(portJ, "outMode");
+				if (outModeJ) outMode[portIndex] = (OUTMODE)json_integer_value(outModeJ);
+				json_t* ratchetingEnabledJ = json_object_get(portJ, "ratchetingEnabled");
+				if (ratchetingEnabledJ) ratchetingEnabled[portIndex] = (RATCHETMODE)json_integer_value(ratchetingEnabledJ);
 
-			json_t* ratchetingProbJ = json_object_get(portJ, "ratchetingProb");
-			if (ratchetingProbJ) {
-				ratchetingSetProb(portIndex, json_real_value(ratchetingProbJ));
+				json_t* ratchetingProbJ = json_object_get(portJ, "ratchetingProb");
+				if (ratchetingProbJ) {
+					ratchetingSetProb(portIndex, json_real_value(ratchetingProbJ));
+				}
 			}
 		}
 
-		usedSize = json_integer_value(json_object_get(rootJ, "usedSize"));
+		json_t* usedSizeJ = json_object_get(rootJ, "usedSize");
+		if (usedSizeJ) usedSize = json_integer_value(usedSizeJ);
 		json_t* normalizePortsJ = json_object_get(rootJ, "normalizePorts");
 		if (normalizePortsJ) normalizePorts = json_boolean_value(normalizePortsJ);
 
@@ -511,7 +530,7 @@ struct MazeModule : Module {
 		if (ratchetingEnabledJ) {
 			for (int i = 0; i < NUM_PORTS; i++) {
 				ratchetingEnabled[i] = (RATCHETMODE)json_integer_value(ratchetingEnabledJ);
-				ratchetingSetProb(i, json_real_value(ratchetingProbJ));
+				if (ratchetingProbJ) ratchetingSetProb(i, json_real_value(ratchetingProbJ));
 			}
 		}
 

@@ -3,6 +3,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <thread>
+#include <atomic>
 #include <pthread.h>
 
 namespace StoermelderPackOne {
@@ -16,11 +17,15 @@ struct TaskWorker {
 	bool workerDoProcess = false;
 	std::string name;
 
+	// Set just before the worker thread is torn down. Long-running tasks
+	// should poll this and return early once it becomes true.
+	std::atomic<bool> cancel{false};
+
 	struct WorkItem {
-		std::function<void()> task;
+		std::shared_ptr<std::function<void(std::atomic<bool>&)>> task;
 		Context* context;
 	};
-	dsp::RingBuffer<std::shared_ptr<WorkItem>, 32> workQueue;
+	dsp::RingBuffer<WorkItem, 32> workQueue;
 
 	TaskWorker(std::string name = "") {
 		workerContext = contextGet();
@@ -29,8 +34,12 @@ struct TaskWorker {
 	}
 
 	~TaskWorker() {
-		workerIsRunning = false;
-		workerDoProcess = true;
+		cancel.store(true, std::memory_order_relaxed);
+		{
+			std::unique_lock<std::mutex> lock(workerMutex);
+			workerIsRunning = false;
+			workerDoProcess = true;
+		}
 		workerCondVar.notify_one();
 		worker->join();
 		workerContext = NULL;
@@ -56,8 +65,8 @@ struct TaskWorker {
 			if (!workerIsRunning) return;
 			while (!workQueue.empty()) {
 				auto item = workQueue.shift();
-				contextSet(item->context);
-				item->task();
+				contextSet(item.context);
+				(*item.task)(cancel);
 			}
 			workerDoProcess = false;
 		}
@@ -68,7 +77,17 @@ struct TaskWorker {
 	}
 
 	void work(std::function<void()> task, Context* context) {
-		workQueue.push(std::make_shared<WorkItem>(WorkItem{std::move(task), context}));
+		work(std::bind([](std::function<void()>& task, std::atomic<bool>&) { task(); }, std::move(task), std::placeholders::_1), context);
+	}
+
+	// Cancel-aware variant: the task receives the worker's cancel flag and
+	// should poll it periodically, returning early once it is set.
+	void work(std::function<void(std::atomic<bool>&)> task) {
+		work(std::move(task), workerContext);
+	}
+
+	void work(std::function<void(std::atomic<bool>&)> task, Context* context) {
+		workQueue.push(WorkItem{std::make_shared<std::function<void(std::atomic<bool>&)>>(std::move(task)), context});
 		workerDoProcess = true;
 		workerCondVar.notify_one();
 	}

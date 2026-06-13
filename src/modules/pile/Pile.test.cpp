@@ -20,6 +20,19 @@ TEST_CASE("Construction and initialization", "[Pile]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[Pile][JSON]") {
+	auto module = Test::createModule<PileModule>("Pile");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 TEST_CASE("Increment and decrement", "[Pile]") {
 	auto module = Test::createModule<PileModule>("Pile");
 
