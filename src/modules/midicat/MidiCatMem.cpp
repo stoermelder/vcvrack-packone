@@ -148,10 +148,12 @@ struct MidiCatMemModule : MidiCatMemBase, StripIdFixModule {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		resetMap();
 		json_t* midiMapJ = json_object_get(rootJ, "midiMap");
+		if (!midiMapJ) return;
 		size_t i;
 		json_t* midiMapJJ;
 		json_array_foreach(midiMapJ, i, midiMapJJ) {
@@ -166,15 +168,22 @@ struct MidiCatMemModule : MidiCatMemBase, StripIdFixModule {
 			json_t* paramMapJJ;
 			json_array_foreach(paramMapJ, j, paramMapJJ) {
 				MemParam* p = new MemParam;
-				p->paramId = json_integer_value(json_object_get(paramMapJJ, "paramId"));
-				p->cc = json_integer_value(json_object_get(paramMapJJ, "cc"));
-				p->ccMode = (CCMODE)json_integer_value(json_object_get(paramMapJJ, "ccMode"));
+				json_t* paramIdJ = json_object_get(paramMapJJ, "paramId");
+				if (paramIdJ) p->paramId = json_integer_value(paramIdJ);
+				json_t* ccJ = json_object_get(paramMapJJ, "cc");
+				if (ccJ) p->cc = json_integer_value(ccJ);
+				json_t* ccModeJ = json_object_get(paramMapJJ, "ccMode");
+				if (ccModeJ) p->ccMode = (CCMODE)json_integer_value(ccModeJ);
 				json_t* cc14bitJ = json_object_get(paramMapJJ, "cc14bit");
 				if (cc14bitJ) p->cc14bit = json_boolean_value(cc14bitJ);
-				p->note = json_integer_value(json_object_get(paramMapJJ, "note"));
-				p->noteMode = (NOTEMODE)json_integer_value(json_object_get(paramMapJJ, "noteMode"));
-				p->label = json_string_value(json_object_get(paramMapJJ, "label"));
-				p->midiOptions = json_integer_value(json_object_get(paramMapJJ, "midiOptions"));
+				json_t* noteJ = json_object_get(paramMapJJ, "note");
+				if (noteJ) p->note = json_integer_value(noteJ);
+				json_t* noteModeJ = json_object_get(paramMapJJ, "noteMode");
+				if (noteModeJ) p->noteMode = (NOTEMODE)json_integer_value(noteModeJ);
+				json_t* labelJ = json_object_get(paramMapJJ, "label");
+				if (labelJ) p->label = json_string_value(labelJ);
+				json_t* midiOptionsJ = json_object_get(paramMapJJ, "midiOptions");
+				if (midiOptionsJ) p->midiOptions = json_integer_value(midiOptionsJ);
 				json_t* slewJ = json_object_get(paramMapJJ, "slew");
 				if (slewJ) p->slew = json_real_value(slewJ);
 				json_t* minJ = json_object_get(paramMapJJ, "min");

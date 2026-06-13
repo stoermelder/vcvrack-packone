@@ -711,47 +711,73 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
-		padBrightness = json_real_value(json_object_get(rootJ, "padBrightness"));
-		inputVisualize = json_boolean_value(json_object_get(rootJ, "inputVisualize"));
-		outputClamp = json_boolean_value(json_object_get(rootJ, "outputClamp"));
-		channelCount = json_integer_value(json_object_get(rootJ, "channelCount"));
+		json_t* padBrightnessJ = json_object_get(rootJ, "padBrightness");
+		if (padBrightnessJ) padBrightness = json_real_value(padBrightnessJ);
+		json_t* inputVisualizeJ = json_object_get(rootJ, "inputVisualize");
+		if (inputVisualizeJ) inputVisualize = json_boolean_value(inputVisualizeJ);
+		json_t* outputClampJ = json_object_get(rootJ, "outputClamp");
+		if (outputClampJ) outputClamp = json_boolean_value(outputClampJ);
+		json_t* channelCountJ = json_object_get(rootJ, "channelCount");
+		if (channelCountJ) channelCount = json_integer_value(channelCountJ);
 
 		json_t* inputsJ = json_object_get(rootJ, "inputMode");
-		json_t* inputJ;
-		size_t inputIndex;
-		json_array_foreach(inputsJ, inputIndex, inputJ) {
-			inputMode[inputIndex] = (IN_MODE)json_integer_value(inputJ);
+		if (inputsJ) {
+			json_t* inputJ;
+			size_t inputIndex;
+			json_array_foreach(inputsJ, inputIndex, inputJ) {
+				inputMode[inputIndex] = (IN_MODE)json_integer_value(inputJ);
+			}
 		}
 
 		json_t* scenesJ = json_object_get(rootJ, "scenes");
-		json_t* sceneJ;
-		size_t sceneIndex;
-		json_array_foreach(scenesJ, sceneIndex, sceneJ) {
-			json_t* inputJ = json_object_get(sceneJ, "input");
-			json_t* outputJ = json_object_get(sceneJ, "output");
-			json_t* outputAtJ = json_object_get(sceneJ, "outputAt");
-			json_t* matrixJ = json_object_get(sceneJ, "matrix");
-			json_t* valueJ;
-			size_t index;
-			json_array_foreach(inputJ, index, valueJ) {
-				scenes[sceneIndex].input[index] = (IN_MODE)json_integer_value(valueJ);
-			}
-			json_array_foreach(outputJ, index, valueJ) {
-				scenes[sceneIndex].output[index] = (OUT_MODE)json_integer_value(valueJ);
-			}
-			json_array_foreach(outputAtJ, index, valueJ) {
-				scenes[sceneIndex].outputAt[index] = json_real_value(valueJ);
-			}
-			json_array_foreach(matrixJ, index, valueJ) {
-				scenes[sceneIndex].matrix[index / PORTS][index % PORTS] = json_real_value(valueJ);
+		if (scenesJ) {
+			json_t* sceneJ;
+			size_t sceneIndex;
+			json_array_foreach(scenesJ, sceneIndex, sceneJ) {
+				json_t* inputJ = json_object_get(sceneJ, "input");
+				json_t* outputJ = json_object_get(sceneJ, "output");
+				json_t* outputAtJ = json_object_get(sceneJ, "outputAt");
+				json_t* matrixJ = json_object_get(sceneJ, "matrix");
+				if (inputJ) {
+					json_t* valueJ;
+					size_t index;
+					json_array_foreach(inputJ, index, valueJ) {
+						scenes[sceneIndex].input[index] = (IN_MODE)json_integer_value(valueJ);
+					}
+				}
+				if (outputJ) {
+					json_t* valueJ;
+					size_t index;
+					json_array_foreach(outputJ, index, valueJ) {
+						scenes[sceneIndex].output[index] = (OUT_MODE)json_integer_value(valueJ);
+					}
+				}
+				if (outputAtJ) {
+					json_t* valueJ;
+					size_t index;
+					json_array_foreach(outputAtJ, index, valueJ) {
+						scenes[sceneIndex].outputAt[index] = json_real_value(valueJ);
+					}
+				}
+				if (matrixJ) {
+					json_t* valueJ;
+					size_t index;
+					json_array_foreach(matrixJ, index, valueJ) {
+						scenes[sceneIndex].matrix[index / PORTS][index % PORTS] = json_real_value(valueJ);
+					}
+				}
 			}
 		}
 
-		sceneSelected = json_integer_value(json_object_get(rootJ, "sceneSelected"));
-		sceneMode = (SCENE_CV_MODE)json_integer_value(json_object_get(rootJ, "sceneMode"));
-		sceneInputMode = json_boolean_value(json_object_get(rootJ, "sceneInputMode"));
+		json_t* sceneSelectedJ = json_object_get(rootJ, "sceneSelected");
+		if (sceneSelectedJ) sceneSelected = json_integer_value(sceneSelectedJ);
+		json_t* sceneModeJ = json_object_get(rootJ, "sceneMode");
+		if (sceneModeJ) sceneMode = (SCENE_CV_MODE)json_integer_value(sceneModeJ);
+		json_t* sceneInputModeJ = json_object_get(rootJ, "sceneInputMode");
+		if (sceneInputModeJ) sceneInputMode = json_boolean_value(sceneInputModeJ);
 		json_t* sceneAtModeJ = json_object_get(rootJ, "sceneAtMode");
 		if (sceneAtModeJ) sceneAtMode = json_boolean_value(sceneAtModeJ);
 		json_t* sceneCountJ = json_object_get(rootJ, "sceneCount");

@@ -50,6 +50,19 @@ TEST_CASE("Construction and initialization", "[IntermixGate]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[IntermixGate][JSON]") {
+	auto module = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 TEST_CASE("Expander connection", "[IntermixGate]") {
 	auto gateModule = Test::createModule<IntermixGateModule<8>>("IntermixGate");
 

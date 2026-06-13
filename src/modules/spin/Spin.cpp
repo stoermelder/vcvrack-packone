@@ -124,10 +124,14 @@ struct SpinModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		mods = json_integer_value(json_object_get(rootJ, "mods"));
-		clickMode = (CLICK_MODE)json_integer_value(json_object_get(rootJ, "clickMode"));
-		clickHigh = json_boolean_value(json_object_get(rootJ, "clickHigh"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* modsJ = json_object_get(rootJ, "mods");
+		if (modsJ) mods = json_integer_value(modsJ);
+		json_t* clickModeJ = json_object_get(rootJ, "clickMode");
+		if (clickModeJ) clickMode = (CLICK_MODE)json_integer_value(clickModeJ);
+		json_t* clickHighJ = json_object_get(rootJ, "clickHigh");
+		if (clickHighJ) clickHigh = json_boolean_value(clickHighJ);
 	}
 };
 

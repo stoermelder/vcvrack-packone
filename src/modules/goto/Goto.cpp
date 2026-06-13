@@ -160,12 +160,16 @@ struct GotoModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		triggerMode = (TRIGGERMODE)json_integer_value(json_object_get(rootJ, "triggerMode"));
-
-		smoothTransition = json_boolean_value(json_object_get(rootJ, "smoothTransition"));
-		jumpPos = (JUMPPOS)json_integer_value(json_object_get(rootJ, "centerModule"));
-		ignoreZoom = json_boolean_value(json_object_get(rootJ, "ignoreZoom"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* triggerModeJ = json_object_get(rootJ, "triggerMode");
+		if (triggerModeJ) triggerMode = (TRIGGERMODE)json_integer_value(triggerModeJ);
+		json_t* smoothTransitionJ = json_object_get(rootJ, "smoothTransition");
+		if (smoothTransitionJ) smoothTransition = json_boolean_value(smoothTransitionJ);
+		json_t* jumpPosJ = json_object_get(rootJ, "centerModule");
+		if (jumpPosJ) jumpPos = (JUMPPOS)json_integer_value(jumpPosJ);
+		json_t* ignoreZoomJ = json_object_get(rootJ, "ignoreZoom");
+		if (ignoreZoomJ) ignoreZoom = json_boolean_value(ignoreZoomJ);
 
 		json_t* jumpPointsJ = json_object_get(rootJ, "jumpPoints");
 		for (int i = 0; i < 10; i++) {
@@ -185,7 +189,8 @@ struct GotoModule : Module {
 				}
 			}
 			
-			jumpPoints[i].zoom = json_real_value(json_object_get(jumpPointJ, "zoom"));
+			json_t* zoomJ = json_object_get(jumpPointJ, "zoom");
+			if (zoomJ) jumpPoints[i].zoom = json_real_value(zoomJ);
 		}
 	}
 };
