@@ -93,4 +93,35 @@ struct TaskWorker {
 	}
 }; // struct TaskWorker
 
+
+
+struct ITaskWorker {
+	virtual ~ITaskWorker() = default;
+	virtual void work(std::function<void()> task) = 0;
+	virtual void work(std::function<void()> task, Context* context) = 0;
+};
+
+// Runs tasks synchronously on the calling thread — no background thread.
+// Used in tests to make engine.process() calls deterministic.
+struct SyncTaskWorker : ITaskWorker {
+	void work(std::function<void()> task) override { task(); }
+	void work(std::function<void()> task, Context* context) override {
+		Context* prev = contextGet();
+		contextSet(context);
+		task();
+		contextSet(prev);
+	}
+}; // struct SyncTaskWorker
+
+
+// Adapts a TaskWorker to the ITaskWorker interface without modifying TaskWorker.
+struct TaskWorkerAdapter : ITaskWorker {
+	std::shared_ptr<TaskWorker> inner;
+	explicit TaskWorkerAdapter(std::shared_ptr<TaskWorker> tw) : inner(std::move(tw)) {}
+	void work(std::function<void()> task) override { inner->work(std::move(task)); }
+	void work(std::function<void()> task, Context* context) override { inner->work(std::move(task), context); }
+}; // struct TaskWorkerAdapter
+
+
+
 } // namespace StoermelderPackOne

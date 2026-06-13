@@ -1,10 +1,36 @@
 # stoermelder MIDI-KIT
 
-MIDI-KIT is a scripting module for altering, filtering, delaying, or generating MIDI messages. It provides a lightweight scripting engine that interprets a small subset of JavaScript.
+MIDI-KIT is a scripting module for altering, filtering, delaying, or generating MIDI messages. It bundles two lightweight scripting engines — a small subset of JavaScript and a small subset of Lua — so you can pick whichever language you are more comfortable with.
 
 ## How it works
 
-The module uses a lightweight JavaScript engine (Elk 3) to interpret your custom scripts. Elk is not optimized for raw performance, but MIDI events are typically sparse compared to audio/DSP processing and the engine is adequate for most MIDI scripting tasks.
+MIDI-KIT provides two interchangeable scripting engines. Both expose the same MIDI / input / trig / param / number API described further down, so the only thing that differs between them is the language syntax and a few language-specific details.
+
+| Engine | Language | Underlying interpreter |
+| ------ | -------- | ---------------------- |
+| **JavaScript** | A small subset of JavaScript | [Elk 3](https://github.com/cesanta/elk) |
+| **Lua**        | A small subset of Lua 5.x    | [MiniLua](https://github.com/edubart/minilua) (bundled) |
+
+Neither engine is optimized for raw performance, but MIDI events are typically sparse compared to audio/DSP processing and the engines are adequate for most MIDI scripting tasks.
+
+The active engine is chosen by a header tag at the top of the script.
+
+JavaScript:
+```
+/**
+ * @engine Elk
+ */
+```
+(`@engine Elk` is also the default — JavaScript is assumed when no `@engine` tag is present.)
+
+Lua:
+```
+--[[
+@engine Lua
+--]]
+```
+
+The header is parsed line-by-line and may also be used to set `author` and `description` metadata, which is shown in the module's log on load.
 
 MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the selected MIDI input. The scripting API lets you create new MIDI messages; a single incoming message may result in up to 16 outgoing messages. Incoming MIDI messages are not passed through automatically — scripts must explicitly call `midiOut.send()` to forward messages.
 
@@ -18,15 +44,26 @@ You can use MIDI-KIT as an insert effect via VCV Rack's built-in MIDI Loopback d
 
 ### Basic pass-through
 The script passes all incoming MIDI messages to the default MIDI output port.
-```
+
+JavaScript:
+```js
 let processMidi = function(midiPort, msg) {
    midiOut.send(msg);
 };
 ```
 
+Lua:
+```lua
+processMidi = function(midiPort, msg)
+   midiOut.send(msg)
+end
+```
+
 ### Simple MIDI filter
 The script drops all incoming MIDI messages except for MIDI channel 2. Messages without a channel field (like MIDI clock) will also be dropped.
-```
+
+JavaScript:
+```js
 let processMidi = function(midiPort, msg) {
    if (midi.getChannel(msg) === 2) {
       midiOut.send(msg);
@@ -34,9 +71,20 @@ let processMidi = function(midiPort, msg) {
 };
 ```
 
+Lua:
+```lua
+processMidi = function(midiPort, msg)
+   if midi.getChannel(msg) == 2 then
+      midiOut.send(msg)
+   end
+end
+```
+
 ### MIDI channel routing for CC messages
 The script routes incoming CC messages on MIDI channel 2 to MIDI channel 3. All other messages are passed-through unchanged.
-```
+
+JavaScript:
+```js
 let processMidi = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
       midi.setChannel(msg, 3);
@@ -45,9 +93,21 @@ let processMidi = function(midiPort, msg) {
 };
 ```
 
+Lua:
+```lua
+processMidi = function(midiPort, msg)
+   if midi.isCc(msg) and midi.getChannel(msg) == 2 then
+      midi.setChannel(msg, 3)
+   end
+   midiOut.send(msg)
+end
+```
+
 ### Dynamic MIDI channel routing for CC messages by knob (1)
 The script routes incoming CC messages on MIDI channel 2 to a MIDI channel set by parameter 1 on the panel. All other messages are passed-through unchanged.
-```
+
+JavaScript:
+```js
 param.enable(1);
 
 let processMidi = function(midiPort, msg) {
@@ -59,9 +119,24 @@ let processMidi = function(midiPort, msg) {
 };
 ```
 
+Lua:
+```lua
+param.enable(1)
+
+processMidi = function(midiPort, msg)
+   if midi.isCc(msg) and midi.getChannel(msg) == 2 then
+      local ch = number.ceil(param.getValue(1) * 16)
+      midi.setChannel(msg, ch)
+   end
+   midiOut.send(msg)
+end
+```
+
 ### Dynamic MIDI channel routing for CC messages by knob (2)
 The script handles MIDI messages like the previous example, but MIDI-KIT provides additional programming interface for user interface configuration: `param.getName` configures the text "MIDI Channel" for the tooltip of the first panel parameter, the display value is scaled to the integer range 1..16 by `param.getValueFormat`.
-```
+
+JavaScript:
+```js
 param.enable(1);
 
 param.getName = function(port) {
@@ -84,8 +159,33 @@ let processMidi = function(midiPort, msg) {
 ```
 ![Dynamic MIDI channel routing for CC](./MidiKit-ex1.png)
 
-### Send NRPN message
+Lua:
+```lua
+param.enable(1)
+
+param.getName = function(port)
+    if port == 1 then return "MIDI Channel" end
+    return ""
+end
+
+param.getValueFormat = function(port)
+    if port == 1 then return number.toString(number.ceil(param.getValue(1) * 16)) end
+    return number.toString(param.getValue(port))
+end
+
+processMidi = function(midiPort, msg)
+   if midi.isCc(msg) and midi.getChannel(msg) == 2 then
+      local ch = number.ceil(param.getValue(1) * 16)
+      midi.setChannel(msg, ch)
+   end
+   midiOut.send(msg)
+end
 ```
+
+### Send NRPN message
+
+JavaScript:
+```js
 let processMidi = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let nrpn1 = midi.createNRPN();
@@ -95,8 +195,21 @@ let processMidi = function(midiPort, msg) {
 };
 ```
 
-### Send SysEx message
+Lua:
+```lua
+processMidi = function(midiPort, msg)
+   if midi.isNoteOn(msg) then
+      local nrpn1 = midi.createNRPN()
+      midi.setNRPN(nrpn1, 1, 12345, 13456)
+      midiOut.send(nrpn1)
+   end
+end
 ```
+
+### Send SysEx message
+
+JavaScript:
+```js
 let processMidi = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let sysex = midi.create();
@@ -106,11 +219,39 @@ let processMidi = function(midiPort, msg) {
 };
 ```
 
+Lua:
+```lua
+processMidi = function(midiPort, msg)
+   if midi.isNoteOn(msg) then
+      local sysex = midi.create()
+      midi.setSysEx(sysex, "ab33010001")
+      midiOut.send(sysex)
+   end
+end
+```
+
 ## Language reference
 
-MIDI-KIT uses [Elk](https://github.com/cesanta/elk) for interpreting JavaScript. Elk is completely bare, it does not even have a standard library.
+MIDI-KIT supports two scripting languages, both deliberately small. The JavaScript engine is [Elk](https://github.com/cesanta/elk); the Lua engine is a bundled [MiniLua](https://github.com/edubart/minilua). Both are completely bare — neither ships with a standard library — and only the language core plus the MIDI-KIT API is available. The MIDI / input / trig / param / number API is identical across the two engines, so picking an engine is mostly a matter of personal taste.
 
-### Supported features
+### Quick comparison
+
+| | JavaScript (Elk) | Lua (MiniLua) |
+| - | ---------------- | ------------- |
+| Statement terminator | `;` required | newline / `;` (no `;` required) |
+| Variable declaration | `let x = 1;` | `local x = 1` (globals are unprefixed) |
+| Strict equality | `===`, `!==` | `==`, `~=` (no implicit conversion in either) |
+| Logical operators | `&&`, `\|\|`, `!` | `and`, `or`, `not` |
+| Block keyword | `{ }` | `do ... end` / `function ... end` |
+| Function definition | `let f = function(x) { ... };` | `local f = function(x) ... end` |
+| String length | counts UTF-8 **bytes** | counts **bytes** as well |
+| Implicit number→string | **no** — use `number.toString(n)` | **no** — use `tostring(n)` or `number.toString(n)` |
+| Comments | `//` and `/* */` | `--` and `--[[ ]]` |
+| Header convention | `/** ... @engine Elk ... */` | `--[[ ... @engine Lua ... --]]` |
+
+### JavaScript (Elk)
+
+#### Supported features
 
 - Operations: all standard JS operations except:
    - `!=`, `==`. Use strict comparison `!==`, `===`
@@ -127,7 +268,7 @@ MIDI-KIT uses [Elk](https://github.com/cesanta/elk) for interpreting JavaScript.
 - Strings are binary data chunks; their length counts bytes rather than Unicode code points: `'Київ'.length === 8`.
 - Arrays are supported.
 
-### Not supported features
+#### Not supported features
 
 - No `var`, no `const`. Use `let` (strict mode only)
 - No `do`, `switch`, `while`. Use `for`
@@ -137,7 +278,42 @@ MIDI-KIT uses [Elk](https://github.com/cesanta/elk) for interpreting JavaScript.
 
 Be aware that there is no implicit casting, especially for casting numbers to strings. For this purpose the function `number.toString` has been added.
 
+### Lua (MiniLua)
+
+#### Supported features
+
+- Numeric and string literals: `12`, `12.3`, `"hello"`, `'hello'`, `true`, `false`, `nil`
+- Arithmetic: `+`, `-`, `*`, `/`, `%`, unary `-`
+- Comparisons: `==`, `~=`, `<`, `<=`, `>`, `>=` (no implicit conversion)
+- Logical operators: `and`, `or`, `not` (short-circuit)
+- String concatenation: `..` — e.g. `'Port ' .. i`
+- Local variables: `local x = 1`
+- Tables (associative + array) with index access: `t.k`, `t["k"]`, `t[1]`
+- Functions: `local f = function(x) return x * 2 end` and `function f(x) ... end`
+- Numeric and generic `for` loops:
+  ```
+  for i = 1, 10 do ... end             -- numeric
+  for k, v in pairs(t) do ... end       -- generic
+  ```
+- `if ... then ... else ... end` (also `elseif`)
+- `repeat ... until cond`
+- Multi-return values; `tostring(n)`, `tonumber(s)`, `math.*` (a subset of the standard `math` library is available)
+- `pcall` for protected calls
+- Strings are binary data chunks: their length counts bytes, not Unicode code points — `'Київ':len() == 8`.
+
+#### Not supported features
+
+- No `goto` and no labels
+- No pattern matching with captures (only plain `string.find` is exposed)
+- No `os`, `io`, `package`, `require` or `debug` libraries — the engine only opens the safe subset (`_G`, `math`, `string`, `table`) needed to host user scripts
+- No coroutines (`coroutine.*`)
+- No metamethods / metatables beyond what `string` and `table` need internally
+
+There is no implicit number-to-string coercion — use `tostring(n)` or the MIDI-KIT helper `number.toString(n)`. For everything else, the standard Lua 5.x semantics apply; please refer to the [Lua reference manual](https://www.lua.org/manual/5.4/) for details.
+
 ## Programming reference
+
+The API below is identical for both scripting engines — the function names, argument semantics, and return values do not depend on whether the active engine is JavaScript or Lua. Where the syntax of the call differs between languages, the examples in the corresponding section above (JavaScript (Elk) / Lua (MiniLua)) apply.
 
 ### Global functions
 
@@ -232,7 +408,7 @@ Some functions provide a parameter `midiPort` for selecting the output port. Cur
 
 - Support for TTY ([Tipsy](https://github.com/baconpaul/tipsy-encoder))
 - Expander-modules
-- Another engine for supporting a different language
+- More engines / languages
 
 ## Changelog
 

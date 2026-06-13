@@ -1,8 +1,9 @@
 #include "MidiScriptEngine.h"
 #include "MidiScriptEngineElk.h"
+#include "MidiScriptEngineLua.h"
 #include "../../components/Knobs.hpp"
 #include "../../components/MidiWidget.hpp"
-#include "../../components/LogDisplay.hpp"
+#include "../../components/LedTextField.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
 #include <osdialog.h>
 #include <fstream>
@@ -10,6 +11,14 @@
 
 namespace StoermelderPackOne {
 namespace MidiKit {
+
+
+enum class LOG_FORMAT {
+	RESET,
+	TIMESTAMP,
+	INDENTED,
+	TEXT
+};
 
 struct MidiOutput : midi::Output {
 	struct FrameSchedule {
@@ -94,6 +103,19 @@ struct MidiOutput : midi::Output {
 	}
 };
 
+
+// Returns the one shared async worker for all MidiKit modules.
+// The weak_ptr lets it be destroyed when the last module is removed.
+static std::shared_ptr<ITaskWorker> defaultWorker() {
+	static std::weak_ptr<ITaskWorker> shared;
+	if (shared.expired()) {
+		auto adapter = std::make_shared<TaskWorkerAdapter>(
+			std::make_shared<TaskWorker>("MidiKit worker"));
+		shared = adapter;
+		return adapter;
+	}
+	return shared.lock();
+}
 
 struct MidiKitModule : Module {
 	enum ParamIds {
@@ -207,9 +229,78 @@ struct MidiKitModule : Module {
 		}
 	};
 
-	MidiKitScriptEngineElk se;
+	struct MidiKitScriptEngineLua : MidiScript::Lua::MidiScriptEngineLua {
+		MidiKitModule* module;
 
-	MidiKitModule() {
+		MidiKitScriptEngineLua() {
+			inputCount      = 4;
+			inputTrigCount  = 1;
+			outputTrigCount = 1;
+			paramCount      = 4;
+			midiInputCount  = 1;
+			midiOutputCount = 1;
+		}
+
+		void writeLog(std::string log, bool useTimestamp = true) override {
+			float timestamp = float(module->sample) / module->sampleRate;
+			if (useTimestamp) {
+				module->midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
+			}
+			else {
+				module->midiLogMessages.push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, log));
+			}
+		}
+
+		void writeOverlay(std::string s1, std::string s2, std::string s3) override {
+			module->overlayQueue.push(0);
+			module->overlayMessage = std::make_tuple(s1, s2, s3);
+		}
+
+		void enableInput(int i) override {
+			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(module->inputInfos[i])->enabled = true;
+		}
+
+		float getInputVoltage(int i, uint8_t ch) override {
+			if (reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(module->inputInfos[i])->enabled)
+				return module->inputs[INPUT + i].getVoltage(ch);
+			return 0.f;
+		}
+
+		float getTrigVoltage(int i, uint8_t ch) override {
+			return module->inputs[INPUT_TRIG + i].getVoltage(ch);
+		}
+
+		uint64_t getTrigTicks(int i) override {
+			return module->inputTriggerTick;
+		}
+
+		void enableParam(int i) override {
+			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(module->paramQuantities[i])->enabled = true;
+		}
+
+		float getParamValue(int i) override {
+			if (reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(module->paramQuantities[i])->enabled)
+				return module->params[PARAM + i].getValue();
+			return 0.f;
+		}
+
+		void setTrig(int i, uint8_t ch, float duration = 1e-3f) override {
+			module->outputTriggerActive[ch] = true;
+			module->outputPulseGenerator[ch].trigger(duration);
+		}
+
+		void setTrigVoltage(int i, uint8_t ch, float voltage) override {
+			module->outputTriggerActive[ch] = false;
+			module->outputs[OUTPUT_TRIG].setVoltage(voltage, ch);
+		}
+	};
+
+	MidiKitScriptEngineElk se;
+	MidiKitScriptEngineLua seLua;
+	MidiScript::MidiScriptEngine* activeEngine = &se;
+
+	MidiKitModule() : MidiKitModule(defaultWorker()) {}
+	explicit MidiKitModule(std::shared_ptr<ITaskWorker> worker) {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_TRIG, "Trigger");
@@ -221,6 +312,9 @@ struct MidiKitModule : Module {
 
 		processDivider.setDivision(8);
 		se.module = this;
+		seLua.module = this;
+		se.setWorker(worker);
+		seLua.setWorker(worker);
 		onReset();
 	}
 
@@ -237,12 +331,14 @@ struct MidiKitModule : Module {
 		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
 			outputTriggerActive[i] = true;
 			outputPulseGenerator[i].reset();
-		} 
+		}
+		activeEngine = &se;
 		se.loadScript("");
+		seLua.loadScript("");
 	}
 
-	void onSampleRateChange() override {
-		sampleRate = APP->engine->getSampleRate();
+	void onSampleRateChange(const Module::SampleRateChangeEvent& e) override {
+		sampleRate = e.sampleRate;
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -264,14 +360,14 @@ struct MidiKitModule : Module {
 		if (processDivider.process()) {
 			midi::Message msg;
 			while (midiInput.tryPop(&msg, args.frame)) {
-				se.processInMessage(0, msg);
+				activeEngine->processInMessage(0, msg);
 			}
 
-			se.process();
+			activeEngine->process();
 
 			int midiPort;
 			int ticks;
-			while (se.processOutMessage(midiPort, msg, ticks)) {
+			while (activeEngine->processOutMessage(midiPort, msg, ticks)) {
 				midiOutput.send(msg, ticks);
 			}
 			
@@ -303,12 +399,12 @@ struct MidiKitModule : Module {
 		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
-		if (midiInputJ) midiInput.fromJson(midiInputJ);
+		if (midiInputJ && json_is_object(midiInputJ)) midiInput.fromJson(midiInputJ);
 		json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
-		if (midiOutputJ) midiOutput.fromJson(midiOutputJ);
+		if (midiOutputJ && json_is_object(midiOutputJ)) midiOutput.fromJson(midiOutputJ);
 
 		json_t* scriptJ = json_object_get(rootJ, "script");
-		if (scriptJ) loadScript(json_string_value(scriptJ));
+		if (scriptJ && json_is_string(scriptJ)) loadScript(json_string_value(scriptJ));
 	}
 
 	void loadScript(std::string s) {
@@ -320,11 +416,74 @@ struct MidiKitModule : Module {
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
 		}
 		midiLogMessages.push(std::make_tuple(LOG_FORMAT::RESET, 0.f, ""));
-		se.loadScript(script.c_str());
+
+		// Detect engine from script header (@engine Lua  vs  @engine Elk / default)
+		bool isLua = s.find("@engine Lua") != std::string::npos;
+
+		MidiScript::MidiScriptEngine* prevEngine = activeEngine;
+		activeEngine = isLua ? static_cast<MidiScript::MidiScriptEngine*>(&seLua)
+		                     : static_cast<MidiScript::MidiScriptEngine*>(&se);
+
+		// Clear the engine that is no longer active (silently — RESET was already pushed)
+		if (prevEngine != activeEngine)
+			prevEngine->loadScript("");
+
+		// Keep port/param info pointers in sync with the active engine
+		for (int i = 0; i < 4; i++) {
+			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->se = activeEngine;
+			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->se = activeEngine;
+		}
+
+		activeEngine->loadScript(script.c_str());
 	}
 
 	void clearScript() {
 		loadScript("");
+	}
+};
+
+
+struct LogDisplay : LedTextDisplay {
+	std::list<std::tuple<LOG_FORMAT, float, std::string>>* buffer;
+	bool dirty = true;
+
+	LogDisplay() {
+		color = nvgRGB(0xf0, 0xf0, 0xf0);
+		bgColor.a = 0.f;
+		fontSize = 9.2f;
+		textOffset.y += 2.f;
+	}
+
+	void step() override {
+		LedTextDisplay::step();
+		if (dirty) {
+			text = "";
+			size_t size = std::min(buffer->size(), (size_t)(box.size.x / fontSize) + 1);
+			size_t i = 0;
+			for (std::tuple<LOG_FORMAT, float, std::string> s : *buffer) {
+				if (i >= size) break;
+				LOG_FORMAT f = std::get<0>(s);
+				float timestamp = std::get<1>(s);
+				switch (f) {
+					case LOG_FORMAT::TIMESTAMP:
+						text += string::f("[%9.4f] %s\n", timestamp, std::get<2>(s).c_str());
+						break;
+					case LOG_FORMAT::TEXT:
+						text += string::f("%s\n", std::get<2>(s).c_str());
+						break;
+					case LOG_FORMAT::INDENTED:
+						text += string::f("     %s\n", std::get<2>(s).c_str());
+						break;
+					default:
+						break;
+				};
+			}
+		}
+	}
+
+	void reset() {
+		buffer->clear();
+		dirty = true;
 	}
 };
 
