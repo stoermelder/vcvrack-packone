@@ -261,12 +261,21 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitCtrlMaster, ExpanderChan
 	}
 
 	// TransitPadMaster
-	int getSelectedSlot() override { 
-		return preset; 
+	int getSelectedSlot() override {
+		return preset;
 	}
 
-	std::string getSlotLabel(int i) override { 
-		return getSlot(i)->getLabel();
+	std::string getSlotLabel(int i) override {
+		SLOT* slot = getSlot(i);
+		if (!slot) return "";
+		return slot->getLabel();
+	}
+
+	bool getSlotOwner(int slotIndex, Module*& module, int& localIndex) override {
+		if (slotIndex < 0 || slotIndex >= presetTotal) return false;
+		localIndex = slotIndex % NUM_PRESETS;
+		module = N[slotIndex / NUM_PRESETS];
+		return true;
 	}
 
 	void process(const Module::ProcessArgs& args) override {
@@ -824,7 +833,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitCtrlMaster, ExpanderChan
 			for (auto snapshot : snapshots) {
 				if (snapshot.id < 0) continue;
 				SLOT* slot1 = getSlot(snapshot.id);
-				if (!slot1->isUsed()) continue;
+				if (!slot1 || !slot1->isUsed()) continue;
 				weight += snapshot.weight;
 
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
@@ -836,19 +845,13 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitCtrlMaster, ExpanderChan
 			}
 
 			if (weight > 0.f) {
-				for (auto snapshot : snapshots) {
-					if (snapshot.id < 0) continue;
-					SLOT* slot1 = getSlot(snapshot.id);
-					if (!slot1->isUsed()) continue;
-
-					for (size_t i = 0; i < sourceHandles.size(); i++) {
-						ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
-						if (!pq) continue;
-						if (settings::isPlugin && parameterChangesDirect)
-							pq->setValue(v[i] / weight);
-						else
-							pq->getParam()->setValue(v[i] / weight);
-					}
+				for (size_t i = 0; i < sourceHandles.size(); i++) {
+					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+					if (!pq) continue;
+					if (settings::isPlugin && parameterChangesDirect)
+						pq->setValue(v[i] / weight);
+					else
+						pq->getParam()->setValue(v[i] / weight);
 				}
 			}
 
@@ -1277,6 +1280,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitCtrlMaster, ExpanderChan
 			case SLOT_CMD::SET_LAST:
 				presetSetLast(i + 1);
 				return -1;
+			case SLOT_CMD::INDEX:
+				return i;
 			default:
 				return -1;
 		}
@@ -1740,8 +1745,6 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			bool phaseMode = module->slotCvMode == SLOTCVMODE::PHASE;
 			bool xyMode = module->isXyPadActive();
 
-			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Off", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::OFF));
-			menu->addChild(new MenuSeparator);
 			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Envelope", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::ENV, &OutModeItem::disabled, phaseMode || xyMode));
 			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Gate", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::GATE, &OutModeItem::disabled, phaseMode || xyMode));
 			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger snapshot change", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SNAPSHOT, &OutModeItem::disabled, phaseMode || xyMode));
@@ -1750,7 +1753,9 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			menu->addChild(new MenuSeparator);
 			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Polyphonic", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::POLY, &OutModeItem::disabled, phaseMode || xyMode));
 			menu->addChild(new MenuSeparator);
-			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Phase", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::PHASE, &OutModeItem::disabled, !phaseMode));
+			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Phase", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::PHASE, &OutModeItem::disabled, !phaseMode || xyMode));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Off", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::OFF));
 			menu->addChild(new MenuSeparator);
 			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Tipsy", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TIPSY, &OutModeItem::disabled, phaseMode));
 		}));
