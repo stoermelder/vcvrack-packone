@@ -36,6 +36,21 @@ TEST_CASE("MidiKit: construction and initialization", "[MidiKit]") {
 	Test::destroyModule(m);
 }
 
+
+TEST_CASE("Preset JSON null-guards", "[MidiKit][JSON]") {
+	auto module = Test::createModule<MidiKitModule>("MidiKit");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
+
 TEST_CASE("MidiKit: process() does not crash with no script", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 

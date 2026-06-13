@@ -399,12 +399,12 @@ struct MidiKitModule : Module {
 		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
-		if (midiInputJ) midiInput.fromJson(midiInputJ);
+		if (midiInputJ && json_is_object(midiInputJ)) midiInput.fromJson(midiInputJ);
 		json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
-		if (midiOutputJ) midiOutput.fromJson(midiOutputJ);
+		if (midiOutputJ && json_is_object(midiOutputJ)) midiOutput.fromJson(midiOutputJ);
 
 		json_t* scriptJ = json_object_get(rootJ, "script");
-		if (scriptJ) loadScript(json_string_value(scriptJ));
+		if (scriptJ && json_is_string(scriptJ)) loadScript(json_string_value(scriptJ));
 	}
 
 	void loadScript(std::string s) {
