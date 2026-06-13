@@ -1377,7 +1377,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
 		if (mappingIndicatorHiddenJ) mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
 		json_t* mappingIndicatorColorJ = json_object_get(rootJ, "mappingIndicatorColor");
-		if (mappingIndicatorColorJ) mappingIndicatorColor = color::fromHexString(json_string_value(mappingIndicatorColorJ));
+		if (mappingIndicatorColorJ && json_is_string(mappingIndicatorColorJ)) mappingIndicatorColor = color::fromHexString(json_string_value(mappingIndicatorColorJ));
 		json_t* lockedJ = json_object_get(rootJ, "locked");
 		if (lockedJ) locked = json_boolean_value(lockedJ);
 		json_t* processDivisionJ = json_object_get(rootJ, "processDivision");

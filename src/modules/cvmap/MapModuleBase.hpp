@@ -191,11 +191,11 @@ struct MapModuleBase : Module, StripIdFixModule {
 		clearMaps_NoLock();
 
 		json_t* textScrollingJ = json_object_get(rootJ, "textScrolling");
-		textScrolling = json_boolean_value(textScrollingJ);
+		if (textScrollingJ) textScrolling = json_boolean_value(textScrollingJ);
 		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
-		mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
+		if (mappingIndicatorHiddenJ) mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
 		json_t* mappingIndicatorColorJ = json_object_get(rootJ, "mappingIndicatorColor");
-		if (mappingIndicatorColorJ) mappingIndicatorColor = color::fromHexString(json_string_value(mappingIndicatorColorJ));
+		if (mappingIndicatorColorJ && json_is_string(mappingIndicatorColorJ)) mappingIndicatorColor = color::fromHexString(json_string_value(mappingIndicatorColorJ));
 
 		json_t* mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
@@ -211,7 +211,9 @@ struct MapModuleBase : Module, StripIdFixModule {
 				int64_t moduleId = json_integer_value(moduleIdJ);
 				int paramId = json_integer_value(paramIdJ);
 				moduleId = idFix(moduleId);
-				APP->engine->updateParamHandle_NoLock(&paramHandles[mapIndex], moduleId, paramId, false);
+				if (moduleId >= 0) {
+					APP->engine->updateParamHandle_NoLock(&paramHandles[mapIndex], moduleId, paramId, false);
+				}
 				dataFromJsonMap(mapJ, mapIndex);
 			}
 		}

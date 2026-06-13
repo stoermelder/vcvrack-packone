@@ -1240,15 +1240,21 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitCtrlMaster, ExpanderChan
 
 	void dataFromJson(json_t* rootJ) override {
 		BASE::panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		mappingIndicatorHidden = json_boolean_value(json_object_get(rootJ, "mappingIndicatorHidden"));
-		setProcessDivision(json_integer_value(json_object_get(rootJ, "presetProcessDivision")));
+		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
+		if (mappingIndicatorHiddenJ) mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
+		json_t* presetProcessDivisionJ = json_object_get(rootJ, "presetProcessDivision");
+		if (presetProcessDivisionJ) setProcessDivision(json_integer_value(presetProcessDivisionJ));
 
-		slotCvMode = (SLOTCVMODE)json_integer_value(json_object_get(rootJ, "slotCvMode"));
-		outMode = (OUTMODE)json_integer_value(json_object_get(rootJ, "outMode"));
-		preset = json_integer_value(json_object_get(rootJ, "preset"));
+		json_t* slotCvModeJ = json_object_get(rootJ, "slotCvMode");
+		if (slotCvModeJ) slotCvMode = (SLOTCVMODE)json_integer_value(slotCvModeJ);
+		json_t* outModeJ = json_object_get(rootJ, "outMode");
+		if (outModeJ) outMode = (OUTMODE)json_integer_value(outModeJ);
+		json_t* presetJ = json_object_get(rootJ, "preset");
+		if (presetJ) preset = json_integer_value(presetJ);
 		json_t* presetFirstJ = json_object_get(rootJ, "presetFirst");
 		if (presetFirstJ) presetFirst = json_integer_value(presetFirstJ);
-		presetLast = json_integer_value(json_object_get(rootJ, "presetCount"));
+		json_t* presetLastJ = json_object_get(rootJ, "presetCount");
+		if (presetLastJ) presetLast = json_integer_value(presetLastJ);
 		json_t* presetCountLongPressJ = json_object_get(rootJ, "presetCountLongPress");
 		if (presetCountLongPressJ) presetCountLongPress = json_boolean_value(presetCountLongPressJ);
 		json_t* clampFadeCvJ = json_object_get(rootJ, "clampFadeCv");

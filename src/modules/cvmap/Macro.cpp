@@ -216,7 +216,8 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 
 	void dataFromJson(json_t* rootJ) override {
 		CVMapModuleBase<MAPS>::dataFromJson(rootJ);
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 		json_t* processDivisionJ = json_object_get(rootJ, "processDivision");
 		if (processDivisionJ) {
 			processDivision = json_integer_value(processDivisionJ);

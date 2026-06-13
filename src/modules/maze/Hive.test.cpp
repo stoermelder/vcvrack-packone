@@ -38,6 +38,19 @@ TEST_CASE("Construction and initialization", "[Hive]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[Hive][JSON]") {
+	auto module = Test::createModule<HiveMod>("Hive");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 TEST_CASE("Reset clears grid and restores cursor defaults", "[Hive]") {
 	auto module = Test::createModule<HiveMod>("Hive");
 

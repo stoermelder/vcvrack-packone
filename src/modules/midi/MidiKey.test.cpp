@@ -26,6 +26,19 @@ TEST_CASE("Construction and initialization", "[MidiKey]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[MidiKey][JSON]") {
+	auto module = Test::createModule<MidiKeyModule<>>("MidiKey");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 TEST_CASE("Preset loading", "[MidiKey]") {
 	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
 	Test::registerModule(m);
