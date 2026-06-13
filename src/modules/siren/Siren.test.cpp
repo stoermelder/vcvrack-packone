@@ -21,6 +21,19 @@ TEST_CASE("Construction and initialization", "[Siren]") {
 
 // ─── JSON serialization ───────────────────────────────────────────────────────
 
+TEST_CASE("Preset JSON null-guards", "[Siren][JSON]") {
+	auto module = Test::createModule<SirenModule>("Siren");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 // JSON round-trip preserves lastFile, lastPlayheadPos and activeRootIdx.
 TEST_CASE("JSON serialization", "[Siren][JSON]") {
 	auto* m = Test::createModule<SirenModule>("Siren");
@@ -778,6 +791,13 @@ TEST_CASE("startPlayback: rapid successive calls — last position wins", "[Sire
 	// pendingSeekFrame is a single atomic; rapid overwrites are safe — the fill
 	// thread always picks up the latest position.
 	auto* m = Test::createModule<SirenModule>("Siren");
+	// Stop the fill thread so it can't consume pendingSeekFrame via
+	// exchange(-1) before the assertion runs. The destructor will not
+	// re-join because joinable() returns false after this.
+	m->fillThreadStop.store(true, std::memory_order_release);
+	m->fillCv.notify_all();
+	if (m->fillThread.joinable()) m->fillThread.join();
+
 	m->streamTotalFrames = 1000;
 
 	m->startPlayback(0.1f);   // press
@@ -865,9 +885,9 @@ TEST_CASE("startIndexing: fills audio info and filename-based BPM, preserves exi
 	pane.activeDs = std::shared_ptr<DataSource>(src);
 
 	pane.startIndexing();
-	REQUIRE(pane.indexProgress != nullptr);
+	REQUIRE(pane.indexTask.progress != nullptr);
 
-	while (!pane.indexProgress->done.load(std::memory_order_acquire)) {
+	while (!pane.indexTask.progress->done.load(std::memory_order_acquire)) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(5));
 	}
 
@@ -905,14 +925,14 @@ TEST_CASE("startIndexing: re-entrant call while running is ignored", "[Siren][Br
 	pane.activeDs = std::shared_ptr<DataSource>(src);
 
 	pane.startIndexing();
-	auto firstProgress = pane.indexProgress;
+	auto firstProgress = pane.indexTask.progress;
 	REQUIRE(firstProgress != nullptr);
 
 	// A second call before the first finishes must not replace indexProgress.
 	pane.startIndexing();
-	REQUIRE(pane.indexProgress == firstProgress);
+	REQUIRE(pane.indexTask.progress == firstProgress);
 
-	while (!pane.indexProgress->done.load(std::memory_order_acquire)) {
+	while (!pane.indexTask.progress->done.load(std::memory_order_acquire)) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(5));
 	}
 }

@@ -477,9 +477,12 @@ struct SirenModule : Module {
 
 	void dataFromJson(json_t* rootJ) override {
 		json_t* v;
-		v = json_object_get(rootJ, "lastFile");        if (v) lastFilePath = json_string_value(v);
-		v = json_object_get(rootJ, "lastPlayheadPos"); if (v) lastPlayheadPos = (float)json_real_value(v);
-		v = json_object_get(rootJ, "activeRootIdx");   if (v) activeRootIdx = (int)json_integer_value(v);
+		v = json_object_get(rootJ, "lastFile");
+		if (v && json_is_string(v)) lastFilePath = json_string_value(v);
+		v = json_object_get(rootJ, "lastPlayheadPos");
+		if (v && json_is_real(v)) lastPlayheadPos = (float)json_real_value(v);
+		v = json_object_get(rootJ, "activeRootIdx");
+		if (v && json_is_integer(v)) activeRootIdx = (int)json_integer_value(v);
 	}
 };
 
