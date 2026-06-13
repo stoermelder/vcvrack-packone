@@ -775,17 +775,22 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		BASE::panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) BASE::panelTheme = json_integer_value(panelThemeJ);
 
-		slotCvMode = (SLOTCVMODE)json_integer_value(json_object_get(rootJ, "slotCvMode"));
-		preset = json_integer_value(json_object_get(rootJ, "preset"));
-		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
+		json_t* slotCvModeJ = json_object_get(rootJ, "slotCvMode");
+		if (slotCvModeJ) slotCvMode = (SLOTCVMODE)json_integer_value(slotCvModeJ);
+		json_t* presetJ = json_object_get(rootJ, "preset");
+		if (presetJ) preset = json_integer_value(presetJ);
+		json_t* presetCountJ = json_object_get(rootJ, "presetCount");
+		if (presetCountJ) presetCount = json_integer_value(presetCountJ);
 		json_t* presetCountLongPressJ = json_object_get(rootJ, "presetCountLongPress");
 		if (presetCountLongPressJ) presetCountLongPress = json_boolean_value(presetCountLongPressJ);
 
-		boxDraw = json_integer_value(json_object_get(rootJ, "boxDraw"));
+		json_t* boxDrawJ = json_object_get(rootJ, "boxDraw");
+		if (boxDrawJ) boxDraw = json_integer_value(boxDrawJ);
 		json_t* boxColorJ = json_object_get(rootJ, "boxColor");
-		if (boxColorJ) boxColor = color::fromHexString(json_string_value(boxColorJ));
+		if (boxColorJ && json_is_string(boxColorJ)) boxColor = color::fromHexString(json_string_value(boxColorJ));
 		json_t* boxOpacityJ = json_object_get(rootJ, "boxOpacity");
 		if (boxOpacityJ) boxOpacity = json_real_value(boxOpacityJ);
 

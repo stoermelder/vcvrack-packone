@@ -557,10 +557,11 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 */
 	void dataFromJson(json_t* rootJ) override {
 		StripModuleBase::dataFromJson(rootJ);
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* onModeJ = json_object_get(rootJ, "onMode");
-		onMode = (ONMODE)json_integer_value(onModeJ);
+		if (onModeJ) onMode = (ONMODE)json_integer_value(onModeJ);
 
 		json_t* excludedParamsJ = json_object_get(rootJ, "excludedParams");
 		if (excludedParamsJ) {
@@ -583,7 +584,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		}
 	
 		json_t* randomExclJ = json_object_get(rootJ, "randomExcl");
-		randomExcl = (RANDOMEXCL)json_integer_value(randomExclJ);
+		if (randomExclJ) randomExcl = (RANDOMEXCL)json_integer_value(randomExclJ);
 		json_t* randomParamsOnlyJ = json_object_get(rootJ, "randomParamsOnly");
 		if (randomParamsOnlyJ) randomParamsOnly = json_boolean_value(randomParamsOnlyJ);
 		json_t* presetLoadReplaceJ = json_object_get(rootJ, "presetLoadReplace");

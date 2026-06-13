@@ -125,7 +125,8 @@ struct MidiPlugModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
 		for (int i = 0; i < INPUT; i++) {
