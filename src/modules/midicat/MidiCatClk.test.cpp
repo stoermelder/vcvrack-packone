@@ -69,6 +69,19 @@ TEST_CASE("MidiCatClk: construction and initialization", "[MidiCatClk]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[MidiCatClk][JSON]") {
+	auto module = Test::createModule<MidiCatClkModule>("MidiCatClk");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 TEST_CASE("MidiCatClk: JSON round-trip stores and restores panelTheme", "[MidiCatClk]") {
 	MidiCatClkModule* m = Test::createModule<MidiCatClkModule>("MidiCatClk");
 

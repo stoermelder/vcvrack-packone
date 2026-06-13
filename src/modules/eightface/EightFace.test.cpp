@@ -20,6 +20,19 @@ TEST_CASE("Construction and initialization", "[EightFace]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[EightFace][JSON]") {
+	auto module = Test::createModule<EightFaceModule<8>>("EightFace");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 TEST_CASE("EightFaceX2 Construction and initialization", "[EightFace]") {
 	EightFaceModule<16>* m = Test::createModule<EightFaceModule<16>>("EightFaceX2");
 	EightFaceX2Widget* mw = Test::createWidget<EightFaceX2Widget>("EightFaceX2");

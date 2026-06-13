@@ -505,31 +505,44 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* inportsJ = json_object_get(rootJ, "inports");
-		json_t* inportJ;
-		uint8_t inputIndex;
-		json_array_foreach(inportsJ, inputIndex, inportJ) {	
-			modMode[inputIndex] = (MODMODE)json_integer_value(json_object_get(inportJ, "modMode"));
-			inputXBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "inputXBipolar"));
-			inputYBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "inputYBipolar"));
-			outputMode[inputIndex] = (OUTPUTMODE)json_integer_value(json_object_get(inportJ, "outputMode"));
-			Sc::dataFromJson(inportJ, 0, inputIndex);
+		if (inportsJ) {
+			json_t* inportJ;
+			uint8_t inputIndex;
+			json_array_foreach(inportsJ, inputIndex, inportJ) {	
+				json_t* modModeJ = json_object_get(inportJ, "modMode");
+				if (modModeJ) modMode[inputIndex] = (MODMODE)json_integer_value(modModeJ);
+				json_t* inputXBipolarJ = json_object_get(inportJ, "inputXBipolar");
+				if (inputXBipolarJ) inputXBipolar[inputIndex] = json_boolean_value(inputXBipolarJ);
+				json_t* inputYBipolarJ = json_object_get(inportJ, "inputYBipolar");
+				if (inputYBipolarJ) inputYBipolar[inputIndex] = json_boolean_value(inputYBipolarJ);
+				json_t* outputModeJ = json_object_get(inportJ, "outputMode");
+				if (outputModeJ) outputMode[inputIndex] = (OUTPUTMODE)json_integer_value(outputModeJ);
+				Sc::dataFromJson(inportJ, 0, inputIndex);
+			}
 		}
 
 		json_t* mixportsJ = json_object_get(rootJ, "mixports");
-		json_t* mixportJ;
-		uint8_t mixputIndex;
-		json_array_foreach(mixportsJ, mixputIndex, mixportJ) {
-			mixportXBipolar[mixputIndex] = json_boolean_value(json_object_get(mixportJ, "mixportXBipolar"));
-			mixportYBipolar[mixputIndex] = json_boolean_value(json_object_get(mixportJ, "mixportYBipolar"));
-			Sc::dataFromJson(mixportJ, 1, mixputIndex);
-			Seq::dataFromJson(mixportJ, mixputIndex);
+		if (mixportsJ) {
+			json_t* mixportJ;
+			uint8_t mixputIndex;
+			json_array_foreach(mixportsJ, mixputIndex, mixportJ) {
+				json_t* mixportXBipolarJ = json_object_get(mixportJ, "mixportXBipolar");
+				if (mixportXBipolarJ) mixportXBipolar[mixputIndex] = json_boolean_value(mixportXBipolarJ);
+				json_t* mixportYBipolarJ = json_object_get(mixportJ, "mixportYBipolar");
+				if (mixportYBipolarJ) mixportYBipolar[mixputIndex] = json_boolean_value(mixportYBipolarJ);
+				Sc::dataFromJson(mixportJ, 1, mixputIndex);
+				Seq::dataFromJson(mixportJ, mixputIndex);
+			}
 		}
 
-		inportsUsed = json_integer_value(json_object_get(rootJ, "inportsUsed"));
-		mixportsUsed = json_integer_value(json_object_get(rootJ, "mixportsUsed"));
+		json_t* inportsUsedJ = json_object_get(rootJ, "inportsUsed");
+		if (inportsUsedJ) inportsUsed = json_integer_value(inportsUsedJ);
+		json_t* mixportsUsedJ = json_object_get(rootJ, "mixportsUsed");
+		if (mixportsUsedJ) mixportsUsed = json_integer_value(mixportsUsedJ);
 	}
 };
 

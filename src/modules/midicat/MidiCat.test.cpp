@@ -42,8 +42,8 @@ TEST_CASE("Construction and initialization", "[MidiCat]") {
 	SECTION("CC values are initialized to -1") {
 		std::vector<int> v;
 		for (int i = 0; i < 128; i++) {
-			if (module->valuesCc[i] != -1 || module->valuesNote[i] != -1)
-				v.push_back(i);
+		if (module->valuesCc[i] != -1 || module->valuesNote[i] != -1)
+			v.push_back(i);
 		}
 		REQUIRE(v.size() == 0); // No values should be different
 	}
@@ -58,6 +58,19 @@ TEST_CASE("Construction and initialization", "[MidiCat]") {
 	}
 
 	Test::destroyWidget(mw);
+	Test::destroyModule(module);
+}
+
+TEST_CASE("Preset JSON null-guards", "[MidiCat][JSON]") {
+	auto module = Test::createModule<MidiCatModule>("MidiCat");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
 
