@@ -41,27 +41,27 @@ struct SuggestedTag {
 
 namespace TagClassifierDetail {
 
-// ── STFT constants — see SirenBpmDetector.hpp:108-115 for rationale ──────
-static constexpr int    FFT_SIZE           = 512;
-static constexpr int    HOP                = 128;
-static constexpr int    HALF_N             = FFT_SIZE / 2;
-static constexpr int    TARGET_SR          = 8820;  // doubled for better high-freq coverage
+// STFT constants — see SirenBpmDetector.hpp:108-115 for rationale
+static constexpr int FFT_SIZE = 512;
+static constexpr int HOP = 128;
+static constexpr int HALF_N = FFT_SIZE / 2;
+static constexpr int TARGET_SR = 8820;  // doubled for better high-freq coverage
 
-// ── Normalisation constants — must match feature_config.FEATURE_NAMES ─────
-static constexpr float  ONSET_DENSITY_NORM = 30.f;     // peaks/sec → [0, 1]
-static constexpr float  SUB_BASS_HZ        = 80.f;     // sub_bass_ratio cutoff (Hz)
-static constexpr float  LOW_BAND_HZ        = 250.f;    // low_mid_ratio cutoff (Hz)
-static constexpr float  HIGH_BAND_HZ       = 2000.f;   // high_band_ratio cutoff (Hz)
-static constexpr float  MEAN_FLUX_NORM     = 50.f;     // log-flux units/hop → [0, 1]
-static constexpr float  RMS_FULL_SCALE     = 0.7071067811865475f; // 1/√2
+// Normalisation constants — must match feature_config.FEATURE_NAMES
+static constexpr float ONSET_DENSITY_NORM = 30.f;     // peaks/sec → [0, 1]
+static constexpr float SUB_BASS_HZ = 80.f;     // sub_bass_ratio cutoff (Hz)
+static constexpr float LOW_BAND_HZ = 250.f;    // low_mid_ratio cutoff (Hz)
+static constexpr float HIGH_BAND_HZ = 2000.f;   // high_band_ratio cutoff (Hz)
+static constexpr float MEAN_FLUX_NORM = 50.f;     // log-flux units/hop → [0, 1]
+static constexpr float RMS_FULL_SCALE = 0.7071067811865475f; // 1/√2
 
-// ── MFCC parameters ────────────────────────────────────────────────────────
-static constexpr int    N_MELS        = 26;    // mel filterbank bands
-static constexpr int    N_MFCC        = 13;    // cepstral coefficients kept
-static constexpr float  MFCC_NORM_0   = 200.f; // normalization for C[0] (energy-like, wide range)
-static constexpr float  MFCC_NORM_N   = 30.f;  // normalization for C[1..12] (shape)
+// MFCC parameters
+static constexpr int N_MELS = 26;    // mel filterbank bands
+static constexpr int N_MFCC = 13;    // cepstral coefficients kept
+static constexpr float MFCC_NORM_0 = 200.f; // normalization for C[0] (energy-like, wide range)
+static constexpr float MFCC_NORM_N = 30.f;  // normalization for C[1..12] (shape)
 
-// ── Helpers (RAII, window, magnitudes, flux, smoothing, peak-pick) ────────
+// Helpers (RAII, window, magnitudes, flux, smoothing, peak-pick)
 
 struct PffftSetupGuard {
 	PFFFT_Setup* p;
@@ -73,8 +73,9 @@ struct PffftSetupGuard {
 
 inline void generateHannWindow(float* out, int n) {
 	const float denom = (n > 1) ? float(n - 1) : 1.f;
-	for (int i = 0; i < n; ++i)
+	for (int i = 0; i < n; ++i) {
 		out[i] = 0.5f * (1.f - std::cos(2.f * float(M_PI) * i / denom));
+	}
 }
 
 inline void computeMagnitudes(const float* fftOut, float* mag, int halfSize) {
@@ -126,46 +127,44 @@ inline int countPeaks(const float* x, int n, float threshold) {
 	return peaks;
 }
 
-// ── Per-hop spectral accumulator ─────────────────────────────────────────
+// Per-hop spectral accumulator
 // Carries all intermediate STFT-phase state between runSTFT() and
 // finalizeSpectralFeatures(). All doubles — accumulated over many hops,
 // normalised to [0,1] only when written to the output feature vector.
 struct SpectralAccum {
 	double centroidBinSum = 0.0;
-	double powerSum       = 0.0;
-	double powerSubBass   = 0.0;
-	double powerLow       = 0.0;
-	double powerHigh      = 0.0;
-	double rolloff85Acc   = 0.0;
-	double bwAcc          = 0.0;
-	double flatnessAcc    = 0.0;
-	double crestAcc       = 0.0;
-	double entropyAcc     = 0.0;
-	double slopeAcc       = 0.0;
-	double decreaseAcc    = 0.0;
-	double skewnessAcc    = 0.0;
-	double kurtosisAcc    = 0.0;
+	double powerSum = 0.0;
+	double powerSubBass = 0.0;
+	double powerLow = 0.0;
+	double powerHigh = 0.0;
+	double rolloff85Acc = 0.0;
+	double bwAcc = 0.0;
+	double flatnessAcc = 0.0;
+	double crestAcc = 0.0;
+	double entropyAcc = 0.0;
+	double slopeAcc = 0.0;
+	double decreaseAcc = 0.0;
+	double skewnessAcc = 0.0;
+	double kurtosisAcc = 0.0;
 	std::vector<double> melAcc;
-	std::vector<float>  onsetSignal;
-	int                 numHops = 0;
+	std::vector<float> onsetSignal;
+	int numHops = 0;
 
 	// MFCC delta: mean absolute frame-to-frame difference per coefficient
 	std::vector<double> mfccDeltaAcc;
-	float               mfccPrev[N_MFCC] = {};
-	bool                mfccPrevValid     = false;
+	float mfccPrev[N_MFCC] = {};
+	bool mfccPrevValid = false;
 
 	explicit SpectralAccum(int nMels)
-	    : melAcc(size_t(nMels), 0.0)
-	    , mfccDeltaAcc(size_t(N_MFCC), 0.0) {}
+	    : melAcc(size_t(nMels), 0.0), mfccDeltaAcc(size_t(N_MFCC), 0.0) {}
 };
 
 } // namespace TagClassifierDetail
 
 
-// ─── Public API ───────────────────────────────────────────────────────────
-
+// Public API
 struct TagClassifier {
-	// ── Model registration ─────────────────────────────────────────────────
+	// Model registration
 	// SirenTagClassifier.cpp calls registerModel() from its anonymous
 	// namespace so the model is available as soon as its header is included
 	// in a TU. Feature extraction works without registration; classification
@@ -202,12 +201,14 @@ struct TagClassifier {
 
 	// Called by SirenTagClassifier.cpp at static-init time to register a
 	// deferred loader. The loader itself runs on the first scoring call.
-	static void _setLoader(void (*fn)()) { _model().lazyInit = fn; }
+	static void _setLoader(void (*fn)()) {
+		_model().lazyInit = fn;
+	}
 
 	static bool registerModel(void (*fn)(const float*, float*),
-	                          int numClasses, const char* const* classNames) {
+			int numClasses, const char* const* classNames) {
 		ModelInfo& m = _model();
-		m.scoreFn    = fn;
+		m.scoreFn = fn;
 		m.numClasses = numClasses;
 		m.classNames = classNames;
 		return true;
@@ -241,7 +242,7 @@ struct TagClassifier {
 	// Number of classes in the loaded model (0 if no model registered yet).
 	static int numClasses() { return _model().numClasses; }
 
-	// ── Scoring ────────────────────────────────────────────────────────────
+	// Scoring
 
 	// Score a feature vector. `out` must be numClasses() floats.
 	// Clamps features and scores to [0, 1]. No-op if no model is loaded.
@@ -290,7 +291,7 @@ struct TagClassifier {
 
 	// Top-k SuggestedTags straight from an audio stream.
 	static std::vector<SuggestedTag> classify(AudioStream& stream, int k = 3,
-	                                          float maxDurationSeconds = 30.f) {
+			float maxDurationSeconds = 30.f) {
 		float features[SIREN_TAG_NUM_FEATURES] = {};
 		extractFeatures(stream, features, maxDurationSeconds);
 		return classify(features, k);
@@ -299,7 +300,7 @@ struct TagClassifier {
 	// Top-k SuggestedTags from an audio stream, boosted by filename hints.
 	// `filePath` may be a full path or just the filename — only the stem is used.
 	static std::vector<SuggestedTag> classify(AudioStream& stream, const std::string& filePath,
-	                                          int k = 3, float maxDurationSeconds = 30.f) {
+			int k = 3, float maxDurationSeconds = 30.f) {
 		int n = _model().numClasses;
 		if (n <= 0) return {};
 		float features[SIREN_TAG_NUM_FEATURES] = {};
@@ -339,7 +340,7 @@ struct TagClassifier {
 	// Uses max(score, boost) so audio evidence is never reduced.
 	// Keywords are read from the registered map (loaded from SirenTags.json).
 	static void applyFilenameBoosts(const std::string& stem, float* scores, int n,
-	                                const char* const* classNames, float boost = 0.9f) {
+			const char* const* classNames, float boost = 0.9f) {
 		const auto& kw = _model().keywords;
 		if (kw.empty()) return;
 		for (int c = 0; c < n; ++c) {
@@ -360,7 +361,7 @@ struct TagClassifier {
 	// Returns all-zero if the stream has no frames or too few STFT hops (<4).
 	// Output is always clamped to [0, 1].
 	static void extractFeatures(AudioStream& stream, float out[SIREN_TAG_NUM_FEATURES],
-	                            float maxDurationSeconds = 30.f) {
+			float maxDurationSeconds = 30.f) {
 		using namespace TagClassifierDetail;
 
 		for (int i = 0; i < SIREN_TAG_NUM_FEATURES; ++i) out[i] = 0.f;
@@ -382,15 +383,15 @@ struct TagClassifier {
 		}
 	}
 
-	// ── Phase 1: Audio ingestion ───────────────────────────────────────────
+	// Phase 1: Audio ingestion
 	// Read the stream, decimate to ~TARGET_SR, mix to mono.
 	// Returns false if the stream is invalid or yields no samples.
 	static bool prepareMono(AudioStream& stream, float maxDurationSeconds,
-	                        std::vector<float>& mono, int& outSR) {
+			std::vector<float>& mono, int& outSR) {
 		using namespace TagClassifierDetail;
 
-		int     sampleRate  = stream.sampleRate();
-		int     channels    = stream.channels();
+		int sampleRate = stream.sampleRate();
+		int channels = stream.channels();
 		int64_t totalFrames = stream.totalFrames();
 		if (totalFrames <= 0 || sampleRate <= 0 || channels <= 0) return false;
 
@@ -412,11 +413,11 @@ struct TagClassifier {
 		int64_t framesRead = 0;
 		while (framesRead < totalFrames) {
 			int64_t toRead = std::min<int64_t>(BUFSIZE, totalFrames - framesRead);
-			int64_t got    = stream.readF32(buf.data(), toRead);
+			int64_t got = stream.readF32(buf.data(), toRead);
 			if (got <= 0) break;
 			for (int64_t f = 0; f < got; f += decimRate) {
-				float sum   = 0.f;
-				int   count = 0;
+				float sum = 0.f;
+				int count = 0;
 				for (int ch = 0; ch < channels; ++ch) {
 					size_t idx = size_t(f * channels + ch);
 					if (idx >= buf.size()) break;
@@ -430,7 +431,7 @@ struct TagClassifier {
 		return !mono.empty();
 	}
 
-	// ── Phase 2: Time-domain features ─────────────────────────────────────
+	// Phase 2: Time-domain features
 	// Operates on the decimated mono buffer. No FFT required.
 	// Writes: out[2]  ZCR mean
 	//         out[3]  RMS
@@ -443,18 +444,18 @@ struct TagClassifier {
 	//         out[35] envelope RMS variance
 	//         out[36] temporal entropy
 	static void extractTimeDomainFeatures(const std::vector<float>& mono, int outSR,
-	                                      float out[SIREN_TAG_NUM_FEATURES]) {
+			float out[SIREN_TAG_NUM_FEATURES]) {
 		using namespace TagClassifierDetail;
 
 		// ZCR — per-frame average zero-crossing rate
 		{
-			const int zcrFrame     = std::max(64, outSR / 33);
+			const int zcrFrame = std::max(64, outSR / 33);
 			const int zcrNumFrames = int(mono.size()) / zcrFrame;
-			float zcrSum  = 0.f;
-			int   zcrCount = 0;
+			float zcrSum = 0.f;
+			int zcrCount = 0;
 			for (int f = 0; f < zcrNumFrames; ++f) {
 				int startIdx = f * zcrFrame;
-				int endIdx   = startIdx + zcrFrame;
+				int endIdx = startIdx + zcrFrame;
 				int crossings = 0;
 				for (int i = startIdx + 1; i < endIdx; ++i) {
 					float a = mono[i - 1], b = mono[i];
@@ -468,16 +469,16 @@ struct TagClassifier {
 
 		// RMS, peak amplitude, crest factor
 		{
-			double sumSq   = 0.0;
-			float  peakAbs = 0.f;
+			double sumSq = 0.0;
+			float peakAbs = 0.f;
 			for (float s : mono) {
 				sumSq += double(s) * double(s);
 				float a = s < 0.f ? -s : s;
 				if (a > peakAbs) peakAbs = a;
 			}
-			float rms  = float(std::sqrt(sumSq / double(mono.size())));
+			float rms = float(std::sqrt(sumSq / double(mono.size())));
 			float crest = (rms > 1e-6f) ? peakAbs / rms : 0.f;
-			out[3]  = rms / RMS_FULL_SCALE;
+			out[3] = rms / RMS_FULL_SCALE;
 			// log(1 + crest) / log(31): sustained sine ~0.2, percussion ~0.7, silence 0
 			out[10] = std::min(1.f, std::log(1.f + crest) / std::log(31.f));
 		}
@@ -485,11 +486,11 @@ struct TagClassifier {
 		// Temporal envelope — 32-block RMS, shared by five features
 		{
 			const int N_BLOCKS = 32;
-			const int n        = int(mono.size());
+			const int n = int(mono.size());
 			float blockRms[N_BLOCKS] = {};
 			for (int b = 0; b < N_BLOCKS; ++b) {
-				int    lo = (int64_t(b)     * n) / N_BLOCKS;
-				int    hi = (int64_t(b + 1) * n) / N_BLOCKS;
+				int lo = (int64_t(b) * n) / N_BLOCKS;
+				int hi = (int64_t(b + 1) * n) / N_BLOCKS;
 				double ss = 0.0;
 				for (int i = lo; i < hi; ++i) ss += double(mono[i]) * double(mono[i]);
 				blockRms[b] = (hi > lo) ? float(std::sqrt(ss / double(hi - lo))) : 0.f;
@@ -510,7 +511,7 @@ struct TagClassifier {
 			{
 				const int EDGE = std::max(1, N_BLOCKS / 5);
 				double headE = 0.0, tailE = 0.0;
-				for (int b = 0; b < EDGE; ++b)                   headE += double(blockRms[b]);
+				for (int b = 0; b < EDGE; ++b) headE += double(blockRms[b]);
 				for (int b = N_BLOCKS - EDGE; b < N_BLOCKS; ++b) tailE += double(blockRms[b]);
 				out[32] = float(tailE / (headE + tailE + 1e-12));
 			}
@@ -518,8 +519,9 @@ struct TagClassifier {
 			// Attack time: position of peak-RMS block, normalised — percussive→0, pad→high
 			{
 				int peakBlock = 0;
-				for (int b = 1; b < N_BLOCKS; ++b)
+				for (int b = 1; b < N_BLOCKS; ++b) {
 					if (blockRms[b] > blockRms[peakBlock]) peakBlock = b;
+				}
 				out[34] = float(peakBlock) / float(N_BLOCKS - 1);
 			}
 
@@ -556,7 +558,7 @@ struct TagClassifier {
 		// Peak normalised AC → 1 for rhythmic loops, ~0 for one-shots / drones.
 		{
 			const int ENV_BLOCK = std::max(1, outSR / 10);
-			const int nBlocks   = int(mono.size()) / ENV_BLOCK;
+			const int nBlocks = int(mono.size()) / ENV_BLOCK;
 			if (nBlocks >= 6) {
 				std::vector<float> env(size_t(nBlocks), 0.f);
 				for (int b = 0; b < nBlocks; ++b) {
@@ -586,7 +588,7 @@ struct TagClassifier {
 		// Harmonic ratio — autocorrelation over pitch range 49–1100 Hz (lags 8–180 at outSR)
 		// Normalised peak → periodic=1 (tonal), noise=0.
 		{
-			int   n  = std::min((int)mono.size(), 4096);
+			int n  = std::min((int)mono.size(), 4096);
 			float r0 = 0.f;
 			for (int i = 0; i < n; ++i) r0 += mono[i] * mono[i];
 			float maxAC = 0.f;
@@ -602,15 +604,15 @@ struct TagClassifier {
 		}
 	}
 
-	// ── Phase 3: STFT + per-hop spectral accumulation ─────────────────────
+	// Phase 3: STFT + per-hop spectral accumulation
 	// Fills acc with summed statistics over all hops.
 	// Returns false if there are too few hops (<4).
 	static bool runSTFT(const std::vector<float>& mono, int outSR,
-	                    TagClassifierDetail::SpectralAccum& acc) {
+			TagClassifierDetail::SpectralAccum& acc) {
 		using namespace TagClassifierDetail;
 
 		const int numFrames = int(mono.size());
-		const int numHops   = (numFrames - FFT_SIZE) / HOP + 1;
+		const int numHops = (numFrames - FFT_SIZE) / HOP + 1;
 		if (numHops < 4) return false;
 
 		acc.numHops = numHops;
@@ -623,18 +625,18 @@ struct TagClassifier {
 		std::vector<float> win(FFT_SIZE, 0.f), spec(FFT_SIZE, 0.f), work(FFT_SIZE, 0.f);
 
 		// Precomputed slope constants (function of HALF_N only)
-		const double sum_k  = double(HALF_N) * (HALF_N - 1) / 2.0;
+		const double sum_k = double(HALF_N) * (HALF_N - 1) / 2.0;
 		const double sum_k2 = double(HALF_N) * (HALF_N - 1) * (2 * HALF_N - 1) / 6.0;
-		const double var_k  = double(HALF_N) * sum_k2 - sum_k * sum_k;
+		const double var_k = double(HALF_N) * sum_k2 - sum_k * sum_k;
 
 		PffftSetupGuard fft(FFT_SIZE, PFFFT_REAL);
 		if (!fft.p) return false;
 
 		// Frequency-band cutoff bins at the decimated sample rate
-		const float binHz        = float(outSR) / float(FFT_SIZE);
-		const int   subBassBinMax = std::max(1, int(std::floor(SUB_BASS_HZ  / binHz)));
-		const int   lowBinMax     = std::max(1, int(std::floor(LOW_BAND_HZ  / binHz)));
-		const int   highBinMin    = std::min(HALF_N - 1, int(std::ceil(HIGH_BAND_HZ / binHz)));
+		const float binHz = float(outSR) / float(FFT_SIZE);
+		const int subBassBinMax = std::max(1, int(std::floor(SUB_BASS_HZ / binHz)));
+		const int lowBinMax = std::max(1, int(std::floor(LOW_BAND_HZ / binHz)));
+		const int highBinMin = std::min(HALF_N - 1, int(std::ceil(HIGH_BAND_HZ / binHz)));
 
 		// Mel filterbank: N_MELS triangular filters from 0 Hz to Nyquist
 		// mel(f) = 2595·log10(1 + f/700);  bin = round(mel_hz * FFT_SIZE / outSR)
@@ -646,7 +648,7 @@ struct TagClassifier {
 			double mel_hi = hz_to_mel(double(outSR) / 2.0);
 			for (int m = 0; m < N_MELS + 2; ++m) {
 				double mel = mel_lo + (mel_hi - mel_lo) * m / (N_MELS + 1);
-				int    bin = int(mel_to_hz(mel) * FFT_SIZE / outSR);
+				int bin = int(mel_to_hz(mel) * FFT_SIZE / outSR);
 				mel_bins[m] = std::max(0, std::min(HALF_N - 1, bin));
 			}
 		}
@@ -657,7 +659,7 @@ struct TagClassifier {
 		computeMagnitudes(spec.data(), magPrev.data(), HALF_N);
 
 		for (int h = 0; h < numHops; ++h) {
-			const int startIdx  = h * HOP;
+			const int startIdx = h * HOP;
 			const int lastValid = std::min(FFT_SIZE, numFrames - startIdx);
 			for (int i = 0; i < lastValid; ++i) win[i] = mono[startIdx + i] * window[i];
 			for (int i = lastValid; i < FFT_SIZE; ++i) win[i] = 0.f;
@@ -668,24 +670,24 @@ struct TagClassifier {
 			acc.onsetSignal[h] = computeSpectralFlux(magCur.data(), magPrev.data(), HALF_N);
 
 			// First pass: power sums, centroid, band energy, slope/crest inputs
-			double framePower  = 0.0;
-			double centroid    = 0.0;
+			double framePower = 0.0;
+			double centroid = 0.0;
 			double frameMagSum = 0.0;  // Σ mag[b]
-			double frameKXSum  = 0.0;  // Σ b·mag[b]  (spectral slope)
+			double frameKXSum = 0.0;  // Σ b·mag[b]  (spectral slope)
 			double frameMaxMag = 0.0;  // max(mag[b]) (spectral crest)
 			for (int b = 0; b < HALF_N; ++b) {
 				double m = double(magCur[b]);
 				double p = m * m;
 				framePower += p;
-				centroid   += double(b) * p;
-				if (b < subBassBinMax)              acc.powerSubBass += p;
-				else if (b < lowBinMax)             acc.powerLow     += p;  // [80, 250) Hz
-				if (b >= highBinMin)                acc.powerHigh    += p;
+				centroid += double(b) * p;
+				if (b < subBassBinMax) acc.powerSubBass += p;
+				else if (b < lowBinMax) acc.powerLow += p;  // [80, 250) Hz
+				if (b >= highBinMin) acc.powerHigh += p;
 				frameMagSum += m;
-				frameKXSum  += double(b) * m;
+				frameKXSum += double(b) * m;
 				if (m > frameMaxMag) frameMaxMag = m;
 			}
-			acc.powerSum       += framePower;
+			acc.powerSum += framePower;
 			acc.centroidBinSum += centroid;
 
 			// Spectral crest: max(mag) / mean(mag), normalised by HALF_N
@@ -696,7 +698,7 @@ struct TagClassifier {
 
 			// Spectral slope: Pearson r between bin index and magnitude
 			{
-				double cov   = double(HALF_N) * frameKXSum - sum_k * frameMagSum;
+				double cov = double(HALF_N) * frameKXSum - sum_k * frameMagSum;
 				double var_x = double(HALF_N) * framePower - frameMagSum * frameMagSum;
 				double denom = std::sqrt(var_k * std::max(0.0, var_x));
 				acc.slopeAcc += (denom > 1e-12) ? cov / denom : 0.0;
@@ -712,13 +714,13 @@ struct TagClassifier {
 			double entropy = 0.0;
 			const double x0 = double(magCur[0]);
 			for (int b = 0; b < HALF_N; ++b) {
-				double m   = double(magCur[b]);
-				double p   = m * m;
-				double df  = double(b) - centroidBinFrame;
+				double m = double(magCur[b]);
+				double p = m * m;
+				double df = double(b) - centroidBinFrame;
 				double df2 = df * df;
-				bwSq      += df2 * p;
-				logMagSum  += std::log(m + 1e-12);
-				linMagSum  += m;
+				bwSq += df2 * p;
+				logMagSum += std::log(m + 1e-12);
+				linMagSum += m;
 				sk3 += df * df2 * p;
 				sk4 += df2 * df2 * p;
 				if (b > 0) { decNum += (m - x0) / double(b); decDen += m; }
@@ -727,13 +729,13 @@ struct TagClassifier {
 					if (pn > 1e-12) entropy -= pn * std::log(pn);
 				}
 			}
-			acc.bwAcc      += (framePower > 1e-12)
-			                ? std::sqrt(bwSq / framePower) / double(HALF_N - 1)
-			                : 0.0;
+			acc.bwAcc += (framePower > 1e-12)
+			    ? std::sqrt(bwSq / framePower) / double(HALF_N - 1)
+			    : 0.0;
 			const double arithMean = linMagSum / double(HALF_N);
 			acc.flatnessAcc += (arithMean > 1e-12)
-			                 ? std::exp(logMagSum / double(HALF_N)) / arithMean
-			                 : 0.0;
+			    ? std::exp(logMagSum / double(HALF_N)) / arithMean
+			    : 0.0;
 			if (framePower > 1e-12) {
 				const double bw = std::sqrt(bwSq / framePower);
 				if (bw > 1e-12) {
@@ -742,22 +744,24 @@ struct TagClassifier {
 				}
 			}
 			acc.decreaseAcc += (decDen > 1e-12) ? decNum / decDen : 0.0;
-			acc.entropyAcc  += entropy / std::log(double(HALF_N));
+			acc.entropyAcc += entropy / std::log(double(HALF_N));
 
 			// Mel filterbank: triangular filters, power energy per band
 			double mel_hop[N_MELS] = {};
 			for (int mf = 0; mf < N_MELS; ++mf) {
-				const int lo  = mel_bins[mf];
+				const int lo = mel_bins[mf];
 				const int ctr = mel_bins[mf + 1];
-				const int hi  = mel_bins[mf + 2];
+				const int hi = mel_bins[mf + 2];
 				double e = 0.0;
 				if (ctr > lo) {
-					for (int b = lo; b < ctr; ++b)
+					for (int b = lo; b < ctr; ++b) {
 						e += double(magCur[b]) * double(magCur[b]) * double(b - lo) / double(ctr - lo);
+					}
 				}
 				if (hi > ctr) {
-					for (int b = ctr; b <= hi; ++b)
+					for (int b = ctr; b <= hi; ++b) {
 						e += double(magCur[b]) * double(magCur[b]) * double(hi - b) / double(hi - ctr);
+					}
 				}
 				acc.melAcc[mf] += e;
 				mel_hop[mf]     = e;
@@ -768,20 +772,23 @@ struct TagClassifier {
 			// Static sounds (drone, pad) → near 0; melodic/rhythmic → higher.
 			{
 				float log_mel_hop[N_MELS];
-				for (int m = 0; m < N_MELS; ++m)
+				for (int m = 0; m < N_MELS; ++m) {
 					log_mel_hop[m] = std::log(float(std::max(1e-10, mel_hop[m])));
+				}
 
 				float mfcc_cur[N_MFCC];
 				for (int n = 0; n < N_MFCC; ++n) {
 					float c = 0.f;
-					for (int m = 0; m < N_MELS; ++m)
+					for (int m = 0; m < N_MELS; ++m) {
 						c += log_mel_hop[m] * std::cos(float(M_PI) * n * (m + 0.5f) / float(N_MELS));
+					}
 					mfcc_cur[n] = c;
 				}
 
 				if (acc.mfccPrevValid) {
-					for (int n = 0; n < N_MFCC; ++n)
+					for (int n = 0; n < N_MFCC; ++n) {
 						acc.mfccDeltaAcc[n] += std::abs(double(mfcc_cur[n]) - double(acc.mfccPrev[n]));
+					}
 				}
 				std::copy(mfcc_cur, mfcc_cur + N_MFCC, acc.mfccPrev);
 				acc.mfccPrevValid = true;
@@ -791,7 +798,7 @@ struct TagClassifier {
 			{
 				const double rolloffTarget = 0.85 * framePower;
 				double cum = 0.0;
-				int    rolloffBin = HALF_N - 1;
+				int rolloffBin = HALF_N - 1;
 				if (framePower > 0.0) {
 					for (int b = 0; b < HALF_N; ++b) {
 						cum += double(magCur[b]) * double(magCur[b]);
@@ -807,19 +814,20 @@ struct TagClassifier {
 		return true;
 	}
 
-	// ── Phase 4: Normalize accumulators → output feature vector ───────────
+	// Phase 4: Normalize accumulators → output feature vector
 	// Writes the 30 spectral / MFCC / band-ratio / flux features and the
 	// 13 MFCC deltas:
 	//   out[0,1,4-9,12-17,18-30,37-39]  spectral + MFCCs + extra band ratios
 	//   out[40-52]                       MFCC deltas
 	static void finalizeSpectralFeatures(const TagClassifierDetail::SpectralAccum& acc,
-	                                     int outSR, float out[SIREN_TAG_NUM_FEATURES]) {
+			int outSR, float out[SIREN_TAG_NUM_FEATURES]) {
 		using namespace TagClassifierDetail;
 		const int numHops = acc.numHops;
 
 		// Spectral centroid: (Σ b·p_b) / (Σ p_b), normalised by (HALF_N - 1)
-		if (acc.powerSum > 0.0)
+		if (acc.powerSum > 0.0) {
 			out[0] = float(acc.centroidBinSum / acc.powerSum) / float(HALF_N - 1);
+		}
 
 		// 85% rolloff: averaged over hops
 		out[1] = float(acc.rolloff85Acc / double(numHops));
@@ -832,7 +840,7 @@ struct TagClassifier {
 			float maxOnset = 0.f;
 			for (float v : onsetFiltered) if (v > maxOnset) maxOnset = v;
 			const float threshold = 0.5f * maxOnset;
-			const int   peaks     = countPeaks(onsetFiltered.data(), numHops, threshold);
+			const int peaks = countPeaks(onsetFiltered.data(), numHops, threshold);
 			const float peaksPerSec = float(peaks) * (float(outSR) / float(HOP)) / float(numHops);
 			out[4] = peaksPerSec / ONSET_DENSITY_NORM;
 		}
@@ -840,21 +848,21 @@ struct TagClassifier {
 		// Band ratios: four non-overlapping frequency regions sum to 1.
 		// sub_bass [0, 80) Hz · low_mid [80, 250) Hz · mid [250, 2000) Hz · high [2000+) Hz
 		if (acc.powerSum > 0.0) {
-			out[5]  = float(acc.powerLow     / acc.powerSum);  // low_mid  [80, 250) Hz
-			out[8]  = float(acc.powerHigh    / acc.powerSum);  // high     [2000+)   Hz
+			out[5] = float(acc.powerLow / acc.powerSum);  // low_mid  [80, 250) Hz
+			out[8] = float(acc.powerHigh / acc.powerSum);  // high     [2000+)   Hz
 			out[37] = float(acc.powerSubBass / acc.powerSum);  // sub_bass [0, 80)   Hz
 			out[38] = float((acc.powerSum - acc.powerSubBass - acc.powerLow - acc.powerHigh)
 			                / acc.powerSum);                   // mid      [250, 2000) Hz
 		}
 
 		// Spectral shape features — averaged over hops
-		out[6]  = float(acc.flatnessAcc / double(numHops));
-		out[7]  = float(acc.bwAcc       / double(numHops));
-		out[12] = float(acc.crestAcc    / double(numHops));
-		out[13] = float(acc.entropyAcc  / double(numHops));
-		out[14] = float(acc.slopeAcc    / double(numHops)) * 0.5f + 0.5f;
-		out[15] = std::max(0.f, std::min(1.f, float(acc.decreaseAcc  / numHops) + 0.5f));
-		out[16] = std::max(0.f, std::min(1.f, float(acc.skewnessAcc  / numHops) / 6.f + 0.5f));
+		out[6] = float(acc.flatnessAcc / double(numHops));
+		out[7] = float(acc.bwAcc / double(numHops));
+		out[12] = float(acc.crestAcc / double(numHops));
+		out[13] = float(acc.entropyAcc / double(numHops));
+		out[14] = float(acc.slopeAcc / double(numHops)) * 0.5f + 0.5f;
+		out[15] = std::max(0.f, std::min(1.f, float(acc.decreaseAcc / numHops) + 0.5f));
+		out[16] = std::max(0.f, std::min(1.f, float(acc.skewnessAcc / numHops) / 6.f + 0.5f));
 		out[17] = std::max(0.f, std::min(1.f, (float(acc.kurtosisAcc / numHops) - 3.f + 3.f) / 10.f));
 
 		// Mean spectral flux and flux variance
@@ -875,12 +883,14 @@ struct TagClassifier {
 		// MFCCs (out[18..30]) — average mel energies, log, then DCT-II
 		{
 			float log_mel[N_MELS];
-			for (int m = 0; m < N_MELS; ++m)
+			for (int m = 0; m < N_MELS; ++m) {
 				log_mel[m] = std::log(float(std::max(1e-10, acc.melAcc[m] / double(numHops))));
+			}
 			for (int n = 0; n < N_MFCC; ++n) {
 				float c = 0.f;
-				for (int m = 0; m < N_MELS; ++m)
+				for (int m = 0; m < N_MELS; ++m) {
 					c += log_mel[m] * std::cos(float(M_PI) * n * (m + 0.5f) / float(N_MELS));
+				}
 				const float norm = (n == 0) ? MFCC_NORM_0 : MFCC_NORM_N;
 				out[18 + n] = std::max(0.f, std::min(1.f, c / norm + 0.5f));
 			}
@@ -895,7 +905,7 @@ struct TagClassifier {
 			if (deltaHops > 0) {
 				for (int n = 0; n < N_MFCC; ++n) {
 					const float meanDelta = float(acc.mfccDeltaAcc[n] / double(deltaHops));
-					const float norm      = (n == 0) ? MFCC_NORM_0 : MFCC_NORM_N;
+					const float norm = (n == 0) ? MFCC_NORM_0 : MFCC_NORM_N;
 					out[40 + n] = std::min(1.f, meanDelta / norm);
 				}
 			}

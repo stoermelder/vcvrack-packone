@@ -9,7 +9,7 @@
 namespace StoermelderPackOne {
 namespace Siren {
 
-// ─── Starter tag list ────────────────────────────────────────────────────────
+// Starter tag list
 //
 // The list of "starter" tags is the single source of truth in
 // `res/data/SirenTags.json`. We read it once per module load
@@ -24,7 +24,6 @@ namespace Siren {
 // without recompiling the plugin, and the file is small (a few KB) so the
 // per-load cost is negligible. `isTesting()` short-circuits the disk read
 // in the test harness.
-
 inline std::string tagManifestPath() {
 	return rack::asset::plugin(pluginInstance, "res/data/SirenTags.json");
 }
@@ -115,7 +114,7 @@ inline const std::map<std::string, std::vector<std::string>>& starterTagKeywords
 	json_t* entryJ;
 	json_array_foreach(tagsJ, i, entryJ) {
 		json_t* nameJ = json_object_get(entryJ, "name");
-		json_t* kwJ   = json_object_get(entryJ, "keywords");
+		json_t* kwJ = json_object_get(entryJ, "keywords");
 		if (!nameJ || !json_is_string(nameJ)) continue;
 		if (!kwJ || !json_is_array(kwJ)) continue;
 		std::string name = json_string_value(nameJ);
@@ -139,9 +138,9 @@ struct SampleMetadata {
 	float bpm = 0.f;           // detected BPM, 0 if not detected
 	float bpmConfidence = 0.f; // confidence of BPM detection
 	float durationSeconds = 0.f; // length of the audio file, 0 if unknown
-	int sampleRate = 0;        // sample rate in Hz, 0 if unknown
-	int bitDepth = 0;          // bits per sample, 0 if unknown
-	int channels = 0;          // channel count, 0 if unknown
+	int sampleRate = 0; // sample rate in Hz, 0 if unknown
+	int bitDepth = 0; // bits per sample, 0 if unknown
+	int channels = 0; // channel count, 0 if unknown
 	int64_t fileTimestamp = 0; // file mtime when the audio info above was last read, 0 if unknown
 };
 
@@ -238,28 +237,35 @@ struct MetadataStore {
 			const SampleMetadata& meta = pair.second;
 			json_t* fileJ = json_object();
 			json_object_set_new(fileJ, "path", json_string(meta.relativePath.c_str()));
-			if (meta.favorite)
+			if (meta.favorite) {
 				json_object_set_new(fileJ, "fav", json_true());
+			}
 			if (!meta.tags.empty()) {
 				json_t* tagsJ = json_array();
-				for (const std::string& tag : meta.tags)
+				for (const std::string& tag : meta.tags) {
 					json_array_append_new(tagsJ, json_string(tag.c_str()));
+				}
 				json_object_set_new(fileJ, "tags", tagsJ);
 			}
 			if (meta.bpm > 0.f) {
 				json_object_set_new(fileJ, "bpm", json_real(meta.bpm));
 				json_object_set_new(fileJ, "bpmConfidence", json_real(meta.bpmConfidence));
 			}
-			if (meta.durationSeconds > 0.f)
+			if (meta.durationSeconds > 0.f) {
 				json_object_set_new(fileJ, "duration", json_real(meta.durationSeconds));
-			if (meta.sampleRate > 0)
+			}
+			if (meta.sampleRate > 0) {
 				json_object_set_new(fileJ, "sampleRate", json_integer(meta.sampleRate));
-			if (meta.bitDepth > 0)
+			}
+			if (meta.bitDepth > 0) {
 				json_object_set_new(fileJ, "bitDepth", json_integer(meta.bitDepth));
-			if (meta.channels > 0)
+			}
+			if (meta.channels > 0) {
 				json_object_set_new(fileJ, "channels", json_integer(meta.channels));
-			if (meta.fileTimestamp != 0)
+			}
+			if (meta.fileTimestamp != 0) {
 				json_object_set_new(fileJ, "mtime", json_integer((json_int_t)meta.fileTimestamp));
+			}
 			json_array_append_new(filesJ, fileJ);
 		}
 		json_object_set_new(rootJ, "files", filesJ);
@@ -273,7 +279,8 @@ struct MetadataStore {
 
 		json_t* filesJ = json_object_get(rootJ, "files");
 		if (filesJ && json_is_array(filesJ)) {
-			size_t i; json_t* fileJ;
+			size_t i;
+			json_t* fileJ;
 			json_array_foreach(filesJ, i, fileJ) {
 				if (!json_is_object(fileJ)) continue;
 				json_t* pathJ = json_object_get(fileJ, "path");
@@ -287,7 +294,8 @@ struct MetadataStore {
 
 				json_t* tagsJ = json_object_get(fileJ, "tags");
 				if (tagsJ && json_is_array(tagsJ)) {
-					size_t j; json_t* tagJ;
+					size_t j;
+					json_t* tagJ;
 					json_array_foreach(tagsJ, j, tagJ) {
 						if (json_is_string(tagJ)) {
 							std::string t = rack::string::trim(json_string_value(tagJ));
@@ -351,8 +359,9 @@ struct MetadataStore {
 		auto& meta = samples[rel];
 		meta.relativePath = rel;
 		std::string tagLow = rack::string::lowercase(trimmed);
-		for (const std::string& t : meta.tags)
+		for (const std::string& t : meta.tags) {
 			if (rack::string::lowercase(rack::string::trim(t)) == tagLow) return;
+		}
 		meta.tags.push_back(trimmed);
 	}
 
@@ -387,8 +396,9 @@ struct MetadataStore {
 			if (seen.insert(low).second) result.insert(t);
 		};
 		for (const std::string& t : starterTags()) insert(t);
-		for (const auto& pair : samples)
+		for (const auto& pair : samples) {
 			for (const std::string& tag : pair.second.tags) insert(tag);
+		}
 		return result;
 	}
 

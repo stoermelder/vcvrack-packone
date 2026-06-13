@@ -39,7 +39,7 @@ struct CanvasViewMode {
 	}
 };
 
-// ─── SirenWaveformCanvas ──────────────────────────────────────────────────────
+// SirenWaveformCanvas
 // Child widget of SirenPreviewPane that owns the waveform region: drawing,
 // trim handles, playhead, scrollbar, readout, and all mouse/keyboard interaction.
 //
@@ -50,57 +50,56 @@ struct CanvasViewMode {
 //   - Waveform is tinted gold to signal loop preview
 //   - Trim handles are hidden and interaction is suppressed
 //   - A "Generating loop preview…" overlay is shown while building
-
 struct SirenWaveformCanvas : widget::OpaqueWidget {
 	static constexpr float WAVE_X = 8.f;
-	static constexpr float READOUT_H   = 14.f;
+	static constexpr float READOUT_H = 14.f;
 	static constexpr float SCROLLBAR_H = 12.f;
 
-	// ── display inputs (set by parent each step()) ───────────────────────────
-	WaveformCache*      cache             = nullptr;  // non-owning pointer to parent's active cache
-	bool                cacheReady        = false;
-	bool                loopPreviewMode   = false;    // tint + suppress trim handles
+	// display inputs (set by parent each step())
+	WaveformCache* cache = nullptr;  // non-owning pointer to parent's active cache
+	bool cacheReady = false;
+	bool loopPreviewMode = false;    // tint + suppress trim handles
 	const CanvasViewMode* viewMode = &CanvasViewMode::normal(); // active mode's accent color, shared by waveform + header texts
-	bool                hasFile           = false;
-	float               durationSeconds   = 0.f;
+	bool hasFile = false;
+	float durationSeconds = 0.f;
 	std::atomic<float>* modulePlayheadPos = nullptr;
 
 	// Single overlay for any background task ("Building waveform…", "Converting…",
 	// "Generating loop preview…", "Indexing… N / M", ...). Empty = no overlay.
 	std::string statusMessage;
-	NVGcolor    statusColor = nvgRGBf(1.f, 0.85f, 0.1f);
+	NVGcolor statusColor = nvgRGBf(1.f, 0.85f, 0.1f);
 
 	// drag source data — updated by parent each step()
 	std::string dragPath;
 	std::string dragDisplayName;
 
 	SirenDropHandler* dropHandler = nullptr;
-	TaskWorker*       worker      = nullptr;
+	TaskWorker* worker = nullptr;
 
-	// ── owned state ──────────────────────────────────────────────────────────
-	float inPoint  = 0.f;
+	// owned state
+	float inPoint = 0.f;
 	float outPoint = 1.f;
-	float zoomLevel  = 1.0f;
-	float scrollPos  = 0.0f;
+	float zoomLevel = 1.0f;
+	float scrollPos = 0.0f;
 
-	float scrubPos           = 0.f;
-	float dragStartRackX     = 0.f;
-	float dragStartScrub     = 0.f;
-	bool  draggingPlayhead   = false;
-	bool  trimmingIn         = false;
-	bool  trimmingOut        = false;
-	bool  trimmingRange      = false;
-	float rangeAnchor        = 0.f;
-	bool  draggingScrollbar  = false;
+	float scrubPos = 0.f;
+	float dragStartRackX = 0.f;
+	float dragStartScrub = 0.f;
+	bool draggingPlayhead = false;
+	bool trimmingIn = false;
+	bool trimmingOut = false;
+	bool trimmingRange = false;
+	float rangeAnchor = 0.f;
+	bool draggingScrollbar = false;
 	float dragStartScrollbarX = 0.f;
 
-	// ── callbacks ────────────────────────────────────────────────────────────
+	// callbacks
 	std::function<void(float)> onInPointChanged;
 	std::function<void(float)> onOutPointChanged;
 	std::function<void(float)> onScrubTo;
-	std::function<void()>      onCancelLoopPreview;
+	std::function<void()> onCancelLoopPreview;
 
-	// ── geometry helpers ─────────────────────────────────────────────────────
+	// geometry helpers
 
 	Rect waveformRect() const {
 		float waveW = box.size.x - WAVE_X - 4.f;
@@ -130,8 +129,8 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 	}
 
 	float getScrollbarThumbX() const {
-		Rect sr   = scrollbarRect();
-		float tw  = getScrollbarThumbWidth();
+		Rect sr = scrollbarRect();
+		float tw = getScrollbarThumbWidth();
 		float maxS = 1.0f - (1.0f / zoomLevel);
 		if (maxS <= 0.f) return sr.pos.x;
 		return sr.pos.x + (scrollPos / maxS) * (sr.size.x - tw);
@@ -143,7 +142,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 		}
 		else {
 			float maxS = 1.0f - (1.0f / zoomLevel);
-			scrollPos  = rack::math::clamp(scrollPos, 0.f, maxS);
+			scrollPos = rack::math::clamp(scrollPos, 0.f, maxS);
 		}
 	}
 
@@ -154,13 +153,11 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 	}
 
 	void resetTrimHandles() {
-		inPoint  = 0.f;
+		inPoint = 0.f;
 		outPoint = 1.f;
-		if (onInPointChanged)  onInPointChanged(inPoint);
+		if (onInPointChanged) onInPointChanged(inPoint);
 		if (onOutPointChanged) onOutPointChanged(outPoint);
 	}
-
-	// ── drawing ──────────────────────────────────────────────────────────────
 
 	void draw(const DrawArgs& args) override {
 		Rect waveRect = waveformRect();
@@ -177,12 +174,12 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 		// Waveform stroke color: shared with the header texts via viewMode
 		NVGcolor waveColor = previewColor;
 
-		// ── waveform ──────────────────────────────────────────────────────────
+		// waveform
 		if (cache && cacheReady && !cache->empty()) {
 			int numCh = (int)cache->samples.size();
 			float chH = waveH / numCh;
 			float visibleStart = scrollPos;
-			float visibleEnd   = std::min(scrollPos + 1.0f / zoomLevel, 1.0f);
+			float visibleEnd = std::min(scrollPos + 1.0f / zoomLevel, 1.0f);
 
 			// Clip the waveform line to the wave area — some peaks can exceed
 			// their channel's height (e.g. hot/clipping signals).
@@ -193,16 +190,17 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			nvgStrokeWidth(args.vg, 1.f);
 			nvgStrokeColor(args.vg, waveColor);
 
-			std::vector<float> wavePx, wavePy;
+			std::vector<float> wavePx;
+			std::vector<float> wavePy;
 			for (int ch = 0; ch < numCh; ch++) {
-				float chY  = waveY + ch * chH;
+				float chY = waveY + ch * chH;
 				float midY = chY + chH * 0.5f;
 				const auto& chSamples = cache->samples[ch];
 				int n = (int)chSamples.size();
 				if (n == 0) continue;
 
-				int startIdx = rack::math::clamp((int)(visibleStart * n),     0, n - 1);
-				int endIdx   = rack::math::clamp((int)(visibleEnd   * n) + 1, 0, n);
+				int startIdx = rack::math::clamp((int)(visibleStart * n), 0, n - 1);
+				int endIdx = rack::math::clamp((int)(visibleEnd * n) + 1, 0, n);
 
 				wavePx.clear();
 				wavePy.clear();
@@ -239,7 +237,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			// look more faint than quiet passages.
 			NVGcolor fadeColor = nvgRGB(0x12, 0x12, 0x12);
 			for (int ch = 0; ch < numCh; ch++) {
-				float chY  = waveY + ch * chH;
+				float chY = waveY + ch * chH;
 				float midY = chY + chH * 0.5f;
 
 				nvgBeginPath(args.vg);
@@ -260,21 +258,21 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			nvgRestore(args.vg);
 		}
 
-		// ── tick marks ───────────────────────────────────────────────────────
+		// tick marks
 		if (durationSeconds > 0.f && waveW > 0.f) {
-			float dur          = durationSeconds;
+			float dur = durationSeconds;
 			float visibleStart = scrollPos;
-			float visibleEnd   = std::min(scrollPos + 1.0f / zoomLevel, 1.0f);
+			float visibleEnd = std::min(scrollPos + 1.0f / zoomLevel, 1.0f);
 
 			static const float ivs[] = {0.5f, 1.f, 2.f, 5.f, 10.f, 30.f, 60.f, 300.f};
 			float tickIv = 1.f;
 			for (float iv : ivs) {
 				if ((dur / zoomLevel) / iv <= 14.f) { tickIv = iv; break; }
 			}
-			float tickY      = waveY + waveH;
-			float startTime  = visibleStart * dur;
-			float endTime    = visibleEnd * dur;
-			float firstTick  = std::floor(startTime / tickIv) * tickIv;
+			float tickY = waveY + waveH;
+			float startTime = visibleStart * dur;
+			float endTime = visibleEnd * dur;
+			float firstTick = std::floor(startTime / tickIv) * tickIv;
 			for (float t = firstTick; t <= endTime + 0.001f; t += tickIv) {
 				if (t < startTime) continue;
 				float tx = WAVE_X + (t / dur - scrollPos) * zoomLevel * waveW;
@@ -287,10 +285,10 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			}
 		}
 
-		// ── trim region + handles (suppressed in loop preview mode) ───────────
+		// trim region + handles (suppressed in loop preview mode)
 		if (!loopPreviewMode && hasFile) {
 			if ((inPoint > 0.f || outPoint < 1.f) && outPoint > inPoint) {
-				float x1 = rack::math::clamp(WAVE_X + (inPoint  - scrollPos) * zoomLevel * waveW, WAVE_X, WAVE_X + waveW);
+				float x1 = rack::math::clamp(WAVE_X + (inPoint - scrollPos) * zoomLevel * waveW, WAVE_X, WAVE_X + waveW);
 				float x2 = rack::math::clamp(WAVE_X + (outPoint - scrollPos) * zoomLevel * waveW, WAVE_X, WAVE_X + waveW);
 				if (x2 > x1) {
 					nvgBeginPath(args.vg);
@@ -303,10 +301,10 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			drawHandle(args.vg, inPoint,  true,  waveY, waveW, waveH);
 		}
 
-		// ── playhead ─────────────────────────────────────────────────────────
+		// playhead
 		if (hasFile) {
 			float ph = draggingPlayhead ? scrubPos
-			         : (modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f);
+				: (modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f);
 			float phX = WAVE_X + (ph - scrollPos) * zoomLevel * waveW;
 			if (phX >= WAVE_X && phX <= WAVE_X + waveW) {
 				nvgBeginPath(args.vg);
@@ -319,14 +317,14 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 				nvgBeginPath(args.vg);
 				nvgMoveTo(args.vg, phX - ts, waveY);
 				nvgLineTo(args.vg, phX + ts, waveY);
-				nvgLineTo(args.vg, phX,      waveY + ts * 1.6f);
+				nvgLineTo(args.vg, phX, waveY + ts * 1.6f);
 				nvgClosePath(args.vg);
 				nvgFillColor(args.vg, nvgRGBf(1.f, 1.f, 1.f));
 				nvgFill(args.vg);
 			}
 		}
 
-		// ── "Exit" button (loop preview mode) ─────────────────────────────────
+		// "Exit" button (loop preview mode)
 		if (loopPreviewMode) {
 			Rect br = exitButtonRect();
 			nvgBeginPath(args.vg);
@@ -343,12 +341,12 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
 		}
 
-		// ── background-task overlay ("Building waveform…", "Converting…", etc.) ──
+		// background-task overlay ("Building waveform…", "Converting…", etc.)
 		if (!statusMessage.empty()) {
 			drawStatusOverlay(args.vg, waveW, waveY, waveH, statusMessage.c_str(), statusColor);
 		}
 
-		// ── scrollbar ─────────────────────────────────────────────────────────
+		// scrollbar
 		if (zoomLevel > 1.0f) {
 			Rect sr = scrollbarRect();
 			if (sr.size.x > 0.f) {
@@ -361,7 +359,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			}
 		}
 
-		// ── readout (IN / OUT / LEN / POS) ────────────────────────────────────
+		// readout (IN / OUT / LEN / POS)
 		auto formatTime = [](float s) -> std::string {
 			if (s < 0.f) s = 0.f;
 			int mm = (int)(s / 60.f);
@@ -369,7 +367,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			return rack::string::f("%02d:%05.2f", mm, ss);
 		};
 		float ph = draggingPlayhead ? scrubPos
-		         : (modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f);
+			: (modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f);
 		float waveW2 = waveformRect().size.x;
 		float col = waveW2 / 4.f + 4.f;
 		nvgFontFaceId(args.vg, font->handle);
@@ -381,13 +379,11 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			nvgFillColor(args.vg, accent);
 			nvgText(args.vg, x + 21.f, box.size.y, formatTime(val).c_str(), nullptr);
 		};
-		drawReadout(WAVE_X,           "IN",  inPoint  * durationSeconds);
-		drawReadout(WAVE_X + col,     "OUT", outPoint * durationSeconds);
+		drawReadout(WAVE_X, "IN", inPoint * durationSeconds);
+		drawReadout(WAVE_X + col, "OUT", outPoint * durationSeconds);
 		drawReadout(WAVE_X + col * 2, "LEN", (outPoint - inPoint) * durationSeconds);
 		drawReadout(WAVE_X + col * 3, "POS", ph * durationSeconds);
 	}
-
-	// ── interaction ──────────────────────────────────────────────────────────
 
 	void onButton(const event::Button& e) override {
 		// "Exit" button (loop preview mode)
@@ -411,8 +407,8 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			}
 			else if (zoomLevel > 1.f) {
 				float newTx = rack::math::clamp(e.pos.x - tw * 0.5f, sr.pos.x, sr.pos.x + sr.size.x - tw);
-				float maxS  = 1.0f - (1.0f / zoomLevel);
-				scrollPos   = ((newTx - sr.pos.x) / (sr.size.x - tw)) * maxS;
+				float maxS = 1.0f - (1.0f / zoomLevel);
+				scrollPos = ((newTx - sr.pos.x) / (sr.size.x - tw)) * maxS;
 				draggingScrollbar = true;
 				dragStartScrollbarX = APP->scene->rack->getMousePos().x;
 			}
@@ -424,35 +420,41 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			Rect r = waveformRect();
 			if (r.contains(e.pos)) {
 				bool shift = (e.mods & RACK_MOD_SHIFT) != 0;
-				bool ctrl  = (e.mods & RACK_MOD_CTRL) != 0;
+				bool ctrl = (e.mods & RACK_MOD_CTRL) != 0;
 
 				if (shift && !loopPreviewMode) {
-					float pos      = posToNormalized(e.pos);
+					float pos = posToNormalized(e.pos);
 					dragStartRackX = APP->scene->rack->getMousePos().x;
 					dragStartScrub = pos;
 
-					bool hasRange   = (inPoint > 0.f || outPoint < 1.f);
-					float inScreenX  = r.pos.x + (inPoint  - scrollPos) * zoomLevel * r.size.x;
+					bool hasRange = (inPoint > 0.f || outPoint < 1.f);
+					float inScreenX = r.pos.x + (inPoint - scrollPos) * zoomLevel * r.size.x;
 					float outScreenX = r.pos.x + (outPoint - scrollPos) * zoomLevel * r.size.x;
 					const float thresh = 8.f;
-					bool nearIn  = hasRange && std::abs(e.pos.x - inScreenX)  < thresh;
+					bool nearIn = hasRange && std::abs(e.pos.x - inScreenX) < thresh;
 					bool nearOut = hasRange && std::abs(e.pos.x - outScreenX) < thresh;
 
-					if (nearIn)        { trimmingIn = true;  dragStartScrub = inPoint; }
-					else if (nearOut)  { trimmingOut = true; dragStartScrub = outPoint; }
+					if (nearIn) {
+						trimmingIn = true;
+						dragStartScrub = inPoint;
+					}
+					else if (nearOut) {
+						trimmingOut = true;
+						dragStartScrub = outPoint;
+					}
 					else {
-						rangeAnchor   = pos;
-						inPoint       = pos;
-						outPoint      = pos;
+						rangeAnchor = pos;
+						inPoint = pos;
+						outPoint = pos;
 						trimmingRange = true;
-						if (onInPointChanged)  onInPointChanged(inPoint);
+						if (onInPointChanged) onInPointChanged(inPoint);
 						if (onOutPointChanged) onOutPointChanged(outPoint);
 					}
 				}
 				else if (!ctrl) {
-					scrubPos         = posToNormalized(e.pos);
-					dragStartRackX   = APP->scene->rack->getMousePos().x;
-					dragStartScrub   = scrubPos;
+					scrubPos = posToNormalized(e.pos);
+					dragStartRackX = APP->scene->rack->getMousePos().x;
+					dragStartScrub = scrubPos;
 					draggingPlayhead = true;
 				}
 				// Ctrl held (or loop preview) → onDragStart fires the file drop
@@ -474,12 +476,12 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 		if (draggingScrollbar) {
 			Rect sr = scrollbarRect();
 			if (sr.size.x > 0.f) {
-				float tw  = getScrollbarThumbWidth();
-				float dx  = APP->scene->rack->getMousePos().x - dragStartScrollbarX;
+				float tw = getScrollbarThumbWidth();
+				float dx = APP->scene->rack->getMousePos().x - dragStartScrollbarX;
 				float newTx = rack::math::clamp(getScrollbarThumbX() + dx,
 					sr.pos.x, sr.pos.x + sr.size.x - tw);
-				float maxS  = 1.0f - (1.0f / zoomLevel);
-				scrollPos   = ((newTx - sr.pos.x) / (sr.size.x - tw)) * maxS;
+				float maxS = 1.0f - (1.0f / zoomLevel);
+				scrollPos = ((newTx - sr.pos.x) / (sr.size.x - tw)) * maxS;
 				dragStartScrollbarX = APP->scene->rack->getMousePos().x;
 			}
 			return;
@@ -487,7 +489,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 
 		Rect r = waveformRect();
 		if (r.size.x <= 0.f) return;
-		float dx  = APP->scene->rack->getMousePos().x - dragStartRackX;
+		float dx = APP->scene->rack->getMousePos().x - dragStartRackX;
 		float pos = dragStartScrub + dx / (r.size.x * zoomLevel);
 
 		if (trimmingIn) {
@@ -500,9 +502,9 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 		}
 		else if (trimmingRange) {
 			float cp = rack::math::clamp(pos, 0.f, 1.f);
-			inPoint  = std::min(rangeAnchor, cp);
+			inPoint = std::min(rangeAnchor, cp);
 			outPoint = std::max(rangeAnchor, cp);
-			if (onInPointChanged)  onInPointChanged(inPoint);
+			if (onInPointChanged) onInPointChanged(inPoint);
 			if (onOutPointChanged) onOutPointChanged(outPoint);
 		}
 		else if (draggingPlayhead && hasFile) {
@@ -515,7 +517,10 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 	}
 
 	void onDragEnd(const event::DragEnd& e) override {
-		if (draggingScrollbar) { draggingScrollbar = false; return; }
+		if (draggingScrollbar) {
+			draggingScrollbar = false;
+			return;
+		}
 		if (draggingPlayhead)  {
 			draggingPlayhead = false;
 			if (onScrubTo) onScrubTo(scrubPos);
@@ -525,8 +530,9 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			trimmingIn = trimmingOut = trimmingRange = false;
 			return;
 		}
-		if (dropHandler && dropHandler->active)
+		if (dropHandler && dropHandler->active) {
 			dropHandler->endDrag(APP->scene->mousePos, worker);
+		}
 	}
 
 	void onHoverScroll(const HoverScrollEvent& e) override {
@@ -536,8 +542,9 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			: scrollPos;
 		float factor = (e.scrollDelta.y > 0) ? 1.3f : (1.f / 1.3f);
 		zoomLevel = rack::math::clamp(zoomLevel * factor, 1.0f, 10.0f);
-		if (r.size.x > 0.f)
+		if (r.size.x > 0.f) {
 			scrollPos = cursorNorm - (e.pos.x - r.pos.x) / (r.size.x * zoomLevel);
+		}
 		clampScrollPos();
 		e.consume(this);
 	}
@@ -566,8 +573,9 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			// Forward browser-navigation keys to the module widget
 			if (e.key == GLFW_KEY_SPACE || e.key == GLFW_KEY_UP || e.key == GLFW_KEY_DOWN
 					|| e.key == GLFW_KEY_LEFT || e.key == GLFW_KEY_RIGHT) {
-				if (ModuleWidget* mw = getAncestorOfType<ModuleWidget>())
+				if (ModuleWidget* mw = getAncestorOfType<ModuleWidget>()) {
 					mw->onSelectKey(e);
+				}
 				return;
 			}
 		}

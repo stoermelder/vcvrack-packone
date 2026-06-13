@@ -21,11 +21,10 @@ struct SirenTagBar;
 
 static constexpr float BROWSER_TAG_H = 58.f;
 
-// ─── single row in the tree ───────────────────────────────────────────────────
-
+// single row in the tree
 struct SirenTreeRow : widget::OpaqueWidget {
-	static constexpr float ROW_H   = 12.f;
-	static constexpr float INDENT  = 8.f;
+	static constexpr float ROW_H = 12.f;
+	static constexpr float INDENT = 8.f;
 
 	// Favorite star button (file rows only)
 	struct StarButton : widget::OpaqueWidget {
@@ -130,8 +129,12 @@ struct SirenTreeRow : widget::OpaqueWidget {
 		float h = ROW_H;
 
 		BNDwidgetState state = BND_DEFAULT;
-		if (selected) state = BND_ACTIVE;
-		else if (APP->event->getHoveredWidget() == this) state = BND_HOVER;
+		if (selected) {
+			state = BND_ACTIVE;
+		}
+		else if (APP->event->getHoveredWidget() == this) {
+			state = BND_HOVER;
+		}
 
 		if (state != BND_DEFAULT) {
 			nvgBeginPath(args.vg);
@@ -196,8 +199,7 @@ struct SirenTreeRow : widget::OpaqueWidget {
 	void onDragEnd(const event::DragEnd& e) override;
 };
 
-// ─── ScrollWidget with a narrower vertical scrollbar ─────────────────────────
-
+// ScrollWidget with a narrower vertical scrollbar
 struct SirenScrollWidget : ui::ScrollWidget {
 	static constexpr float SCROLLBAR_W = 6.f;
 	void step() override {
@@ -209,11 +211,10 @@ struct SirenScrollWidget : ui::ScrollWidget {
 	}
 };
 
-// ─── SirenBrowserPane (tag bar added after SirenTagBar is defined) ────────────
-
+// SirenBrowserPane (tag bar added after SirenTagBar is defined)
 struct SirenBrowserPane : widget::OpaqueWidget {
 	std::function<void(const DataSourceNode&, bool)> onFileSelected;
-	std::function<void()>    onAddRoot;
+	std::function<void()> onAddRoot;
 	std::function<void(int)> onSelectRoot;
 
 	// Fired right before the active DataSource is destroyed (root switch/removal),
@@ -284,7 +285,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 	struct TreeEntry {
 		DataSourceNode node;
-		int indent    = 0;
+		int indent = 0;
 		bool expanded = false;
 	};
 	std::vector<TreeEntry> rows;
@@ -353,14 +354,15 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 	std::string getRootDisplayName(int idx) const {
 		if (idx < 0 || idx >= (int)rootContainers.size()) return "";
-		if (idx == activeRootIdx && activeDs)
+		if (idx == activeRootIdx && activeDs) {
 			return activeDs->getRootDisplayName();
+		}
 		return FileSystemDataSource::rootDisplayName(rootContainers[idx]);
 	}
 
 	void setRoots(const std::vector<std::string>& roots, int activeIdx) {
 		rootContainers = roots;
-		activeRootIdx  = activeIdx;
+		activeRootIdx = activeIdx;
 		if (activeRootIdx >= 0 && activeRootIdx < (int)rootContainers.size()) {
 			loadRoot(rootContainers[activeRootIdx]);
 		}
@@ -472,8 +474,8 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		entry.expanded = true;
 		requestRebuild();
 
-		std::string id    = entry.node.relativePath;
-		int insertIdx     = rowIdx + 1;
+		std::string id = entry.node.relativePath;
+		int insertIdx = rowIdx + 1;
 
 		if (worker && activeDs) {
 			int gen = treeGeneration.load(std::memory_order_relaxed);
@@ -502,14 +504,16 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			if (favoritesOnly && !sm.favorite) continue;
 			if (!tagFilter.empty()) {
 				bool hasAll = true;
-				for (const std::string& t : tagFilter)
+				for (const std::string& t : tagFilter) {
 					if (std::find(sm.tags.begin(), sm.tags.end(), t) == sm.tags.end()) { hasAll = false; break; }
+				}
 				if (!hasAll) continue;
 			}
 			if (!tagExcludeFilter.empty()) {
 				bool hasAny = false;
-				for (const std::string& t : tagExcludeFilter)
+				for (const std::string& t : tagExcludeFilter) {
 					if (std::find(sm.tags.begin(), sm.tags.end(), t) != sm.tags.end()) { hasAny = true; break; }
+				}
 				if (hasAny) continue;
 			}
 			return true;
@@ -518,16 +522,19 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	}
 
 	int findTreeIdx(const std::string& id) {
-		for (int i = 0; i < (int)rows.size(); i++)
+		for (int i = 0; i < (int)rows.size(); i++) {
 			if (rows[i].node.relativePath == id) return i;
+		}
 		return -1;
 	}
 
 	std::vector<SirenTreeRow*> visibleRowWidgets() {
 		std::vector<SirenTreeRow*> result;
-		for (Widget* w : rowContainer->children)
-			if (auto* r = dynamic_cast<SirenTreeRow*>(w))
+		for (Widget* w : rowContainer->children) {
+			if (auto* r = dynamic_cast<SirenTreeRow*>(w)) {
 				result.push_back(r);
+			}
+		}
 		return result;
 	}
 
@@ -538,10 +545,12 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			float rowTop = r->box.pos.y;
 			float rowBot = rowTop + r->box.size.y;
 			float viewH  = scrollWidget->box.size.y;
-			if (rowTop < scrollWidget->offset.y)
+			if (rowTop < scrollWidget->offset.y) {
 				scrollWidget->offset.y = rowTop;
-			else if (rowBot > scrollWidget->offset.y + viewH)
+			}
+			else if (rowBot > scrollWidget->offset.y + viewH) {
 				scrollWidget->offset.y = rowBot - viewH;
+			}
 			break;
 		}
 	}
@@ -550,8 +559,9 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		selectedPath = node.relativePath;
 		requestRebuild();
 		scrollAfterRebuild = true;
-		if (!node.isContainer && onFileSelected)
+		if (!node.isContainer && onFileSelected) {
 			onFileSelected(node, startPlay);
+		}
 	}
 
 	// Marks `node` as the selected row without invoking onFileSelected, used when
@@ -612,9 +622,11 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		MetadataStore* meta = ds->getMetadata();
 
 		classifyTask.onApply = [this, meta, ds](const std::map<std::string, std::set<std::string>>& filtered) {
-			for (const auto& pair : filtered)
-				for (const std::string& r : pair.second)
+			for (const auto& pair : filtered) {
+				for (const std::string& r : pair.second) {
 					meta->addTag(r, pair.first);
+				}
+			}
 			if (ds) ds->saveMetadata();
 			requestRebuild();
 		};
@@ -628,8 +640,9 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		if (vr.empty()) return false;
 
 		int selIdx = -1;
-		for (int i = 0; i < (int)vr.size(); i++)
+		for (int i = 0; i < (int)vr.size(); i++) {
 			if (vr[i]->selected) { selIdx = i; break; }
+		}
 
 		if (key == GLFW_KEY_UP) {
 			selectPath(vr[(selIdx <= 0) ? 0 : selIdx - 1]->node);
@@ -711,8 +724,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 };
 
 
-// ─── Single tag chip widget ───────────────────────────────────────────────────
-
+// Single tag chip widget
 struct SirenTagChip : widget::OpaqueWidget {
 	static constexpr float CHIP_H = 10.f;
 
@@ -731,9 +743,10 @@ struct SirenTagChip : widget::OpaqueWidget {
 	void draw(const DrawArgs& args) override {
 		bool included = pane && pane->tagFilter.count(tag) > 0;
 		bool excluded = pane && pane->tagExcludeFilter.count(tag) > 0;
-		bool hovered  = APP->event->getHoveredWidget() == this;
+		bool hovered = APP->event->getHoveredWidget() == this;
 
-		NVGcolor bgColor, fgColor;
+		NVGcolor bgColor;
+		NVGcolor fgColor;
 		if (included) {
 			bgColor = bndGetTheme()->toolTheme.innerSelectedColor;
 			fgColor = bndGetTheme()->toolTheme.textSelectedColor;
@@ -799,17 +812,16 @@ struct SirenTagChip : widget::OpaqueWidget {
 };
 
 
-// ─── Tag chip container (scrollable content inside SirenTagBar) ───────────────
-
+// Tag chip container (scrollable content inside SirenTagBar)
 struct SirenTagContainer : widget::OpaqueWidget {
-	SirenBrowserPane* pane            = nullptr;
-	widget::Widget*   scrollContainer = nullptr;  // scrollWidget->container; updated after layout
-	bool              layoutDirty     = true;
+	SirenBrowserPane* pane = nullptr;
+	widget::Widget* scrollContainer = nullptr;  // scrollWidget->container; updated after layout
+	bool layoutDirty = true;
 
-	static constexpr float CHIP_H     = SirenTagChip::CHIP_H;
+	static constexpr float CHIP_H = SirenTagChip::CHIP_H;
 	static constexpr float ROW_STRIDE = CHIP_H + 2.f;
-	static constexpr float PAD_X      = 4.f;
-	static constexpr float PAD_Y      = 4.f;
+	static constexpr float PAD_X = 4.f;
+	static constexpr float PAD_Y = 4.f;
 
 	// Mark for rebuild; actual chip creation is deferred to draw() so NVG is ready.
 	void layout() { layoutDirty = true; }
@@ -838,9 +850,9 @@ struct SirenTagContainer : widget::OpaqueWidget {
 			if (x + tw > box.size.x - PAD_X) { y += ROW_STRIDE; x = PAD_X; }
 
 			SirenTagChip* chip = new SirenTagChip;
-			chip->pane     = pane;
-			chip->tag      = t;
-			chip->box.pos  = Vec(x, y);
+			chip->pane = pane;
+			chip->tag = t;
+			chip->box.pos = Vec(x, y);
 			chip->box.size = Vec(tw, CHIP_H);
 			addChild(chip);
 
@@ -877,22 +889,21 @@ struct SirenTagContainer : widget::OpaqueWidget {
 };
 
 
-// ─── Tag bar: separator + scrollable tag chip area ────────────────────────────
-
+// Tag bar: separator + scrollable tag chip area
 struct SirenTagBar : widget::OpaqueWidget {
-	SirenScrollWidget* scrollWidget  = nullptr;
-	SirenTagContainer* tagContainer  = nullptr;
+	SirenScrollWidget* scrollWidget = nullptr;
+	SirenTagContainer* tagContainer = nullptr;
 
 	void init(SirenBrowserPane* pane) {
 		scrollWidget = new SirenScrollWidget;
-		scrollWidget->box.pos  = Vec(0.f, 1.f);  // 1 px below separator
+		scrollWidget->box.pos = Vec(0.f, 1.f);  // 1 px below separator
 		scrollWidget->box.size = Vec(box.size.x, box.size.y - 1.f);
 		addChild(scrollWidget);
 
 		tagContainer = new SirenTagContainer;
-		tagContainer->pane            = pane;
+		tagContainer->pane = pane;
 		tagContainer->scrollContainer = scrollWidget->container;
-		tagContainer->box.pos  = Vec(0.f, 0.f);
+		tagContainer->box.pos = Vec(0.f, 0.f);
 		tagContainer->box.size = Vec(box.size.x - SirenScrollWidget::SCROLLBAR_W, 0.f);
 		scrollWidget->container->addChild(tagContainer);
 
@@ -903,8 +914,9 @@ struct SirenTagBar : widget::OpaqueWidget {
 	void layout() {
 		if (!tagContainer) return;
 		tagContainer->box.size.x = box.size.x - SirenScrollWidget::SCROLLBAR_W;
-		if (tagContainer->box.size.y <= 0.f)
+		if (tagContainer->box.size.y <= 0.f) {
 			tagContainer->box.size.y = SirenTagContainer::CHIP_H + SirenTagContainer::PAD_Y * 2.f;
+		}
 		tagContainer->layout();
 	}
 
@@ -932,7 +944,7 @@ struct SirenTagBar : widget::OpaqueWidget {
 };
 
 
-// ─── SirenBrowserPane deferred method implementations ────────────────────────
+// SirenBrowserPane deferred method implementations
 
 inline void SirenBrowserPane::init(TaskWorker* tw) {
 	worker = tw;
@@ -954,7 +966,7 @@ inline void SirenBrowserPane::setSize(Vec size) {
 	scrollWidget->box.size = Vec(size.x, size.y - BROWSER_TAG_H);
 	rowContainer->box.size.x = size.x;
 
-	tagBar->box.pos  = Vec(0.f, size.y - BROWSER_TAG_H);
+	tagBar->box.pos = Vec(0.f, size.y - BROWSER_TAG_H);
 	tagBar->box.size = Vec(size.x, BROWSER_TAG_H);
 	tagBar->scrollWidget->box.size = Vec(size.x, BROWSER_TAG_H - 1.f);
 	tagBar->layout();
@@ -975,12 +987,15 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 		const DataSourceNode& n = entry.node;
 
 		if (!sq.empty() && activeDs) {
-			if (!activeDs->matchesSearch(n.relativePath, n.isContainer, sq)) continue;
+			if (!activeDs->matchesSearch(n.relativePath, n.isContainer, sq)) {
+				continue;
+			}
 		}
 
 		if (n.isContainer) {
-			if ((favoritesOnly || !tagFilter.empty() || !tagExcludeFilter.empty()) && !containerHasMatchingDescendant(i, meta))
+			if ((favoritesOnly || !tagFilter.empty() || !tagExcludeFilter.empty()) && !containerHasMatchingDescendant(i, meta)) {
 				continue;
+			}
 		}
 		else {
 			if (favoritesOnly && meta && !meta->isFavorite(n.relativePath))
@@ -989,14 +1004,16 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 				auto tags = meta->getTags(n.relativePath);
 				if (!tagFilter.empty()) {
 					bool hasAll = true;
-					for (const std::string& t : tagFilter)
+					for (const std::string& t : tagFilter) {
 						if (std::find(tags.begin(), tags.end(), t) == tags.end()) { hasAll = false; break; }
+					}
 					if (!hasAll) continue;
 				}
 				if (!tagExcludeFilter.empty()) {
 					bool hasAny = false;
-					for (const std::string& t : tagExcludeFilter)
+					for (const std::string& t : tagExcludeFilter) {
 						if (std::find(tags.begin(), tags.end(), t) != tags.end()) { hasAny = true; break; }
+					}
 					if (hasAny) continue;
 				}
 			}
@@ -1004,10 +1021,10 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 
 		SirenTreeRow* row = new SirenTreeRow;
 		row->init(n, entry.indent, this);
-		row->selected     = (n.relativePath == selectedPath);
-		row->expanded     = entry.expanded;
-		row->box.pos      = Vec(0.f, y);
-		row->box.size     = Vec(box.size.x - SirenScrollWidget::SCROLLBAR_W, SirenTreeRow::ROW_H);
+		row->selected = (n.relativePath == selectedPath);
+		row->expanded = entry.expanded;
+		row->box.pos = Vec(0.f, y);
+		row->box.size = Vec(box.size.x - SirenScrollWidget::SCROLLBAR_W, SirenTreeRow::ROW_H);
 		rowContainer->addChild(row);
 		y += SirenTreeRow::ROW_H;
 	}
@@ -1018,7 +1035,7 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 }
 
 
-// ─── SirenTreeRow out-of-line method implementations ─────────────────────────
+// SirenTreeRow out-of-line method implementations
 
 inline void SirenTreeRow::onButton(const event::Button& e) {
 	if (starBtn && starBtn->box.contains(e.pos)) {
@@ -1062,9 +1079,11 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 				if (!meta) return;
 				if (node.isContainer) {
 					const std::string prefix = node.relativePath + "/";
-					for (auto& pair : meta->samples)
-						if (pair.first.compare(0, prefix.size(), prefix) == 0)
+					for (auto& pair : meta->samples) {
+						if (pair.first.compare(0, prefix.size(), prefix) == 0) {
 							meta->clearTags(pair.first);
+						}
+					}
 				}
 				else {
 					meta->clearTags(node.relativePath);
@@ -1080,8 +1099,9 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 
 inline void SirenTreeRow::onDragStart(const event::DragStart& e) {
 	if (node.isContainer) return;
-	if (pane && pane->dropHandler)
+	if (pane && pane->dropHandler) {
 		pane->dropHandler->startDrag(node.relativePath, node.name);
+	}
 	e.consume(this);
 }
 

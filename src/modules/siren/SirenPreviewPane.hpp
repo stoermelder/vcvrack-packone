@@ -12,7 +12,7 @@
 namespace StoermelderPackOne {
 namespace Siren {
 
-// ─── SirenPreviewPane ─────────────────────────────────────────────────────────
+// SirenPreviewPane
 // Orchestrates the preview region: top bar (file info, play button) + the
 // SirenWaveformCanvas child widget.  Owns all file-state, waveform caches, and
 // loop-preview generation logic.
@@ -25,19 +25,18 @@ namespace Siren {
 //      canvas's loopPreviewMode (gold waveform, no trim handles).
 //   4. Dropping while in loop-preview mode regenerates the loop on disk.
 //   5. "Cancel loop preview" returns to the normal file stream.
-
 struct SirenPreviewPane : widget::OpaqueWidget {
 	static constexpr float TB_H = 50.f;
 
-	// ── file state ───────────────────────────────────────────────────────────
+	// file state
 	DataSourceNode currentNode;
 	// Held via shared_ptr so worker tasks that captured a copy (waveform cache
 	// build, loop preview, BPM detection) keep the source alive even if the
 	// active root is switched while they're running.
 	std::shared_ptr<DataSource> source;
-	std::string  displayName;
-	std::string  relPath;
-	AudioInfo    info;
+	std::string displayName;
+	std::string relPath;
+	AudioInfo info;
 
 	// Lowest-priority source for the canvas's background-task overlay: returns
 	// a status message (e.g. "Indexing… N / M") or "" if nothing to show.
@@ -45,61 +44,61 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	// progress here without this pane depending on its type.
 	std::function<std::string()> externalStatusMessage;
 
-	// ── normal waveform cache ─────────────────────────────────────────────────
-	WaveformCache     cache;
+	// normal waveform cache
+	WaveformCache cache;
 	std::atomic<bool> cacheReady{false};
 	std::atomic<bool> cacheBuilding{false};
 
 	struct PendingCache { WaveformCache cache; int gen = -1; bool valid = false; };
 	std::atomic<int> cacheGeneration{0};
-	PendingCache     pendingCache;
+	PendingCache pendingCache;
 	std::atomic<bool> pendingCacheReady{false};
 
 	float loopCrossfadeDuration = 6.f;
-	float repitchSemitones      = 0.f;
-	float repitchCents          = 0.f;
+	float repitchSemitones = 0.f;
+	float repitchCents = 0.f;
 
 	// Total pitch shift in semitones, combining the semitone and cent sliders.
 	float repitchTotalSemitones() const { return repitchSemitones + repitchCents / 100.f; }
 
-	// ── loop-preview state ────────────────────────────────────────────────────
-	bool          loopPreviewActive   = false;
-	bool          loopPreviewBuilding = false;  // worker running, not yet active
-	bool          previewIsRepitch    = false;  // true if the active preview was generated via repitch
+	// loop-preview state
+	bool loopPreviewActive = false;
+	bool loopPreviewBuilding = false;  // worker running, not yet active
+	bool previewIsRepitch = false;  // true if the active preview was generated via repitch
 	WaveformCache loopCache;
-	bool          loopCacheReady     = false;
-	float         loopDurationSeconds = 0.f;
+	bool loopCacheReady = false;
+	float loopDurationSeconds = 0.f;
 
 	struct PendingLoopPreview {
 		std::vector<float> samples;
-		int   channels        = 0;
-		int   sampleRate      = 0;
+		int channels = 0;
+		int sampleRate = 0;
 		float durationSeconds = 0.f;
 		WaveformCache cache;
-		bool  valid           = false;
+		bool valid = false;
 	};
 	PendingLoopPreview pendingLoop;
-	std::atomic<bool>  pendingLoopReady{false};
+	std::atomic<bool> pendingLoopReady{false};
 
-	// ── child widget ──────────────────────────────────────────────────────────
+	// child widget
 	SirenWaveformCanvas* canvas = nullptr;
 
-	// ── module interface ──────────────────────────────────────────────────────
-	std::function<void(const std::string&, DataSource*)>      openStreamCallback;
+	// module interface
+	std::function<void(const std::string&, DataSource*)> openStreamCallback;
 	std::function<void(std::unique_ptr<AudioStream>, int64_t)> adoptStreamCallback;
-	std::function<void(float)>                                 startPlaybackCallback;
-	std::function<void()>                                      stopPlaybackCallback;
+	std::function<void(float)> startPlaybackCallback;
+	std::function<void()> stopPlaybackCallback;
 
 	std::atomic<float>* modulePlayheadPos = nullptr;
-	std::atomic<bool>*  modulePlaying     = nullptr;
-	std::atomic<float>* moduleInPoint     = nullptr;
-	std::atomic<float>* moduleOutPoint    = nullptr;
+	std::atomic<bool>* modulePlaying = nullptr;
+	std::atomic<float>* moduleInPoint = nullptr;
+	std::atomic<float>* moduleOutPoint = nullptr;
 
 	SirenDropHandler* dropHandler = nullptr;
-	TaskWorker*       worker      = nullptr;
-	std::string       cacheDir;
+	TaskWorker* worker = nullptr;
+	std::string cacheDir;
 
-	// ── BPM ───────────────────────────────────────────────────────────────────
+	// BPM
 	std::atomic<float> bpm{0.f};
 	Rect bpmHitRect;
 
@@ -117,20 +116,20 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	std::function<void()> onMetadataChanged;
 	std::function<void(const std::string&)> onSetSearchQuery;
 
-	// ── public accessors for SirenWidget ─────────────────────────────────────
+	// public accessors for SirenWidget
 	bool isLoopPreviewActive() const { return loopPreviewActive && !previewIsRepitch; }
 	bool isRepitchPreviewActive() const { return loopPreviewActive && previewIsRepitch; }
 
-	// ── init ─────────────────────────────────────────────────────────────────
+	// init
 
 	void init(TaskWorker* tw, SirenDropHandler* dh) {
-		worker      = tw;
+		worker = tw;
 		dropHandler = dh;
 
 		canvas = new SirenWaveformCanvas;
-		canvas->box.pos   = Vec(0.f, TB_H);
+		canvas->box.pos = Vec(0.f, TB_H);
 		canvas->dropHandler = dh;
-		canvas->worker      = tw;
+		canvas->worker = tw;
 
 		canvas->onInPointChanged = [this](float v) {
 			if (moduleInPoint) moduleInPoint->store(v, std::memory_order_relaxed);
@@ -148,33 +147,33 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		addChild(canvas);
 	}
 
-	// ── file loading ──────────────────────────────────────────────────────────
+	// file loading
 
 	void loadItem(const DataSourceNode& node, std::shared_ptr<DataSource> src,
 	              bool startPlay = false, bool forceRebuild = false) {
 		const std::string& id = node.relativePath;
 
 		if (stopPlaybackCallback) stopPlaybackCallback();
-		if (openStreamCallback)   openStreamCallback(id, src.get());
+		if (openStreamCallback) openStreamCallback(id, src.get());
 
-		currentNode   = node;
-		source        = src;
-		displayName   = !node.name.empty() ? node.name : (src && !id.empty() ? src->getDisplayName(id) : "");
-		relPath       = id;
-		cacheReady    = false;
+		currentNode = node;
+		source = src;
+		displayName = !node.name.empty() ? node.name : (src && !id.empty() ? src->getDisplayName(id) : "");
+		relPath = id;
+		cacheReady = false;
 		cacheBuilding = false;
 		pendingCacheReady.store(false, std::memory_order_relaxed);
 		int gen = ++cacheGeneration;
 
 		// Cancel any active loop preview when a new file is loaded
-		loopPreviewActive   = false;
+		loopPreviewActive = false;
 		loopPreviewBuilding = false;
-		loopCacheReady      = false;
+		loopCacheReady = false;
 		loopDurationSeconds = 0.f;
-		loopCache           = WaveformCache{};
+		loopCache = WaveformCache{};
 
 		if (canvas) {
-			canvas->inPoint  = 0.f;
+			canvas->inPoint = 0.f;
 			canvas->outPoint = 1.f;
 			canvas->scrubPos = 0.f;
 			canvas->zoomLevel = 1.0f;
@@ -207,12 +206,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			}
 		}
 
-		int64_t ts        = src->getTimestamp(id);
+		int64_t ts = src->getTimestamp(id);
 		std::string cacheFile = cachePathFor(id);
 		if (!forceRebuild) {
 			WaveformCache loaded;
 			if (loadWaveformCacheFile(cacheFile, ts, loaded) && loaded.sampleCount > 0) {
-				cache      = std::move(loaded);
+				cache = std::move(loaded);
 				cacheReady = true;
 				if (startPlay) startPlaybackFrom(0.f);
 				return;
@@ -224,7 +223,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		int pw = canvas ? (int)canvas->box.size.x - (int)SirenWaveformCanvas::WAVE_X - 8 : 512;
 		if (pw < 64) pw = 512;
 
-		std::string cacheCopy    = cacheFile;
+		std::string cacheCopy = cacheFile;
 		std::string cacheDirCopy = cacheDir;
 		worker->work([this, id, ts, src, cacheCopy, cacheDirCopy, pw, gen]() {
 			WaveformCache built;
@@ -234,7 +233,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				saveWaveformCacheFile(cacheCopy, built);
 			}
 			pendingCache.cache = std::move(built);
-			pendingCache.gen   = gen;
+			pendingCache.gen = gen;
 			pendingCache.valid = ok;
 			pendingCacheReady.store(true, std::memory_order_release);
 		});
@@ -242,21 +241,21 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		if (startPlay) startPlaybackFrom(0.f);
 	}
 
-	// ── loop preview ─────────────────────────────────────────────────────────
+	// loop preview
 
 	void generateLoopPreview() {
 		if (!source || currentNode.relativePath.empty() || !worker) return;
 
 		loopPreviewBuilding = true;
-		loopPreviewActive   = false;
-		previewIsRepitch    = false;
-		loopCacheReady      = false;
-		loopCache           = WaveformCache{};
+		loopPreviewActive = false;
+		previewIsRepitch = false;
+		loopCacheReady = false;
+		loopCache = WaveformCache{};
 
 		std::shared_ptr<DataSource> srcCopy = source;
-		std::string idCopy  = currentNode.relativePath;
-		float trimIn   = canvas ? canvas->inPoint  : 0.f;
-		float trimOut  = canvas ? canvas->outPoint : 1.f;
+		std::string idCopy = currentNode.relativePath;
+		float trimIn = canvas ? canvas->inPoint : 0.f;
+		float trimOut = canvas ? canvas->outPoint : 1.f;
 		float duration = loopCrossfadeDuration;
 		int pw = canvas ? (int)canvas->box.size.x - (int)SirenWaveformCanvas::WAVE_X - 8 : 512;
 		if (pw < 64) pw = 512;
@@ -273,12 +272,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				WaveformCache wc;
 				buildWaveformCache(0, ms, pw, wc);
 
-				pendingLoop.samples       = std::move(result.samples);
-				pendingLoop.channels      = result.channels;
-				pendingLoop.sampleRate    = result.sampleRate;
-				pendingLoop.durationSeconds = result.durationSeconds;
-				pendingLoop.cache         = std::move(wc);
-				pendingLoop.valid         = true;
+			pendingLoop.samples = std::move(result.samples);
+			pendingLoop.channels = result.channels;
+			pendingLoop.sampleRate = result.sampleRate;
+			pendingLoop.durationSeconds = result.durationSeconds;
+			pendingLoop.cache = std::move(wc);
+			pendingLoop.valid = true;
 			}
 			else {
 				pendingLoop.valid = false;
@@ -291,15 +290,15 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		if (!source || currentNode.relativePath.empty() || !worker) return;
 
 		loopPreviewBuilding = true;
-		loopPreviewActive   = false;
-		previewIsRepitch    = true;
-		loopCacheReady      = false;
-		loopCache           = WaveformCache{};
+		loopPreviewActive = false;
+		previewIsRepitch = true;
+		loopCacheReady = false;
+		loopCache = WaveformCache{};
 
 		std::shared_ptr<DataSource> srcCopy = source;
-		std::string idCopy  = currentNode.relativePath;
-		float trimIn   = canvas ? canvas->inPoint  : 0.f;
-		float trimOut  = canvas ? canvas->outPoint : 1.f;
+		std::string idCopy = currentNode.relativePath;
+		float trimIn = canvas ? canvas->inPoint : 0.f;
+		float trimOut = canvas ? canvas->outPoint : 1.f;
 		float semitones = repitchTotalSemitones();
 		int pw = canvas ? (int)canvas->box.size.x - (int)SirenWaveformCanvas::WAVE_X - 8 : 512;
 		if (pw < 64) pw = 512;
@@ -316,12 +315,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				WaveformCache wc;
 				buildWaveformCache(0, ms, pw, wc);
 
-				pendingLoop.samples       = std::move(result.samples);
-				pendingLoop.channels      = result.channels;
-				pendingLoop.sampleRate    = result.sampleRate;
+				pendingLoop.samples = std::move(result.samples);
+				pendingLoop.channels = result.channels;
+				pendingLoop.sampleRate = result.sampleRate;
 				pendingLoop.durationSeconds = result.durationSeconds;
-				pendingLoop.cache         = std::move(wc);
-				pendingLoop.valid         = true;
+				pendingLoop.cache = std::move(wc);
+				pendingLoop.valid = true;
 			}
 			else {
 				pendingLoop.valid = false;
@@ -331,31 +330,31 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void cancelLoopPreview() {
-		loopPreviewActive   = false;
+		loopPreviewActive = false;
 		loopPreviewBuilding = false;
-		previewIsRepitch    = false;
-		loopCacheReady      = false;
+		previewIsRepitch = false;
+		loopCacheReady = false;
 		loopDurationSeconds = 0.f;
-		loopCache           = WaveformCache{};
+		loopCache = WaveformCache{};
 
 		// Restore original file stream and module trim points
 		if (openStreamCallback && source && !currentNode.relativePath.empty())
 			openStreamCallback(currentNode.relativePath, source.get());
 		if (canvas) {
-			if (moduleInPoint)  moduleInPoint->store(canvas->inPoint,  std::memory_order_relaxed);
+			if (moduleInPoint) moduleInPoint->store(canvas->inPoint, std::memory_order_relaxed);
 			if (moduleOutPoint) moduleOutPoint->store(canvas->outPoint, std::memory_order_relaxed);
 		}
 	}
 
-	// ── step ─────────────────────────────────────────────────────────────────
+	// step
 
 	void step() override {
 		// Consume pending normal waveform cache
 		if (pendingCacheReady.load(std::memory_order_acquire)) {
 			pendingCacheReady.store(false, std::memory_order_relaxed);
 			if (pendingCache.valid && pendingCache.gen == cacheGeneration.load(std::memory_order_relaxed)) {
-				cache         = std::move(pendingCache.cache);
-				cacheReady    = true;
+				cache = std::move(pendingCache.cache);
+				cacheReady = true;
 				cacheBuilding = false;
 			}
 		}
@@ -364,21 +363,21 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		if (pendingLoopReady.load(std::memory_order_acquire)) {
 			pendingLoopReady.store(false, std::memory_order_relaxed);
 			if (pendingLoop.valid) {
-				auto ms      = std::unique_ptr<MemoryAudioStream>(new MemoryAudioStream);
-				ms->samples  = std::move(pendingLoop.samples);
-				ms->ch       = pendingLoop.channels;
-				ms->sr       = pendingLoop.sampleRate;
-				int64_t tf   = ms->totalFrames();
+				auto ms = std::unique_ptr<MemoryAudioStream>(new MemoryAudioStream);
+				ms->samples = std::move(pendingLoop.samples);
+				ms->ch = pendingLoop.channels;
+				ms->sr = pendingLoop.sampleRate;
+				int64_t tf = ms->totalFrames();
 				if (adoptStreamCallback) adoptStreamCallback(std::move(ms), tf);
 
-				loopCache           = std::move(pendingLoop.cache);
-				loopCacheReady      = true;
+				loopCache = std::move(pendingLoop.cache);
+				loopCacheReady = true;
 				loopDurationSeconds = pendingLoop.durationSeconds;
-				loopPreviewActive   = true;
+				loopPreviewActive = true;
 				loopPreviewBuilding = false;
 
 				// The loop buffer spans [0, 1] — make the module loop it fully
-				if (moduleInPoint)  moduleInPoint->store(0.f,  std::memory_order_relaxed);
+				if (moduleInPoint) moduleInPoint->store(0.f, std::memory_order_relaxed);
 				if (moduleOutPoint) moduleOutPoint->store(1.f, std::memory_order_relaxed);
 
 				// Reset seek base so playhead is valid in the new stream's frame space
@@ -391,16 +390,16 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		// Update canvas display inputs
 		if (canvas) {
-			canvas->box.size       = Vec(box.size.x, box.size.y - TB_H);
-			canvas->cache          = loopPreviewActive ? &loopCache : &cache;
-			canvas->cacheReady     = loopPreviewActive ? loopCacheReady : (bool)cacheReady;
+			canvas->box.size = Vec(box.size.x, box.size.y - TB_H);
+			canvas->cache = loopPreviewActive ? &loopCache : &cache;
+			canvas->cacheReady = loopPreviewActive ? loopCacheReady : (bool)cacheReady;
 			canvas->loopPreviewMode = loopPreviewActive;
 			canvas->viewMode = !loopPreviewActive ? &CanvasViewMode::normal()
 			                    : previewIsRepitch    ? &CanvasViewMode::repitch()
 			                                          : &CanvasViewMode::loopCrossfade();
-			canvas->hasFile        = !currentNode.relativePath.empty();
+			canvas->hasFile = !currentNode.relativePath.empty();
 			canvas->durationSeconds = loopPreviewActive ? loopDurationSeconds : info.durationSeconds;
-			canvas->dragPath        = currentNode.relativePath;
+			canvas->dragPath = currentNode.relativePath;
 			canvas->dragDisplayName = displayName;
 			canvas->modulePlayheadPos = modulePlayheadPos;
 
@@ -416,16 +415,16 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 			struct StatusCandidate { const std::string& msg; NVGcolor color; };
 			StatusCandidate candidates[] = {
-				{ convertingMsg,     nvgRGBf(1.f, 0.85f, 0.1f) },
+				{ convertingMsg, nvgRGBf(1.f, 0.85f, 0.1f) },
 				{ generatingLoopMsg, canvas->viewMode->accentColor },
-				{ buildingMsg,       nvgRGBf(1.f, 0.85f, 0.1f) },
-				{ externalMsg,       nvgRGBf(1.f, 0.85f, 0.1f) },
+				{ buildingMsg, nvgRGBf(1.f, 0.85f, 0.1f) },
+				{ externalMsg, nvgRGBf(1.f, 0.85f, 0.1f) },
 			};
 			canvas->statusMessage.clear();
 			for (const StatusCandidate& c : candidates) {
 				if (!c.msg.empty()) {
 					canvas->statusMessage = c.msg;
-					canvas->statusColor   = c.color;
+					canvas->statusColor = c.color;
 					break;
 				}
 			}
@@ -435,7 +434,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		widget::OpaqueWidget::step();
 	}
 
-	// ── draw (top bar only) ───────────────────────────────────────────────────
+	// draw (top bar only)
 
 	void draw(const DrawArgs& args) override {
 		widget::OpaqueWidget::draw(args);  // draw canvas child first
@@ -460,9 +459,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		// Filename — gold when playing, otherwise the active mode's filename color
 		std::string fname = displayName.empty() ? currentNode.relativePath : displayName;
 		nvgFontSize(args.vg, 12.f);
-		NVGcolor fnColor = isPlaying ? nvgRGBf(1.f, 0.85f, 0.1f)
-		                 : canvas    ? canvas->viewMode->filenameColor
-		                 :             nvgRGBf(0.92f, 0.92f, 0.88f);
+		NVGcolor fnColor = isPlaying
+			? nvgRGBf(1.f, 0.85f, 0.1f)
+			: (canvas ? canvas->viewMode->filenameColor : nvgRGBf(0.92f, 0.92f, 0.88f));
 		nvgFillColor(args.vg, fnColor);
 		float maxFnW = w - 30.f;
 		nvgScissor(args.vg, 22.f, 0.f, maxFnW, TB_H);
@@ -481,9 +480,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		else {
 			// ch · sr · bit badges
 			std::string badges;
-			if (info.bitDepth > 0)   badges = rack::string::f("%dbit", info.bitDepth);
+			if (info.bitDepth > 0) badges = rack::string::f("%dbit", info.bitDepth);
 			if (info.sampleRate > 0) badges = rack::string::f("%dk", info.sampleRate / 1000) + (badges.empty() ? "" : " \xc2\xb7 ") + badges;
-			if (info.channels > 0)   badges = std::string(info.channels == 1 ? "MONO" : "STEREO") + (badges.empty() ? "" : " \xc2\xb7 ") + badges;
+			if (info.channels > 0) badges = std::string(info.channels == 1 ? "MONO" : "STEREO") + (badges.empty() ? "" : " \xc2\xb7 ") + badges;
 			if (!badges.empty())
 				nvgText(args.vg, SirenWaveformCanvas::WAVE_X, 26.f, badges.c_str(), nullptr);
 		}
@@ -529,7 +528,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			if (!tags.empty()) {
 				static constexpr float CHIP_H = 10.f;
 				static constexpr float CHIP_Y = 34.f;
-				float x    = SirenWaveformCanvas::WAVE_X;
+				float x = SirenWaveformCanvas::WAVE_X;
 				float maxX = w - 4.f;
 				nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 				nvgFontSize(args.vg, 8.f);
@@ -554,7 +553,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 	}
 
-	// ── interaction ───────────────────────────────────────────────────────────
+	// interaction
 
 	void onButton(const event::Button& e) override {
 		if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
@@ -575,9 +574,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		// Play/stop button (top bar area only — canvas handles clicks below TB_H)
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
 			if (e.pos.x < 26.f && e.pos.y < TB_H) {
-				if (modulePlaying && modulePlaying->load()) stopPlaybackCallback();
-				else if (!currentNode.relativePath.empty())
+				if (modulePlaying && modulePlaying->load()) {
+					stopPlaybackCallback();
+				}
+				else if (!currentNode.relativePath.empty()) {
 					startPlaybackFrom(canvas ? canvas->inPoint : 0.f);
+				}
 				e.consume(this);
 				return;
 			}
@@ -586,13 +588,15 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void onDragStart(const event::DragStart& e) override {
-		if (!currentNode.relativePath.empty() && dropHandler)
+		if (!currentNode.relativePath.empty() && dropHandler) {
 			dropHandler->startDrag(currentNode.relativePath, displayName);
+		}
 	}
 
 	void onDragEnd(const event::DragEnd& e) override {
-		if (dropHandler && dropHandler->active)
+		if (dropHandler && dropHandler->active) {
 			dropHandler->endDrag(APP->scene->mousePos, worker);
+		}
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
@@ -604,8 +608,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		widget::OpaqueWidget::onSelectKey(e);
 	}
 
-	// ── context menu ──────────────────────────────────────────────────────────
-
 	void createContextMenu() {
 		if (currentNode.relativePath.empty() || !source) return;
 
@@ -613,13 +615,13 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		menu->addChild(createMenuLabel(source->getDisplayName(currentNode.relativePath)));
 
 		if (loopPreviewActive) {
-			// ── preview mode ──────────────────────────────────────────────────
+			// preview mode
 			menu->addChild(createMenuItem(previewIsRepitch ? "Exit repitch preview" : "Exit loop preview", "", [this]() {
 				cancelLoopPreview();
 			}));
 		}
 		else {
-			// ── normal mode ──────────────────────────────────────────────────
+			// normal mode
 			menu->addChild(new ui::MenuSeparator);
 			menu->addChild(createMenuItem("Reset trim", "",
 				[this]() { if (canvas) canvas->resetTrimHandles(); },
@@ -702,13 +704,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}));
 	}
 
-	// ── BPM detection ─────────────────────────────────────────────────────────
-
+	// BPM detection
 	void startBpmDetection() {
 		if (!source || currentNode.relativePath.empty() || !worker) return;
 		if (bpm.load() < 0.f) return;
 		bpm.store(-1.f);
-		std::string idCopy      = currentNode.relativePath;
+		std::string idCopy = currentNode.relativePath;
 		std::string relPathCopy = relPath;
 		std::shared_ptr<DataSource> ds = source;
 		worker->work([this, idCopy, relPathCopy, ds]() {
@@ -723,7 +724,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		});
 	}
 
-	// ── helpers ───────────────────────────────────────────────────────────────
+	// helpers
 
 	void startPlaybackFrom(float pos) {
 		if (startPlaybackCallback) startPlaybackCallback(pos);

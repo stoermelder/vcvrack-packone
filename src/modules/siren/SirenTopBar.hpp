@@ -6,12 +6,9 @@ namespace StoermelderPackOne {
 namespace Siren {
 
 
-/**
- * @brief Source selection choice button for the Siren top bar
- * 
- * Provides a dropdown button for selecting the active root container
- * and accessing source management options.
- */
+// Source selection choice button for the Siren top bar.
+// Provides a dropdown button for selecting the active root container
+// and accessing source management options.
 static constexpr float TOPBAR_SCALE = 0.6f;
 
 struct SirenSourceButton : ui::ChoiceButton {
@@ -24,7 +21,7 @@ struct SirenSourceButton : ui::ChoiceButton {
 		nvgSave(args.vg);
 		nvgScale(args.vg, TOPBAR_SCALE, TOPBAR_SCALE);
 		bndChoiceButton(args.vg, 0, 0, box.size.x / TOPBAR_SCALE, box.size.y / TOPBAR_SCALE,
-		                BND_CORNER_NONE, state, -1, text.c_str());
+			BND_CORNER_NONE, state, -1, text.c_str());
 		nvgRestore(args.vg);
 	}
 
@@ -42,7 +39,7 @@ struct SirenSourceButton : ui::ChoiceButton {
 
 	void onAction(const event::Action& e) override {
 		ui::Menu* menu = createMenu();
-		menu->box.pos   = getAbsoluteOffset(math::Vec(0, box.size.y));
+		menu->box.pos = getAbsoluteOffset(math::Vec(0, box.size.y));
 		menu->box.size.x = box.size.x;
 
 		// List of existing sources
@@ -82,9 +79,9 @@ struct SirenSourceButton : ui::ChoiceButton {
 		menu->addChild(createSubmenuItem("Resample quality", "", [](ui::Menu* qMenu) {
 			struct QPreset { int value; std::string label; std::string desc; };
 			QPreset presets[] = {
-				{ 1,  "Fast",    "Lowest CPU" },
-				{ 6,  "Default", "Balanced quality and CPU"      },
-				{ 10, "Best",    "Highest CPU"  },
+				{ 1, "Fast", "Lowest CPU" },
+				{ 6, "Default", "Balanced quality and CPU" },
+				{ 10, "Best", "Highest CPU" },
 			};
 			for (const QPreset& p : presets) {
 				qMenu->addChild(createCheckMenuItem(p.label, p.desc,
@@ -114,12 +111,9 @@ struct SirenSourceButton : ui::ChoiceButton {
 };
 
 
-/**
- * @brief Search field widget for the Siren top bar
- * 
- * Provides a text input field for searching within the file browser.
- * Supports escape key to clear the search and trigger a rebuild.
- */
+// Search field widget for the Siren top bar.
+// Provides a text input field for searching within the file browser.
+// Supports escape key to clear the search and trigger a rebuild.
 struct SirenSearchField : ui::TextField {
 	SirenBrowserPane* pane = nullptr;
 
@@ -133,7 +127,7 @@ struct SirenSearchField : ui::TextField {
 		else if (APP->event->getHoveredWidget() == this) state = BND_HOVER;
 		else state = BND_DEFAULT;
 		int begin = std::min(cursor, selection);
-		int end   = std::max(cursor, selection);
+		int end = std::max(cursor, selection);
 		bool showPlaceholder = text.empty() && state != BND_ACTIVE;
 		const char* displayText = showPlaceholder ? placeholder.c_str() : text.c_str();
 		int b = showPlaceholder ? 0 : begin;
@@ -142,7 +136,7 @@ struct SirenSearchField : ui::TextField {
 		if (showPlaceholder) nvgGlobalAlpha(args.vg, 0.4f);
 		nvgScale(args.vg, TOPBAR_SCALE, TOPBAR_SCALE);
 		bndTextField(args.vg, 0, 0, box.size.x / TOPBAR_SCALE, box.size.y / TOPBAR_SCALE,
-		             BND_CORNER_NONE, state, -1, displayText, b, e);
+			BND_CORNER_NONE, state, -1, displayText, b, e);
 		nvgRestore(args.vg);
 	}
 
@@ -189,12 +183,13 @@ struct SirenFavButton : widget::OpaqueWidget {
 		if (!pane) return;
 		bool active = pane->favoritesOnly;
 		BNDwidgetState state = active ? BND_ACTIVE
-		                     : (APP->event->getHoveredWidget() == this ? BND_HOVER : BND_DEFAULT);
+			: (APP->event->getHoveredWidget() == this ? BND_HOVER : BND_DEFAULT);
 		nvgSave(args.vg);
 		nvgScale(args.vg, TOPBAR_SCALE, TOPBAR_SCALE);
 		float lw = box.size.x / TOPBAR_SCALE;
 		float lh = box.size.y / TOPBAR_SCALE;
 		bndToolButton(args.vg, 0, 0, lw, lh, BND_CORNER_NONE, state, -1, nullptr);
+
 		nvgFontSize(args.vg, 14.f);
 		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -223,26 +218,26 @@ struct SirenTopBar : widget::OpaqueWidget {
 
 	void init() {
 		const float browserW = 188.0f;
-		const float gapW     = 10.f;
-		const float btnH     = 22.f * TOPBAR_SCALE;        // physical button height
-		const float btnY     = (box.size.y - btnH) * 0.5f; // centred in top bar
-		const float starW    = btnH;                        // square star button
-		const float srcW     = browserW - starW - 2.f;     // source button leaves room for star
+		const float gapW = 10.f;
+		const float btnH = 22.f * TOPBAR_SCALE;        // physical button height
+		const float btnY = (box.size.y - btnH) * 0.5f; // centred in top bar
+		const float starW = btnH;                        // square star button
+		const float srcW = browserW - starW - 2.f;     // source button leaves room for star
 
 		SirenSourceButton* sourceButton = new SirenSourceButton;
-		sourceButton->box.pos  = Vec(0.f, btnY);
+		sourceButton->box.pos = Vec(0.f, btnY);
 		sourceButton->box.size = Vec(srcW, btnH);
 		sourceButton->pane = pane;
 		addChild(sourceButton);
 
 		SirenFavButton* favButton = new SirenFavButton;
-		favButton->box.pos  = Vec(srcW + 2.f, btnY);
+		favButton->box.pos = Vec(srcW + 2.f, btnY);
 		favButton->box.size = Vec(starW, btnH);
 		favButton->pane = pane;
 		addChild(favButton);
 
 		SirenSearchField* searchField = new SirenSearchField;
-		searchField->box.pos  = Vec(browserW + gapW, btnY);
+		searchField->box.pos = Vec(browserW + gapW, btnY);
 		searchField->box.size = Vec(box.size.x - browserW - gapW, btnH);
 		searchField->pane = pane;
 		addChild(searchField);

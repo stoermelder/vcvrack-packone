@@ -19,8 +19,7 @@ namespace Siren {
 
 using namespace rack;
 
-// ─── SirenIndexTask ─────────────────────────────────────────────────────────
-//
+// SirenIndexTask
 // Owns the background "index metadata" scan for a SirenBrowserPane: recursively
 // reads audio header info (length, sample rate, bit depth, channels) and detects
 // BPM from filenames for every supported file below the active root, storing the
@@ -28,10 +27,9 @@ using namespace rack;
 //
 // Progress is held in a shared_ptr so the worker task can safely outlive the
 // pane if the module is removed mid-scan; step() reclaims it once done.
-
 struct SirenIndexTask {
 	struct Progress {
-		std::atomic<int>  processed{0};
+		std::atomic<int> processed{0};
 		std::atomic<bool> done{false};
 	};
 	std::shared_ptr<Progress> progress;
@@ -105,8 +103,9 @@ struct SirenIndexTask {
 			};
 			visit(ds->rootId());
 
-			if (!cancelled())
+			if (!cancelled()) {
 				ds->saveMetadata();
+			}
 			p->done.store(true, std::memory_order_release);
 		});
 	}
@@ -114,7 +113,7 @@ struct SirenIndexTask {
 
 
 
-// ─── SirenClassifyTask ──────────────────────────────────────────────────────
+// SirenClassifyTask
 //
 // Owns the background "suggest tags" scan for a SirenBrowserPane: classifies
 // every supported file below a given node, collects tag -> file suggestions,
@@ -125,14 +124,13 @@ struct SirenIndexTask {
 //
 // `tagToRels` is written by the worker before `done` is stored with release
 // ordering, so step() can read it safely after observing `done` with acquire.
-
 struct SirenClassifyTask {
 	using TagToRels = std::map<std::string, std::set<std::string>>;
 	using Dialog = StoermelderPackOne::ui::TagConfirmDialog<std::string>;
 
 	struct Progress {
-		std::atomic<int>  processed{0};
-		std::atomic<int>  total{0};
+		std::atomic<int> processed{0};
+		std::atomic<int> total{0};
 		std::atomic<bool> done{false};
 		TagToRels tagToRels;
 	};
@@ -148,13 +146,15 @@ struct SirenClassifyTask {
 	std::string statusMessage() const {
 		if (!progress) return "";
 		int processed = progress->processed.load(std::memory_order_relaxed);
-		int total     = progress->total.load(std::memory_order_relaxed);
+		int total = progress->total.load(std::memory_order_relaxed);
 
 		char msg[64];
-		if (total > 0)
+		if (total > 0) {
 			std::snprintf(msg, sizeof(msg), "Analysing\xe2\x80\xa6 %d/%d", processed, total);
-		else
+		}
+		else {
 			std::snprintf(msg, sizeof(msg), "Analysing\xe2\x80\xa6");
+		}
 		return msg;
 	}
 
@@ -177,13 +177,13 @@ struct SirenClassifyTask {
 	using OnSelect = std::function<void(const DataSourceNode&, bool)>;
 
 	void start(TaskWorker* worker, std::shared_ptr<DataSource> ds, MetadataStore* meta,
-	           const std::string& rel, bool isDir, const std::string& name, OnSelect onSelect) {
+			const std::string& rel, bool isDir, const std::string& name, OnSelect onSelect) {
 		if (running()) return;
 
-		this->ds        = ds;
-		this->isDir     = isDir;
-		this->dirName   = name;
-		this->onSelect  = onSelect;
+		this->ds = ds;
+		this->isDir = isDir;
+		this->dirName = name;
+		this->onSelect = onSelect;
 
 		auto p = std::make_shared<Progress>();
 		progress = p;
@@ -193,8 +193,12 @@ struct SirenClassifyTask {
 			if (isDir) {
 				std::function<void(const std::string&)> collect = [&](const std::string& id) {
 					for (const auto& child : ds->loadChildrenSync(id)) {
-						if (child.isContainer) collect(child.relativePath);
-						else files.push_back(child.relativePath);
+						if (child.isContainer) {
+							collect(child.relativePath);
+						}
+						else {
+							files.push_back(child.relativePath);
+						}
 					}
 				};
 				collect(rel);
@@ -233,9 +237,9 @@ struct SirenClassifyTask {
 private:
 	// Set by start(), consumed by showResult() once the scan completes.
 	std::shared_ptr<DataSource> ds;
-	bool        isDir = false;
+	bool isDir = false;
 	std::string dirName;
-	OnSelect    onSelect;
+	OnSelect onSelect;
 
 	void showResult(const TagToRels& tagToRels) {
 		if (tagToRels.empty()) {
@@ -244,8 +248,9 @@ private:
 		}
 
 		Dialog::GroupVector groups;
-		for (const auto& pair : tagToRels)
+		for (const auto& pair : tagToRels) {
 			groups.push_back({pair.first, pair.second});
+		}
 
 		std::string header = isDir ? "Suggest tags — " + dirName : "Suggest tags";
 		StoermelderPackOne::ui::openTagConfirmDialog<std::string>(
@@ -259,7 +264,7 @@ private:
 		return [ds, onSelect](const std::string& tag, const std::string& fileId) -> widget::Widget* {
 			struct SampleLabel : ui::MenuItem {
 				DataSource* ds;
-				OnSelect    onSelect;
+				OnSelect onSelect;
 				std::string fileId;
 				std::string groupTag;
 				void onAction(const event::Action& e) override {
@@ -290,10 +295,10 @@ private:
 				}
 			};
 			SampleLabel* item = new SampleLabel;
-			item->text     = ds->getDisplayName(fileId);
-			item->ds       = ds.get();
+			item->text = ds->getDisplayName(fileId);
+			item->ds = ds.get();
 			item->onSelect = onSelect;
-			item->fileId   = fileId;
+			item->fileId = fileId;
 			item->groupTag = tag;
 			return item;
 		};
@@ -301,9 +306,10 @@ private:
 
 	static std::function<std::string(int, int)> makeSummaryFn(bool isDir, std::string name) {
 		return [isDir, name](int sel, int items) -> std::string {
-			if (isDir)
+			if (isDir) {
 				return rack::string::f("%d tag%s across %d file%s",
 					sel, sel == 1 ? "" : "s", items, items == 1 ? "" : "s");
+			}
 			return rack::string::f("%d tag%s for %s",
 				sel, sel == 1 ? "" : "s", name.c_str());
 		};

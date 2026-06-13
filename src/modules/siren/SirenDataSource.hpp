@@ -11,14 +11,13 @@
 namespace StoermelderPackOne {
 namespace Siren {
 
-// ─── Search query ──────────────────────────────────────────────────────────
+// Search query
 // The search field accepts plain text plus optional numeric filter terms of
 // the form "key:[op]value[unit]", e.g. "bpm:140", "bpm:>120", "length:<1s",
 // "length:>=2.5m". Recognised keys: "bpm", and "length"/"duration"/"len" for
 // the file's duration (unit "s"/"sec" or "m"/"min", default seconds).
 // Operators: "<", "<=", ">", ">=", "=" (default "=", matched with a small
 // tolerance since these are detected/measured values).
-
 enum class SearchFilterField { Bpm, Length };
 enum class SearchFilterOp { Eq, Lt, Le, Gt, Ge };
 
@@ -33,7 +32,7 @@ struct SearchFilter {
 inline bool parseSearchFilter(const std::string& lowerToken, SearchFilter& out) {
 	size_t colon = lowerToken.find(':');
 	if (colon == std::string::npos) return false;
-	std::string key  = lowerToken.substr(0, colon);
+	std::string key = lowerToken.substr(0, colon);
 	std::string rest = lowerToken.substr(colon + 1);
 
 	SearchFilterField field;
@@ -166,8 +165,9 @@ inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream, int pixel
 				                   ? (int64_t)((curSample + 1) * framesPerSample) : total;
 			}
 			if (!sampleTaken) {
-				for (int ch = 0; ch < channels; ch++)
+				for (int ch = 0; ch < channels; ch++) {
 					out.samples[ch][curSample] = buf[(size_t)(f * channels + ch)];
+				}
 				sampleTaken = true;
 			}
 		}
@@ -176,7 +176,7 @@ inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream, int pixel
 	return true;
 }
 
-// ─── Loop crossfade post-processing ──────────────────────────────────────────
+// Loop crossfade post-processing
 // Rotation + crossfade: makes a sample loop-ready so that looping at the
 // file boundaries produces a smooth transition.
 //
@@ -243,21 +243,23 @@ inline void applyLoopCrossfade(std::vector<float>& samples, int channels, int sa
 	//                         original[0  .. C-1]  (fade-in).
 	int64_t part1Len = (N - C) - M;   // frames from rotation point to end minus tail
 	int64_t part2Len = M - C;          // frames from crossfade end to rotation point
-	int64_t outN     = part1Len + C + part2Len; // == N - C
+	int64_t outN = part1Len + C + part2Len; // == N - C
 
 	std::vector<float> out((size_t)(outN * channels));
 
 	// Part 1: original[M .. N-C-1]
-	for (int64_t f = 0; f < part1Len; f++)
-		for (int ch = 0; ch < channels; ch++)
+	for (int64_t f = 0; f < part1Len; f++) {
+		for (int ch = 0; ch < channels; ch++) {
 			out[(size_t)(f * channels + ch)] = samples[(size_t)((M + f) * channels + ch)];
+		}
+	}
 
 	// Crossfade: blend tail of second half (fade-out) with head of first half (fade-in)
 	for (int64_t f = 0; f < C; f++) {
-		float alpha   = (C > 1) ? (float)f / (float)(C - 1) : 1.f;
-		float angle   = alpha * float(M_PI) * 0.5f;
+		float alpha = (C > 1) ? (float)f / (float)(C - 1) : 1.f;
+		float angle = alpha * float(M_PI) * 0.5f;
 		float fadeOut = std::cos(angle);
-		float fadeIn  = std::sin(angle);
+		float fadeIn = std::sin(angle);
 		for (int ch = 0; ch < channels; ch++) {
 			float s1 = samples[(size_t)((N - C + f) * channels + ch)];
 			float s2 = samples[(size_t)(f            * channels + ch)];
@@ -266,9 +268,11 @@ inline void applyLoopCrossfade(std::vector<float>& samples, int channels, int sa
 	}
 
 	// Part 2: original[C .. M-1]
-	for (int64_t f = 0; f < part2Len; f++)
-		for (int ch = 0; ch < channels; ch++)
+	for (int64_t f = 0; f < part2Len; f++) {
+		for (int ch = 0; ch < channels; ch++) {
 			out[(size_t)((part1Len + C + f) * channels + ch)] = samples[(size_t)((C + f) * channels + ch)];
+		}
+	}
 
 	samples = std::move(out);
 }
@@ -299,19 +303,19 @@ inline void applyRepitch(std::vector<float>& samples, int channels, int sampleRa
 		st.putSamples(block.data(), n);
 
 		uint received;
-		while ((received = st.receiveSamples(block.data(), blockFrames)) > 0)
+		while ((received = st.receiveSamples(block.data(), blockFrames)) > 0) {
 			out.insert(out.end(), block.begin(), block.begin() + (size_t)(received * channels));
+		}
 	}
 	st.flush();
 	uint received;
-	while ((received = st.receiveSamples(block.data(), blockFrames)) > 0)
+	while ((received = st.receiveSamples(block.data(), blockFrames)) > 0) {
 		out.insert(out.end(), block.begin(), block.begin() + (size_t)(received * channels));
-
+	}
 	samples = std::move(out);
 }
 
-// ─── DataSource ──────────────────────────────────────────────────────────────
-
+// DataSource
 struct DataSource {
 	virtual ~DataSource() = default;
 
@@ -375,9 +379,9 @@ struct DataSource {
 
 		// Container: own name match is sufficient only when there are no
 		// numeric filters to satisfy against a descendant.
-		if (query.filters.empty()
-				&& (query.text.empty() || rack::string::lowercase(ownName).find(query.text) != std::string::npos))
+		if (query.filters.empty() && (query.text.empty() || rack::string::lowercase(ownName).find(query.text) != std::string::npos)) {
 			return true;
+		}
 
 		// Known descendant files via metadata
 		MetadataStore* meta = getMetadata();
@@ -387,8 +391,9 @@ struct DataSource {
 			if (pair.first.compare(0, dirPrefix.size(), dirPrefix) != 0) continue;
 			size_t s = pair.first.rfind('/');
 			std::string name = (s != std::string::npos) ? pair.first.substr(s + 1) : pair.first;
-			if (!query.text.empty() && rack::string::lowercase(name).find(query.text) == std::string::npos)
+			if (!query.text.empty() && rack::string::lowercase(name).find(query.text) == std::string::npos) {
 				continue;
+			}
 			if (!query.matchesMetadata(pair.second)) continue;
 			return true;
 		}
@@ -407,7 +412,7 @@ struct DataSource {
 	// Append source-specific context menu items for a tree node.
 	// onChanged is called after any metadata modification so the browser can refresh.
 	virtual void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node,
-	                                 std::function<void()> onChanged = {}) {}
+			std::function<void()> onChanged = {}) {}
 
 	// Append source-level settings to the source button dropdown (e.g. conversion options).
 	virtual void appendSourceMenuItems(ui::Menu* menu) {}
@@ -431,7 +436,7 @@ struct DataSource {
 		return [id]() { return id; };
 	}
 
-	// ── audio provision (abstracts format / transport) ────────────────────────
+	// audio provision (abstracts format / transport)
 
 	// Reconstruct a DataSourceNode from a stored relative path (e.g. for patch restore).
 	virtual DataSourceNode resolveNode(const std::string& relativePath) const { return DataSourceNode{}; }
@@ -463,8 +468,7 @@ struct DataSource {
 	}
 };
 
-// ─── Loop preview: in-memory decode + process ────────────────────────────────
-
+// Loop preview: in-memory decode + process
 struct LoopPreviewResult {
 	std::vector<float> samples;   // interleaved float PCM after rotation+crossfade
 	int channels = 0;

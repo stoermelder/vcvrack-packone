@@ -12,8 +12,7 @@ namespace StoermelderPackOne {
 namespace Siren {
 
 
-// ─── Path extraction ─────────────────────────────────────────────────────────
-
+// Path extraction
 namespace detail {
 
 // Compiled once and reused. Patterns are static so try/catch around
@@ -29,7 +28,7 @@ struct BpmRegexTable {
 	std::regex leading;     // "120.5 kick.wav"
 
 	BpmRegexTable()
-		: tagged   (R"((\d+(?:\.\d+)?)\s*bpm)",   std::regex::icase)
+		: tagged   (R"((\d+(?:\.\d+)?)\s*bpm)", std::regex::icase)
 		, bracket  (R"(\[(\d+(?:\.\d+)?)\])")
 		, delimited(R"((?:^|[_\-])(\d+(?:\.\d+)?)(?:[_\-]|$))")
 		, leading  (R"(^(\d+(?:\.\d+)?))") {}
@@ -47,9 +46,9 @@ inline std::string stripAudioExtension(const std::string& name) {
 	if (dotPos == std::string::npos || dotPos + 1 >= name.size()) return name;
 	std::string ext = name.substr(dotPos + 1);
 	std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-	if (ext == "wav"  || ext == "mp3"  || ext == "flac" || ext == "ogg"  ||
-		ext == "aiff" || ext == "aif"  || ext == "m4a"  || ext == "wma"  ||
-		ext == "opus" || ext == "oga"  || ext == "aac")
+	if (ext == "wav" || ext == "mp3" || ext == "flac" || ext == "ogg" ||
+		ext == "aiff" || ext == "aif" || ext == "m4a" || ext == "wma" ||
+		ext == "opus" || ext == "oga" || ext == "aac")
 		return name.substr(0, dotPos);
 	return name;
 }
@@ -90,8 +89,7 @@ inline std::vector<std::string> collectBoundedNumbers(const std::string& name) {
 
 
 
-// ─── Spectral analysis (spectral flux onset + autocorrelation) ─────────────────
-
+// Spectral analysis (spectral flux onset + autocorrelation)
 namespace detail {
 
 // Reuse STFT constants from the tag classifier (FFT_SIZE=512, HOP=128,
@@ -106,15 +104,15 @@ using TagClassifierDetail::computeMagnitudes;
 using TagClassifierDetail::medianFilter3;
 using TagClassifierDetail::meanSubtract;
 
-static constexpr float  MIN_BPM         = 60.f;
-static constexpr float  MAX_BPM         = 200.f;
-static constexpr float  CONFIDENCE_THR  = 0.20f;  // Min normalised autocorr peak to accept
+static constexpr float MIN_BPM = 60.f;
+static constexpr float MAX_BPM = 200.f;
+static constexpr float CONFIDENCE_THR = 0.20f;  // Min normalised autocorr peak to accept
 
 // Sub-band weighting. With SR=8820 and FFT_SIZE=512, each bin spans ~17 Hz
 // (Nyquist 4410 Hz / 256 bins). The first 8 bins cover 0–~140 Hz — i.e. the
 // bass/kick band that drives perceived tempo.
-static constexpr int    BASS_BIN_COUNT  = 8;
-static constexpr float  BASS_BIN_WEIGHT = 2.0f;
+static constexpr int BASS_BIN_COUNT = 8;
+static constexpr float BASS_BIN_WEIGHT = 2.0f;
 
 // Log-magnitude spectral flux with bass-bin weighting. Differs from the
 // classifier's unweighted version — kept here to emphasise kick energy.
@@ -133,7 +131,7 @@ inline float computeSpectralFlux(const float* magCur, const float* magPrev, int 
 }
 
 struct AutocorrResult {
-	int   bestLag    = 0;     // integer lag of the strongest peak
+	int bestLag = 0;     // integer lag of the strongest peak
 	float confidence = 0.f;   // normalised peak value, ~[0, 1]
 	float refinedLag = 0.f;   // parabolic-interpolated fractional lag
 };
@@ -192,8 +190,8 @@ inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, flo
 	// pffft is unnormalised: IFFT(FFT(x)) = N · x.  output[2*k] holds the
 	// real part of the k-th complex sample; for a real input the imaginary
 	// part is zero.  output[2*0] = N · Σ x² (the signal energy × N).
-	const float norm      = 1.f / float(n);
-	const float energy    = output[0] * norm;   // = Σ x²
+	const float norm = 1.f / float(n);
+	const float energy = output[0] * norm;   // = Σ x²
 	if (energy <= 0.f) return result;
 	const float invEnergy = 1.f / energy;
 
@@ -207,7 +205,7 @@ inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, flo
 	int lagMax = std::min(numFrames - 1, int(std::round(frameRate * 60.f / MIN_BPM)));
 	if (lagMin >= lagMax) return result;
 
-	int   peakIdx = lagMin;
+	int peakIdx = lagMin;
 	float peakVal = rAt(lagMin);
 	for (int k = lagMin + 1; k <= lagMax; ++k) {
 		float v = rAt(k);
@@ -235,7 +233,7 @@ inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, flo
 	//   • A spurious "octave" candidate (e.g. lag 23 for a 90 BPM track)
 	//     can only borrow score from its 2× harmonic — since W < 1, the
 	//     smaller raw rAt(23) cannot outvote the larger rAt(46).
-	int   bestIdx   = peakIdx;
+	int bestIdx = peakIdx;
 	float bestScore = -1.f;
 	constexpr float HARMONIC_W = 0.5f;
 	// For each candidate p, look at the maximum autocorr in a small window
@@ -260,7 +258,7 @@ inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, flo
 	(void)peakVal;
 	(void)peakIdx;
 
-	result.bestLag    = bestIdx;
+	result.bestLag = bestIdx;
 	result.refinedLag = float(bestIdx);
 	// Re-evaluate parabolic interpolation at the chosen bestIdx.
 	if (bestIdx > lagMin && bestIdx < lagMax) {
@@ -283,14 +281,13 @@ inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, flo
 } // namespace detail
 
 
-// ─── Main detect function ────────────────────────────────────────────────────
+// Main detect function
 
 // Offline BPM detection via log-magnitude spectral flux + autocorrelation.
 // Must be called on a worker thread, never the DSP thread.
 // Returns detected BPM, or 0 if detection failed or confidence is below threshold.
 // confidenceOut receives the raw confidence value (0–1) regardless of threshold.
-inline float detectBpm(AudioStream& stream, float& confidenceOut,
-                       float maxDurationSeconds = 60.f) {
+inline float detectBpm(AudioStream& stream, float& confidenceOut, float maxDurationSeconds = 60.f) {
 	confidenceOut = 0.f;
 
 	std::vector<float> mono;
@@ -300,10 +297,10 @@ inline float detectBpm(AudioStream& stream, float& confidenceOut,
 	// Need at least ~2 s of audio to make a tempo estimate.
 	if (mono.size() < size_t(outSR * 2)) return 0.f;
 
-	// ── STFT (Hann-windowed, 4× overlap) ────────────────────────────────
+	// STFT (Hann-windowed, 4× overlap)
 	const int FFT_SIZE = detail::FFT_SIZE;
-	const int HOP      = detail::HOP;
-	const int halfN    = FFT_SIZE / 2;
+	const int HOP = detail::HOP;
+	const int halfN = FFT_SIZE / 2;
 
 	int numFrames = int(mono.size());
 	int numHops   = (numFrames - FFT_SIZE) / HOP + 1;
@@ -314,10 +311,10 @@ inline float detectBpm(AudioStream& stream, float& confidenceOut,
 
 	std::vector<float> onsetSignal(numHops, 0.f);
 	std::vector<float> magPrev(halfN, 0.f);
-	std::vector<float> magCur (halfN, 0.f);
-	std::vector<float> win    (FFT_SIZE, 0.f);
-	std::vector<float> spec   (FFT_SIZE, 0.f);
-	std::vector<float> work   (FFT_SIZE, 0.f);
+	std::vector<float> magCur(halfN, 0.f);
+	std::vector<float> win(FFT_SIZE, 0.f);
+	std::vector<float> spec(FFT_SIZE, 0.f);
+	std::vector<float> work(FFT_SIZE, 0.f);
 
 	detail::PffftSetupGuard fft(FFT_SIZE, PFFFT_REAL);
 	if (!fft.p) return 0.f;
@@ -363,8 +360,7 @@ inline float detectBpm(AudioStream& stream, float& confidenceOut,
 }
 
 
-// ─── BpmDetector struct (API) ───────────────────────────────────────────────
-
+// BpmDetector struct (API)
 struct BpmDetector {
 	// Scan filename and parent folder path components for an encoded BPM.
 	// Fast and synchronous — safe to call on the main thread.
@@ -376,7 +372,8 @@ struct BpmDetector {
 		// unambiguous and use regex_search.
 		const std::array<std::regex, 3> strongPatterns = { tbl.tagged, tbl.bracket, tbl.leading };
 		std::vector<std::string> components;
-		size_t start = 0, end;
+		size_t start = 0;
+		size_t end;
 		while ((end = id.find('/', start)) != std::string::npos) {
 			if (end > start) components.push_back(id.substr(start, end - start));
 			start = end + 1;
@@ -391,7 +388,8 @@ struct BpmDetector {
 				try {
 					float bpm = std::stof(m[1].str());
 					if (bpm >= 60.f && bpm <= 220.f) { confidenceOut = 1.f; return bpm; }
-				} catch (const std::exception&) {}
+				}
+				catch (const std::exception&) {}
 			}
 			// Delimited numbers: enumerate every bounded number and accept
 			// the first one in the valid BPM range.  This handles filenames
@@ -401,7 +399,8 @@ struct BpmDetector {
 				try {
 					float bpm = std::stof(numStr);
 					if (bpm >= 60.f && bpm <= 220.f) { confidenceOut = 1.f; return bpm; }
-				} catch (const std::exception&) {}
+				}
+				catch (const std::exception&) {}
 			}
 		}
 		return 0.f;
@@ -410,7 +409,7 @@ struct BpmDetector {
 	// Spectral analysis BPM detection — must be called on a worker thread.
 	// Returns BPM or 0 if detection failed or confidence is below threshold.
 	static float detectFromDsp(DataSource& source, const std::string& id, float& confidenceOut,
-	                           float maxDurationSeconds = 60.f) {
+			float maxDurationSeconds = 60.f) {
 		confidenceOut = 0.f;
 		auto stream = source.openAudioStream(id);
 		if (!stream) return 0.f;

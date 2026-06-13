@@ -14,25 +14,25 @@ namespace Siren {
 // it writes pendingDropPath then signals dropPending (release), and step() reads
 // dropPending (acquire) before reading pendingDropPath.
 struct SirenDropHandler {
-	// ── drag in progress ──────────────────────────────────────────────────────
-	bool        active          = false;
+	// drag in progress
+	bool active = false;
 	std::string dragPath;
 	std::string dragDisplayName;
 
-	// ── async conversion state ────────────────────────────────────────────────
+	// async conversion state
 	std::atomic<bool> converting{false};
 
-	// ── pending drop (worker → UI thread handoff) ─────────────────────────────
+	// pending drop (worker → UI thread handoff)
 	std::atomic<bool> dropPending{false};
-	std::string       pendingDropPath;
-	Vec               pendingDropPos;
+	std::string pendingDropPath;
+	Vec pendingDropPos;
 
-	// ── module widget reference (set by SirenWidget) ─────────────────────────
+	// module widget reference (set by SirenWidget)
 	// Used to suppress the label and conversion while the cursor is still over
 	// the Siren module itself — drops are only meaningful to external targets.
 	widget::Widget* moduleWidget = nullptr;
 
-	// ── conversion callback wired by SirenWidget ──────────────────────────────
+	// conversion callback wired by SirenWidget
 	// Returns a task lambda for the given path. The lambda is dispatched to the
 	// worker and its return value is the final drop path.
 	std::function<std::function<std::string()>(const std::string&)> prepareForDropCallback;
@@ -55,8 +55,8 @@ struct SirenDropHandler {
 
 	// Called on the UI thread when a drag begins.
 	void startDrag(const std::string& path, const std::string& displayName) {
-		active          = true;
-		dragPath        = path;
+		active = true;
+		dragPath = path;
 		dragDisplayName = displayName;
 	}
 
@@ -86,7 +86,7 @@ struct SirenDropHandler {
 			std::string readyPath = task();
 			converting.store(false, std::memory_order_relaxed);
 			pendingDropPath = readyPath;
-			pendingDropPos  = dropPos;
+			pendingDropPos = dropPos;
 			dropPending.store(true, std::memory_order_release);
 		});
 	}

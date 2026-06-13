@@ -6,8 +6,7 @@
 namespace StoermelderPackOne {
 namespace Siren {
 
-// ─── helper: settings file paths ─────────────────────────────────────────────
-
+// helper: settings file paths
 inline std::string settingsDirPath() {
 	return rack::asset::user("Stoermelder-P1");
 }
@@ -20,21 +19,19 @@ inline std::string sirenCacheDirPath() {
 	return settingsDirPath() + "/siren-cache";
 }
 
-
-// ─── global siren settings ───────────────────────────────────────────────────
-
+// global siren settings
 struct SirenSettings {
 	std::vector<std::string> rootContainers;
 	int activeRootIdx = -1;
 	std::string lastFile;
 	float lastPlayheadPos = 0.f;
-	bool loopPlayback       = false;
+	bool loopPlayback = false;
 	bool resampleOnPlayback = true;
-	bool resampleOnDrop     = true;
+	bool resampleOnDrop = true;
 	// Speex resampler quality used during "resample on drop" (SPEEX_RESAMPLER_QUALITY_*).
 	// Three discrete options surfaced in the context menu; values 1, 6 and 10 map to
 	// linear / default / best in the speex preset table.
-	int  resampleQuality    = 6;
+	int resampleQuality = 6;
 	bool convertToWavOnDrop = false;
 	// When non-empty, converted/trimmed files are written here instead of
 	// alongside the source file.
@@ -117,8 +114,9 @@ struct SirenSettings {
 	json_t* toJson() const {
 		json_t* j = json_object();
 		json_t* rootsJ = json_array();
-		for (const std::string& r : rootContainers)
+		for (const std::string& r : rootContainers) {
 			json_array_append_new(rootsJ, json_string(r.c_str()));
+		}
 		json_object_set_new(j, "rootContainers", rootsJ);
 		json_object_set_new(j, "activeRootIdx", json_integer(activeRootIdx));
 		json_object_set_new(j, "lastFile", json_string(lastFile.c_str()));
@@ -142,15 +140,15 @@ struct SirenSettings {
 			}
 		}
 		json_t* v;
-		v = json_object_get(j, "activeRootIdx");      if (v) activeRootIdx = (int)json_integer_value(v);
-		v = json_object_get(j, "lastFile");            if (v) lastFile = json_string_value(v);
-		v = json_object_get(j, "lastPlayheadPos");     if (v) lastPlayheadPos = (float)json_real_value(v);
-		v = json_object_get(j, "loopPlayback");         if (v) loopPlayback = json_boolean_value(v);
-		v = json_object_get(j, "resampleOnPlayback");  if (v) resampleOnPlayback = json_boolean_value(v);
-		v = json_object_get(j, "resampleOnDrop");      if (v) resampleOnDrop = json_boolean_value(v);
-		v = json_object_get(j, "resampleQuality");     if (v) resampleQuality = (int)json_integer_value(v);
-		v = json_object_get(j, "convertToWavOnDrop");  if (v) convertToWavOnDrop = json_boolean_value(v);
-		v = json_object_get(j, "customConvertDir");    if (v) customConvertDir = json_string_value(v);
+		v = json_object_get(j, "activeRootIdx"); if (v) activeRootIdx = (int)json_integer_value(v);
+		v = json_object_get(j, "lastFile"); if (v) lastFile = json_string_value(v);
+		v = json_object_get(j, "lastPlayheadPos"); if (v) lastPlayheadPos = (float)json_real_value(v);
+		v = json_object_get(j, "loopPlayback"); if (v) loopPlayback = json_boolean_value(v);
+		v = json_object_get(j, "resampleOnPlayback"); if (v) resampleOnPlayback = json_boolean_value(v);
+		v = json_object_get(j, "resampleOnDrop"); if (v) resampleOnDrop = json_boolean_value(v);
+		v = json_object_get(j, "resampleQuality"); if (v) resampleQuality = (int)json_integer_value(v);
+		v = json_object_get(j, "convertToWavOnDrop"); if (v) convertToWavOnDrop = json_boolean_value(v);
+		v = json_object_get(j, "customConvertDir"); if (v) customConvertDir = json_string_value(v);
 	}
 } sirenSettings;
 

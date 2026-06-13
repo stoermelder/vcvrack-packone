@@ -6,13 +6,12 @@
 namespace StoermelderPackOne {
 namespace Siren {
 
-// ─── AudioStream ─────────────────────────────────────────────────────────────
+// AudioStream
 // Streaming decoder kept open by the data source — no full-file buffering needed.
-
 struct AudioStream {
 	virtual ~AudioStream() = default;
-	virtual int     channels()    const = 0;
-	virtual int     sampleRate()  const = 0;
+	virtual int channels() const = 0;
+	virtual int sampleRate() const = 0;
 	virtual int64_t totalFrames() const = 0;  // 0 if unknown (e.g. live stream)
 
 	// Read up to frameCount interleaved PCM frames normalised to [-1, 1].
@@ -23,12 +22,11 @@ struct AudioStream {
 	virtual bool seekTo(int64_t frameIndex) = 0;
 };
 
-// ─── MemoryAudioStream ────────────────────────────────────────────────────────
+// MemoryAudioStream
 // Holds a fully decoded PCM buffer in memory — used for loop preview so the
 // fill thread can stream from processed audio without touching the filesystem.
 // Thread-safe for concurrent readF32/seekTo once `samples` is assigned,
 // because readPos is only written by the fill thread after stream adoption.
-
 struct MemoryAudioStream : AudioStream {
 	std::vector<float> samples;  // interleaved float PCM
 	int ch = 0;

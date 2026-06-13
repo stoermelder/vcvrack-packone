@@ -15,8 +15,9 @@ namespace Siren {
 static const std::vector<std::string> SUPPORTED_EXTENSIONS = { ".wav", ".WAV", ".flac", ".FLAC", ".mp3", ".MP3" };
 inline bool isSupportedAudioFile(const std::string& path) {
 	std::string ext = rack::system::getExtension(rack::system::getFilename(path));
-	for (const std::string& e : SUPPORTED_EXTENSIONS)
+	for (const std::string& e : SUPPORTED_EXTENSIONS) {
 		if (ext == e) return true;
+	}
 	return false;
 }
 
@@ -42,12 +43,13 @@ inline bool isGeneratedFile(const std::string& filename) {
 	if (filename.size() < TAIL) return false;
 	size_t markerPos = filename.size() - TAIL;
 	if (filename.compare(markerPos, 7, "_siren_") != 0) return false;
-	for (size_t i = markerPos + 7; i < filename.size() - 4; i++)
+	for (size_t i = markerPos + 7; i < filename.size() - 4; i++) {
 		if (!islower((unsigned char)filename[i])) return false;
+	}
 	return filename.compare(filename.size() - 4, 4, ".wav") == 0;
 }
 
-// ─── format-specific audio I/O (only place dr_libs are used directly) ────────
+// format-specific audio I/O (only place dr_libs are used directly)
 
 // Decode header-only metadata (fast; does not decode PCM).
 inline bool loadAudioInfo(const std::string& path, AudioInfo& out) {
@@ -57,10 +59,10 @@ inline bool loadAudioInfo(const std::string& path, AudioInfo& out) {
 	if (ext == ".wav") {
 		drwav wav;
 		if (!drwav_init_file(&wav, path.c_str(), nullptr)) return false;
-		out.sampleRate      = (int)wav.sampleRate;
-		out.channels        = (int)wav.channels;
-		out.bitDepth        = (int)wav.bitsPerSample;
-		out.frameCount      = (int64_t)wav.totalPCMFrameCount;
+		out.sampleRate = (int)wav.sampleRate;
+		out.channels = (int)wav.channels;
+		out.bitDepth = (int)wav.bitsPerSample;
+		out.frameCount = (int64_t)wav.totalPCMFrameCount;
 		out.durationSeconds = wav.sampleRate > 0
 		                    ? (float)wav.totalPCMFrameCount / (float)wav.sampleRate : 0.f;
 		drwav_uninit(&wav);
@@ -69,10 +71,10 @@ inline bool loadAudioInfo(const std::string& path, AudioInfo& out) {
 	if (ext == ".flac") {
 		drflac* flac = drflac_open_file(path.c_str(), nullptr);
 		if (!flac) return false;
-		out.sampleRate      = (int)flac->sampleRate;
-		out.channels        = (int)flac->channels;
-		out.bitDepth        = (int)flac->bitsPerSample;
-		out.frameCount      = (int64_t)flac->totalPCMFrameCount;
+		out.sampleRate = (int)flac->sampleRate;
+		out.channels = (int)flac->channels;
+		out.bitDepth = (int)flac->bitsPerSample;
+		out.frameCount = (int64_t)flac->totalPCMFrameCount;
 		out.durationSeconds = flac->sampleRate > 0
 		                    ? (float)flac->totalPCMFrameCount / (float)flac->sampleRate : 0.f;
 		drflac_close(flac);
@@ -81,10 +83,10 @@ inline bool loadAudioInfo(const std::string& path, AudioInfo& out) {
 	if (ext == ".mp3") {
 		drmp3 mp3;
 		if (!drmp3_init_file(&mp3, path.c_str(), nullptr)) return false;
-		out.sampleRate      = (int)mp3.sampleRate;
-		out.channels        = (int)mp3.channels;
-		out.bitDepth        = 16;
-		out.frameCount      = (int64_t)drmp3_get_pcm_frame_count(&mp3);
+		out.sampleRate = (int)mp3.sampleRate;
+		out.channels = (int)mp3.channels;
+		out.bitDepth = 16;
+		out.frameCount = (int64_t)drmp3_get_pcm_frame_count(&mp3);
 		out.durationSeconds = mp3.sampleRate > 0
 		                    ? (float)out.frameCount / (float)mp3.sampleRate : 0.f;
 		drmp3_uninit(&mp3);
@@ -93,17 +95,17 @@ inline bool loadAudioInfo(const std::string& path, AudioInfo& out) {
 	return false;
 }
 
-// ─── FileSystemAudioStream ───────────────────────────────────────────────────
+// FileSystemAudioStream
 // Keeps a dr_libs decoder open so frames are read on demand — no full-file buffer.
-
 struct FileSystemAudioStream : AudioStream {
 	enum class Fmt { WAV, FLAC, MP3 } fmt;
 
-	drwav   wav  = {};
+	drwav wav = {};
 	drflac* flac = nullptr;
-	drmp3   mp3  = {};
+	drmp3 mp3 = {};
 
-	int     ch = 0, sr = 0;
+	int ch = 0;
+	int sr = 0;
 	int64_t total = 0;
 
 	// Seek table for MP3 — calculated once at open time so every subsequent seek is a
@@ -112,38 +114,43 @@ struct FileSystemAudioStream : AudioStream {
 	std::vector<drmp3_seek_point> mp3SeekTable;
 
 	~FileSystemAudioStream() override {
-		if (fmt == Fmt::WAV)               drwav_uninit(&wav);
+		if (fmt == Fmt::WAV) drwav_uninit(&wav);
 		else if (fmt == Fmt::FLAC && flac) drflac_close(flac);
-		else if (fmt == Fmt::MP3)          drmp3_uninit(&mp3);
+		else if (fmt == Fmt::MP3) drmp3_uninit(&mp3);
 	}
 
-	int     channels()    const override { return ch; }
-	int     sampleRate()  const override { return sr; }
+	int channels() const override { return ch; }
+	int sampleRate() const override { return sr; }
 	int64_t totalFrames() const override { return total; }
 
 	int64_t readF32(float* buffer, int64_t frameCount) override {
-		if (fmt == Fmt::WAV)
+		if (fmt == Fmt::WAV) {
 			return (int64_t)drwav_read_pcm_frames_f32(&wav, (drwav_uint64)frameCount, buffer);
-		if (fmt == Fmt::FLAC)
-			return (int64_t)drflac_read_pcm_frames_f32(flac, (drflac_uint64)frameCount, buffer);
-		if (fmt == Fmt::MP3)
+		}
+		if (fmt == Fmt::FLAC) {
+			return (int64_t)drflac_read_pcm_frames_f32(flac, (drwav_uint64)frameCount, buffer);
+		}
+		if (fmt == Fmt::MP3) {
 			return (int64_t)drmp3_read_pcm_frames_f32(&mp3, (drmp3_uint64)frameCount, buffer);
+		}
 		return 0;
 	}
 
 	bool seekTo(int64_t frameIndex) override {
-		if (fmt == Fmt::WAV)
+		if (fmt == Fmt::WAV) {
 			return drwav_seek_to_pcm_frame(&wav, (drwav_uint64)frameIndex) == DRWAV_TRUE;
-		if (fmt == Fmt::FLAC)
-			return drflac_seek_to_pcm_frame(flac, (drflac_uint64)frameIndex) != 0;
-		if (fmt == Fmt::MP3)
+		}
+		if (fmt == Fmt::FLAC) {
+			return drflac_seek_to_pcm_frame(flac, (drwav_uint64)frameIndex) != 0;
+		}
+		if (fmt == Fmt::MP3) {
 			return drmp3_seek_to_pcm_frame(&mp3, (drmp3_uint64)frameIndex) != 0;
+		}
 		return false;
 	}
 };
 
-// ─── FileSystemDataSource ─────────────────────────────────────────────────────
-
+// FileSystemDataSource
 struct FileSystemDataSource : DataSource {
 	std::string root;
 	std::unique_ptr<MetadataStore> metadata_;
@@ -199,9 +206,9 @@ struct FileSystemDataSource : DataSource {
 
 	DataSourceNode resolveNode(const std::string& relativePath) const override {
 		DataSourceNode node;
-		node.relativePath    = relativePath;
-		node.name            = ghc::filesystem::path(relativePath).filename().string();
-		node.isContainer     = false;
+		node.relativePath = relativePath;
+		node.name = ghc::filesystem::path(relativePath).filename().string();
+		node.isContainer = false;
 		node.durationSeconds = loadCachedDuration(relativePath, resolveAbsPath(relativePath));
 		return node;
 	}
@@ -211,8 +218,9 @@ struct FileSystemDataSource : DataSource {
 	float loadCachedDuration(const std::string& relativePath, const std::string& absPath) const {
 		int64_t ts = getFileTimestamp(absPath);
 		MetadataStore* meta = metadata_.get();
-		if (meta && meta->hasValidAudioInfo(relativePath, ts))
+		if (meta && meta->hasValidAudioInfo(relativePath, ts)) {
 			return meta->samples.at(relativePath).durationSeconds;
+		}
 
 		AudioInfo ai;
 		if (!::StoermelderPackOne::Siren::loadAudioInfo(absPath, ai)) return 0.f;
@@ -232,15 +240,18 @@ struct FileSystemDataSource : DataSource {
 		try {
 			for (const auto& entry : ghc::filesystem::directory_iterator(scanPath)) {
 				DataSourceNode node;
-				node.name        = entry.path().filename().string();
+				node.name = entry.path().filename().string();
 				node.isContainer = entry.is_directory();
 				auto rel = entry.path().lexically_relative(base);
 				node.relativePath = "/" + rel.generic_string();
 				if (node.isContainer || isSupportedAudioFile(node.name)) {
 					if (!node.isContainer) {
-						if (isGeneratedFile(node.name)) continue;
-						if (withAudioInfo)
+						if (isGeneratedFile(node.name)) {
+							continue;
+						}
+						if (withAudioInfo) {
 							node.durationSeconds = loadCachedDuration(node.relativePath, resolveAbsPath(node.relativePath));
+						}
 					}
 					result.push_back(std::move(node));
 				}
@@ -264,7 +275,7 @@ struct FileSystemDataSource : DataSource {
 			try {
 				for (const auto& entry : ghc::filesystem::directory_iterator(scanPath)) {
 					DataSourceNode node;
-					node.name        = entry.path().filename().string();
+					node.name = entry.path().filename().string();
 					node.isContainer = entry.is_directory();
 					auto rel = entry.path().lexically_relative(base);
 					node.relativePath = "/" + rel.generic_string();
@@ -311,23 +322,23 @@ struct FileSystemDataSource : DataSource {
 		if (ext == ".wav") {
 			if (!drwav_init_file(&s->wav, absPath.c_str(), nullptr)) return nullptr;
 			s->fmt = FileSystemAudioStream::Fmt::WAV;
-			s->ch  = (int)s->wav.channels;
-			s->sr  = (int)s->wav.sampleRate;
+			s->ch = (int)s->wav.channels;
+			s->sr = (int)s->wav.sampleRate;
 			s->total = (int64_t)s->wav.totalPCMFrameCount;
 		}
 		else if (ext == ".flac") {
 			s->flac = drflac_open_file(absPath.c_str(), nullptr);
 			if (!s->flac) return nullptr;
 			s->fmt = FileSystemAudioStream::Fmt::FLAC;
-			s->ch  = (int)s->flac->channels;
-			s->sr  = (int)s->flac->sampleRate;
+			s->ch = (int)s->flac->channels;
+			s->sr = (int)s->flac->sampleRate;
 			s->total = (int64_t)s->flac->totalPCMFrameCount;
 		}
 		else if (ext == ".mp3") {
 			if (!drmp3_init_file(&s->mp3, absPath.c_str(), nullptr)) return nullptr;
-			s->fmt   = FileSystemAudioStream::Fmt::MP3;
-			s->ch    = (int)s->mp3.channels;
-			s->sr    = (int)s->mp3.sampleRate;
+			s->fmt = FileSystemAudioStream::Fmt::MP3;
+			s->ch = (int)s->mp3.channels;
+			s->sr = (int)s->mp3.sampleRate;
 			s->total = (int64_t)drmp3_get_pcm_frame_count(&s->mp3);
 
 			// Build a seek table so random-access seeking is O(log N) rather than O(N).
@@ -338,11 +349,11 @@ struct FileSystemDataSource : DataSource {
 			if (drmp3_calculate_seek_points(&s->mp3, &nPoints, s->mp3SeekTable.data())) {
 				s->mp3SeekTable.resize(nPoints);
 				drmp3_bind_seek_table(&s->mp3, nPoints, s->mp3SeekTable.data());
-			} 
+			}
 			else {
 				s->mp3SeekTable.clear();
 			}
-		} 
+		}
 		else {
 			return nullptr;
 		}
@@ -350,7 +361,7 @@ struct FileSystemDataSource : DataSource {
 	}
 
 	std::function<std::string()> prepareForDrop(const std::string& id, bool convertToWav,
-			int targetSampleRate = 0, float trimIn  = 0.f, float trimOut = 1.f,
+			int targetSampleRate = 0, float trimIn = 0.f, float trimOut = 1.f,
 			int resampleQuality = 6, const std::string& outputDir = "",
 			bool loopOnDrop = false, float loopCrossfadeDuration = 8.f,
 			float repitchSemitones = 0.f) override {
@@ -359,17 +370,17 @@ struct FileSystemDataSource : DataSource {
 		std::string ext = rack::system::getExtension(rack::system::getFilename(absPath));
 		for (char& c : ext) c = (char)tolower(c);
 
-		bool needConvert  = convertToWav && (ext == ".flac" || ext == ".mp3");
+		bool needConvert = convertToWav && (ext == ".flac" || ext == ".mp3");
 		bool needResample = targetSampleRate > 0;  // caller passes 0 when resample is off
-		bool needTrim     = trimIn > 0.f || trimOut < 1.f;
-		bool needRepitch  = repitchSemitones != 0.f;
+		bool needTrim = trimIn > 0.f || trimOut < 1.f;
+		bool needRepitch = repitchSemitones != 0.f;
 
 		if (!needConvert && !needResample && !needTrim && !loopOnDrop && !needRepitch) return [absPath]() { return absPath; };
 
-		std::string dir   = !outputDir.empty() ? outputDir : ghc::filesystem::path(absPath).parent_path().string();
+		std::string dir = !outputDir.empty() ? outputDir : ghc::filesystem::path(absPath).parent_path().string();
 		std::string fname = rack::system::getFilename(absPath);
-		size_t dot        = fname.rfind('.');
-		std::string stem  = (dot != std::string::npos) ? fname.substr(0, dot) : fname;
+		size_t dot = fname.rfind('.');
+		std::string stem = (dot != std::string::npos) ? fname.substr(0, dot) : fname;
 		std::string outPath = dir + "/" + stem + randomFileSuffix() + ".wav";
 
 		return [absPath, outPath, targetSampleRate, trimIn, trimOut, resampleQuality, loopOnDrop, loopCrossfadeDuration, repitchSemitones]() -> std::string {
@@ -391,15 +402,15 @@ struct FileSystemDataSource : DataSource {
 		if (!::StoermelderPackOne::Siren::loadAudioInfo(srcPath, info)) return srcPath;
 		if (info.channels <= 0 || info.sampleRate <= 0 || info.frameCount <= 0) return srcPath;
 
-		int     channels    = info.channels;
-		int     srcRate     = info.sampleRate;
+		int channels = info.channels;
+		int srcRate = info.sampleRate;
 		int64_t totalFrames = info.frameCount;
 
 		// Trim: compute the [trimIn, trimOut] region.
-		int64_t startFrame = (int64_t)(trimIn  * (float)totalFrames);
-		int64_t endFrame   = (int64_t)(trimOut * (float)totalFrames);
+		int64_t startFrame = (int64_t)(trimIn * (float)totalFrames);
+		int64_t endFrame = (int64_t)(trimOut * (float)totalFrames);
 		startFrame = std::max((int64_t)0, std::min(startFrame, totalFrames));
-		endFrame   = std::max(startFrame, std::min(endFrame,   totalFrames));
+		endFrame = std::max(startFrame, std::min(endFrame, totalFrames));
 		int64_t trimFrames = endFrame - startFrame;
 		if (trimFrames <= 0) return srcPath;
 
@@ -442,8 +453,8 @@ struct FileSystemDataSource : DataSource {
 		int outRate = (targetSampleRate > 0 && targetSampleRate != srcRate)
 		            ? targetSampleRate : srcRate;
 		std::vector<float> resampled;
-		const float* outPtr    = samples.data();
-		int64_t      outFrames = framesRead;
+		const float* outPtr = samples.data();
+		int64_t outFrames = framesRead;
 		if (outRate != srcRate) {
 			int64_t outCapacity = (int64_t)((double)framesRead * outRate / srcRate) + 256;
 			resampled.resize((size_t)(outCapacity * channels));
@@ -453,14 +464,14 @@ struct FileSystemDataSource : DataSource {
 			// Clamp to speex's documented range; out-of-range values would assert / destroy
 			// the resampler state silently in refreshState().
 			int q = resampleQuality;
-			if (q < 0)  q = 0;
+			if (q < 0) q = 0;
 			if (q > 10) q = 10;
 			src.setQuality(q);
-			int inF  = (int)std::min(framesRead,   (int64_t)INT_MAX);
-			int outF = (int)std::min(outCapacity,  (int64_t)INT_MAX);
+			int inF = (int)std::min(framesRead, (int64_t)INT_MAX);
+			int outF = (int)std::min(outCapacity, (int64_t)INT_MAX);
 			src.process(outPtr, channels, &inF, resampled.data(), channels, &outF);
 			resampled.resize((size_t)outF * channels);
-			outPtr    = resampled.data();
+			outPtr = resampled.data();
 			outFrames = (int64_t)outF;
 		}
 
@@ -470,7 +481,7 @@ struct FileSystemDataSource : DataSource {
 			std::vector<float> repitchBuf(outPtr, outPtr + (size_t)(outFrames * channels));
 			::StoermelderPackOne::Siren::applyRepitch(repitchBuf, channels, outRate, repitchSemitones);
 			resampled = std::move(repitchBuf);
-			outPtr    = resampled.data();
+			outPtr = resampled.data();
 			outFrames = (int64_t)(resampled.size() / (size_t)channels);
 			if (outFrames <= 0) return srcPath;
 		}
@@ -481,17 +492,17 @@ struct FileSystemDataSource : DataSource {
 			std::vector<float> loopBuf(outPtr, outPtr + (size_t)(outFrames * channels));
 			::StoermelderPackOne::Siren::applyLoopCrossfade(loopBuf, channels, outRate, loopCrossfadeDuration);
 			resampled = std::move(loopBuf);
-			outPtr    = resampled.data();
+			outPtr = resampled.data();
 			outFrames = (int64_t)(resampled.size() / (size_t)channels);
 			if (outFrames <= 0) return srcPath;
 		}
 
 		// Write output WAV.
 		drwav_data_format fmt = {};
-		fmt.container     = drwav_container_riff;
-		fmt.format        = DR_WAVE_FORMAT_IEEE_FLOAT;
-		fmt.channels      = (drwav_uint32)channels;
-		fmt.sampleRate    = (drwav_uint32)outRate;
+		fmt.container = drwav_container_riff;
+		fmt.format = DR_WAVE_FORMAT_IEEE_FLOAT;
+		fmt.channels = (drwav_uint32)channels;
+		fmt.sampleRate = (drwav_uint32)outRate;
 		fmt.bitsPerSample = 32;
 		drwav wav;
 		if (!drwav_init_file_write(&wav, dstPath.c_str(), &fmt, nullptr)) return srcPath;
@@ -522,12 +533,12 @@ struct FileSystemDataSource : DataSource {
 			}
 		};
 		auto addNewTagField = [&](std::function<void(const std::string&)> applyTag) {
-			NewTagField* ntf    = new NewTagField;
-			ntf->box.size.x     = 150.f;
-			ntf->placeholder    = "New tag...";
-			ntf->src            = this;
-			ntf->onChanged      = onChanged;
-			ntf->applyTag       = applyTag;
+			NewTagField* ntf = new NewTagField;
+			ntf->box.size.x = 150.f;
+			ntf->placeholder = "New tag...";
+			ntf->src = this;
+			ntf->onChanged = onChanged;
+			ntf->applyTag = applyTag;
 			menu->addChild(ntf);
 			APP->event->setSelectedWidget(ntf);
 		};
@@ -545,9 +556,11 @@ struct FileSystemDataSource : DataSource {
 			std::string folderId = node.relativePath;
 			addNewTagField([this, folderId](const std::string& tag) {
 				auto children = loadChildrenSync(folderId, false);
-				for (const auto& child : children)
-					if (!child.isContainer)
+				for (const auto& child : children) {
+					if (!child.isContainer) {
 						getMetadata()->addTag(child.relativePath, tag);
+					}
+				}
 			});
 
 			// Sticky submenu: scan container, then show all tags; clicking adds/removes
@@ -557,10 +570,11 @@ struct FileSystemDataSource : DataSource {
 				// Scan for direct audio children (runs on UI thread; acceptable for a menu action)
 				auto children = loadChildrenSync(id, false);
 				std::vector<std::string> audioRels;
-				for (const auto& child : children)
-					if (!child.isContainer)
+				for (const auto& child : children) {
+					if (!child.isContainer) {
 						audioRels.push_back(child.relativePath);
-
+					}
+				}
 				if (audioRels.empty()) {
 					tagMenu->addChild(createMenuLabel("No audio files in folder"));
 					return;
@@ -584,10 +598,12 @@ struct FileSystemDataSource : DataSource {
 					bool wasAllHave;
 					std::function<void()> onChanged;
 					void onAction(const event::Action& e) override {
-						if (wasAllHave)
+						if (wasAllHave) {
 							for (const auto& rel : rels) src->metadata_->removeTag(rel, tag);
-						else
+						}
+						else {
 							for (const auto& rel : rels) src->metadata_->addTag(rel, tag);
+						}
 						src->saveMetadata();
 						if (onChanged) onChanged();
 					}
@@ -598,14 +614,14 @@ struct FileSystemDataSource : DataSource {
 				std::sort(sorted.begin(), sorted.end());
 
 				Rack::addGroupedMenuItems<std::string>(tagMenu, sorted, [this, audioRels, allHave, onChanged](const std::string& tag) -> ui::MenuItem* {
-					ContainerTagItem* item   = new ContainerTagItem;
-					item->text            = tag;
-					item->rightText       = CHECKMARK(allHave(tag));
-					item->src             = this;
-					item->rels            = audioRels;
-					item->tag             = tag;
-					item->wasAllHave      = allHave(tag);
-					item->onChanged       = onChanged;
+					ContainerTagItem* item = new ContainerTagItem;
+					item->text = tag;
+					item->rightText = CHECKMARK(allHave(tag));
+					item->src = this;
+					item->rels = audioRels;
+					item->tag = tag;
+					item->wasAllHave = allHave(tag);
+					item->onChanged = onChanged;
 					return item;
 				}, 16);
 			}));
@@ -650,8 +666,12 @@ struct FileSystemDataSource : DataSource {
 					bool has = std::any_of(current.begin(), current.end(), [&](const std::string& t) {
 						return rack::string::lowercase(t) == tagLow;
 					});
-					if (has) metadata->removeTag(rel, tag);
-					else     metadata->addTag(rel, tag);
+					if (has) {
+						metadata->removeTag(rel, tag);
+					}
+					else {
+						metadata->addTag(rel, tag);
+					}
 					src->saveMetadata();
 					if (onChanged) onChanged();
 					e.unconsume();
@@ -673,10 +693,10 @@ struct FileSystemDataSource : DataSource {
 
 			Rack::addGroupedMenuItems<std::string>(menu, sorted, [this, rel, onChanged](const std::string& tag) -> ui::MenuItem* {
 				FileTagItem* item = new FileTagItem;
-				item->text      = tag;
-				item->rel       = rel;
-				item->tag       = tag;
-				item->src       = this;
+				item->text = tag;
+				item->rel = rel;
+				item->tag = tag;
+				item->src = this;
 				item->onChanged = onChanged;
 				return item;
 			}, 16);

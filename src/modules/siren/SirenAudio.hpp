@@ -7,8 +7,7 @@
 namespace StoermelderPackOne {
 namespace Siren {
 
-// ─── data structures ──────────────────────────────────────────────────────────
-
+// data structures
 struct AudioInfo {
 	int sampleRate = 0;
 	int channels = 0;
@@ -26,8 +25,7 @@ struct WaveformCache {
 	bool empty() const { return samples.empty() || sampleCount == 0; }
 };
 
-// ─── file timestamp ───────────────────────────────────────────────────────────
-
+// file timestamp
 inline int64_t getFileTimestamp(const std::string& path) {
 	try {
 		auto ft = ghc::filesystem::last_write_time(path);
@@ -36,8 +34,7 @@ inline int64_t getFileTimestamp(const std::string& path) {
 	catch (...) { return 0; }
 }
 
-// ─── base64 helpers ───────────────────────────────────────────────────────────
-
+// base64 helpers
 static const char B64_ENC[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 inline std::string b64Encode(const uint8_t* data, size_t len) {
@@ -83,7 +80,7 @@ inline std::vector<uint8_t> b64Decode(const std::string& s) {
 	return out;
 }
 
-// ─── waveform cache file I/O ─────────────────────────────────────────────────
+// waveform cache file I/O
 //
 // JSON file with metadata fields + per-channel base64-encoded int16 sample data.
 // Each channel's samples are scaled to [-32767, 32767], packed as little-endian
@@ -114,10 +111,11 @@ inline bool loadWaveformCacheFile(const std::string& cachePath, int64_t expected
 	if (!channelsJ || !json_is_array(channelsJ)) return false;
 
 	out.fileTimestamp = storedTs;
-	out.sampleCount   = sampleCount;
+	out.sampleCount = sampleCount;
 	out.samples.clear();
 
-	size_t ch; json_t* chJ;
+	size_t ch;
+	json_t* chJ;
 	json_array_foreach(channelsJ, ch, chJ) {
 		if (!json_is_string(chJ)) return false;
 		auto bytes = b64Decode(json_string_value(chJ));

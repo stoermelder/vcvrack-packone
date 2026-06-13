@@ -41,36 +41,36 @@ struct SirenModule : Module {
 	float lastPlayheadPos = 0.f;
 	int activeRootIdx = -1;
 
-	// ── audio streaming ────────────────────────────────────────────────────────
+	// audio streaming
 	// The module owns all audio state; the widget only drives the UI.
 
-	// ── lock-free command channel (UI → fill thread) ──────────────────────────
+	// lock-free command channel (UI → fill thread)
 	// UI sets; fill thread exchange()s to nullptr/-1/false to consume.
 	// No mutex on any audio path — only atomics and ring buffers.
 	std::atomic<AudioStream*> pendingStream{nullptr};  // raw ptr: UI releases ownership, fill thread adopts
-	std::atomic<int64_t>      pendingSeekFrame{-1};    // ≥0 means seek to this frame and start playing
-	std::atomic<bool>         pendingStop{false};      // true means stop and drain ring
+	std::atomic<int64_t> pendingSeekFrame{-1};    // ≥0 means seek to this frame and start playing
+	std::atomic<bool> pendingStop{false};      // true means stop and drain ring
 
 	// Audio ring buffers — single-producer (fill thread) / single-consumer (process())
 	static constexpr size_t RB_SIZE = 1 << 13;         // 8192 frames ≈ 186 ms at 44.1 kHz
 	dsp::RingBuffer<float, RB_SIZE> rbL, rbR;
 
 	// Fill thread management
-	std::thread             fillThread;
+	std::thread fillThread;
 	std::condition_variable fillCv;      // woken by UI commands or when ring needs data
-	std::mutex              fillCvMutex; // guards the condition variable only
-	std::atomic<bool>       fillThreadStop{false};
+	std::mutex fillCvMutex; // guards the condition variable only
+	std::atomic<bool> fillThreadStop{false};
 
 	// Playback state
-	std::atomic<bool>  playing{false};       // DSP reads; fill thread and UI write
-	std::atomic<bool>  eofReached{false};    // fill thread sets at decoder EOF; DSP drains ring before stopping
+	std::atomic<bool> playing{false};        // DSP reads; fill thread and UI write
+	std::atomic<bool> eofReached{false};     // fill thread sets at decoder EOF; DSP drains ring before stopping
 	std::atomic<float> playheadPos{0.f};     // DSP writes; UI reads for display
 	std::atomic<float> trimIn{0.f};          // UI writes; DSP reads for loop restart position
 	std::atomic<float> trimOut{1.f};         // UI writes; DSP reads to compute stop frame
 
 	// Position counters — written before playing=true (release), read after playing (acquire)
-	int64_t              seekBaseFrame     = 0;  // file frame at which this play session began
-	int64_t              streamTotalFrames = 0;  // total frames in the open item; set in openStream()
+	int64_t seekBaseFrame = 0;  // file frame at which this play session began
+	int64_t streamTotalFrames = 0;  // total frames in the open item; set in openStream()
 	std::atomic<int64_t> outputFrameCount{0};    // frames output since last seek; DSP increments
 
 	// Resampling — fill thread reads, process() writes engineSampleRate
@@ -90,16 +90,16 @@ struct SirenModule : Module {
 
 		// Per-stream playback config — computed once per seek, reused every fill cycle.
 		dsp::SampleRateConverter<2> src;
-		int   fillCh       = 1;
-		bool  fillResample = false;
-		float fillRatio    = 1.f;  // outRate / inRate
+		int fillCh = 1;
+		bool fillResample = false;
+		float fillRatio = 1.f;  // outRate / inRate
 
 		// Tracks the file-frame position of the next frame to be pushed into the ring.
 		// The fill thread uses this to wrap seamlessly at trimOut → trimIn during looping
 		// without clearing the ring, so the DSP never hears a gap.
 		int64_t fillFilePos = 0;
 
-		static constexpr size_t CHUNK   = 1024;
+		static constexpr size_t CHUNK = 1024;
 		static constexpr size_t OUT_MAX = CHUNK * 8;  // headroom for up to 8× upsampling
 		float outBuf[OUT_MAX * 2];  // resampler output — allocated once for the thread lifetime
 
@@ -110,11 +110,11 @@ struct SirenModule : Module {
 		// loop needs none of this — its boundaries are already near silence — so it keeps
 		// the cheaper hard seek.
 		static constexpr int64_t LOOP_XFADE = 512;  // ~11 ms @44.1 kHz
-		float   loopHead[LOOP_XFADE * 2];   // first `xfade` frames of the range, cached once
-		float   loopTail[LOOP_XFADE * 2];   // last `xfade` frames of the range, read each period
-		bool    loopHeadValid = false;      // loopHead matches the current range
-		int64_t loopCacheIn   = -1;         // trimIn frame loopHead was built for
-		int64_t loopCacheOut  = -1;         // trimOut frame loopHead was built for
+		float loopHead[LOOP_XFADE * 2];   // first `xfade` frames of the range, cached once
+		float loopTail[LOOP_XFADE * 2];   // last `xfade` frames of the range, read each period
+		bool loopHeadValid = false;       // loopHead matches the current range
+		int64_t loopCacheIn = -1;         // trimIn frame loopHead was built for
+		int64_t loopCacheOut = -1;        // trimOut frame loopHead was built for
 
 		// Push n frames from buf into the ring, resampling if active.
 		auto pushFrames = [&](const float* buf, int n) {
@@ -160,8 +160,9 @@ struct SirenModule : Module {
 			for (int64_t i = 0; i < xf; i++) {
 				float angle = ((xf > 1) ? (float)i / (float)(xf - 1) : 1.f) * float(M_PI) * 0.5f;
 				float fo = std::cos(angle), fi = std::sin(angle);
-				for (int c = 0; c < fillCh; c++)
+				for (int c = 0; c < fillCh; c++) {
 					blend[i * fillCh + c] = loopTail[i * fillCh + c] * fo + loopHead[i * fillCh + c] * fi;
+				}
 			}
 			pushFrames(blend, (int)xf);
 			// Resume after the head frames already consumed by the fade-in.
@@ -199,10 +200,12 @@ struct SirenModule : Module {
 			float zcBuf[ZC_WINDOW * 2];
 			int64_t zcRead = stream->readF32(zcBuf, ZC_WINDOW);
 			int64_t zcOffset = 0;
-			for (int64_t i = 1; i < zcRead; i++)
+			for (int64_t i = 1; i < zcRead; i++) {
 				if (zcBuf[(i - 1) * fillCh] * zcBuf[i * fillCh] <= 0.f) { zcOffset = i; break; }
-			for (int64_t r = zcOffset; r < zcRead; r += (int64_t)CHUNK)
+			}
+			for (int64_t r = zcOffset; r < zcRead; r += (int64_t)CHUNK) {
 				pushFrames(zcBuf + r * fillCh, (int)std::min((int64_t)CHUNK, zcRead - r));
+			}
 
 			// Shift seekBaseFrame so the displayed playhead matches the actual audio start
 			// (written before the playing release-fence).
@@ -213,23 +216,27 @@ struct SirenModule : Module {
 
 		// Top up the ring while playing, wrapping seamlessly at the loop boundary.
 		auto fillRing = [&]() {
-			bool    isLooping   = sirenSettings.loopPlayback;
+			bool isLooping = sirenSettings.loopPlayback;
 			int64_t totalFrames = streamTotalFrames;
 
 			// Resolve the loop range and crossfade length. A crossfade is used only for a
 			// sub-range (trim points active); a full-file loop wraps at near-silent
 			// boundaries and keeps the cheaper hard seek.
-			int64_t inFrame = 0, outFrame = 0, xfade = 0;
-			bool    trimLoop = false;
+			int64_t inFrame = 0;
+			int64_t outFrame = 0;
+			int64_t xfade = 0;
+			bool trimLoop = false;
 			if (isLooping && totalFrames > 0) {
-				inFrame  = (int64_t)(trimIn.load(std::memory_order_relaxed)  * totalFrames);
+				inFrame = (int64_t)(trimIn.load(std::memory_order_relaxed) * totalFrames);
 				outFrame = (int64_t)(trimOut.load(std::memory_order_relaxed) * totalFrames);
 				if ((inFrame > 0 || outFrame < totalFrames) && inFrame < outFrame) {
-					xfade    = std::min(LOOP_XFADE, (outFrame - inFrame) / 2);
+					xfade = std::min(LOOP_XFADE, (outFrame - inFrame) / 2);
 					trimLoop = xfade > 0;
 					// Rebuild the cached head whenever the loop range changes.
 					if (inFrame != loopCacheIn || outFrame != loopCacheOut) {
-						loopCacheIn = inFrame; loopCacheOut = outFrame; loopHeadValid = false;
+						loopCacheIn = inFrame;
+						loopCacheOut = outFrame;
+						loopHeadValid = false;
 					}
 				}
 			}
@@ -280,14 +287,14 @@ struct SirenModule : Module {
 		};
 
 		while (!fillThreadStop.load(std::memory_order_relaxed)) {
-			// ── stop: halt playback and drain ring ────────────────────────
+			// stop: halt playback and drain ring
 			if (pendingStop.exchange(false, std::memory_order_acq_rel)) {
 				playing.store(false, std::memory_order_release);
 				eofReached.store(false, std::memory_order_relaxed);
 				rbL.clear(); rbR.clear();
 			}
 
-			// ── stream swap: adopt new decoder from UI thread ─────────────
+			// stream swap: adopt new decoder from UI thread
 			AudioStream* ns = pendingStream.exchange(nullptr, std::memory_order_acq_rel);
 			if (ns) {
 				delete stream;
@@ -298,15 +305,16 @@ struct SirenModule : Module {
 				loopHeadValid = false;
 			}
 
-			// ── seek: reposition, configure resampler, prime ring ─────────
+			// seek: reposition, configure resampler, prime ring
 			int64_t sf = pendingSeekFrame.exchange(-1, std::memory_order_acq_rel);
 			if (sf >= 0 && stream) primeFromSeek(sf);
 
-			// ── fill: keep ring topped up while playing ───────────────────
-			if (playing.load(std::memory_order_relaxed) && stream && !eofReached.load(std::memory_order_relaxed))
+			// fill: keep ring topped up while playing
+			if (playing.load(std::memory_order_relaxed) && stream && !eofReached.load(std::memory_order_relaxed)) {
 				fillRing();
+			}
 
-			// ── sleep when idle ───────────────────────────────────────────
+			// sleep when idle
 			{
 				std::unique_lock<std::mutex> cvLock(fillCvMutex);
 				fillCv.wait_for(cvLock, std::chrono::milliseconds(5), [this] {
@@ -486,13 +494,12 @@ struct SirenModule : Module {
 	}
 };
 
-// ─── display widget ───────────────────────────────────────────────────────────
-
+// display widget
 struct SirenDisplayWidget : OpaqueWidget {
 	void draw(const DrawArgs& args) override {}
 	void drawLayer(const DrawArgs& args, int layer) override {
 		if (layer != 1) return;
-		float b     = std::max(0.2f, settings::rackBrightness);
+		float b = std::max(0.2f, settings::rackBrightness);
 		float b_inv = 1.f + std::max(b - settings::rackBrightness, 0.f) * 8.f;
 		nvgGlobalAlpha(args.vg, b);
 
@@ -514,7 +521,7 @@ struct SirenDisplayWidget : OpaqueWidget {
 		// Dark gradient background
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, RECT_ARGS(r));
-		NVGcolor topColor    = color::mult(nvgRGB(0x22, 0x22, 0x22), b_inv);
+		NVGcolor topColor = color::mult(nvgRGB(0x22, 0x22, 0x22), b_inv);
 		NVGcolor bottomColor = color::mult(nvgRGB(0x12, 0x12, 0x12), b_inv);
 		nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 25.f, topColor, bottomColor));
 		nvgFill(args.vg);
@@ -581,7 +588,7 @@ struct SirenDisplayWidget : OpaqueWidget {
 struct SirenDragOverlay : widget::TransparentWidget {
 	SirenDropHandler* dropHandler = nullptr;
 	SirenPreviewPane* previewPane = nullptr;
-	TaskWorker*       worker      = nullptr;
+	TaskWorker* worker = nullptr;
 	bool initiated = false;
 
 	void drawLayer(const DrawArgs& args, int layer) override {
@@ -600,8 +607,8 @@ struct SirenDragOverlay : widget::TransparentWidget {
 		float bounds[4];
 		nvgTextBounds(args.vg, 0.f, 0.f, lbl.c_str(), nullptr, bounds);
 		const float pad = 4.f;
-		const float w   = bounds[2] - bounds[0] + pad * 2.f;
-		const float h   = 18.f;
+		const float w = bounds[2] - bounds[0] + pad * 2.f;
+		const float h = 18.f;
 
 		nvgBeginPath(args.vg);
 		nvgRoundedRect(args.vg, mp.x + 10.f, mp.y, w, h, 3.f);
@@ -625,8 +632,9 @@ struct SirenDragOverlay : widget::TransparentWidget {
 	}
 
 	void onDragEnd(const event::DragEnd& e) override {
-		if (dropHandler && dropHandler->active && worker)
+		if (dropHandler && dropHandler->active && worker) {
 			dropHandler->endDrag(APP->scene->mousePos, worker);
+		}
 		initiated = false;
 	}
 };
@@ -698,32 +706,32 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		static constexpr float vuW = 2.f * SirenVuMeter::BAR_W + SirenVuMeter::BAR_GAP + 4.f;
 		static constexpr float vuH = SirenVuMeter::NUM_SEGS * (SirenVuMeter::SEG_H + SirenVuMeter::SEG_GAP);
 		SirenVuMeter* vu = new SirenVuMeter;
-		vu->levelL   = module ? &module->levelL : nullptr;
-		vu->levelR   = module ? &module->levelR : nullptr;
-		vu->box.pos  = Vec(12.9f, 235.3f);
+		vu->levelL = module ? &module->levelL : nullptr;
+		vu->levelR = module ? &module->levelR : nullptr;
+		vu->box.pos = Vec(12.9f, 235.3f);
 		vu->box.size = Vec(vuW, vuH);
 		addChild(vu);
 
 		addChild(createWidgetCentered<SirenOcWidget>(Vec(22.9f, 329.f)));
 
-		// ── Layout constants ──────────────────────────────────────────────────
+		// Layout constants
 		const float contentX = 8.f;
 		const float contentY = 8.f;
 		const float browserW = 188.0f;
 		const float previewW = 297.8f;
-		const float totalW   = browserW + previewW;
-		const float topBarH  = 18.f;
+		const float totalW = browserW + previewW;
+		const float topBarH = 18.f;
 		const float contentH = 336.6f;
-		const float paneH    = contentH - topBarH;
-		const float gapW     = 4.f;   // gap between browser and preview
+		const float paneH = contentH - topBarH;
+		const float gapW = 4.f;   // gap between browser and preview
 
-		// ── Display widget (single container for browser + topbar + preview) ──
+		// Display widget (single container for browser + topbar + preview)
 		SirenDisplayWidget* display = new SirenDisplayWidget;
 		display->box.pos = Vec(45.5f, 10.2f);
 		display->box.size = Vec(501.7f, 354.0f);
 		addChild(display);
 
-		// ── Browser pane (inside display, local coords) ───────────────────────
+		// Browser pane (inside display, local coords)
 		{
 			const Vec displaySize = Vec(browserW, paneH);
 
@@ -762,17 +770,17 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			display->addChild(browserPane);
 		}
 
-		// ── Top bar (inside display, local coords) ────────────────────────────
+		// Top bar (inside display, local coords)
 		SirenTopBar* topBar = new SirenTopBar;
-		topBar->box.pos  = Vec(contentX, contentY);   // relative to display
+		topBar->box.pos = Vec(contentX, contentY);   // relative to display
 		topBar->box.size = Vec(totalW, topBarH);
 		topBar->pane = browserPane;
 		topBar->init();
 		display->addChild(topBar);
 
-		// ── Preview pane (inside display, local coords) ───────────────────────
+		// Preview pane (inside display, local coords)
 		previewPane = new SirenPreviewPane;
-		previewPane->box.pos  = Vec(contentX + browserW + gapW, contentY + topBarH);  // relative to display
+		previewPane->box.pos = Vec(contentX + browserW + gapW, contentY + topBarH);  // relative to display
 		previewPane->box.size = Vec(previewW, paneH);
 		previewPane->init(&taskWorker, &dropHandler);
 		previewPane->cacheDir = sirenCacheDirPath();
@@ -790,33 +798,33 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		if (!module) return;
 
 		// Wire audio callbacks: pane → module
-		previewPane->openStreamCallback    = [module](const std::string& id, DataSource* src) {
+		previewPane->openStreamCallback = [module](const std::string& id, DataSource* src) {
 			module->openStream(id, src);
 		};
-		previewPane->adoptStreamCallback   = [module](std::unique_ptr<AudioStream> s, int64_t tf) {
+		previewPane->adoptStreamCallback = [module](std::unique_ptr<AudioStream> s, int64_t tf) {
 			module->adoptStream(std::move(s), tf);
 		};
 		previewPane->startPlaybackCallback = [module](float pos) {
 			module->startPlayback(pos);
 		};
-		previewPane->stopPlaybackCallback  = [module]() {
+		previewPane->stopPlaybackCallback = [module]() {
 			module->stopPlayback();
 		};
 		previewPane->onMetadataChanged = [this]() {
 			browserPane->requestRebuild();
 		};
 		previewPane->modulePlayheadPos = &module->playheadPos;
-		previewPane->modulePlaying     = &module->playing;
-		previewPane->moduleInPoint     = &module->trimIn;
-		previewPane->moduleOutPoint    = &module->trimOut;
+		previewPane->modulePlaying = &module->playing;
+		previewPane->moduleInPoint = &module->trimIn;
+		previewPane->moduleOutPoint = &module->trimOut;
 
 		// Top-level drag label overlay — drawn above all other rack elements
 		dragOverlay = new SirenDragOverlay;
-		dragOverlay->box.pos  = Vec(0.f, 0.f);
+		dragOverlay->box.pos = Vec(0.f, 0.f);
 		dragOverlay->box.size = Vec(1e6f, 1e6f);
 		dragOverlay->dropHandler = &dropHandler;
 		dragOverlay->previewPane = previewPane;
-		dragOverlay->worker      = &taskWorker;
+		dragOverlay->worker = &taskWorker;
 		APP->scene->rack->addChild(dragOverlay);
 
 		// Load global settings and restore state
@@ -831,10 +839,10 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			DataSource* src = browserPane->activeDs.get();
 			if (!src) return [id]() { return id; };
 
-			int targetRate   = sirenSettings.resampleOnDrop ? this->module->engineSampleRate : 0;
-			bool loopOnDrop  = previewPane->isLoopPreviewActive();
+			int targetRate = sirenSettings.resampleOnDrop ? this->module->engineSampleRate : 0;
+			bool loopOnDrop = previewPane->isLoopPreviewActive();
 			float repitchOnDrop = previewPane->isRepitchPreviewActive() ? previewPane->repitchTotalSemitones() : 0.f;
-			float trimIn  = previewPane->canvas ? previewPane->canvas->inPoint  : 0.f;
+			float trimIn = previewPane->canvas ? previewPane->canvas->inPoint : 0.f;
 			float trimOut = previewPane->canvas ? previewPane->canvas->outPoint : 1.f;
 			return src->prepareForDrop(id, sirenSettings.convertToWavOnDrop,
 				targetRate, trimIn, trimOut, sirenSettings.resampleQuality, sirenSettings.customConvertDir,
@@ -876,8 +884,9 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 	std::string activeRoot() const {
 		int idx = sirenSettings.activeRootIdx;
-		if (idx >= 0 && idx < (int)sirenSettings.rootContainers.size())
+		if (idx >= 0 && idx < (int)sirenSettings.rootContainers.size()) {
 			return sirenSettings.rootContainers[idx];
+		}
 		return "";
 	}
 
