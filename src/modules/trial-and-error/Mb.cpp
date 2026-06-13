@@ -193,6 +193,13 @@ std::set<std::string> customTagsForModel(Model* model) {
 	return result;
 }
 
+std::set<std::string> customTagsAll() {
+	std::set<std::string> result;
+	for (auto& pair : customTagModels)
+		result.insert(pair.first);
+	return result;
+}
+
 
 // Predefined tag modifications
 

@@ -48,7 +48,7 @@ struct ParamHandleEx : ParamHandleIndicator {
 
 
 template <int NUM_PRESETS>
-struct TransitModule : TransitBase<NUM_PRESETS>, TransitCtrlMaster, ExpanderChangeListener {
+struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMaster, ExpanderChangeListener {
 	typedef TransitBase<NUM_PRESETS> BASE;
 	typedef typename TransitBase<NUM_PRESETS>::Slot SLOT;
 
