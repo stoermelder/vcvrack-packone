@@ -841,9 +841,27 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			float repitchOnDrop = previewPane->isRepitchPreviewActive() ? previewPane->repitchTotalSemitones() : 0.f;
 			float trimIn = previewPane->canvas ? previewPane->canvas->inPoint : 0.f;
 			float trimOut = previewPane->canvas ? previewPane->canvas->outPoint : 1.f;
+			// Resolve the output directory from the chosen target at drop time.
+			// Patch storage can only be created once the module is added to the
+			// engine, so we look it up here (UI thread) rather than capturing the
+			// module pointer and dereferencing it on the worker thread later.
+			std::string outputDir;
+			switch (sirenSettings.convertTarget) {
+				case SirenSettings::CT_CUSTOM:
+					outputDir = sirenSettings.customConvertDir;
+					break;
+				case SirenSettings::CT_PATCH:
+					outputDir = this->module ? this->module->createPatchStorageDirectory() : "";
+					break;
+				case SirenSettings::CT_SOURCE:
+				default:
+					outputDir = "";
+					break;
+			}
 			return src->prepareForDrop(id, sirenSettings.convertToWavOnDrop,
-				targetRate, trimIn, trimOut, sirenSettings.resampleQuality, sirenSettings.customConvertDir,
-				loopOnDrop, previewPane->loopCrossfadeDuration, repitchOnDrop);
+				targetRate, trimIn, trimOut, sirenSettings.resampleQuality, outputDir,
+				loopOnDrop, previewPane->loopCrossfadeDuration, repitchOnDrop,
+				sirenSettings.alwaysCopy);
 		};
 		dropHandler.moduleWidget = this;
 
@@ -965,19 +983,42 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		menu->addChild(createBoolPtrMenuItem("Convert to WAV on drop", "", &sirenSettings.convertToWavOnDrop));
 		menu->addChild(createSubmenuItem("Folder for converted/trimmed files", "", [=](ui::Menu* subMenu) {
 			subMenu->addChild(createCheckMenuItem("Same folder as source file", "",
-				[=]() { return sirenSettings.customConvertDir.empty(); },
-				[=]() { sirenSettings.customConvertDir = ""; }
+				[=]() { return sirenSettings.convertTarget == SirenSettings::CT_SOURCE; },
+				[=]() { sirenSettings.convertTarget = SirenSettings::CT_SOURCE; }
 			));
 			subMenu->addChild(createCheckMenuItem(
 				sirenSettings.customConvertDir.empty() ? "Custom folder..." : sirenSettings.customConvertDir, "",
-				[=]() { return !sirenSettings.customConvertDir.empty(); },
+				[=]() { return sirenSettings.convertTarget == SirenSettings::CT_CUSTOM; },
 				[]() {
 					char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
 					if (!path) return;
 					sirenSettings.customConvertDir = path;
+					sirenSettings.convertTarget = SirenSettings::CT_CUSTOM;
 					free(path);
 				}
 			));
+			// Patch storage: writes the file into the module's per-patch storage
+			// directory, so the sample is bundled with the saved patch. Only
+			// available when this is a real module instance (i.e. not a preview
+			// widget). The widget pointer is captured by the lambda so the check
+			// is dynamic and re-evaluated when the menu is opened.
+			subMenu->addChild(createCheckMenuItem("Patch storage", "",
+				[=]() { return sirenSettings.convertTarget == SirenSettings::CT_PATCH; },
+				[this]() {
+					if (!this->module) return;
+					sirenSettings.convertTarget = SirenSettings::CT_PATCH;
+				},
+				this->module == nullptr
+			));
+			subMenu->addChild(new ui::MenuSeparator);
+			// "Always copy" forces a copy of the source file into the target folder
+			// even when no conversion/trim/resample is needed. Disabled (greyed out)
+			// when the target is the source folder — copying a file on top of itself
+			// serves no purpose.
+			subMenu->addChild(createBoolMenuItem("Always copy", "",
+				[=]() { return sirenSettings.alwaysCopy; },
+				[=](bool v) { sirenSettings.alwaysCopy = v; },
+				sirenSettings.convertTarget == SirenSettings::CT_SOURCE));
 		}));
 	}
 };

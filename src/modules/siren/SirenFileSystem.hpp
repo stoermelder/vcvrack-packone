@@ -3,6 +3,7 @@
 #include "SirenDataSource.hpp"
 #include "SirenAudio.hpp"
 #include <osdialog.h>
+#include <fstream>
 
 // dr_libs — declarations only (implementations compiled in SirenDrLibs.cpp)
 #include "../../../dep/drlibs/dr_wav.h"
@@ -358,7 +359,7 @@ struct FileSystemDataSource : DataSource {
 			int targetSampleRate = 0, float trimIn = 0.f, float trimOut = 1.f,
 			int resampleQuality = 6, const std::string& outputDir = "",
 			bool loopOnDrop = false, float loopCrossfadeDuration = 8.f,
-			float repitchSemitones = 0.f) override {
+			float repitchSemitones = 0.f, bool alwaysCopy = false) override {
 
 		std::string absPath = resolveAbsPath(id);
 		std::string ext = rack::system::getExtension(rack::system::getFilename(absPath));
@@ -369,7 +370,12 @@ struct FileSystemDataSource : DataSource {
 		bool needTrim = trimIn > 0.f || trimOut < 1.f;
 		bool needRepitch = repitchSemitones != 0.f;
 
-		if (!needConvert && !needResample && !needTrim && !loopOnDrop && !needRepitch) return [absPath]() { return absPath; };
+		// alwaysCopy only makes sense when there is somewhere to copy to. The "Same
+		// folder as source" target leaves outputDir empty; copying a file on top of
+		// itself is pointless, so we treat it as a no-op in that case.
+		bool needCopy = alwaysCopy && !outputDir.empty();
+
+		if (!needConvert && !needResample && !needTrim && !loopOnDrop && !needRepitch && !needCopy) return [absPath]() { return absPath; };
 
 		std::string dir = !outputDir.empty() ? outputDir : ghc::filesystem::path(absPath).parent_path().string();
 		std::string fname = rack::system::getFilename(absPath);
@@ -377,9 +383,34 @@ struct FileSystemDataSource : DataSource {
 		std::string stem = (dot != std::string::npos) ? fname.substr(0, dot) : fname;
 		std::string outPath = dir + "/" + stem + randomFileSuffix() + ".wav";
 
-		return [absPath, outPath, targetSampleRate, trimIn, trimOut, resampleQuality, loopOnDrop, loopCrossfadeDuration, repitchSemitones]() -> std::string {
+		return [absPath, outPath, targetSampleRate, trimIn, trimOut, resampleQuality, loopOnDrop, loopCrossfadeDuration, repitchSemitones, needCopy]() -> std::string {
+			// Copy-only path: no conversion/transcode is required, so a plain
+			// filesystem copy is faster and preserves the original format/bit-depth
+			// (a re-encode to WAV would always be 32-bit float and lose metadata).
+			if (needCopy && targetSampleRate == 0 && trimIn <= 0.f && trimOut >= 1.f
+			        && !loopOnDrop && repitchSemitones == 0.f) {
+				return copyFileForDrop(absPath, outPath);
+			}
 			return processAudioForDrop(absPath, outPath, targetSampleRate, trimIn, trimOut, resampleQuality, loopOnDrop, loopCrossfadeDuration, repitchSemitones);
 		};
+	}
+
+	// Copies src to dst (binary, no re-encoding) and returns dst on success or
+	// src on failure. Used by the alwaysCopy path: keeping the original file
+	// intact is faster and avoids the lossy re-encode that processAudioForDrop
+	// would otherwise do (WAV float32 regardless of source format).
+	static std::string copyFileForDrop(const std::string& srcPath, const std::string& dstPath) {
+		std::ifstream in(srcPath, std::ios::binary);
+		if (!in) return srcPath;
+		// Make sure the destination directory exists; patch storage is created
+		// for us, but a user-chosen custom folder might be a brand-new path.
+		std::error_code ec;
+		ghc::filesystem::create_directories(ghc::filesystem::path(dstPath).parent_path(), ec);
+		std::ofstream out(dstPath, std::ios::binary | std::ios::trunc);
+		if (!out) return srcPath;
+		out << in.rdbuf();
+		if (!out.good()) return srcPath;
+		return dstPath;
 	}
 
 	// Trim, decode, resample, and/or loop-process src into a new WAV file at dstPath.

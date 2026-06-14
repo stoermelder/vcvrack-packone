@@ -7,6 +7,11 @@ namespace StoermelderPackOne {
 namespace Siren {
 
 struct SirenSettings {
+	// Where to write generated copies of audio files when a drop needs them.
+	//   CT_SOURCE — next to the source file (the default)
+	//   CT_CUSTOM — into customConvertDir (chosen by the user)
+	//   CT_PATCH  — into the module's patch storage directory
+	enum ConvertTarget { CT_SOURCE = 0, CT_CUSTOM = 1, CT_PATCH = 2 };
 	std::vector<RootContainer> rootContainers;
 	int activeRootIdx = -1;
 	std::string lastFile;
@@ -19,9 +24,16 @@ struct SirenSettings {
 	// linear / default / best in the speex preset table.
 	int resampleQuality = 6;
 	bool convertToWavOnDrop = false;
-	// When non-empty, converted/trimmed files are written here instead of
-	// alongside the source file.
+	// When non-empty and convertTarget == CT_CUSTOM, converted/trimmed files are
+	// written here instead of alongside the source file. For CT_SOURCE/older
+	// settings (convertTarget == 0 with this empty) the output lands beside the
+	// source file.
 	std::string customConvertDir;
+	ConvertTarget convertTarget = CT_SOURCE;
+	// When true, the file is always copied to the target location on drop, even
+	// when no conversion/trim/resample/loop/repitch is needed. No-op for
+	// CT_SOURCE — copying a file on top of itself is pointless.
+	bool alwaysCopy = false;
 
 	// Saves via rename-write-verify-delete so a crash mid-write can never destroy
 	// the previous settings: the existing file is first moved aside to ".bak",
@@ -116,6 +128,8 @@ struct SirenSettings {
 		json_object_set_new(j, "resampleQuality", json_integer(resampleQuality));
 		json_object_set_new(j, "convertToWavOnDrop", json_boolean(convertToWavOnDrop));
 		json_object_set_new(j, "customConvertDir", json_string(customConvertDir.c_str()));
+		json_object_set_new(j, "convertTarget", json_integer(convertTarget));
+		json_object_set_new(j, "alwaysCopy", json_boolean(alwaysCopy));
 		return j;
 	}
 
@@ -149,6 +163,13 @@ struct SirenSettings {
 		v = json_object_get(j, "resampleQuality"); if (v) resampleQuality = (int)json_integer_value(v);
 		v = json_object_get(j, "convertToWavOnDrop"); if (v) convertToWavOnDrop = json_boolean_value(v);
 		v = json_object_get(j, "customConvertDir"); if (v) customConvertDir = json_string_value(v);
+		v = json_object_get(j, "convertTarget");
+		// Backward compatibility: older settings stored the source-vs-custom choice
+		// implicitly via customConvertDir being empty/non-empty. The new explicit
+		// field takes precedence when present.
+		if (v) convertTarget = (ConvertTarget)(int)json_integer_value(v);
+		else convertTarget = customConvertDir.empty() ? CT_SOURCE : CT_CUSTOM;
+		v = json_object_get(j, "alwaysCopy"); if (v) alwaysCopy = json_boolean_value(v);
 	}
 } sirenSettings;
 

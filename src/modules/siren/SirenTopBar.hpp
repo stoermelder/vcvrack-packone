@@ -93,19 +93,35 @@ struct SirenSourceButton : ui::ChoiceButton {
 		menu->addChild(createBoolPtrMenuItem("Convert to WAV on drop", "", &sirenSettings.convertToWavOnDrop));
 		menu->addChild(createSubmenuItem("Folder for converted/trimmed files", "", [=](ui::Menu* subMenu) {
 			subMenu->addChild(createCheckMenuItem("Same folder as source file", "",
-				[=]() { return sirenSettings.customConvertDir.empty(); },
-				[=]() { sirenSettings.customConvertDir = ""; }
+				[=]() { return sirenSettings.convertTarget == SirenSettings::CT_SOURCE; },
+				[=]() { sirenSettings.convertTarget = SirenSettings::CT_SOURCE; }
 			));
 			subMenu->addChild(createCheckMenuItem(
 				sirenSettings.customConvertDir.empty() ? "Custom folder..." : sirenSettings.customConvertDir, "",
-				[=]() { return !sirenSettings.customConvertDir.empty(); },
+				[=]() { return sirenSettings.convertTarget == SirenSettings::CT_CUSTOM; },
 				[]() {
 					char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
 					if (!path) return;
 					sirenSettings.customConvertDir = path;
+					sirenSettings.convertTarget = SirenSettings::CT_CUSTOM;
 					free(path);
 				}
 			));
+			subMenu->addChild(createCheckMenuItem("Patch storage", "",
+				[=]() { return sirenSettings.convertTarget == SirenSettings::CT_PATCH; },
+				[=]() { sirenSettings.convertTarget = SirenSettings::CT_PATCH; }
+			));
+			subMenu->addChild(new MenuSeparator);
+			// "Always copy" forces a copy of the source file into the target folder
+			// even when no conversion/trim/resample is needed. Disabled (greyed out)
+			// when the target is the source folder — copying a file on top of itself
+			// serves no purpose. The top bar has no module reference, so the disabled
+			// flag is taken at menu construction time (and is in fact always false
+			// here, since the top bar only ever belongs to a real widget instance).
+			subMenu->addChild(createBoolMenuItem("Always copy", "",
+				[=]() { return sirenSettings.alwaysCopy; },
+				[=](bool v) { sirenSettings.alwaysCopy = v; },
+				sirenSettings.convertTarget == SirenSettings::CT_SOURCE));
 		}));
 	}
 };

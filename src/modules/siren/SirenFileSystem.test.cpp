@@ -4,6 +4,7 @@
 #include "SirenTest.hpp"
 #include <fstream>
 #include <algorithm>
+#include <sstream>
 
 using namespace StoermelderPackOne::Siren;
 using namespace StoermelderPackOne::Siren::filesystem;
@@ -279,6 +280,87 @@ TEST_CASE("prepareForDrop: outputDir is ignored when no conversion/trim/resample
 	auto task = src.prepareForDrop("/kick.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
 	                               /*trimIn=*/0.f, /*trimOut=*/1.f, /*resampleQuality=*/6, outDir.str());
 	REQUIRE(task() == tmp.filePath("kick.wav"));
+}
+
+// ─── prepareForDrop: alwaysCopy ──────────────────────────────────────────────
+// "Always copy" produces a binary copy of the source into outputDir even when no
+// other transformation is needed. The copy path is only used when the source
+// contents are sufficient — i.e. no trim/resample/repitch/loop is requested.
+
+// alwaysCopy with a real file copies the bytes verbatim into outputDir.
+TEST_CASE("prepareForDrop: alwaysCopy copies source file into outputDir", "[Siren][FileSystem]") {
+	TempDir tmp;
+	TempDir outDir;
+	tmp.touch("kick.wav");
+	// Seed the source with recognisable bytes so we can confirm byte-for-byte
+	// equality on the output (proving it's a true copy, not a re-encode).
+	{
+		std::ofstream f(tmp.filePath("kick.wav"), std::ios::binary);
+		const char bytes[] = "siren-test-fixture-bytes";
+		f.write(bytes, sizeof(bytes) - 1);
+	}
+
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+	auto task = src.prepareForDrop("/kick.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
+	                               /*trimIn=*/0.f, /*trimOut=*/1.f, /*resampleQuality=*/6,
+	                               outDir.str(), /*loopOnDrop=*/false, /*loopCrossfadeDuration=*/8.f,
+	                               /*repitchSemitones=*/0.f, /*alwaysCopy=*/true);
+	std::string result = task();
+
+	REQUIRE(result != tmp.filePath("kick.wav"));
+	REQUIRE(ghc::filesystem::path(result).parent_path().string() == outDir.str());
+	REQUIRE(ghc::filesystem::exists(result));
+
+	// The new file must contain the original bytes unchanged.
+	std::ifstream in(result, std::ios::binary);
+	std::stringstream buf;
+	buf << in.rdbuf();
+	REQUIRE(buf.str() == "siren-test-fixture-bytes");
+}
+
+// alwaysCopy is a no-op when outputDir is empty ("Same folder as source" target):
+// copying a file on top of itself serves no purpose.
+TEST_CASE("prepareForDrop: alwaysCopy is a no-op when outputDir is empty", "[Siren][FileSystem]") {
+	TempDir tmp;
+	tmp.touch("kick.wav");
+
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+	auto task = src.prepareForDrop("/kick.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
+	                               /*trimIn=*/0.f, /*trimOut=*/1.f, /*resampleQuality=*/6,
+	                               /*outputDir=*/"", /*loopOnDrop=*/false, /*loopCrossfadeDuration=*/8.f,
+	                               /*repitchSemitones=*/0.f, /*alwaysCopy=*/true);
+	REQUIRE(task() == tmp.filePath("kick.wav"));
+}
+
+// alwaysCopy leaves non-copy transformations (trim, resample, etc.) to the
+// existing processAudioForDrop pipeline: when combined with a trim, the result
+// is a re-encoded WAV trimmed into outputDir rather than a raw byte copy.
+TEST_CASE("prepareForDrop: alwaysCopy defers to processAudioForDrop when a transformation is needed", "[Siren][FileSystem]") {
+	TempDir tmp;
+	TempDir outDir;
+	writeTestWav(tmp.filePath("loop.wav"));
+
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+	auto task = src.prepareForDrop("/loop.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
+	                               /*trimIn=*/0.f, /*trimOut=*/0.5f, /*resampleQuality=*/6,
+	                               outDir.str(), /*loopOnDrop=*/false, /*loopCrossfadeDuration=*/8.f,
+	                               /*repitchSemitones=*/0.f, /*alwaysCopy=*/true);
+	std::string result = task();
+
+	// Even with alwaysCopy=true the trim drives the path through the encoder.
+	REQUIRE(ghc::filesystem::path(result).parent_path().string() == outDir.str());
+	REQUIRE(ghc::filesystem::exists(result));
+}
+
+// copyFileForDrop is the binary-copy helper used by the alwaysCopy path. A
+// missing source file should fall back to the source path so the rest of the
+// drop pipeline can decide what to do.
+TEST_CASE("copyFileForDrop: missing source returns the source path", "[Siren][FileSystem]") {
+	TempDir outDir;
+	std::string result = FileSystemDataSource::copyFileForDrop("/does/not/exist.wav",
+	                                                           outDir.str() + "/out.wav");
+	REQUIRE(result == "/does/not/exist.wav");
+	REQUIRE(!ghc::filesystem::exists(outDir.str() + "/out.wav"));
 }
 
 // ─── isSupportedAudioFile ───────────────────────────────────────────────────

@@ -6,6 +6,7 @@ SIREN is an audio file browser and playback module: you can drop samples out of 
 
 - Streams WAV, FLAC, and MP3 from disk; no full-file loading.
 - Drag-and-drop onto any compatible module, with optional resampling or WAV conversion.
+- Configurable output destination for generated files: next to the source, a custom folder, or the module's per-patch storage so the sample travels with the patch. An **Always copy** mode forces a copy into the target on every drop, even when no processing is needed.
 - Multiple root folders, switchable from the source menu.
 - Search by file or folder name with live filtering and keyboard navigation.
 - Favorites and a per-root metadata store (tags, favorites) shared between SIREN instances.
@@ -32,7 +33,11 @@ The lower part of the source menu controls how audio is processed:
 - **Resample on drop** — resample to Rack's current sample rate before handing the file to another module. Prevents pitch shifting in modules that don't resample themselves.
 - **Resample quality** — choose between **Fast** (lowest CPU), **Default** (balanced), and **Best** (highest quality, most CPU). Affects resampling on drop only.
 - **Convert to WAV on drop** — convert FLAC or MP3 files to WAV before dropping. Useful for modules that only accept WAV.
-- **Folder for converted/trimmed files** — when SIREN has to generate a new file (resampling, format conversion, or trimming), it is normally written next to the source file. Use this submenu to redirect those generated files to a single custom folder of your choice. The original file is never modified.
+- **Folder for converted/trimmed files** — when SIREN has to generate a new file (resampling, format conversion, or trimming), it is normally written next to the source file. Use this submenu to redirect those generated files to a single custom folder of your choice. The original file is never modified. Three targets are available:
+  - **Same folder as source file** — write the generated file next to the original (the default).
+  - **Custom folder…** — choose a single folder where every generated file is written. The folder path is shown in the menu once it is set.
+  - **Patch storage** — write the generated file into the module's per-patch storage directory, so the file is bundled with the saved patch and travels with it. Please note, that these files get deleted, if the SIREN module is removed from the patch.
+- **Always copy** — when one of the two non-source targets is selected, force a copy of the source file into that target on every drop, even when no conversion, resampling, or trimming is required. The original file is left untouched. Disabled when **Same folder as source file** is selected, since copying a file on top of itself serves no purpose.
 
 ### Indexing
 
@@ -46,7 +51,7 @@ Indexing is optional — file info and BPM are also picked up automatically as y
 
 You can also start a drag from anywhere in your patch: hold `Ctrl/Cmd + Shift` and click, then drag — SIREN will load the last selected sample and start a drag-and-drop from that point.
 
-The **Resample on drop**, **Resample quality**, and **Convert to WAV on drop** options in the source menu (see [Adding a Root Folder](#adding-a-root-folder)) control how the file is prepared when it is handed to another module. **Resample on playback** applies to SIREN's own L/R outputs and has no effect on drops.
+The **Resample on drop**, **Resample quality**, **Convert to WAV on drop**, **Folder for converted/trimmed files**, and **Always copy** options in the source menu (see [Setting Up](#setting-up)) control how the file is prepared when it is handed to another module. **Resample on playback** applies to SIREN's own L/R outputs and has no effect on drops.
 
 ## Browsing Files
 
@@ -142,7 +147,7 @@ SIREN decodes the trimmed region, finds the quietest zero crossing near the midp
 
 **Crossfade duration** — the slider below **Generate crossfade loop** in the context menu sets the blend length in seconds (default 6s, range 0.01–60s). Longer crossfades produce a smoother join at the cost of shortening the output slightly.
 
-**Dragging from loop preview mode** drops the loop-processed file. SIREN writes a new WAV alongside the source (or in the custom output folder, if set) and hands that file to the receiving module — the same crossfade that you heard during preview is baked in.
+**Dragging from loop preview mode** drops the loop-processed file. SIREN writes a new WAV to the destination selected under **Folder for converted/trimmed files** (next to the source by default) and hands that file to the receiving module — the same crossfade that you heard during preview is baked in.
 
 ### Repitch
 
@@ -150,7 +155,7 @@ SIREN can shift the pitch of the current sample or trim region without changing 
 
 **Repitch** / **Repitch fine** — the sliders below **Generate repitch preview** in the context menu set the pitch shift: **Repitch** in semitones (range -24 to +24, default 0) and **Repitch fine** in cents (range -100 to +100, default 0). The two combine into a single pitch shift. Positive values raise the pitch, negative values lower it.
 
-**Dragging from repitch preview mode** drops the repitched file. SIREN writes a new WAV alongside the source (or in the custom output folder, if set) and hands that file to the receiving module — the same pitch shift that you heard during preview is baked in.
+**Dragging from repitch preview mode** drops the repitched file. SIREN writes a new WAV to the destination selected under **Folder for converted/trimmed files** (next to the source by default) and hands that file to the receiving module — the same pitch shift that you heard during preview is baked in.
 
 ## Organizing Files
 

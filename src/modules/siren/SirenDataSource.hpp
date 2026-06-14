@@ -278,10 +278,18 @@ struct DataSource {
 	//   loopOnDrop       — apply rotation+crossfade to produce a loop-ready WAV
 	//   loopCrossfadeDuration — crossfade length in seconds for the loop join
 	//   repitchSemitones — shift pitch by this many semitones without changing duration (0 = off)
+	//   alwaysCopy       — force a copy of the source into outputDir even when no
+	//                      transformation is needed. Implementations should treat this
+	//                      as a no-op when outputDir is empty (copying onto itself is
+	//                      pointless) and may return the source path unchanged in that
+	//                      case.
 	virtual std::function<std::string()> prepareForDrop(const std::string& id, bool convertToWav,
 			int targetSampleRate = 0, float trimIn = 0.f, float trimOut = 1.f, int resampleQuality = 6,
 			const std::string& outputDir = "", bool loopOnDrop = false, float loopCrossfadeDuration = 8.f,
-			float repitchSemitones = 0.f) {
+			float repitchSemitones = 0.f, bool alwaysCopy = false) {
+		// Base default: always returns the source id. Concrete sources are expected
+		// to override this method to honour alwaysCopy by producing a copy in
+		// outputDir when requested.
 		return [id]() { return id; };
 	}
 
