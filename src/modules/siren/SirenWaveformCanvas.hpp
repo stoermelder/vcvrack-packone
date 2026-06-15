@@ -46,7 +46,7 @@ struct CanvasViewMode {
 // The parent feeds display inputs each step(); the canvas owns inPoint/outPoint,
 // zoom, and scroll state, and fires callbacks when they change.
 //
-// In loopPreviewMode:
+// In previewMode:
 //   - Waveform is tinted gold to signal loop preview
 //   - Trim handles are hidden and interaction is suppressed
 //   - A "Generating loop preview…" overlay is shown while building
@@ -62,7 +62,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 	// display inputs (set by parent each step())
 	AudioWaveformCache* cache = nullptr;  // non-owning pointer to parent's active cache
 	bool cacheReady = false;
-	bool loopPreviewMode = false;    // tint + suppress trim handles
+	bool previewMode = false;    // tint + suppress trim handles
 	const CanvasViewMode* viewMode = &CanvasViewMode::normal(); // active mode's accent color, shared by waveform + header texts
 	bool hasFile = false;
 	float durationSeconds = 0.f;
@@ -108,7 +108,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 	std::function<void(float)> onInPointChanged;
 	std::function<void(float)> onOutPointChanged;
 	std::function<void(float)> onScrubTo;
-	std::function<void()> onCancelLoopPreview;
+	std::function<void()> onCancelPreview;
 
 	// geometry helpers
 
@@ -296,7 +296,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 		}
 
 		// trim region + handles (suppressed in loop preview mode)
-		if (!loopPreviewMode && hasFile) {
+		if (!previewMode && hasFile) {
 			if ((inPoint > 0.f || outPoint < 1.f) && outPoint > inPoint) {
 				float x1 = rack::math::clamp(WAVE_X + (inPoint - scrollPos) * zoomLevel * waveW, WAVE_X, WAVE_X + waveW);
 				float x2 = rack::math::clamp(WAVE_X + (outPoint - scrollPos) * zoomLevel * waveW, WAVE_X, WAVE_X + waveW);
@@ -335,7 +335,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 		}
 
 		// "Exit" button (loop preview mode)
-		if (loopPreviewMode) {
+		if (previewMode) {
 			Rect br = exitButtonRect();
 			nvgBeginPath(args.vg);
 			nvgRoundedRect(args.vg, br.pos.x, br.pos.y, br.size.x, br.size.y, 2.f);
@@ -397,9 +397,9 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 
 	void onButton(const event::Button& e) override {
 		// "Exit" button (loop preview mode)
-		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && loopPreviewMode) {
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && previewMode) {
 			if (exitButtonRect().contains(e.pos)) {
-				if (onCancelLoopPreview) onCancelLoopPreview();
+				if (onCancelPreview) onCancelPreview();
 				e.consume(this);
 				return;
 			}
@@ -432,7 +432,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 				bool shift = (e.mods & RACK_MOD_SHIFT) != 0;
 				bool ctrl = (e.mods & RACK_MOD_CTRL) != 0;
 
-				if (shift && !loopPreviewMode) {
+				if (shift && !previewMode) {
 					float pos = posToNormalized(e.pos);
 					dragStartRackX = APP->scene->rack->getMousePos().x;
 					dragStartScrub = pos;
@@ -593,8 +593,8 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 
 	void onSelectKey(const event::SelectKey& e) override {
 		if (e.action == GLFW_PRESS) {
-			if (e.key == GLFW_KEY_ESCAPE && loopPreviewMode) {
-				if (onCancelLoopPreview) onCancelLoopPreview();
+			if (e.key == GLFW_KEY_ESCAPE && previewMode) {
+				if (onCancelPreview) onCancelPreview();
 				e.consume(this); return;
 			}
 			if (e.key == GLFW_KEY_EQUAL || e.key == GLFW_KEY_RIGHT_BRACKET) {

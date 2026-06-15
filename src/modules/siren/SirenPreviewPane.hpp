@@ -8,6 +8,7 @@
 #include "SirenWaveformCanvas.hpp"
 #include "SirenDummyPreview.hpp"
 #include "../../utils/TaskWorker.hpp"
+#include "../../ui/InfoWindow.hpp"
 
 
 namespace StoermelderPackOne {
@@ -23,7 +24,7 @@ namespace Siren {
 //   2. Worker decodes the trimmed region, applies rotation+crossfade, builds a
 //      waveform cache for the result.
 //   3. step() adopts the MemoryAudioStream into the module and activates the
-//      canvas's loopPreviewMode (gold waveform, no trim handles).
+//      canvas's previewMode (gold waveform, no trim handles).
 //   4. Dropping while in loop-preview mode regenerates the loop on disk.
 //   5. "Cancel loop preview" returns to the normal file stream.
 struct SirenPreviewPane : widget::OpaqueWidget {
@@ -63,12 +64,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	float repitchTotalSemitones() const { return repitchSemitones + repitchCents / 100.f; }
 
 	// loop-preview state
-	bool loopPreviewActive = false;
-	bool loopPreviewBuilding = false;  // worker running, not yet active
+	bool previewActive = false;
+	bool previewBuilding = false;  // worker running, not yet active
 	bool previewIsRepitch = false;  // true if the active preview was generated via repitch
-	AudioWaveformCache loopCache;
-	bool loopCacheReady = false;
-	float loopDurationSeconds = 0.f;
+	AudioWaveformCache previewCache;
+	bool previewCacheReady = false;
+	float previewDurationSeconds = 0.f;
 
 	struct PendingLoopPreview {
 		std::vector<float> samples;
@@ -83,7 +84,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 	// child widget
 	SirenWaveformCanvas* canvas = nullptr;
-
 	// module interface
 	std::function<void(const std::string&, DataSource*)> openStreamCallback;
 	std::function<void(std::unique_ptr<AudioStream>, int64_t)> adoptStreamCallback;
@@ -120,11 +120,11 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	bool isLoopPreviewActive() const {
-		return loopPreviewActive && !previewIsRepitch;
+		return previewActive && !previewIsRepitch;
 	}
 
 	bool isRepitchPreviewActive() const {
-		return loopPreviewActive && previewIsRepitch;
+		return previewActive && previewIsRepitch;
 	}
 
 	void init(TaskWorker* tw, SirenDropHandler* dh) {
@@ -145,8 +145,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		canvas->onScrubTo = [this](float pos) {
 			if (startPlaybackCallback) startPlaybackCallback(pos);
 		};
-		canvas->onCancelLoopPreview = [this]() {
-			cancelLoopPreview();
+		canvas->onCancelPreview = [this]() {
+			cancelPreview();
 		};
 
 		addChild(canvas);
@@ -192,11 +192,11 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		int gen = ++cacheGeneration;
 
 		// Cancel any active loop preview when a new file is loaded
-		loopPreviewActive = false;
-		loopPreviewBuilding = false;
-		loopCacheReady = false;
-		loopDurationSeconds = 0.f;
-		loopCache = AudioWaveformCache{};
+		previewActive = false;
+		previewBuilding = false;
+		previewCacheReady = false;
+		previewDurationSeconds = 0.f;
+		previewCache = AudioWaveformCache{};
 
 		if (canvas) {
 			canvas->inPoint = 0.f;
@@ -262,65 +262,82 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void generateLoopPreview() {
-		if (!source || currentNode.relativePath.empty() || !worker) return;
-
-		loopPreviewBuilding = true;
-		loopPreviewActive = false;
-		previewIsRepitch = false;
-		loopCacheReady = false;
-		loopCache = AudioWaveformCache{};
-
-		std::shared_ptr<DataSource> srcCopy = source;
-		std::string idCopy = currentNode.relativePath;
-		float trimIn = canvas ? canvas->inPoint : 0.f;
-		float trimOut = canvas ? canvas->outPoint : 1.f;
-		float duration = loopCrossfadeDuration;
-		int pw = canvas ? (int)canvas->box.size.x - (int)SirenWaveformCanvas::WAVE_X - 8 : 512;
-		if (pw < 64) pw = 512;
-
-		worker->work([this, srcCopy, idCopy, trimIn, trimOut, duration, pw]() {
-			AudioPreviewResult result = buildLoopPreview(*srcCopy, idCopy, trimIn, trimOut, duration);
-			if (result.ok && !result.samples.empty()) {
-				// Build waveform cache directly from the in-memory buffer
-				MemoryAudioStream ms;
-				ms.samples = result.samples;  // copy: cache builder reads it sequentially
-				ms.ch = result.channels;
-				ms.sr = result.sampleRate;
-				AudioWaveformCache wc;
-				buildWaveformCache(0, ms, pw, wc);
-				pendingLoop.samples = std::move(result.samples);
-				pendingLoop.channels = result.channels;
-				pendingLoop.sampleRate = result.sampleRate;
-				pendingLoop.durationSeconds = result.durationSeconds;
-				pendingLoop.cache = std::move(wc);
-				pendingLoop.valid = true;
-			}
-			else {
-				pendingLoop.valid = false;
-			}
-			pendingLoopReady.store(true, std::memory_order_release);
+		startPreviewBuild(false, [this](std::shared_ptr<DataSource> srcCopy, std::string idCopy,
+				float trimIn, float trimOut, int pw,
+				AudioPreviewResult& result) {
+			result = buildLoopPreview(*srcCopy, idCopy, trimIn, trimOut, loopCrossfadeDuration);
 		});
 	}
 
 	void generateRepitchPreview() {
+		startPreviewBuild(true, [this](std::shared_ptr<DataSource> srcCopy, std::string idCopy,
+				float trimIn, float trimOut, int pw,
+				AudioPreviewResult& result) {
+			result = buildRepitchPreview(*srcCopy, idCopy, trimIn, trimOut, repitchTotalSemitones());
+		});
+	}
+
+	// Shared entry point used by both generateLoopPreview() and
+	// generateRepitchPreview().  Estimates the in-memory buffer size from the
+	// current trim region + file info and, if it exceeds PREVIEW_CONFIRM_BYTES,
+	// surfaces a modal asking the user to confirm before the worker allocates.
+	template <typename BuildFn>
+	void startPreviewBuild(bool repitch, BuildFn buildFn) {
 		if (!source || currentNode.relativePath.empty() || !worker) return;
 
-		loopPreviewBuilding = true;
-		loopPreviewActive = false;
-		previewIsRepitch = true;
-		loopCacheReady = false;
-		loopCache = AudioWaveformCache{};
+		float trimIn = canvas ? canvas->inPoint : 0.f;
+		float trimOut = canvas ? canvas->outPoint : 1.f;
+		size_t projectedBytes = previewBufferBytes(trimIn, trimOut);
+		if (projectedBytes > PREVIEW_CONFIRM_BYTES) {
+			std::string header = repitch
+				? "Confirm repitch preview"
+				: "Confirm loop preview";
+			std::string text = rack::string::f(
+				"This allocates about %.1f MB of temporary memory for the processed buffer. "
+				"It is released when the preview is cancelled.",
+				(double)projectedBytes / (1024.0 * 1024.0));
+
+			// Capture by value so the lambda outlives the menu callback.
+			BuildFn buildFnCopy = buildFn;
+			bool repitchCopy = repitch;
+			widget::Widget* overlay = confirmOverlayCreate(
+				header, text, "Continue",
+				[]() { /* cancel: do nothing */ },
+				[this, buildFnCopy, repitchCopy]() {
+					dispatchPreviewBuild(repitchCopy, buildFnCopy);
+				}
+			);
+			widget::Widget* overlayParent = getAncestorOfType<ModuleWidget>();
+			overlayParent->addChild(overlay);
+			return;
+		}
+
+		dispatchPreviewBuild(repitch, buildFn);
+	}
+
+	// Runs the actual worker job for a preview build.  Sets the "building"
+	// flags up front so the UI shows progress, then on the worker thread runs
+	// `buildFn` and publishes the result via pendingLoop / pendingLoopReady.
+	template <typename BuildFn>
+	void dispatchPreviewBuild(bool repitch, BuildFn buildFn) {
+		if (!source || currentNode.relativePath.empty() || !worker) return;
+
+		previewBuilding = true;
+		previewActive = false;
+		previewIsRepitch = repitch;
+		previewCacheReady = false;
+		previewCache = AudioWaveformCache{};
 
 		std::shared_ptr<DataSource> srcCopy = source;
 		std::string idCopy = currentNode.relativePath;
 		float trimIn = canvas ? canvas->inPoint : 0.f;
 		float trimOut = canvas ? canvas->outPoint : 1.f;
-		float semitones = repitchTotalSemitones();
 		int pw = canvas ? (int)canvas->box.size.x - (int)SirenWaveformCanvas::WAVE_X - 8 : 512;
 		if (pw < 64) pw = 512;
 
-		worker->work([this, srcCopy, idCopy, trimIn, trimOut, semitones, pw]() {
-			AudioPreviewResult result = buildRepitchPreview(*srcCopy, idCopy, trimIn, trimOut, semitones);
+		worker->work([this, srcCopy, idCopy, trimIn, trimOut, pw, buildFn]() {
+			AudioPreviewResult result;
+			buildFn(srcCopy, idCopy, trimIn, trimOut, pw, result);
 			if (result.ok && !result.samples.empty()) {
 				// Build waveform cache directly from the in-memory buffer
 				MemoryAudioStream ms;
@@ -343,13 +360,13 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		});
 	}
 
-	void cancelLoopPreview() {
-		loopPreviewActive = false;
-		loopPreviewBuilding = false;
+	void cancelPreview() {
+		previewActive = false;
+		previewBuilding = false;
 		previewIsRepitch = false;
-		loopCacheReady = false;
-		loopDurationSeconds = 0.f;
-		loopCache = AudioWaveformCache{};
+		previewCacheReady = false;
+		previewDurationSeconds = 0.f;
+		previewCache = AudioWaveformCache{};
 
 		// Restore original file stream and module trim points
 		if (openStreamCallback && source && !currentNode.relativePath.empty()) {
@@ -383,11 +400,11 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				int64_t tf = ms->totalFrames();
 				if (adoptStreamCallback) adoptStreamCallback(std::move(ms), tf);
 
-				loopCache = std::move(pendingLoop.cache);
-				loopCacheReady = true;
-				loopDurationSeconds = pendingLoop.durationSeconds;
-				loopPreviewActive = true;
-				loopPreviewBuilding = false;
+				previewCache = std::move(pendingLoop.cache);
+				previewCacheReady = true;
+				previewDurationSeconds = pendingLoop.durationSeconds;
+				previewActive = true;
+				previewBuilding = false;
 
 				// The loop buffer spans [0, 1] — make the module loop it fully
 				if (moduleInPoint) moduleInPoint->store(0.f, std::memory_order_relaxed);
@@ -397,29 +414,29 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				if (startPlaybackCallback) startPlaybackCallback(0.f);
 			}
 			else {
-				loopPreviewBuilding = false;
+				previewBuilding = false;
 			}
 		}
 
 		// Update canvas display inputs
 		if (canvas) {
 			canvas->box.size = Vec(box.size.x, box.size.y - TB_H);
-			canvas->cache = loopPreviewActive ? &loopCache : &cache;
-			canvas->cacheReady = loopPreviewActive ? loopCacheReady : (bool)cacheReady;
-			canvas->loopPreviewMode = loopPreviewActive;
-			canvas->viewMode = !loopPreviewActive && !loopPreviewBuilding
+			canvas->cache = previewActive ? &previewCache : &cache;
+			canvas->cacheReady = previewActive ? previewCacheReady : (bool)cacheReady;
+			canvas->previewMode = previewActive;
+			canvas->viewMode = !previewActive && !previewBuilding
 				? &CanvasViewMode::normal()
 				: previewIsRepitch ? &CanvasViewMode::repitch() : &CanvasViewMode::loopCrossfade();
 			canvas->hasFile = !currentNode.relativePath.empty();
-			canvas->durationSeconds = loopPreviewActive ? loopDurationSeconds : info.durationSeconds;
+			canvas->durationSeconds = previewActive ? previewDurationSeconds : info.durationSeconds;
 			canvas->dragPath = currentNode.relativePath;
 			canvas->dragDisplayName = displayName;
 			canvas->modulePlayheadPos = modulePlayheadPos;
 
 			// Single background-task overlay. Every source computes a message
 			// ("" = nothing to show), then the first non-empty one wins.
-			bool building = !loopPreviewActive && cacheBuilding;
-			bool generatingLoop = loopPreviewBuilding && !loopPreviewActive;
+			bool building = !previewActive && cacheBuilding;
+			bool generatingLoop = previewBuilding && !previewActive;
 			std::string convertingMsg = (dropHandler && dropHandler->converting.load(std::memory_order_relaxed))
 				? "Converting\xe2\x80\xa6" : "";
 			std::string generatingLoopMsg = generatingLoop ? canvas->viewMode->generatingMessage : "";
@@ -481,7 +498,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		nvgFillColor(args.vg, previewColor);
 
 		// Preview label (second row, left side)
-		if (loopPreviewActive && canvas) {
+		if (previewActive && canvas) {
 			nvgFillColor(args.vg, previewColor);
 			nvgText(args.vg, SirenWaveformCanvas::WAVE_X, 26.f, canvas->viewMode->label.c_str(), nullptr);
 			nvgFillColor(args.vg, previewColor);
@@ -608,8 +625,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
-		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE && loopPreviewActive) {
-			cancelLoopPreview();
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE && previewActive) {
+			cancelPreview();
 			e.consume(this);
 			return;
 		}
@@ -627,10 +644,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			[]() { sirenSettings.loopPlayback = !sirenSettings.loopPlayback; }
 		));
 
-		if (loopPreviewActive) {
+		if (previewActive) {
 			// preview mode
 			menu->addChild(createMenuItem(previewIsRepitch ? "Exit repitch preview" : "Exit loop preview", "", [this]() {
-				cancelLoopPreview();
+				cancelPreview();
 			}));
 		}
 		else {
@@ -735,6 +752,26 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 	bool isPlaying() const {
 		return modulePlaying && modulePlaying->load();
+	}
+
+	// Threshold (in bytes) above which the user is asked to confirm before
+	// allocating a loop/repitch preview buffer.  ~20 MB of float PCM at 16-bit/44.1
+	// corresponds to roughly a 5-minute stereo region.
+	static constexpr size_t PREVIEW_CONFIRM_BYTES = 20 * 1024 * 1024;
+
+	// Estimate the in-memory size the preview worker will allocate for the
+	// trimmed region.
+	size_t previewBufferBytes(float trimIn, float trimOut) const {
+		if (!source || info.frameCount <= 0 || info.sampleRate <= 0) return 0;
+		int ch = std::min(info.channels, 2);
+		if (ch <= 0) return 0;
+		int64_t startFrame = (int64_t)(trimIn * (float)info.frameCount);
+		int64_t endFrame = (int64_t)(trimOut * (float)info.frameCount);
+		startFrame = std::max((int64_t)0, std::min(startFrame, info.frameCount));
+		endFrame = std::max(startFrame, std::min(endFrame, info.frameCount));
+		int64_t frames = endFrame - startFrame;
+		if (frames <= 0) return 0;
+		return (size_t)frames * (size_t)ch * sizeof(float);
 	}
 };
 
