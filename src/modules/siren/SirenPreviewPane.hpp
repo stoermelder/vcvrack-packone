@@ -597,6 +597,11 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		ui::Menu* menu = createMenu();
 		menu->addChild(createMenuLabel(source->getDisplayName(currentNode.relativePath)));
+		menu->addChild(new ui::MenuSeparator);
+		menu->addChild(createCheckMenuItem("Loop playback", "",
+			[]() { return sirenSettings.loopPlayback; },
+			[]() { sirenSettings.loopPlayback = !sirenSettings.loopPlayback; }
+		));
 
 		if (loopPreviewActive) {
 			// preview mode
@@ -606,14 +611,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 		else {
 			// normal mode
-			menu->addChild(new ui::MenuSeparator);
 			menu->addChild(createMenuItem("Reset trim", "",
 				[this]() { if (canvas) canvas->resetTrimHandles(); },
 				canvas && canvas->inPoint == 0.f && canvas->outPoint == 1.f
-			));
-			menu->addChild(createCheckMenuItem("Loop playback", "",
-				[]() { return sirenSettings.loopPlayback; },
-				[]() { sirenSettings.loopPlayback = !sirenSettings.loopPlayback; }
 			));
 
 			/*
@@ -623,7 +623,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			menu->addChild(new ui::MenuSeparator);
 			menu->addChild(createSubmenuItem("Crossfade loop", "", [=](Menu* menu) {
 				menu->addChild(Rack::createPtrSlider(
-					&loopCrossfadeDuration, 0.01f, 60.f, 6.f, "Crossfade", " s", 1.f, 150.f));
+					&loopCrossfadeDuration, 0.01f, 60.f, 6.f, "Crossfade", "s", 1.f, 150.f));
 				menu->addChild(createMenuItem("Generate preview", "",
 					[this]() { generateLoopPreview(); APP->event->setSelectedWidget(canvas); }
 				));
@@ -633,9 +633,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				menu->addChild(Rack::createSteppedSlider<int>(
 					[this]() { return (int)repitchSemitones; },
 					[this](int v) { repitchSemitones = (float)v; },
-					-24.f, 24.f, 0.f, "Repitch", " st", nullptr, 150.f));
+					-24.f, 24.f, 0.f, "Semitones", " st", nullptr, 150.f));
 				menu->addChild(Rack::createPtrSlider(
-					&repitchCents, -100.f, 100.f, 0.f, "Repitch fine", " ct", 1.f, 150.f));
+					&repitchCents, -100.f, 100.f, 0.f, "Fine", " ct", 1.f, 150.f));
 				menu->addChild(createMenuItem("Generate preview", "",
 					[this]() { generateRepitchPreview(); APP->event->setSelectedWidget(canvas); }
 				));

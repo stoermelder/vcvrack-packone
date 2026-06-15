@@ -931,35 +931,6 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 	void appendContextMenu(ui::Menu* menu) override {
 		ThemedModuleWidget<SirenModule>::appendContextMenu(menu);
-		menu->addChild(new ui::MenuSeparator);
-
-		// Root container management
-		for (int i = 0; i < (int)sirenSettings.rootContainers.size(); i++) {
-			std::string label = sirenSettings.rootContainers[i].name;
-			bool active = (i == sirenSettings.activeRootIdx);
-			menu->addChild(createCheckMenuItem(label, "", [=]() { return active; }, [this, i]() {
-				sirenSettings.activeRootIdx = i;
-				browserPane->setRoots(sirenSettings.rootContainers, i);
-			}));
-		}
-
-		menu->addChild(createMenuItem("Add root...", "", [this]() {
-			RootContainer rc;
-			if (!filesystem::createNewRootContainer(rc)) return;
-			if (std::find(sirenSettings.rootContainers.begin(), sirenSettings.rootContainers.end(), rc)
-			    == sirenSettings.rootContainers.end()) {
-				sirenSettings.rootContainers.push_back(rc);
-				sirenSettings.activeRootIdx = (int)sirenSettings.rootContainers.size() - 1;
-				browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
-			}
-		}));
-
-		if (!sirenSettings.rootContainers.empty()) {
-			menu->addChild(createMenuItem("Remove root", "", [this]() {
-				if (!sirenSettings.removeActiveRoot(browserPane->activeDs.get())) return;
-				browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
-			}));
-		}
 
 		menu->addChild(new ui::MenuSeparator);
 		menu->addChild(createBoolPtrMenuItem("Resample on playback", "", &sirenSettings.resampleOnPlayback));
