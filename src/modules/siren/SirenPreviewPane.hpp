@@ -6,6 +6,7 @@
 #include "SirenDropHandler.hpp"
 #include "SirenBpmDetector.hpp"
 #include "SirenWaveformCanvas.hpp"
+#include "SirenDummyPreview.hpp"
 #include "../../utils/TaskWorker.hpp"
 
 
@@ -149,6 +150,29 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		};
 
 		addChild(canvas);
+	}
+
+	// Called by SirenWidget when constructed without a module (module browser
+	// thumbnail) — populates the pane with a static mock file + waveform so the
+	// preview isn't blank. Purely cosmetic; no source/callbacks are involved.
+	void setupDummyPreview() {
+		const dummyview::DummyPreviewInfo& d = dummyview::dummyPreviewInfo();
+		currentNode.relativePath = d.displayName;
+		displayName = d.displayName;
+		relPath = d.displayName;
+		info.durationSeconds = d.durationSeconds;
+		info.sampleRate = d.sampleRate;
+		info.bitDepth = d.bitDepth;
+		info.channels = d.channels;
+		bpm.store(d.bpm);
+
+		cache = dummyview::buildDummyWaveformCache();
+		cacheReady = true;
+
+		if (canvas) {
+			canvas->inPoint = 0.15f;
+			canvas->outPoint = 0.65f;
+		}
 	}
 
 	void loadItem(const DataSourceNode& node, std::shared_ptr<DataSource> src,

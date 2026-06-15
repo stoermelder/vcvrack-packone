@@ -16,7 +16,7 @@
 		{
 			"slug": "Siren",
 			"name": "SIREN",
-			"description": "Sample browser collaboration with Omri Cohen — browse, preview and drag WAV/FLAC/MP3 samples to other modules. Streams audio directly from disk with no full-file loading, making it practical for large sample libraries and long recordings.",
+			"description": "Sample browser collaboration with Omri Cohen — browse, preview and drag WAV/FLAC/MP3 samples to other modules.\nStreams audio directly from disk with no full-file loading, making it practical for large sample libraries and long recordings. Also does repitching and creates endless loops.",
 			"tags": [
 				"Utility"
 			]

@@ -847,7 +847,13 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			previewPane->loadItem(DataSourceNode{}, nullptr);
 		};
 
-		if (!module) return;
+		if (!module) {
+			// Module browser thumbnail — show static placeholder content instead
+			// of empty panes.
+			browserPane->dummyPreview = true;
+			previewPane->setupDummyPreview();
+			return;
+		}
 
 		// Wire audio callbacks: pane → module
 		previewPane->openStreamCallback = [module](const std::string& id, DataSource* src) {

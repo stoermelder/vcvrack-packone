@@ -8,6 +8,7 @@
 #include "SirenTagClassifierApi.hpp"
 #include "SirenBpmDetector.hpp"
 #include "SirenBackgroundTasks.hpp"
+#include "SirenDummyPreview.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../../ui/AutoTagDialog.hpp"
 
@@ -229,6 +230,10 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	int activeRootIdx = -1;
 	std::string selectedPath;
 	bool favoritesOnly = false;
+
+	// Set by SirenWidget when constructed without a module (module browser
+	// thumbnail) — draws a static mock file tree since no roots are loaded.
+	bool dummyPreview = false;
 
 	std::string searchQuery;
 
@@ -740,6 +745,10 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		nvgFill(args.vg);
 
 		OpaqueWidget::draw(args);
+
+		if (dummyPreview && rows.empty()) {
+			dummyview::drawDummyTree(args.vg, w);
+		}
 	}
 };
 
