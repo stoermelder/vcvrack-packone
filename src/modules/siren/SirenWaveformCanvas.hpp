@@ -506,7 +506,9 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			if (std::abs(ddx) < threshold && std::abs(ddy) < threshold) return;
 
 			dragDirectionPending = false;
-			if (std::abs(ddx) >= std::abs(ddy)) {
+			// Require movement to be close to the horizontal axis for a playhead
+			// drag — diagonal movement starts a file drag instead.
+			if (std::abs(ddx) >= std::abs(ddy) * 2.f) {
 				draggingPlayhead = true;
 				scrubPos = dragStartScrub;
 			}
