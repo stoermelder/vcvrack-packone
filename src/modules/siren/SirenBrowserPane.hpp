@@ -200,6 +200,22 @@ struct SirenTreeRow : widget::OpaqueWidget {
 	void onDragEnd(const event::DragEnd& e) override;
 };
 
+// Placeholder row shown below an expanded container while its children are
+// being fetched asynchronously.
+struct SirenLoadingRow : widget::OpaqueWidget {
+	int indentLevel = 0;
+
+	void draw(const DrawArgs& args) override {
+		float textX = 6.f + indentLevel * SirenTreeRow::INDENT;
+		NVGcolor textColor = bndGetTheme()->toolTheme.textColor;
+		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+		nvgFontSize(args.vg, 7.7f);
+		nvgFillColor(args.vg, nvgRGBAf(textColor.r, textColor.g, textColor.b, 0.45f));
+		nvgText(args.vg, textX, 8.f, "Loading\xe2\x80\xa6", nullptr);
+		OpaqueWidget::draw(args);
+	}
+};
+
 // ScrollWidget with a narrower vertical scrollbar
 struct SirenScrollWidget : ui::ScrollWidget {
 	static constexpr float SCROLLBAR_W = 6.f;
@@ -292,6 +308,9 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		DataSourceNode node;
 		int indent = 0;
 		bool expanded = false;
+		// True while this container's children have been requested but not yet
+		// arrived — rebuildRowWidgets() shows a "Loading…" placeholder row below it.
+		bool childrenLoading = false;
 	};
 	std::vector<TreeEntry> rows;
 	std::atomic<bool> loadPending{false};
@@ -434,6 +453,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 				}
 				else {
 					int idx = pendingResult.insertIdx;
+					rows[idx - 1].childrenLoading = false;
 					std::vector<TreeEntry> newRows;
 					for (auto& n : pendingResult.nodes) {
 						TreeEntry e;
@@ -492,6 +512,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			while (end < (int)rows.size() && rows[end].indent >= childIndent) end++;
 			rows.erase(rows.begin() + rowIdx + 1, rows.begin() + end);
 			entry.expanded = false;
+			entry.childrenLoading = false;
 			requestRebuild();
 			return;
 		}
@@ -503,6 +524,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		int insertIdx = rowIdx + 1;
 
 		if (worker && activeDs) {
+			entry.childrenLoading = true;
 			int gen = treeGeneration.load(std::memory_order_relaxed);
 			activeDs->loadChildrenAsync(id, *worker, [this, insertIdx, gen](std::vector<DataSourceNode> nodes) {
 				pendingResult = PendingResult("", insertIdx, std::move(nodes), gen);
@@ -1055,6 +1077,15 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 		row->box.size = Vec(box.size.x - SirenScrollWidget::SCROLLBAR_W, SirenTreeRow::ROW_H);
 		rowContainer->addChild(row);
 		y += SirenTreeRow::ROW_H;
+
+		if (n.isContainer && entry.expanded && entry.childrenLoading) {
+			SirenLoadingRow* loadingRow = new SirenLoadingRow;
+			loadingRow->indentLevel = entry.indent + 1;
+			loadingRow->box.pos = Vec(0.f, y);
+			loadingRow->box.size = Vec(box.size.x - SirenScrollWidget::SCROLLBAR_W, SirenTreeRow::ROW_H);
+			rowContainer->addChild(loadingRow);
+			y += SirenTreeRow::ROW_H;
+		}
 	}
 	rowContainer->box.size.y = y;
 	scrollWidget->container->box.size = rowContainer->box.size;
