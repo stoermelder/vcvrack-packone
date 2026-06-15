@@ -155,6 +155,55 @@ both the plugin and the training pipeline.
 
 ---
 
+## How the two knobs drive file size
+
+m2cgen transpiles every tree into a nested `if/else` chain, one per node, for
+all 18 heads. So:
+
+```
+file size  ∝  18 heads × N_ESTIMATORS × (nodes per tree)
+nodes per tree  ≈  2^MAX_DEPTH   (worst case, a full tree)
+```
+
+- **`N_ESTIMATORS` scales linearly** — double the trees, double the file.
+- **`MAX_DEPTH` scales ~exponentially** — each `+1` roughly *doubles* tree
+  size (and is what triggers m2cgen's `RecursionError`, see the
+  "Troubleshooting" section below).
+
+So `MAX_DEPTH` is the dominant lever. In practice trees rarely hit full depth
+(data runs out first), which is why `(24, 8)` lands at ~10 MB rather than the
+theoretical max.
+
+## Recommended values
+
+Stay in this box and you keep the file in the single-digit-MB range while
+holding accuracy:
+
+| Goal | `N_ESTIMATORS` | `MAX_DEPTH` | Approx. cpp size |
+|------|----------------|-------------|------------------|
+| **Smallest useful**    | 16 | 6 | ~1.5–2 MB |
+| **Balanced (good default)** | 24 | 7 | ~4–5 MB |
+| **Current default**    | 24 | 8 | ~9.6 MB |
+| **Max I'd go**         | 32 | 8 | ~13 MB |
+| ⚠️ Avoid               | any | ≥10 | ~40 MB+ / RecursionError |
+
+**My recommendation: `N_ESTIMATORS=24 MAX_DEPTH=7`.** It roughly halves the
+current file (~5 MB) for negligible accuracy loss — Random Forests get most
+of their benefit from the first ~24 trees, and depth 7 is plenty to separate
+53-feature timbral classes. If you want to claw back a little accuracy
+without much size, bump `N_ESTIMATORS` to 32 before touching `MAX_DEPTH`,
+since trees-count is the linear/cheap axis.
+
+```bash
+make train CSV=build/my_samples.csv N_ESTIMATORS=24 MAX_DEPTH=7
+```
+
+Hard ceilings: don't push `MAX_DEPTH` past 8–9 (exponential blowup + the
+m2cgen recursion limit), and there's little point above ~40 estimators given
+RF's diminishing returns.
+
+---
+
 ## One-time setup
 
 You need Python 3.10+ and a C++ compiler (`c++`/`clang++`) on your `PATH`
