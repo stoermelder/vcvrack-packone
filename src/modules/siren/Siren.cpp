@@ -974,7 +974,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 						previewPane->stopPlaybackCallback();
 					}
 					else {
-						previewPane->startPlaybackFrom(module->playheadPos.load(std::memory_order_relaxed));
+						previewPane->startPlaybackFrom(module->trimIn.load(std::memory_order_relaxed));
 					}
 					e.consume(this);
 					return;
