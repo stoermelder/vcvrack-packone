@@ -357,8 +357,31 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	}
 
 	void setRoots(const std::vector<RootContainer>& roots, int activeIdx) {
+		// `activeIdx` is treated as an index into the input `roots` vector (the
+		// persisted / pre-sort order from sirenSettings). After sorting
+		// `rootContainers` for display, we remap it to the new position by
+		// matching the root's identity, so the same root stays "active" across
+		// the sort rather than silently pointing at a different one.
+		RootContainer activeRoot;
+		bool haveActive = activeIdx >= 0 && activeIdx < (int)roots.size();
+		if (haveActive) activeRoot = roots[activeIdx];
+
 		rootContainers = roots;
-		activeRootIdx = activeIdx;
+		// Sort roots by name (case-insensitive) for a stable, predictable
+		// display order in the root selector.
+		std::sort(rootContainers.begin(), rootContainers.end(),
+			[](const RootContainer& a, const RootContainer& b) {
+				return rack::string::lowercase(a.name) < rack::string::lowercase(b.name);
+			});
+
+		if (haveActive) {
+			for (int i = 0; i < (int)rootContainers.size(); i++) {
+				if (rootContainers[i] == activeRoot) {
+					activeRootIdx = i;
+					break;
+				}
+			}
+		}
 		if (activeRootIdx >= 0 && activeRootIdx < (int)rootContainers.size()) {
 			loadRoot(rootContainers[activeRootIdx]);
 		}
@@ -366,6 +389,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			if (onActiveSourceChanging) onActiveSourceChanging();
 			cancelActiveSourceTasks();
 			activeDs = nullptr;
+			activeRootIdx = -1;
 			selectedPath.clear();
 			rows.clear();
 			loadPending = false;

@@ -798,9 +798,25 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 					}
 				};
 				browserPane->onSelectRoot = [this, m](int idx) {
-					sirenSettings.activeRootIdx = idx;
-					if (m) m->activeRootIdx = idx;
-					browserPane->setRoots(sirenSettings.rootContainers, idx);
+					// `idx` comes from the menu, which iterates
+					// `pane->rootContainers` in sorted (display) order. We
+					// translate it back to the insertion-order index used by
+					// `sirenSettings.rootContainers` / `setRoots` so the same
+					// root is selected regardless of which ordering the index
+					// refers to.
+					if (idx < 0 || idx >= (int)browserPane->rootContainers.size()) return;
+					const RootContainer& sortedActive = browserPane->rootContainers[idx];
+					int insertionIdx = -1;
+					for (int i = 0; i < (int)sirenSettings.rootContainers.size(); i++) {
+						if (sirenSettings.rootContainers[i] == sortedActive) {
+							insertionIdx = i;
+							break;
+						}
+					}
+					if (insertionIdx < 0) return;
+					sirenSettings.activeRootIdx = insertionIdx;
+					if (m) m->activeRootIdx = insertionIdx;
+					browserPane->setRoots(sirenSettings.rootContainers, insertionIdx);
 				};
 			}
 
