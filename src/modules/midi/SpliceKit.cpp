@@ -143,11 +143,11 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	};
 
 	struct SpliceKitOutput : midi::Output {
-		int* ledState      = nullptr;
+		int* ledState = nullptr;
 		int* sceneLedState = nullptr;
 
 		midi::Message lastSentMsg;
-		int           sentCount = 0;
+		int sentCount = 0;
 
 		SpliceKitOutput() {
 			channel = -1;
@@ -170,8 +170,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		// states to -1, which makes the next process() tick re-send every cell.
 		void setDeviceId(int deviceId) override {
 			midi::Output::setDeviceId(deviceId);
-			if (ledState)      std::fill(ledState,      ledState      + MATRIX_COUNT, -1);
-			if (sceneLedState) std::fill(sceneLedState, sceneLedState + MATRIX_SIZE,  -1);
+			if (ledState) std::fill(ledState, ledState + MATRIX_COUNT, -1);
+			if (sceneLedState) std::fill(sceneLedState, sceneLedState + MATRIX_SIZE, -1);
 		}
 	};
 
@@ -206,7 +206,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	ClockDividerEx processDivider;
 	// Written by GUI thread (step), read by DSP thread (process) — accepted race for LEDs
 	bool portHasCable[MATRIX_COUNT] = {};
-	float blinkPhase     = 0.f;
+	float blinkPhase = 0.f;
 	float slowBlinkPhase = 0.f;
 
 	enum ButtonMode {
@@ -217,7 +217,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	ButtonMode buttonMode = BUTTON_TOGGLE;
 
 	// -1 = no pending; >=0 = first button pressed, awaiting second press
-	int  pendingCellId         = -1;
+	int pendingCellId = -1;
 	bool pendingCellIsPhysical = false; // true = set by physical button, false = set by MIDI
 
 	// Tracks the last MIDI-activated scene that has not yet received a note-off / CC=0.
@@ -228,7 +228,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	// Resets the pending-cell selection (called on cancel, completion, mode switch, and reset).
 	// Also clears the global cross-instance pending if this module was the initiator.
 	void clearPending() {
-		pendingCellId         = -1;
+		pendingCellId = -1;
 		pendingCellIsPhysical = false;
 		auto& cp = crossPending[APP];
 		if (cp.initiator == this) cp.clear();
@@ -281,7 +281,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		trackingProcessor.handler = this;
 		trackingProcessor.enableCc();
 		trackingProcessor.enableNotes();
-		midiOutput.ledState      = cellLedState;
+		midiOutput.ledState = cellLedState;
 		midiOutput.sceneLedState = sceneLedState;
 		processDivider.setDivision(256);
 	}
@@ -341,18 +341,18 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 				}
 			}
 
-			blinkPhase     += args.sampleTime * 4.f * processDivider.division;
-			if (blinkPhase     >= 1.f) blinkPhase     -= 1.f;
+			blinkPhase += args.sampleTime * 4.f * processDivider.division;
+			if (blinkPhase >= 1.f) blinkPhase -= 1.f;
 			slowBlinkPhase += args.sampleTime * 2.f * processDivider.division;
 			if (slowBlinkPhase >= 1.f) slowBlinkPhase -= 1.f;
 
-			bool blinkOn     = blinkPhase     < 0.5f;
+			bool blinkOn = blinkPhase < 0.5f;
 			bool slowBlinkOn = slowBlinkPhase < 0.5f;
 			for (int i = 0; i < MATRIX_COUNT; i++) {
 				bool assigned = portAssignments[i].isValid();
 				bool hasCable = portHasCable[i];
 				bool connectedToPending = pendingCellId >= 0 && i != pendingCellId
-									  && isConnected(currentScene, pendingCellId, i);
+					&& isConnected(currentScene, pendingCellId, i);
 				int cs = getCellColorSet(i);  // 0–3
 				NVGcolor col;
 				int stateId;
@@ -406,8 +406,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 					for (int i = 0; i < MATRIX_COUNT; i++) {
 						if (sceneConnections[s][i]) { hasConn = true; break; }
 					}
-					bright      = hasConn ? LED_SCENE_DIM : 0.f;
-					sceneState  = hasConn ? LED_STATE_SCENE_DIM : LED_STATE_OFF;
+					bright = hasConn ? LED_SCENE_DIM : 0.f;
+					sceneState = hasConn ? LED_STATE_SCENE_DIM : LED_STATE_OFF;
 				}
 				if (sceneState != sceneLedState[s]) {
 					sendFeedbackOff(MATRIX_COUNT + s, sceneLedState[s]);
@@ -510,8 +510,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	// Any thread — forces a full MIDI LED refresh on the next process() tick by resetting
 	// all cached LED states to -1, causing every cell and scene button to be re-sent.
 	void invalidateLedStates() {
-		std::fill(cellLedState,  cellLedState  + MATRIX_COUNT, -1);
-		std::fill(sceneLedState, sceneLedState + MATRIX_SIZE,  -1);
+		std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
+		std::fill(sceneLedState, sceneLedState + MATRIX_SIZE, -1);
 	}
 
 	// GUI thread — starts MIDI learn for a single cell (id < MATRIX_COUNT) or scene button
@@ -665,12 +665,18 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		}
 		uint8_t status;
 		switch (spec.type) {
-			case MIDI_OUT_NOTE_ON:        status = 0x90; break;
-			case MIDI_OUT_NOTE_OFF:       status = 0x80; break;
-			case MIDI_OUT_CC:             status = 0xB0; break;
+			case MIDI_OUT_NOTE_ON:
+				status = 0x90;
+				break;
+			case MIDI_OUT_NOTE_OFF:
+				status = 0x80;
+				break;
+			case MIDI_OUT_CC:
+				status = 0xB0;
+				break;
 			case MIDI_OUT_FROM_SLOT_TYPE:
-				if      (slotType == MidiTrackingType::NOTE) status = 0x90;
-				else if (slotType == MidiTrackingType::CC)   status = 0xB0;
+				if (slotType == MidiTrackingType::NOTE) status = 0x90;
+				else if (slotType == MidiTrackingType::CC) status = 0xB0;
 				else return;
 				break;
 			default: return;
@@ -1529,12 +1535,15 @@ struct SpliceKitCellButton : app::SvgSwitch {
 		int a = src->cellId, b = cellId;
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			if (src->shiftDrag) {
-				if (!module->guiQueue.full())
+				if (!module->guiQueue.full()) {
 					module->guiQueue.push([=]() { module->moveCell(a, b); });
-			} else {
+				}
+			}
+			else {
 				module->clearPending();
-				if (!module->guiQueue.full())
+				if (!module->guiQueue.full()) { 
 					module->guiQueue.push([=]() { module->toggleConnection(a, b); });
+				}
 			}
 		}
 	}
@@ -1636,7 +1645,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			SpliceKitCellButton* btn = findCellButton(hovered);
 			if (btn) {
 				if (active) btn->destroyTooltip();
-				else        btn->createTooltip();
+				else btn->createTooltip();
 			}
 		}
 	}
@@ -1667,8 +1676,9 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		std::set<std::pair<int64_t, int>> assignedPorts;
 		for (int j = 0; j < MATRIX_COUNT; j++) {
 			const PortAssignment& pb = module->portAssignments[j];
-			if (pb.isValid())
+			if (pb.isValid()) {
 				assignedPorts.insert({pb.moduleId, pb.portId * 2 + (int)pb.type});
+			}
 		}
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			const PortAssignment& pa = module->portAssignments[i];
