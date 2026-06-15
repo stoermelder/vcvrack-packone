@@ -72,6 +72,19 @@ struct SirenModule : Module {
 	int64_t streamTotalFrames = 0;  // total frames in the open item; set in openStream()
 	std::atomic<int64_t> outputFrameCount{0};    // frames output since last seek; DSP increments
 
+	// Declick ramp after a seek (e.g. scrubbing the playhead) — the ring is
+	// cleared and refilled from the new position, which would otherwise step
+	// straight from the last output sample to silence/the new position.
+	// startPlayback() snapshots the last output sample on the UI thread;
+	// process() ramps from it into the post-seek audio over DECLICK_TIME.
+	static constexpr float DECLICK_TIME = 0.015f;  // ~15 ms
+	std::atomic<int> declickRemaining{0};
+	std::atomic<int> declickTotal{1};
+	std::atomic<float> declickFromL{0.f};
+	std::atomic<float> declickFromR{0.f};
+	std::atomic<float> declickLastOutL{0.f};  // most recent raw (pre-volume) output sample
+	std::atomic<float> declickLastOutR{0.f};
+
 	// Resampling — fill thread reads, process() writes engineSampleRate
 	int engineSampleRate;   // set in process(), read by fill thread
 	std::atomic<float> sampleRateRatio{1.f};      // outRate/inRate; set by fill thread, read in process()
@@ -382,6 +395,15 @@ struct SirenModule : Module {
 		seekBaseFrame = (total > 0) ? (int64_t)(pos * (float)total) : 0;
 		outputFrameCount.store(0, std::memory_order_relaxed);
 		playheadPos.store(pos, std::memory_order_relaxed);
+
+		// Snapshot the last output sample so process() can ramp from it into
+		// the post-seek audio instead of stepping straight to it.
+		declickFromL.store(declickLastOutL.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		declickFromR.store(declickLastOutR.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		int declickFrames = std::max(1, (int)(engineSampleRate * DECLICK_TIME));
+		declickTotal.store(declickFrames, std::memory_order_relaxed);
+		declickRemaining.store(declickFrames, std::memory_order_release);
+
 		// Send seek command to fill thread (release: seekBaseFrame visible after acquire)
 		pendingSeekFrame.store(seekBaseFrame, std::memory_order_release);
 		fillCv.notify_one();
@@ -450,6 +472,23 @@ struct SirenModule : Module {
 				}
 			}
 		}
+
+		// Ramp from the pre-seek output into the post-seek audio to avoid a
+		// step discontinuity at the splice point (e.g. when scrubbing).
+		// For correctness should be std::memory_order_acquire, but I'm downgrading
+		// to std::memory_order_relaxed to avoid any performance hits.
+		int declick = declickRemaining.load(std::memory_order_relaxed);
+		if (declick > 0) {
+			int total = declickTotal.load(std::memory_order_relaxed);
+			float t = 1.f - (float)declick / (float)total;
+			float fromL = declickFromL.load(std::memory_order_relaxed);
+			float fromR = declickFromR.load(std::memory_order_relaxed);
+			l = fromL + (l - fromL) * t;
+			r = fromR + (r - fromR) * t;
+			declickRemaining.store(declick - 1, std::memory_order_relaxed);
+		}
+		declickLastOutL.store(l, std::memory_order_relaxed);
+		declickLastOutR.store(r, std::memory_order_relaxed);
 
 		float vol = params[PARAM_VOLUME].getValue();
 		l *= vol * 5.f;

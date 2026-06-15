@@ -54,6 +54,10 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 	static constexpr float WAVE_X = 8.f;
 	static constexpr float READOUT_H = 14.f;
 	static constexpr float SCROLLBAR_H = 12.f;
+	// Minimum time between onScrubTo callbacks while dragging the playhead —
+	// each call triggers a seek/ring-buffer refill on the audio thread, which
+	// can glitch if fired on every UI frame.
+	static constexpr double SCRUB_INTERVAL = 0.1;
 
 	// display inputs (set by parent each step())
 	AudioWaveformCache* cache = nullptr;  // non-owning pointer to parent's active cache
@@ -84,14 +88,21 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 
 	float scrubPos = 0.f;
 	float dragStartRackX = 0.f;
+	float dragStartRackY = 0.f;
 	float dragStartScrub = 0.f;
 	bool draggingPlayhead = false;
+	// Set on a plain left-click in the waveform, before the drag direction is
+	// known. Resolved on the first onDragMove past a small threshold: a mostly
+	// horizontal drag becomes a playhead drag, a mostly vertical one starts a
+	// file drag. A click with no movement falls back to setting the playhead.
+	bool dragDirectionPending = false;
 	bool trimmingIn = false;
 	bool trimmingOut = false;
 	bool trimmingRange = false;
 	float rangeAnchor = 0.f;
 	bool draggingScrollbar = false;
 	float dragStartScrollbarX = 0.f;
+	double lastScrubTime = 0.0;
 
 	// callbacks
 	std::function<void(float)> onInPointChanged;
@@ -451,10 +462,11 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 					}
 				}
 				else if (!ctrl) {
-					scrubPos = posToNormalized(e.pos);
-					dragStartRackX = APP->scene->rack->getMousePos().x;
-					dragStartScrub = scrubPos;
-					draggingPlayhead = true;
+					Vec mp = APP->scene->rack->getMousePos();
+					dragStartRackX = mp.x;
+					dragStartRackY = mp.y;
+					dragStartScrub = posToNormalized(e.pos);
+					dragDirectionPending = true;
 				}
 				// Ctrl held (or loop preview) → onDragStart fires the file drop
 				e.consume(this);
@@ -466,7 +478,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 
 	void onDragStart(const event::DragStart& e) override {
 		if (hasFile && !draggingPlayhead && !trimmingIn && !trimmingOut
-				&& !trimmingRange && !draggingScrollbar && dropHandler) {
+				&& !trimmingRange && !draggingScrollbar && !dragDirectionPending && dropHandler) {
 			dropHandler->startDrag(dragPath, dragDisplayName);
 		}
 	}
@@ -484,6 +496,23 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 				dragStartScrollbarX = APP->scene->rack->getMousePos().x;
 			}
 			return;
+		}
+
+		if (dragDirectionPending) {
+			Vec mp = APP->scene->rack->getMousePos();
+			float ddx = mp.x - dragStartRackX;
+			float ddy = mp.y - dragStartRackY;
+			const float threshold = 2.f;
+			if (std::abs(ddx) < threshold && std::abs(ddy) < threshold) return;
+
+			dragDirectionPending = false;
+			if (std::abs(ddx) >= std::abs(ddy)) {
+				draggingPlayhead = true;
+				scrubPos = dragStartScrub;
+			}
+			else if (dropHandler) {
+				dropHandler->startDrag(dragPath, dragDisplayName);
+			}
 		}
 
 		Rect r = waveformRect();
@@ -510,7 +539,11 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			float np = rack::math::clamp(pos, 0.f, 1.f);
 			if (np != scrubPos) {
 				scrubPos = np;
-				if (onScrubTo) onScrubTo(scrubPos);
+				double now = rack::system::getTime();
+				if (now - lastScrubTime >= SCRUB_INTERVAL) {
+					lastScrubTime = now;
+					if (onScrubTo) onScrubTo(scrubPos);
+				}
 			}
 		}
 	}
@@ -518,6 +551,14 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 	void onDragEnd(const event::DragEnd& e) override {
 		if (draggingScrollbar) {
 			draggingScrollbar = false;
+			return;
+		}
+		// Plain click without enough movement to pick a drag direction —
+		// treat it as setting the playhead.
+		if (dragDirectionPending) {
+			dragDirectionPending = false;
+			scrubPos = dragStartScrub;
+			if (onScrubTo) onScrubTo(scrubPos);
 			return;
 		}
 		if (draggingPlayhead)  {
