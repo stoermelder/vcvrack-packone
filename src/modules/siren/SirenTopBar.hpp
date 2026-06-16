@@ -231,18 +231,13 @@ struct SirenSearchField : ui::TextField {
 	}
 
 	void onChange(const event::Change& e) override {
-		if (pane) {
-			pane->searchQuery = rack::string::trim(text);
-			pane->requestRebuild();
-		}
+		if (pane) pane->setSearchQuery(rack::string::trim(text));
 		ui::TextField::onChange(e);
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
 		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
-			setText("");
-			pane->searchQuery.clear();
-			pane->requestRebuild();
+			if (pane) pane->setSearchQuery("");
 			e.consume(this);
 			return;
 		}
@@ -250,9 +245,7 @@ struct SirenSearchField : ui::TextField {
 	}
 
 	void onDoubleClick(const DoubleClickEvent& e) override {
-		setText("");
-		pane->searchQuery.clear();
-		pane->requestRebuild();
+		if (pane) pane->setSearchQuery("");
 	}
 };
 
