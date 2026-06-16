@@ -15,27 +15,31 @@ Test::TestContext<> testContext;
 // Creates a unique temporary directory; removes it on destruction.
 
 struct TempDir {
-	ghc::filesystem::path path;
+	std::string path;
 
 	TempDir() {
 		static int seq = 0;
-		path = ghc::filesystem::temp_directory_path()
-		       / ("sirenfs_test_" + std::to_string(++seq));
-		ghc::filesystem::create_directories(path);
+		path = rack::system::join(rack::system::getTempDirectory(),
+			"sirenfs_test_" + std::to_string(++seq));
+		rack::system::createDirectories(path);
 	}
 
-	~TempDir() { ghc::filesystem::remove_all(path); }
+	~TempDir() {
+		rack::system::removeRecursively(path);
+	}
 
 	// Create an empty file with the given name inside this directory.
 	void touch(const std::string& name) const {
-		std::ofstream f((path / name).string());
+		std::ofstream f(rack::system::join(path, name));
 	}
 
 	std::string filePath(const std::string& name) const {
-		return (path / name).string();
+		return rack::system::join(path, name);
 	}
 
-	std::string str() const { return path.string(); }
+	std::string str() const {
+		return path;
+	}
 };
 
 // ─── prepareForDrop helper ────────────────────────────────────────────────────
@@ -134,7 +138,7 @@ TEST_CASE("loadChildrenSync: container (directory) alongside _siren_ files is un
 	TempDir tmp;
 	tmp.touch("sample.flac");
 	tmp.touch("sample_siren_abcdef.wav");
-	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "Drums");
+	rack::system::createDirectories(rack::system::join(tmp.str(), "Drums"));
 
 	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto nodes = src.loadChildrenSync("");
@@ -151,7 +155,7 @@ TEST_CASE("loadChildrenSync: container (directory) alongside _siren_ files is un
 TEST_CASE("loadChildrenSync: node isContainer flag is correct", "[Siren][FileSystem]") {
 	TempDir tmp;
 	tmp.touch("kick.wav");
-	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "Loops");
+	rack::system::createDirectories(rack::system::join(tmp.str(), "Loops"));
 
 	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto nodes = src.loadChildrenSync("");
@@ -251,8 +255,8 @@ TEST_CASE("prepareForDrop: writes trimmed file into custom outputDir when set", 
 	std::string result = task();
 
 	REQUIRE(result != tmp.filePath("loop.wav"));
-	REQUIRE(ghc::filesystem::path(result).parent_path().string() == outDir.str());
-	REQUIRE(ghc::filesystem::exists(result));
+	REQUIRE(rack::system::getDirectory(result) == outDir.str());
+	REQUIRE(rack::system::exists(result));
 }
 
 // With outputDir empty (default), the generated file is written beside the source —
@@ -267,8 +271,8 @@ TEST_CASE("prepareForDrop: writes trimmed file beside source when outputDir is e
 	std::string result = task();
 
 	REQUIRE(result != tmp.filePath("loop.wav"));
-	REQUIRE(ghc::filesystem::path(result).parent_path().string() == tmp.str());
-	REQUIRE(ghc::filesystem::exists(result));
+	REQUIRE(rack::system::getDirectory(result) == tmp.str());
+	REQUIRE(rack::system::exists(result));
 }
 
 // outputDir must be ignored on the early-return (no-op) path — the resolved
@@ -310,8 +314,8 @@ TEST_CASE("prepareForDrop: alwaysCopy copies source file into outputDir", "[Sire
 	std::string result = task();
 
 	REQUIRE(result != tmp.filePath("kick.wav"));
-	REQUIRE(ghc::filesystem::path(result).parent_path().string() == outDir.str());
-	REQUIRE(ghc::filesystem::exists(result));
+	REQUIRE(rack::system::getDirectory(result) == outDir.str());
+	REQUIRE(rack::system::exists(result));
 
 	// The new file must contain the original bytes unchanged.
 	std::ifstream in(result, std::ios::binary);
@@ -350,8 +354,8 @@ TEST_CASE("prepareForDrop: alwaysCopy defers to processAudioForDrop when a trans
 	std::string result = task();
 
 	// Even with alwaysCopy=true the trim drives the path through the encoder.
-	REQUIRE(ghc::filesystem::path(result).parent_path().string() == outDir.str());
-	REQUIRE(ghc::filesystem::exists(result));
+	REQUIRE(rack::system::getDirectory(result) == outDir.str());
+	REQUIRE(rack::system::exists(result));
 }
 
 // copyFileForDrop is the binary-copy helper used by the alwaysCopy path. A
@@ -362,7 +366,7 @@ TEST_CASE("copyFileForDrop: missing source returns the source path", "[Siren][Fi
 	std::string result = FileSystemDataSource::copyFileForDrop("/does/not/exist.wav",
 	                                                           outDir.str() + "/out.wav");
 	REQUIRE(result == "/does/not/exist.wav");
-	REQUIRE(!ghc::filesystem::exists(outDir.str() + "/out.wav"));
+	REQUIRE(!rack::system::exists(outDir.str() + "/out.wav"));
 }
 
 // ─── isSupportedAudioFile ───────────────────────────────────────────────────
@@ -413,8 +417,8 @@ TEST_CASE("loadChildrenSync: directories appear before audio files (case-insensi
 	TempDir tmp;
 	tmp.touch("Zebra.wav");
 	tmp.touch("alpha.mp3");
-	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "Beta");
-	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "alpha");
+	rack::system::createDirectories(rack::system::join(tmp.str(), "Beta"));
+	rack::system::createDirectories(rack::system::join(tmp.str(), "alpha"));
 
 	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto nodes = src.loadChildrenSync("");
