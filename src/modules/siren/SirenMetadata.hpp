@@ -40,97 +40,86 @@ static const std::vector<std::string>& fallbackTags() {
 	return v;
 }
 
-inline const std::vector<std::string>& starterTags() {
-	static std::vector<std::string> cache;
+struct TagManifest {
+	std::vector<std::string> tags;
+	std::map<std::string, std::vector<std::string>> keywords;
+};
+
+// Loads SirenTags.json exactly once and populates both caches in a single pass.
+inline const TagManifest& tagManifest() {
+	static TagManifest manifest;
 	static bool loaded = false;
-	if (loaded) return cache;
-	loaded = true;  // set first so a JSON parse failure doesn't retry every call
+	if (loaded) return manifest;
+	loaded = true;
 
 	if (isTesting()) {
-		// In tests we can't reach `rack::asset::plugin` without a full
-		// plugin instance. Use the fallback.
-		cache = fallbackTags();
-		return cache;
+		manifest.tags = fallbackTags();
+		return manifest;
 	}
 
 	std::string path = tagManifestPath();
 	FILE* f = std::fopen(path.c_str(), "r");
 	if (!f) {
 		WARN("Siren: failed to read SirenTags.json at %s; using built-in fallback.", path.c_str());
-		cache = fallbackTags();
-		return cache;
+		manifest.tags = fallbackTags();
+		return manifest;
 	}
 	json_error_t err;
 	json_t* rootJ = json_loadf(f, 0, &err);
 	std::fclose(f);
 	if (!rootJ) {
 		WARN("Siren: failed to parse SirenTags.json: %s; using built-in fallback.", err.text);
-		cache = fallbackTags();
-		return cache;
+		manifest.tags = fallbackTags();
+		return manifest;
 	}
 	DEFER({ json_decref(rootJ); });
 
 	json_t* tagsJ = json_object_get(rootJ, "tags");
 	if (!tagsJ || !json_is_array(tagsJ)) {
 		WARN("Siren: SirenTags.json missing 'tags' array; using built-in fallback.");
-		cache = fallbackTags();
-		return cache;
+		manifest.tags = fallbackTags();
+		return manifest;
 	}
+
 	size_t i;
 	json_t* entryJ;
 	json_array_foreach(tagsJ, i, entryJ) {
 		json_t* nameJ = json_object_get(entryJ, "name");
-		if (nameJ && json_is_string(nameJ)) {
-			cache.emplace_back(json_string_value(nameJ));
-		}
-	}
-	if (cache.empty()) {
-		cache = fallbackTags();
-	}
-	return cache;
-}
-
-// Returns a map from tag name to its filename keywords, loaded from the same
-// SirenTags.json. Empty map on parse failure (filename boosting is just skipped).
-inline const std::map<std::string, std::vector<std::string>>& starterTagKeywords() {
-	static std::map<std::string, std::vector<std::string>> cache;
-	static bool loaded = false;
-	if (loaded) return cache;
-	loaded = true;
-
-	if (isTesting()) return cache;
-
-	std::string path = tagManifestPath();
-	FILE* f = std::fopen(path.c_str(), "r");
-	if (!f) return cache;
-	json_error_t err;
-	json_t* rootJ = json_loadf(f, 0, &err);
-	std::fclose(f);
-	if (!rootJ) return cache;
-	DEFER({ json_decref(rootJ); });
-
-	json_t* tagsJ = json_object_get(rootJ, "tags");
-	if (!tagsJ || !json_is_array(tagsJ)) return cache;
-	size_t i;
-	json_t* entryJ;
-	json_array_foreach(tagsJ, i, entryJ) {
-		json_t* nameJ = json_object_get(entryJ, "name");
-		json_t* kwJ = json_object_get(entryJ, "keywords");
 		if (!nameJ || !json_is_string(nameJ)) continue;
-		if (!kwJ || !json_is_array(kwJ)) continue;
 		std::string name = json_string_value(nameJ);
+		manifest.tags.emplace_back(name);
+
+		json_t* kwJ = json_object_get(entryJ, "keywords");
+		if (!kwJ || !json_is_array(kwJ)) continue;
 		std::vector<std::string> kws;
 		size_t j;
 		json_t* kwEntry;
 		json_array_foreach(kwJ, j, kwEntry) {
-			if (json_is_string(kwEntry))
+			if (json_is_string(kwEntry)) {
 				kws.emplace_back(json_string_value(kwEntry));
+			}
 		}
-		if (!kws.empty())
-			cache[name] = std::move(kws);
+		if (!kws.empty()) {
+			manifest.keywords[name] = std::move(kws);
+		}
 	}
-	return cache;
+
+	if (manifest.tags.empty()) {
+		manifest.tags = fallbackTags();
+	}
+	return manifest;
 }
+
+inline const std::vector<std::string>& starterTags() {
+	return tagManifest().tags;
+}
+
+// Returns a map from tag name to its filename keywords.
+// Empty map on parse failure (filename boosting is just skipped).
+inline const std::map<std::string, std::vector<std::string>>& starterTagKeywords() {
+	return tagManifest().keywords;
+}
+
 
 struct SampleMetadata {
 	std::string relativePath;  // relative to root, using '/' separator
