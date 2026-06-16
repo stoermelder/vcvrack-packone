@@ -336,8 +336,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			: parentPath(std::move(p)), insertIdx(idx), nodes(std::move(n)), gen(g) {}
 	};
 	std::atomic<int> treeGeneration{0};
-	PendingResult pendingResult;
-	std::atomic<bool> pendingReady{false};
+	dsp::RingBuffer<PendingResult, 16> pendingQueue;
 
 	SirenScrollWidget* scrollWidget = nullptr;
 	widget::Widget* rowContainer = nullptr;
@@ -396,7 +395,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			selectedPath.clear();
 			rows.clear();
 			loadPending = false;
-			pendingReady.store(false, std::memory_order_relaxed);
 			++treeGeneration;
 			rebuildRowWidgets();
 		}
@@ -408,57 +406,59 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		activeDs = createDataSource(root);
 		rows.clear();
 		rebuildRowWidgets();
-		pendingReady.store(false, std::memory_order_relaxed);
 		int gen = ++treeGeneration;
 		if (!worker) return;
 		loadPending = true;
 		activeDs->loadChildrenAsync(activeDs->rootId(), *worker, [this, gen](std::vector<DataSourceNode> nodes) {
-			pendingResult = PendingResult("", 0, std::move(nodes), gen);
-			pendingReady.store(true, std::memory_order_release);
+			if (!pendingQueue.full()) {
+				pendingQueue.push(PendingResult("", 0, std::move(nodes), gen));
+			}
 		});
 	}
 
 	void step() override {
-		if (pendingReady.load(std::memory_order_acquire)) {
-			pendingReady.store(false, std::memory_order_relaxed);
-			if (pendingResult.gen == treeGeneration.load(std::memory_order_relaxed)) {
-				loadPending = false;
-				if (pendingResult.insertIdx == 0) {
-					rows.clear();
-					for (auto& n : pendingResult.nodes) {
-						TreeEntry e; e.node = n; e.indent = 0;
-						rows.push_back(e);
-					}
-				}
-				else {
-					int idx = pendingResult.insertIdx;
-					rows[idx - 1].childrenLoading = false;
-					std::vector<TreeEntry> newRows;
-					for (auto& n : pendingResult.nodes) {
-						TreeEntry e;
-						e.node   = n;
-						e.indent = rows[idx - 1].indent + 1;
-						newRows.push_back(e);
-					}
-					rows.insert(rows.begin() + idx, newRows.begin(), newRows.end());
-				}
-				rebuildRowWidgets();
-
-				if (!pendingSelectFirstOfPath.empty()) {
-					std::string parentId = pendingSelectFirstOfPath;
-					pendingSelectFirstOfPath.clear();
-					auto vr = visibleRowWidgets();
-					for (int i = 0; i < (int)vr.size() - 1; i++) {
-						if (vr[i]->node.relativePath == parentId) {
-							selectPath(vr[i + 1]->node);
-							break;
-						}
-					}
-				}
-				if (!pendingRevealPath.empty()) {
-					advanceRevealPath();
+		while (!pendingQueue.empty()) {
+			PendingResult result = pendingQueue.shift();
+			if (result.gen != treeGeneration.load(std::memory_order_relaxed)) continue;
+			loadPending = false;
+			if (result.parentPath.empty()) {
+				rows.clear();
+				for (auto& n : result.nodes) {
+					TreeEntry e; e.node = n; e.indent = 0;
+					rows.push_back(e);
 				}
 			}
+			else {
+				int parentIdx = findTreeIdx(result.parentPath);
+				if (parentIdx >= 0) {
+					rows[parentIdx].childrenLoading = false;
+					std::vector<TreeEntry> newRows;
+					for (auto& n : result.nodes) {
+						TreeEntry e;
+						e.node   = n;
+						e.indent = rows[parentIdx].indent + 1;
+						newRows.push_back(e);
+					}
+					rows.insert(rows.begin() + parentIdx + 1, newRows.begin(), newRows.end());
+				}
+			}
+			rebuildRowWidgets();
+
+			if (!pendingSelectFirstOfPath.empty()) {
+				std::string parentId = pendingSelectFirstOfPath;
+				pendingSelectFirstOfPath.clear();
+				auto vr = visibleRowWidgets();
+				for (int i = 0; i < (int)vr.size() - 1; i++) {
+					if (vr[i]->node.relativePath == parentId) {
+						selectPath(vr[i + 1]->node);
+						break;
+					}
+				}
+			}
+			if (!pendingRevealPath.empty()) {
+				advanceRevealPath();
+			}
+			break;
 		}
 		if (dropHandler) dropHandler->step();
 
@@ -500,14 +500,13 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		requestRebuild();
 
 		std::string id = entry.node.relativePath;
-		int insertIdx = rowIdx + 1;
 
 		if (worker && activeDs) {
 			entry.childrenLoading = true;
 			int gen = treeGeneration.load(std::memory_order_relaxed);
-			activeDs->loadChildrenAsync(id, *worker, [this, insertIdx, gen](std::vector<DataSourceNode> nodes) {
-				pendingResult = PendingResult("", insertIdx, std::move(nodes), gen);
-				pendingReady.store(true, std::memory_order_release);
+			activeDs->loadChildrenAsync(id, *worker, [this, id, gen](std::vector<DataSourceNode> nodes) {
+				if (!pendingQueue.full())
+					pendingQueue.push(PendingResult(id, -1, std::move(nodes), gen));
 			});
 		}
 	}
