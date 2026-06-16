@@ -986,64 +986,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		ThemedModuleWidget<SirenModule>::appendContextMenu(menu);
 
 		menu->addChild(new ui::MenuSeparator);
-		menu->addChild(createBoolPtrMenuItem("Resample on playback", "", &sirenSettings.resampleOnPlayback));
-		menu->addChild(createBoolPtrMenuItem("Resample on drop", "", &sirenSettings.resampleOnDrop));
-		// Speex resampler quality used during "resample on drop".
-		// Three presets cover the practical range: fast (1), default (6), best (10).
-		menu->addChild(createSubmenuItem("Resample quality", "", [=](ui::Menu* qMenu) {
-			struct QPreset { int value; std::string label; std::string desc; };
-			QPreset presets[] = {
-				{ 1,  "Fast",    "Lowest CPU" },
-				{ 6,  "Default", "Balanced quality and CPU"      },
-				{ 10, "Best",    "Highest CPU"  },
-			};
-			for (const QPreset& p : presets) {
-				qMenu->addChild(createCheckMenuItem(p.label, p.desc,
-					[=]() { return sirenSettings.resampleQuality == p.value; },
-					[=]() { sirenSettings.resampleQuality = p.value; }
-				));
-			}
-		}));
-		menu->addChild(createBoolPtrMenuItem("Convert to WAV on drop", "", &sirenSettings.convertToWavOnDrop));
-		menu->addChild(createSubmenuItem("Folder for converted/trimmed files", "", [=](ui::Menu* subMenu) {
-			subMenu->addChild(createCheckMenuItem("Same folder as source file", "",
-				[=]() { return sirenSettings.convertTarget == SirenSettings::CT_SOURCE; },
-				[=]() { sirenSettings.convertTarget = SirenSettings::CT_SOURCE; }
-			));
-			subMenu->addChild(createCheckMenuItem(
-				sirenSettings.customConvertDir.empty() ? "Custom folder..." : sirenSettings.customConvertDir, "",
-				[=]() { return sirenSettings.convertTarget == SirenSettings::CT_CUSTOM; },
-				[]() {
-					char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
-					if (!path) return;
-					sirenSettings.customConvertDir = path;
-					sirenSettings.convertTarget = SirenSettings::CT_CUSTOM;
-					free(path);
-				}
-			));
-			// Patch storage: writes the file into the module's per-patch storage
-			// directory, so the sample is bundled with the saved patch. Only
-			// available when this is a real module instance (i.e. not a preview
-			// widget). The widget pointer is captured by the lambda so the check
-			// is dynamic and re-evaluated when the menu is opened.
-			subMenu->addChild(createCheckMenuItem("Patch storage", "",
-				[=]() { return sirenSettings.convertTarget == SirenSettings::CT_PATCH; },
-				[this]() {
-					if (!this->module) return;
-					sirenSettings.convertTarget = SirenSettings::CT_PATCH;
-				},
-				this->module == nullptr
-			));
-			subMenu->addChild(new ui::MenuSeparator);
-			// "Always copy" forces a copy of the source file into the target folder
-			// even when no conversion/trim/resample is needed. Disabled (greyed out)
-			// when the target is the source folder — copying a file on top of itself
-			// serves no purpose.
-			subMenu->addChild(createBoolMenuItem("Always copy", "",
-				[=]() { return sirenSettings.alwaysCopy; },
-				[=](bool v) { sirenSettings.alwaysCopy = v; },
-				sirenSettings.convertTarget == SirenSettings::CT_SOURCE));
-		}));
+		appendConversionMenuItems(menu, this->module != nullptr);
 	}
 };
 

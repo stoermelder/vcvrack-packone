@@ -25,7 +25,7 @@ SIREN browses one folder at a time, called a *root container*. To add one:
 1. Click the **source button** (top-left of the display) to open its menu.
 2. Select **Add root…** and choose a folder.
 
-You can add as many roots as you like and switch between them via the same menu. Each root has a checkmark in the menu — click another entry to switch to it. Use **Remove root** to delete the currently active root. Tags and favorites are stored per root and recalled automatically.
+You can add as many roots as you like and switch between them via the same menu. Each root has a checkmark in the menu — click another entry to switch to it. Use **Remove current root** to delete the currently active root. Tags and favorites are stored per root and recalled automatically.
 
 The lower part of the source menu controls how audio is processed:
 

@@ -1101,6 +1101,7 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 		if (pane->activeDs) {
 			ui::Menu* menu = createMenu();
 			menu->addChild(createMenuLabel(pane->activeDs->getDisplayName(node.relativePath)));
+			menu->addChild(new ui::MenuSeparator);
 			pane->activeDs->appendNodeMenuItems(menu, node, [this]() {
 				pane->rebuildRowWidgets();
 			});
