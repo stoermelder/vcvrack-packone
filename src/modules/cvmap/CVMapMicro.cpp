@@ -144,7 +144,8 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 
 	void dataFromJson(json_t* rootJ) override {
 		CVMapModuleBase<1>::dataFromJson(rootJ);
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 		json_t* invertedOutputJ = json_object_get(rootJ, "invertedOutput");
 		if (invertedOutputJ) invertedOutput = json_boolean_value(invertedOutputJ);
 		json_t* audioRateJ = json_object_get(rootJ, "audioRate");

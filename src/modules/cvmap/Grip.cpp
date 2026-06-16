@@ -108,8 +108,10 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 
 	void dataFromJson(json_t* rootJ) override {
 		CVMapModuleBase<MAX_CHANNELS>::dataFromJson(rootJ);
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* audioRateJ = json_object_get(rootJ, "audioRate");
+		if (audioRateJ) audioRate = json_boolean_value(audioRateJ);
 
 		json_t* lastValuesJ = json_object_get(rootJ, "lastValues");
 		for (int i = 0; i < MAX_CHANNELS; i++) {

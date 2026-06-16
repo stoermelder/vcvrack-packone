@@ -203,6 +203,29 @@ ui::MenuItem* createValuePtrMenuItem(std::string text, std::string rightText, T*
 	return createMenuItem(text, string::f("%s %s", rightText, CHECKMARK(*ptr == val)), [=]() { *ptr = val; });
 }
 
+/**
+ * @brief Like createValuePtrMenuItem() but for std::atomic<T> values.
+ *
+ * The checkmark reflects whether the current atomic value equals val; clicking the
+ * item stores val into the atomic. Loads and stores use std::memory_order_seq_cst
+ * (the default for std::atomic), which is the safest option for a cross-thread
+ * UI/engine field.
+ *
+ * @param text The label text for the menu item
+ * @param ptr Pointer to the std::atomic<T> value to modify
+ * @param val The value to set when the menu item is clicked
+ * @return ui::MenuItem* The created menu item
+ *
+ * Example:
+ *   menu->addChild(createAtomicValuePtrMenuItem("Off", &module->setCvMode, SETCVMODE::OFF));
+ *   menu->addChild(createAtomicValuePtrMenuItem("Trigger", &module->snapshotsUsed, 1));
+ */
+template <typename T>
+ui::MenuItem* createAtomicValuePtrMenuItem(std::string text, std::atomic<T>* ptr, T val) {
+	T _v = ptr->load(std::memory_order_relaxed);
+	return createMenuItem(text, CHECKMARK(_v == val), [=]() { ptr->store(val, std::memory_order_relaxed); });
+}
+
 
 /**
  * @brief Append color controls directly to an existing menu.

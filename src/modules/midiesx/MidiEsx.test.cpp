@@ -66,6 +66,19 @@ TEST_CASE("Construction and initialization", "[MidiEsx]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[MidiEsx][JSON]") {
+	auto module = Test::createModule<MidiEsxModule>("MidiEsx");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 
 TEST_CASE("Encoding creates fractional samples correctly (approx)", "[MidiEsx]") {
 	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");

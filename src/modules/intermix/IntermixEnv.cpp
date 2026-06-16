@@ -66,8 +66,10 @@ struct IntermixEnvModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		input = json_integer_value(json_object_get(rootJ, "input"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* inputJ = json_object_get(rootJ, "input");
+		if (inputJ) input = json_integer_value(inputJ);
 	}
 };
 

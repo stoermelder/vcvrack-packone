@@ -20,6 +20,19 @@ TEST_CASE("Construction and initialization", "[PilePoly]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[PilePoly][JSON]") {
+	auto module = Test::createModule<PilePolyModule>("PilePoly");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 TEST_CASE("Polyphonic increment and decrement", "[PilePoly]") {
 	auto module = Test::createModule<PilePolyModule>("PilePoly");
 

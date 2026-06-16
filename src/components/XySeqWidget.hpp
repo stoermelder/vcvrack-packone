@@ -886,17 +886,19 @@ struct XySeqEditWidget : OpaqueWidget {
 		if (!module) return;
 
 		int seqId = module->seqEdit;
-		int seqSelected = module->seqSelected[module->seqEdit];
+		visible = seqId >= 0;
 
 		if (module->seqEdit >= 0) {
+			int seqSelected = module->seqSelected[module->seqEdit];
 			if (lastSeqId != seqId || lastSeqSelected != seqSelected)
 				recWidget->init(seqId, seqSelected);
+			lastSeqSelected = seqSelected;
 		}
 		else {
 			recWidget->init(-1, -1);
+			lastSeqSelected = -1;
 		}
 		lastSeqId = seqId;
-		lastSeqSelected = seqSelected;
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
@@ -989,7 +991,7 @@ struct XySeqEditWidget : OpaqueWidget {
 				recWidget->clear();
 				e.consume(this);
 			}
-			if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && !e.isConsumed()) {
+			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && !e.isConsumed()) {
 				createContextMenu();
 				e.consume(this);
 			}

@@ -21,6 +21,19 @@ TEST_CASE("Construction and initialization", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[Ahab][JSON]") {
+	auto module = Test::createModule<AhabModule>("Ahab");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 // Mock MIDI OutputDevice for testing MIDI output messages
 struct MockMidiOutputDevice : public rack::midi::OutputDevice {
 	std::vector<rack::midi::Message> sentMessages;
