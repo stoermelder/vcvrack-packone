@@ -1,7 +1,7 @@
 #include "../../plugin.hpp"
 #include "../../pluginsettings.hpp"
 #include "../../components/Knobs.hpp"
-#include "Siren.hpp"
+#include "SirenSettings.hpp"
 #include "SirenDataSource.hpp"
 #include "SirenFileSystem.hpp"
 #include "SirenAudio.hpp"

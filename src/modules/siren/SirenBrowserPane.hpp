@@ -1,6 +1,6 @@
 #pragma once
 #include <rack.hpp>
-#include "Siren.hpp"
+#include "SirenSettings.hpp"
 #include "SirenDataSource.hpp"
 #include "SirenFileSystem.hpp"
 #include "SirenMetadata.hpp"

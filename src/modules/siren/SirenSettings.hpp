@@ -48,10 +48,9 @@ struct SirenSettings {
 		DEFER({ json_decref(j); });
 
 		std::string bakPath = jsonPath + ".bak";
-		std::error_code ec;
-		bool hadExisting = ghc::filesystem::exists(jsonPath, ec);
+		bool hadExisting = rack::system::exists(jsonPath);
 		if (hadExisting) {
-			ghc::filesystem::rename(jsonPath, bakPath, ec);
+			rack::system::rename(jsonPath, bakPath);
 		}
 
 		FILE* f = fopen(jsonPath.c_str(), "w");
@@ -74,11 +73,11 @@ struct SirenSettings {
 
 		if (hadExisting) {
 			if (verified) {
-				ghc::filesystem::remove(bakPath, ec);
+				rack::system::remove(bakPath);
 			}
 			else {
-				ghc::filesystem::remove(jsonPath, ec);
-				ghc::filesystem::rename(bakPath, jsonPath, ec);
+				rack::system::remove(jsonPath);
+				rack::system::rename(bakPath, jsonPath);
 			}
 		}
 	}
@@ -194,7 +193,9 @@ struct SirenSettings {
 		else convertTarget = customConvertDir.empty() ? CT_SOURCE : CT_CUSTOM;
 		v = json_object_get(j, "alwaysCopy"); if (v) alwaysCopy = json_boolean_value(v);
 	}
-} sirenSettings;
+};
+
+extern SirenSettings sirenSettings;
 
 } // namespace Siren
 } // namespace StoermelderPackOne
