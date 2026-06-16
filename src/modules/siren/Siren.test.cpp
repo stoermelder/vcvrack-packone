@@ -63,6 +63,82 @@ TEST_CASE("JSON serialization", "[Siren][JSON]") {
 	Test::destroyModule(m);
 }
 
+// ─── SirenSettings: fromJson sort-and-remap ───────────────────────────────────
+
+// fromJson sorts rootContainers by name and remaps activeRootIdx to the new position.
+TEST_CASE("SirenSettings::fromJson: sorts rootContainers alphabetically", "[Siren][Settings]") {
+	// Build JSON with three roots in reverse-alphabetical insertion order.
+	json_t* j = json_object();
+	json_t* rootsJ = json_array();
+	auto makeRoot = [](const char* path) {
+		json_t* r = json_object();
+		json_object_set_new(r, "path", json_string(path));
+		json_object_set_new(r, "type", json_string("fs"));
+		return r;
+	};
+	json_array_append_new(rootsJ, makeRoot("/Zebra"));   // insertion idx 0
+	json_array_append_new(rootsJ, makeRoot("/Mango"));   // insertion idx 1
+	json_array_append_new(rootsJ, makeRoot("/Apple"));   // insertion idx 2
+	json_object_set_new(j, "rootContainers", rootsJ);
+	json_object_set_new(j, "activeRootIdx", json_integer(0));  // Zebra is active
+
+	SirenSettings settings;
+	settings.fromJson(j);
+	json_decref(j);
+
+	REQUIRE(settings.rootContainers.size() == 3);
+	REQUIRE(settings.rootContainers[0].name == "Apple");
+	REQUIRE(settings.rootContainers[1].name == "Mango");
+	REQUIRE(settings.rootContainers[2].name == "Zebra");
+	// Zebra was at insertion idx 0 → sorted idx 2
+	REQUIRE(settings.activeRootIdx == 2);
+}
+
+// activeRootIdx follows the active root even when loading an old file that stored
+// insertion-order indices (pre-sort). The identity-capture approach handles both.
+TEST_CASE("SirenSettings::fromJson: remaps activeRootIdx from insertion order (backward compat)", "[Siren][Settings]") {
+	json_t* j = json_object();
+	json_t* rootsJ = json_array();
+	auto makeRoot = [](const char* path) {
+		json_t* r = json_object();
+		json_object_set_new(r, "path", json_string(path));
+		json_object_set_new(r, "type", json_string("fs"));
+		return r;
+	};
+	json_array_append_new(rootsJ, makeRoot("/Beta"));    // insertion idx 0
+	json_array_append_new(rootsJ, makeRoot("/Alpha"));   // insertion idx 1 — will be active
+	json_object_set_new(j, "rootContainers", rootsJ);
+	json_object_set_new(j, "activeRootIdx", json_integer(1));  // Alpha (insertion idx 1)
+
+	SirenSettings settings;
+	settings.fromJson(j);
+	json_decref(j);
+
+	REQUIRE(settings.rootContainers[0].name == "Alpha");
+	REQUIRE(settings.rootContainers[1].name == "Beta");
+	// Alpha was at insertion idx 1 → sorted idx 0
+	REQUIRE(settings.activeRootIdx == 0);
+}
+
+// Out-of-range activeRootIdx leaves activeRootIdx at its default (-1).
+TEST_CASE("SirenSettings::fromJson: out-of-range activeRootIdx becomes -1", "[Siren][Settings]") {
+	json_t* j = json_object();
+	json_t* rootsJ = json_array();
+	json_t* r = json_object();
+	json_object_set_new(r, "path", json_string("/Samples"));
+	json_object_set_new(r, "type", json_string("fs"));
+	json_array_append_new(rootsJ, r);
+	json_object_set_new(j, "rootContainers", rootsJ);
+	json_object_set_new(j, "activeRootIdx", json_integer(99));  // out of range
+
+	SirenSettings settings;
+	settings.fromJson(j);
+	json_decref(j);
+
+	REQUIRE(settings.rootContainers.size() == 1);
+	REQUIRE(settings.activeRootIdx == -1);
+}
+
 // ─── MetadataStore: favorites ──────────────────────────────────────────────────
 // favorite flag can be set, cleared, and persists independently of tags.
 TEST_CASE("MetadataStore: favorites", "[Siren][Metadata]") {
@@ -334,28 +410,97 @@ TEST_CASE("MetadataStore::load: ignores a corrupt file without crashing", "[Sire
 	REQUIRE(store.getTags("a.wav") == std::vector<std::string>{"kept"});
 }
 
-// ─── AudioWaveformCache: timestamp invalidation ────────────────────────────────────
-// cache tracks file mtime and reports empty/non-empty state.
-TEST_CASE("AudioWaveformCache: timestamp validation", "[Siren][Audio]") {
-	SECTION("Different timestamp is detected as stale") {
-		AudioWaveformCache cache;
-		cache.fileTimestamp = 12345;
-		// Simulate: stored timestamp != current mtime
-		// (We test the logic by checking the stored value)
-		REQUIRE(cache.fileTimestamp == 12345);
-		// If current mtime were different, loadWaveformCacheFile returns false
-	}
+// ─── AudioWaveformCache ────────────────────────────────────────────────────────
+// empty() state and buildWaveformCache output (loadWaveformCacheFile /
+// saveWaveformCacheFile are gated by isTesting() and cannot run in the test
+// harness, so we exercise buildWaveformCache directly instead).
 
-	SECTION("Empty cache reports empty()") {
+struct FakeAudioStream : AudioStream {
+	std::vector<float> data;
+	int ch_, sr_;
+	int64_t pos_ = 0;
+	FakeAudioStream(int frames, int ch, int sr, float fill = 0.5f)
+		: ch_(ch), sr_(sr) {
+		data.assign((size_t)frames * ch, fill);
+	}
+	int     channels()    const override { return ch_; }
+	int     sampleRate()  const override { return sr_; }
+	int64_t totalFrames() const override { return (int64_t)data.size() / std::max(1, ch_); }
+	int64_t readF32(float* buf, int64_t n) override {
+		int64_t avail = totalFrames() - pos_;
+		int64_t toRead = std::min(n, avail);
+		if (buf && toRead > 0)
+			std::memcpy(buf, data.data() + pos_ * ch_, (size_t)toRead * (size_t)ch_ * sizeof(float));
+		pos_ += toRead;
+		return toRead;
+	}
+	bool seekTo(int64_t f) override { pos_ = f; return true; }
+};
+
+TEST_CASE("AudioWaveformCache: empty() reports cache state correctly", "[Siren][Audio]") {
+	SECTION("Default-constructed cache is empty") {
 		AudioWaveformCache cache;
 		REQUIRE(cache.empty() == true);
 	}
 
-	SECTION("Non-empty cache reports not empty") {
+	SECTION("Cache with sampleCount but no channel data is empty") {
+		AudioWaveformCache cache;
+		cache.sampleCount = 100;
+		REQUIRE(cache.empty() == true);
+	}
+
+	SECTION("Populated cache is not empty") {
 		AudioWaveformCache cache;
 		cache.sampleCount = 100;
 		cache.samples.push_back(std::vector<float>(100, 0.f));
 		REQUIRE(cache.empty() == false);
+	}
+}
+
+TEST_CASE("buildWaveformCache: fills cache from a stream", "[Siren][Audio]") {
+	FakeAudioStream stream(4410, 1, 44100, 0.5f);
+
+	AudioWaveformCache cache;
+	bool ok = buildWaveformCache(/*timestamp=*/99999, stream, /*pixelWidth=*/100, cache);
+
+	REQUIRE(ok == true);
+	REQUIRE(cache.fileTimestamp == 99999);
+	REQUIRE(cache.sampleCount == std::min(100 * 8, 8192));  // internal resolution = pixelWidth * 8
+	REQUIRE(cache.samples.size() == 1);  // mono
+	REQUIRE(!cache.empty());
+}
+
+TEST_CASE("buildWaveformCache: stores timestamp for stale-detection", "[Siren][Audio]") {
+	// buildWaveformCache stamps the cache with the caller-supplied timestamp.
+	// At load time, loadWaveformCacheFile rejects any cache whose stored timestamp
+	// does not match the file's current mtime, making this the key staleness signal.
+	FakeAudioStream s1(4410, 1, 44100);
+	FakeAudioStream s2(4410, 1, 44100);
+	AudioWaveformCache c1, c2;
+	buildWaveformCache(11111, s1, 50, c1);
+	buildWaveformCache(22222, s2, 50, c2);
+	REQUIRE(c1.fileTimestamp == 11111);
+	REQUIRE(c2.fileTimestamp == 22222);
+	REQUIRE(c1.fileTimestamp != c2.fileTimestamp);
+}
+
+TEST_CASE("buildWaveformCache: stereo stream produces two channel vectors", "[Siren][Audio]") {
+	FakeAudioStream stream(4410, 2, 44100);
+	AudioWaveformCache cache;
+	REQUIRE(buildWaveformCache(0, stream, 80, cache) == true);
+	REQUIRE(cache.samples.size() == 2);
+}
+
+TEST_CASE("buildWaveformCache: rejects degenerate inputs", "[Siren][Audio]") {
+	SECTION("zero pixel width") {
+		FakeAudioStream s(1000, 1, 44100);
+		AudioWaveformCache c;
+		REQUIRE(buildWaveformCache(0, s, 0, c) == false);
+	}
+	SECTION("zero-frame stream") {
+		FakeAudioStream s(0, 1, 44100);
+		AudioWaveformCache c;
+		REQUIRE(buildWaveformCache(0, s, 100, c) == false);
 	}
 }
 

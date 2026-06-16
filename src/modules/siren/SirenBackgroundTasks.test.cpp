@@ -292,10 +292,11 @@ TEST_CASE("SirenClassifyTask: existing tags are filtered out of suggestions", "[
 		}
 	}
 	if (observedTag.empty()) {
-		// Model didn't emit any tag for this synthetic file — nothing to test.
-		// Still a valid result: the filter can't drop what wasn't there.
-		WARN("Classifier emitted no tag for /a.wav — filter is untested for this file.");
-		return;
+		// The ML classifier emitted no tag for this synthetic WAV — the filter
+		// logic is untestable without a suggestion to filter. Skip rather than
+		// silently passing: a WARN + return would show as a green test, hiding
+		// the fact that the invariant was never exercised.
+		SKIP("Classifier emitted no tag for /a.wav — filter path is untested for this signal.");
 	}
 
 	// Pre-apply the observed tag (using the SAME normalisation addTag uses)

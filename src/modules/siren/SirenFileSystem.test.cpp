@@ -193,11 +193,13 @@ TEST_CASE("prepareForDrop: .WAV extension (uppercase) also treated as wav — no
 	REQUIRE(callPrepareForDrop(src, "/sample.WAV", true) == tmp.filePath("sample.WAV"));
 }
 
-// non-audio ids that can't be decoded fall back to the resolved absolute path.
-TEST_CASE("prepareForDrop: returns existing _siren_ file without decoding (idempotent)", "[Siren][FileSystem]") {
+// A _siren_-named WAV file passed with convertToWav=true is returned unchanged:
+// the .wav extension means needConvert=false, and the early-return path fires
+// without any decode attempt — so previously-generated files are never re-encoded.
+TEST_CASE("prepareForDrop: generated _siren_ WAV file is returned without re-conversion", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
-	REQUIRE(callPrepareForDrop(src, "/ghost.flac", true) == tmp.filePath("ghost.flac"));
+	REQUIRE(callPrepareForDrop(src, "/kick_siren_abcdef.wav", true) == tmp.filePath("kick_siren_abcdef.wav"));
 }
 
 // decode failure (e.g. non-existent file) falls back to the resolved absolute path.
@@ -441,8 +443,9 @@ TEST_CASE("randomFileSuffix: format is '_siren_' + 6 lowercase letters and works
 	REQUIRE(isGeneratedFile(filename) == true);
 }
 
-// MetadataStore::filePath is derived from rootPath and is stable across instances on the same root.
-TEST_CASE("FileSystemDataSource: metadata file path is stable for same root", "[Siren][FileSystem]") {
+// MetadataStore::filePath is deterministic: two independent instances with the same root
+// produce the same file path, so metadata is shared rather than duplicated.
+TEST_CASE("FileSystemDataSource: metadata file path is deterministic for same root", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src1(tmp.str(), scratchMetadataStore());
 	FileSystemDataSource src2(tmp.str(), scratchMetadataStore());
