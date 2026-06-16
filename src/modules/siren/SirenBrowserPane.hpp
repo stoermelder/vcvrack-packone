@@ -520,30 +520,19 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		return -1;
 	}
 
-	bool containerHasMatchingDescendant(int rowIdx, MetadataStore* meta) const {
-		if (!meta) return false;
-		const std::string dirPrefix = rows[rowIdx].node.relativePath + "/";
-		for (const auto& pair : meta->samples) {
-			if (pair.first.compare(0, dirPrefix.size(), dirPrefix) != 0) continue;
-			const SampleMetadata& sm = pair.second;
-			if (favoritesOnly && !sm.favorite) continue;
-			if (!tagFilter.empty()) {
-				bool hasAll = true;
-				for (const std::string& t : tagFilter) {
-					if (std::find(sm.tags.begin(), sm.tags.end(), t) == sm.tags.end()) { hasAll = false; break; }
-				}
-				if (!hasAll) continue;
+	bool sampleMatchesFilter(const SampleMetadata& sm) const {
+		if (favoritesOnly && !sm.favorite) return false;
+		if (!tagFilter.empty()) {
+			for (const std::string& t : tagFilter) {
+				if (std::find(sm.tags.begin(), sm.tags.end(), t) == sm.tags.end()) return false;
 			}
-			if (!tagExcludeFilter.empty()) {
-				bool hasAny = false;
-				for (const std::string& t : tagExcludeFilter) {
-					if (std::find(sm.tags.begin(), sm.tags.end(), t) != sm.tags.end()) { hasAny = true; break; }
-				}
-				if (hasAny) continue;
-			}
-			return true;
 		}
-		return false;
+		if (!tagExcludeFilter.empty()) {
+			for (const std::string& t : tagExcludeFilter) {
+				if (std::find(sm.tags.begin(), sm.tags.end(), t) != sm.tags.end()) return false;
+			}
+		}
+		return true;
 	}
 
 	int findTreeIdx(const std::string& id) {
@@ -1007,6 +996,22 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 	rowContainer->clearChildren();
 	MetadataStore* meta = activeDs ? activeDs->getMetadata() : nullptr;
 
+	// Pre-compute which directories have at least one matching descendant in O(N).
+	// Container rows then do an O(log D) set lookup instead of an O(N) scan each.
+	const bool filterActive = favoritesOnly || !tagFilter.empty() || !tagExcludeFilter.empty();
+	std::set<std::string> matchingDirs;
+	if (filterActive && meta) {
+		for (const auto& pair : meta->samples) {
+			if (!sampleMatchesFilter(pair.second)) continue;
+			const std::string& filePath = pair.first;
+			size_t pos = 0;
+			while ((pos = filePath.find('/', pos)) != std::string::npos) {
+				matchingDirs.insert(filePath.substr(0, pos));
+				++pos;
+			}
+		}
+	}
+
 	SearchQuery sq = parseSearchQuery(searchQuery);
 	float y = 0.f;
 	for (int i = 0; i < (int)rows.size(); i++) {
@@ -1020,30 +1025,12 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 		}
 
 		if (n.isContainer) {
-			if ((favoritesOnly || !tagFilter.empty() || !tagExcludeFilter.empty()) && !containerHasMatchingDescendant(i, meta)) {
-				continue;
-			}
+			if (filterActive && matchingDirs.count(n.relativePath) == 0) continue;
 		}
 		else {
-			if (favoritesOnly && meta && !meta->isFavorite(n.relativePath)) {
-				continue;
-			}
-			if ((!tagFilter.empty() || !tagExcludeFilter.empty()) && meta) {
-				auto tags = meta->getTags(n.relativePath);
-				if (!tagFilter.empty()) {
-					bool hasAll = true;
-					for (const std::string& t : tagFilter) {
-						if (std::find(tags.begin(), tags.end(), t) == tags.end()) { hasAll = false; break; }
-					}
-					if (!hasAll) continue;
-				}
-				if (!tagExcludeFilter.empty()) {
-					bool hasAny = false;
-					for (const std::string& t : tagExcludeFilter) {
-						if (std::find(tags.begin(), tags.end(), t) != tags.end()) { hasAny = true; break; }
-					}
-					if (hasAny) continue;
-				}
+			if (filterActive && meta) {
+				auto it = meta->samples.find(n.relativePath);
+				if (it == meta->samples.end() || !sampleMatchesFilter(it->second)) continue;
 			}
 		}
 
