@@ -29,8 +29,14 @@ inline bool isSupportedAudioFile(const std::string& path) {
 // The fixed "_siren_" marker lets isGeneratedFile() identify them for browser filtering.
 inline std::string randomFileSuffix() {
 	static const char letters[] = "abcdefghijklmnopqrstuvwxyz";
-	unsigned long long seed = (unsigned long long)std::time(nullptr);
-	seed ^= (unsigned long long)(size_t)&seed;
+	// Seed once from a non-deterministic source; advance a per-call counter so
+	// repeated calls within the same second produce different suffixes.
+	static std::mt19937_64 rng = []() {
+		std::random_device rd;
+		return std::mt19937_64(rd());
+	}();
+	static std::atomic<unsigned long long> counter{0};
+	unsigned long long seed = rng() ^ counter.fetch_add(1, std::memory_order_relaxed);
 	std::string s = "_siren_";
 	s.reserve(13);
 	for (int i = 0; i < 6; i++) {
