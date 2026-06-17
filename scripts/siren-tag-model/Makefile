@@ -32,8 +32,8 @@ clean:
 # Python-orchestrated pipeline targets
 #
 # This block layers a `make`-driven workflow on top of the Python scripts
-# (generate_synthetic_dataset.py, load_folder_dataset.py, train_model.py,
-# classify_wav.py). It mirrors what run.sh / run.bat do, but with three
+# (generate_synthetic_dataset.py, load_folder_dataset.py, train_model.py).
+# It mirrors what run.sh / run.bat do, but with three
 # wins:
 #
 #   1. Incremental. The venv is created only when missing, the dataset
@@ -73,7 +73,7 @@ endif
 PY        ?= $(VENV_PY)
 PIP       ?= $(VENV_PY) -m pip
 
-# Default parameter values for the training / dataset / classify targets.
+# Default parameter values for the training / dataset targets.
 # Override on the command line, e.g. `make train CSV=build/my.csv`.
 N_PER_CLASS    ?= 80
 SEED           ?= 42
@@ -81,11 +81,9 @@ N_ESTIMATORS   ?= 24
 MAX_DEPTH      ?= 8
 AUGMENT        ?= 3
 NEGATIVE_WEIGHT ?= 3.0
-TOP_K          ?= 3
 DATASET_OUT    ?= build/synthetic_dataset.csv
 TRAIN_OUT      ?= build/SirenTagClassifier.generated.cpp
 LOADER_OUT     ?= build/my_dataset.csv
-CLASSIFY_CSV   ?= build/synthetic_dataset.csv
 
 # ── venv lifecycle ───────────────────────────────────────────────────────
 .PHONY: venv
@@ -141,18 +139,6 @@ train:
 	$(PY) train_model.py --csv "$(CSV)" --out $(TRAIN_OUT) \
 		--n-estimators $(N_ESTIMATORS) --max-depth $(MAX_DEPTH) \
 		--augment $(AUGMENT) --seed $(SEED) --negative-weight $(NEGATIVE_WEIGHT)
-
-# ── Score a single audio file against the trained model ─────────────────
-# Usage: make classify WAV=path/to/snippet.wav
-.PHONY: classify
-classify:
-	@if [ -z "$(WAV)" ]; then \
-		echo "error: WAV is required, e.g. make classify WAV=path/to/snippet.wav" 1>&2; \
-		exit 2; \
-	fi
-	@echo "▶ Classifying $(WAV) ..."
-	$(PY) classify_wav.py "$(WAV)" --top-k $(TOP_K) --csv $(CLASSIFY_CSV) \
-		$(if $(NO_MODEL),--no-model)
 
 # ── Full pipeline (mirrors run.sh / run.bat) ─────────────────────────────
 # Order: ensure extractor is built, generate dataset (or skip if CSV is

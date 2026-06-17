@@ -349,38 +349,13 @@ read this back to populate a "model info" panel so users always
 know which dataset / hyper-parameters produced the bundled
 classifier — no sidecar files, no JSON parser dependency.
 
-## Classifying a single file (Python smoke test)
+## Inspecting features for a single file
 
-```bash
-# Score one of the synthetic clips
-make classify WAV=build/synthetic_audio/drone_0010.wav
-# — or, equivalently:
-python3 classify_wav.py build/synthetic_audio/drone_0010.wav
-
-# Try a real wav from anywhere
-make classify WAV=~/samples/kick.wav
-
-# Just dump the 53 features (skip the model step entirely)
-make classify WAV=~/samples/kick.wav NO_MODEL=1
-# — or:
-python3 classify_wav.py ~/samples/kick.wav --no-model
-
-# Show top 5 instead of top 3
-make classify WAV=build/synthetic_audio/percussion_0020.wav TOP_K=5
-```
-
-For a quick feature dump from the C++ binary:
+To dump the 53 features that the C++ extractor produces for any audio file:
 
 ```bash
 build/siren_extract_features build/synthetic_audio/percussion_0020.wav
 ```
-
-Note: `classify_wav.py` uses `find_cpp_extractor()` to delegate feature
-extraction to the C++ binary — Python feature extraction has been removed
-so training and inference are guaranteed to use the same implementation.
-For a coherence check, run the C++ binary on a file and compare its CSV
-output to `classify_wav.py --no-model` on the same file; all 53 feature
-values should be identical.
 
 ## Training on your own audio
 
@@ -529,7 +504,6 @@ overfitting — aim for the 100–200 clips/class range.
 | `load_folder_dataset.py` | Walks a folder of tag-named subdirectories, extracts features, writes a CSV. Recognises `Non-<Tag>/` subfolders as hard-negative buckets. Bridge to real data. |
 | `train_model.py` | Fits 18 independent `RandomForestClassifier` heads (one per binary tag) via the `PerClassRFBag` adapter, prints metrics, calibrates per-class probabilities, calls `emit_cpp.py`. Accepts a `--negative-weight` flag for per-(row, class) hard-negative weighting. |
 | `emit_cpp.py` | Uses `m2cgen` to write the C source fragment, with Platt-scaled per-class dispatcher, the `SIREN_TAG_TRAINING_INFO_JSON` metadata blob, and the `registerTrainingInfo()` call into the API header. |
-| `classify_wav.py` | Python smoke-test tool: score a single wav file via the C++ extractor + Python reference model. |
 | `run.sh` | macOS/Linux convenience wrapper: venv → extractor → dataset → train → emit. Use `make pipeline` instead if you have GNU make. |
 | `run.bat` | Windows convenience wrapper (no GNU make required). Same flow as `run.sh`. |
 | `requirements.txt` | Pinned Python deps. |
@@ -558,18 +532,16 @@ been removed. Common causes: `c++` not on `PATH`, or `RACK_DIR` pointing
 at the wrong location. Fix with `make extractor RACK_DIR=/path/to/Rack`
 or set the `RACK_DIR` environment variable.
 
-**Smoke-test predictions look random** — training and inference are out of
-sync. Both must use the same STFT parameters (`FFT_SIZE=512`, `HOP=128`,
-`TARGET_SR=8820`) and the same 53 features in the same order. Run
-`build/siren_extract_features <file>` and `make classify WAV=<file> NO_MODEL=1`
-on the same file; all 53 feature values should match.
+**Predictions look random** — training and inference are out of sync. Both
+must use the same STFT parameters (`FFT_SIZE=512`, `HOP=128`, `TARGET_SR=8820`)
+and the same 53 features in the same order. Run
+`build/siren_extract_features <file>` on a test file and confirm it produces
+exactly 53 comma-separated values.
 
-**The plugin's predictions differ from the Python smoke test** — same root
-cause as above. Rebuild the C++ extractor with `make extractor` and re-run
-`make pipeline` to regenerate the model using the C++ feature values.
-Check that both sides produce exactly 53 values per file. Also check the
-plugin and CLI agree by running the same WAV through both `make
-testrun` paths and `classify_wav.py`.
+**The plugin's predictions differ from `make testrun`** — same root cause
+as above. Rebuild the C++ extractor with `make extractor` and re-run
+`make pipeline` to regenerate the model using the current C++ feature values.
+Check that both sides produce exactly 53 values per file.
 
 **Trainer reports F1 = 0 on classes you know are present** — the CSV has
 fewer than 18 labels or a folder name doesn't match the manifest. Check

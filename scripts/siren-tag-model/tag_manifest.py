@@ -4,8 +4,7 @@ The C++ plugin treats `res/data/SirenTags.json` as the single
 source of truth at runtime — it reads it once at module startup with
 `rack::asset::plugin(...)` and rebuilds `STARTER_TAGS` from it. The Python
 training pipeline reads the same JSON here and exposes the same list as
-`CLASS_NAMES` so `features.py`, `train_model.py`, `classify_wav.py`, and
-`emit_cpp.py` all agree.
+`CLASS_NAMES` so `features.py`, `train_model.py`, and `emit_cpp.py` all agree.
 
 When you edit `SirenTags.json`, both worlds pick it up automatically —
 C++ on next module load, Python on next import of this file (or on the
@@ -58,8 +57,8 @@ def load_manifest(path: Path = MANIFEST_PATH) -> tuple[int, list[TagInfo]]:
 
 # ── Module-level convenience: CLASS_NAMES and FEATURE_NAMES ──────────────
 #
-# The rest of the Python pipeline (features.py, train_model.py, classify_wav.py,
-# emit_cpp.py) imports these names without knowing about the JSON.
+# The rest of the Python pipeline (features.py, train_model.py, emit_cpp.py)
+# imports these names without knowing about the JSON.
 
 def _reload() -> None:
     """Re-read the manifest and refresh module-level globals."""

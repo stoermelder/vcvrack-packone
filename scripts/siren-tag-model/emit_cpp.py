@@ -24,9 +24,9 @@ default), each per-class estimator is either:
                 (degenerate case where all training samples for that class
                 shared the same label)
 
-The Python scoring side (`classify_wav.py`) uses
-`predict_proba(...)[0, 1]` -- i.e. the probability of the **positive**
-class. So for the 2-class shape we want `output[1]`, not `output[0]`.
+The Python scoring uses `predict_proba(...)[0, 1]` -- i.e. the probability
+of the **positive** class. So for the 2-class shape we want `output[1]`,
+not `output[0]`.
 
 We wrap each m2cgen body in a uniform bridge function
 `static double siren_tag_score_class_N(double *input)` that returns the
@@ -34,9 +34,7 @@ class-N probability (positive-class probability for 2-class, the value
 itself for 1-class). The dispatcher can then uniformly do
 `double _s = siren_tag_score_class_N(_x);` for every class.
 
-The result is a source file that compiles cleanly into the plugin and gives
-identical scores to the Python `classify_wav.py` reference at the same
-`MODEL_VERSION`.
+The result is a source file that compiles cleanly into the plugin.
 """
 from __future__ import annotations
 
