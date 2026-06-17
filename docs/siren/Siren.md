@@ -27,6 +27,8 @@ SIREN browses one folder at a time, called a *root container*. To add one:
 
 You can add as many roots as you like and switch between them via the same menu. Each root has a checkmark in the menu — click another entry to switch to it. Use **Remove current root** to delete the currently active root. Tags and favorites are stored per root and recalled automatically.
 
+The **◀** and **▶** arrow buttons flanking the source button cycle through your roots without opening the menu.
+
 The lower part of the source menu controls how audio is processed:
 
 - **Resample on playback** — resample on the fly to Rack's current sample rate while SIREN plays through its own outputs. Has no effect on the file on disk.
@@ -43,7 +45,9 @@ The lower part of the source menu controls how audio is processed:
 
 Select **Index metadata for all files** from the source menu to scan the active root in the background: SIREN reads each file's audio info (duration, sample rate, bit depth, channels) and detects BPM from filenames where possible, storing the results in the root's metadata file. A status overlay ("Indexing… N files") shows progress; closing the patch or switching roots cancels an in-progress scan.
 
-Indexing is optional — file info and BPM are also picked up automatically as you browse — but running it once after adding a large root avoids per-file delays the first time each folder is opened. Files are only re-read if they've changed on disk since the last scan, so re-running indexing on an already-indexed root is fast.
+Indexing is optional — file infos and BPM are also picked up automatically as you browse, but the search function is limited to files which are known in the index. Indexing a data source ensures, that all files are considered while searching.
+
+To stop a scan before it finishes, select **Cancel indexing** in the source menu (only visible while a scan is running).
 
 ## Drag and Drop
 
@@ -149,6 +153,8 @@ SIREN decodes the trimmed region, finds the quietest zero crossing near the midp
 
 **Dragging from loop preview mode** drops the loop-processed file. SIREN writes a new WAV to the destination selected under **Folder for converted/trimmed files** (next to the source by default) and hands that file to the receiving module — the same crossfade that you heard during preview is baked in.
 
+> **Note:** If the trim region is large, SIREN shows a confirmation dialog estimating how much temporary memory the preview will use before it begins decoding. Confirm to proceed or cancel to abort.
+
 ### Repitch
 
 SIREN can shift the pitch of the current sample or trim region without changing its duration, and let you audition the result before committing. Right-click the preview pane and select **Generate repitch preview**.
@@ -156,6 +162,8 @@ SIREN can shift the pitch of the current sample or trim region without changing 
 **Repitch** / **Repitch fine** — the sliders below **Generate repitch preview** in the context menu set the pitch shift: **Repitch** in semitones (range -24 to +24, default 0) and **Repitch fine** in cents (range -100 to +100, default 0). The two combine into a single pitch shift. Positive values raise the pitch, negative values lower it.
 
 **Dragging from repitch preview mode** drops the repitched file. SIREN writes a new WAV to the destination selected under **Folder for converted/trimmed files** (next to the source by default) and hands that file to the receiving module — the same pitch shift that you heard during preview is baked in.
+
+> **Note:** If the trim region is large, SIREN shows a confirmation dialog estimating how much temporary memory the preview will use before it begins decoding. Confirm to proceed or cancel to abort.
 
 ## Organizing Files
 
