@@ -150,8 +150,13 @@ struct SirenSourceButton : ui::ChoiceButton {
 		menu->addChild(createMenuItem("Index metadata for all files", "", [this]() {
 			pane->startIndexing();
 		}, !pane->activeDs || indexing));
-		menu->addChild(new ui::MenuSeparator);
+		if (pane->indexTask.running()) {
+			menu->addChild(createMenuItem("Cancel indexing", "", [this]() {
+				pane->cancelActiveSourceTasks();
+			}));
+		}
 
+		menu->addChild(new ui::MenuSeparator);
 		menu->addChild(createMenuItem("Add root...", "", [this]() {
 			if (pane->onAddRoot) pane->onAddRoot();
 		}));
