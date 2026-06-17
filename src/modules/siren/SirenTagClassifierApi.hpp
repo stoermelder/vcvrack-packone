@@ -58,6 +58,9 @@ static constexpr float RMS_FULL_SCALE = 0.7071067811865475f; // 1/√2
 // MFCC parameters
 static constexpr int N_MELS = 26;    // mel filterbank bands
 static constexpr int N_MFCC = 13;    // cepstral coefficients kept
+static constexpr float MEL_F_MIN = 80.f;  // mel filterbank lower bound (Hz); at outSR=8820
+                                          // binHz≈17 Hz, so 0 Hz collapses lowest bands to
+                                          // the same bin — floor at 80 Hz keeps all filters live
 static constexpr float MFCC_NORM_0 = 200.f; // normalization for C[0] (energy-like, wide range)
 static constexpr float MFCC_NORM_N = 30.f;  // normalization for C[1..12] (shape)
 
@@ -647,13 +650,16 @@ struct TagClassifier {
 		const int lowBinMax = std::max(1, int(std::floor(LOW_BAND_HZ / binHz)));
 		const int highBinMin = std::min(HALF_N - 1, int(std::ceil(HIGH_BAND_HZ / binHz)));
 
-		// Mel filterbank: N_MELS triangular filters from 0 Hz to Nyquist
-		// mel(f) = 2595·log10(1 + f/700);  bin = round(mel_hz * FFT_SIZE / outSR)
+		// Mel filterbank: N_MELS triangular filters from MEL_F_MIN Hz to Nyquist.
+		// mel(f) = 2595·log10(1 + f/700);  bin = round(mel_hz * FFT_SIZE / outSR).
+		// Starting at MEL_F_MIN (80 Hz) rather than 0 Hz prevents the lowest filters
+		// from collapsing: at outSR=8820, binHz≈17 Hz, so 0 Hz maps adjacent mel
+		// boundaries to the same bin, producing dead bands with zero energy.
 		int mel_bins[N_MELS + 2];
 		{
 			auto hz_to_mel = [](double hz) { return 2595.0 * std::log10(1.0 + hz / 700.0); };
 			auto mel_to_hz = [](double m) { return 700.0 * (std::pow(10.0, m / 2595.0) - 1.0); };
-			double mel_lo = hz_to_mel(0.0);
+			double mel_lo = hz_to_mel(double(MEL_F_MIN));
 			double mel_hi = hz_to_mel(double(outSR) / 2.0);
 			for (int m = 0; m < N_MELS + 2; ++m) {
 				double mel = mel_lo + (mel_hi - mel_lo) * m / (N_MELS + 1);
