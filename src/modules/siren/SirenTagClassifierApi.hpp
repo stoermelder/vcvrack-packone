@@ -89,7 +89,7 @@ inline void computeMagnitudes(const float* fftOut, float* mag, int halfSize) {
 inline float computeSpectralFlux(const float* magCur, const float* magPrev, int numBins) {
 	float total = 0.f;
 	for (int i = 0; i < numBins; ++i) {
-		float cur  = std::max(magCur[i],  1e-6f);
+		float cur = std::max(magCur[i], 1e-6f);
 		float prev = std::max(magPrev[i], 1e-6f);
 		float diff = std::log(cur) - std::log(prev);
 		if (diff > 0.f) total += diff;
@@ -156,7 +156,7 @@ struct SpectralAccum {
 	bool mfccPrevValid = false;
 
 	explicit SpectralAccum(int nMels)
-	    : melAcc(size_t(nMels), 0.0), mfccDeltaAcc(size_t(N_MFCC), 0.0) {}
+		: melAcc(size_t(nMels), 0.0), mfccDeltaAcc(size_t(N_MFCC), 0.0) {}
 };
 
 } // namespace TagClassifierDetail
@@ -329,7 +329,7 @@ struct TagClassifier {
 		if (kwLen == 0) return false;
 		size_t pos = 0;
 		while ((pos = stem.find(kw, pos)) != std::string::npos) {
-			bool leftOk  = (pos == 0) || !std::isalnum((unsigned char)stem[pos - 1]);
+			bool leftOk = (pos == 0) || !std::isalnum((unsigned char)stem[pos - 1]);
 			bool rightOk = (pos + kwLen >= stem.size()) || !std::isalnum((unsigned char)stem[pos + kwLen]);
 			if (leftOk && rightOk) return true;
 			++pos;
@@ -589,7 +589,7 @@ struct TagClassifier {
 		// Harmonic ratio — autocorrelation over pitch range 49–1100 Hz (lags 8–180 at outSR)
 		// Normalised peak → periodic=1 (tonal), noise=0.
 		{
-			int n  = std::min((int)mono.size(), 4096);
+			int n = std::min((int)mono.size(), 4096);
 			float r0 = 0.f;
 			for (int i = 0; i < n; ++i) r0 += mono[i] * mono[i];
 			float maxAC = 0.f;
@@ -644,7 +644,7 @@ struct TagClassifier {
 		int mel_bins[N_MELS + 2];
 		{
 			auto hz_to_mel = [](double hz) { return 2595.0 * std::log10(1.0 + hz / 700.0); };
-			auto mel_to_hz = [](double m)  { return 700.0 * (std::pow(10.0, m / 2595.0) - 1.0); };
+			auto mel_to_hz = [](double m) { return 700.0 * (std::pow(10.0, m / 2595.0) - 1.0); };
 			double mel_lo = hz_to_mel(0.0);
 			double mel_hi = hz_to_mel(double(outSR) / 2.0);
 			for (int m = 0; m < N_MELS + 2; ++m) {
@@ -731,12 +731,12 @@ struct TagClassifier {
 				}
 			}
 			acc.bwAcc += (framePower > 1e-12)
-			    ? std::sqrt(bwSq / framePower) / double(HALF_N - 1)
-			    : 0.0;
+				? std::sqrt(bwSq / framePower) / double(HALF_N - 1)
+				: 0.0;
 			const double arithMean = linMagSum / double(HALF_N);
 			acc.flatnessAcc += (arithMean > 1e-12)
-			    ? std::exp(logMagSum / double(HALF_N)) / arithMean
-			    : 0.0;
+				? std::exp(logMagSum / double(HALF_N)) / arithMean
+				: 0.0;
 			if (framePower > 1e-12) {
 				const double bw = std::sqrt(bwSq / framePower);
 				if (bw > 1e-12) {
@@ -765,7 +765,7 @@ struct TagClassifier {
 					}
 				}
 				acc.melAcc[mf] += e;
-				mel_hop[mf]     = e;
+				mel_hop[mf] = e;
 			}
 
 			// Per-hop MFCC → delta accumulation
@@ -853,7 +853,7 @@ struct TagClassifier {
 			out[8] = float(acc.powerHigh / acc.powerSum);  // high     [2000+)   Hz
 			out[37] = float(acc.powerSubBass / acc.powerSum);  // sub_bass [0, 80)   Hz
 			out[38] = float((acc.powerSum - acc.powerSubBass - acc.powerLow - acc.powerHigh)
-			                / acc.powerSum);                   // mid      [250, 2000) Hz
+				/ acc.powerSum);                   // mid      [250, 2000) Hz
 		}
 
 		// Spectral shape features — averaged over hops

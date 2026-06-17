@@ -318,7 +318,7 @@ TEST_CASE("MetadataStore: JSON round-trip", "[Siren][Metadata]") {
 TEST_CASE("MetadataStore::save: round-trips through real file I/O", "[Siren][Metadata][Persistence]") {
 	ScratchMetadataStore store;
 	store.rootPath = "/test/save-roundtrip";
-	DEFER({ ghc::filesystem::remove(store.filePath()); });
+	DEFER({ rack::system::remove(store.filePath()); });
 
 	store.setFavorite("a.wav", true);
 	store.addTag("a.wav", "drone");
@@ -326,7 +326,7 @@ TEST_CASE("MetadataStore::save: round-trips through real file I/O", "[Siren][Met
 	store.setAudioInfo("a.wav", 12.5f, 44100, 16, 2);
 	store.save();
 
-	REQUIRE(ghc::filesystem::exists(store.filePath()));
+	REQUIRE(rack::system::exists(store.filePath()));
 
 	ScratchMetadataStore loaded;
 	loaded.rootPath = store.rootPath;
@@ -348,19 +348,19 @@ TEST_CASE("MetadataStore::save: leaves no stray .bak file on success", "[Siren][
 	ScratchMetadataStore store;
 	store.rootPath = "/test/save-no-bak";
 	DEFER({
-		ghc::filesystem::remove(store.filePath());
-		ghc::filesystem::remove(store.filePath() + ".bak");
+		rack::system::remove(store.filePath());
+		rack::system::remove(store.filePath() + ".bak");
 	});
 
 	store.addTag("a.wav", "loop");
 	store.save();
-	REQUIRE(ghc::filesystem::exists(store.filePath()));
-	REQUIRE_FALSE(ghc::filesystem::exists(store.filePath() + ".bak"));
+	REQUIRE(rack::system::exists(store.filePath()));
+	REQUIRE_FALSE(rack::system::exists(store.filePath() + ".bak"));
 
 	// Saving again over an existing file also cleans up its own backup.
 	store.addTag("a.wav", "drone");
 	store.save();
-	REQUIRE_FALSE(ghc::filesystem::exists(store.filePath() + ".bak"));
+	REQUIRE_FALSE(rack::system::exists(store.filePath() + ".bak"));
 }
 
 // save() overwrites a previously-existing file, even one with stale or corrupted
@@ -369,11 +369,11 @@ TEST_CASE("MetadataStore::save: overwrites a corrupted prior file", "[Siren][Met
 	ScratchMetadataStore store;
 	store.rootPath = "/test/save-overwrites-corrupt";
 	DEFER({
-		ghc::filesystem::remove(store.filePath());
-		ghc::filesystem::remove(store.filePath() + ".bak");
+		rack::system::remove(store.filePath());
+		rack::system::remove(store.filePath() + ".bak");
 	});
 
-	rack::system::createDirectories(ghc::filesystem::path(store.filePath()).parent_path().string());
+	rack::system::createDirectories(rack::system::getDirectory(store.filePath()));
 	FILE* f = fopen(store.filePath().c_str(), "w");
 	REQUIRE(f != nullptr);
 	fputs("{ this is not valid json", f);
@@ -382,7 +382,7 @@ TEST_CASE("MetadataStore::save: overwrites a corrupted prior file", "[Siren][Met
 	store.addTag("a.wav", "percussion");
 	store.save();
 
-	REQUIRE_FALSE(ghc::filesystem::exists(store.filePath() + ".bak"));
+	REQUIRE_FALSE(rack::system::exists(store.filePath() + ".bak"));
 
 	ScratchMetadataStore loaded;
 	loaded.rootPath = store.rootPath;
@@ -395,9 +395,9 @@ TEST_CASE("MetadataStore::save: overwrites a corrupted prior file", "[Siren][Met
 TEST_CASE("MetadataStore::load: ignores a corrupt file without crashing", "[Siren][Metadata][Persistence]") {
 	ScratchMetadataStore store;
 	store.rootPath = "/test/load-ignores-corrupt";
-	DEFER({ ghc::filesystem::remove(store.filePath()); });
+	DEFER({ rack::system::remove(store.filePath()); });
 
-	rack::system::createDirectories(ghc::filesystem::path(store.filePath()).parent_path().string());
+	rack::system::createDirectories(rack::system::getDirectory(store.filePath()));
 	FILE* f = fopen(store.filePath().c_str(), "w");
 	REQUIRE(f != nullptr);
 	fputs("not json at all", f);
@@ -420,17 +420,18 @@ struct FakeAudioStream : AudioStream {
 	int ch_, sr_;
 	int64_t pos_ = 0;
 	FakeAudioStream(int frames, int ch, int sr, float fill = 0.5f)
-		: ch_(ch), sr_(sr) {
+			: ch_(ch), sr_(sr) {
 		data.assign((size_t)frames * ch, fill);
 	}
-	int     channels()    const override { return ch_; }
-	int     sampleRate()  const override { return sr_; }
+	int channels() const override { return ch_; }
+	int sampleRate() const override { return sr_; }
 	int64_t totalFrames() const override { return (int64_t)data.size() / std::max(1, ch_); }
 	int64_t readF32(float* buf, int64_t n) override {
 		int64_t avail = totalFrames() - pos_;
 		int64_t toRead = std::min(n, avail);
-		if (buf && toRead > 0)
+		if (buf && toRead > 0) {
 			std::memcpy(buf, data.data() + pos_ * ch_, (size_t)toRead * (size_t)ch_ * sizeof(float));
+		}
 		pos_ += toRead;
 		return toRead;
 	}
@@ -582,8 +583,9 @@ TEST_CASE("allTags: starter tags present even when samples have tags", "[Siren][
 	auto all = meta.allTags();
 
 	REQUIRE(all.count("percussion") == 1);
-	for (const std::string& starter : starterTags())
+	for (const std::string& starter : starterTags()) {
 		REQUIRE(all.count(starter) == 1);
+	}
 }
 
 // user tags merge with starter tags; duplicates are prevented.
@@ -603,14 +605,14 @@ TEST_CASE("starterTags: returns 15-tag canonical list in tests", "[Siren][Metada
 	auto tags = starterTags();
 	REQUIRE(tags.size() == 15);
 	// Spot-check a few representative tags from the new vocabulary
-	REQUIRE(std::find(tags.begin(), tags.end(), "Drone")    != tags.end());
-	REQUIRE(std::find(tags.begin(), tags.end(), "Pad")      != tags.end());
-	REQUIRE(std::find(tags.begin(), tags.end(), "Lead")     != tags.end());
-	REQUIRE(std::find(tags.begin(), tags.end(), "Stab")     != tags.end());
-	REQUIRE(std::find(tags.begin(), tags.end(), "Noise")    != tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "Drone") != tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "Pad") != tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "Lead") != tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "Stab") != tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "Noise") != tags.end());
 	// Removed from the old list
-	REQUIRE(std::find(tags.begin(), tags.end(), "Fx")       == tags.end());
-	REQUIRE(std::find(tags.begin(), tags.end(), "Ambient")  == tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "Fx") == tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "Ambient") == tags.end());
 }
 
 // ─── Volume parameter ─────────────────────────────────────────────────────────
@@ -648,7 +650,7 @@ TEST_CASE("PARAM_VOLUME: zero volume produces silence", "[Siren][Module]") {
 // during drag, scrubPos overrides modulePlayheadPos for visual display.
 TEST_CASE("posToPlayhead: scrubPos is display source while draggingPlayhead", "[Siren][Preview]") {
 	// The draw() function reads scrubPos directly when draggingPlayhead == true,
-	// ignoring modulePlayheadPos.  This prevents the DSP thread from overwriting
+	// ignoring modulePlayheadPos. This prevents the DSP thread from overwriting
 	// the visual position while the fill thread is still processing the seek.
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
@@ -659,21 +661,21 @@ TEST_CASE("posToPlayhead: scrubPos is display source while draggingPlayhead", "[
 	pane.modulePlayheadPos = &fakePlayhead;
 
 	// User starts dragging to 0.7
-	pane.canvas->scrubPos         = 0.7f;
-	pane.canvas->inPoint          = 0.7f;
+	pane.canvas->scrubPos = 0.7f;
+	pane.canvas->inPoint = 0.7f;
 	pane.canvas->draggingPlayhead = true;
 
 	// The visual playhead should track scrubPos, not modulePlayheadPos
 	float displayedPh = pane.canvas->draggingPlayhead
-	    ? pane.canvas->scrubPos
-	    : (pane.modulePlayheadPos ? pane.modulePlayheadPos->load() : 0.f);
+		? pane.canvas->scrubPos
+		: (pane.modulePlayheadPos ? pane.modulePlayheadPos->load() : 0.f);
 	REQUIRE(displayedPh == Catch::Approx(0.7f));
 
 	// After drag ends, display switches back to modulePlayheadPos
 	pane.canvas->draggingPlayhead = false;
 	displayedPh = pane.canvas->draggingPlayhead
-	    ? pane.canvas->scrubPos
-	    : (pane.modulePlayheadPos ? pane.modulePlayheadPos->load() : 0.f);
+		? pane.canvas->scrubPos
+		: (pane.modulePlayheadPos ? pane.modulePlayheadPos->load() : 0.f);
 	REQUIRE(displayedPh == Catch::Approx(0.1f));
 }
 
@@ -683,12 +685,12 @@ TEST_CASE("loadItem resets inPoint and scrubPos", "[Siren][Preview]") {
 	pane.box.size = Vec(600.f, 380.f);
 	pane.init(nullptr, nullptr);
 
-	pane.canvas->inPoint  = 0.7f;
+	pane.canvas->inPoint = 0.7f;
 	pane.canvas->scrubPos = 0.7f;
 
 	pane.loadItem(DataSourceNode{}, nullptr);
 
-	REQUIRE(pane.canvas->inPoint  == 0.f);
+	REQUIRE(pane.canvas->inPoint == 0.f);
 	REQUIRE(pane.canvas->scrubPos == 0.f);
 }
 

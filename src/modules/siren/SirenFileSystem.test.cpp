@@ -56,10 +56,10 @@ static std::string callPrepareForDrop(FileSystemDataSource& src, const std::stri
 // whenever loadAudioInfo() can't decode a header (e.g. the empty files from touch()).
 static void writeTestWav(const std::string& path, int frames = 4410, int sampleRate = 44100, int channels = 2) {
 	drwav_data_format fmt = {};
-	fmt.container     = drwav_container_riff;
-	fmt.format        = DR_WAVE_FORMAT_IEEE_FLOAT;
-	fmt.channels      = (drwav_uint32)channels;
-	fmt.sampleRate    = (drwav_uint32)sampleRate;
+	fmt.container = drwav_container_riff;
+	fmt.format = DR_WAVE_FORMAT_IEEE_FLOAT;
+	fmt.channels = (drwav_uint32)channels;
+	fmt.sampleRate = (drwav_uint32)sampleRate;
 	fmt.bitsPerSample = 32;
 	drwav wav;
 	drwav_init_file_write(&wav, path.c_str(), &fmt, nullptr);
@@ -71,30 +71,30 @@ static void writeTestWav(const std::string& path, int frames = 4410, int sampleR
 // ─── isGeneratedFile ──────────────────────────────────────────────────────────
 // pattern: _siren_ + exactly 6 lowercase letters + .wav suffix, must be at position size-17.
 TEST_CASE("isGeneratedFile: recognises _siren_+6letters.wav pattern", "[Siren][FileSystem]") {
-	REQUIRE(isGeneratedFile("_siren_abcdef.wav")         == true);
-	REQUIRE(isGeneratedFile("kick_siren_abcdef.wav")     == true);
+	REQUIRE(isGeneratedFile("_siren_abcdef.wav") == true);
+	REQUIRE(isGeneratedFile("kick_siren_abcdef.wav") == true);
 	REQUIRE(isGeneratedFile("pad.with.dots_siren_uvwxyz.wav") == true);
 }
 
 // regular audio files are not flagged as generated.
 TEST_CASE("isGeneratedFile: regular audio files are not generated", "[Siren][FileSystem]") {
-	REQUIRE(isGeneratedFile("kick.wav")   == false);
-	REQUIRE(isGeneratedFile("pad.flac")   == false);
-	REQUIRE(isGeneratedFile("bass.mp3")   == false);
-	REQUIRE(isGeneratedFile("bass.WAV")   == false);
+	REQUIRE(isGeneratedFile("kick.wav") == false);
+	REQUIRE(isGeneratedFile("pad.flac") == false);
+	REQUIRE(isGeneratedFile("bass.mp3") == false);
+	REQUIRE(isGeneratedFile("bass.WAV") == false);
 }
 
 // old .converted.wav naming and various invalid patterns are rejected.
 TEST_CASE("isGeneratedFile: rejects old .converted.wav and other edge cases", "[Siren][FileSystem]") {
-	REQUIRE(isGeneratedFile("kick.converted.wav")   == false);
-	REQUIRE(isGeneratedFile("sample.converted.wav")  == false);
-	REQUIRE(isGeneratedFile("")                      == false);
-	REQUIRE(isGeneratedFile("_siren_abc.wav")         == false); // only 5 letters after _siren_
-	REQUIRE(isGeneratedFile("_siren_ABC.wav")          == false); // uppercase in random part
-	REQUIRE(isGeneratedFile("_siren_abcdefgh.wav")      == false); // 8 letters (must be exactly 6)
-	REQUIRE(isGeneratedFile("kick_siren_.wav")          == false); // missing 6 letters
-	REQUIRE(isGeneratedFile("kick_siren_abcdef.wav")   == true);  // valid: _siren_ at position size-17
-	REQUIRE(isGeneratedFile(".wav")                    == false);
+	REQUIRE(isGeneratedFile("kick.converted.wav") == false);
+	REQUIRE(isGeneratedFile("sample.converted.wav") == false);
+	REQUIRE(isGeneratedFile("") == false);
+	REQUIRE(isGeneratedFile("_siren_abc.wav") == false); // only 5 letters after _siren_
+	REQUIRE(isGeneratedFile("_siren_ABC.wav") == false); // uppercase in random part
+	REQUIRE(isGeneratedFile("_siren_abcdefgh.wav") == false); // 8 letters (must be exactly 6)
+	REQUIRE(isGeneratedFile("kick_siren_.wav") == false); // missing 6 letters
+	REQUIRE(isGeneratedFile("kick_siren_abcdef.wav") == true);  // valid: _siren_ at position size-17
+	REQUIRE(isGeneratedFile(".wav") == false);
 }
 
 
@@ -112,8 +112,8 @@ TEST_CASE("loadChildrenSync: excludes _siren_ files from results", "[Siren][File
 	std::vector<std::string> names;
 	for (const auto& n : nodes) names.push_back(n.name);
 
-	REQUIRE(std::find(names.begin(), names.end(), "kick.wav")             != names.end());
-	REQUIRE(std::find(names.begin(), names.end(), "pad.flac")             != names.end());
+	REQUIRE(std::find(names.begin(), names.end(), "kick.wav") != names.end());
+	REQUIRE(std::find(names.begin(), names.end(), "pad.flac") != names.end());
 	REQUIRE(std::find(names.begin(), names.end(), "kick_siren_abcdef.wav") == names.end());
 }
 
@@ -129,8 +129,9 @@ TEST_CASE("loadChildrenSync: correct count when multiple _siren_ files are prese
 	auto nodes = src.loadChildrenSync("");
 
 	REQUIRE(nodes.size() == 2);
-	for (const auto& n : nodes)
+	for (const auto& n : nodes) {
 		REQUIRE(isGeneratedFile(n.name) == false);
+	}
 }
 
 // directories are returned alongside audio files with no interference.
@@ -146,8 +147,8 @@ TEST_CASE("loadChildrenSync: container (directory) alongside _siren_ files is un
 	std::vector<std::string> names;
 	for (const auto& n : nodes) names.push_back(n.name);
 
-	REQUIRE(std::find(names.begin(), names.end(), "Drums")                 != names.end());
-	REQUIRE(std::find(names.begin(), names.end(), "sample.flac")         != names.end());
+	REQUIRE(std::find(names.begin(), names.end(), "Drums") != names.end());
+	REQUIRE(std::find(names.begin(), names.end(), "sample.flac") != names.end());
 	REQUIRE(std::find(names.begin(), names.end(), "sample_siren_abcdef.wav") == names.end());
 }
 
@@ -163,13 +164,13 @@ TEST_CASE("loadChildrenSync: node isContainer flag is correct", "[Siren][FileSys
 	const DataSourceNode* fileNode = nullptr;
 	const DataSourceNode* containerNode = nullptr;
 	for (const auto& n : nodes) {
-		if (n.name == "kick.wav")  fileNode      = &n;
-		if (n.name == "Loops")     containerNode = &n;
+		if (n.name == "kick.wav") fileNode = &n;
+		if (n.name == "Loops") containerNode = &n;
 	}
 
-	REQUIRE(fileNode      != nullptr);
+	REQUIRE(fileNode != nullptr);
 	REQUIRE(containerNode != nullptr);
-	REQUIRE(fileNode->isContainer      == false);
+	REQUIRE(fileNode->isContainer == false);
 	REQUIRE(containerNode->isContainer == true);
 }
 
@@ -231,7 +232,7 @@ TEST_CASE("prepareForDrop: resampleQuality parameter is accepted (no-op when no 
 	for (int q : { 0, 1, 4, 7, 10 }) {
 		// targetSampleRate=0 → no resample, no convert, no trim → identity lambda returning abs path.
 		auto task = src.prepareForDrop("/kick.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
-		                               /*trimIn=*/0.f, /*trimOut=*/1.f, q);
+			/*trimIn=*/0.f, /*trimOut=*/1.f, q);
 		REQUIRE(task != nullptr);
 		REQUIRE(task() == tmp.filePath("kick.wav"));
 	}
@@ -251,7 +252,7 @@ TEST_CASE("prepareForDrop: writes trimmed file into custom outputDir when set", 
 
 	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto task = src.prepareForDrop("/loop.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
-	                               /*trimIn=*/0.f, /*trimOut=*/0.5f, /*resampleQuality=*/6, outDir.str());
+		/*trimIn=*/0.f, /*trimOut=*/0.5f, /*resampleQuality=*/6, outDir.str());
 	std::string result = task();
 
 	REQUIRE(result != tmp.filePath("loop.wav"));
@@ -267,7 +268,7 @@ TEST_CASE("prepareForDrop: writes trimmed file beside source when outputDir is e
 
 	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto task = src.prepareForDrop("/loop.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
-	                               /*trimIn=*/0.f, /*trimOut=*/0.5f, /*resampleQuality=*/6, "");
+		/*trimIn=*/0.f, /*trimOut=*/0.5f, /*resampleQuality=*/6, "");
 	std::string result = task();
 
 	REQUIRE(result != tmp.filePath("loop.wav"));
@@ -284,7 +285,7 @@ TEST_CASE("prepareForDrop: outputDir is ignored when no conversion/trim/resample
 
 	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto task = src.prepareForDrop("/kick.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
-	                               /*trimIn=*/0.f, /*trimOut=*/1.f, /*resampleQuality=*/6, outDir.str());
+		/*trimIn=*/0.f, /*trimOut=*/1.f, /*resampleQuality=*/6, outDir.str());
 	REQUIRE(task() == tmp.filePath("kick.wav"));
 }
 
@@ -308,9 +309,9 @@ TEST_CASE("prepareForDrop: alwaysCopy copies source file into outputDir", "[Sire
 
 	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto task = src.prepareForDrop("/kick.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
-	                               /*trimIn=*/0.f, /*trimOut=*/1.f, /*resampleQuality=*/6,
-	                               outDir.str(), /*loopOnDrop=*/false, /*loopCrossfadeDuration=*/8.f,
-	                               /*repitchSemitones=*/0.f, /*alwaysCopy=*/true);
+		/*trimIn=*/0.f, /*trimOut=*/1.f, /*resampleQuality=*/6,
+		outDir.str(), /*loopOnDrop=*/false, /*loopCrossfadeDuration=*/8.f,
+		/*repitchSemitones=*/0.f, /*alwaysCopy=*/true);
 	std::string result = task();
 
 	REQUIRE(result != tmp.filePath("kick.wav"));
@@ -332,9 +333,9 @@ TEST_CASE("prepareForDrop: alwaysCopy is a no-op when outputDir is empty", "[Sir
 
 	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto task = src.prepareForDrop("/kick.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
-	                               /*trimIn=*/0.f, /*trimOut=*/1.f, /*resampleQuality=*/6,
-	                               /*outputDir=*/"", /*loopOnDrop=*/false, /*loopCrossfadeDuration=*/8.f,
-	                               /*repitchSemitones=*/0.f, /*alwaysCopy=*/true);
+		/*trimIn=*/0.f, /*trimOut=*/1.f, /*resampleQuality=*/6,
+		/*outputDir=*/"", /*loopOnDrop=*/false, /*loopCrossfadeDuration=*/8.f,
+		/*repitchSemitones=*/0.f, /*alwaysCopy=*/true);
 	REQUIRE(task() == tmp.filePath("kick.wav"));
 }
 
@@ -348,9 +349,9 @@ TEST_CASE("prepareForDrop: alwaysCopy defers to processAudioForDrop when a trans
 
 	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto task = src.prepareForDrop("/loop.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
-	                               /*trimIn=*/0.f, /*trimOut=*/0.5f, /*resampleQuality=*/6,
-	                               outDir.str(), /*loopOnDrop=*/false, /*loopCrossfadeDuration=*/8.f,
-	                               /*repitchSemitones=*/0.f, /*alwaysCopy=*/true);
+		/*trimIn=*/0.f, /*trimOut=*/0.5f, /*resampleQuality=*/6,
+		outDir.str(), /*loopOnDrop=*/false, /*loopCrossfadeDuration=*/8.f,
+		/*repitchSemitones=*/0.f, /*alwaysCopy=*/true);
 	std::string result = task();
 
 	// Even with alwaysCopy=true the trim drives the path through the encoder.
@@ -364,7 +365,7 @@ TEST_CASE("prepareForDrop: alwaysCopy defers to processAudioForDrop when a trans
 TEST_CASE("copyFileForDrop: missing source returns the source path", "[Siren][FileSystem]") {
 	TempDir outDir;
 	std::string result = FileSystemDataSource::copyFileForDrop("/does/not/exist.wav",
-	                                                           outDir.str() + "/out.wav");
+		outDir.str() + "/out.wav");
 	REQUIRE(result == "/does/not/exist.wav");
 	REQUIRE(!rack::system::exists(outDir.str() + "/out.wav"));
 }
@@ -372,19 +373,19 @@ TEST_CASE("copyFileForDrop: missing source returns the source path", "[Siren][Fi
 // ─── isSupportedAudioFile ───────────────────────────────────────────────────
 // accepts .wav/.flac/.mp3 in any case; rejects everything else.
 TEST_CASE("isSupportedAudioFile: recognises wav/flac/mp3 (any case), rejects everything else", "[Siren][FileSystem]") {
-	REQUIRE(isSupportedAudioFile("/path/to/kick.wav")   == true);
-	REQUIRE(isSupportedAudioFile("/path/to/kick.WAV")   == true);
-	REQUIRE(isSupportedAudioFile("/path/to/kick.flac")  == true);
-	REQUIRE(isSupportedAudioFile("/path/to/kick.FLAC")  == true);
-	REQUIRE(isSupportedAudioFile("/path/to/kick.mp3")   == true);
-	REQUIRE(isSupportedAudioFile("/path/to/kick.MP3")   == true);
-	REQUIRE(isSupportedAudioFile("/path/to/kick.ogg")   == false);
-	REQUIRE(isSupportedAudioFile("/path/to/kick.aac")   == false);
-	REQUIRE(isSupportedAudioFile("/path/to/kick.m4a")   == false);
-	REQUIRE(isSupportedAudioFile("/path/to/kick")       == false);
-	REQUIRE(isSupportedAudioFile("")                     == false);
-	REQUIRE(isSupportedAudioFile("/path/to/.wav")       == false);
-	REQUIRE(isSupportedAudioFile("/path/to/no-ext")     == false);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.wav") == true);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.WAV") == true);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.flac") == true);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.FLAC") == true);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.mp3") == true);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.MP3") == true);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.ogg") == false);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.aac") == false);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.m4a") == false);
+	REQUIRE(isSupportedAudioFile("/path/to/kick") == false);
+	REQUIRE(isSupportedAudioFile("") == false);
+	REQUIRE(isSupportedAudioFile("/path/to/.wav") == false);
+	REQUIRE(isSupportedAudioFile("/path/to/no-ext") == false);
 }
 
 // isSupportedFile delegates to isSupportedAudioFile on the path.
@@ -440,8 +441,9 @@ TEST_CASE("randomFileSuffix: format is '_siren_' + 6 lowercase letters and works
 	auto suffix = randomFileSuffix();
 	REQUIRE(suffix.size() == 13);
 	REQUIRE(suffix.substr(0, 7) == "_siren_");
-	for (size_t i = 7; i < suffix.size(); i++)
+	for (size_t i = 7; i < suffix.size(); i++) {
 		REQUIRE(std::islower(suffix[i]) != 0);
+	}
 
 	std::string filename = "kick" + suffix + ".wav";
 	REQUIRE(isGeneratedFile(filename) == true);

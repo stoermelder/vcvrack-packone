@@ -16,9 +16,9 @@ inline void appendConversionMenuItems(ui::Menu* menu, bool patchStorageAvailable
 	menu->addChild(createSubmenuItem("Resample quality", "", [](ui::Menu* qMenu) {
 		struct QPreset { int value; std::string label; std::string desc; };
 		QPreset presets[] = {
-			{ 1,  "Fast",    "Lowest CPU" },
-			{ 6,  "Default", "Balanced quality and CPU" },
-			{ 10, "Best",    "Highest CPU" },
+			{ 1, "Fast", "Lowest CPU" },
+			{ 6, "Default", "Balanced quality and CPU" },
+			{ 10, "Best", "Highest CPU" },
 		};
 		for (const QPreset& p : presets) {
 			qMenu->addChild(createCheckMenuItem(p.label, p.desc,

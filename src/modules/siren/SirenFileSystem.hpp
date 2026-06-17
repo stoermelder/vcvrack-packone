@@ -192,8 +192,7 @@ struct FileSystemDataSource : DataSource {
 
 		for (const auto& pair : metadata->samples) {
 			std::string cacheFile = cacheFilePathFor(pair.first);
-			std::error_code ec;
-			ghc::filesystem::remove(ghc::filesystem::path(cacheFile), ec);
+			rack::system::remove(cacheFile);
 		}
 	}
 
@@ -208,7 +207,7 @@ struct FileSystemDataSource : DataSource {
 	DataSourceNode resolveNode(const std::string& relativePath) const override {
 		DataSourceNode node;
 		node.relativePath = relativePath;
-		node.name = ghc::filesystem::path(relativePath).filename().string();
+		node.name = rack::system::getFilename(relativePath);
 		node.isContainer = false;
 		node.durationSeconds = loadCachedDuration(relativePath, resolveAbsPath(relativePath));
 		return node;
@@ -237,28 +236,21 @@ struct FileSystemDataSource : DataSource {
 	std::vector<DataSourceNode> loadChildrenSync(const std::string& id, bool withAudioInfo = true) override {
 		std::vector<DataSourceNode> result;
 		std::string scanPath = root + id;
-		ghc::filesystem::path base(root);
-		try {
-			for (const auto& entry : ghc::filesystem::directory_iterator(scanPath)) {
-				DataSourceNode node;
-				node.name = entry.path().filename().string();
-				node.isContainer = entry.is_directory();
-				auto rel = entry.path().lexically_relative(base);
-				node.relativePath = "/" + rel.generic_string();
-				if (node.isContainer || isSupportedAudioFile(node.name)) {
-					if (!node.isContainer) {
-						if (isGeneratedFile(node.name)) {
-							continue;
-						}
-						if (withAudioInfo) {
-							node.durationSeconds = loadCachedDuration(node.relativePath, resolveAbsPath(node.relativePath));
-						}
+		for (const std::string& entryPath : rack::system::getEntries(scanPath, 0)) {
+			DataSourceNode node;
+			node.name = rack::system::getFilename(entryPath);
+			node.isContainer = rack::system::isDirectory(entryPath);
+			node.relativePath = entryPath.substr(root.size());
+			if (node.isContainer || isSupportedAudioFile(node.name)) {
+				if (!node.isContainer) {
+					if (isGeneratedFile(node.name)) continue;
+					if (withAudioInfo) {
+						node.durationSeconds = loadCachedDuration(node.relativePath, resolveAbsPath(node.relativePath));
 					}
-					result.push_back(std::move(node));
 				}
+				result.push_back(std::move(node));
 			}
 		}
-		catch (...) {}
 		std::sort(result.begin(), result.end(), [](const DataSourceNode& a, const DataSourceNode& b) {
 			if (a.isContainer != b.isContainer) return a.isContainer > b.isContainer;
 			return rack::string::lowercase(a.name) < rack::string::lowercase(b.name);
@@ -272,24 +264,19 @@ struct FileSystemDataSource : DataSource {
 		std::string rootCopy = root;
 		worker.work([this, scanPath, rootCopy, onDone]() {
 			std::vector<DataSourceNode> result;
-			ghc::filesystem::path base(rootCopy);
-			try {
-				for (const auto& entry : ghc::filesystem::directory_iterator(scanPath)) {
-					DataSourceNode node;
-					node.name = entry.path().filename().string();
-					node.isContainer = entry.is_directory();
-					auto rel = entry.path().lexically_relative(base);
-					node.relativePath = "/" + rel.generic_string();
-					if (node.isContainer || isSupportedAudioFile(node.name)) {
-						if (!node.isContainer) {
-							if (isGeneratedFile(node.name)) continue;
-							node.durationSeconds = loadCachedDuration(node.relativePath, rootCopy + node.relativePath);
-						}
-						result.push_back(std::move(node));
+			for (const std::string& entryPath : rack::system::getEntries(scanPath, 0)) {
+				DataSourceNode node;
+				node.name = rack::system::getFilename(entryPath);
+				node.isContainer = rack::system::isDirectory(entryPath);
+				node.relativePath = entryPath.substr(rootCopy.size());
+				if (node.isContainer || isSupportedAudioFile(node.name)) {
+					if (!node.isContainer) {
+						if (isGeneratedFile(node.name)) continue;
+						node.durationSeconds = loadCachedDuration(node.relativePath, rootCopy + node.relativePath);
 					}
+					result.push_back(std::move(node));
 				}
 			}
-			catch (...) {}
 			std::sort(result.begin(), result.end(), [](const DataSourceNode& a, const DataSourceNode& b) {
 				if (a.isContainer != b.isContainer) return a.isContainer > b.isContainer;
 				return rack::string::lowercase(a.name) < rack::string::lowercase(b.name);
@@ -383,7 +370,7 @@ struct FileSystemDataSource : DataSource {
 
 		if (!needConvert && !needResample && !needTrim && !loopOnDrop && !needRepitch && !needCopy) return [absPath]() { return absPath; };
 
-		std::string dir = !outputDir.empty() ? outputDir : ghc::filesystem::path(absPath).parent_path().string();
+		std::string dir = !outputDir.empty() ? outputDir : rack::system::getDirectory(absPath);
 		std::string fname = rack::system::getFilename(absPath);
 		size_t dot = fname.rfind('.');
 		std::string stem = (dot != std::string::npos) ? fname.substr(0, dot) : fname;
@@ -410,8 +397,7 @@ struct FileSystemDataSource : DataSource {
 		if (!in) return srcPath;
 		// Make sure the destination directory exists; patch storage is created
 		// for us, but a user-chosen custom folder might be a brand-new path.
-		std::error_code ec;
-		ghc::filesystem::create_directories(ghc::filesystem::path(dstPath).parent_path(), ec);
+		rack::system::createDirectories(rack::system::getDirectory(dstPath));
 		std::ofstream out(dstPath, std::ios::binary | std::ios::trunc);
 		if (!out) return srcPath;
 		out << in.rdbuf();
@@ -655,7 +641,7 @@ struct FileSystemDataSource : DataSource {
 			}));
 		}
 		else {
-			std::string dir = ghc::filesystem::path(resolveAbsPath(node.relativePath)).parent_path().string();
+			std::string dir = rack::system::getDirectory(resolveAbsPath(node.relativePath));
 			menu->addChild(createMenuItem("Open containing folder", "", [dir]() {
 				rack::system::openDirectory(dir);
 			}));
@@ -730,9 +716,8 @@ inline std::shared_ptr<DataSource> createDataSource(const RootContainer& root) {
 // Builds the RootContainer for a filesystem path (e.g. picked via an
 // "Add root..." folder dialog) — the "fs" type tag is filesystem-specific.
 inline RootContainer createRootContainer(const std::string& path) {
-	ghc::filesystem::path p(path);
-	std::string name = p.filename().string();
-	std::string displayName = name.empty() ? p.string() : name;
+	std::string name = rack::system::getFilename(path);
+	std::string displayName = name.empty() ? path : name;
 	return RootContainer(path, "fs", displayName);
 }
 

@@ -28,10 +28,10 @@ struct BpmRegexTable {
 	std::regex leading;     // "120.5 kick.wav"
 
 	BpmRegexTable()
-		: tagged   (R"((\d+(?:\.\d+)?)\s*bpm)", std::regex::icase)
-		, bracket  (R"(\[(\d+(?:\.\d+)?)\])")
+		: tagged (R"((\d+(?:\.\d+)?)\s*bpm)", std::regex::icase)
+		, bracket (R"(\[(\d+(?:\.\d+)?)\])")
 		, delimited(R"((?:^|[_\-])(\d+(?:\.\d+)?)(?:[_\-]|$))")
-		, leading  (R"(^(\d+(?:\.\d+)?))") {}
+		, leading (R"(^(\d+(?:\.\d+)?))") {}
 };
 
 inline const BpmRegexTable& bpmRegexTable() {
@@ -72,10 +72,10 @@ inline std::vector<std::string> collectBoundedNumbers(const std::string& name) {
 		if (!std::isdigit(static_cast<unsigned char>(name[i]))) { ++i; continue; }
 		size_t start = i;
 		while (i < name.size() &&
-		       (std::isdigit(static_cast<unsigned char>(name[i])) || name[i] == '.')) {
+				(std::isdigit(static_cast<unsigned char>(name[i])) || name[i] == '.')) {
 			++i;
 		}
-		bool leftBounded  = (start == 0) || isDelim(name[start - 1]);
+		bool leftBounded = (start == 0) || isDelim(name[start - 1]);
 		bool rightBounded = (i == name.size()) || isDelim(name[i]);
 		if (leftBounded || rightBounded) {
 			out.push_back(name.substr(start, i - start));
@@ -119,7 +119,7 @@ static constexpr float BASS_BIN_WEIGHT = 2.0f;
 inline float computeSpectralFlux(const float* magCur, const float* magPrev, int numBins) {
 	float total = 0.f;
 	for (int i = 0; i < numBins; ++i) {
-		float cur  = std::max(magCur[i],  1e-6f);
+		float cur = std::max(magCur[i], 1e-6f);
 		float prev = std::max(magPrev[i], 1e-6f);
 		float diff = std::log(cur) - std::log(prev);
 		if (diff > 0.f) {
@@ -160,14 +160,14 @@ inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, flo
 	// PFFFT_COMPLEX: input/output/work arrays must hold 2*N floats
 	// (interleaved (r, i) complex samples).
 	const int fsz = 2 * n;
-	std::vector<float> input  (size_t(fsz), 0.f);
-	std::vector<float> spec   (size_t(fsz), 0.f);
+	std::vector<float> input (size_t(fsz), 0.f);
+	std::vector<float> spec (size_t(fsz), 0.f);
 	std::vector<float> output (size_t(fsz), 0.f);
-	std::vector<float> work   (size_t(fsz), 0.f);
+	std::vector<float> work (size_t(fsz), 0.f);
 
 	// Pack real signal into interleaved (r, i) complex samples.
 	for (int i = 0; i < numFrames; ++i) {
-		input[i * 2]     = onsetSignal[i];
+		input[i * 2] = onsetSignal[i];
 		input[i * 2 + 1] = 0.f;
 	}
 
@@ -181,7 +181,7 @@ inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, flo
 	for (int i = 0; i < n; ++i) {
 		float re = spec[i * 2];
 		float im = spec[i * 2 + 1];
-		spec[i * 2]     = re * re + im * im;
+		spec[i * 2] = re * re + im * im;
 		spec[i * 2 + 1] = 0.f;
 	}
 
@@ -217,7 +217,7 @@ inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, flo
 	//
 	// For a strictly periodic signal the autocorr at the true period P and at
 	// any integer multiple of P (2P, 3P, …) are all equal in the limit of
-	// long signals.  In practice, finite-length + windowing + a non-integer
+	// long signals. In practice, finite-length + windowing + a non-integer
 	// HOP/SR ratio can make the 2P peak happen to be *stronger* than the 1P
 	// peak — e.g. a synthetic 120 BPM click train at 44.1 kSR / HOP=128 has a
 	// frame period of 34.45, so lags 34 and 35 straddle the true period and
@@ -226,7 +226,7 @@ inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, flo
 	//
 	// We score every candidate period P ∈ [lagMin, lagMax] by
 	//   score(P) = rAt(P) + W · Σ rAt(P·h) for h ≥ 2 (clipped to lagMax)
-	// with W < 1, so the fundamental dominates the score.  This recovers the
+	// with W < 1, so the fundamental dominates the score. This recovers the
 	// true period when:
 	//   • The fundamental's autocorr is strong AND has a strong 2× harmonic
 	//     in range (e.g. 120 BPM → lag 34 with strong 2× at lag 68).
@@ -237,7 +237,7 @@ inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, flo
 	float bestScore = -1.f;
 	constexpr float HARMONIC_W = 0.5f;
 	// For each candidate p, look at the maximum autocorr in a small window
-	// [k-1, k+1] around each harmonic k = p·h.  This is robust to sub-frame
+	// [k-1, k+1] around each harmonic k = p·h. This is robust to sub-frame
 	// drift: a true 2× harmonic might land at lag 2p±1 (because the true
 	// period is rarely an integer number of hops), and we still want to
 	// count it as support for p.
@@ -272,7 +272,7 @@ inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, flo
 		}
 	}
 	// Confidence: the autocorr value at the chosen best lag (in [-1, 1] but
-	// clipped to [0, 1] for thresholding).  We don't use the harmonic-summed
+	// clipped to [0, 1] for thresholding). We don't use the harmonic-summed
 	// score because it can exceed 1 when many harmonics line up.
 	result.confidence = std::max(0.f, std::min(1.f, rAt(bestIdx)));
 	return result;
@@ -303,7 +303,7 @@ inline float detectBpm(AudioStream& stream, float& confidenceOut, float maxDurat
 	const int halfN = FFT_SIZE / 2;
 
 	int numFrames = int(mono.size());
-	int numHops   = (numFrames - FFT_SIZE) / HOP + 1;
+	int numHops = (numFrames - FFT_SIZE) / HOP + 1;
 	if (numHops < 4) return 0.f;
 
 	std::vector<float> window(FFT_SIZE);
@@ -392,7 +392,7 @@ struct BpmDetector {
 				catch (const std::exception&) {}
 			}
 			// Delimited numbers: enumerate every bounded number and accept
-			// the first one in the valid BPM range.  This handles filenames
+			// the first one in the valid BPM range. This handles filenames
 			// like "LHD_Drum_Loop_04_76.5" where an out-of-range index ("04")
 			// appears before the actual BPM ("76.5").
 			for (const std::string& numStr : detail::collectBoundedNumbers(name)) {

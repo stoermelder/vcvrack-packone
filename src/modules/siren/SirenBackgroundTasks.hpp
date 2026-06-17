@@ -24,7 +24,6 @@ using namespace rack;
 // reads audio header info (length, sample rate, bit depth, channels) and detects
 // BPM from filenames for every supported file below the active root, storing the
 // results in metadata. Does not decode PCM data or build waveform caches.
-//
 // Progress is held in a shared_ptr so the worker task can safely outlive the
 // pane if the module is removed mid-scan; step() reclaims it once done.
 struct SirenIndexTask {
@@ -136,11 +135,25 @@ struct SirenClassifyTask {
 	};
 	std::shared_ptr<Progress> progress;
 
+	// `meta` may be null. `rel`/`isDir`/`name` identify the file or directory to scan
+	// (`name` is used for the dialog header/summary). `onSelect` is called with
+	// startPlay=true when the user clicks a sample label in the result dialog —
+	// pass the pane's selectPath(). `onApply` must be set first.
+	using SelectCallback = std::function<void(const DataSourceNode&, bool)>;
+
+	// Set by start(), consumed by showResult() once the scan completes.
+	std::shared_ptr<DataSource> ds;
+	bool isDir = false;
+	std::string dirName;
+	SelectCallback onSelect;
+
 	// Set by the caller before start(): invoked with the tags the user accepted
 	// once they confirm the result dialog. The pane's cue to write them to metadata.
 	Dialog::ApplyCallback onApply;
 
-	bool running() const { return progress != nullptr; }
+	bool running() const {
+		return progress != nullptr;
+	}
 
 	// "" if no scan is in progress.
 	std::string statusMessage() const {
@@ -170,14 +183,8 @@ struct SirenClassifyTask {
 		return false;
 	}
 
-	// `meta` may be null. `rel`/`isDir`/`name` identify the file or directory to scan
-	// (`name` is used for the dialog header/summary). `onSelect` is called with
-	// startPlay=true when the user clicks a sample label in the result dialog —
-	// pass the pane's selectPath(). `onApply` must be set first.
-	using OnSelect = std::function<void(const DataSourceNode&, bool)>;
-
 	void start(TaskWorker* worker, std::shared_ptr<DataSource> ds, MetadataStore* meta,
-			const std::string& rel, bool isDir, const std::string& name, OnSelect onSelect) {
+			const std::string& rel, bool isDir, const std::string& name, SelectCallback onSelect) {
 		if (running()) return;
 
 		this->ds = ds;
@@ -234,13 +241,6 @@ struct SirenClassifyTask {
 		});
 	}
 
-private:
-	// Set by start(), consumed by showResult() once the scan completes.
-	std::shared_ptr<DataSource> ds;
-	bool isDir = false;
-	std::string dirName;
-	OnSelect onSelect;
-
 	void showResult(const TagToRels& tagToRels) {
 		if (tagToRels.empty()) {
 			osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
@@ -260,11 +260,11 @@ private:
 	// Builds the per-sample label widget shown in each tag row of the result
 	// dialog: left-click selects/plays the sample via `onSelect`, right-click
 	// offers "Remove from group" (operating on the dialog's own group data).
-	static Dialog::BuildLabelCallback makeBuildLabel(std::shared_ptr<DataSource> ds, OnSelect onSelect) {
+	static Dialog::BuildLabelCallback makeBuildLabel(std::shared_ptr<DataSource> ds, SelectCallback onSelect) {
 		return [ds, onSelect](const std::string& tag, const std::string& fileId) -> widget::Widget* {
 			struct SampleLabel : ui::MenuItem {
 				DataSource* ds;
-				OnSelect onSelect;
+				SelectCallback onSelect;
 				std::string fileId;
 				std::string groupTag;
 				void onAction(const event::Action& e) override {

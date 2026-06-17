@@ -268,7 +268,7 @@ struct SirenModule : Module {
 
 			// Full-file loop: hard seek back at the near-silent file boundary.
 			if (isLooping && !trimLoop && totalFrames > 0
-			        && fillFilePos >= outFrame && inFrame < outFrame) {
+					&& fillFilePos >= outFrame && inFrame < outFrame) {
 				stream->seekTo(inFrame);
 				fillFilePos = inFrame;
 			}
@@ -278,17 +278,17 @@ struct SirenModule : Module {
 			float tmp[CHUNK * 2];
 			// Limit input so the resampled output fits in the available ring space.
 			size_t toRead = fillResample
-			    ? std::min(CHUNK, (size_t)std::max(1.0, (double)space / fillRatio))
-			    : std::min(CHUNK, space);
+				? std::min(CHUNK, (size_t)std::max(1.0, (double)space / fillRatio))
+				: std::min(CHUNK, space);
 			// Never read past the loop end: an engaged trim loop stops `xfade` early, a
 			// full-file loop stops at the file end, otherwise read freely to EOF.
 			int64_t fillEnd = loopEngaged ? outFrame - xfade
-			                : (isLooping && !trimLoop && totalFrames > 0) ? outFrame : -1;
+				: (isLooping && !trimLoop && totalFrames > 0) ? outFrame : -1;
 			if (fillEnd >= 0) {
 				int64_t framesLeft = fillEnd - fillFilePos;
-				if (framesLeft <= 0)   toRead = 0;  // wrap fires next iteration
+				if (framesLeft <= 0) toRead = 0;  // wrap fires next iteration
 				else if (fillResample) toRead = std::min(toRead, (size_t)std::max(1.0, (double)framesLeft / fillRatio));
-				else                   toRead = std::min(toRead, (size_t)framesLeft);
+				else toRead = std::min(toRead, (size_t)framesLeft);
 			}
 			if (toRead > 0) {
 				int64_t nRead = stream->readF32(tmp, (int64_t)toRead);
@@ -331,10 +331,10 @@ struct SirenModule : Module {
 				std::unique_lock<std::mutex> cvLock(fillCvMutex);
 				fillCv.wait_for(cvLock, std::chrono::milliseconds(5), [this] {
 					return fillThreadStop.load()
-					    || pendingStop.load()
-					    || pendingStream.load() != nullptr
-					    || pendingSeekFrame.load() >= 0
-					    || (playing.load() && rbL.capacity() > 256);
+						|| pendingStop.load()
+						|| pendingStream.load() != nullptr
+						|| pendingSeekFrame.load() >= 0
+						|| (playing.load() && rbL.capacity() > 256);
 				});
 			}
 		}
@@ -441,7 +441,7 @@ struct SirenModule : Module {
 					// Convert stopAt (file frames) to output-frame count from the seek base
 					int64_t stopAtOut = (int64_t)(((float)stopAt - (float)seekBaseFrame) * ratio);
 					if (stopAtOut > 0 && count >= stopAtOut
-					        && pendingSeekFrame.load(std::memory_order_relaxed) < 0) {
+							&& pendingSeekFrame.load(std::memory_order_relaxed) < 0) {
 						if (sirenSettings.loopPlayback) {
 							// The fill thread has already wrapped at trimOut → trimIn seamlessly,
 							// so the ring already contains the next iteration's audio.
@@ -459,7 +459,7 @@ struct SirenModule : Module {
 			else if (eofReached.load(std::memory_order_acquire)) {
 				// Ring drained and fill thread hit EOF
 				if (sirenSettings.loopPlayback
-				        && pendingSeekFrame.load(std::memory_order_relaxed) < 0) {
+						&& pendingSeekFrame.load(std::memory_order_relaxed) < 0) {
 					int64_t total = streamTotalFrames;
 					int64_t loopStart = (int64_t)(trimIn.load(std::memory_order_relaxed) * (float)total);
 					seekBaseFrame = loopStart;
@@ -550,7 +550,7 @@ struct SirenDisplayWidget : OpaqueWidget {
 			r.pos.x, r.pos.y, r.size.x, r.size.y,
 			3.f, spread,
 			nvgRGBAf(0.45f, 0.70f, 1.0f, 0.12f * b),
-			nvgRGBAf(0.0f,  0.0f,  0.0f, 0.0f));
+			nvgRGBAf(0.0f, 0.0f, 0.0f, 0.0f));
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, r.pos.x - spread, r.pos.y - spread,
 			r.size.x + 2.f * spread, r.size.y + 2.f * spread);
@@ -790,7 +790,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 					RootContainer rc;
 					if (!filesystem::createNewRootContainer(rc)) return;
 					if (std::find(sirenSettings.rootContainers.begin(), sirenSettings.rootContainers.end(), rc)
-					    == sirenSettings.rootContainers.end()) {
+							== sirenSettings.rootContainers.end()) {
 						sirenSettings.rootContainers.push_back(rc);
 						std::sort(sirenSettings.rootContainers.begin(), sirenSettings.rootContainers.end(),
 							[](const RootContainer& a, const RootContainer& b) {

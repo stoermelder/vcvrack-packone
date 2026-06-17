@@ -1,7 +1,6 @@
 #pragma once
 #include "SirenMetadata.hpp"
 #include "SirenDataSource.hpp"
-#include <ghc/filesystem.hpp>
 
 
 namespace StoermelderPackOne {
@@ -13,8 +12,8 @@ namespace Siren {
 // without ever touching the user's actual settings folder.
 struct ScratchMetadataStore : MetadataStore {
 	std::string filePath() const override {
-		return (ghc::filesystem::temp_directory_path() / "siren_test_metadata"
-				/ ("siren-" + hashPath(rootPath) + ".json")).string();
+		return rack::system::join(rack::system::join(rack::system::getTempDirectory(), "siren_test_metadata"),
+			"siren-" + hashPath(rootPath) + ".json");
 	}
 };
 

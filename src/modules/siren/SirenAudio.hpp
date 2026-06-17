@@ -56,7 +56,7 @@ inline std::string b64Encode(const uint8_t* data, size_t len) {
 		out += B64_ENC[(n >> 18) & 63];
 		out += B64_ENC[(n >> 12) & 63];
 		out += (i + 1 < len) ? B64_ENC[(n >> 6) & 63] : '=';
-		out += (i + 2 < len) ? B64_ENC[n        & 63] : '=';
+		out += (i + 2 < len) ? B64_ENC[n & 63] : '=';
 	}
 	return out;
 }
@@ -146,7 +146,7 @@ inline void saveWaveformCacheFile(const std::string& cachePath, const AudioWavef
 	if (cache.samples.empty() || cache.sampleCount == 0) return;
 
 	json_t* rootJ = json_object();
-	json_object_set_new(rootJ, "timestamp",   json_integer(cache.fileTimestamp));
+	json_object_set_new(rootJ, "timestamp", json_integer(cache.fileTimestamp));
 	json_object_set_new(rootJ, "sampleCount", json_integer(cache.sampleCount));
 
 	json_t* channelsJ = json_array();
@@ -178,7 +178,7 @@ inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream, int pixel
 	if (pixelWidth <= 0 || total <= 0 || channels <= 0) return false;
 
 	int sampleRes = std::min(pixelWidth * 8, 8192);
-	out.sampleCount   = sampleRes;
+	out.sampleCount = sampleRes;
 	out.fileTimestamp = timestamp;
 	out.samples.assign(channels, std::vector<float>(sampleRes, 0.f));
 
@@ -186,7 +186,7 @@ inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream, int pixel
 	std::vector<float> buf((size_t)(BUF_FRAMES * channels));
 	double framesPerSample = (double)total / (double)sampleRes;
 	int64_t framePos = 0;
-	int curSample    = 0;
+	int curSample = 0;
 	bool sampleTaken = false;
 	int64_t nextSampleBoundary = (sampleRes > 1) ? (int64_t)(framesPerSample) : total;
 
@@ -200,7 +200,7 @@ inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream, int pixel
 				curSample++;
 				sampleTaken = false;
 				nextSampleBoundary = (curSample + 1 < sampleRes)
-				                   ? (int64_t)((curSample + 1) * framesPerSample) : total;
+					? (int64_t)((curSample + 1) * framesPerSample) : total;
 			}
 			if (!sampleTaken) {
 				for (int ch = 0; ch < channels; ch++) {

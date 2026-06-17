@@ -308,7 +308,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 				}
 			}
 			drawHandle(args.vg, outPoint, false, waveY, waveW, waveH);
-			drawHandle(args.vg, inPoint,  true,  waveY, waveW, waveH);
+			drawHandle(args.vg, inPoint, true, waveY, waveW, waveH);
 		}
 
 		// playhead
@@ -563,7 +563,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			if (onScrubTo) onScrubTo(scrubPos);
 			return;
 		}
-		if (draggingPlayhead)  {
+		if (draggingPlayhead) {
 			draggingPlayhead = false;
 			if (onScrubTo) onScrubTo(scrubPos);
 			return;
@@ -626,7 +626,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 
 	void drawHandle(NVGcontext* vg, float norm, bool isIn,
 			float waveY, float waveW, float waveH) {
-		if (isIn  && norm <= 0.f) return;
+		if (isIn && norm <= 0.f) return;
 		if (!isIn && norm >= 1.f) return;
 		float hx = WAVE_X + (norm - scrollPos) * zoomLevel * waveW;
 		if (hx < WAVE_X || hx > WAVE_X + waveW) return;
@@ -640,7 +640,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 		nvgBeginPath(vg);
 		nvgMoveTo(vg, hx - ts, waveY + waveH);
 		nvgLineTo(vg, hx + ts, waveY + waveH);
-		nvgLineTo(vg, hx,      waveY + waveH - ts * 1.4f);
+		nvgLineTo(vg, hx, waveY + waveH - ts * 1.4f);
 		nvgClosePath(vg);
 		nvgFillColor(vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.85f));
 		nvgFill(vg);

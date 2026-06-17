@@ -170,8 +170,8 @@ struct SirenTreeRow : widget::OpaqueWidget {
 			nvgRestore(args.vg);
 		}
 		else {
-			const float starW   = 10.f;
-			const float durW    = 26.f;
+			const float starW = 10.f;
+			const float durW = 26.f;
 			float maxNameW = w - textX - durW - starW - 4.f;
 
 			nvgFontSize(args.vg, 7.7f);
@@ -223,7 +223,7 @@ struct SirenScrollWidget : ui::ScrollWidget {
 		ui::ScrollWidget::step();
 		if (verticalScrollbar) {
 			verticalScrollbar->box.size.x = SCROLLBAR_W;
-			verticalScrollbar->box.pos.x  = box.size.x - SCROLLBAR_W;
+			verticalScrollbar->box.pos.x = box.size.x - SCROLLBAR_W;
 		}
 	}
 };
@@ -435,7 +435,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 					std::vector<TreeEntry> newRows;
 					for (auto& n : result.nodes) {
 						TreeEntry e;
-						e.node   = n;
+						e.node = n;
 						e.indent = rows[parentIdx].indent + 1;
 						newRows.push_back(e);
 					}
@@ -558,7 +558,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			if (!r || !r->selected) continue;
 			float rowTop = r->box.pos.y;
 			float rowBot = rowTop + r->box.size.y;
-			float viewH  = scrollWidget->box.size.y;
+			float viewH = scrollWidget->box.size.y;
 			if (rowTop < scrollWidget->offset.y) {
 				scrollWidget->offset.y = rowTop;
 			}
@@ -717,7 +717,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 				return;
 			}
 			if (e.key == GLFW_KEY_UP || e.key == GLFW_KEY_DOWN ||
-			    e.key == GLFW_KEY_LEFT || e.key == GLFW_KEY_RIGHT) {
+					e.key == GLFW_KEY_LEFT || e.key == GLFW_KEY_RIGHT) {
 				if (navigateKey(e.key)) { e.consume(this); return; }
 			}
 		}

@@ -13,19 +13,19 @@ Test::TestContext<> testContext;
 // Creates a unique temporary directory; removes it on destruction.
 
 struct TempDir {
-	ghc::filesystem::path path;
+	std::string path;
 
 	TempDir() {
 		static int seq = 0;
-		path = ghc::filesystem::temp_directory_path()
-		       / ("siren_index_test_" + std::to_string(++seq));
-		ghc::filesystem::create_directories(path);
+		path = rack::system::join(rack::system::getTempDirectory(),
+			"siren_index_test_" + std::to_string(++seq));
+		rack::system::createDirectories(path);
 	}
 
-	~TempDir() { ghc::filesystem::remove_all(path); }
+	~TempDir() { rack::system::removeRecursively(path); }
 
-	std::string filePath(const std::string& name) const { return (path / name).string(); }
-	std::string str() const { return path.string(); }
+	std::string filePath(const std::string& name) const { return rack::system::join(path, name); }
+	std::string str() const { return path; }
 };
 
 // ─── SirenIndexTask ───────────────────────────────────────────────────────────
@@ -35,10 +35,10 @@ namespace {
 // Writes a short decodable silent WAV file so loadAudioInfo() can read its header.
 void writeIndexTestWav(const std::string& path, int frames = 4410, int sampleRate = 44100, int channels = 2) {
 	drwav_data_format fmt = {};
-	fmt.container     = drwav_container_riff;
-	fmt.format        = DR_WAVE_FORMAT_IEEE_FLOAT;
-	fmt.channels      = (drwav_uint32)channels;
-	fmt.sampleRate    = (drwav_uint32)sampleRate;
+	fmt.container = drwav_container_riff;
+	fmt.format = DR_WAVE_FORMAT_IEEE_FLOAT;
+	fmt.channels = (drwav_uint32)channels;
+	fmt.sampleRate = (drwav_uint32)sampleRate;
 	fmt.bitsPerSample = 32;
 	drwav wav;
 	drwav_init_file_write(&wav, path.c_str(), &fmt, nullptr);
@@ -124,10 +124,10 @@ namespace {
 void writeClassifyTestWav(const std::string& path, float freqHz = 440.f,
 		int frames = 4410, int sampleRate = 44100, int channels = 2) {
 	drwav_data_format fmt = {};
-	fmt.container     = drwav_container_riff;
-	fmt.format        = DR_WAVE_FORMAT_IEEE_FLOAT;
-	fmt.channels      = (drwav_uint32)channels;
-	fmt.sampleRate    = (drwav_uint32)sampleRate;
+	fmt.container = drwav_container_riff;
+	fmt.format = DR_WAVE_FORMAT_IEEE_FLOAT;
+	fmt.channels = (drwav_uint32)channels;
+	fmt.sampleRate = (drwav_uint32)sampleRate;
 	fmt.bitsPerSample = 32;
 	drwav wav;
 	drwav_init_file_write(&wav, path.c_str(), &fmt, nullptr);

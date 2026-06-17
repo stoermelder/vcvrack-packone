@@ -16,7 +16,7 @@ namespace Siren {
 
 // SirenPreviewPane
 // Orchestrates the preview region: top bar (file info, play button) + the
-// SirenWaveformCanvas child widget.  Owns all file-state, waveform caches, and
+// SirenWaveformCanvas child widget. Owns all file-state, waveform caches, and
 // loop-preview generation logic.
 //
 // Loop-preview workflow:
@@ -278,7 +278,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	// Shared entry point used by both generateLoopPreview() and
-	// generateRepitchPreview().  Estimates the in-memory buffer size from the
+	// generateRepitchPreview(). Estimates the in-memory buffer size from the
 	// current trim region + file info and, if it exceeds PREVIEW_CONFIRM_BYTES,
 	// surfaces a modal asking the user to confirm before the worker allocates.
 	template <typename BuildFn>
@@ -315,7 +315,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		dispatchPreviewBuild(repitch, buildFn);
 	}
 
-	// Runs the actual worker job for a preview build.  Sets the "building"
+	// Runs the actual worker job for a preview build. Sets the "building"
 	// flags up front so the UI shows progress, then on the worker thread runs
 	// `buildFn` and publishes the result via pendingLoop / pendingLoopReady.
 	template <typename BuildFn>
@@ -755,7 +755,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	// Threshold (in bytes) above which the user is asked to confirm before
-	// allocating a loop/repitch preview buffer.  ~20 MB of float PCM at 16-bit/44.1
+	// allocating a loop/repitch preview buffer. ~20 MB of float PCM at 16-bit/44.1
 	// corresponds to roughly a 5-minute stereo region.
 	static constexpr size_t PREVIEW_CONFIRM_BYTES = 20 * 1024 * 1024;
 

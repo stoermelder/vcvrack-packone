@@ -1,7 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
 #include <rack.hpp>
-#include <ghc/filesystem.hpp>
 #include <map>
 #include <vector>
 #include "SirenPaths.hpp"
@@ -122,10 +121,10 @@ inline const std::map<std::string, std::vector<std::string>>& starterTagKeywords
 
 
 struct SampleMetadata {
-	std::string relativePath;  // relative to root, using '/' separator
+	std::string relativePath; // relative to root, using '/' separator
 	bool favorite = false;
 	std::vector<std::string> tags;
-	float bpm = 0.f;           // detected BPM, 0 if not detected
+	float bpm = 0.f; // detected BPM, 0 if not detected
 	float bpmConfidence = 0.f; // confidence of BPM detection
 	float durationSeconds = 0.f; // length of the audio file, 0 if unknown
 	int sampleRate = 0; // sample rate in Hz, 0 if unknown
@@ -136,7 +135,7 @@ struct SampleMetadata {
 
 struct MetadataStore {
 	std::string rootPath;
-	std::map<std::string, SampleMetadata> samples;  // key = relativePath
+	std::map<std::string, SampleMetadata> samples; // key = relativePath
 
 	virtual ~MetadataStore() = default;
 
@@ -165,16 +164,15 @@ struct MetadataStore {
 	// only then is the backup removed. On verification failure the backup is restored.
 	void save() const {
 		std::string jsonPath = filePath();
-		rack::system::createDirectories(ghc::filesystem::path(jsonPath).parent_path().string());
+		rack::system::createDirectories(rack::system::getDirectory(jsonPath));
 
 		json_t* rootJ = toJson();
 		DEFER({ json_decref(rootJ); });
 
 		std::string bakPath = jsonPath + ".bak";
-		std::error_code ec;
-		bool hadExisting = ghc::filesystem::exists(jsonPath, ec);
+		bool hadExisting = rack::system::exists(jsonPath);
 		if (hadExisting) {
-			ghc::filesystem::rename(jsonPath, bakPath, ec);
+			rack::system::rename(jsonPath, bakPath);
 		}
 
 		FILE* file = fopen(jsonPath.c_str(), "w");
@@ -197,11 +195,11 @@ struct MetadataStore {
 
 		if (hadExisting) {
 			if (verified) {
-				ghc::filesystem::remove(bakPath, ec);
+				rack::system::remove(bakPath);
 			}
 			else {
-				ghc::filesystem::remove(jsonPath, ec);
-				ghc::filesystem::rename(bakPath, jsonPath, ec);
+				rack::system::remove(jsonPath);
+				rack::system::rename(bakPath, jsonPath);
 			}
 		}
 	}

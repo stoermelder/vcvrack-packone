@@ -293,10 +293,10 @@ struct DataSource {
 		return [id]() { return id; };
 	}
 
-	// audio provision (abstracts format / transport)
-
 	// Reconstruct a DataSourceNode from a stored relative path (e.g. for patch restore).
-	virtual DataSourceNode resolveNode(const std::string& relativePath) const { return DataSourceNode{}; }
+	virtual DataSourceNode resolveNode(const std::string& relativePath) const {
+		return DataSourceNode{};
+	}
 
 	// Human-readable display name for an item id (e.g. filename without directory).
 	virtual std::string getDisplayName(const std::string& id) const { return id; }
@@ -324,7 +324,7 @@ struct DataSource {
 	// directory if necessary.
 	virtual void saveWaveformCache(const std::string& id, const AudioWaveformCache& cache) const {
 		std::string path = cacheFilePathFor(id);
-		rack::system::createDirectories(ghc::filesystem::path(path).parent_path().string());
+		rack::system::createDirectories(rack::system::getDirectory(path));
 		saveWaveformCacheFile(path, cache);
 	}
 
@@ -384,7 +384,7 @@ inline void applyRepitch(std::vector<float>& samples, int channels, int sampleRa
 	for (int64_t pos = 0; pos < totalFrames; pos += blockFrames) {
 		uint n = (uint)std::min((int64_t)blockFrames, totalFrames - pos);
 		std::copy(samples.begin() + (size_t)(pos * channels),
-		          samples.begin() + (size_t)((pos + n) * channels), block.begin());
+			samples.begin() + (size_t)((pos + n) * channels), block.begin());
 		st.putSamples(block.data(), n);
 
 		uint received;
@@ -481,7 +481,7 @@ inline void applyLoopCrossfade(std::vector<float>& samples, int channels, int sa
 			for (int sign : {-1, 1}) {
 				int64_t pos = mid + sign * d;
 				if (pos <= 0 || pos >= N - 1) continue;
-				float cur  = samples[(size_t)(pos       * channels)];
+				float cur = samples[(size_t)(pos * channels)];
 				float prev = samples[(size_t)((pos - 1) * channels)];
 				if (cur * prev <= 0.f) {
 					float score = std::abs(cur) + std::abs(prev);
@@ -526,7 +526,7 @@ inline void applyLoopCrossfade(std::vector<float>& samples, int channels, int sa
 		float fadeIn = std::sin(angle);
 		for (int ch = 0; ch < channels; ch++) {
 			float s1 = samples[(size_t)((N - C + f) * channels + ch)];
-			float s2 = samples[(size_t)(f            * channels + ch)];
+			float s2 = samples[(size_t)(f * channels + ch)];
 			out[(size_t)((part1Len + f) * channels + ch)] = s1 * fadeOut + s2 * fadeIn;
 		}
 	}

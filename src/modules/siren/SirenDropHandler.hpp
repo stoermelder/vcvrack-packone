@@ -78,8 +78,8 @@ struct SirenDropHandler {
 		if (mouseIsInsideModule()) return;
 
 		auto task = prepareForDropCallback
-		    ? prepareForDropCallback(path)
-		    : [path]() { return path; };
+			? prepareForDropCallback(path)
+			: [path]() { return path; };
 
 		converting.store(true, std::memory_order_relaxed);
 		worker->work([this, task, dropPos]() {
