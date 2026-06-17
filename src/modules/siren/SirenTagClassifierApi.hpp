@@ -399,10 +399,11 @@ struct TagClassifier {
 		int64_t maxFrames = int64_t(sampleRate * maxDurationSeconds);
 		if (totalFrames > maxFrames) totalFrames = maxFrames;
 
-		// Decimate to ~TARGET_SR. For 44.1/48 kHz inputs this gives a
-		// factor of 5 (≈ 8.82 kHz output) — the kept spectrum is well above
-		// the sub-bass / kick band (≤ 250 Hz) and well below the SR/2
-		// aliasing bound.
+		// Decimate to ~TARGET_SR via box-filter averaging: each output sample
+		// is the mean of decimRate consecutive input frames (mixed to mono).
+		// Averaging over decimRate frames acts as a low-pass filter with its
+		// first null at outSR Hz, attenuating content above outSR/2 before
+		// subsampling and preventing it from aliasing into the analysis band.
 		int decimRate = std::max(1, sampleRate / TARGET_SR);
 		outSR = sampleRate / decimRate;
 		if (outSR <= 0) outSR = TARGET_SR;
@@ -412,22 +413,29 @@ struct TagClassifier {
 		std::vector<float> buf(size_t(BUFSIZE) * size_t(std::max(channels, 1)));
 
 		int64_t framesRead = 0;
+		float groupSum = 0.f;
+		int groupCount = 0;
 		while (framesRead < totalFrames) {
 			int64_t toRead = std::min<int64_t>(BUFSIZE, totalFrames - framesRead);
 			int64_t got = stream.readF32(buf.data(), toRead);
 			if (got <= 0) break;
-			for (int64_t f = 0; f < got; f += decimRate) {
-				float sum = 0.f;
-				int count = 0;
+			for (int64_t f = 0; f < got; f++) {
+				float frameMono = 0.f;
 				for (int ch = 0; ch < channels; ++ch) {
-					size_t idx = size_t(f * channels + ch);
-					if (idx >= buf.size()) break;
-					sum += buf[idx];
-					++count;
+					frameMono += buf[size_t(f * channels + ch)];
 				}
-				if (count > 0) mono.push_back(sum / float(count));
+				groupSum += frameMono / float(channels);
+				if (++groupCount == decimRate) {
+					mono.push_back(groupSum / float(decimRate));
+					groupSum = 0.f;
+					groupCount = 0;
+				}
 			}
 			framesRead += got;
+		}
+		// Flush any partial group at EOF
+		if (groupCount > 0) {
+			mono.push_back(groupSum / float(groupCount));
 		}
 		return !mono.empty();
 	}
