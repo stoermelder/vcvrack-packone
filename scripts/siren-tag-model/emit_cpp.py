@@ -184,8 +184,8 @@ def emit_cpp(
     """
     if not hasattr(model, "estimators_"):
         raise ValueError(
-            "emit_cpp expects a MultiOutputClassifier (or any object exposing "
-            "`.estimators_`). Wrap with sklearn.multioutput.MultiOutputClassifier."
+            "emit_cpp expects an object exposing `.estimators_` "
+            "(e.g. PerClassRFBag or sklearn MultiOutputClassifier)."
         )
 
     json_literal, json_var_name = _emit_training_info_block(training_params)

@@ -1,17 +1,17 @@
-"""Generate a synthetic labeled dataset of audio clips + per-class feature vectors.
+"""Generate a synthetic labeled dataset of audio clips + extracted feature vectors.
 
 The goal is to have *something* to train on before real labeled data exists.
-Each "class" is a parameterized synthetic generator whose output strongly
-exhibits the audio features we care about (e.g. a sustained 200 Hz sine wave
-should be tagged "drone + bass + tonal"; a 120 BPM click train should be
-tagged "percussion + one-shot").
+Each generator produces audio that strongly exhibits a set of target tags
+(e.g. a sustained 200 Hz sine wave → "drone", "bass", "tonal"; a noise burst
+→ "one-shot", "percussion", "noisy").
 
 The output is a CSV at `build/synthetic_dataset.csv` with columns:
-    path, label, feature_0, feature_1, ..., feature_5
-plus the audio clips themselves in `build/synthetic_audio/`.
+    path, <tag_0>, <tag_1>, ..., <tag_N-1>, feature_0, feature_1, ..., feature_52
+plus the audio clips themselves in `build/synthetic_audio/`. Tag columns are
+taken from `CLASS_NAMES` (derived from `res/data/SirenTags.json`).
 
 You can swap this out for a real dataset (Freesound, your own sample library)
-by writing `load_real_dataset()` in this file and pointing the trainer at it.
+via `load_folder_dataset.py` and pointing the trainer at its CSV output.
 """
 from __future__ import annotations
 

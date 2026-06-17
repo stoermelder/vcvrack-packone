@@ -2,9 +2,9 @@
 
 Uses a Random Forest from scikit-learn — handles non-linear feature
 interactions out of the box, doesn't need feature scaling, and emits to
-clean C code via `m2cgen`. We use `MultiOutputClassifier` to support
-multi-label tagging (a "click train at 120 BPM" should ideally be tagged
-both "percussion" and "one-shot" and "loop" simultaneously).
+clean C code via `m2cgen`. Per-class binary heads are managed by
+`PerClassRFBag`, which exposes the same `.estimators_` interface expected
+by `emit_cpp`.
 
 Usage:
     python train_model.py --csv build/synthetic_dataset.csv
@@ -22,7 +22,6 @@ from scipy.optimize import fmin_bfgs
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, hamming_loss
 from sklearn.model_selection import train_test_split
-from sklearn.multioutput import MultiOutputClassifier
 
 from emit_cpp import emit_cpp
 from feature_config import CLASS_NAMES, MODEL_VERSION, NUM_CLASSES, NUM_FEATURES
