@@ -513,6 +513,27 @@ struct FileSystemDataSource : DataSource {
 			if (outFrames <= 0) return srcPath;
 		}
 
+		// Declick the start/end so the exported file doesn't pop.
+		// Non-loop: trim to the nearest zero crossing within 5 ms (no waveform
+		//   modification); falls back to a short cosine fade if none is found.
+		// Loop: leave the buffer untouched. applyLoopCrossfade already placed the
+		//   loop seam at two consecutive source frames, so the wrap is continuous in
+		//   value and slope on every channel and a gapless player loops it with no
+		//   artifact. We deliberately do NOT fade the ends to zero: for steep material
+		//   with no quiet zero crossing, that fade only trades the boundary click for
+		//   an audible low-frequency "bump" (an amplitude hole) on every player.
+		if (!loopOnDrop) {
+			if (resampled.empty()) {
+				resampled.assign(outPtr, outPtr + (size_t)(outFrames * channels));
+			}
+			::StoermelderPackOne::Siren::applyDeclickZeroCross(resampled, channels, outRate);
+			// applyDeclickZeroCross trims to the zero crossings, changing the length;
+			// refresh outPtr/outFrames so the write below uses the trimmed buffer.
+			outPtr = resampled.data();
+			outFrames = (int64_t)(resampled.size() / (size_t)channels);
+			if (outFrames <= 0) return srcPath;
+		}
+
 		// Write output WAV.
 		drwav_data_format fmt = {};
 		fmt.container = drwav_container_riff;

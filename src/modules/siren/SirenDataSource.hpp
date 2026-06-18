@@ -440,6 +440,83 @@ inline AudioPreviewResult buildRepitchPreview(DataSource& src, const std::string
 }
 
 
+// Generic declick: zero out the first and last frame of every channel.
+// NOTE: this is NOT used for loop export. Loop files are left pristine — the
+// applyLoopCrossfade seam is already continuous, and fading the ends to zero would
+// only trade the boundary click for an audible low-frequency "bump" (an amplitude
+// hole) on steep material with no quiet zero crossing. Forcing a single endpoint
+// sample to zero only makes sense when the file is played once (a hard start/end).
+// Kept as a small utility / fallback building block.
+inline void applyDeclick(std::vector<float>& samples, int channels) {
+	if (channels <= 0 || samples.empty()) return;
+	int64_t N = (int64_t)(samples.size() / (size_t)channels);
+	if (N < 2) return;
+
+	for (int ch = 0; ch < channels; ch++) {
+		samples[(size_t)ch] = 0.f;
+		samples[(size_t)((N - 1) * channels + ch)] = 0.f;
+	}
+}
+
+// Declick for trimmed (non-loop) files: search for zero crossings within a 5 ms
+// window at the start and end and trim the buffer to those crossing points.
+// This avoids waveform modification — the audio simply starts/ends where the
+// signal naturally crosses zero. Falls back to applyDeclick (short cosine fade)
+// for any boundary where no zero crossing exists within the search window.
+inline void applyDeclickZeroCross(std::vector<float>& samples, int channels, int sampleRate) {
+	if (channels <= 0 || sampleRate <= 0 || samples.empty()) return;
+	int64_t N = (int64_t)(samples.size() / (size_t)channels);
+	if (N < 4) return;
+
+	const int64_t window = std::min((int64_t)(sampleRate / 200), N / 4);  // 5 ms
+
+	// Trim start: advance to the first zero crossing (where signal crosses zero on ch 0).
+	bool foundStart = false;
+	for (int64_t f = 1; f < window; f++) {
+		float prev = samples[(size_t)((f - 1) * channels)];
+		float cur  = samples[(size_t)(f * channels)];
+		if (prev * cur <= 0.f) {
+			samples.erase(samples.begin(), samples.begin() + (size_t)(f * channels));
+			N -= f;
+			foundStart = true;
+			break;
+		}
+	}
+
+	// Trim end: retreat to the last zero crossing searching backward.
+	bool foundEnd = false;
+	for (int64_t f = 1; f < window; f++) {
+		int64_t pos = N - f;
+		if (pos <= 0) break;
+		float prev = samples[(size_t)((pos - 1) * channels)];
+		float cur  = samples[(size_t)(pos * channels)];
+		if (prev * cur <= 0.f) {
+			samples.resize((size_t)(pos * channels));
+			N = pos;
+			foundEnd = true;
+			break;
+		}
+	}
+
+	// For any boundary with no crossing in the window, fall back to a 5 ms
+	// cosine fade. applyDeclick uses only 16 samples (correct for loop files
+	// where the boundary is already near-zero); re-implement the longer fade here.
+	if (!foundStart || !foundEnd) {
+		int64_t Nfb = (int64_t)(samples.size() / (size_t)channels);
+		int64_t fadeFrames = std::min((int64_t)(sampleRate / 200), Nfb / 4);  // 5 ms
+		if (fadeFrames >= 2) {
+			for (int64_t f = 0; f < fadeFrames; f++) {
+				float gain = std::sin((float)f / (float)(fadeFrames - 1) * float(M_PI) * 0.5f);
+				for (int ch = 0; ch < channels; ch++) {
+					if (!foundStart) samples[(size_t)(f * channels + ch)] *= gain;
+					if (!foundEnd)   samples[(size_t)((Nfb - 1 - f) * channels + ch)] *= gain;
+				}
+			}
+		}
+	}
+}
+
+
 // Loop crossfade post-processing
 // Rotation + crossfade: makes a sample loop-ready so that looping at the
 // file boundaries produces a smooth transition.
@@ -477,22 +554,33 @@ inline void applyLoopCrossfade(std::vector<float>& samples, int channels, int sa
 	{
 		const int64_t searchWindow = std::min(N / 4, (int64_t)(sampleRate / 4));
 		float bestScore = std::numeric_limits<float>::max();
+		bool foundCrossing = false;
+		// Fallback for material with no zero crossing in the window (e.g. a DC
+		// offset): remember the sample closest to zero so the seam still lands at
+		// the smallest possible discontinuity instead of an arbitrary jump at the
+		// exact midpoint.
+		float bestAbs = std::numeric_limits<float>::max();
+		int64_t bestAbsPos = mid;
 		for (int64_t d = 0; d <= searchWindow; d++) {
 			for (int sign : {-1, 1}) {
 				int64_t pos = mid + sign * d;
 				if (pos <= 0 || pos >= N - 1) continue;
 				float cur = samples[(size_t)(pos * channels)];
 				float prev = samples[(size_t)((pos - 1) * channels)];
+				float a = std::abs(cur);
+				if (a < bestAbs) { bestAbs = a; bestAbsPos = pos; }
 				if (cur * prev <= 0.f) {
-					float score = std::abs(cur) + std::abs(prev);
+					float score = a + std::abs(prev);
 					if (score < bestScore) {
 						bestScore = score;
 						M = pos;
+						foundCrossing = true;
 					}
 				}
 			}
-			if (bestScore < 1e-5f) break;  // essentially silent — can't do better
+			if (foundCrossing && bestScore < 1e-5f) break;  // essentially silent — can't do better
 		}
+		if (!foundCrossing) M = bestAbsPos;
 	}
 
 	// Clamp crossfade length so it fits in both halves.
