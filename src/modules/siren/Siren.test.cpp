@@ -987,3 +987,206 @@ TEST_CASE("openStream: null source leaves pendingStream nullptr", "[Siren][Audio
 
 	Test::destroyModule(m);
 }
+
+// ─── sampleMatchesFilter: tag filtering logic ─────────────────────────────────
+// Tests for include/exclude/favorites filtering on SirenBrowserPane.
+// SirenBrowserPane is instantiated without init() — sampleMatchesFilter only
+// reads tagFilter, tagExcludeFilter, and favoritesOnly from `this`.
+
+TEST_CASE("sampleMatchesFilter: include filter", "[Siren][Browser][Filter]") {
+	SirenBrowserPane pane;
+	pane.tagFilter.insert("Kick");
+
+	SECTION("passes file that has the included tag") {
+		SampleMetadata sm;
+		sm.tags = {"Kick"};
+		REQUIRE(pane.sampleMatchesFilter(sm) == true);
+	}
+	SECTION("hides file that lacks the included tag") {
+		SampleMetadata sm;
+		sm.tags = {"Snare"};
+		REQUIRE(pane.sampleMatchesFilter(sm) == false);
+	}
+	SECTION("hides file with no tags") {
+		SampleMetadata empty;
+		REQUIRE(pane.sampleMatchesFilter(empty) == false);
+	}
+}
+
+TEST_CASE("sampleMatchesFilter: exclude filter", "[Siren][Browser][Filter]") {
+	SirenBrowserPane pane;
+	pane.tagExcludeFilter.insert("Kick");
+
+	SECTION("hides file that has the excluded tag") {
+		SampleMetadata sm;
+		sm.tags = {"Kick"};
+		REQUIRE(pane.sampleMatchesFilter(sm) == false);
+	}
+	SECTION("passes file without the excluded tag") {
+		SampleMetadata sm;
+		sm.tags = {"Snare"};
+		REQUIRE(pane.sampleMatchesFilter(sm) == true);
+	}
+	// Regression: before the fix, files not in meta->samples were always hidden
+	// when filterActive was true. With an exclude-only filter, an unindexed file
+	// (represented here by a default-constructed SampleMetadata with no tags)
+	// has no excluded tag by definition and must remain visible.
+	SECTION("passes file with no tags — regression for unindexed files") {
+		SampleMetadata empty;
+		REQUIRE(pane.sampleMatchesFilter(empty) == true);
+	}
+	SECTION("hides file that has excluded tag alongside other tags") {
+		SampleMetadata sm;
+		sm.tags = {"Kick", "Loop"};
+		REQUIRE(pane.sampleMatchesFilter(sm) == false);
+	}
+}
+
+TEST_CASE("sampleMatchesFilter: include + exclude combined", "[Siren][Browser][Filter]") {
+	SirenBrowserPane pane;
+	pane.tagFilter.insert("Loop");
+	pane.tagExcludeFilter.insert("Kick");
+
+	SECTION("passes file that has included tag but not excluded tag") {
+		SampleMetadata sm;
+		sm.tags = {"Loop", "Snare"};
+		REQUIRE(pane.sampleMatchesFilter(sm) == true);
+	}
+	SECTION("hides file that has both included and excluded tag") {
+		SampleMetadata sm;
+		sm.tags = {"Loop", "Kick"};
+		REQUIRE(pane.sampleMatchesFilter(sm) == false);
+	}
+	SECTION("hides file with no tags — fails include filter") {
+		SampleMetadata empty;
+		REQUIRE(pane.sampleMatchesFilter(empty) == false);
+	}
+}
+
+TEST_CASE("sampleMatchesFilter: favorites filter", "[Siren][Browser][Filter]") {
+	SirenBrowserPane pane;
+	pane.favoritesOnly = true;
+
+	SECTION("passes favorited file") {
+		SampleMetadata sm;
+		sm.favorite = true;
+		REQUIRE(pane.sampleMatchesFilter(sm) == true);
+	}
+	SECTION("hides non-favorited file") {
+		SampleMetadata sm;
+		sm.favorite = false;
+		REQUIRE(pane.sampleMatchesFilter(sm) == false);
+	}
+	SECTION("hides file with no metadata — not favorited by default") {
+		SampleMetadata empty;
+		REQUIRE(pane.sampleMatchesFilter(empty) == false);
+	}
+}
+
+// ─── rebuildRowWidgets: container visibility with tag filters ─────────────────
+// These tests exercise the container-row visibility path in rebuildRowWidgets(),
+// which is a separate code path from sampleMatchesFilter (file rows).
+//
+// With a positive filter (include tag or favorites) a container is hidden unless
+// matchingDirs contains it (i.e. at least one indexed descendant passes the filter).
+// With an exclude-only filter the matchingDirs check is skipped entirely: we cannot
+// know from the index alone whether a collapsed container holds unindexed files that
+// would pass, so all containers remain visible.
+
+static SirenBrowserPane::TreeEntry makeContainerEntry(const std::string& path) {
+	SirenBrowserPane::TreeEntry e;
+	e.node.relativePath = path;
+	e.node.name = path;
+	e.node.isContainer = true;
+	e.indent = 0;
+	return e;
+}
+
+static SirenBrowserPane::TreeEntry makeFileEntry(const std::string& path) {
+	SirenBrowserPane::TreeEntry e;
+	e.node.relativePath = path;
+	e.node.name = path;
+	e.node.isContainer = false;
+	e.indent = 1;
+	return e;
+}
+
+TEST_CASE("rebuildRowWidgets: exclude-only filter keeps containers visible", "[Siren][Browser][Filter]") {
+	SirenBrowserPane pane;
+	pane.box.size = Vec(200.f, 400.f);
+	pane.init(nullptr);
+	pane.setSize(pane.box.size);
+
+	auto ds = std::make_shared<TestDataSource>("/test/root");
+	pane.activeDs = ds;
+
+	// One container with no indexed files at all — not in meta->samples.
+	pane.rows.push_back(makeContainerEntry("drums"));
+
+	pane.tagExcludeFilter.insert("Kick");
+	pane.rebuildRowWidgets();
+
+	// The container must be visible: we cannot prove it has no passing children.
+	REQUIRE(pane.rowContainer->children.size() == 1);
+}
+
+TEST_CASE("rebuildRowWidgets: include filter hides container with no matching indexed files", "[Siren][Browser][Filter]") {
+	SirenBrowserPane pane;
+	pane.box.size = Vec(200.f, 400.f);
+	pane.init(nullptr);
+	pane.setSize(pane.box.size);
+
+	auto ds = std::make_shared<TestDataSource>("/test/root");
+	pane.activeDs = ds;
+
+	pane.rows.push_back(makeContainerEntry("drums"));
+
+	pane.tagFilter.insert("Kick");
+	pane.rebuildRowWidgets();
+
+	// No indexed file under "drums" has the "Kick" tag → container is hidden.
+	REQUIRE(pane.rowContainer->children.empty());
+}
+
+TEST_CASE("rebuildRowWidgets: include filter shows container that has a matching indexed file", "[Siren][Browser][Filter]") {
+	SirenBrowserPane pane;
+	pane.box.size = Vec(200.f, 400.f);
+	pane.init(nullptr);
+	pane.setSize(pane.box.size);
+
+	auto ds = std::make_shared<TestDataSource>("/test/root");
+	MetadataStore* meta = ds->getMetadata();
+	meta->addTag("drums/kick.wav", "Kick");
+	pane.activeDs = ds;
+
+	pane.rows.push_back(makeContainerEntry("drums"));
+
+	pane.tagFilter.insert("Kick");
+	pane.rebuildRowWidgets();
+
+	// "drums/kick.wav" has the "Kick" tag → "drums" appears in matchingDirs → visible.
+	REQUIRE(pane.rowContainer->children.size() == 1);
+}
+
+TEST_CASE("rebuildRowWidgets: exclude filter hides file with excluded tag, keeps unindexed file", "[Siren][Browser][Filter]") {
+	SirenBrowserPane pane;
+	pane.box.size = Vec(200.f, 400.f);
+	pane.init(nullptr);
+	pane.setSize(pane.box.size);
+
+	auto ds = std::make_shared<TestDataSource>("/test/root");
+	MetadataStore* meta = ds->getMetadata();
+	meta->addTag("drums/kick.wav", "Kick");
+	pane.activeDs = ds;
+
+	// Three rows: directory, a tagged (excluded) file, an unindexed file.
+	pane.rows.push_back(makeContainerEntry("drums"));
+	pane.rows.push_back(makeFileEntry("drums/kick.wav"));    // tagged "Kick" → hidden
+	pane.rows.push_back(makeFileEntry("drums/snare.wav"));   // not in meta  → visible
+
+	pane.tagExcludeFilter.insert("Kick");
+	pane.rebuildRowWidgets();
+
+	// Container + unindexed snare.wav = 2 rows; kick.wav is hidden.
+	REQUIRE(pane.rowContainer->children.size() == 2);
+}

@@ -998,9 +998,14 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 
 	// Pre-compute which directories have at least one matching descendant in O(N).
 	// Container rows then do an O(log D) set lookup instead of an O(N) scan each.
+	// matchingDirs is only consulted when a positive filter (include tag or favorites)
+	// is active. For an exclude-only filter we cannot tell whether a collapsed
+	// container holds unindexed files that would pass, so containers are always kept
+	// visible in that case — the per-file row filter still hides the wrong files.
 	const bool filterActive = favoritesOnly || !tagFilter.empty() || !tagExcludeFilter.empty();
+	const bool hasPositiveFilter = favoritesOnly || !tagFilter.empty();
 	std::set<std::string> matchingDirs;
-	if (filterActive && meta) {
+	if (hasPositiveFilter && meta) {
 		for (const auto& pair : meta->samples) {
 			if (!sampleMatchesFilter(pair.second)) continue;
 			const std::string& filePath = pair.first;
@@ -1025,12 +1030,14 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 		}
 
 		if (n.isContainer) {
-			if (filterActive && matchingDirs.count(n.relativePath) == 0) continue;
+			if (hasPositiveFilter && matchingDirs.count(n.relativePath) == 0) continue;
 		}
 		else {
 			if (filterActive && meta) {
 				auto it = meta->samples.find(n.relativePath);
-				if (it == meta->samples.end() || !sampleMatchesFilter(it->second)) continue;
+				SampleMetadata emptyMeta;
+				const SampleMetadata& sm = (it != meta->samples.end()) ? it->second : emptyMeta;
+				if (!sampleMatchesFilter(sm)) continue;
 			}
 		}
 
