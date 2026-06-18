@@ -800,6 +800,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 						sirenSettings.activeRootIdx = (int)(it - sirenSettings.rootContainers.begin());
 						if (m) m->activeRootIdx = sirenSettings.activeRootIdx;
 						browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
+						browserPane->startIndexing();
 					}
 				};
 				browserPane->onSelectRoot = [this, m](int idx) {
