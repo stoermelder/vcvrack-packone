@@ -32,7 +32,7 @@ int16_t MessageEx::getParamNumber() const {
 }
 
 int MessageEx::getSysExSize() const {
-	return type == Type::SYSEX ? msg.getSize() + 2 : 0; 
+	return type == Type::SYSEX ? msg.getSize() : 0;
 }
 
 unsigned char MessageEx::getSysExByte(int i) const {

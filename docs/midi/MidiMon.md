@@ -21,3 +21,5 @@ Each log entry is prefixed with a timing indicator in square brackets. By defaul
     - Reduced CPU usage
 - v2.4.0
     - Added option to display engine frame instead of timestamp
+- v2.5.0
+    - Fixed SysEx message logging (trailing garbage bytes)
