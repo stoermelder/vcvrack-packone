@@ -11,6 +11,7 @@
 #include "SirenDummyPreview.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../../ui/AutoTagDialog.hpp"
+#include "../../ui/HoverScrollLock.hpp"
 
 
 namespace StoermelderPackOne {
@@ -217,7 +218,7 @@ struct SirenLoadingRow : widget::OpaqueWidget {
 };
 
 // ScrollWidget with a narrower vertical scrollbar
-struct SirenScrollWidget : ui::ScrollWidget {
+struct SirenScrollWidget : WithHoverScrollLock<ui::ScrollWidget> {
 	static constexpr float SCROLLBAR_W = 6.f;
 	void step() override {
 		ui::ScrollWidget::step();

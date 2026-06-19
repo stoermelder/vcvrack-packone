@@ -2,6 +2,7 @@
 #include <rack.hpp>
 #include "SirenAudio.hpp"
 #include "SirenDropHandler.hpp"
+#include "../../ui/HoverScrollLock.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include <vector>
 
@@ -50,7 +51,7 @@ struct CanvasViewMode {
 //   - Waveform is tinted gold to signal loop preview
 //   - Trim handles are hidden and interaction is suppressed
 //   - A "Generating loop preview…" overlay is shown while building
-struct SirenWaveformCanvas : widget::OpaqueWidget {
+struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 	static constexpr float WAVE_X = 8.f;
 	static constexpr float READOUT_H = 14.f;
 	static constexpr float SCROLLBAR_H = 12.f;
@@ -577,7 +578,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 		}
 	}
 
-	void onHoverScroll(const HoverScrollEvent& e) override {
+	void doHoverScroll(const HoverScrollEvent& e) override {
 		Rect r = waveformRect();
 		float cursorNorm = (r.size.x > 0.f)
 			? scrollPos + (e.pos.x - r.pos.x) / (r.size.x * zoomLevel)
