@@ -827,6 +827,8 @@ struct MbModule : Module {
 		NUM_LIGHTS
 	};
 
+	int panelTheme = 0;
+
 	MbModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
@@ -873,14 +875,14 @@ struct MbMenuButton : ui::Button {
 	}
 };
 
-struct MbWidget : ModuleWidget {
+struct MbWidget : ThemedModuleWidget<MbModule> {
 	BrowserOverlay* browserOverlay;
 	MbMenuButton* menubarButton;
 	bool active = false;
 
-	MbWidget(MbModule* module) {
+	MbWidget(MbModule* module)
+		: ThemedModuleWidget<MbModule>(module, "Mb", "", true) {
 		setModule(module);
-		setPanel(Svg::load(asset::plugin(pluginInstance, "res/Mb.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(0, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -940,7 +942,7 @@ struct MbWidget : ModuleWidget {
 		if (module) {
 			module->lights[MbModule::LIGHT_ACTIVE].setBrightness(active);
 		}
-		ModuleWidget::step();
+		ThemedModuleWidget<MbModule>::step();
 	}
 
 	void appendContextMenu(Menu* menu) override {
