@@ -25,7 +25,7 @@ static bool pollHigh(MidiStepModule* module, int out, int channel = 0, int frame
 }
 
 
-TEST_CASE("MidiStep construction and reset", "[MidiStep]") {
+TEST_CASE("Construction and reset", "[MidiStep]") {
 	auto module = Test::createModule<MidiStepModule>("MidiStep");
 
 	SECTION("Default mapping after reset") {
@@ -57,7 +57,6 @@ TEST_CASE("MidiStep construction and reset", "[MidiStep]") {
 	Test::destroyModule(module);
 }
 
-
 TEST_CASE("Preset JSON null-guards", "[MidiStep][JSON]") {
 	auto module = Test::createModule<MidiStepModule>("MidiStep");
 
@@ -72,7 +71,7 @@ TEST_CASE("Preset JSON null-guards", "[MidiStep][JSON]") {
 }
 
 
-TEST_CASE("MidiStep relative mode #1 (Beatstep R1 / X-Touch R2)", "[MidiStep]") {
+TEST_CASE("Relative mode #1 (Beatstep R1 / X-Touch R2)", "[MidiStep]") {
 	auto module = Test::createModule<MidiStepModule>("MidiStep");
 
 	auto modeVal = GENERATE(MODE::BEATSTEP_R1, MODE::XTOUCH_R2);
@@ -108,7 +107,7 @@ TEST_CASE("MidiStep relative mode #1 (Beatstep R1 / X-Touch R2)", "[MidiStep]") 
 }
 
 
-TEST_CASE("MidiStep relative mode #2 (fixed 1..3 / 125..127)", "[MidiStep]") {
+TEST_CASE("Relative mode #2 (fixed 1..3 / 125..127)", "[MidiStep]") {
 	auto module = Test::createModule<MidiStepModule>("MidiStep");
 
 	auto modeVal = GENERATE(MODE::BEATSTEP_R2, MODE::KK_REL, MODE::AKAI_MPD218,
@@ -145,7 +144,7 @@ TEST_CASE("MidiStep relative mode #2 (fixed 1..3 / 125..127)", "[MidiStep]") {
 }
 
 
-TEST_CASE("MidiStep ignores non-CC messages", "[MidiStep]") {
+TEST_CASE("Ignores non-CC messages", "[MidiStep]") {
 	auto module = Test::createModule<MidiStepModule>("MidiStep");
 	// Note-on, status 0x9 — should be ignored entirely.
 	module->processMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
@@ -157,7 +156,7 @@ TEST_CASE("MidiStep ignores non-CC messages", "[MidiStep]") {
 }
 
 
-TEST_CASE("MidiStep CC learning", "[MidiStep]") {
+TEST_CASE("CC learning", "[MidiStep]") {
 	auto module = Test::createModule<MidiStepModule>("MidiStep");
 
 	SECTION("learnCC remaps a channel to a new CC") {
@@ -210,7 +209,7 @@ TEST_CASE("MidiStep CC learning", "[MidiStep]") {
 }
 
 
-TEST_CASE("MidiStep produces increment/decrement triggers", "[MidiStep]") {
+TEST_CASE("Produces increment/decrement triggers", "[MidiStep]") {
 	auto module = Test::createModule<MidiStepModule>("MidiStep");
 	module->mode = MODE::BEATSTEP_R1;
 
@@ -233,7 +232,7 @@ TEST_CASE("MidiStep produces increment/decrement triggers", "[MidiStep]") {
 }
 
 
-TEST_CASE("MidiStep output routing", "[MidiStep]") {
+TEST_CASE("Output routing", "[MidiStep]") {
 	auto module = Test::createModule<MidiStepModule>("MidiStep");
 	module->mode = MODE::BEATSTEP_R1;
 
@@ -257,7 +256,7 @@ TEST_CASE("MidiStep output routing", "[MidiStep]") {
 }
 
 
-TEST_CASE("MidiStep MIDI queue is processed", "[MidiStep]") {
+TEST_CASE("MIDI queue is processed", "[MidiStep]") {
 	auto module = Test::createModule<MidiStepModule>("MidiStep");
 	module->mode = MODE::BEATSTEP_R1;
 	// Push a CC into the input queue and let process() pop it.
@@ -268,7 +267,7 @@ TEST_CASE("MidiStep MIDI queue is processed", "[MidiStep]") {
 }
 
 
-TEST_CASE("MidiStep JSON round-trip", "[MidiStep][JSON]") {
+TEST_CASE("JSON round-trip", "[MidiStep][JSON]") {
 	auto module = Test::createModule<MidiStepModule>("MidiStep");
 	module->mode = MODE::AKAI_MPD218;
 	module->polyphonicOutput = true;
@@ -298,14 +297,4 @@ TEST_CASE("MidiStep JSON round-trip", "[MidiStep][JSON]") {
 	json_decref(rootJ);
 	Test::destroyModule(module);
 	Test::destroyModule(restored);
-}
-
-
-TEST_CASE("MidiStep preset JSON null-guards", "[MidiStep][JSON]") {
-	auto module = Test::createModule<MidiStepModule>("MidiStep");
-	json_t* rootJ = module->dataToJson();
-	REQUIRE(rootJ != nullptr);
-	Test::testPresetNullGuards(module, rootJ);
-	json_decref(rootJ);
-	Test::destroyModule(module);
 }

@@ -1,5 +1,6 @@
 #include "../../test/test_plugin.hpp"
 #include "../../test/test_context.hpp"
+#include "Mb.cpp"
 #include "Mb.hpp"
 
 using namespace StoermelderPackOne::Mb;
@@ -43,9 +44,31 @@ void cleanupMockModels() {
 }
 
 
-// ============================================================================
-// FAVORITE MODEL TESTS
-// ============================================================================
+TEST_CASE("Construction and initialization", "[Mb]") {
+	MbModule* m = Test::createModule<MbModule>("Mb");
+	MbWidget* mw = Test::createWidget<MbWidget>("Mb");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Preset JSON null-guards", "[Mb][JSON]") {
+	auto module = Test::createModule<MbModule>("Mb");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 
 TEST_CASE("Favorite model operations", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");
@@ -95,7 +118,6 @@ TEST_CASE("Favorite model operations", "[Mb]") {
 	cleanupMockModels();
 }
 
-
 TEST_CASE("Favorite mode switching", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");
 	cleanupMockModels();
@@ -128,11 +150,6 @@ TEST_CASE("Favorite mode switching", "[Mb]") {
 	
 	cleanupMockModels();
 }
-
-
-// ============================================================================
-// HIDDEN MODEL TESTS
-// ============================================================================
 
 TEST_CASE("Hidden model operations", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");
@@ -169,11 +186,6 @@ TEST_CASE("Hidden model operations", "[Mb]") {
 	
 	cleanupMockModels();
 }
-
-
-// ============================================================================
-// CUSTOM TAGS TESTS
-// ============================================================================
 
 TEST_CASE("Custom tag operations", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");
@@ -264,7 +276,6 @@ TEST_CASE("Custom tag operations", "[Mb]") {
 	cleanupMockModels();
 }
 
-
 TEST_CASE("Custom tag case resolution", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");
 	cleanupMockModels();
@@ -291,11 +302,6 @@ TEST_CASE("Custom tag case resolution", "[Mb]") {
 	
 	cleanupMockModels();
 }
-
-
-// ============================================================================
-// CUSTOM TAG VALIDATION TESTS
-// ============================================================================
 
 TEST_CASE("Custom tag validation", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");
@@ -347,11 +353,6 @@ TEST_CASE("Custom tag validation", "[Mb]") {
 	
 	cleanupMockModels();
 }
-
-
-// ============================================================================
-// CUSTOM TAG RESOLVE KEY TESTS
-// ============================================================================
 
 TEST_CASE("Custom tag resolveKey behavior", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");
@@ -429,11 +430,6 @@ TEST_CASE("Custom tag resolveKey behavior", "[Mb]") {
 	cleanupMockModels();
 }
 
-
-// ============================================================================
-// PREDEFINED TAGS TESTS
-// ============================================================================
-
 TEST_CASE("Predefined tag modifications", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");
 	cleanupMockModels();
@@ -501,7 +497,6 @@ TEST_CASE("Predefined tag modifications", "[Mb]") {
 	cleanupMockModels();
 }
 
-
 TEST_CASE("Effective tag IDs with modifications", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");
 	cleanupMockModels();
@@ -544,7 +539,6 @@ TEST_CASE("Effective tag IDs with modifications", "[Mb]") {
 	cleanupMockModels();
 }
 
-
 TEST_CASE("Tag cache invalidation", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");
 	cleanupMockModels();
@@ -585,11 +579,6 @@ TEST_CASE("Tag cache invalidation", "[Mb]") {
 	
 	cleanupMockModels();
 }
-
-
-// ============================================================================
-// MODEL USAGE TESTS
-// ============================================================================
 
 TEST_CASE("Model usage tracking", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");
@@ -643,10 +632,6 @@ TEST_CASE("Model usage tracking", "[Mb]") {
 	cleanupMockModels();
 }
 
-
-// ============================================================================
-// JSON SERIALIZATION TESTS
-// ============================================================================
 
 TEST_CASE("JSON serialization and deserialization", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");
@@ -727,7 +712,6 @@ TEST_CASE("JSON serialization and deserialization", "[Mb]") {
 	cleanupMockModels();
 }
 
-
 TEST_CASE("JSON roundtrip preserves all data", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");
 	cleanupMockModels();
@@ -787,10 +771,6 @@ TEST_CASE("JSON roundtrip preserves all data", "[Mb]") {
 }
 
 
-// ============================================================================
-// EDGE CASES AND INTEGRATION TESTS
-// ============================================================================
-
 TEST_CASE("Edge cases and corner cases", "[Mb]") {
 	cleanupMockModels();
 	
@@ -839,7 +819,6 @@ TEST_CASE("Edge cases and corner cases", "[Mb]") {
 	
 	cleanupMockModels();
 }
-
 
 TEST_CASE("Favorite and hidden interaction", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");

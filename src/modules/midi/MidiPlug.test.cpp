@@ -33,7 +33,7 @@ static void feed(Module2* module, int i, const rack::midi::Message& msg, int64_t
 }
 
 
-TEST_CASE("MidiPlug construction and reset", "[MidiPlug]") {
+TEST_CASE("Construction and reset", "[MidiPlug]") {
 	auto module = Test::createModule<Module2>("MidiPlug");
 
 	SECTION("Outputs default to Thru / Replace") {
@@ -76,7 +76,7 @@ TEST_CASE("Preset JSON null-guards", "[MidiPlug][JSON]") {
 }
 
 
-TEST_CASE("MidiPlug routes both inputs to both outputs", "[MidiPlug]") {
+TEST_CASE("Routes both inputs to both outputs", "[MidiPlug]") {
 	auto module = Test::createModule<Module2>("MidiPlug");
 	CaptureDevice* out0 = attachCapture(module, 0);
 	CaptureDevice* out1 = attachCapture(module, 1);
@@ -97,7 +97,7 @@ TEST_CASE("MidiPlug routes both inputs to both outputs", "[MidiPlug]") {
 }
 
 
-TEST_CASE("MidiPlug Thru passes messages unchanged", "[MidiPlug]") {
+TEST_CASE("Thru passes messages unchanged", "[MidiPlug]") {
 	auto module = Test::createModule<Module2>("MidiPlug");
 	CaptureDevice* out = attachCapture(module, 0);
 	module->midiOutput[0].channel = -1;
@@ -111,7 +111,7 @@ TEST_CASE("MidiPlug Thru passes messages unchanged", "[MidiPlug]") {
 }
 
 
-TEST_CASE("MidiPlug REPLACE rewrites channel", "[MidiPlug]") {
+TEST_CASE("REPLACE rewrites channel", "[MidiPlug]") {
 	auto module = Test::createModule<Module2>("MidiPlug");
 	CaptureDevice* out = attachCapture(module, 0);
 	module->midiOutput[0].channel = 5;
@@ -143,7 +143,7 @@ TEST_CASE("MidiPlug REPLACE rewrites channel", "[MidiPlug]") {
 }
 
 
-TEST_CASE("MidiPlug FILTER keeps only the target channel", "[MidiPlug]") {
+TEST_CASE("FILTER keeps only the target channel", "[MidiPlug]") {
 	auto module = Test::createModule<Module2>("MidiPlug");
 	CaptureDevice* out = attachCapture(module, 0);
 	module->midiOutput[0].channel = 3;
@@ -162,7 +162,7 @@ TEST_CASE("MidiPlug FILTER keeps only the target channel", "[MidiPlug]") {
 }
 
 
-TEST_CASE("MidiPlug BLOCK drops the target channel", "[MidiPlug]") {
+TEST_CASE("BLOCK drops the target channel", "[MidiPlug]") {
 	auto module = Test::createModule<Module2>("MidiPlug");
 	CaptureDevice* out = attachCapture(module, 0);
 	module->midiOutput[0].channel = 3;
@@ -181,7 +181,7 @@ TEST_CASE("MidiPlug BLOCK drops the target channel", "[MidiPlug]") {
 }
 
 
-TEST_CASE("MidiPlug FILTER/BLOCK ignore system messages", "[MidiPlug]") {
+TEST_CASE("FILTER/BLOCK ignore system messages", "[MidiPlug]") {
 	auto module = Test::createModule<Module2>("MidiPlug");
 	CaptureDevice* out = attachCapture(module, 0);
 	module->midiOutput[0].channel = 3;
@@ -202,7 +202,7 @@ TEST_CASE("MidiPlug FILTER/BLOCK ignore system messages", "[MidiPlug]") {
 }
 
 
-TEST_CASE("MidiPlug JSON round-trip", "[MidiPlug][JSON]") {
+TEST_CASE("JSON round-trip", "[MidiPlug][JSON]") {
 	auto module = Test::createModule<Module2>("MidiPlug");
 	module->panelTheme = 1;
 	module->midiOutput[0].channel = 7;
@@ -225,14 +225,4 @@ TEST_CASE("MidiPlug JSON round-trip", "[MidiPlug][JSON]") {
 	json_decref(rootJ);
 	Test::destroyModule(module);
 	Test::destroyModule(restored);
-}
-
-
-TEST_CASE("MidiPlug preset JSON null-guards", "[MidiPlug][JSON]") {
-	auto module = Test::createModule<Module2>("MidiPlug");
-	json_t* rootJ = module->dataToJson();
-	REQUIRE(rootJ != nullptr);
-	Test::testPresetNullGuards(module, rootJ);
-	json_decref(rootJ);
-	Test::destroyModule(module);
 }

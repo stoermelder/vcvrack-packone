@@ -30,7 +30,7 @@ static std::string textOf(const LogEntry& e) { return std::get<3>(e); }
 static LOG_FORMAT formatOf(const LogEntry& e) { return std::get<0>(e); }
 
 
-TEST_CASE("MidiMon construction and reset", "[MidiMon]") {
+TEST_CASE("Construction and reset", "[MidiMon]") {
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 
 	SECTION("Default visibility flags after reset") {
@@ -59,7 +59,6 @@ TEST_CASE("MidiMon construction and reset", "[MidiMon]") {
 	Test::destroyModule(module);
 }
 
-
 TEST_CASE("Preset JSON null-guards", "[MidiMon][JSON]") {
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 
@@ -74,7 +73,7 @@ TEST_CASE("Preset JSON null-guards", "[MidiMon][JSON]") {
 }
 
 
-TEST_CASE("MidiMon logs and formats channel messages", "[MidiMon]") {
+TEST_CASE("Logs and formats channel messages", "[MidiMon]") {
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 	drain(module); // discard header lines
 
@@ -121,7 +120,7 @@ TEST_CASE("MidiMon logs and formats channel messages", "[MidiMon]") {
 }
 
 
-TEST_CASE("MidiMon respects visibility flags", "[MidiMon]") {
+TEST_CASE("Respects visibility flags", "[MidiMon]") {
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 	drain(module);
 
@@ -152,7 +151,7 @@ TEST_CASE("MidiMon respects visibility flags", "[MidiMon]") {
 }
 
 
-TEST_CASE("MidiMon logs system real-time messages", "[MidiMon]") {
+TEST_CASE("Logs system real-time messages", "[MidiMon]") {
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 	drain(module);
 	REQUIRE(module->showSystemMsg == true);
@@ -178,7 +177,7 @@ TEST_CASE("MidiMon logs system real-time messages", "[MidiMon]") {
 }
 
 
-TEST_CASE("MidiMon SysEx logging", "[MidiMon]") {
+TEST_CASE("SysEx logging", "[MidiMon]") {
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 	drain(module);
 
@@ -217,7 +216,7 @@ TEST_CASE("MidiMon SysEx logging", "[MidiMon]") {
 }
 
 
-TEST_CASE("MidiMon processMidi never consumes the message", "[MidiMon]") {
+TEST_CASE("processMidi never consumes the message", "[MidiMon]") {
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 	// Returning false keeps the message available to other handlers.
 	REQUIRE(module->processMidi(makeEx(MType::NOTE_ON, Test::makeMidiMessage(0x9, 0, 60, 1))) == false);
@@ -226,7 +225,7 @@ TEST_CASE("MidiMon processMidi never consumes the message", "[MidiMon]") {
 }
 
 
-TEST_CASE("MidiMon JSON round-trip", "[MidiMon][JSON]") {
+TEST_CASE("JSON round-trip", "[MidiMon][JSON]") {
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 	module->panelTheme = 1;
 	module->showNoteMsg = false;
@@ -260,7 +259,7 @@ TEST_CASE("MidiMon JSON round-trip", "[MidiMon][JSON]") {
 }
 
 
-TEST_CASE("MidiMon legacy preset defaults showCcExMsg to showCcMsg", "[MidiMon][JSON]") {
+TEST_CASE("Legacy preset defaults showCcExMsg to showCcMsg", "[MidiMon][JSON]") {
 	// Older presets had no "showCcExMsg" key; it should inherit showCcMsg.
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 
