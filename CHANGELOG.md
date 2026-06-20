@@ -7,6 +7,8 @@
 - Module [MIDI-MON](./docs/midi/MidiMon.md)
     - Fixed SysEx message logging (trailing garbage bytes)
     - Fixed saving of SysEx data logging setting
+- Module [PANIC ROOM](./docs/panicroom/PanicRoom.md)
+    - Added options to limit the number of allowed modules and cables
 - Module [TRANSIT](./docs/transit/Transit.md)
     - Fade CV input is now additive to per-slot fade time (previously CV was only additive to the global _FADE_ knob)
     - Added Output-mode "Tipsy" for sending the snapshot text label (for modules with Tipsy-support like [TTY](https://library.vcvrack.com/StochasticTelegraph/TTY))
