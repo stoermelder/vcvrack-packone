@@ -46,7 +46,7 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		notifyExpanderListeners("Transit");
+		notifyModuleListeners("Transit");
 	}
 
 	void onReset(const Module::ResetEvent& e) override {
