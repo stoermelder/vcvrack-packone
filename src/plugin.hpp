@@ -90,12 +90,12 @@ bool unregisterSingleton(std::string name, Widget* mw);
 Widget* getSingleton(std::string name);
 
 
-struct ExpanderChangeListener {
-    bool expandersChanged;
+struct ModuleChangeListener {
+    bool moduleChangedFlag;
 };
 
-void registerExpanderListener(std::string topic, ExpanderChangeListener* l);
-void unregisterExpanderListener(std::string topic, ExpanderChangeListener* l);
-void notifyExpanderListeners(std::string topic);
+void registerModuleListener(std::string topic, ModuleChangeListener* l);
+void unregisterModuleListener(std::string topic, ModuleChangeListener* l);
+void notifyModuleListeners(std::string topic);
 
 } // namespace StoermelderPackOne
