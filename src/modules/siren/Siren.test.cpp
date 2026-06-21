@@ -63,9 +63,9 @@ TEST_CASE("JSON serialization", "[Siren][JSON]") {
 	Test::destroyModule(m);
 }
 
-// ─── SirenSettings: fromJson sort-and-remap ───────────────────────────────────
+// ─── SirenSettings: fromJson sort ──────────────────────────────────────────────
 
-// fromJson sorts rootContainers by name and remaps activeRootIdx to the new position.
+// fromJson sorts rootContainers alphabetically (the canonical on-disk order).
 TEST_CASE("SirenSettings::fromJson: sorts rootContainers alphabetically", "[Siren][Settings]") {
 	// Build JSON with three roots in reverse-alphabetical insertion order.
 	json_t* j = json_object();
@@ -76,11 +76,10 @@ TEST_CASE("SirenSettings::fromJson: sorts rootContainers alphabetically", "[Sire
 		json_object_set_new(r, "type", json_string("fs"));
 		return r;
 	};
-	json_array_append_new(rootsJ, makeRoot("/Zebra"));   // insertion idx 0
-	json_array_append_new(rootsJ, makeRoot("/Mango"));   // insertion idx 1
-	json_array_append_new(rootsJ, makeRoot("/Apple"));   // insertion idx 2
+	json_array_append_new(rootsJ, makeRoot("/Zebra"));
+	json_array_append_new(rootsJ, makeRoot("/Mango"));
+	json_array_append_new(rootsJ, makeRoot("/Apple"));
 	json_object_set_new(j, "rootContainers", rootsJ);
-	json_object_set_new(j, "activeRootIdx", json_integer(0));  // Zebra is active
 
 	SirenSettings settings;
 	settings.fromJson(j);
@@ -90,13 +89,13 @@ TEST_CASE("SirenSettings::fromJson: sorts rootContainers alphabetically", "[Sire
 	REQUIRE(settings.rootContainers[0].name == "Apple");
 	REQUIRE(settings.rootContainers[1].name == "Mango");
 	REQUIRE(settings.rootContainers[2].name == "Zebra");
-	// Zebra was at insertion idx 0 → sorted idx 2
-	REQUIRE(settings.activeRootIdx == 2);
 }
 
-// activeRootIdx follows the active root even when loading an old file that stored
-// insertion-order indices (pre-sort). The identity-capture approach handles both.
-TEST_CASE("SirenSettings::fromJson: remaps activeRootIdx from insertion order (backward compat)", "[Siren][Settings]") {
+// Legacy settings files (pre per-instance refactor) included activeRootIdx,
+// lastFile and lastPlayheadPos. They are now stored per SirenModule on the
+// patch, so the global SirenSettings ignores them silently — but must not
+// choke on them when loading an old file.
+TEST_CASE("SirenSettings::fromJson: legacy per-instance fields are silently ignored", "[Siren][Settings]") {
 	json_t* j = json_object();
 	json_t* rootsJ = json_array();
 	auto makeRoot = [](const char* path) {
@@ -105,38 +104,19 @@ TEST_CASE("SirenSettings::fromJson: remaps activeRootIdx from insertion order (b
 		json_object_set_new(r, "type", json_string("fs"));
 		return r;
 	};
-	json_array_append_new(rootsJ, makeRoot("/Beta"));    // insertion idx 0
-	json_array_append_new(rootsJ, makeRoot("/Alpha"));   // insertion idx 1 — will be active
+	json_array_append_new(rootsJ, makeRoot("/Samples"));
 	json_object_set_new(j, "rootContainers", rootsJ);
-	json_object_set_new(j, "activeRootIdx", json_integer(1));  // Alpha (insertion idx 1)
+	json_object_set_new(j, "activeRootIdx", json_integer(0));   // legacy
+	json_object_set_new(j, "lastFile", json_string("/x.wav"));  // legacy
+	json_object_set_new(j, "lastPlayheadPos", json_real(0.5));  // legacy
 
 	SirenSettings settings;
 	settings.fromJson(j);
 	json_decref(j);
 
-	REQUIRE(settings.rootContainers[0].name == "Alpha");
-	REQUIRE(settings.rootContainers[1].name == "Beta");
-	// Alpha was at insertion idx 1 → sorted idx 0
-	REQUIRE(settings.activeRootIdx == 0);
-}
-
-// Out-of-range activeRootIdx leaves activeRootIdx at its default (-1).
-TEST_CASE("SirenSettings::fromJson: out-of-range activeRootIdx becomes -1", "[Siren][Settings]") {
-	json_t* j = json_object();
-	json_t* rootsJ = json_array();
-	json_t* r = json_object();
-	json_object_set_new(r, "path", json_string("/Samples"));
-	json_object_set_new(r, "type", json_string("fs"));
-	json_array_append_new(rootsJ, r);
-	json_object_set_new(j, "rootContainers", rootsJ);
-	json_object_set_new(j, "activeRootIdx", json_integer(99));  // out of range
-
-	SirenSettings settings;
-	settings.fromJson(j);
-	json_decref(j);
-
+	// Global settings still load fine.
 	REQUIRE(settings.rootContainers.size() == 1);
-	REQUIRE(settings.activeRootIdx == -1);
+	REQUIRE(settings.rootContainers[0].name == "Samples");
 }
 
 // ─── MetadataStore: favorites ──────────────────────────────────────────────────
@@ -1189,4 +1169,300 @@ TEST_CASE("rebuildRowWidgets: exclude filter hides file with excluded tag, keeps
 
 	// Container + unindexed snare.wav = 2 rows; kick.wav is hidden.
 	REQUIRE(pane.rowContainer->children.size() == 2);
+}
+
+// ─── Cross-instance settings sync (ModuleChangeListener wiring) ───────────────
+//
+// Siren stores its settings in a process-global `sirenSettings` singleton. With
+// multiple Siren module instances on the patch, mutating the global in one
+// instance used to leave the others stale (their browser pane kept showing the
+// old root list / active root). The fix wires each SirenWidget up as a
+// ModuleChangeListener under the "Siren" topic; every mutating callback calls
+// notifyModuleListeners("Siren"), and each instance's step() consumes the flag
+// by re-applying sirenSettings to its browser pane.
+
+// Helper: snapshot the global sirenSettings state we mutate in [SettingsSync]
+// tests so we can restore it on the way out and not leak state to other tests.
+// (Per-instance state — activeRootIdx, lastFilePath, lastPlayheadPos — now
+// lives on SirenModule and is restored per test by the widget pair.)
+struct SirenSettingsGuard {
+	std::vector<RootContainer> savedRoots;
+
+	SirenSettingsGuard() {
+		savedRoots = sirenSettings.rootContainers;
+		sirenSettings.rootContainers.clear();
+	}
+
+	~SirenSettingsGuard() {
+		sirenSettings.rootContainers = savedRoots;
+	}
+};
+
+// Helper: build a (module, widget) pair the way the rack does — the widget is
+// what registers itself as a ModuleChangeListener for "Siren", so the pair is
+// the smallest faithful unit for testing the cross-instance sync.
+struct SirenWidgetPair {
+	SirenModule* module;
+	SirenWidget* widget;
+};
+
+static SirenWidgetPair makeWidgetPair() {
+	SirenWidgetPair p;
+	p.module = Test::createModule<SirenModule>("Siren");
+	p.widget = Test::createWidget<SirenWidget>(p.module);
+	return p;
+}
+
+static void destroyWidgetPair(SirenWidgetPair& p) {
+	Test::destroyWidget(p.widget);
+	Test::destroyModule(p.module);
+}
+
+TEST_CASE("Cross-instance settings sync: notifyModuleListeners reaches every SirenWidget", "[Siren][SettingsSync]") {
+	SirenSettingsGuard guard;
+	auto a = makeWidgetPair();
+	auto b = makeWidgetPair();
+	REQUIRE(a.widget != nullptr);
+	REQUIRE(b.widget != nullptr);
+	REQUIRE(a.widget->moduleChangedFlag == false);
+	REQUIRE(b.widget->moduleChangedFlag == false);
+
+	// Simulate one instance mutating sirenSettings by broadcasting directly.
+	// This is the same channel the onAddRoot/onSelectRoot/onRemoveRoot/
+	// onFileSelected callbacks use.
+	StoermelderPackOne::notifyModuleListeners("Siren");
+
+	REQUIRE(a.widget->moduleChangedFlag == true);
+	REQUIRE(b.widget->moduleChangedFlag == true);
+
+	destroyWidgetPair(b);
+	destroyWidgetPair(a);
+}
+
+TEST_CASE("Cross-instance settings sync: originator clears its own flag after notify", "[Siren][SettingsSync]") {
+	// Reproduce the originator-clears-self pattern used by the root/file
+	// mutation callbacks: notify, then immediately reset the local flag so
+	// step() does not redundantly refresh the UI we just updated inline.
+	SirenSettingsGuard guard;
+	auto a = makeWidgetPair();
+	auto b = makeWidgetPair();
+
+	StoermelderPackOne::notifyModuleListeners("Siren");
+	// Originator (a) clears its own flag — mirroring the
+	//   notifyModuleListeners("Siren"); moduleChangedFlag = false;
+	// sequence in SirenWidget::SirenWidget's onAddRoot / onSelectRoot /
+	// onRemoveRoot lambdas and in onFileSelected.
+	a.widget->moduleChangedFlag = false;
+
+	REQUIRE(a.widget->moduleChangedFlag == false);
+	REQUIRE(b.widget->moduleChangedFlag == true);
+
+	destroyWidgetPair(b);
+	destroyWidgetPair(a);
+}
+
+TEST_CASE("Cross-instance settings sync: destroyed widget is removed from the listener set", "[Siren][SettingsSync]") {
+	// After unregisterModuleListener runs in ~SirenWidget, subsequent
+	// broadcasts must not touch the freed pointer. We exercise this by
+	// destroying widget a, then broadcasting, then verifying widget b's flag
+	// flips — without a crash or use-after-free.
+	SirenSettingsGuard guard;
+	auto a = makeWidgetPair();
+	auto b = makeWidgetPair();
+
+	Test::destroyWidget(a.widget);
+	a.widget = nullptr;
+
+	// Broadcasting after a's destruction must not crash.
+	StoermelderPackOne::notifyModuleListeners("Siren");
+	REQUIRE(b.widget->moduleChangedFlag == true);
+
+	destroyWidgetPair(b);
+}
+
+TEST_CASE("ModuleChangeListener protocol: notify reaches all registered listeners and unregister removes them", "[Siren][SettingsSync]") {
+	// Lower-level protocol test using bare ModuleChangeListener objects, so
+	// the registry's semantics are pinned down independently of the Siren
+	// widget tree.
+	StoermelderPackOne::ModuleChangeListener x{false};
+	StoermelderPackOne::ModuleChangeListener y{false};
+
+	StoermelderPackOne::registerModuleListener("SirenSyncTest", &x);
+	StoermelderPackOne::registerModuleListener("SirenSyncTest", &y);
+
+	StoermelderPackOne::notifyModuleListeners("SirenSyncTest");
+	REQUIRE(x.moduleChangedFlag == true);
+	REQUIRE(y.moduleChangedFlag == true);
+
+	// Unregister one; the other must still be notified next time.
+	StoermelderPackOne::unregisterModuleListener("SirenSyncTest", &x);
+	x.moduleChangedFlag = false;
+	y.moduleChangedFlag = false;
+
+	StoermelderPackOne::notifyModuleListeners("SirenSyncTest");
+	REQUIRE(x.moduleChangedFlag == false);  // not in the set anymore
+	REQUIRE(y.moduleChangedFlag == true);   // still registered
+
+	StoermelderPackOne::unregisterModuleListener("SirenSyncTest", &y);
+}
+
+TEST_CASE("Cross-instance settings sync: SirenWidget step() refreshes browser pane from sirenSettings", "[Siren][SettingsSync]") {
+	// End-to-end behaviour: when the flag fires, the widget's step() must
+	// rebuild the browser pane from the current global sirenSettings, using
+	// the module's own activeRootIdx as the active selection. We seed the
+	// global with one root entry, give the module its own active root, set
+	// the flag, run step(), and verify the browser pane picked up the change.
+	SirenSettingsGuard guard;
+	sirenSettings.rootContainers.push_back(createRootContainer("/seeded/path", "fs"));
+
+	auto p = makeWidgetPair();
+	REQUIRE(p.widget != nullptr);
+	REQUIRE(p.widget->browserPane != nullptr);
+	p.module->activeRootIdx = 0;
+
+	// Simulate the flag arriving from another instance.
+	p.widget->moduleChangedFlag = true;
+	p.widget->step();
+	REQUIRE(p.widget->moduleChangedFlag == false);
+	REQUIRE(p.widget->browserPane->rootContainers.size() == 1);
+	REQUIRE(p.widget->browserPane->rootContainers[0].path == "/seeded/path");
+	REQUIRE(p.widget->browserPane->activeRootIdx == 0);
+
+	destroyWidgetPair(p);
+}
+
+// ─── Per-instance state (refactor: moved off the process-global SirenSettings) ─
+//
+// activeRootIdx, lastFilePath and lastPlayheadPos used to live on the
+// process-global `sirenSettings` singleton, so changing them in one Siren
+// instance silently moved every other instance to the same selection. They
+// now live on SirenModule (persisted with the patch) — each instance owns
+// its own and changes are local.
+
+// Two instances with different active roots must each keep their own.
+// Constructing a widget reads module->activeRootIdx; changing it on one
+// instance must NOT change the other.
+TEST_CASE("Per-instance activeRootIdx: two Siren instances keep separate selections", "[Siren][PerInstance]") {
+	SirenSettingsGuard guard;
+	sirenSettings.rootContainers.push_back(createRootContainer("/root-a", "fs"));
+	sirenSettings.rootContainers.push_back(createRootContainer("/root-b", "fs"));
+
+	auto a = makeWidgetPair();
+	auto b = makeWidgetPair();
+	a.module->activeRootIdx = 0;
+	b.module->activeRootIdx = 1;
+	a.widget->browserPane->setRoots(sirenSettings.rootContainers, a.module->activeRootIdx);
+	b.widget->browserPane->setRoots(sirenSettings.rootContainers, b.module->activeRootIdx);
+
+	REQUIRE(a.widget->browserPane->activeRootIdx == 0);
+	REQUIRE(b.widget->browserPane->activeRootIdx == 1);
+
+	// Mutate a's selection locally — b must NOT follow.
+	a.module->activeRootIdx = 1;
+	a.widget->browserPane->setRoots(sirenSettings.rootContainers, a.module->activeRootIdx);
+
+	REQUIRE(a.widget->browserPane->activeRootIdx == 1);
+	REQUIRE(b.widget->browserPane->activeRootIdx == 1);  // unchanged
+
+	// And vice versa: changing b does not move a.
+	b.module->activeRootIdx = 0;
+	b.widget->browserPane->setRoots(sirenSettings.rootContainers, b.module->activeRootIdx);
+
+	REQUIRE(a.widget->browserPane->activeRootIdx == 1);  // unchanged
+	REQUIRE(b.widget->browserPane->activeRootIdx == 0);
+
+	destroyWidgetPair(b);
+	destroyWidgetPair(a);
+}
+
+// Removing a root from instance A shifts the indices on instance B if the
+// removed root was at or before B's own active index. The shared root list
+// changes; each instance's activeRootIdx is per-instance and must be
+// clamped by B's step() refresh.
+TEST_CASE("Per-instance activeRootIdx: removing a root before another instance's idx shifts it", "[Siren][PerInstance]") {
+	SirenSettingsGuard guard;
+	sirenSettings.rootContainers.push_back(createRootContainer("/r0", "fs"));
+	sirenSettings.rootContainers.push_back(createRootContainer("/r1", "fs"));
+	sirenSettings.rootContainers.push_back(createRootContainer("/r2", "fs"));
+
+	auto a = makeWidgetPair();
+	auto b = makeWidgetPair();
+
+	// Both pick their own root. b's idx = 2 (third root).
+	a.module->activeRootIdx = 0;
+	b.module->activeRootIdx = 2;
+	a.widget->browserPane->setRoots(sirenSettings.rootContainers, a.module->activeRootIdx);
+	b.widget->browserPane->setRoots(sirenSettings.rootContainers, b.module->activeRootIdx);
+
+	REQUIRE(b.widget->browserPane->rootContainers.size() == 3);
+
+	// Instance A removes its active root (/r0) — wipes the global root at idx 0.
+	// B's module still says activeRootIdx = 2, but the list is now only 2 long.
+	sirenSettings.removeRootAt(a.module->activeRootIdx, nullptr);
+
+	// B hasn't been told yet — its browserPane still reflects the pre-removal state.
+	REQUIRE(b.widget->browserPane->rootContainers.size() == 3);
+
+	// The cross-instance broadcast arrives; B's step() refreshes and clamps.
+	b.widget->moduleChangedFlag = true;
+	b.widget->step();
+
+	REQUIRE(b.widget->browserPane->rootContainers.size() == 2);
+	// B's idx 2 was out of range after the removal; step() clamps it to a
+	// valid index in the shrunken list (0 here, since the new size is 2).
+	REQUIRE(b.widget->browserPane->activeRootIdx == 0);
+
+	destroyWidgetPair(b);
+	destroyWidgetPair(a);
+}
+
+// lastFilePath is per-instance: setting it on one module must not bleed into
+// another.
+TEST_CASE("Per-instance lastFilePath: two Siren instances keep separate files", "[Siren][PerInstance]") {
+	SirenSettingsGuard guard;
+	auto a = makeWidgetPair();
+	auto b = makeWidgetPair();
+
+	a.module->lastFilePath = "/samples/a.wav";
+	b.module->lastFilePath = "/samples/b.wav";
+
+	a.module->lastFilePath = "/samples/a2.wav";  // mutate a only
+
+	REQUIRE(a.module->lastFilePath == "/samples/a2.wav");
+	REQUIRE(b.module->lastFilePath == "/samples/b.wav");
+
+	destroyWidgetPair(b);
+	destroyWidgetPair(a);
+}
+
+// SirenModule persists activeRootIdx, lastFilePath and lastPlayheadPos into
+// the patch JSON — they must round-trip even though SirenSettings no longer
+// touches them.
+TEST_CASE("Per-instance state: JSON round-trips activeRootIdx, lastFilePath, lastPlayheadPos", "[Siren][PerInstance][JSON]") {
+	SirenSettingsGuard guard;
+	auto m = Test::createModule<SirenModule>("Siren");
+
+	m->activeRootIdx = 3;
+	m->lastFilePath = "/round/trip.wav";
+	m->lastPlayheadPos = 0.875f;
+
+	json_t* j = m->dataToJson();
+	REQUIRE(j != nullptr);
+
+	REQUIRE(json_integer_value(json_object_get(j, "activeRootIdx")) == 3);
+	REQUIRE(std::string(json_string_value(json_object_get(j, "lastFile"))) == "/round/trip.wav");
+	REQUIRE(json_real_value(json_object_get(j, "lastPlayheadPos")) == Catch::Approx(0.875).margin(0.001));
+
+	// Reset module fields, then restore from JSON.
+	m->activeRootIdx = -1;
+	m->lastFilePath = "";
+	m->lastPlayheadPos = 0.f;
+	m->dataFromJson(j);
+
+	REQUIRE(m->activeRootIdx == 3);
+	REQUIRE(m->lastFilePath == "/round/trip.wav");
+	REQUIRE(m->lastPlayheadPos == Catch::Approx(0.875).margin(0.001));
+
+	json_decref(j);
+	Test::destroyModule(m);
 }

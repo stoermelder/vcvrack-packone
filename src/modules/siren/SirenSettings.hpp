@@ -13,9 +13,6 @@ struct SirenSettings {
 	//   CT_PATCH  — into the module's patch storage directory
 	enum ConvertTarget { CT_SOURCE = 0, CT_CUSTOM = 1, CT_PATCH = 2 };
 	std::vector<RootContainer> rootContainers;
-	int activeRootIdx = -1;
-	std::string lastFile;
-	float lastPlayheadPos = 0.f;
 	bool loopPlayback = false;
 	bool resampleOnPlayback = true;
 	bool resampleOnDrop = true;
@@ -94,17 +91,16 @@ struct SirenSettings {
 		json_decref(j);
 	}
 
-	// Remove the active root from the list of configured roots. The active
-	// data source's cache is cleaned up before the entry is erased, so cache
-	// files for the removed root are deleted while its on-disk metadata file
+	// Remove the root at `idx` from the list of configured roots. The data
+	// source's cache is cleaned up before the entry is erased, so cache files
+	// for the removed root are deleted while its on-disk metadata file
 	// (tags/favorites/BPM) is preserved. Returns true on success, false if
-	// the index is out of range.
-	bool removeActiveRoot(DataSource* activeDs) {
-		int idx = activeRootIdx;
+	// the index is out of range. The active-root pointer on this settings
+	// struct is not touched; callers (per-instance module state) own it.
+	bool removeRootAt(int idx, DataSource* activeDs) {
 		if (idx < 0 || idx >= (int)rootContainers.size()) return false;
 		if (activeDs) activeDs->cleanup();
 		rootContainers.erase(rootContainers.begin() + idx);
-		activeRootIdx = rootContainers.empty() ? -1 : 0;
 		return true;
 	}
 
@@ -118,9 +114,6 @@ struct SirenSettings {
 			json_array_append_new(rootsJ, rj);
 		}
 		json_object_set_new(j, "rootContainers", rootsJ);
-		json_object_set_new(j, "activeRootIdx", json_integer(activeRootIdx));
-		json_object_set_new(j, "lastFile", json_string(lastFile.c_str()));
-		json_object_set_new(j, "lastPlayheadPos", json_real(lastPlayheadPos));
 		json_object_set_new(j, "loopPlayback", json_boolean(loopPlayback));
 		json_object_set_new(j, "resampleOnPlayback", json_boolean(resampleOnPlayback));
 		json_object_set_new(j, "resampleOnDrop", json_boolean(resampleOnDrop));
@@ -152,17 +145,6 @@ struct SirenSettings {
 				}
 			}
 		}
-		// Identify which root was active before sorting so we can re-find it by
-		// identity afterwards. Old files persisted insertion-order indices; new
-		// files persist sorted-order indices — either way, capturing the root
-		// object and searching for it post-sort handles both cases correctly.
-		json_t* v;
-		v = json_object_get(j, "activeRootIdx");
-		int savedIdx = v ? (int)json_integer_value(v) : -1;
-		RootContainer activeRoot;
-		bool haveActive = savedIdx >= 0 && savedIdx < (int)rootContainers.size();
-		if (haveActive) activeRoot = rootContainers[savedIdx];
-
 		// Keep roots in sorted order as the single canonical representation —
 		// no dual insertion-order vs. display-order vectors to keep in sync.
 		std::sort(rootContainers.begin(), rootContainers.end(),
@@ -170,15 +152,7 @@ struct SirenSettings {
 				return rack::string::lowercase(a.name) < rack::string::lowercase(b.name);
 			});
 
-		if (haveActive) {
-			activeRootIdx = -1;
-			for (int i = 0; i < (int)rootContainers.size(); i++) {
-				if (rootContainers[i] == activeRoot) { activeRootIdx = i; break; }
-			}
-		}
-
-		v = json_object_get(j, "lastFile"); if (v) lastFile = json_string_value(v);
-		v = json_object_get(j, "lastPlayheadPos"); if (v) lastPlayheadPos = (float)json_real_value(v);
+		json_t* v;
 		v = json_object_get(j, "loopPlayback"); if (v) loopPlayback = json_boolean_value(v);
 		v = json_object_get(j, "resampleOnPlayback"); if (v) resampleOnPlayback = json_boolean_value(v);
 		v = json_object_get(j, "resampleOnDrop"); if (v) resampleOnDrop = json_boolean_value(v);

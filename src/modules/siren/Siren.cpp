@@ -718,7 +718,7 @@ struct SirenOcWidget : OpaqueWidget {
 	}
 };
 
-struct SirenWidget : ThemedModuleWidget<SirenModule> {
+struct SirenWidget : ThemedModuleWidget<SirenModule>, ModuleChangeListener {
 	TaskWorker taskWorker{"Siren"};
 	SirenDropHandler dropHandler;
 
@@ -727,8 +727,18 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 	SirenDragOverlay* dragOverlay = nullptr;
 
 	SirenWidget(SirenModule* module)
-		: ThemedModuleWidget<SirenModule>(module, "Siren") {
+		: ThemedModuleWidget<SirenModule>(module, "Siren"), ModuleChangeListener{false} {
 		setModule(module);
+
+		if (module) {
+			// Watch the global sirenSettings so that changes made in another
+			// Siren instance (adding a root, selecting one, opening a file,
+			// toggling loop/resample/quality/convert-target, etc.) are reflected
+			// in this instance's browser pane and preview pane without requiring
+			// a reload. notifyModuleListeners("Siren") fires from the mutating
+			// callbacks below; this widget's step() consumes the flag.
+			registerModuleListener("Siren", this);
+		}
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		//addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
@@ -797,19 +807,56 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 								return rack::string::lowercase(a.name) < rack::string::lowercase(b.name);
 							});
 						auto it = std::find(sirenSettings.rootContainers.begin(), sirenSettings.rootContainers.end(), rc);
-						sirenSettings.activeRootIdx = (int)(it - sirenSettings.rootContainers.begin());
-						if (m) m->activeRootIdx = sirenSettings.activeRootIdx;
-						browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
+						// The newly added root becomes active in THIS instance only —
+						// other instances keep their own selected root, they just need
+						// to refresh their root list (notified below).
+						int newIdx = (int)(it - sirenSettings.rootContainers.begin());
+						if (m) m->activeRootIdx = newIdx;
+						browserPane->setRoots(sirenSettings.rootContainers, newIdx);
 						browserPane->startIndexing();
+						// Other Siren instances must refresh their root list now
+						// that the global settings have a new entry.
+						notifyModuleListeners("Siren");
+						// Skip self: the originating widget already applied the change
+						// above, and re-running setRoots() in step() would trigger a
+						// redundant async reload of the DataSource.
+						moduleChangedFlag = false;
 					}
 				};
 				browserPane->onSelectRoot = [this, m](int idx) {
 					// Both sirenSettings.rootContainers and browserPane->rootContainers
 					// are kept in sorted order, so `idx` is valid for both directly.
 					if (idx < 0 || idx >= (int)sirenSettings.rootContainers.size()) return;
-					sirenSettings.activeRootIdx = idx;
+					// Per-instance: only this module's selected root changes. Other
+					// instances keep their own selection.
 					if (m) m->activeRootIdx = idx;
 					browserPane->setRoots(sirenSettings.rootContainers, idx);
+					// Skip self: no broadcast — selecting a root is a local action
+					// in the originating instance and should not affect peers.
+					moduleChangedFlag = false;
+				};
+				browserPane->onRemoveRoot = [this, m]() {
+					// Per-instance: remove the root this instance currently has
+					// selected. Each instance owns its own activeRootIdx, so other
+					// instances simply shift their index in their step() refresh
+					// if the removed root was before theirs.
+					int idx = m ? m->activeRootIdx : -1;
+					if (idx < 0) return;
+					if (!sirenSettings.removeRootAt(idx, browserPane->activeDs.get())) return;
+					if (m) {
+						// After erasing `idx`, the next root (or none) becomes active
+						// for this instance. The removed root was at idx, so the new
+						// active is the entry that slid into its slot — or -1 when the
+						// list is now empty.
+						m->activeRootIdx = (int)sirenSettings.rootContainers.size() > idx
+							? idx
+							: (int)sirenSettings.rootContainers.size() - 1;
+					}
+					browserPane->setRoots(sirenSettings.rootContainers, m ? m->activeRootIdx : -1);
+					// Other Siren instances must drop the removed root from their list.
+					notifyModuleListeners("Siren");
+					// Skip self: see onAddRoot above.
+					moduleChangedFlag = false;
 				};
 			}
 
@@ -878,12 +925,12 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		dragOverlay->worker = &taskWorker;
 		APP->scene->rack->addChild(dragOverlay);
 
-		// Load global settings and restore state
+		// Load the global sirenSettings (the SHARED root list and per-user
+		// conversion/playback preferences). Per-instance state — selected root,
+		// last opened file, playhead position — lives on the module and is
+		// restored from the patch via SirenModule::dataFromJson before this
+		// constructor runs.
 		sirenSettings.load();
-		// Patch state takes priority over global settings if the patch was saved
-		if (!module->lastFilePath.empty()) {
-			sirenSettings.activeRootIdx = module->activeRootIdx;
-		}
 
 		// Obtain the conversion task from the active source; dispatched by the drop handler.
 		dropHandler.prepareForDropCallback = [this](const std::string& id) -> std::function<std::string()> {
@@ -919,9 +966,16 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		};
 		dropHandler.moduleWidget = this;
 
-		browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
-		std::string restoreFile = module ? module->lastFilePath : sirenSettings.lastFile;
-		float restorePos = module ? module->lastPlayheadPos : sirenSettings.lastPlayheadPos;
+		// Clamp to the
+		// currently-known root list so a stale idx from an older patch
+		// (when the list was different) doesn't index out of range.
+		int activeIdx = module->activeRootIdx;
+		if (activeIdx < 0 || activeIdx >= (int)sirenSettings.rootContainers.size()) {
+			activeIdx = sirenSettings.rootContainers.empty() ? -1 : 0;
+		}
+		browserPane->setRoots(sirenSettings.rootContainers, activeIdx);
+		std::string restoreFile = module->lastFilePath;
+		float restorePos = module->lastPlayheadPos;
 		if (!restoreFile.empty()) {
 			std::shared_ptr<DataSource> src = browserPane->activeDs;
 			DataSourceNode restoreNode = src ? src->resolveNode(restoreFile) : DataSourceNode{};
@@ -932,19 +986,21 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 	}
 
 	~SirenWidget() override {
+		if (module) {
+			unregisterModuleListener("Siren", this);
+		}
+
 		if (dragOverlay) {
 			APP->scene->rack->removeChild(dragOverlay);
 			delete dragOverlay;
 			dragOverlay = nullptr;
 		}
 
-		// Sync preview state back into module fields (for patch save) and global settings
-		sirenSettings.lastFile = previewPane->currentNode.relativePath;
-		sirenSettings.lastPlayheadPos = module ? module->playheadPos.load() : 0.f;
+		// Sync preview state back into module fields (for patch save). Per-instance
+		// state — file, playhead, active root — lives only on the module.
 		if (module) {
 			module->lastFilePath = previewPane->currentNode.relativePath;
 			module->lastPlayheadPos = module->playheadPos.load();
-			module->activeRootIdx = sirenSettings.activeRootIdx;
 		}
 
 		sirenSettings.save();
@@ -952,11 +1008,14 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 	}
 
 	void onFileSelected(const DataSourceNode& node, bool startPlay) {
-		sirenSettings.lastFile = node.relativePath;
+		// Per-instance: only this module remembers the selected file.
 		if (module) module->lastFilePath = node.relativePath;
 		std::shared_ptr<DataSource> src = browserPane->activeDs;
 		bool autoplay = module && module->params[SirenModule::PARAM_AUTOPLAY].getValue() > 0.5f;
 		previewPane->loadItem(node, src, startPlay || autoplay);
+		// Skip self: opening a file is a local action — it should not switch
+		// the loaded item in other Siren instances.
+		moduleChangedFlag = false;
 	}
 
 	void onSelectKey(const SelectKeyEvent& e) override {
@@ -988,6 +1047,29 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 		menu->addChild(new ui::MenuSeparator);
 		appendConversionMenuItems(menu, this->module != nullptr);
+	}
+
+	// Consume the cross-instance change flag set by notifyModuleListeners("Siren").
+	// When another Siren instance added or removed a root from the SHARED root
+	// list, refresh this instance's browser pane so its dropdown stays in sync.
+	// The active root (module->activeRootIdx), loaded file and playhead
+	// position are PER-INSTANCE — they are deliberately not touched here, so
+	// selecting or loading in one Siren does not hijack another instance.
+	void step() override {
+		if (moduleChangedFlag) {
+			moduleChangedFlag = false;
+			if (browserPane && module) {
+				// Clamp the per-instance idx to the (possibly shrunken) root list
+				// — e.g. if instance A removed the root that was at idx 0 in
+				// instance B, B's idx must shift to 0 (or -1) so it stays valid.
+				int idx = module->activeRootIdx;
+				if (idx < 0 || idx >= (int)sirenSettings.rootContainers.size()) {
+					idx = sirenSettings.rootContainers.empty() ? -1 : 0;
+				}
+				browserPane->setRoots(sirenSettings.rootContainers, idx);
+			}
+		}
+		ThemedModuleWidget<SirenModule>::step();
 	}
 };
 

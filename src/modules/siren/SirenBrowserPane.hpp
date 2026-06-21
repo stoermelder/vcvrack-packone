@@ -234,6 +234,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	std::function<void(const DataSourceNode&, bool)> onFileSelected;
 	std::function<void()> onAddRoot;
 	std::function<void(int)> onSelectRoot;
+	std::function<void()> onRemoveRoot;
 
 	// Fired right before the active DataSource is destroyed (root switch/removal),
 	// so owners holding raw DataSource*/MetadataStore* derived from it (e.g. the
