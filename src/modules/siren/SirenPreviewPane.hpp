@@ -92,8 +92,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 	std::atomic<float>* modulePlayheadPos = nullptr;
 	std::atomic<bool>* modulePlaying = nullptr;
-	std::atomic<float>* moduleInPoint = nullptr;
-	std::atomic<float>* moduleOutPoint = nullptr;
 
 	SirenDropHandler* dropHandler = nullptr;
 	TaskWorker* worker = nullptr;
@@ -136,12 +134,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		canvas->dropHandler = dh;
 		canvas->worker = tw;
 
-		canvas->onInPointChanged = [this](float v) {
-			if (moduleInPoint) moduleInPoint->store(v, std::memory_order_relaxed);
-		};
-		canvas->onOutPointChanged = [this](float v) {
-			if (moduleOutPoint) moduleOutPoint->store(v, std::memory_order_relaxed);
-		};
 		canvas->onScrubTo = [this](float pos) {
 			if (startPlaybackCallback) startPlaybackCallback(pos);
 		};
@@ -199,13 +191,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		previewCache = AudioWaveformCache{};
 
 		if (canvas) {
-			canvas->inPoint = 0.f;
-			canvas->outPoint = 1.f;
+			// Per-instance trim range lives on the module and persists across
+			// file loads — do NOT reset it here. Only the view/scroll state
+			// (which IS per-file) is reset on each new item.
 			canvas->scrubPos = 0.f;
 			canvas->zoomLevel = 1.0f;
 			canvas->scrollPos = 0.0f;
-			canvas->onInPointChanged(0.f);
-			canvas->onOutPointChanged(1.f);
 		}
 		bpm.store(0.f);
 
@@ -285,8 +276,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	void startPreviewBuild(bool repitch, BuildFn buildFn) {
 		if (!source || currentNode.relativePath.empty() || !worker) return;
 
-		float trimIn = canvas ? canvas->inPoint : 0.f;
-		float trimOut = canvas ? canvas->outPoint : 1.f;
+		float trimIn = canvas ? canvas->getInPoint() : 0.f;
+		float trimOut = canvas ? canvas->getOutPoint() : 1.f;
 		size_t projectedBytes = previewBufferBytes(trimIn, trimOut);
 		if (projectedBytes > PREVIEW_CONFIRM_BYTES) {
 			std::string header = repitch
@@ -330,8 +321,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		std::shared_ptr<DataSource> srcCopy = source;
 		std::string idCopy = currentNode.relativePath;
-		float trimIn = canvas ? canvas->inPoint : 0.f;
-		float trimOut = canvas ? canvas->outPoint : 1.f;
+		float trimIn = canvas ? canvas->getInPoint() : 0.f;
+		float trimOut = canvas ? canvas->getOutPoint() : 1.f;
 		int pw = canvas ? (int)canvas->box.size.x - (int)SirenWaveformCanvas::WAVE_X - 8 : 512;
 		if (pw < 64) pw = 512;
 
@@ -372,10 +363,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		if (openStreamCallback && source && !currentNode.relativePath.empty()) {
 			openStreamCallback(currentNode.relativePath, source.get());
 		}
-		if (canvas) {
-			if (moduleInPoint) moduleInPoint->store(canvas->inPoint, std::memory_order_relaxed);
-			if (moduleOutPoint) moduleOutPoint->store(canvas->outPoint, std::memory_order_relaxed);
-		}
 	}
 
 	void step() override {
@@ -406,9 +393,14 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				previewActive = true;
 				previewBuilding = false;
 
-				// The loop buffer spans [0, 1] — make the module loop it fully
-				if (moduleInPoint) moduleInPoint->store(0.f, std::memory_order_relaxed);
-				if (moduleOutPoint) moduleOutPoint->store(1.f, std::memory_order_relaxed);
+				// The loop buffer spans [0, 1] — make the module loop it fully.
+				// canvas->moduleInPoint/OutPoint may be unset (dummy preview),
+				// in which case the canvas's local fields are also irrelevant
+				// (no audio playback happens).
+				if (canvas) {
+					canvas->setInPoint(0.f);
+					canvas->setOutPoint(1.f);
+				}
 
 				// Reset seek base so playhead is valid in the new stream's frame space
 				if (startPlaybackCallback) startPlaybackCallback(0.f);
@@ -603,7 +595,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 					stopPlaybackCallback();
 				}
 				else if (!currentNode.relativePath.empty()) {
-					startPlaybackFrom(canvas ? canvas->inPoint : 0.f);
+					startPlaybackFrom(canvas ? canvas->getInPoint() : 0.f);
 				}
 				e.consume(this);
 				return;
@@ -654,7 +646,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			// normal mode
 			menu->addChild(createMenuItem("Reset trim", "",
 				[this]() { if (canvas) canvas->resetTrimHandles(); },
-				canvas && canvas->inPoint == 0.f && canvas->outPoint == 1.f
+				canvas && canvas->getInPoint() == 0.f && canvas->getOutPoint() == 1.f
 			));
 
 			/*

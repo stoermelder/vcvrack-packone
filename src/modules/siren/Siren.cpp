@@ -517,6 +517,8 @@ struct SirenModule : Module {
 		json_object_set_new(rootJ, "lastFile", json_string(lastFilePath.c_str()));
 		json_object_set_new(rootJ, "lastPlayheadPos", json_real(lastPlayheadPos));
 		json_object_set_new(rootJ, "activeRootIdx", json_integer(activeRootIdx));
+		json_object_set_new(rootJ, "trimIn", json_real(trimIn.load(std::memory_order_relaxed)));
+		json_object_set_new(rootJ, "trimOut", json_real(trimOut.load(std::memory_order_relaxed)));
 		return rootJ;
 	}
 
@@ -528,6 +530,22 @@ struct SirenModule : Module {
 		if (v && json_is_real(v)) lastPlayheadPos = (float)json_real_value(v);
 		v = json_object_get(rootJ, "activeRootIdx");
 		if (v && json_is_integer(v)) activeRootIdx = (int)json_integer_value(v);
+		v = json_object_get(rootJ, "trimIn");
+		if (v && json_is_real(v)) {
+			float t = (float)json_real_value(v);
+			// Clamp to [0,1] so a malformed patch can never produce an
+			// out-of-range trim that breaks loop wrapping at trimOut → trimIn.
+			if (t < 0.f) t = 0.f;
+			if (t > 1.f) t = 1.f;
+			trimIn.store(t, std::memory_order_relaxed);
+		}
+		v = json_object_get(rootJ, "trimOut");
+		if (v && json_is_real(v)) {
+			float t = (float)json_real_value(v);
+			if (t < 0.f) t = 0.f;
+			if (t > 1.f) t = 1.f;
+			trimOut.store(t, std::memory_order_relaxed);
+		}
 	}
 };
 
@@ -913,8 +931,8 @@ struct SirenWidget : ThemedModuleWidget<SirenModule>, ModuleChangeListener {
 		};
 		previewPane->modulePlayheadPos = &module->playheadPos;
 		previewPane->modulePlaying = &module->playing;
-		previewPane->moduleInPoint = &module->trimIn;
-		previewPane->moduleOutPoint = &module->trimOut;
+		previewPane->canvas->moduleInPoint = &module->trimIn;
+		previewPane->canvas->moduleOutPoint = &module->trimOut;
 
 		// Top-level drag label overlay — drawn above all other rack elements
 		dragOverlay = new SirenDragOverlay;
@@ -940,8 +958,8 @@ struct SirenWidget : ThemedModuleWidget<SirenModule>, ModuleChangeListener {
 			int targetRate = sirenSettings.resampleOnDrop ? this->module->engineSampleRate : 0;
 			bool loopOnDrop = previewPane->isLoopPreviewActive();
 			float repitchOnDrop = previewPane->isRepitchPreviewActive() ? previewPane->repitchTotalSemitones() : 0.f;
-			float trimIn = previewPane->canvas ? previewPane->canvas->inPoint : 0.f;
-			float trimOut = previewPane->canvas ? previewPane->canvas->outPoint : 1.f;
+			float trimIn = previewPane->canvas ? previewPane->canvas->getInPoint() : 0.f;
+			float trimOut = previewPane->canvas ? previewPane->canvas->getOutPoint() : 1.f;
 			// Resolve the output directory from the chosen target at drop time.
 			// Patch storage can only be created once the module is added to the
 			// engine, so we look it up here (UI thread) rather than capturing the

@@ -69,6 +69,15 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 	float durationSeconds = 0.f;
 	std::atomic<float>* modulePlayheadPos = nullptr;
 
+	// Module-owned trim points. When set (real module), the canvas reads
+	// inPoint/outPoint from these atomics and writes user-driven changes to
+	// them — the module is the single source of truth. When null (module
+	// browser thumbnail), the canvas falls back to its own inPoint/outPoint
+	// member fields below. The audio thread, JSON save/load, and DSP loop
+	// wrapping all read/write the module atomics directly.
+	std::atomic<float>* moduleInPoint = nullptr;
+	std::atomic<float>* moduleOutPoint = nullptr;
+
 	// Single overlay for any background task ("Building waveform…", "Converting…",
 	// "Generating loop preview…", "Indexing… N / M", ...). Empty = no overlay.
 	std::string statusMessage;
@@ -106,10 +115,28 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 	double lastScrubTime = 0.0;
 
 	// callbacks
-	std::function<void(float)> onInPointChanged;
-	std::function<void(float)> onOutPointChanged;
 	std::function<void(float)> onScrubTo;
 	std::function<void()> onCancelPreview;
+
+	// Trim-point accessors. When the canvas is bound to a module (via
+	// moduleInPoint/moduleOutPoint) the module atomics are the source of
+	// truth; the local inPoint/outPoint fields are only used for the module
+	// browser thumbnail (no module). Callers should always read through
+	// these accessors instead of touching the public fields directly.
+	float getInPoint() const {
+		return moduleInPoint ? moduleInPoint->load(std::memory_order_relaxed) : inPoint;
+	}
+	float getOutPoint() const {
+		return moduleOutPoint ? moduleOutPoint->load(std::memory_order_relaxed) : outPoint;
+	}
+	void setInPoint(float v) {
+		if (moduleInPoint) moduleInPoint->store(v, std::memory_order_relaxed);
+		else inPoint = v;
+	}
+	void setOutPoint(float v) {
+		if (moduleOutPoint) moduleOutPoint->store(v, std::memory_order_relaxed);
+		else outPoint = v;
+	}
 
 	// geometry helpers
 
@@ -165,10 +192,8 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 	}
 
 	void resetTrimHandles() {
-		inPoint = 0.f;
-		outPoint = 1.f;
-		if (onInPointChanged) onInPointChanged(inPoint);
-		if (onOutPointChanged) onOutPointChanged(outPoint);
+		setInPoint(0.f);
+		setOutPoint(1.f);
 	}
 
 	void draw(const DrawArgs& args) override {
@@ -298,9 +323,11 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 
 		// trim region + handles (suppressed in loop preview mode)
 		if (!previewMode && hasFile) {
-			if ((inPoint > 0.f || outPoint < 1.f) && outPoint > inPoint) {
-				float x1 = rack::math::clamp(WAVE_X + (inPoint - scrollPos) * zoomLevel * waveW, WAVE_X, WAVE_X + waveW);
-				float x2 = rack::math::clamp(WAVE_X + (outPoint - scrollPos) * zoomLevel * waveW, WAVE_X, WAVE_X + waveW);
+			float inV = getInPoint();
+			float outV = getOutPoint();
+			if ((inV > 0.f || outV < 1.f) && outV > inV) {
+				float x1 = rack::math::clamp(WAVE_X + (inV - scrollPos) * zoomLevel * waveW, WAVE_X, WAVE_X + waveW);
+				float x2 = rack::math::clamp(WAVE_X + (outV - scrollPos) * zoomLevel * waveW, WAVE_X, WAVE_X + waveW);
 				if (x2 > x1) {
 					nvgBeginPath(args.vg);
 					nvgRect(args.vg, x1, waveY, x2 - x1, waveH);
@@ -308,8 +335,8 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 					nvgFill(args.vg);
 				}
 			}
-			drawHandle(args.vg, outPoint, false, waveY, waveW, waveH);
-			drawHandle(args.vg, inPoint, true, waveY, waveW, waveH);
+			drawHandle(args.vg, outV, false, waveY, waveW, waveH);
+			drawHandle(args.vg, inV, true, waveY, waveW, waveH);
 		}
 
 		// playhead
@@ -390,9 +417,9 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 			nvgFillColor(args.vg, accent);
 			nvgText(args.vg, x + 21.f, box.size.y, formatTime(val).c_str(), nullptr);
 		};
-		drawReadout(WAVE_X, "IN", inPoint * durationSeconds);
-		drawReadout(WAVE_X + col, "OUT", outPoint * durationSeconds);
-		drawReadout(WAVE_X + col * 2, "LEN", (outPoint - inPoint) * durationSeconds);
+		drawReadout(WAVE_X, "IN", getInPoint() * durationSeconds);
+		drawReadout(WAVE_X + col, "OUT", getOutPoint() * durationSeconds);
+		drawReadout(WAVE_X + col * 2, "LEN", (getOutPoint() - getInPoint()) * durationSeconds);
 		drawReadout(WAVE_X + col * 3, "POS", ph * durationSeconds);
 	}
 
@@ -438,28 +465,28 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 					dragStartRackX = APP->scene->rack->getMousePos().x;
 					dragStartScrub = pos;
 
-					bool hasRange = (inPoint > 0.f || outPoint < 1.f);
-					float inScreenX = r.pos.x + (inPoint - scrollPos) * zoomLevel * r.size.x;
-					float outScreenX = r.pos.x + (outPoint - scrollPos) * zoomLevel * r.size.x;
+					float inV = getInPoint();
+					float outV = getOutPoint();
+					bool hasRange = (inV > 0.f || outV < 1.f);
+					float inScreenX = r.pos.x + (inV - scrollPos) * zoomLevel * r.size.x;
+					float outScreenX = r.pos.x + (outV - scrollPos) * zoomLevel * r.size.x;
 					const float thresh = 8.f;
 					bool nearIn = hasRange && std::abs(e.pos.x - inScreenX) < thresh;
 					bool nearOut = hasRange && std::abs(e.pos.x - outScreenX) < thresh;
 
 					if (nearIn) {
 						trimmingIn = true;
-						dragStartScrub = inPoint;
+						dragStartScrub = inV;
 					}
 					else if (nearOut) {
 						trimmingOut = true;
-						dragStartScrub = outPoint;
+						dragStartScrub = outV;
 					}
 					else {
 						rangeAnchor = pos;
-						inPoint = pos;
-						outPoint = pos;
+						setInPoint(pos);
+						setOutPoint(pos);
 						trimmingRange = true;
-						if (onInPointChanged) onInPointChanged(inPoint);
-						if (onOutPointChanged) onOutPointChanged(outPoint);
 					}
 				}
 				else if (!ctrl) {
@@ -524,19 +551,15 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 		float pos = dragStartScrub + dx / (r.size.x * zoomLevel);
 
 		if (trimmingIn) {
-			inPoint = rack::math::clamp(pos, 0.f, outPoint);
-			if (onInPointChanged) onInPointChanged(inPoint);
+			setInPoint(rack::math::clamp(pos, 0.f, getOutPoint()));
 		}
 		else if (trimmingOut) {
-			outPoint = rack::math::clamp(pos, inPoint, 1.f);
-			if (onOutPointChanged) onOutPointChanged(outPoint);
+			setOutPoint(rack::math::clamp(pos, getInPoint(), 1.f));
 		}
 		else if (trimmingRange) {
 			float cp = rack::math::clamp(pos, 0.f, 1.f);
-			inPoint = std::min(rangeAnchor, cp);
-			outPoint = std::max(rangeAnchor, cp);
-			if (onInPointChanged) onInPointChanged(inPoint);
-			if (onOutPointChanged) onOutPointChanged(outPoint);
+			setInPoint(std::min(rangeAnchor, cp));
+			setOutPoint(std::max(rangeAnchor, cp));
 		}
 		else if (draggingPlayhead && hasFile) {
 			float np = rack::math::clamp(pos, 0.f, 1.f);

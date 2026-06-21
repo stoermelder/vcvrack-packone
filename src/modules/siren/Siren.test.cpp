@@ -34,7 +34,7 @@ TEST_CASE("Preset JSON null-guards", "[Siren][JSON]") {
 	Test::destroyModule(module);
 }
 
-// JSON round-trip preserves lastFile, lastPlayheadPos and activeRootIdx.
+// JSON round-trip preserves lastFile, lastPlayheadPos, activeRootIdx and trim.
 TEST_CASE("JSON serialization", "[Siren][JSON]") {
 	auto* m = Test::createModule<SirenModule>("Siren");
 
@@ -42,6 +42,8 @@ TEST_CASE("JSON serialization", "[Siren][JSON]") {
 	m->lastFilePath = "/some/path/sample.wav";
 	m->lastPlayheadPos = 0.42f;
 	m->activeRootIdx = 2;
+	m->trimIn.store(0.15f, std::memory_order_relaxed);
+	m->trimOut.store(0.85f, std::memory_order_relaxed);
 
 	json_t* j = m->dataToJson();
 	REQUIRE(j != nullptr);
@@ -58,6 +60,14 @@ TEST_CASE("JSON serialization", "[Siren][JSON]") {
 	json_t* arJ = json_object_get(j, "activeRootIdx");
 	REQUIRE(arJ != nullptr);
 	REQUIRE(json_integer_value(arJ) == 2);
+
+	json_t* tiJ = json_object_get(j, "trimIn");
+	REQUIRE(tiJ != nullptr);
+	REQUIRE(json_real_value(tiJ) == Catch::Approx(0.15).margin(0.001));
+
+	json_t* toJ = json_object_get(j, "trimOut");
+	REQUIRE(toJ != nullptr);
+	REQUIRE(json_real_value(toJ) == Catch::Approx(0.85).margin(0.001));
 
 	json_decref(j);
 	Test::destroyModule(m);
@@ -660,18 +670,29 @@ TEST_CASE("posToPlayhead: scrubPos is display source while draggingPlayhead", "[
 }
 
 // loadItem resets inPoint and scrubPos to 0 on each call.
-TEST_CASE("loadItem resets inPoint and scrubPos", "[Siren][Preview]") {
+// loadItem resets scrubPos/zoom/scroll to 0 (view state is per-file).
+// The trim range is PER-INSTANCE — owned by the module's trimIn/trimOut
+// atomics — and is deliberately NOT touched by loadItem, so loading a new
+// file preserves the user's chosen trim points.
+TEST_CASE("loadItem resets view state but preserves trim range", "[Siren][Preview]") {
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
 	pane.init(nullptr, nullptr);
 
 	pane.canvas->inPoint = 0.7f;
+	pane.canvas->outPoint = 0.9f;
 	pane.canvas->scrubPos = 0.7f;
 
 	pane.loadItem(DataSourceNode{}, nullptr);
 
-	REQUIRE(pane.canvas->inPoint == 0.f);
+	// View state resets
 	REQUIRE(pane.canvas->scrubPos == 0.f);
+	REQUIRE(pane.canvas->zoomLevel == 1.0f);
+	REQUIRE(pane.canvas->scrollPos == 0.0f);
+	// Trim range is preserved (no module wired up, so the canvas's local
+	// fields are what getInPoint/getOutPoint return).
+	REQUIRE(pane.canvas->getInPoint() == 0.7f);
+	REQUIRE(pane.canvas->getOutPoint() == 0.9f);
 }
 
 // loadItem with empty id or null source leaves currentNode.relativePath empty.
@@ -1435,16 +1456,18 @@ TEST_CASE("Per-instance lastFilePath: two Siren instances keep separate files", 
 	destroyWidgetPair(a);
 }
 
-// SirenModule persists activeRootIdx, lastFilePath and lastPlayheadPos into
-// the patch JSON — they must round-trip even though SirenSettings no longer
-// touches them.
-TEST_CASE("Per-instance state: JSON round-trips activeRootIdx, lastFilePath, lastPlayheadPos", "[Siren][PerInstance][JSON]") {
+// SirenModule persists activeRootIdx, lastFilePath, lastPlayheadPos and trim
+// range into the patch JSON — they must round-trip even though SirenSettings
+// no longer touches them.
+TEST_CASE("Per-instance state: JSON round-trips activeRootIdx, lastFilePath, lastPlayheadPos, trim", "[Siren][PerInstance][JSON]") {
 	SirenSettingsGuard guard;
 	auto m = Test::createModule<SirenModule>("Siren");
 
 	m->activeRootIdx = 3;
 	m->lastFilePath = "/round/trip.wav";
 	m->lastPlayheadPos = 0.875f;
+	m->trimIn.store(0.21f, std::memory_order_relaxed);
+	m->trimOut.store(0.79f, std::memory_order_relaxed);
 
 	json_t* j = m->dataToJson();
 	REQUIRE(j != nullptr);
@@ -1452,17 +1475,107 @@ TEST_CASE("Per-instance state: JSON round-trips activeRootIdx, lastFilePath, las
 	REQUIRE(json_integer_value(json_object_get(j, "activeRootIdx")) == 3);
 	REQUIRE(std::string(json_string_value(json_object_get(j, "lastFile"))) == "/round/trip.wav");
 	REQUIRE(json_real_value(json_object_get(j, "lastPlayheadPos")) == Catch::Approx(0.875).margin(0.001));
+	REQUIRE(json_real_value(json_object_get(j, "trimIn")) == Catch::Approx(0.21).margin(0.001));
+	REQUIRE(json_real_value(json_object_get(j, "trimOut")) == Catch::Approx(0.79).margin(0.001));
 
 	// Reset module fields, then restore from JSON.
 	m->activeRootIdx = -1;
 	m->lastFilePath = "";
 	m->lastPlayheadPos = 0.f;
+	m->trimIn.store(0.f, std::memory_order_relaxed);
+	m->trimOut.store(1.f, std::memory_order_relaxed);
 	m->dataFromJson(j);
 
 	REQUIRE(m->activeRootIdx == 3);
 	REQUIRE(m->lastFilePath == "/round/trip.wav");
 	REQUIRE(m->lastPlayheadPos == Catch::Approx(0.875).margin(0.001));
+	REQUIRE(m->trimIn.load() == Catch::Approx(0.21).margin(0.001));
+	REQUIRE(m->trimOut.load() == Catch::Approx(0.79).margin(0.001));
 
 	json_decref(j);
+	Test::destroyModule(m);
+}
+
+// Out-of-range trim values in patch JSON must be clamped to [0,1] so a
+// malformed patch can never produce an out-of-range trim that breaks loop
+// wrapping at trimOut → trimIn.
+TEST_CASE("Per-instance state: out-of-range trim is clamped on dataFromJson", "[Siren][PerInstance][JSON]") {
+	SirenSettingsGuard guard;
+	auto m = Test::createModule<SirenModule>("Siren");
+
+	json_t* j = json_object();
+	json_object_set_new(j, "trimIn", json_real(-0.5));
+	json_object_set_new(j, "trimOut", json_real(1.7));
+	m->dataFromJson(j);
+	json_decref(j);
+
+	REQUIRE(m->trimIn.load() == 0.f);
+	REQUIRE(m->trimOut.load() == 1.f);
+
+	Test::destroyModule(m);
+}
+
+// The module's trimIn/trimOut atomics are the single source of truth for
+// the canvas's visible trim range: when wired up via moduleInPoint /
+// moduleOutPoint, the canvas's getInPoint/getOutPoint/setInPoint/setOutPoint
+// all read from / write to the module atomics — not the canvas's local
+// inPoint/outPoint fields. Saving and restoring a patch therefore
+// automatically restores the visible trim range, without any explicit
+// "restore" step in the widget constructor.
+TEST_CASE("Canvas trim is driven by the module atomics when wired up", "[Siren][PerInstance]") {
+	SirenPreviewPane pane;
+	pane.box.size = Vec(600.f, 380.f);
+	pane.init(nullptr, nullptr);
+
+	// Simulate a real module by wiring up atomics the way SirenWidget does.
+	std::atomic<float> moduleIn{0.f};
+	std::atomic<float> moduleOut{1.f};
+	pane.canvas->moduleInPoint = &moduleIn;
+	pane.canvas->moduleOutPoint = &moduleOut;
+
+	// Reads go through the atomic — local fields are ignored.
+	pane.canvas->inPoint = 0.7f;
+	pane.canvas->outPoint = 0.9f;
+	REQUIRE(pane.canvas->getInPoint() == 0.f);
+	REQUIRE(pane.canvas->getOutPoint() == 1.f);
+
+	// Writes go through the atomic.
+	pane.canvas->setInPoint(0.25f);
+	pane.canvas->setOutPoint(0.75f);
+	REQUIRE(moduleIn.load() == 0.25f);
+	REQUIRE(moduleOut.load() == 0.75f);
+	REQUIRE(pane.canvas->getInPoint() == 0.25f);
+	REQUIRE(pane.canvas->getOutPoint() == 0.75f);
+	// Local fields are NOT touched — they remain at their previous values.
+	REQUIRE(pane.canvas->inPoint == 0.7f);
+	REQUIRE(pane.canvas->outPoint == 0.9f);
+}
+
+// dataFromJson followed by a draw (or any getInPoint/getOutPoint read) on
+// the canvas immediately reflects the saved trim values — no widget
+// constructor restore step is needed because the canvas reads from the
+// module atomics on every read.
+TEST_CASE("Restored trim is visible immediately without an explicit restore step", "[Siren][PerInstance]") {
+	SirenSettingsGuard guard;
+	auto m = Test::createModule<SirenModule>("Siren");
+	SirenPreviewPane pane;
+	pane.box.size = Vec(600.f, 380.f);
+	pane.init(nullptr, nullptr);
+	pane.canvas->moduleInPoint = &m->trimIn;
+	pane.canvas->moduleOutPoint = &m->trimOut;
+
+	// Persist trim, simulate preset being loaded, then read the canvas.
+	m->trimIn.store(0.12f, std::memory_order_relaxed);
+	m->trimOut.store(0.88f, std::memory_order_relaxed);
+	json_t* j = m->dataToJson();
+	m->trimIn.store(0.f, std::memory_order_relaxed);
+	m->trimOut.store(1.f, std::memory_order_relaxed);
+	m->dataFromJson(j);
+	json_decref(j);
+
+	// The canvas sees the restored values without any explicit restore call.
+	REQUIRE(pane.canvas->getInPoint() == Catch::Approx(0.12f).margin(0.001));
+	REQUIRE(pane.canvas->getOutPoint() == Catch::Approx(0.88f).margin(0.001));
+
 	Test::destroyModule(m);
 }
