@@ -24,7 +24,7 @@ struct TestParamModule : Module {
 static void connectFine(MidiCatModule* midicat, MidiCatFineModule* fine) {
 	midicat->rightExpander.module = fine;
 	fine->leftExpander.module = midicat;
-	midicat->expandersChanged = true;
+	midicat->moduleChangedFlag = true;
 	midicat->process(Test::makeProcessArgs(1));
 }
 
@@ -215,7 +215,7 @@ TEST_CASE("Disconnecting expander clears expFine and ccFineMode", "[MidiCatFine]
 	// Disconnect
 	midicat->rightExpander.module = nullptr;
 	fine->leftExpander.module = nullptr;
-	midicat->expandersChanged = true;
+	midicat->moduleChangedFlag = true;
 	midicat->process(Test::makeProcessArgs(10));
 
 	REQUIRE(midicat->expFine.load() == nullptr);
