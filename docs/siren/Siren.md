@@ -1,6 +1,6 @@
 # stoermelder SIREN
 
-SIREN is an audio file browser and playback module - a collaboration with [Omri Cohen]("https://omricohen-music.com/"): you can drop samples out of the browser onto your sampler modules. SIREN is not a sampler module - it helps you organizing your samples and improving the workflow with sampler modules in VCV Rack.
+SIREN is an audio file browser and playback module - a collaboration with [Omri Cohen](https://omricohen-music.com/): you can drop samples out of the browser onto your sampler modules. SIREN is not a sampler module - it helps you organizing your samples and improving the workflow with sampler modules in VCV Rack.
 
 ![SIREN Intro](./Siren-intro.gif)
 
