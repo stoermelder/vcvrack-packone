@@ -51,8 +51,11 @@ struct SirenModule : Module {
 	std::atomic<bool> pendingStop{false};      // true means stop and drain ring
 
 	// Audio ring buffers — single-producer (fill thread) / single-consumer (process())
+	// Single interleaved stereo buffer so L+R are always pushed/consumed as one unit,
+	// preventing the race where DSP reads rbL after the fill thread pushed it but before
+	// rbR is pushed, causing rbR.shift() on an empty buffer and permanent desync.
 	static constexpr size_t RB_SIZE = 1 << 13;         // 8192 frames ≈ 186 ms at 44.1 kHz
-	dsp::RingBuffer<float, RB_SIZE> rbL, rbR;
+	dsp::RingBuffer<dsp::Frame<2>, RB_SIZE> rb;
 
 	// Fill thread management
 	std::thread fillThread;
@@ -134,14 +137,18 @@ struct SirenModule : Module {
 				int inF = n, outF = (int)OUT_MAX;
 				src.process(buf, fillCh, &inF, outBuf, fillCh, &outF);
 				for (int f = 0; f < outF; f++) {
-					rbL.push(outBuf[f * fillCh]);
-					rbR.push(fillCh >= 2 ? outBuf[f * fillCh + 1] : outBuf[f * fillCh]);
+					dsp::Frame<2> fr;
+					fr.samples[0] = outBuf[f * fillCh];
+					fr.samples[1] = fillCh >= 2 ? outBuf[f * fillCh + 1] : outBuf[f * fillCh];
+					rb.push(fr);
 				}
 			}
 			else {
 				for (int f = 0; f < n; f++) {
-					rbL.push(buf[f * fillCh]);
-					rbR.push(fillCh >= 2 ? buf[f * fillCh + 1] : buf[f * fillCh]);
+					dsp::Frame<2> fr;
+					fr.samples[0] = buf[f * fillCh];
+					fr.samples[1] = fillCh >= 2 ? buf[f * fillCh + 1] : buf[f * fillCh];
+					rb.push(fr);
 				}
 			}
 		};
@@ -159,7 +166,7 @@ struct SirenModule : Module {
 		// false when the ring can't yet hold the burst, so the caller retries next cycle.
 		auto crossfadeWrap = [&](int64_t inFrame, int64_t outFrame, int64_t xf) -> bool {
 			size_t need = fillResample ? (size_t)std::ceil((double)xf * fillRatio) + 2 : (size_t)xf;
-			if (rbL.capacity() < need) return false;
+			if (rb.capacity() < need) return false;
 			// The head is constant for the range — read it once.
 			if (!loopHeadValid) {
 				stream->seekTo(inFrame);
@@ -191,7 +198,7 @@ struct SirenModule : Module {
 			stream->seekTo(sf);
 			outputFrameCount.store(0, std::memory_order_relaxed);
 			eofReached.store(false, std::memory_order_relaxed);
-			rbL.clear(); rbR.clear();
+			rb.clear();
 			loopHeadValid = false;
 
 			// Channel count — clamped to the stereo SRC limit.
@@ -273,7 +280,7 @@ struct SirenModule : Module {
 				fillFilePos = inFrame;
 			}
 
-			size_t space = rbL.capacity();
+			size_t space = rb.capacity();
 			if (space == 0) return;
 			float tmp[CHUNK * 2];
 			// Limit input so the resampled output fits in the available ring space.
@@ -303,7 +310,7 @@ struct SirenModule : Module {
 			if (pendingStop.exchange(false, std::memory_order_acq_rel)) {
 				playing.store(false, std::memory_order_release);
 				eofReached.store(false, std::memory_order_relaxed);
-				rbL.clear(); rbR.clear();
+				rb.clear();
 			}
 
 			// stream swap: adopt new decoder from UI thread
@@ -312,7 +319,7 @@ struct SirenModule : Module {
 				delete stream;
 				stream = ns;
 				eofReached.store(false, std::memory_order_relaxed);
-				rbL.clear(); rbR.clear();
+				rb.clear();
 				fillFilePos = 0;
 				loopHeadValid = false;
 			}
@@ -334,7 +341,7 @@ struct SirenModule : Module {
 						|| pendingStop.load()
 						|| pendingStream.load() != nullptr
 						|| pendingSeekFrame.load() >= 0
-						|| (playing.load() && rbL.capacity() > 256);
+						|| (playing.load() && rb.capacity() > 256);
 				});
 			}
 		}
@@ -423,9 +430,10 @@ struct SirenModule : Module {
 
 		// DSP reads ring buffer — no mutex, no file I/O
 		if (playing.load(std::memory_order_acquire)) {
-			if (!rbL.empty()) {
-				l = rbL.shift();
-				r = rbR.shift();
+			if (!rb.empty()) {
+				dsp::Frame<2> fr = rb.shift();
+				l = fr.samples[0];
+				r = fr.samples[1];
 
 				int64_t count = outputFrameCount.fetch_add(1, std::memory_order_relaxed) + 1;
 				int64_t total = streamTotalFrames;
