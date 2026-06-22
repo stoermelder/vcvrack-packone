@@ -17,7 +17,9 @@ struct WithHoverScrollLock : Base {
 
 	void onHover(const widget::Widget::HoverEvent& e) override {
 		Base::onHover(e);
-		e.consume(this);
+		if (!e.isConsumed()) {
+			e.consume(this);
+		}
 	}
 
 	void onEnter(const widget::Widget::EnterEvent& e) override {
