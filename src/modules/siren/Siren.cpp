@@ -137,6 +137,7 @@ struct SirenModule : Module {
 				int inF = n, outF = (int)OUT_MAX;
 				src.process(buf, fillCh, &inF, outBuf, fillCh, &outF);
 				for (int f = 0; f < outF; f++) {
+					if (rb.full()) break;  // guard: SRC output can slightly exceed capacity estimate
 					dsp::Frame<2> fr;
 					fr.samples[0] = outBuf[f * fillCh];
 					fr.samples[1] = fillCh >= 2 ? outBuf[f * fillCh + 1] : outBuf[f * fillCh];
@@ -284,8 +285,13 @@ struct SirenModule : Module {
 			if (space == 0) return;
 			float tmp[CHUNK * 2];
 			// Limit input so the resampled output fits in the available ring space.
+			// When upsampling, the SRC may produce up to ceil(fillRatio) output frames
+			// per input frame; require at least that much room before reading anything,
+			// so a single input frame never overflows the ring.
+			size_t minSpace = fillResample ? (size_t)std::ceil(fillRatio) + 1 : 1;
+			if (space < minSpace) return;
 			size_t toRead = fillResample
-				? std::min(CHUNK, (size_t)std::max(1.0, (double)space / fillRatio))
+				? std::min(CHUNK, (size_t)((double)space / fillRatio))
 				: std::min(CHUNK, space);
 			// Never read past the loop end: an engaged trim loop stops `xfade` early, a
 			// full-file loop stops at the file end, otherwise read freely to EOF.

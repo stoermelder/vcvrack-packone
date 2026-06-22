@@ -835,8 +835,10 @@ TEST_CASE("matchesSearch: container matches when a descendant satisfies the filt
 // process() reads from ring buffers and applies volume scaling.
 // Helper: push a stereo frame directly into the module's ring buffers.
 static void pushFrame(SirenModule* m, float l, float r) {
-	m->rbL.push(l);
-	m->rbR.push(r);
+	dsp::Frame<2> fr;
+	fr.samples[0] = l;
+	fr.samples[1] = r;
+	m->rb.push(fr);
 }
 
 TEST_CASE("process: reads samples from ring buffer and scales by volume", "[Siren][Audio]") {
