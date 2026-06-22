@@ -157,7 +157,7 @@ struct SirenSourceButton : ui::ChoiceButton {
 		}
 
 		bool classifying = pane->classifyTask.running();
-		menu->addChild(createMenuItem("Run tag classifier on all files", "", [this]() {
+		menu->addChild(createMenuItem("Suggest tags on all files", "", [this]() {
 			pane->startTagClassificationAll();
 		}, !pane->activeDs || classifying));
 		if (classifying) {

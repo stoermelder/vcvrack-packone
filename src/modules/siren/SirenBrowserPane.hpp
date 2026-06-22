@@ -737,16 +737,22 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 	void onButton(const event::Button& e) override {
 		OpaqueWidget::onButton(e);
-		if (!e.isConsumed() && e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
-			ui::Menu* menu = createMenu();
+		if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
+			ui::Menu* menu = APP->scene->getFirstDescendantOfType<Menu>();
+			if (menu) {
+				menu->addChild(new MenuSeparator);
+			}
+			else {
+				menu = createMenu();
+			}
 			bool hasTagFilter = !tagFilter.empty() || !tagExcludeFilter.empty();
 			bool hasAnyFilter = hasTagFilter || favoritesOnly || !searchQuery.empty();
-			menu->addChild(createMenuItem("Reset tag filters", "", [this]() {
+			menu->addChild(createMenuItem("Clear tag filters", "", [this]() {
 				tagFilter.clear();
 				tagExcludeFilter.clear();
 				requestRebuild();
 			}, !hasTagFilter));
-			menu->addChild(createMenuItem("Reset all filters", "", [this]() {
+			menu->addChild(createMenuItem("Clear all filters", "", [this]() {
 				tagFilter.clear();
 				tagExcludeFilter.clear();
 				favoritesOnly = false;
@@ -918,12 +924,6 @@ struct SirenTagContainer : widget::OpaqueWidget {
 	void onButton(const event::Button& e) override {
 		if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
 			Menu* menu = createMenu();
-			menu->addChild(createMenuItem("Clear tag filters", "", [this]() {
-				pane->tagFilter.clear();
-				pane->tagExcludeFilter.clear();
-				pane->requestRebuild();
-			}));
-			menu->addChild(new MenuSeparator);
 			menu->addChild(createMenuItem("Clear included tag filter", "", [this]() {
 				pane->tagFilter.clear();
 				pane->requestRebuild();

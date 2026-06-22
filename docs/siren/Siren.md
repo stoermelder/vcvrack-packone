@@ -129,7 +129,7 @@ The dialog groups suggestions by tag. **Check** the ones you want to apply and c
 
 #### Running the Tag Classifier on all files
 
-Select **Run tag classifier on all files** from the source menu to analyse every audio file in the active root and apply automatic tag suggestions in one pass. This is the bulk equivalent of right-clicking individual files and choosing **Suggest tags** — SIREN processes each file using the same 18-tag classifier and adds the resulting tags directly to the metadata without a confirmation dialog.
+Select **Suggest tags on all files** from the source menu to analyse every audio file in the active root and apply automatic tag suggestions in one pass. This is the bulk equivalent of right-clicking individual files and choosing **Suggest tags** — SIREN processes each file using the same 18-tag classifier and adds the resulting tags directly to the metadata without a confirmation dialog.
 
 ### Favorites
 
