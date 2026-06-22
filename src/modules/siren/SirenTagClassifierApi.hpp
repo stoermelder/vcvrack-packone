@@ -41,11 +41,26 @@ struct SuggestedTag {
 
 namespace TagClassifierDetail {
 
-// STFT constants — see SirenBpmDetector.hpp:108-115 for rationale
+// STFT constants — see SirenBpmDetector.hpp:108-115 for rationale.
+// These are the BPM detector's analysis params; the tag classifier uses its
+// own TAG_* params below. 8820 Hz is fine for BPM (kicks < 200 Hz) but too
+// low for tag classification, where HiHat/Cymbal/bright-Snare discrimination
+// lives above the 4.41 kHz Nyquist this rate implies.
 static constexpr int FFT_SIZE = 512;
 static constexpr int HOP = 128;
 static constexpr int HALF_N = FFT_SIZE / 2;
-static constexpr int TARGET_SR = 8820;  // doubled for better high-freq coverage
+static constexpr int TARGET_SR = 8820;
+
+// Tag-classifier STFT params. Used only by runSTFT / finalizeSpectralFeatures /
+// extractTimeDomainFeatures (the BPM detector keeps the params above). TARGET_SR
+// is raised to 22050 (Nyquist ~11 kHz) so metallic/high-frequency tags keep
+// their discriminating band; FFT_SIZE is raised in proportion so frequency
+// resolution stays ~21.5 Hz/bin (vs ~17 Hz at the old rate) — the low end isn't
+// traded away for the high end. HOP keeps the 4× overlap.
+static constexpr int TAG_TARGET_SR = 22050;
+static constexpr int TAG_FFT_SIZE = 1024;
+static constexpr int TAG_HOP = TAG_FFT_SIZE / 4;
+static constexpr int TAG_HALF_N = TAG_FFT_SIZE / 2;
 
 // Normalisation constants — must match feature_config.FEATURE_NAMES
 static constexpr float ONSET_DENSITY_NORM = 30.f;     // peaks/sec → [0, 1]
@@ -372,7 +387,7 @@ struct TagClassifier {
 
 		std::vector<float> mono;
 		int outSR;
-		if (!prepareMono(stream, maxDurationSeconds, mono, outSR)) return;
+		if (!prepareMono(stream, maxDurationSeconds, mono, outSR, TAG_TARGET_SR)) return;
 
 		extractTimeDomainFeatures(mono, outSR, out);
 
@@ -388,10 +403,13 @@ struct TagClassifier {
 	}
 
 	// Phase 1: Audio ingestion
-	// Read the stream, decimate to ~TARGET_SR, mix to mono.
+	// Read the stream, decimate to ~targetSR, mix to mono.
 	// Returns false if the stream is invalid or yields no samples.
+	// targetSR defaults to the BPM detector's rate; the tag classifier passes
+	// TAG_TARGET_SR for wider high-frequency coverage.
 	static bool prepareMono(AudioStream& stream, float maxDurationSeconds,
-			std::vector<float>& mono, int& outSR) {
+			std::vector<float>& mono, int& outSR,
+			int targetSR = TagClassifierDetail::TARGET_SR) {
 		using namespace TagClassifierDetail;
 
 		int sampleRate = stream.sampleRate();
@@ -407,9 +425,9 @@ struct TagClassifier {
 		// Averaging over decimRate frames acts as a low-pass filter with its
 		// first null at outSR Hz, attenuating content above outSR/2 before
 		// subsampling and preventing it from aliasing into the analysis band.
-		int decimRate = std::max(1, sampleRate / TARGET_SR);
+		int decimRate = std::max(1, sampleRate / targetSR);
 		outSR = sampleRate / decimRate;
-		if (outSR <= 0) outSR = TARGET_SR;
+		if (outSR <= 0) outSR = targetSR;
 
 		const int64_t BUFSIZE = 65536;
 		mono.reserve(size_t(totalFrames / decimRate) + 1024);
@@ -616,15 +634,21 @@ struct TagClassifier {
 			}
 		}
 
-		// Harmonic ratio — autocorrelation over pitch range 49–1100 Hz (lags 8–180 at outSR)
+		// Harmonic ratio — autocorrelation over the musical pitch range 49–1100 Hz.
+		// Lag bounds are derived from outSR (lag = outSR / freq) so the analysed
+		// pitch band is fixed regardless of the decimated rate — at the old
+		// 8820 Hz this reproduces the original lags 8–180. The window spans
+		// ~0.5 s (≥ several periods of the lowest pitch) for a stable estimate.
 		// Normalised peak → periodic=1 (tonal), noise=0.
 		{
-			int n = std::min((int)mono.size(), 4096);
+			const int n = std::min((int)mono.size(), std::max(4096, outSR / 2));
+			const int lagMin = std::max(1, outSR / 1100);
+			const int lagMax = std::min(n - 1, outSR / 49);
 			float r0 = 0.f;
 			for (int i = 0; i < n; ++i) r0 += mono[i] * mono[i];
 			float maxAC = 0.f;
 			if (r0 > 1e-12f) {
-				for (int lag = 8; lag <= std::min(180, n - 1); ++lag) {
+				for (int lag = lagMin; lag <= lagMax; ++lag) {
 					float r = 0.f;
 					for (int i = 0; i < n - lag; ++i) r += mono[i] * mono[i + lag];
 					float rn = r / r0;
@@ -641,6 +665,12 @@ struct TagClassifier {
 	static bool runSTFT(const std::vector<float>& mono, int outSR,
 			TagClassifierDetail::SpectralAccum& acc) {
 		using namespace TagClassifierDetail;
+
+		// Tag-classifier STFT geometry (shadows the BPM-detector constants
+		// brought in by the using-directive above).
+		const int FFT_SIZE = TAG_FFT_SIZE;
+		const int HOP = TAG_HOP;
+		const int HALF_N = TAG_HALF_N;
 
 		const int numFrames = int(mono.size());
 		const int numHops = (numFrames - FFT_SIZE) / HOP + 1;
@@ -856,6 +886,9 @@ struct TagClassifier {
 	static void finalizeSpectralFeatures(const TagClassifierDetail::SpectralAccum& acc,
 			int outSR, float out[SIREN_TAG_NUM_FEATURES]) {
 		using namespace TagClassifierDetail;
+		// Match runSTFT's tag-classifier geometry (shadows BPM constants).
+		const int HOP = TAG_HOP;
+		const int HALF_N = TAG_HALF_N;
 		const int numHops = acc.numHops;
 
 		// Spectral centroid: (Σ b·p_b) / (Σ p_b), normalised by (HALF_N - 1)

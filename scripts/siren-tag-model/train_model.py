@@ -48,9 +48,11 @@ def load_csv(
         carry a `negatives` column (column index 2). Rows with a
         non-empty value in that column are *hard negatives* for the
         named tag(s): their `Y[i, neg_tag]` is forced to 0 (it usually
-        would be already, but we make it explicit) and the row is
-        given a `negative_weight` x higher `sample_weight` *for that
-        specific class's binary head only*.
+        would be already, but we make it explicit), the row is given a
+        `negative_weight` x higher `sample_weight` *for that specific
+        class's binary head only*, and is MASKED (weight 0.0) on every
+        other head so it is dropped from those fits rather than asserted
+        as a confirmed negative of tags it was never labelled against.
       - Older CSVs (no `negatives` column) still parse correctly:
         every row is a unit-weight positive for every class.
 
@@ -60,12 +62,17 @@ def load_csv(
         paths          list[str]                          — source path per row
         sample_weights (N, NUM_CLASSES)         float32 — per-(row, class)
                                                        weight for fit().
-                                                       Hard-negative rows
-                                                       carry `negative_weight`
-                                                       for the specific class
-                                                       they are a negative of
-                                                       and 1.0 for every other
-                                                       class.
+                                                       A pure hard-negative
+                                                       row carries
+                                                       `negative_weight` for
+                                                       the specific class it is
+                                                       a negative of and 0.0
+                                                       (masked — dropped from
+                                                       the fit) for every other
+                                                       class, so it makes no
+                                                       claim about heads it was
+                                                       never labelled against.
+                                                       All other rows are 1.0.
         neg_stats      (n_neg_rows, n_neg_cells,
                         n_neg_classes)               int     — hard-negative
                                                        counts derived directly
@@ -137,22 +144,36 @@ def load_csv(
         for c in neg_tags_per_row[i]:
             Y_idx[i, c] = 0
 
-    # Per-(row, class) weight matrix. Start at 1.0 everywhere, then
-    # raise to `negative_weight` for the specific (row, class) cells
-    # that come from a `Non-<Tag>` folder. Crucially the raise is
-    # per-class, not per-row: a Non-Kick sample is a hard negative
-    # ONLY for the Kick head, weight stays 1.0 for the other 17 heads.
+    # Per-(row, class) weight matrix. Start at 1.0 everywhere. For a
+    # hard-negative row (collected under `Non-<Tag>/`) we know exactly one
+    # thing: it is NOT the target tag(s). We make no claim about the other
+    # 16-17 heads — the file may well be a true positive of some other tag
+    # that simply resembles the target. So such a row is:
+    #   - weighted `negative_weight` on its target column(s) (a strong
+    #     "definitely not this" signal for that head), and
+    #   - MASKED (weight 0.0) on every other head, so it is dropped from
+    #     those heads' fits rather than asserted as a confirmed negative.
+    # Masking only the non-target cells (vs. weight 1.0) avoids injecting
+    # false negatives into unrelated heads. The other heads don't go short
+    # on negatives: every positive row of every other tag already serves as
+    # a one-vs-rest negative here. A row carrying a positive label is left
+    # fully weighted (it is a real, fully-known example).
     sample_weights = np.ones((len(Y), NUM_CLASSES), dtype=np.float32)
     neg_class_seen = np.zeros(NUM_CLASSES, dtype=bool)
     n_neg_cells = 0
     n_neg_rows = 0
     for i, neg_idxs in enumerate(neg_tags_per_row):
+        if not neg_idxs:
+            continue
+        # Pure hard-negative row (label and negatives are mutually exclusive
+        # in load_folder_dataset.py): silence every head except the targets.
+        if not Y[i][0]:
+            sample_weights[i, :] = 0.0
         for c in neg_idxs:
             sample_weights[i, c] = negative_weight
             neg_class_seen[c] = True
             n_neg_cells += 1
-        if neg_idxs:
-            n_neg_rows += 1
+        n_neg_rows += 1
     # Derived directly from the parsed `negatives` column rather than from
     # `sample_weights`, so the counts stay correct even when `negative_weight`
     # is 1.0 (disables boosting) or 0.0 (skips hard-negatives) -- values the

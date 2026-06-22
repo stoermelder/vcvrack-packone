@@ -126,7 +126,7 @@
       "category": "source",
       "description": "Vocal or vocal-like material: sung voice, formant tones, vowel-like resonances.",
       "classifier_can_suggest": true,
-      "keywords": ["vocal", "vox", "voice", "choir"]
+      "keywords": ["vocal", "vox", "choir"]
     }
   ]
 }

@@ -45,6 +45,16 @@ noisy recording that keeps getting mis-tagged as "Kick" into
 `Non-Kick/` and the Kick binary head will be penalised for predicting
 "Kick" on its feature vector.
 
+A `Non-<Tag>` row makes a claim about *one* head only: "this is not
+<Tag>". It is deliberately **not** treated as a negative for the other
+heads — the trainer masks (weight 0.0) every non-target head for these
+rows, so a file that is genuinely some other tag (e.g. a sub-bass note
+filed under `Non-Kick/` because it resembles a kick) is never injected
+as a false negative into the Bass head. If you instead want a sample
+that is "none of the 18 tags at all" and should act as a negative for
+every head, give it a positive label of its true tag (if it has one),
+or omit it — do not file true positives of tag B under `Non-A/`.
+
     my_dataset/
         Kick/
             kick_001.wav
