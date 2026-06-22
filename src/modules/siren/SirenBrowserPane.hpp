@@ -376,6 +376,15 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		indexTask.start(worker, activeDs, activeDsCancel);
 	}
 
+	void startTagClassificationAll() {
+		if (!activeDs) return;
+		DataSourceNode root;
+		root.relativePath = activeDs->rootId();
+		root.isContainer = true;
+		root.name = "";
+		startTagClassification(root);
+	}
+
 	std::string getRootDisplayName(int idx) const {
 		if (idx < 0 || idx >= (int)rootContainers.size()) return "";
 		return rootContainers[idx].name;

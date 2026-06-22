@@ -156,6 +156,16 @@ struct SirenSourceButton : ui::ChoiceButton {
 			}));
 		}
 
+		bool classifying = pane->classifyTask.running();
+		menu->addChild(createMenuItem("Run tag classifier on all files", "", [this]() {
+			pane->startTagClassificationAll();
+		}, !pane->activeDs || classifying));
+		if (classifying) {
+			menu->addChild(createMenuItem("Cancel tag classification", "", [this]() {
+				pane->cancelActiveSourceTasks();
+			}));
+		}
+
 		menu->addChild(new ui::MenuSeparator);
 		menu->addChild(createMenuItem("Add root...", "", [this]() {
 			if (pane->onAddRoot) pane->onAddRoot();

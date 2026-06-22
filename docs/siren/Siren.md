@@ -127,6 +127,10 @@ SIREN analyses the first 30 seconds of audio, extracts a feature vector, and pro
 
 The dialog groups suggestions by tag. **Check** the ones you want to apply and confirm — checked tags are added to the matching files in the active root. Already-applied tags are filtered out of the proposal list, so you only see tags that are genuinely new for each file. Right-click a proposal to remove it from its group before confirming.
 
+#### Running the Tag Classifier on all files
+
+Select **Run tag classifier on all files** from the source menu to analyse every audio file in the active root and apply automatic tag suggestions in one pass. This is the bulk equivalent of right-clicking individual files and choosing **Suggest tags** — SIREN processes each file using the same 18-tag classifier and adds the resulting tags directly to the metadata without a confirmation dialog.
+
 ### Favorites
 
 Click the **star** at the right edge of any file row to toggle it as a favorite. Use the ☆ button in the top bar to show only favorites.
