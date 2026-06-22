@@ -440,7 +440,26 @@ struct TagClassifier {
 		if (groupCount > 0) {
 			mono.push_back(groupSum / float(groupCount));
 		}
-		return !mono.empty();
+		if (mono.empty()) return false;
+
+		// Peak-normalise to ±1.0 so all downstream features are gain-invariant.
+		// A sample's tag is a level-invariant property (a kick is a kick whether
+		// quiet or loud); without this, level-dependent features (rms,
+		// env_rms_variance, mfcc_0) encode recording gain rather than content.
+		// Done here so the time-domain pass, the STFT pass, and — because the
+		// training pipeline calls this same extractFeatures() via the CLI — both
+		// training and inference operate on identically normalised audio.
+		// Near-silent buffers are left untouched (no meaningful peak to scale to).
+		float peak = 0.f;
+		for (float s : mono) {
+			float a = s < 0.f ? -s : s;
+			if (a > peak) peak = a;
+		}
+		if (peak > 1e-6f) {
+			const float gain = 1.f / peak;
+			for (float& s : mono) s *= gain;
+		}
+		return true;
 	}
 
 	// Phase 2: Time-domain features
