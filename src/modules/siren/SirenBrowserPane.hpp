@@ -735,6 +735,30 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		OpaqueWidget::onSelectKey(e);
 	}
 
+	void onButton(const event::Button& e) override {
+		OpaqueWidget::onButton(e);
+		if (!e.isConsumed() && e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
+			ui::Menu* menu = createMenu();
+			bool hasTagFilter = !tagFilter.empty() || !tagExcludeFilter.empty();
+			bool hasAnyFilter = hasTagFilter || favoritesOnly || !searchQuery.empty();
+			menu->addChild(createMenuItem("Reset tag filters", "", [this]() {
+				tagFilter.clear();
+				tagExcludeFilter.clear();
+				requestRebuild();
+			}, !hasTagFilter));
+			menu->addChild(createMenuItem("Reset all filters", "", [this]() {
+				tagFilter.clear();
+				tagExcludeFilter.clear();
+				favoritesOnly = false;
+				setSearchQuery("");
+				if (setSearchFieldText) setSearchFieldText("");
+				requestRebuild();
+			}, !hasAnyFilter));
+			e.consume(this);
+			return;
+		}
+	}
+
 	void draw(const DrawArgs& args) override {
 		float w = box.size.x;
 		float h = box.size.y;
