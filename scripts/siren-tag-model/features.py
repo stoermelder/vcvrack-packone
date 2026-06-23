@@ -41,10 +41,11 @@ def find_cpp_extractor() -> str:
     return str(binary)
 
 
-# Mirrors the C++ STFT constants in SirenTagClassifierApi.hpp.
-_TARGET_SR  = 8820
-_FFT_SIZE   = 512
-_HOP        = 128
+# Mirrors the tag-classifier STFT constants in SirenTagClassifierApi.hpp
+# (the TAG_* params used by extractFeatures(), not the BPM detector's).
+_TARGET_SR  = 22050
+_FFT_SIZE   = 1024
+_HOP        = 256
 _MIN_HOPS   = 4
 
 # Minimum original-sample frames needed to produce _MIN_HOPS STFT hops after
@@ -55,16 +56,41 @@ def _min_frames_for_sr(samplerate: int) -> int:
     return (decim_needed + 1) * decim_rate              # back to original SR
 
 
-def _transcode_to_pcm_wav(src: str) -> Optional[str]:
-    """Re-encode src to a temporary 16-bit PCM WAV using soundfile.
+def _write_temp_pcm_wav(data: np.ndarray, samplerate: int) -> Optional[str]:
+    """Write a mono float array to a temporary 16-bit PCM WAV.
 
-    Also tiles audio that is too short to produce enough STFT hops in the C++
+    Tiles audio that is too short to produce enough STFT hops in the C++
     extractor (_MIN_HOPS hops, roughly 0.1 s). Short one-shot samples are
     looped rather than zero-padded so their spectral character is preserved.
     The tiled version matches what extractFeatures() would see if the plugin
-    received the sample looped, and is consistent with the runtime behaviour
-    now that the old 0.5 s guard has been removed from extractFeatures().
+    received the sample looped.
 
+    Returns the temp file path on success, None on failure. The caller is
+    responsible for deleting the temp file.
+    """
+    try:
+        import os
+        import soundfile as sf
+        arr = np.asarray(data, dtype=np.float32)
+        if arr.ndim == 1:
+            arr = arr.reshape(-1, 1)
+        # Tile only if too short for the STFT minimum — don't inflate longer files.
+        min_frames = _min_frames_for_sr(samplerate)
+        if 0 < len(arr) < min_frames:
+            repeats = -(-min_frames // len(arr))  # ceiling division
+            arr = np.tile(arr, (repeats, 1))[:min_frames]
+        fd, tmp_path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        sf.write(tmp_path, arr, samplerate, subtype="PCM_16")
+        return tmp_path
+    except Exception:
+        return None
+
+
+def _transcode_to_pcm_wav(src: str) -> Optional[str]:
+    """Re-encode src to a temporary 16-bit PCM WAV using soundfile.
+
+    Used as a fallback for encodings drwav can't decode (ADPCM, mu-law, ...).
     Returns the temp file path on success, None if soundfile can't open it.
     The caller is responsible for deleting the temp file.
     """
@@ -73,24 +99,51 @@ def _transcode_to_pcm_wav(src: str) -> Optional[str]:
         data, samplerate = sf.read(src, dtype="float32", always_2d=True)
     except Exception:
         return None
-
     # Mix down to mono the same way the C++ extractor does (simple mean).
     if data.shape[1] > 1:
-        data = data.mean(axis=1, keepdims=True)
+        data = data.mean(axis=1)
+    else:
+        data = data[:, 0]
+    return _write_temp_pcm_wav(data, samplerate)
 
-    # Tile only if too short for the STFT minimum — don't inflate longer files.
-    min_frames = _min_frames_for_sr(samplerate)
-    if 0 < len(data) < min_frames:
-        repeats = -(-min_frames // len(data))  # ceiling division
-        data = np.tile(data, (repeats, 1))[:min_frames]
 
+def extract_features_for_arrays(
+    items: List[tuple],
+    binary: Optional[str] = None,
+) -> Dict[str, Optional[np.ndarray]]:
+    """Extract features for in-memory waveforms.
+
+    `items` is a list of `(key, mono_float_array, samplerate)` tuples. Each
+    array is written to a temporary PCM WAV and run through the same C++
+    extractor as on-disk files, so augmented audio produces features identical
+    to what the plugin would compute. Returns `{key: feature_array | None}`.
+
+    Keys must be unique within the call. Temp files are always cleaned up.
+    """
+    if binary is None:
+        binary = find_cpp_extractor()
+    out: Dict[str, Optional[np.ndarray]] = {key: None for key, _, _ in items}
+    tmp_to_key: Dict[str, str] = {}
+    for key, data, sr in items:
+        tmp = _write_temp_pcm_wav(data, sr)
+        if tmp is not None:
+            tmp_to_key[tmp] = key
+    if not tmp_to_key:
+        return out
     try:
-        fd, tmp_path = tempfile.mkstemp(suffix=".wav")
-        import os; os.close(fd)
-        sf.write(tmp_path, data, samplerate, subtype="PCM_16")
-        return tmp_path
-    except Exception:
-        return None
+        res = extract_features_batch(list(tmp_to_key.keys()), binary=binary)
+        for tmp, key in tmp_to_key.items():
+            feat = res.get(tmp)
+            if feat is not None and not np.all(feat == 0):
+                out[key] = feat
+    finally:
+        import os
+        for tmp in tmp_to_key:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+    return out
 
 
 def extract_features_batch(

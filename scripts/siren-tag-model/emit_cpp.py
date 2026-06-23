@@ -166,6 +166,7 @@ def emit_cpp(
     model,
     out_path: Path,
     calibration_params: list[tuple[float, float] | None] | None = None,
+    thresholds: list[float] | None = None,
     training_params: dict | None = None,
 ) -> None:
     """Write the generated C++ source file to ``out_path``.
@@ -277,6 +278,17 @@ def emit_cpp(
         parts.append(f'    "{name}",')
     parts.append("};")
     parts.append("")
+    # Per-class decision thresholds applied to the (calibrated) score by the
+    # runtime. F1-tuned on the calibration slice; 0.5 where a class had too few
+    # cal positives to tune. A global 0.5 cut starves recall on imbalanced tags
+    # whose calibrated probability rarely tops 0.5, so these are essential.
+    thr = thresholds if thresholds else [0.5] * NUM_CLASSES
+    parts.append("// Per-class decision thresholds for the calibrated score (see train_model.fit_thresholds).")
+    parts.append("static const float SIREN_TAG_THRESHOLDS[SIREN_TAG_NUM_CLASSES] = {")
+    for c, name in enumerate(CLASS_NAMES):
+        parts.append(f"    {float(thr[c]):.6f}f,  // {name}")
+    parts.append("};")
+    parts.append("")
     # JSON blob of training parameters (empty string if none supplied).
     # Lives in the generated TU and is handed to the plugin via
     # TagClassifier::registerTrainingInfo() at static-init time.
@@ -328,6 +340,7 @@ def emit_cpp(
     parts.append("static void _siren_load_model() {")
     parts.append("    ::StoermelderPackOne::Siren::TagClassifier::registerModel(")
     parts.append("        siren_tag_score, SIREN_TAG_NUM_CLASSES, SIREN_TAG_CLASS_NAMES);")
+    parts.append("    ::StoermelderPackOne::Siren::TagClassifier::registerThresholds(SIREN_TAG_THRESHOLDS);")
     parts.append(f"    ::StoermelderPackOne::Siren::TagClassifier::registerTrainingInfo({json_var_name});")
     parts.append("}")
     parts.append("namespace {")

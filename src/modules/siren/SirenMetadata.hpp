@@ -2,6 +2,7 @@
 #include "../../plugin.hpp"
 #include <rack.hpp>
 #include <map>
+#include <utility>
 #include <vector>
 #include "SirenPaths.hpp"
 
@@ -39,9 +40,16 @@ static const std::vector<std::string>& fallbackTags() {
 	return v;
 }
 
+// Default prior assigned to bare-string keywords (those given as a plain
+// string in SirenTags.json rather than a {"word": prior} object). Matches the
+// historical filename-boost strength. Weak/ambiguous keywords (e.g. "loop",
+// "fx") should override this with a lower explicit prior.
+static constexpr float DEFAULT_KEYWORD_PRIOR = 0.9f;
+
 struct TagManifest {
 	std::vector<std::string> tags;
-	std::map<std::string, std::vector<std::string>> keywords;
+	// tag name → list of (filename keyword, prior strength in (0, 1])
+	std::map<std::string, std::vector<std::pair<std::string, float>>> keywords;
 };
 
 // Loads SirenTags.json exactly once and populates both caches in a single pass.
@@ -88,15 +96,20 @@ inline const TagManifest& tagManifest() {
 		std::string name = json_string_value(nameJ);
 		manifest.tags.emplace_back(name);
 
+		// `keywords` is an object mapping each filename keyword to its
+		// reliability prior in (0, 1]. A non-number value falls back to
+		// DEFAULT_KEYWORD_PRIOR; out-of-range priors are clamped.
 		json_t* kwJ = json_object_get(entryJ, "keywords");
-		if (!kwJ || !json_is_array(kwJ)) continue;
-		std::vector<std::string> kws;
-		size_t j;
-		json_t* kwEntry;
-		json_array_foreach(kwJ, j, kwEntry) {
-			if (json_is_string(kwEntry)) {
-				kws.emplace_back(json_string_value(kwEntry));
-			}
+		if (!kwJ || !json_is_object(kwJ)) continue;
+		std::vector<std::pair<std::string, float>> kws;
+		const char* word;
+		json_t* priorJ;
+		json_object_foreach(kwJ, word, priorJ) {
+			if (!word) continue;
+			float prior = json_is_number(priorJ) ? (float) json_number_value(priorJ)
+			                                     : DEFAULT_KEYWORD_PRIOR;
+			prior = prior < 0.f ? 0.f : (prior > 1.f ? 1.f : prior);
+			kws.emplace_back(word, prior);
 		}
 		if (!kws.empty()) {
 			manifest.keywords[name] = std::move(kws);
@@ -113,9 +126,9 @@ inline const std::vector<std::string>& starterTags() {
 	return tagManifest().tags;
 }
 
-// Returns a map from tag name to its filename keywords.
+// Returns a map from tag name to its (filename keyword, prior) pairs.
 // Empty map on parse failure (filename boosting is just skipped).
-inline const std::map<std::string, std::vector<std::string>>& starterTagKeywords() {
+inline const std::map<std::string, std::vector<std::pair<std::string, float>>>& starterTagKeywords() {
 	return tagManifest().keywords;
 }
 

@@ -1,132 +1,132 @@
 {
   "version": 1,
-  "description": "Single source of truth for the Siren starter tag list. Read at runtime by both the C++ plugin (via rack::asset::plugin, parsed in SirenMetadata.hpp) and the Python training pipeline (via scripts/siren-tag-model/tag_manifest.py). Edit THIS file when adding/removing/renaming tags. Keep the entries sorted by 'name'. The optional 'keywords' array on each tag drives the filename-score-boost pass in TagClassifier::applyFilenameBoosts.",
+  "description": "Single source of truth for the Siren starter tag list. Read at runtime by both the C++ plugin (via rack::asset::plugin, parsed in SirenMetadata.hpp) and the Python training pipeline (via scripts/siren-tag-model/tag_manifest.py). Edit THIS file when adding/removing/renaming tags. Keep the entries sorted by 'name'. The optional 'keywords' array on each tag drives the filename-score-boost pass in TagClassifier::applyFilenameBoosts. 'keywords' is an object mapping each filename keyword to its reliability prior in (0,1]; the matched prior is fused with the audio score by noisy-OR. Use 0.9 for reliable cues and a lower prior for ambiguous/common ones (loop, fx, sub, hat) so they nudge rather than dominate.",
   "tags": [
     {
       "name": "Acoustic",
       "category": "timbre",
       "description": "Acoustic instrument character: natural harmonics with exponential decay. Guitar, piano, marimba.",
       "classifier_can_suggest": true,
-      "keywords": ["acoustic", "guitar", "piano", "harp", "organ"]
+      "keywords": { "acoustic": 0.9, "guitar": 0.9, "piano": 0.9, "harp": 0.9, "organ": 0.9 }
     },
     {
       "name": "Atmospheric",
       "category": "timbre",
       "description": "Slowly evolving ambient texture. Pads, washes, drones with movement and space.",
       "classifier_can_suggest": true,
-      "keywords": ["atmo", "atmosphere", "ambient", "ambience", "ether"]
+      "keywords": { "atmo": 0.9, "atmosphere": 0.9, "ambient": 0.9, "ambience": 0.9, "ether": 0.6 }
     },
     {
       "name": "Bass",
       "category": "role",
       "description": "Fills the low end of a patch. Sub- or bass-register sustained or rhythmic material.",
       "classifier_can_suggest": true,
-      "keywords": ["bass", "sub", "808"]
+      "keywords": { "bass": 0.9, "sub": 0.6, "808": 0.9 }
     },
     {
       "name": "Clap",
       "category": "source",
       "description": "Clap sound: layered noise bursts with mid-frequency character.",
       "classifier_can_suggest": true,
-      "keywords": ["clap", "snap", "handclap", "clp"]
+      "keywords": { "clap": 0.9, "snap": 0.6, "handclap": 0.9, "clp": 0.9 }
     },
     {
       "name": "Cymbal",
       "category": "source",
       "description": "Cymbal or crash: high-frequency metallic noise with longer decay.",
       "classifier_can_suggest": true,
-      "keywords": ["cymbal", "crash", "ride", "cym"]
+      "keywords": { "cymbal": 0.9, "crash": 0.9, "ride": 0.6, "cym": 0.9 }
     },
     {
       "name": "Drone",
       "category": "source",
       "description": "Sustained, slowly evolving pitch. A held note or pad-like bed.",
       "classifier_can_suggest": true,
-      "keywords": ["drone"]
+      "keywords": { "drone": 0.9 }
     },
     {
       "name": "Drums",
       "category": "source",
       "description": "Full drum pattern or kit loop: combination of kick, snare, and hi-hat.",
       "classifier_can_suggest": true,
-      "keywords": ["drums", "drum"]
+      "keywords": { "drums": 0.9, "drum": 0.9 }
     },
     {
       "name": "FX",
       "category": "role",
       "description": "Special effect: sweeps, risers, impacts, designed sounds.",
       "classifier_can_suggest": true,
-      "keywords": ["fx", "sfx", "effect", "riser", "sweep", "impact", "whoosh"]
+      "keywords": { "fx": 0.6, "sfx": 0.9, "effect": 0.6, "riser": 0.9, "sweep": 0.9, "impact": 0.9, "whoosh": 0.9 }
     },
     {
       "name": "Glitch",
       "category": "timbre",
       "description": "Glitchy, stuttering, or fragmented audio: random bursts, artifacts, stutter edits.",
       "classifier_can_suggest": true,
-      "keywords": ["glitch", "stutter"]
+      "keywords": { "glitch": 0.9, "stutter": 0.9 }
     },
     {
       "name": "HiHat",
       "category": "source",
       "description": "Hi-hat: short metallic noise burst, high-frequency transient.",
       "classifier_can_suggest": true,
-      "keywords": ["hihat", "hi_hat", "hat", "hh"]
+      "keywords": { "hihat": 0.9, "hi_hat": 0.9, "hat": 0.6, "hh": 0.9 }
     },
     {
       "name": "Kick",
       "category": "source",
       "description": "Kick drum: low-frequency transient with punchy bass content.",
       "classifier_can_suggest": true,
-      "keywords": ["kick", "bd", "bassdrum"]
+      "keywords": { "kick": 0.9, "bd": 0.9, "bassdrum": 0.9 }
     },
     {
       "name": "Lead",
       "category": "role",
       "description": "Carries the melody. Sits on top of the mix, mid/high register, often rhythmic.",
       "classifier_can_suggest": true,
-      "keywords": ["lead", "melody", "melodic"]
+      "keywords": { "lead": 0.9, "melody": 0.9, "melodic": 0.9 }
     },
     {
       "name": "Loop",
       "category": "time",
       "description": "Cyclical material that loops cleanly — drum loop, melodic phrase, arp.",
       "classifier_can_suggest": true,
-      "keywords": ["loop"]
+      "keywords": { "loop": 0.6 }
     },
     {
       "name": "Nature",
       "category": "source",
       "description": "Environmental or nature recording: room tone, wind, rain, outdoor ambience.",
       "classifier_can_suggest": true,
-      "keywords": ["nature", "bird", "rain", "wind", "field", "outdoor"]
+      "keywords": { "nature": 0.9, "bird": 0.9, "rain": 0.9, "wind": 0.9, "field": 0.6, "outdoor": 0.9 }
     },
     {
       "name": "Noise",
       "category": "source",
       "description": "Broadband noise without a clear tonal component. Wind, hiss, static.",
       "classifier_can_suggest": true,
-      "keywords": ["noise", "hiss", "static"]
+      "keywords": { "noise": 0.9, "hiss": 0.9, "static": 0.9 }
     },
     {
       "name": "Pad",
       "category": "role",
       "description": "Sustained harmonic bed. Chords or textures that fill space beneath a melody.",
       "classifier_can_suggest": true,
-      "keywords": ["pad", "chord", "strings"]
+      "keywords": { "pad": 0.9, "chord": 0.9, "strings": 0.9 }
     },
     {
       "name": "Snare",
       "category": "source",
       "description": "Snare drum: mid-frequency transient with noise component and sharp attack.",
       "classifier_can_suggest": true,
-      "keywords": ["snare", "sd", "rimshot"]
+      "keywords": { "snare": 0.9, "sd": 0.9, "rimshot": 0.9 }
     },
     {
       "name": "Vocal",
       "category": "source",
       "description": "Vocal or vocal-like material: sung voice, formant tones, vowel-like resonances.",
       "classifier_can_suggest": true,
-      "keywords": ["vocal", "vox", "choir"]
+      "keywords": { "vocal": 0.9, "vox": 0.9, "voice": 0.6, "choir": 0.9 }
     }
   ]
 }

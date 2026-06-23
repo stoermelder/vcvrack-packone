@@ -79,8 +79,18 @@ N_PER_CLASS    ?= 80
 SEED           ?= 42
 N_ESTIMATORS   ?= 24
 MAX_DEPTH      ?= 8
-AUGMENT        ?= 3
+# Feature-space jitter (trainer). Off by default: measured not to help and to
+# hurt the weak classes on real data. Audio-domain augmentation (AUDIO_AUGMENT,
+# applied by the folder loader) is the useful kind.
+AUGMENT        ?= 0
+# Audio-domain augmentation: variants per clip added by the folder loader
+# (noise/speed/EQ/reverb/shift, re-extracted). Distinct from AUGMENT, which is
+# the trainer's feature-space jitter. Default 0 (off).
+AUDIO_AUGMENT  ?= 0
 NEGATIVE_WEIGHT ?= 3.0
+# Global nudge added to every per-class decision threshold. Positive = more
+# conservative (fewer, more-precise tags); negative = more eager (more tags).
+THRESHOLD_BIAS ?= 0.0
 DATASET_OUT    ?= build/synthetic_dataset.csv
 TRAIN_OUT      ?= build/SirenTagClassifier.generated.cpp
 LOADER_OUT     ?= build/my_dataset.csv
@@ -114,14 +124,16 @@ $(DATASET_OUT): generate_synthetic_dataset.py feature_config.py tag_manifest.py 
 # Walk a tree of <Tag>/ and Non-<Tag>/ subfolders, extract features with
 # the C++ binary, write a CSV. Used for real-world sample collections.
 # Usage: make csv-from-folder ROOT=path/to/my_samples
+#        make csv-from-folder ROOT=path/to/my_samples AUDIO_AUGMENT=4
 .PHONY: csv-from-folder
 csv-from-folder: $(OUT)
 	@if [ -z "$(ROOT)" ]; then \
 		echo "error: ROOT is required, e.g. make csv-from-folder ROOT=path/to/my_samples" 1>&2; \
 		exit 2; \
 	fi
-	@echo "▶ Loading folder dataset from $(ROOT) ..."
+	@echo "▶ Loading folder dataset from $(ROOT) (audio_augment=$(AUDIO_AUGMENT)) ..."
 	$(PY) load_folder_dataset.py $(ROOT) --out $(LOADER_OUT) \
+		--augment $(AUDIO_AUGMENT) --seed $(SEED) \
 		$(if $(MAX_PER_CLASS),--max-per-class $(MAX_PER_CLASS))
 
 # ── Train the model and emit SirenTagClassifier.generated.cpp ───────────
@@ -138,7 +150,8 @@ train:
 	@echo "▶ Training RandomForest on $(CSV) ..."
 	$(PY) train_model.py --csv "$(CSV)" --out $(TRAIN_OUT) \
 		--n-estimators $(N_ESTIMATORS) --max-depth $(MAX_DEPTH) \
-		--augment $(AUGMENT) --seed $(SEED) --negative-weight $(NEGATIVE_WEIGHT)
+		--augment $(AUGMENT) --seed $(SEED) --negative-weight $(NEGATIVE_WEIGHT) \
+		--threshold-bias $(THRESHOLD_BIAS)
 
 # ── Full pipeline (mirrors run.sh / run.bat) ─────────────────────────────
 # Order: ensure extractor is built, generate dataset (or skip if CSV is
@@ -148,24 +161,28 @@ train:
 pipeline: $(OUT)
 	@if [ -n "$(ROOT)" ]; then \
 		echo "▶ Pipeline (folder mode: ROOT=$(ROOT))"; \
-		$(MAKE) csv-from-folder ROOT=$(ROOT) MAX_PER_CLASS=$(MAX_PER_CLASS) --no-print-directory; \
+		$(MAKE) csv-from-folder ROOT=$(ROOT) MAX_PER_CLASS=$(MAX_PER_CLASS) \
+			AUDIO_AUGMENT=$(AUDIO_AUGMENT) SEED=$(SEED) --no-print-directory; \
 		CSV=$(LOADER_OUT) $(MAKE) train --no-print-directory \
 			CSV=$(LOADER_OUT) \
 			N_ESTIMATORS=$(N_ESTIMATORS) MAX_DEPTH=$(MAX_DEPTH) \
-			AUGMENT=$(AUGMENT) SEED=$(SEED) NEGATIVE_WEIGHT=$(NEGATIVE_WEIGHT); \
+			AUGMENT=$(AUGMENT) SEED=$(SEED) NEGATIVE_WEIGHT=$(NEGATIVE_WEIGHT) \
+			THRESHOLD_BIAS=$(THRESHOLD_BIAS); \
 	elif [ -n "$(CSV)" ]; then \
 		echo "▶ Pipeline (csv mode: CSV=$(CSV))"; \
 		$(MAKE) train --no-print-directory \
 			CSV=$(CSV) \
 			N_ESTIMATORS=$(N_ESTIMATORS) MAX_DEPTH=$(MAX_DEPTH) \
-			AUGMENT=$(AUGMENT) SEED=$(SEED) NEGATIVE_WEIGHT=$(NEGATIVE_WEIGHT); \
+			AUGMENT=$(AUGMENT) SEED=$(SEED) NEGATIVE_WEIGHT=$(NEGATIVE_WEIGHT) \
+			THRESHOLD_BIAS=$(THRESHOLD_BIAS); \
 	else \
 		echo "▶ Pipeline (synthetic-data mode: n_per_class=$(N_PER_CLASS))"; \
 		$(MAKE) dataset --no-print-directory N_PER_CLASS=$(N_PER_CLASS) SEED=$(SEED); \
 		$(MAKE) train --no-print-directory \
 			CSV=$(DATASET_OUT) \
 			N_ESTIMATORS=$(N_ESTIMATORS) MAX_DEPTH=$(MAX_DEPTH) \
-			AUGMENT=$(AUGMENT) SEED=$(SEED) NEGATIVE_WEIGHT=$(NEGATIVE_WEIGHT); \
+			AUGMENT=$(AUGMENT) SEED=$(SEED) NEGATIVE_WEIGHT=$(NEGATIVE_WEIGHT) \
+			THRESHOLD_BIAS=$(THRESHOLD_BIAS); \
 	fi
 	@echo
 	@echo "── Done ────────────────────────────────────────────────────────"

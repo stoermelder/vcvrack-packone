@@ -229,7 +229,10 @@ struct SirenClassifyTask {
 				if (stream) {
 					auto suggestions = TagClassifier::classify(*stream, f, 5);
 					for (const auto& s : suggestions) {
-						if (s.score < 0.5f) continue;
+						// Per-class threshold from the model; a global 0.5 cut
+						// starved recall on imbalanced tags whose calibrated
+						// score rarely tops 0.5.
+						if (s.score < s.threshold) continue;
 						std::string nameLow = rack::string::lowercase(rack::string::trim(s.name));
 						if (existing.count(nameLow)) continue;
 						p->tagToRels[s.name].insert(f);

@@ -43,13 +43,16 @@ def load_manifest(path: Path = MANIFEST_PATH) -> tuple[int, list[TagInfo]]:
     version = int(data.get("version", 1))
     tags: list[TagInfo] = []
     for entry in data["tags"]:
+        # `keywords` is an object mapping word -> reliability prior (the prior
+        # drives the C++ filename-boost fusion). Python only needs the words.
+        keywords: list[str] = list(entry.get("keywords", {}).keys())
         tags.append(
             TagInfo(
                 name=entry["name"],
                 category=entry.get("category", "source"),
                 description=entry.get("description", ""),
                 classifier_can_suggest=bool(entry.get("classifier_can_suggest", True)),
-                keywords=tuple(entry.get("keywords", [])),
+                keywords=tuple(keywords),
             )
         )
     return version, tags

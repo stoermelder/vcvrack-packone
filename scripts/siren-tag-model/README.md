@@ -204,6 +204,67 @@ RF's diminishing returns.
 
 ---
 
+## Decision thresholds (precision / recall knob)
+
+Each of the 18 heads emits a calibrated probability; a tag is applied when that
+probability clears the head's **decision threshold**. The thresholds are not a
+flat 0.5 — the trainer tunes one per class for best F1 on a held-out
+calibration slice (`fit_thresholds` in `train_model.py`), because the calibrated
+probability for an imbalanced tag rarely tops 0.5 and a flat 0.5 cut starves
+recall (most tags never get applied). The tuned values are emitted into the
+model as `SIREN_TAG_THRESHOLDS[]` and read at runtime via
+`TagClassifier::thresholdForClass()`; "Suggest tags…" applies a tag when
+`score >= threshold`.
+
+To shift the whole operating point with a single knob, use `THRESHOLD_BIAS`
+(`--threshold-bias`). It is a shift in **log-odds**, not a flat addition:
+`t' = sigmoid(logit(t) + bias)`.
+
+- **Positive** → more conservative: fewer tags, higher precision (rather miss a
+  tag than apply a wrong one).
+- **Negative** → more eager: more tags, higher recall (accept a few wrong ones).
+
+Working in log-odds — the natural scale of a calibrated probability — keeps the
+nudge *proportional*. A weak, low-threshold class (Atmospheric ≈ 0.05) moves
+only a hair, while a strong, well-separated class (Pad ≈ 0.54) moves more, so
+the extra recall comes from classes that can afford it and the weak ones aren't
+slammed into a false-positive flood. (A flat additive nudge does the opposite —
+it floors the many already-low thresholds at once and precision falls off a
+cliff. That's why this is log-odds.) The transform is self-clamping, so there's
+no floor/ceiling to tune.
+
+```bash
+# More tags, accepting some false positives
+make train CSV=build/my_samples.csv THRESHOLD_BIAS=-0.5
+
+# Fewer, more-precise tags
+make train CSV=build/my_samples.csv THRESHOLD_BIAS=0.5
+```
+
+Measured tradeoff on the reference dataset (24 trees, depth 7):
+
+| `THRESHOLD_BIAS` | micro P | micro R | micro F1 | macro F1 | effect |
+|------------------|---------|---------|----------|----------|--------|
+| +0.5             | 0.64    | 0.53    | 0.58     | 0.52     | fewer, more precise |
+| 0.0 (default)    | 0.57    | 0.59    | 0.58     | 0.53     | F1-optimal |
+| −0.3             | 0.52    | 0.65    | 0.58     | 0.55     | a bit more coverage |
+| **−0.5**         | 0.49    | 0.68    | 0.57     | **0.55** | **more tags, balanced** |
+| −0.7             | 0.46    | 0.70    | 0.56     | 0.55     | lean into coverage |
+| −1.0             | 0.41    | 0.74    | 0.52     | 0.53     | aggressive |
+| −1.5             | 0.30    | 0.83    | 0.44     | 0.52     | near-everything tagged |
+
+Unlike the old additive scheme, the negative side now degrades **gracefully** —
+no cliff. Macro F1 even peaks slightly below zero (the weak classes finally
+contribute recall without wrecking precision). For "more tags, a few wrong",
+**−0.5** is the sweet spot (recall 0.59 → 0.68, F1 essentially unchanged); go to
+−0.7 to lean harder, or −1.0+ only if you really want almost everything tagged.
+
+The chosen bias is recorded in the emitted model — both the `// Training
+parameters` header comment and the `threshold_bias` field of
+`SIREN_TAG_TRAINING_INFO_JSON` — so every generated model is self-documenting.
+
+---
+
 ## One-time setup
 
 You need Python 3.10+ and a C++ compiler (`c++`/`clang++`) on your `PATH`
@@ -255,8 +316,8 @@ defaults — call `make <target>` and the override what you need.
 | `make extractor` | Build the C++ feature extractor (`build/siren_extract_features`). Same as the default `make`. | — | `CXX=clang++`, `CC=clang`, `RACK_DIR=/path/to/Rack` |
 | `make venv` | Create `.venv/` and install `requirements.txt` (idempotent). | — | `PYTHON=python3.12` |
 | `make dataset` | Generate the synthetic labeled dataset. | — | `N_PER_CLASS=200 SEED=7` |
-| `make csv-from-folder` | Walk a `<Tag>/` + `Non-<Tag>/` folder tree, write a CSV. | `ROOT=path/to/dir` | `OUT=build/my.csv MAX_PER_CLASS=200` |
-| `make train` | Train the model and emit `build/SirenTagClassifier.generated.cpp`. | `CSV=build/my_samples.csv` | `N_ESTIMATORS=60 MAX_DEPTH=8 AUGMENT=3 NEGATIVE_WEIGHT=5.0` |
+| `make csv-from-folder` | Walk a `<Tag>/` + `Non-<Tag>/` folder tree, write a CSV. | `ROOT=path/to/dir` | `OUT=build/my.csv MAX_PER_CLASS=200 AUDIO_AUGMENT=4` |
+| `make train` | Train the model and emit `build/SirenTagClassifier.generated.cpp`. | `CSV=build/my_samples.csv` | `N_ESTIMATORS=60 MAX_DEPTH=8 NEGATIVE_WEIGHT=5.0 THRESHOLD_BIAS=-0.5` |
 | `make classify` | Score a single audio file against the trained model. | `WAV=path/to/snippet.wav` | `TOP_K=5 NO_MODEL=1` |
 | `make pipeline` | End-to-end: `dataset` (or `csv-from-folder` if `ROOT` is set) → `train` → emit C++. Mirrors `run.sh`. | none — auto-detects mode | any of the above |
 | `make self-test` | Run the loader's folder-name parser self-test. No C++ extractor needed. | — | — |
@@ -341,8 +402,9 @@ After pasting the new generated body, bump `MODEL_VERSION` in
 
 The full set of training parameters used for the current run
 (`--csv`, `--n-estimators`, `--max-depth`, `--augment`, `--seed`,
-dataset shape, calibrated-class count, scikit-learn / m2cgen /
-numpy / Python versions, host platform) is also embedded in the
+`--threshold-bias`, the per-class `decision_thresholds`, dataset
+shape, calibrated-class count, scikit-learn / m2cgen / numpy /
+Python versions, host platform) is also embedded in the
 generated source as a compact JSON blob, and exposed to the plugin
 at runtime via `TagClassifier::trainingInfo()`. The plugin can
 read this back to populate a "model info" panel so users always
@@ -387,6 +449,32 @@ make train CSV=build/my_samples.csv
 # — or, end-to-end:
 make pipeline ROOT=my_samples
 ```
+
+### Audio-domain augmentation (`load_folder_dataset.py --augment N`)
+
+```bash
+# Add 4 augmented variants per source clip (noise, speed/pitch, EQ, reverb,
+# time shift), extracted through the same C++ extractor as the originals:
+python3 load_folder_dataset.py my_samples --out build/my_samples.csv --augment 4
+```
+
+This is **audio-domain** augmentation — it transforms the waveform and
+re-extracts features, producing realistic, on-manifold variation. The
+transforms are kept deliberately **subtle** (high-SNR noise, ±5 % speed, gentle
+EQ tilt, very light reverb, small time-shift, one transform per variant), so a
+variant never drifts far enough to change a clip's true class. Gain/level
+changes are deliberately not applied (the extractor peak-normalises, so they'd
+be no-ops).
+
+This is the **useful** kind of augmentation. It is distinct from the trainer's
+feature-space `--augment` (Gaussian jitter on the already-extracted vector),
+which is **off by default** — it was measured to not help and to hurt the weak
+classes (its uniform 0.03 noise swamps low-variance features).
+
+All variants of a clip share that clip's `path`, and the trainer splits
+**by clip** (`GroupShuffleSplit` on the `path` column), so a clip's variants
+always land entirely in train, cal, *or* test — never straddling the boundary.
+That keeps the test metrics honest (no near-duplicate leakage).
 
 ### Hard-negative folders (`Non-<Tag>`)
 
@@ -502,8 +590,8 @@ overfitting — aim for the 100–200 clips/class range.
 | `features.py` | Subprocess wrapper around the C++ extractor. Provides `find_cpp_extractor()` and `extract_features_batch()`. Includes an automatic transcoding fallback: files that the C++ extractor cannot decode (e.g. compressed WAV encodings) are re-encoded to temporary PCM WAV via `soundfile` and retried transparently. Also tiles clips that are too short for the STFT minimum. |
 | `generate_synthetic_dataset.py` | Synthesizes 18 types of audio and writes a CSV. Requires the C++ extractor. |
 | `load_folder_dataset.py` | Walks a folder of tag-named subdirectories, extracts features, writes a CSV. Recognises `Non-<Tag>/` subfolders as hard-negative buckets. Bridge to real data. |
-| `train_model.py` | Fits 18 independent `RandomForestClassifier` heads (one per binary tag) via the `PerClassRFBag` adapter, prints metrics, calibrates per-class probabilities, calls `emit_cpp.py`. Accepts a `--negative-weight` flag for per-(row, class) hard-negative weighting. |
-| `emit_cpp.py` | Uses `m2cgen` to write the C source fragment, with Platt-scaled per-class dispatcher, the `SIREN_TAG_TRAINING_INFO_JSON` metadata blob, and the `registerTrainingInfo()` call into the API header. |
+| `train_model.py` | Fits 18 independent `RandomForestClassifier` heads (one per binary tag) via the `PerClassRFBag` adapter, prints metrics, calibrates per-class probabilities, tunes per-class decision thresholds (`fit_thresholds`), calls `emit_cpp.py`. Accepts `--negative-weight` (per-(row, class) hard-negative weighting) and `--threshold-bias` (global precision/recall nudge). |
+| `emit_cpp.py` | Uses `m2cgen` to write the C source fragment, with Platt-scaled per-class dispatcher, the `SIREN_TAG_THRESHOLDS[]` array + `registerThresholds()` call, the `SIREN_TAG_TRAINING_INFO_JSON` metadata blob, and the `registerTrainingInfo()` call into the API header. |
 | `run.sh` | macOS/Linux convenience wrapper: venv → extractor → dataset → train → emit. Use `make pipeline` instead if you have GNU make. |
 | `run.bat` | Windows convenience wrapper (no GNU make required). Same flow as `run.sh`. |
 | `requirements.txt` | Pinned Python deps. |

@@ -109,8 +109,13 @@ from pathlib import Path
 
 import numpy as np
 
+from audio_augment import augment_waveform, load_mono
 from feature_config import NUM_FEATURES
-from features import extract_features_batch, find_cpp_extractor  # raises if not built
+from features import (  # raises if not built
+    extract_features_batch,
+    extract_features_for_arrays,
+    find_cpp_extractor,
+)
 from tag_manifest import CLASS_NAMES, TAGS
 
 # Audio file extensions we recognize. soundfile / libsndfile handles these.
@@ -181,8 +186,17 @@ def load_folder_dataset(
     max_per_class: int | None = None,
     append: bool = False,
     seed: int = 42,
+    augment: int = 0,
 ) -> dict[str, int]:
     """Walk `root`, find one subfolder per known tag, extract features, write CSV.
+
+    When `augment > 0`, each source clip additionally contributes `augment`
+    audio-domain augmented variants (noise, speed/pitch, EQ, reverb, time
+    shift; see `audio_augment.py`), extracted through the same C++ extractor.
+    All variants of a clip share the original clip's `path` value so the
+    trainer can keep them on the same side of the train/cal/test split
+    (group-aware splitting) — otherwise the augmented copies would leak across
+    the boundary and inflate the metrics.
 
     Returns a dict {tag_name: row_count_written} for the caller's diagnostics.
     """
@@ -246,8 +260,11 @@ def load_folder_dataset(
     print(f"  Using C++ extractor: {binary}")
     features_by_path = extract_features_batch([str(f) for f, _, _ in pending], binary)
 
-    # Phase 3: build rows.
+    # Phase 3: build rows (one per successfully-extracted source clip).
+    # `kept` tracks the clips whose originals made it in, so Phase 4 only
+    # augments real, usable audio.
     rows: list[list] = []
+    kept: list[tuple[Path, str, str, str]] = []  # (file, relpath, label, negatives)
     for f, label, negatives in pending:
         features = features_by_path.get(str(f))
         if features is None:
@@ -258,6 +275,44 @@ def load_folder_dataset(
         except ValueError:
             rel = f
         rows.append([str(rel), label, negatives, *features.tolist()])
+        kept.append((f, str(rel), label, negatives))
+
+    # Phase 4: audio-domain augmentation. Generate `augment` variants per kept
+    # clip, extract their features in one batch, and append rows that REUSE the
+    # source clip's relpath (the trainer groups on it to avoid split leakage).
+    if augment > 0 and kept:
+        aug_rng = np.random.default_rng(seed + 1)
+        items: list[tuple] = []                     # (key, waveform, sr) for the extractor
+        key_meta: dict[str, tuple[str, str, str]] = {}  # key -> (relpath, label, negatives)
+        n_loaded = 0
+        for i, (f, rel, label, negatives) in enumerate(kept):
+            loaded = load_mono(f)
+            if loaded is None:
+                continue                            # un-loadable here; original row still stands
+            data, sr = loaded
+            n_loaded += 1
+            for j in range(augment):
+                key = f"{i}#aug{j}"
+                # The row's path carries an `#aug<j>` marker: the trainer strips
+                # it to group variants with their original clip, AND uses it to
+                # keep augmented rows OUT of the calibration/test partitions
+                # (augmentation is a training-time signal; metrics/calibration
+                # must see clean originals only).
+                aug_rel = f"{rel}#aug{j}"
+                items.append((key, augment_waveform(data, sr, aug_rng), sr))
+                key_meta[key] = (aug_rel, label, negatives)
+        print(f"  augmenting {n_loaded}/{len(kept)} clips × {augment} "
+              f"→ {len(items)} variants ...")
+        aug_feats = extract_features_for_arrays(items, binary)
+        n_aug_rows = 0
+        for key, feats in aug_feats.items():
+            if feats is None:
+                continue
+            rel, label, negatives = key_meta[key]
+            rows.append([rel, label, negatives, *feats.tolist()])
+            n_aug_rows += 1
+        print(f"  added {n_aug_rows} augmented rows "
+              f"({len(items) - n_aug_rows} dropped as empty/failed)")
 
     if not rows:
         raise RuntimeError(
@@ -283,6 +338,12 @@ def main() -> int:
                    help="Optional cap on the number of clips per tag (for class balancing).")
     p.add_argument("--append", action="store_true",
                    help="Append to the CSV instead of overwriting (preserves the header if the file is new).")
+    p.add_argument("--augment", type=int, default=0,
+                   help="Audio-domain augmented variants to add per source clip "
+                        "(0 = off). Variants share the source clip's path so the "
+                        "trainer keeps them on one side of the split.")
+    p.add_argument("--seed", type=int, default=42,
+                   help="RNG seed for class-balancing sampling and augmentation.")
     p.add_argument("--list-known-tags", action="store_true",
                    help="Print the list of accepted tag names and exit.")
     p.add_argument("--self-test", action="store_true",
@@ -304,7 +365,8 @@ def main() -> int:
         return 2
 
     try:
-        load_folder_dataset(args.root, args.out, args.max_per_class, args.append)
+        load_folder_dataset(args.root, args.out, args.max_per_class, args.append,
+                            seed=args.seed, augment=args.augment)
     except (FileNotFoundError, RuntimeError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

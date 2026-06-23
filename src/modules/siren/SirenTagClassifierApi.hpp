@@ -24,6 +24,7 @@
 #include <cstring>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 
@@ -37,6 +38,12 @@ static const int SIREN_TAG_NUM_FEATURES = 53;
 struct SuggestedTag {
 	std::string name;
 	float score;
+	// Per-class decision threshold the model recommends for this tag. A
+	// suggestion is "confident" when `score >= threshold`. topK() fills this
+	// from TagClassifier::thresholdForClass(), which yields 0.5 for models
+	// that don't ship per-class thresholds. No default member initializer so
+	// the struct stays a C++11 aggregate (brace-initialisable).
+	float threshold;
 };
 
 namespace TagClassifierDetail {
@@ -194,8 +201,8 @@ struct TagClassifier {
 		const char* const* classNames = nullptr;
 		// called once on first scoring use
 		void (*lazyInit)() = nullptr;
-		// tag name → filename keywords
-		std::map<std::string, std::vector<std::string>> keywords;
+		// tag name → list of (filename keyword, prior strength in (0, 1])
+		std::map<std::string, std::vector<std::pair<std::string, float>>> keywords;
 		// JSON blob describing the training run that produced this model
 		// (dataset path, hyper-parameters, scikit-learn version, …).
 		// Set by the generated model TU via registerTrainingInfo(). May be
@@ -203,6 +210,11 @@ struct TagClassifier {
 		// generated files), or a pointer to a static "" when no params
 		// were supplied at training time.
 		const char* trainingInfoJson = nullptr;
+		// Per-class decision thresholds (numClasses floats) applied to the
+		// score. Set by the generated model TU via registerThresholds().
+		// nullptr for legacy models that predate per-class thresholds — in
+		// that case thresholdForClass() returns the 0.5 default.
+		const float* thresholds = nullptr;
 	};
 
 	// Access the singleton. On first call after setLoader(), calls the loader
@@ -232,6 +244,23 @@ struct TagClassifier {
 		return true;
 	}
 
+	// Register per-class decision thresholds (numClasses floats) emitted by
+	// the trained model. `thresholds` must have static storage duration (a
+	// static array in the generated model TU); it is NOT copied. Safe to call
+	// before or after registerModel(). A null pointer leaves the model on the
+	// 0.5 default for every class.
+	static void registerThresholds(const float* thresholds) {
+		_model().thresholds = thresholds;
+	}
+
+	// Recommended decision threshold for class `c`, or 0.5 when the model
+	// ships none (or `c` is out of range).
+	static float thresholdForClass(int c) {
+		const ModelInfo& m = _model();
+		if (!m.thresholds || c < 0 || c >= m.numClasses) return 0.5f;
+		return m.thresholds[c];
+	}
+
 	// Register a JSON blob describing the training parameters used to
 	// build the model (dataset path, n_estimators, max_depth, …).
 	// `json` must be a pointer with static storage duration (a string
@@ -253,7 +282,7 @@ struct TagClassifier {
 
 	// Register filename keywords loaded from SirenTags.json.
 	// Call this on the main thread before first use (e.g. from SirenBrowserPane).
-	static void registerKeywords(const std::map<std::string, std::vector<std::string>>& kw) {
+	static void registerKeywords(const std::map<std::string, std::vector<std::pair<std::string, float>>>& kw) {
 		_model().keywords = kw;
 	}
 
@@ -294,7 +323,7 @@ struct TagClassifier {
 		result.reserve(size_t(k));
 		for (int j = 0; j < k; ++j) {
 			int c = idx[j];
-			result.push_back({ _model().classNames[c], scores[c] });
+			result.push_back({ _model().classNames[c], scores[c], thresholdForClass(c) });
 		}
 		return result;
 	}
@@ -355,21 +384,35 @@ struct TagClassifier {
 		return false;
 	}
 
-	// Boost scores for classes whose keywords appear in the filename stem.
-	// Uses max(score, boost) so audio evidence is never reduced.
+	// Fuse filename evidence into the scores for classes whose keywords appear
+	// in the filename stem. Each keyword carries a prior in (0, 1] (its
+	// reliability as a tag cue; loaded from SirenTags.json, default applied to
+	// bare-string keywords by the loader). For a tag we take the strongest
+	// matched keyword's prior and combine it with the audio score by NOISY-OR:
+	//
+	//     score' = 1 - (1 - score) * (1 - prior)
+	//
+	// This treats the filename as independent positive evidence: it is monotone
+	// in the audio score (so calibration is preserved and "filename + audio
+	// agree" reads higher than either alone), never reduces audio evidence, and
+	// never hard-pins to a magic constant the way the old max(score, 0.9) did.
 	// Keywords are read from the registered map (loaded from SirenTags.json).
 	static void applyFilenameBoosts(const std::string& stem, float* scores, int n,
-			const char* const* classNames, float boost = 0.9f) {
+			const char* const* classNames) {
 		const auto& kw = _model().keywords;
 		if (kw.empty()) return;
 		for (int c = 0; c < n; ++c) {
 			auto it = kw.find(classNames[c]);
 			if (it == kw.end()) continue;
-			for (const std::string& word : it->second) {
-				if (wordContains(stem, word.c_str())) {
-					if (scores[c] < boost) scores[c] = boost;
-					break;
+			float prior = 0.f;  // strongest matched keyword prior for this tag
+			for (const auto& wordPrior : it->second) {
+				if (wordContains(stem, wordPrior.first.c_str()) && wordPrior.second > prior) {
+					prior = wordPrior.second;
 				}
+			}
+			if (prior > 0.f) {
+				const float s = scores[c];
+				scores[c] = 1.f - (1.f - s) * (1.f - prior);
 			}
 		}
 	}
