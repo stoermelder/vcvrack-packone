@@ -147,3 +147,5 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
 - v2.4.0
     - Added an option to draw module outlines only when selected, which is the new default
     - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)
+- v2.4.1
+    - Fixed crash on patch autosave and on preset-loading 

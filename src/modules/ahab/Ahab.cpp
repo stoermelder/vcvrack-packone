@@ -332,17 +332,26 @@ struct AhabModule : Module {
 
 	void dataFromJson(json_t* rootJ) override {
 		hasDataLoaded = true;
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		midiVirtualPortId = json_integer_value(json_object_get(rootJ, "midiVirtualPortId"));
-		midiOutEnabled = json_boolean_value(json_object_get(rootJ, "midiOutEnabled"));
-		midiOutPort.fromJson(json_object_get(rootJ, "midiOutPort"));
-		midiCcOffset = (uint8_t)json_integer_value(json_object_get(rootJ, "midiCcOffset"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* midiVirtualPortIdJ = json_object_get(rootJ, "midiVirtualPortId");
+		if (midiVirtualPortIdJ) midiVirtualPortId = json_integer_value(midiVirtualPortIdJ);
+		json_t* midiOutEnabledJ = json_object_get(rootJ, "midiOutEnabled");
+		if (midiOutEnabledJ) midiOutEnabled = json_boolean_value(midiOutEnabledJ);
+		json_t* midiOutPortJ = json_object_get(rootJ, "midiOutPort");
+		if (midiOutPortJ) midiOutPort.fromJson(midiOutPortJ);
+		json_t* midiCcOffsetJ = json_object_get(rootJ, "midiCcOffset");
+		if (midiCcOffsetJ) midiCcOffset = (uint8_t)json_integer_value(midiCcOffsetJ);
 		json_t* simJ = json_object_get(rootJ, "sim");
-		sim->fromJson(simJ);
-		simRunning = json_boolean_value(json_object_get(rootJ, "simRunning"));
-		overwriteZeroNoteDuration = json_boolean_value(json_object_get(rootJ, "overwriteZeroNoteDuration"));
-		gridStepCol = (int)json_integer_value(json_object_get(rootJ, "gridStepCol"));
-		gridStepRow = (int)json_integer_value(json_object_get(rootJ, "gridStepRow"));
+		if (simJ && json_is_object(simJ)) sim->fromJson(simJ);
+		json_t* simRunningJ = json_object_get(rootJ, "simRunning");
+		if (simRunningJ) simRunning = json_boolean_value(simRunningJ);
+		json_t* overwriteZeroNoteDurationJ = json_object_get(rootJ, "overwriteZeroNoteDuration");
+		if (overwriteZeroNoteDurationJ) overwriteZeroNoteDuration = json_boolean_value(overwriteZeroNoteDurationJ);
+		json_t* gridStepColJ = json_object_get(rootJ, "gridStepCol");
+		if (gridStepColJ) gridStepCol = (int)json_integer_value(gridStepColJ);
+		json_t* gridStepRowJ = json_object_get(rootJ, "gridStepRow");
+		if (gridStepRowJ) gridStepRow = (int)json_integer_value(gridStepRowJ);
 	}
 };
 
@@ -660,52 +669,26 @@ struct AhabSimWidget : OpaqueWidget {
 
 		math::Rect r = box.zeroPos();
 
-		// Black background
+		// Outer glow — screen light bleeding onto the panel surface
+		float spread = 22.f;
+		NVGpaint glow = nvgBoxGradient(args.vg,
+			r.pos.x, r.pos.y, r.size.x, r.size.y,
+			3.f, spread,
+			nvgRGBAf(0.45f, 0.70f, 1.0f, 0.12f * b),
+			nvgRGBAf(0.0f, 0.0f, 0.0f, 0.0f));
 		nvgBeginPath(args.vg);
-		nvgRect(args.vg, RECT_ARGS(r));
-		NVGcolor topColor = color::mult(nvgRGB(0x22, 0x22, 0x22), b_inv);
-		NVGcolor bottomColor = color::mult(nvgRGB(0x12, 0x12, 0x12), b_inv);
-		nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.0, 0.0, 0.0, 25.0, topColor, bottomColor));
-		// nvgFillColor(args.vg, bottomColor);
+		nvgRect(args.vg, r.pos.x - spread, r.pos.y - spread,
+			r.size.x + 2.f * spread, r.size.y + 2.f * spread);
+		nvgFillPaint(args.vg, glow);
 		nvgFill(args.vg);
 
-		// Outer strokes
+		// Dark gradient background
+		NVGcolor topColor = color::mult(nvgRGB(0x22, 0x22, 0x22), b_inv);
+		NVGcolor bottomColor = color::mult(nvgRGB(0x12, 0x12, 0x12), b_inv);
 		nvgBeginPath(args.vg);
-		nvgMoveTo(args.vg, 0.0, -0.5);
-		nvgLineTo(args.vg, box.size.x, -0.5);
-		nvgStrokeColor(args.vg, nvgRGBAf(0, 0, 0, 0.24));
-		nvgStrokeWidth(args.vg, 1.0);
-		nvgStroke(args.vg);
-
-		nvgBeginPath(args.vg);
-		nvgMoveTo(args.vg, 0.0, box.size.y + 0.5);
-		nvgLineTo(args.vg, box.size.x, box.size.y + 0.5);
-		nvgStrokeColor(args.vg, nvgRGBAf(1, 1, 1, 0.25));
-		nvgStrokeWidth(args.vg, 1.0);
-		nvgStroke(args.vg);
-
-		// Inner strokes
-		nvgBeginPath(args.vg);
-		nvgMoveTo(args.vg, 0.0, 2.5);
-		nvgLineTo(args.vg, box.size.x, 2.5);
-		nvgStrokeColor(args.vg, nvgRGBAf(1, 1, 1, 0.20));
-		nvgStrokeWidth(args.vg, 1.0);
-		nvgStroke(args.vg);
-
-		nvgBeginPath(args.vg);
-		nvgMoveTo(args.vg, 0.0, box.size.y - 2.5);
-		nvgLineTo(args.vg, box.size.x, box.size.y - 2.5);
-		nvgStrokeColor(args.vg, nvgRGBAf(1, 1, 1, 0.20));
-		nvgStrokeWidth(args.vg, 1.0);
-		nvgStroke(args.vg);
-
-		// Black border
-		math::Rect rBorder = r.shrink(math::Vec(1, 1));
-		nvgBeginPath(args.vg);
-		nvgRect(args.vg, RECT_ARGS(rBorder));
-		nvgStrokeColor(args.vg, bottomColor);
-		nvgStrokeWidth(args.vg, 2.0);
-		nvgStroke(args.vg);
+		nvgRect(args.vg, RECT_ARGS(r));
+		nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 25.f, topColor, bottomColor));
+		nvgFill(args.vg);
 
 		// Obtain a local snapshot of the simulator display read buffer
 		if (display_ready) {
@@ -722,6 +705,57 @@ struct AhabSimWidget : OpaqueWidget {
 		}
 		// Draw the display field
 		renderer.draw(args.vg, &display_field, display_mbuf.buffer, box.size, module ? module->simRunning : false);
+
+		// Corner vignette — subtle darkening toward edges for screen depth
+		NVGpaint vignette = nvgRadialGradient(args.vg,
+			r.size.x * 0.5f, r.size.y * 0.5f,
+			r.size.x * 0.35f, r.size.x * 0.75f,
+			nvgRGBAf(0.f, 0.f, 0.f, 0.0f),
+			nvgRGBAf(0.f, 0.f, 0.f, 0.45f));
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, RECT_ARGS(r));
+		nvgFillPaint(args.vg, vignette);
+		nvgFill(args.vg);
+
+		// Outer top stroke (shadow)
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, 0.f, -0.5f);
+		nvgLineTo(args.vg, box.size.x, -0.5f);
+		nvgStrokeColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.24f));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+
+		// Outer bottom stroke (highlight)
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, 0.f, box.size.y + 0.5f);
+		nvgLineTo(args.vg, box.size.x, box.size.y + 0.5f);
+		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.25f));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+
+		// Inner top stroke
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, 0.f, 2.5f);
+		nvgLineTo(args.vg, box.size.x, 2.5f);
+		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.20f));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+
+		// Inner bottom stroke
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, 0.f, box.size.y - 2.5f);
+		nvgLineTo(args.vg, box.size.x, box.size.y - 2.5f);
+		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.20f));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+
+		// Black border (1 px inner shrink)
+		math::Rect rBorder = r.shrink(math::Vec(1.f, 1.f));
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, RECT_ARGS(rBorder));
+		nvgStrokeColor(args.vg, bottomColor);
+		nvgStrokeWidth(args.vg, 2.f);
+		nvgStroke(args.vg);
 	}
 
 	void onSelectText(const SelectTextEvent& e) override {

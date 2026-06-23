@@ -33,6 +33,7 @@ struct EightFaceMk2ExModule : EightFaceMk2Base<NUM_PRESETS> {
 			EightFaceMk2ParamQuantity<NUM_PRESETS>* pq = (EightFaceMk2ParamQuantity<NUM_PRESETS>*)Module::paramQuantities[PARAM_PRESET + i];
 			pq->module = this;
 			pq->id = i;
+			pq->description = string::f("Loads preset slot %d into the connected target module.", i + 1);
 			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 
 			BASE::slot[i].param = &Module::params[PARAM_PRESET + i];
@@ -57,7 +58,7 @@ struct EightFaceMk2ExModule : EightFaceMk2Base<NUM_PRESETS> {
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		notifyExpanderListeners("8FaceMk2");
+		notifyModuleListeners("8FaceMk2");
 	}
 
 	void onReset(const Module::ResetEvent& e) override {

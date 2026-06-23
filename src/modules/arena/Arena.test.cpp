@@ -54,6 +54,19 @@ TEST_CASE("Construction and initialization", "[Arena]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[Arena][JSON]") {
+	auto module = Test::createModule<ArenaModule<8, 4>>("Arena");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 // Proximity mixing: MIX output
 
 TEST_CASE("MIX output is non-zero when IN is within radius", "[Arena]") {

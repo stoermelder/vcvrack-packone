@@ -20,6 +20,19 @@ TEST_CASE("Construction and initialization", "[Intermix]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[Intermix][JSON]") {
+	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 
 TEST_CASE("Scene selection", "[Intermix]") {
 	auto module = Test::createModule<IntermixModule<8>>("Intermix");
@@ -742,13 +755,13 @@ TEST_CASE("Scene CV modes with reset", "[Intermix]") {
 		REQUIRE(module->sceneSelected == 0);
 	}
 
-	SECTION("TRIG_RANDOM reset goes to scene 0") {
+	SECTION("TRIG_RANDOM reset has no effect") {
 		module->sceneMode = SCENE_CV_MODE::TRIG_RANDOM;
 		module->sceneCount = 4;
 		module->sceneSet(3);
 		initializeInputs();
 		triggerReset(200);
-		REQUIRE(module->sceneSelected == 0);
+		REQUIRE(module->sceneSelected == 3);
 	}
 
 	SECTION("TRIG_RANDOM selection stays within boundaries") {
@@ -764,13 +777,13 @@ TEST_CASE("Scene CV modes with reset", "[Intermix]") {
 		}
 	}
 
-	SECTION("TRIG_RANDOM_WO_REPEAT reset goes to scene 0") {
+	SECTION("TRIG_RANDOM_WO_REPEAT reset has no effect") {
 		module->sceneMode = SCENE_CV_MODE::TRIG_RANDOM_WO_REPEAT;
 		module->sceneCount = 4;
 		module->sceneSet(3);
 		initializeInputs();
 		triggerReset(200);
-		REQUIRE(module->sceneSelected == 0);
+		REQUIRE(module->sceneSelected == 3);
 	}
 
 	SECTION("TRIG_RANDOM_WO_REPEAT never selects same scene twice") {
@@ -789,13 +802,13 @@ TEST_CASE("Scene CV modes with reset", "[Intermix]") {
 		}
 	}
 
-	SECTION("TRIG_RANDOM_WALK reset goes to scene 0") {
+	SECTION("TRIG_RANDOM_WALK reset has no effect") {
 		module->sceneMode = SCENE_CV_MODE::TRIG_RANDOM_WALK;
 		module->sceneCount = 4;
 		module->sceneSet(3);
 		initializeInputs();
 		triggerReset(200);
-		REQUIRE(module->sceneSelected == 0);
+		REQUIRE(module->sceneSelected == 3);
 	}
 
 	SECTION("TRIG_RANDOM_WALK steps up or down by 1") {

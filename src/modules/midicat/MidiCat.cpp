@@ -211,7 +211,7 @@ struct MidiCatParam : ScaledMapParam<int> {
 };
 
 
-struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
+struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	/** [Stored to Json] */
 	midi::InputQueue midiInput;
 	/** [Stored to Json] */
@@ -458,7 +458,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
-		registerExpanderListener("MidiCat", this);
+		registerModuleListener("MidiCat", this);
 		config(0, 0, 0, 0);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandles[id].color = mappingIndicatorColor;
@@ -475,18 +475,18 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 	}
 
 	~MidiCatModule() {
-		unregisterExpanderListener("MidiCat", this);
+		unregisterModuleListener("MidiCat", this);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			APP->engine->removeParamHandle(&paramHandles[id]);
 		}
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		notifyExpanderListeners("MidiCat");
+		notifyModuleListeners("MidiCat");
 	}
 
 	void onReset(const Module::ResetEvent& e) override {
-		expandersChanged = true;
+		moduleChangedFlag = true;
 
 		learningId = -1;
 		learnedCc = false;
@@ -573,7 +573,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		}
 
 		// Expanders
-		if (expandersChanged) {
+		if (moduleChangedFlag) {
 			bool expMemFound = false;
 			bool expCtxFound = false;
 			bool expClkFound = false;
@@ -629,7 +629,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 				ccFineMode = false;
 			}
 
-			expandersChanged = false;
+			moduleChangedFlag = false;
 		}
 
 		if (expClk.load()) expClkProcess();
@@ -1377,7 +1377,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
 		if (mappingIndicatorHiddenJ) mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
 		json_t* mappingIndicatorColorJ = json_object_get(rootJ, "mappingIndicatorColor");
-		if (mappingIndicatorColorJ) mappingIndicatorColor = color::fromHexString(json_string_value(mappingIndicatorColorJ));
+		if (mappingIndicatorColorJ && json_is_string(mappingIndicatorColorJ)) mappingIndicatorColor = color::fromHexString(json_string_value(mappingIndicatorColorJ));
 		json_t* lockedJ = json_object_get(rootJ, "locked");
 		if (lockedJ) locked = json_boolean_value(lockedJ);
 		json_t* processDivisionJ = json_object_get(rootJ, "processDivision");

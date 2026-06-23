@@ -122,7 +122,8 @@ struct MidiEsxModule : Module, MidiEsxMessageHandler {
 
 	void dataFromJson(json_t* rootJ) override {
 		unsubscribe(portGroupId, this);
-		portGroupId = json_integer_value(json_object_get(rootJ, "portGroupId"));
+		json_t* portGroupIdJ = json_object_get(rootJ, "portGroupId");
+		if (portGroupIdJ) portGroupId = json_integer_value(portGroupIdJ);
 		subscribe(portGroupId, this);
 	}
 

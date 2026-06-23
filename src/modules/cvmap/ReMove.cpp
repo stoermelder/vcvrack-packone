@@ -184,19 +184,33 @@ struct ReMoveModule : MapModuleBase<1> {
         panelTheme = pluginSettings.panelThemeDefault;
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS); 
         configSwitch(SEQP_PARAM, 0.0f, 1.0f, 0.0f, "Previous sequence");
+        paramQuantities[SEQP_PARAM]->description = "Switches to the previous sequence (wrap-around at the first sequence).";
         configSwitch(SEQN_PARAM, 0.0f, 1.0f, 0.0f, "Next sequence");
+        paramQuantities[SEQN_PARAM]->description = "Switches to the next sequence (wrap-around at the last sequence).";
         configSwitch(RUN_PARAM, 0.0f, 1.0f, 0.0f, "Run");
+        paramQuantities[RUN_PARAM]->description = "Toggles playback of the currently selected sequence.";
         configSwitch(RESET_PARAM, 0.0f, 1.0f, 0.0f, "Reset");
+        paramQuantities[RESET_PARAM]->description = "Resets the playback position to the start of the current sequence.";
         configSwitch(REC_PARAM, 0.0f, 1.0f, 0.0f, "Record");
+        paramQuantities[REC_PARAM]->description = "Starts/stops recording of the automation data on the mapped parameter(s).";
         configParam(SLEW_PARAM, 0.0f, 0.975f, 0.0f, "Slew");
+        paramQuantities[SLEW_PARAM]->description = "Slew limiting applied to the playback output (smoothing between recorded steps).";
         configInput(RUN_INPUT, "Run gate/trigger");
+        inputInfos[RUN_INPUT]->description = "Gate or trigger to start/stop playback (gate/trig mode set on the context menu).";
         configInput(RESET_INPUT, "Reset trigger");
+        inputInfos[RESET_INPUT]->description = "Trigger that resets playback to the start of the current sequence.";
         configInput(PHASE_INPUT, "Phase CV");
+        inputInfos[PHASE_INPUT]->description = "CV for manually scrubbing the playback position within the current sequence.";
         configInput(SEQ_INPUT, "Sequence selection");
+        inputInfos[SEQ_INPUT]->description = "Selects the active sequence: 0..10V (default), C4..G4 (C4 mode), or trigger (Trig mode).";
         configInput(CV_INPUT, "Automation CV");
+        inputInfos[CV_INPUT]->description = "Voltage recorded as automation during recording; also the signal played back during playback.";
         configInput(REC_INPUT, "Record trigger/gate");
+        inputInfos[REC_INPUT]->description = "Gate or trigger to start/stop recording (gate/trig mode set on the context menu).";
         configOutput(CV_OUTPUT, "Automation CV");
+        outputInfos[CV_OUTPUT]->description = "Automation output: the currently played-back voltage of the mapped parameter.";
         configOutput(REC_OUTPUT, "Record trigger/gate");
+        outputInfos[REC_OUTPUT]->description = "Gate or trigger fired when recording is active (gate/trig mode set on the context menu).";
 
         seqData = new float[REMOVE_MAX_DATA];
         this->mappingIndicatorColor = nvgRGB(0x40, 0xff, 0xff);
@@ -706,7 +720,8 @@ struct ReMoveModule : MapModuleBase<1> {
 
     void dataFromJson(json_t* rootJ) override {
         MapModuleBase::dataFromJson(rootJ);
-        panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+        json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+        if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
         json_t* audioRateJ = json_object_get(rootJ, "audioRate");
         if (audioRateJ) audioRate = json_boolean_value(audioRateJ);
 

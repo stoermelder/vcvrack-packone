@@ -26,6 +26,19 @@ TEST_CASE("Construction and initialization", "[TransitEx]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[TransitEx][JSON]") {
+	auto module = Test::createModule<TransitExModule<12>>("TransitEx");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 // Helper module with test parameters
 struct TestModule : rack::Module {
 	enum ParamIds {
@@ -69,7 +82,7 @@ static Module* createExModule(TransitBase<12>** baseOut = nullptr) {
 static void connectExpander(TransitModule<12>* transit, Module* exModule) {
 	transit->rightExpander.module = exModule;
 	exModule->leftExpander.module = transit;
-	transit->expandersChanged = true;
+	transit->moduleChangedFlag = true;
 	transit->process(Test::makeProcessArgs(0));
 }
 
@@ -79,14 +92,14 @@ static void connectTwoExpanders(TransitModule<12>* transit, Module* ex1, Module*
 	ex1->leftExpander.module = transit;
 	ex1->rightExpander.module = ex2;
 	ex2->leftExpander.module = ex1;
-	transit->expandersChanged = true;
+	transit->moduleChangedFlag = true;
 	transit->process(Test::makeProcessArgs(0));
 }
 
 // Helper: disconnect the expander and re-process so Transit re-scans.
 static void disconnectExpander(TransitModule<12>* transit) {
 	transit->rightExpander.module = nullptr;
-	transit->expandersChanged = true;
+	transit->moduleChangedFlag = true;
 	transit->process(Test::makeProcessArgs(1));
 }
 

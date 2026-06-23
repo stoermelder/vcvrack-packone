@@ -66,6 +66,19 @@ TEST_CASE("Construction and initialization", "[MidiEsx]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[MidiEsx][JSON]") {
+	auto module = Test::createModule<MidiEsxModule>("MidiEsx");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 
 TEST_CASE("Encoding creates fractional samples correctly (approx)", "[MidiEsx]") {
 	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
@@ -234,9 +247,9 @@ TEST_CASE("Multiple messages queued and encoded sequentially", "[MidiEsx]") {
 TEST_CASE("Buffer overflow protection", "[MidiEsx]") {
 	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
 	
-	// Try to queue messages that would exceed buffer capacity (2048 bits)
-	// Each message takes ~48 bits, so ~42 messages fit
-	// Send more than capacity
+	// Each message encodes to 3 bytes * 16 = 48 bits, so only ~42 fit in the
+	// 2048-slot buffer. Sending 50 must trigger the capacity guard in
+	// bitEnqueue(), which bails out leaving the port locked.
 	int messagesQueued = 0;
 	for (int i = 0; i < 50; i++) {
 		auto msg = Test::makeMidiMessage(0x9, 0, 60 + (i % 64), 100);
@@ -245,14 +258,18 @@ TEST_CASE("Buffer overflow protection", "[MidiEsx]") {
 			messagesQueued++;
 		}
 	}
-	
-	// Should have queued some messages
+
+	// Some messages were accepted, but the overflow guard rejected the rest.
 	REQUIRE(messagesQueued > 0);
-	
-	// Module should handle gracefully - collect without crashing
+	REQUIRE(messagesQueued < 50);
+	REQUIRE(module->port[0].locked == true);
+	// The buffer never exceeded its capacity.
+	REQUIRE(module->port[0].bitQueue.size() <= 2048);
+
+	// Module should handle gracefully - drain without crashing
 	auto samples = collectSamples(module, 4096);
 	REQUIRE(samples.size() > 0);
-	
+
 	Test::destroyModule(module);
 }
 
@@ -377,7 +394,7 @@ TEST_CASE("Locked state returns zero from nextBit", "[MidiEsx]") {
 	// After unlock, should return actual bits
 	module->port[0].locked = false;
 	bit = module->port[0].nextBit();
-	REQUIRE(bit == 1.f);  // First bit after start bits
+	REQUIRE(bit == 1.f);  // First queued bit is a start bit (1)
 	
 	Test::destroyModule(module);
 }
@@ -388,18 +405,17 @@ TEST_CASE("Sample rate check in process() rejects non-48kHz", "[MidiEsx]") {
 	
 	auto msg = Test::makeMidiMessage(0x9, 0, 60, 100);
 	module->onMessage(0, msg);
-	
-	// Get initial bit output
-	float bitBefore = module->port[0].nextBit();
-	
-	// Simulate process() at wrong sample rate (should early-return)
+
+	size_t sizeBefore = module->port[0].bitQueue.size();
+	REQUIRE(sizeBefore > 0);
+
+	// process() at the wrong sample rate must early-return before touching the queue
 	auto argsWrong = Test::makeProcessArgs(0, 44100.f);
 	module->process(argsWrong);
-	
+
 	// Nothing should have been consumed
-	float bitAfter = module->port[0].nextBit();
-	REQUIRE(bitBefore == bitAfter);
-	
+	REQUIRE(module->port[0].bitQueue.size() == sizeBefore);
+
 	Test::destroyModule(module);
 }
 
@@ -409,17 +425,17 @@ TEST_CASE("Process outputs correct voltage levels", "[MidiEsx]") {
 	
 	auto msg = Test::makeMidiMessage(0x9, 0, 60, 100);
 	module->onMessage(0, msg);
-	
-	// Set sample rate to 48kHz (required for process)
+
+	// Sample rate must be 48kHz for process() to run
 	auto args = Test::makeProcessArgs(0, 48000.f);
-	module->onSampleRateChange({48000.f, 1.0f/48000.f});
 	module->process(args);
-	
-	// Output should be either 0 or ~10V (bit value * 10V)
-	float v = module->outputs[MidiEsxModule::OUTPUT_ENC + 0].getVoltage();
-	REQUIRE(v >= 0.f);
-	REQUIRE(v <= 10.f);
-	
+
+	// process() outputs the raw bit value (0 or 1). The first queued bit is a
+	// start bit, so port 0 outputs exactly 1V.
+	REQUIRE(module->outputs[MidiEsxModule::OUTPUT_ENC + 0].getVoltage() == 1.f);
+	// A port with no queued data outputs 0V.
+	REQUIRE(module->outputs[MidiEsxModule::OUTPUT_ENC + 1].getVoltage() == 0.f);
+
 	Test::destroyModule(module);
 }
 

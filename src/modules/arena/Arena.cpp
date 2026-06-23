@@ -114,28 +114,48 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		// in-ports
 		for (int i = 0; i < IN_PORTS; i++) {
 			configInput(IN + i, string::f("Channel IN-%i", i + 1));
+			inputInfos[IN + i]->description = "Monophonic audio source for this channel.";
 			configInput(IN_X_INPUT + i, string::f("Channel IN-%i x-pos CV", i + 1));
+			inputInfos[IN_X_INPUT + i]->description = "CV modulation of the channel's x-position on the XY grid (summed with the knob).";
 			configInput(IN_Y_INPUT + i, string::f("Channel IN-%i y-pos CV", i + 1));
+			inputInfos[IN_Y_INPUT + i]->description = "CV modulation of the channel's y-position on the XY grid (summed with the knob).";
 			configInput(MOD_INPUT + i, string::f("Channel IN-%i modulation", i + 1));
+			inputInfos[MOD_INPUT + i]->description = "Modulation signal for the channel; behavior depends on the Mod Mode selected on the context menu.";
 			configOutput(OUT_OUTPUT + i, string::f("Channel IN-%i direct", i + 1));
+			outputInfos[OUT_OUTPUT + i]->description = "Direct output of the channel's input audio.";
 			configParam<XyScreenParamQuantity>(IN_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (IN_PORTS - 1)), string::f("Channel IN-%i x-pos", i + 1));
+			paramQuantities[IN_X_POS + i]->description = "Position of this channel on the XY field's x-axis.";
 			configParam<XyScreenParamQuantity>(IN_Y_POS + i, 0.0f, 1.0f, 0.1f, string::f("Channel IN-%i y-pos", i + 1));
+			paramQuantities[IN_Y_POS + i]->description = "Position of this channel on the XY field's y-axis.";
 			configParam(IN_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i x-pos attenuverter", i + 1), "x");
+			paramQuantities[IN_X_PARAM + i]->description = "Attenuverter for the x-pos CV input (-1 inverts, 0 mutes, 1 passes through).";
 			configParam(IN_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i y-pos attenuverter", i + 1), "x");
+			paramQuantities[IN_Y_PARAM + i]->description = "Attenuverter for the y-pos CV input (-1 inverts, 0 mutes, 1 passes through).";
 			configParam(MOD_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i Mod attenuverter", i + 1), "x");
+			paramQuantities[MOD_PARAM + i]->description = "Attenuverter for the modulation CV input (-1 inverts, 0 mutes, 1 passes through).";
 		}
 		// mix-ports
 		for (int i = 0; i < MIX_PORTS; i++) {
 			configInput(MIX_X_INPUT + i, string::f("Channel MIX-%i x-pos", i + 1));
+			inputInfos[MIX_X_INPUT + i]->description = "CV modulation of this mix channel's x-position on the XY grid.";
 			configInput(MIX_Y_INPUT + i, string::f("Channel MIX-%i y-pos", i + 1));
+			inputInfos[MIX_Y_INPUT + i]->description = "CV modulation of this mix channel's y-position on the XY grid.";
 			configInput(SEQ_INPUT + i, string::f("Channel MIX-%i sequence select", i + 1));
+			inputInfos[SEQ_INPUT + i]->description = "Selects the active sequence step for this mix channel.";
 			configInput(SEQ_PH_INPUT + i, string::f("Channel MIX-%i sequence phase", i + 1));
+			inputInfos[SEQ_PH_INPUT + i]->description = "Phases the sequence of this mix channel by the input voltage.";
 			configOutput(MIX_OUTPUT + i, string::f("Channel MIX-%i", i + 1));
+			outputInfos[MIX_OUTPUT + i]->description = "Mix of all IN channels routed into this output's XY position on the field.";
 			configParam(MIX_VOL_PARAM + i, 0.0f, 2.0f, 1.0f, string::f("Channel MIX-%i volume", i + 1));
+			paramQuantities[MIX_VOL_PARAM + i]->description = "Output gain of this mix channel (0..2, default 1).";
 			configParam<XyScreenParamQuantity>(MIX_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (MIX_PORTS - 1)), string::f("Channel MIX-%i x-pos", i + 1));
+			paramQuantities[MIX_X_POS + i]->description = "Position of this output on the XY field's x-axis.";
 			configParam<XyScreenParamQuantity>(MIX_Y_POS + i, 0.0f, 1.0f, 0.9f, string::f("Channel MIX-%i y-pos", i + 1));
+			paramQuantities[MIX_Y_POS + i]->description = "Position of this output on the XY field's y-axis.";
 			configParam(MIX_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel MIX-%i x-pos attenuverter", i + 1), "x");
+			paramQuantities[MIX_X_PARAM + i]->description = "Attenuverter for the x-pos CV input (-1 inverts, 0 mutes, 1 passes through).";
 			configParam(MIX_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel MIX-%i y-pos attenuverter", i + 1), "x");
+			paramQuantities[MIX_Y_PARAM + i]->description = "Attenuverter for the y-pos CV input (-1 inverts, 0 mutes, 1 passes through).";
 		}
 
 		ResetEvent re;
@@ -485,31 +505,44 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* inportsJ = json_object_get(rootJ, "inports");
-		json_t* inportJ;
-		uint8_t inputIndex;
-		json_array_foreach(inportsJ, inputIndex, inportJ) {	
-			modMode[inputIndex] = (MODMODE)json_integer_value(json_object_get(inportJ, "modMode"));
-			inputXBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "inputXBipolar"));
-			inputYBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "inputYBipolar"));
-			outputMode[inputIndex] = (OUTPUTMODE)json_integer_value(json_object_get(inportJ, "outputMode"));
-			Sc::dataFromJson(inportJ, 0, inputIndex);
+		if (inportsJ) {
+			json_t* inportJ;
+			uint8_t inputIndex;
+			json_array_foreach(inportsJ, inputIndex, inportJ) {	
+				json_t* modModeJ = json_object_get(inportJ, "modMode");
+				if (modModeJ) modMode[inputIndex] = (MODMODE)json_integer_value(modModeJ);
+				json_t* inputXBipolarJ = json_object_get(inportJ, "inputXBipolar");
+				if (inputXBipolarJ) inputXBipolar[inputIndex] = json_boolean_value(inputXBipolarJ);
+				json_t* inputYBipolarJ = json_object_get(inportJ, "inputYBipolar");
+				if (inputYBipolarJ) inputYBipolar[inputIndex] = json_boolean_value(inputYBipolarJ);
+				json_t* outputModeJ = json_object_get(inportJ, "outputMode");
+				if (outputModeJ) outputMode[inputIndex] = (OUTPUTMODE)json_integer_value(outputModeJ);
+				Sc::dataFromJson(inportJ, 0, inputIndex);
+			}
 		}
 
 		json_t* mixportsJ = json_object_get(rootJ, "mixports");
-		json_t* mixportJ;
-		uint8_t mixputIndex;
-		json_array_foreach(mixportsJ, mixputIndex, mixportJ) {
-			mixportXBipolar[mixputIndex] = json_boolean_value(json_object_get(mixportJ, "mixportXBipolar"));
-			mixportYBipolar[mixputIndex] = json_boolean_value(json_object_get(mixportJ, "mixportYBipolar"));
-			Sc::dataFromJson(mixportJ, 1, mixputIndex);
-			Seq::dataFromJson(mixportJ, mixputIndex);
+		if (mixportsJ) {
+			json_t* mixportJ;
+			uint8_t mixputIndex;
+			json_array_foreach(mixportsJ, mixputIndex, mixportJ) {
+				json_t* mixportXBipolarJ = json_object_get(mixportJ, "mixportXBipolar");
+				if (mixportXBipolarJ) mixportXBipolar[mixputIndex] = json_boolean_value(mixportXBipolarJ);
+				json_t* mixportYBipolarJ = json_object_get(mixportJ, "mixportYBipolar");
+				if (mixportYBipolarJ) mixportYBipolar[mixputIndex] = json_boolean_value(mixportYBipolarJ);
+				Sc::dataFromJson(mixportJ, 1, mixputIndex);
+				Seq::dataFromJson(mixportJ, mixputIndex);
+			}
 		}
 
-		inportsUsed = json_integer_value(json_object_get(rootJ, "inportsUsed"));
-		mixportsUsed = json_integer_value(json_object_get(rootJ, "mixportsUsed"));
+		json_t* inportsUsedJ = json_object_get(rootJ, "inportsUsed");
+		if (inportsUsedJ) inportsUsed = json_integer_value(inportsUsedJ);
+		json_t* mixportsUsedJ = json_object_get(rootJ, "mixportsUsed");
+		if (mixportsUsedJ) mixportsUsed = json_integer_value(mixportsUsedJ);
 	}
 };
 

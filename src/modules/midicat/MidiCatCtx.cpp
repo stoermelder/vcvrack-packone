@@ -40,7 +40,7 @@ struct MidiCatCtxModule : MidiCatCtxBase {
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		notifyExpanderListeners("MidiCat");
+		notifyModuleListeners("MidiCat");
 	}
 
 	void onReset(const ResetEvent& e) override {
@@ -68,8 +68,10 @@ struct MidiCatCtxModule : MidiCatCtxBase {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		midiCatId = json_string_value(json_object_get(rootJ, "midiCatId"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* midiCatIdJ = json_object_get(rootJ, "midiCatId");
+		if (midiCatIdJ) midiCatId = json_string_value(midiCatIdJ);
 	}
 };
 

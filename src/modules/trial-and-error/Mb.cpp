@@ -73,6 +73,98 @@ ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser) {
 }
 
 
+// Model Widths
+
+std::map<Model*, int> modelWidths;
+
+void modelWidthSet(Model* model, int hp) {
+	modelWidths[model] = hp;
+}
+
+int modelWidthGet(Model* model) {
+	auto it = modelWidths.find(model);
+	return (it != modelWidths.end()) ? it->second : -1;
+}
+
+void modelWidthScanAll() {
+	for (plugin::Plugin* p : rack::plugin::plugins) {
+		for (plugin::Model* model : p->models) {
+			ModuleWidget* mw = model->createModuleWidget(NULL);
+			if (mw) {
+				int hp = (int)std::round(mw->box.size.x / RACK_GRID_WIDTH);
+				modelWidthSet(model, hp);
+				delete mw;
+			}
+		}
+	}
+	modelWidthsToJson();
+}
+
+static std::string mbWidthFilePath() {
+	return rack::asset::user("Stoermelder-P1/mb-widths.json");
+}
+
+void modelWidthsFromJson() {
+	FILE* file = fopen(mbWidthFilePath().c_str(), "r");
+	if (!file) return;
+	json_error_t error;
+	json_t* j = json_loadf(file, 0, &error);
+	fclose(file);
+	if (!j) return;
+	DEFER({ json_decref(j); });
+
+	modelWidths.clear();
+	json_t* widthsJ = json_object_get(j, "widths");
+	if (!widthsJ) return;
+	const char* hpKey;
+	json_t* modelsJ;
+	json_object_foreach(widthsJ, hpKey, modelsJ) {
+		int hp = std::atoi(hpKey);
+		if (hp <= 0) continue;
+		size_t i;
+		json_t* entryJ;
+		json_array_foreach(modelsJ, i, entryJ) {
+			if (!json_is_array(entryJ) || json_array_size(entryJ) < 2) continue;
+			json_t* pluginJ = json_array_get(entryJ, 0);
+			json_t* modelJ  = json_array_get(entryJ, 1);
+			if (!pluginJ || !modelJ) continue;
+			Model* model = plugin::getModel(json_string_value(pluginJ), json_string_value(modelJ));
+			if (!model) continue;
+			modelWidths[model] = hp;
+		}
+	}
+}
+
+void modelWidthsToJson() {
+	// Group models by HP
+	std::map<int, std::vector<Model*>> byHp;
+	for (auto& pair : modelWidths)
+		byHp[pair.second].push_back(pair.first);
+
+	json_t* widthsJ = json_object();
+	for (auto& hpPair : byHp) {
+		json_t* modelsJ = json_array();
+		for (Model* model : hpPair.second) {
+			json_t* entryJ = json_array();
+			json_array_append_new(entryJ, json_string(model->plugin->slug.c_str()));
+			json_array_append_new(entryJ, json_string(model->slug.c_str()));
+			json_array_append_new(modelsJ, entryJ);
+		}
+		json_object_set_new(widthsJ, std::to_string(hpPair.first).c_str(), modelsJ);
+	}
+	json_t* j = json_object();
+	json_object_set_new(j, "widths", widthsJ);
+
+	rack::system::createDirectory(rack::asset::user("Stoermelder-P1"));
+	FILE* file = fopen(mbWidthFilePath().c_str(), "w");
+	if (file) {
+		json_dumpf(j, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+		fclose(file);
+	}
+	json_decref(j);
+}
+
+
 // Favorites
 
 std::set<Model*> favoriteModels;
@@ -613,6 +705,7 @@ BrowserOverlay::BrowserOverlay() {
 	sortBySearchScore = pluginSettings.mbSortBySearchScore;
 	favoriteHighlight = pluginSettings.mbFavoriteHighlight;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
+	modelWidthsFromJson();
 	modelDbInit();
 
 	mbWidgetBackup = APP->scene->browser;
@@ -668,7 +761,8 @@ BrowserOverlay::~BrowserOverlay() {
 	pluginSettings.mbFavoriteHighlight = favoriteHighlight;
 	json_decref(pluginSettings.mbModelsJ);
 	pluginSettings.mbModelsJ = moduleBrowserToJson();
-	
+	modelWidthsToJson();
+
 	pluginSettings.saveToJson();
 }
 
@@ -733,6 +827,8 @@ struct MbModule : Module {
 		NUM_LIGHTS
 	};
 
+	int panelTheme = 0;
+
 	MbModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
@@ -779,14 +875,14 @@ struct MbMenuButton : ui::Button {
 	}
 };
 
-struct MbWidget : ModuleWidget {
+struct MbWidget : ThemedModuleWidget<MbModule> {
 	BrowserOverlay* browserOverlay;
 	MbMenuButton* menubarButton;
 	bool active = false;
 
-	MbWidget(MbModule* module) {
+	MbWidget(MbModule* module)
+		: ThemedModuleWidget<MbModule>(module, "Mb", "", true) {
 		setModule(module);
-		setPanel(Svg::load(asset::plugin(pluginInstance, "res/Mb.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(0, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -846,7 +942,7 @@ struct MbWidget : ModuleWidget {
 		if (module) {
 			module->lights[MbModule::LIGHT_ACTIVE].setBrightness(active);
 		}
-		ModuleWidget::step();
+		ThemedModuleWidget<MbModule>::step();
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -988,6 +1084,11 @@ struct MbWidget : ModuleWidget {
 				}
 			));
 		}
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuItem("Determine width for all modules", "", []() {
+			modelWidthScanAll();
+		}));
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Browser settings", "",

@@ -30,14 +30,16 @@ struct MidiCatFineModule : MidiCatFineBase {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_LOWRANGE, "Lower precision range (10%) gate");
+		inputInfos[INPUT_LOWRANGE]->description = "When high, mapped parameters snap to a 10% step grid for coarse adjustments.";
 		configInput(INPUT_HIGHRANGE, "Higher precision range (1/2/5%) gate");
+		inputInfos[INPUT_HIGHRANGE]->description = "When high, mapped parameters snap to a fine 1/2/5% step grid.";
 
 		ResetEvent re;
 		onReset(re);
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		notifyExpanderListeners("MidiCat");
+		notifyModuleListeners("MidiCat");
 	}
 
 	void onReset(const ResetEvent& e) override {
@@ -54,7 +56,8 @@ struct MidiCatFineModule : MidiCatFineBase {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 		json_t* highRangeJ = json_object_get(rootJ, "highRange");
 		if (highRangeJ) highRange = json_real_value(highRangeJ);
 	}

@@ -250,7 +250,7 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		json_object_set_new(rootJ, "showPitchWheelMsg", json_boolean(showPitchWheelMsg));
 
 		json_object_set_new(rootJ, "showSysExMsg", json_boolean(showSysExMsg));
-		json_object_set_new(rootJ, "showSysExData", json_boolean(showSysExMsg));
+		json_object_set_new(rootJ, "showSysExData", json_boolean(showSysExData));
 		json_object_set_new(rootJ, "showClockMsg", json_boolean(showClockMsg));
 		json_object_set_new(rootJ, "showSystemMsg", json_boolean(showSystemMsg));
 		json_object_set_new(rootJ, "showFrame", json_boolean(showFrame));
@@ -260,22 +260,33 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
-		showNoteMsg = json_boolean_value(json_object_get(rootJ, "showNoteMsg"));
-		showKeyPressure = json_boolean_value(json_object_get(rootJ, "showKeyPressure"));
-		showCcMsg = json_boolean_value(json_object_get(rootJ, "showCcMsg"));
+		json_t* showNoteMsgJ = json_object_get(rootJ, "showNoteMsg");
+		if (showNoteMsgJ) showNoteMsg = json_boolean_value(showNoteMsgJ);
+		json_t* showKeyPressureJ = json_object_get(rootJ, "showKeyPressure");
+		if (showKeyPressureJ) showKeyPressure = json_boolean_value(showKeyPressureJ);
+		json_t* showCcMsgJ = json_object_get(rootJ, "showCcMsg");
+		if (showCcMsgJ) showCcMsg = json_boolean_value(showCcMsgJ);
 		json_t* showCcExMsgJ = json_object_get(rootJ, "showCcExMsg");
 		showCcExMsg = showCcExMsgJ ? json_boolean_value(showCcExMsgJ) : showCcMsg;
-		showProgChangeMsg = json_boolean_value(json_object_get(rootJ, "showProgChangeMsg"));
-		showChannelPressurelMsg = json_boolean_value(json_object_get(rootJ, "showChannelPressurelMsg"));
-		showPitchWheelMsg = json_boolean_value(json_object_get(rootJ, "showPitchWheelMsg"));
-
-		showSysExMsg = json_boolean_value(json_object_get(rootJ, "showSysExMsg"));
-		showSysExData = json_boolean_value(json_object_get(rootJ, "showSysExData"));
-		showClockMsg = json_boolean_value(json_object_get(rootJ, "showClockMsg"));
-		showSystemMsg = json_boolean_value(json_object_get(rootJ, "showSystemMsg"));
-		showFrame = json_boolean_value(json_object_get(rootJ, "showFrame"));
+		json_t* showProgChangeMsgJ = json_object_get(rootJ, "showProgChangeMsg");
+		if (showProgChangeMsgJ) showProgChangeMsg = json_boolean_value(showProgChangeMsgJ);
+		json_t* showChannelPressurelMsgJ = json_object_get(rootJ, "showChannelPressurelMsg");
+		if (showChannelPressurelMsgJ) showChannelPressurelMsg = json_boolean_value(showChannelPressurelMsgJ);
+		json_t* showPitchWheelMsgJ = json_object_get(rootJ, "showPitchWheelMsg");
+		if (showPitchWheelMsgJ) showPitchWheelMsg = json_boolean_value(showPitchWheelMsgJ);
+		json_t* showSysExMsgJ = json_object_get(rootJ, "showSysExMsg");
+		if (showSysExMsgJ) showSysExMsg = json_boolean_value(showSysExMsgJ);
+		json_t* showSysExDataJ = json_object_get(rootJ, "showSysExData");
+		if (showSysExDataJ) showSysExData = json_boolean_value(showSysExDataJ);
+		json_t* showClockMsgJ = json_object_get(rootJ, "showClockMsg");
+		if (showClockMsgJ) showClockMsg = json_boolean_value(showClockMsgJ);
+		json_t* showSystemMsgJ = json_object_get(rootJ, "showSystemMsg");
+		if (showSystemMsgJ) showSystemMsg = json_boolean_value(showSystemMsgJ);
+		json_t* showFrameJ = json_object_get(rootJ, "showFrame");
+		if (showFrameJ) showFrame = json_boolean_value(showFrameJ);
 
 		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
 		if (midiInputJ) midiProcessor.getInput().fromJson(midiInputJ);
