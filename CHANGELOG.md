@@ -1,5 +1,10 @@
 ## 2.5.0
 
+### New modules
+
+- Module [SIREN](./docs/siren/Siren.md)
+    - Sample browser collaboration with Omri Cohen — browse, preview and drag WAV/FLAC/MP3 samples to other modules
+
 ### Changes and Fixes
 
 - Module [MB](./docs/trial-and-error/Mb.md)
