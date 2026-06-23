@@ -14,6 +14,14 @@
 	"donateUrl": "https://paypal.me/stoermelder",
 	"modules": [
 		{
+			"slug": "Siren",
+			"name": "SIREN",
+			"description": "Sample browser collaboration with Omri Cohen — browse, preview and drag WAV/FLAC/MP3 samples to other modules.\nStreams audio directly from disk with no full-file loading, making it practical for large sample libraries and long recordings. Also does repitching and creates endless loops.",
+			"tags": [
+				"Utility"
+			]
+		},
+		{
 			"slug": "MidiEsx",
 			"name": "MIDI-ESX",
 			"description": "MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.). Routes MIDI messages from any VCV Rack MIDI module to your audio interface, sharing the same sample-accurate latency for tight sync with your modular gear.",
