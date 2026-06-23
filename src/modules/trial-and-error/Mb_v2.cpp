@@ -1438,7 +1438,9 @@ void ModuleBrowser::clear() {
 }
 
 void ModuleBrowser::onShow(const event::Show& e) {
+	math::Vec savedOffset = modelScroll->offset;
 	refresh();
+	modelScroll->offset = savedOffset;
 	OpaqueWidget::onShow(e);
 }
 

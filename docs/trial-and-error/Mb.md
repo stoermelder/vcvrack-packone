@@ -147,3 +147,4 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
     - Fixed broken button of "Favorites" category
 - v2.5.0
     - Added width (HP) filter and sorting to *v2 mod* browser
+    - Fixed *v2 mod* scroll position when reopening the browser overlay

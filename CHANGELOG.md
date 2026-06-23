@@ -4,6 +4,7 @@
 
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added width (HP) filter and sorting to *v2 mod* browser
+    - Fixed *v2 mod* scroll position when reopening the browser overlay
 - Module [MIDI-MON](./docs/midi/MidiMon.md)
     - Fixed SysEx message logging (trailing garbage bytes)
     - Fixed saving of SysEx data logging setting
