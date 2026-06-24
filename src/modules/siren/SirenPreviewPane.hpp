@@ -64,7 +64,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	float repitchTotalSemitones() const { return repitchSemitones + repitchCents / 100.f; }
 
 	// loop-preview state
-	bool previewActive = false;
+	std::atomic<bool>* previewActive = nullptr;
 	bool previewBuilding = false;  // worker running, not yet active
 	bool previewIsRepitch = false;  // true if the active preview was generated via repitch
 	AudioWaveformCache previewCache;
@@ -117,12 +117,16 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		return source ? source->getMetadata() : nullptr;
 	}
 
+	bool isPreviewActive() const {
+		return previewActive && previewActive->load(std::memory_order_relaxed);
+	}
+
 	bool isLoopPreviewActive() const {
-		return previewActive && !previewIsRepitch;
+		return isPreviewActive() && !previewIsRepitch;
 	}
 
 	bool isRepitchPreviewActive() const {
-		return previewActive && previewIsRepitch;
+		return isPreviewActive() && previewIsRepitch;
 	}
 
 	void init(TaskWorker* tw, SirenDropHandler* dh) {
@@ -168,7 +172,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void loadItem(const DataSourceNode& node, std::shared_ptr<DataSource> src,
-			bool startPlay = false, bool forceRebuild = false) {
+			bool startPlay = false, bool forceRebuild = false, bool resetTrim = true) {
 		const std::string& id = node.relativePath;
 
 		if (stopPlaybackCallback) stopPlaybackCallback();
@@ -184,16 +188,14 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		int gen = ++cacheGeneration;
 
 		// Cancel any active loop preview when a new file is loaded
-		previewActive = false;
 		previewBuilding = false;
 		previewCacheReady = false;
 		previewDurationSeconds = 0.f;
 		previewCache = AudioWaveformCache{};
+		previewActive->store(false, std::memory_order_relaxed);
 
 		if (canvas) {
-			// Per-instance trim range lives on the module and persists across
-			// file loads — do NOT reset it here. Only the view/scroll state
-			// (which IS per-file) is reset on each new item.
+			if (resetTrim) canvas->resetTrimHandles();
 			canvas->scrubPos = 0.f;
 			canvas->zoomLevel = 1.0f;
 			canvas->scrollPos = 0.0f;
@@ -314,7 +316,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		if (!source || currentNode.relativePath.empty() || !worker) return;
 
 		previewBuilding = true;
-		previewActive = false;
+		previewActive->store(false, std::memory_order_relaxed);
 		previewIsRepitch = repitch;
 		previewCacheReady = false;
 		previewCache = AudioWaveformCache{};
@@ -352,16 +354,22 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void cancelPreview() {
-		previewActive = false;
 		previewBuilding = false;
 		previewIsRepitch = false;
 		previewCacheReady = false;
 		previewDurationSeconds = 0.f;
 		previewCache = AudioWaveformCache{};
+		previewActive->store(false, std::memory_order_relaxed);
 
-		// Restore original file stream and module trim points
+		// Restore original file stream, then seek to trimIn so the playhead and
+		// all DSP counters (seekBaseFrame, outputFrameCount) are valid in the
+		// original file's frame space — the preview buffer's [0,1] position is
+		// meaningless once the stream is replaced.
 		if (openStreamCallback && source && !currentNode.relativePath.empty()) {
 			openStreamCallback(currentNode.relativePath, source.get());
+		}
+		if (startPlaybackCallback) {
+			startPlaybackCallback(canvas ? canvas->getInPoint() : 0.f);
 		}
 	}
 
@@ -390,17 +398,11 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				previewCache = std::move(pendingLoop.cache);
 				previewCacheReady = true;
 				previewDurationSeconds = pendingLoop.durationSeconds;
-				previewActive = true;
 				previewBuilding = false;
 
-				// The loop buffer spans [0, 1] — make the module loop it fully.
-				// canvas->moduleInPoint/OutPoint may be unset (dummy preview),
-				// in which case the canvas's local fields are also irrelevant
-				// (no audio playback happens).
-				if (canvas) {
-					canvas->setInPoint(0.f);
-					canvas->setOutPoint(1.f);
-				}
+				// Tell the module to ignore trimIn/trimOut: the preview buffer already
+				// spans the full [0, 1] range, so the original trim values are left untouched.
+				previewActive->store(true, std::memory_order_relaxed);
 
 				// Reset seek base so playhead is valid in the new stream's frame space
 				if (startPlaybackCallback) startPlaybackCallback(0.f);
@@ -412,23 +414,24 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		// Update canvas display inputs
 		if (canvas) {
+			bool pa = isPreviewActive();
 			canvas->box.size = Vec(box.size.x, box.size.y - TB_H);
-			canvas->cache = previewActive ? &previewCache : &cache;
-			canvas->cacheReady = previewActive ? previewCacheReady : (bool)cacheReady;
-			canvas->previewMode = previewActive;
-			canvas->viewMode = !previewActive && !previewBuilding
+			canvas->cache = pa ? &previewCache : &cache;
+			canvas->cacheReady = pa ? previewCacheReady : (bool)cacheReady;
+			canvas->previewMode = pa;
+			canvas->viewMode = !pa && !previewBuilding
 				? &CanvasViewMode::normal()
 				: previewIsRepitch ? &CanvasViewMode::repitch() : &CanvasViewMode::loopCrossfade();
 			canvas->hasFile = !currentNode.relativePath.empty();
-			canvas->durationSeconds = previewActive ? previewDurationSeconds : info.durationSeconds;
+			canvas->durationSeconds = pa ? previewDurationSeconds : info.durationSeconds;
 			canvas->dragPath = currentNode.relativePath;
 			canvas->dragDisplayName = displayName;
 			canvas->modulePlayheadPos = modulePlayheadPos;
 
 			// Single background-task overlay. Every source computes a message
 			// ("" = nothing to show), then the first non-empty one wins.
-			bool building = !previewActive && cacheBuilding;
-			bool generatingLoop = previewBuilding && !previewActive;
+			bool building = !pa && cacheBuilding;
+			bool generatingLoop = previewBuilding && !pa;
 			std::string convertingMsg = (dropHandler && dropHandler->converting.load(std::memory_order_relaxed))
 				? "Converting\xe2\x80\xa6" : "";
 			std::string generatingLoopMsg = generatingLoop ? canvas->viewMode->generatingMessage : "";
@@ -490,7 +493,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		nvgFillColor(args.vg, previewColor);
 
 		// Preview label (second row, left side)
-		if (previewActive && canvas) {
+		if (isPreviewActive() && canvas) {
 			nvgFillColor(args.vg, previewColor);
 			nvgText(args.vg, SirenWaveformCanvas::WAVE_X, 26.f, canvas->viewMode->label.c_str(), nullptr);
 			nvgFillColor(args.vg, previewColor);
@@ -617,7 +620,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
-		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE && previewActive) {
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE && isPreviewActive()) {
 			cancelPreview();
 			e.consume(this);
 			return;
@@ -636,7 +639,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			[]() { sirenSettings.loopPlayback = !sirenSettings.loopPlayback; }
 		));
 
-		if (previewActive) {
+		if (isPreviewActive()) {
 			// preview mode
 			menu->addChild(createMenuItem(previewIsRepitch ? "Exit repitch preview" : "Exit loop preview", "", [this]() {
 				cancelPreview();

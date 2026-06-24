@@ -417,9 +417,11 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 			nvgFillColor(args.vg, accent);
 			nvgText(args.vg, x + 21.f, box.size.y, formatTime(val).c_str(), nullptr);
 		};
-		drawReadout(WAVE_X, "IN", getInPoint() * durationSeconds);
-		drawReadout(WAVE_X + col, "OUT", getOutPoint() * durationSeconds);
-		drawReadout(WAVE_X + col * 2, "LEN", (getOutPoint() - getInPoint()) * durationSeconds);
+		float inFrac  = previewMode ? 0.f : getInPoint();
+		float outFrac = previewMode ? 1.f : getOutPoint();
+		drawReadout(WAVE_X, "IN", inFrac * durationSeconds);
+		drawReadout(WAVE_X + col, "OUT", outFrac * durationSeconds);
+		drawReadout(WAVE_X + col * 2, "LEN", (outFrac - inFrac) * durationSeconds);
 		drawReadout(WAVE_X + col * 3, "POS", ph * durationSeconds);
 	}
 

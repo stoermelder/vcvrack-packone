@@ -69,6 +69,10 @@ struct SirenModule : Module {
 	std::atomic<float> playheadPos{0.f};     // DSP writes; UI reads for display
 	std::atomic<float> trimIn{0.f};          // UI writes; DSP reads for loop restart position
 	std::atomic<float> trimOut{1.f};         // UI writes; DSP reads to compute stop frame
+	// When true the active stream is an in-memory processed preview buffer that spans
+	// the full [0, 1] range. DSP and fill thread treat trimIn/trimOut as 0/1 so the
+	// original module trim values are never overwritten by the preview.
+	std::atomic<bool> previewActive{false};
 
 	// Position counters — written before playing=true (release), read after playing (acquire)
 	int64_t seekBaseFrame = 0;  // file frame at which this play session began
@@ -247,8 +251,9 @@ struct SirenModule : Module {
 			int64_t xfade = 0;
 			bool trimLoop = false;
 			if (isLooping && totalFrames > 0) {
-				inFrame = (int64_t)(trimIn.load(std::memory_order_relaxed) * totalFrames);
-				outFrame = (int64_t)(trimOut.load(std::memory_order_relaxed) * totalFrames);
+				bool preview = previewActive.load(std::memory_order_relaxed);
+				inFrame = preview ? 0 : (int64_t)(trimIn.load(std::memory_order_relaxed) * totalFrames);
+				outFrame = preview ? totalFrames : (int64_t)(trimOut.load(std::memory_order_relaxed) * totalFrames);
 				if ((inFrame > 0 || outFrame < totalFrames) && inFrame < outFrame) {
 					xfade = std::min(LOOP_XFADE, (outFrame - inFrame) / 2);
 					trimLoop = xfade > 0;
@@ -451,7 +456,8 @@ struct SirenModule : Module {
 					float ph = ((float)seekBaseFrame + inputCount) / (float)total;
 					playheadPos.store(ph, std::memory_order_relaxed);
 
-					int64_t stopAt = (int64_t)(trimOut.load(std::memory_order_relaxed) * (float)total);
+					bool preview = previewActive.load(std::memory_order_relaxed);
+					int64_t stopAt = preview ? total : (int64_t)(trimOut.load(std::memory_order_relaxed) * (float)total);
 					// Convert stopAt (file frames) to output-frame count from the seek base
 					int64_t stopAtOut = (int64_t)(((float)stopAt - (float)seekBaseFrame) * ratio);
 					if (stopAtOut > 0 && count >= stopAtOut
@@ -460,7 +466,7 @@ struct SirenModule : Module {
 							// The fill thread has already wrapped at trimOut → trimIn seamlessly,
 							// so the ring already contains the next iteration's audio.
 							// Only the display counters need resetting — no seek, no ring clear.
-							int64_t loopStart = (int64_t)(trimIn.load(std::memory_order_relaxed) * (float)total);
+							int64_t loopStart = preview ? 0 : (int64_t)(trimIn.load(std::memory_order_relaxed) * (float)total);
 							seekBaseFrame = loopStart;
 							outputFrameCount.store(0, std::memory_order_relaxed);
 						}
@@ -475,7 +481,8 @@ struct SirenModule : Module {
 				if (sirenSettings.loopPlayback
 						&& pendingSeekFrame.load(std::memory_order_relaxed) < 0) {
 					int64_t total = streamTotalFrames;
-					int64_t loopStart = (int64_t)(trimIn.load(std::memory_order_relaxed) * (float)total);
+					bool preview = previewActive.load(std::memory_order_relaxed);
+					int64_t loopStart = preview ? 0 : (int64_t)(trimIn.load(std::memory_order_relaxed) * (float)total);
 					seekBaseFrame = loopStart;
 					outputFrameCount.store(0, std::memory_order_relaxed);
 					pendingSeekFrame.store(loopStart, std::memory_order_release);
@@ -916,7 +923,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule>, ModuleChangeListener {
 		// The active DataSource (and its MetadataStore) is about to be destroyed —
 		// drop the preview pane's references to it before they dangle.
 		browserPane->onActiveSourceChanging = [this]() {
-			previewPane->loadItem(DataSourceNode{}, nullptr);
+			previewPane->loadItem(DataSourceNode{}, nullptr, false, false, /*resetTrim=*/false);
 		};
 
 		if (!module) {
@@ -945,6 +952,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule>, ModuleChangeListener {
 		};
 		previewPane->modulePlayheadPos = &module->playheadPos;
 		previewPane->modulePlaying = &module->playing;
+		previewPane->previewActive = &module->previewActive;
 		previewPane->canvas->moduleInPoint = &module->trimIn;
 		previewPane->canvas->moduleOutPoint = &module->trimOut;
 
@@ -1011,7 +1019,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule>, ModuleChangeListener {
 		if (!restoreFile.empty()) {
 			std::shared_ptr<DataSource> src = browserPane->activeDs;
 			DataSourceNode restoreNode = src ? src->resolveNode(restoreFile) : DataSourceNode{};
-			previewPane->loadItem(restoreNode, src);
+			previewPane->loadItem(restoreNode, src, false, false, /*resetTrim=*/false);
 			module->playheadPos.store(restorePos, std::memory_order_relaxed);
 			browserPane->revealPath(restoreFile);
 		}
