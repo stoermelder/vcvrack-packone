@@ -36,3 +36,5 @@ A lush example of how HIVE and MAZE can work together:
   - Added new ratcheting modes ("Twos", "Threes", "Power of Two")
 - v2.0.0
   - Fixed broken reset-behavior
+- v2.x.x
+  - Fixed broken SHIFT/R- input

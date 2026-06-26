@@ -1,3 +1,10 @@
+## 2.x.x
+
+### Changes and Fixes
+
+- Module [HIVE](./docs/maze/Hive.md)
+    - Fixed broken SHIFT/R- input
+
 ## 2.5.0
 
 ### New modules
