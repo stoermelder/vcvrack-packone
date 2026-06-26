@@ -18,6 +18,18 @@ extern bool sortBySearchScore;
 void modelDbInit();
 ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser = true);
 
+
+// Model Widths (HP, determined from actual panel widget)
+
+extern std::map<Model*, int> modelWidths;
+
+void modelWidthSet(Model* model, int hp);
+int modelWidthGet(Model* model); // returns -1 if unknown
+void modelWidthScanAll();
+void modelWidthsFromJson();
+void modelWidthsToJson();
+
+
 // Model Usage
 
 struct ModelUsage {

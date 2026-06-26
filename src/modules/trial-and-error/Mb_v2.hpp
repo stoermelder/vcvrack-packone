@@ -12,6 +12,7 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	ui::ChoiceButton* brandButton;
 	ui::ChoiceButton* tagButton;
 	ui::ChoiceButton* customTagButton;
+	ui::ChoiceButton* widthButton;
 	ui::Button* favoriteButton;
 	ui::Button* clearButton;
 	ui::Label* countLabel;
@@ -26,6 +27,9 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	std::string brand;
 	std::set<int> tagIds;
 	std::set<std::string> customTagFilter;
+	int widthFilterRef = 0;  // reference HP value (0 = no filter)
+	int widthFilterMode = 0; // 0=off, 1=exact, 2=≤, 3=≥
+	int widthSortDir = 0;    // 0=off, 1=narrow→wide, -1=wide→narrow
 	bool favorite = false;
 	bool hidden = false;
 
@@ -41,8 +45,8 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	void clear();
 	void updateZoom();
 	void navigateSelection(int key);
-	bool isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter);
-	bool hasVisibleModel(const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter);
+	bool isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode);
+	bool hasVisibleModel(const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode);
 	void onShow(const event::Show& e) override;
 	void onHoverScroll(const event::HoverScroll& e) override;
 };

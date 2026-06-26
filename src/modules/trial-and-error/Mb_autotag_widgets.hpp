@@ -72,7 +72,7 @@ inline ui::TagConfirmDialog<plugin::Model*>::ApplyCallback autoTagApplyCallback(
 
 inline ui::TagConfirmDialog<plugin::Model*>::BuildLabelCallback
 autoTagBuildLabelCallback() {
-	return [](plugin::Model* m) -> widget::Widget* {
+	return [](const std::string& /*tag*/, plugin::Model* m) -> widget::Widget* {
 		return new ModelLabel(m);
 	};
 }

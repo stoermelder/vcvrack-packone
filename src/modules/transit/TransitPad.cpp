@@ -162,7 +162,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
 		masterModule = nullptr;
-		notifyExpanderListeners("Transit");
+		notifyModuleListeners("Transit");
 	}
 
 	void onReset() override {

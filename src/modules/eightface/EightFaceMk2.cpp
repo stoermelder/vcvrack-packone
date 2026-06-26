@@ -40,7 +40,7 @@ enum class GUISAFEMODE {
 
 
 template <int NUM_PRESETS>
-struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListener {
+struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener {
 	typedef EightFaceMk2Base<NUM_PRESETS> BASE;
 
 	enum ParamIds {
@@ -131,7 +131,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 
 	EightFaceMk2Module() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
-		registerExpanderListener("8FaceMk2", this);
+		registerModuleListener("8FaceMk2", this);
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configSwitch(PARAM_RW, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
 		Module::paramQuantities[PARAM_RW]->description = "Read: load a slot manually.\nAuto: auto-save on snapshot-change.\nWrite: snapshot the currently mapped parameters into a slot.";
@@ -162,7 +162,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	}
 
 	~EightFaceMk2Module() {
-		unregisterExpanderListener("8FaceMk2", this);
+		unregisterModuleListener("8FaceMk2", this);
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (BASE::presetSlotUsed[i]) {
 				for (json_t* vJ : BASE::preset[i]) {
@@ -176,12 +176,12 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		notifyExpanderListeners("8FaceMk2");
+		notifyModuleListeners("8FaceMk2");
 	}
 
 	void onReset(const Module::ResetEvent& e) override {
 		inChange = true;
-		expandersChanged = true;
+		moduleChangedFlag = true;
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (BASE::presetSlotUsed[i]) {
 				for (json_t* vJ : BASE::preset[i]) {
@@ -237,7 +237,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 
 		CTRLMODE ctrlMode = (CTRLMODE)Module::params[PARAM_RW].getValue();
 
-		if (expandersChanged || ctrlMode != BASE::ctrlMode) {
+		if (moduleChangedFlag || ctrlMode != BASE::ctrlMode) {
 			expandersConnected.clear();
 			presetTotal = NUM_PRESETS;
 			Module* m = this;
@@ -262,7 +262,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 				t->ctrlMode = BASE::ctrlMode;
 				presetTotal += NUM_PRESETS;
 			}
-			expandersChanged = false;
+			moduleChangedFlag = false;
 		}
 		int presetCount = std::min(this->presetCount, presetTotal);
 
