@@ -963,7 +963,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule>, ModuleChangeListener {
 		dragOverlay->dropHandler = &dropHandler;
 		dragOverlay->previewPane = previewPane;
 		dragOverlay->worker = &taskWorker;
-		APP->scene->rack->addChild(dragOverlay);
+		APP->scene->rack->addChildBottom(dragOverlay);
 
 		// Load the global sirenSettings (the SHARED root list and per-user
 		// conversion/playback preferences). Per-instance state — selected root,
