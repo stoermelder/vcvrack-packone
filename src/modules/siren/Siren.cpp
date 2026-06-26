@@ -670,7 +670,7 @@ struct SirenDragOverlay : widget::TransparentWidget {
 	bool initiated = false;
 
 	void drawLayer(const DrawArgs& args, int layer) override {
-		if (layer != 1) return;
+		if (layer != 2) return;
 		if (!dropHandler || !dropHandler->active) return;
 		if (dropHandler->mouseIsInsideModule()) return;
 

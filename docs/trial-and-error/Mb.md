@@ -235,3 +235,4 @@ The Patch browser supports keyboard navigation and shortcuts:
 - v2.5.0
     - Added width (HP) filter and sorting to *v2 mod* browser
     - Fixed *v2 mod* scroll position when reopening the browser overlay
+    - Fixed module placement to trace back to the right click mouse position

@@ -53,7 +53,31 @@ ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser) {
 	// Create ModuleWidget
 	ModuleWidget* moduleWidget = model->createModuleWidget(addedModule);
 	assert(moduleWidget);
-	APP->scene->rack->addModuleAtMouse(moduleWidget);
+
+	// Place the module at the rack position that was captured when the browser
+	// was opened (typically the right-click position). This matches the VCV
+	// built-in browser behavior. We use the stored position rather than the
+	// current mouse position because the mouse is now inside the browser UI.
+	BrowserOverlay* overlay = dynamic_cast<BrowserOverlay*>(APP->scene->browser);
+	if (overlay && overlay->rackMousePosAtOpen.isFinite()) {
+		if (hideBrowser) {
+			// Single-click: center on the stored right-click position, snapped to grid.
+			math::Vec pos = overlay->rackMousePosAtOpen - moduleWidget->box.size.div(2);
+			pos.x = std::round(pos.x / RACK_GRID_WIDTH) * RACK_GRID_WIDTH;
+			pos.y = std::round(pos.y / RACK_GRID_HEIGHT) * RACK_GRID_HEIGHT;
+			moduleWidget->box.pos = pos;
+			APP->scene->rack->addModule(moduleWidget);
+		}
+		else {
+			// Shift-click (browser stays open): use setModulePosForce so each new
+			// module lands near the right-click position and pushes others aside.
+			APP->scene->rack->addModule(moduleWidget);
+			APP->scene->rack->setModulePosForce(moduleWidget, overlay->rackMousePosAtOpen - moduleWidget->box.size.div(2));
+		}
+	}
+	else {
+		APP->scene->rack->addModuleAtMouse(moduleWidget);
+	}
 
 	// Load template preset
 	moduleWidget->loadTemplate();
@@ -66,6 +90,14 @@ ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser) {
 
 	// Hide Module Browser
 	if (hideBrowser) APP->scene->browser->hide();
+
+	// Arm a pending drag so the user can immediately reposition the module by
+	// holding and dragging — cleared in BrowserOverlay::step() once the mouse
+	// moves far enough (drag transfers) or the button is released (stays put).
+	if (overlay && hideBrowser) {
+		overlay->pendingDragModule = moduleWidget;
+		overlay->pendingDragSceneAnchor = APP->scene->getMousePos();
+	}
 
 	// Update usage data
 	modelUsageTouch(model);
@@ -811,6 +843,11 @@ BrowserOverlay::~BrowserOverlay() {
 	pluginSettings.saveToJson();
 }
 
+void BrowserOverlay::onShow(const event::Show& e) {
+	rackMousePosAtOpen = APP->scene->rack->getMousePos();
+	OpaqueWidget::onShow(e);
+}
+
 void BrowserOverlay::step() {
 	bool doActivate = false;
 	// Hide active browser
@@ -851,8 +888,29 @@ void BrowserOverlay::step() {
 	}
 
 	box = parent->box.zeroPos();
-	// Only step if visible, since there are potentially thousands of descendants that 
-	// don't need to be stepped.
+
+	// Pending drag: transfer the drag from the card widget to the module widget
+	// once the mouse has moved past a small threshold.  This distinguishes a
+	// quick click (module stays at rackMousePosAtOpen) from a click-and-drag
+	// (module follows the cursor).  step() fires in the same frame as the
+	// button press, so we cannot simply check "button still held" — we need
+	// actual movement to gate the transfer.
+	if (pendingDragModule) {
+		if (!APP->event->getDraggedWidget()) {
+			// Button was released without enough movement — module stays put.
+			pendingDragModule = nullptr;
+		}
+		else {
+			math::Vec currentPos = APP->scene->getMousePos();
+			if (currentPos.minus(pendingDragSceneAnchor).square() >= 4.f * 4.f) {
+				ModuleWidget* mw = pendingDragModule;
+				pendingDragModule = nullptr;
+				APP->event->setDraggedWidget(mw, GLFW_MOUSE_BUTTON_LEFT);
+			}
+		}
+	}
+
+	// Only step if visible, since there are potentially thousands of descendants that don't need to be stepped.
 	if (visible) OpaqueWidget::step();
 }
 

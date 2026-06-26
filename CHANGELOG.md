@@ -7,9 +7,12 @@
 
 ### Changes and Fixes
 
+- Module [HIVE](./docs/maze/Hive.md)
+    - Fixed broken SHIFT/R- input
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added width (HP) filter and sorting to *v2 mod* browser
     - Fixed *v2 mod* scroll position when reopening the browser overlay
+    - Fixed module placement to trace back to the right click mouse position
 - Module [MIDI-MON](./docs/midi/MidiMon.md)
     - Fixed SysEx message logging (trailing garbage bytes)
     - Fixed saving of SysEx data logging setting

@@ -16,5 +16,5 @@ PANIC ROOM can also limit the number of modules or cables in your patch. Enable 
 
 - v2.2.0
     - Initial release
-- v2.x.x
+- v2.5.0
     - Added option to limit the number of modules and cables

@@ -179,8 +179,8 @@ struct ModelBox : widget::OpaqueWidget {
 		OpaqueWidget::onButton(e);
 
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == 0) {
-			ModuleWidget* mw = chooseModel(model);
-			e.consume(mw);
+			chooseModel(model);
+			e.consume(this);
 		}
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
 			chooseModel(model, false);
