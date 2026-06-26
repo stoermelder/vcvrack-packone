@@ -218,9 +218,22 @@ struct BrowserOverlay : widget::OpaqueWidget {
 
 	MODE* mode;
 
+	// Rack-space position captured when the browser is shown via right-click.
+	// Used to place the new module at the right-click position rather than at
+	// the current mouse position (which is inside the browser UI).
+	math::Vec rackMousePosAtOpen = math::Vec(NAN, NAN);
+
+	// Pending immediate drag: if non-null, the user is still holding the mouse
+	// button after adding a module. Once they move far enough (in screen space)
+	// the drag is transferred to the module widget; otherwise the module stays
+	// at rackMousePosAtOpen when they release.
+	ModuleWidget* pendingDragModule = nullptr;
+	math::Vec pendingDragSceneAnchor = math::Vec(NAN, NAN);
+
 	BrowserOverlay();
 	~BrowserOverlay();
 
+	void onShow(const event::Show& e) override;
 	void step() override;
 	void draw(const DrawArgs& args) override;
 	void onButton(const event::Button& e) override;
