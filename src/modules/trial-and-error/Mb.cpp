@@ -68,8 +68,10 @@ ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser) {
 
 	// Make the new module follow the mouse cursor so it can be placed
 	// at the desired position, matching the built-in VCV browser behavior.
-	moduleWidget->dragOffset() = moduleWidget->box.size.div(2);
-	moduleWidget->dragEnabled() = false;
+	// We use the public setDraggedWidget API instead of ModuleWidget's
+	// deprecated dragOffset()/dragEnabled() accessors so that the plugin
+	// builds on all platforms (GCC promotes those to hard errors).
+	APP->event->setDraggedWidget(moduleWidget, GLFW_MOUSE_BUTTON_LEFT);
 
 	// Update usage data
 	modelUsageTouch(model);
