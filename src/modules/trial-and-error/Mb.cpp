@@ -72,12 +72,12 @@ ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser) {
 			// Shift-click (browser stays open): use setModulePosForce so each new
 			// module lands near the right-click position and pushes others aside.
 			APP->scene->rack->addModule(moduleWidget);
-			APP->scene->rack->setModulePosForce(moduleWidget, overlay->rackMousePosAtOpen - moduleWidget->box.size.div(2));
 		}
 	}
 	else {
 		APP->scene->rack->addModuleAtMouse(moduleWidget);
 	}
+	APP->scene->rack->setModulePosForce(moduleWidget, overlay->rackMousePosAtOpen - moduleWidget->box.size.div(2));
 
 	// Load template preset
 	moduleWidget->loadTemplate();
