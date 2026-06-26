@@ -210,6 +210,57 @@ TEST_CASE("Turn trigger rotates direction in ONETWENTY mode", "[Hive]") {
 	Test::destroyModule(module);
 }
 
+// Fire a single rising edge on the given input
+static void pulse(HiveMod* module, int input, int frame) {
+	module->inputs[input].channels = 1;
+	module->inputs[input].setVoltage(0.f);
+	module->process(Test::makeProcessArgs(frame));
+	module->inputs[input].setVoltage(10.f);
+	module->process(Test::makeProcessArgs(frame + 1));
+	module->inputs[input].setVoltage(0.f);
+}
+
+// Shift a fresh module from the centre cell via the given input, return resulting pos
+static RoundAxialVec shiftFromCentre(int input) {
+	auto module = Test::createModule<HiveMod>("Hive");
+	module->grid.cursor[0].pos = RoundAxialVec(0, 0);
+	pulse(module, input, 10);
+	RoundAxialVec p = module->grid.cursor[0].pos;
+	Test::destroyModule(module);
+	return p;
+}
+
+TEST_CASE("All four side-shift inputs move the cursor", "[Hive]") {
+	// Regression: SHIFT_L2 was wired to the SHIFT_L1 trigger, leaving the
+	// "shift left down" jack dead. Each jack must move the cursor, and the two
+	// left jacks (and the two right jacks) must reach distinct cells.
+	RoundAxialVec centre(0, 0);
+
+	RoundAxialVec r1 = shiftFromCentre(HiveMod::SHIFT_R1_INPUT);
+	RoundAxialVec r2 = shiftFromCentre(HiveMod::SHIFT_R2_INPUT);
+	RoundAxialVec l1 = shiftFromCentre(HiveMod::SHIFT_L1_INPUT);
+	RoundAxialVec l2 = shiftFromCentre(HiveMod::SHIFT_L2_INPUT);
+
+	SECTION("SHIFT_R1 moves the cursor") {
+		REQUIRE_FALSE((r1.q == centre.q && r1.r == centre.r));
+	}
+	SECTION("SHIFT_R2 moves the cursor") {
+		REQUIRE_FALSE((r2.q == centre.q && r2.r == centre.r));
+	}
+	SECTION("SHIFT_L1 moves the cursor") {
+		REQUIRE_FALSE((l1.q == centre.q && l1.r == centre.r));
+	}
+	SECTION("SHIFT_L2 moves the cursor (regression: was dead)") {
+		REQUIRE_FALSE((l2.q == centre.q && l2.r == centre.r));
+	}
+	SECTION("The two left jacks reach distinct cells") {
+		REQUIRE_FALSE((l1.q == l2.q && l1.r == l2.r));
+	}
+	SECTION("The two right jacks reach distinct cells") {
+		REQUIRE_FALSE((r1.q == r2.q && r1.r == r2.r));
+	}
+}
+
 TEST_CASE("Reset input returns cursor to start position", "[Hive]") {
 	auto module = Test::createModule<HiveMod>("Hive");
 	module->inputs[HiveMod::RESET_INPUT].channels = 1;
