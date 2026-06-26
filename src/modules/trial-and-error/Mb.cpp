@@ -66,6 +66,11 @@ ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser) {
 	// Hide Module Browser
 	if (hideBrowser) APP->scene->browser->hide();
 
+	// Make the new module follow the mouse cursor so it can be placed
+	// at the desired position, matching the built-in VCV browser behavior.
+	moduleWidget->dragOffset() = moduleWidget->box.size.div(2);
+	moduleWidget->dragEnabled() = false;
+
 	// Update usage data
 	modelUsageTouch(model);
 
