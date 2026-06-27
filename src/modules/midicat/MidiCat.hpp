@@ -7,6 +7,8 @@ namespace MidiCat {
 
 static const int MAX_CHANNELS = 128;
 
+static const int TOGGLE_MULTI_STEPS = 8;
+
 #define MIDIOPTION_VELZERO_BIT 0
 
 enum class CCMODE {
@@ -16,7 +18,8 @@ enum class CCMODE {
 	TOGGLE = 3,
 	TOGGLE_VALUE = 4,
 	SNAPPED = 5,
-	SNAPPED_SL = 6
+	SNAPPED_SL = 6,
+	TOGGLE_STEPS = 7
 };
 
 enum class NOTEMODE {
@@ -25,7 +28,8 @@ enum class NOTEMODE {
 	TOGGLE = 2,
 	TOGGLE_VEL = 3,
 	SNAPPED = 4,
-	SNAPPED_SL = 5
+	SNAPPED_SL = 5,
+	TOGGLE_STEPS = 6
 };
 
 

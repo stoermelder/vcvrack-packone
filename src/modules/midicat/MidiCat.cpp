@@ -128,10 +128,24 @@ struct MidiCatParam : ScaledMapParam<int> {
 
 	MidiCatPrecisionProcessor precProcessor;
 
+	// POC: user-defined step values for TOGGLE_STEPS/TOGGLE_STEPS modes
+	std::vector<float> stepValues;
+	int stepIndex = 0;
+	int stepLastHigh = 0;
+
 	void reset(bool resetSettings = true) override {
 		if (resetSettings) {
 			clockMode = CLOCKMODE::OFF;
 			clockSource = 0;
+			// POC default: two steps at the param's range endpoints.
+			// limitMinT/limitMaxT are already set by MidiCatModule::MidiCatModule()
+			// before onReset() invokes this, so they reflect the actual range
+			// (e.g. 0..127 for a CC mapping).
+			stepValues.clear();
+			stepValues.push_back(float(limitMinT));
+			stepValues.push_back(float(limitMaxT));
+			stepIndex = 0;
+			stepLastHigh = 0;
 		}
 		lightFirstId = -1;
 		lightNumColors = 0;
@@ -207,6 +221,69 @@ struct MidiCatParam : ScaledMapParam<int> {
 
 	inline bool hasLight() {
 		return lightFirstId >= 0;
+	}
+
+	// POC: returns the (min, max) range of the bound mapped parameter,
+	// or the static midi range (limitMinT/limitMaxT) when no parameter is
+	// bound yet. The UI uses this so the step editor tracks the actual
+	// parameter the user is mapping, not the MIDI range.
+	void getBoundRange(float& outMin, float& outMax) const {
+		if (paramQuantity) {
+			outMin = paramQuantity->getMinValue();
+			outMax = paramQuantity->getMaxValue();
+		}
+		else {
+			outMin = float(limitMinT);
+			outMax = float(limitMaxT);
+		}
+	}
+
+	// POC: convert a step value (expressed in the bound parameter's range,
+	// e.g. 0..1 for a normalized knob, or -5..5 for a bipolar knob) into
+	// the integer limit/CC space that setValue() expects on input.
+	//
+	// The forward pipeline for setValue() + process() is:
+	//   cc/limit  -->  [min, max]      (setValue, user MIDI scaling)
+	//            -->  [paramMin, paramMax] (process, snap/curve/slew)
+	//
+	// We invert it: paramValue -> normalized [0,1] -> [min, max] -> [limitMin, limitMax].
+	// When no param is bound the user has entered values already in
+	// [limitMinT, limitMaxT] so the value is passed through.
+	int scaleStepToLimit(float stepValue) const {
+		if (!paramQuantity) {
+			// No bound param: clamp into the static CC range.
+			return (int)std::round(clamp(stepValue,
+				std::min(limitMin, limitMax), std::max(limitMin, limitMax)));
+		}
+		float paramMin = paramQuantity->getMinValue();
+		float paramMax = paramQuantity->getMaxValue();
+		// 1. paramValue -> normalized [0, 1]
+		float normalized = rescale(stepValue, paramMin, paramMax, 0.f, 1.f);
+		normalized = clamp(normalized, 0.f, 1.f);
+		// 2. normalized [0, 1] -> [min, max] (user MIDI scaling).
+		//    setValue() rescales i in [limitMin, limitMax] to f in [min, max],
+		//    so the inverse is: f in [min, max] -> i in [limitMin, limitMax].
+		float ccValue = rescale(normalized, min, max, limitMin, limitMax);
+		return (int)std::round(ccValue);
+	}
+
+	// POC: advance one step in the user-defined stepValues list and return
+	// the value scaled to limit/CC space, suitable for setValue().
+	//
+	// `trigger` selects the advancing mode:
+	//   true  -> rising edge / level-high: advance stepIndex and return the new value.
+	//   false -> level-low / no event:    do NOT advance, return -1 (no change).
+	//
+	// For TOGGLE_STEPS (CC) the caller supplies a rising-edge signal built from
+	// the CC value (0 -> nonzero). For TOGGLE_STEPS (note) the caller supplies a
+	// level-high signal gated by the note adapter's process() change-detect.
+	//
+	// Returns -1 when stepValues is empty (so the caller skips setValue()).
+	int nextStepValue(bool trigger) {
+		if (!trigger || stepValues.empty())
+			return -1;
+		stepIndex = (stepIndex + 1) % (int)stepValues.size();
+		return scaleStepToLimit(stepValues[stepIndex]);
 	}
 };
 
@@ -760,6 +837,19 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 									t = midiParam[id].getValue();
 								lastValueIn[id] = -1;
 								break;
+							case CCMODE::TOGGLE_STEPS: {
+								// Multi-step toggle with user-defined values.
+								// Each rising edge (CC goes 0 -> nonzero) advances the
+								// step index modulo the size of stepValues, and writes
+								// the corresponding user value into t (CC/limit space).
+								// stepLastHigh tracks the prior CC level for edge detection.
+								int curHigh = ccs[id].getValue() > 0 ? 1 : 0;
+								bool risingEdge = curHigh && !midiParam[id].stepLastHigh;
+								midiParam[id].stepLastHigh = curHigh;
+								t = midiParam[id].nextStepValue(risingEdge);
+								lastValueIn[id] = -1;
+								break;
+							}
 						}
 					}
 
@@ -834,6 +924,16 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 								}
 								lastValueIn[id] = -1;
 								break;
+							case NOTEMODE::TOGGLE_STEPS: {
+								// Multi-step toggle driven by note-on velocity.
+								// The note-on event triggers advancing the step index;
+								// the user-defined values come from midiParam[id].stepValues,
+								// not from the incoming velocity. Re-emit protection comes
+								// from MidiNoteAdapter::process() which only fires on changes.
+								t = midiParam[id].nextStepValue(notes[id].getValue() > 0);
+								lastValueIn[id] = -1;
+								break;
+							}
 						}
 					}
 
@@ -1071,6 +1171,11 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 			midiParam[learningId].setCurve(midiParam[learningId - 1].getCurve());
 			midiParam[learningId].clockMode = midiParam[learningId - 1].clockMode;
 			midiParam[learningId].clockSource = midiParam[learningId - 1].clockSource;
+			// POC: copy the user-defined step list from the previous slot
+			// so new mappings inherit the same multi-step configuration.
+			midiParam[learningId].stepValues = midiParam[learningId - 1].stepValues;
+			midiParam[learningId].stepIndex = 0;
+			midiParam[learningId].stepLastHigh = 0;
 		}
 		textLabel[learningId] = "";
 
@@ -1357,6 +1462,14 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 			json_object_set_new(mapJ, "clockSource", json_integer(midiParam[id].clockSource));
 			json_object_set_new(mapJ, "lightFirstId", json_integer(midiParam[id].lightFirstId));
 			json_object_set_new(mapJ, "lightNumColors", json_integer(midiParam[id].lightNumColors));
+			// POC: persist user-defined step list for STEP_VALUE/STEP_VEL modes.
+			// stepIndex and stepLastHigh are deliberately NOT serialized -- they
+			// are runtime state and should reset to 0 on load.
+			json_t* stepsJ = json_array();
+			for (float v : midiParam[id].stepValues) {
+				json_array_append_new(stepsJ, json_real(v));
+			}
+			json_object_set_new(mapJ, "stepValues", stepsJ);
 			json_array_append_new(mapsJ, mapJ);
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
@@ -1421,6 +1534,7 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 				json_t* clockSourceJ = json_object_get(mapJ, "clockSource");
 				json_t* lightFirstIdJ = json_object_get(mapJ, "lightFirstId");
 				json_t* lightNumColorsJ = json_object_get(mapJ, "lightNumColors");
+				json_t* stepValuesJ = json_object_get(mapJ, "stepValues");
 
 				if (!(ccJ || noteJ)) {
 					ccs[mapIndex].setCc(-1);
@@ -1456,6 +1570,20 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 				if (clockSourceJ) midiParam[mapIndex].clockSource = json_integer_value(clockSourceJ);
 				if (lightFirstIdJ) midiParam[mapIndex].lightFirstId = json_integer_value(lightFirstIdJ);
 				if (lightNumColorsJ) midiParam[mapIndex].lightNumColors = json_integer_value(lightNumColorsJ);
+				// POC: restore the user-defined step list. stepIndex/stepLastHigh
+				// are runtime-only state, reset to 0 on load.
+				midiParam[mapIndex].stepValues.clear();
+				midiParam[mapIndex].stepIndex = 0;
+				midiParam[mapIndex].stepLastHigh = 0;
+				if (stepValuesJ && json_is_array(stepValuesJ)) {
+					size_t stepIndex;
+					json_t* stepJ;
+					json_array_foreach(stepValuesJ, stepIndex, stepJ) {
+						if (json_is_number(stepJ)) {
+							midiParam[mapIndex].stepValues.push_back((float)json_number_value(stepJ));
+						}
+					}
+				}
 			}
 		}
 
@@ -1586,6 +1714,135 @@ struct ScalingOutputLabel : MenuLabelEx {
 		rightText = string::f("[%.1f%%, %.1f%%]", f1, f2);
 	}
 }; // struct ScalingOutputLabel
+
+
+// POC: Step editor — submenu with up to 8 user-defined step values.
+// The child menu is cached so we can rebuild its children in place after
+// Add / Remove / Reset, keeping the slider list in sync without forcing
+// the user to close and reopen the submenu.
+// Leaf items subclass MenuItem and unconsume the action event, so clicks
+// keep the context menu open while editing.
+struct StepEditorMenuItem : MenuItem {
+	MidiCatParam* p = NULL;
+	Menu* childMenu = NULL;
+
+	StepEditorMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	~StepEditorMenuItem() {
+		// childMenu is owned by the menu overlay; nulling here is enough.
+		childMenu = NULL;
+	}
+
+	void onAction(const ActionEvent& e) override {
+		// No-op; child menu is created in createChildMenu()
+	}
+
+	// Rebuild the cached child menu's children list in place. Menu::step()
+	// measures children each frame, so adding/removing widgets updates the
+	// submenu layout automatically.
+	void rebuildChildMenu() {
+		if (!childMenu || !p) return;
+
+		// Delete existing children. clearChildren() is provided by Widget.
+		childMenu->clearChildren();
+
+		// Read-only header showing count
+		childMenu->addChild(construct<MenuLabel>(&MenuLabel::text,
+			string::f("Steps (%d/%d)", (int)p->stepValues.size(), TOGGLE_MULTI_STEPS)));
+
+		// One slider per step (sliders don't fire ActionEvent, no sticky needed)
+		float rangeMin, rangeMax;
+		p->getBoundRange(rangeMin, rangeMax);
+		for (int i = 0; i < (int)p->stepValues.size(); i++) {
+			int idx = i;
+			float defaultVal = (float)idx / std::max(1, (int)p->stepValues.size() - 1);
+
+			childMenu->addChild(Rack::createSlider(
+				[this, idx]() { return p->stepValues[idx]; },
+				[this, idx, rangeMin, rangeMax](float v) {
+					p->stepValues[idx] = clamp(v, std::min(rangeMin, rangeMax), std::max(rangeMin, rangeMax));
+				},
+				rangeMin, rangeMax, defaultVal,
+				string::f("Step %d", idx + 1).c_str(), "", 1.f, 220.0f
+			));
+		}
+
+		// Sticky leaf-item: subclass MenuItem and unconsume the action event so
+		// MenuOverlay::requestDelete() is skipped.
+		struct StickyItem : MenuItem {
+			std::function<void()> action;
+			StepEditorMenuItem* parentItem;
+			void onAction(const ActionEvent& e) override {
+				if (action) action();
+				// Rebuild child menu in place after the action mutates state.
+				if (parentItem) parentItem->rebuildChildMenu();
+				e.unconsume();
+			}
+		};
+
+		// Add step
+		bool canAdd = (int)p->stepValues.size() < TOGGLE_MULTI_STEPS;
+		StickyItem* addItem = new StickyItem;
+		addItem->text = "+ Add step";
+		addItem->disabled = !canAdd;
+		addItem->parentItem = this;
+		addItem->action = [this]() {
+			if (!p) return;
+			if ((int)p->stepValues.size() >= TOGGLE_MULTI_STEPS) return;
+			float lo, hi;
+			p->getBoundRange(lo, hi);
+			float span = std::max(lo, hi) - std::min(lo, hi);
+			float last = p->stepValues.empty() ? std::min(lo, hi) : p->stepValues.back();
+			float next = clamp(last + span / (float)TOGGLE_MULTI_STEPS,
+				std::min(lo, hi), std::max(lo, hi));
+			p->stepValues.push_back(next);
+		};
+		childMenu->addChild(addItem);
+
+		// Remove last step (only when more than 2 remain, mirroring min-2 toggle behavior)
+		bool canRemove = (int)p->stepValues.size() > 2;
+		StickyItem* removeItem = new StickyItem;
+		removeItem->text = "- Remove last step";
+		removeItem->disabled = !canRemove;
+		removeItem->parentItem = this;
+		removeItem->action = [this]() {
+			if (!p) return;
+			if ((int)p->stepValues.size() <= 2) return;
+			p->stepValues.pop_back();
+			if (p->stepIndex >= (int)p->stepValues.size())
+				p->stepIndex = (int)p->stepValues.size() - 1;
+		};
+		childMenu->addChild(removeItem);
+
+		childMenu->addChild(new MenuSeparator);
+
+		// Reset to {min, max}
+		StickyItem* resetItem = new StickyItem;
+		resetItem->text = "Reset to min/max";
+		resetItem->parentItem = this;
+		resetItem->action = [this]() {
+			if (!p) return;
+			float lo, hi;
+			p->getBoundRange(lo, hi);
+			p->stepValues.clear();
+			p->stepValues.push_back(std::min(lo, hi));
+			p->stepValues.push_back(std::max(lo, hi));
+			p->stepIndex = 0;
+		};
+		childMenu->addChild(resetItem);
+	}
+
+	Menu* createChildMenu() override {
+		// Cache the menu so rebuildChildMenu() can mutate it in place.
+		// If the parent menu was closed and reopened, createChildMenu() is called
+		// again — we just build a fresh Menu in that case.
+		childMenu = new Menu;
+		rebuildChildMenu();
+		return childMenu;
+	}
+}; // struct StepEditorMenuItem
 
 
 struct MidiCatSelectionWidget : Widget {
@@ -1890,6 +2147,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle + Value", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE_VALUE));
+				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle Steps", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE_STEPS));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Snapped", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::SNAPPED));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Snapped (short/long)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::SNAPPED_SL));
 				return menu;
@@ -1938,6 +2196,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE_VEL));
+				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle Steps", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE_STEPS));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Snapped", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::SNAPPED));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Snapped (short/long)", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::SNAPPED_SL));
 				return menu;
@@ -2076,6 +2335,10 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			[this]() { return module->midiParam[id].getMax(); },
 			[this](float v) { module->midiParam[id].setMax(v); },
 			-1.f, 2.f, 1.f, "High", "%", 100.f, 220.0f
+		));
+		menu->addChild(construct<StepEditorMenuItem>(
+			&MenuItem::text, "Steps",
+			&StepEditorMenuItem::p, &module->midiParam[id]
 		));
 		menu->addChild(construct<PresetMenuItem>(&MenuItem::text, "Presets", &PresetMenuItem::module, module, &PresetMenuItem::id, id));
 		menu->addChild(new MidiCatCurveMenuItem(&module->midiParam[id]));
