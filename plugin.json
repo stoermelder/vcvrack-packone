@@ -12,6 +12,7 @@
 	"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/README.md",
 	"changelogUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/CHANGELOG.md",
 	"donateUrl": "https://paypal.me/stoermelder",
+	"minRackVersion": "2.6.1",
 	"modules": [
 		{
 			"slug": "Siren",
