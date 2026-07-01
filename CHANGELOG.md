@@ -1,3 +1,10 @@
+## 2.x.x
+
+### Changes and Fixes
+
+- Module [SIREN](./docs/siren/Siren.md)
+    - Fixed crash when playing multi-channel files
+
 ## 2.5.0
 
 ### New modules

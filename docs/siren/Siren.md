@@ -205,4 +205,6 @@ SIREN can shift the pitch of the current sample or trim region without changing 
 ## Changelog
 
 - v2.5.0
-    - Initial release
+  - Initial release
+- v2.x.x
+  - Fixed crash when playing multi-channel files

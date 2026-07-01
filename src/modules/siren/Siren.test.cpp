@@ -991,6 +991,50 @@ TEST_CASE("openStream: null source leaves pendingStream nullptr", "[Siren][Audio
 	Test::destroyModule(m);
 }
 
+// Fill thread plays back only the first two channels of a multi-channel file.
+// Regression test: stream->readF32() always interleaves the decoder's real
+// channel count, but the fill thread's scratch buffers (zcBuf, tmp, loopHead/
+// loopTail) were sized assuming <=2 channels (the already-clamped fillCh).
+// A file with more channels (e.g. 5.1 surround) overflowed those stack
+// buffers, corrupting memory and crashing during playback (though the
+// preview path, which sizes its buffers to the real channel count, was fine).
+TEST_CASE("Fill thread: multi-channel stream plays back first two channels only", "[Siren][Audio]") {
+	auto* m = Test::createModule<SirenModule>("Siren");
+	m->engineSampleRate = 44100;
+
+	// 6-channel stream (5.1 surround). Channels 0/1 carry distinct constant
+	// values so the test can verify they pass through correctly; channels
+	// 2-5 carry a different value that must never leak into the output.
+	const int frames = 8192;
+	const int channels = 6;
+	auto stream = std::unique_ptr<FakeAudioStream>(new FakeAudioStream(frames, channels, 44100, 0.f));
+	for (int f = 0; f < frames; f++) {
+		stream->data[(size_t)f * channels + 0] = 0.8f;
+		stream->data[(size_t)f * channels + 1] = -0.4f;
+		for (int c = 2; c < channels; c++) stream->data[(size_t)f * channels + c] = 1.f;
+	}
+
+	m->adoptStream(std::move(stream), frames);
+	m->startPlayback(0.f);
+
+	// Drive process() until the fill thread has caught up and the declick
+	// ramp (~660 frames at 44.1 kHz) has settled; interleave short sleeps so
+	// the background fill thread actually gets scheduled.
+	float l = 0.f, r = 0.f;
+	for (int i = 0; i < 3000; i++) {
+		m->process(Test::makeProcessArgs(1));
+		l = m->outputs[SirenModule::OUTPUT_L].getVoltage();
+		r = m->outputs[SirenModule::OUTPUT_R].getVoltage();
+		if (i % 20 == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
+
+	// Output = sample * volume(1.0) * 5.f
+	REQUIRE(l == Catch::Approx(0.8f * 5.f).margin(0.05f));
+	REQUIRE(r == Catch::Approx(-0.4f * 5.f).margin(0.05f));
+
+	Test::destroyModule(m);
+}
+
 // ─── sampleMatchesFilter: tag filtering logic ─────────────────────────────────
 // Tests for include/exclude/favorites filtering on SirenBrowserPane.
 // SirenBrowserPane is instantiated without init() — sampleMatchesFilter only
