@@ -683,7 +683,7 @@ TEST_CASE("loadItem resets view state but preserves trim range", "[Siren][Previe
 	pane.canvas->outPoint = 0.9f;
 	pane.canvas->scrubPos = 0.7f;
 
-	pane.loadItem(DataSourceNode{}, nullptr);
+	pane.loadItem(DataSourceNode{}, nullptr, false, false, /*resetTrim=*/false);
 
 	// View state resets
 	REQUIRE(pane.canvas->scrubPos == 0.f);
