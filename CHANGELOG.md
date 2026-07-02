@@ -3,6 +3,7 @@
 ### Changes and Fixes
 
 - Module [SIREN](./docs/siren/Siren.md)
+    - Added support for multi-channel files on Re-pitch and Crossfade-loop
     - Fixed crash when playing multi-channel files
 
 ## 2.5.0
