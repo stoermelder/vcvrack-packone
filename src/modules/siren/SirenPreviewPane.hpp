@@ -192,7 +192,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		previewCacheReady = false;
 		previewDurationSeconds = 0.f;
 		previewCache = AudioWaveformCache{};
-		previewActive->store(false, std::memory_order_relaxed);
+		if (previewActive) previewActive->store(false, std::memory_order_relaxed);
 
 		if (canvas) {
 			if (resetTrim) canvas->resetTrimHandles();
@@ -316,7 +316,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		if (!source || currentNode.relativePath.empty() || !worker) return;
 
 		previewBuilding = true;
-		previewActive->store(false, std::memory_order_relaxed);
+		if (previewActive) previewActive->store(false, std::memory_order_relaxed);
 		previewIsRepitch = repitch;
 		previewCacheReady = false;
 		previewCache = AudioWaveformCache{};
@@ -359,7 +359,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		previewCacheReady = false;
 		previewDurationSeconds = 0.f;
 		previewCache = AudioWaveformCache{};
-		previewActive->store(false, std::memory_order_relaxed);
+		if (previewActive) previewActive->store(false, std::memory_order_relaxed);
 
 		// Restore original file stream, then seek to trimIn so the playhead and
 		// all DSP counters (seekBaseFrame, outputFrameCount) are valid in the
@@ -402,7 +402,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 				// Tell the module to ignore trimIn/trimOut: the preview buffer already
 				// spans the full [0, 1] range, so the original trim values are left untouched.
-				previewActive->store(true, std::memory_order_relaxed);
+				if (previewActive) previewActive->store(true, std::memory_order_relaxed);
 
 				// Reset seek base so playhead is valid in the new stream's frame space
 				if (startPlaybackCallback) startPlaybackCallback(0.f);

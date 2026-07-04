@@ -109,9 +109,16 @@ struct SirenModule : Module {
 
 		// Per-stream playback config — computed once per seek, reused every fill cycle.
 		dsp::SampleRateConverter<2> src;
-		int fillCh = 1;
+		int fillCh = 1;      // channels actually pushed to the ring, clamped to 2
+		int streamCh = 1;    // real channel count reported by the decoder — readF32 always
+		                     // interleaves this many channels regardless of fillCh
 		bool fillResample = false;
 		float fillRatio = 1.f;  // outRate / inRate
+
+		// Scratch for raw decoder reads when streamCh > 2 (e.g. 5.1 files). readF32()
+		// interleaves streamCh channels per frame; only the first fillCh (<=2) are kept.
+		// Sized for the largest single read request (ZC_WINDOW below).
+		std::vector<float> chScratch;
 
 		// Tracks the file-frame position of the next frame to be pushed into the ring.
 		// The fill thread uses this to wrap seamlessly at trimOut → trimIn during looping
@@ -119,6 +126,7 @@ struct SirenModule : Module {
 		int64_t fillFilePos = 0;
 
 		static constexpr size_t CHUNK = 1024;
+		static constexpr size_t ZC_WINDOW = 2048;    // zero-crossing lookahead window (frames)
 		static constexpr size_t OUT_MAX = CHUNK * 8;  // headroom for up to 8× upsampling
 		float outBuf[OUT_MAX * 2];  // resampler output — allocated once for the thread lifetime
 
@@ -161,7 +169,10 @@ struct SirenModule : Module {
 		// Read exactly n frames into buf, zero-padding any shortfall so the fixed-size
 		// crossfade buffers are always fully populated even near EOF.
 		auto readPadded = [&](float* buf, int64_t n) {
-			int64_t got = stream->readF32(buf, n);
+			int64_t got = stream->readF32(chScratch.data(), n);
+			for (int64_t f = 0; f < got; f++) {
+				for (int c = 0; c < fillCh; c++) buf[f * fillCh + c] = chScratch[f * streamCh + c];
+			}
 			for (int64_t i = got * fillCh; i < n * fillCh; i++) buf[i] = 0.f;
 		};
 
@@ -206,10 +217,13 @@ struct SirenModule : Module {
 			rb.clear();
 			loopHeadValid = false;
 
-			// Channel count — clamped to the stereo SRC limit.
-			fillCh = stream->channels();
-			if (fillCh < 1) fillCh = 1;
-			if (fillCh > 2) fillCh = 2;
+			// Channel count — streamCh is the real decoder channel count (readF32 always
+			// interleaves this many channels); fillCh is clamped to the stereo SRC limit,
+			// so files with more than 2 channels play back only their first two.
+			streamCh = stream->channels();
+			if (streamCh < 1) streamCh = 1;
+			fillCh = std::min(streamCh, 2);
+			chScratch.resize((size_t)ZC_WINDOW * streamCh);
 
 			// Resampler setup — only when file and engine rates differ.
 			int inRate = stream->sampleRate(), outRate = engineSampleRate;
@@ -219,10 +233,13 @@ struct SirenModule : Module {
 			sampleRateRatio.store(fillRatio, std::memory_order_relaxed);
 
 			// ZC lookahead — discard frames up to the first zero crossing on channel 0,
-			// then push the rest to prime the ring.
-			static constexpr size_t ZC_WINDOW = 2048;
+			// then push the rest to prime the ring. Read raw (streamCh channels) into the
+			// scratch buffer, then downmix to the first fillCh (<=2) channels.
 			float zcBuf[ZC_WINDOW * 2];
-			int64_t zcRead = stream->readF32(zcBuf, ZC_WINDOW);
+			int64_t zcRead = stream->readF32(chScratch.data(), ZC_WINDOW);
+			for (int64_t f = 0; f < zcRead; f++) {
+				for (int c = 0; c < fillCh; c++) zcBuf[f * fillCh + c] = chScratch[f * streamCh + c];
+			}
 			int64_t zcOffset = 0;
 			for (int64_t i = 1; i < zcRead; i++) {
 				if (zcBuf[(i - 1) * fillCh] * zcBuf[i * fillCh] <= 0.f) { zcOffset = i; break; }
@@ -309,7 +326,10 @@ struct SirenModule : Module {
 				else toRead = std::min(toRead, (size_t)framesLeft);
 			}
 			if (toRead > 0) {
-				int64_t nRead = stream->readF32(tmp, (int64_t)toRead);
+				int64_t nRead = stream->readF32(chScratch.data(), (int64_t)toRead);
+				for (int64_t f = 0; f < nRead; f++) {
+					for (int c = 0; c < fillCh; c++) tmp[f * fillCh + c] = chScratch[f * streamCh + c];
+				}
 				pushFrames(tmp, (int)nRead);
 				fillFilePos += nRead;
 				if (nRead == 0) eofReached.store(true, std::memory_order_release);

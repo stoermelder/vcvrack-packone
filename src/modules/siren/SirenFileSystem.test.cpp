@@ -68,6 +68,29 @@ static void writeTestWav(const std::string& path, int frames = 4410, int sampleR
 	drwav_uninit(&wav);
 }
 
+// Writes a WAV where channel 0 and channel 1 each hold a distinct constant
+// value and any further channels hold a third value — lets tests verify that
+// only the first two channels survive a downmix.
+static void writeMultichannelTestWav(const std::string& path, int frames, int sampleRate, int channels,
+		float ch0, float ch1, float chRest) {
+	drwav_data_format fmt = {};
+	fmt.container = drwav_container_riff;
+	fmt.format = DR_WAVE_FORMAT_IEEE_FLOAT;
+	fmt.channels = (drwav_uint32)channels;
+	fmt.sampleRate = (drwav_uint32)sampleRate;
+	fmt.bitsPerSample = 32;
+	drwav wav;
+	drwav_init_file_write(&wav, path.c_str(), &fmt, nullptr);
+	std::vector<float> samples((size_t)frames * channels);
+	for (int f = 0; f < frames; f++) {
+		samples[(size_t)f * channels + 0] = ch0;
+		if (channels > 1) samples[(size_t)f * channels + 1] = ch1;
+		for (int c = 2; c < channels; c++) samples[(size_t)f * channels + c] = chRest;
+	}
+	drwav_write_pcm_frames(&wav, (drwav_uint64)frames, samples.data());
+	drwav_uninit(&wav);
+}
+
 // ─── isGeneratedFile ──────────────────────────────────────────────────────────
 // pattern: _siren_ + exactly 6 lowercase letters + .wav suffix, must be at position size-17.
 TEST_CASE("isGeneratedFile: recognises _siren_+6letters.wav pattern", "[Siren][FileSystem]") {
@@ -456,4 +479,86 @@ TEST_CASE("FileSystemDataSource: metadata file path is deterministic for same ro
 	FileSystemDataSource src1(tmp.str(), scratchMetadataStore());
 	FileSystemDataSource src2(tmp.str(), scratchMetadataStore());
 	REQUIRE(src1.getMetadata()->filePath() == src2.getMetadata()->filePath());
+}
+
+// ─── buildRepitchPreview / buildLoopPreview: multi-channel support ───────────
+// Regression test for the same bug fixed in the fill thread: readF32() always
+// interleaves the decoder's real channel count, but these functions allocated
+// their read buffer sized for a stereo-clamped channel count, overflowing it
+// for files with more than 2 channels (e.g. 5.1 surround). The fix keeps the
+// full channel count all the way through — these functions no longer clamp
+// to stereo at all; downmixing (if any) happens only at the fill-thread
+// playback stage, not here.
+
+// semitones = 0 is a no-op in applyRepitch, so the result reflects the raw
+// read exactly — letting this test assert precise sample values per channel.
+TEST_CASE("buildRepitchPreview: multi-channel file keeps its full channel count", "[Siren][Audio][Repitch]") {
+	TempDir tmp;
+	const int frames = 4410;
+	writeMultichannelTestWav(tmp.filePath("surround.wav"), frames, 44100, 6, 0.6f, -0.3f, 0.15f);
+
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+	AudioPreviewResult result = buildRepitchPreview(src, "/surround.wav", 0.f, 1.f, 0.f);
+
+	REQUIRE(result.ok == true);
+	REQUIRE(result.channels == 6);
+	REQUIRE(!result.samples.empty());
+	for (size_t f = 0; f < result.samples.size() / 6; f++) {
+		REQUIRE(result.samples[f * 6 + 0] == Catch::Approx(0.6f));
+		REQUIRE(result.samples[f * 6 + 1] == Catch::Approx(-0.3f));
+		for (int c = 2; c < 6; c++) {
+			REQUIRE(result.samples[f * 6 + c] == Catch::Approx(0.15f));
+		}
+	}
+}
+
+// An actual pitch shift on a >2-channel file must complete without crashing
+// and preserve the full channel count.
+TEST_CASE("buildRepitchPreview: multi-channel file with actual pitch shift does not crash", "[Siren][Audio][Repitch]") {
+	TempDir tmp;
+	writeMultichannelTestWav(tmp.filePath("surround.wav"), 4410, 44100, 8, 0.5f, 0.2f, 0.1f);
+
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+	AudioPreviewResult result = buildRepitchPreview(src, "/surround.wav", 0.f, 1.f, 5.f);
+
+	REQUIRE(result.ok == true);
+	REQUIRE(result.channels == 8);
+	REQUIRE(!result.samples.empty());
+}
+
+// A mono file is unaffected — regression guard against accidentally forcing
+// a minimum channel count.
+TEST_CASE("buildRepitchPreview: mono file is read correctly", "[Siren][Audio][Repitch]") {
+	TempDir tmp;
+	writeMultichannelTestWav(tmp.filePath("mono.wav"), 4410, 44100, 1, 0.42f, 0.f, 0.f);
+
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+	AudioPreviewResult result = buildRepitchPreview(src, "/mono.wav", 0.f, 1.f, 0.f);
+
+	REQUIRE(result.ok == true);
+	REQUIRE(result.channels == 1);
+	REQUIRE(!result.samples.empty());
+	for (float s : result.samples) {
+		REQUIRE(s == Catch::Approx(0.42f));
+	}
+}
+
+TEST_CASE("buildLoopPreview: multi-channel file keeps its full channel count without crashing", "[Siren][Audio][Loop]") {
+	TempDir tmp;
+	writeMultichannelTestWav(tmp.filePath("surround.wav"), 8820, 44100, 6, 0.4f, -0.2f, 0.1f);
+
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+	AudioPreviewResult result = buildLoopPreview(src, "/surround.wav", 0.f, 1.f, 0.05f);
+
+	REQUIRE(result.ok == true);
+	REQUIRE(result.channels == 6);
+	REQUIRE(!result.samples.empty());
+	// The loop-crossfade rotation/blend only ever mixes ch0/ch1 (0.4 / -0.2)
+	// with the same-index channel across the splice, and channels 2-5 (0.1)
+	// with themselves — so with the equal-power crossfade's worst-case
+	// sqrt(2) gain, no output sample can exceed ~0.6. A misaligned/overflowing
+	// read would instead blend unrelated channels together and break this bound.
+	for (float s : result.samples) {
+		REQUIRE(std::abs(s) <= 0.6f);
+	}
 }
