@@ -1,7 +1,35 @@
-## 2.5.0
+## 2.x.x
 
 ### Changes and Fixes
 
+- Modules [MIDI-CAT](./docs/midicat/MidiCat.md), [MIDI-ESX](./docs/midiesx/MidiEsx.md), [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md), [MIDI-PLUG](./docs/midi/MidiPlug.md), [MIDI-STEP](./docs/midi/MidiStep.md)
+    - Ignore incoming MIDI messages while module is bypassed
+- Module [SIREN](./docs/siren/Siren.md)
+    - Added support for multi-channel files on Re-pitch and Crossfade-loop
+    - Fixed crash when playing multi-channel files
+
+## 2.5.0
+
+### New modules
+
+- Module [SIREN](./docs/siren/Siren.md)
+    - Sample browser collaboration with Omri Cohen — browse, preview and drag WAV/FLAC/MP3 samples to other modules
+
+### Changes and Fixes
+
+- Module [HIVE](./docs/maze/Hive.md)
+    - Fixed broken SHIFT/R- input
+- Module [MB](./docs/trial-and-error/Mb.md)
+    - Added width (HP) filter and sorting to *v2 mod* browser
+    - Fixed *v2 mod* scroll position when reopening the browser overlay
+    - Fixed module placement to trace back to the right click mouse position
+- Module [MIDI-MON](./docs/midi/MidiMon.md)
+    - Fixed SysEx message logging (trailing garbage bytes)
+    - Fixed saving of SysEx data logging setting
+- Module [PANIC ROOM](./docs/panicroom/PanicRoom.md)
+    - Added options to limit the number of allowed modules and cables
+- Module [STRIP](./docs/strip/Strip.md)
+    - Fixed crash when removing modules added by STRIP in plugin-version of Rack
 - Module [TRANSIT](./docs/transit/Transit.md)
     - Fade CV input is now additive to per-slot fade time (previously CV was only additive to the global _FADE_ knob)
     - Added Output-mode "Tipsy" for sending the snapshot text label (for modules with Tipsy-support like [TTY](https://library.vcvrack.com/StochasticTelegraph/TTY))

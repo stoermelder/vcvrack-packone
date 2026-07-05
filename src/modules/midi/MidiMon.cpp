@@ -107,6 +107,12 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		}
 	}
 
+	void processBypass(const ProcessArgs& args) override {
+		// Drain the queue while bypassed
+		midiProcessor.processBypass(args.frame);
+		Module::processBypass(args);
+	}
+
 	void process(const ProcessArgs& args) override {
 		isProcessing = true;
 		if (processDivider.process()) {
@@ -250,7 +256,7 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		json_object_set_new(rootJ, "showPitchWheelMsg", json_boolean(showPitchWheelMsg));
 
 		json_object_set_new(rootJ, "showSysExMsg", json_boolean(showSysExMsg));
-		json_object_set_new(rootJ, "showSysExData", json_boolean(showSysExMsg));
+		json_object_set_new(rootJ, "showSysExData", json_boolean(showSysExData));
 		json_object_set_new(rootJ, "showClockMsg", json_boolean(showClockMsg));
 		json_object_set_new(rootJ, "showSystemMsg", json_boolean(showSystemMsg));
 		json_object_set_new(rootJ, "showFrame", json_boolean(showFrame));

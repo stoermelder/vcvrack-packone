@@ -42,6 +42,10 @@ struct MidiTrackingProcessor : MidiProcessorHandler {
 		return midiProcessor.getInput();
 	}
 
+	void processBypass(int64_t frame) {
+		midiProcessor.processBypass(frame);
+	}
+
 	void process(int64_t frame) {
 		midiProcessor.process(frame);
 	}

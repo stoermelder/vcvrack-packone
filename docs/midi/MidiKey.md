@@ -15,3 +15,5 @@ MIDI-KEY is a utility module for converting MIDI messages from your MIDI control
     - Fixed crash on mapped special keys like ENTER
 - v2.3.0
     - Fixed occasional crash in browser preview
+- v2.x.x
+    - Ignore incoming MIDI messages while module is bypassed

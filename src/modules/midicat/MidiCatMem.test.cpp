@@ -14,7 +14,7 @@ Test::TestContext<> testContext;
 static void connectMem(MidiCatModule* midicat, MidiCatMemModule* mem) {
 	midicat->rightExpander.module = mem;
 	mem->leftExpander.module = midicat;
-	midicat->expandersChanged = true;
+	midicat->moduleChangedFlag = true;
 	midicat->process(Test::makeProcessArgs(1));
 }
 
@@ -177,7 +177,7 @@ TEST_CASE("MidiCatMem: disconnecting expander clears expMem", "[MidiCatMem][Midi
 
 	midicat->rightExpander.module = nullptr;
 	mem->leftExpander.module = nullptr;
-	midicat->expandersChanged = true;
+	midicat->moduleChangedFlag = true;
 	midicat->process(Test::makeProcessArgs(10));
 
 	REQUIRE(midicat->expMem.load() == nullptr);

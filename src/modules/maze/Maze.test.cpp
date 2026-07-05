@@ -235,6 +235,44 @@ TEST_CASE("Turn trigger reverses direction in ONEEIGHTY mode", "[Maze]") {
 	Test::destroyModule(module);
 }
 
+// Fire a single rising edge on the given input
+static void pulse(MazeMod* module, int input, int frame) {
+	module->inputs[input].channels = 1;
+	module->inputs[input].setVoltage(0.f);
+	module->process(Test::makeProcessArgs(frame));
+	module->inputs[input].setVoltage(10.f);
+	module->process(Test::makeProcessArgs(frame + 1));
+	module->inputs[input].setVoltage(0.f);
+}
+
+TEST_CASE("Side-shift inputs nudge cursors perpendicular to travel", "[Maze]") {
+	// Heading East (xDir=1, yDir=0): SHIFT_R moves +y (down/right of travel),
+	// SHIFT_L moves -y (up/left of travel).
+	SECTION("SHIFT_R moves the cursor down (right of eastward travel)") {
+		auto module = Test::createModule<MazeMod>("Maze");
+		module->xPos[0] = 4; module->yPos[0] = 4;
+		module->xDir[0] = 1; module->yDir[0] = 0;
+
+		pulse(module, MazeMod::SHIFT_R_INPUT, 10);
+
+		REQUIRE(module->xPos[0] == 4);
+		REQUIRE(module->yPos[0] == 5);
+		Test::destroyModule(module);
+	}
+
+	SECTION("SHIFT_L moves the cursor up (left of eastward travel)") {
+		auto module = Test::createModule<MazeMod>("Maze");
+		module->xPos[0] = 4; module->yPos[0] = 4;
+		module->xDir[0] = 1; module->yDir[0] = 0;
+
+		pulse(module, MazeMod::SHIFT_L_INPUT, 10);
+
+		REQUIRE(module->xPos[0] == 4);
+		REQUIRE(module->yPos[0] == 3);
+		Test::destroyModule(module);
+	}
+}
+
 TEST_CASE("Reset input returns cursor to start position", "[Maze]") {
 	auto module = Test::createModule<MazeMod>("Maze");
 	module->inputs[MazeMod::RESET_INPUT].channels = 1;

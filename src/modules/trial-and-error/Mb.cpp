@@ -52,7 +52,31 @@ ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser) {
 	// Create ModuleWidget
 	ModuleWidget* moduleWidget = model->createModuleWidget(addedModule);
 	assert(moduleWidget);
-	APP->scene->rack->addModuleAtMouse(moduleWidget);
+
+	// Place the module at the rack position that was captured when the browser
+	// was opened (typically the right-click position). This matches the VCV
+	// built-in browser behavior. We use the stored position rather than the
+	// current mouse position because the mouse is now inside the browser UI.
+	BrowserOverlay* overlay = dynamic_cast<BrowserOverlay*>(APP->scene->browser);
+	if (overlay && overlay->rackMousePosAtOpen.isFinite()) {
+		if (hideBrowser) {
+			// Single-click: center on the stored right-click position, snapped to grid.
+			math::Vec pos = overlay->rackMousePosAtOpen - moduleWidget->box.size.div(2);
+			pos.x = std::round(pos.x / RACK_GRID_WIDTH) * RACK_GRID_WIDTH;
+			pos.y = std::round(pos.y / RACK_GRID_HEIGHT) * RACK_GRID_HEIGHT;
+			moduleWidget->box.pos = pos;
+			APP->scene->rack->addModule(moduleWidget);
+		}
+		else {
+			// Shift-click (browser stays open): use setModulePosForce so each new
+			// module lands near the right-click position and pushes others aside.
+			APP->scene->rack->addModule(moduleWidget);
+		}
+	}
+	else {
+		APP->scene->rack->addModuleAtMouse(moduleWidget);
+	}
+	APP->scene->rack->setModulePosForce(moduleWidget, overlay->rackMousePosAtOpen - moduleWidget->box.size.div(2));
 
 	// Load template preset
 	moduleWidget->loadTemplate();
@@ -66,10 +90,110 @@ ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser) {
 	// Hide Module Browser
 	if (hideBrowser) APP->scene->browser->hide();
 
+	// Arm a pending drag so the user can immediately reposition the module by
+	// holding and dragging — cleared in BrowserOverlay::step() once the mouse
+	// moves far enough (drag transfers) or the button is released (stays put).
+	if (overlay && hideBrowser) {
+		overlay->pendingDragModule = moduleWidget;
+		overlay->pendingDragSceneAnchor = APP->scene->getMousePos();
+	}
+
 	// Update usage data
 	modelUsageTouch(model);
 
 	return moduleWidget;
+}
+
+
+// Model Widths
+
+std::map<Model*, int> modelWidths;
+
+void modelWidthSet(Model* model, int hp) {
+	modelWidths[model] = hp;
+}
+
+int modelWidthGet(Model* model) {
+	auto it = modelWidths.find(model);
+	return (it != modelWidths.end()) ? it->second : -1;
+}
+
+void modelWidthScanAll() {
+	for (plugin::Plugin* p : rack::plugin::plugins) {
+		for (plugin::Model* model : p->models) {
+			ModuleWidget* mw = model->createModuleWidget(NULL);
+			if (mw) {
+				int hp = (int)std::round(mw->box.size.x / RACK_GRID_WIDTH);
+				modelWidthSet(model, hp);
+				delete mw;
+			}
+		}
+	}
+	modelWidthsToJson();
+}
+
+static std::string mbWidthFilePath() {
+	return rack::asset::user("Stoermelder-P1/mb-widths.json");
+}
+
+void modelWidthsFromJson() {
+	FILE* file = fopen(mbWidthFilePath().c_str(), "r");
+	if (!file) return;
+	json_error_t error;
+	json_t* j = json_loadf(file, 0, &error);
+	fclose(file);
+	if (!j) return;
+	DEFER({ json_decref(j); });
+
+	modelWidths.clear();
+	json_t* widthsJ = json_object_get(j, "widths");
+	if (!widthsJ) return;
+	const char* hpKey;
+	json_t* modelsJ;
+	json_object_foreach(widthsJ, hpKey, modelsJ) {
+		int hp = std::atoi(hpKey);
+		if (hp <= 0) continue;
+		size_t i;
+		json_t* entryJ;
+		json_array_foreach(modelsJ, i, entryJ) {
+			if (!json_is_array(entryJ) || json_array_size(entryJ) < 2) continue;
+			json_t* pluginJ = json_array_get(entryJ, 0);
+			json_t* modelJ  = json_array_get(entryJ, 1);
+			if (!pluginJ || !modelJ) continue;
+			Model* model = plugin::getModel(json_string_value(pluginJ), json_string_value(modelJ));
+			if (!model) continue;
+			modelWidths[model] = hp;
+		}
+	}
+}
+
+void modelWidthsToJson() {
+	// Group models by HP
+	std::map<int, std::vector<Model*>> byHp;
+	for (auto& pair : modelWidths)
+		byHp[pair.second].push_back(pair.first);
+
+	json_t* widthsJ = json_object();
+	for (auto& hpPair : byHp) {
+		json_t* modelsJ = json_array();
+		for (Model* model : hpPair.second) {
+			json_t* entryJ = json_array();
+			json_array_append_new(entryJ, json_string(model->plugin->slug.c_str()));
+			json_array_append_new(entryJ, json_string(model->slug.c_str()));
+			json_array_append_new(modelsJ, entryJ);
+		}
+		json_object_set_new(widthsJ, std::to_string(hpPair.first).c_str(), modelsJ);
+	}
+	json_t* j = json_object();
+	json_object_set_new(j, "widths", widthsJ);
+
+	rack::system::createDirectory(rack::asset::user("Stoermelder-P1"));
+	FILE* file = fopen(mbWidthFilePath().c_str(), "w");
+	if (file) {
+		json_dumpf(j, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+		fclose(file);
+	}
+	json_decref(j);
 }
 
 
@@ -613,6 +737,7 @@ BrowserOverlay::BrowserOverlay() {
 	sortBySearchScore = pluginSettings.mbSortBySearchScore;
 	favoriteHighlight = pluginSettings.mbFavoriteHighlight;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
+	modelWidthsFromJson();
 	modelDbInit();
 
 	mbWidgetBackup = APP->scene->browser;
@@ -668,8 +793,14 @@ BrowserOverlay::~BrowserOverlay() {
 	pluginSettings.mbFavoriteHighlight = favoriteHighlight;
 	json_decref(pluginSettings.mbModelsJ);
 	pluginSettings.mbModelsJ = moduleBrowserToJson();
-	
+	modelWidthsToJson();
+
 	pluginSettings.saveToJson();
+}
+
+void BrowserOverlay::onShow(const event::Show& e) {
+	rackMousePosAtOpen = APP->scene->rack->getMousePos();
+	OpaqueWidget::onShow(e);
 }
 
 void BrowserOverlay::step() {
@@ -692,6 +823,28 @@ void BrowserOverlay::step() {
 	}
 
 	box = parent->box.zeroPos();
+
+	// Pending drag: transfer the drag from the card widget to the module widget
+	// once the mouse has moved past a small threshold.  This distinguishes a
+	// quick click (module stays at rackMousePosAtOpen) from a click-and-drag
+	// (module follows the cursor).  step() fires in the same frame as the
+	// button press, so we cannot simply check "button still held" — we need
+	// actual movement to gate the transfer.
+	if (pendingDragModule) {
+		if (!APP->event->getDraggedWidget()) {
+			// Button was released without enough movement — module stays put.
+			pendingDragModule = nullptr;
+		}
+		else {
+			math::Vec currentPos = APP->scene->getMousePos();
+			if (currentPos.minus(pendingDragSceneAnchor).square() >= 4.f * 4.f) {
+				ModuleWidget* mw = pendingDragModule;
+				pendingDragModule = nullptr;
+				APP->event->setDraggedWidget(mw, GLFW_MOUSE_BUTTON_LEFT);
+			}
+		}
+	}
+
 	// Only step if visible, since there are potentially thousands of descendants that don't need to be stepped.
 	if (visible) OpaqueWidget::step();
 }
@@ -732,6 +885,8 @@ struct MbModule : Module {
 		LIGHT_ACTIVE,
 		NUM_LIGHTS
 	};
+
+	int panelTheme = 0;
 
 	MbModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -779,14 +934,14 @@ struct MbMenuButton : ui::Button {
 	}
 };
 
-struct MbWidget : ModuleWidget {
+struct MbWidget : ThemedModuleWidget<MbModule> {
 	BrowserOverlay* browserOverlay;
 	MbMenuButton* menubarButton;
 	bool active = false;
 
-	MbWidget(MbModule* module) {
+	MbWidget(MbModule* module)
+		: ThemedModuleWidget<MbModule>(module, "Mb", "", true) {
 		setModule(module);
-		setPanel(Svg::load(asset::plugin(pluginInstance, "res/Mb.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(0, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -846,7 +1001,7 @@ struct MbWidget : ModuleWidget {
 		if (module) {
 			module->lights[MbModule::LIGHT_ACTIVE].setBrightness(active);
 		}
-		ModuleWidget::step();
+		ThemedModuleWidget<MbModule>::step();
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -988,6 +1143,11 @@ struct MbWidget : ModuleWidget {
 				}
 			));
 		}
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuItem("Determine width for all modules", "", []() {
+			modelWidthScanAll();
+		}));
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Browser settings", "",

@@ -82,7 +82,7 @@ static Module* createExModule(TransitBase<12>** baseOut = nullptr) {
 static void connectExpander(TransitModule<12>* transit, Module* exModule) {
 	transit->rightExpander.module = exModule;
 	exModule->leftExpander.module = transit;
-	transit->expandersChanged = true;
+	transit->moduleChangedFlag = true;
 	transit->process(Test::makeProcessArgs(0));
 }
 
@@ -92,14 +92,14 @@ static void connectTwoExpanders(TransitModule<12>* transit, Module* ex1, Module*
 	ex1->leftExpander.module = transit;
 	ex1->rightExpander.module = ex2;
 	ex2->leftExpander.module = ex1;
-	transit->expandersChanged = true;
+	transit->moduleChangedFlag = true;
 	transit->process(Test::makeProcessArgs(0));
 }
 
 // Helper: disconnect the expander and re-process so Transit re-scans.
 static void disconnectExpander(TransitModule<12>* transit) {
 	transit->rightExpander.module = nullptr;
-	transit->expandersChanged = true;
+	transit->moduleChangedFlag = true;
 	transit->process(Test::makeProcessArgs(1));
 }
 

@@ -3,6 +3,16 @@
 
 namespace StoermelderPackOne {
 
+struct LayerOneMenuOverlay : ui::MenuOverlay {
+	void draw(const DrawArgs& args) override {}
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer == 1) {
+			ui::MenuOverlay::draw(args);
+		}
+	}
+};
+
+
 struct InfoOverlayWidget : widget::OpaqueWidget {
 	struct UrlButton : ui::Button {
 		std::string url;
@@ -111,7 +121,7 @@ struct InfoOverlayWidget : widget::OpaqueWidget {
 	}
 };
 
-widget::Widget* infoOverlayCreate(bool* setting, std::string header, std::string text, std::string url) {
+inline widget::Widget* infoOverlayCreate(bool* setting, std::string header, std::string text, std::string url) {
 	ui::MenuOverlay* overlay = new ui::MenuOverlay;
 	overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
 
@@ -121,6 +131,135 @@ widget::Widget* infoOverlayCreate(bool* setting, std::string header, std::string
 	w->label->text = text;
 	w->linkButton->url = url;
 	w->linkButton->text = url;
+	overlay->addChild(w);
+
+	return overlay;
+}
+
+
+// Centered modal with a header, a free-form text body, and two buttons
+// (Cancel + Confirm).  Caller supplies both actions via callbacks.  Used for
+// pre-flight confirmations (e.g. allocating a large in-memory preview buffer).
+struct ConfirmOverlayWidget : widget::OpaqueWidget {
+	struct CancelButton : ui::Button {
+		ConfirmOverlayWidget* w;
+		void onAction(const ActionEvent& e) override {
+			if (w->onCancel) w->onCancel();
+			w->getParent()->requestDelete();
+		}
+	};
+
+	struct ConfirmButton : ui::Button {
+		ConfirmOverlayWidget* w;
+		void onAction(const ActionEvent& e) override {
+			if (w->onConfirm) w->onConfirm();
+			w->getParent()->requestDelete();
+		}
+	};
+
+	ui::SequentialLayout* layout;
+	ui::Label* header;
+	ui::Label* label;
+	CancelButton* cancelButton = nullptr;
+	ConfirmButton* confirmButton = nullptr;
+
+	std::function<void()> onCancel;
+	std::function<void()> onConfirm;
+
+	ConfirmOverlayWidget() {
+		// Layout the dialog at a comfortable, normal size and then render it
+		// through a ZoomWidget that uniformly scales the whole appearance
+		// (font, buttons, padding) down.  This keeps the internal layout
+		// ratios — including the BND default 21px button height and 13px
+		// label font — intact, so the dialog looks like a properly-proportioned
+		// modal rather than a tightly-shrunk panel.
+		//
+		// The inner content is laid out at (innerW × innerH).  The dialog's
+		// own box.size equals the *visible* rendered footprint, which is
+		// innerSize × zoom because the ZoomWidget scales its children by
+		// `zoom` when drawing.
+		constexpr float zoom = 0.75f;
+		const float innerW = 360.f;
+		const float innerH = 150.f;
+		box.size = math::Vec(innerW * zoom, innerH * zoom);
+
+		widget::ZoomWidget* zw = new widget::ZoomWidget;
+		zw->box.pos = math::Vec(0.f, 0.f);
+		zw->box.size = math::Vec(innerW, innerH);
+		zw->setZoom(zoom);
+		addChild(zw);
+
+		const float margin = 10.f;
+		const float buttonWidth = 100.f;
+
+		layout = new ui::SequentialLayout;
+		layout->box.size = zw->box.size;
+		layout->orientation = ui::SequentialLayout::VERTICAL_ORIENTATION;
+		layout->margin = math::Vec(margin, margin);
+		layout->spacing = math::Vec(margin, margin);
+		layout->wrap = false;
+		zw->addChild(layout);
+
+		header = new ui::Label;
+		header->box.size.y = 20.f;
+		header->fontSize = 14.f;
+		layout->addChild(header);
+
+		label = new ui::Label;
+		label->box.size.y = 60.f;
+		label->box.size.x = innerW - 2.f * margin;
+		label->fontSize = 12.f;
+		layout->addChild(label);
+
+		ui::SequentialLayout* buttonLayout = new ui::SequentialLayout;
+		buttonLayout->box.size.x = innerW - 2.f * margin;
+		buttonLayout->spacing = math::Vec(margin, margin);
+		layout->addChild(buttonLayout);
+
+		cancelButton = new CancelButton;
+		cancelButton->box.size.x = buttonWidth;
+		cancelButton->text = "Cancel";
+		cancelButton->w = this;
+		buttonLayout->addChild(cancelButton);
+
+		confirmButton = new ConfirmButton;
+		confirmButton->box.size.x = buttonWidth;
+		confirmButton->text = "Confirm";
+		confirmButton->w = this;
+		buttonLayout->addChild(confirmButton);
+
+		buttonLayout->box.size.y = cancelButton->box.size.y;
+	}
+
+	void step() override {
+		OpaqueWidget::step();
+		// `box.size` is the post-scale visible size; the ZoomWidget child
+		// renders the layout at `box.size / zoom` and is positioned at (0, 0).
+		box.pos = parent->box.size.minus(box.size).div(2).round();
+	}
+
+	void draw(const DrawArgs& args) override {
+		bndMenuBackground(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0);
+		Widget::draw(args);
+	}
+};
+
+
+// Builds a centered confirmation overlay.  Returns the MenuOverlay (already
+// containing the dialog widget) so the caller can addChild() it where the
+// overlay should be parented (e.g. APP->scene or a module widget).
+inline widget::Widget* confirmOverlayCreate(std::string header, std::string text,
+		std::string confirmLabel, std::function<void()> onCancel,
+		std::function<void()> onConfirm) {
+	ui::MenuOverlay* overlay = new LayerOneMenuOverlay;
+	overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
+
+	ConfirmOverlayWidget* w = new ConfirmOverlayWidget;
+	w->header->text = header;
+	w->label->text = text;
+	w->confirmButton->text = confirmLabel;
+	w->onCancel = std::move(onCancel);
+	w->onConfirm = std::move(onConfirm);
 	overlay->addChild(w);
 
 	return overlay;

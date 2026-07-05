@@ -87,6 +87,12 @@ struct MidiKeyModule : Module, MidiTrackingProcessorHandler {
 		Module::onReset(e);
 	}
 
+	void processBypass(const ProcessArgs &args) override {
+		// Drain the queue while bypassed
+		trackingProcessor.processBypass(args.frame);
+		Module::processBypass(args);
+	}
+
 	void process(const ProcessArgs &args) override {
 		trackingProcessor.process(args.frame);
 	}

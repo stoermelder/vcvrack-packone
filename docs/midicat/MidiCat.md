@@ -364,3 +364,5 @@ FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used t
     - Added hotkey Ctrl/Cmd+Shift+R for resetting input-mode _Pickup (snap)_
     - Added hotkey Ctrl/Cmd+Shift+I for temporarily activating input-mode _Direct_ while held
     - Added hotkey Ctrl/Cmd+Shift+F for re-sending MIDI feedback
+- v2.x.x
+    - Ignore incoming MIDI messages while module is bypassed

@@ -10,6 +10,26 @@ namespace vcv {
 static const char SELECTION_FILTERS[] = "VCV Rack module selection (.vcvs):vcvs";
 
 /**
+ * Removes engine-runtime binding fields from a module's JSON before it is applied
+ * to an already-created module with ModuleWidget::fromJson(). Mirrors Rack's own
+ * engine::Module::jsonStripIds(), which every Rack preset/clipboard load calls
+ * before fromJson(). Restoring these fields would transplant another instance's
+ * bindings onto the new module; in particular a stale "automId" desyncs the module
+ * from the engine's host-automation map (automModuleMap) and causes a use-after-free
+ * in getAutomParamQuantity() on the next module removal.
+ * NB: unlike Rack's version, "id" is intentionally kept - callers read it for id
+ * remapping (StripIdFixModule) and rely on it.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
+static void jsonStripIds(json_t* moduleJ) {
+    json_object_del(moduleJ, "leftModuleId");
+    json_object_del(moduleJ, "rightModuleId");
+    json_object_del(moduleJ, "automId");
+}
+
+/**
  * Creates a module from JSON data, also returns the previous id of the module.
  * @param moduleJ JSON representation of the module
  * @param oldId Output parameter for the previous module id
@@ -281,6 +301,9 @@ static std::vector<history::Action*>* vcvsFromJson_presets(json_t* rootJ, std::m
 
             StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
             if (m) m->idFixDataFromJson(modules);
+
+            // Drop engine-runtime binding fields, like Rack's own preset loader.
+            jsonStripIds(moduleJ);
 
             mw->fromJson(moduleJ);
 
