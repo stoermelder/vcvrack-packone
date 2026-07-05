@@ -107,6 +107,12 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		}
 	}
 
+	void processBypass(const ProcessArgs& args) override {
+		// Drain the queue while bypassed
+		midiProcessor.processBypass(args.frame);
+		Module::processBypass(args);
+	}
+
 	void process(const ProcessArgs& args) override {
 		isProcessing = true;
 		if (processDivider.process()) {
