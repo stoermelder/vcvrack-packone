@@ -12,12 +12,30 @@ ORCA_SOURCES = \
 
 ORCA_GENERATED_HEADER := src/modules/ahab/orca_examples.hpp
 
+# SoundTouch dependency (used by Siren for repitch processing)
+SOUNDTOUCH_SOURCES = \
+	dep/soundtouch/source/SoundTouch/AAFilter.cpp \
+	dep/soundtouch/source/SoundTouch/BPMDetect.cpp \
+	dep/soundtouch/source/SoundTouch/FIFOSampleBuffer.cpp \
+	dep/soundtouch/source/SoundTouch/FIRFilter.cpp \
+	dep/soundtouch/source/SoundTouch/InterpolateCubic.cpp \
+	dep/soundtouch/source/SoundTouch/InterpolateLinear.cpp \
+	dep/soundtouch/source/SoundTouch/InterpolateShannon.cpp \
+	dep/soundtouch/source/SoundTouch/PeakFinder.cpp \
+	dep/soundtouch/source/SoundTouch/RateTransposer.cpp \
+	dep/soundtouch/source/SoundTouch/SoundTouch.cpp \
+	dep/soundtouch/source/SoundTouch/TDStretch.cpp \
+	dep/soundtouch/source/SoundTouch/cpu_detect_x86.cpp \
+	dep/soundtouch/source/SoundTouch/mmx_optimized.cpp \
+	dep/soundtouch/source/SoundTouch/sse_optimized.cpp
+
 # Add .cpp files to the build
 SOURCES += $(wildcard src/*.cpp src/**/**/*.cpp)
 # Exclude test files from the main build
 SOURCES := $(filter-out src/test/%.cpp,$(SOURCES))
 SOURCES := $(filter-out %.test.cpp,$(SOURCES))
 SOURCES += $(ORCA_SOURCES)
+SOURCES += $(SOUNDTOUCH_SOURCES)
 
 
 # Creates a generated header embedding the ORCA example
@@ -37,6 +55,8 @@ endif
 
 # Ensure headers from the orca-c tree (and its thirdparty) are found
 FLAGS += -Idep
+# Ensure headers from the SoundTouch library are found
+FLAGS += -Idep/soundtouch/include -Idep/soundtouch/source/SoundTouch
 
 
 # Add files to the ZIP package when running `make dist`
@@ -86,7 +106,7 @@ build/test/%: %.cpp $(CURDIR)/src/test/test_context.hpp
 	@mkdir -p $(dir $@)
 	@echo "Building $@..."
 	@$(CXX) -std=c++14 \
-		-I$(CURDIR)/src/test -I$(CURDIR)/src/test $(FLAGS) -O0 \
+		-I$(CURDIR)/src/test -I$(CURDIR)/src/test $(FLAGS) -O0 -UNDEBUG \
 		-L$(RACK_DIR) -lRack \
 		-o $@ $(TEST_ADD_SOURCES) $(CURDIR)/$(TARGET) $<
 

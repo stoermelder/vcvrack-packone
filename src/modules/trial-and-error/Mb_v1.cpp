@@ -231,9 +231,8 @@ struct ModelBox : widget::OpaqueWidget {
 		//	return;
 
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == 0) {
-			ModuleWidget* mw = chooseModel(model);
-			// Pretend the moduleWidget was clicked so it can be dragged in the RackWidget
-			e.consume(mw);
+			chooseModel(model);
+			e.consume(this);
 		}
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
 			chooseModel(model, false);

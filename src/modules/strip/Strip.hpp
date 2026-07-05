@@ -1,6 +1,7 @@
 #pragma once
 #include "../../plugin.hpp"
 #include "../../utils/StripIdFixModule.hpp"
+#include "../../utils/vcv_files.hpp"
 #include <osdialog.h>
 #include <plugin.hpp>
 
@@ -679,6 +680,9 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 						StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
 						if (m) m->idFixDataFromJson(modules);
 
+						// Drop engine-runtime binding fields, like Rack's own preset loader.
+						vcv::jsonStripIds(moduleJ);
+
 						mw->fromJson(moduleJ);
 
 						h->newModuleJ = mw->toJson();
@@ -705,6 +709,9 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 
 						StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
 						if (m) m->idFixDataFromJson(modules);
+
+						// Drop engine-runtime binding fields, like Rack's own preset loader.
+						vcv::jsonStripIds(moduleJ);
 
 						mw->fromJson(moduleJ);
 
@@ -737,6 +744,9 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 
 				StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
 				if (m) m->idFixDataFromJson(modules);
+
+				// Drop engine-runtime binding fields, like Rack's own preset loader.
+				vcv::jsonStripIds(moduleJ);
 
 				mw->fromJson(moduleJ);
 

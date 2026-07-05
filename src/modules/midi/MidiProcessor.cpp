@@ -32,7 +32,7 @@ int16_t MessageEx::getParamNumber() const {
 }
 
 int MessageEx::getSysExSize() const {
-	return type == Type::SYSEX ? msg.getSize() + 2 : 0; 
+	return type == Type::SYSEX ? msg.getSize() : 0;
 }
 
 unsigned char MessageEx::getSysExByte(int i) const {
@@ -58,6 +58,13 @@ rack::midi::InputQueue& MidiProcessor::getInput() {
 	return midiInput;
 }
 
+
+void MidiProcessor::processBypass(int64_t frame) {
+	rack::midi::Message msg;
+	while (midiInput.tryPop(&msg, frame)) { 
+		(void)0;
+	}
+}
 
 void MidiProcessor::process(int64_t frame) {
 	rack::midi::Message msg;

@@ -238,7 +238,7 @@ struct HiveModule : Module {
 		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage()))
 			for (int i = 0; i < NUM_PORTS; i++)
 				grid.moveCursor(i, (grid.cursor[i].dir + 10) % 12);
-		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage()))
+		if (shiftL2Trigger.process(inputs[SHIFT_L2_INPUT].getVoltage()))
 			for (int i = 0; i < NUM_PORTS; i++)
 				grid.moveCursor(i, (grid.cursor[i].dir + 8) % 12);
 

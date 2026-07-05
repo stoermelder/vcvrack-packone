@@ -1,7 +1,7 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/Version-2.4.1-green.svg?style=flat-square)
+![Version](https://img.shields.io/badge/Version-2.5.0-green.svg?style=flat-square)
 ![Rack](https://img.shields.io/badge/VCV_Rack-v2-red.svg?style=flat-square)
 ![MetaModule](https://img.shields.io/badge/MetaModule-v2-orange.svg?style=flat-square)
 ![License](https://img.shields.io/badge/License-GPLv3+-blue.svg?style=flat-square)
@@ -60,6 +60,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder, but d
 - [ReMOVE Lite](./docs/cvmap/ReMove.md): a recorder for knob/slider/switch-automation
 - [ROTOR Model A](./docs/rotor/RotorA.md): spread a carrier signal across 2-16 output channels using CV
 - [SAIL](./docs/sail/Sail.md): control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC
+- [SIREN](./docs/siren/Siren.md): Sample browser collaboration with Omri Cohen — browse, preview and drag WAV/FLAC/MP3 samples to other modules
 - [SIPO](./docs/sipo/Sipo.md): serial-in parallel-out shift register with polyphonic output and CV controls
 - [SPIN](./docs/spin/Spin.md): utility for converting mouse-wheel or middle mouse-button events into triggers
 - [STROKE](./docs/stroke/Stroke.md): utility which converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment

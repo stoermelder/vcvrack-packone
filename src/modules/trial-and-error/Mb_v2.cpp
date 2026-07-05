@@ -99,6 +99,9 @@ struct ModelBox : widget::OpaqueWidget {
 		mwc->addChild(moduleWidget);
 		mwc->box.size = moduleWidget->box.size;
 
+		int hp = (int)std::round(moduleWidget->box.size.x / RACK_GRID_WIDTH);
+		modelWidthSet(model, hp);
+
 		moduleWidget->step();
 		updateZoom();
 	}
@@ -176,8 +179,8 @@ struct ModelBox : widget::OpaqueWidget {
 		OpaqueWidget::onButton(e);
 
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == 0) {
-			ModuleWidget* mw = chooseModel(model);
-			e.consume(mw);
+			chooseModel(model);
+			e.consume(this);
 		}
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
 			chooseModel(model, false);
@@ -287,6 +290,18 @@ struct ModelBox : widget::OpaqueWidget {
 				browser->refresh();
 			}
 		}));
+
+		int modelHp = modelWidthGet(model);
+		if (modelHp > 0) {
+			menu->addChild(createMenuItem(string::f("Filter by %d HP", modelHp), "", [modelHp]() {
+				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+				if (browser) {
+					browser->widthFilterRef = modelHp;
+					browser->widthFilterMode = 1;
+					browser->refresh();
+				}
+			}));
+		}
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createCheckMenuItem("Favorite", RACK_MOD_CTRL_NAME "+F",
@@ -555,7 +570,7 @@ struct BrandItem : DropdownChoiceItem<ModuleBrowser> {
 	}
 	void step() override {
 		selected = (browser->brand == brand);
-		disabled = !selected && !browser->hasVisibleModel(brand, browser->tagIds, browser->favorite, browser->hidden, browser->customTagFilter);
+		disabled = !selected && !browser->hasVisibleModel(brand, browser->tagIds, browser->favorite, browser->hidden, browser->customTagFilter, browser->widthFilterRef, browser->widthFilterMode);
 		DropdownChoiceItem::step();
 	}
 };
@@ -625,7 +640,7 @@ struct TagItem : DropdownChoiceItem<ModuleBrowser> {
 		if (!selected) {
 			std::set<int> newTagIds = browser->tagIds;
 			newTagIds.insert(tagId);
-			disabled = !browser->hasVisibleModel(browser->brand, newTagIds, browser->favorite, browser->hidden, browser->customTagFilter);
+			disabled = !browser->hasVisibleModel(browser->brand, newTagIds, browser->favorite, browser->hidden, browser->customTagFilter, browser->widthFilterRef, browser->widthFilterMode);
 		}
 		else {
 			disabled = false;
@@ -702,7 +717,7 @@ struct CustomTagFilterItem : DropdownChoiceItem<ModuleBrowser> {
 		if (!selected && !tagName.empty()) {
 			std::set<std::string> newFilter = browser->customTagFilter;
 			newFilter.insert(tagName);
-			disabled = !browser->hasVisibleModel(browser->brand, browser->tagIds, browser->favorite, browser->hidden, newFilter);
+			disabled = !browser->hasVisibleModel(browser->brand, browser->tagIds, browser->favorite, browser->hidden, newFilter, browser->widthFilterRef, browser->widthFilterMode);
 		}
 		else {
 			disabled = false;
@@ -764,6 +779,95 @@ struct CustomTagButton : ui::ChoiceButton {
 };
 
 
+struct WidthItem : DropdownChoiceItem<ModuleBrowser> {
+	int hp;
+
+	void onAction(const event::Action& e) override {
+		if (browser->widthFilterRef == hp) {
+			browser->widthFilterMode++;
+			if (browser->widthFilterMode > 3) {
+				browser->widthFilterRef = 0;
+				browser->widthFilterMode = 0;
+			}
+		} else {
+			browser->widthFilterRef = hp;
+			browser->widthFilterMode = 1;
+		}
+		browser->refresh();
+	}
+
+	void step() override {
+		selected = (browser->widthFilterMode == 1 && hp == browser->widthFilterRef) ||
+		           (browser->widthFilterMode == 2 && hp <= browser->widthFilterRef) ||
+		           (browser->widthFilterMode == 3 && hp >= browser->widthFilterRef);
+		DropdownChoiceItem::step();
+	}
+
+	void draw(const DrawArgs& args) override {
+		static const char* suffix[] = {"", " =", " ≤", " ≥"};
+		bool isRef = (browser->widthFilterRef == hp && browser->widthFilterMode != 0);
+		if (isRef) { 
+			text = rawText + suffix[browser->widthFilterMode];
+		}
+		else if (selected) {
+			text = string::f("%s %s", rawText.c_str(), CHECKMARK(true));
+		}
+		else {
+			text = rawText;
+		}
+		BNDwidgetState state = BND_DEFAULT;
+		if (!disabled) {
+			if (APP->event->getHoveredWidget() == this) state = BND_HOVER;
+			if (APP->event->getDraggedWidget() == this) state = BND_ACTIVE;
+		}
+		if (disabled) nvgSave(args.vg);
+		if (disabled) nvgGlobalAlpha(args.vg, 0.35f);
+		bndToolButton(args.vg, 0.0, 0.0, box.size.x, box.size.y, BND_CORNER_NONE, state, -1, text.c_str());
+		if (disabled) nvgRestore(args.vg);
+
+		DropdownChoiceContainer* container = getAncestorOfType<DropdownChoiceContainer>();
+		if (container && container->selectedItem == this) {
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, -2.f, -2.f, box.size.x + 4.f, box.size.y + 4.f);
+			nvgStrokeWidth(args.vg, 1.5f);
+			nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.9f));
+			nvgStroke(args.vg);
+		}
+	}
+};
+
+struct WidthButton : ui::ChoiceButton {
+	ModuleBrowser* browser;
+
+	void onAction(const event::Action& e) override {
+		std::vector<widget::Widget*> items;
+
+		std::set<int> knownWidths;
+		for (auto& pair : modelWidths)
+			knownWidths.insert(pair.second);
+
+		for (int hp : knownWidths) {
+			WidthItem* item = new WidthItem;
+			item->setRawText(string::f("%d HP", hp));
+			item->hp = hp;
+			item->browser = browser;
+			items.push_back(item);
+		}
+
+		openLayoutMenu<ModuleBrowser>(this, items);
+	}
+
+	void step() override {
+		static const char* modePrefix[] = {"", "", "≤ ", "≥ "};
+		text = "Width";
+		if (browser->widthFilterMode != 0)
+			text += string::f(": %s%d HP", modePrefix[browser->widthFilterMode], browser->widthFilterRef);
+		text = string::ellipsize(text, 20);
+		ChoiceButton::step();
+	}
+};
+
+
 struct FavoriteButton : ui::Button {
 	ModuleBrowser* browser;
 	void onAction(const event::Action& e) override {
@@ -795,10 +899,24 @@ struct SortButton : ui::ChoiceButton {
 		settings::BrowserSort sort;
 		void onAction(const event::Action& e) override {
 			settings::browserSort = sort;
+			browser->widthSortDir = 0;
 			browser->refresh();
 		}
 		void step() override {
-			rightText = CHECKMARK(settings::browserSort == (int)sort);
+			rightText = CHECKMARK(browser->widthSortDir == 0 && settings::browserSort == (int)sort);
+			MenuItem::step();
+		}
+	};
+
+	struct WidthSortItem : ui::MenuItem {
+		ModuleBrowser* browser;
+		int dir;
+		void onAction(const event::Action& e) override {
+			browser->widthSortDir = (browser->widthSortDir == dir) ? 0 : dir;
+			browser->refresh();
+		}
+		void step() override {
+			rightText = CHECKMARK(browser->widthSortDir == dir);
 			MenuItem::step();
 		}
 	};
@@ -823,9 +941,29 @@ struct SortButton : ui::ChoiceButton {
 			item->browser = browser;
 			menu->addChild(item);
 		}
+
+		menu->addChild(new MenuSeparator);
+
+		WidthSortItem* wasc = new WidthSortItem;
+		wasc->text = "Width: narrow → wide";
+		wasc->dir = 1;
+		wasc->browser = browser;
+		menu->addChild(wasc);
+
+		WidthSortItem* wdesc = new WidthSortItem;
+		wdesc->text = "Width: wide → narrow";
+		wdesc->dir = -1;
+		wdesc->browser = browser;
+		menu->addChild(wdesc);
 	}
 
 	void step() override {
+		if (browser->widthSortDir != 0) {
+			text = browser->widthSortDir > 0 ? "Sort: narrow → wide" : "Sort: wide → narrow";
+			text = string::ellipsize(text, 22);
+			ChoiceButton::step();
+			return;
+		}
 		static const char* sortNames[] = {
 			"Recently updated", "Last used", "Most used", "Brand", "Module name", "Random"
 		};
@@ -928,6 +1066,12 @@ ModuleBrowser::ModuleBrowser() {
 	headerLayout->addChild(ctb);
 	customTagButton = ctb;
 
+	WidthButton* wb = new WidthButton;
+	wb->box.size.x = 114;
+	wb->browser = this;
+	headerLayout->addChild(wb);
+	widthButton = wb;
+
 	FavoriteButton* fb = new FavoriteButton;
 	fb->box.size.x = 90;
 	fb->text = "Favorites";
@@ -1003,7 +1147,7 @@ void ModuleBrowser::draw(const DrawArgs& args) {
 	Widget::draw(args);
 }
 
-bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter) {
+bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode) {
 	// Filter if not whitelisted by library
 	if (pluginSettings.mbApplyLibraryWhitelist) {
 		if (!settings::isModuleWhitelisted(model->plugin->slug, model->slug)) {
@@ -1046,12 +1190,21 @@ bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& bran
 		return false;
 	}
 
+	// Filter by width (HP)
+	if (widthFilterMode != 0) {
+		int hp = modelWidthGet(model);
+		if (hp < 0) return false;
+		if (widthFilterMode == 1 && hp != widthFilterRef) return false;
+		if (widthFilterMode == 2 && hp > widthFilterRef) return false;
+		if (widthFilterMode == 3 && hp < widthFilterRef) return false;
+	}
+
 	return true;
 }
 
-bool ModuleBrowser::hasVisibleModel(const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter) {
+bool ModuleBrowser::hasVisibleModel(const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode) {
 	for (const auto& pair : prefilteredModelScores) {
-		if (isModelVisible(pair.first, brand, tagIds, favorite, hidden, customTagFilter))
+		if (isModelVisible(pair.first, brand, tagIds, favorite, hidden, customTagFilter, widthFilterRef, widthFilterMode))
 			return true;
 	}
 	return false;
@@ -1071,10 +1224,19 @@ void ModuleBrowser::refresh() {
 
 	for (Widget* w : modelContainer->children) {
 		ModelBox* m = reinterpret_cast<ModelBox*>(w);
-		m->visible = isModelVisible(m->model, brand, tagIds, favorite, hidden, customTagFilter);
+		m->visible = isModelVisible(m->model, brand, tagIds, favorite, hidden, customTagFilter, widthFilterRef, widthFilterMode);
 	}
 
 	auto applyBrowserSort = [&]() {
+		if (widthSortDir != 0) {
+			int dir = widthSortDir;
+			sortModelContainer(modelContainer, [dir](ModelBox* m) {
+				int hp = modelWidthGet(m->model);
+				if (hp < 0) hp = dir > 0 ? std::numeric_limits<int>::max() : 0;
+				return dir > 0 ? hp : -hp;
+			});
+			return;
+		}
 		if (settings::browserSort == settings::BROWSER_SORT_UPDATED) {
 			sortModelContainer(modelContainer, [this](ModelBox* m) {
 				plugin::Plugin* p = m->model->plugin;
@@ -1268,12 +1430,17 @@ void ModuleBrowser::clear() {
 	brand = "";
 	tagIds = {};
 	customTagFilter = {};
+	widthFilterRef = 0;
+	widthFilterMode = 0;
+	widthSortDir = 0;
 	favorite = false;
 	refresh();
 }
 
 void ModuleBrowser::onShow(const event::Show& e) {
+	math::Vec savedOffset = modelScroll->offset;
 	refresh();
+	modelScroll->offset = savedOffset;
 	OpaqueWidget::onShow(e);
 }
 
