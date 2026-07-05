@@ -538,6 +538,15 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 		longPressDuration = (uint64_t)(e.sampleRate / 2);
 	}
 
+	void processBypass(const ProcessArgs &args) override {
+		midi::Message msg;
+		// Drain the queue while bypassed
+		while (midiInput.tryPop(&msg, args.frame)) {
+			(void)0;
+		}
+		Module::processBypass(args);
+	}
+
 	void process(const ProcessArgs &args) override {
 		ts++;
 

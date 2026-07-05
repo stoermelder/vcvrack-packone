@@ -2,6 +2,8 @@
 
 ### Changes and Fixes
 
+- Modules [MIDI-CAT](./docs/midicat/MidiCat.md), [MIDI-ESX](./docs/midiesx/MidiEsx.md), [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md), [MIDI-PLUG](./docs/midi/MidiPlug.md), [MIDI-STEP](./docs/midi/MidiStep.md)
+    - Ignore incoming MIDI messages while module is bypassed
 - Module [SIREN](./docs/siren/Siren.md)
     - Added support for multi-channel files on Re-pitch and Crossfade-loop
     - Fixed crash when playing multi-channel files
