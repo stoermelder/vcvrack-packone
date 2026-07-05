@@ -341,6 +341,14 @@ struct MidiKitModule : Module {
 		sampleRate = e.sampleRate;
 	}
 
+	void processBypass(const ProcessArgs& args) override {
+		midi::Message msg;
+		while (midiInput.tryPop(&msg, args.frame)) {
+			(void)0;
+		}
+		Module::processBypass(args);
+	}
+
 	void process(const ProcessArgs& args) override {
 		/*
 		// play it safe and limit MIDI output rate to 200 Hz.
