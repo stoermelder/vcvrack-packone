@@ -265,7 +265,6 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	uint64_t sceneClipboard[MATRIX_COUNT] = {};
 	bool sceneClipboardValid = false;
 
-	// GUI thread — called once by Rack when the module is instantiated.
 	SpliceKitModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -292,8 +291,6 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	}
 
 	// Engine thread — called by Rack when the user resets the module.
-	// Synchronous bookkeeping (disabling learns, clearing pending state) is done
-	// immediately; cable teardown is deferred to the GUI thread via guiQueue.
 	void onReset() override {
 		disableLearn();
 		disablePortLearn();
@@ -303,8 +300,11 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		requestReset();
 	}
 
-	// Reads MIDI input, polls button params (every 256 samples via processDivider),
-	// updates LED brightness/state, and enqueues cable operations for the GUI thread.
+	void processBypass(const ProcessArgs& args) override {
+		trackingProcessor.processBypass(args.frame);
+		Module::processBypass(args);
+	}
+
 	void process(const ProcessArgs& args) override {
 		trackingProcessor.process(args.frame);
 
