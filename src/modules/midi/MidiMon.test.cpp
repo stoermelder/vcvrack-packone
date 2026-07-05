@@ -216,6 +216,21 @@ TEST_CASE("SysEx logging", "[MidiMon]") {
 }
 
 
+TEST_CASE("processBypass drains the MIDI queue without logging", "[MidiMon]") {
+	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	drain(module); // discard header lines
+
+	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
+	REQUIRE(module->midiProcessor.getInput().size() == 1);
+
+	module->processBypass(Test::makeProcessArgs(1));
+
+	REQUIRE(module->midiProcessor.getInput().size() == 0);
+	REQUIRE(drain(module).empty());
+
+	Test::destroyModule(module);
+}
+
 TEST_CASE("processMidi never consumes the message", "[MidiMon]") {
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 	// Returning false keeps the message available to other handlers.
