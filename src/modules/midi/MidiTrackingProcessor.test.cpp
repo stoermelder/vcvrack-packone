@@ -136,6 +136,23 @@ TEST_CASE("Note learn and disable learn behavior", "[MidiTrackingProcessor]") {
 	REQUIRE(p.getMapLearn() == false);
 }
 
+TEST_CASE("processBypass drains queued MIDI without triggering map updates", "[MidiTrackingProcessor]") {
+	MidiTrackingProcessor<19> p;
+	TestHandler h;
+	p.handler = &h;
+	p.enableCc();
+	p.setMap(MidiTrackingType::CC, 1, 10);
+
+	// Queue a CC message that would normally trigger a map update.
+	p.getInput().onMessage(makeMidiMessage(0xb, 0, 10, 55));
+	REQUIRE(p.getInput().size() == 1);
+
+	p.processBypass(1);
+
+	REQUIRE(p.getInput().size() == 0);
+	REQUIRE(h.updates.empty());
+}
+
 TEST_CASE("Mapping persistence", "[MidiTrackingProcessor]") {
 	MidiTrackingProcessor<19> p;
 	TestHandler h;

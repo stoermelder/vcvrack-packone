@@ -79,6 +79,30 @@ TEST_CASE("Map ID inversion", "[MidiKey]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("processBypass drains queued MIDI without emitting key events", "[MidiKey]") {
+	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+
+	// Learn note 60 -> slot 0, then bind it to a key, so a normal process()
+	// of note 60 would enqueue a key event.
+	m->enableLearn(0);
+	m->trackingProcessor.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
+	m->process(Test::makeProcessArgs(1));
+	m->learnKey(GLFW_KEY_A, 0);
+	REQUIRE(m->slot[0].key == GLFW_KEY_A);
+	REQUIRE(m->keyEventQueue.size() == 0);
+
+	// Queue another note-on for the now-mapped note.
+	m->trackingProcessor.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
+	REQUIRE(m->trackingProcessor.getInput().size() == 1);
+
+	m->processBypass(Test::makeProcessArgs(2));
+
+	REQUIRE(m->trackingProcessor.getInput().size() == 0);
+	REQUIRE(m->keyEventQueue.size() == 0);
+
+	Test::destroyModule(m);
+}
+
 TEST_CASE("Enable/disable learn and learnKey behavior", "[MidiKey]") {
 	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
 	// Enable learn, then disable the tracking processor learn state and call learnKey

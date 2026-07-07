@@ -1,5 +1,6 @@
 #include "Mb_v2.hpp"
 #include "Mb.hpp"
+#include "Mb_manifests.hpp"
 #include <tag.hpp>
 #include <settings.hpp>
 #include <componentlibrary.hpp>
@@ -12,6 +13,7 @@ namespace StoermelderPackOne {
 namespace Mb {
 namespace v2 {
 
+BrowserSort browserSort = BrowserSort::UPDATED;
 
 
 // Tag toggle menu item for predefined tags
@@ -896,14 +898,16 @@ struct SortButton : ui::ChoiceButton {
 
 	struct SortItem : ui::MenuItem {
 		ModuleBrowser* browser;
-		settings::BrowserSort sort;
+		BrowserSort sort;
 		void onAction(const event::Action& e) override {
-			settings::browserSort = sort;
+			if (disabled) return;
+			browserSort = sort;
 			browser->widthSortDir = 0;
 			browser->refresh();
 		}
 		void step() override {
-			rightText = CHECKMARK(browser->widthSortDir == 0 && settings::browserSort == (int)sort);
+			if (sort == BrowserSort::NEWEST) disabled = !Mb::manifestsCacheExists();
+			rightText = CHECKMARK(browser->widthSortDir == 0 && browserSort == sort);
 			MenuItem::step();
 		}
 	};
@@ -926,13 +930,14 @@ struct SortButton : ui::ChoiceButton {
 		menu->box.pos = getAbsoluteOffset(Vec(0, box.size.y));
 		menu->box.size.x = box.size.x;
 
-		static const struct { settings::BrowserSort id; const char* name; } sorts[] = {
-			{ settings::BROWSER_SORT_UPDATED, "Recently updated" },
-			{ settings::BROWSER_SORT_LAST_USED, "Last used" },
-			{ settings::BROWSER_SORT_MOST_USED, "Most used" },
-			{ settings::BROWSER_SORT_BRAND, "Brand" },
-			{ settings::BROWSER_SORT_NAME, "Module name" },
-			{ settings::BROWSER_SORT_RANDOM, "Random" },
+		static const struct { BrowserSort id; const char* name; } sorts[] = {
+			{ BrowserSort::UPDATED, "Recently updated" },
+			{ BrowserSort::NEWEST, "Newest" },
+			{ BrowserSort::LAST_USED, "Last used" },
+			{ BrowserSort::MOST_USED, "Most used" },
+			{ BrowserSort::BRAND, "Brand" },
+			{ BrowserSort::NAME, "Module name" },
+			{ BrowserSort::RANDOM, "Random" },
 		};
 		for (auto& s : sorts) {
 			SortItem* item = new SortItem;
@@ -965,12 +970,13 @@ struct SortButton : ui::ChoiceButton {
 			return;
 		}
 		static const char* sortNames[] = {
-			"Recently updated", "Last used", "Most used", "Brand", "Module name", "Random"
+			"Recently updated", "Last used", "Most used", "Brand", "Module name", "Random", "Newest"
 		};
 		text = "Sort: ";
-		int sort = (int)settings::browserSort;
-		if (sort >= 0 && sort <= (int)settings::BROWSER_SORT_RANDOM)
+		int sort = (int)browserSort;
+		if (sort >= 0 && sort <= (int)BrowserSort::NEWEST) {
 			text += sortNames[sort];
+		}
 		text = string::ellipsize(text, 22);
 		ChoiceButton::step();
 	}
@@ -1237,14 +1243,26 @@ void ModuleBrowser::refresh() {
 			});
 			return;
 		}
-		if (settings::browserSort == settings::BROWSER_SORT_UPDATED) {
+		// Newest requires the manifests cache; fall back to "Recently updated" if it isn't available.
+		BrowserSort sort = (browserSort == BrowserSort::NEWEST && !Mb::manifestsCacheExists())
+			? BrowserSort::UPDATED : browserSort;
+
+		if (sort == BrowserSort::NEWEST) {
+			sortModelContainer(modelContainer, [this](ModelBox* m) {
+				plugin::Plugin* p = m->model->plugin;
+				int64_t ts = Mb::manifestCreationTimestampGet(m->model);
+				int order = get(modelOrders, m->model, 0);
+				return std::make_tuple(-ts, p->brand, p->name, order);
+			});
+		}
+		else if (sort == BrowserSort::UPDATED) {
 			sortModelContainer(modelContainer, [this](ModelBox* m) {
 				plugin::Plugin* p = m->model->plugin;
 				int order = get(modelOrders, m->model, 0);
 				return std::make_tuple(-p->modifiedTimestamp, p->brand, p->name, order);
 			});
 		}
-		else if (settings::browserSort == settings::BROWSER_SORT_LAST_USED) {
+		else if (sort == BrowserSort::LAST_USED) {
 			sortModelContainer(modelContainer, [this](ModelBox* m) {
 				plugin::Plugin* p = m->model->plugin;
 				auto u = modelUsage.find(m->model);
@@ -1253,7 +1271,7 @@ void ModuleBrowser::refresh() {
 				return std::make_tuple(-ts, -p->modifiedTimestamp, p->brand, p->name, order);
 			});
 		}
-		else if (settings::browserSort == settings::BROWSER_SORT_MOST_USED) {
+		else if (sort == BrowserSort::MOST_USED) {
 			sortModelContainer(modelContainer, [this](ModelBox* m) {
 				plugin::Plugin* p = m->model->plugin;
 				auto u = modelUsage.find(m->model);
@@ -1263,19 +1281,19 @@ void ModuleBrowser::refresh() {
 				return std::make_tuple(-count, -ts, -p->modifiedTimestamp, p->brand, p->name, order);
 			});
 		}
-		else if (settings::browserSort == settings::BROWSER_SORT_BRAND) {
+		else if (sort == BrowserSort::BRAND) {
 			sortModelContainer(modelContainer, [this](ModelBox* m) {
 				plugin::Plugin* p = m->model->plugin;
 				int order = get(modelOrders, m->model, 0);
 				return std::make_tuple(p->brand, p->name, order);
 			});
 		}
-		else if (settings::browserSort == settings::BROWSER_SORT_NAME) {
+		else if (sort == BrowserSort::NAME) {
 			sortModelContainer(modelContainer, [](ModelBox* m) {
 				return std::make_tuple(m->model->name, m->model->plugin->brand);
 			});
 		}
-		else if (settings::browserSort == settings::BROWSER_SORT_RANDOM) {
+		else if (sort == BrowserSort::RANDOM) {
 			std::vector<std::reference_wrapper<Widget*>> vec(modelContainer->children.begin(), modelContainer->children.end());
 			std::random_device rd;
 			std::mt19937 g(rd());

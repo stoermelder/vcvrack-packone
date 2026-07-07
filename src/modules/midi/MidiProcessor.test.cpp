@@ -177,6 +177,23 @@ TEST_CASE("RPN selection, data entry and reset", "[MidiProcessor]") {
 	REQUIRE(resetMsg.getParamNumber() == -1);
 }
 
+TEST_CASE("processBypass drains the input queue without notifying handlers", "[MidiProcessor]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	// Queue a few messages directly on the input queue (frame 0, default).
+	mp.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
+	mp.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 7, 64));
+	REQUIRE(mp.getInput().size() == 2);
+
+	mp.processBypass(1);
+
+	// Queue is drained but no handler was notified.
+	REQUIRE(mp.getInput().size() == 0);
+	REQUIRE(h.msgs.empty());
+}
+
 TEST_CASE("NRPN selection and data entry", "[MidiProcessor]") {
 	MidiProcessor mp;
 	TestHandler h;

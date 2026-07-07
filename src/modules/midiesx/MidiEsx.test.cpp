@@ -686,6 +686,48 @@ TEST_CASE("Sequential messages on different ports are independent", "[MidiEsx]")
 }
 
 
+TEST_CASE("onBypass clears queued data and blocks new messages", "[MidiEsx]") {
+	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+
+	auto msg = Test::makeMidiMessage(0x9, 0, 60, 100);
+	module->onMessage(0, msg);
+	REQUIRE(module->port[0].bitQueue.size() > 0);
+
+	Module::BypassEvent be;
+	module->onBypass(be);
+
+	// Bypass resets the port: queue cleared, unlocked, marked bypassed.
+	REQUIRE(module->port[0].isBypassed == true);
+	REQUIRE(module->port[0].bitQueue.size() == 0);
+	REQUIRE(module->port[0].locked == false);
+
+	// While bypassed, new MIDI messages are dropped instead of being queued.
+	module->onMessage(0, msg);
+	REQUIRE(module->port[0].bitQueue.size() == 0);
+
+	Test::destroyModule(module);
+}
+
+
+TEST_CASE("onUnBypass restores normal message encoding", "[MidiEsx]") {
+	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+
+	Module::BypassEvent be;
+	module->onBypass(be);
+	REQUIRE(module->port[0].isBypassed == true);
+
+	Module::UnBypassEvent ube;
+	module->onUnBypass(ube);
+	REQUIRE(module->port[0].isBypassed == false);
+
+	auto msg = Test::makeMidiMessage(0x9, 0, 60, 100);
+	module->onMessage(0, msg);
+	REQUIRE(module->port[0].bitQueue.size() > 0);
+
+	Test::destroyModule(module);
+}
+
+
 TEST_CASE("Module reset does not clear bit queues by default", "[MidiEsx]") {
 	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
 	

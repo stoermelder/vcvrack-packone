@@ -164,6 +164,34 @@ TEST_CASE("Parameter mapping core functionality", "[MidiCat]") {
 }
 
 
+TEST_CASE("processBypass drains the MIDI queue without updating mappings", "[MidiCat]") {
+	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	TestModule* testModule = new TestModule();
+	Test::registerModule(testModule);
+
+	// Set up a CC7 -> param mapping.
+	module->enableLearn(0, true);
+	module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 7, 64)); // Learn CC7
+	module->learnParam(0, testModule->id, TestModule::TEST_PARAM_1);
+	module->ccs[0].ccMode = CCMODE::DIRECT;
+	module->process(Test::makeProcessArgs(1));
+
+	ParamQuantity* pq = testModule->getParamQuantity(TestModule::TEST_PARAM_1);
+	float valueBefore = pq->getValue();
+
+	// Queue a new CC value; a normal process() would update valuesCc and the param.
+	module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 7, 100));
+
+	module->processBypass(Test::makeProcessArgs(2));
+
+	REQUIRE(module->valuesCc[7] == 64);
+	REQUIRE(pq->getValue() == Catch::Approx(valueBefore));
+
+	Test::unregisterModule(testModule);
+	Test::destroyModule(module);
+}
+
+
 TEST_CASE("CC basic processing", "[MidiCat]") {
 	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
 

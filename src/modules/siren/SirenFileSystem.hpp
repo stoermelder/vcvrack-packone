@@ -18,7 +18,12 @@ namespace filesystem {
 
 inline bool isSupportedAudioFile(const std::string& path) {
 	static const std::vector<std::string> SUPPORTED_EXTENSIONS = { ".wav", ".WAV", ".flac", ".FLAC", ".mp3", ".MP3" };
-	std::string ext = rack::system::getExtension(rack::system::getFilename(path));
+	std::string filename = rack::system::getFilename(path);
+	if (filename[0] == '.') {
+		// Ignore files beginning with dot
+		return false;
+	}
+	std::string ext = rack::system::getExtension(filename);
 	for (const std::string& e : SUPPORTED_EXTENSIONS) {
 		if (ext == e) return true;
 	}
