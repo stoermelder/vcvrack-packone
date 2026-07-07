@@ -6,6 +6,7 @@
     - Ignore incoming MIDI messages while module is bypassed
 - Module [SIREN](./docs/siren/Siren.md)
     - Added support for multi-channel files on Re-pitch and Crossfade-loop
+    - Ignore files starting with "." (#460)
     - Fixed crash when playing multi-channel files
 
 ## 2.5.0
