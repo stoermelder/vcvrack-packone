@@ -2,6 +2,8 @@
 
 ### Changes and Fixes
 
+- Module [MB](./docs/trial-and-error/Mb.md)
+    - Added sorting option "Newest" to *v2 mod* browser
 - Modules [MIDI-CAT](./docs/midicat/MidiCat.md), [MIDI-ESX](./docs/midiesx/MidiEsx.md), [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md), [MIDI-PLUG](./docs/midi/MidiPlug.md), [MIDI-STEP](./docs/midi/MidiStep.md)
     - Ignore incoming MIDI messages while module is bypassed
 - Module [SIREN](./docs/siren/Siren.md)

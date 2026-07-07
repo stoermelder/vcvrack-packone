@@ -57,6 +57,16 @@ A **Filter by N HP** shortcut is also available in the right-click context menu 
 Width data is determined lazily: it is captured automatically the first time a module preview is rendered in the browser. To populate widths for all installed modules at once (making the full HP range available in the dropdown without browsing through everything first), use **Determine width for all modules**. This re-scans every model and saves the result immediately.
 
 
+## Sorting (*v2 mod*)
+
+The *v2 mod* browser's **Sort** button offers several ordering options, one of which is **Newest** — sorting modules by the date each was first added to its plugin, rather than by the date the plugin itself was last updated (as "Recently updated" does).
+
+This information is not part of the plugin manifest and is not available locally, so MB downloads it separately from the [VCV Rack Library](https://github.com/VCVRack/library) and caches it in your local Rack directory. The **Newest** entry stays disabled (greyed out) in the Sort menu until this data has been downloaded at least once.
+
+**Auto-download data for 'Newest' sort** — a menu option (disabled by default) that automatically downloads this data in the background whenever a new or updated plugin is detected in your plugins folder. Enabling it shows a confirmation dialog, since it connects to an external service.
+
+The Sort menu also has two **Width** entries (*narrow → wide* / *wide → narrow*), which sort modules by their HP width instead of by the selected sort option above. Clicking an active width entry again disables it and returns to the previous sort option. Modules with unknown width (see [Width filter](#width-filter-v2-mod)) are sorted to the end. 
+
 ## *v2_mod* keyboard shortcuts
 
 The *v2-mod* browser variant supports keyboard navigation and shortcuts:
@@ -149,3 +159,5 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
     - Added width (HP) filter and sorting to *v2 mod* browser
     - Fixed *v2 mod* scroll position when reopening the browser overlay
     - Fixed module placement to trace back to the right click mouse position
+- v2.x.x
+    - Added sorting option "Newest" to *v2 mod* browser

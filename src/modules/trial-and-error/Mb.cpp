@@ -3,6 +3,7 @@
 #include "Mb_v1.hpp"
 #include "Mb_v2.hpp"
 #include "Mb_v06.hpp"
+#include "Mb_manifests.hpp"
 #include "Mb_autotag.hpp"
 #include "Mb_autotag_widgets.hpp"
 #include <osdialog.h>
@@ -733,11 +734,15 @@ BrowserOverlay::BrowserOverlay() {
 	v1::modelBoxZoom = pluginSettings.mbZoom;
 	v1::modelBoxSort = pluginSettings.mbSort;
 	v1::hideBrands = pluginSettings.mbHideBrands;
+	if (pluginSettings.mbSortV2 >= 0 && pluginSettings.mbSortV2 <= (int)v2::BrowserSort::NEWEST) {
+		v2::browserSort = (v2::BrowserSort)pluginSettings.mbSortV2;
+	}
 	searchDescriptions = pluginSettings.mbSearchDescriptions;
 	sortBySearchScore = pluginSettings.mbSortBySearchScore;
 	favoriteHighlight = pluginSettings.mbFavoriteHighlight;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
 	modelWidthsFromJson();
+	manifestsCacheInit();
 	modelDbInit();
 
 	mbWidgetBackup = APP->scene->browser;
@@ -787,6 +792,7 @@ BrowserOverlay::~BrowserOverlay() {
 
 	pluginSettings.mbZoom = v1::modelBoxZoom;
 	pluginSettings.mbSort = v1::modelBoxSort;
+	pluginSettings.mbSortV2 = (int)v2::browserSort;
 	pluginSettings.mbHideBrands = v1::hideBrands;
 	pluginSettings.mbSearchDescriptions = searchDescriptions;
 	pluginSettings.mbSortBySearchScore = sortBySearchScore;
@@ -1148,6 +1154,18 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 		menu->addChild(createMenuItem("Determine width for all modules", "", []() {
 			modelWidthScanAll();
 		}));
+		menu->addChild(createBoolMenuItem("Auto-download data for 'Newest' sort", "",
+			[]() { return pluginSettings.mbNewestAutoUpdate; },
+			[](bool state) {
+				if (state && !osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, "This will connect to https://raw.githubusercontent.com and download plugin metadata whenever new or updated plugins are detected. Continue?")) {
+					return;
+				}
+				pluginSettings.mbNewestAutoUpdate = state;
+				if (state) {
+					manifestsCacheInit();
+				}
+			}
+		));
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Browser settings", "",

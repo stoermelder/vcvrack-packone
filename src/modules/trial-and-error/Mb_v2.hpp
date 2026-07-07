@@ -6,6 +6,19 @@ namespace StoermelderPackOne {
 namespace Mb {
 namespace v2 {
 
+// MB's own persisted sort setting, decoupled from Rack core's settings::browserSort
+// so it can include modes (e.g. "Newest") that Rack core doesn't know about.
+enum class BrowserSort {
+	UPDATED = 0,
+	LAST_USED,
+	MOST_USED,
+	BRAND,
+	NAME,
+	RANDOM,
+	NEWEST,
+};
+extern BrowserSort browserSort;
+
 struct ModuleBrowser : widget::OpaqueWidget {
 	ui::SequentialLayout* headerLayout;
 	ui::TextField* searchField;

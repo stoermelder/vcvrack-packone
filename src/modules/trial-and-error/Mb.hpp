@@ -1,5 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "Mb_manifests.hpp"
 #include <plugin.hpp>
 #include <FuzzySearchDatabase.hpp>
 
