@@ -208,14 +208,14 @@ struct ModelBox : widget::OpaqueWidget {
 				case GLFW_KEY_F: {
 					toggleModelFavorite(model);
 					ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-					if (browser && browser->favorite) browser->refresh();
+					if (browser && browser->favorite) browser->refresh(false);
 					e.consume(this);
 					break;
 				}
 				case GLFW_KEY_H: {
 					toggleModelHidden(model);
 					ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-					if (browser) browser->refresh();
+					if (browser) browser->refresh(false);
 					e.consume(this);
 					break;
 				}
@@ -311,7 +311,7 @@ struct ModelBox : widget::OpaqueWidget {
 			[&]() { 
 				toggleModelFavorite(model);
 				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				if (browser && browser->favorite) browser->refresh();
+				if (browser && browser->favorite) browser->refresh(false);
 			}
 		));
 		menu->addChild(createCheckMenuItem("Hidden", RACK_MOD_CTRL_NAME "+H",
@@ -319,7 +319,7 @@ struct ModelBox : widget::OpaqueWidget {
 			[&]() { 
 				toggleModelHidden(model);
 				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				if (browser) browser->refresh();
+				if (browser) browser->refresh(false);
 			}
 		));
 
@@ -1224,8 +1224,8 @@ void ModuleBrowser::updateZoom() {
 	}
 }
 
-void ModuleBrowser::refresh() {
-	modelScroll->offset = math::Vec();
+void ModuleBrowser::refresh(bool scrollTop) {
+	if (scrollTop) modelScroll->offset = math::Vec();
 	prefilteredModelScores.clear();
 
 	for (Widget* w : modelContainer->children) {
