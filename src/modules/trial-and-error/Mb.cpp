@@ -727,6 +727,16 @@ void modelUsageReset() {
 	modelUsage.clear();
 }
 
+int64_t modelUsageTimestamp(Model* model) {
+	auto u = modelUsage.find(model);
+	return (u != modelUsage.end()) ? u->second->usedTimestamp : 0;
+}
+
+int modelUsageCount(Model* model) {
+	auto u = modelUsage.find(model);
+	return (u != modelUsage.end()) ? u->second->usedCount : 0;
+}
+
 
 // Browser overlay
 

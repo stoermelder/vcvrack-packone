@@ -1265,8 +1265,7 @@ void ModuleBrowser::refresh(bool scrollTop) {
 		else if (sort == BrowserSort::LAST_USED) {
 			sortModelContainer(modelContainer, [this](ModelBox* m) {
 				plugin::Plugin* p = m->model->plugin;
-				auto u = modelUsage.find(m->model);
-				int64_t ts = (u != modelUsage.end()) ? u->second->usedTimestamp : std::numeric_limits<int64_t>::min();
+				int64_t ts = modelUsageTimestamp(m->model);
 				int order = get(modelOrders, m->model, 0);
 				return std::make_tuple(-ts, -p->modifiedTimestamp, p->brand, p->name, order);
 			});
@@ -1274,9 +1273,8 @@ void ModuleBrowser::refresh(bool scrollTop) {
 		else if (sort == BrowserSort::MOST_USED) {
 			sortModelContainer(modelContainer, [this](ModelBox* m) {
 				plugin::Plugin* p = m->model->plugin;
-				auto u = modelUsage.find(m->model);
-				int count = (u != modelUsage.end()) ? u->second->usedCount : 0;
-				int64_t ts = (u != modelUsage.end()) ? u->second->usedTimestamp : std::numeric_limits<int64_t>::min();
+				int count = modelUsageCount(m->model);
+				int64_t ts = modelUsageTimestamp(m->model);
 				int order = get(modelOrders, m->model, 0);
 				return std::make_tuple(-count, -ts, -p->modifiedTimestamp, p->brand, p->name, order);
 			});

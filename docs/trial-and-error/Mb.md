@@ -161,3 +161,4 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
     - Fixed module placement to trace back to the right click mouse position
 - v2.x.x
     - Added sorting option "Newest" to *v2 mod* browser
+    - Fixed broken sorting option "Last used"
