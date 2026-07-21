@@ -38,6 +38,12 @@ struct SirenSettings {
 	// only then is the backup removed. On verification failure the backup is restored.
 	void save() const {
 		if (isTesting()) return;
+		// Never persist state that was never loaded. The module-browser thumbnail
+		// constructs a SirenWidget with a null module that returns before calling
+		// load(), yet its destructor still calls save(); without this guard that
+		// would write empty defaults over an existing siren.json, silently wiping
+		// all configured roots and preferences before any real instance reads them.
+		if (!loaded) return;
 		std::string jsonPath = sirenFilePath();
 		rack::system::createDirectories(settingsDirPath());
 
@@ -79,8 +85,19 @@ struct SirenSettings {
 		}
 	}
 
+	// sirenSettings is a process-global singleton shared by all Siren instances,
+	// but load() is called from every SirenWidget constructor. Re-reading the file
+	// after the first load would clobber in-memory changes (e.g. a root added in
+	// one instance but not yet saved to disk) whenever a second instance is
+	// created — via add, duplicate, cut/paste or undo/redo — silently losing the
+	// unsaved roots. So the disk file is read only once per process; thereafter
+	// the in-memory state is authoritative and is persisted on mutation and on close.
+	bool loaded = false;
+
 	void load() {
 		if (isTesting()) return;
+		if (loaded) return;
+		loaded = true;
 		FILE* f = fopen(sirenFilePath().c_str(), "r");
 		if (!f) return;
 		json_error_t err;

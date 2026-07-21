@@ -210,3 +210,4 @@ SIREN can shift the pitch of the current sample or trim region without changing 
   - Added support for multi-channel files on Re-pitch and Crossfade-loop
   - Ignore files starting with "." (#460)
   - Fixed crash when playing multi-channel files
+  - Fixed occasionally lost settings
