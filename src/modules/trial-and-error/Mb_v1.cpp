@@ -79,6 +79,7 @@ struct TogglePredefinedTagItem : MenuItem {
 	plugin::Model* model = nullptr;
 	int tagId = 0;
 	bool hasEffectiveTag = false;
+	std::shared_ptr<std::string> filter;
 	void onAction(const event::Action& e) override {
 		if (hasEffectiveTag) {
 			predefinedTagRemove(model, tagId);
@@ -94,6 +95,7 @@ struct TogglePredefinedTagItem : MenuItem {
 		e.unconsume();
 	}
 	void step() override {
+		visible = Rack::menuFilterMatches(filter, text);
 		rightText = CHECKMARK(hasEffectiveTag);
 		MenuItem::step();
 	}
@@ -285,8 +287,19 @@ struct ModelBox : widget::OpaqueWidget {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuLabel("Custom Tags"));
 
+		// Shared between the new-tag text field and the tag menu items below:
+		// the typed text doubles as a live case-insensitive filter on the
+		// existing tags while still creating a new tag on enter.
+		auto tagFilter = std::make_shared<std::string>();
+
 		struct NewCustomTagField : ui::TextField {
 			plugin::Model* model;
+			std::shared_ptr<std::string> filter;
+
+			void onChange(const event::Change& e) override {
+				ui::TextField::onChange(e);
+				*filter = string::trim(text);
+			}
 
 			void onSelectKey(const event::SelectKey& e) override {
 				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
@@ -312,6 +325,7 @@ struct ModelBox : widget::OpaqueWidget {
 		struct ToggleCustomTagItem : MenuItem {
 			plugin::Model* model;
 			std::string tagName;
+			std::shared_ptr<std::string> filter;
 
 			void onAction(const event::Action& e) override {
 				if (customTagHas(model, tagName)) {
@@ -329,6 +343,7 @@ struct ModelBox : widget::OpaqueWidget {
 			}
 
 			void step() override {
+				visible = Rack::menuFilterMatches(filter, text);
 				rightText = CHECKMARK(customTagHas(model, tagName));
 				MenuItem::step();
 			}
@@ -336,8 +351,9 @@ struct ModelBox : widget::OpaqueWidget {
 
 		NewCustomTagField* ntf = new NewCustomTagField;
 		ntf->box.size.x = 150.f;
-		ntf->placeholder = "New tag...";
+		ntf->placeholder = "Filter / new tag...";
 		ntf->model = model;
+		ntf->filter = tagFilter;
 		menu->addChild(ntf);
 		APP->event->setSelectedWidget(ntf);
 
@@ -348,13 +364,14 @@ struct ModelBox : widget::OpaqueWidget {
 		});
 
 		plugin::Model* m = model;
-		Rack::addGroupedMenuItems<std::string>(menu, tags, [m](const std::string& tag) -> ui::MenuItem* {
+		Rack::addGroupedMenuItems<std::string>(menu, tags, [m, tagFilter](const std::string& tag) -> ui::MenuItem* {
 			ToggleCustomTagItem* item = new ToggleCustomTagItem;
 			item->text = tag;
 			item->model = m;
 			item->tagName = tag;
+			item->filter = tagFilter;
 			return item;
-		}, 20);
+		}, 20, 16, tagFilter);
 
 		// Add section for modifying predefined tags
 		menu->addChild(new MenuSeparator);
@@ -371,15 +388,17 @@ struct ModelBox : widget::OpaqueWidget {
 			return string::lowercase(a.first) < string::lowercase(b.first);
 		});
 
-		Rack::addGroupedMenuItems<MenuItemType>(menu, allTags, 
-			[effectiveTagIds, m](MenuItemType item) {
+		Rack::addGroupedMenuItems<MenuItemType>(menu, allTags,
+			[effectiveTagIds, m, tagFilter](MenuItemType item) {
 				TogglePredefinedTagItem* t = new TogglePredefinedTagItem;
 				t->text = item.first;
 				t->model = m;
 				t->tagId = item.second;
 				t->hasEffectiveTag = effectiveTagIds.find(item.second) != effectiveTagIds.end();
+				t->filter = tagFilter;
 				return t;
-			}
+			},
+			24, 16, tagFilter
 		);
 	}
 
