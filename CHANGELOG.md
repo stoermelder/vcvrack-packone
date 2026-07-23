@@ -10,6 +10,7 @@
 - Module [SIREN](./docs/siren/Siren.md)
     - Added support for multi-channel files on Re-pitch and Crossfade-loop
     - Ignore files starting with "." (#460)
+    - Improved context menus for tags (#461)
     - Fixed crash when playing multi-channel files
     - Fixed occasionally lost settings
 
