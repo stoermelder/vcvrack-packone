@@ -60,7 +60,7 @@ struct PortAssignment {
 	void clear() { moduleId = -1; portId = -1; }
 };
 
-static const int TOTAL_MAPS = MATRIX_COUNT + MATRIX_SIZE;  // 64 cells + 8 scenes
+static const int TOTAL_MAPS = MATRIX_COUNT + SCENE_COUNT;  // 64 cells + 8 scenes
 
 struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListener {
 	// Cross-instance pending state: the initiator module + its pending cell, shared across all
@@ -140,7 +140,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 
 	enum ParamIds {
 		ENUMS(PARAM_MATRIX, MATRIX_COUNT),
-		ENUMS(PARAM_SCENE, MATRIX_SIZE),
+		ENUMS(PARAM_SCENE, SCENE_COUNT),
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -151,7 +151,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	};
 	enum LightIds {
 		ENUMS(LIGHT_MATRIX, MATRIX_COUNT * 3),
-		ENUMS(LIGHT_SCENE, MATRIX_SIZE),
+		ENUMS(LIGHT_SCENE, SCENE_COUNT),
 		NUM_LIGHTS
 	};
 
@@ -212,10 +212,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// Per-scene connection bitmasks. sceneConnections[scene][cellA] has bit cellB set
 	// when cellA and cellB are connected in that scene.
 	/** [Stored to JSON] */
-	uint64_t sceneConnections[MATRIX_SIZE][MATRIX_COUNT] = {};
+	uint64_t sceneConnections[SCENE_COUNT][MATRIX_COUNT] = {};
 
 	dsp::BooleanTrigger buttonTriggers[MATRIX_COUNT];
-	dsp::BooleanTrigger sceneTriggers[MATRIX_SIZE];
+	dsp::BooleanTrigger sceneTriggers[SCENE_COUNT];
 	dsp::RingBuffer<std::function<void()>, 16> guiQueue;
 	ClockDividerEx processDivider;
 	// Written by GUI thread (step), read by DSP thread (process) — accepted race for LEDs
@@ -277,7 +277,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 
 	// -1 forces a send on the first light-divider tick after load.
 	int cellLedState[MATRIX_COUNT];
-	int sceneLedState[MATRIX_SIZE];
+	int sceneLedState[SCENE_COUNT];
 
 	/** [Stored to JSON — only non-empty entries are written] */
 	std::string cellLabels[MATRIX_COUNT];
@@ -315,7 +315,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			configParam<SpliceKitCellQuantity>(PARAM_MATRIX + i, 0.f, 1.f, 0.f)->randomizeEnabled = false;
 		}
-		for (int i = 0; i < MATRIX_SIZE; i++) {
+		for (int i = 0; i < SCENE_COUNT; i++) {
 			configParam<SpliceKitSceneQuantity>(PARAM_SCENE + i, 0.f, 1.f, 0.f)->randomizeEnabled = false;
 		}
 
@@ -472,7 +472,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 				}
 			}
 
-			for (int i = 0; i < MATRIX_SIZE; i++) {
+			for (int i = 0; i < SCENE_COUNT; i++) {
 				if (sceneTriggers[i].process(params[PARAM_SCENE + i].getValue() > 0.5f)) {
 					if (learningId == MATRIX_COUNT + i) {
 						disableLearn();
@@ -532,7 +532,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 				lights[LIGHT_MATRIX + i * 3 + 1].setBrightnessSmooth(col.g, f);
 				lights[LIGHT_MATRIX + i * 3 + 2].setBrightnessSmooth(col.b, f);
 			}
-			for (int s = 0; s < MATRIX_SIZE; s++) {
+			for (int s = 0; s < SCENE_COUNT; s++) {
 				float bright;
 				int sceneState;
 				if (learningId == MATRIX_COUNT + s) {
@@ -653,7 +653,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// all cached LED states to -1, causing every cell and scene button to be re-sent.
 	void invalidateLedStates() {
 		std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
-		std::fill(sceneLedState, sceneLedState + MATRIX_SIZE, -1);
+		std::fill(sceneLedState, sceneLedState + SCENE_COUNT, -1);
 	}
 
 	// GUI thread — starts MIDI learn for a single cell (id < MATRIX_COUNT) or scene button
@@ -845,7 +845,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 				trackingProcessor.setMap(s.type, i, s.number);
 			}
 		}
-		for (int i = 0; i < MATRIX_SIZE; i++) {
+		for (int i = 0; i < SCENE_COUNT; i++) {
 			const auto& s = preset->scenes[i];
 			if (s.type != MidiTrackingType::NONE) {
 				trackingProcessor.setMap(s.type, MATRIX_COUNT + i, s.number);
@@ -883,7 +883,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		json_object_set_new(rootJ, "ports", portsJ);
 
 		json_t* scenesJ = json_object();
-		for (int s = 0; s < MATRIX_SIZE; s++) {
+		for (int s = 0; s < SCENE_COUNT; s++) {
 			json_t* connJ = json_array();
 			for (int a = 0; a < MATRIX_COUNT; a++) {
 				for (int b = a + 1; b < MATRIX_COUNT; b++) {
@@ -1044,7 +1044,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			json_t* sceneJ;
 			json_object_foreach(scenesJ, key, sceneJ) {
 				int s = std::atoi(key);
-				if (s < 0 || s >= MATRIX_SIZE) continue;
+				if (s < 0 || s >= SCENE_COUNT) continue;
 				json_t* connJ = json_object_get(sceneJ, "connections");
 				if (!connJ) continue;
 				size_t k;
@@ -1349,7 +1349,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		// Rewrite sceneConnections for every scene:
 		//   Step A — tear out toId's existing connections from its neighbours.
 		//   Step B — redirect fromId's connections to toId.
-		for (int s = 0; s < MATRIX_SIZE; s++) {
+		for (int s = 0; s < SCENE_COUNT; s++) {
 			uint64_t oldToMask = sceneConnections[s][toId];
 			for (int j = 0; j < MATRIX_COUNT; j++) {
 				if ((oldToMask >> j) & 1) {
@@ -1776,7 +1776,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 				addChild(createLightCentered<SaturatedMatrixButtonLight<SpliceKitModule>>(pos, module, SpliceKitModule::LIGHT_MATRIX + cellId * 3));
 			}
 		}
-		for (int i = 0; i < MATRIX_SIZE; i++) {
+		for (int i = 0; i < SCENE_COUNT; i++) {
 			Vec pos = SpliceKitVizOverlay::sceneCenter(i);
 			auto* sb = createParamCentered<SpliceKitSceneButton>(pos, module, SpliceKitModule::PARAM_SCENE + i);
 			sb->module = module;

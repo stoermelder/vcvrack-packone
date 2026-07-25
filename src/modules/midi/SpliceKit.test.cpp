@@ -1110,10 +1110,10 @@ TEST_CASE("getActivePreset - returns &customPreset for PRESET_IDX_CUSTOM", "[Spl
 TEST_CASE("invalidateLedStates - resets both LED state arrays to -1", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	for (int i = 0; i < MATRIX_COUNT; i++) m->cellLedState[i]   = i;
-	for (int i = 0; i < MATRIX_SIZE;  i++) m->sceneLedState[i]  = i;
+	for (int i = 0; i < SCENE_COUNT;  i++) m->sceneLedState[i]  = i;
 	m->invalidateLedStates();
 	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->cellLedState[i]  == -1);
-	for (int i = 0; i < MATRIX_SIZE;  i++) REQUIRE(m->sceneLedState[i] == -1);
+	for (int i = 0; i < SCENE_COUNT;  i++) REQUIRE(m->sceneLedState[i] == -1);
 	Test::destroyModule(m);
 }
 
@@ -1383,7 +1383,7 @@ TEST_CASE("requestReset - enqueues a reset lambda that clears all state", "[Spli
 	REQUIRE(m->portAssignments[3].isValid() == false);
 	REQUIRE(m->portHasCable[3]      == false);
 	// All scenes cleared
-	for (int s = 0; s < MATRIX_SIZE; s++) {
+	for (int s = 0; s < SCENE_COUNT; s++) {
 		for (int c = 0; c < MATRIX_COUNT; c++) {
 			REQUIRE(m->sceneConnections[s][c] == 0);
 		}
@@ -1977,7 +1977,7 @@ TEST_CASE("applyPresetLayout - invalidates LED states so they are re-sent", "[Sp
 
 	// Pre-populate LED state with non-(-1) values.
 	for (int i = 0; i < MATRIX_COUNT; i++) m->cellLedState[i]  = LED_STATE_COLOR0;
-	for (int i = 0; i < MATRIX_SIZE;  i++) m->sceneLedState[i] = LED_STATE_SCENE_ACTIVE;
+	for (int i = 0; i < SCENE_COUNT;  i++) m->sceneLedState[i] = LED_STATE_SCENE_ACTIVE;
 
 	MidiOutPreset preset;
 	preset.cells[0].type = MidiTrackingType::NOTE;  preset.cells[0].number = 36;
@@ -1986,7 +1986,7 @@ TEST_CASE("applyPresetLayout - invalidates LED states so they are re-sent", "[Sp
 
 	m->applyPresetLayout();
 	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->cellLedState[i]  == -1);
-	for (int i = 0; i < MATRIX_SIZE;  i++) REQUIRE(m->sceneLedState[i] == -1);
+	for (int i = 0; i < SCENE_COUNT;  i++) REQUIRE(m->sceneLedState[i] == -1);
 	Test::destroyModule(m);
 }
 
@@ -1995,14 +1995,14 @@ TEST_CASE("SpliceKitOutput::setDeviceId invalidates LED states via the module ho
 
 	// Pre-populate LED state with non-(-1) values.
 	for (int i = 0; i < MATRIX_COUNT; i++) m->cellLedState[i]  = LED_STATE_COLOR0;
-	for (int i = 0; i < MATRIX_SIZE;  i++) m->sceneLedState[i] = LED_STATE_SCENE_ACTIVE;
+	for (int i = 0; i < SCENE_COUNT;  i++) m->sceneLedState[i] = LED_STATE_SCENE_ACTIVE;
 
 	// setDeviceId must trigger the onDeviceChanged hook wired in the constructor
 	// (midiOutput has no driver attached, so this is a no-op device switch).
 	m->midiOutput.setDeviceId(-1);
 
 	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->cellLedState[i]  == -1);
-	for (int i = 0; i < MATRIX_SIZE;  i++) REQUIRE(m->sceneLedState[i] == -1);
+	for (int i = 0; i < SCENE_COUNT;  i++) REQUIRE(m->sceneLedState[i] == -1);
 	Test::destroyModule(m);
 }
 
