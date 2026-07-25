@@ -513,6 +513,42 @@ TEST_CASE("process - scene cellLedState transitions to SCENE_ACTIVE for currentS
 	Test::destroyModule(m);
 }
 
+TEST_CASE("process - physical scene button press works normally when not linked", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->currentScene = 0;  // sceneLinkMasterId stays -1 (default)
+
+	Test::SimpleEngine engine;
+	engine.registerModule(m);
+	for (int i = 0; i < 256; i++) engine.step();  // establish trigger baseline at low
+
+	m->params[SpliceKitModule::PARAM_SCENE + 1].setValue(1.f);
+	for (int i = 0; i < 256; i++) engine.step();  // rising edge on the next divided tick
+
+	REQUIRE(m->guiQueue.size() == 1);  // switchScene(1) queued
+	m->guiQueue.shift()();
+	REQUIRE(m->currentScene == 1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("process - physical scene button press is ignored while following a scene link master", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->sceneLinkMasterId = 999;  // any id — process() only checks it's >= 0
+	m->currentScene = 0;
+
+	Test::SimpleEngine engine;
+	engine.registerModule(m);
+	for (int i = 0; i < 256; i++) engine.step();  // establish trigger baseline at low
+
+	m->params[SpliceKitModule::PARAM_SCENE + 1].setValue(1.f);
+	for (int i = 0; i < 256; i++) engine.step();  // rising edge on the next divided tick
+
+	REQUIRE(m->currentScene == 0);   // unaffected — scene button press ignored while linked
+	REQUIRE(m->guiQueue.size() == 0);
+
+	Test::destroyModule(m);
+}
+
 // ---------------------------------------------------------------------------
 // moveCell
 // ---------------------------------------------------------------------------
@@ -849,6 +885,17 @@ TEST_CASE("processMapUpdate - single scene activation sets pendingMidiSceneId an
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 2, 100);
 	REQUIRE(m->pendingMidiSceneId == 2);
 	REQUIRE(m->guiQueue.size() == 1);  // switchScene enqueued
+	Test::destroyModule(m);
+}
+
+TEST_CASE("processMapUpdate - MIDI scene activation is ignored while following a scene link master", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->sceneLinkMasterId = 999;  // any id — process()/processMapUpdate only check it's >= 0
+
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 2, 100);
+
+	REQUIRE(m->pendingMidiSceneId == -1);
+	REQUIRE(m->guiQueue.size() == 0);
 	Test::destroyModule(m);
 }
 

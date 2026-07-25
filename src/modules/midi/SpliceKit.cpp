@@ -476,8 +476,11 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 				if (sceneTriggers[i].process(params[PARAM_SCENE + i].getValue() > 0.5f)) {
 					if (learningId == MATRIX_COUNT + i) {
 						disableLearn();
-					} 
-					else {
+					}
+					// Scene buttons are inert while following a scene link master — the active
+					// scene is driven entirely by the master (see process()'s moduleChangedFlag
+					// handling), not by this instance's own buttons.
+					else if (sceneLinkMasterId < 0) {
 						requestSceneChange(i);
 					}
 				}
@@ -597,6 +600,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			}
 		}
 		else if (mapId < (uint16_t)TOTAL_MAPS) {
+			// Scene buttons are inert while following a scene link master — see the matching
+			// guard in process()'s physical scene-button handling.
+			if (sceneLinkMasterId >= 0) return;
 			int sceneId = (int)(mapId - MATRIX_COUNT);
 			if (value > 0) {
 				if (pendingMidiSceneId >= 0 && pendingMidiSceneId != sceneId) {

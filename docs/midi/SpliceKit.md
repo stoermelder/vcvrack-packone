@@ -60,6 +60,8 @@ A follower with no master configured (**None**, the default) behaves exactly lik
 
 Scene link is strictly two-level: a master cannot itself follow another instance, and an instance already following a master cannot be picked as someone else's master. Chains of linked instances (and the loops they would create) are not possible.
 
+While following a master, a follower's own scene buttons are inactive — pressing one (or triggering it via MIDI) has no effect, since its active scene is driven entirely by the master.
+
 ### Drag gestures
 
 As a faster alternative to the two-press workflow, connections can be created or removed by dragging directly from one cell to another:
