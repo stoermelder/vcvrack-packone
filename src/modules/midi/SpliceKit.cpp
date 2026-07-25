@@ -1710,10 +1710,25 @@ struct SpliceKitCellButton : app::SvgSwitch {
 		}
 	}
 
-	// Left-drag → toggle connection; shift+left-drag → move cell assignment.
+	// Left-drag → toggle connection; shift+left-drag → move cell assignment; dropping an
+	// in-progress cable (dragged from any port in the patch) → assign that port to this cell.
 	void onDragDrop(const event::DragDrop& e) override {
 		SvgSwitch::onDragDrop(e);
 		if (!module) return;
+
+		// Alternative to the modal "Learn port" gesture: dragging a cable's loose end onto a
+		// cell assigns that port directly. The temporary cable itself is left untouched here —
+		// PortWidget::onDragEnd() discards it automatically since it never gets completed.
+		if (auto* pw = dynamic_cast<PortWidget*>(e.origin)) {
+			if (e.button != GLFW_MOUSE_BUTTON_LEFT || !pw->module) return;
+			PortAssignment& pa = module->portAssignments[cellId];
+			if (pa.isValid()) pa.clear();
+			pa.moduleId = pw->module->getId();
+			pa.portId = pw->portId;
+			pa.type = pw->type;
+			return;
+		}
+
 		auto* src = dynamic_cast<SpliceKitCellButton*>(e.origin);
 		if (!src || src->module != module || src->cellId == cellId) return;
 		int a = src->cellId, b = cellId;

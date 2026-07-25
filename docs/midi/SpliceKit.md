@@ -6,6 +6,8 @@ SPLICE-KIT is an 8×8 matrix patch bay. Each of the 64 buttons represents a sing
 
 Before a button can be used, a port from the current patch must be assigned to it. Right-click any matrix button to open its context menu and select **Learn port**. The cursor changes to a crosshair — click on any input or output port in the patch to complete the assignment. The port label and direction are shown at the top of the context menu once a port is assigned.
 
+As a faster alternative, drag a cable from any port in the patch and drop it directly onto a matrix button to assign that port — no modal learn step required. The dragged cable itself is discarded; no patch cable is created by this gesture. If the button already had a port assigned, it is replaced.
+
 To remove a port assignment select **Clear port** from the context menu. Any connections involving that button are removed from all scenes.
 
 Hovering over a button shows a tooltip with the assigned port label and its current MIDI mapping.
