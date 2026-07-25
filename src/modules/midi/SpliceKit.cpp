@@ -14,9 +14,9 @@ namespace SpliceKit {
 // Each LED uses a single SCHEME channel in isolation. Mixing channels is avoided
 // because SCHEME_BLUE (#29b2ef) already contains G=178/255, which saturates the
 // green channel and produces teal/white when combined with the green channel.
-static const float LED_BRIGHT      = 1.f;
-static const float LED_DIM         = 0.65f;  // assigned port, no cable attached
-static const float LED_SCENE_DIM   = 0.3f;   // inactive scene that has stored connections
+static const float LED_BRIGHT = 1.f;
+static const float LED_DIM = 0.65f;  		// assigned port, no cable attached
+static const float LED_SCENE_DIM = 0.3f;    // inactive scene that has stored connections
 
 static const NVGcolor LED_OFF        = nvgRGBf(0.f,        0.f,        0.f       );
 static const NVGcolor LED_PENDING    = nvgRGBf(LED_BRIGHT, LED_BRIGHT, LED_BRIGHT);
@@ -35,6 +35,19 @@ static const ColorSet COLOR_SETS[COLOR_SET_COUNT] = {
 	{ nvgRGB(0x10, 0x60, 0xff), "Blue"   },
 	{ SCHEME_ORANGE,            "Orange" },
 	{ SCHEME_GREEN,             "Green"  }
+};
+
+// Per-color-set LED state lookups, named explicitly rather than computed via
+// enum-stride arithmetic (e.g. LED_STATE_COLOR0 + cs * 2) — safe against any
+// future reordering/insertion in the LED_STATE_* enum.
+static const int LED_STATE_COLOR_DIM_BY_SET[COLOR_SET_COUNT] = {
+	LED_STATE_COLOR0_DIM, LED_STATE_COLOR1_DIM, LED_STATE_COLOR2_DIM, LED_STATE_COLOR3_DIM
+};
+static const int LED_STATE_COLOR_BY_SET[COLOR_SET_COUNT] = {
+	LED_STATE_COLOR0, LED_STATE_COLOR1, LED_STATE_COLOR2, LED_STATE_COLOR3
+};
+static const int LED_STATE_CONNECTED_BY_SET[COLOR_SET_COUNT] = {
+	LED_STATE_CONNECTED0, LED_STATE_CONNECTED1, LED_STATE_CONNECTED2, LED_STATE_CONNECTED3
 };
 
 
@@ -143,8 +156,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	};
 
 	struct SpliceKitOutput : midi::Output {
-		int* ledState = nullptr;
-		int* sceneLedState = nullptr;
+		// Hook to the owning module's invalidateLedStates(), set once by the module.
+		// SpliceKitOutput has no module back-pointer of its own, so a callback is used
+		// instead of duplicating the cache-invalidation logic here.
+		std::function<void()> onDeviceChanged;
 
 		midi::Message lastSentMsg;
 		int sentCount = 0;
@@ -166,12 +181,11 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 			return channels;
 		}
 
-		// Forces a full LED refresh after the device changes by setting all cached
-		// states to -1, which makes the next process() tick re-send every cell.
+		// Forces a full LED refresh after the device changes, which makes the next
+		// process() tick re-send every cell and scene button.
 		void setDeviceId(int deviceId) override {
 			midi::Output::setDeviceId(deviceId);
-			if (ledState) std::fill(ledState, ledState + MATRIX_COUNT, -1);
-			if (sceneLedState) std::fill(sceneLedState, sceneLedState + MATRIX_SIZE, -1);
+			if (onDeviceChanged) onDeviceChanged();
 		}
 	};
 
@@ -225,13 +239,31 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	// the pair is interpreted as a copy from pendingMidiSceneId → new sceneId.
 	int pendingMidiSceneId = -1;
 
-	// Resets the pending-cell selection (called on cancel, completion, mode switch, and reset).
-	// Also clears the global cross-instance pending if this module was the initiator.
-	void clearPending() {
+	// Resets the local pending-cell selection only. Safe to call from either thread —
+	// unlike clearPending()/clearPendingCrossGui(), it never touches crossPending.
+	void clearPendingLocal() {
 		pendingCellId = -1;
 		pendingCellIsPhysical = false;
+	}
+
+	// GUI thread only — clears the global cross-instance pending state if this module
+	// is the current initiator. crossPending is a static map shared across all module
+	// instances; mutating it from the engine thread would race with GUI-thread access.
+	void clearPendingCrossGui() {
 		auto& cp = crossPending[APP];
 		if (cp.initiator == this) cp.clear();
+	}
+
+	// Resets the pending-cell selection (called on cancel, completion, mode switch, and reset).
+	// Callable from the engine thread: the local reset happens immediately, while the
+	// cross-instance cleanup (if this module was the initiator) is deferred to the GUI
+	// thread via guiQueue. GUI-thread callers that need the cross-instance cleanup to
+	// happen immediately should call clearPendingLocal() + clearPendingCrossGui() instead.
+	void clearPending() {
+		clearPendingLocal();
+		if (!guiQueue.full()) {
+			guiQueue.push([this]() { clearPendingCrossGui(); });
+		}
 	}
 
 	int portLearningId = -1;
@@ -280,8 +312,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		trackingProcessor.handler = this;
 		trackingProcessor.enableCc();
 		trackingProcessor.enableNotes();
-		midiOutput.ledState = cellLedState;
-		midiOutput.sceneLedState = sceneLedState;
+		midiOutput.onDeviceChanged = [this]() { invalidateLedStates(); };
 		processDivider.setDivision(256);
 	}
 
@@ -362,7 +393,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 				}
 				else if (connectedToPending) {
 					col = slowBlinkOn ? COLOR_SETS[cs].color : nvgRGBf(0.f, 0.f, 0.f);
-					stateId = LED_STATE_CONNECTED0 + cs;
+					stateId = LED_STATE_CONNECTED_BY_SET[cs];
 				}
 				else if (portLearningId == i) {
 					col = blinkOn ? LED_PORT_LEARN : LED_OFF;
@@ -374,7 +405,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 				}
 				else if (assigned) {
 					col = color::mult(COLOR_SETS[cs].color, hasCable ? LED_BRIGHT : LED_DIM);
-					stateId = hasCable ? LED_STATE_COLOR0 + cs * 2 : LED_STATE_COLOR0_DIM + cs * 2;
+					stateId = hasCable ? LED_STATE_COLOR_BY_SET[cs] : LED_STATE_COLOR_DIM_BY_SET[cs];
 				}
 				else {
 					col = LED_OFF;
@@ -626,9 +657,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 				slotType = m.type;
 				break;
 			}
-			case MIDI_OUT_FIXED:
+			case MIDI_OUT_FIXED: {
 				noteNum = spec.note;
 				break;
+			}
 			default: return;
 		}
 		if (spec.type == MIDI_OUT_FROM_SLOT_TYPE && slotType != MidiTrackingType::NOTE) return;
@@ -658,9 +690,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 				slotType = m.type;
 				break;
 			}
-			case MIDI_OUT_FIXED:
+			case MIDI_OUT_FIXED: {
 				noteNum = spec.note;
 				break;
+			}
 			default: return;
 		}
 		uint8_t status;
@@ -697,13 +730,13 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		trackingProcessor.clearMaps();
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			const auto& s = preset->cells[i];
-			if (s.type != MidiTrackingType::NONE && s.number > 0) {
+			if (s.type != MidiTrackingType::NONE) {
 				trackingProcessor.setMap(s.type, i, s.number);
 			}
 		}
 		for (int i = 0; i < MATRIX_SIZE; i++) {
 			const auto& s = preset->scenes[i];
-			if (s.type != MidiTrackingType::NONE && s.number > 0) {
+			if (s.type != MidiTrackingType::NONE) {
 				trackingProcessor.setMap(s.type, MATRIX_COUNT + i, s.number);
 			}
 		}
@@ -845,13 +878,14 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		}
 		if (feedbackPreset == PRESET_IDX_CUSTOM) {
 			json_t* cpJ = json_object_get(rootJ, "customPreset");
-			if (cpJ) {
-				customPresetJson = json_string_value(cpJ);
+			const char* cpStr = cpJ ? json_string_value(cpJ) : nullptr;
+			if (cpStr) {
+				customPresetJson = cpStr;
 				json_error_t err;
 				json_t* root = json_loads(customPresetJson.c_str(), 0, &err);
 				if (root) { customPreset.fromJson(root); json_decref(root); }
 				else feedbackPreset = 0;
-			} 
+			}
 			else {
 				feedbackPreset = 0;
 			}
@@ -865,8 +899,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 			json_t* val;
 			json_object_foreach(labelsJ, key, val) {
 				int i = std::atoi(key);
-				if (i >= 0 && i < MATRIX_COUNT) {
-					cellLabels[i] = json_string_value(val);
+				const char* s = json_string_value(val);
+				if (i >= 0 && i < MATRIX_COUNT && s) {
+					cellLabels[i] = s;
 				}
 			}
 		}
@@ -921,8 +956,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		const PortAssignment& b = portAssignments[cellIdB];
 		if (!a.isValid() || !b.isValid()) return;
 		const PortAssignment* outPd = nullptr;
-		const PortAssignment* inPd  = nullptr;
-		if      (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) { outPd = &a; inPd = &b; }
+		const PortAssignment* inPd = nullptr;
+		if (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) { outPd = &a; inPd = &b; }
 		else if (a.type == engine::Port::INPUT  && b.type == engine::Port::OUTPUT) { outPd = &b; inPd = &a; }
 		else return;
 		CableWidget* cw = vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
@@ -937,7 +972,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		const PortAssignment& b = portAssignments[cellIdB];
 
 		const PortAssignment* outPd = nullptr;
-		const PortAssignment* inPd  = nullptr;
+		const PortAssignment* inPd = nullptr;
 		int outCell, inCell;
 		if (!a.isValid() || !b.isValid()) {
 			return;
@@ -992,7 +1027,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	void applyConnectionDiff(const uint64_t* oldConns, const uint64_t* newConns) {
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			for (int j = i + 1; j < MATRIX_COUNT; j++) {
-				bool was  = (oldConns[i] >> j) & 1;
+				bool was = (oldConns[i] >> j) & 1;
 				bool will = (newConns[i] >> j) & 1;
 				if (was == will) continue;
 				const PortAssignment& a = portAssignments[i];
@@ -1004,7 +1039,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 				else {
 					const PortAssignment* outPd = nullptr;
 					const PortAssignment* inPd  = nullptr;
-					if      (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) { outPd = &a; inPd = &b; }
+					if (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) { outPd = &a; inPd = &b; }
 					else if (a.type == engine::Port::INPUT  && b.type == engine::Port::OUTPUT) { outPd = &b; inPd = &a; }
 					else continue;
 					vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
@@ -1047,7 +1082,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	// GUI thread — posts a two-line overlay message (no-op when overlay is disabled).
 	void setOverlayMessage(const std::string& title, const std::string& sub0, const std::string& sub1 = "") {
 		if (!overlayEnabled) return;
-		overlayMessage.title       = title;
+		overlayMessage.title = title;
 		overlayMessage.subtitle[0] = sub0;
 		overlayMessage.subtitle[1] = sub1;
 		overlayMessageId = 0;
@@ -1073,8 +1108,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 						PortAssignment iPort = cp.port;
 						PortAssignment rPort = portAssignments[id];
 						cp.clear();
-						initiator->clearPending();
-						clearPending();  // reset our own tentative pendingCellId
+						initiator->clearPendingLocal();
+						clearPendingLocal();  // reset our own tentative pendingCellId
 						const PortAssignment* outPd = nullptr;
 						const PortAssignment* inPd  = nullptr;
 						if (iPort.type == engine::Port::OUTPUT && rPort.type == engine::Port::INPUT) {
@@ -1099,8 +1134,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 						// Initiator path (cp was already consumed, or no cross-pending).
 						if (crossInstanceEnabled) {
 							cp.initiator = this;
-							cp.cellId    = id;
-							cp.port      = portAssignments[id];
+							cp.cellId = id;
+							cp.port = portAssignments[id];
 						}
 						const std::string& lbl = cellLabels[id];
 						if (!lbl.empty()) setOverlayMessage(lbl, portLabel(portAssignments[id]));
@@ -1167,7 +1202,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		// sendFeedbackOff uses the mapping to address the right note/CC; clearing
 		// the mappings first would cause the off-message to be lost.
 		sendFeedbackOff(fromId, cellLedState[fromId]);
-		sendFeedbackOff(toId,   cellLedState[toId]);
+		sendFeedbackOff(toId, cellLedState[toId]);
 
 		// Remove only toId's existing cables — fromId's cables stay, because toId
 		// will inherit fromId's port and those cables are already in the right place.
@@ -1179,8 +1214,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		for (int s = 0; s < MATRIX_SIZE; s++) {
 			uint64_t oldToMask = sceneConnections[s][toId];
 			for (int j = 0; j < MATRIX_COUNT; j++) {
-				if ((oldToMask >> j) & 1)
+				if ((oldToMask >> j) & 1) {
 					sceneConnections[s][j] &= ~(1ULL << toId);
+				}
 			}
 			sceneConnections[s][toId] = 0;
 
@@ -1188,8 +1224,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 			for (int j = 0; j < MATRIX_COUNT; j++) {
 				if (!((fromMask >> j) & 1)) continue;
 				sceneConnections[s][j] &= ~(1ULL << fromId);
-				if (j != toId)
+				if (j != toId) {
 					sceneConnections[s][j] |= (1ULL << toId);
+				}
 			}
 			// fromId's connections become toId's, minus any self-connection bit.
 			sceneConnections[s][toId]   = fromMask & ~(1ULL << toId);
@@ -1202,9 +1239,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		portAssignments[toId] = portAssignments[fromId];
 		portAssignments[fromId].clear();
 
-		cellLabels[toId]     = std::move(cellLabels[fromId]);
-		cellLabels[fromId]   = "";
-		cellColorSet[toId]   = cellColorSet[fromId];
+		cellLabels[toId] = std::move(cellLabels[fromId]);
+		cellLabels[fromId] = "";
+		cellColorSet[toId] = cellColorSet[fromId];
 		cellColorSet[fromId] = -1;
 
 		invalidateLedStates();
@@ -1222,7 +1259,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 				applyConnectionDiff(sceneConnections[currentScene], empty);
 				memset(sceneConnections, 0, sizeof(sceneConnections));
 				for (int i = 0; i < MATRIX_COUNT; i++) portAssignments[i].clear();
-				for (int i = 0; i < MATRIX_COUNT; i++) trackingProcessor.clearMap(i);
+				for (int i = 0; i < TOTAL_MAPS; i++) trackingProcessor.clearMap(i);
 				currentScene   = 0;
 				feedbackPreset = 0;
 				invalidateLedStates();
@@ -1250,11 +1287,19 @@ struct SpliceKitVizOverlay : TransparentWidget {
 		TransparentWidget::step();
 	}
 
+	static float cellCenterX(int col) {
+		return 24.3f + col * (245.7f - 24.3f) / 7.f;
+	}
+
 	static Vec cellCenter(int cellId) {
 		int r = cellId / MATRIX_SIZE;
 		int c = cellId % MATRIX_SIZE;
-		return Vec(24.3f + c * (245.7f - 24.3f) / 7.f,
-				   54.5f + r * (277.4f - 54.5f) / 7.f);
+		return Vec(cellCenterX(c), 54.5f + r * (277.4f - 54.5f) / 7.f);
+	}
+
+	// Scene-button row shares the matrix's column spacing/x-positions.
+	static Vec sceneCenter(int sceneId) {
+		return Vec(cellCenterX(sceneId), 324.3f);
 	}
 
 	// Deterministic value in [-1, +1] for a given cell — golden-ratio sequence
@@ -1264,7 +1309,7 @@ struct SpliceKitVizOverlay : TransparentWidget {
 	}
 
 	void drawSpline(NVGcontext* vg, Vec a, Vec b, NVGcolor col, float jitter, bool highlighted = false) {
-		float dx   = b.x - a.x;
+		float dx = b.x - a.x;
 		float dist = a.minus(b).norm();
 		float bulge = dist * 0.18f * jitter;
 		Vec cp1 = a.plus(Vec(dx * 0.5f,  bulge));
@@ -1287,9 +1332,9 @@ struct SpliceKitVizOverlay : TransparentWidget {
 	// Draws a short arc between two cell-button centers on the module face.
 	// Used to show which cells are wired together in the active scene.
 	void drawCellArc(NVGcontext* vg, Vec a, Vec b) {
-		Vec diff   = b.minus(a);
-		Vec perp   = Vec(-diff.y, diff.x).mult(0.12f);  // ~12% of distance, perpendicular
-		Vec cp     = a.plus(diff.mult(0.5f)).plus(perp);
+		Vec diff = b.minus(a);
+		Vec perp = Vec(-diff.y, diff.x).mult(0.12f);  // ~12% of distance, perpendicular
+		Vec cp = a.plus(diff.mult(0.5f)).plus(perp);
 
 		nvgBeginPath(vg);
 		nvgMoveTo(vg, a.x, a.y);
@@ -1467,8 +1512,9 @@ struct SpliceKitSceneButton : app::SvgSwitch {
 
 // Matrix cell button with right-click context menu and drag-and-drop support.
 //   Left-drag        A → B : toggle connection between A and B.
-//   Shift+left-drag  A → B : move A's port, MIDI mapping, label, color, and
-//                            scene connections onto B (B's assignment is discarded).
+//   Shift+left-drag  A → B : move A's port, label, color, and scene connections
+//                            onto B (B's assignment is discarded). MIDI mappings
+//                            stay on their physical cell positions, not the port.
 //   Right-click            : open the per-cell context menu.
 struct SpliceKitCellButton : app::SvgSwitch {
 	SpliceKitModule* module = nullptr;
@@ -1540,8 +1586,9 @@ struct SpliceKitCellButton : app::SvgSwitch {
 				}
 			}
 			else {
-				module->clearPending();
-				if (!module->guiQueue.full()) { 
+				module->clearPendingLocal();
+				module->clearPendingCrossGui();
+				if (!module->guiQueue.full()) {
 					module->guiQueue.push([=]() { module->toggleConnection(a, b); });
 				}
 			}
@@ -1566,25 +1613,24 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 
 		for (int r = 0; r < MATRIX_SIZE; r++) {
 			for (int c = 0; c < MATRIX_SIZE; c++) {
-				float x = 24.3f + c * (245.7f - 24.3f) / 7.f;
-				float y = 54.5f + r * (277.4f - 54.5f) / 7.f;
 				int cellId = r * MATRIX_SIZE + c;
-				auto* btn = createParam<SpliceKitCellButton>(Vec(x - 13.25f, y - 13.25f), module, SpliceKitModule::PARAM_MATRIX + cellId);
+				Vec pos = SpliceKitVizOverlay::cellCenter(cellId);
+				auto* btn = createParam<SpliceKitCellButton>(pos.minus(Vec(13.25f, 13.25f)), module, SpliceKitModule::PARAM_MATRIX + cellId);
 				btn->module = module;
 				btn->mw = this;
 				btn->cellId = cellId;
 				addParam(btn);
-				addChild(createLightCentered<SaturatedMatrixButtonLight<SpliceKitModule>>(Vec(x, y), module, SpliceKitModule::LIGHT_MATRIX + cellId * 3));
+				addChild(createLightCentered<SaturatedMatrixButtonLight<SpliceKitModule>>(pos, module, SpliceKitModule::LIGHT_MATRIX + cellId * 3));
 			}
 		}
 		for (int i = 0; i < MATRIX_SIZE; i++) {
-			float x = 24.3f + i * (245.7f - 24.3f) / 7.f;
-			auto* sb = createParamCentered<SpliceKitSceneButton>(Vec(x, 324.3f), module, SpliceKitModule::PARAM_SCENE + i);
+			Vec pos = SpliceKitVizOverlay::sceneCenter(i);
+			auto* sb = createParamCentered<SpliceKitSceneButton>(pos, module, SpliceKitModule::PARAM_SCENE + i);
 			sb->module = module;
 			sb->mw = this;
 			sb->sceneId = i;
 			addParam(sb);
-			addChild(createLightCentered<MatrixButtonLight<WhiteLight, SpliceKitModule>>(Vec(x, 324.3f), module, SpliceKitModule::LIGHT_SCENE + i));
+			addChild(createLightCentered<MatrixButtonLight<WhiteLight, SpliceKitModule>>(pos, module, SpliceKitModule::LIGHT_SCENE + i));
 		}
 
 		if (module) {
@@ -1816,17 +1862,28 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			[=]() { return module->crossInstanceEnabled; },
 			[=]() {
 				module->crossInstanceEnabled = !module->crossInstanceEnabled;
-				if (!module->crossInstanceEnabled) module->clearPending();
+				if (!module->crossInstanceEnabled) {
+					module->clearPendingLocal();
+					module->clearPendingCrossGui();
+				}
 			}
 		));
 		menu->addChild(createSubmenuItem("Button mode", "", [=](Menu* menu) {
 			menu->addChild(createCheckMenuItem("Toggle", "",
 				[=]() { return module->buttonMode == SpliceKitModule::BUTTON_TOGGLE; },
-				[=]() { module->buttonMode = SpliceKitModule::BUTTON_TOGGLE; module->clearPending(); }
+				[=]() {
+					module->buttonMode = SpliceKitModule::BUTTON_TOGGLE;
+					module->clearPendingLocal();
+					module->clearPendingCrossGui();
+				}
 			));
 			menu->addChild(createCheckMenuItem("Momentary", "",
 				[=]() { return module->buttonMode == SpliceKitModule::BUTTON_MOMENTARY; },
-				[=]() { module->buttonMode = SpliceKitModule::BUTTON_MOMENTARY; module->clearPending(); }
+				[=]() {
+					module->buttonMode = SpliceKitModule::BUTTON_MOMENTARY;
+					module->clearPendingLocal();
+					module->clearPendingCrossGui();
+				}
 			));
 		}));
 	}
@@ -1888,6 +1945,9 @@ void SpliceKitSceneButton::createSceneMenu() {
 }
 
 void SpliceKitCellButton::createCellMenu() {
+	// Intended: this is what makes the per-cell "Start sequential learn..." item begin at
+	// this cell rather than cell 0 — the module-level context menu has no such click to
+	// anchor on, which is the actual bug (see startGlobalLearn/startGlobalPortLearn).
 	module->lastClickedCell = cellId;
 	auto& pa = module->portAssignments[cellId];
 	std::string label = SpliceKitModule::portLabel(pa);

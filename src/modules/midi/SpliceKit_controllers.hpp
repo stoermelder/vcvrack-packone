@@ -12,7 +12,7 @@ static const int MATRIX_COUNT = MATRIX_SIZE * MATRIX_SIZE;
 
 // LED state identifiers — order must match the light-loop state assignment in SpliceKit.cpp.
 // Color sets 0–3: dim then bright for each set, then connected per set.
-//   default: set 0 = red (output), set 1 = blue (input), set 2 = orange, set 3 = yellow
+//   default: set 0 = red (output), set 1 = blue (input), set 2 = orange, set 3 = green
 enum {
 	LED_STATE_OFF = 0,
 	LED_STATE_COLOR0_DIM,    // color set 0, no cable
@@ -157,7 +157,7 @@ struct MidiOutPreset {
 //   note     — note/CC number; only used with noteMode 1  (default 0)
 //   value    — velocity or CC value                       (default 0)
 //
-// Colour set defaults: 0=red  1=blue  2=green  3=yellow
+// Colour set defaults: 0=red  1=blue  2=orange  3=green
 //
 // Colour palette references (Novation Launchpad X / MK3 / MK2):
 //   0=off  5=red(dim)  7=red  17=green(dim)  21=green  9=yellow(dim)  13=yellow

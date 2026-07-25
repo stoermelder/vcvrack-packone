@@ -1347,6 +1347,8 @@ TEST_CASE("requestReset - enqueues a reset lambda that clears all state", "[Spli
 	m->portAssignments[3].type     = engine::Port::OUTPUT;
 	m->portHasCable[3]             = true;
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 5, 60);
+	// A scene-button map (index MATRIX_COUNT..TOTAL_MAPS-1) must be cleared too.
+	m->trackingProcessor.setMap(MidiTrackingType::NOTE, MATRIX_COUNT + 1, 70);
 
 	REQUIRE(m->guiQueue.size() == 0);
 	m->requestReset();
@@ -1366,6 +1368,9 @@ TEST_CASE("requestReset - enqueues a reset lambda that clears all state", "[Spli
 	// MIDI map for cell 5 was cleared
 	auto map = m->trackingProcessor.getMap(5);
 	REQUIRE(map.type == MidiTrackingType::NONE);
+	// MIDI map for scene button 1 was cleared
+	auto sceneMap = m->trackingProcessor.getMap(MATRIX_COUNT + 1);
+	REQUIRE(sceneMap.type == MidiTrackingType::NONE);
 
 	Test::destroyModule(m);
 }
@@ -1585,6 +1590,37 @@ TEST_CASE("applyPresetLayout - applies cell and scene mappings from custom prese
 	Test::destroyModule(m);
 }
 
+TEST_CASE("applyPresetLayout - maps every valid MIDI note/CC number 0..127, including 0", "[SpliceKit]") {
+	// Note 0 and CC 0 are legal MIDI values and must not be skipped; sweep the
+	// full valid range for both cell and scene slots to guard against any
+	// other off-by-one at the boundaries.
+	for (int number = 0; number <= 127; number++) {
+		SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+		MidiOutPreset preset;
+		preset.cells[0].type  = MidiTrackingType::NOTE;  preset.cells[0].number = number;
+		preset.cells[1].type  = MidiTrackingType::CC;    preset.cells[1].number = number;
+		preset.scenes[0].type = MidiTrackingType::NOTE;  preset.scenes[0].number = number;
+		m->customPreset   = preset;
+		m->feedbackPreset = PRESET_IDX_CUSTOM;
+
+		m->applyPresetLayout();
+
+		auto c0 = m->trackingProcessor.getMap(0);
+		REQUIRE(c0.type  == MidiTrackingType::NOTE);
+		REQUIRE(c0.param == number);
+		auto c1 = m->trackingProcessor.getMap(1);
+		REQUIRE(c1.type  == MidiTrackingType::CC);
+		REQUIRE(c1.param == number);
+		// Scene 0 is MATRIX_COUNT + 0.
+		auto s0 = m->trackingProcessor.getMap(MATRIX_COUNT);
+		REQUIRE(s0.type  == MidiTrackingType::NOTE);
+		REQUIRE(s0.param == number);
+
+		Test::destroyModule(m);
+	}
+}
+
 TEST_CASE("applyPresetLayout - no-op when no preset is active", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	m->feedbackPreset = 0;  // no preset
@@ -1616,6 +1652,22 @@ TEST_CASE("applyPresetLayout - invalidates LED states so they are re-sent", "[Sp
 	Test::destroyModule(m);
 }
 
+TEST_CASE("SpliceKitOutput::setDeviceId invalidates LED states via the module hook", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	// Pre-populate LED state with non-(-1) values.
+	for (int i = 0; i < MATRIX_COUNT; i++) m->cellLedState[i]  = LED_STATE_COLOR0;
+	for (int i = 0; i < MATRIX_SIZE;  i++) m->sceneLedState[i] = LED_STATE_SCENE_ACTIVE;
+
+	// setDeviceId must trigger the onDeviceChanged hook wired in the constructor
+	// (midiOutput has no driver attached, so this is a no-op device switch).
+	m->midiOutput.setDeviceId(-1);
+
+	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->cellLedState[i]  == -1);
+	for (int i = 0; i < MATRIX_SIZE;  i++) REQUIRE(m->sceneLedState[i] == -1);
+	Test::destroyModule(m);
+}
+
 
 // ---------------------------------------------------------------------------
 // dataFromJson — invalid customPreset string falls back to feedbackPreset == 0
@@ -1634,5 +1686,33 @@ TEST_CASE("dataFromJson - malformed customPresetJson reverts to no preset", "[Sp
 	json_decref(j);
 	REQUIRE(m2->feedbackPreset == 0);
 	Test::destroyModule(m2);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("dataFromJson - non-string customPreset value does not crash and reverts to no preset", "[SpliceKit][JSON]") {
+	json_t* j = json_object();
+	json_object_set_new(j, "feedbackPreset", json_integer(PRESET_IDX_CUSTOM));
+	json_object_set_new(j, "customPreset",   json_integer(42));  // not a string
+
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	REQUIRE_NOTHROW(m->dataFromJson(j));
+	json_decref(j);
+	REQUIRE(m->feedbackPreset == 0);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("dataFromJson - non-string cellLabels entry does not crash and is skipped", "[SpliceKit][JSON]") {
+	json_t* labelsJ = json_object();
+	json_object_set_new(labelsJ, "3", json_integer(7));       // not a string — must be skipped
+	json_object_set_new(labelsJ, "5", json_string("kept"));   // valid — must be applied
+	json_t* j = json_object();
+	json_object_set_new(j, "cellLabels", labelsJ);
+
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->cellLabels[3] = "stale";
+	REQUIRE_NOTHROW(m->dataFromJson(j));
+	json_decref(j);
+	REQUIRE(m->cellLabels[3] == "");
+	REQUIRE(m->cellLabels[5] == "kept");
 	Test::destroyModule(m);
 }
