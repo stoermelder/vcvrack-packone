@@ -44,6 +44,11 @@ Right-clicking a scene button opens its context menu:
 | **Paste** | Apply the clipboard topology to this scene |
 | **Learn MIDI** | Map a MIDI CC or note to this scene button |
 | **Clear MIDI** | Remove the MIDI mapping from this scene button |
+| **Randomize** | Generate a random valid connection topology for this scene (only available on the currently active scene) |
+
+**Randomize** on the currently active scene's context menu pairs every assigned output port with a random assigned input port, one-to-one, respecting the same output→input direction rule as manual patching. It only changes that scene's connections — port assignments and other scenes are untouched.
+
+Right-click the module and choose **Randomize** (or press `Ctrl+R`/`Cmd+R`) to instead clear every existing port assignment and label, then reassign as many matrix cells as possible to a distinct random port from anywhere in the patch — no two cells are ever assigned the same port. If the patch has fewer available ports than 64, the surplus cells are simply left unassigned rather than duplicating a port. This is a full reshuffle of the patch bay itself, independent of scenes — use the scene button's **Randomize** instead if you just want a new random cable topology between the ports you've already assigned.
 
 ### Scene link
 

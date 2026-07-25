@@ -308,11 +308,15 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		memset(cellColorSet, -1, sizeof(cellColorSet));
 		invalidateLedStates();
+		// Momentary button representations, not meaningful knob/switch values — excluded from
+		// Rack's default param randomization. onRandomize() below generates a random cable
+		// topology instead; randomizing these directly would just spuriously trigger button
+		// presses on the next process() tick.
 		for (int i = 0; i < MATRIX_COUNT; i++) {
-			configParam<SpliceKitCellQuantity>(PARAM_MATRIX + i, 0.f, 1.f, 0.f);
+			configParam<SpliceKitCellQuantity>(PARAM_MATRIX + i, 0.f, 1.f, 0.f)->randomizeEnabled = false;
 		}
 		for (int i = 0; i < MATRIX_SIZE; i++) {
-			configParam<SpliceKitSceneQuantity>(PARAM_SCENE + i, 0.f, 1.f, 0.f);
+			configParam<SpliceKitSceneQuantity>(PARAM_SCENE + i, 0.f, 1.f, 0.f)->randomizeEnabled = false;
 		}
 
 		trackingProcessor.handler = this;
@@ -343,6 +347,84 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		for (auto& l : cellLabels) l.clear();
 		memset(cellColorSet, -1, sizeof(cellColorSet));
 		requestReset();
+	}
+
+	// Engine thread — called by Rack when the user randomizes the module. Button params are
+	// excluded from default randomization (see the constructor); this instead reassigns every
+	// matrix cell to a random port somewhere in the patch. Deferred to the GUI thread since it
+	// reads ModuleWidget/PortWidget state. (Generating a random cable topology for the current
+	// scene, keeping the existing port assignments, is available separately via "Randomize" in
+	// the scene button's context menu — see randomizeCurrentScene().)
+	void onRandomize() override {
+		if (!guiQueue.full()) {
+			guiQueue.push([this]() { randomizePortAssignments(); });
+		}
+	}
+
+	// GUI thread — collects every port of every module currently in the rack (SpliceKit itself
+	// has none) as candidates and hands them to randomizePortAssignmentsFrom().
+	void randomizePortAssignments() {
+		std::vector<PortAssignment> candidates;
+		for (ModuleWidget* mw : APP->scene->rack->getModules()) {
+			if (!mw->module) continue;
+			for (PortWidget* pw : mw->getPorts()) {
+				PortAssignment pa;
+				pa.moduleId = pw->module->getId();
+				pa.portId   = pw->portId;
+				pa.type     = pw->type;
+				candidates.push_back(pa);
+			}
+		}
+		randomizePortAssignmentsFrom(candidates);
+	}
+
+	// GUI thread — clears every cell's port assignment and label, then reassigns as many cells
+	// as possible to a distinct, shuffled entry from candidates (sampling without replacement,
+	// so no two cells ever end up on the same port). If there are fewer candidates than
+	// MATRIX_COUNT, the surplus cells are left cleared rather than duplicating a port; if there
+	// are more candidates than cells, the extras are simply not used. Existing scene connections
+	// are left as-is. Split out from randomizePortAssignments() so the actual assignment logic
+	// is testable without needing real ModuleWidget/PortWidget scaffolding.
+	void randomizePortAssignmentsFrom(const std::vector<PortAssignment>& candidates) {
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			portAssignments[i].clear();
+			cellLabels[i].clear();
+		}
+		if (candidates.empty()) return;
+
+		std::vector<PortAssignment> shuffled = candidates;
+		std::mt19937 rng(random::u32());
+		std::shuffle(shuffled.begin(), shuffled.end(), rng);
+
+		size_t count = std::min((size_t)MATRIX_COUNT, shuffled.size());
+		for (size_t i = 0; i < count; i++) {
+			portAssignments[i] = shuffled[i];
+		}
+		invalidateLedStates();
+	}
+
+	// GUI thread — replaces the current scene's connections with a random valid topology:
+	// assigned output ports and assigned input ports are each shuffled independently, then
+	// paired up one-to-one in order, respecting the out→in direction constraint enforced
+	// everywhere else in this file. Any surplus ports on the larger side are left unconnected.
+	void randomizeCurrentScene() {
+		std::vector<int> outputs, inputs;
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			if (!portAssignments[i].isValid()) continue;
+			(portAssignments[i].type == engine::Port::OUTPUT ? outputs : inputs).push_back(i);
+		}
+		std::mt19937 rng(random::u32());
+		std::shuffle(outputs.begin(), outputs.end(), rng);
+		std::shuffle(inputs.begin(), inputs.end(), rng);
+
+		uint64_t newConns[MATRIX_COUNT] = {};
+		size_t pairs = std::min(outputs.size(), inputs.size());
+		for (size_t i = 0; i < pairs; i++) {
+			int a = outputs[i], b = inputs[i];
+			newConns[a] |= (1ULL << b);
+			newConns[b] |= (1ULL << a);
+		}
+		reconcileScene(currentScene, newConns);
 	}
 
 	void processBypass(const ProcessArgs& args) override {
@@ -1996,6 +2078,12 @@ void SpliceKitSceneButton::createSceneMenu() {
 		if (!module->sceneClipboardValid) return;
 		module->reconcileScene(sceneId, module->sceneClipboard);
 	}, !module->sceneClipboardValid));
+	// randomizeCurrentScene() always targets the active scene, not necessarily the one whose
+	// button was clicked — only offer it here when they're the same scene.
+	bool notCurrent = sceneId != module->currentScene;
+	menu->addChild(createMenuItem("Randomize", "", [=]() {
+		module->randomizeCurrentScene();
+	}, notCurrent));
 
 	menu->addChild(new MenuSeparator);
 
