@@ -45,6 +45,14 @@ Right-clicking a scene button opens its context menu:
 | **Learn MIDI** | Map a MIDI CC or note to this scene button |
 | **Clear MIDI** | Remove the MIDI mapping from this scene button |
 
+### Scene link
+
+Multiple SPLICE-KIT instances can be linked so that one follows another's scene selection automatically. Open the module context menu of the instance that should follow, then choose **Scene link master** and select the instance to follow (or **None** to unlink). Whenever the master's scene changes, the follower switches to the same scene index shortly after.
+
+A follower with no master configured (**None**, the default) behaves exactly like a standalone instance. If the configured master is deleted from the patch, the follower automatically reverts to **None**. Scene link only tracks *which* scene is active — it has no effect on cross-instance patching, cable topology, or port assignments, which remain entirely independent per instance.
+
+Scene link is strictly two-level: a master cannot itself follow another instance, and an instance already following a master cannot be picked as someone else's master. Chains of linked instances (and the loops they would create) are not possible.
+
 ### Drag gestures
 
 As a faster alternative to the two-press workflow, connections can be created or removed by dragging directly from one cell to another:

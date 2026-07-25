@@ -62,7 +62,7 @@ struct PortAssignment {
 
 static const int TOTAL_MAPS = MATRIX_COUNT + MATRIX_SIZE;  // 64 cells + 8 scenes
 
-struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
+struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListener {
 	// Cross-instance pending state: the initiator module + its pending cell, shared across all
 	// SpliceKit instances in the same Rack context. Cleared by the responder or when the
 	// initiator cancels/completes its local pending.
@@ -297,7 +297,13 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	uint64_t sceneClipboard[MATRIX_COUNT] = {};
 	bool sceneClipboardValid = false;
 
-	SpliceKitModule() {
+	// -1 = no scene link master. Otherwise the engine module ID of another SpliceKit
+	// instance whose currentScene this instance follows (see notifyModuleListeners
+	// consumption in process()).
+	/** [Stored to JSON] */
+	int64_t sceneLinkMasterId = -1;
+
+	SpliceKitModule() : ModuleChangeListener{false} {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		memset(cellColorSet, -1, sizeof(cellColorSet));
@@ -314,6 +320,14 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		trackingProcessor.enableNotes();
 		midiOutput.onDeviceChanged = [this]() { invalidateLedStates(); };
 		processDivider.setDivision(256);
+		registerModuleListener("SpliceKit-SceneLink", this);
+	}
+
+	// Runs on plain deletion too (unlike onRemove(), which only fires when the module is
+	// removed through the engine) — this is what keeps the static ModuleChangeListener
+	// registry free of dangling pointers regardless of how the module's lifetime ends.
+	~SpliceKitModule() {
+		unregisterModuleListener("SpliceKit-SceneLink", this);
 	}
 
 	void onRemove() override {
@@ -340,6 +354,21 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		trackingProcessor.process(args.frame);
 
 		if (processDivider.process()) {
+			if (moduleChangedFlag) {
+				moduleChangedFlag = false;
+				if (sceneLinkMasterId >= 0) {
+					auto* master = dynamic_cast<SpliceKitModule*>(APP->engine->getModule(sceneLinkMasterId));
+					if (!master) {
+						// Master was removed from the patch (or never existed) — stop following.
+						sceneLinkMasterId = -1;
+					}
+					else if (master->currentScene != currentScene && !guiQueue.full()) {
+						int targetScene = master->currentScene;
+						guiQueue.push([this, targetScene]() { switchScene(targetScene); });
+					}
+				}
+			}
+
 			for (int i = 0; i < MATRIX_COUNT; i++) {
 				bool high = params[PARAM_MATRIX + i].getValue() > 0.5f;
 				if (buttonTriggers[i].process(high)) {
@@ -798,6 +827,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		json_object_set_new(rootJ, "buttonMode", json_integer((int)buttonMode));
 		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
 		json_object_set_new(rootJ, "crossInstanceEnabled", json_boolean(crossInstanceEnabled));
+		json_object_set_new(rootJ, "sceneLinkMasterId", json_integer(sceneLinkMasterId));
 		if (feedbackPreset == PRESET_IDX_CUSTOM && !customPresetJson.empty()) {
 			json_object_set_new(rootJ, "customPreset", json_string(customPresetJson.c_str()));
 		}
@@ -842,6 +872,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		if (overlayEnabledJ) overlayEnabled = json_boolean_value(overlayEnabledJ);
 		json_t* crossInstanceEnabledJ = json_object_get(rootJ, "crossInstanceEnabled");
 		if (crossInstanceEnabledJ) crossInstanceEnabled = json_boolean_value(crossInstanceEnabledJ);
+		json_t* sceneLinkMasterIdJ = json_object_get(rootJ, "sceneLinkMasterId");
+		sceneLinkMasterId = sceneLinkMasterIdJ ? json_integer_value(sceneLinkMasterIdJ) : -1;
 
 		trackingProcessor.clearMaps();
 		json_t* mapsJ = json_object_get(rootJ, "maps");
@@ -1062,11 +1094,35 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 
 	// GUI thread — switches to newScene: captures the outgoing scene's current cable state,
 	// diffs it against the incoming scene's stored topology, and updates patch cables accordingly.
+	// Pings "SpliceKit-SceneLink" listeners so any instance following this one as its scene
+	// link master can pick up the change (see the moduleChangedFlag handling in process()).
 	void switchScene(int newScene) {
 		if (newScene == currentScene) return;
 		captureScene(currentScene);
 		applyConnectionDiff(sceneConnections[currentScene], sceneConnections[newScene]);
 		currentScene = newScene;
+		notifyModuleListeners("SpliceKit-SceneLink");
+	}
+
+	// GUI thread — chains are disallowed entirely: a module can only be picked as a scene
+	// link master if it isn't itself following another module. This keeps the topology a
+	// flat star (root masters with any number of followers) so cycles are structurally
+	// impossible rather than merely detected.
+	static bool sceneLinkCandidateIsFollower(int64_t candidateId) {
+		auto* m = dynamic_cast<SpliceKitModule*>(APP->engine->getModule(candidateId));
+		return m && m->sceneLinkMasterId >= 0;
+	}
+
+	// GUI thread — returns true if another SpliceKit instance currently follows this one.
+	// A module already serving as a master must not itself pick a master, for the same
+	// flat-topology reason as sceneLinkCandidateIsFollower().
+	bool sceneLinkHasFollowers() const {
+		for (int64_t otherId : APP->engine->getModuleIds()) {
+			if (otherId == id) continue;
+			auto* m = dynamic_cast<SpliceKitModule*>(APP->engine->getModule(otherId));
+			if (m && m->sceneLinkMasterId == id) return true;
+		}
+		return false;
 	}
 
 	// GUI thread — returns a human-readable label for a port assignment, e.g. "VCO · Out 1".
@@ -1868,6 +1924,26 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 				}
 			}
 		));
+		bool isMaster = module->sceneLinkHasFollowers();
+		menu->addChild(createSubmenuItem("Scene link master", isMaster ? "(has followers)" : "", [=](Menu* menu) {
+			menu->addChild(createCheckMenuItem("None", "",
+				[=]() { return module->sceneLinkMasterId < 0; },
+				[=]() { module->sceneLinkMasterId = -1; }
+			));
+			menu->addChild(new MenuSeparator);
+			for (int64_t id : APP->engine->getModuleIds()) {
+				if (id == module->id) continue;
+				Module* m = APP->engine->getModule(id);
+				if (!m || m->model != modelSpliceKit) continue;
+				bool isFollower = SpliceKitModule::sceneLinkCandidateIsFollower(id);
+				std::string label = string::f("id %lld", (long long)id);
+				menu->addChild(createCheckMenuItem(label, isFollower ? "(already follows)" : "",
+					[=]() { return module->sceneLinkMasterId == id; },
+					[=]() { module->sceneLinkMasterId = id; },
+					isFollower
+				));
+			}
+		}, isMaster));
 		menu->addChild(createSubmenuItem("Button mode", "", [=](Menu* menu) {
 			menu->addChild(createCheckMenuItem("Toggle", "",
 				[=]() { return module->buttonMode == SpliceKitModule::BUTTON_TOGGLE; },

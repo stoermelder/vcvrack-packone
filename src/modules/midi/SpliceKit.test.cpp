@@ -1169,6 +1169,28 @@ TEST_CASE("JSON roundtrip preserves crossInstanceEnabled", "[SpliceKit][JSON]") 
 	Test::destroyModule(m);
 }
 
+TEST_CASE("JSON roundtrip preserves sceneLinkMasterId", "[SpliceKit][JSON]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->sceneLinkMasterId = 17;
+	json_t* j = m->dataToJson();
+	SpliceKitModule* m2 = Test::createModule<SpliceKitModule>("SpliceKit");
+	m2->dataFromJson(j);
+	json_decref(j);
+	REQUIRE(m2->sceneLinkMasterId == 17);
+	Test::destroyModule(m2);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("JSON roundtrip: missing sceneLinkMasterId key defaults to -1", "[SpliceKit][JSON]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	json_t* j = json_object();  // no "sceneLinkMasterId" key at all
+	m->sceneLinkMasterId = 5;   // pre-existing value must be overwritten, not left stale
+	REQUIRE_NOTHROW(m->dataFromJson(j));
+	json_decref(j);
+	REQUIRE(m->sceneLinkMasterId == -1);
+	Test::destroyModule(m);
+}
+
 TEST_CASE("JSON roundtrip preserves cellColorSet overrides", "[SpliceKit][JSON]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	m->cellColorSet[3]  = 2;  // orange
@@ -1373,6 +1395,145 @@ TEST_CASE("requestReset - enqueues a reset lambda that clears all state", "[Spli
 	REQUIRE(sceneMap.type == MidiTrackingType::NONE);
 
 	Test::destroyModule(m);
+}
+
+
+// ---------------------------------------------------------------------------
+// Scene link — a follower re-syncs its currentScene from its configured master's
+// currentScene, driven by notifyModuleListeners("SpliceKit-SceneLink") + process().
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Scene link - follower adopts master's scene after a change", "[SpliceKit]") {
+	SpliceKitModule* master = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* follower = Test::createModule<SpliceKitModule>("SpliceKit");
+	Test::registerModule(master);
+	Test::registerModule(follower);
+
+	follower->sceneLinkMasterId = master->id;
+	master->switchScene(3);  // also calls notifyModuleListeners("SpliceKit-SceneLink")
+	REQUIRE(follower->currentScene == 0);  // not yet applied
+
+	Test::SimpleEngine engine;
+	engine.registerModule(follower);
+	for (int i = 0; i < 256; i++) engine.step();  // let processDivider fire and drain moduleChangedFlag
+
+	REQUIRE(follower->guiQueue.size() == 1);
+	follower->guiQueue.shift()();
+	REQUIRE(follower->currentScene == 3);
+
+	Test::unregisterModule(follower);
+	Test::unregisterModule(master);
+	Test::destroyModule(follower);
+	Test::destroyModule(master);
+}
+
+TEST_CASE("Scene link - no-op when sceneLinkMasterId is unset", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	Test::registerModule(m);
+	REQUIRE(m->sceneLinkMasterId == -1);
+
+	m->moduleChangedFlag = true;
+	Test::SimpleEngine engine;
+	engine.registerModule(m);
+	for (int i = 0; i < 256; i++) engine.step();
+
+	REQUIRE(m->guiQueue.size() == 0);
+	REQUIRE(m->currentScene == 0);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Scene link - unrelated instance without a configured master ignores the notification", "[SpliceKit]") {
+	SpliceKitModule* master = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* bystander = Test::createModule<SpliceKitModule>("SpliceKit");
+	Test::registerModule(master);
+	Test::registerModule(bystander);
+	// bystander->sceneLinkMasterId stays -1
+
+	master->switchScene(2);  // notifies every registered SpliceKit instance, including bystander
+
+	Test::SimpleEngine engine;
+	engine.registerModule(bystander);
+	for (int i = 0; i < 256; i++) engine.step();
+
+	REQUIRE(bystander->currentScene == 0);
+	REQUIRE(bystander->guiQueue.size() == 0);
+
+	Test::unregisterModule(bystander);
+	Test::unregisterModule(master);
+	Test::destroyModule(bystander);
+	Test::destroyModule(master);
+}
+
+TEST_CASE("Scene link - stale master reference is cleared once the master no longer exists", "[SpliceKit]") {
+	SpliceKitModule* master = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* follower = Test::createModule<SpliceKitModule>("SpliceKit");
+	Test::registerModule(master);
+	Test::registerModule(follower);
+	follower->sceneLinkMasterId = master->id;
+
+	Test::unregisterModule(master);
+	Test::destroyModule(master);
+
+	follower->moduleChangedFlag = true;  // simulate a pending notification arriving late
+	Test::SimpleEngine engine;
+	engine.registerModule(follower);
+	for (int i = 0; i < 256; i++) engine.step();
+
+	REQUIRE(follower->sceneLinkMasterId == -1);
+	REQUIRE(follower->guiQueue.size() == 0);
+
+	Test::unregisterModule(follower);
+	Test::destroyModule(follower);
+}
+
+TEST_CASE("Scene link - sceneLinkCandidateIsFollower rejects chaining through an already-following module", "[SpliceKit]") {
+	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* c = Test::createModule<SpliceKitModule>("SpliceKit");
+	Test::registerModule(a);
+	Test::registerModule(b);
+	Test::registerModule(c);
+
+	// No links yet: any module is a valid pick.
+	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(a->id) == false);
+	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(b->id) == false);
+
+	// b now follows a, so b is no longer a valid master for anyone (chains are disallowed).
+	b->sceneLinkMasterId = a->id;
+	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(b->id) == true);
+	// a itself is still a valid pick (a follows nobody).
+	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(a->id) == false);
+	// c is unrelated and still a valid pick.
+	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(c->id) == false);
+
+	Test::unregisterModule(c);
+	Test::unregisterModule(b);
+	Test::unregisterModule(a);
+	Test::destroyModule(c);
+	Test::destroyModule(b);
+	Test::destroyModule(a);
+}
+
+TEST_CASE("Scene link - sceneLinkHasFollowers detects when a module already serves as a master", "[SpliceKit]") {
+	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	Test::registerModule(a);
+	Test::registerModule(b);
+
+	REQUIRE(a->sceneLinkHasFollowers() == false);
+	REQUIRE(b->sceneLinkHasFollowers() == false);
+
+	// b follows a, so a now has a follower and must not be allowed to pick its own master.
+	b->sceneLinkMasterId = a->id;
+	REQUIRE(a->sceneLinkHasFollowers() == true);
+	REQUIRE(b->sceneLinkHasFollowers() == false);
+
+	Test::unregisterModule(b);
+	Test::unregisterModule(a);
+	Test::destroyModule(b);
+	Test::destroyModule(a);
 }
 
 
