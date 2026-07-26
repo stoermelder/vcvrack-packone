@@ -1408,7 +1408,13 @@ static jsval_t js_return(struct js *js) {
   uint8_t exe = !(js->flags & F_NOEXEC);
   js->consumed = 1;
   if (exe && !(js->flags & F_CALL)) return js_mkerr(js, "not in func");
-  if (next(js) == TOK_SEMICOLON) return js_mkundef();
+  if (next(js) == TOK_SEMICOLON) {
+    if (exe) {
+      js->pos = js->clen;     // Shift to the end - exit the code snippet
+      js->flags |= F_RETURN;  // Tell caller we've executed
+    }
+    return js_mkundef();
+  }
   jsval_t res = resolveprop(js, js_expr(js));
   if (exe) {
     js->pos = js->clen;     // Shift to the end - exit the code snippet
