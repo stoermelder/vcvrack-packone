@@ -24,7 +24,7 @@ static const char* LUA_EMPTY = R"(--[[
 --]]
 )";
 
-TEST_CASE("MidiKit Lua: Lua-tagged script loads and creates Lua state", "[MidiKit][Lua]") {
+TEST_CASE("Lua-tagged script loads and creates Lua state", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_EMPTY);
@@ -42,7 +42,7 @@ static const char* LUA_MAX = R"(--[[
 x = number.max(3, 7)
 )";
 
-TEST_CASE("MidiKit Lua: script body runs synchronously on load", "[MidiKit][Lua]") {
+TEST_CASE("Script body runs synchronously on load", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_MAX);
@@ -64,7 +64,7 @@ static const char* LUA_RESCALE = R"(--[[
 r = number.rescale(5, 0, 10, 0, 100)
 )";
 
-TEST_CASE("MidiKit Lua: number.rescale API works from script body", "[MidiKit][Lua]") {
+TEST_CASE("number.rescale API works from script body", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_RESCALE);
@@ -85,7 +85,7 @@ static const char* LUA_INPUT_NAME = R"(--[[
 input.getName = function(i) return 'CV-' .. i end
 )";
 
-TEST_CASE("MidiKit Lua: script can override input.getName", "[MidiKit][Lua]") {
+TEST_CASE("Script can override input.getName", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_INPUT_NAME);
@@ -103,7 +103,7 @@ static const char* ELK_HEADER = R"(/**
  */
 )";
 
-TEST_CASE("MidiKit Lua: Elk-tagged script is rejected by Lua engine", "[MidiKit][Lua]") {
+TEST_CASE("Elk-tagged script is rejected by Lua engine", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->seLua.loadScript(ELK_HEADER);
@@ -120,7 +120,7 @@ static const char* LUA_BAD_SYNTAX = R"(--[[
 local x = ?
 )";
 
-TEST_CASE("MidiKit Lua: syntax error is handled gracefully", "[MidiKit][Lua]") {
+TEST_CASE("Syntax error is handled gracefully", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->seLua.loadScript(LUA_BAD_SYNTAX);
@@ -144,7 +144,7 @@ processMidi = function(port, msg)
 end
 )";
 
-TEST_CASE("MidiKit Lua: simple CC reroute script", "[MidiKit][Lua]") {
+TEST_CASE("Simple CC reroute script", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_CC_REROUTE);

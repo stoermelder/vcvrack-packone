@@ -21,7 +21,7 @@ static constexpr const char* LUA_SCRIPT =
 	"--]]\n";
 
 
-TEST_CASE("MidiKit: construction and initialization", "[MidiKit]") {
+TEST_CASE("Construction and initialization", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	REQUIRE(m != nullptr);
@@ -51,7 +51,7 @@ TEST_CASE("Preset JSON null-guards", "[MidiKit][JSON]") {
 }
 
 
-TEST_CASE("MidiKit: process() does not crash with no script", "[MidiKit]") {
+TEST_CASE("process() does not crash with no script", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	for (int i = 0; i < 20; i++) {
@@ -63,7 +63,7 @@ TEST_CASE("MidiKit: process() does not crash with no script", "[MidiKit]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("MidiKit: default engine is Elk", "[MidiKit]") {
+TEST_CASE("Default engine is Elk", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->se));
@@ -71,7 +71,7 @@ TEST_CASE("MidiKit: default engine is Elk", "[MidiKit]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("MidiKit: @engine Lua header selects Lua engine", "[MidiKit]") {
+TEST_CASE("@engine Lua header selects Lua engine", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	m->loadScript(LUA_SCRIPT);
@@ -81,7 +81,7 @@ TEST_CASE("MidiKit: @engine Lua header selects Lua engine", "[MidiKit]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("MidiKit: Elk header keeps Elk engine active", "[MidiKit]") {
+TEST_CASE("Elk header keeps Elk engine active", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	// First switch to Lua, then switch back via an Elk-tagged script
@@ -94,7 +94,7 @@ TEST_CASE("MidiKit: Elk header keeps Elk engine active", "[MidiKit]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("MidiKit: clearScript resets to empty and restores Elk engine", "[MidiKit]") {
+TEST_CASE("clearScript resets to empty and restores Elk engine", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	m->loadScript(LUA_SCRIPT);
@@ -108,7 +108,7 @@ TEST_CASE("MidiKit: clearScript resets to empty and restores Elk engine", "[Midi
 	Test::destroyModule(m);
 }
 
-TEST_CASE("MidiKit: trigger input increments inputTriggerTick", "[MidiKit]") {
+TEST_CASE("Trigger input increments inputTriggerTick", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
@@ -134,7 +134,7 @@ TEST_CASE("MidiKit: trigger input increments inputTriggerTick", "[MidiKit]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("MidiKit: JSON round-trip preserves panelTheme and script", "[MidiKit]") {
+TEST_CASE("JSON round-trip preserves panelTheme and script", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	m->panelTheme = 2;
@@ -156,7 +156,7 @@ TEST_CASE("MidiKit: JSON round-trip preserves panelTheme and script", "[MidiKit]
 	Test::destroyModule(m);
 }
 
-TEST_CASE("MidiKit: process() does not crash with Lua script loaded", "[MidiKit]") {
+TEST_CASE("process() does not crash with Lua script loaded", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	m->loadScript(LUA_SCRIPT);

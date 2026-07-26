@@ -31,7 +31,7 @@ static const char* ELK_EMPTY = R"(/**
  */
 )";
 
-TEST_CASE("MidiKit Elk: Elk-tagged script loads and creates JS context", "[MidiKit][Elk]") {
+TEST_CASE("Elk-tagged script loads and creates JS context", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(ELK_EMPTY);
@@ -50,7 +50,7 @@ static const char* ELK_MAX = R"(/**
 let x = number.max(3, 7);
 )";
 
-TEST_CASE("MidiKit Elk: script body runs synchronously on load", "[MidiKit][Elk]") {
+TEST_CASE("Script body runs synchronously on load", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(ELK_MAX);
@@ -72,7 +72,7 @@ static const char* ELK_RESCALE = R"(/**
 let r = number.rescale(5, 0, 10, 0, 100);
 )";
 
-TEST_CASE("MidiKit Elk: number.rescale API works from script body", "[MidiKit][Elk]") {
+TEST_CASE("number.rescale API works from script body", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(ELK_RESCALE);
@@ -99,7 +99,7 @@ let processMidi = function(port, msg) {
 };
 )";
 
-TEST_CASE("MidiKit Elk: processMidi callback is invoked with incoming message", "[MidiKit][Elk]") {
+TEST_CASE("processMidi callback is invoked with incoming message", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(ELK_ECHO);
@@ -132,7 +132,7 @@ static const char* LUA_HEADER = R"(--[[
 --]]
 )";
 
-TEST_CASE("MidiKit Elk: Lua-tagged script is rejected by Elk engine", "[MidiKit][Elk]") {
+TEST_CASE("Lua-tagged script is rejected by Elk engine", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->se.loadScript(LUA_HEADER);
@@ -150,7 +150,7 @@ static const char* ELK_BAD_SYNTAX = R"(/**
 let ??? = ;
 )";
 
-TEST_CASE("MidiKit Elk: JS syntax error is handled gracefully", "[MidiKit][Elk]") {
+TEST_CASE("JS syntax error is handled gracefully", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->se.loadScript(ELK_BAD_SYNTAX);
@@ -174,7 +174,7 @@ let processMidi = function(port, msg) {
 };
 )";
 
-TEST_CASE("MidiKit Elk: simple CC reroute script", "[MidiKit][Elk]") {
+TEST_CASE("Simple CC reroute script", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(ELK_CC_REROUTE);
