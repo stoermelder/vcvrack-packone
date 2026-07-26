@@ -9,10 +9,15 @@ namespace SpliceKit {
 
 static const int MATRIX_SIZE  = 8;
 static const int MATRIX_COUNT = MATRIX_SIZE * MATRIX_SIZE;
+// Number of onboard scene slots. Currently equal to MATRIX_SIZE (the matrix's row/column
+// count) but conceptually independent — kept as its own constant so scene-related code
+// doesn't implicitly depend on the matrix's dimensions, which matter for an unrelated reason
+// (SpliceKitVizOverlay::cellCenter() and the grid layout in SpliceKitWidget's constructor).
+static const int SCENE_COUNT  = 8;
 
 // LED state identifiers — order must match the light-loop state assignment in SpliceKit.cpp.
 // Color sets 0–3: dim then bright for each set, then connected per set.
-//   default: set 0 = red (output), set 1 = blue (input), set 2 = orange, set 3 = yellow
+//   default: set 0 = red (output), set 1 = blue (input), set 2 = orange, set 3 = green
 enum {
 	LED_STATE_OFF = 0,
 	LED_STATE_COLOR0_DIM,    // color set 0, no cable
@@ -90,16 +95,18 @@ static void parseSlotsBlock(json_t* j, MidiSlot* slots, int count) {
 // A named controller preset: per-button input slots + one output spec per LED state.
 struct MidiOutPreset {
 	std::string name;
-	MidiSlot    cells[MATRIX_COUNT] = {};   // 64 matrix cell input slots
-	MidiSlot    scenes[MATRIX_SIZE] = {};   // 8 scene button input slots
-	MidiOutSpec specs[LED_STATE_COUNT]  = {};
+	MidiSlot cells[MATRIX_COUNT] = {};   // 64 matrix cell input slots
+	MidiSlot scenes[SCENE_COUNT] = {};   // scene button input slots
+	MidiOutSpec specs[LED_STATE_COUNT] = {};
 
 	bool hasLayout() const {
-		for (int i = 0; i < MATRIX_COUNT; i++)
+		for (int i = 0; i < MATRIX_COUNT; i++) {
 			if (cells[i].type != MidiTrackingType::NONE) return true;
-		for (int i = 0; i < MATRIX_SIZE; i++)
+        }
+        for (int i = 0; i < SCENE_COUNT; i++) {
 			if (scenes[i].type != MidiTrackingType::NONE) return true;
-		return false;
+        }
+        return false;
 	}
 
 	void fromJson(json_t* rootJ) {
@@ -108,7 +115,7 @@ struct MidiOutPreset {
 		if (nameJ) name = json_string_value(nameJ);
 
 		parseSlotsBlock(json_object_get(rootJ, "cells"),  cells,  MATRIX_COUNT);
-		parseSlotsBlock(json_object_get(rootJ, "scenes"), scenes, MATRIX_SIZE);
+		parseSlotsBlock(json_object_get(rootJ, "scenes"), scenes, SCENE_COUNT);
 
 		static const char* const STATE_KEYS[LED_STATE_COUNT] = {
 			"off",
@@ -157,7 +164,7 @@ struct MidiOutPreset {
 //   note     — note/CC number; only used with noteMode 1  (default 0)
 //   value    — velocity or CC value                       (default 0)
 //
-// Colour set defaults: 0=red  1=blue  2=green  3=yellow
+// Colour set defaults: 0=red  1=blue  2=orange  3=green
 //
 // Colour palette references (Novation Launchpad X / MK3 / MK2):
 //   0=off  5=red(dim)  7=red  17=green(dim)  21=green  9=yellow(dim)  13=yellow

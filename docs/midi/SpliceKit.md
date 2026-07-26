@@ -6,6 +6,8 @@ SPLICE-KIT is an 8×8 matrix patch bay. Each of the 64 buttons represents a sing
 
 Before a button can be used, a port from the current patch must be assigned to it. Right-click any matrix button to open its context menu and select **Learn port**. The cursor changes to a crosshair — click on any input or output port in the patch to complete the assignment. The port label and direction are shown at the top of the context menu once a port is assigned.
 
+As a faster alternative, drag a cable from any port in the patch and drop it directly onto a matrix button to assign that port — no modal learn step required. The dragged cable itself is discarded; no patch cable is created by this gesture. If the button already had a port assigned, it is replaced.
+
 To remove a port assignment select **Clear port** from the context menu. Any connections involving that button are removed from all scenes.
 
 Hovering over a button shows a tooltip with the assigned port label and its current MIDI mapping.
@@ -44,6 +46,21 @@ Right-clicking a scene button opens its context menu:
 | **Paste** | Apply the clipboard topology to this scene |
 | **Learn MIDI** | Map a MIDI CC or note to this scene button |
 | **Clear MIDI** | Remove the MIDI mapping from this scene button |
+| **Randomize** | Generate a random valid connection topology for this scene (only available on the currently active scene) |
+
+**Randomize** on the currently active scene's context menu pairs every assigned output port with a random assigned input port, one-to-one, respecting the same output→input direction rule as manual patching. It only changes that scene's connections — port assignments and other scenes are untouched.
+
+Right-click the module and choose **Randomize** (or press `Ctrl+R`/`Cmd+R`) to instead clear every existing port assignment and label, then reassign as many matrix cells as possible to a distinct random port from anywhere in the patch — no two cells are ever assigned the same port. If the patch has fewer available ports than 64, the surplus cells are simply left unassigned rather than duplicating a port. This is a full reshuffle of the patch bay itself, independent of scenes — use the scene button's **Randomize** instead if you just want a new random cable topology between the ports you've already assigned.
+
+### Scene link
+
+Multiple SPLICE-KIT instances can be linked so that one follows another's scene selection automatically. Open the module context menu of the instance that should follow, then choose **Scene link master** and select the instance to follow (or **None** to unlink). Whenever the master's scene changes, the follower switches to the same scene index shortly after.
+
+A follower with no master configured (**None**, the default) behaves exactly like a standalone instance. If the configured master is deleted from the patch, the follower automatically reverts to **None**. Scene link only tracks *which* scene is active — it has no effect on cross-instance patching, cable topology, or port assignments, which remain entirely independent per instance.
+
+Scene link is strictly two-level: a master cannot itself follow another instance, and an instance already following a master cannot be picked as someone else's master. Chains of linked instances (and the loops they would create) are not possible.
+
+While following a master, a follower's own scene buttons are inactive — pressing one (or triggering it via MIDI) has no effect, since its active scene is driven entirely by the master.
 
 ### Drag gestures
 

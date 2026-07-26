@@ -1,6 +1,7 @@
 #include "../../test/test_plugin.hpp"
 #include "../../test/test_context.hpp"
 #include "SpliceKit.cpp"
+#include <set>
 
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::SpliceKit;
@@ -512,6 +513,42 @@ TEST_CASE("process - scene cellLedState transitions to SCENE_ACTIVE for currentS
 	Test::destroyModule(m);
 }
 
+TEST_CASE("process - physical scene button press works normally when not linked", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->currentScene = 0;  // sceneLinkMasterId stays -1 (default)
+
+	Test::SimpleEngine engine;
+	engine.registerModule(m);
+	for (int i = 0; i < 256; i++) engine.step();  // establish trigger baseline at low
+
+	m->params[SpliceKitModule::PARAM_SCENE + 1].setValue(1.f);
+	for (int i = 0; i < 256; i++) engine.step();  // rising edge on the next divided tick
+
+	REQUIRE(m->guiQueue.size() == 1);  // switchScene(1) queued
+	m->guiQueue.shift()();
+	REQUIRE(m->currentScene == 1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("process - physical scene button press is ignored while following a scene link master", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->sceneLinkMasterId = 999;  // any id — process() only checks it's >= 0
+	m->currentScene = 0;
+
+	Test::SimpleEngine engine;
+	engine.registerModule(m);
+	for (int i = 0; i < 256; i++) engine.step();  // establish trigger baseline at low
+
+	m->params[SpliceKitModule::PARAM_SCENE + 1].setValue(1.f);
+	for (int i = 0; i < 256; i++) engine.step();  // rising edge on the next divided tick
+
+	REQUIRE(m->currentScene == 0);   // unaffected — scene button press ignored while linked
+	REQUIRE(m->guiQueue.size() == 0);
+
+	Test::destroyModule(m);
+}
+
 // ---------------------------------------------------------------------------
 // moveCell
 // ---------------------------------------------------------------------------
@@ -851,6 +888,17 @@ TEST_CASE("processMapUpdate - single scene activation sets pendingMidiSceneId an
 	Test::destroyModule(m);
 }
 
+TEST_CASE("processMapUpdate - MIDI scene activation is ignored while following a scene link master", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->sceneLinkMasterId = 999;  // any id — process()/processMapUpdate only check it's >= 0
+
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 2, 100);
+
+	REQUIRE(m->pendingMidiSceneId == -1);
+	REQUIRE(m->guiQueue.size() == 0);
+	Test::destroyModule(m);
+}
+
 TEST_CASE("processMapUpdate - note-off clears pendingMidiSceneId", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 3, 100);
@@ -1109,10 +1157,10 @@ TEST_CASE("getActivePreset - returns &customPreset for PRESET_IDX_CUSTOM", "[Spl
 TEST_CASE("invalidateLedStates - resets both LED state arrays to -1", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	for (int i = 0; i < MATRIX_COUNT; i++) m->cellLedState[i]   = i;
-	for (int i = 0; i < MATRIX_SIZE;  i++) m->sceneLedState[i]  = i;
+	for (int i = 0; i < SCENE_COUNT;  i++) m->sceneLedState[i]  = i;
 	m->invalidateLedStates();
 	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->cellLedState[i]  == -1);
-	for (int i = 0; i < MATRIX_SIZE;  i++) REQUIRE(m->sceneLedState[i] == -1);
+	for (int i = 0; i < SCENE_COUNT;  i++) REQUIRE(m->sceneLedState[i] == -1);
 	Test::destroyModule(m);
 }
 
@@ -1166,6 +1214,28 @@ TEST_CASE("JSON roundtrip preserves crossInstanceEnabled", "[SpliceKit][JSON]") 
 	json_decref(j);
 	REQUIRE(m2->crossInstanceEnabled == false);
 	Test::destroyModule(m2);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("JSON roundtrip preserves sceneLinkMasterId", "[SpliceKit][JSON]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->sceneLinkMasterId = 17;
+	json_t* j = m->dataToJson();
+	SpliceKitModule* m2 = Test::createModule<SpliceKitModule>("SpliceKit");
+	m2->dataFromJson(j);
+	json_decref(j);
+	REQUIRE(m2->sceneLinkMasterId == 17);
+	Test::destroyModule(m2);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("JSON roundtrip: missing sceneLinkMasterId key defaults to -1", "[SpliceKit][JSON]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	json_t* j = json_object();  // no "sceneLinkMasterId" key at all
+	m->sceneLinkMasterId = 5;   // pre-existing value must be overwritten, not left stale
+	REQUIRE_NOTHROW(m->dataFromJson(j));
+	json_decref(j);
+	REQUIRE(m->sceneLinkMasterId == -1);
 	Test::destroyModule(m);
 }
 
@@ -1347,6 +1417,8 @@ TEST_CASE("requestReset - enqueues a reset lambda that clears all state", "[Spli
 	m->portAssignments[3].type     = engine::Port::OUTPUT;
 	m->portHasCable[3]             = true;
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 5, 60);
+	// A scene-button map (index MATRIX_COUNT..TOTAL_MAPS-1) must be cleared too.
+	m->trackingProcessor.setMap(MidiTrackingType::NOTE, MATRIX_COUNT + 1, 70);
 
 	REQUIRE(m->guiQueue.size() == 0);
 	m->requestReset();
@@ -1358,7 +1430,7 @@ TEST_CASE("requestReset - enqueues a reset lambda that clears all state", "[Spli
 	REQUIRE(m->portAssignments[3].isValid() == false);
 	REQUIRE(m->portHasCable[3]      == false);
 	// All scenes cleared
-	for (int s = 0; s < MATRIX_SIZE; s++) {
+	for (int s = 0; s < SCENE_COUNT; s++) {
 		for (int c = 0; c < MATRIX_COUNT; c++) {
 			REQUIRE(m->sceneConnections[s][c] == 0);
 		}
@@ -1366,8 +1438,150 @@ TEST_CASE("requestReset - enqueues a reset lambda that clears all state", "[Spli
 	// MIDI map for cell 5 was cleared
 	auto map = m->trackingProcessor.getMap(5);
 	REQUIRE(map.type == MidiTrackingType::NONE);
+	// MIDI map for scene button 1 was cleared
+	auto sceneMap = m->trackingProcessor.getMap(MATRIX_COUNT + 1);
+	REQUIRE(sceneMap.type == MidiTrackingType::NONE);
 
 	Test::destroyModule(m);
+}
+
+
+// ---------------------------------------------------------------------------
+// Scene link — a follower re-syncs its currentScene from its configured master's
+// currentScene, driven by notifyModuleListeners("SpliceKit-SceneLink") + process().
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Scene link - follower adopts master's scene after a change", "[SpliceKit]") {
+	SpliceKitModule* master = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* follower = Test::createModule<SpliceKitModule>("SpliceKit");
+	Test::registerModule(master);
+	Test::registerModule(follower);
+
+	follower->sceneLinkMasterId = master->id;
+	master->switchScene(3);  // also calls notifyModuleListeners("SpliceKit-SceneLink")
+	REQUIRE(follower->currentScene == 0);  // not yet applied
+
+	Test::SimpleEngine engine;
+	engine.registerModule(follower);
+	for (int i = 0; i < 256; i++) engine.step();  // let processDivider fire and drain moduleChangedFlag
+
+	REQUIRE(follower->guiQueue.size() == 1);
+	follower->guiQueue.shift()();
+	REQUIRE(follower->currentScene == 3);
+
+	Test::unregisterModule(follower);
+	Test::unregisterModule(master);
+	Test::destroyModule(follower);
+	Test::destroyModule(master);
+}
+
+TEST_CASE("Scene link - no-op when sceneLinkMasterId is unset", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	Test::registerModule(m);
+	REQUIRE(m->sceneLinkMasterId == -1);
+
+	m->moduleChangedFlag = true;
+	Test::SimpleEngine engine;
+	engine.registerModule(m);
+	for (int i = 0; i < 256; i++) engine.step();
+
+	REQUIRE(m->guiQueue.size() == 0);
+	REQUIRE(m->currentScene == 0);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Scene link - unrelated instance without a configured master ignores the notification", "[SpliceKit]") {
+	SpliceKitModule* master = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* bystander = Test::createModule<SpliceKitModule>("SpliceKit");
+	Test::registerModule(master);
+	Test::registerModule(bystander);
+	// bystander->sceneLinkMasterId stays -1
+
+	master->switchScene(2);  // notifies every registered SpliceKit instance, including bystander
+
+	Test::SimpleEngine engine;
+	engine.registerModule(bystander);
+	for (int i = 0; i < 256; i++) engine.step();
+
+	REQUIRE(bystander->currentScene == 0);
+	REQUIRE(bystander->guiQueue.size() == 0);
+
+	Test::unregisterModule(bystander);
+	Test::unregisterModule(master);
+	Test::destroyModule(bystander);
+	Test::destroyModule(master);
+}
+
+TEST_CASE("Scene link - stale master reference is cleared once the master no longer exists", "[SpliceKit]") {
+	SpliceKitModule* master = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* follower = Test::createModule<SpliceKitModule>("SpliceKit");
+	Test::registerModule(master);
+	Test::registerModule(follower);
+	follower->sceneLinkMasterId = master->id;
+
+	Test::unregisterModule(master);
+	Test::destroyModule(master);
+
+	follower->moduleChangedFlag = true;  // simulate a pending notification arriving late
+	Test::SimpleEngine engine;
+	engine.registerModule(follower);
+	for (int i = 0; i < 256; i++) engine.step();
+
+	REQUIRE(follower->sceneLinkMasterId == -1);
+	REQUIRE(follower->guiQueue.size() == 0);
+
+	Test::unregisterModule(follower);
+	Test::destroyModule(follower);
+}
+
+TEST_CASE("Scene link - sceneLinkCandidateIsFollower rejects chaining through an already-following module", "[SpliceKit]") {
+	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* c = Test::createModule<SpliceKitModule>("SpliceKit");
+	Test::registerModule(a);
+	Test::registerModule(b);
+	Test::registerModule(c);
+
+	// No links yet: any module is a valid pick.
+	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(a->id) == false);
+	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(b->id) == false);
+
+	// b now follows a, so b is no longer a valid master for anyone (chains are disallowed).
+	b->sceneLinkMasterId = a->id;
+	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(b->id) == true);
+	// a itself is still a valid pick (a follows nobody).
+	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(a->id) == false);
+	// c is unrelated and still a valid pick.
+	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(c->id) == false);
+
+	Test::unregisterModule(c);
+	Test::unregisterModule(b);
+	Test::unregisterModule(a);
+	Test::destroyModule(c);
+	Test::destroyModule(b);
+	Test::destroyModule(a);
+}
+
+TEST_CASE("Scene link - sceneLinkHasFollowers detects when a module already serves as a master", "[SpliceKit]") {
+	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	Test::registerModule(a);
+	Test::registerModule(b);
+
+	REQUIRE(a->sceneLinkHasFollowers() == false);
+	REQUIRE(b->sceneLinkHasFollowers() == false);
+
+	// b follows a, so a now has a follower and must not be allowed to pick its own master.
+	b->sceneLinkMasterId = a->id;
+	REQUIRE(a->sceneLinkHasFollowers() == true);
+	REQUIRE(b->sceneLinkHasFollowers() == false);
+
+	Test::unregisterModule(b);
+	Test::unregisterModule(a);
+	Test::destroyModule(b);
+	Test::destroyModule(a);
 }
 
 
@@ -1405,6 +1619,182 @@ TEST_CASE("reconcileScene - non-current scene with all-zero newConns clears that
 	uint64_t empty[MATRIX_COUNT] = {};
 	m->reconcileScene(3, empty);
 	REQUIRE(m->isConnected(3, 1, 2) == false);
+	Test::destroyModule(m);
+}
+
+
+// ---------------------------------------------------------------------------
+// onRandomize / randomizeCurrentScene — random valid topology for the current scene
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Construction - matrix and scene param quantities exclude default randomization", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	REQUIRE(m->paramQuantities[SpliceKitModule::PARAM_MATRIX]->randomizeEnabled == false);
+	REQUIRE(m->paramQuantities[SpliceKitModule::PARAM_SCENE]->randomizeEnabled == false);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("randomizeCurrentScene - no connections when no ports are assigned", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->randomizeCurrentScene();
+	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->sceneConnections[m->currentScene][i] == 0);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("randomizeCurrentScene - only pairs assigned outputs with assigned inputs", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	int outs[] = {0, 5};
+	int ins[]  = {1, 2, 10};
+	for (int i : outs) {
+		m->portAssignments[i].moduleId = 42;
+		m->portAssignments[i].portId   = i;
+		m->portAssignments[i].type     = engine::Port::OUTPUT;
+	}
+	for (int i : ins) {
+		m->portAssignments[i].moduleId = 42;
+		m->portAssignments[i].portId   = i;
+		m->portAssignments[i].type     = engine::Port::INPUT;
+	}
+
+	m->randomizeCurrentScene();
+
+	// Exactly min(#outs, #ins) = 2 pairs were formed, each connecting one output to one input.
+	int connectionCount = 0;
+	for (int i = 0; i < MATRIX_COUNT; i++) {
+		for (int j = i + 1; j < MATRIX_COUNT; j++) {
+			if (!m->isConnected(m->currentScene, i, j)) continue;
+			connectionCount++;
+			bool iOut = m->portAssignments[i].isValid() && m->portAssignments[i].type == engine::Port::OUTPUT;
+			bool jOut = m->portAssignments[j].isValid() && m->portAssignments[j].type == engine::Port::OUTPUT;
+			bool iIn  = m->portAssignments[i].isValid() && m->portAssignments[i].type == engine::Port::INPUT;
+			bool jIn  = m->portAssignments[j].isValid() && m->portAssignments[j].type == engine::Port::INPUT;
+			REQUIRE(((iOut && jIn) || (iIn && jOut)));
+		}
+	}
+	REQUIRE(connectionCount == 2);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("randomizeCurrentScene - replaces the scene's previous topology", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->portAssignments[0].moduleId = 42; m->portAssignments[0].portId = 0; m->portAssignments[0].type = engine::Port::OUTPUT;
+	m->portAssignments[1].moduleId = 42; m->portAssignments[1].portId = 1; m->portAssignments[1].type = engine::Port::INPUT;
+	// Stale connection between cells with no valid port assignment — must disappear.
+	m->sceneConnections[m->currentScene][5] |= (1ULL << 6);
+	m->sceneConnections[m->currentScene][6] |= (1ULL << 5);
+
+	m->randomizeCurrentScene();
+
+	REQUIRE(m->isConnected(m->currentScene, 5, 6) == false);
+	REQUIRE(m->isConnected(m->currentScene, 0, 1) == true);  // the only valid pair — deterministic
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("randomizePortAssignmentsFrom - clears every cell even when candidates is empty", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->portAssignments[0].moduleId = 42; m->portAssignments[0].portId = 0; m->portAssignments[0].type = engine::Port::OUTPUT;
+	m->cellLabels[0] = "stale label";
+
+	m->randomizePortAssignmentsFrom({});
+
+	REQUIRE(m->portAssignments[0].isValid() == false);
+	REQUIRE(m->cellLabels[0].empty());
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("randomizePortAssignmentsFrom - a single candidate is assigned to exactly one cell", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	for (int i = 0; i < MATRIX_COUNT; i++) m->cellLabels[i] = "stale label";
+
+	std::vector<PortAssignment> candidates(1);
+	candidates[0].moduleId = 99;
+	candidates[0].portId   = 3;
+	candidates[0].type     = engine::Port::OUTPUT;
+
+	m->randomizePortAssignmentsFrom(candidates);
+
+	// No duplicates: with only one candidate, exactly one cell gets it and every other cell
+	// is cleared rather than repeating the same port.
+	int matches = 0;
+	for (int i = 0; i < MATRIX_COUNT; i++) {
+		REQUIRE(m->cellLabels[i].empty());
+		if (!m->portAssignments[i].isValid()) continue;
+		REQUIRE(m->portAssignments[i].moduleId == 99);
+		REQUIRE(m->portAssignments[i].portId   == 3);
+		REQUIRE(m->portAssignments[i].type     == engine::Port::OUTPUT);
+		matches++;
+	}
+	REQUIRE(matches == 1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("randomizePortAssignmentsFrom - each candidate is used at most once, surplus cells cleared", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	std::vector<PortAssignment> candidates(3);
+	candidates[0] = {10, engine::Port::OUTPUT, 0};
+	candidates[1] = {20, engine::Port::INPUT,  1};
+	candidates[2] = {30, engine::Port::OUTPUT, 2};
+
+	m->randomizePortAssignmentsFrom(candidates);
+
+	std::vector<bool> candidateUsed(candidates.size(), false);
+	int assignedCount = 0;
+	for (int i = 0; i < MATRIX_COUNT; i++) {
+		const auto& pa = m->portAssignments[i];
+		if (!pa.isValid()) continue;
+		assignedCount++;
+		bool matched = false;
+		for (size_t c = 0; c < candidates.size(); c++) {
+			if (pa.moduleId != candidates[c].moduleId || pa.portId != candidates[c].portId
+			    || pa.type != candidates[c].type) continue;
+			REQUIRE(candidateUsed[c] == false);  // no duplicates
+			candidateUsed[c] = true;
+			matched = true;
+			break;
+		}
+		REQUIRE(matched);
+	}
+	// All 3 candidates were placed (fewer candidates than cells), and the other 61 cells cleared.
+	REQUIRE(assignedCount == 3);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("randomizePortAssignmentsFrom - fills every cell without duplicates when there are more candidates than cells", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	std::vector<PortAssignment> candidates(MATRIX_COUNT + 20);
+	for (size_t i = 0; i < candidates.size(); i++) {
+		candidates[i] = {(int64_t)i, (i % 2 == 0) ? engine::Port::OUTPUT : engine::Port::INPUT, (int)i};
+	}
+
+	m->randomizePortAssignmentsFrom(candidates);
+
+	std::set<int64_t> seenModuleIds;
+	for (int i = 0; i < MATRIX_COUNT; i++) {
+		REQUIRE(m->portAssignments[i].isValid() == true);  // every cell filled — enough candidates for all
+		auto inserted = seenModuleIds.insert(m->portAssignments[i].moduleId);
+		REQUIRE(inserted.second == true);  // moduleId (unique per candidate here) never repeats
+	}
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("onRandomize - enqueues randomizePortAssignments via guiQueue", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	REQUIRE(m->guiQueue.size() == 0);
+	m->onRandomize();
+	REQUIRE(m->guiQueue.size() == 1);
+	// No modules in the rack in this test, so the queued job is a safe no-op; just confirm
+	// it runs without throwing (real port enumeration is exercised via randomizePortAssignmentsFrom).
+	REQUIRE_NOTHROW(m->guiQueue.shift()());
+
 	Test::destroyModule(m);
 }
 
@@ -1585,6 +1975,37 @@ TEST_CASE("applyPresetLayout - applies cell and scene mappings from custom prese
 	Test::destroyModule(m);
 }
 
+TEST_CASE("applyPresetLayout - maps every valid MIDI note/CC number 0..127, including 0", "[SpliceKit]") {
+	// Note 0 and CC 0 are legal MIDI values and must not be skipped; sweep the
+	// full valid range for both cell and scene slots to guard against any
+	// other off-by-one at the boundaries.
+	for (int number = 0; number <= 127; number++) {
+		SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+		MidiOutPreset preset;
+		preset.cells[0].type  = MidiTrackingType::NOTE;  preset.cells[0].number = number;
+		preset.cells[1].type  = MidiTrackingType::CC;    preset.cells[1].number = number;
+		preset.scenes[0].type = MidiTrackingType::NOTE;  preset.scenes[0].number = number;
+		m->customPreset   = preset;
+		m->feedbackPreset = PRESET_IDX_CUSTOM;
+
+		m->applyPresetLayout();
+
+		auto c0 = m->trackingProcessor.getMap(0);
+		REQUIRE(c0.type  == MidiTrackingType::NOTE);
+		REQUIRE(c0.param == number);
+		auto c1 = m->trackingProcessor.getMap(1);
+		REQUIRE(c1.type  == MidiTrackingType::CC);
+		REQUIRE(c1.param == number);
+		// Scene 0 is MATRIX_COUNT + 0.
+		auto s0 = m->trackingProcessor.getMap(MATRIX_COUNT);
+		REQUIRE(s0.type  == MidiTrackingType::NOTE);
+		REQUIRE(s0.param == number);
+
+		Test::destroyModule(m);
+	}
+}
+
 TEST_CASE("applyPresetLayout - no-op when no preset is active", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	m->feedbackPreset = 0;  // no preset
@@ -1603,7 +2024,7 @@ TEST_CASE("applyPresetLayout - invalidates LED states so they are re-sent", "[Sp
 
 	// Pre-populate LED state with non-(-1) values.
 	for (int i = 0; i < MATRIX_COUNT; i++) m->cellLedState[i]  = LED_STATE_COLOR0;
-	for (int i = 0; i < MATRIX_SIZE;  i++) m->sceneLedState[i] = LED_STATE_SCENE_ACTIVE;
+	for (int i = 0; i < SCENE_COUNT;  i++) m->sceneLedState[i] = LED_STATE_SCENE_ACTIVE;
 
 	MidiOutPreset preset;
 	preset.cells[0].type = MidiTrackingType::NOTE;  preset.cells[0].number = 36;
@@ -1612,7 +2033,23 @@ TEST_CASE("applyPresetLayout - invalidates LED states so they are re-sent", "[Sp
 
 	m->applyPresetLayout();
 	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->cellLedState[i]  == -1);
-	for (int i = 0; i < MATRIX_SIZE;  i++) REQUIRE(m->sceneLedState[i] == -1);
+	for (int i = 0; i < SCENE_COUNT;  i++) REQUIRE(m->sceneLedState[i] == -1);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("SpliceKitOutput::setDeviceId invalidates LED states via the module hook", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	// Pre-populate LED state with non-(-1) values.
+	for (int i = 0; i < MATRIX_COUNT; i++) m->cellLedState[i]  = LED_STATE_COLOR0;
+	for (int i = 0; i < SCENE_COUNT;  i++) m->sceneLedState[i] = LED_STATE_SCENE_ACTIVE;
+
+	// setDeviceId must trigger the onDeviceChanged hook wired in the constructor
+	// (midiOutput has no driver attached, so this is a no-op device switch).
+	m->midiOutput.setDeviceId(-1);
+
+	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->cellLedState[i]  == -1);
+	for (int i = 0; i < SCENE_COUNT;  i++) REQUIRE(m->sceneLedState[i] == -1);
 	Test::destroyModule(m);
 }
 
@@ -1634,5 +2071,33 @@ TEST_CASE("dataFromJson - malformed customPresetJson reverts to no preset", "[Sp
 	json_decref(j);
 	REQUIRE(m2->feedbackPreset == 0);
 	Test::destroyModule(m2);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("dataFromJson - non-string customPreset value does not crash and reverts to no preset", "[SpliceKit][JSON]") {
+	json_t* j = json_object();
+	json_object_set_new(j, "feedbackPreset", json_integer(PRESET_IDX_CUSTOM));
+	json_object_set_new(j, "customPreset",   json_integer(42));  // not a string
+
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	REQUIRE_NOTHROW(m->dataFromJson(j));
+	json_decref(j);
+	REQUIRE(m->feedbackPreset == 0);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("dataFromJson - non-string cellLabels entry does not crash and is skipped", "[SpliceKit][JSON]") {
+	json_t* labelsJ = json_object();
+	json_object_set_new(labelsJ, "3", json_integer(7));       // not a string — must be skipped
+	json_object_set_new(labelsJ, "5", json_string("kept"));   // valid — must be applied
+	json_t* j = json_object();
+	json_object_set_new(j, "cellLabels", labelsJ);
+
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->cellLabels[3] = "stale";
+	REQUIRE_NOTHROW(m->dataFromJson(j));
+	json_decref(j);
+	REQUIRE(m->cellLabels[3] == "");
+	REQUIRE(m->cellLabels[5] == "kept");
 	Test::destroyModule(m);
 }
