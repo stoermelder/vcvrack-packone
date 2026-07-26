@@ -47,6 +47,8 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 	/** [Stored to JSON] */
 	bool showCcExMsg;
 	/** [Stored to JSON] */
+	bool showRpnNrpnMsg;
+	/** [Stored to JSON] */
 	bool showProgChangeMsg;
 	/** [Stored to JSON] */
 	bool showChannelPressurelMsg;
@@ -87,6 +89,7 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		showKeyPressure = true;
 		showCcMsg = true;
 		showCcExMsg = true;
+		showRpnNrpnMsg = false;
 		showProgChangeMsg = true;
 		showChannelPressurelMsg = true;
 		showPitchWheelMsg = true;
@@ -182,7 +185,7 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 				else if (m.getParamNumber() == 4) {
 					s = string::f("ch%02d rpn param=4 (Tuning Bank Select)", m.getChannel() + 1);
 				}
-				logMessage(showCcExMsg, LOG_FORMAT::INDENTED, 0.f, 0LL, s);
+				logMessage(showRpnNrpnMsg, LOG_FORMAT::INDENTED, 0.f, 0LL, s);
 				break;
 			case MessageEx::Type::NRPN:
 				if (m.getValue() >= 0) {
@@ -191,7 +194,7 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 				else {
 					s = string::f("ch%02d nrpn param=%i selected", m.getChannel() + 1, m.getParamNumber());
 				}
-				logMessage(showCcExMsg, LOG_FORMAT::INDENTED, 0.f, 0LL, s);
+				logMessage(showRpnNrpnMsg, LOG_FORMAT::INDENTED, 0.f, 0LL, s);
 				break;
 			case MessageEx::Type::PROGRAM_CHANGE:
 				s = string::f("ch%02d program=%i", m.getChannel() + 1, m.getNote());
@@ -251,6 +254,7 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		json_object_set_new(rootJ, "showKeyPressure", json_boolean(showKeyPressure));
 		json_object_set_new(rootJ, "showCcMsg", json_boolean(showCcMsg));
 		json_object_set_new(rootJ, "showCcExMsg", json_boolean(showCcExMsg));
+		json_object_set_new(rootJ, "showRpnNrpnMsg", json_boolean(showRpnNrpnMsg));
 		json_object_set_new(rootJ, "showProgChangeMsg", json_boolean(showProgChangeMsg));
 		json_object_set_new(rootJ, "showChannelPressurelMsg", json_boolean(showChannelPressurelMsg));
 		json_object_set_new(rootJ, "showPitchWheelMsg", json_boolean(showPitchWheelMsg));
@@ -277,6 +281,8 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		if (showCcMsgJ) showCcMsg = json_boolean_value(showCcMsgJ);
 		json_t* showCcExMsgJ = json_object_get(rootJ, "showCcExMsg");
 		showCcExMsg = showCcExMsgJ ? json_boolean_value(showCcExMsgJ) : showCcMsg;
+		json_t* showRpnNrpnMsgJ = json_object_get(rootJ, "showRpnNrpnMsg");
+		if (showRpnNrpnMsgJ) showRpnNrpnMsg = json_boolean_value(showRpnNrpnMsgJ);
 		json_t* showProgChangeMsgJ = json_object_get(rootJ, "showProgChangeMsg");
 		if (showProgChangeMsgJ) showProgChangeMsg = json_boolean_value(showProgChangeMsgJ);
 		json_t* showChannelPressurelMsgJ = json_object_get(rootJ, "showChannelPressurelMsg");
@@ -416,7 +422,8 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 			menu->addChild(createBoolPtrMenuItem("Note on/off", "", &module->showNoteMsg));
 			menu->addChild(createBoolPtrMenuItem("Key pressure", "", &module->showKeyPressure));
 			menu->addChild(createBoolPtrMenuItem("CC", "", &module->showCcMsg));
-			menu->addChild(createBoolPtrMenuItem("CC (14-bit/RPN/NRPN)", "", &module->showCcExMsg));
+			menu->addChild(createBoolPtrMenuItem("CC (14-bit)", "", &module->showCcExMsg));
+			menu->addChild(createBoolPtrMenuItem("CC (RPN/NRPN)", "", &module->showRpnNrpnMsg));
 			menu->addChild(createBoolPtrMenuItem("Program change", "", &module->showProgChangeMsg));
 			menu->addChild(createBoolPtrMenuItem("Channel pressure", "", &module->showChannelPressurelMsg));
 			menu->addChild(createBoolPtrMenuItem("Pitch wheel", "", &module->showPitchWheelMsg));
