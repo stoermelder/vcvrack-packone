@@ -192,7 +192,8 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 		jsval_t r = js_eval(js, script, ~0U);
 		if (js_type(r) == JS_ERR) {
-			writeLog(string::f("Error while loading script: %s", js_str(js, r)), false);
+			writeLog("Error while loading script", false);
+			writeLog(js_str(js, r), false);
 			js = NULL;
 		}
 		else {
@@ -392,7 +393,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			snprintf(str, sizeof(str), "%i", (int)f);
 		else
 			snprintf(str, sizeof(str), "%f", f);
-		return js_mkstr(js, str, 6);
+		return js_mkstr(js, str, strlen(str));
 	}
 
 	// input
