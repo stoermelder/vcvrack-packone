@@ -1,4 +1,5 @@
 /**
+ * @target stoermelder MIDI-KIT
  * @engine Elk
  * @author stoermelder
  * @description NRPN to 14-bit CC converter

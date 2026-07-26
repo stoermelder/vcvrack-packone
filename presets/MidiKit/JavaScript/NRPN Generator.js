@@ -1,4 +1,5 @@
 /**
+ * @target stoermelder MIDI-KIT
  * @engine Elk
  * @author stoermelder
  * @description NRPN test generator for nrpn_to_cc.js - sweeps a 14-bit value driven by MIDI clock
