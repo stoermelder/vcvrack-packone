@@ -581,6 +581,14 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 		ThemedModuleWidget<MidiKitModule>::appendContextMenu(menu);
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Script"));
+		menu->addChild(createSubmenuItem("Examples", "", [=](Menu* menu) {
+			menu->addChild(createSubmenuItem("JavaScript", "", [=](Menu* menu) {
+				appendExampleItems(menu, asset::plugin(pluginInstance, "presets/MidiKit/JavaScript"), ".js");
+			}));
+			menu->addChild(createSubmenuItem("Lua", "", [=](Menu* menu) {
+				appendExampleItems(menu, asset::plugin(pluginInstance, "presets/MidiKit/Lua"), ".lua");
+			}));
+		}));
 		menu->addChild(createMenuItem("Clear", "", [=]() { module->clearScript(); }));
 		menu->addChild(createMenuItem("Paste from clipboard", RACK_MOD_ALT_NAME "+V", [=]() { pasteJsClipboard(); }));
 		menu->addChild(createMenuItem("Copy to clipboard", RACK_MOD_ALT_NAME "+C", [=]() { copyJsClipboard(); }));
@@ -602,7 +610,7 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 	}
 
 	void loadJsDialog() {
-		osdialog_filters* filters = osdialog_filters_parse("MIDI-SCRIPT file (.js):js");
+		osdialog_filters* filters = osdialog_filters_parse("MIDI-KIT file:js,lua");
 		DEFER({
 			osdialog_filters_free(filters);
 		});
@@ -635,6 +643,29 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 		}
 		catch (const std::runtime_error& err) {
 			// Fail silently
+		}
+	}
+
+	// Lists .js/.lua example scripts bundled under src/modules/midikit/, sorted, as clickable
+	// menu items (mirrors ModuleWidget's factory-preset submenu, but for raw scripts). All
+	// other file types in that folder (.cpp, .h, .md, ...) are ignored.
+	void appendExampleItems(Menu* menu, std::string dir, std::string ext) {
+		bool hasExamples = false;
+		if (system::isDirectory(dir)) {
+			std::vector<std::string> entries = system::getEntries(dir);
+			std::sort(entries.begin(), entries.end());
+			for (std::string path : entries) {
+				if (system::getExtension(path) != ext) continue;
+				hasExamples = true;
+				std::string name = system::getStem(path);
+				menu->addChild(createMenuItem(name, "", [=]() {
+					filename = path;
+					loadJs(path);
+				}));
+			}
+		}
+		if (!hasExamples) {
+			menu->addChild(createMenuLabel("None found"));
 		}
 	}
 
