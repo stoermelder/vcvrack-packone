@@ -2,11 +2,20 @@
 
 ### Changes and Fixes
 
+- Module [MB](./docs/trial-and-error/Mb.md)
+    - Added sorting option "Newest" to *v2 mod* browser
+    - Improved context menus for tags (#461)
+    - Fixed broken sorting option "Last used"
 - Modules [MIDI-CAT](./docs/midicat/MidiCat.md), [MIDI-ESX](./docs/midiesx/MidiEsx.md), [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md), [MIDI-PLUG](./docs/midi/MidiPlug.md), [MIDI-STEP](./docs/midi/MidiStep.md)
     - Ignore incoming MIDI messages while module is bypassed
+- Module [MIDI-MON](./docs/midi/MidiMon.md)
+    - Splitted display option for 14bit CC and RPN/NRPN messages
 - Module [SIREN](./docs/siren/Siren.md)
     - Added support for multi-channel files on Re-pitch and Crossfade-loop
+    - Ignore files starting with "." (#460)
+    - Improved context menus for tags
     - Fixed crash when playing multi-channel files
+    - Fixed occasionally lost settings
 
 ## 2.5.0
 

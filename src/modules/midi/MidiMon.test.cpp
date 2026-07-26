@@ -38,6 +38,7 @@ TEST_CASE("Construction and reset", "[MidiMon]") {
 		REQUIRE(module->showKeyPressure == true);
 		REQUIRE(module->showCcMsg == true);
 		REQUIRE(module->showCcExMsg == true);
+		REQUIRE(module->showRpnNrpnMsg == false);
 		REQUIRE(module->showProgChangeMsg == true);
 		REQUIRE(module->showChannelPressurelMsg == true);
 		REQUIRE(module->showPitchWheelMsg == true);
@@ -216,6 +217,21 @@ TEST_CASE("SysEx logging", "[MidiMon]") {
 }
 
 
+TEST_CASE("processBypass drains the MIDI queue without logging", "[MidiMon]") {
+	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	drain(module); // discard header lines
+
+	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
+	REQUIRE(module->midiProcessor.getInput().size() == 1);
+
+	module->processBypass(Test::makeProcessArgs(1));
+
+	REQUIRE(module->midiProcessor.getInput().size() == 0);
+	REQUIRE(drain(module).empty());
+
+	Test::destroyModule(module);
+}
+
 TEST_CASE("processMidi never consumes the message", "[MidiMon]") {
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 	// Returning false keeps the message available to other handlers.
@@ -231,6 +247,7 @@ TEST_CASE("JSON round-trip", "[MidiMon][JSON]") {
 	module->showNoteMsg = false;
 	module->showCcMsg = false;
 	module->showCcExMsg = true;
+	module->showRpnNrpnMsg = true;
 	module->showClockMsg = true;
 	module->showSysExMsg = true;
 	module->showSysExData = true;
@@ -247,6 +264,7 @@ TEST_CASE("JSON round-trip", "[MidiMon][JSON]") {
 	REQUIRE(restored->showNoteMsg == false);
 	REQUIRE(restored->showCcMsg == false);
 	REQUIRE(restored->showCcExMsg == true);
+	REQUIRE(restored->showRpnNrpnMsg == true);
 	REQUIRE(restored->showClockMsg == true);
 	REQUIRE(restored->showSysExMsg == true);
 	REQUIRE(restored->showSysExData == true);

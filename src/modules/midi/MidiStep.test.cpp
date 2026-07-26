@@ -267,6 +267,26 @@ TEST_CASE("MIDI queue is processed", "[MidiStep]") {
 }
 
 
+TEST_CASE("processBypass drains the MIDI queue without producing triggers", "[MidiStep]") {
+	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	module->mode = MODE::BEATSTEP_R1;
+
+	// Push a CC that would normally produce an increment pulse.
+	module->midiInput.onMessage(cc(0, 70));
+
+	module->processBypass(Test::makeProcessArgs(1));
+
+	REQUIRE(module->incPulseCount[0] == 0);
+	REQUIRE(module->outputs[MidiStepModule::OUTPUT_INC].getVoltage() == 0.f);
+
+	// The queue was drained by processBypass, so a following process() sees nothing.
+	module->process(Test::makeProcessArgs(2));
+	REQUIRE(module->incPulseCount[0] == 0);
+
+	Test::destroyModule(module);
+}
+
+
 TEST_CASE("JSON round-trip", "[MidiStep][JSON]") {
 	auto module = Test::createModule<MidiStepModule>("MidiStep");
 	module->mode = MODE::AKAI_MPD218;
