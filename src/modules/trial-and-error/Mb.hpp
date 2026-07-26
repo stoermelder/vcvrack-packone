@@ -35,12 +35,19 @@ void modelWidthsToJson();
 
 struct ModelUsage {
 	int usedCount = 0;
-	int64_t usedTimestamp = -std::numeric_limits<int64_t>::infinity();
+	int64_t usedTimestamp = 0;
 };
 extern std::map<Model*, ModelUsage*> modelUsage;
 
 void modelUsageTouch(Model* model);
 void modelUsageReset();
+
+// Sort-key accessors for the browser's usage-based sorts. Both return 0 for a model
+// that has never been used. 0 is a safe sentinel: real timestamps/counts are always
+// positive, so unused models sort last, and negating the value (as the "last used" /
+// "most used" sorts do) can never overflow — unlike an INT64_MIN sentinel would.
+int64_t modelUsageTimestamp(Model* model);
+int modelUsageCount(Model* model);
 
 
 // Favorite

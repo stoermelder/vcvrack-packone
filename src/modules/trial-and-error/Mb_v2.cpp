@@ -21,6 +21,7 @@ struct TogglePredefinedTagItem : MenuItem {
 	plugin::Model* model;
 	int tagId;
 	bool hasEffectiveTag = false;
+	std::shared_ptr<std::string> filter;
 	void onAction(const event::Action& e) override {
 		if (hasEffectiveTag) {
 			predefinedTagRemove(model, tagId);
@@ -33,6 +34,7 @@ struct TogglePredefinedTagItem : MenuItem {
 		e.unconsume();
 	}
 	void step() override {
+		visible = Rack::menuFilterMatches(filter, text);
 		rightText = CHECKMARK(hasEffectiveTag);
 		MenuItem::step();
 	}
@@ -208,14 +210,14 @@ struct ModelBox : widget::OpaqueWidget {
 				case GLFW_KEY_F: {
 					toggleModelFavorite(model);
 					ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-					if (browser && browser->favorite) browser->refresh();
+					if (browser && browser->favorite) browser->refresh(false);
 					e.consume(this);
 					break;
 				}
 				case GLFW_KEY_H: {
 					toggleModelHidden(model);
 					ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-					if (browser) browser->refresh();
+					if (browser) browser->refresh(false);
 					e.consume(this);
 					break;
 				}
@@ -311,7 +313,7 @@ struct ModelBox : widget::OpaqueWidget {
 			[&]() { 
 				toggleModelFavorite(model);
 				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				if (browser && browser->favorite) browser->refresh();
+				if (browser && browser->favorite) browser->refresh(false);
 			}
 		));
 		menu->addChild(createCheckMenuItem("Hidden", RACK_MOD_CTRL_NAME "+H",
@@ -319,15 +321,26 @@ struct ModelBox : widget::OpaqueWidget {
 			[&]() { 
 				toggleModelHidden(model);
 				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				if (browser) browser->refresh();
+				if (browser) browser->refresh(false);
 			}
 		));
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuLabel("Custom Tags"));
 
+		// Shared between the new-tag text field and the tag menu items below:
+		// the typed text doubles as a live case-insensitive filter on the
+		// existing tags while still creating a new tag on enter.
+		auto tagFilter = std::make_shared<std::string>();
+
 		struct NewCustomTagField : ui::TextField {
 			plugin::Model* model;
+			std::shared_ptr<std::string> filter;
+
+			void onChange(const event::Change& e) override {
+				ui::TextField::onChange(e);
+				*filter = string::trim(text);
+			}
 
 			void onSelectKey(const event::SelectKey& e) override {
 				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
@@ -351,6 +364,7 @@ struct ModelBox : widget::OpaqueWidget {
 		struct ToggleCustomTagItem : MenuItem {
 			plugin::Model* model;
 			std::string tagName;
+			std::shared_ptr<std::string> filter;
 			void onAction(const event::Action& e) override {
 				if (customTagHas(model, tagName))
 					customTagRemove(model, tagName);
@@ -361,6 +375,7 @@ struct ModelBox : widget::OpaqueWidget {
 				e.unconsume();
 			}
 			void step() override {
+				visible = Rack::menuFilterMatches(filter, text);
 				rightText = CHECKMARK(customTagHas(model, tagName));
 				MenuItem::step();
 			}
@@ -368,8 +383,9 @@ struct ModelBox : widget::OpaqueWidget {
 
 		NewCustomTagField* ntf = new NewCustomTagField;
 		ntf->box.size.x = 150.f;
-		ntf->placeholder = "New tag...";
+		ntf->placeholder = "Filter / new tag...";
 		ntf->model = model;
+		ntf->filter = tagFilter;
 		menu->addChild(ntf);
 		APP->event->setSelectedWidget(ntf);
 
@@ -380,13 +396,14 @@ struct ModelBox : widget::OpaqueWidget {
 		});
 
 		plugin::Model* m = model;
-		Rack::addGroupedMenuItems<std::string>(menu, tags, [m](const std::string& tag) -> ui::MenuItem* {
+		Rack::addGroupedMenuItems<std::string>(menu, tags, [m, tagFilter](const std::string& tag) -> ui::MenuItem* {
 			ToggleCustomTagItem* item = new ToggleCustomTagItem;
 			item->text = tag;
 			item->model = m;
 			item->tagName = tag;
+			item->filter = tagFilter;
 			return item;
-		}, 20);
+		}, 20, 16, tagFilter);
 
 		// Add section for modifying predefined tags
 		menu->addChild(new MenuSeparator);
@@ -406,14 +423,16 @@ struct ModelBox : widget::OpaqueWidget {
 		});
 
 		Rack::addGroupedMenuItems<MenuItemType>(menu, allTags,
-			[effectiveTagIds, m](const MenuItemType& item) {
+			[effectiveTagIds, m, tagFilter](const MenuItemType& item) {
 				TogglePredefinedTagItem* t = new TogglePredefinedTagItem;
 				t->text = item.first;
 				t->model = m;
 				t->tagId = item.second;
 				t->hasEffectiveTag = effectiveTagIds.find(item.second) != effectiveTagIds.end();
+				t->filter = tagFilter;
 				return t;
-			}
+			},
+			24, 16, tagFilter
 		);
 	}
 };
@@ -1224,8 +1243,8 @@ void ModuleBrowser::updateZoom() {
 	}
 }
 
-void ModuleBrowser::refresh() {
-	modelScroll->offset = math::Vec();
+void ModuleBrowser::refresh(bool scrollTop) {
+	if (scrollTop) modelScroll->offset = math::Vec();
 	prefilteredModelScores.clear();
 
 	for (Widget* w : modelContainer->children) {
@@ -1265,8 +1284,7 @@ void ModuleBrowser::refresh() {
 		else if (sort == BrowserSort::LAST_USED) {
 			sortModelContainer(modelContainer, [this](ModelBox* m) {
 				plugin::Plugin* p = m->model->plugin;
-				auto u = modelUsage.find(m->model);
-				int64_t ts = (u != modelUsage.end()) ? u->second->usedTimestamp : std::numeric_limits<int64_t>::min();
+				int64_t ts = modelUsageTimestamp(m->model);
 				int order = get(modelOrders, m->model, 0);
 				return std::make_tuple(-ts, -p->modifiedTimestamp, p->brand, p->name, order);
 			});
@@ -1274,9 +1292,8 @@ void ModuleBrowser::refresh() {
 		else if (sort == BrowserSort::MOST_USED) {
 			sortModelContainer(modelContainer, [this](ModelBox* m) {
 				plugin::Plugin* p = m->model->plugin;
-				auto u = modelUsage.find(m->model);
-				int count = (u != modelUsage.end()) ? u->second->usedCount : 0;
-				int64_t ts = (u != modelUsage.end()) ? u->second->usedTimestamp : std::numeric_limits<int64_t>::min();
+				int count = modelUsageCount(m->model);
+				int64_t ts = modelUsageTimestamp(m->model);
 				int order = get(modelOrders, m->model, 0);
 				return std::make_tuple(-count, -ts, -p->modifiedTimestamp, p->brand, p->name, order);
 			});

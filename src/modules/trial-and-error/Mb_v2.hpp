@@ -54,7 +54,7 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	ModuleBrowser();
 	void step() override;
 	void draw(const DrawArgs& args) override;
-	void refresh();
+	void refresh(bool scrollTo = true);
 	void clear();
 	void updateZoom();
 	void navigateSelection(int key);

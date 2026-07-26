@@ -569,6 +569,17 @@ inline ui::TextField* createTextField(const std::string& initial = "", const std
 }
 
 /**
+ * @brief True when `text` matches a live menu filter string (case-insensitive substring match).
+ *
+ * A null or empty filter matches everything. Intended for menu items that
+ * hide themselves in step() while the user types into a filter text field.
+ */
+inline bool menuFilterMatches(const std::shared_ptr<std::string>& filter, const std::string& text) {
+	if (!filter || filter->empty()) return true;
+	return string::lowercase(text).find(string::lowercase(*filter)) != std::string::npos;
+}
+
+/**
  * @brief Helper to add menu items from a sorted list with a factory function, grouping them into submenus when exceeding a threshold.
  *
  * @param menu The menu to add items to
@@ -576,6 +587,7 @@ inline ui::TextField* createTextField(const std::string& initial = "", const std
  * @param creator Factory function: ui::MenuItem* creator(const TData& item)
  * @param directThreshold Maximum number of items before grouping into submenus (default: 24)
  * @param groupSize Number of items per submenu when grouping (default: 16)
+ * @param filter Optional live filter string; group submenu items hide themselves when no member's text matches (the items created by `creator` are expected to filter themselves)
  *
  * Example:
  *   std::vector<std::pair<std::string, int>> items = {...};
@@ -591,7 +603,8 @@ inline void addGroupedMenuItems(
 	const std::vector<TData>& items,
 	std::function<ui::MenuItem*(const TData&)> creator,
 	size_t directThreshold = 24,
-	size_t groupSize = 16
+	size_t groupSize = 16,
+	std::shared_ptr<std::string> filter = nullptr
 ) {
 	if (items.empty()) return;
 
@@ -600,23 +613,63 @@ inline void addGroupedMenuItems(
 			menu->addChild(creator(item));
 		}
 	} else {
+		// Group submenu item that hides itself while a live filter is set and
+		// none of its member texts match it.
+		struct FilteredGroupItem : ui::MenuItem {
+			std::function<void(ui::Menu*)> createMenuFn;
+			std::vector<std::string> texts;
+			std::shared_ptr<std::string> filter;
+			ui::Menu* createChildMenu() override {
+				ui::Menu* subMenu = new ui::Menu;
+				createMenuFn(subMenu);
+				return subMenu;
+			}
+			void step() override {
+				visible = std::any_of(texts.begin(), texts.end(), [this](const std::string& t) {
+					return menuFilterMatches(filter, t);
+				});
+				MenuItem::step();
+			}
+		};
+
 		size_t numGroups = (items.size() + groupSize - 1) / groupSize;
 		size_t actualGroupSize = (items.size() + numGroups - 1) / numGroups;
 
 		for (size_t i = 0; i < items.size(); i += actualGroupSize) {
 			size_t end = std::min(i + actualGroupSize, items.size());
-			char first = (char)std::toupper((unsigned char)string::lowercase(creator(items[i])->text)[0]);
-			char last = (char)std::toupper((unsigned char)string::lowercase(creator(items[end - 1])->text)[0]);
+			// Item texts are only obtainable via creator(); the widgets built
+			// here are temporary and deleted after their text is read.
+			std::vector<std::string> texts;
+			texts.reserve(end - i);
+			for (size_t j = i; j < end; j++) {
+				ui::MenuItem* tmp = creator(items[j]);
+				texts.push_back(tmp->text);
+				delete tmp;
+			}
+			char first = (char)std::toupper((unsigned char)string::lowercase(texts.front())[0]);
+			char last = (char)std::toupper((unsigned char)string::lowercase(texts.back())[0]);
 			std::string label = first == last
 				? std::string(1, first)
 				: std::string(1, first) + "-" + std::string(1, last);
 
 			std::vector<TData> group(items.begin() + i, items.begin() + end);
-			menu->addChild(createSubmenuItem(label, "", [creator, group](ui::Menu* subMenu) {
+			auto createMenuFn = [creator, group](ui::Menu* subMenu) {
 				for (const auto& item : group) {
 					subMenu->addChild(creator(item));
 				}
-			}));
+			};
+			if (filter) {
+				FilteredGroupItem* groupItem = new FilteredGroupItem;
+				groupItem->text = label;
+				groupItem->rightText = RIGHT_ARROW;
+				groupItem->createMenuFn = createMenuFn;
+				groupItem->texts = std::move(texts);
+				groupItem->filter = filter;
+				menu->addChild(groupItem);
+			}
+			else {
+				menu->addChild(createSubmenuItem(label, "", createMenuFn));
+			}
 		}
 	}
 }

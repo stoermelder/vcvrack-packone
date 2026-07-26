@@ -1398,6 +1398,74 @@ TEST_CASE("Cross-instance settings sync: SirenWidget step() refreshes browser pa
 	destroyWidgetPair(p);
 }
 
+// ─── Settings persistence: module-browser thumbnail must not wipe the file ────
+//
+// Regression: the module browser instantiates a SirenWidget with a null module
+// to render its thumbnail. That constructor returns before ever calling
+// sirenSettings.load(), yet ~SirenWidget still calls sirenSettings.save(). With
+// the process-global sirenSettings still at empty defaults, the save wrote an
+// empty siren.json over the user's existing one — silently discarding every
+// configured root before any real instance had a chance to read them. The fix
+// makes save() a no-op until the settings have actually been load()ed.
+//
+// save()/load() short-circuit under isTesting(), so this test clears the TESTING
+// env for its critical section to exercise the real disk path, and backs up /
+// restores anything already at sirenFilePath() so it stays hermetic. The path
+// resolves relative to the plugin working dir in the harness, distinct from a
+// user's real Rack settings.
+TEST_CASE("Settings persistence: module-browser widget destruction does not wipe siren.json", "[Siren][SettingsPersistence]") {
+	const std::string path = sirenFilePath();
+	const std::string testBak = path + ".unittestbak";
+
+	// Back up any pre-existing file (and the crash-safety .bak) so the test
+	// never disturbs real state, and restore everything on the way out.
+	const bool hadExisting = rack::system::exists(path);
+	if (hadExisting) rack::system::rename(path, testBak);
+	DEFER({
+		if (rack::system::exists(path)) rack::system::remove(path);
+		if (hadExisting) rack::system::rename(testBak, path);
+		else rack::system::remove(settingsDirPath());  // clean the dir we created
+	});
+
+	// Enable real disk IO for the critical section (save/load no-op under TESTING).
+	::unsetenv("TESTING");
+	DEFER({ ::setenv("TESTING", "1", 1); });
+
+	// Preserve and restore the global singleton we mutate below.
+	const std::vector<RootContainer> savedRoots = sirenSettings.rootContainers;
+	const bool savedLoaded = sirenSettings.loaded;
+	DEFER({
+		sirenSettings.rootContainers = savedRoots;
+		sirenSettings.loaded = savedLoaded;
+	});
+
+	// 1) A previous session persisted a valid settings file with two roots.
+	sirenSettings.rootContainers.clear();
+	sirenSettings.rootContainers.push_back(createRootContainer("/root-a", "fs"));
+	sirenSettings.rootContainers.push_back(createRootContainer("/root-b", "fs"));
+	sirenSettings.loaded = true;   // a genuinely-loaded singleton may persist
+	sirenSettings.save();
+	REQUIRE(rack::system::exists(path));
+
+	// 2) Fresh process: nothing has load()ed the settings yet.
+	sirenSettings.rootContainers.clear();
+	sirenSettings.loaded = false;
+
+	// 3) The module browser builds a thumbnail SirenWidget with no module, then
+	//    destroys it. The constructor returns before load(); the destructor's
+	//    save() must be suppressed by the !loaded guard.
+	SirenWidget* mw = Test::createWidget<SirenWidget>("Siren");
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+	Test::destroyWidget(mw);
+
+	// 4) The on-disk file must still hold both roots. Before the fix it would
+	//    have been overwritten with an empty rootContainers array.
+	SirenSettings check;
+	check.load();
+	REQUIRE(check.rootContainers.size() == 2);
+}
+
 // ─── Per-instance state (refactor: moved off the process-global SirenSettings) ─
 //
 // activeRootIdx, lastFilePath and lastPlayheadPos used to live on the

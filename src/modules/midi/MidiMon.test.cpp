@@ -38,6 +38,7 @@ TEST_CASE("Construction and reset", "[MidiMon]") {
 		REQUIRE(module->showKeyPressure == true);
 		REQUIRE(module->showCcMsg == true);
 		REQUIRE(module->showCcExMsg == true);
+		REQUIRE(module->showRpnNrpnMsg == false);
 		REQUIRE(module->showProgChangeMsg == true);
 		REQUIRE(module->showChannelPressurelMsg == true);
 		REQUIRE(module->showPitchWheelMsg == true);
@@ -246,6 +247,7 @@ TEST_CASE("JSON round-trip", "[MidiMon][JSON]") {
 	module->showNoteMsg = false;
 	module->showCcMsg = false;
 	module->showCcExMsg = true;
+	module->showRpnNrpnMsg = true;
 	module->showClockMsg = true;
 	module->showSysExMsg = true;
 	module->showSysExData = true;
@@ -262,6 +264,7 @@ TEST_CASE("JSON round-trip", "[MidiMon][JSON]") {
 	REQUIRE(restored->showNoteMsg == false);
 	REQUIRE(restored->showCcMsg == false);
 	REQUIRE(restored->showCcExMsg == true);
+	REQUIRE(restored->showRpnNrpnMsg == true);
 	REQUIRE(restored->showClockMsg == true);
 	REQUIRE(restored->showSysExMsg == true);
 	REQUIRE(restored->showSysExData == true);

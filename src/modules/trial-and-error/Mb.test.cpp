@@ -619,16 +619,61 @@ TEST_CASE("Model usage tracking", "[Mb]") {
 	SECTION("modelUsageReset clears all usage") {
 		plugin::Model* m1 = createMockModel("plugin1", "model1", "Model 1");
 		plugin::Model* m2 = createMockModel("plugin2", "model2", "Model 2");
-		
+
 		modelUsageTouch(m1);
 		modelUsageTouch(m2);
-		
+
 		REQUIRE(!modelUsage.empty());
-		
+
 		modelUsageReset();
 		REQUIRE(modelUsage.empty());
 	}
-	
+
+	cleanupMockModels();
+}
+
+TEST_CASE("Model usage sort keys", "[Mb]") {
+	cleanupMockModels();
+
+	SECTION("Never-used model reports zero, not INT64_MIN") {
+		// Regression: the "last used"/"most used" sorts negate this value. A never-used
+		// model must report 0 (not INT64_MIN, whose negation is undefined behavior and
+		// would sort unused modules to the top instead of the bottom).
+		plugin::Model* model = createMockModel("test", "test", "Test");
+		REQUIRE(modelUsageTimestamp(model) == 0);
+		REQUIRE(modelUsageCount(model) == 0);
+	}
+
+	SECTION("Used model reports a positive timestamp and count") {
+		plugin::Model* model = createMockModel("test", "test", "Test");
+		modelUsageTouch(model);
+		REQUIRE(modelUsageTimestamp(model) > 0);
+		REQUIRE(modelUsageCount(model) == 1);
+	}
+
+	SECTION("'Last used' key sorts used before never-used, most-recent first") {
+		// Mirror the browser's LAST_USED primary sort key: negated timestamp, ascending.
+		plugin::Model* unused = createMockModel("p0", "unused", "Unused");
+		plugin::Model* older = createMockModel("p1", "older", "Older");
+		plugin::Model* newer = createMockModel("p2", "newer", "Newer");
+
+		modelUsageTouch(older);
+		// Ensure a strictly greater timestamp for "newer" regardless of clock resolution.
+		modelUsage[newer] = new ModelUsage;
+		modelUsage[newer]->usedCount = 1;
+		modelUsage[newer]->usedTimestamp = modelUsage[older]->usedTimestamp + 1;
+
+		auto key = [](plugin::Model* m) { return -modelUsageTimestamp(m); };
+		std::vector<plugin::Model*> models = { unused, older, newer };
+		std::sort(models.begin(), models.end(),
+			[&](plugin::Model* a, plugin::Model* b) { return key(a) < key(b); });
+
+		// Most recently used first, never-used last.
+		REQUIRE(models[0] == newer);
+		REQUIRE(models[1] == older);
+		REQUIRE(models[2] == unused);
+	}
+
 	cleanupMockModels();
 }
 

@@ -553,12 +553,35 @@ struct FileSystemDataSource : DataSource {
 		return dstPath;
 	}
 
+	// Adds `tag` to every audio file under `folderId`, recursing into
+	// subfolders. Runs on the UI thread; acceptable for a menu action.
+	void addTagRecursive(const std::string& folderId, const std::string& tag) {
+		for (const auto& child : loadChildrenSync(folderId, false)) {
+			if (child.isContainer) {
+				addTagRecursive(child.relativePath, tag);
+			}
+			else {
+				getMetadata()->addTag(child.relativePath, tag);
+			}
+		}
+	}
+
 	void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node, std::function<void()> onChanged) override {
+		// Shared between the new-tag text field and the tag menu items below:
+		// the typed text doubles as a live case-insensitive filter on the
+		// existing tags while still creating a new tag on enter.
+		auto tagFilter = std::make_shared<std::string>();
+
 		auto addNewTagField = [&](std::function<void(const std::string&)> applyTag) {
 			struct NewTagField : ui::TextField {
 				FileSystemDataSource* src;
 				std::function<void()> onChanged;
 				std::function<void(const std::string&)> applyTag;
+				std::shared_ptr<std::string> filter;
+				void onChange(const event::Change& e) override {
+					ui::TextField::onChange(e);
+					*filter = rack::string::trim(text);
+				}
 				void onSelectKey(const event::SelectKey& e) override {
 					if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
 						std::string tag = rack::string::trim(text);
@@ -578,10 +601,11 @@ struct FileSystemDataSource : DataSource {
 
 			NewTagField* ntf = new NewTagField;
 			ntf->box.size.x = 150.f;
-			ntf->placeholder = "New tag...";
+			ntf->placeholder = "Filter / new tag...";
 			ntf->src = this;
 			ntf->onChanged = onChanged;
 			ntf->applyTag = applyTag;
+			ntf->filter = tagFilter;
 			menu->addChild(ntf);
 			APP->event->setSelectedWidget(ntf);
 		};
@@ -596,74 +620,45 @@ struct FileSystemDataSource : DataSource {
 			menu->addChild(createMenuLabel("Tags"));
 			std::string folderId = node.relativePath;
 			addNewTagField([this, folderId](const std::string& tag) {
-				auto children = loadChildrenSync(folderId, false);
-				for (const auto& child : children) {
-					if (!child.isContainer) {
-						getMetadata()->addTag(child.relativePath, tag);
-					}
-				}
+				addTagRecursive(folderId, tag);
 			});
 
-			// Sticky submenu: scan container, then show all tags; clicking adds/removes
-			// the tag for every direct audio file in the container.
+			// Sticky submenu listing all known tags; clicking adds the tag to every
+			// audio file under the container (recursively). The container is scanned
+			// only when a tag is actually applied, not when the menu is shown — so no
+			// checkmarks / toggle state on these items.
 			std::string id = node.relativePath;
-			menu->addChild(Rack::createStickySubmenuItem("Tag all files", RIGHT_ARROW, [this, id, onChanged](ui::Menu* tagMenu) {
-				// Scan for direct audio children (runs on UI thread; acceptable for a menu action)
-				auto children = loadChildrenSync(id, false);
-				std::vector<std::string> audioRels;
-				for (const auto& child : children) {
-					if (!child.isContainer) {
-						audioRels.push_back(child.relativePath);
+			menu->addChild(Rack::createStickySubmenuItem("Tag all files", RIGHT_ARROW, [this, id, onChanged, tagFilter](ui::Menu* tagMenu) {
+				struct ContainerTagItem : ui::MenuItem {
+					FileSystemDataSource* src;
+					std::string folderId;
+					std::string tag;
+					std::function<void()> onChanged;
+					std::shared_ptr<std::string> filter;
+					void step() override {
+						visible = Rack::menuFilterMatches(filter, text);
+						MenuItem::step();
 					}
-				}
-				if (audioRels.empty()) {
-					tagMenu->addChild(createMenuLabel("No audio files in folder"));
-					return;
-				}
-
-				auto allHave = [this, audioRels](std::string tag) {
-					for (const auto& rel : audioRels) {
-						auto fileTags = metadata->getTags(rel);
-						if (std::find(fileTags.begin(), fileTags.end(), tag) == fileTags.end()) {
-							return false;
-							break;
-						}
+					void onAction(const event::Action& e) override {
+						src->addTagRecursive(folderId, tag);
+						src->saveMetadata();
+						if (onChanged) onChanged();
 					}
-					return true;
 				};
 
 				auto allTagsSet = metadata->allTags();
 				std::vector<std::string> sorted(allTagsSet.begin(), allTagsSet.end());
 				std::sort(sorted.begin(), sorted.end());
-				Rack::addGroupedMenuItems<std::string>(tagMenu, sorted, [this, audioRels, allHave, onChanged](const std::string& tag) -> ui::MenuItem* {
-					struct ContainerTagItem : ui::MenuItem {
-						FileSystemDataSource* src;
-						std::vector<std::string> rels;
-						std::string tag;
-						bool wasAllHave;
-						std::function<void()> onChanged;
-						void onAction(const event::Action& e) override {
-							if (wasAllHave) {
-								for (const auto& rel : rels) src->getMetadata()->removeTag(rel, tag);
-							}
-							else {
-								for (const auto& rel : rels) src->getMetadata()->addTag(rel, tag);
-							}
-							src->saveMetadata();
-							if (onChanged) onChanged();
-						}
-					};
-
+				Rack::addGroupedMenuItems<std::string>(tagMenu, sorted, [this, id, onChanged, tagFilter](const std::string& tag) -> ui::MenuItem* {
 					ContainerTagItem* item = new ContainerTagItem;
 					item->text = tag;
-					item->rightText = CHECKMARK(allHave(tag));
 					item->src = this;
-					item->rels = audioRels;
+					item->folderId = id;
 					item->tag = tag;
-					item->wasAllHave = allHave(tag);
 					item->onChanged = onChanged;
+					item->filter = tagFilter;
 					return item;
-				}, 16);
+				}, 16, 16, tagFilter);
 			}));
 		}
 		else {
@@ -695,6 +690,7 @@ struct FileSystemDataSource : DataSource {
 				std::string tag;
 				FileSystemDataSource* src;
 				std::function<void()> onChanged;
+				std::shared_ptr<std::string> filter;
 				void onAction(const event::Action& e) override {
 					if (has()) src->getMetadata()->removeTag(rel, tag);
 					else src->getMetadata()->addTag(rel, tag);
@@ -703,6 +699,7 @@ struct FileSystemDataSource : DataSource {
 					e.unconsume();
 				}
 				void step() override {
+					visible = Rack::menuFilterMatches(filter, text);
 					rightText = CHECKMARK(has());
 					MenuItem::step();
 				}
@@ -719,15 +716,16 @@ struct FileSystemDataSource : DataSource {
 			auto allTagsSet = metadata->allTags();
 			std::vector<std::string> sorted(allTagsSet.begin(), allTagsSet.end());
 			std::sort(sorted.begin(), sorted.end());
-			Rack::addGroupedMenuItems<std::string>(menu, sorted, [this, rel, onChanged](const std::string& tag) -> ui::MenuItem* {
+			Rack::addGroupedMenuItems<std::string>(menu, sorted, [this, rel, onChanged, tagFilter](const std::string& tag) -> ui::MenuItem* {
 				FileTagItem* item = new FileTagItem;
 				item->text = tag;
 				item->rel = rel;
 				item->tag = tag;
 				item->src = this;
 				item->onChanged = onChanged;
+				item->filter = tagFilter;
 				return item;
-			}, 16);
+			}, 16, 16, tagFilter);
 		}
 	}
 };
