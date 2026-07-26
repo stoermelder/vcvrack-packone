@@ -372,6 +372,11 @@ static void test_funcs(void) {
   assert(ev(js, "(function(){return 1;})(1,)", "ERROR: parse error"));
   assert(ev(js, "(function(){return 1;2;})()", "1"));
   assert(ev(js, "(function(){return 1;2;return 3;})()", "1"));
+  // Bare "return;" (no expression) must also exit the function immediately,
+  // not merely evaluate to undefined and fall through to later statements.
+  assert(ev(js, "(function(){if(true){return;}return 1;})()", "undefined"));
+  assert(ev(js, "(function(){if(false){}else{return;}return 1;})()", "undefined"));
+  assert(ev(js, "let rt=1;(function(){rt=2;return;rt=3;})();rt", "2"));
   assert(ev(js, "(function(a){return b;})(1)", "ERROR: 'b' not found"));
   assert(ev(js, "(function(a,b){return a + b;})()", "ERROR: type mismatch"));
   assert(ev(js, "(function(a,b){return a + b;})(1)", "ERROR: type mismatch"));
