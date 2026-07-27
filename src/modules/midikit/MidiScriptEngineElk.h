@@ -410,7 +410,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		if (!js_chkargs(args, nargs, "d") && !js_chkargs(args, nargs, "dd")) return js_mkerr(js, "input.getVoltage: bad args");
 		int i = js_getnum(args[0]);
 		if (i < 1 || i > jsMap[js]->inputCount) return js_mkerr(js, "input.getVoltage: bad index");
-		uint8_t ch = 0;
+		uint8_t ch = 1;
 		if (nargs == 2) ch = js_getnum(args[1]);
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) return js_mkerr(js, "input.getVoltage: bad channel");
 		return js_mknum(jsMap[js]->getInputVoltage(i - 1, ch - 1));
@@ -420,7 +420,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		if (!js_chkargs(args, nargs, "d") && !js_chkargs(args, nargs, "dd")) return js_mkerr(js, "input.isHigh: bad args");
 		int i = js_getnum(args[0]);
 		if (i < 1 || i > jsMap[js]->inputCount) return js_mkerr(js, "input.isHigh: bad index");
-		uint8_t ch = 0;
+		uint8_t ch = 1;
 		if (nargs == 2) ch = js_getnum(args[1]);
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) return js_mkerr(js, "input.isHigh: bad channel");
 		return js_mkbool(jsMap[js]->getInputVoltage(i - 1, ch - 1) > 0.7f);
@@ -430,7 +430,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		if (!js_chkargs(args, nargs, "d") && !js_chkargs(args, nargs, "dd")) return js_mkerr(js, "input.isLow: bad args");
 		int i = js_getnum(args[0]);
 		if (i < 1 || i > jsMap[js]->inputCount) return js_mkerr(js, "input.isLow: bad index");
-		uint8_t ch = 0;
+		uint8_t ch = 1;
 		if (nargs == 2) ch = js_getnum(args[1]);
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) return js_mkerr(js, "input.isLow: bad channel");
 		return js_mkbool(jsMap[js]->getInputVoltage(i - 1, ch - 1) < 0.7f);
