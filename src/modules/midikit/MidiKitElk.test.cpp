@@ -202,3 +202,1291 @@ TEST_CASE("Simple CC reroute script", "[MidiKit][Elk]") {
 
 	Test::destroyModule(m);
 }
+
+
+static const char* ELK_ABS = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let a = number.abs(-5);
+let b = number.abs(3);
+let c = number.abs(0);
+)";
+
+TEST_CASE("API number.abs", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_ABS);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "a;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(5.0));
+
+	v = js_eval(m->se.js, "b;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(3.0));
+
+	v = js_eval(m->se.js, "c;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(0.0));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_CEIL = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let a = number.ceil(3.2);
+let b = number.ceil(-3.2);
+let c = number.ceil(5);
+)";
+
+TEST_CASE("API number.ceil", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_CEIL);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "a;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(4.0));
+
+	v = js_eval(m->se.js, "b;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(-3.0));
+
+	v = js_eval(m->se.js, "c;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(5.0));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_CROSSFADE = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let a = number.crossfade(0, 10, 0.5);
+let b = number.crossfade(100, 200, 0.25);
+let c = number.crossfade(-5, 5, 0.75);
+)";
+
+TEST_CASE("API number.crossfade", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_CROSSFADE);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "a;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(5.0));
+
+	v = js_eval(m->se.js, "b;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(125.0));
+
+	v = js_eval(m->se.js, "c;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(2.5));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_FLOOR = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let a = number.floor(3.8);
+let b = number.floor(-3.8);
+let c = number.floor(5);
+)";
+
+TEST_CASE("API number.floor", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_FLOOR);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "a;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(3.0));
+
+	v = js_eval(m->se.js, "b;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(-4.0));
+
+	v = js_eval(m->se.js, "c;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(5.0));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIN = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let a = number.min(3, 7);
+let b = number.min(-5, 5);
+let c = number.min(10, 10);
+)";
+
+TEST_CASE("API number.min", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIN);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "a;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(3.0));
+
+	v = js_eval(m->se.js, "b;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(-5.0));
+
+	v = js_eval(m->se.js, "c;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(10.0));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_RANDOM = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let a = number.random();
+let b = number.random();
+let c = number.random();
+)";
+
+TEST_CASE("API number.random", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_RANDOM);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "a;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) >= 0.0);
+	REQUIRE(js_getnum(v) < 1.0);
+
+	v = js_eval(m->se.js, "b;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) >= 0.0);
+	REQUIRE(js_getnum(v) < 1.0);
+
+	v = js_eval(m->se.js, "c;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) >= 0.0);
+	REQUIRE(js_getnum(v) < 1.0);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_TOSTRING = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let a = number.toString(42);
+let b = number.toString(3.14);
+let c = number.toString(-100);
+)";
+
+TEST_CASE("API number.toString", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_TOSTRING);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "a;", ~0U);
+	REQUIRE(js_type(v) == JS_STR);
+	size_t len;
+	char* s = js_getstr(m->se.js, v, &len);
+	REQUIRE(std::string(s, len) == "42");
+
+	v = js_eval(m->se.js, "b;", ~0U);
+	REQUIRE(js_type(v) == JS_STR);
+	s = js_getstr(m->se.js, v, &len);
+	REQUIRE(std::string(s, len) == "3.140000");
+
+	v = js_eval(m->se.js, "c;", ~0U);
+	REQUIRE(js_type(v) == JS_STR);
+	s = js_getstr(m->se.js, v, &len);
+	REQUIRE(std::string(s, len) == "-100");
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_CREATE = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+let type = typeof(msg);
+)";
+
+TEST_CASE("API midi.create", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_CREATE);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "msg;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);  // Returns a message index (number)
+
+	v = js_eval(m->se.js, "type;", ~0U);
+	REQUIRE(js_type(v) == JS_STR);
+	size_t len;
+	char* s = js_getstr(m->se.js, v, &len);
+	REQUIRE(std::string(s, len) == "number");
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_CREATE_NRPN = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let nrpn = midi.createNRPN();
+let type = typeof(nrpn);
+)";
+
+TEST_CASE("API midi.createNRPN", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_CREATE_NRPN);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "nrpn;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);  // Returns an NRPN index (number)
+
+	v = js_eval(m->se.js, "type;", ~0U);
+	REQUIRE(js_type(v) == JS_STR);
+	size_t len;
+	char* s = js_getstr(m->se.js, v, &len);
+	REQUIRE(std::string(s, len) == "number");
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_GETTERS = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setNoteOn(msg, 1, 60, 100);
+let ch = midi.getChannel(msg);
+let note = midi.getNote(msg);
+let val = midi.getValue(msg);
+let len = midi.getLength(msg);
+
+let msgPitch = midi.create();
+midi.setPitchWheel(msgPitch, 1, 8192);
+let pw = midi.getPitchWheel(msgPitch);
+)";
+
+TEST_CASE("API midi getter", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_GETTERS);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "ch;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(1.0));
+
+	v = js_eval(m->se.js, "note;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(60.0));
+
+	v = js_eval(m->se.js, "val;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(100.0));
+
+	v = js_eval(m->se.js, "len;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(3.0));
+
+	v = js_eval(m->se.js, "pw;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	// Pitch wheel is computed from note (LSB) and value (MSB) bytes
+	// For pitch wheel value 8192: note = 8192 & 0x7F = 0, value = 8192 >> 7 = 64
+	// pw = (64 << 7) | 0 = 8192
+	REQUIRE(js_getnum(v) == Catch::Approx(8192.0));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_IS_TYPES = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msgNoteOn = midi.create();
+midi.setNoteOn(msgNoteOn, 1, 60, 100);
+
+let msgNoteOff = midi.create();
+midi.setNoteOff(msgNoteOff, 1, 60);
+
+let msgCc = midi.create();
+midi.setCc(msgCc, 1, 10, 64);
+
+let msgPitch = midi.create();
+midi.setPitchWheel(msgPitch, 1, 8192);
+
+let msgProg = midi.create();
+midi.setProgramChange(msgProg, 1, 5);
+
+let msgChanPress = midi.create();
+midi.setChanPressure(msgChanPress, 1, 100);
+
+let msgKeyPress = midi.create();
+midi.setKeyPressure(msgKeyPress, 1, 60, 100);
+
+let msgSysEx = midi.create();
+midi.setSysEx(msgSysEx, "f043104c0000f7");
+
+let isNoteOn = midi.isNoteOn(msgNoteOn);
+let isNoteOff = midi.isNoteOff(msgNoteOff);
+let isCc = midi.isCc(msgCc);
+let isPitchWheel = midi.isPitchWheel(msgPitch);
+let isProgramChange = midi.isProgramChange(msgProg);
+let isChanPressure = midi.isChanPressure(msgChanPress);
+let isKeyPressure = midi.isKeyPressure(msgKeyPress);
+let isSysEx = midi.isSysEx(msgSysEx);
+let isClock = midi.isClock(msgNoteOn);
+let isStart = midi.isStart(msgNoteOn);
+let isStop = midi.isStop(msgNoteOn);
+let isContinue = midi.isContinue(msgNoteOn);
+)";
+
+TEST_CASE("API midi.is* type check", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_IS_TYPES);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v;
+
+	v = js_eval(m->se.js, "isNoteOn;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "isNoteOff;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "isCc;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "isPitchWheel;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "isProgramChange;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "isChanPressure;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "isKeyPressure;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "isSysEx;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	// These should be false for the messages we created
+	v = js_eval(m->se.js, "isClock;", ~0U);
+	REQUIRE(js_type(v) == JS_FALSE);
+
+	v = js_eval(m->se.js, "isStart;", ~0U);
+	REQUIRE(js_type(v) == JS_FALSE);
+
+	v = js_eval(m->se.js, "isStop;", ~0U);
+	REQUIRE(js_type(v) == JS_FALSE);
+
+	v = js_eval(m->se.js, "isContinue;", ~0U);
+	REQUIRE(js_type(v) == JS_FALSE);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_SETTERS = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setNoteOn(msg, 1, 60, 100);
+midi.setChannel(msg, 5);
+midi.setNote(msg, 72);
+midi.setValue(msg, 80);
+let ch = midi.getChannel(msg);
+let note = midi.getNote(msg);
+let val = midi.getValue(msg);
+)";
+
+TEST_CASE("API midi setter", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SETTERS);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "ch;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(5.0));
+
+	v = js_eval(m->se.js, "note;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(72.0));
+
+	v = js_eval(m->se.js, "val;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(80.0));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_SET_CC = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setCc(msg, 3, 7, 100);
+let isCc = midi.isCc(msg);
+let ch = midi.getChannel(msg);
+let cc = midi.getNote(msg);
+let val = midi.getValue(msg);
+)";
+
+TEST_CASE("API midi.setCc", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SET_CC);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "isCc;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "ch;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(3.0));
+
+	v = js_eval(m->se.js, "cc;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(7.0));
+
+	v = js_eval(m->se.js, "val;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(100.0));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_SET_PITCH_WHEEL = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setPitchWheel(msg, 2, 12345);
+let isPitch = midi.isPitchWheel(msg);
+let ch = midi.getChannel(msg);
+let pw = midi.getPitchWheel(msg);
+)";
+
+TEST_CASE("API midi.setPitchWheel", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SET_PITCH_WHEEL);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "isPitch;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "ch;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(2.0));
+
+	v = js_eval(m->se.js, "pw;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(12345.0));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_SET_PROGRAM_CHANGE = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setProgramChange(msg, 4, 10);
+let isProg = midi.isProgramChange(msg);
+let ch = midi.getChannel(msg);
+let prog = midi.getNote(msg);
+)";
+
+TEST_CASE("API midi.setProgramChange", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SET_PROGRAM_CHANGE);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "isProg;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "ch;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(4.0));
+
+	v = js_eval(m->se.js, "prog;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(10.0));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_SET_CHAN_PRESSURE = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setChanPressure(msg, 5, 80);
+let isPress = midi.isChanPressure(msg);
+let ch = midi.getChannel(msg);
+let note = midi.getNote(msg);  // Pressure value is in note byte for channel pressure
+)";
+
+TEST_CASE("API midi.setChanPressure", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SET_CHAN_PRESSURE);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "isPress;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "ch;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(5.0));
+
+	v = js_eval(m->se.js, "note;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(80.0));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_SET_KEY_PRESSURE = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setKeyPressure(msg, 6, 64, 90);
+let isPress = midi.isKeyPressure(msg);
+let ch = midi.getChannel(msg);
+let note = midi.getNote(msg);
+let val = midi.getValue(msg);
+)";
+
+TEST_CASE("API midi.setKeyPressure", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SET_KEY_PRESSURE);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "isPress;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "ch;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(6.0));
+
+	v = js_eval(m->se.js, "note;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(64.0));
+
+	v = js_eval(m->se.js, "val;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(90.0));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_SET_SYSEX = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setSysEx(msg, "f043104c0000f7");
+let isSysEx = midi.isSysEx(msg);
+let data = midi.getSysExData(msg);
+)";
+
+TEST_CASE("API midi.setSysEx and midi.getSysExData", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SET_SYSEX);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "isSysEx;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "data;", ~0U);
+	REQUIRE(js_type(v) == JS_STR);
+	size_t len;
+	char* s = js_getstr(m->se.js, v, &len);
+	REQUIRE(std::string(s, len) == "f043104c0000f7");
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_SET_NOTE_OFF = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setNoteOff(msg, 7, 48);
+let isOff = midi.isNoteOff(msg);
+let ch = midi.getChannel(msg);
+let note = midi.getNote(msg);
+)";
+
+TEST_CASE("API midi.setNoteOff", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SET_NOTE_OFF);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "isOff;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "ch;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(7.0));
+
+	v = js_eval(m->se.js, "note;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(48.0));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_CC_14BIT = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg1 = midi.create();
+let msg2 = midi.create();
+midi.setCc14bit(msg1, msg2, 8, 1, 100.5);
+let isCc1 = midi.isCc(msg1);
+let isCc2 = midi.isCc(msg2);
+let ch1 = midi.getChannel(msg1);
+let ch2 = midi.getChannel(msg2);
+let cc1 = midi.getNote(msg1);
+let cc2 = midi.getNote(msg2);
+let val1 = midi.getValue(msg1);
+let val2 = midi.getValue(msg2);
+)";
+
+TEST_CASE("API midi.setCc14bit", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_CC_14BIT);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "isCc1;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "isCc2;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "ch1;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(8.0));
+
+	v = js_eval(m->se.js, "ch2;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(8.0));
+
+	v = js_eval(m->se.js, "cc1;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(1.0));  // CC number (MSB)
+
+	v = js_eval(m->se.js, "cc2;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(33.0));  // CC number + 32 (LSB)
+
+	v = js_eval(m->se.js, "val1;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(100.0));  // MSB value
+
+	v = js_eval(m->se.js, "val2;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(64.0));  // LSB value (0.5 * 128)
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_SET_NRPN = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let nrpn = midi.createNRPN();
+midi.setNRPN(nrpn, 9, 1234, 5678);
+)";
+
+TEST_CASE("API midi.setNRPN", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SET_NRPN);
+	REQUIRE(m->se.js != nullptr);
+
+	// Verify the NRPN was created and set correctly
+	// NRPN is 4 CC messages: CC98 (LSB of NRPN number), CC99 (MSB of NRPN number), CC38 (LSB of value), CC6 (MSB of value)
+	jsval_t v = js_eval(m->se.js, "nrpn;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	size_t nrpnIdx = js_getnum(v);
+
+	// Helper lambda to build JS code strings
+	auto eval = [&](const char* fmt, size_t idx) -> jsval_t {
+		char buf[256];
+		snprintf(buf, sizeof(buf), fmt, idx);
+		return js_eval(m->se.js, buf, ~0U);
+	};
+
+	// Check message 1: CC98 (NRPN number LSB) - 1234 & 0x7f = 0x52 = 82
+	v = eval("midi.getNote(%zu);", nrpnIdx);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == 98);
+	v = eval("midi.getValue(%zu);", nrpnIdx);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == 82);  // 1234 & 0x7f = 0x52 = 82
+
+	// Check message 2: CC99 (NRPN number MSB) - (1234 >> 7) & 0x7f = 9
+	v = eval("midi.getNote(%zu);", nrpnIdx + 1);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == 99);
+	v = eval("midi.getValue(%zu);", nrpnIdx + 1);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == 9);  // (1234 >> 7) & 0x7f
+
+	// Check message 3: CC38 (NRPN value LSB) - 5678 & 0x7f = 46
+	v = eval("midi.getNote(%zu);", nrpnIdx + 2);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == 38);
+	v = eval("midi.getValue(%zu);", nrpnIdx + 2);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == 46);  // 5678 & 0x7f = 46
+
+	// Check message 4: CC6 (NRPN value MSB) - (5678 >> 7) & 0x7f = 44
+	v = eval("midi.getNote(%zu);", nrpnIdx + 3);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == 6);
+	v = eval("midi.getValue(%zu);", nrpnIdx + 3);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == 44);  // (5678 >> 7) & 0x7f
+
+	// Verify channel is set correctly (channel 9 = 0-indexed 8)
+	v = eval("midi.getChannel(%zu);", nrpnIdx);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == 9);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_INPUT_ENABLE = R"(/**
+ * @engine Elk
+ * @description test
+ */
+input.enable(1);
+input.enable(2);
+)";
+
+TEST_CASE("API input.enable", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_INPUT_ENABLE);
+	REQUIRE(m->se.js != nullptr);
+
+	// Verify inputs are enabled by checking the module's inputInfos
+	REQUIRE(reinterpret_cast<StoermelderPackOne::MidiScript::MidiScriptEnginePortInfo*>(m->inputInfos[0])->enabled == true);
+	REQUIRE(reinterpret_cast<StoermelderPackOne::MidiScript::MidiScriptEnginePortInfo*>(m->inputInfos[1])->enabled == true);
+	REQUIRE(reinterpret_cast<StoermelderPackOne::MidiScript::MidiScriptEnginePortInfo*>(m->inputInfos[2])->enabled == false);
+	REQUIRE(reinterpret_cast<StoermelderPackOne::MidiScript::MidiScriptEnginePortInfo*>(m->inputInfos[3])->enabled == false);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_INPUT_GET_VOLTAGE = R"(/**
+ * @engine Elk
+ * @description test
+ */
+input.enable(1);
+let v1 = input.getVoltage(1);
+let v2 = input.getVoltage(1, 1);
+)";
+
+TEST_CASE("API input.getVoltage", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_INPUT_GET_VOLTAGE);
+	REQUIRE(m->se.js != nullptr);
+
+	// Test default voltage (0V)
+	jsval_t v = js_eval(m->se.js, "v1;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(0.0));  // Default voltage is 0
+
+	v = js_eval(m->se.js, "v2;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(0.0));
+
+	// Test with non-zero voltage on input
+	m->inputs[MidiKitModule::INPUT + 0].channels = 1;
+	m->inputs[MidiKitModule::INPUT + 0].setVoltage(5.0f);
+
+	// Re-evaluate the script to get updated voltage
+	m->loadScript(ELK_INPUT_GET_VOLTAGE);
+	REQUIRE(m->se.js != nullptr);
+
+	v = js_eval(m->se.js, "v1;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(5.0));  // Should read 5V
+
+	v = js_eval(m->se.js, "v2;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(5.0));  // Channel 1 should also read 5V
+
+	// Test with negative voltage
+	m->inputs[MidiKitModule::INPUT + 0].setVoltage(-3.0f);
+	m->loadScript(ELK_INPUT_GET_VOLTAGE);
+	REQUIRE(m->se.js != nullptr);
+
+	v = js_eval(m->se.js, "v1;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(-3.0));  // Should read -3V
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_INPUT_IS_HIGH_LOW = R"(/**
+ * @engine Elk
+ * @description test
+ */
+input.enable(1);
+let high1 = input.isHigh(1);
+let low1 = input.isLow(1);
+let high2 = input.isHigh(1, 1);
+let low2 = input.isLow(1, 1);
+)";
+
+TEST_CASE("API input.isHigh and input.isLow", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_INPUT_IS_HIGH_LOW);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "high1;", ~0U);
+	REQUIRE(js_type(v) == JS_FALSE);  // Default voltage 0V is not high
+
+	v = js_eval(m->se.js, "low1;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);  // Default voltage 0V is low
+
+	v = js_eval(m->se.js, "high2;", ~0U);
+	REQUIRE(js_type(v) == JS_FALSE);
+
+	v = js_eval(m->se.js, "low2;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_TRIG_GET_TICKS = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let ticks = trig.getTicks(1);
+)";
+
+TEST_CASE("API trig.getTicks", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_TRIG_GET_TICKS);
+	REQUIRE(m->se.js != nullptr);
+
+	// Initially no triggers
+	jsval_t v = js_eval(m->se.js, "ticks;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(0.0));  // No triggers yet
+
+	// Send a trigger pulse to the input
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+	Module::ProcessArgs args;
+	args.sampleTime = 1.0f / 44100.0f;
+	args.frame = 0;
+	args.sampleRate = 44100.0f;
+	m->process(args);
+
+	// Rising edge → tick increments
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+	args.frame = 1;
+	m->process(args);
+
+	// Evaluate trig.getTicks directly (don't reload script - that resets inputTriggerTick)
+	v = js_eval(m->se.js, "trig.getTicks(1);", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(1.0));  // One trigger received
+
+	// Second pulse
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+	args.frame = 2;
+	m->process(args);
+
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+	args.frame = 3;
+	m->process(args);
+
+	v = js_eval(m->se.js, "trig.getTicks(1);", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(2.0));  // Two triggers received
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_TRIG_IS_HIGH_LOW = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let high1 = trig.isHigh(1);
+let low1 = trig.isLow(1);
+let high2 = trig.isHigh(1, 1);
+let low2 = trig.isLow(1, 1);
+)";
+
+TEST_CASE("API trig.isHigh and trig.isLow", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_TRIG_IS_HIGH_LOW);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "high1;", ~0U);
+	REQUIRE(js_type(v) == JS_FALSE);  // Default voltage 0V is not high
+
+	v = js_eval(m->se.js, "low1;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);  // Default voltage 0V is low
+
+	v = js_eval(m->se.js, "high2;", ~0U);
+	REQUIRE(js_type(v) == JS_FALSE);
+
+	v = js_eval(m->se.js, "low2;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_TRIG_SET_FUNCTIONS = R"(/**
+ * @engine Elk
+ * @description test
+ */
+trig.setGate(1, 100);
+trig.setHigh(1);
+trig.setLow(1);
+trig.setTrigger(1);
+)";
+
+TEST_CASE("API trig.setGate, setHigh, setLow, setTrigger", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_TRIG_SET_FUNCTIONS);
+	REQUIRE(m->se.js != nullptr);
+
+	// Process the module to execute the script and trigger outputs
+	Module::ProcessArgs args;
+	args.sampleTime = 1.0f / 44100.0f;
+	args.frame = 0;
+	args.sampleRate = 44100.0f;
+	m->process(args);
+
+	// After the script runs, the last call was trig.setTrigger(1) which sets outputTriggerActive[0] = true
+	// and triggers the pulse generator for 1ms. At frame 0, the pulse should be high (10V).
+	REQUIRE(m->outputs[MidiKitModule::OUTPUT_TRIG].getVoltage(0) == Catch::Approx(10.0f));
+
+	// Verify internal state: outputTriggerActive should be true (from setTrigger)
+	REQUIRE(m->outputTriggerActive[0] == true);
+
+	// Verify pulse generator is active
+	REQUIRE(m->outputPulseGenerator[0].process(args.sampleTime) == true);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_PARAM_ENABLE = R"(/**
+ * @engine Elk
+ * @description test
+ */
+param.enable(1);
+param.enable(3);
+)";
+
+TEST_CASE("API param.enable", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_PARAM_ENABLE);
+	REQUIRE(m->se.js != nullptr);
+
+	// Verify parameters are enabled by checking the module's paramQuantities
+	REQUIRE(reinterpret_cast<StoermelderPackOne::MidiScript::MidiScriptEngineParamQuantity*>(m->paramQuantities[0])->enabled == true);
+	REQUIRE(reinterpret_cast<StoermelderPackOne::MidiScript::MidiScriptEngineParamQuantity*>(m->paramQuantities[1])->enabled == false);
+	REQUIRE(reinterpret_cast<StoermelderPackOne::MidiScript::MidiScriptEngineParamQuantity*>(m->paramQuantities[2])->enabled == true);
+	REQUIRE(reinterpret_cast<StoermelderPackOne::MidiScript::MidiScriptEngineParamQuantity*>(m->paramQuantities[3])->enabled == false);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_PARAM_GET_VALUE = R"(/**
+ * @engine Elk
+ * @description test
+ */
+param.enable(1);
+let v1 = param.getValue(1);
+let v2 = param.getValue(2);
+)";
+
+TEST_CASE("API param.getValue", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_PARAM_GET_VALUE);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "v1;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(0.0));  // Default param value is 0
+
+	v = js_eval(m->se.js, "v2;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(0.0));
+
+	// Test with non-default parameter value
+	m->params[MidiKitModule::PARAM + 0].setValue(0.5f);
+
+	// Re-evaluate the script to get updated value
+	m->loadScript(ELK_PARAM_GET_VALUE);
+	REQUIRE(m->se.js != nullptr);
+
+	v = js_eval(m->se.js, "v1;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(0.5));  // Should read 0.5
+
+	v = js_eval(m->se.js, "v2;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(0.0));  // Param 2 still default
+
+	// Test with another value
+	m->params[MidiKitModule::PARAM + 0].setValue(1.0f);
+	m->loadScript(ELK_PARAM_GET_VALUE);
+	REQUIRE(m->se.js != nullptr);
+
+	v = js_eval(m->se.js, "v1;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(1.0));  // Should read 1.0
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDIOUT_SEND = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setNoteOn(msg, 1, 60, 100);
+
+let processMidi = function(port, msg) {
+    midiOut.send(msg);
+};
+)";
+
+TEST_CASE("API midiOut.send", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDIOUT_SEND);
+	REQUIRE(m->se.js != nullptr);
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);  // NoteOn
+	msg.setChannel(0);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	m->se.processInMessage(0, msg);
+	m->se.process();
+
+	int outPort;
+	midi::Message outMsg;
+	int ticks;
+	REQUIRE(m->se.processOutMessage(outPort, outMsg, ticks));
+
+	REQUIRE(outMsg.getStatus() == 0x9);  // NoteOn
+	REQUIRE(outMsg.getChannel() == 0);   // channel 1 (0-based)
+	REQUIRE(outMsg.getNote() == 60);
+	REQUIRE(outMsg.getValue() == 100);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDIOUT_SEND_WITH_PORT = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setNoteOn(msg, 1, 60, 100);
+
+let processMidi = function(port, msg) {
+    midiOut.send(1, msg);  // Send to port 1 (1-based)
+};
+)";
+
+TEST_CASE("API midiOut.send with port", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDIOUT_SEND_WITH_PORT);
+	REQUIRE(m->se.js != nullptr);
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);  // NoteOn
+	msg.setChannel(0);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	m->se.processInMessage(0, msg);
+	m->se.process();
+
+	int outPort;
+	midi::Message outMsg;
+	int ticks;
+	REQUIRE(m->se.processOutMessage(outPort, outMsg, ticks));
+
+	REQUIRE(outPort == 1);  // Port 2 (1-based) = port 1 (0-based)
+	REQUIRE(outMsg.getStatus() == 0x9);
+	REQUIRE(outMsg.getNote() == 60);
+	REQUIRE(outMsg.getValue() == 100);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDIOUT_SEND_AFTER_MS = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setNoteOn(msg, 1, 60, 100);
+
+let processMidi = function(port, msg) {
+    midiOut.sendAfterMs(msg, 100);  // Send after 100ms
+};
+)";
+
+TEST_CASE("API midiOut.sendAfterMs", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDIOUT_SEND_AFTER_MS);
+	REQUIRE(m->se.js != nullptr);
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);  // NoteOn
+	msg.setChannel(0);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	m->se.processInMessage(0, msg);
+	m->se.process();
+
+	int outPort;
+	midi::Message outMsg;
+	int ticks;
+	REQUIRE(m->se.processOutMessage(outPort, outMsg, ticks));
+
+	REQUIRE(outMsg.getStatus() == 0x9);
+	REQUIRE(outMsg.getNote() == 60);
+	REQUIRE(outMsg.getValue() == 100);
+	// Frame should be set to future time
+	REQUIRE(outMsg.frame > 0);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDIOUT_SEND_AFTER_TRIGGER = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setNoteOn(msg, 1, 60, 100);
+
+let processMidi = function(port, msg) {
+    midiOut.sendAfterTrigger(msg, 10);  // Send after 10 ticks on trig port 0
+};
+)";
+
+TEST_CASE("API midiOut.sendAfterTrigger", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDIOUT_SEND_AFTER_TRIGGER);
+	REQUIRE(m->se.js != nullptr);
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);  // NoteOn
+	msg.setChannel(0);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	m->se.processInMessage(0, msg);
+	m->se.process();
+
+	int outPort;
+	midi::Message outMsg;
+	int ticks;
+	REQUIRE(m->se.processOutMessage(outPort, outMsg, ticks));
+
+	REQUIRE(outMsg.getStatus() == 0x9);
+	REQUIRE(outMsg.getNote() == 60);
+	REQUIRE(outMsg.getValue() == 100);
+	// Tick should be set to current trig ticks + 10
+	REQUIRE(ticks >= 10);
+
+	Test::destroyModule(m);
+}
