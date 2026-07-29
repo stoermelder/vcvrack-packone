@@ -2211,3 +2211,69 @@ TEST_CASE("assignPort - explicit color set override survives a rebind", "[Splice
 
 	Test::destroyModule(m);
 }
+
+
+// ─── moveCell + pending selection (issue 17) ─────────────────────────────────────────────
+// SpliceKitCellButton::onDragDrop needs real widget/event plumbing, so these cover the
+// module-level invariant the widget fix relies on: moveCell() rewrites both cells, so a
+// pending selection left on either one is stale and must be cleared by the caller.
+
+TEST_CASE("moveCell - leaves a stale pending selection on the source cell", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+
+	m->triggerCell(0);
+	REQUIRE(m->pendingCellId == 0);
+
+	m->moveCell(0, 5);
+
+	// moveCell deliberately does not touch pendingCellId — the drag-drop caller is
+	// responsible for clearing it (SpliceKitCellButton::onDragDrop, shiftDrag branch).
+	REQUIRE(m->portAssignments[0].isValid() == false);
+	REQUIRE(m->pendingCellId == 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("moveCell - a pending selection on the moved-away cell cannot be cancelled by pressing it", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+
+	m->triggerCell(0);
+	REQUIRE(m->pendingCellId == 0);
+
+	m->moveCell(0, 5);
+
+	// This is what makes issue 17 worse than a cosmetic stale blink: triggerCell() returns
+	// on the !isValid() guard before it reaches the "pressing the pending cell cancels it"
+	// branch, so the user cannot clear the selection by pressing the blinking cell.
+	m->triggerCell(0);
+	REQUIRE(m->pendingCellId == 0);
+
+	// clearPendingLocal() — what the fixed drag-drop path calls — does clear it.
+	m->clearPendingLocal();
+	REQUIRE(m->pendingCellId == -1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("moveCell - a pending selection on the destination cell silently changes meaning", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(5, 77, 3, engine::Port::INPUT);
+
+	// Cell 5 is pending, selected while it still referred to port 77:3.
+	m->triggerCell(5);
+	REQUIRE(m->pendingCellId == 5);
+
+	m->moveCell(0, 5);
+
+	// Still pending, but now pointing at a different port than the user selected — a second
+	// press would connect the wrong one. Hence the unconditional clear in the drag-drop path.
+	REQUIRE(m->pendingCellId == 5);
+	REQUIRE(m->portAssignments[5].moduleId == 42);
+	REQUIRE(m->portAssignments[5].portId == 0);
+
+	Test::destroyModule(m);
+}

@@ -1768,17 +1768,13 @@ struct SpliceKitCellButton : app::SvgSwitch {
 		if (!src || src->module != module || src->cellId == cellId) return;
 		int a = src->cellId, b = cellId;
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			if (src->shiftDrag) {
-				if (!module->guiQueue.full()) {
-					module->guiQueue.push([=]() { module->moveCell(a, b); });
-				}
-			}
-			else {
-				module->clearPendingLocal();
-				module->clearPendingCrossGui();
-				if (!module->guiQueue.full()) {
-					module->guiQueue.push([=]() { module->toggleConnection(a, b); });
-				}
+			// Either gesture rewrites the cells it touches, so a pending selection made against
+			// their previous state is stale afterwards and is dropped for both paths.
+			module->clearPendingLocal();
+			module->clearPendingCrossGui();
+			if (!module->guiQueue.full()) {
+				if (src->shiftDrag) module->guiQueue.push([=]() { module->moveCell(a, b); });
+				else module->guiQueue.push([=]() { module->toggleConnection(a, b); });
 			}
 		}
 	}
