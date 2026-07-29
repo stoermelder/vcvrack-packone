@@ -2101,3 +2101,113 @@ TEST_CASE("dataFromJson - non-string cellLabels entry does not crash and is skip
 	REQUIRE(m->cellLabels[5] == "kept");
 	Test::destroyModule(m);
 }
+
+
+// ─── assignPort — rebinding a cell must discard everything derived from the old port ─────
+
+TEST_CASE("assignPort - assigns port to an empty cell", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->assignPort(4, 42, 3, engine::Port::OUTPUT);
+
+	REQUIRE(m->portAssignments[4].isValid());
+	REQUIRE(m->portAssignments[4].moduleId == 42);
+	REQUIRE(m->portAssignments[4].portId == 3);
+	REQUIRE(m->portAssignments[4].type == engine::Port::OUTPUT);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - rebinding clears connections in every scene, not just the current one", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+	m->assignPort(2, 44, 0, engine::Port::INPUT);
+
+	// Cell 0 is wired in the active scene (0) and in an inactive one (3).
+	m->setConnection(0, 0, 1, true);
+	m->setConnection(3, 0, 2, true);
+	REQUIRE(m->isConnected(0, 0, 1));
+	REQUIRE(m->isConnected(3, 0, 2));
+
+	// Rebind cell 0 to a different port — its old connections describe the discarded port.
+	m->assignPort(0, 99, 7, engine::Port::OUTPUT);
+
+	REQUIRE(m->portAssignments[0].moduleId == 99);
+	REQUIRE(m->portAssignments[0].portId == 7);
+
+	// A stale bit in an inactive scene would recreate a cable to the wrong port on switchScene().
+	REQUIRE(m->isConnected(0, 0, 1) == false);
+	REQUIRE(m->isConnected(3, 0, 2) == false);
+	// Symmetric halves must be cleared too, or the neighbour still claims the connection.
+	REQUIRE(m->sceneConnections[0][1] == 0);
+	REQUIRE(m->sceneConnections[3][2] == 0);
+	REQUIRE(m->sceneConnections[0][0] == 0);
+	REQUIRE(m->sceneConnections[3][0] == 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - rebinding drops the label describing the old port", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(5, 42, 0, engine::Port::OUTPUT);
+	m->cellLabels[5] = "Filter cutoff";
+
+	m->assignPort(5, 77, 1, engine::Port::INPUT);
+
+	REQUIRE(m->cellLabels[5].empty());
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - assigning to an empty cell preserves a pre-set label", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	// No previous port, so there is nothing stale to discard — a label the user typed on an
+	// unassigned cell must survive the first assignment.
+	m->cellLabels[6] = "Reverb send";
+
+	m->assignPort(6, 42, 0, engine::Port::OUTPUT);
+
+	REQUIRE(m->cellLabels[6] == "Reverb send");
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - invalidates LED states so a changed color set is re-sent", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	std::fill(m->cellLedState, m->cellLedState + MATRIX_COUNT, LED_STATE_OFF);
+
+	// OUTPUT → INPUT flips the auto color set (0/red → 1/blue), so the cached LED state
+	// must be invalidated or the controller keeps showing the previous set's color.
+	m->assignPort(0, 42, 0, engine::Port::INPUT);
+
+	REQUIRE(m->getCellColorSet(0) == 1);
+	REQUIRE(m->cellLedState[0] == -1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - out-of-range cell ids are ignored", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	REQUIRE_NOTHROW(m->assignPort(-1, 42, 0, engine::Port::OUTPUT));
+	REQUIRE_NOTHROW(m->assignPort(MATRIX_COUNT, 42, 0, engine::Port::OUTPUT));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - explicit color set override survives a rebind", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(2, 42, 0, engine::Port::OUTPUT);
+	m->cellColorSet[2] = 3;  // explicit green, chosen by the user for this button position
+
+	m->assignPort(2, 88, 4, engine::Port::INPUT);
+
+	// The color set is a property of the physical button the user configured, not of the
+	// port — like the MIDI mapping, it stays put across a rebind.
+	REQUIRE(m->cellColorSet[2] == 3);
+	REQUIRE(m->getCellColorSet(2) == 3);
+
+	Test::destroyModule(m);
+}

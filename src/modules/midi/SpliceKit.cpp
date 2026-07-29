@@ -694,9 +694,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		portSelectProcessor.startLearn(
 			[=](PortWidget* pw, Vec) {
 				if (!pw->module) return;
-				portAssignments[portLearningId].moduleId = pw->module->getId();
-				portAssignments[portLearningId].type = pw->type;
-				portAssignments[portLearningId].portId = pw->portId;
+				assignPort(portLearningId, pw->module->getId(), pw->portId, pw->type);
 				if (portLearningId + 1 < MATRIX_COUNT) {
 					portLearningId++;
 				} 
@@ -734,9 +732,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		portSelectProcessor.startLearn(
 			[=](PortWidget* pw, Vec) {
 				if (!pw->module) return;
-				portAssignments[portLearningId].moduleId = pw->module->getId();
-				portAssignments[portLearningId].type = pw->type;
-				portAssignments[portLearningId].portId = pw->portId;
+				assignPort(portLearningId, pw->module->getId(), pw->portId, pw->type);
 				portLearningId = -1;
 			}
 		);
@@ -1392,6 +1388,43 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		setOverlayMessage("Moved cell", portLabel(portAssignments[toId]));
 	}
 
+	// GUI thread — (re)binds cellId to a module port. Used by all three assignment gestures:
+	// dropping a cable end on a cell, single "Learn port", and sequential port learn.
+	//
+	// Rebinding discards the cell's previous port, so — exactly as in moveCell() for the
+	// destination cell — everything derived from that old port must go with it:
+	//   * current-scene cables are removed while the old assignment is still in place
+	//     (removeCableBetween() resolves coordinates from portAssignments, so this must
+	//     happen before the overwrite or the cables become unreachable orphans),
+	//   * the connection bitmasks are cleared in *every* scene, not just the current one —
+	//     a stale bit in an inactive scene would recreate a cable to the wrong port on the
+	//     next switchScene(),
+	//   * the label is dropped, since it described the old port,
+	//   * LED state is invalidated, because the color set is derived from the port direction
+	//     (see getCellColorSet) and would otherwise keep the previous set's color.
+	void assignPort(int cellId, int64_t moduleId, int portId, engine::Port::Type type) {
+		if (cellId < 0 || cellId >= MATRIX_COUNT) return;
+
+		if (portAssignments[cellId].isValid()) {
+			// Turn the LED off while the old MIDI mapping and state are still addressable.
+			sendFeedbackOff(cellId, cellLedState[cellId]);
+			removeCellConnections(cellId);
+			for (int s = 0; s < SCENE_COUNT; s++) {
+				uint64_t mask = sceneConnections[s][cellId];
+				for (int j = 0; j < MATRIX_COUNT; j++) {
+					if ((mask >> j) & 1) sceneConnections[s][j] &= ~(1ULL << cellId);
+				}
+				sceneConnections[s][cellId] = 0;
+			}
+			cellLabels[cellId].clear();
+		}
+
+		portAssignments[cellId].moduleId = moduleId;
+		portAssignments[cellId].portId = portId;
+		portAssignments[cellId].type = type;
+		invalidateLedStates();
+	}
+
 	// Engine thread — enqueues a full module reset on the GUI thread via guiQueue.
 	// Removes all current-scene cables, clears all stored scenes and port assignments,
 	// resets scene and preset selection, and clears LED state.
@@ -1727,11 +1760,7 @@ struct SpliceKitCellButton : app::SvgSwitch {
 		// PortWidget::onDragEnd() discards it automatically since it never gets completed.
 		if (auto* pw = dynamic_cast<PortWidget*>(e.origin)) {
 			if (e.button != GLFW_MOUSE_BUTTON_LEFT || !pw->module) return;
-			PortAssignment& pa = module->portAssignments[cellId];
-			if (pa.isValid()) pa.clear();
-			pa.moduleId = pw->module->getId();
-			pa.portId = pw->portId;
-			pa.type = pw->type;
+			module->assignPort(cellId, pw->module->getId(), pw->portId, pw->type);
 			return;
 		}
 
