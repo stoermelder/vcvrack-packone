@@ -2277,3 +2277,44 @@ TEST_CASE("moveCell - a pending selection on the destination cell silently chang
 
 	Test::destroyModule(m);
 }
+
+
+TEST_CASE("dataFromJson - out-of-range currentScene is clamped into bounds", "[SpliceKit][JSON]") {
+	// currentScene indexes sceneConnections[SCENE_COUNT][MATRIX_COUNT] directly in
+	// captureScene/switchScene/randomizeCurrentScene, so an unchecked value from a corrupted
+	// or hand-edited patch would read and write far outside the array.
+	auto load = [](json_int_t v) {
+		SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+		json_t* j = json_object();
+		json_object_set_new(j, "currentScene", json_integer(v));
+		m->dataFromJson(j);
+		json_decref(j);
+		int result = m->currentScene;
+		Test::destroyModule(m);
+		return result;
+	};
+
+	REQUIRE(load(99) == SCENE_COUNT - 1);            // far above the top
+	REQUIRE(load(SCENE_COUNT) == SCENE_COUNT - 1);   // one past the top
+	REQUIRE(load(-1) == 0);                          // negative
+	REQUIRE(load(SCENE_COUNT - 1) == SCENE_COUNT - 1);  // top of range survives unchanged
+	REQUIRE(load(0) == 0);
+	REQUIRE(load(3) == 3);                           // ordinary value is untouched
+}
+
+TEST_CASE("dataFromJson - clamped currentScene leaves scene state safely addressable", "[SpliceKit][JSON]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	json_t* j = json_object();
+	json_object_set_new(j, "currentScene", json_integer(99));
+	m->dataFromJson(j);
+	json_decref(j);
+
+	// The whole point of the clamp: these operations index sceneConnections[currentScene]
+	// and must stay in bounds after loading a malformed patch.
+	REQUIRE_NOTHROW(m->setConnection(m->currentScene, 0, 1, true));
+	REQUIRE(m->isConnected(m->currentScene, 0, 1));
+	REQUIRE_NOTHROW(m->removeCellConnections(0));
+	REQUIRE(m->sceneConnections[m->currentScene][0] == 0);
+
+	Test::destroyModule(m);
+}

@@ -949,7 +949,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// that would occur if setMap() is called multiple times for the same slot (undo/redo).
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		currentScene = json_integer_value(json_object_get(rootJ, "currentScene"));
+		// Clamped: an out-of-range value from a corrupted or hand-edited patch would otherwise
+		// be used unchecked to index sceneConnections[currentScene] (captureScene, switchScene,
+		// randomizeCurrentScene, the cell context menu), reading and writing past the array.
+		currentScene = clamp((int)json_integer_value(json_object_get(rootJ, "currentScene")), 0, SCENE_COUNT - 1);
 		json_t* buttonModeJ = json_object_get(rootJ, "buttonMode");
 		if (buttonModeJ) buttonMode = (ButtonMode)json_integer_value(buttonModeJ);
 		json_t* overlayEnabledJ = json_object_get(rootJ, "overlayEnabled");
