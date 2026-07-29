@@ -2318,3 +2318,320 @@ TEST_CASE("dataFromJson - clamped currentScene leaves scene state safely address
 
 	Test::destroyModule(m);
 }
+
+
+// ─── toggleConnection — direction validation ─────────────────────────────────────────────
+// The connect/disconnect branches call into vcv:: cable helpers, which bail early when the
+// module widgets don't exist (as in these tests); the bitmask update happens first either
+// way, so the direction logic is fully exercisable here.
+
+TEST_CASE("toggleConnection - output to input creates the connection", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+
+	m->toggleConnection(0, 1);
+	REQUIRE(m->isConnected(m->currentScene, 0, 1));
+
+	// Toggling again removes it.
+	m->toggleConnection(0, 1);
+	REQUIRE(m->isConnected(m->currentScene, 0, 1) == false);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("toggleConnection - argument order does not matter", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+
+	// input-first must resolve the same pair as output-first.
+	m->toggleConnection(1, 0);
+	REQUIRE(m->isConnected(m->currentScene, 0, 1));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("toggleConnection - two outputs are rejected and reported", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::OUTPUT);
+
+	m->toggleConnection(0, 1);
+
+	REQUIRE(m->isConnected(m->currentScene, 0, 1) == false);
+	REQUIRE(m->overlayMessage.title == "Both ports are outputs");
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("toggleConnection - two inputs are rejected and reported", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::INPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+
+	m->toggleConnection(0, 1);
+
+	REQUIRE(m->isConnected(m->currentScene, 0, 1) == false);
+	REQUIRE(m->overlayMessage.title == "Both ports are inputs");
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("toggleConnection - unassigned cell is ignored without an overlay message", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	// Cell 1 is left unassigned.
+	m->setOverlayMessage("sentinel", "");
+
+	m->toggleConnection(0, 1);
+
+	REQUIRE(m->isConnected(m->currentScene, 0, 1) == false);
+	// The !isValid() branch returns before any setOverlayMessage call.
+	REQUIRE(m->overlayMessage.title == "sentinel");
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("toggleConnection - only the current scene is affected", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+	m->currentScene = 3;
+
+	m->toggleConnection(0, 1);
+
+	REQUIRE(m->isConnected(3, 0, 1));
+	for (int s = 0; s < SCENE_COUNT; s++) {
+		if (s != 3) REQUIRE(m->isConnected(s, 0, 1) == false);
+	}
+
+	Test::destroyModule(m);
+}
+
+
+// ─── onReset — what it adds on top of requestReset() ─────────────────────────────────────
+
+TEST_CASE("onReset - clears labels, color overrides and cancels learn", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->cellLabels[2]   = "Filter cutoff";
+	m->cellColorSet[2] = 3;
+	m->pendingCellId   = 4;
+	m->enableLearn(5);
+	REQUIRE(m->learningId == 5);
+
+	m->onReset();
+
+	REQUIRE(m->cellLabels[2].empty());
+	REQUIRE(m->cellColorSet[2] == -1);
+	REQUIRE(m->learningId == -1);
+	REQUIRE(m->midiLearnMode == false);
+	REQUIRE(m->portLearningId == -1);
+	REQUIRE(m->portLearnMode == false);
+	REQUIRE(m->pendingCellId == -1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("onReset - queues the state-clearing reset on the GUI queue", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->currentScene = 5;
+	m->setConnection(5, 0, 1, true);
+
+	m->onReset();
+	// clearPending() and requestReset() each enqueue one item.
+	REQUIRE(m->guiQueue.size() == 2);
+	while (m->guiQueue.size() > 0) m->guiQueue.shift()();
+
+	REQUIRE(m->currentScene == 0);
+	REQUIRE(m->sceneConnections[5][0] == 0);
+
+	Test::destroyModule(m);
+}
+
+
+// ─── port learn — range guard and mode interaction ───────────────────────────────────────
+
+TEST_CASE("enablePortLearn - out-of-range ids are ignored", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitWidget* w = Test::createWidget<SpliceKitWidget>("SpliceKit");
+
+	m->enablePortLearn(-1, w);
+	REQUIRE(m->portLearningId == -1);
+	m->enablePortLearn(MATRIX_COUNT, w);
+	REQUIRE(m->portLearningId == -1);
+
+	Test::destroyWidget(w);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("enablePortLearn - sets the learning cell and cancels an active MIDI learn", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitWidget* w = Test::createWidget<SpliceKitWidget>("SpliceKit");
+
+	// MIDI learn and port learn are mutually exclusive — starting one cancels the other.
+	m->enableLearn(5);
+	REQUIRE(m->learningId == 5);
+
+	m->enablePortLearn(7, w);
+	REQUIRE(m->portLearningId == 7);
+	REQUIRE(m->learningId == -1);
+	REQUIRE(m->trackingProcessor.getMapLearn() == false);
+
+	Test::destroyWidget(w);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("disablePortLearn - clears the learning cell and sequential mode", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->portLearningId = 9;
+	m->portLearnMode  = true;
+
+	m->disablePortLearn();
+
+	REQUIRE(m->portLearningId == -1);
+	REQUIRE(m->portLearnMode == false);
+	REQUIRE(m->isPortLearning(9) == false);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("enableLearn - starting MIDI learn cancels an active port learn", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitWidget* w = Test::createWidget<SpliceKitWidget>("SpliceKit");
+
+	m->enablePortLearn(3, w);
+	REQUIRE(m->portLearningId == 3);
+
+	m->enableLearn(6);
+	REQUIRE(m->learningId == 6);
+	REQUIRE(m->portLearningId == -1);
+	REQUIRE(m->portLearnMode == false);
+
+	Test::destroyWidget(w);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("enableLearn - out-of-range ids are ignored", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->enableLearn(-1);
+	REQUIRE(m->learningId == -1);
+	m->enableLearn(TOTAL_MAPS);
+	REQUIRE(m->learningId == -1);
+
+	// The last valid id is a scene button, not a cell.
+	m->enableLearn(TOTAL_MAPS - 1);
+	REQUIRE(m->learningId == TOTAL_MAPS - 1);
+
+	Test::destroyModule(m);
+}
+
+
+// ─── dataFromJson — index guards on the per-cell/per-scene maps ──────────────────────────
+
+TEST_CASE("dataFromJson - out-of-range port indices are skipped", "[SpliceKit][JSON]") {
+	json_t* portsJ = json_object();
+	for (const char* key : {"-1", "64", "999"}) {
+		json_t* p = json_object();
+		json_object_set_new(p, "moduleId", json_integer(42));
+		json_object_set_new(p, "type", json_integer((int)engine::Port::OUTPUT));
+		json_object_set_new(p, "portId", json_integer(0));
+		json_object_set_new(portsJ, key, p);
+	}
+	json_t* valid = json_object();
+	json_object_set_new(valid, "moduleId", json_integer(77));
+	json_object_set_new(valid, "type", json_integer((int)engine::Port::INPUT));
+	json_object_set_new(valid, "portId", json_integer(2));
+	json_object_set_new(portsJ, "5", valid);
+
+	json_t* j = json_object();
+	json_object_set_new(j, "ports", portsJ);
+
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	REQUIRE_NOTHROW(m->dataFromJson(j));
+	json_decref(j);
+
+	// Only the in-range entry was applied.
+	REQUIRE(m->portAssignments[5].moduleId == 77);
+	REQUIRE(m->portAssignments[5].portId == 2);
+	int assigned = 0;
+	for (int i = 0; i < MATRIX_COUNT; i++) if (m->portAssignments[i].isValid()) assigned++;
+	REQUIRE(assigned == 1);
+
+	// NOTE: this asserts the *observable* outcome only. Removing the bounds check in
+	// dataFromJson would write past portAssignments (index 64 lands on sceneConnections,
+	// 1024 bytes past the base) without failing here, because dataFromJson memsets
+	// sceneConnections after the ports loop, erasing the clobber before it can be read.
+	// Detecting the stray write itself needs ASan, not an in-process assertion.
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("dataFromJson - out-of-range scene and connection indices are skipped", "[SpliceKit][JSON]") {
+	auto makePair = [](int a, int b) {
+		json_t* pair = json_array();
+		json_array_append_new(pair, json_integer(a));
+		json_array_append_new(pair, json_integer(b));
+		return pair;
+	};
+
+	json_t* scenesJ = json_object();
+	// Out-of-range scene key — must be skipped wholesale.
+	json_t* badScene = json_object();
+	json_t* badConns = json_array();
+	json_array_append_new(badConns, makePair(0, 1));
+	json_object_set_new(badScene, "connections", badConns);
+	json_object_set_new(scenesJ, "99", badScene);
+
+	// Valid scene holding one out-of-range pair and one valid pair.
+	json_t* okScene = json_object();
+	json_t* okConns = json_array();
+	json_array_append_new(okConns, makePair(0, MATRIX_COUNT));  // b out of range
+	json_array_append_new(okConns, makePair(-1, 3));            // a out of range
+	json_array_append_new(okConns, makePair(2, 4));             // valid
+	json_object_set_new(okScene, "connections", okConns);
+	json_object_set_new(scenesJ, "1", okScene);
+
+	json_t* j = json_object();
+	json_object_set_new(j, "scenes", scenesJ);
+
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	REQUIRE_NOTHROW(m->dataFromJson(j));
+	json_decref(j);
+
+	REQUIRE(m->isConnected(1, 2, 4));
+	REQUIRE(m->sceneConnections[1][0] == 0);
+	REQUIRE(m->sceneConnections[1][3] == 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("dataFromJson - out-of-range MIDI map indices are skipped", "[SpliceKit][JSON]") {
+	json_t* mapsJ = json_object();
+	for (const char* key : {"-1", "72", "999"}) {
+		json_t* mapJ = json_object();
+		json_object_set_new(mapJ, "type", json_integer((int)MidiTrackingType::NOTE));
+		json_object_set_new(mapJ, "param", json_integer(60));
+		json_object_set_new(mapsJ, key, mapJ);
+	}
+	// TOTAL_MAPS - 1 is the last valid slot (a scene button).
+	json_t* okMap = json_object();
+	json_object_set_new(okMap, "type", json_integer((int)MidiTrackingType::CC));
+	json_object_set_new(okMap, "param", json_integer(7));
+	json_object_set_new(mapsJ, std::to_string(TOTAL_MAPS - 1).c_str(), okMap);
+
+	json_t* j = json_object();
+	json_object_set_new(j, "maps", mapsJ);
+
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	REQUIRE_NOTHROW(m->dataFromJson(j));
+	json_decref(j);
+
+	auto last = m->trackingProcessor.getMap(TOTAL_MAPS - 1);
+	REQUIRE(last.type == MidiTrackingType::CC);
+	REQUIRE(last.param == 7);
+
+	Test::destroyModule(m);
+}
