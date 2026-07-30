@@ -92,7 +92,11 @@ struct MidiOutput : midi::Output {
 		while (true) {
 			if (tickQueue.size() == 0) return;
 			TickSchedule s = tickQueue.top();
-			if (tick == s.tick) {
+			// ">=" and not "==": process() calls processTick() before draining the
+			// engine's out-queue, so a script can schedule for a tick the counter has
+			// already consumed. With "==" such a message is never sent and, since the
+			// queue is ordered smallest-tick-first, it blocks every later one behind it.
+			if (tick >= s.tick) {
 				tickQueue.pop();
 				sendMessage(s.msg);
 			}

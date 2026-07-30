@@ -28,20 +28,36 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 	const static int msgStoreSize = 32;
 	MessageEx msgStore[msgStoreSize];
-	size_t msgCount;
+	// Must be initialised: top-level script code runs during loadScript(), before
+	// process() sets this to 1, and it bounds every msgStore index check below.
+	size_t msgCount = 0;
 
-	void setWorker(std::shared_ptr<ITaskWorker> w) { taskWorker = std::move(w); }
+	~MidiScriptEngineElk() {
+		closeState();
+	}
+
+	// Unregisters this engine's context from jsMap. The key returned by
+	// js_create() is jsMem itself, i.e. an address inside this object, so an
+	// entry left behind after destruction is a dangling key — and a later
+	// engine allocated at the same address would collide with it.
+	void closeState() {
+		if (js != NULL) {
+			jsMap.erase(js);
+			js = NULL;
+			// no need for free() here as "js" completely operates in jsMem
+		}
+	}
+
+	void setWorker(std::shared_ptr<ITaskWorker> w) { 
+		taskWorker = std::move(w);
+	}
 
 	void runAsync(std::function<void()> task) override {
 		taskWorker->work(task, APP);
 	}
 
 	void loadScript(const char* script) override {
-		if (js != NULL) {
-			jsMap.erase(js);
-			js = NULL;
-			// no need for free() here as "js" completely operates in jsMem
-		}
+		closeState();
 
 		if (script[0] == '\0') {
 			writeLog("No script", false);
@@ -194,7 +210,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		if (js_type(r) == JS_ERR) {
 			writeLog("Error while loading script", false);
 			writeLog(js_str(js, r), false);
-			js = NULL;
+			closeState();
 		}
 		else {
 			writeLog("Script loaded", false);
@@ -532,7 +548,9 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	inline static jsval_t js_midi(struct js* js, jsval_t* args, int nargs, const char* chkargs, const char* n, std::function<jsval_t(jsval_t*, MessageEx&)> f) {
 		if (!js_chkargs(args, nargs, chkargs)) return js_mkerr(js, string::f("midi.%s: invalid msg", n).c_str());
 		size_t idx = js_getnum(args[0]);
-		if (idx > jsMap[js]->msgCount - 1) return js_mkerr(js, string::f("midi.%s: invalid msg", n).c_str());
+		// ">= msgCount" and not "> msgCount - 1": msgCount is unsigned, so the
+		// subtraction wraps to SIZE_MAX when it is 0 and admits every index.
+		if (idx >= jsMap[js]->msgCount) return js_mkerr(js, string::f("midi.%s: invalid msg", n).c_str());
 		return f(args, jsMap[js]->msgStore[idx]);
 	}
 
@@ -683,7 +701,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	static jsval_t js_midi_setCc14bit(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "ddddd", "setCc", [js](jsval_t* args, MessageEx& s1) {
 			size_t idx2 = js_getnum(args[1]);
-			if (idx2 > jsMap[js]->msgCount - 1) return js_mkerr(js, string::f("midi.setCc14bit: invalid msg").c_str());
+			if (idx2 >= jsMap[js]->msgCount) return js_mkerr(js, string::f("midi.setCc14bit: invalid msg").c_str());
 			MessageEx& s2 = jsMap[js]->msgStore[idx2];
 			uint8_t ch = std::max((uint8_t)1, std::min((uint8_t)16, (uint8_t)js_getnum(args[2])));
 			uint8_t cc = js_getnum(args[3]);
@@ -775,7 +793,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	static jsval_t js_midi_setNrpn(struct js* js, jsval_t* args, int nargs) {
 		if (!js_chkargs(args, nargs, "dddd")) return js_mkerr(js, "midi.setNrpn: invalid args");
 		size_t idx = js_getnum(args[0]);
-		if (idx > jsMap[js]->msgCount - 1) return js_mkerr(js, "midi.setNrpn: invalid msg");
+		if (idx >= jsMap[js]->msgCount) return js_mkerr(js, "midi.setNrpn: invalid msg");
 		MessageEx* s1 = &jsMap[js]->msgStore[idx];
 		if (!s1->isNrpn) return js_mkerr(js, "midi.setNrpn: invalid nrpn message");
 		MessageEx* s2 = &jsMap[js]->msgStore[idx + 1];
@@ -836,7 +854,6 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 				return js_mkerr(js, "midi.setSysEx: invalid string length");
 			if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
 				return js_mkerr(js, "midi.setSysEx: invalid hexstring");
-			data.erase(std::remove_if(data.begin(), data.end(), ::isspace), data.end());
 			s.msg.setSize(data.length() / 2 + 2);
 			s.msg.bytes[0] = 0xf0;
 			for (size_t i = 0; i < data.length(); i += 2) {
@@ -865,7 +882,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			const char* chkargs1 = chkargs1s.c_str();
 			if (!js_chkargs(args, nargs, chkargs1)) return js_mkerr(js, string::f("midiOut.%s: bad args", n).c_str());
 			size_t idx = js_getnum(args[0]);
-			if (idx > jsMap[js]->msgCount - 1) return js_mkerr(js, string::f("midiOut.%s: invalid msg", n).c_str());
+			if (idx >= jsMap[js]->msgCount) return js_mkerr(js, string::f("midiOut.%s: invalid msg", n).c_str());
 			jsMap[js]->msgStore[idx].midiPort = 0;
 			return f(&args[1], jsMap[js]->msgStore[idx]);
 		}
@@ -876,7 +893,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			int midiPort = js_getnum(args[0]);
 			if (midiPort < 1 || midiPort > jsMap[js]->midiOutputCount) return js_mkerr(js, string::f("midiOut.%s: invalid output index", n).c_str());
 			size_t idx = js_getnum(args[1]);
-			if (idx > jsMap[js]->msgCount - 1) return js_mkerr(js, string::f("midiOut.%s: invalid msg", n).c_str());
+			if (idx >= jsMap[js]->msgCount) return js_mkerr(js, string::f("midiOut.%s: invalid msg", n).c_str());
 			jsMap[js]->msgStore[idx].midiPort = midiPort;
 			return f(&args[2], jsMap[js]->msgStore[idx]);
 		}

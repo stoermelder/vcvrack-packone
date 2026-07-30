@@ -19,6 +19,7 @@ Both engines are similarly capable for the common case (reacting to
 
 | | Elk (JS) | Lua |
 |---|---|---|
+| Language completeness | A JS **subset**: no `while`, `var`/`const`, `switch`, `try`, `class`, `new`, `this`, and functions must be expressions (`let f = function(){}`) — see [Elk language limitations](#elk-language-limitations) | Full Lua 5.4 syntax; only the *library* is trimmed |
 | Data structures | Array literals `[1,2,3]`, object literals `{a:1}` (see [elk_array.md](elk_array.md)) | Only tables (`{}`); no literal array sugar, must use `{ {...}, {...} }` and `#t`/`ipairs` |
 | Stdlib | Minimal subset of JS, no regex/JSON/closures over complex types guaranteed | Real Lua stdlib subset: `math`, `string`, `table` (no `io`, `os`, `package`, `debug` — sandboxed) |
 | String formatting | `number.toString(x)` helper needed for numeric concatenation | Lua auto-coerces numbers in `..` concatenation; `string.format` available |
@@ -30,7 +31,9 @@ same preset pair already use** (e.g. a generator + converter pair should
 both be Lua or both be Elk, so users can read them side by side). If there's
 no existing convention, prefer Lua for anything doing string formatting or
 table sorting, and Elk for anything that benefits from array/object literal
-syntax or is adapted from existing JS example scripts.
+syntax or is adapted from existing JS example scripts. For anything with
+non-trivial control flow, Lua is the safer default — Elk's missing `while`,
+`switch` and `try` tend to surface only once the script is already written.
 
 ## Required file header
 
@@ -67,13 +70,74 @@ conventionally present but not checked by the loader.
 - Top-level code runs once, synchronously, when the script is (re)loaded.
 - `processMidi(midiPort, msg)` is called for every incoming MIDI message
   (`midiPort` is 1-based). Define it as a global function — it's the only
-  callback the engine looks for per message.
+  callback the engine looks for per message. **In Elk it must be written as a
+  function *expression*** (`let processMidi = function(...) {...};`); the
+  `function processMidi(...) {}` declaration form is a parse error. See
+  [Elk language limitations](#elk-language-limitations). Lua accepts either
+  `processMidi = function(...) end` or `function processMidi(...) end`.
 - Optional `input.getName(i)`, `param.getName(i)`, `param.getValueFormat(i)`
   functions may be overridden to customize panel/input labeling; both
   engines seed defaults (`"Port " .. i` / `"Param " .. i`) that scripts can
   replace by reassigning the table field.
 - There is no per-sample or per-frame callback — logic only runs in
   response to incoming MIDI messages (including clock 0xF8 realtime bytes).
+
+## Elk language limitations
+
+Elk is a small JavaScript *subset*, not a JS engine — a lot of ordinary
+JavaScript does not parse. This trips up most first-time scripts, and the
+error message is a bare `ERROR: parse error` with no line number, so the
+list below is worth reading before writing Elk. (Lua scripts are unaffected;
+minilua is a real Lua 5.4 VM with only the standard library trimmed.)
+
+**Not supported — these fail to load:**
+
+| Feature | Error | Use instead |
+|---|---|---|
+| `function f() {}` declaration | `parse error` | `let f = function() {};` |
+| `while (...) {}` | `'while' not implemented` | `for (;cond;) {}` |
+| `do {} while (...)` | `'do' not implemented` | `for (;;) { ...; if (!cond) break; }` |
+| `var x` | `'var' not implemented` | `let x` |
+| `const x` | `'const' not implemented` | `let x` |
+| `switch` | `'switch' not implemented` | `if` / `else if` chain |
+| `try` / `catch` / `throw` | `'try' not implemented` | — no exception handling |
+| `class` | `'class' not implemented` | plain object literals |
+| `new X()` | `bad expr` | object literals `{}` |
+| `this` | `bad expr` | — no method receivers |
+| `delete o.k` | `'delete' not found` | assign `null` |
+| `x instanceof Y` | `parse error` | — |
+
+**Supported:** `let`, `if` / `else if` / `else`, three-clause `for`
+(`for (let i = 0; i < n; i++)`), `for (;;)` with `break` / `continue`,
+`return`, function *expressions* (including nested and recursive via a `let`
+binding), array literals and indexing with `.length` (see
+[elk_array.md](elk_array.md)), object literals and property access, the
+ternary `?:`, string concatenation with `+`, and `typeof`.
+
+The authoritative list is elk's own parser
+([elk.c](elk.c), `js_stmt`) and its test suite
+([elk_unit_test.c](elk_unit_test.c)); the table above was verified against the
+engine as built here.
+
+Because there is no `while`, the common "loop until done" shape becomes:
+
+```javascript
+/**
+ * @engine Elk
+ * @description Example of the for-loop idiom
+ */
+let processMidi = function(midiPort, msg) {
+    for (let i = 0; i < 4; i++) {
+        if (input.isLow(i + 1)) continue;
+        log("input " + number.toString(i + 1) + " is high");
+    }
+};
+```
+
+Note also that a script whose *only* header tag is `@engine` fails to load —
+the tag parser captures a trailing space and the value no longer matches
+exactly. Always include at least one more tag (`@description` is conventional);
+every example in this document does.
 
 ## API surface
 

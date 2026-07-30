@@ -167,3 +167,123 @@ TEST_CASE("process() does not crash with Lua script loaded", "[MidiKit]") {
 
 	Test::destroyModule(m);
 }
+
+
+// MidiOutput::processTick — tick-scheduled sends
+//
+// midi::Output::sendMessage is non-virtual and no-ops without a subscribed
+// device, so a send is not directly observable here. These tests assert on
+// queue drainage instead: an entry leaves tickQueue exactly when it is sent,
+// which is the property the ">= vs ==" bug turned on.
+
+static midi::Message makeCc() {
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0xb);
+	msg.setChannel(0);
+	msg.setNote(20);
+	msg.setValue(100);
+	return msg;
+}
+
+TEST_CASE("processTick sends a message on its exact tick", "[MidiKit]") {
+	MidiOutput out;
+	midi::Message msg = makeCc();
+
+	out.send(msg, 5);
+	REQUIRE(out.tickQueue.size() == 1);
+
+	out.processTick(4);
+	REQUIRE(out.tickQueue.size() == 1);  // not due yet
+
+	out.processTick(5);
+	REQUIRE(out.tickQueue.size() == 0);
+}
+
+TEST_CASE("processTick sends a message whose tick has already passed", "[MidiKit]") {
+	MidiOutput out;
+	midi::Message msg = makeCc();
+
+	// process() calls processTick() before draining the engine out-queue, so a
+	// script can schedule for a tick the counter has already consumed.
+	out.send(msg, 5);
+	REQUIRE(out.tickQueue.size() == 1);
+
+	out.processTick(6);
+	REQUIRE(out.tickQueue.size() == 0);  // with "==" this stayed queued forever
+}
+
+TEST_CASE("processTick drains every due message in one call", "[MidiKit]") {
+	MidiOutput out;
+	midi::Message msg = makeCc();
+
+	out.send(msg, 3);
+	out.send(msg, 5);
+	out.send(msg, 7);
+	REQUIRE(out.tickQueue.size() == 3);
+
+	out.processTick(5);
+	REQUIRE(out.tickQueue.size() == 1);        // 3 and 5 sent, 7 still pending
+	REQUIRE(out.tickQueue.top().tick == 7);
+
+	out.processTick(7);
+	REQUIRE(out.tickQueue.size() == 0);
+}
+
+TEST_CASE("processTick: a stale entry does not block later messages", "[MidiKit]") {
+	MidiOutput out;
+	midi::Message msg = makeCc();
+
+	// tickQueue is ordered smallest-tick-first, so the stale entry sits at the
+	// head. With "==" it was never popped and blocked everything behind it.
+	out.send(msg, 2);   // stale — this tick is already in the past
+	out.send(msg, 7);   // legitimately scheduled for later
+	REQUIRE(out.tickQueue.size() == 2);
+
+	out.processTick(7);
+	REQUIRE(out.tickQueue.size() == 0);  // both drained, not stuck at the head
+}
+
+TEST_CASE("processTick leaves not-yet-due messages queued", "[MidiKit]") {
+	MidiOutput out;
+	midi::Message msg = makeCc();
+
+	out.send(msg, 10);
+
+	for (uint64_t t = 0; t < 10; t++) {
+		out.processTick(t);
+		REQUIRE(out.tickQueue.size() == 1);
+	}
+
+	out.processTick(10);
+	REQUIRE(out.tickQueue.size() == 0);
+}
+
+TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKit]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+	m->process(Test::makeProcessArgs(0));
+
+	// Schedule for tick 2 but also queue a stale tick-1 entry ahead of it, as
+	// happens when a script schedules for a tick the counter already consumed.
+	// The stale entry sorts to the head, so with "==" it blocks both forever.
+	midi::Message msg = makeCc();
+	m->midiOutput.send(msg, 2);
+	m->midiOutput.tickQueue.push(MidiOutput::TickSchedule{msg, 0});
+	REQUIRE(m->midiOutput.tickQueue.size() == 2);
+
+	int64_t frame = 1;
+	for (int pulse = 0; pulse < 3; pulse++) {
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+		m->process(Test::makeProcessArgs(frame++));
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+		m->process(Test::makeProcessArgs(frame++));
+	}
+
+	REQUIRE(m->inputTriggerTick == 3);
+	REQUIRE(m->midiOutput.tickQueue.size() == 0);
+
+	Test::destroyModule(m);
+}
