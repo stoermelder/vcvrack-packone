@@ -212,7 +212,9 @@ rather than decoding this by hand).
 
 ## Gotchas
 - Message handles are only valid within the `processMidi` call that created
-  them — the store resets each callback invocation.
+  them — the store resets each callback invocation. Creating a message at top
+  level (outside `processMidi`) logs a warning and the handle is discarded as
+  soon as the next MIDI message arrives, so build messages inside the callback.
 - `midi.setCc14bit`/`setNRPN` split a 14-bit value across two 7-bit CC
   messages (`cc` = MSB, `cc + 32` = LSB per the NRPN/14-bit CC convention);
   see [nrpn_to_cc.js](nrpn_to_cc.js)/[nrpn_to_cc.lua](nrpn_to_cc.lua) for a

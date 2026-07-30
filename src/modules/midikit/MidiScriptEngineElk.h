@@ -31,6 +31,10 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	// Must be initialised: top-level script code runs during loadScript(), before
 	// process() sets this to 1, and it bounds every msgStore index check below.
 	size_t msgCount = 0;
+	// True only while processMidi() is executing. The message store is reset on
+	// every callback, so handles created outside one are silently invalidated —
+	// this lets midi.create() warn instead of failing quietly.
+	bool inCallback = false;
 
 	~MidiScriptEngineElk() {
 		closeState();
@@ -254,7 +258,9 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			msgStore[0].tick = 0;
 			msgCount = 1;
 
+			inCallback = true;
 			jsval_t r = js_eval(js, string::f("processMidi(%i, 0)", midiPort + 1).c_str(), ~0U);
+			inCallback = false;
 			if (js_type(r) == JS_ERR) {
 				writeLog(js_str(js, r));
 			}
@@ -560,8 +566,20 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		});
 	}
 
+	// Warns when a message is created outside processMidi(). The store is reset on
+	// every callback, so such a handle is silently invalidated before it can be
+	// used — see midi.create() in SCRIPTING.md.
+	inline static void warnIfOutsideCallback(struct js* js, const char* fn) {
+		MidiScriptEngineElk* e = jsMap[js];
+		if (!e->inCallback) {
+			e->writeLog(string::f("%s: called outside processMidi(); the message "
+				"is discarded when the next MIDI message arrives", fn), false);
+		}
+	}
+
 	static jsval_t js_midi_create(struct js* js, jsval_t* args, int nargs) {
 		if (!js_chkargs(args, nargs, "")) return js_mkerr(js, "midi.create: bad args");
+		warnIfOutsideCallback(js, "midi.create");
 		size_t* s = &jsMap[js]->msgCount;
 		if (*s == msgStoreSize) return js_mkerr(js, "midi.create: maximum reached");
 		jsMap[js]->msgStore[*s] = MessageEx();
@@ -570,6 +588,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 	static jsval_t js_midi_createNrpn(struct js* js, jsval_t* args, int nargs) {
 		if (!js_chkargs(args, nargs, "")) return js_mkerr(js, "midi.createNrpn: bad args");
+		warnIfOutsideCallback(js, "midi.createNRPN");
 		size_t* s = &jsMap[js]->msgCount;
 		if (*s + 4 >= msgStoreSize) return js_mkerr(js, "midi.createNrpn: buffer maximum reached");
 		jsMap[js]->msgStore[*s + 0] = MessageEx();

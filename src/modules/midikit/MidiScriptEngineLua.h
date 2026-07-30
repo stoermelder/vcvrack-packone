@@ -26,6 +26,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static const int msgStoreSize = 32;
 	MessageEx msgStore[msgStoreSize];
 	size_t msgCount = 0;
+	// True only while processMidi() is executing. The message store is reset on
+	// every callback, so handles created outside one are silently invalidated —
+	// this lets midi.create() warn instead of failing quietly.
+	bool inCallback = false;
 
 	// ─── Lua state & threading ────────────────────────────────────────────────
 
@@ -215,7 +219,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 		lua_pushinteger(L, midiPort + 1);
 		lua_pushinteger(L, 0);
-		if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+		inCallback = true;
+		int status = lua_pcall(L, 2, 0, 0);
+		inCallback = false;
+		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
 			writeLog(string::f("processMidi error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1);
@@ -642,8 +649,19 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// ── midi.* ────────────────────────────────────────────────────────────────
 
+	// Warns when a message is created outside processMidi(). The store is reset on
+	// every callback, so such a handle is silently invalidated before it can be
+	// used — see midi.create() in SCRIPTING.md.
+	static void warnIfOutsideCallback(MidiScriptEngineLua* e, const char* fn) {
+		if (!e->inCallback) {
+			e->writeLog(string::f("%s: called outside processMidi(); the message "
+				"is discarded when the next MIDI message arrives", fn), false);
+		}
+	}
+
 	static int lua_midi_create(lua_State* L) {
 		auto* e = getEngine(L);
+		warnIfOutsideCallback(e, "midi.create");
 		size_t* s = &e->msgCount;
 		if (*s >= (size_t)msgStoreSize)
 			luaL_error(L, "midi.create: message store full");
@@ -654,6 +672,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_createNrpn(lua_State* L) {
 		auto* e = getEngine(L);
+		warnIfOutsideCallback(e, "midi.createNRPN");
 		size_t* s = &e->msgCount;
 		if (*s + 4 > (size_t)msgStoreSize)
 			luaL_error(L, "midi.createNRPN: message store full");

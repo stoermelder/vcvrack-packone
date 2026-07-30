@@ -1530,3 +1530,82 @@ TEST_CASE("API midiOut.sendAfterTrigger", "[MidiKit][Lua]") {
 
 	Test::destroyModule(m);
 }
+
+// midi.create() / midi.createNRPN() outside processMidi()
+//
+// The message store is reset on every callback, so a handle created at top
+// level is silently invalidated before it can be used. That reset is documented
+// and intended; these tests pin the warning that makes it visible.
+
+static std::string drainLog(MidiKitModule* m) {
+	std::string all;
+	while (!m->midiLogMessages.empty()) {
+		auto t = m->midiLogMessages.shift();
+		all += std::get<2>(t) + "\n";
+	}
+	return all;
+}
+
+static const char* OUTSIDE_CALLBACK_WARNING = "called outside processMidi()";
+
+static const char* LUA_TOPLEVEL_CREATE = R"(--[[
+@engine Lua
+--]]
+g = midi.create()
+)";
+
+static const char* LUA_TOPLEVEL_CREATE_NRPN = R"(--[[
+@engine Lua
+--]]
+g = midi.createNRPN()
+)";
+
+static const char* LUA_CALLBACK_CREATE = R"(--[[
+@engine Lua
+--]]
+processMidi = function(port, msg)
+    local m = midi.create()
+    midi.setCc(m, 1, 20, 100)
+    midiOut.send(m)
+end
+)";
+
+TEST_CASE("midi.create outside processMidi warns", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_TOPLEVEL_CREATE);
+	REQUIRE(m->seLua.L != nullptr);
+
+	REQUIRE(drainLog(m).find(OUTSIDE_CALLBACK_WARNING) != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("midi.createNRPN outside processMidi warns", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_TOPLEVEL_CREATE_NRPN);
+	REQUIRE(m->seLua.L != nullptr);
+
+	REQUIRE(drainLog(m).find(OUTSIDE_CALLBACK_WARNING) != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("midi.create inside processMidi does not warn", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_CALLBACK_CREATE);
+	REQUIRE(m->seLua.L != nullptr);
+	drainLog(m);  // discard load-time messages
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0xb);
+	m->seLua.processInMessage(0, msg);
+	m->seLua.process();
+
+	REQUIRE(drainLog(m).find(OUTSIDE_CALLBACK_WARNING) == std::string::npos);
+
+	Test::destroyModule(m);
+}
