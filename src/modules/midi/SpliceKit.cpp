@@ -269,11 +269,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	int portLearningId = -1;
 	StoermelderPackOne::PortSelectProcessor portSelectProcessor;
 
-	/** [Stored to JSON] */
-	int feedbackPreset = 0;
-	/** [Stored to JSON] — raw JSON string for the user-loaded custom preset (non-empty when feedbackPreset == PRESET_IDX_CUSTOM) */
-	std::string customPresetJson;
-	MidiOutPreset customPreset;
+	/** [Stored to JSON] — raw JSON of the currently active preset (built-in or user-loaded); empty means feedback is off. */
+	std::string activePresetJson;
+	/** Parsed from activePresetJson; kept in sync whenever activePresetJson changes. */
+	MidiOutPreset activePreset;
 
 	// -1 forces a send on the first light-divider tick after load.
 	int cellLedState[MATRIX_COUNT];
@@ -647,12 +646,32 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 
 	// Returns a pointer to the currently active preset, or nullptr when feedback is off.
 	const MidiOutPreset* getActivePreset() const {
-		static auto& presets = getPresets();
-		if (feedbackPreset == PRESET_IDX_CUSTOM) return &customPreset;
-		if (feedbackPreset > 0 && feedbackPreset < CONTROLLER_PRESET_COUNT) {
-			return &presets[feedbackPreset];
+		if (activePresetJson.empty()) return nullptr;
+		return &activePreset;
+	}
+
+	// Sets the active preset from raw JSON text (from a built-in file or a user-loaded file)
+	// and re-parses it into activePreset. Passing an empty string turns feedback off.
+	void setActivePresetJson(const std::string& json) {
+		activePresetJson = json;
+		activePreset = MidiOutPreset();
+		if (!json.empty()) {
+			json_error_t err;
+			json_t* root = json_loads(json.c_str(), 0, &err);
+			if (root) { activePreset.fromJson(root); json_decref(root); }
+			else activePresetJson.clear();
 		}
-		return nullptr;
+	}
+
+	// Sets the active preset directly from a struct (e.g. built programmatically),
+	// serializing it to keep activePresetJson genuine and exportable via "Save preset to file...".
+	void setActivePreset(const MidiOutPreset& preset) {
+		activePreset = preset;
+		json_t* root = preset.toJson();
+		char* text = json_dumps(root, JSON_INDENT(2));
+		json_decref(root);
+		activePresetJson = text;
+		std::free(text);
 	}
 
 	// Any thread — forces a full MIDI LED refresh on the next process() tick by resetting
@@ -907,13 +926,12 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			}
 		}
 		json_object_set_new(rootJ, "scenes", scenesJ);
-		json_object_set_new(rootJ, "feedbackPreset", json_integer(feedbackPreset));
 		json_object_set_new(rootJ, "buttonMode", json_integer((int)buttonMode));
 		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
 		json_object_set_new(rootJ, "crossInstanceEnabled", json_boolean(crossInstanceEnabled));
 		json_object_set_new(rootJ, "sceneLinkMasterId", json_integer(sceneLinkMasterId));
-		if (feedbackPreset == PRESET_IDX_CUSTOM && !customPresetJson.empty()) {
-			json_object_set_new(rootJ, "customPreset", json_string(customPresetJson.c_str()));
+		if (!activePresetJson.empty()) {
+			json_object_set_new(rootJ, "activePreset", json_string(activePresetJson.c_str()));
 		}
 		json_t* labelsJ = json_object();
 		for (int i = 0; i < MATRIX_COUNT; i++) {
@@ -991,24 +1009,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			}
 		}
 
-		feedbackPreset = json_integer_value(json_object_get(rootJ, "feedbackPreset"));
-		if (feedbackPreset != PRESET_IDX_CUSTOM) {
-			feedbackPreset = clamp(feedbackPreset, 0, CONTROLLER_PRESET_COUNT - 1);
-		}
-		if (feedbackPreset == PRESET_IDX_CUSTOM) {
-			json_t* cpJ = json_object_get(rootJ, "customPreset");
-			const char* cpStr = cpJ ? json_string_value(cpJ) : nullptr;
-			if (cpStr) {
-				customPresetJson = cpStr;
-				json_error_t err;
-				json_t* root = json_loads(customPresetJson.c_str(), 0, &err);
-				if (root) { customPreset.fromJson(root); json_decref(root); }
-				else feedbackPreset = 0;
-			}
-			else {
-				feedbackPreset = 0;
-			}
-		}
+		json_t* activePresetJ = json_object_get(rootJ, "activePreset");
+		const char* activePresetStr = (activePresetJ && json_is_string(activePresetJ)) ? json_string_value(activePresetJ) : nullptr;
+		setActivePresetJson(activePresetStr ? activePresetStr : "");
 		invalidateLedStates();
 
 		for (auto& l : cellLabels) l.clear();
@@ -1441,7 +1444,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 				for (int i = 0; i < MATRIX_COUNT; i++) portAssignments[i].clear();
 				for (int i = 0; i < TOTAL_MAPS; i++) trackingProcessor.clearMap(i);
 				currentScene   = 0;
-				feedbackPreset = 0;
+				setActivePresetJson("");
 				invalidateLedStates();
 				std::fill(portHasCable, portHasCable  + MATRIX_COUNT, false);
 			});
@@ -1941,6 +1944,36 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		}
 	}
 
+	// A MenuLabel with a fixed pixel width instead of growing to fit the text on one line.
+	// MenuLabel::step() normally sets box.size.x to the unwrapped text width, so a long
+	// description would render as one very wide line; blendish's underlying nvgTextBox()
+	// call already wraps to whatever width it is given (see bndIconLabelValue()), so fixing
+	// the width here is enough to get word-wrapped, multi-line text.
+	struct WrappedMenuLabel : ui::MenuLabel {
+		static constexpr float WRAP_WIDTH = 300.f;
+		void step() override {
+			box.size.x = WRAP_WIDTH;
+			box.size.y = bndLabelHeight(APP->window->vg, -1, text.c_str(), WRAP_WIDTH);
+			Widget::step();
+		}
+	};
+
+	// MenuItem base that opens a submenu on hover containing a single disabled label with
+	// the given description — used as the TMenuItem base for createCheckMenuItem() below,
+	// so the resulting item both selects the preset on click and shows its description
+	// on hover, the same way "MIDI Preset" itself opens a submenu.
+	struct DescriptionMenuItem : ui::MenuItem {
+		std::string description;
+		ui::Menu* createChildMenu() override {
+			if (description.empty()) return nullptr;
+			ui::Menu* menu = new ui::Menu;
+			WrappedMenuLabel* label = new WrappedMenuLabel;
+			label->text = description;
+			menu->addChild(label);
+			return menu;
+		}
+	};
+
 	void appendContextMenu(Menu* menu) override {
 		SpliceKitModule* module = this->module;
 		if (!module) return;
@@ -1949,36 +1982,47 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		menu->addChild(StoermelderPackOne::Rack::createStickyMidiMenuItem("MIDI Input",  &module->trackingProcessor.getInput()));
 		menu->addChild(StoermelderPackOne::Rack::createStickyMidiMenuItem("MIDI Output", &module->midiOutput));
 		menu->addChild(createSubmenuItem("MIDI Preset", "", [=](Menu* menu) {
-			auto& presets = getPresets();
-			for (int i = 0; i < (int)presets.size(); i++) {
-				int preset = i;
-				std::string name = presets[i].name;
-				menu->addChild(createCheckMenuItem(name, "",
-					[=]() { return module->feedbackPreset == preset; },
+			menu->addChild(createMenuLabel("MIDI feedback"));
+			menu->addChild(createCheckMenuItem("No preset", "",
+				[=]() { return module->activePresetJson.empty(); },
+				[=]() {
+					module->setActivePresetJson("");
+					module->invalidateLedStates();
+				}
+			));
+			bool isKnownPreset = module->activePresetJson.empty();
+			for (const LoadedPreset& lp : getLoadedPresets()) {
+				std::string json = lp.json;
+				if (module->activePresetJson == json) isKnownPreset = true;
+				auto* item = createCheckMenuItem<DescriptionMenuItem>(lp.preset.name, "",
+					[=]() { return module->activePresetJson == json; },
 					[=]() {
-						module->feedbackPreset = preset;
+						module->setActivePresetJson(json);
 						module->invalidateLedStates();
 					}
-				));
+				);
+				item->description = lp.preset.description;
+				menu->addChild(item);
 			}
-			if (module->feedbackPreset == PRESET_IDX_CUSTOM) {
-				std::string name = module->customPreset.name.empty() ? "Custom preset" : module->customPreset.name;
+			if (!isKnownPreset) {
+				std::string name = module->activePreset.name.empty() ? "Custom preset" : module->activePreset.name;
 				menu->addChild(createCheckMenuItem(name, "",
 					[=]() { return true; },
 					[=]() {}
 				));
 			}
 			menu->addChild(new MenuSeparator);
+			menu->addChild(createMenuLabel("MIDI mapping"));
 			const MidiOutPreset* activeP = module->getActivePreset();
 			bool hasLayout = activeP && activeP->hasLayout();
-			menu->addChild(createMenuItem("Apply note layout as MIDI input mappings", "",
+			menu->addChild(createMenuItem("Apply input mappings from preset", "",
 				[=]() { module->applyPresetLayout(); },
 				!hasLayout
 			));
 			menu->addChild(new MenuSeparator);
 			menu->addChild(createMenuItem("Load preset from file...", "",
 				[=]() {
-					osdialog_filters* filters = osdialog_filters_parse("JSON:json");
+					osdialog_filters* filters = osdialog_filters_parse("SpliceKit Preset:ctrl.json;JSON:json");
 					char* pathC = osdialog_file(OSDIALOG_OPEN, NULL, NULL, filters);
 					osdialog_filters_free(filters);
 					if (!pathC) return;
@@ -1987,35 +2031,23 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 					std::vector<uint8_t> bytes = system::readFile(path);
 					if (bytes.empty()) return;
 					std::string text(bytes.begin(), bytes.end());
-					json_error_t err;
-					json_t* root = json_loads(text.c_str(), 0, &err);
-					if (!root) return;
-					MidiOutPreset p;
-					p.fromJson(root);
-					json_decref(root);
-					module->customPreset     = p;
-					module->customPresetJson = text;
-					module->feedbackPreset   = PRESET_IDX_CUSTOM;
+					module->setActivePresetJson(text);
 					module->invalidateLedStates();
 				}
 			));
-			bool canSave = module->feedbackPreset > 0;
+			bool canSave = !module->activePresetJson.empty();
 			menu->addChild(createMenuItem("Save preset to file...", "",
 				[=]() {
-					osdialog_filters* filters = osdialog_filters_parse("JSON:json");
-					std::string defName = (module->feedbackPreset == PRESET_IDX_CUSTOM)
-						? module->customPreset.name
-						: getPresets()[module->feedbackPreset].name;
-					if (!defName.empty()) defName += ".json";
+					osdialog_filters* filters = osdialog_filters_parse("SpliceKit Preset:ctrl.json");
+					std::string defName = module->activePreset.name;
+					if (!defName.empty()) defName += ".ctrl.json";
 					char* pathC = osdialog_file(OSDIALOG_SAVE, NULL,
-						defName.empty() ? "preset.json" : defName.c_str(), filters);
+						defName.empty() ? "preset.ctrl.json" : defName.c_str(), filters);
 					osdialog_filters_free(filters);
 					if (!pathC) return;
 					std::string path = pathC;
 					free(pathC);
-					std::string text = (module->feedbackPreset == PRESET_IDX_CUSTOM)
-						? module->customPresetJson
-						: CONTROLLER_PRESET_JSON[module->feedbackPreset];
+					const std::string& text = module->activePresetJson;
 					system::writeFile(path, std::vector<uint8_t>(text.begin(), text.end()));
 				},
 				!canSave

@@ -1,0 +1,24 @@
+{
+    "name": "Generic (Note On)",
+    "description": "Works with any controller that lights LEDs via Note On velocity. Assign note numbers via MIDI learn.",
+    "specs": {
+        "off":          {"type":1,"noteMode":0,"value": 0},
+        "color0dim":    {"type":1,"noteMode":0,"value": 1},
+        "color0":       {"type":1,"noteMode":0,"value": 2},
+        "color1dim":    {"type":1,"noteMode":0,"value": 3},
+        "color1":       {"type":1,"noteMode":0,"value": 4},
+        "color2dim":    {"type":1,"noteMode":0,"value": 5},
+        "color2":       {"type":1,"noteMode":0,"value": 6},
+        "color3dim":    {"type":1,"noteMode":0,"value": 7},
+        "color3":       {"type":1,"noteMode":0,"value": 8},
+        "pending":      {"type":1,"noteMode":0,"value": 9},
+        "portLearn":    {"type":1,"noteMode":0,"value":10},
+        "midiLearn":    {"type":1,"noteMode":0,"value":11},
+        "sceneActive":  {"type":1,"noteMode":0,"value":12},
+        "sceneDim":     {"type":1,"noteMode":0,"value":13},
+        "connected0":   {"type":1,"noteMode":0,"value":14},
+        "connected1":   {"type":1,"noteMode":0,"value":15},
+        "connected2":   {"type":1,"noteMode":0,"value":16},
+        "connected3":   {"type":1,"noteMode":0,"value":17}
+    }
+}

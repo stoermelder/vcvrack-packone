@@ -1,6 +1,7 @@
 #pragma once
 #include "../../plugin.hpp"
 #include "MidiTrackingProcessor.hpp"
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -68,6 +69,16 @@ struct MidiOutSpec {
 		note     = gi("note");
 		value    = gi("value");
 	}
+
+	json_t* toJson() const {
+		json_t* j = json_object();
+		json_object_set_new(j, "type",     json_integer(type));
+		json_object_set_new(j, "channel",  json_integer(channel));
+		json_object_set_new(j, "noteMode", json_integer(noteMode));
+		json_object_set_new(j, "note",     json_integer(note));
+		json_object_set_new(j, "value",    json_integer(value));
+		return j;
+	}
 };
 
 // A single input slot: which MIDI message triggers this button.
@@ -92,9 +103,40 @@ static void parseSlotsBlock(json_t* j, MidiSlot* slots, int count) {
 	}
 }
 
+// Serialize a slot block to JSON, mirroring parseSlotsBlock(). All slots in a block share
+// one MidiTrackingType (the layout format has no per-slot type), so the first mapped slot's
+// type is used for the whole block; returns nullptr if no slot in the block is mapped.
+static json_t* slotsBlockToJson(const MidiSlot* slots, int count) {
+	MidiTrackingType type = MidiTrackingType::NONE;
+	for (int i = 0; i < count; i++) {
+		if (slots[i].type != MidiTrackingType::NONE) { type = slots[i].type; break; }
+	}
+	if (type == MidiTrackingType::NONE) return nullptr;
+
+	json_t* j = json_object();
+	json_object_set_new(j, "type", json_integer((int)type));
+	json_t* numsJ = json_array();
+	for (int i = 0; i < count; i++) {
+		json_array_append_new(numsJ, json_integer(slots[i].number));
+	}
+	json_object_set_new(j, "numbers", numsJ);
+	return j;
+}
+
+// LED-state keys, in LED_STATE_* order — shared by MidiOutPreset::fromJson/toJson.
+static const char* const LED_STATE_KEYS[LED_STATE_COUNT] = {
+	"off",
+	"color0dim", "color0", "color1dim", "color1",
+	"color2dim", "color2", "color3dim", "color3",
+	"pending", "portLearn", "midiLearn",
+	"sceneActive", "sceneDim",
+	"connected0", "connected1", "connected2", "connected3"
+};
+
 // A named controller preset: per-button input slots + one output spec per LED state.
 struct MidiOutPreset {
 	std::string name;
+	std::string description;             // optional free-text notes (layout/hardware references)
 	MidiSlot cells[MATRIX_COUNT] = {};   // 64 matrix cell input slots
 	MidiSlot scenes[SCENE_COUNT] = {};   // scene button input slots
 	MidiOutSpec specs[LED_STATE_COUNT] = {};
@@ -113,30 +155,52 @@ struct MidiOutPreset {
 		if (!rootJ) return;
 		json_t* nameJ = json_object_get(rootJ, "name");
 		if (nameJ) name = json_string_value(nameJ);
+		json_t* descJ = json_object_get(rootJ, "description");
+		if (descJ) description = json_string_value(descJ);
 
 		parseSlotsBlock(json_object_get(rootJ, "cells"),  cells,  MATRIX_COUNT);
 		parseSlotsBlock(json_object_get(rootJ, "scenes"), scenes, SCENE_COUNT);
 
-		static const char* const STATE_KEYS[LED_STATE_COUNT] = {
-			"off",
-			"color0dim", "color0", "color1dim", "color1",
-			"color2dim", "color2", "color3dim", "color3",
-			"pending", "portLearn", "midiLearn",
-			"sceneActive", "sceneDim",
-			"connected0", "connected1", "connected2", "connected3"
-		};
 		json_t* specsJ = json_object_get(rootJ, "specs");
 		if (specsJ) {
 			for (int i = 0; i < LED_STATE_COUNT; i++)
-				specs[i].fromJson(json_object_get(specsJ, STATE_KEYS[i]));
+				specs[i].fromJson(json_object_get(specsJ, LED_STATE_KEYS[i]));
 		}
+	}
+
+	json_t* toJson() const {
+		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "name", json_string(name.c_str()));
+		if (!description.empty()) {
+			json_object_set_new(rootJ, "description", json_string(description.c_str()));
+		}
+
+		json_t* cellsJ = slotsBlockToJson(cells, MATRIX_COUNT);
+		if (cellsJ) json_object_set_new(rootJ, "cells", cellsJ);
+		json_t* scenesJ = slotsBlockToJson(scenes, SCENE_COUNT);
+		if (scenesJ) json_object_set_new(rootJ, "scenes", scenesJ);
+
+		json_t* specsJ = json_object();
+		for (int i = 0; i < LED_STATE_COUNT; i++) {
+			json_object_set_new(specsJ, LED_STATE_KEYS[i], specs[i].toJson());
+		}
+		json_object_set_new(rootJ, "specs", specsJ);
+		return rootJ;
 	}
 };
 
-// ---- Controller preset definitions (JSON strings) --------------------------
+// ---- Controller preset definitions -----------------------------------------
+//
+// Built-in presets are loaded from *.ctrl.json files in presets/SpliceKit/,
+// sorted by filename (hence the "01-", "02-", ... numeric prefixes, which
+// only control menu order). "No output" is not one of these files — it is
+// the module's default state when no preset is selected; see
+// SpliceKitModule::activePresetJson. Edit these files, or drop in new ones,
+// to add/change built-in presets without recompiling.
 //
 // JSON fields:
-//   name    — display name
+//   name        — display name
+//   description — optional free-text notes (layout/hardware references)
 //
 //   cells   — input slot block for the 64 matrix buttons (optional):
 //               { "type": <1|2>, "numbers": [ 64 values ] }
@@ -184,384 +248,47 @@ struct MidiOutPreset {
 //
 // ---------------------------------------------------------------------------
 
-static const char* const CONTROLLER_PRESET_JSON[] = {
+// Directory containing the built-in *.ctrl.json preset files, resolved relative
+// to the plugin install directory. Under the test harness (TESTING=1) the
+// plugin path is empty and tests run with the repo root as the working
+// directory, so a plain relative path resolves correctly there too.
+static std::string controllerPresetsDir() {
+	if (isTesting() || !pluginInstance || pluginInstance->path.empty()) {
+		return "presets/SpliceKit";
+	}
+	return pluginInstance->path + "/presets/SpliceKit";
+}
 
-// ---- Off -------------------------------------------------------------------
-R"json({
-    "name": "Off",
-    "specs": {
-        "off":          {"type":0},
-        "color0dim":    {"type":0},
-        "color0":       {"type":0},
-        "color1dim":    {"type":0},
-        "color1":       {"type":0},
-        "color2dim":    {"type":0},
-        "color2":       {"type":0},
-        "color3dim":    {"type":0},
-        "color3":       {"type":0},
-        "pending":      {"type":0},
-        "portLearn":    {"type":0},
-        "midiLearn":    {"type":0},
-        "sceneActive":  {"type":0},
-        "sceneDim":     {"type":0},
-        "connected0":   {"type":0},
-        "connected1":   {"type":0},
-        "connected2":   {"type":0},
-        "connected3":   {"type":0}
-    }
-})json",
-
-// ---- Novation Launchpad / S — X-Y mode ------------------------------------
-// Grid cells: Note On, row r (0=top) col c (0=left) → note = 16×r + c
-//   top row = 0–7, bottom row = 112–119.
-// Scene launch buttons (right-side column): Note On, note = 16×r + 8
-//   → notes 8, 24, 40, 56, 72, 88, 104, 120 (top to bottom).
-// Bi-colour LEDs: velocity = 16×Green + Red + 12  (no RGB; no hardware init needed).
-// https://userguides.novationmusic.com/hc/en-gb/articles/23731330800146-Launchpad-Mini-s-default-MIDI-mappings
-// https://downloads.novationmusic.com/novation/launchpad-mk1/launchpad
-R"json({
-    "name": "Launchpad / S (X-Y mode)",
-    "cells": {
-        "type": 1,
-        "numbers": [
-              0,  1,  2,  3,  4,  5,  6,  7,
-             16, 17, 18, 19, 20, 21, 22, 23,
-             32, 33, 34, 35, 36, 37, 38, 39,
-             48, 49, 50, 51, 52, 53, 54, 55,
-             64, 65, 66, 67, 68, 69, 70, 71,
-             80, 81, 82, 83, 84, 85, 86, 87,
-             96, 97, 98, 99,100,101,102,103,
-            112,113,114,115,116,117,118,119
-        ]
-    },
-    "scenes": {
-        "type": 1,
-        "numbers": [8,24,40,56,72,88,104,120]
-    },
-    "specs": {
-        "off":          {"type":1,"channel":0,"noteMode":0,"value":12},
-        "color0dim":    {"type":1,"channel":0,"noteMode":0,"value":13},
-        "color0":       {"type":1,"channel":0,"noteMode":0,"value":15},
-        "color1dim":    {"type":1,"channel":0,"noteMode":0,"value":28},
-        "color1":       {"type":1,"channel":0,"noteMode":0,"value":60},
-        "color2dim":    {"type":1,"channel":0,"noteMode":0,"value":28},
-        "color2":       {"type":1,"channel":0,"noteMode":0,"value":60},
-        "color3dim":    {"type":1,"channel":0,"noteMode":0,"value":29},
-        "color3":       {"type":1,"channel":0,"noteMode":0,"value":62},
-        "pending":      {"type":1,"channel":0,"noteMode":0,"value":63},
-        "portLearn":    {"type":1,"channel":0,"noteMode":0,"value":62},
-        "midiLearn":    {"type":1,"channel":0,"noteMode":0,"value":29},
-        "sceneActive":  {"type":1,"channel":0,"noteMode":0,"value":60},
-        "sceneDim":     {"type":1,"channel":0,"noteMode":0,"value":28},
-        "connected0":   {"type":1,"channel":0,"noteMode":0,"value":15},
-        "connected1":   {"type":1,"channel":0,"noteMode":0,"value":60},
-        "connected2":   {"type":1,"channel":0,"noteMode":0,"value":60},
-        "connected3":   {"type":1,"channel":0,"noteMode":0,"value":62}
-    }
-})json",
-
-// ---- Novation Launchpad MK2 / S — Session mode ----------------------------
-// Grid cells: Note On, row r (0=top) col c (0=left) → note = (7−r)×10 + c + 11
-// Top-row round buttons (scene): CC 104–111 (fixed regardless of layout, p.7/8).
-// channel 0 — static colour (MIDI ch 1)
-// channel 1 — flash: alternates between this colour and current static colour, one beat (MIDI ch 2)
-// channel 2 — pulse: breathes dark→full, two beats (MIDI ch 3)
-// https://downloads.novationmusic.com/novation/launchpad-mk2/launchpad-mini-mk2
-R"json({
-    "name": "Launchpad MK2 (Session mode)",
-    "cells": {
-        "type": 1,
-        "numbers": [
-            81,82,83,84,85,86,87,88,
-            71,72,73,74,75,76,77,78,
-            61,62,63,64,65,66,67,68,
-            51,52,53,54,55,56,57,58,
-            41,42,43,44,45,46,47,48,
-            31,32,33,34,35,36,37,38,
-            21,22,23,24,25,26,27,28,
-            11,12,13,14,15,16,17,18
-        ]
-    },
-    "scenes": {
-        "type": 2,
-        "numbers": [104,105,106,107,108,109,110,111]
-    },
-    "specs": {
-        "off":          {"type":1,"channel":0,"noteMode":0,"value": 0},
-        "color0dim":    {"type":1,"channel":0,"noteMode":0,"value": 7},
-        "color0":       {"type":1,"channel":0,"noteMode":0,"value": 5},
-        "color1dim":    {"type":1,"channel":0,"noteMode":0,"value":47},
-        "color1":       {"type":1,"channel":0,"noteMode":0,"value":44},
-        "color2dim":    {"type":1,"channel":0,"noteMode":0,"value":10},
-        "color2":       {"type":1,"channel":0,"noteMode":0,"value":96},
-        "color3dim":    {"type":1,"channel":0,"noteMode":0,"value":27},
-        "color3":       {"type":1,"channel":0,"noteMode":0,"value":25},
-        "pending":      {"type":1,"channel":1,"noteMode":0,"value": 3},
-        "portLearn":    {"type":1,"channel":2,"noteMode":0,"value":45},
-        "midiLearn":    {"type":1,"channel":2,"noteMode":0,"value": 1},
-        "sceneActive":  {"type":1,"channel":0,"noteMode":0,"value":63},
-        "sceneDim":     {"type":1,"channel":0,"noteMode":0,"value": 2},
-        "connected0":   {"type":1,"channel":2,"noteMode":0,"value": 5},
-        "connected1":   {"type":1,"channel":2,"noteMode":0,"value":44},
-        "connected2":   {"type":1,"channel":2,"noteMode":0,"value":96},
-        "connected3":   {"type":1,"channel":2,"noteMode":0,"value":25}
-    }
-})json",
-
-
-// ---- Novation Launchpad X / Mini MK3 — Programmer mode --------------------
-// Grid cells: Note On, row r (0=top) col c (0=left) → note = (8−r)×10 + c + 1
-// Scene buttons (top row of round buttons): CC 91–98
-// channel 0 — static colour (MIDI ch 1)
-// channel 1 — flash: alternates between this colour and current static colour, one beat (MIDI ch 2)
-// channel 2 — pulse: breathes dark→full, two beats (MIDI ch 3)
-// https://downloads.novationmusic.com/novation/launchpad-mk3/launchpad-mini-mk3-0
-R"json({
-    "name": "Launchpad X / MK3 (Programmer mode)",
-    "cells": {
-        "type": 1,
-        "numbers": [
-            81,82,83,84,85,86,87,88,
-            71,72,73,74,75,76,77,78,
-            61,62,63,64,65,66,67,68,
-            51,52,53,54,55,56,57,58,
-            41,42,43,44,45,46,47,48,
-            31,32,33,34,35,36,37,38,
-            21,22,23,24,25,26,27,28,
-            11,12,13,14,15,16,17,18
-        ]
-    },
-    "scenes": {
-        "type": 2,
-        "numbers": [91,92,93,94,95,96,97,98]
-    },
-    "specs": {
-        "off":          {"type":1,"channel":0,"noteMode":0,"value": 0},
-        "color0dim":    {"type":1,"channel":0,"noteMode":0,"value": 7},
-        "color0":       {"type":1,"channel":0,"noteMode":0,"value": 5},
-        "color1dim":    {"type":1,"channel":0,"noteMode":0,"value":47},
-        "color1":       {"type":1,"channel":0,"noteMode":0,"value":44},
-        "color2dim":    {"type":1,"channel":0,"noteMode":0,"value":10},
-        "color2":       {"type":1,"channel":0,"noteMode":0,"value":96},
-        "color3dim":    {"type":1,"channel":0,"noteMode":0,"value":27},
-        "color3":       {"type":1,"channel":0,"noteMode":0,"value":25},
-        "pending":      {"type":1,"channel":1,"noteMode":0,"value": 3},
-        "portLearn":    {"type":1,"channel":2,"noteMode":0,"value":45},
-        "midiLearn":    {"type":1,"channel":2,"noteMode":0,"value": 1},
-        "sceneActive":  {"type":1,"channel":0,"noteMode":0,"value":63},
-        "sceneDim":     {"type":1,"channel":0,"noteMode":0,"value": 2},
-        "connected0":   {"type":1,"channel":2,"noteMode":0,"value": 5},
-        "connected1":   {"type":1,"channel":2,"noteMode":0,"value":44},
-        "connected2":   {"type":1,"channel":2,"noteMode":0,"value":96},
-        "connected3":   {"type":1,"channel":2,"noteMode":0,"value":25}
-    }
-})json",
-
-// ---- Akai APC Mini (original) — Note On ch 0 ------------------------------
-// Grid cells: Note On, row r (0=top) col c (0=left) → note = (7−r)×8 + c
-//   top row = 56–63, bottom row = 0–7.
-// Scene Launch 1–8 (right-side buttons): notes 82–89, top to bottom.
-// Velocity: 0=off  1=green  2=green blink  3=red  4=red blink  5=yellow  6=yellow blink
-// Only 3 colors available; color2 maps to green, color3 to yellow.
-R"json({
-    "name": "APC Mini",
-    "cells": {
-        "type": 1,
-        "numbers": [
-            56,57,58,59,60,61,62,63,
-            48,49,50,51,52,53,54,55,
-            40,41,42,43,44,45,46,47,
-            32,33,34,35,36,37,38,39,
-            24,25,26,27,28,29,30,31,
-            16,17,18,19,20,21,22,23,
-             8, 9,10,11,12,13,14,15,
-             0, 1, 2, 3, 4, 5, 6, 7
-        ]
-    },
-    "scenes": {
-        "type": 1,
-        "numbers": [82,83,84,85,86,87,88,89]
-    },
-    "specs": {
-        "off":          {"type":1,"noteMode":0,"value":0},
-        "color0dim":    {"type":1,"noteMode":0,"value":5},
-        "color0":       {"type":1,"noteMode":0,"value":3},
-        "color1dim":    {"type":1,"noteMode":0,"value":5},
-        "color1":       {"type":1,"noteMode":0,"value":1},
-        "color2dim":    {"type":1,"noteMode":0,"value":5},
-        "color2":       {"type":1,"noteMode":0,"value":1},
-        "color3dim":    {"type":1,"noteMode":0,"value":5},
-        "color3":       {"type":1,"noteMode":0,"value":5},
-        "pending":      {"type":1,"noteMode":0,"value":6},
-        "portLearn":    {"type":1,"noteMode":0,"value":2},
-        "midiLearn":    {"type":1,"noteMode":0,"value":4},
-        "sceneActive":  {"type":1,"noteMode":0,"value":1},
-        "sceneDim":     {"type":1,"noteMode":0,"value":5},
-        "connected0":   {"type":1,"noteMode":0,"value":4},
-        "connected1":   {"type":1,"noteMode":0,"value":2},
-        "connected2":   {"type":1,"noteMode":0,"value":2},
-        "connected3":   {"type":1,"noteMode":0,"value":6}
-    }
-})json",
-
-// ---- Akai APC Mini MK2 — RGB LEDs, MIDI channel encodes behavior ----------
-// Grid cells: Note On, row r (0=top) col c (0=left) → note = (7−r)×8 + c
-//   top row = 56–63, bottom row = 0–7 (same convention as original APC Mini).
-// Scene Launch 1–8 (right-side buttons): notes 112–119, single-color green,
-//   ch 0 only (blink/pulse not supported on single-color LEDs).
-// MIDI channel determines LED behaviour (p.3):
-//   ch 0–6  = solid at 10–100% brightness;  ch 6 used here for 100%
-//   ch 7–10 = pulsing at 1/16–1/2 note;     ch 7 (1/16) used for learn
-//   ch 11–15= blinking at 1/24–1/2 note;    ch 11 (1/24) used for pending/connected
-// Colour palette (p.4–5): 0=off  3=white  5=red  9=amber  21=green  45=blue
-// https://cdn.inmusicbrands.com/akai/attachments/APC%20mini%20mk2%20-%20Communication%20Protocol%20-%20v1.0.pdf
-R"json({
-    "name": "APC Mini MK2",
-    "cells": {
-        "type": 1,
-        "numbers": [
-            56,57,58,59,60,61,62,63,
-            48,49,50,51,52,53,54,55,
-            40,41,42,43,44,45,46,47,
-            32,33,34,35,36,37,38,39,
-            24,25,26,27,28,29,30,31,
-            16,17,18,19,20,21,22,23,
-             8, 9,10,11,12,13,14,15,
-             0, 1, 2, 3, 4, 5, 6, 7
-        ]
-    },
-    "scenes": {
-        "type": 1,
-        "numbers": [112,113,114,115,116,117,118,119]
-    },
-    "specs": {
-        "off":          {"type":1,"channel": 6,"noteMode":0,"value": 0},
-        "color0dim":    {"type":1,"channel": 1,"noteMode":0,"value": 5},
-        "color0":       {"type":1,"channel": 6,"noteMode":0,"value": 5},
-        "color1dim":    {"type":1,"channel": 1,"noteMode":0,"value":45},
-        "color1":       {"type":1,"channel": 6,"noteMode":0,"value":45},
-        "color2dim":    {"type":1,"channel": 1,"noteMode":0,"value":21},
-        "color2":       {"type":1,"channel": 6,"noteMode":0,"value":21},
-        "color3dim":    {"type":1,"channel": 1,"noteMode":0,"value": 9},
-        "color3":       {"type":1,"channel": 6,"noteMode":0,"value": 9},
-        "pending":      {"type":1,"channel":11,"noteMode":0,"value": 3},
-        "portLearn":    {"type":1,"channel": 7,"noteMode":0,"value":45},
-        "midiLearn":    {"type":1,"channel": 7,"noteMode":0,"value":21},
-        "sceneActive":  {"type":1,"channel": 6,"noteMode":0,"value":21},
-        "sceneDim":     {"type":1,"channel": 1,"noteMode":0,"value":21},
-        "connected0":   {"type":1,"channel":11,"noteMode":0,"value": 5},
-        "connected1":   {"type":1,"channel":11,"noteMode":0,"value":45},
-        "connected2":   {"type":1,"channel":11,"noteMode":0,"value":21},
-        "connected3":   {"type":1,"channel":11,"noteMode":0,"value": 9}
-    }
-})json",
-
-// ---- Ableton Push 2 --------------------------------------------------------
-// Grid cells: Note On, row r (0=top) col c (0=left) → note = (9−r)×8 + c + 28
-//   top row = 92–99, bottom row = 36–43.
-// Scene buttons (below the display, left to right): CC 20–27.
-//   These use CC for both button press input and LED feedback.
-// LED colour palette (index 0–127, documented subset):
-//   0=off  122=white(204,204,204)  123=light-gray(64,64,64)
-//   124=dark-gray(20,20,20)  125=blue  126=green  127=red
-// Animation channels: 0=static
-//   6=pulse(1/24)…10=pulse(1/2)   11=blink(1/24)…15=blink(1/2)
-//   ch10 (slowest pulse, ~0.5 s at 120 BPM) used for idle/dim states.
-//   ch6  (fastest pulse) used for connected highlights.
-//   ch11 (fastest blink) used for pending/learn states.
-// spec type 4 (from-slot-type): sends Note On for pad cells, CC for scene buttons.
-// Push 2 must be in User mode (not Live mode) for direct MIDI control.
-// https://github.com/Ableton/push-interface/blob/main/doc/AbletonPush2MIDIDisplayInterface.asc
-R"json({
-    "name": "Ableton Push 2",
-    "cells": {
-        "type": 1,
-        "numbers": [
-            92,93,94,95,96,97,98,99,
-            84,85,86,87,88,89,90,91,
-            76,77,78,79,80,81,82,83,
-            68,69,70,71,72,73,74,75,
-            60,61,62,63,64,65,66,67,
-            52,53,54,55,56,57,58,59,
-            44,45,46,47,48,49,50,51,
-            36,37,38,39,40,41,42,43
-        ]
-    },
-    "scenes": {
-        "type": 2,
-        "numbers": [20,21,22,23,24,25,26,27]
-    },
-    "specs": {
-        "off":          {"type":4,"channel": 0,"noteMode":0,"value":  0},
-        "color0dim":    {"type":1,"channel": 0,"noteMode":0,"value":127},
-        "color0":       {"type":1,"channel": 0,"noteMode":0,"value": 68},
-        "color1dim":    {"type":1,"channel": 0,"noteMode":0,"value":125},
-        "color1":       {"type":1,"channel": 0,"noteMode":0,"value": 99},
-        "color2dim":    {"type":1,"channel": 0,"noteMode":0,"value": 69},
-        "color2":       {"type":1,"channel": 0,"noteMode":0,"value": 39},
-        "color3dim":    {"type":1,"channel": 0,"noteMode":0,"value":126},
-        "color3":       {"type":1,"channel": 0,"noteMode":0,"value": 89},
-        "pending":      {"type":1,"channel":10,"noteMode":0,"value":122},
-        "portLearn":    {"type":1,"channel":11,"noteMode":0,"value": 24},
-        "midiLearn":    {"type":1,"channel":11,"noteMode":0,"value": 22},
-        "sceneActive":  {"type":4,"channel": 0,"noteMode":0,"value":122},
-        "sceneDim":     {"type":4,"channel": 0,"noteMode":0,"value":123},
-        "connected0":   {"type":1,"channel":11,"noteMode":0,"value":127},
-        "connected1":   {"type":1,"channel":11,"noteMode":0,"value":120},
-        "connected2":   {"type":1,"channel":11,"noteMode":0,"value": 69},
-        "connected3":   {"type":1,"channel":11,"noteMode":0,"value":126}
-    }
-})json",
-
-// ---- Generic Note On -------------------------------------------------------
-// Works with any controller that lights LEDs via Note On velocity.
-// Assign note numbers via MIDI learn.
-R"json({
-    "name": "Generic (Note On)",
-    "specs": {
-        "off":          {"type":1,"noteMode":0,"value": 0},
-        "color0dim":    {"type":1,"noteMode":0,"value": 1},
-        "color0":       {"type":1,"noteMode":0,"value": 2},
-        "color1dim":    {"type":1,"noteMode":0,"value": 3},
-        "color1":       {"type":1,"noteMode":0,"value": 4},
-        "color2dim":    {"type":1,"noteMode":0,"value": 5},
-        "color2":       {"type":1,"noteMode":0,"value": 6},
-        "color3dim":    {"type":1,"noteMode":0,"value": 7},
-        "color3":       {"type":1,"noteMode":0,"value": 8},
-        "pending":      {"type":1,"noteMode":0,"value": 9},
-        "portLearn":    {"type":1,"noteMode":0,"value":10},
-        "midiLearn":    {"type":1,"noteMode":0,"value":11},
-        "sceneActive":  {"type":1,"noteMode":0,"value":12},
-        "sceneDim":     {"type":1,"noteMode":0,"value":13},
-        "connected0":   {"type":1,"noteMode":0,"value":14},
-        "connected1":   {"type":1,"noteMode":0,"value":15},
-        "connected2":   {"type":1,"noteMode":0,"value":16},
-        "connected3":   {"type":1,"noteMode":0,"value":17}
-    }
-})json",
-
-}; // CONTROLLER_PRESET_JSON
-
-static const int CONTROLLER_PRESET_COUNT =
-	(int)(sizeof(CONTROLLER_PRESET_JSON) / sizeof(CONTROLLER_PRESET_JSON[0]));
-
-// Sentinel stored in the module's feedbackPreset field when a user-loaded custom
-// preset is active. The value is persisted in patch JSON under "feedbackPreset",
-// so it must remain 255 forever for backward compatibility. It must never equal
-// any built-in preset index — use CONTROLLER_PRESET_COUNT to guard that range.
-static const int PRESET_IDX_CUSTOM = 255;
+// One loaded preset plus the raw JSON text it was parsed from, so
+// "Save preset to file..." can write back the exact source file contents.
+struct LoadedPreset {
+	MidiOutPreset preset;
+	std::string json;
+};
 
 // Parse and cache all presets on first call (C++11 magic-static, thread-safe).
-static std::vector<MidiOutPreset>& getPresets() {
-	static std::vector<MidiOutPreset> presets = []() {
-		std::vector<MidiOutPreset> v;
-		v.reserve(CONTROLLER_PRESET_COUNT);
-		for (int i = 0; i < CONTROLLER_PRESET_COUNT; i++) {
+// Reads every *.ctrl.json file in controllerPresetsDir(), sorted by filename.
+static std::vector<LoadedPreset>& getLoadedPresets() {
+	static std::vector<LoadedPreset> presets = []() {
+		std::vector<LoadedPreset> v;
+		std::string dir = controllerPresetsDir();
+		std::vector<std::string> files = rack::system::getEntries(dir);
+		std::sort(files.begin(), files.end());
+		for (const std::string& path : files) {
+			if (path.size() < 10 || path.compare(path.size() - 10, 10, ".ctrl.json") != 0) continue;
+			std::vector<uint8_t> raw = rack::system::readFile(path);
+			if (raw.empty()) continue;
+
+			LoadedPreset lp;
+			lp.json.assign(raw.begin(), raw.end());
+
 			json_error_t err;
-			json_t* root = json_loads(CONTROLLER_PRESET_JSON[i], 0, &err);
-			MidiOutPreset p;
-			if (root) { p.fromJson(root); json_decref(root); }
-			v.push_back(std::move(p));
+			json_t* root = json_loads(lp.json.c_str(), 0, &err);
+			if (!root) continue;
+			lp.preset.fromJson(root);
+			json_decref(root);
+
+			v.push_back(std::move(lp));
 		}
 		return v;
 	}();
