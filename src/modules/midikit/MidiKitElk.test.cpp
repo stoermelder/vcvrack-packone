@@ -18,11 +18,11 @@ static MidiKitModule* createModule() {
 	return m;
 }
 
-// Note: the Elk header parser uses ([^@]*) to capture tag values, which
-// means each tag value is terminated by the next @.  A script where
-// @engine is the ONLY tag would capture "Elk " (with trailing space) and
-// fail the "Elk" equality check.  Adding a second tag (e.g. @description)
-// ensures the capture stops cleanly at the next @.
+// Note: the Elk header parser uses ([^@]*) to capture tag values, so each
+// value runs up to the next @ (or the end of the header) and picks up the
+// separating whitespace.  loadScript() trims that trailing whitespace, so a
+// script with @engine as its only tag loads too — see the ELK_ONLY_ENGINE
+// test below.
 
 
 static const char* ELK_EMPTY = R"(/**
@@ -35,6 +35,23 @@ TEST_CASE("Elk-tagged script loads and creates JS context", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(ELK_EMPTY);
+
+	REQUIRE(m->se.js != nullptr);
+	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->se));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_ONLY_ENGINE = R"(/**
+ * @engine Elk
+ */
+)";
+
+TEST_CASE("Elk script loads with @engine as the only header tag", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_ONLY_ENGINE);
 
 	REQUIRE(m->se.js != nullptr);
 	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->se));

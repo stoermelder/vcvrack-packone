@@ -134,6 +134,11 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 				std::smatch m2 = *i;
 				std::string topic = m2[1].str();
 				std::string text = m2[2].str();
+				// The capture runs up to the next "@" (or the end of the header),
+				// so it picks up the whitespace that separated the tags. Trim it,
+				// otherwise a lone "@engine Elk" yields "Elk " and fails to match.
+				size_t last = text.find_last_not_of(" \t");
+				text = (last == std::string::npos) ? "" : text.substr(0, last + 1);
 				topics[topic] = text;
 			}
 		}
