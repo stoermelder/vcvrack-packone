@@ -259,6 +259,198 @@ TEST_CASE("processTick leaves not-yet-due messages queued", "[MidiKit]") {
 	REQUIRE(out.tickQueue.size() == 0);
 }
 
+// process() ordering and the divider boundary
+//
+// The engine interface is virtual, so a recording stub can observe exactly
+// which process() calls reach the engine and what frame each one saw. That
+// makes the trigger/divider interleaving assertable rather than inferred from
+// queue side effects.
+
+struct RecordingEngine : MidiScriptEngine {
+	int processCalls = 0;
+	int inMessageCalls = 0;
+	// Messages to hand back from processOutMessage(), as (ticks) — one per
+	// processOutMessage() call until exhausted.
+	std::vector<int> pending;
+	// inputTriggerTick observed at the moment the engine emitted each message.
+	std::vector<uint64_t> tickAtEmit;
+	MidiKitModule* module = nullptr;
+
+	void processInMessage(int midiPort, midi::Message& msg) override {
+		inMessageCalls++;
+	}
+
+	void process() override {
+		processCalls++;
+	}
+
+	bool processOutMessage(int& midiPort, midi::Message& msg, int& ticks) override {
+		if (pending.empty()) return false;
+		midiPort = 0;
+		msg = makeCc();
+		ticks = pending.front();
+		pending.erase(pending.begin());
+		if (module) tickAtEmit.push_back(module->inputTriggerTick);
+		return true;
+	}
+};
+
+// Drives one full sample through process() with the trigger input held at the
+// given voltage. The caller must have patched INPUT_TRIG (see patchTrigger) —
+// getVoltage() reads 0 on an unconnected input regardless of setVoltage().
+static void step(MidiKitModule* m, float trigVoltage, int64_t frame) {
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(trigVoltage);
+	m->process(Test::makeProcessArgs(frame));
+}
+
+static void patchTrigger(MidiKitModule* m) {
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+}
+
+TEST_CASE("process() runs the engine only on divider ticks", "[MidiKit]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+	RecordingEngine eng;
+	m->activeEngine = &eng;
+
+	// processDivider is set to a division of 8. dsp::ClockDivider increments
+	// before comparing, so it fires on every 8th call — call indices 7, 15, 23
+	// — not on the first one.
+	for (int64_t f = 0; f < 7; f++) {
+		step(m, 0.f, f);
+	}
+	REQUIRE(eng.processCalls == 0);
+
+	step(m, 0.f, 7);
+	REQUIRE(eng.processCalls == 1);
+
+	for (int64_t f = 8; f < 24; f++) {
+		step(m, 0.f, f);
+	}
+	REQUIRE(eng.processCalls == 3);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("process() drains the engine out-queue on a divider tick", "[MidiKit]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+	RecordingEngine eng;
+	eng.module = m;
+	m->activeEngine = &eng;
+
+	// Three messages scheduled for tick 1; all must be pulled in a single
+	// divider tick, not one per call.
+	eng.pending = {1, 1, 1};
+
+	// Nothing is drained until the divider actually fires on the 8th call.
+	for (int64_t f = 0; f < 7; f++) {
+		step(m, 0.f, f);
+	}
+	REQUIRE(eng.pending.size() == 3);
+	REQUIRE(m->midiOutput.tickQueue.size() == 0);
+
+	step(m, 0.f, 7);
+
+	REQUIRE(eng.pending.empty());
+	REQUIRE(m->midiOutput.tickQueue.size() == 3);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("process() consumes the tick before the engine schedules on it", "[MidiKit]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+	RecordingEngine eng;
+	eng.module = m;
+	m->activeEngine = &eng;
+	patchTrigger(m);
+
+	// Prime the SchmittTrigger LOW and advance to one call short of a divider
+	// tick, without letting the engine emit anything.
+	for (int64_t f = 0; f < 7; f++) {
+		step(m, 0.f, f);
+	}
+	REQUIRE(eng.processCalls == 0);
+
+	// A trigger and a divider tick coincide on this sample: processTick() runs
+	// first and consumes tick 1, then the engine emits a message scheduled for
+	// tick 1 — a tick already gone. This is the ordering that makes a stale
+	// entry reachable at all, and it is why processTick() must use ">=".
+	eng.pending = {1};
+	step(m, 10.f, 7);
+	REQUIRE(eng.processCalls == 1);
+
+	REQUIRE(m->inputTriggerTick == 1);
+	REQUIRE(eng.tickAtEmit.size() == 1);
+	REQUIRE(eng.tickAtEmit[0] == 1);       // emitted after the tick was consumed
+	REQUIRE(m->midiOutput.tickQueue.size() == 1);
+	REQUIRE(m->midiOutput.tickQueue.top().tick == 1);
+
+	// The next trigger drains it rather than stranding it behind the counter.
+	// The entry sits at tick 1 while the counter moves to 2, so only ">=" can
+	// pop it — "==" strands it here permanently.
+	step(m, 0.f, 8);
+	REQUIRE(m->midiOutput.tickQueue.size() == 1);   // falling edge: no tick
+	step(m, 10.f, 9);
+
+	REQUIRE(m->inputTriggerTick == 2);
+	REQUIRE(eng.tickAtEmit.size() == 1);           // engine emitted only once
+	REQUIRE(m->midiOutput.tickQueue.size() == 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("process() handles triggers arriving between divider ticks", "[MidiKit]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+	RecordingEngine eng;
+	eng.module = m;
+	m->activeEngine = &eng;
+	patchTrigger(m);
+
+	// Schedule for two ticks ahead on the first divider tick (call index 7).
+	eng.pending = {2};
+	for (int64_t f = 0; f < 8; f++) {
+		step(m, 0.f, f);
+	}
+	REQUIRE(m->midiOutput.tickQueue.size() == 1);
+
+	// Triggers are handled every sample, independent of the divider. These land
+	// between divider boundaries and must not send the tick-2 message early.
+	step(m, 10.f, 8);
+	REQUIRE(m->inputTriggerTick == 1);
+	REQUIRE(m->midiOutput.tickQueue.size() == 1);
+
+	step(m, 0.f, 9);
+	step(m, 10.f, 10);
+	REQUIRE(m->inputTriggerTick == 2);
+	REQUIRE(m->midiOutput.tickQueue.size() == 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("process() sends frame-scheduled messages on divider ticks only", "[MidiKit]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+
+	// ticks == 0 with a set frame routes to frameQueue rather than tickQueue.
+	midi::Message msg = makeCc();
+	msg.frame = 9;
+	m->midiOutput.send(msg, 0);
+	REQUIRE(m->midiOutput.frameQueue.size() == 1);
+
+	// Divider ticks land on call indices 7 and 15, and processFrame() is only
+	// reached inside that branch. The frame-9 message is therefore still queued
+	// at frame 14, four samples after it came due — this is the one-divider-
+	// period latency the review notes under #3.
+	for (int64_t f = 0; f <= 14; f++) {
+		step(m, 0.f, f);
+	}
+	REQUIRE(m->midiOutput.frameQueue.size() == 1);
+
+	// The next divider tick drains it.
+	step(m, 0.f, 15);
+	REQUIRE(m->midiOutput.frameQueue.size() == 0);
+
+	Test::destroyModule(m);
+}
+
 TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
