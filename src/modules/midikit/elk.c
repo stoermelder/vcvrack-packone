@@ -1014,6 +1014,14 @@ static jsval_t js_func_literal(struct js *js) {
     js->flags = flags;
     return res;
   }
+  // stoermelder: js_block() stops on EOF *or* '}' and does not say which, so an
+  // unterminated body reached the end of input and looked like a clean block.
+  // A function literal requires the closing brace, so demand it here — without
+  // this, "let f = function(x) {" loads as a valid script.
+  if (next(js) != TOK_RBRACE) {
+    js->flags = flags;
+    return js_mkerr(js, "} expected");
+  }
   js->flags = flags;  // Restore flags
   jsval_t str = js_mkstr(js, &js->code[pos], js->pos - pos);
   js->consumed = 1;

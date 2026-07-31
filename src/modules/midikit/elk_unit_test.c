@@ -432,6 +432,22 @@ static void test_funcs(void) {
   assert(ev(js, "f({})", "{}"));
   assert(ev(js, "f({a:5,b:3}).b", "3"));
   assert(ev(js, "f({\"a\":5,\"b\":3}).b", "3"));
+
+  // stoermelder: an unterminated function body must be a parse error.
+  // js_block() stops on either EOF or '}' without reporting which, so a body
+  // running off the end of the buffer used to be indistinguishable from a
+  // properly closed one — js_func_literal() accepted it and the whole script
+  // evaluated successfully. js_func_literal() now demands the closing brace.
+  assert(ev(js, "function(){", "ERROR: } expected"));
+  assert(ev(js, "function(x){", "ERROR: } expected"));
+  assert(ev(js, "function(x){return x;", "ERROR: } expected"));
+  assert(ev(js, "let g = function(x){return x;", "ERROR: } expected"));
+  // Nested: the inner block closes but the outer one does not
+  assert(ev(js, "function(x){ if (x) { return 1; }", "ERROR: } expected"));
+  // And the well-formed counterparts must still parse
+  assert(ev(js, "function(x){return x;};", "function(x){return x;}"));
+  assert(ev(js, "function(x){ if (x) { return 1; } };",
+            "function(x){ if (x) { return 1; } }"));
 }
 
 static void test_bool(void) {
