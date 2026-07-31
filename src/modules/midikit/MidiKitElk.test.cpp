@@ -1393,7 +1393,17 @@ TEST_CASE("API midiOut.send", "[MidiKit][Elk]") {
 }
 
 
-static const char* ELK_MIDIOUT_SEND_WITH_PORT = R"(/**
+static std::string drainLog(MidiKitModule* m) {
+	std::string all;
+	while (!m->midiLogMessages.empty()) {
+		auto t = m->midiLogMessages.shift();
+		all += std::get<2>(t) + "\n";
+	}
+	return all;
+}
+
+
+static const char* ELK_MIDI_SELECT_PORT = R"(/**
  * @engine Elk
  * @description test
  */
@@ -1401,14 +1411,15 @@ let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
 
 let processMidi = function(port, msg) {
-    midiOut.send(1, msg);  // Send to port 1 (1-based)
+    midi.selectPort(1);  // Select port 1 (1-based); stays selected until changed
+    midiOut.send(msg);
 };
 )";
 
-TEST_CASE("API midiOut.send with port", "[MidiKit][Elk]") {
+TEST_CASE("API midi.selectPort", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
-	m->loadScript(ELK_MIDIOUT_SEND_WITH_PORT);
+	m->loadScript(ELK_MIDI_SELECT_PORT);
 	REQUIRE(m->se.js != nullptr);
 
 	midi::Message msg;
@@ -1426,10 +1437,88 @@ TEST_CASE("API midiOut.send with port", "[MidiKit][Elk]") {
 	int ticks;
 	REQUIRE(m->se.processOutMessage(outPort, outMsg, ticks));
 
-	REQUIRE(outPort == 1);  // Port 2 (1-based) = port 1 (0-based)
+	REQUIRE(outPort == 0);  // Port 1 (1-based) = port 0 (0-based)
 	REQUIRE(outMsg.getStatus() == 0x9);
 	REQUIRE(outMsg.getNote() == 60);
 	REQUIRE(outMsg.getValue() == 100);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_SELECT_PORT_STICKY = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let processMidi = function(port, msg) {
+    midi.selectPort(1);
+    let msg1 = midi.create();
+    midi.setNoteOn(msg1, 1, 60, 100);
+    let msg2 = midi.create();
+    midi.setNoteOn(msg2, 1, 61, 100);
+    midiOut.send(msg1);
+    midiOut.send(msg2);  // No selectPort call — stays on port 1
+};
+)";
+
+TEST_CASE("API midi.selectPort stays selected across calls", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SELECT_PORT_STICKY);
+	REQUIRE(m->se.js != nullptr);
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);
+	msg.setChannel(0);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	m->se.processInMessage(0, msg);
+	m->se.process();
+
+	int outPort;
+	midi::Message outMsg;
+	int ticks;
+	REQUIRE(m->se.processOutMessage(outPort, outMsg, ticks));
+	REQUIRE(outPort == 0);
+	REQUIRE(outMsg.getNote() == 60);
+
+	REQUIRE(m->se.processOutMessage(outPort, outMsg, ticks));
+	REQUIRE(outPort == 0);
+	REQUIRE(outMsg.getNote() == 61);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_SELECT_PORT_INVALID = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let processMidi = function(port, msg) {
+    midi.selectPort(2);  // Only 1 output port exists
+};
+)";
+
+TEST_CASE("API midi.selectPort rejects an out-of-range port", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SELECT_PORT_INVALID);
+	REQUIRE(m->se.js != nullptr);
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);
+	msg.setChannel(0);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	m->se.processInMessage(0, msg);
+	m->se.process();
+
+	std::string log = drainLog(m);
+	REQUIRE(log.find("processMidi error") != std::string::npos);
 
 	Test::destroyModule(m);
 }
@@ -1521,20 +1610,101 @@ TEST_CASE("API midiOut.sendAfterTrigger", "[MidiKit][Elk]") {
 }
 
 
+// midiOut.sendAfterTrigger no longer takes midiPort as an argument — output
+// port comes from midi.selectPort() instead. The 3-arg form here is
+// (msg, trigPort, ticks).
+
+static const char* ELK_MIDIOUT_SEND_AFTER_TRIGGER_WITH_SELECTED_PORT = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setNoteOn(msg, 1, 60, 100);
+
+let processMidi = function(port, msg) {
+    midi.selectPort(1);
+    midiOut.sendAfterTrigger(msg, 10);  // no trigPort override
+};
+)";
+
+TEST_CASE("API midiOut.sendAfterTrigger uses the selected port", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDIOUT_SEND_AFTER_TRIGGER_WITH_SELECTED_PORT);
+	REQUIRE(m->se.js != nullptr);
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);
+	msg.setChannel(0);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	m->se.processInMessage(0, msg);
+	m->se.process();
+
+	int outPort;
+	midi::Message outMsg;
+	int ticks;
+	REQUIRE(m->se.processOutMessage(outPort, outMsg, ticks));
+
+	REQUIRE(outPort == 0);
+	REQUIRE(outMsg.getStatus() == 0x9);
+	REQUIRE(outMsg.getNote() == 60);
+	REQUIRE(ticks >= 10);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDIOUT_SEND_AFTER_TRIGGER_WITH_TRIGPORT = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setNoteOn(msg, 1, 60, 100);
+
+let processMidi = function(port, msg) {
+    midi.selectPort(1);
+    midiOut.sendAfterTrigger(msg, 1, 10);  // trigPort 1, 10 ticks
+};
+)";
+
+TEST_CASE("API midiOut.sendAfterTrigger with explicit trigPort (3 args)", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDIOUT_SEND_AFTER_TRIGGER_WITH_TRIGPORT);
+	REQUIRE(m->se.js != nullptr);
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);
+	msg.setChannel(0);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	m->se.processInMessage(0, msg);
+	m->se.process();
+
+	int outPort;
+	midi::Message outMsg;
+	int ticks;
+	REQUIRE(m->se.processOutMessage(outPort, outMsg, ticks));
+
+	REQUIRE(outPort == 0);
+	REQUIRE(outMsg.getStatus() == 0x9);
+	REQUIRE(outMsg.getNote() == 60);
+	REQUIRE(ticks >= 10);
+
+	Test::destroyModule(m);
+}
+
+
 // midi.create() / midi.createNRPN() outside processMidi()
 //
 // The message store is reset on every callback, so a handle created at top
 // level is silently invalidated before it can be used. That reset is documented
 // and intended; these tests pin the warning that makes it visible.
-
-static std::string drainLog(MidiKitModule* m) {
-	std::string all;
-	while (!m->midiLogMessages.empty()) {
-		auto t = m->midiLogMessages.shift();
-		all += std::get<2>(t) + "\n";
-	}
-	return all;
-}
 
 static const char* OUTSIDE_CALLBACK_WARNING = "called outside processMidi()";
 

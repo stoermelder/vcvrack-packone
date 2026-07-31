@@ -202,18 +202,23 @@ index `0`, Elk: same convention).
   `setSysEx(msg, hexString)` (payload only — the `f0`/`f7` framing is added
   automatically, so pass e.g. `"43104c0000"` rather than `"f043104c0000f7"`),
   `setValue(msg, value)`.
+- `midi.selectPort(midiPort)` — selects the output port (1-based) that every
+  subsequent `midiOut.*` call sends on, until `selectPort` is called again.
+  The selection is sticky across `processMidi` invocations, not reset per
+  callback. MIDI-KIT currently exposes a single output, so `midi.selectPort(1)`
+  is a no-op today beyond validating the index — it exists so scripts written
+  against a future multi-output engine don't need to change their sending code.
 
 ### `midiOut.*` — sending
-All variants accept an optional leading `midiPort` (1-based; omit for the
-default/first output):
-- `midiOut.send([midiPort,] msg)` — send immediately.
-- `midiOut.send([midiPort,] nrpnHandle)` — sending the first handle of an
-  NRPN quad automatically flushes all 4 underlying CC messages in order.
-- `midiOut.sendAfterMs([midiPort,] msg, ms)` — delayed send, scheduled from
-  the current engine frame.
-- `midiOut.sendAfterTrigger([midiPort,] msg [, trigPort], ticks)` — send
-  after `ticks` clock ticks counted from `trigPort` (defaults to trig
-  input 1).
+None of these take a port argument — the destination is whatever
+`midi.selectPort()` last selected (port 1 if it was never called):
+- `midiOut.send(msg)` — send immediately.
+- `midiOut.send(nrpnHandle)` — sending the first handle of an NRPN quad
+  automatically flushes all 4 underlying CC messages in order.
+- `midiOut.sendAfterMs(msg, ms)` — delayed send, scheduled from the current
+  engine frame.
+- `midiOut.sendAfterTrigger(msg [, trigPort], ticks)` — send after `ticks`
+  clock ticks counted from `trigPort` (1-based, defaults to trig input 1).
 
 ## MIDI status/type reference used internally
 CC=0xb, NoteOn=0x9, NoteOff=0x8, KeyPressure=0xa, ChanPressure=0xd,

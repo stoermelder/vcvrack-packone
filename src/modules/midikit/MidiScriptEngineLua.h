@@ -30,6 +30,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// every callback, so handles created outside one are silently invalidated —
 	// this lets midi.create() warn instead of failing quietly.
 	bool inCallback = false;
+	// Sticky output port selected via midi.selectPort(), 0-based. Stays in
+	// effect across callbacks until changed again.
+	int selectedPort = 0;
 
 	// ─── Lua state & threading ────────────────────────────────────────────────
 
@@ -361,6 +364,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		// ── midi table ───────────────────────────────────────────────────────
 		lua_newtable(L);
+		setTableFunc("selectPort",      lua_midi_selectPort);
 		setTableFunc("create",          lua_midi_create);
 		setTableFunc("createNRPN",      lua_midi_createNrpn);
 		setTableFunc("getChannel",      lua_midi_getChannel);
@@ -668,6 +672,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			e->writeLog(string::f("%s: called outside processMidi(); the message "
 				"is discarded when the next MIDI message arrives", fn), false);
 		}
+	}
+
+	static int lua_midi_selectPort(lua_State* L) {
+		auto* e = getEngine(L);
+		int midiPort = (int)luaL_checkinteger(L, 1);
+		if (midiPort < 1 || midiPort > e->midiOutputCount) luaL_argerror(L, 1, "invalid output port index");
+		e->selectedPort = midiPort - 1;
+		return 0;
 	}
 
 	static int lua_midi_create(lua_State* L) {
@@ -985,83 +997,47 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// ── midiOut.* ─────────────────────────────────────────────────────────────
 	//
-	// Overloads:
-	//   midiOut.send(msg)               — no midiPort prefix → port 0
-	//   midiOut.send(midiPort, msg)     — with midiPort (1-based)
-	//
-	// The first argument is numeric in both cases. We distinguish by looking at
-	// the second argument:
-	//   - If arg2 exists and is an integer, arg1 is the midiPort and arg2 is msg.
-	//   - Otherwise arg1 is msg.
+	// Output port is not an argument here — it's set via midi.selectPort(n)
+	// and applied to every message sent until selectPort() is called again.
 
-	// Returns {midiPort (0-based internal), msgIndex} from the optional-port
-	// overload, or luaL_error on bad args.
-	struct PortMsg { int port; MessageEx* m; };
-	static PortMsg getPortMsg(lua_State* L) {
+	// Returns the message at stack position 1, stamped with the currently
+	// selected output port, or luaL_error on bad args.
+	static MessageEx* getPortMsg(lua_State* L) {
 		auto* e = getEngine(L);
-		int n = lua_gettop(L);
-		if (n < 1) luaL_error(L, "midiOut: too few arguments");
-
-		// Detect whether first arg is port or msg:
-		// If n==1 → only msg  (no port given)
-		// If n==2 and second arg is integer → midiPort, msg
-		// If n==2 and second arg is NOT integer → msg, extra-arg (handled upstream)
-		bool hasPort = (n >= 2 && (lua_isinteger(L, 1) || lua_isnumber(L, 1)) &&
-		                           (lua_isinteger(L, 2) || lua_isnumber(L, 2)));
-		int portArg  = 0;
-		int msgArg   = 1;
-		if (hasPort) { portArg = 1; msgArg = 2; }
-
-		int port = 0;
-		if (hasPort) {
-			port = (int)lua_tointeger(L, portArg);
-			if (port < 1 || port > e->midiOutputCount)
-				luaL_error(L, "midiOut: invalid output port index");
-		}
-
-		int idx = (int)luaL_checkinteger(L, msgArg);
+		int idx = (int)luaL_checkinteger(L, 1);
 		if (idx < 0 || (size_t)idx >= e->msgCount)
 			luaL_error(L, "midiOut: invalid message index");
 
-		e->msgStore[idx].midiPort = port; // 0 means "port 0" internally
-		return { port, &e->msgStore[idx] };
+		e->msgStore[idx].midiPort = e->selectedPort;
+		return &e->msgStore[idx];
 	}
 
 	static int lua_midiOut_send(lua_State* L) {
-		// midiOut.send([midiPort,] msg)
-		auto pm = getPortMsg(L);
-		pm.m->send = true;
-		pm.m->msg.frame = -1;
-		pm.m->tick = 0;
+		// midiOut.send(msg)
+		MessageEx* m = getPortMsg(L);
+		m->send = true;
+		m->msg.frame = -1;
+		m->tick = 0;
 		return 0;
 	}
 
 	static int lua_midiOut_sendAfterMs(lua_State* L) {
-		// midiOut.sendAfterMs([midiPort,] msg, ms)
-		// Extra arg 'ms' is always the last argument.
-		int n = lua_gettop(L);
-		float ms = (float)luaL_checknumber(L, n);
-		lua_pop(L, 1);   // pop ms; now stack matches the no-extra overload
+		// midiOut.sendAfterMs(msg, ms)
+		float ms = (float)luaL_checknumber(L, 2);
 
-		auto pm = getPortMsg(L);
+		MessageEx* m = getPortMsg(L);
 		int64_t currentFrame = APP->engine->getFrame();
 		int64_t frame = (int64_t)(ms / 1000.f / APP->engine->getSampleTime());
-		pm.m->send = true;
-		pm.m->msg.frame = currentFrame + frame;
-		pm.m->tick = 0;
+		m->send = true;
+		m->msg.frame = currentFrame + frame;
+		m->tick = 0;
 		return 0;
 	}
 
 	static int lua_midiOut_sendAfterTrigger(lua_State* L) {
-		// midiOut.sendAfterTrigger([midiPort,] msg [, trigPort], ticks)
-		//
-		// Disambiguate:
-		//   2 args: msg, ticks                     (no port, no trigPort)
-		//   3 args: midiPort, msg, ticks            (port, no trigPort)
-		//        or msg, trigPort, ticks            (no port, trigPort) — both 2nd/3rd are ints
-		//   4 args: midiPort, msg, trigPort, ticks  (port + trigPort)
-		//
-		// Strategy: always last arg = ticks, second-to-last = trigPort or msg depending on count.
+		// midiOut.sendAfterTrigger(msg, [trigPort,] ticks)
+		//   2 args: msg, ticks              (trig port defaults to 1)
+		//   3 args: msg, trigPort, ticks
 
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
@@ -1069,30 +1045,18 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		int ticks    = (int)luaL_checkinteger(L, n);
 		int trigPort = 0;  // 0 = use trig port 0
 
-		if (n == 4) {
-			// midiPort, msg, trigPort, ticks
-			trigPort = (int)luaL_checkinteger(L, n - 1);
-			lua_pop(L, 2);
-		}
-		else if (n == 3) {
-			// Could be either (midiPort, msg, ticks) or (msg, trigPort, ticks).
-			// If arg1 is clearly a port (1-based, small) and arg2 is a msg index, assume former.
-			// We just assume (msg, trigPort, ticks) when there are 3 args.
-			trigPort = (int)luaL_checkinteger(L, n - 1);
-			lua_pop(L, 2);
-		}
-		else {
-			lua_pop(L, 1); // pop ticks
+		if (n == 3) {
+			trigPort = (int)luaL_checkinteger(L, 2);
 		}
 
 		if (trigPort < 0 || trigPort > e->inputTrigCount)
 			luaL_error(L, "midiOut.sendAfterTrigger: invalid trig port index");
 
-		auto pm = getPortMsg(L);
+		MessageEx* m = getPortMsg(L);
 		int64_t currentTicks = e->getTrigTicks(trigPort == 0 ? 0 : trigPort - 1);
-		pm.m->send  = true;
-		pm.m->msg.frame = -1;
-		pm.m->tick  = currentTicks + ticks;
+		m->send  = true;
+		m->msg.frame = -1;
+		m->tick  = currentTicks + ticks;
 		return 0;
 	}
 };

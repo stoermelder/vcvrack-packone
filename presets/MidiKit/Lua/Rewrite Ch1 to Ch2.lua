@@ -9,5 +9,6 @@ function processMidi(midiInput, msg)
     if midi.getChannel(msg) == 1 then
         midi.setChannel(msg, 2)
     end
-    midiOut.send(1, msg)
+    midi.selectPort(1)
+    midiOut.send(msg)
 end

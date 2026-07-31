@@ -1419,21 +1419,22 @@ TEST_CASE("API midiOut.send", "[MidiKit][Lua]") {
 }
 
 
-static const char* LUA_MIDIOUT_SEND_WITH_PORT = R"(--[[
+static const char* LUA_MIDI_SELECT_PORT = R"(--[[
 @engine Lua
 --]]
 msg = midi.create()
 midi.setNoteOn(msg, 1, 60, 100)
 
 processMidi = function(port, msg)
-    midiOut.send(1, msg)  -- Send to port 1 (1-based)
+    midi.selectPort(1)  -- Select port 1 (1-based); stays selected until changed
+    midiOut.send(msg)
 end
 )";
 
-TEST_CASE("API midiOut.send with port", "[MidiKit][Lua]") {
+TEST_CASE("API midi.selectPort", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
-	m->loadScript(LUA_MIDIOUT_SEND_WITH_PORT);
+	m->loadScript(LUA_MIDI_SELECT_PORT);
 	REQUIRE(m->seLua.L != nullptr);
 
 	midi::Message msg;
@@ -1451,10 +1452,90 @@ TEST_CASE("API midiOut.send with port", "[MidiKit][Lua]") {
 	int ticks;
 	REQUIRE(m->seLua.processOutMessage(outPort, outMsg, ticks));
 
-	REQUIRE(outPort == 1);  // Port 2 (1-based) = port 1 (0-based)
+	REQUIRE(outPort == 0);  // Port 1 (1-based) = port 0 (0-based)
 	REQUIRE(outMsg.getStatus() == 0x9);
 	REQUIRE(outMsg.getNote() == 60);
 	REQUIRE(outMsg.getValue() == 100);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* LUA_MIDI_SELECT_PORT_STICKY = R"(--[[
+@engine Lua
+--]]
+processMidi = function(port, msg)
+    midi.selectPort(1)
+    local msg1 = midi.create()
+    midi.setNoteOn(msg1, 1, 60, 100)
+    local msg2 = midi.create()
+    midi.setNoteOn(msg2, 1, 61, 100)
+    midiOut.send(msg1)
+    midiOut.send(msg2)  -- No selectPort call -- stays on port 1
+end
+)";
+
+TEST_CASE("API midi.selectPort stays selected across calls", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_MIDI_SELECT_PORT_STICKY);
+	REQUIRE(m->seLua.L != nullptr);
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);
+	msg.setChannel(0);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	m->seLua.processInMessage(0, msg);
+	m->seLua.process();
+
+	int outPort;
+	midi::Message outMsg;
+	int ticks;
+	REQUIRE(m->seLua.processOutMessage(outPort, outMsg, ticks));
+	REQUIRE(outPort == 0);
+	REQUIRE(outMsg.getNote() == 60);
+
+	REQUIRE(m->seLua.processOutMessage(outPort, outMsg, ticks));
+	REQUIRE(outPort == 0);
+	REQUIRE(outMsg.getNote() == 61);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* LUA_MIDI_SELECT_PORT_INVALID = R"(--[[
+@engine Lua
+--]]
+processMidi = function(port, msg)
+    midi.selectPort(2)  -- Only 1 output port exists
+end
+)";
+
+TEST_CASE("API midi.selectPort rejects an out-of-range port", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_MIDI_SELECT_PORT_INVALID);
+	REQUIRE(m->seLua.L != nullptr);
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);
+	msg.setChannel(0);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	m->seLua.processInMessage(0, msg);
+	m->seLua.process();
+
+	std::string log;
+	while (!m->midiLogMessages.empty()) {
+		auto t = m->midiLogMessages.shift();
+		log += std::get<2>(t) + "\n";
+	}
+	REQUIRE(log.find("processMidi error") != std::string::npos);
 
 	Test::destroyModule(m);
 }
@@ -1538,6 +1619,94 @@ TEST_CASE("API midiOut.sendAfterTrigger", "[MidiKit][Lua]") {
 	REQUIRE(outMsg.getNote() == 60);
 	REQUIRE(outMsg.getValue() == 100);
 	// Tick should be set to current trig ticks + 10
+	REQUIRE(ticks >= 10);
+
+	Test::destroyModule(m);
+}
+
+
+// midiOut.sendAfterTrigger no longer takes midiPort as an argument — output
+// port comes from midi.selectPort() instead. The 3-arg form here is
+// (msg, trigPort, ticks). This must match the Elk engine.
+
+static const char* LUA_MIDIOUT_SEND_AFTER_TRIGGER_WITH_SELECTED_PORT = R"(--[[
+@engine Lua
+--]]
+msg = midi.create()
+midi.setNoteOn(msg, 1, 60, 100)
+
+processMidi = function(port, msg)
+    midi.selectPort(1)
+    midiOut.sendAfterTrigger(msg, 10)  -- no trigPort override
+end
+)";
+
+TEST_CASE("API midiOut.sendAfterTrigger uses the selected port", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_MIDIOUT_SEND_AFTER_TRIGGER_WITH_SELECTED_PORT);
+	REQUIRE(m->seLua.L != nullptr);
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);
+	msg.setChannel(0);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	m->seLua.processInMessage(0, msg);
+	m->seLua.process();
+
+	int outPort;
+	midi::Message outMsg;
+	int ticks;
+	REQUIRE(m->seLua.processOutMessage(outPort, outMsg, ticks));
+
+	REQUIRE(outPort == 0);
+	REQUIRE(outMsg.getStatus() == 0x9);
+	REQUIRE(outMsg.getNote() == 60);
+	REQUIRE(ticks >= 10);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* LUA_MIDIOUT_SEND_AFTER_TRIGGER_WITH_TRIGPORT = R"(--[[
+@engine Lua
+--]]
+msg = midi.create()
+midi.setNoteOn(msg, 1, 60, 100)
+
+processMidi = function(port, msg)
+    midi.selectPort(1)
+    midiOut.sendAfterTrigger(msg, 1, 10)  -- trigPort 1, 10 ticks
+end
+)";
+
+TEST_CASE("API midiOut.sendAfterTrigger with explicit trigPort (3 args)", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_MIDIOUT_SEND_AFTER_TRIGGER_WITH_TRIGPORT);
+	REQUIRE(m->seLua.L != nullptr);
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);
+	msg.setChannel(0);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	m->seLua.processInMessage(0, msg);
+	m->seLua.process();
+
+	int outPort;
+	midi::Message outMsg;
+	int ticks;
+	REQUIRE(m->seLua.processOutMessage(outPort, outMsg, ticks));
+
+	REQUIRE(outPort == 0);
+	REQUIRE(outMsg.getStatus() == 0x9);
+	REQUIRE(outMsg.getNote() == 60);
 	REQUIRE(ticks >= 10);
 
 	Test::destroyModule(m);

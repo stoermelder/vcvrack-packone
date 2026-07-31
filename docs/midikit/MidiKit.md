@@ -393,16 +393,17 @@ The API below is identical for both scripting engines — the function names, ar
 - `midi.setNRPN(nrpn, channel, number, value)`: Sets the NRPN number and NRPN value of `nrpn`.
 - `midi.setPitchWheel(msg, channel, value)`: Sets `msg` as a MIDI pitch wheel message, with the specified MIDI channel (1..16) and pitch wheel value (0..16383).
 - `midi.setProgramChange(msg, channel, prg)`: Sets `msg` as a MIDI program change message, with the MIDI channel `channel` (1..16) and program number `prg` (0..127).
-- `midi.setSysEx(msg, str)`: Sets `msg` as a MIDI SysEx message with string `str` representing a hexstring of data (e.g. "ab0fad050fdd", whitespaces are ignored).
+- `midi.setSysEx(msg, str)`: Sets `msg` as a MIDI SysEx message with string `str` representing a hexstring of the payload data (e.g. "ab0fad050fdd"). The `f0`/`f7` framing bytes are added automatically and must not be included in `str`.
 - `midi.setValue(msg, value)`: Sets the MIDI value field (0..127) for `msg` (byte 3 of the MIDI message).
+- `midi.selectPort(midiPort)`: Selects the output port `midiPort` (1-based) used by every following `midiOut.*` call, until `midi.selectPort()` is called again. The selection stays in effect across `processMidi()` invocations. Currently MIDI-KIT has only one output port (index *1*) — scripts that call it now won't need to change when more output ports become available.
 
 ### midiOut
 
-Some functions provide a parameter `midiPort` for selecting the output port. Currently MIDI-KIT has only one output port (with index *1*) and additional ports will be added in the future by expanders.
+The destination port for every function below is whatever `midi.selectPort()` last selected (port *1* if it was never called) — none of these take a port argument.
 
-- `midiOut.send([midiPort], msg)`: Sends `msg` on MIDI port `midiPort` (default port = *1*). If `midiPort` is omitted the default MIDI output port is used.
-- `midiOut.sendAfterMs([midiPort], msg, ms)`: Sends `msg` delayed on MIDI port `midiPort` (default port = *1*). The delay `ms` is specified in milliseconds. If `midiPort` is omitted the default MIDI output port is used.
-- `midiOut.sendAfterTrigger([midiPort], msg, [trigPort], ticks)`: Sends `msg` delayed on MIDI port `midiPort` (default output = *1*). The delay is specified in `ticks` of triggers on CV trigger input `trigPort`. If `midiPort` is omitted the default MIDI output port is used. If `trigPort` is omitted the default trigger port is selected.
+- `midiOut.send(msg)`: Sends `msg` on the selected MIDI port.
+- `midiOut.sendAfterMs(msg, ms)`: Sends `msg` delayed on the selected MIDI port. The delay `ms` is specified in milliseconds.
+- `midiOut.sendAfterTrigger(msg, [trigPort], ticks)`: Sends `msg` delayed on the selected MIDI port. The delay is specified in `ticks` of triggers on CV trigger input `trigPort`. If `trigPort` is omitted the default trigger port is selected.
 
 ## Future feature ideas
 

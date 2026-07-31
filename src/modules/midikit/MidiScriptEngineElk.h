@@ -35,6 +35,9 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	// every callback, so handles created outside one are silently invalidated —
 	// this lets midi.create() warn instead of failing quietly.
 	bool inCallback = false;
+	// Sticky output port selected via midi.selectPort(), 0-based. Stays in
+	// effect across callbacks until changed again.
+	int selectedPort = 0;
 
 	~MidiScriptEngineElk() {
 		closeState();
@@ -210,6 +213,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		// midi
 		jsval_t _midi = js_mkobj(js);
 		js_set(js, js_glob(js), "midi", _midi);												// let midi = {}
+		js_set(js, _midi, "selectPort", js_mkfun(js_midi_selectPort));						// void midi.selectPort(midiPort)
 		js_set(js, _midi, "create", js_mkfun(js_midi_create));								// let msg = midi.create()
 		js_set(js, _midi, "createNRPN", js_mkfun(js_midi_createNrpn));						// let nrpn = midi.createNrpn()
 		js_set(js, _midi, "getChannel", js_mkfun(js_midi_getChannel));						// int midi.getChannel(msg)
@@ -249,9 +253,9 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		// midiOut
 		jsval_t _midiOut = js_mkobj(js);
 		js_set(js, js_glob(js), "midiOut", _midiOut);										// let midiOut = {}
-		js_set(js, _midiOut, "send", js_mkfun(js_midiOut_send));							// void midiOut.send([midiPort], msg)
-		js_set(js, _midiOut, "sendAfterMs", js_mkfun(js_midiOut_sendAfterMs));				// void midiOut.sendAfterMs([midiPort], msg, ms)
-		js_set(js, _midiOut, "sendAfterTrigger", js_mkfun(js_midiOut_sendAfterTrigger));	// void midiOut.sendAfterTrigger([midiPort], msg, [trigPort], ticks)
+		js_set(js, _midiOut, "send", js_mkfun(js_midiOut_send));							// void midiOut.send(msg)
+		js_set(js, _midiOut, "sendAfterMs", js_mkfun(js_midiOut_sendAfterMs));				// void midiOut.sendAfterMs(msg, ms)
+		js_set(js, _midiOut, "sendAfterTrigger", js_mkfun(js_midiOut_sendAfterTrigger));	// void midiOut.sendAfterTrigger(msg, [trigPort], ticks)
 
 		jsval_t r = js_eval(js, script, ~0U);
 		if (js_type(r) == JS_ERR) {
@@ -625,6 +629,14 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		}
 	}
 
+	static jsval_t js_midi_selectPort(struct js* js, jsval_t* args, int nargs) {
+		if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "midi.selectPort: bad args");
+		int midiPort = js_getnum(args[0]);
+		if (midiPort < 1 || midiPort > jsMap[js]->midiOutputCount) return js_mkerr(js, "midi.selectPort: invalid output index");
+		jsMap[js]->selectedPort = midiPort - 1;
+		return js_mknull();
+	}
+
 	static jsval_t js_midi_create(struct js* js, jsval_t* args, int nargs) {
 		if (!js_chkargs(args, nargs, "")) return js_mkerr(js, "midi.create: bad args");
 		warnIfOutsideCallback(js, "midi.create");
@@ -944,28 +956,13 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	// midiOut
 
 	inline static jsval_t js_midiOut(struct js* js, jsval_t* args, int nargs, const char* chkargs, const char* n, std::function<jsval_t(jsval_t*, MessageEx&)> f) {
-		if (nargs == (int)strlen(chkargs) + 1) {
-			std::string chkargs1s = string::f("d%s", chkargs);
-			const char* chkargs1 = chkargs1s.c_str();
-			if (!js_chkargs(args, nargs, chkargs1)) return js_mkerr(js, string::f("midiOut.%s: bad args", n).c_str());
-			size_t idx = js_getnum(args[0]);
-			if (idx >= jsMap[js]->msgCount) return js_mkerr(js, string::f("midiOut.%s: invalid msg", n).c_str());
-			jsMap[js]->msgStore[idx].midiPort = 0;
-			return f(&args[1], jsMap[js]->msgStore[idx]);
-		}
-		if (nargs == (int)strlen(chkargs) + 2) {
-			std::string chkargs1s = string::f("dd%s", chkargs);
-			const char* chkargs1 = chkargs1s.c_str();
-			if (!js_chkargs(args, nargs, chkargs1)) return js_mkerr(js, string::f("midiOut.%s: bad args", n).c_str());
-			int midiPort = js_getnum(args[0]);
-			if (midiPort < 1 || midiPort > jsMap[js]->midiOutputCount) return js_mkerr(js, string::f("midiOut.%s: invalid output index", n).c_str());
-			size_t idx = js_getnum(args[1]);
-			if (idx >= jsMap[js]->msgCount) return js_mkerr(js, string::f("midiOut.%s: invalid msg", n).c_str());
-			jsMap[js]->msgStore[idx].midiPort = midiPort;
-			return f(&args[2], jsMap[js]->msgStore[idx]);
-		}
-
-		return js_mkerr(js, string::f("midiOut.%s: invalid number of args", n).c_str());
+		std::string chkargs1s = string::f("d%s", chkargs);
+		const char* chkargs1 = chkargs1s.c_str();
+		if (!js_chkargs(args, nargs, chkargs1)) return js_mkerr(js, string::f("midiOut.%s: bad args", n).c_str());
+		size_t idx = js_getnum(args[0]);
+		if (idx >= jsMap[js]->msgCount) return js_mkerr(js, string::f("midiOut.%s: invalid msg", n).c_str());
+		jsMap[js]->msgStore[idx].midiPort = jsMap[js]->selectedPort;
+		return f(&args[1], jsMap[js]->msgStore[idx]);
 	}
 
 	static jsval_t js_midiOut_send(struct js* js, jsval_t* args, int nargs) {
@@ -988,7 +985,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	}
 
 	static jsval_t js_midiOut_sendAfterTrigger(struct js* js, jsval_t* args, int nargs) {
-		if (nargs == 2 || nargs == 3) {
+		if (nargs == 2) {
 			return js_midiOut(js, args, nargs, "d", "sendAfterTrigger", [js](jsval_t* args, MessageEx& s) {
 				int64_t currentTicks = jsMap[js]->getTrigTicks(0);
 				int ticks = js_getnum(args[0]);
@@ -997,7 +994,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 				return js_mknull();
 			});
 		}
-		if (nargs == 4) {
+		if (nargs == 3) {
 			return js_midiOut(js, args, nargs, "dd", "sendAfterTrigger", [js](jsval_t* args, MessageEx& s) {
 				int trigPort = js_getnum(args[0]);
 				if (trigPort < 1 || trigPort > jsMap[js]->inputTrigCount) return js_mkerr(js, "midiOut.sendAfterTrigger: bad trigInput index");
