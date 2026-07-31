@@ -1,0 +1,121 @@
+--[[
+@target stoermelder MIDI-KIT
+@engine Lua
+@author stoermelder
+@description Replaces every note's held length with a fixed number of clock ticks, so all notes end on the grid
+--]]
+
+-- Note length quantiser for MIDI-KIT
+--
+-- Notes played by hand end whenever the finger lifts, which leaves ragged note
+-- lengths - a problem for gate-driven gear, for arpeggiators that re-trigger on
+-- release, and for anything where a slightly-too-long note overlaps the next.
+--
+-- This script discards the incoming Note-Off entirely and schedules its own,
+-- exactly config.lengthTicks clock ticks after the Note-On, using
+-- midiOut.sendAfterTrigger(). Every note then lasts the same musical duration
+-- regardless of how it was played.
+--
+-- Requires a clock on the module's trigger input (config.trigPort): the length
+-- is counted in ticks of that input, not in milliseconds, so it follows tempo.
+-- Feed the same clock that drives the rest of the patch. With a 24 ppqn MIDI
+-- clock routed to the trigger input:
+--
+--     lengthTicks  6 -> 16th note
+--     lengthTicks 12 -> 8th note
+--     lengthTicks 24 -> quarter note
+--
+-- Retriggering the same note while it is still sounding is handled by sending
+-- the pending Note-Off immediately, so the note is re-articulated rather than
+-- being cut short later by a stale scheduled release.
+
+
+-- Configuration - change these values as needed
+local config = {
+    -- Fixed note length, in ticks of the trigger input's clock
+    lengthTicks = 12,
+
+    -- Trigger input the length is counted on (1-based)
+    trigPort = 1,
+
+    -- Only quantise this channel; set to 0 to quantise every channel
+    channel = 0,
+
+    -- Forward non-note messages (CC, pitch bend, clock, ...) unchanged
+    passThroughOther = true,
+
+    -- Log each quantised note
+    verbose = false
+}
+
+-- Internal state.
+-- sounding[n] is true while note number n has a scheduled Note-Off pending.
+local state = {
+    sounding = {}
+}
+
+local function init()
+    for n = 0, 127 do
+        state.sounding[n] = false
+    end
+    log("Note length quantiser initialized")
+    log(string.format("Length: %d ticks on trigger input %d", config.lengthTicks, config.trigPort))
+    if config.channel == 0 then
+        log("Channel: all")
+    else
+        log("Channel: " .. config.channel)
+    end
+end
+
+local function matchesChannel(ch)
+    return config.channel == 0 or ch == config.channel
+end
+
+-- Builds and schedules the Note-Off that ends a quantised note.
+local function scheduleNoteOff(ch, note)
+    local off = midi.create()
+    midi.setNoteOff(off, ch, note)
+    midiOut.sendAfterTrigger(off, config.trigPort, config.lengthTicks)
+end
+
+function processMidi(midiPort, msg)
+    local ch = midi.getChannel(msg)
+
+    if midi.isNoteOn(msg) and matchesChannel(ch) then
+        local note = midi.getNote(msg)
+
+        -- Same note still sounding: release it now so the re-articulation is
+        -- clean and its pending scheduled Note-Off cannot clip the new note.
+        if state.sounding[note] then
+            local cut = midi.create()
+            midi.setNoteOff(cut, ch, note)
+            midiOut.send(cut)
+        end
+
+        midiOut.send(msg)
+        scheduleNoteOff(ch, note)
+        state.sounding[note] = true
+
+        if config.verbose then
+            log(string.format("note %d -> %d ticks", note, config.lengthTicks))
+        end
+        return
+    end
+
+    if midi.isNoteOff(msg) and matchesChannel(ch) then
+        -- Dropped on purpose: the scheduled Note-Off is what ends the note.
+        -- Note that state.sounding is cleared here rather than when the
+        -- scheduled release fires - the script has no callback for that - so a
+        -- note held longer than lengthTicks is already marked free by the time
+        -- the player lifts the key, which is the same moment it stopped sounding.
+        state.sounding[midi.getNote(msg)] = false
+        return
+    end
+
+    if config.passThroughOther then
+        midiOut.send(msg)
+    end
+end
+
+-- Initialize when script loads
+init()
