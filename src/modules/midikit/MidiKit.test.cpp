@@ -268,17 +268,12 @@ TEST_CASE("processTick leaves not-yet-due messages queued", "[MidiKit]") {
 
 struct RecordingEngine : MidiScriptEngine {
 	int processCalls = 0;
-	int inMessageCalls = 0;
 	// Messages to hand back from processOutMessage(), as (ticks) — one per
 	// processOutMessage() call until exhausted.
 	std::vector<int> pending;
 	// inputTriggerTick observed at the moment the engine emitted each message.
 	std::vector<uint64_t> tickAtEmit;
 	MidiKitModule* module = nullptr;
-
-	void processInMessage(int midiPort, midi::Message& msg) override {
-		inMessageCalls++;
-	}
 
 	void process() override {
 		processCalls++;
@@ -296,8 +291,7 @@ struct RecordingEngine : MidiScriptEngine {
 };
 
 // Drives one full sample through process() with the trigger input held at the
-// given voltage. The caller must have patched INPUT_TRIG (see patchTrigger) —
-// getVoltage() reads 0 on an unconnected input regardless of setVoltage().
+// given voltage.
 static void step(MidiKitModule* m, float trigVoltage, int64_t frame) {
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(trigVoltage);
 	m->process(Test::makeProcessArgs(frame));
