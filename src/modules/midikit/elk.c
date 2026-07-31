@@ -66,6 +66,11 @@ struct js {
   jsoff_t gct;        // GC threshold. If brk > gct, trigger GC
   jsoff_t maxcss;     // Maximum allowed C stack size usage
   void *cstk;         // C stack pointer at the beginning of js_eval()
+  // stoermelder: parsing position at the moment the last error was raised.
+  // js_mkerr() moves js->pos to the end of the buffer to abort parsing, which
+  // destroys the only record of where the failure happened — so it is copied
+  // here first. See js_errpos().
+  jsoff_t errpos;
 };
 
 // A JS memory stores diffenent entities: objects, properties, strings
@@ -254,6 +259,13 @@ jsval_t js_mkerr(struct js *js, const char *xx, ...) {
   vsnprintf(js->errmsg + n, sizeof(js->errmsg) - n, xx, ap);
   va_end(ap);
   js->errmsg[sizeof(js->errmsg) - 1] = '\0';
+  // stoermelder: record where this failed before the jump below discards it.
+  // toff is the offset of the last token next() scanned, which is the token the
+  // error is about; it is always set before any error path can run. Only the
+  // first error of an eval is kept — later ones are raised at the end-of-buffer
+  // position this function jumps to, so they would overwrite a good offset with
+  // a useless one.
+  if (js->errpos == (jsoff_t) ~0) js->errpos = js->toff;
   js->pos = js->clen, js->tok = TOK_EOF, js->consumed = 0;  // Jump to the end
   return mkval(T_ERR, 0);
 }
@@ -1470,10 +1482,12 @@ struct js *js_create(void *buf, size_t len) {
   js->size = js->size / 8U * 8U;             // Align js->size by 8 byte
   js->lwm = js->size;                        // Initial LWM: 100% free
   js->gct = js->size / 2;
+  js->errpos = (jsoff_t) ~0;                 // stoermelder: "no error yet"
   return js;
 }
 
 // clang-format off
+size_t js_errpos(struct js *js) { return js->errpos == (jsoff_t) ~0 ? (size_t) ~0 : (size_t) js->errpos; }
 void js_setgct(struct js *js, size_t gct) { js->gct = (jsoff_t) gct; }
 void js_setmaxcss(struct js *js, size_t max) { js->maxcss = (jsoff_t) max; }
 jsval_t js_mktrue(void) { return mkval(T_BOOL, 1); }
@@ -1537,6 +1551,7 @@ jsval_t js_eval(struct js *js, const char *buf, size_t len) {
   js->code = buf;
   js->clen = (jsoff_t) len;
   js->pos = 0;
+  js->errpos = (jsoff_t) ~0;  // stoermelder: positions are per-eval
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdangling-pointer"

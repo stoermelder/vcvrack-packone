@@ -1573,3 +1573,82 @@ TEST_CASE("midi.create inside processMidi does not warn", "[MidiKit][Elk]") {
 
 	Test::destroyModule(m);
 }
+
+
+// Parse-error reporting with a source position
+//
+// Elk raises errors as a bare string with no position, so a failed load used to
+// log just "ERROR: parse error". js_mkerr() now records the offset of the token
+// it failed on, and the engine turns that into a line, a column and the source
+// line itself.
+
+// The `function f() {}` declaration form is a parse error in Elk — it is a JS
+// subset that only accepts `let f = function() {}`. This is the single most
+// likely mistake a script author makes, and the one that most needs a line.
+static const char* ELK_BAD_ON_LINE_7 = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let a = 1;
+let b = 2;
+function broken(x) { return x; }
+let c = 3;
+)";
+
+TEST_CASE("Elk parse error reports the line it failed on", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_BAD_ON_LINE_7);
+	// A failed load tears the state down
+	REQUIRE(m->se.js == nullptr);
+
+	std::string log = drainLog(m);
+	// `function` is on line 7, at column 10 counting from the `broken` token
+	REQUIRE(log.find("line 7:") != std::string::npos);
+	// The offending source line is echoed so the author needn't count lines
+	REQUIRE(log.find("function broken(x) { return x; }") != std::string::npos);
+	// The underlying elk message is still present
+	REQUIRE(log.find("parse error") != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+
+// Same defect one line earlier — pins that the number tracks the error rather
+// than being a constant that happens to match.
+static const char* ELK_BAD_ON_LINE_6 = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let a = 1;
+function broken(x) { return x; }
+let b = 2;
+)";
+
+TEST_CASE("Elk parse error line number tracks the error position", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_BAD_ON_LINE_6);
+	REQUIRE(m->se.js == nullptr);
+
+	std::string log = drainLog(m);
+	REQUIRE(log.find("line 6:") != std::string::npos);
+	REQUIRE(log.find("line 7:") == std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+
+// A script that loads cleanly must not emit any position noise.
+TEST_CASE("Elk successful load reports no error position", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MAX);
+	REQUIRE(m->se.js != nullptr);
+
+	std::string log = drainLog(m);
+	REQUIRE(log.find("line ") == std::string::npos);
+	REQUIRE(log.find("Script loaded") != std::string::npos);
+
+	Test::destroyModule(m);
+}

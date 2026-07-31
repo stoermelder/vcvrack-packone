@@ -60,6 +60,44 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		taskWorker->work(task, APP);
 	}
 
+	// Formats an Elk error with the source position it was raised at.
+	//
+	// Elk reports errors as a bare string ("ERROR: parse error") with no
+	// position of its own, which leaves a script author with nothing to go on.
+	// js_errpos() returns the byte offset of the offending token, so the line
+	// and column are recovered by counting newlines up to that offset.
+	//
+	// "code" must be the exact buffer that was passed to js_eval(), since the
+	// offset indexes into it. Falls back to the bare message when no position
+	// is available, so the caller never has to special-case that.
+	std::string formatError(const char* code, const char* message) {
+		size_t pos = js_errpos(js);
+		size_t len = strlen(code);
+		if (pos == (size_t)~0 || pos > len) return message;
+
+		int line = 1;
+		size_t lineStart = 0;
+		for (size_t i = 0; i < pos; i++) {
+			if (code[i] == '\n') {
+				line++;
+				lineStart = i + 1;
+			}
+		}
+		int column = int(pos - lineStart) + 1;
+
+		// The source line itself, trimmed, so the log shows what failed without
+		// the author having to count lines in an external editor.
+		size_t lineEnd = lineStart;
+		while (lineEnd < len && code[lineEnd] != '\n' && code[lineEnd] != '\r') lineEnd++;
+		std::string text(code + lineStart, lineEnd - lineStart);
+		size_t first = text.find_first_not_of(" \t");
+		text = (first == std::string::npos) ? "" : text.substr(first);
+
+		std::string s = string::f("line %i:%i: %s", line, column, message);
+		if (!text.empty()) s += string::f("  >  %s", text.c_str());
+		return s;
+	}
+
 	void loadScript(const char* script) override {
 		closeState();
 
@@ -213,7 +251,8 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		jsval_t r = js_eval(js, script, ~0U);
 		if (js_type(r) == JS_ERR) {
 			writeLog("Error while loading script", false);
-			writeLog(js_str(js, r), false);
+			// Both reads go through js, so they must happen before closeState()
+			writeLog(formatError(script, js_str(js, r)), false);
 			closeState();
 		}
 		else {
@@ -262,7 +301,11 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			jsval_t r = js_eval(js, string::f("processMidi(%i, 0)", midiPort + 1).c_str(), ~0U);
 			inCallback = false;
 			if (js_type(r) == JS_ERR) {
-				writeLog(js_str(js, r));
+				// No line number here, deliberately: for a call into a script
+				// function elk swaps js->code to the function body it stored in
+				// JS memory, so js_errpos() indexes into that copy rather than
+				// into the script buffer and cannot be mapped back to a line.
+				writeLog(string::f("processMidi error: %s", js_str(js, r)));
 			}
 
 			for (size_t i = 0; i < msgCount; i++) {

@@ -1609,3 +1609,85 @@ TEST_CASE("midi.create inside processMidi does not warn", "[MidiKit][Lua]") {
 
 	Test::destroyModule(m);
 }
+
+
+// Error reporting with a source position
+//
+// Lua produces "<chunkname>:<line>: message" by itself, so the line number was
+// always available — but luaL_dostring names the chunk after the entire script
+// text, which rendered as [string "--[[..."]:7: with the source inlined. The
+// script is now loaded under an explicit chunk name so the prefix reads
+// "script:7:".
+
+static const char* LUA_BAD_ON_LINE_7 = R"(--[[
+@engine Lua
+@description test
+--]]
+local a = 1
+local b = 2
+this is not lua
+local c = 3
+)";
+
+TEST_CASE("Lua load error reports a clean chunk name and line", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_BAD_ON_LINE_7);
+	REQUIRE(m->seLua.L == nullptr);
+
+	std::string log = drainLog(m);
+	REQUIRE(log.find("script:7:") != std::string::npos);
+	// The old chunk name dumped the script into the message
+	REQUIRE(log.find("[string \"") == std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+
+// Runtime errors inside processMidi carry a position too, and go through the
+// same chunk name.
+static const char* LUA_RUNTIME_ERROR = R"(--[[
+@engine Lua
+@description test
+--]]
+processMidi = function(port, msg)
+  local x = nil
+  return x.field
+end
+)";
+
+TEST_CASE("Lua runtime error reports a clean chunk name and line", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_RUNTIME_ERROR);
+	REQUIRE(m->seLua.L != nullptr);
+	drainLog(m);  // discard load-time messages
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0xb);
+	m->seLua.processInMessage(0, msg);
+	m->seLua.process();
+
+	std::string log = drainLog(m);
+	// x.field is on line 7
+	REQUIRE(log.find("script:7:") != std::string::npos);
+	REQUIRE(log.find("[string \"") == std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+
+// A script that loads cleanly must still load cleanly through luaL_loadbuffer.
+TEST_CASE("Lua successful load reports no error position", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_MAX);
+	REQUIRE(m->seLua.L != nullptr);
+
+	std::string log = drainLog(m);
+	REQUIRE(log.find("script:") == std::string::npos);
+	REQUIRE(log.find("Script loaded") != std::string::npos);
+
+	Test::destroyModule(m);
+}

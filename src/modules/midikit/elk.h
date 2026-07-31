@@ -38,6 +38,11 @@ void js_setmaxcss(struct js *, size_t);              // Set max C stack size
 void js_setgct(struct js *, size_t);                 // Set GC trigger threshold
 void js_stats(struct js *, size_t *total, size_t *min, size_t *cstacksize);
 void js_dump(struct js *);  // Print debug info. Requires -DJS_DUMP
+// stoermelder: byte offset into the code buffer where the last error was
+// raised, or (size_t) ~0 if no error has been raised on this instance.
+// js_mkerr() jumps js->pos to the end of the buffer, so the position has to be
+// captured at the point the error is created; this exposes that capture.
+size_t js_errpos(struct js *);
 
 // Create JS values from C values
 jsval_t js_mkundef(void);  // Create undefined

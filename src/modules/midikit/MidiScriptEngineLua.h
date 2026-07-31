@@ -36,6 +36,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// Registry key used to store `this` as a lightuserdata inside each lua_State
 	static constexpr const char* REGISTRY_KEY = "stoermelder_MidiScriptEngineLua";
 
+	// Chunk name the script is loaded under. Lua prefixes every error it raises
+	// with "<chunkname>:<line>:", so this is what the user sees in the log.
+	// The "=" prefix tells Lua to use the name verbatim rather than decorating
+	// it as [string "..."].
+	static constexpr const char* CHUNK_NAME = "=script";
+
 	lua_State* L = nullptr;
 
 	std::shared_ptr<ITaskWorker> taskWorker;
@@ -144,7 +150,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		registerAPI();
 
 		// ── Load and run script ──────────────────────────────────────────────
-		if (luaL_dostring(L, script) != LUA_OK) {
+		// luaL_loadbuffer rather than luaL_dostring: the latter passes the whole
+		// script text as the chunk name, so Lua's own "chunk:LINE:" prefix comes
+		// out as [string "/**..."]:12: with the source dumped inline. Naming the
+		// chunk "script" makes that prefix read as "script:12:" instead.
+		if (luaL_loadbuffer(L, script, strlen(script), CHUNK_NAME) != LUA_OK ||
+		    lua_pcall(L, 0, LUA_MULTRET, 0) != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
 			writeLog(string::f("Error loading script: %s", err ? err : "(unknown)"), false);
 			lua_pop(L, 1);
