@@ -574,7 +574,7 @@ let msgKeyPress = midi.create();
 midi.setKeyPressure(msgKeyPress, 1, 60, 100);
 
 let msgSysEx = midi.create();
-midi.setSysEx(msgSysEx, "f043104c0000f7");
+midi.setSysEx(msgSysEx, "43104c0000");
 
 let isNoteOn = midi.isNoteOn(msgNoteOn);
 let isNoteOff = midi.isNoteOff(msgNoteOff);
@@ -850,7 +850,7 @@ static const char* ELK_MIDI_SET_SYSEX = R"(/**
  * @description test
  */
 let msg = midi.create();
-midi.setSysEx(msg, "f043104c0000f7");
+midi.setSysEx(msg, "43104c0000");
 let isSysEx = midi.isSysEx(msg);
 let data = midi.getSysExData(msg);
 )";
@@ -868,7 +868,19 @@ TEST_CASE("API midi.setSysEx and midi.getSysExData", "[MidiKit][Elk]") {
 	REQUIRE(js_type(v) == JS_STR);
 	size_t len;
 	char* s = js_getstr(m->se.js, v, &len);
-	REQUIRE(std::string(s, len) == "f043104c0000f7");
+	REQUIRE(std::string(s, len) == "43104c0000");
+
+	// The payload argument is unframed; setSysEx must add the 0xf0/0xf7 framing
+	// itself rather than doubling it (#17).
+	auto& stored = m->se.msgStore[0];
+	REQUIRE(stored.msg.getSize() == 7);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[0] == 0xf0);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[1] == 0x43);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[2] == 0x10);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[3] == 0x4c);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[4] == 0x00);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[5] == 0x00);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[6] == 0xf7);
 
 	Test::destroyModule(m);
 }

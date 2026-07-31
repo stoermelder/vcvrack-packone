@@ -187,7 +187,8 @@ index `0`, Elk: same convention).
 - `midi.createNRPN()` → 4 chained handles (param LSB/MSB + value LSB/MSB),
   used only with `midi.setNRPN`.
 - Getters: `getChannel(msg)` (1-based), `getNote(msg)`, `getValue(msg)`,
-  `getLength(msg)`, `getPitchWheel(msg)`, `getSysExData(msg)` (hex string).
+  `getLength(msg)`, `getPitchWheel(msg)`, `getSysExData(msg)` (hex string, the
+  payload only — without the `f0`/`f7` framing).
 - Type predicates: `isCc`, `isNoteOn`, `isNoteOff`, `isKeyPressure`,
   `isChanPressure`, `isProgramChange`, `isPitchWheel`, `isSysEx`, `isClock`,
   `isStart`, `isContinue`, `isStop`.
@@ -198,7 +199,9 @@ index `0`, Elk: same convention).
   `setNoteOn(msg, ch, note, vel)`, `setNoteOff(msg, ch, note)`,
   `setNRPN(nrpnHandle, ch, number, value)` (number/value are 14-bit, 0-16383),
   `setPitchWheel(msg, ch, value)`, `setProgramChange(msg, ch, program)`,
-  `setSysEx(msg, hexString)`, `setValue(msg, value)`.
+  `setSysEx(msg, hexString)` (payload only — the `f0`/`f7` framing is added
+  automatically, so pass e.g. `"43104c0000"` rather than `"f043104c0000f7"`),
+  `setValue(msg, value)`.
 
 ### `midiOut.*` — sending
 All variants accept an optional leading `midiPort` (1-based; omit for the

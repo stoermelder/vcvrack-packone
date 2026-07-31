@@ -542,7 +542,7 @@ msgKeyPress = midi.create()
 midi.setKeyPressure(msgKeyPress, 1, 60, 100)
 
 msgSysEx = midi.create()
-midi.setSysEx(msgSysEx, "f043104c0000f7")
+midi.setSysEx(msgSysEx, "43104c0000")
 
 isNoteOn = midi.isNoteOn(msgNoteOn)
 isNoteOff = midi.isNoteOff(msgNoteOff)
@@ -841,7 +841,7 @@ static const char* LUA_MIDI_SET_SYSEX = R"(--[[
 @engine Lua
 --]]
 msg = midi.create()
-midi.setSysEx(msg, "f043104c0000f7")
+midi.setSysEx(msg, "43104c0000")
 isSysEx = midi.isSysEx(msg)
 data = midi.getSysExData(msg)
 )";
@@ -858,8 +858,20 @@ TEST_CASE("API midi.setSysEx and midi.getSysExData", "[MidiKit][Lua]") {
 
 	lua_getglobal(m->seLua.L, "data");
 	REQUIRE(lua_isstring(m->seLua.L, -1));
-	REQUIRE(std::string(lua_tostring(m->seLua.L, -1)) == "f043104c0000f7");
+	REQUIRE(std::string(lua_tostring(m->seLua.L, -1)) == "43104c0000");
 	lua_pop(m->seLua.L, 1);
+
+	// The payload argument is unframed; setSysEx must add the 0xf0/0xf7 framing
+	// itself rather than doubling it (#17).
+	auto& stored = m->seLua.msgStore[0];
+	REQUIRE(stored.msg.getSize() == 7);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[0] == 0xf0);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[1] == 0x43);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[2] == 0x10);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[3] == 0x4c);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[4] == 0x00);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[5] == 0x00);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[6] == 0xf7);
 
 	Test::destroyModule(m);
 }
