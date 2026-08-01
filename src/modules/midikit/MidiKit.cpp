@@ -182,7 +182,7 @@ struct MidiKitModule : Module {
 		}
 
 		void writeLog(std::string log, bool useTimestamp = true) override {
-			float timestamp = float(module->sample) / module->sampleRate;
+			float timestamp = module->sampleRate != 0.f ? float(module->sample) / module->sampleRate : 0.f;
 			if (useTimestamp) {
 				module->midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
 			}
