@@ -212,7 +212,9 @@ index `0`, Elk: same convention).
 - `midi.create()` → new empty message handle.
 - `midi.createNRPN()` → 4 chained handles (param LSB/MSB + value LSB/MSB),
   used only with `midi.setNRPN`.
-- Getters: `getChannel(msg)` (1-based), `getChanPressure(msg)`, `getNote(msg)`,
+- Getters: `getChannel(msg)` (1-based; `-1` for realtime/SysEx messages —
+  clock, start/stop/continue, SysEx framing — which have no channel),
+  `getChanPressure(msg)`, `getNote(msg)`,
   `getValue(msg)`, `getLength(msg)`, `getPitchWheel(msg)`, `getSysExData(msg)`
   (hex string, the payload only — without the `f0`/`f7` framing), `getRaw(msg)`
   (hex string of the message's raw bytes, exactly as sent/received — no

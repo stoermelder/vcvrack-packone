@@ -1001,6 +1001,43 @@ TEST_CASE("midi.is* predicates agree on every message type", "[MidiKit][CrossEng
 }
 
 
+// --- midi.getChannel on a realtime/SysEx message (#A4) --------------------
+//
+// Status 0xf (clock, start/stop/continue, SysEx) has no channel. getChannel()
+// used to return the low status nibble + 1 — a plausible-looking but
+// meaningless number, since that nibble is a sub-type selector, not a
+// channel — which made e.g. a clock tick misread as "channel 9". It now
+// returns -1 for that family, and the real 1-16 channel otherwise.
+
+static const char* JS_GET_CHANNEL_SENTINEL = R"(/**
+ * @engine Elk
+ */
+let note = midi.create();
+midi.setNoteOn(note, 5, 60, 100);
+log("PROBE:" + number.toString(midi.getChannel(note)));
+
+let clock = midi.create();
+midi.setSysEx(clock, "");
+log("PROBE:" + number.toString(midi.getChannel(clock)));
+)";
+
+static const char* LUA_GET_CHANNEL_SENTINEL = R"(--[[
+@engine Lua
+--]]
+local note = midi.create()
+midi.setNoteOn(note, 5, 60, 100)
+log("PROBE:" .. number.toString(midi.getChannel(note)))
+
+local clock = midi.create()
+midi.setSysEx(clock, "")
+log("PROBE:" .. number.toString(midi.getChannel(clock)))
+)";
+
+TEST_CASE("midi.getChannel returns -1 on realtime/SysEx, the real channel otherwise", "[MidiKit][CrossEngine]") {
+	requireLoggedValues(JS_GET_CHANNEL_SENTINEL, LUA_GET_CHANNEL_SENTINEL, {"5", "-1"});
+}
+
+
 // --- input.enable ----------------------------------------------------------
 //
 // input.enable flips a flag on the module's own inputInfos, which is plain

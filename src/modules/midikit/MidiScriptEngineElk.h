@@ -752,7 +752,14 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 	static jsval_t js_midi_getChannel(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "d", "getChannel", [](jsval_t* args, MessageEx& s) {
-			// TODO: check for message type
+			// Status 0xf is the realtime/SysEx family (clock, start/stop/continue,
+			// SysEx framing) — none of those carry a channel, and the low nibble
+			// is a sub-type selector instead (see the is* predicates below), so
+			// the old "+ 1" on that nibble returned a plausible-looking but
+			// meaningless channel number (#A4). -1 is unambiguous: 1-16 is the
+			// only valid channel range, so a script can check `> 0` without
+			// needing to special-case realtime messages via try/catch.
+			if (s.msg.getStatus() == 0xf) return js_mknum(-1);
 			return js_mknum(s.msg.getChannel() + 1);
 		});
 	}

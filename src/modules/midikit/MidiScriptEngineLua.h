@@ -792,6 +792,17 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_getChannel(lua_State* L) {
 		MessageEx* m = getMsg(L, 1);
+		// Status 0xf is the realtime/SysEx family (clock, start/stop/continue,
+		// SysEx framing) — none of those carry a channel, and the low nibble is
+		// a sub-type selector instead (see the is* predicates below), so the
+		// old "+ 1" on that nibble returned a plausible-looking but meaningless
+		// channel number (#A4). -1 is unambiguous: 1-16 is the only valid
+		// channel range, so a script can check `> 0` without needing a
+		// try/catch around every call.
+		if (m->msg.getStatus() == 0xf) {
+			lua_pushinteger(L, -1);
+			return 1;
+		}
 		lua_pushinteger(L, m->msg.getChannel() + 1);
 		return 1;
 	}

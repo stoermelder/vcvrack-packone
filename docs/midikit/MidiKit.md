@@ -432,7 +432,7 @@ The API below is identical for both scripting engines — the function names, ar
 
 - `midi.create()`: Creates an empty MIDI message.
 - `midi.createNRPN()`: Creates an empty NRPN MIDI message (actually 4 MIDI messages).
-- `midi.getChannel(msg)`: Returns the MIDI channel (1..16) of `msg`.
+- `midi.getChannel(msg)`: Returns the MIDI channel (1..16) of `msg`, or `-1` if `msg` is a realtime or SysEx message (clock, start/stop/continue, SysEx framing), since those carry no channel.
 - `midi.getChanPressure(msg)`: Returns the pressure value (0..127) of a MIDI channel pressure/aftertouch message `msg`.
 - `midi.getLength(msg)`: Returns the length of the MIDI message `msg`. For common short messages this will return *3*; channel pressure messages are 2 bytes; SysEx messages may be longer.
 - `midi.getNote(msg)`: Returns the MIDI note number (0..127) of `msg` (byte 2 of the MIDI message).
