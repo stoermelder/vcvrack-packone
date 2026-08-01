@@ -371,6 +371,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("getLength",       lua_midi_getLength);
 		setTableFunc("getNote",         lua_midi_getNote);
 		setTableFunc("getPitchWheel",   lua_midi_getPitchWheel);
+		setTableFunc("getRaw",          lua_midi_getRaw);
 		setTableFunc("getSysExData",    lua_midi_getSysExData);
 		setTableFunc("getValue",        lua_midi_getValue);
 		setTableFunc("isCc",            lua_midi_isCc);
@@ -396,6 +397,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("setNRPN",         lua_midi_setNrpn);
 		setTableFunc("setPitchWheel",   lua_midi_setPitchWheel);
 		setTableFunc("setProgramChange",lua_midi_setProgramChange);
+		setTableFunc("setRaw",          lua_midi_setRaw);
 		setTableFunc("setSysEx",        lua_midi_setSysEx);
 		setTableFunc("setValue",        lua_midi_setValue);
 		lua_setglobal(L, "midi");
@@ -746,6 +748,17 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 1;
 	}
 
+	static int lua_midi_getRaw(lua_State* L) {
+		MessageEx* m = getMsg(L, 1);
+		std::ostringstream ss;
+		ss << std::hex;
+		for (int i = 0; i < m->msg.getSize(); i++)
+			ss << std::setw(2) << std::setfill('0') << static_cast<int>(m->msg.bytes[i]);
+		std::string s = ss.str();
+		lua_pushlstring(L, s.c_str(), s.size());
+		return 1;
+	}
+
 	static int lua_midi_getValue(lua_State* L) {
 		MessageEx* m = getMsg(L, 1);
 		lua_pushinteger(L, m->msg.getValue());
@@ -965,6 +978,24 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		m->msg.setStatus(0xc);
 		m->msg.setChannel(ch - 1);
 		m->msg.setNote(prg);
+		return 0;
+	}
+
+	static int lua_midi_setRaw(lua_State* L) {
+		// midi.setRaw(msg, hexstring)
+		MessageEx* m  = getMsg(L, 1);
+		size_t len;
+		const char* raw = luaL_checklstring(L, 2, &len);
+		std::string data(raw, len);
+		if (data.length() % 2 != 0)
+			luaL_error(L, "midi.setRaw: hex string length must be even");
+		if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+			luaL_error(L, "midi.setRaw: invalid hex string");
+		m->msg.setSize((int)(data.length() / 2));
+		for (size_t i = 0; i < data.length(); i += 2) {
+			char byte = (char)strtol(data.substr(i, 2).c_str(), nullptr, 16);
+			m->msg.bytes[i / 2] = byte;
+		}
 		return 0;
 	}
 

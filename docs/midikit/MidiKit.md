@@ -230,6 +230,32 @@ processMidi = function(midiPort, msg)
 end
 ```
 
+### Send a raw MIDI message
+
+Use `midi.setRaw()` for message types with no dedicated setter, such as an MTC quarter-frame message (status `0xf1`).
+
+JavaScript:
+```js
+let processMidi = function(midiPort, msg) {
+   if (midi.isNoteOn(msg)) {
+      let mtc = midi.create();
+      midi.setRaw(mtc, "f11a");
+      midiOut.send(mtc);
+   }
+};
+```
+
+Lua:
+```lua
+processMidi = function(midiPort, msg)
+   if midi.isNoteOn(msg) then
+      local mtc = midi.create()
+      midi.setRaw(mtc, "f11a")
+      midiOut.send(mtc)
+   end
+end
+```
+
 ## Language reference
 
 MIDI-KIT supports two scripting languages, both deliberately small. The JavaScript engine is [Elk](https://github.com/cesanta/elk); the Lua engine is a bundled [MiniLua](https://github.com/edubart/minilua). Both are completely bare — neither ships with a standard library — and only the language core plus the MIDI-KIT API is available. The MIDI / input / trig / param / number API is identical across the two engines, so picking an engine is mostly a matter of personal taste.
@@ -368,6 +394,7 @@ The API below is identical for both scripting engines — the function names, ar
 - `midi.getChannel(msg)`: Returns the MIDI channel (1..16) of `msg`.
 - `midi.getLength(msg)`: Returns the length of the MIDI message `msg`. For common short messages this will return *3*; SysEx messages may be longer.
 - `midi.getNote(msg)`: Returns the MIDI note number (0..127) of `msg` (byte 2 of the MIDI message).
+- `midi.getRaw(msg)`: Returns the raw bytes of `msg` as hexstring, exactly as sent/received — no framing added or removed.
 - `midi.getSysExData(msg)`: Returns the data of a MIDI SysEx message `msg` as hexstring.
 - `midi.getPitchWheel(msg)`: Returns the MIDI pitch wheel (0..16383) value of `msg`.
 - `midi.getValue(msg)`. Returns the MIDI value field (0..127) of `msg` (byte 3 of the MIDI message).
@@ -393,6 +420,7 @@ The API below is identical for both scripting engines — the function names, ar
 - `midi.setNRPN(nrpn, channel, number, value)`: Sets the NRPN number and NRPN value of `nrpn`.
 - `midi.setPitchWheel(msg, channel, value)`: Sets `msg` as a MIDI pitch wheel message, with the specified MIDI channel (1..16) and pitch wheel value (0..16383).
 - `midi.setProgramChange(msg, channel, prg)`: Sets `msg` as a MIDI program change message, with the MIDI channel `channel` (1..16) and program number `prg` (0..127).
+- `midi.setRaw(msg, str)`: Sets `msg` to the exact bytes given by hexstring `str` (e.g. "f11a"), with no framing added or removed. Use this for message types with no dedicated setter, such as MIDI Time Code, Song Position Pointer, Song Select, tune request or active sensing.
 - `midi.setSysEx(msg, str)`: Sets `msg` as a MIDI SysEx message with string `str` representing a hexstring of the payload data (e.g. "ab0fad050fdd"). The `f0`/`f7` framing bytes are added automatically and must not be included in `str`.
 - `midi.setValue(msg, value)`: Sets the MIDI value field (0..127) for `msg` (byte 3 of the MIDI message).
 - `midi.selectPort(midiPort)`: Selects the output port `midiPort` (1-based) used by every following `midiOut.*` call, until `midi.selectPort()` is called again. The selection stays in effect across `processMidi()` invocations. Currently MIDI-KIT has only one output port (index *1*) — scripts that call it now won't need to change when more output ports become available.

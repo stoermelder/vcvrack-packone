@@ -886,6 +886,37 @@ TEST_CASE("API midi.setSysEx and midi.getSysExData", "[MidiKit][Elk]") {
 }
 
 
+static const char* ELK_MIDI_SET_RAW = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msg = midi.create();
+midi.setRaw(msg, "f11a");
+let data = midi.getRaw(msg);
+)";
+
+TEST_CASE("API midi.setRaw and midi.getRaw", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SET_RAW);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "data;", ~0U);
+	REQUIRE(js_type(v) == JS_STR);
+	size_t len;
+	char* s = js_getstr(m->se.js, v, &len);
+	REQUIRE(std::string(s, len) == "f11a");
+
+	// setRaw writes the exact bytes with no framing added, unlike setSysEx.
+	auto& stored = m->se.msgStore[0];
+	REQUIRE(stored.msg.getSize() == 2);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[0] == 0xf1);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[1] == 0x1a);
+
+	Test::destroyModule(m);
+}
+
+
 static const char* ELK_MIDI_SET_NOTE_OFF = R"(/**
  * @engine Elk
  * @description test

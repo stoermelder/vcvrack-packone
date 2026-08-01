@@ -188,7 +188,9 @@ index `0`, Elk: same convention).
   used only with `midi.setNRPN`.
 - Getters: `getChannel(msg)` (1-based), `getNote(msg)`, `getValue(msg)`,
   `getLength(msg)`, `getPitchWheel(msg)`, `getSysExData(msg)` (hex string, the
-  payload only — without the `f0`/`f7` framing).
+  payload only — without the `f0`/`f7` framing), `getRaw(msg)` (hex string of
+  the message's raw bytes, exactly as sent/received — no framing added or
+  removed).
 - Type predicates: `isCc`, `isNoteOn`, `isNoteOff`, `isKeyPressure`,
   `isChanPressure`, `isProgramChange`, `isPitchWheel`, `isSysEx`, `isClock`,
   `isStart`, `isContinue`, `isStop`.
@@ -201,7 +203,9 @@ index `0`, Elk: same convention).
   `setPitchWheel(msg, ch, value)`, `setProgramChange(msg, ch, program)`,
   `setSysEx(msg, hexString)` (payload only — the `f0`/`f7` framing is added
   automatically, so pass e.g. `"43104c0000"` rather than `"f043104c0000f7"`),
-  `setValue(msg, value)`.
+  `setRaw(msg, hexString)` (writes the exact bytes with no framing added,
+  e.g. `"f11a"` for an MTC quarter-frame — use this for message types with no
+  dedicated setter), `setValue(msg, value)`.
 - `midi.selectPort(midiPort)` — selects the output port (1-based) that every
   subsequent `midiOut.*` call sends on, until `selectPort` is called again.
   The selection is sticky across `processMidi` invocations, not reset per

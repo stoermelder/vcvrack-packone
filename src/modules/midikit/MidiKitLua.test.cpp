@@ -877,6 +877,35 @@ TEST_CASE("API midi.setSysEx and midi.getSysExData", "[MidiKit][Lua]") {
 }
 
 
+static const char* LUA_MIDI_SET_RAW = R"(--[[
+@engine Lua
+--]]
+msg = midi.create()
+midi.setRaw(msg, "f11a")
+data = midi.getRaw(msg)
+)";
+
+TEST_CASE("API midi.setRaw and midi.getRaw", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_MIDI_SET_RAW);
+	REQUIRE(m->seLua.L != nullptr);
+
+	lua_getglobal(m->seLua.L, "data");
+	REQUIRE(lua_isstring(m->seLua.L, -1));
+	REQUIRE(std::string(lua_tostring(m->seLua.L, -1)) == "f11a");
+	lua_pop(m->seLua.L, 1);
+
+	// setRaw writes the exact bytes with no framing added, unlike setSysEx.
+	auto& stored = m->seLua.msgStore[0];
+	REQUIRE(stored.msg.getSize() == 2);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[0] == 0xf1);
+	REQUIRE((int)(uint8_t)stored.msg.bytes[1] == 0x1a);
+
+	Test::destroyModule(m);
+}
+
+
 static const char* LUA_MIDI_SET_NOTE_OFF = R"(--[[
 @engine Lua
 --]]

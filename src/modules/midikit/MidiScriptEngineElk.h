@@ -221,6 +221,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		js_set(js, _midi, "getNote", js_mkfun(js_midi_getNote));							// int midi.getNote(msg)
 		js_set(js, _midi, "getPitchWheel", js_mkfun(js_midi_getPitchWheel));				// int midi.getPitchWheel(msg)
 		//js_set(js, _midi, "getType", js_mkfun(js_midi_getType));							// int midi.getType(msg)
+		js_set(js, _midi, "getRaw", js_mkfun(js_midi_getRaw));								// string midi.getRaw(msg)
 		js_set(js, _midi, "getSysExData", js_mkfun(js_midi_getSysExData));					// string midi.getSysExData(msg)
 		js_set(js, _midi, "getValue", js_mkfun(js_midi_getValue));							// int midi.getValue(msg)
 		js_set(js, _midi, "isCc", js_mkfun(js_midi_isCc));									// bool midi.isCc(msg)
@@ -247,6 +248,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		js_set(js, _midi, "setPitchWheel", js_mkfun(js_midi_setPitchWheel));				// bool midi.setPitchWheel(msg, value)
 		js_set(js, _midi, "setProgramChange", js_mkfun(js_midi_setProgramChange));			// void midi.setProgramChange(msg, channel, prg)
 		//js_set(js, _midi, "setType", js_mkfun(js_midi_setType));							// void midi.setType(msg)
+		js_set(js, _midi, "setRaw", js_mkfun(js_midi_setRaw));								// void midi.setRaw(msg, string)
 		js_set(js, _midi, "setSysEx", js_mkfun(js_midi_setSysEx));							// void midi.setSysEx(msg, string)
 		js_set(js, _midi, "setValue", js_mkfun(js_midi_setValue));							// void midi.setValue(msg, int)
 
@@ -699,6 +701,18 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		});
 	}
 
+	static jsval_t js_midi_getRaw(struct js* js, jsval_t* args, int nargs) {
+		return js_midi(js, args, nargs, "d", "getRaw", [js](jsval_t* args, MessageEx& s) {
+			std::ostringstream ss;
+			ss << std::hex;
+			for (int i = 0; i < s.msg.getSize(); i++) {
+				ss << std::setw(2) << std::setfill('0') << static_cast<int>(s.msg.bytes[i]);
+			}
+			std::string str = ss.str();
+			return js_mkstr(js, str.c_str(), str.length());
+		});
+	}
+
 	static jsval_t js_midi_getValue(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "d", "getValue", [](jsval_t* args, MessageEx& s) {
 			return js_mknum(s.msg.getValue());
@@ -922,6 +936,23 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			s.msg.setStatus(0xc);
 			s.msg.setChannel(ch - 1);
 			s.msg.setNote(prg);
+			return js_mknull();
+		});
+	}
+
+	static jsval_t js_midi_setRaw(struct js* js, jsval_t* args, int nargs) {
+		return js_midi(js, args, nargs, "ds", "setRaw", [js](jsval_t* args, MessageEx& s) {
+			std::string data = js_getstr(js, args[1], NULL);
+			if (data.length() % 2 != 0)
+				return js_mkerr(js, "midi.setRaw: invalid string length");
+			if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+				return js_mkerr(js, "midi.setRaw: invalid hexstring");
+			s.msg.setSize(data.length() / 2);
+			for (size_t i = 0; i < data.length(); i += 2) {
+				std::string bs = data.substr(i, 2);
+				char byte = (char)strtol(bs.c_str(), NULL, 16);
+				s.msg.bytes[i / 2] = byte;
+			}
 			return js_mknull();
 		});
 	}
