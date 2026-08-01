@@ -712,6 +712,36 @@ TEST_CASE("API midi.setCc", "[MidiKit][Elk]") {
 }
 
 
+static const char* ELK_MIDI_SET_CC_CLAMP = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msgHigh = midi.create();
+midi.setCc(msgHigh, 3, 7, 200);
+let valHigh = midi.getValue(msgHigh);
+let msgLow = midi.create();
+midi.setCc(msgLow, 3, 7, -1);
+let valLow = midi.getValue(msgLow);
+)";
+
+TEST_CASE("API midi.setCc clamps out-of-range values instead of wrapping (#A5)", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SET_CC_CLAMP);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "valHigh;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(127.0));
+
+	v = js_eval(m->se.js, "valLow;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(0.0));
+
+	Test::destroyModule(m);
+}
+
+
 static const char* ELK_MIDI_SET_PITCH_WHEEL = R"(/**
  * @engine Elk
  * @description test
@@ -840,6 +870,66 @@ TEST_CASE("API midi.setKeyPressure", "[MidiKit][Elk]") {
 	v = js_eval(m->se.js, "val;", ~0U);
 	REQUIRE(js_type(v) == JS_NUM);
 	REQUIRE(js_getnum(v) == Catch::Approx(90.0));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_SET_KEY_PRESSURE_CLAMP = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msgHigh = midi.create();
+midi.setKeyPressure(msgHigh, 6, 64, 200);
+let valHigh = midi.getValue(msgHigh);
+let msgLow = midi.create();
+midi.setKeyPressure(msgLow, 6, 64, -1);
+let valLow = midi.getValue(msgLow);
+)";
+
+TEST_CASE("API midi.setKeyPressure clamps out-of-range values instead of wrapping (#A5)", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SET_KEY_PRESSURE_CLAMP);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "valHigh;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(127.0));
+
+	v = js_eval(m->se.js, "valLow;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(0.0));
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_MIDI_SET_NOTE_ON_CLAMP = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let msgHigh = midi.create();
+midi.setNoteOn(msgHigh, 1, 60, 200);
+let valHigh = midi.getValue(msgHigh);
+let msgLow = midi.create();
+midi.setNoteOn(msgLow, 1, 60, -1);
+let valLow = midi.getValue(msgLow);
+)";
+
+TEST_CASE("API midi.setNoteOn clamps out-of-range velocity instead of wrapping (#A5)", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SET_NOTE_ON_CLAMP);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "valHigh;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(127.0));
+
+	v = js_eval(m->se.js, "valLow;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(0.0));
 
 	Test::destroyModule(m);
 }

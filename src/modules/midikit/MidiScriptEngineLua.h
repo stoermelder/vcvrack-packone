@@ -834,7 +834,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		MessageEx* m  = getMsg(L, 1);
 		uint8_t ch    = (uint8_t)std::max(1, std::min(16, (int)luaL_checkinteger(L, 2)));
 		uint8_t cc    = (uint8_t)luaL_checkinteger(L, 3);
-		int8_t  value = (int8_t)luaL_checkinteger(L, 4);
+		uint8_t value = (uint8_t)std::max(0, std::min(127, (int)luaL_checkinteger(L, 4)));
 		if (m->msg.getSize() != 3) m->msg.setSize(3);
 		m->msg.setStatus(0xb);
 		m->msg.setChannel(ch - 1);
@@ -887,7 +887,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		MessageEx* m = getMsg(L, 1);
 		uint8_t ch   = (uint8_t)std::max(1, std::min(16, (int)luaL_checkinteger(L, 2)));
 		uint8_t note = (uint8_t)luaL_checkinteger(L, 3);
-		int8_t  vel  = (int8_t)luaL_checkinteger(L, 4);
+		uint8_t vel  = (uint8_t)std::max(0, std::min(127, (int)luaL_checkinteger(L, 4)));
 		if (m->msg.getSize() != 3) m->msg.setSize(3);
 		m->msg.setStatus(0xa);
 		m->msg.setChannel(ch - 1);
@@ -921,7 +921,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		MessageEx* m = getMsg(L, 1);
 		uint8_t ch   = (uint8_t)std::max(1, std::min(16, (int)luaL_checkinteger(L, 2)));
 		uint8_t note = (uint8_t)luaL_checkinteger(L, 3);
-		int8_t  vel  = (int8_t)luaL_checkinteger(L, 4);
+		uint8_t vel  = (uint8_t)std::max(0, std::min(127, (int)luaL_checkinteger(L, 4)));
 		if (m->msg.getSize() != 3) m->msg.setSize(3);
 		m->msg.setStatus(0x9);
 		m->msg.setChannel(ch - 1);

@@ -781,7 +781,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		return js_midi(js, args, nargs, "dddd", "setCc", [](jsval_t* args, MessageEx& s) {
 			uint8_t ch = std::max((uint8_t)1, std::min((uint8_t)16, (uint8_t)js_getnum(args[1])));
 			uint8_t cc = js_getnum(args[2]);
-			int8_t value = js_getnum(args[3]);
+			uint8_t value = std::max(0, std::min(127, (int)js_getnum(args[3])));
 			if (s.msg.getSize() != 3) s.msg.setSize(3);
 			s.msg.setStatus(0xb);
 			s.msg.setChannel(ch - 1);
@@ -838,7 +838,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		return js_midi(js, args, nargs, "dddd", "setKeyPressure", [](jsval_t* args, MessageEx& s) {
 			uint8_t ch = std::max((uint8_t)1, std::min((uint8_t)16, (uint8_t)js_getnum(args[1])));
 			uint8_t note = js_getnum(args[2]);
-			int8_t vel = js_getnum(args[3]);
+			uint8_t vel = std::max(0, std::min(127, (int)js_getnum(args[3])));
 			if (s.msg.getSize() != 3) s.msg.setSize(3);
 			s.msg.setStatus(0xa);
 			s.msg.setChannel(ch - 1);
@@ -873,7 +873,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		return js_midi(js, args, nargs, "dddd", "setNoteOn", [](jsval_t* args, MessageEx& s) {
 			uint8_t ch = std::max((uint8_t)1, std::min((uint8_t)16, (uint8_t)js_getnum(args[1])));
 			uint8_t note = js_getnum(args[2]);
-			int8_t vel = js_getnum(args[3]);
+			uint8_t vel = std::max(0, std::min(127, (int)js_getnum(args[3])));
 			if (s.msg.getSize() != 3) s.msg.setSize(3);
 			s.msg.setStatus(0x9);
 			s.msg.setChannel(ch - 1);

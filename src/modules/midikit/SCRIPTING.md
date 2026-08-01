@@ -194,11 +194,12 @@ index `0`, Elk: same convention).
 - Type predicates: `isCc`, `isNoteOn`, `isNoteOff`, `isKeyPressure`,
   `isChanPressure`, `isProgramChange`, `isPitchWheel`, `isSysEx`, `isClock`,
   `isStart`, `isContinue`, `isStop`.
-- Setters: `setCc(msg, ch, cc, value)`, `setCc14bit(msgMsb, msgLsb, ch, cc, value)`
+- Setters: `setCc(msg, ch, cc, value)` (`value` is clamped to 0-127),
+  `setCc14bit(msgMsb, msgLsb, ch, cc, value)`
   (value is a float, MSB=int part/LSB=fractional*128 — see `nrpn_to_cc.js`/`.lua`
   for the canonical use), `setChannel(msg, ch)`, `setChanPressure(msg, ch, value)`,
-  `setKeyPressure(msg, ch, note, vel)`, `setNote(msg, note)`,
-  `setNoteOn(msg, ch, note, vel)`, `setNoteOff(msg, ch, note)`,
+  `setKeyPressure(msg, ch, note, vel)` (`vel` is clamped to 0-127), `setNote(msg, note)`,
+  `setNoteOn(msg, ch, note, vel)` (`vel` is clamped to 0-127), `setNoteOff(msg, ch, note)`,
   `setNRPN(nrpnHandle, ch, number, value)` (number/value are 14-bit, 0-16383),
   `setPitchWheel(msg, ch, value)`, `setProgramChange(msg, ch, program)`,
   `setSysEx(msg, hexString)` (payload only — the `f0`/`f7` framing is added

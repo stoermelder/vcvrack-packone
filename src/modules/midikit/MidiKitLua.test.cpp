@@ -695,6 +695,37 @@ TEST_CASE("API midi.setCc", "[MidiKit][Lua]") {
 }
 
 
+static const char* LUA_MIDI_SET_CC_CLAMP = R"(--[[
+@engine Lua
+--]]
+msgHigh = midi.create()
+midi.setCc(msgHigh, 3, 7, 200)
+valHigh = midi.getValue(msgHigh)
+msgLow = midi.create()
+midi.setCc(msgLow, 3, 7, -1)
+valLow = midi.getValue(msgLow)
+)";
+
+TEST_CASE("API midi.setCc clamps out-of-range values instead of wrapping (#A5)", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_MIDI_SET_CC_CLAMP);
+	REQUIRE(m->seLua.L != nullptr);
+
+	lua_getglobal(m->seLua.L, "valHigh");
+	REQUIRE(lua_isnumber(m->seLua.L, -1));
+	REQUIRE(lua_tonumber(m->seLua.L, -1) == Catch::Approx(127.0));
+	lua_pop(m->seLua.L, 1);
+
+	lua_getglobal(m->seLua.L, "valLow");
+	REQUIRE(lua_isnumber(m->seLua.L, -1));
+	REQUIRE(lua_tonumber(m->seLua.L, -1) == Catch::Approx(0.0));
+	lua_pop(m->seLua.L, 1);
+
+	Test::destroyModule(m);
+}
+
+
 static const char* LUA_MIDI_SET_PITCH_WHEEL = R"(--[[
 @engine Lua
 --]]
@@ -831,6 +862,68 @@ TEST_CASE("API midi.setKeyPressure", "[MidiKit][Lua]") {
 	lua_getglobal(m->seLua.L, "val");
 	REQUIRE(lua_isnumber(m->seLua.L, -1));
 	REQUIRE(lua_tonumber(m->seLua.L, -1) == Catch::Approx(90.0));
+	lua_pop(m->seLua.L, 1);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* LUA_MIDI_SET_KEY_PRESSURE_CLAMP = R"(--[[
+@engine Lua
+--]]
+msgHigh = midi.create()
+midi.setKeyPressure(msgHigh, 6, 64, 200)
+valHigh = midi.getValue(msgHigh)
+msgLow = midi.create()
+midi.setKeyPressure(msgLow, 6, 64, -1)
+valLow = midi.getValue(msgLow)
+)";
+
+TEST_CASE("API midi.setKeyPressure clamps out-of-range values instead of wrapping (#A5)", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_MIDI_SET_KEY_PRESSURE_CLAMP);
+	REQUIRE(m->seLua.L != nullptr);
+
+	lua_getglobal(m->seLua.L, "valHigh");
+	REQUIRE(lua_isnumber(m->seLua.L, -1));
+	REQUIRE(lua_tonumber(m->seLua.L, -1) == Catch::Approx(127.0));
+	lua_pop(m->seLua.L, 1);
+
+	lua_getglobal(m->seLua.L, "valLow");
+	REQUIRE(lua_isnumber(m->seLua.L, -1));
+	REQUIRE(lua_tonumber(m->seLua.L, -1) == Catch::Approx(0.0));
+	lua_pop(m->seLua.L, 1);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* LUA_MIDI_SET_NOTE_ON_CLAMP = R"(--[[
+@engine Lua
+--]]
+msgHigh = midi.create()
+midi.setNoteOn(msgHigh, 1, 60, 200)
+valHigh = midi.getValue(msgHigh)
+msgLow = midi.create()
+midi.setNoteOn(msgLow, 1, 60, -1)
+valLow = midi.getValue(msgLow)
+)";
+
+TEST_CASE("API midi.setNoteOn clamps out-of-range velocity instead of wrapping (#A5)", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_MIDI_SET_NOTE_ON_CLAMP);
+	REQUIRE(m->seLua.L != nullptr);
+
+	lua_getglobal(m->seLua.L, "valHigh");
+	REQUIRE(lua_isnumber(m->seLua.L, -1));
+	REQUIRE(lua_tonumber(m->seLua.L, -1) == Catch::Approx(127.0));
+	lua_pop(m->seLua.L, 1);
+
+	lua_getglobal(m->seLua.L, "valLow");
+	REQUIRE(lua_isnumber(m->seLua.L, -1));
+	REQUIRE(lua_tonumber(m->seLua.L, -1) == Catch::Approx(0.0));
 	lua_pop(m->seLua.L, 1);
 
 	Test::destroyModule(m);
