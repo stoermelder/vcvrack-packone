@@ -414,6 +414,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_newtable(L);
 		setTableFunc("selectPort",      lua_midi_selectPort);
 		setTableFunc("create",          lua_midi_create);
+		setTableFunc("clone",           lua_midi_clone);
 		setTableFunc("createNRPN",      lua_midi_createNrpn);
 		setTableFunc("getChanPressure", lua_midi_getChanPressure);
 		setTableFunc("getChannel",      lua_midi_getChannel);
@@ -767,6 +768,24 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			luaL_error(L, "midi.create: message store full");
 		}
 		e->msgStore[*s] = MessageEx();
+		lua_pushinteger(L, static_cast<lua_Integer>((*s)++));
+		return 1;
+	}
+
+	static int lua_midi_clone(lua_State* L) {
+		auto* e = getEngine(L);
+		MessageEx* src = getMsg(L, 1);
+		warnIfOutsideCallback(e, "midi.clone");
+		size_t* s = &e->msgCount;
+		if (*s >= static_cast<size_t>(msgStoreSize)) {
+			luaL_error(L, "midi.clone: message store full");
+		}
+		// Copy only the MIDI payload; the clone starts as a fresh, unsent
+		// message (send/tick/midiPort/isNrpn at defaults) so it can be modified
+		// and sent independently of the source.
+		MessageEx clone;
+		clone.msg = src->msg;
+		e->msgStore[*s] = clone;
 		lua_pushinteger(L, static_cast<lua_Integer>((*s)++));
 		return 1;
 	}

@@ -212,6 +212,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		js_set(js, js_glob(js), "midi", _midi);												// let midi = {}
 		js_set(js, _midi, "selectPort", js_mkfun(js_midi_selectPort));						// void midi.selectPort(midiPort)
 		js_set(js, _midi, "create", js_mkfun(js_midi_create));								// let msg = midi.create()
+		js_set(js, _midi, "clone", js_mkfun(js_midi_clone));								// let msg2 = midi.clone(msg)
 		js_set(js, _midi, "createNRPN", js_mkfun(js_midi_createNrpn));						// let nrpn = midi.createNrpn()
 		js_set(js, _midi, "getChanPressure", js_mkfun(js_midi_getChanPressure));			// int midi.getChanPressure(msg)
 		js_set(js, _midi, "getChannel", js_mkfun(js_midi_getChannel));						// int midi.getChannel(msg)
@@ -735,6 +736,22 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		size_t* s = &jsMap[js]->msgCount;
 		if (*s == msgStoreSize) return js_mkerr(js, "midi.create: maximum reached");
 		jsMap[js]->msgStore[*s] = MessageEx();
+		return js_mknum((*s)++);
+	}
+
+	static jsval_t js_midi_clone(struct js* js, jsval_t* args, int nargs) {
+		if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "midi.clone: bad args");
+		size_t idx = js_getnum(args[0]);
+		if (idx >= jsMap[js]->msgCount) return js_mkerr(js, "midi.clone: invalid msg");
+		warnIfOutsideCallback(js, "midi.clone");
+		size_t* s = &jsMap[js]->msgCount;
+		if (*s == msgStoreSize) return js_mkerr(js, "midi.clone: maximum reached");
+		// Copy only the MIDI payload; the clone starts as a fresh, unsent
+		// message (send/tick/midiPort/isNrpn at defaults) so it can be modified
+		// and sent independently of the source.
+		MessageEx clone;
+		clone.msg = jsMap[js]->msgStore[idx].msg;
+		jsMap[js]->msgStore[*s] = clone;
 		return js_mknum((*s)++);
 	}
 

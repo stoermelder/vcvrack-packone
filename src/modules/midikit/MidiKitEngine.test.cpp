@@ -881,6 +881,70 @@ TEST_CASE("setNoteOn clamps out-of-range velocity identically (#A5)", "[MidiKit]
 }
 
 
+// --- midi.clone --------------------------------------------------------
+//
+// clone(msg) must produce an independent copy: same MIDI payload, but a
+// fresh, unsent message. Editing the clone must not touch the source (a
+// naive "return the same slot" alias would fail the first case below), and
+// cloning the incoming message (handle 0) is the review's D8 idiom — "send
+// a modified copy of the incoming message".
+
+static const char* JS_MIDI_CLONE = R"(/**
+ * @engine Elk
+ */
+onMidiMessage = function(port, msg) {
+    let src = midi.create();
+    midi.setNoteOn(src, 1, 60, 100);
+    let copy = midi.clone(src);
+    midi.setNote(copy, 70);      // edit the clone only
+    midiOut.send(src);           // source unchanged -> note 60
+    midiOut.send(copy);          // clone carries the edit -> note 70
+};
+)";
+
+static const char* LUA_MIDI_CLONE = R"(--[[
+@engine Lua
+--]]
+function onMidiMessage(port, msg)
+    local src = midi.create()
+    midi.setNoteOn(src, 1, 60, 100)
+    local copy = midi.clone(src)
+    midi.setNote(copy, 70)
+    midiOut.send(src)
+    midiOut.send(copy)
+end
+)";
+
+TEST_CASE("midi.clone is an independent copy in both engines", "[MidiKit][CrossEngine]") {
+	requireEquivalent(JS_MIDI_CLONE, LUA_MIDI_CLONE);
+}
+
+
+static const char* JS_MIDI_CLONE_INCOMING = R"(/**
+ * @engine Elk
+ */
+onMidiMessage = function(port, msg) {
+    let copy = midi.clone(msg);   // deep copy of the incoming note-on
+    midi.setChannel(copy, 5);     // reroute to channel 5
+    midiOut.send(copy);
+};
+)";
+
+static const char* LUA_MIDI_CLONE_INCOMING = R"(--[[
+@engine Lua
+--]]
+function onMidiMessage(port, msg)
+    local copy = midi.clone(msg)
+    midi.setChannel(copy, 5)
+    midiOut.send(copy)
+end
+)";
+
+TEST_CASE("midi.clone of the incoming message sends a modified copy", "[MidiKit][CrossEngine]") {
+	requireEquivalent(JS_MIDI_CLONE_INCOMING, LUA_MIDI_CLONE_INCOMING);
+}
+
+
 // --- setNoteOff --------------------------------------------------------
 
 static const char* JS_NOTE_OFF = R"(/**

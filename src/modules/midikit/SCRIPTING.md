@@ -212,6 +212,13 @@ also receives the incoming message as handle `0`/implicit first arg (Lua:
 index `0`, Elk: same convention).
 
 - `midi.create()` → new empty message handle.
+- `midi.clone(msg)` → new message handle carrying an independent copy of
+  `msg`'s MIDI payload. The clone starts as a fresh, unsent message (its own
+  store slot), so it can be modified and sent without affecting the source.
+  This is the canonical way to "send a modified copy of the incoming message",
+  e.g. `let copy = midi.clone(msg); midi.setChannel(copy, 5); midiOut.send(copy);`
+  Note: NRPN state is not copied — a clone of an NRPN handle is a single plain
+  message, not a chained quad.
 - `midi.createNRPN()` → 4 chained handles (param LSB/MSB + value LSB/MSB),
   used only with `midi.setNRPN`.
 - Getters: `getChannel(msg)` (1-based; `-1` for realtime/SysEx messages —

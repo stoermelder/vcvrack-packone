@@ -435,6 +435,7 @@ The API below is identical for both scripting engines — the function names, ar
 ### midi
 
 - `midi.create()`: Creates an empty MIDI message.
+- `midi.clone(msg)`: Creates an independent copy of `msg` (same MIDI payload, but a fresh, unsent message). Edit the returned handle freely — the source `msg` is unaffected. Handy for sending a modified copy of the incoming message: `let copy = midi.clone(msg); midi.setChannel(copy, 5); midiOut.send(copy);`. Note: NRPN state is not copied — a clone of an NRPN handle is a single plain message.
 - `midi.createNRPN()`: Creates an empty NRPN MIDI message (actually 4 MIDI messages).
 - `midi.getChannel(msg)`: Returns the MIDI channel (1..16) of `msg`, or `-1` if `msg` is a realtime or SysEx message (clock, start/stop/continue, SysEx framing), since those carry no channel.
 - `midi.getChanPressure(msg)`: Returns the pressure value (0..127) of a MIDI channel pressure/aftertouch message `msg`.
