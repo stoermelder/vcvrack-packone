@@ -278,3 +278,148 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Elk
 
 	Test::destroyModule(m);
 }
+
+
+// ─── Memory / garbage collection ────────────────────────────────────────────
+
+// RAM-usage tests for the Elk engine. Each onMidiMessage callback allocates
+// scratch garbage (strings, objects, arrays) that nothing retains, so the fixed
+// 64KB arena must stay bounded across a large number of callbacks. Under real
+// use the engine's own automatic GC is what keeps it bounded, and the no-growth
+// test below deliberately does NOT collect or touch the GC threshold — it only
+// runs callbacks and checks the arena did not march toward exhaustion. A leak —
+// a script that keeps references to per-callback allocations — would grow brk
+// monotonically (reachable entities are never collected) until the arena fills
+// and allocations start failing with "oom".
+//
+// The retain test below is a sensitivity control for the no-growth test: it
+// proves the measurement would actually see a leak. It sets the GC threshold to
+// zero (js_setgct) so Elk's own automatic GC runs at every top-level statement
+// boundary, which lets it read the retained live set instead of the transient
+// garbage stacked on top of it. That is deliberate isolation of retention, not
+// a substitute for the automatic-GC behaviour pinned by the no-growth test.
+
+static const char* ELK_GC_SCRATCH = R"(/**
+ * @engine Elk
+ * @description test
+ */
+onMidiMessage = function(midiPort, msg) {
+	let n = number.toString(midi.getNote(msg));
+	let s = n + "_" + n;
+	let o = { a: 1, b: "b", c: s };
+	let arr = [s, o, "tail"];
+	number.toString(arr.length);
+};
+)";
+
+TEST_CASE("Elk garbage-generating callbacks do not grow RAM usage", "[MidiKit][Elk][GC]") {
+	MidiKitModule* m = createModule();
+	m->loadScript(ELK_GC_SCRATCH);
+	REQUIRE(m->se.js != nullptr);
+
+	const int warmup = 200;
+	const int run = 5000;
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);
+	msg.setChannel(1);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	for (int i = 0; i < warmup; i++) {
+		m->se.processInMessage(0, msg);
+		m->se.process();
+	}
+
+	size_t used0, total;
+	REQUIRE(m->se.getMemoryUsage(used0, total));
+	// The arena is fixed, so the total budget is known up front.
+	REQUIRE(total == sizeof(m->se.jsMem));
+
+	for (int i = 0; i < run; i++) {
+		m->se.processInMessage(0, msg);
+		m->se.process();
+	}
+
+	size_t used1, total1;
+	REQUIRE(m->se.getMemoryUsage(used1, total1));
+
+	// The callbacks must have actually run (no load/callback errors), so the
+	// allocations really happened rather than the test passing vacuously.
+	std::string log = drainLog(m);
+	REQUIRE(log.find("rror") == std::string::npos);
+
+	// Only the engine's automatic GC is in play here — nothing in this test
+	// collects or changes the threshold. Elk collects at top-level statement
+	// boundaries once brk crosses half the arena, so a non-retaining script's
+	// usage oscillates well below the limit. A leak would march brk toward the
+	// full 64KB arena (and start erroring with "oom"), so after 5000 callbacks
+	// usage must still be comfortably inside the arena and no more than half
+	// the arena above the warm-up level.
+	REQUIRE(used1 < total1);
+	REQUIRE(used1 <= used0 + total1 / 2);
+
+	Test::destroyModule(m);
+}
+
+
+// Sensitivity control for the test above: a script that DOES retain its
+// per-callback allocation (grows a global array) must show up as clear
+// growth. Without this the no-growth test could pass vacuously if js_usage
+// stopped reflecting allocations at all. The GC threshold is lowered to zero so
+// the retained set can be read cleanly — deliberate isolation of retention,
+// separate from the automatic-GC behaviour the no-growth test pins.
+static const char* ELK_GC_RETAIN = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let leaked = [];
+onMidiMessage = function(midiPort, msg) {
+	leaked[leaked.length] = number.toString(midi.getNote(msg)) + "_";
+};
+)";
+
+TEST_CASE("Elk retaining callbacks do grow RAM usage", "[MidiKit][Elk][GC]") {
+	MidiKitModule* m = createModule();
+	m->loadScript(ELK_GC_RETAIN);
+	REQUIRE(m->se.js != nullptr);
+	js_setgct(m->se.js, 0);
+
+	const int warmup = 20;
+	const int run = 200;
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);
+	msg.setChannel(1);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	for (int i = 0; i < warmup; i++) {
+		m->se.processInMessage(0, msg);
+		m->se.process();
+	}
+
+	js_eval(m->se.js, "1;", ~0U);
+	size_t used0, total;
+	REQUIRE(m->se.getMemoryUsage(used0, total));
+
+	for (int i = 0; i < run; i++) {
+		m->se.processInMessage(0, msg);
+		m->se.process();
+	}
+
+	js_eval(m->se.js, "1;", ~0U);
+	size_t used1, total1;
+	REQUIRE(m->se.getMemoryUsage(used1, total1));
+
+	std::string log = drainLog(m);
+	REQUIRE(log.find("rror") == std::string::npos);
+
+	// 200 retained strings + their array slots must be clearly visible, while
+	// still staying well under the 64KB arena.
+	REQUIRE(used1 > used0 + 2048);
+
+	Test::destroyModule(m);
+}

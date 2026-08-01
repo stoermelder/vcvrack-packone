@@ -228,3 +228,131 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua
 
 	Test::destroyModule(m);
 }
+
+
+// ─── Memory / garbage collection ────────────────────────────────────────────
+
+// RAM-usage tests for the Lua engine. Each onMidiMessage callback allocates
+// scratch garbage (strings, tables) that nothing retains; across a large number
+// of callbacks the heap must not grow. Under real use the engine's automatic
+// incremental GC is what keeps it flat, so the no-growth test below does NOT
+// collect manually — it only runs callbacks and checks the heap stayed put. A
+// retaining script grows the heap roughly linearly with the callback count,
+// because reachable objects are never collected (pinned by the retain test).
+
+static const char* LUA_GC_SCRATCH = R"(--[[
+@engine Lua
+@description test
+--]]
+onMidiMessage = function(midiPort, msg)
+  local n = number.toString(midi.getNote(msg))
+  local s = n .. "_" .. n
+  local o = { a = 1, b = "b", c = s }
+  local t = { s, o, "tail" }
+  number.toString(#t)
+end
+)";
+
+TEST_CASE("Lua garbage-generating callbacks do not grow RAM usage", "[MidiKit][Lua][GC]") {
+	MidiKitModule* m = createModule();
+	m->loadScript(LUA_GC_SCRATCH);
+	REQUIRE(m->seLua.L != nullptr);
+
+	const int warmup = 200;
+	const int run = 5000;
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);
+	msg.setChannel(1);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	for (int i = 0; i < warmup; i++) {
+		m->seLua.processInMessage(0, msg);
+		m->seLua.process();
+	}
+
+	size_t used0;
+	REQUIRE(m->seLua.getMemoryUsage(used0));
+
+	for (int i = 0; i < run; i++) {
+		m->seLua.processInMessage(0, msg);
+		m->seLua.process();
+	}
+
+	size_t used1;
+	REQUIRE(m->seLua.getMemoryUsage(used1));
+
+	// The callbacks must have actually run (no load/callback errors), so the
+	// allocations really happened rather than the test passing vacuously.
+	std::string log = drainLog(m);
+	REQUIRE(log.find("rror") == std::string::npos);
+
+	// Only the engine's automatic incremental GC is in play — nothing in this
+	// test collects. It keeps the heap at a stable equilibrium for a constant
+	// per-callback allocation pattern (measured noise here is a few KB); a
+	// per-callback leak would grow the heap by tens of kilobytes over this run.
+	REQUIRE(used1 <= used0 + 16384);
+
+	Test::destroyModule(m);
+}
+
+
+// Sensitivity control for the test above: a script that DOES retain its
+// per-callback allocation (grows a global table) must show up as clear
+// growth. Without this the no-growth test could pass vacuously if
+// getMemoryUsage stopped reflecting allocations at all.
+static const char* LUA_GC_RETAIN = R"(--[[
+@engine Lua
+@description test
+--]]
+leaked = {}
+count = 0
+onMidiMessage = function(midiPort, msg)
+  count = count + 1
+  leaked[count] = number.toString(midi.getNote(msg)) .. "_"
+end
+)";
+
+TEST_CASE("Lua retaining callbacks do grow RAM usage", "[MidiKit][Lua][GC]") {
+	MidiKitModule* m = createModule();
+	m->loadScript(LUA_GC_RETAIN);
+	REQUIRE(m->seLua.L != nullptr);
+
+	const int warmup = 20;
+	const int run = 3000;
+
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);
+	msg.setChannel(1);
+	msg.setNote(60);
+	msg.setValue(100);
+
+	for (int i = 0; i < warmup; i++) {
+		m->seLua.processInMessage(0, msg);
+		m->seLua.process();
+	}
+
+	size_t used0;
+	REQUIRE(m->seLua.getMemoryUsage(used0));
+
+	for (int i = 0; i < run; i++) {
+		m->seLua.processInMessage(0, msg);
+		m->seLua.process();
+	}
+
+	size_t used1;
+	REQUIRE(m->seLua.getMemoryUsage(used1));
+
+	std::string log = drainLog(m);
+	REQUIRE(log.find("rror") == std::string::npos);
+
+	// 3000 retained entries in the global table must be clearly visible even
+	// against the automatic GC's equilibrium noise (measured here ~34KB of
+	// growth vs ~5KB of noise).
+	REQUIRE(used1 > used0 + 16384);
+
+	Test::destroyModule(m);
+}
