@@ -1077,15 +1077,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	static int lua_midi_setNoteOff(lua_State* L) {
-		// midi.setNoteOff(msg, channel, note)
+		// midi.setNoteOff(msg, channel, note [, velocity])
 		MessageEx* m = getMsg(L, 1);
 		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
 		uint8_t note = static_cast<uint8_t>(luaL_checkinteger(L, 3));
+		uint8_t vel = static_cast<uint8_t>(std::max(0, std::min(127, static_cast<int>(luaL_optinteger(L, 4, 0)))));
 		if (m->msg.getSize() != 3) m->msg.setSize(3);
 		m->msg.setStatus(0x8);
 		m->msg.setChannel(ch - 1);
 		m->msg.setNote(note);
-		m->msg.setValue(0);
+		m->msg.setValue(vel);
 		return 0;
 	}
 

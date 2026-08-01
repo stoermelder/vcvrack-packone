@@ -1155,6 +1155,69 @@ TEST_CASE("setNoteOff produces identical wire bytes", "[MidiKit][CrossEngine]") 
 }
 
 
+// --- setNoteOff velocity (#D5) ------------------------------------------
+//
+// The optional 4th arg sets the release velocity (byte 3), read back with
+// getValue — symmetric with note-on velocity. The 3-arg form keeps velocity
+// 0 for backward compatibility; the velocity clamps to 0-127.
+
+static const char* JS_NOTE_OFF_VEL = R"(/**
+ * @engine Elk
+ */
+onMidiMessage = function(port, msg) {
+    let out = midi.create();
+    midi.setNoteOff(out, 7, 48, 100);
+    midiOut.send(out);
+};
+)";
+
+static const char* LUA_NOTE_OFF_VEL = R"(--[[
+@engine Lua
+--]]
+function onMidiMessage(port, msg)
+    local out = midi.create()
+    midi.setNoteOff(out, 7, 48, 100)
+    midiOut.send(out)
+end
+)";
+
+TEST_CASE("setNoteOff with velocity produces identical wire bytes", "[MidiKit][CrossEngine]") {
+	requireEquivalent(JS_NOTE_OFF_VEL, LUA_NOTE_OFF_VEL);
+}
+
+static const char* JS_NOTE_OFF_VEL_PROBE = R"(/**
+ * @engine Elk
+ */
+let a = midi.create();
+midi.setNoteOff(a, 7, 48, 100);
+rack.log("PROBE:" + number.toString(midi.getValue(a)));
+midi.setNoteOff(a, 7, 48);
+rack.log("PROBE:" + number.toString(midi.getValue(a)));
+midi.setNoteOff(a, 7, 48, 500);
+rack.log("PROBE:" + number.toString(midi.getValue(a)));
+midi.setNoteOff(a, 7, 48, -5);
+rack.log("PROBE:" + number.toString(midi.getValue(a)));
+)";
+
+static const char* LUA_NOTE_OFF_VEL_PROBE = R"(--[[
+@engine Lua
+--]]
+local a = midi.create()
+midi.setNoteOff(a, 7, 48, 100)
+rack.log("PROBE:" .. number.toString(midi.getValue(a)))
+midi.setNoteOff(a, 7, 48)
+rack.log("PROBE:" .. number.toString(midi.getValue(a)))
+midi.setNoteOff(a, 7, 48, 500)
+rack.log("PROBE:" .. number.toString(midi.getValue(a)))
+midi.setNoteOff(a, 7, 48, -5)
+rack.log("PROBE:" .. number.toString(midi.getValue(a)))
+)";
+
+TEST_CASE("setNoteOff velocity round-trips via getValue and clamps", "[MidiKit][CrossEngine]") {
+	requireLoggedValues(JS_NOTE_OFF_VEL_PROBE, LUA_NOTE_OFF_VEL_PROBE, {"100", "0", "127", "0"});
+}
+
+
 // --- setCc14bit --------------------------------------------------------
 
 static const char* JS_CC_14BIT = R"(/**

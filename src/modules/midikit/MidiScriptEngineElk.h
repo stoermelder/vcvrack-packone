@@ -242,7 +242,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		js_set(js, _midi, "setChanPressure", js_mkfun(js_midi_setChanPressure));			// void midi.setChannelPressure(msg, channel, value)
 		js_set(js, _midi, "setKeyPressure", js_mkfun(js_midi_setKeyPressure));				// void midi.setKeyPressure(msg, channel, note, velocity)
 		js_set(js, _midi, "setNote", js_mkfun(js_midi_setNote));							// void midi.setNote(msg, int)
-		js_set(js, _midi, "setNoteOff", js_mkfun(js_midi_setNoteOff));						// void midi.setNoteOff(msg, channel, note)
+		js_set(js, _midi, "setNoteOff", js_mkfun(js_midi_setNoteOff));						// void midi.setNoteOff(msg, channel, note[, velocity])
 		js_set(js, _midi, "setNoteOn", js_mkfun(js_midi_setNoteOn));						// void midi.setNoteOn(msg, channel, note, velocity)
 		js_set(js, _midi, "setNRPN", js_mkfun(js_midi_setNrpn));							// void midi.setNrpn(nrpn, channel, number, value);
 		js_set(js, _midi, "setPitchWheel", js_mkfun(js_midi_setPitchWheel));				// bool midi.setPitchWheel(msg, value)
@@ -1030,16 +1030,20 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	}
 
 	static jsval_t js_midi_setNoteOff(struct js* js, jsval_t* args, int nargs) {
-		return js_midi(js, args, nargs, "ddd", "setNoteOff", [](jsval_t* args, MessageEx& s) {
-			uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(js_getnum(args[1]))));
-			uint8_t note = js_getnum(args[2]);
-			if (s.msg.getSize() != 3) s.msg.setSize(3);
-			s.msg.setStatus(0x8);
-			s.msg.setChannel(ch - 1);
-			s.msg.setNote(note);
-			s.msg.setValue(0);
-			return js_mknull();
-		});
+		// midi.setNoteOff(msg, channel, note [, velocity])
+		if (!js_chkargs(args, nargs, "ddd") && !js_chkargs(args, nargs, "dddd")) return js_mkerr(js, "midi.setNoteOff: invalid msg");
+		size_t idx = js_getnum(args[0]);
+		if (idx >= jsMap[js]->msgCount) return js_mkerr(js, "midi.setNoteOff: invalid msg");
+		MessageEx& s = jsMap[js]->msgStore[idx];
+		uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(js_getnum(args[1]))));
+		uint8_t note = js_getnum(args[2]);
+		uint8_t vel = nargs >= 4 ? std::max(0, std::min(127, static_cast<int>(js_getnum(args[3])))) : 0;
+		if (s.msg.getSize() != 3) s.msg.setSize(3);
+		s.msg.setStatus(0x8);
+		s.msg.setChannel(ch - 1);
+		s.msg.setNote(note);
+		s.msg.setValue(vel);
+		return js_mknull();
 	}
 
 	static jsval_t js_midi_setNoteOn(struct js* js, jsval_t* args, int nargs) {

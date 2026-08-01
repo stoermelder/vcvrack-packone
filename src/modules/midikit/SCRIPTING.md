@@ -250,8 +250,10 @@ index `0`, Elk: same convention).
   `setChanPressure(msg, ch, value)` (2-byte message; read back with
   `getChanPressure`, not `getValue`),
   `setKeyPressure(msg, ch, note, vel)` (`vel` is clamped to 0-127), `setNote(msg, note)`,
-  `setNoteOn(msg, ch, note, vel)` (`vel` is clamped to 0-127), `setNoteOff(msg, ch, note)`,
-  `setNRPN(nrpnHandle, ch, number, value)` (number/value are 14-bit, 0-16383),
+  `setNoteOn(msg, ch, note, vel)` (`vel` is clamped to 0-127),
+  `setNoteOff(msg, ch, note [, vel])` (release velocity defaults to 0, clamped to
+  0-127; read back with `getValue`), `setNRPN(nrpnHandle, ch, number, value)`
+  (number/value are 14-bit, 0-16383),
   `setPitchWheel(msg, ch, value)`, `setProgramChange(msg, ch, program)`,
   `setSysEx(msg, hexString)` (payload only — the `f0`/`f7` framing is added
   automatically, so pass e.g. `"43104c0000"` rather than `"f043104c0000f7"`;
