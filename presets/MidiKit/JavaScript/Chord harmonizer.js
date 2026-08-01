@@ -67,7 +67,7 @@ onLoad = function() {
         state.voicesOf[n] = [];
     }
     rack.log("Chord harmonizer initialized");
-    rack.log("Voices per note: " + number.toString(config.intervals.length));
+    rack.log("Voices per note: ", config.intervals.length);
 };
 
 onUnload = function() {

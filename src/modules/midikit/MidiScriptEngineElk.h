@@ -157,8 +157,8 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		// rack
 		jsval_t _rack = js_mkobj(js);														// let rack = {}
 		js_set(js, js_glob(js), "rack", _rack);
-		js_set(js, _rack, "log", js_mkfun(js_rack_log));											// void rack.log(string)
-		js_set(js, _rack, "overlay", js_mkfun(js_rack_overlay));									// void rack.overlay(string, [string], [string])
+		js_set(js, _rack, "log", js_mkfun(js_rack_log));									// void rack.log(...)
+		js_set(js, _rack, "overlay", js_mkfun(js_rack_overlay));							// void rack.overlay(string, [string], [string])
 		js_set(js, _rack, "getFrame", js_mkfun(js_rack_getFrame));							// int rack.getFrame()
 
 		// number
@@ -435,8 +435,43 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	// rack
 
 	static jsval_t js_rack_log(struct js* js, jsval_t* args, int nargs) {
-		if (!js_chkargs(args, nargs, "s")) return js_mkerr(js, "log: bad args");
-		const char* log = js_getstr(js, args[0], NULL);
+		if (nargs < 1) return js_mkerr(js, "log: bad args");
+		// Concatenate every argument into one log line, coercing each value
+		// with the same per-type contract as a single value - so scripts can
+		// log numbers/booleans directly instead of wrapping every one in
+		// number.toString(). Numbers use the same format as number.toString();
+		// strings are logged verbatim (no added quotes); null/undefined log as
+		// "null"/"undefined"; anything else falls back to the engine's own
+		// stringification so the call never errors.
+		std::string log;
+		for (int i = 0; i < nargs; i++) {
+			switch (js_type(args[i])) {
+				case JS_NUM: {
+					char str[32];
+					formatNumber(js_getnum(args[i]), str, sizeof(str));
+					log += str;
+					break;
+				}
+				case JS_TRUE:
+					log += "true";
+					break;
+				case JS_FALSE:
+					log += "false";
+					break;
+				case JS_STR:
+					log += js_getstr(js, args[i], NULL);
+					break;
+				case JS_NULL:
+					log += "null";
+					break;
+				case JS_UNDEF:
+					log += "undefined";
+					break;
+				default:
+					log += js_str(js, args[i]);
+					break;
+			}
+		}
 		jsMap[js]->writeLog(log);
 		return js_mknull();
 	}

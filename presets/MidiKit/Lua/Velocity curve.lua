@@ -67,8 +67,8 @@ end
 
 function onLoad()
     rack.log("Velocity curve initialized")
-    rack.log(string.format("Range: %d-%d", config.minVelocity, config.maxVelocity))
-    rack.log("Knob " .. config.curveParam .. " sets the curve (centre = linear)")
+    rack.log("Range: ", config.minVelocity, "-", config.maxVelocity)
+    rack.log("Knob ", config.curveParam, " sets the curve (centre = linear)")
 end
 
 local function matchesChannel(ch)

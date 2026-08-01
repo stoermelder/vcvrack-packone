@@ -56,7 +56,7 @@ let state = {
 
 onLoad = function() {
     rack.log("Clock divider initialized");
-    rack.log("Divisor: " + number.toString(config.divisor) + " (24 ppqn / " + number.toString(config.divisor) + ")");
+    rack.log("Divisor: ", config.divisor, " (24 ppqn / ", config.divisor, ")");
 };
 
 let resetPhase = function() {

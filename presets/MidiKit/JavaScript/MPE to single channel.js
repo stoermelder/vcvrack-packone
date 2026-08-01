@@ -74,9 +74,9 @@ onLoad = function() {
         state.playedOfChannel[c] = 0;
     }
     rack.log("MPE to single channel initialized");
-    rack.log("Member channels: " + number.toString(config.memberLow) + "-" + number.toString(config.memberHigh));
-    rack.log("Output channel: " + number.toString(config.outChannel));
-    rack.log("Bend range: " + number.toString(config.bendRange) + " semitones");
+    rack.log("Member channels: ", config.memberLow, "-", config.memberHigh);
+    rack.log("Output channel: ", config.outChannel);
+    rack.log("Bend range: ", config.bendRange, " semitones");
 };
 
 onUnload = function() {
@@ -142,7 +142,7 @@ onMidiMessage = function(midiPort, msg) {
         midi.setNoteOn(out, config.outChannel, note, midi.getValue(msg));
         midiOut.send(out);
         if (config.verbose) {
-            rack.log("note on ch" + number.toString(ch) + " note=" + number.toString(note));
+            rack.log("note on ch", ch, " note=", note);
         }
         return;
     }
@@ -206,7 +206,7 @@ onMidiMessage = function(midiPort, msg) {
 
         state.noteOfChannel[ch] = target;
         if (config.verbose) {
-            rack.log("bend ch" + number.toString(ch) + ": " + number.toString(sounding) + " -> " + number.toString(target));
+            rack.log("bend ch", ch, ": ", sounding, " -> ", target);
         }
         return;
     }

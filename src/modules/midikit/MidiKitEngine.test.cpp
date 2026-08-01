@@ -223,6 +223,37 @@ static void requireLoggedValues(const std::string& jsScript, const std::string& 
 	REQUIRE(lua == expected);
 }
 
+// rack.log() must coerce non-string arguments (numbers, booleans, null/nil)
+// to the same text in both engines. The PROBE-prefix channel above can't be
+// used here — a string concatenation would do the coercion before rack.log
+// ever saw the value — so instead the script logs inside onMidiMessage and
+// the whole runtime log is compared line-for-line. (The load-time framework
+// chatter lives in loadLog and is ignored.) JS and Lua are asserted against
+// their own expected list because Elk has an `undefined` value that Lua's
+// `nil` has no direct counterpart for (it logs as "null" in both engines).
+static void requireCoercedLog(const std::string& jsScript, const std::string& luaScript,
+                               const std::vector<std::string>& jsExpected,
+                               const std::vector<std::string>& luaExpected) {
+	CATCH_INFO("JS:\n" << jsScript);
+	CATCH_INFO("Lua:\n" << luaScript);
+
+	auto extract = [](const std::string& script) {
+		EngineResult r = run(script);
+		std::vector<std::string> lines;
+		size_t pos = 0;
+		while (pos < r.log.size()) {
+			size_t nl = r.log.find('\n', pos);
+			if (nl == std::string::npos) break;
+			lines.push_back(r.log.substr(pos, nl - pos));
+			pos = nl + 1;
+		}
+		return lines;
+	};
+
+	REQUIRE(extract(jsScript) == jsExpected);
+	REQUIRE(extract(luaScript) == luaExpected);
+}
+
 
 // --- number.* ------------------------------------------------------------
 //
@@ -463,6 +494,87 @@ TEST_CASE("rack.getFrame returns the engine frame counter in both engines", "[Mi
 	uint64_t frame = APP->engine->getFrame();
 	REQUIRE(frameLogged(JS_RACK_GET_FRAME) == frame);
 	REQUIRE(frameLogged(LUA_RACK_GET_FRAME) == frame);
+}
+
+
+// --- rack.log coercion ---------------------------------------------------
+//
+// rack.log() takes any value, not just a string — numbers, booleans and
+// null/undefined/nil are coerced. Numbers use the number.toString() format
+// (pinned by the number.toString cases above), so `rack.log(1 / 3)` prints
+// the same "0.333333" as `number.toString(1 / 3)`. `undefined` exists only
+// in Elk, so the JS and Lua expected lists differ by exactly that line.
+
+static const char* JS_RACK_LOG_COERCE = R"(/**
+ * @engine Elk
+ */
+onMidiMessage = function(port, msg) {
+    rack.log(42);
+    rack.log(3.14);
+    rack.log(-7);
+    rack.log(1 / 3);
+    rack.log(true);
+    rack.log(false);
+    rack.log("hello");
+    rack.log(null);
+    rack.log(undefined);
+};
+)";
+
+static const char* LUA_RACK_LOG_COERCE = R"(--[[
+@engine Lua
+--]]
+function onMidiMessage(port, msg)
+    rack.log(42)
+    rack.log(3.14)
+    rack.log(-7)
+    rack.log(1 / 3)
+    rack.log(true)
+    rack.log(false)
+    rack.log("hello")
+    rack.log(nil)
+end
+)";
+
+TEST_CASE("rack.log coerces numbers, booleans, strings and null in both engines", "[MidiKit][CrossEngine]") {
+	requireCoercedLog(JS_RACK_LOG_COERCE, LUA_RACK_LOG_COERCE,
+	                  {"42", "3.14", "-7", "0.333333", "true", "false", "hello", "null", "undefined"},
+	                  {"42", "3.14", "-7", "0.333333", "true", "false", "hello", "null"});
+}
+
+
+// --- rack.log multiple arguments ---------------------------------------
+//
+// rack.log() concatenates every argument into one line, coercing each value
+// with the same per-type contract. So `rack.log("note on ch", ch, " note=",
+// note)` prints the same line as the old `"note on ch" + number.toString(ch)
+// + " note=" + number.toString(note)`, but without the number.toString()
+// noise — each value is formatted by rack.log, not by the lossy `+` coercion.
+
+static const char* JS_RACK_LOG_MULTI = R"(/**
+ * @engine Elk
+ */
+onMidiMessage = function(port, msg) {
+    rack.log("Member channels: ", 2, "-", 16);
+    rack.log("note on ch", 3, " note=", 60, " -> ", 64);
+    rack.log("ok=", true, " n=", 1 / 3, " nil=", null);
+};
+)";
+
+static const char* LUA_RACK_LOG_MULTI = R"(--[[
+@engine Lua
+--]]
+function onMidiMessage(port, msg)
+    rack.log("Member channels: ", 2, "-", 16)
+    rack.log("note on ch", 3, " note=", 60, " -> ", 64)
+    rack.log("ok=", true, " n=", 1 / 3, " nil=", nil)
+end
+)";
+
+TEST_CASE("rack.log concatenates multiple arguments in both engines", "[MidiKit][CrossEngine]") {
+	requireCoercedLog(JS_RACK_LOG_MULTI, LUA_RACK_LOG_MULTI,
+	                  {"Member channels: 2-16", "note on ch3 note=60 -> 64", "ok=true n=0.333333 nil=null"},
+	                  {"Member channels: 2-16", "note on ch3 note=60 -> 64", "ok=true n=0.333333 nil=null"});
 }
 
 

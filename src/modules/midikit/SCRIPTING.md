@@ -164,7 +164,7 @@ Because there is no `while`, the common "loop until done" shape becomes:
 onMidiMessage = function(midiPort, msg) {
     for (let i = 0; i < 4; i++) {
         if (input.isLow(i + 1)) continue;
-        rack.log("input " + number.toString(i + 1) + " is high");
+        rack.log("input ", i + 1, " is high");
     }
 };
 ```
@@ -177,7 +177,15 @@ every example in this document does.
 ## API surface
 
 ### `rack.*`
-- `rack.log(string)` — write a line to the module's log/console.
+- `rack.log(value [, value ...])` — write a line to the module's log/console.
+  Any number of arguments are concatenated (no separator) into one line, each
+  coerced the same way as a single value: strings are logged verbatim (no
+  added quotes), numbers use the same format as `number.toString()` (so
+  `rack.log(1 / 3)` prints `0.333333`), booleans log as `true`/`false`, and
+  `null`/`undefined` (Elk) / `nil` (Lua) log as `null`/`undefined`. Other
+  values (objects, arrays, tables, functions) use each engine's own
+  stringification — scalars are guaranteed to format identically in both
+  engines.
 - `rack.overlay(s1 [, s2 [, s3]])` — show up to 3 lines in the on-panel overlay.
 - `rack.getFrame()` — the current engine frame number (`APP->engine->getFrame()`).
 

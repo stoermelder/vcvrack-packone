@@ -68,8 +68,8 @@ param.getValueFormat = function(port) {
 
 onLoad = function() {
     rack.log("Velocity curve initialized");
-    rack.log("Range: " + number.toString(config.minVelocity) + "-" + number.toString(config.maxVelocity));
-    rack.log("Knob " + number.toString(config.curveParam) + " sets the curve (centre = linear)");
+    rack.log("Range: ", config.minVelocity, "-", config.maxVelocity);
+    rack.log("Knob ", config.curveParam, " sets the curve (centre = linear)");
 };
 
 let matchesChannel = function(ch) {

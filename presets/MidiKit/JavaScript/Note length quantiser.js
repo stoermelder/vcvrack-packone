@@ -59,12 +59,12 @@ onLoad = function() {
         state.sounding[n] = false;
     }
     rack.log("Note length quantiser initialized");
-    rack.log("Length: " + number.toString(config.lengthTicks) + " ticks on trigger input " + number.toString(config.trigPort));
+    rack.log("Length: ", config.lengthTicks, " ticks on trigger input ", config.trigPort);
     if (config.channel === 0) {
         rack.log("Channel: all");
     }
     else {
-        rack.log("Channel: " + number.toString(config.channel));
+        rack.log("Channel: ", config.channel);
     }
 };
 
@@ -117,7 +117,7 @@ onMidiMessage = function(midiPort, msg) {
         state.sounding[note] = true;
 
         if (config.verbose) {
-            rack.log("note " + number.toString(note) + " -> " + number.toString(config.lengthTicks) + " ticks");
+            rack.log("note ", note, " -> ", config.lengthTicks, " ticks");
         }
         return;
     }

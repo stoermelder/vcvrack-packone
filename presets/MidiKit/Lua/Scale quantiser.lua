@@ -76,7 +76,7 @@ function onLoad()
     end
     rack.log("Scale quantiser initialized")
     rack.log("Root: " .. noteName(config.root))
-    rack.log("Scale degrees: " .. #config.scale)
+    rack.log("Scale degrees: ", #config.scale)
 end
 
 -- Releases every note still substituted in state.playedAs. Without this, a

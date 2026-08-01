@@ -71,7 +71,7 @@ onLoad = function() {
     }
     rack.log("Scale quantiser initialized");
     rack.log("Root: " + noteNames[config.root]);
-    rack.log("Scale degrees: " + number.toString(config.scale.length));
+    rack.log("Scale degrees: ", config.scale.length);
 };
 
 // Releases every note still substituted in state.playedAs. Without this, a

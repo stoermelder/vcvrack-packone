@@ -471,8 +471,46 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// ── log / overlay ─────────────────────────────────────────────────────────
 
 	static int lua_rack_log(lua_State* L) {
-		const char* msg = luaL_checkstring(L, 1);
-		getEngine(L)->writeLog(msg);
+		auto* e = getEngine(L);
+		int n = lua_gettop(L);
+		if (n < 1) return luaL_error(L, "log: bad args");
+		// Concatenate every argument into one log line, coercing each value
+		// with the same per-type contract as a single value - so scripts can
+		// log numbers/booleans directly instead of wrapping every one in
+		// number.toString(). Numbers use the same format as number.toString();
+		// strings are logged verbatim; nil logs as "null" to match Elk; any
+		// other value falls back to Lua's own stringification (luaL_tolstring)
+		// so the call never errors.
+		std::string log;
+		for (int i = 1; i <= n; i++) {
+			switch (lua_type(L, i)) {
+				case LUA_TNUMBER: {
+					char buf[32];
+					formatNumber(static_cast<float>(lua_tonumber(L, i)), buf, sizeof(buf));
+					log += buf;
+					break;
+				}
+				case LUA_TBOOLEAN:
+					log += lua_toboolean(L, i) ? "true" : "false";
+					break;
+				case LUA_TSTRING: {
+					size_t len;
+					log += lua_tolstring(L, i, &len);
+					break;
+				}
+				case LUA_TNIL:
+					log += "null";
+					break;
+				default: {
+					size_t len;
+					const char* s = luaL_tolstring(L, i, &len);
+					log += s;
+					lua_pop(L, 1);  // luaL_tolstring leaves the string on the stack
+					break;
+				}
+			}
+		}
+		e->writeLog(log);
 		return 0;
 	}
 

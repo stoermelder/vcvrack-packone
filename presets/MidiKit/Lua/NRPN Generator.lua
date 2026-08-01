@@ -42,9 +42,9 @@ local state = {
 
 function onLoad()
     rack.log("NRPN generator initialized")
-    rack.log("Channel: " .. config.channel)
-    rack.log("NRPN number: " .. config.nrpnNumber)
-    rack.log("Ticks per step: " .. config.ticksPerStep)
+    rack.log("Channel: ", config.channel)
+    rack.log("NRPN number: ", config.nrpnNumber)
+    rack.log("Ticks per step: ", config.ticksPerStep)
 end
 
 local function sendNrpn()
@@ -52,7 +52,7 @@ local function sendNrpn()
     midi.setNRPN(nrpn, config.channel, config.nrpnNumber, state.value)
     midiOut.send(nrpn)
 
-    rack.log("Sent nrpn #" .. config.nrpnNumber .. " = " .. state.value)
+    rack.log("Sent nrpn #", config.nrpnNumber, " = ", state.value)
 end
 
 local function advanceValue()

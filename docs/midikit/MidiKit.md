@@ -387,7 +387,7 @@ The API below is identical for both scripting engines — the function names, ar
 
 ### rack
 
-- `rack.log(str)`: Prints string `str` on the display of the module.
+- `rack.log(value [, value ...])`: Prints a line on the display of the module. Any number of arguments are concatenated (no separator) into one line; each accepts any value — numbers (formatted like `number.toString()`), booleans (`true`/`false`), strings (verbatim), and `null`/`nil`/`undefined` (Lua's `nil` prints as `null`). Other values (objects, arrays, tables) use engine-specific formatting.
 - `rack.overlay(str1, [str2], [str3])`: Displays string `str1` in an Rack overlay widget.
 - `rack.getFrame()`: Returns the current engine frame number of the Rack engine.
 

@@ -67,7 +67,7 @@ function onLoad()
         state.voicesOf[n] = {}
     end
     rack.log("Chord harmonizer initialized")
-    rack.log("Voices per note: " .. #config.intervals)
+    rack.log("Voices per note: ", #config.intervals)
 end
 
 function onUnload()
