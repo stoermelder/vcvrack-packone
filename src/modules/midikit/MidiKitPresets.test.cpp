@@ -115,6 +115,13 @@ static midi::Message clockTick() {
 	return msg;
 }
 
+static midi::Message startMsg() {
+	midi::Message msg;
+	msg.setSize(1);
+	msg.bytes[0] = 0xfa;
+	return msg;
+}
+
 // One trigger-input tick, draining whatever the callback sent into a flat
 // list of decoded (status-nibble, channel, note, value) events, in order.
 struct NoteEvent {
@@ -135,6 +142,61 @@ static std::vector<NoteEvent> feedTick(MidiKitModule* m) {
 		events.push_back({out.getStatus(), out.getChannel(), out.getNote(), out.getValue()});
 	}
 	return events;
+}
+
+// Like NoteEvent but also carries the engine's tick-scheduling value for the
+// message: 0 = send immediately, N = send once the trigger-input tick counter
+// reaches N. The note-length quantiser schedules its Note-Offs through
+// midiOut.sendAfterTrigger(), so its tests need this to assert the note is
+// cut exactly config.lengthTicks ticks after the Note-On - the tick value the
+// engine stamps on the message is the only way to observe the scheduling.
+struct OutEvent {
+	uint8_t status;  // status nibble: 0x9 = Note-On, 0x8 = Note-Off, 0xb = CC, 0xf = realtime
+	uint8_t channel; // Rack's internal 0-based channel; the script's 1-based channel is this + 1
+	uint8_t note;
+	uint8_t value;
+	int ticks;
+	bool operator==(const OutEvent& o) const {
+		return status == o.status && channel == o.channel && note == o.note && value == o.value && ticks == o.ticks;
+	}
+};
+
+// Let Catch2 print OutEvent contents in assertion expansions (otherwise the
+// "with expansion" line just shows { {?} } and hides the actual message).
+namespace Catch {
+	template<> struct StringMaker<OutEvent> {
+		static std::string convert(OutEvent const& e) {
+			std::ostringstream os;
+			os << "0x" << std::hex << (int)e.status << std::dec
+			   << " ch=" << (int)e.channel
+			   << " n=" << (int)e.note
+			   << " v=" << (int)e.value
+			   << " t=" << e.ticks;
+			return os.str();
+		}
+	};
+}
+
+// Drains an engine's out-queue into OutEvents. Also used after loadScript("")
+// to read the messages onUnload() queued into the engine that was active
+// before the reload.
+static std::vector<OutEvent> drainOut(MidiScriptEngine* engine) {
+	std::vector<OutEvent> events;
+	int port, ticks;
+	midi::Message out;
+	while (engine->processOutMessage(port, out, ticks)) {
+		events.push_back({out.getStatus(), out.getChannel(), out.getNote(), out.getValue(), ticks});
+	}
+	return events;
+}
+
+// feed() plus a drain of the engine's out-queue, decoded into OutEvents. The
+// behavioural preset tests below need the actual outgoing messages (and their
+// tick scheduling), not just "the script ran without erroring".
+static std::vector<OutEvent> feedCollect(MidiKitModule* m, midi::Message msg) {
+	m->activeEngine->processInMessage(0, msg);
+	m->activeEngine->process();
+	return drainOut(m->activeEngine);
 }
 
 
@@ -224,11 +286,10 @@ static const char* ARPEGGIATOR_PRESET_PATHS[] = {
 	"presets/MidiKit/Lua/Arpeggiator.lua"
 };
 
-// Loads one of the two Arpeggiator preset files and sets its four params by
-// normalized 0..1 Param value - the same values a user would get from the
-// panel knobs, so this exercises the same param.getValue() reads the script
-// makes rather than reaching into script-internal state.
-static MidiKitModule* loadArp(const std::string& relPath, float clockDivision, float octaveRange, float noteLength, float playmode) {
+// Loads a preset file into a fresh module and asserts it loaded cleanly (no
+// error lines, and the "Script loaded" confirmation). Shared by all the
+// behavioural preset tests.
+static MidiKitModule* loadPreset(const std::string& relPath) {
 	MidiKitModule* m = createModule();
 	m->loadScript(readFile(repoRoot() + "/" + relPath));
 
@@ -237,7 +298,15 @@ static MidiKitModule* loadArp(const std::string& relPath, float clockDivision, f
 	CATCH_INFO("load log:\n" << loadLog);
 	REQUIRE(loadLog.find("rror") == std::string::npos);
 	REQUIRE(loadLog.find("Script loaded") != std::string::npos);
+	return m;
+}
 
+// Loads one of the two Arpeggiator preset files and sets its four params by
+// normalized 0..1 Param value - the same values a user would get from the
+// panel knobs, so this exercises the same param.getValue() reads the script
+// makes rather than reaching into script-internal state.
+static MidiKitModule* loadArp(const std::string& relPath, float clockDivision, float octaveRange, float noteLength, float playmode) {
+	MidiKitModule* m = loadPreset(relPath);
 	m->params[MidiKitModule::PARAM + 0].setValue(clockDivision);
 	m->params[MidiKitModule::PARAM + 1].setValue(octaveRange);
 	m->params[MidiKitModule::PARAM + 2].setValue(noteLength);
@@ -246,7 +315,7 @@ static MidiKitModule* loadArp(const std::string& relPath, float clockDivision, f
 }
 
 // --- Up mode, 1 tick/step, 1 octave: plain ascending replay of the held chord ---
-TEST_CASE("Arpeggiator Up mode steps the held chord in press order", "[MidiKit][Arpeggiator]") {
+TEST_CASE("'Arpeggiator.js/.lua' Up mode steps the held chord in press order", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
 	CATCH_INFO("preset: " << path);
 
@@ -276,7 +345,7 @@ TEST_CASE("Arpeggiator Up mode steps the held chord in press order", "[MidiKit][
 }
 
 // --- Down mode: exact reverse of press order ---
-TEST_CASE("Arpeggiator Down mode steps the held chord in reverse", "[MidiKit][Arpeggiator]") {
+TEST_CASE("'Arpeggiator.js/.lua' Down mode steps the held chord in reverse", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
 	CATCH_INFO("preset: " << path);
 
@@ -303,7 +372,7 @@ TEST_CASE("Arpeggiator Down mode steps the held chord in reverse", "[MidiKit][Ar
 }
 
 // --- Up-Down mode: ascends then descends without repeating the two end notes ---
-TEST_CASE("Arpeggiator Up-Down mode does not repeat the end notes", "[MidiKit][Arpeggiator]") {
+TEST_CASE("'Arpeggiator.js/.lua' Up-Down mode does not repeat the end notes", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
 	CATCH_INFO("preset: " << path);
 
@@ -332,7 +401,7 @@ TEST_CASE("Arpeggiator Up-Down mode does not repeat the end notes", "[MidiKit][A
 }
 
 // --- Octave range doubles the pattern upward before it cycles ---
-TEST_CASE("Arpeggiator octave range repeats the chord one octave higher", "[MidiKit][Arpeggiator]") {
+TEST_CASE("'Arpeggiator.js/.lua' octave range repeats the chord one octave higher", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
 	CATCH_INFO("preset: " << path);
 
@@ -358,7 +427,7 @@ TEST_CASE("Arpeggiator octave range repeats the chord one octave higher", "[Midi
 }
 
 // --- Clock division: steps only advance every Nth trigger tick ---
-TEST_CASE("Arpeggiator clock division holds the step across intermediate ticks", "[MidiKit][Arpeggiator]") {
+TEST_CASE("'Arpeggiator.js/.lua' clock division holds the step across intermediate ticks", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
 	CATCH_INFO("preset: " << path);
 
@@ -390,7 +459,7 @@ TEST_CASE("Arpeggiator clock division holds the step across intermediate ticks",
 }
 
 // --- Note length: the scheduled Note-Off must always land before the next Note-On ---
-TEST_CASE("Arpeggiator note length never overruns into the next step", "[MidiKit][Arpeggiator]") {
+TEST_CASE("'Arpeggiator.js/.lua' note length never overruns into the next step", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
 	CATCH_INFO("preset: " << path);
 
@@ -428,7 +497,7 @@ TEST_CASE("Arpeggiator note length never overruns into the next step", "[MidiKit
 }
 
 // --- Releasing all held notes stops the arp; no further Note-On is sent ---
-TEST_CASE("Arpeggiator stops stepping once every note is released", "[MidiKit][Arpeggiator]") {
+TEST_CASE("'Arpeggiator.js/.lua' stops stepping once every note is released", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
 	CATCH_INFO("preset: " << path);
 
@@ -454,7 +523,7 @@ TEST_CASE("Arpeggiator stops stepping once every note is released", "[MidiKit][A
 }
 
 // --- onUnload releases whatever note the arp is currently sustaining ---
-TEST_CASE("Arpeggiator releases the sounding note on unload", "[MidiKit][Arpeggiator]") {
+TEST_CASE("'Arpeggiator.js/.lua' releases the sounding note on unload", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
 	CATCH_INFO("preset: " << path);
 
@@ -489,6 +558,337 @@ TEST_CASE("Arpeggiator releases the sounding note on unload", "[MidiKit][Arpeggi
 		if (out.getStatus() == 0x8 && out.getNote() == soundingNote) sawMatchingNoteOff = true;
 	}
 	REQUIRE(sawMatchingNoteOff);
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the Chord harmonizer preset. It reads no module
+// params - config.intervals (the major triad [0,4,7]) and harmonyVelocity
+// (0.8) are hardcoded in the shipped script - so these tests assert against
+// those defaults. A single note must expand into three voices with the
+// 0-offset at full velocity and the harmony voices scaled, the Note-Off must
+// release exactly the voices that were started, and overlapping voices must
+// not be released twice - the reference-counting is the whole point of the
+// script and the part most likely to regress.
+static const char* CHORD_HARMONIZER_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/Chord harmonizer.js",
+	"presets/MidiKit/Lua/Chord harmonizer.lua"
+};
+
+// --- [0,4,7] triad with 0.8 harmony velocity ---
+TEST_CASE("'Chord harmonizer.js/.lua' expands a single note into a scaled triad", "[MidiKit][ChordHarmonizer]") {
+	std::string path = GENERATE(from_range(std::begin(CHORD_HARMONIZER_PRESET_PATHS), std::end(CHORD_HARMONIZER_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// C4 -> C4 (0-offset, full velocity), E4 (+4, floor(100*0.8+0.5)=80),
+	// G4 (+7, 80).
+	auto on = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(on == std::vector<OutEvent>{{0x9, 1, 60, 100, 0}, {0x9, 1, 64, 80, 0}, {0x9, 1, 67, 80, 0}});
+
+	// The Note-Off releases exactly those three voices, once each.
+	auto off = feedCollect(m, noteOff(1, 60));
+	REQUIRE(off == std::vector<OutEvent>{{0x8, 1, 60, 0, 0}, {0x8, 1, 64, 0, 0}, {0x8, 1, 67, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+// --- reference-counting: two notes transposing onto the same target ---
+TEST_CASE("'Chord harmonizer.js/.lua' releases a colliding voice exactly once", "[MidiKit][ChordHarmonizer]") {
+	std::string path = GENERATE(from_range(std::begin(CHORD_HARMONIZER_PRESET_PATHS), std::end(CHORD_HARMONIZER_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// C4's voices are {60,64,67}; A3's voices are {57,61,64}. Note 64 (E4) is
+	// shared - C4's +4 and A3's +7 both land on it.
+	feedCollect(m, noteOn(1, 60, 100));   // 60, 64, 67 down
+	auto second = feedCollect(m, noteOn(1, 57, 100));
+	// 64 is already sounding, so no second Note-On for it - only 57 and 61.
+	REQUIRE(second == std::vector<OutEvent>{{0x9, 1, 57, 100, 0}, {0x9, 1, 61, 80, 0}});
+
+	// Releasing C4 drops 60 and 67 but must leave 64 down (A3 still holds it).
+	auto release60 = feedCollect(m, noteOff(1, 60));
+	REQUIRE(release60 == std::vector<OutEvent>{{0x8, 1, 60, 0, 0}, {0x8, 1, 67, 0, 0}});
+
+	// Releasing A3 finally lets 64 go - exactly once.
+	auto release57 = feedCollect(m, noteOff(1, 57));
+	REQUIRE(release57 == std::vector<OutEvent>{{0x8, 1, 57, 0, 0}, {0x8, 1, 61, 0, 0}, {0x8, 1, 64, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+// --- onUnload releases every still-sounding voice ---
+TEST_CASE("'Chord harmonizer.js/.lua' releases all sounding voices on unload", "[MidiKit][ChordHarmonizer]") {
+	std::string path = GENERATE(from_range(std::begin(CHORD_HARMONIZER_PRESET_PATHS), std::end(CHORD_HARMONIZER_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	feedCollect(m, noteOn(1, 60, 100));   // 60, 64, 67 all held
+
+	MidiScriptEngine* engineBeforeUnload = m->activeEngine;
+	m->loadScript("");
+
+	// refCount 60/64/67 all > 0 -> released ascending. The script's onUnload
+	// hard-codes the release to MIDI channel 1 (internal channel 0) because
+	// refCount isn't channel-indexed - so this is not the 1-based channel the
+	// Note-On went out on, but the fixed first channel.
+	auto ev = drainOut(engineBeforeUnload);
+	REQUIRE(ev == std::vector<OutEvent>{{0x8, 0, 60, 0, 0}, {0x8, 0, 64, 0, 0}, {0x8, 0, 67, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the Scale quantiser preset. The shipped default is C
+// minor ({0,2,3,5,7,8,10} with root C) and preferUpward=false. Every
+// out-of-scale note in a minor scale sits exactly halfway between two scale
+// degrees, so with the default it always snaps down by a semitone - that
+// uniform tie-break is exactly the behaviour worth pinning. The Note-Off
+// rewrite (the release arrives with the *played* note, not the snapped one)
+// and the onUnload release of the substituted note are the parts of the
+// script most likely to regress.
+static const char* SCALE_QUANTISER_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/Scale quantiser.js",
+	"presets/MidiKit/Lua/Scale quantiser.lua"
+};
+
+TEST_CASE("'Scale quantiser.js/.lua' passes in-scale notes through unchanged", "[MidiKit][ScaleQuantiser]") {
+	std::string path = GENERATE(from_range(std::begin(SCALE_QUANTISER_PRESET_PATHS), std::end(SCALE_QUANTISER_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// C minor degrees: C D D# F G G# A# - each passes through note-for-note.
+	// All seven are fed to one module in a single run: that also covers the
+	// engine's GC boundary, since the 6th consecutive message through
+	// quantise() is roughly where Elk first pushes brk past its GC threshold
+	// mid-call. That used to surface as a dropped message with
+	// "onMidiMessage error: ERROR: parse error"; see the F_CALL check in
+	// js_stmt() (elk.c).
+	for (int note : {60, 62, 63, 65, 67, 68, 70}) {
+		auto ev = feedCollect(m, noteOn(1, note, 100));
+		REQUIRE(ev == std::vector<OutEvent>{{0x9, 1, static_cast<uint8_t>(note), 100, 0}});
+	}
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Scale quantiser.js/.lua' snaps off-scale notes to the nearest degree", "[MidiKit][ScaleQuantiser]") {
+	std::string path = GENERATE(from_range(std::begin(SCALE_QUANTISER_PRESET_PATHS), std::end(SCALE_QUANTISER_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// C# E F# A B are each equidistant between two minor-scale degrees; the
+	// default preferUpward=false rounds them all down by a semitone.
+	std::vector<std::pair<int, int>> cases = {{61, 60}, {64, 63}, {66, 65}, {69, 68}, {71, 70}};
+	for (auto& c : cases) {
+		auto ev = feedCollect(m, noteOn(1, c.first, 100));
+		REQUIRE(ev == std::vector<OutEvent>{{0x9, 1, static_cast<uint8_t>(c.second), 100, 0}});
+	}
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Scale quantiser.js/.lua' rewrites the Note-Off to the snapped note", "[MidiKit][ScaleQuantiser]") {
+	std::string path = GENERATE(from_range(std::begin(SCALE_QUANTISER_PRESET_PATHS), std::end(SCALE_QUANTISER_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// E4 snaps to D#4...
+	auto on = feedCollect(m, noteOn(1, 64, 100));
+	REQUIRE(on == std::vector<OutEvent>{{0x9, 1, 63, 100, 0}});
+
+	// ...so the Note-Off that arrives as 64 must be rewritten to release 63.
+	auto off = feedCollect(m, noteOff(1, 64));
+	REQUIRE(off == std::vector<OutEvent>{{0x8, 1, 63, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Scale quantiser.js/.lua' releases the substituted note on unload", "[MidiKit][ScaleQuantiser]") {
+	std::string path = GENERATE(from_range(std::begin(SCALE_QUANTISER_PRESET_PATHS), std::end(SCALE_QUANTISER_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	feedCollect(m, noteOn(1, 64, 100));   // played as 63, still held
+
+	MidiScriptEngine* engineBeforeUnload = m->activeEngine;
+	m->loadScript("");
+
+	// onUnload must release the *substituted* note (63), not the raw 64 -
+	// releasing 64 would leave a hanging voice. As with Chord harmonizer, the
+	// release goes out on the fixed MIDI channel 1 (internal channel 0).
+	auto ev = drainOut(engineBeforeUnload);
+	REQUIRE(ev == std::vector<OutEvent>{{0x8, 0, 63, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the Note length quantiser preset. The shipped default
+// is config.lengthTicks=12 counted on trigger input 1. Every Note-On is
+// re-articulated immediately and a Note-Off is scheduled exactly 12 ticks
+// later via midiOut.sendAfterTrigger(); the incoming Note-Off is discarded.
+// inputTriggerTick only advances on a real trigger edge inside
+// Module::process(), which these engine-level tests do not run, so the tests
+// write the counter directly to simulate a clock that has already advanced -
+// this also proves the scheduled tick is *relative* to the note-on's tick
+// count rather than a fixed absolute tick.
+static const char* NOTE_LENGTH_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/Note length quantiser.js",
+	"presets/MidiKit/Lua/Note length quantiser.lua"
+};
+
+TEST_CASE("'Note length quantiser.js/.lua' schedules the Note-Off lengthTicks after the Note-On", "[MidiKit][NoteLength]") {
+	std::string path = GENERATE(from_range(std::begin(NOTE_LENGTH_PRESET_PATHS), std::end(NOTE_LENGTH_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	m->inputTriggerTick = 40;
+
+	// Note-On passes through, and its Note-Off is scheduled at 40 + 12.
+	auto ev = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0x9, 1, 60, 100, 0}, {0x8, 1, 60, 0, 52}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Note length quantiser.js/.lua' drops the incoming Note-Off", "[MidiKit][NoteLength]") {
+	std::string path = GENERATE(from_range(std::begin(NOTE_LENGTH_PRESET_PATHS), std::end(NOTE_LENGTH_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	feedCollect(m, noteOn(1, 60, 100));
+
+	// The player's own release is discarded - the scheduled one ends the note.
+	auto ev = feedCollect(m, noteOff(1, 60));
+	REQUIRE(ev.empty());
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Note length quantiser.js/.lua' cuts a retriggered note before re-articulating", "[MidiKit][NoteLength]") {
+	std::string path = GENERATE(from_range(std::begin(NOTE_LENGTH_PRESET_PATHS), std::end(NOTE_LENGTH_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	m->inputTriggerTick = 40;
+	feedCollect(m, noteOn(1, 60, 100));   // drains [on, off@52]; sounding[60] stays true
+
+	// Retriggering 60 while it is still sounding cuts the old note immediately
+	// (Note-Off, tick 0) so the re-articulation is clean, then sends the fresh
+	// Note-On and its scheduled Note-Off. Note the order: the engine flushes
+	// the incoming Note-On (message handle 0) before the freshly created cut
+	// message (handle 1), regardless of the send() call order in the script.
+	auto ev = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0x9, 1, 60, 100, 0}, {0x8, 1, 60, 0, 0}, {0x8, 1, 60, 0, 52}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Note length quantiser.js/.lua' releases the sounding note on unload", "[MidiKit][NoteLength]") {
+	std::string path = GENERATE(from_range(std::begin(NOTE_LENGTH_PRESET_PATHS), std::end(NOTE_LENGTH_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	feedCollect(m, noteOn(1, 60, 100));   // scheduled Note-Off not yet due
+
+	MidiScriptEngine* engineBeforeUnload = m->activeEngine;
+	m->loadScript("");
+
+	// onUnload releases the still-sounding note on the fixed MIDI channel 1
+	// (internal channel 0), same best-effort choice as the other presets.
+	auto ev = drainOut(engineBeforeUnload);
+	REQUIRE(ev == std::vector<OutEvent>{{0x8, 0, 60, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the Clock divider preset. The shipped default is
+// config.divisor=6 with passthrough of non-clock messages. MIDI clock (0xF8)
+// arrives on the MIDI input, not the trigger input, so these tests feed it
+// via feedCollect() and assert on which realtime messages come back out: the
+// division (only every 6th tick forwarded), the Start phase reset (so the
+// divided clock always lands on the downbeat rather than wherever the last
+// run left off), and the passthrough of unrelated messages. (The CV trigger
+// output is not asserted here - it is a side effect on the module's pulse
+// generator that only surfaces through Module::process(), which these
+// engine-level tests do not run.)
+static const char* CLOCK_DIVIDER_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/Clock divider.js",
+	"presets/MidiKit/Lua/Clock divider.lua"
+};
+
+TEST_CASE("'Clock divider.js/.lua' forwards only every divisor-th tick", "[MidiKit][ClockDivider]") {
+	std::string path = GENERATE(from_range(std::begin(CLOCK_DIVIDER_PRESET_PATHS), std::end(CLOCK_DIVIDER_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Realtime messages decode to status nibble 0xf. The first five clock
+	// ticks are swallowed...
+	for (int i = 0; i < 5; i++) {
+		auto ev = feedCollect(m, clockTick());
+		bool forwarded = false;
+		for (auto& e : ev) if (e.status == 0xf) forwarded = true;
+		REQUIRE_FALSE(forwarded);
+	}
+
+	// ...and only the sixth is forwarded.
+	auto ev = feedCollect(m, clockTick());
+	int forwarded = 0;
+	for (auto& e : ev) if (e.status == 0xf) forwarded++;
+	REQUIRE(forwarded == 1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Clock divider.js/.lua' resets the phase on Start", "[MidiKit][ClockDivider]") {
+	std::string path = GENERATE(from_range(std::begin(CLOCK_DIVIDER_PRESET_PATHS), std::end(CLOCK_DIVIDER_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// 3 ticks before Start are swallowed, leaving tickCount = 3.
+	for (int i = 0; i < 3; i++) feedCollect(m, clockTick());
+
+	// Start itself is forwarded and resets the count back to 0.
+	auto start = feedCollect(m, startMsg());
+	bool startFwd = false;
+	for (auto& e : start) if (e.status == 0xf) startFwd = true;
+	REQUIRE(startFwd);
+
+	// Without the reset the next tick would already reach the divisor; with
+	// it, the phase restarts and the 6th tick after Start is the first one out.
+	for (int i = 0; i < 5; i++) {
+		auto ev = feedCollect(m, clockTick());
+		bool fwd = false;
+		for (auto& e : ev) if (e.status == 0xf) fwd = true;
+		REQUIRE_FALSE(fwd);
+	}
+	auto ev = feedCollect(m, clockTick());
+	int fwd = 0;
+	for (auto& e : ev) if (e.status == 0xf) fwd++;
+	REQUIRE(fwd == 1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Clock divider.js/.lua' passes non-clock messages through unchanged", "[MidiKit][ClockDivider]") {
+	std::string path = GENERATE(from_range(std::begin(CLOCK_DIVIDER_PRESET_PATHS), std::end(CLOCK_DIVIDER_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// passThroughOther: a CC is forwarded untouched - only 0xF8 is thinned.
+	auto ev = feedCollect(m, cc(1, 20, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0xb, 1, 20, 100, 0}});
 
 	Test::destroyModule(m);
 }
