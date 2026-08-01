@@ -67,7 +67,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// ─── MidiScriptEngine interface ───────────────────────────────────────────
 
-	void setWorker(std::shared_ptr<ITaskWorker> w) { taskWorker = std::move(w); }
+	void setWorker(std::shared_ptr<ITaskWorker> w) {
+		taskWorker = std::move(w);
+	}
 
 	void runAsync(std::function<void()> task) override {
 		taskWorker->work(task, APP);
@@ -120,8 +122,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 					break;
 				// Try to match a @tag line
 				std::smatch m;
-				if (std::regex_search(line, m, tag_re))
+				if (std::regex_search(line, m, tag_re)) {
 					topics[m[1].str()] = m[2].str();
+				}
 			}
 		}
 
@@ -130,10 +133,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			return;
 		}
 
-		if (topics.find("author") != topics.end())
+		if (topics.find("author") != topics.end()) {
 			writeLog(string::f("Author: %s", topics["author"].c_str()), false);
-		if (topics.find("description") != topics.end())
+		}
+		if (topics.find("description") != topics.end()) {
 			writeLog(topics["description"], false);
+		}
 
 		// ── Create Lua state ─────────────────────────────────────────────────
 
@@ -192,8 +197,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (L && !midiOutQueue.empty()) {
 			auto t = midiOutQueue.shift();
 			midiPort = std::get<0>(t);
-			msg      = std::get<1>(t);
-			ticks    = std::get<2>(t);
+			msg = std::get<1>(t);
+			ticks = std::get<2>(t);
 			return true;
 		}
 		return false;
@@ -219,9 +224,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	void processMidi(int midiPort, Message& msg) {
 		if (!L) return;
 
-		msgStore[0].msg    = msg;
-		msgStore[0].send   = false;
-		msgStore[0].tick   = 0;
+		msgStore[0].msg = msg;
+		msgStore[0].send = false;
+		msgStore[0].tick = 0;
 		msgStore[0].isNrpn = false;
 		msgCount = 1;
 
@@ -293,8 +298,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			luaL_argerror(L, stackPos, "message index expected");
 			return nullptr;
 		}
-		int idx = (int)lua_tointeger(L, stackPos);
-		if (idx < 0 || (size_t)idx >= e->msgCount) {
+		int idx = static_cast<int>(lua_tointeger(L, stackPos));
+		if (idx < 0 || static_cast<size_t>(idx) >= e->msgCount) {
 			luaL_argerror(L, stackPos, "invalid message index");
 			return nullptr;
 		}
@@ -438,38 +443,38 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// ── number.* ──────────────────────────────────────────────────────────────
 
 	static int lua_number_abs(lua_State* L) {
-		lua_pushnumber(L, std::abs((float)luaL_checknumber(L, 1)));
+		lua_pushnumber(L, std::abs(static_cast<float>(luaL_checknumber(L, 1))));
 		return 1;
 	}
 
 	static int lua_number_ceil(lua_State* L) {
-		lua_pushnumber(L, std::ceil((float)luaL_checknumber(L, 1)));
+		lua_pushnumber(L, std::ceil(static_cast<float>(luaL_checknumber(L, 1))));
 		return 1;
 	}
 
 	static int lua_number_crossfade(lua_State* L) {
-		float a = (float)luaL_checknumber(L, 1);
-		float b = (float)luaL_checknumber(L, 2);
-		float p = (float)luaL_checknumber(L, 3);
+		float a = static_cast<float>(luaL_checknumber(L, 1));
+		float b = static_cast<float>(luaL_checknumber(L, 2));
+		float p = static_cast<float>(luaL_checknumber(L, 3));
 		lua_pushnumber(L, rack::crossfade(a, b, p));
 		return 1;
 	}
 
 	static int lua_number_floor(lua_State* L) {
-		lua_pushnumber(L, std::floor((float)luaL_checknumber(L, 1)));
+		lua_pushnumber(L, std::floor(static_cast<float>(luaL_checknumber(L, 1))));
 		return 1;
 	}
 
 	static int lua_number_max(lua_State* L) {
-		float a = (float)luaL_checknumber(L, 1);
-		float b = (float)luaL_checknumber(L, 2);
+		float a = static_cast<float>(luaL_checknumber(L, 1));
+		float b = static_cast<float>(luaL_checknumber(L, 2));
 		lua_pushnumber(L, std::max(a, b));
 		return 1;
 	}
 
 	static int lua_number_min(lua_State* L) {
-		float a = (float)luaL_checknumber(L, 1);
-		float b = (float)luaL_checknumber(L, 2);
+		float a = static_cast<float>(luaL_checknumber(L, 1));
+		float b = static_cast<float>(luaL_checknumber(L, 2));
 		lua_pushnumber(L, std::min(a, b));
 		return 1;
 	}
@@ -481,16 +486,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_number_rescale(lua_State* L) {
 		int n = lua_gettop(L);
-		float x    = (float)luaL_checknumber(L, 1);
-		float xMin = (float)luaL_checknumber(L, 2);
-		float xMax = (float)luaL_checknumber(L, 3);
-		float yMin = (float)luaL_checknumber(L, 4);
-		float yMax = (float)luaL_checknumber(L, 5);
+		float x = static_cast<float>(luaL_checknumber(L, 1));
+		float xMin = static_cast<float>(luaL_checknumber(L, 2));
+		float xMax = static_cast<float>(luaL_checknumber(L, 3));
+		float yMin = static_cast<float>(luaL_checknumber(L, 4));
+		float yMax = static_cast<float>(luaL_checknumber(L, 5));
 		if (n >= 6) {
-			float a = (float)luaL_checknumber(L, 6);
-			x = rack::rescale(x, xMin, xMax, 1.f, (float)M_E);
+			float a = static_cast<float>(luaL_checknumber(L, 6));
+			x = rack::rescale(x, xMin, xMax, 1.f, static_cast<float>(M_E));
 			x = std::exp(std::pow(std::log(x), dsp::exp2_taylor5(a)));
-			x = rack::rescale(x, 1.f, (float)M_E, yMin, yMax);
+			x = rack::rescale(x, 1.f, static_cast<float>(M_E), yMin, yMax);
 		}
 		else {
 			x = rack::rescale(x, xMin, xMax, yMin, yMax);
@@ -500,12 +505,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	static int lua_number_toString(lua_State* L) {
-		float f = (float)luaL_checknumber(L, 1);
+		float f = static_cast<float>(luaL_checknumber(L, 1));
 		char buf[32];
-		if (std::ceilf(f) == f)
-			snprintf(buf, sizeof(buf), "%i", (int)f);
-		else
+		if (std::ceilf(f) == f) {
+			snprintf(buf, sizeof(buf), "%i", static_cast<int>(f));
+		}
+		else {
 			snprintf(buf, sizeof(buf), "%f", f);
+		}
 		lua_pushstring(L, buf);
 		return 1;
 	}
@@ -514,7 +521,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_input_enable(lua_State* L) {
 		auto* e = getEngine(L);
-		int i = (int)luaL_checkinteger(L, 1);
+		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->inputCount) luaL_argerror(L, 1, "input index out of range");
 		e->enableInput(i - 1);
 		return 0;
@@ -523,10 +530,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_input_getVoltage(lua_State* L) {
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
-		int i  = (int)luaL_checkinteger(L, 1);
+		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->inputCount) luaL_argerror(L, 1, "input index out of range");
 		uint8_t ch = 1;
-		if (n >= 2) ch = (uint8_t)luaL_checkinteger(L, 2);
+		if (n >= 2) ch = static_cast<uint8_t>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
 		lua_pushnumber(L, e->getInputVoltage(i - 1, ch - 1));
 		return 1;
@@ -535,10 +542,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_input_isHigh(lua_State* L) {
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
-		int i  = (int)luaL_checkinteger(L, 1);
+		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->inputCount) luaL_argerror(L, 1, "input index out of range");
 		uint8_t ch = 1;
-		if (n >= 2) ch = (uint8_t)luaL_checkinteger(L, 2);
+		if (n >= 2) ch = static_cast<uint8_t>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
 		lua_pushboolean(L, e->getInputVoltage(i - 1, ch - 1) > 0.7f);
 		return 1;
@@ -547,10 +554,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_input_isLow(lua_State* L) {
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
-		int i  = (int)luaL_checkinteger(L, 1);
+		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->inputCount) luaL_argerror(L, 1, "input index out of range");
 		uint8_t ch = 1;
-		if (n >= 2) ch = (uint8_t)luaL_checkinteger(L, 2);
+		if (n >= 2) ch = static_cast<uint8_t>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
 		lua_pushboolean(L, e->getInputVoltage(i - 1, ch - 1) < 0.7f);
 		return 1;
@@ -560,19 +567,19 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_trig_getTicks(lua_State* L) {
 		auto* e = getEngine(L);
-		int i = (int)luaL_checkinteger(L, 1);
+		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->inputTrigCount) luaL_argerror(L, 1, "trig index out of range");
-		lua_pushinteger(L, (lua_Integer)e->getTrigTicks(i - 1));
+		lua_pushinteger(L, static_cast<lua_Integer>(e->getTrigTicks(i - 1)));
 		return 1;
 	}
 
 	static int lua_trig_isHigh(lua_State* L) {
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
-		int i = (int)luaL_checkinteger(L, 1);
+		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->inputTrigCount) luaL_argerror(L, 1, "trig index out of range");
 		int ch = 1;
-		if (n >= 2) ch = (int)luaL_checkinteger(L, 2);
+		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
 		lua_pushboolean(L, e->getTrigVoltage(i - 1, ch - 1) > 0.7f);
 		return 1;
@@ -581,10 +588,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_trig_isLow(lua_State* L) {
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
-		int i = (int)luaL_checkinteger(L, 1);
+		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->inputTrigCount) luaL_argerror(L, 1, "trig index out of range");
 		int ch = 1;
-		if (n >= 2) ch = (int)luaL_checkinteger(L, 2);
+		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
 		lua_pushboolean(L, e->getTrigVoltage(i - 1, ch - 1) < 0.7f);
 		return 1;
@@ -594,16 +601,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
 		if (n < 2) luaL_error(L, "trig.setGate: expected (port [,ch], duration)");
-		int i = (int)luaL_checkinteger(L, 1);
+		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->outputTrigCount) luaL_argerror(L, 1, "trig index out of range");
 		int ch = 1;
 		float duration;
 		if (n == 3) {
-			ch = (int)luaL_checkinteger(L, 2);
-			duration = (float)luaL_checknumber(L, 3);
+			ch = static_cast<int>(luaL_checkinteger(L, 2));
+			duration = static_cast<float>(luaL_checknumber(L, 3));
 		}
 		else {
-			duration = (float)luaL_checknumber(L, 2);
+			duration = static_cast<float>(luaL_checknumber(L, 2));
 		}
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
 		e->setTrig(i - 1, ch - 1, duration);
@@ -613,10 +620,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_trig_setHigh(lua_State* L) {
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
-		int i = (int)luaL_checkinteger(L, 1);
+		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->outputTrigCount) luaL_argerror(L, 1, "trig index out of range");
 		int ch = 1;
-		if (n >= 2) ch = (int)luaL_checkinteger(L, 2);
+		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
 		e->setTrigVoltage(i - 1, ch - 1, 10.f);
 		return 0;
@@ -625,10 +632,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_trig_setLow(lua_State* L) {
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
-		int i = (int)luaL_checkinteger(L, 1);
+		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->outputTrigCount) luaL_argerror(L, 1, "trig index out of range");
 		int ch = 1;
-		if (n >= 2) ch = (int)luaL_checkinteger(L, 2);
+		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
 		e->setTrigVoltage(i - 1, ch - 1, 0.f);
 		return 0;
@@ -637,10 +644,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_trig_setTrigger(lua_State* L) {
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
-		int i = (int)luaL_checkinteger(L, 1);
+		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->outputTrigCount) luaL_argerror(L, 1, "trig index out of range");
 		int ch = 1;
-		if (n >= 2) ch = (int)luaL_checkinteger(L, 2);
+		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
 		e->setTrig(i - 1, ch - 1);
 		return 0;
@@ -650,7 +657,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_param_enable(lua_State* L) {
 		auto* e = getEngine(L);
-		int i = (int)luaL_checkinteger(L, 1);
+		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->paramCount) luaL_argerror(L, 1, "param index out of range");
 		e->enableParam(i - 1);
 		return 0;
@@ -658,7 +665,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_param_getValue(lua_State* L) {
 		auto* e = getEngine(L);
-		int i = (int)luaL_checkinteger(L, 1);
+		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->paramCount) luaL_argerror(L, 1, "param index out of range");
 		lua_pushnumber(L, e->getParamValue(i - 1));
 		return 1;
@@ -678,7 +685,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_selectPort(lua_State* L) {
 		auto* e = getEngine(L);
-		int midiPort = (int)luaL_checkinteger(L, 1);
+		int midiPort = static_cast<int>(luaL_checkinteger(L, 1));
 		if (midiPort < 1 || midiPort > e->midiOutputCount) luaL_argerror(L, 1, "invalid output port index");
 		e->selectedPort = midiPort - 1;
 		return 0;
@@ -688,10 +695,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		auto* e = getEngine(L);
 		warnIfOutsideCallback(e, "midi.create");
 		size_t* s = &e->msgCount;
-		if (*s >= (size_t)msgStoreSize)
+		if (*s >= static_cast<size_t>(msgStoreSize)) {
 			luaL_error(L, "midi.create: message store full");
+		}
 		e->msgStore[*s] = MessageEx();
-		lua_pushinteger(L, (lua_Integer)(*s)++);
+		lua_pushinteger(L, static_cast<lua_Integer>((*s)++));
 		return 1;
 	}
 
@@ -699,14 +707,15 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		auto* e = getEngine(L);
 		warnIfOutsideCallback(e, "midi.createNRPN");
 		size_t* s = &e->msgCount;
-		if (*s + 4 > (size_t)msgStoreSize)
+		if (*s + 4 > static_cast<size_t>(msgStoreSize)) {
 			luaL_error(L, "midi.createNRPN: message store full");
+		}
 		e->msgStore[*s + 0] = MessageEx();
 		e->msgStore[*s + 0].isNrpn = true;
 		e->msgStore[*s + 1] = MessageEx();
 		e->msgStore[*s + 2] = MessageEx();
 		e->msgStore[*s + 3] = MessageEx();
-		lua_Integer idx = (lua_Integer)*s;
+		lua_Integer idx = static_cast<lua_Integer>(*s);
 		*s += 4;
 		lua_pushinteger(L, idx);
 		return 1;
@@ -732,7 +741,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_getPitchWheel(lua_State* L) {
 		MessageEx* m = getMsg(L, 1);
-		uint16_t value = ((uint16_t)m->msg.getValue() << 7) | m->msg.getNote();
+		uint16_t value = (static_cast<uint16_t>(m->msg.getValue()) << 7) | m->msg.getNote();
 		lua_pushinteger(L, value);
 		return 1;
 	}
@@ -741,8 +750,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		MessageEx* m = getMsg(L, 1);
 		std::ostringstream ss;
 		ss << std::hex;
-		for (int i = 1; i < m->msg.getSize() - 1; i++)
+		for (int i = 1; i < m->msg.getSize() - 1; i++) {
 			ss << std::setw(2) << std::setfill('0') << static_cast<int>(m->msg.bytes[i]);
+		}
 		std::string s = ss.str();
 		lua_pushlstring(L, s.c_str(), s.size());
 		return 1;
@@ -752,8 +762,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		MessageEx* m = getMsg(L, 1);
 		std::ostringstream ss;
 		ss << std::hex;
-		for (int i = 0; i < m->msg.getSize(); i++)
+		for (int i = 0; i < m->msg.getSize(); i++) {
 			ss << std::setw(2) << std::setfill('0') << static_cast<int>(m->msg.bytes[i]);
+		}
 		std::string s = ss.str();
 		lua_pushlstring(L, s.c_str(), s.size());
 		return 1;
@@ -831,10 +842,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setCc(lua_State* L) {
 		// midi.setCc(msg, channel, cc, value)
-		MessageEx* m  = getMsg(L, 1);
-		uint8_t ch    = (uint8_t)std::max(1, std::min(16, (int)luaL_checkinteger(L, 2)));
-		uint8_t cc    = (uint8_t)luaL_checkinteger(L, 3);
-		uint8_t value = (uint8_t)std::max(0, std::min(127, (int)luaL_checkinteger(L, 4)));
+		MessageEx* m = getMsg(L, 1);
+		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
+		uint8_t cc = static_cast<uint8_t>(luaL_checkinteger(L, 3));
+		uint8_t value = static_cast<uint8_t>(std::max(0, std::min(127, static_cast<int>(luaL_checkinteger(L, 4)))));
 		if (m->msg.getSize() != 3) m->msg.setSize(3);
 		m->msg.setStatus(0xb);
 		m->msg.setChannel(ch - 1);
@@ -845,27 +856,29 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setCc14bit(lua_State* L) {
 		// midi.setCc14bit(msg1, msg2, channel, cc, value)
-		auto* e      = getEngine(L);
+		auto* e = getEngine(L);
 		MessageEx* m1 = getMsg(L, 1);
-		int idx2      = (int)luaL_checkinteger(L, 2);
-		if (idx2 < 0 || (size_t)idx2 >= e->msgCount) luaL_argerror(L, 2, "invalid msg2 index");
+		int idx2 = static_cast<int>(luaL_checkinteger(L, 2));
+		if (idx2 < 0 || static_cast<size_t>(idx2) >= e->msgCount) luaL_argerror(L, 2, "invalid msg2 index");
 		MessageEx* m2 = &e->msgStore[idx2];
-		uint8_t ch    = (uint8_t)std::max(1, std::min(16, (int)luaL_checkinteger(L, 3)));
-		uint8_t cc    = (uint8_t)luaL_checkinteger(L, 4);
-		double  value = luaL_checknumber(L, 5);
+		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 3)))));
+		uint8_t cc = static_cast<uint8_t>(luaL_checkinteger(L, 4));
+		double value = luaL_checknumber(L, 5);
 		if (m1->msg.getSize() != 3) m1->msg.setSize(3);
 		if (m2->msg.getSize() != 3) m2->msg.setSize(3);
 		m1->msg.setStatus(0xb); m2->msg.setStatus(0xb);
-		m1->msg.setChannel(ch - 1); m2->msg.setChannel(ch - 1);
-		m1->msg.setNote(cc);        m2->msg.setNote(cc + 32);
-		m1->msg.setValue((int8_t)value);
-		m2->msg.setValue((int8_t)((value - ((int8_t)value)) * 128.f));
+		m1->msg.setChannel(ch - 1);
+		m2->msg.setChannel(ch - 1);
+		m1->msg.setNote(cc);
+		m2->msg.setNote(cc + 32);
+		m1->msg.setValue(static_cast<int8_t>(value));
+		m2->msg.setValue(static_cast<int8_t>((value - static_cast<int8_t>(value)) * 128.f));
 		return 0;
 	}
 
 	static int lua_midi_setChannel(lua_State* L) {
 		MessageEx* m = getMsg(L, 1);
-		uint8_t ch   = (uint8_t)std::max(1, std::min(16, (int)luaL_checkinteger(L, 2)));
+		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
 		m->msg.setChannel(ch - 1);
 		return 0;
 	}
@@ -873,8 +886,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setChanPressure(lua_State* L) {
 		// midi.setChanPressure(msg, channel, value)
 		MessageEx* m = getMsg(L, 1);
-		uint8_t ch   = (uint8_t)std::max(1, std::min(16, (int)luaL_checkinteger(L, 2)));
-		uint8_t val  = (uint8_t)luaL_checkinteger(L, 3);
+		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
+		uint8_t val = static_cast<uint8_t>(luaL_checkinteger(L, 3));
 		if (m->msg.getSize() != 3) m->msg.setSize(3);
 		m->msg.setStatus(0xd);
 		m->msg.setChannel(ch - 1);
@@ -885,9 +898,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setKeyPressure(lua_State* L) {
 		// midi.setKeyPressure(msg, channel, note, velocity)
 		MessageEx* m = getMsg(L, 1);
-		uint8_t ch   = (uint8_t)std::max(1, std::min(16, (int)luaL_checkinteger(L, 2)));
-		uint8_t note = (uint8_t)luaL_checkinteger(L, 3);
-		uint8_t vel  = (uint8_t)std::max(0, std::min(127, (int)luaL_checkinteger(L, 4)));
+		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
+		uint8_t note = static_cast<uint8_t>(luaL_checkinteger(L, 3));
+		uint8_t vel = static_cast<uint8_t>(std::max(0, std::min(127, static_cast<int>(luaL_checkinteger(L, 4)))));
 		if (m->msg.getSize() != 3) m->msg.setSize(3);
 		m->msg.setStatus(0xa);
 		m->msg.setChannel(ch - 1);
@@ -897,8 +910,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	static int lua_midi_setNote(lua_State* L) {
-		MessageEx* m  = getMsg(L, 1);
-		uint8_t value = (uint8_t)luaL_checkinteger(L, 2);
+		MessageEx* m = getMsg(L, 1);
+		uint8_t value = static_cast<uint8_t>(luaL_checkinteger(L, 2));
 		m->msg.setNote(value);
 		return 0;
 	}
@@ -906,8 +919,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setNoteOff(lua_State* L) {
 		// midi.setNoteOff(msg, channel, note)
 		MessageEx* m = getMsg(L, 1);
-		uint8_t ch   = (uint8_t)std::max(1, std::min(16, (int)luaL_checkinteger(L, 2)));
-		uint8_t note = (uint8_t)luaL_checkinteger(L, 3);
+		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
+		uint8_t note = static_cast<uint8_t>(luaL_checkinteger(L, 3));
 		if (m->msg.getSize() != 3) m->msg.setSize(3);
 		m->msg.setStatus(0x8);
 		m->msg.setChannel(ch - 1);
@@ -919,9 +932,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setNoteOn(lua_State* L) {
 		// midi.setNoteOn(msg, channel, note, velocity)
 		MessageEx* m = getMsg(L, 1);
-		uint8_t ch   = (uint8_t)std::max(1, std::min(16, (int)luaL_checkinteger(L, 2)));
-		uint8_t note = (uint8_t)luaL_checkinteger(L, 3);
-		uint8_t vel  = (uint8_t)std::max(0, std::min(127, (int)luaL_checkinteger(L, 4)));
+		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
+		uint8_t note = static_cast<uint8_t>(luaL_checkinteger(L, 3));
+		uint8_t vel = static_cast<uint8_t>(std::max(0, std::min(127, static_cast<int>(luaL_checkinteger(L, 4)))));
 		if (m->msg.getSize() != 3) m->msg.setSize(3);
 		m->msg.setStatus(0x9);
 		m->msg.setChannel(ch - 1);
@@ -932,35 +945,43 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setNrpn(lua_State* L) {
 		// midi.setNRPN(nrpn, channel, number, value)
-		auto* e       = getEngine(L);
-		int idx        = (int)luaL_checkinteger(L, 1);
-		if (idx < 0 || (size_t)idx >= e->msgCount) luaL_argerror(L, 1, "invalid nrpn index");
-		MessageEx* s1  = &e->msgStore[idx];
+		auto* e = getEngine(L);
+		int idx = static_cast<int>(luaL_checkinteger(L, 1));
+		if (idx < 0 || static_cast<size_t>(idx) >= e->msgCount) luaL_argerror(L, 1, "invalid nrpn index");
+		MessageEx* s1 = &e->msgStore[idx];
 		if (!s1->isNrpn) luaL_argerror(L, 1, "message is not an NRPN");
-		MessageEx* s2  = &e->msgStore[idx + 1];
-		MessageEx* s3  = &e->msgStore[idx + 2];
-		MessageEx* s4  = &e->msgStore[idx + 3];
+		MessageEx* s2 = &e->msgStore[idx + 1];
+		MessageEx* s3 = &e->msgStore[idx + 2];
+		MessageEx* s4 = &e->msgStore[idx + 3];
 
-		uint8_t  ch     = (uint8_t)std::max(1, std::min(16, (int)luaL_checkinteger(L, 2)));
-		uint16_t number = (uint16_t)luaL_checkinteger(L, 3);
-		uint16_t value  = (uint16_t)luaL_checkinteger(L, 4);
+		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
+		uint16_t number = static_cast<uint16_t>(luaL_checkinteger(L, 3));
+		uint16_t value = static_cast<uint16_t>(luaL_checkinteger(L, 4));
 
-		s1->msg.setStatus(0xb); s1->msg.setChannel(ch - 1);
-		s1->msg.setNote(98);    s1->msg.setValue(number & 0x7f);
-		s2->msg.setStatus(0xb); s2->msg.setChannel(ch - 1);
-		s2->msg.setNote(99);    s2->msg.setValue((number >> 7) & 0x7f);
-		s3->msg.setStatus(0xb); s3->msg.setChannel(ch - 1);
-		s3->msg.setNote(38);    s3->msg.setValue(value & 0x7f);
-		s4->msg.setStatus(0xb); s4->msg.setChannel(ch - 1);
-		s4->msg.setNote(6);     s4->msg.setValue((value >> 7) & 0x7f);
+		s1->msg.setStatus(0xb);
+		s1->msg.setChannel(ch - 1);
+		s1->msg.setNote(98);
+		s1->msg.setValue(number & 0x7f);
+		s2->msg.setStatus(0xb);
+		s2->msg.setChannel(ch - 1);
+		s2->msg.setNote(99); 
+		s2->msg.setValue((number >> 7) & 0x7f);
+		s3->msg.setStatus(0xb);
+		s3->msg.setChannel(ch - 1);
+		s3->msg.setNote(38);
+		s3->msg.setValue(value & 0x7f);
+		s4->msg.setStatus(0xb);
+		s4->msg.setChannel(ch - 1);
+		s4->msg.setNote(6);
+		s4->msg.setValue((value >> 7) & 0x7f);
 		return 0;
 	}
 
 	static int lua_midi_setPitchWheel(lua_State* L) {
 		// midi.setPitchWheel(msg, channel, value)
-		MessageEx* m  = getMsg(L, 1);
-		uint8_t  ch   = (uint8_t)std::max(1, std::min(16, (int)luaL_checkinteger(L, 2)));
-		uint16_t value = (uint16_t)luaL_checkinteger(L, 3);
+		MessageEx* m = getMsg(L, 1);
+		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
+		uint16_t value = static_cast<uint16_t>(luaL_checkinteger(L, 3));
 		if (m->msg.getSize() != 3) m->msg.setSize(3);
 		m->msg.setStatus(0xe);
 		m->msg.setChannel(ch - 1);
@@ -972,8 +993,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setProgramChange(lua_State* L) {
 		// midi.setProgramChange(msg, channel, program)
 		MessageEx* m = getMsg(L, 1);
-		uint8_t ch   = (uint8_t)std::max(1, std::min(16, (int)luaL_checkinteger(L, 2)));
-		uint8_t prg  = (uint8_t)luaL_checkinteger(L, 3);
+		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
+		uint8_t prg = static_cast<uint8_t>(luaL_checkinteger(L, 3));
 		if (m->msg.getSize() != 3) m->msg.setSize(3);
 		m->msg.setStatus(0xc);
 		m->msg.setChannel(ch - 1);
@@ -983,17 +1004,19 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setRaw(lua_State* L) {
 		// midi.setRaw(msg, hexstring)
-		MessageEx* m  = getMsg(L, 1);
+		MessageEx* m = getMsg(L, 1);
 		size_t len;
 		const char* raw = luaL_checklstring(L, 2, &len);
 		std::string data(raw, len);
-		if (data.length() % 2 != 0)
+		if (data.length() % 2 != 0) {
 			luaL_error(L, "midi.setRaw: hex string length must be even");
-		if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+		}
+		if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
 			luaL_error(L, "midi.setRaw: invalid hex string");
-		m->msg.setSize((int)(data.length() / 2));
+		}
+		m->msg.setSize(static_cast<int>(data.length() / 2));
 		for (size_t i = 0; i < data.length(); i += 2) {
-			char byte = (char)strtol(data.substr(i, 2).c_str(), nullptr, 16);
+			char byte = static_cast<char>(strtol(data.substr(i, 2).c_str(), nullptr, 16));
 			m->msg.bytes[i / 2] = byte;
 		}
 		return 0;
@@ -1001,25 +1024,29 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setSysEx(lua_State* L) {
 		// midi.setSysEx(msg, hexstring)
-		MessageEx* m  = getMsg(L, 1);
+		MessageEx* m = getMsg(L, 1);
 		size_t len;
 		const char* raw = luaL_checklstring(L, 2, &len);
 		std::string data(raw, len);
-		if (data.length() % 2 != 0)
+		if (data.length() % 2 != 0) {
 			luaL_error(L, "midi.setSysEx: hex string length must be even");
-		if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
-			luaL_error(L, "midi.setSysEx: invalid hex string");
-		if (data.length() / 2 > (size_t)MidiScriptEngine::sysExMaxPayloadLength)
-			luaL_error(L, "midi.setSysEx: payload exceeds maximum of %d bytes", MidiScriptEngine::sysExMaxPayloadLength);
-		for (size_t i = 0; i < data.length(); i += 2) {
-			uint8_t byte = (uint8_t)strtol(data.substr(i, 2).c_str(), nullptr, 16);
-			if (byte > 0x7f)
-				luaL_error(L, "midi.setSysEx: payload bytes must be 7-bit (00-7f)");
 		}
-		m->msg.setSize((int)(data.length() / 2 + 2));
+		if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
+			luaL_error(L, "midi.setSysEx: invalid hex string");
+		}
+		if (data.length() / 2 > static_cast<size_t>(MidiScriptEngine::sysExMaxPayloadLength)) {
+			luaL_error(L, "midi.setSysEx: payload exceeds maximum of %d bytes", MidiScriptEngine::sysExMaxPayloadLength);
+		}
+		for (size_t i = 0; i < data.length(); i += 2) {
+			uint8_t byte = static_cast<uint8_t>(strtol(data.substr(i, 2).c_str(), nullptr, 16));
+			if (byte > 0x7f) {
+				luaL_error(L, "midi.setSysEx: payload bytes must be 7-bit (00-7f)");
+			}
+		}
+		m->msg.setSize(static_cast<int>(data.length() / 2 + 2));
 		m->msg.bytes[0] = 0xf0;
 		for (size_t i = 0; i < data.length(); i += 2) {
-			char byte = (char)strtol(data.substr(i, 2).c_str(), nullptr, 16);
+			char byte = static_cast<char>(strtol(data.substr(i, 2).c_str(), nullptr, 16));
 			m->msg.bytes[i / 2 + 1] = byte;
 		}
 		m->msg.bytes[m->msg.getSize() - 1] = 0xf7;
@@ -1027,8 +1054,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	static int lua_midi_setValue(lua_State* L) {
-		MessageEx* m  = getMsg(L, 1);
-		uint8_t value = (uint8_t)luaL_checkinteger(L, 2);
+		MessageEx* m = getMsg(L, 1);
+		uint8_t value = static_cast<uint8_t>(luaL_checkinteger(L, 2));
 		m->msg.setValue(value);
 		return 0;
 	}
@@ -1042,9 +1069,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// selected output port, or luaL_error on bad args.
 	static MessageEx* getPortMsg(lua_State* L) {
 		auto* e = getEngine(L);
-		int idx = (int)luaL_checkinteger(L, 1);
-		if (idx < 0 || (size_t)idx >= e->msgCount)
+		int idx = static_cast<int>(luaL_checkinteger(L, 1));
+		if (idx < 0 || static_cast<size_t>(idx) >= e->msgCount) {
 			luaL_error(L, "midiOut: invalid message index");
+		}
 
 		e->msgStore[idx].midiPort = e->selectedPort;
 		return &e->msgStore[idx];
@@ -1061,11 +1089,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midiOut_sendAfterMs(lua_State* L) {
 		// midiOut.sendAfterMs(msg, ms)
-		float ms = (float)luaL_checknumber(L, 2);
+		float ms = static_cast<float>(luaL_checknumber(L, 2));
 
 		MessageEx* m = getPortMsg(L);
 		int64_t currentFrame = APP->engine->getFrame();
-		int64_t frame = (int64_t)(ms / 1000.f / APP->engine->getSampleTime());
+		int64_t frame = static_cast<int64_t>(ms / 1000.f / APP->engine->getSampleTime());
 		m->send = true;
 		m->msg.frame = currentFrame + frame;
 		m->tick = 0;
@@ -1080,21 +1108,22 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
 
-		int ticks    = (int)luaL_checkinteger(L, n);
+		int ticks = static_cast<int>(luaL_checkinteger(L, n));
 		int trigPort = 0;  // 0 = use trig port 0
 
 		if (n == 3) {
-			trigPort = (int)luaL_checkinteger(L, 2);
+			trigPort = static_cast<int>(luaL_checkinteger(L, 2));
 		}
 
-		if (trigPort < 0 || trigPort > e->inputTrigCount)
+		if (trigPort < 0 || trigPort > e->inputTrigCount) {
 			luaL_error(L, "midiOut.sendAfterTrigger: invalid trig port index");
+		}
 
 		MessageEx* m = getPortMsg(L);
 		int64_t currentTicks = e->getTrigTicks(trigPort == 0 ? 0 : trigPort - 1);
-		m->send  = true;
+		m->send = true;
 		m->msg.frame = -1;
-		m->tick  = currentTicks + ticks;
+		m->tick = currentTicks + ticks;
 		return 0;
 	}
 };

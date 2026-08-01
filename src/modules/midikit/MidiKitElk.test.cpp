@@ -964,13 +964,13 @@ TEST_CASE("API midi.setSysEx and midi.getSysExData", "[MidiKit][Elk]") {
 	// itself rather than doubling it (#17).
 	auto& stored = m->se.msgStore[0];
 	REQUIRE(stored.msg.getSize() == 7);
-	REQUIRE((int)(uint8_t)stored.msg.bytes[0] == 0xf0);
-	REQUIRE((int)(uint8_t)stored.msg.bytes[1] == 0x43);
-	REQUIRE((int)(uint8_t)stored.msg.bytes[2] == 0x10);
-	REQUIRE((int)(uint8_t)stored.msg.bytes[3] == 0x4c);
-	REQUIRE((int)(uint8_t)stored.msg.bytes[4] == 0x00);
-	REQUIRE((int)(uint8_t)stored.msg.bytes[5] == 0x00);
-	REQUIRE((int)(uint8_t)stored.msg.bytes[6] == 0xf7);
+	REQUIRE(static_cast<int>(static_cast<uint8_t>(stored.msg.bytes[0])) == 0xf0);
+	REQUIRE(static_cast<int>(static_cast<uint8_t>(stored.msg.bytes[1])) == 0x43);
+	REQUIRE(static_cast<int>(static_cast<uint8_t>(stored.msg.bytes[2])) == 0x10);
+	REQUIRE(static_cast<int>(static_cast<uint8_t>(stored.msg.bytes[3])) == 0x4c);
+	REQUIRE(static_cast<int>(static_cast<uint8_t>(stored.msg.bytes[4])) == 0x00);
+	REQUIRE(static_cast<int>(static_cast<uint8_t>(stored.msg.bytes[5])) == 0x00);
+	REQUIRE(static_cast<int>(static_cast<uint8_t>(stored.msg.bytes[6])) == 0xf7);
 
 	Test::destroyModule(m);
 }
@@ -1026,8 +1026,8 @@ TEST_CASE("API midi.setRaw and midi.getRaw", "[MidiKit][Elk]") {
 	// setRaw writes the exact bytes with no framing added, unlike setSysEx.
 	auto& stored = m->se.msgStore[0];
 	REQUIRE(stored.msg.getSize() == 2);
-	REQUIRE((int)(uint8_t)stored.msg.bytes[0] == 0xf1);
-	REQUIRE((int)(uint8_t)stored.msg.bytes[1] == 0x1a);
+	REQUIRE(static_cast<int>(static_cast<uint8_t>(stored.msg.bytes[0])) == 0xf1);
+	REQUIRE(static_cast<int>(static_cast<uint8_t>(stored.msg.bytes[1])) == 0x1a);
 
 	Test::destroyModule(m);
 }

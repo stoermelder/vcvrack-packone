@@ -22,30 +22,30 @@ struct MidiScriptEngine {
 
 	virtual ~MidiScriptEngine() { }
 
-	virtual void runAsync(std::function<void()> task) { }
-	virtual void loadScript(const char* script) { }
+	virtual void runAsync(std::function<void()> task) = 0;
+	virtual void loadScript(const char* script) = 0;
 
 	// Main interface for message processing
-	virtual void processInMessage(int midiPort, Message& msg) { }
-	virtual void process() { }
-	virtual bool processOutMessage(int& midiPort, Message& msg, int& ticks) { return false; }
+	virtual void processInMessage(int midiPort, Message& msg) = 0;
+	virtual void process() = 0;
+	virtual bool processOutMessage(int& midiPort, Message& msg, int& ticks) = 0;
 
 	// Callbacks from the script
-	virtual void writeLog(std::string, bool useTimestamp = true) { }
-	virtual void writeOverlay(std::string s1, std::string s2, std::string s3) { }
-	virtual void enableInput(int i) { }
-	virtual float getInputVoltage(int i, uint8_t ch) { return 0.f; }
-	virtual float getTrigVoltage(int i, uint8_t ch) { return 0.f; }
-	virtual uint64_t getTrigTicks(int i) { return 0; }
-	virtual void enableParam(int i) { }
-	virtual float getParamValue(int i) { return 0.f; }
-	virtual void setTrig(int i, uint8_t ch, float duration = 1e-3f) { }
-	virtual void setTrigVoltage(int i, uint8_t ch, float voltage) { }
+	virtual void writeLog(std::string, bool useTimestamp = true) = 0;
+	virtual void writeOverlay(std::string s1, std::string s2, std::string s3) = 0;
+	virtual void enableInput(int i) = 0;
+	virtual float getInputVoltage(int i, uint8_t ch) = 0;
+	virtual float getTrigVoltage(int i, uint8_t ch) = 0;
+	virtual uint64_t getTrigTicks(int i) = 0;
+	virtual void enableParam(int i) = 0;
+	virtual float getParamValue(int i) = 0;
+	virtual void setTrig(int i, uint8_t ch, float duration = 1e-3f) = 0;
+	virtual void setTrigVoltage(int i, uint8_t ch, float voltage) = 0;
 
 	// Queries into the script from the UI
-	virtual std::string getInputName(int i) { return ""; }
-	virtual std::string getParamName(int i) { return ""; }
-	virtual std::string getParamFormatValue(int i) { return ""; }
+	virtual std::string getInputName(int i) = 0;
+	virtual std::string getParamName(int i) = 0;
+	virtual std::string getParamFormatValue(int i) = 0;
 };
 
 

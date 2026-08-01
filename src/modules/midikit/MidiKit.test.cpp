@@ -288,6 +288,24 @@ struct RecordingEngine : MidiScriptEngine {
 		if (module) tickAtEmit.push_back(module->inputTriggerTick);
 		return true;
 	}
+
+	// Unused by these tests — stubbed only to satisfy the interface.
+	void runAsync(std::function<void()> task) override { }
+	void loadScript(const char* script) override { }
+	void processInMessage(int midiPort, midi::Message& msg) override { }
+	void writeLog(std::string, bool useTimestamp = true) override { }
+	void writeOverlay(std::string s1, std::string s2, std::string s3) override { }
+	void enableInput(int i) override { }
+	float getInputVoltage(int i, uint8_t ch) override { return 0.f; }
+	float getTrigVoltage(int i, uint8_t ch) override { return 0.f; }
+	uint64_t getTrigTicks(int i) override { return 0; }
+	void enableParam(int i) override { }
+	float getParamValue(int i) override { return 0.f; }
+	void setTrig(int i, uint8_t ch, float duration = 1e-3f) override { }
+	void setTrigVoltage(int i, uint8_t ch, float voltage) override { }
+	std::string getInputName(int i) override { return ""; }
+	std::string getParamName(int i) override { return ""; }
+	std::string getParamFormatValue(int i) override { return ""; }
 };
 
 // Drives one full sample through process() with the trigger input held at the

@@ -76,7 +76,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	std::string formatError(const char* code, const char* message) {
 		size_t pos = js_errpos(js);
 		size_t len = strlen(code);
-		if (pos == (size_t)~0 || pos > len) return message;
+		if (pos == static_cast<size_t>(~0) || pos > len) return message;
 
 		int line = 1;
 		size_t lineStart = 0;
@@ -465,10 +465,12 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "number.toString: bad args");
 		float f = js_getnum(args[0]);
 		char str[32];
-		if (ceilf(f) == f)
-			snprintf(str, sizeof(str), "%i", (int)f);
-		else
+		if (ceilf(f) == f) {
+			snprintf(str, sizeof(str), "%i", static_cast<int>(f));
+		}
+		else {
 			snprintf(str, sizeof(str), "%f", f);
+		}
 		return js_mkstr(js, str, strlen(str));
 	}
 
@@ -684,7 +686,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 	static jsval_t js_midi_getPitchWheel(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "d", "getPitchWheel", [](jsval_t* args, MessageEx& s) {
-			uint16_t value = ((uint16_t)s.msg.getValue() << 7) | s.msg.getNote();
+			uint16_t value = (static_cast<uint16_t>(s.msg.getValue()) << 7) | s.msg.getNote();
 			return js_mknum(value);
 		});
 	}
@@ -779,9 +781,9 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 	static jsval_t js_midi_setCc(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "dddd", "setCc", [](jsval_t* args, MessageEx& s) {
-			uint8_t ch = std::max((uint8_t)1, std::min((uint8_t)16, (uint8_t)js_getnum(args[1])));
+			uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(js_getnum(args[1]))));
 			uint8_t cc = js_getnum(args[2]);
-			uint8_t value = std::max(0, std::min(127, (int)js_getnum(args[3])));
+			uint8_t value = std::max(0, std::min(127, static_cast<int>(js_getnum(args[3]))));
 			if (s.msg.getSize() != 3) s.msg.setSize(3);
 			s.msg.setStatus(0xb);
 			s.msg.setChannel(ch - 1);
@@ -796,7 +798,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			size_t idx2 = js_getnum(args[1]);
 			if (idx2 >= jsMap[js]->msgCount) return js_mkerr(js, string::f("midi.setCc14bit: invalid msg").c_str());
 			MessageEx& s2 = jsMap[js]->msgStore[idx2];
-			uint8_t ch = std::max((uint8_t)1, std::min((uint8_t)16, (uint8_t)js_getnum(args[2])));
+			uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(js_getnum(args[2]))));
 			uint8_t cc = js_getnum(args[3]);
 			double value = js_getnum(args[4]);
 			if (s1.msg.getSize() != 3) s1.msg.setSize(3);
@@ -807,15 +809,15 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			s2.msg.setChannel(ch - 1);
 			s1.msg.setNote(cc);
 			s2.msg.setNote(cc + 32);
-			s1.msg.setValue((int8_t)value);
-			s2.msg.setValue((int8_t)(((value - ((int8_t)value))) * 128.f));
+			s1.msg.setValue(static_cast<int8_t>(value));
+			s2.msg.setValue(static_cast<int8_t>((value - static_cast<int8_t>(value)) * 128.f));
 			return js_mknull();
 		});
 	}
 
 	static jsval_t js_midi_setChannel(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "dd", "setChannel", [](jsval_t* args, MessageEx& s) {
-			uint8_t ch = std::max((uint8_t)1, std::min((uint8_t)16, (uint8_t)js_getnum(args[1])));
+			uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(js_getnum(args[1]))));
 			s.msg.setChannel(ch - 1);
 			return js_mknull();
 		});
@@ -823,7 +825,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 	static jsval_t js_midi_setChanPressure(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "ddd", "setChanPressure", [](jsval_t* args, MessageEx& s) {
-			uint8_t ch = std::max((uint8_t)1, std::min((uint8_t)16, (uint8_t)js_getnum(args[1])));
+			uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(js_getnum(args[1]))));
 			uint8_t value = js_getnum(args[2]);
 			if (s.msg.getSize() != 3) s.msg.setSize(3);
 			s.msg.setStatus(0xd);
@@ -836,9 +838,9 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 	static jsval_t js_midi_setKeyPressure(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "dddd", "setKeyPressure", [](jsval_t* args, MessageEx& s) {
-			uint8_t ch = std::max((uint8_t)1, std::min((uint8_t)16, (uint8_t)js_getnum(args[1])));
+			uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(js_getnum(args[1]))));
 			uint8_t note = js_getnum(args[2]);
-			uint8_t vel = std::max(0, std::min(127, (int)js_getnum(args[3])));
+			uint8_t vel = std::max(0, std::min(127, static_cast<int>(js_getnum(args[3]))));
 			if (s.msg.getSize() != 3) s.msg.setSize(3);
 			s.msg.setStatus(0xa);
 			s.msg.setChannel(ch - 1);
@@ -858,7 +860,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 	static jsval_t js_midi_setNoteOff(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "ddd", "setNoteOff", [](jsval_t* args, MessageEx& s) {
-			uint8_t ch = std::max((uint8_t)1, std::min((uint8_t)16, (uint8_t)js_getnum(args[1])));
+			uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(js_getnum(args[1]))));
 			uint8_t note = js_getnum(args[2]);
 			if (s.msg.getSize() != 3) s.msg.setSize(3);
 			s.msg.setStatus(0x8);
@@ -871,9 +873,9 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 	static jsval_t js_midi_setNoteOn(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "dddd", "setNoteOn", [](jsval_t* args, MessageEx& s) {
-			uint8_t ch = std::max((uint8_t)1, std::min((uint8_t)16, (uint8_t)js_getnum(args[1])));
+			uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(js_getnum(args[1]))));
 			uint8_t note = js_getnum(args[2]);
-			uint8_t vel = std::max(0, std::min(127, (int)js_getnum(args[3])));
+			uint8_t vel = std::max(0, std::min(127, static_cast<int>(js_getnum(args[3]))));
 			if (s.msg.getSize() != 3) s.msg.setSize(3);
 			s.msg.setStatus(0x9);
 			s.msg.setChannel(ch - 1);
@@ -893,7 +895,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		MessageEx* s3 = &jsMap[js]->msgStore[idx + 2];
 		MessageEx* s4 = &jsMap[js]->msgStore[idx + 3];
 
-		uint8_t ch = std::max((uint8_t)1, std::min((uint8_t)16, (uint8_t)js_getnum(args[1])));
+		uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(js_getnum(args[1]))));
 		uint16_t number = js_getnum(args[2]);
 		uint16_t value = js_getnum(args[3]);
 		s1->msg.setStatus(0xb);
@@ -917,7 +919,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 	static jsval_t js_midi_setPitchWheel(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "ddd", "setPitchWheel", [](jsval_t* args, MessageEx& s) {
-			uint8_t ch = std::max((uint8_t)1, std::min((uint8_t)16, (uint8_t)js_getnum(args[1])));
+			uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(js_getnum(args[1]))));
 			uint16_t value = js_getnum(args[2]);
 			if (s.msg.getSize() != 3) s.msg.setSize(3);
 			s.msg.setStatus(0xe);
@@ -930,7 +932,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 	static jsval_t js_midi_setProgramChange(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "ddd", "setProgramChange", [](jsval_t* args, MessageEx& s) {
-			uint8_t ch = std::max((uint8_t)1, std::min((uint8_t)16, (uint8_t)js_getnum(args[1])));
+			uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(js_getnum(args[1]))));
 			uint8_t prg = js_getnum(args[2]);
 			if (s.msg.getSize() != 3) s.msg.setSize(3);
 			s.msg.setStatus(0xc);
@@ -943,14 +945,16 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	static jsval_t js_midi_setRaw(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "ds", "setRaw", [js](jsval_t* args, MessageEx& s) {
 			std::string data = js_getstr(js, args[1], NULL);
-			if (data.length() % 2 != 0)
+			if (data.length() % 2 != 0) {
 				return js_mkerr(js, "midi.setRaw: invalid string length");
-			if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+			}
+			if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
 				return js_mkerr(js, "midi.setRaw: invalid hexstring");
+			}
 			s.msg.setSize(data.length() / 2);
 			for (size_t i = 0; i < data.length(); i += 2) {
 				std::string bs = data.substr(i, 2);
-				char byte = (char)strtol(bs.c_str(), NULL, 16);
+				char byte = static_cast<char>(strtol(bs.c_str(), NULL, 16));
 				s.msg.bytes[i / 2] = byte;
 			}
 			return js_mknull();
@@ -960,22 +964,26 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	static jsval_t js_midi_setSysEx(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "ds", "setSysEx", [js](jsval_t* args, MessageEx& s) {
 			std::string data = js_getstr(js, args[1], NULL);
-			if (data.length() % 2 != 0)
+			if (data.length() % 2 != 0) {
 				return js_mkerr(js, "midi.setSysEx: invalid string length");
-			if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+			}
+			if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
 				return js_mkerr(js, "midi.setSysEx: invalid hexstring");
-			if (data.length() / 2 > MidiScriptEngine::sysExMaxPayloadLength)
+			}
+			if (data.length() / 2 > MidiScriptEngine::sysExMaxPayloadLength) {
 				return js_mkerr(js, string::f("midi.setSysEx: payload exceeds maximum of %d bytes", MidiScriptEngine::sysExMaxPayloadLength).c_str());
+			}
 			for (size_t i = 0; i < data.length(); i += 2) {
-				uint8_t byte = (uint8_t)strtol(data.substr(i, 2).c_str(), NULL, 16);
-				if (byte > 0x7f)
+				uint8_t byte = static_cast<uint8_t>(strtol(data.substr(i, 2).c_str(), NULL, 16));
+				if (byte > 0x7f) {
 					return js_mkerr(js, "midi.setSysEx: payload bytes must be 7-bit (00-7f)");
+				}
 			}
 			s.msg.setSize(data.length() / 2 + 2);
 			s.msg.bytes[0] = 0xf0;
 			for (size_t i = 0; i < data.length(); i += 2) {
 				std::string bs = data.substr(i, 2);
-				char byte = (char)strtol(bs.c_str(), NULL, 16);
+				char byte = static_cast<char>(strtol(bs.c_str(), NULL, 16));
 				s.msg.bytes[i / 2 + 1] = byte;
 			}
 			s.msg.bytes[s.msg.getSize() - 1] = 0xf7;
