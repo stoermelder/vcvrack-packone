@@ -131,7 +131,6 @@ minilua is a real Lua 5.4 VM with only the standard library trimmed.)
 | `this` | `bad expr` | — no method receivers |
 | `delete o.k` | `'delete' not found` | assign `null` |
 | `x instanceof Y` | `parse error` | — |
-| `a === b` / `a !== b` where **either side is a boolean** | `type mismatch`, or a bare `parse error` when it sits inside an `if` condition | compare numbers instead: keep the flag as `0`/`1` and test `flag === 1` |
 
 **Supported:** `let`, `if` / `else if` / `else`, three-clause `for`
 (`for (let i = 0; i < n; i++)`), `for (;;)` with `break` / `continue`,
@@ -140,13 +139,15 @@ binding), array literals and indexing with `.length` (see
 [elk_array.md](elk_array.md)), object literals and property access, the
 ternary `?:`, string concatenation with `+`, and `typeof`.
 
-Booleans themselves are fine to store, pass and test directly (`if (flag)`,
-`flag = !flag`, `cond ? a : b`) — it is only `===`/`!==` *comparison* of a
-boolean that fails, and because the failure appears as a runtime
-`onMidiMessage error` rather than a load-time error, a script with one of these
-loads cleanly and then does nothing on every message. See
-[Scale quantiser.js](../../../presets/MidiKit/JavaScript/Scale%20quantiser.js),
-which keeps its tie-break flag as `0`/`1` for exactly this reason.
+Booleans can be stored, passed and tested directly (`if (flag)`, `flag = !flag`,
+`cond ? a : b`). Two booleans can also be compared with `===`/`!==` — they
+compare as their `0`/`1` values, so `flag === true`, `flag !== false` and
+`true === true` work. Mixed comparisons stay type errors, consistent with the
+engine's rejection of other mixed operand types: `flag === 1` (boolean vs
+number) and `flag === 'true'` (boolean vs string) both fail with
+`type mismatch` — keep a numeric flag as `0`/`1` and test `flag === 1` for that
+case, as in
+[Scale quantiser.js](../../../presets/MidiKit/JavaScript/Scale%20quantiser.js).
 
 The authoritative list is elk's own parser
 ([elk.c](elk.c), `js_stmt`) and its test suite

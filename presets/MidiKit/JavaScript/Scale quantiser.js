@@ -123,10 +123,9 @@ let quantise = function(note) {
             // midway between two degrees - config.preferUpward decides, which
             // is the only case where the choice is arbitrary.
             //
-            // The tie test is written over numbers, not booleans: Elk's
-            // === / !== raise "type mismatch" on boolean operands, so
-            // `up !== bestUp` would not run. upNum/bestUpNum carry the same
-            // information as 0/1.
+            // The tie test is written over numbers (0/1) rather than
+            // booleans, which remains valid and readable; `upNum`/`bestUpNum`
+            // carry the same information as boolean up/bestUp.
             let upNum = candidate >= rel ? 1 : 0;
             let wantUp = config.preferUpward ? 1 : 0;
 

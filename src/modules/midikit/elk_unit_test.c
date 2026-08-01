@@ -473,6 +473,29 @@ static void test_bool(void) {
   assert(ev(js, "a=!a;a", "false"));
   assert(ev(js, "!123", "false"));
   assert(ev(js, "!0", "true"));
+  // Boolean === / !== compares two booleans as 0/1 (stoermelder), so a
+  // boolean flag can be tested directly against true/false. Mixed
+  // boolean/number or boolean/string comparisons are still type errors.
+  assert(ev(js, "true === true", "true"));
+  assert(ev(js, "true === false", "false"));
+  assert(ev(js, "false === false", "true"));
+  assert(ev(js, "true !== false", "true"));
+  assert(ev(js, "false !== false", "false"));
+  assert(ev(js, "let flag1 = true; flag1 === true", "true"));
+  assert(ev(js, "let flag2 = false; flag2 !== false", "false"));
+  assert(ev(js, "let flag3 = true; flag3 === false", "false"));
+  // Previously a boolean ===/!== inside an if condition failed with a bare
+  // "parse error"; boolean-only comparisons must now evaluate normally.
+  assert(ev(js, "a=0; if (true === true) a = 1; else a = 2; a", "1"));
+  assert(ev(js, "a=0; if (true === false) a = 1; else a = 2; a", "2"));
+  assert(ev(js, "a=0; if (false !== false) a = 1; else a = 2; a", "2"));
+  // Mixed boolean/number and boolean/string comparisons are still type errors
+  assert(ev(js, "true === 1", "ERROR: type mismatch"));
+  assert(ev(js, "1 === true", "ERROR: type mismatch"));
+  assert(ev(js, "false === 0", "ERROR: type mismatch"));
+  assert(ev(js, "0 !== false", "ERROR: type mismatch"));
+  assert(ev(js, "true === 'true'", "ERROR: type mismatch"));
+  assert(ev(js, "'true' !== true", "ERROR: type mismatch"));
   assert(ev(js, "a=1; 0 || a++; a", "2"));
   assert(ev(js, "a=1; 1 || a++; a", "1"));
   assert(ev(js, "a=1; 0 && a++; a", "1"));

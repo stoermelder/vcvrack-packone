@@ -890,6 +890,17 @@ static jsval_t do_op(struct js *js, uint8_t op, jsval_t lhs, jsval_t rhs) {
   }
   if (is_assign(op))    return do_assign_op(js, op, lhs, r);
   if (vtype(l) == T_STR && vtype(r) == T_STR) return do_string_op(js, op, l, r);
+  // stoermelder: allow ===/!== between two booleans, compared as 0/1 (so
+  // `flag === true`, `flag !== false`, `true === true` work). Mixed
+  // boolean/number or boolean/string comparisons still fall through to
+  // "type mismatch" below, matching the engine's rejection of other mixed
+  // operand types.
+  if ((op == TOK_EQ || op == TOK_NE) &&
+      vtype(l) == T_BOOL && vtype(r) == T_BOOL) {
+    long a = (long) (vdata(l) & 1);
+    long b = (long) (vdata(r) & 1);
+    return mkval(T_BOOL, op == TOK_EQ ? a == b : a != b);
+  }
   if (is_unary(op) && vtype(r) != T_NUM) return js_mkerr(js, "type mismatch");
   if (!is_unary(op) && op != TOK_DOT && (vtype(l) != T_NUM || vtype(r) != T_NUM)) return js_mkerr(js, "type mismatch");
   double a = tod(l), b = tod(r);

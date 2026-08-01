@@ -205,6 +205,49 @@ TEST_CASE("Successful load reports no error position", "[MidiKit][Elk]") {
 }
 
 
+// Boolean === / !== between two booleans works (compared as 0/1), so a
+// boolean flag can be tested directly with `flag === true` / `flag !== false`.
+// Previously this raised "type mismatch" at runtime — or a bare "parse error"
+// when the comparison sat inside an if condition. Mixed boolean/number and
+// boolean/string comparisons are still type errors.
+static const char* ELK_BOOL_EQ = R"(/**
+ * @engine Elk
+ * @description test
+ */
+let eqSame = true === true;
+let neDiff = true !== false;
+let flag = true;
+let ifCmp = 0;
+if (flag === true) ifCmp = 1;
+)";
+
+TEST_CASE("Boolean ===/!== comparison works in scripts", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_BOOL_EQ);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v;
+
+	v = js_eval(m->se.js, "eqSame;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	v = js_eval(m->se.js, "neDiff;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	// The previously-broken case: a boolean comparison inside an if condition
+	v = js_eval(m->se.js, "ifCmp;", ~0U);
+	REQUIRE(js_type(v) == JS_NUM);
+	REQUIRE(js_getnum(v) == Catch::Approx(1.0));
+
+	// Mixed boolean/number and boolean/string comparisons are still type errors
+	v = js_eval(m->se.js, "true === 'true';", ~0U);
+	REQUIRE(js_type(v) == JS_ERR);
+
+	Test::destroyModule(m);
+}
+
+
 static const char* ELK_ON_UNLOAD = R"(/**
  * @engine Elk
  * @description test
