@@ -801,10 +801,10 @@ msg = midi.create()
 midi.setChanPressure(msg, 5, 80)
 isPress = midi.isChanPressure(msg)
 ch = midi.getChannel(msg)
-pressure = midi.getNote(msg)  -- Pressure value is in note byte for channel pressure
+pressure = midi.getChanPressure(msg)
 )";
 
-TEST_CASE("API midi.setChanPressure", "[MidiKit][Lua]") {
+TEST_CASE("API midi.setChanPressure and midi.getChanPressure", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_MIDI_SET_CHAN_PRESSURE);
@@ -823,6 +823,13 @@ TEST_CASE("API midi.setChanPressure", "[MidiKit][Lua]") {
 	REQUIRE(lua_isnumber(m->seLua.L, -1));
 	REQUIRE(lua_tonumber(m->seLua.L, -1) == Catch::Approx(80.0));
 	lua_pop(m->seLua.L, 1);
+
+	// Channel pressure is a 2-byte message on the wire (status + pressure),
+	// not 3 — a trailing byte is illegal for status 0xD (#A2).
+	auto& stored = m->seLua.msgStore[0];
+	REQUIRE(stored.msg.getSize() == 2);
+	REQUIRE(static_cast<int>(static_cast<uint8_t>(stored.msg.bytes[0]) & 0xf0) == 0xd0);
+	REQUIRE(static_cast<int>(static_cast<uint8_t>(stored.msg.bytes[1])) == 80);
 
 	Test::destroyModule(m);
 }

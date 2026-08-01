@@ -372,6 +372,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("selectPort",      lua_midi_selectPort);
 		setTableFunc("create",          lua_midi_create);
 		setTableFunc("createNRPN",      lua_midi_createNrpn);
+		setTableFunc("getChanPressure", lua_midi_getChanPressure);
 		setTableFunc("getChannel",      lua_midi_getChannel);
 		setTableFunc("getLength",       lua_midi_getLength);
 		setTableFunc("getNote",         lua_midi_getNote);
@@ -721,6 +722,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 1;
 	}
 
+	static int lua_midi_getChanPressure(lua_State* L) {
+		MessageEx* m = getMsg(L, 1);
+		lua_pushinteger(L, m->msg.getNote());
+		return 1;
+	}
+
 	static int lua_midi_getChannel(lua_State* L) {
 		MessageEx* m = getMsg(L, 1);
 		lua_pushinteger(L, m->msg.getChannel() + 1);
@@ -888,7 +895,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		MessageEx* m = getMsg(L, 1);
 		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
 		uint8_t val = static_cast<uint8_t>(luaL_checkinteger(L, 3));
-		if (m->msg.getSize() != 3) m->msg.setSize(3);
+		// Channel pressure is a 2-byte message (status + pressure), not 3 —
+		// the pressure lives in bytes[1], read back via getChanPressure/getNote.
+		if (m->msg.getSize() != 2) m->msg.setSize(2);
 		m->msg.setStatus(0xd);
 		m->msg.setChannel(ch - 1);
 		m->msg.setNote(val);

@@ -814,10 +814,10 @@ let msg = midi.create();
 midi.setChanPressure(msg, 5, 80);
 let isPress = midi.isChanPressure(msg);
 let ch = midi.getChannel(msg);
-let note = midi.getNote(msg);  // Pressure value is in note byte for channel pressure
+let pressure = midi.getChanPressure(msg);
 )";
 
-TEST_CASE("API midi.setChanPressure", "[MidiKit][Elk]") {
+TEST_CASE("API midi.setChanPressure and midi.getChanPressure", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(ELK_MIDI_SET_CHAN_PRESSURE);
@@ -830,9 +830,16 @@ TEST_CASE("API midi.setChanPressure", "[MidiKit][Elk]") {
 	REQUIRE(js_type(v) == JS_NUM);
 	REQUIRE(js_getnum(v) == Catch::Approx(5.0));
 
-	v = js_eval(m->se.js, "note;", ~0U);
+	v = js_eval(m->se.js, "pressure;", ~0U);
 	REQUIRE(js_type(v) == JS_NUM);
 	REQUIRE(js_getnum(v) == Catch::Approx(80.0));
+
+	// Channel pressure is a 2-byte message on the wire (status + pressure),
+	// not 3 — a trailing byte is illegal for status 0xD (#A2).
+	auto& stored = m->se.msgStore[0];
+	REQUIRE(stored.msg.getSize() == 2);
+	REQUIRE(static_cast<int>(static_cast<uint8_t>(stored.msg.bytes[0]) & 0xf0) == 0xd0);
+	REQUIRE(static_cast<int>(static_cast<uint8_t>(stored.msg.bytes[1])) == 80);
 
 	Test::destroyModule(m);
 }

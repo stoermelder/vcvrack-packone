@@ -186,18 +186,22 @@ index `0`, Elk: same convention).
 - `midi.create()` → new empty message handle.
 - `midi.createNRPN()` → 4 chained handles (param LSB/MSB + value LSB/MSB),
   used only with `midi.setNRPN`.
-- Getters: `getChannel(msg)` (1-based), `getNote(msg)`, `getValue(msg)`,
-  `getLength(msg)`, `getPitchWheel(msg)`, `getSysExData(msg)` (hex string, the
-  payload only — without the `f0`/`f7` framing), `getRaw(msg)` (hex string of
-  the message's raw bytes, exactly as sent/received — no framing added or
-  removed).
+- Getters: `getChannel(msg)` (1-based), `getChanPressure(msg)`, `getNote(msg)`,
+  `getValue(msg)`, `getLength(msg)`, `getPitchWheel(msg)`, `getSysExData(msg)`
+  (hex string, the payload only — without the `f0`/`f7` framing), `getRaw(msg)`
+  (hex string of the message's raw bytes, exactly as sent/received — no
+  framing added or removed).
 - Type predicates: `isCc`, `isNoteOn`, `isNoteOff`, `isKeyPressure`,
   `isChanPressure`, `isProgramChange`, `isPitchWheel`, `isSysEx`, `isClock`,
   `isStart`, `isContinue`, `isStop`.
-- Setters: `setCc(msg, ch, cc, value)` (`value` is clamped to 0-127),
+- Setters (every `ch` argument below is a MIDI channel and is silently
+  clamped to 1-16, e.g. `setNoteOn(msg, -5, ...)` is treated as channel 1):
+  `setCc(msg, ch, cc, value)` (`value` is clamped to 0-127),
   `setCc14bit(msgMsb, msgLsb, ch, cc, value)`
   (value is a float, MSB=int part/LSB=fractional*128 — see `nrpn_to_cc.js`/`.lua`
-  for the canonical use), `setChannel(msg, ch)`, `setChanPressure(msg, ch, value)`,
+  for the canonical use), `setChannel(msg, ch)`,
+  `setChanPressure(msg, ch, value)` (2-byte message; read back with
+  `getChanPressure`, not `getValue`),
   `setKeyPressure(msg, ch, note, vel)` (`vel` is clamped to 0-127), `setNote(msg, note)`,
   `setNoteOn(msg, ch, note, vel)` (`vel` is clamped to 0-127), `setNoteOff(msg, ch, note)`,
   `setNRPN(nrpnHandle, ch, number, value)` (number/value are 14-bit, 0-16383),

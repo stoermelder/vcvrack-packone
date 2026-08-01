@@ -216,6 +216,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		js_set(js, _midi, "selectPort", js_mkfun(js_midi_selectPort));						// void midi.selectPort(midiPort)
 		js_set(js, _midi, "create", js_mkfun(js_midi_create));								// let msg = midi.create()
 		js_set(js, _midi, "createNRPN", js_mkfun(js_midi_createNrpn));						// let nrpn = midi.createNrpn()
+		js_set(js, _midi, "getChanPressure", js_mkfun(js_midi_getChanPressure));			// int midi.getChanPressure(msg)
 		js_set(js, _midi, "getChannel", js_mkfun(js_midi_getChannel));						// int midi.getChannel(msg)
 		js_set(js, _midi, "getLength", js_mkfun(js_midi_getLength));						// int midi.getLength(msg)
 		js_set(js, _midi, "getNote", js_mkfun(js_midi_getNote));							// int midi.getNote(msg)
@@ -665,6 +666,12 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		return js_mknum(_s);
 	}
 
+	static jsval_t js_midi_getChanPressure(struct js* js, jsval_t* args, int nargs) {
+		return js_midi(js, args, nargs, "d", "getChanPressure", [](jsval_t* args, MessageEx& s) {
+			return js_mknum(s.msg.getNote());
+		});
+	}
+
 	static jsval_t js_midi_getChannel(struct js* js, jsval_t* args, int nargs) {
 		return js_midi(js, args, nargs, "d", "getChannel", [](jsval_t* args, MessageEx& s) {
 			// TODO: check for message type
@@ -827,7 +834,9 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		return js_midi(js, args, nargs, "ddd", "setChanPressure", [](jsval_t* args, MessageEx& s) {
 			uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(js_getnum(args[1]))));
 			uint8_t value = js_getnum(args[2]);
-			if (s.msg.getSize() != 3) s.msg.setSize(3);
+			// Channel pressure is a 2-byte message (status + pressure), not 3 —
+			// the pressure lives in bytes[1], read back via getChanPressure/getNote.
+			if (s.msg.getSize() != 2) s.msg.setSize(2);
 			s.msg.setStatus(0xd);
 			s.msg.setChannel(ch - 1);
 			s.msg.setNote(value);

@@ -392,7 +392,8 @@ The API below is identical for both scripting engines — the function names, ar
 - `midi.create()`: Creates an empty MIDI message.
 - `midi.createNRPN()`: Creates an empty NRPN MIDI message (actually 4 MIDI messages).
 - `midi.getChannel(msg)`: Returns the MIDI channel (1..16) of `msg`.
-- `midi.getLength(msg)`: Returns the length of the MIDI message `msg`. For common short messages this will return *3*; SysEx messages may be longer.
+- `midi.getChanPressure(msg)`: Returns the pressure value (0..127) of a MIDI channel pressure/aftertouch message `msg`.
+- `midi.getLength(msg)`: Returns the length of the MIDI message `msg`. For common short messages this will return *3*; channel pressure messages are 2 bytes; SysEx messages may be longer.
 - `midi.getNote(msg)`: Returns the MIDI note number (0..127) of `msg` (byte 2 of the MIDI message).
 - `midi.getRaw(msg)`: Returns the raw bytes of `msg` as hexstring, exactly as sent/received — no framing added or removed.
 - `midi.getSysExData(msg)`: Returns the data of a MIDI SysEx message `msg` as hexstring.
@@ -409,6 +410,7 @@ The API below is identical for both scripting engines — the function names, ar
 - `midi.isStart(msg)`: Returns true if `msg` is a MIDI start message.
 - `midi.isStop(msg)`: Returns true if `msg` is a MIDI stop message.
 - `midi.isSysEx(msg)`: Returns true if `msg` is a MIDI SysEx message.
+- Every `channel` argument below is silently clamped to 1..16, e.g. `midi.setNoteOn(msg, -5, ...)` is treated as channel 1.
 - `midi.setCc(msg, channel, cc, value)`: Sets `msg` as a MIDI CC message with the specified MIDI channel `channel` (1..16), CC number `cc` (0..127) and `value` (0..127, clamped if out of range).
 - `midi.setCc14bit(msg1, msg2, channel, cc, value)`: Sets `msg1` and `msg2` as a 14-bit MIDI CC message pair, with the MIDI channel `channel` (1..16), CC number `cc` (0..127) and `value` (0..16383).
 - `midi.setChannel(msg, channel)`: Sets the MIDI channel `channel` (1..16) for `msg`.
