@@ -73,10 +73,10 @@ function onLoad()
         state.bendOfChannel[c] = 0
         state.playedOfChannel[c] = 0
     end
-    log("MPE to single channel initialized")
-    log("Member channels: " .. config.memberLow .. "-" .. config.memberHigh)
-    log("Output channel: " .. config.outChannel)
-    log("Bend range: " .. config.bendRange .. " semitones")
+    rack.log("MPE to single channel initialized")
+    rack.log("Member channels: " .. config.memberLow .. "-" .. config.memberHigh)
+    rack.log("Output channel: " .. config.outChannel)
+    rack.log("Bend range: " .. config.bendRange .. " semitones")
 end
 
 function onUnload()
@@ -136,7 +136,7 @@ function onMidiMessage(midiPort, msg)
         midi.setNoteOn(out, config.outChannel, note, midi.getValue(msg))
         midiOut.send(out)
         if config.verbose then
-            log(string.format("note on ch%d note=%d", ch, note))
+            rack.log(string.format("note on ch%d note=%d", ch, note))
         end
         return
     end
@@ -200,7 +200,7 @@ function onMidiMessage(midiPort, msg)
 
         state.noteOfChannel[ch] = target
         if config.verbose then
-            log(string.format("bend ch%d: %d -> %d", ch, sounding, target))
+            rack.log(string.format("bend ch%d: %d -> %d", ch, sounding, target))
         end
         return
     end

@@ -351,12 +351,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 
 	void registerAPI() {
-		// ── Global functions ─────────────────────────────────────────────────
-		lua_pushcfunction(L, lua_log);
-		lua_setglobal(L, "log");
-
-		lua_pushcfunction(L, lua_overlay);
-		lua_setglobal(L, "overlay");
+		// ── rack table ──────────────────────────────────────────────────────
+		lua_newtable(L);
+		setTableFunc("log",      lua_rack_log);
+		setTableFunc("overlay",  lua_rack_overlay);
+		setTableFunc("getFrame", lua_rack_getFrame);
+		lua_setglobal(L, "rack");
 
 		// ── number table ─────────────────────────────────────────────────────
 		// Mostly wraps existing Lua math.*; provided for Elk script compatibility.
@@ -469,19 +469,24 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// ── log / overlay ─────────────────────────────────────────────────────────
 
-	static int lua_log(lua_State* L) {
+	static int lua_rack_log(lua_State* L) {
 		const char* msg = luaL_checkstring(L, 1);
 		getEngine(L)->writeLog(msg);
 		return 0;
 	}
 
-	static int lua_overlay(lua_State* L) {
+	static int lua_rack_overlay(lua_State* L) {
 		int n = lua_gettop(L);
 		const char* s1 = luaL_checkstring(L, 1);
 		const char* s2 = n >= 2 ? luaL_checkstring(L, 2) : "";
 		const char* s3 = n >= 3 ? luaL_checkstring(L, 3) : "";
 		getEngine(L)->writeOverlay(s1, s2, s3);
 		return 0;
+	}
+
+	static int lua_rack_getFrame(lua_State* L) {
+		lua_pushnumber(L, static_cast<lua_Number>(APP->engine->getFrame()));
+		return 1;
 	}
 
 	// ── number.* ──────────────────────────────────────────────────────────────

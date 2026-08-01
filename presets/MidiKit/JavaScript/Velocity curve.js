@@ -67,9 +67,9 @@ param.getValueFormat = function(port) {
 };
 
 onLoad = function() {
-    log("Velocity curve initialized");
-    log("Range: " + number.toString(config.minVelocity) + "-" + number.toString(config.maxVelocity));
-    log("Knob " + number.toString(config.curveParam) + " sets the curve (centre = linear)");
+    rack.log("Velocity curve initialized");
+    rack.log("Range: " + number.toString(config.minVelocity) + "-" + number.toString(config.maxVelocity));
+    rack.log("Knob " + number.toString(config.curveParam) + " sets the curve (centre = linear)");
 };
 
 let matchesChannel = function(ch) {
@@ -105,7 +105,7 @@ onMidiMessage = function(midiPort, msg) {
         midi.setValue(msg, shaped);
 
         if (config.showOverlay) {
-            overlay("Velocity", number.toString(vel) + " -> " + number.toString(shaped));
+            rack.overlay("Velocity", number.toString(vel) + " -> " + number.toString(shaped));
         }
     }
 

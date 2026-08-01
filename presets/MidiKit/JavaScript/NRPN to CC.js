@@ -47,9 +47,9 @@ let state = {
 };
 
 onLoad = function() {
-    log("NRPN to CC converter initialized");
-    log("Mapped NRPN numbers: " + number.toString(config.map.length));
-    log("Channel: " + number.toString(config.ccChannel));
+    rack.log("NRPN to CC converter initialized");
+    rack.log("Mapped NRPN numbers: " + number.toString(config.map.length));
+    rack.log("Channel: " + number.toString(config.ccChannel));
 };
 
 // Returns the CC number mapped to nrpnNumber, or -1 if not mapped
@@ -112,7 +112,7 @@ onMidiMessage = function(midiPort, msg) {
             return;
         }
 
-        log("nrpn #" + number.toString(nrpnNumber) + ": value=" + number.toString(nrpnValue) + " -> cc" + number.toString(ccNumber));
+        rack.log("nrpn #" + number.toString(nrpnNumber) + ": value=" + number.toString(nrpnValue) + " -> cc" + number.toString(ccNumber));
 
         let ccMsb = midi.create();
         let ccLsb = midi.create();

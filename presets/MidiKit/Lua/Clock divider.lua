@@ -55,8 +55,8 @@ local state = {
 }
 
 function onLoad()
-    log("Clock divider initialized")
-    log(string.format("Divisor: %d (24 ppqn / %d)", config.divisor, config.divisor))
+    rack.log("Clock divider initialized")
+    rack.log(string.format("Divisor: %d (24 ppqn / %d)", config.divisor, config.divisor))
 end
 
 local function resetPhase()
@@ -101,7 +101,7 @@ function onMidiMessage(midiPort, msg)
             trig.setTrigger(config.trigPort)
         end
         if config.showOverlay then
-            overlay("Clock /" .. config.divisor, "pulse " .. state.pulseCount)
+            rack.overlay("Clock /" .. config.divisor, "pulse " .. state.pulseCount)
         end
         return
     end

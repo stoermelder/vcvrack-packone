@@ -66,9 +66,9 @@ local function resetState()
 end
 
 function onLoad()
-    log("NRPN to CC converter initialized")
-    log("Mapped NRPN numbers: " .. #config.map)
-    log("Channel: " .. config.ccChannel)
+    rack.log("NRPN to CC converter initialized")
+    rack.log("Mapped NRPN numbers: " .. #config.map)
+    rack.log("Channel: " .. config.ccChannel)
 end
 
 function onMidiMessage(midiPort, msg)
@@ -107,7 +107,7 @@ function onMidiMessage(midiPort, msg)
             return
         end
 
-        log("nrpn #" .. nrpnNumber .. ": value=" .. nrpnValue .. " -> cc" .. ccNumber)
+        rack.log("nrpn #" .. nrpnNumber .. ": value=" .. nrpnValue .. " -> cc" .. ccNumber)
 
         local ccMsb = midi.create()
         local ccLsb = midi.create()

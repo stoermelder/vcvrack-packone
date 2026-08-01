@@ -3,7 +3,7 @@
 MIDI-KIT scripts run in one of two embedded engines, chosen by the `@engine`
 header tag: **Elk** (a JavaScript subset) or **Lua** (a sandboxed Lua 5.4 via
 minilua). Both engines expose the *same* API (`midi`, `midiOut`, `input`,
-`trig`, `param`, `number`, `log`, `overlay`) with 1-based indices for ports,
+`trig`, `param`, `number`, `rack`) with 1-based indices for ports,
 channels, and params. Pick the engine per script; the module identifies it
 from the header, not the file extension.
 
@@ -164,7 +164,7 @@ Because there is no `while`, the common "loop until done" shape becomes:
 onMidiMessage = function(midiPort, msg) {
     for (let i = 0; i < 4; i++) {
         if (input.isLow(i + 1)) continue;
-        log("input " + number.toString(i + 1) + " is high");
+        rack.log("input " + number.toString(i + 1) + " is high");
     }
 };
 ```
@@ -176,9 +176,10 @@ every example in this document does.
 
 ## API surface
 
-### Global functions
-- `log(string)` — write a line to the module's log/console.
-- `overlay(s1 [, s2 [, s3]])` — show up to 3 lines in the on-panel overlay.
+### `rack.*`
+- `rack.log(string)` — write a line to the module's log/console.
+- `rack.overlay(s1 [, s2 [, s3]])` — show up to 3 lines in the on-panel overlay.
+- `rack.getFrame()` — the current engine frame number (`APP->engine->getFrame()`).
 
 ### `number.*`
 `abs`, `ceil`, `floor`, `max(a,b)`, `min(a,b)`, `random()` (0..1 uniform),

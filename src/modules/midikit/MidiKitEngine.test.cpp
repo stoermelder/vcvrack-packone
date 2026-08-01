@@ -234,17 +234,17 @@ static void requireLoggedValues(const std::string& jsScript, const std::string& 
 static const char* JS_NUMBER_ABS = R"(/**
  * @engine Elk
  */
-log("PROBE:" + number.toString(number.abs(-5)));
-log("PROBE:" + number.toString(number.abs(3)));
-log("PROBE:" + number.toString(number.abs(0)));
+rack.log("PROBE:" + number.toString(number.abs(-5)));
+rack.log("PROBE:" + number.toString(number.abs(3)));
+rack.log("PROBE:" + number.toString(number.abs(0)));
 )";
 
 static const char* LUA_NUMBER_ABS = R"(--[[
 @engine Lua
 --]]
-log("PROBE:" .. number.toString(number.abs(-5)))
-log("PROBE:" .. number.toString(number.abs(3)))
-log("PROBE:" .. number.toString(number.abs(0)))
+rack.log("PROBE:" .. number.toString(number.abs(-5)))
+rack.log("PROBE:" .. number.toString(number.abs(3)))
+rack.log("PROBE:" .. number.toString(number.abs(0)))
 )";
 
 TEST_CASE("number.abs is identical", "[MidiKit][CrossEngine]") {
@@ -255,17 +255,17 @@ TEST_CASE("number.abs is identical", "[MidiKit][CrossEngine]") {
 static const char* JS_NUMBER_CEIL = R"(/**
  * @engine Elk
  */
-log("PROBE:" + number.toString(number.ceil(3.2)));
-log("PROBE:" + number.toString(number.ceil(-3.2)));
-log("PROBE:" + number.toString(number.ceil(5)));
+rack.log("PROBE:" + number.toString(number.ceil(3.2)));
+rack.log("PROBE:" + number.toString(number.ceil(-3.2)));
+rack.log("PROBE:" + number.toString(number.ceil(5)));
 )";
 
 static const char* LUA_NUMBER_CEIL = R"(--[[
 @engine Lua
 --]]
-log("PROBE:" .. number.toString(number.ceil(3.2)))
-log("PROBE:" .. number.toString(number.ceil(-3.2)))
-log("PROBE:" .. number.toString(number.ceil(5)))
+rack.log("PROBE:" .. number.toString(number.ceil(3.2)))
+rack.log("PROBE:" .. number.toString(number.ceil(-3.2)))
+rack.log("PROBE:" .. number.toString(number.ceil(5)))
 )";
 
 TEST_CASE("number.ceil is identical", "[MidiKit][CrossEngine]") {
@@ -276,17 +276,17 @@ TEST_CASE("number.ceil is identical", "[MidiKit][CrossEngine]") {
 static const char* JS_NUMBER_CROSSFADE = R"(/**
  * @engine Elk
  */
-log("PROBE:" + number.toString(number.crossfade(0, 10, 0.5)));
-log("PROBE:" + number.toString(number.crossfade(100, 200, 0.25)));
-log("PROBE:" + number.toString(number.crossfade(-5, 5, 0.75)));
+rack.log("PROBE:" + number.toString(number.crossfade(0, 10, 0.5)));
+rack.log("PROBE:" + number.toString(number.crossfade(100, 200, 0.25)));
+rack.log("PROBE:" + number.toString(number.crossfade(-5, 5, 0.75)));
 )";
 
 static const char* LUA_NUMBER_CROSSFADE = R"(--[[
 @engine Lua
 --]]
-log("PROBE:" .. number.toString(number.crossfade(0, 10, 0.5)))
-log("PROBE:" .. number.toString(number.crossfade(100, 200, 0.25)))
-log("PROBE:" .. number.toString(number.crossfade(-5, 5, 0.75)))
+rack.log("PROBE:" .. number.toString(number.crossfade(0, 10, 0.5)))
+rack.log("PROBE:" .. number.toString(number.crossfade(100, 200, 0.25)))
+rack.log("PROBE:" .. number.toString(number.crossfade(-5, 5, 0.75)))
 )";
 
 TEST_CASE("number.crossfade is identical", "[MidiKit][CrossEngine]") {
@@ -297,17 +297,17 @@ TEST_CASE("number.crossfade is identical", "[MidiKit][CrossEngine]") {
 static const char* JS_NUMBER_FLOOR = R"(/**
  * @engine Elk
  */
-log("PROBE:" + number.toString(number.floor(3.8)));
-log("PROBE:" + number.toString(number.floor(-3.8)));
-log("PROBE:" + number.toString(number.floor(5)));
+rack.log("PROBE:" + number.toString(number.floor(3.8)));
+rack.log("PROBE:" + number.toString(number.floor(-3.8)));
+rack.log("PROBE:" + number.toString(number.floor(5)));
 )";
 
 static const char* LUA_NUMBER_FLOOR = R"(--[[
 @engine Lua
 --]]
-log("PROBE:" .. number.toString(number.floor(3.8)))
-log("PROBE:" .. number.toString(number.floor(-3.8)))
-log("PROBE:" .. number.toString(number.floor(5)))
+rack.log("PROBE:" .. number.toString(number.floor(3.8)))
+rack.log("PROBE:" .. number.toString(number.floor(-3.8)))
+rack.log("PROBE:" .. number.toString(number.floor(5)))
 )";
 
 TEST_CASE("number.floor is identical", "[MidiKit][CrossEngine]") {
@@ -318,17 +318,17 @@ TEST_CASE("number.floor is identical", "[MidiKit][CrossEngine]") {
 static const char* JS_NUMBER_MIN = R"(/**
  * @engine Elk
  */
-log("PROBE:" + number.toString(number.min(3, 7)));
-log("PROBE:" + number.toString(number.min(-5, 5)));
-log("PROBE:" + number.toString(number.min(10, 10)));
+rack.log("PROBE:" + number.toString(number.min(3, 7)));
+rack.log("PROBE:" + number.toString(number.min(-5, 5)));
+rack.log("PROBE:" + number.toString(number.min(10, 10)));
 )";
 
 static const char* LUA_NUMBER_MIN = R"(--[[
 @engine Lua
 --]]
-log("PROBE:" .. number.toString(number.min(3, 7)))
-log("PROBE:" .. number.toString(number.min(-5, 5)))
-log("PROBE:" .. number.toString(number.min(10, 10)))
+rack.log("PROBE:" .. number.toString(number.min(3, 7)))
+rack.log("PROBE:" .. number.toString(number.min(-5, 5)))
+rack.log("PROBE:" .. number.toString(number.min(10, 10)))
 )";
 
 TEST_CASE("number.min is identical", "[MidiKit][CrossEngine]") {
@@ -339,13 +339,13 @@ TEST_CASE("number.min is identical", "[MidiKit][CrossEngine]") {
 static const char* JS_NUMBER_RESCALE = R"(/**
  * @engine Elk
  */
-log("PROBE:" + number.toString(number.rescale(5, 0, 10, 0, 100)));
+rack.log("PROBE:" + number.toString(number.rescale(5, 0, 10, 0, 100)));
 )";
 
 static const char* LUA_NUMBER_RESCALE = R"(--[[
 @engine Lua
 --]]
-log("PROBE:" .. number.toString(number.rescale(5, 0, 10, 0, 100)))
+rack.log("PROBE:" .. number.toString(number.rescale(5, 0, 10, 0, 100)))
 )";
 
 TEST_CASE("number.rescale is identical", "[MidiKit][CrossEngine]") {
@@ -356,21 +356,21 @@ TEST_CASE("number.rescale is identical", "[MidiKit][CrossEngine]") {
 static const char* JS_NUMBER_TOSTRING = R"(/**
  * @engine Elk
  */
-log("PROBE:" + number.toString(42));
-log("PROBE:" + number.toString(3.14));
-log("PROBE:" + number.toString(-100));
-log("PROBE:" + number.toString(1 / 3));
-log("PROBE:" + number.toString(0));
+rack.log("PROBE:" + number.toString(42));
+rack.log("PROBE:" + number.toString(3.14));
+rack.log("PROBE:" + number.toString(-100));
+rack.log("PROBE:" + number.toString(1 / 3));
+rack.log("PROBE:" + number.toString(0));
 )";
 
 static const char* LUA_NUMBER_TOSTRING = R"(--[[
 @engine Lua
 --]]
-log("PROBE:" .. number.toString(42))
-log("PROBE:" .. number.toString(3.14))
-log("PROBE:" .. number.toString(-100))
-log("PROBE:" .. number.toString(1 / 3))
-log("PROBE:" .. number.toString(0))
+rack.log("PROBE:" .. number.toString(42))
+rack.log("PROBE:" .. number.toString(3.14))
+rack.log("PROBE:" .. number.toString(-100))
+rack.log("PROBE:" .. number.toString(1 / 3))
+rack.log("PROBE:" .. number.toString(0))
 )";
 
 TEST_CASE("number.toString is identical", "[MidiKit][CrossEngine]") {
@@ -386,19 +386,19 @@ TEST_CASE("number.toString is identical", "[MidiKit][CrossEngine]") {
 static const char* JS_NUMBER_TOFIXED = R"(/**
  * @engine Elk
  */
-log("PROBE:" + number.toFixed(3.14159, 2));
-log("PROBE:" + number.toFixed(0.5, 0));
-log("PROBE:" + number.toFixed(1, 3));
-log("PROBE:" + number.toFixed(2.005, 2));
+rack.log("PROBE:" + number.toFixed(3.14159, 2));
+rack.log("PROBE:" + number.toFixed(0.5, 0));
+rack.log("PROBE:" + number.toFixed(1, 3));
+rack.log("PROBE:" + number.toFixed(2.005, 2));
 )";
 
 static const char* LUA_NUMBER_TOFIXED = R"(--[[
 @engine Lua
 --]]
-log("PROBE:" .. number.toFixed(3.14159, 2))
-log("PROBE:" .. number.toFixed(0.5, 0))
-log("PROBE:" .. number.toFixed(1, 3))
-log("PROBE:" .. number.toFixed(2.005, 2))
+rack.log("PROBE:" .. number.toFixed(3.14159, 2))
+rack.log("PROBE:" .. number.toFixed(0.5, 0))
+rack.log("PROBE:" .. number.toFixed(1, 3))
+rack.log("PROBE:" .. number.toFixed(2.005, 2))
 )";
 
 TEST_CASE("number.toFixed is identical", "[MidiKit][CrossEngine]") {
@@ -412,13 +412,13 @@ TEST_CASE("number.toFixed is identical", "[MidiKit][CrossEngine]") {
 static const char* JS_NUMBER_RANDOM = R"(/**
  * @engine Elk
  */
-log("PROBE:" + number.toString(number.random()));
+rack.log("PROBE:" + number.toString(number.random()));
 )";
 
 static const char* LUA_NUMBER_RANDOM = R"(--[[
 @engine Lua
 --]]
-log("PROBE:" .. number.toString(number.random()))
+rack.log("PROBE:" .. number.toString(number.random()))
 )";
 
 TEST_CASE("number.random stays within [0, 1) in both engines", "[MidiKit][CrossEngine]") {
@@ -431,6 +431,38 @@ TEST_CASE("number.random stays within [0, 1) in both engines", "[MidiKit][CrossE
 	};
 	checkInRange(JS_NUMBER_RANDOM);
 	checkInRange(LUA_NUMBER_RANDOM);
+}
+
+
+// --- rack.getFrame ----------------------------------------------------------
+//
+// getFrame wraps APP->engine->getFrame(), the engine's sample-frame counter.
+// Both engines must return it as a plain number. The script's top-level code
+// runs inside loadScript() — before any engine processing could advance the
+// counter — so the value it logs must match the counter read back in the test.
+
+static const char* JS_RACK_GET_FRAME = R"(/**
+ * @engine Elk
+ */
+rack.log("PROBE:" + number.toString(rack.getFrame()));
+)";
+
+static const char* LUA_RACK_GET_FRAME = R"(--[[
+@engine Lua
+--]]
+rack.log("PROBE:" .. number.toString(rack.getFrame()))
+)";
+
+TEST_CASE("rack.getFrame returns the engine frame counter in both engines", "[MidiKit][CrossEngine]") {
+	auto frameLogged = [](const std::string& script) {
+		auto lines = loadAndDrainLog(script);
+		REQUIRE(lines.size() == 1);
+		return static_cast<uint64_t>(std::stoull(lines[0]));
+	};
+
+	uint64_t frame = APP->engine->getFrame();
+	REQUIRE(frameLogged(JS_RACK_GET_FRAME) == frame);
+	REQUIRE(frameLogged(LUA_RACK_GET_FRAME) == frame);
 }
 
 
@@ -967,7 +999,7 @@ let bits = "" +
     (midi.isStart(msgNoteOn) ? "1" : "0") +
     (midi.isStop(msgNoteOn) ? "1" : "0") +
     (midi.isContinue(msgNoteOn) ? "1" : "0");
-log("PROBE:" + bits);
+rack.log("PROBE:" + bits);
 )";
 
 static const char* LUA_IS_TYPES = R"(--[[
@@ -993,7 +1025,7 @@ local bits =
     b(midi.isStart(msgNoteOn)) ..
     b(midi.isStop(msgNoteOn)) ..
     b(midi.isContinue(msgNoteOn))
-log("PROBE:" .. bits)
+rack.log("PROBE:" .. bits)
 )";
 
 TEST_CASE("midi.is* predicates agree on every message type", "[MidiKit][CrossEngine]") {
@@ -1014,11 +1046,11 @@ static const char* JS_GET_CHANNEL_SENTINEL = R"(/**
  */
 let note = midi.create();
 midi.setNoteOn(note, 5, 60, 100);
-log("PROBE:" + number.toString(midi.getChannel(note)));
+rack.log("PROBE:" + number.toString(midi.getChannel(note)));
 
 let clock = midi.create();
 midi.setSysEx(clock, "");
-log("PROBE:" + number.toString(midi.getChannel(clock)));
+rack.log("PROBE:" + number.toString(midi.getChannel(clock)));
 )";
 
 static const char* LUA_GET_CHANNEL_SENTINEL = R"(--[[
@@ -1026,11 +1058,11 @@ static const char* LUA_GET_CHANNEL_SENTINEL = R"(--[[
 --]]
 local note = midi.create()
 midi.setNoteOn(note, 5, 60, 100)
-log("PROBE:" .. number.toString(midi.getChannel(note)))
+rack.log("PROBE:" .. number.toString(midi.getChannel(note)))
 
 local clock = midi.create()
 midi.setSysEx(clock, "")
-log("PROBE:" .. number.toString(midi.getChannel(clock)))
+rack.log("PROBE:" .. number.toString(midi.getChannel(clock)))
 )";
 
 TEST_CASE("midi.getChannel returns -1 on realtime/SysEx, the real channel otherwise", "[MidiKit][CrossEngine]") {
@@ -1082,20 +1114,20 @@ static const char* JS_INPUT_GET_VOLTAGE = R"(/**
  * @engine Elk
  */
 input.enable(1);
-log("PROBE:" + number.toString(input.getVoltage(1)));
-log("PROBE:" + number.toString(input.getVoltage(1, 1)));
-log("PROBE:" + (input.isHigh(1) ? "high" : "low"));
-log("PROBE:" + (input.isLow(1) ? "low" : "high"));
+rack.log("PROBE:" + number.toString(input.getVoltage(1)));
+rack.log("PROBE:" + number.toString(input.getVoltage(1, 1)));
+rack.log("PROBE:" + (input.isHigh(1) ? "high" : "low"));
+rack.log("PROBE:" + (input.isLow(1) ? "low" : "high"));
 )";
 
 static const char* LUA_INPUT_GET_VOLTAGE = R"(--[[
 @engine Lua
 --]]
 input.enable(1)
-log("PROBE:" .. number.toString(input.getVoltage(1)))
-log("PROBE:" .. number.toString(input.getVoltage(1, 1)))
-log("PROBE:" .. (input.isHigh(1) and "high" or "low"))
-log("PROBE:" .. (input.isLow(1) and "low" or "high"))
+rack.log("PROBE:" .. number.toString(input.getVoltage(1)))
+rack.log("PROBE:" .. number.toString(input.getVoltage(1, 1)))
+rack.log("PROBE:" .. (input.isHigh(1) and "high" or "low"))
+rack.log("PROBE:" .. (input.isLow(1) and "low" or "high"))
 )";
 
 TEST_CASE("input.getVoltage/isHigh/isLow read identical default state", "[MidiKit][CrossEngine]") {
@@ -1575,7 +1607,7 @@ static const char* JS_ON_LOAD = R"(/**
  */
 onMidiMessage = function(midiPort, msg) {};
 onLoad = function() {
-    log("onLoad ran");
+    rack.log("onLoad ran");
     let msg = midi.create();
     midi.setNoteOn(msg, 1, 60, 100);
     midiOut.send(msg);
@@ -1587,7 +1619,7 @@ static const char* LUA_ON_LOAD = R"(--[[
 --]]
 function onMidiMessage(midiPort, msg) end
 function onLoad()
-    log("onLoad ran")
+    rack.log("onLoad ran")
     local msg = midi.create()
     midi.setNoteOn(msg, 1, 60, 100)
     midiOut.send(msg)
@@ -1646,7 +1678,7 @@ static const char* JS_TOPLEVEL_SYSEX = R"(/**
  */
 let msg = midi.create();
 midi.setSysEx(msg, "43104c0000");
-log("PROBE:" + (midi.isSysEx(msg) ? "yes" : "no"));
+rack.log("PROBE:" + (midi.isSysEx(msg) ? "yes" : "no"));
 )";
 
 static const char* LUA_TOPLEVEL_SYSEX = R"(--[[
@@ -1654,7 +1686,7 @@ static const char* LUA_TOPLEVEL_SYSEX = R"(--[[
 --]]
 msg = midi.create()
 midi.setSysEx(msg, "43104c0000")
-log("PROBE:" .. (midi.isSysEx(msg) and "yes" or "no"))
+rack.log("PROBE:" .. (midi.isSysEx(msg) and "yes" or "no"))
 )";
 
 TEST_CASE("Top-level message handle survives a load with no onLoad in both engines (#D4)", "[MidiKit][CrossEngine]") {
@@ -1669,7 +1701,7 @@ static const char* JS_ON_UNLOAD = R"(/**
  */
 onMidiMessage = function(midiPort, msg) {};
 onUnload = function() {
-    log("onUnload ran");
+    rack.log("onUnload ran");
     let msg = midi.create();
     midi.setNoteOff(msg, 1, 60);
     midiOut.send(msg);
@@ -1681,7 +1713,7 @@ static const char* LUA_ON_UNLOAD = R"(--[[
 --]]
 function onMidiMessage(midiPort, msg) end
 function onUnload()
-    log("onUnload ran")
+    rack.log("onUnload ran")
     local msg = midi.create()
     midi.setNoteOff(msg, 1, 60)
     midiOut.send(msg)

@@ -55,8 +55,8 @@ let state = {
 };
 
 onLoad = function() {
-    log("Clock divider initialized");
-    log("Divisor: " + number.toString(config.divisor) + " (24 ppqn / " + number.toString(config.divisor) + ")");
+    rack.log("Clock divider initialized");
+    rack.log("Divisor: " + number.toString(config.divisor) + " (24 ppqn / " + number.toString(config.divisor) + ")");
 };
 
 let resetPhase = function() {
@@ -101,7 +101,7 @@ onMidiMessage = function(midiPort, msg) {
             trig.setTrigger(config.trigPort);
         }
         if (config.showOverlay) {
-            overlay("Clock /" + number.toString(config.divisor), "pulse " + number.toString(state.pulseCount));
+            rack.overlay("Clock /" + number.toString(config.divisor), "pulse " + number.toString(state.pulseCount));
         }
         return;
     }

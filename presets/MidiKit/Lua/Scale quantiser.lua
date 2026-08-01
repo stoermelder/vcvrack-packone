@@ -74,9 +74,9 @@ function onLoad()
     for n = 0, 127 do
         state.playedAs[n] = -1
     end
-    log("Scale quantiser initialized")
-    log("Root: " .. noteName(config.root))
-    log("Scale degrees: " .. #config.scale)
+    rack.log("Scale quantiser initialized")
+    rack.log("Root: " .. noteName(config.root))
+    rack.log("Scale degrees: " .. #config.scale)
 end
 
 -- Releases every note still substituted in state.playedAs. Without this, a
@@ -170,7 +170,7 @@ function onMidiMessage(midiPort, msg)
         midiOut.send(msg)
 
         if config.showOverlay and snapped ~= note then
-            overlay("Quantise", noteName(note) .. " -> " .. noteName(snapped))
+            rack.overlay("Quantise", noteName(note) .. " -> " .. noteName(snapped))
         end
         return
     end

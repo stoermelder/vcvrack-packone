@@ -384,8 +384,12 @@ The API below is identical for both scripting engines — the function names, ar
 - `onMidiMessage(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
 - `onLoad()`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. Use it in place of a manually-called `init()` function at the bottom of the file.
 - `onUnload()`: Optional. Called once, right before the script's state is torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. **In JavaScript (Elk), define it with plain assignment, not `let`:** `onUnload = function() { ... };` — see [JavaScript (Elk)](#javascript-elk) below.
-- `log(str)`: Prints string `str` on the display of the module.
-- `overlay(str1, [str2], [str3])`: Displays string `str1` in an Rack overlay widget.
+
+### rack
+
+- `rack.log(str)`: Prints string `str` on the display of the module.
+- `rack.overlay(str1, [str2], [str3])`: Displays string `str1` in an Rack overlay widget.
+- `rack.getFrame()`: Returns the current engine frame number of the Rack engine.
 
 ### input
 

@@ -154,9 +154,12 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		js = js_create(jsMem, sizeof(jsMem));
 		jsMap[js] = this;
 
-		// global functions
-		js_set(js, js_glob(js), "log", js_mkfun(js_log));									// void log(string)
-		js_set(js, js_glob(js), "overlay", js_mkfun(js_overlay));							// void overlay(string)
+		// rack
+		jsval_t _rack = js_mkobj(js);														// let rack = {}
+		js_set(js, js_glob(js), "rack", _rack);
+		js_set(js, _rack, "log", js_mkfun(js_rack_log));											// void rack.log(string)
+		js_set(js, _rack, "overlay", js_mkfun(js_rack_overlay));									// void rack.overlay(string, [string], [string])
+		js_set(js, _rack, "getFrame", js_mkfun(js_rack_getFrame));							// int rack.getFrame()
 
 		// number
 		jsval_t _number = js_mkobj(js);														// let number = {}
@@ -428,14 +431,16 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		return js_mknull();
 	}
 
-	static jsval_t js_log(struct js* js, jsval_t* args, int nargs) {
+	// rack
+
+	static jsval_t js_rack_log(struct js* js, jsval_t* args, int nargs) {
 		if (!js_chkargs(args, nargs, "s")) return js_mkerr(js, "log: bad args");
 		const char* log = js_getstr(js, args[0], NULL);
 		jsMap[js]->writeLog(log);
 		return js_mknull();
 	}
 
-	static jsval_t js_overlay(struct js* js, jsval_t* args, int nargs) {
+	static jsval_t js_rack_overlay(struct js* js, jsval_t* args, int nargs) {
 		if (js_chkargs(args, nargs, "s")) {
 			const char* s1 = js_getstr(js, args[0], NULL);
 			jsMap[js]->writeOverlay(s1, "", "");
@@ -455,6 +460,10 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			return js_mknull();
 		}
 		return js_mkerr(js, "overlay: bad args");
+	}
+
+	static jsval_t js_rack_getFrame(struct js* js, jsval_t* args, int nargs) {
+		return js_mknum(double(APP->engine->getFrame()));
 	}
 
 	// number

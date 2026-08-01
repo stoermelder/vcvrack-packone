@@ -254,7 +254,7 @@ static const char* ELK_ON_UNLOAD = R"(/**
  */
 onMidiMessage = function(midiPort, msg) {};
 onUnload = function() {
-	log("onUnload ran");
+	rack.log("onUnload ran");
 	let msg = midi.create();
 	midi.setNoteOff(msg, 1, 60);
 	midiOut.send(msg);

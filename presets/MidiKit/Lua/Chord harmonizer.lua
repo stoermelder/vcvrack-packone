@@ -66,8 +66,8 @@ function onLoad()
         state.refCount[n] = 0
         state.voicesOf[n] = {}
     end
-    log("Chord harmonizer initialized")
-    log("Voices per note: " .. #config.intervals)
+    rack.log("Chord harmonizer initialized")
+    rack.log("Voices per note: " .. #config.intervals)
 end
 
 function onUnload()
@@ -146,7 +146,7 @@ function onMidiMessage(midiPort, msg)
         state.voicesOf[note] = voices
 
         if config.showOverlay then
-            overlay("Harmonize", note .. " + " .. #voices .. " voices")
+            rack.overlay("Harmonize", note .. " + " .. #voices .. " voices")
         end
         return
     end

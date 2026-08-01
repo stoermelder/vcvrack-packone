@@ -66,9 +66,9 @@ param.getValueFormat = function(port)
 end
 
 function onLoad()
-    log("Velocity curve initialized")
-    log(string.format("Range: %d-%d", config.minVelocity, config.maxVelocity))
-    log("Knob " .. config.curveParam .. " sets the curve (centre = linear)")
+    rack.log("Velocity curve initialized")
+    rack.log(string.format("Range: %d-%d", config.minVelocity, config.maxVelocity))
+    rack.log("Knob " .. config.curveParam .. " sets the curve (centre = linear)")
 end
 
 local function matchesChannel(ch)
@@ -103,7 +103,7 @@ function onMidiMessage(midiPort, msg)
         midi.setValue(msg, shaped)
 
         if config.showOverlay then
-            overlay("Velocity", vel .. " -> " .. shaped)
+            rack.overlay("Velocity", vel .. " -> " .. shaped)
         end
     end
 

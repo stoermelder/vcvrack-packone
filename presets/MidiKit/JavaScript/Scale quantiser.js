@@ -69,9 +69,9 @@ onLoad = function() {
     for (let n = 0; n < 128; n++) {
         state.playedAs[n] = -1;
     }
-    log("Scale quantiser initialized");
-    log("Root: " + noteNames[config.root]);
-    log("Scale degrees: " + number.toString(config.scale.length));
+    rack.log("Scale quantiser initialized");
+    rack.log("Root: " + noteNames[config.root]);
+    rack.log("Scale degrees: " + number.toString(config.scale.length));
 };
 
 // Releases every note still substituted in state.playedAs. Without this, a
@@ -173,7 +173,7 @@ onMidiMessage = function(midiPort, msg) {
         midiOut.send(msg);
 
         if (config.showOverlay && snapped !== note) {
-            overlay("Quantise", noteNames[note % 12] + " -> " + noteNames[snapped % 12]);
+            rack.overlay("Quantise", noteNames[note % 12] + " -> " + noteNames[snapped % 12]);
         }
         return;
     }

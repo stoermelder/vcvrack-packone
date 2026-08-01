@@ -58,12 +58,12 @@ function onLoad()
     for n = 0, 127 do
         state.sounding[n] = false
     end
-    log("Note length quantiser initialized")
-    log(string.format("Length: %d ticks on trigger input %d", config.lengthTicks, config.trigPort))
+    rack.log("Note length quantiser initialized")
+    rack.log(string.format("Length: %d ticks on trigger input %d", config.lengthTicks, config.trigPort))
     if config.channel == 0 then
-        log("Channel: all")
+        rack.log("Channel: all")
     else
-        log("Channel: " .. config.channel)
+        rack.log("Channel: " .. config.channel)
     end
 end
 
@@ -116,7 +116,7 @@ function onMidiMessage(midiPort, msg)
         state.sounding[note] = true
 
         if config.verbose then
-            log(string.format("note %d -> %d ticks", note, config.lengthTicks))
+            rack.log(string.format("note %d -> %d ticks", note, config.lengthTicks))
         end
         return
     end

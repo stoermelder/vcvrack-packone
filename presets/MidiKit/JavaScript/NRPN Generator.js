@@ -41,10 +41,10 @@ let state = {
 };
 
 onLoad = function() {
-    log("NRPN generator initialized");
-    log("Channel: " + number.toString(config.channel));
-    log("NRPN number: " + number.toString(config.nrpnNumber));
-    log("Ticks per step: " + number.toString(config.ticksPerStep));
+    rack.log("NRPN generator initialized");
+    rack.log("Channel: " + number.toString(config.channel));
+    rack.log("NRPN number: " + number.toString(config.nrpnNumber));
+    rack.log("Ticks per step: " + number.toString(config.ticksPerStep));
 };
 
 let sendNrpn = function() {
@@ -52,7 +52,7 @@ let sendNrpn = function() {
     midi.setNRPN(nrpn, config.channel, config.nrpnNumber, state.value);
     midiOut.send(nrpn);
 
-    log("Sent nrpn #" + number.toString(config.nrpnNumber) + " = " + number.toString(state.value));
+    rack.log("Sent nrpn #" + number.toString(config.nrpnNumber) + " = " + number.toString(state.value));
 };
 
 let advanceValue = function() {

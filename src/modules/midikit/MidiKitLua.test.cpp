@@ -207,7 +207,7 @@ static const char* LUA_ON_UNLOAD = R"(--[[
 --]]
 onMidiMessage = function(midiPort, msg) end
 onUnload = function()
-	log("onUnload ran")
+	rack.log("onUnload ran")
 	local msg = midi.create()
 	midi.setNoteOff(msg, 1, 60)
 	midiOut.send(msg)
