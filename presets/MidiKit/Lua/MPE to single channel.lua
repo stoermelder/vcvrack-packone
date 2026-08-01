@@ -25,6 +25,10 @@
 -- Only the Lower Zone layout is handled: channel 1 is the master channel
 -- (bends there are global and pass through untouched), channels 2-16 are member
 -- channels. Adjust config.memberLow/memberHigh for a smaller zone.
+--
+-- onUnload releases every member-channel note still sounding on the output
+-- channel when the script is replaced, the module is reset, or the module is
+-- removed - without it, a note held at that moment would hang forever.
 
 
 -- Configuration - change these values as needed
@@ -63,7 +67,7 @@ local state = {
     counter = 0
 }
 
-local function init()
+function onLoad()
     for c = 1, 16 do
         state.noteOfChannel[c] = -1
         state.bendOfChannel[c] = 0
@@ -73,6 +77,16 @@ local function init()
     log("Member channels: " .. config.memberLow .. "-" .. config.memberHigh)
     log("Output channel: " .. config.outChannel)
     log("Bend range: " .. config.bendRange .. " semitones")
+end
+
+function onUnload()
+    for c = config.memberLow, config.memberHigh do
+        if state.noteOfChannel[c] >= 0 then
+            local off = midi.create()
+            midi.setNoteOff(off, config.outChannel, state.noteOfChannel[c])
+            midiOut.send(off)
+        end
+    end
 end
 
 local function isMemberChannel(ch)
@@ -98,7 +112,7 @@ local function isActiveChannel(ch)
     return ch == state.lastChannel
 end
 
-function processMidi(midiPort, msg)
+function onMidiMessage(midiPort, msg)
     local ch = midi.getChannel(msg)
 
     -- Master channel and anything outside the zone passes through untouched
@@ -214,6 +228,3 @@ function processMidi(midiPort, msg)
         midiOut.send(out)
     end
 end
-
--- Initialize when script loads
-init()

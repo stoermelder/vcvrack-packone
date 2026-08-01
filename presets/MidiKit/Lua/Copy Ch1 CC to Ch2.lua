@@ -5,7 +5,7 @@
 @description Duplicates all CC messages on channel 1 on channel 2
 --]]
 
-function processMidi(midiPort, msg)
+function onMidiMessage(midiPort, msg)
     if midi.getChannel(msg) == 1 then
         if midi.isCc(msg) then
             local msg2 = midi.create()

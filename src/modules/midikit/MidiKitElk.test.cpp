@@ -104,19 +104,19 @@ TEST_CASE("number.rescale API works from script body", "[MidiKit][Elk]") {
 
 
 // Echo script: forwards every message verbatim.
-// Used to verify that processMidi is called without needing a second js_eval
+// Used to verify that onMidiMessage is called without needing a second js_eval
 // readback (the Elk arena is too small for two consecutive js_eval calls after
 // a full API registration + script load).
 static const char* ELK_ECHO = R"(/**
  * @engine Elk
  * @description echo passthrough
  */
-let processMidi = function(port, msg) {
+onMidiMessage = function(port, msg) {
     midiOut.send(msg);
 };
 )";
 
-TEST_CASE("processMidi callback is invoked with incoming message", "[MidiKit][Elk]") {
+TEST_CASE("onMidiMessage callback is invoked with incoming message", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(ELK_ECHO);
@@ -183,7 +183,7 @@ static const char* ELK_CC_REROUTE = R"(/**
  * @engine Elk
  * @description CC number +1 passthrough
  */
-let processMidi = function(port, msg) {
+onMidiMessage = function(port, msg) {
     if (midi.isCc(msg)) {
         midi.setNote(msg, midi.getNote(msg) + 1);
         midiOut.send(msg);
@@ -1512,7 +1512,7 @@ static const char* ELK_MIDIOUT_SEND = R"(/**
 let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
 
-let processMidi = function(port, msg) {
+onMidiMessage = function(port, msg) {
     midiOut.send(msg);
 };
 )";
@@ -1564,7 +1564,7 @@ static const char* ELK_MIDI_SELECT_PORT = R"(/**
 let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
 
-let processMidi = function(port, msg) {
+onMidiMessage = function(port, msg) {
     midi.selectPort(1);  // Select port 1 (1-based); stays selected until changed
     midiOut.send(msg);
 };
@@ -1604,7 +1604,7 @@ static const char* ELK_MIDI_SELECT_PORT_STICKY = R"(/**
  * @engine Elk
  * @description test
  */
-let processMidi = function(port, msg) {
+onMidiMessage = function(port, msg) {
     midi.selectPort(1);
     let msg1 = midi.create();
     midi.setNoteOn(msg1, 1, 60, 100);
@@ -1650,7 +1650,7 @@ static const char* ELK_MIDI_SELECT_PORT_INVALID = R"(/**
  * @engine Elk
  * @description test
  */
-let processMidi = function(port, msg) {
+onMidiMessage = function(port, msg) {
     midi.selectPort(2);  // Only 1 output port exists
 };
 )";
@@ -1672,7 +1672,7 @@ TEST_CASE("API midi.selectPort rejects an out-of-range port", "[MidiKit][Elk]") 
 	m->se.process();
 
 	std::string log = drainLog(m);
-	REQUIRE(log.find("processMidi error") != std::string::npos);
+	REQUIRE(log.find("onMidiMessage error") != std::string::npos);
 
 	Test::destroyModule(m);
 }
@@ -1685,7 +1685,7 @@ static const char* ELK_MIDIOUT_SEND_AFTER_MS = R"(/**
 let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
 
-let processMidi = function(port, msg) {
+onMidiMessage = function(port, msg) {
     midiOut.sendAfterMs(msg, 100);  // Send after 100ms
 };
 )";
@@ -1728,7 +1728,7 @@ static const char* ELK_MIDIOUT_SEND_AFTER_TRIGGER = R"(/**
 let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
 
-let processMidi = function(port, msg) {
+onMidiMessage = function(port, msg) {
     midiOut.sendAfterTrigger(msg, 10);  // Send after 10 ticks on trig port 0
 };
 )";
@@ -1775,7 +1775,7 @@ static const char* ELK_MIDIOUT_SEND_AFTER_TRIGGER_WITH_SELECTED_PORT = R"(/**
 let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
 
-let processMidi = function(port, msg) {
+onMidiMessage = function(port, msg) {
     midi.selectPort(1);
     midiOut.sendAfterTrigger(msg, 10);  // no trigPort override
 };
@@ -1818,7 +1818,7 @@ static const char* ELK_MIDIOUT_SEND_AFTER_TRIGGER_WITH_TRIGPORT = R"(/**
 let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
 
-let processMidi = function(port, msg) {
+onMidiMessage = function(port, msg) {
     midi.selectPort(1);
     midiOut.sendAfterTrigger(msg, 1, 10);  // trigPort 1, 10 ticks
 };
@@ -1854,13 +1854,13 @@ TEST_CASE("API midiOut.sendAfterTrigger with explicit trigPort (3 args)", "[Midi
 }
 
 
-// midi.create() / midi.createNRPN() outside processMidi()
+// midi.create() / midi.createNRPN() outside onMidiMessage()
 //
 // The message store is reset on every callback, so a handle created at top
 // level is silently invalidated before it can be used. That reset is documented
 // and intended; these tests pin the warning that makes it visible.
 
-static const char* OUTSIDE_CALLBACK_WARNING = "called outside processMidi()";
+static const char* OUTSIDE_CALLBACK_WARNING = "called outside a callback";
 
 static const char* ELK_TOPLEVEL_CREATE = R"(/**
  * @engine Elk
@@ -1880,14 +1880,14 @@ static const char* ELK_CALLBACK_CREATE = R"(/**
  * @engine Elk
  * @description test
  */
-let processMidi = function(port, msg) {
+onMidiMessage = function(port, msg) {
   let m = midi.create();
   midi.setCc(m, 1, 20, 100);
   midiOut.send(m);
 };
 )";
 
-TEST_CASE("midi.create outside processMidi warns", "[MidiKit][Elk]") {
+TEST_CASE("midi.create outside onMidiMessage warns", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(ELK_TOPLEVEL_CREATE);
@@ -1898,7 +1898,7 @@ TEST_CASE("midi.create outside processMidi warns", "[MidiKit][Elk]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("midi.createNRPN outside processMidi warns", "[MidiKit][Elk]") {
+TEST_CASE("midi.createNRPN outside onMidiMessage warns", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(ELK_TOPLEVEL_CREATE_NRPN);
@@ -1909,7 +1909,7 @@ TEST_CASE("midi.createNRPN outside processMidi warns", "[MidiKit][Elk]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("midi.create inside processMidi does not warn", "[MidiKit][Elk]") {
+TEST_CASE("midi.create inside onMidiMessage does not warn", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(ELK_CALLBACK_CREATE);
@@ -1948,7 +1948,7 @@ function broken(x) { return x; }
 let c = 3;
 )";
 
-TEST_CASE("Elk parse error reports the line it failed on", "[MidiKit][Elk]") {
+TEST_CASE("Parse error reports the line it failed on", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(ELK_BAD_ON_LINE_7);
@@ -1978,7 +1978,7 @@ function broken(x) { return x; }
 let b = 2;
 )";
 
-TEST_CASE("Elk parse error line number tracks the error position", "[MidiKit][Elk]") {
+TEST_CASE("Parse error line number tracks the error position", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(ELK_BAD_ON_LINE_6);
@@ -1993,7 +1993,7 @@ TEST_CASE("Elk parse error line number tracks the error position", "[MidiKit][El
 
 
 // A script that loads cleanly must not emit any position noise.
-TEST_CASE("Elk successful load reports no error position", "[MidiKit][Elk]") {
+TEST_CASE("Successful load reports no error position", "[MidiKit][Elk]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(ELK_MAX);
@@ -2002,6 +2002,134 @@ TEST_CASE("Elk successful load reports no error position", "[MidiKit][Elk]") {
 	std::string log = drainLog(m);
 	REQUIRE(log.find("line ") == std::string::npos);
 	REQUIRE(log.find("Script loaded") != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_ON_LOAD = R"(/**
+ * @engine Elk
+ * @description test
+ */
+log("onMidiMessage placeholder");
+onMidiMessage = function(midiPort, msg) {};
+onLoad = function() {
+	log("onLoad ran");
+	let msg = midi.create();
+	midi.setNoteOn(msg, 1, 60, 100);
+	midiOut.send(msg);
+};
+)";
+
+TEST_CASE("onLoad runs once after a successful load and can send a message", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_ON_LOAD);
+	REQUIRE(m->se.js != nullptr);
+
+	REQUIRE(drainLog(m).find("onLoad ran") != std::string::npos);
+
+	int outPort;
+	midi::Message outMsg;
+	int ticks;
+	REQUIRE(m->se.processOutMessage(outPort, outMsg, ticks));
+	REQUIRE(outMsg.getStatus() == 0x9);
+	REQUIRE(outMsg.getNote() == 60);
+	REQUIRE(outMsg.getValue() == 100);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Script without onLoad loads without any onLoad log noise", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MAX);
+	REQUIRE(m->se.js != nullptr);
+
+	REQUIRE(drainLog(m).find("onLoad") == std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Top-level message handle survives a load with no onLoad (#D4)", "[MidiKit][Elk]") {
+	// onLoad must only reset the message store when the script actually
+	// overrides the default no-op — otherwise a handle a script builds at
+	// top level (a documented, intentional pattern) would be discarded
+	// before the script ever gets to use it.
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_MIDI_SET_SYSEX);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "isSysEx;", ~0U);
+	REQUIRE(js_type(v) == JS_TRUE);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* ELK_ON_UNLOAD = R"(/**
+ * @engine Elk
+ * @description test
+ */
+onMidiMessage = function(midiPort, msg) {};
+onUnload = function() {
+	log("onUnload ran");
+	let msg = midi.create();
+	midi.setNoteOff(msg, 1, 60);
+	midiOut.send(msg);
+};
+)";
+
+TEST_CASE("onUnload runs when the script is replaced and can send a message", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_ON_UNLOAD);
+	REQUIRE(m->se.js != nullptr);
+	drainLog(m);  // discard the load-time log
+
+	m->clearScript();
+
+	REQUIRE(drainLog(m).find("onUnload ran") != std::string::npos);
+
+	int outPort;
+	midi::Message outMsg;
+	int ticks;
+	REQUIRE(m->se.processOutMessage(outPort, outMsg, ticks));
+	REQUIRE(outMsg.getStatus() == 0x8);
+	REQUIRE(outMsg.getNote() == 60);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("onUnload runs again when a second script replaces the first", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(ELK_ON_UNLOAD);
+	REQUIRE(m->se.js != nullptr);
+	drainLog(m);
+
+	m->loadScript(ELK_MAX);
+	REQUIRE(m->se.js != nullptr);
+
+	REQUIRE(drainLog(m).find("onUnload ran") != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Elk]") {
+	// Regression guard: writeLog/writeOverlay/input.*/trig.*/param.* are pure
+	// virtual in MidiScriptEngineElk, overridden only by the derived class in
+	// MidiKit.cpp. Running onUnload from ~MidiScriptEngineElk() itself would
+	// call through a vtable that no longer has those overrides — undefined
+	// behaviour that crashes as "pure virtual function called". MidiKitModule
+	// has its own destructor that calls closeState() first, while still fully
+	// alive, specifically to avoid that. This test does not (and cannot)
+	// assert a log/message result — it can only prove destroyModule() doesn't
+	// crash, which is what it's for.
+	MidiKitModule* m = createModule();
+	m->loadScript(ELK_ON_UNLOAD);
+	REQUIRE(m->se.js != nullptr);
 
 	Test::destroyModule(m);
 }

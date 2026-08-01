@@ -65,13 +65,13 @@ local function resetState()
     state.hasValueMsb = false
 end
 
-local function init()
+function onLoad()
     log("NRPN to CC converter initialized")
     log("Mapped NRPN numbers: " .. #config.map)
     log("Channel: " .. config.ccChannel)
 end
 
-function processMidi(midiPort, msg)
+function onMidiMessage(midiPort, msg)
     if not midi.isCc(msg) then
         return
     end
@@ -116,6 +116,3 @@ function processMidi(midiPort, msg)
         midiOut.send(ccLsb)
     end
 end
-
--- Initialize when script loads
-init()

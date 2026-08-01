@@ -40,21 +40,21 @@ You can use MIDI-KIT as an insert effect via VCV Rack's built-in MIDI Loopback d
 
 ## Examples
 
-**Note:** Channels are 1..16, parameter and input indices are 1..4. The main entry point is `processMidi(midiPort, msg)`; in this version `midiPort` is always *1*.
+**Note:** Channels are 1..16, parameter and input indices are 1..4. The main entry point is `onMidiMessage(midiPort, msg)`; in this version `midiPort` is always *1*.
 
 ### Basic pass-through
 The script passes all incoming MIDI messages to the default MIDI output port.
 
 JavaScript:
 ```js
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    midiOut.send(msg);
 };
 ```
 
 Lua:
 ```lua
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    midiOut.send(msg)
 end
 ```
@@ -64,7 +64,7 @@ The script drops all incoming MIDI messages except for MIDI channel 2. Messages 
 
 JavaScript:
 ```js
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    if (midi.getChannel(msg) === 2) {
       midiOut.send(msg);
    }
@@ -73,7 +73,7 @@ let processMidi = function(midiPort, msg) {
 
 Lua:
 ```lua
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    if midi.getChannel(msg) == 2 then
       midiOut.send(msg)
    end
@@ -85,7 +85,7 @@ The script routes incoming CC messages on MIDI channel 2 to MIDI channel 3. All 
 
 JavaScript:
 ```js
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
       midi.setChannel(msg, 3);
    }
@@ -95,7 +95,7 @@ let processMidi = function(midiPort, msg) {
 
 Lua:
 ```lua
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    if midi.isCc(msg) and midi.getChannel(msg) == 2 then
       midi.setChannel(msg, 3)
    end
@@ -110,7 +110,7 @@ JavaScript:
 ```js
 param.enable(1);
 
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
       let ch = number.ceil(param.getValue(1) * 16);
       midi.setChannel(msg, ch);
@@ -123,7 +123,7 @@ Lua:
 ```lua
 param.enable(1)
 
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    if midi.isCc(msg) and midi.getChannel(msg) == 2 then
       local ch = number.ceil(param.getValue(1) * 16)
       midi.setChannel(msg, ch)
@@ -149,7 +149,7 @@ param.getValueFormat = function(port) {
     return number.toString(param.getValue(port));
 };
 
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
       let ch = number.ceil(param.getValue(1) * 16);
       midi.setChannel(msg, ch);
@@ -173,7 +173,7 @@ param.getValueFormat = function(port)
     return number.toString(param.getValue(port))
 end
 
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    if midi.isCc(msg) and midi.getChannel(msg) == 2 then
       local ch = number.ceil(param.getValue(1) * 16)
       midi.setChannel(msg, ch)
@@ -186,7 +186,7 @@ end
 
 JavaScript:
 ```js
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let nrpn1 = midi.createNRPN();
       midi.setNRPN(nrpn1, 1, 12345, 13456);
@@ -197,7 +197,7 @@ let processMidi = function(midiPort, msg) {
 
 Lua:
 ```lua
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       local nrpn1 = midi.createNRPN()
       midi.setNRPN(nrpn1, 1, 12345, 13456)
@@ -210,7 +210,7 @@ end
 
 JavaScript:
 ```js
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let sysex = midi.create();
       midi.setSysEx(sysex, "ab33010001");
@@ -221,7 +221,7 @@ let processMidi = function(midiPort, msg) {
 
 Lua:
 ```lua
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       local sysex = midi.create()
       midi.setSysEx(sysex, "ab33010001")
@@ -236,7 +236,7 @@ Use `midi.setRaw()` for message types with no dedicated setter, such as an MTC q
 
 JavaScript:
 ```js
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let mtc = midi.create();
       midi.setRaw(mtc, "f11a");
@@ -247,11 +247,49 @@ let processMidi = function(midiPort, msg) {
 
 Lua:
 ```lua
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       local mtc = midi.create()
       midi.setRaw(mtc, "f11a")
       midiOut.send(mtc)
+   end
+end
+```
+
+### Send an all-notes-off when the script unloads
+
+`onUnload()` runs once, right before the script's state is torn down — the script is being replaced, the module is reset, or the module is removed from the patch. It's the only reliable place to clean up notes a script left sounding, since nothing runs afterward to release them. Note the JavaScript version overrides `onUnload` with plain assignment, not `let` — see [JavaScript (Elk)](#javascript-elk).
+
+JavaScript:
+```js
+onMidiMessage = function(midiPort, msg) {
+   if (midi.isNoteOn(msg)) {
+      midiOut.send(msg);
+   }
+};
+
+onUnload = function() {
+   for (let note = 0; note < 128; note++) {
+      let off = midi.create();
+      midi.setNoteOff(off, 1, note);
+      midiOut.send(off);
+   }
+};
+```
+
+Lua:
+```lua
+onMidiMessage = function(midiPort, msg)
+   if midi.isNoteOn(msg) then
+      midiOut.send(msg)
+   end
+end
+
+function onUnload()
+   for note = 0, 127 do
+      local off = midi.create()
+      midi.setNoteOff(off, 1, note)
+      midiOut.send(off)
    end
 end
 ```
@@ -343,7 +381,9 @@ The API below is identical for both scripting engines — the function names, ar
 
 ### Global functions
 
-- `processMidi(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
+- `onMidiMessage(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
+- `onLoad()`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. Use it in place of a manually-called `init()` function at the bottom of the file.
+- `onUnload()`: Optional. Called once, right before the script's state is torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. **In JavaScript (Elk), define it with plain assignment, not `let`:** `onUnload = function() { ... };` — see [JavaScript (Elk)](#javascript-elk) below.
 - `log(str)`: Prints string `str` on the display of the module.
 - `overlay(str1, [str2], [str3])`: Displays string `str1` in an Rack overlay widget.
 
@@ -425,7 +465,7 @@ The API below is identical for both scripting engines — the function names, ar
 - `midi.setRaw(msg, str)`: Sets `msg` to the exact bytes given by hexstring `str` (e.g. "f11a"), with no framing added or removed. Use this for message types with no dedicated setter, such as MIDI Time Code, Song Position Pointer, Song Select, tune request or active sensing.
 - `midi.setSysEx(msg, str)`: Sets `msg` as a MIDI SysEx message with string `str` representing a hexstring of the payload data (e.g. "ab0fad050fdd"). The `f0`/`f7` framing bytes are added automatically and must not be included in `str`. The payload is limited to 256 bytes and every byte must be 7-bit (00-7f), since any byte ≥ 0x80 inside a SysEx body is illegal.
 - `midi.setValue(msg, value)`: Sets the MIDI value field (0..127) for `msg` (byte 3 of the MIDI message).
-- `midi.selectPort(midiPort)`: Selects the output port `midiPort` (1-based) used by every following `midiOut.*` call, until `midi.selectPort()` is called again. The selection stays in effect across `processMidi()` invocations. Currently MIDI-KIT has only one output port (index *1*) — scripts that call it now won't need to change when more output ports become available.
+- `midi.selectPort(midiPort)`: Selects the output port `midiPort` (1-based) used by every following `midiOut.*` call, until `midi.selectPort()` is called again. The selection stays in effect across `onMidiMessage()` invocations. Currently MIDI-KIT has only one output port (index *1*) — scripts that call it now won't need to change when more output ports become available.
 
 ### midiOut
 

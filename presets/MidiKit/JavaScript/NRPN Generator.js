@@ -40,7 +40,7 @@ let state = {
     direction: 1
 };
 
-let init = function() {
+onLoad = function() {
     log("NRPN generator initialized");
     log("Channel: " + number.toString(config.channel));
     log("NRPN number: " + number.toString(config.nrpnNumber));
@@ -67,7 +67,7 @@ let advanceValue = function() {
     }
 };
 
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
     if (midi.isClock(msg)) {
         state.tickCount++;
         if (state.tickCount >= config.ticksPerStep) {
@@ -80,6 +80,3 @@ let processMidi = function(midiPort, msg) {
         state.tickCount = 0;
     }
 };
-
-// Initialize when script loads
-init();

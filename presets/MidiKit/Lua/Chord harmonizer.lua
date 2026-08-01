@@ -26,6 +26,11 @@
 -- another voice still wants it. This script therefore reference-counts sounding
 -- note numbers in state.refCount and only emits a Note-Off when the last user
 -- of that note lets go.
+--
+-- onUnload releases every still-sounding note when the script is replaced,
+-- the module is reset, or the module is removed - without it, a chord held
+-- at that moment would hang forever, since nothing else remembers those
+-- note numbers are down once this script's state is gone.
 
 
 -- Configuration - change these values as needed
@@ -56,13 +61,23 @@ local state = {
     voicesOf = {}
 }
 
-local function init()
+function onLoad()
     for n = 0, 127 do
         state.refCount[n] = 0
         state.voicesOf[n] = {}
     end
     log("Chord harmonizer initialized")
     log("Voices per note: " .. #config.intervals)
+end
+
+function onUnload()
+    for n = 0, 127 do
+        if state.refCount[n] > 0 then
+            local off = midi.create()
+            midi.setNoteOff(off, 1, n)
+            midiOut.send(off)
+        end
+    end
 end
 
 local function matchesChannel(ch)
@@ -89,7 +104,7 @@ local function releaseVoices(ch, note)
     state.voicesOf[note] = {}
 end
 
-function processMidi(midiPort, msg)
+function onMidiMessage(midiPort, msg)
     local ch = midi.getChannel(msg)
 
     if not matchesChannel(ch) then
@@ -152,6 +167,3 @@ function processMidi(midiPort, msg)
 
     midiOut.send(msg)
 end
-
--- Initialize when script loads
-init()

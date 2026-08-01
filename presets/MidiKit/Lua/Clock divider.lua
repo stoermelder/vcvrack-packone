@@ -54,7 +54,7 @@ local state = {
     running = false
 }
 
-local function init()
+function onLoad()
     log("Clock divider initialized")
     log(string.format("Divisor: %d (24 ppqn / %d)", config.divisor, config.divisor))
 end
@@ -64,7 +64,7 @@ local function resetPhase()
     state.pulseCount = 0
 end
 
-function processMidi(midiPort, msg)
+function onMidiMessage(midiPort, msg)
     if midi.isStart(msg) then
         resetPhase()
         state.running = true
@@ -110,6 +110,3 @@ function processMidi(midiPort, msg)
         midiOut.send(msg)
     end
 end
-
--- Initialize when script loads
-init()

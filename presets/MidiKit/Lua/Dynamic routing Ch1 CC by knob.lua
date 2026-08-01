@@ -7,7 +7,7 @@
 
 param.enable(1)
 
-function processMidi(midiPort, msg)
+function onMidiMessage(midiPort, msg)
     if midi.isCc(msg) and midi.getChannel(msg) == 1 then
         local ch = number.ceil(param.getValue(1) * 16)
         midi.setChannel(msg, ch)

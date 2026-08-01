@@ -31,28 +31,21 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	// Must be initialised: top-level script code runs during loadScript(), before
 	// process() sets this to 1, and it bounds every msgStore index check below.
 	size_t msgCount = 0;
-	// True only while processMidi() is executing. The message store is reset on
-	// every callback, so handles created outside one are silently invalidated —
-	// this lets midi.create() warn instead of failing quietly.
+	// True only while onMidiMessage() is executing. The message store is reset
+	// on every callback, so handles created outside one are silently
+	// invalidated — this lets midi.create() warn instead of failing quietly.
 	bool inCallback = false;
 	// Sticky output port selected via midi.selectPort(), 0-based. Stays in
 	// effect across callbacks until changed again.
 	int selectedPort = 0;
 
+	// closeState() here is a no-op fallback (js is already NULL): onUnload()
+	// must run via MidiKitModule's destructor, while this object is still
+	// fully alive — writeLog/input.*/trig.*/param.* are pure virtual here and
+	// only overridden on the derived class, so calling them post-destruction
+	// (e.g. from a script's onUnload) would be undefined behaviour.
 	~MidiScriptEngineElk() {
 		closeState();
-	}
-
-	// Unregisters this engine's context from jsMap. The key returned by
-	// js_create() is jsMem itself, i.e. an address inside this object, so an
-	// entry left behind after destruction is a dangling key — and a later
-	// engine allocated at the same address would collide with it.
-	void closeState() {
-		if (js != NULL) {
-			jsMap.erase(js);
-			js = NULL;
-			// no need for free() here as "js" completely operates in jsMem
-		}
 	}
 
 	void setWorker(std::shared_ptr<ITaskWorker> w) { 
@@ -260,6 +253,14 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		js_set(js, _midiOut, "sendAfterMs", js_mkfun(js_midiOut_sendAfterMs));				// void midiOut.sendAfterMs(msg, ms)
 		js_set(js, _midiOut, "sendAfterTrigger", js_mkfun(js_midiOut_sendAfterTrigger));	// void midiOut.sendAfterTrigger(msg, [trigPort], ticks)
 
+		// Pre-registered as no-ops: Elk's `typeof` errors on a truly
+		// undeclared identifier (unlike real JS), so existence can't be
+		// probed otherwise. A script overrides one with plain assignment,
+		// NOT `let` — `let onLoad = ...` would collide and fail to parse.
+		js_set(js, js_glob(js), "onLoad", js_mkfun(js_noop));								// onLoad = function() {}
+		js_set(js, js_glob(js), "onUnload", js_mkfun(js_noop));								// onUnload = function() {}
+		js_set(js, js_glob(js), "onMidiMessage", js_mkfun(js_noop));						// onMidiMessage = function(midiPort, msg) {}
+
 		jsval_t r = js_eval(js, script, ~0U);
 		if (js_type(r) == JS_ERR) {
 			writeLog("Error while loading script", false);
@@ -269,7 +270,53 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		}
 		else {
 			writeLog("Script loaded", false);
+			if (js_eval(js, "onMidiMessage", ~0U) == js_mkfun(js_noop)) {
+				writeLog("No onMidiMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
+			}
+			callOnLoad();
 		}
+	}
+
+	// Unregisters this engine's context from jsMap. The key returned by
+	// js_create() is jsMem itself, i.e. an address inside this object, so an
+	// entry left behind after destruction is a dangling key — and a later
+	// engine allocated at the same address would collide with it.
+	void closeState() {
+		if (js != NULL) {
+			callOnUnload();
+			jsMap.erase(js);
+			js = NULL;
+			// no need for free() here as "js" completely operates in jsMem
+		}
+	}
+
+	// Runs after top-level code, once the script is known to have loaded.
+	void callOnLoad() {
+		callOptionalHook("onLoad");
+	}
+
+	// Runs right before this script's state is torn down (replaced, module
+	// reset, or module destroyed) — the only place a script can reliably
+	// clean up, e.g. an all-notes-off for anything still sounding.
+	void callOnUnload() {
+		callOptionalHook("onUnload");
+	}
+
+	// No-op if the script never overrode the pre-registered default (compared
+	// by identity, not Elk equality — see the note in loadScript()). Skipping
+	// msgCount's reset in that case matters: a handle built at top level must
+	// survive until the next real callback if there's no onLoad to consume it.
+	void callOptionalHook(const char* name) {
+		if (js_eval(js, name, ~0U) == js_mkfun(js_noop)) return;
+
+		msgCount = 0;
+		inCallback = true;
+		jsval_t r = js_eval(js, string::f("%s()", name).c_str(), ~0U);
+		inCallback = false;
+		if (js_type(r) == JS_ERR) {
+			writeLog(string::f("%s error: %s", name, js_str(js, r)));
+		}
+		flushMsgStore();
 	}
 
 	void processInMessage(int midiPort, Message& msg) override {
@@ -292,7 +339,9 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	}
 
 	bool processOutMessage(int& midiPort, Message& msg, int& ticks) override {
-		if (js && !midiOutQueue.empty()) {
+		// No `js` guard: onUnload()'s messages are queued just before js is
+		// nulled and must still drain afterwards.
+		if (!midiOutQueue.empty()) {
 			auto t = midiOutQueue.shift();
 			midiPort = std::get<0>(t);
 			msg = std::get<1>(t);
@@ -310,29 +359,36 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			msgCount = 1;
 
 			inCallback = true;
-			jsval_t r = js_eval(js, string::f("processMidi(%i, 0)", midiPort + 1).c_str(), ~0U);
+			jsval_t r = js_eval(js, string::f("onMidiMessage(%i, 0)", midiPort + 1).c_str(), ~0U);
 			inCallback = false;
 			if (js_type(r) == JS_ERR) {
 				// No line number here, deliberately: for a call into a script
 				// function elk swaps js->code to the function body it stored in
 				// JS memory, so js_errpos() indexes into that copy rather than
 				// into the script buffer and cannot be mapped back to a line.
-				writeLog(string::f("processMidi error: %s", js_str(js, r)));
+				writeLog(string::f("onMidiMessage error: %s", js_str(js, r)));
 			}
 
-			for (size_t i = 0; i < msgCount; i++) {
-				if (msgStore[i].send) {
-					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i].msg, msgStore[i].tick));
-					if (msgStore[i].isNrpn) {
-						midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 1].msg, msgStore[i].tick));
-						midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 2].msg, msgStore[i].tick));
-						midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 3].msg, msgStore[i].tick));
-						i += 3;
-					}
+			flushMsgStore();
+		}
+	}
+
+	// Pushes every message sent during the callback that just ran into
+	// midiOutQueue. Shared by onMidiMessage/onLoad/onUnload.
+	void flushMsgStore() {
+		for (size_t i = 0; i < msgCount; i++) {
+			if (msgStore[i].send) {
+				midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i].msg, msgStore[i].tick));
+				if (msgStore[i].isNrpn) {
+					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 1].msg, msgStore[i].tick));
+					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 2].msg, msgStore[i].tick));
+					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 3].msg, msgStore[i].tick));
+					i += 3;
 				}
 			}
 		}
 	}
+
 
 	std::string getInputName(int i) override {
 		if (js) {
@@ -366,6 +422,10 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		return b ? js_mktrue() : js_mkfalse();
 	}
 
+	// Default body for onLoad/onUnload, in case a script never assigns its own.
+	static jsval_t js_noop(struct js* js, jsval_t* args, int nargs) {
+		return js_mknull();
+	}
 
 	static jsval_t js_log(struct js* js, jsval_t* args, int nargs) {
 		if (!js_chkargs(args, nargs, "s")) return js_mkerr(js, "log: bad args");
@@ -623,13 +683,13 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		});
 	}
 
-	// Warns when a message is created outside processMidi(). The store is reset on
-	// every callback, so such a handle is silently invalidated before it can be
-	// used — see midi.create() in SCRIPTING.md.
+	// Warns when a message is created outside a callback (onMidiMessage/
+	// onLoad/onUnload) — the store resets every callback, silently
+	// invalidating such a handle before use.
 	inline static void warnIfOutsideCallback(struct js* js, const char* fn) {
 		MidiScriptEngineElk* e = jsMap[js];
 		if (!e->inCallback) {
-			e->writeLog(string::f("%s: called outside processMidi(); the message "
+			e->writeLog(string::f("%s: called outside a callback; the message "
 				"is discarded when the next MIDI message arrives", fn), false);
 		}
 	}

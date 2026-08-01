@@ -54,7 +54,7 @@ let state = {
     sounding: []
 };
 
-let init = function() {
+onLoad = function() {
     for (let n = 0; n < 128; n++) {
         state.sounding[n] = false;
     }
@@ -65,6 +65,25 @@ let init = function() {
     }
     else {
         log("Channel: " + number.toString(config.channel));
+    }
+};
+
+// Releases every note with a still-pending scheduled Note-Off. Without this,
+// a note whose release hasn't fired yet at the moment the script is replaced,
+// the module is reset, or the module is removed would hang forever - the
+// scheduled Note-Off belongs to the old script state and is discarded with it.
+// state.sounding isn't channel-indexed (only one note-length policy is active
+// at a time), so this releases on config.channel if fixed, or channel 1 when
+// config.channel is 0 (every channel) - the same best-effort choice
+// Chord harmonizer makes for the same reason.
+onUnload = function() {
+    let ch = config.channel === 0 ? 1 : config.channel;
+    for (let n = 0; n < 128; n++) {
+        if (state.sounding[n]) {
+            let off = midi.create();
+            midi.setNoteOff(off, ch, n);
+            midiOut.send(off);
+        }
     }
 };
 
@@ -79,7 +98,7 @@ let scheduleNoteOff = function(ch, note) {
     midiOut.sendAfterTrigger(off, config.trigPort, config.lengthTicks);
 };
 
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     if (midi.isNoteOn(msg) && matchesChannel(ch)) {
@@ -117,6 +136,3 @@ let processMidi = function(midiPort, msg) {
         midiOut.send(msg);
     }
 };
-
-// Initialize when script loads
-init();

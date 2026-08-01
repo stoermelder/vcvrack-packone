@@ -70,13 +70,32 @@ local function noteName(note)
     return noteNames[(note % 12) + 1]
 end
 
-local function init()
+function onLoad()
     for n = 0, 127 do
         state.playedAs[n] = -1
     end
     log("Scale quantiser initialized")
     log("Root: " .. noteName(config.root))
     log("Scale degrees: " .. #config.scale)
+end
+
+-- Releases every note still substituted in state.playedAs. Without this, a
+-- held note that has been remapped to a different scale degree would hang
+-- forever once the script is replaced, the module is reset, or the module is
+-- removed - the substitution needed to release it correctly lives only in
+-- this script's state. state.playedAs isn't channel-indexed (only one scale
+-- is active at a time), so this releases on config.channel if fixed, or
+-- channel 1 when config.channel is 0 (every channel) - the same best-effort
+-- choice Chord harmonizer makes for the same reason.
+function onUnload()
+    local ch = config.channel == 0 and 1 or config.channel
+    for n = 0, 127 do
+        if state.playedAs[n] >= 0 then
+            local off = midi.create()
+            midi.setNoteOff(off, ch, state.playedAs[n])
+            midiOut.send(off)
+        end
+    end
 end
 
 local function matchesChannel(ch)
@@ -136,7 +155,7 @@ local function quantise(note)
     return out
 end
 
-function processMidi(midiPort, msg)
+function onMidiMessage(midiPort, msg)
     if not matchesChannel(midi.getChannel(msg)) then
         midiOut.send(msg)
         return
@@ -171,6 +190,3 @@ function processMidi(midiPort, msg)
 
     midiOut.send(msg)
 end
-
--- Initialize when script loads
-init()

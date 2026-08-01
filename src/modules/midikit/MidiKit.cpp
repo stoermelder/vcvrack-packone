@@ -322,6 +322,18 @@ struct MidiKitModule : Module {
 		onReset();
 	}
 
+	// Runs the active script's onUnload() (all-notes-off etc.) while se/seLua
+	// are still fully-constructed MidiKitScriptEngineElk/Lua objects, i.e.
+	// before Module's own destructor (and this object's other members) start
+	// tearing down. Calling closeState() later, from ~MidiScriptEngineElk()/
+	// ~MidiScriptEngineLua() themselves, would run onUnload() through a
+	// vtable that no longer has this class's overrides (writeLog, trig.*,
+	// input.*, param.* are all pure virtual there) — undefined behaviour.
+	~MidiKitModule() {
+		se.closeState();
+		seLua.closeState();
+	}
+
 	void onReset() override {
 		midiInput.reset();
 		midiOutput.reset();

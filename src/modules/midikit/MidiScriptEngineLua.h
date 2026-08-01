@@ -26,7 +26,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static const int msgStoreSize = 32;
 	MessageEx msgStore[msgStoreSize];
 	size_t msgCount = 0;
-	// True only while processMidi() is executing. The message store is reset on
+	// True only while onMidiMessage() is executing. The message store is reset on
 	// every callback, so handles created outside one are silently invalidated —
 	// this lets midi.create() warn instead of failing quietly.
 	bool inCallback = false;
@@ -54,15 +54,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// ─── Construction / destruction ───────────────────────────────────────────
 
+	// closeState() here is a no-op fallback (L is already nullptr): onUnload()
+	// must run via MidiKitModule's destructor, while this object is still
+	// fully alive — writeLog/input.*/trig.*/param.* are pure virtual here and
+	// only overridden on the derived class, so calling them post-destruction
+	// (e.g. from a script's onUnload) would be undefined behaviour.
 	~MidiScriptEngineLua() {
 		closeState();
-	}
-
-	void closeState() {
-		if (L) {
-			lua_close(L);
-			L = nullptr;
-		}
 	}
 
 	// ─── MidiScriptEngine interface ───────────────────────────────────────────
@@ -172,6 +170,45 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		writeLog("Script loaded", false);
+		callOnLoad();
+	}
+
+	void closeState() {
+		if (L) {
+			callOnUnload();
+			lua_close(L);
+			L = nullptr;
+		}
+	}
+
+	// Runs after top-level code, once the script is known to have loaded.
+	void callOnLoad() {
+		callOptionalHook("onLoad");
+	}
+
+	// Runs right before this script's state is torn down (replaced, module
+	// reset, or module destroyed) — the only place a script can reliably
+	// clean up, e.g. an all-notes-off for anything still sounding.
+	void callOnUnload() {
+		callOptionalHook("onUnload");
+	}
+
+	void callOptionalHook(const char* name) {
+		lua_getglobal(L, name);
+		if (!lua_isfunction(L, -1)) {
+			lua_pop(L, 1);
+			return;
+		}
+		msgCount = 0;
+		inCallback = true;
+		int status = lua_pcall(L, 0, 0, 0);
+		inCallback = false;
+		if (status != LUA_OK) {
+			const char* err = lua_tostring(L, -1);
+			writeLog(string::f("%s error: %s", name, err ? err : "(unknown)"));
+			lua_pop(L, 1);
+		}
+		flushMsgStore();
 	}
 
 	void processInMessage(int midiPort, Message& msg) override {
@@ -187,14 +224,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 					auto t = midiInQueue.shift();
 					int port = std::get<0>(t);
 					midi::Message msg = std::get<1>(t);
-					processMidi(port, msg);
+					dispatchMidiMessage(port, msg);
 				}
 			});
 		}
 	}
 
 	bool processOutMessage(int& midiPort, Message& msg, int& ticks) override {
-		if (L && !midiOutQueue.empty()) {
+		// No `L` guard: onUnload()'s messages are queued just before L closes
+		// and must still drain afterwards.
+		if (!midiOutQueue.empty()) {
 			auto t = midiOutQueue.shift();
 			midiPort = std::get<0>(t);
 			msg = std::get<1>(t);
@@ -203,6 +242,23 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 		return false;
 	}
+
+	// Pushes every message sent during the callback that just ran into
+	// midiOutQueue. Shared by onMidiMessage/onLoad/onUnload.
+	void flushMsgStore() {
+		for (size_t i = 0; i < msgCount; i++) {
+			if (msgStore[i].send) {
+				midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i].msg, msgStore[i].tick));
+				if (msgStore[i].isNrpn) {
+					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 1].msg, msgStore[i].tick));
+					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 2].msg, msgStore[i].tick));
+					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 3].msg, msgStore[i].tick));
+					i += 3;
+				}
+			}
+		}
+	}
+
 
 	std::string getInputName(int i) override {
 		if (!L) return "";
@@ -219,9 +275,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return callLuaTableFunc("param", "getValueFormat", i + 1);
 	}
 
-	// ─── Private helpers ──────────────────────────────────────────────────────
 
-	void processMidi(int midiPort, Message& msg) {
+	void dispatchMidiMessage(int midiPort, Message& msg) {
 		if (!L) return;
 
 		msgStore[0].msg = msg;
@@ -230,8 +285,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		msgStore[0].isNrpn = false;
 		msgCount = 1;
 
-		// Call Lua: processMidi(port, msgIndex)   (port 1-based, msgIndex 0-based)
-		lua_getglobal(L, "processMidi");
+		lua_getglobal(L, "onMidiMessage");
 		if (!lua_isfunction(L, -1)) {
 			lua_pop(L, 1);
 			return;
@@ -243,22 +297,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			writeLog(string::f("processMidi error: %s", err ? err : "(unknown)"));
+			writeLog(string::f("onMidiMessage error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1);
 		}
 
-		// Flush outgoing messages
-		for (size_t i = 0; i < msgCount; i++) {
-			if (msgStore[i].send) {
-				midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i].msg, msgStore[i].tick));
-				if (msgStore[i].isNrpn) {
-					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 1].msg, msgStore[i].tick));
-					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 2].msg, msgStore[i].tick));
-					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 3].msg, msgStore[i].tick));
-					i += 3;
-				}
-			}
-		}
+		flushMsgStore();
 	}
 
 	std::string callLuaTableFunc(const char* tableName, const char* funcName, int arg) {
@@ -306,7 +349,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return &e->msgStore[idx];
 	}
 
-	// ─── API registration ─────────────────────────────────────────────────────
 
 	void registerAPI() {
 		// ── Global functions ─────────────────────────────────────────────────
@@ -674,12 +716,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// ── midi.* ────────────────────────────────────────────────────────────────
 
-	// Warns when a message is created outside processMidi(). The store is reset on
-	// every callback, so such a handle is silently invalidated before it can be
-	// used — see midi.create() in SCRIPTING.md.
+	// Warns when a message is created outside a callback (onMidiMessage/
+	// onLoad/onUnload) — the store resets every callback, silently
+	// invalidating such a handle before use. See midi.create() in SCRIPTING.md.
 	static void warnIfOutsideCallback(MidiScriptEngineLua* e, const char* fn) {
 		if (!e->inCallback) {
-			e->writeLog(string::f("%s: called outside processMidi(); the message "
+			e->writeLog(string::f("%s: called outside a callback; the message "
 				"is discarded when the next MIDI message arrives", fn), false);
 		}
 	}

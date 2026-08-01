@@ -21,7 +21,7 @@ Test::TestContext<> testContext;
 // Each preset is loaded into a real module and fed representative traffic, then
 // checked for three things: nothing error-shaped in the load log, nothing
 // error-shaped in the per-message log, and at least one MIDI message actually
-// produced. The last check matters — without it a script whose processMidi
+// produced. The last check matters — without it a script whose onMidiMessage
 // never runs at all passes both error checks trivially.
 
 // Presets are read from disk, so the paths must not depend on the working
@@ -71,7 +71,7 @@ static std::string drainLog(MidiKitModule* m) {
 }
 
 // processInMessage only queues the message — process() is what actually runs
-// processMidi(), so both are needed or the script never executes at all.
+// onMidiMessage(), so both are needed or the script never executes at all.
 static void feed(MidiKitModule* m, midi::Message msg) {
 	m->activeEngine->processInMessage(0, msg);
 	m->activeEngine->process();

@@ -19,7 +19,7 @@ param.getValueFormat = function(port)
     return number.toString(param.getValue(port))
 end
 
-function processMidi(midiPort, msg)
+function onMidiMessage(midiPort, msg)
     if midi.isCc(msg) and midi.getChannel(msg) == 1 then
         local ch = number.ceil(param.getValue(1) * 16)
         midi.setChannel(msg, ch)

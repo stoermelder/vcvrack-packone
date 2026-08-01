@@ -54,7 +54,7 @@ local state = {
     sounding = {}
 }
 
-local function init()
+function onLoad()
     for n = 0, 127 do
         state.sounding[n] = false
     end
@@ -64,6 +64,25 @@ local function init()
         log("Channel: all")
     else
         log("Channel: " .. config.channel)
+    end
+end
+
+-- Releases every note with a still-pending scheduled Note-Off. Without this,
+-- a note whose release hasn't fired yet at the moment the script is replaced,
+-- the module is reset, or the module is removed would hang forever - the
+-- scheduled Note-Off belongs to the old script state and is discarded with it.
+-- state.sounding isn't channel-indexed (only one note-length policy is active
+-- at a time), so this releases on config.channel if fixed, or channel 1 when
+-- config.channel is 0 (every channel) - the same best-effort choice
+-- Chord harmonizer makes for the same reason.
+function onUnload()
+    local ch = config.channel == 0 and 1 or config.channel
+    for n = 0, 127 do
+        if state.sounding[n] then
+            local off = midi.create()
+            midi.setNoteOff(off, ch, n)
+            midiOut.send(off)
+        end
     end
 end
 
@@ -78,7 +97,7 @@ local function scheduleNoteOff(ch, note)
     midiOut.sendAfterTrigger(off, config.trigPort, config.lengthTicks)
 end
 
-function processMidi(midiPort, msg)
+function onMidiMessage(midiPort, msg)
     local ch = midi.getChannel(msg)
 
     if midi.isNoteOn(msg) and matchesChannel(ch) then
@@ -116,6 +135,3 @@ function processMidi(midiPort, msg)
         midiOut.send(msg)
     end
 end
-
--- Initialize when script loads
-init()

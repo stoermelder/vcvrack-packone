@@ -136,7 +136,7 @@ static const char* LUA_CC_REROUTE = R"(--[[
 @engine Lua
 @description CC number +1 passthrough
 --]]
-processMidi = function(port, msg)
+onMidiMessage = function(port, msg)
     if midi.isCc(msg) then
         midi.setNote(msg, midi.getNote(msg) + 1)
         midiOut.send(msg)
@@ -1539,7 +1539,7 @@ static const char* LUA_MIDIOUT_SEND = R"(--[[
 msg = midi.create()
 midi.setNoteOn(msg, 1, 60, 100)
 
-processMidi = function(port, msg)
+onMidiMessage = function(port, msg)
     midiOut.send(msg)
 end
 )";
@@ -1580,7 +1580,7 @@ static const char* LUA_MIDI_SELECT_PORT = R"(--[[
 msg = midi.create()
 midi.setNoteOn(msg, 1, 60, 100)
 
-processMidi = function(port, msg)
+onMidiMessage = function(port, msg)
     midi.selectPort(1)  -- Select port 1 (1-based); stays selected until changed
     midiOut.send(msg)
 end
@@ -1619,7 +1619,7 @@ TEST_CASE("API midi.selectPort", "[MidiKit][Lua]") {
 static const char* LUA_MIDI_SELECT_PORT_STICKY = R"(--[[
 @engine Lua
 --]]
-processMidi = function(port, msg)
+onMidiMessage = function(port, msg)
     midi.selectPort(1)
     local msg1 = midi.create()
     midi.setNoteOn(msg1, 1, 60, 100)
@@ -1664,7 +1664,7 @@ TEST_CASE("API midi.selectPort stays selected across calls", "[MidiKit][Lua]") {
 static const char* LUA_MIDI_SELECT_PORT_INVALID = R"(--[[
 @engine Lua
 --]]
-processMidi = function(port, msg)
+onMidiMessage = function(port, msg)
     midi.selectPort(2)  -- Only 1 output port exists
 end
 )";
@@ -1690,7 +1690,7 @@ TEST_CASE("API midi.selectPort rejects an out-of-range port", "[MidiKit][Lua]") 
 		auto t = m->midiLogMessages.shift();
 		log += std::get<2>(t) + "\n";
 	}
-	REQUIRE(log.find("processMidi error") != std::string::npos);
+	REQUIRE(log.find("onMidiMessage error") != std::string::npos);
 
 	Test::destroyModule(m);
 }
@@ -1702,7 +1702,7 @@ static const char* LUA_MIDIOUT_SEND_AFTER_MS = R"(--[[
 msg = midi.create()
 midi.setNoteOn(msg, 1, 60, 100)
 
-processMidi = function(port, msg)
+onMidiMessage = function(port, msg)
     midiOut.sendAfterMs(msg, 100)  -- Send after 100ms
 end
 )";
@@ -1744,7 +1744,7 @@ static const char* LUA_MIDIOUT_SEND_AFTER_TRIGGER = R"(--[[
 msg = midi.create()
 midi.setNoteOn(msg, 1, 60, 100)
 
-processMidi = function(port, msg)
+onMidiMessage = function(port, msg)
     midiOut.sendAfterTrigger(msg, 10)  -- Send after 10 ticks on trig port 0
 end
 )";
@@ -1790,7 +1790,7 @@ static const char* LUA_MIDIOUT_SEND_AFTER_TRIGGER_WITH_SELECTED_PORT = R"(--[[
 msg = midi.create()
 midi.setNoteOn(msg, 1, 60, 100)
 
-processMidi = function(port, msg)
+onMidiMessage = function(port, msg)
     midi.selectPort(1)
     midiOut.sendAfterTrigger(msg, 10)  -- no trigPort override
 end
@@ -1832,7 +1832,7 @@ static const char* LUA_MIDIOUT_SEND_AFTER_TRIGGER_WITH_TRIGPORT = R"(--[[
 msg = midi.create()
 midi.setNoteOn(msg, 1, 60, 100)
 
-processMidi = function(port, msg)
+onMidiMessage = function(port, msg)
     midi.selectPort(1)
     midiOut.sendAfterTrigger(msg, 1, 10)  -- trigPort 1, 10 ticks
 end
@@ -1867,7 +1867,7 @@ TEST_CASE("API midiOut.sendAfterTrigger with explicit trigPort (3 args)", "[Midi
 	Test::destroyModule(m);
 }
 
-// midi.create() / midi.createNRPN() outside processMidi()
+// midi.create() / midi.createNRPN() outside onMidiMessage()
 //
 // The message store is reset on every callback, so a handle created at top
 // level is silently invalidated before it can be used. That reset is documented
@@ -1882,7 +1882,7 @@ static std::string drainLog(MidiKitModule* m) {
 	return all;
 }
 
-static const char* OUTSIDE_CALLBACK_WARNING = "called outside processMidi()";
+static const char* OUTSIDE_CALLBACK_WARNING = "called outside a callback";
 
 static const char* LUA_TOPLEVEL_CREATE = R"(--[[
 @engine Lua
@@ -1899,14 +1899,14 @@ g = midi.createNRPN()
 static const char* LUA_CALLBACK_CREATE = R"(--[[
 @engine Lua
 --]]
-processMidi = function(port, msg)
+onMidiMessage = function(port, msg)
     local m = midi.create()
     midi.setCc(m, 1, 20, 100)
     midiOut.send(m)
 end
 )";
 
-TEST_CASE("midi.create outside processMidi warns", "[MidiKit][Lua]") {
+TEST_CASE("midi.create outside onMidiMessage warns", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_TOPLEVEL_CREATE);
@@ -1917,7 +1917,7 @@ TEST_CASE("midi.create outside processMidi warns", "[MidiKit][Lua]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("midi.createNRPN outside processMidi warns", "[MidiKit][Lua]") {
+TEST_CASE("midi.createNRPN outside onMidiMessage warns", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_TOPLEVEL_CREATE_NRPN);
@@ -1928,7 +1928,7 @@ TEST_CASE("midi.createNRPN outside processMidi warns", "[MidiKit][Lua]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("midi.create inside processMidi does not warn", "[MidiKit][Lua]") {
+TEST_CASE("midi.create inside onMidiMessage does not warn", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_CALLBACK_CREATE);
@@ -1965,7 +1965,7 @@ this is not lua
 local c = 3
 )";
 
-TEST_CASE("Lua load error reports a clean chunk name and line", "[MidiKit][Lua]") {
+TEST_CASE("Load error reports a clean chunk name and line", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_BAD_ON_LINE_7);
@@ -1980,19 +1980,19 @@ TEST_CASE("Lua load error reports a clean chunk name and line", "[MidiKit][Lua]"
 }
 
 
-// Runtime errors inside processMidi carry a position too, and go through the
+// Runtime errors inside onMidiMessage carry a position too, and go through the
 // same chunk name.
 static const char* LUA_RUNTIME_ERROR = R"(--[[
 @engine Lua
 @description test
 --]]
-processMidi = function(port, msg)
+onMidiMessage = function(port, msg)
   local x = nil
   return x.field
 end
 )";
 
-TEST_CASE("Lua runtime error reports a clean chunk name and line", "[MidiKit][Lua]") {
+TEST_CASE("Runtime error reports a clean chunk name and line", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_RUNTIME_ERROR);
@@ -2015,7 +2015,7 @@ TEST_CASE("Lua runtime error reports a clean chunk name and line", "[MidiKit][Lu
 
 
 // A script that loads cleanly must still load cleanly through luaL_loadbuffer.
-TEST_CASE("Lua successful load reports no error position", "[MidiKit][Lua]") {
+TEST_CASE("Successful load reports no error position", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_MAX);
@@ -2024,6 +2024,125 @@ TEST_CASE("Lua successful load reports no error position", "[MidiKit][Lua]") {
 	std::string log = drainLog(m);
 	REQUIRE(log.find("script:") == std::string::npos);
 	REQUIRE(log.find("Script loaded") != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* LUA_ON_LOAD = R"(--[[
+@engine Lua
+--]]
+onMidiMessage = function(midiPort, msg) end
+onLoad = function()
+	log("onLoad ran")
+	local msg = midi.create()
+	midi.setNoteOn(msg, 1, 60, 100)
+	midiOut.send(msg)
+end
+)";
+
+TEST_CASE("onLoad runs once after a successful load and can send a message", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_ON_LOAD);
+	REQUIRE(m->seLua.L != nullptr);
+
+	REQUIRE(drainLog(m).find("onLoad ran") != std::string::npos);
+
+	int outPort;
+	midi::Message outMsg;
+	int ticks;
+	REQUIRE(m->seLua.processOutMessage(outPort, outMsg, ticks));
+	REQUIRE(outMsg.getStatus() == 0x9);
+	REQUIRE(outMsg.getNote() == 60);
+	REQUIRE(outMsg.getValue() == 100);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Script without onLoad loads without any onLoad log noise", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_MAX);
+	REQUIRE(m->seLua.L != nullptr);
+
+	REQUIRE(drainLog(m).find("onLoad") == std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Top-level message handle survives a load with no onLoad (#D4)", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_MIDI_SET_SYSEX);
+	REQUIRE(m->seLua.L != nullptr);
+
+	lua_getglobal(m->seLua.L, "isSysEx");
+	REQUIRE(lua_toboolean(m->seLua.L, -1) == 1);
+	lua_pop(m->seLua.L, 1);
+
+	Test::destroyModule(m);
+}
+
+
+static const char* LUA_ON_UNLOAD = R"(--[[
+@engine Lua
+--]]
+onMidiMessage = function(midiPort, msg) end
+onUnload = function()
+	log("onUnload ran")
+	local msg = midi.create()
+	midi.setNoteOff(msg, 1, 60)
+	midiOut.send(msg)
+end
+)";
+
+TEST_CASE("onUnload runs when the script is replaced and can send a message", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_ON_UNLOAD);
+	REQUIRE(m->seLua.L != nullptr);
+	drainLog(m);  // discard the load-time log
+
+	m->clearScript();
+
+	REQUIRE(drainLog(m).find("onUnload ran") != std::string::npos);
+
+	int outPort;
+	midi::Message outMsg;
+	int ticks;
+	REQUIRE(m->seLua.processOutMessage(outPort, outMsg, ticks));
+	REQUIRE(outMsg.getStatus() == 0x8);
+	REQUIRE(outMsg.getNote() == 60);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("onUnload runs again when a second script replaces the first", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+
+	m->loadScript(LUA_ON_UNLOAD);
+	REQUIRE(m->seLua.L != nullptr);
+	drainLog(m);
+
+	m->loadScript(LUA_MAX);
+	REQUIRE(m->seLua.L != nullptr);
+
+	REQUIRE(drainLog(m).find("onUnload ran") != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua]") {
+	// See the matching Elk test for why this can only assert "doesn't crash":
+	// MidiKitModule's destructor calls closeState() (which runs onUnload())
+	// while se/seLua are still fully alive, specifically so that virtuals
+	// like writeLog/trig.*/input.*/param.* resolve correctly — calling them
+	// from ~MidiScriptEngineLua() itself, after MidiKitScriptEngineLua's part
+	// of the object is already gone, would be undefined behaviour.
+	MidiKitModule* m = createModule();
+	m->loadScript(LUA_ON_UNLOAD);
+	REQUIRE(m->seLua.L != nullptr);
 
 	Test::destroyModule(m);
 }

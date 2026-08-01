@@ -65,13 +65,32 @@ let state = {
 
 let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-let init = function() {
+onLoad = function() {
     for (let n = 0; n < 128; n++) {
         state.playedAs[n] = -1;
     }
     log("Scale quantiser initialized");
     log("Root: " + noteNames[config.root]);
     log("Scale degrees: " + number.toString(config.scale.length));
+};
+
+// Releases every note still substituted in state.playedAs. Without this, a
+// held note that has been remapped to a different scale degree would hang
+// forever once the script is replaced, the module is reset, or the module is
+// removed - the substitution needed to release it correctly lives only in
+// this script's state. state.playedAs isn't channel-indexed (only one scale
+// is active at a time), so this releases on config.channel if fixed, or
+// channel 1 when config.channel is 0 (every channel) - the same best-effort
+// choice Chord harmonizer makes for the same reason.
+onUnload = function() {
+    let ch = config.channel === 0 ? 1 : config.channel;
+    for (let n = 0; n < 128; n++) {
+        if (state.playedAs[n] >= 0) {
+            let off = midi.create();
+            midi.setNoteOff(off, ch, state.playedAs[n]);
+            midiOut.send(off);
+        }
+    }
 };
 
 let matchesChannel = function(ch) {
@@ -140,7 +159,7 @@ let quantise = function(note) {
     return out;
 };
 
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
     if (!matchesChannel(midi.getChannel(msg))) {
         midiOut.send(msg);
         return;
@@ -175,6 +194,3 @@ let processMidi = function(midiPort, msg) {
 
     midiOut.send(msg);
 };
-
-// Initialize when script loads
-init();

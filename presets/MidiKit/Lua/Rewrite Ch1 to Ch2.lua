@@ -5,7 +5,7 @@
 @description Rewrites all MIDI messages on channel 1 to channel 2
 --]]
 
-function processMidi(midiInput, msg)
+function onMidiMessage(midiInput, msg)
     if midi.getChannel(msg) == 1 then
         midi.setChannel(msg, 2)
     end

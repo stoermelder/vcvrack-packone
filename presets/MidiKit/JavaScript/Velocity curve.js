@@ -66,7 +66,7 @@ param.getValueFormat = function(port) {
     return "";
 };
 
-let init = function() {
+onLoad = function() {
     log("Velocity curve initialized");
     log("Range: " + number.toString(config.minVelocity) + "-" + number.toString(config.maxVelocity));
     log("Knob " + number.toString(config.curveParam) + " sets the curve (centre = linear)");
@@ -91,7 +91,7 @@ let shapeVelocity = function(vel) {
     return out;
 };
 
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
     if (midi.isNoteOn(msg) && matchesChannel(midi.getChannel(msg))) {
         let vel = midi.getValue(msg);
 
@@ -111,6 +111,3 @@ let processMidi = function(midiPort, msg) {
 
     midiOut.send(msg);
 };
-
-// Initialize when script loads
-init();

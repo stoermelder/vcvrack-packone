@@ -65,7 +65,7 @@ param.getValueFormat = function(port)
     return ""
 end
 
-local function init()
+function onLoad()
     log("Velocity curve initialized")
     log(string.format("Range: %d-%d", config.minVelocity, config.maxVelocity))
     log("Knob " .. config.curveParam .. " sets the curve (centre = linear)")
@@ -89,7 +89,7 @@ local function shapeVelocity(vel)
     return math.max(config.minVelocity, math.min(config.maxVelocity, out))
 end
 
-function processMidi(midiPort, msg)
+function onMidiMessage(midiPort, msg)
     if midi.isNoteOn(msg) and matchesChannel(midi.getChannel(msg)) then
         local vel = midi.getValue(msg)
 
@@ -109,6 +109,3 @@ function processMidi(midiPort, msg)
 
     midiOut.send(msg)
 end
-
--- Initialize when script loads
-init()

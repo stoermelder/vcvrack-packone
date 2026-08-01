@@ -26,6 +26,11 @@
 // another voice still wants it. This script therefore reference-counts sounding
 // note numbers in state.refCount and only emits a Note-Off when the last user
 // of that note lets go.
+//
+// onUnload releases every still-sounding note when the script is replaced,
+// the module is reset, or the module is removed - without it, a chord held
+// at that moment would hang forever, since nothing else remembers those
+// note numbers are down once this script's state is gone.
 
 
 // Configuration - change these values as needed
@@ -56,7 +61,7 @@ let state = {
     voicesOf: []
 };
 
-let init = function() {
+onLoad = function() {
     for (let n = 0; n < 128; n++) {
         state.refCount[n] = 0;
         state.voicesOf[n] = [];
@@ -65,11 +70,21 @@ let init = function() {
     log("Voices per note: " + number.toString(config.intervals.length));
 };
 
+onUnload = function() {
+    for (let n = 0; n < 128; n++) {
+        if (state.refCount[n] > 0) {
+            let off = midi.create();
+            midi.setNoteOff(off, 1, n);
+            midiOut.send(off);
+        }
+    }
+};
+
 let matchesChannel = function(ch) {
     return config.channel === 0 || ch === config.channel;
 };
 
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     if (!matchesChannel(ch)) {
@@ -144,6 +159,3 @@ let processMidi = function(midiPort, msg) {
 
     midiOut.send(msg);
 };
-
-// Initialize when script loads
-init();

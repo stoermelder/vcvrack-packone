@@ -7,7 +7,7 @@
 
 param.enable(1);
 
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
     if (midi.isCc(msg) && midi.getChannel(msg) === 1) {
         let ch = number.ceil(param.getValue(1) * 16);
         midi.setChannel(msg, ch);

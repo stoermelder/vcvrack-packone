@@ -54,7 +54,7 @@ let state = {
     running: false
 };
 
-let init = function() {
+onLoad = function() {
     log("Clock divider initialized");
     log("Divisor: " + number.toString(config.divisor) + " (24 ppqn / " + number.toString(config.divisor) + ")");
 };
@@ -64,7 +64,7 @@ let resetPhase = function() {
     state.pulseCount = 0;
 };
 
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
     if (midi.isStart(msg)) {
         resetPhase();
         state.running = true;
@@ -110,6 +110,3 @@ let processMidi = function(midiPort, msg) {
         midiOut.send(msg);
     }
 };
-
-// Initialize when script loads
-init();

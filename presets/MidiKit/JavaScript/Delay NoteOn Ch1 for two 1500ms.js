@@ -5,7 +5,7 @@
  * @description Delays every Note-On message on channel 1 for 1500ms
  */
 
-let processMidi = function(midiInput, msg) {
+onMidiMessage = function(midiInput, msg) {
     if (midi.isNoteOn(msg) && midi.getChannel(msg) === 1) {
         midiOut.sendAfterMs(msg, 1500);
     }

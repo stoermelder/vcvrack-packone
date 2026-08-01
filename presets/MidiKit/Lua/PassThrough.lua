@@ -5,6 +5,6 @@
 @description Passes all incoming MIDI messages to the default MIDI output port.
 --]]
 
-function processMidi(midiPort, msg)
+function onMidiMessage(midiPort, msg)
     midiOut.send(msg)
 end

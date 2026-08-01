@@ -46,8 +46,7 @@ let state = {
     hasValueMsb: false
 };
 
-// Called when the script is loaded
-let init = function() {
+onLoad = function() {
     log("NRPN to CC converter initialized");
     log("Mapped NRPN numbers: " + number.toString(config.map.length));
     log("Channel: " + number.toString(config.ccChannel));
@@ -73,7 +72,7 @@ let resetState = function() {
 };
 
 // Called when a MIDI message is received
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
     if (!midi.isCc(msg)) {
         return;
     }
@@ -122,6 +121,3 @@ let processMidi = function(midiPort, msg) {
         midiOut.send(ccLsb);
     }
 };
-
-// Initialize when script loads
-init();

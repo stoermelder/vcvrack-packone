@@ -15,7 +15,7 @@ Implementation: [MidiScriptEngineElk.h](MidiScriptEngineElk.h) (uses
 ## When to write Elk (JavaScript) vs Lua
 
 Both engines are similarly capable for the common case (reacting to
-`processMidi`, building/sending messages). Pick based on these differences:
+`onMidiMessage`, building/sending messages). Pick based on these differences:
 
 | | Elk (JS) | Lua |
 |---|---|---|
@@ -68,19 +68,44 @@ conventionally present but not checked by the loader.
 ## Script structure
 
 - Top-level code runs once, synchronously, when the script is (re)loaded.
-- `processMidi(midiPort, msg)` is called for every incoming MIDI message
+- `onMidiMessage(midiPort, msg)` is called for every incoming MIDI message
   (`midiPort` is 1-based). Define it as a global function — it's the only
-  callback the engine looks for per message. **In Elk it must be written as a
-  function *expression*** (`let processMidi = function(...) {...};`); the
-  `function processMidi(...) {}` declaration form is a parse error. See
-  [Elk language limitations](#elk-language-limitations). Lua accepts either
-  `processMidi = function(...) end` or `function processMidi(...) end`.
+  callback the engine looks for per message; a script that never defines it
+  loads fine but silently ignores all incoming MIDI (logged once at load
+  time). **In Elk it must be defined with plain assignment, NOT `let`:**
+  `onMidiMessage = function(...) {...};` — same reason as `onLoad`/`onUnload`
+  below: the name already exists as a pre-registered no-op before your
+  script runs, and `let onMidiMessage = ...` collides with it and fails to
+  parse (`'onMidiMessage' already declared`). The `function onMidiMessage(...)
+  {}` declaration form is *also* a parse error in Elk, independent of that —
+  see [Elk language limitations](#elk-language-limitations). Lua has neither
+  restriction: `onMidiMessage = function(...) end` or
+  `function onMidiMessage(...) end` both work.
 - Optional `input.getName(i)`, `param.getName(i)`, `param.getValueFormat(i)`
   functions may be overridden to customize panel/input labeling; both
   engines seed defaults (`"Port " .. i` / `"Param " .. i`) that scripts can
   replace by reassigning the table field.
 - There is no per-sample or per-frame callback — logic only runs in
   response to incoming MIDI messages (including clock 0xF8 realtime bytes).
+- Optional `onLoad()` and `onUnload()` hooks run once each:
+  - `onLoad()` runs once, right after top-level code, when the script has
+    parsed and loaded successfully.
+  - `onUnload()` runs once, right before the *current* script's state is
+    torn down — because it's about to be replaced by another script, the
+    module was reset, or the module is being removed from the patch. This
+    is the only place a script can reliably clean up: sending an
+    all-notes-off for anything it left sounding is the main use case, since
+    nothing else will ever get a chance to release those notes once the
+    script's own state is gone.
+  - Both can call `midi.create()`/`midiOut.send()` like `onMidiMessage` can;
+    messages sent from either are flushed the same way.
+  - **Elk-specific:** define these with **plain assignment, not `let`** —
+    `onLoad = function() { ... };` / `onUnload = function() { ... };`. Both
+    names already exist as no-op globals before your script runs (so the
+    engine always has something to call even if you don't define one), and
+    Elk raises a parse error on `let onLoad = ...` re-declaring an existing
+    global (`'onLoad' already declared`). Lua has no such restriction —
+    `function onLoad() ... end`/`onLoad = function() ... end` both work.
 
 ## Elk language limitations
 
@@ -118,7 +143,7 @@ ternary `?:`, string concatenation with `+`, and `typeof`.
 Booleans themselves are fine to store, pass and test directly (`if (flag)`,
 `flag = !flag`, `cond ? a : b`) — it is only `===`/`!==` *comparison* of a
 boolean that fails, and because the failure appears as a runtime
-`processMidi error` rather than a load-time error, a script with one of these
+`onMidiMessage error` rather than a load-time error, a script with one of these
 loads cleanly and then does nothing on every message. See
 [Scale quantiser.js](../../../presets/MidiKit/JavaScript/Scale%20quantiser.js),
 which keeps its tie-break flag as `0`/`1` for exactly this reason.
@@ -135,7 +160,7 @@ Because there is no `while`, the common "loop until done" shape becomes:
  * @engine Elk
  * @description Example of the for-loop idiom
  */
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
     for (let i = 0; i < 4; i++) {
         if (input.isLow(i + 1)) continue;
         log("input " + number.toString(i + 1) + " is high");
@@ -179,7 +204,7 @@ even though `math.*` is also available, for script portability).
 
 ### `midi.*` — message construction/inspection
 Messages are opaque handles (indices into an internal store, max 32 live per
-callback) created with `midi.create()` or `midi.createNRPN()`; `processMidi`
+callback) created with `midi.create()` or `midi.createNRPN()`; `onMidiMessage`
 also receives the incoming message as handle `0`/implicit first arg (Lua:
 index `0`, Elk: same convention).
 
@@ -214,7 +239,7 @@ index `0`, Elk: same convention).
   dedicated setter), `setValue(msg, value)`.
 - `midi.selectPort(midiPort)` — selects the output port (1-based) that every
   subsequent `midiOut.*` call sends on, until `selectPort` is called again.
-  The selection is sticky across `processMidi` invocations, not reset per
+  The selection is sticky across `onMidiMessage` invocations, not reset per
   callback. MIDI-KIT currently exposes a single output, so `midi.selectPort(1)`
   is a no-op today beyond validating the index — it exists so scripts written
   against a future multi-output engine don't need to change their sending code.
@@ -238,10 +263,13 @@ Clock=0xF8, Start=0xFA, Continue=0xFB, Stop=0xFC (encoded as status 0xf with
 rather than decoding this by hand).
 
 ## Gotchas
-- Message handles are only valid within the `processMidi` call that created
+- Message handles are only valid within the `onMidiMessage` call that created
   them — the store resets each callback invocation. Creating a message at top
-  level (outside `processMidi`) logs a warning and the handle is discarded as
+  level (outside `onMidiMessage`) logs a warning and the handle is discarded as
   soon as the next MIDI message arrives, so build messages inside the callback.
+  `onLoad()`/`onUnload()` are full callbacks in this sense too — a message
+  created and sent inside either is delivered normally, and (unlike bare
+  top-level code) doesn't warn.
 - `midi.setCc14bit`/`setNRPN` split a 14-bit value across two 7-bit CC
   messages (`cc` = MSB, `cc + 32` = LSB per the NRPN/14-bit CC convention);
   see [nrpn_to_cc.js](nrpn_to_cc.js)/[nrpn_to_cc.lua](nrpn_to_cc.lua) for a
