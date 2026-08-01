@@ -218,6 +218,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		js_set(js, _midi, "getLength", js_mkfun(js_midi_getLength));						// int midi.getLength(msg)
 		js_set(js, _midi, "getNote", js_mkfun(js_midi_getNote));							// int midi.getNote(msg)
 		js_set(js, _midi, "getPitchWheel", js_mkfun(js_midi_getPitchWheel));				// int midi.getPitchWheel(msg)
+		js_set(js, _midi, "getProgramChange", js_mkfun(js_midi_getProgramChange));			// int midi.getProgramChange(msg)
 		//js_set(js, _midi, "getType", js_mkfun(js_midi_getType));							// int midi.getType(msg)
 		js_set(js, _midi, "getRaw", js_mkfun(js_midi_getRaw));								// string midi.getRaw(msg)
 		js_set(js, _midi, "getSysExData", js_mkfun(js_midi_getSysExData));					// string midi.getSysExData(msg)
@@ -841,6 +842,12 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		return js_midi(js, args, nargs, "d", "getPitchWheel", [](jsval_t* args, MessageEx& s) {
 			uint16_t value = (static_cast<uint16_t>(s.msg.getValue()) << 7) | s.msg.getNote();
 			return js_mknum(value);
+		});
+	}
+
+	static jsval_t js_midi_getProgramChange(struct js* js, jsval_t* args, int nargs) {
+		return js_midi(js, args, nargs, "d", "getProgramChange", [](jsval_t* args, MessageEx& s) {
+			return js_mknum(s.msg.getNote());
 		});
 	}
 

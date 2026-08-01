@@ -232,7 +232,8 @@ index `0`, Elk: same convention).
 - Getters: `getChannel(msg)` (1-based; `-1` for realtime/SysEx messages —
   clock, start/stop/continue, SysEx framing — which have no channel),
   `getChanPressure(msg)`, `getNote(msg)`,
-  `getValue(msg)`, `getLength(msg)`, `getPitchWheel(msg)`, `getSysExData(msg)`
+  `getValue(msg)`, `getLength(msg)`, `getPitchWheel(msg)`, `getProgramChange(msg)`,
+  `getSysExData(msg)`
   (hex string, the payload only — without the `f0`/`f7` framing), `getRaw(msg)`
   (hex string of the message's raw bytes, exactly as sent/received — no
   framing added or removed).

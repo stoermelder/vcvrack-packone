@@ -444,6 +444,7 @@ The API below is identical for both scripting engines — the function names, ar
 - `midi.getRaw(msg)`: Returns the raw bytes of `msg` as hexstring, exactly as sent/received — no framing added or removed.
 - `midi.getSysExData(msg)`: Returns the data of a MIDI SysEx message `msg` as hexstring.
 - `midi.getPitchWheel(msg)`: Returns the MIDI pitch wheel (0..16383) value of `msg`.
+- `midi.getProgramChange(msg)`: Returns the MIDI program number (0..127) of `msg` (byte 2 of the MIDI message).
 - `midi.getValue(msg)`. Returns the MIDI value field (0..127) of `msg` (byte 3 of the MIDI message).
 - `midi.isCc(msg)`: Returns true if `msg` is a MIDI CC message.
 - `midi.isChanPressure(msg)`: Returns true if `msg` is a MIDI channel pressure message.

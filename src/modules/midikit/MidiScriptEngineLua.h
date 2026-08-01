@@ -420,6 +420,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("getLength",       lua_midi_getLength);
 		setTableFunc("getNote",         lua_midi_getNote);
 		setTableFunc("getPitchWheel",   lua_midi_getPitchWheel);
+		setTableFunc("getProgramChange",lua_midi_getProgramChange);
 		setTableFunc("getRaw",          lua_midi_getRaw);
 		setTableFunc("getSysExData",    lua_midi_getSysExData);
 		setTableFunc("getValue",        lua_midi_getValue);
@@ -885,6 +886,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		MessageEx* m = getMsg(L, 1);
 		uint16_t value = (static_cast<uint16_t>(m->msg.getValue()) << 7) | m->msg.getNote();
 		lua_pushinteger(L, value);
+		return 1;
+	}
+
+	static int lua_midi_getProgramChange(lua_State* L) {
+		MessageEx* m = getMsg(L, 1);
+		lua_pushinteger(L, m->msg.getNote());
 		return 1;
 	}
 

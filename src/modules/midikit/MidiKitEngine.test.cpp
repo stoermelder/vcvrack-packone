@@ -873,6 +873,37 @@ TEST_CASE("setProgramChange produces identical wire bytes", "[MidiKit][CrossEngi
 }
 
 
+// --- getProgramChange round-trips the program number (#D5) ----------------
+
+static const char* JS_GET_PROGRAM_CHANGE = R"(/**
+ * @engine Elk
+ */
+let low = midi.create();
+midi.setProgramChange(low, 4, 0);
+rack.log("PROBE:" + number.toString(midi.getProgramChange(low)));
+
+let high = midi.create();
+midi.setProgramChange(high, 4, 127);
+rack.log("PROBE:" + number.toString(midi.getProgramChange(high)));
+)";
+
+static const char* LUA_GET_PROGRAM_CHANGE = R"(--[[
+@engine Lua
+--]]
+local low = midi.create()
+midi.setProgramChange(low, 4, 0)
+rack.log("PROBE:" .. number.toString(midi.getProgramChange(low)))
+
+local high = midi.create()
+midi.setProgramChange(high, 4, 127)
+rack.log("PROBE:" .. number.toString(midi.getProgramChange(high)))
+)";
+
+TEST_CASE("getProgramChange round-trips the program number", "[MidiKit][CrossEngine]") {
+	requireLoggedValues(JS_GET_PROGRAM_CHANGE, LUA_GET_PROGRAM_CHANGE, {"0", "127"});
+}
+
+
 // --- setChanPressure (2-byte message, #A2) --------------------------------
 
 static const char* JS_CHAN_PRESSURE = R"(/**
