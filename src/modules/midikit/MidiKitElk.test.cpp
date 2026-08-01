@@ -886,6 +886,32 @@ TEST_CASE("API midi.setSysEx and midi.getSysExData", "[MidiKit][Elk]") {
 }
 
 
+TEST_CASE("API midi.setSysEx rejects a payload over the length cap", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+	m->loadScript(ELK_MIDI_SET_SYSEX);
+	REQUIRE(m->se.js != nullptr);
+
+	// One byte past the 256-byte cap (#A6).
+	std::string longHex(2 * 257, '7');
+	std::string expr = "midi.setSysEx(msg, \"" + longHex + "\");";
+	jsval_t v = js_eval(m->se.js, expr.c_str(), ~0U);
+	REQUIRE(js_type(v) == JS_ERR);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("API midi.setSysEx rejects a non-7-bit payload byte", "[MidiKit][Elk]") {
+	MidiKitModule* m = createModule();
+	m->loadScript(ELK_MIDI_SET_SYSEX);
+	REQUIRE(m->se.js != nullptr);
+
+	jsval_t v = js_eval(m->se.js, "midi.setSysEx(msg, \"ff\");", ~0U);
+	REQUIRE(js_type(v) == JS_ERR);
+
+	Test::destroyModule(m);
+}
+
+
 static const char* ELK_MIDI_SET_RAW = R"(/**
  * @engine Elk
  * @description test

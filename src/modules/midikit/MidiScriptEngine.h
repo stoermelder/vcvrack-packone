@@ -8,6 +8,11 @@ using rack::midi::Message;
 
 
 struct MidiScriptEngine {
+	// Arbitrary but generous cap on setSysEx's payload, to keep a script from
+	// building an unbounded message that then flows through the fixed-size
+	// midiOutQueue and out to the driver.
+	static const int sysExMaxPayloadLength = 256;
+
 	int inputCount;
 	int inputTrigCount;
 	int outputTrigCount;

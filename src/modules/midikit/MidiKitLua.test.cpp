@@ -877,6 +877,32 @@ TEST_CASE("API midi.setSysEx and midi.getSysExData", "[MidiKit][Lua]") {
 }
 
 
+TEST_CASE("API midi.setSysEx rejects a payload over the length cap", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+	m->loadScript(LUA_MIDI_SET_SYSEX);
+	REQUIRE(m->seLua.L != nullptr);
+
+	// One byte past the 256-byte cap (#A6).
+	std::string longHex(2 * 257, '7');
+	std::string expr = "midi.setSysEx(msg, \"" + longHex + "\")";
+	REQUIRE(luaL_dostring(m->seLua.L, expr.c_str()) != LUA_OK);
+	lua_pop(m->seLua.L, 1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("API midi.setSysEx rejects a non-7-bit payload byte", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+	m->loadScript(LUA_MIDI_SET_SYSEX);
+	REQUIRE(m->seLua.L != nullptr);
+
+	REQUIRE(luaL_dostring(m->seLua.L, "midi.setSysEx(msg, \"ff\")") != LUA_OK);
+	lua_pop(m->seLua.L, 1);
+
+	Test::destroyModule(m);
+}
+
+
 static const char* LUA_MIDI_SET_RAW = R"(--[[
 @engine Lua
 --]]

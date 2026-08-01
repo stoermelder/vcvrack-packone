@@ -202,7 +202,8 @@ index `0`, Elk: same convention).
   `setNRPN(nrpnHandle, ch, number, value)` (number/value are 14-bit, 0-16383),
   `setPitchWheel(msg, ch, value)`, `setProgramChange(msg, ch, program)`,
   `setSysEx(msg, hexString)` (payload only — the `f0`/`f7` framing is added
-  automatically, so pass e.g. `"43104c0000"` rather than `"f043104c0000f7"`),
+  automatically, so pass e.g. `"43104c0000"` rather than `"f043104c0000f7"`;
+  payload is capped at 256 bytes and every byte must be 7-bit, `00`-`7f`),
   `setRaw(msg, hexString)` (writes the exact bytes with no framing added,
   e.g. `"f11a"` for an MTC quarter-frame — use this for message types with no
   dedicated setter), `setValue(msg, value)`.

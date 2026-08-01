@@ -964,6 +964,13 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 				return js_mkerr(js, "midi.setSysEx: invalid string length");
 			if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
 				return js_mkerr(js, "midi.setSysEx: invalid hexstring");
+			if (data.length() / 2 > MidiScriptEngine::sysExMaxPayloadLength)
+				return js_mkerr(js, string::f("midi.setSysEx: payload exceeds maximum of %d bytes", MidiScriptEngine::sysExMaxPayloadLength).c_str());
+			for (size_t i = 0; i < data.length(); i += 2) {
+				uint8_t byte = (uint8_t)strtol(data.substr(i, 2).c_str(), NULL, 16);
+				if (byte > 0x7f)
+					return js_mkerr(js, "midi.setSysEx: payload bytes must be 7-bit (00-7f)");
+			}
 			s.msg.setSize(data.length() / 2 + 2);
 			s.msg.bytes[0] = 0xf0;
 			for (size_t i = 0; i < data.length(); i += 2) {
