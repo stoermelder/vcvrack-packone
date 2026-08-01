@@ -290,7 +290,7 @@ log("PROBE:" .. number.toString(number.crossfade(-5, 5, 0.75)))
 )";
 
 TEST_CASE("number.crossfade is identical", "[MidiKit][CrossEngine]") {
-	requireLoggedValues(JS_NUMBER_CROSSFADE, LUA_NUMBER_CROSSFADE, {"5", "125", "2.500000"});
+	requireLoggedValues(JS_NUMBER_CROSSFADE, LUA_NUMBER_CROSSFADE, {"5", "125", "2.5"});
 }
 
 
@@ -359,6 +359,8 @@ static const char* JS_NUMBER_TOSTRING = R"(/**
 log("PROBE:" + number.toString(42));
 log("PROBE:" + number.toString(3.14));
 log("PROBE:" + number.toString(-100));
+log("PROBE:" + number.toString(1 / 3));
+log("PROBE:" + number.toString(0));
 )";
 
 static const char* LUA_NUMBER_TOSTRING = R"(--[[
@@ -367,10 +369,40 @@ static const char* LUA_NUMBER_TOSTRING = R"(--[[
 log("PROBE:" .. number.toString(42))
 log("PROBE:" .. number.toString(3.14))
 log("PROBE:" .. number.toString(-100))
+log("PROBE:" .. number.toString(1 / 3))
+log("PROBE:" .. number.toString(0))
 )";
 
 TEST_CASE("number.toString is identical", "[MidiKit][CrossEngine]") {
-	requireLoggedValues(JS_NUMBER_TOSTRING, LUA_NUMBER_TOSTRING, {"42", "3.140000", "-100"});
+	requireLoggedValues(JS_NUMBER_TOSTRING, LUA_NUMBER_TOSTRING, {"42", "3.14", "-100", "0.333333", "0"});
+}
+
+
+// number.toFixed (#A10) — closes the gap number.toString left: Elk had no
+// way to control decimal precision, so a knob-value overlay always printed
+// six decimals (0.500000). Covers 0 digits (rounds to an integer string,
+// unlike toString's "%i" branch which only triggers for exact integers),
+// a mid-range digit count, and rounding at the last retained digit.
+static const char* JS_NUMBER_TOFIXED = R"(/**
+ * @engine Elk
+ */
+log("PROBE:" + number.toFixed(3.14159, 2));
+log("PROBE:" + number.toFixed(0.5, 0));
+log("PROBE:" + number.toFixed(1, 3));
+log("PROBE:" + number.toFixed(2.005, 2));
+)";
+
+static const char* LUA_NUMBER_TOFIXED = R"(--[[
+@engine Lua
+--]]
+log("PROBE:" .. number.toFixed(3.14159, 2))
+log("PROBE:" .. number.toFixed(0.5, 0))
+log("PROBE:" .. number.toFixed(1, 3))
+log("PROBE:" .. number.toFixed(2.005, 2))
+)";
+
+TEST_CASE("number.toFixed is identical", "[MidiKit][CrossEngine]") {
+	requireLoggedValues(JS_NUMBER_TOFIXED, LUA_NUMBER_TOFIXED, {"3.14", "0", "1.000", "2.01"});
 }
 
 

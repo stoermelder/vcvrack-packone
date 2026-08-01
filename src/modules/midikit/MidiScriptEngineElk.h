@@ -170,6 +170,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		js_set(js, _number, "random", js_mkfun(js_number_random));
 		js_set(js, _number, "rescale", js_mkfun(js_number_rescale));
 		js_set(js, _number, "toString", js_mkfun(js_number_toString));
+		js_set(js, _number, "toFixed", js_mkfun(js_number_toFixed));
 
 		// input
 		jsval_t _input = js_eval(js,														// let input = {}
@@ -522,16 +523,33 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		}
 	}
 
+	// Formats f with up to 6 decimal places, then trims trailing zeros (and a
+	// trailing '.' if nothing is left after the point) so an integral value
+	// prints as "42" rather than "42.000000", matching the old %i/%f split
+	// without needing two branches — and non-integers print only as many
+	// decimals as they actually have, up to 6, instead of always six.
+	static void formatNumber(float f, char* str, size_t strSize) {
+		snprintf(str, strSize, "%f", f);
+		char* end = str + strlen(str) - 1;
+		while (end > str && *end == '0') { *end = '\0'; end--; }
+		if (end > str && *end == '.') { *end = '\0'; }
+	}
+
 	static jsval_t js_number_toString(struct js* js, jsval_t* args, int nargs) {
 		if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "number.toString: bad args");
 		float f = js_getnum(args[0]);
 		char str[32];
-		if (ceilf(f) == f) {
-			snprintf(str, sizeof(str), "%i", static_cast<int>(f));
-		}
-		else {
-			snprintf(str, sizeof(str), "%f", f);
-		}
+		formatNumber(f, str, sizeof(str));
+		return js_mkstr(js, str, strlen(str));
+	}
+
+	static jsval_t js_number_toFixed(struct js* js, jsval_t* args, int nargs) {
+		if (!js_chkargs(args, nargs, "dd")) return js_mkerr(js, "number.toFixed: bad args");
+		float f = js_getnum(args[0]);
+		int digits = static_cast<int>(js_getnum(args[1]));
+		if (digits < 0 || digits > 20) return js_mkerr(js, "number.toFixed: digits out of range");
+		char str[64];
+		snprintf(str, sizeof(str), "%.*f", digits, f);
 		return js_mkstr(js, str, strlen(str));
 	}
 

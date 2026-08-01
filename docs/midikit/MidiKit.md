@@ -425,6 +425,7 @@ The API below is identical for both scripting engines — the function names, ar
   $$ f(x) \frac{\ \exp\left(\left(\ln\left(x\left(e-1\right)+1\right)\right)^{\left(2^{a}\right)}\right)-1}{e-1} $$
   Resulting in curves for `a = -4, -2, 0, 2, 4`: 
   ![](./MidiKit-rescale.png)
+- `number.toFixed(arg, digits)`: Converts `arg` to a string representation with a fixed number of decimal places (`digits`, 0..20).
 - `number.toString(arg)`: Converts `arg` to a string representation.
 
 ### midi

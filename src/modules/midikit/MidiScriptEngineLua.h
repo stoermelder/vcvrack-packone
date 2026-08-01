@@ -370,6 +370,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("random",    lua_number_random);
 		setTableFunc("rescale",   lua_number_rescale);
 		setTableFunc("toString",  lua_number_toString);
+		setTableFunc("toFixed",   lua_number_toFixed);
 		lua_setglobal(L, "number");
 
 		// ── input table ──────────────────────────────────────────────────────
@@ -547,15 +548,34 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 1;
 	}
 
+	static int lua_number_toFixed(lua_State* L) {
+		float f = static_cast<float>(luaL_checknumber(L, 1));
+		int digits = static_cast<int>(luaL_checkinteger(L, 2));
+		if (digits < 0 || digits > 20) {
+			return luaL_error(L, "number.toFixed: digits out of range");
+		}
+		char buf[64];
+		snprintf(buf, sizeof(buf), "%.*f", digits, f);
+		lua_pushstring(L, buf);
+		return 1;
+	}
+
+	// Formats f with up to 6 decimal places, then trims trailing zeros (and a
+	// trailing '.' if nothing is left after the point) so an integral value
+	// prints as "42" rather than "42.000000", matching the old %i/%f split
+	// without needing two branches — and non-integers print only as many
+	// decimals as they actually have, up to 6, instead of always six.
+	static void formatNumber(float f, char* buf, size_t bufSize) {
+		snprintf(buf, bufSize, "%f", f);
+		char* end = buf + strlen(buf) - 1;
+		while (end > buf && *end == '0') { *end = '\0'; end--; }
+		if (end > buf && *end == '.') { *end = '\0'; }
+	}
+
 	static int lua_number_toString(lua_State* L) {
 		float f = static_cast<float>(luaL_checknumber(L, 1));
 		char buf[32];
-		if (std::ceilf(f) == f) {
-			snprintf(buf, sizeof(buf), "%i", static_cast<int>(f));
-		}
-		else {
-			snprintf(buf, sizeof(buf), "%f", f);
-		}
+		formatNumber(f, buf, sizeof(buf));
 		lua_pushstring(L, buf);
 		return 1;
 	}
