@@ -471,11 +471,12 @@ The API below is identical for both scripting engines — the function names, ar
 - `midi.setRaw(msg, str)`: Sets `msg` to the exact bytes given by hexstring `str` (e.g. "f11a"), with no framing added or removed. Use this for message types with no dedicated setter, such as MIDI Time Code, Song Position Pointer, Song Select, tune request or active sensing.
 - `midi.setSysEx(msg, str)`: Sets `msg` as a MIDI SysEx message with string `str` representing a hexstring of the payload data (e.g. "ab0fad050fdd"). The `f0`/`f7` framing bytes are added automatically and must not be included in `str`. The payload is limited to 256 bytes and every byte must be 7-bit (00-7f), since any byte ≥ 0x80 inside a SysEx body is illegal.
 - `midi.setValue(msg, value)`: Sets the MIDI value field (0..127) for `msg` (byte 3 of the MIDI message).
-- `midi.selectPort(midiPort)`: Selects the output port `midiPort` (1-based) used by every following `midiOut.*` call, until `midi.selectPort()` is called again. The selection stays in effect across `onMidiMessage()` invocations. Currently MIDI-KIT has only one output port (index *1*) — scripts that call it now won't need to change when more output ports become available.
 
 ### midiOut
 
-The destination port for every function below is whatever `midi.selectPort()` last selected (port *1* if it was never called) — none of these take a port argument.
+- `midiOut.selectPort(midiPort)`: Selects the output port `midiPort` (1-based) used by every following `midiOut.*` call, until `midiOut.selectPort()` is called again. The selection stays in effect across `onMidiMessage()` invocations. Currently MIDI-KIT has only one output port (index *1*) — scripts that call it now won't need to change when more output ports become available.
+
+The sending functions below take no port argument — the destination is whatever `midiOut.selectPort()` last selected (port *1* if it was never called):
 
 - `midiOut.send(msg)`: Sends `msg` on the selected MIDI port.
 - `midiOut.sendAfterMs(msg, ms)`: Sends `msg` delayed on the selected MIDI port. The delay `ms` is specified in milliseconds.

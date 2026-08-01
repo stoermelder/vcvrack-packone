@@ -30,7 +30,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// every callback, so handles created outside one are silently invalidated —
 	// this lets midi.create() warn instead of failing quietly.
 	bool inCallback = false;
-	// Sticky output port selected via midi.selectPort(), 0-based. Stays in
+	// Sticky output port selected via midiOut.selectPort(), 0-based. Stays in
 	// effect across callbacks until changed again.
 	int selectedPort = 0;
 
@@ -412,7 +412,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		// ── midi table ───────────────────────────────────────────────────────
 		lua_newtable(L);
-		setTableFunc("selectPort",      lua_midi_selectPort);
 		setTableFunc("create",          lua_midi_create);
 		setTableFunc("clone",           lua_midi_clone);
 		setTableFunc("createNRPN",      lua_midi_createNrpn);
@@ -454,6 +453,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		// ── midiOut table ────────────────────────────────────────────────────
 		lua_newtable(L);
+		setTableFunc("selectPort",         lua_midiOut_selectPort);
 		setTableFunc("send",               lua_midiOut_send);
 		setTableFunc("sendAfterMs",        lua_midiOut_sendAfterMs);
 		setTableFunc("sendAfterTrigger",   lua_midiOut_sendAfterTrigger);
@@ -790,7 +790,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 	}
 
-	static int lua_midi_selectPort(lua_State* L) {
+	static int lua_midiOut_selectPort(lua_State* L) {
 		auto* e = getEngine(L);
 		int midiPort = static_cast<int>(luaL_checkinteger(L, 1));
 		if (midiPort < 1 || midiPort > e->midiOutputCount) luaL_argerror(L, 1, "invalid output port index");
@@ -1206,7 +1206,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// ── midiOut.* ─────────────────────────────────────────────────────────────
 	//
-	// Output port is not an argument here — it's set via midi.selectPort(n)
+	// Output port is not an argument here — it's set via midiOut.selectPort(n)
 	// and applied to every message sent until selectPort() is called again.
 
 	// Returns the message at stack position 1, stamped with the currently

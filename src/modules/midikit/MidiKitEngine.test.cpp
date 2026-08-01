@@ -1509,7 +1509,7 @@ TEST_CASE("param.getValue reads identical value in both engines", "[MidiKit][Cro
 }
 
 
-// --- midi.selectPort ---------------------------------------------------
+// --- midiOut.selectPort ------------------------------------------------
 
 static const char* JS_SELECT_PORT = R"(/**
  * @engine Elk
@@ -1518,7 +1518,7 @@ let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
 
 onMidiMessage = function(port, msg) {
-    midi.selectPort(1);
+    midiOut.selectPort(1);
     midiOut.send(msg);
 };
 )";
@@ -1530,12 +1530,12 @@ msg = midi.create()
 midi.setNoteOn(msg, 1, 60, 100)
 
 function onMidiMessage(port, msg)
-    midi.selectPort(1)
+    midiOut.selectPort(1)
     midiOut.send(msg)
 end
 )";
 
-TEST_CASE("midi.selectPort produces identical output port in both engines", "[MidiKit][CrossEngine]") {
+TEST_CASE("midiOut.selectPort produces identical output port in both engines", "[MidiKit][CrossEngine]") {
 	requireEquivalent(JS_SELECT_PORT, LUA_SELECT_PORT);
 }
 
@@ -1544,7 +1544,7 @@ static const char* JS_SELECT_PORT_STICKY = R"(/**
  * @engine Elk
  */
 onMidiMessage = function(port, msg) {
-    midi.selectPort(1);
+    midiOut.selectPort(1);
     let msg1 = midi.create();
     midi.setNoteOn(msg1, 1, 60, 100);
     let msg2 = midi.create();
@@ -1558,7 +1558,7 @@ static const char* LUA_SELECT_PORT_STICKY = R"(--[[
 @engine Lua
 --]]
 function onMidiMessage(port, msg)
-    midi.selectPort(1)
+    midiOut.selectPort(1)
     local msg1 = midi.create()
     midi.setNoteOn(msg1, 1, 60, 100)
     local msg2 = midi.create()
@@ -1568,7 +1568,7 @@ function onMidiMessage(port, msg)
 end
 )";
 
-TEST_CASE("midi.selectPort stays selected across calls identically", "[MidiKit][CrossEngine]") {
+TEST_CASE("midiOut.selectPort stays selected across calls identically", "[MidiKit][CrossEngine]") {
 	requireEquivalent(JS_SELECT_PORT_STICKY, LUA_SELECT_PORT_STICKY);
 }
 
@@ -1577,7 +1577,7 @@ static const char* JS_SELECT_PORT_INVALID = R"(/**
  * @engine Elk
  */
 onMidiMessage = function(port, msg) {
-    midi.selectPort(2);
+    midiOut.selectPort(2);
 };
 )";
 
@@ -1585,11 +1585,11 @@ static const char* LUA_SELECT_PORT_INVALID = R"(--[[
 @engine Lua
 --]]
 function onMidiMessage(port, msg)
-    midi.selectPort(2)
+    midiOut.selectPort(2)
 end
 )";
 
-TEST_CASE("midi.selectPort rejects an out-of-range port identically", "[MidiKit][CrossEngine]") {
+TEST_CASE("midiOut.selectPort rejects an out-of-range port identically", "[MidiKit][CrossEngine]") {
 	requireEquivalentLog(JS_SELECT_PORT_INVALID, LUA_SELECT_PORT_INVALID, "onMidiMessage error", true);
 }
 
@@ -1647,7 +1647,7 @@ TEST_CASE("midiOut.sendAfterMs schedules an identical future-frame message", "[M
 }
 
 
-// --- midiOut.sendAfterTrigger with selectPort / explicit trigPort ---------
+// --- midiOut.sendAfterTrigger with selected port / explicit trigPort ------
 
 static const char* JS_SEND_AFTER_TRIGGER_SELECTED_PORT = R"(/**
  * @engine Elk
@@ -1656,7 +1656,7 @@ let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
 
 onMidiMessage = function(port, msg) {
-    midi.selectPort(1);
+    midiOut.selectPort(1);
     midiOut.sendAfterTrigger(msg, 10);
 };
 )";
@@ -1668,7 +1668,7 @@ msg = midi.create()
 midi.setNoteOn(msg, 1, 60, 100)
 
 function onMidiMessage(port, msg)
-    midi.selectPort(1)
+    midiOut.selectPort(1)
     midiOut.sendAfterTrigger(msg, 10)
 end
 )";
@@ -1685,7 +1685,7 @@ let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
 
 onMidiMessage = function(port, msg) {
-    midi.selectPort(1);
+    midiOut.selectPort(1);
     midiOut.sendAfterTrigger(msg, 1, 10);
 };
 )";
@@ -1697,7 +1697,7 @@ msg = midi.create()
 midi.setNoteOn(msg, 1, 60, 100)
 
 function onMidiMessage(port, msg)
-    midi.selectPort(1)
+    midiOut.selectPort(1)
     midiOut.sendAfterTrigger(msg, 1, 10)
 end
 )";

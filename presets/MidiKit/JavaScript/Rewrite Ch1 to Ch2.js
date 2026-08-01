@@ -9,6 +9,6 @@ onMidiMessage = function(midiInput, msg) {
     if (midi.getChannel(msg) === 1) {
         midi.setChannel(msg, 2);
     }
-    midi.selectPort(1);
+    midiOut.selectPort(1);
     midiOut.send(msg);
 };

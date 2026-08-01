@@ -257,16 +257,20 @@ index `0`, Elk: same convention).
   `setRaw(msg, hexString)` (writes the exact bytes with no framing added,
   e.g. `"f11a"` for an MTC quarter-frame — use this for message types with no
   dedicated setter), `setValue(msg, value)`.
-- `midi.selectPort(midiPort)` — selects the output port (1-based) that every
-  subsequent `midiOut.*` call sends on, until `selectPort` is called again.
-  The selection is sticky across `onMidiMessage` invocations, not reset per
-  callback. MIDI-KIT currently exposes a single output, so `midi.selectPort(1)`
-  is a no-op today beyond validating the index — it exists so scripts written
-  against a future multi-output engine don't need to change their sending code.
 
 ### `midiOut.*` — sending
-None of these take a port argument — the destination is whatever
-`midi.selectPort()` last selected (port 1 if it was never called):
+
+- `midiOut.selectPort(midiPort)` — selects the output port (1-based) that every
+  subsequent `midiOut.*` call sends on, until `selectPort` is called again.
+  The selection is sticky across `onMidiMessage` invocations, not reset per
+  callback. MIDI-KIT currently exposes a single output, so
+  `midiOut.selectPort(1)` is a no-op today beyond validating the index — it
+  exists so scripts written against a future multi-output engine don't need to
+  change their sending code.
+
+The sending functions below take no port argument — the destination is
+whatever `midiOut.selectPort()` last selected (port 1 if it was never called):
+
 - `midiOut.send(msg)` — send immediately.
 - `midiOut.send(nrpnHandle)` — sending the first handle of an NRPN quad
   automatically flushes all 4 underlying CC messages in order.

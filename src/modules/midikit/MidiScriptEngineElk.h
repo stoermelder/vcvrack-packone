@@ -35,7 +35,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	// on every callback, so handles created outside one are silently
 	// invalidated — this lets midi.create() warn instead of failing quietly.
 	bool inCallback = false;
-	// Sticky output port selected via midi.selectPort(), 0-based. Stays in
+	// Sticky output port selected via midiOut.selectPort(), 0-based. Stays in
 	// effect across callbacks until changed again.
 	int selectedPort = 0;
 
@@ -210,7 +210,6 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		// midi
 		jsval_t _midi = js_mkobj(js);
 		js_set(js, js_glob(js), "midi", _midi);												// let midi = {}
-		js_set(js, _midi, "selectPort", js_mkfun(js_midi_selectPort));						// void midi.selectPort(midiPort)
 		js_set(js, _midi, "create", js_mkfun(js_midi_create));								// let msg = midi.create()
 		js_set(js, _midi, "clone", js_mkfun(js_midi_clone));								// let msg2 = midi.clone(msg)
 		js_set(js, _midi, "createNRPN", js_mkfun(js_midi_createNrpn));						// let nrpn = midi.createNrpn()
@@ -254,6 +253,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		// midiOut
 		jsval_t _midiOut = js_mkobj(js);
 		js_set(js, js_glob(js), "midiOut", _midiOut);										// let midiOut = {}
+		js_set(js, _midiOut, "selectPort", js_mkfun(js_midiOut_selectPort));				// void midiOut.selectPort(midiPort)
 		js_set(js, _midiOut, "send", js_mkfun(js_midiOut_send));							// void midiOut.send(msg)
 		js_set(js, _midiOut, "sendAfterMs", js_mkfun(js_midiOut_sendAfterMs));				// void midiOut.sendAfterMs(msg, ms)
 		js_set(js, _midiOut, "sendAfterTrigger", js_mkfun(js_midiOut_sendAfterTrigger));	// void midiOut.sendAfterTrigger(msg, [trigPort], ticks)
@@ -757,10 +757,10 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		}
 	}
 
-	static jsval_t js_midi_selectPort(struct js* js, jsval_t* args, int nargs) {
-		if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "midi.selectPort: bad args");
+	static jsval_t js_midiOut_selectPort(struct js* js, jsval_t* args, int nargs) {
+		if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "midiOut.selectPort: bad args");
 		int midiPort = js_getnum(args[0]);
-		if (midiPort < 1 || midiPort > jsMap[js]->midiOutputCount) return js_mkerr(js, "midi.selectPort: invalid output index");
+		if (midiPort < 1 || midiPort > jsMap[js]->midiOutputCount) return js_mkerr(js, "midiOut.selectPort: invalid output index");
 		jsMap[js]->selectedPort = midiPort - 1;
 		return js_mknull();
 	}
