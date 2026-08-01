@@ -4,7 +4,7 @@ MIDI-KIT is a scripting module for altering, filtering, delaying, or generating 
 
 ## How it works
 
-MIDI-KIT provides two interchangeable scripting engines. Both expose the same MIDI / input / trig / param / number API described further down, so the only thing that differs between them is the language syntax and a few language-specific details.
+MIDI-KIT provides two interchangeable scripting engines. Both expose the same `midi` / `midiOut` / `input` / `trig` / `param` / `number` / `rack` API described further down, so the only thing that differs between them is the language syntax and a few language-specific details.
 
 | Engine | Language | Underlying interpreter |
 | ------ | -------- | ---------------------- |
@@ -30,9 +30,9 @@ Lua:
 --]]
 ```
 
-The header is parsed line-by-line and may also be used to set `author` and `description` metadata, which is shown in the module's log on load.
+The header is parsed line-by-line and may also be used to set `@author` and `@description` metadata, which is shown in the module's log on load.
 
-MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the selected MIDI input. The scripting API lets you create new MIDI messages; a single incoming message may result in up to 16 outgoing messages. Incoming MIDI messages are not passed through automatically — scripts must explicitly call `midiOut.send()` to forward messages.
+MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the selected MIDI input. The scripting API lets you create new MIDI messages; a single incoming message may result in up to 32 outgoing messages. Incoming MIDI messages are not passed through automatically — scripts must explicitly call `midiOut.send()` to forward messages.
 
 The module also exposes four CV inputs and four panel parameters that can be read from scripts to add modulation or dynamic configuration.
 
@@ -296,7 +296,7 @@ end
 
 ## Language reference
 
-MIDI-KIT supports two scripting languages, both deliberately small. The JavaScript engine is [Elk](https://github.com/cesanta/elk); the Lua engine is a bundled [MiniLua](https://github.com/edubart/minilua). Both are completely bare — neither ships with a standard library — and only the language core plus the MIDI-KIT API is available. The MIDI / input / trig / param / number API is identical across the two engines, so picking an engine is mostly a matter of personal taste.
+MIDI-KIT supports two scripting languages, both deliberately small. The JavaScript engine is [Elk](https://github.com/cesanta/elk); the Lua engine is a bundled [MiniLua](https://github.com/edubart/minilua). Both are completely bare — neither ships with a standard library — and only the language core plus the MIDI-KIT API is available. The `midi` / `midiOut` / `input` / `trig` / `param` / `number` / `rack` API is identical across the two engines, so picking an engine is mostly a matter of personal taste.
 
 ### Quick comparison
 
@@ -309,7 +309,7 @@ MIDI-KIT supports two scripting languages, both deliberately small. The JavaScri
 | Block keyword | `{ }` | `do ... end` / `function ... end` |
 | Function definition | `let f = function(x) { ... };` | `local f = function(x) ... end` |
 | String length | counts UTF-8 **bytes** | counts **bytes** as well |
-| Implicit number→string | **no** — use `number.toString(n)` | **no** — use `tostring(n)` or `number.toString(n)` |
+| Implicit number→string | **no** — use `number.toString(n)` | **yes** for `..` concatenation; use `tostring(n)` elsewhere |
 | Comments | `//` and `/* */` | `--` and `--[[ ]]` |
 | Header convention | `/** ... @engine Elk ... */` | `--[[ ... @engine Lua ... --]]` |
 
@@ -373,7 +373,7 @@ Be aware that there is no implicit casting, especially for casting numbers to st
 - No coroutines (`coroutine.*`)
 - No metamethods / metatables beyond what `string` and `table` need internally
 
-There is no implicit number-to-string coercion — use `tostring(n)` or the MIDI-KIT helper `number.toString(n)`. For everything else, the standard Lua 5.x semantics apply; please refer to the [Lua reference manual](https://www.lua.org/manual/5.4/) for details.
+There is no implicit number-to-string coercion outside `..` concatenation — numbers are auto-converted to strings in `..` (e.g. `'Port ' .. i`); everywhere else use `tostring(n)` or the MIDI-KIT helper `number.toString(n)`. For everything else, the standard Lua 5.x semantics apply; please refer to the [Lua reference manual](https://www.lua.org/manual/5.4/) for details.
 
 ## Programming reference
 
@@ -382,13 +382,13 @@ The API below is identical for both scripting engines — the function names, ar
 ### Global functions
 
 - `onMidiMessage(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
-- `onLoad()`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. Use it in place of a manually-called `init()` function at the bottom of the file.
+- `onLoad()`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. Use it in place of a manually-called `init()` function at the bottom of the file. **In JavaScript (Elk), define it with plain assignment, not `let`:** `onLoad = function() { ... };` — see [JavaScript (Elk)](#javascript-elk) below.
 - `onUnload()`: Optional. Called once, right before the script's state is torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. **In JavaScript (Elk), define it with plain assignment, not `let`:** `onUnload = function() { ... };` — see [JavaScript (Elk)](#javascript-elk) below.
 
 ### rack
 
 - `rack.log(value [, value ...])`: Prints a line on the display of the module. Any number of arguments are concatenated (no separator) into one line; each accepts any value — numbers (formatted like `number.toString()`), booleans (`true`/`false`), strings (verbatim), and `null`/`nil`/`undefined` (Lua's `nil` prints as `null`). Other values (objects, arrays, tables) use engine-specific formatting.
-- `rack.overlay(str1, [str2], [str3])`: Displays string `str1` in an Rack overlay widget.
+- `rack.overlay(str1, [str2], [str3])`: Displays string `str1` in a Rack overlay widget.
 - `rack.getFrame()`: Returns the current engine frame number of the Rack engine.
 
 ### input
@@ -446,11 +446,12 @@ The API below is identical for both scripting engines — the function names, ar
 - `midi.getSysExLength(msg)`: Returns the payload length in bytes of a MIDI SysEx message `msg` (the `f0`/`f7` framing is excluded) — check this before reading the payload with `getSysEx`.
 - `midi.getPitchWheel(msg)`: Returns the MIDI pitch wheel (0..16383) value of `msg`.
 - `midi.getProgramChange(msg)`: Returns the MIDI program number (0..127) of `msg` (byte 2 of the MIDI message).
-- `midi.getValue(msg)`. Returns the MIDI value field (0..127) of `msg` (byte 3 of the MIDI message).
+- `midi.getValue(msg)`: Returns the MIDI value field (0..127) of `msg` (byte 3 of the MIDI message).
 - `midi.isCc(msg)`: Returns true if `msg` is a MIDI CC message.
 - `midi.isChanPressure(msg)`: Returns true if `msg` is a MIDI channel pressure message.
 - `midi.isClock(msg)`: Returns true if `msg` is a MIDI clock message.
 - `midi.isContinue(msg)`: Returns true if `msg` is a MIDI continue message.
+- `midi.isKeyPressure(msg)`: Returns true if `msg` is a MIDI key pressure message.
 - `midi.isNoteOff(msg)`: Returns true if `msg` is a MIDI note off message.
 - `midi.isNoteOn(msg)`: Returns true if `msg` is a MIDI note on message.
 - `midi.isPitchWheel(msg)`: Returns true if `msg` is a MIDI pitch wheel message.
@@ -484,11 +485,8 @@ The sending functions below take no port argument — the destination is whateve
 - `midiOut.sendAfterMs(msg, ms)`: Sends `msg` delayed on the selected MIDI port. The delay `ms` is specified in milliseconds.
 - `midiOut.sendAfterTrigger(msg, [trigPort], ticks)`: Sends `msg` delayed on the selected MIDI port. The delay is specified in `ticks` of triggers on CV trigger input `trigPort`. If `trigPort` is omitted the default trigger port is selected.
 
-## Future feature ideas
+**A message can only be sent once per callback.** `midiOut.send(msg)` and the `sendAfter*` variants mark the handle as sent — the actual enqueue happens once per handle after the callback, so sending the *same* handle again in one `onMidiMessage`/`onLoad`/`onUnload` is not a second message: only one goes out (and if the message body was changed in between, the last change wins). To send the same bytes twice, create a fresh handle with `midi.create()` or `midi.clone(msg)` and send that. Each message sent also consumes one of the 32 message-handle slots, so one handle per message is the right pattern.
 
-- Support for TTY ([Tipsy](https://github.com/baconpaul/tipsy-encoder))
-- Expander-modules
-- More engines / languages
 
 ## Changelog
 

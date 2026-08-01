@@ -283,6 +283,16 @@ whatever `midiOut.selectPort()` last selected (port 1 if it was never called):
 - `midiOut.sendAfterTrigger(msg [, trigPort], ticks)` — send after `ticks`
   clock ticks counted from `trigPort` (1-based, defaults to trig input 1).
 
+**A message can only be sent once per callback.** `midiOut.send(msg)` (and the
+`sendAfter*` variants) mark the handle as sent; the actual enqueue happens once
+per handle in the post-callback flush, so a second `send` of the *same* handle
+within one `onMidiMessage`/`onLoad`/`onUnload` is not a second message — only
+one goes out, and if the message body was changed in between, the last change
+wins. To send the same bytes twice, build a fresh handle first with
+`midi.create()` or `midi.clone(msg)` and send that. Each message sent consumes
+one store slot against the 32-handle cap, so one handle per message is the
+correct idiom.
+
 ## MIDI status/type reference used internally
 CC=0xb, NoteOn=0x9, NoteOff=0x8, KeyPressure=0xa, ChanPressure=0xd,
 ProgramChange=0xc, PitchWheel=0xe, SysEx=0xf0/0xf7-wrapped. Realtime:
