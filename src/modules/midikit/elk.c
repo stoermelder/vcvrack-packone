@@ -1463,7 +1463,29 @@ static jsval_t js_return(struct js *js) {
 static jsval_t js_stmt(struct js *js) {
   jsval_t res;
   // jsoff_t pos = js->pos - js->tlen;
-  if (js->brk > js->gct) js_gc(js);
+  // stoermelder: only collect at a *top-level* statement boundary.
+  //
+  // Elk's GC is documented to run "before every top-level statement", and that
+  // is the invariant the rest of the engine is written against: js_gc() moves
+  // live entities down and js_fixup_offsets() repairs only the state reachable
+  // from struct js - js->scope, js->nogc and the single js->code that happens to
+  // be live. Anything a *suspended* frame is holding is invisible to it.
+  //
+  // But js_stmt() is not only the top-level statement loop: it recurses for
+  // every statement inside every function body and block. So without this
+  // check a collection can fire deep inside nested calls (e.g. the Scale
+  // quantiser's onMidiMessage() -> quantise()), while do_call_op() further up
+  // the C stack is still holding the caller's js->code as a plain pointer and
+  // call_js() is holding the callee's body. Compaction then shifts the memory
+  // underneath both, and the outer frame resumes parsing at an offset that now
+  // lands mid-entity - surfacing as a spurious "parse error" or a bogus
+  // "'x' not found" on whichever call first pushes brk past gct.
+  //
+  // F_CALL is set for exactly the duration of a function call (see call_js),
+  // so deferring while it is set keeps collection at the boundary the design
+  // assumes. The allocation is not lost: brk stays above gct, so the very next
+  // top-level statement collects instead.
+  if (js->brk > js->gct && !(js->flags & F_CALL)) js_gc(js);
   switch (next(js)) {  // clang-format off
     case TOK_CASE: case TOK_CATCH: case TOK_CLASS: case TOK_CONST:
     case TOK_DEFAULT: case TOK_DELETE: case TOK_DO: case TOK_FINALLY:

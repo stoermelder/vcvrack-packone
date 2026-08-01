@@ -534,6 +534,50 @@ static void test_gc(void) {
       ev(js, "(function(x){for(let i=0;i<x;){a+='y';i++;}})(1);a", "\"xxy\""));
 }
 
+// Regression test: a GC must never run while a function call is in progress.
+//
+// js_stmt() runs the collector when brk passes gct, but it recurses for every
+// statement inside every function body - not just top-level ones. A collection
+// firing mid-call compacts JS memory underneath the suspended frames, whose
+// saved js->code / function body pointers js_fixup_offsets() cannot reach. The
+// caller then resumes parsing at an offset that lands mid-entity, which
+// surfaces as a bogus "parse error" or "'x' not found".
+//
+// Merely running a collection mid-call is not enough to show the bug: it only
+// bites when the sweep actually *moves* live data. So "junk" is allocated
+// first and then dropped - reclaiming it compacts everything defined after it,
+// including both function bodies, downwards. gct is then set so the threshold
+// is crossed while outer() is suspended in the middle of calling inner().
+//
+// Before the F_CALL check in js_stmt(), this returned "ERROR: parse error"
+// instead of 42, for any gct in a wide band above brk.
+static void test_gc_during_call(void) {
+  const char *setup[] = {
+      "let junk = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';",
+      "let inner = function(a) { let s = 'padpadpadpadpadpad';"
+      " let t = a + 1; return t; };",
+      "let outer = function(n) { let p = 'qqqqqqqqqqqqqqqqqqqq';"
+      " let v = inner(n); let w = v + 1; return w; };",
+      "junk = 0;",  // now unreachable: sweeping it shifts both functions down
+  };
+
+  // The exact offset at which the threshold trips varies with layout, so sweep
+  // a band of thresholds rather than betting on one value.
+  for (jsoff_t gct = 360; gct < 800; gct += 4) {
+    struct js *js;
+    char mem[sizeof(*js) + 16384];
+    assert((js = js_create(mem, sizeof(mem))) != NULL);
+    for (size_t i = 0; i < sizeof(setup) / sizeof(setup[0]); i++) {
+      js_eval(js, setup[i], strlen(setup[i]));
+    }
+    js_setgct(js, gct);
+    for (int i = 0; i < 8; i++) assert(ev(js, "outer(40)", "42"));
+    // The collector must still run, not just defer forever: eight calls' worth
+    // of garbage has to be reclaimed to stay inside the arena.
+    assert(js->brk < js->size);
+  }
+}
+
 // Postponed callback invocation. C code stores a callback, then calls later
 static void (*s_timer_fn)(int, void *);
 static void *s_timer_fn_data;
@@ -791,6 +835,7 @@ int main(void) {
   test_c_funcs();
   test_ternary();
   test_gc();
+  test_gc_during_call();
   double ms = (double) (clock() - a) * 1000 / CLOCKS_PER_SEC;
   printf("SUCCESS. All tests passed in %g ms\n", ms);
   return EXIT_SUCCESS;
