@@ -422,7 +422,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("getPitchWheel",   lua_midi_getPitchWheel);
 		setTableFunc("getProgramChange",lua_midi_getProgramChange);
 		setTableFunc("getRaw",          lua_midi_getRaw);
-		setTableFunc("getSysExData",    lua_midi_getSysExData);
+		setTableFunc("getSysEx",        lua_midi_getSysEx);
+		setTableFunc("getSysExLength",  lua_midi_getSysExLength);
 		setTableFunc("getValue",        lua_midi_getValue);
 		setTableFunc("isCc",            lua_midi_isCc);
 		setTableFunc("isChanPressure",  lua_midi_isChanPressure);
@@ -895,7 +896,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 1;
 	}
 
-	static int lua_midi_getSysExData(lua_State* L) {
+	static int lua_midi_getSysEx(lua_State* L) {
 		MessageEx* m = getMsg(L, 1);
 		std::ostringstream ss;
 		ss << std::hex;
@@ -904,6 +905,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 		std::string s = ss.str();
 		lua_pushlstring(L, s.c_str(), s.size());
+		return 1;
+	}
+
+	static int lua_midi_getSysExLength(lua_State* L) {
+		MessageEx* m = getMsg(L, 1);
+		// Payload length only — the f0/f7 framing is excluded, so a script can
+		// check the size before reading the payload with getSysEx.
+		lua_pushinteger(L, std::max(0, m->msg.getSize() - 2));
 		return 1;
 	}
 

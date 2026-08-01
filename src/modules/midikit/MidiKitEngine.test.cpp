@@ -729,6 +729,46 @@ TEST_CASE("setSysEx frames the payload identically", "[MidiKit][CrossEngine]") {
 }
 
 
+// --- getSysEx / getSysExLength round-trip (#D5) --------------------------
+//
+// The payload getter (renamed from getSysExData) plus its size guard: the
+// script can check the payload length before reading it, and getSysEx returns
+// the payload with the f0/f7 framing excluded. The empty payload round-trips
+// as "[]".
+
+static const char* JS_GET_SYSEX = R"(/**
+ * @engine Elk
+ */
+let m1 = midi.create();
+midi.setSysEx(m1, "43104c0000");
+rack.log("PROBE:" + number.toString(midi.getSysExLength(m1)));
+rack.log("PROBE:" + midi.getSysEx(m1));
+
+let m2 = midi.create();
+midi.setSysEx(m2, "");
+rack.log("PROBE:" + number.toString(midi.getSysExLength(m2)));
+rack.log("PROBE:[" + midi.getSysEx(m2) + "]");
+)";
+
+static const char* LUA_GET_SYSEX = R"(--[[
+@engine Lua
+--]]
+local m1 = midi.create()
+midi.setSysEx(m1, "43104c0000")
+rack.log("PROBE:" .. number.toString(midi.getSysExLength(m1)))
+rack.log("PROBE:" .. midi.getSysEx(m1))
+
+local m2 = midi.create()
+midi.setSysEx(m2, "")
+rack.log("PROBE:" .. number.toString(midi.getSysExLength(m2)))
+rack.log("PROBE:[" .. midi.getSysEx(m2) .. "]")
+)";
+
+TEST_CASE("getSysEx returns the payload and getSysExLength the size", "[MidiKit][CrossEngine]") {
+	requireLoggedValues(JS_GET_SYSEX, LUA_GET_SYSEX, {"5", "43104c0000", "0", "[]"});
+}
+
+
 // --- sendAfterTrigger (finding #7: 3-arg form) --------------------------
 //
 // Regression coverage for the actual bug in #7: Lua used to misread the

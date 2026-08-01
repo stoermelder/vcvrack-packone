@@ -221,7 +221,8 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		js_set(js, _midi, "getProgramChange", js_mkfun(js_midi_getProgramChange));			// int midi.getProgramChange(msg)
 		//js_set(js, _midi, "getType", js_mkfun(js_midi_getType));							// int midi.getType(msg)
 		js_set(js, _midi, "getRaw", js_mkfun(js_midi_getRaw));								// string midi.getRaw(msg)
-		js_set(js, _midi, "getSysExData", js_mkfun(js_midi_getSysExData));					// string midi.getSysExData(msg)
+		js_set(js, _midi, "getSysEx", js_mkfun(js_midi_getSysEx));						// string midi.getSysEx(msg)
+		js_set(js, _midi, "getSysExLength", js_mkfun(js_midi_getSysExLength));				// int midi.getSysExLength(msg)
 		js_set(js, _midi, "getValue", js_mkfun(js_midi_getValue));							// int midi.getValue(msg)
 		js_set(js, _midi, "isCc", js_mkfun(js_midi_isCc));									// bool midi.isCc(msg)
 		js_set(js, _midi, "isChanPressure", js_mkfun(js_midi_isChanPressure));				// bool midi.isChannelPressure(msg)
@@ -851,8 +852,8 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		});
 	}
 
-	static jsval_t js_midi_getSysExData(struct js* js, jsval_t* args, int nargs) {
-		return js_midi(js, args, nargs, "d", "getSysExData", [js](jsval_t* args, MessageEx& s) {
+	static jsval_t js_midi_getSysEx(struct js* js, jsval_t* args, int nargs) {
+		return js_midi(js, args, nargs, "d", "getSysEx", [js](jsval_t* args, MessageEx& s) {
 			std::ostringstream ss;
 			ss << std::hex;
 			for (int i = 1; i < s.msg.getSize() - 1; i++) {
@@ -860,6 +861,14 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			}
 			std::string str = ss.str();
 			return js_mkstr(js, str.c_str(), str.length());
+		});
+	}
+
+	static jsval_t js_midi_getSysExLength(struct js* js, jsval_t* args, int nargs) {
+		return js_midi(js, args, nargs, "d", "getSysExLength", [](jsval_t* args, MessageEx& s) {
+			// Payload length only — the f0/f7 framing is excluded, so a script
+			// can check the size before reading the payload with getSysEx.
+			return js_mknum(std::max(0, s.msg.getSize() - 2));
 		});
 	}
 

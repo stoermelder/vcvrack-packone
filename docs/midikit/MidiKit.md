@@ -442,7 +442,8 @@ The API below is identical for both scripting engines — the function names, ar
 - `midi.getLength(msg)`: Returns the length of the MIDI message `msg`. For common short messages this will return *3*; channel pressure messages are 2 bytes; SysEx messages may be longer.
 - `midi.getNote(msg)`: Returns the MIDI note number (0..127) of `msg` (byte 2 of the MIDI message).
 - `midi.getRaw(msg)`: Returns the raw bytes of `msg` as hexstring, exactly as sent/received — no framing added or removed.
-- `midi.getSysExData(msg)`: Returns the data of a MIDI SysEx message `msg` as hexstring.
+- `midi.getSysEx(msg)`: Returns the payload data of a MIDI SysEx message `msg` as hexstring (the `f0`/`f7` framing is excluded).
+- `midi.getSysExLength(msg)`: Returns the payload length in bytes of a MIDI SysEx message `msg` (the `f0`/`f7` framing is excluded) — check this before reading the payload with `getSysEx`.
 - `midi.getPitchWheel(msg)`: Returns the MIDI pitch wheel (0..16383) value of `msg`.
 - `midi.getProgramChange(msg)`: Returns the MIDI program number (0..127) of `msg` (byte 2 of the MIDI message).
 - `midi.getValue(msg)`. Returns the MIDI value field (0..127) of `msg` (byte 3 of the MIDI message).

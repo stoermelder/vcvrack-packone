@@ -233,8 +233,9 @@ index `0`, Elk: same convention).
   clock, start/stop/continue, SysEx framing — which have no channel),
   `getChanPressure(msg)`, `getNote(msg)`,
   `getValue(msg)`, `getLength(msg)`, `getPitchWheel(msg)`, `getProgramChange(msg)`,
-  `getSysExData(msg)`
-  (hex string, the payload only — without the `f0`/`f7` framing), `getRaw(msg)`
+  `getSysEx(msg)` (hex string, the payload only — without the `f0`/`f7`
+  framing), `getSysExLength(msg)` (payload length in bytes, framing excluded —
+  check it before reading the payload with `getSysEx`), `getRaw(msg)`
   (hex string of the message's raw bytes, exactly as sent/received — no
   framing added or removed).
 - Type predicates: `isCc`, `isNoteOn`, `isNoteOff`, `isKeyPressure`,
