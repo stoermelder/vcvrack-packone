@@ -259,6 +259,70 @@ TEST_CASE("processTick leaves not-yet-due messages queued", "[MidiKit]") {
 	REQUIRE(out.tickQueue.size() == 0);
 }
 
+TEST_CASE("processFrame sends a message on its exact frame", "[MidiKit]") {
+	MidiOutput out;
+	midi::Message msg = makeCc();
+	msg.frame = 5;
+
+	out.send(msg, 0);
+	REQUIRE(out.frameQueue.size() == 1);
+
+	out.processFrame(4);
+	REQUIRE(out.frameQueue.size() == 1);  // not due yet
+
+	out.processFrame(5);
+	REQUIRE(out.frameQueue.size() == 0);  // with ">" this stayed queued one call longer
+}
+
+TEST_CASE("processFrame sends a message whose frame has already passed", "[MidiKit]") {
+	MidiOutput out;
+	midi::Message msg = makeCc();
+	msg.frame = 5;
+
+	out.send(msg, 0);
+	REQUIRE(out.frameQueue.size() == 1);
+
+	out.processFrame(6);
+	REQUIRE(out.frameQueue.size() == 0);
+}
+
+TEST_CASE("processFrame drains every due message in one call", "[MidiKit]") {
+	MidiOutput out;
+	midi::Message msg = makeCc();
+
+	msg.frame = 3;
+	out.send(msg, 0);
+	msg.frame = 5;
+	out.send(msg, 0);
+	msg.frame = 7;
+	out.send(msg, 0);
+	REQUIRE(out.frameQueue.size() == 3);
+
+	out.processFrame(5);
+	REQUIRE(out.frameQueue.size() == 1);         // 3 and 5 sent, 7 still pending
+	REQUIRE(out.frameQueue.top().msg.frame == 7);
+
+	out.processFrame(7);
+	REQUIRE(out.frameQueue.size() == 0);
+}
+
+TEST_CASE("processFrame leaves not-yet-due messages queued", "[MidiKit]") {
+	MidiOutput out;
+	midi::Message msg = makeCc();
+	msg.frame = 10;
+
+	out.send(msg, 0);
+	REQUIRE(out.frameQueue.size() == 1);
+
+	for (int64_t f = 0; f < 10; f++) {
+		out.processFrame(f);
+		REQUIRE(out.frameQueue.size() == 1);
+	}
+
+	out.processFrame(10);
+	REQUIRE(out.frameQueue.size() == 0);
+}
+
 // process() ordering and the divider boundary
 //
 // The engine interface is virtual, so a recording stub can observe exactly

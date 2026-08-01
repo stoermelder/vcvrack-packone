@@ -77,7 +77,11 @@ struct MidiOutput : midi::Output {
 		while (true) {
 			if (frameQueue.size() == 0) return;
 			FrameSchedule s = frameQueue.top();
-			if (frame > s.msg.frame) {
+			// ">=" and not ">": s.msg.frame is the engine frame the message is
+			// intended to be processed at (midi.hpp). With ">" a message due
+			// exactly at the current frame is deferred to the next processFrame()
+			// call — one divider period later. Mirrors the processTick() fix.
+			if (frame >= s.msg.frame) {
 				frameQueue.pop();
 				s.msg.frame = -1;
 				sendMessage(s.msg);
