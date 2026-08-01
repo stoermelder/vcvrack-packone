@@ -424,6 +424,14 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		return "";
 	}
 
+	// Returns current/total bytes of the fixed jsMem arena, or false if no script is loaded.
+	bool getMemoryUsage(size_t& used, size_t& total) {
+		if (!js) return false;
+		used = js_usage(js);
+		total = sizeof(jsMem);
+		return true;
+	}
+
 
 	inline static jsval_t js_mkbool(bool b) {
 		return b ? js_mktrue() : js_mkfalse();

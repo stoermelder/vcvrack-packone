@@ -43,6 +43,9 @@ void js_dump(struct js *);  // Print debug info. Requires -DJS_DUMP
 // js_mkerr() jumps js->pos to the end of the buffer, so the position has to be
 // captured at the point the error is created; this exposes that capture.
 size_t js_errpos(struct js *);
+// stoermelder: current memory usage in bytes, i.e. js->brk. Unlike js_stats()'s
+// lwm (historical low-water mark / peak usage), this reflects live usage right now.
+size_t js_usage(struct js *);
 
 // Create JS values from C values
 jsval_t js_mkundef(void);  // Create undefined

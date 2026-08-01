@@ -275,6 +275,17 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return callLuaTableFunc("param", "getValueFormat", i + 1);
 	}
 
+	// Returns current bytes in use by the Lua heap, or false if no script is loaded.
+	// Unlike Elk there is no fixed arena to compare against: minilua's default allocator
+	// grows via realloc() with no cap, so only an absolute byte count is available.
+	bool getMemoryUsage(size_t& used) {
+		if (!L) return false;
+		int kb = lua_gc(L, LUA_GCCOUNT);
+		int b = lua_gc(L, LUA_GCCOUNTB);
+		used = (size_t) kb * 1024 + (size_t) b;
+		return true;
+	}
+
 
 	void dispatchMidiMessage(int midiPort, Message& msg) {
 		if (!L) return;

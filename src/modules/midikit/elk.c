@@ -1505,6 +1505,7 @@ struct js *js_create(void *buf, size_t len) {
 
 // clang-format off
 size_t js_errpos(struct js *js) { return js->errpos == (jsoff_t) ~0 ? (size_t) ~0 : (size_t) js->errpos; }
+size_t js_usage(struct js *js) { return (size_t) js->brk; }
 void js_setgct(struct js *js, size_t gct) { js->gct = (jsoff_t) gct; }
 void js_setmaxcss(struct js *js, size_t max) { js->maxcss = (jsoff_t) max; }
 jsval_t js_mktrue(void) { return mkval(T_BOOL, 1); }

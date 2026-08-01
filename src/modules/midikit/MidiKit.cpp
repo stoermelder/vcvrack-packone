@@ -600,6 +600,21 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MidiKitModule>::appendContextMenu(menu);
 		menu->addChild(new MenuSeparator());
+		if (module->activeEngine == &module->se) {
+			size_t used, total;
+			if (module->se.getMemoryUsage(used, total)) {
+				float pct = total > 0 ? 100.f * used / total : 0.f;
+				menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
+			}
+		}
+		else if (module->activeEngine == &module->seLua) {
+			size_t used;
+			if (module->seLua.getMemoryUsage(used)) {
+				menu->addChild(createMenuLabel(string::f("RAM usage: %zu KB", used / 1024)));
+			}
+		}
+
+		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Script"));
 		menu->addChild(createSubmenuItem("Examples", "", [=](Menu* menu) {
 			menu->addChild(createSubmenuItem("JavaScript", "", [=](Menu* menu) {
