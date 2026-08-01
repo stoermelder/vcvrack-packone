@@ -24,6 +24,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 	std::shared_ptr<ITaskWorker> taskWorker;
 	dsp::RingBuffer<std::tuple<int, Message>, 128> midiInQueue;
+	dsp::RingBuffer<int, 4> tickInQueue;
 	dsp::RingBuffer<std::tuple<int, Message, uint64_t>, 128> midiOutQueue;
 
 	const static int msgStoreSize = 32;
@@ -267,6 +268,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		js_set(js, js_glob(js), "onLoad", js_mkfun(js_noop));								// onLoad = function() {}
 		js_set(js, js_glob(js), "onUnload", js_mkfun(js_noop));								// onUnload = function() {}
 		js_set(js, js_glob(js), "onMidiMessage", js_mkfun(js_noop));						// onMidiMessage = function(midiPort, msg) {}
+		js_set(js, js_glob(js), "onTrigger", js_mkfun(js_noop));							// onTrigger = function(trigPort) {}
 
 		jsval_t r = js_eval(js, script, ~0U);
 		if (js_type(r) == JS_ERR) {
@@ -332,14 +334,24 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		}
 	}
 
+	void processInTick(int trigPort) override {
+		if (js) {
+			tickInQueue.push(trigPort);
+		}
+	}
+
 	void process() override {
-		if (js && midiInQueue.size() > 0) {
+		if (js && (midiInQueue.size() > 0 || tickInQueue.size() > 0)) {
 			runAsync([this]() {
 				while (!midiInQueue.empty()) {
 					auto t = midiInQueue.shift();
 					int midiPort = std::get<0>(t);
 					midi::Message msg = std::get<1>(t);
 					process(midiPort, msg);
+				}
+				while (!tickInQueue.empty()) {
+					int trigPort = tickInQueue.shift();
+					processTick(trigPort);
 				}
 			});
 		}
@@ -380,8 +392,24 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		}
 	}
 
+	// Dispatches onTrigger(trigPort) when the trigger input fires. No-op if
+	// the script never defined it (compared by identity against the
+	// pre-registered default, same convention as onLoad/onUnload).
+	void processTick(int trigPort) {
+		if (js) {
+			msgCount = 0;
+			inCallback = true;
+			jsval_t r = js_eval(js, string::f("onTrigger(%i)", trigPort + 1).c_str(), ~0U);
+			inCallback = false;
+			if (js_type(r) == JS_ERR) {
+				writeLog(string::f("onTrigger error: %s", js_str(js, r)));
+			}
+			flushMsgStore();
+		}
+	}
+
 	// Pushes every message sent during the callback that just ran into
-	// midiOutQueue. Shared by onMidiMessage/onLoad/onUnload.
+	// midiOutQueue. Shared by onMidiMessage/onLoad/onUnload/onTrigger.
 	void flushMsgStore() {
 		for (size_t i = 0; i < msgCount; i++) {
 			if (msgStore[i].send) {

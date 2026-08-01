@@ -32,7 +32,7 @@ Lua:
 
 The header is parsed line-by-line and may also be used to set `@author` and `@description` metadata, which is shown in the module's log on load.
 
-MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the selected MIDI input. The scripting API lets you create new MIDI messages; a single incoming message may result in up to 32 outgoing messages. Incoming MIDI messages are not passed through automatically — scripts must explicitly call `midiOut.send()` to forward messages.
+MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the selected MIDI input, or a trigger arrives on the CV trigger input (`onTrigger`). The scripting API lets you create new MIDI messages; a single incoming event may result in up to 32 outgoing messages. Incoming MIDI messages are not passed through automatically — scripts must explicitly call `midiOut.send()` to forward messages.
 
 The module also exposes four CV inputs and four panel parameters that can be read from scripts to add modulation or dynamic configuration.
 
@@ -294,6 +294,28 @@ function onUnload()
 end
 ```
 
+### Send a MIDI clock message on each trigger
+
+`onTrigger(trigPort)` is the entry point for logic driven by the CV trigger input rather than by incoming MIDI — for example, forwarding an external clock as MIDI clock messages.
+
+JavaScript:
+```js
+onTrigger = function(trigPort) {
+   let clock = midi.create();
+   midi.setRaw(clock, "f8");
+   midiOut.send(clock);
+};
+```
+
+Lua:
+```lua
+function onTrigger(trigPort)
+   local clock = midi.create()
+   midi.setRaw(clock, "f8")
+   midiOut.send(clock)
+end
+```
+
 ## Language reference
 
 MIDI-KIT supports two scripting languages, both deliberately small. The JavaScript engine is [Elk](https://github.com/cesanta/elk); the Lua engine is a bundled [MiniLua](https://github.com/edubart/minilua). Both are completely bare — neither ships with a standard library — and only the language core plus the MIDI-KIT API is available. The `midi` / `midiOut` / `input` / `trig` / `param` / `number` / `rack` API is identical across the two engines, so picking an engine is mostly a matter of personal taste.
@@ -382,6 +404,7 @@ The API below is identical for both scripting engines — the function names, ar
 ### Global functions
 
 - `onMidiMessage(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
+- `onTrigger(trigPort)`: Optional. Called whenever a trigger arrives on CV trigger input port `trigPort` (only *1* is supported in this version). This is the only entry point for script logic that isn't driven by an incoming MIDI message — e.g. sending a MIDI message in response to an external clock/gate. A script that doesn't define it simply never has it called. **In JavaScript (Elk), define it with plain assignment, not `let`:** `onTrigger = function(trigPort) { ... };` — see [JavaScript (Elk)](#javascript-elk) below.
 - `onLoad()`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. Use it in place of a manually-called `init()` function at the bottom of the file. **In JavaScript (Elk), define it with plain assignment, not `let`:** `onLoad = function() { ... };` — see [JavaScript (Elk)](#javascript-elk) below.
 - `onUnload()`: Optional. Called once, right before the script's state is torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. **In JavaScript (Elk), define it with plain assignment, not `let`:** `onUnload = function() { ... };` — see [JavaScript (Elk)](#javascript-elk) below.
 

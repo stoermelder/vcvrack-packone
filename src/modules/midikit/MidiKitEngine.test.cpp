@@ -2077,3 +2077,76 @@ TEST_CASE("onUnload runs again when a second script replaces the first, in both 
 	REQUIRE(checkOnUnloadReplaced(JS_ON_UNLOAD, JS_NO_ON_LOAD) == true);
 	REQUIRE(checkOnUnloadReplaced(LUA_ON_UNLOAD, LUA_NO_ON_LOAD) == true);
 }
+
+
+static const char* JS_ON_TRIGGER = R"(/**
+ * @engine Elk
+ */
+onTrigger = function(trigPort) {
+    rack.log("onTrigger " + number.toString(trigPort));
+    let msg = midi.create();
+    midi.setCc(msg, 1, 10, trigPort);
+    midiOut.send(msg);
+};
+)";
+
+static const char* LUA_ON_TRIGGER = R"(--[[
+@engine Lua
+--]]
+function onTrigger(trigPort)
+    rack.log("onTrigger " .. trigPort)
+    local msg = midi.create()
+    midi.setCc(msg, 1, 10, trigPort)
+    midiOut.send(msg)
+end
+)";
+
+TEST_CASE("onTrigger fires on a trigger input tick and sends an identical message in both engines", "[MidiKit][CrossEngine]") {
+	auto checkOnTrigger = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		drainLog(m);
+
+		m->activeEngine->processInTick(0);
+		m->activeEngine->process();
+
+		std::string log = drainLog(m);
+		REQUIRE(log.find("onTrigger 1") != std::string::npos);
+
+		int port, ticks;
+		midi::Message out;
+		REQUIRE(m->activeEngine->processOutMessage(port, out, ticks));
+		auto sent = toSent(port, ticks, out);
+		Test::destroyModule(m);
+		return sent;
+	};
+
+	auto js = checkOnTrigger(JS_ON_TRIGGER);
+	auto lua = checkOnTrigger(LUA_ON_TRIGGER);
+	REQUIRE(js.port == lua.port);
+	REQUIRE(js.bytes == lua.bytes);
+}
+
+
+TEST_CASE("Script without onTrigger silently ignores trigger ticks, in both engines", "[MidiKit][CrossEngine]") {
+	auto checkNoOnTrigger = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		drainLog(m);
+
+		m->activeEngine->processInTick(0);
+		m->activeEngine->process();
+
+		std::string log = drainLog(m);
+		int port, ticks;
+		midi::Message out;
+		bool sentAnything = m->activeEngine->processOutMessage(port, out, ticks);
+		Test::destroyModule(m);
+		return std::make_pair(log, sentAnything);
+	};
+
+	auto js = checkNoOnTrigger(JS_NO_ON_LOAD);
+	auto lua = checkNoOnTrigger(LUA_NO_ON_LOAD);
+	REQUIRE(js.second == false);
+	REQUIRE(lua.second == false);
+}

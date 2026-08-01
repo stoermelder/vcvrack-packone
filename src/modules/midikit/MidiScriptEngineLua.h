@@ -50,6 +50,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	std::shared_ptr<ITaskWorker> taskWorker;
 
 	dsp::RingBuffer<std::tuple<int, Message>, 128> midiInQueue;
+	dsp::RingBuffer<int, 4> tickInQueue;
 	dsp::RingBuffer<std::tuple<int, Message, uint64_t>, 128> midiOutQueue;
 
 	// ─── Construction / destruction ───────────────────────────────────────────
@@ -217,14 +218,24 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 	}
 
+	void processInTick(int trigPort) override {
+		if (L) {
+			tickInQueue.push(trigPort);
+		}
+	}
+
 	void process() override {
-		if (L && midiInQueue.size() > 0) {
+		if (L && (midiInQueue.size() > 0 || tickInQueue.size() > 0)) {
 			runAsync([this]() {
 				while (!midiInQueue.empty()) {
 					auto t = midiInQueue.shift();
 					int port = std::get<0>(t);
 					midi::Message msg = std::get<1>(t);
 					dispatchMidiMessage(port, msg);
+				}
+				while (!tickInQueue.empty()) {
+					int trigPort = tickInQueue.shift();
+					dispatchTrigger(trigPort);
 				}
 			});
 		}
@@ -309,6 +320,30 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
 			writeLog(string::f("onMidiMessage error: %s", err ? err : "(unknown)"));
+			lua_pop(L, 1);
+		}
+
+		flushMsgStore();
+	}
+
+	// Dispatches onTrigger(trigPort) when the trigger input fires. No-op if
+	// the script never defined it.
+	void dispatchTrigger(int trigPort) {
+		if (!L) return;
+
+		lua_getglobal(L, "onTrigger");
+		if (!lua_isfunction(L, -1)) {
+			lua_pop(L, 1);
+			return;
+		}
+		lua_pushinteger(L, trigPort + 1);
+		msgCount = 0;
+		inCallback = true;
+		int status = lua_pcall(L, 1, 0, 0);
+		inCallback = false;
+		if (status != LUA_OK) {
+			const char* err = lua_tostring(L, -1);
+			writeLog(string::f("onTrigger error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1);
 		}
 

@@ -383,6 +383,7 @@ struct MidiKitModule : Module {
 		if (inputTrigger.process(inputs[INPUT_TRIG].getVoltage())) {
 			inputTriggerTick++;
 			midiOutput.processTick(inputTriggerTick);
+			activeEngine->processInTick(0);
 		}
 
 		if (processDivider.process()) {

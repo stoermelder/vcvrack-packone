@@ -27,6 +27,7 @@ struct MidiScriptEngine {
 
 	// Main interface for message processing
 	virtual void processInMessage(int midiPort, Message& msg) = 0;
+	virtual void processInTick(int trigPort) = 0;
 	virtual void process() = 0;
 	virtual bool processOutMessage(int& midiPort, Message& msg, int& ticks) = 0;
 

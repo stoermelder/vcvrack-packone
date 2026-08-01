@@ -85,8 +85,22 @@ conventionally present but not checked by the loader.
   functions may be overridden to customize panel/input labeling; both
   engines seed defaults (`"Port " .. i` / `"Param " .. i`) that scripts can
   replace by reassigning the table field.
+- Optional `onTrigger(trigPort)` is called whenever the module's trigger/gate
+  input (`trigPort`, 1-based — MIDI-KIT currently exposes a single trigger
+  input, so this is always `1`) crosses the trigger threshold. It is the
+  only way to run script logic that isn't driven by an incoming MIDI
+  message — e.g. reading `trig.getTicks()`/`input.*` and sending a MIDI
+  message in response to an external clock/gate. A script that never
+  defines it simply never has it called; unlike `onMidiMessage`, there is no
+  load-time log warning for omitting it. **In Elk it must be defined with
+  plain assignment, NOT `let`:** `onTrigger = function(trigPort) {...};` —
+  same reason as `onLoad`/`onUnload`/`onMidiMessage`: the name already
+  exists as a pre-registered no-op before your script runs. Lua has no such
+  restriction: `onTrigger = function(trigPort) end` or
+  `function onTrigger(trigPort) end` both work.
 - There is no per-sample or per-frame callback — logic only runs in
-  response to incoming MIDI messages (including clock 0xF8 realtime bytes).
+  response to incoming MIDI messages (including clock 0xF8 realtime bytes)
+  or trigger-input ticks via `onTrigger`.
 - Optional `onLoad()` and `onUnload()` hooks run once each:
   - `onLoad()` runs once, right after top-level code, when the script has
     parsed and loaded successfully.
@@ -305,9 +319,9 @@ rather than decoding this by hand).
   them — the store resets each callback invocation. Creating a message at top
   level (outside `onMidiMessage`) logs a warning and the handle is discarded as
   soon as the next MIDI message arrives, so build messages inside the callback.
-  `onLoad()`/`onUnload()` are full callbacks in this sense too — a message
-  created and sent inside either is delivered normally, and (unlike bare
-  top-level code) doesn't warn.
+  `onLoad()`/`onUnload()`/`onTrigger()` are full callbacks in this sense too
+  — a message created and sent inside any of them is delivered normally,
+  and (unlike bare top-level code) doesn't warn.
 - `midi.setCc14bit`/`setNRPN` split a 14-bit value across two 7-bit CC
   messages (`cc` = MSB, `cc + 32` = LSB per the NRPN/14-bit CC convention);
   see [nrpn_to_cc.js](nrpn_to_cc.js)/[nrpn_to_cc.lua](nrpn_to_cc.lua) for a
