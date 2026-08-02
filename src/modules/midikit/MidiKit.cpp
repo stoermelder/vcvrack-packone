@@ -115,6 +115,11 @@ struct MidiOutput : midi::Output {
 
 // Returns the one shared async worker for all MidiKit modules.
 // The weak_ptr lets it be destroyed when the last module is removed.
+//
+// No mutex guards the expired()/make_shared/assignment sequence below. This is
+// safe because modules are constructed on the UI thread, which is a single
+// thread, so defaultWorker() is never called concurrently -- the static
+// weak_ptr is only ever touched from that one thread.
 static std::shared_ptr<ITaskWorker> defaultWorker() {
 	static std::weak_ptr<ITaskWorker> shared;
 	if (shared.expired()) {
