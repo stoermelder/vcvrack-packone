@@ -98,6 +98,41 @@ TEST_CASE("Concurrent producers from multiple threads: every accepted task runs 
 	REQUIRE(execCount == expected);
 }
 
+// drain() pops and discards queued tasks without running them. We block the
+// worker on a first task so the following tasks stay queued, drain, then
+// release the block and assert only the blocking task ran.
+TEST_CASE("drain() discards queued tasks without running them", "[MpmcTaskWorker]") {
+	Test::TestContext<> ctx;
+	MpmcTaskWorker worker;
+
+	std::atomic<int> execCount{0};
+	std::atomic<bool> workerBusy{false};
+	std::atomic<bool> blockDone{false};
+	// Create the promise directly (not via makePromise) so the task can
+	// retrieve its future; makePromise already retrieves it.
+	auto releaseProm = std::make_shared<std::promise<void>>();
+
+	// Block the worker on the first task so the rest stay queued.
+	worker.work([&execCount, &workerBusy, &blockDone, releaseProm]() {
+		execCount.fetch_add(1);
+		workerBusy.store(true, std::memory_order_release);
+		releaseProm->get_future().wait();
+		blockDone.store(true, std::memory_order_release);
+	});
+	while (!workerBusy.load(std::memory_order_acquire)) std::this_thread::yield();
+
+	// Queue 5 more tasks; they must stay queued because the worker is blocked.
+	for (int i = 0; i < 5; i++) {
+		worker.work([&execCount]() { execCount.fetch_add(1); });
+	}
+	worker.drain();
+
+	// Release the worker; only the blocking task should have run.
+	releaseProm->set_value();
+	while (!blockDone.load(std::memory_order_acquire)) std::this_thread::yield();
+	REQUIRE(execCount == 1);
+}
+
 TEST_CASE("Queuing from the task itself does not deadlock", "[MpmcTaskWorker]") {
 	Test::TestContext<> ctx;
 	MpmcTaskWorker worker;
