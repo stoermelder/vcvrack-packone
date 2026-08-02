@@ -65,13 +65,13 @@ local function resetState()
     state.hasValueMsb = false
 end
 
-local function init()
-    log("NRPN to CC converter initialized")
-    log("Mapped NRPN numbers: " .. #config.map)
-    log("Channel: " .. config.ccChannel)
+function onLoad()
+    rack.log("NRPN to CC converter initialized")
+    rack.log("Mapped NRPN numbers: ", #config.map)
+    rack.log("Channel: ", config.ccChannel)
 end
 
-function processMidi(midiPort, msg)
+function onMidiMessage(midiPort, msg)
     if not midi.isCc(msg) then
         return
     end
@@ -107,7 +107,7 @@ function processMidi(midiPort, msg)
             return
         end
 
-        log("nrpn #" .. nrpnNumber .. ": value=" .. nrpnValue .. " -> cc" .. ccNumber)
+        rack.log("nrpn #", nrpnNumber, ": value=", nrpnValue, " -> cc", ccNumber)
 
         local ccMsb = midi.create()
         local ccLsb = midi.create()
@@ -116,6 +116,3 @@ function processMidi(midiPort, msg)
         midiOut.send(ccLsb)
     end
 end
-
--- Initialize when script loads
-init()

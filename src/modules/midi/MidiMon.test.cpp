@@ -121,6 +121,77 @@ TEST_CASE("Logs and formats channel messages", "[MidiMon]") {
 }
 
 
+TEST_CASE("Logs NRPN messages with full 14-bit value", "[MidiMon]") {
+	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	drain(module); // discard header lines
+	module->showRpnNrpnMsg = true;
+	module->showCcExMsg = false; // isolate NRPN output from the 14-bit CC log
+
+	// Select NRPN: CC 99 (MSB) then CC 98 (LSB) -> param = 4*128 + 5 = 517
+	module->midiProcessor.processCc(Test::makeMidiMessage(0xb, 3, 99, 4));
+	module->midiProcessor.processCc(Test::makeMidiMessage(0xb, 3, 98, 5));
+
+	// Data entry: CC 6 (MSB) then CC 38 (LSB) -> value = 20*128 + 2 = 2562
+	module->midiProcessor.processCc(Test::makeMidiMessage(0xb, 3, 6, 20));
+	module->midiProcessor.processCc(Test::makeMidiMessage(0xb, 3, 38, 2));
+
+	auto entries = drain(module);
+
+	// Selection logs "selected"; data entry logs the full 14-bit value.
+	REQUIRE(entries.size() == 2);
+	REQUIRE(textOf(entries[0]) == "ch04 nrpn param=517 selected");
+	REQUIRE(textOf(entries[1]) == "ch04 nrpn param=517 value=2562");
+	REQUIRE(formatOf(entries[1]) == LOG_FORMAT::INDENTED);
+
+	Test::destroyModule(module);
+}
+
+
+TEST_CASE("NRPN single-byte data entry", "[MidiMon]") {
+	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	drain(module);
+	module->showRpnNrpnMsg = true;
+	module->showCcExMsg = false;
+
+	// Select NRPN: CC 99 (MSB) then CC 98 (LSB)
+	module->midiProcessor.processCc(Test::makeMidiMessage(0xb, 3, 99, 4));
+	module->midiProcessor.processCc(Test::makeMidiMessage(0xb, 3, 98, 5));
+
+	// Data entry as a single CC 6 (data entry MSB only), value 100.
+	module->midiProcessor.processCc(Test::makeMidiMessage(0xb, 3, 6, 100));
+
+	auto entries = drain(module);
+	// Only the selection entry is logged; a lone CC 6 does not emit an NRPN value.
+	REQUIRE(entries.size() == 1);
+	REQUIRE(textOf(entries[0]) == "ch04 nrpn param=517 selected");
+
+	Test::destroyModule(module);
+}
+
+
+TEST_CASE("NRPN LSB-only data entry", "[MidiMon]") {
+	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	drain(module);
+	module->showRpnNrpnMsg = true;
+	module->showCcExMsg = false;
+
+	// Select NRPN: CC 99 (MSB) then CC 98 (LSB)
+	module->midiProcessor.processCc(Test::makeMidiMessage(0xb, 3, 99, 4));
+	module->midiProcessor.processCc(Test::makeMidiMessage(0xb, 3, 98, 5));
+
+	// Data entry as a single CC 38 (data entry LSB only), value 100.
+	module->midiProcessor.processCc(Test::makeMidiMessage(0xb, 3, 38, 100));
+
+	auto entries = drain(module);
+	// LSB-only data entry caps the value at 0-127 (no MSB was sent).
+	REQUIRE(entries.size() == 2);
+	REQUIRE(textOf(entries[0]) == "ch04 nrpn param=517 selected");
+	REQUIRE(textOf(entries[1]) == "ch04 nrpn param=517 value=100");
+
+	Test::destroyModule(module);
+}
+
+
 TEST_CASE("Respects visibility flags", "[MidiMon]") {
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 	drain(module);

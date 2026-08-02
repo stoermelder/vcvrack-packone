@@ -40,11 +40,11 @@ local state = {
     direction = 1
 }
 
-local function init()
-    log("NRPN generator initialized")
-    log("Channel: " .. config.channel)
-    log("NRPN number: " .. config.nrpnNumber)
-    log("Ticks per step: " .. config.ticksPerStep)
+function onLoad()
+    rack.log("NRPN generator initialized")
+    rack.log("Channel: ", config.channel)
+    rack.log("NRPN number: ", config.nrpnNumber)
+    rack.log("Ticks per step: ", config.ticksPerStep)
 end
 
 local function sendNrpn()
@@ -52,7 +52,7 @@ local function sendNrpn()
     midi.setNRPN(nrpn, config.channel, config.nrpnNumber, state.value)
     midiOut.send(nrpn)
 
-    log("Sent nrpn #" .. config.nrpnNumber .. " = " .. state.value)
+    rack.log("Sent nrpn #", config.nrpnNumber, " = ", state.value)
 end
 
 local function advanceValue()
@@ -66,7 +66,7 @@ local function advanceValue()
     end
 end
 
-function processMidi(midiPort, msg)
+function onMidiMessage(midiPort, msg)
     if midi.isClock(msg) then
         state.tickCount = state.tickCount + 1
         if state.tickCount >= config.ticksPerStep then
@@ -78,6 +78,3 @@ function processMidi(midiPort, msg)
         state.tickCount = 0
     end
 end
-
--- Initialize when script loads
-init()

@@ -1,5 +1,6 @@
 /**
- * @engine Elk
+ * @target stoermelder MIDI-KIT
+ * @engine QuickJs
  * @author stoermelder
  * @description NRPN to 14-bit CC converter
  */
@@ -45,15 +46,14 @@ let state = {
     hasValueMsb: false
 };
 
-// Called when the script is loaded
-let init = function() {
-    log("NRPN to CC converter initialized");
-    log("Mapped NRPN numbers: " + number.toString(config.map.length));
-    log("Channel: " + number.toString(config.ccChannel));
+function onLoad() {
+    rack.log("NRPN to CC converter initialized");
+    rack.log("Mapped NRPN numbers: ", config.map.length);
+    rack.log("Channel: ", config.ccChannel);
 };
 
 // Returns the CC number mapped to nrpnNumber, or -1 if not mapped
-let findCcNumber = function(nrpnNumber) {
+function findCcNumber(nrpnNumber) {
     let ccNumber = -1;
     for (let i = 0; i < config.map.length; i++) {
         if (config.map[i].nrpnNumber === nrpnNumber) {
@@ -64,7 +64,7 @@ let findCcNumber = function(nrpnNumber) {
     return ccNumber;
 };
 
-let resetState = function() {
+function resetState() {
     state.hasNumberLsb = false;
     state.hasNumberMsb = false;
     state.hasValueLsb = false;
@@ -72,7 +72,7 @@ let resetState = function() {
 };
 
 // Called when a MIDI message is received
-let processMidi = function(midiPort, msg) {
+function onMidiMessage(midiPort, msg) {
     if (!midi.isCc(msg)) {
         return;
     }
@@ -112,7 +112,7 @@ let processMidi = function(midiPort, msg) {
             return;
         }
 
-        log("nrpn #" + number.toString(nrpnNumber) + ": value=" + number.toString(nrpnValue) + " -> cc" + number.toString(ccNumber));
+        rack.log("nrpn #", nrpnNumber, ": value=", nrpnValue, " -> cc", ccNumber);
 
         let ccMsb = midi.create();
         let ccLsb = midi.create();
@@ -121,6 +121,3 @@ let processMidi = function(midiPort, msg) {
         midiOut.send(ccLsb);
     }
 };
-
-// Initialize when script loads
-init();

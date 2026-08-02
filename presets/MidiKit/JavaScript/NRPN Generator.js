@@ -1,5 +1,6 @@
 /**
- * @engine Elk
+ * @target stoermelder MIDI-KIT
+ * @engine QuickJs
  * @author stoermelder
  * @description NRPN test generator for nrpn_to_cc.js - sweeps a 14-bit value driven by MIDI clock
  */
@@ -39,22 +40,22 @@ let state = {
     direction: 1
 };
 
-let init = function() {
-    log("NRPN generator initialized");
-    log("Channel: " + number.toString(config.channel));
-    log("NRPN number: " + number.toString(config.nrpnNumber));
-    log("Ticks per step: " + number.toString(config.ticksPerStep));
+function onLoad() {
+    rack.log("NRPN generator initialized");
+    rack.log("Channel: ", config.channel);
+    rack.log("NRPN number: ", config.nrpnNumber);
+    rack.log("Ticks per step: ", config.ticksPerStep);
 };
 
-let sendNrpn = function() {
+function sendNrpn() {
     let nrpn = midi.createNRPN();
     midi.setNRPN(nrpn, config.channel, config.nrpnNumber, state.value);
     midiOut.send(nrpn);
 
-    log("Sent nrpn #" + number.toString(config.nrpnNumber) + " = " + number.toString(state.value));
+    rack.log("Sent nrpn #", config.nrpnNumber, " = ", state.value);
 };
 
-let advanceValue = function() {
+function advanceValue() {
     state.value = state.value + state.direction * config.stepSize;
     if (state.value >= config.maxValue) {
         state.value = config.maxValue;
@@ -66,7 +67,7 @@ let advanceValue = function() {
     }
 };
 
-let processMidi = function(midiPort, msg) {
+function onMidiMessage(midiPort, msg) {
     if (midi.isClock(msg)) {
         state.tickCount++;
         if (state.tickCount >= config.ticksPerStep) {
@@ -79,6 +80,3 @@ let processMidi = function(midiPort, msg) {
         state.tickCount = 0;
     }
 };
-
-// Initialize when script loads
-init();

@@ -1,14 +1,14 @@
 # stoermelder MIDI-KIT
 
-MIDI-KIT is a scripting module for altering, filtering, delaying, or generating MIDI messages. It bundles two lightweight scripting engines — a small subset of JavaScript and a small subset of Lua — so you can pick whichever language you are more comfortable with.
+MIDI-KIT is a scripting module for altering, filtering, delaying, or generating MIDI messages. It bundles two scripting engines — a full JavaScript engine (QuickJS) and a small subset of Lua — so you can pick whichever language you are more comfortable with.
 
 ## How it works
 
-MIDI-KIT provides two interchangeable scripting engines. Both expose the same MIDI / input / trig / param / number API described further down, so the only thing that differs between them is the language syntax and a few language-specific details.
+MIDI-KIT provides two interchangeable scripting engines. Both expose the same `midi` / `midiOut` / `input` / `trig` / `param` / `number` / `rack` API described further down, so the only thing that differs between them is the language syntax and a few language-specific details.
 
 | Engine | Language | Underlying interpreter |
 | ------ | -------- | ---------------------- |
-| **JavaScript** | A small subset of JavaScript | [Elk 3](https://github.com/cesanta/elk) |
+| **JavaScript** | Full JavaScript (ES2020) | [QuickJS](https://bellard.org/quickjs/) |
 | **Lua**        | A small subset of Lua 5.x    | [MiniLua](https://github.com/edubart/minilua) (bundled) |
 
 Neither engine is optimized for raw performance, but MIDI events are typically sparse compared to audio/DSP processing and the engines are adequate for most MIDI scripting tasks.
@@ -18,10 +18,10 @@ The active engine is chosen by a header tag at the top of the script.
 JavaScript:
 ```
 /**
- * @engine Elk
+ * @engine QuickJs
  */
 ```
-(`@engine Elk` is also the default — JavaScript is assumed when no `@engine` tag is present.)
+(`@engine QuickJs` is also the default — JavaScript is assumed when no `@engine` tag is present.)
 
 Lua:
 ```
@@ -30,9 +30,9 @@ Lua:
 --]]
 ```
 
-The header is parsed line-by-line and may also be used to set `author` and `description` metadata, which is shown in the module's log on load.
+The header is parsed line-by-line and may also be used to set `@author` and `@description` metadata, which is shown in the module's log on load.
 
-MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the selected MIDI input. The scripting API lets you create new MIDI messages; a single incoming message may result in up to 16 outgoing messages. Incoming MIDI messages are not passed through automatically — scripts must explicitly call `midiOut.send()` to forward messages.
+MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the selected MIDI input, or a trigger arrives on the CV trigger input (`onTrigger`). The scripting API lets you create new MIDI messages; a single incoming event may result in up to 32 outgoing messages. Incoming MIDI messages are not passed through automatically — scripts must explicitly call `midiOut.send()` to forward messages.
 
 The module also exposes four CV inputs and four panel parameters that can be read from scripts to add modulation or dynamic configuration.
 
@@ -40,21 +40,21 @@ You can use MIDI-KIT as an insert effect via VCV Rack's built-in MIDI Loopback d
 
 ## Examples
 
-**Note:** Channels are 1..16, parameter and input indices are 1..4. The main entry point is `processMidi(midiPort, msg)`; in this version `midiPort` is always *1*.
+**Note:** Channels are 1..16, parameter and input indices are 1..4. The main entry point is `onMidiMessage(midiPort, msg)`; in this version `midiPort` is always *1*.
 
 ### Basic pass-through
 The script passes all incoming MIDI messages to the default MIDI output port.
 
 JavaScript:
 ```js
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    midiOut.send(msg);
 };
 ```
 
 Lua:
 ```lua
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    midiOut.send(msg)
 end
 ```
@@ -64,7 +64,7 @@ The script drops all incoming MIDI messages except for MIDI channel 2. Messages 
 
 JavaScript:
 ```js
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    if (midi.getChannel(msg) === 2) {
       midiOut.send(msg);
    }
@@ -73,7 +73,7 @@ let processMidi = function(midiPort, msg) {
 
 Lua:
 ```lua
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    if midi.getChannel(msg) == 2 then
       midiOut.send(msg)
    end
@@ -85,7 +85,7 @@ The script routes incoming CC messages on MIDI channel 2 to MIDI channel 3. All 
 
 JavaScript:
 ```js
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
       midi.setChannel(msg, 3);
    }
@@ -95,7 +95,7 @@ let processMidi = function(midiPort, msg) {
 
 Lua:
 ```lua
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    if midi.isCc(msg) and midi.getChannel(msg) == 2 then
       midi.setChannel(msg, 3)
    end
@@ -110,7 +110,7 @@ JavaScript:
 ```js
 param.enable(1);
 
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
       let ch = number.ceil(param.getValue(1) * 16);
       midi.setChannel(msg, ch);
@@ -123,7 +123,7 @@ Lua:
 ```lua
 param.enable(1)
 
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    if midi.isCc(msg) and midi.getChannel(msg) == 2 then
       local ch = number.ceil(param.getValue(1) * 16)
       midi.setChannel(msg, ch)
@@ -149,7 +149,7 @@ param.getValueFormat = function(port) {
     return number.toString(param.getValue(port));
 };
 
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
       let ch = number.ceil(param.getValue(1) * 16);
       midi.setChannel(msg, ch);
@@ -173,7 +173,7 @@ param.getValueFormat = function(port)
     return number.toString(param.getValue(port))
 end
 
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    if midi.isCc(msg) and midi.getChannel(msg) == 2 then
       local ch = number.ceil(param.getValue(1) * 16)
       midi.setChannel(msg, ch)
@@ -186,7 +186,7 @@ end
 
 JavaScript:
 ```js
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let nrpn1 = midi.createNRPN();
       midi.setNRPN(nrpn1, 1, 12345, 13456);
@@ -197,7 +197,7 @@ let processMidi = function(midiPort, msg) {
 
 Lua:
 ```lua
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       local nrpn1 = midi.createNRPN()
       midi.setNRPN(nrpn1, 1, 12345, 13456)
@@ -210,7 +210,7 @@ end
 
 JavaScript:
 ```js
-let processMidi = function(midiPort, msg) {
+onMidiMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let sysex = midi.create();
       midi.setSysEx(sysex, "ab33010001");
@@ -221,7 +221,7 @@ let processMidi = function(midiPort, msg) {
 
 Lua:
 ```lua
-processMidi = function(midiPort, msg)
+onMidiMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       local sysex = midi.create()
       midi.setSysEx(sysex, "ab33010001")
@@ -230,53 +230,121 @@ processMidi = function(midiPort, msg)
 end
 ```
 
+### Send a raw MIDI message
+
+Use `midi.setRaw()` for message types with no dedicated setter, such as an MTC quarter-frame message (status `0xf1`).
+
+JavaScript:
+```js
+onMidiMessage = function(midiPort, msg) {
+   if (midi.isNoteOn(msg)) {
+      let mtc = midi.create();
+      midi.setRaw(mtc, "f11a");
+      midiOut.send(mtc);
+   }
+};
+```
+
+Lua:
+```lua
+onMidiMessage = function(midiPort, msg)
+   if midi.isNoteOn(msg) then
+      local mtc = midi.create()
+      midi.setRaw(mtc, "f11a")
+      midiOut.send(mtc)
+   end
+end
+```
+
+### Send an all-notes-off when the script unloads
+
+`onUnload()` runs once, right before the script's state is torn down — the script is being replaced, the module is reset, or the module is removed from the patch. It's the only reliable place to clean up notes a script left sounding, since nothing runs afterward to release them. Note the JavaScript version overrides `onUnload` with plain assignment — `onUnload = function() {...}` or `function onUnload() {...}` both work in QuickJS — see [JavaScript (QuickJS)](#javascript-quickjs).
+
+JavaScript:
+```js
+onMidiMessage = function(midiPort, msg) {
+   if (midi.isNoteOn(msg)) {
+      midiOut.send(msg);
+   }
+};
+
+onUnload = function() {
+   for (let note = 0; note < 128; note++) {
+      let off = midi.create();
+      midi.setNoteOff(off, 1, note);
+      midiOut.send(off);
+   }
+};
+```
+
+Lua:
+```lua
+onMidiMessage = function(midiPort, msg)
+   if midi.isNoteOn(msg) then
+      midiOut.send(msg)
+   end
+end
+
+function onUnload()
+   for note = 0, 127 do
+      local off = midi.create()
+      midi.setNoteOff(off, 1, note)
+      midiOut.send(off)
+   end
+end
+```
+
+### Send a MIDI clock message on each trigger
+
+`onTrigger(trigPort)` is the entry point for logic driven by the CV trigger input rather than by incoming MIDI — for example, forwarding an external clock as MIDI clock messages.
+
+JavaScript:
+```js
+onTrigger = function(trigPort) {
+   let clock = midi.create();
+   midi.setRaw(clock, "f8");
+   midiOut.send(clock);
+};
+```
+
+Lua:
+```lua
+function onTrigger(trigPort)
+   local clock = midi.create()
+   midi.setRaw(clock, "f8")
+   midiOut.send(clock)
+end
+```
+
 ## Language reference
 
-MIDI-KIT supports two scripting languages, both deliberately small. The JavaScript engine is [Elk](https://github.com/cesanta/elk); the Lua engine is a bundled [MiniLua](https://github.com/edubart/minilua). Both are completely bare — neither ships with a standard library — and only the language core plus the MIDI-KIT API is available. The MIDI / input / trig / param / number API is identical across the two engines, so picking an engine is mostly a matter of personal taste.
+MIDI-KIT supports two scripting languages. The JavaScript engine is [QuickJS](https://bellard.org/quickjs/) (a full ES2020 engine); the Lua engine is a bundled [MiniLua](https://github.com/edubart/minilua). QuickJS ships with the full standard JavaScript library; MiniLua is trimmed to a safe subset. The `midi` / `midiOut` / `input` / `trig` / `param` / `number` / `rack` API is identical across the two engines, so picking an engine is mostly a matter of personal taste.
 
 ### Quick comparison
 
-| | JavaScript (Elk) | Lua (MiniLua) |
+| | JavaScript (QuickJS) | Lua (MiniLua) |
 | - | ---------------- | ------------- |
-| Statement terminator | `;` required | newline / `;` (no `;` required) |
-| Variable declaration | `let x = 1;` | `local x = 1` (globals are unprefixed) |
-| Strict equality | `===`, `!==` | `==`, `~=` (no implicit conversion in either) |
-| Logical operators | `&&`, `\|\|`, `!` | `and`, `or`, `not` |
+| Statement terminator | `;` optional (ASI) | newline / `;` (no `;` required) |
+| Variable declaration | `let x = 1;` (also `var`, `const`) | `local x = 1` (globals are unprefixed) |
+| Strict equality | `===`, `!==` (also `==`, `!=`) | `==`, `~=` (no implicit conversion in either) |
+| Logical operators | `&&`, `||`, `!` | `and`, `or`, `not` |
 | Block keyword | `{ }` | `do ... end` / `function ... end` |
-| Function definition | `let f = function(x) { ... };` | `local f = function(x) ... end` |
+| Function definition | `function f(x) { ... }` or `let f = function(x) { ... };` | `local f = function(x) ... end` |
 | String length | counts UTF-8 **bytes** | counts **bytes** as well |
-| Implicit number→string | **no** — use `number.toString(n)` | **no** — use `tostring(n)` or `number.toString(n)` |
+| Implicit number→string | **yes** in `+` concatenation | **yes** for `..` concatenation; use `tostring(n)` elsewhere |
 | Comments | `//` and `/* */` | `--` and `--[[ ]]` |
-| Header convention | `/** ... @engine Elk ... */` | `--[[ ... @engine Lua ... --]]` |
+| Header convention | `/** ... @engine QuickJs ... */` | `--[[ ... @engine Lua ... --]]` |
 
-### JavaScript (Elk)
+### JavaScript (QuickJS)
 
-#### Supported features
+QuickJS is a full JavaScript engine (ES2020), so all standard JavaScript syntax and the standard library are available: `function` declarations, `while`/`do`/`for` loops, `switch`, `try`/`catch`/`throw`, `class`, `new`, `this`, `var`/`let`/`const`, arrow functions, destructuring, template literals, and `Math`/`JSON`/`String`/`Array`/`Date`/`RegExp`/`Number`. There are no scriptlet subset restrictions to work around.
 
-- Operations: all standard JS operations except:
-   - `!=`, `==`. Use strict comparison `!==`, `===`
-   - No computed member access `a[b]`
-   - No exponentiation operation `a ** b`
-- Typeof: `typeof('a') === 'string'`
-- For loop: `for (...;...;...)  ...`
-- Conditional: `if (...) ... else ...`
-- Ternary operator `a ? b : c`
-- Simple types: `let a, b, c = 12.3, d = 'a', e = null, f = true, g = false;`
-- Functions: `let f = function(x, y) { return x + y; };`
-- Objects: `let obj = {f: function(x) { return x * 2}}; obj.f(3);`
-- Every statement must end with a semicolon `;`
-- Strings are binary data chunks; their length counts bytes rather than Unicode code points: `'Київ'.length === 8`.
-- Arrays are supported.
+The only constraints come from the module, not the language:
 
-#### Not supported features
+- A **1 MiB memory limit** on the QuickJS heap.
+- The script runs in a **sandboxed API**: only the globals documented here (`rack`, `number`, `input`, `trig`, `param`, `midi`, `midiOut`) are available. There is no `require`/`import`, no `console`, and no file or network access.
 
-- No `var`, no `const`. Use `let` (strict mode only)
-- No `do`, `switch`, `while`. Use `for`
-- No `=>` functions. Use `let f = function(...) {...};`
-- No closures, prototypes, `this`, `new`, `delete`
-- No standard library: no `Date`, `Regexp`, `Function`, `String`, `Number`
-
-Be aware that there is no implicit casting, especially for casting numbers to strings. For this purpose the function `number.toString` has been added.
+Strings are binary data chunks; their length counts bytes rather than Unicode code points: `'Київ'.length === 8`. Numbers are ordinary JavaScript numbers; `+` concatenation auto-coerces numbers to strings, and `number.toString(n)` is also available for explicit conversion.
 
 ### Lua (MiniLua)
 
@@ -309,17 +377,24 @@ Be aware that there is no implicit casting, especially for casting numbers to st
 - No coroutines (`coroutine.*`)
 - No metamethods / metatables beyond what `string` and `table` need internally
 
-There is no implicit number-to-string coercion — use `tostring(n)` or the MIDI-KIT helper `number.toString(n)`. For everything else, the standard Lua 5.x semantics apply; please refer to the [Lua reference manual](https://www.lua.org/manual/5.4/) for details.
+There is no implicit number-to-string coercion outside `..` concatenation — numbers are auto-converted to strings in `..` (e.g. `'Port ' .. i`); everywhere else use `tostring(n)` or the MIDI-KIT helper `number.toString(n)`. For everything else, the standard Lua 5.x semantics apply; please refer to the [Lua reference manual](https://www.lua.org/manual/5.4/) for details.
 
 ## Programming reference
 
-The API below is identical for both scripting engines — the function names, argument semantics, and return values do not depend on whether the active engine is JavaScript or Lua. Where the syntax of the call differs between languages, the examples in the corresponding section above (JavaScript (Elk) / Lua (MiniLua)) apply.
+The API below is identical for both scripting engines — the function names, argument semantics, and return values do not depend on whether the active engine is JavaScript or Lua. Where the syntax of the call differs between languages, the examples in the corresponding section above (JavaScript (QuickJS) / Lua (MiniLua)) apply.
 
 ### Global functions
 
-- `processMidi(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
-- `log(str)`: Prints string `str` on the display of the module.
-- `overlay(str1, [str2], [str3])`: Displays string `str1` in an Rack overlay widget.
+- `onMidiMessage(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
+- `onTrigger(trigPort)`: Optional. Called whenever a trigger arrives on CV trigger input port `trigPort` (only *1* is supported in this version). This is the only entry point for script logic that isn't driven by an incoming MIDI message — e.g. sending a MIDI message in response to an external clock/gate. A script that doesn't define it simply never has it called. **In JavaScript (QuickJS), define it as a global function** — `function onTrigger(trigPort) { ... }` or `onTrigger = function(trigPort) { ... };` both work — see [JavaScript (QuickJS)](#javascript-quickjs) below.
+- `onLoad()`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. Use it in place of a manually-called `init()` function at the bottom of the file. **In JavaScript (QuickJS), define it as a global function** — `function onLoad() { ... }` or `onLoad = function() { ... };` both work — see [JavaScript (QuickJS)](#javascript-quickjs) below.
+- `onUnload()`: Optional. Called once, right before the script's state is torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. **In JavaScript (QuickJS), define it as a global function** — `function onUnload() { ... }` or `onUnload = function() { ... };` both work — see [JavaScript (QuickJS)](#javascript-quickjs) below.
+
+### rack
+
+- `rack.log(value [, value ...])`: Prints a line on the display of the module. Any number of arguments are concatenated (no separator) into one line; each accepts any value — numbers (formatted like `number.toString()`), booleans (`true`/`false`), strings (verbatim), and `null`/`nil`/`undefined` (Lua's `nil` prints as `null`). Other values (objects, arrays, tables) use engine-specific formatting.
+- `rack.overlay(str1, [str2], [str3])`: Displays string `str1` in a Rack overlay widget.
+- `rack.getFrame()`: Returns the current engine frame number of the Rack engine.
 
 ### input
 
@@ -359,22 +434,29 @@ The API below is identical for both scripting engines — the function names, ar
   $$ f(x) \frac{\ \exp\left(\left(\ln\left(x\left(e-1\right)+1\right)\right)^{\left(2^{a}\right)}\right)-1}{e-1} $$
   Resulting in curves for `a = -4, -2, 0, 2, 4`: 
   ![](./MidiKit-rescale.png)
+- `number.toFixed(arg, digits)`: Converts `arg` to a string representation with a fixed number of decimal places (`digits`, 0..20).
 - `number.toString(arg)`: Converts `arg` to a string representation.
 
 ### midi
 
 - `midi.create()`: Creates an empty MIDI message.
+- `midi.clone(msg)`: Creates an independent copy of `msg` (same MIDI payload, but a fresh, unsent message). Edit the returned handle freely — the source `msg` is unaffected. Handy for sending a modified copy of the incoming message: `let copy = midi.clone(msg); midi.setChannel(copy, 5); midiOut.send(copy);`. Note: NRPN state is not copied — a clone of an NRPN handle is a single plain message.
 - `midi.createNRPN()`: Creates an empty NRPN MIDI message (actually 4 MIDI messages).
-- `midi.getChannel(msg)`: Returns the MIDI channel (1..16) of `msg`.
-- `midi.getLength(msg)`: Returns the length of the MIDI message `msg`. For common short messages this will return *3*; SysEx messages may be longer.
+- `midi.getChannel(msg)`: Returns the MIDI channel (1..16) of `msg`, or `-1` if `msg` is a realtime or SysEx message (clock, start/stop/continue, SysEx framing), since those carry no channel.
+- `midi.getChanPressure(msg)`: Returns the pressure value (0..127) of a MIDI channel pressure/aftertouch message `msg`.
+- `midi.getLength(msg)`: Returns the length of the MIDI message `msg`. For common short messages this will return *3*; channel pressure messages are 2 bytes; SysEx messages may be longer.
 - `midi.getNote(msg)`: Returns the MIDI note number (0..127) of `msg` (byte 2 of the MIDI message).
-- `midi.getSysExData(msg)`: Returns the data of a MIDI SysEx message `msg` as hexstring.
+- `midi.getRaw(msg)`: Returns the raw bytes of `msg` as hexstring, exactly as sent/received — no framing added or removed.
+- `midi.getSysEx(msg)`: Returns the payload data of a MIDI SysEx message `msg` as hexstring (the `f0`/`f7` framing is excluded).
+- `midi.getSysExLength(msg)`: Returns the payload length in bytes of a MIDI SysEx message `msg` (the `f0`/`f7` framing is excluded) — check this before reading the payload with `getSysEx`.
 - `midi.getPitchWheel(msg)`: Returns the MIDI pitch wheel (0..16383) value of `msg`.
-- `midi.getValue(msg)`. Returns the MIDI value field (0..127) of `msg` (byte 3 of the MIDI message).
+- `midi.getProgramChange(msg)`: Returns the MIDI program number (0..127) of `msg` (byte 2 of the MIDI message).
+- `midi.getValue(msg)`: Returns the MIDI value field (0..127) of `msg` (byte 3 of the MIDI message).
 - `midi.isCc(msg)`: Returns true if `msg` is a MIDI CC message.
 - `midi.isChanPressure(msg)`: Returns true if `msg` is a MIDI channel pressure message.
 - `midi.isClock(msg)`: Returns true if `msg` is a MIDI clock message.
 - `midi.isContinue(msg)`: Returns true if `msg` is a MIDI continue message.
+- `midi.isKeyPressure(msg)`: Returns true if `msg` is a MIDI key pressure message.
 - `midi.isNoteOff(msg)`: Returns true if `msg` is a MIDI note off message.
 - `midi.isNoteOn(msg)`: Returns true if `msg` is a MIDI note on message.
 - `midi.isPitchWheel(msg)`: Returns true if `msg` is a MIDI pitch wheel message.
@@ -382,33 +464,34 @@ The API below is identical for both scripting engines — the function names, ar
 - `midi.isStart(msg)`: Returns true if `msg` is a MIDI start message.
 - `midi.isStop(msg)`: Returns true if `msg` is a MIDI stop message.
 - `midi.isSysEx(msg)`: Returns true if `msg` is a MIDI SysEx message.
-- `midi.setCc(msg, channel, cc, value)`: Sets `msg` as a MIDI CC message with the specified MIDI channel `channel` (1..16), CC number `cc` (0..127) and `value` (0..127).
+- Every `channel` argument below is silently clamped to 1..16, e.g. `midi.setNoteOn(msg, -5, ...)` is treated as channel 1.
+- `midi.setCc(msg, channel, cc, value)`: Sets `msg` as a MIDI CC message with the specified MIDI channel `channel` (1..16), CC number `cc` (0..127) and `value` (0..127, clamped if out of range).
 - `midi.setCc14bit(msg1, msg2, channel, cc, value)`: Sets `msg1` and `msg2` as a 14-bit MIDI CC message pair, with the MIDI channel `channel` (1..16), CC number `cc` (0..127) and `value` (0..16383).
 - `midi.setChannel(msg, channel)`: Sets the MIDI channel `channel` (1..16) for `msg`.
 - `midi.setChanPressure(msg, channel, value)`: Sets `msg` as a MIDI channel pressure message, with MIDI channel `channel` (1..16) and pressure `value` (0..127).
-- `midi.setKeyPressure(msg, channel, note, value)`: Sets `msg` as MIDI key pressure/aftertouch message, with the MIDI channel `channel` (1..16), MIDI note number `note` (0..127) and pressure `value` (0..127).
+- `midi.setKeyPressure(msg, channel, note, value)`: Sets `msg` as MIDI key pressure/aftertouch message, with the MIDI channel `channel` (1..16), MIDI note number `note` (0..127) and pressure `value` (0..127, clamped if out of range).
 - `midi.setNote(msg, note)`: Sets the MIDI note number (0..127) for `msg` (byte 2 of the MIDI message).
-- `midi.setNoteOff(msg, channel, note)`: Sets `msg` as MIDI note off message, with MIDI channel `channel` (1..16) and MIDI note number `note` (0..127). Please be aware, some MIDI devices need a MIDI note on message with velocity *0* instead of a MIDI note off message.
-- `midi.setNoteOn(msg, channel, note, velocity)`: Sets `msg` as MIDI note on message, with MIDI channel `channel` (1..16), MIDI note number `note` (0..127) and `velocity` (0..127).
+- `midi.setNoteOff(msg, channel, note, velocity)`: Sets `msg` as MIDI note off message, with MIDI channel `channel` (1..16), MIDI note number `note` (0..127) and release `velocity` (0..127, clamped if out of range; optional and defaults to *0* — read back with `midi.getValue(msg)`). Please be aware, some MIDI devices need a MIDI note on message with velocity *0* instead of a MIDI note off message.
+- `midi.setNoteOn(msg, channel, note, velocity)`: Sets `msg` as MIDI note on message, with MIDI channel `channel` (1..16), MIDI note number `note` (0..127) and `velocity` (0..127, clamped if out of range).
 - `midi.setNRPN(nrpn, channel, number, value)`: Sets the NRPN number and NRPN value of `nrpn`.
 - `midi.setPitchWheel(msg, channel, value)`: Sets `msg` as a MIDI pitch wheel message, with the specified MIDI channel (1..16) and pitch wheel value (0..16383).
 - `midi.setProgramChange(msg, channel, prg)`: Sets `msg` as a MIDI program change message, with the MIDI channel `channel` (1..16) and program number `prg` (0..127).
-- `midi.setSysEx(msg, str)`: Sets `msg` as a MIDI SysEx message with string `str` representing a hexstring of data (e.g. "ab0fad050fdd", whitespaces are ignored).
+- `midi.setRaw(msg, str)`: Sets `msg` to the exact bytes given by hexstring `str` (e.g. "f11a"), with no framing added or removed. Use this for message types with no dedicated setter, such as MIDI Time Code, Song Position Pointer, Song Select, tune request or active sensing.
+- `midi.setSysEx(msg, str)`: Sets `msg` as a MIDI SysEx message with string `str` representing a hexstring of the payload data (e.g. "ab0fad050fdd"). The `f0`/`f7` framing bytes are added automatically and must not be included in `str`. The payload is limited to 256 bytes and every byte must be 7-bit (00-7f), since any byte ≥ 0x80 inside a SysEx body is illegal.
 - `midi.setValue(msg, value)`: Sets the MIDI value field (0..127) for `msg` (byte 3 of the MIDI message).
 
 ### midiOut
 
-Some functions provide a parameter `midiPort` for selecting the output port. Currently MIDI-KIT has only one output port (with index *1*) and additional ports will be added in the future by expanders.
+- `midiOut.selectPort(midiPort)`: Selects the output port `midiPort` (1-based) used by every following `midiOut.*` call, until `midiOut.selectPort()` is called again. The selection stays in effect across `onMidiMessage()` invocations. Currently MIDI-KIT has only one output port (index *1*) — scripts that call it now won't need to change when more output ports become available.
 
-- `midiOut.send([midiPort], msg)`: Sends `msg` on MIDI port `midiPort` (default port = *1*). If `midiPort` is omitted the default MIDI output port is used.
-- `midiOut.sendAfterMs([midiPort], msg, ms)`: Sends `msg` delayed on MIDI port `midiPort` (default port = *1*). The delay `ms` is specified in milliseconds. If `midiPort` is omitted the default MIDI output port is used.
-- `midiOut.sendAfterTrigger([midiPort], msg, [trigPort], ticks)`: Sends `msg` delayed on MIDI port `midiPort` (default output = *1*). The delay is specified in `ticks` of triggers on CV trigger input `trigPort`. If `midiPort` is omitted the default MIDI output port is used. If `trigPort` is omitted the default trigger port is selected.
+The sending functions below take no port argument — the destination is whatever `midiOut.selectPort()` last selected (port *1* if it was never called):
 
-## Future feature ideas
+- `midiOut.send(msg)`: Sends `msg` on the selected MIDI port.
+- `midiOut.sendAfterMs(msg, ms)`: Sends `msg` delayed on the selected MIDI port. The delay `ms` is specified in milliseconds.
+- `midiOut.sendAfterTrigger(msg, [trigPort], ticks)`: Sends `msg` delayed on the selected MIDI port. The delay is specified in `ticks` of triggers on CV trigger input `trigPort`. If `trigPort` is omitted the default trigger port is selected.
 
-- Support for TTY ([Tipsy](https://github.com/baconpaul/tipsy-encoder))
-- Expander-modules
-- More engines / languages
+**A message can only be sent once per callback.** `midiOut.send(msg)` and the `sendAfter*` variants mark the handle as sent — the actual enqueue happens once per handle after the callback, so sending the *same* handle again in one `onMidiMessage`/`onLoad`/`onUnload` is not a second message: only one goes out (and if the message body was changed in between, the last change wins). To send the same bytes twice, create a fresh handle with `midi.create()` or `midi.clone(msg)` and send that. Each message sent also consumes one of the 32 message-handle slots, so one handle per message is the right pattern.
+
 
 ## Changelog
 
