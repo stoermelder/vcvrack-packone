@@ -116,6 +116,11 @@ struct MpmcTaskWorker : ITaskWorker {
 		}
 		return ok;
 	}
+
+	void drain() {
+		WorkItem item;
+		while (workQueue.try_pop(item)) { }
+	}
 }; // struct MpmcTaskWorker
 
 } // namespace StoermelderPackOne
