@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine Elk
+ * @engine QuickJs
  * @author stoermelder
  * @description Snaps incoming notes to the nearest note of a selectable scale, tracking held notes so releases still match
  */
@@ -65,7 +65,7 @@ let state = {
 
 let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-onLoad = function() {
+function onLoad() {
     for (let n = 0; n < 128; n++) {
         state.playedAs[n] = -1;
     }
@@ -82,7 +82,7 @@ onLoad = function() {
 // is active at a time), so this releases on config.channel if fixed, or
 // channel 1 when config.channel is 0 (every channel) - the same best-effort
 // choice Chord harmonizer makes for the same reason.
-onUnload = function() {
+function onUnload() {
     let ch = config.channel === 0 ? 1 : config.channel;
     for (let n = 0; n < 128; n++) {
         if (state.playedAs[n] >= 0) {
@@ -93,14 +93,14 @@ onUnload = function() {
     }
 };
 
-let matchesChannel = function(ch) {
+function matchesChannel(ch) {
     return config.channel === 0 || ch === config.channel;
 };
 
 // Snaps a note number to the nearest member of the configured scale.
 // Works in pitch-class space, then puts the octave back, so the search only
 // ever has to look one octave up and down.
-let quantise = function(note) {
+function quantise(note) {
     // Distance above the root, folded into 0..11
     let rel = (note - config.root) % 12;
     if (rel < 0) rel = rel + 12;
@@ -147,18 +147,17 @@ let quantise = function(note) {
 
     let out = octaveBase + best;
     // A snap upward at the very top of the range could exceed 127; drop an
-    // octave rather than emit an invalid note byte. Elk has no `while`, so this
-    // is the documented `for (; cond;)` idiom.
-    for (; out > 127;) {
+    // octave rather than emit an invalid note byte.
+    while (out > 127) {
         out = out - 12;
     }
-    for (; out < 0;) {
+    while (out < 0) {
         out = out + 12;
     }
     return out;
 };
 
-onMidiMessage = function(midiPort, msg) {
+function onMidiMessage(midiPort, msg) {
     if (!matchesChannel(midi.getChannel(msg))) {
         midiOut.send(msg);
         return;

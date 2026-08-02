@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine Elk
+ * @engine QuickJs
  * @author stoermelder
  * @description Divides incoming MIDI clock, forwarding every Nth tick and emitting a trigger on the trigger output
  */
@@ -54,17 +54,17 @@ let state = {
     running: false
 };
 
-onLoad = function() {
+function onLoad() {
     rack.log("Clock divider initialized");
     rack.log("Divisor: ", config.divisor, " (24 ppqn / ", config.divisor, ")");
 };
 
-let resetPhase = function() {
+function resetPhase() {
     state.tickCount = 0;
     state.pulseCount = 0;
 };
 
-onMidiMessage = function(midiPort, msg) {
+function onMidiMessage(midiPort, msg) {
     if (midi.isStart(msg)) {
         resetPhase();
         state.running = true;
@@ -101,7 +101,7 @@ onMidiMessage = function(midiPort, msg) {
             trig.setTrigger(config.trigPort);
         }
         if (config.showOverlay) {
-            rack.overlay("Clock /" + number.toString(config.divisor), "pulse " + number.toString(state.pulseCount));
+            rack.overlay("Clock /" + config.divisor, "pulse " + state.pulseCount);
         }
         return;
     }

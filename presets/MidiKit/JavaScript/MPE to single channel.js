@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine Elk
+ * @engine QuickJs
  * @author stoermelder
  * @description Flattens MPE (one note per member channel) to a single channel, folding per-note pitch bend into note numbers
  */
@@ -67,7 +67,7 @@ let state = {
     counter: 0
 };
 
-onLoad = function() {
+function onLoad() {
     for (let c = 0; c <= 16; c++) {
         state.noteOfChannel[c] = -1;
         state.bendOfChannel[c] = 0;
@@ -79,7 +79,7 @@ onLoad = function() {
     rack.log("Bend range: ", config.bendRange, " semitones");
 };
 
-onUnload = function() {
+function onUnload() {
     for (let c = config.memberLow; c <= config.memberHigh; c++) {
         if (state.noteOfChannel[c] >= 0) {
             let off = midi.create();
@@ -89,36 +89,35 @@ onUnload = function() {
     }
 };
 
-let isMemberChannel = function(ch) {
+function isMemberChannel(ch) {
     return ch >= config.memberLow && ch <= config.memberHigh;
 };
 
 // Converts a raw pitch wheel reading to semitones, using config.bendRange.
 // getPitchWheel returns 0..16383 with 8192 as centre.
-let bendToSemitones = function(pitchWheel) {
+function bendToSemitones(pitchWheel) {
     return (pitchWheel - 8192) / 8192 * config.bendRange;
 };
 
-// Rounds to the nearest integer. Elk's number.floor plus 0.5 is enough here;
-// there is no number.round in the API.
-let roundToInt = function(x) {
-    return number.floor(x + 0.5);
+// Rounds to the nearest integer.
+function roundToInt(x) {
+    return Math.round(x);
 };
 
 // Clamps a note number into the valid MIDI range so a large bend near the
 // keyboard edges cannot produce an out-of-range note.
-let clampNote = function(note) {
-    return number.max(0, number.min(127, note));
+function clampNote(note) {
+    return Math.max(0, Math.min(127, note));
 };
 
 // True if ch is the member channel holding the most recently played note.
 // Expression messages from any other channel are dropped, because a single
 // output channel can only carry one pressure/timbre stream at a time.
-let isActiveChannel = function(ch) {
+function isActiveChannel(ch) {
     return ch === state.lastChannel;
 };
 
-onMidiMessage = function(midiPort, msg) {
+function onMidiMessage(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     // Master channel and anything outside the zone passes through untouched

@@ -1,6 +1,6 @@
 #include "MidiScriptEngine.h"
-#include "MidiScriptEngineElk.h"
 #include "MidiScriptEngineLua.h"
+#include "MidiScriptEngineQuickJs.h"
 #include "../../components/Knobs.hpp"
 #include "../../components/MidiWidget.hpp"
 #include "../../components/LedTextField.hpp"
@@ -177,74 +177,6 @@ struct MidiKitModule : Module {
 	uint64_t sample;
 	float sampleRate;
 
-	struct MidiKitScriptEngineElk : MidiScript::Elk::MidiScriptEngineElk {
-		MidiKitModule* module;
-
-		MidiKitScriptEngineElk() {
-			inputCount = 4;
-			inputTrigCount = 1;
-			outputTrigCount = 1;
-			paramCount = 4;
-			midiInputCount = 1;
-			midiOutputCount = 1;
-		}
-
-		void writeLog(std::string log, bool useTimestamp = true) override {
-			float timestamp = module->sampleRate != 0.f ? float(module->sample) / module->sampleRate : 0.f;
-			if (useTimestamp) {
-				module->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
-			}
-			else {
-				module->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, log));
-			}
-		};
-
-		void writeOverlay(std::string s1, std::string s2, std::string s3) override {
-			module->overlayQueue.push(0);
-			module->overlayMessage = std::make_tuple(s1, s2, s3);
-		};
-
-		void enableInput(int i) override {
-			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(module->inputInfos[i])->enabled = true;
-		};
-
-		float getInputVoltage(int i, uint8_t ch) override {
-			if (reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(module->inputInfos[i])->enabled)
-				return module->inputs[INPUT + i].getVoltage(ch);
-			else
-				return 0.f;
-		};
-
-		float getTrigVoltage(int i, uint8_t ch) override {
-			return module->inputs[INPUT_TRIG + i].getVoltage(ch);
-		};
-
-		uint64_t getTrigTicks(int i) override {
-			return module->inputTriggerTick;
-		};
-
-		void enableParam(int i) override {
-			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(module->paramQuantities[i])->enabled = true;
-		};
-
-		float getParamValue(int i) override {
-			if (reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(module->paramQuantities[i])->enabled)
-				return module->params[PARAM + i].getValue();
-			else
-				return 0.f;
-		};
-
-		void setTrig(int i, uint8_t ch, float duration = 1e-3f) override {
-			module->outputTriggerActive[ch] = true;
-			module->outputPulseGenerator[ch].trigger(duration);
-		}
-
-		void setTrigVoltage(int i, uint8_t ch, float voltage) override {
-			module->outputTriggerActive[ch] = false;
-			module->outputs[OUTPUT_TRIG].setVoltage(voltage, ch);
-		}
-	};
-
 	struct MidiKitScriptEngineLua : MidiScript::Lua::MidiScriptEngineLua {
 		MidiKitModule* module;
 
@@ -311,9 +243,75 @@ struct MidiKitModule : Module {
 		}
 	};
 
-	MidiKitScriptEngineElk se;
+	struct MidiKitScriptEngineQuickJs : MidiScript::QuickJs::MidiScriptEngineQuickJs {
+		MidiKitModule* module;
+
+		MidiKitScriptEngineQuickJs() {
+			inputCount      = 4;
+			inputTrigCount  = 1;
+			outputTrigCount = 1;
+			paramCount      = 4;
+			midiInputCount  = 1;
+			midiOutputCount = 1;
+		}
+
+		void writeLog(std::string log, bool useTimestamp = true) override {
+			float timestamp = module->sampleRate != 0.f ? float(module->sample) / module->sampleRate : 0.f;
+			if (useTimestamp) {
+				module->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
+			}
+			else {
+				module->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, log));
+			}
+		}
+
+		void writeOverlay(std::string s1, std::string s2, std::string s3) override {
+			module->overlayQueue.push(0);
+			module->overlayMessage = std::make_tuple(s1, s2, s3);
+		}
+
+		void enableInput(int i) override {
+			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(module->inputInfos[i])->enabled = true;
+		}
+
+		float getInputVoltage(int i, uint8_t ch) override {
+			if (reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(module->inputInfos[i])->enabled)
+				return module->inputs[INPUT + i].getVoltage(ch);
+			return 0.f;
+		}
+
+		float getTrigVoltage(int i, uint8_t ch) override {
+			return module->inputs[INPUT_TRIG + i].getVoltage(ch);
+		}
+
+		uint64_t getTrigTicks(int i) override {
+			return module->inputTriggerTick;
+		}
+
+		void enableParam(int i) override {
+			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(module->paramQuantities[i])->enabled = true;
+		}
+
+		float getParamValue(int i) override {
+			if (reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(module->paramQuantities[i])->enabled)
+				return module->params[PARAM + i].getValue();
+			return 0.f;
+		}
+
+		void setTrig(int i, uint8_t ch, float duration = 1e-3f) override {
+			module->outputTriggerActive[ch] = true;
+			module->outputPulseGenerator[ch].trigger(duration);
+		}
+
+		void setTrigVoltage(int i, uint8_t ch, float voltage) override {
+			module->outputTriggerActive[ch] = false;
+			module->outputs[OUTPUT_TRIG].setVoltage(voltage, ch);
+		}
+	};
+
 	MidiKitScriptEngineLua seLua;
-	MidiScript::MidiScriptEngine* activeEngine = &se;
+	MidiKitScriptEngineQuickJs seQuickJs;
+	MidiScript::MidiScriptEngine* activeEngine = &seQuickJs;
 
 	MidiKitModule() : MidiKitModule(defaultWorker()) {}
 	explicit MidiKitModule(std::shared_ptr<ITaskWorker> worker) {
@@ -322,28 +320,28 @@ struct MidiKitModule : Module {
 		configInput(INPUT_TRIG, "Trigger");
 		configOutput(OUTPUT_TRIG, "Trigger");
 		for (int i = 0; i < 4; i++) {
-			configInput<MidiScript::MidiScriptEnginePortInfo>(INPUT + i)->se = &se;
-			configParam<MidiScript::MidiScriptEngineParamQuantity>(PARAM + i, 0.f, 1.f, 0.f)->se = &se;
+			configInput<MidiScript::MidiScriptEnginePortInfo>(INPUT + i)->se = &seQuickJs;
+			configParam<MidiScript::MidiScriptEngineParamQuantity>(PARAM + i, 0.f, 1.f, 0.f)->se = &seQuickJs;
 		}
 
 		processDivider.setDivision(8);
-		se.module = this;
 		seLua.module = this;
-		se.setWorker(worker);
+		seQuickJs.module = this;
 		seLua.setWorker(worker);
+		seQuickJs.setWorker(worker);
 		onReset();
 	}
 
-	// Runs the active script's onUnload() (all-notes-off etc.) while se/seLua
-	// are still fully-constructed MidiKitScriptEngineElk/Lua objects, i.e.
-	// before Module's own destructor (and this object's other members) start
-	// tearing down. Calling closeState() later, from ~MidiScriptEngineElk()/
-	// ~MidiScriptEngineLua() themselves, would run onUnload() through a
-	// vtable that no longer has this class's overrides (writeLog, trig.*,
-	// input.*, param.* are all pure virtual there) — undefined behaviour.
+	// Runs the active script's onUnload() (all-notes-off etc.) while
+	// seLua/seQuickJs are still fully-constructed MidiKitScriptEngine*
+	// objects, i.e. before Module's own destructor (and this object's other
+	// members) start tearing down. Calling closeState() later, from each
+	// engine's own destructor, would run onUnload() through a vtable that no
+	// longer has this class's overrides (writeLog, trig.*, input.*, param.*
+	// are all pure virtual there) — undefined behaviour.
 	~MidiKitModule() {
-		se.closeState();
 		seLua.closeState();
+		seQuickJs.closeState();
 	}
 
 	void onReset() override {
@@ -360,9 +358,10 @@ struct MidiKitModule : Module {
 			outputTriggerActive[i] = true;
 			outputPulseGenerator[i].reset();
 		}
-		activeEngine = &se;
-		se.loadScript("");
+		activeEngine = &seQuickJs;
+		seQuickJs.loadScript("");
 		seLua.loadScript("");
+		seQuickJs.loadScript("");
 	}
 
 	void onSampleRateChange(const Module::SampleRateChangeEvent& e) override {
@@ -454,12 +453,12 @@ struct MidiKitModule : Module {
 		}
 		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::RESET, 0.f, std::string("")));
 
-		// Detect engine from script header (@engine Lua  vs  @engine Elk / default)
+		// Detect engine from script header (@engine Lua, default QuickJs)
 		bool isLua = s.find("@engine Lua") != std::string::npos;
 
 		MidiScript::MidiScriptEngine* prevEngine = activeEngine;
 		activeEngine = isLua ? static_cast<MidiScript::MidiScriptEngine*>(&seLua)
-		                     : static_cast<MidiScript::MidiScriptEngine*>(&se);
+		                     : static_cast<MidiScript::MidiScriptEngine*>(&seQuickJs);
 
 		// Clear the engine that is no longer active (silently — RESET was already pushed)
 		if (prevEngine != activeEngine)
@@ -609,17 +608,17 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MidiKitModule>::appendContextMenu(menu);
 		menu->addChild(new MenuSeparator());
-		if (module->activeEngine == &module->se) {
-			size_t used, total;
-			if (module->se.getMemoryUsage(used, total)) {
-				float pct = total > 0 ? 100.f * used / total : 0.f;
-				menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
-			}
-		}
-		else if (module->activeEngine == &module->seLua) {
+		if (module->activeEngine == &module->seLua) {
 			size_t used;
 			if (module->seLua.getMemoryUsage(used)) {
 				menu->addChild(createMenuLabel(string::f("RAM usage: %zu KB", used / 1024)));
+			}
+		}
+		else if (module->activeEngine == &module->seQuickJs) {
+			size_t used, total;
+			if (module->seQuickJs.getMemoryUsage(used, total)) {
+				float pct = total > 0 ? 100.f * used / total : 0.f;
+				menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
 			}
 		}
 

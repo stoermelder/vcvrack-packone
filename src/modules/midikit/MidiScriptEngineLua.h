@@ -68,7 +68,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// ── Parse file header ────────────────────────────────────────────────
 		// Supports both Lua-style block comments and JS-style /** */ comments:
 		//
-		//   Elk/JS style:
+		//   JS style:
 		//     /**
 		//      * @engine Lua
 		//      * @author ...
@@ -240,7 +240,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	// Returns current bytes in use by the Lua heap, or false if no script is loaded.
-	// Unlike Elk there is no fixed arena to compare against: minilua's default allocator
+	// minilua's default allocator
 	// grows via realloc() with no cap, so only an absolute byte count is available.
 	bool getMemoryUsage(size_t& used) {
 		if (!L) return false;
@@ -358,7 +358,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_setglobal(L, "rack");
 
 		// ── number table ─────────────────────────────────────────────────────
-		// Mostly wraps existing Lua math.*; provided for Elk script compatibility.
+		// Mostly wraps existing Lua math.*; provided for JS script compatibility.
 		lua_newtable(L);
 		setTableFunc("abs",       lua_number_abs);
 		setTableFunc("ceil",      lua_number_ceil);
@@ -479,7 +479,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// with the same per-type contract as a single value - so scripts can
 		// log numbers/booleans directly instead of wrapping every one in
 		// number.toString(). Numbers use the same format as number.toString();
-		// strings are logged verbatim; nil logs as "null" to match Elk; any
+		// strings are logged verbatim; nil logs as "null" to match JS; any
 		// other value falls back to Lua's own stringification (luaL_tolstring)
 		// so the call never errors.
 		std::string log;

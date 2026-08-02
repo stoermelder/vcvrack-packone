@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine Elk
+ * @engine QuickJs
  * @author stoermelder
  * @description Arpeggiator clocked by the trigger input, with clock division, octave range, note length and playmode params
  */
@@ -82,40 +82,40 @@ param.getName = function(i) {
     return "";
 };
 
-let divisionIndex = function() {
+function divisionIndex() {
     let idx = number.floor(param.getValue(1) * DIVISIONS.length);
     if (idx >= DIVISIONS.length) idx = DIVISIONS.length - 1;
     return idx;
 };
 
-let octaveRange = function() {
+function octaveRange() {
     let o = number.floor(param.getValue(2) * 4) + 1;
     if (o > 4) o = 4;
     return o;
 };
 
-let playmodeIndex = function() {
+function playmodeIndex() {
     let idx = number.floor(param.getValue(4) * PLAYMODES.length);
     if (idx >= PLAYMODES.length) idx = PLAYMODES.length - 1;
     return idx;
 };
 
 param.getValueFormat = function(i) {
-    if (i === 1) return number.toString(DIVISIONS[divisionIndex()]) + " ticks/step";
-    if (i === 2) return number.toString(octaveRange()) + " oct";
+    if (i === 1) return DIVISIONS[divisionIndex()] + " ticks/step";
+    if (i === 2) return octaveRange() + " oct";
     if (i === 3) return number.toFixed(param.getValue(3) * 100, 0) + " %";
     if (i === 4) return PLAYMODES[playmodeIndex()];
     return number.toString(param.getValue(i));
 };
 
-let matchesChannel = function(ch) {
+function matchesChannel(ch) {
     return config.channel === 0 || ch === config.channel;
 };
 
 // Rebuilds state.pattern from state.held, the octave range and the playmode.
 // Called whenever the held-note set changes so the pattern is always fresh
 // at the next step boundary.
-let rebuildPattern = function() {
+function rebuildPattern() {
     let notes = [];
     let oct = octaveRange();
 
@@ -149,7 +149,7 @@ let rebuildPattern = function() {
 };
 
 // Releases whatever note the arp is currently sustaining, if any.
-let releaseSounding = function() {
+function releaseSounding() {
     if (state.soundingNote >= 0) {
         let off = midi.create();
         midi.setNoteOff(off, state.soundingChannel, state.soundingNote);
@@ -158,16 +158,16 @@ let releaseSounding = function() {
     }
 };
 
-onLoad = function() {
+function onLoad() {
     rack.log("Arpeggiator initialized");
     rack.log("Trigger input: ", config.trigPort);
 };
 
-onUnload = function() {
+function onUnload() {
     releaseSounding();
 };
 
-onMidiMessage = function(midiPort, msg) {
+function onMidiMessage(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     if (midi.isNoteOn(msg) && matchesChannel(ch) && midi.getValue(msg) > 0) {
@@ -206,7 +206,7 @@ onMidiMessage = function(midiPort, msg) {
     midiOut.send(msg);
 };
 
-onTrigger = function(trigPort) {
+function onTrigger(trigPort) {
     if (trigPort !== config.trigPort) return;
 
     let division = DIVISIONS[divisionIndex()];
@@ -237,7 +237,7 @@ onTrigger = function(trigPort) {
     state.soundingChannel = ch;
 
     if (config.showOverlay) {
-        rack.overlay("Arp " + PLAYMODES[playmodeIndex()], "note " + number.toString(note) + " (" + number.toString(state.step + 1) + "/" + number.toString(state.pattern.length) + ")");
+        rack.overlay("Arp " + PLAYMODES[playmodeIndex()], "note " + note + " (" + (state.step + 1) + "/" + state.pattern.length + ")");
     }
 
     state.step = state.step + 1;

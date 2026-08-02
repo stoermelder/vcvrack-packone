@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine Elk
+ * @engine QuickJs
  * @author stoermelder
  * @description Routes incoming CC messages on MIDI channel 1 to a MIDI channel set by parameter 1 on the panel
  */
@@ -14,13 +14,13 @@ param.getName = function(port) {
 
 param.getValueFormat = function(port) {
     if (port === 1) return number.toString(number.ceil(param.getValue(1) * 16));
-    return number.toString(param.getValue(i));
+    return number.toString(param.getValue(port));
 };
 
-onMidiMessage = function(midiPort, msg) {
+function onMidiMessage(midiPort, msg) {
     if (midi.isCc(msg) && midi.getChannel(msg) === 1) {
         let ch = number.ceil(param.getValue(1) * 16);
         midi.setChannel(msg, ch);
     }
     midiOut.send(msg);
-};
+}

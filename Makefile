@@ -29,10 +29,18 @@ SOUNDTOUCH_SOURCES = \
 	dep/soundtouch/source/SoundTouch/mmx_optimized.cpp \
 	dep/soundtouch/source/SoundTouch/sse_optimized.cpp
 
+# QuickJS dependency (used by MIDI-KIT)
+QUICKJS_SOURCES = \
+	dep/quickjs/quickjs.c \
+	dep/quickjs/cutils.c \
+	dep/quickjs/libregexp.c \
+	dep/quickjs/libunicode.c \
+	dep/quickjs/dtoa.c
+
 # Add .cpp files to the build
 SOURCES += $(wildcard src/*.cpp src/**/**/*.cpp)
-SOURCES += src/modules/midikit/elk.c
 SOURCES += src/modules/midikit/minilua.c
+SOURCES += $(QUICKJS_SOURCES)
 # Exclude test files from the main build
 SOURCES := $(filter-out src/test/%.cpp,$(SOURCES))
 SOURCES := $(filter-out %.test.cpp,$(SOURCES))
@@ -59,6 +67,24 @@ endif
 FLAGS += -Idep
 # Ensure headers from the SoundTouch library are found
 FLAGS += -Idep/soundtouch/include -Idep/soundtouch/source/SoundTouch
+
+# QuickJS's own sources #include "quickjs-atom.h" etc. unqualified, so they
+# need dep/quickjs on the search path — but adding that path plugin-wide
+# would let a bare #include <version> resolve to dep/quickjs/version instead
+# of the real C++ header, since the two collide on a case-insensitive
+# filesystem. A pattern rule that's more specific than compile.mk's own
+# "build/%.c.o: %.c" scopes the extra -I (and QuickJS's required
+# CONFIG_VERSION define) to just its own objects; everything else (including
+# MidiScriptEngineQuickJs.h's #include "quickjs.h", found via plain -Idep)
+# is unaffected.
+QUICKJS_FLAGS := -Idep/quickjs -DCONFIG_VERSION="\"2026-06-04\""
+# QuickJS's own -Wsign-compare noise (unsigned/signed comparisons throughout
+# its tagged-value code) isn't ours to fix; silence it here rather than for
+# the whole plugin.
+QUICKJS_FLAGS += -Wno-sign-compare
+build/dep/quickjs/%.c.o: dep/quickjs/%.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(QUICKJS_FLAGS) -c -o $@ $<
 
 
 # Add files to the ZIP package when running `make dist`

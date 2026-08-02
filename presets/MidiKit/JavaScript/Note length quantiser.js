@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine Elk
+ * @engine QuickJs
  * @author stoermelder
  * @description Replaces every note's held length with a fixed number of clock ticks, so all notes end on the grid
  */
@@ -54,7 +54,7 @@ let state = {
     sounding: []
 };
 
-onLoad = function() {
+function onLoad() {
     for (let n = 0; n < 128; n++) {
         state.sounding[n] = false;
     }
@@ -76,7 +76,7 @@ onLoad = function() {
 // at a time), so this releases on config.channel if fixed, or channel 1 when
 // config.channel is 0 (every channel) - the same best-effort choice
 // Chord harmonizer makes for the same reason.
-onUnload = function() {
+function onUnload() {
     let ch = config.channel === 0 ? 1 : config.channel;
     for (let n = 0; n < 128; n++) {
         if (state.sounding[n]) {
@@ -87,18 +87,18 @@ onUnload = function() {
     }
 };
 
-let matchesChannel = function(ch) {
+function matchesChannel(ch) {
     return config.channel === 0 || ch === config.channel;
 };
 
 // Builds and schedules the Note-Off that ends a quantised note.
-let scheduleNoteOff = function(ch, note) {
+function scheduleNoteOff(ch, note) {
     let off = midi.create();
     midi.setNoteOff(off, ch, note);
     midiOut.sendAfterTrigger(off, config.trigPort, config.lengthTicks);
 };
 
-onMidiMessage = function(midiPort, msg) {
+function onMidiMessage(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     if (midi.isNoteOn(msg) && matchesChannel(ch)) {

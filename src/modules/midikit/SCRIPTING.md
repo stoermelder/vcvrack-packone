@@ -1,50 +1,49 @@
 # MIDI-KIT scripting reference
 
 MIDI-KIT scripts run in one of two embedded engines, chosen by the `@engine`
-header tag: **Elk** (a JavaScript subset) or **Lua** (a sandboxed Lua 5.4 via
+header tag: **QuickJs** (a full JavaScript engine) or **Lua** (a sandboxed Lua 5.4 via
 minilua). Both engines expose the *same* API (`midi`, `midiOut`, `input`,
 `trig`, `param`, `number`, `rack`) with 1-based indices for ports,
 channels, and params. Pick the engine per script; the module identifies it
 from the header, not the file extension.
 
-Implementation: [MidiScriptEngineElk.h](MidiScriptEngineElk.h) (uses
-[elk.h](elk.h)/[elk.c](elk.c)) and [MidiScriptEngineLua.h](MidiScriptEngineLua.h)
+Implementation: [MidiScriptEngineQuickJs.h](MidiScriptEngineQuickJs.h) (uses
+[quickjs.h](../../../dep/quickjs/quickjs.h)) and [MidiScriptEngineLua.h](MidiScriptEngineLua.h)
 (uses [minilua.h](minilua.h)/[minilua.c](minilua.c)). Shared interface:
 [MidiScriptEngine.h](MidiScriptEngine.h).
 
-## When to write Elk (JavaScript) vs Lua
+## When to write QuickJs (JavaScript) vs Lua
 
 Both engines are similarly capable for the common case (reacting to
 `onMidiMessage`, building/sending messages). Pick based on these differences:
 
-| | Elk (JS) | Lua |
+| | QuickJs (JS) | Lua |
 |---|---|---|
-| Language completeness | A JS **subset**: no `while`, `var`/`const`, `switch`, `try`, `class`, `new`, `this`, and functions must be expressions (`let f = function(){}`) — see [Elk language limitations](#elk-language-limitations) | Full Lua 5.4 syntax; only the *library* is trimmed |
-| Data structures | Array literals `[1,2,3]`, object literals `{a:1}` (see [elk_array.md](elk_array.md)) | Only tables (`{}`); no literal array sugar, must use `{ {...}, {...} }` and `#t`/`ipairs` |
-| Stdlib | Minimal subset of JS, no regex/JSON/closures over complex types guaranteed | Real Lua stdlib subset: `math`, `string`, `table` (no `io`, `os`, `package`, `debug` — sandboxed) |
-| String formatting | `number.toString(x)` helper needed for numeric concatenation | Lua auto-coerces numbers in `..` concatenation; `string.format` available |
-| Familiarity | Preferred if the user/preset is JS-oriented or ports logic from another Elk script | Preferred if the script needs `string.format`, `table.sort`, pattern matching, or other real stdlib features |
-| Performance/footprint | `elk.c` is a tiny embeddable interpreter, fixed memory arena | minilua is a stripped full Lua VM; similarly small footprint |
+| Language completeness | Full JavaScript (ES2020): `while`, `switch`, `try`, `class`, `new`, `this`, `var`/`let`/`const`, function declarations, arrow functions — see [QuickJS language support](#quickjs-language-support) | Full Lua 5.4 syntax; only the *library* is trimmed |
+| Data structures | Array literals `[1,2,3]`, object literals `{a:1}` | Only tables (`{}`); no literal array sugar, must use `{ {...}, {...} }` and `#t`/`ipairs` |
+| Stdlib | Full JS standard library: `Math`, `JSON`, `String`, `Array`, ... | Real Lua stdlib subset: `math`, `string`, `table` (no `io`, `os`, `package`, `debug` — sandboxed) |
+| String formatting | JS auto-coerces numbers in `+` concatenation; `number.toString()`/`number.toFixed()` helpers available | Lua auto-coerces numbers in `..` concatenation; `string.format` available |
+| Familiarity | Preferred if the user/preset is JS-oriented or ports logic from another JS script | Preferred if the script needs `string.format`, `table.sort`, pattern matching, or other real stdlib features |
+| Performance/footprint | QuickJS is a full embeddable JS engine with a 1 MiB memory limit | minilua is a stripped full Lua VM; similarly small footprint |
 
 Default guidance: **match whatever engine sibling/companion scripts in the
 same preset pair already use** (e.g. a generator + converter pair should
-both be Lua or both be Elk, so users can read them side by side). If there's
+both be Lua or both be QuickJs, so users can read them side by side). If there's
 no existing convention, prefer Lua for anything doing string formatting or
-table sorting, and Elk for anything that benefits from array/object literal
-syntax or is adapted from existing JS example scripts. For anything with
-non-trivial control flow, Lua is the safer default — Elk's missing `while`,
-`switch` and `try` tend to surface only once the script is already written.
+table sorting, and QuickJs for anything that benefits from array/object literal
+syntax or is adapted from existing JS example scripts. Both are full languages,
+so either is a safe choice for non-trivial control flow.
 
 ## Required file header
 
 The engine is selected by parsing `@key value` tags out of the leading
 comment block only — nothing after the block is scanned for tags.
 
-Elk (JS-style `/** ... */`):
+QuickJs (JS-style `/** ... */`):
 ```javascript
 /**
  * @target stoermelder MIDI-KIT
- * @engine Elk
+ * @engine QuickJs
  * @author yourname
  * @description One-line summary shown in the module log on load
  */
@@ -60,7 +59,7 @@ Lua (Lua-style `--[[ ... --]]`):
 --]]
 ```
 
-`@engine` is mandatory and must exactly match `Elk` or `Lua` for the
+`@engine` is mandatory and must exactly match `QuickJs` or `Lua` for the
 respective loader, or the script is rejected. `@author`/`@description` are
 optional but get echoed to the module's log on load. `@target` is
 conventionally present but not checked by the loader.
@@ -72,15 +71,10 @@ conventionally present but not checked by the loader.
   (`midiPort` is 1-based). Define it as a global function — it's the only
   callback the engine looks for per message; a script that never defines it
   loads fine but silently ignores all incoming MIDI (logged once at load
-  time). **In Elk it must be defined with plain assignment, NOT `let`:**
-  `onMidiMessage = function(...) {...};` — same reason as `onLoad`/`onUnload`
-  below: the name already exists as a pre-registered no-op before your
-  script runs, and `let onMidiMessage = ...` collides with it and fails to
-  parse (`'onMidiMessage' already declared`). The `function onMidiMessage(...)
-  {}` declaration form is *also* a parse error in Elk, independent of that —
-  see [Elk language limitations](#elk-language-limitations). Lua has neither
-  restriction: `onMidiMessage = function(...) end` or
-  `function onMidiMessage(...) end` both work.
+  time). In QuickJs, define it as a global function — either
+  `function onMidiMessage(midiPort, msg) {...}` or
+  `onMidiMessage = function(midiPort, msg) {...}` both work. Lua likewise:
+  `onMidiMessage = function(...) end` or `function onMidiMessage(...) end`.
 - Optional `input.getName(i)`, `param.getName(i)`, `param.getValueFormat(i)`
   functions may be overridden to customize panel/input labeling; both
   engines seed defaults (`"Port " .. i` / `"Param " .. i`) that scripts can
@@ -92,12 +86,10 @@ conventionally present but not checked by the loader.
   message — e.g. reading `trig.getTicks()`/`input.*` and sending a MIDI
   message in response to an external clock/gate. A script that never
   defines it simply never has it called; unlike `onMidiMessage`, there is no
-  load-time log warning for omitting it. **In Elk it must be defined with
-  plain assignment, NOT `let`:** `onTrigger = function(trigPort) {...};` —
-  same reason as `onLoad`/`onUnload`/`onMidiMessage`: the name already
-  exists as a pre-registered no-op before your script runs. Lua has no such
-  restriction: `onTrigger = function(trigPort) end` or
-  `function onTrigger(trigPort) end` both work.
+  load-time log warning for omitting it. In QuickJs, define it as a global
+  function — `function onTrigger(trigPort) {...}` or
+  `onTrigger = function(trigPort) {...}` both work. Lua likewise:
+  `onTrigger = function(trigPort) end` or `function onTrigger(trigPort) end`.
 - There is no per-sample or per-frame callback — logic only runs in
   response to incoming MIDI messages (including clock 0xF8 realtime bytes)
   or trigger-input ticks via `onTrigger`.
@@ -113,75 +105,30 @@ conventionally present but not checked by the loader.
     script's own state is gone.
   - Both can call `midi.create()`/`midiOut.send()` like `onMidiMessage` can;
     messages sent from either are flushed the same way.
-  - **Elk-specific:** define these with **plain assignment, not `let`** —
-    `onLoad = function() { ... };` / `onUnload = function() { ... };`. Both
-    names already exist as no-op globals before your script runs (so the
-    engine always has something to call even if you don't define one), and
-    Elk raises a parse error on `let onLoad = ...` re-declaring an existing
-    global (`'onLoad' already declared`). Lua has no such restriction —
-    `function onLoad() ... end`/`onLoad = function() ... end` both work.
+  - In QuickJs, define them as global functions — `function onLoad() {...}`
+    or `onLoad = function() {...}` both work. Lua likewise:
+    `function onLoad() ... end`/`onLoad = function() ... end`.
 
-## Elk language limitations
+## QuickJS language support
 
-Elk is a small JavaScript *subset*, not a JS engine — a lot of ordinary
-JavaScript does not parse. This trips up most first-time scripts, and the
-error message is a bare `ERROR: parse error` with no line number, so the
-list below is worth reading before writing Elk. (Lua scripts are unaffected;
-minilua is a real Lua 5.4 VM with only the standard library trimmed.)
+QuickJs is a full JavaScript engine (ES2020), so all standard JavaScript
+syntax is available: `function` declarations, `while`/`do`/`for` loops,
+`switch`, `try`/`catch`/`throw`, `class`, `new`, `this`, `var`/`let`/`const`,
+arrow functions, destructuring, template literals, and the standard library
+(`Math`, `JSON`, `String`, `Array`, ...). There are no scriptlet subset
+restrictions to work around.
 
-**Not supported — these fail to load:**
+The only constraints come from the module, not the language:
 
-| Feature | Error | Use instead |
-|---|---|---|
-| `function f() {}` declaration | `parse error` | `let f = function() {};` |
-| `while (...) {}` | `'while' not implemented` | `for (;cond;) {}` |
-| `do {} while (...)` | `'do' not implemented` | `for (;;) { ...; if (!cond) break; }` |
-| `var x` | `'var' not implemented` | `let x` |
-| `const x` | `'const' not implemented` | `let x` |
-| `switch` | `'switch' not implemented` | `if` / `else if` chain |
-| `try` / `catch` / `throw` | `'try' not implemented` | — no exception handling |
-| `class` | `'class' not implemented` | plain object literals |
-| `new X()` | `bad expr` | object literals `{}` |
-| `this` | `bad expr` | — no method receivers |
-| `delete o.k` | `'delete' not found` | assign `null` |
-| `x instanceof Y` | `parse error` | — |
+- A **1 MiB memory limit** on the QuickJS heap (see
+  `MidiScriptEngineQuickJs.h`).
+- The script runs in a **sandboxed API**: only the globals documented here
+  (`rack`, `number`, `input`, `trig`, `param`, `midi`, `midiOut`) are
+  available. There is no `require`/`import`, no `console`, and no file or
+  network access.
 
-**Supported:** `let`, `if` / `else if` / `else`, three-clause `for`
-(`for (let i = 0; i < n; i++)`), `for (;;)` with `break` / `continue`,
-`return`, function *expressions* (including nested and recursive via a `let`
-binding), array literals and indexing with `.length` (see
-[elk_array.md](elk_array.md)), object literals and property access, the
-ternary `?:`, string concatenation with `+`, and `typeof`.
-
-Booleans can be stored, passed and tested directly (`if (flag)`, `flag = !flag`,
-`cond ? a : b`). Two booleans can also be compared with `===`/`!==` — they
-compare as their `0`/`1` values, so `flag === true`, `flag !== false` and
-`true === true` work. Mixed comparisons stay type errors, consistent with the
-engine's rejection of other mixed operand types: `flag === 1` (boolean vs
-number) and `flag === 'true'` (boolean vs string) both fail with
-`type mismatch` — keep a numeric flag as `0`/`1` and test `flag === 1` for that
-case, as in
-[Scale quantiser.js](../../../presets/MidiKit/JavaScript/Scale%20quantiser.js).
-
-The authoritative list is elk's own parser
-([elk.c](elk.c), `js_stmt`) and its test suite
-([elk_unit_test.c](elk_unit_test.c)); the table above was verified against the
-engine as built here.
-
-Because there is no `while`, the common "loop until done" shape becomes:
-
-```javascript
-/**
- * @engine Elk
- * @description Example of the for-loop idiom
- */
-onMidiMessage = function(midiPort, msg) {
-    for (let i = 0; i < 4; i++) {
-        if (input.isLow(i + 1)) continue;
-        rack.log("input ", i + 1, " is high");
-    }
-};
-```
+Booleans are real JavaScript booleans: `if (flag)`, `flag = !flag`,
+`cond ? a : b`, and `flag === true` all work as in any JS engine.
 
 Note also that a script whose *only* header tag is `@engine` fails to load —
 the tag parser captures a trailing space and the value no longer matches
@@ -196,7 +143,7 @@ every example in this document does.
   coerced the same way as a single value: strings are logged verbatim (no
   added quotes), numbers use the same format as `number.toString()` (so
   `rack.log(1 / 3)` prints `0.333333`), booleans log as `true`/`false`, and
-  `null`/`undefined` (Elk) / `nil` (Lua) log as `null`/`undefined`. Other
+  `null`/`undefined` (QuickJs) / `nil` (Lua) log as `null`/`undefined`. Other
   values (objects, arrays, tables, functions) use each engine's own
   stringification — scalars are guaranteed to format identically in both
   engines.
@@ -231,7 +178,7 @@ Present in both engines identically (Lua re-exposes these even though
 Messages are opaque handles (indices into an internal store, max 32 live per
 callback) created with `midi.create()` or `midi.createNRPN()`; `onMidiMessage`
 also receives the incoming message as handle `0`/implicit first arg (Lua:
-index `0`, Elk: same convention).
+index `0`, QuickJs: same convention).
 
 - `midi.create()` → new empty message handle.
 - `midi.clone(msg)` → new message handle carrying an independent copy of
@@ -329,6 +276,6 @@ rather than decoding this by hand).
   [nrpn_generator.lua](nrpn_generator.lua) for constructing NRPN messages.
 - Lua's sandboxed stdlib excludes `io`, `os`, `package`, `debug` — no file
   access, no OS calls, by design.
-- Both engines only see `@engine`-matching scripts; loading an Elk script
+- Both engines only see `@engine`-matching scripts; loading a QuickJs script
   into what expects `@engine Lua` (or vice versa) fails with an explicit
   "not compatible" log message rather than silently misinterpreting it.

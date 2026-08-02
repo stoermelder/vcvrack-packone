@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine Elk
+ * @engine QuickJs
  * @author stoermelder
  * @description Reshapes Note-On velocity with a knob-controlled curve, plus configurable floor and ceiling
  */
@@ -66,20 +66,20 @@ param.getValueFormat = function(port) {
     return "";
 };
 
-onLoad = function() {
+function onLoad() {
     rack.log("Velocity curve initialized");
     rack.log("Range: ", config.minVelocity, "-", config.maxVelocity);
     rack.log("Knob ", config.curveParam, " sets the curve (centre = linear)");
 };
 
-let matchesChannel = function(ch) {
+function matchesChannel(ch) {
     return config.channel === 0 || ch === config.channel;
 };
 
 // Maps velocity 1..127 through the curve and into the configured range.
 // number.rescale takes an optional curve argument, which is exactly the
-// exponential shaping wanted here - no manual pow() needed (and Elk has none).
-let shapeVelocity = function(vel) {
+// exponential shaping wanted here - no manual pow() needed.
+function shapeVelocity(vel) {
     let knob = param.getValue(config.curveParam);
     let curve = (knob - 0.5) * 2 * config.curveAmount;
     let out = number.rescale(vel, 1, 127, config.minVelocity, config.maxVelocity, curve);
@@ -91,7 +91,7 @@ let shapeVelocity = function(vel) {
     return out;
 };
 
-onMidiMessage = function(midiPort, msg) {
+function onMidiMessage(midiPort, msg) {
     if (midi.isNoteOn(msg) && matchesChannel(midi.getChannel(msg))) {
         let vel = midi.getValue(msg);
 

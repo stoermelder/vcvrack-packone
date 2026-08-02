@@ -59,15 +59,15 @@ TEST_CASE("Script can override input.getName", "[MidiKit][Lua]") {
 }
 
 
-static const char* ELK_HEADER = R"(/**
- * @engine Elk
+static const char* QUICKJS_HEADER = R"(/**
+ * @engine QuickJs
  */
 )";
 
-TEST_CASE("Elk-tagged script is rejected by Lua engine", "[MidiKit][Lua]") {
+TEST_CASE("QuickJs-tagged script is rejected by Lua engine", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
-	m->seLua.loadScript(ELK_HEADER);
+	m->seLua.loadScript(QUICKJS_HEADER);
 
 	REQUIRE(m->seLua.L == nullptr);
 
@@ -188,7 +188,7 @@ end
 
 
 TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua]") {
-	// See the matching Elk test for why this can only assert "doesn't crash":
+	// See the matching QuickJs test for why this can only assert "doesn't crash":
 	// MidiKitModule's destructor calls closeState() (which runs onUnload())
 	// while se/seLua are still fully alive, specifically so that virtuals
 	// like writeLog/trig.*/input.*/param.* resolve correctly — calling them

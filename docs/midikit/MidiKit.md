@@ -1,6 +1,6 @@
 # stoermelder MIDI-KIT
 
-MIDI-KIT is a scripting module for altering, filtering, delaying, or generating MIDI messages. It bundles two lightweight scripting engines — a small subset of JavaScript and a small subset of Lua — so you can pick whichever language you are more comfortable with.
+MIDI-KIT is a scripting module for altering, filtering, delaying, or generating MIDI messages. It bundles two scripting engines — a full JavaScript engine (QuickJS) and a small subset of Lua — so you can pick whichever language you are more comfortable with.
 
 ## How it works
 
@@ -8,7 +8,7 @@ MIDI-KIT provides two interchangeable scripting engines. Both expose the same `m
 
 | Engine | Language | Underlying interpreter |
 | ------ | -------- | ---------------------- |
-| **JavaScript** | A small subset of JavaScript | [Elk 3](https://github.com/cesanta/elk) |
+| **JavaScript** | Full JavaScript (ES2020) | [QuickJS](https://bellard.org/quickjs/) |
 | **Lua**        | A small subset of Lua 5.x    | [MiniLua](https://github.com/edubart/minilua) (bundled) |
 
 Neither engine is optimized for raw performance, but MIDI events are typically sparse compared to audio/DSP processing and the engines are adequate for most MIDI scripting tasks.
@@ -18,10 +18,10 @@ The active engine is chosen by a header tag at the top of the script.
 JavaScript:
 ```
 /**
- * @engine Elk
+ * @engine QuickJs
  */
 ```
-(`@engine Elk` is also the default — JavaScript is assumed when no `@engine` tag is present.)
+(`@engine QuickJs` is also the default — JavaScript is assumed when no `@engine` tag is present.)
 
 Lua:
 ```
@@ -258,7 +258,7 @@ end
 
 ### Send an all-notes-off when the script unloads
 
-`onUnload()` runs once, right before the script's state is torn down — the script is being replaced, the module is reset, or the module is removed from the patch. It's the only reliable place to clean up notes a script left sounding, since nothing runs afterward to release them. Note the JavaScript version overrides `onUnload` with plain assignment, not `let` — see [JavaScript (Elk)](#javascript-elk).
+`onUnload()` runs once, right before the script's state is torn down — the script is being replaced, the module is reset, or the module is removed from the patch. It's the only reliable place to clean up notes a script left sounding, since nothing runs afterward to release them. Note the JavaScript version overrides `onUnload` with plain assignment — `onUnload = function() {...}` or `function onUnload() {...}` both work in QuickJS — see [JavaScript (QuickJS)](#javascript-quickjs).
 
 JavaScript:
 ```js
@@ -318,51 +318,33 @@ end
 
 ## Language reference
 
-MIDI-KIT supports two scripting languages, both deliberately small. The JavaScript engine is [Elk](https://github.com/cesanta/elk); the Lua engine is a bundled [MiniLua](https://github.com/edubart/minilua). Both are completely bare — neither ships with a standard library — and only the language core plus the MIDI-KIT API is available. The `midi` / `midiOut` / `input` / `trig` / `param` / `number` / `rack` API is identical across the two engines, so picking an engine is mostly a matter of personal taste.
+MIDI-KIT supports two scripting languages. The JavaScript engine is [QuickJS](https://bellard.org/quickjs/) (a full ES2020 engine); the Lua engine is a bundled [MiniLua](https://github.com/edubart/minilua). QuickJS ships with the full standard JavaScript library; MiniLua is trimmed to a safe subset. The `midi` / `midiOut` / `input` / `trig` / `param` / `number` / `rack` API is identical across the two engines, so picking an engine is mostly a matter of personal taste.
 
 ### Quick comparison
 
-| | JavaScript (Elk) | Lua (MiniLua) |
+| | JavaScript (QuickJS) | Lua (MiniLua) |
 | - | ---------------- | ------------- |
-| Statement terminator | `;` required | newline / `;` (no `;` required) |
-| Variable declaration | `let x = 1;` | `local x = 1` (globals are unprefixed) |
-| Strict equality | `===`, `!==` | `==`, `~=` (no implicit conversion in either) |
-| Logical operators | `&&`, `\|\|`, `!` | `and`, `or`, `not` |
+| Statement terminator | `;` optional (ASI) | newline / `;` (no `;` required) |
+| Variable declaration | `let x = 1;` (also `var`, `const`) | `local x = 1` (globals are unprefixed) |
+| Strict equality | `===`, `!==` (also `==`, `!=`) | `==`, `~=` (no implicit conversion in either) |
+| Logical operators | `&&`, `||`, `!` | `and`, `or`, `not` |
 | Block keyword | `{ }` | `do ... end` / `function ... end` |
-| Function definition | `let f = function(x) { ... };` | `local f = function(x) ... end` |
+| Function definition | `function f(x) { ... }` or `let f = function(x) { ... };` | `local f = function(x) ... end` |
 | String length | counts UTF-8 **bytes** | counts **bytes** as well |
-| Implicit number→string | **no** — use `number.toString(n)` | **yes** for `..` concatenation; use `tostring(n)` elsewhere |
+| Implicit number→string | **yes** in `+` concatenation | **yes** for `..` concatenation; use `tostring(n)` elsewhere |
 | Comments | `//` and `/* */` | `--` and `--[[ ]]` |
-| Header convention | `/** ... @engine Elk ... */` | `--[[ ... @engine Lua ... --]]` |
+| Header convention | `/** ... @engine QuickJs ... */` | `--[[ ... @engine Lua ... --]]` |
 
-### JavaScript (Elk)
+### JavaScript (QuickJS)
 
-#### Supported features
+QuickJS is a full JavaScript engine (ES2020), so all standard JavaScript syntax and the standard library are available: `function` declarations, `while`/`do`/`for` loops, `switch`, `try`/`catch`/`throw`, `class`, `new`, `this`, `var`/`let`/`const`, arrow functions, destructuring, template literals, and `Math`/`JSON`/`String`/`Array`/`Date`/`RegExp`/`Number`. There are no scriptlet subset restrictions to work around.
 
-- Operations: all standard JS operations except:
-   - `!=`, `==`. Use strict comparison `!==`, `===`
-   - No computed member access `a[b]`
-   - No exponentiation operation `a ** b`
-- Typeof: `typeof('a') === 'string'`
-- For loop: `for (...;...;...)  ...`
-- Conditional: `if (...) ... else ...`
-- Ternary operator `a ? b : c`
-- Simple types: `let a, b, c = 12.3, d = 'a', e = null, f = true, g = false;`
-- Functions: `let f = function(x, y) { return x + y; };`
-- Objects: `let obj = {f: function(x) { return x * 2}}; obj.f(3);`
-- Every statement must end with a semicolon `;`
-- Strings are binary data chunks; their length counts bytes rather than Unicode code points: `'Київ'.length === 8`.
-- Arrays are supported.
+The only constraints come from the module, not the language:
 
-#### Not supported features
+- A **1 MiB memory limit** on the QuickJS heap.
+- The script runs in a **sandboxed API**: only the globals documented here (`rack`, `number`, `input`, `trig`, `param`, `midi`, `midiOut`) are available. There is no `require`/`import`, no `console`, and no file or network access.
 
-- No `var`, no `const`. Use `let` (strict mode only)
-- No `do`, `switch`, `while`. Use `for`
-- No `=>` functions. Use `let f = function(...) {...};`
-- No closures, prototypes, `this`, `new`, `delete`
-- No standard library: no `Date`, `Regexp`, `Function`, `String`, `Number`
-
-Be aware that there is no implicit casting, especially for casting numbers to strings. For this purpose the function `number.toString` has been added.
+Strings are binary data chunks; their length counts bytes rather than Unicode code points: `'Київ'.length === 8`. Numbers are ordinary JavaScript numbers; `+` concatenation auto-coerces numbers to strings, and `number.toString(n)` is also available for explicit conversion.
 
 ### Lua (MiniLua)
 
@@ -399,14 +381,14 @@ There is no implicit number-to-string coercion outside `..` concatenation — nu
 
 ## Programming reference
 
-The API below is identical for both scripting engines — the function names, argument semantics, and return values do not depend on whether the active engine is JavaScript or Lua. Where the syntax of the call differs between languages, the examples in the corresponding section above (JavaScript (Elk) / Lua (MiniLua)) apply.
+The API below is identical for both scripting engines — the function names, argument semantics, and return values do not depend on whether the active engine is JavaScript or Lua. Where the syntax of the call differs between languages, the examples in the corresponding section above (JavaScript (QuickJS) / Lua (MiniLua)) apply.
 
 ### Global functions
 
 - `onMidiMessage(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
-- `onTrigger(trigPort)`: Optional. Called whenever a trigger arrives on CV trigger input port `trigPort` (only *1* is supported in this version). This is the only entry point for script logic that isn't driven by an incoming MIDI message — e.g. sending a MIDI message in response to an external clock/gate. A script that doesn't define it simply never has it called. **In JavaScript (Elk), define it with plain assignment, not `let`:** `onTrigger = function(trigPort) { ... };` — see [JavaScript (Elk)](#javascript-elk) below.
-- `onLoad()`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. Use it in place of a manually-called `init()` function at the bottom of the file. **In JavaScript (Elk), define it with plain assignment, not `let`:** `onLoad = function() { ... };` — see [JavaScript (Elk)](#javascript-elk) below.
-- `onUnload()`: Optional. Called once, right before the script's state is torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. **In JavaScript (Elk), define it with plain assignment, not `let`:** `onUnload = function() { ... };` — see [JavaScript (Elk)](#javascript-elk) below.
+- `onTrigger(trigPort)`: Optional. Called whenever a trigger arrives on CV trigger input port `trigPort` (only *1* is supported in this version). This is the only entry point for script logic that isn't driven by an incoming MIDI message — e.g. sending a MIDI message in response to an external clock/gate. A script that doesn't define it simply never has it called. **In JavaScript (QuickJS), define it as a global function** — `function onTrigger(trigPort) { ... }` or `onTrigger = function(trigPort) { ... };` both work — see [JavaScript (QuickJS)](#javascript-quickjs) below.
+- `onLoad()`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. Use it in place of a manually-called `init()` function at the bottom of the file. **In JavaScript (QuickJS), define it as a global function** — `function onLoad() { ... }` or `onLoad = function() { ... };` both work — see [JavaScript (QuickJS)](#javascript-quickjs) below.
+- `onUnload()`: Optional. Called once, right before the script's state is torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. **In JavaScript (QuickJS), define it as a global function** — `function onUnload() { ... }` or `onUnload = function() { ... };` both work — see [JavaScript (QuickJS)](#javascript-quickjs) below.
 
 ### rack
 

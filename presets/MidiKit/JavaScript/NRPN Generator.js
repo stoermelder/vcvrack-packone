@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine Elk
+ * @engine QuickJs
  * @author stoermelder
  * @description NRPN test generator for nrpn_to_cc.js - sweeps a 14-bit value driven by MIDI clock
  */
@@ -40,14 +40,14 @@ let state = {
     direction: 1
 };
 
-onLoad = function() {
+function onLoad() {
     rack.log("NRPN generator initialized");
     rack.log("Channel: ", config.channel);
     rack.log("NRPN number: ", config.nrpnNumber);
     rack.log("Ticks per step: ", config.ticksPerStep);
 };
 
-let sendNrpn = function() {
+function sendNrpn() {
     let nrpn = midi.createNRPN();
     midi.setNRPN(nrpn, config.channel, config.nrpnNumber, state.value);
     midiOut.send(nrpn);
@@ -55,7 +55,7 @@ let sendNrpn = function() {
     rack.log("Sent nrpn #", config.nrpnNumber, " = ", state.value);
 };
 
-let advanceValue = function() {
+function advanceValue() {
     state.value = state.value + state.direction * config.stepSize;
     if (state.value >= config.maxValue) {
         state.value = config.maxValue;
@@ -67,7 +67,7 @@ let advanceValue = function() {
     }
 };
 
-onMidiMessage = function(midiPort, msg) {
+function onMidiMessage(midiPort, msg) {
     if (midi.isClock(msg)) {
         state.tickCount++;
         if (state.tickCount >= config.ticksPerStep) {

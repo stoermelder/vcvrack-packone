@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine Elk
+ * @engine QuickJs
  * @author stoermelder
  * @description Turns every incoming note into a chord by adding transposed copies, with matching Note-Offs
  */
@@ -61,7 +61,7 @@ let state = {
     voicesOf: []
 };
 
-onLoad = function() {
+function onLoad() {
     for (let n = 0; n < 128; n++) {
         state.refCount[n] = 0;
         state.voicesOf[n] = [];
@@ -70,7 +70,7 @@ onLoad = function() {
     rack.log("Voices per note: ", config.intervals.length);
 };
 
-onUnload = function() {
+function onUnload() {
     for (let n = 0; n < 128; n++) {
         if (state.refCount[n] > 0) {
             let off = midi.create();
@@ -80,11 +80,11 @@ onUnload = function() {
     }
 };
 
-let matchesChannel = function(ch) {
+function matchesChannel(ch) {
     return config.channel === 0 || ch === config.channel;
 };
 
-onMidiMessage = function(midiPort, msg) {
+function onMidiMessage(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     if (!matchesChannel(ch)) {
@@ -123,7 +123,7 @@ onMidiMessage = function(midiPort, msg) {
             state.voicesOf[note] = voices;
 
             if (config.showOverlay) {
-                rack.overlay("Harmonize", number.toString(note) + " + " + number.toString(voices.length) + " voices");
+                rack.overlay("Harmonize", note + " + " + voices.length + " voices");
             }
             return;
         }

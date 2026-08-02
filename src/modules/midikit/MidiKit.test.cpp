@@ -2,10 +2,10 @@
 
 using namespace StoermelderPackOne::MidiScript;
 
-// Minimal Elk script header (body can be empty — the Elk engine still loads it)
-static constexpr const char* ELK_SCRIPT =
+// Minimal QuickJs script header (body can be empty — the engine still loads it)
+static constexpr const char* QUICKJS_SCRIPT =
 	"/**\n"
-	" * @engine Elk\n"
+	" * @engine QuickJs\n"
 	" */\n";
 
 // Minimal Lua script (synchronously loaded, no body needed)
@@ -57,10 +57,10 @@ TEST_CASE("process() does not crash with no script", "[MidiKit]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("Default engine is Elk", "[MidiKit]") {
+TEST_CASE("Default engine is QuickJs", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
-	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->se));
+	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seQuickJs));
 
 	Test::destroyModule(m);
 }
@@ -75,20 +75,20 @@ TEST_CASE("@engine Lua header selects Lua engine", "[MidiKit]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("Elk header keeps Elk engine active", "[MidiKit]") {
+TEST_CASE("QuickJs header keeps QuickJs engine active", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
-	// First switch to Lua, then switch back via an Elk-tagged script
+	// First switch to Lua, then switch back via a QuickJs-tagged script
 	m->loadScript(LUA_SCRIPT);
 	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seLua));
 
-	m->loadScript(ELK_SCRIPT);
-	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->se));
+	m->loadScript(QUICKJS_SCRIPT);
+	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seQuickJs));
 
 	Test::destroyModule(m);
 }
 
-TEST_CASE("clearScript resets to empty and restores Elk engine", "[MidiKit]") {
+TEST_CASE("clearScript resets to empty and restores QuickJs engine", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	m->loadScript(LUA_SCRIPT);
@@ -97,7 +97,7 @@ TEST_CASE("clearScript resets to empty and restores Elk engine", "[MidiKit]") {
 	m->clearScript();
 
 	REQUIRE(m->script == "");
-	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->se));
+	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seQuickJs));
 
 	Test::destroyModule(m);
 }
@@ -576,12 +576,12 @@ TEST_CASE("Log accepts entries from multiple producers", "[MidiKit][Log]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 	drainLogEntries(m);  // discard construction-time entries
 
-	// Producer A: the Elk engine's writeLog (the worker-thread path).
-	m->se.writeLog("from-engine", true);
+	// Producer A: the QuickJs engine's writeLog (the worker-thread path).
+	m->seQuickJs.writeLog("from-engine", true);
 	// Producer B: a direct push (the loadScript/onReset path).
 	m->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, std::string("from-direct")));
 	// Producer A again.
-	m->se.writeLog("from-engine-2", false);
+	m->seQuickJs.writeLog("from-engine-2", false);
 
 	auto entries = drainLogEntries(m);
 	REQUIRE(entries.size() == 3);
@@ -601,7 +601,7 @@ TEST_CASE("LoadScript emits a RESET log entry", "[MidiKit][Log]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 	drainLogEntries(m);  // discard construction-time entries
 
-	m->loadScript(ELK_SCRIPT);
+	m->loadScript(QUICKJS_SCRIPT);
 
 	auto entries = drainLogEntries(m);
 	REQUIRE(!entries.empty());

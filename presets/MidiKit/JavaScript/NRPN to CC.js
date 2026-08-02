@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine Elk
+ * @engine QuickJs
  * @author stoermelder
  * @description NRPN to 14-bit CC converter
  */
@@ -46,14 +46,14 @@ let state = {
     hasValueMsb: false
 };
 
-onLoad = function() {
+function onLoad() {
     rack.log("NRPN to CC converter initialized");
     rack.log("Mapped NRPN numbers: ", config.map.length);
     rack.log("Channel: ", config.ccChannel);
 };
 
 // Returns the CC number mapped to nrpnNumber, or -1 if not mapped
-let findCcNumber = function(nrpnNumber) {
+function findCcNumber(nrpnNumber) {
     let ccNumber = -1;
     for (let i = 0; i < config.map.length; i++) {
         if (config.map[i].nrpnNumber === nrpnNumber) {
@@ -64,7 +64,7 @@ let findCcNumber = function(nrpnNumber) {
     return ccNumber;
 };
 
-let resetState = function() {
+function resetState() {
     state.hasNumberLsb = false;
     state.hasNumberMsb = false;
     state.hasValueLsb = false;
@@ -72,7 +72,7 @@ let resetState = function() {
 };
 
 // Called when a MIDI message is received
-onMidiMessage = function(midiPort, msg) {
+function onMidiMessage(midiPort, msg) {
     if (!midi.isCc(msg)) {
         return;
     }

@@ -1,14 +1,14 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine Elk
+ * @engine QuickJs
  * @author stoermelder
  * @description Delays every Note-On message on channel 1 for two clock ticks on the clock input
  */
 
-onMidiMessage = function(midiInput, msg) {
+function onMidiMessage(midiInput, msg) {
     if (midi.isNoteOn(msg)) {
         if (midi.getChannel(msg) === 1) {
             midiOut.sendAfterTrigger(msg, 2);
         }
     }
-};
+}

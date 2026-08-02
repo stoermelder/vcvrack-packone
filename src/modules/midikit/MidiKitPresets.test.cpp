@@ -8,7 +8,7 @@
 // else in the suite would notice if one stopped working — and both engines fail
 // in ways that are easy to miss by reading: a script with an unsupported
 // construct can load cleanly, report "Script loaded", and then error out on
-// every single MIDI message. See project SCRIPTING.md ("Elk language
+// every single MIDI message. See project SCRIPTING.md ("QuickJs language
 // limitations"); the boolean === / !== entry there was found by this test.
 //
 // Each preset is loaded into a real module and fed representative traffic, then
@@ -638,10 +638,9 @@ TEST_CASE("'Scale quantiser.js/.lua' passes in-scale notes through unchanged", "
 	// C minor degrees: C D D# F G G# A# - each passes through note-for-note.
 	// All seven are fed to one module in a single run: that also covers the
 	// engine's GC boundary, since the 6th consecutive message through
-	// quantise() is roughly where Elk first pushes brk past its GC threshold
+	// quantise() is roughly where the engine's memory/GC limit first surfaces
 	// mid-call. That used to surface as a dropped message with
-	// "onMidiMessage error: ERROR: parse error"; see the F_CALL check in
-	// js_stmt() (elk.c).
+	// "onMidiMessage error: ERROR: parse error".
 	for (int note : {60, 62, 63, 65, 67, 68, 70}) {
 		auto ev = feedCollect(m, noteOn(1, note, 100));
 		REQUIRE(ev == std::vector<OutEvent>{{0x9, 1, static_cast<uint8_t>(note), 100, 0}});

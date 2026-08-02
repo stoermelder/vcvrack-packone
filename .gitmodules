@@ -10,3 +10,7 @@
 	path = dep/soundtouch
 	url = https://codeberg.org/soundtouch/soundtouch.git
 	commit = 0047e0b1ecfceb041348579119bf79b73a322a3a
+[submodule "dep/quickjs"]
+	path = dep/quickjs
+	url = https://github.com/bellard/quickjs.git
+	commit = 3d5e064e9dd67c70f7962836505a7fa067bf0a4e

@@ -2,7 +2,7 @@
 
 // Cross-engine equivalence suite (review finding D7).
 //
-// Elk and Lua are two independent ~1000-line implementations of the same
+// QuickJs and Lua are two independent ~1000-line implementations of the same
 // documented midi.*/midiOut.* API, with nothing structurally holding them in
 // agreement. Findings #7 (sendAfterTrigger argument order), #11 (SysEx
 // whitespace handling) and #13 (header-tag parsing) were all the same class
@@ -204,7 +204,7 @@ static void requireLoggedValues(const std::string& jsScript, const std::string& 
 // ever saw the value — so instead the script logs inside onMidiMessage and
 // the whole runtime log is compared line-for-line. (The load-time framework
 // chatter lives in loadLog and is ignored.) JS and Lua are asserted against
-// their own expected list because Elk has an `undefined` value that Lua's
+// their own expected list because QuickJs has an `undefined` value that Lua's
 // `nil` has no direct counterpart for (it logs as "null" in both engines).
 static void requireCoercedLog(const std::string& jsScript, const std::string& luaScript,
                                const std::vector<std::string>& jsExpected,
@@ -238,7 +238,7 @@ static void requireCoercedLog(const std::string& jsScript, const std::string& lu
 // a valid equivalence check rather than just an engine-internal readback.
 
 static const char* JS_NUMBER_ABS = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 rack.log("PROBE:" + number.toString(number.abs(-5)));
 rack.log("PROBE:" + number.toString(number.abs(3)));
@@ -259,7 +259,7 @@ TEST_CASE("number.abs is identical", "[MidiKit][CrossEngine]") {
 
 
 static const char* JS_NUMBER_CEIL = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 rack.log("PROBE:" + number.toString(number.ceil(3.2)));
 rack.log("PROBE:" + number.toString(number.ceil(-3.2)));
@@ -280,7 +280,7 @@ TEST_CASE("number.ceil is identical", "[MidiKit][CrossEngine]") {
 
 
 static const char* JS_NUMBER_CROSSFADE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 rack.log("PROBE:" + number.toString(number.crossfade(0, 10, 0.5)));
 rack.log("PROBE:" + number.toString(number.crossfade(100, 200, 0.25)));
@@ -301,7 +301,7 @@ TEST_CASE("number.crossfade is identical", "[MidiKit][CrossEngine]") {
 
 
 static const char* JS_NUMBER_FLOOR = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 rack.log("PROBE:" + number.toString(number.floor(3.8)));
 rack.log("PROBE:" + number.toString(number.floor(-3.8)));
@@ -322,7 +322,7 @@ TEST_CASE("number.floor is identical", "[MidiKit][CrossEngine]") {
 
 
 static const char* JS_NUMBER_MIN = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 rack.log("PROBE:" + number.toString(number.min(3, 7)));
 rack.log("PROBE:" + number.toString(number.min(-5, 5)));
@@ -343,7 +343,7 @@ TEST_CASE("number.min is identical", "[MidiKit][CrossEngine]") {
 
 
 static const char* JS_NUMBER_RESCALE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 rack.log("PROBE:" + number.toString(number.rescale(5, 0, 10, 0, 100)));
 )";
@@ -360,7 +360,7 @@ TEST_CASE("number.rescale is identical", "[MidiKit][CrossEngine]") {
 
 
 static const char* JS_NUMBER_TOSTRING = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 rack.log("PROBE:" + number.toString(42));
 rack.log("PROBE:" + number.toString(3.14));
@@ -384,13 +384,13 @@ TEST_CASE("number.toString is identical", "[MidiKit][CrossEngine]") {
 }
 
 
-// number.toFixed (#A10) — closes the gap number.toString left: Elk had no
+// number.toFixed (#A10) — closes the gap number.toString left: QuickJs had no
 // way to control decimal precision, so a knob-value overlay always printed
 // six decimals (0.500000). Covers 0 digits (rounds to an integer string,
 // unlike toString's "%i" branch which only triggers for exact integers),
 // a mid-range digit count, and rounding at the last retained digit.
 static const char* JS_NUMBER_TOFIXED = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 rack.log("PROBE:" + number.toFixed(3.14159, 2));
 rack.log("PROBE:" + number.toFixed(0.5, 0));
@@ -416,7 +416,7 @@ TEST_CASE("number.toFixed is identical", "[MidiKit][CrossEngine]") {
 // within the documented [0, 1) range, and in agreement about that range, so
 // this uses a bespoke check rather than requireLoggedValues.
 static const char* JS_NUMBER_RANDOM = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 rack.log("PROBE:" + number.toString(number.random()));
 )";
@@ -448,7 +448,7 @@ TEST_CASE("number.random stays within [0, 1) in both engines", "[MidiKit][CrossE
 // counter — so the value it logs must match the counter read back in the test.
 
 static const char* JS_RACK_GET_FRAME = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 rack.log("PROBE:" + number.toString(rack.getFrame()));
 )";
@@ -478,10 +478,10 @@ TEST_CASE("rack.getFrame returns the engine frame counter in both engines", "[Mi
 // null/undefined/nil are coerced. Numbers use the number.toString() format
 // (pinned by the number.toString cases above), so `rack.log(1 / 3)` prints
 // the same "0.333333" as `number.toString(1 / 3)`. `undefined` exists only
-// in Elk, so the JS and Lua expected lists differ by exactly that line.
+// in QuickJs, so the JS and Lua expected lists differ by exactly that line.
 
 static const char* JS_RACK_LOG_COERCE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     rack.log(42);
@@ -527,7 +527,7 @@ TEST_CASE("rack.log coerces numbers, booleans, strings and null in both engines"
 // noise — each value is formatted by rack.log, not by the lossy `+` coercion.
 
 static const char* JS_RACK_LOG_MULTI = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     rack.log("Member channels: ", 2, "-", 16);
@@ -556,7 +556,7 @@ TEST_CASE("rack.log concatenates multiple arguments in both engines", "[MidiKit]
 // --- setNoteOn / midiOut.send -----------------------------------------
 
 static const char* JS_NOTE_ON = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let out = midi.create();
@@ -588,7 +588,7 @@ TEST_CASE("setNoteOn produces identical wire bytes", "[MidiKit][CrossEngine]") {
 // and needs a CC message fed in rather than the default NoteOn.
 
 static const char* JS_CC_REROUTE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  * @description CC number +1 passthrough
  */
 onMidiMessage = function(port, msg) {
@@ -626,7 +626,7 @@ TEST_CASE("CC reroute script produces identical output in both engines", "[MidiK
 // --- setCc --------------------------------------------------------------
 
 static const char* JS_CC = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let out = midi.create();
@@ -653,7 +653,7 @@ TEST_CASE("setCc produces identical wire bytes", "[MidiKit][CrossEngine]") {
 // --- setCc clamping (documented: value clamped to 0-127) ---------------
 
 static const char* JS_CC_CLAMP = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let out = midi.create();
@@ -680,7 +680,7 @@ TEST_CASE("setCc clamps out-of-range value identically", "[MidiKit][CrossEngine]
 // --- setSysEx (finding #11/#17: payload-only convention) ---------------
 
 static const char* JS_SYSEX = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let out = midi.create();
@@ -712,7 +712,7 @@ TEST_CASE("setSysEx frames the payload identically", "[MidiKit][CrossEngine]") {
 // as "[]".
 
 static const char* JS_GET_SYSEX = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 let m1 = midi.create();
 midi.setSysEx(m1, "43104c0000");
@@ -747,13 +747,13 @@ TEST_CASE("getSysEx returns the payload and getSysExLength the size", "[MidiKit]
 // --- sendAfterTrigger (finding #7: 3-arg form) --------------------------
 //
 // Regression coverage for the actual bug in #7: Lua used to misread the
-// 3-arg form as (msg, trigPort, ticks) instead of matching Elk's
+// 3-arg form as (msg, trigPort, ticks) instead of matching QuickJs's
 // (midiPort-selected, msg, ticks). Comparing the two engines directly is
 // exactly the check that would have caught #7 the moment it was introduced,
 // rather than requiring a human to notice the scripts behaved differently.
 
 static const char* JS_SEND_AFTER_TRIGGER = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let out = midi.create();
@@ -780,10 +780,10 @@ TEST_CASE("sendAfterTrigger 2-arg form is identical", "[MidiKit][CrossEngine]") 
 // --- header-tag-only script (finding #13) -------------------------------
 //
 // A script whose header carries only @engine and nothing else must load in
-// both engines — #13 was Elk-only failing on this exact shape.
+// both engines — #13 was QuickJs-only failing on this exact shape.
 
 static const char* JS_HEADER_ONLY = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let out = midi.create();
@@ -810,7 +810,7 @@ TEST_CASE("@engine-only header loads identically in both engines", "[MidiKit][Cr
 // --- getRaw / setRaw round trip -----------------------------------------
 
 static const char* JS_RAW = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let out = midi.create();
@@ -837,7 +837,7 @@ TEST_CASE("setRaw writes identical bytes with no framing", "[MidiKit][CrossEngin
 // --- setPitchWheel --------------------------------------------------------
 
 static const char* JS_PITCH_WHEEL = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let out = midi.create();
@@ -864,7 +864,7 @@ TEST_CASE("setPitchWheel produces identical wire bytes", "[MidiKit][CrossEngine]
 // --- setProgramChange ------------------------------------------------------
 
 static const char* JS_PROGRAM_CHANGE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let out = midi.create();
@@ -891,7 +891,7 @@ TEST_CASE("setProgramChange produces identical wire bytes", "[MidiKit][CrossEngi
 // --- getProgramChange round-trips the program number (#D5) ----------------
 
 static const char* JS_GET_PROGRAM_CHANGE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 let low = midi.create();
 midi.setProgramChange(low, 4, 0);
@@ -922,7 +922,7 @@ TEST_CASE("getProgramChange round-trips the program number", "[MidiKit][CrossEng
 // --- setChanPressure (2-byte message, #A2) --------------------------------
 
 static const char* JS_CHAN_PRESSURE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let out = midi.create();
@@ -949,7 +949,7 @@ TEST_CASE("setChanPressure produces identical 2-byte wire message", "[MidiKit][C
 // --- setKeyPressure --------------------------------------------------------
 
 static const char* JS_KEY_PRESSURE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let out = midi.create();
@@ -976,7 +976,7 @@ TEST_CASE("setKeyPressure produces identical wire bytes", "[MidiKit][CrossEngine
 // --- setKeyPressure clamping (#A5) -----------------------------------------
 
 static const char* JS_KEY_PRESSURE_CLAMP = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let outHigh = midi.create();
@@ -1009,7 +1009,7 @@ TEST_CASE("setKeyPressure clamps out-of-range values identically (#A5)", "[MidiK
 // --- setNoteOn clamping (#A5) -----------------------------------------------
 
 static const char* JS_NOTE_ON_CLAMP = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let outHigh = midi.create();
@@ -1048,7 +1048,7 @@ TEST_CASE("setNoteOn clamps out-of-range velocity identically (#A5)", "[MidiKit]
 // a modified copy of the incoming message".
 
 static const char* JS_MIDI_CLONE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let src = midi.create();
@@ -1079,7 +1079,7 @@ TEST_CASE("midi.clone is an independent copy in both engines", "[MidiKit][CrossE
 
 
 static const char* JS_MIDI_CLONE_INCOMING = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let copy = midi.clone(msg);   // deep copy of the incoming note-on
@@ -1106,7 +1106,7 @@ TEST_CASE("midi.clone of the incoming message sends a modified copy", "[MidiKit]
 // --- setNoteOff --------------------------------------------------------
 
 static const char* JS_NOTE_OFF = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let out = midi.create();
@@ -1137,7 +1137,7 @@ TEST_CASE("setNoteOff produces identical wire bytes", "[MidiKit][CrossEngine]") 
 // 0 for backward compatibility; the velocity clamps to 0-127.
 
 static const char* JS_NOTE_OFF_VEL = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let out = midi.create();
@@ -1161,7 +1161,7 @@ TEST_CASE("setNoteOff with velocity produces identical wire bytes", "[MidiKit][C
 }
 
 static const char* JS_NOTE_OFF_VEL_PROBE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 let a = midi.create();
 midi.setNoteOff(a, 7, 48, 100);
@@ -1196,7 +1196,7 @@ TEST_CASE("setNoteOff velocity round-trips via getValue and clamps", "[MidiKit][
 // --- setCc14bit --------------------------------------------------------
 
 static const char* JS_CC_14BIT = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let msb = midi.create();
@@ -1231,7 +1231,7 @@ TEST_CASE("setCc14bit produces identical MSB/LSB wire messages", "[MidiKit][Cros
 // sending it is what actually exercises setNRPN's byte layout end to end.
 
 static const char* JS_NRPN = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let nrpn = midi.createNRPN();
@@ -1280,7 +1280,7 @@ TEST_CASE("setNRPN wire order is spec-compliant (MSB before LSB)", "[MidiKit]") 
 // engine-internal js_eval/lua_getglobal readbacks.
 
 static const char* JS_IS_TYPES = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 let msgNoteOn = midi.create();
 midi.setNoteOn(msgNoteOn, 1, 60, 100);
@@ -1343,7 +1343,7 @@ TEST_CASE("midi.is* predicates agree on every message type", "[MidiKit][CrossEng
 // returns -1 for that family, and the real 1-16 channel otherwise.
 
 static const char* JS_GET_CHANNEL_SENTINEL = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 let note = midi.create();
 midi.setNoteOn(note, 5, 60, 100);
@@ -1378,7 +1378,7 @@ TEST_CASE("midi.getChannel returns -1 on realtime/SysEx, the real channel otherw
 // probe.
 
 static const char* JS_INPUT_ENABLE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 input.enable(1);
 input.enable(2);
@@ -1412,7 +1412,7 @@ TEST_CASE("input.enable sets identical module state in both engines", "[MidiKit]
 // --- input.getVoltage / input.isHigh / input.isLow --------------------------
 
 static const char* JS_INPUT_GET_VOLTAGE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 input.enable(1);
 rack.log("PROBE:" + number.toString(input.getVoltage(1)));
@@ -1445,7 +1445,7 @@ TEST_CASE("input.getVoltage/isHigh/isLow read identical default state", "[MidiKi
 // asserting the same sequence on both engines instead of one at a time.
 
 static const char* JS_TRIG_GET_TICKS = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let out = midi.create();
@@ -1507,7 +1507,7 @@ TEST_CASE("trig.getTicks counts identical rising edges in both engines", "[MidiK
 // module state comparable directly across engines.
 
 static const char* JS_TRIG_SET_FUNCTIONS = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 trig.setGate(1, 100);
 trig.setHigh(1);
@@ -1552,7 +1552,7 @@ TEST_CASE("trig.setTrigger produces identical output-trigger state", "[MidiKit][
 // --- param.enable ------------------------------------------------------------
 
 static const char* JS_PARAM_ENABLE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 param.enable(1);
 param.enable(3);
@@ -1586,7 +1586,7 @@ TEST_CASE("param.enable sets identical module state in both engines", "[MidiKit]
 // --- param.getValue ----------------------------------------------------------
 
 static const char* JS_PARAM_GET_VALUE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     param.enable(1);
@@ -1637,7 +1637,7 @@ TEST_CASE("param.getValue reads identical value in both engines", "[MidiKit][Cro
 // --- midiOut.selectPort ------------------------------------------------
 
 static const char* JS_SELECT_PORT = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
@@ -1666,7 +1666,7 @@ TEST_CASE("midiOut.selectPort produces identical output port in both engines", "
 
 
 static const char* JS_SELECT_PORT_STICKY = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     midiOut.selectPort(1);
@@ -1699,7 +1699,7 @@ TEST_CASE("midiOut.selectPort stays selected across calls identically", "[MidiKi
 
 
 static const char* JS_SELECT_PORT_INVALID = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     midiOut.selectPort(2);
@@ -1722,7 +1722,7 @@ TEST_CASE("midiOut.selectPort rejects an out-of-range port identically", "[MidiK
 // --- midiOut.sendAfterMs ------------------------------------------------
 
 static const char* JS_SEND_AFTER_MS = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
@@ -1775,7 +1775,7 @@ TEST_CASE("midiOut.sendAfterMs schedules an identical future-frame message", "[M
 // --- midiOut.sendAfterTrigger with selected port / explicit trigPort ------
 
 static const char* JS_SEND_AFTER_TRIGGER_SELECTED_PORT = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
@@ -1804,7 +1804,7 @@ TEST_CASE("sendAfterTrigger uses the selected port identically", "[MidiKit][Cros
 
 
 static const char* JS_SEND_AFTER_TRIGGER_TRIGPORT = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
@@ -1843,7 +1843,7 @@ TEST_CASE("sendAfterTrigger with explicit trigPort (3 args) is identical", "[Mid
 static const char* OUTSIDE_CALLBACK_WARNING = "called outside a callback";
 
 static const char* JS_TOPLEVEL_CREATE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 let g = midi.create();
 )";
@@ -1860,7 +1860,7 @@ TEST_CASE("midi.create outside onMidiMessage warns identically", "[MidiKit][Cros
 
 
 static const char* JS_TOPLEVEL_CREATE_NRPN = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 let g = midi.createNRPN();
 )";
@@ -1877,7 +1877,7 @@ TEST_CASE("midi.createNRPN outside onMidiMessage warns identically", "[MidiKit][
 
 
 static const char* JS_CALLBACK_CREATE = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(port, msg) {
     let m = midi.create();
@@ -1904,7 +1904,7 @@ TEST_CASE("midi.create inside onMidiMessage does not warn in either engine", "[M
 // --- onLoad ----------------------------------------------------------------
 
 static const char* JS_ON_LOAD = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(midiPort, msg) {};
 onLoad = function() {
@@ -1951,7 +1951,7 @@ TEST_CASE("onLoad runs once and sends an identical message in both engines", "[M
 
 
 static const char* JS_NO_ON_LOAD = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 let x = number.max(3, 7);
 )";
@@ -1975,7 +1975,7 @@ TEST_CASE("Script without onLoad loads without any onLoad log noise in either en
 // script ever gets to use it.
 
 static const char* JS_TOPLEVEL_SYSEX = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 let msg = midi.create();
 midi.setSysEx(msg, "43104c0000");
@@ -1998,7 +1998,7 @@ TEST_CASE("Top-level message handle survives a load with no onLoad in both engin
 // --- onUnload ----------------------------------------------------------
 
 static const char* JS_ON_UNLOAD = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onMidiMessage = function(midiPort, msg) {};
 onUnload = function() {
@@ -2027,8 +2027,8 @@ TEST_CASE("onUnload runs when replaced and sends an identical message in both en
 		m->loadScript(script);
 		drainLog(m);
 
-		// clearScript() reloads an empty script, which always selects Elk
-		// (loadScript defaults to Elk when "@engine Lua" isn't found) — so
+		// clearScript() reloads an empty script, which always selects QuickJs
+		// (loadScript defaults to QuickJs when "@engine Lua" isn't found) — so
 		// activeEngine no longer points at the engine onUnload actually ran
 		// on by the time clearScript() returns. Capture it first.
 		MidiScriptEngine* engine = m->activeEngine;
@@ -2071,7 +2071,7 @@ TEST_CASE("onUnload runs again when a second script replaces the first, in both 
 
 
 static const char* JS_ON_TRIGGER = R"(/**
- * @engine Elk
+ * @engine QuickJs
  */
 onTrigger = function(trigPort) {
     rack.log("onTrigger " + number.toString(trigPort));

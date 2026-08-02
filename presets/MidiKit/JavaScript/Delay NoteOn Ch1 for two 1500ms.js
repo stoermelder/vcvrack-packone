@@ -1,12 +1,12 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine Elk
+ * @engine QuickJs
  * @author stoermelder
  * @description Delays every Note-On message on channel 1 for 1500ms
  */
 
-onMidiMessage = function(midiInput, msg) {
+function onMidiMessage(midiInput, msg) {
     if (midi.isNoteOn(msg) && midi.getChannel(msg) === 1) {
         midiOut.sendAfterMs(msg, 1500);
     }
-};
+}

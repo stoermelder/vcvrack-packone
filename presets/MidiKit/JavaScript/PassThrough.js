@@ -1,10 +1,10 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine Elk
+ * @engine QuickJs
  * @author stoermelder
  * @description Passes all incoming MIDI messages to the default MIDI output port.
  */
 
-onMidiMessage = function(midiPort, msg) {
+function onMidiMessage(midiPort, msg) {
     midiOut.send(msg);
-};
+}
