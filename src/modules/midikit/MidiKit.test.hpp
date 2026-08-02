@@ -9,10 +9,11 @@ using StoermelderPackOne::MidiScript::MidiScriptEngine;
 SYNC_MODEL(modelMidiKit, "MidiKit");
 Test::TestContext<> testContext;
 
-// Bypass the dylib factory — create directly so the injected SyncTaskWorker
-// is used instead of the module's default async TaskWorker.
-static MidiKitModule* createModule() {
-	MidiKitModule* m = new MidiKitModule(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+// Bypass the dylib factory — create directly so the injected worker is used
+// instead of the module's default async TaskWorker. Tests default to a
+// synchronous worker; the perf harness passes a real (async) worker.
+static MidiKitModule* createModule(std::shared_ptr<StoermelderPackOne::ITaskWorker> worker = std::make_shared<StoermelderPackOne::SyncTaskWorker>()) {
+	MidiKitModule* m = new MidiKitModule(std::move(worker));
 	m->id = rand();
 	Module::SampleRateChangeEvent e{44100.f, 1.f / 44100.f};
 	m->onSampleRateChange(e);
