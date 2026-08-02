@@ -96,6 +96,29 @@ static midi::Message startMsg() {
 	return msg;
 }
 
+// A 14-bit pitch wheel message. The engine reads it back as
+// (getValue() << 7) | getNote(), so the MSB goes in value and the LSB in note.
+static midi::Message pitchWheel(int ch, int value) {
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0xe);
+	msg.setChannel(ch);
+	msg.setNote(value & 0x7f);
+	msg.setValue((value >> 7) & 0x7f);
+	return msg;
+}
+
+// A 2-byte channel-pressure message; the pressure value lives in bytes[1],
+// read back via getChanPressure()/getNote().
+static midi::Message chanPressure(int ch, int value) {
+	midi::Message msg;
+	msg.setSize(2);
+	msg.setStatus(0xd);
+	msg.setChannel(ch);
+	msg.setNote(value);
+	return msg;
+}
+
 // One trigger-input tick, draining whatever the callback sent into a flat
 // list of decoded (status-nibble, channel, note, value) events, in order.
 struct NoteEvent {
@@ -862,6 +885,328 @@ TEST_CASE("'Clock divider.js/.lua' passes non-clock messages through unchanged",
 	// passThroughOther: a CC is forwarded untouched - only 0xF8 is thinned.
 	auto ev = feedCollect(m, cc(1, 20, 100));
 	REQUIRE(ev == std::vector<OutEvent>{{0xb, 1, 20, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the MPE to single channel preset. The shipped default
+// is a Lower Zone: channel 1 is the master channel (passes through untouched),
+// channels 2-16 are member channels, and everything member-channel is folded
+// onto config.outChannel=1. Per-note pitch bend is quantised to semitones and
+// folded into the note number (a semitone crossing re-articulates the note),
+// and channel pressure / CC 74 are forwarded only for the member channel
+// holding the most recently played note. These are the parts of the script
+// most likely to regress, and none of them are exercised by the generic smoke
+// check (which only asserts "it ran without erroring").
+static const char* MPE_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/MPE to single channel.js",
+	"presets/MidiKit/Lua/MPE to single channel.lua"
+};
+
+TEST_CASE("'MPE to single channel.js/.lua' rewrites member-channel notes to the output channel", "[MidiKit][MPE]") {
+	std::string path = GENERATE(from_range(std::begin(MPE_PRESET_PATHS), std::end(MPE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Note-On on member channel 2 is recreated on outChannel 1 (internal 0).
+	auto on = feedCollect(m, noteOn(2, 60, 100));
+	REQUIRE(on == std::vector<OutEvent>{{0x9, 0, 60, 100, 0}});
+
+	// The Note-Off releases the same folded note on the output channel.
+	auto off = feedCollect(m, noteOff(2, 60));
+	REQUIRE(off == std::vector<OutEvent>{{0x8, 0, 60, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'MPE to single channel.js/.lua' passes the master channel through untouched", "[MidiKit][MPE]") {
+	std::string path = GENERATE(from_range(std::begin(MPE_PRESET_PATHS), std::end(MPE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Channel 1 (internal 0) is the master channel - not a member channel - so
+	// it is sent through as-is on its own channel (internal 0), not folded.
+	auto on = feedCollect(m, noteOn(0, 60, 100));
+	REQUIRE(on == std::vector<OutEvent>{{0x9, 0, 60, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'MPE to single channel.js/.lua' folds a semitone pitch bend into the note number", "[MidiKit][MPE]") {
+	std::string path = GENERATE(from_range(std::begin(MPE_PRESET_PATHS), std::end(MPE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	feedCollect(m, noteOn(2, 60, 100));   // 60 sounding on member channel 2
+
+	// A bend of +0.75 semitones (pitch wheel 8320, centre 8192, range 48)
+	// rounds to +1 step, so the receiver re-articulates 60 as 61: release the
+	// old note, play the new one at the script's fixed velocity 100.
+	auto ev = feedCollect(m, pitchWheel(2, 8320));
+	REQUIRE(ev == std::vector<OutEvent>{{0x8, 0, 60, 0, 0}, {0x9, 0, 61, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'MPE to single channel.js/.lua' forwards channel pressure only for the active channel", "[MidiKit][MPE]") {
+	std::string path = GENERATE(from_range(std::begin(MPE_PRESET_PATHS), std::end(MPE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Channel 2 is the most recently played member channel, so its pressure
+	// is forwarded on the output channel.
+	feedCollect(m, noteOn(2, 60, 100));
+	auto p1 = feedCollect(m, chanPressure(2, 50));
+	REQUIRE(p1 == std::vector<OutEvent>{{0xd, 0, 50, 0, 0}});
+
+	// Playing a note on channel 3 makes it the active channel; pressure on the
+	// now-inactive channel 2 is dropped, while channel 3's is forwarded.
+	feedCollect(m, noteOn(3, 64, 100));
+	REQUIRE(feedCollect(m, chanPressure(2, 60)).empty());
+	auto p3 = feedCollect(m, chanPressure(3, 70));
+	REQUIRE(p3 == std::vector<OutEvent>{{0xd, 0, 70, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'MPE to single channel.js/.lua' forwards CC 74 only for the active channel", "[MidiKit][MPE]") {
+	std::string path = GENERATE(from_range(std::begin(MPE_PRESET_PATHS), std::end(MPE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	feedCollect(m, noteOn(2, 60, 100));   // active channel 2
+	auto c1 = feedCollect(m, cc(2, 74, 40));
+	REQUIRE(c1 == std::vector<OutEvent>{{0xb, 0, 74, 40, 0}});
+
+	// Channel 3 becomes active; CC 74 on channel 2 is dropped, on 3 forwarded.
+	feedCollect(m, noteOn(3, 64, 100));
+	REQUIRE(feedCollect(m, cc(2, 74, 30)).empty());
+	auto c3 = feedCollect(m, cc(3, 74, 60));
+	REQUIRE(c3 == std::vector<OutEvent>{{0xb, 0, 74, 60, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'MPE to single channel.js/.lua' forwards other CCs on a member channel to the output channel", "[MidiKit][MPE]") {
+	std::string path = GENERATE(from_range(std::begin(MPE_PRESET_PATHS), std::end(MPE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// A non-74 CC on a member channel is forwarded on the output channel.
+	auto ev = feedCollect(m, cc(2, 20, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0xb, 0, 20, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the Velocity curve preset. The shipped default is
+// config.minVelocity=1, maxVelocity=127, curveAmount=2, channel=0 (every
+// channel), with the curve shape read live from panel param 1. At knob 0.5
+// the curve is linear, so velocity passes through unchanged; velocity 0 (the
+// running-status spelling of a Note-Off) must always be left alone; and
+// non-note messages must pass through untouched.
+static const char* VELOCITY_CURVE_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/Velocity curve.js",
+	"presets/MidiKit/Lua/Velocity curve.lua"
+};
+
+TEST_CASE("'Velocity curve.js/.lua' passes velocity through unchanged at the linear knob", "[MidiKit][VelocityCurve]") {
+	std::string path = GENERATE(from_range(std::begin(VELOCITY_CURVE_PRESET_PATHS), std::end(VELOCITY_CURVE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	// knob 0.5 -> curve 0 -> identity mapping.
+	m->params[MidiKitModule::PARAM + 0].setValue(0.5f);
+
+	// The script passes the message through on its own channel (internal 1).
+	auto ev = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0x9, 1, 60, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Velocity curve.js/.lua' leaves velocity 0 untouched even off-linear", "[MidiKit][VelocityCurve]") {
+	std::string path = GENERATE(from_range(std::begin(VELOCITY_CURVE_PRESET_PATHS), std::end(VELOCITY_CURVE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	// A strongly non-linear knob would reshape any real velocity, but a
+	// Note-On with velocity 0 is a Note-Off in disguise and must pass through.
+	m->params[MidiKitModule::PARAM + 0].setValue(1.0f);
+
+	auto ev = feedCollect(m, noteOn(1, 60, 0));
+	REQUIRE(ev == std::vector<OutEvent>{{0x9, 1, 60, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Velocity curve.js/.lua' passes non-note messages through unchanged", "[MidiKit][VelocityCurve]") {
+	std::string path = GENERATE(from_range(std::begin(VELOCITY_CURVE_PRESET_PATHS), std::end(VELOCITY_CURVE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	auto ev = feedCollect(m, cc(1, 20, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0xb, 1, 20, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the NRPN to CC preset. The shipped config.map maps
+// NRPN 0->CC 0, 1->CC 1, 2->CC 2 on ccChannel 1. A full NRPN write is four CCs
+// (99/98 number MSB/LSB, 6/38 value MSB/LSB); once all four arrive the 14-bit
+// value is emitted as a 14-bit CC pair (CC n = MSB, CC n+32 = LSB). Unmapped
+// NRPN numbers are ignored, and nothing is emitted until all four bytes are
+// present.
+static const char* NRPN_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/NRPN to CC.js",
+	"presets/MidiKit/Lua/NRPN to CC.lua"
+};
+
+TEST_CASE("'NRPN to CC.js/.lua' converts a mapped NRPN to a 14-bit CC pair", "[MidiKit][NRPN]") {
+	std::string path = GENERATE(from_range(std::begin(NRPN_PRESET_PATHS), std::end(NRPN_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// NRPN 1 (number MSB 0, LSB 1) with value 8192 (value MSB 64, LSB 0).
+	// Mapped to CC 1: CC 1 = MSB 64, CC 33 = LSB 0, both on channel 1 (int 0).
+	feedCollect(m, cc(1, 99, 0));
+	feedCollect(m, cc(1, 98, 1));
+	feedCollect(m, cc(1, 6, 64));
+	auto ev = feedCollect(m, cc(1, 38, 0));
+	REQUIRE(ev == std::vector<OutEvent>{{0xb, 0, 1, 64, 0}, {0xb, 0, 33, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'NRPN to CC.js/.lua' ignores unmapped NRPN numbers", "[MidiKit][NRPN]") {
+	std::string path = GENERATE(from_range(std::begin(NRPN_PRESET_PATHS), std::end(NRPN_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// NRPN 5 is not in config.map, so the complete write produces nothing.
+	feedCollect(m, cc(1, 99, 0));
+	feedCollect(m, cc(1, 98, 5));
+	feedCollect(m, cc(1, 6, 64));
+	auto ev = feedCollect(m, cc(1, 38, 0));
+	REQUIRE(ev.empty());
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'NRPN to CC.js/.lua' emits nothing until all four bytes arrive", "[MidiKit][NRPN]") {
+	std::string path = GENERATE(from_range(std::begin(NRPN_PRESET_PATHS), std::end(NRPN_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Only three of the four bytes - the value LSB is missing.
+	feedCollect(m, cc(1, 99, 0));
+	feedCollect(m, cc(1, 98, 1));
+	auto ev = feedCollect(m, cc(1, 6, 64));
+	REQUIRE(ev.empty());
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the Copy Ch1 CC to Ch2 preset. It duplicates every CC
+// on channel 1 onto channel 2 (the copy is sent first, then the original),
+// and leaves everything else untouched.
+static const char* COPY_CC_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/Copy Ch1 CC to Ch2.js",
+	"presets/MidiKit/Lua/Copy Ch1 CC to Ch2.lua"
+};
+
+TEST_CASE("'Copy Ch1 CC to Ch2.js/.lua' duplicates a channel-1 CC onto channel 2", "[MidiKit][CopyCC]") {
+	std::string path = GENERATE(from_range(std::begin(COPY_CC_PRESET_PATHS), std::end(COPY_CC_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// A CC on MIDI channel 1 (internal 0) is copied to channel 2 (internal 1).
+	// The engine flushes the incoming message (handle 0) before the freshly
+	// created copy (handle 1), so the original on channel 1 comes out first,
+	// then the copy on channel 2.
+	auto ev = feedCollect(m, cc(0, 20, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0xb, 0, 20, 100, 0}, {0xb, 1, 20, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Copy Ch1 CC to Ch2.js/.lua' does not duplicate CCs on other channels", "[MidiKit][CopyCC]") {
+	std::string path = GENERATE(from_range(std::begin(COPY_CC_PRESET_PATHS), std::end(COPY_CC_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// A CC on MIDI channel 2 (internal 1) is only forwarded on its own channel
+	// - no copy.
+	auto ev = feedCollect(m, cc(1, 20, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0xb, 1, 20, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Copy Ch1 CC to Ch2.js/.lua' does not duplicate non-CC messages on channel 1", "[MidiKit][CopyCC]") {
+	std::string path = GENERATE(from_range(std::begin(COPY_CC_PRESET_PATHS), std::end(COPY_CC_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// A Note-On on MIDI channel 1 (internal 0) is not a CC, so it is only
+	// forwarded once on its own channel.
+	auto ev = feedCollect(m, noteOn(0, 60, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0x9, 0, 60, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the Rewrite Ch1 to Ch2 preset. It rewrites every
+// message on channel 1 to channel 2 and leaves all other channels alone.
+static const char* REWRITE_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/Rewrite Ch1 to Ch2.js",
+	"presets/MidiKit/Lua/Rewrite Ch1 to Ch2.lua"
+};
+
+TEST_CASE("'Rewrite Ch1 to Ch2.js/.lua' rewrites channel-1 messages to channel 2", "[MidiKit][Rewrite]") {
+	std::string path = GENERATE(from_range(std::begin(REWRITE_PRESET_PATHS), std::end(REWRITE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Note-On and CC on MIDI channel 1 (internal 0) both come out on channel 2
+	// (internal 1).
+	auto note = feedCollect(m, noteOn(0, 60, 100));
+	REQUIRE(note == std::vector<OutEvent>{{0x9, 1, 60, 100, 0}});
+	auto ccEv = feedCollect(m, cc(0, 20, 100));
+	REQUIRE(ccEv == std::vector<OutEvent>{{0xb, 1, 20, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Rewrite Ch1 to Ch2.js/.lua' leaves other channels unchanged", "[MidiKit][Rewrite]") {
+	std::string path = GENERATE(from_range(std::begin(REWRITE_PRESET_PATHS), std::end(REWRITE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Channel 3 (internal 2) and channel 2 (internal 1) are untouched.
+	auto note = feedCollect(m, noteOn(3, 60, 100));
+	REQUIRE(note == std::vector<OutEvent>{{0x9, 3, 60, 100, 0}});
+	auto ccEv = feedCollect(m, cc(2, 20, 100));
+	REQUIRE(ccEv == std::vector<OutEvent>{{0xb, 2, 20, 100, 0}});
 
 	Test::destroyModule(m);
 }

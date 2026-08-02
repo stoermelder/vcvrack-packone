@@ -208,7 +208,10 @@ function onMidiMessage(midiPort, msg)
     if midi.isChanPressure(msg) then
         if not config.forwardPressure or not isActiveChannel(ch) then return end
         local out = midi.create()
-        midi.setChanPressure(out, config.outChannel, midi.getValue(msg))
+        -- Channel pressure is a 2-byte message - the pressure value lives in
+        -- bytes[1], read back via getNote() (getValue() would return bytes[2],
+        -- which does not exist for a 2-byte message and reads as 0).
+        midi.setChanPressure(out, config.outChannel, midi.getNote(msg))
         midiOut.send(out)
         return
     end
