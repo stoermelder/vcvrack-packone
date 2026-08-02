@@ -97,19 +97,23 @@ struct TaskWorker {
 
 struct ITaskWorker {
 	virtual ~ITaskWorker() = default;
-	virtual void work(std::function<void()> task) = 0;
-	virtual void work(std::function<void()> task, Context* context) = 0;
+	// Returns false if the task was dropped instead of queued (e.g. a
+	// fixed-capacity worker that was full). Implementations backed by an
+	// unbounded/overwriting queue (TaskWorker) always return true.
+	virtual bool work(std::function<void()> task) = 0;
+	virtual bool work(std::function<void()> task, Context* context) = 0;
 };
 
 // Runs tasks synchronously on the calling thread — no background thread.
 // Used in tests to make engine.process() calls deterministic.
 struct SyncTaskWorker : ITaskWorker {
-	void work(std::function<void()> task) override { task(); }
-	void work(std::function<void()> task, Context* context) override {
+	bool work(std::function<void()> task) override { task(); return true; }
+	bool work(std::function<void()> task, Context* context) override {
 		Context* prev = contextGet();
 		contextSet(context);
 		task();
 		contextSet(prev);
+		return true;
 	}
 }; // struct SyncTaskWorker
 
@@ -118,8 +122,8 @@ struct SyncTaskWorker : ITaskWorker {
 struct TaskWorkerAdapter : ITaskWorker {
 	std::shared_ptr<TaskWorker> inner;
 	explicit TaskWorkerAdapter(std::shared_ptr<TaskWorker> tw) : inner(std::move(tw)) {}
-	void work(std::function<void()> task) override { inner->work(std::move(task)); }
-	void work(std::function<void()> task, Context* context) override { inner->work(std::move(task), context); }
+	bool work(std::function<void()> task) override { inner->work(std::move(task)); return true; }
+	bool work(std::function<void()> task, Context* context) override { inner->work(std::move(task), context); return true; }
 }; // struct TaskWorkerAdapter
 
 
