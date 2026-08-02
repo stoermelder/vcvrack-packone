@@ -1,9 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
-#include "MidiKit.cpp"
-
-using namespace StoermelderPackOne::MidiKit;
-using StoermelderPackOne::MidiScript::MidiScriptEngine;
+#include "MidiKit.test.hpp"
 
 // Cross-engine equivalence suite (review finding D7).
 //
@@ -21,26 +16,6 @@ using StoermelderPackOne::MidiScript::MidiScriptEngine;
 // contract *between* them, so a future change to one engine that isn't
 // mirrored in the other fails here even if both engines individually still
 // pass their own suite.
-
-SYNC_MODEL(modelMidiKit, "MidiKit");
-Test::TestContext<> testContext;
-
-static MidiKitModule* createModule() {
-	MidiKitModule* m = new MidiKitModule(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
-	m->id = rand();
-	Module::SampleRateChangeEvent e{44100.f, 1.f / 44100.f};
-	m->onSampleRateChange(e);
-	return m;
-}
-
-static std::string drainLog(MidiKitModule* m) {
-	std::string all;
-	while (!m->midiLogMessages.empty()) {
-		auto t = m->midiLogMessages.shift();
-		all += std::get<2>(t) + "\n";
-	}
-	return all;
-}
 
 static midi::Message noteOn(int ch, int note, int vel) {
 	midi::Message msg;

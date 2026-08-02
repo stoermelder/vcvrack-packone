@@ -158,7 +158,10 @@ struct MidiKitModule : Module {
 	/** [Stored to Json] */
 	std::string script = "";
 
-	dsp::RingBuffer<std::tuple<LOG_FORMAT, float, std::string>, 512> midiLogMessages;
+	// MPMC queue: midiLogMessages is pushed from the worker thread (writeLog)
+	// and from the caller of loadScript/onReset, so it needs concurrent-producer
+	// support rather than dsp::RingBuffer's single-producer contract.
+	rigtorp::MPMCQueue<std::tuple<LOG_FORMAT, float, std::string>> midiLogMessages{512};
 
 	dsp::RingBuffer<int, 8> overlayQueue;
 	std::tuple<std::string, std::string, std::string> overlayMessage;
@@ -189,10 +192,10 @@ struct MidiKitModule : Module {
 		void writeLog(std::string log, bool useTimestamp = true) override {
 			float timestamp = module->sampleRate != 0.f ? float(module->sample) / module->sampleRate : 0.f;
 			if (useTimestamp) {
-				module->midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
+				module->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
 			}
 			else {
-				module->midiLogMessages.push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, log));
+				module->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, log));
 			}
 		};
 
@@ -257,10 +260,10 @@ struct MidiKitModule : Module {
 		void writeLog(std::string log, bool useTimestamp = true) override {
 			float timestamp = float(module->sample) / module->sampleRate;
 			if (useTimestamp) {
-				module->midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
+				module->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
 			}
 			else {
-				module->midiLogMessages.push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, log));
+				module->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, log));
 			}
 		}
 
@@ -352,7 +355,7 @@ struct MidiKitModule : Module {
 			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
 		}
-		midiLogMessages.push(std::make_tuple(LOG_FORMAT::RESET, 0.f, ""));
+		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::RESET, 0.f, std::string("")));
 		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
 			outputTriggerActive[i] = true;
 			outputPulseGenerator[i].reset();
@@ -449,7 +452,7 @@ struct MidiKitModule : Module {
 			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
 		}
-		midiLogMessages.push(std::make_tuple(LOG_FORMAT::RESET, 0.f, ""));
+		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::RESET, 0.f, std::string("")));
 
 		// Detect engine from script header (@engine Lua  vs  @engine Elk / default)
 		bool isLua = s.find("@engine Lua") != std::string::npos;
@@ -585,9 +588,9 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 	void step() override {
 		ThemedModuleWidget<MidiKitModule>::step();
 		if (!module) return;
-		while (!module->midiLogMessages.empty()) {
+		std::tuple<LOG_FORMAT, float, std::string> s;
+		while (module->midiLogMessages.try_pop(s)) {
 			if (buffer.size() == BUFFERSIZE) buffer.pop_back();
-			std::tuple<LOG_FORMAT, float, std::string> s = module->midiLogMessages.shift();
 			if (std::get<0>(s) == LOG_FORMAT::RESET) {
 				resetLog();
 			}

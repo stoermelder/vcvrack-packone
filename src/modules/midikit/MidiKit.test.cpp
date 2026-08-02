@@ -1,12 +1,6 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
-#include "MidiKit.cpp"
+#include "MidiKit.test.hpp"
 
-using namespace StoermelderPackOne::MidiKit;
 using namespace StoermelderPackOne::MidiScript;
-
-SYNC_MODEL(modelMidiKit, "MidiKit");
-Test::TestContext<> testContext;
 
 // Minimal Elk script header (body can be empty — the Elk engine still loads it)
 static constexpr const char* ELK_SCRIPT =
@@ -554,6 +548,87 @@ TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKi
 
 	REQUIRE(m->inputTriggerTick == 3);
 	REQUIRE(m->midiOutput.tickQueue.size() == 0);
+
+	Test::destroyModule(m);
+}
+
+// --- Logging (midiLogMessages) ------------------------------------------------
+
+TEST_CASE("Log queue preserves FIFO order", "[MidiKit][Log]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+	drainLogEntries(m);  // discard construction-time entries
+
+	for (int i = 0; i < 10; i++) {
+		m->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, std::string("line") + std::to_string(i)));
+	}
+
+	auto entries = drainLogEntries(m);
+	REQUIRE(entries.size() == 10);
+	for (int i = 0; i < 10; i++) {
+		REQUIRE(std::get<1>(entries[i]) == "line" + std::to_string(i));
+	}
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("Log accepts entries from multiple producers", "[MidiKit][Log]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+	drainLogEntries(m);  // discard construction-time entries
+
+	// Producer A: the Elk engine's writeLog (the worker-thread path).
+	m->se.writeLog("from-engine", true);
+	// Producer B: a direct push (the loadScript/onReset path).
+	m->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, std::string("from-direct")));
+	// Producer A again.
+	m->se.writeLog("from-engine-2", false);
+
+	auto entries = drainLogEntries(m);
+	REQUIRE(entries.size() == 3);
+	REQUIRE(std::get<1>(entries[0]) == "from-engine");
+	REQUIRE(std::get<1>(entries[1]) == "from-direct");
+	REQUIRE(std::get<1>(entries[2]) == "from-engine-2");
+	// writeLog(useTimestamp=true) -> TIMESTAMP, writeLog(useTimestamp=false) -> TEXT.
+	REQUIRE(std::get<0>(entries[0]) == LOG_FORMAT::TIMESTAMP);
+	REQUIRE(std::get<0>(entries[1]) == LOG_FORMAT::TEXT);
+	REQUIRE(std::get<0>(entries[2]) == LOG_FORMAT::TEXT);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("LoadScript emits a RESET log entry", "[MidiKit][Log]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+	drainLogEntries(m);  // discard construction-time entries
+
+	m->loadScript(ELK_SCRIPT);
+
+	auto entries = drainLogEntries(m);
+	REQUIRE(!entries.empty());
+	// loadScript() pushes the RESET marker before any script output.
+	REQUIRE(std::get<0>(entries[0]) == LOG_FORMAT::RESET);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("Log queue drops entries when full", "[MidiKit][Log]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+	drainLogEntries(m);  // discard construction-time entries
+
+	// The queue holds exactly 512 entries; pushing more must drop (try_push
+	// returns false) rather than block.
+	int pushed = 0;
+	for (int i = 0; i < 1000; i++) {
+		if (m->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, std::string("x")))) {
+			pushed++;
+		}
+	}
+	REQUIRE(pushed == 512);
+
+	// Every accepted entry is still drained out (no loss of accepted entries).
+	auto entries = drainLogEntries(m);
+	REQUIRE(entries.size() == 512);
 
 	Test::destroyModule(m);
 }

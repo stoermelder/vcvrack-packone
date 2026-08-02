@@ -1,14 +1,6 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
-#include "MidiKit.cpp"
+#include "MidiKit.test.hpp"
 #include <fstream>
 #include <sstream>
-
-using namespace StoermelderPackOne::MidiKit;
-using StoermelderPackOne::MidiScript::MidiScriptEngine;
-
-SYNC_MODEL(modelMidiKit, "MidiKit");
-Test::TestContext<> testContext;
 
 // Smoke test for the shipped example presets in presets/MidiKit/.
 //
@@ -44,14 +36,6 @@ static std::string repoRoot() {
 	return root.empty() ? "." : root;
 }
 
-static MidiKitModule* createModule() {
-	MidiKitModule* m = new MidiKitModule(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
-	m->id = rand();
-	Module::SampleRateChangeEvent e{44100.f, 1.f / 44100.f};
-	m->onSampleRateChange(e);
-	return m;
-}
-
 static std::string readFile(const std::string& path) {
 	std::ifstream f(path);
 	CATCH_INFO("cannot open " << path);
@@ -59,16 +43,6 @@ static std::string readFile(const std::string& path) {
 	std::stringstream ss;
 	ss << f.rdbuf();
 	return ss.str();
-}
-
-// Drains the module log and returns it as one string.
-static std::string drainLog(MidiKitModule* m) {
-	std::string out;
-	while (!m->midiLogMessages.empty()) {
-		auto s = m->midiLogMessages.shift();
-		out += std::get<2>(s) + "\n";
-	}
-	return out;
 }
 
 // processInMessage only queues the message — process() is what actually runs

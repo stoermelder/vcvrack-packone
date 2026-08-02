@@ -1,22 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
-#include "MidiKit.cpp"
-
-using namespace StoermelderPackOne::MidiKit;
-using StoermelderPackOne::MidiScript::MidiScriptEngine;
-
-SYNC_MODEL(modelMidiKit, "MidiKit");
-Test::TestContext<> testContext;
-
-// Bypass the dylib factory — create directly so the injected SyncTaskWorker
-// is used instead of the module's default async TaskWorker.
-static MidiKitModule* createModule() {
-	MidiKitModule* m = new MidiKitModule(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
-	m->id = rand();
-	Module::SampleRateChangeEvent e{44100.f, 1.f / 44100.f};
-	m->onSampleRateChange(e);
-	return m;
-}
+#include "MidiKit.test.hpp"
 
 
 static const char* LUA_EMPTY = R"(--[[
@@ -107,16 +89,6 @@ TEST_CASE("Syntax error is handled gracefully", "[MidiKit][Lua]") {
 	REQUIRE(m->seLua.L == nullptr);
 
 	Test::destroyModule(m);
-}
-
-
-static std::string drainLog(MidiKitModule* m) {
-	std::string all;
-	while (!m->midiLogMessages.empty()) {
-		auto t = m->midiLogMessages.shift();
-		all += std::get<2>(t) + "\n";
-	}
-	return all;
 }
 
 
