@@ -1187,6 +1187,71 @@ TEST_CASE("setNRPN wire order is spec-compliant (MSB before LSB)", "[MidiKit]") 
 }
 
 
+// --- NRPN send() order ---------------------------------------------------
+//
+// An NRPN is a quad of 4 CC messages that flush as a unit when the group
+// leader is sent. This verifies that the send-order fix also applies across
+// NRPN groups: two NRPNs are created (n1, then n2) but sent in the opposite
+// order (n2, then n1), and the wire must carry n2's whole quad before n1's
+// whole quad — i.e. the groups are ordered by send() call, not by
+// handle-creation order.
+
+static const char* JS_NRPN_SEND_ORDER = R"(/**
+ * @engine QuickJs
+ */
+onMidiMessage = function(port, msg) {
+    let n1 = midi.createNRPN();
+    midi.setNRPN(n1, 9, 1234, 5678);
+    let n2 = midi.createNRPN();
+    midi.setNRPN(n2, 9, 100, 200);
+    midiOut.send(n2);   // created second, sent first
+    midiOut.send(n1);   // created first, sent last
+};
+)";
+
+static const char* LUA_NRPN_SEND_ORDER = R"(--[[
+@engine Lua
+--]]
+function onMidiMessage(port, msg)
+    local n1 = midi.createNRPN()
+    midi.setNRPN(n1, 9, 1234, 5678)
+    local n2 = midi.createNRPN()
+    midi.setNRPN(n2, 9, 100, 200)
+    midiOut.send(n2)
+    midiOut.send(n1)
+end
+)";
+
+TEST_CASE("NRPN quads flush in send() order, not handle-creation order, in both engines", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(JS_NRPN_SEND_ORDER);
+	EngineResult lua = run(LUA_NRPN_SEND_ORDER);
+
+	// n2 (number=100, value=200): msb=0,lsb=100, data msb=1,lsb=72
+	std::vector<uint8_t> n2p0 = {0xb8, 99, 0};
+	std::vector<uint8_t> n2p1 = {0xb8, 98, 100};
+	std::vector<uint8_t> n2p2 = {0xb8, 6, 1};
+	std::vector<uint8_t> n2p3 = {0xb8, 38, 72};
+	// n1 (number=1234, value=5678): msb=9,lsb=82, data msb=44,lsb=46
+	std::vector<uint8_t> n1p0 = {0xb8, 99, 9};
+	std::vector<uint8_t> n1p1 = {0xb8, 98, 82};
+	std::vector<uint8_t> n1p2 = {0xb8, 6, 44};
+	std::vector<uint8_t> n1p3 = {0xb8, 38, 46};
+
+	// Handle order would be n1's quad then n2's; send() order is n2 then n1.
+	std::vector<std::vector<uint8_t>> expect = {n2p0, n2p1, n2p2, n2p3, n1p0, n1p1, n1p2, n1p3};
+
+	REQUIRE(js.sent.size() == 8);
+	for (size_t i = 0; i < expect.size(); i++) {
+		REQUIRE(js.sent[i].bytes == expect[i]);
+	}
+
+	REQUIRE(lua.sent.size() == 8);
+	for (size_t i = 0; i < expect.size(); i++) {
+		REQUIRE(lua.sent[i].bytes == expect[i]);
+	}
+}
+
+
 // --- is* type predicates -------------------------------------------------
 //
 // One message per status byte, each checked against every is* predicate and
@@ -2056,4 +2121,68 @@ TEST_CASE("Script without onTrigger silently ignores trigger ticks, in both engi
 	auto lua = checkNoOnTrigger(LUA_NO_ON_LOAD);
 	REQUIRE(js.second == false);
 	REQUIRE(lua.second == false);
+}
+
+
+// --- send() order, not handle-creation order ----------------------------
+//
+// Regression test for the flush-order bug: the engine used to push the
+// out-queue in msgStore index (handle-creation) order, so a script that
+// created several messages and then sent them in a different order had them
+// reordered on the wire. The receiver must observe send() order. This
+// creates A, B, C (handle order) but sends C, A, B, and asserts the wire
+// order is C, A, B in both engines.
+
+static const char* JS_SEND_ORDER = R"(/**
+ * @engine QuickJs
+ */
+onMidiMessage = function(port, msg) {
+    let a = midi.create();
+    midi.setNoteOn(a, 1, 60, 100);
+    let b = midi.create();
+    midi.setNoteOn(b, 1, 62, 100);
+    let c = midi.create();
+    midi.setNoteOn(c, 1, 64, 100);
+    midiOut.send(c);   // handle 2 sent first
+    midiOut.send(a);   // handle 0 sent second
+    midiOut.send(b);   // handle 1 sent last
+};
+)";
+
+static const char* LUA_SEND_ORDER = R"(--[[
+@engine Lua
+--]]
+function onMidiMessage(port, msg)
+    local a = midi.create()
+    midi.setNoteOn(a, 1, 60, 100)
+    local b = midi.create()
+    midi.setNoteOn(b, 1, 62, 100)
+    local c = midi.create()
+    midi.setNoteOn(c, 1, 64, 100)
+    midiOut.send(c)
+    midiOut.send(a)
+    midiOut.send(b)
+end
+)";
+
+TEST_CASE("out-queue flushes in send() order, not handle-creation order, in both engines", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(JS_SEND_ORDER);
+	EngineResult lua = run(LUA_SEND_ORDER);
+
+	// Handle order would be 60, 62, 64; send() order is 64, 60, 62. The
+	// script's channel argument is 1-based, so channel 1 = internal channel 0
+	// = status nibble 0x9 | 0 = 0x90.
+	std::vector<uint8_t> expectC = {0x90, 64, 100};
+	std::vector<uint8_t> expectA = {0x90, 60, 100};
+	std::vector<uint8_t> expectB = {0x90, 62, 100};
+
+	REQUIRE(js.sent.size() == 3);
+	REQUIRE(js.sent[0].bytes == expectC);
+	REQUIRE(js.sent[1].bytes == expectA);
+	REQUIRE(js.sent[2].bytes == expectB);
+
+	REQUIRE(lua.sent.size() == 3);
+	REQUIRE(lua.sent[0].bytes == expectC);
+	REQUIRE(lua.sent[1].bytes == expectA);
+	REQUIRE(lua.sent[2].bytes == expectB);
 }

@@ -778,11 +778,11 @@ TEST_CASE("'Note length quantiser.js/.lua' cuts a retriggered note before re-art
 
 	// Retriggering 60 while it is still sounding cuts the old note immediately
 	// (Note-Off, tick 0) so the re-articulation is clean, then sends the fresh
-	// Note-On and its scheduled Note-Off. Note the order: the engine flushes
-	// the incoming Note-On (message handle 0) before the freshly created cut
-	// message (handle 1), regardless of the send() call order in the script.
+	// Note-On and its scheduled Note-Off. The engine flushes in send() order,
+	// so the cut (sent first) comes out before the incoming Note-On (sent
+	// second) and the scheduled Note-Off (sent last).
 	auto ev = feedCollect(m, noteOn(1, 60, 100));
-	REQUIRE(ev == std::vector<OutEvent>{{0x9, 1, 60, 100, 0}, {0x8, 1, 60, 0, 0}, {0x8, 1, 60, 0, 52}});
+	REQUIRE(ev == std::vector<OutEvent>{{0x8, 1, 60, 0, 0}, {0x9, 1, 60, 100, 0}, {0x8, 1, 60, 0, 52}});
 
 	Test::destroyModule(m);
 }
@@ -1135,11 +1135,11 @@ TEST_CASE("'Copy Ch1 CC to Ch2.js/.lua' duplicates a channel-1 CC onto channel 2
 	MidiKitModule* m = loadPreset(path);
 
 	// A CC on MIDI channel 1 (internal 0) is copied to channel 2 (internal 1).
-	// The engine flushes the incoming message (handle 0) before the freshly
-	// created copy (handle 1), so the original on channel 1 comes out first,
-	// then the copy on channel 2.
+	// The script calls send(copy) before send(original), and the engine now
+	// flushes in send() order, so the copy on channel 2 comes out first, then
+	// the original on channel 1.
 	auto ev = feedCollect(m, cc(0, 20, 100));
-	REQUIRE(ev == std::vector<OutEvent>{{0xb, 0, 20, 100, 0}, {0xb, 1, 20, 100, 0}});
+	REQUIRE(ev == std::vector<OutEvent>{{0xb, 1, 20, 100, 0}, {0xb, 0, 20, 100, 0}});
 
 	Test::destroyModule(m);
 }
