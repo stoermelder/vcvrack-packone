@@ -118,11 +118,11 @@ SPLICE-KIT can send MIDI messages back to a controller to illuminate its LEDs in
 
 #### Controller presets
 
-Open the **MIDI Feedback** submenu to select a preset:
+Open the **MIDI Preset** submenu to select a preset:
 
 | Preset | Description |
 |---|---|
-| **Off** | No feedback sent |
+| **No preset** | No feedback sent |
 | **Launchpad / S (X-Y mode)** | Novation Launchpad (original) and Launchpad S in X-Y (default) layout. Bi-colour LEDs driven by Note On velocity. Grid cells use notes 0–119 (row×16+col); right-side scene launch buttons use notes 8, 24, 40, 56, 72, 88, 104, 120. |
 | **Launchpad X / MK3 (Programmer mode)** | Novation Launchpad X / Mini MK3 in Programmer mode. Uses hardware flash (channel 1) for pending state and hardware pulse (channel 2) for learn states, synced to MIDI clock. Grid cells use Note On; top-row scene buttons use CC 91–98. |
 | **Launchpad MK2 (Session mode)** | Novation Launchpad MK2 / S in Session mode. Grid cells use Note On; top-row scene buttons use CC 104–111. Uses hardware flash (channel 2) for pending state and hardware pulse (channel 3) for learn states, synced to MIDI clock. |
@@ -131,19 +131,22 @@ Open the **MIDI Feedback** submenu to select a preset:
 | **Ableton Push 2** | Ableton Push 2 in User mode. 8×8 pad grid uses Note On (notes 36–99, bottom-left to top-right); the eight buttons below the display (CC 20–27) serve as scene selectors. MIDI channel encodes animation: 0=static, 6–10=pulse, 11–15=blink. Color palette indices: 0=off, 127=red, 125=blue, 126=green, 122=white, 124=dark gray. |
 | **Generic (Note On)** | Any controller that accepts Note On for LED control. Velocity values 0–6 map to off through the various states. |
 
-Each preset defines the MIDI message type, channel, and value sent for every LED state (off, four color sets each with dim/active/connected variants, pending, port-learn, MIDI-learn, scene-active, scene-dim).
+Each preset defines the MIDI message type, channel, and value sent for every LED state (off, four color sets each with dim/active/connected variants, pending, port-learn, MIDI-learn, scene-active, scene-dim). Hover a preset entry to see additional notes about its layout and hardware, where available.
+
+The built-in presets are plain files on disk (`presets/SpliceKit/*.ctrl.json` inside the plugin folder). They can be edited directly, and new files dropped into that folder appear in the **MIDI Preset** submenu the next time VCV Rack starts — no reinstall needed. See [Custom preset JSON format](#custom-preset-json-format) below for the file format.
 
 #### Loading and saving presets
 
-Use **Load preset from file...** to read a JSON file from disk and activate it as the current feedback configuration. The loaded preset appears in the submenu below the built-in entries. Use **Save preset to file...** to write the currently active preset back to disk as a JSON file; this is also how to export a built-in preset as a starting template for customisation.
+Use **Load preset from file...** to read a JSON file from disk and activate it as the current feedback configuration. Use **Save preset to file...** to write the currently active preset back to disk as a JSON file; this is also how to export a built-in preset as a starting template for customisation.
 
 #### Custom preset JSON format
 
-A preset file is a UTF-8 JSON object with three top-level keys:
+A preset file is a UTF-8 JSON object:
 
 ```json
 {
     "name": "My controller",
+    "description": "Optional notes shown when hovering the preset in the menu.",
     "cells":  { "type": <1|2>, "numbers": [ <64 values> ] },
     "scenes": { "type": <1|2>, "numbers": [ <8 values>  ] },
     "specs": {
@@ -169,7 +172,9 @@ A preset file is a UTF-8 JSON object with three top-level keys:
 }
 ```
 
-**`cells` and `scenes`** (optional) define the MIDI input mapping applied when **Apply note layout** is used. `type` is `1` for Note and `2` for CC. `numbers` lists the note or CC number for each button in row-major order (top-left to bottom-right for cells; top to bottom for scenes). Omit these keys if the preset is LED-only with no fixed layout.
+**`name`** is shown in the **MIDI Preset** submenu and used as the default filename when saving. **`description`** is optional; if present, it is shown when hovering the preset entry. Use `\n\n` to separate it into multiple paragraphs — long single-paragraph text is hard to read once wrapped.
+
+**`cells` and `scenes`** (optional) define the MIDI input mapping applied when **Apply input mappings from preset** is used. `type` is `1` for Note and `2` for CC. `numbers` lists the note or CC number for each button in row-major order (top-left to bottom-right for cells; top to bottom for scenes). Omit these keys if the preset is LED-only with no fixed layout.
 
 Each **`<spec>`** object describes the MIDI message sent to the controller for one LED state:
 
@@ -208,7 +213,7 @@ SPLICE-KIT uses four color sets (0–3). The defaults are: set 0 = red (output p
 
 #### Applying a preset's note layout
 
-Presets that define a fixed button layout (Launchpad / S, Launchpad MK3, Launchpad MK2, APC Mini, APC Mini MK2, and Ableton Push 2) can automatically configure the MIDI input mappings to match: select **Apply note layout as MIDI input mappings**. This clears any existing MIDI input assignments and maps each cell and scene button to its corresponding note or CC number from the preset.
+Presets that define a fixed button layout (Launchpad / S, Launchpad MK3, Launchpad MK2, APC Mini, APC Mini MK2, and Ableton Push 2) can automatically configure the MIDI input mappings to match: select **Apply input mappings from preset**. This clears any existing MIDI input assignments and maps each cell and scene button to its corresponding note or CC number from the preset.
 
 
 ## Changelog

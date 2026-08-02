@@ -307,7 +307,7 @@ TEST_CASE("sendFeedbackOff - no-op for invalid state id (-1)", "[SpliceKit]") {
 
 TEST_CASE("sendFeedbackOff - no-op when feedback preset is off", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->feedbackPreset = 0;  // preset index 0 == no output
+	m->setActivePresetJson("");  // no output
 	m->sendFeedbackOff(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount == 0);
 	Test::destroyModule(m);
@@ -317,8 +317,7 @@ TEST_CASE("sendFeedbackOff - no-op for MIDI_OUT_NONE spec", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_NONE;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	m->sendFeedbackOff(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount == 0);
 	Test::destroyModule(m);
@@ -331,8 +330,7 @@ TEST_CASE("sendFeedbackOff - no-op for CC-type spec", "[SpliceKit]") {
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FIXED;
 	preset.specs[LED_STATE_COLOR0].note     = 20;
 	preset.specs[LED_STATE_COLOR0].value    = 127;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	m->sendFeedbackOff(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount == 0);
 	Test::destroyModule(m);
@@ -345,8 +343,7 @@ TEST_CASE("sendFeedbackOff - no-op for NOTE_OFF-type spec", "[SpliceKit]") {
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FIXED;
 	preset.specs[LED_STATE_COLOR0].note     = 36;
 	preset.specs[LED_STATE_COLOR0].value    = 0;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	m->sendFeedbackOff(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount == 0);
 	Test::destroyModule(m);
@@ -358,8 +355,7 @@ TEST_CASE("sendFeedbackOff - no-op when FROM_SLOT note mode has no mapping", "[S
 	preset.specs[LED_STATE_COLOR0].type     = MIDI_OUT_NOTE_ON;
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FROM_SLOT;
 	preset.specs[LED_STATE_COLOR0].value    = 127;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	// Cell 0 has no MIDI mapping — FROM_SLOT resolves to NONE → nothing sent
 	m->sendFeedbackOff(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount == 0);
@@ -372,8 +368,7 @@ TEST_CASE("sendFeedbackOff - no-op for FROM_SLOT_TYPE when slot is CC", "[Splice
 	preset.specs[LED_STATE_COLOR0].type     = MIDI_OUT_FROM_SLOT_TYPE;
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FROM_SLOT;
 	preset.specs[LED_STATE_COLOR0].value    = 127;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	m->trackingProcessor.setMap(MidiTrackingType::CC, 0, 74);
 	// CC slot with FROM_SLOT_TYPE resolves to a CC status — must be skipped
 	m->sendFeedbackOff(0, LED_STATE_COLOR0);
@@ -389,8 +384,7 @@ TEST_CASE("sendFeedbackOff - sends note-off 0x80 for NOTE_ON + FIXED mode", "[Sp
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FIXED;
 	preset.specs[LED_STATE_COLOR0].note     = 36;
 	preset.specs[LED_STATE_COLOR0].value    = 127;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	m->sendFeedbackOff(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount          == 1);
 	REQUIRE(m->midiOutput.lastSentMsg.bytes[0] == 0x80);  // note-off, channel 0
@@ -406,8 +400,7 @@ TEST_CASE("sendFeedbackOff - sends note-off with note from slot mapping (FROM_SL
 	preset.specs[LED_STATE_COLOR1].channel  = 2;
 	preset.specs[LED_STATE_COLOR1].noteMode = MIDI_OUT_FROM_SLOT;
 	preset.specs[LED_STATE_COLOR1].value    = 100;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 5, 60);
 	m->sendFeedbackOff(5, LED_STATE_COLOR1);
 	REQUIRE(m->midiOutput.sentCount          == 1);
@@ -424,8 +417,7 @@ TEST_CASE("sendFeedbackOff - sends note-off for FROM_SLOT_TYPE with NOTE slot", 
 	preset.specs[LED_STATE_COLOR0].channel  = 1;
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FROM_SLOT;
 	preset.specs[LED_STATE_COLOR0].value    = 127;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 0, 48);
 	m->sendFeedbackOff(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount          == 1);
@@ -484,8 +476,7 @@ TEST_CASE("process - assigned cell without cable transitions to DIM state", "[Sp
 
 TEST_CASE("process - cellLedState transitions from old state to OFF when cell unassigned", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->customPreset   = makeNoteOnPreset();
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(makeNoteOnPreset());
 
 	// Simulate a previous state that the LED was in
 	m->cellLedState[5] = LED_STATE_COLOR1;
@@ -766,8 +757,7 @@ TEST_CASE("moveCell - overlay message is posted", "[SpliceKit]") {
 
 TEST_CASE("process - scene state transitions from active to dim after scene switch", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->customPreset   = makeNoteOnPreset();
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(makeNoteOnPreset());
 
 	m->currentScene = 0;
 	// Give scene 1 a stored connection so it becomes DIM
@@ -972,7 +962,7 @@ TEST_CASE("processMapUpdate - after a copy, the next activation is treated norma
 
 TEST_CASE("sendFeedback - no-op when no preset is active", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->feedbackPreset = 0;  // no output
+	m->setActivePresetJson("");  // no output
 	m->sendFeedback(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount == 0);
 	Test::destroyModule(m);
@@ -982,8 +972,7 @@ TEST_CASE("sendFeedback - no-op for NONE-type spec", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_NONE;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	m->sendFeedback(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount == 0);
 	Test::destroyModule(m);
@@ -995,8 +984,7 @@ TEST_CASE("sendFeedback - no-op for FROM_SLOT when slot is unmapped", "[SpliceKi
 	preset.specs[LED_STATE_COLOR0].type     = MIDI_OUT_NOTE_ON;
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FROM_SLOT;
 	preset.specs[LED_STATE_COLOR0].value    = 127;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	// Cell 0 has no mapping — FROM_SLOT resolves to NONE → nothing sent
 	m->sendFeedback(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount == 0);
@@ -1009,15 +997,14 @@ TEST_CASE("sendFeedback - no-op for FROM_SLOT_TYPE when slot is CC", "[SpliceKit
 	preset.specs[LED_STATE_COLOR0].type     = MIDI_OUT_FROM_SLOT_TYPE;
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FROM_SLOT;
 	preset.specs[LED_STATE_COLOR0].value    = 127;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	m->trackingProcessor.setMap(MidiTrackingType::CC, 0, 74);
 	// CC slot with FROM_SLOT_TYPE resolves to a CC status — but for the *on-side*
 	// (MIDI_OUT_FROM_SLOT_TYPE), the code does support CC→0xB0. This test instead
 	// verifies the *no-op* case: if we set a NONE-type spec on top, it still
 	// returns early before any branch is taken.
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_NONE;
-	m->customPreset = preset;
+	m->setActivePreset(preset);
 	m->sendFeedback(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount == 0);
 	Test::destroyModule(m);
@@ -1031,8 +1018,7 @@ TEST_CASE("sendFeedback - sends note-on 0x90 for NOTE_ON + FIXED mode", "[Splice
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FIXED;
 	preset.specs[LED_STATE_COLOR0].note     = 36;
 	preset.specs[LED_STATE_COLOR0].value    = 127;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	m->sendFeedback(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount          == 1);
 	REQUIRE(m->midiOutput.lastSentMsg.bytes[0] == 0x90);  // note-on, channel 0
@@ -1049,8 +1035,7 @@ TEST_CASE("sendFeedback - sends note-off 0x80 for NOTE_OFF + FIXED mode", "[Spli
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FIXED;
 	preset.specs[LED_STATE_COLOR0].note     = 36;
 	preset.specs[LED_STATE_COLOR0].value    = 0;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	m->sendFeedback(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount          == 1);
 	REQUIRE(m->midiOutput.lastSentMsg.bytes[0] == (0x80 | 1));  // note-off, channel 1
@@ -1066,8 +1051,7 @@ TEST_CASE("sendFeedback - sends CC 0xB0 for CC + FROM_SLOT mode with CC slot", "
 	preset.specs[LED_STATE_COLOR0].channel  = 2;
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FROM_SLOT;
 	preset.specs[LED_STATE_COLOR0].value    = 100;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	m->trackingProcessor.setMap(MidiTrackingType::CC, 0, 74);
 	m->sendFeedback(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount          == 1);
@@ -1084,8 +1068,7 @@ TEST_CASE("sendFeedback - sends note-on 0x90 for FROM_SLOT_TYPE with NOTE slot",
 	preset.specs[LED_STATE_COLOR0].channel  = 0;
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FROM_SLOT;
 	preset.specs[LED_STATE_COLOR0].value    = 64;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 0, 60);
 	m->sendFeedback(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount          == 1);
@@ -1102,8 +1085,7 @@ TEST_CASE("sendFeedback - sends CC 0xB0 for FROM_SLOT_TYPE with CC slot", "[Spli
 	preset.specs[LED_STATE_COLOR0].channel  = 3;
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FROM_SLOT;
 	preset.specs[LED_STATE_COLOR0].value    = 127;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 	m->trackingProcessor.setMap(MidiTrackingType::CC, 0, 16);
 	m->sendFeedback(0, LED_STATE_COLOR0);
 	REQUIRE(m->midiOutput.sentCount          == 1);
@@ -1118,34 +1100,22 @@ TEST_CASE("sendFeedback - sends CC 0xB0 for FROM_SLOT_TYPE with CC slot", "[Spli
 // getActivePreset
 // ---------------------------------------------------------------------------
 
-TEST_CASE("getActivePreset - returns nullptr for feedbackPreset == 0", "[SpliceKit]") {
+TEST_CASE("getActivePreset - returns nullptr when no preset is active", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->feedbackPreset = 0;
+	m->setActivePresetJson("");
 	REQUIRE(m->getActivePreset() == nullptr);
 	Test::destroyModule(m);
 }
 
-TEST_CASE("getActivePreset - returns nullptr for out-of-range index", "[SpliceKit]") {
+TEST_CASE("getActivePreset - returns &activePreset once a preset is set", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->feedbackPreset = CONTROLLER_PRESET_COUNT;  // one past the end
-	REQUIRE(m->getActivePreset() == nullptr);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("getActivePreset - returns a built-in preset for valid index", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->feedbackPreset = 1;  // first built-in (index 0 == "no output")
+	MidiOutPreset preset;
+	preset.name = "Test";
+	m->setActivePreset(preset);
 	const MidiOutPreset* p = m->getActivePreset();
 	REQUIRE(p != nullptr);
-	REQUIRE(p != &m->customPreset);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("getActivePreset - returns &customPreset for PRESET_IDX_CUSTOM", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
-	const MidiOutPreset* p = m->getActivePreset();
-	REQUIRE(p == &m->customPreset);
+	REQUIRE(p == &m->activePreset);
+	REQUIRE(p->name == "Test");
 	Test::destroyModule(m);
 }
 
@@ -1368,8 +1338,7 @@ TEST_CASE("process - cell connected to pending cell transitions to CONNECTED1", 
 
 TEST_CASE("process - cell with port assignment and no cable transitions to COLOR0_DIM", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->customPreset   = makeNoteOnPreset();
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(makeNoteOnPreset());
 
 	m->portAssignments[2].moduleId = 1;
 	m->portAssignments[2].portId   = 0;
@@ -1410,7 +1379,9 @@ TEST_CASE("requestReset - enqueues a reset lambda that clears all state", "[Spli
 
 	// Populate state that should be wiped by reset.
 	m->currentScene        = 4;
-	m->feedbackPreset      = 2;
+	MidiOutPreset preset;
+	preset.name = "Test";
+	m->setActivePreset(preset);
 	m->setConnection(2, 0, 1, true);
 	m->portAssignments[3].moduleId = 1;
 	m->portAssignments[3].portId   = 0;
@@ -1426,7 +1397,7 @@ TEST_CASE("requestReset - enqueues a reset lambda that clears all state", "[Spli
 	m->guiQueue.shift()();
 
 	REQUIRE(m->currentScene         == 0);
-	REQUIRE(m->feedbackPreset       == 0);
+	REQUIRE(m->getActivePreset()    == nullptr);
 	REQUIRE(m->portAssignments[3].isValid() == false);
 	REQUIRE(m->portHasCable[3]      == false);
 	// All scenes cleared
@@ -1946,8 +1917,7 @@ TEST_CASE("applyPresetLayout - applies cell and scene mappings from custom prese
 	preset.cells[0].type   = MidiTrackingType::NOTE;  preset.cells[0].number = 36;
 	preset.cells[1].type   = MidiTrackingType::CC;    preset.cells[1].number = 1;
 	preset.scenes[2].type  = MidiTrackingType::NOTE;  preset.scenes[2].number = 50;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 
 	// Pre-existing maps must be wiped before applyPresetLayout runs.
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 30, 70);
@@ -1986,8 +1956,7 @@ TEST_CASE("applyPresetLayout - maps every valid MIDI note/CC number 0..127, incl
 		preset.cells[0].type  = MidiTrackingType::NOTE;  preset.cells[0].number = number;
 		preset.cells[1].type  = MidiTrackingType::CC;    preset.cells[1].number = number;
 		preset.scenes[0].type = MidiTrackingType::NOTE;  preset.scenes[0].number = number;
-		m->customPreset   = preset;
-		m->feedbackPreset = PRESET_IDX_CUSTOM;
+		m->setActivePreset(preset);
 
 		m->applyPresetLayout();
 
@@ -2008,7 +1977,7 @@ TEST_CASE("applyPresetLayout - maps every valid MIDI note/CC number 0..127, incl
 
 TEST_CASE("applyPresetLayout - no-op when no preset is active", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->feedbackPreset = 0;  // no preset
+	m->setActivePresetJson("");  // no preset
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 5, 60);
 
 	m->applyPresetLayout();  // must not throw, must not clear
@@ -2028,8 +1997,7 @@ TEST_CASE("applyPresetLayout - invalidates LED states so they are re-sent", "[Sp
 
 	MidiOutPreset preset;
 	preset.cells[0].type = MidiTrackingType::NOTE;  preset.cells[0].number = 36;
-	m->customPreset   = preset;
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
+	m->setActivePreset(preset);
 
 	m->applyPresetLayout();
 	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->cellLedState[i]  == -1);
@@ -2055,34 +2023,28 @@ TEST_CASE("SpliceKitOutput::setDeviceId invalidates LED states via the module ho
 
 
 // ---------------------------------------------------------------------------
-// dataFromJson — invalid customPreset string falls back to feedbackPreset == 0
+// dataFromJson — invalid activePreset string falls back to no preset
 // ---------------------------------------------------------------------------
 
-TEST_CASE("dataFromJson - malformed customPresetJson reverts to no preset", "[SpliceKit][JSON]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->feedbackPreset = PRESET_IDX_CUSTOM;
-	m->customPresetJson = "this is { not valid json";
-
+TEST_CASE("dataFromJson - malformed activePreset JSON reverts to no preset", "[SpliceKit][JSON]") {
 	json_t* j = json_object();
-	json_object_set_new(j, "feedbackPreset", json_integer(PRESET_IDX_CUSTOM));
-	json_object_set_new(j, "customPreset",   json_string(m->customPresetJson.c_str()));
-	SpliceKitModule* m2 = Test::createModule<SpliceKitModule>("SpliceKit");
-	m2->dataFromJson(j);
+	json_object_set_new(j, "activePreset", json_string("this is { not valid json"));
+
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->dataFromJson(j);
 	json_decref(j);
-	REQUIRE(m2->feedbackPreset == 0);
-	Test::destroyModule(m2);
+	REQUIRE(m->getActivePreset() == nullptr);
 	Test::destroyModule(m);
 }
 
-TEST_CASE("dataFromJson - non-string customPreset value does not crash and reverts to no preset", "[SpliceKit][JSON]") {
+TEST_CASE("dataFromJson - non-string activePreset value does not crash and reverts to no preset", "[SpliceKit][JSON]") {
 	json_t* j = json_object();
-	json_object_set_new(j, "feedbackPreset", json_integer(PRESET_IDX_CUSTOM));
-	json_object_set_new(j, "customPreset",   json_integer(42));  // not a string
+	json_object_set_new(j, "activePreset", json_integer(42));  // not a string
 
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	REQUIRE_NOTHROW(m->dataFromJson(j));
 	json_decref(j);
-	REQUIRE(m->feedbackPreset == 0);
+	REQUIRE(m->getActivePreset() == nullptr);
 	Test::destroyModule(m);
 }
 
@@ -2099,5 +2061,539 @@ TEST_CASE("dataFromJson - non-string cellLabels entry does not crash and is skip
 	json_decref(j);
 	REQUIRE(m->cellLabels[3] == "");
 	REQUIRE(m->cellLabels[5] == "kept");
+	Test::destroyModule(m);
+}
+
+
+// ─── assignPort — rebinding a cell must discard everything derived from the old port ─────
+
+TEST_CASE("assignPort - assigns port to an empty cell", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->assignPort(4, 42, 3, engine::Port::OUTPUT);
+
+	REQUIRE(m->portAssignments[4].isValid());
+	REQUIRE(m->portAssignments[4].moduleId == 42);
+	REQUIRE(m->portAssignments[4].portId == 3);
+	REQUIRE(m->portAssignments[4].type == engine::Port::OUTPUT);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - rebinding clears connections in every scene, not just the current one", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+	m->assignPort(2, 44, 0, engine::Port::INPUT);
+
+	// Cell 0 is wired in the active scene (0) and in an inactive one (3).
+	m->setConnection(0, 0, 1, true);
+	m->setConnection(3, 0, 2, true);
+	REQUIRE(m->isConnected(0, 0, 1));
+	REQUIRE(m->isConnected(3, 0, 2));
+
+	// Rebind cell 0 to a different port — its old connections describe the discarded port.
+	m->assignPort(0, 99, 7, engine::Port::OUTPUT);
+
+	REQUIRE(m->portAssignments[0].moduleId == 99);
+	REQUIRE(m->portAssignments[0].portId == 7);
+
+	// A stale bit in an inactive scene would recreate a cable to the wrong port on switchScene().
+	REQUIRE(m->isConnected(0, 0, 1) == false);
+	REQUIRE(m->isConnected(3, 0, 2) == false);
+	// Symmetric halves must be cleared too, or the neighbour still claims the connection.
+	REQUIRE(m->sceneConnections[0][1] == 0);
+	REQUIRE(m->sceneConnections[3][2] == 0);
+	REQUIRE(m->sceneConnections[0][0] == 0);
+	REQUIRE(m->sceneConnections[3][0] == 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - rebinding drops the label describing the old port", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(5, 42, 0, engine::Port::OUTPUT);
+	m->cellLabels[5] = "Filter cutoff";
+
+	m->assignPort(5, 77, 1, engine::Port::INPUT);
+
+	REQUIRE(m->cellLabels[5].empty());
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - assigning to an empty cell preserves a pre-set label", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	// No previous port, so there is nothing stale to discard — a label the user typed on an
+	// unassigned cell must survive the first assignment.
+	m->cellLabels[6] = "Reverb send";
+
+	m->assignPort(6, 42, 0, engine::Port::OUTPUT);
+
+	REQUIRE(m->cellLabels[6] == "Reverb send");
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - invalidates LED states so a changed color set is re-sent", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	std::fill(m->cellLedState, m->cellLedState + MATRIX_COUNT, LED_STATE_OFF);
+
+	// OUTPUT → INPUT flips the auto color set (0/red → 1/blue), so the cached LED state
+	// must be invalidated or the controller keeps showing the previous set's color.
+	m->assignPort(0, 42, 0, engine::Port::INPUT);
+
+	REQUIRE(m->getCellColorSet(0) == 1);
+	REQUIRE(m->cellLedState[0] == -1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - out-of-range cell ids are ignored", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	REQUIRE_NOTHROW(m->assignPort(-1, 42, 0, engine::Port::OUTPUT));
+	REQUIRE_NOTHROW(m->assignPort(MATRIX_COUNT, 42, 0, engine::Port::OUTPUT));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - explicit color set override survives a rebind", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(2, 42, 0, engine::Port::OUTPUT);
+	m->cellColorSet[2] = 3;  // explicit green, chosen by the user for this button position
+
+	m->assignPort(2, 88, 4, engine::Port::INPUT);
+
+	// The color set is a property of the physical button the user configured, not of the
+	// port — like the MIDI mapping, it stays put across a rebind.
+	REQUIRE(m->cellColorSet[2] == 3);
+	REQUIRE(m->getCellColorSet(2) == 3);
+
+	Test::destroyModule(m);
+}
+
+
+// ─── moveCell + pending selection (issue 17) ─────────────────────────────────────────────
+// SpliceKitCellButton::onDragDrop needs real widget/event plumbing, so these cover the
+// module-level invariant the widget fix relies on: moveCell() rewrites both cells, so a
+// pending selection left on either one is stale and must be cleared by the caller.
+
+TEST_CASE("moveCell - leaves a stale pending selection on the source cell", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+
+	m->triggerCell(0);
+	REQUIRE(m->pendingCellId == 0);
+
+	m->moveCell(0, 5);
+
+	// moveCell deliberately does not touch pendingCellId — the drag-drop caller is
+	// responsible for clearing it (SpliceKitCellButton::onDragDrop, shiftDrag branch).
+	REQUIRE(m->portAssignments[0].isValid() == false);
+	REQUIRE(m->pendingCellId == 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("moveCell - a pending selection on the moved-away cell cannot be cancelled by pressing it", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+
+	m->triggerCell(0);
+	REQUIRE(m->pendingCellId == 0);
+
+	m->moveCell(0, 5);
+
+	// This is what makes issue 17 worse than a cosmetic stale blink: triggerCell() returns
+	// on the !isValid() guard before it reaches the "pressing the pending cell cancels it"
+	// branch, so the user cannot clear the selection by pressing the blinking cell.
+	m->triggerCell(0);
+	REQUIRE(m->pendingCellId == 0);
+
+	// clearPendingLocal() — what the fixed drag-drop path calls — does clear it.
+	m->clearPendingLocal();
+	REQUIRE(m->pendingCellId == -1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("moveCell - a pending selection on the destination cell silently changes meaning", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(5, 77, 3, engine::Port::INPUT);
+
+	// Cell 5 is pending, selected while it still referred to port 77:3.
+	m->triggerCell(5);
+	REQUIRE(m->pendingCellId == 5);
+
+	m->moveCell(0, 5);
+
+	// Still pending, but now pointing at a different port than the user selected — a second
+	// press would connect the wrong one. Hence the unconditional clear in the drag-drop path.
+	REQUIRE(m->pendingCellId == 5);
+	REQUIRE(m->portAssignments[5].moduleId == 42);
+	REQUIRE(m->portAssignments[5].portId == 0);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("dataFromJson - out-of-range currentScene is clamped into bounds", "[SpliceKit][JSON]") {
+	// currentScene indexes sceneConnections[SCENE_COUNT][MATRIX_COUNT] directly in
+	// captureScene/switchScene/randomizeCurrentScene, so an unchecked value from a corrupted
+	// or hand-edited patch would read and write far outside the array.
+	auto load = [](json_int_t v) {
+		SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+		json_t* j = json_object();
+		json_object_set_new(j, "currentScene", json_integer(v));
+		m->dataFromJson(j);
+		json_decref(j);
+		int result = m->currentScene;
+		Test::destroyModule(m);
+		return result;
+	};
+
+	REQUIRE(load(99) == SCENE_COUNT - 1);            // far above the top
+	REQUIRE(load(SCENE_COUNT) == SCENE_COUNT - 1);   // one past the top
+	REQUIRE(load(-1) == 0);                          // negative
+	REQUIRE(load(SCENE_COUNT - 1) == SCENE_COUNT - 1);  // top of range survives unchanged
+	REQUIRE(load(0) == 0);
+	REQUIRE(load(3) == 3);                           // ordinary value is untouched
+}
+
+TEST_CASE("dataFromJson - clamped currentScene leaves scene state safely addressable", "[SpliceKit][JSON]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	json_t* j = json_object();
+	json_object_set_new(j, "currentScene", json_integer(99));
+	m->dataFromJson(j);
+	json_decref(j);
+
+	// The whole point of the clamp: these operations index sceneConnections[currentScene]
+	// and must stay in bounds after loading a malformed patch.
+	REQUIRE_NOTHROW(m->setConnection(m->currentScene, 0, 1, true));
+	REQUIRE(m->isConnected(m->currentScene, 0, 1));
+	REQUIRE_NOTHROW(m->removeCellConnections(0));
+	REQUIRE(m->sceneConnections[m->currentScene][0] == 0);
+
+	Test::destroyModule(m);
+}
+
+
+// ─── toggleConnection — direction validation ─────────────────────────────────────────────
+// The connect/disconnect branches call into vcv:: cable helpers, which bail early when the
+// module widgets don't exist (as in these tests); the bitmask update happens first either
+// way, so the direction logic is fully exercisable here.
+
+TEST_CASE("toggleConnection - output to input creates the connection", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+
+	m->toggleConnection(0, 1);
+	REQUIRE(m->isConnected(m->currentScene, 0, 1));
+
+	// Toggling again removes it.
+	m->toggleConnection(0, 1);
+	REQUIRE(m->isConnected(m->currentScene, 0, 1) == false);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("toggleConnection - argument order does not matter", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+
+	// input-first must resolve the same pair as output-first.
+	m->toggleConnection(1, 0);
+	REQUIRE(m->isConnected(m->currentScene, 0, 1));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("toggleConnection - two outputs are rejected and reported", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::OUTPUT);
+
+	m->toggleConnection(0, 1);
+
+	REQUIRE(m->isConnected(m->currentScene, 0, 1) == false);
+	REQUIRE(m->overlayMessage.title == "Both ports are outputs");
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("toggleConnection - two inputs are rejected and reported", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::INPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+
+	m->toggleConnection(0, 1);
+
+	REQUIRE(m->isConnected(m->currentScene, 0, 1) == false);
+	REQUIRE(m->overlayMessage.title == "Both ports are inputs");
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("toggleConnection - unassigned cell is ignored without an overlay message", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	// Cell 1 is left unassigned.
+	m->setOverlayMessage("sentinel", "");
+
+	m->toggleConnection(0, 1);
+
+	REQUIRE(m->isConnected(m->currentScene, 0, 1) == false);
+	// The !isValid() branch returns before any setOverlayMessage call.
+	REQUIRE(m->overlayMessage.title == "sentinel");
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("toggleConnection - only the current scene is affected", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+	m->currentScene = 3;
+
+	m->toggleConnection(0, 1);
+
+	REQUIRE(m->isConnected(3, 0, 1));
+	for (int s = 0; s < SCENE_COUNT; s++) {
+		if (s != 3) REQUIRE(m->isConnected(s, 0, 1) == false);
+	}
+
+	Test::destroyModule(m);
+}
+
+
+// ─── onReset — what it adds on top of requestReset() ─────────────────────────────────────
+
+TEST_CASE("onReset - clears labels, color overrides and cancels learn", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->cellLabels[2]   = "Filter cutoff";
+	m->cellColorSet[2] = 3;
+	m->pendingCellId   = 4;
+	m->enableLearn(5);
+	REQUIRE(m->learningId == 5);
+
+	m->onReset();
+
+	REQUIRE(m->cellLabels[2].empty());
+	REQUIRE(m->cellColorSet[2] == -1);
+	REQUIRE(m->learningId == -1);
+	REQUIRE(m->midiLearnMode == false);
+	REQUIRE(m->portLearningId == -1);
+	REQUIRE(m->portLearnMode == false);
+	REQUIRE(m->pendingCellId == -1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("onReset - queues the state-clearing reset on the GUI queue", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->currentScene = 5;
+	m->setConnection(5, 0, 1, true);
+
+	m->onReset();
+	// clearPending() and requestReset() each enqueue one item.
+	REQUIRE(m->guiQueue.size() == 2);
+	while (m->guiQueue.size() > 0) m->guiQueue.shift()();
+
+	REQUIRE(m->currentScene == 0);
+	REQUIRE(m->sceneConnections[5][0] == 0);
+
+	Test::destroyModule(m);
+}
+
+
+// ─── port learn — range guard and mode interaction ───────────────────────────────────────
+
+TEST_CASE("enablePortLearn - out-of-range ids are ignored", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitWidget* w = Test::createWidget<SpliceKitWidget>("SpliceKit");
+
+	m->enablePortLearn(-1, w);
+	REQUIRE(m->portLearningId == -1);
+	m->enablePortLearn(MATRIX_COUNT, w);
+	REQUIRE(m->portLearningId == -1);
+
+	Test::destroyWidget(w);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("enablePortLearn - sets the learning cell and cancels an active MIDI learn", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitWidget* w = Test::createWidget<SpliceKitWidget>("SpliceKit");
+
+	// MIDI learn and port learn are mutually exclusive — starting one cancels the other.
+	m->enableLearn(5);
+	REQUIRE(m->learningId == 5);
+
+	m->enablePortLearn(7, w);
+	REQUIRE(m->portLearningId == 7);
+	REQUIRE(m->learningId == -1);
+	REQUIRE(m->trackingProcessor.getMapLearn() == false);
+
+	Test::destroyWidget(w);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("disablePortLearn - clears the learning cell and sequential mode", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->portLearningId = 9;
+	m->portLearnMode  = true;
+
+	m->disablePortLearn();
+
+	REQUIRE(m->portLearningId == -1);
+	REQUIRE(m->portLearnMode == false);
+	REQUIRE(m->isPortLearning(9) == false);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("enableLearn - starting MIDI learn cancels an active port learn", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitWidget* w = Test::createWidget<SpliceKitWidget>("SpliceKit");
+
+	m->enablePortLearn(3, w);
+	REQUIRE(m->portLearningId == 3);
+
+	m->enableLearn(6);
+	REQUIRE(m->learningId == 6);
+	REQUIRE(m->portLearningId == -1);
+	REQUIRE(m->portLearnMode == false);
+
+	Test::destroyWidget(w);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("enableLearn - out-of-range ids are ignored", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->enableLearn(-1);
+	REQUIRE(m->learningId == -1);
+	m->enableLearn(TOTAL_MAPS);
+	REQUIRE(m->learningId == -1);
+
+	// The last valid id is a scene button, not a cell.
+	m->enableLearn(TOTAL_MAPS - 1);
+	REQUIRE(m->learningId == TOTAL_MAPS - 1);
+
+	Test::destroyModule(m);
+}
+
+
+// ─── dataFromJson — index guards on the per-cell/per-scene maps ──────────────────────────
+
+TEST_CASE("dataFromJson - out-of-range port indices are skipped", "[SpliceKit][JSON]") {
+	json_t* portsJ = json_object();
+	for (const char* key : {"-1", "64", "999"}) {
+		json_t* p = json_object();
+		json_object_set_new(p, "moduleId", json_integer(42));
+		json_object_set_new(p, "type", json_integer((int)engine::Port::OUTPUT));
+		json_object_set_new(p, "portId", json_integer(0));
+		json_object_set_new(portsJ, key, p);
+	}
+	json_t* valid = json_object();
+	json_object_set_new(valid, "moduleId", json_integer(77));
+	json_object_set_new(valid, "type", json_integer((int)engine::Port::INPUT));
+	json_object_set_new(valid, "portId", json_integer(2));
+	json_object_set_new(portsJ, "5", valid);
+
+	json_t* j = json_object();
+	json_object_set_new(j, "ports", portsJ);
+
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	REQUIRE_NOTHROW(m->dataFromJson(j));
+	json_decref(j);
+
+	// Only the in-range entry was applied.
+	REQUIRE(m->portAssignments[5].moduleId == 77);
+	REQUIRE(m->portAssignments[5].portId == 2);
+	int assigned = 0;
+	for (int i = 0; i < MATRIX_COUNT; i++) if (m->portAssignments[i].isValid()) assigned++;
+	REQUIRE(assigned == 1);
+
+	// NOTE: this asserts the *observable* outcome only. Removing the bounds check in
+	// dataFromJson would write past portAssignments (index 64 lands on sceneConnections,
+	// 1024 bytes past the base) without failing here, because dataFromJson memsets
+	// sceneConnections after the ports loop, erasing the clobber before it can be read.
+	// Detecting the stray write itself needs ASan, not an in-process assertion.
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("dataFromJson - out-of-range scene and connection indices are skipped", "[SpliceKit][JSON]") {
+	auto makePair = [](int a, int b) {
+		json_t* pair = json_array();
+		json_array_append_new(pair, json_integer(a));
+		json_array_append_new(pair, json_integer(b));
+		return pair;
+	};
+
+	json_t* scenesJ = json_object();
+	// Out-of-range scene key — must be skipped wholesale.
+	json_t* badScene = json_object();
+	json_t* badConns = json_array();
+	json_array_append_new(badConns, makePair(0, 1));
+	json_object_set_new(badScene, "connections", badConns);
+	json_object_set_new(scenesJ, "99", badScene);
+
+	// Valid scene holding one out-of-range pair and one valid pair.
+	json_t* okScene = json_object();
+	json_t* okConns = json_array();
+	json_array_append_new(okConns, makePair(0, MATRIX_COUNT));  // b out of range
+	json_array_append_new(okConns, makePair(-1, 3));            // a out of range
+	json_array_append_new(okConns, makePair(2, 4));             // valid
+	json_object_set_new(okScene, "connections", okConns);
+	json_object_set_new(scenesJ, "1", okScene);
+
+	json_t* j = json_object();
+	json_object_set_new(j, "scenes", scenesJ);
+
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	REQUIRE_NOTHROW(m->dataFromJson(j));
+	json_decref(j);
+
+	REQUIRE(m->isConnected(1, 2, 4));
+	REQUIRE(m->sceneConnections[1][0] == 0);
+	REQUIRE(m->sceneConnections[1][3] == 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("dataFromJson - out-of-range MIDI map indices are skipped", "[SpliceKit][JSON]") {
+	json_t* mapsJ = json_object();
+	for (const char* key : {"-1", "72", "999"}) {
+		json_t* mapJ = json_object();
+		json_object_set_new(mapJ, "type", json_integer((int)MidiTrackingType::NOTE));
+		json_object_set_new(mapJ, "param", json_integer(60));
+		json_object_set_new(mapsJ, key, mapJ);
+	}
+	// TOTAL_MAPS - 1 is the last valid slot (a scene button).
+	json_t* okMap = json_object();
+	json_object_set_new(okMap, "type", json_integer((int)MidiTrackingType::CC));
+	json_object_set_new(okMap, "param", json_integer(7));
+	json_object_set_new(mapsJ, std::to_string(TOTAL_MAPS - 1).c_str(), okMap);
+
+	json_t* j = json_object();
+	json_object_set_new(j, "maps", mapsJ);
+
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	REQUIRE_NOTHROW(m->dataFromJson(j));
+	json_decref(j);
+
+	auto last = m->trackingProcessor.getMap(TOTAL_MAPS - 1);
+	REQUIRE(last.type == MidiTrackingType::CC);
+	REQUIRE(last.param == 7);
+
 	Test::destroyModule(m);
 }

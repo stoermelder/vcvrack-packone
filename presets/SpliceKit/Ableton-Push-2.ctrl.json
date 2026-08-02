@@ -1,0 +1,41 @@
+{
+    "name": "Ableton Push 2",
+    "description": "Grid cells: Note On, row r (0=top) col c (0=left) -> note = (9-r)*8 + c + 28 (top row = 92-99, bottom row = 36-43).\n\nScene buttons (below the display, left to right): CC 20-27; these use CC for both button press input and LED feedback.\n\nLED colour palette (index 0-127, documented subset): 0=off 122=white(204,204,204) 123=light-gray(64,64,64) 124=dark-gray(20,20,20) 125=blue 126=green 127=red.\n\nAnimation channels: 0=static, 6=pulse(1/24)...10=pulse(1/2), 11=blink(1/24)...15=blink(1/2); ch10 (slowest pulse, ~0.5s at 120 BPM) used for idle/dim states, ch6 (fastest pulse) used for connected highlights, ch11 (fastest blink) used for pending/learn states.\n\nspec type 4 (from-slot-type) sends Note On for pad cells, CC for scene buttons. Push 2 must be in User mode (not Live mode) for direct MIDI control.\n\nhttps://github.com/Ableton/push-interface/blob/main/doc/AbletonPush2MIDIDisplayInterface.asc",
+    "cells": {
+        "type": 1,
+        "numbers": [
+            92,93,94,95,96,97,98,99,
+            84,85,86,87,88,89,90,91,
+            76,77,78,79,80,81,82,83,
+            68,69,70,71,72,73,74,75,
+            60,61,62,63,64,65,66,67,
+            52,53,54,55,56,57,58,59,
+            44,45,46,47,48,49,50,51,
+            36,37,38,39,40,41,42,43
+        ]
+    },
+    "scenes": {
+        "type": 2,
+        "numbers": [20,21,22,23,24,25,26,27]
+    },
+    "specs": {
+        "off":          {"type":4,"channel": 0,"noteMode":0,"value":  0},
+        "color0dim":    {"type":1,"channel": 0,"noteMode":0,"value":127},
+        "color0":       {"type":1,"channel": 0,"noteMode":0,"value": 68},
+        "color1dim":    {"type":1,"channel": 0,"noteMode":0,"value":125},
+        "color1":       {"type":1,"channel": 0,"noteMode":0,"value": 99},
+        "color2dim":    {"type":1,"channel": 0,"noteMode":0,"value": 69},
+        "color2":       {"type":1,"channel": 0,"noteMode":0,"value": 39},
+        "color3dim":    {"type":1,"channel": 0,"noteMode":0,"value":126},
+        "color3":       {"type":1,"channel": 0,"noteMode":0,"value": 89},
+        "pending":      {"type":1,"channel":10,"noteMode":0,"value":122},
+        "portLearn":    {"type":1,"channel":11,"noteMode":0,"value": 24},
+        "midiLearn":    {"type":1,"channel":11,"noteMode":0,"value": 22},
+        "sceneActive":  {"type":4,"channel": 0,"noteMode":0,"value":122},
+        "sceneDim":     {"type":4,"channel": 0,"noteMode":0,"value":123},
+        "connected0":   {"type":1,"channel":11,"noteMode":0,"value":127},
+        "connected1":   {"type":1,"channel":11,"noteMode":0,"value":120},
+        "connected2":   {"type":1,"channel":11,"noteMode":0,"value": 69},
+        "connected3":   {"type":1,"channel":11,"noteMode":0,"value":126}
+    }
+}

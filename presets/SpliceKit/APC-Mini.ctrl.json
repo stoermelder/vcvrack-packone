@@ -1,0 +1,41 @@
+{
+    "name": "APC Mini",
+    "description": "Grid cells: Note On, row r (0=top) col c (0=left) -> note = (7-r)*8 + c (top row = 56-63, bottom row = 0-7).\n\nScene Launch 1-8 (right-side buttons): notes 82-89, top to bottom.\n\nVelocity: 0=off 1=green 2=green blink 3=red 4=red blink 5=yellow 6=yellow blink. Only 3 colors available; color2 maps to green, color3 to yellow.",
+    "cells": {
+        "type": 1,
+        "numbers": [
+            56,57,58,59,60,61,62,63,
+            48,49,50,51,52,53,54,55,
+            40,41,42,43,44,45,46,47,
+            32,33,34,35,36,37,38,39,
+            24,25,26,27,28,29,30,31,
+            16,17,18,19,20,21,22,23,
+             8, 9,10,11,12,13,14,15,
+             0, 1, 2, 3, 4, 5, 6, 7
+        ]
+    },
+    "scenes": {
+        "type": 1,
+        "numbers": [82,83,84,85,86,87,88,89]
+    },
+    "specs": {
+        "off":          {"type":1,"noteMode":0,"value":0},
+        "color0dim":    {"type":1,"noteMode":0,"value":5},
+        "color0":       {"type":1,"noteMode":0,"value":3},
+        "color1dim":    {"type":1,"noteMode":0,"value":5},
+        "color1":       {"type":1,"noteMode":0,"value":1},
+        "color2dim":    {"type":1,"noteMode":0,"value":5},
+        "color2":       {"type":1,"noteMode":0,"value":1},
+        "color3dim":    {"type":1,"noteMode":0,"value":5},
+        "color3":       {"type":1,"noteMode":0,"value":5},
+        "pending":      {"type":1,"noteMode":0,"value":6},
+        "portLearn":    {"type":1,"noteMode":0,"value":2},
+        "midiLearn":    {"type":1,"noteMode":0,"value":4},
+        "sceneActive":  {"type":1,"noteMode":0,"value":1},
+        "sceneDim":     {"type":1,"noteMode":0,"value":5},
+        "connected0":   {"type":1,"noteMode":0,"value":4},
+        "connected1":   {"type":1,"noteMode":0,"value":2},
+        "connected2":   {"type":1,"noteMode":0,"value":2},
+        "connected3":   {"type":1,"noteMode":0,"value":6}
+    }
+}
