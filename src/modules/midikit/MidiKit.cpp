@@ -181,6 +181,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	// The engines call back into the module through these methods for every
 	// module-facing operation (log/overlay/input/trig/param).
 
+	// MidiScriptEngineHandler
 	void writeLog(const std::string& log, bool useTimestamp = true) override {
 		float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
 		if (useTimestamp) {
@@ -191,44 +192,53 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		}
 	}
 
+	// MidiScriptEngineHandler
 	void writeOverlay(const std::string& s1, const std::string& s2, const std::string& s3) override {
 		overlayQueue.push(0);
 		overlayMessage = std::make_tuple(s1, s2, s3);
 	}
 
+	// MidiScriptEngineHandler
 	void enableInput(int i) override {
 		reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = true;
 	}
 
+	// MidiScriptEngineHandler
 	float getInputVoltage(int i, uint8_t ch) override {
 		if (reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled)
 			return inputs[INPUT + i].getVoltage(ch);
 		return 0.f;
 	}
 
+	// MidiScriptEngineHandler
 	float getTrigVoltage(int i, uint8_t ch) override {
 		return inputs[INPUT_TRIG + i].getVoltage(ch);
 	}
 
+	// MidiScriptEngineHandler
 	uint64_t getTrigTicks(int i) override {
 		return inputTriggerTick;
 	}
 
+	// MidiScriptEngineHandler
 	void enableParam(int i) override {
 		reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = true;
 	}
 
+	// MidiScriptEngineHandler
 	float getParamValue(int i) override {
 		if (reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled)
 			return params[PARAM + i].getValue();
 		return 0.f;
 	}
 
+	// MidiScriptEngineHandler
 	void setTrig(int i, uint8_t ch, float duration = 1e-3f) override {
 		outputTriggerActive[ch] = true;
 		outputPulseGenerator[ch].trigger(duration);
 	}
 
+	// MidiScriptEngineHandler
 	void setTrigVoltage(int i, uint8_t ch, float voltage) override {
 		outputTriggerActive[ch] = false;
 		outputs[OUTPUT_TRIG].setVoltage(voltage, ch);

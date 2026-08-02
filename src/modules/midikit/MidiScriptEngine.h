@@ -57,8 +57,8 @@ struct MidiScriptEngine {
 		taskWorker = std::move(w);
 	}
 
-	void runAsync(std::function<void()> task) {
-		taskWorker->work(task, APP);
+	bool runAsync(std::function<void()> task) {
+		return taskWorker->work(task, APP);
 	}
 
 	virtual void loadScript(const char* script) = 0;
@@ -120,12 +120,23 @@ struct MidiScriptEnginePortInfo : PortInfo {
 	bool enabled;
 	MidiScriptEngine* se;
 	std::string bufferedName;
+	std::atomic<bool> queryInFlight{false};
 
 	std::string getName() override {
-		se->runAsync([=] {
-			bufferedName = se->getInputName(portId);
-		});
-		return enabled ? bufferedName : "<Disabled>";
+		if (enabled) {
+			bool expected = false;
+			if (queryInFlight.compare_exchange_strong(expected, true)) {
+				bool queued = se->runAsync([=] {
+					bufferedName = se->getInputName(portId);
+					queryInFlight.store(false);
+				});
+				if (!queued) {
+					queryInFlight.store(false);
+				}
+			}
+			return bufferedName;
+		}
+		return "<Disabled>";
 	}
 };
 
@@ -135,16 +146,24 @@ struct MidiScriptEngineParamQuantity : ParamQuantity {
 	MidiScriptEngine* se;
 	std::string bufferedLabel;
 	std::string bufferedDisplayValue;
+	std::atomic<bool> queryInFlight{false};
 
 	std::string getLabel() override {
 		return enabled ? bufferedLabel : "";
 	}
 	std::string getDisplayValueString() override {
 		if (enabled) {
-			se->runAsync([=] {
-				bufferedLabel = se->getParamName(paramId);
-				bufferedDisplayValue = se->getParamFormatValue(paramId);
-			});
+			bool expected = false;
+			if (queryInFlight.compare_exchange_strong(expected, true)) {
+				bool queued = se->runAsync([=] {
+					bufferedLabel = se->getParamName(paramId);
+					bufferedDisplayValue = se->getParamFormatValue(paramId);
+					queryInFlight.store(false);
+				});
+				if (!queued) {
+					queryInFlight.store(false);
+				}
+			}
 			std::string s = bufferedDisplayValue;
 			return !s.empty() ? s : ParamQuantity::getDisplayValueString();
 		}
