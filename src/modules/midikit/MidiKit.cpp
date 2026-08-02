@@ -5,6 +5,7 @@
 #include "../../components/MidiWidget.hpp"
 #include "../../components/LedTextField.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
+#include "../../utils/MpmcTaskWorker.hpp"
 #include <osdialog.h>
 #include <fstream>
 #include <queue>
@@ -117,10 +118,9 @@ struct MidiOutput : midi::Output {
 static std::shared_ptr<ITaskWorker> defaultWorker() {
 	static std::weak_ptr<ITaskWorker> shared;
 	if (shared.expired()) {
-		auto adapter = std::make_shared<TaskWorkerAdapter>(
-			std::make_shared<TaskWorker>("MidiKit worker"));
-		shared = adapter;
-		return adapter;
+		auto worker = std::make_shared<MpmcTaskWorker>("MidiKit worker");
+		shared = worker;
+		return worker;
 	}
 	return shared.lock();
 }
