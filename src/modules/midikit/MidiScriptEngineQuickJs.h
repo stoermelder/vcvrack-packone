@@ -159,11 +159,15 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JS_FreeValue(ctx, r);
 			writeLog("Script loaded", false);
 
+			// Callbacks live on the rack object (rack.onMidiMessage etc.), not
+			// on the global scope.
 			JSValue glob = JS_GetGlobalObject(ctx);
-			hasOnLoad = isCallableProp(glob, "onLoad");
-			hasOnUnload = isCallableProp(glob, "onUnload");
-			hasOnMidiMessage = isCallableProp(glob, "onMidiMessage");
-			hasOnTrigger = isCallableProp(glob, "onTrigger");
+			JSValue rack = JS_GetPropertyStr(ctx, glob, "rack");
+			hasOnLoad = isCallableProp(rack, "onLoad");
+			hasOnUnload = isCallableProp(rack, "onUnload");
+			hasOnMidiMessage = isCallableProp(rack, "onMidiMessage");
+			hasOnTrigger = isCallableProp(rack, "onTrigger");
+			JS_FreeValue(ctx, rack);
 			JS_FreeValue(ctx, glob);
 
 			if (!hasOnMidiMessage) {
@@ -215,9 +219,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		msgCount = 0;
 		inCallback = true;
 		JSValue glob = JS_GetGlobalObject(ctx);
-		JSValue fn = JS_GetPropertyStr(ctx, glob, name);
-		JSValue r = JS_Call(ctx, fn, glob, 0, NULL);
+		JSValue rack = JS_GetPropertyStr(ctx, glob, "rack");
+		JSValue fn = JS_GetPropertyStr(ctx, rack, name);
+		JSValue r = JS_Call(ctx, fn, rack, 0, NULL);
 		JS_FreeValue(ctx, fn);
+		JS_FreeValue(ctx, rack);
 		JS_FreeValue(ctx, glob);
 		inCallback = false;
 		if (JS_IsException(r)) {
@@ -254,12 +260,14 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			inCallback = true;
 			if (hasOnMidiMessage) {
 				JSValue glob = JS_GetGlobalObject(ctx);
-				JSValue fn = JS_GetPropertyStr(ctx, glob, "onMidiMessage");
+				JSValue rack = JS_GetPropertyStr(ctx, glob, "rack");
+				JSValue fn = JS_GetPropertyStr(ctx, rack, "onMidiMessage");
 				JSValue args[2] = { JS_NewInt32(ctx, midiPort + 1), JS_NewInt32(ctx, 0) };
-				JSValue r = JS_Call(ctx, fn, glob, 2, args);
+				JSValue r = JS_Call(ctx, fn, rack, 2, args);
 				JS_FreeValue(ctx, args[0]);
 				JS_FreeValue(ctx, args[1]);
 				JS_FreeValue(ctx, fn);
+				JS_FreeValue(ctx, rack);
 				JS_FreeValue(ctx, glob);
 				inCallback = false;
 				if (JS_IsException(r)) {
@@ -288,11 +296,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			inCallback = true;
 			if (hasOnTrigger) {
 				JSValue glob = JS_GetGlobalObject(ctx);
-				JSValue fn = JS_GetPropertyStr(ctx, glob, "onTrigger");
+				JSValue rack = JS_GetPropertyStr(ctx, glob, "rack");
+				JSValue fn = JS_GetPropertyStr(ctx, rack, "onTrigger");
 				JSValue arg = JS_NewInt32(ctx, trigPort + 1);
-				JSValue r = JS_Call(ctx, fn, glob, 1, &arg);
+				JSValue r = JS_Call(ctx, fn, rack, 1, &arg);
 				JS_FreeValue(ctx, arg);
 				JS_FreeValue(ctx, fn);
+				JS_FreeValue(ctx, rack);
 				JS_FreeValue(ctx, glob);
 				inCallback = false;
 				if (JS_IsException(r)) {

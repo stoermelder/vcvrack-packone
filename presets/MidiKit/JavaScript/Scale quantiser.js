@@ -65,7 +65,7 @@ let state = {
 
 let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-function onLoad() {
+rack.onLoad = function() {
     for (let n = 0; n < 128; n++) {
         state.playedAs[n] = -1;
     }
@@ -82,7 +82,7 @@ function onLoad() {
 // is active at a time), so this releases on config.channel if fixed, or
 // channel 1 when config.channel is 0 (every channel) - the same best-effort
 // choice Chord harmonizer makes for the same reason.
-function onUnload() {
+rack.onUnload = function() {
     let ch = config.channel === 0 ? 1 : config.channel;
     for (let n = 0; n < 128; n++) {
         if (state.playedAs[n] >= 0) {
@@ -157,7 +157,7 @@ function quantise(note) {
     return out;
 };
 
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
     if (!matchesChannel(midi.getChannel(msg))) {
         midiOut.send(msg);
         return;

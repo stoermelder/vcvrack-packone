@@ -5,6 +5,6 @@
  * @description Passes all incoming MIDI messages to the default MIDI output port.
  */
 
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
     midiOut.send(msg);
 }

@@ -67,7 +67,7 @@ local state = {
     counter = 0
 }
 
-function onLoad()
+rack.onLoad = function()
     for c = 1, 16 do
         state.noteOfChannel[c] = -1
         state.bendOfChannel[c] = 0
@@ -79,7 +79,7 @@ function onLoad()
     rack.log("Bend range: ", config.bendRange, " semitones")
 end
 
-function onUnload()
+rack.onUnload = function()
     for c = config.memberLow, config.memberHigh do
         if state.noteOfChannel[c] >= 0 then
             local off = midi.create()
@@ -112,7 +112,7 @@ local function isActiveChannel(ch)
     return ch == state.lastChannel
 end
 
-function onMidiMessage(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 
     -- Master channel and anything outside the zone passes through untouched

@@ -66,7 +66,7 @@ param.getValueFormat = function(port) {
     return "";
 };
 
-function onLoad() {
+rack.onLoad = function() {
     rack.log("Velocity curve initialized");
     rack.log("Range: ", config.minVelocity, "-", config.maxVelocity);
     rack.log("Knob ", config.curveParam, " sets the curve (centre = linear)");
@@ -91,7 +91,7 @@ function shapeVelocity(vel) {
     return out;
 };
 
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
     if (midi.isNoteOn(msg) && matchesChannel(midi.getChannel(msg))) {
         let vel = midi.getValue(msg);
 

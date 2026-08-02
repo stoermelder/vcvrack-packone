@@ -61,7 +61,7 @@ let state = {
     voicesOf: []
 };
 
-function onLoad() {
+rack.onLoad = function() {
     for (let n = 0; n < 128; n++) {
         state.refCount[n] = 0;
         state.voicesOf[n] = [];
@@ -70,7 +70,7 @@ function onLoad() {
     rack.log("Voices per note: ", config.intervals.length);
 };
 
-function onUnload() {
+rack.onUnload = function() {
     for (let n = 0; n < 128; n++) {
         if (state.refCount[n] > 0) {
             let off = midi.create();
@@ -84,7 +84,7 @@ function matchesChannel(ch) {
     return config.channel === 0 || ch === config.channel;
 };
 
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     if (!matchesChannel(ch)) {

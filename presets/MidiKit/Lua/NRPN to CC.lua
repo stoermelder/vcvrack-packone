@@ -65,13 +65,13 @@ local function resetState()
     state.hasValueMsb = false
 end
 
-function onLoad()
+rack.onLoad = function()
     rack.log("NRPN to CC converter initialized")
     rack.log("Mapped NRPN numbers: ", #config.map)
     rack.log("Channel: ", config.ccChannel)
 end
 
-function onMidiMessage(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
     if not midi.isCc(msg) then
         return
     end

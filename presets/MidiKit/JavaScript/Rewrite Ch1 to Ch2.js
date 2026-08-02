@@ -5,7 +5,7 @@
  * @description Rewrites all MIDI messages on channel 1 to channel 2
  */
 
-function onMidiMessage(midiInput, msg) {
+rack.onMidiMessage = function(midiInput, msg) {
     if (midi.getChannel(msg) === 1) {
         midi.setChannel(msg, 2);
     }

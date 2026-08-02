@@ -141,8 +141,8 @@ TEST_CASE("Successful load reports no error", "[MidiKit][QuickJs]") {
 static const char* QJS_ON_UNLOAD = R"(/**
  * @engine QuickJs
  */
-function onMidiMessage(midiPort, msg) {}
-function onUnload() {
+rack.onMidiMessage = function(midiPort, msg) {}
+rack.onUnload = function() {
 	rack.log("onUnload ran");
 	let msg = midi.create();
 	midi.setNoteOff(msg, 1, 60);
@@ -172,7 +172,7 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Qui
 static const char* QJS_MIDI_ROUNDTRIP = R"(/**
  * @engine QuickJs
  */
-function onMidiMessage(port, m) {
+rack.onMidiMessage = function(port, m) {
 	if (midi.isCc(m)) {
 		let out = midi.clone(m);
 		midi.setChannel(out, 2);
@@ -217,7 +217,7 @@ TEST_CASE("onMidiMessage dispatch round-trips a CC message through midi.*/midiOu
 static const char* QJS_NRPN = R"(/**
  * @engine QuickJs
  */
-function onMidiMessage(port, m) {
+rack.onMidiMessage = function(port, m) {
 	let n = midi.createNRPN();
 	midi.setNRPN(n, 1, 300, 500);
 	midiOut.send(n);
@@ -267,7 +267,7 @@ TEST_CASE("midi.createNRPN/setNRPN queue all four CC messages in order", "[MidiK
 static const char* QJS_GC_SCRATCH = R"(/**
  * @engine QuickJs
  */
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
 	let n = number.toString(midi.getNote(msg));
 	let s = n + "_" + n;
 	let o = { a: 1, b: "b", c: s };
@@ -333,7 +333,7 @@ static const char* QJS_GC_RETAIN = R"(/**
  * @engine QuickJs
  */
 var leaked = [];
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
 	leaked.push(number.toString(midi.getNote(msg)) + "_");
 }
 )";

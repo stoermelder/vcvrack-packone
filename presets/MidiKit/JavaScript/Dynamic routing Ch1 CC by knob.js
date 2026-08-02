@@ -7,7 +7,7 @@
 
 param.enable(1);
 
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
     if (midi.isCc(msg) && midi.getChannel(msg) === 1) {
         let ch = Math.ceil(param.getValue(1) * 16);
         midi.setChannel(msg, ch);

@@ -5,7 +5,7 @@
 @description Delays every Note-On message on channel 1 for two clock ticks on the clock input
 --]]
 
-function onMidiMessage(midiInput, msg)
+rack.onMidiMessage = function(midiPort, msg)
     if midi.isNoteOn(msg) then
         if midi.getChannel(msg) == 1 then
             midiOut.sendAfterTrigger(msg, 2)

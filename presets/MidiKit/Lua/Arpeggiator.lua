@@ -156,16 +156,16 @@ local function releaseSounding()
     end
 end
 
-function onLoad()
+rack.onLoad = function()
     rack.log("Arpeggiator initialized")
     rack.log("Trigger input: ", config.trigPort)
 end
 
-function onUnload()
+rack.onUnload = function()
     releaseSounding()
 end
 
-function onMidiMessage(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 
     if midi.isNoteOn(msg) and matchesChannel(ch) and midi.getValue(msg) > 0 then
@@ -204,7 +204,7 @@ function onMidiMessage(midiPort, msg)
     midiOut.send(msg)
 end
 
-function onTrigger(trigPort)
+function rack.onTrigger(trigPort)
     if trigPort ~= config.trigPort then return end
 
     local division = DIVISIONS[divisionIndex()]

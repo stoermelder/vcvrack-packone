@@ -109,7 +109,7 @@ static const char* LUA_RUNTIME_ERROR = R"(--[[
 @engine Lua
 @description test
 --]]
-onMidiMessage = function(port, msg)
+rack.onMidiMessage = function(port, msg)
   local x = nil
   return x.field
 end
@@ -155,8 +155,8 @@ TEST_CASE("Successful load reports no error position", "[MidiKit][Lua]") {
 static const char* LUA_ON_UNLOAD = R"(--[[
 @engine Lua
 --]]
-onMidiMessage = function(midiPort, msg) end
-onUnload = function()
+rack.onMidiMessage = function(midiPort, msg) end
+rack.onUnload = function()
 	rack.log("onUnload ran")
 	local msg = midi.create()
 	midi.setNoteOff(msg, 1, 60)
@@ -194,7 +194,7 @@ static const char* LUA_GC_SCRATCH = R"(--[[
 @engine Lua
 @description test
 --]]
-onMidiMessage = function(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
   local n = number.toString(midi.getNote(msg))
   local s = n .. "_" .. n
   local o = { a = 1, b = "b", c = s }
@@ -259,7 +259,7 @@ static const char* LUA_GC_RETAIN = R"(--[[
 --]]
 leaked = {}
 count = 0
-onMidiMessage = function(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
   count = count + 1
   leaked[count] = number.toString(midi.getNote(msg)) .. "_"
 end

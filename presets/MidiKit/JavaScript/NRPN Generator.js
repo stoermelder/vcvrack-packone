@@ -40,7 +40,7 @@ let state = {
     direction: 1
 };
 
-function onLoad() {
+rack.onLoad = function() {
     rack.log("NRPN generator initialized");
     rack.log("Channel: ", config.channel);
     rack.log("NRPN number: ", config.nrpnNumber);
@@ -67,7 +67,7 @@ function advanceValue() {
     }
 };
 
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
     if (midi.isClock(msg)) {
         state.tickCount++;
         if (state.tickCount >= config.ticksPerStep) {

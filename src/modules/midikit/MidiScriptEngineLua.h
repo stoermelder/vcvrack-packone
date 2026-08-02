@@ -185,11 +185,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	void callOptionalHook(const char* name) {
-		lua_getglobal(L, name);
-		if (!lua_isfunction(L, -1)) {
-			lua_pop(L, 1);
-			return;
-		}
+		// Callbacks live on the rack table (rack.onMidiMessage etc.), not on
+		// the global scope.
+		lua_getglobal(L, "rack");
+		if (!lua_istable(L, -1)) { lua_pop(L, 1); return; }
+		lua_getfield(L, -1, name);
+		if (!lua_isfunction(L, -1)) { lua_pop(L, 2); return; }
 		msgCount = 0;
 		inCallback = true;
 		int status = lua_pcall(L, 0, 0, 0);
@@ -197,8 +198,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
 			writeLog(string::f("%s error: %s", name, err ? err : "(unknown)"));
-			lua_pop(L, 1);
+			lua_pop(L, 1); // pop error message
 		}
+		lua_pop(L, 1); // pop rack table
 		flushMsgStore();
 	}
 
@@ -273,11 +275,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		msgStore[0].isNrpn = false;
 		msgCount = 1;
 
-		lua_getglobal(L, "onMidiMessage");
-		if (!lua_isfunction(L, -1)) {
-			lua_pop(L, 1);
-			return;
-		}
+		lua_getglobal(L, "rack");
+		if (!lua_istable(L, -1)) { lua_pop(L, 1); return; }
+		lua_getfield(L, -1, "onMidiMessage");
+		if (!lua_isfunction(L, -1)) { lua_pop(L, 2); return; }
 		lua_pushinteger(L, midiPort + 1);
 		lua_pushinteger(L, 0);
 		inCallback = true;
@@ -286,8 +287,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
 			writeLog(string::f("onMidiMessage error: %s", err ? err : "(unknown)"));
-			lua_pop(L, 1);
+			lua_pop(L, 1); // pop error message
 		}
+		lua_pop(L, 1); // pop rack table
 
 		flushMsgStore();
 	}
@@ -297,11 +299,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	void dispatchTrigger(int trigPort) override {
 		if (!L) return;
 
-		lua_getglobal(L, "onTrigger");
-		if (!lua_isfunction(L, -1)) {
-			lua_pop(L, 1);
-			return;
-		}
+		lua_getglobal(L, "rack");
+		if (!lua_istable(L, -1)) { lua_pop(L, 1); return; }
+		lua_getfield(L, -1, "onTrigger");
+		if (!lua_isfunction(L, -1)) { lua_pop(L, 2); return; }
 		lua_pushinteger(L, trigPort + 1);
 		msgCount = 0;
 		inCallback = true;
@@ -310,8 +311,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
 			writeLog(string::f("onTrigger error: %s", err ? err : "(unknown)"));
-			lua_pop(L, 1);
+			lua_pop(L, 1); // pop error message
 		}
+		lua_pop(L, 1); // pop rack table
 
 		flushMsgStore();
 	}

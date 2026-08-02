@@ -61,7 +61,7 @@ local state = {
     voicesOf = {}
 }
 
-function onLoad()
+rack.onLoad = function()
     for n = 0, 127 do
         state.refCount[n] = 0
         state.voicesOf[n] = {}
@@ -70,7 +70,7 @@ function onLoad()
     rack.log("Voices per note: ", #config.intervals)
 end
 
-function onUnload()
+rack.onUnload = function()
     for n = 0, 127 do
         if state.refCount[n] > 0 then
             local off = midi.create()
@@ -104,7 +104,7 @@ local function releaseVoices(ch, note)
     state.voicesOf[note] = {}
 end
 
-function onMidiMessage(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 
     if not matchesChannel(ch) then

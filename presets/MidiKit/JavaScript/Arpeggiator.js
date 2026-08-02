@@ -158,16 +158,16 @@ function releaseSounding() {
     }
 };
 
-function onLoad() {
+rack.onLoad = function() {
     rack.log("Arpeggiator initialized");
     rack.log("Trigger input: ", config.trigPort);
 };
 
-function onUnload() {
+rack.onUnload = function() {
     releaseSounding();
 };
 
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     if (midi.isNoteOn(msg) && matchesChannel(ch) && midi.getValue(msg) > 0) {
@@ -206,7 +206,7 @@ function onMidiMessage(midiPort, msg) {
     midiOut.send(msg);
 };
 
-function onTrigger(trigPort) {
+rack.onTrigger = function(trigPort) {
     if (trigPort !== config.trigPort) return;
 
     let division = DIVISIONS[divisionIndex()];
