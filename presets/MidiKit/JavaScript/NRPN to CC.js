@@ -46,7 +46,7 @@ let state = {
     hasValueMsb: false
 };
 
-function onLoad() {
+rack.onLoad = function() {
     rack.log("NRPN to CC converter initialized");
     rack.log("Mapped NRPN numbers: ", config.map.length);
     rack.log("Channel: ", config.ccChannel);
@@ -72,7 +72,7 @@ function resetState() {
 };
 
 // Called when a MIDI message is received
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
     if (!midi.isCc(msg)) {
         return;
     }

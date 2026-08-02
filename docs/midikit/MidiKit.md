@@ -32,7 +32,7 @@ Lua:
 
 The header is parsed line-by-line and may also be used to set `@author` and `@description` metadata, which is shown in the module's log on load.
 
-MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the selected MIDI input, or a trigger arrives on the CV trigger input (`onTrigger`). The scripting API lets you create new MIDI messages; a single incoming event may result in up to 32 outgoing messages. Incoming MIDI messages are not passed through automatically — scripts must explicitly call `midiOut.send()` to forward messages.
+MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the selected MIDI input, or a trigger arrives on the CV trigger input (`rack.onTrigger`). The scripting API lets you create new MIDI messages; a single incoming event may result in up to 32 outgoing messages. Incoming MIDI messages are not passed through automatically — scripts must explicitly call `midiOut.send()` to forward messages.
 
 The module also exposes four CV inputs and four panel parameters that can be read from scripts to add modulation or dynamic configuration.
 
@@ -40,21 +40,21 @@ You can use MIDI-KIT as an insert effect via VCV Rack's built-in MIDI Loopback d
 
 ## Examples
 
-**Note:** Channels are 1..16, parameter and input indices are 1..4. The main entry point is `onMidiMessage(midiPort, msg)`; in this version `midiPort` is always *1*.
+**Note:** Channels are 1..16, parameter and input indices are 1..4. The main entry point is `rack.onMidiMessage(midiPort, msg)`; in this version `midiPort` is always *1*.
 
 ### Basic pass-through
 The script passes all incoming MIDI messages to the default MIDI output port.
 
 JavaScript:
 ```js
-onMidiMessage = function(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
    midiOut.send(msg);
 };
 ```
 
 Lua:
 ```lua
-onMidiMessage = function(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
    midiOut.send(msg)
 end
 ```
@@ -64,7 +64,7 @@ The script drops all incoming MIDI messages except for MIDI channel 2. Messages 
 
 JavaScript:
 ```js
-onMidiMessage = function(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
    if (midi.getChannel(msg) === 2) {
       midiOut.send(msg);
    }
@@ -73,7 +73,7 @@ onMidiMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-onMidiMessage = function(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
    if midi.getChannel(msg) == 2 then
       midiOut.send(msg)
    end
@@ -85,7 +85,7 @@ The script routes incoming CC messages on MIDI channel 2 to MIDI channel 3. All 
 
 JavaScript:
 ```js
-onMidiMessage = function(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
       midi.setChannel(msg, 3);
    }
@@ -95,7 +95,7 @@ onMidiMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-onMidiMessage = function(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
    if midi.isCc(msg) and midi.getChannel(msg) == 2 then
       midi.setChannel(msg, 3)
    end
@@ -110,9 +110,9 @@ JavaScript:
 ```js
 param.enable(1);
 
-onMidiMessage = function(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
-      let ch = number.ceil(param.getValue(1) * 16);
+      let ch = Math.ceil(param.getValue(1) * 16);
       midi.setChannel(msg, ch);
    }
    midiOut.send(msg);
@@ -123,9 +123,9 @@ Lua:
 ```lua
 param.enable(1)
 
-onMidiMessage = function(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
    if midi.isCc(msg) and midi.getChannel(msg) == 2 then
-      local ch = number.ceil(param.getValue(1) * 16)
+      local ch = math.ceil(param.getValue(1) * 16)
       midi.setChannel(msg, ch)
    end
    midiOut.send(msg)
@@ -145,13 +145,13 @@ param.getName = function(port) {
 };
 
 param.getValueFormat = function(port) {
-    if (port === 1) return number.toString(number.ceil(param.getValue(1) * 16));
+    if (port === 1) return number.toString(Math.ceil(param.getValue(1) * 16));
     return number.toString(param.getValue(port));
 };
 
-onMidiMessage = function(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
-      let ch = number.ceil(param.getValue(1) * 16);
+      let ch = Math.ceil(param.getValue(1) * 16);
       midi.setChannel(msg, ch);
    }
    midiOut.send(msg);
@@ -169,13 +169,13 @@ param.getName = function(port)
 end
 
 param.getValueFormat = function(port)
-    if port == 1 then return number.toString(number.ceil(param.getValue(1) * 16)) end
+    if port == 1 then return number.toString(math.ceil(param.getValue(1) * 16)) end
     return number.toString(param.getValue(port))
 end
 
-onMidiMessage = function(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
    if midi.isCc(msg) and midi.getChannel(msg) == 2 then
-      local ch = number.ceil(param.getValue(1) * 16)
+      local ch = math.ceil(param.getValue(1) * 16)
       midi.setChannel(msg, ch)
    end
    midiOut.send(msg)
@@ -186,7 +186,7 @@ end
 
 JavaScript:
 ```js
-onMidiMessage = function(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let nrpn1 = midi.createNRPN();
       midi.setNRPN(nrpn1, 1, 12345, 13456);
@@ -197,7 +197,7 @@ onMidiMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-onMidiMessage = function(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       local nrpn1 = midi.createNRPN()
       midi.setNRPN(nrpn1, 1, 12345, 13456)
@@ -210,7 +210,7 @@ end
 
 JavaScript:
 ```js
-onMidiMessage = function(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let sysex = midi.create();
       midi.setSysEx(sysex, "ab33010001");
@@ -221,7 +221,7 @@ onMidiMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-onMidiMessage = function(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       local sysex = midi.create()
       midi.setSysEx(sysex, "ab33010001")
@@ -236,7 +236,7 @@ Use `midi.setRaw()` for message types with no dedicated setter, such as an MTC q
 
 JavaScript:
 ```js
-onMidiMessage = function(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let mtc = midi.create();
       midi.setRaw(mtc, "f11a");
@@ -247,7 +247,7 @@ onMidiMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-onMidiMessage = function(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       local mtc = midi.create()
       midi.setRaw(mtc, "f11a")
@@ -258,17 +258,17 @@ end
 
 ### Send an all-notes-off when the script unloads
 
-`onUnload()` runs once, right before the script's state is torn down — the script is being replaced, the module is reset, or the module is removed from the patch. It's the only reliable place to clean up notes a script left sounding, since nothing runs afterward to release them. Note the JavaScript version overrides `onUnload` with plain assignment — `onUnload = function() {...}` or `function onUnload() {...}` both work in QuickJS — see [JavaScript (QuickJS)](#javascript-quickjs).
+`rack.onUnload()` runs once, right before the script's state is torn down — the script is being replaced, the module is reset, or the module is removed from the patch. It's the only reliable place to clean up notes a script left sounding, since nothing runs afterward to release them. Note the JavaScript version assigns it to the `rack` object — `rack.onUnload = function() {...}` — see [JavaScript (QuickJS)](#javascript-quickjs).
 
 JavaScript:
 ```js
-onMidiMessage = function(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       midiOut.send(msg);
    }
 };
 
-onUnload = function() {
+rack.onUnload = function() {
    for (let note = 0; note < 128; note++) {
       let off = midi.create();
       midi.setNoteOff(off, 1, note);
@@ -279,13 +279,13 @@ onUnload = function() {
 
 Lua:
 ```lua
-onMidiMessage = function(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       midiOut.send(msg)
    end
 end
 
-function onUnload()
+rack.onUnload = function()
    for note = 0, 127 do
       local off = midi.create()
       midi.setNoteOff(off, 1, note)
@@ -296,11 +296,11 @@ end
 
 ### Send a MIDI clock message on each trigger
 
-`onTrigger(trigPort)` is the entry point for logic driven by the CV trigger input rather than by incoming MIDI — for example, forwarding an external clock as MIDI clock messages.
+`rack.onTrigger(trigPort)` is the entry point for logic driven by the CV trigger input rather than by incoming MIDI — for example, forwarding an external clock as MIDI clock messages.
 
 JavaScript:
 ```js
-onTrigger = function(trigPort) {
+rack.onTrigger = function(trigPort) {
    let clock = midi.create();
    midi.setRaw(clock, "f8");
    midiOut.send(clock);
@@ -309,7 +309,7 @@ onTrigger = function(trigPort) {
 
 Lua:
 ```lua
-function onTrigger(trigPort)
+rack.onTrigger = function(trigPort)
    local clock = midi.create()
    midi.setRaw(clock, "f8")
    midiOut.send(clock)
@@ -383,12 +383,14 @@ There is no implicit number-to-string coercion outside `..` concatenation — nu
 
 The API below is identical for both scripting engines — the function names, argument semantics, and return values do not depend on whether the active engine is JavaScript or Lua. Where the syntax of the call differs between languages, the examples in the corresponding section above (JavaScript (QuickJS) / Lua (MiniLua)) apply.
 
-### Global functions
+### Callbacks on the `rack` object
 
-- `onMidiMessage(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
-- `onTrigger(trigPort)`: Optional. Called whenever a trigger arrives on CV trigger input port `trigPort` (only *1* is supported in this version). This is the only entry point for script logic that isn't driven by an incoming MIDI message — e.g. sending a MIDI message in response to an external clock/gate. A script that doesn't define it simply never has it called. **In JavaScript (QuickJS), define it as a global function** — `function onTrigger(trigPort) { ... }` or `onTrigger = function(trigPort) { ... };` both work — see [JavaScript (QuickJS)](#javascript-quickjs) below.
-- `onLoad()`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. Use it in place of a manually-called `init()` function at the bottom of the file. **In JavaScript (QuickJS), define it as a global function** — `function onLoad() { ... }` or `onLoad = function() { ... };` both work — see [JavaScript (QuickJS)](#javascript-quickjs) below.
-- `onUnload()`: Optional. Called once, right before the script's state is torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. **In JavaScript (QuickJS), define it as a global function** — `function onUnload() { ... }` or `onUnload = function() { ... };` both work — see [JavaScript (QuickJS)](#javascript-quickjs) below.
+The callbacks below are defined as methods on the `rack` object — `rack.onMidiMessage`, `rack.onTrigger`, `rack.onLoad`, `rack.onUnload`.
+
+- `rack.onMidiMessage(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
+- `rack.onTrigger(trigPort)`: Optional. Called whenever a trigger arrives on CV trigger input port `trigPort` (only *1* is supported in this version). This is the only entry point for script logic that isn't driven by an incoming MIDI message — e.g. sending a MIDI message in response to an external clock/gate. A script that doesn't define it simply never has it called. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onTrigger = function(trigPort) { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
+- `rack.onLoad()`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. Use it in place of a manually-called `init()` function at the bottom of the file. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onLoad = function() { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
+- `rack.onUnload()`: Optional. Called once, right before the script's state is torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onUnload = function() { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
 
 ### rack
 
@@ -423,12 +425,7 @@ The API below is identical for both scripting engines — the function names, ar
 
 ### number
 
-- `number.abs(x)`: Computes the absolute value of `x`.
-- `number.ceil(x)`: Computes the largest integer value not less than `x`.
 - `number.crossfade(a, b, p)`: Linearly interpolates between `a` and `b`, from `p = 0` to `p = 1`.
-- `number.floor(arg)`: Computes the largest integer value not greater than `arg`.
-- `number.max(arg1, arg2)`: Returns the greater of two arguments.
-- `number.min(arg1, arg2)`: Returns the smaller of two arguments.
 - `number.random()`: Returns a random number of interval [0, 1).
 - `number.rescale(x, xMin, xMax, yMin, yMax, [a])`: Rescales `x` from `[xMin, xMax]` to `[yMin, yMax]`. The optional parameter `a` controls the curvature of the mapping (`a = 0` is linear). See the image for example curves:
   $$ f(x) \frac{\ \exp\left(\left(\ln\left(x\left(e-1\right)+1\right)\right)^{\left(2^{a}\right)}\right)-1}{e-1} $$
@@ -482,7 +479,7 @@ The API below is identical for both scripting engines — the function names, ar
 
 ### midiOut
 
-- `midiOut.selectPort(midiPort)`: Selects the output port `midiPort` (1-based) used by every following `midiOut.*` call, until `midiOut.selectPort()` is called again. The selection stays in effect across `onMidiMessage()` invocations. Currently MIDI-KIT has only one output port (index *1*) — scripts that call it now won't need to change when more output ports become available.
+- `midiOut.selectPort(midiPort)`: Selects the output port `midiPort` (1-based) used by every following `midiOut.*` call, until `midiOut.selectPort()` is called again. The selection stays in effect across `rack.onMidiMessage()` invocations. Currently MIDI-KIT has only one output port (index *1*) — scripts that call it now won't need to change when more output ports become available.
 
 The sending functions below take no port argument — the destination is whatever `midiOut.selectPort()` last selected (port *1* if it was never called):
 
@@ -490,7 +487,7 @@ The sending functions below take no port argument — the destination is whateve
 - `midiOut.sendAfterMs(msg, ms)`: Sends `msg` delayed on the selected MIDI port. The delay `ms` is specified in milliseconds.
 - `midiOut.sendAfterTrigger(msg, [trigPort], ticks)`: Sends `msg` delayed on the selected MIDI port. The delay is specified in `ticks` of triggers on CV trigger input `trigPort`. If `trigPort` is omitted the default trigger port is selected.
 
-**A message can only be sent once per callback.** `midiOut.send(msg)` and the `sendAfter*` variants mark the handle as sent — the actual enqueue happens once per handle after the callback, so sending the *same* handle again in one `onMidiMessage`/`onLoad`/`onUnload` is not a second message: only one goes out (and if the message body was changed in between, the last change wins). To send the same bytes twice, create a fresh handle with `midi.create()` or `midi.clone(msg)` and send that. Each message sent also consumes one of the 32 message-handle slots, so one handle per message is the right pattern.
+**A message can only be sent once per callback.** `midiOut.send(msg)` and the `sendAfter*` variants mark the handle as sent — the actual enqueue happens once per handle after the callback, so sending the *same* handle again in one `rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload` is not a second message: only one goes out (and if the message body was changed in between, the last change wins). To send the same bytes twice, create a fresh handle with `midi.create()` or `midi.clone(msg)` and send that. Each message sent also consumes one of the 32 message-handle slots, so one handle per message is the right pattern.
 
 
 ## Changelog

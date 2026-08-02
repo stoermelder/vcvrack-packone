@@ -40,7 +40,7 @@ local state = {
     direction = 1
 }
 
-function onLoad()
+rack.onLoad = function()
     rack.log("NRPN generator initialized")
     rack.log("Channel: ", config.channel)
     rack.log("NRPN number: ", config.nrpnNumber)
@@ -66,7 +66,7 @@ local function advanceValue()
     end
 end
 
-function onMidiMessage(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
     if midi.isClock(msg) then
         state.tickCount = state.tickCount + 1
         if state.tickCount >= config.ticksPerStep then

@@ -36,31 +36,6 @@ TEST_CASE("QuickJs script loads with @engine as the only header tag", "[MidiKit]
 }
 
 
-static const char* QJS_MAX = R"(/**
- * @engine QuickJs
- */
-var x = number.max(3, 7);
-)";
-
-TEST_CASE("Script body runs synchronously on load", "[MidiKit][QuickJs]") {
-	MidiKitModule* m = createModule();
-
-	m->loadScript(QJS_MAX);
-	REQUIRE(m->seQuickJs.ctx != nullptr);
-
-	// number.max(3, 7) evaluated at load time — JS global x should be 7
-	JSValue glob = JS_GetGlobalObject(m->seQuickJs.ctx);
-	JSValue x = JS_GetPropertyStr(m->seQuickJs.ctx, glob, "x");
-	double xd = 0;
-	JS_ToFloat64(m->seQuickJs.ctx, &xd, x);
-	JS_FreeValue(m->seQuickJs.ctx, x);
-	JS_FreeValue(m->seQuickJs.ctx, glob);
-	REQUIRE(xd == Catch::Approx(7.0));
-
-	Test::destroyModule(m);
-}
-
-
 static const char* LUA_HEADER = R"(--[[
 @engine Lua
 --]]
@@ -152,7 +127,7 @@ TEST_CASE("Parse error line number tracks the error position", "[MidiKit][QuickJ
 TEST_CASE("Successful load reports no error", "[MidiKit][QuickJs]") {
 	MidiKitModule* m = createModule();
 
-	m->loadScript(QJS_MAX);
+	m->loadScript(QJS_EMPTY);
 	REQUIRE(m->seQuickJs.ctx != nullptr);
 
 	std::string log = drainLog(m);
@@ -166,8 +141,8 @@ TEST_CASE("Successful load reports no error", "[MidiKit][QuickJs]") {
 static const char* QJS_ON_UNLOAD = R"(/**
  * @engine QuickJs
  */
-function onMidiMessage(midiPort, msg) {}
-function onUnload() {
+rack.onMidiMessage = function(midiPort, msg) {}
+rack.onUnload = function() {
 	rack.log("onUnload ran");
 	let msg = midi.create();
 	midi.setNoteOff(msg, 1, 60);
@@ -197,7 +172,7 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Qui
 static const char* QJS_MIDI_ROUNDTRIP = R"(/**
  * @engine QuickJs
  */
-function onMidiMessage(port, m) {
+rack.onMidiMessage = function(port, m) {
 	if (midi.isCc(m)) {
 		let out = midi.clone(m);
 		midi.setChannel(out, 2);
@@ -242,7 +217,7 @@ TEST_CASE("onMidiMessage dispatch round-trips a CC message through midi.*/midiOu
 static const char* QJS_NRPN = R"(/**
  * @engine QuickJs
  */
-function onMidiMessage(port, m) {
+rack.onMidiMessage = function(port, m) {
 	let n = midi.createNRPN();
 	midi.setNRPN(n, 1, 300, 500);
 	midiOut.send(n);
@@ -292,7 +267,7 @@ TEST_CASE("midi.createNRPN/setNRPN queue all four CC messages in order", "[MidiK
 static const char* QJS_GC_SCRATCH = R"(/**
  * @engine QuickJs
  */
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
 	let n = number.toString(midi.getNote(msg));
 	let s = n + "_" + n;
 	let o = { a: 1, b: "b", c: s };
@@ -358,7 +333,7 @@ static const char* QJS_GC_RETAIN = R"(/**
  * @engine QuickJs
  */
 var leaked = [];
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
 	leaked.push(number.toString(midi.getNote(msg)) + "_");
 }
 )";

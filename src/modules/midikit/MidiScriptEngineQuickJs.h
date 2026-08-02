@@ -1,6 +1,7 @@
 #include "MidiScriptEngine.h"
 #include "../../utils/TaskWorker.hpp"
 #include "../../../dep/quickjs/quickjs.h"
+#include <algorithm>
 #include <iomanip>
 #include <regex>
 
@@ -16,6 +17,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		bool isNrpn = false;
 		bool send = false;
 		uint64_t tick = 0;
+		// Monotonic stamp assigned when midiOut.send() is called, so the out
+		// queue can be flushed in send() order rather than handle order.
+		size_t sendOrder = 0;
 	};
 
 	static std::map<JSContext*, MidiScriptEngineQuickJs*> ctxMap;
@@ -30,6 +34,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// Must be initialised: top-level script code runs during loadScript(), before
 	// process() sets this to 1, and it bounds every msgStore index check below.
 	size_t msgCount = 0;
+	// Next value handed to MessageEx::sendOrder. Never reset: it only needs to
+	// be monotonic within a single callback, and the store is reset per callback.
+	size_t sendCounter = 0;
 	// True only while onMidiMessage() is executing. The message store is reset
 	// on every callback, so handles created outside one are silently
 	// invalidated — this lets midi.create() warn instead of failing quietly.
@@ -152,11 +159,15 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JS_FreeValue(ctx, r);
 			writeLog("Script loaded", false);
 
+			// Callbacks live on the rack object (rack.onMidiMessage etc.), not
+			// on the global scope.
 			JSValue glob = JS_GetGlobalObject(ctx);
-			hasOnLoad = isCallableProp(glob, "onLoad");
-			hasOnUnload = isCallableProp(glob, "onUnload");
-			hasOnMidiMessage = isCallableProp(glob, "onMidiMessage");
-			hasOnTrigger = isCallableProp(glob, "onTrigger");
+			JSValue rack = JS_GetPropertyStr(ctx, glob, "rack");
+			hasOnLoad = isCallableProp(rack, "onLoad");
+			hasOnUnload = isCallableProp(rack, "onUnload");
+			hasOnMidiMessage = isCallableProp(rack, "onMidiMessage");
+			hasOnTrigger = isCallableProp(rack, "onTrigger");
+			JS_FreeValue(ctx, rack);
 			JS_FreeValue(ctx, glob);
 
 			if (!hasOnMidiMessage) {
@@ -208,9 +219,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		msgCount = 0;
 		inCallback = true;
 		JSValue glob = JS_GetGlobalObject(ctx);
-		JSValue fn = JS_GetPropertyStr(ctx, glob, name);
-		JSValue r = JS_Call(ctx, fn, glob, 0, NULL);
+		JSValue rack = JS_GetPropertyStr(ctx, glob, "rack");
+		JSValue fn = JS_GetPropertyStr(ctx, rack, name);
+		JSValue r = JS_Call(ctx, fn, rack, 0, NULL);
 		JS_FreeValue(ctx, fn);
+		JS_FreeValue(ctx, rack);
 		JS_FreeValue(ctx, glob);
 		inCallback = false;
 		if (JS_IsException(r)) {
@@ -247,12 +260,14 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			inCallback = true;
 			if (hasOnMidiMessage) {
 				JSValue glob = JS_GetGlobalObject(ctx);
-				JSValue fn = JS_GetPropertyStr(ctx, glob, "onMidiMessage");
+				JSValue rack = JS_GetPropertyStr(ctx, glob, "rack");
+				JSValue fn = JS_GetPropertyStr(ctx, rack, "onMidiMessage");
 				JSValue args[2] = { JS_NewInt32(ctx, midiPort + 1), JS_NewInt32(ctx, 0) };
-				JSValue r = JS_Call(ctx, fn, glob, 2, args);
+				JSValue r = JS_Call(ctx, fn, rack, 2, args);
 				JS_FreeValue(ctx, args[0]);
 				JS_FreeValue(ctx, args[1]);
 				JS_FreeValue(ctx, fn);
+				JS_FreeValue(ctx, rack);
 				JS_FreeValue(ctx, glob);
 				inCallback = false;
 				if (JS_IsException(r)) {
@@ -281,11 +296,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			inCallback = true;
 			if (hasOnTrigger) {
 				JSValue glob = JS_GetGlobalObject(ctx);
-				JSValue fn = JS_GetPropertyStr(ctx, glob, "onTrigger");
+				JSValue rack = JS_GetPropertyStr(ctx, glob, "rack");
+				JSValue fn = JS_GetPropertyStr(ctx, rack, "onTrigger");
 				JSValue arg = JS_NewInt32(ctx, trigPort + 1);
-				JSValue r = JS_Call(ctx, fn, glob, 1, &arg);
+				JSValue r = JS_Call(ctx, fn, rack, 1, &arg);
 				JS_FreeValue(ctx, arg);
 				JS_FreeValue(ctx, fn);
+				JS_FreeValue(ctx, rack);
 				JS_FreeValue(ctx, glob);
 				inCallback = false;
 				if (JS_IsException(r)) {
@@ -307,16 +324,23 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	// Pushes every message sent during the callback that just ran into
 	// midiOutQueue. Shared by onMidiMessage/onLoad/onUnload/onTrigger.
+	// Messages are emitted in the order midiOut.send() was called (sendOrder),
+	// not in handle-creation order: a script may create several messages and
+	// send them in a different order, and the receiver must observe send() order.
 	void flushMsgStore() {
+		std::vector<size_t> order;
 		for (size_t i = 0; i < msgCount; i++) {
-			if (msgStore[i].send) {
-				midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i].msg, msgStore[i].tick));
-				if (msgStore[i].isNrpn) {
-					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 1].msg, msgStore[i].tick));
-					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 2].msg, msgStore[i].tick));
-					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 3].msg, msgStore[i].tick));
-					i += 3;
-				}
+			if (msgStore[i].send) order.push_back(i);
+		}
+		std::sort(order.begin(), order.end(), [this](size_t a, size_t b) {
+			return msgStore[a].sendOrder < msgStore[b].sendOrder;
+		});
+		for (size_t i : order) {
+			midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i].msg, msgStore[i].tick));
+			if (msgStore[i].isNrpn) {
+				midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 1].msg, msgStore[i].tick));
+				midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 2].msg, msgStore[i].tick));
+				midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 3].msg, msgStore[i].tick));
 			}
 		}
 	}
@@ -385,12 +409,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// number
 		JSValue _number = JS_NewObject(ctx);
 		JS_SetPropertyStr(ctx, glob, "number", _number);
-		JS_SetPropertyStr(ctx, _number, "abs", JS_NewCFunction(ctx, js_number_abs, "abs", 1));
-		JS_SetPropertyStr(ctx, _number, "ceil", JS_NewCFunction(ctx, js_number_ceil, "ceil", 1));
 		JS_SetPropertyStr(ctx, _number, "crossfade", JS_NewCFunction(ctx, js_number_crossfade, "crossfade", 3));
-		JS_SetPropertyStr(ctx, _number, "floor", JS_NewCFunction(ctx, js_number_floor, "floor", 1));
-		JS_SetPropertyStr(ctx, _number, "max", JS_NewCFunction(ctx, js_number_max, "max", 2));
-		JS_SetPropertyStr(ctx, _number, "min", JS_NewCFunction(ctx, js_number_min, "min", 2));
 		JS_SetPropertyStr(ctx, _number, "random", JS_NewCFunction(ctx, js_number_random, "random", 0));
 		JS_SetPropertyStr(ctx, _number, "rescale", JS_NewCFunction(ctx, js_number_rescale, "rescale", 5));
 		JS_SetPropertyStr(ctx, _number, "toString", JS_NewCFunction(ctx, js_number_toString, "toString", 1));
@@ -564,18 +583,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	// number
 
-	static JSValue js_number_abs(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc < 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "number.abs: bad args");
-		float f = argNum(ctx, argv[0]);
-		return JS_NewFloat64(ctx, std::abs(f));
-	}
-
-	static JSValue js_number_ceil(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc < 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "number.ceil: bad args");
-		float f = argNum(ctx, argv[0]);
-		return JS_NewFloat64(ctx, std::ceil(f));
-	}
-
 	static JSValue js_number_crossfade(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		if (argc < 3 || !argIsNumber(ctx, argv[0]) || !argIsNumber(ctx, argv[1]) || !argIsNumber(ctx, argv[2]))
 			return jsThrow(ctx, "number.crossfade: bad args");
@@ -583,26 +590,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		float b = argNum(ctx, argv[1]);
 		float p = argNum(ctx, argv[2]);
 		return JS_NewFloat64(ctx, rack::crossfade(a, b, p));
-	}
-
-	static JSValue js_number_floor(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc < 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "number.floor: bad args");
-		float f = argNum(ctx, argv[0]);
-		return JS_NewFloat64(ctx, std::floor(f));
-	}
-
-	static JSValue js_number_max(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc < 2 || !argIsNumber(ctx, argv[0]) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "number.max: bad args");
-		float f1 = argNum(ctx, argv[0]);
-		float f2 = argNum(ctx, argv[1]);
-		return JS_NewFloat64(ctx, std::max(f1, f2));
-	}
-
-	static JSValue js_number_min(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc < 2 || !argIsNumber(ctx, argv[0]) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "number.min: bad args");
-		float f1 = argNum(ctx, argv[0]);
-		float f2 = argNum(ctx, argv[1]);
-		return JS_NewFloat64(ctx, std::min(f1, f2));
 	}
 
 	static JSValue js_number_random(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
@@ -1286,6 +1273,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		MessageEx& s = ctxMap[ctx]->msgStore[idx];
 		s.midiPort = ctxMap[ctx]->selectedPort;
 		s.send = true;
+		s.sendOrder = ctxMap[ctx]->sendCounter++;
 		s.msg.frame = -1;
 		return JS_UNDEFINED;
 	}
@@ -1299,6 +1287,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		int64_t currentFrame = APP->engine->getFrame();
 		int64_t frame = ms / 1000.f / APP->engine->getSampleTime();
 		s.send = true;
+		s.sendOrder = ctxMap[ctx]->sendCounter++;
 		s.msg.frame = currentFrame + frame;
 		return JS_UNDEFINED;
 	}
@@ -1312,6 +1301,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			int64_t currentTicks = ctxMap[ctx]->getTrigTicks(0);
 			int ticks = static_cast<int>(argNum(ctx, argv[1]));
 			s.send = true;
+			s.sendOrder = ctxMap[ctx]->sendCounter++;
 			s.tick = currentTicks + ticks;
 			return JS_UNDEFINED;
 		}
@@ -1325,6 +1315,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			int64_t currentTicks = ctxMap[ctx]->getTrigTicks(trigPort - 1);
 			int ticks = static_cast<int>(argNum(ctx, argv[2]));
 			s.send = true;
+			s.sendOrder = ctxMap[ctx]->sendCounter++;
 			s.tick = currentTicks + ticks;
 			return JS_UNDEFINED;
 		}

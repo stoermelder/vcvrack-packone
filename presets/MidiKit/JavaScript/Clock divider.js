@@ -54,7 +54,7 @@ let state = {
     running: false
 };
 
-function onLoad() {
+rack.onLoad = function() {
     rack.log("Clock divider initialized");
     rack.log("Divisor: ", config.divisor, " (24 ppqn / ", config.divisor, ")");
 };
@@ -64,7 +64,7 @@ function resetPhase() {
     state.pulseCount = 0;
 };
 
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
     if (midi.isStart(msg)) {
         resetPhase();
         state.running = true;

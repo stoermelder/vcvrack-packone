@@ -18,28 +18,6 @@ TEST_CASE("Lua-tagged script loads and creates Lua state", "[MidiKit][Lua]") {
 }
 
 
-static const char* LUA_MAX = R"(--[[
-@engine Lua
---]]
-x = number.max(3, 7)
-)";
-
-TEST_CASE("Script body runs synchronously on load", "[MidiKit][Lua]") {
-	MidiKitModule* m = createModule();
-
-	m->loadScript(LUA_MAX);
-	REQUIRE(m->seLua.L != nullptr);
-
-	// number.max(3, 7) evaluated at load time — Lua global x should be 7
-	lua_getglobal(m->seLua.L, "x");
-	REQUIRE(lua_isnumber(m->seLua.L, -1));
-	REQUIRE(lua_tonumber(m->seLua.L, -1) == Catch::Approx(7.0));
-	lua_pop(m->seLua.L, 1);
-
-	Test::destroyModule(m);
-}
-
-
 static const char* LUA_INPUT_NAME = R"(--[[
 @engine Lua
 --]]
@@ -131,7 +109,7 @@ static const char* LUA_RUNTIME_ERROR = R"(--[[
 @engine Lua
 @description test
 --]]
-onMidiMessage = function(port, msg)
+rack.onMidiMessage = function(port, msg)
   local x = nil
   return x.field
 end
@@ -163,7 +141,7 @@ TEST_CASE("Runtime error reports a clean chunk name and line", "[MidiKit][Lua]")
 TEST_CASE("Successful load reports no error position", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
-	m->loadScript(LUA_MAX);
+	m->loadScript(LUA_EMPTY);
 	REQUIRE(m->seLua.L != nullptr);
 
 	std::string log = drainLog(m);
@@ -177,8 +155,8 @@ TEST_CASE("Successful load reports no error position", "[MidiKit][Lua]") {
 static const char* LUA_ON_UNLOAD = R"(--[[
 @engine Lua
 --]]
-onMidiMessage = function(midiPort, msg) end
-onUnload = function()
+rack.onMidiMessage = function(midiPort, msg) end
+rack.onUnload = function()
 	rack.log("onUnload ran")
 	local msg = midi.create()
 	midi.setNoteOff(msg, 1, 60)
@@ -216,7 +194,7 @@ static const char* LUA_GC_SCRATCH = R"(--[[
 @engine Lua
 @description test
 --]]
-onMidiMessage = function(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
   local n = number.toString(midi.getNote(msg))
   local s = n .. "_" .. n
   local o = { a = 1, b = "b", c = s }
@@ -281,7 +259,7 @@ static const char* LUA_GC_RETAIN = R"(--[[
 --]]
 leaked = {}
 count = 0
-onMidiMessage = function(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
   count = count + 1
   leaked[count] = number.toString(midi.getNote(msg)) .. "_"
 end

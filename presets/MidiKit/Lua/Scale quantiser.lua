@@ -70,7 +70,7 @@ local function noteName(note)
     return noteNames[(note % 12) + 1]
 end
 
-function onLoad()
+rack.onLoad = function()
     for n = 0, 127 do
         state.playedAs[n] = -1
     end
@@ -87,7 +87,7 @@ end
 -- is active at a time), so this releases on config.channel if fixed, or
 -- channel 1 when config.channel is 0 (every channel) - the same best-effort
 -- choice Chord harmonizer makes for the same reason.
-function onUnload()
+rack.onUnload = function()
     local ch = config.channel == 0 and 1 or config.channel
     for n = 0, 127 do
         if state.playedAs[n] >= 0 then
@@ -155,7 +155,7 @@ local function quantise(note)
     return out
 end
 
-function onMidiMessage(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
     if not matchesChannel(midi.getChannel(msg)) then
         midiOut.send(msg)
         return

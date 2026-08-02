@@ -66,7 +66,7 @@ param.getValueFormat = function(port) {
     return "";
 };
 
-function onLoad() {
+rack.onLoad = function() {
     rack.log("Velocity curve initialized");
     rack.log("Range: ", config.minVelocity, "-", config.maxVelocity);
     rack.log("Knob ", config.curveParam, " sets the curve (centre = linear)");
@@ -86,12 +86,12 @@ function shapeVelocity(vel) {
 
     // Guard the endpoints: rescale works in floats and can land a hair outside
     // the window, which would produce an invalid velocity byte.
-    out = number.floor(out + 0.5);
-    out = number.max(config.minVelocity, number.min(config.maxVelocity, out));
+    out = Math.floor(out + 0.5);
+    out = Math.max(config.minVelocity, Math.min(config.maxVelocity, out));
     return out;
 };
 
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
     if (midi.isNoteOn(msg) && matchesChannel(midi.getChannel(msg))) {
         let vel = midi.getValue(msg);
 

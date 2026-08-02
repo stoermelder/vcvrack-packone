@@ -237,48 +237,6 @@ static void requireCoercedLog(const std::string& jsScript, const std::string& lu
 // identical text in both engines — that's what makes comparing logged lines
 // a valid equivalence check rather than just an engine-internal readback.
 
-static const char* JS_NUMBER_ABS = R"(/**
- * @engine QuickJs
- */
-rack.log("PROBE:" + number.toString(number.abs(-5)));
-rack.log("PROBE:" + number.toString(number.abs(3)));
-rack.log("PROBE:" + number.toString(number.abs(0)));
-)";
-
-static const char* LUA_NUMBER_ABS = R"(--[[
-@engine Lua
---]]
-rack.log("PROBE:" .. number.toString(number.abs(-5)))
-rack.log("PROBE:" .. number.toString(number.abs(3)))
-rack.log("PROBE:" .. number.toString(number.abs(0)))
-)";
-
-TEST_CASE("number.abs is identical", "[MidiKit][CrossEngine]") {
-	requireLoggedValues(JS_NUMBER_ABS, LUA_NUMBER_ABS, {"5", "3", "0"});
-}
-
-
-static const char* JS_NUMBER_CEIL = R"(/**
- * @engine QuickJs
- */
-rack.log("PROBE:" + number.toString(number.ceil(3.2)));
-rack.log("PROBE:" + number.toString(number.ceil(-3.2)));
-rack.log("PROBE:" + number.toString(number.ceil(5)));
-)";
-
-static const char* LUA_NUMBER_CEIL = R"(--[[
-@engine Lua
---]]
-rack.log("PROBE:" .. number.toString(number.ceil(3.2)))
-rack.log("PROBE:" .. number.toString(number.ceil(-3.2)))
-rack.log("PROBE:" .. number.toString(number.ceil(5)))
-)";
-
-TEST_CASE("number.ceil is identical", "[MidiKit][CrossEngine]") {
-	requireLoggedValues(JS_NUMBER_CEIL, LUA_NUMBER_CEIL, {"4", "-3", "5"});
-}
-
-
 static const char* JS_NUMBER_CROSSFADE = R"(/**
  * @engine QuickJs
  */
@@ -297,48 +255,6 @@ rack.log("PROBE:" .. number.toString(number.crossfade(-5, 5, 0.75)))
 
 TEST_CASE("number.crossfade is identical", "[MidiKit][CrossEngine]") {
 	requireLoggedValues(JS_NUMBER_CROSSFADE, LUA_NUMBER_CROSSFADE, {"5", "125", "2.5"});
-}
-
-
-static const char* JS_NUMBER_FLOOR = R"(/**
- * @engine QuickJs
- */
-rack.log("PROBE:" + number.toString(number.floor(3.8)));
-rack.log("PROBE:" + number.toString(number.floor(-3.8)));
-rack.log("PROBE:" + number.toString(number.floor(5)));
-)";
-
-static const char* LUA_NUMBER_FLOOR = R"(--[[
-@engine Lua
---]]
-rack.log("PROBE:" .. number.toString(number.floor(3.8)))
-rack.log("PROBE:" .. number.toString(number.floor(-3.8)))
-rack.log("PROBE:" .. number.toString(number.floor(5)))
-)";
-
-TEST_CASE("number.floor is identical", "[MidiKit][CrossEngine]") {
-	requireLoggedValues(JS_NUMBER_FLOOR, LUA_NUMBER_FLOOR, {"3", "-4", "5"});
-}
-
-
-static const char* JS_NUMBER_MIN = R"(/**
- * @engine QuickJs
- */
-rack.log("PROBE:" + number.toString(number.min(3, 7)));
-rack.log("PROBE:" + number.toString(number.min(-5, 5)));
-rack.log("PROBE:" + number.toString(number.min(10, 10)));
-)";
-
-static const char* LUA_NUMBER_MIN = R"(--[[
-@engine Lua
---]]
-rack.log("PROBE:" .. number.toString(number.min(3, 7)))
-rack.log("PROBE:" .. number.toString(number.min(-5, 5)))
-rack.log("PROBE:" .. number.toString(number.min(10, 10)))
-)";
-
-TEST_CASE("number.min is identical", "[MidiKit][CrossEngine]") {
-	requireLoggedValues(JS_NUMBER_MIN, LUA_NUMBER_MIN, {"3", "-5", "10"});
 }
 
 
@@ -483,7 +399,7 @@ TEST_CASE("rack.getFrame returns the engine frame counter in both engines", "[Mi
 static const char* JS_RACK_LOG_COERCE = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     rack.log(42);
     rack.log(3.14);
     rack.log(-7);
@@ -499,7 +415,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_RACK_LOG_COERCE = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     rack.log(42)
     rack.log(3.14)
     rack.log(-7)
@@ -529,7 +445,7 @@ TEST_CASE("rack.log coerces numbers, booleans, strings and null in both engines"
 static const char* JS_RACK_LOG_MULTI = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     rack.log("Member channels: ", 2, "-", 16);
     rack.log("note on ch", 3, " note=", 60, " -> ", 64);
     rack.log("ok=", true, " n=", 1 / 3, " nil=", null);
@@ -539,7 +455,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_RACK_LOG_MULTI = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     rack.log("Member channels: ", 2, "-", 16)
     rack.log("note on ch", 3, " note=", 60, " -> ", 64)
     rack.log("ok=", true, " n=", 1 / 3, " nil=", nil)
@@ -558,7 +474,7 @@ TEST_CASE("rack.log concatenates multiple arguments in both engines", "[MidiKit]
 static const char* JS_NOTE_ON = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setNoteOn(out, 1, 60, 100);
     midiOut.send(out);
@@ -568,7 +484,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_NOTE_ON = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setNoteOn(out, 1, 60, 100)
     midiOut.send(out)
@@ -591,7 +507,7 @@ static const char* JS_CC_REROUTE = R"(/**
  * @engine QuickJs
  * @description CC number +1 passthrough
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     if (midi.isCc(msg)) {
         midi.setNote(msg, midi.getNote(msg) + 1);
         midiOut.send(msg);
@@ -603,7 +519,7 @@ static const char* LUA_CC_REROUTE = R"(--[[
 @engine Lua
 @description CC number +1 passthrough
 --]]
-onMidiMessage = function(port, msg)
+rack.onMidiMessage = function(port, msg)
     if midi.isCc(msg) then
         midi.setNote(msg, midi.getNote(msg) + 1)
         midiOut.send(msg)
@@ -628,7 +544,7 @@ TEST_CASE("CC reroute script produces identical output in both engines", "[MidiK
 static const char* JS_CC = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setCc(out, 2, 74, 127);
     midiOut.send(out);
@@ -638,7 +554,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_CC = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setCc(out, 2, 74, 127)
     midiOut.send(out)
@@ -655,7 +571,7 @@ TEST_CASE("setCc produces identical wire bytes", "[MidiKit][CrossEngine]") {
 static const char* JS_CC_CLAMP = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setCc(out, 1, 10, 500);
     midiOut.send(out);
@@ -665,7 +581,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_CC_CLAMP = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setCc(out, 1, 10, 500)
     midiOut.send(out)
@@ -682,7 +598,7 @@ TEST_CASE("setCc clamps out-of-range value identically", "[MidiKit][CrossEngine]
 static const char* JS_SYSEX = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setSysEx(out, "43104c0000");
     midiOut.send(out);
@@ -692,7 +608,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_SYSEX = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setSysEx(out, "43104c0000")
     midiOut.send(out)
@@ -755,7 +671,7 @@ TEST_CASE("getSysEx returns the payload and getSysExLength the size", "[MidiKit]
 static const char* JS_SEND_AFTER_TRIGGER = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setNoteOn(out, 1, 60, 100);
     midiOut.sendAfterTrigger(out, 10);
@@ -765,7 +681,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_SEND_AFTER_TRIGGER = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setNoteOn(out, 1, 60, 100)
     midiOut.sendAfterTrigger(out, 10)
@@ -785,7 +701,7 @@ TEST_CASE("sendAfterTrigger 2-arg form is identical", "[MidiKit][CrossEngine]") 
 static const char* JS_HEADER_ONLY = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setNoteOn(out, 1, 60, 100);
     midiOut.send(out);
@@ -795,7 +711,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_HEADER_ONLY = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setNoteOn(out, 1, 60, 100)
     midiOut.send(out)
@@ -812,7 +728,7 @@ TEST_CASE("@engine-only header loads identically in both engines", "[MidiKit][Cr
 static const char* JS_RAW = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setRaw(out, "f11a");
     midiOut.send(out);
@@ -822,7 +738,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_RAW = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setRaw(out, "f11a")
     midiOut.send(out)
@@ -839,7 +755,7 @@ TEST_CASE("setRaw writes identical bytes with no framing", "[MidiKit][CrossEngin
 static const char* JS_PITCH_WHEEL = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setPitchWheel(out, 2, 12345);
     midiOut.send(out);
@@ -849,7 +765,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_PITCH_WHEEL = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setPitchWheel(out, 2, 12345)
     midiOut.send(out)
@@ -866,7 +782,7 @@ TEST_CASE("setPitchWheel produces identical wire bytes", "[MidiKit][CrossEngine]
 static const char* JS_PROGRAM_CHANGE = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setProgramChange(out, 4, 10);
     midiOut.send(out);
@@ -876,7 +792,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_PROGRAM_CHANGE = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setProgramChange(out, 4, 10)
     midiOut.send(out)
@@ -924,7 +840,7 @@ TEST_CASE("getProgramChange round-trips the program number", "[MidiKit][CrossEng
 static const char* JS_CHAN_PRESSURE = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setChanPressure(out, 5, 80);
     midiOut.send(out);
@@ -934,7 +850,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_CHAN_PRESSURE = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setChanPressure(out, 5, 80)
     midiOut.send(out)
@@ -951,7 +867,7 @@ TEST_CASE("setChanPressure produces identical 2-byte wire message", "[MidiKit][C
 static const char* JS_KEY_PRESSURE = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setKeyPressure(out, 6, 64, 90);
     midiOut.send(out);
@@ -961,7 +877,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_KEY_PRESSURE = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setKeyPressure(out, 6, 64, 90)
     midiOut.send(out)
@@ -978,7 +894,7 @@ TEST_CASE("setKeyPressure produces identical wire bytes", "[MidiKit][CrossEngine
 static const char* JS_KEY_PRESSURE_CLAMP = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let outHigh = midi.create();
     midi.setKeyPressure(outHigh, 6, 64, 200);
     midiOut.send(outHigh);
@@ -991,7 +907,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_KEY_PRESSURE_CLAMP = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local outHigh = midi.create()
     midi.setKeyPressure(outHigh, 6, 64, 200)
     midiOut.send(outHigh)
@@ -1011,7 +927,7 @@ TEST_CASE("setKeyPressure clamps out-of-range values identically (#A5)", "[MidiK
 static const char* JS_NOTE_ON_CLAMP = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let outHigh = midi.create();
     midi.setNoteOn(outHigh, 1, 60, 200);
     midiOut.send(outHigh);
@@ -1024,7 +940,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_NOTE_ON_CLAMP = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local outHigh = midi.create()
     midi.setNoteOn(outHigh, 1, 60, 200)
     midiOut.send(outHigh)
@@ -1050,7 +966,7 @@ TEST_CASE("setNoteOn clamps out-of-range velocity identically (#A5)", "[MidiKit]
 static const char* JS_MIDI_CLONE = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let src = midi.create();
     midi.setNoteOn(src, 1, 60, 100);
     let copy = midi.clone(src);
@@ -1063,7 +979,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_MIDI_CLONE = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local src = midi.create()
     midi.setNoteOn(src, 1, 60, 100)
     local copy = midi.clone(src)
@@ -1081,7 +997,7 @@ TEST_CASE("midi.clone is an independent copy in both engines", "[MidiKit][CrossE
 static const char* JS_MIDI_CLONE_INCOMING = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let copy = midi.clone(msg);   // deep copy of the incoming note-on
     midi.setChannel(copy, 5);     // reroute to channel 5
     midiOut.send(copy);
@@ -1091,7 +1007,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_MIDI_CLONE_INCOMING = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local copy = midi.clone(msg)
     midi.setChannel(copy, 5)
     midiOut.send(copy)
@@ -1108,7 +1024,7 @@ TEST_CASE("midi.clone of the incoming message sends a modified copy", "[MidiKit]
 static const char* JS_NOTE_OFF = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setNoteOff(out, 7, 48);
     midiOut.send(out);
@@ -1118,7 +1034,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_NOTE_OFF = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setNoteOff(out, 7, 48)
     midiOut.send(out)
@@ -1139,7 +1055,7 @@ TEST_CASE("setNoteOff produces identical wire bytes", "[MidiKit][CrossEngine]") 
 static const char* JS_NOTE_OFF_VEL = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setNoteOff(out, 7, 48, 100);
     midiOut.send(out);
@@ -1149,7 +1065,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_NOTE_OFF_VEL = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setNoteOff(out, 7, 48, 100)
     midiOut.send(out)
@@ -1198,7 +1114,7 @@ TEST_CASE("setNoteOff velocity round-trips via getValue and clamps", "[MidiKit][
 static const char* JS_CC_14BIT = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let msb = midi.create();
     let lsb = midi.create();
     midi.setCc14bit(msb, lsb, 8, 1, 100.5);
@@ -1210,7 +1126,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_CC_14BIT = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local msb = midi.create()
     local lsb = midi.create()
     midi.setCc14bit(msb, lsb, 8, 1, 100.5)
@@ -1233,7 +1149,7 @@ TEST_CASE("setCc14bit produces identical MSB/LSB wire messages", "[MidiKit][Cros
 static const char* JS_NRPN = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let nrpn = midi.createNRPN();
     midi.setNRPN(nrpn, 9, 1234, 5678);
     midiOut.send(nrpn);
@@ -1243,7 +1159,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_NRPN = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local nrpn = midi.createNRPN()
     midi.setNRPN(nrpn, 9, 1234, 5678)
     midiOut.send(nrpn)
@@ -1268,6 +1184,71 @@ TEST_CASE("setNRPN wire order is spec-compliant (MSB before LSB)", "[MidiKit]") 
 	REQUIRE(r.sent[1].bytes == std::vector<uint8_t>{0xb8, 98, 82});
 	REQUIRE(r.sent[2].bytes == std::vector<uint8_t>{0xb8, 6, 44});
 	REQUIRE(r.sent[3].bytes == std::vector<uint8_t>{0xb8, 38, 46});
+}
+
+
+// --- NRPN send() order ---------------------------------------------------
+//
+// An NRPN is a quad of 4 CC messages that flush as a unit when the group
+// leader is sent. This verifies that the send-order fix also applies across
+// NRPN groups: two NRPNs are created (n1, then n2) but sent in the opposite
+// order (n2, then n1), and the wire must carry n2's whole quad before n1's
+// whole quad — i.e. the groups are ordered by send() call, not by
+// handle-creation order.
+
+static const char* JS_NRPN_SEND_ORDER = R"(/**
+ * @engine QuickJs
+ */
+rack.onMidiMessage = function(port, msg) {
+    let n1 = midi.createNRPN();
+    midi.setNRPN(n1, 9, 1234, 5678);
+    let n2 = midi.createNRPN();
+    midi.setNRPN(n2, 9, 100, 200);
+    midiOut.send(n2);   // created second, sent first
+    midiOut.send(n1);   // created first, sent last
+};
+)";
+
+static const char* LUA_NRPN_SEND_ORDER = R"(--[[
+@engine Lua
+--]]
+rack.onMidiMessage = function(midiPort, msg)
+    local n1 = midi.createNRPN()
+    midi.setNRPN(n1, 9, 1234, 5678)
+    local n2 = midi.createNRPN()
+    midi.setNRPN(n2, 9, 100, 200)
+    midiOut.send(n2)
+    midiOut.send(n1)
+end
+)";
+
+TEST_CASE("NRPN quads flush in send() order, not handle-creation order, in both engines", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(JS_NRPN_SEND_ORDER);
+	EngineResult lua = run(LUA_NRPN_SEND_ORDER);
+
+	// n2 (number=100, value=200): msb=0,lsb=100, data msb=1,lsb=72
+	std::vector<uint8_t> n2p0 = {0xb8, 99, 0};
+	std::vector<uint8_t> n2p1 = {0xb8, 98, 100};
+	std::vector<uint8_t> n2p2 = {0xb8, 6, 1};
+	std::vector<uint8_t> n2p3 = {0xb8, 38, 72};
+	// n1 (number=1234, value=5678): msb=9,lsb=82, data msb=44,lsb=46
+	std::vector<uint8_t> n1p0 = {0xb8, 99, 9};
+	std::vector<uint8_t> n1p1 = {0xb8, 98, 82};
+	std::vector<uint8_t> n1p2 = {0xb8, 6, 44};
+	std::vector<uint8_t> n1p3 = {0xb8, 38, 46};
+
+	// Handle order would be n1's quad then n2's; send() order is n2 then n1.
+	std::vector<std::vector<uint8_t>> expect = {n2p0, n2p1, n2p2, n2p3, n1p0, n1p1, n1p2, n1p3};
+
+	REQUIRE(js.sent.size() == 8);
+	for (size_t i = 0; i < expect.size(); i++) {
+		REQUIRE(js.sent[i].bytes == expect[i]);
+	}
+
+	REQUIRE(lua.sent.size() == 8);
+	for (size_t i = 0; i < expect.size(); i++) {
+		REQUIRE(lua.sent[i].bytes == expect[i]);
+	}
 }
 
 
@@ -1447,7 +1428,7 @@ TEST_CASE("input.getVoltage/isHigh/isLow read identical default state", "[MidiKi
 static const char* JS_TRIG_GET_TICKS = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setCc(out, 1, 1, 0);
     midi.setValue(out, trig.getTicks(1));
@@ -1458,7 +1439,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_TRIG_GET_TICKS = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setCc(out, 1, 1, 0)
     midi.setValue(out, trig.getTicks(1))
@@ -1588,11 +1569,11 @@ TEST_CASE("param.enable sets identical module state in both engines", "[MidiKit]
 static const char* JS_PARAM_GET_VALUE = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     param.enable(1);
     let out = midi.create();
     midi.setCc(out, 1, 1, 0);
-    midi.setValue(out, number.floor(param.getValue(1) * 127));
+    midi.setValue(out, Math.floor(param.getValue(1) * 127));
     midiOut.send(out);
 };
 )";
@@ -1600,11 +1581,11 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_PARAM_GET_VALUE = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     param.enable(1)
     local out = midi.create()
     midi.setCc(out, 1, 1, 0)
-    midi.setValue(out, number.floor(param.getValue(1) * 127))
+    midi.setValue(out, math.floor(param.getValue(1) * 127))
     midiOut.send(out)
 end
 )";
@@ -1642,7 +1623,7 @@ static const char* JS_SELECT_PORT = R"(/**
 let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
 
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     midiOut.selectPort(1);
     midiOut.send(msg);
 };
@@ -1654,7 +1635,7 @@ static const char* LUA_SELECT_PORT = R"(--[[
 msg = midi.create()
 midi.setNoteOn(msg, 1, 60, 100)
 
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     midiOut.selectPort(1)
     midiOut.send(msg)
 end
@@ -1668,7 +1649,7 @@ TEST_CASE("midiOut.selectPort produces identical output port in both engines", "
 static const char* JS_SELECT_PORT_STICKY = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     midiOut.selectPort(1);
     let msg1 = midi.create();
     midi.setNoteOn(msg1, 1, 60, 100);
@@ -1682,7 +1663,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_SELECT_PORT_STICKY = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     midiOut.selectPort(1)
     local msg1 = midi.create()
     midi.setNoteOn(msg1, 1, 60, 100)
@@ -1701,7 +1682,7 @@ TEST_CASE("midiOut.selectPort stays selected across calls identically", "[MidiKi
 static const char* JS_SELECT_PORT_INVALID = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     midiOut.selectPort(2);
 };
 )";
@@ -1709,7 +1690,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_SELECT_PORT_INVALID = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     midiOut.selectPort(2)
 end
 )";
@@ -1727,7 +1708,7 @@ static const char* JS_SEND_AFTER_MS = R"(/**
 let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
 
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     midiOut.sendAfterMs(msg, 100);
 };
 )";
@@ -1738,7 +1719,7 @@ static const char* LUA_SEND_AFTER_MS = R"(--[[
 msg = midi.create()
 midi.setNoteOn(msg, 1, 60, 100)
 
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     midiOut.sendAfterMs(msg, 100)
 end
 )";
@@ -1780,7 +1761,7 @@ static const char* JS_SEND_AFTER_TRIGGER_SELECTED_PORT = R"(/**
 let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
 
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     midiOut.selectPort(1);
     midiOut.sendAfterTrigger(msg, 10);
 };
@@ -1792,7 +1773,7 @@ static const char* LUA_SEND_AFTER_TRIGGER_SELECTED_PORT = R"(--[[
 msg = midi.create()
 midi.setNoteOn(msg, 1, 60, 100)
 
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     midiOut.selectPort(1)
     midiOut.sendAfterTrigger(msg, 10)
 end
@@ -1809,7 +1790,7 @@ static const char* JS_SEND_AFTER_TRIGGER_TRIGPORT = R"(/**
 let msg = midi.create();
 midi.setNoteOn(msg, 1, 60, 100);
 
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     midiOut.selectPort(1);
     midiOut.sendAfterTrigger(msg, 1, 10);
 };
@@ -1821,7 +1802,7 @@ static const char* LUA_SEND_AFTER_TRIGGER_TRIGPORT = R"(--[[
 msg = midi.create()
 midi.setNoteOn(msg, 1, 60, 100)
 
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     midiOut.selectPort(1)
     midiOut.sendAfterTrigger(msg, 1, 10)
 end
@@ -1879,7 +1860,7 @@ TEST_CASE("midi.createNRPN outside onMidiMessage warns identically", "[MidiKit][
 static const char* JS_CALLBACK_CREATE = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(port, msg) {
+rack.onMidiMessage = function(port, msg) {
     let m = midi.create();
     midi.setCc(m, 1, 20, 100);
     midiOut.send(m);
@@ -1889,7 +1870,7 @@ onMidiMessage = function(port, msg) {
 static const char* LUA_CALLBACK_CREATE = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(port, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local m = midi.create()
     midi.setCc(m, 1, 20, 100)
     midiOut.send(m)
@@ -1906,8 +1887,8 @@ TEST_CASE("midi.create inside onMidiMessage does not warn in either engine", "[M
 static const char* JS_ON_LOAD = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(midiPort, msg) {};
-onLoad = function() {
+rack.onMidiMessage = function(midiPort, msg) {};
+rack.onLoad = function() {
     rack.log("onLoad ran");
     let msg = midi.create();
     midi.setNoteOn(msg, 1, 60, 100);
@@ -1918,8 +1899,8 @@ onLoad = function() {
 static const char* LUA_ON_LOAD = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(midiPort, msg) end
-function onLoad()
+rack.onMidiMessage = function(midiPort, msg) end
+rack.onLoad = function()
     rack.log("onLoad ran")
     local msg = midi.create()
     midi.setNoteOn(msg, 1, 60, 100)
@@ -1953,13 +1934,13 @@ TEST_CASE("onLoad runs once and sends an identical message in both engines", "[M
 static const char* JS_NO_ON_LOAD = R"(/**
  * @engine QuickJs
  */
-let x = number.max(3, 7);
+let x = Math.max(3, 7);
 )";
 
 static const char* LUA_NO_ON_LOAD = R"(--[[
 @engine Lua
 --]]
-x = number.max(3, 7)
+x = math.max(3, 7)
 )";
 
 TEST_CASE("Script without onLoad loads without any onLoad log noise in either engine", "[MidiKit][CrossEngine]") {
@@ -2000,8 +1981,8 @@ TEST_CASE("Top-level message handle survives a load with no onLoad in both engin
 static const char* JS_ON_UNLOAD = R"(/**
  * @engine QuickJs
  */
-onMidiMessage = function(midiPort, msg) {};
-onUnload = function() {
+rack.onMidiMessage = function(midiPort, msg) {};
+rack.onUnload = function() {
     rack.log("onUnload ran");
     let msg = midi.create();
     midi.setNoteOff(msg, 1, 60);
@@ -2012,8 +1993,8 @@ onUnload = function() {
 static const char* LUA_ON_UNLOAD = R"(--[[
 @engine Lua
 --]]
-function onMidiMessage(midiPort, msg) end
-function onUnload()
+rack.onMidiMessage = function(midiPort, msg) end
+rack.onUnload = function()
     rack.log("onUnload ran")
     local msg = midi.create()
     midi.setNoteOff(msg, 1, 60)
@@ -2073,7 +2054,7 @@ TEST_CASE("onUnload runs again when a second script replaces the first, in both 
 static const char* JS_ON_TRIGGER = R"(/**
  * @engine QuickJs
  */
-onTrigger = function(trigPort) {
+rack.onTrigger = function(trigPort) {
     rack.log("onTrigger " + number.toString(trigPort));
     let msg = midi.create();
     midi.setCc(msg, 1, 10, trigPort);
@@ -2084,7 +2065,7 @@ onTrigger = function(trigPort) {
 static const char* LUA_ON_TRIGGER = R"(--[[
 @engine Lua
 --]]
-function onTrigger(trigPort)
+function rack.onTrigger(trigPort)
     rack.log("onTrigger " .. trigPort)
     local msg = midi.create()
     midi.setCc(msg, 1, 10, trigPort)
@@ -2140,4 +2121,68 @@ TEST_CASE("Script without onTrigger silently ignores trigger ticks, in both engi
 	auto lua = checkNoOnTrigger(LUA_NO_ON_LOAD);
 	REQUIRE(js.second == false);
 	REQUIRE(lua.second == false);
+}
+
+
+// --- send() order, not handle-creation order ----------------------------
+//
+// Regression test for the flush-order bug: the engine used to push the
+// out-queue in msgStore index (handle-creation) order, so a script that
+// created several messages and then sent them in a different order had them
+// reordered on the wire. The receiver must observe send() order. This
+// creates A, B, C (handle order) but sends C, A, B, and asserts the wire
+// order is C, A, B in both engines.
+
+static const char* JS_SEND_ORDER = R"(/**
+ * @engine QuickJs
+ */
+rack.onMidiMessage = function(port, msg) {
+    let a = midi.create();
+    midi.setNoteOn(a, 1, 60, 100);
+    let b = midi.create();
+    midi.setNoteOn(b, 1, 62, 100);
+    let c = midi.create();
+    midi.setNoteOn(c, 1, 64, 100);
+    midiOut.send(c);   // handle 2 sent first
+    midiOut.send(a);   // handle 0 sent second
+    midiOut.send(b);   // handle 1 sent last
+};
+)";
+
+static const char* LUA_SEND_ORDER = R"(--[[
+@engine Lua
+--]]
+rack.onMidiMessage = function(midiPort, msg)
+    local a = midi.create()
+    midi.setNoteOn(a, 1, 60, 100)
+    local b = midi.create()
+    midi.setNoteOn(b, 1, 62, 100)
+    local c = midi.create()
+    midi.setNoteOn(c, 1, 64, 100)
+    midiOut.send(c)
+    midiOut.send(a)
+    midiOut.send(b)
+end
+)";
+
+TEST_CASE("out-queue flushes in send() order, not handle-creation order, in both engines", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(JS_SEND_ORDER);
+	EngineResult lua = run(LUA_SEND_ORDER);
+
+	// Handle order would be 60, 62, 64; send() order is 64, 60, 62. The
+	// script's channel argument is 1-based, so channel 1 = internal channel 0
+	// = status nibble 0x9 | 0 = 0x90.
+	std::vector<uint8_t> expectC = {0x90, 64, 100};
+	std::vector<uint8_t> expectA = {0x90, 60, 100};
+	std::vector<uint8_t> expectB = {0x90, 62, 100};
+
+	REQUIRE(js.sent.size() == 3);
+	REQUIRE(js.sent[0].bytes == expectC);
+	REQUIRE(js.sent[1].bytes == expectA);
+	REQUIRE(js.sent[2].bytes == expectB);
+
+	REQUIRE(lua.sent.size() == 3);
+	REQUIRE(lua.sent[0].bytes == expectC);
+	REQUIRE(lua.sent[1].bytes == expectA);
+	REQUIRE(lua.sent[2].bytes == expectB);
 }

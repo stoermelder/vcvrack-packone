@@ -61,7 +61,7 @@ let state = {
     voicesOf: []
 };
 
-function onLoad() {
+rack.onLoad = function() {
     for (let n = 0; n < 128; n++) {
         state.refCount[n] = 0;
         state.voicesOf[n] = [];
@@ -70,7 +70,7 @@ function onLoad() {
     rack.log("Voices per note: ", config.intervals.length);
 };
 
-function onUnload() {
+rack.onUnload = function() {
     for (let n = 0; n < 128; n++) {
         if (state.refCount[n] > 0) {
             let off = midi.create();
@@ -84,7 +84,7 @@ function matchesChannel(ch) {
     return config.channel === 0 || ch === config.channel;
 };
 
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     if (!matchesChannel(ch)) {
@@ -109,7 +109,7 @@ function onMidiMessage(midiPort, msg) {
                 // Only actually sound the note if nothing else is holding it.
                 // Otherwise just take a reference - the note is already down.
                 if (state.refCount[target] === 0) {
-                    let v = offset === 0 ? vel : number.floor(vel * config.harmonyVelocity + 0.5);
+                    let v = offset === 0 ? vel : Math.floor(vel * config.harmonyVelocity + 0.5);
                     if (v < 1) v = 1;
 
                     let on = midi.create();

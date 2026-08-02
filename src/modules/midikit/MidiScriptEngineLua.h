@@ -3,6 +3,7 @@ extern "C" {
 	#include "minilua.h"
 }
 #include "../../utils/TaskWorker.hpp"
+#include <algorithm>
 #include <iomanip>
 #include <regex>
 #include <sstream>
@@ -21,11 +22,17 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		bool isNrpn = false;
 		bool send = false;
 		uint64_t tick = 0;
+		// Monotonic stamp assigned when midiOut.send() is called, so the out
+		// queue can be flushed in send() order rather than handle order.
+		size_t sendOrder = 0;
 	};
 
 	static const int msgStoreSize = 32;
 	MessageEx msgStore[msgStoreSize];
 	size_t msgCount = 0;
+	// Next value handed to MessageEx::sendOrder. Never reset: it only needs to
+	// be monotonic within a single callback, and the store is reset per callback.
+	size_t sendCounter = 0;
 	// True only while onMidiMessage() is executing. The message store is reset on
 	// every callback, so handles created outside one are silently invalidated —
 	// this lets midi.create() warn instead of failing quietly.
@@ -178,11 +185,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	void callOptionalHook(const char* name) {
-		lua_getglobal(L, name);
-		if (!lua_isfunction(L, -1)) {
-			lua_pop(L, 1);
-			return;
-		}
+		// Callbacks live on the rack table (rack.onMidiMessage etc.), not on
+		// the global scope.
+		lua_getglobal(L, "rack");
+		if (!lua_istable(L, -1)) { lua_pop(L, 1); return; }
+		lua_getfield(L, -1, name);
+		if (!lua_isfunction(L, -1)) { lua_pop(L, 2); return; }
 		msgCount = 0;
 		inCallback = true;
 		int status = lua_pcall(L, 0, 0, 0);
@@ -190,8 +198,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
 			writeLog(string::f("%s error: %s", name, err ? err : "(unknown)"));
-			lua_pop(L, 1);
+			lua_pop(L, 1); // pop error message
 		}
+		lua_pop(L, 1); // pop rack table
 		flushMsgStore();
 	}
 
@@ -208,17 +217,23 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	// Pushes every message sent during the callback that just ran into
-	// midiOutQueue. Shared by onMidiMessage/onLoad/onUnload.
+	// midiOutQueue, in send() order rather than handle-creation order: a
+	// script may create several messages and send them in a different order,
+	// and the receiver must observe send() order.
 	void flushMsgStore() {
+		std::vector<size_t> order;
 		for (size_t i = 0; i < msgCount; i++) {
-			if (msgStore[i].send) {
-				midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i].msg, msgStore[i].tick));
-				if (msgStore[i].isNrpn) {
-					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 1].msg, msgStore[i].tick));
-					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 2].msg, msgStore[i].tick));
-					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 3].msg, msgStore[i].tick));
-					i += 3;
-				}
+			if (msgStore[i].send) order.push_back(i);
+		}
+		std::sort(order.begin(), order.end(), [this](size_t a, size_t b) {
+			return msgStore[a].sendOrder < msgStore[b].sendOrder;
+		});
+		for (size_t i : order) {
+			midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i].msg, msgStore[i].tick));
+			if (msgStore[i].isNrpn) {
+				midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 1].msg, msgStore[i].tick));
+				midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 2].msg, msgStore[i].tick));
+				midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 3].msg, msgStore[i].tick));
 			}
 		}
 	}
@@ -260,11 +275,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		msgStore[0].isNrpn = false;
 		msgCount = 1;
 
-		lua_getglobal(L, "onMidiMessage");
-		if (!lua_isfunction(L, -1)) {
-			lua_pop(L, 1);
-			return;
-		}
+		lua_getglobal(L, "rack");
+		if (!lua_istable(L, -1)) { lua_pop(L, 1); return; }
+		lua_getfield(L, -1, "onMidiMessage");
+		if (!lua_isfunction(L, -1)) { lua_pop(L, 2); return; }
 		lua_pushinteger(L, midiPort + 1);
 		lua_pushinteger(L, 0);
 		inCallback = true;
@@ -273,8 +287,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
 			writeLog(string::f("onMidiMessage error: %s", err ? err : "(unknown)"));
-			lua_pop(L, 1);
+			lua_pop(L, 1); // pop error message
 		}
+		lua_pop(L, 1); // pop rack table
 
 		flushMsgStore();
 	}
@@ -284,11 +299,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	void dispatchTrigger(int trigPort) override {
 		if (!L) return;
 
-		lua_getglobal(L, "onTrigger");
-		if (!lua_isfunction(L, -1)) {
-			lua_pop(L, 1);
-			return;
-		}
+		lua_getglobal(L, "rack");
+		if (!lua_istable(L, -1)) { lua_pop(L, 1); return; }
+		lua_getfield(L, -1, "onTrigger");
+		if (!lua_isfunction(L, -1)) { lua_pop(L, 2); return; }
 		lua_pushinteger(L, trigPort + 1);
 		msgCount = 0;
 		inCallback = true;
@@ -297,8 +311,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
 			writeLog(string::f("onTrigger error: %s", err ? err : "(unknown)"));
-			lua_pop(L, 1);
+			lua_pop(L, 1); // pop error message
 		}
+		lua_pop(L, 1); // pop rack table
 
 		flushMsgStore();
 	}
@@ -360,12 +375,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// ── number table ─────────────────────────────────────────────────────
 		// Mostly wraps existing Lua math.*; provided for JS script compatibility.
 		lua_newtable(L);
-		setTableFunc("abs",       lua_number_abs);
-		setTableFunc("ceil",      lua_number_ceil);
 		setTableFunc("crossfade", lua_number_crossfade);
-		setTableFunc("floor",     lua_number_floor);
-		setTableFunc("max",       lua_number_max);
-		setTableFunc("min",       lua_number_min);
 		setTableFunc("random",    lua_number_random);
 		setTableFunc("rescale",   lua_number_rescale);
 		setTableFunc("toString",  lua_number_toString);
@@ -531,40 +541,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// ── number.* ──────────────────────────────────────────────────────────────
 
-	static int lua_number_abs(lua_State* L) {
-		lua_pushnumber(L, std::abs(static_cast<float>(luaL_checknumber(L, 1))));
-		return 1;
-	}
-
-	static int lua_number_ceil(lua_State* L) {
-		lua_pushnumber(L, std::ceil(static_cast<float>(luaL_checknumber(L, 1))));
-		return 1;
-	}
-
 	static int lua_number_crossfade(lua_State* L) {
 		float a = static_cast<float>(luaL_checknumber(L, 1));
 		float b = static_cast<float>(luaL_checknumber(L, 2));
 		float p = static_cast<float>(luaL_checknumber(L, 3));
 		lua_pushnumber(L, rack::crossfade(a, b, p));
-		return 1;
-	}
-
-	static int lua_number_floor(lua_State* L) {
-		lua_pushnumber(L, std::floor(static_cast<float>(luaL_checknumber(L, 1))));
-		return 1;
-	}
-
-	static int lua_number_max(lua_State* L) {
-		float a = static_cast<float>(luaL_checknumber(L, 1));
-		float b = static_cast<float>(luaL_checknumber(L, 2));
-		lua_pushnumber(L, std::max(a, b));
-		return 1;
-	}
-
-	static int lua_number_min(lua_State* L) {
-		float a = static_cast<float>(luaL_checknumber(L, 1));
-		float b = static_cast<float>(luaL_checknumber(L, 2));
-		lua_pushnumber(L, std::min(a, b));
 		return 1;
 	}
 
@@ -1246,6 +1227,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// midiOut.send(msg)
 		MessageEx* m = getPortMsg(L);
 		m->send = true;
+		m->sendOrder = getEngine(L)->sendCounter++;
 		m->msg.frame = -1;
 		m->tick = 0;
 		return 0;
@@ -1259,6 +1241,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		int64_t currentFrame = APP->engine->getFrame();
 		int64_t frame = static_cast<int64_t>(ms / 1000.f / APP->engine->getSampleTime());
 		m->send = true;
+		m->sendOrder = getEngine(L)->sendCounter++;
 		m->msg.frame = currentFrame + frame;
 		m->tick = 0;
 		return 0;
@@ -1286,6 +1269,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		MessageEx* m = getPortMsg(L);
 		int64_t currentTicks = e->getTrigTicks(trigPort == 0 ? 0 : trigPort - 1);
 		m->send = true;
+		m->sendOrder = e->sendCounter++;
 		m->msg.frame = -1;
 		m->tick = currentTicks + ticks;
 		return 0;

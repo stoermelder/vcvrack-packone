@@ -54,7 +54,7 @@ let state = {
     sounding: []
 };
 
-function onLoad() {
+rack.onLoad = function() {
     for (let n = 0; n < 128; n++) {
         state.sounding[n] = false;
     }
@@ -76,7 +76,7 @@ function onLoad() {
 // at a time), so this releases on config.channel if fixed, or channel 1 when
 // config.channel is 0 (every channel) - the same best-effort choice
 // Chord harmonizer makes for the same reason.
-function onUnload() {
+rack.onUnload = function() {
     let ch = config.channel === 0 ? 1 : config.channel;
     for (let n = 0; n < 128; n++) {
         if (state.sounding[n]) {
@@ -98,7 +98,7 @@ function scheduleNoteOff(ch, note) {
     midiOut.sendAfterTrigger(off, config.trigPort, config.lengthTicks);
 };
 
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     if (midi.isNoteOn(msg) && matchesChannel(ch)) {

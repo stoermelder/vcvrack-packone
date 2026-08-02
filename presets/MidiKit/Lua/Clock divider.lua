@@ -54,7 +54,7 @@ local state = {
     running = false
 }
 
-function onLoad()
+rack.onLoad = function()
     rack.log("Clock divider initialized")
     rack.log("Divisor: ", config.divisor, " (24 ppqn / ", config.divisor, ")")
 end
@@ -64,7 +64,7 @@ local function resetPhase()
     state.pulseCount = 0
 end
 
-function onMidiMessage(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
     if midi.isStart(msg) then
         resetPhase()
         state.running = true

@@ -83,19 +83,19 @@ param.getName = function(i) {
 };
 
 function divisionIndex() {
-    let idx = number.floor(param.getValue(1) * DIVISIONS.length);
+    let idx = Math.floor(param.getValue(1) * DIVISIONS.length);
     if (idx >= DIVISIONS.length) idx = DIVISIONS.length - 1;
     return idx;
 };
 
 function octaveRange() {
-    let o = number.floor(param.getValue(2) * 4) + 1;
+    let o = Math.floor(param.getValue(2) * 4) + 1;
     if (o > 4) o = 4;
     return o;
 };
 
 function playmodeIndex() {
-    let idx = number.floor(param.getValue(4) * PLAYMODES.length);
+    let idx = Math.floor(param.getValue(4) * PLAYMODES.length);
     if (idx >= PLAYMODES.length) idx = PLAYMODES.length - 1;
     return idx;
 };
@@ -158,16 +158,16 @@ function releaseSounding() {
     }
 };
 
-function onLoad() {
+rack.onLoad = function() {
     rack.log("Arpeggiator initialized");
     rack.log("Trigger input: ", config.trigPort);
 };
 
-function onUnload() {
+rack.onUnload = function() {
     releaseSounding();
 };
 
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     if (midi.isNoteOn(msg) && matchesChannel(ch) && midi.getValue(msg) > 0) {
@@ -206,7 +206,7 @@ function onMidiMessage(midiPort, msg) {
     midiOut.send(msg);
 };
 
-function onTrigger(trigPort) {
+rack.onTrigger = function(trigPort) {
     if (trigPort !== config.trigPort) return;
 
     let division = DIVISIONS[divisionIndex()];
@@ -225,7 +225,7 @@ function onTrigger(trigPort) {
     midi.setNoteOn(on, ch, note, 100);
     midiOut.send(on);
 
-    let lengthTicks = number.floor(division * param.getValue(3));
+    let lengthTicks = Math.floor(division * param.getValue(3));
     if (lengthTicks < 1) lengthTicks = 1;
     if (lengthTicks > division - 1) lengthTicks = division > 1 ? division - 1 : 1;
 

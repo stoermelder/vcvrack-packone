@@ -13,13 +13,13 @@ param.getName = function(port) {
 };
 
 param.getValueFormat = function(port) {
-    if (port === 1) return number.toString(number.ceil(param.getValue(1) * 16));
+    if (port === 1) return number.toString(Math.ceil(param.getValue(1) * 16));
     return number.toString(param.getValue(port));
 };
 
-function onMidiMessage(midiPort, msg) {
+rack.onMidiMessage = function(midiPort, msg) {
     if (midi.isCc(msg) && midi.getChannel(msg) === 1) {
-        let ch = number.ceil(param.getValue(1) * 16);
+        let ch = Math.ceil(param.getValue(1) * 16);
         midi.setChannel(msg, ch);
     }
     midiOut.send(msg);

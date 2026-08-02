@@ -67,7 +67,7 @@ local state = {
     counter = 0
 }
 
-function onLoad()
+rack.onLoad = function()
     for c = 1, 16 do
         state.noteOfChannel[c] = -1
         state.bendOfChannel[c] = 0
@@ -79,7 +79,7 @@ function onLoad()
     rack.log("Bend range: ", config.bendRange, " semitones")
 end
 
-function onUnload()
+rack.onUnload = function()
     for c = config.memberLow, config.memberHigh do
         if state.noteOfChannel[c] >= 0 then
             local off = midi.create()
@@ -112,7 +112,7 @@ local function isActiveChannel(ch)
     return ch == state.lastChannel
 end
 
-function onMidiMessage(midiPort, msg)
+rack.onMidiMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 
     -- Master channel and anything outside the zone passes through untouched
@@ -208,7 +208,10 @@ function onMidiMessage(midiPort, msg)
     if midi.isChanPressure(msg) then
         if not config.forwardPressure or not isActiveChannel(ch) then return end
         local out = midi.create()
-        midi.setChanPressure(out, config.outChannel, midi.getValue(msg))
+        -- Channel pressure is a 2-byte message - the pressure value lives in
+        -- bytes[1], read back via getNote() (getValue() would return bytes[2],
+        -- which does not exist for a 2-byte message and reads as 0).
+        midi.setChanPressure(out, config.outChannel, midi.getNote(msg))
         midiOut.send(out)
         return
     end

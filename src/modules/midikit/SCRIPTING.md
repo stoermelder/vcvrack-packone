@@ -15,7 +15,7 @@ Implementation: [MidiScriptEngineQuickJs.h](MidiScriptEngineQuickJs.h) (uses
 ## When to write QuickJs (JavaScript) vs Lua
 
 Both engines are similarly capable for the common case (reacting to
-`onMidiMessage`, building/sending messages). Pick based on these differences:
+`rack.onMidiMessage`, building/sending messages). Pick based on these differences:
 
 | | QuickJs (JS) | Lua |
 |---|---|---|
@@ -67,47 +67,49 @@ conventionally present but not checked by the loader.
 ## Script structure
 
 - Top-level code runs once, synchronously, when the script is (re)loaded.
-- `onMidiMessage(midiPort, msg)` is called for every incoming MIDI message
-  (`midiPort` is 1-based). Define it as a global function — it's the only
-  callback the engine looks for per message; a script that never defines it
-  loads fine but silently ignores all incoming MIDI (logged once at load
-  time). In QuickJs, define it as a global function — either
-  `function onMidiMessage(midiPort, msg) {...}` or
-  `onMidiMessage = function(midiPort, msg) {...}` both work. Lua likewise:
-  `onMidiMessage = function(...) end` or `function onMidiMessage(...) end`.
+- `rack.onMidiMessage(midiPort, msg)` is called for every incoming MIDI
+  message (`midiPort` is 1-based). Define it as a method on the `rack`
+  object — it's the only callback the engine looks for per message; a
+  script that never defines it loads fine but silently ignores all incoming
+  MIDI (logged once at load time). In QuickJs, assign it to the `rack`
+  object — `rack.onMidiMessage = function(midiPort, msg) {...}`. Lua
+  likewise: `rack.onMidiMessage = function(...) end` or
+  `rack.onMidiMessage = function(midiPort, msg) end`.
 - Optional `input.getName(i)`, `param.getName(i)`, `param.getValueFormat(i)`
   functions may be overridden to customize panel/input labeling; both
   engines seed defaults (`"Port " .. i` / `"Param " .. i`) that scripts can
   replace by reassigning the table field.
-- Optional `onTrigger(trigPort)` is called whenever the module's trigger/gate
-  input (`trigPort`, 1-based — MIDI-KIT currently exposes a single trigger
-  input, so this is always `1`) crosses the trigger threshold. It is the
-  only way to run script logic that isn't driven by an incoming MIDI
-  message — e.g. reading `trig.getTicks()`/`input.*` and sending a MIDI
-  message in response to an external clock/gate. A script that never
-  defines it simply never has it called; unlike `onMidiMessage`, there is no
-  load-time log warning for omitting it. In QuickJs, define it as a global
-  function — `function onTrigger(trigPort) {...}` or
-  `onTrigger = function(trigPort) {...}` both work. Lua likewise:
-  `onTrigger = function(trigPort) end` or `function onTrigger(trigPort) end`.
+- Optional `rack.onTrigger(trigPort)` is called whenever the module's
+  trigger/gate input (`trigPort`, 1-based — MIDI-KIT currently exposes a
+  single trigger input, so this is always `1`) crosses the trigger
+  threshold. It is the only way to run script logic that isn't driven by an
+  incoming MIDI message — e.g. reading `trig.getTicks()`/`input.*` and
+  sending a MIDI message in response to an external clock/gate. A script
+  that never defines it simply never has it called; unlike
+  `rack.onMidiMessage`, there is no load-time log warning for omitting it.
+  In QuickJs, assign it to the `rack` object —
+  `rack.onTrigger = function(trigPort) {...}`. Lua likewise:
+  `rack.onTrigger = function(trigPort) end` or
+  `function rack.onTrigger(trigPort) end`.
 - There is no per-sample or per-frame callback — logic only runs in
   response to incoming MIDI messages (including clock 0xF8 realtime bytes)
-  or trigger-input ticks via `onTrigger`.
-- Optional `onLoad()` and `onUnload()` hooks run once each:
-  - `onLoad()` runs once, right after top-level code, when the script has
-    parsed and loaded successfully.
-  - `onUnload()` runs once, right before the *current* script's state is
-    torn down — because it's about to be replaced by another script, the
+  or trigger-input ticks via `rack.onTrigger`.
+- Optional `rack.onLoad()` and `rack.onUnload()` hooks run once each:
+  - `rack.onLoad()` runs once, right after top-level code, when the script
+    has parsed and loaded successfully.
+  - `rack.onUnload()` runs once, right before the *current* script's state
+    is torn down — because it's about to be replaced by another script, the
     module was reset, or the module is being removed from the patch. This
     is the only place a script can reliably clean up: sending an
     all-notes-off for anything it left sounding is the main use case, since
     nothing else will ever get a chance to release those notes once the
     script's own state is gone.
-  - Both can call `midi.create()`/`midiOut.send()` like `onMidiMessage` can;
-    messages sent from either are flushed the same way.
-  - In QuickJs, define them as global functions — `function onLoad() {...}`
-    or `onLoad = function() {...}` both work. Lua likewise:
-    `function onLoad() ... end`/`onLoad = function() ... end`.
+  - Both can call `midi.create()`/`midiOut.send()` like `rack.onMidiMessage`
+    can; messages sent from either are flushed the same way.
+  - In QuickJs, assign them to the `rack` object —
+    `rack.onLoad = function() {...}` / `rack.onUnload = function() {...}`.
+    Lua likewise: `rack.onLoad = function() ... end` /
+    `rack.onUnload = function() ... end`.
 
 ## QuickJS language support
 
@@ -151,11 +153,10 @@ every example in this document does.
 - `rack.getFrame()` — the current engine frame number (`APP->engine->getFrame()`).
 
 ### `number.*`
-`abs`, `ceil`, `floor`, `max(a,b)`, `min(a,b)`, `random()` (0..1 uniform),
-`rescale(x, xMin, xMax, yMin, yMax [, curve])`, `crossfade(a, b, pos)`,
-`toString(x)`, `toFixed(x, digits)` (fixed-precision string, `digits` 0-20).
-Present in both engines identically (Lua re-exposes these even though
-`math.*` is also available, for script portability).
+`random()` (0..1 uniform), `rescale(x, xMin, xMax, yMin, yMax [, curve])`,
+`crossfade(a, b, pos)`, `toString(x)`, `toFixed(x, digits)` (fixed-precision
+string, `digits` 0-20). Present in both engines identically (Lua re-exposes
+these even though `math.*` is also available, for script portability).
 
 ### `input.*` (CV inputs on the module, 1-based)
 - `input.enable(i)` — activate input `i` so it appears on the panel.
@@ -176,7 +177,7 @@ Present in both engines identically (Lua re-exposes these even though
 
 ### `midi.*` — message construction/inspection
 Messages are opaque handles (indices into an internal store, max 32 live per
-callback) created with `midi.create()` or `midi.createNRPN()`; `onMidiMessage`
+callback) created with `midi.create()` or `midi.createNRPN()`; `rack.onMidiMessage`
 also receives the incoming message as handle `0`/implicit first arg (Lua:
 index `0`, QuickJs: same convention).
 
@@ -227,7 +228,7 @@ index `0`, QuickJs: same convention).
 
 - `midiOut.selectPort(midiPort)` — selects the output port (1-based) that every
   subsequent `midiOut.*` call sends on, until `selectPort` is called again.
-  The selection is sticky across `onMidiMessage` invocations, not reset per
+  The selection is sticky across `rack.onMidiMessage` invocations, not reset per
   callback. MIDI-KIT currently exposes a single output, so
   `midiOut.selectPort(1)` is a no-op today beyond validating the index — it
   exists so scripts written against a future multi-output engine don't need to
@@ -247,7 +248,7 @@ whatever `midiOut.selectPort()` last selected (port 1 if it was never called):
 **A message can only be sent once per callback.** `midiOut.send(msg)` (and the
 `sendAfter*` variants) mark the handle as sent; the actual enqueue happens once
 per handle in the post-callback flush, so a second `send` of the *same* handle
-within one `onMidiMessage`/`onLoad`/`onUnload` is not a second message — only
+within one `rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload` is not a second message — only
 one goes out, and if the message body was changed in between, the last change
 wins. To send the same bytes twice, build a fresh handle first with
 `midi.create()` or `midi.clone(msg)` and send that. Each message sent consumes
@@ -262,13 +263,14 @@ Clock=0xF8, Start=0xFA, Continue=0xFB, Stop=0xFC (encoded as status 0xf with
 rather than decoding this by hand).
 
 ## Gotchas
-- Message handles are only valid within the `onMidiMessage` call that created
-  them — the store resets each callback invocation. Creating a message at top
-  level (outside `onMidiMessage`) logs a warning and the handle is discarded as
-  soon as the next MIDI message arrives, so build messages inside the callback.
-  `onLoad()`/`onUnload()`/`onTrigger()` are full callbacks in this sense too
-  — a message created and sent inside any of them is delivered normally,
-  and (unlike bare top-level code) doesn't warn.
+- Message handles are only valid within the `rack.onMidiMessage` call that
+  created them — the store resets each callback invocation. Creating a
+  message at top level (outside `rack.onMidiMessage`) logs a warning and the
+  handle is discarded as soon as the next MIDI message arrives, so build
+  messages inside the callback. `rack.onLoad()`/`rack.onUnload()`/`rack.onTrigger()`
+  are full callbacks in this sense too — a message created and sent inside
+  any of them is delivered normally, and (unlike bare top-level code)
+  doesn't warn.
 - `midi.setCc14bit`/`setNRPN` split a 14-bit value across two 7-bit CC
   messages (`cc` = MSB, `cc + 32` = LSB per the NRPN/14-bit CC convention);
   see [nrpn_to_cc.js](nrpn_to_cc.js)/[nrpn_to_cc.lua](nrpn_to_cc.lua) for a
