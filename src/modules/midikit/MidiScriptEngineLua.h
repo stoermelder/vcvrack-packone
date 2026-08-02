@@ -47,14 +47,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	lua_State* L = nullptr;
 
-	std::shared_ptr<ITaskWorker> taskWorker;
-
-	dsp::RingBuffer<std::tuple<int, Message>, 128> midiInQueue;
-	dsp::RingBuffer<int, 4> tickInQueue;
-	dsp::RingBuffer<std::tuple<int, Message, uint64_t>, 128> midiOutQueue;
-
-	// ─── Construction / destruction ───────────────────────────────────────────
-
 	// closeState() here is a no-op fallback (L is already nullptr): onUnload()
 	// must run via MidiKitModule's destructor, while this object is still
 	// fully alive — writeLog/input.*/trig.*/param.* are pure virtual here and
@@ -64,15 +56,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		closeState();
 	}
 
-	// ─── MidiScriptEngine interface ───────────────────────────────────────────
-
-	void setWorker(std::shared_ptr<ITaskWorker> w) {
-		taskWorker = std::move(w);
-	}
-
-	void runAsync(std::function<void()> task) override {
-		taskWorker->work(task, APP);
-	}
 
 	void loadScript(const char* script) override {
 		closeState();
@@ -224,36 +207,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 	}
 
-	void process() override {
-		if (L && (midiInQueue.size() > 0 || tickInQueue.size() > 0)) {
-			runAsync([this]() {
-				while (!midiInQueue.empty()) {
-					auto t = midiInQueue.shift();
-					int port = std::get<0>(t);
-					midi::Message msg = std::get<1>(t);
-					dispatchMidiMessage(port, msg);
-				}
-				while (!tickInQueue.empty()) {
-					int trigPort = tickInQueue.shift();
-					dispatchTrigger(trigPort);
-				}
-			});
-		}
-	}
-
-	bool processOutMessage(int& midiPort, Message& msg, int& ticks) override {
-		// No `L` guard: onUnload()'s messages are queued just before L closes
-		// and must still drain afterwards.
-		if (!midiOutQueue.empty()) {
-			auto t = midiOutQueue.shift();
-			midiPort = std::get<0>(t);
-			msg = std::get<1>(t);
-			ticks = std::get<2>(t);
-			return true;
-		}
-		return false;
-	}
-
 	// Pushes every message sent during the callback that just ran into
 	// midiOutQueue. Shared by onMidiMessage/onLoad/onUnload.
 	void flushMsgStore() {
@@ -298,7 +251,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 
-	void dispatchMidiMessage(int midiPort, Message& msg) {
+	void dispatchMidiMessage(int midiPort, Message& msg) override {
 		if (!L) return;
 
 		msgStore[0].msg = msg;
@@ -328,7 +281,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// Dispatches onTrigger(trigPort) when the trigger input fires. No-op if
 	// the script never defined it.
-	void dispatchTrigger(int trigPort) {
+	void dispatchTrigger(int trigPort) override {
 		if (!L) return;
 
 		lua_getglobal(L, "onTrigger");

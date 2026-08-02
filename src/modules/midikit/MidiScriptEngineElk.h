@@ -22,11 +22,6 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	char jsMem[64 * 1024];
 	struct js* js = NULL;
 
-	std::shared_ptr<ITaskWorker> taskWorker;
-	dsp::RingBuffer<std::tuple<int, Message>, 128> midiInQueue;
-	dsp::RingBuffer<int, 4> tickInQueue;
-	dsp::RingBuffer<std::tuple<int, Message, uint64_t>, 128> midiOutQueue;
-
 	const static int msgStoreSize = 32;
 	MessageEx msgStore[msgStoreSize];
 	// Must be initialised: top-level script code runs during loadScript(), before
@@ -47,14 +42,6 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	// (e.g. from a script's onUnload) would be undefined behaviour.
 	~MidiScriptEngineElk() {
 		closeState();
-	}
-
-	void setWorker(std::shared_ptr<ITaskWorker> w) { 
-		taskWorker = std::move(w);
-	}
-
-	void runAsync(std::function<void()> task) override {
-		taskWorker->work(task, APP);
 	}
 
 	// Formats an Elk error with the source position it was raised at.
@@ -340,37 +327,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		}
 	}
 
-	void process() override {
-		if (js && (midiInQueue.size() > 0 || tickInQueue.size() > 0)) {
-			runAsync([this]() {
-				while (!midiInQueue.empty()) {
-					auto t = midiInQueue.shift();
-					int midiPort = std::get<0>(t);
-					midi::Message msg = std::get<1>(t);
-					process(midiPort, msg);
-				}
-				while (!tickInQueue.empty()) {
-					int trigPort = tickInQueue.shift();
-					processTick(trigPort);
-				}
-			});
-		}
-	}
-
-	bool processOutMessage(int& midiPort, Message& msg, int& ticks) override {
-		// No `js` guard: onUnload()'s messages are queued just before js is
-		// nulled and must still drain afterwards.
-		if (!midiOutQueue.empty()) {
-			auto t = midiOutQueue.shift();
-			midiPort = std::get<0>(t);
-			msg = std::get<1>(t);
-			ticks = std::get<2>(t);
-			return true;
-		}
-		return false;
-	}
-
-	void process(int midiPort, Message& msg) {
+	void dispatchMidiMessage(int midiPort, Message& msg) override {
 		if (js) {
 			msgStore[0].msg = msg;
 			msgStore[0].send = false;
@@ -395,7 +352,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	// Dispatches onTrigger(trigPort) when the trigger input fires. No-op if
 	// the script never defined it (compared by identity against the
 	// pre-registered default, same convention as onLoad/onUnload).
-	void processTick(int trigPort) {
+	void dispatchTrigger(int trigPort) override {
 		if (js) {
 			msgCount = 0;
 			inCallback = true;

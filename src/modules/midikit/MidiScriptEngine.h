@@ -1,5 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "../../utils/TaskWorker.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiScript {
@@ -20,16 +21,68 @@ struct MidiScriptEngine {
 	int midiInputCount;
 	int midiOutputCount;
 
+	std::shared_ptr<ITaskWorker> taskWorker;
+	dsp::RingBuffer<std::tuple<int, Message>, 128> midiInQueue;
+	dsp::RingBuffer<int, 4> tickInQueue;
+	dsp::RingBuffer<std::tuple<int, Message, uint64_t>, 128> midiOutQueue;
+
 	virtual ~MidiScriptEngine() { }
 
-	virtual void runAsync(std::function<void()> task) = 0;
+	void setWorker(std::shared_ptr<ITaskWorker> w) {
+		taskWorker = std::move(w);
+	}
+
+	void runAsync(std::function<void()> task) {
+		taskWorker->work(task, APP);
+	}
+
 	virtual void loadScript(const char* script) = 0;
 
 	// Main interface for message processing
 	virtual void processInMessage(int midiPort, Message& msg) = 0;
 	virtual void processInTick(int trigPort) = 0;
-	virtual void process() = 0;
-	virtual bool processOutMessage(int& midiPort, Message& msg, int& ticks) = 0;
+
+	// onUnload()'s messages are queued just before the script
+	// state is torn down and must still drain afterwards. Kept virtual (like
+	// process()) so tests can override it to fabricate output without a real
+	// script engine behind it.
+	virtual bool processOutMessage(int& midiPort, Message& msg, int& ticks) {
+		if (!midiOutQueue.empty()) {
+			auto t = midiOutQueue.shift();
+			midiPort = std::get<0>(t);
+			msg = std::get<1>(t);
+			ticks = std::get<2>(t);
+			return true;
+		}
+		return false;
+	}
+
+	// Dispatches everything queued by processInMessage()/processInTick() onto
+	// the script engine, asynchronously via runAsync(). Identical across
+	// engines; only the per-message/-tick dispatch is engine-specific. Kept
+	// virtual (rather than non-virtual) so tests can override it to observe
+	// call counts without needing to route traffic through the real queues.
+	virtual void process() {
+		if ((midiInQueue.size() > 0 || tickInQueue.size() > 0)) {
+			runAsync([this]() {
+				while (!midiInQueue.empty()) {
+					auto t = midiInQueue.shift();
+					int midiPort = std::get<0>(t);
+					Message msg = std::get<1>(t);
+					dispatchMidiMessage(midiPort, msg);
+				}
+				while (!tickInQueue.empty()) {
+					int trigPort = tickInQueue.shift();
+					dispatchTrigger(trigPort);
+				}
+			});
+		}
+	}
+
+	// Engine-specific dispatch of a single message/tick, invoked from
+	// process() above on the worker thread.
+	virtual void dispatchMidiMessage(int midiPort, Message& msg) = 0;
+	virtual void dispatchTrigger(int trigPort) = 0;
 
 	// Callbacks from the script
 	virtual void writeLog(std::string, bool useTimestamp = true) = 0;

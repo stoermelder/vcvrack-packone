@@ -354,10 +354,11 @@ struct RecordingEngine : MidiScriptEngine {
 	}
 
 	// Unused by these tests — stubbed only to satisfy the interface.
-	void runAsync(std::function<void()> task) override { }
 	void loadScript(const char* script) override { }
 	void processInMessage(int midiPort, midi::Message& msg) override { }
 	void processInTick(int trigPort) override { }
+	void dispatchMidiMessage(int midiPort, midi::Message& msg) override { }
+	void dispatchTrigger(int trigPort) override { }
 	void writeLog(std::string, bool useTimestamp = true) override { }
 	void writeOverlay(std::string s1, std::string s2, std::string s3) override { }
 	void enableInput(int i) override { }
