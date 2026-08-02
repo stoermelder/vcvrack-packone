@@ -168,10 +168,10 @@ end
 TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua]") {
 	// See the matching QuickJs test for why this can only assert "doesn't crash":
 	// MidiKitModule's destructor calls closeState() (which runs onUnload())
-	// while se/seLua are still fully alive, specifically so that virtuals
-	// like writeLog/trig.*/input.*/param.* resolve correctly — calling them
-	// from ~MidiScriptEngineLua() itself, after MidiKitScriptEngineLua's part
-	// of the object is already gone, would be undefined behaviour.
+	// while the module — the engines' handler — is still fully alive, so that
+	// callbacks like writeLog/trig.*/input.*/param.* resolve through the
+	// handler. Calling them from ~MidiScriptEngineLua() itself, after the
+	// module (and its handler) is already gone, would be undefined behaviour.
 	MidiKitModule* m = createModule();
 	m->loadScript(LUA_ON_UNLOAD);
 	REQUIRE(m->seLua.L != nullptr);

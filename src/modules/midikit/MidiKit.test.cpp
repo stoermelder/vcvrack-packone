@@ -333,6 +333,10 @@ struct RecordingEngine : MidiScriptEngine {
 	std::vector<uint64_t> tickAtEmit;
 	MidiKitModule* module = nullptr;
 
+	// Not driven by a real handler — the callbacks it would exercise are never
+	// reached by these tests, so a null handler is fine.
+	RecordingEngine() : MidiScriptEngine(nullptr, 4, 1, 1, 4, 1, 1) {}
+
 	void process() override {
 		processCalls++;
 	}
@@ -353,16 +357,6 @@ struct RecordingEngine : MidiScriptEngine {
 	void processInTick(int trigPort) override { }
 	void dispatchMidiMessage(int midiPort, midi::Message& msg) override { }
 	void dispatchTrigger(int trigPort) override { }
-	void writeLog(std::string, bool useTimestamp = true) override { }
-	void writeOverlay(std::string s1, std::string s2, std::string s3) override { }
-	void enableInput(int i) override { }
-	float getInputVoltage(int i, uint8_t ch) override { return 0.f; }
-	float getTrigVoltage(int i, uint8_t ch) override { return 0.f; }
-	uint64_t getTrigTicks(int i) override { return 0; }
-	void enableParam(int i) override { }
-	float getParamValue(int i) override { return 0.f; }
-	void setTrig(int i, uint8_t ch, float duration = 1e-3f) override { }
-	void setTrigVoltage(int i, uint8_t ch, float voltage) override { }
 	std::string getInputName(int i) override { return ""; }
 	std::string getParamName(int i) override { return ""; }
 	std::string getParamFormatValue(int i) override { return ""; }
@@ -576,12 +570,12 @@ TEST_CASE("Log accepts entries from multiple producers", "[MidiKit][Log]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 	drainLogEntries(m);  // discard construction-time entries
 
-	// Producer A: the QuickJs engine's writeLog (the worker-thread path).
-	m->seQuickJs.writeLog("from-engine", true);
+	// Producer A: the module's handler writeLog (the worker-thread path).
+	m->writeLog("from-engine", true);
 	// Producer B: a direct push (the loadScript/onReset path).
 	m->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, std::string("from-direct")));
 	// Producer A again.
-	m->seQuickJs.writeLog("from-engine-2", false);
+	m->writeLog("from-engine-2", false);
 
 	auto entries = drainLogEntries(m);
 	REQUIRE(entries.size() == 3);

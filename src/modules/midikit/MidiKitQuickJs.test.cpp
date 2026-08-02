@@ -152,15 +152,15 @@ rack.onUnload = function() {
 
 
 TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][QuickJs]") {
-	// Regression guard: writeLog/writeOverlay/input.*/trig.*/param.* are pure
-	// virtual in MidiScriptEngineQuickJs, overridden only by the derived class
-	// in MidiKit.cpp. Running onUnload from ~MidiScriptEngineQuickJs() itself
-	// would call through a vtable that no longer has those overrides —
-	// undefined behaviour that crashes as "pure virtual function called".
-	// MidiKitModule has its own destructor that calls closeState() first,
-	// while still fully alive, specifically to avoid that. This test does not
-	// (and cannot) assert a log/message result — it can only prove
-	// destroyModule() doesn't crash, which is what it's for.
+	// Regression guard: writeLog/writeOverlay/input.*/trig.*/param.* live on
+	// the MidiScriptEngineHandler (implemented by MidiKitModule). Running
+	// onUnload from ~MidiScriptEngineQuickJs() itself would route those
+	// callbacks through a handler that is already destroyed — undefined
+	// behaviour that crashes as "pure virtual function called". MidiKitModule
+	// has its own destructor that calls closeState() first, while the module
+	// (the handler) is still fully alive, specifically to avoid that. This
+	// test does not (and cannot) assert a log/message result — it can only
+	// prove destroyModule() doesn't crash, which is what it's for.
 	MidiKitModule* m = createModule();
 	m->loadScript(QJS_ON_UNLOAD);
 	REQUIRE(m->seQuickJs.ctx != nullptr);

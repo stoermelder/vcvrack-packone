@@ -14,6 +14,9 @@ namespace Lua {
 
 struct MidiScriptEngineLua : MidiScriptEngine {
 
+	MidiScriptEngineLua(MidiScriptEngineHandler* handler, int inputCount, int inputTrigCount, int outputTrigCount, int paramCount, int midiInputCount, int midiOutputCount)
+		: MidiScriptEngine(handler, inputCount, inputTrigCount, outputTrigCount, paramCount, midiInputCount, midiOutputCount) {}
+
 	// ─── Message store ────────────────────────────────────────────────────────
 
 	struct MessageEx {
@@ -68,7 +71,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		closeState();
 
 		if (script[0] == '\0') {
-			writeLog("No script", false);
+			handler->writeLog("No script", false);
 			return;
 		}
 
@@ -118,15 +121,15 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		if (topics.find("engine") == topics.end() || topics["engine"] != "Lua") {
-			writeLog("Script is not compatible with this engine (expected @engine Lua)", false);
+			handler->writeLog("Script is not compatible with this engine (expected @engine Lua)", false);
 			return;
 		}
 
 		if (topics.find("author") != topics.end()) {
-			writeLog(string::f("Author: %s", topics["author"].c_str()), false);
+			handler->writeLog(string::f("Author: %s", topics["author"].c_str()), false);
 		}
 		if (topics.find("description") != topics.end()) {
-			writeLog(topics["description"], false);
+			handler->writeLog(topics["description"], false);
 		}
 
 		// ── Create Lua state ─────────────────────────────────────────────────
@@ -154,13 +157,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (luaL_loadbuffer(L, script, strlen(script), CHUNK_NAME) != LUA_OK ||
 		    lua_pcall(L, 0, LUA_MULTRET, 0) != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			writeLog(string::f("Error loading script: %s", err ? err : "(unknown)"), false);
+			handler->writeLog(string::f("Error loading script: %s", err ? err : "(unknown)"), false);
 			lua_pop(L, 1);
 			closeState();
 			return;
 		}
 
-		writeLog("Script loaded", false);
+		handler->writeLog("Script loaded", false);
 		callOnLoad();
 	}
 
@@ -197,7 +200,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			writeLog(string::f("%s error: %s", name, err ? err : "(unknown)"));
+			handler->writeLog(string::f("%s error: %s", name, err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
 		lua_pop(L, 1); // pop rack table
@@ -286,7 +289,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			writeLog(string::f("onMidiMessage error: %s", err ? err : "(unknown)"));
+			handler->writeLog(string::f("onMidiMessage error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
 		lua_pop(L, 1); // pop rack table
@@ -310,7 +313,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			writeLog(string::f("onTrigger error: %s", err ? err : "(unknown)"));
+			handler->writeLog(string::f("onTrigger error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
 		lua_pop(L, 1); // pop rack table
@@ -521,7 +524,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 				}
 			}
 		}
-		e->writeLog(log);
+		e->handler->writeLog(log);
 		return 0;
 	}
 
@@ -530,7 +533,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		const char* s1 = luaL_checkstring(L, 1);
 		const char* s2 = n >= 2 ? luaL_checkstring(L, 2) : "";
 		const char* s3 = n >= 3 ? luaL_checkstring(L, 3) : "";
-		getEngine(L)->writeOverlay(s1, s2, s3);
+		getEngine(L)->handler->writeOverlay(s1, s2, s3);
 		return 0;
 	}
 
@@ -612,7 +615,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		auto* e = getEngine(L);
 		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->inputCount) luaL_argerror(L, 1, "input index out of range");
-		e->enableInput(i - 1);
+		e->handler->enableInput(i - 1);
 		return 0;
 	}
 
@@ -624,7 +627,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		uint8_t ch = 1;
 		if (n >= 2) ch = static_cast<uint8_t>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
-		lua_pushnumber(L, e->getInputVoltage(i - 1, ch - 1));
+		lua_pushnumber(L, e->handler->getInputVoltage(i - 1, ch - 1));
 		return 1;
 	}
 
@@ -636,7 +639,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		uint8_t ch = 1;
 		if (n >= 2) ch = static_cast<uint8_t>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
-		lua_pushboolean(L, e->getInputVoltage(i - 1, ch - 1) > 0.7f);
+		lua_pushboolean(L, e->handler->getInputVoltage(i - 1, ch - 1) > 0.7f);
 		return 1;
 	}
 
@@ -648,7 +651,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		uint8_t ch = 1;
 		if (n >= 2) ch = static_cast<uint8_t>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
-		lua_pushboolean(L, e->getInputVoltage(i - 1, ch - 1) < 0.7f);
+		lua_pushboolean(L, e->handler->getInputVoltage(i - 1, ch - 1) < 0.7f);
 		return 1;
 	}
 
@@ -658,7 +661,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		auto* e = getEngine(L);
 		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->inputTrigCount) luaL_argerror(L, 1, "trig index out of range");
-		lua_pushinteger(L, static_cast<lua_Integer>(e->getTrigTicks(i - 1)));
+		lua_pushinteger(L, static_cast<lua_Integer>(e->handler->getTrigTicks(i - 1)));
 		return 1;
 	}
 
@@ -670,7 +673,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		int ch = 1;
 		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
-		lua_pushboolean(L, e->getTrigVoltage(i - 1, ch - 1) > 0.7f);
+		lua_pushboolean(L, e->handler->getTrigVoltage(i - 1, ch - 1) > 0.7f);
 		return 1;
 	}
 
@@ -682,7 +685,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		int ch = 1;
 		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
-		lua_pushboolean(L, e->getTrigVoltage(i - 1, ch - 1) < 0.7f);
+		lua_pushboolean(L, e->handler->getTrigVoltage(i - 1, ch - 1) < 0.7f);
 		return 1;
 	}
 
@@ -702,7 +705,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			duration = static_cast<float>(luaL_checknumber(L, 2));
 		}
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
-		e->setTrig(i - 1, ch - 1, duration);
+		e->handler->setTrig(i - 1, ch - 1, duration);
 		return 0;
 	}
 
@@ -714,7 +717,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		int ch = 1;
 		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
-		e->setTrigVoltage(i - 1, ch - 1, 10.f);
+		e->handler->setTrigVoltage(i - 1, ch - 1, 10.f);
 		return 0;
 	}
 
@@ -726,7 +729,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		int ch = 1;
 		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
-		e->setTrigVoltage(i - 1, ch - 1, 0.f);
+		e->handler->setTrigVoltage(i - 1, ch - 1, 0.f);
 		return 0;
 	}
 
@@ -738,7 +741,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		int ch = 1;
 		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
-		e->setTrig(i - 1, ch - 1);
+		e->handler->setTrig(i - 1, ch - 1);
 		return 0;
 	}
 
@@ -748,7 +751,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		auto* e = getEngine(L);
 		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->paramCount) luaL_argerror(L, 1, "param index out of range");
-		e->enableParam(i - 1);
+		e->handler->enableParam(i - 1);
 		return 0;
 	}
 
@@ -756,7 +759,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		auto* e = getEngine(L);
 		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->paramCount) luaL_argerror(L, 1, "param index out of range");
-		lua_pushnumber(L, e->getParamValue(i - 1));
+		lua_pushnumber(L, e->handler->getParamValue(i - 1));
 		return 1;
 	}
 
@@ -767,7 +770,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// invalidating such a handle before use. See midi.create() in SCRIPTING.md.
 	static void warnIfOutsideCallback(MidiScriptEngineLua* e, const char* fn) {
 		if (!e->inCallback) {
-			e->writeLog(string::f("%s: called outside a callback; the message "
+			e->handler->writeLog(string::f("%s: called outside a callback; the message "
 				"is discarded when the next MIDI message arrives", fn), false);
 		}
 	}
@@ -1267,7 +1270,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		MessageEx* m = getPortMsg(L);
-		int64_t currentTicks = e->getTrigTicks(trigPort == 0 ? 0 : trigPort - 1);
+		int64_t currentTicks = e->handler->getTrigTicks(trigPort == 0 ? 0 : trigPort - 1);
 		m->send = true;
 		m->sendOrder = e->sendCounter++;
 		m->msg.frame = -1;

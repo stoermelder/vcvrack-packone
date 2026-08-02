@@ -8,11 +8,33 @@ namespace MidiScript {
 using rack::midi::Message;
 
 
+// Implemented by the module that hosts a MidiScriptEngine. The engine calls
+// back through this interface for everything that touches the module's
+// hardware (inputs/outputs/triggers) and its UI (log/overlay), so the engine
+// itself stays free of any module-specific knowledge.
+struct MidiScriptEngineHandler {
+	virtual void writeLog(const std::string& s, bool useTimestamp = true) = 0;
+	virtual void writeOverlay(const std::string& s1, const std::string& s2, const std::string& s3) = 0;
+	virtual void enableInput(int i) = 0;
+	virtual float getInputVoltage(int i, uint8_t ch) = 0;
+	virtual float getTrigVoltage(int i, uint8_t ch) = 0;
+	virtual uint64_t getTrigTicks(int i) = 0;
+	virtual void enableParam(int i) = 0;
+	virtual float getParamValue(int i) = 0;
+	virtual void setTrig(int i, uint8_t ch, float duration = 1e-3f) = 0;
+	virtual void setTrigVoltage(int i, uint8_t ch, float voltage) = 0;
+};
+
+
 struct MidiScriptEngine {
 	// Arbitrary but generous cap on setSysEx's payload, to keep a script from
 	// building an unbounded message that then flows through the fixed-size
 	// midiOutQueue and out to the driver.
 	static const int sysExMaxPayloadLength = 256;
+
+	// The handler this engine runs inside, injected at construction. Every
+	// module-facing callback (log/overlay/input/trig/param) routes through it.
+	MidiScriptEngineHandler* handler;
 
 	int inputCount;
 	int inputTrigCount;
@@ -20,6 +42,9 @@ struct MidiScriptEngine {
 	int paramCount;
 	int midiInputCount;
 	int midiOutputCount;
+
+	MidiScriptEngine(MidiScriptEngineHandler* handler, int inputCount, int inputTrigCount, int outputTrigCount, int paramCount, int midiInputCount, int midiOutputCount)
+		: handler(handler), inputCount(inputCount), inputTrigCount(inputTrigCount), outputTrigCount(outputTrigCount), paramCount(paramCount), midiInputCount(midiInputCount), midiOutputCount(midiOutputCount) {}
 
 	std::shared_ptr<ITaskWorker> taskWorker;
 	dsp::RingBuffer<std::tuple<int, Message>, 128> midiInQueue;
@@ -83,18 +108,6 @@ struct MidiScriptEngine {
 	// process() above on the worker thread.
 	virtual void dispatchMidiMessage(int midiPort, Message& msg) = 0;
 	virtual void dispatchTrigger(int trigPort) = 0;
-
-	// Callbacks from the script
-	virtual void writeLog(std::string, bool useTimestamp = true) = 0;
-	virtual void writeOverlay(std::string s1, std::string s2, std::string s3) = 0;
-	virtual void enableInput(int i) = 0;
-	virtual float getInputVoltage(int i, uint8_t ch) = 0;
-	virtual float getTrigVoltage(int i, uint8_t ch) = 0;
-	virtual uint64_t getTrigTicks(int i) = 0;
-	virtual void enableParam(int i) = 0;
-	virtual float getParamValue(int i) = 0;
-	virtual void setTrig(int i, uint8_t ch, float duration = 1e-3f) = 0;
-	virtual void setTrigVoltage(int i, uint8_t ch, float voltage) = 0;
 
 	// Queries into the script from the UI
 	virtual std::string getInputName(int i) = 0;
