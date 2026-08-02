@@ -1066,22 +1066,26 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(js_getnum(args[1]))));
 		uint16_t number = js_getnum(args[2]);
 		uint16_t value = js_getnum(args[3]);
+		// Spec order: NRPN MSB, NRPN LSB, Data Entry MSB, Data Entry LSB.
+		// flushMsgStore() sends s1..s4 in this order, and MidiProcessor's NRPN
+		// state machine (CC99 sets pending MSB, CC98 completes selection;
+		// CC6 sets pending data MSB, CC38 completes the value) requires it.
 		s1->msg.setStatus(0xb);
 		s1->msg.setChannel(ch - 1);
-		s1->msg.setNote(98);
-		s1->msg.setValue(number & 0x7f);
+		s1->msg.setNote(99);
+		s1->msg.setValue((number >> 7) & 0x7f);
 		s2->msg.setStatus(0xb);
 		s2->msg.setChannel(ch - 1);
-		s2->msg.setNote(99);
-		s2->msg.setValue((number >> 7) & 0x7f);
+		s2->msg.setNote(98);
+		s2->msg.setValue(number & 0x7f);
 		s3->msg.setStatus(0xb);
 		s3->msg.setChannel(ch - 1);
-		s3->msg.setNote(38);
-		s3->msg.setValue(value & 0x7f);
+		s3->msg.setNote(6);
+		s3->msg.setValue((value >> 7) & 0x7f);
 		s4->msg.setStatus(0xb);
 		s4->msg.setChannel(ch - 1);
-		s4->msg.setNote(6);
-		s4->msg.setValue((value >> 7) & 0x7f);
+		s4->msg.setNote(38);
+		s4->msg.setValue(value & 0x7f);
 		return js_mknull();
 	}
 

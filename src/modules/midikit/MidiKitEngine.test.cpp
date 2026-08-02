@@ -1279,6 +1279,22 @@ TEST_CASE("setNRPN produces identical 4-message wire sequence", "[MidiKit][Cross
 	requireEquivalent(JS_NRPN, LUA_NRPN);
 }
 
+// Cross-engine equivalence above only pins JS and Lua to each other — it
+// can't catch a bug shared by both (as happened: both engines flushed the
+// quad as CC98/CC99/CC38/CC6, MSB-after-LSB for both pairs, which desyncs
+// MidiProcessor::processCc's NRPN state machine and corrupts every value
+// after the first). This asserts the actual wire bytes/order against the
+// spec: CC99 (param MSB), CC98 (param LSB), CC6 (data MSB), CC38 (data LSB).
+TEST_CASE("setNRPN wire order is spec-compliant (MSB before LSB)", "[MidiKit]") {
+	EngineResult r = run(JS_NRPN);
+	REQUIRE(r.sent.size() == 4);
+	// channel 9 -> status/channel byte 0xb8; number=1234 -> msb=9,lsb=82; value=5678 -> msb=44,lsb=46
+	REQUIRE(r.sent[0].bytes == std::vector<uint8_t>{0xb8, 99, 9});
+	REQUIRE(r.sent[1].bytes == std::vector<uint8_t>{0xb8, 98, 82});
+	REQUIRE(r.sent[2].bytes == std::vector<uint8_t>{0xb8, 6, 44});
+	REQUIRE(r.sent[3].bytes == std::vector<uint8_t>{0xb8, 38, 46});
+}
+
 
 // --- is* type predicates -------------------------------------------------
 //
