@@ -151,11 +151,10 @@ every example in this document does.
 - `rack.getFrame()` — the current engine frame number (`APP->engine->getFrame()`).
 
 ### `number.*`
-`abs`, `ceil`, `floor`, `max(a,b)`, `min(a,b)`, `random()` (0..1 uniform),
-`rescale(x, xMin, xMax, yMin, yMax [, curve])`, `crossfade(a, b, pos)`,
-`toString(x)`, `toFixed(x, digits)` (fixed-precision string, `digits` 0-20).
-Present in both engines identically (Lua re-exposes these even though
-`math.*` is also available, for script portability).
+`random()` (0..1 uniform), `rescale(x, xMin, xMax, yMin, yMax [, curve])`,
+`crossfade(a, b, pos)`, `toString(x)`, `toFixed(x, digits)` (fixed-precision
+string, `digits` 0-20). Present in both engines identically (Lua re-exposes
+these even though `math.*` is also available, for script portability).
 
 ### `input.*` (CV inputs on the module, 1-based)
 - `input.enable(i)` — activate input `i` so it appears on the panel.

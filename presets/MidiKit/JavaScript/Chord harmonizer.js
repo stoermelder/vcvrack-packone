@@ -109,7 +109,7 @@ function onMidiMessage(midiPort, msg) {
                 // Only actually sound the note if nothing else is holding it.
                 // Otherwise just take a reference - the note is already down.
                 if (state.refCount[target] === 0) {
-                    let v = offset === 0 ? vel : number.floor(vel * config.harmonyVelocity + 0.5);
+                    let v = offset === 0 ? vel : Math.floor(vel * config.harmonyVelocity + 0.5);
                     if (v < 1) v = 1;
 
                     let on = midi.create();

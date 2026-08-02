@@ -117,7 +117,7 @@ function quantise(note) {
         // below the root snaps up to the root rather than down a whole octave.
         for (let o = 0; o <= 1; o++) {
             let candidate = degree + o * 12;
-            let dist = number.abs(candidate - rel);
+            let dist = Math.abs(candidate - rel);
 
             // Strictly closer always wins. On an exact tie - the note sits
             // midway between two degrees - config.preferUpward decides, which

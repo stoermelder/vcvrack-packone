@@ -385,12 +385,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// number
 		JSValue _number = JS_NewObject(ctx);
 		JS_SetPropertyStr(ctx, glob, "number", _number);
-		JS_SetPropertyStr(ctx, _number, "abs", JS_NewCFunction(ctx, js_number_abs, "abs", 1));
-		JS_SetPropertyStr(ctx, _number, "ceil", JS_NewCFunction(ctx, js_number_ceil, "ceil", 1));
 		JS_SetPropertyStr(ctx, _number, "crossfade", JS_NewCFunction(ctx, js_number_crossfade, "crossfade", 3));
-		JS_SetPropertyStr(ctx, _number, "floor", JS_NewCFunction(ctx, js_number_floor, "floor", 1));
-		JS_SetPropertyStr(ctx, _number, "max", JS_NewCFunction(ctx, js_number_max, "max", 2));
-		JS_SetPropertyStr(ctx, _number, "min", JS_NewCFunction(ctx, js_number_min, "min", 2));
 		JS_SetPropertyStr(ctx, _number, "random", JS_NewCFunction(ctx, js_number_random, "random", 0));
 		JS_SetPropertyStr(ctx, _number, "rescale", JS_NewCFunction(ctx, js_number_rescale, "rescale", 5));
 		JS_SetPropertyStr(ctx, _number, "toString", JS_NewCFunction(ctx, js_number_toString, "toString", 1));
@@ -564,18 +559,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	// number
 
-	static JSValue js_number_abs(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc < 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "number.abs: bad args");
-		float f = argNum(ctx, argv[0]);
-		return JS_NewFloat64(ctx, std::abs(f));
-	}
-
-	static JSValue js_number_ceil(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc < 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "number.ceil: bad args");
-		float f = argNum(ctx, argv[0]);
-		return JS_NewFloat64(ctx, std::ceil(f));
-	}
-
 	static JSValue js_number_crossfade(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		if (argc < 3 || !argIsNumber(ctx, argv[0]) || !argIsNumber(ctx, argv[1]) || !argIsNumber(ctx, argv[2]))
 			return jsThrow(ctx, "number.crossfade: bad args");
@@ -583,26 +566,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		float b = argNum(ctx, argv[1]);
 		float p = argNum(ctx, argv[2]);
 		return JS_NewFloat64(ctx, rack::crossfade(a, b, p));
-	}
-
-	static JSValue js_number_floor(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc < 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "number.floor: bad args");
-		float f = argNum(ctx, argv[0]);
-		return JS_NewFloat64(ctx, std::floor(f));
-	}
-
-	static JSValue js_number_max(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc < 2 || !argIsNumber(ctx, argv[0]) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "number.max: bad args");
-		float f1 = argNum(ctx, argv[0]);
-		float f2 = argNum(ctx, argv[1]);
-		return JS_NewFloat64(ctx, std::max(f1, f2));
-	}
-
-	static JSValue js_number_min(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc < 2 || !argIsNumber(ctx, argv[0]) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "number.min: bad args");
-		float f1 = argNum(ctx, argv[0]);
-		float f2 = argNum(ctx, argv[1]);
-		return JS_NewFloat64(ctx, std::min(f1, f2));
 	}
 
 	static JSValue js_number_random(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {

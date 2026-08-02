@@ -112,7 +112,7 @@ param.enable(1);
 
 onMidiMessage = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
-      let ch = number.ceil(param.getValue(1) * 16);
+      let ch = Math.ceil(param.getValue(1) * 16);
       midi.setChannel(msg, ch);
    }
    midiOut.send(msg);
@@ -125,7 +125,7 @@ param.enable(1)
 
 onMidiMessage = function(midiPort, msg)
    if midi.isCc(msg) and midi.getChannel(msg) == 2 then
-      local ch = number.ceil(param.getValue(1) * 16)
+      local ch = math.ceil(param.getValue(1) * 16)
       midi.setChannel(msg, ch)
    end
    midiOut.send(msg)
@@ -145,13 +145,13 @@ param.getName = function(port) {
 };
 
 param.getValueFormat = function(port) {
-    if (port === 1) return number.toString(number.ceil(param.getValue(1) * 16));
+    if (port === 1) return number.toString(Math.ceil(param.getValue(1) * 16));
     return number.toString(param.getValue(port));
 };
 
 onMidiMessage = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
-      let ch = number.ceil(param.getValue(1) * 16);
+      let ch = Math.ceil(param.getValue(1) * 16);
       midi.setChannel(msg, ch);
    }
    midiOut.send(msg);
@@ -169,13 +169,13 @@ param.getName = function(port)
 end
 
 param.getValueFormat = function(port)
-    if port == 1 then return number.toString(number.ceil(param.getValue(1) * 16)) end
+    if port == 1 then return number.toString(math.ceil(param.getValue(1) * 16)) end
     return number.toString(param.getValue(port))
 end
 
 onMidiMessage = function(midiPort, msg)
    if midi.isCc(msg) and midi.getChannel(msg) == 2 then
-      local ch = number.ceil(param.getValue(1) * 16)
+      local ch = math.ceil(param.getValue(1) * 16)
       midi.setChannel(msg, ch)
    end
    midiOut.send(msg)
@@ -423,12 +423,7 @@ The API below is identical for both scripting engines — the function names, ar
 
 ### number
 
-- `number.abs(x)`: Computes the absolute value of `x`.
-- `number.ceil(x)`: Computes the largest integer value not less than `x`.
 - `number.crossfade(a, b, p)`: Linearly interpolates between `a` and `b`, from `p = 0` to `p = 1`.
-- `number.floor(arg)`: Computes the largest integer value not greater than `arg`.
-- `number.max(arg1, arg2)`: Returns the greater of two arguments.
-- `number.min(arg1, arg2)`: Returns the smaller of two arguments.
 - `number.random()`: Returns a random number of interval [0, 1).
 - `number.rescale(x, xMin, xMax, yMin, yMax, [a])`: Rescales `x` from `[xMin, xMax]` to `[yMin, yMax]`. The optional parameter `a` controls the curvature of the mapping (`a = 0` is linear). See the image for example curves:
   $$ f(x) \frac{\ \exp\left(\left(\ln\left(x\left(e-1\right)+1\right)\right)^{\left(2^{a}\right)}\right)-1}{e-1} $$

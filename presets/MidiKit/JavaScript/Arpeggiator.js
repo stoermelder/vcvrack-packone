@@ -83,19 +83,19 @@ param.getName = function(i) {
 };
 
 function divisionIndex() {
-    let idx = number.floor(param.getValue(1) * DIVISIONS.length);
+    let idx = Math.floor(param.getValue(1) * DIVISIONS.length);
     if (idx >= DIVISIONS.length) idx = DIVISIONS.length - 1;
     return idx;
 };
 
 function octaveRange() {
-    let o = number.floor(param.getValue(2) * 4) + 1;
+    let o = Math.floor(param.getValue(2) * 4) + 1;
     if (o > 4) o = 4;
     return o;
 };
 
 function playmodeIndex() {
-    let idx = number.floor(param.getValue(4) * PLAYMODES.length);
+    let idx = Math.floor(param.getValue(4) * PLAYMODES.length);
     if (idx >= PLAYMODES.length) idx = PLAYMODES.length - 1;
     return idx;
 };
@@ -225,7 +225,7 @@ function onTrigger(trigPort) {
     midi.setNoteOn(on, ch, note, 100);
     midiOut.send(on);
 
-    let lengthTicks = number.floor(division * param.getValue(3));
+    let lengthTicks = Math.floor(division * param.getValue(3));
     if (lengthTicks < 1) lengthTicks = 1;
     if (lengthTicks > division - 1) lengthTicks = division > 1 ? division - 1 : 1;
 

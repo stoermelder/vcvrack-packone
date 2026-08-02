@@ -237,48 +237,6 @@ static void requireCoercedLog(const std::string& jsScript, const std::string& lu
 // identical text in both engines — that's what makes comparing logged lines
 // a valid equivalence check rather than just an engine-internal readback.
 
-static const char* JS_NUMBER_ABS = R"(/**
- * @engine QuickJs
- */
-rack.log("PROBE:" + number.toString(number.abs(-5)));
-rack.log("PROBE:" + number.toString(number.abs(3)));
-rack.log("PROBE:" + number.toString(number.abs(0)));
-)";
-
-static const char* LUA_NUMBER_ABS = R"(--[[
-@engine Lua
---]]
-rack.log("PROBE:" .. number.toString(number.abs(-5)))
-rack.log("PROBE:" .. number.toString(number.abs(3)))
-rack.log("PROBE:" .. number.toString(number.abs(0)))
-)";
-
-TEST_CASE("number.abs is identical", "[MidiKit][CrossEngine]") {
-	requireLoggedValues(JS_NUMBER_ABS, LUA_NUMBER_ABS, {"5", "3", "0"});
-}
-
-
-static const char* JS_NUMBER_CEIL = R"(/**
- * @engine QuickJs
- */
-rack.log("PROBE:" + number.toString(number.ceil(3.2)));
-rack.log("PROBE:" + number.toString(number.ceil(-3.2)));
-rack.log("PROBE:" + number.toString(number.ceil(5)));
-)";
-
-static const char* LUA_NUMBER_CEIL = R"(--[[
-@engine Lua
---]]
-rack.log("PROBE:" .. number.toString(number.ceil(3.2)))
-rack.log("PROBE:" .. number.toString(number.ceil(-3.2)))
-rack.log("PROBE:" .. number.toString(number.ceil(5)))
-)";
-
-TEST_CASE("number.ceil is identical", "[MidiKit][CrossEngine]") {
-	requireLoggedValues(JS_NUMBER_CEIL, LUA_NUMBER_CEIL, {"4", "-3", "5"});
-}
-
-
 static const char* JS_NUMBER_CROSSFADE = R"(/**
  * @engine QuickJs
  */
@@ -297,48 +255,6 @@ rack.log("PROBE:" .. number.toString(number.crossfade(-5, 5, 0.75)))
 
 TEST_CASE("number.crossfade is identical", "[MidiKit][CrossEngine]") {
 	requireLoggedValues(JS_NUMBER_CROSSFADE, LUA_NUMBER_CROSSFADE, {"5", "125", "2.5"});
-}
-
-
-static const char* JS_NUMBER_FLOOR = R"(/**
- * @engine QuickJs
- */
-rack.log("PROBE:" + number.toString(number.floor(3.8)));
-rack.log("PROBE:" + number.toString(number.floor(-3.8)));
-rack.log("PROBE:" + number.toString(number.floor(5)));
-)";
-
-static const char* LUA_NUMBER_FLOOR = R"(--[[
-@engine Lua
---]]
-rack.log("PROBE:" .. number.toString(number.floor(3.8)))
-rack.log("PROBE:" .. number.toString(number.floor(-3.8)))
-rack.log("PROBE:" .. number.toString(number.floor(5)))
-)";
-
-TEST_CASE("number.floor is identical", "[MidiKit][CrossEngine]") {
-	requireLoggedValues(JS_NUMBER_FLOOR, LUA_NUMBER_FLOOR, {"3", "-4", "5"});
-}
-
-
-static const char* JS_NUMBER_MIN = R"(/**
- * @engine QuickJs
- */
-rack.log("PROBE:" + number.toString(number.min(3, 7)));
-rack.log("PROBE:" + number.toString(number.min(-5, 5)));
-rack.log("PROBE:" + number.toString(number.min(10, 10)));
-)";
-
-static const char* LUA_NUMBER_MIN = R"(--[[
-@engine Lua
---]]
-rack.log("PROBE:" .. number.toString(number.min(3, 7)))
-rack.log("PROBE:" .. number.toString(number.min(-5, 5)))
-rack.log("PROBE:" .. number.toString(number.min(10, 10)))
-)";
-
-TEST_CASE("number.min is identical", "[MidiKit][CrossEngine]") {
-	requireLoggedValues(JS_NUMBER_MIN, LUA_NUMBER_MIN, {"3", "-5", "10"});
 }
 
 
@@ -1592,7 +1508,7 @@ onMidiMessage = function(port, msg) {
     param.enable(1);
     let out = midi.create();
     midi.setCc(out, 1, 1, 0);
-    midi.setValue(out, number.floor(param.getValue(1) * 127));
+    midi.setValue(out, Math.floor(param.getValue(1) * 127));
     midiOut.send(out);
 };
 )";
@@ -1604,7 +1520,7 @@ function onMidiMessage(port, msg)
     param.enable(1)
     local out = midi.create()
     midi.setCc(out, 1, 1, 0)
-    midi.setValue(out, number.floor(param.getValue(1) * 127))
+    midi.setValue(out, math.floor(param.getValue(1) * 127))
     midiOut.send(out)
 end
 )";
@@ -1953,13 +1869,13 @@ TEST_CASE("onLoad runs once and sends an identical message in both engines", "[M
 static const char* JS_NO_ON_LOAD = R"(/**
  * @engine QuickJs
  */
-let x = number.max(3, 7);
+let x = Math.max(3, 7);
 )";
 
 static const char* LUA_NO_ON_LOAD = R"(--[[
 @engine Lua
 --]]
-x = number.max(3, 7)
+x = math.max(3, 7)
 )";
 
 TEST_CASE("Script without onLoad loads without any onLoad log noise in either engine", "[MidiKit][CrossEngine]") {

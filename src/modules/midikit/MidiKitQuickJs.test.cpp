@@ -36,31 +36,6 @@ TEST_CASE("QuickJs script loads with @engine as the only header tag", "[MidiKit]
 }
 
 
-static const char* QJS_MAX = R"(/**
- * @engine QuickJs
- */
-var x = number.max(3, 7);
-)";
-
-TEST_CASE("Script body runs synchronously on load", "[MidiKit][QuickJs]") {
-	MidiKitModule* m = createModule();
-
-	m->loadScript(QJS_MAX);
-	REQUIRE(m->seQuickJs.ctx != nullptr);
-
-	// number.max(3, 7) evaluated at load time — JS global x should be 7
-	JSValue glob = JS_GetGlobalObject(m->seQuickJs.ctx);
-	JSValue x = JS_GetPropertyStr(m->seQuickJs.ctx, glob, "x");
-	double xd = 0;
-	JS_ToFloat64(m->seQuickJs.ctx, &xd, x);
-	JS_FreeValue(m->seQuickJs.ctx, x);
-	JS_FreeValue(m->seQuickJs.ctx, glob);
-	REQUIRE(xd == Catch::Approx(7.0));
-
-	Test::destroyModule(m);
-}
-
-
 static const char* LUA_HEADER = R"(--[[
 @engine Lua
 --]]
@@ -152,7 +127,7 @@ TEST_CASE("Parse error line number tracks the error position", "[MidiKit][QuickJ
 TEST_CASE("Successful load reports no error", "[MidiKit][QuickJs]") {
 	MidiKitModule* m = createModule();
 
-	m->loadScript(QJS_MAX);
+	m->loadScript(QJS_EMPTY);
 	REQUIRE(m->seQuickJs.ctx != nullptr);
 
 	std::string log = drainLog(m);

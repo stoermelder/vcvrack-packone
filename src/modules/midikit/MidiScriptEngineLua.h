@@ -360,12 +360,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// ── number table ─────────────────────────────────────────────────────
 		// Mostly wraps existing Lua math.*; provided for JS script compatibility.
 		lua_newtable(L);
-		setTableFunc("abs",       lua_number_abs);
-		setTableFunc("ceil",      lua_number_ceil);
 		setTableFunc("crossfade", lua_number_crossfade);
-		setTableFunc("floor",     lua_number_floor);
-		setTableFunc("max",       lua_number_max);
-		setTableFunc("min",       lua_number_min);
 		setTableFunc("random",    lua_number_random);
 		setTableFunc("rescale",   lua_number_rescale);
 		setTableFunc("toString",  lua_number_toString);
@@ -531,40 +526,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// ── number.* ──────────────────────────────────────────────────────────────
 
-	static int lua_number_abs(lua_State* L) {
-		lua_pushnumber(L, std::abs(static_cast<float>(luaL_checknumber(L, 1))));
-		return 1;
-	}
-
-	static int lua_number_ceil(lua_State* L) {
-		lua_pushnumber(L, std::ceil(static_cast<float>(luaL_checknumber(L, 1))));
-		return 1;
-	}
-
 	static int lua_number_crossfade(lua_State* L) {
 		float a = static_cast<float>(luaL_checknumber(L, 1));
 		float b = static_cast<float>(luaL_checknumber(L, 2));
 		float p = static_cast<float>(luaL_checknumber(L, 3));
 		lua_pushnumber(L, rack::crossfade(a, b, p));
-		return 1;
-	}
-
-	static int lua_number_floor(lua_State* L) {
-		lua_pushnumber(L, std::floor(static_cast<float>(luaL_checknumber(L, 1))));
-		return 1;
-	}
-
-	static int lua_number_max(lua_State* L) {
-		float a = static_cast<float>(luaL_checknumber(L, 1));
-		float b = static_cast<float>(luaL_checknumber(L, 2));
-		lua_pushnumber(L, std::max(a, b));
-		return 1;
-	}
-
-	static int lua_number_min(lua_State* L) {
-		float a = static_cast<float>(luaL_checknumber(L, 1));
-		float b = static_cast<float>(luaL_checknumber(L, 2));
-		lua_pushnumber(L, std::min(a, b));
 		return 1;
 	}
 

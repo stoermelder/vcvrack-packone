@@ -14,14 +14,14 @@ end
 
 param.getValueFormat = function(port)
     if port == 1 then
-        return number.toString(number.ceil(param.getValue(1) * 16))
+        return number.toString(math.ceil(param.getValue(1) * 16))
     end
     return number.toString(param.getValue(port))
 end
 
 function onMidiMessage(midiPort, msg)
     if midi.isCc(msg) and midi.getChannel(msg) == 1 then
-        local ch = number.ceil(param.getValue(1) * 16)
+        local ch = math.ceil(param.getValue(1) * 16)
         midi.setChannel(msg, ch)
     end
     midiOut.send(msg)
