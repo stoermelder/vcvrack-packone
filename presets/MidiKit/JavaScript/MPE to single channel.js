@@ -117,6 +117,40 @@ function isActiveChannel(ch) {
     return ch === state.lastChannel;
 };
 
+// Context menu - right-click the module to change these settings live.
+// Each menu mirrors a `config` value above; onChange applies the choice.
+let CHANNEL_LABELS = [];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Output channel",
+    options: CHANNEL_LABELS,
+    selected: config.outChannel - 1,
+    onChange: function(idx) {
+        config.outChannel = idx + 1;
+        rack.log("Output channel: ", config.outChannel);
+    }
+});
+
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Forward channel pressure",
+    checked: config.forwardPressure,
+    onChange: function(checked) {
+        config.forwardPressure = checked;
+    }
+});
+
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Forward CC 74 (timbre)",
+    checked: config.forwardTimbre,
+    onChange: function(checked) {
+        config.forwardTimbre = checked;
+    }
+});
+
 rack.onMidiMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 

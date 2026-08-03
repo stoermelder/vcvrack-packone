@@ -67,6 +67,42 @@ function advanceValue() {
     }
 };
 
+// Context menu - right-click the module to change these settings live.
+// Each menu mirrors a `config` value above; onChange applies the choice.
+let CHANNEL_LABELS = [];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+let TICKS_PER_STEP = [1, 2, 4, 8, 16, 24];
+let TICKS_LABELS = ["1", "2", "4", "8 (16th)", "16 (8th)", "24 (quarter)"];
+
+function ticksIndex() {
+    for (let i = 0; i < TICKS_PER_STEP.length; i++) {
+        if (TICKS_PER_STEP[i] === config.ticksPerStep) return i;
+    }
+    return 0;
+};
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Channel",
+    options: CHANNEL_LABELS,
+    selected: config.channel - 1,
+    onChange: function(idx) {
+        config.channel = idx + 1;
+        rack.log("Channel: ", config.channel);
+    }
+});
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Ticks per step",
+    options: TICKS_LABELS,
+    selected: ticksIndex(),
+    onChange: function(idx) {
+        config.ticksPerStep = TICKS_PER_STEP[idx];
+        rack.log("Ticks per step: ", config.ticksPerStep);
+    }
+});
+
 rack.onMidiMessage = function(midiPort, msg) {
     if (midi.isClock(msg)) {
         state.tickCount++;

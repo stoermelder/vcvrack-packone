@@ -98,6 +98,60 @@ function scheduleNoteOff(ch, note) {
     midiOut.sendAfterTrigger(off, config.trigPort, config.lengthTicks);
 };
 
+// Context menu - right-click the module to change these settings live.
+// Each menu mirrors a `config` value above; onChange applies the choice.
+let LENGTH_TICKS = [6, 12, 24, 48];
+let LENGTH_LABELS = ["6 (16th)", "12 (8th)", "24 (quarter)", "48 (half)"];
+let CHANNEL_LABELS = ["All"];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
+function lengthTicksIndex() {
+    for (let i = 0; i < LENGTH_TICKS.length; i++) {
+        if (LENGTH_TICKS[i] === config.lengthTicks) return i;
+    }
+    return 0;
+};
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Note length",
+    options: LENGTH_LABELS,
+    selected: lengthTicksIndex(),
+    onChange: function(idx) {
+        config.lengthTicks = LENGTH_TICKS[idx];
+        rack.log("Length: ", config.lengthTicks, " ticks");
+    }
+});
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Channel",
+    options: CHANNEL_LABELS,
+    selected: config.channel,
+    onChange: function(idx) {
+        config.channel = idx;
+        rack.log("Channel: ", CHANNEL_LABELS[idx]);
+    }
+});
+
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Pass through other messages",
+    checked: config.passThroughOther,
+    onChange: function(checked) {
+        config.passThroughOther = checked;
+    }
+});
+
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Log quantised notes",
+    checked: config.verbose,
+    onChange: function(checked) {
+        config.verbose = checked;
+    }
+});
+
 rack.onMidiMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 

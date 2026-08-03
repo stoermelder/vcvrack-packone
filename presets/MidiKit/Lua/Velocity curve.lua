@@ -42,10 +42,7 @@ local config = {
     curveAmount = 2,
 
     -- Only process this channel; 0 = every channel
-    channel = 0,
-
-    -- Show each remapped velocity in the panel overlay
-    showOverlay = true
+    channel = 0
 }
 
 param.enable(config.curveParam)
@@ -89,6 +86,22 @@ local function shapeVelocity(vel)
     return math.max(config.minVelocity, math.min(config.maxVelocity, out))
 end
 
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Channel",
+    options = CHANNEL_LABELS,
+    selected = config.channel,
+    onChange = function(idx)
+        config.channel = idx
+        rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
+    end
+})
+
 rack.onMidiMessage = function(midiPort, msg)
     if midi.isNoteOn(msg) and matchesChannel(midi.getChannel(msg)) then
         local vel = midi.getValue(msg)
@@ -101,10 +114,6 @@ rack.onMidiMessage = function(midiPort, msg)
 
         local shaped = shapeVelocity(vel)
         midi.setValue(msg, shaped)
-
-        if config.showOverlay then
-            rack.overlay("Velocity", vel .. " -> " .. shaped)
-        end
     end
 
     midiOut.send(msg)

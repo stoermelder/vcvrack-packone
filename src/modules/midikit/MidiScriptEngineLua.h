@@ -5,8 +5,10 @@ extern "C" {
 #include "../../utils/TaskWorker.hpp"
 #include <algorithm>
 #include <iomanip>
+#include <mutex>
 #include <regex>
 #include <sstream>
+#include <unordered_map>
 
 namespace StoermelderPackOne {
 namespace MidiScript {
@@ -43,6 +45,21 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// Sticky output port selected via midiOut.selectPort(), 0-based. Stays in
 	// effect across callbacks until changed again.
 	int selectedPort = 0;
+
+	// Script-registered context menus. The Lua callback lives in the registry
+	// as an integer reference (luaL_ref), not in ContextMenuSpec, because the
+	// UI thread only reads presentation copies through getContextMenus().
+	struct ContextMenuEntry {
+		ContextMenuSpec spec;
+		int callbackRef;
+	};
+	std::unordered_map<int, ContextMenuEntry> contextMenus;
+	int nextContextMenuCallbackId = 1;
+	// Guards contextMenus/nextContextMenuCallbackId against concurrent
+	// access from the UI thread (menu build / click) and the worker thread
+	// (registerContextMenu, callback dispatch). Never held while running a
+	// script callback, or a callback that re-registers would deadlock.
+	mutable std::mutex contextMenusMutex;
 
 	// ─── Lua state & threading ────────────────────────────────────────────────
 
@@ -170,6 +187,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	void closeState() {
 		if (L) {
 			callOnUnload();
+			clearContextMenus();
 			lua_close(L);
 			L = nullptr;
 		}
@@ -255,6 +273,89 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	std::string getParamFormatValue(int i) override {
 		if (!L) return "";
 		return callLuaTableFunc("param", "getValueFormat", i + 1);
+	}
+
+	void clearContextMenus() override {
+		std::lock_guard<std::mutex> lock(contextMenusMutex);
+		if (L) {
+			// Releases the stored script callbacks. Only safe on this (UI)
+			// thread while L is still alive: closeState() calls this before
+			// closing the state, and every other Lua operation happens on the
+			// worker thread.
+			for (auto& kv : contextMenus) {
+				luaL_unref(L, LUA_REGISTRYINDEX, kv.second.callbackRef);
+			}
+		}
+		contextMenus.clear();
+		nextContextMenuCallbackId = 1;
+	}
+
+	void getContextMenus(std::vector<ContextMenuSpec>& out) const override {
+		std::lock_guard<std::mutex> lock(contextMenusMutex);
+		out.clear();
+		out.reserve(contextMenus.size());
+		for (const auto& kv : contextMenus) {
+			out.push_back(kv.second.spec);
+		}
+		// callbackIds are assigned monotonically at registration, so sorting by
+		// them yields registration order — the unordered_map's own iteration
+		// order is unspecified.
+		std::sort(out.begin(), out.end(), [](const ContextMenuSpec& a, const ContextMenuSpec& b) {
+			return a.callbackId < b.callbackId;
+		});
+	}
+
+	// Fires a registered menu item's onChange callback on the worker thread.
+	// The spec's presentation state (checked/selected) is updated synchronously
+	// on the caller (UI) thread so the next menu build reflects the change
+	// immediately; the actual script call is deferred to runAsync() because it
+	// must run on the worker thread alongside all other Lua work.
+	void invokeContextMenuCallback(int callbackId, int value) override {
+		ContextMenuSpec::Type type;
+		std::string label;
+		{
+			std::lock_guard<std::mutex> lock(contextMenusMutex);
+			auto it = contextMenus.find(callbackId);
+			if (it == contextMenus.end()) return;
+			ContextMenuEntry& entry = it->second;
+			type = entry.spec.type;
+			if (type == ContextMenuSpec::Type::Boolean) {
+				entry.spec.checked = (value != 0);
+			}
+			else {
+				if (value < 0 || value >= static_cast<int>(entry.spec.options.size())) return;
+				entry.spec.selected = value;
+				label = entry.spec.options[value];
+			}
+		}
+
+		runAsync([this, callbackId, value, type, label]() {
+			if (!L) return;
+			int ref;
+			{
+				std::lock_guard<std::mutex> lock(contextMenusMutex);
+				auto it = contextMenus.find(callbackId);
+				if (it == contextMenus.end()) return;
+				ref = it->second.callbackRef;
+			}
+			lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+			int nargs;
+			if (type == ContextMenuSpec::Type::Boolean) {
+				lua_pushboolean(L, value != 0);
+				nargs = 1;
+			}
+			else {
+				lua_pushinteger(L, value);
+				lua_pushlstring(L, label.c_str(), label.size());
+				nargs = 2;
+			}
+			int status = lua_pcall(L, nargs, 0, 0);
+			if (status != LUA_OK) {
+				const char* err = lua_tostring(L, -1);
+				handler->writeLog(string::f("Context menu callback error: %s", err ? err : "(unknown)"));
+				lua_pop(L, 1); // pop error message
+			}
+		});
 	}
 
 	// Returns current bytes in use by the Lua heap, or false if no script is loaded.
@@ -374,6 +475,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("overlay",  lua_rack_overlay);
 		setTableFunc("getFrame", lua_rack_getFrame);
 		setTableFunc("random",   lua_rack_random);
+		setTableFunc("registerContextMenu", lua_rack_registerContextMenu);
 		lua_setglobal(L, "rack");
 
 		// ── number table ─────────────────────────────────────────────────────
@@ -538,6 +640,84 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_rack_getFrame(lua_State* L) {
 		lua_pushnumber(L, static_cast<lua_Number>(APP->engine->getFrame()));
+		return 1;
+	}
+
+	// rack.registerContextMenu(options) — registers one item in the module's
+	// context menu. Two variants:
+	//   { type = "boolean", label, checked, onChange = fn(checked) }
+	//   { type = "options", label, options = {...}, selected, onChange = fn(idx, label) }
+	// Returns true on success. The script callback is stored (owned) by the
+	// engine as a registry reference and fired through
+	// invokeContextMenuCallback() on the worker thread.
+	static int lua_rack_registerContextMenu(lua_State* L) {
+		auto* e = getEngine(L);
+		if (lua_gettop(L) < 1 || !lua_istable(L, 1))
+			return luaL_error(L, "registerContextMenu: expected a table");
+
+		ContextMenuSpec spec;
+
+		lua_getfield(L, 1, "type");
+		if (lua_type(L, -1) != LUA_TSTRING) return luaL_error(L, "registerContextMenu: type must be a string");
+		std::string type = lua_tostring(L, -1);
+		lua_pop(L, 1);
+		if (type == "options") spec.type = ContextMenuSpec::Type::Options;
+		else if (type == "boolean") spec.type = ContextMenuSpec::Type::Boolean;
+		else return luaL_error(L, "registerContextMenu: type must be \"boolean\" or \"options\"");
+
+		lua_getfield(L, 1, "label");
+		if (lua_type(L, -1) != LUA_TSTRING) return luaL_error(L, "registerContextMenu: label must be a string");
+		size_t labelLen;
+		const char* label = lua_tolstring(L, -1, &labelLen);
+		if (labelLen == 0) return luaL_error(L, "registerContextMenu: label must be a non-empty string");
+		spec.label.assign(label, labelLen);
+		lua_pop(L, 1);
+
+		lua_getfield(L, 1, "onChange");
+		if (!lua_isfunction(L, -1)) return luaL_error(L, "registerContextMenu: onChange must be a function");
+
+		if (spec.type == ContextMenuSpec::Type::Boolean) {
+			lua_getfield(L, 1, "checked");
+			spec.checked = lua_toboolean(L, -1);
+			lua_pop(L, 1);
+		}
+		else {
+			lua_getfield(L, 1, "options");
+			if (!lua_istable(L, -1)) return luaL_error(L, "registerContextMenu: options must be a non-empty array of strings");
+			lua_len(L, -1);
+			lua_Integer len = lua_tointeger(L, -1);
+			lua_pop(L, 1); // pop length; options table is now on top
+			if (len <= 0) return luaL_error(L, "registerContextMenu: options must be a non-empty array of strings");
+			spec.options.resize(static_cast<size_t>(len));
+			for (lua_Integer i = 1; i <= len; i++) {
+				lua_rawgeti(L, -1, i); // push options[i]
+				if (lua_type(L, -1) != LUA_TSTRING) return luaL_error(L, "registerContextMenu: options must contain only strings");
+				size_t olen;
+				const char* os = lua_tolstring(L, -1, &olen);
+				spec.options[static_cast<size_t>(i - 1)].assign(os, olen);
+				lua_pop(L, 1);
+			}
+			lua_pop(L, 1); // pop options table
+
+			lua_getfield(L, 1, "selected");
+			if (lua_isnumber(L, -1)) {
+				lua_Integer sel = lua_tointeger(L, -1);
+				spec.selected = static_cast<int>(std::max<lua_Integer>(0, std::min<lua_Integer>(sel, len - 1)));
+			}
+			lua_pop(L, 1); // pop selected
+		}
+
+		spec.callbackId = e->nextContextMenuCallbackId++;
+		int ref = luaL_ref(L, LUA_REGISTRYINDEX); // pops the onChange function
+		{
+			std::lock_guard<std::mutex> lock(e->contextMenusMutex);
+			ContextMenuEntry entry;
+			entry.spec = spec;
+			entry.callbackRef = ref;
+			e->contextMenus[spec.callbackId] = entry;
+		}
+
+		lua_pushboolean(L, 1);
 		return 1;
 	}
 

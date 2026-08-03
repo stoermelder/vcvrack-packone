@@ -316,6 +316,58 @@ rack.onTrigger = function(trigPort)
 end
 ```
 
+### Add items to the module's context menu
+
+`rack.registerContextMenu()` adds items to the module's right-click context menu — a boolean toggle (a menu line with a checkmark) or an options submenu (one entry per option, checkmark on the current selection). Items appear in registration order and can be used to change `config` values live instead of editing the script.
+
+JavaScript:
+```js
+config.channel = 1;
+
+rack.registerContextMenu({
+    type: "options",
+    label: "MIDI channel",
+    options: ["1", "2", "3"],
+    selected: config.channel - 1,
+    onChange: function(idx) {
+        config.channel = idx + 1;
+    }
+});
+
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Pass through",
+    checked: config.passThrough,
+    onChange: function(checked) {
+        config.passThrough = checked;
+    }
+});
+```
+
+Lua:
+```lua
+config.channel = 1
+
+rack.registerContextMenu({
+    type = "options",
+    label = "MIDI channel",
+    options = { "1", "2", "3" },
+    selected = config.channel - 1,
+    onChange = function(idx)
+        config.channel = idx + 1
+    end
+})
+
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Pass through",
+    checked = config.passThrough,
+    onChange = function(checked)
+        config.passThrough = checked
+    end
+})
+```
+
 ## Language reference
 
 MIDI-KIT supports two scripting languages. The JavaScript engine is [QuickJS](https://bellard.org/quickjs/) (a full ES2020 engine); the Lua engine is a bundled [MiniLua](https://github.com/edubart/minilua). QuickJS ships with the full standard JavaScript library; MiniLua is trimmed to a safe subset. The `midi` / `midiOut` / `input` / `trig` / `param` / `number` / `rack` API is identical across the two engines, so picking an engine is mostly a matter of personal taste.
@@ -398,6 +450,37 @@ The callbacks below are defined as methods on the `rack` object — `rack.onMidi
 - `rack.overlay(str1, [str2], [str3])`: Displays string `str1` in a Rack overlay widget.
 - `rack.getFrame()`: Returns the current engine frame number of the Rack engine.
 - `rack.random()`: Returns a random number of interval [0, 1), drawn from Rack's own RNG (`rack::random::uniform()`).
+- `rack.registerContextMenu(options)`: Adds one item to the module's right-click context menu, in registration order — multiple items are allowed. Returns `true` on success; throws (and the script fails to load) if `options` is malformed. Two variants:
+
+  *Boolean toggle* — a single menu line with a checkmark:
+  ```js
+  rack.registerContextMenu({
+      type: "boolean",
+      label: "Velocity to CC",
+      checked: false,
+      onChange: function(checked) {
+          // checked: true/false (boolean)
+      }
+  });
+  ```
+  *Options submenu* — a submenu with one entry per option, checkmark on the current selection:
+  ```js
+  rack.registerContextMenu({
+      type: "options",
+      label: "Out mode",
+      options: ["Internal", "External", "Both"],
+      selected: 1,
+      onChange: function(selectedIndex, selectedLabel) {
+          // selectedIndex: number, selectedLabel: string
+      }
+  });
+  ```
+  Notes:
+  - `label` must be a non-empty string; `options` must be a non-empty array of strings; `onChange` must be a function.
+  - `checked` (boolean variant) defaults to `false`; `selected` (options variant) is clamped into range and defaults to `0`.
+  - `onChange` runs when the menu item is clicked and may call any other `rack.*` function; exceptions inside it are logged as `Context menu callback error: ...` without crashing.
+  - The checkmark/selection updates as soon as the item is clicked, so the menu reflects the change immediately.
+  - All registered items are cleared when the script is reloaded or cleared.
 
 ### input
 

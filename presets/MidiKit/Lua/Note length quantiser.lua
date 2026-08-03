@@ -97,6 +97,60 @@ local function scheduleNoteOff(ch, note)
     midiOut.sendAfterTrigger(off, config.trigPort, config.lengthTicks)
 end
 
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local LENGTH_TICKS = { 6, 12, 24, 48 }
+local LENGTH_LABELS = { "6 (16th)", "12 (8th)", "24 (quarter)", "48 (half)" }
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+
+local function lengthTicksIndex()
+    for i = 1, #LENGTH_TICKS do
+        if LENGTH_TICKS[i] == config.lengthTicks then return i - 1 end
+    end
+    return 0
+end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Note length",
+    options = LENGTH_LABELS,
+    selected = lengthTicksIndex(),
+    onChange = function(idx)
+        config.lengthTicks = LENGTH_TICKS[idx + 1]
+        rack.log("Length: ", config.lengthTicks, " ticks")
+    end
+})
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Channel",
+    options = CHANNEL_LABELS,
+    selected = config.channel,
+    onChange = function(idx)
+        config.channel = idx
+        rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
+    end
+})
+
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Pass through other messages",
+    checked = config.passThroughOther,
+    onChange = function(checked)
+        config.passThroughOther = checked
+    end
+})
+
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Log quantised notes",
+    checked = config.verbose,
+    onChange = function(checked)
+        config.verbose = checked
+    end
+})
+
 rack.onMidiMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 

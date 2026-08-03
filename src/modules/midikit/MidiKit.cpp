@@ -254,7 +254,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 
 	MidiScript::Lua::MidiScriptEngineLua seLua;
 	MidiScript::QuickJs::MidiScriptEngineQuickJs seQuickJs;
-	MidiScript::MidiScriptEngine* activeEngine = &seQuickJs;
+	MidiScript::MidiScriptEngine* activeEngine = nullptr;
 
 	MidiKitModule() : MidiKitModule(defaultWorker()) {}
 	explicit MidiKitModule(std::shared_ptr<ITaskWorker> worker)
@@ -300,7 +300,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			outputTriggerActive[i] = true;
 			outputPulseGenerator[i].reset();
 		}
-		activeEngine = &seQuickJs;
+		activeEngine = nullptr;
 		seQuickJs.loadScript("");
 		seLua.loadScript("");
 		seQuickJs.loadScript("");
@@ -328,6 +328,8 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		else
 			return;
 		*/
+
+		if (!activeEngine) return;
 
 		if (inputTrigger.process(inputs[INPUT_TRIG].getVoltage())) {
 			inputTriggerTick++;
@@ -395,16 +397,18 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		}
 		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::RESET, 0.f, std::string("")));
 
-		// Detect engine from script header (@engine Lua, default QuickJs)
+		// Detect engine from script header
 		bool isLua = s.find("@engine Lua") != std::string::npos;
+		bool isQuickJs = s.find("@engine QuickJs") != std::string::npos;
 
 		MidiScript::MidiScriptEngine* prevEngine = activeEngine;
-		activeEngine = isLua ? static_cast<MidiScript::MidiScriptEngine*>(&seLua)
-		                     : static_cast<MidiScript::MidiScriptEngine*>(&seQuickJs);
+		if (isLua) activeEngine = &seLua;
+		if (isQuickJs) activeEngine = &seQuickJs;
 
 		// Clear the engine that is no longer active (silently — RESET was already pushed)
-		if (prevEngine != activeEngine)
+		if (prevEngine && prevEngine != activeEngine) {
 			prevEngine->loadScript("");
+		}
 
 		// Keep port/param info pointers in sync with the active engine
 		for (int i = 0; i < 4; i++) {
@@ -412,7 +416,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->se = activeEngine;
 		}
 
-		activeEngine->loadScript(script.c_str());
+		if (activeEngine) activeEngine->loadScript(script.c_str());
 	}
 
 	void clearScript() {
@@ -549,18 +553,47 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MidiKitModule>::appendContextMenu(menu);
-		menu->addChild(new MenuSeparator());
-		if (module->activeEngine == &module->seLua) {
-			size_t used;
-			if (module->seLua.getMemoryUsage(used)) {
-				menu->addChild(createMenuLabel(string::f("RAM usage: %zu KB", used / 1024)));
+
+		if (module->activeEngine) {
+			menu->addChild(new MenuSeparator());
+			if (module->activeEngine == &module->seLua) {
+				menu->addChild(createMenuLabel("Running Script (Lua)"));
+				size_t used;
+				if (module->seLua.getMemoryUsage(used)) {
+					menu->addChild(createMenuLabel(string::f("RAM usage: %zu KB", used / 1024)));
+				}
 			}
-		}
-		else if (module->activeEngine == &module->seQuickJs) {
-			size_t used, total;
-			if (module->seQuickJs.getMemoryUsage(used, total)) {
-				float pct = total > 0 ? 100.f * used / total : 0.f;
-				menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
+			if (module->activeEngine == &module->seQuickJs) {
+				menu->addChild(createMenuLabel("Running Script (QuickJs)"));
+				size_t used, total;
+				if (module->seQuickJs.getMemoryUsage(used, total)) {
+					float pct = total > 0 ? 100.f * used / total : 0.f;
+					menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
+				}
+			}
+
+			// Script-registered items (rack.registerContextMenu). appendContextMenu
+			// re-runs every time the menu is opened, so the checkmarks/selection are
+			// always read fresh from the engine.
+			std::vector<MidiScript::ContextMenuSpec> specs;
+			module->activeEngine->getContextMenus(specs);
+			if (!specs.empty()) {
+				for (const MidiScript::ContextMenuSpec& spec : specs) {
+					if (spec.type == MidiScript::ContextMenuSpec::Type::Boolean) {
+						menu->addChild(createMenuItem(spec.label, CHECKMARK(spec.checked), [=]() {
+							module->activeEngine->invokeContextMenuCallback(spec.callbackId, spec.checked ? 0 : 1);
+						}));
+					}
+					else {
+						menu->addChild(createSubmenuItem(spec.label, "", [=](Menu* sub) {
+							for (size_t i = 0; i < spec.options.size(); i++) {
+								sub->addChild(createMenuItem(spec.options[i], CHECKMARK(i == static_cast<size_t>(spec.selected)), [=]() {
+									module->activeEngine->invokeContextMenuCallback(spec.callbackId, static_cast<int>(i));
+								}));
+							}
+						}));
+					}
+				}
 			}
 		}
 

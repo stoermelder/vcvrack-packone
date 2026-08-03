@@ -726,6 +726,30 @@ TEST_CASE("'Scale quantiser.js/.lua' releases the substituted note on unload", "
 	Test::destroyModule(m);
 }
 
+TEST_CASE("'Scale quantiser.js/.lua' reads the root from CV input 1", "[MidiKit][ScaleQuantiser]") {
+	std::string path = GENERATE(from_range(std::begin(SCALE_QUANTISER_PRESET_PATHS), std::end(SCALE_QUANTISER_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// 0.5V on input 1 puts the root at F# (pitch class 6) under the standard
+	// 1V/oct pitch convention: the C minor scale transposes up 6 semitones.
+	// In-scale notes still pass through unchanged and off-scale notes still
+	// snap down a semitone under the default preferUpward=false.
+	m->inputs[MidiKitModule::INPUT].setVoltage(0.5f, 0);
+
+	// C#5 (pitch class 1) is in the F# minor scale -> unchanged.
+	auto inScale = feedCollect(m, noteOn(1, 73, 100));
+	REQUIRE(inScale == std::vector<OutEvent>{{0x9, 1, 73, 100, 0}});
+
+	// C5 (pitch class 0) sits midway between B (11) and C# (1) -> snaps down
+	// to B (71).
+	auto offScale = feedCollect(m, noteOn(1, 72, 100));
+	REQUIRE(offScale == std::vector<OutEvent>{{0x9, 1, 71, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
 
 // Behavioural tests for the Micro scale preset. The scale is not hardcoded:
 // onLoad parses the Scala .scl pasted into config.scl (a "config.scl = ..."

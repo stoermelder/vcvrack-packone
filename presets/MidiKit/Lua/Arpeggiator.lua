@@ -41,10 +41,7 @@ local config = {
     channel = 0,
 
     -- Output channel for arpeggiated notes; 0 = same as input note's channel
-    outChannel = 0,
-
-    -- Show the currently playing step in the panel overlay
-    showOverlay = true
+    outChannel = 0
 }
 
 -- Clock division choices, in trigger ticks per arp step (fewer ticks = faster)
@@ -165,6 +162,35 @@ rack.onUnload = function()
     releaseSounding()
 end
 
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+local OUT_CHANNEL_LABELS = { "Same as input" }
+for c = 1, 16 do OUT_CHANNEL_LABELS[c + 1] = tostring(c) end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Input channel",
+    options = CHANNEL_LABELS,
+    selected = config.channel,
+    onChange = function(idx)
+        config.channel = idx
+        rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
+    end
+})
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Output channel",
+    options = OUT_CHANNEL_LABELS,
+    selected = config.outChannel,
+    onChange = function(idx)
+        config.outChannel = idx
+        rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx + 1])
+    end
+})
+
 rack.onMidiMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 
@@ -235,10 +261,6 @@ function rack.onTrigger(trigPort)
 
     state.soundingNote = note
     state.soundingChannel = ch
-
-    if config.showOverlay then
-        rack.overlay("Arp " .. PLAYMODES[playmodeIndex()], "note " .. number.toString(note) .. " (" .. number.toString(state.step) .. "/" .. number.toString(#state.pattern) .. ")")
-    end
 
     state.step = state.step + 1
     if state.step > #state.pattern then state.step = 1 end

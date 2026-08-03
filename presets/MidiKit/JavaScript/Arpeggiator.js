@@ -41,10 +41,7 @@ let config = {
     channel: 0,
 
     // Output channel for arpeggiated notes; 0 = same as input note's channel
-    outChannel: 0,
-
-    // Show the currently playing step in the panel overlay
-    showOverlay: true
+    outChannel: 0
 };
 
 // Clock division choices, in trigger ticks per arp step (fewer ticks = faster)
@@ -167,6 +164,35 @@ rack.onUnload = function() {
     releaseSounding();
 };
 
+// Context menu - right-click the module to change these settings live.
+// Each menu mirrors a `config` value above; onChange applies the choice.
+let CHANNEL_LABELS = ["All"];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+let OUT_CHANNEL_LABELS = ["Same as input"];
+for (let c = 1; c <= 16; c++) OUT_CHANNEL_LABELS[OUT_CHANNEL_LABELS.length] = String(c);
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Input channel",
+    options: CHANNEL_LABELS,
+    selected: config.channel,
+    onChange: function(idx) {
+        config.channel = idx;
+        rack.log("Input channel: ", CHANNEL_LABELS[idx]);
+    }
+});
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Output channel",
+    options: OUT_CHANNEL_LABELS,
+    selected: config.outChannel,
+    onChange: function(idx) {
+        config.outChannel = idx;
+        rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx]);
+    }
+});
+
 rack.onMidiMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
@@ -235,10 +261,6 @@ rack.onTrigger = function(trigPort) {
 
     state.soundingNote = note;
     state.soundingChannel = ch;
-
-    if (config.showOverlay) {
-        rack.overlay("Arp " + PLAYMODES[playmodeIndex()], "note " + note + " (" + (state.step + 1) + "/" + state.pattern.length + ")");
-    }
 
     state.step = state.step + 1;
     if (state.step >= state.pattern.length) state.step = 0;

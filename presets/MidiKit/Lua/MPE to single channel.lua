@@ -112,6 +112,40 @@ local function isActiveChannel(ch)
     return ch == state.lastChannel
 end
 
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local CHANNEL_LABELS = {}
+for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Output channel",
+    options = CHANNEL_LABELS,
+    selected = config.outChannel - 1,
+    onChange = function(idx)
+        config.outChannel = idx + 1
+        rack.log("Output channel: ", config.outChannel)
+    end
+})
+
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Forward channel pressure",
+    checked = config.forwardPressure,
+    onChange = function(checked)
+        config.forwardPressure = checked
+    end
+})
+
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Forward CC 74 (timbre)",
+    checked = config.forwardTimbre,
+    onChange = function(checked)
+        config.forwardTimbre = checked
+    end
+})
+
 rack.onMidiMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 

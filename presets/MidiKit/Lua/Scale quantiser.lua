@@ -2,7 +2,7 @@
 @target stoermelder MIDI-KIT
 @engine Lua
 @author stoermelder
-@description Snaps incoming notes to the nearest note of a selectable scale, tracking held notes so releases still match
+@description Snaps incoming notes to the nearest note of a selectable scale, with the root set by CV input 1 (1V/oct); tracks held notes so releases still match
 --]]
 
 -- Scale quantiser for MIDI-KIT
@@ -20,6 +20,11 @@
 -- The scale is a list of semitone offsets from the root, in the octave
 -- 0..11. Several common scales are pre-defined below; point config.scale at
 -- whichever one you want, or write your own list.
+--
+-- The root of the scale is not a fixed setting: it is read live from CV
+-- input 1 using the standard VCV pitch convention (0V = C, +1V = one octave),
+-- so the key can be transposed by a pitch CV or a sequencer. Leave input 1
+-- unpatched for a C root.
 
 
 -- Scale definitions - semitone offsets from the root note
@@ -40,9 +45,6 @@ local scales = {
 
 -- Configuration - change these values as needed
 local config = {
-    -- Root note of the scale, as a pitch class: 0 = C, 1 = C#, ... 11 = B
-    root = 0,
-
     -- Which scale to snap to - pick any list from `scales` above
     scale = scales.minor,
 
@@ -50,11 +52,17 @@ local config = {
     channel = 0,
 
     -- When a note sits exactly between two scale degrees, round up instead of down
-    preferUpward = false,
-
-    -- Show each substitution in the panel overlay
-    showOverlay = true
+    preferUpward = false
 }
+
+-- The root note is taken live from CV input 1: 0V = C, +1V = one octave up
+-- (standard VCV pitch CV). Unpatched, the input reads 0V, so the scale is
+-- rooted on C.
+input.enable(1)
+input.getName = function(port)
+    if port == 1 then return "Root (1V/oct)" end
+    return ""
+end
 
 -- Internal state.
 -- playedAs[n] is the note number actually sent for incoming note n, so the
@@ -63,19 +71,12 @@ local state = {
     playedAs = {}
 }
 
-local noteNames = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }
-
--- noteNames is 1-based like every Lua table, but pitch classes are 0-based
-local function noteName(note)
-    return noteNames[(note % 12) + 1]
-end
-
 rack.onLoad = function()
     for n = 0, 127 do
         state.playedAs[n] = -1
     end
     rack.log("Scale quantiser initialized")
-    rack.log("Root: " .. noteName(config.root))
+    rack.log("Root from input 1: 0V = C, 1V/oct")
     rack.log("Scale degrees: ", #config.scale)
 end
 
@@ -102,13 +103,19 @@ local function matchesChannel(ch)
     return config.channel == 0 or ch == config.channel
 end
 
+-- Root note as a pitch class (0 = C, ... 11 = B), read from CV input 1 using
+-- the standard VCV pitch convention: 0V = C, 1V = one octave = 12 semitones.
+local function getRoot()
+    return math.floor(input.getVoltage(1) * 12 + 0.5) % 12
+end
+
 -- Snaps a note number to the nearest member of the configured scale.
 -- Works in pitch-class space, then puts the octave back, so the search only
 -- ever has to look one octave up and down.
 local function quantise(note)
     -- Distance above the root, folded into 0..11.
     -- Lua's % already returns a non-negative result for a positive divisor.
-    local rel = (note - config.root) % 12
+    local rel = (note - getRoot()) % 12
     local octaveBase = note - rel
 
     local best = config.scale[1]
@@ -155,6 +162,51 @@ local function quantise(note)
     return out
 end
 
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local SCALE_NAMES = { "chromatic", "major", "minor", "harmonic", "dorian", "phrygian", "lydian", "mixolydian", "pentatonic", "minorPenta", "blues", "wholeTone" }
+local SCALE_LABELS = { "Chromatic", "Major", "Minor", "Harmonic", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Pentatonic", "Minor pentatonic", "Blues", "Whole tone" }
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+
+local function scaleIndex()
+    for i = 1, #SCALE_NAMES do
+        if config.scale == scales[SCALE_NAMES[i]] then return i - 1 end
+    end
+    return 0
+end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Scale",
+    options = SCALE_LABELS,
+    selected = scaleIndex(),
+    onChange = function(idx)
+        config.scale = scales[SCALE_NAMES[idx + 1]]
+        rack.log("Scale: ", SCALE_LABELS[idx + 1])
+    end
+})
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Channel",
+    options = CHANNEL_LABELS,
+    selected = config.channel,
+    onChange = function(idx)
+        config.channel = idx
+        rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
+    end
+})
+
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Round up on ties",
+    checked = config.preferUpward,
+    onChange = function(checked)
+        config.preferUpward = checked
+    end
+})
+
 rack.onMidiMessage = function(midiPort, msg)
     if not matchesChannel(midi.getChannel(msg)) then
         midiOut.send(msg)
@@ -169,9 +221,6 @@ rack.onMidiMessage = function(midiPort, msg)
         midi.setNote(msg, snapped)
         midiOut.send(msg)
 
-        if config.showOverlay and snapped ~= note then
-            rack.overlay("Quantise", noteName(note) .. " -> " .. noteName(snapped))
-        end
         return
     end
 

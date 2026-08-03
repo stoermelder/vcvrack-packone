@@ -360,6 +360,9 @@ struct RecordingEngine : MidiScriptEngine {
 	std::string getInputName(int i) override { return ""; }
 	std::string getParamName(int i) override { return ""; }
 	std::string getParamFormatValue(int i) override { return ""; }
+	void clearContextMenus() override { }
+	void getContextMenus(std::vector<StoermelderPackOne::MidiScript::ContextMenuSpec>& out) const override { }
+	void invokeContextMenuCallback(int callbackId, int value) override { }
 };
 
 // Drives one full sample through process() with the trigger input held at the
@@ -625,4 +628,149 @@ TEST_CASE("Log queue drops entries when full", "[MidiKit][Log]") {
 	REQUIRE(entries.size() == 512);
 
 	Test::destroyModule(m);
+}
+
+
+// ─── rack.registerContextMenu(): module lifecycle ───────────────────────────
+// The module-level consequences of script-registered context menus: clearing
+// the script or switching engines drops the previous engine's registered
+// items. These behaviours are engine-independent: each case drives both
+// engines through the public module API (loadScript/clearScript/
+// getContextMenus) and never touches engine internals.
+
+static const char* QJS_BOOL = R"(/**
+ * @engine QuickJs
+ */
+rack.registerContextMenu({
+	type: "boolean",
+	label: "Velocity to CC",
+	checked: false,
+	onChange: function(checked) {
+		rack.log("onChange: " + (checked ? "true" : "false"));
+	}
+});
+)";
+
+static const char* QJS_OPTIONS = R"(/**
+ * @engine QuickJs
+ */
+rack.registerContextMenu({
+	type: "options",
+	label: "Out mode",
+	options: ["Internal", "External", "Both"],
+	selected: 1,
+	onChange: function(selectedIndex, selectedLabel) {
+		rack.log("onChange: " + selectedIndex + " " + selectedLabel);
+	}
+});
+)";
+
+static const char* LUA_BOOL = R"(--[[
+@engine Lua
+--]]
+rack.registerContextMenu({
+	type = "boolean",
+	label = "Velocity to CC",
+	checked = false,
+	onChange = function(checked)
+		rack.log("onChange: " .. tostring(checked))
+	end
+})
+)";
+
+static const char* LUA_OPTIONS = R"(--[[
+@engine Lua
+--]]
+rack.registerContextMenu({
+	type = "options",
+	label = "Out mode",
+	options = {"Internal", "External", "Both"},
+	selected = 1,
+	onChange = function(selectedIndex, selectedLabel)
+		rack.log("onChange: " .. selectedIndex .. " " .. selectedLabel)
+	end
+})
+)";
+
+// ─── rack.registerContextMenu(): widget integration ─────────────────────────
+// appendContextMenu() reads the registered specs and builds real menu items;
+// clicking an item through MenuItem::doAction() fires the script callback.
+// The widget behaviour is engine-independent: each case builds the menu for a
+// fresh module+widget per engine script.
+
+TEST_CASE("Context menu: boolean item is built and click fires the callback", "[MidiKit][ContextMenu]") {
+	for (const char* script : {QJS_BOOL, LUA_BOOL}) {
+		MidiKitModule* m = createModule();
+		m->model = modelMidiKit;
+		m->loadScript(script);
+		MidiKitWidget* mw = Test::createWidget<MidiKitWidget>(m);
+
+		rack::ui::Menu* menu = new rack::ui::Menu;
+		mw->appendContextMenu(menu);
+
+		rack::ui::MenuItem* item = nullptr;
+		for (rack::Widget* child : menu->children) {
+			if (auto* mi = dynamic_cast<rack::ui::MenuItem*>(child)) {
+				if (mi->text == "Velocity to CC") { item = mi; break; }
+			}
+		}
+		REQUIRE(item != nullptr);
+		// Unchecked → no checkmark.
+		REQUIRE(item->rightText == "");
+
+		item->doAction(true);
+		std::string log = drainLog(m);
+		REQUIRE(log.find("onChange: true") != std::string::npos);
+
+		delete menu;
+		Test::destroyWidget(mw);
+		Test::destroyModule(m);
+	}
+}
+
+TEST_CASE("Context menu: options submenu is built and click fires the callback", "[MidiKit][ContextMenu]") {
+	for (const char* script : {QJS_OPTIONS, LUA_OPTIONS}) {
+		MidiKitModule* m = createModule();
+		m->model = modelMidiKit;
+		m->loadScript(script);
+		MidiKitWidget* mw = Test::createWidget<MidiKitWidget>(m);
+
+		rack::ui::Menu* menu = new rack::ui::Menu;
+		mw->appendContextMenu(menu);
+
+		rack::ui::MenuItem* sub = nullptr;
+		for (rack::Widget* child : menu->children) {
+			if (auto* mi = dynamic_cast<rack::ui::MenuItem*>(child)) {
+				if (mi->text == "Out mode") { sub = mi; break; }
+			}
+		}
+		REQUIRE(sub != nullptr);
+
+		// Building the child menu is what a hover/click on the submenu does.
+		rack::ui::Menu* submenu = sub->createChildMenu();
+		REQUIRE(submenu != nullptr);
+
+		rack::ui::MenuItem* external = nullptr;
+		rack::ui::MenuItem* both = nullptr;
+		for (rack::Widget* child : submenu->children) {
+			if (auto* mi = dynamic_cast<rack::ui::MenuItem*>(child)) {
+				if (mi->text == "External") external = mi;
+				if (mi->text == "Both") both = mi;
+			}
+		}
+		REQUIRE(external != nullptr);
+		REQUIRE(both != nullptr);
+		// selected == 1 → "External" is the checked one, "Both" is not.
+		REQUIRE(external->rightText == "✔");
+		REQUIRE(both->rightText == "");
+
+		both->doAction(true);
+		std::string log = drainLog(m);
+		REQUIRE(log.find("onChange: 2 Both") != std::string::npos);
+
+		delete submenu;
+		delete menu;
+		Test::destroyWidget(mw);
+		Test::destroyModule(m);
+	}
 }

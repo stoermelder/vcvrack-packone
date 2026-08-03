@@ -71,6 +71,22 @@ function resetState() {
     state.hasValueMsb = false;
 };
 
+// Context menu - right-click the module to change these settings live.
+// Each menu mirrors a `config` value above; onChange applies the choice.
+let CHANNEL_LABELS = [];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
+rack.registerContextMenu({
+    type: "options",
+    label: "CC channel",
+    options: CHANNEL_LABELS,
+    selected: config.ccChannel - 1,
+    onChange: function(idx) {
+        config.ccChannel = idx + 1;
+        rack.log("CC channel: ", config.ccChannel);
+    }
+});
+
 // Called when a MIDI message is received
 rack.onMidiMessage = function(midiPort, msg) {
     if (!midi.isCc(msg)) {

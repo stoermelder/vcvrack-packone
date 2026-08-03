@@ -42,10 +42,7 @@ let config = {
     curveAmount: 2,
 
     // Only process this channel; 0 = every channel
-    channel: 0,
-
-    // Show each remapped velocity in the panel overlay
-    showOverlay: true
+    channel: 0
 };
 
 param.enable(config.curveParam);
@@ -91,6 +88,22 @@ function shapeVelocity(vel) {
     return out;
 };
 
+// Context menu - right-click the module to change these settings live.
+// Each menu mirrors a `config` value above; onChange applies the choice.
+let CHANNEL_LABELS = ["All"];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Channel",
+    options: CHANNEL_LABELS,
+    selected: config.channel,
+    onChange: function(idx) {
+        config.channel = idx;
+        rack.log("Channel: ", CHANNEL_LABELS[idx]);
+    }
+});
+
 rack.onMidiMessage = function(midiPort, msg) {
     if (midi.isNoteOn(msg) && matchesChannel(midi.getChannel(msg))) {
         let vel = midi.getValue(msg);
@@ -103,10 +116,6 @@ rack.onMidiMessage = function(midiPort, msg) {
 
         let shaped = shapeVelocity(vel);
         midi.setValue(msg, shaped);
-
-        if (config.showOverlay) {
-            rack.overlay("Velocity", number.toString(vel) + " -> " + number.toString(shaped));
-        }
     }
 
     midiOut.send(msg);

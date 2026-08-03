@@ -153,6 +153,48 @@ every example in this document does.
 - `rack.getFrame()` — the current engine frame number (`APP->engine->getFrame()`).
 - `rack.random()` — a random number in the interval [0, 1), drawn from Rack's own
   RNG (`rack::random::uniform()`), so it shares the patch's seed/determinism.
+- `rack.registerContextMenu(options)` — add one item to the module's right-click
+  context menu, in registration order (multiple items are allowed). Returns
+  `true` on success; throws (load fails) if `options` is malformed. Two variants:
+
+  *Boolean toggle* — a single menu line with a checkmark:
+  ```js
+  rack.registerContextMenu({
+      type: "boolean",
+      label: "Velocity to CC",
+      checked: false,
+      onChange: function(checked) {
+          // checked: true/false (boolean)
+      }
+  });
+  ```
+  *Options submenu* — a submenu with one entry per option, checkmark on the
+  current selection:
+  ```js
+  rack.registerContextMenu({
+      type: "options",
+      label: "Out mode",
+      options: ["Internal", "External", "Both"],
+      selected: 1,
+      onChange: function(selectedIndex, selectedLabel) {
+          // selectedIndex: number, selectedLabel: string
+      }
+  });
+  ```
+  Notes:
+  - `label` must be a non-empty string; `options` must be a non-empty array of
+    strings; `onChange` must be a function.
+  - `checked` (boolean variant) defaults to `false`; `selected` (options
+    variant) is clamped into range and defaults to `0`.
+  - `onChange` runs on the worker thread (like the other callbacks) when the
+    menu item is clicked, and may call any other `rack.*` function. Exceptions
+    inside it are logged as `Context menu callback error: ...` without crashing.
+  - The module's presentation state (checkmark/selection) is updated as soon as
+    the item is clicked, so the menu reflects the change immediately even
+    before the callback has run.
+  - All registered items are cleared when the script is reloaded or cleared.
+  - Lua uses an equivalent table: `{ type = "boolean", label = "...",
+    checked = false, onChange = function(checked) ... end }`.
 
 ### `number.*`
 `rescale(x, xMin, xMax, yMin, yMax [, curve])`,

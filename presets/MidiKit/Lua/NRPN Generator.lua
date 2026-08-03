@@ -66,6 +66,42 @@ local function advanceValue()
     end
 end
 
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local CHANNEL_LABELS = {}
+for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
+local TICKS_PER_STEP = { 1, 2, 4, 8, 16, 24 }
+local TICKS_LABELS = { "1", "2", "4", "8 (16th)", "16 (8th)", "24 (quarter)" }
+
+local function ticksIndex()
+    for i = 1, #TICKS_PER_STEP do
+        if TICKS_PER_STEP[i] == config.ticksPerStep then return i - 1 end
+    end
+    return 0
+end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Channel",
+    options = CHANNEL_LABELS,
+    selected = config.channel - 1,
+    onChange = function(idx)
+        config.channel = idx + 1
+        rack.log("Channel: ", config.channel)
+    end
+})
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Ticks per step",
+    options = TICKS_LABELS,
+    selected = ticksIndex(),
+    onChange = function(idx)
+        config.ticksPerStep = TICKS_PER_STEP[idx + 1]
+        rack.log("Ticks per step: ", config.ticksPerStep)
+    end
+})
+
 rack.onMidiMessage = function(midiPort, msg)
     if midi.isClock(msg) then
         state.tickCount = state.tickCount + 1

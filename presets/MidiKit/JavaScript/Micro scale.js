@@ -88,10 +88,7 @@ let config = {
     alwaysSendBend: false,
 
     // Only process this input channel; 0 = every channel
-    channel: 0,
-
-    // Show each retune in the panel overlay
-    showOverlay: true
+    channel: 0
 };
 
 // Internal state, indexed by 1-based output channel.
@@ -107,8 +104,6 @@ let state = {
     queueOfNote: [],
     cursor: -1
 };
-
-let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 // The parsed scale, filled in onLoad from config.scl: cents offsets per
 // octave degree, scale[0] = 0 (the tonic at baseNote). The tonic is implicit
@@ -257,6 +252,31 @@ function removeFromQueue(note, ch) {
     }
 };
 
+// Context menu - right-click the module to change these settings live.
+// Each menu mirrors a `config` value above; onChange applies the choice.
+let CHANNEL_LABELS = ["All"];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Input channel",
+    options: CHANNEL_LABELS,
+    selected: config.channel,
+    onChange: function(idx) {
+        config.channel = idx;
+        rack.log("Input channel: ", CHANNEL_LABELS[idx]);
+    }
+});
+
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Always send pitch bend",
+    checked: config.alwaysSendBend,
+    onChange: function(checked) {
+        config.alwaysSendBend = checked;
+    }
+});
+
 rack.onMidiMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
@@ -303,14 +323,6 @@ rack.onMidiMessage = function(midiPort, msg) {
         midi.setNoteOn(on, outCh, outNote, vel);
         midiOut.send(on);
 
-        if (config.showOverlay) {
-            let centsDev = Math.round(cents - (outNote - config.baseNote) * 100);
-            rack.overlay(
-                noteNames[note % 12] + " -> " + noteNames[outNote % 12],
-                number.toString(centsDev) + " cents",
-                "ch " + number.toString(outCh)
-            );
-        }
         return;
     }
 

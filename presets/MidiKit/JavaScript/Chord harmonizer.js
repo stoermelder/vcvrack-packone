@@ -44,12 +44,7 @@ let config = {
 
     // Velocity scaling for the added voices, relative to the played note.
     // The 0-offset voice is always sent at full velocity.
-    harmonyVelocity: 0.8,
-
-    // Show each harmonized note in the panel overlay.
-    // Note: voices transposed outside 0..127 are dropped rather than clamped -
-    // clamping would pile several voices onto the same edge note.
-    showOverlay: true
+    harmonyVelocity: 0.8
 };
 
 // Internal state.
@@ -83,6 +78,55 @@ rack.onUnload = function() {
 function matchesChannel(ch) {
     return config.channel === 0 || ch === config.channel;
 };
+
+// Context menu - right-click the module to change these settings live.
+// Each menu mirrors a `config` value above; onChange applies the choice.
+let CHORD_INTERVALS = [
+    [0, 4, 7],      // Major triad
+    [0, 3, 7],      // Minor triad
+    [0, 3, 7, 10],  // Minor seventh
+    [0, 7],         // Power chord
+    [0, 12],        // Octave doubling
+    [0, -12, 12]    // Three octaves
+];
+let CHORD_LABELS = ["Major triad", "Minor triad", "Minor seventh", "Power chord", "Octave doubling", "Three octaves"];
+let CHANNEL_LABELS = ["All"];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
+function chordIndex() {
+    for (let i = 0; i < CHORD_INTERVALS.length; i++) {
+        if (config.intervals.length === CHORD_INTERVALS[i].length) {
+            let same = true;
+            for (let j = 0; j < CHORD_INTERVALS[i].length; j++) {
+                if (config.intervals[j] !== CHORD_INTERVALS[i][j]) { same = false; break; }
+            }
+            if (same) return i;
+        }
+    }
+    return 0;
+};
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Chord",
+    options: CHORD_LABELS,
+    selected: chordIndex(),
+    onChange: function(idx) {
+        config.intervals = CHORD_INTERVALS[idx];
+        rack.log("Chord: ", CHORD_LABELS[idx], " (", config.intervals.length, " voices)");
+    }
+});
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Channel",
+    options: CHANNEL_LABELS,
+    selected: config.channel,
+    onChange: function(idx) {
+        config.channel = idx;
+        rack.log("Channel: ", CHANNEL_LABELS[idx]);
+    }
+});
 
 rack.onMidiMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
@@ -122,9 +166,6 @@ rack.onMidiMessage = function(midiPort, msg) {
 
             state.voicesOf[note] = voices;
 
-            if (config.showOverlay) {
-                rack.overlay("Harmonize", note + " + " + voices.length + " voices");
-            }
             return;
         }
     }

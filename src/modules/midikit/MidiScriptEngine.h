@@ -1,11 +1,31 @@
 #pragma once
 #include "../../plugin.hpp"
 #include "../../utils/TaskWorker.hpp"
+#include <vector>
 
 namespace StoermelderPackOne {
 namespace MidiScript {
 
 using rack::midi::Message;
+
+
+// A single user-facing context-menu item, as registered by a script through
+// rack.registerContextMenu(). Carries only the presentation data (label and
+// current state) plus an opaque callbackId; the actual script callback lives
+// in the engine's own map keyed by that id, so a copied spec never owns a
+// script-function reference and can be handed freely to the UI thread.
+struct ContextMenuSpec {
+	enum class Type { Boolean, Options } type = Type::Boolean;
+	std::string label;
+	// Boolean variant: current checked state.
+	bool checked = false;
+	// Options variant: selectable labels and the current selection index.
+	std::vector<std::string> options;
+	int selected = 0;
+	// Opaque handle assigned by the engine at registration time; resolves to
+	// the script's onChange callback inside the engine.
+	int callbackId = -1;
+};
 
 
 // Implemented by the module that hosts a MidiScriptEngine. The engine calls
@@ -113,6 +133,17 @@ struct MidiScriptEngine {
 	virtual std::string getInputName(int i) = 0;
 	virtual std::string getParamName(int i) = 0;
 	virtual std::string getParamFormatValue(int i) = 0;
+
+	// Script-registered context menus (rack.registerContextMenu). The engine
+	// owns the registration state; the module/widget only read it back.
+	// clearContextMenus() is called by the engine itself when its script state
+	// is torn down (closeState/loadScript), never by the module.
+	virtual void clearContextMenus() = 0;
+	virtual void getContextMenus(std::vector<ContextMenuSpec>& out) const = 0;
+	// Called from the widget's menu-action handler (UI thread) when the user
+	// clicks a script menu item. value is 0/1 for a Boolean toggle and the
+	// selected index for Options. The script callback runs on the worker thread.
+	virtual void invokeContextMenuCallback(int callbackId, int value) = 0;
 };
 
 

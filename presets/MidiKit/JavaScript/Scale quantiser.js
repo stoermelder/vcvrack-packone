@@ -2,7 +2,7 @@
  * @target stoermelder MIDI-KIT
  * @engine QuickJs
  * @author stoermelder
- * @description Snaps incoming notes to the nearest note of a selectable scale, tracking held notes so releases still match
+ * @description Snaps incoming notes to the nearest note of a selectable scale, with the root set by CV input 1 (1V/oct); tracks held notes so releases still match
  */
 
 // Scale quantiser for MIDI-KIT
@@ -20,6 +20,11 @@
 // The scale is a list of semitone offsets from the root, in the octave
 // 0..11. Several common scales are pre-defined below; point config.scale at
 // whichever one you want, or write your own list.
+//
+// The root of the scale is not a fixed setting: it is read live from CV
+// input 1 using the standard VCV pitch convention (0V = C, +1V = one octave),
+// so the key can be transposed by a pitch CV or a sequencer. Leave input 1
+// unpatched for a C root.
 
 
 // Scale definitions - semitone offsets from the root note
@@ -40,9 +45,6 @@ let scales = {
 
 // Configuration - change these values as needed
 let config = {
-    // Root note of the scale, as a pitch class: 0 = C, 1 = C#, ... 11 = B
-    root: 0,
-
     // Which scale to snap to - pick any list from `scales` above
     scale: scales.minor,
 
@@ -50,10 +52,16 @@ let config = {
     channel: 0,
 
     // When a note sits exactly between two scale degrees, round up instead of down
-    preferUpward: false,
+    preferUpward: false
+};
 
-    // Show each substitution in the panel overlay
-    showOverlay: true
+// The root note is taken live from CV input 1: 0V = C, +1V = one octave up
+// (standard VCV pitch CV). Unpatched, the input reads 0V, so the scale is
+// rooted on C.
+input.enable(1);
+input.getName = function(port) {
+    if (port === 1) return "Root (1V/oct)";
+    return "";
 };
 
 // Internal state.
@@ -63,14 +71,12 @@ let state = {
     playedAs: []
 };
 
-let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-
 rack.onLoad = function() {
     for (let n = 0; n < 128; n++) {
         state.playedAs[n] = -1;
     }
     rack.log("Scale quantiser initialized");
-    rack.log("Root: " + noteNames[config.root]);
+    rack.log("Root from input 1: 0V = C, 1V/oct");
     rack.log("Scale degrees: ", config.scale.length);
 };
 
@@ -97,12 +103,20 @@ function matchesChannel(ch) {
     return config.channel === 0 || ch === config.channel;
 };
 
+// Root note as a pitch class (0 = C, ... 11 = B), read from CV input 1 using
+// the standard VCV pitch convention: 0V = C, 1V = one octave = 12 semitones.
+function getRoot() {
+    let root = Math.round(input.getVoltage(1) * 12) % 12;
+    if (root < 0) root = root + 12;
+    return root;
+}
+
 // Snaps a note number to the nearest member of the configured scale.
 // Works in pitch-class space, then puts the octave back, so the search only
 // ever has to look one octave up and down.
 function quantise(note) {
     // Distance above the root, folded into 0..11
-    let rel = (note - config.root) % 12;
+    let rel = (note - getRoot()) % 12;
     if (rel < 0) rel = rel + 12;
     let octaveBase = note - rel;
 
@@ -157,6 +171,51 @@ function quantise(note) {
     return out;
 };
 
+// Context menu - right-click the module to change these settings live.
+// Each menu mirrors a `config` value above; onChange applies the choice.
+let SCALE_NAMES = ["chromatic", "major", "minor", "harmonic", "dorian", "phrygian", "lydian", "mixolydian", "pentatonic", "minorPenta", "blues", "wholeTone"];
+let SCALE_LABELS = ["Chromatic", "Major", "Minor", "Harmonic", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Pentatonic", "Minor pentatonic", "Blues", "Whole tone"];
+let CHANNEL_LABELS = ["All"];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
+function scaleIndex() {
+    for (let i = 0; i < SCALE_NAMES.length; i++) {
+        if (config.scale === scales[SCALE_NAMES[i]]) return i;
+    }
+    return 0;
+};
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Scale",
+    options: SCALE_LABELS,
+    selected: scaleIndex(),
+    onChange: function(idx) {
+        config.scale = scales[SCALE_NAMES[idx]];
+        rack.log("Scale: ", SCALE_LABELS[idx]);
+    }
+});
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Channel",
+    options: CHANNEL_LABELS,
+    selected: config.channel,
+    onChange: function(idx) {
+        config.channel = idx;
+        rack.log("Channel: ", CHANNEL_LABELS[idx]);
+    }
+});
+
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Round up on ties",
+    checked: config.preferUpward,
+    onChange: function(checked) {
+        config.preferUpward = checked;
+    }
+});
+
 rack.onMidiMessage = function(midiPort, msg) {
     if (!matchesChannel(midi.getChannel(msg))) {
         midiOut.send(msg);
@@ -171,9 +230,6 @@ rack.onMidiMessage = function(midiPort, msg) {
         midi.setNote(msg, snapped);
         midiOut.send(msg);
 
-        if (config.showOverlay && snapped !== note) {
-            rack.overlay("Quantise", noteNames[note % 12] + " -> " + noteNames[snapped % 12]);
-        }
         return;
     }
 

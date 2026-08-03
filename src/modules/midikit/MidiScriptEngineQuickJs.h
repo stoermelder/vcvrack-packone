@@ -3,7 +3,9 @@
 #include "../../../dep/quickjs/quickjs.h"
 #include <algorithm>
 #include <iomanip>
+#include <mutex>
 #include <regex>
+#include <unordered_map>
 
 namespace StoermelderPackOne {
 namespace MidiScript {
@@ -48,6 +50,21 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// Sticky output port selected via midiOut.selectPort(), 0-based. Stays in
 	// effect across callbacks until changed again.
 	int selectedPort = 0;
+
+	// Script-registered context menus. The JSValue callback lives here (not in
+	// ContextMenuSpec) because it is only ever touched on the worker thread;
+	// the UI thread reads presentation copies through getContextMenus().
+	struct ContextMenuEntry {
+		ContextMenuSpec spec;
+		JSValue callbackFn;
+	};
+	std::unordered_map<int, ContextMenuEntry> contextMenus;
+	int nextContextMenuCallbackId = 1;
+	// Guards contextMenus/nextContextMenuCallbackId against concurrent
+	// access from the UI thread (menu build / click) and the worker thread
+	// (registerContextMenu, callback dispatch). Never held while running a
+	// script callback, or a callback that re-registers would deadlock.
+	mutable std::mutex contextMenusMutex;
 
 	bool hasOnMidiMessage = false;
 	bool hasOnLoad = false;
@@ -194,6 +211,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	void closeState() {
 		if (ctx != NULL) {
 			callOnUnload();
+			clearContextMenus();
 			ctxMap.erase(ctx);
 			JS_FreeContext(ctx);
 			JS_FreeRuntime(rt);
@@ -388,6 +406,101 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return callGlobalStringFn("param", "getValueFormat", i);
 	}
 
+	void clearContextMenus() override {
+		std::lock_guard<std::mutex> lock(contextMenusMutex);
+		if (ctx) {
+			// Frees the stored script callbacks. Only safe on this (UI) thread
+			// while ctx is still alive: closeState() calls this before freeing
+			// the context, and every JS operation happens on this thread.
+			for (auto& kv : contextMenus) {
+				JS_FreeValue(ctx, kv.second.callbackFn);
+			}
+		}
+		contextMenus.clear();
+		nextContextMenuCallbackId = 1;
+	}
+
+	void getContextMenus(std::vector<ContextMenuSpec>& out) const override {
+		std::lock_guard<std::mutex> lock(contextMenusMutex);
+		out.clear();
+		out.reserve(contextMenus.size());
+		for (const auto& kv : contextMenus) {
+			out.push_back(kv.second.spec);
+		}
+		// callbackIds are assigned monotonically at registration, so sorting by
+		// them yields registration order — the unordered_map's own iteration
+		// order is unspecified.
+		std::sort(out.begin(), out.end(), [](const ContextMenuSpec& a, const ContextMenuSpec& b) {
+			return a.callbackId < b.callbackId;
+		});
+	}
+
+	// Fires a registered menu item's onChange callback on the worker thread.
+	// The spec's presentation state (checked/selected) is updated synchronously
+	// on the caller (UI) thread so the next menu build reflects the change
+	// immediately; the actual script call is deferred to runAsync() because it
+	// must run on the worker thread alongside all other JS work.
+	void invokeContextMenuCallback(int callbackId, int value) override {
+		ContextMenuSpec::Type type;
+		std::string label;
+		{
+			std::lock_guard<std::mutex> lock(contextMenusMutex);
+			auto it = contextMenus.find(callbackId);
+			if (it == contextMenus.end()) return;
+			ContextMenuEntry& entry = it->second;
+			type = entry.spec.type;
+			if (type == ContextMenuSpec::Type::Boolean) {
+				entry.spec.checked = (value != 0);
+			}
+			else {
+				if (value < 0 || value >= static_cast<int>(entry.spec.options.size())) return;
+				entry.spec.selected = value;
+				label = entry.spec.options[value];
+			}
+		}
+
+		runAsync([this, callbackId, value, type, label]() {
+			if (!ctx) return;
+			JSValue fn;
+			{
+				std::lock_guard<std::mutex> lock(contextMenusMutex);
+				auto it = contextMenus.find(callbackId);
+				if (it == contextMenus.end()) return;
+				// Dup on the worker thread only: QuickJS refcounts are not
+				// atomic, so JS_DupValue must not run on the UI thread.
+				fn = JS_DupValue(ctx, it->second.callbackFn);
+			}
+
+			JSValue glob = JS_GetGlobalObject(ctx);
+			JSValue rack = JS_GetPropertyStr(ctx, glob, "rack");
+			JSValue args[2];
+			int argc;
+			if (type == ContextMenuSpec::Type::Boolean) {
+				args[0] = JS_NewBool(ctx, value != 0);
+				argc = 1;
+			}
+			else {
+				args[0] = JS_NewInt32(ctx, value);
+				args[1] = JS_NewString(ctx, label.c_str());
+				argc = 2;
+			}
+			JSValue r = JS_Call(ctx, fn, rack, argc, args);
+			for (int i = 0; i < argc; i++) JS_FreeValue(ctx, args[i]);
+			JS_FreeValue(ctx, fn);
+			JS_FreeValue(ctx, rack);
+			JS_FreeValue(ctx, glob);
+			if (JS_IsException(r)) {
+				JS_FreeValue(ctx, r);
+				JSValue exc = JS_GetException(ctx);
+				handler->writeLog(string::f("Context menu callback error: %s", jsToStdString(exc).c_str()));
+				JS_FreeValue(ctx, exc);
+			}
+			else {
+				JS_FreeValue(ctx, r);
+			}
+		});
+	}
+
 	// Returns current/total bytes in use by the QuickJS heap, or false if no
 	// script is loaded.
 	bool getMemoryUsage(size_t& used, size_t& total) {
@@ -410,6 +523,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _rack, "overlay", JS_NewCFunction(ctx, js_rack_overlay, "overlay", 3));
 		JS_SetPropertyStr(ctx, _rack, "getFrame", JS_NewCFunction(ctx, js_rack_getFrame, "getFrame", 0));
 		JS_SetPropertyStr(ctx, _rack, "random", JS_NewCFunction(ctx, js_rack_random, "random", 0));
+		JS_SetPropertyStr(ctx, _rack, "registerContextMenu", JS_NewCFunction(ctx, js_rack_registerContextMenu, "registerContextMenu", 1));
 
 		// number
 		JSValue _number = JS_NewObject(ctx);
@@ -598,6 +712,101 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	static JSValue js_rack_random(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		if (argc != 0) return jsThrow(ctx, "rack.random: bad args");
 		return JS_NewFloat64(ctx, rack::random::uniform());
+	}
+
+	// rack.registerContextMenu(options) — registers one item in the module's
+	// context menu. Two variants:
+	//   { type: "boolean", label, checked, onChange: fn(checked) }
+	//   { type: "options", label, options: [..], selected, onChange: fn(idx, label) }
+	// Returns true on success. The script callback is stored (owned) by the
+	// engine and fired through invokeContextMenuCallback() on the worker thread.
+	static JSValue js_rack_registerContextMenu(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		MidiScriptEngineQuickJs* e = ctxMap[ctx];
+		if (argc < 1 || !JS_IsObject(argv[0])) return jsThrow(ctx, "registerContextMenu: bad args");
+
+		ContextMenuSpec spec;
+
+		JSValue typeV = JS_GetPropertyStr(ctx, argv[0], "type");
+		std::string type = JS_IsString(typeV) ? e->jsToStdString(typeV) : "";
+		JS_FreeValue(ctx, typeV);
+		if (type == "options") spec.type = ContextMenuSpec::Type::Options;
+		else if (type == "boolean") spec.type = ContextMenuSpec::Type::Boolean;
+		else return jsThrow(ctx, "registerContextMenu: type must be \"boolean\" or \"options\"");
+
+		JSValue labelV = JS_GetPropertyStr(ctx, argv[0], "label");
+		std::string label = JS_IsString(labelV) ? e->jsToStdString(labelV) : "";
+		JS_FreeValue(ctx, labelV);
+		if (label.empty()) return jsThrow(ctx, "registerContextMenu: label must be a non-empty string");
+		spec.label = label;
+
+		JSValue onChangeV = JS_GetPropertyStr(ctx, argv[0], "onChange");
+		if (!JS_IsFunction(ctx, onChangeV)) {
+			JS_FreeValue(ctx, onChangeV);
+			return jsThrow(ctx, "registerContextMenu: onChange must be a function");
+		}
+
+		if (spec.type == ContextMenuSpec::Type::Boolean) {
+			JSValue checkedV = JS_GetPropertyStr(ctx, argv[0], "checked");
+			int b = JS_ToBool(ctx, checkedV);
+			JS_FreeValue(ctx, checkedV);
+			if (b < 0) {
+				JS_FreeValue(ctx, onChangeV);
+				return jsThrow(ctx, "registerContextMenu: checked must be a boolean");
+			}
+			spec.checked = (b != 0);
+		}
+		else {
+			JSValue optionsV = JS_GetPropertyStr(ctx, argv[0], "options");
+			if (!JS_IsArray(ctx, optionsV)) {
+				JS_FreeValue(ctx, optionsV);
+				JS_FreeValue(ctx, onChangeV);
+				return jsThrow(ctx, "registerContextMenu: options must be a non-empty array of strings");
+			}
+			JSValue lengthV = JS_GetPropertyStr(ctx, optionsV, "length");
+			uint32_t len = 0;
+			bool lenOk = (JS_ToUint32(ctx, &len, lengthV) >= 0);
+			JS_FreeValue(ctx, lengthV);
+			if (!lenOk || len == 0) {
+				JS_FreeValue(ctx, optionsV);
+				JS_FreeValue(ctx, onChangeV);
+				return jsThrow(ctx, "registerContextMenu: options must be a non-empty array of strings");
+			}
+			spec.options.resize(len);
+			for (uint32_t i = 0; i < len; i++) {
+				JSValue v = JS_GetPropertyUint32(ctx, optionsV, i);
+				if (!JS_IsString(v)) {
+					JS_FreeValue(ctx, v);
+					JS_FreeValue(ctx, optionsV);
+					JS_FreeValue(ctx, onChangeV);
+					return jsThrow(ctx, "registerContextMenu: options must contain only strings");
+				}
+				spec.options[i] = e->jsToStdString(v);
+				JS_FreeValue(ctx, v);
+			}
+			JS_FreeValue(ctx, optionsV);
+
+			JSValue selectedV = JS_GetPropertyStr(ctx, argv[0], "selected");
+			if (JS_IsNumber(selectedV)) {
+				double d = 0;
+				JS_ToFloat64(ctx, &d, selectedV);
+				int sel = static_cast<int>(d);
+				spec.selected = std::max(0, std::min(sel, static_cast<int>(len) - 1));
+			}
+			JS_FreeValue(ctx, selectedV);
+		}
+
+		spec.callbackId = e->nextContextMenuCallbackId++;
+		{
+			std::lock_guard<std::mutex> lock(e->contextMenusMutex);
+			ContextMenuEntry entry;
+			entry.spec = spec;
+			// Ownership of onChangeV transfers to the map; freed in
+			// clearContextMenus().
+			entry.callbackFn = onChangeV;
+			e->contextMenus[spec.callbackId] = entry;
+		}
+
+		return JS_NewBool(ctx, true);
 	}
 
 	static JSValue js_number_rescale(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {

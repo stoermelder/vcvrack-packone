@@ -71,6 +71,22 @@ rack.onLoad = function()
     rack.log("Channel: ", config.ccChannel)
 end
 
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local CHANNEL_LABELS = {}
+for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "CC channel",
+    options = CHANNEL_LABELS,
+    selected = config.ccChannel - 1,
+    onChange = function(idx)
+        config.ccChannel = idx + 1
+        rack.log("CC channel: ", config.ccChannel)
+    end
+})
+
 rack.onMidiMessage = function(midiPort, msg)
     if not midi.isCc(msg) then
         return

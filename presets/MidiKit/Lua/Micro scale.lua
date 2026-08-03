@@ -90,10 +90,7 @@ local config = {
     alwaysSendBend = false,
 
     -- Only process this input channel; 0 = every channel
-    channel = 0,
-
-    -- Show each retune in the panel overlay
-    showOverlay = true
+    channel = 0
 }
 
 -- Internal state, indexed by 1-based output channel.
@@ -114,13 +111,6 @@ local state = {
 -- octave degree, scale[1] = 0 (the tonic at baseNote). The tonic is implicit
 -- and the octave entry (1200 cents) is not stored - the scale repeats.
 local scale = { 0 }
-
-local noteNames = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }
-
--- noteNames is 1-based like every Lua table, but pitch classes are 0-based
-local function noteName(note)
-    return noteNames[(note % 12) + 1]
-end
 
 -- Converts a Scala frequency ratio to cents: 1200 * log2(numer / denom).
 local function ratioToCents(numer, denom)
@@ -275,6 +265,31 @@ local function removeFromQueue(note, ch)
     end
 end
 
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Input channel",
+    options = CHANNEL_LABELS,
+    selected = config.channel,
+    onChange = function(idx)
+        config.channel = idx
+        rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
+    end
+})
+
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Always send pitch bend",
+    checked = config.alwaysSendBend,
+    onChange = function(checked)
+        config.alwaysSendBend = checked
+    end
+})
+
 rack.onMidiMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 
@@ -322,14 +337,6 @@ rack.onMidiMessage = function(midiPort, msg)
         midi.setNoteOn(on, outCh, outNote, vel)
         midiOut.send(on)
 
-        if config.showOverlay then
-            local centsDev = round(cents - (outNote - config.baseNote) * 100)
-            rack.overlay(
-                noteName(note) .. " -> " .. noteName(outNote),
-                number.toString(centsDev) .. " cents",
-                "ch " .. number.toString(outCh)
-            )
-        end
         return
     end
 

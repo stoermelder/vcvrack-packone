@@ -1,5 +1,7 @@
 #include "MidiKit.test.hpp"
 
+using StoermelderPackOne::MidiScript::ContextMenuSpec;
+
 // Cross-engine equivalence suite (review finding D7).
 //
 // QuickJs and Lua are two independent ~1000-line implementations of the same
@@ -2157,4 +2159,319 @@ TEST_CASE("out-queue flushes in send() order, not handle-creation order, in both
 	REQUIRE(lua.sent[0].bytes == expectC);
 	REQUIRE(lua.sent[1].bytes == expectA);
 	REQUIRE(lua.sent[2].bytes == expectB);
+}
+
+
+// --- rack.registerContextMenu() --------------------------------------------
+//
+// Script-registered context-menu items (see SCRIPTING.md). Both engines
+// expose the identical rack.registerContextMenu() API; the observable result
+// of a script is the extracted ContextMenuSpec list (what the widget builds
+// its menu from) plus the log produced when a click fires the onChange
+// callback. Each behaviour is pinned as a JS_* / LUA_* script pair and
+// asserted identical, exactly like the midi.* cases above.
+
+// Loads the script, drains the load-time log, and returns the registered
+// ContextMenuSpecs. When clickId >= 0, also invokes that callback (the
+// programmatic equivalent of a menu click) and re-reads the specs so
+// presentation-state updates (checked/selected) are observable.
+struct MenuResult {
+	bool loaded = false;
+	std::vector<ContextMenuSpec> specs;
+	std::string loadLog;
+	std::string log;
+};
+
+static MenuResult runMenu(const std::string& script, int clickId = -1, int clickValue = 0) {
+	MidiKitModule* m = createModule();
+	m->loadScript(script);
+
+	MenuResult r;
+	r.loaded = (m->activeEngine == &m->seQuickJs) ? (m->seQuickJs.ctx != nullptr)
+	                                              : (m->seLua.L != nullptr);
+	r.loadLog = drainLog(m);
+	if (r.loaded) {
+		m->activeEngine->getContextMenus(r.specs);
+		if (clickId >= 0) {
+			m->activeEngine->invokeContextMenuCallback(clickId, clickValue);
+			r.log = drainLog(m);
+			m->activeEngine->getContextMenus(r.specs);
+		}
+	}
+	Test::destroyModule(m);
+	return r;
+}
+
+// The two engines must expose identical menu models: same count, same order,
+// and identical presentation fields. callbackId is engine-internal (both
+// assign 1, 2, 3… in registration order), so only its validity is checked,
+// not its exact value.
+static void requireSameMenus(const std::vector<ContextMenuSpec>& a, const std::vector<ContextMenuSpec>& b) {
+	REQUIRE(a.size() == b.size());
+	for (size_t i = 0; i < a.size(); i++) {
+		REQUIRE(a[i].type == b[i].type);
+		REQUIRE(a[i].label == b[i].label);
+		REQUIRE(a[i].checked == b[i].checked);
+		REQUIRE(a[i].selected == b[i].selected);
+		REQUIRE(a[i].options == b[i].options);
+		REQUIRE(a[i].callbackId >= 1);
+	}
+}
+
+static const char* JS_REGISTER_BOOL = R"(/**
+ * @engine QuickJs
+ */
+rack.registerContextMenu({
+	type: "boolean",
+	label: "Velocity to CC",
+	checked: false,
+	onChange: function(checked) {
+		rack.log("onChange: " + (checked ? "true" : "false"));
+	}
+});
+)";
+
+static const char* LUA_REGISTER_BOOL = R"(--[[
+@engine Lua
+--]]
+rack.registerContextMenu({
+	type = "boolean",
+	label = "Velocity to CC",
+	checked = false,
+	onChange = function(checked)
+		rack.log("onChange: " .. tostring(checked))
+	end
+})
+)";
+
+TEST_CASE("registerContextMenu boolean menu is identical", "[MidiKit][CrossEngine]") {
+	MenuResult js = runMenu(JS_REGISTER_BOOL);
+	MenuResult lua = runMenu(LUA_REGISTER_BOOL);
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	requireSameMenus(js.specs, lua.specs);
+
+	REQUIRE(js.specs.size() == 1);
+	REQUIRE(js.specs[0].type == ContextMenuSpec::Type::Boolean);
+	REQUIRE(js.specs[0].label == "Velocity to CC");
+	REQUIRE(js.specs[0].checked == false);
+
+	// A click fires onChange(true) and flips the presentation state.
+	MenuResult jsOn = runMenu(JS_REGISTER_BOOL, js.specs[0].callbackId, 1);
+	MenuResult luaOn = runMenu(LUA_REGISTER_BOOL, lua.specs[0].callbackId, 1);
+	REQUIRE(jsOn.log.find("onChange: true") != std::string::npos);
+	REQUIRE(luaOn.log.find("onChange: true") != std::string::npos);
+	REQUIRE(jsOn.specs[0].checked == true);
+	REQUIRE(luaOn.specs[0].checked == true);
+
+	// And back to false.
+	MenuResult jsOff = runMenu(JS_REGISTER_BOOL, js.specs[0].callbackId, 0);
+	MenuResult luaOff = runMenu(LUA_REGISTER_BOOL, lua.specs[0].callbackId, 0);
+	REQUIRE(jsOff.log.find("onChange: false") != std::string::npos);
+	REQUIRE(luaOff.log.find("onChange: false") != std::string::npos);
+}
+
+static const char* JS_REGISTER_OPTIONS = R"(/**
+ * @engine QuickJs
+ */
+rack.registerContextMenu({
+	type: "options",
+	label: "Out mode",
+	options: ["Internal", "External", "Both"],
+	selected: 1,
+	onChange: function(selectedIndex, selectedLabel) {
+		rack.log("onChange: " + selectedIndex + " " + selectedLabel);
+	}
+});
+)";
+
+static const char* LUA_REGISTER_OPTIONS = R"(--[[
+@engine Lua
+--]]
+rack.registerContextMenu({
+	type = "options",
+	label = "Out mode",
+	options = {"Internal", "External", "Both"},
+	selected = 1,
+	onChange = function(selectedIndex, selectedLabel)
+		rack.log("onChange: " .. selectedIndex .. " " .. selectedLabel)
+	end
+})
+)";
+
+TEST_CASE("registerContextMenu options menu is identical", "[MidiKit][CrossEngine]") {
+	MenuResult js = runMenu(JS_REGISTER_OPTIONS);
+	MenuResult lua = runMenu(LUA_REGISTER_OPTIONS);
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	requireSameMenus(js.specs, lua.specs);
+
+	REQUIRE(js.specs.size() == 1);
+	REQUIRE(js.specs[0].type == ContextMenuSpec::Type::Options);
+	REQUIRE(js.specs[0].label == "Out mode");
+	REQUIRE(js.specs[0].options.size() == 3);
+	REQUIRE(js.specs[0].options[0] == "Internal");
+	REQUIRE(js.specs[0].options[1] == "External");
+	REQUIRE(js.specs[0].options[2] == "Both");
+	REQUIRE(js.specs[0].selected == 1);
+
+	// Clicking index 2 passes index + label to onChange and updates selection.
+	MenuResult jsClick = runMenu(JS_REGISTER_OPTIONS, js.specs[0].callbackId, 2);
+	MenuResult luaClick = runMenu(LUA_REGISTER_OPTIONS, lua.specs[0].callbackId, 2);
+	REQUIRE(jsClick.log.find("onChange: 2 Both") != std::string::npos);
+	REQUIRE(luaClick.log.find("onChange: 2 Both") != std::string::npos);
+	REQUIRE(jsClick.specs[0].selected == 2);
+	REQUIRE(luaClick.specs[0].selected == 2);
+}
+
+static const char* JS_REGISTER_TWO = R"(/**
+ * @engine QuickJs
+ */
+rack.registerContextMenu({ type: "boolean", label: "First", checked: false, onChange: function() {} });
+rack.registerContextMenu({ type: "options", label: "Second", options: ["x", "y"], selected: 0, onChange: function() {} });
+)";
+
+static const char* LUA_REGISTER_TWO = R"(--[[
+@engine Lua
+--]]
+rack.registerContextMenu({ type = "boolean", label = "First", checked = false, onChange = function() end })
+rack.registerContextMenu({ type = "options", label = "Second", options = {"x", "y"}, selected = 0, onChange = function() end })
+)";
+
+TEST_CASE("Multiple registerContextMenu calls keep registration order", "[MidiKit][CrossEngine]") {
+	MenuResult js = runMenu(JS_REGISTER_TWO);
+	MenuResult lua = runMenu(LUA_REGISTER_TWO);
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	requireSameMenus(js.specs, lua.specs);
+
+	REQUIRE(js.specs.size() == 2);
+	REQUIRE(js.specs[0].label == "First");
+	REQUIRE(js.specs[1].label == "Second");
+	REQUIRE(js.specs[0].type == ContextMenuSpec::Type::Boolean);
+	REQUIRE(js.specs[1].type == ContextMenuSpec::Type::Options);
+	// callbackIds are assigned monotonically in registration order.
+	REQUIRE(js.specs[0].callbackId < js.specs[1].callbackId);
+	REQUIRE(lua.specs[0].callbackId < lua.specs[1].callbackId);
+}
+
+static const char* JS_REGISTER_THROW = R"(/**
+ * @engine QuickJs
+ */
+rack.registerContextMenu({
+	type: "boolean",
+	label: "Bad",
+	checked: false,
+	onChange: function(checked) { throw new Error("boom"); }
+});
+rack.registerContextMenu({
+	type: "boolean",
+	label: "Good",
+	checked: false,
+	onChange: function(checked) { rack.log("good"); }
+});
+)";
+
+static const char* LUA_REGISTER_THROW = R"(--[[
+@engine Lua
+--]]
+rack.registerContextMenu({
+	type = "boolean",
+	label = "Bad",
+	checked = false,
+	onChange = function(checked) error("boom") end
+})
+rack.registerContextMenu({
+	type = "boolean",
+	label = "Good",
+	checked = false,
+	onChange = function(checked) rack.log("good") end
+})
+)";
+
+TEST_CASE("Throwing context-menu callback is logged and the module keeps working", "[MidiKit][CrossEngine]") {
+	MenuResult js = runMenu(JS_REGISTER_THROW);
+	MenuResult lua = runMenu(LUA_REGISTER_THROW);
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	requireSameMenus(js.specs, lua.specs);
+
+	REQUIRE(js.specs.size() == 2);
+
+	// A throwing onChange is reported through the log in both engines.
+	MenuResult jsBad = runMenu(JS_REGISTER_THROW, js.specs[0].callbackId, 1);
+	MenuResult luaBad = runMenu(LUA_REGISTER_THROW, lua.specs[0].callbackId, 1);
+	REQUIRE(jsBad.log.find("Context menu callback error") != std::string::npos);
+	REQUIRE(luaBad.log.find("Context menu callback error") != std::string::npos);
+
+	// The other registered item still fires normally.
+	MenuResult jsGood = runMenu(JS_REGISTER_THROW, js.specs[1].callbackId, 1);
+	MenuResult luaGood = runMenu(LUA_REGISTER_THROW, lua.specs[1].callbackId, 1);
+	REQUIRE(jsGood.log.find("good") != std::string::npos);
+	REQUIRE(luaGood.log.find("good") != std::string::npos);
+
+	// A callbackId that was never registered is a silent no-op in both.
+	MenuResult jsNoop = runMenu(JS_REGISTER_THROW, 9999, 1);
+	MenuResult luaNoop = runMenu(LUA_REGISTER_THROW, 9999, 1);
+	REQUIRE(jsNoop.log.empty());
+	REQUIRE(luaNoop.log.empty());
+}
+
+static const char* JS_REGISTER_BAD_NO_ONCHANGE = R"(/**
+ * @engine QuickJs
+ */
+rack.registerContextMenu({ type: "boolean", label: "X", checked: false });
+)";
+
+static const char* LUA_REGISTER_BAD_NO_ONCHANGE = R"(--[[
+@engine Lua
+--]]
+rack.registerContextMenu({ type = "boolean", label = "X", checked = false })
+)";
+
+static const char* JS_REGISTER_BAD_TYPE = R"(/**
+ * @engine QuickJs
+ */
+rack.registerContextMenu({ type: "nope", label: "X", onChange: function() {} });
+)";
+
+static const char* LUA_REGISTER_BAD_TYPE = R"(--[[
+@engine Lua
+--]]
+rack.registerContextMenu({ type = "nope", label = "X", onChange = function() end })
+)";
+
+static const char* JS_REGISTER_BAD_OPTIONS = R"(/**
+ * @engine QuickJs
+ */
+rack.registerContextMenu({ type: "options", label: "X", options: ["ok", 42], onChange: function() {} });
+)";
+
+static const char* LUA_REGISTER_BAD_OPTIONS = R"(--[[
+@engine Lua
+--]]
+rack.registerContextMenu({ type = "options", label = "X", options = {"ok", 42}, onChange = function() end })
+)";
+
+TEST_CASE("Malformed registerContextMenu fails the load identically", "[MidiKit][CrossEngine]") {
+	// Missing onChange: both engines reject the registration and the load.
+	MenuResult js = runMenu(JS_REGISTER_BAD_NO_ONCHANGE);
+	MenuResult lua = runMenu(LUA_REGISTER_BAD_NO_ONCHANGE);
+	REQUIRE_FALSE(js.loaded);
+	REQUIRE_FALSE(lua.loaded);
+
+	// Unknown type: both fail with the same diagnostic wording.
+	js = runMenu(JS_REGISTER_BAD_TYPE);
+	lua = runMenu(LUA_REGISTER_BAD_TYPE);
+	REQUIRE_FALSE(js.loaded);
+	REQUIRE_FALSE(lua.loaded);
+	REQUIRE(js.loadLog.find("registerContextMenu: type must be") != std::string::npos);
+	REQUIRE(lua.loadLog.find("registerContextMenu: type must be") != std::string::npos);
+
+	// Non-string element in options (the Lua lua_isstring-coercion divergence
+	// was caught here — see repo notes): both engines reject it.
+	js = runMenu(JS_REGISTER_BAD_OPTIONS);
+	lua = runMenu(LUA_REGISTER_BAD_OPTIONS);
+	REQUIRE_FALSE(js.loaded);
+	REQUIRE_FALSE(lua.loaded);
 }
