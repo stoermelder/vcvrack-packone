@@ -328,22 +328,22 @@ TEST_CASE("number.toFixed is identical", "[MidiKit][CrossEngine]") {
 }
 
 
-// number.random has no fixed expected value — both engines only need to stay
+// rack.random has no fixed expected value — both engines only need to stay
 // within the documented [0, 1) range, and in agreement about that range, so
 // this uses a bespoke check rather than requireLoggedValues.
-static const char* JS_NUMBER_RANDOM = R"(/**
+static const char* JS_RACK_RANDOM = R"(/**
  * @engine QuickJs
  */
-rack.log("PROBE:" + number.toString(number.random()));
+rack.log("PROBE:" + number.toString(rack.random()));
 )";
 
-static const char* LUA_NUMBER_RANDOM = R"(--[[
+static const char* LUA_RACK_RANDOM = R"(--[[
 @engine Lua
 --]]
-rack.log("PROBE:" .. number.toString(number.random()))
+rack.log("PROBE:" .. number.toString(rack.random()))
 )";
 
-TEST_CASE("number.random stays within [0, 1) in both engines", "[MidiKit][CrossEngine]") {
+TEST_CASE("rack.random stays within [0, 1) in both engines", "[MidiKit][CrossEngine]") {
 	auto checkInRange = [](const std::string& script) {
 		auto lines = loadAndDrainLog(script);
 		REQUIRE(lines.size() == 1);
@@ -351,8 +351,8 @@ TEST_CASE("number.random stays within [0, 1) in both engines", "[MidiKit][CrossE
 		REQUIRE(v >= 0.0);
 		REQUIRE(v < 1.0);
 	};
-	checkInRange(JS_NUMBER_RANDOM);
-	checkInRange(LUA_NUMBER_RANDOM);
+	checkInRange(JS_RACK_RANDOM);
+	checkInRange(LUA_RACK_RANDOM);
 }
 
 

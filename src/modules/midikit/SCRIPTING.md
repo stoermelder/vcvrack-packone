@@ -151,9 +151,11 @@ every example in this document does.
   engines.
 - `rack.overlay(s1 [, s2 [, s3]])` — show up to 3 lines in the on-panel overlay.
 - `rack.getFrame()` — the current engine frame number (`APP->engine->getFrame()`).
+- `rack.random()` — a random number in the interval [0, 1), drawn from Rack's own
+  RNG (`rack::random::uniform()`), so it shares the patch's seed/determinism.
 
 ### `number.*`
-`random()` (0..1 uniform), `rescale(x, xMin, xMax, yMin, yMax [, curve])`,
+`rescale(x, xMin, xMax, yMin, yMax [, curve])`,
 `crossfade(a, b, pos)`, `toString(x)`, `toFixed(x, digits)` (fixed-precision
 string, `digits` 0-20). Present in both engines identically (Lua re-exposes
 these even though `math.*` is also available, for script portability).

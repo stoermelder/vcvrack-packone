@@ -373,13 +373,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("log",      lua_rack_log);
 		setTableFunc("overlay",  lua_rack_overlay);
 		setTableFunc("getFrame", lua_rack_getFrame);
+		setTableFunc("random",   lua_rack_random);
 		lua_setglobal(L, "rack");
 
 		// ── number table ─────────────────────────────────────────────────────
 		// Mostly wraps existing Lua math.*; provided for JS script compatibility.
 		lua_newtable(L);
 		setTableFunc("crossfade", lua_number_crossfade);
-		setTableFunc("random",    lua_number_random);
 		setTableFunc("rescale",   lua_number_rescale);
 		setTableFunc("toString",  lua_number_toString);
 		setTableFunc("toFixed",   lua_number_toFixed);
@@ -552,7 +552,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 1;
 	}
 
-	static int lua_number_random(lua_State* L) {
+	static int lua_rack_random(lua_State* L) {
 		lua_pushnumber(L, rack::random::uniform());
 		return 1;
 	}

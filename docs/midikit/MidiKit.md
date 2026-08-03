@@ -397,6 +397,7 @@ The callbacks below are defined as methods on the `rack` object — `rack.onMidi
 - `rack.log(value [, value ...])`: Prints a line on the display of the module. Any number of arguments are concatenated (no separator) into one line; each accepts any value — numbers (formatted like `number.toString()`), booleans (`true`/`false`), strings (verbatim), and `null`/`nil`/`undefined` (Lua's `nil` prints as `null`). Other values (objects, arrays, tables) use engine-specific formatting.
 - `rack.overlay(str1, [str2], [str3])`: Displays string `str1` in a Rack overlay widget.
 - `rack.getFrame()`: Returns the current engine frame number of the Rack engine.
+- `rack.random()`: Returns a random number of interval [0, 1), drawn from Rack's own RNG (`rack::random::uniform()`).
 
 ### input
 
@@ -426,7 +427,6 @@ The callbacks below are defined as methods on the `rack` object — `rack.onMidi
 ### number
 
 - `number.crossfade(a, b, p)`: Linearly interpolates between `a` and `b`, from `p = 0` to `p = 1`.
-- `number.random()`: Returns a random number of interval [0, 1).
 - `number.rescale(x, xMin, xMax, yMin, yMax, [a])`: Rescales `x` from `[xMin, xMax]` to `[yMin, yMax]`. The optional parameter `a` controls the curvature of the mapping (`a = 0` is linear). See the image for example curves:
   $$ f(x) \frac{\ \exp\left(\left(\ln\left(x\left(e-1\right)+1\right)\right)^{\left(2^{a}\right)}\right)-1}{e-1} $$
   Resulting in curves for `a = -4, -2, 0, 2, 4`: 

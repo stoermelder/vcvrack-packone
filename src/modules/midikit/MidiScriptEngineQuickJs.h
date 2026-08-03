@@ -409,12 +409,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _rack, "log", JS_NewCFunction(ctx, js_rack_log, "log", 1));
 		JS_SetPropertyStr(ctx, _rack, "overlay", JS_NewCFunction(ctx, js_rack_overlay, "overlay", 3));
 		JS_SetPropertyStr(ctx, _rack, "getFrame", JS_NewCFunction(ctx, js_rack_getFrame, "getFrame", 0));
+		JS_SetPropertyStr(ctx, _rack, "random", JS_NewCFunction(ctx, js_rack_random, "random", 0));
 
 		// number
 		JSValue _number = JS_NewObject(ctx);
 		JS_SetPropertyStr(ctx, glob, "number", _number);
 		JS_SetPropertyStr(ctx, _number, "crossfade", JS_NewCFunction(ctx, js_number_crossfade, "crossfade", 3));
-		JS_SetPropertyStr(ctx, _number, "random", JS_NewCFunction(ctx, js_number_random, "random", 0));
 		JS_SetPropertyStr(ctx, _number, "rescale", JS_NewCFunction(ctx, js_number_rescale, "rescale", 5));
 		JS_SetPropertyStr(ctx, _number, "toString", JS_NewCFunction(ctx, js_number_toString, "toString", 1));
 		JS_SetPropertyStr(ctx, _number, "toFixed", JS_NewCFunction(ctx, js_number_toFixed, "toFixed", 2));
@@ -596,8 +596,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return JS_NewFloat64(ctx, rack::crossfade(a, b, p));
 	}
 
-	static JSValue js_number_random(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc != 0) return jsThrow(ctx, "number.random: bad args");
+	static JSValue js_rack_random(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		if (argc != 0) return jsThrow(ctx, "rack.random: bad args");
 		return JS_NewFloat64(ctx, rack::random::uniform());
 	}
 
