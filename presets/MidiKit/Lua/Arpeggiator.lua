@@ -103,7 +103,7 @@ end
 param.getValueFormat = function(i)
     if i == 1 then return number.toString(DIVISIONS[divisionIndex()]) .. " ticks/step" end
     if i == 2 then return number.toString(octaveRange()) .. " oct" end
-    if i == 3 then return number.toFixed(param.getValue(3) * 100, 0) .. " %" end
+    if i == 3 then return string.format("%.0f", param.getValue(3) * 100) .. " %" end
     if i == 4 then return PLAYMODES[playmodeIndex()] end
     return number.toString(param.getValue(i))
 end

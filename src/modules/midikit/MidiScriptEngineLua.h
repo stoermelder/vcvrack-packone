@@ -382,7 +382,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("crossfade", lua_number_crossfade);
 		setTableFunc("rescale",   lua_number_rescale);
 		setTableFunc("toString",  lua_number_toString);
-		setTableFunc("toFixed",   lua_number_toFixed);
 		lua_setglobal(L, "number");
 
 		// ── input table ──────────────────────────────────────────────────────
@@ -574,18 +573,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			x = rack::rescale(x, xMin, xMax, yMin, yMax);
 		}
 		lua_pushnumber(L, x);
-		return 1;
-	}
-
-	static int lua_number_toFixed(lua_State* L) {
-		float f = static_cast<float>(luaL_checknumber(L, 1));
-		int digits = static_cast<int>(luaL_checkinteger(L, 2));
-		if (digits < 0 || digits > 20) {
-			return luaL_error(L, "number.toFixed: digits out of range");
-		}
-		char buf[64];
-		snprintf(buf, sizeof(buf), "%.*f", digits, f);
-		lua_pushstring(L, buf);
 		return 1;
 	}
 

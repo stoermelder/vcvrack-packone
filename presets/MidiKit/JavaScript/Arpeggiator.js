@@ -103,7 +103,7 @@ function playmodeIndex() {
 param.getValueFormat = function(i) {
     if (i === 1) return DIVISIONS[divisionIndex()] + " ticks/step";
     if (i === 2) return octaveRange() + " oct";
-    if (i === 3) return number.toFixed(param.getValue(3) * 100, 0) + " %";
+    if (i === 3) return (param.getValue(3) * 100).toFixed(0) + " %";
     if (i === 4) return PLAYMODES[playmodeIndex()];
     return number.toString(param.getValue(i));
 };

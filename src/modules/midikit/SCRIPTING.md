@@ -22,7 +22,7 @@ Both engines are similarly capable for the common case (reacting to
 | Language completeness | Full JavaScript (ES2020): `while`, `switch`, `try`, `class`, `new`, `this`, `var`/`let`/`const`, function declarations, arrow functions — see [QuickJS language support](#quickjs-language-support) | Full Lua 5.4 syntax; only the *library* is trimmed |
 | Data structures | Array literals `[1,2,3]`, object literals `{a:1}` | Only tables (`{}`); no literal array sugar, must use `{ {...}, {...} }` and `#t`/`ipairs` |
 | Stdlib | Full JS standard library: `Math`, `JSON`, `String`, `Array`, ... | Real Lua stdlib subset: `math`, `string`, `table` (no `io`, `os`, `package`, `debug` — sandboxed) |
-| String formatting | JS auto-coerces numbers in `+` concatenation; `number.toString()`/`number.toFixed()` helpers available | Lua auto-coerces numbers in `..` concatenation; `string.format` available |
+| String formatting | JS auto-coerces numbers in `+` concatenation; `number.toString()` helper available | Lua auto-coerces numbers in `..` concatenation; `string.format` available |
 | Familiarity | Preferred if the user/preset is JS-oriented or ports logic from another JS script | Preferred if the script needs `string.format`, `table.sort`, pattern matching, or other real stdlib features |
 | Performance/footprint | QuickJS is a full embeddable JS engine with a 1 MiB memory limit | minilua is a stripped full Lua VM; similarly small footprint |
 
@@ -156,8 +156,7 @@ every example in this document does.
 
 ### `number.*`
 `rescale(x, xMin, xMax, yMin, yMax [, curve])`,
-`crossfade(a, b, pos)`, `toString(x)`, `toFixed(x, digits)` (fixed-precision
-string, `digits` 0-20). Present in both engines identically (Lua re-exposes
+`crossfade(a, b, pos)`, `toString(x)`. Present in both engines identically (Lua re-exposes
 these even though `math.*` is also available, for script portability).
 
 ### `input.*` (CV inputs on the module, 1-based)

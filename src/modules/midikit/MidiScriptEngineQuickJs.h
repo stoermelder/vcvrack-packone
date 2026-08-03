@@ -417,7 +417,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _number, "crossfade", JS_NewCFunction(ctx, js_number_crossfade, "crossfade", 3));
 		JS_SetPropertyStr(ctx, _number, "rescale", JS_NewCFunction(ctx, js_number_rescale, "rescale", 5));
 		JS_SetPropertyStr(ctx, _number, "toString", JS_NewCFunction(ctx, js_number_toString, "toString", 1));
-		JS_SetPropertyStr(ctx, _number, "toFixed", JS_NewCFunction(ctx, js_number_toFixed, "toFixed", 2));
 
 		// input
 		JSValue _input = JS_Eval(ctx,
@@ -640,16 +639,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		float f = argNum(ctx, argv[0]);
 		char str[32];
 		formatNumber(f, str, sizeof(str));
-		return JS_NewString(ctx, str);
-	}
-
-	static JSValue js_number_toFixed(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc < 2 || !argIsNumber(ctx, argv[0]) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "number.toFixed: bad args");
-		float f = argNum(ctx, argv[0]);
-		int digits = static_cast<int>(argNum(ctx, argv[1]));
-		if (digits < 0 || digits > 20) return jsThrow(ctx, "number.toFixed: digits out of range");
-		char str[64];
-		snprintf(str, sizeof(str), "%.*f", digits, f);
 		return JS_NewString(ctx, str);
 	}
 

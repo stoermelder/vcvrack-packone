@@ -300,34 +300,6 @@ TEST_CASE("number.toString is identical", "[MidiKit][CrossEngine]") {
 }
 
 
-// number.toFixed (#A10) — closes the gap number.toString left: QuickJs had no
-// way to control decimal precision, so a knob-value overlay always printed
-// six decimals (0.500000). Covers 0 digits (rounds to an integer string,
-// unlike toString's "%i" branch which only triggers for exact integers),
-// a mid-range digit count, and rounding at the last retained digit.
-static const char* JS_NUMBER_TOFIXED = R"(/**
- * @engine QuickJs
- */
-rack.log("PROBE:" + number.toFixed(3.14159, 2));
-rack.log("PROBE:" + number.toFixed(0.5, 0));
-rack.log("PROBE:" + number.toFixed(1, 3));
-rack.log("PROBE:" + number.toFixed(2.005, 2));
-)";
-
-static const char* LUA_NUMBER_TOFIXED = R"(--[[
-@engine Lua
---]]
-rack.log("PROBE:" .. number.toFixed(3.14159, 2))
-rack.log("PROBE:" .. number.toFixed(0.5, 0))
-rack.log("PROBE:" .. number.toFixed(1, 3))
-rack.log("PROBE:" .. number.toFixed(2.005, 2))
-)";
-
-TEST_CASE("number.toFixed is identical", "[MidiKit][CrossEngine]") {
-	requireLoggedValues(JS_NUMBER_TOFIXED, LUA_NUMBER_TOFIXED, {"3.14", "0", "1.000", "2.01"});
-}
-
-
 // rack.random has no fixed expected value — both engines only need to stay
 // within the documented [0, 1) range, and in agreement about that range, so
 // this uses a bespoke check rather than requireLoggedValues.
