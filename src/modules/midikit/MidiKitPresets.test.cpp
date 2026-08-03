@@ -252,7 +252,8 @@ static const char* PRESETS[] = {
 	"Chord harmonizer",
 	"NRPN to CC",
 	"Copy Ch1 CC to Ch2",
-	"Rewrite Ch1 to Ch2"
+	"Rewrite Ch1 to Ch2",
+	"Micro scale"
 };
 
 // GENERATE re-runs the body once per preset name, and Catch2 treats every
@@ -721,6 +722,225 @@ TEST_CASE("'Scale quantiser.js/.lua' releases the substituted note on unload", "
 	// release goes out on the fixed MIDI channel 1 (internal channel 0).
 	auto ev = drainOut(engineBeforeUnload);
 	REQUIRE(ev == std::vector<OutEvent>{{0x8, 0, 63, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the Micro scale preset. The scale is not hardcoded:
+// onLoad parses the Scala .scl pasted into config.scl (a "config.scl = ..."
+// multi-line string in each preset). The shipped default is the 5-limit
+// just-intonation major scale given as ratios (9/8, 5/4, 4/3, 3/2, 5/3, 15/8,
+// 2/1) on baseNote 60 @ 261.625565 Hz (A440), bendDepth 2 semitones, output
+// channels 1-8, alwaysSendBend=false. Each incoming note is retuned to its
+// exact scale pitch, expressed as the nearest 12-EDO note number plus a pitch
+// wheel for the residual cents, dispatched to its own output channel
+// (round-robin) because pitch bend is channel-global. The expected values
+// below are exact: for note 62 the scale says D sits at 386.3137... cents,
+// i.e. the tuned frequency is exactly a 5/4 above the base (327.03 Hz); that
+// is semis 63.86314, so the note sent is 64 and the residual -0.13686 st maps
+// to pitch wheel 7631 (LSB 79, MSB 59). For note 61 it is a 9/8 above base:
+// semis 62.03910 -> sent 62, residual +0.03910 st -> wheel 8352 (LSB 32, MSB
+// 65). The tonic (note 60, 0 cents) sits exactly on the centre bend, so with
+// alwaysSendBend=false no bend is emitted at all.
+
+// Loads one of the two Micro scale presets but with the pasted .scl swapped
+// for a caller-provided scale, so the scl parser is exercised with arbitrary
+// content rather than only the shipped default. The .scl lives in a
+// multi-line string assigned to "config.scl" (a backtick template literal in
+// the JS preset, a [[ ]] long-bracket string in the Lua one); the content
+// between the delimiters is replaced with `scl`.
+static MidiKitModule* loadPresetWithScl(const std::string& relPath, const std::string& scl) {
+	std::string script = readFile(repoRoot() + "/" + relPath);
+
+	// Anchor on the assignment itself - "config.scl" also appears in comments
+	// and log strings, and the Lua preset's config comment mentions literal
+	// "[[ ... ]]" brackets, so a generic search would splice the scl into the
+	// wrong place. Lua assigns with "scl = [[ ... ]]", JS with "scl: ` ... `".
+	size_t contentStart = std::string::npos;
+	size_t contentEnd = std::string::npos;
+	size_t anchor = script.find("scl = [[");
+	if (anchor != std::string::npos) {
+		contentStart = anchor + 8;                    // just after "[["
+		contentEnd = script.find("]]", contentStart);
+	}
+	else {
+		anchor = script.find("scl: `");
+		REQUIRE(anchor != std::string::npos);
+		contentStart = anchor + 6;                    // just after the backtick
+		contentEnd = script.find("`", contentStart);
+	}
+	REQUIRE(contentStart != std::string::npos);
+	REQUIRE(contentEnd != std::string::npos);
+	script.replace(contentStart, contentEnd - contentStart, scl);
+
+	MidiKitModule* m = createModule();
+	m->loadScript(script);
+
+	std::string loadLog = drainLog(m);
+	CATCH_INFO("preset: " << relPath);
+	CATCH_INFO("load log:\n" << loadLog);
+	REQUIRE(loadLog.find("rror") == std::string::npos);
+	REQUIRE(loadLog.find("Script loaded") != std::string::npos);
+	return m;
+}
+
+static const char* MICRO_SCALE_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/Micro scale.js",
+	"presets/MidiKit/Lua/Micro scale.lua"
+};
+
+TEST_CASE("'Micro scale.js/.lua' retunes a note and bends the residual cents", "[MidiKit][MicroScale]") {
+	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// D4 (note 62) is a 5/4 above C4 in just intonation: it sounds as 64 with
+	// a -0.13686 st bend. The pitch wheel is sent before the Note-On, because
+	// the bend must be in place when the voice starts.
+	auto ev = feedCollect(m, noteOn(1, 62, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0xe, 0, 79, 59, 0}, {0x9, 0, 64, 100, 0}});
+
+	// Its Note-Off arrives as the *played* note 62 but must release the sent
+	// note 64 on the same channel.
+	auto off = feedCollect(m, noteOff(1, 62));
+	REQUIRE(off == std::vector<OutEvent>{{0x8, 0, 64, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Micro scale.js/.lua' dispatches simultaneous notes to separate channels", "[MidiKit][MicroScale]") {
+	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// C#4 (note 61) is a 9/8 above C4: it sounds as 62 with a +0.03910 st bend.
+	// Both notes are held at once, so they must land on different channels
+	// (1 then 2) - pitch bend is channel-global, so sharing a channel would
+	// corrupt the other voice's tuning.
+	auto c = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(c == std::vector<OutEvent>{{0x9, 0, 60, 100, 0}});
+
+	auto cs = feedCollect(m, noteOn(1, 61, 100));
+	REQUIRE(cs == std::vector<OutEvent>{{0xe, 1, 32, 65, 0}, {0x9, 1, 62, 100, 0}});
+
+	// Each Note-Off releases exactly its own channel and sent note.
+	auto cOff = feedCollect(m, noteOff(1, 60));
+	REQUIRE(cOff == std::vector<OutEvent>{{0x8, 0, 60, 0, 0}});
+
+	auto csOff = feedCollect(m, noteOff(1, 61));
+	REQUIRE(csOff == std::vector<OutEvent>{{0x8, 1, 62, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Micro scale.js/.lua' sends no redundant bend for the tonic and releases it on unload", "[MidiKit][MicroScale]") {
+	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// The tonic (note 60) is exactly on the centre bend 8192, so with
+	// alwaysSendBend=false no pitch wheel precedes the Note-On.
+	auto ev = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0x9, 0, 60, 100, 0}});
+
+	// onUnload releases the still-held note.
+	MidiScriptEngine* engineBeforeUnload = m->activeEngine;
+	m->loadScript("");
+
+	auto unload = drainOut(engineBeforeUnload);
+	REQUIRE(unload == std::vector<OutEvent>{{0x8, 0, 60, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Micro scale.js/.lua' parses a pasted equal-temperament scl", "[MidiKit][MicroScale]") {
+	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// A hand-written 12-tone equal temperament .scl, pasted exactly as a user
+	// would copy it from the Scala archive: cents values carry a decimal
+	// point (Scala convention), the octave is given as a ratio. The parser
+	// skips the "!" comments and is indifferent to the stated note count.
+	std::string scl =
+		"! 12edo.scl\n"
+		"!\n"
+		"12-tone equal temperament\n"
+		" 12\n"
+		"!\n"
+		" 100.0\n 200.0\n 300.0\n 400.0\n 500.0\n 600.0\n 700.0\n 800.0\n 900.0\n 1000.0\n 1100.0\n"
+		" 2/1\n";
+	MidiKitModule* m = loadPresetWithScl(path, scl);
+
+	// In 12-EDO every scale degree is a whole semitone, so no note needs
+	// retuning: D4 (note 62) passes through as 62 with no pitch wheel.
+	auto ev = feedCollect(m, noteOn(1, 62, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0x9, 0, 62, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Micro scale.js/.lua' parses a mixed scl with ratios, cents, comments and dropped entries", "[MidiKit][MicroScale]") {
+	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// A deliberately convoluted .scl exercising every parser rule at once:
+	// ratio notes and cents notes mixed, comment lines at the top AND between
+	// notes, a stated note count that does not match the lines that follow
+	// (the count is ignored), and entries that must be dropped - the tonic
+	// "1/1" (0 cents, implicit), the octave "2/1" and "1200.0" (1200 cents,
+	// implied by the scale repeating) and the bare integer "3" (a ratio of 3,
+	// i.e. 1901.96 cents, outside the octave). The surviving scale has 8
+	// degrees: 9/8, 193.0, 5/4, 4/3, 3/2, 5/3, 15/8.
+	std::string scl =
+		"! Mixed scale.scl\n"
+		"!\n"
+		"Ratios, cents and comments in one scale\n"
+		" 8\n"
+		"!\n"
+		" 1/1\n"
+		" 9/8\n"
+		"! a mid-file comment must be skipped too\n"
+		" 193.0\n"
+		" 5/4\n"
+		" 4/3\n"
+		" 3/2\n"
+		" 5/3\n"
+		" 15/8\n"
+		" 2/1\n"
+		" 1200.0\n"
+		" 3\n";
+	MidiKitModule* m = loadPresetWithScl(path, scl);
+
+	// C#4 (note 61) lands on degree 1 = 9/8 (ratio branch): sent as 62 with a
+	// +0.03910 st bend.
+	auto cs = feedCollect(m, noteOn(1, 61, 100));
+	REQUIRE(cs == std::vector<OutEvent>{{0xe, 0, 32, 65, 0}, {0x9, 0, 62, 100, 0}});
+
+	// D4 (note 62) lands on degree 2 = 193.0 cents (cents branch): sent as 62
+	// with a -0.07 st bend -> wheel 7905 (LSB 97, MSB 61). Both held notes
+	// land on separate channels (1 then 2).
+	auto d = feedCollect(m, noteOn(1, 62, 100));
+	REQUIRE(d == std::vector<OutEvent>{{0xe, 1, 97, 61, 0}, {0x9, 1, 62, 100, 0}});
+
+	// G#4 (note 68) is a full scale-octave up, so it wraps to degree 0 of the
+	// next octave - exactly the tonic one octave higher, passing through as
+	// 72 with no bend. Had the "2/1"/"1200.0" octave entries not been dropped
+	// (they are implicit), the degree indexing would shift and this note would
+	// not come out clean.
+	auto gs = feedCollect(m, noteOn(1, 68, 100));
+	REQUIRE(gs == std::vector<OutEvent>{{0x9, 2, 72, 100, 0}});
+
+	// Each Note-Off releases its own channel and sent note.
+	auto csOff = feedCollect(m, noteOff(1, 61));
+	REQUIRE(csOff == std::vector<OutEvent>{{0x8, 0, 62, 0, 0}});
+	auto dOff = feedCollect(m, noteOff(1, 62));
+	REQUIRE(dOff == std::vector<OutEvent>{{0x8, 1, 62, 0, 0}});
+	auto gsOff = feedCollect(m, noteOff(1, 68));
+	REQUIRE(gsOff == std::vector<OutEvent>{{0x8, 2, 72, 0, 0}});
 
 	Test::destroyModule(m);
 }
