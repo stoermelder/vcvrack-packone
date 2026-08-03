@@ -130,7 +130,9 @@ rack.registerContextMenu({
     type = "options",
     label = "Chord",
     options = CHORD_LABELS,
-    selected = chordIndex(),
+    onGetValue = function()
+        return chordIndex()
+    end,
     onChange = function(idx)
         config.intervals = CHORD_INTERVALS[idx + 1]
         rack.log("Chord: ", CHORD_LABELS[idx + 1], " (", #config.intervals, " voices)")
@@ -141,7 +143,9 @@ rack.registerContextMenu({
     type = "options",
     label = "Channel",
     options = CHANNEL_LABELS,
-    selected = config.channel,
+    onGetValue = function()
+        return config.channel
+    end,
     onChange = function(idx)
         config.channel = idx
         rack.log("Channel: ", CHANNEL_LABELS[idx + 1])

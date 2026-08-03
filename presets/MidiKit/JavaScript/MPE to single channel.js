@@ -126,7 +126,9 @@ rack.registerContextMenu({
     type: "options",
     label: "Output channel",
     options: CHANNEL_LABELS,
-    selected: config.outChannel - 1,
+    onGetValue: function() {
+        return config.outChannel - 1;
+    },
     onChange: function(idx) {
         config.outChannel = idx + 1;
         rack.log("Output channel: ", config.outChannel);
@@ -136,7 +138,9 @@ rack.registerContextMenu({
 rack.registerContextMenu({
     type: "boolean",
     label: "Forward channel pressure",
-    checked: config.forwardPressure,
+    onGetValue: function() {
+        return config.forwardPressure;
+    },
     onChange: function(checked) {
         config.forwardPressure = checked;
     }
@@ -145,7 +149,9 @@ rack.registerContextMenu({
 rack.registerContextMenu({
     type: "boolean",
     label: "Forward CC 74 (timbre)",
-    checked: config.forwardTimbre,
+    onGetValue: function() {
+        return config.forwardTimbre;
+    },
     onChange: function(checked) {
         config.forwardTimbre = checked;
     }

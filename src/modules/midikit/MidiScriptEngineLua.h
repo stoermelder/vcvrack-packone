@@ -2,6 +2,7 @@
 extern "C" {
 	#include "minilua.h"
 }
+#include <jansson.h>
 #include "../../utils/TaskWorker.hpp"
 #include <algorithm>
 #include <iomanip>
@@ -52,6 +53,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	struct ContextMenuEntry {
 		ContextMenuSpec spec;
 		int callbackRef;
+		int onGetValueRef = LUA_NOREF;
 	};
 	std::unordered_map<int, ContextMenuEntry> contextMenus;
 	int nextContextMenuCallbackId = 1;
@@ -84,7 +86,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 
-	void loadScript(const char* script) override {
+	void loadScript(const char* script, const std::string& persistedConfigJson = "") override {
 		closeState();
 
 		if (script[0] == '\0') {
@@ -181,48 +183,282 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		handler->writeLog("Script loaded", false);
-		callOnLoad();
+		callOnLoad(persistedConfigJson);
 	}
 
-	void closeState() {
+	// Runs rack.onUnload() and returns the JSON string of the value it
+	// returned — the script's config to persist — without tearing down the
+	// script state. Used by dataToJson() at save time. The messages onUnload()
+	// queued are discarded (never flushed), so saving has no audible effect.
+	std::string captureConfig() override {
+		if (!L) return "";
+		int nRet = callOnUnload();
+		std::string configJson;
+		if (nRet > 0) {
+			configJson = luaTableToJson(L, -1);
+			lua_pop(L, 1);
+		}
+		return configJson;
+	}
+
+	// Tears down the Lua state. Runs onUnload() first (via captureConfig())
+	// so the script's teardown messages and its config can be captured;
+	// returns the captured config JSON.
+	std::string closeState() override {
 		if (L) {
-			callOnUnload();
+			std::string configJson = captureConfig();
+			// onUnload()'s teardown messages (e.g. all-notes-off) must still
+			// go out even though captureConfig() itself did not flush them.
+			flushMsgStore();
 			clearContextMenus();
 			lua_close(L);
 			L = nullptr;
+			return configJson;
 		}
+		return "";
 	}
 
-	// Runs after top-level code, once the script is known to have loaded.
-	void callOnLoad() {
-		callOptionalHook("onLoad");
-	}
-
-	// Runs right before this script's state is torn down (replaced, module
-	// reset, or module destroyed) — the only place a script can reliably
-	// clean up, e.g. an all-notes-off for anything still sounding.
-	void callOnUnload() {
-		callOptionalHook("onUnload");
-	}
-
-	void callOptionalHook(const char* name) {
-		// Callbacks live on the rack table (rack.onMidiMessage etc.), not on
-		// the global scope.
+	// Runs the script's onLoad() hook after load, passing the persisted config
+	// (decoded from JSON) as its single argument, or no argument when none was
+	// persisted.
+	void callOnLoad(const std::string& persistedConfigJson) {
+		// Callbacks live on the rack table (rack.onLoad etc.), not on the
+		// global scope.
 		lua_getglobal(L, "rack");
 		if (!lua_istable(L, -1)) { lua_pop(L, 1); return; }
-		lua_getfield(L, -1, name);
+		lua_getfield(L, -1, "onLoad");
 		if (!lua_isfunction(L, -1)) { lua_pop(L, 2); return; }
+		int nargs = 0;
+		if (!persistedConfigJson.empty() && jsonToLuaTable(L, persistedConfigJson)) {
+			nargs = 1;
+		}
 		msgCount = 0;
 		inCallback = true;
-		int status = lua_pcall(L, 0, 0, 0);
+		int status = lua_pcall(L, nargs, 0, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			handler->writeLog(string::f("%s error: %s", name, err ? err : "(unknown)"));
+			handler->writeLog(string::f("onLoad error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
 		lua_pop(L, 1); // pop rack table
 		flushMsgStore();
+	}
+
+	// Runs the script's onUnload() hook. Returns 1 with the hook's return
+	// value (kept only if it is a table) on top of the stack, or 0. Only a
+	// table is kept — the engine can only persist table configs. Messages the
+	// hook queued are NOT flushed here (closeState() flushes them for
+	// teardown; captureConfig() discards them so a save has no audible side
+	// effects).
+	int callOnUnload() {
+		lua_getglobal(L, "rack");
+		if (!lua_istable(L, -1)) { lua_pop(L, 1); return 0; }
+		lua_getfield(L, -1, "onUnload");
+		if (!lua_isfunction(L, -1)) { lua_pop(L, 2); return 0; }
+		msgCount = 0;
+		inCallback = true;
+		int status = lua_pcall(L, 0, 1, 0);
+		inCallback = false;
+		if (status != LUA_OK) {
+			const char* err = lua_tostring(L, -1);
+			handler->writeLog(string::f("onUnload error: %s", err ? err : "(unknown)"));
+			lua_pop(L, 1); // pop error message
+			lua_pop(L, 1); // pop rack table
+			flushMsgStore();
+			return 0;
+		}
+		// Stack is now [rack table, result].
+		if (lua_istable(L, -1)) {
+			lua_remove(L, -2); // drop the rack table; the result stays on top
+			return 1;
+		}
+		lua_pop(L, 1); // pop non-table result
+		lua_pop(L, 1); // pop rack table
+		return 0;
+	}
+
+	// ── Config persistence JSON helpers ──────────────────────────────────────
+	// MiniLua has no JSON library, so config tables are converted to/from
+	// JSON via jansson (bundled with Rack). Supports nested objects/arrays of
+	// numbers, strings and booleans; Lua tables serialize as JSON arrays when
+	// their keys are exactly 1..n, otherwise as JSON objects.
+
+	// Converts the Lua value at the given index into a JSON string. Returns ""
+	// if the value is not a table or contains an unsupported value type.
+	static std::string luaTableToJson(lua_State* L, int idx) {
+		json_t* j = luaValueToJson(L, idx);
+		if (!j) return "";
+		char* s = json_dumps(j, JSON_COMPACT);
+		json_decref(j);
+		std::string result = s ? s : "";
+		if (s) free(s);
+		return result;
+	}
+
+	// Recursively converts a Lua value at idx into a jansson json_t*. Returns
+	// NULL for unsupported types. Leaves the Lua stack untouched.
+	static json_t* luaValueToJson(lua_State* L, int idx) {
+		switch (lua_type(L, idx)) {
+			case LUA_TNIL: return json_null();
+			case LUA_TBOOLEAN: return json_boolean(lua_toboolean(L, idx) != 0);
+			case LUA_TNUMBER: {
+				lua_Number n = lua_tonumber(L, idx);
+				lua_Integer i = static_cast<lua_Integer>(n);
+				if (n == static_cast<lua_Number>(i)) return json_integer(static_cast<json_int_t>(i));
+				return json_real(static_cast<double>(n));
+			}
+			case LUA_TSTRING: {
+				size_t len;
+				const char* s = lua_tolstring(L, idx, &len);
+				return json_stringn(s, len);
+			}
+			case LUA_TTABLE: return luaTableToJsonValue(L, idx);
+			default: return NULL;
+		}
+	}
+
+	// Converts a Lua table into a jansson value, detecting whether it is an
+	// array (integer keys exactly 1..n) or an object.
+	static json_t* luaTableToJsonValue(lua_State* L, int idx) {
+		int absIdx = lua_absindex(L, idx);
+
+		// Classify the table: an array when every key is a positive integer
+		// and the keys are exactly 1..n (no gaps, no extra fields).
+		size_t highest = 0;
+		size_t totalKeys = 0;
+		bool arrayLike = true;
+		lua_pushnil(L);
+		while (lua_next(L, absIdx) != 0) {
+			// key at -2, value at -1
+			totalKeys++;
+			if (lua_type(L, -2) == LUA_TNUMBER) {
+				lua_Number k = lua_tonumber(L, -2);
+				lua_Integer ki = static_cast<lua_Integer>(k);
+				if (k == static_cast<lua_Number>(ki) && ki > 0) {
+					if (static_cast<size_t>(ki) > highest) highest = static_cast<size_t>(ki);
+				}
+				else {
+					arrayLike = false;
+				}
+			}
+			else {
+				arrayLike = false;
+			}
+			lua_pop(L, 1); // pop value, keep key for the next lua_next
+		}
+		// NOTE: lua_next() already pops the final key when it returns 0, so
+		// the stack is balanced here — no extra pop.
+
+		if (arrayLike && totalKeys == highest) {
+			json_t* arr = json_array();
+			for (size_t i = 1; i <= highest; i++) {
+				lua_rawgeti(L, absIdx, static_cast<lua_Integer>(i));
+				json_t* val = luaValueToJson(L, -1);
+				lua_pop(L, 1);
+				if (!val) {
+					json_decref(arr);
+					return NULL;
+				}
+				json_array_append_new(arr, val);
+			}
+			return arr;
+		}
+		else {
+			json_t* obj = json_object();
+			lua_pushnil(L);
+			while (lua_next(L, absIdx) != 0) {
+				// key at -2, value at -1
+				std::string key = luaKeyToString(L, -2);
+				json_t* val = luaValueToJson(L, -1);
+				if (!key.empty() && val) {
+					json_object_set_new(obj, key.c_str(), val);
+				}
+				else if (val) {
+					json_decref(val);
+				}
+				lua_pop(L, 1); // pop value, keep key for the next lua_next
+			}
+			// NOTE: lua_next() already pops the final key when it returns 0,
+			// so the stack is balanced here — no extra pop.
+			return obj;
+		}
+	}
+
+	// Converts a Lua key (string or number) at idx into a std::string. Returns
+	// "" for unsupported key types.
+	static std::string luaKeyToString(lua_State* L, int idx) {
+		if (lua_type(L, idx) == LUA_TSTRING) {
+			size_t len;
+			const char* s = lua_tolstring(L, idx, &len);
+			return std::string(s, len);
+		}
+		if (lua_type(L, idx) == LUA_TNUMBER) {
+			char buf[32];
+			snprintf(buf, sizeof(buf), "%lld", static_cast<long long>(lua_tointeger(L, idx)));
+			return buf;
+		}
+		return "";
+	}
+
+	// Parses a JSON string into a Lua table pushed onto the stack. Returns
+	// true on success (the table is on top of the stack), false otherwise
+	// (nothing is pushed).
+	static bool jsonToLuaTable(lua_State* L, const std::string& json) {
+		json_error_t error;
+		json_t* j = json_loads(json.c_str(), 0, &error);
+		if (!j) return false;
+		bool ok = pushJsonAsLua(L, j);
+		json_decref(j);
+		return ok;
+	}
+
+	// Recursively converts a jansson value into a Lua value pushed onto the
+	// stack. Returns true on success, false otherwise (nothing is pushed).
+	static bool pushJsonAsLua(lua_State* L, json_t* j) {
+		if (json_is_object(j)) {
+			lua_newtable(L);
+			const char* key;
+			json_t* val;
+			json_object_foreach(j, key, val) {
+				if (!pushJsonAsLua(L, val)) {
+					lua_pop(L, 1); // pop the partial table
+					return false;
+				}
+				lua_setfield(L, -2, key);
+			}
+			return true;
+		}
+		else if (json_is_array(j)) {
+			lua_newtable(L);
+			size_t index;
+			json_t* val;
+			json_array_foreach(j, index, val) {
+				if (!pushJsonAsLua(L, val)) {
+					lua_pop(L, 1); // pop the partial table
+					return false;
+				}
+				lua_rawseti(L, -2, static_cast<lua_Integer>(index) + 1); // 1-based
+			}
+			return true;
+		}
+		else if (json_is_number(j)) {
+			lua_pushnumber(L, static_cast<lua_Number>(json_number_value(j)));
+			return true;
+		}
+		else if (json_is_string(j)) {
+			lua_pushstring(L, json_string_value(j));
+			return true;
+		}
+		else if (json_is_boolean(j)) {
+			lua_pushboolean(L, json_is_true(j) != 0);
+			return true;
+		}
+		else if (json_is_null(j)) {
+			lua_pushnil(L);
+			return true;
+		}
+		return false;
 	}
 
 	void processInMessage(int midiPort, Message& msg) override {
@@ -275,7 +511,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return callLuaTableFunc("param", "getValueFormat", i + 1);
 	}
 
-	void clearContextMenus() override {
+	void clearContextMenus() {
 		std::lock_guard<std::mutex> lock(contextMenusMutex);
 		if (L) {
 			// Releases the stored script callbacks. Only safe on this (UI)
@@ -284,32 +520,75 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			// worker thread.
 			for (auto& kv : contextMenus) {
 				luaL_unref(L, LUA_REGISTRYINDEX, kv.second.callbackRef);
+				if (kv.second.onGetValueRef != LUA_NOREF) {
+					luaL_unref(L, LUA_REGISTRYINDEX, kv.second.onGetValueRef);
+				}
 			}
 		}
 		contextMenus.clear();
 		nextContextMenuCallbackId = 1;
 	}
 
-	void getContextMenus(std::vector<ContextMenuSpec>& out) const override {
-		std::lock_guard<std::mutex> lock(contextMenusMutex);
-		out.clear();
-		out.reserve(contextMenus.size());
-		for (const auto& kv : contextMenus) {
-			out.push_back(kv.second.spec);
-		}
-		// callbackIds are assigned monotonically at registration, so sorting by
-		// them yields registration order — the unordered_map's own iteration
-		// order is unspecified.
-		std::sort(out.begin(), out.end(), [](const ContextMenuSpec& a, const ContextMenuSpec& b) {
-			return a.callbackId < b.callbackId;
+	void getContextMenus(const std::function<void(const std::vector<ContextMenuSpec>&)>& callback) override {
+		// The whole snapshot (including each onGetValue registry ref) is built
+		// on the worker thread, so getContextMenus() itself needs no lock/copy
+		// on the UI thread. The lock is released before any script call below.
+		runAsync([this, callback]() {
+			if (!L) return;
+			struct Snapshot { int id; ContextMenuSpec spec; int onGetValueRef; };
+			std::vector<Snapshot> snap;
+			{
+				std::lock_guard<std::mutex> lock(contextMenusMutex);
+				snap.reserve(contextMenus.size());
+				for (const auto& kv : contextMenus) {
+					snap.push_back({kv.first, kv.second.spec, kv.second.onGetValueRef});
+				}
+			}
+			// callbackIds are assigned monotonically at registration, so sorting
+			// by them yields registration order — the unordered_map's own
+			// iteration order is unspecified.
+			std::sort(snap.begin(), snap.end(), [](const Snapshot& a, const Snapshot& b) {
+				return a.id < b.id;
+			});
+			std::vector<ContextMenuSpec> result;
+			result.reserve(snap.size());
+			for (const Snapshot& s : snap) {
+				ContextMenuSpec spec = s.spec;
+				int ref = s.onGetValueRef;
+				if (ref != LUA_NOREF) {
+					lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+					int status = lua_pcall(L, 0, 1, 0);
+					if (status == LUA_OK) {
+						if (spec.type == ContextMenuSpec::Type::Boolean) {
+							spec.checked = lua_toboolean(L, -1) != 0;
+						}
+						else {
+							lua_Integer sel = lua_tointeger(L, -1);
+							spec.selected = static_cast<int>(std::max<lua_Integer>(0, std::min<lua_Integer>(sel, static_cast<lua_Integer>(spec.options.size()) - 1)));
+						}
+						lua_pop(L, 1); // pop result
+					}
+					else {
+						const char* err = lua_tostring(L, -1);
+						handler->writeLog(string::f("Context menu error: %s", err ? err : "(unknown)"));
+						lua_pop(L, 1); // pop error message
+					}
+				}
+				result.push_back(spec);
+			}
+			// Invoke the caller's callback with the evaluated specs. It only
+			// touches memory the caller owns (never constructs widgets), so it
+			// is safe to run here on the worker thread.
+			callback(result);
 		});
 	}
 
 	// Fires a registered menu item's onChange callback on the worker thread.
-	// The spec's presentation state (checked/selected) is updated synchronously
-	// on the caller (UI) thread so the next menu build reflects the change
-	// immediately; the actual script call is deferred to runAsync() because it
-	// must run on the worker thread alongside all other Lua work.
+	// The presentation state is not stored on the spec — the next menu build
+	// re-evaluates it from onGetValue, so whatever onChange changed in the
+	// script's config is picked up automatically. The actual script call is
+	// deferred to runAsync() because it must run on the worker thread
+	// alongside all other Lua work.
 	void invokeContextMenuCallback(int callbackId, int value) override {
 		ContextMenuSpec::Type type;
 		std::string label;
@@ -317,14 +596,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			std::lock_guard<std::mutex> lock(contextMenusMutex);
 			auto it = contextMenus.find(callbackId);
 			if (it == contextMenus.end()) return;
-			ContextMenuEntry& entry = it->second;
+			const ContextMenuEntry& entry = it->second;
 			type = entry.spec.type;
-			if (type == ContextMenuSpec::Type::Boolean) {
-				entry.spec.checked = (value != 0);
-			}
-			else {
+			if (type != ContextMenuSpec::Type::Boolean) {
 				if (value < 0 || value >= static_cast<int>(entry.spec.options.size())) return;
-				entry.spec.selected = value;
 				label = entry.spec.options[value];
 			}
 		}
@@ -645,11 +920,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// rack.registerContextMenu(options) — registers one item in the module's
 	// context menu. Two variants:
-	//   { type = "boolean", label, checked, onChange = fn(checked) }
-	//   { type = "options", label, options = {...}, selected, onChange = fn(idx, label) }
-	// Returns true on success. The script callback is stored (owned) by the
-	// engine as a registry reference and fired through
-	// invokeContextMenuCallback() on the worker thread.
+	//   { type = "boolean", label, onGetValue = fn() -> bool, onChange = fn(checked) }
+	//   { type = "options", label, options = {...}, onGetValue = fn() -> int, onChange = fn(idx, label) }
+	// onGetValue is optional (defaults to value 0) and is evaluated lazily on
+	// the worker thread whenever the menu is built, so it always reflects the
+	// script's current config. The script callbacks are stored (owned) by the
+	// engine as registry references and fired through
+	// invokeContextMenuCallback()/getContextMenus() on the worker thread.
 	static int lua_rack_registerContextMenu(lua_State* L) {
 		auto* e = getEngine(L);
 		if (lua_gettop(L) < 1 || !lua_istable(L, 1))
@@ -676,12 +953,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_getfield(L, 1, "onChange");
 		if (!lua_isfunction(L, -1)) return luaL_error(L, "registerContextMenu: onChange must be a function");
 
-		if (spec.type == ContextMenuSpec::Type::Boolean) {
-			lua_getfield(L, 1, "checked");
-			spec.checked = lua_toboolean(L, -1);
-			lua_pop(L, 1);
-		}
-		else {
+		if (spec.type == ContextMenuSpec::Type::Options) {
 			lua_getfield(L, 1, "options");
 			if (!lua_istable(L, -1)) return luaL_error(L, "registerContextMenu: options must be a non-empty array of strings");
 			lua_len(L, -1);
@@ -698,13 +970,20 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 				lua_pop(L, 1);
 			}
 			lua_pop(L, 1); // pop options table
+		}
 
-			lua_getfield(L, 1, "selected");
-			if (lua_isnumber(L, -1)) {
-				lua_Integer sel = lua_tointeger(L, -1);
-				spec.selected = static_cast<int>(std::max<lua_Integer>(0, std::min<lua_Integer>(sel, len - 1)));
-			}
-			lua_pop(L, 1); // pop selected
+		// The current value (checked/selected) is not read at registration:
+		// it is evaluated lazily from onGetValue when the menu is built, so
+		// it always reflects the script's live config. onGetValue is optional
+		// and defaults to value 0. Its ref is taken before onChange's so an
+		// error while validating options (above) cannot leak it.
+		lua_getfield(L, 1, "onGetValue");
+		int onGetValueRef = LUA_NOREF;
+		if (lua_isfunction(L, -1)) {
+			onGetValueRef = luaL_ref(L, LUA_REGISTRYINDEX); // pops onGetValue
+		}
+		else {
+			lua_pop(L, 1); // ignore non-function onGetValue
 		}
 
 		spec.callbackId = e->nextContextMenuCallbackId++;
@@ -714,6 +993,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			ContextMenuEntry entry;
 			entry.spec = spec;
 			entry.callbackRef = ref;
+			entry.onGetValueRef = onGetValueRef;
 			e->contextMenus[spec.callbackId] = entry;
 		}
 

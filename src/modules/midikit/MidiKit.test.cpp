@@ -48,19 +48,21 @@ TEST_CASE("Preset JSON null-guards", "[MidiKit][JSON]") {
 TEST_CASE("process() does not crash with no script", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
+	// With no engine loaded, process() returns early (the `!activeEngine`
+	// guard) — it must not crash, and must not touch any counters.
 	for (int i = 0; i < 20; i++) {
 		REQUIRE_NOTHROW(m->process(Test::makeProcessArgs(i + 1)));
 	}
 
-	REQUIRE(m->sample == 20);
+	REQUIRE(m->sample == 0);
 
 	Test::destroyModule(m);
 }
 
-TEST_CASE("Default engine is QuickJs", "[MidiKit]") {
+TEST_CASE("Default engine it not set", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
-	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seQuickJs));
+	REQUIRE(m->activeEngine == nullptr);
 
 	Test::destroyModule(m);
 }
@@ -88,7 +90,7 @@ TEST_CASE("QuickJs header keeps QuickJs engine active", "[MidiKit]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("clearScript resets to empty and restores QuickJs engine", "[MidiKit]") {
+TEST_CASE("clearScript resets to empty and restores no engine", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	m->loadScript(LUA_SCRIPT);
@@ -97,13 +99,17 @@ TEST_CASE("clearScript resets to empty and restores QuickJs engine", "[MidiKit]"
 	m->clearScript();
 
 	REQUIRE(m->script == "");
-	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seQuickJs));
+	REQUIRE(m->activeEngine == nullptr);
 
 	Test::destroyModule(m);
 }
 
 TEST_CASE("Trigger input increments inputTriggerTick", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+
+	// With no default engine, load a script so process() runs past the
+	// `if (!activeEngine) return;` guard.
+	m->loadScript(QUICKJS_SCRIPT);
 
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
 
@@ -352,7 +358,9 @@ struct RecordingEngine : MidiScriptEngine {
 	}
 
 	// Unused by these tests — stubbed only to satisfy the interface.
-	void loadScript(const char* script) override { }
+	void loadScript(const char* script, const std::string& persistedConfigJson) override { }
+	std::string closeState() override { return ""; }
+	std::string captureConfig() override { return ""; }
 	void processInMessage(int midiPort, midi::Message& msg) override { }
 	void processInTick(int trigPort) override { }
 	void dispatchMidiMessage(int midiPort, midi::Message& msg) override { }
@@ -360,8 +368,10 @@ struct RecordingEngine : MidiScriptEngine {
 	std::string getInputName(int i) override { return ""; }
 	std::string getParamName(int i) override { return ""; }
 	std::string getParamFormatValue(int i) override { return ""; }
-	void clearContextMenus() override { }
-	void getContextMenus(std::vector<StoermelderPackOne::MidiScript::ContextMenuSpec>& out) const override { }
+	void getContextMenus(const std::function<void(const std::vector<StoermelderPackOne::MidiScript::ContextMenuSpec>&)>& callback) override {
+		std::vector<StoermelderPackOne::MidiScript::ContextMenuSpec> empty;
+		callback(empty);
+	}
 	void invokeContextMenuCallback(int callbackId, int value) override { }
 };
 
@@ -498,6 +508,10 @@ TEST_CASE("process() handles triggers arriving between divider ticks", "[MidiKit
 TEST_CASE("process() sends frame-scheduled messages on divider ticks only", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
+	// With no default engine, load a script so process() runs past the
+	// `if (!activeEngine) return;` guard.
+	m->loadScript(QUICKJS_SCRIPT);
+
 	// ticks == 0 with a set frame routes to frameQueue rather than tickQueue.
 	midi::Message msg = makeCc();
 	msg.frame = 9;
@@ -522,6 +536,10 @@ TEST_CASE("process() sends frame-scheduled messages on divider ticks only", "[Mi
 
 TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+
+	// With no default engine, load a script so process() runs past the
+	// `if (!activeEngine) return;` guard.
+	m->loadScript(QUICKJS_SCRIPT);
 
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
@@ -641,11 +659,15 @@ TEST_CASE("Log queue drops entries when full", "[MidiKit][Log]") {
 static const char* QJS_BOOL = R"(/**
  * @engine QuickJs
  */
+let v = false;
 rack.registerContextMenu({
 	type: "boolean",
 	label: "Velocity to CC",
-	checked: false,
+	onGetValue: function() {
+		return v;
+	},
 	onChange: function(checked) {
+		v = checked;
 		rack.log("onChange: " + (checked ? "true" : "false"));
 	}
 });
@@ -654,12 +676,16 @@ rack.registerContextMenu({
 static const char* QJS_OPTIONS = R"(/**
  * @engine QuickJs
  */
+let v = 1;
 rack.registerContextMenu({
 	type: "options",
 	label: "Out mode",
 	options: ["Internal", "External", "Both"],
-	selected: 1,
+	onGetValue: function() {
+		return v;
+	},
 	onChange: function(selectedIndex, selectedLabel) {
+		v = selectedIndex;
 		rack.log("onChange: " + selectedIndex + " " + selectedLabel);
 	}
 });
@@ -668,11 +694,15 @@ rack.registerContextMenu({
 static const char* LUA_BOOL = R"(--[[
 @engine Lua
 --]]
+v = false
 rack.registerContextMenu({
 	type = "boolean",
 	label = "Velocity to CC",
-	checked = false,
+	onGetValue = function()
+		return v
+	end,
 	onChange = function(checked)
+		v = checked
 		rack.log("onChange: " .. tostring(checked))
 	end
 })
@@ -681,22 +711,62 @@ rack.registerContextMenu({
 static const char* LUA_OPTIONS = R"(--[[
 @engine Lua
 --]]
+v = 1
 rack.registerContextMenu({
 	type = "options",
 	label = "Out mode",
 	options = {"Internal", "External", "Both"},
-	selected = 1,
+	onGetValue = function()
+		return v
+	end,
 	onChange = function(selectedIndex, selectedLabel)
+		v = selectedIndex
 		rack.log("onChange: " .. selectedIndex .. " " .. selectedLabel)
 	end
 })
 )";
 
 // ─── rack.registerContextMenu(): widget integration ─────────────────────────
-// appendContextMenu() reads the registered specs and builds real menu items;
-// clicking an item through MenuItem::doAction() fires the script callback.
-// The widget behaviour is engine-independent: each case builds the menu for a
-// fresh module+widget per engine script.
+// appendContextMenu() inserts an async placeholder that builds the real menu
+// items once the worker has evaluated onGetValue — driven by the
+// placeholder's step(), which the tests call via buildScriptMenuItems() (the
+// worker is inline under SyncTaskWorker). Clicking an item through
+// MenuItem::doAction() fires the script callback. The widget behaviour is
+// engine-independent: each case builds the menu for a fresh module+widget per
+// engine script.
+
+// Drive the async placeholder (ScriptContextMenuItems) that builds the
+// script-registered items, then remove and delete the placeholder exactly as
+// Rack's Menu::step() would once it has requested deletion. Only the
+// placeholder is stepped: stepping the whole menu would run Menu::step()
+// (which reads its parent's box) and MenuItem::step() (which needs APP->window
+// for font metrics), neither of which the test harness provides. The
+// placeholder is the only MenuEntry that is not a MenuItem, MenuLabel, or
+// MenuSeparator. Freeing it matters: the built items are its siblings and must
+// keep working after it is destroyed — their callbacks capture the module
+// pointer, not the placeholder itself.
+static void buildScriptMenuItems(rack::ui::Menu* menu) {
+	rack::Widget* placeholder = nullptr;
+	for (rack::Widget* child : menu->children) {
+		if (!dynamic_cast<rack::ui::MenuEntry*>(child))
+			continue;
+		if (dynamic_cast<rack::ui::MenuItem*>(child))
+			continue;
+		if (dynamic_cast<rack::ui::MenuLabel*>(child))
+			continue;
+		if (dynamic_cast<rack::ui::MenuSeparator*>(child))
+			continue;
+		placeholder = child;
+		break;
+	}
+	if (!placeholder) return;
+	placeholder->step();
+	// Delete exactly as Rack's Widget::step() would: removeChild() detaches the
+	// placeholder from the menu (RemoveEvent + parent = NULL), then delete is
+	// legal — Widget::~Widget() asserts the widget is orphaned.
+	menu->removeChild(placeholder);
+	delete placeholder;
+}
 
 TEST_CASE("Context menu: boolean item is built and click fires the callback", "[MidiKit][ContextMenu]") {
 	for (const char* script : {QJS_BOOL, LUA_BOOL}) {
@@ -707,6 +777,13 @@ TEST_CASE("Context menu: boolean item is built and click fires the callback", "[
 
 		rack::ui::Menu* menu = new rack::ui::Menu;
 		mw->appendContextMenu(menu);
+		// The script items are built asynchronously: the worker evaluates
+		// onGetValue (inline here via SyncTaskWorker) and the placeholder's
+		// step() builds the real items. The helper also frees the placeholder
+		// as Rack's Menu::step() would, so clicking below runs against the
+		// freed placeholder (its callbacks must capture the module, not
+		// `this`). The whole menu can't be stepped without a window.
+		buildScriptMenuItems(menu);
 
 		rack::ui::MenuItem* item = nullptr;
 		for (rack::Widget* child : menu->children) {
@@ -737,6 +814,10 @@ TEST_CASE("Context menu: options submenu is built and click fires the callback",
 
 		rack::ui::Menu* menu = new rack::ui::Menu;
 		mw->appendContextMenu(menu);
+		// See the boolean test case: step the async placeholder so it builds
+		// the real items, then free the placeholder (Rack's Menu::step()
+		// behaviour) so the submenu callbacks run without `this`.
+		buildScriptMenuItems(menu);
 
 		rack::ui::MenuItem* sub = nullptr;
 		for (rack::Widget* child : menu->children) {

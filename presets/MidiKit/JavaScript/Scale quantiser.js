@@ -71,7 +71,27 @@ let state = {
     playedAs: []
 };
 
-rack.onLoad = function() {
+function arraysEqual(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+}
+
+// onLoad optionally receives the config that onUnload returned at the last
+// save. It is merged over the defaults, so a setting changed via the
+// right-click context menu survives a patch save/reload.
+rack.onLoad = function(persisted) {
+    if (persisted) {
+        config = Object.assign({}, config, persisted);
+        // A persisted scale arrives as a plain array; point it back at the
+        // matching named scale so the context-menu selection stays valid.
+        for (let i = 0; i < SCALE_NAMES.length; i++) {
+            if (arraysEqual(config.scale, scales[SCALE_NAMES[i]])) {
+                config.scale = scales[SCALE_NAMES[i]];
+                break;
+            }
+        }
+    }
     for (let n = 0; n < 128; n++) {
         state.playedAs[n] = -1;
     }
@@ -97,6 +117,8 @@ rack.onUnload = function() {
             midiOut.send(off);
         }
     }
+    // Return the current config so the engine can persist it on save.
+    return config;
 };
 
 function matchesChannel(ch) {
@@ -189,7 +211,9 @@ rack.registerContextMenu({
     type: "options",
     label: "Scale",
     options: SCALE_LABELS,
-    selected: scaleIndex(),
+    onGetValue: function() {
+        return scaleIndex();
+    },
     onChange: function(idx) {
         config.scale = scales[SCALE_NAMES[idx]];
         rack.log("Scale: ", SCALE_LABELS[idx]);
@@ -200,7 +224,9 @@ rack.registerContextMenu({
     type: "options",
     label: "Channel",
     options: CHANNEL_LABELS,
-    selected: config.channel,
+    onGetValue: function() {
+        return config.channel;
+    },
     onChange: function(idx) {
         config.channel = idx;
         rack.log("Channel: ", CHANNEL_LABELS[idx]);
@@ -210,7 +236,9 @@ rack.registerContextMenu({
 rack.registerContextMenu({
     type: "boolean",
     label: "Round up on ties",
-    checked: config.preferUpward,
+    onGetValue: function() {
+        return config.preferUpward;
+    },
     onChange: function(checked) {
         config.preferUpward = checked;
     }

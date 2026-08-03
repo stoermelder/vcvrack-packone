@@ -80,7 +80,9 @@ rack.registerContextMenu({
     type = "options",
     label = "CC channel",
     options = CHANNEL_LABELS,
-    selected = config.ccChannel - 1,
+    onGetValue = function()
+        return config.ccChannel - 1
+    end,
     onChange = function(idx)
         config.ccChannel = idx + 1
         rack.log("CC channel: ", config.ccChannel)

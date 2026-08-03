@@ -175,7 +175,9 @@ rack.registerContextMenu({
     type: "options",
     label: "Input channel",
     options: CHANNEL_LABELS,
-    selected: config.channel,
+    onGetValue: function() {
+        return config.channel;
+    },
     onChange: function(idx) {
         config.channel = idx;
         rack.log("Input channel: ", CHANNEL_LABELS[idx]);
@@ -186,7 +188,9 @@ rack.registerContextMenu({
     type: "options",
     label: "Output channel",
     options: OUT_CHANNEL_LABELS,
-    selected: config.outChannel,
+    onGetValue: function() {
+        return config.outChannel;
+    },
     onChange: function(idx) {
         config.outChannel = idx;
         rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx]);

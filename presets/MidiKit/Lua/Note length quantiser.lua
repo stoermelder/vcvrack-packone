@@ -115,7 +115,9 @@ rack.registerContextMenu({
     type = "options",
     label = "Note length",
     options = LENGTH_LABELS,
-    selected = lengthTicksIndex(),
+    onGetValue = function()
+        return lengthTicksIndex()
+    end,
     onChange = function(idx)
         config.lengthTicks = LENGTH_TICKS[idx + 1]
         rack.log("Length: ", config.lengthTicks, " ticks")
@@ -126,7 +128,9 @@ rack.registerContextMenu({
     type = "options",
     label = "Channel",
     options = CHANNEL_LABELS,
-    selected = config.channel,
+    onGetValue = function()
+        return config.channel
+    end,
     onChange = function(idx)
         config.channel = idx
         rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
@@ -136,7 +140,9 @@ rack.registerContextMenu({
 rack.registerContextMenu({
     type = "boolean",
     label = "Pass through other messages",
-    checked = config.passThroughOther,
+    onGetValue = function()
+        return config.passThroughOther
+    end,
     onChange = function(checked)
         config.passThroughOther = checked
     end
@@ -145,7 +151,9 @@ rack.registerContextMenu({
 rack.registerContextMenu({
     type = "boolean",
     label = "Log quantised notes",
-    checked = config.verbose,
+    onGetValue = function()
+        return config.verbose
+    end,
     onChange = function(checked)
         config.verbose = checked
     end

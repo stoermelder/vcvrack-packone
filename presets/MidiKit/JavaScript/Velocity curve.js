@@ -97,7 +97,9 @@ rack.registerContextMenu({
     type: "options",
     label: "Channel",
     options: CHANNEL_LABELS,
-    selected: config.channel,
+    onGetValue: function() {
+        return config.channel;
+    },
     onChange: function(idx) {
         config.channel = idx;
         rack.log("Channel: ", CHANNEL_LABELS[idx]);

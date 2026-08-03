@@ -10,21 +10,33 @@ using rack::midi::Message;
 
 
 // A single user-facing context-menu item, as registered by a script through
-// rack.registerContextMenu(). Carries only the presentation data (label and
-// current state) plus an opaque callbackId; the actual script callback lives
-// in the engine's own map keyed by that id, so a copied spec never owns a
-// script-function reference and can be handed freely to the UI thread.
+// rack.registerContextMenu(). Carries the presentation data (label and the
+// current selected/checked state, evaluated by the engine from the script's
+// onGetValue callback) plus an opaque callbackId; the actual script callbacks
+// (onChange, onGetValue) live in the engine's own map keyed by that id, so a
+// copied spec never owns a script-function reference and can be handed freely
+// to the UI thread. checked/selected are filled by getContextMenus() when the
+// menu is built and default to 0 when the script registered no onGetValue.
 struct ContextMenuSpec {
 	enum class Type { Boolean, Options } type = Type::Boolean;
 	std::string label;
-	// Boolean variant: current checked state.
-	bool checked = false;
-	// Options variant: selectable labels and the current selection index.
+	// Options variant: selectable labels and the current selection index
+	// (evaluated from onGetValue).
 	std::vector<std::string> options;
-	int selected = 0;
+	// checked (Boolean) and selected (Options) share the same storage — only
+	// one is meaningful, the one matching `type`. Both default to 0
+	// (unchecked / first option) when the script registered no onGetValue.
+	// The union is initialized via `selected(0)`, which zeroes the whole
+	// 4-byte storage so `checked` (its low byte) reads false as well.
+	union {
+		bool checked;
+		int selected;
+	};
 	// Opaque handle assigned by the engine at registration time; resolves to
 	// the script's onChange callback inside the engine.
 	int callbackId = -1;
+
+	ContextMenuSpec() : selected(0) {}
 };
 
 
@@ -81,7 +93,26 @@ struct MidiScriptEngine {
 		return taskWorker->work(task, APP);
 	}
 
-	virtual void loadScript(const char* script) = 0;
+	// loadScript accepts an optional persisted-config JSON string. When
+	// non-empty, the engine parses it and passes the result to rack.onLoad()
+	// as its single argument, so the script can restore its config. An empty
+	// string means no config was persisted — rack.onLoad() is called with no
+	// argument (undefined/nil) and the script initializes from its defaults.
+	virtual void loadScript(const char* script, const std::string& persistedConfigJson = "") = 0;
+
+	// Tears down the script state. Runs rack.onUnload() first (so the script
+	// can clean up, e.g. an all-notes-off) and returns the JSON string of the
+	// value onUnload() returned — the script's config to persist — or "" when
+	// onUnload() is missing, errored, or returned nothing serializable.
+	virtual std::string closeState() = 0;
+
+	// Runs rack.onUnload() and returns the JSON string of the value it
+	// returned, WITHOUT tearing down the script state. Used by the module's
+	// dataToJson() to persist the live config at save time without unloading
+	// the script. The onUnload() messages are discarded (no MIDI is emitted),
+	// unlike closeState() where they are flushed for teardown. Returns "" when
+	// onUnload() is missing, errored, or returned nothing serializable.
+	virtual std::string captureConfig() = 0;
 
 	// Main interface for message processing
 	virtual void processInMessage(int midiPort, Message& msg) = 0;
@@ -134,12 +165,17 @@ struct MidiScriptEngine {
 	virtual std::string getParamName(int i) = 0;
 	virtual std::string getParamFormatValue(int i) = 0;
 
-	// Script-registered context menus (rack.registerContextMenu). The engine
-	// owns the registration state; the module/widget only read it back.
-	// clearContextMenus() is called by the engine itself when its script state
-	// is torn down (closeState/loadScript), never by the module.
-	virtual void clearContextMenus() = 0;
-	virtual void getContextMenus(std::vector<ContextMenuSpec>& out) const = 0;
+	// Starts an asynchronous query of the script-registered menus. Called from
+	// the UI thread while the context menu is being built. The engine
+	// evaluates each item's onGetValue callback on the WORKER thread (script
+	// code must never run on the UI thread) and then invokes `callback` with
+	// the evaluated specs. The callback must not construct widgets: it only
+	// publishes the specs (e.g. into a buffer the caller owns) and flips a
+	// `loaded` guard of its own, which the menu widget polls from step() on
+	// the UI thread before building the actual menu items. When a script
+	// registered no onGetValue for an item, that item reports value 0
+	// (unchecked / first option).
+	virtual void getContextMenus(const std::function<void(const std::vector<ContextMenuSpec>&)>& callback) = 0;
 	// Called from the widget's menu-action handler (UI thread) when the user
 	// clicks a script menu item. value is 0/1 for a Boolean toggle and the
 	// selected index for Options. The script callback runs on the worker thread.

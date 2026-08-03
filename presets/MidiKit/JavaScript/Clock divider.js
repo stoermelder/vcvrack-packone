@@ -75,7 +75,9 @@ rack.registerContextMenu({
     type: "options",
     label: "Divisor",
     options: DIVISOR_LABELS,
-    selected: divisorIndex(),
+    onGetValue: function() {
+        return divisorIndex();
+    },
     onChange: function(idx) {
         config.divisor = DIVISORS[idx];
         rack.log("Divisor: ", config.divisor, " (24 ppqn / ", config.divisor, ")");
@@ -85,7 +87,9 @@ rack.registerContextMenu({
 rack.registerContextMenu({
     type: "boolean",
     label: "Emit trigger output",
-    checked: config.emitTrigger,
+    onGetValue: function() {
+        return config.emitTrigger;
+    },
     onChange: function(checked) {
         config.emitTrigger = checked;
         rack.log("Emit trigger: ", checked);
@@ -95,7 +99,9 @@ rack.registerContextMenu({
 rack.registerContextMenu({
     type: "boolean",
     label: "Pass through other messages",
-    checked: config.passThroughOther,
+    onGetValue: function() {
+        return config.passThroughOther;
+    },
     onChange: function(checked) {
         config.passThroughOther = checked;
     }

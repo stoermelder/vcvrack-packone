@@ -173,7 +173,9 @@ rack.registerContextMenu({
     type = "options",
     label = "Input channel",
     options = CHANNEL_LABELS,
-    selected = config.channel,
+    onGetValue = function() 
+        return config.channel
+    end,
     onChange = function(idx)
         config.channel = idx
         rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
@@ -184,7 +186,9 @@ rack.registerContextMenu({
     type = "options",
     label = "Output channel",
     options = OUT_CHANNEL_LABELS,
-    selected = config.outChannel,
+    onGetValue = function()
+        return config.outChannel
+    end,
     onChange = function(idx)
         config.outChannel = idx
         rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx + 1])

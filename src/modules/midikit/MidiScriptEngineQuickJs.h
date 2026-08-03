@@ -57,6 +57,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	struct ContextMenuEntry {
 		ContextMenuSpec spec;
 		JSValue callbackFn;
+		JSValue onGetValueFn = JS_UNDEFINED;
 	};
 	std::unordered_map<int, ContextMenuEntry> contextMenus;
 	int nextContextMenuCallbackId = 1;
@@ -102,7 +103,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return message;
 	}
 
-	void loadScript(const char* script) override {
+	void loadScript(const char* script, const std::string& persistedConfigJson = "") override {
 		closeState();
 
 		if (script[0] == '\0') {
@@ -194,7 +195,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (!hasOnMidiMessage) {
 				handler->writeLog("No onMidiMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
 			}
-			callOnLoad();
+			// Pass any persisted config to onLoad(). parsePersistedConfig()
+			// returns JS_UNDEFINED when there is none (or it is not valid
+			// JSON), so the script falls back to its defaults.
+			JSValue config = parsePersistedConfig(persistedConfigJson);
+			callOnLoad(config);
+			// JS_UNDEFINED is a shared atom; JS_FreeValue is a no-op for it.
+			JS_FreeValue(ctx, config);
 		}
 	}
 
@@ -205,44 +212,95 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return r;
 	}
 
+	// Runs rack.onUnload() and returns the JSON string of the value it
+	// returned — the script's config to persist — without tearing down the
+	// script state. Used by dataToJson() at save time. The messages onUnload()
+	// queued are discarded (never flushed), so saving has no audible effect.
+	std::string captureConfig() override {
+		if (!ctx) return "";
+		JSValue ret = callOnUnload();
+		std::string configJson;
+		if (!JS_IsUndefined(ret) && !JS_IsNull(ret) && !JS_IsException(ret)) {
+			JSValue jsonVal = JS_JSONStringify(ctx, ret, JS_UNDEFINED, JS_UNDEFINED);
+			if (!JS_IsException(jsonVal)) {
+				configJson = jsToStdString(jsonVal);
+			}
+			JS_FreeValue(ctx, jsonVal);
+		}
+		JS_FreeValue(ctx, ret);
+		return configJson;
+	}
+
 	// Unregisters this engine's context from ctxMap and frees the QuickJS
 	// runtime/context. A dangling entry left behind after destruction would
-	// collide with a later engine allocated at the same address.
-	void closeState() {
+	// collide with a later engine allocated at the same address. Runs
+	// onUnload() first (via captureConfig()) so the script's teardown messages
+	// and its config can be captured; returns the captured config JSON.
+	std::string closeState() override {
 		if (ctx != NULL) {
-			callOnUnload();
+			std::string configJson = captureConfig();
+			// onUnload()'s teardown messages (e.g. all-notes-off) must still
+			// go out even though captureConfig() itself did not flush them.
+			flushMsgStore();
 			clearContextMenus();
 			ctxMap.erase(ctx);
 			JS_FreeContext(ctx);
 			JS_FreeRuntime(rt);
 			ctx = NULL;
 			rt = NULL;
+			return configJson;
 		}
+		return "";
 	}
 
-	// Runs after top-level code, once the script is known to have loaded.
-	void callOnLoad() {
-		callOptionalHook("onLoad", hasOnLoad);
-	}
-
-	// Runs right before this script's state is torn down (replaced, module
-	// reset, or module destroyed) — the only place a script can reliably
-	// clean up, e.g. an all-notes-off for anything still sounding.
-	void callOnUnload() {
-		callOptionalHook("onUnload", hasOnUnload);
-	}
-
-	// No-op if the script never defined this hook. Skipping msgCount's reset
-	// in that case matters: a handle built at top level must survive until
-	// the next real callback if there's no onLoad to consume it.
-	void callOptionalHook(const char* name, bool has) {
-		if (!has) return;
+	// Runs the script's onLoad() hook after load, passing the parsed persisted
+	// config as its single argument (or no argument when none was persisted).
+	void callOnLoad(JSValue persistedConfig) {
+		if (!hasOnLoad) return;
 
 		msgCount = 0;
 		inCallback = true;
 		JSValue glob = JS_GetGlobalObject(ctx);
 		JSValue rack = JS_GetPropertyStr(ctx, glob, "rack");
-		JSValue fn = JS_GetPropertyStr(ctx, rack, name);
+		JSValue fn = JS_GetPropertyStr(ctx, rack, "onLoad");
+		JSValue r;
+		if (JS_IsUndefined(persistedConfig)) {
+			r = JS_Call(ctx, fn, rack, 0, NULL);
+		}
+		else {
+			JSValue args[1] = { persistedConfig };
+			r = JS_Call(ctx, fn, rack, 1, args);
+		}
+		JS_FreeValue(ctx, fn);
+		JS_FreeValue(ctx, rack);
+		JS_FreeValue(ctx, glob);
+		inCallback = false;
+		if (JS_IsException(r)) {
+			JS_FreeValue(ctx, r);
+			JSValue exc = JS_GetException(ctx);
+			handler->writeLog(string::f("onLoad error: %s", jsToStdString(exc).c_str()));
+			JS_FreeValue(ctx, exc);
+		}
+		else {
+			JS_FreeValue(ctx, r);
+		}
+		flushMsgStore();
+	}
+
+	// Runs the script's onUnload() hook and returns its return value — the
+	// script's config to persist. Returns JS_UNDEFINED when the hook is
+	// missing or errored. The caller owns the returned value. onUnload()'s
+	// messages are NOT flushed here: closeState() flushes them (teardown
+	// cleanup like all-notes-off must still go out), captureConfig() discards
+	// them (a save must not have audible side effects).
+	JSValue callOnUnload() {
+		if (!hasOnUnload) return JS_UNDEFINED;
+
+		msgCount = 0;
+		inCallback = true;
+		JSValue glob = JS_GetGlobalObject(ctx);
+		JSValue rack = JS_GetPropertyStr(ctx, glob, "rack");
+		JSValue fn = JS_GetPropertyStr(ctx, rack, "onUnload");
 		JSValue r = JS_Call(ctx, fn, rack, 0, NULL);
 		JS_FreeValue(ctx, fn);
 		JS_FreeValue(ctx, rack);
@@ -251,13 +309,28 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
 			JSValue exc = JS_GetException(ctx);
-			handler->writeLog(string::f("%s error: %s", name, jsToStdString(exc).c_str()));
+			handler->writeLog(string::f("onUnload error: %s", jsToStdString(exc).c_str()));
 			JS_FreeValue(ctx, exc);
+			flushMsgStore();
+			return JS_UNDEFINED;
 		}
-		else {
-			JS_FreeValue(ctx, r);
+		return r;
+	}
+
+	// Parses a persisted-config JSON string into a JSValue for rack.onLoad(),
+	// or JS_UNDEFINED when the string is empty or not valid JSON. The caller
+	// must JS_FreeValue the result (a no-op for JS_UNDEFINED).
+	JSValue parsePersistedConfig(const std::string& json) {
+		if (json.empty()) return JS_UNDEFINED;
+		JSValue parsed = JS_ParseJSON(ctx, json.c_str(), json.size(), "<config>");
+		if (JS_IsException(parsed)) {
+			JS_FreeValue(ctx, parsed);
+			JSValue exc = JS_GetException(ctx);
+			handler->writeLog(string::f("Ignoring invalid persisted script config: %s", jsToStdString(exc).c_str()), false);
+			JS_FreeValue(ctx, exc);
+			return JS_UNDEFINED;
 		}
-		flushMsgStore();
+		return parsed;
 	}
 
 	void processInMessage(int midiPort, Message& msg) override {
@@ -406,7 +479,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return callGlobalStringFn("param", "getValueFormat", i);
 	}
 
-	void clearContextMenus() override {
+	void clearContextMenus() {
 		std::lock_guard<std::mutex> lock(contextMenusMutex);
 		if (ctx) {
 			// Frees the stored script callbacks. Only safe on this (UI) thread
@@ -414,32 +487,86 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			// the context, and every JS operation happens on this thread.
 			for (auto& kv : contextMenus) {
 				JS_FreeValue(ctx, kv.second.callbackFn);
+				// JS_FreeValue on JS_UNDEFINED is a safe no-op.
+				JS_FreeValue(ctx, kv.second.onGetValueFn);
 			}
 		}
 		contextMenus.clear();
 		nextContextMenuCallbackId = 1;
 	}
 
-	void getContextMenus(std::vector<ContextMenuSpec>& out) const override {
-		std::lock_guard<std::mutex> lock(contextMenusMutex);
-		out.clear();
-		out.reserve(contextMenus.size());
-		for (const auto& kv : contextMenus) {
-			out.push_back(kv.second.spec);
-		}
-		// callbackIds are assigned monotonically at registration, so sorting by
-		// them yields registration order — the unordered_map's own iteration
-		// order is unspecified.
-		std::sort(out.begin(), out.end(), [](const ContextMenuSpec& a, const ContextMenuSpec& b) {
-			return a.callbackId < b.callbackId;
+	void getContextMenus(const std::function<void(const std::vector<ContextMenuSpec>&)>& callback) override {
+		// The whole snapshot is built on the worker thread, so getContextMenus()
+		// itself needs no lock/copy on the UI thread. Each onGetValue function
+		// is dup'd here under the same lock that guards the map — QuickJS
+		// refcounts are not atomic, so JS_DupValue must only run on the worker
+		// thread. The lock is released before any script call below.
+		runAsync([this, callback]() {
+			if (!ctx) return;
+			struct Snapshot { int id; ContextMenuSpec spec; JSValue onGetValueFn; };
+			std::vector<Snapshot> snap;
+			{
+				std::lock_guard<std::mutex> lock(contextMenusMutex);
+				snap.reserve(contextMenus.size());
+				for (const auto& kv : contextMenus) {
+					snap.push_back({kv.first, kv.second.spec, JS_DupValue(ctx, kv.second.onGetValueFn)});
+				}
+			}
+			// callbackIds are assigned monotonically at registration, so sorting
+			// by them yields registration order — the unordered_map's own
+			// iteration order is unspecified.
+			std::sort(snap.begin(), snap.end(), [](const Snapshot& a, const Snapshot& b) {
+				return a.id < b.id;
+			});
+			std::vector<ContextMenuSpec> result;
+			result.reserve(snap.size());
+			JSValue glob = JS_GetGlobalObject(ctx);
+			JSValue rack = JS_GetPropertyStr(ctx, glob, "rack");
+			for (const Snapshot& s : snap) {
+				ContextMenuSpec spec = s.spec;
+				// Each snapshot owns one dup'd reference; freed after use below.
+				JSValue fn = s.onGetValueFn;
+				if (JS_IsFunction(ctx, fn)) {
+					JSValue r = JS_Call(ctx, fn, rack, 0, NULL);
+					if (JS_IsException(r)) {
+						JS_FreeValue(ctx, r);
+						JSValue exc = JS_GetException(ctx);
+						handler->writeLog(string::f("Context menu error: %s", jsToStdString(exc).c_str()));
+						JS_FreeValue(ctx, exc);
+					}
+					else {
+						if (spec.type == ContextMenuSpec::Type::Boolean) {
+							int b = JS_ToBool(ctx, r);
+							if (b >= 0) spec.checked = (b != 0);
+						}
+						else {
+							double d = 0;
+							if (JS_ToFloat64(ctx, &d, r) >= 0) {
+								int sel = static_cast<int>(d);
+								spec.selected = std::max(0, std::min(sel, static_cast<int>(spec.options.size()) - 1));
+							}
+						}
+						JS_FreeValue(ctx, r);
+					}
+				}
+				JS_FreeValue(ctx, fn);
+				result.push_back(spec);
+			}
+			JS_FreeValue(ctx, rack);
+			JS_FreeValue(ctx, glob);
+			// Invoke the caller's callback with the evaluated specs. It only
+			// touches memory the caller owns (never constructs widgets), so it
+			// is safe to run here on the worker thread.
+			callback(result);
 		});
 	}
 
 	// Fires a registered menu item's onChange callback on the worker thread.
-	// The spec's presentation state (checked/selected) is updated synchronously
-	// on the caller (UI) thread so the next menu build reflects the change
-	// immediately; the actual script call is deferred to runAsync() because it
-	// must run on the worker thread alongside all other JS work.
+	// The presentation state is not stored on the spec — the next menu build
+	// re-evaluates it from onGetValue, so whatever onChange changed in the
+	// script's config is picked up automatically. The actual script call is
+	// deferred to runAsync() because it must run on the worker thread
+	// alongside all other JS work.
 	void invokeContextMenuCallback(int callbackId, int value) override {
 		ContextMenuSpec::Type type;
 		std::string label;
@@ -447,14 +574,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			std::lock_guard<std::mutex> lock(contextMenusMutex);
 			auto it = contextMenus.find(callbackId);
 			if (it == contextMenus.end()) return;
-			ContextMenuEntry& entry = it->second;
+			const ContextMenuEntry& entry = it->second;
 			type = entry.spec.type;
-			if (type == ContextMenuSpec::Type::Boolean) {
-				entry.spec.checked = (value != 0);
-			}
-			else {
+			if (type != ContextMenuSpec::Type::Boolean) {
 				if (value < 0 || value >= static_cast<int>(entry.spec.options.size())) return;
-				entry.spec.selected = value;
 				label = entry.spec.options[value];
 			}
 		}
@@ -716,10 +839,14 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	// rack.registerContextMenu(options) — registers one item in the module's
 	// context menu. Two variants:
-	//   { type: "boolean", label, checked, onChange: fn(checked) }
-	//   { type: "options", label, options: [..], selected, onChange: fn(idx, label) }
-	// Returns true on success. The script callback is stored (owned) by the
-	// engine and fired through invokeContextMenuCallback() on the worker thread.
+	//   { type: "boolean", label, onGetValue: fn() -> bool, onChange: fn(checked) }
+	//   { type: "options", label, options: [..], onGetValue: fn() -> int, onChange: fn(idx, label) }
+	// onGetValue is optional (defaults to value 0) and is evaluated lazily on
+	// the worker thread whenever the menu is built, so it always reflects the
+	// script's current config — unlike a value captured at registration time.
+	// Returns true on success. The script callbacks are stored (owned) by the
+	// engine and fired through invokeContextMenuCallback()/getContextMenus()
+	// on the worker thread.
 	static JSValue js_rack_registerContextMenu(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		MidiScriptEngineQuickJs* e = ctxMap[ctx];
 		if (argc < 1 || !JS_IsObject(argv[0])) return jsThrow(ctx, "registerContextMenu: bad args");
@@ -745,17 +872,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "registerContextMenu: onChange must be a function");
 		}
 
-		if (spec.type == ContextMenuSpec::Type::Boolean) {
-			JSValue checkedV = JS_GetPropertyStr(ctx, argv[0], "checked");
-			int b = JS_ToBool(ctx, checkedV);
-			JS_FreeValue(ctx, checkedV);
-			if (b < 0) {
-				JS_FreeValue(ctx, onChangeV);
-				return jsThrow(ctx, "registerContextMenu: checked must be a boolean");
-			}
-			spec.checked = (b != 0);
-		}
-		else {
+		if (spec.type == ContextMenuSpec::Type::Options) {
 			JSValue optionsV = JS_GetPropertyStr(ctx, argv[0], "options");
 			if (!JS_IsArray(ctx, optionsV)) {
 				JS_FreeValue(ctx, optionsV);
@@ -784,15 +901,17 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				JS_FreeValue(ctx, v);
 			}
 			JS_FreeValue(ctx, optionsV);
+		}
 
-			JSValue selectedV = JS_GetPropertyStr(ctx, argv[0], "selected");
-			if (JS_IsNumber(selectedV)) {
-				double d = 0;
-				JS_ToFloat64(ctx, &d, selectedV);
-				int sel = static_cast<int>(d);
-				spec.selected = std::max(0, std::min(sel, static_cast<int>(len) - 1));
-			}
-			JS_FreeValue(ctx, selectedV);
+		// The current value (checked/selected) is not read at registration:
+		// it is evaluated lazily from onGetValue when the menu is built, so
+		// it always reflects the script's live config. onGetValue is optional
+		// and defaults to value 0.
+		JSValue onGetValueV = JS_GetPropertyStr(ctx, argv[0], "onGetValue");
+		if (!JS_IsFunction(ctx, onGetValueV)) {
+			// Not a function — ignore and default to value 0.
+			JS_FreeValue(ctx, onGetValueV);
+			onGetValueV = JS_UNDEFINED;
 		}
 
 		spec.callbackId = e->nextContextMenuCallbackId++;
@@ -800,9 +919,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			std::lock_guard<std::mutex> lock(e->contextMenusMutex);
 			ContextMenuEntry entry;
 			entry.spec = spec;
-			// Ownership of onChangeV transfers to the map; freed in
-			// clearContextMenus().
+			// Ownership of onChangeV/onGetValueV transfers to the map; freed
+			// in clearContextMenus().
 			entry.callbackFn = onChangeV;
+			entry.onGetValueFn = onGetValueV;
 			e->contextMenus[spec.callbackId] = entry;
 		}
 

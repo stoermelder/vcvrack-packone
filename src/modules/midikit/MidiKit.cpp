@@ -9,6 +9,7 @@
 #include <osdialog.h>
 #include <fstream>
 #include <queue>
+#include <atomic>
 
 namespace StoermelderPackOne {
 namespace MidiKit {
@@ -157,6 +158,8 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	MidiOutput midiOutput;
 	/** [Stored to Json] */
 	std::string script = "";
+	/** [Stored to Json] */
+	std::string scriptConfigJson = "";
 
 	// MPMC queue: midiLogMessages is pushed from the worker thread (writeLog)
 	// and from the caller of loadScript/onReset, so it needs concurrent-producer
@@ -275,17 +278,6 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		onReset();
 	}
 
-	// Runs the active script's onUnload() (all-notes-off etc.) while this
-	// module — the engines' handler — is still fully alive. onUnload() calls
-	// back into the module via handler->writeLog()/input.*/trig.*/param.*, so
-	// it must run before this object (and its members) start tearing down.
-	// Calling closeState() later, from each engine's own destructor, would
-	// route those callbacks through a dangling handler — undefined behaviour.
-	~MidiKitModule() {
-		seLua.closeState();
-		seQuickJs.closeState();
-	}
-
 	void onReset() override {
 		midiInput.reset();
 		midiOutput.reset();
@@ -301,13 +293,35 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			outputPulseGenerator[i].reset();
 		}
 		activeEngine = nullptr;
-		seQuickJs.loadScript("");
 		seLua.loadScript("");
 		seQuickJs.loadScript("");
 	}
 
-	void onSampleRateChange(const Module::SampleRateChangeEvent& e) override {
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		sampleRate = e.sampleRate;
+	}
+
+	void onRemove(const RemoveEvent& e) override {
+		// Runs the active script's onUnload() (all-notes-off etc.) while this
+		// module — the engines' handler — is still fully alive. onUnload() calls
+		// back into the module via handler->writeLog()/input.*/trig.*/param.*, so
+		// it must run before this object (and its members) start tearing down.
+		// Calling closeState() later, from each engine's own destructor, would
+		// route those callbacks through a dangling handler — undefined behaviour.
+		if (activeEngine) {
+			activeEngine->closeState();
+		}
+	}
+
+	void onSave(const SaveEvent& e) override {
+		// Ask the active script for its current config (via rack.onUnload())
+		// so the latest context-menu setting survives a save/reload cycle.
+		// Runs synchronously on the GUI thread, matching the existing
+		// loadScript() pattern; onUnload()'s messages are discarded, so saving
+		// has no audible side effects.
+		if (activeEngine) {
+			scriptConfigJson = activeEngine->captureConfig();
+		}
 	}
 
 	void processBypass(const ProcessArgs& args) override {
@@ -371,6 +385,13 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		json_object_set_new(rootJ, "midiInput", midiInput.toJson());
 		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
 		json_object_set_new(rootJ, "script", json_string(script.c_str()));
+
+		if (!scriptConfigJson.empty()) {
+			json_t* configJ = json_loads(scriptConfigJson.c_str(), 0, NULL);
+			if (configJ) {
+				json_object_set_new(rootJ, "scriptConfig", configJ);
+			}
+		}
 		return rootJ;
 	}
 
@@ -384,10 +405,22 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		if (midiOutputJ && json_is_object(midiOutputJ)) midiOutput.fromJson(midiOutputJ);
 
 		json_t* scriptJ = json_object_get(rootJ, "script");
-		if (scriptJ && json_is_string(scriptJ)) loadScript(json_string_value(scriptJ));
+		if (scriptJ && json_is_string(scriptJ)) {
+			// Restore any persisted script config alongside the script itself.
+			json_t* configJ = json_object_get(rootJ, "scriptConfig");
+			std::string configJson;
+			if (configJ && json_is_object(configJ)) {
+				char* s = json_dumps(configJ, JSON_COMPACT);
+				if (s) {
+					configJson = s;
+					free(s);
+				}
+			}
+			loadScript(json_string_value(scriptJ), configJson);
+		}
 	}
 
-	void loadScript(std::string s) {
+	void loadScript(std::string s, std::string configJson = "") {
 		script = s;
 		sample = 0;
 		inputTriggerTick = 0;
@@ -402,6 +435,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		bool isQuickJs = s.find("@engine QuickJs") != std::string::npos;
 
 		MidiScript::MidiScriptEngine* prevEngine = activeEngine;
+		activeEngine = nullptr;
 		if (isLua) activeEngine = &seLua;
 		if (isQuickJs) activeEngine = &seQuickJs;
 
@@ -416,7 +450,8 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->se = activeEngine;
 		}
 
-		if (activeEngine) activeEngine->loadScript(script.c_str());
+		scriptConfigJson = configJson;
+		if (activeEngine) activeEngine->loadScript(script.c_str(), scriptConfigJson);
 	}
 
 	void clearScript() {
@@ -466,6 +501,69 @@ struct LogDisplay : LedTextDisplay {
 	void reset() {
 		buffer->clear();
 		dirty = true;
+	}
+};
+
+// Placeholder menu entry that builds the script-registered items
+// (rack.registerContextMenu) asynchronously. getContextMenus() evaluates each
+// item's onGetValue callback on the worker thread and then invokes its
+// callback with the evaluated specs.
+struct ScriptContextMenuItems : ui::MenuEntry {
+	struct Context {
+		std::vector<MidiScript::ContextMenuSpec> specs;
+		std::atomic<bool> loaded{false};
+	};
+	MidiKitModule* module;
+	std::shared_ptr<Context> ctx;
+	bool built = false;
+
+	ScriptContextMenuItems(MidiKitModule* module) : module(module) {
+		ctx = std::make_shared<Context>();
+		// Capture a local copy: Apple's Clang rejects capturing the data
+		// member `ctx` by name in a capture list.
+		std::shared_ptr<Context> c = ctx;
+		module->activeEngine->getContextMenus([c](const std::vector<MidiScript::ContextMenuSpec>& specs) {
+			// Runs on the worker thread once every onGetValue has been
+			// evaluated. Only publishes the specs; the menu widgets are
+			// constructed by step() on the UI thread.
+			c->specs = specs;
+			c->loaded.store(true, std::memory_order_release);
+		});
+	}
+
+	void step() override {
+		if (!built && ctx->loaded.load(std::memory_order_acquire)) {
+			built = true;
+			buildItems();
+			requestDelete();
+		}
+		ui::MenuEntry::step();
+	}
+
+	void buildItems() {
+		Menu* menu = dynamic_cast<Menu*>(parent);
+		if (!menu) return;
+		MidiKitModule* m = module;
+		Widget* anchor = this;
+		for (const MidiScript::ContextMenuSpec& spec : ctx->specs) {
+			Widget* item;
+			if (spec.type == MidiScript::ContextMenuSpec::Type::Boolean) {
+				item = createMenuItem(spec.label, CHECKMARK(spec.checked), [m, spec]() {
+					m->activeEngine->invokeContextMenuCallback(spec.callbackId, spec.checked ? 0 : 1);
+				});
+			}
+			else {
+				item = createSubmenuItem(spec.label, "", [m, spec](Menu* sub) {
+					for (size_t i = 0; i < spec.options.size(); i++) {
+						sub->addChild(createMenuItem(spec.options[i], CHECKMARK(i == static_cast<size_t>(spec.selected)), [m, spec, i]() {
+							m->activeEngine->invokeContextMenuCallback(spec.callbackId, static_cast<int>(i));
+						}));
+					}
+				});
+			}
+			menu->addChildAbove(item, anchor);
+			anchor = item;
+		}
 	}
 };
 
@@ -572,29 +670,7 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 				}
 			}
 
-			// Script-registered items (rack.registerContextMenu). appendContextMenu
-			// re-runs every time the menu is opened, so the checkmarks/selection are
-			// always read fresh from the engine.
-			std::vector<MidiScript::ContextMenuSpec> specs;
-			module->activeEngine->getContextMenus(specs);
-			if (!specs.empty()) {
-				for (const MidiScript::ContextMenuSpec& spec : specs) {
-					if (spec.type == MidiScript::ContextMenuSpec::Type::Boolean) {
-						menu->addChild(createMenuItem(spec.label, CHECKMARK(spec.checked), [=]() {
-							module->activeEngine->invokeContextMenuCallback(spec.callbackId, spec.checked ? 0 : 1);
-						}));
-					}
-					else {
-						menu->addChild(createSubmenuItem(spec.label, "", [=](Menu* sub) {
-							for (size_t i = 0; i < spec.options.size(); i++) {
-								sub->addChild(createMenuItem(spec.options[i], CHECKMARK(i == static_cast<size_t>(spec.selected)), [=]() {
-									module->activeEngine->invokeContextMenuCallback(spec.callbackId, static_cast<int>(i));
-								}));
-							}
-						}));
-					}
-				}
-			}
+			menu->addChild(new ScriptContextMenuItems(module));
 		}
 
 		menu->addChild(new MenuSeparator());

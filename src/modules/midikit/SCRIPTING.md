@@ -162,7 +162,12 @@ every example in this document does.
   rack.registerContextMenu({
       type: "boolean",
       label: "Velocity to CC",
-      checked: false,
+      onGetValue: function() {
+          // Return true/false: the checkmark is read lazily, when the
+          // menu is opened, so it always reflects the current state
+          // (e.g. a config restored by onLoad()).
+          return config.emitTrigger;
+      },
       onChange: function(checked) {
           // checked: true/false (boolean)
       }
@@ -175,7 +180,11 @@ every example in this document does.
       type: "options",
       label: "Out mode",
       options: ["Internal", "External", "Both"],
-      selected: 1,
+      onGetValue: function() {
+          // Return the selected index, read lazily when the menu is
+          // opened. Return the index, or -1 for no selection.
+          return config.outMode;
+      },
       onChange: function(selectedIndex, selectedLabel) {
           // selectedIndex: number, selectedLabel: string
       }
@@ -184,17 +193,24 @@ every example in this document does.
   Notes:
   - `label` must be a non-empty string; `options` must be a non-empty array of
     strings; `onChange` must be a function.
-  - `checked` (boolean variant) defaults to `false`; `selected` (options
-    variant) is clamped into range and defaults to `0`.
+  - `onGetValue` is optional and, when present, must be a function returning
+    the item's current value: a boolean for `type: "boolean"`, an index
+    number for `type: "options"`. It is evaluated just-in-time on the worker
+    thread every time the context menu is opened, so the checkmark/selection
+    always reflects the script's live state — including config restored by
+    `onLoad()` on a patch reload. When `onGetValue` is absent the value
+    defaults to `false` / `0`.
   - `onChange` runs on the worker thread (like the other callbacks) when the
     menu item is clicked, and may call any other `rack.*` function. Exceptions
-    inside it are logged as `Context menu callback error: ...` without crashing.
+    inside it are logged as `Context menu callback error: ...` without
+    crashing.
   - The module's presentation state (checkmark/selection) is updated as soon as
     the item is clicked, so the menu reflects the change immediately even
     before the callback has run.
   - All registered items are cleared when the script is reloaded or cleared.
   - Lua uses an equivalent table: `{ type = "boolean", label = "...",
-    checked = false, onChange = function(checked) ... end }`.
+    onGetValue = function() return config.emitTrigger end,
+    onChange = function(checked) ... end }`.
 
 ### `number.*`
 `rescale(x, xMin, xMax, yMin, yMax [, curve])`,

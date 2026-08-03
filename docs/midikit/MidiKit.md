@@ -36,6 +36,8 @@ MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the select
 
 The module also exposes four CV inputs and four panel parameters that can be read from scripts to add modulation or dynamic configuration.
 
+Scripts can persist their configuration across patch saves and reloads via `rack.onLoad()` and `rack.onUnload()` (see [Persistence](#persistence)).
+
 You can use MIDI-KIT as an insert effect via VCV Rack's built-in MIDI Loopback driver. This lets you process incoming messages before they reach other MIDI modules (for example, MIDI‑CC, MIDI‑CV, MIDI‑MAP, or MIDI‑CAT), and likewise process outgoing messages.
 
 ## Examples
@@ -320,6 +322,8 @@ end
 
 `rack.registerContextMenu()` adds items to the module's right-click context menu — a boolean toggle (a menu line with a checkmark) or an options submenu (one entry per option, checkmark on the current selection). Items appear in registration order and can be used to change `config` values live instead of editing the script.
 
+The checkmark/selection state is read **lazily** — each time the menu is opened, the engine calls the item's `onGetValue` callback (if provided) to determine the current value. This means the menu always reflects the live state of the script, even if it was changed programmatically. If `onGetValue` is omitted, the item defaults to `false` (boolean) or `0` (options, i.e. the first option).
+
 JavaScript:
 ```js
 config.channel = 1;
@@ -328,7 +332,9 @@ rack.registerContextMenu({
     type: "options",
     label: "MIDI channel",
     options: ["1", "2", "3"],
-    selected: config.channel - 1,
+    onGetValue: function() {
+        return config.channel - 1;
+    },
     onChange: function(idx) {
         config.channel = idx + 1;
     }
@@ -337,7 +343,9 @@ rack.registerContextMenu({
 rack.registerContextMenu({
     type: "boolean",
     label: "Pass through",
-    checked: config.passThrough,
+    onGetValue: function() {
+        return config.passThrough;
+    },
     onChange: function(checked) {
         config.passThrough = checked;
     }
@@ -352,7 +360,9 @@ rack.registerContextMenu({
     type = "options",
     label = "MIDI channel",
     options = { "1", "2", "3" },
-    selected = config.channel - 1,
+    onGetValue = function()
+        return config.channel - 1
+    end,
     onChange = function(idx)
         config.channel = idx + 1
     end
@@ -361,7 +371,9 @@ rack.registerContextMenu({
 rack.registerContextMenu({
     type = "boolean",
     label = "Pass through",
-    checked = config.passThrough,
+    onGetValue = function()
+        return config.passThrough
+    end,
     onChange = function(checked)
         config.passThrough = checked
     end
@@ -441,8 +453,8 @@ The callbacks below are defined as methods on the `rack` object — `rack.onMidi
 
 - `rack.onMidiMessage(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
 - `rack.onTrigger(trigPort)`: Optional. Called whenever a trigger arrives on CV trigger input port `trigPort` (only *1* is supported in this version). This is the only entry point for script logic that isn't driven by an incoming MIDI message — e.g. sending a MIDI message in response to an external clock/gate. A script that doesn't define it simply never has it called. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onTrigger = function(trigPort) { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
-- `rack.onLoad()`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. Use it in place of a manually-called `init()` function at the bottom of the file. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onLoad = function() { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
-- `rack.onUnload()`: Optional. Called once, right before the script's state is torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onUnload = function() { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
+- `rack.onLoad(persistedConfig)`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. If the script was previously saved with a config (see [Persistence](#persistence)), `persistedConfig` is a JavaScript object (QuickJS) or table (Lua) containing the values returned by the last `rack.onUnload()`. If no config was persisted, `persistedConfig` is `undefined` (QuickJS) / `nil` (Lua), and the script should initialize from its defaults. Use it in place of a manually-called `init()` function at the bottom of the file. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onLoad = function(persistedConfig) { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
+- `rack.onUnload()`: Optional. Called once, right before the script's state is torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. If the script returns a value from `onUnload()`, it is serialized to JSON and persisted with the patch (see [Persistence](#persistence)). **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onUnload = function() { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
 
 ### rack
 
@@ -457,7 +469,9 @@ The callbacks below are defined as methods on the `rack` object — `rack.onMidi
   rack.registerContextMenu({
       type: "boolean",
       label: "Velocity to CC",
-      checked: false,
+      onGetValue: function() {
+          return config.velocityToCc;
+      },
       onChange: function(checked) {
           // checked: true/false (boolean)
       }
@@ -469,7 +483,9 @@ The callbacks below are defined as methods on the `rack` object — `rack.onMidi
       type: "options",
       label: "Out mode",
       options: ["Internal", "External", "Both"],
-      selected: 1,
+      onGetValue: function() {
+          return config.outMode;
+      },
       onChange: function(selectedIndex, selectedLabel) {
           // selectedIndex: number, selectedLabel: string
       }
@@ -477,10 +493,54 @@ The callbacks below are defined as methods on the `rack` object — `rack.onMidi
   ```
   Notes:
   - `label` must be a non-empty string; `options` must be a non-empty array of strings; `onChange` must be a function.
+  - `onGetValue` is an optional callback that returns the current checkmark/selection state. For boolean items it must return a boolean; for options items it must return an integer index (clamped into range). If `onGetValue` is omitted, the item defaults to `false` (boolean) or `0` (options, i.e. the first option). If `onGetValue` returns nothing (undefined/nil), the same defaults apply.
   - `checked` (boolean variant) defaults to `false`; `selected` (options variant) is clamped into range and defaults to `0`.
   - `onChange` runs when the menu item is clicked and may call any other `rack.*` function; exceptions inside it are logged as `Context menu callback error: ...` without crashing.
   - The checkmark/selection updates as soon as the item is clicked, so the menu reflects the change immediately.
   - All registered items are cleared when the script is reloaded or cleared.
+
+### Persistence
+
+Scripts can persist their configuration across patch saves and reloads. The mechanism is a pair of hooks:
+
+- **`rack.onUnload()`** — called when the script is about to be torn down (replaced, module reset, or module removed). If it returns a value, that value is serialized to JSON and stored with the module's patch data.
+- **`rack.onLoad(persistedConfig)`** — called when the script loads. If a persisted config exists, it is deserialized from JSON and passed as `persistedConfig` (a JavaScript object in QuickJS, a Lua table in Lua). If no config was persisted, `persistedConfig` is `undefined` (QuickJS) / `nil` (Lua).
+
+The persisted value must be a plain JSON-serializable object (booleans, numbers, strings, arrays, and nested objects). Functions and other non-serializable values are silently dropped. If `onUnload()` returns nothing (or returns a non-serializable value), no config is persisted and `onLoad()` receives `undefined`/`nil`.
+
+A typical pattern:
+
+```js
+let config = { channel: 1, passThrough: false };
+
+rack.onLoad = function(persistedConfig) {
+    if (persistedConfig) {
+        config = Object.assign({}, config, persistedConfig);
+    }
+};
+
+rack.onUnload = function() {
+    return config;
+};
+```
+
+```lua
+config = { channel = 1, passThrough = false }
+
+rack.onLoad = function(persistedConfig)
+    if persistedConfig then
+        for k, v in pairs(persistedConfig) do
+            config[k] = v
+        end
+    end
+end
+
+rack.onUnload = function()
+    return config
+end
+```
+
+Note that `onUnload()` is also called when the script is replaced by a different script (not just on patch save), so it should be safe to call multiple times. The cleanup messages sent from `onUnload()` (e.g. all-notes-off) are delivered normally, but the persisted config is only saved when the module's `dataToJson()` is called by Rack (i.e. on patch save).
 
 ### input
 

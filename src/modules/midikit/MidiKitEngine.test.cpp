@@ -2025,6 +2025,134 @@ TEST_CASE("onUnload runs again when a second script replaces the first, in both 
 }
 
 
+// --- script config persistence -------------------------------------------
+//
+// rack.onLoad(persistedConfig) restores a config; rack.onUnload() returns the
+// current config. The engine JSON-stringifies onUnload()'s return value and
+// hands it back to onLoad() on the next load — the save/reload round-trip
+// the module's dataToJson()/dataFromJson() drive. This asserts the engine
+// contract directly: captureConfig() reflects context-menu edits, and a
+// reload with that config makes onLoad() see the same values.
+
+static const char* JS_CONFIG = R"(/**
+ * @engine QuickJs
+ */
+let config = { divisor: 6, emitTrigger: true };
+rack.onLoad = function(persisted) {
+    if (persisted) config = Object.assign({}, config, persisted);
+    rack.log("onLoad divisor=" + config.divisor + " emitTrigger=" + config.emitTrigger);
+};
+rack.onUnload = function() {
+    return config;
+};
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Emit trigger",
+    onGetValue: function() {
+		return config.emitTrigger;
+	},
+    onChange: function(checked) {
+		config.emitTrigger = checked;
+	}
+});
+rack.onMidiMessage = function(midiPort, msg) {};
+)";
+
+static const char* LUA_CONFIG = R"(--[[
+@engine Lua
+--]]
+config = { divisor = 6, emitTrigger = true }
+rack.onLoad = function(persisted)
+    if persisted then
+        config.divisor = persisted.divisor or config.divisor
+        config.emitTrigger = persisted.emitTrigger
+    end
+    rack.log("onLoad divisor=" .. config.divisor .. " emitTrigger=" .. tostring(config.emitTrigger))
+end
+rack.onUnload = function()
+    return config
+end
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Emit trigger",
+    onGetValue = function()
+		return config.emitTrigger
+	end,
+    onChange = function(checked)
+        config.emitTrigger = checked
+    end
+})
+rack.onMidiMessage = function(midiPort, msg) end
+)";
+
+// Reads an integer field out of a config JSON string (jansson).
+static json_int_t configInt(const std::string& json, const char* key) {
+	json_error_t error;
+	json_t* j = json_loads(json.c_str(), 0, &error);
+	REQUIRE(j != nullptr);
+	json_t* v = json_object_get(j, key);
+	REQUIRE(v != nullptr);
+	json_int_t result = json_integer_value(v);
+	json_decref(j);
+	return result;
+}
+
+// Reads a boolean field out of a config JSON string (jansson).
+static bool configBool(const std::string& json, const char* key) {
+	json_error_t error;
+	json_t* j = json_loads(json.c_str(), 0, &error);
+	REQUIRE(j != nullptr);
+	json_t* v = json_object_get(j, key);
+	REQUIRE(v != nullptr);
+	bool result = json_is_true(v);
+	json_decref(j);
+	return result;
+}
+
+TEST_CASE("Script config survives capture and reload in both engines", "[MidiKit][CrossEngine]") {
+	auto check = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		drainLog(m);
+
+		// Initial config, as returned by onUnload().
+		std::string config = m->activeEngine->captureConfig();
+		REQUIRE(configInt(config, "divisor") == 6);
+		REQUIRE(configBool(config, "emitTrigger") == true);
+
+		// The user flips a setting via the script's context menu.
+		std::vector<ContextMenuSpec> specs;
+		m->activeEngine->getContextMenus([&specs](const std::vector<ContextMenuSpec>& s) { specs = s; });
+		REQUIRE(specs.size() == 1);
+		m->activeEngine->invokeContextMenuCallback(specs[0].callbackId, 0);
+		drainLog(m);
+
+		// The modified config is what a save would persist.
+		config = m->activeEngine->captureConfig();
+		REQUIRE(configBool(config, "emitTrigger") == false);
+
+		// Reload with the persisted config: onLoad() must restore it.
+		m->loadScript(script, config);
+		std::string reloadLog = drainLog(m);
+		// The log line's number formatting is engine-specific (JS prints
+		// "6", Lua's `..` stringifies as "6.0"), so assert the stable parts
+		// and verify the restored values numerically rather than comparing
+		// log text verbatim — same philosophy as requireEquivalent() above.
+		REQUIRE(reloadLog.find("onLoad divisor=") != std::string::npos);
+		REQUIRE(reloadLog.find("emitTrigger=false") != std::string::npos);
+
+		// The script's config after the reload is the persisted, flipped one.
+		std::string restored = m->activeEngine->captureConfig();
+		REQUIRE(configInt(restored, "divisor") == 6);
+		REQUIRE(configBool(restored, "emitTrigger") == false);
+
+		Test::destroyModule(m);
+	};
+	check(JS_CONFIG);
+	check(LUA_CONFIG);
+}
+
+
 static const char* JS_ON_TRIGGER = R"(/**
  * @engine QuickJs
  */
@@ -2191,11 +2319,21 @@ static MenuResult runMenu(const std::string& script, int clickId = -1, int click
 	                                              : (m->seLua.L != nullptr);
 	r.loadLog = drainLog(m);
 	if (r.loaded) {
-		m->activeEngine->getContextMenus(r.specs);
+		// getContextMenus is asynchronous: the worker evaluates onGetValue and
+		// then invokes the callback with the evaluated specs. The tests use a
+		// SyncTaskWorker, which runs the worker task inline on the calling
+		// thread, so the callback has already fired by the time getContextMenus
+		// returns and r.specs is filled synchronously.
+		auto queryMenus = [&]() {
+			m->activeEngine->getContextMenus([&r](const std::vector<ContextMenuSpec>& specs) {
+				r.specs = specs;
+			});
+		};
+		queryMenus();
 		if (clickId >= 0) {
 			m->activeEngine->invokeContextMenuCallback(clickId, clickValue);
 			r.log = drainLog(m);
-			m->activeEngine->getContextMenus(r.specs);
+			queryMenus();
 		}
 	}
 	Test::destroyModule(m);
@@ -2211,8 +2349,11 @@ static void requireSameMenus(const std::vector<ContextMenuSpec>& a, const std::v
 	for (size_t i = 0; i < a.size(); i++) {
 		REQUIRE(a[i].type == b[i].type);
 		REQUIRE(a[i].label == b[i].label);
-		REQUIRE(a[i].checked == b[i].checked);
-		REQUIRE(a[i].selected == b[i].selected);
+		// checked/selected share one union member; only read the active one.
+		if (a[i].type == ContextMenuSpec::Type::Boolean)
+			REQUIRE(a[i].checked == b[i].checked);
+		else
+			REQUIRE(a[i].selected == b[i].selected);
 		REQUIRE(a[i].options == b[i].options);
 		REQUIRE(a[i].callbackId >= 1);
 	}
@@ -2221,11 +2362,15 @@ static void requireSameMenus(const std::vector<ContextMenuSpec>& a, const std::v
 static const char* JS_REGISTER_BOOL = R"(/**
  * @engine QuickJs
  */
+let v = false;
 rack.registerContextMenu({
 	type: "boolean",
 	label: "Velocity to CC",
-	checked: false,
+	onGetValue: function() {
+		return v;
+	},
 	onChange: function(checked) {
+		v = checked;
 		rack.log("onChange: " + (checked ? "true" : "false"));
 	}
 });
@@ -2234,11 +2379,15 @@ rack.registerContextMenu({
 static const char* LUA_REGISTER_BOOL = R"(--[[
 @engine Lua
 --]]
+v = false
 rack.registerContextMenu({
 	type = "boolean",
 	label = "Velocity to CC",
-	checked = false,
+	onGetValue = function()
+		return v
+	end,
 	onChange = function(checked)
+		v = checked
 		rack.log("onChange: " .. tostring(checked))
 	end
 })
@@ -2274,12 +2423,16 @@ TEST_CASE("registerContextMenu boolean menu is identical", "[MidiKit][CrossEngin
 static const char* JS_REGISTER_OPTIONS = R"(/**
  * @engine QuickJs
  */
+let v = 1;
 rack.registerContextMenu({
 	type: "options",
 	label: "Out mode",
 	options: ["Internal", "External", "Both"],
-	selected: 1,
+	onGetValue: function() {
+		return v;
+	},
 	onChange: function(selectedIndex, selectedLabel) {
+		v = selectedIndex;
 		rack.log("onChange: " + selectedIndex + " " + selectedLabel);
 	}
 });
@@ -2288,12 +2441,16 @@ rack.registerContextMenu({
 static const char* LUA_REGISTER_OPTIONS = R"(--[[
 @engine Lua
 --]]
+v = 1
 rack.registerContextMenu({
 	type = "options",
 	label = "Out mode",
 	options = {"Internal", "External", "Both"},
-	selected = 1,
+	onGetValue = function()
+		return v
+	end,
 	onChange = function(selectedIndex, selectedLabel)
+		v = selectedIndex
 		rack.log("onChange: " .. selectedIndex .. " " .. selectedLabel)
 	end
 })
@@ -2327,15 +2484,15 @@ TEST_CASE("registerContextMenu options menu is identical", "[MidiKit][CrossEngin
 static const char* JS_REGISTER_TWO = R"(/**
  * @engine QuickJs
  */
-rack.registerContextMenu({ type: "boolean", label: "First", checked: false, onChange: function() {} });
-rack.registerContextMenu({ type: "options", label: "Second", options: ["x", "y"], selected: 0, onChange: function() {} });
+rack.registerContextMenu({ type: "boolean", label: "First", onChange: function() {} });
+rack.registerContextMenu({ type: "options", label: "Second", options: ["x", "y"], onChange: function() {} });
 )";
 
 static const char* LUA_REGISTER_TWO = R"(--[[
 @engine Lua
 --]]
-rack.registerContextMenu({ type = "boolean", label = "First", checked = false, onChange = function() end })
-rack.registerContextMenu({ type = "options", label = "Second", options = {"x", "y"}, selected = 0, onChange = function() end })
+rack.registerContextMenu({ type = "boolean", label = "First", onChange = function() end })
+rack.registerContextMenu({ type = "options", label = "Second", options = {"x", "y"}, onChange = function() end })
 )";
 
 TEST_CASE("Multiple registerContextMenu calls keep registration order", "[MidiKit][CrossEngine]") {
@@ -2361,13 +2518,11 @@ static const char* JS_REGISTER_THROW = R"(/**
 rack.registerContextMenu({
 	type: "boolean",
 	label: "Bad",
-	checked: false,
 	onChange: function(checked) { throw new Error("boom"); }
 });
 rack.registerContextMenu({
 	type: "boolean",
 	label: "Good",
-	checked: false,
 	onChange: function(checked) { rack.log("good"); }
 });
 )";
@@ -2378,13 +2533,11 @@ static const char* LUA_REGISTER_THROW = R"(--[[
 rack.registerContextMenu({
 	type = "boolean",
 	label = "Bad",
-	checked = false,
 	onChange = function(checked) error("boom") end
 })
 rack.registerContextMenu({
 	type = "boolean",
 	label = "Good",
-	checked = false,
 	onChange = function(checked) rack.log("good") end
 })
 )";
@@ -2420,13 +2573,13 @@ TEST_CASE("Throwing context-menu callback is logged and the module keeps working
 static const char* JS_REGISTER_BAD_NO_ONCHANGE = R"(/**
  * @engine QuickJs
  */
-rack.registerContextMenu({ type: "boolean", label: "X", checked: false });
+rack.registerContextMenu({ type: "boolean", label: "X" });
 )";
 
 static const char* LUA_REGISTER_BAD_NO_ONCHANGE = R"(--[[
 @engine Lua
 --]]
-rack.registerContextMenu({ type = "boolean", label = "X", checked = false })
+rack.registerContextMenu({ type = "boolean", label = "X" })
 )";
 
 static const char* JS_REGISTER_BAD_TYPE = R"(/**
@@ -2474,4 +2627,76 @@ TEST_CASE("Malformed registerContextMenu fails the load identically", "[MidiKit]
 	lua = runMenu(LUA_REGISTER_BAD_OPTIONS);
 	REQUIRE_FALSE(js.loaded);
 	REQUIRE_FALSE(lua.loaded);
+}
+
+static const char* JS_ONGETVALUE_NO_RETURN_BOOL = R"(/**
+ * @engine QuickJs
+ */
+rack.registerContextMenu({
+	type: "boolean",
+	label: "No return",
+	onGetValue: function() {},
+	onChange: function() {}
+});
+)";
+
+static const char* LUA_ONGETVALUE_NO_RETURN_BOOL = R"(--[[
+@engine Lua
+--]]
+rack.registerContextMenu({
+	type = "boolean",
+	label = "No return",
+	onGetValue = function() end,
+	onChange = function() end
+})
+)";
+
+static const char* JS_ONGETVALUE_NO_RETURN_OPTIONS = R"(/**
+ * @engine QuickJs
+ */
+rack.registerContextMenu({
+	type: "options",
+	label: "No return",
+	options: ["A", "B", "C"],
+	onGetValue: function() {},
+	onChange: function() {}
+});
+)";
+
+static const char* LUA_ONGETVALUE_NO_RETURN_OPTIONS = R"(--[[
+@engine Lua
+--]]
+rack.registerContextMenu({
+	type = "options",
+	label = "No return",
+	options = {"A", "B", "C"},
+	onGetValue = function() end,
+	onChange = function() end
+})
+)";
+
+TEST_CASE("onGetValue returning nothing defaults to false/0", "[MidiKit][CrossEngine]") {
+	// Boolean: a missing return yields undefined (JS) / nil (Lua), which both
+	// engines coerce to false.
+	MenuResult js = runMenu(JS_ONGETVALUE_NO_RETURN_BOOL);
+	MenuResult lua = runMenu(LUA_ONGETVALUE_NO_RETURN_BOOL);
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	requireSameMenus(js.specs, lua.specs);
+	REQUIRE(js.specs.size() == 1);
+	REQUIRE(js.specs[0].type == ContextMenuSpec::Type::Boolean);
+	REQUIRE(js.specs[0].checked == false);
+	REQUIRE(lua.specs[0].checked == false);
+
+	// Options: a missing return yields undefined (JS) / nil (Lua), which both
+	// engines coerce to 0 (the first option).
+	MenuResult jsOpt = runMenu(JS_ONGETVALUE_NO_RETURN_OPTIONS);
+	MenuResult luaOpt = runMenu(LUA_ONGETVALUE_NO_RETURN_OPTIONS);
+	REQUIRE(jsOpt.loaded);
+	REQUIRE(luaOpt.loaded);
+	requireSameMenus(jsOpt.specs, luaOpt.specs);
+	REQUIRE(jsOpt.specs.size() == 1);
+	REQUIRE(jsOpt.specs[0].type == ContextMenuSpec::Type::Options);
+	REQUIRE(jsOpt.specs[0].selected == 0);
+	REQUIRE(luaOpt.specs[0].selected == 0);
 }

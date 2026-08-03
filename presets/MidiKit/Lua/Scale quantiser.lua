@@ -71,7 +71,33 @@ local state = {
     playedAs = {}
 }
 
-rack.onLoad = function()
+local function arraysEqual(a, b)
+    if #a ~= #b then return false end
+    for i = 1, #a do
+        if a[i] ~= b[i] then return false end
+    end
+    return true
+end
+
+-- onLoad optionally receives the config that onUnload returned at the last
+-- save. It is merged over the defaults, so a setting changed via the
+-- right-click context menu survives a patch save/reload.
+rack.onLoad = function(persisted)
+    if persisted then
+        if persisted.channel ~= nil then config.channel = persisted.channel end
+        if persisted.preferUpward ~= nil then config.preferUpward = persisted.preferUpward end
+        if persisted.scale ~= nil then
+            config.scale = persisted.scale
+            -- A persisted scale is a plain table; point it back at the
+            -- matching named scale so the context-menu selection stays valid.
+            for name, scl in pairs(scales) do
+                if arraysEqual(config.scale, scl) then
+                    config.scale = scl
+                    break
+                end
+            end
+        end
+    end
     for n = 0, 127 do
         state.playedAs[n] = -1
     end
@@ -97,6 +123,8 @@ rack.onUnload = function()
             midiOut.send(off)
         end
     end
+    -- Return the current config so the engine can persist it on save.
+    return config
 end
 
 local function matchesChannel(ch)
@@ -180,7 +208,9 @@ rack.registerContextMenu({
     type = "options",
     label = "Scale",
     options = SCALE_LABELS,
-    selected = scaleIndex(),
+    onGetValue = function()
+        return scaleIndex()
+    end,
     onChange = function(idx)
         config.scale = scales[SCALE_NAMES[idx + 1]]
         rack.log("Scale: ", SCALE_LABELS[idx + 1])
@@ -191,7 +221,9 @@ rack.registerContextMenu({
     type = "options",
     label = "Channel",
     options = CHANNEL_LABELS,
-    selected = config.channel,
+    onGetValue = function()
+        return config.channel
+    end,
     onChange = function(idx)
         config.channel = idx
         rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
@@ -201,7 +233,9 @@ rack.registerContextMenu({
 rack.registerContextMenu({
     type = "boolean",
     label = "Round up on ties",
-    checked = config.preferUpward,
+    onGetValue = function()
+        return config.preferUpward
+    end,
     onChange = function(checked)
         config.preferUpward = checked
     end

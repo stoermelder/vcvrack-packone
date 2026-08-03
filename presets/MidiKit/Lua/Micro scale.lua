@@ -274,7 +274,9 @@ rack.registerContextMenu({
     type = "options",
     label = "Input channel",
     options = CHANNEL_LABELS,
-    selected = config.channel,
+    onGetValue = function()
+        return config.channel
+    end,
     onChange = function(idx)
         config.channel = idx
         rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
@@ -284,7 +286,9 @@ rack.registerContextMenu({
 rack.registerContextMenu({
     type = "boolean",
     label = "Always send pitch bend",
-    checked = config.alwaysSendBend,
+    onGetValue = function()
+        return config.alwaysSendBend
+    end,
     onChange = function(checked)
         config.alwaysSendBend = checked
     end

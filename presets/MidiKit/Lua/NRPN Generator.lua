@@ -84,7 +84,9 @@ rack.registerContextMenu({
     type = "options",
     label = "Channel",
     options = CHANNEL_LABELS,
-    selected = config.channel - 1,
+    onGetValue = function()
+        return config.channel - 1
+    end,
     onChange = function(idx)
         config.channel = idx + 1
         rack.log("Channel: ", config.channel)
@@ -95,7 +97,9 @@ rack.registerContextMenu({
     type = "options",
     label = "Ticks per step",
     options = TICKS_LABELS,
-    selected = ticksIndex(),
+    onGetValue = function()
+        return ticksIndex()
+    end,
     onChange = function(idx)
         config.ticksPerStep = TICKS_PER_STEP[idx + 1]
         rack.log("Ticks per step: ", config.ticksPerStep)

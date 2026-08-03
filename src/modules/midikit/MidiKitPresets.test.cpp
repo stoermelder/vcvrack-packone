@@ -2,6 +2,8 @@
 #include <fstream>
 #include <sstream>
 
+using StoermelderPackOne::MidiScript::ContextMenuSpec;
+
 // Smoke test for the shipped example presets in presets/MidiKit/.
 //
 // These scripts are only ever exercised by loading them in Rack, so nothing
@@ -748,6 +750,83 @@ TEST_CASE("'Scale quantiser.js/.lua' reads the root from CV input 1", "[MidiKit]
 	REQUIRE(offScale == std::vector<OutEvent>{{0x9, 1, 71, 100, 0}});
 
 	Test::destroyModule(m);
+}
+
+
+// Parses a single value out of the compact JSON returned by captureConfig().
+static json_int_t configInt(const std::string& json, const char* key) {
+	json_t* root = json_loads(json.c_str(), 0, NULL);
+	if (!root) return 0;
+	json_int_t v = json_integer_value(json_object_get(root, key));
+	json_decref(root);
+	return v;
+}
+
+static bool configBool(const std::string& json, const char* key) {
+	json_t* root = json_loads(json.c_str(), 0, NULL);
+	if (!root) return false;
+	bool v = json_is_true(json_object_get(root, key));
+	json_decref(root);
+	return v;
+}
+
+TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", "[MidiKit][ScaleQuantiser][JSON]") {
+	std::string path = GENERATE(from_range(std::begin(SCALE_QUANTISER_PRESET_PATHS), std::end(SCALE_QUANTISER_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// First module: load the preset and change two settings via the
+	// right-click context menus, exactly as a user would.
+	MidiKitModule* m = loadPreset(path);
+
+	std::vector<ContextMenuSpec> specs;
+	m->activeEngine->getContextMenus([&specs](const std::vector<ContextMenuSpec>& s) { specs = s; });
+	REQUIRE(specs.size() == 3);
+	REQUIRE(specs[1].label == "Channel");
+	REQUIRE(specs[2].label == "Round up on ties");
+
+	// "Channel" option index 1 selects MIDI channel 2 (internal channel 1).
+	m->activeEngine->invokeContextMenuCallback(specs[1].callbackId, 1);
+	// Switch "Round up on ties" on.
+	m->activeEngine->invokeContextMenuCallback(specs[2].callbackId, 1);
+	drainLog(m);
+
+	// Save: Rack calls onSave() before dataToJson(), and onSave() asks the
+	// active script for its current config (via onUnload) so the user's
+	// context-menu changes are what get persisted as "scriptConfig".
+	rack::engine::Module::SaveEvent saveEvent;
+	m->onSave(saveEvent);
+	json_t* rootJ = m->dataToJson();
+	Test::destroyModule(m);
+
+	json_t* configJ = json_object_get(rootJ, "scriptConfig");
+	REQUIRE(configJ != NULL);
+	REQUIRE(json_is_object(configJ));
+	REQUIRE(json_integer_value(json_object_get(configJ, "channel")) == 1);
+	REQUIRE(json_is_true(json_object_get(configJ, "preferUpward")));
+
+	// Second module: reload the patch and confirm the config came back.
+	MidiKitModule* m2 = createModule();
+	m2->dataFromJson(rootJ);
+	json_decref(rootJ);
+
+	// The reloaded module's config must match what the user changed.
+	std::string restored = m2->activeEngine->captureConfig();
+	REQUIRE(configInt(restored, "channel") == 1);
+	REQUIRE(configBool(restored, "preferUpward") == true);
+
+	// The menu presentation state is read lazily from onGetValue, so after a
+	// reload the rebuilt menus reflect the restored config — the regression
+	// this fix targets (checked/selected used to be captured at script load
+	// time, before onLoad() restored the persisted config).
+	std::vector<ContextMenuSpec> restoredSpecs;
+	m2->activeEngine->getContextMenus([&restoredSpecs](const std::vector<ContextMenuSpec>& s) { restoredSpecs = s; });
+	REQUIRE(restoredSpecs.size() == 3);
+	REQUIRE(restoredSpecs[1].label == "Channel");
+	REQUIRE(restoredSpecs[2].label == "Round up on ties");
+	REQUIRE(restoredSpecs[1].selected == 1);
+	REQUIRE(restoredSpecs[2].checked == true);
+
+	Test::destroyModule(m2);
 }
 
 
