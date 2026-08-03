@@ -107,7 +107,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		closeState();
 
 		if (script[0] == '\0') {
-			handler->writeLog("No script", false);
 			return;
 		}
 

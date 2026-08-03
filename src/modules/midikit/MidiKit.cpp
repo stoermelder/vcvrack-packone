@@ -287,7 +287,6 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
 		}
-		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::RESET, 0.f, std::string("")));
 		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
 			outputTriggerActive[i] = true;
 			outputPulseGenerator[i].reset();
@@ -295,6 +294,9 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		activeEngine = nullptr;
 		seLua.loadScript("");
 		seQuickJs.loadScript("");
+
+		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::RESET, 0.f, std::string("")));
+		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, std::string("No script")));
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
