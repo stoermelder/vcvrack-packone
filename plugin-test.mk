@@ -2,6 +2,8 @@
 # Use "make test" to build tests
 # Use "make testrun" to build and run tests
 # Use "make testrun SUCCESS=1" to print test success messages
+# Use "make testrun-one NAME=<Module>" to run a single test binary (builds it if needed)
+# Use "make test-one NAME=<Module>" to rebuild (if out of date) and run a single test binary
 
 ifdef SUCCESS
 	TEST_SUCCESS_FLAG = --success
@@ -36,3 +38,17 @@ testrun: test
 		echo "Running $$t..."; \
 		TESTING=1 DYLD_LIBRARY_PATH=$(RACK_DIR) ./$$t $(TEST_SUCCESS_FLAG); \
 	done
+
+# Run a single test binary (builds it if needed), e.g. make testrun-one NAME=Mb
+# The binary is build/test/<NAME>.test.
+.PHONY: testrun-one
+testrun-one: build/test/$(NAME).test
+	TESTING=1 DYLD_LIBRARY_PATH=$(RACK_DIR) ./$< $(TEST_SUCCESS_FLAG)
+
+# Rebuild (if out of date) and run a single test binary, e.g. make testone NAME=Mb
+# Rebuilds the plugin dylib first, removes the stale binary so it is freshly
+# relinked, then runs it via `testrun-one`.
+.PHONY: test-one
+test-one: $(TARGET)
+	rm -f build/test/$(NAME).test
+	$(MAKE) testrun-one NAME=$(NAME)
