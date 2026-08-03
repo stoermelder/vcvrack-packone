@@ -98,6 +98,20 @@ static midi::Message startMsg() {
 	return msg;
 }
 
+static midi::Message continueMsg() {
+	midi::Message msg;
+	msg.setSize(1);
+	msg.bytes[0] = 0xfb;
+	return msg;
+}
+
+static midi::Message stopMsg() {
+	midi::Message msg;
+	msg.setSize(1);
+	msg.bytes[0] = 0xfc;
+	return msg;
+}
+
 // A 14-bit pitch wheel message. The engine reads it back as
 // (getValue() << 7) | getNote(), so the MSB goes in value and the LSB in note.
 static midi::Message pitchWheel(int ch, int value) {
@@ -253,9 +267,14 @@ static const char* PRESETS[] = {
 	"Scale quantiser",
 	"Chord harmonizer",
 	"NRPN to CC",
+	"NRPN Generator",
 	"Copy Ch1 CC to Ch2",
 	"Rewrite Ch1 to Ch2",
-	"Micro scale"
+	"Micro scale",
+	"Euclidean rhythm generator",
+	"Keyboard split",
+	"Bouncing ball delay",
+	"Gravity well"
 };
 
 // GENERATE re-runs the body once per preset name, and Catch2 treats every
@@ -558,6 +577,735 @@ TEST_CASE("'Arpeggiator.js/.lua' releases the sounding note on unload", "[MidiKi
 		if (out.getStatus() == 0x8 && out.getNote() == soundingNote) sawMatchingNoteOff = true;
 	}
 	REQUIRE(sawMatchingNoteOff);
+
+	Test::destroyModule(m);
+}
+
+
+// --- Dynamic chords: adding or removing a held note mid-arp must rebuild the
+// pattern so the change takes effect on the next step, without corrupting the
+// step position. Note that rebuildPattern() only resets state.step when it has
+// run past the end of the (possibly shrunken) pattern: adding a note keeps the
+// current step and folds the new note in at its press-order position, while
+// removing a note can clamp the step back to 0. These two cases pin the
+// difference. ---
+TEST_CASE("'Arpeggiator.js/.lua' folds a note added mid-arp into the pattern from the current step", "[MidiKit][Arpeggiator]") {
+	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// 1 tick/step, 1 octave, Up mode.
+	MidiKitModule* m = loadArp(path, 0.f, 0.f, 0.5f, 0.f);
+
+	feed(m, noteOn(1, 60, 100));
+	feed(m, noteOn(1, 64, 100));
+	drainLog(m);
+
+	// Step once: pattern [60,64] plays 60, step advances to 1.
+	auto first = feedTick(m);
+	bool saw60 = false;
+	for (auto& e : first) if (e.status == 0x9 && e.note == 60) saw60 = true;
+	REQUIRE(saw60);
+	drainLog(m);
+
+	// Add 67 mid-arp. rebuildPattern() makes the pattern [60,64,67] but does
+	// NOT reset the step - it stays at 1 (within the new length), so 64 still
+	// plays before the newly added 67, which joins at its press-order position.
+	feed(m, noteOn(1, 67, 100));
+	drainLog(m);
+
+	std::vector<uint8_t> notesOn;
+	for (int i = 0; i < 4; i++) {
+		auto events = feedTick(m);
+		for (auto& e : events) if (e.status == 0x9) notesOn.push_back(e.note);
+	}
+
+	// Continuing from step 1 of the rebuilt [60,64,67] pattern.
+	std::vector<uint8_t> expected = {64, 67, 60, 64};
+	REQUIRE(notesOn == expected);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Arpeggiator.js/.lua' clamps the step when a note removed mid-arp shrinks the pattern", "[MidiKit][Arpeggiator]") {
+	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadArp(path, 0.f, 0.f, 0.5f, 0.f);
+
+	feed(m, noteOn(1, 60, 100));
+	feed(m, noteOn(1, 64, 100));
+	feed(m, noteOn(1, 67, 100));
+	drainLog(m);
+
+	// Advance the step twice: plays 60 then 64, leaving step at 2.
+	feedTick(m);
+	feedTick(m);
+	drainLog(m);
+
+	// Remove 60 mid-arp: held becomes [64,67], so the rebuilt pattern is
+	// [64,67] and step 2 is now past its end - rebuildPattern() clamps it to 0
+	// and the next step starts the shrunken pattern from the beginning.
+	feed(m, noteOff(1, 60));
+	drainLog(m);
+
+	std::vector<uint8_t> notesOn;
+	for (int i = 0; i < 3; i++) {
+		auto events = feedTick(m);
+		for (auto& e : events) if (e.status == 0x9) notesOn.push_back(e.note);
+	}
+
+	std::vector<uint8_t> expected = {64, 67, 64};
+	REQUIRE(notesOn == expected);
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the Euclidean rhythm generator preset. It is clocked
+// by the trigger input (not by MIDI), rebuilding its pattern live from the
+// four panel params: Steps (1-16), Fills (0..Steps), Note (0-127), Velocity
+// (1-127). Each trigger tick advances one step and, on a hit, fires a Note-On
+// that sustains until the next trigger tick (a one-step gate). The pattern is
+// the canonical Bjorklund distribution - 4 steps / 2 fills is [0,1,0,1], so
+// hits land on steps 1 and 3 of every bar. Everything arriving on MIDI IN is
+// passed through unchanged.
+static const char* EUCLID_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/Euclidean rhythm generator.js",
+	"presets/MidiKit/Lua/Euclidean rhythm generator.lua"
+};
+
+TEST_CASE("'Euclidean rhythm generator.js/.lua' fires a note on each Euclidean hit", "[MidiKit][EuclidRhythm]") {
+	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// steps=4, fills=2 -> pattern [0,1,0,1] (hits on steps 1 and 3), note 64,
+	// velocity 33, output channel 1.
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(0.2f);   // 4 steps
+	m->params[MidiKitModule::PARAM + 1].setValue(0.5f);   // 2 fills
+	m->params[MidiKitModule::PARAM + 2].setValue(0.5f);   // note 64
+	m->params[MidiKitModule::PARAM + 3].setValue(0.25f);  // velocity 33
+	drainLog(m);
+
+	// Two bars (8 ticks): hits land on ticks 2,4,6,8 (steps 1,3,1,3). The rest
+	// ticks emit no Note-On.
+	std::vector<int> hitTicks;
+	for (int i = 1; i <= 8; i++) {
+		auto events = feedTick(m);
+		bool hit = false;
+		for (auto& e : events) {
+			if (e.status == 0x9) {
+				hit = true;
+				REQUIRE(e.channel == 0);
+				REQUIRE(e.note == 64);
+				REQUIRE(e.value == 33);
+			}
+		}
+		if (hit) hitTicks.push_back(i);
+	}
+	std::vector<int> expected = {2, 4, 6, 8};
+	REQUIRE(hitTicks == expected);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Euclidean rhythm generator.js/.lua' passes MIDI in through unchanged", "[MidiKit][EuclidRhythm]") {
+	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// The script is a pure generator: whatever arrives on MIDI IN is forwarded
+	// untouched on its own channel.
+	auto ccEv = feedCollect(m, cc(1, 20, 100));
+	REQUIRE(ccEv == std::vector<OutEvent>{{0xb, 1, 20, 100, 0}});
+	auto note = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(note == std::vector<OutEvent>{{0x9, 1, 60, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Euclidean rhythm generator.js/.lua' plays the canonical 5-in-8 pattern", "[MidiKit][EuclidRhythm]") {
+	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// steps=8, fills=5 -> the canonical Bjorklund distribution
+	// [1,0,1,1,0,1,1,0], hits on steps 0,2,3,5,6. This pins the algorithm
+	// beyond the trivially symmetric 4-in-2 case.
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(7.0f / 15.0f);  // 8 steps
+	m->params[MidiKitModule::PARAM + 1].setValue(5.0f / 8.0f);   // 5 fills
+	m->params[MidiKitModule::PARAM + 2].setValue(0.5f);          // note 64
+	m->params[MidiKitModule::PARAM + 3].setValue(0.25f);         // velocity 33
+	drainLog(m);
+
+	// One bar (8 ticks): hits on ticks 1,3,4,6,7.
+	std::vector<int> hitTicks;
+	for (int i = 1; i <= 8; i++) {
+		auto events = feedTick(m);
+		bool hit = false;
+		for (auto& e : events) if (e.status == 0x9) hit = true;
+		if (hit) hitTicks.push_back(i);
+	}
+	std::vector<int> expected = {1, 3, 4, 6, 7};
+	REQUIRE(hitTicks == expected);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Euclidean rhythm generator.js/.lua' fills 0 silences and fills == steps fires every step", "[MidiKit][EuclidRhythm]") {
+	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// fills = 0 -> the pattern is all rests: no Note-On across a full bar.
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(0.2f);   // 4 steps
+	m->params[MidiKitModule::PARAM + 1].setValue(0.0f);   // 0 fills
+	m->params[MidiKitModule::PARAM + 2].setValue(0.5f);   // note 64
+	m->params[MidiKitModule::PARAM + 3].setValue(0.25f);  // velocity 33
+	drainLog(m);
+	for (int i = 0; i < 8; i++) {
+		auto events = feedTick(m);
+		for (auto& e : events) REQUIRE_FALSE(e.status == 0x9);
+	}
+	Test::destroyModule(m);
+
+	// fills = steps -> every step is a hit.
+	MidiKitModule* m2 = loadPreset(path);
+	m2->params[MidiKitModule::PARAM + 0].setValue(0.2f);   // 4 steps
+	m2->params[MidiKitModule::PARAM + 1].setValue(1.0f);   // 4 fills
+	m2->params[MidiKitModule::PARAM + 2].setValue(0.5f);   // note 64
+	m2->params[MidiKitModule::PARAM + 3].setValue(0.25f);  // velocity 33
+	drainLog(m2);
+	for (int i = 0; i < 4; i++) {
+		auto events = feedTick(m2);
+		bool hit = false;
+		for (auto& e : events) if (e.status == 0x9) hit = true;
+		REQUIRE(hit);
+	}
+	Test::destroyModule(m2);
+}
+
+TEST_CASE("'Euclidean rhythm generator.js/.lua' gates each hit for exactly one step", "[MidiKit][EuclidRhythm]") {
+	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// steps=4, fills=2 -> [0,1,0,1]. A Note-On on a hit tick must be released
+	// by the very next trigger tick (one-step gate) - the Note-Off comes out
+	// even though the next step is a rest.
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(0.2f);   // 4 steps
+	m->params[MidiKitModule::PARAM + 1].setValue(0.5f);   // 2 fills
+	m->params[MidiKitModule::PARAM + 2].setValue(0.5f);   // note 64
+	m->params[MidiKitModule::PARAM + 3].setValue(0.25f);  // velocity 33
+	drainLog(m);
+
+	// tick 1 (rest): nothing sounds, nothing to release.
+	REQUIRE(feedTick(m).empty());
+
+	// tick 2 (hit): a Note-On goes out.
+	auto t2 = feedTick(m);
+	bool on = false;
+	for (auto& e : t2) if (e.status == 0x9) on = true;
+	REQUIRE(on);
+
+	// tick 3 (rest): the tick-2 note is released - a matching Note-Off.
+	auto t3 = feedTick(m);
+	bool off = false;
+	for (auto& e : t3) if (e.status == 0x8 && e.note == 64) off = true;
+	REQUIRE(off);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Euclidean rhythm generator.js/.lua' output channel menu changes the note channel", "[MidiKit][EuclidRhythm]") {
+	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(0.2f);   // 4 steps
+	m->params[MidiKitModule::PARAM + 1].setValue(0.5f);   // 2 fills
+	m->params[MidiKitModule::PARAM + 2].setValue(0.5f);   // note 64
+	m->params[MidiKitModule::PARAM + 3].setValue(0.25f);  // velocity 33
+
+	// "Output channel" option index 1 -> MIDI channel 2 (internal 1).
+	std::vector<ContextMenuSpec> specs;
+	m->activeEngine->getContextMenus([&specs](const std::vector<ContextMenuSpec>& s) { specs = s; });
+	REQUIRE(specs.size() == 1);
+	REQUIRE(specs[0].label == "Output channel");
+	m->activeEngine->invokeContextMenuCallback(specs[0].callbackId, 1);
+	drainLog(m);
+
+	// The first hit (tick 2) goes out on the new channel.
+	feedTick(m);   // tick 1: rest
+	auto t2 = feedTick(m);
+	bool onCh2 = false;
+	for (auto& e : t2) if (e.status == 0x9 && e.channel == 1) onCh2 = true;
+	REQUIRE(onCh2);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Euclidean rhythm generator.js/.lua' releases the sounding note on unload", "[MidiKit][EuclidRhythm]") {
+	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// fills = steps so the first trigger tick already fires a note, which is
+	// still sounding when the script is unloaded immediately after.
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(0.2f);   // 4 steps
+	m->params[MidiKitModule::PARAM + 1].setValue(1.0f);   // every step hits
+	m->params[MidiKitModule::PARAM + 2].setValue(0.5f);   // note 64
+	m->params[MidiKitModule::PARAM + 3].setValue(0.25f);  // velocity 33
+	drainLog(m);
+
+	feedTick(m);
+	drainLog(m);
+
+	MidiScriptEngine* engineBeforeUnload = m->activeEngine;
+	m->loadScript("");
+
+	// onUnload releases the still-sounding note on output channel 1
+	// (internal 0).
+	auto ev = drainOut(engineBeforeUnload);
+	REQUIRE(ev == std::vector<OutEvent>{{0x8, 0, 64, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Euclidean rhythm generator.js/.lua' rebuilds the pattern live when a param changes", "[MidiKit][EuclidRhythm]") {
+	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(0.2f);   // 4 steps
+	m->params[MidiKitModule::PARAM + 1].setValue(0.5f);   // 2 fills -> [0,1,0,1]
+	m->params[MidiKitModule::PARAM + 2].setValue(0.5f);   // note 64
+	m->params[MidiKitModule::PARAM + 3].setValue(0.25f);  // velocity 33
+	drainLog(m);
+
+	// First bar of [0,1,0,1]: hits on ticks 2 and 4.
+	std::vector<int> firstBar;
+	for (int i = 1; i <= 4; i++) {
+		auto events = feedTick(m);
+		bool hit = false;
+		for (auto& e : events) if (e.status == 0x9) hit = true;
+		if (hit) firstBar.push_back(i);
+	}
+	REQUIRE(firstBar == std::vector<int>{2, 4});
+
+	// Drop fills to 0 mid-run: the pattern is rebuilt from the live knob, so
+	// from the very next tick nothing ever fires again (only releases).
+	m->params[MidiKitModule::PARAM + 1].setValue(0.0f);
+	drainLog(m);
+	for (int i = 0; i < 6; i++) {
+		auto events = feedTick(m);
+		for (auto& e : events) REQUIRE_FALSE(e.status == 0x9);
+	}
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the Keyboard split preset. The shipped config defines
+// three presets, each a split point plus two output channels, activated by a
+// CC whose number matches the preset's `cc` with any value > 0:
+//   preset 1: CC 70, A=1, B=2, split 60  (active at load)
+//   preset 2: CC 71, A=3, B=4, split 48
+//   preset 3: CC 72, A=5, B=6, split 72
+// Notes below the split go to channel A, at or above it to channel B; Note-Offs
+// follow the same rule. The trigger CCs are consumed, and every other non-note
+// message passes through unchanged.
+static const char* KEYBOARD_SPLIT_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/Keyboard split.js",
+	"presets/MidiKit/Lua/Keyboard split.lua"
+};
+
+TEST_CASE("'Keyboard split.js/.lua' routes notes below and above the split to channels A and B", "[MidiKit][KeyboardSplit]") {
+	std::string path = GENERATE(from_range(std::begin(KEYBOARD_SPLIT_PRESET_PATHS), std::end(KEYBOARD_SPLIT_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Default preset 1: A=1 (internal 0), B=2 (internal 1), split at 60.
+	auto below = feedCollect(m, noteOn(1, 50, 100));   // below the split -> A
+	REQUIRE(below == std::vector<OutEvent>{{0x9, 0, 50, 100, 0}});
+	auto at = feedCollect(m, noteOn(1, 60, 100));      // at the split -> B
+	REQUIRE(at == std::vector<OutEvent>{{0x9, 1, 60, 100, 0}});
+	auto above = feedCollect(m, noteOn(1, 84, 100));   // above -> B
+	REQUIRE(above == std::vector<OutEvent>{{0x9, 1, 84, 100, 0}});
+
+	// Note-Offs are rewritten by the same rule.
+	auto offBelow = feedCollect(m, noteOff(1, 50));
+	REQUIRE(offBelow == std::vector<OutEvent>{{0x8, 0, 50, 0, 0}});
+	auto offAbove = feedCollect(m, noteOff(1, 84));
+	REQUIRE(offAbove == std::vector<OutEvent>{{0x8, 1, 84, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Keyboard split.js/.lua' a trigger CC with value > 0 switches the active preset", "[MidiKit][KeyboardSplit]") {
+	std::string path = GENERATE(from_range(std::begin(KEYBOARD_SPLIT_PRESET_PATHS), std::end(KEYBOARD_SPLIT_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// CC 71 (preset 2's trigger) with value 100 activates preset 2 and is
+	// consumed - nothing is forwarded.
+	REQUIRE(feedCollect(m, cc(1, 71, 100)).empty());
+
+	// Preset 2: A=3 (internal 2), B=4 (internal 3), split at 48.
+	auto below = feedCollect(m, noteOn(1, 40, 100));   // below 48 -> A
+	REQUIRE(below == std::vector<OutEvent>{{0x9, 2, 40, 100, 0}});
+	auto at = feedCollect(m, noteOn(1, 48, 100));      // at 48 -> B
+	REQUIRE(at == std::vector<OutEvent>{{0x9, 3, 48, 100, 0}});
+	auto above = feedCollect(m, noteOn(1, 60, 100));   // above -> B
+	REQUIRE(above == std::vector<OutEvent>{{0x9, 3, 60, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Keyboard split.js/.lua' a trigger CC with value 0 does not switch presets", "[MidiKit][KeyboardSplit]") {
+	std::string path = GENERATE(from_range(std::begin(KEYBOARD_SPLIT_PRESET_PATHS), std::end(KEYBOARD_SPLIT_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// CC 71 with value 0 is a control CC (still consumed) but does not switch.
+	REQUIRE(feedCollect(m, cc(1, 71, 0)).empty());
+
+	// Preset 1 is still active: note 50 -> A=1 (internal 0).
+	auto below = feedCollect(m, noteOn(1, 50, 100));
+	REQUIRE(below == std::vector<OutEvent>{{0x9, 0, 50, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Keyboard split.js/.lua' passes non-trigger messages through unchanged", "[MidiKit][KeyboardSplit]") {
+	std::string path = GENERATE(from_range(std::begin(KEYBOARD_SPLIT_PRESET_PATHS), std::end(KEYBOARD_SPLIT_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// A plain CC (not a preset trigger) and a pitch wheel pass through on
+	// their own channel.
+	auto ccEv = feedCollect(m, cc(1, 7, 100));
+	REQUIRE(ccEv == std::vector<OutEvent>{{0xb, 1, 7, 100, 0}});
+	auto pw = feedCollect(m, pitchWheel(1, 8192));
+	REQUIRE(pw == std::vector<OutEvent>{{0xe, 1, 0, 64, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Keyboard split.js/.lua' the preset menu switches the active preset", "[MidiKit][KeyboardSplit]") {
+	std::string path = GENERATE(from_range(std::begin(KEYBOARD_SPLIT_PRESET_PATHS), std::end(KEYBOARD_SPLIT_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	std::vector<ContextMenuSpec> specs;
+	m->activeEngine->getContextMenus([&specs](const std::vector<ContextMenuSpec>& s) { specs = s; });
+	REQUIRE(specs.size() == 1);
+	REQUIRE(specs[0].label == "Preset");
+	REQUIRE(specs[0].options.size() == 3);
+
+	// Option index 2 -> preset 3 (A=5 internal 4, B=6 internal 5, split 72).
+	m->activeEngine->invokeContextMenuCallback(specs[0].callbackId, 2);
+	drainLog(m);
+
+	auto below = feedCollect(m, noteOn(1, 70, 100));   // below 72 -> A
+	REQUIRE(below == std::vector<OutEvent>{{0x9, 4, 70, 100, 0}});
+	auto above = feedCollect(m, noteOn(1, 84, 100));   // above -> B
+	REQUIRE(above == std::vector<OutEvent>{{0x9, 5, 84, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the Bouncing ball delay preset. Every Note-On passes
+// through (the dry note) and additionally spawns a pre-scheduled echo train:
+// each echo's gap is the previous gap times (1 - Gravity) and its velocity is
+// the previous velocity times Bounciness, until the velocity drops below Min
+// velocity (the "settle" point) or the echo cap is hit. Params are read at the
+// moment the Note-On arrives; every non-note message and every Note-Off passes
+// through unchanged. Scheduling is done with midiOut.sendAfterMs(), which the
+// engine emits immediately with a positive `frame` (the dry/immediate note has
+// frame -1), so the drain below sees the whole train at once.
+static const char* BOUNCING_BALL_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/Bouncing ball delay.js",
+	"presets/MidiKit/Lua/Bouncing ball delay.lua"
+};
+
+TEST_CASE("'Bouncing ball delay.js/.lua' passes the note through and echoes it with decaying velocity", "[MidiKit][BouncingBall]") {
+	std::string path = GENERATE(from_range(std::begin(BOUNCING_BALL_PRESET_PATHS), std::end(BOUNCING_BALL_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// bounciness 0.5 (half the velocity survives each bounce), gravity 0,
+	// min velocity 1.
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(0.0f);  // gravity 0
+	m->params[MidiKitModule::PARAM + 1].setValue(0.5f);  // bounciness 0.5
+	m->params[MidiKitModule::PARAM + 2].setValue(0.0f);  // min velocity 1
+	drainLog(m);
+
+	// Dry note first, then one Note-On/Note-Off pair per echo. Velocity decays
+	// 100, 50, 25, 13, 6, 3, 2 (round-half-up) and the train stops once the
+	// float velocity drops below 1.
+	auto ev = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(ev == std::vector<OutEvent>{
+		{0x9, 1, 60, 100, 0},                                          // dry
+		{0x9, 1, 60, 100, 0}, {0x8, 1, 60, 0, 0},                       // echo 1
+		{0x9, 1, 60, 50, 0},  {0x8, 1, 60, 0, 0},                       // echo 2
+		{0x9, 1, 60, 25, 0},  {0x8, 1, 60, 0, 0},                       // echo 3
+		{0x9, 1, 60, 13, 0},  {0x8, 1, 60, 0, 0},                       // echo 4
+		{0x9, 1, 60, 6, 0},   {0x8, 1, 60, 0, 0},                       // echo 5
+		{0x9, 1, 60, 3, 0},   {0x8, 1, 60, 0, 0},                       // echo 6
+		{0x9, 1, 60, 2, 0},   {0x8, 1, 60, 0, 0},                       // echo 7
+	});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Bouncing ball delay.js/.lua' settles once the velocity drops below the min threshold", "[MidiKit][BouncingBall]") {
+	std::string path = GENERATE(from_range(std::begin(BOUNCING_BALL_PRESET_PATHS), std::end(BOUNCING_BALL_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// min velocity 32: vel 100 -> 100, 50, then 25 < 32 -> settle.
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(0.0f);
+	m->params[MidiKitModule::PARAM + 1].setValue(0.5f);
+	m->params[MidiKitModule::PARAM + 2].setValue(31.0f / 126.0f);  // min velocity 32
+	drainLog(m);
+
+	auto ev = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(ev == std::vector<OutEvent>{
+		{0x9, 1, 60, 100, 0},                                          // dry
+		{0x9, 1, 60, 100, 0}, {0x8, 1, 60, 0, 0},                       // echo 1
+		{0x9, 1, 60, 50, 0},  {0x8, 1, 60, 0, 0},                       // echo 2
+	});
+
+	Test::destroyModule(m);
+}
+
+// Drains one feed, capturing each message's scheduled frame so the interval
+// shrink (gravity) is observable. Immediate sends carry frame -1; the
+// sendAfterMs() echoes carry a positive future frame.
+struct FrameEvent {
+	uint8_t status;
+	uint8_t channel;
+	uint8_t note;
+	uint8_t value;
+	int64_t frame;
+};
+
+static std::vector<FrameEvent> feedFrames(MidiKitModule* m, midi::Message msg) {
+	m->activeEngine->processInMessage(0, msg);
+	m->activeEngine->process();
+	std::vector<FrameEvent> events;
+	int port, ticks;
+	midi::Message out;
+	while (m->activeEngine->processOutMessage(port, out, ticks)) {
+		events.push_back({out.getStatus(), out.getChannel(), out.getNote(), out.getValue(), out.frame});
+	}
+	return events;
+}
+
+TEST_CASE("'Bouncing ball delay.js/.lua' gravity shrinks the interval between echoes", "[MidiKit][BouncingBall]") {
+	std::string path = GENERATE(from_range(std::begin(BOUNCING_BALL_PRESET_PATHS), std::end(BOUNCING_BALL_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// gravity 0.2 (intervals shrink to 80% per bounce), bounciness 1.0 (no
+	// velocity decay -> the train runs to the maxEchoes cap), min velocity 1.
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(0.5f);   // gravity 0.2
+	m->params[MidiKitModule::PARAM + 1].setValue(1.0f);   // bounciness 1.0
+	m->params[MidiKitModule::PARAM + 2].setValue(0.0f);   // min velocity 1
+	drainLog(m);
+
+	auto ev = feedFrames(m, noteOn(1, 60, 100));
+
+	// Dry note immediate (frame -1); all maxEchoes = 12 echoes scheduled.
+	std::vector<int64_t> onFrames;
+	for (auto& e : ev) if (e.status == 0x9 && e.frame != -1) onFrames.push_back(e.frame);
+	REQUIRE(onFrames.size() == 12);
+
+	// Every gap is positive and the gaps strictly shrink (gravity > 0).
+	std::vector<int64_t> gaps;
+	for (size_t i = 1; i < onFrames.size(); i++) {
+		int64_t gap = onFrames[i] - onFrames[i - 1];
+		REQUIRE(gap > 0);
+		gaps.push_back(gap);
+	}
+	for (size_t i = 1; i < gaps.size(); i++) REQUIRE(gaps[i] < gaps[i - 1]);
+
+	// The first gap shrinks by the retention factor (1 - gravity) = 0.8, up to
+	// integer frame rounding.
+	REQUIRE(std::abs(double(gaps[1]) - double(gaps[0]) * 0.8) <= 2.0);
+	Test::destroyModule(m);
+
+	// gravity 0 -> uniform delay: consecutive gaps stay equal (within rounding).
+	MidiKitModule* m2 = loadPreset(path);
+	m2->params[MidiKitModule::PARAM + 0].setValue(0.0f);   // gravity 0
+	m2->params[MidiKitModule::PARAM + 1].setValue(1.0f);
+	m2->params[MidiKitModule::PARAM + 2].setValue(0.0f);
+	drainLog(m2);
+
+	auto ev2 = feedFrames(m2, noteOn(1, 60, 100));
+	std::vector<int64_t> gaps2;
+	int64_t prev = -1;
+	for (auto& e : ev2) if (e.status == 0x9 && e.frame != -1) {
+		if (prev >= 0) gaps2.push_back(e.frame - prev);
+		prev = e.frame;
+	}
+	REQUIRE(gaps2.size() == 11);
+	for (size_t i = 1; i < gaps2.size(); i++) {
+		REQUIRE(std::abs(gaps2[i] - gaps2[0]) <= 1);
+	}
+	Test::destroyModule(m2);
+}
+
+TEST_CASE("'Bouncing ball delay.js/.lua' passes Note-Offs and non-note messages through unchanged", "[MidiKit][BouncingBall]") {
+	std::string path = GENERATE(from_range(std::begin(BOUNCING_BALL_PRESET_PATHS), std::end(BOUNCING_BALL_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// A Note-Off is not a Note-On, so it passes through and spawns no echoes.
+	auto off = feedCollect(m, noteOff(1, 60));
+	REQUIRE(off == std::vector<OutEvent>{{0x8, 1, 60, 0, 0}});
+
+	// Non-note messages pass through untouched too.
+	auto ccEv = feedCollect(m, cc(1, 7, 100));
+	REQUIRE(ccEv == std::vector<OutEvent>{{0xb, 1, 7, 100, 0}});
+	auto pw = feedCollect(m, pitchWheel(1, 8192));
+	REQUIRE(pw == std::vector<OutEvent>{{0xe, 1, 0, 64, 0}});
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the Gravity well preset. Every Note-On is retuned
+// toward the configurable Center (param 1, 0-127) by
+//   round(distance * Strength * (1 - velocity / 127))
+// so the bend grows with distance from the center and shrinks with velocity:
+// soft and distant notes fall deep into the well (tension), loud and
+// near-center notes stay put (release). Strength 0 disables the effect, and a
+// note on the center is never bent. Because the sent pitch depends on
+// velocity, the Note-Off arrives with the *played* note and is redirected to
+// the note that was actually sent. Non-note messages pass through unchanged.
+static const char* GRAVITY_WELL_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/Gravity well.js",
+	"presets/MidiKit/Lua/Gravity well.lua"
+};
+
+TEST_CASE("'Gravity well.js/.lua' bends notes toward the center, more for soft and distant notes", "[MidiKit][GravityWell]") {
+	std::string path = GENERATE(from_range(std::begin(GRAVITY_WELL_PRESET_PATHS), std::end(GRAVITY_WELL_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// center 60, strength 1.0.
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(60.0f / 127.0f);  // center 60
+	m->params[MidiKitModule::PARAM + 1].setValue(1.0f);            // strength 1
+	drainLog(m);
+
+	// note 72 (12 above center), vel 100 -> bent 3 down to 69.
+	auto a = feedCollect(m, noteOn(1, 72, 100));
+	REQUIRE(a == std::vector<OutEvent>{{0x9, 1, 69, 100, 0}});
+
+	// same note, vel 40 -> bent further (8) down to 64: softer falls deeper.
+	auto b = feedCollect(m, noteOn(1, 72, 40));
+	REQUIRE(b == std::vector<OutEvent>{{0x9, 1, 64, 40, 0}});
+
+	// note 84 (24 above center), vel 100 -> bent 5 to 79: farther falls more
+	// than note 72's 3 at the same velocity.
+	auto c = feedCollect(m, noteOn(1, 84, 100));
+	REQUIRE(c == std::vector<OutEvent>{{0x9, 1, 79, 100, 0}});
+
+	// note 48 (12 below center), vel 100 -> bent up 3 to 51.
+	auto d = feedCollect(m, noteOn(1, 48, 100));
+	REQUIRE(d == std::vector<OutEvent>{{0x9, 1, 51, 100, 0}});
+
+	// a note on the center is never bent.
+	auto e = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(e == std::vector<OutEvent>{{0x9, 1, 60, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Gravity well.js/.lua' redirects the Note-Off to the bent note", "[MidiKit][GravityWell]") {
+	std::string path = GENERATE(from_range(std::begin(GRAVITY_WELL_PRESET_PATHS), std::end(GRAVITY_WELL_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(60.0f / 127.0f);  // center 60
+	m->params[MidiKitModule::PARAM + 1].setValue(1.0f);            // strength 1
+	drainLog(m);
+
+	// note 72, vel 40 -> sent as 64, so its Note-Off must release 64.
+	auto on = feedCollect(m, noteOn(1, 72, 40));
+	REQUIRE(on == std::vector<OutEvent>{{0x9, 1, 64, 40, 0}});
+	auto off = feedCollect(m, noteOff(1, 72));
+	REQUIRE(off == std::vector<OutEvent>{{0x8, 1, 64, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Gravity well.js/.lua' max velocity and zero strength leave notes unbent", "[MidiKit][GravityWell]") {
+	std::string path = GENERATE(from_range(std::begin(GRAVITY_WELL_PRESET_PATHS), std::end(GRAVITY_WELL_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(60.0f / 127.0f);  // center 60
+	m->params[MidiKitModule::PARAM + 1].setValue(1.0f);            // strength 1
+	drainLog(m);
+
+	// velocity 127 -> the well exerts no pull at all.
+	auto loud = feedCollect(m, noteOn(1, 84, 127));
+	REQUIRE(loud == std::vector<OutEvent>{{0x9, 1, 84, 127, 0}});
+
+	// strength 0 -> the well is off regardless of velocity.
+	m->params[MidiKitModule::PARAM + 1].setValue(0.0f);
+	auto weak = feedCollect(m, noteOn(1, 84, 40));
+	REQUIRE(weak == std::vector<OutEvent>{{0x9, 1, 84, 40, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Gravity well.js/.lua' passes non-note messages through unchanged", "[MidiKit][GravityWell]") {
+	std::string path = GENERATE(from_range(std::begin(GRAVITY_WELL_PRESET_PATHS), std::end(GRAVITY_WELL_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	auto ccEv = feedCollect(m, cc(1, 7, 100));
+	REQUIRE(ccEv == std::vector<OutEvent>{{0xb, 1, 7, 100, 0}});
+	auto pw = feedCollect(m, pitchWheel(1, 8192));
+	REQUIRE(pw == std::vector<OutEvent>{{0xe, 1, 0, 64, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Gravity well.js/.lua' releases the held bent note on unload", "[MidiKit][GravityWell]") {
+	std::string path = GENERATE(from_range(std::begin(GRAVITY_WELL_PRESET_PATHS), std::end(GRAVITY_WELL_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// A bent note that is still held when the script is replaced must be
+	// released at its sent pitch (64), not the played 72.
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(60.0f / 127.0f);  // center 60
+	m->params[MidiKitModule::PARAM + 1].setValue(1.0f);            // strength 1
+	drainLog(m);
+
+	feedCollect(m, noteOn(1, 72, 40));
+	drainLog(m);
+
+	MidiScriptEngine* engineBeforeUnload = m->activeEngine;
+	m->loadScript("");
+
+	// onUnload releases on the script channel the note was played on (channel
+	// 2 = internal 1).
+	auto ev = drainOut(engineBeforeUnload);
+	REQUIRE(ev == std::vector<OutEvent>{{0x8, 1, 64, 0, 0}});
 
 	Test::destroyModule(m);
 }
@@ -1048,6 +1796,167 @@ TEST_CASE("'Micro scale.js/.lua' parses a mixed scl with ratios, cents, comments
 	Test::destroyModule(m);
 }
 
+// --- A unison (the same note played twice) must release in press order, one
+// voice per Note-Off - the queueOfNote FIFO is the part of the script most
+// likely to regress. Round-robin sends the first voice to channel 1 and the
+// second to channel 2; the two Note-Offs must then release channel 1 first and
+// channel 2 second, not the other way round and not both at once. ---
+TEST_CASE("'Micro scale.js/.lua' releases a unison's voices in press order", "[MidiKit][MicroScale]") {
+	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// The tonic (note 60) has no residual bend, so each voice is a single
+	// clean Note-On - the test focuses purely on the FIFO, not on tuning.
+	auto first = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(first == std::vector<OutEvent>{{0x9, 0, 60, 100, 0}});
+	auto second = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(second == std::vector<OutEvent>{{0x9, 1, 60, 100, 0}});
+
+	// The two Note-Offs release in press order: channel 1 first, then channel
+	// 2. A LIFO or a single combined release would break this.
+	auto off1 = feedCollect(m, noteOff(1, 60));
+	REQUIRE(off1 == std::vector<OutEvent>{{0x8, 0, 60, 0, 0}});
+	auto off2 = feedCollect(m, noteOff(1, 60));
+	REQUIRE(off2 == std::vector<OutEvent>{{0x8, 1, 60, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+// --- Voice stealing with the default 8 output channels: once every channel is
+// busy the 9th note displaces the round-robin next channel, and the displaced
+// note's later Note-Off must be dropped so it cannot release the thief. An
+// equal-temperament scale is used so every note passes through unchanged and
+// the test observes channel allocation alone. ---
+TEST_CASE("'Micro scale.js/.lua' steals a busy channel and drops the displaced note", "[MidiKit][MicroScale]") {
+	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// 12-EDO: every scale degree is exactly a semitone, so all notes pass
+	// through with no pitch bend - allocation is the only variable.
+	std::string scl =
+		"! 12edo.scl\n"
+		"!\n"
+		"12-tone equal temperament\n"
+		" 12\n"
+		"!\n"
+		" 100.0\n 200.0\n 300.0\n 400.0\n 500.0\n 600.0\n 700.0\n 800.0\n 900.0\n 1000.0\n 1100.0\n"
+		" 2/1\n";
+	MidiKitModule* m = loadPresetWithScl(path, scl);
+
+	// 8 notes fill the 8 default channels in round-robin order (1..8).
+	for (int n = 0; n < 8; n++) {
+		auto ev = feedCollect(m, noteOn(1, 60 + n, 100));
+		REQUIRE(ev == std::vector<OutEvent>{{0x9, static_cast<uint8_t>(n), static_cast<uint8_t>(60 + n), 100, 0}});
+	}
+
+	// The 9th note finds every channel busy, so it steals the next round-robin
+	// channel - channel 1 (internal 0) - displacing note 60.
+	auto steal = feedCollect(m, noteOn(1, 68, 100));
+	REQUIRE(steal == std::vector<OutEvent>{{0x9, 0, 68, 100, 0}});
+
+	// The displaced note's Note-Off arrives later and must be dropped: its
+	// queue entry was removed at steal time, so releasing it would kill the
+	// thief's voice.
+	REQUIRE(feedCollect(m, noteOff(1, 60)).empty());
+
+	// The thief's own Note-Off releases channel 1.
+	auto rel = feedCollect(m, noteOff(1, 68));
+	REQUIRE(rel == std::vector<OutEvent>{{0x8, 0, 68, 0, 0}});
+
+	// Channel 1 is free again; the next note lands there (round-robin wraps
+	// back to the freed channel rather than skipping it).
+	auto again = feedCollect(m, noteOn(1, 69, 100));
+	REQUIRE(again == std::vector<OutEvent>{{0x9, 0, 69, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+// --- The "Always send pitch bend" context-menu option: with it off (the
+// default) the tonic sits exactly on the centre bend and no pitch wheel is
+// emitted; with it on, the centre bend is sent anyway. This is the script's
+// only alwaysSendBend code path and nothing else in the suite exercises it
+// (the default preset keeps it off). ---
+TEST_CASE("'Micro scale.js/.lua' alwaysSendBend forces a bend even for the tonic", "[MidiKit][MicroScale]") {
+	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	std::vector<ContextMenuSpec> specs;
+	m->activeEngine->getContextMenus([&specs](const std::vector<ContextMenuSpec>& s) { specs = s; });
+	REQUIRE(specs.size() == 2);
+	REQUIRE(specs[0].label == "Input channel");
+	REQUIRE(specs[1].label == "Always send pitch bend");
+
+	// Switch the option on; the next tonic Note-On must be preceded by the
+	// centre bend 8192 (LSB 0, MSB 64) even though it is unchanged.
+	m->activeEngine->invokeContextMenuCallback(specs[1].callbackId, 1);
+	drainLog(m);
+
+	auto ev = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0xe, 0, 0, 64, 0}, {0x9, 0, 60, 100, 0}});
+	feedCollect(m, noteOff(1, 60));
+
+	// Switch it back off: the receiver still remembers the last bend per
+	// channel, so the next tonic (on a fresh round-robin channel) goes out
+	// bend-free again.
+	m->activeEngine->invokeContextMenuCallback(specs[1].callbackId, 0);
+	drainLog(m);
+
+	auto again = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(again == std::vector<OutEvent>{{0x9, 1, 60, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+// --- The "Input channel" context-menu option filters which input channel is
+// retuned. Notes on the filtered channel go through the normal retune path;
+// notes on every other channel pass through untouched - and, crucially, are
+// not tracked, so their Note-Offs pass through as the raw note rather than
+// being redirected to a retuned note. Non-note messages pass through on all
+// channels. ---
+TEST_CASE("'Micro scale.js/.lua' input-channel filter retunes only the chosen channel", "[MidiKit][MicroScale]") {
+	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	std::vector<ContextMenuSpec> specs;
+	m->activeEngine->getContextMenus([&specs](const std::vector<ContextMenuSpec>& s) { specs = s; });
+	// "Input channel" option index 1 selects script channel 1. The script's
+	// channels are 1-based (midi.getChannel returns the Rack nibble + 1), so
+	// the matching note is fed as noteOn(0, ...) and the non-matching one as
+	// noteOn(1, ...).
+	m->activeEngine->invokeContextMenuCallback(specs[0].callbackId, 1);
+	drainLog(m);
+
+	// Channel 1 is still retuned exactly as before.
+	auto in = feedCollect(m, noteOn(0, 62, 100));
+	REQUIRE(in == std::vector<OutEvent>{{0xe, 0, 79, 59, 0}, {0x9, 0, 64, 100, 0}});
+
+	// Channel 2 passes through untouched - not retuned, not tracked.
+	auto out = feedCollect(m, noteOn(1, 62, 100));
+	REQUIRE(out == std::vector<OutEvent>{{0x9, 1, 62, 100, 0}});
+
+	// Non-note messages pass through on both the matching and non-matching
+	// channels.
+	auto ccIn = feedCollect(m, cc(0, 20, 100));
+	REQUIRE(ccIn == std::vector<OutEvent>{{0xb, 0, 20, 100, 0}});
+	auto ccOut = feedCollect(m, cc(1, 20, 100));
+	REQUIRE(ccOut == std::vector<OutEvent>{{0xb, 1, 20, 100, 0}});
+
+	// The channel-1 Note-Off releases the retuned note 64; the channel-2
+	// Note-Off is a passthrough of the raw note 62.
+	auto offIn = feedCollect(m, noteOff(0, 62));
+	REQUIRE(offIn == std::vector<OutEvent>{{0x8, 0, 64, 0, 0}});
+	auto offOut = feedCollect(m, noteOff(1, 62));
+	REQUIRE(offOut == std::vector<OutEvent>{{0x8, 1, 62, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
 
 // Behavioural tests for the Note length quantiser preset. The shipped default
 // is config.lengthTicks=12 counted on trigger input 1. Every Note-On is
@@ -1186,6 +2095,40 @@ TEST_CASE("'Clock divider.js/.lua' resets the phase on Start", "[MidiKit][ClockD
 	// Without the reset the next tick would already reach the divisor; with
 	// it, the phase restarts and the 6th tick after Start is the first one out.
 	for (int i = 0; i < 5; i++) {
+		auto ev = feedCollect(m, clockTick());
+		bool fwd = false;
+		for (auto& e : ev) if (e.status == 0xf) fwd = true;
+		REQUIRE_FALSE(fwd);
+	}
+	auto ev = feedCollect(m, clockTick());
+	int fwd = 0;
+	for (auto& e : ev) if (e.status == 0xf) fwd++;
+	REQUIRE(fwd == 1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Clock divider.js/.lua' forwards Stop and does not reset the phase", "[MidiKit][ClockDivider]") {
+	std::string path = GENERATE(from_range(std::begin(CLOCK_DIVIDER_PRESET_PATHS), std::end(CLOCK_DIVIDER_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// 3 ticks are swallowed, leaving tickCount = 3 (3 < divisor 6).
+	for (int i = 0; i < 3; i++) feedCollect(m, clockTick());
+
+	// Stop is always forwarded untouched - it is a realtime message handled
+	// before the passThroughOther check, so it goes out even mid-count.
+	auto stop = feedCollect(m, stopMsg());
+	bool stopFwd = false;
+	for (auto& e : stop) if (e.status == 0xf) stopFwd = true;
+	REQUIRE(stopFwd);
+
+	// Unlike Start, Stop does not reset the phase: the next forwarded tick is
+	// still the one that completes the count from before the Stop (3 pre-Stop
+	// ticks + 3 more = 6), not 6 ticks after the Stop. Had Stop called
+	// resetPhase(), the 3rd tick after it would still be swallowed (count 3).
+	for (int i = 0; i < 2; i++) {
 		auto ev = feedCollect(m, clockTick());
 		bool fwd = false;
 		for (auto& e : ev) if (e.status == 0xf) fwd = true;
@@ -1382,6 +2325,80 @@ TEST_CASE("'Velocity curve.js/.lua' passes non-note messages through unchanged",
 	Test::destroyModule(m);
 }
 
+// The knob extremes are the whole point of the script - curveAmount=2 turns
+// knob 0.0 into curve +2 and knob 1.0 into curve -2, the only two non-linear
+// settings number.rescale() ever sees at runtime. Both engines run the same
+// formula as Rack's rack::math::rescale() with a dsp::exp2_taylor5() exponent:
+// first the velocity is rescaled linearly onto [1, e], raised to the power
+// 2^curve, then rescaled back onto [1, 127] and rounded. Note the direction:
+// a POSITIVE curve (knob 0.0, exponential) squashes soft notes toward the
+// floor - the full range only opens up at the top of the key travel - while a
+// NEGATIVE curve (knob 1.0, logarithmic) lifts light touches toward the
+// ceiling. (The curve sign in the presets was inverted until 2026-08-03,
+// making knob 0.0 boost instead of squash.) The expected values below are
+// exact, computed from those same functions.
+static int shapedVelocity(MidiKitModule* m, int vel) {
+	auto ev = feedCollect(m, noteOn(1, 60, vel));
+	REQUIRE_FALSE(ev.empty());
+	return ev[0].value;
+}
+
+TEST_CASE("'Velocity curve.js/.lua' exponential knob (0.0) reshapes velocities", "[MidiKit][VelocityCurve]") {
+	std::string path = GENERATE(from_range(std::begin(VELOCITY_CURVE_PRESET_PATHS), std::end(VELOCITY_CURVE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// knob 0.0 -> curve +2: soft notes are squashed toward the floor - only
+	// hard hits open up the range - and the endpoints stay pinned at 1 and 127.
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(0.0f);
+
+	std::vector<std::pair<int, int>> cases = {{1, 1}, {2, 1}, {8, 1}, {32, 2}, {64, 13}, {96, 46}, {120, 102}, {127, 127}};
+	for (auto& c : cases) {
+		REQUIRE(shapedVelocity(m, c.first) == c.second);
+	}
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Velocity curve.js/.lua' logarithmic knob (1.0) reshapes velocities", "[MidiKit][VelocityCurve]") {
+	std::string path = GENERATE(from_range(std::begin(VELOCITY_CURVE_PRESET_PATHS), std::end(VELOCITY_CURVE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// knob 1.0 -> curve -2: light touches are lifted sharply toward the
+	// ceiling (useful for stiff keybeds), and the endpoints stay pinned.
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(1.0f);
+
+	std::vector<std::pair<int, int>> cases = {{1, 1}, {2, 31}, {8, 55}, {32, 86}, {64, 106}, {96, 118}, {120, 125}, {127, 127}};
+	for (auto& c : cases) {
+		REQUIRE(shapedVelocity(m, c.first) == c.second);
+	}
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Velocity curve.js/.lua' keeps every output within the 1..127 window", "[MidiKit][VelocityCurve]") {
+	std::string path = GENERATE(from_range(std::begin(VELOCITY_CURVE_PRESET_PATHS), std::end(VELOCITY_CURVE_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// The script's rescale() works in floats and can land a hair outside the
+	// configured window, so shapeVelocity() must clamp to [minVelocity,
+	// maxVelocity] = [1, 127]. Sweep the whole input range at both knob
+	// extremes: a valid output byte must never drop to 0 (that would read as a
+	// Note-Off) nor exceed 127.
+	MidiKitModule* m = loadPreset(path);
+	for (float knob : {0.0f, 1.0f}) {
+		m->params[MidiKitModule::PARAM + 0].setValue(knob);
+		for (int vel = 1; vel <= 127; vel++) {
+			int out = shapedVelocity(m, vel);
+			REQUIRE(out >= 1);
+			REQUIRE(out <= 127);
+		}
+	}
+
+	Test::destroyModule(m);
+}
+
 
 // Behavioural tests for the NRPN to CC preset. The shipped config.map maps
 // NRPN 0->CC 0, 1->CC 1, 2->CC 2 on ccChannel 1. A full NRPN write is four CCs
@@ -1438,6 +2455,235 @@ TEST_CASE("'NRPN to CC.js/.lua' emits nothing until all four bytes arrive", "[Mi
 	feedCollect(m, cc(1, 98, 1));
 	auto ev = feedCollect(m, cc(1, 6, 64));
 	REQUIRE(ev.empty());
+
+	Test::destroyModule(m);
+}
+
+// The script speaks only NRPN: non-CC messages are dropped by an early return,
+// and non-NRPN CC numbers (anything but 98/99/6/38) fall through to an
+// else/return branch. So a plain CC - CC 7 volume, CC 10 pan, ... - is silently
+// swallowed rather than passed on. That is the intended design (the script
+// converts NRPN and nothing else), so these tests pin it, and also prove the
+// swallowed messages never corrupt the NRPN state machine that follows.
+TEST_CASE("'NRPN to CC.js/.lua' drops non-NRPN CCs and non-CC messages silently", "[MidiKit][NRPN]") {
+	std::string path = GENERATE(from_range(std::begin(NRPN_PRESET_PATHS), std::end(NRPN_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Regular CCs fall through to the else/return branch and are swallowed.
+	auto cc7 = feedCollect(m, cc(1, 7, 100));
+	REQUIRE(cc7.empty());
+	auto cc10 = feedCollect(m, cc(1, 10, 64));
+	REQUIRE(cc10.empty());
+
+	// Non-CC messages (a Note-On here) hit the early return and are dropped too.
+	auto note = feedCollect(m, noteOn(1, 60, 100));
+	REQUIRE(note.empty());
+
+	// None of the dropped messages touched the NRPN state machine: a complete
+	// NRPN write that follows still converts to its CC pair as usual.
+	feedCollect(m, cc(1, 99, 0));
+	feedCollect(m, cc(1, 98, 1));
+	feedCollect(m, cc(1, 6, 64));
+	auto ev = feedCollect(m, cc(1, 38, 0));
+	REQUIRE(ev == std::vector<OutEvent>{{0xb, 0, 1, 64, 0}, {0xb, 0, 33, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the NRPN Generator preset, the companion to "NRPN to
+// CC": it sweeps a 14-bit value up and down and emits it as a spec-compliant
+// NRPN once per ticksPerStep MIDI clock ticks. A send is the 4-CC wire form
+// built by midi.createNRPN()/midi.setNRPN() - CC 99/98 carry the parameter
+// number MSB/LSB and CC 6/38 the value MSB/LSB (see nrpnQuad below). The
+// shipped config is channel 1, nrpnNumber 0, ticksPerStep 8, stepSize 16,
+// maxValue 16383; only Channel and Ticks per step are exposed in the context
+// menu, so the other fields are set by rewriting the config block before load
+// (loadNrpnGen) when a test needs a non-default sweep.
+static const char* NRPN_GENERATOR_PRESET_PATHS[] = {
+	"presets/MidiKit/JavaScript/NRPN Generator.js",
+	"presets/MidiKit/Lua/NRPN Generator.lua"
+};
+
+// The 4-CC wire form midi.setNRPN() expands an NRPN into, in send() order:
+// CC 99 = number MSB, CC 98 = number LSB, CC 6 = value MSB, CC 38 = value LSB,
+// all on the script's 1-based channel ch (OutEvent channels are 0-based).
+static std::vector<OutEvent> nrpnQuad(int ch, int number, int value) {
+	return {
+		{0xb, static_cast<uint8_t>(ch - 1), 99, static_cast<uint8_t>((number >> 7) & 0x7f), 0},
+		{0xb, static_cast<uint8_t>(ch - 1), 98, static_cast<uint8_t>(number & 0x7f), 0},
+		{0xb, static_cast<uint8_t>(ch - 1), 6, static_cast<uint8_t>((value >> 7) & 0x7f), 0},
+		{0xb, static_cast<uint8_t>(ch - 1), 38, static_cast<uint8_t>(value & 0x7f), 0},
+	};
+};
+
+// Feeds n consecutive MIDI clock ticks and returns everything the generator
+// emitted across them. Intermediate ticks produce nothing; only the Nth tick
+// (a step boundary) yields the NRPN quad, so this is just that tick's output.
+static std::vector<OutEvent> feedTicks(MidiKitModule* m, int n) {
+	std::vector<OutEvent> all;
+	for (int i = 0; i < n; i++) {
+		auto ev = feedCollect(m, clockTick());
+		all.insert(all.end(), ev.begin(), ev.end());
+	}
+	return all;
+}
+
+// Loads the NRPN Generator preset with an arbitrary config. The shipped
+// defaults are rewritten in the script text before loading, so the sweep
+// arithmetic (stepSize/maxValue/nrpnNumber) can be driven with a handful of
+// steps instead of the ~1000 the shipped stepSize=16/maxValue=16383 need.
+// The two engines spell the config the same way apart from the assignment
+// operator: JS "field: value", Lua "field = value". Each replacement is
+// asserted to have been found so a preset edit cannot silently skip a field.
+static MidiKitModule* loadNrpnGen(const std::string& relPath, int channel, int nrpnNumber, int ticksPerStep, int stepSize, int maxValue) {
+	std::string script = readFile(repoRoot() + "/" + relPath);
+	const char* sep = (relPath.find("Lua/") != std::string::npos) ? " = " : ": ";
+	auto set = [&script, sep](const char* name, int oldVal, int newVal) {
+		std::string from = std::string(name) + sep + std::to_string(oldVal);
+		size_t at = script.find(from);
+		REQUIRE(at != std::string::npos);
+		script.replace(at, from.size(), std::string(name) + sep + std::to_string(newVal));
+	};
+	set("channel", 1, channel);
+	set("nrpnNumber", 0, nrpnNumber);
+	set("ticksPerStep", 8, ticksPerStep);
+	set("stepSize", 16, stepSize);
+	set("maxValue", 16383, maxValue);
+
+	MidiKitModule* m = createModule();
+	m->loadScript(script);
+	std::string loadLog = drainLog(m);
+	CATCH_INFO("preset: " << relPath);
+	CATCH_INFO("load log:\n" << loadLog);
+	REQUIRE(loadLog.find("rror") == std::string::npos);
+	REQUIRE(loadLog.find("Script loaded") != std::string::npos);
+	return m;
+}
+
+TEST_CASE("'NRPN Generator.js/.lua' sweeps the value once per ticksPerStep ticks", "[MidiKit][NRPNGenerator]") {
+	std::string path = GENERATE(from_range(std::begin(NRPN_GENERATOR_PRESET_PATHS), std::end(NRPN_GENERATOR_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Default ticksPerStep=8: the 8th tick is the first step boundary. The
+	// value starts at 0 and advanceValue() runs before sendNrpn(), so the
+	// first emitted value is 0 + 16 = 16, not 0.
+	auto first = feedTicks(m, 8);
+	REQUIRE(first == nrpnQuad(1, 0, 16));
+
+	// The next 8 ticks advance the sweep to 32.
+	auto second = feedTicks(m, 8);
+	REQUIRE(second == nrpnQuad(1, 0, 32));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'NRPN Generator.js/.lua' emits nothing until the first full step", "[MidiKit][NRPNGenerator]") {
+	std::string path = GENERATE(from_range(std::begin(NRPN_GENERATOR_PRESET_PATHS), std::end(NRPN_GENERATOR_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// 7 ticks leave tickCount at 7 - below the 8-tick step - so no NRPN yet.
+	REQUIRE(feedTicks(m, 7).empty());
+
+	// The 8th tick completes the first step.
+	REQUIRE(feedTicks(m, 1) == nrpnQuad(1, 0, 16));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'NRPN Generator.js/.lua' resets the phase on Start and Continue", "[MidiKit][NRPNGenerator]") {
+	std::string path = GENERATE(from_range(std::begin(NRPN_GENERATOR_PRESET_PATHS), std::end(NRPN_GENERATOR_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Partial ticks before Start: tickCount reaches 3, below the step.
+	feedTicks(m, 3);
+	REQUIRE(feedCollect(m, startMsg()).empty());
+
+	// Start reset the count to 0, so the next NRPN is not on tick 5 (the
+	// remainder of the abandoned step) but on the 8th tick after Start.
+	REQUIRE(feedTicks(m, 7).empty());
+	REQUIRE(feedTicks(m, 1) == nrpnQuad(1, 0, 16));
+
+	// Same for Continue after a partial run.
+	feedTicks(m, 4);
+	REQUIRE(feedCollect(m, continueMsg()).empty());
+	REQUIRE(feedTicks(m, 7).empty());
+	REQUIRE(feedTicks(m, 1) == nrpnQuad(1, 0, 32));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'NRPN Generator.js/.lua' context menu changes ticks per step and channel", "[MidiKit][NRPNGenerator]") {
+	std::string path = GENERATE(from_range(std::begin(NRPN_GENERATOR_PRESET_PATHS), std::end(NRPN_GENERATOR_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	std::vector<ContextMenuSpec> specs;
+	m->activeEngine->getContextMenus([&specs](const std::vector<ContextMenuSpec>& s) { specs = s; });
+	REQUIRE(specs.size() == 2);
+	REQUIRE(specs[0].label == "Channel");
+	REQUIRE(specs[1].label == "Ticks per step");
+
+	// "Ticks per step" option index 1 -> TICKS_PER_STEP[1] = 2 ticks/step.
+	m->activeEngine->invokeContextMenuCallback(specs[1].callbackId, 1);
+	// "Channel" option index 1 -> MIDI channel 2 (internal channel 1).
+	m->activeEngine->invokeContextMenuCallback(specs[0].callbackId, 1);
+	drainLog(m);
+
+	// 2 ticks now complete a step; the quad goes out on the new channel.
+	REQUIRE(feedTicks(m, 2) == nrpnQuad(2, 0, 16));
+
+	// The menus report the new selections (read back through onGetValue).
+	std::vector<ContextMenuSpec> after;
+	m->activeEngine->getContextMenus([&after](const std::vector<ContextMenuSpec>& s) { after = s; });
+	REQUIRE(after[0].selected == 1);
+	REQUIRE(after[1].selected == 1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'NRPN Generator.js/.lua' encodes the NRPN number as 14-bit MSB/LSB", "[MidiKit][NRPNGenerator]") {
+	std::string path = GENERATE(from_range(std::begin(NRPN_GENERATOR_PRESET_PATHS), std::end(NRPN_GENERATOR_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// nrpnNumber 257 = 0b100000001: CC 99 carries MSB 2, CC 98 carries LSB 1.
+	// Everything else stays at the default, so the first step is value 16.
+	MidiKitModule* m = loadNrpnGen(path, 1, 257, 8, 16, 16383);
+
+	REQUIRE(feedTicks(m, 8) == nrpnQuad(1, 257, 16));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'NRPN Generator.js/.lua' clamps at maxValue and reverses the sweep", "[MidiKit][NRPNGenerator]") {
+	std::string path = GENERATE(from_range(std::begin(NRPN_GENERATOR_PRESET_PATHS), std::end(NRPN_GENERATOR_PRESET_PATHS)));
+	CATCH_INFO("preset: " << path);
+
+	// A tiny sweep (stepSize 100, maxValue 300) reaches both ends in a handful
+	// of steps instead of the ~1000 the shipped config needs, and every value
+	// is > 127 so the 14-bit MSB/LSB split of CC 6/38 is exercised too (200 ->
+	// CC 6 = 1, CC 38 = 72; 300 -> CC 6 = 2, CC 38 = 44).
+	MidiKitModule* m = loadNrpnGen(path, 1, 0, 8, 100, 300);
+
+	REQUIRE(feedTicks(m, 8) == nrpnQuad(1, 0, 100));
+	REQUIRE(feedTicks(m, 8) == nrpnQuad(1, 0, 200));
+	// 300 hits maxValue: the value is clamped there, not overshot to 400...
+	REQUIRE(feedTicks(m, 8) == nrpnQuad(1, 0, 300));
+	// ...and the direction flips.
+	REQUIRE(feedTicks(m, 8) == nrpnQuad(1, 0, 200));
+	REQUIRE(feedTicks(m, 8) == nrpnQuad(1, 0, 100));
+	// 0 hits the bottom and flips back up.
+	REQUIRE(feedTicks(m, 8) == nrpnQuad(1, 0, 0));
+	REQUIRE(feedTicks(m, 8) == nrpnQuad(1, 0, 100));
 
 	Test::destroyModule(m);
 }

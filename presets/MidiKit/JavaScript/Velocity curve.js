@@ -56,8 +56,10 @@ param.getValueFormat = function(port) {
     if (port === config.curveParam) {
         let v = param.getValue(config.curveParam);
         // Report the curve as a signed shape amount rather than a raw 0..1,
-        // so the panel reads "-4.0 .. 0.0 .. +4.0" around linear.
-        let shaped = (v - 0.5) * 2 * config.curveAmount;
+        // so the panel reads "-2.0 .. 0.0 .. +2.0" around linear (curveAmount=2).
+        // Same sign as shapeVelocity()'s curve, so the readout matches the
+        // curve actually applied.
+        let shaped = -(v - 0.5) * 2 * config.curveAmount;
         return number.toString(shaped);
     }
     return "";
@@ -78,7 +80,11 @@ function matchesChannel(ch) {
 // exponential shaping wanted here - no manual pow() needed.
 function shapeVelocity(vel) {
     let knob = param.getValue(config.curveParam);
-    let curve = (knob - 0.5) * 2 * config.curveAmount;
+    // Negated so a low knob (exponential) squashes soft notes toward the floor
+    // and a high knob (logarithmic) lifts them toward the ceiling - matching
+    // the header description. The sign was inverted until 2026-08-03, which
+    // made knob 0.0 boost instead of squash.
+    let curve = -(knob - 0.5) * 2 * config.curveAmount;
     let out = number.rescale(vel, 1, 127, config.minVelocity, config.maxVelocity, curve);
 
     // Guard the endpoints: rescale works in floats and can land a hair outside
