@@ -84,7 +84,9 @@ conventionally present but not checked by the loader.
   single trigger input, so this is always `1`) crosses the trigger
   threshold. It is the only way to run script logic that isn't driven by an
   incoming MIDI message — e.g. reading `trig.getTicks()`/`input.*` and
-  sending a MIDI message in response to an external clock/gate. A script
+  sending a MIDI message in response to an external clock/gate, or streaming
+  a [Tipsy](#trig-dedicated-triggergate-ports) message with `trig.sendTipsy()`
+  on the trigger output. A script
   that never defines it simply never has it called; unlike
   `rack.onMidiMessage`, there is no load-time log warning for omitting it.
   In QuickJs, assign it to the `rack` object —
@@ -228,6 +230,23 @@ these even though `math.*` is also available, for script portability).
 - `trig.isHigh(i [, ch])`, `trig.isLow(i [, ch])`.
 - `trig.setHigh(i [, ch])`, `trig.setLow(i [, ch])`, `trig.setTrigger(i [, ch])`
   (momentary trigger), `trig.setGate(i [, ch], durationMs)`.
+- `trig.sendTipsy(data [, mimeType])` — encode `data` (a string) with the
+  [Tipsy protocol](https://github.com/baconpaul/tipsy-encoder) and stream it
+  out the trigger output as CV voltages, one voltage per sample until the
+  message is complete. The optional `mimeType` (a string) specifies the
+  content type and defaults to `"text/plain"`; the payload is capped at
+  256 bytes. The stream is meant for modules that understand the Tipsy
+  protocol (such as [TRANSIT](../../transit/Transit.md)) and temporarily
+  takes over the trigger output while it is being transmitted. Unlike the
+  `midiOut.*` senders, `sendTipsy` sends no MIDI: it is not routed through
+  `midiOut.selectPort()`, does not consume a message-handle slot, and is not
+  subject to the "sent once per callback" rule.
+  ```js
+  rack.onTrigger = function(trigPort) {
+      trig.sendTipsy("Hello Tipsy!");                              // mime defaults to "text/plain"
+      trig.sendTipsy('{"label":"My snapshot","value":42}', "application/json");
+  };
+  ```
 
 ### `param.*` (panel knobs)
 - `param.enable(i)` — activate param `i`.

@@ -105,6 +105,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	void loadScript(const char* script, const std::string& persistedConfigJson = "") override {
 		closeState();
+		resetTipsyOutput();
 
 		if (script[0] == '\0') {
 			return;
@@ -678,6 +679,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _trig, "setHigh", JS_NewCFunction(ctx, js_trig_setHigh, "setHigh", 2));
 		JS_SetPropertyStr(ctx, _trig, "setLow", JS_NewCFunction(ctx, js_trig_setLow, "setLow", 2));
 		JS_SetPropertyStr(ctx, _trig, "setTrigger", JS_NewCFunction(ctx, js_trig_setTrigger, "setTrigger", 2));
+		JS_SetPropertyStr(ctx, _trig, "sendTipsy", JS_NewCFunction(ctx, js_trig_sendTipsy, "sendTipsy", 2));
 
 		// param
 		const char* paramSrc =
@@ -1642,6 +1644,57 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 
 		return jsThrow(ctx, "midiOut.sendAfterTrigger: bad args");
+	}
+
+	static JSValue js_trig_sendTipsy(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		// trig.sendTipsy(data, [mimeType])
+		//   data: string or ArrayBuffer (binary data to encode)
+		//   mimeType: optional string (default "text/plain")
+		
+		if (argc < 1) return jsThrow(ctx, "trig.sendTipsy: requires data argument");
+		
+		// Handle both string and ArrayBuffer for data
+		const unsigned char* data = nullptr;
+		uint32_t dataLen = 0;
+		
+		if (JS_IsString(argv[0])) {
+			size_t len;
+			const char* str = JS_ToCStringLen(ctx, &len, argv[0]);
+			if (!str) {
+				return jsThrow(ctx, "trig.sendTipsy: invalid data");
+			}
+			data = reinterpret_cast<const unsigned char*>(str);
+			dataLen = static_cast<uint32_t>(len);
+			JS_FreeCString(ctx, str);
+		}
+		else {
+			// JS_GetArrayBuffer returns NULL when the value is not an ArrayBuffer
+			size_t byteLen;
+			uint8_t* buffer = JS_GetArrayBuffer(ctx, &byteLen, argv[0]);
+			if (!buffer) {
+				return jsThrow(ctx, "trig.sendTipsy: data must be string or ArrayBuffer");
+			}
+			data = buffer;
+			dataLen = static_cast<uint32_t>(byteLen);
+		}
+		
+		const char* mimeType = "text/plain";
+		const char* mimeDyn = nullptr;
+		if (argc >= 2) {
+			mimeDyn = JS_ToCString(ctx, argv[1]);
+			if (!mimeDyn) return jsThrow(ctx, "trig.sendTipsy: invalid mimeType");
+			mimeType = mimeDyn;
+		}
+		
+		auto* engine = ctxMap[ctx];
+		bool success = engine->sendTipsy(mimeType, data, dataLen);
+		if (mimeDyn) JS_FreeCString(ctx, mimeDyn);
+		
+		if (!success) {
+			return jsThrow(ctx, "trig.sendTipsy: failed to initiate message");
+		}
+		
+		return JS_UNDEFINED;
 	}
 };
 

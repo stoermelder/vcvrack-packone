@@ -88,6 +88,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	void loadScript(const char* script, const std::string& persistedConfigJson = "") override {
 		closeState();
+		resetTipsyOutput();
 
 		if (script[0] == '\0') {
 			return;
@@ -783,6 +784,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("setHigh",     lua_trig_setHigh);
 		setTableFunc("setLow",      lua_trig_setLow);
 		setTableFunc("setTrigger",  lua_trig_setTrigger);
+		setTableFunc("sendTipsy",   lua_trig_sendTipsy);
 		lua_setglobal(L, "trig");
 
 		// ── param table ──────────────────────────────────────────────────────
@@ -1721,6 +1723,38 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		m->sendOrder = e->sendCounter++;
 		m->msg.frame = -1;
 		m->tick = currentTicks + ticks;
+		return 0;
+	}
+
+	static int lua_trig_sendTipsy(lua_State* L) {
+		// trig.sendTipsy(data, [mimeType])
+		//   data: string (binary data to encode)
+		//   mimeType: optional string (default "text/plain")
+		
+		auto* e = getEngine(L);
+		
+		if (lua_gettop(L) < 1) {
+			luaL_error(L, "trig.sendTipsy: requires data argument");
+		}
+		
+		size_t dataLen = 0;
+		const char* data = luaL_checklstring(L, 1, &dataLen);
+		
+		const char* mimeType = "text/plain";
+		if (lua_gettop(L) >= 2) {
+			mimeType = luaL_checkstring(L, 2);
+		}
+		
+		if (!mimeType || !data) {
+			luaL_error(L, "trig.sendTipsy: invalid arguments");
+		}
+		
+		bool success = e->sendTipsy(mimeType, reinterpret_cast<const unsigned char*>(data), static_cast<uint32_t>(dataLen));
+		
+		if (!success) {
+			luaL_error(L, "trig.sendTipsy: failed to initiate message");
+		}
+		
 		return 0;
 	}
 };

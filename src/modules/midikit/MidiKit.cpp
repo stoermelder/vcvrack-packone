@@ -377,6 +377,11 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 					outputs[OUTPUT_TRIG].setVoltage(s ? 10.f : 0.f, i);
 				}
 			}
+			
+			// Process Tipsy output buffer if active
+			if (activeEngine) {
+				activeEngine->processTipsyOutput(0);
+			}
 		}
 
 		sample++;

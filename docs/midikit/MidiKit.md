@@ -318,6 +318,36 @@ rack.onTrigger = function(trigPort)
 end
 ```
 
+### Send Tipsy protocol data via CV output
+
+`trig.sendTipsy(data, [mimeType])` encodes binary `data` using the Tipsy protocol and outputs it as CV voltages on the trigger output. The optional `mimeType` argument defaults to `"text/plain"`. This is useful for communicating with modules that understand the Tipsy protocol, such as Transit for preset snapshots.
+
+JavaScript:
+```js
+rack.onMidiMessage = function(midiPort, msg) {
+   // Send a text message via Tipsy protocol (mime defaults to text/plain)
+   trig.sendTipsy("Preset changed!");
+   
+   // Or send JSON data with an explicit mime type
+   let config = JSON.stringify({ channel: 1, mode: "auto" });
+   trig.sendTipsy(config, "application/json");
+};
+```
+
+Lua:
+```lua
+rack.onMidiMessage = function(midiPort, msg)
+   -- Send a text message via Tipsy protocol (mime defaults to text/plain)
+   trig.sendTipsy("Preset changed!")
+   
+   -- Or send JSON-like data with an explicit mime type
+   local config = '{"channel":1,"mode":"auto"}'
+   trig.sendTipsy(config, "application/json")
+end
+```
+
+**Note:** The Tipsy-encoded data is output sequentially as CV voltages on the trigger output, one voltage per sample. The receiving module must understand the Tipsy protocol to decode the data correctly. When no Tipsy message is being sent, the trigger output is driven by the script's `trig.*` functions; a `trig.sendTipsy` call temporarily takes over the trigger output while its encoded stream is transmitted.
+
 ### Add items to the module's context menu
 
 `rack.registerContextMenu()` adds items to the module's right-click context menu — a boolean toggle (a menu line with a checkmark) or an options submenu (one entry per option, checkmark on the current selection). Items appear in registration order and can be used to change `config` values live instead of editing the script.
@@ -559,6 +589,9 @@ Note that `onUnload()` is also called when the script is replaced by a different
 - `trig.setHigh(trigPort, [channel = 1])`: Sets the trigger output port `trigPort` (only *1* is supported in this version) to 10V on polyphonic `channel` (1..16).
 - `trig.setLow(trigPort, [channel = 1])`: Sets the trigger output port `trigPort` (only *1* is supported in this version) to 0V on polyphonic `channel` (1..16).
 - `trig.setTrigger(trigPort, [channel = 1])`: Sends a trigger on trigger output port `trigPort` (only *1* is supported in this version) on polyphonic `channel` (1..16).
+- `trig.sendTipsy(data, [mimeType])`: Encodes binary `data` using the [Tipsy protocol](https://github.com/baconpaul/tipsy-encoder) and outputs it as a stream of CV voltages on the trigger output — one voltage per sample until the message is complete. The optional `mimeType` parameter specifies the content type and defaults to `"text/plain"` (e.g., `"text/plain"`, `"application/json"`). This allows scripts to transmit arbitrary binary data through the CV interface, compatible with modules that understand the Tipsy protocol (such as Transit). The payload is limited to 256 bytes.
+
+The trigger output can also carry [Tipsy](https://github.com/baconpaul/tipsy-encoder) protocol data sent with [`trig.sendTipsy()`](#trig). While such a message is being transmitted, the script's trigger functions temporarily take a back seat — each encoded sample of the Tipsy stream takes over the trigger output until the message is complete.
 
 ### param
 

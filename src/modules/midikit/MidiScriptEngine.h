@@ -1,7 +1,7 @@
 #pragma once
 #include "../../plugin.hpp"
 #include "../../utils/TaskWorker.hpp"
-#include <vector>
+#include "tipsy-encoder/include/tipsy/tipsy.h"
 
 namespace StoermelderPackOne {
 namespace MidiScript {
@@ -131,6 +131,107 @@ struct MidiScriptEngine {
 			return true;
 		}
 		return false;
+	}
+
+	// Caps on Tipsy payloads. The pending queue entry is a fixed-size POD so
+	// the audio thread's shift() never heap-allocates; script payloads are
+	// capped accordingly (mime types match tipsy::kMaxMimeTypeSize, data
+	// matches the established sysExMaxPayloadLength cap).
+	static constexpr size_t tipsyMaxMimeTypeSize = 256;
+	static constexpr size_t tipsyMaxPayloadLength = 256;
+
+	// A Tipsy message queued by sendTipsy() (script/worker thread) and
+	// consumed by processTipsyOutput() (audio thread). Fixed-size so the SPSC
+	// dsp::RingBuffer copies it without heap allocation on either side.
+	struct TipsyMessage {
+		uint16_t mimeSize;                         // length without NUL
+		uint16_t dataSize;
+		char mime[tipsyMaxMimeTypeSize];
+		unsigned char data[tipsyMaxPayloadLength];
+	};
+
+	// Tipsy encoder for sending protocol-encoded messages via MIDI output.
+	// Each engine instance gets its own encoder so scripts can initiate/send
+	// independently without interfering with each other.
+	tipsy::ProtocolEncoder tipsyEncoder;
+
+	// SPSC queue of pending Tipsy messages (worker → audio). sendTipsy() only
+	// copies the payload here; the actual Tipsy encoding is done on the audio
+	// thread in processTipsyOutput(), which owns the encoder.
+	dsp::RingBuffer<TipsyMessage, 8> tipsyPendingQueue;
+
+	// The message the encoder is currently streaming out. The encoder holds
+	// pointers into its mime/data buffers for the whole (multi-cycle) message,
+	// so it must outlive the encoding — a dedicated member, not a stack local
+	// (the queue's shift() hands out copies).
+	TipsyMessage tipsyCurrentMessage;
+
+	// Queues a Tipsy protocol message for transmission via the module's
+	// trigger CV output. Runs on the script (worker) thread: it only copies
+	// the payload into the SPSC pending queue — the actual encoding happens on
+	// the audio thread in processTipsyOutput(). The message is always output on
+	// the first trigger output (port 1). Returns true on success.
+	bool sendTipsy(const char* mimeType, const unsigned char* data, uint32_t dataBytes) {
+		if (!mimeType || !data || dataBytes > tipsyMaxPayloadLength) {
+			handler->writeLog("Tipsy: invalid parameters", false);
+			return false;
+		}
+		size_t mimeSize = strlen(mimeType);
+		if (mimeSize + 1 > tipsyMaxMimeTypeSize) {
+			handler->writeLog("Tipsy: mime type too long", false);
+			return false;
+		}
+		if (tipsyPendingQueue.full()) {
+			handler->writeLog("Tipsy: pending queue full", false);
+			return false;
+		}
+
+		TipsyMessage p;
+		p.mimeSize = (uint16_t)mimeSize;
+		p.dataSize = (uint16_t)dataBytes;
+		std::memcpy(p.mime, mimeType, mimeSize + 1);
+		std::memcpy(p.data, data, dataBytes);
+		tipsyPendingQueue.push(p);
+		return true;
+	}
+
+	// Outputs the next Tipsy-encoded voltage on the trigger output. Called
+	// from the module's process() loop on the audio thread. If the encoder is
+	// idle, starts the next pending message; then drains one encoded float
+	// onto the selected trigger output. Returns true if a voltage was output.
+	bool processTipsyOutput(uint8_t channel = 0) {
+		if (tipsyEncoder.isDormant() && !tipsyPendingQueue.empty()) {
+			// Copy into the member the encoder will point into for the whole
+			// message (shift() returns a copy, so it must not be a local).
+			tipsyCurrentMessage = tipsyPendingQueue.shift();
+			auto initResult = tipsyEncoder.initiateMessage(tipsyCurrentMessage.mime, tipsyCurrentMessage.dataSize, tipsyCurrentMessage.data);
+			if (tipsyEncoder.isError(initResult)) {
+				handler->writeLog("Tipsy encoder error: " + std::to_string(static_cast<int>(initResult)), false);
+				return false;
+			}
+		}
+
+		if (tipsyEncoder.isDormant()) {
+			return false;
+		}
+
+		float f;
+		auto result = tipsyEncoder.getNextMessageFloat(f);
+		if (tipsyEncoder.isError(result)) {
+			handler->writeLog("Tipsy encoding error", false);
+			tipsyEncoder.terminateCurrentMessage();
+			return false;
+		}
+		// Tipsy messages always go to the first trigger output (port 0).
+		handler->setTrigVoltage(0, channel, f);
+		return true;
+	}
+
+	// Resets the Tipsy state (called on reset/new script load): drops pending
+	// messages and terminates any in-flight encoding.
+	void resetTipsyOutput() {
+		tipsyPendingQueue.clear();
+		tipsyEncoder.terminateCurrentMessage();
 	}
 
 	// Dispatches everything queued by processInMessage()/processInTick() onto
