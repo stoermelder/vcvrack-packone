@@ -2706,3 +2706,82 @@ TEST_CASE("onGetValue returning nothing defaults to false/0", "[MidiKit][CrossEn
 	REQUIRE(jsOpt.specs[0].selected == 0);
 	REQUIRE(luaOpt.specs[0].selected == 0);
 }
+
+
+// --- 32-handle store cap (review D1 consequence / A3 partial flush) ------
+//
+// midi.create()/midi.clone()/midi.createNRPN() fail once the 32-handle
+// per-callback store is full, aborting the rest of the callback. The error
+// wording is identical in both engines (unified: "midi.create: message store
+// full" etc.). Per A3, messages already sent before the error are still
+// flushed — a multi-message sequence can be emitted partially — while
+// anything created after the error is dropped.
+
+static const char* JS_STORE_FULL = R"(/**
+ * @engine QuickJs
+ */
+rack.onMidiMessage = function(midiPort, msg) {
+    // Two messages sent before the overflow — these must still be flushed.
+    let m1 = midi.create();
+    midi.setNoteOn(m1, 1, 60, 100);
+    midiOut.send(m1);
+    let m2 = midi.create();
+    midi.setCc(m2, 1, 20, 100);
+    midiOut.send(m2);
+
+    // Handle 0 is the incoming message (msgCount starts at 1) and m1/m2
+    // above each consume a slot, so this loop crosses the 32-handle cap and
+    // midi.create() throws mid-callback. The exact overflow point doesn't
+    // matter — the point is that it throws here.
+    for (let i = 0; i < 33; i++) {
+        midi.create();
+    }
+
+    // Never reached — the error above aborts the callback.
+    let m3 = midi.create();
+    midi.setNoteOn(m3, 1, 61, 100);
+    midiOut.send(m3);
+};
+)";
+
+static const char* LUA_STORE_FULL = R"(--[[
+@engine Lua
+--]]
+rack.onMidiMessage = function(midiPort, msg)
+    local m1 = midi.create()
+    midi.setNoteOn(m1, 1, 60, 100)
+    midiOut.send(m1)
+    local m2 = midi.create()
+    midi.setCc(m2, 1, 20, 100)
+    midiOut.send(m2)
+
+    for i = 1, 33 do
+        midi.create()
+    end
+
+    local m3 = midi.create()
+    midi.setNoteOn(m3, 1, 61, 100)
+    midiOut.send(m3)
+end
+)";
+
+TEST_CASE("midi.create past the 32-handle cap errors and flushes only pre-error sends", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(JS_STORE_FULL);
+	EngineResult lua = run(LUA_STORE_FULL);
+
+	// Identical error wording in both engines (unified wording).
+	CATCH_INFO("JS log:\n" << js.log);
+	CATCH_INFO("Lua log:\n" << lua.log);
+	REQUIRE(js.log.find("midi.create: message store full") != std::string::npos);
+	REQUIRE(lua.log.find("midi.create: message store full") != std::string::npos);
+
+	// Partial flush (A3): both pre-error messages go out, identically, with
+	// the exact bytes the scripts requested. size == 2 also proves the
+	// message created after the error never went out.
+	REQUIRE(js.sent.size() == 2);
+	REQUIRE(lua.sent.size() == 2);
+	REQUIRE(js.sent[0].bytes == lua.sent[0].bytes);
+	REQUIRE(js.sent[1].bytes == lua.sent[1].bytes);
+	REQUIRE(js.sent[0].bytes == std::vector<uint8_t>({0x90, 0x3c, 0x64})); // note-on ch1 note 60 vel 100
+	REQUIRE(js.sent[1].bytes == std::vector<uint8_t>({0xb0, 0x14, 0x64})); // cc ch1 cc 20 val 100
+}

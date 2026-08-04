@@ -360,6 +360,7 @@ struct RecordingEngine : MidiScriptEngine {
 
 	// Unused by these tests — stubbed only to satisfy the interface.
 	void loadScript(const char* script, const std::string& persistedConfigJson) override { }
+	bool testScript(const std::string& script) override { return false; }
 	std::string closeState() override { return ""; }
 	std::string captureConfig() override { return ""; }
 	void processInMessage(int midiPort, midi::Message& msg) override { }

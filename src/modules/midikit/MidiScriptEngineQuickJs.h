@@ -103,6 +103,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return message;
 	}
 
+	// Engine selection: true when this script's header declares QuickJs. The
+	// same simple substring check the module used to run itself (Q26) — kept
+	// here so the module has no third header parser.
+	bool testScript(const std::string& script) override {
+		return script.find("@engine QuickJs") != std::string::npos;
+	}
+
 	void loadScript(const char* script, const std::string& persistedConfigJson = "") override {
 		closeState();
 		resetTipsyOutput();
@@ -1155,7 +1162,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (argc != 0) return jsThrow(ctx, "midi.create: bad args");
 		warnIfOutsideCallback(ctx, "midi.create");
 		size_t* s = &ctxMap[ctx]->msgCount;
-		if (*s == msgStoreSize) return jsThrow(ctx, "midi.create: maximum reached");
+		if (*s == msgStoreSize) return jsThrow(ctx, "midi.create: message store full");
 		ctxMap[ctx]->msgStore[*s] = MessageEx();
 		return JS_NewFloat64(ctx, double((*s)++));
 	}
@@ -1165,7 +1172,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.clone: invalid msg");
 		warnIfOutsideCallback(ctx, "midi.clone");
 		size_t* s = &ctxMap[ctx]->msgCount;
-		if (*s == msgStoreSize) return jsThrow(ctx, "midi.clone: maximum reached");
+		if (*s == msgStoreSize) return jsThrow(ctx, "midi.clone: message store full");
 		// Copy only the MIDI payload; the clone starts as a fresh, unsent
 		// message (send/tick/midiPort/isNrpn at defaults) so it can be modified
 		// and sent independently of the source.
@@ -1179,7 +1186,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (argc != 0) return jsThrow(ctx, "midi.createNrpn: bad args");
 		warnIfOutsideCallback(ctx, "midi.createNRPN");
 		size_t* s = &ctxMap[ctx]->msgCount;
-		if (*s + 4 >= msgStoreSize) return jsThrow(ctx, "midi.createNrpn: buffer maximum reached");
+		if (*s + 4 >= msgStoreSize) return jsThrow(ctx, "midi.createNRPN: message store full");
 		ctxMap[ctx]->msgStore[*s + 0] = MessageEx();
 		ctxMap[ctx]->msgStore[*s + 0].isNrpn = true;
 		ctxMap[ctx]->msgStore[*s + 1] = MessageEx();

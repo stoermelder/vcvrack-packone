@@ -64,6 +64,14 @@ respective loader, or the script is rejected. `@author`/`@description` are
 optional but get echoed to the module's log on load. `@target` is
 conventionally present but not checked by the loader.
 
+Engine selection is a simple substring match: the module asks each engine's
+`testScript()` whether the script is for it (QuickJs matches `@engine QuickJs`,
+Lua matches `@engine Lua`) and routes to the engine that says yes — the file
+extension is never used. Because the match is a plain `@engine <name>`
+substring search, a script that mentions the tag only in a comment or a string
+(after the header block) can be misrouted; keep the `@engine` tag in the
+leading comment block.
+
 ## Script structure
 
 - Top-level code runs once, synchronously, when the script is (re)loaded.
@@ -97,20 +105,25 @@ conventionally present but not checked by the loader.
   response to incoming MIDI messages (including clock 0xF8 realtime bytes)
   or trigger-input ticks via `rack.onTrigger`.
 - Optional `rack.onLoad()` and `rack.onUnload()` hooks run once each:
-  - `rack.onLoad()` runs once, right after top-level code, when the script
-    has parsed and loaded successfully.
+  - `rack.onLoad([persistedConfig])` runs once, right after top-level code,
+    when the script has parsed and loaded successfully. If a config was
+    persisted by a previous save (see [Persistence](#persistence)), it is
+    passed as `persistedConfig` (a JavaScript object in QuickJs, a Lua table
+    in Lua); otherwise the argument is `undefined` (QuickJs) / `nil` (Lua).
   - `rack.onUnload()` runs once, right before the *current* script's state
     is torn down — because it's about to be replaced by another script, the
     module was reset, or the module is being removed from the patch. This
     is the only place a script can reliably clean up: sending an
     all-notes-off for anything it left sounding is the main use case, since
     nothing else will ever get a chance to release those notes once the
-    script's own state is gone.
+    script's own state is gone. If it returns a value, that value is
+    serialized to JSON and stored with the module's patch data (see
+    [Persistence](#persistence)).
   - Both can call `midi.create()`/`midiOut.send()` like `rack.onMidiMessage`
     can; messages sent from either are flushed the same way.
   - In QuickJs, assign them to the `rack` object —
-    `rack.onLoad = function() {...}` / `rack.onUnload = function() {...}`.
-    Lua likewise: `rack.onLoad = function() ... end` /
+    `rack.onLoad = function(...) {...}` / `rack.onUnload = function() {...}`.
+    Lua likewise: `rack.onLoad = function(...) ... end` /
     `rack.onUnload = function() ... end`.
 
 ## QuickJS language support
@@ -214,6 +227,74 @@ every example in this document does.
     onGetValue = function() return config.emitTrigger end,
     onChange = function(checked) ... end }`.
 
+### Persistence
+
+Scripts can persist their configuration across patch saves and reloads via a
+pair of hooks:
+
+- **`rack.onUnload()`** — called when the script is about to be torn down
+  (replaced, module reset, or module removed). If it returns a value, that
+  value is serialized to JSON and stored with the module's patch data.
+- **`rack.onLoad(persistedConfig)`** — called when the script loads. If a
+  config was persisted, it is deserialized from JSON and passed as
+  `persistedConfig` (a JavaScript object in QuickJs, a Lua table in Lua). If
+  no config was persisted, `persistedConfig` is `undefined` (QuickJs) / `nil`
+  (Lua) and the script initializes from its defaults.
+
+The persisted value must be a plain JSON-serializable object (booleans,
+numbers, strings, arrays, and nested objects); functions and other
+non-serializable values are silently dropped. If `onUnload()` returns nothing
+(or a non-serializable value), no config is persisted and `onLoad()` receives
+`undefined`/`nil`.
+
+A typical pattern:
+
+```js
+let config = { channel: 1, passThrough: false };
+
+rack.onLoad = function(persistedConfig) {
+    if (persistedConfig) {
+        config = Object.assign({}, config, persistedConfig);
+    }
+};
+
+rack.onUnload = function() {
+    return config;
+};
+```
+
+```lua
+config = { channel = 1, passThrough = false }
+
+rack.onLoad = function(persistedConfig)
+    if persistedConfig then
+        for k, v in pairs(persistedConfig) do
+            config[k] = v
+        end
+    end
+end
+
+rack.onUnload = function()
+    return config
+end
+```
+
+Timing notes:
+
+- On a patch save, the module snapshots the config by running `onUnload()`
+  synchronously on the GUI thread **without** tearing the script down — the
+  script keeps running and the return value reflects live state (e.g. the
+  latest context-menu setting). Messages `onUnload()` sends during this
+  capture are **discarded**: saving has no audible side effects.
+- When the script is actually replaced, the module reset, or the module
+  removed, `onUnload()` runs again as a real teardown and this time its
+  messages (e.g. an all-notes-off) **are** delivered. Since the same hook
+  serves both purposes, it should be safe to call multiple times — keep any
+  side effects idempotent rather than assuming it runs exactly once.
+- The persisted config is only written when Rack serializes the module
+  (`dataToJson()`, i.e. on patch save); replacing/removing the module or
+  script does not by itself save it.
+
 ### `number.*`
 `rescale(x, xMin, xMax, yMin, yMax [, curve])`,
 `crossfade(a, b, pos)`, `toString(x)`. Present in both engines identically (Lua re-exposes
@@ -258,6 +339,14 @@ Messages are opaque handles (indices into an internal store, max 32 live per
 callback) created with `midi.create()` or `midi.createNRPN()`; `rack.onMidiMessage`
 also receives the incoming message as handle `0`/implicit first arg (Lua:
 index `0`, QuickJs: same convention).
+
+**The store holds at most 32 live handles per callback.** Once it is full,
+`midi.create()`, `midi.clone()`, and `midi.createNRPN()` raise a script error
+that aborts the rest of the callback. Messages already marked for send before
+the error are still flushed, so a multi-message sequence (e.g. an NRPN pair,
+or a wide chord release) can be emitted partially — a message created but
+never sent is dropped. Keep callbacks within the cap, or create/send in
+batches (one handle per message, per the send-once rule below).
 
 - `midi.create()` → new empty message handle.
 - `midi.clone(msg)` → new message handle carrying an independent copy of

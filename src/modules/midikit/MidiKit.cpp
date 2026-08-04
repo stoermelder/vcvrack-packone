@@ -439,14 +439,10 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		}
 		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::RESET, 0.f, std::string("")));
 
-		// Detect engine from script header
-		bool isLua = s.find("@engine Lua") != std::string::npos;
-		bool isQuickJs = s.find("@engine QuickJs") != std::string::npos;
-
 		MidiScript::MidiScriptEngine* prevEngine = activeEngine;
 		activeEngine = nullptr;
-		if (isLua) activeEngine = &seLua;
-		if (isQuickJs) activeEngine = &seQuickJs;
+		if (seLua.testScript(s)) activeEngine = &seLua;
+		if (seQuickJs.testScript(s)) activeEngine = &seQuickJs;
 
 		// Clear the engine that is no longer active (silently — RESET was already pushed)
 		if (prevEngine && prevEngine != activeEngine) {

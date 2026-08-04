@@ -86,6 +86,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 
+	// Engine selection: true when this script's header declares Lua. The same
+	// simple substring check the module used to run itself (Q26) — kept here
+	// so the module has no third header parser.
+	bool testScript(const std::string& script) override {
+		return script.find("@engine Lua") != std::string::npos;
+	}
+
 	void loadScript(const char* script, const std::string& persistedConfigJson = "") override {
 		closeState();
 		resetTipsyOutput();

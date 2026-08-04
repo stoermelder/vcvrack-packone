@@ -100,6 +100,14 @@ struct MidiScriptEngine {
 	// argument (undefined/nil) and the script initializes from its defaults.
 	virtual void loadScript(const char* script, const std::string& persistedConfigJson = "") = 0;
 
+	// Returns true when this engine is the one that should process `script`.
+	// This is the module's engine-selection check — the module routes a script
+	// to the engine whose testScript() returns true and no longer parses the
+	// header itself (a third, substring-based parser used to live in
+	// MidiKit.cpp). Each engine keeps the simple "@engine <name>" substring
+	// match, in sync with its own loadScript() header validation.
+	virtual bool testScript(const std::string& script) = 0;
+
 	// Tears down the script state. Runs rack.onUnload() first (so the script
 	// can clean up, e.g. an all-notes-off) and returns the JSON string of the
 	// value onUnload() returned — the script's config to persist — or "" when
