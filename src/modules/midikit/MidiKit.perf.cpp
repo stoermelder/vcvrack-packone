@@ -480,3 +480,145 @@ TEST_CASE("MidiKit N-engine contention on one TaskWorker", "[perf]") {
 	}
 	std::cout << std::endl;
 }
+
+// ── idle cost (no MIDI/trigger activity) ────────────────────────────────────
+//
+// Investigates a reported CPU-usage complaint: MidiKit apparently costs CPU
+// even with a script loaded and no MIDI/trigger events arriving. The
+// round-trip benchmarks above only measure the active path (message in ->
+// message out); these measure the two paths that still run when idle:
+//   1. MidiKitModule::process() on the audio thread, every sample, whether or
+//      not any message/tick is pending.
+//   2. MidiScriptEnginePortInfo::getName() / MidiScriptEngineParamQuantity::
+//      getDisplayValueString(), which the Rack UI polls every frame for any
+//      hovered port/param tooltip (see ParamTooltip::step()/PortTooltip::
+//      step() in Rack's app/ParamWidget.cpp / PortWidget.cpp) -- each poll
+//      that finds queryInFlight false dispatches a fresh runAsync() task that
+//      calls into the script engine.
+
+static double timeIdleProcess(MidiKitModule* m, int nSamples) {
+	Module::ProcessArgs args;
+	args.sampleRate = 44100.f;
+	args.sampleTime = 1.f / 44100.f;
+	args.frame = 0;
+	auto start = Clock::now();
+	for (int i = 0; i < nSamples; i++) {
+		m->process(args);
+		args.frame++;
+	}
+	auto end = Clock::now();
+	return std::chrono::duration<double, std::milli>(end - start).count();
+}
+
+TEST_CASE("MidiKit idle process() cost: no script vs QuickJs vs Lua", "[perf]") {
+	auto worker = std::make_shared<StoermelderPackOne::MpmcTaskWorker>("MidiKit idle-perf worker");
+	const int N = 44100 * 5; // 5 seconds of audio at 44.1kHz
+
+	std::cout << "\n=== MidiKit idle process() cost (no MIDI/trigger activity) ===" << std::endl;
+	std::cout << "  process() returns immediately via `if (!activeEngine) return;` when no\n"
+	          << "  script is loaded, so ANY loaded script (trivial or not) turns on the full\n"
+	          << "  per-sample body below, including the 16-channel outputPulseGenerator loop\n"
+	          << "  that runs whether or not the script uses triggers at all." << std::endl;
+
+	// No script loaded
+	{
+		MidiKitModule* m = createModule(worker);
+		double ms = timeIdleProcess(m, N);
+		std::cout << "  No script:              " << ms << " ms for " << N << " samples ("
+		          << (ms * 1000.0 / N) << " us/sample)" << std::endl;
+		Test::destroyModule(m);
+	}
+
+	// QuickJs PassThrough loaded, idle (no messages pushed)
+	{
+		MidiKitModule* m = createModule(worker);
+		m->loadScript(readFile(repoRoot() + "/" + enginePath(&passThroughScript, EngineKind::QuickJs)));
+		std::string loadLog = drainLog(m);
+		std::cout << "  QuickJs load log: " << loadLog << std::endl;
+		double ms = timeIdleProcess(m, N);
+		std::cout << "  QuickJs (PassThrough):  " << ms << " ms for " << N << " samples ("
+		          << (ms * 1000.0 / N) << " us/sample)" << std::endl;
+		Test::destroyModule(m);
+	}
+
+	// Lua PassThrough loaded, idle
+	{
+		MidiKitModule* m = createModule(worker);
+		m->loadScript(readFile(repoRoot() + "/" + enginePath(&passThroughScript, EngineKind::Lua)));
+		std::string loadLog = drainLog(m);
+		std::cout << "  Lua load log: " << loadLog << std::endl;
+		double ms = timeIdleProcess(m, N);
+		std::cout << "  Lua (PassThrough):      " << ms << " ms for " << N << " samples ("
+		          << (ms * 1000.0 / N) << " us/sample)" << std::endl;
+		Test::destroyModule(m);
+	}
+
+	std::cout << std::endl;
+}
+
+// Isolates the 16-channel outputPulseGenerator/setVoltage loop (the part of
+// process() that only runs once a script is loaded, gated by the early
+// `if (!activeEngine) return;`) from everything else in process() when idle,
+// by timing the trigger-out loop's own cost directly. If this alone accounts
+// for most of the no-script -> script-loaded jump above, the finding is:
+// "engine dispatch is cheap when idle; the always-on 16-channel voltage loop
+// is what turns on."
+TEST_CASE("MidiKit idle process() cost: trigger-output loop in isolation", "[perf]") {
+	auto worker = std::make_shared<StoermelderPackOne::MpmcTaskWorker>("MidiKit idle-perf worker");
+	const int N = 44100 * 5;
+
+	MidiKitModule* m = createModule(worker);
+	m->loadScript(readFile(repoRoot() + "/" + enginePath(&passThroughScript, EngineKind::QuickJs)));
+	drainLog(m);
+
+	// Directly time just the loop body process() runs unconditionally every
+	// sample once activeEngine is set (copied verbatim from MidiKit.cpp).
+	Module::ProcessArgs args;
+	args.sampleTime = 1.f / 44100.f;
+	auto start = Clock::now();
+	for (int i = 0; i < N; i++) {
+		for (uint8_t ch = 0; ch < PORT_MAX_CHANNELS; ch++) {
+			bool s = m->outputPulseGenerator[ch].process(args.sampleTime);
+			if (m->outputTriggerActive[ch]) {
+				m->outputs[MidiKitModule::OUTPUT_TRIG].setVoltage(s ? 10.f : 0.f, ch);
+			}
+		}
+	}
+	auto end = Clock::now();
+	double ms = std::chrono::duration<double, std::milli>(end - start).count();
+	std::cout << "\n=== Trigger-output loop alone (16 channels x " << N << " samples) ===" << std::endl;
+	std::cout << "  " << ms << " ms total (" << (ms * 1000.0 / N) << " us/sample)" << std::endl;
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MidiKit idle UI polling cost: getDisplayValueString/getName with script loaded", "[perf]") {
+	auto worker = std::make_shared<StoermelderPackOne::MpmcTaskWorker>("MidiKit idle-perf worker");
+	MidiKitModule* m = createModule(worker);
+	m->loadScript(readFile(repoRoot() + "/" + enginePath(&passThroughScript, EngineKind::QuickJs)));
+	drainLog(m);
+
+	// Enable input 0 / param 0 the way a script does via input.enable()/param.enable()
+	m->enableInput(0);
+	m->enableParam(0);
+
+	const int N = 1000; // simulate 1000 UI frames (~16s at 60Hz)
+	auto* pi = reinterpret_cast<StoermelderPackOne::MidiScript::MidiScriptEnginePortInfo*>(m->inputInfos[0]);
+	auto* pq = reinterpret_cast<StoermelderPackOne::MidiScript::MidiScriptEngineParamQuantity*>(m->paramQuantities[0]);
+
+	auto start = Clock::now();
+	for (int i = 0; i < N; i++) {
+		volatile std::string s1 = pi->getName();
+		volatile std::string s2 = pq->getDisplayValueString();
+		(void)s1; (void)s2;
+		// Give the (real, async) worker a chance to clear queryInFlight between
+		// polls, same as it would between two real 1/60s-spaced UI frames.
+		barrier(worker);
+	}
+	auto end = Clock::now();
+	double ms = std::chrono::duration<double, std::milli>(end - start).count();
+	std::cout << "\n=== MidiKit UI polling cost (getName/getDisplayValueString via real worker) ===" << std::endl;
+	std::cout << "  " << N << " simulated tooltip-step polls: " << ms << " ms total (" << (ms / N) << " ms/poll)" << std::endl;
+
+	Test::destroyModule(m);
+}

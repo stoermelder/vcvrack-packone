@@ -370,10 +370,12 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			midiOutput.processFrame(args.frame);
 		}
 
-		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
-			bool s = outputPulseGenerator[i].process(args.sampleTime);
-			if (outputTriggerActive[i]) {
-				outputs[OUTPUT_TRIG].setVoltage(s ? 10.f : 0.f, i);
+		if (outputs[OUTPUT_TRIG].isConnected()) {
+			for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
+				bool s = outputPulseGenerator[i].process(args.sampleTime);
+				if (outputTriggerActive[i]) {
+					outputs[OUTPUT_TRIG].setVoltage(s ? 10.f : 0.f, i);
+				}
 			}
 		}
 

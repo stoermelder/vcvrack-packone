@@ -1484,6 +1484,12 @@ TEST_CASE("trig.setTrigger produces identical output-trigger state", "[MidiKit][
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
 
+		// process() only writes the trigger output voltage while a cable is
+		// connected (see the isConnected() gate in MidiKitModule::process),
+		// so simulate one — otherwise the pulse generator's 10V pulse is
+		// never written to the port and the voltage reads 0.
+		m->outputs[MidiKitModule::OUTPUT_TRIG].channels = 1;
+
 		Module::ProcessArgs args;
 		args.sampleTime = 1.0f / 44100.0f;
 		args.sampleRate = 44100.0f;
