@@ -187,7 +187,7 @@ TEST_CASE("onMidiMessage dispatch round-trips a CC message through midi.*/midiOu
 	MidiKitModule* m = createModule();
 	m->loadScript(QJS_MIDI_ROUNDTRIP);
 	REQUIRE(m->seQuickJs.ctx != nullptr);
-	REQUIRE(m->seQuickJs.hasOnMidiMessage);
+	REQUIRE(JS_IsFunction(m->seQuickJs.ctx, m->seQuickJs.onMidiMessageFn));
 
 	midi::Message msg;
 	msg.setSize(3);

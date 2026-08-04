@@ -126,6 +126,37 @@ leading comment block.
     Lua likewise: `rack.onLoad = function(...) ... end` /
     `rack.onUnload = function() ... end`.
 
+### Hooks and predefined objects are resolved once, at load time
+
+`rack.onMidiMessage`, `rack.onTrigger`, `rack.onLoad`, and `rack.onUnload`
+are read from the `rack` object **exactly once**, right after the script's
+top-level code finishes running. **Reassigning any of them afterward — from
+inside a callback or anywhere else in the script — has no effect.** The
+function that was present at load time keeps running for the lifetime of the
+script; a later assignment to `rack.onMidiMessage` (or the others) is simply
+never looked at again. The same applies to defining a hook **late**: a
+script that never defines `rack.onMidiMessage` at load time but assigns it
+later (e.g. from inside `rack.onTrigger`) will never have that later
+definition called — the "no `onMidiMessage` defined" warning logged at load
+time is the last word on it.
+
+This is a deliberate, permanent design choice, not a limitation to be worked
+around: resolving the hooks once (rather than looking them up by name on
+every incoming MIDI message or trigger tick) is what keeps message dispatch
+fast. Write scripts so every hook is assigned exactly once, at the top
+level, during initial load — this is what every shipped preset already does
+and the only supported pattern.
+
+Reassigning (or otherwise clobbering — e.g. `rack = 42`) one of the
+predefined globals (`rack`, `midi`, `midiOut`, `trig`, `input`, `param`,
+`number`) at runtime is likewise unsupported. Both engines are tested to
+degrade gracefully rather than crash if a script does this anyway — expect
+either the reassignment to be silently ignored (for a hook function, per
+above) or a caught, logged script error on the next statement that tries to
+use the clobbered value (for everything else) — but the resulting behavior
+is undefined and may differ in wording between QuickJs and Lua. Treat any of
+this as a bug in the script, not a supported technique.
+
 ## QuickJS language support
 
 QuickJs is a full JavaScript engine (ES2020), so all standard JavaScript

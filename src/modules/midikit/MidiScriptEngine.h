@@ -9,31 +9,23 @@ namespace MidiScript {
 using rack::midi::Message;
 
 
-// A single user-facing context-menu item, as registered by a script through
-// rack.registerContextMenu(). Carries the presentation data (label and the
-// current selected/checked state, evaluated by the engine from the script's
-// onGetValue callback) plus an opaque callbackId; the actual script callbacks
-// (onChange, onGetValue) live in the engine's own map keyed by that id, so a
-// copied spec never owns a script-function reference and can be handed freely
-// to the UI thread. checked/selected are filled by getContextMenus() when the
-// menu is built and default to 0 when the script registered no onGetValue.
+// A user-facing context-menu item registered via rack.registerContextMenu().
+// Carries presentation data only — the actual onChange/onGetValue callbacks
+// live in the engine's own map keyed by callbackId, so a copied spec can be
+// handed freely to the UI thread without owning a script-function reference.
 struct ScriptMenuItem {
 	enum class Type { Boolean, Options } type = Type::Boolean;
 	std::string label;
-	// Options variant: selectable labels and the current selection index
-	// (evaluated from onGetValue).
+	// Options variant: selectable labels and the current selection index.
 	std::vector<std::string> options;
-	// checked (Boolean) and selected (Options) share the same storage — only
-	// one is meaningful, the one matching `type`. Both default to 0
-	// (unchecked / first option) when the script registered no onGetValue.
-	// The union is initialized via `selected(0)`, which zeroes the whole
-	// 4-byte storage so `checked` (its low byte) reads false as well.
+	// checked (Boolean) and selected (Options) share storage — only the one
+	// matching `type` is meaningful. Initialized via selected(0), which
+	// zeroes both.
 	union {
 		bool checked;
 		int selected;
 	};
-	// Opaque handle assigned by the engine at registration time; resolves to
-	// the script's onChange callback inside the engine.
+	// Opaque handle resolving to the script's onChange callback in the engine.
 	int callbackId = -1;
 
 	ScriptMenuItem() : selected(0) {}
@@ -93,43 +85,33 @@ struct MidiScriptEngine {
 		return taskWorker->work(task, APP);
 	}
 
-	// loadScript accepts an optional persisted-config JSON string. When
-	// non-empty, the engine parses it and passes the result to rack.onLoad()
-	// as its single argument, so the script can restore its config. An empty
-	// string means no config was persisted — rack.onLoad() is called with no
-	// argument (undefined/nil) and the script initializes from its defaults.
+	// persistedConfigJson, if non-empty, is parsed and passed to
+	// rack.onLoad() so the script can restore its config; otherwise
+	// rack.onLoad() gets no argument and the script uses its defaults.
 	virtual void loadScript(const char* script, const std::string& persistedConfigJson = "") = 0;
 
-	// Returns true when this engine is the one that should process `script`.
-	// This is the module's engine-selection check — the module routes a script
-	// to the engine whose testScript() returns true and no longer parses the
-	// header itself (a third, substring-based parser used to live in
-	// MidiKit.cpp). Each engine keeps the simple "@engine <name>" substring
-	// match, in sync with its own loadScript() header validation.
+	// True if this engine should process `script` — the module routes to
+	// whichever engine's testScript() matches, so it needs no header parser
+	// of its own. Each engine does a simple "@engine <name>" substring match.
 	virtual bool testScript(const std::string& script) = 0;
 
-	// Tears down the script state. Runs rack.onUnload() first (so the script
-	// can clean up, e.g. an all-notes-off) and returns the JSON string of the
-	// value onUnload() returned — the script's config to persist — or "" when
-	// onUnload() is missing, errored, or returned nothing serializable.
+	// Tears down the script state, running rack.onUnload() first so the
+	// script can clean up (e.g. all-notes-off). Returns the JSON string of
+	// onUnload()'s return value to persist, or "" if missing/errored/empty.
 	virtual std::string closeState() = 0;
 
-	// Runs rack.onUnload() and returns the JSON string of the value it
-	// returned, WITHOUT tearing down the script state. Used by the module's
-	// dataToJson() to persist the live config at save time without unloading
-	// the script. The onUnload() messages are discarded (no MIDI is emitted),
-	// unlike closeState() where they are flushed for teardown. Returns "" when
-	// onUnload() is missing, errored, or returned nothing serializable.
+	// Like closeState(), but runs onUnload() WITHOUT tearing down the script
+	// — used by dataToJson() to persist the live config at save time.
+	// onUnload()'s messages are discarded (a save must have no audible
+	// effect), unlike closeState() where they're flushed.
 	virtual std::string captureConfig() = 0;
 
 	// Main interface for message processing
 	virtual void processInMessage(int midiPort, Message& msg) = 0;
 	virtual void processInTick(int trigPort) = 0;
 
-	// onUnload()'s messages are queued just before the script
-	// state is torn down and must still drain afterwards. Kept virtual (like
-	// process()) so tests can override it to fabricate output without a real
-	// script engine behind it.
+	// Virtual (like process()) so tests can override it to fabricate output
+	// without a real script engine behind it.
 	virtual bool processOutMessage(int& midiPort, Message& msg, int& ticks) {
 		if (!midiOutQueue.empty()) {
 			auto t = midiOutQueue.shift();
@@ -243,10 +225,8 @@ struct MidiScriptEngine {
 	}
 
 	// Dispatches everything queued by processInMessage()/processInTick() onto
-	// the script engine, asynchronously via runAsync(). Identical across
-	// engines; only the per-message/-tick dispatch is engine-specific. Kept
-	// virtual (rather than non-virtual) so tests can override it to observe
-	// call counts without needing to route traffic through the real queues.
+	// the script engine via runAsync(). Virtual so tests can override it to
+	// observe call counts without routing through the real queues.
 	virtual void process() {
 		if ((midiInQueue.size() > 0 || tickInQueue.size() > 0)) {
 			runAsync([this]() {
@@ -274,20 +254,15 @@ struct MidiScriptEngine {
 	virtual std::string getParamName(int i) = 0;
 	virtual std::string getParamFormatValue(int i) = 0;
 
-	// Starts an asynchronous query of the script-registered menus. Called from
-	// the UI thread while the context menu is being built. The engine
-	// evaluates each item's onGetValue callback on the WORKER thread (script
-	// code must never run on the UI thread) and then invokes `callback` with
-	// the evaluated specs. The callback must not construct widgets: it only
-	// publishes the specs (e.g. into a buffer the caller owns) and flips a
-	// `loaded` guard of its own, which the menu widget polls from step() on
-	// the UI thread before building the actual menu items. When a script
-	// registered no onGetValue for an item, that item reports value 0
-	// (unchecked / first option).
+	// Called from the UI thread while the context menu is being built.
+	// Evaluates each item's onGetValue on the WORKER thread (script code must
+	// never run on the UI thread), then invokes `callback` with the results.
+	// The callback must not construct widgets — it only publishes the specs
+	// for the menu widget to poll from step() on the UI thread.
 	virtual void getContextMenus(const std::function<void(const std::vector<ScriptMenuItem>&)>& callback) = 0;
-	// Called from the widget's menu-action handler (UI thread) when the user
-	// clicks a script menu item. value is 0/1 for a Boolean toggle and the
-	// selected index for Options. The script callback runs on the worker thread.
+	// Called from the UI thread when the user clicks a script menu item.
+	// value is 0/1 for Boolean, the selected index for Options. Runs the
+	// script callback on the worker thread.
 	virtual void invokeContextMenuCallback(int callbackId, int value) = 0;
 };
 

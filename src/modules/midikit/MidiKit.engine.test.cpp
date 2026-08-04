@@ -2785,3 +2785,363 @@ TEST_CASE("midi.create past the 32-handle cap errors and flushes only pre-error 
 	REQUIRE(js.sent[0].bytes == std::vector<uint8_t>({0x90, 0x3c, 0x64})); // note-on ch1 note 60 vel 100
 	REQUIRE(js.sent[1].bytes == std::vector<uint8_t>({0xb0, 0x14, 0x64})); // cc ch1 cc 20 val 100
 }
+
+
+// --- runtime API mutation: forbidden by contract, must not crash ---------
+//
+// SCRIPTING.md documents that rack.onMidiMessage/onTrigger/onLoad/onUnload
+// (and the predefined objects rack/midi/midiOut/trig/input/param/number) are
+// resolved ONCE at load time; a script that reassigns any of them afterward,
+// or defines a hook late (e.g. from inside onTrigger), has no effect on
+// what runs — the engine keeps calling whatever was present at load. This
+// section verifies that contract holds identically in both engines and that
+// a script violating it (deliberately or by accident) degrades gracefully
+// rather than crashing or diverging in observable behavior between engines.
+
+// Feeds two incoming messages through the same loaded script and returns the
+// log text after each dispatch separately, so a test can assert what
+// happened on the first call vs. the second (e.g. "did a reassignment made
+// during call 1 take effect on call 2").
+struct TwoDispatchResult {
+	std::string log1, log2;
+};
+
+static TwoDispatchResult runTwoMidiDispatches(const std::string& script) {
+	MidiKitModule* m = createModule();
+	m->loadScript(script);
+	drainLog(m);
+
+	TwoDispatchResult r;
+	midi::Message in1 = noteOn(1, 60, 100);
+	m->activeEngine->processInMessage(0, in1);
+	m->activeEngine->process();
+	r.log1 = drainLog(m);
+
+	midi::Message in2 = noteOn(1, 61, 100);
+	m->activeEngine->processInMessage(0, in2);
+	m->activeEngine->process();
+	r.log2 = drainLog(m);
+
+	Test::destroyModule(m);
+	return r;
+}
+
+static const char* JS_REASSIGN_ON_MIDI_MESSAGE = R"(/**
+ * @engine QuickJs
+ */
+let n = 0;
+rack.onMidiMessage = function(port, msg) {
+    n++;
+    rack.log("call " + n);
+    if (n === 1) {
+        // Reassignment must have no effect: dispatch already resolved and
+        // cached the function above at load time.
+        rack.onMidiMessage = function(port, msg) {
+            rack.log("REPLACED");
+        };
+    }
+};
+)";
+
+static const char* LUA_REASSIGN_ON_MIDI_MESSAGE = R"(--[[
+@engine Lua
+--]]
+local n = 0
+rack.onMidiMessage = function(port, msg)
+    n = n + 1
+    rack.log("call " .. n)
+    if n == 1 then
+        rack.onMidiMessage = function(port, msg)
+            rack.log("REPLACED")
+        end
+    end
+end
+)";
+
+TEST_CASE("Reassigning rack.onMidiMessage after load has no effect, in both engines", "[MidiKit][CrossEngine]") {
+	auto checkReassign = [](const std::string& script) {
+		TwoDispatchResult r = runTwoMidiDispatches(script);
+		REQUIRE(r.log1.find("call 1") != std::string::npos);
+		REQUIRE(r.log2.find("call 2") != std::string::npos);
+		REQUIRE(r.log2.find("REPLACED") == std::string::npos);
+	};
+	checkReassign(JS_REASSIGN_ON_MIDI_MESSAGE);
+	checkReassign(LUA_REASSIGN_ON_MIDI_MESSAGE);
+}
+
+static const char* JS_ON_MIDI_MESSAGE_NONFUNC = R"(/**
+ * @engine QuickJs
+ */
+rack.onMidiMessage = function(port, msg) {
+    rack.log("call");
+    // Assigning a non-function must not affect dispatch: the cached function
+    // reference keeps running regardless of what rack.onMidiMessage is now.
+    rack.onMidiMessage = 42;
+};
+)";
+
+static const char* LUA_ON_MIDI_MESSAGE_NONFUNC = R"(--[[
+@engine Lua
+--]]
+rack.onMidiMessage = function(port, msg)
+    rack.log("call")
+    rack.onMidiMessage = 42
+end
+)";
+
+TEST_CASE("Assigning a non-function to rack.onMidiMessage does not break later dispatch, in both engines", "[MidiKit][CrossEngine]") {
+	auto checkNonFunc = [](const std::string& script) {
+		TwoDispatchResult r = runTwoMidiDispatches(script);
+		REQUIRE(r.log1.find("call") != std::string::npos);
+		REQUIRE(r.log1.find("rror") == std::string::npos);
+		REQUIRE(r.log2.find("call") != std::string::npos);
+		REQUIRE(r.log2.find("rror") == std::string::npos);
+	};
+	checkNonFunc(JS_ON_MIDI_MESSAGE_NONFUNC);
+	checkNonFunc(LUA_ON_MIDI_MESSAGE_NONFUNC);
+}
+
+static const char* JS_RACK_CLOBBER = R"(/**
+ * @engine QuickJs
+ */
+rack.onMidiMessage = function(port, msg) {
+    rack.log("call");
+    rack = 42;
+};
+)";
+
+static const char* LUA_RACK_CLOBBER = R"(--[[
+@engine Lua
+--]]
+rack.onMidiMessage = function(port, msg)
+    rack.log("call")
+    rack = 42
+end
+)";
+
+TEST_CASE("Clobbering the global rack variable does not crash either engine", "[MidiKit][CrossEngine]") {
+	// Unlike the two cases above, this one is NOT free of side effects: the
+	// callback itself still holds a reference to the true rack object (it was
+	// resolved once at load time), but the callback body reads the *global*
+	// "rack" identifier fresh via rack.log(...) on the second call, and that
+	// global was just overwritten with 42 on the first call. So the second
+	// call errors — inside the script's own code, not in the engine's
+	// dispatch mechanism — and neither engine crashes. Wording differs
+	// (see #13/D6) but both engines must be equally non-silent here.
+	auto checkClobber = [](const std::string& script) {
+		TwoDispatchResult r = runTwoMidiDispatches(script);
+		REQUIRE(r.log1.find("call") != std::string::npos);
+		REQUIRE(r.log1.find("rror") == std::string::npos);
+		REQUIRE(r.log2.find("rror") != std::string::npos);
+	};
+	checkClobber(JS_RACK_CLOBBER);
+	checkClobber(LUA_RACK_CLOBBER);
+}
+
+static const char* JS_MIDIOUT_CLOBBER = R"(/**
+ * @engine QuickJs
+ */
+rack.onMidiMessage = function(port, msg) {
+    midiOut = 42;
+    let m = midi.create();
+    midi.setNoteOn(m, 1, 60, 100);
+    midiOut.send(m);
+};
+)";
+
+static const char* LUA_MIDIOUT_CLOBBER = R"(--[[
+@engine Lua
+--]]
+rack.onMidiMessage = function(port, msg)
+    midiOut = 42
+    local m = midi.create()
+    midi.setNoteOn(m, 1, 60, 100)
+    midiOut.send(m)
+end
+)";
+
+TEST_CASE("Clobbering the predefined midiOut object errors without crashing, in both engines", "[MidiKit][CrossEngine]") {
+	// midiOut (unlike rack) is never cached by the engine — every midiOut.*
+	// call already resolves it fresh each time, so this is a script clobbering
+	// its own global and immediately paying for it, in both engines, on the
+	// very first dispatch.
+	auto checkClobber = [](const std::string& script) {
+		TwoDispatchResult r = runTwoMidiDispatches(script);
+		REQUIRE(r.log1.find("rror") != std::string::npos);
+		REQUIRE(r.log2.find("rror") != std::string::npos);
+	};
+	checkClobber(JS_MIDIOUT_CLOBBER);
+	checkClobber(LUA_MIDIOUT_CLOBBER);
+}
+
+static const char* JS_LATE_DEFINE_ON_MIDI_MESSAGE = R"(/**
+ * @engine QuickJs
+ */
+rack.onTrigger = function(trigPort) {
+    rack.log("onTrigger fired");
+    // Defining onMidiMessage for the first time here, after load, must have
+    // no effect: it did not exist when hooks were resolved at load time.
+    rack.onMidiMessage = function(port, msg) {
+        rack.log("late onMidiMessage called");
+    };
+};
+)";
+
+static const char* LUA_LATE_DEFINE_ON_MIDI_MESSAGE = R"(--[[
+@engine Lua
+--]]
+rack.onTrigger = function(trigPort)
+    rack.log("onTrigger fired")
+    rack.onMidiMessage = function(port, msg)
+        rack.log("late onMidiMessage called")
+    end
+end
+)";
+
+TEST_CASE("Defining rack.onMidiMessage late (from onTrigger) never gets called, in both engines", "[MidiKit][CrossEngine]") {
+	auto checkLateDefine = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		std::string loadLog = drainLog(m);
+		// The load-time "no onMidiMessage" warning must fire in both engines:
+		// the hook didn't exist when hooks were resolved at load time, even
+		// though the script goes on to define it moments later.
+		REQUIRE(loadLog.find("No onMidiMessage") != std::string::npos);
+
+		m->activeEngine->processInTick(0);
+		m->activeEngine->process();
+		std::string triggerLog = drainLog(m);
+		REQUIRE(triggerLog.find("onTrigger fired") != std::string::npos);
+
+		midi::Message in = noteOn(1, 60, 100);
+		m->activeEngine->processInMessage(0, in);
+		m->activeEngine->process();
+		std::string midiLog = drainLog(m);
+		REQUIRE(midiLog.find("late onMidiMessage called") == std::string::npos);
+
+		Test::destroyModule(m);
+	};
+	checkLateDefine(JS_LATE_DEFINE_ON_MIDI_MESSAGE);
+	checkLateDefine(LUA_LATE_DEFINE_ON_MIDI_MESSAGE);
+}
+
+
+// SCRIPTING.md claims both engines are "tested to degrade gracefully" when a
+// script clobbers a predefined global at runtime, using "rack = 42" as its
+// own example. That specific case — rack.onMidiMessage = 42 at top level
+// (before hooks are cached) — had no cross-engine test: "Clobbering the
+// global rack variable" above clobbers rack *inside* onMidiMessage, after
+// caching already succeeded, which exercises a different path (the script's
+// own next statement erroring) than clobbering it beforehand at load time.
+// This closes that gap for the literal case the doc promises coverage for.
+static const char* JS_RACK_NUMBER_AT_LOAD = R"(/**
+ * @engine QuickJs
+ */
+rack.onLoad = function(persisted) {
+    rack.log("onLoad ran");
+};
+rack.onMidiMessage = function(port, msg) {
+    rack.log("call");
+};
+rack = 42;
+)";
+
+static const char* LUA_RACK_NUMBER_AT_LOAD = R"(--[[
+@engine Lua
+--]]
+rack.onLoad = function(persisted)
+    rack.log("onLoad ran")
+end
+rack.onMidiMessage = function(port, msg)
+    rack.log("call")
+end
+rack = 42
+)";
+
+TEST_CASE("Clobbering rack with a number at top-level load time does not crash either engine", "[MidiKit][CrossEngine]") {
+	auto checkNumberClobber = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		std::string loadLog = drainLog(m);
+		// rack is 42 (not an object) by the time hooks are resolved — neither
+		// hook is found in either engine, same "not defined" outcome as a
+		// script that never assigned them.
+		REQUIRE(loadLog.find("No onMidiMessage") != std::string::npos);
+
+		midi::Message in = noteOn(1, 60, 100);
+		m->activeEngine->processInMessage(0, in);
+		m->activeEngine->process();
+		std::string midiLog = drainLog(m);
+		REQUIRE(midiLog.empty());
+
+		// Reload a completely unrelated, valid script into the SAME module
+		// afterward — the real assertion. Verifies nothing from the
+		// number-clobbered load (a pending QuickJS exception, a stale Lua
+		// registry ref, or anything else) corrupts state that would affect a
+		// fresh, correctly-behaving script loaded right after.
+		bool isJs = script.find("QuickJs") != std::string::npos;
+		m->loadScript(isJs ? JS_REASSIGN_ON_MIDI_MESSAGE : LUA_REASSIGN_ON_MIDI_MESSAGE);
+		drainLog(m);
+		m->activeEngine->processInMessage(0, in);
+		m->activeEngine->process();
+		std::string reloadMidiLog = drainLog(m);
+		REQUIRE(reloadMidiLog.find("call 1") != std::string::npos);
+
+		Test::destroyModule(m);
+	};
+	checkNumberClobber(JS_RACK_NUMBER_AT_LOAD);
+	checkNumberClobber(LUA_RACK_NUMBER_AT_LOAD);
+}
+
+
+// Regression test for a QuickJS-only bug: a script that clobbers the global
+// "rack" binding with null/undefined during its own top-level code (before
+// loadScript() gets to cache rack/its hooks) used to make
+// cacheCallableProp()'s JS_GetPropertyStr throw a TypeError on ctx and leave
+// it pending, uncleared, unconsumed by any JS_Call site since they all gate
+// on JS_IsFunction first and skip the call rather than surface the
+// exception. Fixed by only resolving hooks when rackObj is JS_IsObject; the
+// four hooks stay JS_UNDEFINED (same end state) without ever touching
+// JS_GetPropertyStr on a null/undefined receiver.
+static const char* JS_RACK_NULL_AT_LOAD = R"(/**
+ * @engine QuickJs
+ */
+rack.onLoad = function(persisted) {
+    rack.log("onLoad ran");
+};
+rack.onMidiMessage = function(port, msg) {
+    rack.log("call");
+};
+rack = null;
+)";
+
+TEST_CASE("Clobbering rack with null during top-level load code does not leave a pending exception (QuickJS)", "[MidiKit][QuickJs]") {
+	MidiKitModule* m = createModule();
+	m->loadScript(JS_RACK_NULL_AT_LOAD);
+	std::string loadLog = drainLog(m);
+	// rack is null by the time hooks are resolved (top-level code, including
+	// "rack = null;", runs to completion before caching happens) — so neither
+	// hook is found, matching the same "not defined" outcome a script that
+	// never assigned them would get.
+	REQUIRE(loadLog.find("No onMidiMessage") != std::string::npos);
+
+	midi::Message in = noteOn(1, 60, 100);
+	m->activeEngine->processInMessage(0, in);
+	m->activeEngine->process();
+	std::string midiLog = drainLog(m);
+	REQUIRE(midiLog.empty());
+
+	// The real assertion: reload a completely unrelated, valid script into
+	// the SAME module afterward. If the first load's null-rack lookups had
+	// left a pending exception corrupting ctx, this would be where it
+	// surfaces — a fresh JS_Call site (this script's own onMidiMessage)
+	// running for the first time on that ctx.
+	m->loadScript(JS_REASSIGN_ON_MIDI_MESSAGE);
+	drainLog(m);
+	m->activeEngine->processInMessage(0, in);
+	m->activeEngine->process();
+	std::string reloadMidiLog = drainLog(m);
+	REQUIRE(reloadMidiLog.find("call 1") != std::string::npos);
+
+	Test::destroyModule(m);
+}

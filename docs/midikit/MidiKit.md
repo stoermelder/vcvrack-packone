@@ -38,6 +38,8 @@ The module also exposes four CV inputs and four panel parameters that can be rea
 
 Scripts can persist their configuration across patch saves and reloads via `rack.onLoad()` and `rack.onUnload()` (see [Persistence](#persistence)).
 
+`rack.onMidiMessage`/`rack.onTrigger`/`rack.onLoad`/`rack.onUnload` are only ever read once, right after the script loads — assign each exactly once, at the top level. Reassigning one later, or defining it late, has no effect.
+
 You can use MIDI-KIT as an insert effect via VCV Rack's built-in MIDI Loopback driver. This lets you process incoming messages before they reach other MIDI modules (for example, MIDI‑CC, MIDI‑CV, MIDI‑MAP, or MIDI‑CAT), and likewise process outgoing messages.
 
 ## Examples

@@ -47,6 +47,19 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// effect across callbacks until changed again.
 	int selectedPort = 0;
 
+	// The four lifecycle hooks (rack.onMidiMessage/onTrigger/onLoad/onUnload)
+	// are resolved from the rack table once at load and kept as registry
+	// references — not re-looked-up by name on every dispatch. Matched in
+	// QuickJS (onMidiMessageFn/etc.): reassigning a hook after load, or
+	// defining one late, has no effect — only what was present at load time
+	// ever runs. LUA_NOREF means "not defined". One asymmetry: hooks are
+	// called here as bare functions with no receiver; QuickJS calls them as
+	// methods (rackObj as thisVal). Predates caching, unused by any preset.
+	int onMidiMessageRef = LUA_NOREF;
+	int onTriggerRef = LUA_NOREF;
+	int onLoadRef = LUA_NOREF;
+	int onUnloadRef = LUA_NOREF;
+
 	// Script-registered context menus. The Lua callback lives in the registry
 	// as an integer reference (luaL_ref), not in ContextMenuSpec, because the
 	// UI thread only reads presentation copies through getContextMenus().
@@ -76,11 +89,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	lua_State* L = nullptr;
 
-	// closeState() here is a no-op fallback (L is already nullptr): onUnload()
-	// must run via MidiKitModule's destructor, while this object is still
-	// fully alive — writeLog/input.*/trig.*/param.* are pure virtual here and
-	// only overridden on the derived class, so calling them post-destruction
-	// (e.g. from a script's onUnload) would be undefined behaviour.
+	// Usually a no-op (L already nullptr): the real closeState() runs from
+	// MidiKitModule's destructor while this object is still fully alive,
+	// since writeLog/input.*/trig.*/param.* are pure virtual here and calling
+	// them post-destruction would be UB.
 	~MidiScriptEngineLua() {
 		closeState();
 	}
@@ -190,7 +202,35 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		handler->writeLog("Script loaded", false);
+
+		// Resolve and cache the four lifecycle hooks once (see declarations).
+		lua_getglobal(L, "rack");
+		if (lua_istable(L, -1)) {
+			onLoadRef = cacheHookRef("onLoad");
+			onUnloadRef = cacheHookRef("onUnload");
+			onMidiMessageRef = cacheHookRef("onMidiMessage");
+			onTriggerRef = cacheHookRef("onTrigger");
+		}
+		lua_pop(L, 1); // pop rack table (or whatever "rack" turned out to be)
+
+		if (onMidiMessageRef == LUA_NOREF) {
+			handler->writeLog("No onMidiMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
+		}
+
 		callOnLoad(persistedConfigJson);
+	}
+
+	// Reads rack[name] and keeps a registry ref to it if it's a function,
+	// else returns LUA_NOREF. Assumes "rack" is on top of the stack and
+	// leaves it there — lua_getfield's pushed value is always popped back
+	// off, either directly or implicitly by luaL_ref.
+	int cacheHookRef(const char* name) {
+		lua_getfield(L, -1, name);
+		if (!lua_isfunction(L, -1)) {
+			lua_pop(L, 1);
+			return LUA_NOREF;
+		}
+		return luaL_ref(L, LUA_REGISTRYINDEX); // pops the function, returns its ref
 	}
 
 	// Runs rack.onUnload() and returns the JSON string of the value it
@@ -218,6 +258,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			// go out even though captureConfig() itself did not flush them.
 			flushMsgStore();
 			clearContextMenus();
+			// lua_close invalidates these anyway; reset for hygiene.
+			onMidiMessageRef = LUA_NOREF;
+			onTriggerRef = LUA_NOREF;
+			onLoadRef = LUA_NOREF;
+			onUnloadRef = LUA_NOREF;
 			lua_close(L);
 			L = nullptr;
 			return configJson;
@@ -225,16 +270,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return "";
 	}
 
-	// Runs the script's onLoad() hook after load, passing the persisted config
-	// (decoded from JSON) as its single argument, or no argument when none was
-	// persisted.
+	// Runs the script's onLoad() hook, passing the persisted config (decoded
+	// from JSON) as its argument, or no argument if none. Uses onLoadRef.
 	void callOnLoad(const std::string& persistedConfigJson) {
-		// Callbacks live on the rack table (rack.onLoad etc.), not on the
-		// global scope.
-		lua_getglobal(L, "rack");
-		if (!lua_istable(L, -1)) { lua_pop(L, 1); return; }
-		lua_getfield(L, -1, "onLoad");
-		if (!lua_isfunction(L, -1)) { lua_pop(L, 2); return; }
+		if (onLoadRef == LUA_NOREF) return;
+		lua_rawgeti(L, LUA_REGISTRYINDEX, onLoadRef);
 		int nargs = 0;
 		if (!persistedConfigJson.empty() && jsonToLuaTable(L, persistedConfigJson)) {
 			nargs = 1;
@@ -248,21 +288,17 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			handler->writeLog(string::f("onLoad error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
-		lua_pop(L, 1); // pop rack table
 		flushMsgStore();
 	}
 
-	// Runs the script's onUnload() hook. Returns 1 with the hook's return
-	// value (kept only if it is a table) on top of the stack, or 0. Only a
-	// table is kept — the engine can only persist table configs. Messages the
-	// hook queued are NOT flushed here (closeState() flushes them for
-	// teardown; captureConfig() discards them so a save has no audible side
-	// effects).
+	// Runs the script's onUnload() hook. Returns 1 with its return value on
+	// top of the stack (kept only if a table — the only persistable config
+	// shape), or 0. Messages are NOT flushed here: closeState() flushes them
+	// for teardown, captureConfig() discards them so a save has no audible
+	// side effects.
 	int callOnUnload() {
-		lua_getglobal(L, "rack");
-		if (!lua_istable(L, -1)) { lua_pop(L, 1); return 0; }
-		lua_getfield(L, -1, "onUnload");
-		if (!lua_isfunction(L, -1)) { lua_pop(L, 2); return 0; }
+		if (onUnloadRef == LUA_NOREF) return 0;
+		lua_rawgeti(L, LUA_REGISTRYINDEX, onUnloadRef);
 		msgCount = 0;
 		inCallback = true;
 		int status = lua_pcall(L, 0, 1, 0);
@@ -271,17 +307,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			const char* err = lua_tostring(L, -1);
 			handler->writeLog(string::f("onUnload error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
-			lua_pop(L, 1); // pop rack table
 			flushMsgStore();
 			return 0;
 		}
-		// Stack is now [rack table, result].
+		// Stack is now [result].
 		if (lua_istable(L, -1)) {
-			lua_remove(L, -2); // drop the rack table; the result stays on top
 			return 1;
 		}
 		lua_pop(L, 1); // pop non-table result
-		lua_pop(L, 1); // pop rack table
 		return 0;
 	}
 
@@ -661,10 +694,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		msgStore[0].isNrpn = false;
 		msgCount = 1;
 
-		lua_getglobal(L, "rack");
-		if (!lua_istable(L, -1)) { lua_pop(L, 1); return; }
-		lua_getfield(L, -1, "onMidiMessage");
-		if (!lua_isfunction(L, -1)) { lua_pop(L, 2); return; }
+		// Calls the cached onMidiMessageRef. No-op if never defined (LUA_NOREF).
+		if (onMidiMessageRef == LUA_NOREF) return;
+		lua_rawgeti(L, LUA_REGISTRYINDEX, onMidiMessageRef);
 		lua_pushinteger(L, midiPort + 1);
 		lua_pushinteger(L, 0);
 		inCallback = true;
@@ -675,20 +707,17 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			handler->writeLog(string::f("onMidiMessage error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
-		lua_pop(L, 1); // pop rack table
 
 		flushMsgStore();
 	}
 
-	// Dispatches onTrigger(trigPort) when the trigger input fires. No-op if
+	// Dispatches onTrigger(trigPort) via the cached onTriggerRef. No-op if
 	// the script never defined it.
 	void dispatchTrigger(int trigPort) override {
 		if (!L) return;
+		if (onTriggerRef == LUA_NOREF) return;
 
-		lua_getglobal(L, "rack");
-		if (!lua_istable(L, -1)) { lua_pop(L, 1); return; }
-		lua_getfield(L, -1, "onTrigger");
-		if (!lua_isfunction(L, -1)) { lua_pop(L, 2); return; }
+		lua_rawgeti(L, LUA_REGISTRYINDEX, onTriggerRef);
 		lua_pushinteger(L, trigPort + 1);
 		msgCount = 0;
 		inCallback = true;
@@ -699,7 +728,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			handler->writeLog(string::f("onTrigger error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
-		lua_pop(L, 1); // pop rack table
 
 		flushMsgStore();
 	}
