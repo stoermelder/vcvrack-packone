@@ -51,7 +51,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// as an integer reference (luaL_ref), not in ContextMenuSpec, because the
 	// UI thread only reads presentation copies through getContextMenus().
 	struct ContextMenuEntry {
-		ContextMenuSpec spec;
+		ScriptMenuItem spec;
 		int callbackRef;
 		int onGetValueRef = LUA_NOREF;
 	};
@@ -529,13 +529,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		nextContextMenuCallbackId = 1;
 	}
 
-	void getContextMenus(const std::function<void(const std::vector<ContextMenuSpec>&)>& callback) override {
+	void getContextMenus(const std::function<void(const std::vector<ScriptMenuItem>&)>& callback) override {
 		// The whole snapshot (including each onGetValue registry ref) is built
 		// on the worker thread, so getContextMenus() itself needs no lock/copy
 		// on the UI thread. The lock is released before any script call below.
 		runAsync([this, callback]() {
 			if (!L) return;
-			struct Snapshot { int id; ContextMenuSpec spec; int onGetValueRef; };
+			struct Snapshot { int id; ScriptMenuItem spec; int onGetValueRef; };
 			std::vector<Snapshot> snap;
 			{
 				std::lock_guard<std::mutex> lock(contextMenusMutex);
@@ -550,16 +550,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			std::sort(snap.begin(), snap.end(), [](const Snapshot& a, const Snapshot& b) {
 				return a.id < b.id;
 			});
-			std::vector<ContextMenuSpec> result;
+			std::vector<ScriptMenuItem> result;
 			result.reserve(snap.size());
 			for (const Snapshot& s : snap) {
-				ContextMenuSpec spec = s.spec;
+				ScriptMenuItem spec = s.spec;
 				int ref = s.onGetValueRef;
 				if (ref != LUA_NOREF) {
 					lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
 					int status = lua_pcall(L, 0, 1, 0);
 					if (status == LUA_OK) {
-						if (spec.type == ContextMenuSpec::Type::Boolean) {
+						if (spec.type == ScriptMenuItem::Type::Boolean) {
 							spec.checked = lua_toboolean(L, -1) != 0;
 						}
 						else {
@@ -590,7 +590,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// deferred to runAsync() because it must run on the worker thread
 	// alongside all other Lua work.
 	void invokeContextMenuCallback(int callbackId, int value) override {
-		ContextMenuSpec::Type type;
+		ScriptMenuItem::Type type;
 		std::string label;
 		{
 			std::lock_guard<std::mutex> lock(contextMenusMutex);
@@ -598,7 +598,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			if (it == contextMenus.end()) return;
 			const ContextMenuEntry& entry = it->second;
 			type = entry.spec.type;
-			if (type != ContextMenuSpec::Type::Boolean) {
+			if (type != ScriptMenuItem::Type::Boolean) {
 				if (value < 0 || value >= static_cast<int>(entry.spec.options.size())) return;
 				label = entry.spec.options[value];
 			}
@@ -615,7 +615,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			}
 			lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
 			int nargs;
-			if (type == ContextMenuSpec::Type::Boolean) {
+			if (type == ScriptMenuItem::Type::Boolean) {
 				lua_pushboolean(L, value != 0);
 				nargs = 1;
 			}
@@ -933,14 +933,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (lua_gettop(L) < 1 || !lua_istable(L, 1))
 			return luaL_error(L, "registerContextMenu: expected a table");
 
-		ContextMenuSpec spec;
+		ScriptMenuItem spec;
 
 		lua_getfield(L, 1, "type");
 		if (lua_type(L, -1) != LUA_TSTRING) return luaL_error(L, "registerContextMenu: type must be a string");
 		std::string type = lua_tostring(L, -1);
 		lua_pop(L, 1);
-		if (type == "options") spec.type = ContextMenuSpec::Type::Options;
-		else if (type == "boolean") spec.type = ContextMenuSpec::Type::Boolean;
+		if (type == "options") spec.type = ScriptMenuItem::Type::Options;
+		else if (type == "boolean") spec.type = ScriptMenuItem::Type::Boolean;
 		else return luaL_error(L, "registerContextMenu: type must be \"boolean\" or \"options\"");
 
 		lua_getfield(L, 1, "label");
@@ -954,7 +954,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_getfield(L, 1, "onChange");
 		if (!lua_isfunction(L, -1)) return luaL_error(L, "registerContextMenu: onChange must be a function");
 
-		if (spec.type == ContextMenuSpec::Type::Options) {
+		if (spec.type == ScriptMenuItem::Type::Options) {
 			lua_getfield(L, 1, "options");
 			if (!lua_istable(L, -1)) return luaL_error(L, "registerContextMenu: options must be a non-empty array of strings");
 			lua_len(L, -1);

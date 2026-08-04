@@ -519,7 +519,7 @@ struct LogDisplay : LedTextDisplay {
 // callback with the evaluated specs.
 struct ScriptContextMenuItems : ui::MenuEntry {
 	struct Context {
-		std::vector<MidiScript::ContextMenuSpec> specs;
+		std::vector<MidiScript::ScriptMenuItem> specs;
 		std::atomic<bool> loaded{false};
 	};
 	MidiKitModule* module;
@@ -531,7 +531,7 @@ struct ScriptContextMenuItems : ui::MenuEntry {
 		// Capture a local copy: Apple's Clang rejects capturing the data
 		// member `ctx` by name in a capture list.
 		std::shared_ptr<Context> c = ctx;
-		module->activeEngine->getContextMenus([c](const std::vector<MidiScript::ContextMenuSpec>& specs) {
+		module->activeEngine->getContextMenus([c](const std::vector<MidiScript::ScriptMenuItem>& specs) {
 			// Runs on the worker thread once every onGetValue has been
 			// evaluated. Only publishes the specs; the menu widgets are
 			// constructed by step() on the UI thread.
@@ -554,9 +554,9 @@ struct ScriptContextMenuItems : ui::MenuEntry {
 		if (!menu) return;
 		MidiKitModule* m = module;
 		Widget* anchor = this;
-		for (const MidiScript::ContextMenuSpec& spec : ctx->specs) {
+		for (const MidiScript::ScriptMenuItem& spec : ctx->specs) {
 			Widget* item;
-			if (spec.type == MidiScript::ContextMenuSpec::Type::Boolean) {
+			if (spec.type == MidiScript::ScriptMenuItem::Type::Boolean) {
 				item = createMenuItem(spec.label, CHECKMARK(spec.checked), [m, spec]() {
 					m->activeEngine->invokeContextMenuCallback(spec.callbackId, spec.checked ? 0 : 1);
 				});

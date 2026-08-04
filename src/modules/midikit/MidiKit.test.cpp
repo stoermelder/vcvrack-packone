@@ -369,8 +369,8 @@ struct RecordingEngine : MidiScriptEngine {
 	std::string getInputName(int i) override { return ""; }
 	std::string getParamName(int i) override { return ""; }
 	std::string getParamFormatValue(int i) override { return ""; }
-	void getContextMenus(const std::function<void(const std::vector<StoermelderPackOne::MidiScript::ContextMenuSpec>&)>& callback) override {
-		std::vector<StoermelderPackOne::MidiScript::ContextMenuSpec> empty;
+	void getContextMenus(const std::function<void(const std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem>&)>& callback) override {
+		std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem> empty;
 		callback(empty);
 	}
 	void invokeContextMenuCallback(int callbackId, int value) override { }

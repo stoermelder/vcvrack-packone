@@ -17,7 +17,7 @@ using rack::midi::Message;
 // copied spec never owns a script-function reference and can be handed freely
 // to the UI thread. checked/selected are filled by getContextMenus() when the
 // menu is built and default to 0 when the script registered no onGetValue.
-struct ContextMenuSpec {
+struct ScriptMenuItem {
 	enum class Type { Boolean, Options } type = Type::Boolean;
 	std::string label;
 	// Options variant: selectable labels and the current selection index
@@ -36,7 +36,7 @@ struct ContextMenuSpec {
 	// the script's onChange callback inside the engine.
 	int callbackId = -1;
 
-	ContextMenuSpec() : selected(0) {}
+	ScriptMenuItem() : selected(0) {}
 };
 
 
@@ -276,7 +276,7 @@ struct MidiScriptEngine {
 	// the UI thread before building the actual menu items. When a script
 	// registered no onGetValue for an item, that item reports value 0
 	// (unchecked / first option).
-	virtual void getContextMenus(const std::function<void(const std::vector<ContextMenuSpec>&)>& callback) = 0;
+	virtual void getContextMenus(const std::function<void(const std::vector<ScriptMenuItem>&)>& callback) = 0;
 	// Called from the widget's menu-action handler (UI thread) when the user
 	// clicks a script menu item. value is 0/1 for a Boolean toggle and the
 	// selected index for Options. The script callback runs on the worker thread.

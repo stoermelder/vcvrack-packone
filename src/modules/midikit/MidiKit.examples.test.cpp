@@ -2,7 +2,7 @@
 #include <fstream>
 #include <sstream>
 
-using StoermelderPackOne::MidiScript::ContextMenuSpec;
+using StoermelderPackOne::MidiScript::ScriptMenuItem;
 
 // Smoke test for the shipped example presets in presets/MidiKit/. These are
 // only exercised by loading them in Rack, and an unsupported construct can
@@ -834,8 +834,8 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' output channel menu changes the 
 	m->params[MidiKitModule::PARAM + 3].setValue(0.25f);  // velocity 33
 
 	// "Output channel" option index 1 -> MIDI channel 2 (internal 1).
-	std::vector<ContextMenuSpec> specs;
-	m->activeEngine->getContextMenus([&specs](const std::vector<ContextMenuSpec>& s) { specs = s; });
+	std::vector<ScriptMenuItem> specs;
+	m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 	REQUIRE(specs.size() == 1);
 	REQUIRE(specs[0].label == "Output channel");
 	m->activeEngine->invokeContextMenuCallback(specs[0].callbackId, 1);
@@ -1004,8 +1004,8 @@ TEST_CASE("'Keyboard split.js/.lua' the preset menu switches the active preset",
 
 	MidiKitModule* m = loadPreset(path);
 
-	std::vector<ContextMenuSpec> specs;
-	m->activeEngine->getContextMenus([&specs](const std::vector<ContextMenuSpec>& s) { specs = s; });
+	std::vector<ScriptMenuItem> specs;
+	m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 	REQUIRE(specs.size() == 1);
 	REQUIRE(specs[0].label == "Preset");
 	REQUIRE(specs[0].options.size() == 3);
@@ -1504,8 +1504,8 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	// right-click context menus, exactly as a user would.
 	MidiKitModule* m = loadPreset(path);
 
-	std::vector<ContextMenuSpec> specs;
-	m->activeEngine->getContextMenus([&specs](const std::vector<ContextMenuSpec>& s) { specs = s; });
+	std::vector<ScriptMenuItem> specs;
+	m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 	REQUIRE(specs.size() == 3);
 	REQUIRE(specs[1].label == "Channel");
 	REQUIRE(specs[2].label == "Round up on ties");
@@ -1544,8 +1544,8 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	// reload the rebuilt menus reflect the restored config — the regression
 	// this fix targets (checked/selected used to be captured at script load
 	// time, before onLoad() restored the persisted config).
-	std::vector<ContextMenuSpec> restoredSpecs;
-	m2->activeEngine->getContextMenus([&restoredSpecs](const std::vector<ContextMenuSpec>& s) { restoredSpecs = s; });
+	std::vector<ScriptMenuItem> restoredSpecs;
+	m2->activeEngine->getContextMenus([&restoredSpecs](const std::vector<ScriptMenuItem>& s) { restoredSpecs = s; });
 	REQUIRE(restoredSpecs.size() == 3);
 	REQUIRE(restoredSpecs[1].label == "Channel");
 	REQUIRE(restoredSpecs[2].label == "Round up on ties");
@@ -1840,8 +1840,8 @@ TEST_CASE("'Micro scale.js/.lua' alwaysSendBend forces a bend even for the tonic
 
 	MidiKitModule* m = loadPreset(path);
 
-	std::vector<ContextMenuSpec> specs;
-	m->activeEngine->getContextMenus([&specs](const std::vector<ContextMenuSpec>& s) { specs = s; });
+	std::vector<ScriptMenuItem> specs;
+	m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 	REQUIRE(specs.size() == 2);
 	REQUIRE(specs[0].label == "Input channel");
 	REQUIRE(specs[1].label == "Always send pitch bend");
@@ -1877,8 +1877,8 @@ TEST_CASE("'Micro scale.js/.lua' input-channel filter retunes only the chosen ch
 
 	MidiKitModule* m = loadPreset(path);
 
-	std::vector<ContextMenuSpec> specs;
-	m->activeEngine->getContextMenus([&specs](const std::vector<ContextMenuSpec>& s) { specs = s; });
+	std::vector<ScriptMenuItem> specs;
+	m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 	// "Input channel" option index 1 selects script channel 1. The script's
 	// channels are 1-based (midi.getChannel returns the Rack nibble + 1), so
 	// the matching note is fed as noteOn(0, ...) and the non-matching one as
@@ -2541,8 +2541,8 @@ TEST_CASE("'NRPN Generator.js/.lua' context menu changes ticks per step and chan
 
 	MidiKitModule* m = loadPreset(path);
 
-	std::vector<ContextMenuSpec> specs;
-	m->activeEngine->getContextMenus([&specs](const std::vector<ContextMenuSpec>& s) { specs = s; });
+	std::vector<ScriptMenuItem> specs;
+	m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 	REQUIRE(specs.size() == 2);
 	REQUIRE(specs[0].label == "Channel");
 	REQUIRE(specs[1].label == "Ticks per step");
@@ -2557,8 +2557,8 @@ TEST_CASE("'NRPN Generator.js/.lua' context menu changes ticks per step and chan
 	REQUIRE(feedTicks(m, 2) == nrpnQuad(2, 0, 16));
 
 	// The menus report the new selections (read back through onGetValue).
-	std::vector<ContextMenuSpec> after;
-	m->activeEngine->getContextMenus([&after](const std::vector<ContextMenuSpec>& s) { after = s; });
+	std::vector<ScriptMenuItem> after;
+	m->activeEngine->getContextMenus([&after](const std::vector<ScriptMenuItem>& s) { after = s; });
 	REQUIRE(after[0].selected == 1);
 	REQUIRE(after[1].selected == 1);
 

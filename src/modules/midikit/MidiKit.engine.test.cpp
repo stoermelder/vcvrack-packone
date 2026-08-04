@@ -1,6 +1,6 @@
 #include "MidiKit.test.hpp"
 
-using StoermelderPackOne::MidiScript::ContextMenuSpec;
+using StoermelderPackOne::MidiScript::ScriptMenuItem;
 
 // Cross-engine equivalence suite (review finding D7).
 //
@@ -2127,8 +2127,8 @@ TEST_CASE("Script config survives capture and reload in both engines", "[MidiKit
 		REQUIRE(configBool(config, "emitTrigger") == true);
 
 		// The user flips a setting via the script's context menu.
-		std::vector<ContextMenuSpec> specs;
-		m->activeEngine->getContextMenus([&specs](const std::vector<ContextMenuSpec>& s) { specs = s; });
+		std::vector<ScriptMenuItem> specs;
+		m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 		REQUIRE(specs.size() == 1);
 		m->activeEngine->invokeContextMenuCallback(specs[0].callbackId, 0);
 		drainLog(m);
@@ -2311,7 +2311,7 @@ TEST_CASE("out-queue flushes in send() order, not handle-creation order, in both
 // presentation-state updates (checked/selected) are observable.
 struct MenuResult {
 	bool loaded = false;
-	std::vector<ContextMenuSpec> specs;
+	std::vector<ScriptMenuItem> specs;
 	std::string loadLog;
 	std::string log;
 };
@@ -2331,7 +2331,7 @@ static MenuResult runMenu(const std::string& script, int clickId = -1, int click
 		// thread, so the callback has already fired by the time getContextMenus
 		// returns and r.specs is filled synchronously.
 		auto queryMenus = [&]() {
-			m->activeEngine->getContextMenus([&r](const std::vector<ContextMenuSpec>& specs) {
+			m->activeEngine->getContextMenus([&r](const std::vector<ScriptMenuItem>& specs) {
 				r.specs = specs;
 			});
 		};
@@ -2350,13 +2350,13 @@ static MenuResult runMenu(const std::string& script, int clickId = -1, int click
 // and identical presentation fields. callbackId is engine-internal (both
 // assign 1, 2, 3… in registration order), so only its validity is checked,
 // not its exact value.
-static void requireSameMenus(const std::vector<ContextMenuSpec>& a, const std::vector<ContextMenuSpec>& b) {
+static void requireSameMenus(const std::vector<ScriptMenuItem>& a, const std::vector<ScriptMenuItem>& b) {
 	REQUIRE(a.size() == b.size());
 	for (size_t i = 0; i < a.size(); i++) {
 		REQUIRE(a[i].type == b[i].type);
 		REQUIRE(a[i].label == b[i].label);
 		// checked/selected share one union member; only read the active one.
-		if (a[i].type == ContextMenuSpec::Type::Boolean)
+		if (a[i].type == ScriptMenuItem::Type::Boolean)
 			REQUIRE(a[i].checked == b[i].checked);
 		else
 			REQUIRE(a[i].selected == b[i].selected);
@@ -2407,7 +2407,7 @@ TEST_CASE("registerContextMenu boolean menu is identical", "[MidiKit][CrossEngin
 	requireSameMenus(js.specs, lua.specs);
 
 	REQUIRE(js.specs.size() == 1);
-	REQUIRE(js.specs[0].type == ContextMenuSpec::Type::Boolean);
+	REQUIRE(js.specs[0].type == ScriptMenuItem::Type::Boolean);
 	REQUIRE(js.specs[0].label == "Velocity to CC");
 	REQUIRE(js.specs[0].checked == false);
 
@@ -2470,7 +2470,7 @@ TEST_CASE("registerContextMenu options menu is identical", "[MidiKit][CrossEngin
 	requireSameMenus(js.specs, lua.specs);
 
 	REQUIRE(js.specs.size() == 1);
-	REQUIRE(js.specs[0].type == ContextMenuSpec::Type::Options);
+	REQUIRE(js.specs[0].type == ScriptMenuItem::Type::Options);
 	REQUIRE(js.specs[0].label == "Out mode");
 	REQUIRE(js.specs[0].options.size() == 3);
 	REQUIRE(js.specs[0].options[0] == "Internal");
@@ -2511,8 +2511,8 @@ TEST_CASE("Multiple registerContextMenu calls keep registration order", "[MidiKi
 	REQUIRE(js.specs.size() == 2);
 	REQUIRE(js.specs[0].label == "First");
 	REQUIRE(js.specs[1].label == "Second");
-	REQUIRE(js.specs[0].type == ContextMenuSpec::Type::Boolean);
-	REQUIRE(js.specs[1].type == ContextMenuSpec::Type::Options);
+	REQUIRE(js.specs[0].type == ScriptMenuItem::Type::Boolean);
+	REQUIRE(js.specs[1].type == ScriptMenuItem::Type::Options);
 	// callbackIds are assigned monotonically in registration order.
 	REQUIRE(js.specs[0].callbackId < js.specs[1].callbackId);
 	REQUIRE(lua.specs[0].callbackId < lua.specs[1].callbackId);
@@ -2690,7 +2690,7 @@ TEST_CASE("onGetValue returning nothing defaults to false/0", "[MidiKit][CrossEn
 	REQUIRE(lua.loaded);
 	requireSameMenus(js.specs, lua.specs);
 	REQUIRE(js.specs.size() == 1);
-	REQUIRE(js.specs[0].type == ContextMenuSpec::Type::Boolean);
+	REQUIRE(js.specs[0].type == ScriptMenuItem::Type::Boolean);
 	REQUIRE(js.specs[0].checked == false);
 	REQUIRE(lua.specs[0].checked == false);
 
@@ -2702,7 +2702,7 @@ TEST_CASE("onGetValue returning nothing defaults to false/0", "[MidiKit][CrossEn
 	REQUIRE(luaOpt.loaded);
 	requireSameMenus(jsOpt.specs, luaOpt.specs);
 	REQUIRE(jsOpt.specs.size() == 1);
-	REQUIRE(jsOpt.specs[0].type == ContextMenuSpec::Type::Options);
+	REQUIRE(jsOpt.specs[0].type == ScriptMenuItem::Type::Options);
 	REQUIRE(jsOpt.specs[0].selected == 0);
 	REQUIRE(luaOpt.specs[0].selected == 0);
 }

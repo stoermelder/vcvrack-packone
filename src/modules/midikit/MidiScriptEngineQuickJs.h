@@ -52,10 +52,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	int selectedPort = 0;
 
 	// Script-registered context menus. The JSValue callback lives here (not in
-	// ContextMenuSpec) because it is only ever touched on the worker thread;
+	// ScriptMenuItem) because it is only ever touched on the worker thread;
 	// the UI thread reads presentation copies through getContextMenus().
 	struct ContextMenuEntry {
-		ContextMenuSpec spec;
+		ScriptMenuItem spec;
 		JSValue callbackFn;
 		JSValue onGetValueFn = JS_UNDEFINED;
 	};
@@ -495,7 +495,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		nextContextMenuCallbackId = 1;
 	}
 
-	void getContextMenus(const std::function<void(const std::vector<ContextMenuSpec>&)>& callback) override {
+	void getContextMenus(const std::function<void(const std::vector<ScriptMenuItem>&)>& callback) override {
 		// The whole snapshot is built on the worker thread, so getContextMenus()
 		// itself needs no lock/copy on the UI thread. Each onGetValue function
 		// is dup'd here under the same lock that guards the map — QuickJS
@@ -503,7 +503,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// thread. The lock is released before any script call below.
 		runAsync([this, callback]() {
 			if (!ctx) return;
-			struct Snapshot { int id; ContextMenuSpec spec; JSValue onGetValueFn; };
+			struct Snapshot { int id; ScriptMenuItem spec; JSValue onGetValueFn; };
 			std::vector<Snapshot> snap;
 			{
 				std::lock_guard<std::mutex> lock(contextMenusMutex);
@@ -518,12 +518,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			std::sort(snap.begin(), snap.end(), [](const Snapshot& a, const Snapshot& b) {
 				return a.id < b.id;
 			});
-			std::vector<ContextMenuSpec> result;
+			std::vector<ScriptMenuItem> result;
 			result.reserve(snap.size());
 			JSValue glob = JS_GetGlobalObject(ctx);
 			JSValue rack = JS_GetPropertyStr(ctx, glob, "rack");
 			for (const Snapshot& s : snap) {
-				ContextMenuSpec spec = s.spec;
+				ScriptMenuItem spec = s.spec;
 				// Each snapshot owns one dup'd reference; freed after use below.
 				JSValue fn = s.onGetValueFn;
 				if (JS_IsFunction(ctx, fn)) {
@@ -535,7 +535,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 						JS_FreeValue(ctx, exc);
 					}
 					else {
-						if (spec.type == ContextMenuSpec::Type::Boolean) {
+						if (spec.type == ScriptMenuItem::Type::Boolean) {
 							int b = JS_ToBool(ctx, r);
 							if (b >= 0) spec.checked = (b != 0);
 						}
@@ -568,7 +568,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// deferred to runAsync() because it must run on the worker thread
 	// alongside all other JS work.
 	void invokeContextMenuCallback(int callbackId, int value) override {
-		ContextMenuSpec::Type type;
+		ScriptMenuItem::Type type;
 		std::string label;
 		{
 			std::lock_guard<std::mutex> lock(contextMenusMutex);
@@ -576,7 +576,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (it == contextMenus.end()) return;
 			const ContextMenuEntry& entry = it->second;
 			type = entry.spec.type;
-			if (type != ContextMenuSpec::Type::Boolean) {
+			if (type != ScriptMenuItem::Type::Boolean) {
 				if (value < 0 || value >= static_cast<int>(entry.spec.options.size())) return;
 				label = entry.spec.options[value];
 			}
@@ -598,7 +598,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JSValue rack = JS_GetPropertyStr(ctx, glob, "rack");
 			JSValue args[2];
 			int argc;
-			if (type == ContextMenuSpec::Type::Boolean) {
+			if (type == ScriptMenuItem::Type::Boolean) {
 				args[0] = JS_NewBool(ctx, value != 0);
 				argc = 1;
 			}
@@ -852,13 +852,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		MidiScriptEngineQuickJs* e = ctxMap[ctx];
 		if (argc < 1 || !JS_IsObject(argv[0])) return jsThrow(ctx, "registerContextMenu: bad args");
 
-		ContextMenuSpec spec;
+		ScriptMenuItem spec;
 
 		JSValue typeV = JS_GetPropertyStr(ctx, argv[0], "type");
 		std::string type = JS_IsString(typeV) ? e->jsToStdString(typeV) : "";
 		JS_FreeValue(ctx, typeV);
-		if (type == "options") spec.type = ContextMenuSpec::Type::Options;
-		else if (type == "boolean") spec.type = ContextMenuSpec::Type::Boolean;
+		if (type == "options") spec.type = ScriptMenuItem::Type::Options;
+		else if (type == "boolean") spec.type = ScriptMenuItem::Type::Boolean;
 		else return jsThrow(ctx, "registerContextMenu: type must be \"boolean\" or \"options\"");
 
 		JSValue labelV = JS_GetPropertyStr(ctx, argv[0], "label");
@@ -873,7 +873,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "registerContextMenu: onChange must be a function");
 		}
 
-		if (spec.type == ContextMenuSpec::Type::Options) {
+		if (spec.type == ScriptMenuItem::Type::Options) {
 			JSValue optionsV = JS_GetPropertyStr(ctx, argv[0], "options");
 			if (!JS_IsArray(ctx, optionsV)) {
 				JS_FreeValue(ctx, optionsV);
