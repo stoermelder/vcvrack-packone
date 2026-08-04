@@ -4,31 +4,17 @@
 
 using StoermelderPackOne::MidiScript::ContextMenuSpec;
 
-// Smoke test for the shipped example presets in presets/MidiKit/.
-//
-// These scripts are only ever exercised by loading them in Rack, so nothing
-// else in the suite would notice if one stopped working — and both engines fail
-// in ways that are easy to miss by reading: a script with an unsupported
-// construct can load cleanly, report "Script loaded", and then error out on
-// every single MIDI message. See project SCRIPTING.md ("QuickJs language
-// limitations"); the boolean === / !== entry there was found by this test.
-//
-// Each preset is loaded into a real module and fed representative traffic, then
-// checked for three things: nothing error-shaped in the load log, nothing
-// error-shaped in the per-message log, and at least one MIDI message actually
-// produced. The last check matters — without it a script whose onMidiMessage
-// never runs at all passes both error checks trivially.
+// Smoke test for the shipped example presets in presets/MidiKit/. These are
+// only exercised by loading them in Rack, and an unsupported construct can
+// load cleanly yet still error on every message. Each preset is loaded into a
+// real module and checked for: no error in the load log, no error in the
+// per-message log, and at least one MIDI message produced (so a script whose
+// onMidiMessage never runs can't pass trivially).
 
-// Presets are read from disk, so the paths must not depend on the working
-// directory the test binary happens to be started from.
-//
-// __FILE__ is whatever path the compiler was handed, and the test Makefile rule
-// passes "$<" — a path relative to the repo root, not an absolute one. So this
-// strips the known "src/modules/midikit/<file>" suffix rather than counting
-// slashes: counting four levels up from a relative __FILE__ overshoots and
-// yields "src", which is how this used to look for src/presets/MidiKit/...
-// An empty result means __FILE__ was already repo-root-relative, in which case
-// "." (the directory make runs from) is correct.
+// Presets are read from disk, so paths must not depend on the test binary's
+// working directory. __FILE__ is repo-root-relative (make passes "$<"), so
+// strip the known "src/modules/midikit/" suffix; if already root-relative the
+// result is empty and "." (make's cwd) is correct.
 static std::string repoRoot() {
 	static const std::string suffix = "src/modules/midikit/";
 	std::string f = __FILE__;
@@ -158,11 +144,9 @@ static std::vector<NoteEvent> feedTick(MidiKitModule* m) {
 }
 
 // Like NoteEvent but also carries the engine's tick-scheduling value for the
-// message: 0 = send immediately, N = send once the trigger-input tick counter
-// reaches N. The note-length quantiser schedules its Note-Offs through
-// midiOut.sendAfterTrigger(), so its tests need this to assert the note is
-// cut exactly config.lengthTicks ticks after the Note-On - the tick value the
-// engine stamps on the message is the only way to observe the scheduling.
+// message: 0 = send immediately, N = send once the trigger tick counter reaches
+// N. The note-length quantiser schedules Note-Offs via sendAfterTrigger(), so
+// this tick value is the only way to observe that scheduling.
 struct OutEvent {
 	uint8_t status;  // status nibble: 0x9 = Note-On, 0x8 = Note-Off, 0xb = CC, 0xf = realtime
 	uint8_t channel; // Rack's internal 0-based channel; the script's 1-based channel is this + 1
@@ -191,8 +175,7 @@ namespace Catch {
 }
 
 // Drains an engine's out-queue into OutEvents. Also used after loadScript("")
-// to read the messages onUnload() queued into the engine that was active
-// before the reload.
+// to read the messages onUnload() queued into the pre-reload engine.
 static std::vector<OutEvent> drainOut(MidiScriptEngine* engine) {
 	std::vector<OutEvent> events;
 	int port, ticks;
@@ -203,9 +186,9 @@ static std::vector<OutEvent> drainOut(MidiScriptEngine* engine) {
 	return events;
 }
 
-// feed() plus a drain of the engine's out-queue, decoded into OutEvents. The
-// behavioural preset tests below need the actual outgoing messages (and their
-// tick scheduling), not just "the script ran without erroring".
+// feed() plus a drain of the engine's out-queue. The behavioural tests need
+// the actual outgoing messages (and their tick scheduling), not just "ran
+// without erroring".
 static std::vector<OutEvent> feedCollect(MidiKitModule* m, midi::Message msg) {
 	m->activeEngine->processInMessage(0, msg);
 	m->activeEngine->process();
@@ -213,7 +196,70 @@ static std::vector<OutEvent> feedCollect(MidiKitModule* m, midi::Message msg) {
 }
 
 
-static void checkPreset(const std::string& relPath) {
+// Preset metadata.
+//
+// PRESETS[] is the single table every behavioural preset is listed in: its
+// subfolder ("" for top-level, "creative/" for the creative subfolder) and its
+// script stem. Both the smoke test and every behavioural test derive their
+// paths from this one table via presetPath(), so the creative-subfolder
+// location can't drift. The trivial one-branch presets (PassThrough, Filter
+// Ch2, ...) are deliberately absent: they have nothing to regress and some
+// drop everything by design, so the "produced output" check wouldn't apply.
+struct PresetInfo {
+	const char* subfolder;  // "" for top-level, "creative/" for the creative subfolder
+	const char* name;       // script stem without extension
+	bool midiDriven;        // false for trigger-clocked presets (Arpeggiator) that
+	                        // produce no output from plain MIDI traffic
+};
+static const PresetInfo PRESETS[] = {
+	{"", "MPE to single channel", true},
+	{"", "Clock divider", true},
+	{"", "Note length quantiser", true},
+	{"", "Velocity curve", true},
+	{"", "Scale quantiser", true},
+	{"", "Chord harmonizer", true},
+	{"", "NRPN to CC", true},
+	{"", "NRPN Generator", true},
+	{"", "Copy Ch1 CC to Ch2", true},
+	{"", "Rewrite Ch1 to Ch2", true},
+	{"", "Micro scale", true},
+	{"", "Arpeggiator", false},   // trigger-clocked; emits nothing for MIDI traffic
+	{"creative/", "Euclidean rhythm generator", true},
+	{"creative/", "Keyboard split", true},
+	{"creative/", "Bouncing ball delay", true},
+	{"creative/", "Gravity well", true}
+};
+
+// The two engine variants every preset ships in. Behavioural tests iterate
+// this once per TEST_CASE; subfolder and stem always come from PRESETS[].
+static const char* ENGINES[] = {"JavaScript", "Lua"};
+
+static std::string presetPath(const PresetInfo& p, const char* engine) {
+	std::string ext = (std::string(engine) == "JavaScript") ? ".js" : ".lua";
+	return std::string("presets/MidiKit/") + engine + "/" + p.subfolder + p.name + ext;
+}
+
+// Looks up the PRESETS[] entry for a named preset; the name must match. A
+// mistyped name fails loudly here rather than silently running the wrong
+// script.
+static const PresetInfo& requirePreset(const char* name) {
+	for (const auto& p : PRESETS)
+		if (std::strcmp(p.name, name) == 0) return p;
+	FAIL("preset not found in PRESETS[]: " << name);
+	return PRESETS[0]; // unreachable; silences the return-path warning
+}
+
+// Generator yielding the preset file path for every engine variant of the
+// named preset (e.g. ".../JavaScript/Arpeggiator.js" and ".../Lua/Arpeggiator.lua").
+// One GENERATE over this replaces the former engine + preset pair.
+static auto presetPaths(const char* name) {
+	return Catch::Generators::map(
+		[name](const char* engine) { return presetPath(requirePreset(name), engine); },
+		Catch::Generators::from_range(std::begin(ENGINES), std::end(ENGINES)));
+}
+
+static void checkPreset(const PresetInfo& p, const char* engine) {
+	std::string relPath = presetPath(p, engine);
 	CATCH_INFO("preset: " << relPath);
 	MidiKitModule* m = createModule();
 	m->loadScript(readFile(repoRoot() + "/" + relPath));
@@ -224,18 +270,17 @@ static void checkPreset(const std::string& relPath) {
 	REQUIRE(loadLog.find("not compatible") == std::string::npos);
 	REQUIRE(loadLog.find("Script loaded") != std::string::npos);
 
-	// Representative traffic: notes on two channels (so channel filters and
-	// MPE member-channel handling both see something), a full release, and
-	// enough clock ticks to drive the clock-counting scripts past a step.
+// Representative traffic: notes on two channels (exercising channel filters
+// and MPE member handling), a full release, and enough clock ticks to drive
+// the clock-counting scripts past a step.
 	feed(m, noteOn(1, 60, 100));
 	feed(m, noteOn(2, 64, 40));
 	feed(m, noteOff(1, 60));
 	feed(m, noteOff(2, 64));
 	for (int i = 0; i < 32; i++) feed(m, clockTick());
 
-	// A complete NRPN write (parameter 1, an entry the NRPN preset maps) plus a
-	// plain CC. Note/clock traffic alone leaves the CC-driven presets silent, so
-	// without this the "produced output" check below cannot pass for them.
+	// A complete NRPN write (parameter 1, which the NRPN preset maps) plus a
+	// plain CC - note/clock traffic alone leaves the CC-driven presets silent.
 	feed(m, cc(1, 99, 0));    // parameter number MSB
 	feed(m, cc(1, 98, 1));    // parameter number LSB
 	feed(m, cc(1, 6, 64));    // data entry MSB
@@ -246,68 +291,42 @@ static void checkPreset(const std::string& relPath) {
 	CATCH_INFO("runtime log:\n" << runLog);
 	REQUIRE(runLog.find("rror") == std::string::npos);
 
-	// Every one of these presets emits something for the traffic above.
-	// Without this the log checks would also pass for a script that never ran.
-	int outPort = 0, outTicks = 0;
-	midi::Message outMsg;
-	REQUIRE(m->activeEngine->processOutMessage(outPort, outMsg, outTicks));
+	// Every preset emits something for the traffic above (without this, a
+	// script that never ran would pass the log checks). The Arpeggiator is
+	// trigger-clocked and emits nothing for MIDI traffic, so it is exempt.
+	if (p.midiDriven) {
+		int outPort = 0, outTicks = 0;
+		midi::Message outMsg;
+		REQUIRE(m->activeEngine->processOutMessage(outPort, outMsg, outTicks));
+	}
 
 	Test::destroyModule(m);
 }
 
-// Presets carrying real logic. The trivial ones (PassThrough, Filter Ch2, ...)
-// are deliberately not listed: they are single-branch scripts with nothing to
-// regress, and some drop everything by design, so the "produced output" check
-// would not apply to them.
-static const char* PRESETS[] = {
-	"MPE to single channel",
-	"Clock divider",
-	"Note length quantiser",
-	"Velocity curve",
-	"Scale quantiser",
-	"Chord harmonizer",
-	"NRPN to CC",
-	"NRPN Generator",
-	"Copy Ch1 CC to Ch2",
-	"Rewrite Ch1 to Ch2",
-	"Micro scale",
-	"Euclidean rhythm generator",
-	"Keyboard split",
-	"Bouncing ball delay",
-	"Gravity well"
-};
-
-// GENERATE re-runs the body once per preset name, and Catch2 treats every
-// generated value as its own leaf: a failure names the preset that broke and
-// the others still run, instead of the whole engine stopping at the first bad
-// script. Listing the names in the TEST_CASE is unavoidable — a TEST_CASE is
-// registered at static-init time, so it cannot be produced per array element.
+// GENERATE re-runs the body once per preset name, and each generated value is
+// its own Catch2 leaf: a failure names the preset that broke and the others
+// still run. Listing the names is unavoidable - a TEST_CASE is registered at
+// static-init time, so it can't be produced per array element.
 TEST_CASE("JavaScript preset loads and runs without errors", "[MidiKit][Presets]") {
-	std::string name = GENERATE(from_range(std::begin(PRESETS), std::end(PRESETS)));
-	checkPreset("presets/MidiKit/JavaScript/" + name + ".js");
+	PresetInfo p = GENERATE(from_range(std::begin(PRESETS), std::end(PRESETS)));
+	checkPreset(p, "JavaScript");
 }
 
 TEST_CASE("Lua preset loads and runs without errors", "[MidiKit][Presets]") {
-	std::string name = GENERATE(from_range(std::begin(PRESETS), std::end(PRESETS)));
-	checkPreset("presets/MidiKit/Lua/" + name + ".lua");
+	PresetInfo p = GENERATE(from_range(std::begin(PRESETS), std::end(PRESETS)));
+	checkPreset(p, "Lua");
 }
 
-// Behavioural tests for the Arpeggiator preset, beyond the generic smoke
-// check above. The arp is clocked by onTrigger (the CV trigger input) rather
-// than by incoming MIDI, and its four params (clock division, octave range,
-// note length, playmode) are read live from the module's Param objects — so
-// each case here sets params directly on the module, builds a held chord via
-// Note-On/Note-Off, steps the clock via feedTick(), and asserts on the actual
-// decoded note sequence and timing produced, rather than only "it ran without
-// erroring".
-static const char* ARPEGGIATOR_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/Arpeggiator.js",
-	"presets/MidiKit/Lua/Arpeggiator.lua"
-};
+// Behavioural tests for the Arpeggiator preset. It is clocked by onTrigger
+// (the CV trigger input) rather than MIDI, and its four params are read live
+// from the module's Param objects. Each case sets params directly, builds a
+// held chord via Note-On/Off, steps the clock via feedTick(), and asserts on
+// the decoded note sequence and timing.
+
 
 // Loads a preset file into a fresh module and asserts it loaded cleanly (no
-// error lines, and the "Script loaded" confirmation). Shared by all the
-// behavioural preset tests.
+// error lines, and the "Script loaded" confirmation). Shared by the
+// behavioural tests.
 static MidiKitModule* loadPreset(const std::string& relPath) {
 	MidiKitModule* m = createModule();
 	m->loadScript(readFile(repoRoot() + "/" + relPath));
@@ -320,10 +339,9 @@ static MidiKitModule* loadPreset(const std::string& relPath) {
 	return m;
 }
 
-// Loads one of the two Arpeggiator preset files and sets its four params by
-// normalized 0..1 Param value - the same values a user would get from the
-// panel knobs, so this exercises the same param.getValue() reads the script
-// makes rather than reaching into script-internal state.
+// Loads one of the two Arpeggiator presets and sets its four params by
+// normalized 0..1 Param value - the same reads a user's panel knobs produce,
+// so this exercises the script's param.getValue() path.
 static MidiKitModule* loadArp(const std::string& relPath, float clockDivision, float octaveRange, float noteLength, float playmode) {
 	MidiKitModule* m = loadPreset(relPath);
 	m->params[MidiKitModule::PARAM + 0].setValue(clockDivision);
@@ -335,7 +353,7 @@ static MidiKitModule* loadArp(const std::string& relPath, float clockDivision, f
 
 // --- Up mode, 1 tick/step, 1 octave: plain ascending replay of the held chord ---
 TEST_CASE("'Arpeggiator.js/.lua' Up mode steps the held chord in press order", "[MidiKit][Arpeggiator]") {
-	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
 
 	// clockDivision=0 -> DIVISIONS[0]=1 tick/step, octaveRange=0 -> 1 octave,
@@ -365,7 +383,7 @@ TEST_CASE("'Arpeggiator.js/.lua' Up mode steps the held chord in press order", "
 
 // --- Down mode: exact reverse of press order ---
 TEST_CASE("'Arpeggiator.js/.lua' Down mode steps the held chord in reverse", "[MidiKit][Arpeggiator]") {
-	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
 
 	// playmode=0.99 -> last entry in PLAYMODES (Down is index 1 of 3, so 0.5).
@@ -392,7 +410,7 @@ TEST_CASE("'Arpeggiator.js/.lua' Down mode steps the held chord in reverse", "[M
 
 // --- Up-Down mode: ascends then descends without repeating the two end notes ---
 TEST_CASE("'Arpeggiator.js/.lua' Up-Down mode does not repeat the end notes", "[MidiKit][Arpeggiator]") {
-	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
 
 	// playmode=0.99 -> last entry in PLAYMODES (Up-Down, index 2 of 3).
@@ -421,7 +439,7 @@ TEST_CASE("'Arpeggiator.js/.lua' Up-Down mode does not repeat the end notes", "[
 
 // --- Octave range doubles the pattern upward before it cycles ---
 TEST_CASE("'Arpeggiator.js/.lua' octave range repeats the chord one octave higher", "[MidiKit][Arpeggiator]") {
-	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
 
 	// octaveRange=0.5 -> floor(0.5*4)+1 = 3 octaves, playmode=0 -> Up.
@@ -447,7 +465,7 @@ TEST_CASE("'Arpeggiator.js/.lua' octave range repeats the chord one octave highe
 
 // --- Clock division: steps only advance every Nth trigger tick ---
 TEST_CASE("'Arpeggiator.js/.lua' clock division holds the step across intermediate ticks", "[MidiKit][Arpeggiator]") {
-	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
 
 	// clockDivision index 3 -> DIVISIONS[3] = 4 ticks/step. 4 divisions span
@@ -479,7 +497,7 @@ TEST_CASE("'Arpeggiator.js/.lua' clock division holds the step across intermedia
 
 // --- Note length: the scheduled Note-Off must always land before the next Note-On ---
 TEST_CASE("'Arpeggiator.js/.lua' note length never overruns into the next step", "[MidiKit][Arpeggiator]") {
-	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
 
 	// noteLength=1.0 (full gate) at clockDivision index 0 -> 1 tick/step; the
@@ -517,7 +535,7 @@ TEST_CASE("'Arpeggiator.js/.lua' note length never overruns into the next step",
 
 // --- Releasing all held notes stops the arp; no further Note-On is sent ---
 TEST_CASE("'Arpeggiator.js/.lua' stops stepping once every note is released", "[MidiKit][Arpeggiator]") {
-	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadArp(path, 0.f, 0.f, 0.5f, 0.f);
@@ -543,13 +561,12 @@ TEST_CASE("'Arpeggiator.js/.lua' stops stepping once every note is released", "[
 
 // --- onUnload releases whatever note the arp is currently sustaining ---
 TEST_CASE("'Arpeggiator.js/.lua' releases the sounding note on unload", "[MidiKit][Arpeggiator]") {
-	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
 
-	// clockDivision=0 -> 1 tick/step, so the first feedTick() already lands on
-	// a step boundary; noteLength=1.0 (clamped to division-1, i.e. at least 1
-	// tick) keeps the note sustained, not yet auto-released, when onUnload
-	// fires immediately after.
+	// clockDivision=0 -> 1 tick/step, so the first feedTick() lands on a step
+	// boundary; noteLength=1.0 (clamped to division-1, >= 1 tick) keeps the
+	// note sustained when onUnload fires.
 	MidiKitModule* m = loadArp(path, 0.f, 0.f, 1.0f, 0.f);
 
 	feed(m, noteOn(1, 60, 100));
@@ -560,13 +577,9 @@ TEST_CASE("'Arpeggiator.js/.lua' releases the sounding note on unload", "[MidiKi
 	REQUIRE(soundingNote != 0);
 	drainLog(m);
 
-	// loadScript("") replaces the active engine's script, which synchronously
-	// runs onUnload() on that same engine object and queues its output into
-	// that engine's own midiOutQueue - so it must be drained from the engine
-	// that was active *before* the reload, not from m->activeEngine (which by
-	// this point may already point at a different engine, e.g. after a
-	// language switch elsewhere in the suite; here it is the same object,
-	// but reading it before reload keeps the test correct either way).
+	// loadScript("") runs onUnload() synchronously on the active engine and
+	// queues its output there, so drain the engine that was active *before*
+	// the reload rather than m->activeEngine.
 	MidiScriptEngine* engineBeforeUnload = m->activeEngine;
 	m->loadScript("");
 
@@ -582,15 +595,14 @@ TEST_CASE("'Arpeggiator.js/.lua' releases the sounding note on unload", "[MidiKi
 }
 
 
-// --- Dynamic chords: adding or removing a held note mid-arp must rebuild the
-// pattern so the change takes effect on the next step, without corrupting the
-// step position. Note that rebuildPattern() only resets state.step when it has
-// run past the end of the (possibly shrunken) pattern: adding a note keeps the
-// current step and folds the new note in at its press-order position, while
-// removing a note can clamp the step back to 0. These two cases pin the
+// --- Dynamic chords: adding/removing a held note mid-arp rebuilds the pattern
+// for the next step without corrupting the step position. rebuildPattern()
+// only resets the step when it has run past the (possibly shrunken) pattern's
+// end: adding keeps the current step and folds the note in at its press-order
+// position; removing can clamp the step back to 0. These two cases pin the
 // difference. ---
 TEST_CASE("'Arpeggiator.js/.lua' folds a note added mid-arp into the pattern from the current step", "[MidiKit][Arpeggiator]") {
-	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
 
 	// 1 tick/step, 1 octave, Up mode.
@@ -607,9 +619,8 @@ TEST_CASE("'Arpeggiator.js/.lua' folds a note added mid-arp into the pattern fro
 	REQUIRE(saw60);
 	drainLog(m);
 
-	// Add 67 mid-arp. rebuildPattern() makes the pattern [60,64,67] but does
-	// NOT reset the step - it stays at 1 (within the new length), so 64 still
-	// plays before the newly added 67, which joins at its press-order position.
+	// Add 67 mid-arp: rebuildPattern() makes [60,64,67] but does not reset the
+	// step (stays at 1), so 64 still plays before the newly added 67.
 	feed(m, noteOn(1, 67, 100));
 	drainLog(m);
 
@@ -627,7 +638,7 @@ TEST_CASE("'Arpeggiator.js/.lua' folds a note added mid-arp into the pattern fro
 }
 
 TEST_CASE("'Arpeggiator.js/.lua' clamps the step when a note removed mid-arp shrinks the pattern", "[MidiKit][Arpeggiator]") {
-	std::string path = GENERATE(from_range(std::begin(ARPEGGIATOR_PRESET_PATHS), std::end(ARPEGGIATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadArp(path, 0.f, 0.f, 0.5f, 0.f);
@@ -642,9 +653,8 @@ TEST_CASE("'Arpeggiator.js/.lua' clamps the step when a note removed mid-arp shr
 	feedTick(m);
 	drainLog(m);
 
-	// Remove 60 mid-arp: held becomes [64,67], so the rebuilt pattern is
-	// [64,67] and step 2 is now past its end - rebuildPattern() clamps it to 0
-	// and the next step starts the shrunken pattern from the beginning.
+	// Remove 60 mid-arp: the pattern shrinks to [64,67] and step 2 is past its
+	// end, so rebuildPattern() clamps it to 0 and restarts the pattern.
 	feed(m, noteOff(1, 60));
 	drainLog(m);
 
@@ -661,21 +671,16 @@ TEST_CASE("'Arpeggiator.js/.lua' clamps the step when a note removed mid-arp shr
 }
 
 
-// Behavioural tests for the Euclidean rhythm generator preset. It is clocked
-// by the trigger input (not by MIDI), rebuilding its pattern live from the
-// four panel params: Steps (1-16), Fills (0..Steps), Note (0-127), Velocity
-// (1-127). Each trigger tick advances one step and, on a hit, fires a Note-On
-// that sustains until the next trigger tick (a one-step gate). The pattern is
-// the canonical Bjorklund distribution - 4 steps / 2 fills is [0,1,0,1], so
-// hits land on steps 1 and 3 of every bar. Everything arriving on MIDI IN is
-// passed through unchanged.
-static const char* EUCLID_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/Euclidean rhythm generator.js",
-	"presets/MidiKit/Lua/Euclidean rhythm generator.lua"
-};
+// Behavioural tests for the Euclidean rhythm generator preset. Clocked by the
+// trigger input, rebuilding its pattern live from the four panel params:
+// Steps (1-16), Fills (0..Steps), Note (0-127), Velocity (1-127). Each trigger
+// tick advances one step and, on a hit, fires a Note-On that sustains until
+// the next tick (a one-step gate). The pattern is the canonical Bjorklund
+// distribution (4/2 -> [0,1,0,1]). MIDI IN passes through unchanged.
+
 
 TEST_CASE("'Euclidean rhythm generator.js/.lua' fires a note on each Euclidean hit", "[MidiKit][EuclidRhythm]") {
-	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Euclidean rhythm generator"));
 	CATCH_INFO("preset: " << path);
 
 	// steps=4, fills=2 -> pattern [0,1,0,1] (hits on steps 1 and 3), note 64,
@@ -710,7 +715,7 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' fires a note on each Euclidean h
 }
 
 TEST_CASE("'Euclidean rhythm generator.js/.lua' passes MIDI in through unchanged", "[MidiKit][EuclidRhythm]") {
-	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Euclidean rhythm generator"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -726,7 +731,7 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' passes MIDI in through unchanged
 }
 
 TEST_CASE("'Euclidean rhythm generator.js/.lua' plays the canonical 5-in-8 pattern", "[MidiKit][EuclidRhythm]") {
-	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Euclidean rhythm generator"));
 	CATCH_INFO("preset: " << path);
 
 	// steps=8, fills=5 -> the canonical Bjorklund distribution
@@ -754,7 +759,7 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' plays the canonical 5-in-8 patte
 }
 
 TEST_CASE("'Euclidean rhythm generator.js/.lua' fills 0 silences and fills == steps fires every step", "[MidiKit][EuclidRhythm]") {
-	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Euclidean rhythm generator"));
 	CATCH_INFO("preset: " << path);
 
 	// fills = 0 -> the pattern is all rests: no Note-On across a full bar.
@@ -787,7 +792,7 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' fills 0 silences and fills == st
 }
 
 TEST_CASE("'Euclidean rhythm generator.js/.lua' gates each hit for exactly one step", "[MidiKit][EuclidRhythm]") {
-	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Euclidean rhythm generator"));
 	CATCH_INFO("preset: " << path);
 
 	// steps=4, fills=2 -> [0,1,0,1]. A Note-On on a hit tick must be released
@@ -819,7 +824,7 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' gates each hit for exactly one s
 }
 
 TEST_CASE("'Euclidean rhythm generator.js/.lua' output channel menu changes the note channel", "[MidiKit][EuclidRhythm]") {
-	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Euclidean rhythm generator"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -847,7 +852,7 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' output channel menu changes the 
 }
 
 TEST_CASE("'Euclidean rhythm generator.js/.lua' releases the sounding note on unload", "[MidiKit][EuclidRhythm]") {
-	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Euclidean rhythm generator"));
 	CATCH_INFO("preset: " << path);
 
 	// fills = steps so the first trigger tick already fires a note, which is
@@ -874,7 +879,7 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' releases the sounding note on un
 }
 
 TEST_CASE("'Euclidean rhythm generator.js/.lua' rebuilds the pattern live when a param changes", "[MidiKit][EuclidRhythm]") {
-	std::string path = GENERATE(from_range(std::begin(EUCLID_PRESET_PATHS), std::end(EUCLID_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Euclidean rhythm generator"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -909,20 +914,16 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' rebuilds the pattern live when a
 
 // Behavioural tests for the Keyboard split preset. The shipped config defines
 // three presets, each a split point plus two output channels, activated by a
-// CC whose number matches the preset's `cc` with any value > 0:
+// CC matching its `cc` with value > 0:
 //   preset 1: CC 70, A=1, B=2, split 60  (active at load)
 //   preset 2: CC 71, A=3, B=4, split 48
 //   preset 3: CC 72, A=5, B=6, split 72
-// Notes below the split go to channel A, at or above it to channel B; Note-Offs
-// follow the same rule. The trigger CCs are consumed, and every other non-note
-// message passes through unchanged.
-static const char* KEYBOARD_SPLIT_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/Keyboard split.js",
-	"presets/MidiKit/Lua/Keyboard split.lua"
-};
+// Notes below the split go to A, at/above to B (Note-Offs likewise). The
+// trigger CCs are consumed; other non-note messages pass through.
+
 
 TEST_CASE("'Keyboard split.js/.lua' routes notes below and above the split to channels A and B", "[MidiKit][KeyboardSplit]") {
-	std::string path = GENERATE(from_range(std::begin(KEYBOARD_SPLIT_PRESET_PATHS), std::end(KEYBOARD_SPLIT_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Keyboard split"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -945,7 +946,7 @@ TEST_CASE("'Keyboard split.js/.lua' routes notes below and above the split to ch
 }
 
 TEST_CASE("'Keyboard split.js/.lua' a trigger CC with value > 0 switches the active preset", "[MidiKit][KeyboardSplit]") {
-	std::string path = GENERATE(from_range(std::begin(KEYBOARD_SPLIT_PRESET_PATHS), std::end(KEYBOARD_SPLIT_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Keyboard split"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -966,7 +967,7 @@ TEST_CASE("'Keyboard split.js/.lua' a trigger CC with value > 0 switches the act
 }
 
 TEST_CASE("'Keyboard split.js/.lua' a trigger CC with value 0 does not switch presets", "[MidiKit][KeyboardSplit]") {
-	std::string path = GENERATE(from_range(std::begin(KEYBOARD_SPLIT_PRESET_PATHS), std::end(KEYBOARD_SPLIT_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Keyboard split"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -982,7 +983,7 @@ TEST_CASE("'Keyboard split.js/.lua' a trigger CC with value 0 does not switch pr
 }
 
 TEST_CASE("'Keyboard split.js/.lua' passes non-trigger messages through unchanged", "[MidiKit][KeyboardSplit]") {
-	std::string path = GENERATE(from_range(std::begin(KEYBOARD_SPLIT_PRESET_PATHS), std::end(KEYBOARD_SPLIT_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Keyboard split"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -998,7 +999,7 @@ TEST_CASE("'Keyboard split.js/.lua' passes non-trigger messages through unchange
 }
 
 TEST_CASE("'Keyboard split.js/.lua' the preset menu switches the active preset", "[MidiKit][KeyboardSplit]") {
-	std::string path = GENERATE(from_range(std::begin(KEYBOARD_SPLIT_PRESET_PATHS), std::end(KEYBOARD_SPLIT_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Keyboard split"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1023,21 +1024,15 @@ TEST_CASE("'Keyboard split.js/.lua' the preset menu switches the active preset",
 
 
 // Behavioural tests for the Bouncing ball delay preset. Every Note-On passes
-// through (the dry note) and additionally spawns a pre-scheduled echo train:
-// each echo's gap is the previous gap times (1 - Gravity) and its velocity is
-// the previous velocity times Bounciness, until the velocity drops below Min
-// velocity (the "settle" point) or the echo cap is hit. Params are read at the
-// moment the Note-On arrives; every non-note message and every Note-Off passes
-// through unchanged. Scheduling is done with midiOut.sendAfterMs(), which the
-// engine emits immediately with a positive `frame` (the dry/immediate note has
-// frame -1), so the drain below sees the whole train at once.
-static const char* BOUNCING_BALL_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/Bouncing ball delay.js",
-	"presets/MidiKit/Lua/Bouncing ball delay.lua"
-};
+// through (dry) and spawns a pre-scheduled echo train: each echo's gap is the
+// previous gap times (1 - Gravity) and its velocity the previous times
+// Bounciness, until velocity drops below Min or the echo cap is hit. Params
+// are read at the Note-On. sendAfterMs() echoes carry a positive `frame` (the
+// dry note has frame -1), so the drain below sees the whole train at once.
+
 
 TEST_CASE("'Bouncing ball delay.js/.lua' passes the note through and echoes it with decaying velocity", "[MidiKit][BouncingBall]") {
-	std::string path = GENERATE(from_range(std::begin(BOUNCING_BALL_PRESET_PATHS), std::end(BOUNCING_BALL_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Bouncing ball delay"));
 	CATCH_INFO("preset: " << path);
 
 	// bounciness 0.5 (half the velocity survives each bounce), gravity 0,
@@ -1067,7 +1062,7 @@ TEST_CASE("'Bouncing ball delay.js/.lua' passes the note through and echoes it w
 }
 
 TEST_CASE("'Bouncing ball delay.js/.lua' settles once the velocity drops below the min threshold", "[MidiKit][BouncingBall]") {
-	std::string path = GENERATE(from_range(std::begin(BOUNCING_BALL_PRESET_PATHS), std::end(BOUNCING_BALL_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Bouncing ball delay"));
 	CATCH_INFO("preset: " << path);
 
 	// min velocity 32: vel 100 -> 100, 50, then 25 < 32 -> settle.
@@ -1111,7 +1106,7 @@ static std::vector<FrameEvent> feedFrames(MidiKitModule* m, midi::Message msg) {
 }
 
 TEST_CASE("'Bouncing ball delay.js/.lua' gravity shrinks the interval between echoes", "[MidiKit][BouncingBall]") {
-	std::string path = GENERATE(from_range(std::begin(BOUNCING_BALL_PRESET_PATHS), std::end(BOUNCING_BALL_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Bouncing ball delay"));
 	CATCH_INFO("preset: " << path);
 
 	// gravity 0.2 (intervals shrink to 80% per bounce), bounciness 1.0 (no
@@ -1165,7 +1160,7 @@ TEST_CASE("'Bouncing ball delay.js/.lua' gravity shrinks the interval between ec
 }
 
 TEST_CASE("'Bouncing ball delay.js/.lua' passes Note-Offs and non-note messages through unchanged", "[MidiKit][BouncingBall]") {
-	std::string path = GENERATE(from_range(std::begin(BOUNCING_BALL_PRESET_PATHS), std::end(BOUNCING_BALL_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Bouncing ball delay"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1185,21 +1180,16 @@ TEST_CASE("'Bouncing ball delay.js/.lua' passes Note-Offs and non-note messages 
 
 
 // Behavioural tests for the Gravity well preset. Every Note-On is retuned
-// toward the configurable Center (param 1, 0-127) by
-//   round(distance * Strength * (1 - velocity / 127))
-// so the bend grows with distance from the center and shrinks with velocity:
-// soft and distant notes fall deep into the well (tension), loud and
-// near-center notes stay put (release). Strength 0 disables the effect, and a
-// note on the center is never bent. Because the sent pitch depends on
-// velocity, the Note-Off arrives with the *played* note and is redirected to
-// the note that was actually sent. Non-note messages pass through unchanged.
-static const char* GRAVITY_WELL_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/Gravity well.js",
-	"presets/MidiKit/Lua/Gravity well.lua"
-};
+// toward Center (param 1) by round(distance * Strength * (1 - velocity/127)):
+// the bend grows with distance and shrinks with velocity, so soft/distant
+// notes fall deep into the well and loud/near-center notes stay put. Strength
+// 0 disables it and a center note is never bent. Because the sent pitch
+// depends on velocity, the Note-Off (played note) is redirected to the sent
+// note. Non-note messages pass through.
+
 
 TEST_CASE("'Gravity well.js/.lua' bends notes toward the center, more for soft and distant notes", "[MidiKit][GravityWell]") {
-	std::string path = GENERATE(from_range(std::begin(GRAVITY_WELL_PRESET_PATHS), std::end(GRAVITY_WELL_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Gravity well"));
 	CATCH_INFO("preset: " << path);
 
 	// center 60, strength 1.0.
@@ -1233,7 +1223,7 @@ TEST_CASE("'Gravity well.js/.lua' bends notes toward the center, more for soft a
 }
 
 TEST_CASE("'Gravity well.js/.lua' redirects the Note-Off to the bent note", "[MidiKit][GravityWell]") {
-	std::string path = GENERATE(from_range(std::begin(GRAVITY_WELL_PRESET_PATHS), std::end(GRAVITY_WELL_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Gravity well"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1251,7 +1241,7 @@ TEST_CASE("'Gravity well.js/.lua' redirects the Note-Off to the bent note", "[Mi
 }
 
 TEST_CASE("'Gravity well.js/.lua' max velocity and zero strength leave notes unbent", "[MidiKit][GravityWell]") {
-	std::string path = GENERATE(from_range(std::begin(GRAVITY_WELL_PRESET_PATHS), std::end(GRAVITY_WELL_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Gravity well"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1272,7 +1262,7 @@ TEST_CASE("'Gravity well.js/.lua' max velocity and zero strength leave notes unb
 }
 
 TEST_CASE("'Gravity well.js/.lua' passes non-note messages through unchanged", "[MidiKit][GravityWell]") {
-	std::string path = GENERATE(from_range(std::begin(GRAVITY_WELL_PRESET_PATHS), std::end(GRAVITY_WELL_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Gravity well"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1286,7 +1276,7 @@ TEST_CASE("'Gravity well.js/.lua' passes non-note messages through unchanged", "
 }
 
 TEST_CASE("'Gravity well.js/.lua' releases the held bent note on unload", "[MidiKit][GravityWell]") {
-	std::string path = GENERATE(from_range(std::begin(GRAVITY_WELL_PRESET_PATHS), std::end(GRAVITY_WELL_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Gravity well"));
 	CATCH_INFO("preset: " << path);
 
 	// A bent note that is still held when the script is replaced must be
@@ -1311,22 +1301,17 @@ TEST_CASE("'Gravity well.js/.lua' releases the held bent note on unload", "[Midi
 }
 
 
-// Behavioural tests for the Chord harmonizer preset. It reads no module
-// params - config.intervals (the major triad [0,4,7]) and harmonyVelocity
-// (0.8) are hardcoded in the shipped script - so these tests assert against
-// those defaults. A single note must expand into three voices with the
-// 0-offset at full velocity and the harmony voices scaled, the Note-Off must
-// release exactly the voices that were started, and overlapping voices must
-// not be released twice - the reference-counting is the whole point of the
-// script and the part most likely to regress.
-static const char* CHORD_HARMONIZER_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/Chord harmonizer.js",
-	"presets/MidiKit/Lua/Chord harmonizer.lua"
-};
+// Behavioural tests for the Chord harmonizer preset. It reads no params:
+// config.intervals ([0,4,7]) and harmonyVelocity (0.8) are hardcoded. A note
+// expands into three voices (0-offset at full velocity, harmony voices
+// scaled); the Note-Off releases exactly the started voices, and overlapping
+// voices must not be released twice - reference-counting is the point of the
+// script.
+
 
 // --- [0,4,7] triad with 0.8 harmony velocity ---
 TEST_CASE("'Chord harmonizer.js/.lua' expands a single note into a scaled triad", "[MidiKit][ChordHarmonizer]") {
-	std::string path = GENERATE(from_range(std::begin(CHORD_HARMONIZER_PRESET_PATHS), std::end(CHORD_HARMONIZER_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Chord harmonizer"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1345,7 +1330,7 @@ TEST_CASE("'Chord harmonizer.js/.lua' expands a single note into a scaled triad"
 
 // --- reference-counting: two notes transposing onto the same target ---
 TEST_CASE("'Chord harmonizer.js/.lua' releases a colliding voice exactly once", "[MidiKit][ChordHarmonizer]") {
-	std::string path = GENERATE(from_range(std::begin(CHORD_HARMONIZER_PRESET_PATHS), std::end(CHORD_HARMONIZER_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Chord harmonizer"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1370,7 +1355,7 @@ TEST_CASE("'Chord harmonizer.js/.lua' releases a colliding voice exactly once", 
 
 // --- onUnload releases every still-sounding voice ---
 TEST_CASE("'Chord harmonizer.js/.lua' releases all sounding voices on unload", "[MidiKit][ChordHarmonizer]") {
-	std::string path = GENERATE(from_range(std::begin(CHORD_HARMONIZER_PRESET_PATHS), std::end(CHORD_HARMONIZER_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Chord harmonizer"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1390,30 +1375,23 @@ TEST_CASE("'Chord harmonizer.js/.lua' releases all sounding voices on unload", "
 }
 
 
-// Behavioural tests for the Scale quantiser preset. The shipped default is C
-// minor ({0,2,3,5,7,8,10} with root C) and preferUpward=false. Every
-// out-of-scale note in a minor scale sits exactly halfway between two scale
-// degrees, so with the default it always snaps down by a semitone - that
-// uniform tie-break is exactly the behaviour worth pinning. The Note-Off
-// rewrite (the release arrives with the *played* note, not the snapped one)
-// and the onUnload release of the substituted note are the parts of the
-// script most likely to regress.
-static const char* SCALE_QUANTISER_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/Scale quantiser.js",
-	"presets/MidiKit/Lua/Scale quantiser.lua"
-};
+// Behavioural tests for the Scale quantiser preset. Shipped default: C minor
+// ({0,2,3,5,7,8,10}, root C) with preferUpward=false. Every out-of-scale note
+// sits exactly halfway between two minor degrees, so it always snaps down a
+// semitone - the uniform tie-break worth pinning. The Note-Off rewrite (the
+// release arrives with the played note) and the onUnload release of the
+// substituted note are the parts most likely to regress.
+
 
 TEST_CASE("'Scale quantiser.js/.lua' passes in-scale notes through unchanged", "[MidiKit][ScaleQuantiser]") {
-	std::string path = GENERATE(from_range(std::begin(SCALE_QUANTISER_PRESET_PATHS), std::end(SCALE_QUANTISER_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Scale quantiser"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
 
-	// C minor degrees: C D D# F G G# A# - each passes through note-for-note.
-	// All seven are fed to one module in a single run: that also covers the
-	// engine's GC boundary, since the 6th consecutive message through
-	// quantise() is roughly where the engine's memory/GC limit first surfaces
-	// mid-call. That used to surface as a dropped message with
+	// C minor degrees all pass through note-for-note. Feeding all seven in one
+	// run also crosses the engine's GC boundary (the 6th consecutive
+	// quantise() call), which used to surface as a dropped message with
 	// "onMidiMessage error: ERROR: parse error".
 	for (int note : {60, 62, 63, 65, 67, 68, 70}) {
 		auto ev = feedCollect(m, noteOn(1, note, 100));
@@ -1424,7 +1402,7 @@ TEST_CASE("'Scale quantiser.js/.lua' passes in-scale notes through unchanged", "
 }
 
 TEST_CASE("'Scale quantiser.js/.lua' snaps off-scale notes to the nearest degree", "[MidiKit][ScaleQuantiser]") {
-	std::string path = GENERATE(from_range(std::begin(SCALE_QUANTISER_PRESET_PATHS), std::end(SCALE_QUANTISER_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Scale quantiser"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1441,7 +1419,7 @@ TEST_CASE("'Scale quantiser.js/.lua' snaps off-scale notes to the nearest degree
 }
 
 TEST_CASE("'Scale quantiser.js/.lua' rewrites the Note-Off to the snapped note", "[MidiKit][ScaleQuantiser]") {
-	std::string path = GENERATE(from_range(std::begin(SCALE_QUANTISER_PRESET_PATHS), std::end(SCALE_QUANTISER_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Scale quantiser"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1458,7 +1436,7 @@ TEST_CASE("'Scale quantiser.js/.lua' rewrites the Note-Off to the snapped note",
 }
 
 TEST_CASE("'Scale quantiser.js/.lua' releases the substituted note on unload", "[MidiKit][ScaleQuantiser]") {
-	std::string path = GENERATE(from_range(std::begin(SCALE_QUANTISER_PRESET_PATHS), std::end(SCALE_QUANTISER_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Scale quantiser"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1477,7 +1455,7 @@ TEST_CASE("'Scale quantiser.js/.lua' releases the substituted note on unload", "
 }
 
 TEST_CASE("'Scale quantiser.js/.lua' reads the root from CV input 1", "[MidiKit][ScaleQuantiser]") {
-	std::string path = GENERATE(from_range(std::begin(SCALE_QUANTISER_PRESET_PATHS), std::end(SCALE_QUANTISER_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Scale quantiser"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1519,7 +1497,7 @@ static bool configBool(const std::string& json, const char* key) {
 }
 
 TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", "[MidiKit][ScaleQuantiser][JSON]") {
-	std::string path = GENERATE(from_range(std::begin(SCALE_QUANTISER_PRESET_PATHS), std::end(SCALE_QUANTISER_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Scale quantiser"));
 	CATCH_INFO("preset: " << path);
 
 	// First module: load the preset and change two settings via the
@@ -1578,36 +1556,21 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 }
 
 
-// Behavioural tests for the Micro scale preset. The scale is not hardcoded:
-// onLoad parses the Scala .scl pasted into config.scl (a "config.scl = ..."
-// multi-line string in each preset). The shipped default is the 5-limit
-// just-intonation major scale given as ratios (9/8, 5/4, 4/3, 3/2, 5/3, 15/8,
-// 2/1) on baseNote 60 @ 261.625565 Hz (A440), bendDepth 2 semitones, output
-// channels 1-8, alwaysSendBend=false. Each incoming note is retuned to its
-// exact scale pitch, expressed as the nearest 12-EDO note number plus a pitch
-// wheel for the residual cents, dispatched to its own output channel
-// (round-robin) because pitch bend is channel-global. The expected values
-// below are exact: for note 62 the scale says D sits at 386.3137... cents,
-// i.e. the tuned frequency is exactly a 5/4 above the base (327.03 Hz); that
-// is semis 63.86314, so the note sent is 64 and the residual -0.13686 st maps
-// to pitch wheel 7631 (LSB 79, MSB 59). For note 61 it is a 9/8 above base:
-// semis 62.03910 -> sent 62, residual +0.03910 st -> wheel 8352 (LSB 32, MSB
-// 65). The tonic (note 60, 0 cents) sits exactly on the centre bend, so with
-// alwaysSendBend=false no bend is emitted at all.
+// Behavioural tests for the Micro scale preset. onLoad parses the Scala .scl
+// pasted into config.scl. The shipped default is a 5-limit just-intonation
+// major scale (9/8, 5/4, ...) on baseNote 60 @ A440, bendDepth 2, output
+// channels 1-8, alwaysSendBend=false. Each note is retuned to the nearest
+// 12-EDO note plus a pitch-wheel for the residual cents, dispatched
+// round-robin to its own channel (pitch bend is channel-global). The exact
+// note/cent split and wheel bytes are noted inline in each test.
 
-// Loads one of the two Micro scale presets but with the pasted .scl swapped
-// for a caller-provided scale, so the scl parser is exercised with arbitrary
-// content rather than only the shipped default. The .scl lives in a
-// multi-line string assigned to "config.scl" (a backtick template literal in
-// the JS preset, a [[ ]] long-bracket string in the Lua one); the content
-// between the delimiters is replaced with `scl`.
+// Loads one of the two Micro scale presets with the pasted .scl swapped for a
+// caller-provided scale, so the parser is exercised with arbitrary content.
 static MidiKitModule* loadPresetWithScl(const std::string& relPath, const std::string& scl) {
 	std::string script = readFile(repoRoot() + "/" + relPath);
 
-	// Anchor on the assignment itself - "config.scl" also appears in comments
-	// and log strings, and the Lua preset's config comment mentions literal
-	// "[[ ... ]]" brackets, so a generic search would splice the scl into the
-	// wrong place. Lua assigns with "scl = [[ ... ]]", JS with "scl: ` ... `".
+	// Anchor on the assignment (Lua "scl = [[...]]", JS "scl: `...`") - a
+	// generic search would also hit the literal "[[ ]]"/"`" in comments/logs.
 	size_t contentStart = std::string::npos;
 	size_t contentEnd = std::string::npos;
 	size_t anchor = script.find("scl = [[");
@@ -1636,13 +1599,10 @@ static MidiKitModule* loadPresetWithScl(const std::string& relPath, const std::s
 	return m;
 }
 
-static const char* MICRO_SCALE_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/Micro scale.js",
-	"presets/MidiKit/Lua/Micro scale.lua"
-};
+
 
 TEST_CASE("'Micro scale.js/.lua' retunes a note and bends the residual cents", "[MidiKit][MicroScale]") {
-	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1662,7 +1622,7 @@ TEST_CASE("'Micro scale.js/.lua' retunes a note and bends the residual cents", "
 }
 
 TEST_CASE("'Micro scale.js/.lua' dispatches simultaneous notes to separate channels", "[MidiKit][MicroScale]") {
-	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1688,7 +1648,7 @@ TEST_CASE("'Micro scale.js/.lua' dispatches simultaneous notes to separate chann
 }
 
 TEST_CASE("'Micro scale.js/.lua' sends no redundant bend for the tonic and releases it on unload", "[MidiKit][MicroScale]") {
-	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1709,7 +1669,7 @@ TEST_CASE("'Micro scale.js/.lua' sends no redundant bend for the tonic and relea
 }
 
 TEST_CASE("'Micro scale.js/.lua' parses a pasted equal-temperament scl", "[MidiKit][MicroScale]") {
-	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
 
 	// A hand-written 12-tone equal temperament .scl, pasted exactly as a user
@@ -1735,17 +1695,15 @@ TEST_CASE("'Micro scale.js/.lua' parses a pasted equal-temperament scl", "[MidiK
 }
 
 TEST_CASE("'Micro scale.js/.lua' parses a mixed scl with ratios, cents, comments and dropped entries", "[MidiKit][MicroScale]") {
-	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
 
-	// A deliberately convoluted .scl exercising every parser rule at once:
-	// ratio notes and cents notes mixed, comment lines at the top AND between
-	// notes, a stated note count that does not match the lines that follow
-	// (the count is ignored), and entries that must be dropped - the tonic
-	// "1/1" (0 cents, implicit), the octave "2/1" and "1200.0" (1200 cents,
-	// implied by the scale repeating) and the bare integer "3" (a ratio of 3,
-	// i.e. 1901.96 cents, outside the octave). The surviving scale has 8
-	// degrees: 9/8, 193.0, 5/4, 4/3, 3/2, 5/3, 15/8.
+	// A convoluted .scl exercising every parser rule at once: ratio and cents
+	// notes mixed, comments at the top and between notes, a stated count that
+	// doesn't match the lines (ignored), and entries that must be dropped -
+	// the tonic "1/1", the octave "2/1"/"1200.0" (implicit), and the bare
+	// integer "3" (a ratio outside the octave). The surviving 8 degrees are
+	// 9/8, 193.0, 5/4, 4/3, 3/2, 5/3, 15/8.
 	std::string scl =
 		"! Mixed scale.scl\n"
 		"!\n"
@@ -1777,11 +1735,10 @@ TEST_CASE("'Micro scale.js/.lua' parses a mixed scl with ratios, cents, comments
 	auto d = feedCollect(m, noteOn(1, 62, 100));
 	REQUIRE(d == std::vector<OutEvent>{{0xe, 1, 97, 61, 0}, {0x9, 1, 62, 100, 0}});
 
-	// G#4 (note 68) is a full scale-octave up, so it wraps to degree 0 of the
-	// next octave - exactly the tonic one octave higher, passing through as
-	// 72 with no bend. Had the "2/1"/"1200.0" octave entries not been dropped
-	// (they are implicit), the degree indexing would shift and this note would
-	// not come out clean.
+	// G#4 (note 68) is a full scale-octave up, wrapping to degree 0 of the next
+	// octave - the tonic one octave higher, passing through as 72. Had the
+	// implicit "2/1"/"1200.0" octave entries not been dropped, the indexing
+	// would shift and this note wouldn't come out clean.
 	auto gs = feedCollect(m, noteOn(1, 68, 100));
 	REQUIRE(gs == std::vector<OutEvent>{{0x9, 2, 72, 100, 0}});
 
@@ -1802,7 +1759,7 @@ TEST_CASE("'Micro scale.js/.lua' parses a mixed scl with ratios, cents, comments
 // second to channel 2; the two Note-Offs must then release channel 1 first and
 // channel 2 second, not the other way round and not both at once. ---
 TEST_CASE("'Micro scale.js/.lua' releases a unison's voices in press order", "[MidiKit][MicroScale]") {
-	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1824,13 +1781,13 @@ TEST_CASE("'Micro scale.js/.lua' releases a unison's voices in press order", "[M
 	Test::destroyModule(m);
 }
 
-// --- Voice stealing with the default 8 output channels: once every channel is
-// busy the 9th note displaces the round-robin next channel, and the displaced
-// note's later Note-Off must be dropped so it cannot release the thief. An
-// equal-temperament scale is used so every note passes through unchanged and
-// the test observes channel allocation alone. ---
+// --- Voice stealing with the default 8 output channels: when every channel
+// is busy the 9th note displaces the round-robin next channel, and the
+// displaced note's later Note-Off must be dropped so it can't release the
+// thief. An equal-temperament scale makes every note pass through unchanged,
+// so the test observes channel allocation alone. ---
 TEST_CASE("'Micro scale.js/.lua' steals a busy channel and drops the displaced note", "[MidiKit][MicroScale]") {
-	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
 
 	// 12-EDO: every scale degree is exactly a semitone, so all notes pass
@@ -1873,13 +1830,12 @@ TEST_CASE("'Micro scale.js/.lua' steals a busy channel and drops the displaced n
 	Test::destroyModule(m);
 }
 
-// --- The "Always send pitch bend" context-menu option: with it off (the
-// default) the tonic sits exactly on the centre bend and no pitch wheel is
-// emitted; with it on, the centre bend is sent anyway. This is the script's
-// only alwaysSendBend code path and nothing else in the suite exercises it
-// (the default preset keeps it off). ---
+// --- The "Always send pitch bend" context-menu option: off (default) the
+// tonic sits on the centre bend and no wheel is emitted; on, the centre bend
+// is sent anyway. This is the script's only alwaysSendBend code path and
+// nothing else in the suite exercises it. ---
 TEST_CASE("'Micro scale.js/.lua' alwaysSendBend forces a bend even for the tonic", "[MidiKit][MicroScale]") {
-	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1912,13 +1868,11 @@ TEST_CASE("'Micro scale.js/.lua' alwaysSendBend forces a bend even for the tonic
 }
 
 // --- The "Input channel" context-menu option filters which input channel is
-// retuned. Notes on the filtered channel go through the normal retune path;
-// notes on every other channel pass through untouched - and, crucially, are
-// not tracked, so their Note-Offs pass through as the raw note rather than
-// being redirected to a retuned note. Non-note messages pass through on all
-// channels. ---
+// retuned. Notes on the chosen channel are retuned; notes on other channels
+// pass through untouched and untracked (their Note-Offs pass as the raw
+// note). Non-note messages pass through on all channels. ---
 TEST_CASE("'Micro scale.js/.lua' input-channel filter retunes only the chosen channel", "[MidiKit][MicroScale]") {
-	std::string path = GENERATE(from_range(std::begin(MICRO_SCALE_PRESET_PATHS), std::end(MICRO_SCALE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1958,22 +1912,18 @@ TEST_CASE("'Micro scale.js/.lua' input-channel filter retunes only the chosen ch
 }
 
 
-// Behavioural tests for the Note length quantiser preset. The shipped default
-// is config.lengthTicks=12 counted on trigger input 1. Every Note-On is
-// re-articulated immediately and a Note-Off is scheduled exactly 12 ticks
-// later via midiOut.sendAfterTrigger(); the incoming Note-Off is discarded.
+// Behavioural tests for the Note length quantiser preset. Shipped default:
+// config.lengthTicks=12 counted on trigger input 1. Every Note-On is
+// re-articulated immediately and a Note-Off scheduled exactly 12 ticks later
+// via midiOut.sendAfterTrigger(); the incoming Note-Off is discarded.
 // inputTriggerTick only advances on a real trigger edge inside
 // Module::process(), which these engine-level tests do not run, so the tests
-// write the counter directly to simulate a clock that has already advanced -
-// this also proves the scheduled tick is *relative* to the note-on's tick
-// count rather than a fixed absolute tick.
-static const char* NOTE_LENGTH_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/Note length quantiser.js",
-	"presets/MidiKit/Lua/Note length quantiser.lua"
-};
+// write the counter directly - also proving the scheduled tick is *relative*
+// to the note-on's tick count, not a fixed absolute tick.
+
 
 TEST_CASE("'Note length quantiser.js/.lua' schedules the Note-Off lengthTicks after the Note-On", "[MidiKit][NoteLength]") {
-	std::string path = GENERATE(from_range(std::begin(NOTE_LENGTH_PRESET_PATHS), std::end(NOTE_LENGTH_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Note length quantiser"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -1987,7 +1937,7 @@ TEST_CASE("'Note length quantiser.js/.lua' schedules the Note-Off lengthTicks af
 }
 
 TEST_CASE("'Note length quantiser.js/.lua' drops the incoming Note-Off", "[MidiKit][NoteLength]") {
-	std::string path = GENERATE(from_range(std::begin(NOTE_LENGTH_PRESET_PATHS), std::end(NOTE_LENGTH_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Note length quantiser"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2001,18 +1951,17 @@ TEST_CASE("'Note length quantiser.js/.lua' drops the incoming Note-Off", "[MidiK
 }
 
 TEST_CASE("'Note length quantiser.js/.lua' cuts a retriggered note before re-articulating", "[MidiKit][NoteLength]") {
-	std::string path = GENERATE(from_range(std::begin(NOTE_LENGTH_PRESET_PATHS), std::end(NOTE_LENGTH_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Note length quantiser"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
 	m->inputTriggerTick = 40;
 	feedCollect(m, noteOn(1, 60, 100));   // drains [on, off@52]; sounding[60] stays true
 
-	// Retriggering 60 while it is still sounding cuts the old note immediately
-	// (Note-Off, tick 0) so the re-articulation is clean, then sends the fresh
-	// Note-On and its scheduled Note-Off. The engine flushes in send() order,
-	// so the cut (sent first) comes out before the incoming Note-On (sent
-	// second) and the scheduled Note-Off (sent last).
+	// Retriggering 60 while it's still sounding cuts the old note immediately
+	// (Note-Off, tick 0), then sends the fresh Note-On and its scheduled
+	// Note-Off. The engine flushes in send() order: cut, Note-On, scheduled
+	// Note-Off.
 	auto ev = feedCollect(m, noteOn(1, 60, 100));
 	REQUIRE(ev == std::vector<OutEvent>{{0x8, 1, 60, 0, 0}, {0x9, 1, 60, 100, 0}, {0x8, 1, 60, 0, 52}});
 
@@ -2020,7 +1969,7 @@ TEST_CASE("'Note length quantiser.js/.lua' cuts a retriggered note before re-art
 }
 
 TEST_CASE("'Note length quantiser.js/.lua' releases the sounding note on unload", "[MidiKit][NoteLength]") {
-	std::string path = GENERATE(from_range(std::begin(NOTE_LENGTH_PRESET_PATHS), std::end(NOTE_LENGTH_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Note length quantiser"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2038,23 +1987,17 @@ TEST_CASE("'Note length quantiser.js/.lua' releases the sounding note on unload"
 }
 
 
-// Behavioural tests for the Clock divider preset. The shipped default is
+// Behavioural tests for the Clock divider preset. Shipped default
 // config.divisor=6 with passthrough of non-clock messages. MIDI clock (0xF8)
-// arrives on the MIDI input, not the trigger input, so these tests feed it
-// via feedCollect() and assert on which realtime messages come back out: the
-// division (only every 6th tick forwarded), the Start phase reset (so the
-// divided clock always lands on the downbeat rather than wherever the last
-// run left off), and the passthrough of unrelated messages. (The CV trigger
-// output is not asserted here - it is a side effect on the module's pulse
-// generator that only surfaces through Module::process(), which these
+// arrives on the MIDI input, so these tests feed it via feedCollect() and
+// assert on the realtime messages that come back: the division (every 6th
+// tick), the Start phase reset, and passthrough. (The CV trigger output is
+// not asserted - it only surfaces through Module::process(), which these
 // engine-level tests do not run.)
-static const char* CLOCK_DIVIDER_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/Clock divider.js",
-	"presets/MidiKit/Lua/Clock divider.lua"
-};
+
 
 TEST_CASE("'Clock divider.js/.lua' forwards only every divisor-th tick", "[MidiKit][ClockDivider]") {
-	std::string path = GENERATE(from_range(std::begin(CLOCK_DIVIDER_PRESET_PATHS), std::end(CLOCK_DIVIDER_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Clock divider"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2078,7 +2021,7 @@ TEST_CASE("'Clock divider.js/.lua' forwards only every divisor-th tick", "[MidiK
 }
 
 TEST_CASE("'Clock divider.js/.lua' resets the phase on Start", "[MidiKit][ClockDivider]") {
-	std::string path = GENERATE(from_range(std::begin(CLOCK_DIVIDER_PRESET_PATHS), std::end(CLOCK_DIVIDER_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Clock divider"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2109,7 +2052,7 @@ TEST_CASE("'Clock divider.js/.lua' resets the phase on Start", "[MidiKit][ClockD
 }
 
 TEST_CASE("'Clock divider.js/.lua' forwards Stop and does not reset the phase", "[MidiKit][ClockDivider]") {
-	std::string path = GENERATE(from_range(std::begin(CLOCK_DIVIDER_PRESET_PATHS), std::end(CLOCK_DIVIDER_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Clock divider"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2125,9 +2068,8 @@ TEST_CASE("'Clock divider.js/.lua' forwards Stop and does not reset the phase", 
 	REQUIRE(stopFwd);
 
 	// Unlike Start, Stop does not reset the phase: the next forwarded tick is
-	// still the one that completes the count from before the Stop (3 pre-Stop
-	// ticks + 3 more = 6), not 6 ticks after the Stop. Had Stop called
-	// resetPhase(), the 3rd tick after it would still be swallowed (count 3).
+	// still the one that completes the count from before the Stop (3 + 3 = 6),
+	// not 6 ticks after the Stop.
 	for (int i = 0; i < 2; i++) {
 		auto ev = feedCollect(m, clockTick());
 		bool fwd = false;
@@ -2143,7 +2085,7 @@ TEST_CASE("'Clock divider.js/.lua' forwards Stop and does not reset the phase", 
 }
 
 TEST_CASE("'Clock divider.js/.lua' passes non-clock messages through unchanged", "[MidiKit][ClockDivider]") {
-	std::string path = GENERATE(from_range(std::begin(CLOCK_DIVIDER_PRESET_PATHS), std::end(CLOCK_DIVIDER_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Clock divider"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2156,22 +2098,17 @@ TEST_CASE("'Clock divider.js/.lua' passes non-clock messages through unchanged",
 }
 
 
-// Behavioural tests for the MPE to single channel preset. The shipped default
-// is a Lower Zone: channel 1 is the master channel (passes through untouched),
-// channels 2-16 are member channels, and everything member-channel is folded
-// onto config.outChannel=1. Per-note pitch bend is quantised to semitones and
-// folded into the note number (a semitone crossing re-articulates the note),
-// and channel pressure / CC 74 are forwarded only for the member channel
-// holding the most recently played note. These are the parts of the script
-// most likely to regress, and none of them are exercised by the generic smoke
-// check (which only asserts "it ran without erroring").
-static const char* MPE_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/MPE to single channel.js",
-	"presets/MidiKit/Lua/MPE to single channel.lua"
-};
+// Behavioural tests for the MPE to single channel preset. Shipped default is
+// a Lower Zone: channel 1 is the master (passes through), channels 2-16 are
+// members folded onto config.outChannel=1. Per-note pitch bend is quantised
+// to semitones and folded into the note number (a semitone crossing
+// re-articulates), and channel pressure / CC 74 are forwarded only for the
+// member channel holding the most recently played note. None of this is
+// exercised by the generic smoke check.
+
 
 TEST_CASE("'MPE to single channel.js/.lua' rewrites member-channel notes to the output channel", "[MidiKit][MPE]") {
-	std::string path = GENERATE(from_range(std::begin(MPE_PRESET_PATHS), std::end(MPE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("MPE to single channel"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2188,7 +2125,7 @@ TEST_CASE("'MPE to single channel.js/.lua' rewrites member-channel notes to the 
 }
 
 TEST_CASE("'MPE to single channel.js/.lua' passes the master channel through untouched", "[MidiKit][MPE]") {
-	std::string path = GENERATE(from_range(std::begin(MPE_PRESET_PATHS), std::end(MPE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("MPE to single channel"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2202,7 +2139,7 @@ TEST_CASE("'MPE to single channel.js/.lua' passes the master channel through unt
 }
 
 TEST_CASE("'MPE to single channel.js/.lua' folds a semitone pitch bend into the note number", "[MidiKit][MPE]") {
-	std::string path = GENERATE(from_range(std::begin(MPE_PRESET_PATHS), std::end(MPE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("MPE to single channel"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2218,7 +2155,7 @@ TEST_CASE("'MPE to single channel.js/.lua' folds a semitone pitch bend into the 
 }
 
 TEST_CASE("'MPE to single channel.js/.lua' forwards channel pressure only for the active channel", "[MidiKit][MPE]") {
-	std::string path = GENERATE(from_range(std::begin(MPE_PRESET_PATHS), std::end(MPE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("MPE to single channel"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2240,7 +2177,7 @@ TEST_CASE("'MPE to single channel.js/.lua' forwards channel pressure only for th
 }
 
 TEST_CASE("'MPE to single channel.js/.lua' forwards CC 74 only for the active channel", "[MidiKit][MPE]") {
-	std::string path = GENERATE(from_range(std::begin(MPE_PRESET_PATHS), std::end(MPE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("MPE to single channel"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2259,7 +2196,7 @@ TEST_CASE("'MPE to single channel.js/.lua' forwards CC 74 only for the active ch
 }
 
 TEST_CASE("'MPE to single channel.js/.lua' forwards other CCs on a member channel to the output channel", "[MidiKit][MPE]") {
-	std::string path = GENERATE(from_range(std::begin(MPE_PRESET_PATHS), std::end(MPE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("MPE to single channel"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2272,19 +2209,15 @@ TEST_CASE("'MPE to single channel.js/.lua' forwards other CCs on a member channe
 }
 
 
-// Behavioural tests for the Velocity curve preset. The shipped default is
-// config.minVelocity=1, maxVelocity=127, curveAmount=2, channel=0 (every
-// channel), with the curve shape read live from panel param 1. At knob 0.5
-// the curve is linear, so velocity passes through unchanged; velocity 0 (the
-// running-status spelling of a Note-Off) must always be left alone; and
-// non-note messages must pass through untouched.
-static const char* VELOCITY_CURVE_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/Velocity curve.js",
-	"presets/MidiKit/Lua/Velocity curve.lua"
-};
+// Behavioural tests for the Velocity curve preset. Shipped default
+// config.minVelocity=1, maxVelocity=127, curveAmount=2, channel=0, with the
+// curve shape read live from panel param 1. At knob 0.5 the curve is linear
+// (pass-through); velocity 0 (running-status Note-Off) is always left alone;
+// non-note messages pass through untouched.
+
 
 TEST_CASE("'Velocity curve.js/.lua' passes velocity through unchanged at the linear knob", "[MidiKit][VelocityCurve]") {
-	std::string path = GENERATE(from_range(std::begin(VELOCITY_CURVE_PRESET_PATHS), std::end(VELOCITY_CURVE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Velocity curve"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2299,7 +2232,7 @@ TEST_CASE("'Velocity curve.js/.lua' passes velocity through unchanged at the lin
 }
 
 TEST_CASE("'Velocity curve.js/.lua' leaves velocity 0 untouched even off-linear", "[MidiKit][VelocityCurve]") {
-	std::string path = GENERATE(from_range(std::begin(VELOCITY_CURVE_PRESET_PATHS), std::end(VELOCITY_CURVE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Velocity curve"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2314,7 +2247,7 @@ TEST_CASE("'Velocity curve.js/.lua' leaves velocity 0 untouched even off-linear"
 }
 
 TEST_CASE("'Velocity curve.js/.lua' passes non-note messages through unchanged", "[MidiKit][VelocityCurve]") {
-	std::string path = GENERATE(from_range(std::begin(VELOCITY_CURVE_PRESET_PATHS), std::end(VELOCITY_CURVE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Velocity curve"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2325,18 +2258,14 @@ TEST_CASE("'Velocity curve.js/.lua' passes non-note messages through unchanged",
 	Test::destroyModule(m);
 }
 
-// The knob extremes are the whole point of the script - curveAmount=2 turns
-// knob 0.0 into curve +2 and knob 1.0 into curve -2, the only two non-linear
-// settings number.rescale() ever sees at runtime. Both engines run the same
-// formula as Rack's rack::math::rescale() with a dsp::exp2_taylor5() exponent:
-// first the velocity is rescaled linearly onto [1, e], raised to the power
-// 2^curve, then rescaled back onto [1, 127] and rounded. Note the direction:
-// a POSITIVE curve (knob 0.0, exponential) squashes soft notes toward the
-// floor - the full range only opens up at the top of the key travel - while a
-// NEGATIVE curve (knob 1.0, logarithmic) lifts light touches toward the
-// ceiling. (The curve sign in the presets was inverted until 2026-08-03,
-// making knob 0.0 boost instead of squash.) The expected values below are
-// exact, computed from those same functions.
+// The knob extremes are the whole point of the script: curveAmount=2 turns
+// knob 0.0 into curve +2 (exponential) and knob 1.0 into curve -2
+// (logarithmic), the only non-linear settings number.rescale() ever sees at
+// runtime. Both engines run Rack's rack::math::rescale() with a
+// dsp::exp2_taylor5() exponent. A POSITIVE curve squashes soft notes toward
+// the floor; a NEGATIVE one lifts light touches toward the ceiling. (The
+// curve sign was inverted in the presets until 2026-08-03.) Expected values
+// are exact, computed from those same functions.
 static int shapedVelocity(MidiKitModule* m, int vel) {
 	auto ev = feedCollect(m, noteOn(1, 60, vel));
 	REQUIRE_FALSE(ev.empty());
@@ -2344,7 +2273,7 @@ static int shapedVelocity(MidiKitModule* m, int vel) {
 }
 
 TEST_CASE("'Velocity curve.js/.lua' exponential knob (0.0) reshapes velocities", "[MidiKit][VelocityCurve]") {
-	std::string path = GENERATE(from_range(std::begin(VELOCITY_CURVE_PRESET_PATHS), std::end(VELOCITY_CURVE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Velocity curve"));
 	CATCH_INFO("preset: " << path);
 
 	// knob 0.0 -> curve +2: soft notes are squashed toward the floor - only
@@ -2361,7 +2290,7 @@ TEST_CASE("'Velocity curve.js/.lua' exponential knob (0.0) reshapes velocities",
 }
 
 TEST_CASE("'Velocity curve.js/.lua' logarithmic knob (1.0) reshapes velocities", "[MidiKit][VelocityCurve]") {
-	std::string path = GENERATE(from_range(std::begin(VELOCITY_CURVE_PRESET_PATHS), std::end(VELOCITY_CURVE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Velocity curve"));
 	CATCH_INFO("preset: " << path);
 
 	// knob 1.0 -> curve -2: light touches are lifted sharply toward the
@@ -2378,14 +2307,13 @@ TEST_CASE("'Velocity curve.js/.lua' logarithmic knob (1.0) reshapes velocities",
 }
 
 TEST_CASE("'Velocity curve.js/.lua' keeps every output within the 1..127 window", "[MidiKit][VelocityCurve]") {
-	std::string path = GENERATE(from_range(std::begin(VELOCITY_CURVE_PRESET_PATHS), std::end(VELOCITY_CURVE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Velocity curve"));
 	CATCH_INFO("preset: " << path);
 
-	// The script's rescale() works in floats and can land a hair outside the
-	// configured window, so shapeVelocity() must clamp to [minVelocity,
-	// maxVelocity] = [1, 127]. Sweep the whole input range at both knob
-	// extremes: a valid output byte must never drop to 0 (that would read as a
-	// Note-Off) nor exceed 127.
+	// rescale() works in floats and can land a hair outside the configured
+	// window, so the script clamps to [minVelocity, maxVelocity] = [1, 127].
+	// Sweep the whole input range at both knob extremes: a valid output byte
+	// must never drop to 0 (would read as a Note-Off) nor exceed 127.
 	MidiKitModule* m = loadPreset(path);
 	for (float knob : {0.0f, 1.0f}) {
 		m->params[MidiKitModule::PARAM + 0].setValue(knob);
@@ -2400,19 +2328,15 @@ TEST_CASE("'Velocity curve.js/.lua' keeps every output within the 1..127 window"
 }
 
 
-// Behavioural tests for the NRPN to CC preset. The shipped config.map maps
-// NRPN 0->CC 0, 1->CC 1, 2->CC 2 on ccChannel 1. A full NRPN write is four CCs
+// Behavioural tests for the NRPN to CC preset. Shipped config.map maps NRPN
+// 0->CC 0, 1->CC 1, 2->CC 2 on ccChannel 1. A full NRPN write is four CCs
 // (99/98 number MSB/LSB, 6/38 value MSB/LSB); once all four arrive the 14-bit
 // value is emitted as a 14-bit CC pair (CC n = MSB, CC n+32 = LSB). Unmapped
-// NRPN numbers are ignored, and nothing is emitted until all four bytes are
-// present.
-static const char* NRPN_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/NRPN to CC.js",
-	"presets/MidiKit/Lua/NRPN to CC.lua"
-};
+// numbers are ignored, and nothing is emitted until all four bytes arrive.
+
 
 TEST_CASE("'NRPN to CC.js/.lua' converts a mapped NRPN to a 14-bit CC pair", "[MidiKit][NRPN]") {
-	std::string path = GENERATE(from_range(std::begin(NRPN_PRESET_PATHS), std::end(NRPN_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("NRPN to CC"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2429,7 +2353,7 @@ TEST_CASE("'NRPN to CC.js/.lua' converts a mapped NRPN to a 14-bit CC pair", "[M
 }
 
 TEST_CASE("'NRPN to CC.js/.lua' ignores unmapped NRPN numbers", "[MidiKit][NRPN]") {
-	std::string path = GENERATE(from_range(std::begin(NRPN_PRESET_PATHS), std::end(NRPN_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("NRPN to CC"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2445,7 +2369,7 @@ TEST_CASE("'NRPN to CC.js/.lua' ignores unmapped NRPN numbers", "[MidiKit][NRPN]
 }
 
 TEST_CASE("'NRPN to CC.js/.lua' emits nothing until all four bytes arrive", "[MidiKit][NRPN]") {
-	std::string path = GENERATE(from_range(std::begin(NRPN_PRESET_PATHS), std::end(NRPN_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("NRPN to CC"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2459,14 +2383,12 @@ TEST_CASE("'NRPN to CC.js/.lua' emits nothing until all four bytes arrive", "[Mi
 	Test::destroyModule(m);
 }
 
-// The script speaks only NRPN: non-CC messages are dropped by an early return,
-// and non-NRPN CC numbers (anything but 98/99/6/38) fall through to an
-// else/return branch. So a plain CC - CC 7 volume, CC 10 pan, ... - is silently
-// swallowed rather than passed on. That is the intended design (the script
-// converts NRPN and nothing else), so these tests pin it, and also prove the
-// swallowed messages never corrupt the NRPN state machine that follows.
+// The script speaks only NRPN: non-CC messages hit an early return and
+// non-NRPN CC numbers fall through to an else/return, so a plain CC is
+// silently swallowed. That is the intended design; these tests pin it and
+// prove the swallowed messages never corrupt the NRPN state machine.
 TEST_CASE("'NRPN to CC.js/.lua' drops non-NRPN CCs and non-CC messages silently", "[MidiKit][NRPN]") {
-	std::string path = GENERATE(from_range(std::begin(NRPN_PRESET_PATHS), std::end(NRPN_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("NRPN to CC"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2493,19 +2415,14 @@ TEST_CASE("'NRPN to CC.js/.lua' drops non-NRPN CCs and non-CC messages silently"
 }
 
 
-// Behavioural tests for the NRPN Generator preset, the companion to "NRPN to
-// CC": it sweeps a 14-bit value up and down and emits it as a spec-compliant
-// NRPN once per ticksPerStep MIDI clock ticks. A send is the 4-CC wire form
-// built by midi.createNRPN()/midi.setNRPN() - CC 99/98 carry the parameter
-// number MSB/LSB and CC 6/38 the value MSB/LSB (see nrpnQuad below). The
-// shipped config is channel 1, nrpnNumber 0, ticksPerStep 8, stepSize 16,
-// maxValue 16383; only Channel and Ticks per step are exposed in the context
-// menu, so the other fields are set by rewriting the config block before load
-// (loadNrpnGen) when a test needs a non-default sweep.
-static const char* NRPN_GENERATOR_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/NRPN Generator.js",
-	"presets/MidiKit/Lua/NRPN Generator.lua"
-};
+// Behavioural tests for the NRPN Generator preset (companion to "NRPN to CC"):
+// it sweeps a 14-bit value up and down, emitting a spec-compliant NRPN once
+// per ticksPerStep MIDI clock ticks. A send is the 4-CC wire form
+// (CC 99/98 number MSB/LSB, CC 6/38 value MSB/LSB, see nrpnQuad). Shipped
+// config: channel 1, nrpnNumber 0, ticksPerStep 8, stepSize 16, maxValue
+// 16383. Only Channel and Ticks per step are in the context menu; the other
+// fields are set by rewriting the config block before load (loadNrpnGen).
+
 
 // The 4-CC wire form midi.setNRPN() expands an NRPN into, in send() order:
 // CC 99 = number MSB, CC 98 = number LSB, CC 6 = value MSB, CC 38 = value LSB,
@@ -2519,9 +2436,8 @@ static std::vector<OutEvent> nrpnQuad(int ch, int number, int value) {
 	};
 };
 
-// Feeds n consecutive MIDI clock ticks and returns everything the generator
-// emitted across them. Intermediate ticks produce nothing; only the Nth tick
-// (a step boundary) yields the NRPN quad, so this is just that tick's output.
+// Feeds n consecutive MIDI clock ticks and returns everything emitted across
+// them (only the Nth - a step boundary - yields the NRPN quad).
 static std::vector<OutEvent> feedTicks(MidiKitModule* m, int n) {
 	std::vector<OutEvent> all;
 	for (int i = 0; i < n; i++) {
@@ -2531,13 +2447,11 @@ static std::vector<OutEvent> feedTicks(MidiKitModule* m, int n) {
 	return all;
 }
 
-// Loads the NRPN Generator preset with an arbitrary config. The shipped
-// defaults are rewritten in the script text before loading, so the sweep
-// arithmetic (stepSize/maxValue/nrpnNumber) can be driven with a handful of
-// steps instead of the ~1000 the shipped stepSize=16/maxValue=16383 need.
-// The two engines spell the config the same way apart from the assignment
-// operator: JS "field: value", Lua "field = value". Each replacement is
-// asserted to have been found so a preset edit cannot silently skip a field.
+// Loads the NRPN Generator preset with an arbitrary config by rewriting the
+// shipped defaults in the script text, so the sweep can be driven with a
+// handful of steps instead of ~1000. The engines differ only in assignment
+// syntax (JS "field: value", Lua "field = value"). Each replacement is
+// asserted found so a preset edit can't silently skip a field.
 static MidiKitModule* loadNrpnGen(const std::string& relPath, int channel, int nrpnNumber, int ticksPerStep, int stepSize, int maxValue) {
 	std::string script = readFile(repoRoot() + "/" + relPath);
 	const char* sep = (relPath.find("Lua/") != std::string::npos) ? " = " : ": ";
@@ -2564,7 +2478,7 @@ static MidiKitModule* loadNrpnGen(const std::string& relPath, int channel, int n
 }
 
 TEST_CASE("'NRPN Generator.js/.lua' sweeps the value once per ticksPerStep ticks", "[MidiKit][NRPNGenerator]") {
-	std::string path = GENERATE(from_range(std::begin(NRPN_GENERATOR_PRESET_PATHS), std::end(NRPN_GENERATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("NRPN Generator"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2583,7 +2497,7 @@ TEST_CASE("'NRPN Generator.js/.lua' sweeps the value once per ticksPerStep ticks
 }
 
 TEST_CASE("'NRPN Generator.js/.lua' emits nothing until the first full step", "[MidiKit][NRPNGenerator]") {
-	std::string path = GENERATE(from_range(std::begin(NRPN_GENERATOR_PRESET_PATHS), std::end(NRPN_GENERATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("NRPN Generator"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2598,7 +2512,7 @@ TEST_CASE("'NRPN Generator.js/.lua' emits nothing until the first full step", "[
 }
 
 TEST_CASE("'NRPN Generator.js/.lua' resets the phase on Start and Continue", "[MidiKit][NRPNGenerator]") {
-	std::string path = GENERATE(from_range(std::begin(NRPN_GENERATOR_PRESET_PATHS), std::end(NRPN_GENERATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("NRPN Generator"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2622,7 +2536,7 @@ TEST_CASE("'NRPN Generator.js/.lua' resets the phase on Start and Continue", "[M
 }
 
 TEST_CASE("'NRPN Generator.js/.lua' context menu changes ticks per step and channel", "[MidiKit][NRPNGenerator]") {
-	std::string path = GENERATE(from_range(std::begin(NRPN_GENERATOR_PRESET_PATHS), std::end(NRPN_GENERATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("NRPN Generator"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2652,7 +2566,7 @@ TEST_CASE("'NRPN Generator.js/.lua' context menu changes ticks per step and chan
 }
 
 TEST_CASE("'NRPN Generator.js/.lua' encodes the NRPN number as 14-bit MSB/LSB", "[MidiKit][NRPNGenerator]") {
-	std::string path = GENERATE(from_range(std::begin(NRPN_GENERATOR_PRESET_PATHS), std::end(NRPN_GENERATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("NRPN Generator"));
 	CATCH_INFO("preset: " << path);
 
 	// nrpnNumber 257 = 0b100000001: CC 99 carries MSB 2, CC 98 carries LSB 1.
@@ -2665,7 +2579,7 @@ TEST_CASE("'NRPN Generator.js/.lua' encodes the NRPN number as 14-bit MSB/LSB", 
 }
 
 TEST_CASE("'NRPN Generator.js/.lua' clamps at maxValue and reverses the sweep", "[MidiKit][NRPNGenerator]") {
-	std::string path = GENERATE(from_range(std::begin(NRPN_GENERATOR_PRESET_PATHS), std::end(NRPN_GENERATOR_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("NRPN Generator"));
 	CATCH_INFO("preset: " << path);
 
 	// A tiny sweep (stepSize 100, maxValue 300) reaches both ends in a handful
@@ -2692,13 +2606,10 @@ TEST_CASE("'NRPN Generator.js/.lua' clamps at maxValue and reverses the sweep", 
 // Behavioural tests for the Copy Ch1 CC to Ch2 preset. It duplicates every CC
 // on channel 1 onto channel 2 (the copy is sent first, then the original),
 // and leaves everything else untouched.
-static const char* COPY_CC_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/Copy Ch1 CC to Ch2.js",
-	"presets/MidiKit/Lua/Copy Ch1 CC to Ch2.lua"
-};
+
 
 TEST_CASE("'Copy Ch1 CC to Ch2.js/.lua' duplicates a channel-1 CC onto channel 2", "[MidiKit][CopyCC]") {
-	std::string path = GENERATE(from_range(std::begin(COPY_CC_PRESET_PATHS), std::end(COPY_CC_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Copy Ch1 CC to Ch2"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2714,7 +2625,7 @@ TEST_CASE("'Copy Ch1 CC to Ch2.js/.lua' duplicates a channel-1 CC onto channel 2
 }
 
 TEST_CASE("'Copy Ch1 CC to Ch2.js/.lua' does not duplicate CCs on other channels", "[MidiKit][CopyCC]") {
-	std::string path = GENERATE(from_range(std::begin(COPY_CC_PRESET_PATHS), std::end(COPY_CC_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Copy Ch1 CC to Ch2"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2728,7 +2639,7 @@ TEST_CASE("'Copy Ch1 CC to Ch2.js/.lua' does not duplicate CCs on other channels
 }
 
 TEST_CASE("'Copy Ch1 CC to Ch2.js/.lua' does not duplicate non-CC messages on channel 1", "[MidiKit][CopyCC]") {
-	std::string path = GENERATE(from_range(std::begin(COPY_CC_PRESET_PATHS), std::end(COPY_CC_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Copy Ch1 CC to Ch2"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2744,13 +2655,10 @@ TEST_CASE("'Copy Ch1 CC to Ch2.js/.lua' does not duplicate non-CC messages on ch
 
 // Behavioural tests for the Rewrite Ch1 to Ch2 preset. It rewrites every
 // message on channel 1 to channel 2 and leaves all other channels alone.
-static const char* REWRITE_PRESET_PATHS[] = {
-	"presets/MidiKit/JavaScript/Rewrite Ch1 to Ch2.js",
-	"presets/MidiKit/Lua/Rewrite Ch1 to Ch2.lua"
-};
+
 
 TEST_CASE("'Rewrite Ch1 to Ch2.js/.lua' rewrites channel-1 messages to channel 2", "[MidiKit][Rewrite]") {
-	std::string path = GENERATE(from_range(std::begin(REWRITE_PRESET_PATHS), std::end(REWRITE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Rewrite Ch1 to Ch2"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -2766,7 +2674,7 @@ TEST_CASE("'Rewrite Ch1 to Ch2.js/.lua' rewrites channel-1 messages to channel 2
 }
 
 TEST_CASE("'Rewrite Ch1 to Ch2.js/.lua' leaves other channels unchanged", "[MidiKit][Rewrite]") {
-	std::string path = GENERATE(from_range(std::begin(REWRITE_PRESET_PATHS), std::end(REWRITE_PRESET_PATHS)));
+	std::string path = GENERATE(presetPaths("Rewrite Ch1 to Ch2"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);

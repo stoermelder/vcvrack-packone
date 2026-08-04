@@ -1,4 +1,5 @@
 #include "MidiKit.test.hpp"
+#include <fstream>
 
 using namespace StoermelderPackOne::MidiScript;
 
@@ -854,4 +855,218 @@ TEST_CASE("Context menu: options submenu is built and click fires the callback",
 		Test::destroyWidget(mw);
 		Test::destroyModule(m);
 	}
+}
+
+
+// ─── Example-script submenus (appendExampleItems / hasExampleScripts) ───────
+// appendExampleItems() and hasExampleScripts() scan a real directory on disk,
+// so these tests build a throwaway tree under the system temp dir (see
+// TempExampleDir) and point the menu builder at it. They assert on the menu
+// structure — leaf items for matching scripts, nested submenus for subfolders,
+// empty subfolders skipped, "None found" when nothing matches — and on the
+// click-through: a leaf's action loads the script into the module via loadJs().
+
+// Creates a unique, writable directory tree for one test case and removes it on
+// destruction. Names come from a static counter, which keeps every concurrently
+// live tree unique; a stale leftover from a crashed run is removed first, and
+// createDirectories() is happy to recreate it.
+struct TempExampleDir {
+	std::string root;
+
+	TempExampleDir() {
+		root = rack::system::join(rack::system::getTempDirectory(), "MidiKit-example-test-" + std::to_string(++s_counter));
+		rack::system::removeRecursively(root);  // clear stale leftovers
+		REQUIRE(rack::system::createDirectories(root));
+	}
+	~TempExampleDir() {
+		rack::system::removeRecursively(root);
+	}
+
+	// Full path of a root-relative path.
+	std::string path(const std::string& rel) const {
+		return rack::system::join(root, rel);
+	}
+
+	// Writes a file (creating parent dirs) and returns its full path.
+	std::string write(const std::string& rel, const std::string& content = "") {
+		std::string p = path(rel);
+		rack::system::createDirectories(rack::system::getDirectory(p));
+		std::ofstream f(p);
+		REQUIRE(f.good());
+		f << content;
+		return p;
+	}
+
+	static int s_counter;
+};
+int TempExampleDir::s_counter = 0;
+
+// Creates the module+widget pair used by the example-menu tests.
+static void createExampleFixture(MidiKitModule** m, MidiKitWidget** mw) {
+	*m = createModule();
+	(*m)->model = modelMidiKit;
+	*mw = Test::createWidget<MidiKitWidget>(*m);
+}
+
+// Finds a child MenuItem of `menu` by text; returns NULL when absent.
+static rack::ui::MenuItem* findMenuItem(rack::ui::Menu* menu, const std::string& text) {
+	for (rack::Widget* child : menu->children) {
+		if (auto* mi = dynamic_cast<rack::ui::MenuItem*>(child)) {
+			if (mi->text == text) return mi;
+		}
+	}
+	return nullptr;
+}
+
+// Returns whether `menu` has a MenuLabel with the given text.
+static bool hasMenuLabel(rack::ui::Menu* menu, const std::string& text) {
+	for (rack::Widget* child : menu->children) {
+		if (auto* label = dynamic_cast<rack::ui::MenuLabel*>(child)) {
+			if (label->text == text) return true;
+		}
+	}
+	return false;
+}
+
+TEST_CASE("hasExampleScripts detects scripts recursively", "[MidiKit][Examples]") {
+	MidiKitModule* m;
+	MidiKitWidget* mw;
+	createExampleFixture(&m, &mw);
+
+	TempExampleDir d;
+	d.write("A.js");
+	d.write("notes.md");
+	d.write("sub/B.js");
+	d.write("sub/deep/C.js");
+	d.write("empty/deep/placeholder.txt");
+
+	REQUIRE(mw->hasExampleScripts(d.root, ".js"));
+	REQUIRE(!mw->hasExampleScripts(d.root, ".lua"));           // no .lua anywhere
+	REQUIRE(mw->hasExampleScripts(d.path("sub"), ".js"));      // one level down
+	REQUIRE(mw->hasExampleScripts(d.path("sub/deep"), ".js")); // nested
+	REQUIRE(!mw->hasExampleScripts(d.path("empty"), ".js"));   // only .txt
+	REQUIRE(!mw->hasExampleScripts(d.path("missing"), ".js")); // no such dir
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("appendExampleItems builds nested submenus and skips empty folders", "[MidiKit][Examples]") {
+	MidiKitModule* m;
+	MidiKitWidget* mw;
+	createExampleFixture(&m, &mw);
+
+	TempExampleDir d;
+	d.write("Alpha.js");
+	d.write("Beta.md");               // wrong extension → ignored
+	d.write("sub/SubOne.js");
+	d.write("sub/SubTwo.js");
+	d.write("sub/deep/DeepOne.js");
+	d.write("empty/placeholder.txt"); // no .js in this subtree → skipped
+	d.write("other/Other.lua");       // .lua only → skipped for a .js listing
+
+	rack::ui::Menu* menu = new rack::ui::Menu;
+	mw->appendExampleItems(menu, d.root, ".js");
+
+	// Top level: subfolders come first (sorted), then files (sorted).
+	// Folders without any matching script do not appear at all.
+	rack::ui::MenuItem* sub = findMenuItem(menu, "sub");
+	REQUIRE(sub != nullptr);
+	REQUIRE(sub->rightText == "▸");                  // submenu arrow
+
+	rack::ui::MenuItem* alpha = findMenuItem(menu, "Alpha");
+	REQUIRE(alpha != nullptr);
+	REQUIRE(alpha->rightText == "");                 // leaf: no submenu arrow
+	REQUIRE(findMenuItem(menu, "Beta") == nullptr);  // wrong ext ignored
+	REQUIRE(findMenuItem(menu, "empty") == nullptr); // no .js inside
+	REQUIRE(findMenuItem(menu, "other") == nullptr); // no .js inside
+
+	// Verify ordering: subfolder(s) appear before file(s).
+	int subIdx = 0, alphaIdx = 0, idx = 0;
+	for (auto* child : menu->children) {
+		if (child == sub) subIdx = idx;
+		if (child == alpha) alphaIdx = idx;
+		idx++;
+	}
+	REQUIRE(subIdx < alphaIdx);
+
+	// Open sub/: SubOne and SubTwo are leaves, deep/ is another submenu.
+	rack::ui::Menu* subMenu = sub->createChildMenu();
+	REQUIRE(subMenu != nullptr);
+	REQUIRE(findMenuItem(subMenu, "SubOne") != nullptr);
+	REQUIRE(findMenuItem(subMenu, "SubTwo") != nullptr);
+	rack::ui::MenuItem* deep = findMenuItem(subMenu, "deep");
+	REQUIRE(deep != nullptr);
+
+	// Open deep/: only DeepOne, no "None found" (a non-empty match).
+	rack::ui::Menu* deepMenu = deep->createChildMenu();
+	REQUIRE(findMenuItem(deepMenu, "DeepOne") != nullptr);
+	REQUIRE(deepMenu->children.size() == 1);
+	REQUIRE(!hasMenuLabel(deepMenu, "None found"));
+
+	delete deepMenu;
+	delete subMenu;
+	delete menu;
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("appendExampleItems leaf click loads the script", "[MidiKit][Examples]") {
+	MidiKitModule* m;
+	MidiKitWidget* mw;
+	createExampleFixture(&m, &mw);
+
+	static const std::string CONTENT =
+		"/**\n"
+		" * @engine QuickJs\n"
+		" */\n"
+		"rack.log(\"loaded from submenu\");\n";
+
+	TempExampleDir d;
+	std::string path = d.write("Alpha.js", CONTENT);
+
+	rack::ui::Menu* menu = new rack::ui::Menu;
+	mw->appendExampleItems(menu, d.root, ".js");
+
+	rack::ui::MenuItem* alpha = findMenuItem(menu, "Alpha");
+	REQUIRE(alpha != nullptr);
+
+	// Clicking a leaf is what Rack does on mouse release: it runs the item's
+	// action, which records the file path and loads it into the module.
+	alpha->doAction(true);
+
+	REQUIRE(mw->filename == path);
+	REQUIRE(m->script == CONTENT);
+	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seQuickJs));
+
+	delete menu;
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("appendExampleItems shows 'None found' when nothing matches", "[MidiKit][Examples]") {
+	MidiKitModule* m;
+	MidiKitWidget* mw;
+	createExampleFixture(&m, &mw);
+
+	TempExampleDir d;
+	d.write("readme.md"); // no scripts of the requested engine
+
+	// A directory with only non-matching files → label only, no items.
+	rack::ui::Menu* menu = new rack::ui::Menu;
+	mw->appendExampleItems(menu, d.root, ".js");
+	REQUIRE(hasMenuLabel(menu, "None found"));
+	for (rack::Widget* child : menu->children) {
+		REQUIRE(dynamic_cast<rack::ui::MenuItem*>(child) == nullptr);
+	}
+	delete menu;
+
+	// A directory that does not exist at all → same behaviour.
+	rack::ui::Menu* menu2 = new rack::ui::Menu;
+	mw->appendExampleItems(menu2, d.path("missing"), ".js");
+	REQUIRE(hasMenuLabel(menu2, "None found"));
+	delete menu2;
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
 }

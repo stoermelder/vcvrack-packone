@@ -677,13 +677,11 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Script"));
-		menu->addChild(createSubmenuItem("Examples", "", [=](Menu* menu) {
-			menu->addChild(createSubmenuItem("JavaScript", "", [=](Menu* menu) {
-				appendExampleItems(menu, asset::plugin(pluginInstance, "presets/MidiKit/JavaScript"), ".js");
-			}));
-			menu->addChild(createSubmenuItem("Lua", "", [=](Menu* menu) {
-				appendExampleItems(menu, asset::plugin(pluginInstance, "presets/MidiKit/Lua"), ".lua");
-			}));
+		menu->addChild(createSubmenuItem("Examples (JavaScript)", "", [=](Menu* menu) {
+			appendExampleItems(menu, asset::plugin(pluginInstance, "presets/MidiKit/JavaScript"), ".js");
+		}));
+		menu->addChild(createSubmenuItem("Examples (Lua)", "", [=](Menu* menu) {
+			appendExampleItems(menu, asset::plugin(pluginInstance, "presets/MidiKit/Lua"), ".lua");
 		}));
 		menu->addChild(createMenuItem("Clear", "", [=]() { module->clearScript(); }));
 		menu->addChild(createMenuItem("Paste from clipboard", RACK_MOD_ALT_NAME "+V", [=]() { pasteJsClipboard(); }));
@@ -742,15 +740,45 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 		}
 	}
 
-	// Lists .js/.lua example scripts bundled under src/modules/midikit/, sorted, as clickable
-	// menu items (mirrors ModuleWidget's factory-preset submenu, but for raw scripts). All
-	// other file types in that folder (.cpp, .h, .md, ...) are ignored.
+	// Returns true if dir (or any of its subfolders, recursively) contains at
+	// least one script file with the given extension. Used to avoid creating
+	// empty submenus for folders that hold no scripts of the active engine.
+	bool hasExampleScripts(std::string dir, std::string ext) {
+		if (!system::isDirectory(dir)) return false;
+		for (std::string path : system::getEntries(dir)) {
+			if (system::isDirectory(path)) {
+				if (hasExampleScripts(path, ext)) return true;
+			}
+			else if (system::getExtension(path) == ext) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Lists .js/.lua example scripts bundled under src/modules/midikit/, sorted,
+	// as clickable menu items (mirrors ModuleWidget's factory-preset submenu, but
+	// for raw scripts). Subfolders become nested submenus, recursing arbitrarily
+	// deep. All other file types in those folders (.cpp, .h, .md, ...) are
+	// ignored. Subfolders are listed before files within each directory.
 	void appendExampleItems(Menu* menu, std::string dir, std::string ext) {
 		bool hasExamples = false;
 		if (system::isDirectory(dir)) {
 			std::vector<std::string> entries = system::getEntries(dir);
 			std::sort(entries.begin(), entries.end());
+			// Subfolders first (sorted)
 			for (std::string path : entries) {
+				if (!system::isDirectory(path)) continue;
+				if (!hasExampleScripts(path, ext)) continue;
+				hasExamples = true;
+				std::string name = system::getFilename(path);
+				menu->addChild(createSubmenuItem(name, "", [=](Menu* menu) {
+					appendExampleItems(menu, path, ext);
+				}));
+			}
+			// Files second (sorted)
+			for (std::string path : entries) {
+				if (system::isDirectory(path)) continue;
 				if (system::getExtension(path) != ext) continue;
 				hasExamples = true;
 				std::string name = system::getStem(path);
