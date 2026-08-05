@@ -60,6 +60,13 @@ struct MidiScriptEngine {
 	// module-facing callback (log/overlay/input/trig/param) routes through it.
 	MidiScriptEngineHandler* handler;
 
+	// Whether the loaded script defines rack.onSave(). Written on the worker as
+	// part of load/teardown, read on the UI thread by captureConfig() to skip
+	// the round-trip when there is nothing to ask for. Atomic because it is the
+	// only script-derived state crossing threads — the interpreter and its
+	// cached hook refs stay worker-owned.
+	std::atomic<bool> hasOnSave{false};
+
 	int inputCount;
 	int inputTrigCount;
 	int outputTrigCount;
@@ -183,11 +190,11 @@ struct MidiScriptEngine {
 	// used by toJson() at save time. Messages onSave() queues are discarded (a
 	// save must have no audible effect).
 	//
-	// Returns false, leaving `out` untouched, only when the config couldn't be
-	// determined (no script, or dispatch failed). Callers keep their previous
-	// value then; overwriting it with "" would erase the user's settings. A
-	// script without onSave() is NOT a failure — it returns true with empty
-	// `out`, so the caller clears its stored config.
+	// Returns false, leaving `out` untouched, only when the dispatch failed:
+	// callers keep their previous value then, since overwriting it with "" would
+	// erase the user's settings. Having nothing to persist — no script, or a
+	// script without onSave() — is a definite answer, not a failure, so it
+	// returns true with an empty `out` and the caller clears its stored config.
 	//
 	// Callable from any thread; implementations dispatch via runSync().
 	virtual bool captureConfig(std::string& out) = 0;

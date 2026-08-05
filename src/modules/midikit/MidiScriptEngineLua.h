@@ -190,6 +190,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 		lua_pop(L, 1); // pop rack table (or whatever "rack" turned out to be)
 
+		hasOnSave.store(onSaveRef != LUA_NOREF, std::memory_order_release);
+
 		if (onMidiMessageRef == LUA_NOREF) {
 			handler->writeLog("No onMidiMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
 		}
@@ -212,13 +214,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// See MidiScriptEngine::captureConfig() for the contract. Lua state is only
 	// safe to touch from the worker thread, hence runSync().
 	bool captureConfig(std::string& out) override {
-		// Answered from the cached ref, without a worker round-trip: onSaveRef
-		// is a plain member, written only at load time and in closeState().
-		if (L && onSaveRef == LUA_NOREF) {
+		// Answered from the atomic, without a worker round-trip: L/onSaveRef are
+		// worker-owned and must not be read from here. No script, or a script
+		// without onSave(), both mean "nothing to persist" — a definite answer,
+		// so true with an empty `out`, and the caller clears its stored config.
+		if (!hasOnSave.load(std::memory_order_acquire)) {
 			out.clear();
 			return true;
 		}
-		if (!L) return false;
 		return runSync([this]() -> std::string {
 			if (!L) return "";
 			int nRet = callOnSave();
@@ -245,6 +248,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			onLoadRef = LUA_NOREF;
 			onUnloadRef = LUA_NOREF;
 			onSaveRef = LUA_NOREF;
+			hasOnSave.store(false, std::memory_order_release);
 			lua_close(L);
 			L = nullptr;
 		}

@@ -216,6 +216,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				rackObj = JS_UNDEFINED;
 			}
 
+			hasOnSave.store(!JS_IsUndefined(onSaveFn), std::memory_order_release);
+
 			if (JS_IsUndefined(onMidiMessageFn)) {
 				handler->writeLog("No onMidiMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
 			}
@@ -242,14 +244,14 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// context is only safe to touch from the worker thread, hence
 	// runSync().
 	bool captureConfig(std::string& out) override {
-		// Answered from the cached ref, without a worker round-trip.
-		// JS_IsUndefined rather than JS_IsFunction — cacheCallableProp() only
-		// ever stores a callable, so the tag test suffices and needs no ctx.
-		if (ctx && JS_IsUndefined(onSaveFn)) {
+		// Answered from the atomic, without a worker round-trip: ctx/onSaveFn are
+		// worker-owned and must not be read from here. No script, or a script
+		// without onSave(), both mean "nothing to persist" — a definite answer,
+		// so true with an empty `out`, and the caller clears its stored config.
+		if (!hasOnSave.load(std::memory_order_acquire)) {
 			out.clear();
 			return true;
 		}
-		if (!ctx) return false;
 		return runSync([this]() -> std::string {
 			if (!ctx) return "";
 			JSValue ret = callOnSave();
@@ -290,6 +292,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			onLoadFn = JS_UNDEFINED;
 			onUnloadFn = JS_UNDEFINED;
 			onSaveFn = JS_UNDEFINED;
+			hasOnSave.store(false, std::memory_order_release);
 			JS_FreeContext(ctx);
 			JS_FreeRuntime(rt);
 			ctx = NULL;

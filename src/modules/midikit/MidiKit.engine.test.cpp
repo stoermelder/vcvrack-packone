@@ -2278,14 +2278,13 @@ end
 }
 
 
-TEST_CASE("captureConfig on an engine with no script loaded fails without touching out", "[MidiKit][CrossEngine]") {
-	// The other false case: no script at all, so there is no way to know what
-	// (if anything) should be persisted. Distinct from a loaded script with no
-	// onSave(), which succeeds with an empty result — here the caller must keep
-	// whatever config it already had rather than clearing it.
+TEST_CASE("captureConfig on an engine with no script loaded reports nothing to persist", "[MidiKit][CrossEngine]") {
+	// No script is a definite "nothing to persist", not a failure: there is no
+	// config to preserve, so the caller should clear whatever it stored rather
+	// than keep it. false is reserved for a failed dispatch.
 	MidiKitModule* m = createModule();
-	REQUIRE(captureConfigFails(&m->seLua));
-	REQUIRE(captureConfigFails(&m->seQuickJs));
+	REQUIRE(captureConfig(&m->seLua).empty());
+	REQUIRE(captureConfig(&m->seQuickJs).empty());
 	Test::destroyModule(m);
 }
 

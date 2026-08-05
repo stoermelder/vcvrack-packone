@@ -22,24 +22,13 @@ static MidiKitModule* createModule(std::shared_ptr<StoermelderPackOne::ITaskWork
 
 // captureConfig() as a plain value, for tests asserting on the config a script
 // produced. REQUIREs a true return: under SyncTaskWorker the task always runs
-// inline, so false means the config could not be determined at all (no script
-// loaded, or a dispatch failure) and should fail the test loudly rather than
-// silently read as an empty config. A script without onSave() returns true
-// with an empty string and is fine here.
+// inline, so false means the dispatch itself failed and should fail the test
+// loudly rather than read as an empty config. Nothing to persist (no script, or
+// no onSave()) returns true with an empty string and is fine here.
 static std::string captureConfig(MidiScriptEngine* se) {
 	std::string out;
 	REQUIRE(se->captureConfig(out));
 	return out;
-}
-
-// True when captureConfig() cannot determine the config at all. Asserts `out`
-// is left untouched, which is what stops a caller from overwriting a good
-// stored config with "" on a dispatch failure.
-static bool captureConfigFails(MidiScriptEngine* se) {
-	std::string out = "untouched";
-	bool ok = se->captureConfig(out);
-	REQUIRE(out == "untouched");
-	return !ok;
 }
 
 // Drains the module log and returns it as one string.
