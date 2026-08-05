@@ -28,9 +28,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t sendOrder = 0;
 	};
 
-	// Retrieves the engine instance owning ctx, stashed via JS_SetContextOpaque
-	// at context creation. O(1), and avoids a shared map mutated on the GUI
-	// thread and read on the worker thread without synchronization.
+	// Retrieves the engine owning ctx, stashed via JS_SetContextOpaque at
+	// context creation. O(1); avoids a shared map mutated on the GUI thread and
+	// read on the worker thread without synchronization.
 	static MidiScriptEngineQuickJs* getEngine(JSContext* ctx) {
 		return static_cast<MidiScriptEngineQuickJs*>(JS_GetContextOpaque(ctx));
 	}
@@ -42,44 +42,40 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	const static int msgStoreSize = 32;
 	MessageEx msgStore[msgStoreSize];
-	// Must be initialised: top-level script code runs during loadScript(), before
-	// process() sets this to 1, and it bounds every msgStore index check below.
+	// Must be initialised: top-level script code runs during loadScript(),
+	// before process() sets this to 1; it bounds every msgStore check.
 	size_t msgCount = 0;
-	// Next value handed to MessageEx::sendOrder. Never reset: it only needs to
-	// be monotonic within a single callback, and the store is reset per callback.
+	// Next MessageEx::sendOrder value. Never reset: only needs to be monotonic
+	// within a single callback (the store resets per callback).
 	size_t sendCounter = 0;
-	// True only while onMidiMessage() is executing. The message store is reset
-	// on every callback, so handles created outside one are silently
-	// invalidated — this lets midi.create() warn instead of failing quietly.
+	// True only inside a script callback. The store resets every callback, so
+	// handles created outside one are silently invalidated — lets midi.create()
+	// warn instead of failing quietly.
 	bool inCallback = false;
 	// Sticky output port selected via midiOut.selectPort(), 0-based. Stays in
 	// effect across callbacks until changed again.
 	int selectedPort = 0;
 
 	// Script-registered context menus. The JSValue callback lives here (not in
-	// ScriptMenuItem) because it is only ever touched on the worker thread;
-	// the UI thread reads presentation copies through getContextMenus().
+	// ScriptMenuItem) because it's only ever touched on the worker thread; the
+	// UI thread reads presentation copies.
 	struct ContextMenuEntry {
 		ScriptMenuItem spec;
 		JSValue callbackFn;
 		JSValue onGetValueFn = JS_UNDEFINED;
 	};
+	// Worker-thread-owned (registerContextMenu/getContextMenus/
+	// invokeContextMenuCallback); clearContextMenus() only from load/teardown,
+	// which never overlaps dispatch. No mutex — see clearContextMenus().
 	std::unordered_map<int, ContextMenuEntry> contextMenus;
 	int nextContextMenuCallbackId = 1;
-	// Guards contextMenus/nextContextMenuCallbackId against concurrent
-	// access from the UI thread (menu build / click) and the worker thread
-	// (registerContextMenu, callback dispatch). Never held while running a
-	// script callback, or a callback that re-registers would deadlock.
-	mutable std::mutex contextMenusMutex;
 
-	// rack and its five hooks (onMidiMessage/onTrigger/onLoad/onUnload/
-	// onSave) are resolved once at load and cached here, not re-looked-up per
-	// dispatch. Reassigning rack or a hook after load (or defining a hook
-	// late) has no effect — only what was present at load time runs. Matched
-	// in Lua (onMidiMessageRef/etc.) so both engines behave the same. One
-	// asymmetry: QuickJS calls hooks as methods (rackObj as thisVal, so
-	// `this` works inside a hook); Lua calls them as bare functions with no
-	// receiver. Predates caching, unused by any shipped preset, left as-is.
+	// rack and its five hooks (onMidiMessage/onTrigger/onLoad/onUnload/onSave)
+	// are resolved once at load and cached here, not re-looked-up per dispatch
+	// — so defining/reassigning one later has no effect; only what was present
+	// at load runs. Matched in Lua so both engines behave the same. Asymmetry:
+	// QuickJS calls hooks as methods (rackObj as thisVal, so `this` works);
+	// Lua calls them as bare functions. Predates caching, unused by any preset.
 	JSValue rackObj = JS_UNDEFINED;
 	JSValue onMidiMessageFn = JS_UNDEFINED;
 	JSValue onTriggerFn = JS_UNDEFINED;
@@ -88,9 +84,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	JSValue onSaveFn = JS_UNDEFINED;
 
 	// Usually a no-op (ctx already NULL): the real closeState() runs from
-	// MidiKitModule's destructor while this object is still fully alive,
-	// since writeLog/input.*/trig.*/param.* are pure virtual here and calling
-	// them post-destruction would be UB.
+	// MidiKitModule's destructor while this object is fully alive — the
+	// handler callbacks are pure virtual, so calling them post-destruction
+	// would be UB.
 	~MidiScriptEngineQuickJs() {
 		closeState();
 	}
@@ -102,10 +98,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return r;
 	}
 
-	// Formats a QuickJS exception with the source position it was raised at.
-	// QuickJS exceptions carry their own "stack" property with file/line info 
-	// when available (e.g. a SyntaxError raised during parsing), so this reads
-	// message + stack straight off the exception object.
+	// Formats a QuickJS exception with its source position: reads message +
+	// "stack" (file/line info when available, e.g. a parse-time SyntaxError)
+	// straight off the exception object.
 	std::string formatError(JSValueConst exc) {
 		std::string message = jsToStdString(exc);
 		JSValue stack = JS_GetPropertyStr(ctx, exc, "stack");
@@ -117,9 +112,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return message;
 	}
 
-	// Engine selection: true when this script's header declares QuickJs. The
-	// same simple substring check the module used to run itself (Q26) — kept
-	// here so the module has no third header parser.
+	// Engine selection: true when the script's header declares QuickJs. The
+	// same substring check the module used to run itself (Q26) — so the module
+	// has no third header parser.
 	bool testScript(const std::string& script) override {
 		return script.find("@engine QuickJs") != std::string::npos;
 	}
@@ -160,9 +155,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				std::smatch m2 = *i;
 				std::string topic = m2[1].str();
 				std::string text = m2[2].str();
-				// The capture runs up to the next "@" (or the end of the header),
-				// so it picks up the whitespace that separated the tags. Trim it,
-				// otherwise a lone "@engine QuickJs" yields "QuickJs " and fails to match.
+				// The capture runs to the next "@" (or header end), picking up the
+				// separating whitespace — trim it, or "@engine QuickJs" yields
+				// "QuickJs " and fails to match.
 				size_t last = text.find_last_not_of(" \t");
 				text = (last == std::string::npos) ? "" : text.substr(0, last + 1);
 				topics[topic] = text;
@@ -207,10 +202,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JSValue glob = JS_GetGlobalObject(ctx);
 			rackObj = JS_GetPropertyStr(ctx, glob, "rack");
 			JS_FreeValue(ctx, glob);
-			// A script can clobber "rack" (e.g. "rack = null;") before we get
-			// here. JS_GetPropertyStr throws on null/undefined, which would
-			// leave a pending exception on ctx — so only look up hooks when
-			// rackObj is an actual object; otherwise leave them JS_UNDEFINED.
+			// A script can clobber "rack" (e.g. "rack = null;"); JS_GetPropertyStr
+			// throws on null/undefined, leaving a pending exception on ctx — so
+			// only look up hooks when rackObj is an object, else JS_UNDEFINED.
 			if (JS_IsObject(rackObj)) {
 				onLoadFn = cacheCallableProp(rackObj, "onLoad");
 				onUnloadFn = cacheCallableProp(rackObj, "onUnload");
@@ -226,9 +220,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (JS_IsUndefined(onMidiMessageFn)) {
 				handler->writeLog("No onMidiMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
 			}
-			// Pass any persisted config to onLoad(). parsePersistedConfig()
-			// returns JS_UNDEFINED when there is none (or it is not valid
-			// JSON), so the script falls back to its defaults.
+			// Pass any persisted config to onLoad(); parsePersistedConfig()
+			// returns JS_UNDEFINED when there is none or invalid JSON, so the
+			// script falls back to its defaults.
 			JSValue config = parsePersistedConfig(persistedConfigJson);
 			callOnLoad(config);
 			// JS_UNDEFINED is a shared atom; JS_FreeValue is a no-op for it.
@@ -236,8 +230,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 	}
 
-	// Reads obj[name] and keeps a ref to it if callable, else returns
-	// JS_UNDEFINED. Used once at load time to cache the four hooks.
+	// Reads obj[name] and keeps a ref to it if callable, else JS_UNDEFINED.
+	// Used once at load time to cache the hooks.
 	JSValue cacheCallableProp(JSValueConst obj, const char* name) {
 		JSValue v = JS_GetPropertyStr(ctx, obj, name);
 		if (JS_IsFunction(ctx, v)) return v;
@@ -251,7 +245,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	bool captureConfig(std::string& out) override {
 		// Answered from the cached ref, without a worker round-trip.
 		// JS_IsUndefined rather than JS_IsFunction — cacheCallableProp() only
-		// ever stores a callable, so the tag test is enough and needs no ctx.
+		// ever stores a callable, so the tag test suffices and needs no ctx.
 		if (ctx && JS_IsUndefined(onSaveFn)) {
 			out.clear();
 			return true;
@@ -331,10 +325,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		flushMsgStore();
 	}
 
-	// Runs the script's onUnload() hook. Its return value, if any, is
-	// discarded by the caller — onUnload() is teardown-only; config comes
-	// from onSave(). Messages are NOT flushed here: closeState() flushes
-	// them for teardown.
+	// Runs onUnload(). Its return value is discarded by the caller — teardown-
+	// only; config comes from onSave(). Messages are NOT flushed here:
+	// closeState() flushes them for teardown.
 	JSValue callOnUnload() {
 		if (!JS_IsFunction(ctx, onUnloadFn)) return JS_UNDEFINED;
 
@@ -353,10 +346,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return r;
 	}
 
-	// Runs the script's onSave() hook, returning its return value (the
-	// config to persist), or JS_UNDEFINED if missing/errored. Messages are
-	// NOT flushed here: captureConfig() discards them, so a save has no
-	// audible side effects.
+	// Runs onSave(), returning its return value (the config to persist) or
+	// JS_UNDEFINED if missing/errored. Messages are NOT flushed here:
+	// captureConfig() discards them, so a save is silent.
 	JSValue callOnSave() {
 		if (!JS_IsFunction(ctx, onSaveFn)) return JS_UNDEFINED;
 
@@ -375,8 +367,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// Parses a persisted-config JSON string into a JSValue for rack.onLoad(),
-	// or JS_UNDEFINED when the string is empty or not valid JSON. The caller
-	// must JS_FreeValue the result (a no-op for JS_UNDEFINED).
+	// or JS_UNDEFINED when empty/invalid. Caller must JS_FreeValue the result
+	// (a no-op for JS_UNDEFINED).
 	JSValue parsePersistedConfig(const std::string& json) {
 		if (json.empty()) return JS_UNDEFINED;
 		JSValue parsed = JS_ParseJSON(ctx, json.c_str(), json.size(), "<config>");
@@ -412,8 +404,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			inCallback = true;
 			// Calls the cached onMidiMessageFn/rackObj — no by-name lookup.
 			// !JS_IsUndefined, not JS_IsFunction: cacheCallableProp() guarantees
-			// this is always a function or JS_UNDEFINED, so the pure tag test is
-			// equivalent and cheaper on this per-dispatch path.
+			// a function or JS_UNDEFINED, so the tag test suffices and is
+			// cheaper on this per-dispatch path.
 			if (!JS_IsUndefined(onMidiMessageFn)) {
 				JSValue args[2] = { JS_NewInt32(ctx, midiPort + 1), JS_NewInt32(ctx, 0) };
 				JSValue r = JS_Call(ctx, onMidiMessageFn, rackObj, 2, args);
@@ -468,10 +460,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// Pushes every message sent during the callback that just ran into
-	// midiOutQueue. Shared by onMidiMessage/onLoad/onUnload/onTrigger.
-	// Messages are emitted in the order midiOut.send() was called (sendOrder),
-	// not in handle-creation order: a script may create several messages and
-	// send them in a different order, and the receiver must observe send() order.
+	// midiOutQueue (shared by onMidiMessage/onLoad/onUnload/onTrigger).
+	// Emitted in send() order (sendOrder), not handle-creation order: a script
+	// may create and send messages in different orders, and the receiver must
+	// observe send() order.
 	void flushMsgStore() {
 		std::vector<size_t> order;
 		for (size_t i = 0; i < msgCount; i++) {
@@ -492,7 +484,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	// Calls a global "name(i+1)" function returning a string, e.g.
 	// input.getName(i)/param.getName(i)/param.getValueFormat(i). Falls back to
-	// "" if unset or if the call raises.
+	// "" if unset or the call raises.
 	std::string callGlobalStringFn(const char* objName, const char* fnName, int i) {
 		if (!ctx) return "";
 		JSValue glob = JS_GetGlobalObject(ctx);
@@ -529,12 +521,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return callGlobalStringFn("param", "getValueFormat", i);
 	}
 
+	// Frees the stored script callbacks. Called only from closeState(), which —
+	// like loadScript() — runs inline on the calling thread. Load/teardown
+	// never overlap dispatch (the module doesn't process while replacing a
+	// script), so this needs no lock even though other touchers are on the
+	// worker.
 	void clearContextMenus() {
-		std::lock_guard<std::mutex> lock(contextMenusMutex);
 		if (ctx) {
-			// Frees the stored script callbacks. Only safe on this (UI) thread
-			// while ctx is still alive: closeState() calls this before freeing
-			// the context, and every JS operation happens on this thread.
 			for (auto& kv : contextMenus) {
 				JS_FreeValue(ctx, kv.second.callbackFn);
 				// JS_FreeValue on JS_UNDEFINED is a safe no-op.
@@ -547,20 +540,17 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	void getContextMenus(const std::function<void(const std::vector<ScriptMenuItem>&)>& callback) override {
 		// The whole snapshot is built on the worker thread, so getContextMenus()
-		// itself needs no lock/copy on the UI thread. Each onGetValue function
-		// is dup'd here under the same lock that guards the map — QuickJS
-		// refcounts are not atomic, so JS_DupValue must only run on the worker
-		// thread. The lock is released before any script call below.
+		// needs no copy on the UI thread. Each onGetValue function is dup'd
+		// here — QuickJS refcounts aren't atomic, so JS_DupValue only runs on
+		// the worker thread.
 		runAsync([this, callback]() {
+			assert(onWorkerThread());
 			if (!ctx) return;
 			struct Snapshot { int id; ScriptMenuItem spec; JSValue onGetValueFn; };
 			std::vector<Snapshot> snap;
-			{
-				std::lock_guard<std::mutex> lock(contextMenusMutex);
-				snap.reserve(contextMenus.size());
-				for (const auto& kv : contextMenus) {
-					snap.push_back({kv.first, kv.second.spec, JS_DupValue(ctx, kv.second.onGetValueFn)});
-				}
+			snap.reserve(contextMenus.size());
+			for (const auto& kv : contextMenus) {
+				snap.push_back({kv.first, kv.second.spec, JS_DupValue(ctx, kv.second.onGetValueFn)});
 			}
 			// callbackIds are assigned monotonically at registration, so sorting
 			// by them yields registration order — the unordered_map's own
@@ -571,7 +561,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			std::vector<ScriptMenuItem> result;
 			result.reserve(snap.size());
 			// Uses the cached rackObj (same as dispatch), not a fresh lookup, so
-			// hooks and context menus agree on which rack object is real.
+			// hooks and menus agree on which rack object is real.
 			for (const Snapshot& s : snap) {
 				ScriptMenuItem spec = s.spec;
 				// Each snapshot owns one dup'd reference; freed after use below.
@@ -602,45 +592,36 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				JS_FreeValue(ctx, fn);
 				result.push_back(spec);
 			}
-			// Invoke the caller's callback with the evaluated specs. It only
-			// touches memory the caller owns (never constructs widgets), so it
-			// is safe to run here on the worker thread.
+			// Run the caller's callback with the evaluated specs. It only touches
+			// memory the caller owns (never constructs widgets), so it's safe on
+			// the worker thread.
 			callback(result);
 		});
 	}
 
-	// Fires a registered menu item's onChange callback on the worker thread.
-	// The presentation state is not stored on the spec — the next menu build
-	// re-evaluates it from onGetValue, so whatever onChange changed in the
-	// script's config is picked up automatically. The actual script call is
-	// deferred to runAsync() because it must run on the worker thread
-	// alongside all other JS work.
+	// Fires a menu item's onChange callback on the worker thread. Presentation
+	// state isn't stored on the spec — the next menu build re-evaluates it from
+	// onGetValue, so onChange's config changes are picked up automatically. The
+	// call is deferred to runAsync() with all other JS work.
 	void invokeContextMenuCallback(int callbackId, int value) override {
-		ScriptMenuItem::Type type;
-		std::string label;
-		{
-			std::lock_guard<std::mutex> lock(contextMenusMutex);
+		// The whole body runs on the worker thread, incl. the spec lookup:
+		// contextMenus is worker-owned, so no lock. The caller ignores timing,
+		// so the read needn't be synchronous on the UI thread.
+		runAsync([this, callbackId, value]() {
+			assert(onWorkerThread());
+			if (!ctx) return;
 			auto it = contextMenus.find(callbackId);
 			if (it == contextMenus.end()) return;
 			const ContextMenuEntry& entry = it->second;
-			type = entry.spec.type;
+			ScriptMenuItem::Type type = entry.spec.type;
+			std::string label;
 			if (type != ScriptMenuItem::Type::Boolean) {
 				if (value < 0 || value >= static_cast<int>(entry.spec.options.size())) return;
 				label = entry.spec.options[value];
 			}
-		}
-
-		runAsync([this, callbackId, value, type, label]() {
-			if (!ctx) return;
-			JSValue fn;
-			{
-				std::lock_guard<std::mutex> lock(contextMenusMutex);
-				auto it = contextMenus.find(callbackId);
-				if (it == contextMenus.end()) return;
-				// Dup on the worker thread only: QuickJS refcounts are not
-				// atomic, so JS_DupValue must not run on the UI thread.
-				fn = JS_DupValue(ctx, it->second.callbackFn);
-			}
+			// Dup so the call below owns a reference even if the script's
+			// onChange re-registers menus and rewrites the map.
+			JSValue fn = JS_DupValue(ctx, entry.callbackFn);
 
 			// Uses the cached rackObj — see getContextMenus() above.
 			JSValue args[2];
@@ -669,8 +650,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		});
 	}
 
-	// Returns current/total bytes in use by the QuickJS heap, or false if no
-	// script is loaded.
+	// Current/total bytes in use by the QuickJS heap, or false if no script is
+	// loaded.
 	bool getMemoryUsage(size_t& used, size_t& total) {
 		if (!ctx) return false;
 		JSMemoryUsage s;
@@ -810,13 +791,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	static JSValue js_rack_log(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		if (argc < 1) return jsThrow(ctx, "log: bad args");
-		// Concatenate every argument into one log line, coercing each value
-		// with the same per-type contract as a single value - so scripts can
-		// log numbers/booleans directly instead of wrapping every one in
-		// number.toString(). Numbers use the same format as number.toString();
-		// strings are logged verbatim (no added quotes); null/undefined log as
-		// "null"/"undefined"; anything else falls back to the engine's own
-		// stringification so the call never errors.
+		// Concatenate every argument into one log line with the same per-type
+		// contract as a single value: numbers via formatNumber (same as
+		// number.toString()), strings verbatim, null/undefined as "null"/
+		// "undefined", else JS_ToCString — so the call never errors.
 		std::string log;
 		for (int i = 0; i < argc; i++) {
 			JSValueConst v = argv[i];
@@ -884,15 +862,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// rack.registerContextMenu(options) — registers one item in the module's
-	// context menu. Two variants:
+	// context menu:
 	//   { type: "boolean", label, onGetValue: fn() -> bool, onChange: fn(checked) }
 	//   { type: "options", label, options: [..], onGetValue: fn() -> int, onChange: fn(idx, label) }
-	// onGetValue is optional (defaults to value 0) and is evaluated lazily on
-	// the worker thread whenever the menu is built, so it always reflects the
-	// script's current config — unlike a value captured at registration time.
-	// Returns true on success. The script callbacks are stored (owned) by the
-	// engine and fired through invokeContextMenuCallback()/getContextMenus()
-	// on the worker thread.
+	// onGetValue is optional (defaults to 0) and evaluated lazily on the worker
+	// thread when the menu is built, so it always reflects the live config —
+	// unlike a value captured at registration. Returns true on success.
+	// Callbacks are stored (owned) by the engine and fired on the worker thread.
 	static JSValue js_rack_registerContextMenu(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		MidiScriptEngineQuickJs* e = getEngine(ctx);
 		if (argc < 1 || !JS_IsObject(argv[0])) return jsThrow(ctx, "registerContextMenu: bad args");
@@ -949,10 +925,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JS_FreeValue(ctx, optionsV);
 		}
 
-		// The current value (checked/selected) is not read at registration:
-		// it is evaluated lazily from onGetValue when the menu is built, so
-		// it always reflects the script's live config. onGetValue is optional
-		// and defaults to value 0.
+		// The current value isn't read at registration; it's evaluated lazily
+		// from onGetValue when the menu is built, so it always reflects the
+		// live config. onGetValue is optional and defaults to 0.
 		JSValue onGetValueV = JS_GetPropertyStr(ctx, argv[0], "onGetValue");
 		if (!JS_IsFunction(ctx, onGetValueV)) {
 			// Not a function — ignore and default to value 0.
@@ -961,16 +936,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 
 		spec.callbackId = e->nextContextMenuCallbackId++;
-		{
-			std::lock_guard<std::mutex> lock(e->contextMenusMutex);
-			ContextMenuEntry entry;
-			entry.spec = spec;
-			// Ownership of onChangeV/onGetValueV transfers to the map; freed
-			// in clearContextMenus().
-			entry.callbackFn = onChangeV;
-			entry.onGetValueFn = onGetValueV;
-			e->contextMenus[spec.callbackId] = entry;
-		}
+		ContextMenuEntry entry;
+		entry.spec = spec;
+		// Ownership of onChangeV/onGetValueV transfers to the map; freed in
+		// clearContextMenus().
+		entry.callbackFn = onChangeV;
+		entry.onGetValueFn = onGetValueV;
+		e->contextMenus[spec.callbackId] = entry;
 
 		return JS_NewBool(ctx, true);
 	}
@@ -997,11 +969,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 	}
 
-	// Formats f with up to 6 decimal places, then trims trailing zeros (and a
-	// trailing '.' if nothing is left after the point) so an integral value
-	// prints as "42" rather than "42.000000", matching the old %i/%f split
-	// without needing two branches — and non-integers print only as many
-	// decimals as they actually have, up to 6, instead of always six.
+	// Formats f with up to 6 decimals, trimming trailing zeros (and a trailing
+	// '.') so 42.0 prints as "42" — matching the old %i/%f split without two
+	// branches — and non-integers print only the decimals they actually have.
 	static void formatNumber(float f, char* str, size_t strSize) {
 		snprintf(str, strSize, "%f", f);
 		char* end = str + strlen(str) - 1;
@@ -1211,9 +1181,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		warnIfOutsideCallback(ctx, "midi.clone");
 		size_t* s = &getEngine(ctx)->msgCount;
 		if (*s == msgStoreSize) return jsThrow(ctx, "midi.clone: message store full");
-		// Copy only the MIDI payload; the clone starts as a fresh, unsent
-		// message (send/tick/midiPort/isNrpn at defaults) so it can be modified
-		// and sent independently of the source.
+		// Copy only the MIDI payload; the clone starts fresh and unsent (all
+		// fields at defaults) so it can be modified and sent independently.
 		MessageEx clone;
 		clone.msg = getEngine(ctx)->msgStore[idx].msg;
 		getEngine(ctx)->msgStore[*s] = clone;
@@ -1245,13 +1214,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t idx;
 		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.getChannel: invalid msg");
 		MessageEx& s = getEngine(ctx)->msgStore[idx];
-		// Status 0xf is the realtime/SysEx family (clock, start/stop/continue,
-		// SysEx framing) — none of those carry a channel, and the low nibble
-		// is a sub-type selector instead (see the is* predicates below), so
-		// returning a plausible-looking channel number there would be
-		// meaningless. -1 is unambiguous: 1-16 is the only valid channel
-		// range, so a script can check `> 0` without needing to special-case
-		// realtime messages via try/catch.
+		// Status 0xf (realtime/SysEx) carries no channel; the low nibble is a
+		// sub-type selector, so a plausible-looking channel there would be
+		// meaningless. -1 is unambiguous: 1-16 is the only valid range, so a
+		// script can check `> 0` without special-casing realtime via try/catch.
 		if (s.msg.getStatus() == 0xf) return JS_NewFloat64(ctx, -1);
 		return JS_NewFloat64(ctx, s.msg.getChannel() + 1);
 	}
@@ -1298,8 +1264,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	static JSValue js_midi_getSysExLength(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		size_t idx;
 		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.getSysExLength: invalid msg");
-		// Payload length only — the f0/f7 framing is excluded, so a script
-		// can check the size before reading the payload with getSysEx.
+		// Payload length only — f0/f7 framing excluded.
 		return JS_NewFloat64(ctx, std::max(0, getEngine(ctx)->msgStore[idx].msg.getSize() - 2));
 	}
 
@@ -1522,9 +1487,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		uint16_t number = static_cast<uint16_t>(argNum(ctx, argv[2]));
 		uint16_t value = static_cast<uint16_t>(argNum(ctx, argv[3]));
 		// Spec order: NRPN MSB, NRPN LSB, Data Entry MSB, Data Entry LSB.
-		// flushMsgStore() sends s1..s4 in this order, and MidiProcessor's NRPN
-		// state machine (CC99 sets pending MSB, CC98 completes selection;
-		// CC6 sets pending data MSB, CC38 completes the value) requires it.
+		// flushMsgStore() sends s1..s4 in this order, as MidiProcessor's NRPN
+		// state machine requires (CC99/98 select the number, CC6/38 the value).
 		s1->msg.setStatus(0xb);
 		s1->msg.setChannel(ch - 1);
 		s1->msg.setNote(99);

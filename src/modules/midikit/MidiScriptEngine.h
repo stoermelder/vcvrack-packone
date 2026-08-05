@@ -13,18 +13,16 @@ namespace MidiScript {
 using rack::midi::Message;
 
 
-// A user-facing context-menu item registered via rack.registerContextMenu().
-// Carries presentation data only — the actual onChange/onGetValue callbacks
-// live in the engine's own map keyed by callbackId, so a copied spec can be
-// handed freely to the UI thread without owning a script-function reference.
+// A context-menu item registered via rack.registerContextMenu(). Carries
+// presentation data only — the onChange/onGetValue callbacks live in the
+// engine's map keyed by callbackId, so a copied spec is safe on the UI thread.
 struct ScriptMenuItem {
 	enum class Type { Boolean, Options } type = Type::Boolean;
 	std::string label;
 	// Options variant: selectable labels and the current selection index.
 	std::vector<std::string> options;
 	// checked (Boolean) and selected (Options) share storage — only the one
-	// matching `type` is meaningful. Initialized via selected(0), which
-	// zeroes both.
+	// matching `type` is meaningful; selected(0) zeroes both.
 	union {
 		bool checked;
 		int selected;
@@ -36,10 +34,9 @@ struct ScriptMenuItem {
 };
 
 
-// Implemented by the module that hosts a MidiScriptEngine. The engine calls
-// back through this interface for everything that touches the module's
-// hardware (inputs/outputs/triggers) and its UI (log/overlay), so the engine
-// itself stays free of any module-specific knowledge.
+// Host-module interface for everything that touches the module's hardware
+// (inputs/outputs/triggers) and UI (log/overlay), keeping the engine free of
+// module-specific knowledge.
 struct MidiScriptEngineHandler {
 	virtual void writeLog(const std::string& s, bool useTimestamp = true) = 0;
 	virtual void writeOverlay(const std::string& s1, const std::string& s2, const std::string& s3) = 0;
@@ -55,9 +52,8 @@ struct MidiScriptEngineHandler {
 
 
 struct MidiScriptEngine {
-	// Arbitrary but generous cap on setSysEx's payload, to keep a script from
-	// building an unbounded message that then flows through the fixed-size
-	// midiOutQueue and out to the driver.
+	// Cap on setSysEx's payload, so a script can't build an unbounded message
+	// for the fixed-size midiOutQueue.
 	static const int sysExMaxPayloadLength = 256;
 
 	// The handler this engine runs inside, injected at construction. Every
@@ -89,22 +85,29 @@ struct MidiScriptEngine {
 		return taskWorker->work(task, APP);
 	}
 
-	// Runs `task` (script code) on the worker thread — never the caller's, which
-	// is typically the UI thread — and blocks until it completes, writing the
-	// result into `out`. Callable from the worker thread itself (SyncTaskWorker
-	// in tests runs `task` inline, so the future is already ready).
+	// True on the thread script code runs on. Script state (Lua state / QuickJS
+	// context) and worker-owned containers (contextMenus) are only safe there,
+	// so call sites assert this. SyncTaskWorker (tests) runs tasks inline, so
+	// every thread qualifies. NOT true for load/teardown: loadScript()/
+	// closeState() run inline on the UI thread, mutually exclusive with
+	// dispatch by construction, not thread identity.
+	bool onWorkerThread() const {
+		return taskWorker && taskWorker->isWorkerThread();
+	}
+
+	// Runs `task` (script code) on the worker thread, never the caller's
+	// (usually the UI thread), blocks until done, writes the result into `out`.
+	// Callable from the worker thread itself (SyncTaskWorker in tests runs
+	// inline, so the future is already ready).
 	//
-	// Returns false, leaving `out` untouched, if the task could not be queued
-	// or never ran. Callers MUST NOT treat that as a successful empty result:
-	// in captureConfig() it would write an empty scriptConfig and erase the
-	// user's settings on save.
+	// Returns false, leaving `out` untouched, if the task never queued/ran.
+	// Callers MUST NOT treat that as an empty result: in captureConfig() it
+	// would erase the user's settings on save.
 	//
-	// Bounded for liveness: a queued task is not guaranteed to run, since
-	// ~MpmcTaskWorker drains whatever is still pending. That destroys the
-	// promise unfulfilled, making the future ready with a broken-promise error
-	// (hence the catch); the timeout only covers a worker that is alive but
-	// wedged. The shared_ptr keeps the promise alive for a worker still running
-	// after we time out.
+	// Bounded for liveness: ~MpmcTaskWorker drains pending tasks, destroying the
+	// promise unfulfilled (future ready with broken-promise, hence the catch);
+	// the timeout only covers a wedged-but-alive worker. The shared_ptr keeps
+	// the promise alive for a worker still running past the timeout.
 	bool runSyncString(std::function<std::string()> task, std::string& out) {
 		auto promise = std::make_shared<std::promise<std::string>>();
 		std::future<std::string> future = promise->get_future();
@@ -114,9 +117,9 @@ struct MidiScriptEngine {
 		});
 		if (!queued) return false;
 
-		// Function-local: a static constexpr member passed to wait_for() (which
-		// takes its duration by reference) is odr-used and would need an
-		// out-of-line definition, which a header-only class has nowhere to put.
+		// Function-local: passing a static constexpr member to wait_for() (which
+		// takes its duration by reference) would odr-use it, needing an
+		// out-of-line definition a header-only class can't provide.
 		const std::chrono::milliseconds timeout{500};
 
 		if (future.wait_for(timeout) != std::future_status::ready) return false;
@@ -129,43 +132,37 @@ struct MidiScriptEngine {
 		return true;
 	}
 
-	// persistedConfigJson, if non-empty, is parsed and passed to
-	// rack.onLoad() so the script can restore its config; otherwise
-	// rack.onLoad() gets no argument and the script uses its defaults.
+	// persistedConfigJson, if non-empty, is parsed and passed to rack.onLoad()
+	// to restore config; otherwise onLoad() gets no argument (script defaults).
 	virtual void loadScript(const char* script, const std::string& persistedConfigJson = "") = 0;
 
-	// True if this engine should process `script` — the module routes to
-	// whichever engine's testScript() matches, so it needs no header parser
-	// of its own. Each engine does a simple "@engine <name>" substring match.
+	// True if this engine should process `script`: a simple "@engine <name>"
+	// substring match, so the module needs no header parser of its own.
 	virtual bool testScript(const std::string& script) = 0;
 
-	// Tears down the script state, running rack.onUnload() first so the
-	// script can clean up (e.g. all-notes-off). onUnload()'s return value is
-	// ignored — config persistence is captureConfig()'s job, not this one's.
-	// Always returns "".
+	// Tears down script state, running rack.onUnload() first (e.g. all-notes-
+	// off). onUnload()'s return value is ignored — config is captureConfig()'s
+	// job. Always returns "".
 	virtual std::string closeState() = 0;
 
-	// Runs rack.onSave() and writes the JSON string of its return value — the
-	// script's config to persist — into `out`, without disturbing the script's
-	// state. onSave() is expected to be side-effect-free and may be called
-	// repeatedly (e.g. on every explicit save). Used by toJson() at save time.
-	// Any messages onSave() queues are discarded (a save must have no audible
-	// effect).
+	// Runs rack.onSave() and writes its return value (the config to persist) as
+	// JSON into `out` without disturbing script state. onSave() is expected
+	// side-effect-free and may be called repeatedly (e.g. every explicit save);
+	// used by toJson() at save time. Messages onSave() queues are discarded (a
+	// save must have no audible effect).
 	//
-	// Returns false, leaving `out` untouched, only when the config could not be
-	// determined at all — no script loaded, or the worker dispatch failed (see
-	// runSyncString()). Callers must keep their previous value in that case;
-	// overwriting it with "" would erase the user's settings.
+	// Returns false, leaving `out` untouched, only when the config couldn't be
+	// determined — no script loaded, or worker dispatch failed (see
+	// runSyncString()). Callers keep their previous value then; overwriting it
+	// with "" would erase the user's settings.
 	//
-	// A script that defines no onSave() is NOT a failure: that is a definite
-	// "nothing to persist", so it returns true with an empty `out` (answered
-	// from the cached hook ref without entering the engine) and the caller
-	// clears its stored config rather than keeping a stale one.
+	// No onSave() is NOT a failure: a definite "nothing to persist", so it
+	// returns true with empty `out` (answered from the cached hook ref without
+	// entering the engine) and the caller clears its stored config.
 	//
-	// May be called from any thread, including the UI/GUI thread (toJson()
-	// runs there) — implementations must dispatch the actual script call onto
-	// the worker thread via runSyncString(), never run script code inline on
-	// the calling thread.
+	// May be called from any thread (toJson() runs on the UI thread):
+	// implementations must dispatch the script call onto the worker via
+	// runSyncString(), never inline on the calling thread.
 	virtual bool captureConfig(std::string& out) = 0;
 
 	// Main interface for message processing
@@ -185,16 +182,15 @@ struct MidiScriptEngine {
 		return false;
 	}
 
-	// Caps on Tipsy payloads. The pending queue entry is a fixed-size POD so
-	// the audio thread's shift() never heap-allocates; script payloads are
-	// capped accordingly (mime types match tipsy::kMaxMimeTypeSize, data
-	// matches the established sysExMaxPayloadLength cap).
+	// Caps on Tipsy payloads: the queue entry is a fixed-size POD so the audio
+	// thread's shift() never heap-allocates (mime matches
+	// tipsy::kMaxMimeTypeSize, data matches sysExMaxPayloadLength).
 	static constexpr size_t tipsyMaxMimeTypeSize = 256;
 	static constexpr size_t tipsyMaxPayloadLength = 256;
 
-	// A Tipsy message queued by sendTipsy() (script/worker thread) and
-	// consumed by processTipsyOutput() (audio thread). Fixed-size so the SPSC
-	// dsp::RingBuffer copies it without heap allocation on either side.
+	// A Tipsy message queued by sendTipsy() (worker) and consumed by
+	// processTipsyOutput() (audio). Fixed-size so the SPSC RingBuffer copies it
+	// without heap allocation.
 	struct TipsyMessage {
 		uint16_t mimeSize;                         // length without NUL
 		uint16_t dataSize;
@@ -202,27 +198,24 @@ struct MidiScriptEngine {
 		unsigned char data[tipsyMaxPayloadLength];
 	};
 
-	// Tipsy encoder for sending protocol-encoded messages via MIDI output.
-	// Each engine instance gets its own encoder so scripts can initiate/send
-	// independently without interfering with each other.
+	// Encodes protocol messages for MIDI output. Per-instance so scripts can
+	// send independently without interfering.
 	tipsy::ProtocolEncoder tipsyEncoder;
 
 	// SPSC queue of pending Tipsy messages (worker → audio). sendTipsy() only
-	// copies the payload here; the actual Tipsy encoding is done on the audio
-	// thread in processTipsyOutput(), which owns the encoder.
+	// copies the payload; encoding happens in processTipsyOutput() on the audio
+	// thread, which owns the encoder.
 	dsp::RingBuffer<TipsyMessage, 8> tipsyPendingQueue;
 
-	// The message the encoder is currently streaming out. The encoder holds
-	// pointers into its mime/data buffers for the whole (multi-cycle) message,
-	// so it must outlive the encoding — a dedicated member, not a stack local
-	// (the queue's shift() hands out copies).
+	// The message the encoder is streaming out. The encoder holds pointers into
+	// its buffers for the whole (multi-cycle) message, so it must outlive the
+	// encoding — a member, not a local (shift() hands out copies).
 	TipsyMessage tipsyCurrentMessage;
 
-	// Queues a Tipsy protocol message for transmission via the module's
-	// trigger CV output. Runs on the script (worker) thread: it only copies
-	// the payload into the SPSC pending queue — the actual encoding happens on
-	// the audio thread in processTipsyOutput(). The message is always output on
-	// the first trigger output (port 1). Returns true on success.
+	// Queues a Tipsy message for transmission via the module's trigger CV
+	// output. Worker thread: only copies the payload into the pending queue —
+	// encoding happens on the audio thread in processTipsyOutput(). Always
+	// output on the first trigger output (port 1). Returns true on success.
 	bool sendTipsy(const char* mimeType, const unsigned char* data, uint32_t dataBytes) {
 		if (!mimeType || !data || dataBytes > tipsyMaxPayloadLength) {
 			handler->writeLog("Tipsy: invalid parameters", false);
@@ -247,14 +240,13 @@ struct MidiScriptEngine {
 		return true;
 	}
 
-	// Outputs the next Tipsy-encoded voltage on the trigger output. Called
-	// from the module's process() loop on the audio thread. If the encoder is
-	// idle, starts the next pending message; then drains one encoded float
-	// onto the selected trigger output. Returns true if a voltage was output.
+	// Outputs the next Tipsy-encoded voltage on the trigger output (audio
+	// thread). If the encoder is idle, starts the next pending message, then
+	// drains one encoded float. Returns true if a voltage was output.
 	bool processTipsyOutput(uint8_t channel = 0) {
 		if (tipsyEncoder.isDormant() && !tipsyPendingQueue.empty()) {
-			// Copy into the member the encoder will point into for the whole
-			// message (shift() returns a copy, so it must not be a local).
+			// Copy into the member the encoder points into for the whole message
+			// (shift() returns a copy, so not a local).
 			tipsyCurrentMessage = tipsyPendingQueue.shift();
 			auto initResult = tipsyEncoder.initiateMessage(tipsyCurrentMessage.mime, tipsyCurrentMessage.dataSize, tipsyCurrentMessage.data);
 			if (tipsyEncoder.isError(initResult)) {
@@ -286,9 +278,8 @@ struct MidiScriptEngine {
 		tipsyEncoder.terminateCurrentMessage();
 	}
 
-	// Dispatches everything queued by processInMessage()/processInTick() onto
-	// the script engine via runAsync(). Virtual so tests can override it to
-	// observe call counts without routing through the real queues.
+	// Dispatches queued midiInQueue/tickInQueue onto the engine via runAsync().
+	// Virtual so tests can override it to observe call counts.
 	virtual void process() {
 		if ((midiInQueue.size() > 0 || tickInQueue.size() > 0)) {
 			runAsync([this]() {
@@ -316,15 +307,14 @@ struct MidiScriptEngine {
 	virtual std::string getParamName(int i) = 0;
 	virtual std::string getParamFormatValue(int i) = 0;
 
-	// Called from the UI thread while the context menu is being built.
-	// Evaluates each item's onGetValue on the WORKER thread (script code must
-	// never run on the UI thread), then invokes `callback` with the results.
-	// The callback must not construct widgets — it only publishes the specs
-	// for the menu widget to poll from step() on the UI thread.
+	// Called from the UI thread while the context menu is built. Evaluates each
+	// item's onGetValue on the WORKER thread (script code must never run on the
+	// UI thread), then invokes `callback`. The callback must not construct
+	// widgets — it only publishes specs for the menu to poll from step().
 	virtual void getContextMenus(const std::function<void(const std::vector<ScriptMenuItem>&)>& callback) = 0;
-	// Called from the UI thread when the user clicks a script menu item.
-	// value is 0/1 for Boolean, the selected index for Options. Runs the
-	// script callback on the worker thread.
+	// Called from the UI thread when the user clicks a menu item. value is 0/1
+	// for Boolean, the selected index for Options. Runs the callback on the
+	// worker thread.
 	virtual void invokeContextMenuCallback(int callbackId, int value) = 0;
 };
 

@@ -36,72 +36,67 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static const int msgStoreSize = 32;
 	MessageEx msgStore[msgStoreSize];
 	size_t msgCount = 0;
-	// Next value handed to MessageEx::sendOrder. Never reset: it only needs to
-	// be monotonic within a single callback, and the store is reset per callback.
+	// Next MessageEx::sendOrder value. Never reset: only needs to be monotonic
+	// within a single callback (the store resets per callback).
 	size_t sendCounter = 0;
-	// True only while onMidiMessage() is executing. The message store is reset on
-	// every callback, so handles created outside one are silently invalidated —
-	// this lets midi.create() warn instead of failing quietly.
+	// True only inside a script callback. The store resets every callback, so
+	// handles created outside one are silently invalidated — lets midi.create()
+	// warn instead of failing quietly.
 	bool inCallback = false;
 	// Sticky output port selected via midiOut.selectPort(), 0-based. Stays in
 	// effect across callbacks until changed again.
 	int selectedPort = 0;
 
-	// The five lifecycle hooks (rack.onMidiMessage/onTrigger/onLoad/onUnload/
-	// onSave) are resolved from the rack table once at load and kept as
-	// registry references — not re-looked-up by name on every dispatch.
-	// Matched in QuickJS (onMidiMessageFn/etc.): reassigning a hook after
-	// load, or defining one late, has no effect — only what was present at
-	// load time ever runs. LUA_NOREF means "not defined". One asymmetry:
-	// hooks are called here as bare functions with no receiver; QuickJS calls
-	// them as methods (rackObj as thisVal). Predates caching, unused by any preset.
+	// The five lifecycle hooks (onMidiMessage/onTrigger/onLoad/onUnload/onSave)
+	// are resolved from rack once at load and kept as registry refs, not
+	// re-looked-up per dispatch — so defining/reassigning a hook later has no
+	// effect; only what was present at load runs. LUA_NOREF = "not defined".
+	// Asymmetry: Lua calls hooks as bare functions; QuickJS as methods (rackObj
+	// as thisVal). Predates caching, unused by any preset.
 	int onMidiMessageRef = LUA_NOREF;
 	int onTriggerRef = LUA_NOREF;
 	int onLoadRef = LUA_NOREF;
 	int onUnloadRef = LUA_NOREF;
 	int onSaveRef = LUA_NOREF;
 
-	// Script-registered context menus. The Lua callback lives in the registry
-	// as an integer reference (luaL_ref), not in ContextMenuSpec, because the
-	// UI thread only reads presentation copies through getContextMenus().
+	// Script-registered context menus. The callback lives in the registry as an
+	// integer ref (luaL_ref), not the spec, since the UI thread only reads
+	// presentation copies.
 	struct ContextMenuEntry {
 		ScriptMenuItem spec;
 		int callbackRef;
 		int onGetValueRef = LUA_NOREF;
 	};
+	// Worker-thread-owned (registerContextMenu/getContextMenus/
+	// invokeContextMenuCallback); clearContextMenus() only from load/teardown,
+	// which never overlaps dispatch. No mutex — see clearContextMenus().
 	std::unordered_map<int, ContextMenuEntry> contextMenus;
 	int nextContextMenuCallbackId = 1;
-	// Guards contextMenus/nextContextMenuCallbackId against concurrent
-	// access from the UI thread (menu build / click) and the worker thread
-	// (registerContextMenu, callback dispatch). Never held while running a
-	// script callback, or a callback that re-registers would deadlock.
-	mutable std::mutex contextMenusMutex;
 
 	// ─── Lua state & threading ────────────────────────────────────────────────
 
 	// Registry key used to store `this` as a lightuserdata inside each lua_State
 	static constexpr const char* REGISTRY_KEY = "stoermelder_MidiScriptEngineLua";
 
-	// Chunk name the script is loaded under. Lua prefixes every error it raises
-	// with "<chunkname>:<line>:", so this is what the user sees in the log.
-	// The "=" prefix tells Lua to use the name verbatim rather than decorating
-	// it as [string "..."].
+	// Chunk name the script is loaded under. Lua prefixes errors with
+	// "<chunkname>:<line>:", so this is what the user sees. The "=" prefix
+	// tells Lua to use the name verbatim rather than [string "..."].
 	static constexpr const char* CHUNK_NAME = "=script";
 
 	lua_State* L = nullptr;
 
 	// Usually a no-op (L already nullptr): the real closeState() runs from
-	// MidiKitModule's destructor while this object is still fully alive,
-	// since writeLog/input.*/trig.*/param.* are pure virtual here and calling
-	// them post-destruction would be UB.
+	// MidiKitModule's destructor while this object is fully alive — the
+	// handler callbacks are pure virtual, so calling them post-destruction
+	// would be UB.
 	~MidiScriptEngineLua() {
 		closeState();
 	}
 
 
-	// Engine selection: true when this script's header declares Lua. The same
-	// simple substring check the module used to run itself (Q26) — kept here
-	// so the module has no third header parser.
+	// Engine selection: true when the script's header declares Lua. The same
+	// substring check the module used to run itself (Q26) — so the module has
+	// no third header parser.
 	bool testScript(const std::string& script) override {
 		return script.find("@engine Lua") != std::string::npos;
 	}
@@ -115,23 +110,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		// ── Parse file header ────────────────────────────────────────────────
-		// Supports both Lua-style block comments and JS-style /** */ comments:
-		//
-		//   JS style:
-		//     /**
-		//      * @engine Lua
-		//      * @author ...
-		//      */
-		//
-		//   Lua style:
-		//     --[[
-		//     @engine Lua
-		//     @author ...
-		//     --]]
-
-		// ── Parse @key value tags from the header block only ────────────────
-		// Handles both Lua (--[[ ... --]]) and JS (/** ... */) comment styles.
-		// Scans line by line so the capture never spills into the script body.
+		// Extracts @key value tags from the header block (Lua --[[ ... --]] or
+		// JS /** ... */), line by line so the capture never spills into the
+		// script body.
 		std::map<std::string, std::string> topics;
 		{
 			// Regex: optional leading "* " or "-- " noise, then @key  value
@@ -189,10 +170,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		registerAPI();
 
 		// ── Load and run script ──────────────────────────────────────────────
-		// luaL_loadbuffer rather than luaL_dostring: the latter passes the whole
-		// script text as the chunk name, so Lua's own "chunk:LINE:" prefix comes
-		// out as [string "/**..."]:12: with the source dumped inline. Naming the
-		// chunk "script" makes that prefix read as "script:12:" instead.
+		// luaL_loadbuffer, not luaL_dostring: the latter names the chunk with
+		// the whole script text, so errors read as [string "/**..."]:12:.
+		// Naming the chunk "script" makes them read as "script:12:".
 		if (luaL_loadbuffer(L, script, strlen(script), CHUNK_NAME) != LUA_OK ||
 		    lua_pcall(L, 0, LUA_MULTRET, 0) != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
@@ -222,10 +202,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		callOnLoad(persistedConfigJson);
 	}
 
-	// Reads rack[name] and keeps a registry ref to it if it's a function,
-	// else returns LUA_NOREF. Assumes "rack" is on top of the stack and
-	// leaves it there — lua_getfield's pushed value is always popped back
-	// off, either directly or implicitly by luaL_ref.
+	// Reads rack[name], keeping a registry ref to it if it's a function, else
+	// LUA_NOREF. Assumes "rack" is on top of the stack and leaves it there —
+	// the pushed value is always popped, directly or via luaL_ref.
 	int cacheHookRef(const char* name) {
 		lua_getfield(L, -1, name);
 		if (!lua_isfunction(L, -1)) {
@@ -297,9 +276,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		flushMsgStore();
 	}
 
-	// Runs the script's onUnload() hook. Its return value, if any, is
-	// discarded — onUnload() is teardown-only; config comes from onSave().
-	// Messages are NOT flushed here: closeState() flushes them for teardown.
+	// Runs onUnload(). Its return value is discarded — teardown-only; config
+	// comes from onSave(). Messages are NOT flushed here: closeState() flushes
+	// them for teardown.
 	void callOnUnload() {
 		if (onUnloadRef == LUA_NOREF) return;
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onUnloadRef);
@@ -317,10 +296,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_pop(L, 1); // pop (and discard) the return value
 	}
 
-	// Runs the script's onSave() hook. Returns 1 with its return value on
-	// top of the stack (kept only if a table — the only persistable config
-	// shape), or 0. Messages are NOT flushed here: captureConfig() discards
-	// them, so a save has no audible side effects.
+	// Runs onSave(). Returns 1 with its return value on top of the stack (kept
+	// only if a table — the only persistable shape), else 0. Messages are NOT
+	// flushed here: captureConfig() discards them, so a save is silent.
 	int callOnSave() {
 		if (onSaveRef == LUA_NOREF) return 0;
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onSaveRef);
@@ -343,10 +321,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	// ── Config persistence JSON helpers ──────────────────────────────────────
-	// MiniLua has no JSON library, so config tables are converted to/from
-	// JSON via jansson (bundled with Rack). Supports nested objects/arrays of
-	// numbers, strings and booleans; Lua tables serialize as JSON arrays when
-	// their keys are exactly 1..n, otherwise as JSON objects.
+	// MiniLua has no JSON library, so config tables convert to/from JSON via
+	// jansson. Lua tables serialize as arrays when keys are exactly 1..n,
+	// otherwise as objects.
 
 	// Converts the Lua value at the given index into a JSON string. Returns ""
 	// if the value is not a table or contains an unsupported value type.
@@ -466,8 +443,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	// Parses a JSON string into a Lua table pushed onto the stack. Returns
-	// true on success (the table is on top of the stack), false otherwise
-	// (nothing is pushed).
+	// true on success (table on top), false otherwise (nothing pushed).
 	static bool jsonToLuaTable(lua_State* L, const std::string& json) {
 		json_error_t error;
 		json_t* j = json_loads(json.c_str(), 0, &error);
@@ -538,9 +514,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	// Pushes every message sent during the callback that just ran into
-	// midiOutQueue, in send() order rather than handle-creation order: a
-	// script may create several messages and send them in a different order,
-	// and the receiver must observe send() order.
+	// midiOutQueue, in send() order, not handle-creation order: a script may
+	// create several messages and send them in a different order, and the
+	// receiver must observe send() order.
 	void flushMsgStore() {
 		std::vector<size_t> order;
 		for (size_t i = 0; i < msgCount; i++) {
@@ -575,13 +551,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return callLuaTableFunc("param", "getValueFormat", i + 1);
 	}
 
+	// Releases the stored script callbacks. Called only from closeState(), which
+	// — like loadScript() — runs inline on the calling thread. Load/teardown
+	// never overlap dispatch (the module doesn't process while replacing a
+	// script), so this needs no lock even though other touchers are on the
+	// worker.
 	void clearContextMenus() {
-		std::lock_guard<std::mutex> lock(contextMenusMutex);
 		if (L) {
-			// Releases the stored script callbacks. Only safe on this (UI)
-			// thread while L is still alive: closeState() calls this before
-			// closing the state, and every other Lua operation happens on the
-			// worker thread.
 			for (auto& kv : contextMenus) {
 				luaL_unref(L, LUA_REGISTRYINDEX, kv.second.callbackRef);
 				if (kv.second.onGetValueRef != LUA_NOREF) {
@@ -594,19 +570,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	void getContextMenus(const std::function<void(const std::vector<ScriptMenuItem>&)>& callback) override {
-		// The whole snapshot (including each onGetValue registry ref) is built
-		// on the worker thread, so getContextMenus() itself needs no lock/copy
-		// on the UI thread. The lock is released before any script call below.
+		// The whole snapshot (incl. each onGetValue ref) is built on the worker
+		// thread, so no copy is needed on the UI thread.
 		runAsync([this, callback]() {
+			assert(onWorkerThread());
 			if (!L) return;
 			struct Snapshot { int id; ScriptMenuItem spec; int onGetValueRef; };
 			std::vector<Snapshot> snap;
-			{
-				std::lock_guard<std::mutex> lock(contextMenusMutex);
-				snap.reserve(contextMenus.size());
-				for (const auto& kv : contextMenus) {
-					snap.push_back({kv.first, kv.second.spec, kv.second.onGetValueRef});
-				}
+			snap.reserve(contextMenus.size());
+			for (const auto& kv : contextMenus) {
+				snap.push_back({kv.first, kv.second.spec, kv.second.onGetValueRef});
 			}
 			// callbackIds are assigned monotonically at registration, so sorting
 			// by them yields registration order — the unordered_map's own
@@ -640,43 +613,34 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 				}
 				result.push_back(spec);
 			}
-			// Invoke the caller's callback with the evaluated specs. It only
-			// touches memory the caller owns (never constructs widgets), so it
-			// is safe to run here on the worker thread.
+			// Run the caller's callback with the evaluated specs. It only touches
+			// memory the caller owns (never constructs widgets), so it's safe on
+			// the worker thread.
 			callback(result);
 		});
 	}
 
-	// Fires a registered menu item's onChange callback on the worker thread.
-	// The presentation state is not stored on the spec — the next menu build
-	// re-evaluates it from onGetValue, so whatever onChange changed in the
-	// script's config is picked up automatically. The actual script call is
-	// deferred to runAsync() because it must run on the worker thread
-	// alongside all other Lua work.
+	// Fires a menu item's onChange callback on the worker thread. Presentation
+	// state isn't stored on the spec — the next menu build re-evaluates it from
+	// onGetValue, so onChange's config changes are picked up automatically. The
+	// call is deferred to runAsync() with all other Lua work.
 	void invokeContextMenuCallback(int callbackId, int value) override {
-		ScriptMenuItem::Type type;
-		std::string label;
-		{
-			std::lock_guard<std::mutex> lock(contextMenusMutex);
+		// The whole body runs on the worker thread, incl. the spec lookup:
+		// contextMenus is worker-owned, so no lock. The caller ignores timing,
+		// so the read needn't be synchronous on the UI thread.
+		runAsync([this, callbackId, value]() {
+			assert(onWorkerThread());
+			if (!L) return;
 			auto it = contextMenus.find(callbackId);
 			if (it == contextMenus.end()) return;
 			const ContextMenuEntry& entry = it->second;
-			type = entry.spec.type;
+			ScriptMenuItem::Type type = entry.spec.type;
+			std::string label;
 			if (type != ScriptMenuItem::Type::Boolean) {
 				if (value < 0 || value >= static_cast<int>(entry.spec.options.size())) return;
 				label = entry.spec.options[value];
 			}
-		}
-
-		runAsync([this, callbackId, value, type, label]() {
-			if (!L) return;
-			int ref;
-			{
-				std::lock_guard<std::mutex> lock(contextMenusMutex);
-				auto it = contextMenus.find(callbackId);
-				if (it == contextMenus.end()) return;
-				ref = it->second.callbackRef;
-			}
+			int ref = entry.callbackRef;
 			lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
 			int nargs;
 			if (type == ScriptMenuItem::Type::Boolean) {
@@ -697,9 +661,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		});
 	}
 
-	// Returns current bytes in use by the Lua heap, or false if no script is loaded.
-	// minilua's default allocator
-	// grows via realloc() with no cap, so only an absolute byte count is available.
+	// Current bytes used by the Lua heap, or false if no script is loaded.
+	// minilua's allocator grows via realloc() with no cap, so only an absolute
+	// count is available.
 	bool getMemoryUsage(size_t& used) {
 		if (!L) return false;
 		int kb = lua_gc(L, LUA_GCCOUNT);
@@ -924,13 +888,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
 		if (n < 1) return luaL_error(L, "log: bad args");
-		// Concatenate every argument into one log line, coercing each value
-		// with the same per-type contract as a single value - so scripts can
-		// log numbers/booleans directly instead of wrapping every one in
-		// number.toString(). Numbers use the same format as number.toString();
-		// strings are logged verbatim; nil logs as "null" to match JS; any
-		// other value falls back to Lua's own stringification (luaL_tolstring)
-		// so the call never errors.
+		// Concatenate every argument into one log line with the same per-type
+		// contract as a single value: numbers via formatNumber (same as
+		// number.toString()), strings verbatim, nil as "null" (matching JS),
+		// else luaL_tolstring — so the call never errors.
 		std::string log;
 		for (int i = 1; i <= n; i++) {
 			switch (lua_type(L, i)) {
@@ -979,14 +940,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	// rack.registerContextMenu(options) — registers one item in the module's
-	// context menu. Two variants:
+	// context menu:
 	//   { type = "boolean", label, onGetValue = fn() -> bool, onChange = fn(checked) }
 	//   { type = "options", label, options = {...}, onGetValue = fn() -> int, onChange = fn(idx, label) }
-	// onGetValue is optional (defaults to value 0) and is evaluated lazily on
-	// the worker thread whenever the menu is built, so it always reflects the
-	// script's current config. The script callbacks are stored (owned) by the
-	// engine as registry references and fired through
-	// invokeContextMenuCallback()/getContextMenus() on the worker thread.
+	// onGetValue is optional (defaults to 0) and evaluated lazily on the worker
+	// thread when the menu is built, so it always reflects the live config.
+	// Callbacks are stored as registry refs and fired on the worker thread.
 	static int lua_rack_registerContextMenu(lua_State* L) {
 		auto* e = getEngine(L);
 		if (lua_gettop(L) < 1 || !lua_istable(L, 1))
@@ -1032,11 +991,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			lua_pop(L, 1); // pop options table
 		}
 
-		// The current value (checked/selected) is not read at registration:
-		// it is evaluated lazily from onGetValue when the menu is built, so
-		// it always reflects the script's live config. onGetValue is optional
-		// and defaults to value 0. Its ref is taken before onChange's so an
-		// error while validating options (above) cannot leak it.
+		// The current value isn't read at registration; it's evaluated lazily
+		// from onGetValue when the menu is built (optional, defaults to 0). Its
+		// ref is taken before onChange's so an options-validation error can't
+		// leak it.
 		lua_getfield(L, 1, "onGetValue");
 		int onGetValueRef = LUA_NOREF;
 		if (lua_isfunction(L, -1)) {
@@ -1048,14 +1006,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		spec.callbackId = e->nextContextMenuCallbackId++;
 		int ref = luaL_ref(L, LUA_REGISTRYINDEX); // pops the onChange function
-		{
-			std::lock_guard<std::mutex> lock(e->contextMenusMutex);
-			ContextMenuEntry entry;
-			entry.spec = spec;
-			entry.callbackRef = ref;
-			entry.onGetValueRef = onGetValueRef;
-			e->contextMenus[spec.callbackId] = entry;
-		}
+		ContextMenuEntry entry;
+		entry.spec = spec;
+		entry.callbackRef = ref;
+		entry.onGetValueRef = onGetValueRef;
+		e->contextMenus[spec.callbackId] = entry;
 
 		lua_pushboolean(L, 1);
 		return 1;
@@ -1096,11 +1051,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 1;
 	}
 
-	// Formats f with up to 6 decimal places, then trims trailing zeros (and a
-	// trailing '.' if nothing is left after the point) so an integral value
-	// prints as "42" rather than "42.000000", matching the old %i/%f split
-	// without needing two branches — and non-integers print only as many
-	// decimals as they actually have, up to 6, instead of always six.
+	// Formats f with up to 6 decimals, trimming trailing zeros (and a trailing
+	// '.') so 42.0 prints as "42" — matching the old %i/%f split without two
+	// branches — and non-integers print only the decimals they actually have.
 	static void formatNumber(float f, char* buf, size_t bufSize) {
 		snprintf(buf, bufSize, "%f", f);
 		char* end = buf + strlen(buf) - 1;
@@ -1272,9 +1225,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// ── midi.* ────────────────────────────────────────────────────────────────
 
-	// Warns when a message is created outside a callback (onMidiMessage/
-	// onLoad/onUnload) — the store resets every callback, silently
-	// invalidating such a handle before use. See midi.create() in SCRIPTING.md.
+	// Warns when a message is created outside a callback — the store resets
+	// every callback, silently invalidating such a handle (see midi.create()
+	// in SCRIPTING.md).
 	static void warnIfOutsideCallback(MidiScriptEngineLua* e, const char* fn) {
 		if (!e->inCallback) {
 			e->handler->writeLog(string::f("%s: called outside a callback; the message "
@@ -1310,9 +1263,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (*s >= static_cast<size_t>(msgStoreSize)) {
 			luaL_error(L, "midi.clone: message store full");
 		}
-		// Copy only the MIDI payload; the clone starts as a fresh, unsent
-		// message (send/tick/midiPort/isNrpn at defaults) so it can be modified
-		// and sent independently of the source.
+		// Copy only the MIDI payload; the clone starts fresh and unsent (all
+		// fields at defaults) so it can be modified and sent independently.
 		MessageEx clone;
 		clone.msg = src->msg;
 		e->msgStore[*s] = clone;
@@ -1346,13 +1298,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_getChannel(lua_State* L) {
 		MessageEx* m = getMsg(L, 1);
-		// Status 0xf is the realtime/SysEx family (clock, start/stop/continue,
-		// SysEx framing) — none of those carry a channel, and the low nibble is
-		// a sub-type selector instead (see the is* predicates below), so the
-		// old "+ 1" on that nibble returned a plausible-looking but meaningless
-		// channel number (#A4). -1 is unambiguous: 1-16 is the only valid
-		// channel range, so a script can check `> 0` without needing a
-		// try/catch around every call.
+		// Status 0xf (realtime/SysEx) carries no channel; the low nibble is a
+		// sub-type selector, so "+ 1" returned a meaningless channel (#A4).
+		// -1 is unambiguous: 1-16 is the only valid range, so a script can
+		// check `> 0` without a try/catch.
 		if (m->msg.getStatus() == 0xf) {
 			lua_pushinteger(L, -1);
 			return 1;
@@ -1400,8 +1349,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_getSysExLength(lua_State* L) {
 		MessageEx* m = getMsg(L, 1);
-		// Payload length only — the f0/f7 framing is excluded, so a script can
-		// check the size before reading the payload with getSysEx.
+		// Payload length only — f0/f7 framing excluded.
 		lua_pushinteger(L, std::max(0, m->msg.getSize() - 2));
 		return 1;
 	}
@@ -1610,9 +1558,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		uint16_t value = static_cast<uint16_t>(luaL_checkinteger(L, 4));
 
 		// Spec order: NRPN MSB, NRPN LSB, Data Entry MSB, Data Entry LSB.
-		// flushMsgStore() sends s1..s4 in this order, and MidiProcessor's NRPN
-		// state machine (CC99 sets pending MSB, CC98 completes selection;
-		// CC6 sets pending data MSB, CC38 completes the value) requires it.
+		// flushMsgStore() sends s1..s4 in this order, as MidiProcessor's NRPN
+		// state machine requires (CC99/98 select the number, CC6/38 the value).
 		s1->msg.setStatus(0xb);
 		s1->msg.setChannel(ch - 1);
 		s1->msg.setNote(99);
@@ -1716,12 +1663,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	// ── midiOut.* ─────────────────────────────────────────────────────────────
-	//
-	// Output port is not an argument here — it's set via midiOut.selectPort(n)
-	// and applied to every message sent until selectPort() is called again.
+	// Output port is set via midiOut.selectPort(n) and applied to every message
+	// sent until selectPort() is called again.
 
-	// Returns the message at stack position 1, stamped with the currently
-	// selected output port, or luaL_error on bad args.
+	// Returns the message at stack position 1, stamped with the selected output
+	// port, or luaL_error on bad args.
 	static MessageEx* getPortMsg(lua_State* L) {
 		auto* e = getEngine(L);
 		int idx = static_cast<int>(luaL_checkinteger(L, 1));
