@@ -2031,10 +2031,98 @@ TEST_CASE("onUnload runs again when a second script replaces the first, in both 
 }
 
 
+// Reads an integer field out of a config JSON string (jansson).
+static json_int_t configInt(const std::string& json, const char* key) {
+	json_error_t error;
+	json_t* j = json_loads(json.c_str(), 0, &error);
+	REQUIRE(j != nullptr);
+	json_t* v = json_object_get(j, key);
+	REQUIRE(v != nullptr);
+	json_int_t result = json_integer_value(v);
+	json_decref(j);
+	return result;
+}
+
+// --- rack.onSave() vs rack.onUnload() -------------------------------------
+//
+// rack.onSave() is the config-bearing hook; rack.onUnload() is teardown-only
+// and any value it returns is discarded. Both scripts below define both
+// hooks so a test can tell, from the log alone, which one actually ran.
+
+static const char* JS_ON_SAVE_AND_UNLOAD = R"(/**
+ * @engine QuickJs
+ */
+rack.onMidiMessage = function(midiPort, msg) {};
+rack.onUnload = function() {
+    rack.log("onUnload ran");
+    return { bogus: true };
+};
+rack.onSave = function() {
+    rack.log("onSave ran");
+    return { real: 42 };
+};
+)";
+
+static const char* LUA_ON_SAVE_AND_UNLOAD = R"(--[[
+@engine Lua
+--]]
+rack.onMidiMessage = function(midiPort, msg) end
+rack.onUnload = function()
+    rack.log("onUnload ran")
+    return { bogus = true }
+end
+rack.onSave = function()
+    rack.log("onSave ran")
+    return { real = 42 }
+end
+)";
+
+TEST_CASE("captureConfig() calls onSave, not onUnload, and does not run teardown, in both engines", "[MidiKit][CrossEngine]") {
+	auto check = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		drainLog(m);
+
+		// A save (captureConfig()) must run onSave(), not onUnload() — this is
+		// the regression this hook split targets: onUnload used to be the
+		// config-bearing hook, so a save would spuriously log "onUnload ran"
+		// and (for scripts with real teardown side effects) fire them on
+		// every save.
+		std::string config = captureConfig(m->activeEngine);
+		std::string log = drainLog(m);
+		REQUIRE(log.find("onSave ran") != std::string::npos);
+		REQUIRE(log.find("onUnload ran") == std::string::npos);
+		REQUIRE(configInt(config, "real") == 42);
+
+		Test::destroyModule(m);
+	};
+	check(JS_ON_SAVE_AND_UNLOAD);
+	check(LUA_ON_SAVE_AND_UNLOAD);
+}
+
+TEST_CASE("onUnload's return value is ignored on real teardown, in both engines", "[MidiKit][CrossEngine]") {
+	auto check = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		drainLog(m);
+
+		// clearScript() tears the script down for real (onRemove()'s
+		// onUnload() path), which used to also be where config was captured.
+		m->clearScript();
+		std::string log = drainLog(m);
+		REQUIRE(log.find("onUnload ran") != std::string::npos);
+
+		Test::destroyModule(m);
+	};
+	check(JS_ON_SAVE_AND_UNLOAD);
+	check(LUA_ON_SAVE_AND_UNLOAD);
+}
+
+
 // --- script config persistence -------------------------------------------
 //
-// rack.onLoad(persistedConfig) restores a config; rack.onUnload() returns the
-// current config. The engine JSON-stringifies onUnload()'s return value and
+// rack.onLoad(persistedConfig) restores a config; rack.onSave() returns the
+// current config. The engine JSON-stringifies onSave()'s return value and
 // hands it back to onLoad() on the next load — the save/reload round-trip
 // the module's dataToJson()/dataFromJson() drive. This asserts the engine
 // contract directly: captureConfig() reflects context-menu edits, and a
@@ -2048,7 +2136,7 @@ rack.onLoad = function(persisted) {
     if (persisted) config = Object.assign({}, config, persisted);
     rack.log("onLoad divisor=" + config.divisor + " emitTrigger=" + config.emitTrigger);
 };
-rack.onUnload = function() {
+rack.onSave = function() {
     return config;
 };
 rack.registerContextMenu({
@@ -2075,7 +2163,7 @@ rack.onLoad = function(persisted)
     end
     rack.log("onLoad divisor=" .. config.divisor .. " emitTrigger=" .. tostring(config.emitTrigger))
 end
-rack.onUnload = function()
+rack.onSave = function()
     return config
 end
 rack.registerContextMenu({
@@ -2090,18 +2178,6 @@ rack.registerContextMenu({
 })
 rack.onMidiMessage = function(midiPort, msg) end
 )";
-
-// Reads an integer field out of a config JSON string (jansson).
-static json_int_t configInt(const std::string& json, const char* key) {
-	json_error_t error;
-	json_t* j = json_loads(json.c_str(), 0, &error);
-	REQUIRE(j != nullptr);
-	json_t* v = json_object_get(j, key);
-	REQUIRE(v != nullptr);
-	json_int_t result = json_integer_value(v);
-	json_decref(j);
-	return result;
-}
 
 // Reads a boolean field out of a config JSON string (jansson).
 static bool configBool(const std::string& json, const char* key) {
@@ -2121,8 +2197,8 @@ TEST_CASE("Script config survives capture and reload in both engines", "[MidiKit
 		m->loadScript(script);
 		drainLog(m);
 
-		// Initial config, as returned by onUnload().
-		std::string config = m->activeEngine->captureConfig();
+		// Initial config, as returned by onSave().
+		std::string config = captureConfig(m->activeEngine);
 		REQUIRE(configInt(config, "divisor") == 6);
 		REQUIRE(configBool(config, "emitTrigger") == true);
 
@@ -2134,7 +2210,7 @@ TEST_CASE("Script config survives capture and reload in both engines", "[MidiKit
 		drainLog(m);
 
 		// The modified config is what a save would persist.
-		config = m->activeEngine->captureConfig();
+		config = captureConfig(m->activeEngine);
 		REQUIRE(configBool(config, "emitTrigger") == false);
 
 		// Reload with the persisted config: onLoad() must restore it.
@@ -2148,7 +2224,7 @@ TEST_CASE("Script config survives capture and reload in both engines", "[MidiKit
 		REQUIRE(reloadLog.find("emitTrigger=false") != std::string::npos);
 
 		// The script's config after the reload is the persisted, flipped one.
-		std::string restored = m->activeEngine->captureConfig();
+		std::string restored = captureConfig(m->activeEngine);
 		REQUIRE(configInt(restored, "divisor") == 6);
 		REQUIRE(configBool(restored, "emitTrigger") == false);
 
@@ -2156,6 +2232,62 @@ TEST_CASE("Script config survives capture and reload in both engines", "[MidiKit
 	};
 	check(JS_CONFIG);
 	check(LUA_CONFIG);
+}
+
+
+TEST_CASE("A script with only onUnload (no onSave) persists nothing, in both engines", "[MidiKit][CrossEngine]") {
+	// There is no legacy fallback from onSave() to onUnload()'s return value:
+	// a script written before rack.onSave() existed, which only returns its
+	// config from onUnload(), simply persists nothing until migrated. Reuses
+	// JS_ON_SAVE_AND_UNLOAD/LUA_ON_SAVE_AND_UNLOAD's onUnload (which does
+	// return a real table) with onSave stripped out.
+	//
+	// captureConfig() succeeds with an empty result rather than failing: "this
+	// script has no config" is a definite answer, so the caller clears its
+	// stored config instead of keeping a stale one. Answered from the cached
+	// hook ref without a worker round-trip.
+	auto check = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		drainLog(m);
+
+		std::string config = captureConfig(m->activeEngine);
+		REQUIRE(config.empty());
+
+		Test::destroyModule(m);
+	};
+
+	static const char* JS_ONLY_UNLOAD = R"(/**
+ * @engine QuickJs
+ */
+rack.onMidiMessage = function(midiPort, msg) {};
+rack.onUnload = function() {
+    return { bogus: true };
+};
+)";
+	static const char* LUA_ONLY_UNLOAD = R"(--[[
+@engine Lua
+--]]
+rack.onMidiMessage = function(midiPort, msg) end
+rack.onUnload = function()
+    return { bogus = true }
+end
+)";
+
+	check(JS_ONLY_UNLOAD);
+	check(LUA_ONLY_UNLOAD);
+}
+
+
+TEST_CASE("captureConfig on an engine with no script loaded fails without touching out", "[MidiKit][CrossEngine]") {
+	// The other false case: no script at all, so there is no way to know what
+	// (if anything) should be persisted. Distinct from a loaded script with no
+	// onSave(), which succeeds with an empty result — here the caller must keep
+	// whatever config it already had rather than clearing it.
+	MidiKitModule* m = createModule();
+	REQUIRE(captureConfigFails(&m->seLua));
+	REQUIRE(captureConfigFails(&m->seQuickJs));
+	Test::destroyModule(m);
 }
 
 

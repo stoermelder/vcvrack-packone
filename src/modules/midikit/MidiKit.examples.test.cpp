@@ -1516,9 +1516,10 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	m->activeEngine->invokeContextMenuCallback(specs[2].callbackId, 1);
 	drainLog(m);
 
-	// Save: Rack calls onSave() before dataToJson(), and onSave() asks the
-	// active script for its current config (via onUnload) so the user's
-	// context-menu changes are what get persisted as "scriptConfig".
+	// Save: dataToJson() itself refreshes the config (via rack.onSave(), which
+	// is side-effect-free and safe to call here), so the user's context-menu
+	// changes are what get persisted as "scriptConfig" — whether or not
+	// Module::onSave() ran first.
 	rack::engine::Module::SaveEvent saveEvent;
 	m->onSave(saveEvent);
 	json_t* rootJ = m->dataToJson();
@@ -1536,7 +1537,7 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	json_decref(rootJ);
 
 	// The reloaded module's config must match what the user changed.
-	std::string restored = m2->activeEngine->captureConfig();
+	std::string restored = captureConfig(m2->activeEngine);
 	REQUIRE(configInt(restored, "channel") == 1);
 	REQUIRE(configBool(restored, "preferUpward") == true);
 

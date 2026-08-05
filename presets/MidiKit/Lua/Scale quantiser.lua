@@ -123,7 +123,10 @@ rack.onUnload = function()
             midiOut.send(off)
         end
     end
-    -- Return the current config so the engine can persist it on save.
+end
+
+-- Return the current config so the engine can persist it on save.
+rack.onSave = function()
     return config
 end
 

@@ -36,9 +36,9 @@ MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the select
 
 The module also exposes four CV inputs and four panel parameters that can be read from scripts to add modulation or dynamic configuration.
 
-Scripts can persist their configuration across patch saves and reloads via `rack.onLoad()` and `rack.onUnload()` (see [Persistence](#persistence)).
+Scripts can persist their configuration across patch saves and reloads via `rack.onLoad()` and `rack.onSave()` (see [Persistence](#persistence)).
 
-`rack.onMidiMessage`/`rack.onTrigger`/`rack.onLoad`/`rack.onUnload` are only ever read once, right after the script loads — assign each exactly once, at the top level. Reassigning one later, or defining it late, has no effect.
+`rack.onMidiMessage`/`rack.onTrigger`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` are only ever read once, right after the script loads — assign each exactly once, at the top level. Reassigning one later, or defining it late, has no effect.
 
 You can use MIDI-KIT as an insert effect via VCV Rack's built-in MIDI Loopback driver. This lets you process incoming messages before they reach other MIDI modules (for example, MIDI‑CC, MIDI‑CV, MIDI‑MAP, or MIDI‑CAT), and likewise process outgoing messages.
 
@@ -262,7 +262,7 @@ end
 
 ### Send an all-notes-off when the script unloads
 
-`rack.onUnload()` runs once, right before the script's state is torn down — the script is being replaced, the module is reset, or the module is removed from the patch. It's the only reliable place to clean up notes a script left sounding, since nothing runs afterward to release them. Note the JavaScript version assigns it to the `rack` object — `rack.onUnload = function() {...}` — see [JavaScript (QuickJS)](#javascript-quickjs).
+`rack.onUnload()` runs right before the script's state is torn down — the script is being replaced, the module is reset, or the module is removed from the patch. It's the only reliable place to clean up notes a script left sounding, since nothing runs afterward to release them. It never runs on a plain patch save (see [Persistence](#persistence) for the hook that does: `rack.onSave()`). Note the JavaScript version assigns it to the `rack` object — `rack.onUnload = function() {...}` — see [JavaScript (QuickJS)](#javascript-quickjs).
 
 JavaScript:
 ```js
@@ -481,12 +481,13 @@ The API below is identical for both scripting engines — the function names, ar
 
 ### Callbacks on the `rack` object
 
-The callbacks below are defined as methods on the `rack` object — `rack.onMidiMessage`, `rack.onTrigger`, `rack.onLoad`, `rack.onUnload`.
+The callbacks below are defined as methods on the `rack` object — `rack.onMidiMessage`, `rack.onTrigger`, `rack.onLoad`, `rack.onUnload`, `rack.onSave`.
 
 - `rack.onMidiMessage(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
 - `rack.onTrigger(trigPort)`: Optional. Called whenever a trigger arrives on CV trigger input port `trigPort` (only *1* is supported in this version). This is the only entry point for script logic that isn't driven by an incoming MIDI message — e.g. sending a MIDI message in response to an external clock/gate. A script that doesn't define it simply never has it called. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onTrigger = function(trigPort) { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
-- `rack.onLoad(persistedConfig)`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. If the script was previously saved with a config (see [Persistence](#persistence)), `persistedConfig` is a JavaScript object (QuickJS) or table (Lua) containing the values returned by the last `rack.onUnload()`. If no config was persisted, `persistedConfig` is `undefined` (QuickJS) / `nil` (Lua), and the script should initialize from its defaults. Use it in place of a manually-called `init()` function at the bottom of the file. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onLoad = function(persistedConfig) { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
-- `rack.onUnload()`: Optional. Called once, right before the script's state is torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. If the script returns a value from `onUnload()`, it is serialized to JSON and persisted with the patch (see [Persistence](#persistence)). **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onUnload = function() { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
+- `rack.onLoad(persistedConfig)`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. If the script was previously saved with a config (see [Persistence](#persistence)), `persistedConfig` is a JavaScript object (QuickJS) or table (Lua) containing the values returned by the last `rack.onSave()`. If no config was persisted, `persistedConfig` is `undefined` (QuickJS) / `nil` (Lua), and the script should initialize from its defaults. Use it in place of a manually-called `init()` function at the bottom of the file. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onLoad = function(persistedConfig) { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
+- `rack.onUnload()`: Optional. Called every time the script's state is actually torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. It never runs on a plain patch save, and **its return value is ignored** — use `rack.onSave()` to persist config. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onUnload = function() { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
+- `rack.onSave()`: Optional. Called to snapshot the script's current config for persistence — on an explicit patch save, on quit, and (via the module's `dataToJson()`) on periodic autosave. If the script returns a value, it is serialized to JSON and persisted with the patch (see [Persistence](#persistence)). **Must be side-effect-free**: it may be called repeatedly without tearing anything down, so it should only read state, never mutate it. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onSave = function() { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
 
 ### rack
 
@@ -535,10 +536,12 @@ The callbacks below are defined as methods on the `rack` object — `rack.onMidi
 
 Scripts can persist their configuration across patch saves and reloads. The mechanism is a pair of hooks:
 
-- **`rack.onUnload()`** — called when the script is about to be torn down (replaced, module reset, or module removed). If it returns a value, that value is serialized to JSON and stored with the module's patch data.
+- **`rack.onSave()`** — called to snapshot the script's current config for persistence. If it returns a value, that value is serialized to JSON and stored with the module's patch data. Must be side-effect-free: it may be called repeatedly (including on every autosave), so it should only read state, never mutate it.
 - **`rack.onLoad(persistedConfig)`** — called when the script loads. If a persisted config exists, it is deserialized from JSON and passed as `persistedConfig` (a JavaScript object in QuickJS, a Lua table in Lua). If no config was persisted, `persistedConfig` is `undefined` (QuickJS) / `nil` (Lua).
 
-The persisted value must be a plain JSON-serializable object (booleans, numbers, strings, arrays, and nested objects). Functions and other non-serializable values are silently dropped. If `onUnload()` returns nothing (or returns a non-serializable value), no config is persisted and `onLoad()` receives `undefined`/`nil`.
+`rack.onUnload()` is a separate, teardown-only hook (see [Callbacks](#callbacks-on-the-rack-object)) — **its return value is ignored** and it is not part of the persistence mechanism. Scripts written before `rack.onSave()` existed, which only returned their config from `onUnload()`, will persist nothing until migrated to `rack.onSave()` — there is no automatic fallback.
+
+The persisted value must be a plain JSON-serializable object (booleans, numbers, strings, arrays, and nested objects). Functions and other non-serializable values are silently dropped. If `onSave()` returns nothing (or returns a non-serializable value), no config is persisted and `onLoad()` receives `undefined`/`nil`.
 
 A typical pattern:
 
@@ -551,7 +554,7 @@ rack.onLoad = function(persistedConfig) {
     }
 };
 
-rack.onUnload = function() {
+rack.onSave = function() {
     return config;
 };
 ```
@@ -567,12 +570,12 @@ rack.onLoad = function(persistedConfig)
     end
 end
 
-rack.onUnload = function()
+rack.onSave = function()
     return config
 end
 ```
 
-Note that `onUnload()` is also called when the script is replaced by a different script (not just on patch save), so it should be safe to call multiple times. The cleanup messages sent from `onUnload()` (e.g. all-notes-off) are delivered normally, but the persisted config is only saved when the module's `dataToJson()` is called by Rack (i.e. on patch save).
+Note that `rack.onUnload()` is called when the script is replaced by a different script, the module is reset, or the module is removed — not on a plain patch save — so it should be safe to call multiple times. Its cleanup messages (e.g. all-notes-off) are delivered normally. `rack.onSave()`, by contrast, may run on every save including autosaves, and any messages it sends are discarded rather than delivered.
 
 ### input
 
@@ -664,7 +667,7 @@ The sending functions below take no port argument — the destination is whateve
 - `midiOut.sendAfterMs(msg, ms)`: Sends `msg` delayed on the selected MIDI port. The delay `ms` is specified in milliseconds.
 - `midiOut.sendAfterTrigger(msg, [trigPort], ticks)`: Sends `msg` delayed on the selected MIDI port. The delay is specified in `ticks` of triggers on CV trigger input `trigPort`. If `trigPort` is omitted the default trigger port is selected.
 
-**A message can only be sent once per callback.** `midiOut.send(msg)` and the `sendAfter*` variants mark the handle as sent — the actual enqueue happens once per handle after the callback, so sending the *same* handle again in one `rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload` is not a second message: only one goes out (and if the message body was changed in between, the last change wins). To send the same bytes twice, create a fresh handle with `midi.create()` or `midi.clone(msg)` and send that. Each message sent also consumes one of the 32 message-handle slots, so one handle per message is the right pattern. When the store is full, `midi.create()`/`midi.clone()`/`midi.createNRPN()` raise a script error that aborts the rest of the callback; messages already sent before the error are still flushed, so a multi-message sequence can be emitted partially.
+**A message can only be sent once per callback.** `midiOut.send(msg)` and the `sendAfter*` variants mark the handle as sent — the actual enqueue happens once per handle after the callback, so sending the *same* handle again in one `rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` is not a second message: only one goes out (and if the message body was changed in between, the last change wins). To send the same bytes twice, create a fresh handle with `midi.create()` or `midi.clone(msg)` and send that. Each message sent also consumes one of the 32 message-handle slots, so one handle per message is the right pattern. When the store is full, `midi.create()`/`midi.clone()`/`midi.createNRPN()` raise a script error that aborts the rest of the callback; messages already sent before the error are still flushed, so a multi-message sequence can be emitted partially.
 
 
 ## Changelog

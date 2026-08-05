@@ -315,17 +315,6 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		}
 	}
 
-	void onSave(const SaveEvent& e) override {
-		// Ask the active script for its current config (via rack.onUnload())
-		// so the latest context-menu setting survives a save/reload cycle.
-		// Runs synchronously on the GUI thread, matching the existing
-		// loadScript() pattern; onUnload()'s messages are discarded, so saving
-		// has no audible side effects.
-		if (activeEngine) {
-			scriptConfigJson = activeEngine->captureConfig();
-		}
-	}
-
 	void processBypass(const ProcessArgs& args) override {
 		midi::Message msg;
 		while (midiInput.tryPop(&msg, args.frame)) {
@@ -395,6 +384,26 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
 		json_object_set_new(rootJ, "script", json_string(script.c_str()));
 
+		// Ask the script for its current config on every serialization, so the
+		// latest context-menu setting is what gets written. This has to happen
+		// here rather than in onSave(): Rack's periodic autosave calls
+		// saveAutosave() directly without dispatching onSave() first, so an
+		// onSave()-only refresh would leave autosaves writing stale config.
+		// rack.onSave() is side-effect-free by contract, so running it on every
+		// save is harmless.
+		//
+		// Only overwrite on success. False means the config could not be
+		// determined at all (dispatch dropped or timed out), which is NOT the
+		// same as the script having no config — keeping the last known value
+		// there writes a slightly stale config instead of erasing the user's
+		// settings. A script with no onSave() returns true with an empty string
+		// and correctly clears any stale value.
+		if (activeEngine) {
+			std::string captured;
+			if (activeEngine->captureConfig(captured)) {
+				scriptConfigJson = captured;
+			}
+		}
 		if (!scriptConfigJson.empty()) {
 			json_t* configJ = json_loads(scriptConfigJson.c_str(), 0, NULL);
 			if (configJ) {

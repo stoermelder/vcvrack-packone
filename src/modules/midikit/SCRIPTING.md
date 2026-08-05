@@ -104,32 +104,41 @@ leading comment block.
 - There is no per-sample or per-frame callback — logic only runs in
   response to incoming MIDI messages (including clock 0xF8 realtime bytes)
   or trigger-input ticks via `rack.onTrigger`.
-- Optional `rack.onLoad()` and `rack.onUnload()` hooks run once each:
+- Optional `rack.onLoad()`, `rack.onUnload()`, and `rack.onSave()` hooks:
   - `rack.onLoad([persistedConfig])` runs once, right after top-level code,
     when the script has parsed and loaded successfully. If a config was
     persisted by a previous save (see [Persistence](#persistence)), it is
     passed as `persistedConfig` (a JavaScript object in QuickJs, a Lua table
     in Lua); otherwise the argument is `undefined` (QuickJs) / `nil` (Lua).
-  - `rack.onUnload()` runs once, right before the *current* script's state
-    is torn down — because it's about to be replaced by another script, the
-    module was reset, or the module is being removed from the patch. This
-    is the only place a script can reliably clean up: sending an
-    all-notes-off for anything it left sounding is the main use case, since
-    nothing else will ever get a chance to release those notes once the
-    script's own state is gone. If it returns a value, that value is
-    serialized to JSON and stored with the module's patch data (see
+  - `rack.onUnload()` runs every time the *current* script's state is torn
+    down for real — because it's about to be replaced by another script, the
+    module was reset, or the module is being removed from the patch. This is
+    the only place a script can reliably clean up: sending an all-notes-off
+    for anything it left sounding is the main use case, since nothing else
+    will ever get a chance to release those notes once the script's own
+    state is gone. **Its return value is ignored** — `onUnload()` is
+    teardown-only; use `rack.onSave()` to persist config.
+  - `rack.onSave()` is the config-bearing hook: if it returns a value, that
+    value is serialized to JSON and stored with the module's patch data (see
+    [Persistence](#persistence)). It **must be side-effect-free** — it may be
+    called repeatedly (e.g. on every explicit patch save) without tearing
+    down or otherwise disturbing the script's state, so it should only read
+    state, never mutate it or send MIDI messages meant to have an audible
+    effect (any it does send are discarded, see
     [Persistence](#persistence)).
-  - Both can call `midi.create()`/`midiOut.send()` like `rack.onMidiMessage`
-    can; messages sent from either are flushed the same way.
+  - All three can call `midi.create()`/`midiOut.send()` like
+    `rack.onMidiMessage` can; messages sent from any of them are flushed the
+    same way, except `onSave()`'s are always discarded (see above).
   - In QuickJs, assign them to the `rack` object —
-    `rack.onLoad = function(...) {...}` / `rack.onUnload = function() {...}`.
-    Lua likewise: `rack.onLoad = function(...) ... end` /
-    `rack.onUnload = function() ... end`.
+    `rack.onLoad = function(...) {...}` / `rack.onUnload = function() {...}`
+    / `rack.onSave = function() {...}`. Lua likewise:
+    `rack.onLoad = function(...) ... end` / `rack.onUnload = function() ... end`
+    / `rack.onSave = function() ... end`.
 
 ### Hooks and predefined objects are resolved once, at load time
 
-`rack.onMidiMessage`, `rack.onTrigger`, `rack.onLoad`, and `rack.onUnload`
-are read from the `rack` object **exactly once**, right after the script's
+`rack.onMidiMessage`, `rack.onTrigger`, `rack.onLoad`, `rack.onUnload`, and
+`rack.onSave` are read from the `rack` object **exactly once**, right after the script's
 top-level code finishes running. **Reassigning any of them afterward — from
 inside a callback or anywhere else in the script — has no effect.** The
 function that was present at load time keeps running for the lifetime of the
@@ -263,18 +272,26 @@ every example in this document does.
 Scripts can persist their configuration across patch saves and reloads via a
 pair of hooks:
 
-- **`rack.onUnload()`** — called when the script is about to be torn down
-  (replaced, module reset, or module removed). If it returns a value, that
-  value is serialized to JSON and stored with the module's patch data.
+- **`rack.onSave()`** — called to snapshot the script's current config for
+  persistence. If it returns a value, that value is serialized to JSON and
+  stored with the module's patch data. It **must be side-effect-free**: it
+  may be called repeatedly (e.g. on every explicit save), so it should only
+  read state, never mutate it.
 - **`rack.onLoad(persistedConfig)`** — called when the script loads. If a
   config was persisted, it is deserialized from JSON and passed as
   `persistedConfig` (a JavaScript object in QuickJs, a Lua table in Lua). If
   no config was persisted, `persistedConfig` is `undefined` (QuickJs) / `nil`
   (Lua) and the script initializes from its defaults.
 
+`rack.onUnload()` is a separate, teardown-only hook (see above) — **its
+return value is ignored** and it is not part of the persistence contract.
+Scripts written before `rack.onSave()` existed that only returned their
+config from `onUnload()` will persist nothing until migrated to
+`rack.onSave()`; there is no automatic fallback.
+
 The persisted value must be a plain JSON-serializable object (booleans,
 numbers, strings, arrays, and nested objects); functions and other
-non-serializable values are silently dropped. If `onUnload()` returns nothing
+non-serializable values are silently dropped. If `onSave()` returns nothing
 (or a non-serializable value), no config is persisted and `onLoad()` receives
 `undefined`/`nil`.
 
@@ -289,7 +306,7 @@ rack.onLoad = function(persistedConfig) {
     }
 };
 
-rack.onUnload = function() {
+rack.onSave = function() {
     return config;
 };
 ```
@@ -305,22 +322,25 @@ rack.onLoad = function(persistedConfig)
     end
 end
 
-rack.onUnload = function()
+rack.onSave = function()
     return config
 end
 ```
 
 Timing notes:
 
-- On a patch save, the module snapshots the config by running `onUnload()`
-  synchronously on the GUI thread **without** tearing the script down — the
-  script keeps running and the return value reflects live state (e.g. the
-  latest context-menu setting). Messages `onUnload()` sends during this
-  capture are **discarded**: saving has no audible side effects.
+- On a patch save, the module snapshots the config by running `onSave()`
+  synchronously on the GUI thread, without touching `onUnload()` or tearing
+  the script down — the script keeps running and the return value reflects
+  live state (e.g. the latest context-menu setting). Because `onSave()` must
+  be side-effect-free, it may be called on every save (including the
+  periodic autosave) with no audible effect; any messages it sends anyway are
+  **discarded**.
 - When the script is actually replaced, the module reset, or the module
-  removed, `onUnload()` runs again as a real teardown and this time its
-  messages (e.g. an all-notes-off) **are** delivered. Since the same hook
-  serves both purposes, it should be safe to call multiple times — keep any
+  removed, `rack.onUnload()` runs as a real teardown and its messages (e.g.
+  an all-notes-off) **are** delivered — but its return value, even if
+  present, is never persisted. `onUnload()` can run more than once over a
+  script's lifetime (e.g. on module reset followed by removal), so keep any
   side effects idempotent rather than assuming it runs exactly once.
 - The persisted config is only written when Rack serializes the module
   (`dataToJson()`, i.e. on patch save); replacing/removing the module or
@@ -446,7 +466,7 @@ whatever `midiOut.selectPort()` last selected (port 1 if it was never called):
 **A message can only be sent once per callback.** `midiOut.send(msg)` (and the
 `sendAfter*` variants) mark the handle as sent; the actual enqueue happens once
 per handle in the post-callback flush, so a second `send` of the *same* handle
-within one `rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload` is not a second message — only
+within one `rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` is not a second message — only
 one goes out, and if the message body was changed in between, the last change
 wins. To send the same bytes twice, build a fresh handle first with
 `midi.create()` or `midi.clone(msg)` and send that. Each message sent consumes
@@ -465,10 +485,11 @@ rather than decoding this by hand).
   created them — the store resets each callback invocation. Creating a
   message at top level (outside `rack.onMidiMessage`) logs a warning and the
   handle is discarded as soon as the next MIDI message arrives, so build
-  messages inside the callback. `rack.onLoad()`/`rack.onUnload()`/`rack.onTrigger()`
+  messages inside the callback. `rack.onLoad()`/`rack.onUnload()`/`rack.onSave()`/`rack.onTrigger()`
   are full callbacks in this sense too — a message created and sent inside
-  any of them is delivered normally, and (unlike bare top-level code)
-  doesn't warn.
+  any of them is delivered normally (except `onSave()`'s, which are always
+  discarded — see [Persistence](#persistence)), and (unlike bare top-level
+  code) doesn't warn.
 - `midi.setCc14bit`/`setNRPN` split a 14-bit value across two 7-bit CC
   messages (`cc` = MSB, `cc + 32` = LSB per the NRPN/14-bit CC convention);
   see [nrpn_to_cc.js](nrpn_to_cc.js)/[nrpn_to_cc.lua](nrpn_to_cc.lua) for a

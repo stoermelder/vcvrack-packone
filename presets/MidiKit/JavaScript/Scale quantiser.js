@@ -117,7 +117,10 @@ rack.onUnload = function() {
             midiOut.send(off);
         }
     }
-    // Return the current config so the engine can persist it on save.
+};
+
+// Return the current config so the engine can persist it on save.
+rack.onSave = function() {
     return config;
 };
 

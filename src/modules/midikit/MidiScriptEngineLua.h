@@ -47,18 +47,19 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// effect across callbacks until changed again.
 	int selectedPort = 0;
 
-	// The four lifecycle hooks (rack.onMidiMessage/onTrigger/onLoad/onUnload)
-	// are resolved from the rack table once at load and kept as registry
-	// references — not re-looked-up by name on every dispatch. Matched in
-	// QuickJS (onMidiMessageFn/etc.): reassigning a hook after load, or
-	// defining one late, has no effect — only what was present at load time
-	// ever runs. LUA_NOREF means "not defined". One asymmetry: hooks are
-	// called here as bare functions with no receiver; QuickJS calls them as
-	// methods (rackObj as thisVal). Predates caching, unused by any preset.
+	// The five lifecycle hooks (rack.onMidiMessage/onTrigger/onLoad/onUnload/
+	// onSave) are resolved from the rack table once at load and kept as
+	// registry references — not re-looked-up by name on every dispatch.
+	// Matched in QuickJS (onMidiMessageFn/etc.): reassigning a hook after
+	// load, or defining one late, has no effect — only what was present at
+	// load time ever runs. LUA_NOREF means "not defined". One asymmetry:
+	// hooks are called here as bare functions with no receiver; QuickJS calls
+	// them as methods (rackObj as thisVal). Predates caching, unused by any preset.
 	int onMidiMessageRef = LUA_NOREF;
 	int onTriggerRef = LUA_NOREF;
 	int onLoadRef = LUA_NOREF;
 	int onUnloadRef = LUA_NOREF;
+	int onSaveRef = LUA_NOREF;
 
 	// Script-registered context menus. The Lua callback lives in the registry
 	// as an integer reference (luaL_ref), not in ContextMenuSpec, because the
@@ -203,11 +204,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		handler->writeLog("Script loaded", false);
 
-		// Resolve and cache the four lifecycle hooks once (see declarations).
+		// Resolve and cache the five lifecycle hooks once (see declarations).
 		lua_getglobal(L, "rack");
 		if (lua_istable(L, -1)) {
 			onLoadRef = cacheHookRef("onLoad");
 			onUnloadRef = cacheHookRef("onUnload");
+			onSaveRef = cacheHookRef("onSave");
 			onMidiMessageRef = cacheHookRef("onMidiMessage");
 			onTriggerRef = cacheHookRef("onTrigger");
 		}
@@ -233,29 +235,33 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return luaL_ref(L, LUA_REGISTRYINDEX); // pops the function, returns its ref
 	}
 
-	// Runs rack.onUnload() and returns the JSON string of the value it
-	// returned — the script's config to persist — without tearing down the
-	// script state. Used by dataToJson() at save time. The messages onUnload()
-	// queued are discarded (never flushed), so saving has no audible effect.
-	std::string captureConfig() override {
-		if (!L) return "";
-		int nRet = callOnUnload();
-		std::string configJson;
-		if (nRet > 0) {
-			configJson = luaTableToJson(L, -1);
-			lua_pop(L, 1);
+	// See MidiScriptEngine::captureConfig() for the contract. Lua state is only
+	// safe to touch from the worker thread, hence runSyncString().
+	bool captureConfig(std::string& out) override {
+		// Answered from the cached ref, without a worker round-trip: onSaveRef
+		// is a plain member, written only at load time and in closeState().
+		if (L && onSaveRef == LUA_NOREF) {
+			out.clear();
+			return true;
 		}
-		return configJson;
+		if (!L) return false;
+		return runSyncString([this]() -> std::string {
+			if (!L) return "";
+			int nRet = callOnSave();
+			std::string configJson;
+			if (nRet > 0) {
+				configJson = luaTableToJson(L, -1);
+				lua_pop(L, 1);
+			}
+			return configJson;
+		}, out);
 	}
 
-	// Tears down the Lua state. Runs onUnload() first (via captureConfig())
-	// so the script's teardown messages and its config can be captured;
-	// returns the captured config JSON.
+	// Tears down the Lua state. See MidiScriptEngine::closeState().
 	std::string closeState() override {
 		if (L) {
-			std::string configJson = captureConfig();
-			// onUnload()'s teardown messages (e.g. all-notes-off) must still
-			// go out even though captureConfig() itself did not flush them.
+			callOnUnload();
+			// onUnload()'s teardown messages (e.g. all-notes-off) must go out.
 			flushMsgStore();
 			clearContextMenus();
 			// lua_close invalidates these anyway; reset for hygiene.
@@ -263,9 +269,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			onTriggerRef = LUA_NOREF;
 			onLoadRef = LUA_NOREF;
 			onUnloadRef = LUA_NOREF;
+			onSaveRef = LUA_NOREF;
 			lua_close(L);
 			L = nullptr;
-			return configJson;
 		}
 		return "";
 	}
@@ -291,13 +297,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		flushMsgStore();
 	}
 
-	// Runs the script's onUnload() hook. Returns 1 with its return value on
-	// top of the stack (kept only if a table — the only persistable config
-	// shape), or 0. Messages are NOT flushed here: closeState() flushes them
-	// for teardown, captureConfig() discards them so a save has no audible
-	// side effects.
-	int callOnUnload() {
-		if (onUnloadRef == LUA_NOREF) return 0;
+	// Runs the script's onUnload() hook. Its return value, if any, is
+	// discarded — onUnload() is teardown-only; config comes from onSave().
+	// Messages are NOT flushed here: closeState() flushes them for teardown.
+	void callOnUnload() {
+		if (onUnloadRef == LUA_NOREF) return;
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onUnloadRef);
 		msgCount = 0;
 		inCallback = true;
@@ -308,6 +312,26 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			handler->writeLog(string::f("onUnload error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 			flushMsgStore();
+			return;
+		}
+		lua_pop(L, 1); // pop (and discard) the return value
+	}
+
+	// Runs the script's onSave() hook. Returns 1 with its return value on
+	// top of the stack (kept only if a table — the only persistable config
+	// shape), or 0. Messages are NOT flushed here: captureConfig() discards
+	// them, so a save has no audible side effects.
+	int callOnSave() {
+		if (onSaveRef == LUA_NOREF) return 0;
+		lua_rawgeti(L, LUA_REGISTRYINDEX, onSaveRef);
+		msgCount = 0;
+		inCallback = true;
+		int status = lua_pcall(L, 0, 1, 0);
+		inCallback = false;
+		if (status != LUA_OK) {
+			const char* err = lua_tostring(L, -1);
+			handler->writeLog(string::f("onSave error: %s", err ? err : "(unknown)"));
+			lua_pop(L, 1); // pop error message
 			return 0;
 		}
 		// Stack is now [result].

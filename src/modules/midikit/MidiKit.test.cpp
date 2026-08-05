@@ -362,7 +362,7 @@ struct RecordingEngine : MidiScriptEngine {
 	void loadScript(const char* script, const std::string& persistedConfigJson) override { }
 	bool testScript(const std::string& script) override { return false; }
 	std::string closeState() override { return ""; }
-	std::string captureConfig() override { return ""; }
+	bool captureConfig(std::string& out) override { return false; }
 	void processInMessage(int midiPort, midi::Message& msg) override { }
 	void processInTick(int trigPort) override { }
 	void dispatchMidiMessage(int midiPort, midi::Message& msg) override { }

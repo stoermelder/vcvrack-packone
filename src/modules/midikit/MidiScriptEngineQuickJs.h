@@ -72,19 +72,20 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// script callback, or a callback that re-registers would deadlock.
 	mutable std::mutex contextMenusMutex;
 
-	// rack and its four hooks (onMidiMessage/onTrigger/onLoad/onUnload) are
-	// resolved once at load and cached here, not re-looked-up per dispatch.
-	// Reassigning rack or a hook after load (or defining a hook late) has no
-	// effect — only what was present at load time runs. Matched in Lua
-	// (onMidiMessageRef/etc.) so both engines behave the same. One asymmetry:
-	// QuickJS calls hooks as methods (rackObj as thisVal, so `this` works
-	// inside a hook); Lua calls them as bare functions with no receiver.
-	// Predates caching, unused by any shipped preset, left as-is.
+	// rack and its five hooks (onMidiMessage/onTrigger/onLoad/onUnload/
+	// onSave) are resolved once at load and cached here, not re-looked-up per
+	// dispatch. Reassigning rack or a hook after load (or defining a hook
+	// late) has no effect — only what was present at load time runs. Matched
+	// in Lua (onMidiMessageRef/etc.) so both engines behave the same. One
+	// asymmetry: QuickJS calls hooks as methods (rackObj as thisVal, so
+	// `this` works inside a hook); Lua calls them as bare functions with no
+	// receiver. Predates caching, unused by any shipped preset, left as-is.
 	JSValue rackObj = JS_UNDEFINED;
 	JSValue onMidiMessageFn = JS_UNDEFINED;
 	JSValue onTriggerFn = JS_UNDEFINED;
 	JSValue onLoadFn = JS_UNDEFINED;
 	JSValue onUnloadFn = JS_UNDEFINED;
+	JSValue onSaveFn = JS_UNDEFINED;
 
 	// Usually a no-op (ctx already NULL): the real closeState() runs from
 	// MidiKitModule's destructor while this object is still fully alive,
@@ -202,7 +203,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			handler->writeLog("Script loaded", false);
 
 			// Callbacks live on the rack object, not the global scope. rack and
-			// all four hooks are cached once here (see rackObj declaration).
+			// all five hooks are cached once here (see rackObj declaration).
 			JSValue glob = JS_GetGlobalObject(ctx);
 			rackObj = JS_GetPropertyStr(ctx, glob, "rack");
 			JS_FreeValue(ctx, glob);
@@ -213,6 +214,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (JS_IsObject(rackObj)) {
 				onLoadFn = cacheCallableProp(rackObj, "onLoad");
 				onUnloadFn = cacheCallableProp(rackObj, "onUnload");
+				onSaveFn = cacheCallableProp(rackObj, "onSave");
 				onMidiMessageFn = cacheCallableProp(rackObj, "onMidiMessage");
 				onTriggerFn = cacheCallableProp(rackObj, "onTrigger");
 			}
@@ -243,33 +245,40 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return JS_UNDEFINED;
 	}
 
-	// Runs rack.onUnload() and returns the JSON string of the value it
-	// returned — the script's config to persist — without tearing down the
-	// script state. Used by dataToJson() at save time. The messages onUnload()
-	// queued are discarded (never flushed), so saving has no audible effect.
-	std::string captureConfig() override {
-		if (!ctx) return "";
-		JSValue ret = callOnUnload();
-		std::string configJson;
-		if (!JS_IsUndefined(ret) && !JS_IsNull(ret) && !JS_IsException(ret)) {
-			JSValue jsonVal = JS_JSONStringify(ctx, ret, JS_UNDEFINED, JS_UNDEFINED);
-			if (!JS_IsException(jsonVal)) {
-				configJson = jsToStdString(jsonVal);
-			}
-			JS_FreeValue(ctx, jsonVal);
+	// See MidiScriptEngine::captureConfig() for the contract. The QuickJS
+	// context is only safe to touch from the worker thread, hence
+	// runSyncString().
+	bool captureConfig(std::string& out) override {
+		// Answered from the cached ref, without a worker round-trip.
+		// JS_IsUndefined rather than JS_IsFunction — cacheCallableProp() only
+		// ever stores a callable, so the tag test is enough and needs no ctx.
+		if (ctx && JS_IsUndefined(onSaveFn)) {
+			out.clear();
+			return true;
 		}
-		JS_FreeValue(ctx, ret);
-		return configJson;
+		if (!ctx) return false;
+		return runSyncString([this]() -> std::string {
+			if (!ctx) return "";
+			JSValue ret = callOnSave();
+			std::string configJson;
+			if (!JS_IsUndefined(ret) && !JS_IsNull(ret) && !JS_IsException(ret)) {
+				JSValue jsonVal = JS_JSONStringify(ctx, ret, JS_UNDEFINED, JS_UNDEFINED);
+				if (!JS_IsException(jsonVal)) {
+					configJson = jsToStdString(jsonVal);
+				}
+				JS_FreeValue(ctx, jsonVal);
+			}
+			JS_FreeValue(ctx, ret);
+			return configJson;
+		}, out);
 	}
 
-	// Frees the QuickJS runtime/context. Runs onUnload() first (via
-	// captureConfig()) so the script's teardown messages and its config can be
-	// captured; returns the captured config JSON.
+	// Frees the QuickJS runtime/context. See MidiScriptEngine::closeState().
 	std::string closeState() override {
 		if (ctx != NULL) {
-			std::string configJson = captureConfig();
-			// onUnload()'s teardown messages (e.g. all-notes-off) must still
-			// go out even though captureConfig() itself did not flush them.
+			JSValue ret = callOnUnload();
+			JS_FreeValue(ctx, ret);
+			// onUnload()'s teardown messages (e.g. all-notes-off) must go out.
 			flushMsgStore();
 			clearContextMenus();
 			// JS_FreeContext would collect these anyway; free and reset first so
@@ -279,16 +288,17 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JS_FreeValue(ctx, onTriggerFn);
 			JS_FreeValue(ctx, onLoadFn);
 			JS_FreeValue(ctx, onUnloadFn);
+			JS_FreeValue(ctx, onSaveFn);
 			rackObj = JS_UNDEFINED;
 			onMidiMessageFn = JS_UNDEFINED;
 			onTriggerFn = JS_UNDEFINED;
 			onLoadFn = JS_UNDEFINED;
 			onUnloadFn = JS_UNDEFINED;
+			onSaveFn = JS_UNDEFINED;
 			JS_FreeContext(ctx);
 			JS_FreeRuntime(rt);
 			ctx = NULL;
 			rt = NULL;
-			return configJson;
 		}
 		return "";
 	}
@@ -321,10 +331,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		flushMsgStore();
 	}
 
-	// Runs the script's onUnload() hook, returning its return value (the
-	// config to persist), or JS_UNDEFINED if missing/errored. Messages are
-	// NOT flushed here: closeState() flushes them for teardown,
-	// captureConfig() discards them so a save has no audible side effects.
+	// Runs the script's onUnload() hook. Its return value, if any, is
+	// discarded by the caller — onUnload() is teardown-only; config comes
+	// from onSave(). Messages are NOT flushed here: closeState() flushes
+	// them for teardown.
 	JSValue callOnUnload() {
 		if (!JS_IsFunction(ctx, onUnloadFn)) return JS_UNDEFINED;
 
@@ -338,6 +348,27 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			handler->writeLog(string::f("onUnload error: %s", jsToStdString(exc).c_str()));
 			JS_FreeValue(ctx, exc);
 			flushMsgStore();
+			return JS_UNDEFINED;
+		}
+		return r;
+	}
+
+	// Runs the script's onSave() hook, returning its return value (the
+	// config to persist), or JS_UNDEFINED if missing/errored. Messages are
+	// NOT flushed here: captureConfig() discards them, so a save has no
+	// audible side effects.
+	JSValue callOnSave() {
+		if (!JS_IsFunction(ctx, onSaveFn)) return JS_UNDEFINED;
+
+		msgCount = 0;
+		inCallback = true;
+		JSValue r = JS_Call(ctx, onSaveFn, rackObj, 0, NULL);
+		inCallback = false;
+		if (JS_IsException(r)) {
+			JS_FreeValue(ctx, r);
+			JSValue exc = JS_GetException(ctx);
+			handler->writeLog(string::f("onSave error: %s", jsToStdString(exc).c_str()));
+			JS_FreeValue(ctx, exc);
 			return JS_UNDEFINED;
 		}
 		return r;

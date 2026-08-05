@@ -2,6 +2,10 @@
 #include "../../plugin.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "tipsy-encoder/include/tipsy/tipsy.h"
+#include <atomic>
+#include <chrono>
+#include <future>
+#include <thread>
 
 namespace StoermelderPackOne {
 namespace MidiScript {
@@ -85,6 +89,46 @@ struct MidiScriptEngine {
 		return taskWorker->work(task, APP);
 	}
 
+	// Runs `task` (script code) on the worker thread — never the caller's, which
+	// is typically the UI thread — and blocks until it completes, writing the
+	// result into `out`. Callable from the worker thread itself (SyncTaskWorker
+	// in tests runs `task` inline, so the future is already ready).
+	//
+	// Returns false, leaving `out` untouched, if the task could not be queued
+	// or never ran. Callers MUST NOT treat that as a successful empty result:
+	// in captureConfig() it would write an empty scriptConfig and erase the
+	// user's settings on save.
+	//
+	// Bounded for liveness: a queued task is not guaranteed to run, since
+	// ~MpmcTaskWorker drains whatever is still pending. That destroys the
+	// promise unfulfilled, making the future ready with a broken-promise error
+	// (hence the catch); the timeout only covers a worker that is alive but
+	// wedged. The shared_ptr keeps the promise alive for a worker still running
+	// after we time out.
+	bool runSyncString(std::function<std::string()> task, std::string& out) {
+		auto promise = std::make_shared<std::promise<std::string>>();
+		std::future<std::string> future = promise->get_future();
+
+		bool queued = runAsync([task, promise]() {
+			promise->set_value(task());
+		});
+		if (!queued) return false;
+
+		// Function-local: a static constexpr member passed to wait_for() (which
+		// takes its duration by reference) is odr-used and would need an
+		// out-of-line definition, which a header-only class has nowhere to put.
+		const std::chrono::milliseconds timeout{500};
+
+		if (future.wait_for(timeout) != std::future_status::ready) return false;
+		try {
+			out = future.get();
+		}
+		catch (const std::future_error&) {
+			return false;
+		}
+		return true;
+	}
+
 	// persistedConfigJson, if non-empty, is parsed and passed to
 	// rack.onLoad() so the script can restore its config; otherwise
 	// rack.onLoad() gets no argument and the script uses its defaults.
@@ -96,15 +140,33 @@ struct MidiScriptEngine {
 	virtual bool testScript(const std::string& script) = 0;
 
 	// Tears down the script state, running rack.onUnload() first so the
-	// script can clean up (e.g. all-notes-off). Returns the JSON string of
-	// onUnload()'s return value to persist, or "" if missing/errored/empty.
+	// script can clean up (e.g. all-notes-off). onUnload()'s return value is
+	// ignored — config persistence is captureConfig()'s job, not this one's.
+	// Always returns "".
 	virtual std::string closeState() = 0;
 
-	// Like closeState(), but runs onUnload() WITHOUT tearing down the script
-	// — used by dataToJson() to persist the live config at save time.
-	// onUnload()'s messages are discarded (a save must have no audible
-	// effect), unlike closeState() where they're flushed.
-	virtual std::string captureConfig() = 0;
+	// Runs rack.onSave() and writes the JSON string of its return value — the
+	// script's config to persist — into `out`, without disturbing the script's
+	// state. onSave() is expected to be side-effect-free and may be called
+	// repeatedly (e.g. on every explicit save). Used by toJson() at save time.
+	// Any messages onSave() queues are discarded (a save must have no audible
+	// effect).
+	//
+	// Returns false, leaving `out` untouched, only when the config could not be
+	// determined at all — no script loaded, or the worker dispatch failed (see
+	// runSyncString()). Callers must keep their previous value in that case;
+	// overwriting it with "" would erase the user's settings.
+	//
+	// A script that defines no onSave() is NOT a failure: that is a definite
+	// "nothing to persist", so it returns true with an empty `out` (answered
+	// from the cached hook ref without entering the engine) and the caller
+	// clears its stored config rather than keeping a stale one.
+	//
+	// May be called from any thread, including the UI/GUI thread (toJson()
+	// runs there) — implementations must dispatch the actual script call onto
+	// the worker thread via runSyncString(), never run script code inline on
+	// the calling thread.
+	virtual bool captureConfig(std::string& out) = 0;
 
 	// Main interface for message processing
 	virtual void processInMessage(int midiPort, Message& msg) = 0;
