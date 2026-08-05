@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Flattens MPE (one note per member channel) to a single channel, folding per-note pitch bend into note numbers
 --]]

@@ -112,11 +112,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return message;
 	}
 
-	// Engine selection: true when the script's header declares QuickJs. The
-	// same substring check the module used to run itself (Q26) — so the module
-	// has no third header parser.
+	// Engine selection: true when the script's header declares @engine QuickJs@v1.
+	// The same substring check the module used to run itself (Q26) — so the
+	// module has no third header parser.
 	bool testScript(const std::string& script) override {
-		return script.find("@engine QuickJs") != std::string::npos;
+		return script.find("@engine QuickJs@v1") != std::string::npos;
 	}
 
 	void loadScript(const char* script, const std::string& persistedConfigJson = "") override {
@@ -130,7 +130,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// Analyze file header of this pattern:
 		//	/**
 		//	 * @target stoermelder MIDI-KIT
-		//	 * @engine QuickJs
+		//	 * @engine QuickJs@v1
 		//	 * @author stoermelder
 		//	 * @description Routes incoming CC messages on MIDI channel 1 to a MIDI channel set by parameter 1 on the panel
 		//	 */
@@ -148,23 +148,27 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (std::regex_search(str, m1, header_regex)) {
 			std::string header = m1[1].str();
 			// match items in header according to "@topic text"
-			const std::regex at_regex(R"(@([a-z]+)\s([^@]*))");
-			auto words_begin = std::sregex_iterator(header.begin(), header.end(), at_regex);
+			// Tags are "@word value". Values are sliced from each tag's end to
+			// the next tag's start, so "@" inside a value (e.g. the "QuickJs@v1"
+			// version) is kept; trailing whitespace is trimmed so a lone tag
+			// matches exactly.
+			const std::regex tag_re(R"(@([a-z]+)\s+)");
+			auto words_begin = std::sregex_iterator(header.begin(), header.end(), tag_re);
 			auto words_end = std::sregex_iterator();
 			for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
-				std::smatch m2 = *i;
-				std::string topic = m2[1].str();
-				std::string text = m2[2].str();
-				// The capture runs to the next "@" (or header end), picking up the
-				// separating whitespace — trim it, or "@engine QuickJs" yields
-				// "QuickJs " and fails to match.
+				std::string topic = (*i)[1].str();
+				size_t valStart = (*i).position(0) + (*i).length();
+				auto j = i;
+				++j;
+				size_t valEnd = (j != words_end) ? (*j).position(0) : header.size();
+				std::string text = header.substr(valStart, valEnd - valStart);
 				size_t last = text.find_last_not_of(" \t");
 				text = (last == std::string::npos) ? "" : text.substr(0, last + 1);
 				topics[topic] = text;
 			}
 		}
 
-		if (topics.find("engine") == topics.end() || topics["engine"] != "QuickJs") {
+		if (topics.find("engine") == topics.end() || topics["engine"] != "QuickJs@v1") {
 			handler->writeLog("Script is not compatible with MIDI-KIT", false);
 			return;
 		}

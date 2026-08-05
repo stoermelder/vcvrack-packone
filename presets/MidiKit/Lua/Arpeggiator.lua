@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Arpeggiator clocked by the trigger input, with clock division, octave range, note length and playmode params
 --]]

@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine QuickJs
+ * @engine QuickJs@v1
  * @author stoermelder
  * @description Euclidean rhythm generator clocked by the trigger input, with steps, fills, note and velocity params
  */

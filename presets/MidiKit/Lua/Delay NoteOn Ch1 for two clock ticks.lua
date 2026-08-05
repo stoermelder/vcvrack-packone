@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Delays every Note-On message on channel 1 for two clock ticks on the clock input
 --]]

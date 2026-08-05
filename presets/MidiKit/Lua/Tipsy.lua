@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Sends a text message via the Tipsy protocol on the trigger output whenever a trigger is received on the trigger input. Connect the trigger output to a module with Tipsy support (e.g. Transit).
 --]]

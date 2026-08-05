@@ -94,11 +94,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 
-	// Engine selection: true when the script's header declares Lua. The same
-	// substring check the module used to run itself (Q26) — so the module has
-	// no third header parser.
+	// Engine selection: true when the script's header declares @engine minilua@v1.
+	// The same substring check the module used to run itself (Q26) — so the
+	// module has no third header parser.
 	bool testScript(const std::string& script) override {
-		return script.find("@engine Lua") != std::string::npos;
+		return script.find("@engine minilua@v1") != std::string::npos;
 	}
 
 	void loadScript(const char* script, const std::string& persistedConfigJson = "") override {
@@ -140,8 +140,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			}
 		}
 
-		if (topics.find("engine") == topics.end() || topics["engine"] != "Lua") {
-			handler->writeLog("Script is not compatible with this engine (expected @engine Lua)", false);
+		if (topics.find("engine") == topics.end() || topics["engine"] != "minilua@v1") {
+			handler->writeLog("Script is not compatible with this engine (expected @engine minilua@v1)", false);
 			return;
 		}
 

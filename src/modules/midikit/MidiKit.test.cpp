@@ -6,13 +6,13 @@ using namespace StoermelderPackOne::MidiScript;
 // Minimal QuickJs script header (body can be empty — the engine still loads it)
 static constexpr const char* QUICKJS_SCRIPT =
 	"/**\n"
-	" * @engine QuickJs\n"
+	" * @engine QuickJs@v1\n"
 	" */\n";
 
 // Minimal Lua script (synchronously loaded, no body needed)
 static constexpr const char* LUA_SCRIPT =
 	"--[[\n"
-	"@engine Lua\n"
+	"@engine minilua@v1\n"
 	"--]]\n";
 
 
@@ -68,7 +68,7 @@ TEST_CASE("Default engine it not set", "[MidiKit]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("@engine Lua header selects Lua engine", "[MidiKit]") {
+TEST_CASE("@engine minilua@v1 header selects Lua engine", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	m->loadScript(LUA_SCRIPT);
@@ -659,7 +659,7 @@ TEST_CASE("Log queue drops entries when full", "[MidiKit][Log]") {
 // getContextMenus) and never touches engine internals.
 
 static const char* QJS_BOOL = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 let v = false;
 rack.registerContextMenu({
@@ -676,7 +676,7 @@ rack.registerContextMenu({
 )";
 
 static const char* QJS_OPTIONS = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 let v = 1;
 rack.registerContextMenu({
@@ -694,7 +694,7 @@ rack.registerContextMenu({
 )";
 
 static const char* LUA_BOOL = R"(--[[
-@engine Lua
+@engine minilua@v1
 --]]
 v = false
 rack.registerContextMenu({
@@ -711,7 +711,7 @@ rack.registerContextMenu({
 )";
 
 static const char* LUA_OPTIONS = R"(--[[
-@engine Lua
+@engine minilua@v1
 --]]
 v = 1
 rack.registerContextMenu({
@@ -1019,7 +1019,7 @@ TEST_CASE("appendExampleItems leaf click loads the script", "[MidiKit][Examples]
 
 	static const std::string CONTENT =
 		"/**\n"
-		" * @engine QuickJs\n"
+		" * @engine QuickJs@v1\n"
 		" */\n"
 		"rack.log(\"loaded from submenu\");\n";
 

@@ -37,7 +37,7 @@ static std::vector<float> drainTipsy(MidiKitModule* m) {
 TEST_CASE("sendTipsy queues and outputs the encoded stream on the trigger CV", "[MidiKit][Tipsy]") {
 	// JavaScript (data first, mime defaults to "text/plain")
 	const char* JS_SCRIPT = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 rack.onMidiMessage = function(midiPort, msg) {
 	trig.sendTipsy("Hello Tipsy!");
@@ -68,7 +68,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 
 	// Lua (explicit mime, reversed argument order — must match JS output)
 	const char* LUA_SCRIPT = R"(--[[
-@engine Lua
+@engine minilua@v1
 --]]
 rack.onMidiMessage = function(midiPort, msg)
 	trig.sendTipsy("Hello Tipsy!", "text/plain")
@@ -90,7 +90,7 @@ end
 
 TEST_CASE("sendTipsy rejects invalid arguments", "[MidiKit][Tipsy]") {
 	const char* JS_SCRIPT = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 rack.onMidiMessage = function(midiPort, msg) {
 	trig.sendTipsy("x");
@@ -116,7 +116,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 
 TEST_CASE("sendTipsy drops messages when the pending queue overflows", "[MidiKit][Tipsy]") {
 	const char* JS_SCRIPT = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 rack.onMidiMessage = function(midiPort, msg) {
 	trig.sendTipsy("x");
@@ -151,7 +151,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 
 TEST_CASE("sendTipsy handles empty data", "[MidiKit][Tipsy]") {
 	const char* JS_SCRIPT = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 rack.onMidiMessage = function(midiPort, msg) {
 	trig.sendTipsy("");
@@ -176,7 +176,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 
 TEST_CASE("sendTipsy output is reset when a script is reloaded", "[MidiKit][Tipsy]") {
 	const char* JS_SCRIPT_1 = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 rack.onMidiMessage = function(midiPort, msg) {
 	trig.sendTipsy("First message");
@@ -184,7 +184,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 )";
 
 	const char* JS_SCRIPT_2 = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 rack.onMidiMessage = function(midiPort, msg) {
 	trig.sendTipsy('{"key":"value"}', "application/json");

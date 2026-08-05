@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Gravity well: notes are bent toward a center pitch, more when they are far from it or played softly
 --]]

@@ -18,15 +18,15 @@ The active engine is chosen by a header tag at the top of the script.
 JavaScript:
 ```
 /**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 ```
-(`@engine QuickJs` is also the default — JavaScript is assumed when no `@engine` tag is present.)
+(`@engine` is mandatory — there is no default engine; a script without a matching tag is ignored.)
 
 Lua:
 ```
 --[[
-@engine Lua
+@engine minilua@v1
 --]]
 ```
 
@@ -429,7 +429,7 @@ MIDI-KIT supports two scripting languages. The JavaScript engine is [QuickJS](ht
 | String length | counts UTF-8 **bytes** | counts **bytes** as well |
 | Implicit number→string | **yes** in `+` concatenation | **yes** for `..` concatenation; use `tostring(n)` elsewhere |
 | Comments | `//` and `/* */` | `--` and `--[[ ]]` |
-| Header convention | `/** ... @engine QuickJs ... */` | `--[[ ... @engine Lua ... --]]` |
+| Header convention | `/** ... @engine QuickJs@v1 ... */` | `--[[ ... @engine minilua@v1 ... --]]` |
 
 ### JavaScript (QuickJS)
 

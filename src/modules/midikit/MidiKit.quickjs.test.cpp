@@ -2,7 +2,7 @@
 
 
 static const char* QJS_EMPTY = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  * @description test
  */
 )";
@@ -20,7 +20,7 @@ TEST_CASE("QuickJs-tagged script loads and creates a context", "[MidiKit][QuickJ
 
 
 static const char* QJS_ONLY_ENGINE = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 )";
 
@@ -37,7 +37,7 @@ TEST_CASE("QuickJs script loads with @engine as the only header tag", "[MidiKit]
 
 
 static const char* LUA_HEADER = R"(--[[
-@engine Lua
+@engine minilua@v1
 --]]
 )";
 
@@ -53,7 +53,7 @@ TEST_CASE("Lua-tagged script is rejected by QuickJs engine", "[MidiKit][QuickJs]
 
 
 static const char* QJS_BAD_SYNTAX = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 let x = ;
 )";
@@ -75,7 +75,7 @@ TEST_CASE("JS syntax error is handled gracefully", "[MidiKit][QuickJs]") {
 // information (e.g. "script:6:10"), which formatError() appends after the
 // bare message — a real position.
 static const char* QJS_BAD_ON_LINE_6 = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 let a = 1;
 let b = 2;
@@ -102,7 +102,7 @@ TEST_CASE("Parse error reports the line it failed on", "[MidiKit][QuickJs]") {
 // Same defect one line earlier — pins that the number tracks the error rather
 // than being a constant that happens to match.
 static const char* QJS_BAD_ON_LINE_5 = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 let a = 1;
 let b = ;
@@ -139,7 +139,7 @@ TEST_CASE("Successful load reports no error", "[MidiKit][QuickJs]") {
 
 
 static const char* QJS_ON_UNLOAD = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 rack.onMidiMessage = function(midiPort, msg) {}
 rack.onUnload = function() {
@@ -170,7 +170,7 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Qui
 
 
 static const char* QJS_MIDI_ROUNDTRIP = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 rack.onMidiMessage = function(port, m) {
 	if (midi.isCc(m)) {
@@ -215,7 +215,7 @@ TEST_CASE("onMidiMessage dispatch round-trips a CC message through midi.*/midiOu
 
 
 static const char* QJS_NRPN = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 rack.onMidiMessage = function(port, m) {
 	let n = midi.createNRPN();
@@ -265,7 +265,7 @@ TEST_CASE("midi.createNRPN/setNRPN queue all four CC messages in order", "[MidiK
 // automatic-GC behaviour pinned by the no-growth test.
 
 static const char* QJS_GC_SCRATCH = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 rack.onMidiMessage = function(midiPort, msg) {
 	let n = number.toString(midi.getNote(msg));
@@ -330,7 +330,7 @@ TEST_CASE("QuickJs garbage-generating callbacks do not grow RAM usage", "[MidiKi
 // growth even after a forced GC pass, proving the measurement isn't just
 // reading noise.
 static const char* QJS_GC_RETAIN = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 var leaked = [];
 rack.onMidiMessage = function(midiPort, msg) {

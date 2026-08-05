@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Turns every incoming note into a chord by adding transposed copies, with matching Note-Offs
 --]]

@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Divides incoming MIDI clock, forwarding every Nth tick and emitting a trigger on the trigger output
 --]]

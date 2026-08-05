@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine QuickJs
+ * @engine QuickJs@v1
  * @author stoermelder
  * @description Reshapes Note-On velocity with a knob-controlled curve, plus configurable floor and ceiling
  */

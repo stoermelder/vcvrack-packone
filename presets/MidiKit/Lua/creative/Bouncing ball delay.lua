@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Bouncing ball delay: each Note-On spawns a train of echoes that bounce faster and quieter until they settle
 --]]

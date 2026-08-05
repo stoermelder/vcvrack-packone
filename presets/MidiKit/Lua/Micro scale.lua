@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Retunes notes to a micro scale (Scala-style), expressing the residual tuning as per-channel pitch bend
 --]]

@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Snaps incoming notes to the nearest note of a selectable scale, with the root set by CV input 1 (1V/oct); tracks held notes so releases still match
 --]]

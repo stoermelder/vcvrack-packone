@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Keyboard splitter: routes notes below a split point to channel A and the rest to channel B, with CC-switchable presets
 --]]

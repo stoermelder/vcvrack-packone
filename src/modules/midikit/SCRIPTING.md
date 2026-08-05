@@ -1,8 +1,8 @@
 # MIDI-KIT scripting reference
 
-MIDI-KIT scripts run in one of two embedded engines, chosen by the `@engine`
-header tag: **QuickJs** (a full JavaScript engine) or **Lua** (a sandboxed Lua 5.4 via
-minilua). Both engines expose the *same* API (`midi`, `midiOut`, `input`,
+MIDI-KIT scripts run in one of two embedded engines, chosen by a versioned
+`@engine` header tag: `QuickJs@v1` (a full JavaScript engine) or `minilua@v1`
+(a sandboxed Lua 5.4 via minilua). Both engines expose the *same* API (`midi`, `midiOut`, `input`,
 `trig`, `param`, `number`, `rack`) with 1-based indices for ports,
 channels, and params. Pick the engine per script; the module identifies it
 from the header, not the file extension.
@@ -43,7 +43,7 @@ QuickJs (JS-style `/** ... */`):
 ```javascript
 /**
  * @target stoermelder MIDI-KIT
- * @engine QuickJs
+ * @engine QuickJs@v1
  * @author yourname
  * @description One-line summary shown in the module log on load
  */
@@ -53,21 +53,24 @@ Lua (Lua-style `--[[ ... --]]`):
 ```lua
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author yourname
 @description One-line summary shown in the module log on load
 --]]
 ```
 
-`@engine` is mandatory and must exactly match `QuickJs` or `Lua` for the
-respective loader, or the script is rejected. `@author`/`@description` are
-optional but get echoed to the module's log on load. `@target` is
-conventionally present but not checked by the loader.
+`@engine` is mandatory and must exactly match `QuickJs@v1` or `minilua@v1` for
+the respective loader, or the script is rejected. The `@v1` suffix pins the
+script to a specific engine protocol revision, so a future breaking engine
+change can bump it (e.g. `@v2`) and old scripts are cleanly rejected instead
+of misbehaving. `@author`/`@description` are optional but get echoed to the
+module's log on load. `@target` is conventionally present but not checked by
+the loader.
 
 Engine selection is a simple substring match: the module asks each engine's
-`testScript()` whether the script is for it (QuickJs matches `@engine QuickJs`,
-Lua matches `@engine Lua`) and routes to the engine that says yes — the file
-extension is never used. Because the match is a plain `@engine <name>`
+`testScript()` whether the script is for it (QuickJs matches `@engine QuickJs@v1`,
+Lua matches `@engine minilua@v1`) and routes to the engine that says yes — the file
+extension is never used. Because the match is a plain `@engine <name>@vN`
 substring search, a script that mentions the tag only in a comment or a string
 (after the header block) can be misrouted; keep the `@engine` tag in the
 leading comment block.
@@ -498,5 +501,5 @@ rather than decoding this by hand).
 - Lua's sandboxed stdlib excludes `io`, `os`, `package`, `debug` — no file
   access, no OS calls, by design.
 - Both engines only see `@engine`-matching scripts; loading a QuickJs script
-  into what expects `@engine Lua` (or vice versa) fails with an explicit
+  into what expects `@engine minilua@v1` (or vice versa) fails with an explicit
   "not compatible" log message rather than silently misinterpreting it.

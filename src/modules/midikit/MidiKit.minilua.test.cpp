@@ -2,7 +2,7 @@
 
 
 static const char* LUA_EMPTY = R"(--[[
-@engine Lua
+@engine minilua@v1
 --]]
 )";
 
@@ -19,7 +19,7 @@ TEST_CASE("Lua-tagged script loads and creates Lua state", "[MidiKit][Lua]") {
 
 
 static const char* LUA_INPUT_NAME = R"(--[[
-@engine Lua
+@engine minilua@v1
 --]]
 input.getName = function(i) return 'CV-' .. i end
 )";
@@ -38,7 +38,7 @@ TEST_CASE("Script can override input.getName", "[MidiKit][Lua]") {
 
 
 static const char* QUICKJS_HEADER = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 )";
 
@@ -54,7 +54,7 @@ TEST_CASE("QuickJs-tagged script is rejected by Lua engine", "[MidiKit][Lua]") {
 
 
 static const char* LUA_BAD_SYNTAX = R"(--[[
-@engine Lua
+@engine minilua@v1
 --]]
 local x = ?
 )";
@@ -79,7 +79,7 @@ TEST_CASE("Syntax error is handled gracefully", "[MidiKit][Lua]") {
 // "script:7:".
 
 static const char* LUA_BAD_ON_LINE_7 = R"(--[[
-@engine Lua
+@engine minilua@v1
 @description test
 --]]
 local a = 1
@@ -106,7 +106,7 @@ TEST_CASE("Load error reports a clean chunk name and line", "[MidiKit][Lua]") {
 // Runtime errors inside onMidiMessage carry a position too, and go through the
 // same chunk name.
 static const char* LUA_RUNTIME_ERROR = R"(--[[
-@engine Lua
+@engine minilua@v1
 @description test
 --]]
 rack.onMidiMessage = function(port, msg)
@@ -153,7 +153,7 @@ TEST_CASE("Successful load reports no error position", "[MidiKit][Lua]") {
 
 
 static const char* LUA_ON_UNLOAD = R"(--[[
-@engine Lua
+@engine minilua@v1
 --]]
 rack.onMidiMessage = function(midiPort, msg) end
 rack.onUnload = function()
@@ -191,7 +191,7 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua
 // because reachable objects are never collected (pinned by the retain test).
 
 static const char* LUA_GC_SCRATCH = R"(--[[
-@engine Lua
+@engine minilua@v1
 @description test
 --]]
 rack.onMidiMessage = function(midiPort, msg)
@@ -254,7 +254,7 @@ TEST_CASE("Lua garbage-generating callbacks do not grow RAM usage", "[MidiKit][L
 // growth. Without this the no-growth test could pass vacuously if
 // getMemoryUsage stopped reflecting allocations at all.
 static const char* LUA_GC_RETAIN = R"(--[[
-@engine Lua
+@engine minilua@v1
 @description test
 --]]
 leaked = {}
