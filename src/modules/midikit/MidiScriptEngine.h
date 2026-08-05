@@ -75,8 +75,6 @@ struct MidiScriptEngine {
 	dsp::RingBuffer<int, 4> tickInQueue;
 	dsp::RingBuffer<std::tuple<int, Message, uint64_t>, 128> midiOutQueue;
 
-	virtual ~MidiScriptEngine() { }
-
 	void setWorker(std::shared_ptr<ITaskWorker> w) {
 		taskWorker = std::move(w);
 	}
@@ -85,30 +83,25 @@ struct MidiScriptEngine {
 		return taskWorker->work(task, APP);
 	}
 
-	// True on the thread script code runs on. Script state (Lua state / QuickJS
-	// context) and worker-owned containers (contextMenus) are only safe there,
-	// so call sites assert this. SyncTaskWorker (tests) runs tasks inline, so
-	// every thread qualifies. NOT true for load/teardown: loadScript()/
-	// closeState() run inline on the UI thread, mutually exclusive with
-	// dispatch by construction, not thread identity.
+	// True on the thread script code runs on. All script execution happens there
+	// — dispatch, onSave, load/teardown — so the interpreter and contextMenus are
+	// only ever touched from it, and the call sites assert that. Always true
+	// under SyncTaskWorker (tests), which runs tasks inline.
 	bool onWorkerThread() const {
 		return taskWorker && taskWorker->isWorkerThread();
 	}
 
-	// Runs `task` (script code) on the worker thread, never the caller's
-	// (usually the UI thread), blocks until done, writes the result into `out`.
-	// Callable from the worker thread itself (SyncTaskWorker in tests runs
-	// inline, so the future is already ready).
+	// Runs `task` (script code) on the worker thread and blocks until done.
 	//
-	// Returns false, leaving `out` untouched, if the task never queued/ran.
-	// Callers MUST NOT treat that as an empty result: in captureConfig() it
-	// would erase the user's settings on save.
+	// Returns false, leaving `out` untouched, if the task never ran. Callers MUST
+	// NOT treat that as an empty result: in captureConfig() it would erase the
+	// user's settings on save.
 	//
-	// Bounded for liveness: ~MpmcTaskWorker drains pending tasks, destroying the
-	// promise unfulfilled (future ready with broken-promise, hence the catch);
-	// the timeout only covers a wedged-but-alive worker. The shared_ptr keeps
-	// the promise alive for a worker still running past the timeout.
-	bool runSyncString(std::function<std::string()> task, std::string& out) {
+	// The wait is bounded for liveness, not latency: ~MpmcTaskWorker discards
+	// pending tasks, which breaks the promise (hence the catch), so the timeout
+	// only covers a wedged-but-alive worker. The shared_ptr keeps the promise
+	// alive for a worker still running past it.
+	bool runSync(std::function<std::string()> task, std::string& out) {
 		auto promise = std::make_shared<std::promise<std::string>>();
 		std::future<std::string> future = promise->get_future();
 
@@ -117,9 +110,8 @@ struct MidiScriptEngine {
 		});
 		if (!queued) return false;
 
-		// Function-local: passing a static constexpr member to wait_for() (which
-		// takes its duration by reference) would odr-use it, needing an
-		// out-of-line definition a header-only class can't provide.
+		// Function-local: wait_for() takes its duration by reference, so a static
+		// constexpr member would be odr-used and need an out-of-line definition.
 		const std::chrono::milliseconds timeout{500};
 
 		if (future.wait_for(timeout) != std::future_status::ready) return false;
@@ -132,18 +124,58 @@ struct MidiScriptEngine {
 		return true;
 	}
 
-	// persistedConfigJson, if non-empty, is parsed and passed to rack.onLoad()
-	// to restore config; otherwise onLoad() gets no argument (script defaults).
-	virtual void loadScript(const char* script, const std::string& persistedConfigJson = "") = 0;
-
 	// True if this engine should process `script`: a simple "@engine <name>"
 	// substring match, so the module needs no header parser of its own.
 	virtual bool testScript(const std::string& script) = 0;
 
-	// Tears down script state, running rack.onUnload() first (e.g. all-notes-
-	// off). onUnload()'s return value is ignored — config is captureConfig()'s
-	// job. Always returns "".
-	virtual std::string closeState() = 0;
+
+	// persistedConfigJson, if non-empty, is parsed and passed to rack.onLoad()
+	// to restore config; otherwise onLoad() gets no argument (script defaults).
+	//
+	// Asynchronous, with no completion signal by design: the engine is NOT loaded
+	// when this returns, and load messages/parse errors reach the user via
+	// handler->writeLog() from the worker. Callers must not read engine state
+	// expecting the new script — the dispatch paths no-op until the load lands.
+	// The worker queue is FIFO, so successive calls (a script switch tearing one
+	// engine down and loading another) still run in call order.
+	//
+	// `script` is copied, so the caller's buffer need not outlive this call.
+	void loadScript(const char* script, const std::string& persistedConfigJson = "") {
+		std::string s = script ? script : "";
+		runAsync([this, s, persistedConfigJson]() {
+			loadScriptOnWorker(s.c_str(), persistedConfigJson);
+		});
+	}
+
+	// The load itself, always on the worker thread. Tears down any previous
+	// script (via closeStateOnWorker()) before loading the new one; callers
+	// already on the worker invoke this directly rather than loadScript().
+	virtual void loadScriptOnWorker(const char* script, const std::string& persistedConfigJson) = 0;
+
+	// Tears down script state, running rack.onUnload() first (e.g. all-notes-off).
+	// onUnload()'s return value is ignored — config is captureConfig()'s job.
+	// Always returns "".
+	//
+	// Blocks, unlike loadScript(): the caller (MidiKitModule's destructor) is
+	// about to destroy the handler and these engines. UI thread only —
+	// worker-side code calls closeStateOnWorker() directly.
+	//
+	// A failed dispatch is deliberately ignored rather than retried inline: the
+	// worker may be wedged inside the interpreter, and freeing it here would put
+	// two threads in it at once. Leaking it is the lesser evil.
+	std::string closeState() {
+		std::string ignored;
+		runSync([this]() -> std::string {
+			closeStateOnWorker();
+			return "";
+		}, ignored);
+		return "";
+	}
+
+	// The teardown itself, always on the worker thread. Implementations free
+	// their interpreter here; callers already on the worker (loadScriptOnWorker,
+	// including its error paths) invoke this directly rather than closeState().
+	virtual void closeStateOnWorker() = 0;
 
 	// Runs rack.onSave() and writes its return value (the config to persist) as
 	// JSON into `out` without disturbing script state. onSave() is expected
@@ -152,17 +184,12 @@ struct MidiScriptEngine {
 	// save must have no audible effect).
 	//
 	// Returns false, leaving `out` untouched, only when the config couldn't be
-	// determined — no script loaded, or worker dispatch failed (see
-	// runSyncString()). Callers keep their previous value then; overwriting it
-	// with "" would erase the user's settings.
+	// determined (no script, or dispatch failed). Callers keep their previous
+	// value then; overwriting it with "" would erase the user's settings. A
+	// script without onSave() is NOT a failure — it returns true with empty
+	// `out`, so the caller clears its stored config.
 	//
-	// No onSave() is NOT a failure: a definite "nothing to persist", so it
-	// returns true with empty `out` (answered from the cached hook ref without
-	// entering the engine) and the caller clears its stored config.
-	//
-	// May be called from any thread (toJson() runs on the UI thread):
-	// implementations must dispatch the script call onto the worker via
-	// runSyncString(), never inline on the calling thread.
+	// Callable from any thread; implementations dispatch via runSync().
 	virtual bool captureConfig(std::string& out) = 0;
 
 	// Main interface for message processing

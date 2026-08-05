@@ -2105,8 +2105,8 @@ TEST_CASE("onUnload's return value is ignored on real teardown, in both engines"
 		m->loadScript(script);
 		drainLog(m);
 
-		// clearScript() tears the script down for real (onRemove()'s
-		// onUnload() path), which used to also be where config was captured.
+		// clearScript() tears the script down for real (the onUnload() path),
+		// which used to also be where config was captured.
 		m->clearScript();
 		std::string log = drainLog(m);
 		REQUIRE(log.find("onUnload ran") != std::string::npos);

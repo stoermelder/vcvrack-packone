@@ -278,6 +278,23 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		onReset();
 	}
 
+	// The single teardown path — not onRemove(), which only fires for modules
+	// Rack removes from a rack; tests and the perf harness plain-delete theirs.
+	// Runs in the destructor body, so `this` is still a complete module and the
+	// handler callbacks a script's onUnload() makes are valid.
+	//
+	// Closes BOTH engines, not just activeEngine: loadScript() is async, and
+	// clearScript() leaves activeEngine null while the engine it cleared may
+	// still have a task queued. closeState() blocks until its own task has run,
+	// and the queue is FIFO, so that drains anything this engine queued earlier.
+	// Skipping the inactive one lets a pending task run against a destroyed
+	// member, calling a pure virtual on a half-destroyed object.
+	~MidiKitModule() {
+		activeEngine = nullptr;
+		seLua.closeState();
+		seQuickJs.closeState();
+	}
+
 	void onReset() override {
 		midiInput.reset();
 		midiOutput.reset();
@@ -301,18 +318,6 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		sampleRate = e.sampleRate;
-	}
-
-	void onRemove(const RemoveEvent& e) override {
-		// Runs the active script's onUnload() (all-notes-off etc.) while this
-		// module — the engines' handler — is still fully alive. onUnload() calls
-		// back into the module via handler->writeLog()/input.*/trig.*/param.*, so
-		// it must run before this object (and its members) start tearing down.
-		// Calling closeState() later, from each engine's own destructor, would
-		// route those callbacks through a dangling handler — undefined behaviour.
-		if (activeEngine) {
-			activeEngine->closeState();
-		}
 	}
 
 	void processBypass(const ProcessArgs& args) override {
@@ -384,18 +389,14 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
 		json_object_set_new(rootJ, "script", json_string(script.c_str()));
 
-		// Ask the script for its current config on every serialization, so the
-		// latest context-menu setting is what gets written. This has to happen
-		// here rather than in onSave(): Rack's periodic autosave calls
-		// saveAutosave() directly without dispatching onSave() first, so an
-		// onSave()-only refresh would leave autosaves writing stale config.
-		// rack.onSave() is side-effect-free by contract, so running it on every
-		// save is harmless.
+		// Refresh here rather than in onSave(): Rack's periodic autosave calls
+		// saveAutosave() without dispatching onSave() first, so an onSave()-only
+		// refresh would leave autosaves writing stale config. rack.onSave() is
+		// side-effect-free by contract, so running it on every save is harmless.
 		//
-		// Only overwrite on success. False means the config could not be
-		// determined at all (dispatch dropped or timed out), which is NOT the
-		// same as the script having no config — keeping the last known value
-		// there writes a slightly stale config instead of erasing the user's
+		// Only overwrite on success: false means the config couldn't be
+		// determined (dispatch dropped or timed out), so keeping the last known
+		// value writes slightly stale config instead of erasing the user's
 		// settings. A script with no onSave() returns true with an empty string
 		// and correctly clears any stale value.
 		if (activeEngine) {

@@ -341,8 +341,12 @@ struct RecordingEngine : MidiScriptEngine {
 	MidiKitModule* module = nullptr;
 
 	// Not driven by a real handler — the callbacks it would exercise are never
-	// reached by these tests, so a null handler is fine.
-	RecordingEngine() : MidiScriptEngine(nullptr, 4, 1, 1, 4, 1, 1) {}
+	// reached by these tests, so a null handler is fine. A worker, on the other
+	// hand, is not optional: every engine needs one before any dispatch path
+	// (including closeState() from the module's destructor) can run.
+	RecordingEngine() : MidiScriptEngine(nullptr, 4, 1, 1, 4, 1, 1) {
+		setWorker(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+	}
 
 	void process() override {
 		processCalls++;
@@ -359,9 +363,9 @@ struct RecordingEngine : MidiScriptEngine {
 	}
 
 	// Unused by these tests — stubbed only to satisfy the interface.
-	void loadScript(const char* script, const std::string& persistedConfigJson) override { }
+	void loadScriptOnWorker(const char* script, const std::string& persistedConfigJson) override { }
 	bool testScript(const std::string& script) override { return false; }
-	std::string closeState() override { return ""; }
+	void closeStateOnWorker() override { }
 	bool captureConfig(std::string& out) override { return false; }
 	void processInMessage(int midiPort, midi::Message& msg) override { }
 	void processInTick(int trigPort) override { }

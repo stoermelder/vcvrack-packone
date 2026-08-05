@@ -85,13 +85,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	lua_State* L = nullptr;
 
-	// Usually a no-op (L already nullptr): the real closeState() runs from
-	// MidiKitModule's destructor while this object is fully alive — the
-	// handler callbacks are pure virtual, so calling them post-destruction
-	// would be UB.
-	~MidiScriptEngineLua() {
-		closeState();
-	}
 
 
 	// Engine selection: true when the script's header declares @engine minilua@v1.
@@ -101,8 +94,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return script.find("@engine minilua@v1") != std::string::npos;
 	}
 
-	void loadScript(const char* script, const std::string& persistedConfigJson = "") override {
-		closeState();
+
+	void loadScriptOnWorker(const char* script, const std::string& persistedConfigJson) override {
+		assert(onWorkerThread());
+		closeStateOnWorker();
 		resetTipsyOutput();
 
 		if (script[0] == '\0') {
@@ -178,7 +173,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			const char* err = lua_tostring(L, -1);
 			handler->writeLog(string::f("Error loading script: %s", err ? err : "(unknown)"), false);
 			lua_pop(L, 1);
-			closeState();
+			closeStateOnWorker();
 			return;
 		}
 
@@ -215,7 +210,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	// See MidiScriptEngine::captureConfig() for the contract. Lua state is only
-	// safe to touch from the worker thread, hence runSyncString().
+	// safe to touch from the worker thread, hence runSync().
 	bool captureConfig(std::string& out) override {
 		// Answered from the cached ref, without a worker round-trip: onSaveRef
 		// is a plain member, written only at load time and in closeState().
@@ -224,7 +219,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			return true;
 		}
 		if (!L) return false;
-		return runSyncString([this]() -> std::string {
+		return runSync([this]() -> std::string {
 			if (!L) return "";
 			int nRet = callOnSave();
 			std::string configJson;
@@ -236,8 +231,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}, out);
 	}
 
-	// Tears down the Lua state. See MidiScriptEngine::closeState().
-	std::string closeState() override {
+	// Tears down the Lua state. See MidiScriptEngine::closeStateOnWorker().
+	void closeStateOnWorker() override {
+		assert(onWorkerThread());
 		if (L) {
 			callOnUnload();
 			// onUnload()'s teardown messages (e.g. all-notes-off) must go out.
@@ -252,7 +248,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			lua_close(L);
 			L = nullptr;
 		}
-		return "";
 	}
 
 	// Runs the script's onLoad() hook, passing the persisted config (decoded
@@ -551,12 +546,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return callLuaTableFunc("param", "getValueFormat", i + 1);
 	}
 
-	// Releases the stored script callbacks. Called only from closeState(), which
-	// — like loadScript() — runs inline on the calling thread. Load/teardown
-	// never overlap dispatch (the module doesn't process while replacing a
-	// script), so this needs no lock even though other touchers are on the
-	// worker.
+	// Releases the stored script callbacks. Called only from
+	// closeStateOnWorker(), so like every other toucher of contextMenus this
+	// runs on the worker thread — hence no lock.
 	void clearContextMenus() {
+		assert(onWorkerThread());
 		if (L) {
 			for (auto& kv : contextMenus) {
 				luaL_unref(L, LUA_REGISTRYINDEX, kv.second.callbackRef);
@@ -1004,6 +998,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			lua_pop(L, 1); // ignore non-function onGetValue
 		}
 
+		assert(e->onWorkerThread());
 		spec.callbackId = e->nextContextMenuCallbackId++;
 		int ref = luaL_ref(L, LUA_REGISTRYINDEX); // pops the onChange function
 		ContextMenuEntry entry;

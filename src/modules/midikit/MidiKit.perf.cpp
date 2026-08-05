@@ -293,6 +293,9 @@ static bool setupEngine(const Script* script, EngineKind engine,
 	std::string path = enginePath(script, engine);
 	MidiKitModule* m = createModule(worker);
 	m->loadScript(readFile(repoRoot() + "/" + path));
+	// loadScript() is async: wait for the worker to finish the load before
+	// reading the log it writes from there.
+	barrier(worker);
 	std::string loadLog = drainLog(m);
 	if (loadLog.find("rror") != std::string::npos || loadLog.find("Script loaded") == std::string::npos) {
 		std::cout << "  !! " << script->name() << " / " << engineName(engine) << ": failed to load " << path << "\n"
@@ -360,6 +363,9 @@ static std::vector<double> measureContention(const Script* script, EngineKind en
 	for (int i = 0; i < n; i++) {
 		MidiKitModule* m = createModule(worker);
 		m->loadScript(readFile(repoRoot() + "/" + path));
+		// loadScript() is async: wait for the worker to finish the load before
+		// reading the log it writes from there.
+		barrier(worker);
 		std::string loadLog = drainLog(m);
 		if (loadLog.find("rror") != std::string::npos || loadLog.find("Script loaded") == std::string::npos) {
 			std::cout << "  !! failed to load " << path << "\n" << loadLog << std::endl;
@@ -533,6 +539,7 @@ TEST_CASE("MidiKit idle process() cost: no script vs QuickJs vs Lua", "[perf]") 
 	{
 		MidiKitModule* m = createModule(worker);
 		m->loadScript(readFile(repoRoot() + "/" + enginePath(&passThroughScript, EngineKind::QuickJs)));
+		barrier(worker); // loadScript() is async
 		std::string loadLog = drainLog(m);
 		std::cout << "  QuickJs load log: " << loadLog << std::endl;
 		double ms = timeIdleProcess(m, N);
@@ -545,6 +552,7 @@ TEST_CASE("MidiKit idle process() cost: no script vs QuickJs vs Lua", "[perf]") 
 	{
 		MidiKitModule* m = createModule(worker);
 		m->loadScript(readFile(repoRoot() + "/" + enginePath(&passThroughScript, EngineKind::Lua)));
+		barrier(worker); // loadScript() is async
 		std::string loadLog = drainLog(m);
 		std::cout << "  Lua load log: " << loadLog << std::endl;
 		double ms = timeIdleProcess(m, N);
@@ -569,6 +577,7 @@ TEST_CASE("MidiKit idle process() cost: trigger-output loop in isolation", "[per
 
 	MidiKitModule* m = createModule(worker);
 	m->loadScript(readFile(repoRoot() + "/" + enginePath(&passThroughScript, EngineKind::QuickJs)));
+	barrier(worker); // loadScript() is async
 	drainLog(m);
 
 	// Directly time just the loop body process() runs unconditionally every
@@ -596,6 +605,7 @@ TEST_CASE("MidiKit idle UI polling cost: getDisplayValueString/getName with scri
 	auto worker = std::make_shared<StoermelderPackOne::MpmcTaskWorker>("MidiKit idle-perf worker");
 	MidiKitModule* m = createModule(worker);
 	m->loadScript(readFile(repoRoot() + "/" + enginePath(&passThroughScript, EngineKind::QuickJs)));
+	barrier(worker); // loadScript() is async
 	drainLog(m);
 
 	// Enable input 0 / param 0 the way a script does via input.enable()/param.enable()

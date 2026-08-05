@@ -83,13 +83,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	JSValue onUnloadFn = JS_UNDEFINED;
 	JSValue onSaveFn = JS_UNDEFINED;
 
-	// Usually a no-op (ctx already NULL): the real closeState() runs from
-	// MidiKitModule's destructor while this object is fully alive — the
-	// handler callbacks are pure virtual, so calling them post-destruction
-	// would be UB.
-	~MidiScriptEngineQuickJs() {
-		closeState();
-	}
 
 	std::string jsToStdString(JSValueConst v) {
 		const char* s = JS_ToCString(ctx, v);
@@ -119,8 +112,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return script.find("@engine QuickJs@v1") != std::string::npos;
 	}
 
-	void loadScript(const char* script, const std::string& persistedConfigJson = "") override {
-		closeState();
+
+	void loadScriptOnWorker(const char* script, const std::string& persistedConfigJson) override {
+		assert(onWorkerThread());
+		closeStateOnWorker();
 		resetTipsyOutput();
 
 		if (script[0] == '\0') {
@@ -195,7 +190,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			handler->writeLog("Error while loading script", false);
 			handler->writeLog(formatError(exc), false);
 			JS_FreeValue(ctx, exc);
-			closeState();
+			closeStateOnWorker();
 		}
 		else {
 			JS_FreeValue(ctx, r);
@@ -245,7 +240,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	// See MidiScriptEngine::captureConfig() for the contract. The QuickJS
 	// context is only safe to touch from the worker thread, hence
-	// runSyncString().
+	// runSync().
 	bool captureConfig(std::string& out) override {
 		// Answered from the cached ref, without a worker round-trip.
 		// JS_IsUndefined rather than JS_IsFunction — cacheCallableProp() only
@@ -255,7 +250,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return true;
 		}
 		if (!ctx) return false;
-		return runSyncString([this]() -> std::string {
+		return runSync([this]() -> std::string {
 			if (!ctx) return "";
 			JSValue ret = callOnSave();
 			std::string configJson;
@@ -271,8 +266,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}, out);
 	}
 
-	// Frees the QuickJS runtime/context. See MidiScriptEngine::closeState().
-	std::string closeState() override {
+	// Frees the QuickJS runtime/context. See
+	// MidiScriptEngine::closeStateOnWorker().
+	void closeStateOnWorker() override {
+		assert(onWorkerThread());
 		if (ctx != NULL) {
 			JSValue ret = callOnUnload();
 			JS_FreeValue(ctx, ret);
@@ -298,7 +295,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			ctx = NULL;
 			rt = NULL;
 		}
-		return "";
 	}
 
 	// Runs the script's onLoad() hook, passing the parsed persisted config as
@@ -525,12 +521,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return callGlobalStringFn("param", "getValueFormat", i);
 	}
 
-	// Frees the stored script callbacks. Called only from closeState(), which —
-	// like loadScript() — runs inline on the calling thread. Load/teardown
-	// never overlap dispatch (the module doesn't process while replacing a
-	// script), so this needs no lock even though other touchers are on the
-	// worker.
+	// Frees the stored script callbacks. Called only from closeStateOnWorker(),
+	// so like every other toucher of contextMenus this runs on the worker
+	// thread — hence no lock.
 	void clearContextMenus() {
+		assert(onWorkerThread());
 		if (ctx) {
 			for (auto& kv : contextMenus) {
 				JS_FreeValue(ctx, kv.second.callbackFn);
@@ -939,6 +934,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			onGetValueV = JS_UNDEFINED;
 		}
 
+		assert(e->onWorkerThread());
 		spec.callbackId = e->nextContextMenuCallbackId++;
 		ContextMenuEntry entry;
 		entry.spec = spec;
