@@ -117,6 +117,10 @@ struct MpmcTaskWorker : ITaskWorker {
 		return ok;
 	}
 
+	bool isWorkerThread() const override {
+		return worker && std::this_thread::get_id() == worker->get_id();
+	}
+
 	void drain() {
 		WorkItem item;
 		while (workQueue.try_pop(item)) { }
