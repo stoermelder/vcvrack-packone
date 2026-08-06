@@ -12,6 +12,12 @@ endif
 TEST_SOURCES += $(wildcard src/**/*.test.cpp src/**/**/*.test.cpp)
 TEST_ADD_SOURCES := $(CURDIR)/src/test/catch_amalgamated.cpp
 
+# Every project header. Test/perf binaries #include module sources and utility
+# headers directly, so without these as prerequisites a header edit leaves the
+# binary stale and `make testrun`/`make perfrun` silently re-runs old code.
+# $(TARGET) is a prerequisite for the same reason: the binaries link it in.
+TEST_HEADERS := $(wildcard src/*.hpp src/*.h src/**/*.hpp src/**/*.h src/**/**/*.hpp src/**/**/*.h)
+
 # Build each test source into its own executable under build/test/ using basenames
 TEST_NAMES := $(patsubst %.cpp,%,$(notdir $(TEST_SOURCES)))
 TEST_BINARIES := $(patsubst %,build/test/%,$(TEST_NAMES))
@@ -20,7 +26,7 @@ TEST_BINARIES := $(patsubst %,build/test/%,$(TEST_NAMES))
 VPATH := $(sort $(dir $(TEST_SOURCES)))
 
 # Pattern rule to build an individual test executable
-build/test/%: %.cpp $(CURDIR)/src/test/test_context.hpp
+build/test/%: %.cpp $(TEST_HEADERS) $(TARGET)
 	@mkdir -p $(dir $@)
 	@echo "Building $@..."
 	@$(CXX) -std=c++14 \
