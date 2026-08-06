@@ -15,7 +15,7 @@ PERF_BINARIES := $(patsubst %,build/test/%,$(PERF_NAMES))
 # Static pattern rule: explicit target list, so it wins over the generic
 # `build/test/%` rule for exactly these targets. The perf sources live under
 # src/modules/midikit/.
-$(PERF_BINARIES): build/test/%: src/modules/midikit/%.cpp $(CURDIR)/src/test/test_context.hpp
+$(PERF_BINARIES): build/test/%: src/modules/midikit/%.cpp $(TEST_HEADERS) $(TARGET)
 	@mkdir -p $(dir $@)
 	@echo "Building $@..."
 	@$(CXX) -std=c++14 \
