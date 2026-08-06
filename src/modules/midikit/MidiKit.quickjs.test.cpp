@@ -199,9 +199,9 @@ TEST_CASE("onMidiMessage dispatch round-trips a CC message through midi.*/midiOu
 	m->seQuickJs.processInMessage(0, msg);
 	m->seQuickJs.process();
 
-	REQUIRE_FALSE(m->seQuickJs.midiOutQueue.empty());
-	auto t = m->seQuickJs.midiOutQueue.shift();
-	midi::Message& out = std::get<1>(t);
+	int port, ticks;
+	midi::Message out;
+	REQUIRE(processOutMessage(m, port, out, ticks));
 	REQUIRE(out.getStatus() == 0xb);
 	REQUIRE(out.getChannel() == 1);
 	REQUIRE(out.getNote() == 20);
@@ -234,11 +234,12 @@ TEST_CASE("midi.createNRPN/setNRPN queue all four CC messages in order", "[MidiK
 	m->seQuickJs.processInMessage(0, msg);
 	m->seQuickJs.process();
 
-	REQUIRE(m->seQuickJs.midiOutQueue.size() == 4);
+	REQUIRE(m->midiOutQueue.size() == 4);
 	int expectedNote[4] = {99, 98, 6, 38};
 	for (int i = 0; i < 4; i++) {
-		auto t = m->seQuickJs.midiOutQueue.shift();
-		midi::Message& out = std::get<1>(t);
+		int port, ticks;
+		midi::Message out;
+		REQUIRE(processOutMessage(m, port, out, ticks));
 		REQUIRE(out.getStatus() == 0xb);
 		REQUIRE(out.getNote() == expectedNote[i]);
 	}

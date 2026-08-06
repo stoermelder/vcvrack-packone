@@ -137,7 +137,7 @@ static std::vector<NoteEvent> feedTick(MidiKitModule* m) {
 	std::vector<NoteEvent> events;
 	int port, ticks;
 	midi::Message out;
-	while (m->activeEngine->processOutMessage(port, out, ticks)) {
+	while (processOutMessage(m, port, out, ticks)) {
 		events.push_back({out.getStatus(), out.getChannel(), out.getNote(), out.getValue()});
 	}
 	return events;
@@ -174,25 +174,27 @@ namespace Catch {
 	};
 }
 
-// Drains an engine's out-queue into OutEvents. Also used after loadScript("")
-// to read the messages onUnload() queued into the pre-reload engine.
-static std::vector<OutEvent> drainOut(MidiScriptEngine* engine) {
+// Drains the module's out-queue into OutEvents. Also used after loadScript("")
+// to read the messages onUnload() queued while switching or clearing scripts
+// — the queue is module-owned, so it holds those regardless of which engine
+// produced them or whether activeEngine still points at it.
+static std::vector<OutEvent> drainOut(MidiKitModule* m) {
 	std::vector<OutEvent> events;
 	int port, ticks;
 	midi::Message out;
-	while (engine->processOutMessage(port, out, ticks)) {
+	while (processOutMessage(m, port, out, ticks)) {
 		events.push_back({out.getStatus(), out.getChannel(), out.getNote(), out.getValue(), ticks});
 	}
 	return events;
 }
 
-// feed() plus a drain of the engine's out-queue. The behavioural tests need
+// feed() plus a drain of the module's out-queue. The behavioural tests need
 // the actual outgoing messages (and their tick scheduling), not just "ran
 // without erroring".
 static std::vector<OutEvent> feedCollect(MidiKitModule* m, midi::Message msg) {
 	m->activeEngine->processInMessage(0, msg);
 	m->activeEngine->process();
-	return drainOut(m->activeEngine);
+	return drainOut(m);
 }
 
 
@@ -297,7 +299,7 @@ static void checkPreset(const PresetInfo& p, const char* engine) {
 	if (p.midiDriven) {
 		int outPort = 0, outTicks = 0;
 		midi::Message outMsg;
-		REQUIRE(m->activeEngine->processOutMessage(outPort, outMsg, outTicks));
+		REQUIRE(processOutMessage(m, outPort, outMsg, outTicks));
 	}
 
 	Test::destroyModule(m);
@@ -577,16 +579,15 @@ TEST_CASE("'Arpeggiator.js/.lua' releases the sounding note on unload", "[MidiKi
 	REQUIRE(soundingNote != 0);
 	drainLog(m);
 
-	// loadScript("") runs onUnload() synchronously on the active engine and
-	// queues its output there, so drain the engine that was active *before*
-	// the reload rather than m->activeEngine.
-	MidiScriptEngine* engineBeforeUnload = m->activeEngine;
+	// loadScript("") runs onUnload() synchronously and queues its output on
+	// the module's out-queue, which survives the reload regardless of which
+	// engine produced it or that activeEngine now points elsewhere.
 	m->loadScript("");
 
 	int port, ticks;
 	midi::Message out;
 	bool sawMatchingNoteOff = false;
-	while (engineBeforeUnload->processOutMessage(port, out, ticks)) {
+	while (processOutMessage(m, port, out, ticks)) {
 		if (out.getStatus() == 0x8 && out.getNote() == soundingNote) sawMatchingNoteOff = true;
 	}
 	REQUIRE(sawMatchingNoteOff);
@@ -867,12 +868,11 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' releases the sounding note on un
 	feedTick(m);
 	drainLog(m);
 
-	MidiScriptEngine* engineBeforeUnload = m->activeEngine;
 	m->loadScript("");
 
 	// onUnload releases the still-sounding note on output channel 1
 	// (internal 0).
-	auto ev = drainOut(engineBeforeUnload);
+	auto ev = drainOut(m);
 	REQUIRE(ev == std::vector<OutEvent>{{0x8, 0, 64, 0, 0}});
 
 	Test::destroyModule(m);
@@ -1099,7 +1099,7 @@ static std::vector<FrameEvent> feedFrames(MidiKitModule* m, midi::Message msg) {
 	std::vector<FrameEvent> events;
 	int port, ticks;
 	midi::Message out;
-	while (m->activeEngine->processOutMessage(port, out, ticks)) {
+	while (processOutMessage(m, port, out, ticks)) {
 		events.push_back({out.getStatus(), out.getChannel(), out.getNote(), out.getValue(), out.frame});
 	}
 	return events;
@@ -1289,12 +1289,11 @@ TEST_CASE("'Gravity well.js/.lua' releases the held bent note on unload", "[Midi
 	feedCollect(m, noteOn(1, 72, 40));
 	drainLog(m);
 
-	MidiScriptEngine* engineBeforeUnload = m->activeEngine;
 	m->loadScript("");
 
 	// onUnload releases on the script channel the note was played on (channel
 	// 2 = internal 1).
-	auto ev = drainOut(engineBeforeUnload);
+	auto ev = drainOut(m);
 	REQUIRE(ev == std::vector<OutEvent>{{0x8, 1, 64, 0, 0}});
 
 	Test::destroyModule(m);
@@ -1361,14 +1360,13 @@ TEST_CASE("'Chord harmonizer.js/.lua' releases all sounding voices on unload", "
 	MidiKitModule* m = loadPreset(path);
 	feedCollect(m, noteOn(1, 60, 100));   // 60, 64, 67 all held
 
-	MidiScriptEngine* engineBeforeUnload = m->activeEngine;
 	m->loadScript("");
 
 	// refCount 60/64/67 all > 0 -> released ascending. The script's onUnload
 	// hard-codes the release to MIDI channel 1 (internal channel 0) because
 	// refCount isn't channel-indexed - so this is not the 1-based channel the
 	// Note-On went out on, but the fixed first channel.
-	auto ev = drainOut(engineBeforeUnload);
+	auto ev = drainOut(m);
 	REQUIRE(ev == std::vector<OutEvent>{{0x8, 0, 60, 0, 0}, {0x8, 0, 64, 0, 0}, {0x8, 0, 67, 0, 0}});
 
 	Test::destroyModule(m);
@@ -1442,13 +1440,12 @@ TEST_CASE("'Scale quantiser.js/.lua' releases the substituted note on unload", "
 	MidiKitModule* m = loadPreset(path);
 	feedCollect(m, noteOn(1, 64, 100));   // played as 63, still held
 
-	MidiScriptEngine* engineBeforeUnload = m->activeEngine;
 	m->loadScript("");
 
 	// onUnload must release the *substituted* note (63), not the raw 64 -
 	// releasing 64 would leave a hanging voice. As with Chord harmonizer, the
 	// release goes out on the fixed MIDI channel 1 (internal channel 0).
-	auto ev = drainOut(engineBeforeUnload);
+	auto ev = drainOut(m);
 	REQUIRE(ev == std::vector<OutEvent>{{0x8, 0, 63, 0, 0}});
 
 	Test::destroyModule(m);
@@ -1660,10 +1657,9 @@ TEST_CASE("'Micro scale.js/.lua' sends no redundant bend for the tonic and relea
 	REQUIRE(ev == std::vector<OutEvent>{{0x9, 0, 60, 100, 0}});
 
 	// onUnload releases the still-held note.
-	MidiScriptEngine* engineBeforeUnload = m->activeEngine;
 	m->loadScript("");
 
-	auto unload = drainOut(engineBeforeUnload);
+	auto unload = drainOut(m);
 	REQUIRE(unload == std::vector<OutEvent>{{0x8, 0, 60, 0, 0}});
 
 	Test::destroyModule(m);
@@ -1976,12 +1972,11 @@ TEST_CASE("'Note length quantiser.js/.lua' releases the sounding note on unload"
 	MidiKitModule* m = loadPreset(path);
 	feedCollect(m, noteOn(1, 60, 100));   // scheduled Note-Off not yet due
 
-	MidiScriptEngine* engineBeforeUnload = m->activeEngine;
 	m->loadScript("");
 
 	// onUnload releases the still-sounding note on the fixed MIDI channel 1
 	// (internal channel 0), same best-effort choice as the other presets.
-	auto ev = drainOut(engineBeforeUnload);
+	auto ev = drainOut(m);
 	REQUIRE(ev == std::vector<OutEvent>{{0x8, 0, 60, 0, 0}});
 
 	Test::destroyModule(m);

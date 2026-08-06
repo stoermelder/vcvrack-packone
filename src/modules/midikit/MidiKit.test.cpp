@@ -49,13 +49,14 @@ TEST_CASE("Preset JSON null-guards", "[MidiKit][JSON]") {
 TEST_CASE("process() does not crash with no script", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
-	// With no engine loaded, process() returns early (the `!activeEngine`
-	// guard) — it must not crash, and must not touch any counters.
+	// With no engine loaded, the dispatch path (processInMessage/processInTick/
+	// activeEngine->process()) is skipped, but the module's own out-queue drain
+	// and sample counting are unconditional — it must simply not crash.
 	for (int i = 0; i < 20; i++) {
 		REQUIRE_NOTHROW(m->process(Test::makeProcessArgs(i + 1)));
 	}
 
-	REQUIRE(m->sample == 0);
+	REQUIRE(m->sample == 20);
 
 	Test::destroyModule(m);
 }
@@ -333,33 +334,30 @@ TEST_CASE("processFrame leaves not-yet-due messages queued", "[MidiKit]") {
 
 struct RecordingEngine : MidiScriptEngine {
 	int processCalls = 0;
-	// Messages to hand back from processOutMessage(), as (ticks) — one per
-	// processOutMessage() call until exhausted.
+	// Messages to emit via handler->sendMidi() on the next process() call, as
+	// (ticks) — one per pending entry, all drained in one call.
 	std::vector<int> pending;
 	// inputTriggerTick observed at the moment the engine emitted each message.
 	std::vector<uint64_t> tickAtEmit;
-	MidiKitModule* module = nullptr;
+	MidiKitModule* module;
 
-	// Not driven by a real handler — the callbacks it would exercise are never
-	// reached by these tests, so a null handler is fine. A worker, on the other
-	// hand, is not optional: every engine needs one before any dispatch path
-	// (including closeState() from the module's destructor) can run.
-	RecordingEngine() : MidiScriptEngine(nullptr, 4, 1, 1, 4, 1, 1) {
+	// Uses the real MidiKitModule as its handler rather than a test double, so
+	// sendMidi() reaches the same module out-queue process() drains — the queue
+	// is module-owned now, so a double would have to reimplement the thing
+	// under test. A worker is not optional: every engine needs one before any
+	// dispatch path (including closeState() from onRemove()) can run.
+	explicit RecordingEngine(MidiKitModule* module) : MidiScriptEngine(module, 4, 1, 1, 4, 1, 1), module(module) {
 		setWorker(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
 	}
 
 	void process() override {
 		processCalls++;
-	}
-
-	bool processOutMessage(int& midiPort, midi::Message& msg, int& ticks) override {
-		if (pending.empty()) return false;
-		midiPort = 0;
-		msg = makeCc();
-		ticks = pending.front();
-		pending.erase(pending.begin());
-		if (module) tickAtEmit.push_back(module->inputTriggerTick);
-		return true;
+		for (int ticks : pending) {
+			midi::Message msg = makeCc();
+			handler->sendMidi(0, &msg, 1, ticks);
+			tickAtEmit.push_back(module->inputTriggerTick);
+		}
+		pending.clear();
 	}
 
 	// Unused by these tests — stubbed only to satisfy the interface.
@@ -394,7 +392,7 @@ static void patchTrigger(MidiKitModule* m) {
 
 TEST_CASE("process() runs the engine only on divider ticks", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
-	RecordingEngine eng;
+	RecordingEngine eng(m);
 	m->activeEngine = &eng;
 
 	// processDivider is set to a division of 8. dsp::ClockDivider increments
@@ -418,8 +416,7 @@ TEST_CASE("process() runs the engine only on divider ticks", "[MidiKit]") {
 
 TEST_CASE("process() drains the engine out-queue on a divider tick", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
-	RecordingEngine eng;
-	eng.module = m;
+	RecordingEngine eng(m);
 	m->activeEngine = &eng;
 
 	// Three messages scheduled for tick 1; all must be pulled in a single
@@ -443,8 +440,7 @@ TEST_CASE("process() drains the engine out-queue on a divider tick", "[MidiKit]"
 
 TEST_CASE("process() consumes the tick before the engine schedules on it", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
-	RecordingEngine eng;
-	eng.module = m;
+	RecordingEngine eng(m);
 	m->activeEngine = &eng;
 	patchTrigger(m);
 
@@ -485,8 +481,7 @@ TEST_CASE("process() consumes the tick before the engine schedules on it", "[Mid
 
 TEST_CASE("process() handles triggers arriving between divider ticks", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
-	RecordingEngine eng;
-	eng.module = m;
+	RecordingEngine eng(m);
 	m->activeEngine = &eng;
 	patchTrigger(m);
 

@@ -75,7 +75,7 @@ static EngineResult run(const std::string& script, const midi::Message& in) {
 
 	int port, ticks;
 	midi::Message out;
-	while (m->activeEngine->processOutMessage(port, out, ticks)) {
+	while (processOutMessage(m, port, out, ticks)) {
 		r.sent.push_back(toSent(port, ticks, out));
 	}
 	r.log = drainLog(m);
@@ -1446,7 +1446,7 @@ TEST_CASE("trig.getTicks counts identical rising edges in both engines", "[MidiK
 
 		int port, ticks;
 		midi::Message out;
-		REQUIRE(m->activeEngine->processOutMessage(port, out, ticks));
+		REQUIRE(processOutMessage(m, port, out, ticks));
 		int result = out.getValue();
 		Test::destroyModule(m);
 		return result;
@@ -1584,7 +1584,7 @@ TEST_CASE("param.getValue reads identical value in both engines", "[MidiKit][Cro
 
 		int port, ticks;
 		midi::Message out;
-		REQUIRE(m->activeEngine->processOutMessage(port, out, ticks));
+		REQUIRE(processOutMessage(m, port, out, ticks));
 		int result = out.getValue();
 		Test::destroyModule(m);
 		return result;
@@ -1721,7 +1721,7 @@ TEST_CASE("midiOut.sendAfterMs schedules an identical future-frame message", "[M
 
 		int port, ticks;
 		midi::Message out;
-		REQUIRE(m->activeEngine->processOutMessage(port, out, ticks));
+		REQUIRE(processOutMessage(m, port, out, ticks));
 		int frame = out.frame;
 		Test::destroyModule(m);
 		return frame;
@@ -1898,7 +1898,7 @@ TEST_CASE("onLoad runs once and sends an identical message in both engines", "[M
 
 		int port, ticks;
 		midi::Message out;
-		REQUIRE(m->activeEngine->processOutMessage(port, out, ticks));
+		REQUIRE(processOutMessage(m, port, out, ticks));
 		auto sent = toSent(port, ticks, out);
 		Test::destroyModule(m);
 		return sent;
@@ -1988,18 +1988,16 @@ TEST_CASE("onUnload runs when replaced and sends an identical message in both en
 		m->loadScript(script);
 		drainLog(m);
 
-		// clearScript() reloads an empty script, which matches no engine tag —
-		// so activeEngine no longer points at the engine onUnload actually ran
-		// on by the time clearScript() returns. Capture it first.
-		MidiScriptEngine* engine = m->activeEngine;
 		m->clearScript();
 
 		std::string log = drainLog(m);
 		REQUIRE(log.find("onUnload ran") != std::string::npos);
 
+		// The out-queue is module-owned, so onUnload()'s message is still there
+		// regardless of which engine produced it or that activeEngine is now null.
 		int port, ticks;
 		midi::Message out;
-		REQUIRE(engine->processOutMessage(port, out, ticks));
+		REQUIRE(processOutMessage(m, port, out, ticks));
 		auto sent = toSent(port, ticks, out);
 		Test::destroyModule(m);
 		return sent;
@@ -2009,6 +2007,445 @@ TEST_CASE("onUnload runs when replaced and sends an identical message in both en
 	auto lua = checkOnUnload(LUA_ON_UNLOAD);
 	REQUIRE(js.port == lua.port);
 	REQUIRE(js.bytes == lua.bytes);
+}
+
+
+TEST_CASE("onRemove() sends onUnload's message to the device rather than leaving it queued", "[MidiKit][CrossEngine]") {
+	// Exercises onRemove() directly rather than through Test::destroyModule(),
+	// so the module survives the call and its state (not just the absence of a
+	// crash) can be asserted afterward: onUnload() ran and its message left the
+	// module's out-queue instead of sitting there to be freed with the module.
+	auto check = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		drainLog(m);
+		REQUIRE(m->activeEngine != nullptr);
+
+		Module::RemoveEvent eRemove;
+		m->onRemove(eRemove);
+
+		std::string log = drainLog(m);
+		REQUIRE(log.find("onUnload ran") != std::string::npos);
+
+		int port, ticks;
+		midi::Message out;
+		REQUIRE_FALSE(processOutMessage(m, port, out, ticks));
+
+		delete m;
+	};
+	check(JS_ON_UNLOAD);
+	check(LUA_ON_UNLOAD);
+}
+
+
+TEST_CASE("onRemove() twice does not crash or re-run onUnload", "[MidiKit][CrossEngine]") {
+	// The null-then-check in onRemove() (capture activeEngine, null it, only
+	// then closeState()) makes a second call a no-op: activeEngine is already
+	// null, so there is no engine left to close. Undo/redo can plausibly
+	// produce a repeat RemoveEvent dispatch, so this must be safe.
+	auto check = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		drainLog(m);
+
+		Module::RemoveEvent eRemove;
+		m->onRemove(eRemove);
+		drainLog(m);
+
+		m->onRemove(eRemove);
+		std::string log = drainLog(m);
+		REQUIRE(log.find("onUnload ran") == std::string::npos);
+
+		delete m;
+	};
+	check(JS_ON_UNLOAD);
+	check(LUA_ON_UNLOAD);
+}
+
+
+TEST_CASE("switching engines keeps the outgoing engine's onUnload output", "[MidiKit][CrossEngine]") {
+	// Covers the queue consolidation: the outgoing engine's onUnload() message
+	// used to be queued on THAT engine's own out-queue, which nothing drained
+	// once activeEngine moved on. With a module-owned queue nothing is keyed on
+	// which engine is active, so the message is still observable here.
+	//
+	// This does NOT cover the switch being a blocking closeState() rather than
+	// an async loadScript("") — under SyncTaskWorker both run onUnload() inline,
+	// so the message lands either way. See the async-worker test below.
+	MidiKitModule* m = createModule();
+	m->loadScript(JS_ON_UNLOAD);
+	drainLog(m);
+	REQUIRE(m->activeEngine == &m->seQuickJs);
+
+	m->loadScript(LUA_ON_UNLOAD);
+	REQUIRE(m->activeEngine == &m->seLua);
+
+	std::string log = drainLog(m);
+	REQUIRE(log.find("onUnload ran") != std::string::npos);   // the outgoing (JS) engine's onUnload
+
+	int port, ticks;
+	midi::Message out;
+	REQUIRE(processOutMessage(m, port, out, ticks));
+	REQUIRE(out.getStatus() == 0x8);   // note off
+	REQUIRE(out.getNote() == 60);
+
+	Test::destroyModule(m);
+}
+
+
+// ── async-worker teardown ───────────────────────────────────────────────────
+//
+// These use a real background worker rather than SyncTaskWorker. Under
+// SyncTaskWorker every dispatch runs inline, so a fire-and-forget loadScript()
+// and a blocking closeState() are indistinguishable — a test written against it
+// passes whether or not teardown actually waits. The whole point of the switch
+// and teardown paths using closeState() is that they DO wait, which only a real
+// worker can show.
+
+TEST_CASE("Switching engines closes the outgoing engine before returning", "[MidiKit][CrossEngine][Async]") {
+	// loadScript() used to close the outgoing engine with an async
+	// loadScript(""), so the switch returned while onUnload() had not run yet.
+	// It is now a blocking closeState(): once loadScript() returns, the outgoing
+	// engine's onUnload() has finished and its output is already queued.
+	//
+	// No barrier() before the assertions — that is the point. If the outgoing
+	// close were async again, the log and the queue would both still be empty
+	// here and this fails.
+	auto worker = asyncWorker();
+	MidiKitModule* m = createModule(worker);
+
+	m->loadScript(JS_ON_UNLOAD);
+	barrier(worker);                 // the LOAD is still async; wait for it
+	drainLog(m);
+	REQUIRE(m->activeEngine == &m->seQuickJs);
+
+	m->loadScript(LUA_ON_UNLOAD);    // switch: closes QuickJs synchronously
+
+	std::string log = drainLog(m);
+	REQUIRE(log.find("onUnload ran") != std::string::npos);
+
+	int port, ticks;
+	midi::Message out;
+	REQUIRE(processOutMessage(m, port, out, ticks));
+	REQUIRE(out.getStatus() == 0x8);   // note off
+	REQUIRE(out.getNote() == 60);
+
+	barrier(worker);                 // let the pending Lua load finish
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("onRemove() waits for onUnload before draining", "[MidiKit][CrossEngine][Async]") {
+	// Teardown's ordering contract: closeState() blocks, so by the time
+	// flushOutput() runs the worker has finished producing. If the close were
+	// async, the drain would race it and run on an empty queue, leaving
+	// onUnload()'s message stranded — a hung note on module removal.
+	auto check = [](const std::string& script) {
+		auto worker = asyncWorker();
+		MidiKitModule* m = createModule(worker);
+		m->loadScript(script);
+		barrier(worker);
+		drainLog(m);
+		REQUIRE(m->activeEngine != nullptr);
+
+		Module::RemoveEvent eRemove;
+		m->onRemove(eRemove);        // no barrier: onRemove() must do the waiting
+
+		std::string log = drainLog(m);
+		REQUIRE(log.find("onUnload ran") != std::string::npos);
+
+		// Drained by flushOutput(), not left queued.
+		int port, ticks;
+		midi::Message out;
+		REQUIRE_FALSE(processOutMessage(m, port, out, ticks));
+
+		delete m;
+	};
+	check(JS_ON_UNLOAD);
+	check(LUA_ON_UNLOAD);
+}
+
+
+TEST_CASE("onReset() closes the active engine synchronously", "[MidiKit][CrossEngine][Async]") {
+	// onReset() switched from two async loadScript("") calls to a single
+	// blocking closeState() on the active engine. Same ordering contract as the
+	// switch path: once onReset() returns, onUnload() has run and its output is
+	// queued rather than still in flight.
+	auto check = [](const std::string& script) {
+		auto worker = asyncWorker();
+		MidiKitModule* m = createModule(worker);
+		m->loadScript(script);
+		barrier(worker);
+		drainLog(m);
+
+		m->onReset();                // no barrier
+
+		std::string log = drainLog(m);
+		REQUIRE(log.find("onUnload ran") != std::string::npos);
+		REQUIRE(m->activeEngine == nullptr);
+
+		int port, ticks;
+		midi::Message out;
+		REQUIRE(processOutMessage(m, port, out, ticks));
+		REQUIRE(out.getStatus() == 0x8);   // note off
+
+		Test::destroyModule(m);
+	};
+	check(JS_ON_UNLOAD);
+	check(LUA_ON_UNLOAD);
+}
+
+
+// ── process() drains the module queue ───────────────────────────────────────
+
+// Runs process() over one full divider period (division 8), so the drain block
+// inside `if (processDivider.process())` is reached exactly once.
+static void processOneDividerPeriod(MidiKitModule* m, int64_t startFrame = 0) {
+	for (int64_t f = 0; f < 8; f++) {
+		m->process(Test::makeProcessArgs(startFrame + f));
+	}
+}
+
+TEST_CASE("process() drains the out-queue after the script is cleared", "[MidiKit][CrossEngine]") {
+	// The drain in process() sits ABOVE the activeEngine null check, on purpose.
+	// clearScript() runs onUnload() (queuing its message) and leaves
+	// activeEngine null; if the drain were still gated on activeEngine, that
+	// message would sit in the queue forever — the script's all-notes-off never
+	// reaching the device. Asserting via process() rather than reading the queue
+	// directly is what makes this cover the hoist.
+	auto check = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		drainLog(m);
+
+		m->clearScript();
+		REQUIRE(m->activeEngine == nullptr);
+		REQUIRE_FALSE(m->midiOutQueue.empty());   // onUnload()'s message is queued
+
+		processOneDividerPeriod(m);
+
+		// process() moved it out of the module queue even with no active engine.
+		REQUIRE(m->midiOutQueue.empty());
+
+		Test::destroyModule(m);
+	};
+	check(JS_ON_UNLOAD);
+	check(LUA_ON_UNLOAD);
+}
+
+
+TEST_CASE("process() drains a tick-scheduled message into midiOutput", "[MidiKit]") {
+	// End-to-end for the drain: a message the engine queued with a non-zero tick
+	// must reach midiOutput's tick queue, not merely leave the module queue.
+	// midi::Output::sendMessage() no-ops without a subscribed device, so
+	// midiOutput's scheduling queues are the observable endpoint.
+	MidiKitModule* m = createModule();
+	midi::Message msg = noteOn(1, 60, 100);
+
+	REQUIRE(m->sendMidi(0, &msg, 1, 5));   // tick 5: lands in tickQueue
+	REQUIRE(m->midiOutput.tickQueue.size() == 0);
+
+	processOneDividerPeriod(m);
+
+	REQUIRE(m->midiOutQueue.empty());
+	REQUIRE(m->midiOutput.tickQueue.size() == 1);
+	REQUIRE(m->midiOutput.tickQueue.top().tick == 5);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("process() drains the queue in FIFO order across an engine switch", "[MidiKit][CrossEngine]") {
+	// The per-engine queues could never interleave; the shared one can. Messages
+	// queued by the outgoing engine must still precede those from the incoming
+	// engine — a switch must not reorder output. Distinguishable notes stand in
+	// for the two producers.
+	MidiKitModule* m = createModule();
+
+	midi::Message first = noteOn(1, 60, 100);
+	midi::Message second = noteOn(1, 61, 100);
+	midi::Message third = noteOn(1, 62, 100);
+	REQUIRE(m->sendMidi(0, &first, 1, 0));
+	REQUIRE(m->sendMidi(0, &second, 1, 0));
+	REQUIRE(m->sendMidi(0, &third, 1, 0));
+
+	int port, ticks;
+	midi::Message out;
+	REQUIRE(processOutMessage(m, port, out, ticks));
+	REQUIRE(out.getNote() == 60);
+	REQUIRE(processOutMessage(m, port, out, ticks));
+	REQUIRE(out.getNote() == 61);
+	REQUIRE(processOutMessage(m, port, out, ticks));
+	REQUIRE(out.getNote() == 62);
+	REQUIRE_FALSE(processOutMessage(m, port, out, ticks));
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("An NRPN group is queued whole and in order", "[MidiKit]") {
+	// The atomicity contract has two halves: dropped whole when short on room
+	// (below), and — here — queued as four consecutive messages in the order
+	// given, with no interleaving from a message queued after it.
+	MidiKitModule* m = createModule();
+
+	midi::Message group[4] = {noteOn(1, 60, 100), noteOn(1, 61, 100), noteOn(1, 62, 100), noteOn(1, 63, 100)};
+	midi::Message after = noteOn(1, 70, 100);
+	REQUIRE(m->sendMidi(0, group, 4, 0));
+	REQUIRE(m->sendMidi(0, &after, 1, 0));
+
+	int port, ticks;
+	midi::Message out;
+	for (int i = 0; i < 4; i++) {
+		REQUIRE(processOutMessage(m, port, out, ticks));
+		REQUIRE(out.getNote() == 60 + i);
+	}
+	REQUIRE(processOutMessage(m, port, out, ticks));
+	REQUIRE(out.getNote() == 70);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("onRemove() flushes teardown output immediately, bypassing scheduling", "[MidiKit]") {
+	// flushOutput() sets frame = -1 and calls midiOutput.sendMessage() directly
+	// rather than midiOutput.send(): the frame and tick queues are drained only
+	// by process(), which will never run again. A tick-scheduled message left to
+	// send() would land in tickQueue and never be emitted.
+	MidiKitModule* m = createModule();
+	midi::Message msg = noteOn(1, 60, 100);
+
+	REQUIRE(m->sendMidi(0, &msg, 1, 5));   // would be tick-scheduled via send()
+
+	Module::RemoveEvent eRemove;
+	m->onRemove(eRemove);
+
+	REQUIRE(m->midiOutQueue.empty());
+	// Sent immediately instead of being parked in a queue nothing will drain.
+	REQUIRE(m->midiOutput.tickQueue.size() == 0);
+	REQUIRE(m->midiOutput.frameQueue.size() == 0);
+
+	delete m;
+}
+
+
+TEST_CASE("MIDI output overflow drops without corrupting the queue", "[MidiKit]") {
+	// dsp::RingBuffer::push() has no overflow check: on a full buffer it
+	// overwrites unread entries and leaves size() > capacity, and
+	// empty()/full() go incoherent from there. sendMidi() adds the check the
+	// container lacks — this pins that the queue's invariants survive being
+	// pushed past capacity.
+	MidiKitModule* m = createModule();
+	midi::Message msg = noteOn(1, 60, 100);
+
+	size_t capacity = m->midiOutQueue.capacity();
+	for (size_t i = 0; i < capacity; i++) {
+		REQUIRE(m->sendMidi(0, &msg, 1, 0));
+	}
+	REQUIRE(m->midiOutQueue.full());
+
+	// One more push has no room: dropped, not overwritten.
+	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0));
+	REQUIRE(m->midiOutQueue.full());
+	REQUIRE(m->midiOutQueue.size() == capacity);
+	REQUIRE_FALSE(m->midiOutQueue.empty());
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("MIDI output overflow is reported once per episode, not once per drop", "[MidiKit]") {
+	MidiKitModule* m = createModule();
+	midi::Message msg = noteOn(1, 60, 100);
+
+	size_t capacity = m->midiOutQueue.capacity();
+	for (size_t i = 0; i < capacity; i++) {
+		REQUIRE(m->sendMidi(0, &msg, 1, 0));
+	}
+	// Several drops in the same episode — only one log line should result once
+	// process() next runs and consumes the rising edge of midiOutOverflow.
+	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0));
+	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0));
+	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0));
+
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+	for (int64_t f = 0; f < 8; f++) {
+		m->process(Test::makeProcessArgs(f));
+	}
+	auto entries = drainLogEntries(m);
+	size_t count = 0;
+	for (auto& e : entries) {
+		if (std::get<1>(e).find("dropped") != std::string::npos) count++;
+	}
+	REQUIRE(count == 1);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("MIDI output overflow is reported again after the queue recovers", "[MidiKit]") {
+	// The flag is edge-triggered via exchange(false), so reporting once per
+	// episode must not mean once per module lifetime: a later, separate
+	// saturation has to log again. Pins that process() CLEARS the flag rather
+	// than latching it.
+	MidiKitModule* m = createModule();
+	midi::Message msg = noteOn(1, 60, 100);
+
+	auto fillAndOverflow = [&]() {
+		while (m->midiOutQueue.capacity() > 0) {
+			REQUIRE(m->sendMidi(0, &msg, 1, 0));
+		}
+		REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0));
+	};
+	auto countDropLines = [&]() {
+		size_t count = 0;
+		for (auto& e : drainLogEntries(m)) {
+			if (std::get<1>(e).find("dropped") != std::string::npos) count++;
+		}
+		return count;
+	};
+
+	fillAndOverflow();
+	processOneDividerPeriod(m, 0);            // drains the queue, logs once
+	REQUIRE(countDropLines() == 1);
+	REQUIRE(m->midiOutQueue.empty());
+
+	// A quiet period with no drops must log nothing. This is what pins the
+	// CLEARING of the flag: a latched flag would keep reporting here.
+	processOneDividerPeriod(m, 8);
+	REQUIRE(countDropLines() == 0);
+
+	// Second, independent episode: reports again rather than staying silent
+	// after the first — the flag re-arms.
+	fillAndOverflow();
+	processOneDividerPeriod(m, 16);
+	REQUIRE(countDropLines() == 1);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("An NRPN group is dropped whole, never truncated, when free capacity is short", "[MidiKit]") {
+	// The all-or-nothing contract in sendMidi(): an NRPN is 4 messages sharing
+	// one parameter change, and a partial group is a malformed parameter
+	// change, worse than dropping it outright.
+	MidiKitModule* m = createModule();
+	midi::Message msg = noteOn(1, 60, 100);
+
+	// Leave exactly 3 free slots — one short of the 4-message group.
+	size_t capacity = m->midiOutQueue.capacity();
+	for (size_t i = 0; i < capacity - 3; i++) {
+		REQUIRE(m->sendMidi(0, &msg, 1, 0));
+	}
+	REQUIRE(m->midiOutQueue.capacity() == 3);
+
+	midi::Message group[4] = {msg, msg, msg, msg};
+	REQUIRE_FALSE(m->sendMidi(0, group, 4, 0));
+	// Rejected as a whole: the 3 free slots are still free, not partially
+	// consumed by the first 3 messages of the group.
+	REQUIRE(m->midiOutQueue.capacity() == 3);
+
+	Test::destroyModule(m);
 }
 
 
@@ -2325,7 +2762,7 @@ TEST_CASE("onTrigger fires on a trigger input tick and sends an identical messag
 
 		int port, ticks;
 		midi::Message out;
-		REQUIRE(m->activeEngine->processOutMessage(port, out, ticks));
+		REQUIRE(processOutMessage(m, port, out, ticks));
 		auto sent = toSent(port, ticks, out);
 		Test::destroyModule(m);
 		return sent;
@@ -2350,7 +2787,7 @@ TEST_CASE("Script without onTrigger silently ignores trigger ticks, in both engi
 		std::string log = drainLog(m);
 		int port, ticks;
 		midi::Message out;
-		bool sentAnything = m->activeEngine->processOutMessage(port, out, ticks);
+		bool sentAnything = processOutMessage(m, port, out, ticks);
 		Test::destroyModule(m);
 		return std::make_pair(log, sentAnything);
 	};

@@ -512,10 +512,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 	}
 
-	// Pushes every message sent during the callback that just ran into
-	// midiOutQueue, in send() order, not handle-creation order: a script may
-	// create several messages and send them in a different order, and the
-	// receiver must observe send() order.
+	// Sends every message emitted during the callback that just ran through the
+	// handler, in send() order, not handle-creation order: a script may create
+	// several messages and send them in a different order, and the receiver
+	// must observe send() order.
+	//
+	// Return values are ignored: a drop is expected under output saturation,
+	// and the module already reports it once per episode. The engine has no
+	// better response than to carry on.
 	void flushMsgStore() {
 		std::vector<size_t> order;
 		for (size_t i = 0; i < msgCount; i++) {
@@ -525,11 +529,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			return msgStore[a].sendOrder < msgStore[b].sendOrder;
 		});
 		for (size_t i : order) {
-			midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i].msg, msgStore[i].tick));
 			if (msgStore[i].isNrpn) {
-				midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 1].msg, msgStore[i].tick));
-				midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 2].msg, msgStore[i].tick));
-				midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 3].msg, msgStore[i].tick));
+				// NRPN is 4 consecutive entries in msgStore, emitted atomically.
+				const Message group[4] = {
+					msgStore[i].msg, msgStore[i + 1].msg,
+					msgStore[i + 2].msg, msgStore[i + 3].msg
+				};
+				handler->sendMidi(msgStore[i].midiPort, group, 4, msgStore[i].tick);
+			}
+			else {
+				handler->sendMidi(msgStore[i].midiPort, &msgStore[i].msg, 1, msgStore[i].tick);
 			}
 		}
 	}

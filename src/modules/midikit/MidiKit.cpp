@@ -169,6 +169,18 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	dsp::RingBuffer<int, 8> overlayQueue;
 	std::tuple<std::string, std::string, std::string> overlayMessage;
 
+	// MIDI output queue, owned by the module rather than either engine, so its
+	// contents outlive engine switches and clearScript() rather than being tied
+	// to whichever engine happened to be active when they were queued. Written
+	// by sendMidi() (worker thread), drained by process() (audio thread) and by
+	// onRemove() at teardown.
+	dsp::RingBuffer<std::tuple<int, MidiScript::Message, uint64_t>, 128> midiOutQueue;
+	// Set (worker thread) when sendMidi() drops a group for lack of room;
+	// cleared and reported once (audio thread) in process(). A saturated output
+	// must not flood the log through the same bottleneck that is already
+	// saturated.
+	std::atomic<bool> midiOutOverflow{false};
+
 	dsp::ClockDivider processDivider;
 	dsp::Timer rateLimiterTimer;
 
@@ -247,6 +259,21 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		outputs[OUTPUT_TRIG].setVoltage(voltage, ch);
 	}
 
+	// MidiScriptEngineHandler
+	bool sendMidi(int midiPort, const MidiScript::Message* msgs, size_t count, uint64_t tick) override {
+		// Capacity is checked for the whole group, so an NRPN is never
+		// half-emitted. dsp::RingBuffer::push() does not bounds-check: on a full
+		// buffer it overwrites unread entries and leaves size() > capacity.
+		if (midiOutQueue.capacity() < count) {
+			midiOutOverflow.store(true, std::memory_order_relaxed);
+			return false;
+		}
+		for (size_t i = 0; i < count; i++) {
+			midiOutQueue.push(std::make_tuple(midiPort, msgs[i], tick));
+		}
+		return true;
+	}
+
 	// Port/param counts injected into both engines at construction.
 	static constexpr int engineInputCount = 4;
 	static constexpr int engineInputTrigCount = 1;
@@ -278,21 +305,28 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		onReset();
 	}
 
-	// The single teardown path — not onRemove(), which only fires for modules
-	// Rack removes from a rack; tests and the perf harness plain-delete theirs.
-	// Runs in the destructor body, so `this` is still a complete module and the
-	// handler callbacks a script's onUnload() makes are valid.
+	// Closes the active engine and drains whatever its onUnload() queued. Rack
+	// dispatches this before the module leaves the engine and holds the engine
+	// mutex across it, so process() cannot run concurrently.
 	//
-	// Closes BOTH engines, not just activeEngine: loadScript() is async, and
-	// clearScript() leaves activeEngine null while the engine it cleared may
-	// still have a task queued. closeState() blocks until its own task has run,
-	// and the queue is FIFO, so that drains anything this engine queued earlier.
-	// Skipping the inactive one lets a pending task run against a destroyed
-	// member, calling a pure virtual on a half-destroyed object.
-	~MidiKitModule() {
-		activeEngine = nullptr;
-		seLua.closeState();
-		seQuickJs.closeState();
+	// closeState() blocks, so the worker has stopped producing before the drain
+	// — preserve that order, it is what makes the drain safe.
+	void onRemove(const RemoveEvent& e) override {
+		MidiScript::MidiScriptEngine* engine = activeEngine;
+		activeEngine = nullptr;   // stop process() dispatching
+		if (engine) engine->closeState();
+		flushOutput();            // drains the module queue; no engine needed
+	}
+
+	// Sends whatever is left in the module's out-queue straight to the device,
+	// ignoring frame/tick scheduling — teardown is the last chance to emit.
+	void flushOutput() {
+		while (!midiOutQueue.empty()) {
+			auto t = midiOutQueue.shift();
+			midi::Message msg = std::get<1>(t);
+			msg.frame = -1;
+			midiOutput.sendMessage(msg);
+		}
 	}
 
 	void onReset() override {
@@ -308,9 +342,15 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			outputTriggerActive[i] = true;
 			outputPulseGenerator[i].reset();
 		}
+		// Only the previously active engine can have real state — loadScript()
+		// maintains that invariant by only ever loading one engine at a time and
+		// closing the other on switch — so that is the only one that needs
+		// tearing down here. Blocking (closeState()) rather than fire-and-forget,
+		// same reasoning as loadScript(): once this returns, activeEngine is
+		// again the only engine that can have any outstanding worker task.
+		MidiScript::MidiScriptEngine* prevEngine = activeEngine;
 		activeEngine = nullptr;
-		seLua.loadScript("");
-		seQuickJs.loadScript("");
+		if (prevEngine) prevEngine->closeState();
 
 		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::RESET, 0.f, std::string("")));
 		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, std::string("No script")));
@@ -339,28 +379,36 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			return;
 		*/
 
-		if (!activeEngine) return;
-
-		if (inputTrigger.process(inputs[INPUT_TRIG].getVoltage())) {
+		if (activeEngine && inputTrigger.process(inputs[INPUT_TRIG].getVoltage())) {
 			inputTriggerTick++;
 			midiOutput.processTick(inputTriggerTick);
 			activeEngine->processInTick(0);
 		}
 
 		if (processDivider.process()) {
-			midi::Message msg;
-			while (midiInput.tryPop(&msg, args.frame)) {
-				activeEngine->processInMessage(0, msg);
+			if (activeEngine) {
+				midi::Message msg;
+				while (midiInput.tryPop(&msg, args.frame)) {
+					activeEngine->processInMessage(0, msg);
+				}
+
+				activeEngine->process();
 			}
 
-			activeEngine->process();
-
-			int midiPort;
-			int ticks;
-			while (activeEngine->processOutMessage(midiPort, msg, ticks)) {
-				midiOutput.send(msg, ticks);
+			// Drains the module's own out-queue regardless of activeEngine, so a
+			// cleared script's onUnload() output (queued while activeEngine was
+			// still set) still reaches the device even though activeEngine is now
+			// null. Runs after dispatch so output produced by this tick's
+			// activeEngine->process() above still drains this same tick.
+			if (midiOutOverflow.exchange(false, std::memory_order_relaxed)) {
+				float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
+				midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, std::string("MIDI output queue full, message(s) dropped")));
 			}
-			
+			while (!midiOutQueue.empty()) {
+				auto t = midiOutQueue.shift();
+				midi::Message msg = std::get<1>(t);
+				midiOutput.send(msg, std::get<2>(t));
+			}
 			midiOutput.processFrame(args.frame);
 		}
 
@@ -454,9 +502,13 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		if (seLua.testScript(s)) activeEngine = &seLua;
 		if (seQuickJs.testScript(s)) activeEngine = &seQuickJs;
 
-		// Clear the engine that is no longer active (silently — RESET was already pushed)
+		// Close the engine that is no longer active (silently — RESET was already
+		// pushed). Blocking rather than the async loadScript("") this used to be:
+		// once this call returns, activeEngine is again the only engine that can
+		// have any state or outstanding worker task, which is the invariant
+		// onRemove() (and onReset()) rely on to know what needs tearing down.
 		if (prevEngine && prevEngine != activeEngine) {
-			prevEngine->loadScript("");
+			prevEngine->closeState();
 		}
 
 		// Keep port/param info pointers in sync with the active engine

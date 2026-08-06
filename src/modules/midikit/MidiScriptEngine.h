@@ -48,12 +48,24 @@ struct MidiScriptEngineHandler {
 	virtual float getParamValue(int i) = 0;
 	virtual void setTrig(int i, uint8_t ch, float duration = 1e-3f) = 0;
 	virtual void setTrigVoltage(int i, uint8_t ch, float voltage) = 0;
+
+	// Queues `count` MIDI messages for output, all sharing one tick. Called from
+	// the worker thread.
+	//
+	// All-or-nothing: returns false without queuing any of them if there is not
+	// room for the whole group. An NRPN is 4 messages and a partial group is a
+	// malformed parameter change, worse than dropping it outright. A single message
+	// (count == 1) is just the degenerate case, so there is one entry point and one
+	// bounds check rather than two.
+	//
+	// Output saturation is expected, so callers treat false as normal, not an error.
+	virtual bool sendMidi(int midiPort, const Message* msgs, size_t count, uint64_t tick) = 0;
 };
 
 
 struct MidiScriptEngine {
 	// Cap on setSysEx's payload, so a script can't build an unbounded message
-	// for the fixed-size midiOutQueue.
+	// for the handler's fixed-size out-queue.
 	static const int sysExMaxPayloadLength = 256;
 
 	// The handler this engine runs inside, injected at construction. Every
@@ -80,7 +92,6 @@ struct MidiScriptEngine {
 	std::shared_ptr<ITaskWorker> taskWorker;
 	dsp::RingBuffer<std::tuple<int, Message>, 128> midiInQueue;
 	dsp::RingBuffer<int, 4> tickInQueue;
-	dsp::RingBuffer<std::tuple<int, Message, uint64_t>, 128> midiOutQueue;
 
 	void setWorker(std::shared_ptr<ITaskWorker> w) {
 		taskWorker = std::move(w);
@@ -202,19 +213,6 @@ struct MidiScriptEngine {
 	// Main interface for message processing
 	virtual void processInMessage(int midiPort, Message& msg) = 0;
 	virtual void processInTick(int trigPort) = 0;
-
-	// Virtual (like process()) so tests can override it to fabricate output
-	// without a real script engine behind it.
-	virtual bool processOutMessage(int& midiPort, Message& msg, int& ticks) {
-		if (!midiOutQueue.empty()) {
-			auto t = midiOutQueue.shift();
-			midiPort = std::get<0>(t);
-			msg = std::get<1>(t);
-			ticks = std::get<2>(t);
-			return true;
-		}
-		return false;
-	}
 
 	// Caps on Tipsy payloads: the queue entry is a fixed-size POD so the audio
 	// thread's shift() never heap-allocates (mime matches

@@ -81,29 +81,14 @@ static midi::Message noteOff(int ch, int note) {
 	return msg;
 }
 
-static void drainOut(MidiScriptEngine* se) {
+static void drainOut(MidiKitModule* m) {
 	int port, ticks;
 	midi::Message msg;
-	while (se->processOutMessage(port, msg, ticks)) { }
+	while (processOutMessage(m, port, msg, ticks)) { }
 }
 
-// Pushes a sentinel task onto the shared worker and spins until it has run.
-// The worker drains its queue FIFO, so once the sentinel runs, every earlier
-// task (which may capture the engine's `this`) has finished. Without this,
-// destroying a module while the worker is still inside one of its tasks is a
-// use-after-free.
-//
-// work() uses try_push and returns false when the queue is momentarily full
-// (capacity 32). We retry until the sentinel is accepted — the worker keeps
-// draining, so this always terminates. Without the retry, a full queue would
-// leave the sentinel unqueued and this loop would spin forever.
-static void barrier(std::shared_ptr<ITaskWorker> worker) {
-	std::atomic<bool> done{false};
-	while (!worker->work([&done]() { done.store(true, std::memory_order_release); })) {
-		std::this_thread::yield();
-	}
-	while (!done.load(std::memory_order_acquire)) std::this_thread::yield();
-}
+// barrier() lives in MidiKit.test.hpp — the teardown tests need the same
+// wait-for-the-worker primitive this harness does.
 
 // ── script workloads ────────────────────────────────────────────────────────
 
@@ -126,7 +111,7 @@ struct Script {
 	// Per-iteration push for the given module's engine.
 	virtual PushFn pushFn(MidiKitModule* m) const = 0;
 	// One-time setup before measurement (default: none).
-	virtual void seed(MidiScriptEngine* se, std::shared_ptr<ITaskWorker> worker) const {}
+	virtual void seed(MidiKitModule* m, std::shared_ptr<ITaskWorker> worker) const {}
 };
 
 // PassThrough: every incoming message is forwarded unchanged -> exactly 1
@@ -188,14 +173,15 @@ struct ArpeggiatorScript : Script {
 	// (pattern rebuild across several octaves) is representative from the first
 	// measured run instead of a 1-note pattern. The worker barrier guarantees
 	// the seed note-ons have been processed (pattern rebuilt) before returning.
-	void seed(MidiScriptEngine* se, std::shared_ptr<ITaskWorker> worker) const override {
+	void seed(MidiKitModule* m, std::shared_ptr<ITaskWorker> worker) const override {
+		MidiScriptEngine* se = m->activeEngine;
 		for (int note : {60, 64, 67}) {
 			midi::Message on = noteOn(1, note, 100);
 			se->processInMessage(0, on);
 			se->process();
 		}
 		barrier(worker);
-		drainOut(se);   // arp note-ons emit no output, but be tidy
+		drainOut(m);   // arp note-ons emit no output, but be tidy
 	}
 };
 
@@ -225,15 +211,15 @@ static const char* engineName(EngineKind engine) {
 // ── round-trip timing ───────────────────────────────────────────────────────
 
 // Waits (tight spin + periodic yield) for the first output message to become
-// observable in midiOutQueue via processOutMessage(). Returns false on
-// timeout. The yield keeps the spin from pegging the core while letting the
-// worker thread run.
-static bool pollFirst(MidiScriptEngine* se, double maxWaitSec = 10.0) {
+// observable in the module's out-queue via processOutMessage(). Returns false
+// on timeout. The yield keeps the spin from pegging the core while letting
+// the worker thread run.
+static bool pollFirst(MidiKitModule* m, double maxWaitSec = 10.0) {
 	auto start = Clock::now();
 	int port = 0, ticks = 0;
 	midi::Message msg;
 	int spins = 0;
-	while (!se->processOutMessage(port, msg, ticks)) {
+	while (!processOutMessage(m, port, msg, ticks)) {
 		if (std::chrono::duration<double>(Clock::now() - start).count() >= maxWaitSec) return false;
 		if ((spins++ & 63) == 0) std::this_thread::yield();
 	}
@@ -242,19 +228,19 @@ static bool pollFirst(MidiScriptEngine* se, double maxWaitSec = 10.0) {
 
 // One timed round trip, in microseconds; -1.0 on timeout. Used by the
 // contention section — the single-engine section is timed by BENCHMARK.
-static double timeRoundTrip(MidiScriptEngine* se, const PushFn& push, int iteration, double maxWaitSec = 10.0) {
+static double timeRoundTrip(MidiKitModule* m, const PushFn& push, int iteration, double maxWaitSec = 10.0) {
 	auto start = Clock::now();
 	push(iteration);
-	if (!pollFirst(se, maxWaitSec)) return -1.0;
+	if (!pollFirst(m, maxWaitSec)) return -1.0;
 	return std::chrono::duration<double, std::micro>(Clock::now() - start).count();
 }
 
 // Like timeRoundTrip, then drains the whole out-queue so the next (warm-up)
 // call starts from an empty queue. Returns false on timeout.
-static bool pushAndDrain(MidiScriptEngine* se, const PushFn& push, int iteration, double maxWaitSec = 10.0) {
+static bool pushAndDrain(MidiKitModule* m, const PushFn& push, int iteration, double maxWaitSec = 10.0) {
 	push(iteration);
-	if (!pollFirst(se, maxWaitSec)) return false;
-	drainOut(se);
+	if (!pollFirst(m, maxWaitSec)) return false;
+	drainOut(m);
 	return true;
 }
 
@@ -289,7 +275,7 @@ static void printDist(const std::string& label, const std::vector<double>& sampl
 // queued during onLoad so measurements start clean.
 static bool setupEngine(const Script* script, EngineKind engine,
 	std::shared_ptr<ITaskWorker> worker, MidiKitModule** outM,
-	PushFn* outPush, MidiScriptEngine** outSe) {
+	PushFn* outPush) {
 	std::string path = enginePath(script, engine);
 	MidiKitModule* m = createModule(worker);
 	m->loadScript(readFile(repoRoot() + "/" + path));
@@ -304,12 +290,10 @@ static bool setupEngine(const Script* script, EngineKind engine,
 		Test::destroyModule(m);
 		return false;
 	}
-	MidiScriptEngine* se = m->activeEngine;
-	drainOut(se);   // clear anything queued during onLoad
+	drainOut(m);   // clear anything queued during onLoad
 	*outM = m;
 	*outPush = script->pushFn(m);
-	*outSe = se;
-	script->seed(se, worker);
+	script->seed(m, worker);
 	return true;
 }
 
@@ -319,17 +303,21 @@ static bool setupEngine(const Script* script, EngineKind engine,
 // + drain the (possible) leftover scheduled message, then a barrier so the
 // worker is idle before the next run.
 //
-// The trailing barrier is not just belt-and-braces: TaskWorker::workQueue is a
-// fixed-size (32) dsp::RingBuffer whose push() silently OVERWRITES the oldest
-// slot when full. The script tiers with more than one output per push (e.g.
-// the arp: note-off + note-on + clock step in ONE worker task) make pollFirst
-// return on the first output while the task is still draining the rest, so the
-// loop can enqueue faster than the worker drains and overflow the queue. A
-// sentinel pushed into a full queue lands at the FRONT and runs before the
-// module's own tasks, letting the block delete the module while the worker is
-// still inside one of its tasks — a use-after-free. The per-run barrier keeps
-// at most one task in flight, so the block-end barrier always strictly follows
-// every module task. It also stops a previous task's leftover output from
+// The trailing barrier keeps at most one task in flight, so the block-end
+// barrier always strictly follows every module task. The script tiers with more
+// than one output per push (e.g. the arp: note-off + note-on + clock step in ONE
+// worker task) make pollFirst return on the first output while the task is
+// still draining the rest, so without it the loop can enqueue faster than the
+// worker drains.
+//
+// This used to be load-bearing against a use-after-free: TaskWorker::workQueue
+// was a fixed-size dsp::RingBuffer whose push() silently overwrote the oldest
+// slot, so a sentinel pushed into a full queue could land ahead of a module's
+// own task and let the block delete a module still being touched by the worker.
+// MpmcTaskWorker (the default since) uses try_push() and drops on full instead
+// of overwriting, so that specific hazard is gone — but barrier() retries until
+// its sentinel is accepted, and the barrier is still needed for the ordering
+// above. It also stops a previous task's leftover output from
 // bleeding into the next run's pollFirst (which would otherwise report a bogus
 // ~0 latency). Each run therefore measures the full round trip: push -> the
 // script has processed the whole push and its output is drained.
@@ -337,12 +325,11 @@ static void runBenchBlock(const Script* script, EngineKind engine,
 	std::shared_ptr<ITaskWorker> worker, Catch::Benchmark::Chronometer meter) {
 	MidiKitModule* m = nullptr;
 	PushFn push;
-	MidiScriptEngine* se = nullptr;
-	if (!setupEngine(script, engine, worker, &m, &push, &se)) return;
+	if (!setupEngine(script, engine, worker, &m, &push)) return;
 	meter.measure([&](int i) {
 		push(i);
-		bool observed = pollFirst(se);
-		drainOut(se);
+		bool observed = pollFirst(m);
+		drainOut(m);
 		barrier(worker);
 		return observed;
 	});
@@ -373,24 +360,32 @@ static std::vector<double> measureContention(const Script* script, EngineKind en
 			Test::destroyModule(m);
 			continue;
 		}
-		drainOut(m->activeEngine);
+		drainOut(m);
 		mods.push_back(m);
 		pushes.push_back(script->pushFn(m));
-		script->seed(m->activeEngine, worker);
+		script->seed(m, worker);
 	}
 
-	// TaskWorker::workQueue is a dsp::RingBuffer — SPSC (single producer).
-	// With n threads pushing concurrently that is a multi-producer race, so
-	// the push (not the wait) is serialised with a shared mutex. The
-	// contention deliberately measured is the worker's single background
-	// thread processing the shared queue serially.
+	// The push is serialised with a shared mutex, not because the work queue
+	// needs it — the default worker is MpmcTaskWorker, whose rigtorp::MPMCQueue
+	// takes concurrent producers natively — but to keep every thread's pushes
+	// ordered against each other, so the measured latency reflects the worker
+	// draining a shared queue rather than the threads racing to fill it.
+	//
+	// (This predates MpmcTaskWorker, when workQueue was a dsp::RingBuffer and
+	// the mutex was load-bearing for correctness. It is kept because removing
+	// it would change what this benchmark measures.)
+	//
+	// The contention deliberately measured is the worker's single background
+	// thread processing the shared queue serially: each thread pushes to its
+	// own module, but every module's process() dispatches onto the one worker.
 	std::mutex pushMutex;
 	std::atomic<int> timeoutsLocal{0};
 	std::vector<std::vector<double>> perThread(mods.size());
 	std::vector<std::thread> threads;
 	for (size_t i = 0; i < mods.size(); i++) {
 		threads.emplace_back([&, i]() {
-			MidiScriptEngine* se = mods[i]->activeEngine;
+			MidiKitModule* m = mods[i];
 			PushFn push = pushes[i];
 			PushFn lockedPush = [&pushMutex, push](int k) {
 				std::lock_guard<std::mutex> lock(pushMutex);
@@ -399,15 +394,15 @@ static std::vector<double> measureContention(const Script* script, EngineKind en
 
 			// Warm-up (not timed) so each thread's out-queue is empty and the
 			// worker has settled before any measured iteration.
-			for (int w = 0; w < 10; w++) pushAndDrain(se, lockedPush, w);
+			for (int w = 0; w < 10; w++) pushAndDrain(m, lockedPush, w);
 
 			std::vector<double>& out = perThread[i];
 			out.reserve(itersPerThread);
 			for (int k = 0; k < itersPerThread; k++) {
-				double us = timeRoundTrip(se, lockedPush, k + 10);
+				double us = timeRoundTrip(m, lockedPush, k + 10);
 				out.push_back(us);
 				if (us < 0) timeoutsLocal++;
-				drainOut(se);
+				drainOut(m);
 				// Keep the shared queue drained (see runBenchBlock): a full
 				// workQueue would let the end-of-run barrier's sentinel
 				// overwrite a pending module task and delete a module whose

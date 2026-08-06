@@ -669,6 +669,8 @@ The sending functions below take no port argument — the destination is whateve
 
 **A message can only be sent once per callback.** `midiOut.send(msg)` and the `sendAfter*` variants mark the handle as sent — the actual enqueue happens once per handle after the callback, so sending the *same* handle again in one `rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` is not a second message: only one goes out (and if the message body was changed in between, the last change wins). To send the same bytes twice, create a fresh handle with `midi.create()` or `midi.clone(msg)` and send that. Each message sent also consumes one of the 32 message-handle slots, so one handle per message is the right pattern. When the store is full, `midi.create()`/`midi.clone()`/`midi.createNRPN()` raise a script error that aborts the rest of the callback; messages already sent before the error are still flushed, so a multi-message sequence can be emitted partially.
 
+Beyond the per-callback handle store, MIDI-KIT also holds a queue of messages waiting to reach the MIDI output (this is separate from the frame/tick delay queues used by `sendAfterMs`/`sendAfterTrigger`, and separate per module). Under sustained heavy output — far more messages than a real MIDI device could consume anyway — this queue can fill up; if it does, further messages are dropped rather than corrupting already-queued ones, and the log shows a single "MIDI output queue full, message(s) dropped" line. This is expected only under pathological output rates; normal scripts will not hit it.
+
 
 ## Changelog
 
