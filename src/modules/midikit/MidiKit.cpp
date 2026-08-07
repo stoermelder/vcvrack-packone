@@ -6,6 +6,7 @@
 #include "../../components/LedTextField.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
+#include "tipsy-encoder/include/tipsy/tipsy.h"
 #include <osdialog.h>
 #include <fstream>
 #include <queue>
@@ -181,6 +182,64 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	// saturated.
 	std::atomic<bool> midiOutOverflow{false};
 
+	// ── Tipsy output ─────────────────────────────────────────────────────────
+	// Module-owned for the same reason as midiOutQueue: the encoder drives the
+	// trigger CV output, so it belongs to the hardware side rather than to
+	// whichever engine happened to queue a message. Scripts reach it through
+	// the handler's sendTipsyOut(), exactly like sendMidi().
+
+	// Caps on Tipsy payloads: the queue entry is a fixed-size POD so the audio
+	// thread's shift() never heap-allocates (mime matches
+	// tipsy::kMaxMimeTypeSize).
+	static constexpr size_t tipsyOutMaxMimeTypeSize = 256;
+	static constexpr size_t tipsyOutMaxPayloadLength = 256;
+
+	// A Tipsy message queued by sendTipsyOut() (worker) and consumed by
+	// processTipsyOutput() (audio). Fixed-size so the SPSC RingBuffer copies it
+	// without heap allocation.
+	//
+	// mimeSize == 0 marks a discard sentinel rather than a real message: it
+	// carries no payload and exists only to mark where a stale run of messages
+	// ends. sendTipsyOut() rejects an empty mime type so the two can never be
+	// confused. (dataSize would not work as the marker — an empty payload with
+	// a valid mime type is a legitimate message.)
+	struct TipsyOutMessage {
+		uint16_t mimeSize;                         // length without NUL
+		uint16_t dataSize;
+		char mime[tipsyOutMaxMimeTypeSize];
+		unsigned char data[tipsyOutMaxPayloadLength];
+	};
+
+	// Encodes Tipsy messages onto the trigger CV output. Audio thread only.
+	tipsy::ProtocolEncoder tipsyOutEncoder;
+
+	// SPSC queue of pending Tipsy messages (worker → audio). sendTipsyOut() only
+	// copies the payload; encoding happens in processTipsyOutput() on the audio
+	// thread, which owns the encoder.
+	//
+	// Never cleared: clear() writes `start`, the consumer's index, so calling it
+	// from the worker would break the single-consumer contract. Discarding goes
+	// through tipsyOutDiscardCount + a queued sentinel instead.
+	dsp::RingBuffer<TipsyOutMessage, 8> tipsyOutQueue;
+
+	// Discard sentinels enqueued so far. Written by sendTipsyOutReset()
+	// (worker), read by processTipsyOutput() (audio); tipsyOutDiscardSeen is the
+	// audio thread's private count of the ones it has consumed.
+	//
+	// A counter rather than a flag: two reloads in quick succession must discard
+	// both batches, and a bool cleared after the first sentinel would let the
+	// second play. The queued sentinel supplies the position the counter lacks —
+	// anything pushed after it is new and survives.
+	std::atomic<uint32_t> tipsyOutDiscardCount{0};
+	uint32_t tipsyOutDiscardSeen = 0;
+
+	// The message the encoder is streaming out. The encoder holds pointers into
+	// its buffers for the whole (multi-cycle) message, so it must outlive the
+	// encoding — a member, not a local (shift() hands out copies). Only ever
+	// overwritten while the encoder is dormant, so an in-flight message is never
+	// pulled out from under it.
+	TipsyOutMessage tipsyOutCurrentMessage;
+
 	dsp::ClockDivider processDivider;
 	dsp::Timer rateLimiterTimer;
 
@@ -271,6 +330,92 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		for (size_t i = 0; i < count; i++) {
 			midiOutQueue.push(std::make_tuple(midiPort, msgs[i], tick));
 		}
+		return true;
+	}
+
+	// MidiScriptEngineHandler
+	bool sendTipsyOut(const char* mimeType, const unsigned char* data, uint32_t dataBytes) override {
+		if (!mimeType || !data || dataBytes > tipsyOutMaxPayloadLength) {
+			writeLog("Tipsy: invalid parameters", false);
+			return false;
+		}
+		size_t mimeSize = strlen(mimeType);
+		// An empty mime type would be indistinguishable from a discard sentinel.
+		if (mimeSize == 0) {
+			writeLog("Tipsy: mime type must not be empty", false);
+			return false;
+		}
+		if (mimeSize + 1 > tipsyOutMaxMimeTypeSize) {
+			writeLog("Tipsy: mime type too long", false);
+			return false;
+		}
+		// One slot is kept free so sendTipsyOutReset() can always enqueue its
+		// sentinel. A dropped sentinel would leave tipsyOutDiscardCount permanently
+		// ahead of the queue, discarding live messages from then on.
+		if (tipsyOutQueue.capacity() <= 1) {
+			writeLog("Tipsy: pending queue full", false);
+			return false;
+		}
+
+		TipsyOutMessage p;
+		p.mimeSize = (uint16_t)mimeSize;
+		p.dataSize = (uint16_t)dataBytes;
+		std::memcpy(p.mime, mimeType, mimeSize + 1);
+		std::memcpy(p.data, data, dataBytes);
+		tipsyOutQueue.push(p);
+		return true;
+	}
+
+	// MidiScriptEngineHandler
+	void sendTipsyOutReset() override {
+		// Order matters: the sentinel goes in first, so the audio thread can
+		// never see the raised count without the sentinel that bounds it.
+		TipsyOutMessage p;
+		p.mimeSize = 0;
+		p.dataSize = 0;
+		tipsyOutQueue.push(p);
+		tipsyOutDiscardCount.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	// Outputs the next Tipsy-encoded voltage on the trigger output (audio
+	// thread). If the encoder is idle, drops any stale messages, starts the next
+	// pending one, then drains one encoded float. Returns true if a voltage was
+	// output.
+	bool processTipsyOutput(uint8_t channel = 0) {
+		if (tipsyOutEncoder.isDormant()) {
+			// Everything ahead of an unconsumed sentinel was queued by a script
+			// that has since been replaced. Only done while dormant, so a message
+			// already going out still completes. Bounded by the queue size, and
+			// Tipsy messages are rare, so draining the run in one call is fine.
+			while (tipsyOutDiscardSeen < tipsyOutDiscardCount.load(std::memory_order_relaxed) && !tipsyOutQueue.empty()) {
+				if (tipsyOutQueue.shift().mimeSize == 0) tipsyOutDiscardSeen++;
+			}
+
+			if (!tipsyOutQueue.empty()) {
+				// Copy into the member the encoder points into for the whole message
+				// (shift() returns a copy, so not a local).
+				tipsyOutCurrentMessage = tipsyOutQueue.shift();
+				auto initResult = tipsyOutEncoder.initiateMessage(tipsyOutCurrentMessage.mime, tipsyOutCurrentMessage.dataSize, tipsyOutCurrentMessage.data);
+				if (tipsyOutEncoder.isError(initResult)) {
+					writeLog("Tipsy encoder error: " + std::to_string(static_cast<int>(initResult)), false);
+					return false;
+				}
+			}
+		}
+
+		if (tipsyOutEncoder.isDormant()) {
+			return false;
+		}
+
+		float f;
+		auto result = tipsyOutEncoder.getNextMessageFloat(f);
+		if (tipsyOutEncoder.isError(result)) {
+			writeLog("Tipsy encoding error", false);
+			tipsyOutEncoder.terminateCurrentMessage();
+			return false;
+		}
+		// Tipsy messages always go to the first trigger output (port 0).
+		setTrigVoltage(0, channel, f);
 		return true;
 	}
 
@@ -420,10 +565,10 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 				}
 			}
 			
-			// Process Tipsy output buffer if active
-			if (activeEngine) {
-				activeEngine->processTipsyOutput(0);
-			}
+			// Drains the Tipsy queue regardless of activeEngine, for the same
+			// reason as the MIDI out-queue above: messages queued by a script's
+			// onUnload() must still reach the output after the engine is gone.
+			processTipsyOutput(0);
 		}
 
 		sample++;

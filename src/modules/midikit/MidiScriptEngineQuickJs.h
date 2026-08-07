@@ -116,7 +116,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	void loadScriptOnWorker(const char* script, const std::string& persistedConfigJson) override {
 		assert(onWorkerThread());
 		closeStateOnWorker();
-		resetTipsyOutput();
+		handler->sendTipsyOutReset();
 
 		if (script[0] == '\0') {
 			return;
@@ -1708,7 +1708,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 		
 		auto* e = getEngine(ctx);
-		bool success = e->sendTipsy(mimeType, data, dataLen);
+		bool success = e->handler->sendTipsyOut(mimeType, data, dataLen);
 		if (mimeDyn) JS_FreeCString(ctx, mimeDyn);
 		
 		if (!success) {

@@ -98,7 +98,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	void loadScriptOnWorker(const char* script, const std::string& persistedConfigJson) override {
 		assert(onWorkerThread());
 		closeStateOnWorker();
-		resetTipsyOutput();
+		handler->sendTipsyOutReset();
 
 		if (script[0] == '\0') {
 			return;
@@ -1762,7 +1762,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			luaL_error(L, "trig.sendTipsy: invalid arguments");
 		}
 		
-		bool success = e->sendTipsy(mimeType, reinterpret_cast<const unsigned char*>(data), static_cast<uint32_t>(dataLen));
+		bool success = e->handler->sendTipsyOut(mimeType, reinterpret_cast<const unsigned char*>(data), static_cast<uint32_t>(dataLen));
 		
 		if (!success) {
 			luaL_error(L, "trig.sendTipsy: failed to initiate message");
