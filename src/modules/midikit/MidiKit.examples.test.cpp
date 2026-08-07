@@ -226,6 +226,7 @@ static const PresetInfo PRESETS[] = {
 	{"", "Rewrite Ch1 to Ch2", true},
 	{"", "Micro scale", true},
 	{"", "Arpeggiator", false},   // trigger-clocked; emits nothing for MIDI traffic
+	{"", "Volca Sample", true},
 	{"creative/", "Euclidean rhythm generator", true},
 	{"creative/", "Keyboard split", true},
 	{"creative/", "Bouncing ball delay", true},
@@ -2680,6 +2681,181 @@ TEST_CASE("'Rewrite Ch1 to Ch2.js/.lua' leaves other channels unchanged", "[Midi
 	REQUIRE(note == std::vector<OutEvent>{{0x9, 3, 60, 100, 0}});
 	auto ccEv = feedCollect(m, cc(2, 20, 100));
 	REQUIRE(ccEv == std::vector<OutEvent>{{0xb, 2, 20, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+
+
+// Behavioural tests for the Volca Sample preset. Shipped default converts
+// MIDI notes on channels 1-10 to CC 43 speed + Note-On 60 for the Volca
+// Sample's chromatic playback. Channel 16 (poly channel) uses notes 0-9 for
+// part selection and 36-84 for chromatic play with 4-voice round-robin
+// allocation (channels 7-10). Pitch bend → CC 44 with configurable range
+// mapping. Non-note messages and notes outside the chromatic range pass
+// through unchanged.
+
+// Speed for note 60 (C4, index 24 in the 0-based speed table).
+#define KVS_SPEED_C4 64
+
+// Note 60 on a part channel (MIDI ch 1 → internal 0) produces CC 43 (speed)
+// then Note-On 60 on the same channel. The 20 init CCs from onLoad must be
+// drained first.
+TEST_CASE("'Volca Sample.js/.lua' multi-channel note maps to CC43 speed + Note-On 60", "[MidiKit][VolcaSample]") {
+	std::string path = GENERATE(presetPaths("Volca Sample"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	drainOut(m);  // drain the 10×2 init CCs sent by onLoad
+
+	auto ev = feedCollect(m, noteOn(0, 60, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0xb, 0, 43, KVS_SPEED_C4, 0}, {0x9, 0, 60, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+// A note outside the chromatic range (35 < 36) passes through unchanged.
+TEST_CASE("'Volca Sample.js/.lua' out-of-range note passes through", "[MidiKit][VolcaSample]") {
+	std::string path = GENERATE(presetPaths("Volca Sample"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	drainOut(m);  // drain init CCs
+
+	auto ev = feedCollect(m, noteOn(0, 35, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0x9, 0, 35, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+// Notes 0-9 on the poly channel select the sample part and are consumed.
+TEST_CASE("'Volca Sample.js/.lua' poly-channel note 0-9 selects part", "[MidiKit][VolcaSample]") {
+	std::string path = GENERATE(presetPaths("Volca Sample"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	drainOut(m);  // drain init CCs
+
+	// note 3 on poly channel (internal 15) → selects part channel 4, consumed.
+	REQUIRE(feedCollect(m, noteOn(15, 3, 100)).empty());
+
+	// Next chromatic note on poly channel goes to part channel 4 (internal 3).
+	auto ev = feedCollect(m, noteOn(15, 60, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0xb, 3, 43, KVS_SPEED_C4, 0}, {0x9, 3, 60, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+// Chromatic notes on the poly channel cycle through 4 voice channels.
+TEST_CASE("'Volca Sample.js/.lua' poly mode cycles voices round-robin", "[MidiKit][VolcaSample]") {
+	std::string path = GENERATE(presetPaths("Volca Sample"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	drainOut(m);  // drain init CCs
+
+	// Four successive notes on poly channel → channels 7, 8, 9, 10.
+	auto n1 = feedCollect(m, noteOn(15, 60, 100));
+	REQUIRE(n1 == std::vector<OutEvent>{{0xb, 6, 43, KVS_SPEED_C4, 0}, {0x9, 6, 60, 100, 0}});
+
+	auto n2 = feedCollect(m, noteOn(15, 62, 100));
+	// Speed for note 62: index 26 → 69
+	REQUIRE(n2 == std::vector<OutEvent>{{0xb, 7, 43, 69, 0}, {0x9, 7, 60, 100, 0}});
+
+	auto n3 = feedCollect(m, noteOn(15, 64, 100));
+	// Speed for note 64: index 28 → 75
+	REQUIRE(n3 == std::vector<OutEvent>{{0xb, 8, 43, 75, 0}, {0x9, 8, 60, 100, 0}});
+
+	auto n4 = feedCollect(m, noteOn(15, 67, 100));
+	// Speed for note 67: index 31 → 83
+	REQUIRE(n4 == std::vector<OutEvent>{{0xb, 9, 43, 83, 0}, {0x9, 9, 60, 100, 0}});
+
+	// Wraps back to channel 7.
+	auto n5 = feedCollect(m, noteOn(15, 72, 100));
+	// Speed for note 72: index 72-36=36 → SPEED_TABLE[36] = 96
+	REQUIRE(n5 == std::vector<OutEvent>{{0xb, 6, 43, 96, 0}, {0x9, 6, 60, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+// Note-Off releases the correct voice channel in poly mode.
+TEST_CASE("'Volca Sample.js/.lua' Note-Off routes to the correct voice channel", "[MidiKit][VolcaSample]") {
+	std::string path = GENERATE(presetPaths("Volca Sample"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	drainOut(m);  // drain init CCs
+
+	// Two notes on poly channel → channels 7 and 8.
+	feedCollect(m, noteOn(15, 60, 100));
+	feedCollect(m, noteOn(15, 64, 100));
+	drainLog(m);
+
+	// Releasing note 64 → voice channel 8 (internal 7).
+	auto off = feedCollect(m, noteOff(15, 64));
+	REQUIRE(off == std::vector<OutEvent>{{0x8, 7, 60, 0, 0}});
+
+	// Releasing note 60 → voice channel 7 (internal 6).
+	auto off2 = feedCollect(m, noteOff(15, 60));
+	REQUIRE(off2 == std::vector<OutEvent>{{0x8, 6, 60, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+// Pitch bend → CC 44 with the configured range mapping.
+TEST_CASE("'Volca Sample.js/.lua' pitch bend maps to CC44", "[MidiKit][VolcaSample]") {
+	std::string path = GENERATE(presetPaths("Volca Sample"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	drainOut(m);  // drain init CCs
+
+	// pitchWheel(1, 8192 + 64*128): MSB=64, which sits at 0.5 in the
+	// [32,96] input range → rescales to 65 in [60,70] output → clamped 65.
+	// (64 - 32) / (96 - 32) = 0.5; 0.5 * (70 - 60) + 60 = 65.
+	auto ev = feedCollect(m, pitchWheel(0, 64 * 128));
+	REQUIRE(ev == std::vector<OutEvent>{{0xb, 0, 44, 65, 0}});
+
+	Test::destroyModule(m);
+}
+
+// Non-note messages pass through unchanged.
+TEST_CASE("'Volca Sample.js/.lua' non-note messages pass through", "[MidiKit][VolcaSample]") {
+	std::string path = GENERATE(presetPaths("Volca Sample"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	drainOut(m);  // drain init CCs
+
+	auto ev = feedCollect(m, cc(0, 20, 100));
+	REQUIRE(ev == std::vector<OutEvent>{{0xb, 0, 20, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+// Active notes are released on unload.
+TEST_CASE("'Volca Sample.js/.lua' releases active notes on unload", "[MidiKit][VolcaSample]") {
+	std::string path = GENERATE(presetPaths("Volca Sample"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	drainOut(m);  // drain init CCs
+
+	// Hold two notes: one on multi-channel 1, one on poly channel.
+	feedCollect(m, noteOn(0, 60, 100));   // multi-channel
+	feedCollect(m, noteOn(15, 64, 100));  // poly, voice channel 7
+	drainLog(m);
+
+	m->loadScript("");
+
+	// onUnload releases both active notes on their respective channels.
+	// Lua table iteration order differs from JS, so assert on the set.
+	auto ev = drainOut(m);
+	REQUIRE(ev.size() == 2);
+	bool hasCh0 = (ev[0].channel == 0 && ev[0].note == 60) || (ev[1].channel == 0 && ev[1].note == 60);
+	bool hasCh6 = (ev[0].channel == 6 && ev[0].note == 60) || (ev[1].channel == 6 && ev[1].note == 60);
+	REQUIRE(hasCh0);
+	REQUIRE(hasCh6);
 
 	Test::destroyModule(m);
 }
