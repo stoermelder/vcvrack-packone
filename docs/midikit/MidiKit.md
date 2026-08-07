@@ -322,7 +322,7 @@ end
 
 ### Send Tipsy protocol data via CV output
 
-`trig.sendTipsy(data, [mimeType])` encodes binary `data` using the Tipsy protocol and outputs it as CV voltages on the trigger output. The optional `mimeType` argument defaults to `"text/plain"`. This is useful for communicating with modules that understand the Tipsy protocol, such as Transit for preset snapshots.
+`trig.sendTipsy(data, [mimeType = "text/plain"])` encodes binary `data` using the Tipsy protocol and outputs it as CV voltages on the trigger output. This is useful for communicating with modules that understand the Tipsy protocol, such as Transit for preset snapshots.
 
 JavaScript:
 ```js
@@ -528,7 +528,7 @@ The callbacks below are defined as methods on the `rack` object — `rack.onMidi
 ### rack
 
 - `rack.log(value [, value ...])`: Prints a line on the display of the module. Any number of arguments are concatenated (no separator) into one line; each accepts any value — numbers (formatted like `number.toString()`), booleans (`true`/`false`), strings (verbatim), and `null`/`nil`/`undefined` (Lua's `nil` prints as `null`). Other values (objects, arrays, tables) use engine-specific formatting.
-- `rack.overlay(str1, [str2], [str3])`: Displays string `str1` in a Rack overlay widget.
+- `rack.overlay(str1, [str2, [str3]])`: Displays up to three lines in a Rack overlay widget. `str1` is required and becomes the first line; `str2` is an optional second line. `str3` is a further optional third line.
 - `rack.getFrame()`: Returns the current engine frame number of the Rack engine.
 - `rack.random()`: Returns a random number of interval [0, 1), drawn from Rack's own RNG (`rack::random::uniform()`).
 - `rack.registerContextMenu(options)`: Adds one item to the module's right-click context menu, in registration order — multiple items are allowed. Returns `true` on success; throws (and the script fails to load) if `options` is malformed. Two variants:
@@ -617,9 +617,9 @@ Note that `rack.onUnload()` is called when the script is replaced by a different
 
 - `input.enable(port)`: Enables input with index `port` (1..4).
 - `input.getName(port)`: Callback function used by the module to display a tooltip text for the input. The default implementation can be replaced to display some additional information for the input.
-- `input.getVoltage(port, [channel])`: Reads the current voltage on the input port `port` (1..4) of polyphonic `channel` (1..16).
-- `input.isHigh(port, [channel])`: Returns true if the voltage on input port `port` (1..4) of polyphonic `channel` (1..16) is above 0.7V.
-- `input.isLow(port, [channel])`: Returns true if the voltage on input port `port` (1..4) of polyphonic `channel` (1..16) is below 0.7V.
+- `input.getVoltage(port, [channel = 1])`: Reads the current voltage on the input port `port` (1..4) of polyphonic `channel` (1..16).
+- `input.isHigh(port, [channel = 1])`: Returns true if the voltage on input port `port` (1..4) of polyphonic `channel` (1..16) is above 0.7V.
+- `input.isLow(port, [channel = 1])`: Returns true if the voltage on input port `port` (1..4) of polyphonic `channel` (1..16) is below 0.7V.
 
 ### trig
 
@@ -630,8 +630,8 @@ Note that `rack.onUnload()` is called when the script is replaced by a different
 - `trig.setHigh(trigPort, [channel = 1])`: Sets the trigger output port `trigPort` (only *1* is supported in this version) to 10V on polyphonic `channel` (1..16).
 - `trig.setLow(trigPort, [channel = 1])`: Sets the trigger output port `trigPort` (only *1* is supported in this version) to 0V on polyphonic `channel` (1..16).
 - `trig.setTrigger(trigPort, [channel = 1])`: Sends a trigger on trigger output port `trigPort` (only *1* is supported in this version) on polyphonic `channel` (1..16).
-- `trig.sendTipsy(data, [mimeType])`: Encodes binary `data` using the [Tipsy protocol](https://github.com/baconpaul/tipsy-encoder) and outputs it as a stream of CV voltages on the trigger output — one voltage per sample until the message is complete. The optional `mimeType` parameter specifies the content type and defaults to `"text/plain"` (e.g., `"text/plain"`, `"application/json"`). This allows scripts to transmit arbitrary binary data through the CV interface, compatible with modules that understand the Tipsy protocol (such as Transit). The payload is limited to 256 bytes.
-- `trig.enableTipsyIn([enabled])`: Routes the **trigger input** into the Tipsy decoder, delivering every complete message to [`rack.onTipsyMessage(data, mimeType)`](#callbacks-on-the-rack-object). The optional boolean `enabled` defaults to `true`; pass `false` to release the trigger input. Tipsy input is only supported on the first trigger input, so — like `trig.sendTipsy()` — there is no port argument. While the trigger input is claimed, channel 1 stops behaving as a trigger — `rack.onTrigger` doesn't fire and `trig.getTicks()` doesn't advance there, and `trig.isHigh()`/`trig.isLow()` on channel 1 read `0` (other channels are unaffected), since the encoded voltages are protocol data rather than a gate. Payloads are limited to 256 bytes.
+- `trig.sendTipsy(data, [mimeType = "text/plain"])`: Encodes binary `data` using the [Tipsy protocol](https://github.com/baconpaul/tipsy-encoder) and outputs it as a stream of CV voltages on the trigger output — one voltage per sample until the message is complete. The optional `mimeType` parameter specifies the content type and defaults to `"text/plain"` (e.g., `"text/plain"`, `"application/json"`). This allows scripts to transmit arbitrary binary data through the CV interface, compatible with modules that understand the Tipsy protocol (such as Transit). The payload is limited to 256 bytes.
+- `trig.enableTipsyIn([enabled = true])`: Routes the **trigger input** into the Tipsy decoder, delivering every complete message to [`rack.onTipsyMessage(data, mimeType)`](#callbacks-on-the-rack-object). The optional boolean `enabled` defaults to `true`; pass `false` to release the trigger input. Tipsy input is only supported on the first trigger input, so — like `trig.sendTipsy()` — there is no port argument. While the trigger input is claimed, channel 1 stops behaving as a trigger — `rack.onTrigger` doesn't fire and `trig.getTicks()` doesn't advance there, and `trig.isHigh()`/`trig.isLow()` on channel 1 read `0` (other channels are unaffected), since the encoded voltages are protocol data rather than a gate. Payloads are limited to 256 bytes.
 
 The trigger output can also carry [Tipsy](https://github.com/baconpaul/tipsy-encoder) protocol data sent with [`trig.sendTipsy()`](#trig). While such a message is being transmitted, the script's trigger functions temporarily take a back seat — each encoded sample of the Tipsy stream takes over the trigger output until the message is complete.
 
@@ -645,7 +645,7 @@ The trigger output can also carry [Tipsy](https://github.com/baconpaul/tipsy-enc
 ### number
 
 - `number.crossfade(a, b, p)`: Linearly interpolates between `a` and `b`, from `p = 0` to `p = 1`.
-- `number.rescale(x, xMin, xMax, yMin, yMax, [a])`: Rescales `x` from `[xMin, xMax]` to `[yMin, yMax]`. The optional parameter `a` controls the curvature of the mapping (`a = 0` is linear). See the image for example curves:
+- `number.rescale(x, xMin, xMax, yMin, yMax, [a = 0])`: Rescales `x` from `[xMin, xMax]` to `[yMin, yMax]`. The optional parameter `a` controls the curvature of the mapping (`a = 0` is linear). See the image for example curves:
   $$ f(x) \frac{\ \exp\left(\left(\ln\left(x\left(e-1\right)+1\right)\right)^{\left(2^{a}\right)}\right)-1}{e-1} $$
   Resulting in curves for `a = -4, -2, 0, 2, 4`: 
   ![](./MidiKit-rescale.png)
@@ -685,7 +685,7 @@ The trigger output can also carry [Tipsy](https://github.com/baconpaul/tipsy-enc
 - `midi.setChanPressure(msg, channel, value)`: Sets `msg` as a MIDI channel pressure message, with MIDI channel `channel` (1..16) and pressure `value` (0..127).
 - `midi.setKeyPressure(msg, channel, note, value)`: Sets `msg` as MIDI key pressure/aftertouch message, with the MIDI channel `channel` (1..16), MIDI note number `note` (0..127) and pressure `value` (0..127, clamped if out of range).
 - `midi.setNote(msg, note)`: Sets the MIDI note number (0..127) for `msg` (byte 2 of the MIDI message).
-- `midi.setNoteOff(msg, channel, note, velocity)`: Sets `msg` as MIDI note off message, with MIDI channel `channel` (1..16), MIDI note number `note` (0..127) and release `velocity` (0..127, clamped if out of range; optional and defaults to *0* — read back with `midi.getValue(msg)`). Please be aware, some MIDI devices need a MIDI note on message with velocity *0* instead of a MIDI note off message.
+- `midi.setNoteOff(msg, channel, note, [velocity = 0])`: Sets `msg` as MIDI note off message, with MIDI channel `channel` (1..16), MIDI note number `note` (0..127) and release `velocity` (0..127, clamped if out of range; optional and defaults to *0* — read back with `midi.getValue(msg)`). Please be aware, some MIDI devices need a MIDI note on message with velocity *0* instead of a MIDI note off message.
 - `midi.setNoteOn(msg, channel, note, velocity)`: Sets `msg` as MIDI note on message, with MIDI channel `channel` (1..16), MIDI note number `note` (0..127) and `velocity` (0..127, clamped if out of range).
 - `midi.setNRPN(nrpn, channel, number, value)`: Sets the NRPN number and NRPN value of `nrpn`.
 - `midi.setPitchWheel(msg, channel, value)`: Sets `msg` as a MIDI pitch wheel message, with the specified MIDI channel (1..16) and pitch wheel value (0..16383).
@@ -702,7 +702,7 @@ The sending functions below take no port argument — the destination is whateve
 
 - `midiOut.send(msg)`: Sends `msg` on the selected MIDI port.
 - `midiOut.sendAfterMs(msg, ms)`: Sends `msg` delayed on the selected MIDI port. The delay `ms` is specified in milliseconds.
-- `midiOut.sendAfterTrigger(msg, ticks, [trigPort], [channel])`: Sends `msg` delayed on the selected MIDI port. The delay is specified in `ticks` of triggers on CV trigger input `trigPort` (default *1*) of polyphonic `channel` (default *1*). If `trigPort` is omitted the default trigger port is selected.
+- `midiOut.sendAfterTrigger(msg, ticks, [trigPort = 1, [channel = 1]])`: Sends `msg` delayed on the selected MIDI port. The delay is specified in `ticks` of triggers on CV trigger input `trigPort` (default *1*) of polyphonic `channel` (default *1*). `trigPort` is an optional trigger input port; `channel` is a further optional polyphonic channel.
 
 **A message can only be sent once per callback.** `midiOut.send(msg)` and the `sendAfter*` variants mark the handle as sent — the actual enqueue happens once per handle after the callback, so sending the *same* handle again in one `rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` is not a second message: only one goes out (and if the message body was changed in between, the last change wins). To send the same bytes twice, create a fresh handle with `midi.create()` or `midi.clone(msg)` and send that. Each message sent also consumes one of the 32 message-handle slots, so one handle per message is the right pattern. When the store is full, `midi.create()`/`midi.clone()`/`midi.createNRPN()` raise a script error that aborts the rest of the callback; messages already sent before the error are still flushed, so a multi-message sequence can be emitted partially.
 
