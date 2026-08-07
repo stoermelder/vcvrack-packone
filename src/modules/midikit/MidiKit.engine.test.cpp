@@ -1456,6 +1456,85 @@ TEST_CASE("trig.getTicks counts identical rising edges in both engines", "[MidiK
 }
 
 
+static const char* JS_TRIG_GET_TICKS_CHANNEL = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onMidiMessage = function(port, msg) {
+    let a = midi.create();
+    midi.setCc(a, 1, 1, 0);
+    midi.setValue(a, trig.getTicks(1, 1));
+    midiOut.send(a);
+    let b = midi.create();
+    midi.setCc(b, 1, 2, 0);
+    midi.setValue(b, trig.getTicks(1, 2));
+    midiOut.send(b);
+};
+)";
+
+static const char* LUA_TRIG_GET_TICKS_CHANNEL = R"(--[[
+@engine minilua@v1
+--]]
+rack.onMidiMessage = function(midiPort, msg)
+    local a = midi.create()
+    midi.setCc(a, 1, 1, 0)
+    midi.setValue(a, trig.getTicks(1, 1))
+    midiOut.send(a)
+    local b = midi.create()
+    midi.setCc(b, 1, 2, 0)
+    midi.setValue(b, trig.getTicks(1, 2))
+    midiOut.send(b)
+end
+)";
+
+TEST_CASE("trig.getTicks(1, channel) counts each channel independently, in both engines", "[MidiKit][CrossEngine]") {
+	auto ticksPerChannel = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+
+		Module::ProcessArgs args;
+		args.sampleTime = 1.0f / 44100.0f;
+		args.sampleRate = 44100.0f;
+
+		m->inputs[MidiKitModule::INPUT_TRIG].channels = 2;
+		// Channel 1 gets two rising edges, channel 2 gets three.
+		auto drive = [&](int frame, float v0, float v1) {
+			m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(v0, 0);
+			m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(v1, 1);
+			args.frame = frame;
+			m->process(args);
+		};
+		drive(0, 0.f, 0.f);   // prime both low
+		drive(1, 10.f, 0.f);  // ch1 edge
+		drive(2, 0.f, 0.f);
+		drive(3, 10.f, 0.f);  // ch1 edge
+		drive(4, 10.f, 10.f); // ch2 edge (ch1 stays high)
+		drive(5, 0.f, 10.f);
+		drive(6, 0.f, 0.f);
+		drive(7, 0.f, 10.f);  // ch2 edge
+		drive(8, 0.f, 0.f);
+		drive(9, 0.f, 10.f);  // ch2 edge
+
+		midi::Message in;
+		in.setSize(3);
+		in.setStatus(0x9);
+		m->activeEngine->processInMessage(0, in);
+		m->activeEngine->process();
+
+		int port, ticks;
+		midi::Message out;
+		std::vector<int> values;
+		while (processOutMessage(m, port, out, ticks)) {
+			values.push_back(out.getValue());
+		}
+		Test::destroyModule(m);
+		return values;
+	};
+
+	REQUIRE(ticksPerChannel(JS_TRIG_GET_TICKS_CHANNEL) == std::vector<int>{2, 3});
+	REQUIRE(ticksPerChannel(LUA_TRIG_GET_TICKS_CHANNEL) == std::vector<int>{2, 3});
+}
+
+
 // --- trig.setGate / setHigh / setLow / setTrigger ---------------------------
 //
 // These write to the module's own trigger-output state, which is plain
@@ -1772,7 +1851,7 @@ midi.setNoteOn(msg, 1, 60, 100);
 
 rack.onMidiMessage = function(port, msg) {
     midiOut.selectPort(1);
-    midiOut.sendAfterTrigger(msg, 1, 10);
+    midiOut.sendAfterTrigger(msg, 10, 1);
 };
 )";
 
@@ -1784,12 +1863,41 @@ midi.setNoteOn(msg, 1, 60, 100)
 
 rack.onMidiMessage = function(midiPort, msg)
     midiOut.selectPort(1)
-    midiOut.sendAfterTrigger(msg, 1, 10)
+    midiOut.sendAfterTrigger(msg, 10, 1)
 end
 )";
 
 TEST_CASE("sendAfterTrigger with explicit trigPort (3 args) is identical", "[MidiKit][CrossEngine]") {
 	requireEquivalent(JS_SEND_AFTER_TRIGGER_TRIGPORT, LUA_SEND_AFTER_TRIGGER_TRIGPORT);
+}
+
+
+static const char* JS_SEND_AFTER_TRIGGER_CHANNEL = R"(/**
+ * @engine QuickJs@v1
+ */
+let msg = midi.create();
+midi.setNoteOn(msg, 1, 60, 100);
+
+rack.onMidiMessage = function(port, msg) {
+    midiOut.selectPort(1);
+    midiOut.sendAfterTrigger(msg, 10, 1, 2);
+};
+)";
+
+static const char* LUA_SEND_AFTER_TRIGGER_CHANNEL = R"(--[[
+@engine minilua@v1
+--]]
+msg = midi.create()
+midi.setNoteOn(msg, 1, 60, 100)
+
+rack.onMidiMessage = function(midiPort, msg)
+    midiOut.selectPort(1)
+    midiOut.sendAfterTrigger(msg, 10, 1, 2)
+end
+)";
+
+TEST_CASE("sendAfterTrigger with explicit channel (4 args) is identical", "[MidiKit][CrossEngine]") {
+	requireEquivalent(JS_SEND_AFTER_TRIGGER_CHANNEL, LUA_SEND_AFTER_TRIGGER_CHANNEL);
 }
 
 
@@ -2242,14 +2350,14 @@ TEST_CASE("process() drains a tick-scheduled message into midiOutput", "[MidiKit
 	MidiKitModule* m = createModule();
 	midi::Message msg = noteOn(1, 60, 100);
 
-	REQUIRE(m->sendMidi(0, &msg, 1, 5));   // tick 5: lands in tickQueue
-	REQUIRE(m->midiOutput.tickQueue.size() == 0);
+	REQUIRE(m->sendMidi(0, &msg, 1, 0, 5));   // tick 5: lands in tickQueue
+	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
 
 	processOneDividerPeriod(m);
 
 	REQUIRE(m->midiOutQueue.empty());
-	REQUIRE(m->midiOutput.tickQueue.size() == 1);
-	REQUIRE(m->midiOutput.tickQueue.top().tick == 5);
+	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);
+	REQUIRE(m->midiOutput.tickQueue[0].top().tick == 5);
 
 	Test::destroyModule(m);
 }
@@ -2265,9 +2373,9 @@ TEST_CASE("process() drains the queue in FIFO order across an engine switch", "[
 	midi::Message first = noteOn(1, 60, 100);
 	midi::Message second = noteOn(1, 61, 100);
 	midi::Message third = noteOn(1, 62, 100);
-	REQUIRE(m->sendMidi(0, &first, 1, 0));
-	REQUIRE(m->sendMidi(0, &second, 1, 0));
-	REQUIRE(m->sendMidi(0, &third, 1, 0));
+	REQUIRE(m->sendMidi(0, &first, 1, 0, 0));
+	REQUIRE(m->sendMidi(0, &second, 1, 0, 0));
+	REQUIRE(m->sendMidi(0, &third, 1, 0, 0));
 
 	int port, ticks;
 	midi::Message out;
@@ -2291,8 +2399,8 @@ TEST_CASE("An NRPN group is queued whole and in order", "[MidiKit]") {
 
 	midi::Message group[4] = {noteOn(1, 60, 100), noteOn(1, 61, 100), noteOn(1, 62, 100), noteOn(1, 63, 100)};
 	midi::Message after = noteOn(1, 70, 100);
-	REQUIRE(m->sendMidi(0, group, 4, 0));
-	REQUIRE(m->sendMidi(0, &after, 1, 0));
+	REQUIRE(m->sendMidi(0, group, 4, 0, 0));
+	REQUIRE(m->sendMidi(0, &after, 1, 0, 0));
 
 	int port, ticks;
 	midi::Message out;
@@ -2315,14 +2423,14 @@ TEST_CASE("onRemove() flushes teardown output immediately, bypassing scheduling"
 	MidiKitModule* m = createModule();
 	midi::Message msg = noteOn(1, 60, 100);
 
-	REQUIRE(m->sendMidi(0, &msg, 1, 5));   // would be tick-scheduled via send()
+	REQUIRE(m->sendMidi(0, &msg, 1, 0, 5));   // would be tick-scheduled via send()
 
 	Module::RemoveEvent eRemove;
 	m->onRemove(eRemove);
 
 	REQUIRE(m->midiOutQueue.empty());
 	// Sent immediately instead of being parked in a queue nothing will drain.
-	REQUIRE(m->midiOutput.tickQueue.size() == 0);
+	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
 	REQUIRE(m->midiOutput.frameQueue.size() == 0);
 
 	delete m;
@@ -2340,12 +2448,12 @@ TEST_CASE("MIDI output overflow drops without corrupting the queue", "[MidiKit]"
 
 	size_t capacity = m->midiOutQueue.capacity();
 	for (size_t i = 0; i < capacity; i++) {
-		REQUIRE(m->sendMidi(0, &msg, 1, 0));
+		REQUIRE(m->sendMidi(0, &msg, 1, 0, 0));
 	}
 	REQUIRE(m->midiOutQueue.full());
 
 	// One more push has no room: dropped, not overwritten.
-	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0));
+	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0, 0));
 	REQUIRE(m->midiOutQueue.full());
 	REQUIRE(m->midiOutQueue.size() == capacity);
 	REQUIRE_FALSE(m->midiOutQueue.empty());
@@ -2360,13 +2468,13 @@ TEST_CASE("MIDI output overflow is reported once per episode, not once per drop"
 
 	size_t capacity = m->midiOutQueue.capacity();
 	for (size_t i = 0; i < capacity; i++) {
-		REQUIRE(m->sendMidi(0, &msg, 1, 0));
+		REQUIRE(m->sendMidi(0, &msg, 1, 0, 0));
 	}
 	// Several drops in the same episode — only one log line should result once
 	// process() next runs and consumes the rising edge of midiOutOverflow.
-	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0));
-	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0));
-	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0));
+	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0, 0));
+	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0, 0));
+	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0, 0));
 
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
 	for (int64_t f = 0; f < 8; f++) {
@@ -2393,9 +2501,9 @@ TEST_CASE("MIDI output overflow is reported again after the queue recovers", "[M
 
 	auto fillAndOverflow = [&]() {
 		while (m->midiOutQueue.capacity() > 0) {
-			REQUIRE(m->sendMidi(0, &msg, 1, 0));
+			REQUIRE(m->sendMidi(0, &msg, 1, 0, 0));
 		}
-		REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0));
+		REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0, 0));
 	};
 	auto countDropLines = [&]() {
 		size_t count = 0;
@@ -2435,12 +2543,12 @@ TEST_CASE("An NRPN group is dropped whole, never truncated, when free capacity i
 	// Leave exactly 3 free slots — one short of the 4-message group.
 	size_t capacity = m->midiOutQueue.capacity();
 	for (size_t i = 0; i < capacity - 3; i++) {
-		REQUIRE(m->sendMidi(0, &msg, 1, 0));
+		REQUIRE(m->sendMidi(0, &msg, 1, 0, 0));
 	}
 	REQUIRE(m->midiOutQueue.capacity() == 3);
 
 	midi::Message group[4] = {msg, msg, msg, msg};
-	REQUIRE_FALSE(m->sendMidi(0, group, 4, 0));
+	REQUIRE_FALSE(m->sendMidi(0, group, 4, 0, 0));
 	// Rejected as a whole: the 3 free slots are still free, not partially
 	// consumed by the first 3 messages of the group.
 	REQUIRE(m->midiOutQueue.capacity() == 3);
@@ -2754,7 +2862,7 @@ TEST_CASE("onTrigger fires on a trigger input tick and sends an identical messag
 		m->loadScript(script);
 		drainLog(m);
 
-		m->activeEngine->processInTick(0);
+		m->activeEngine->processInTick(0, 0);
 		m->activeEngine->process();
 
 		std::string log = drainLog(m);
@@ -2775,13 +2883,55 @@ TEST_CASE("onTrigger fires on a trigger input tick and sends an identical messag
 }
 
 
+static const char* JS_ON_TRIGGER_CHANNEL = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onTrigger = function(trigPort, channel) {
+    rack.log("onTrigger " + number.toString(trigPort) + " " + number.toString(channel));
+};
+)";
+
+static const char* LUA_ON_TRIGGER_CHANNEL = R"(--[[
+@engine minilua@v1
+--]]
+function rack.onTrigger(trigPort, channel)
+    rack.log("onTrigger " .. trigPort .. " " .. channel)
+end
+)";
+
+TEST_CASE("onTrigger receives the firing channel, in both engines", "[MidiKit][CrossEngine]") {
+	auto logChannels = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		drainLog(m);
+
+		// Channels are 1-based in the callback: index 0 -> "1", index 1 -> "2".
+		m->activeEngine->processInTick(0, 0);
+		m->activeEngine->process();
+		m->activeEngine->processInTick(0, 1);
+		m->activeEngine->process();
+
+		std::string log = drainLog(m);
+		Test::destroyModule(m);
+		return log;
+	};
+
+	auto js = logChannels(JS_ON_TRIGGER_CHANNEL);
+	auto lua = logChannels(LUA_ON_TRIGGER_CHANNEL);
+	REQUIRE(js.find("onTrigger 1 1") != std::string::npos);
+	REQUIRE(js.find("onTrigger 1 2") != std::string::npos);
+	REQUIRE(lua.find("onTrigger 1 1") != std::string::npos);
+	REQUIRE(lua.find("onTrigger 1 2") != std::string::npos);
+}
+
+
 TEST_CASE("Script without onTrigger silently ignores trigger ticks, in both engines", "[MidiKit][CrossEngine]") {
 	auto checkNoOnTrigger = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
 		drainLog(m);
 
-		m->activeEngine->processInTick(0);
+		m->activeEngine->processInTick(0, 0);
 		m->activeEngine->process();
 
 		std::string log = drainLog(m);
@@ -3575,7 +3725,7 @@ TEST_CASE("Defining rack.onMidiMessage late (from onTrigger) never gets called, 
 		// though the script goes on to define it moments later.
 		REQUIRE(loadLog.find("No onMidiMessage") != std::string::npos);
 
-		m->activeEngine->processInTick(0);
+		m->activeEngine->processInTick(0, 0);
 		m->activeEngine->process();
 		std::string triggerLog = drainLog(m);
 		REQUIRE(triggerLog.find("onTrigger fired") != std::string::npos);

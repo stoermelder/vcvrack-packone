@@ -34,9 +34,6 @@
 
 -- Configuration - change these values as needed
 local config = {
-    -- Trigger input driving the arp (1-based)
-    trigPort = 1,
-
     -- Only arpeggiate notes on this channel; 0 = every channel
     channel = 0,
 
@@ -155,7 +152,6 @@ end
 
 rack.onLoad = function()
     rack.log("Arpeggiator initialized")
-    rack.log("Trigger input: ", config.trigPort)
 end
 
 rack.onUnload = function()
@@ -234,8 +230,8 @@ rack.onMidiMessage = function(midiPort, msg)
     midiOut.send(msg)
 end
 
-function rack.onTrigger(trigPort)
-    if trigPort ~= config.trigPort then return end
+function rack.onTrigger(trigPort, channel)
+    if channel ~= 1 then return end
 
     local division = DIVISIONS[divisionIndex()]
     state.tickCount = state.tickCount + 1
@@ -261,7 +257,7 @@ function rack.onTrigger(trigPort)
 
     local off = midi.create()
     midi.setNoteOff(off, ch, note)
-    midiOut.sendAfterTrigger(off, config.trigPort, lengthTicks)
+    midiOut.sendAfterTrigger(off, lengthTicks)
 
     state.soundingNote = note
     state.soundingChannel = ch

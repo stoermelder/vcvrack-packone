@@ -34,9 +34,6 @@
 
 // Configuration - change these values as needed
 let config = {
-    // Trigger input driving the rhythm (1-based)
-    trigPort: 1,
-
     // Output channel for the generated notes (1-16)
     outChannel: 1
 };
@@ -174,7 +171,6 @@ function releaseSounding() {
 
 rack.onLoad = function() {
     rack.log("Euclidean rhythm generator initialized");
-    rack.log("Trigger input: ", config.trigPort);
 };
 
 rack.onUnload = function() {
@@ -204,8 +200,8 @@ rack.onMidiMessage = function(midiPort, msg) {
     midiOut.send(msg);
 };
 
-rack.onTrigger = function(trigPort) {
-    if (trigPort !== config.trigPort) return;
+rack.onTrigger = function(trigPort, channel) {
+    if (channel !== 1) return;
 
     rebuildPattern();
 

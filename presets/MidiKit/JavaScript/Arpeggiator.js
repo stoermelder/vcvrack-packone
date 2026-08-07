@@ -34,9 +34,6 @@
 
 // Configuration - change these values as needed
 let config = {
-    // Trigger input driving the arp (1-based)
-    trigPort: 1,
-
     // Only arpeggiate notes on this channel; 0 = every channel
     channel: 0,
 
@@ -157,7 +154,6 @@ function releaseSounding() {
 
 rack.onLoad = function() {
     rack.log("Arpeggiator initialized");
-    rack.log("Trigger input: ", config.trigPort);
 };
 
 rack.onUnload = function() {
@@ -236,8 +232,8 @@ rack.onMidiMessage = function(midiPort, msg) {
     midiOut.send(msg);
 };
 
-rack.onTrigger = function(trigPort) {
-    if (trigPort !== config.trigPort) return;
+rack.onTrigger = function(trigPort, channel) {
+    if (channel !== 1) return;
 
     let division = DIVISIONS[divisionIndex()];
     state.tickCount++;
@@ -261,7 +257,7 @@ rack.onTrigger = function(trigPort) {
 
     let off = midi.create();
     midi.setNoteOff(off, ch, note);
-    midiOut.sendAfterTrigger(off, config.trigPort, lengthTicks);
+    midiOut.sendAfterTrigger(off, lengthTicks);
 
     state.soundingNote = note;
     state.soundingChannel = ch;

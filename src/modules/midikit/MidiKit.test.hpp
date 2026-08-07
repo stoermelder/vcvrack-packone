@@ -94,7 +94,7 @@ static bool processOutMessage(MidiKitModule* m, int& midiPort, midi::Message& ms
 	auto t = m->midiOutQueue.shift();
 	midiPort = std::get<0>(t);
 	msg = std::get<1>(t);
-	ticks = (int)std::get<2>(t);
+	ticks = (int)std::get<3>(t);
 	return true;
 }
 

@@ -164,7 +164,7 @@ struct ArpeggiatorScript : Script {
 			midi::Message on = noteOn(1, add, 100);
 			se->processInMessage(0, off);
 			se->processInMessage(0, on);
-			se->processInTick(0);
+			se->processInTick(0, 0);
 			se->process();
 			held[0] = add;
 		};

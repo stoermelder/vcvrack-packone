@@ -300,11 +300,11 @@ end
 
 ### Send a MIDI clock message on each trigger
 
-`rack.onTrigger(trigPort)` is the entry point for logic driven by the CV trigger input rather than by incoming MIDI — for example, forwarding an external clock as MIDI clock messages.
+`rack.onTrigger(trigPort, channel)` is the entry point for logic driven by the CV trigger input rather than by incoming MIDI — for example, forwarding an external clock as MIDI clock messages. `channel` (1-based) is the polyphonic channel of the trigger input that fired.
 
 JavaScript:
 ```js
-rack.onTrigger = function(trigPort) {
+rack.onTrigger = function(trigPort, channel) {
    let clock = midi.create();
    midi.setRaw(clock, "f8");
    midiOut.send(clock);
@@ -313,7 +313,7 @@ rack.onTrigger = function(trigPort) {
 
 Lua:
 ```lua
-rack.onTrigger = function(trigPort)
+rack.onTrigger = function(trigPort, channel)
    local clock = midi.create()
    midi.setRaw(clock, "f8")
    midiOut.send(clock)
@@ -354,7 +354,7 @@ end
 
 `trig.enableTipsyIn()` routes the **trigger input** (`TRIG`) into MIDI-KIT's Tipsy decoder. Every complete message that arrives is delivered to `rack.onTipsyMessage(data, mimeType)`. Pass `false` to release the trigger input again. Tipsy input is only supported on the first trigger input, so — like `trig.sendTipsy()` — there is no port argument.
 
-Note that while the trigger input is claimed for Tipsy, it no longer behaves as a trigger — `rack.onTrigger` doesn't fire and `trig.getTicks()` doesn't advance, since the encoded voltages swing across the trigger threshold constantly and would otherwise fire on nearly every sample.
+Note that while the trigger input is claimed for Tipsy, channel 1 no longer behaves as a trigger — `rack.onTrigger` doesn't fire and `trig.getTicks()` doesn't advance there, since the encoded voltages swing across the trigger threshold constantly and would otherwise fire on nearly every sample. Other channels are unaffected.
 
 JavaScript:
 ```js
@@ -383,7 +383,7 @@ rack.onTipsyMessage = function(data, mimeType)
 end
 ```
 
-**Note:** While the trigger input is claimed for Tipsy, it no longer behaves as a trigger — `rack.onTrigger` doesn't fire, `trig.getTicks()` doesn't advance, and `trig.isHigh()`/`trig.isLow()` on channel 1 read `0` (other channels are unaffected). Releasing it with `trig.enableTipsyIn(false)` restores normal trigger behavior. Payloads are capped at 256 bytes, and `data` may contain arbitrary bytes including NULs. A malformed or interrupted stream is reported once in the module log and the decoder resynchronizes automatically on the next message.
+**Note:** While the trigger input is claimed for Tipsy, channel 1 no longer behaves as a trigger — `rack.onTrigger` doesn't fire and `trig.getTicks()` doesn't advance there, and `trig.isHigh()`/`trig.isLow()` on channel 1 read `0` (other channels are unaffected). Releasing it with `trig.enableTipsyIn(false)` restores normal trigger behavior. Payloads are capped at 256 bytes, and `data` may contain arbitrary bytes including NULs. A malformed or interrupted stream is reported once in the module log and the decoder resynchronizes automatically on the next message.
 
 ### Add items to the module's context menu
 
@@ -519,7 +519,7 @@ The API below is identical for both scripting engines — the function names, ar
 The callbacks below are defined as methods on the `rack` object — `rack.onMidiMessage`, `rack.onTrigger`, `rack.onTipsyMessage`, `rack.onLoad`, `rack.onUnload`, `rack.onSave`.
 
 - `rack.onMidiMessage(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
-- `rack.onTrigger(trigPort)`: Optional. Called whenever a trigger arrives on CV trigger input port `trigPort` (only *1* is supported in this version). This is the only entry point for script logic that isn't driven by an incoming MIDI message — e.g. sending a MIDI message in response to an external clock/gate. A script that doesn't define it simply never has it called. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onTrigger = function(trigPort) { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
+- `rack.onTrigger(trigPort, channel)`: Optional. Called whenever a trigger arrives on CV trigger input port `trigPort` (only *1* is supported in this version). `channel` (1-based) is the polyphonic channel of the trigger input that fired — a polyphonic trigger input fires the hook once per rising edge on each channel. This is the only entry point for script logic that isn't driven by an incoming MIDI message — e.g. sending a MIDI message in response to an external clock/gate. A script that doesn't define it simply never has it called. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onTrigger = function(trigPort, channel) { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
 - `rack.onTipsyMessage(data, mimeType)`: Optional. Called once for every complete [Tipsy](#receive-tipsy-protocol-data-via-trigger-input) message decoded from the trigger input claimed with `trig.enableTipsyIn()`. Both arguments are strings; `data` may contain arbitrary bytes (including NULs) and is capped at 256 bytes. A script that never claims a port, or never defines this callback, simply never has it called. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onTipsyMessage = function(data, mimeType) { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
 - `rack.onLoad(persistedConfig)`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. If the script was previously saved with a config (see [Persistence](#persistence)), `persistedConfig` is a JavaScript object (QuickJS) or table (Lua) containing the values returned by the last `rack.onSave()`. If no config was persisted, `persistedConfig` is `undefined` (QuickJS) / `nil` (Lua), and the script should initialize from its defaults. Use it in place of a manually-called `init()` function at the bottom of the file. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onLoad = function(persistedConfig) { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
 - `rack.onUnload()`: Optional. Called every time the script's state is actually torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. It never runs on a plain patch save, and **its return value is ignored** — use `rack.onSave()` to persist config. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onUnload = function() { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
@@ -623,7 +623,7 @@ Note that `rack.onUnload()` is called when the script is replaced by a different
 
 ### trig
 
-- `trig.getTicks(trigPort)`: Returns the number of triggers on trigger input port `trigPort` (only *1* is supported in this version, on polyphonic channel 1) since loading the script. 
+- `trig.getTicks(trigPort, [channel = 1])`: Returns the number of triggers on trigger input port `trigPort` (only *1* is supported in this version) of polyphonic `channel` (1..16) since loading the script. 
 - `trig.isHigh(trigPort, [channel = 1])`: Returns true if the voltage on trigger input port `trigPort` (only *1* is supported in this version) of polyphonic `channel` (1..16) is above 0.7V.
 - `trig.isLow(trigPort, [channel = 1])`: Returns true if the voltage on trigger input port `trigPort` (only *1* is supported in this version) of polyphonic `channel` (1..16) is below 0.7V.
 - `trig.setGate(trigPort, [channel = 1], duration)`: Sends a gate on trigger output port `trigPort` (only *1* is supported in this version) with length of `duration` ms on polyphonic `channel` (1..16).
@@ -631,7 +631,7 @@ Note that `rack.onUnload()` is called when the script is replaced by a different
 - `trig.setLow(trigPort, [channel = 1])`: Sets the trigger output port `trigPort` (only *1* is supported in this version) to 0V on polyphonic `channel` (1..16).
 - `trig.setTrigger(trigPort, [channel = 1])`: Sends a trigger on trigger output port `trigPort` (only *1* is supported in this version) on polyphonic `channel` (1..16).
 - `trig.sendTipsy(data, [mimeType])`: Encodes binary `data` using the [Tipsy protocol](https://github.com/baconpaul/tipsy-encoder) and outputs it as a stream of CV voltages on the trigger output — one voltage per sample until the message is complete. The optional `mimeType` parameter specifies the content type and defaults to `"text/plain"` (e.g., `"text/plain"`, `"application/json"`). This allows scripts to transmit arbitrary binary data through the CV interface, compatible with modules that understand the Tipsy protocol (such as Transit). The payload is limited to 256 bytes.
-- `trig.enableTipsyIn([enabled])`: Routes the **trigger input** into the Tipsy decoder, delivering every complete message to [`rack.onTipsyMessage(data, mimeType)`](#callbacks-on-the-rack-object). The optional boolean `enabled` defaults to `true`; pass `false` to release the trigger input. Tipsy input is only supported on the first trigger input, so — like `trig.sendTipsy()` — there is no port argument. While the trigger input is claimed, it stops behaving as a trigger — `rack.onTrigger` doesn't fire, `trig.getTicks()` doesn't advance, and `trig.isHigh()`/`trig.isLow()` on channel 1 read `0` (other channels are unaffected), since the encoded voltages are protocol data rather than a gate. Payloads are limited to 256 bytes.
+- `trig.enableTipsyIn([enabled])`: Routes the **trigger input** into the Tipsy decoder, delivering every complete message to [`rack.onTipsyMessage(data, mimeType)`](#callbacks-on-the-rack-object). The optional boolean `enabled` defaults to `true`; pass `false` to release the trigger input. Tipsy input is only supported on the first trigger input, so — like `trig.sendTipsy()` — there is no port argument. While the trigger input is claimed, channel 1 stops behaving as a trigger — `rack.onTrigger` doesn't fire and `trig.getTicks()` doesn't advance there, and `trig.isHigh()`/`trig.isLow()` on channel 1 read `0` (other channels are unaffected), since the encoded voltages are protocol data rather than a gate. Payloads are limited to 256 bytes.
 
 The trigger output can also carry [Tipsy](https://github.com/baconpaul/tipsy-encoder) protocol data sent with [`trig.sendTipsy()`](#trig). While such a message is being transmitted, the script's trigger functions temporarily take a back seat — each encoded sample of the Tipsy stream takes over the trigger output until the message is complete.
 
@@ -702,7 +702,7 @@ The sending functions below take no port argument — the destination is whateve
 
 - `midiOut.send(msg)`: Sends `msg` on the selected MIDI port.
 - `midiOut.sendAfterMs(msg, ms)`: Sends `msg` delayed on the selected MIDI port. The delay `ms` is specified in milliseconds.
-- `midiOut.sendAfterTrigger(msg, [trigPort], ticks)`: Sends `msg` delayed on the selected MIDI port. The delay is specified in `ticks` of triggers on CV trigger input `trigPort`. If `trigPort` is omitted the default trigger port is selected.
+- `midiOut.sendAfterTrigger(msg, ticks, [trigPort], [channel])`: Sends `msg` delayed on the selected MIDI port. The delay is specified in `ticks` of triggers on CV trigger input `trigPort` (default *1*) of polyphonic `channel` (default *1*). If `trigPort` is omitted the default trigger port is selected.
 
 **A message can only be sent once per callback.** `midiOut.send(msg)` and the `sendAfter*` variants mark the handle as sent — the actual enqueue happens once per handle after the callback, so sending the *same* handle again in one `rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` is not a second message: only one goes out (and if the message body was changed in between, the last change wins). To send the same bytes twice, create a fresh handle with `midi.create()` or `midi.clone(msg)` and send that. Each message sent also consumes one of the 32 message-handle slots, so one handle per message is the right pattern. When the store is full, `midi.create()`/`midi.clone()`/`midi.createNRPN()` raise a script error that aborts the rest of the callback; messages already sent before the error are still flushed, so a multi-message sequence can be emitted partially.
 

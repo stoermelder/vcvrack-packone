@@ -73,13 +73,15 @@ struct MidiScriptEngineHandler {
 
 	virtual float getInputVoltage(int i, uint8_t ch) = 0;
 	virtual float getTrigVoltage(int i, uint8_t ch) = 0;
-	virtual uint64_t getTrigTicks(int i) = 0;
+	virtual uint64_t getTrigTicks(int i, uint8_t ch) = 0;
 	virtual void enableParam(int i) = 0;
 	virtual float getParamValue(int i) = 0;
 	virtual void setTrig(int i, uint8_t ch, float duration = 1e-3f) = 0;
 	virtual void setTrigVoltage(int i, uint8_t ch, float voltage) = 0;
 
-	// Queues `count` MIDI messages for output, all sharing one tick. Called from
+	// Queues `count` MIDI messages for output, all sharing one tick and the same
+	// trigger-input channel (only meaningful for tick-scheduled messages from
+	// sendAfterTrigger(); immediate/frame messages pass channel 0). Called from
 	// the worker thread.
 	//
 	// All-or-nothing: returns false without queuing any of them if there is not
@@ -89,7 +91,7 @@ struct MidiScriptEngineHandler {
 	// bounds check rather than two.
 	//
 	// Output saturation is expected, so callers treat false as normal, not an error.
-	virtual bool sendMidi(int midiPort, const Message* msgs, size_t count, uint64_t tick) = 0;
+	virtual bool sendMidi(int midiPort, const Message* msgs, size_t count, uint8_t channel, uint64_t tick) = 0;
 
 	// Queues a Tipsy protocol message for output on the module's trigger CV.
 	// Called from the worker thread; the module encodes and emits it on the
@@ -132,7 +134,9 @@ struct MidiScriptEngine {
 
 	std::shared_ptr<ITaskWorker> taskWorker;
 	dsp::RingBuffer<std::tuple<int, Message>, 128> midiInQueue;
-	dsp::RingBuffer<int, 4> tickInQueue;
+	// (trigPort, channel) — the trigger input is polyphonic, so each tick
+	// carries the channel that fired.
+	dsp::RingBuffer<std::tuple<int, uint8_t>, 4> tickInQueue;
 
 	void setWorker(std::shared_ptr<ITaskWorker> w) {
 		taskWorker = std::move(w);
@@ -253,7 +257,7 @@ struct MidiScriptEngine {
 
 	// Main interface for message processing
 	virtual void processInMessage(int midiPort, Message& msg) = 0;
-	virtual void processInTick(int trigPort) = 0;
+	virtual void processInTick(int trigPort, uint8_t channel) = 0;
 
 	// Decoded Tipsy messages awaiting dispatch. Engine-owned, like midiInQueue:
 	// the decoding is the module's job but dispatching into script code is the
@@ -274,8 +278,8 @@ struct MidiScriptEngine {
 					dispatchMidiMessage(midiPort, msg);
 				}
 				while (!tickInQueue.empty()) {
-					int trigPort = tickInQueue.shift();
-					dispatchTrigger(trigPort);
+					auto t = tickInQueue.shift();
+					dispatchTrigger(std::get<0>(t), std::get<1>(t));
 				}
 				while (!tipsyInQueue.empty()) {
 					TipsyMessage msg = tipsyInQueue.shift();
@@ -288,7 +292,7 @@ struct MidiScriptEngine {
 	// Engine-specific dispatch of a single message/tick, invoked from
 	// process() above on the worker thread.
 	virtual void dispatchMidiMessage(int midiPort, Message& msg) = 0;
-	virtual void dispatchTrigger(int trigPort) = 0;
+	virtual void dispatchTrigger(int trigPort, uint8_t channel) = 0;
 	virtual void dispatchTipsyMessage(const TipsyMessage& msg) = 0;
 
 	// Queries into the script from the UI

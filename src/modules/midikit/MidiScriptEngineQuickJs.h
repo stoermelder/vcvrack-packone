@@ -22,6 +22,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		Message msg;
 		bool isNrpn = false;
 		bool send = false;
+		uint8_t channel = 0;   // trigger input channel, for sendAfterTrigger() scheduling
 		uint64_t tick = 0;
 		// Monotonic stamp assigned when midiOut.send() is called, so the out
 		// queue can be flushed in send() order rather than handle order.
@@ -395,9 +396,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 	}
 
-	void processInTick(int trigPort) override {
+	void processInTick(int trigPort, uint8_t channel) override {
 		if (ctx) {
-			tickInQueue.push(trigPort);
+			tickInQueue.push(std::make_tuple(trigPort, channel));
 		}
 	}
 
@@ -437,17 +438,18 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 	}
 
-	// Dispatches onTrigger(trigPort) when the trigger input fires. No-op if
-	// the script never defined it.
-	void dispatchTrigger(int trigPort) override {
+	// Dispatches onTrigger(trigPort, channel) when the trigger input fires.
+	// No-op if the script never defined it.
+	void dispatchTrigger(int trigPort, uint8_t channel) override {
 		if (ctx) {
 			msgCount = 0;
 			inCallback = true;
 			// Calls the cached onTriggerFn/rackObj — see dispatchMidiMessage above.
 			if (!JS_IsUndefined(onTriggerFn)) {
-				JSValue arg = JS_NewInt32(ctx, trigPort + 1);
-				JSValue r = JS_Call(ctx, onTriggerFn, rackObj, 1, &arg);
-				JS_FreeValue(ctx, arg);
+				JSValue args[2] = { JS_NewInt32(ctx, trigPort + 1), JS_NewInt32(ctx, channel + 1) };
+				JSValue r = JS_Call(ctx, onTriggerFn, rackObj, 2, args);
+				JS_FreeValue(ctx, args[0]);
+				JS_FreeValue(ctx, args[1]);
 				inCallback = false;
 				if (JS_IsException(r)) {
 					JS_FreeValue(ctx, r);
@@ -528,10 +530,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 					msgStore[i].msg, msgStore[i + 1].msg,
 					msgStore[i + 2].msg, msgStore[i + 3].msg
 				};
-				handler->sendMidi(msgStore[i].midiPort, group, 4, msgStore[i].tick);
+				handler->sendMidi(msgStore[i].midiPort, group, 4, msgStore[i].channel, msgStore[i].tick);
 			}
 			else {
-				handler->sendMidi(msgStore[i].midiPort, &msgStore[i].msg, 1, msgStore[i].tick);
+				handler->sendMidi(msgStore[i].midiPort, &msgStore[i].msg, 1, msgStore[i].channel, msgStore[i].tick);
 			}
 		}
 	}
@@ -1088,10 +1090,14 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// trig
 
 	static JSValue js_trig_getTicks(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc < 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "trig.getTicks: bad args");
+		if (argc < 1 || argc > 2 || !argIsNumber(ctx, argv[0]) || (argc == 2 && !argIsNumber(ctx, argv[1])))
+			return jsThrow(ctx, "trig.getTicks: bad args");
 		int i = static_cast<int>(argNum(ctx, argv[0]));
 		if (i < 1 || i > getEngine(ctx)->inputTrigCount) return jsThrow(ctx, "trig.getTicks: bad index");
-		return JS_NewFloat64(ctx, double(getEngine(ctx)->handler->getTrigTicks(i - 1)));
+		int ch = 1;
+		if (argc == 2) ch = static_cast<int>(argNum(ctx, argv[1]));
+		if (ch < 1 || ch > PORT_MAX_CHANNELS) return jsThrow(ctx, "trig.getTicks: bad channel");
+		return JS_NewFloat64(ctx, double(getEngine(ctx)->handler->getTrigTicks(i - 1, ch - 1)));
 	}
 
 	static JSValue js_trig_isHigh(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
@@ -1680,34 +1686,41 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	static JSValue js_midiOut_sendAfterTrigger(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		// midiOut.sendAfterTrigger(msg, ticks, [trigPort], [channel])
+		//   2 args: msg, ticks                          (trig port 1, channel 1)
+		//   3 args: msg, ticks, trigPort
+		//   4 args: msg, ticks, trigPort, channel
 		size_t idx;
+		int trigPort = 1;
+		int channel = 1;
 		if (argc == 2) {
 			if (!getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midiOut.sendAfterTrigger: bad args");
-			MessageEx& s = getEngine(ctx)->msgStore[idx];
-			s.midiPort = getEngine(ctx)->selectedPort;
-			int64_t currentTicks = getEngine(ctx)->handler->getTrigTicks(0);
-			int ticks = static_cast<int>(argNum(ctx, argv[1]));
-			s.send = true;
-			s.sendOrder = getEngine(ctx)->sendCounter++;
-			s.tick = currentTicks + ticks;
-			return JS_UNDEFINED;
 		}
-		if (argc == 3) {
+		else if (argc == 3) {
 			if (!getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1]) || !argIsNumber(ctx, argv[2]))
 				return jsThrow(ctx, "midiOut.sendAfterTrigger: bad args");
-			int trigPort = static_cast<int>(argNum(ctx, argv[1]));
-			if (trigPort < 1 || trigPort > getEngine(ctx)->inputTrigCount) return jsThrow(ctx, "midiOut.sendAfterTrigger: bad trigInput index");
-			MessageEx& s = getEngine(ctx)->msgStore[idx];
-			s.midiPort = getEngine(ctx)->selectedPort;
-			int64_t currentTicks = getEngine(ctx)->handler->getTrigTicks(trigPort - 1);
-			int ticks = static_cast<int>(argNum(ctx, argv[2]));
-			s.send = true;
-			s.sendOrder = getEngine(ctx)->sendCounter++;
-			s.tick = currentTicks + ticks;
-			return JS_UNDEFINED;
+			trigPort = static_cast<int>(argNum(ctx, argv[2]));
 		}
-
-		return jsThrow(ctx, "midiOut.sendAfterTrigger: bad args");
+		else if (argc == 4) {
+			if (!getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1]) || !argIsNumber(ctx, argv[2]) || !argIsNumber(ctx, argv[3]))
+				return jsThrow(ctx, "midiOut.sendAfterTrigger: bad args");
+			trigPort = static_cast<int>(argNum(ctx, argv[2]));
+			channel = static_cast<int>(argNum(ctx, argv[3]));
+		}
+		else {
+			return jsThrow(ctx, "midiOut.sendAfterTrigger: bad args");
+		}
+		if (trigPort < 1 || trigPort > getEngine(ctx)->inputTrigCount) return jsThrow(ctx, "midiOut.sendAfterTrigger: bad trigInput index");
+		if (channel < 1 || channel > PORT_MAX_CHANNELS) return jsThrow(ctx, "midiOut.sendAfterTrigger: bad channel");
+		int ticks = static_cast<int>(argNum(ctx, argv[1]));
+		MessageEx& s = getEngine(ctx)->msgStore[idx];
+		s.midiPort = getEngine(ctx)->selectedPort;
+		int64_t currentTicks = getEngine(ctx)->handler->getTrigTicks(trigPort - 1, channel - 1);
+		s.channel = (uint8_t)(channel - 1);
+		s.send = true;
+		s.sendOrder = getEngine(ctx)->sendCounter++;
+		s.tick = currentTicks + ticks;
+		return JS_UNDEFINED;
 	}
 
 	static JSValue js_trig_enableTipsyIn(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {

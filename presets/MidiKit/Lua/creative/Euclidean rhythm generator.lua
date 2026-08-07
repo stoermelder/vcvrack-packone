@@ -34,9 +34,6 @@
 
 -- Configuration - change these values as needed
 local config = {
-    -- Trigger input driving the rhythm (1-based)
-    trigPort = 1,
-
     -- Output channel for the generated notes (1-16)
     outChannel = 1
 }
@@ -175,7 +172,6 @@ end
 
 rack.onLoad = function()
     rack.log("Euclidean rhythm generator initialized")
-    rack.log("Trigger input: ", config.trigPort)
 end
 
 rack.onUnload = function()
@@ -205,8 +201,8 @@ rack.onMidiMessage = function(midiPort, msg)
     midiOut.send(msg)
 end
 
-rack.onTrigger = function(trigPort)
-    if trigPort ~= config.trigPort then return end
+rack.onTrigger = function(trigPort, channel)
+    if channel ~= 1 then return end
 
     rebuildPattern()
 

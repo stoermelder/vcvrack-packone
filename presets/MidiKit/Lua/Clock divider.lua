@@ -37,9 +37,6 @@ local config = {
     -- Also emit a trigger on trigger output 1 for every forwarded tick
     emitTrigger = true,
 
-    -- Trigger output port used when emitTrigger is set
-    trigPort = 1,
-
     -- Forward all non-clock messages (notes, CC, ...) unchanged
     passThroughOther = true
 }
@@ -140,7 +137,7 @@ rack.onMidiMessage = function(midiPort, msg)
 
         midiOut.send(msg)
         if config.emitTrigger then
-            trig.setTrigger(config.trigPort)
+            trig.setTrigger(1)
         end
         return
     end

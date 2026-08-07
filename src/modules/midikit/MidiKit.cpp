@@ -40,7 +40,10 @@ struct MidiOutput : midi::Output {
 	};
 
 	std::priority_queue<FrameSchedule> frameQueue;
-	std::priority_queue<TickSchedule> tickQueue;
+	// One tick queue per polyphonic channel: sendAfterTrigger() schedules a
+	// message against a specific channel's trigger clock, and only that
+	// channel's clock advancing can flush it.
+	std::priority_queue<TickSchedule> tickQueue[PORT_MAX_CHANNELS];
 
 	std::vector<int> getChannels() override {
 		std::vector<int> channels;
@@ -53,16 +56,18 @@ struct MidiOutput : midi::Output {
 	void reset() {
 		Output::reset();
 		while (!frameQueue.empty()) frameQueue.pop();
-		while (!tickQueue.empty()) tickQueue.pop();
+		for (int i = 0; i < PORT_MAX_CHANNELS; i++) {
+			while (!tickQueue[i].empty()) tickQueue[i].pop();
+		}
 		channel = -1;
 	}
 
-	void send(midi::Message& msg, uint64_t tick) {
+	void send(midi::Message& msg, uint8_t channel, uint64_t tick) {
 		if (tick != 0) {
 			TickSchedule s;
 			s.msg = msg;
 			s.tick = tick;
-			tickQueue.push(s);
+			tickQueue[channel < PORT_MAX_CHANNELS ? channel : 0].push(s);
 			return;
 		}
 
@@ -95,16 +100,20 @@ struct MidiOutput : midi::Output {
 		}
 	}
 
-	void processTick(uint64_t tick) {
+	void processTick(uint8_t channel, uint64_t tick) {
+		// Each channel's messages are only ever drained by that channel's own
+		// clock — a message scheduled against channel N must not fire on
+		// another channel's trigger, so its queue is touched only when N fires.
+		auto& q = tickQueue[channel < PORT_MAX_CHANNELS ? channel : 0];
 		while (true) {
-			if (tickQueue.size() == 0) return;
-			TickSchedule s = tickQueue.top();
+			if (q.size() == 0) return;
+			TickSchedule s = q.top();
 			// ">=" and not "==": process() calls processTick() before draining the
 			// engine's out-queue, so a script can schedule for a tick the counter has
 			// already consumed. With "==" such a message is never sent and, since the
 			// queue is ordered smallest-tick-first, it blocks every later one behind it.
 			if (tick >= s.tick) {
-				tickQueue.pop();
+				q.pop();
 				sendMessage(s.msg);
 			}
 			else {
@@ -175,7 +184,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	// to whichever engine happened to be active when they were queued. Written
 	// by sendMidi() (worker thread), drained by process() (audio thread) and by
 	// onRemove() at teardown.
-	dsp::RingBuffer<std::tuple<int, MidiScript::Message, uint64_t>, 128> midiOutQueue;
+	dsp::RingBuffer<std::tuple<int, MidiScript::Message, uint8_t, uint64_t>, 128> midiOutQueue;
 	// Set (worker thread) when sendMidi() drops a group for lack of room;
 	// cleared and reported once (audio thread) in process(). A saturated output
 	// must not flood the log through the same bottleneck that is already
@@ -249,8 +258,10 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	dsp::ClockDivider processDivider;
 	dsp::Timer rateLimiterTimer;
 
-	dsp::SchmittTrigger inputTrigger;
-	uint64_t inputTriggerTick;
+	// One SchmittTrigger and tick counter per polyphonic channel of the trigger
+	// input — rack.onTrigger/trig.getTicks() are channel-aware.
+	dsp::SchmittTrigger inputTrigger[PORT_MAX_CHANNELS];
+	uint64_t inputTriggerTick[PORT_MAX_CHANNELS];
 	bool outputTriggerActive[PORT_MAX_CHANNELS];
 	dsp::PulseGenerator outputPulseGenerator[PORT_MAX_CHANNELS];
 
@@ -308,8 +319,9 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	}
 
 	// MidiScriptEngineHandler
-	uint64_t getTrigTicks(int i) override {
-		return inputTriggerTick;
+	uint64_t getTrigTicks(int i, uint8_t ch) override {
+		if (ch >= PORT_MAX_CHANNELS) return 0;
+		return inputTriggerTick[ch];
 	}
 
 	// MidiScriptEngineHandler
@@ -337,7 +349,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	}
 
 	// MidiScriptEngineHandler
-	bool sendMidi(int midiPort, const MidiScript::Message* msgs, size_t count, uint64_t tick) override {
+	bool sendMidi(int midiPort, const MidiScript::Message* msgs, size_t count, uint8_t channel, uint64_t tick) override {
 		// Capacity is checked for the whole group, so an NRPN is never
 		// half-emitted. dsp::RingBuffer::push() does not bounds-check: on a full
 		// buffer it overwrites unread entries and leaves size() > capacity.
@@ -346,7 +358,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			return false;
 		}
 		for (size_t i = 0; i < count; i++) {
-			midiOutQueue.push(std::make_tuple(midiPort, msgs[i], tick));
+			midiOutQueue.push(std::make_tuple(midiPort, msgs[i], channel, tick));
 		}
 		return true;
 	}
@@ -548,7 +560,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		midiInput.reset();
 		midiOutput.reset();
 		sample = 0;
-		inputTriggerTick = 0;
+		for (int i = 0; i < PORT_MAX_CHANNELS; i++) inputTriggerTick[i] = 0;
 		// A script claims the trigger input for Tipsy explicitly, so a reset
 		// releases it. Re-arming the decoder's data store here is safe: nothing
 		// is decoding at reset, and provideDataBuffer() refuses mid-body.
@@ -599,15 +611,28 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			return;
 		*/
 
-		// While the trigger input carries a Tipsy stream, the encoded voltages
-		// cross the trigger threshold constantly — suppress rack.onTrigger and
-		// tick counting so decoding isn't mistaken for clock ticks. The
-		// SchmittTrigger is still stepped so its state stays current.
+		// While the trigger input carries a Tipsy stream on channel 1, the
+		// encoded voltages cross the trigger threshold constantly — suppress
+		// rack.onTrigger and tick counting on THAT channel only so decoding
+		// isn't mistaken for clock ticks. Other channels keep firing normally.
+		// The SchmittTriggers are still stepped so their states stay current.
+		//
+		// Each polyphonic channel is detected independently. A fired channel's
+		// tick clock advances and flushes that channel's midiOutput tick queue —
+		// sendAfterTrigger() schedules against the channel it targets, so each
+		// channel's messages are drained by its own clock.
 		bool tipsyStreaming = tipsyInPort.load(std::memory_order_relaxed) >= 0;
-		if (activeEngine && inputTrigger.process(inputs[INPUT_TRIG].getVoltage()) && !tipsyStreaming) {
-			inputTriggerTick++;
-			midiOutput.processTick(inputTriggerTick);
-			activeEngine->processInTick(0);
+		int channels = inputs[INPUT_TRIG].getChannels();
+		if (channels <= 0) channels = 1;
+		for (uint8_t c = 0; c < channels; c++) {
+			// Tipsy only takes over channel 1's trigger; the other channels are
+			// ordinary gates and must still fire rack.onTrigger.
+			bool tipsyOnChannel = (c == 0) && tipsyStreaming;
+			if (activeEngine && inputTrigger[c].process(inputs[INPUT_TRIG].getVoltage(c)) && !tipsyOnChannel) {
+				inputTriggerTick[c]++;
+				midiOutput.processTick(c, inputTriggerTick[c]);
+				activeEngine->processInTick(0, c);
+			}
 		}
 
 		// Every sample, not under processDivider: the sender emits one encoded
@@ -644,7 +669,8 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			while (!midiOutQueue.empty()) {
 				auto t = midiOutQueue.shift();
 				midi::Message msg = std::get<1>(t);
-				midiOutput.send(msg, std::get<2>(t));
+				uint8_t channel = std::get<2>(t);
+				midiOutput.send(msg, channel, std::get<3>(t));
 			}
 			midiOutput.processFrame(args.frame);
 		}
@@ -727,7 +753,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	void loadScript(std::string s, std::string configJson = "") {
 		script = s;
 		sample = 0;
-		inputTriggerTick = 0;
+		for (int i = 0; i < PORT_MAX_CHANNELS; i++) inputTriggerTick[i] = 0;
 		for (int i = 0; i < 4; i++) {
 			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;

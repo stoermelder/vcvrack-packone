@@ -27,6 +27,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		Message msg;
 		bool isNrpn = false;
 		bool send = false;
+		uint8_t channel = 0;   // trigger input channel, for sendAfterTrigger() scheduling
 		uint64_t tick = 0;
 		// Monotonic stamp assigned when midiOut.send() is called, so the out
 		// queue can be flushed in send() order rather than handle order.
@@ -509,9 +510,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 	}
 
-	void processInTick(int trigPort) override {
+	void processInTick(int trigPort, uint8_t channel) override {
 		if (L) {
-			tickInQueue.push(trigPort);
+			tickInQueue.push(std::make_tuple(trigPort, channel));
 		}
 	}
 
@@ -538,10 +539,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 					msgStore[i].msg, msgStore[i + 1].msg,
 					msgStore[i + 2].msg, msgStore[i + 3].msg
 				};
-				handler->sendMidi(msgStore[i].midiPort, group, 4, msgStore[i].tick);
+				handler->sendMidi(msgStore[i].midiPort, group, 4, msgStore[i].channel, msgStore[i].tick);
 			}
 			else {
-				handler->sendMidi(msgStore[i].midiPort, &msgStore[i].msg, 1, msgStore[i].tick);
+				handler->sendMidi(msgStore[i].midiPort, &msgStore[i].msg, 1, msgStore[i].channel, msgStore[i].tick);
 			}
 		}
 	}
@@ -709,17 +710,18 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		flushMsgStore();
 	}
 
-	// Dispatches onTrigger(trigPort) via the cached onTriggerRef. No-op if
-	// the script never defined it.
-	void dispatchTrigger(int trigPort) override {
+	// Dispatches onTrigger(trigPort, channel) via the cached onTriggerRef.
+	// No-op if the script never defined it.
+	void dispatchTrigger(int trigPort, uint8_t channel) override {
 		if (!L) return;
 		if (onTriggerRef == LUA_NOREF) return;
 
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onTriggerRef);
 		lua_pushinteger(L, trigPort + 1);
+		lua_pushinteger(L, channel + 1);
 		msgCount = 0;
 		inCallback = true;
-		int status = lua_pcall(L, 1, 0, 0);
+		int status = lua_pcall(L, 2, 0, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
@@ -1156,9 +1158,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_trig_getTicks(lua_State* L) {
 		auto* e = getEngine(L);
+		int n = lua_gettop(L);
 		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->inputTrigCount) luaL_argerror(L, 1, "trig index out of range");
-		lua_pushinteger(L, static_cast<lua_Integer>(e->handler->getTrigTicks(i - 1)));
+		int ch = 1;
+		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
+		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
+		lua_pushinteger(L, static_cast<lua_Integer>(e->handler->getTrigTicks(i - 1, ch - 1)));
 		return 1;
 	}
 
@@ -1741,26 +1747,31 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	static int lua_midiOut_sendAfterTrigger(lua_State* L) {
-		// midiOut.sendAfterTrigger(msg, [trigPort,] ticks)
-		//   2 args: msg, ticks              (trig port defaults to 1)
-		//   3 args: msg, trigPort, ticks
+		// midiOut.sendAfterTrigger(msg, ticks, [trigPort], [channel])
+		//   2 args: msg, ticks                     (trig port 1, channel 1)
+		//   3 args: msg, ticks, trigPort
+		//   4 args: msg, ticks, trigPort, channel
 
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
 
-		int ticks = static_cast<int>(luaL_checkinteger(L, n));
-		int trigPort = 0;  // 0 = use trig port 0
+		int ticks = static_cast<int>(luaL_checkinteger(L, 2));
+		int trigPort = 1;
+		int channel = 1;
 
-		if (n == 3) {
-			trigPort = static_cast<int>(luaL_checkinteger(L, 2));
-		}
+		if (n >= 3) trigPort = static_cast<int>(luaL_checkinteger(L, 3));
+		if (n >= 4) channel = static_cast<int>(luaL_checkinteger(L, 4));
 
-		if (trigPort < 0 || trigPort > e->inputTrigCount) {
+		if (trigPort < 1 || trigPort > e->inputTrigCount) {
 			luaL_error(L, "midiOut.sendAfterTrigger: invalid trig port index");
+		}
+		if (channel < 1 || channel > PORT_MAX_CHANNELS) {
+			luaL_argerror(L, 4, "channel out of range");
 		}
 
 		MessageEx* m = getPortMsg(L);
-		int64_t currentTicks = e->handler->getTrigTicks(trigPort == 0 ? 0 : trigPort - 1);
+		int64_t currentTicks = e->handler->getTrigTicks(trigPort - 1, channel - 1);
+		m->channel = (uint8_t)(channel - 1);
 		m->send = true;
 		m->sendOrder = e->sendCounter++;
 		m->msg.frame = -1;

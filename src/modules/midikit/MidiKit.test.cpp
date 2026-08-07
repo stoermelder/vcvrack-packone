@@ -26,7 +26,7 @@ TEST_CASE("Construction and initialization", "[MidiKit]") {
 	REQUIRE(m->NUM_LIGHTS == 0);
 	REQUIRE(m->script == "");
 	REQUIRE(m->sample == 0);
-	REQUIRE(m->inputTriggerTick == 0);
+	REQUIRE(m->inputTriggerTick[0] == 0);
 
 	Test::destroyModule(m);
 }
@@ -122,16 +122,44 @@ TEST_CASE("Trigger input increments inputTriggerTick", "[MidiKit]") {
 	// Rising edge → tick increments
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(1));
-	REQUIRE(m->inputTriggerTick == 1);
+	REQUIRE(m->inputTriggerTick[0] == 1);
 
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
 	m->process(Test::makeProcessArgs(2));
-	REQUIRE(m->inputTriggerTick == 1);  // no change on falling edge
+	REQUIRE(m->inputTriggerTick[0] == 1);  // no change on falling edge
 
 	// Second pulse
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(3));
-	REQUIRE(m->inputTriggerTick == 2);
+	REQUIRE(m->inputTriggerTick[0] == 2);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Polyphonic trigger input counts ticks per channel", "[MidiKit]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+
+	m->loadScript(QUICKJS_SCRIPT);
+
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 2;
+
+	// Prime both SchmittTriggers LOW before the first rising edges.
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 1);
+	m->process(Test::makeProcessArgs(0));
+
+	// Channel 1 fires twice, channel 2 fires once.
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
+	m->process(Test::makeProcessArgs(1));
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
+	m->process(Test::makeProcessArgs(2));
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
+	m->process(Test::makeProcessArgs(3));
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 1);
+	m->process(Test::makeProcessArgs(4));
+
+	REQUIRE(m->inputTriggerTick[0] == 2);
+	REQUIRE(m->inputTriggerTick[1] == 1);
 
 	Test::destroyModule(m);
 }
@@ -192,14 +220,14 @@ TEST_CASE("processTick sends a message on its exact tick", "[MidiKit]") {
 	MidiOutput out;
 	midi::Message msg = makeCc();
 
-	out.send(msg, 5);
-	REQUIRE(out.tickQueue.size() == 1);
+	out.send(msg, 0, 5);
+	REQUIRE(out.tickQueue[0].size() == 1);
 
-	out.processTick(4);
-	REQUIRE(out.tickQueue.size() == 1);  // not due yet
+	out.processTick(0, 4);
+	REQUIRE(out.tickQueue[0].size() == 1);  // not due yet
 
-	out.processTick(5);
-	REQUIRE(out.tickQueue.size() == 0);
+	out.processTick(0, 5);
+	REQUIRE(out.tickQueue[0].size() == 0);
 }
 
 TEST_CASE("processTick sends a message whose tick has already passed", "[MidiKit]") {
@@ -208,28 +236,28 @@ TEST_CASE("processTick sends a message whose tick has already passed", "[MidiKit
 
 	// process() calls processTick() before draining the engine out-queue, so a
 	// script can schedule for a tick the counter has already consumed.
-	out.send(msg, 5);
-	REQUIRE(out.tickQueue.size() == 1);
+	out.send(msg, 0, 5);
+	REQUIRE(out.tickQueue[0].size() == 1);
 
-	out.processTick(6);
-	REQUIRE(out.tickQueue.size() == 0);  // with "==" this stayed queued forever
+	out.processTick(0, 6);
+	REQUIRE(out.tickQueue[0].size() == 0);  // with "==" this stayed queued forever
 }
 
 TEST_CASE("processTick drains every due message in one call", "[MidiKit]") {
 	MidiOutput out;
 	midi::Message msg = makeCc();
 
-	out.send(msg, 3);
-	out.send(msg, 5);
-	out.send(msg, 7);
-	REQUIRE(out.tickQueue.size() == 3);
+	out.send(msg, 0, 3);
+	out.send(msg, 0, 5);
+	out.send(msg, 0, 7);
+	REQUIRE(out.tickQueue[0].size() == 3);
 
-	out.processTick(5);
-	REQUIRE(out.tickQueue.size() == 1);        // 3 and 5 sent, 7 still pending
-	REQUIRE(out.tickQueue.top().tick == 7);
+	out.processTick(0, 5);
+	REQUIRE(out.tickQueue[0].size() == 1);        // 3 and 5 sent, 7 still pending
+	REQUIRE(out.tickQueue[0].top().tick == 7);
 
-	out.processTick(7);
-	REQUIRE(out.tickQueue.size() == 0);
+	out.processTick(0, 7);
+	REQUIRE(out.tickQueue[0].size() == 0);
 }
 
 TEST_CASE("processTick: a stale entry does not block later messages", "[MidiKit]") {
@@ -238,27 +266,27 @@ TEST_CASE("processTick: a stale entry does not block later messages", "[MidiKit]
 
 	// tickQueue is ordered smallest-tick-first, so the stale entry sits at the
 	// head. With "==" it was never popped and blocked everything behind it.
-	out.send(msg, 2);   // stale — this tick is already in the past
-	out.send(msg, 7);   // legitimately scheduled for later
-	REQUIRE(out.tickQueue.size() == 2);
+	out.send(msg, 0, 2);   // stale — this tick is already in the past
+	out.send(msg, 0, 7);   // legitimately scheduled for later
+	REQUIRE(out.tickQueue[0].size() == 2);
 
-	out.processTick(7);
-	REQUIRE(out.tickQueue.size() == 0);  // both drained, not stuck at the head
+	out.processTick(0, 7);
+	REQUIRE(out.tickQueue[0].size() == 0);  // both drained, not stuck at the head
 }
 
 TEST_CASE("processTick leaves not-yet-due messages queued", "[MidiKit]") {
 	MidiOutput out;
 	midi::Message msg = makeCc();
 
-	out.send(msg, 10);
+	out.send(msg, 0, 10);
 
 	for (uint64_t t = 0; t < 10; t++) {
-		out.processTick(t);
-		REQUIRE(out.tickQueue.size() == 1);
+		out.processTick(0, t);
+		REQUIRE(out.tickQueue[0].size() == 1);
 	}
 
-	out.processTick(10);
-	REQUIRE(out.tickQueue.size() == 0);
+	out.processTick(0, 10);
+	REQUIRE(out.tickQueue[0].size() == 0);
 }
 
 TEST_CASE("processFrame sends a message on its exact frame", "[MidiKit]") {
@@ -266,7 +294,7 @@ TEST_CASE("processFrame sends a message on its exact frame", "[MidiKit]") {
 	midi::Message msg = makeCc();
 	msg.frame = 5;
 
-	out.send(msg, 0);
+	out.send(msg, 0, 0);
 	REQUIRE(out.frameQueue.size() == 1);
 
 	out.processFrame(4);
@@ -281,7 +309,7 @@ TEST_CASE("processFrame sends a message whose frame has already passed", "[MidiK
 	midi::Message msg = makeCc();
 	msg.frame = 5;
 
-	out.send(msg, 0);
+	out.send(msg, 0, 0);
 	REQUIRE(out.frameQueue.size() == 1);
 
 	out.processFrame(6);
@@ -293,11 +321,11 @@ TEST_CASE("processFrame drains every due message in one call", "[MidiKit]") {
 	midi::Message msg = makeCc();
 
 	msg.frame = 3;
-	out.send(msg, 0);
+	out.send(msg, 0, 0);
 	msg.frame = 5;
-	out.send(msg, 0);
+	out.send(msg, 0, 0);
 	msg.frame = 7;
-	out.send(msg, 0);
+	out.send(msg, 0, 0);
 	REQUIRE(out.frameQueue.size() == 3);
 
 	out.processFrame(5);
@@ -313,7 +341,7 @@ TEST_CASE("processFrame leaves not-yet-due messages queued", "[MidiKit]") {
 	midi::Message msg = makeCc();
 	msg.frame = 10;
 
-	out.send(msg, 0);
+	out.send(msg, 0, 0);
 	REQUIRE(out.frameQueue.size() == 1);
 
 	for (int64_t f = 0; f < 10; f++) {
@@ -354,8 +382,8 @@ struct RecordingEngine : MidiScriptEngine {
 		processCalls++;
 		for (int ticks : pending) {
 			midi::Message msg = makeCc();
-			handler->sendMidi(0, &msg, 1, ticks);
-			tickAtEmit.push_back(module->inputTriggerTick);
+			handler->sendMidi(0, &msg, 1, 0, ticks);
+			tickAtEmit.push_back(module->inputTriggerTick[0]);
 		}
 		pending.clear();
 	}
@@ -366,9 +394,9 @@ struct RecordingEngine : MidiScriptEngine {
 	void closeStateOnWorker() override { }
 	bool captureConfig(std::string& out) override { return false; }
 	void processInMessage(int midiPort, midi::Message& msg) override { }
-	void processInTick(int trigPort) override { }
+	void processInTick(int trigPort, uint8_t channel) override { }
 	void dispatchMidiMessage(int midiPort, midi::Message& msg) override { }
-	void dispatchTrigger(int trigPort) override { }
+	void dispatchTrigger(int trigPort, uint8_t channel) override { }
 	void dispatchTipsyMessage(const StoermelderPackOne::MidiScript::TipsyMessage& msg) override { }
 	std::string getInputName(int i) override { return ""; }
 	std::string getParamName(int i) override { return ""; }
@@ -429,12 +457,12 @@ TEST_CASE("process() drains the engine out-queue on a divider tick", "[MidiKit]"
 		step(m, 0.f, f);
 	}
 	REQUIRE(eng.pending.size() == 3);
-	REQUIRE(m->midiOutput.tickQueue.size() == 0);
+	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
 
 	step(m, 0.f, 7);
 
 	REQUIRE(eng.pending.empty());
-	REQUIRE(m->midiOutput.tickQueue.size() == 3);
+	REQUIRE(m->midiOutput.tickQueue[0].size() == 3);
 
 	Test::destroyModule(m);
 }
@@ -460,22 +488,22 @@ TEST_CASE("process() consumes the tick before the engine schedules on it", "[Mid
 	step(m, 10.f, 7);
 	REQUIRE(eng.processCalls == 1);
 
-	REQUIRE(m->inputTriggerTick == 1);
+	REQUIRE(m->inputTriggerTick[0] == 1);
 	REQUIRE(eng.tickAtEmit.size() == 1);
 	REQUIRE(eng.tickAtEmit[0] == 1);       // emitted after the tick was consumed
-	REQUIRE(m->midiOutput.tickQueue.size() == 1);
-	REQUIRE(m->midiOutput.tickQueue.top().tick == 1);
+	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);
+	REQUIRE(m->midiOutput.tickQueue[0].top().tick == 1);
 
 	// The next trigger drains it rather than stranding it behind the counter.
 	// The entry sits at tick 1 while the counter moves to 2, so only ">=" can
 	// pop it — "==" strands it here permanently.
 	step(m, 0.f, 8);
-	REQUIRE(m->midiOutput.tickQueue.size() == 1);   // falling edge: no tick
+	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);   // falling edge: no tick
 	step(m, 10.f, 9);
 
-	REQUIRE(m->inputTriggerTick == 2);
+	REQUIRE(m->inputTriggerTick[0] == 2);
 	REQUIRE(eng.tickAtEmit.size() == 1);           // engine emitted only once
-	REQUIRE(m->midiOutput.tickQueue.size() == 0);
+	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
 
 	Test::destroyModule(m);
 }
@@ -491,18 +519,18 @@ TEST_CASE("process() handles triggers arriving between divider ticks", "[MidiKit
 	for (int64_t f = 0; f < 8; f++) {
 		step(m, 0.f, f);
 	}
-	REQUIRE(m->midiOutput.tickQueue.size() == 1);
+	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);
 
 	// Triggers are handled every sample, independent of the divider. These land
 	// between divider boundaries and must not send the tick-2 message early.
 	step(m, 10.f, 8);
-	REQUIRE(m->inputTriggerTick == 1);
-	REQUIRE(m->midiOutput.tickQueue.size() == 1);
+	REQUIRE(m->inputTriggerTick[0] == 1);
+	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);
 
 	step(m, 0.f, 9);
 	step(m, 10.f, 10);
-	REQUIRE(m->inputTriggerTick == 2);
-	REQUIRE(m->midiOutput.tickQueue.size() == 0);
+	REQUIRE(m->inputTriggerTick[0] == 2);
+	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
 
 	Test::destroyModule(m);
 }
@@ -517,7 +545,7 @@ TEST_CASE("process() sends frame-scheduled messages on divider ticks only", "[Mi
 	// ticks == 0 with a set frame routes to frameQueue rather than tickQueue.
 	midi::Message msg = makeCc();
 	msg.frame = 9;
-	m->midiOutput.send(msg, 0);
+	m->midiOutput.send(msg, 0, 0);
 	REQUIRE(m->midiOutput.frameQueue.size() == 1);
 
 	// Divider ticks land on call indices 7 and 15, and processFrame() is only
@@ -551,9 +579,9 @@ TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKi
 	// happens when a script schedules for a tick the counter already consumed.
 	// The stale entry sorts to the head, so with "==" it blocks both forever.
 	midi::Message msg = makeCc();
-	m->midiOutput.send(msg, 2);
-	m->midiOutput.tickQueue.push(MidiOutput::TickSchedule{msg, 0});
-	REQUIRE(m->midiOutput.tickQueue.size() == 2);
+	m->midiOutput.send(msg, 0, 2);
+	m->midiOutput.tickQueue[0].push(MidiOutput::TickSchedule{msg, 0});
+	REQUIRE(m->midiOutput.tickQueue[0].size() == 2);
 
 	int64_t frame = 1;
 	for (int pulse = 0; pulse < 3; pulse++) {
@@ -563,8 +591,50 @@ TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKi
 		m->process(Test::makeProcessArgs(frame++));
 	}
 
-	REQUIRE(m->inputTriggerTick == 3);
-	REQUIRE(m->midiOutput.tickQueue.size() == 0);
+	REQUIRE(m->inputTriggerTick[0] == 3);
+	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("sendAfterTrigger on one channel is only drained by that channel's clock", "[MidiKit]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+
+	// With no default engine, load a script so process() runs past the
+	// `if (!activeEngine) return;` guard.
+	m->loadScript(QUICKJS_SCRIPT);
+
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 2;
+
+	// Schedule a message against channel 2's clock at tick 2.
+	midi::Message msg = makeCc();
+	m->midiOutput.send(msg, 1, 2);   // channel index 1 = script channel 2
+
+	// Prime both SchmittTriggers LOW.
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 1);
+	m->process(Test::makeProcessArgs(0));
+
+	// Two pulses on channel 1 must NOT drain channel 2's queue.
+	for (int pulse = 0; pulse < 2; pulse++) {
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
+		m->process(Test::makeProcessArgs(pulse * 2 + 1));
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
+		m->process(Test::makeProcessArgs(pulse * 2 + 2));
+	}
+	REQUIRE(m->inputTriggerTick[0] == 2);
+	REQUIRE(m->inputTriggerTick[1] == 0);
+	REQUIRE(m->midiOutput.tickQueue[1].size() == 1);   // still queued
+
+	// Two pulses on channel 2 drain it (tick 2 reached).
+	for (int pulse = 0; pulse < 2; pulse++) {
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 1);
+		m->process(Test::makeProcessArgs(pulse * 2 + 10));
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 1);
+		m->process(Test::makeProcessArgs(pulse * 2 + 11));
+	}
+	REQUIRE(m->inputTriggerTick[1] == 2);
+	REQUIRE(m->midiOutput.tickQueue[1].size() == 0);   // drained
 
 	Test::destroyModule(m);
 }

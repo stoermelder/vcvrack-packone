@@ -16,8 +16,8 @@
 // midiOut.sendAfterTrigger(). Every note then lasts the same musical duration
 // regardless of how it was played.
 //
-// Requires a clock on the module's trigger input (config.trigPort): the length
-// is counted in ticks of that input, not in milliseconds, so it follows tempo.
+// Requires a clock on the module's trigger input: the length is counted in
+// ticks of that input, not in milliseconds, so it follows tempo.
 // Feed the same clock that drives the rest of the patch. With a 24 ppqn MIDI
 // clock routed to the trigger input:
 //
@@ -34,9 +34,6 @@
 let config = {
     // Fixed note length, in ticks of the trigger input's clock
     lengthTicks: 12,
-
-    // Trigger input the length is counted on (1-based)
-    trigPort: 1,
 
     // Only quantise this channel; set to 0 to quantise every channel
     channel: 0,
@@ -59,7 +56,7 @@ rack.onLoad = function() {
         state.sounding[n] = false;
     }
     rack.log("Note length quantiser initialized");
-    rack.log("Length: ", config.lengthTicks, " ticks on trigger input ", config.trigPort);
+    rack.log("Length: ", config.lengthTicks, " ticks");
     if (config.channel === 0) {
         rack.log("Channel: all");
     }
@@ -95,7 +92,7 @@ function matchesChannel(ch) {
 function scheduleNoteOff(ch, note) {
     let off = midi.create();
     midi.setNoteOff(off, ch, note);
-    midiOut.sendAfterTrigger(off, config.trigPort, config.lengthTicks);
+    midiOut.sendAfterTrigger(off, config.lengthTicks);
 };
 
 // Context menu - right-click the module to change these settings live.

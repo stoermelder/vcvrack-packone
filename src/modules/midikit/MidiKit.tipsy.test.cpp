@@ -328,7 +328,7 @@ TEST_CASE("bundled Tipsy output example scripts work", "[MidiKit][Tipsy]") {
 		REQUIRE(m->activeEngine != nullptr);
 
 		// rack.onTrigger(1) must enqueue a Tipsy message on the trigger output.
-		m->activeEngine->processInTick(0);
+		m->activeEngine->processInTick(0, 0);
 		m->activeEngine->process(); // SyncTaskWorker: runs rack.onTrigger inline
 		REQUIRE(m->tipsyOutQueue.size() > 0);
 
@@ -497,15 +497,16 @@ rack.onTipsyMessage = function(data, mimeType) {};
 	Test::destroyModule(m);
 }
 
-TEST_CASE("a Tipsy-claimed trigger input does not fire rack.onTrigger", "[MidiKit][Tipsy]") {
+TEST_CASE("a Tipsy-claimed trigger input suppresses rack.onTrigger on channel 1 only", "[MidiKit][Tipsy]") {
 	// The encoded Tipsy voltages swing across the trigger threshold constantly,
 	// so while the trigger input is claimed they must not count as clock ticks
-	// or fire rack.onTrigger.
+	// or fire rack.onTrigger on channel 1. Other channels are ordinary gates
+	// and keep firing normally.
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
-rack.onTrigger = function(trigPort) {
-	rack.log("trigger");
+rack.onTrigger = function(trigPort, channel) {
+	rack.log("trigger" + number.toString(channel));
 };
 rack.onTipsyMessage = function(data, mimeType) {};
 )";
@@ -514,32 +515,40 @@ rack.onTipsyMessage = function(data, mimeType) {};
 	m->loadScript(JS_SCRIPT);
 	REQUIRE(m->activeEngine != nullptr);
 
-	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 2;
 
-	// Pin the SchmittTrigger low first (a fresh trigger starts uninitialized;
+	// Pin both SchmittTriggers low first (a fresh trigger starts uninitialized;
 	// the first low call locks it to LOW so a later rise is a real edge).
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 1);
 	m->process(Test::makeProcessArgs(1));
 	m->activeEngine->process();
 
-	// Claim the trigger input for Tipsy: a rising edge must not count a tick
-	// or fire rack.onTrigger.
+	// Claim the trigger input for Tipsy: a rising edge on channel 1 must not
+	// count a tick or fire rack.onTrigger there...
 	m->enableTipsyIn(0);
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
 	m->process(Test::makeProcessArgs(2));
 	m->activeEngine->process();
-	REQUIRE(m->inputTriggerTick == 0);
+	REQUIRE(m->inputTriggerTick[0] == 0);
 	REQUIRE(drainLog(m).find("trigger") == std::string::npos);
 
-	// Releasing restores normal trigger behavior.
+	// ...but channel 2 is an ordinary gate and still fires.
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 1);
+	m->process(Test::makeProcessArgs(3));
+	m->activeEngine->process();
+	REQUIRE(m->inputTriggerTick[1] == 1);
+	REQUIRE(drainLog(m).find("trigger2") != std::string::npos);
+
+	// Releasing restores normal trigger behavior on channel 1.
 	m->enableTipsyIn(-1);
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
-	m->process(Test::makeProcessArgs(3));
-	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
 	m->process(Test::makeProcessArgs(4));
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
+	m->process(Test::makeProcessArgs(5));
 	m->activeEngine->process();
-	REQUIRE(m->inputTriggerTick == 1);
-	REQUIRE(drainLog(m).find("trigger") != std::string::npos);
+	REQUIRE(m->inputTriggerTick[0] == 1);
+	REQUIRE(drainLog(m).find("trigger1") != std::string::npos);
 	Test::destroyModule(m);
 }
 
