@@ -79,6 +79,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	JSValue rackObj = JS_UNDEFINED;
 	JSValue onMidiMessageFn = JS_UNDEFINED;
 	JSValue onTriggerFn = JS_UNDEFINED;
+	JSValue onTipsyMessageFn = JS_UNDEFINED;
 	JSValue onLoadFn = JS_UNDEFINED;
 	JSValue onUnloadFn = JS_UNDEFINED;
 	JSValue onSaveFn = JS_UNDEFINED;
@@ -210,6 +211,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				onSaveFn = cacheCallableProp(rackObj, "onSave");
 				onMidiMessageFn = cacheCallableProp(rackObj, "onMidiMessage");
 				onTriggerFn = cacheCallableProp(rackObj, "onTrigger");
+				onTipsyMessageFn = cacheCallableProp(rackObj, "onTipsyMessage");
 			}
 			else {
 				JS_FreeValue(ctx, rackObj);
@@ -283,12 +285,14 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JS_FreeValue(ctx, rackObj);
 			JS_FreeValue(ctx, onMidiMessageFn);
 			JS_FreeValue(ctx, onTriggerFn);
+			JS_FreeValue(ctx, onTipsyMessageFn);
 			JS_FreeValue(ctx, onLoadFn);
 			JS_FreeValue(ctx, onUnloadFn);
 			JS_FreeValue(ctx, onSaveFn);
 			rackObj = JS_UNDEFINED;
 			onMidiMessageFn = JS_UNDEFINED;
 			onTriggerFn = JS_UNDEFINED;
+			onTipsyMessageFn = JS_UNDEFINED;
 			onLoadFn = JS_UNDEFINED;
 			onUnloadFn = JS_UNDEFINED;
 			onSaveFn = JS_UNDEFINED;
@@ -449,6 +453,44 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 					JS_FreeValue(ctx, r);
 					JSValue exc = JS_GetException(ctx);
 					handler->writeLog(string::f("onTrigger error: %s", jsToStdString(exc).c_str()));
+					JS_FreeValue(ctx, exc);
+				}
+				else {
+					JS_FreeValue(ctx, r);
+				}
+			}
+			else {
+				inCallback = false;
+			}
+			flushMsgStore();
+		}
+	}
+
+	// Dispatches onTipsyMessage(data, mimeType) when a Tipsy message finishes
+	// decoding on the input port. No-op if the script never defined it.
+	//
+	// `data` is a string: Tipsy payloads are typically text or JSON, matching
+	// what trig.sendTipsy() accepts on the way out. A binary payload survives
+	// intact — JS strings hold arbitrary 16-bit code units — but a script
+	// wanting bytes should read charCodeAt().
+	void dispatchTipsyMessage(const MidiScript::TipsyMessage& msg) override {
+		if (ctx) {
+			msgCount = 0;
+			inCallback = true;
+			// Calls the cached onTipsyMessageFn/rackObj — see dispatchMidiMessage.
+			if (!JS_IsUndefined(onTipsyMessageFn)) {
+				JSValue args[2] = {
+					JS_NewStringLen(ctx, reinterpret_cast<const char*>(msg.data), msg.dataSize),
+					JS_NewString(ctx, msg.mime)
+				};
+				JSValue r = JS_Call(ctx, onTipsyMessageFn, rackObj, 2, args);
+				JS_FreeValue(ctx, args[0]);
+				JS_FreeValue(ctx, args[1]);
+				inCallback = false;
+				if (JS_IsException(r)) {
+					JS_FreeValue(ctx, r);
+					JSValue exc = JS_GetException(ctx);
+					handler->writeLog(string::f("onTipsyMessage error: %s", jsToStdString(exc).c_str()));
 					JS_FreeValue(ctx, exc);
 				}
 				else {
@@ -717,6 +759,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _trig, "setLow", JS_NewCFunction(ctx, js_trig_setLow, "setLow", 2));
 		JS_SetPropertyStr(ctx, _trig, "setTrigger", JS_NewCFunction(ctx, js_trig_setTrigger, "setTrigger", 2));
 		JS_SetPropertyStr(ctx, _trig, "sendTipsy", JS_NewCFunction(ctx, js_trig_sendTipsy, "sendTipsy", 2));
+		JS_SetPropertyStr(ctx, _trig, "enableTipsyIn", JS_NewCFunction(ctx, js_trig_enableTipsyIn, "enableTipsyIn", 0));
 
 		// param
 		const char* paramSrc =
@@ -1665,6 +1708,18 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 
 		return jsThrow(ctx, "midiOut.sendAfterTrigger: bad args");
+	}
+
+	static JSValue js_trig_enableTipsyIn(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		// trig.enableTipsyIn([enabled])
+		//   Optional boolean: true (the default) decodes a Tipsy stream from the
+		//   trigger input, false disables it. Tipsy input is only supported on the
+		//   first trigger input, so — like trig.sendTipsy() — there is no port
+		//   argument.
+		MidiScriptEngineQuickJs* e = getEngine(ctx);
+		bool enabled = (argc < 1) || (JS_ToBool(ctx, argv[0]) != 0);
+		e->handler->enableTipsyIn(enabled ? 0 : -1);
+		return JS_UNDEFINED;
 	}
 
 	static JSValue js_trig_sendTipsy(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {

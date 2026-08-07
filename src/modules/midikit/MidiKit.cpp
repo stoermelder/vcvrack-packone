@@ -188,27 +188,9 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	// whichever engine happened to queue a message. Scripts reach it through
 	// the handler's sendTipsyOut(), exactly like sendMidi().
 
-	// Caps on Tipsy payloads: the queue entry is a fixed-size POD so the audio
-	// thread's shift() never heap-allocates (mime matches
-	// tipsy::kMaxMimeTypeSize).
-	static constexpr size_t tipsyOutMaxMimeTypeSize = 256;
-	static constexpr size_t tipsyOutMaxPayloadLength = 256;
-
-	// A Tipsy message queued by sendTipsyOut() (worker) and consumed by
-	// processTipsyOutput() (audio). Fixed-size so the SPSC RingBuffer copies it
-	// without heap allocation.
-	//
-	// mimeSize == 0 marks a discard sentinel rather than a real message: it
-	// carries no payload and exists only to mark where a stale run of messages
-	// ends. sendTipsyOut() rejects an empty mime type so the two can never be
-	// confused. (dataSize would not work as the marker — an empty payload with
-	// a valid mime type is a legitimate message.)
-	struct TipsyOutMessage {
-		uint16_t mimeSize;                         // length without NUL
-		uint16_t dataSize;
-		char mime[tipsyOutMaxMimeTypeSize];
-		unsigned char data[tipsyOutMaxPayloadLength];
-	};
+	// TipsyMessage and its size caps live in MidiScriptEngine.h — both
+	// directions share the POD.
+	using TipsyMessage = MidiScript::TipsyMessage;
 
 	// Encodes Tipsy messages onto the trigger CV output. Audio thread only.
 	tipsy::ProtocolEncoder tipsyOutEncoder;
@@ -220,9 +202,9 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	// Never cleared: clear() writes `start`, the consumer's index, so calling it
 	// from the worker would break the single-consumer contract. Discarding goes
 	// through tipsyOutDiscardCount + a queued sentinel instead.
-	dsp::RingBuffer<TipsyOutMessage, 8> tipsyOutQueue;
+	dsp::RingBuffer<TipsyMessage, 8> tipsyOutQueue;
 
-	// Discard sentinels enqueued so far. Written by sendTipsyOutReset()
+	// Discard sentinels enqueued so far. Written by requestTipsyOutDiscard()
 	// (worker), read by processTipsyOutput() (audio); tipsyOutDiscardSeen is the
 	// audio thread's private count of the ones it has consumed.
 	//
@@ -238,7 +220,31 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	// encoding — a member, not a local (shift() hands out copies). Only ever
 	// overwritten while the encoder is dormant, so an in-flight message is never
 	// pulled out from under it.
-	TipsyOutMessage tipsyOutCurrentMessage;
+	TipsyMessage tipsyOutCurrentMessage;
+
+	// ── Tipsy input ──────────────────────────────────────────────────────────
+	// Decodes a Tipsy stream from the trigger input into the active engine's
+	// tipsyInQueue. The roles are mirrored from the output side: here the audio
+	// thread produces and the worker consumes.
+
+	// Which trigger input carries the Tipsy stream, or -1 when disabled. Written
+	// by enableTipsyIn() (worker), read by process() (audio).
+	std::atomic<int> tipsyInPort{-1};
+
+	// Decodes voltages back into messages. Audio thread only.
+	tipsy::ProtocolDecoder tipsyInDecoder;
+
+	// The decoder writes the payload here, so it must outlive the message being
+	// assembled. Handed over once via provideDataBuffer() — which refuses while
+	// a body is in flight, so it is only ever called when the decoder is idle.
+	unsigned char tipsyInBuffer[MidiScript::tipsyMaxPayloadLength];
+
+	// Set (audio thread) when a decoded message is dropped for lack of room, or
+	// when the decoder reports a malformed stream; cleared and reported once in
+	// process(). Same rate-limiting reason as midiOutOverflow — readFloat() runs
+	// per sample, so logging inline would flood the log from noise on the port.
+	std::atomic<bool> tipsyInOverflow{false};
+	std::atomic<bool> tipsyInError{false};
 
 	dsp::ClockDivider processDivider;
 	dsp::Timer rateLimiterTimer;
@@ -285,7 +291,19 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	}
 
 	// MidiScriptEngineHandler
+	void enableTipsyIn(int i) override {
+		// i is a 0-based trigger input index, or -1 to disable decoding. The
+		// script-facing trig.enableTipsyIn() exposes no port — it always targets
+		// the first (only) trigger input, so i is always 0 from scripts.
+		tipsyInPort.store(i, std::memory_order_relaxed);
+	}
+
+	// MidiScriptEngineHandler
 	float getTrigVoltage(int i, uint8_t ch) override {
+		// Only channel 0 of the claimed trigger input carries the Tipsy stream:
+		// that channel reads as 0 — the raw encoded voltages are protocol, not
+		// a gate a script should act on. Other channels are unaffected.
+		if (ch == 0 && i == tipsyInPort.load(std::memory_order_relaxed)) return 0.f;
 		return inputs[INPUT_TRIG + i].getVoltage(ch);
 	}
 
@@ -335,7 +353,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 
 	// MidiScriptEngineHandler
 	bool sendTipsyOut(const char* mimeType, const unsigned char* data, uint32_t dataBytes) override {
-		if (!mimeType || !data || dataBytes > tipsyOutMaxPayloadLength) {
+		if (!mimeType || !data || dataBytes > MidiScript::tipsyMaxPayloadLength) {
 			writeLog("Tipsy: invalid parameters", false);
 			return false;
 		}
@@ -345,7 +363,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			writeLog("Tipsy: mime type must not be empty", false);
 			return false;
 		}
-		if (mimeSize + 1 > tipsyOutMaxMimeTypeSize) {
+		if (mimeSize + 1 > MidiScript::tipsyMaxMimeTypeSize) {
 			writeLog("Tipsy: mime type too long", false);
 			return false;
 		}
@@ -357,7 +375,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			return false;
 		}
 
-		TipsyOutMessage p;
+		TipsyMessage p;
 		p.mimeSize = (uint16_t)mimeSize;
 		p.dataSize = (uint16_t)dataBytes;
 		std::memcpy(p.mime, mimeType, mimeSize + 1);
@@ -370,7 +388,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	void sendTipsyOutReset() override {
 		// Order matters: the sentinel goes in first, so the audio thread can
 		// never see the raised count without the sentinel that bounds it.
-		TipsyOutMessage p;
+		TipsyMessage p;
 		p.mimeSize = 0;
 		p.dataSize = 0;
 		tipsyOutQueue.push(p);
@@ -416,6 +434,58 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		}
 		// Tipsy messages always go to the first trigger output (port 0).
 		setTrigVoltage(0, channel, f);
+		return true;
+	}
+
+	// Feeds one sample from the Tipsy input trigger into the decoder (audio
+	// thread). On a completed message, copies it into the active engine's
+	// tipsyInQueue for the worker to dispatch. Returns true if a message
+	// completed on this sample.
+	//
+	// The Tipsy stream is always carried on channel 0 of the trigger input —
+	// other channels are never decoded. No-op unless a script claimed the
+	// trigger input via trig.enableTipsyIn().
+	bool processTipsyInput() {
+		int port = tipsyInPort.load(std::memory_order_relaxed);
+		if (port < 0 || !activeEngine) return false;
+		if (!inputs[INPUT_TRIG + port].isConnected()) return false;
+
+		auto result = tipsyInDecoder.readFloat(inputs[INPUT_TRIG + port].getVoltage(0));
+
+		if (tipsy::ProtocolDecoder::isError(result)) {
+			// Malformed stream (bad version, bad header, oversized payload).
+			// Flagged rather than logged: readFloat() runs every sample, so a
+			// noisy port would otherwise flood the log. The decoder resyncs on
+			// its own at the next message-begin sentinel.
+			tipsyInError.store(true, std::memory_order_relaxed);
+			return false;
+		}
+		if (result != tipsy::ProtocolDecoder::DecoderResult::BODY_READY) {
+			return false;
+		}
+
+		// BODY_READY: the payload is complete in tipsyInBuffer, which the
+		// decoder reuses for the next message — so copy it out now.
+		if (activeEngine->tipsyInQueue.full()) {
+			tipsyInOverflow.store(true, std::memory_order_relaxed);
+			return false;
+		}
+
+		TipsyMessage p;
+		size_t mimeSize = strnlen(tipsyInDecoder.getMimeType(), MidiScript::tipsyMaxMimeTypeSize - 1);
+		uint32_t dataSize = tipsyInDecoder.getDataSize();
+		if (dataSize > MidiScript::tipsyMaxPayloadLength) {
+			// provideDataBuffer() sized the store, so the decoder should have
+			// rejected this as ERROR_DATA_TOO_LARGE already. Defensive.
+			tipsyInError.store(true, std::memory_order_relaxed);
+			return false;
+		}
+		p.mimeSize = (uint16_t)mimeSize;
+		p.dataSize = (uint16_t)dataSize;
+		std::memcpy(p.mime, tipsyInDecoder.getMimeType(), mimeSize);
+		p.mime[mimeSize] = '\0';
+		std::memcpy(p.data, tipsyInBuffer, dataSize);
+		activeEngine->tipsyInQueue.push(p);
 		return true;
 	}
 
@@ -479,6 +549,11 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		midiOutput.reset();
 		sample = 0;
 		inputTriggerTick = 0;
+		// A script claims the trigger input for Tipsy explicitly, so a reset
+		// releases it. Re-arming the decoder's data store here is safe: nothing
+		// is decoding at reset, and provideDataBuffer() refuses mid-body.
+		tipsyInPort.store(-1, std::memory_order_relaxed);
+		tipsyInDecoder.provideDataBuffer(tipsyInBuffer, sizeof(tipsyInBuffer));
 		for (int i = 0; i < 4; i++) {
 			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
@@ -524,11 +599,20 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			return;
 		*/
 
-		if (activeEngine && inputTrigger.process(inputs[INPUT_TRIG].getVoltage())) {
+		// While the trigger input carries a Tipsy stream, the encoded voltages
+		// cross the trigger threshold constantly — suppress rack.onTrigger and
+		// tick counting so decoding isn't mistaken for clock ticks. The
+		// SchmittTrigger is still stepped so its state stays current.
+		bool tipsyStreaming = tipsyInPort.load(std::memory_order_relaxed) >= 0;
+		if (activeEngine && inputTrigger.process(inputs[INPUT_TRIG].getVoltage()) && !tipsyStreaming) {
 			inputTriggerTick++;
 			midiOutput.processTick(inputTriggerTick);
 			activeEngine->processInTick(0);
 		}
+
+		// Every sample, not under processDivider: the sender emits one encoded
+		// float per sample, so a divided read would drop most of the stream.
+		processTipsyInput();
 
 		if (processDivider.process()) {
 			if (activeEngine) {
@@ -548,6 +632,14 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 			if (midiOutOverflow.exchange(false, std::memory_order_relaxed)) {
 				float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
 				midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, std::string("MIDI output queue full, message(s) dropped")));
+			}
+			if (tipsyInOverflow.exchange(false, std::memory_order_relaxed)) {
+				float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
+				midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, std::string("Tipsy input queue full, message(s) dropped")));
+			}
+			if (tipsyInError.exchange(false, std::memory_order_relaxed)) {
+				float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
+				midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, std::string("Tipsy input: malformed stream")));
 			}
 			while (!midiOutQueue.empty()) {
 				auto t = midiOutQueue.shift();

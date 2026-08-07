@@ -104,9 +104,19 @@ leading comment block.
   `rack.onTrigger = function(trigPort) {...}`. Lua likewise:
   `rack.onTrigger = function(trigPort) end` or
   `function rack.onTrigger(trigPort) end`.
+- Optional `rack.onTipsyMessage(data, mimeType)` is called once for every
+  complete [Tipsy](#trig-dedicated-triggergate-ports) message decoded from
+  the trigger input claimed with `trig.enableTipsyIn()`. `data` and `mimeType` are
+  both strings; `data` may contain arbitrary bytes, including NULs, and is
+  capped at 256 bytes. A script that never claims a port, or never defines
+  the hook, simply never has it called — there is no load-time warning.
+  In QuickJs, assign it to the `rack` object —
+  `rack.onTipsyMessage = function(data, mimeType) {...}`. Lua likewise:
+  `rack.onTipsyMessage = function(data, mimeType) end`.
 - There is no per-sample or per-frame callback — logic only runs in
-  response to incoming MIDI messages (including clock 0xF8 realtime bytes)
-  or trigger-input ticks via `rack.onTrigger`.
+  response to incoming MIDI messages (including clock 0xF8 realtime bytes),
+  trigger-input ticks via `rack.onTrigger`, or decoded Tipsy messages via
+  `rack.onTipsyMessage`.
 - Optional `rack.onLoad()`, `rack.onUnload()`, and `rack.onSave()` hooks:
   - `rack.onLoad([persistedConfig])` runs once, right after top-level code,
     when the script has parsed and loaded successfully. If a config was
@@ -140,7 +150,8 @@ leading comment block.
 
 ### Hooks and predefined objects are resolved once, at load time
 
-`rack.onMidiMessage`, `rack.onTrigger`, `rack.onLoad`, `rack.onUnload`, and
+`rack.onMidiMessage`, `rack.onTrigger`, `rack.onTipsyMessage`, `rack.onLoad`,
+`rack.onUnload`, and
 `rack.onSave` are read from the `rack` object **exactly once**, right after the script's
 top-level code finishes running. **Reassigning any of them afterward — from
 inside a callback or anywhere else in the script — has no effect.** The
@@ -380,6 +391,23 @@ these even though `math.*` is also available, for script portability).
   rack.onTrigger = function(trigPort) {
       trig.sendTipsy("Hello Tipsy!");                              // mime defaults to "text/plain"
       trig.sendTipsy('{"label":"My snapshot","value":42}', "application/json");
+  };
+  ```
+- `trig.enableTipsyIn([enabled])` — decode an incoming Tipsy stream from the
+  trigger input, delivering each completed message to `rack.onTipsyMessage`.
+  The optional boolean `enabled` defaults to `true`; pass `false` to release
+  the trigger input again. Tipsy input is only supported on the first trigger
+  input, so — like `trig.sendTipsy()` — there is no port argument.
+
+  While the trigger input is claimed, it stops behaving as a trigger:
+  `rack.onTrigger` doesn't fire, `trig.getTicks()` doesn't advance, and
+  `trig.isHigh()`/`trig.isLow()` on channel 1 read `0` — the encoded
+  voltages are protocol, not a gate a script should act on. Other channels
+  are unaffected. A Tipsy stream would otherwise fire `rack.onTrigger`
+  continuously as the encoded voltages cross the trigger threshold.
+  ```js
+  rack.onLoad = function() {
+      trig.enableTipsyIn();        // decode from the trigger input
   };
   ```
 

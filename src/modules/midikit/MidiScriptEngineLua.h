@@ -55,6 +55,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// as thisVal). Predates caching, unused by any preset.
 	int onMidiMessageRef = LUA_NOREF;
 	int onTriggerRef = LUA_NOREF;
+	int onTipsyMessageRef = LUA_NOREF;
 	int onLoadRef = LUA_NOREF;
 	int onUnloadRef = LUA_NOREF;
 	int onSaveRef = LUA_NOREF;
@@ -187,6 +188,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			onSaveRef = cacheHookRef("onSave");
 			onMidiMessageRef = cacheHookRef("onMidiMessage");
 			onTriggerRef = cacheHookRef("onTrigger");
+			onTipsyMessageRef = cacheHookRef("onTipsyMessage");
 		}
 		lua_pop(L, 1); // pop rack table (or whatever "rack" turned out to be)
 
@@ -245,6 +247,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			// lua_close invalidates these anyway; reset for hygiene.
 			onMidiMessageRef = LUA_NOREF;
 			onTriggerRef = LUA_NOREF;
+			onTipsyMessageRef = LUA_NOREF;
 			onLoadRef = LUA_NOREF;
 			onUnloadRef = LUA_NOREF;
 			onSaveRef = LUA_NOREF;
@@ -727,6 +730,31 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		flushMsgStore();
 	}
 
+	// Dispatches onTipsyMessage(data, mimeType) via the cached
+	// onTipsyMessageRef. No-op if the script never defined it.
+	//
+	// `data` is pushed with an explicit length, so a payload containing NUL
+	// bytes survives — Lua strings are not NUL-terminated.
+	void dispatchTipsyMessage(const MidiScript::TipsyMessage& msg) override {
+		if (!L) return;
+		if (onTipsyMessageRef == LUA_NOREF) return;
+
+		lua_rawgeti(L, LUA_REGISTRYINDEX, onTipsyMessageRef);
+		lua_pushlstring(L, reinterpret_cast<const char*>(msg.data), msg.dataSize);
+		lua_pushstring(L, msg.mime);
+		msgCount = 0;
+		inCallback = true;
+		int status = lua_pcall(L, 2, 0, 0);
+		inCallback = false;
+		if (status != LUA_OK) {
+			const char* err = lua_tostring(L, -1);
+			handler->writeLog(string::f("onTipsyMessage error: %s", err ? err : "(unknown)"));
+			lua_pop(L, 1); // pop error message
+		}
+
+		flushMsgStore();
+	}
+
 	std::string callLuaTableFunc(const char* tableName, const char* funcName, int arg) {
 		// stack must be balanced on return
 		lua_getglobal(L, tableName);
@@ -815,6 +843,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("setLow",      lua_trig_setLow);
 		setTableFunc("setTrigger",  lua_trig_setTrigger);
 		setTableFunc("sendTipsy",   lua_trig_sendTipsy);
+		setTableFunc("enableTipsyIn", lua_trig_enableTipsyIn);
 		lua_setglobal(L, "trig");
 
 		// ── param table ──────────────────────────────────────────────────────
@@ -1736,6 +1765,18 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		m->sendOrder = e->sendCounter++;
 		m->msg.frame = -1;
 		m->tick = currentTicks + ticks;
+		return 0;
+	}
+
+	static int lua_trig_enableTipsyIn(lua_State* L) {
+		// trig.enableTipsyIn([enabled])
+		//   Optional boolean: true (the default) decodes a Tipsy stream from the
+		//   trigger input, false disables it. Tipsy input is only supported on the
+		//   first trigger input, so — like trig.sendTipsy() — there is no port
+		//   argument.
+		auto* e = getEngine(L);
+		bool enabled = (lua_gettop(L) < 1) || lua_toboolean(L, 1);
+		e->handler->enableTipsyIn(enabled ? 0 : -1);
 		return 0;
 	}
 

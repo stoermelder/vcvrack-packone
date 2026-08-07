@@ -12,6 +12,28 @@ namespace MidiScript {
 using rack::midi::Message;
 
 
+// Caps on Tipsy payloads: queue entries are fixed-size PODs so the audio
+// thread's shift() never heap-allocates (mime matches tipsy::kMaxMimeTypeSize).
+static constexpr size_t tipsyMaxMimeTypeSize = 256;
+static constexpr size_t tipsyMaxPayloadLength = 256;
+
+// One Tipsy message in transit, either direction. Fixed-size so the SPSC
+// RingBuffers copy it without heap allocation.
+//
+// Outbound (module's tipsyOutQueue), mimeSize == 0 marks a discard sentinel
+// rather than a real message: it carries no payload and exists only to mark
+// where a stale run of messages ends. sendTipsyOut() rejects an empty mime type
+// so the two can never be confused. (dataSize would not work as the marker — an
+// empty payload with a valid mime type is a legitimate message.) Inbound
+// (engine's tipsyInQueue) has no sentinels; every entry is a decoded message.
+struct TipsyMessage {
+	uint16_t mimeSize;                         // length without NUL
+	uint16_t dataSize;
+	char mime[tipsyMaxMimeTypeSize];
+	unsigned char data[tipsyMaxPayloadLength];
+};
+
+
 // A context-menu item registered via rack.registerContextMenu(). Carries
 // presentation data only — the onChange/onGetValue callbacks live in the
 // engine's map keyed by callbackId, so a copied spec is safe on the UI thread.
@@ -40,6 +62,15 @@ struct MidiScriptEngineHandler {
 	virtual void writeLog(const std::string& s, bool useTimestamp = true) = 0;
 	virtual void writeOverlay(const std::string& s1, const std::string& s2, const std::string& s3) = 0;
 	virtual void enableInput(int i) = 0;
+
+	// Routes trigger input i into the Tipsy decoder, or disables decoding when
+	// i < 0. Today i is always 0 — the script-facing trig.enableTipsyIn() exposes
+	// no port (Tipsy input is only supported on the first trigger input). While
+	// claimed, the trigger input stops counting ticks and firing rack.onTrigger,
+	// and channel 1 of trig.isHigh()/isLow() reads 0 (other channels are
+	// unaffected). Worker thread.
+	virtual void enableTipsyIn(int i) = 0;
+
 	virtual float getInputVoltage(int i, uint8_t ch) = 0;
 	virtual float getTrigVoltage(int i, uint8_t ch) = 0;
 	virtual uint64_t getTrigTicks(int i) = 0;
@@ -224,10 +255,17 @@ struct MidiScriptEngine {
 	virtual void processInMessage(int midiPort, Message& msg) = 0;
 	virtual void processInTick(int trigPort) = 0;
 
-	// Dispatches queued midiInQueue/tickInQueue onto the engine via runAsync().
-	// Virtual so tests can override it to observe call counts.
+	// Decoded Tipsy messages awaiting dispatch. Engine-owned, like midiInQueue:
+	// the decoding is the module's job but dispatching into script code is the
+	// engine's. Pushed by the module's processTipsyInput() (audio thread),
+	// drained by process() (worker) — the mirror image of the module's
+	// tipsyOutQueue.
+	dsp::RingBuffer<TipsyMessage, 8> tipsyInQueue;
+
+	// Dispatches queued midiInQueue/tickInQueue/tipsyInQueue onto the engine via
+	// runAsync(). Virtual so tests can override it to observe call counts.
 	virtual void process() {
-		if ((midiInQueue.size() > 0 || tickInQueue.size() > 0)) {
+		if ((midiInQueue.size() > 0 || tickInQueue.size() > 0 || tipsyInQueue.size() > 0)) {
 			runAsync([this]() {
 				while (!midiInQueue.empty()) {
 					auto t = midiInQueue.shift();
@@ -239,6 +277,10 @@ struct MidiScriptEngine {
 					int trigPort = tickInQueue.shift();
 					dispatchTrigger(trigPort);
 				}
+				while (!tipsyInQueue.empty()) {
+					TipsyMessage msg = tipsyInQueue.shift();
+					dispatchTipsyMessage(msg);
+				}
 			});
 		}
 	}
@@ -247,6 +289,7 @@ struct MidiScriptEngine {
 	// process() above on the worker thread.
 	virtual void dispatchMidiMessage(int midiPort, Message& msg) = 0;
 	virtual void dispatchTrigger(int trigPort) = 0;
+	virtual void dispatchTipsyMessage(const TipsyMessage& msg) = 0;
 
 	// Queries into the script from the UI
 	virtual std::string getInputName(int i) = 0;

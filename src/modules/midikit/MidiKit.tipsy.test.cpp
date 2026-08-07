@@ -341,3 +341,297 @@ TEST_CASE("bundled Tipsy output example scripts work", "[MidiKit][Tipsy]") {
 	runExample("presets/MidiKit/JavaScript/Tipsy.js");
 	runExample("presets/MidiKit/Lua/Tipsy.lua");
 }
+
+
+// ─── Tipsy input ─────────────────────────────────────────────────────────────
+//
+// trig.enableTipsyIn() routes the trigger input into the module's decoder.
+// Decoding runs per sample on the audio thread in processTipsyInput(); completed
+// messages go to the active engine's tipsyInQueue, which process() drains on
+// the worker to rack.onTipsyMessage().
+
+// Feeds `voltages` into the trigger input one sample at a time, stepping the
+// decoder for each. Returns how many messages completed.
+static int feedTipsy(MidiKitModule* m, int port, const std::vector<float>& voltages) {
+	int completed = 0;
+	for (float v : voltages) {
+		m->inputs[MidiKitModule::INPUT_TRIG + port].setVoltage(v, 0);
+		if (m->processTipsyInput()) completed++;
+	}
+	return completed;
+}
+
+// Encodes one message through the OUTPUT path and returns the voltages, so the
+// input tests can be driven by the encoder rather than hand-built streams.
+static std::vector<float> encodeTipsy(MidiKitModule* m, const char* mime, const std::string& data) {
+	REQUIRE(m->sendTipsyOut(mime, reinterpret_cast<const unsigned char*>(data.data()), (uint32_t)data.size()));
+	return drainTipsy(m);
+}
+
+TEST_CASE("Tipsy input round-trips an encoded message to onTipsyMessage", "[MidiKit][Tipsy]") {
+	// The script echoes what it receives into the log, so the test can assert on
+	// the decoded mime type and payload without extra plumbing.
+	const char* JS_SCRIPT = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onTipsyMessage = function(data, mimeType) {
+	rack.log("got:" + mimeType + ":" + data);
+};
+)";
+
+	MidiKitModule* m = createModule();
+	m->loadScript(JS_SCRIPT);
+	REQUIRE(m->activeEngine != nullptr);
+	m->processTipsyInput();   // no trigger claimed yet: must be a no-op
+
+	// Claim the trigger input and connect it.
+	m->enableTipsyIn(0);
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	std::vector<float> voltages = encodeTipsy(m, "text/plain", "Hello Tipsy!");
+	REQUIRE(voltages.size() > 0);
+
+	// Exactly one message completes, at the end of the stream.
+	REQUIRE(feedTipsy(m, 0, voltages) == 1);
+	REQUIRE(m->activeEngine->tipsyInQueue.size() == 1);
+
+	// The worker dispatches it into the script.
+	m->activeEngine->process();
+	REQUIRE(m->activeEngine->tipsyInQueue.empty());
+	REQUIRE(drainLog(m).find("got:text/plain:Hello Tipsy!") != std::string::npos);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Tipsy input round-trips under Lua", "[MidiKit][Tipsy]") {
+	const char* LUA_SCRIPT = R"(--[[
+@engine minilua@v1
+--]]
+rack.onTipsyMessage = function(data, mimeType)
+	rack.log("got:" .. mimeType .. ":" .. data)
+end
+)";
+
+	MidiKitModule* m = createModule();
+	m->loadScript(LUA_SCRIPT);
+	REQUIRE(m->activeEngine != nullptr);
+
+	m->enableTipsyIn(0);
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	std::vector<float> voltages = encodeTipsy(m, "application/json", "{\"key\":42}");
+	REQUIRE(feedTipsy(m, 0, voltages) == 1);
+
+	m->activeEngine->process();
+	REQUIRE(drainLog(m).find("got:application/json:{\"key\":42}") != std::string::npos);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Tipsy input ignores the stream until the trigger is claimed", "[MidiKit][Tipsy]") {
+	const char* JS_SCRIPT = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onTipsyMessage = function(data, mimeType) {
+	rack.log("got:" + data);
+};
+)";
+
+	MidiKitModule* m = createModule();
+	m->loadScript(JS_SCRIPT);
+	REQUIRE(m->activeEngine != nullptr);
+
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+	std::vector<float> voltages = encodeTipsy(m, "text/plain", "unclaimed");
+
+	// Decoding is off until a script claims the trigger input.
+	REQUIRE(feedTipsy(m, 0, voltages) == 0);
+	REQUIRE(m->activeEngine->tipsyInQueue.empty());
+
+	// Once claimed, the same stream decodes; disabling releases it again.
+	m->enableTipsyIn(0);
+	REQUIRE(feedTipsy(m, 0, voltages) == 1);
+	REQUIRE(m->activeEngine->tipsyInQueue.size() == 1);
+	m->activeEngine->process();
+	REQUIRE(m->activeEngine->tipsyInQueue.empty());
+
+	m->enableTipsyIn(-1);
+	REQUIRE(feedTipsy(m, 0, voltages) == 0);
+	REQUIRE(m->activeEngine->tipsyInQueue.empty());
+	Test::destroyModule(m);
+}
+
+TEST_CASE("a Tipsy-claimed trigger reads as 0 and CV inputs stay live", "[MidiKit][Tipsy]") {
+	const char* JS_SCRIPT = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onTipsyMessage = function(data, mimeType) {};
+)";
+
+	MidiKitModule* m = createModule();
+	m->loadScript(JS_SCRIPT);
+	REQUIRE(m->activeEngine != nullptr);
+
+	// CV inputs are never touched by Tipsy decoding.
+	m->inputs[MidiKitModule::INPUT + 1].channels = 1;
+	m->enableInput(1);
+	m->inputs[MidiKitModule::INPUT + 1].setVoltage(5.f, 0);
+	REQUIRE(m->getInputVoltage(1, 0) == 5.f);
+
+	// Only channel 0 of the trigger input carries the Tipsy stream: while
+	// claimed, channel 0 reads as 0 — the raw encoded voltages are protocol,
+	// not a gate a script should act on. Other channels are unaffected.
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 2;
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(5.f, 0);
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(3.f, 1);
+	REQUIRE(m->getTrigVoltage(0, 0) == 5.f);
+	REQUIRE(m->getTrigVoltage(0, 1) == 3.f);
+	m->enableTipsyIn(0);
+	REQUIRE(m->getTrigVoltage(0, 0) == 0.f);
+	// Channel 1 is not carrying the stream — it still reads normally.
+	REQUIRE(m->getTrigVoltage(0, 1) == 3.f);
+
+	// Releasing restores the trigger reading; the CV input was never masked.
+	m->enableTipsyIn(-1);
+	REQUIRE(m->getTrigVoltage(0, 0) == 5.f);
+	REQUIRE(m->getTrigVoltage(0, 1) == 3.f);
+	REQUIRE(m->getInputVoltage(1, 0) == 5.f);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("a Tipsy-claimed trigger input does not fire rack.onTrigger", "[MidiKit][Tipsy]") {
+	// The encoded Tipsy voltages swing across the trigger threshold constantly,
+	// so while the trigger input is claimed they must not count as clock ticks
+	// or fire rack.onTrigger.
+	const char* JS_SCRIPT = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onTrigger = function(trigPort) {
+	rack.log("trigger");
+};
+rack.onTipsyMessage = function(data, mimeType) {};
+)";
+
+	MidiKitModule* m = createModule();
+	m->loadScript(JS_SCRIPT);
+	REQUIRE(m->activeEngine != nullptr);
+
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	// Pin the SchmittTrigger low first (a fresh trigger starts uninitialized;
+	// the first low call locks it to LOW so a later rise is a real edge).
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
+	m->process(Test::makeProcessArgs(1));
+	m->activeEngine->process();
+
+	// Claim the trigger input for Tipsy: a rising edge must not count a tick
+	// or fire rack.onTrigger.
+	m->enableTipsyIn(0);
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
+	m->process(Test::makeProcessArgs(2));
+	m->activeEngine->process();
+	REQUIRE(m->inputTriggerTick == 0);
+	REQUIRE(drainLog(m).find("trigger") == std::string::npos);
+
+	// Releasing restores normal trigger behavior.
+	m->enableTipsyIn(-1);
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
+	m->process(Test::makeProcessArgs(3));
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
+	m->process(Test::makeProcessArgs(4));
+	m->activeEngine->process();
+	REQUIRE(m->inputTriggerTick == 1);
+	REQUIRE(drainLog(m).find("trigger") != std::string::npos);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Tipsy input resyncs after a malformed stream", "[MidiKit][Tipsy]") {
+	const char* JS_SCRIPT = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onTipsyMessage = function(data, mimeType) {
+	rack.log("got:" + data);
+};
+)";
+
+	MidiKitModule* m = createModule();
+	m->loadScript(JS_SCRIPT);
+	REQUIRE(m->activeEngine != nullptr);
+
+	m->enableTipsyIn(0);
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	// Garbage that never opens a message decodes nothing and does not wedge.
+	REQUIRE(feedTipsy(m, 0, {0.f, 1.f, -3.f, 2.5f, 0.1f}) == 0);
+	REQUIRE(m->activeEngine->tipsyInQueue.empty());
+
+	// A valid message afterwards still decodes: the decoder resyncs on the next
+	// message-begin sentinel.
+	std::vector<float> voltages = encodeTipsy(m, "text/plain", "after noise");
+	REQUIRE(feedTipsy(m, 0, voltages) == 1);
+	m->activeEngine->process();
+	REQUIRE(drainLog(m).find("got:after noise") != std::string::npos);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Tipsy input drops messages when the queue overflows", "[MidiKit][Tipsy]") {
+	const char* JS_SCRIPT = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onTipsyMessage = function(data, mimeType) {};
+)";
+
+	MidiKitModule* m = createModule();
+	m->loadScript(JS_SCRIPT);
+	REQUIRE(m->activeEngine != nullptr);
+
+	m->enableTipsyIn(0);
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	// The in-queue holds 8. Feed 9 messages without draining: the 9th is
+	// dropped rather than corrupting the queue.
+	std::vector<float> voltages = encodeTipsy(m, "text/plain", "x");
+	int completed = 0;
+	for (int i = 0; i < 9; i++) {
+		completed += feedTipsy(m, 0, voltages);
+	}
+	REQUIRE(completed == 8);
+	REQUIRE(m->activeEngine->tipsyInQueue.full());
+
+	// Draining frees room again.
+	m->activeEngine->process();
+	REQUIRE(m->activeEngine->tipsyInQueue.empty());
+	REQUIRE(feedTipsy(m, 0, voltages) == 1);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("bundled Tipsy input example scripts work", "[MidiKit][Tipsy]") {
+	// Loads a bundled TipsyIn example, feeds it an encoded message, and checks
+	// it reached rack.onTipsyMessage. Not in MidiKit.examples.test.cpp's
+	// PRESETS[] table for the same reason the Tipsy sender isn't: it produces
+	// no output from plain MIDI traffic, which is what that smoke test asserts.
+	auto runExample = [](const std::string& path, const std::string& payload, const char* mime) {
+		std::ifstream f(path);
+		REQUIRE(f.good());
+		std::stringstream ss;
+		ss << f.rdbuf();
+
+		MidiKitModule* m = createModule();
+		m->loadScript(ss.str());
+		REQUIRE(m->activeEngine != nullptr);
+
+		// The example claims the trigger input from rack.onLoad().
+		REQUIRE(drainLog(m).find("Listening for Tipsy on TRIG") != std::string::npos);
+		m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+		std::vector<float> voltages = encodeTipsy(m, mime, payload);
+		REQUIRE(feedTipsy(m, 0, voltages) == 1);
+
+		m->activeEngine->process();
+		std::string log = drainLog(m);
+		REQUIRE(log.find("Tipsy [") != std::string::npos);
+		REQUIRE(log.find(payload) != std::string::npos);
+		Test::destroyModule(m);
+	};
+
+	runExample("presets/MidiKit/JavaScript/TipsyIn.js", "{\"value\":42}", "application/json");
+	runExample("presets/MidiKit/Lua/TipsyIn.lua", "42", "text/plain");
+}

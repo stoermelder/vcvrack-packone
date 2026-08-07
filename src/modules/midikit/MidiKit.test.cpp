@@ -369,6 +369,7 @@ struct RecordingEngine : MidiScriptEngine {
 	void processInTick(int trigPort) override { }
 	void dispatchMidiMessage(int midiPort, midi::Message& msg) override { }
 	void dispatchTrigger(int trigPort) override { }
+	void dispatchTipsyMessage(const StoermelderPackOne::MidiScript::TipsyMessage& msg) override { }
 	std::string getInputName(int i) override { return ""; }
 	std::string getParamName(int i) override { return ""; }
 	std::string getParamFormatValue(int i) override { return ""; }
