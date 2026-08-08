@@ -152,7 +152,7 @@ rack.registerContextMenu({
     end
 })
 
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 
     -- Master channel and anything outside the zone passes through untouched

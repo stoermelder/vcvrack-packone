@@ -104,7 +104,7 @@ function bendNote(note, vel) {
     return outNote;
 };
 
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     let vel = midi.isNoteOn(msg) ? midi.getValue(msg) : 0;

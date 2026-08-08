@@ -244,7 +244,7 @@ rack.registerContextMenu({
     end
 })
 
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
     if not matchesChannel(midi.getChannel(msg)) then
         midiOut.send(msg)
         return

@@ -132,7 +132,7 @@ rack.registerContextMenu({
     }
 });
 
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     if (!matchesChannel(ch)) {

@@ -200,7 +200,7 @@ rack.registerContextMenu({
     end
 })
 
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
     -- Pure generator - pass everything from MIDI IN through unchanged so the
     -- module stays transparent in a MIDI chain.
     midiOut.send(msg)

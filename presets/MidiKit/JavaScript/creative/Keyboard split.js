@@ -84,7 +84,7 @@ rack.registerContextMenu({
     }
 });
 
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     // Control CC: switch the active preset when a CC whose number matches one

@@ -121,7 +121,7 @@ function spawnBall(ch, note, vel) {
     }
 };
 
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
     if (midi.isNoteOn(msg) && midi.getValue(msg) > 0) {
         let ch = midi.getChannel(msg);
         let note = midi.getNote(msg);

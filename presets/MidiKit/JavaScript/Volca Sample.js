@@ -165,7 +165,7 @@ rack.onUnload = function() {
 // ---------------------------------------------------------------------------
 // MIDI processing
 // ---------------------------------------------------------------------------
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
     let isPoly = config.polyChannel > 0 && ch === config.polyChannel;
 

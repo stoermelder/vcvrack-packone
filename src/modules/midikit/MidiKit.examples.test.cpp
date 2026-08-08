@@ -9,7 +9,7 @@ using StoermelderPackOne::MidiScript::ScriptMenuItem;
 // load cleanly yet still error on every message. Each preset is loaded into a
 // real module and checked for: no error in the load log, no error in the
 // per-message log, and at least one MIDI message produced (so a script whose
-// onMidiMessage never runs can't pass trivially).
+// midi.onMessage never runs can't pass trivially).
 
 // Presets are read from disk, so paths must not depend on the test binary's
 // working directory. __FILE__ is repo-root-relative (make passes "$<"), so
@@ -34,7 +34,7 @@ static std::string readFile(const std::string& path) {
 }
 
 // processInMessage only queues the message — process() is what actually runs
-// onMidiMessage(), so both are needed or the script never executes at all.
+// midi.onMessage(), so both are needed or the script never executes at all.
 static void feed(MidiKitModule* m, midi::Message msg) {
 	m->activeEngine->processInMessage(0, msg);
 	m->activeEngine->process();
@@ -1391,7 +1391,7 @@ TEST_CASE("'Scale quantiser.js/.lua' passes in-scale notes through unchanged", "
 	// C minor degrees all pass through note-for-note. Feeding all seven in one
 	// run also crosses the engine's GC boundary (the 6th consecutive
 	// quantise() call), which used to surface as a dropped message with
-	// "onMidiMessage error: ERROR: parse error".
+	// "onMessage error: ERROR: parse error".
 	for (int note : {60, 62, 63, 65, 67, 68, 70}) {
 		auto ev = feedCollect(m, noteOn(1, note, 100));
 		REQUIRE(ev == std::vector<OutEvent>{{0x9, 1, static_cast<uint8_t>(note), 100, 0}});

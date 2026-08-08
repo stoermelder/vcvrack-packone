@@ -103,13 +103,13 @@ TEST_CASE("Load error reports a clean chunk name and line", "[MidiKit][Lua]") {
 }
 
 
-// Runtime errors inside onMidiMessage carry a position too, and go through the
+// Runtime errors inside midi.onMessage carry a position too, and go through the
 // same chunk name.
 static const char* LUA_RUNTIME_ERROR = R"(--[[
 @engine minilua@v1
 @description test
 --]]
-rack.onMidiMessage = function(port, msg)
+midi.onMessage = function(port, msg)
   local x = nil
   return x.field
 end
@@ -155,7 +155,7 @@ TEST_CASE("Successful load reports no error position", "[MidiKit][Lua]") {
 static const char* LUA_ON_UNLOAD = R"(--[[
 @engine minilua@v1
 --]]
-rack.onMidiMessage = function(midiPort, msg) end
+midi.onMessage = function(midiPort, msg) end
 rack.onUnload = function()
 	rack.log("onUnload ran")
 	local msg = midi.create()
@@ -182,7 +182,7 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua
 
 // ─── Memory / garbage collection ────────────────────────────────────────────
 
-// RAM-usage tests for the Lua engine. Each onMidiMessage callback allocates
+// RAM-usage tests for the Lua engine. Each midi.onMessage callback allocates
 // scratch garbage (strings, tables) that nothing retains; across a large number
 // of callbacks the heap must not grow. Under real use the engine's automatic
 // incremental GC is what keeps it flat, so the no-growth test below does NOT
@@ -194,7 +194,7 @@ static const char* LUA_GC_SCRATCH = R"(--[[
 @engine minilua@v1
 @description test
 --]]
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
   local n = number.toString(midi.getNote(msg))
   local s = n .. "_" .. n
   local o = { a = 1, b = "b", c = s }
@@ -259,7 +259,7 @@ static const char* LUA_GC_RETAIN = R"(--[[
 --]]
 leaked = {}
 count = 0
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
   count = count + 1
   leaked[count] = number.toString(midi.getNote(msg)) .. "_"
 end

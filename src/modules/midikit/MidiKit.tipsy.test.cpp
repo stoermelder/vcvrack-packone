@@ -39,7 +39,7 @@ TEST_CASE("sendTipsy queues and outputs the encoded stream on the trigger CV", "
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
 	trig.sendTipsy("Hello Tipsy!");
 };
 )";
@@ -50,7 +50,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 
 	midi::Message in = noteOn(1, 60, 100);
 	m->activeEngine->processInMessage(0, in);
-	m->activeEngine->process(); // SyncTaskWorker: runs rack.onMidiMessage inline
+	m->activeEngine->process(); // SyncTaskWorker: runs midi.onMessage inline
 
 	// sendTipsy must have queued the payload for the audio thread.
 	REQUIRE(m->tipsyOutQueue.size() > 0);
@@ -70,7 +70,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 	const char* LUA_SCRIPT = R"(--[[
 @engine minilua@v1
 --]]
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
 	trig.sendTipsy("Hello Tipsy!", "text/plain")
 end
 )";
@@ -92,7 +92,7 @@ TEST_CASE("sendTipsy rejects invalid arguments", "[MidiKit][Tipsy]") {
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
 	trig.sendTipsy("x");
 };
 )";
@@ -124,7 +124,7 @@ TEST_CASE("sendTipsy drops messages when the pending queue overflows", "[MidiKit
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
 	trig.sendTipsy("x");
 };
 )";
@@ -167,7 +167,7 @@ TEST_CASE("sendTipsyOutReset drops queued messages but completes the current one
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
 	trig.sendTipsy("x");
 };
 )";
@@ -218,7 +218,7 @@ TEST_CASE("two discards in a row drop both batches", "[MidiKit][Tipsy]") {
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
 	trig.sendTipsy("x");
 };
 )";
@@ -248,7 +248,7 @@ TEST_CASE("sendTipsy handles empty data", "[MidiKit][Tipsy]") {
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
 	trig.sendTipsy("");
 };
 )";
@@ -273,7 +273,7 @@ TEST_CASE("sendTipsy output is reset when a script is reloaded", "[MidiKit][Tips
 	const char* JS_SCRIPT_1 = R"(/**
  * @engine QuickJs@v1
  */
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
 	trig.sendTipsy("First message");
 };
 )";
@@ -281,7 +281,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 	const char* JS_SCRIPT_2 = R"(/**
  * @engine QuickJs@v1
  */
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
 	trig.sendTipsy('{"key":"value"}', "application/json");
 };
 )";

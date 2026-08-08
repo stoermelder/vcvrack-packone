@@ -104,7 +104,7 @@ local function bendNote(note, vel)
     return outNote
 end
 
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 
     local vel = 0

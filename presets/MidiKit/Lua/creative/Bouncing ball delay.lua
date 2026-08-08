@@ -123,7 +123,7 @@ local function spawnBall(ch, note, vel)
     end
 end
 
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
     if midi.isNoteOn(msg) and midi.getValue(msg) > 0 then
         local ch = midi.getChannel(msg)
         local note = midi.getNote(msg)

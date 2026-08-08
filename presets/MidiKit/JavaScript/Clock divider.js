@@ -104,7 +104,7 @@ rack.registerContextMenu({
     }
 });
 
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
     if (midi.isStart(msg)) {
         resetPhase();
         state.running = true;

@@ -107,7 +107,7 @@ rack.registerContextMenu({
     }
 });
 
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
     if (midi.isClock(msg)) {
         state.tickCount++;
         if (state.tickCount >= config.ticksPerStep) {

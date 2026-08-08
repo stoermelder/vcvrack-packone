@@ -106,7 +106,7 @@ rack.registerContextMenu({
     end
 })
 
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
     if midi.isClock(msg) then
         state.tickCount = state.tickCount + 1
         if state.tickCount >= config.ticksPerStep then

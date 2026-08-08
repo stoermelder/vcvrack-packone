@@ -15,7 +15,7 @@ Implementation: [MidiScriptEngineQuickJs.h](MidiScriptEngineQuickJs.h) (uses
 ## When to write QuickJs (JavaScript) vs Lua
 
 Both engines are similarly capable for the common case (reacting to
-`rack.onMidiMessage`, building/sending messages). Pick based on these differences:
+`midi.onMessage`, building/sending messages). Pick based on these differences:
 
 | | QuickJs (JS) | Lua |
 |---|---|---|
@@ -78,14 +78,14 @@ leading comment block.
 ## Script structure
 
 - Top-level code runs once, synchronously, when the script is (re)loaded.
-- `rack.onMidiMessage(midiPort, msg)` is called for every incoming MIDI
-  message (`midiPort` is 1-based). Define it as a method on the `rack`
+- `midi.onMessage(midiPort, msg)` is called for every incoming MIDI
+  message (`midiPort` is 1-based). Define it as a method on the `midi`
   object — it's the only callback the engine looks for per message; a
   script that never defines it loads fine but silently ignores all incoming
-  MIDI (logged once at load time). In QuickJs, assign it to the `rack`
-  object — `rack.onMidiMessage = function(midiPort, msg) {...}`. Lua
-  likewise: `rack.onMidiMessage = function(...) end` or
-  `rack.onMidiMessage = function(midiPort, msg) end`.
+  MIDI (logged once at load time). In QuickJs, assign it to the `midi`
+  object — `midi.onMessage = function(midiPort, msg) {...}`. Lua
+  likewise: `midi.onMessage = function(...) end` or
+  `midi.onMessage = function(midiPort, msg) end`.
 - Optional `input.getName(i)`, `param.getName(i)`, `param.getValueFormat(i)`
   functions may be overridden to customize panel/input labeling; both
   engines seed defaults (`"Port " .. i` / `"Param " .. i`) that scripts can
@@ -106,7 +106,7 @@ leading comment block.
   `trig.enableIn()` gets no callback; moreover the module does not process the
   trigger input at all on a channel that isn't enabled — it counts no ticks
   (`trig.getTicks()` stays 0), drains no tick-scheduled (`sendAfterTrigger`)
-  messages, and dispatches no `trig.onTrigger`. Unlike `rack.onMidiMessage`,
+  messages, and dispatches no `trig.onTrigger`. Unlike `midi.onMessage`,
   there is no load-time log warning for omitting it. In QuickJs, assign it to
   the `trig` object — `trig.enableIn(1); trig.onTrigger = function(trigPort,
   channel) {...}`. Lua likewise: `trig.enableIn(1)` /
@@ -148,7 +148,7 @@ leading comment block.
     effect (any it does send are discarded, see
     [Persistence](#persistence)).
   - All three can call `midi.create()`/`midiOut.send()` like
-    `rack.onMidiMessage` can; messages sent from any of them are flushed the
+    `midi.onMessage` can; messages sent from any of them are flushed the
     same way, except `onSave()`'s are always discarded (see above).
   - In QuickJs, assign them to the `rack` object —
     `rack.onLoad = function(...) {...}` / `rack.onUnload = function() {...}`
@@ -158,18 +158,18 @@ leading comment block.
 
 ### Hooks and predefined objects are resolved once, at load time
 
-`rack.onMidiMessage`, `rack.onLoad`, `rack.onUnload`, and `rack.onSave` are
-read from the `rack` object **exactly once**, and `trig.onTrigger` and
-`trig.onTipsyMessage` likewise from the `trig` object, right after the
-script's top-level code finishes running. **Reassigning any of them
+`midi.onMessage` is read from the `midi` object **exactly once**;
+`rack.onLoad`, `rack.onUnload`, and `rack.onSave` from the `rack` object;
+and `trig.onTrigger`/`trig.onTipsyMessage` from the `trig` object, right
+after the script's top-level code finishes running. **Reassigning any of them
 afterward — from
 inside a callback or anywhere else in the script — has no effect.** The
 function that was present at load time keeps running for the lifetime of the
-script; a later assignment to `rack.onMidiMessage` (or the others) is simply
+script; a later assignment to `midi.onMessage` (or the others) is simply
 never looked at again. The same applies to defining a hook **late**: a
-script that never defines `rack.onMidiMessage` at load time but assigns it
+script that never defines `midi.onMessage` at load time but assigns it
 later (e.g. from inside `trig.onTrigger`) will never have that later
-definition called — the "no `onMidiMessage` defined" warning logged at load
+definition called — the "no `midi.onMessage` defined" warning logged at load
 time is the last word on it. (`trig.enableIn()` is not a hook — it is a live
 API call like `param.enable()`, so calling it at any time takes effect for
 subsequent trigger dispatch.)
@@ -452,7 +452,7 @@ these even though `math.*` is also available, for script portability).
 ### `midi.*` — message construction/inspection
 Messages are opaque handles (indices into an internal store, max 32 live per
 callback) created with `midi.create()`, `midi.createNRPN()`, or
-`midi.createCc14bit()`; `rack.onMidiMessage`
+`midi.createCc14bit()`; `midi.onMessage`
 also receives the incoming message as handle `0`/implicit first arg (Lua:
 index `0`, QuickJs: same convention).
 
@@ -465,6 +465,8 @@ or a wide chord release) can be emitted partially — a message created but
 never sent is dropped. Keep callbacks within the cap, or create/send in
 batches (one handle per message, per the send-once rule below).
 
+- `midi.onMessage(midiPort, msg)` — the incoming-MIDI entry point (see
+  [Script structure](#script-structure)): called with each incoming message.
 - `midi.create()` → new empty message handle.
 - `midi.clone(msg)` → new message handle carrying an independent copy of
   `msg`'s MIDI payload. The clone starts as a fresh, unsent message (its own
@@ -518,7 +520,7 @@ batches (one handle per message, per the send-once rule below).
 
 - `midiOut.selectPort(midiPort)` — selects the output port (1-based) that every
   subsequent `midiOut.*` call sends on, until `selectPort` is called again.
-  The selection is sticky across `rack.onMidiMessage` invocations, not reset per
+  The selection is sticky across `midi.onMessage` invocations, not reset per
   callback. MIDI-KIT currently exposes a single output, so
   `midiOut.selectPort(1)` is a no-op today beyond validating the index — it
   exists so scripts written against a future multi-output engine don't need to
@@ -540,7 +542,7 @@ whatever `midiOut.selectPort()` last selected (port 1 if it was never called):
 **A message can only be sent once per callback.** `midiOut.send(msg)` (and the
 `sendAfter*` variants) mark the handle as sent; the actual enqueue happens once
 per handle in the post-callback flush, so a second `send` of the *same* handle
-within one `rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` is not a second message — only
+within one `midi.onMessage`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` is not a second message — only
 one goes out, and if the message body was changed in between, the last change
 wins. To send the same bytes twice, build a fresh handle first with
 `midi.create()` or `midi.clone(msg)` and send that. Each message sent consumes
@@ -555,9 +557,9 @@ Clock=0xF8, Start=0xFA, Continue=0xFB, Stop=0xFC (encoded as status 0xf with
 rather than decoding this by hand).
 
 ## Gotchas
-- Message handles are only valid within the `rack.onMidiMessage` call that
+- Message handles are only valid within the `midi.onMessage` call that
   created them — the store resets each callback invocation. Creating a
-  message at top level (outside `rack.onMidiMessage`) logs a warning and the
+  message at top level (outside `midi.onMessage`) logs a warning and the
   handle is discarded as soon as the next MIDI message arrives, so build
   messages inside the callback. `rack.onLoad()`/`rack.onUnload()`/`rack.onSave()`/`trig.onTrigger()`
   are full callbacks in this sense too — a message created and sent inside

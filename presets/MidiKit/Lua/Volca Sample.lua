@@ -164,7 +164,7 @@ end
 -- ---------------------------------------------------------------------------
 -- MIDI processing
 -- ---------------------------------------------------------------------------
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
     local isPoly = config.polyChannel > 0 and ch == config.polyChannel
 

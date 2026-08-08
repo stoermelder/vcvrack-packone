@@ -196,7 +196,7 @@ rack.registerContextMenu({
     end
 })
 
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 
     if midi.isNoteOn(msg) and matchesChannel(ch) and midi.getValue(msg) > 0 then

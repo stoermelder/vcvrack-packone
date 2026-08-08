@@ -141,7 +141,7 @@ TEST_CASE("Successful load reports no error", "[MidiKit][QuickJs]") {
 static const char* QJS_ON_UNLOAD = R"(/**
  * @engine QuickJs@v1
  */
-rack.onMidiMessage = function(midiPort, msg) {}
+midi.onMessage = function(midiPort, msg) {}
 rack.onUnload = function() {
 	rack.log("onUnload ran");
 	let msg = midi.create();
@@ -172,7 +172,7 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Qui
 static const char* QJS_MIDI_ROUNDTRIP = R"(/**
  * @engine QuickJs@v1
  */
-rack.onMidiMessage = function(port, m) {
+midi.onMessage = function(port, m) {
 	if (midi.isCc(m)) {
 		let out = midi.clone(m);
 		midi.setChannel(out, 2);
@@ -183,11 +183,11 @@ rack.onMidiMessage = function(port, m) {
 }
 )";
 
-TEST_CASE("onMidiMessage dispatch round-trips a CC message through midi.*/midiOut.*", "[MidiKit][QuickJs]") {
+TEST_CASE("midi.onMessage dispatch round-trips a CC message through midi.*/midiOut.*", "[MidiKit][QuickJs]") {
 	MidiKitModule* m = createModule();
 	m->loadScript(QJS_MIDI_ROUNDTRIP);
 	REQUIRE(m->seQuickJs.ctx != nullptr);
-	REQUIRE(JS_IsFunction(m->seQuickJs.ctx, m->seQuickJs.onMidiMessageFn));
+	REQUIRE(JS_IsFunction(m->seQuickJs.ctx, m->seQuickJs.onMessageFn));
 
 	midi::Message msg;
 	msg.setSize(3);
@@ -217,7 +217,7 @@ TEST_CASE("onMidiMessage dispatch round-trips a CC message through midi.*/midiOu
 static const char* QJS_NRPN = R"(/**
  * @engine QuickJs@v1
  */
-rack.onMidiMessage = function(port, m) {
+midi.onMessage = function(port, m) {
 	let n = midi.createNRPN();
 	midi.setNRPN(n, 1, 300, 500);
 	midiOut.send(n);
@@ -250,7 +250,7 @@ TEST_CASE("midi.createNRPN/setNRPN queue all four CC messages in order", "[MidiK
 
 // ─── Memory / garbage collection ────────────────────────────────────────────
 
-// RAM-usage tests for the QuickJS engine. Each onMidiMessage callback
+// RAM-usage tests for the QuickJS engine. Each midi.onMessage callback
 // allocates scratch garbage (strings, objects, arrays) that nothing retains,
 // so usage must stay bounded across a large number of callbacks — QuickJS's
 // own incremental/automatic GC (triggered internally on allocation pressure)
@@ -268,7 +268,7 @@ TEST_CASE("midi.createNRPN/setNRPN queue all four CC messages in order", "[MidiK
 static const char* QJS_GC_SCRATCH = R"(/**
  * @engine QuickJs@v1
  */
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
 	let n = number.toString(midi.getNote(msg));
 	let s = n + "_" + n;
 	let o = { a: 1, b: "b", c: s };
@@ -334,7 +334,7 @@ static const char* QJS_GC_RETAIN = R"(/**
  * @engine QuickJs@v1
  */
 var leaked = [];
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
 	leaked.push(number.toString(midi.getNote(msg)) + "_");
 }
 )";

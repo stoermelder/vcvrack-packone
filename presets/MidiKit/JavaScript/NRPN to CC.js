@@ -90,7 +90,7 @@ rack.registerContextMenu({
 });
 
 // Called when a MIDI message is received
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
     if (!midi.isCc(msg)) {
         return;
     }

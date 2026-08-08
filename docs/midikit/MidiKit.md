@@ -38,27 +38,27 @@ The module also exposes four CV inputs and four panel parameters that can be rea
 
 Scripts can persist their configuration across patch saves and reloads via `rack.onLoad()` and `rack.onSave()` (see [Persistence](#persistence)).
 
-`rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` (and `trig.onTrigger`/`trig.onTipsyMessage`, on the `trig` object) are only ever read once, right after the script loads — assign each exactly once, at the top level. Reassigning one later, or defining it late, has no effect. `trig.enableIn()`, by contrast, is a live API call — the trigger input does nothing until it is called.
+`midi.onMessage` (on the `midi` object), `rack.onLoad`/`rack.onUnload`/`rack.onSave`, and `trig.onTrigger`/`trig.onTipsyMessage` (on the `trig` object) are only ever read once, right after the script loads — assign each exactly once, at the top level. Reassigning one later, or defining it late, has no effect. `trig.enableIn()`, by contrast, is a live API call — the trigger input does nothing until it is called.
 
 You can use MIDI-KIT as an insert effect via VCV Rack's built-in MIDI Loopback driver. This lets you process incoming messages before they reach other MIDI modules (for example, MIDI‑CC, MIDI‑CV, MIDI‑MAP, or MIDI‑CAT), and likewise process outgoing messages.
 
 ## Examples
 
-**Note:** Channels are 1..16, parameter and input indices are 1..4. The main entry point is `rack.onMidiMessage(midiPort, msg)`; in this version `midiPort` is always *1*.
+**Note:** Channels are 1..16, parameter and input indices are 1..4. The main entry point is `midi.onMessage(midiPort, msg)`; in this version `midiPort` is always *1*.
 
 ### Basic pass-through
 The script passes all incoming MIDI messages to the default MIDI output port.
 
 JavaScript:
 ```js
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
    midiOut.send(msg);
 };
 ```
 
 Lua:
 ```lua
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
    midiOut.send(msg)
 end
 ```
@@ -68,7 +68,7 @@ The script drops all incoming MIDI messages except for MIDI channel 2. Messages 
 
 JavaScript:
 ```js
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
    if (midi.getChannel(msg) === 2) {
       midiOut.send(msg);
    }
@@ -77,7 +77,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
    if midi.getChannel(msg) == 2 then
       midiOut.send(msg)
    end
@@ -89,7 +89,7 @@ The script routes incoming CC messages on MIDI channel 2 to MIDI channel 3. All 
 
 JavaScript:
 ```js
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
       midi.setChannel(msg, 3);
    }
@@ -99,7 +99,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
    if midi.isCc(msg) and midi.getChannel(msg) == 2 then
       midi.setChannel(msg, 3)
    end
@@ -114,7 +114,7 @@ JavaScript:
 ```js
 param.enable(1);
 
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
       let ch = Math.ceil(param.getValue(1) * 16);
       midi.setChannel(msg, ch);
@@ -127,7 +127,7 @@ Lua:
 ```lua
 param.enable(1)
 
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
    if midi.isCc(msg) and midi.getChannel(msg) == 2 then
       local ch = math.ceil(param.getValue(1) * 16)
       midi.setChannel(msg, ch)
@@ -153,7 +153,7 @@ param.getValueFormat = function(port) {
     return number.toString(param.getValue(port));
 };
 
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
    if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
       let ch = Math.ceil(param.getValue(1) * 16);
       midi.setChannel(msg, ch);
@@ -177,7 +177,7 @@ param.getValueFormat = function(port)
     return number.toString(param.getValue(port))
 end
 
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
    if midi.isCc(msg) and midi.getChannel(msg) == 2 then
       local ch = math.ceil(param.getValue(1) * 16)
       midi.setChannel(msg, ch)
@@ -190,7 +190,7 @@ end
 
 JavaScript:
 ```js
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let nrpn1 = midi.createNRPN();
       midi.setNRPN(nrpn1, 1, 12345, 13456);
@@ -201,7 +201,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       local nrpn1 = midi.createNRPN()
       midi.setNRPN(nrpn1, 1, 12345, 13456)
@@ -218,7 +218,7 @@ receiver never sees the MSB without its LSB.
 
 JavaScript:
 ```js
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let cc14 = midi.createCc14bit();
       midi.setCc14bit(cc14, 1, 1, 100.5);  // CC 1 = 100 (MSB), CC 33 = 64 (LSB)
@@ -229,7 +229,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       local cc14 = midi.createCc14bit()
       midi.setCc14bit(cc14, 1, 1, 100.5)   -- CC 1 = 100 (MSB), CC 33 = 64 (LSB)
@@ -242,7 +242,7 @@ end
 
 JavaScript:
 ```js
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let sysex = midi.create();
       midi.setSysEx(sysex, "ab33010001");
@@ -253,7 +253,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       local sysex = midi.create()
       midi.setSysEx(sysex, "ab33010001")
@@ -268,7 +268,7 @@ Use `midi.setRaw()` for message types with no dedicated setter, such as an MTC q
 
 JavaScript:
 ```js
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let mtc = midi.create();
       midi.setRaw(mtc, "f11a");
@@ -279,7 +279,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       local mtc = midi.create()
       midi.setRaw(mtc, "f11a")
@@ -294,7 +294,7 @@ end
 
 JavaScript:
 ```js
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       midiOut.send(msg);
    }
@@ -311,7 +311,7 @@ rack.onUnload = function() {
 
 Lua:
 ```lua
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       midiOut.send(msg)
    end
@@ -358,7 +358,7 @@ end
 
 JavaScript:
 ```js
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
    // Send a text message via Tipsy protocol (mime defaults to text/plain)
    trig.sendTipsy("Preset changed!");
    
@@ -370,7 +370,7 @@ rack.onMidiMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
    -- Send a text message via Tipsy protocol (mime defaults to text/plain)
    trig.sendTipsy("Preset changed!")
    
@@ -548,9 +548,8 @@ The API below is identical for both scripting engines — the function names, ar
 
 ### Callbacks on the `rack` object
 
-The callbacks below are defined as methods on the `rack` object — `rack.onMidiMessage`, `rack.onLoad`, `rack.onUnload`, `rack.onSave`. (The trigger callbacks `trig.onTrigger` and `trig.onTipsyMessage` live on the `trig` object instead — `trig.onTrigger` is gated by `trig.enableIn()`, `trig.onTipsyMessage` by `trig.enableTipsyIn()` — see [trig](#trig).)
+The callbacks below are defined as methods on the `rack` object — `rack.onLoad`, `rack.onUnload`, `rack.onSave`. (The MIDI entry point `midi.onMessage` lives on the `midi` object — see [midi](#midi) — and the trigger callbacks `trig.onTrigger`/`trig.onTipsyMessage` live on the `trig` object, gated by `trig.enableIn()`/`trig.enableTipsyIn()` — see [trig](#trig).)
 
-- `rack.onMidiMessage(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
 - `rack.onLoad(persistedConfig)`: Optional. Called once, right after the script's top-level code runs, when the script has loaded successfully. If the script was previously saved with a config (see [Persistence](#persistence)), `persistedConfig` is a JavaScript object (QuickJS) or table (Lua) containing the values returned by the last `rack.onSave()`. If no config was persisted, `persistedConfig` is `undefined` (QuickJS) / `nil` (Lua), and the script should initialize from its defaults. Use it in place of a manually-called `init()` function at the bottom of the file. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onLoad = function(persistedConfig) { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
 - `rack.onUnload()`: Optional. Called every time the script's state is actually torn down — the script is being replaced by another, the module is reset, or the module is removed from the patch. This is the only reliable place to send cleanup messages, such as a note off for anything the script left sounding; nothing else gets a chance to release those notes afterward. It never runs on a plain patch save, and **its return value is ignored** — use `rack.onSave()` to persist config. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onUnload = function() { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
 - `rack.onSave()`: Optional. Called to snapshot the script's current config for persistence — on an explicit patch save, on quit, and (via the module's `dataToJson()`) on periodic autosave. If the script returns a value, it is serialized to JSON and persisted with the patch (see [Persistence](#persistence)). **Must be side-effect-free**: it may be called repeatedly without tearing anything down, so it should only read state, never mutate it. **In JavaScript (QuickJS), assign it to the `rack` object** — `rack.onSave = function() { ... };` — see [JavaScript (QuickJS)](#javascript-quickjs) below.
@@ -686,6 +685,7 @@ The trigger output can also carry [Tipsy](https://github.com/baconpaul/tipsy-enc
 
 ### midi
 
+- `midi.onMessage(midiPort, msg)`: Main entry point of the script. This function is called by the module on each incoming MIDI message `msg`, received from MIDI input port `midiPort` (always *1* for this version).
 - `midi.create()`: Creates an empty MIDI message.
 - `midi.clone(msg)`: Creates an independent copy of `msg` (same MIDI payload, but a fresh, unsent message). Edit the returned handle freely — the source `msg` is unaffected. Handy for sending a modified copy of the incoming message: `let copy = midi.clone(msg); midi.setChannel(copy, 5); midiOut.send(copy);`. Note: NRPN/14-bit-CC chain state is not copied — a clone of an NRPN or `createCc14bit()` handle is a single plain message.
 - `midi.createNRPN()`: Creates an empty NRPN MIDI message (actually 4 MIDI messages).
@@ -730,7 +730,7 @@ The trigger output can also carry [Tipsy](https://github.com/baconpaul/tipsy-enc
 
 ### midiOut
 
-- `midiOut.selectPort(midiPort)`: Selects the output port `midiPort` (1-based) used by every following `midiOut.*` call, until `midiOut.selectPort()` is called again. The selection stays in effect across `rack.onMidiMessage()` invocations. Currently MIDI-KIT has only one output port (index *1*) — scripts that call it now won't need to change when more output ports become available.
+- `midiOut.selectPort(midiPort)`: Selects the output port `midiPort` (1-based) used by every following `midiOut.*` call, until `midiOut.selectPort()` is called again. The selection stays in effect across `midi.onMessage()` invocations. Currently MIDI-KIT has only one output port (index *1*) — scripts that call it now won't need to change when more output ports become available.
 
 The sending functions below take no port argument — the destination is whatever `midiOut.selectPort()` last selected (port *1* if it was never called):
 
@@ -738,7 +738,7 @@ The sending functions below take no port argument — the destination is whateve
 - `midiOut.sendAfterMs(msg, ms)`: Sends `msg` delayed on the selected MIDI port. The delay `ms` is specified in milliseconds.
 - `midiOut.sendAfterTrigger(msg, ticks, [trigPort = 1, [channel = 1]])`: Sends `msg` delayed on the selected MIDI port. The delay is specified in `ticks` of triggers on CV trigger input `trigPort` (default *1*) of polyphonic `channel` (default *1*). `trigPort` is an optional trigger input port; `channel` is a further optional polyphonic channel.
 
-**A message can only be sent once per callback.** `midiOut.send(msg)` and the `sendAfter*` variants mark the handle as sent — the actual enqueue happens once per handle after the callback, so sending the *same* handle again in one `rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` is not a second message: only one goes out (and if the message body was changed in between, the last change wins). To send the same bytes twice, create a fresh handle with `midi.create()` or `midi.clone(msg)` and send that. Each message sent also consumes one of the 32 message-handle slots, so one handle per message is the right pattern. When the store is full, `midi.create()`/`midi.clone()`/`midi.createNRPN()`/`midi.createCc14bit()` raise a script error that aborts the rest of the callback; messages already sent before the error are still flushed, so a multi-message sequence can be emitted partially.
+**A message can only be sent once per callback.** `midiOut.send(msg)` and the `sendAfter*` variants mark the handle as sent — the actual enqueue happens once per handle after the callback, so sending the *same* handle again in one `midi.onMessage`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` is not a second message: only one goes out (and if the message body was changed in between, the last change wins). To send the same bytes twice, create a fresh handle with `midi.create()` or `midi.clone(msg)` and send that. Each message sent also consumes one of the 32 message-handle slots, so one handle per message is the right pattern. When the store is full, `midi.create()`/`midi.clone()`/`midi.createNRPN()`/`midi.createCc14bit()` raise a script error that aborts the rest of the callback; messages already sent before the error are still flushed, so a multi-message sequence can be emitted partially.
 
 Beyond the per-callback handle store, MIDI-KIT also holds a queue of messages waiting to reach the MIDI output (this is separate from the frame/tick delay queues used by `sendAfterMs`/`sendAfterTrigger`, and separate per module). Under sustained heavy output — far more messages than a real MIDI device could consume anyway — this queue can fill up; if it does, further messages are dropped rather than corrupting already-queued ones, and the log shows a single "MIDI output queue full, message(s) dropped" line. This is expected only under pathological output rates; normal scripts will not hit it.
 

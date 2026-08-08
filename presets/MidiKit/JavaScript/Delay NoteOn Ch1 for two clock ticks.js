@@ -10,7 +10,7 @@
 // process the trigger input at all and the delayed sends never fire.
 trig.enableIn(1, 1);
 
-rack.onMidiMessage = function(midiInput, msg) {
+midi.onMessage = function(midiInput, msg) {
     if (midi.isNoteOn(msg)) {
         if (midi.getChannel(msg) === 1) {
             midiOut.sendAfterTrigger(msg, 2);

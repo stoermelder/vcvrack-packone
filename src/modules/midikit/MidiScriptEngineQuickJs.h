@@ -77,12 +77,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// effect; only what was present at load runs. Matched in Lua so both
 	// engines behave the same. Asymmetry: QuickJS calls hooks as methods
 	// (rackObj/trigObj as thisVal, so `this` works); Lua calls them as bare
-	// functions. onMidiMessage/onLoad/onUnload/onSave live on the rack object;
-	// onTrigger and onTipsyMessage live on the trig object (onTrigger so
-	// trig.enableIn() can gate it). Predates caching, unused by any preset.
+	// functions. onLoad/onUnload/onSave live on the rack object; onMessage on
+	// the midi object; onTrigger/onTipsyMessage on the trig object (onTrigger
+	// so trig.enableIn() can gate it). Predates caching, unused by any preset.
 	JSValue rackObj = JS_UNDEFINED;
+	JSValue midiObj = JS_UNDEFINED;
 	JSValue trigObj = JS_UNDEFINED;
-	JSValue onMidiMessageFn = JS_UNDEFINED;
+	JSValue onMessageFn = JS_UNDEFINED;
 	JSValue onTriggerFn = JS_UNDEFINED;
 	JSValue onTipsyMessageFn = JS_UNDEFINED;
 	JSValue onLoadFn = JS_UNDEFINED;
@@ -203,12 +204,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			handler->writeLog("Script loaded", false);
 
 			// Callbacks live on the predefined objects, not the global scope.
-			// rack and its hooks (minus onTrigger/onTipsyMessage) plus the trig
-			// object are cached once here (see declarations). onTrigger and
-			// onTipsyMessage are resolved from trig, not rack (onTrigger so
-			// trig.enableIn() can gate it).
+			// rack holds onLoad/onUnload/onSave; the midi object holds onMessage
+			// (the incoming-MIDI entry point); the trig object holds
+			// onTrigger/onTipsyMessage. All are cached once here (see
+			// declarations).
 			JSValue glob = JS_GetGlobalObject(ctx);
 			rackObj = JS_GetPropertyStr(ctx, glob, "rack");
+			midiObj = JS_GetPropertyStr(ctx, glob, "midi");
 			trigObj = JS_GetPropertyStr(ctx, glob, "trig");
 			JS_FreeValue(ctx, glob);
 			// A script can clobber "rack" (e.g. "rack = null;"); JS_GetPropertyStr
@@ -218,11 +220,19 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				onLoadFn = cacheCallableProp(rackObj, "onLoad");
 				onUnloadFn = cacheCallableProp(rackObj, "onUnload");
 				onSaveFn = cacheCallableProp(rackObj, "onSave");
-				onMidiMessageFn = cacheCallableProp(rackObj, "onMidiMessage");
 			}
 			else {
 				JS_FreeValue(ctx, rackObj);
 				rackObj = JS_UNDEFINED;
+			}
+			// midi.onMessage is the incoming-MIDI entry point, resolved once and
+			// clobber-guarded like the others; midiObj is its thisVal.
+			if (JS_IsObject(midiObj)) {
+				onMessageFn = cacheCallableProp(midiObj, "onMessage");
+			}
+			else {
+				JS_FreeValue(ctx, midiObj);
+				midiObj = JS_UNDEFINED;
 			}
 			// trig.onTrigger/trig.onTipsyMessage come from the trig object
 			// (resolved once, clobber-guarded); trigObj is the thisVal for both.
@@ -237,8 +247,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 			hasOnSave.store(!JS_IsUndefined(onSaveFn), std::memory_order_release);
 
-			if (JS_IsUndefined(onMidiMessageFn)) {
-				handler->writeLog("No onMidiMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
+			if (JS_IsUndefined(onMessageFn)) {
+				handler->writeLog("No midi.onMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
 			}
 			// Pass any persisted config to onLoad(); parsePersistedConfig()
 			// returns JS_UNDEFINED when there is none or invalid JSON, so the
@@ -300,16 +310,18 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			// JS_FreeContext would collect these anyway; free and reset first so
 			// nothing stale outlives ctx/rt going to NULL below.
 			JS_FreeValue(ctx, rackObj);
+			JS_FreeValue(ctx, midiObj);
 			JS_FreeValue(ctx, trigObj);
-			JS_FreeValue(ctx, onMidiMessageFn);
+			JS_FreeValue(ctx, onMessageFn);
 			JS_FreeValue(ctx, onTriggerFn);
 			JS_FreeValue(ctx, onTipsyMessageFn);
 			JS_FreeValue(ctx, onLoadFn);
 			JS_FreeValue(ctx, onUnloadFn);
 			JS_FreeValue(ctx, onSaveFn);
 			rackObj = JS_UNDEFINED;
+			midiObj = JS_UNDEFINED;
 			trigObj = JS_UNDEFINED;
-			onMidiMessageFn = JS_UNDEFINED;
+			onMessageFn = JS_UNDEFINED;
 			onTriggerFn = JS_UNDEFINED;
 			onTipsyMessageFn = JS_UNDEFINED;
 			onLoadFn = JS_UNDEFINED;
@@ -434,20 +446,20 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			msgCount = 1;
 
 			inCallback = true;
-			// Calls the cached onMidiMessageFn/rackObj — no by-name lookup.
-			// !JS_IsUndefined, not JS_IsFunction: cacheCallableProp() guarantees
-			// a function or JS_UNDEFINED, so the tag test suffices and is
-			// cheaper on this per-dispatch path.
-			if (!JS_IsUndefined(onMidiMessageFn)) {
+			// Calls the cached onMessageFn with midiObj as thisVal — no by-name
+			// lookup. !JS_IsUndefined, not JS_IsFunction: cacheCallableProp()
+			// guarantees a function or JS_UNDEFINED, so the tag test suffices
+			// and is cheaper on this per-dispatch path.
+			if (!JS_IsUndefined(onMessageFn)) {
 				JSValue args[2] = { JS_NewInt32(ctx, midiPort + 1), JS_NewInt32(ctx, 0) };
-				JSValue r = JS_Call(ctx, onMidiMessageFn, rackObj, 2, args);
+				JSValue r = JS_Call(ctx, onMessageFn, midiObj, 2, args);
 				JS_FreeValue(ctx, args[0]);
 				JS_FreeValue(ctx, args[1]);
 				inCallback = false;
 				if (JS_IsException(r)) {
 					JS_FreeValue(ctx, r);
 					JSValue exc = JS_GetException(ctx);
-					handler->writeLog(string::f("onMidiMessage error: %s", jsToStdString(exc).c_str()));
+					handler->writeLog(string::f("onMessage error: %s", jsToStdString(exc).c_str()));
 					JS_FreeValue(ctx, exc);
 				}
 				else {
@@ -522,7 +534,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// Sends every message emitted during the callback that just ran through the
-	// handler (shared by onMidiMessage/onLoad/onUnload/onTrigger). Emitted in
+	// handler (shared by onMessage/onLoad/onUnload/onTrigger). Emitted in
 	// send() order (sendOrder), not handle-creation order: a script may create
 	// and send messages in different orders, and the receiver must observe
 	// send() order.
@@ -1246,7 +1258,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return JS_NewBool(ctx, s.msg.getStatus() == t);
 	}
 
-	// Warns when a message is created outside a callback (onMidiMessage/
+	// Warns when a message is created outside a callback (onMessage/
 	// onLoad/onUnload) — the store resets every callback, silently
 	// invalidating such a handle before use.
 	static void warnIfOutsideCallback(JSContext* ctx, const char* fn) {

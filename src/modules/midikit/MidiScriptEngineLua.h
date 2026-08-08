@@ -53,10 +53,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// not re-looked-up per dispatch — so defining/reassigning a hook later has
 	// no effect; only what was present at load runs. LUA_NOREF = "not defined".
 	// Asymmetry: Lua calls hooks as bare functions; QuickJS as methods (rackObj
-	// as thisVal). onMidiMessage/onLoad/onUnload/onSave live on the rack table;
-	// onTrigger and onTipsyMessage live on the trig table (onTrigger so
+	// as thisVal). onLoad/onUnload/onSave live on the rack table; onMessage on
+	// the midi table; onTrigger/onTipsyMessage on the trig table (onTrigger so
 	// trig.enableIn() can gate it). Predates caching, unused by any preset.
-	int onMidiMessageRef = LUA_NOREF;
+	int onMessageRef = LUA_NOREF;
 	int onTriggerRef = LUA_NOREF;
 	int onTipsyMessageRef = LUA_NOREF;
 	int onLoadRef = LUA_NOREF;
@@ -183,16 +183,21 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		handler->writeLog("Script loaded", false);
 
-		// Cache the lifecycle hooks once (see declarations): all but
-		// onTrigger/onTipsyMessage come from the rack table; those two from trig.
+		// Cache the lifecycle hooks once (see declarations): onLoad/onUnload/
+		// onSave from rack; onMessage from midi; onTrigger/onTipsyMessage from trig.
 		lua_getglobal(L, "rack");
 		if (lua_istable(L, -1)) {
 			onLoadRef = cacheHookRef("onLoad");
 			onUnloadRef = cacheHookRef("onUnload");
 			onSaveRef = cacheHookRef("onSave");
-			onMidiMessageRef = cacheHookRef("onMidiMessage");
 		}
 		lua_pop(L, 1); // pop rack table (or whatever "rack" turned out to be)
+
+		lua_getglobal(L, "midi");
+		if (lua_istable(L, -1)) {
+			onMessageRef = cacheHookRef("onMessage");
+		}
+		lua_pop(L, 1); // pop midi table (or whatever "midi" turned out to be)
 
 		lua_getglobal(L, "trig");
 		if (lua_istable(L, -1)) {
@@ -203,8 +208,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		hasOnSave.store(onSaveRef != LUA_NOREF, std::memory_order_release);
 
-		if (onMidiMessageRef == LUA_NOREF) {
-			handler->writeLog("No onMidiMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
+		if (onMessageRef == LUA_NOREF) {
+			handler->writeLog("No midi.onMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
 		}
 
 		callOnLoad(persistedConfigJson);
@@ -254,7 +259,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			flushMsgStore();
 			clearContextMenus();
 			// lua_close invalidates these anyway; reset for hygiene.
-			onMidiMessageRef = LUA_NOREF;
+			onMessageRef = LUA_NOREF;
 			onTriggerRef = LUA_NOREF;
 			onTipsyMessageRef = LUA_NOREF;
 			onLoadRef = LUA_NOREF;
@@ -713,9 +718,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		msgStore[0].isCc14bit = false;
 		msgCount = 1;
 
-		// Calls the cached onMidiMessageRef. No-op if never defined (LUA_NOREF).
-		if (onMidiMessageRef == LUA_NOREF) return;
-		lua_rawgeti(L, LUA_REGISTRYINDEX, onMidiMessageRef);
+		// Calls the cached onMessageRef. No-op if never defined (LUA_NOREF).
+		if (onMessageRef == LUA_NOREF) return;
+		lua_rawgeti(L, LUA_REGISTRYINDEX, onMessageRef);
 		lua_pushinteger(L, midiPort + 1);
 		lua_pushinteger(L, 0);
 		inCallback = true;
@@ -723,7 +728,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			handler->writeLog(string::f("onMidiMessage error: %s", err ? err : "(unknown)"));
+			handler->writeLog(string::f("onMessage error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
 
