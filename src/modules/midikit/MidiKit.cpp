@@ -350,8 +350,9 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 
 	// MidiScriptEngineHandler
 	bool sendMidi(int midiPort, const MidiScript::Message* msgs, size_t count, uint8_t channel, uint64_t tick) override {
-		// Capacity is checked for the whole group, so an NRPN is never
-		// half-emitted. dsp::RingBuffer::push() does not bounds-check: on a full
+		// Capacity is checked for the whole group, so a multi-message value — an
+		// NRPN quad or a 14-bit CC pair — is never half-emitted.
+		// dsp::RingBuffer::push() does not bounds-check: on a full
 		// buffer it overwrites unread entries and leaves size() > capacity.
 		if (midiOutQueue.capacity() < count) {
 			midiOutOverflow.store(true, std::memory_order_relaxed);

@@ -423,12 +423,14 @@ these even though `math.*` is also available, for script portability).
 
 ### `midi.*` — message construction/inspection
 Messages are opaque handles (indices into an internal store, max 32 live per
-callback) created with `midi.create()` or `midi.createNRPN()`; `rack.onMidiMessage`
+callback) created with `midi.create()`, `midi.createNRPN()`, or
+`midi.createCc14bit()`; `rack.onMidiMessage`
 also receives the incoming message as handle `0`/implicit first arg (Lua:
 index `0`, QuickJs: same convention).
 
 **The store holds at most 32 live handles per callback.** Once it is full,
-`midi.create()`, `midi.clone()`, and `midi.createNRPN()` raise a script error
+`midi.create()`, `midi.clone()`, `midi.createNRPN()`, and `midi.createCc14bit()`
+raise a script error
 that aborts the rest of the callback. Messages already marked for send before
 the error are still flushed, so a multi-message sequence (e.g. an NRPN pair,
 or a wide chord release) can be emitted partially — a message created but
@@ -441,10 +443,13 @@ batches (one handle per message, per the send-once rule below).
   store slot), so it can be modified and sent without affecting the source.
   This is the canonical way to "send a modified copy of the incoming message",
   e.g. `let copy = midi.clone(msg); midi.setChannel(copy, 5); midiOut.send(copy);`
-  Note: NRPN state is not copied — a clone of an NRPN handle is a single plain
-  message, not a chained quad.
+  Note: NRPN/14-bit-CC chain state is not copied — a clone of an NRPN or
+  `createCc14bit()` handle is a single plain message, not a chained group.
 - `midi.createNRPN()` → 4 chained handles (param LSB/MSB + value LSB/MSB),
   used only with `midi.setNRPN`.
+- `midi.createCc14bit()` → 2 chained handles (value MSB at CC `cc`, value LSB
+  at CC `cc + 32`), used only with `midi.setCc14bit`; the pair is sent
+  atomically — a receiver never sees the MSB without its LSB.
 - Getters: `getChannel(msg)` (1-based; `-1` for realtime/SysEx messages —
   clock, start/stop/continue, SysEx framing — which have no channel),
   `getChanPressure(msg)`, `getNote(msg)`,
@@ -460,9 +465,12 @@ batches (one handle per message, per the send-once rule below).
 - Setters (every `ch` argument below is a MIDI channel and is silently
   clamped to 1-16, e.g. `setNoteOn(msg, -5, ...)` is treated as channel 1):
   `setCc(msg, ch, cc, value)` (`value` is clamped to 0-127),
-  `setCc14bit(msgMsb, msgLsb, ch, cc, value)`
-  (value is a float, MSB=int part/LSB=fractional*128 — see `nrpn_to_cc.js`/`.lua`
-  for the canonical use), `setChannel(msg, ch)`,
+  `setCc14bit(msgMsb, msgLsb, ch, cc, value)` (fills two independent handles,
+  sent as two separate messages with no atomicity) — or
+  `setCc14bit(cc14, ch, cc, value)` where `cc14` is the first handle of a
+  `midi.createCc14bit()` pair (both CCs are sent atomically as a unit). In both
+  forms `value` is a float, MSB=int part/LSB=fractional*128 — see
+  `nrpn_to_cc.js`/`.lua` for the canonical use), `setChannel(msg, ch)`,
   `setChanPressure(msg, ch, value)` (2-byte message; read back with
   `getChanPressure`, not `getValue`),
   `setKeyPressure(msg, ch, note, vel)` (`vel` is clamped to 0-127), `setNote(msg, note)`,
@@ -492,8 +500,9 @@ The sending functions below take no port argument — the destination is
 whatever `midiOut.selectPort()` last selected (port 1 if it was never called):
 
 - `midiOut.send(msg)` — send immediately.
-- `midiOut.send(nrpnHandle)` — sending the first handle of an NRPN quad
-  automatically flushes all 4 underlying CC messages in order.
+- `midiOut.send(nrpnHandle)` / `midiOut.send(cc14Handle)` — sending the first
+  handle of an NRPN quad (4 messages) or a 14-bit CC pair (2 messages)
+  automatically flushes the whole group in order.
 - `midiOut.sendAfterMs(msg, ms)` — delayed send, scheduled from the current
   engine frame.
 - `midiOut.sendAfterTrigger(msg, ticks [, trigPort [, channel]])` — send
@@ -532,6 +541,9 @@ rather than decoding this by hand).
   see [nrpn_to_cc.js](nrpn_to_cc.js)/[nrpn_to_cc.lua](nrpn_to_cc.lua) for a
   full worked example, and [nrpn_generator.js](nrpn_generator.js)/
   [nrpn_generator.lua](nrpn_generator.lua) for constructing NRPN messages.
+  Use `midi.createCc14bit()` + the 4-arg `setCc14bit` for a 14-bit CC pair
+  that must land atomically; the two-handle form sends two independent
+  messages.
 - Lua's sandboxed stdlib excludes `io`, `os`, `package`, `debug` — no file
   access, no OS calls, by design.
 - Both engines only see `@engine`-matching scripts; loading a QuickJs script

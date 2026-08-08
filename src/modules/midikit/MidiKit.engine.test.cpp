@@ -1114,6 +1114,112 @@ TEST_CASE("setCc14bit produces identical MSB/LSB wire messages", "[MidiKit][Cros
 }
 
 
+// --- setCc14bit on a createCc14bit() pair (atomic 2-message flush) -------
+//
+// The two-handle form above sends two independent messages. A
+// createCc14bit() pair is the atomic alternative: midiOut.send(cc14) flushes
+// both underlying CC messages in order when passed the first handle of the
+// pair (per SCRIPTING.md), so sending it is what exercises the pair end to
+// end.
+
+static const char* JS_CC_14BIT_PAIR = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onMidiMessage = function(port, msg) {
+    let cc14 = midi.createCc14bit();
+    midi.setCc14bit(cc14, 8, 1, 100.5);
+    midiOut.send(cc14);
+};
+)";
+
+static const char* LUA_CC_14BIT_PAIR = R"(--[[
+@engine minilua@v1
+--]]
+rack.onMidiMessage = function(midiPort, msg)
+    local cc14 = midi.createCc14bit()
+    midi.setCc14bit(cc14, 8, 1, 100.5)
+    midiOut.send(cc14)
+end
+)";
+
+TEST_CASE("createCc14bit pair produces identical MSB/LSB wire messages", "[MidiKit][CrossEngine]") {
+	requireEquivalent(JS_CC_14BIT_PAIR, LUA_CC_14BIT_PAIR);
+}
+
+// Cross-engine equivalence only pins JS and Lua to each other — it can't
+// catch a bug shared by both (the NRPN quad once flushed MSB-after-LSB in
+// both engines). This asserts the actual wire bytes/order against the
+// 14-bit CC convention: CC 1 (value MSB), then CC 33 (value LSB).
+TEST_CASE("createCc14bit pair wire order is spec-compliant (MSB before LSB)", "[MidiKit]") {
+	EngineResult r = run(JS_CC_14BIT_PAIR);
+	REQUIRE(r.sent.size() == 2);
+	// channel 8 -> status/channel byte 0xb7; value=100.5 -> MSB=100, LSB=64
+	REQUIRE(r.sent[0].bytes == std::vector<uint8_t>{0xb7, 1, 100});
+	REQUIRE(r.sent[1].bytes == std::vector<uint8_t>{0xb7, 33, 64});
+}
+
+
+// --- 14-bit CC pair send() order -----------------------------------------
+//
+// A 14-bit CC pair flushes as a unit when the group leader is sent. This
+// verifies the send-order fix also applies across pairs: two pairs are
+// created (p1, then p2) but sent in the opposite order (p2, then p1), and
+// the wire must carry p2's whole pair before p1's whole pair — the pairs
+// are ordered by send() call, not by handle-creation order, and never
+// interleaved.
+
+static const char* JS_CC_14BIT_SEND_ORDER = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onMidiMessage = function(port, msg) {
+    let p1 = midi.createCc14bit();
+    midi.setCc14bit(p1, 9, 1, 100.5);
+    let p2 = midi.createCc14bit();
+    midi.setCc14bit(p2, 9, 2, 3.5);
+    midiOut.send(p2);   // created second, sent first
+    midiOut.send(p1);   // created first, sent last
+};
+)";
+
+static const char* LUA_CC_14BIT_SEND_ORDER = R"(--[[
+@engine minilua@v1
+--]]
+rack.onMidiMessage = function(midiPort, msg)
+    local p1 = midi.createCc14bit()
+    midi.setCc14bit(p1, 9, 1, 100.5)
+    local p2 = midi.createCc14bit()
+    midi.setCc14bit(p2, 9, 2, 3.5)
+    midiOut.send(p2)
+    midiOut.send(p1)
+end
+)";
+
+TEST_CASE("14-bit CC pairs flush in send() order, not handle-creation order, in both engines", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(JS_CC_14BIT_SEND_ORDER);
+	EngineResult lua = run(LUA_CC_14BIT_SEND_ORDER);
+
+	// channel 9 -> status/channel byte 0xb8; p1 (cc=1, value=100.5) -> CC1=100, CC33=64
+	std::vector<uint8_t> p1m0 = {0xb8, 1, 100};
+	std::vector<uint8_t> p1m1 = {0xb8, 33, 64};
+	// p2 (cc=2, value=3.5) -> CC2=3, CC34=64
+	std::vector<uint8_t> p2m0 = {0xb8, 2, 3};
+	std::vector<uint8_t> p2m1 = {0xb8, 34, 64};
+
+	// Handle order would be p1's pair then p2's; send() order is p2 then p1.
+	std::vector<std::vector<uint8_t>> expect = {p2m0, p2m1, p1m0, p1m1};
+
+	REQUIRE(js.sent.size() == 4);
+	for (size_t i = 0; i < expect.size(); i++) {
+		REQUIRE(js.sent[i].bytes == expect[i]);
+	}
+
+	REQUIRE(lua.sent.size() == 4);
+	for (size_t i = 0; i < expect.size(); i++) {
+		REQUIRE(lua.sent[i].bytes == expect[i]);
+	}
+}
+
+
 // --- setNRPN (4 chained CC messages) ------------------------------------
 //
 // midiOut.send(nrpnHandle) flushes all 4 underlying CC messages in order

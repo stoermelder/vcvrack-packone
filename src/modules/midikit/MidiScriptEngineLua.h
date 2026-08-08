@@ -26,6 +26,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		int midiPort = 0;
 		Message msg;
 		bool isNrpn = false;
+		bool isCc14bit = false;
 		bool send = false;
 		uint8_t channel = 0;   // trigger input channel, for sendAfterTrigger() scheduling
 		uint64_t tick = 0;
@@ -541,6 +542,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 				};
 				handler->sendMidi(msgStore[i].midiPort, group, 4, msgStore[i].channel, msgStore[i].tick);
 			}
+			else if (msgStore[i].isCc14bit) {
+				// A 14-bit CC pair is 2 consecutive entries in msgStore (CC cc /
+				// CC cc+32), emitted atomically — a receiver must never see the
+				// MSB without its LSB.
+				const Message group[2] = { msgStore[i].msg, msgStore[i + 1].msg };
+				handler->sendMidi(msgStore[i].midiPort, group, 2, msgStore[i].channel, msgStore[i].tick);
+			}
 			else {
 				handler->sendMidi(msgStore[i].midiPort, &msgStore[i].msg, 1, msgStore[i].channel, msgStore[i].tick);
 			}
@@ -690,7 +698,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		msgStore[0].msg = msg;
 		msgStore[0].send = false;
 		msgStore[0].tick = 0;
+		// Slot 0 is reused for the incoming message, but it can have been a
+		// chain leader (NRPN/14-bit CC) in an onLoad/onUnload/onSave callback
+		// whose store started at 0 — clear both leader flags so a stale one
+		// can't make the flush emit a chain from the incoming message.
 		msgStore[0].isNrpn = false;
+		msgStore[0].isCc14bit = false;
 		msgCount = 1;
 
 		// Calls the cached onMidiMessageRef. No-op if never defined (LUA_NOREF).
@@ -865,6 +878,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("create",          lua_midi_create);
 		setTableFunc("clone",           lua_midi_clone);
 		setTableFunc("createNRPN",      lua_midi_createNrpn);
+		setTableFunc("createCc14bit",   lua_midi_createCc14bit);
 		setTableFunc("getChanPressure", lua_midi_getChanPressure);
 		setTableFunc("getChannel",      lua_midi_getChannel);
 		setTableFunc("getLength",       lua_midi_getLength);
@@ -1333,6 +1347,24 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 1;
 	}
 
+	static int lua_midi_createCc14bit(lua_State* L) {
+		auto* e = getEngine(L);
+		warnIfOutsideCallback(e, "midi.createCc14bit");
+		size_t* s = &e->msgCount;
+		if (*s + 2 > static_cast<size_t>(msgStoreSize)) {
+			luaL_error(L, "midi.createCc14bit: message store full");
+		}
+		// 2 consecutive entries, filled by setCc14bit: CC cc (value MSB) and
+		// CC cc+32 (value LSB), flushed atomically as a pair.
+		e->msgStore[*s + 0] = MessageEx();
+		e->msgStore[*s + 0].isCc14bit = true;
+		e->msgStore[*s + 1] = MessageEx();
+		lua_Integer idx = static_cast<lua_Integer>(*s);
+		*s += 2;
+		lua_pushinteger(L, idx);
+		return 1;
+	}
+
 	static int lua_midi_getChanPressure(lua_State* L) {
 		MessageEx* m = getMsg(L, 1);
 		lua_pushinteger(L, m->msg.getNote());
@@ -1494,8 +1526,32 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	static int lua_midi_setCc14bit(lua_State* L) {
-		// midi.setCc14bit(msg1, msg2, channel, cc, value)
 		auto* e = getEngine(L);
+
+		if (lua_gettop(L) == 4) {
+			// midi.setCc14bit(msg, channel, cc, value) — msg is the first
+			// handle of a createCc14bit() pair; both CCs are filled and sent
+			// atomically when the pair is flushed.
+			MessageEx* m1 = getMsg(L, 1);
+			if (!m1->isCc14bit) luaL_argerror(L, 1, "message is not a 14-bit CC pair");
+			MessageEx* m2 = &e->msgStore[static_cast<size_t>(m1 - e->msgStore) + 1];
+			uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
+			uint8_t cc = static_cast<uint8_t>(luaL_checkinteger(L, 3));
+			double value = luaL_checknumber(L, 4);
+			if (m1->msg.getSize() != 3) m1->msg.setSize(3);
+			if (m2->msg.getSize() != 3) m2->msg.setSize(3);
+			m1->msg.setStatus(0xb); m2->msg.setStatus(0xb);
+			m1->msg.setChannel(ch - 1);
+			m2->msg.setChannel(ch - 1);
+			m1->msg.setNote(cc);
+			m2->msg.setNote(cc + 32);
+			m1->msg.setValue(static_cast<int8_t>(value));
+			m2->msg.setValue(static_cast<int8_t>((value - static_cast<int8_t>(value)) * 128.f));
+			return 0;
+		}
+
+		// midi.setCc14bit(msg1, msg2, channel, cc, value) — two independent
+		// handles, sent as separate messages (no atomicity).
 		MessageEx* m1 = getMsg(L, 1);
 		int idx2 = static_cast<int>(luaL_checkinteger(L, 2));
 		if (idx2 < 0 || static_cast<size_t>(idx2) >= e->msgCount) luaL_argerror(L, 2, "invalid msg2 index");

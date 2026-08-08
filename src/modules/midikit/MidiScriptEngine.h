@@ -85,10 +85,11 @@ struct MidiScriptEngineHandler {
 	// the worker thread.
 	//
 	// All-or-nothing: returns false without queuing any of them if there is not
-	// room for the whole group. An NRPN is 4 messages and a partial group is a
-	// malformed parameter change, worse than dropping it outright. A single message
-	// (count == 1) is just the degenerate case, so there is one entry point and one
-	// bounds check rather than two.
+	// room for the whole group. A group is a multi-message value — an NRPN (4
+	// messages) or a 14-bit CC pair (2 messages) — and a partial group is a
+	// malformed parameter change, worse than dropping it outright. A single
+	// message (count == 1) is just the degenerate case, so there is one entry
+	// point and one bounds check rather than two.
 	//
 	// Output saturation is expected, so callers treat false as normal, not an error.
 	virtual bool sendMidi(int midiPort, const Message* msgs, size_t count, uint8_t channel, uint64_t tick) = 0;

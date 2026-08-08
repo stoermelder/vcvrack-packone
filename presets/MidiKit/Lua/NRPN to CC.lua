@@ -127,10 +127,9 @@ rack.onMidiMessage = function(midiPort, msg)
 
         rack.log("nrpn #", nrpnNumber, ": value=", nrpnValue, " -> cc", ccNumber)
 
-        local ccMsb = midi.create()
-        local ccLsb = midi.create()
-        midi.setCc14bit(ccMsb, ccLsb, config.ccChannel, ccNumber, nrpnValue / 128)
-        midiOut.send(ccMsb)
-        midiOut.send(ccLsb)
+        local cc14 = midi.createCc14bit()
+        midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue / 128)
+        -- The pair (CC ccNumber = MSB, CC ccNumber + 32 = LSB) is sent atomically.
+        midiOut.send(cc14)
     end
 end

@@ -21,6 +21,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		int midiPort = 0;
 		Message msg;
 		bool isNrpn = false;
+		bool isCc14bit = false;
 		bool send = false;
 		uint8_t channel = 0;   // trigger input channel, for sendAfterTrigger() scheduling
 		uint64_t tick = 0;
@@ -407,6 +408,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			msgStore[0].msg = msg;
 			msgStore[0].send = false;
 			msgStore[0].tick = 0;
+			// Slot 0 is reused for the incoming message, but it can have been a
+			// chain leader (NRPN/14-bit CC) in an onLoad/onUnload/onSave callback
+			// whose store started at 0 — clear both leader flags so a stale one
+			// can't make the flush emit a chain from the incoming message.
+			msgStore[0].isNrpn = false;
+			msgStore[0].isCc14bit = false;
 			msgCount = 1;
 
 			inCallback = true;
@@ -531,6 +538,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 					msgStore[i + 2].msg, msgStore[i + 3].msg
 				};
 				handler->sendMidi(msgStore[i].midiPort, group, 4, msgStore[i].channel, msgStore[i].tick);
+			}
+			else if (msgStore[i].isCc14bit) {
+				// A 14-bit CC pair is 2 consecutive entries in msgStore (CC cc /
+				// CC cc+32), emitted atomically — a receiver must never see the
+				// MSB without its LSB.
+				const Message group[2] = { msgStore[i].msg, msgStore[i + 1].msg };
+				handler->sendMidi(msgStore[i].midiPort, group, 2, msgStore[i].channel, msgStore[i].tick);
 			}
 			else {
 				handler->sendMidi(msgStore[i].midiPort, &msgStore[i].msg, 1, msgStore[i].channel, msgStore[i].tick);
@@ -780,6 +794,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midi, "create", JS_NewCFunction(ctx, js_midi_create, "create", 0));
 		JS_SetPropertyStr(ctx, _midi, "clone", JS_NewCFunction(ctx, js_midi_clone, "clone", 1));
 		JS_SetPropertyStr(ctx, _midi, "createNRPN", JS_NewCFunction(ctx, js_midi_createNrpn, "createNRPN", 0));
+		JS_SetPropertyStr(ctx, _midi, "createCc14bit", JS_NewCFunction(ctx, js_midi_createCc14bit, "createCc14bit", 0));
 		JS_SetPropertyStr(ctx, _midi, "getChanPressure", JS_NewCFunction(ctx, js_midi_getChanPressure, "getChanPressure", 1));
 		JS_SetPropertyStr(ctx, _midi, "getChannel", JS_NewCFunction(ctx, js_midi_getChannel, "getChannel", 1));
 		JS_SetPropertyStr(ctx, _midi, "getLength", JS_NewCFunction(ctx, js_midi_getLength, "getLength", 1));
@@ -1265,6 +1280,21 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return JS_NewFloat64(ctx, double(_s));
 	}
 
+	static JSValue js_midi_createCc14bit(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		if (argc != 0) return jsThrow(ctx, "midi.createCc14bit: bad args");
+		warnIfOutsideCallback(ctx, "midi.createCc14bit");
+		size_t* s = &getEngine(ctx)->msgCount;
+		if (*s + 2 >= msgStoreSize) return jsThrow(ctx, "midi.createCc14bit: message store full");
+		// 2 consecutive entries, filled by setCc14bit: CC cc (value MSB) and
+		// CC cc+32 (value LSB), flushed atomically as a pair.
+		getEngine(ctx)->msgStore[*s + 0] = MessageEx();
+		getEngine(ctx)->msgStore[*s + 0].isCc14bit = true;
+		getEngine(ctx)->msgStore[*s + 1] = MessageEx();
+		size_t _s = *s;
+		(*s) += 2;
+		return JS_NewFloat64(ctx, double(_s));
+	}
+
 	static JSValue js_midi_getChanPressure(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		size_t idx;
 		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.getChanPressure: invalid msg");
@@ -1428,12 +1458,42 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	static JSValue js_midi_setCc14bit(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		auto* e = getEngine(ctx);
+
+		if (argc == 4) {
+			// midi.setCc14bit(msg, channel, cc, value) — msg is the first
+			// handle of a createCc14bit() pair; both CCs are filled and sent
+			// atomically when the pair is flushed.
+			size_t idx1;
+			if (!getMsgArg(ctx, argv[0], idx1) || !argIsNumber(ctx, argv[1]) || !argIsNumber(ctx, argv[2]) || !argIsNumber(ctx, argv[3]))
+				return jsThrow(ctx, "midi.setCc14bit: invalid msg");
+			MessageEx& s1 = e->msgStore[idx1];
+			if (!s1.isCc14bit) return jsThrow(ctx, "midi.setCc14bit: message is not a 14-bit CC pair");
+			MessageEx& s2 = e->msgStore[idx1 + 1];
+			uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(argNum(ctx, argv[1]))));
+			uint8_t cc = static_cast<uint8_t>(argNum(ctx, argv[2]));
+			double value = argNum(ctx, argv[3]);
+			if (s1.msg.getSize() != 3) s1.msg.setSize(3);
+			if (s2.msg.getSize() != 3) s2.msg.setSize(3);
+			s1.msg.setStatus(0xb);
+			s2.msg.setStatus(0xb);
+			s1.msg.setChannel(ch - 1);
+			s2.msg.setChannel(ch - 1);
+			s1.msg.setNote(cc);
+			s2.msg.setNote(cc + 32);
+			s1.msg.setValue(static_cast<int8_t>(value));
+			s2.msg.setValue(static_cast<int8_t>((value - static_cast<int8_t>(value)) * 128.f));
+			return JS_UNDEFINED;
+		}
+
+		// midi.setCc14bit(msg1, msg2, channel, cc, value) — two independent
+		// handles, sent as separate messages (no atomicity).
 		size_t idx1, idx2;
 		if (argc < 5 || !getMsgArg(ctx, argv[0], idx1) || !getMsgArg(ctx, argv[1], idx2) ||
 			!argIsNumber(ctx, argv[2]) || !argIsNumber(ctx, argv[3]) || !argIsNumber(ctx, argv[4]))
 			return jsThrow(ctx, "midi.setCc14bit: invalid msg");
-		MessageEx& s1 = getEngine(ctx)->msgStore[idx1];
-		MessageEx& s2 = getEngine(ctx)->msgStore[idx2];
+		MessageEx& s1 = e->msgStore[idx1];
+		MessageEx& s2 = e->msgStore[idx2];
 		uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(argNum(ctx, argv[2]))));
 		uint8_t cc = static_cast<uint8_t>(argNum(ctx, argv[3]));
 		double value = argNum(ctx, argv[4]);

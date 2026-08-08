@@ -210,6 +210,34 @@ rack.onMidiMessage = function(midiPort, msg)
 end
 ```
 
+### Send 14-bit CC message
+
+A 14-bit CC value spans two CC messages (CC `cc` = value MSB, CC `cc + 32` =
+value LSB). `midi.createCc14bit()` chains the two into one atomic pair, so a
+receiver never sees the MSB without its LSB.
+
+JavaScript:
+```js
+rack.onMidiMessage = function(midiPort, msg) {
+   if (midi.isNoteOn(msg)) {
+      let cc14 = midi.createCc14bit();
+      midi.setCc14bit(cc14, 1, 1, 100.5);  // CC 1 = 100 (MSB), CC 33 = 64 (LSB)
+      midiOut.send(cc14);
+   }
+};
+```
+
+Lua:
+```lua
+rack.onMidiMessage = function(midiPort, msg)
+   if midi.isNoteOn(msg) then
+      local cc14 = midi.createCc14bit()
+      midi.setCc14bit(cc14, 1, 1, 100.5)   -- CC 1 = 100 (MSB), CC 33 = 64 (LSB)
+      midiOut.send(cc14)
+   end
+end
+```
+
 ### Send SysEx message
 
 JavaScript:
@@ -654,8 +682,9 @@ The trigger output can also carry [Tipsy](https://github.com/baconpaul/tipsy-enc
 ### midi
 
 - `midi.create()`: Creates an empty MIDI message.
-- `midi.clone(msg)`: Creates an independent copy of `msg` (same MIDI payload, but a fresh, unsent message). Edit the returned handle freely — the source `msg` is unaffected. Handy for sending a modified copy of the incoming message: `let copy = midi.clone(msg); midi.setChannel(copy, 5); midiOut.send(copy);`. Note: NRPN state is not copied — a clone of an NRPN handle is a single plain message.
+- `midi.clone(msg)`: Creates an independent copy of `msg` (same MIDI payload, but a fresh, unsent message). Edit the returned handle freely — the source `msg` is unaffected. Handy for sending a modified copy of the incoming message: `let copy = midi.clone(msg); midi.setChannel(copy, 5); midiOut.send(copy);`. Note: NRPN/14-bit-CC chain state is not copied — a clone of an NRPN or `createCc14bit()` handle is a single plain message.
 - `midi.createNRPN()`: Creates an empty NRPN MIDI message (actually 4 MIDI messages).
+- `midi.createCc14bit()`: Creates an empty 14-bit CC message pair (actually 2 chained MIDI messages, CC `cc` = value MSB and CC `cc + 32` = value LSB), filled with `midi.setCc14bit` and sent atomically — a receiver never sees the MSB without its LSB.
 - `midi.getChannel(msg)`: Returns the MIDI channel (1..16) of `msg`, or `-1` if `msg` is a realtime or SysEx message (clock, start/stop/continue, SysEx framing), since those carry no channel.
 - `midi.getChanPressure(msg)`: Returns the pressure value (0..127) of a MIDI channel pressure/aftertouch message `msg`.
 - `midi.getLength(msg)`: Returns the length of the MIDI message `msg`. For common short messages this will return *3*; channel pressure messages are 2 bytes; SysEx messages may be longer.
@@ -680,7 +709,7 @@ The trigger output can also carry [Tipsy](https://github.com/baconpaul/tipsy-enc
 - `midi.isSysEx(msg)`: Returns true if `msg` is a MIDI SysEx message.
 - Every `channel` argument below is silently clamped to 1..16, e.g. `midi.setNoteOn(msg, -5, ...)` is treated as channel 1.
 - `midi.setCc(msg, channel, cc, value)`: Sets `msg` as a MIDI CC message with the specified MIDI channel `channel` (1..16), CC number `cc` (0..127) and `value` (0..127, clamped if out of range).
-- `midi.setCc14bit(msg1, msg2, channel, cc, value)`: Sets `msg1` and `msg2` as a 14-bit MIDI CC message pair, with the MIDI channel `channel` (1..16), CC number `cc` (0..127) and `value` (0..16383).
+- `midi.setCc14bit(msg1, msg2, channel, cc, value)`: Sets `msg1` and `msg2` as a 14-bit MIDI CC message pair, with the MIDI channel `channel` (1..16), CC number `cc` (0..127) and `value` (0..127.999). `value` is 7.7 fixed point — its integer part becomes the value MSB (CC `cc`) and its fractional part × 128 becomes the value LSB (CC `cc + 32`); pass a 14-bit value divided by 128, e.g. `nrpnValue / 128`. The two handles are sent as two separate messages (no atomicity). To send the pair atomically, use the 4-argument form `midi.setCc14bit(cc14, channel, cc, value)` where `cc14` is a `midi.createCc14bit()` handle — both CCs are then flushed as a single unit.
 - `midi.setChannel(msg, channel)`: Sets the MIDI channel `channel` (1..16) for `msg`.
 - `midi.setChanPressure(msg, channel, value)`: Sets `msg` as a MIDI channel pressure message, with MIDI channel `channel` (1..16) and pressure `value` (0..127).
 - `midi.setKeyPressure(msg, channel, note, value)`: Sets `msg` as MIDI key pressure/aftertouch message, with the MIDI channel `channel` (1..16), MIDI note number `note` (0..127) and pressure `value` (0..127, clamped if out of range).
@@ -704,7 +733,7 @@ The sending functions below take no port argument — the destination is whateve
 - `midiOut.sendAfterMs(msg, ms)`: Sends `msg` delayed on the selected MIDI port. The delay `ms` is specified in milliseconds.
 - `midiOut.sendAfterTrigger(msg, ticks, [trigPort = 1, [channel = 1]])`: Sends `msg` delayed on the selected MIDI port. The delay is specified in `ticks` of triggers on CV trigger input `trigPort` (default *1*) of polyphonic `channel` (default *1*). `trigPort` is an optional trigger input port; `channel` is a further optional polyphonic channel.
 
-**A message can only be sent once per callback.** `midiOut.send(msg)` and the `sendAfter*` variants mark the handle as sent — the actual enqueue happens once per handle after the callback, so sending the *same* handle again in one `rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` is not a second message: only one goes out (and if the message body was changed in between, the last change wins). To send the same bytes twice, create a fresh handle with `midi.create()` or `midi.clone(msg)` and send that. Each message sent also consumes one of the 32 message-handle slots, so one handle per message is the right pattern. When the store is full, `midi.create()`/`midi.clone()`/`midi.createNRPN()` raise a script error that aborts the rest of the callback; messages already sent before the error are still flushed, so a multi-message sequence can be emitted partially.
+**A message can only be sent once per callback.** `midiOut.send(msg)` and the `sendAfter*` variants mark the handle as sent — the actual enqueue happens once per handle after the callback, so sending the *same* handle again in one `rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` is not a second message: only one goes out (and if the message body was changed in between, the last change wins). To send the same bytes twice, create a fresh handle with `midi.create()` or `midi.clone(msg)` and send that. Each message sent also consumes one of the 32 message-handle slots, so one handle per message is the right pattern. When the store is full, `midi.create()`/`midi.clone()`/`midi.createNRPN()`/`midi.createCc14bit()` raise a script error that aborts the rest of the callback; messages already sent before the error are still flushed, so a multi-message sequence can be emitted partially.
 
 Beyond the per-callback handle store, MIDI-KIT also holds a queue of messages waiting to reach the MIDI output (this is separate from the frame/tick delay queues used by `sendAfterMs`/`sendAfterTrigger`, and separate per module). Under sustained heavy output — far more messages than a real MIDI device could consume anyway — this queue can fill up; if it does, further messages are dropped rather than corrupting already-queued ones, and the log shows a single "MIDI output queue full, message(s) dropped" line. This is expected only under pathological output rates; normal scripts will not hit it.
 
