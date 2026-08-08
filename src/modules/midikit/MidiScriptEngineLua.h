@@ -49,12 +49,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// effect across callbacks until changed again.
 	int selectedPort = 0;
 
-	// The five lifecycle hooks (onMidiMessage/onTrigger/onLoad/onUnload/onSave)
-	// are resolved from rack once at load and kept as registry refs, not
-	// re-looked-up per dispatch — so defining/reassigning a hook later has no
-	// effect; only what was present at load runs. LUA_NOREF = "not defined".
+	// The lifecycle hooks are resolved once at load and kept as registry refs,
+	// not re-looked-up per dispatch — so defining/reassigning a hook later has
+	// no effect; only what was present at load runs. LUA_NOREF = "not defined".
 	// Asymmetry: Lua calls hooks as bare functions; QuickJS as methods (rackObj
-	// as thisVal). Predates caching, unused by any preset.
+	// as thisVal). onMidiMessage/onLoad/onUnload/onSave live on the rack table;
+	// onTrigger and onTipsyMessage live on the trig table (onTrigger so
+	// trig.enableIn() can gate it). Predates caching, unused by any preset.
 	int onMidiMessageRef = LUA_NOREF;
 	int onTriggerRef = LUA_NOREF;
 	int onTipsyMessageRef = LUA_NOREF;
@@ -182,17 +183,23 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		handler->writeLog("Script loaded", false);
 
-		// Resolve and cache the five lifecycle hooks once (see declarations).
+		// Cache the lifecycle hooks once (see declarations): all but
+		// onTrigger/onTipsyMessage come from the rack table; those two from trig.
 		lua_getglobal(L, "rack");
 		if (lua_istable(L, -1)) {
 			onLoadRef = cacheHookRef("onLoad");
 			onUnloadRef = cacheHookRef("onUnload");
 			onSaveRef = cacheHookRef("onSave");
 			onMidiMessageRef = cacheHookRef("onMidiMessage");
+		}
+		lua_pop(L, 1); // pop rack table (or whatever "rack" turned out to be)
+
+		lua_getglobal(L, "trig");
+		if (lua_istable(L, -1)) {
 			onTriggerRef = cacheHookRef("onTrigger");
 			onTipsyMessageRef = cacheHookRef("onTipsyMessage");
 		}
-		lua_pop(L, 1); // pop rack table (or whatever "rack" turned out to be)
+		lua_pop(L, 1); // pop trig table (or whatever "trig" turned out to be)
 
 		hasOnSave.store(onSaveRef != LUA_NOREF, std::memory_order_release);
 
@@ -724,7 +731,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	// Dispatches onTrigger(trigPort, channel) via the cached onTriggerRef.
-	// No-op if the script never defined it.
+	// No-op if never defined; the module only enqueues ticks for enabled channels.
 	void dispatchTrigger(int trigPort, uint8_t channel) override {
 		if (!L) return;
 		if (onTriggerRef == LUA_NOREF) return;
@@ -745,11 +752,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		flushMsgStore();
 	}
 
-	// Dispatches onTipsyMessage(data, mimeType) via the cached
-	// onTipsyMessageRef. No-op if the script never defined it.
-	//
-	// `data` is pushed with an explicit length, so a payload containing NUL
-	// bytes survives — Lua strings are not NUL-terminated.
+	// Dispatches onTipsyMessage(data, mimeType) via the cached onTipsyMessageRef.
+	// No-op if never defined. `data` is pushed with an explicit length so NUL
+	// bytes survive — Lua strings are not NUL-terminated.
 	void dispatchTipsyMessage(const MidiScript::TipsyMessage& msg) override {
 		if (!L) return;
 		if (onTipsyMessageRef == LUA_NOREF) return;
@@ -850,6 +855,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		// ── trig table ───────────────────────────────────────────────────────
 		lua_newtable(L);
+		setTableFunc("enableIn",    lua_trig_enableIn);
 		setTableFunc("getTicks",    lua_trig_getTicks);
 		setTableFunc("isHigh",      lua_trig_isHigh);
 		setTableFunc("isLow",       lua_trig_isLow);
@@ -1169,6 +1175,21 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	// ── trig.* ────────────────────────────────────────────────────────────────
+
+	// trig.enableIn(trigPort, [channel = 1]) — enables trig.onTrigger on that
+	// (port, channel); the callback is unused until called. The module also
+	// gates all other trigger processing on the enabled state.
+	static int lua_trig_enableIn(lua_State* L) {
+		auto* e = getEngine(L);
+		int n = lua_gettop(L);
+		int i = static_cast<int>(luaL_checkinteger(L, 1));
+		if (i < 1 || i > e->inputTrigCount) luaL_argerror(L, 1, "trig index out of range");
+		int ch = 1;
+		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
+		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
+		e->handler->enableTrigger(i - 1, ch - 1);
+		return 0;
+	}
 
 	static int lua_trig_getTicks(lua_State* L) {
 		auto* e = getEngine(L);

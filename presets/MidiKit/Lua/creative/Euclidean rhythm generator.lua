@@ -56,6 +56,11 @@ param.enable(2)
 param.enable(3)
 param.enable(4)
 
+-- Step the rhythm from trigger channel 1 only: trig.onTrigger fires per poly
+-- channel, and trig.enableIn() gates it — enabling just channel 1 means the
+-- other channels are ignored.
+trig.enableIn(1, 1)
+
 param.getName = function(i)
     if i == 1 then return "Steps" end
     if i == 2 then return "Fills" end
@@ -201,9 +206,7 @@ rack.onMidiMessage = function(midiPort, msg)
     midiOut.send(msg)
 end
 
-rack.onTrigger = function(trigPort, channel)
-    if channel ~= 1 then return end
-
+trig.onTrigger = function(trigPort, channel)
     rebuildPattern()
 
     local steps = #state.pattern

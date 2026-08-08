@@ -327,9 +327,9 @@ TEST_CASE("bundled Tipsy output example scripts work", "[MidiKit][Tipsy]") {
 		m->loadScript(ss.str());
 		REQUIRE(m->activeEngine != nullptr);
 
-		// rack.onTrigger(1) must enqueue a Tipsy message on the trigger output.
+		// trig.onTrigger(1) must enqueue a Tipsy message on the trigger output.
 		m->activeEngine->processInTick(0, 0);
-		m->activeEngine->process(); // SyncTaskWorker: runs rack.onTrigger inline
+		m->activeEngine->process(); // SyncTaskWorker: runs trig.onTrigger inline
 		REQUIRE(m->tipsyOutQueue.size() > 0);
 
 		std::vector<float> voltages = drainTipsy(m);
@@ -348,7 +348,7 @@ TEST_CASE("bundled Tipsy output example scripts work", "[MidiKit][Tipsy]") {
 // trig.enableTipsyIn() routes the trigger input into the module's decoder.
 // Decoding runs per sample on the audio thread in processTipsyInput(); completed
 // messages go to the active engine's tipsyInQueue, which process() drains on
-// the worker to rack.onTipsyMessage().
+// the worker to trig.onTipsyMessage().
 
 // Feeds `voltages` into the trigger input one sample at a time, stepping the
 // decoder for each. Returns how many messages completed.
@@ -368,13 +368,13 @@ static std::vector<float> encodeTipsy(MidiKitModule* m, const char* mime, const 
 	return drainTipsy(m);
 }
 
-TEST_CASE("Tipsy input round-trips an encoded message to onTipsyMessage", "[MidiKit][Tipsy]") {
+TEST_CASE("Tipsy input round-trips an encoded message to trig.onTipsyMessage", "[MidiKit][Tipsy]") {
 	// The script echoes what it receives into the log, so the test can assert on
 	// the decoded mime type and payload without extra plumbing.
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
-rack.onTipsyMessage = function(data, mimeType) {
+trig.onTipsyMessage = function(data, mimeType) {
 	rack.log("got:" + mimeType + ":" + data);
 };
 )";
@@ -406,7 +406,7 @@ TEST_CASE("Tipsy input round-trips under Lua", "[MidiKit][Tipsy]") {
 	const char* LUA_SCRIPT = R"(--[[
 @engine minilua@v1
 --]]
-rack.onTipsyMessage = function(data, mimeType)
+trig.onTipsyMessage = function(data, mimeType)
 	rack.log("got:" .. mimeType .. ":" .. data)
 end
 )";
@@ -430,7 +430,7 @@ TEST_CASE("Tipsy input ignores the stream until the trigger is claimed", "[MidiK
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
-rack.onTipsyMessage = function(data, mimeType) {
+trig.onTipsyMessage = function(data, mimeType) {
 	rack.log("got:" + data);
 };
 )";
@@ -463,7 +463,7 @@ TEST_CASE("a Tipsy-claimed trigger reads as 0 and CV inputs stay live", "[MidiKi
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
-rack.onTipsyMessage = function(data, mimeType) {};
+trig.onTipsyMessage = function(data, mimeType) {};
 )";
 
 	MidiKitModule* m = createModule();
@@ -497,18 +497,22 @@ rack.onTipsyMessage = function(data, mimeType) {};
 	Test::destroyModule(m);
 }
 
-TEST_CASE("a Tipsy-claimed trigger input suppresses rack.onTrigger on channel 1 only", "[MidiKit][Tipsy]") {
+TEST_CASE("a Tipsy-claimed trigger input suppresses trig.onTrigger on channel 1 only", "[MidiKit][Tipsy]") {
 	// The encoded Tipsy voltages swing across the trigger threshold constantly,
 	// so while the trigger input is claimed they must not count as clock ticks
-	// or fire rack.onTrigger on channel 1. Other channels are ordinary gates
-	// and keep firing normally.
+	// or fire trig.onTrigger on channel 1. Other channels are ordinary gates
+	// and keep firing normally. Both channels are enabled (as the script's
+	// trig.enableIn() calls do) so each would fire were it not for the claim.
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
-rack.onTrigger = function(trigPort, channel) {
+trig.enableIn(1, 1);
+trig.enableIn(1, 2);
+
+trig.onTrigger = function(trigPort, channel) {
 	rack.log("trigger" + number.toString(channel));
 };
-rack.onTipsyMessage = function(data, mimeType) {};
+trig.onTipsyMessage = function(data, mimeType) {};
 )";
 
 	MidiKitModule* m = createModule();
@@ -525,7 +529,7 @@ rack.onTipsyMessage = function(data, mimeType) {};
 	m->activeEngine->process();
 
 	// Claim the trigger input for Tipsy: a rising edge on channel 1 must not
-	// count a tick or fire rack.onTrigger there...
+	// count a tick or fire trig.onTrigger there...
 	m->enableTipsyIn(0);
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
 	m->process(Test::makeProcessArgs(2));
@@ -556,7 +560,7 @@ TEST_CASE("Tipsy input resyncs after a malformed stream", "[MidiKit][Tipsy]") {
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
-rack.onTipsyMessage = function(data, mimeType) {
+trig.onTipsyMessage = function(data, mimeType) {
 	rack.log("got:" + data);
 };
 )";
@@ -585,7 +589,7 @@ TEST_CASE("Tipsy input drops messages when the queue overflows", "[MidiKit][Tips
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
-rack.onTipsyMessage = function(data, mimeType) {};
+trig.onTipsyMessage = function(data, mimeType) {};
 )";
 
 	MidiKitModule* m = createModule();
@@ -614,7 +618,7 @@ rack.onTipsyMessage = function(data, mimeType) {};
 
 TEST_CASE("bundled Tipsy input example scripts work", "[MidiKit][Tipsy]") {
 	// Loads a bundled TipsyIn example, feeds it an encoded message, and checks
-	// it reached rack.onTipsyMessage. Not in MidiKit.examples.test.cpp's
+	// it reached trig.onTipsyMessage. Not in MidiKit.examples.test.cpp's
 	// PRESETS[] table for the same reason the Tipsy sender isn't: it produces
 	// no output from plain MIDI traffic, which is what that smoke test asserts.
 	auto runExample = [](const std::string& path, const std::string& payload, const char* mime) {

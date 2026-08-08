@@ -51,6 +51,11 @@ let state = {
     sounding: []
 };
 
+// The scheduled Note-Offs are counted in ticks of the trigger input's clock,
+// so that clock must be enabled — without trig.enableIn() the module does not
+// process the trigger input at all and the scheduled sends never fire.
+trig.enableIn(1, 1);
+
 rack.onLoad = function() {
     for (let n = 0; n < 128; n++) {
         state.sounding[n] = false;

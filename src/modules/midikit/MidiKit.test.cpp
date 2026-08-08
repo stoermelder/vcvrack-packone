@@ -110,8 +110,10 @@ TEST_CASE("Trigger input increments inputTriggerTick", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	// With no default engine, load a script so process() runs past the
-	// `if (!activeEngine) return;` guard.
+	// `if (!activeEngine) return;` guard. The trigger is enabled directly here
+	// (as the script's trig.enableIn(1) would do) so the module processes ticks.
 	m->loadScript(QUICKJS_SCRIPT);
+	m->enableTrigger(0, 0);
 
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
 
@@ -136,10 +138,49 @@ TEST_CASE("Trigger input increments inputTriggerTick", "[MidiKit]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Trigger input is not processed until the trigger is enabled", "[MidiKit]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+
+	// With no default engine, load a script so process() runs past the
+	// `if (!activeEngine) return;` guard.
+	m->loadScript(QUICKJS_SCRIPT);
+
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	// Prime the SchmittTrigger LOW, then pulse — without trig.enableIn() the
+	// module must not process triggers at all: no tick counting, no
+	// tick-scheduled drains, and no trig.onTrigger dispatch.
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+	m->process(Test::makeProcessArgs(0));
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+	m->process(Test::makeProcessArgs(1));
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+	m->process(Test::makeProcessArgs(2));
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+	m->process(Test::makeProcessArgs(3));
+	REQUIRE(m->inputTriggerTick[0] == 0);
+
+	// Enabling the channel (as the script's trig.enableIn(1) would do) turns
+	// trigger processing on — the next rising edge counts a tick.
+	m->enableTrigger(0, 0);
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+	m->process(Test::makeProcessArgs(4));
+	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+	m->process(Test::makeProcessArgs(5));
+	REQUIRE(m->inputTriggerTick[0] == 1);
+
+	Test::destroyModule(m);
+}
+
 TEST_CASE("Polyphonic trigger input counts ticks per channel", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	m->loadScript(QUICKJS_SCRIPT);
+
+	// Enable both trigger channels (as the script's trig.enableIn(1, 1) and
+	// trig.enableIn(1, 2) would do) so the module counts ticks on each.
+	m->enableTrigger(0, 0);
+	m->enableTrigger(0, 1);
 
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 2;
 
@@ -472,6 +513,9 @@ TEST_CASE("process() consumes the tick before the engine schedules on it", "[Mid
 	RecordingEngine eng(m);
 	m->activeEngine = &eng;
 	patchTrigger(m);
+	// The module only processes triggers on enabled channels — as the script's
+	// trig.enableIn(1) would do.
+	m->enableTrigger(0, 0);
 
 	// Prime the SchmittTrigger LOW and advance to one call short of a divider
 	// tick, without letting the engine emit anything.
@@ -513,6 +557,9 @@ TEST_CASE("process() handles triggers arriving between divider ticks", "[MidiKit
 	RecordingEngine eng(m);
 	m->activeEngine = &eng;
 	patchTrigger(m);
+	// The module only processes triggers on enabled channels — as the script's
+	// trig.enableIn(1) would do.
+	m->enableTrigger(0, 0);
 
 	// Schedule for two ticks ahead on the first divider tick (call index 7).
 	eng.pending = {2};
@@ -568,8 +615,10 @@ TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKi
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	// With no default engine, load a script so process() runs past the
-	// `if (!activeEngine) return;` guard.
+	// `if (!activeEngine) return;` guard. The trigger is enabled directly here
+	// (as the script's trig.enableIn(1) would do) so the module drains ticks.
 	m->loadScript(QUICKJS_SCRIPT);
+	m->enableTrigger(0, 0);
 
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
@@ -601,8 +650,12 @@ TEST_CASE("sendAfterTrigger on one channel is only drained by that channel's clo
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	// With no default engine, load a script so process() runs past the
-	// `if (!activeEngine) return;` guard.
+	// `if (!activeEngine) return;` guard. Enable both trigger channels (as the
+	// script's trig.enableIn(1, 1)/trig.enableIn(1, 2) would do) so the module
+	// processes ticks on each.
 	m->loadScript(QUICKJS_SCRIPT);
+	m->enableTrigger(0, 0);
+	m->enableTrigger(0, 1);
 
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 2;
 

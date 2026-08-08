@@ -259,11 +259,18 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	dsp::Timer rateLimiterTimer;
 
 	// One SchmittTrigger and tick counter per polyphonic channel of the trigger
-	// input — rack.onTrigger/trig.getTicks() are channel-aware.
+	// input — trig.onTrigger/trig.getTicks() are channel-aware.
 	dsp::SchmittTrigger inputTrigger[PORT_MAX_CHANNELS];
 	uint64_t inputTriggerTick[PORT_MAX_CHANNELS];
 	bool outputTriggerActive[PORT_MAX_CHANNELS];
 	dsp::PulseGenerator outputPulseGenerator[PORT_MAX_CHANNELS];
+
+	// Trigger inputs enabled by the script (trig.enableIn()), as a bitmask of
+	// polyphonic channels (bit c = channel c of port 0). The module gates all
+	// trigger processing on this: disabled channels get no ticks, no
+	// sendAfterTrigger drains, and no trig.onTrigger. Atomic: written by the
+	// worker (trig.enableIn()), read by the audio thread (process()).
+	std::atomic<uint16_t> triggerEnabledMask{0};
 
 	uint64_t sample;
 	float sampleRate;
@@ -292,6 +299,26 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	// MidiScriptEngineHandler
 	void enableInput(int i) override {
 		reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = true;
+	}
+
+	// MidiScriptEngineHandler — trig.enableIn() binding (worker thread).
+	void enableTrigger(int port, uint8_t channel) override {
+		if (port != 0) return;
+		if (channel >= PORT_MAX_CHANNELS) return;
+		triggerEnabledMask.fetch_or(static_cast<uint16_t>(1) << channel, std::memory_order_relaxed);
+	}
+
+	// Gate for all trigger processing; see triggerEnabledMask. Audio thread.
+	bool isTriggerEnabled(int port, uint8_t channel) const {
+		if (port != 0) return false;
+		if (channel >= PORT_MAX_CHANNELS) return false;
+		return (triggerEnabledMask.load(std::memory_order_relaxed) >> channel) & 1;
+	}
+
+	// Forgets every enabled (port, channel) on script load/reset.
+	void clearTriggerEnabled() {
+		for (int i = 0; i < PORT_MAX_CHANNELS; i++) inputTriggerTick[i] = 0;
+		triggerEnabledMask.store(0, std::memory_order_relaxed);
 	}
 
 	// MidiScriptEngineHandler
@@ -561,7 +588,8 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		midiInput.reset();
 		midiOutput.reset();
 		sample = 0;
-		for (int i = 0; i < PORT_MAX_CHANNELS; i++) inputTriggerTick[i] = 0;
+		// No script claims the trigger input until its trig.enableIn() runs.
+		clearTriggerEnabled();
 		// A script claims the trigger input for Tipsy explicitly, so a reset
 		// releases it. Re-arming the decoder's data store here is safe: nothing
 		// is decoding at reset, and provideDataBuffer() refuses mid-body.
@@ -614,22 +642,22 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 
 		// While the trigger input carries a Tipsy stream on channel 1, the
 		// encoded voltages cross the trigger threshold constantly — suppress
-		// rack.onTrigger and tick counting on THAT channel only so decoding
+		// trig.onTrigger and tick counting on THAT channel only so decoding
 		// isn't mistaken for clock ticks. Other channels keep firing normally.
 		// The SchmittTriggers are still stepped so their states stay current.
 		//
-		// Each polyphonic channel is detected independently. A fired channel's
-		// tick clock advances and flushes that channel's midiOutput tick queue —
-		// sendAfterTrigger() schedules against the channel it targets, so each
-		// channel's messages are drained by its own clock.
+		// Each channel is detected independently: its tick clock advances and
+		// drains that channel's tick-scheduled (sendAfterTrigger) messages.
+		// All of it is gated on trig.enableIn() — disabled channels get no
+		// ticks and no trig.onTrigger.
 		bool tipsyStreaming = tipsyInPort.load(std::memory_order_relaxed) >= 0;
 		int channels = inputs[INPUT_TRIG].getChannels();
 		if (channels <= 0) channels = 1;
 		for (uint8_t c = 0; c < channels; c++) {
 			// Tipsy only takes over channel 1's trigger; the other channels are
-			// ordinary gates and must still fire rack.onTrigger.
+			// ordinary gates and must still fire trig.onTrigger.
 			bool tipsyOnChannel = (c == 0) && tipsyStreaming;
-			if (activeEngine && inputTrigger[c].process(inputs[INPUT_TRIG].getVoltage(c)) && !tipsyOnChannel) {
+			if (activeEngine && isTriggerEnabled(0, c) && inputTrigger[c].process(inputs[INPUT_TRIG].getVoltage(c)) && !tipsyOnChannel) {
 				inputTriggerTick[c]++;
 				midiOutput.processTick(c, inputTriggerTick[c]);
 				activeEngine->processInTick(0, c);
@@ -755,6 +783,9 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		script = s;
 		sample = 0;
 		for (int i = 0; i < PORT_MAX_CHANNELS; i++) inputTriggerTick[i] = 0;
+		// Forgets every trig.enableIn()d channel BEFORE the new script loads, so
+		// it starts with all callbacks disabled.
+		clearTriggerEnabled();
 		for (int i = 0; i < 4; i++) {
 			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;

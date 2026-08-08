@@ -320,7 +320,7 @@ TEST_CASE("Lua preset loads and runs without errors", "[MidiKit][Presets]") {
 	checkPreset(p, "Lua");
 }
 
-// Behavioural tests for the Arpeggiator preset. It is clocked by onTrigger
+// Behavioural tests for the Arpeggiator preset. It is clocked by trig.onTrigger
 // (the CV trigger input) rather than MIDI, and its four params are read live
 // from the module's Param objects. Each case sets params directly, builds a
 // held chord via Note-On/Off, steps the clock via feedTick(), and asserts on

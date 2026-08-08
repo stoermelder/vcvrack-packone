@@ -68,6 +68,11 @@ param.enable(2);
 param.enable(3);
 param.enable(4);
 
+// Clock the arp from trigger channel 1 only: trig.onTrigger fires per poly
+// channel, and trig.enableIn() gates it — enabling just channel 1 means the
+// other channels are ignored.
+trig.enableIn(1, 1);
+
 param.getName = function(i) {
     if (i === 1) return "Clock division";
     if (i === 2) return "Octave range";
@@ -232,9 +237,7 @@ rack.onMidiMessage = function(midiPort, msg) {
     midiOut.send(msg);
 };
 
-rack.onTrigger = function(trigPort, channel) {
-    if (channel !== 1) return;
-
+trig.onTrigger = function(trigPort, channel) {
     let division = DIVISIONS[divisionIndex()];
     state.tickCount++;
     if (state.tickCount < division) return;

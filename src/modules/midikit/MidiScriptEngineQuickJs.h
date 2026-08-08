@@ -72,13 +72,16 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	std::unordered_map<int, ContextMenuEntry> contextMenus;
 	int nextContextMenuCallbackId = 1;
 
-	// rack and its five hooks (onMidiMessage/onTrigger/onLoad/onUnload/onSave)
-	// are resolved once at load and cached here, not re-looked-up per dispatch
-	// — so defining/reassigning one later has no effect; only what was present
-	// at load runs. Matched in Lua so both engines behave the same. Asymmetry:
-	// QuickJS calls hooks as methods (rackObj as thisVal, so `this` works);
-	// Lua calls them as bare functions. Predates caching, unused by any preset.
+	// The lifecycle hooks are resolved once at load and cached here, not
+	// re-looked-up per dispatch — so defining/reassigning one later has no
+	// effect; only what was present at load runs. Matched in Lua so both
+	// engines behave the same. Asymmetry: QuickJS calls hooks as methods
+	// (rackObj/trigObj as thisVal, so `this` works); Lua calls them as bare
+	// functions. onMidiMessage/onLoad/onUnload/onSave live on the rack object;
+	// onTrigger and onTipsyMessage live on the trig object (onTrigger so
+	// trig.enableIn() can gate it). Predates caching, unused by any preset.
 	JSValue rackObj = JS_UNDEFINED;
+	JSValue trigObj = JS_UNDEFINED;
 	JSValue onMidiMessageFn = JS_UNDEFINED;
 	JSValue onTriggerFn = JS_UNDEFINED;
 	JSValue onTipsyMessageFn = JS_UNDEFINED;
@@ -199,10 +202,14 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JS_FreeValue(ctx, r);
 			handler->writeLog("Script loaded", false);
 
-			// Callbacks live on the rack object, not the global scope. rack and
-			// all five hooks are cached once here (see rackObj declaration).
+			// Callbacks live on the predefined objects, not the global scope.
+			// rack and its hooks (minus onTrigger/onTipsyMessage) plus the trig
+			// object are cached once here (see declarations). onTrigger and
+			// onTipsyMessage are resolved from trig, not rack (onTrigger so
+			// trig.enableIn() can gate it).
 			JSValue glob = JS_GetGlobalObject(ctx);
 			rackObj = JS_GetPropertyStr(ctx, glob, "rack");
+			trigObj = JS_GetPropertyStr(ctx, glob, "trig");
 			JS_FreeValue(ctx, glob);
 			// A script can clobber "rack" (e.g. "rack = null;"); JS_GetPropertyStr
 			// throws on null/undefined, leaving a pending exception on ctx — so
@@ -212,12 +219,20 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				onUnloadFn = cacheCallableProp(rackObj, "onUnload");
 				onSaveFn = cacheCallableProp(rackObj, "onSave");
 				onMidiMessageFn = cacheCallableProp(rackObj, "onMidiMessage");
-				onTriggerFn = cacheCallableProp(rackObj, "onTrigger");
-				onTipsyMessageFn = cacheCallableProp(rackObj, "onTipsyMessage");
 			}
 			else {
 				JS_FreeValue(ctx, rackObj);
 				rackObj = JS_UNDEFINED;
+			}
+			// trig.onTrigger/trig.onTipsyMessage come from the trig object
+			// (resolved once, clobber-guarded); trigObj is the thisVal for both.
+			if (JS_IsObject(trigObj)) {
+				onTriggerFn = cacheCallableProp(trigObj, "onTrigger");
+				onTipsyMessageFn = cacheCallableProp(trigObj, "onTipsyMessage");
+			}
+			else {
+				JS_FreeValue(ctx, trigObj);
+				trigObj = JS_UNDEFINED;
 			}
 
 			hasOnSave.store(!JS_IsUndefined(onSaveFn), std::memory_order_release);
@@ -285,6 +300,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			// JS_FreeContext would collect these anyway; free and reset first so
 			// nothing stale outlives ctx/rt going to NULL below.
 			JS_FreeValue(ctx, rackObj);
+			JS_FreeValue(ctx, trigObj);
 			JS_FreeValue(ctx, onMidiMessageFn);
 			JS_FreeValue(ctx, onTriggerFn);
 			JS_FreeValue(ctx, onTipsyMessageFn);
@@ -292,6 +308,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JS_FreeValue(ctx, onUnloadFn);
 			JS_FreeValue(ctx, onSaveFn);
 			rackObj = JS_UNDEFINED;
+			trigObj = JS_UNDEFINED;
 			onMidiMessageFn = JS_UNDEFINED;
 			onTriggerFn = JS_UNDEFINED;
 			onTipsyMessageFn = JS_UNDEFINED;
@@ -445,54 +462,45 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 	}
 
-	// Dispatches onTrigger(trigPort, channel) when the trigger input fires.
-	// No-op if the script never defined it.
+	// Dispatches onTrigger(trigPort, channel). No-op if never defined; the
+	// module only enqueues ticks for channels the script enabled.
 	void dispatchTrigger(int trigPort, uint8_t channel) override {
-		if (ctx) {
+		if (ctx && !JS_IsUndefined(onTriggerFn)) {
 			msgCount = 0;
 			inCallback = true;
-			// Calls the cached onTriggerFn/rackObj — see dispatchMidiMessage above.
-			if (!JS_IsUndefined(onTriggerFn)) {
-				JSValue args[2] = { JS_NewInt32(ctx, trigPort + 1), JS_NewInt32(ctx, channel + 1) };
-				JSValue r = JS_Call(ctx, onTriggerFn, rackObj, 2, args);
-				JS_FreeValue(ctx, args[0]);
-				JS_FreeValue(ctx, args[1]);
-				inCallback = false;
-				if (JS_IsException(r)) {
-					JS_FreeValue(ctx, r);
-					JSValue exc = JS_GetException(ctx);
-					handler->writeLog(string::f("onTrigger error: %s", jsToStdString(exc).c_str()));
-					JS_FreeValue(ctx, exc);
-				}
-				else {
-					JS_FreeValue(ctx, r);
-				}
+			// Calls the cached onTriggerFn with trigObj as thisVal.
+			JSValue args[2] = { JS_NewInt32(ctx, trigPort + 1), JS_NewInt32(ctx, channel + 1) };
+			JSValue r = JS_Call(ctx, onTriggerFn, trigObj, 2, args);
+			JS_FreeValue(ctx, args[0]);
+			JS_FreeValue(ctx, args[1]);
+			inCallback = false;
+			if (JS_IsException(r)) {
+				JS_FreeValue(ctx, r);
+				JSValue exc = JS_GetException(ctx);
+				handler->writeLog(string::f("onTrigger error: %s", jsToStdString(exc).c_str()));
+				JS_FreeValue(ctx, exc);
 			}
 			else {
-				inCallback = false;
+				JS_FreeValue(ctx, r);
 			}
 			flushMsgStore();
 		}
 	}
 
 	// Dispatches onTipsyMessage(data, mimeType) when a Tipsy message finishes
-	// decoding on the input port. No-op if the script never defined it.
-	//
-	// `data` is a string: Tipsy payloads are typically text or JSON, matching
-	// what trig.sendTipsy() accepts on the way out. A binary payload survives
-	// intact — JS strings hold arbitrary 16-bit code units — but a script
-	// wanting bytes should read charCodeAt().
+	// decoding. No-op if never defined. `data` is a string; binary payloads
+	// survive intact (JS strings hold arbitrary 16-bit code units).
 	void dispatchTipsyMessage(const MidiScript::TipsyMessage& msg) override {
 		if (ctx) {
 			msgCount = 0;
 			inCallback = true;
-			// Calls the cached onTipsyMessageFn/rackObj — see dispatchMidiMessage.
+			// Calls the cached onTipsyMessageFn with trigObj as thisVal.
 			if (!JS_IsUndefined(onTipsyMessageFn)) {
 				JSValue args[2] = {
 					JS_NewStringLen(ctx, reinterpret_cast<const char*>(msg.data), msg.dataSize),
 					JS_NewString(ctx, msg.mime)
 				};
-				JSValue r = JS_Call(ctx, onTipsyMessageFn, rackObj, 2, args);
+				JSValue r = JS_Call(ctx, onTipsyMessageFn, trigObj, 2, args);
 				JS_FreeValue(ctx, args[0]);
 				JS_FreeValue(ctx, args[1]);
 				inCallback = false;
@@ -767,6 +775,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// trig
 		JSValue _trig = JS_NewObject(ctx);
 		JS_SetPropertyStr(ctx, glob, "trig", _trig);
+		JS_SetPropertyStr(ctx, _trig, "enableIn", JS_NewCFunction(ctx, js_trig_enableIn, "enableIn", 2));
 		JS_SetPropertyStr(ctx, _trig, "getTicks", JS_NewCFunction(ctx, js_trig_getTicks, "getTicks", 1));
 		JS_SetPropertyStr(ctx, _trig, "isHigh", JS_NewCFunction(ctx, js_trig_isHigh, "isHigh", 2));
 		JS_SetPropertyStr(ctx, _trig, "isLow", JS_NewCFunction(ctx, js_trig_isLow, "isLow", 2));
@@ -1103,6 +1112,20 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// trig
+
+	// trig.enableIn(trigPort, [channel = 1]) — enables trig.onTrigger on that
+	// (port, channel); the callback is unused until called.
+	static JSValue js_trig_enableIn(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		if (argc < 1 || argc > 2 || !argIsNumber(ctx, argv[0]) || (argc == 2 && !argIsNumber(ctx, argv[1])))
+			return jsThrow(ctx, "trig.enableIn: bad args");
+		int i = static_cast<int>(argNum(ctx, argv[0]));
+		if (i < 1 || i > getEngine(ctx)->inputTrigCount) return jsThrow(ctx, "trig.enableIn: bad index");
+		int ch = 1;
+		if (argc == 2) ch = static_cast<int>(argNum(ctx, argv[1]));
+		if (ch < 1 || ch > PORT_MAX_CHANNELS) return jsThrow(ctx, "trig.enableIn: bad channel");
+		getEngine(ctx)->handler->enableTrigger(i - 1, ch - 1);
+		return JS_UNDEFINED;
+	}
 
 	static JSValue js_trig_getTicks(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		if (argc < 1 || argc > 2 || !argIsNumber(ctx, argv[0]) || (argc == 2 && !argIsNumber(ctx, argv[1])))

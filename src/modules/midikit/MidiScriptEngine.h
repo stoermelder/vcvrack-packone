@@ -63,10 +63,15 @@ struct MidiScriptEngineHandler {
 	virtual void writeOverlay(const std::string& s1, const std::string& s2, const std::string& s3) = 0;
 	virtual void enableInput(int i) = 0;
 
+	// Marks trigger input (port, channel) as enabled, from the script-facing
+	// trig.enableIn() binding (worker thread). Disabled channels get no tick
+	// processing (counting, sendAfterTrigger drains, or trig.onTrigger).
+	virtual void enableTrigger(int port, uint8_t channel) = 0;
+
 	// Routes trigger input i into the Tipsy decoder, or disables decoding when
 	// i < 0. Today i is always 0 — the script-facing trig.enableTipsyIn() exposes
 	// no port (Tipsy input is only supported on the first trigger input). While
-	// claimed, the trigger input stops counting ticks and firing rack.onTrigger,
+	// claimed, the trigger input stops counting ticks and firing trig.onTrigger,
 	// and channel 1 of trig.isHigh()/isLow() reads 0 (other channels are
 	// unaffected). Worker thread.
 	virtual void enableTipsyIn(int i) = 0;

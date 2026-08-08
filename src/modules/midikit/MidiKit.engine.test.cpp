@@ -1508,6 +1508,7 @@ TEST_CASE("input.getVoltage/isHigh/isLow read identical default state", "[MidiKi
 static const char* JS_TRIG_GET_TICKS = R"(/**
  * @engine QuickJs@v1
  */
+trig.enableIn(1);
 rack.onMidiMessage = function(port, msg) {
     let out = midi.create();
     midi.setCc(out, 1, 1, 0);
@@ -1519,6 +1520,7 @@ rack.onMidiMessage = function(port, msg) {
 static const char* LUA_TRIG_GET_TICKS = R"(--[[
 @engine minilua@v1
 --]]
+trig.enableIn(1)
 rack.onMidiMessage = function(midiPort, msg)
     local out = midi.create()
     midi.setCc(out, 1, 1, 0)
@@ -1565,6 +1567,8 @@ TEST_CASE("trig.getTicks counts identical rising edges in both engines", "[MidiK
 static const char* JS_TRIG_GET_TICKS_CHANNEL = R"(/**
  * @engine QuickJs@v1
  */
+trig.enableIn(1, 1);
+trig.enableIn(1, 2);
 rack.onMidiMessage = function(port, msg) {
     let a = midi.create();
     midi.setCc(a, 1, 1, 0);
@@ -1580,6 +1584,8 @@ rack.onMidiMessage = function(port, msg) {
 static const char* LUA_TRIG_GET_TICKS_CHANNEL = R"(--[[
 @engine minilua@v1
 --]]
+trig.enableIn(1, 1)
+trig.enableIn(1, 2)
 rack.onMidiMessage = function(midiPort, msg)
     local a = midi.create()
     midi.setCc(a, 1, 1, 0)
@@ -2943,7 +2949,8 @@ TEST_CASE("captureConfig on an engine with no script loaded reports nothing to p
 static const char* JS_ON_TRIGGER = R"(/**
  * @engine QuickJs@v1
  */
-rack.onTrigger = function(trigPort) {
+trig.enableIn(1);
+trig.onTrigger = function(trigPort) {
     rack.log("onTrigger " + number.toString(trigPort));
     let msg = midi.create();
     midi.setCc(msg, 1, 10, trigPort);
@@ -2954,7 +2961,8 @@ rack.onTrigger = function(trigPort) {
 static const char* LUA_ON_TRIGGER = R"(--[[
 @engine minilua@v1
 --]]
-function rack.onTrigger(trigPort)
+trig.enableIn(1)
+function trig.onTrigger(trigPort)
     rack.log("onTrigger " .. trigPort)
     local msg = midi.create()
     midi.setCc(msg, 1, 10, trigPort)
@@ -2992,7 +3000,9 @@ TEST_CASE("onTrigger fires on a trigger input tick and sends an identical messag
 static const char* JS_ON_TRIGGER_CHANNEL = R"(/**
  * @engine QuickJs@v1
  */
-rack.onTrigger = function(trigPort, channel) {
+trig.enableIn(1, 1);
+trig.enableIn(1, 2);
+trig.onTrigger = function(trigPort, channel) {
     rack.log("onTrigger " + number.toString(trigPort) + " " + number.toString(channel));
 };
 )";
@@ -3000,7 +3010,9 @@ rack.onTrigger = function(trigPort, channel) {
 static const char* LUA_ON_TRIGGER_CHANNEL = R"(--[[
 @engine minilua@v1
 --]]
-function rack.onTrigger(trigPort, channel)
+trig.enableIn(1, 1)
+trig.enableIn(1, 2)
+function trig.onTrigger(trigPort, channel)
     rack.log("onTrigger " .. trigPort .. " " .. channel)
 end
 )";
@@ -3052,6 +3064,105 @@ TEST_CASE("Script without onTrigger silently ignores trigger ticks, in both engi
 	auto lua = checkNoOnTrigger(LUA_NO_ON_LOAD);
 	REQUIRE(js.second == false);
 	REQUIRE(lua.second == false);
+}
+
+
+static const char* JS_ON_TRIGGER_NOT_ENABLED = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.onTrigger = function(trigPort, channel) {
+    rack.log("onTrigger fired");
+};
+)";
+
+static const char* LUA_ON_TRIGGER_NOT_ENABLED = R"(--[[
+@engine minilua@v1
+--]]
+trig.onTrigger = function(trigPort, channel)
+    rack.log("onTrigger fired")
+end
+)";
+
+TEST_CASE("trig.onTrigger is not called until trig.enableIn() is used, in both engines", "[MidiKit][CrossEngine]") {
+	// trig.onTrigger is unused until the channel is enabled with trig.enableIn().
+	auto checkNotEnabled = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		drainLog(m);
+
+		m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+		// Without trig.enableIn(), a rising edge is not processed at all.
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+		m->process(Test::makeProcessArgs(0));
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+		m->process(Test::makeProcessArgs(1));
+		m->activeEngine->process();
+
+		std::string log = drainLog(m);
+		Test::destroyModule(m);
+		return log;
+	};
+
+	REQUIRE(checkNotEnabled(JS_ON_TRIGGER_NOT_ENABLED).find("onTrigger") == std::string::npos);
+	REQUIRE(checkNotEnabled(LUA_ON_TRIGGER_NOT_ENABLED).find("onTrigger") == std::string::npos);
+}
+
+
+static const char* JS_ON_TRIGGER_ENABLE_CH1_ONLY = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+trig.onTrigger = function(trigPort, channel) {
+    rack.log("onTrigger " + number.toString(channel));
+};
+)";
+
+static const char* LUA_ON_TRIGGER_ENABLE_CH1_ONLY = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableIn(1, 1)
+trig.onTrigger = function(trigPort, channel)
+    rack.log("onTrigger " .. channel)
+end
+)";
+
+TEST_CASE("trig.enableIn gates trig.onTrigger per channel, in both engines", "[MidiKit][CrossEngine]") {
+	// Only channel 1 is enabled: a rising edge on channel 1 fires the callback,
+	// a rising edge on channel 2 (never enabled) is not processed at all.
+	auto checkPerChannel = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		drainLog(m);
+
+		m->inputs[MidiKitModule::INPUT_TRIG].channels = 2;
+		// Prime both SchmittTriggers LOW first (a fresh trigger starts
+		// uninitialized; the first low call locks it so a later rise is real).
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 1);
+		m->process(Test::makeProcessArgs(0));
+
+		// Rising edge on channel 1 (enabled) fires the callback.
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
+		m->process(Test::makeProcessArgs(1));
+		m->activeEngine->process();
+		std::string log1 = drainLog(m);
+
+		// Rising edge on channel 2 (never enabled) is ignored.
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 1);
+		m->process(Test::makeProcessArgs(2));
+		m->activeEngine->process();
+		std::string log2 = drainLog(m);
+
+		Test::destroyModule(m);
+		return std::make_pair(log1, log2);
+	};
+
+	auto js = checkPerChannel(JS_ON_TRIGGER_ENABLE_CH1_ONLY);
+	auto lua = checkPerChannel(LUA_ON_TRIGGER_ENABLE_CH1_ONLY);
+	REQUIRE(js.first.find("onTrigger 1") != std::string::npos);
+	REQUIRE(js.second.find("onTrigger") == std::string::npos);
+	REQUIRE(lua.first.find("onTrigger 1") != std::string::npos);
+	REQUIRE(lua.second.find("onTrigger") == std::string::npos);
 }
 
 
@@ -3612,8 +3723,9 @@ TEST_CASE("midi.create past the 32-handle cap errors and flushes only pre-error 
 
 // --- runtime API mutation: forbidden by contract, must not crash ---------
 //
-// SCRIPTING.md documents that rack.onMidiMessage/onTrigger/onLoad/onUnload
-// (and the predefined objects rack/midi/midiOut/trig/input/param/number) are
+// SCRIPTING.md documents that rack.onMidiMessage/onLoad/onUnload and
+// trig.onTrigger (and the predefined objects rack/midi/midiOut/trig/input/
+// param/number) are
 // resolved ONCE at load time; a script that reassigns any of them afterward,
 // or defines a hook late (e.g. from inside onTrigger), has no effect on
 // what runs — the engine keeps calling whatever was present at load. This
@@ -3800,7 +3912,8 @@ TEST_CASE("Clobbering the predefined midiOut object errors without crashing, in 
 static const char* JS_LATE_DEFINE_ON_MIDI_MESSAGE = R"(/**
  * @engine QuickJs@v1
  */
-rack.onTrigger = function(trigPort) {
+trig.enableIn(1);
+trig.onTrigger = function(trigPort) {
     rack.log("onTrigger fired");
     // Defining onMidiMessage for the first time here, after load, must have
     // no effect: it did not exist when hooks were resolved at load time.
@@ -3813,7 +3926,8 @@ rack.onTrigger = function(trigPort) {
 static const char* LUA_LATE_DEFINE_ON_MIDI_MESSAGE = R"(--[[
 @engine minilua@v1
 --]]
-rack.onTrigger = function(trigPort)
+trig.enableIn(1)
+trig.onTrigger = function(trigPort)
     rack.log("onTrigger fired")
     rack.onMidiMessage = function(port, msg)
         rack.log("late onMidiMessage called")

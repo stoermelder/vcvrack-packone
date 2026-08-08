@@ -90,36 +90,41 @@ leading comment block.
   functions may be overridden to customize panel/input labeling; both
   engines seed defaults (`"Port " .. i` / `"Param " .. i`) that scripts can
   replace by reassigning the table field.
-- Optional `rack.onTrigger(trigPort, channel)` is called whenever the module's
+- Optional `trig.onTrigger(trigPort, channel)` is called whenever the module's
   trigger/gate input (`trigPort`, 1-based — MIDI-KIT currently exposes a
-  single trigger input, so this is always `1`) crosses the trigger
-  threshold. `channel` (1-based) is the polyphonic channel of the trigger
-  input that fired — a polyphonic clock/gate fires the hook once per rising
-  edge on each channel. It is the only way to run script logic that isn't
-  driven by an incoming MIDI message — e.g. reading
+  single trigger input, so this is always `1`) crosses the trigger threshold
+  on an enabled channel. `channel` (1-based) is the polyphonic channel of the
+  trigger input that fired — a polyphonic clock/gate fires the callback once
+  per rising edge on each enabled channel. It is the only way to run script
+  logic that isn't driven by an incoming MIDI message — e.g. reading
   `trig.getTicks()`/`input.*` and sending a MIDI message in response to an
   external clock/gate, or streaming a
   [Tipsy](#trig-dedicated-triggergate-ports) message with `trig.sendTipsy()`
-  on the trigger output. A script
-  that never defines it simply never has it called; unlike
-  `rack.onMidiMessage`, there is no load-time log warning for omitting it.
-  In QuickJs, assign it to the `rack` object —
-  `rack.onTrigger = function(trigPort, channel) {...}`. Lua likewise:
-  `rack.onTrigger = function(trigPort, channel) end` or
-  `function rack.onTrigger(trigPort, channel) end`.
-- Optional `rack.onTipsyMessage(data, mimeType)` is called once for every
+  on the trigger output.
+  **The callback is not used at all until `trig.enableIn(trigPort, [channel])`
+  is called.** A script that defines `trig.onTrigger` but never calls
+  `trig.enableIn()` gets no callback; moreover the module does not process the
+  trigger input at all on a channel that isn't enabled — it counts no ticks
+  (`trig.getTicks()` stays 0), drains no tick-scheduled (`sendAfterTrigger`)
+  messages, and dispatches no `trig.onTrigger`. Unlike `rack.onMidiMessage`,
+  there is no load-time log warning for omitting it. In QuickJs, assign it to
+  the `trig` object — `trig.enableIn(1); trig.onTrigger = function(trigPort,
+  channel) {...}`. Lua likewise: `trig.enableIn(1)` /
+  `trig.onTrigger = function(trigPort, channel) end` or
+  `function trig.onTrigger(trigPort, channel) end`.
+- Optional `trig.onTipsyMessage(data, mimeType)` is called once for every
   complete [Tipsy](#trig-dedicated-triggergate-ports) message decoded from
   the trigger input claimed with `trig.enableTipsyIn()`. `data` and `mimeType` are
   both strings; `data` may contain arbitrary bytes, including NULs, and is
   capped at 256 bytes. A script that never claims a port, or never defines
   the hook, simply never has it called — there is no load-time warning.
-  In QuickJs, assign it to the `rack` object —
-  `rack.onTipsyMessage = function(data, mimeType) {...}`. Lua likewise:
-  `rack.onTipsyMessage = function(data, mimeType) end`.
+  In QuickJs, assign it to the `trig` object —
+  `trig.onTipsyMessage = function(data, mimeType) {...}`. Lua likewise:
+  `trig.onTipsyMessage = function(data, mimeType) end`.
 - There is no per-sample or per-frame callback — logic only runs in
   response to incoming MIDI messages (including clock 0xF8 realtime bytes),
-  trigger-input ticks via `rack.onTrigger`, or decoded Tipsy messages via
-  `rack.onTipsyMessage`.
+  trigger-input ticks via `trig.onTrigger`, or decoded Tipsy messages via
+  `trig.onTipsyMessage`.
 - Optional `rack.onLoad()`, `rack.onUnload()`, and `rack.onSave()` hooks:
   - `rack.onLoad([persistedConfig])` runs once, right after top-level code,
     when the script has parsed and loaded successfully. If a config was
@@ -153,18 +158,21 @@ leading comment block.
 
 ### Hooks and predefined objects are resolved once, at load time
 
-`rack.onMidiMessage`, `rack.onTrigger`, `rack.onTipsyMessage`, `rack.onLoad`,
-`rack.onUnload`, and
-`rack.onSave` are read from the `rack` object **exactly once**, right after the script's
-top-level code finishes running. **Reassigning any of them afterward — from
+`rack.onMidiMessage`, `rack.onLoad`, `rack.onUnload`, and `rack.onSave` are
+read from the `rack` object **exactly once**, and `trig.onTrigger` and
+`trig.onTipsyMessage` likewise from the `trig` object, right after the
+script's top-level code finishes running. **Reassigning any of them
+afterward — from
 inside a callback or anywhere else in the script — has no effect.** The
 function that was present at load time keeps running for the lifetime of the
 script; a later assignment to `rack.onMidiMessage` (or the others) is simply
 never looked at again. The same applies to defining a hook **late**: a
 script that never defines `rack.onMidiMessage` at load time but assigns it
-later (e.g. from inside `rack.onTrigger`) will never have that later
+later (e.g. from inside `trig.onTrigger`) will never have that later
 definition called — the "no `onMidiMessage` defined" warning logged at load
-time is the last word on it.
+time is the last word on it. (`trig.enableIn()` is not a hook — it is a live
+API call like `param.enable()`, so calling it at any time takes effect for
+subsequent trigger dispatch.)
 
 This is a deliberate, permanent design choice, not a limitation to be worked
 around: resolving the hooks once (rather than looking them up by name on
@@ -375,6 +383,25 @@ these even though `math.*` is also available, for script portability).
 - Override `input.getName(i)` to customize the panel label.
 
 ### `trig.*` (dedicated trigger/gate ports)
+- `trig.enableIn(trigPort [, ch])` — enable trigger input `trigPort` (polyphonic
+  channel defaults to 1) for trigger processing and the `trig.onTrigger`
+  callback. **The trigger input does nothing until this is called**: a
+  channel that is never enabled counts no ticks (`trig.getTicks()` stays 0),
+  drains no tick-scheduled (`sendAfterTrigger`) messages, and never fires
+  `trig.onTrigger`. Call once per (port, channel) the script wants to hear; a
+  polyphonic clock is enabled per channel, e.g. `trig.enableIn(1, 1)` plus
+  `trig.enableIn(1, 2)`.
+- `trig.onTrigger(trigPort, ch)` — the trigger callback, assigned on the
+  `trig` object (resolved once at load, like the `rack` hooks). Called on
+  every rising edge of an *enabled* (port, channel); `trigPort` is 1-based
+  (always `1`), `ch` is the 1-based polyphonic channel that fired. Without a
+  matching `trig.enableIn()` call it is never called.
+- `trig.onTipsyMessage(data, mimeType)` — the Tipsy input callback, assigned
+  on the `trig` object (resolved once at load, like the `rack` hooks). Called
+  once for every complete [Tipsy](#trig-dedicated-triggergate-ports) message
+  decoded from the trigger input claimed with `trig.enableTipsyIn()`; see
+  that entry below. `data` and `mimeType` are strings; `data` may contain
+  arbitrary bytes (including NULs) and is capped at 256 bytes.
 - `trig.getTicks(i [, ch])` — clock tick counter for trigger input `i`
   (polyphonic channel defaults to 1).
 - `trig.isHigh(i [, ch])`, `trig.isLow(i [, ch])`.
@@ -392,23 +419,24 @@ these even though `math.*` is also available, for script portability).
   `midiOut.selectPort()`, does not consume a message-handle slot, and is not
   subject to the "sent once per callback" rule.
   ```js
-  rack.onTrigger = function(trigPort, channel) {
+  trig.enableIn(1);
+  trig.onTrigger = function(trigPort, channel) {
       trig.sendTipsy("Hello Tipsy!");                              // mime defaults to "text/plain"
       trig.sendTipsy('{"label":"My snapshot","value":42}', "application/json");
   };
   ```
 - `trig.enableTipsyIn([enabled])` — decode an incoming Tipsy stream from the
-  trigger input, delivering each completed message to `rack.onTipsyMessage`.
+  trigger input, delivering each completed message to `trig.onTipsyMessage`.
   The optional boolean `enabled` defaults to `true`; pass `false` to release
   the trigger input again. Tipsy input is only supported on the first trigger
   input, so — like `trig.sendTipsy()` — there is no port argument.
 
   While the trigger input is claimed, it stops behaving as a trigger on
-  channel 1: `rack.onTrigger` doesn't fire and `trig.getTicks()` doesn't
+  channel 1: `trig.onTrigger` doesn't fire and `trig.getTicks()` doesn't
   advance there, and `trig.isHigh()`/`trig.isLow()` on channel 1 read `0` —
   the encoded voltages are protocol, not a gate a script should act on.
   Other channels are unaffected. A Tipsy stream would otherwise fire
-  `rack.onTrigger` continuously as the encoded voltages cross the trigger
+  `trig.onTrigger` continuously as the encoded voltages cross the trigger
   threshold.
   ```js
   rack.onLoad = function() {
@@ -531,7 +559,7 @@ rather than decoding this by hand).
   created them — the store resets each callback invocation. Creating a
   message at top level (outside `rack.onMidiMessage`) logs a warning and the
   handle is discarded as soon as the next MIDI message arrives, so build
-  messages inside the callback. `rack.onLoad()`/`rack.onUnload()`/`rack.onSave()`/`rack.onTrigger()`
+  messages inside the callback. `rack.onLoad()`/`rack.onUnload()`/`rack.onSave()`/`trig.onTrigger()`
   are full callbacks in this sense too — a message created and sent inside
   any of them is delivered normally (except `onSave()`'s, which are always
   discarded — see [Persistence](#persistence)), and (unlike bare top-level

@@ -7,12 +7,12 @@
 
 rack.onLoad = function() {
     // Claim the trigger input for the Tipsy decoder. While claimed, the
-    // trigger input no longer fires rack.onTrigger or counts ticks.
+    // trigger input no longer fires trig.onTrigger or counts ticks.
     trig.enableTipsyIn();
     rack.log("Listening for Tipsy on TRIG");
 }
 
-rack.onTipsyMessage = function(data, mimeType) {
+trig.onTipsyMessage = function(data, mimeType) {
     rack.log("Tipsy [" + mimeType + "] " + data);
 
     // A JSON payload can drive anything the script can reach — here the
