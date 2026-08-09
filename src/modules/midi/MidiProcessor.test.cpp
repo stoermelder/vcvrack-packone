@@ -336,3 +336,283 @@ TEST_CASE("reset() is per-channel-complete", "[MidiProcessor][reset]") {
 	CATCH_INFO("no channel may keep armed state after reset");
 	REQUIRE(countType(h.msgs, MessageEx::Type::NRPN) == 0);
 }
+
+TEST_CASE("Default construction owns its input queue", "[MidiProcessor][input]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	// The no-argument form must behave exactly as it always has: the processor
+	// allocates a queue and pumps the one it owns.
+	REQUIRE(mp.ownedInput != nullptr);
+	REQUIRE(&mp.getInput() == mp.ownedInput.get());
+
+	mp.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
+	mp.process(0);
+
+	REQUIRE(countType(h.msgs, MessageEx::Type::NOTE_ON) == 1);
+}
+
+TEST_CASE("An injected queue is pumped instead of the owned one", "[MidiProcessor][input]") {
+	rack::midi::InputQueue external;
+	MidiProcessor mp(&external);
+	TestHandler h;
+	mp.subscribe(&h);
+
+	REQUIRE(&mp.getInput() == &external);
+	// No queue is allocated at all when one is injected -- the whole point of
+	// owning it through a pointer rather than as a member.
+	REQUIRE(mp.ownedInput == nullptr);
+
+	external.onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
+	mp.process(0);
+	REQUIRE(countType(h.msgs, MessageEx::Type::NOTE_ON) == 1);
+}
+
+TEST_CASE("processBypass drains the injected queue", "[MidiProcessor][input]") {
+	rack::midi::InputQueue external;
+	MidiProcessor mp(&external);
+	TestHandler h;
+	mp.subscribe(&h);
+
+	external.onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
+	REQUIRE(external.size() == 1);
+
+	mp.processBypass(0);
+
+	REQUIRE(external.size() == 0);
+	REQUIRE(h.msgs.empty());
+}
+
+TEST_CASE("processMessage decodes without any queue", "[MidiProcessor][input]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	// The integration point for consumers that pump a queue themselves: the
+	// same events, with the processor never touching a queue.
+	mp.processMessage(Test::makeMidiMessage(0x9, 4, 60, 100));
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 7, 64));
+
+	REQUIRE(countType(h.msgs, MessageEx::Type::NOTE_ON) == 1);
+	REQUIRE(countType(h.msgs, MessageEx::Type::CC) == 1);
+	REQUIRE(mp.getInput().size() == 0);
+}
+
+TEST_CASE("processMessage assembles NRPN across calls", "[MidiProcessor][input]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	mp.processMessage(Test::makeMidiMessage(0xb, 3, 99, 4));
+	mp.processMessage(Test::makeMidiMessage(0xb, 3, 98, 5));
+	mp.processMessage(Test::makeMidiMessage(0xb, 3, 6, 20));
+	mp.processMessage(Test::makeMidiMessage(0xb, 3, 38, 2));
+
+	auto it = std::find_if(h.msgs.rbegin(), h.msgs.rend(),
+		[](const MessageEx& m){ return m.type == MessageEx::Type::NRPN && m.hasValue(); });
+	REQUIRE(it != h.msgs.rend());
+	REQUIRE(it->getParamNumber() == (4 * 128 + 5));
+	REQUIRE(it->getValue() == (20 * 128 + 2));
+}
+
+TEST_CASE("reset() leaves an injected queue untouched", "[MidiProcessor][reset]") {
+	rack::midi::InputQueue external;
+	MidiProcessor mp(&external);
+
+	external.onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
+	REQUIRE(external.size() == 1);
+
+	// reset() is decoder state only -- the queue may belong to someone else.
+	mp.reset();
+
+	REQUIRE(external.size() == 1);
+}
+
+// Returns the isComponent flag of the last Type::CC message seen.
+static bool lastCcIsComponent(const std::vector<MessageEx>& msgs) {
+	auto it = std::find_if(msgs.rbegin(), msgs.rend(),
+		[](const MessageEx& m){ return m.type == MessageEx::Type::CC; });
+	REQUIRE(it != msgs.rend());
+	return it->isComponent;
+}
+
+TEST_CASE("isComponent marks parameter-select CCs", "[MidiProcessor][isComponent]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	auto cc = GENERATE(98, 99, 100, 101);
+	h.msgs.clear();
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, cc, 4));
+	CATCH_INFO("cc=" << cc);
+	REQUIRE(lastCcIsComponent(h.msgs) == true);
+}
+
+TEST_CASE("isComponent marks data entry only while a parameter is armed", "[MidiProcessor][isComponent]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	SECTION("No parameter armed: CC 6 is an ordinary controller") {
+		mp.processMessage(Test::makeMidiMessage(0xb, 0, 6, 20));
+		REQUIRE(lastCcIsComponent(h.msgs) == false);
+	}
+
+	SECTION("CC 6/38 also form a 14-bit pair, which outranks the data-entry rule") {
+		// CC 6 is below 32, so it is simultaneously Data Entry MSB and the MSB
+		// of 14-bit CC 6 -- the ranges genuinely overlap in the MIDI spec, and
+		// processCc() tracks both. Once CC 6 has been seen with a non-zero
+		// value, CC 38 (= 6 + 32) is a tracked LSB, so it is a component even
+		// with no RPN/NRPN parameter armed.
+		mp.processMessage(Test::makeMidiMessage(0xb, 0, 6, 20));
+		h.msgs.clear();
+		mp.processMessage(Test::makeMidiMessage(0xb, 0, 38, 2));
+		REQUIRE(lastCcIsComponent(h.msgs) == true);
+
+		// A data-entry LSB whose MSB was never seen is not a component.
+		MidiProcessor fresh;
+		TestHandler fh;
+		fresh.subscribe(&fh);
+		fresh.processMessage(Test::makeMidiMessage(0xb, 0, 38, 2));
+		REQUIRE(lastCcIsComponent(fh.msgs) == false);
+	}
+
+	SECTION("Parameter armed: data entry is a component") {
+		mp.processMessage(Test::makeMidiMessage(0xb, 0, 99, 4));
+		mp.processMessage(Test::makeMidiMessage(0xb, 0, 98, 5));
+
+		h.msgs.clear();
+		mp.processMessage(Test::makeMidiMessage(0xb, 0, 6, 20));
+		REQUIRE(lastCcIsComponent(h.msgs) == true);
+
+		h.msgs.clear();
+		mp.processMessage(Test::makeMidiMessage(0xb, 0, 38, 2));
+		REQUIRE(lastCcIsComponent(h.msgs) == true);
+	}
+
+	SECTION("Armed on another channel does not mark this one") {
+		mp.processMessage(Test::makeMidiMessage(0xb, 1, 99, 4));
+		mp.processMessage(Test::makeMidiMessage(0xb, 1, 98, 5));
+
+		h.msgs.clear();
+		mp.processMessage(Test::makeMidiMessage(0xb, 0, 6, 20));
+		REQUIRE(lastCcIsComponent(h.msgs) == false);
+	}
+}
+
+TEST_CASE("isComponent reflects state as of arrival, not after", "[MidiProcessor][isComponent]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	// CC 98 completes the selection. The flag is queried before processCc()
+	// arms the parameter, but a select CC is a component regardless -- what
+	// this pins is that the CC 6 immediately following is already marked,
+	// i.e. the query sees the parameter armed by the preceding message.
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 99, 4));
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 98, 5));
+
+	h.msgs.clear();
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 6, 20));
+	REQUIRE(lastCcIsComponent(h.msgs) == true);
+}
+
+TEST_CASE("isComponent and the 14-bit first-MSB asymmetry", "[MidiProcessor][isComponent]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	// Documented behaviour: the decoder cannot know a pair is coming, so the
+	// first MSB escapes as a plain CC. Pinned so it is not "fixed" silently.
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 5, 3));
+	REQUIRE(lastCcIsComponent(h.msgs) == false);
+
+	// Once tracked, both halves are components.
+	h.msgs.clear();
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 32 + 5, 10));
+	REQUIRE(lastCcIsComponent(h.msgs) == true);
+
+	h.msgs.clear();
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 5, 4));
+	REQUIRE(lastCcIsComponent(h.msgs) == true);
+}
+
+TEST_CASE("isComponent is false for an untracked LSB and plain CCs", "[MidiProcessor][isComponent]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	SECTION("LSB whose MSB was never seen") {
+		mp.processMessage(Test::makeMidiMessage(0xb, 0, 32 + 9, 10));
+		REQUIRE(lastCcIsComponent(h.msgs) == false);
+	}
+
+	SECTION("A CC outside every extended range") {
+		mp.processMessage(Test::makeMidiMessage(0xb, 0, 80, 64));
+		REQUIRE(lastCcIsComponent(h.msgs) == false);
+	}
+}
+
+TEST_CASE("isComponent survives reset() clearing the tracked pair", "[MidiProcessor][isComponent][reset]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 5, 3));
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 32 + 5, 10));
+
+	mp.reset();
+	h.msgs.clear();
+
+	// After a reset the pair is untracked again, so the LSB is a plain CC.
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 32 + 5, 10));
+	REQUIRE(lastCcIsComponent(h.msgs) == false);
+}
+
+TEST_CASE("hasValue() separates parameter select from data entry", "[MidiProcessor][hasValue]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	SECTION("NRPN select has no value; data entry does") {
+		mp.processMessage(Test::makeMidiMessage(0xb, 3, 99, 4));
+		mp.processMessage(Test::makeMidiMessage(0xb, 3, 98, 5));
+
+		auto sel = std::find_if(h.msgs.begin(), h.msgs.end(),
+			[](const MessageEx& m){ return m.type == MessageEx::Type::NRPN; });
+		REQUIRE(sel != h.msgs.end());
+		REQUIRE(sel->hasValue() == false);
+
+		h.msgs.clear();
+		mp.processMessage(Test::makeMidiMessage(0xb, 3, 6, 20));
+		mp.processMessage(Test::makeMidiMessage(0xb, 3, 38, 2));
+
+		auto val = std::find_if(h.msgs.begin(), h.msgs.end(),
+			[](const MessageEx& m){ return m.type == MessageEx::Type::NRPN; });
+		REQUIRE(val != h.msgs.end());
+		REQUIRE(val->hasValue() == true);
+		REQUIRE(val->getValue() == (20 * 128 + 2));
+	}
+
+	SECTION("The RPN 127/127 reset notification carries no value") {
+		mp.processMessage(Test::makeMidiMessage(0xb, 2, 101, 127));
+		mp.processMessage(Test::makeMidiMessage(0xb, 2, 100, 127));
+
+		auto rst = std::find_if(h.msgs.begin(), h.msgs.end(),
+			[](const MessageEx& m){ return m.type == MessageEx::Type::RPN; });
+		REQUIRE(rst != h.msgs.end());
+		REQUIRE(rst->getParamNumber() == -1);
+		REQUIRE(rst->hasValue() == false);
+	}
+
+	SECTION("A 14-bit CC always carries a value") {
+		mp.processMessage(Test::makeMidiMessage(0xb, 1, 5, 3));
+		mp.processMessage(Test::makeMidiMessage(0xb, 1, 32 + 5, 10));
+
+		auto cc14 = std::find_if(h.msgs.begin(), h.msgs.end(),
+			[](const MessageEx& m){ return m.type == MessageEx::Type::CC_14BIT; });
+		REQUIRE(cc14 != h.msgs.end());
+		REQUIRE(cc14->hasValue() == true);
+	}
+}

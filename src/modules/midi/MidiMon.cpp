@@ -169,7 +169,7 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 				if (m.getParamNumber() < 0) {
 					s = string::f("ch%02d rpn/nrpn reset", m.getChannel() + 1);
 				}
-				else if (m.getValue() >= 0) {
+				else if (m.hasValue()) {
 					s = string::f("ch%02d rpn param=%i value=%i", m.getChannel() + 1, m.getParamNumber(), m.getValue());
 				}
 				else if (m.getParamNumber() == 0) {
@@ -190,7 +190,7 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 				logMessage(showRpnNrpnMsg, LOG_FORMAT::INDENTED, 0.f, 0LL, s);
 				break;
 			case MessageEx::Type::NRPN:
-				if (m.getValue() >= 0) {
+				if (m.hasValue()) {
 					s = string::f("ch%02d nrpn param=%i value=%i", m.getChannel() + 1, m.getParamNumber(), m.getValue());
 				}
 				else {
