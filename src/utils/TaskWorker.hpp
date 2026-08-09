@@ -102,6 +102,11 @@ struct ITaskWorker {
 	// unbounded/overwriting queue (TaskWorker) always return true.
 	virtual bool work(std::function<void()> task) = 0;
 	virtual bool work(std::function<void()> task, Context* context) = 0;
+
+	// True when the calling thread is the one this worker runs tasks on, so
+	// callers can assert that state only touched from inside work() really is
+	// being touched from there.
+	virtual bool isWorkerThread() const = 0;
 };
 
 // Runs tasks synchronously on the calling thread — no background thread.
@@ -115,6 +120,8 @@ struct SyncTaskWorker : ITaskWorker {
 		contextSet(prev);
 		return true;
 	}
+	// Every thread is "the worker thread": tasks run inline on the caller.
+	bool isWorkerThread() const override { return true; }
 }; // struct SyncTaskWorker
 
 
@@ -124,6 +131,9 @@ struct TaskWorkerAdapter : ITaskWorker {
 	explicit TaskWorkerAdapter(std::shared_ptr<TaskWorker> tw) : inner(std::move(tw)) {}
 	bool work(std::function<void()> task) override { inner->work(std::move(task)); return true; }
 	bool work(std::function<void()> task, Context* context) override { inner->work(std::move(task), context); return true; }
+	bool isWorkerThread() const override {
+		return inner->worker && std::this_thread::get_id() == inner->worker->get_id();
+	}
 }; // struct TaskWorkerAdapter
 
 

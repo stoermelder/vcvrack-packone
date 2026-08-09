@@ -31,6 +31,10 @@ int16_t MessageEx::getParamNumber() const {
 	return paramNumber;
 }
 
+bool MessageEx::hasValue() const {
+	return extraValue >= 0;
+}
+
 int MessageEx::getSysExSize() const {
 	return type == Type::SYSEX ? msg.getSize() : 0;
 }
@@ -43,7 +47,15 @@ std::vector<unsigned char> MessageEx::getSysExBytes() const {
 	return type == Type::SYSEX ? msg.bytes : std::vector<unsigned char>();
 }
 
-MidiProcessor::MidiProcessor() {
+// ownedInput is initialized first (members initialize in declaration order), so
+// its get() below is valid. Allocated only when nothing is injected.
+MidiProcessor::MidiProcessor(rack::midi::InputQueue* injected)
+	: ownedInput(injected ? nullptr : new rack::midi::InputQueue())
+	, input(injected ? injected : ownedInput.get()) {
+	reset();
+}
+
+void MidiProcessor::reset() {
 	for (int i = 0; i < 16; ++i) {
 		ccNrpnParam[i] = -1;
 		ccRpnParam[i] = -1;
@@ -55,104 +67,130 @@ MidiProcessor::MidiProcessor() {
 }
 
 rack::midi::InputQueue& MidiProcessor::getInput() {
-	return midiInput;
+	return *input;
 }
 
 
 void MidiProcessor::processBypass(int64_t frame) {
 	rack::midi::Message msg;
-	while (midiInput.tryPop(&msg, frame)) { 
+	while (input->tryPop(&msg, frame)) {
 		(void)0;
 	}
 }
 
 void MidiProcessor::process(int64_t frame) {
 	rack::midi::Message msg;
-	while (midiInput.tryPop(&msg, frame)) {
-		uint8_t status = msg.getStatus();
-		MessageEx m = MessageEx(msg);
-		switch (status) {
-			case 0x9:   // note on
-				m.type = MessageEx::Type::NOTE_ON;
-				notify(m);
-				break;
-			case 0x8:   // note off
-				m.type = MessageEx::Type::NOTE_OFF;
-				notify(m);
-				break;
-			case 0xa:   // key pressure
-				m.type = MessageEx::Type::KEY_PRESSURE;
-				notify(m);
-				break;
-			case 0xb:   // cc
-				m.type = MessageEx::Type::CC;
-				notify(m);
-				processCc(msg); // extended CC handling
-				break;
-			case 0xc:   // program change
-				m.type = MessageEx::Type::PROGRAM_CHANGE;
-				notify(m);
-				break;
-			case 0xd:   // channel pressure
-				m.type = MessageEx::Type::CHANNEL_PRESSURE;
-				notify(m);
-				break;
-			case 0xe:   // pitch wheel
-				m.type = MessageEx::Type::PITCH_BEND;
-				m.extraValue = ((uint16_t)msg.getValue() << 7) | msg.getNote();
-				notify(m);
-				break;
-			case 0xf: { // system
-				uint8_t sys = msg.getChannel();
-				switch (sys) {
-					case 0x0: // sysex
-						m.type = MessageEx::Type::SYSEX;
-						notify(m);
-						break;
-					case 0x2: // song pointer
-						m.type = MessageEx::Type::SONG_POINTER;
-						m.extraValue = ((uint16_t)msg.getValue() << 7) | msg.getNote();
-						notify(m);
-						break;
-					case 0x3: // song select
-						m.type = MessageEx::Type::SONG_SELECT;
-						notify(m);
-						break;
-					case 0x8: // timing clock
-						m.type = MessageEx::Type::CLOCK;
-						notify(m);
-						break;
-					case 0xa: // start
-						m.type = MessageEx::Type::START;
-						notify(m);
-						break;
-					case 0xb: // continue
-						m.type = MessageEx::Type::CONTINUE;
-						notify(m); 
-						break;
-					case 0xc: // stop
-						m.type = MessageEx::Type::STOP;
-						notify(m);
-						break;
-					case 0xf: // reset
-						m.type = MessageEx::Type::RESET;
-						notify(m);
-						break;
-					default:
-						break;
-				}
-				break;
-			}
-			default:
-				break;
-		}
+	while (input->tryPop(&msg, frame)) {
+		processMessage(msg);
 	}
+}
+
+void MidiProcessor::processMessage(const rack::midi::Message& msg) {
+	uint8_t status = msg.getStatus();
+	MessageEx m = MessageEx(msg);
+	switch (status) {
+		case 0x9:   // note on
+			m.type = MessageEx::Type::NOTE_ON;
+			notify(m);
+			break;
+		case 0x8:   // note off
+			m.type = MessageEx::Type::NOTE_OFF;
+			notify(m);
+			break;
+		case 0xa:   // key pressure
+			m.type = MessageEx::Type::KEY_PRESSURE;
+			notify(m);
+			break;
+		case 0xb:   // cc
+			m.type = MessageEx::Type::CC;
+			// Must be queried before processCc() below, which mutates the state
+			// it reads: for CC 6/38 the question is whether a parameter was
+			// active when this message arrived, not after it landed. Do not
+			// reorder these -- the raw CC deliberately notifies before its
+			// assembled counterpart.
+			m.isComponent = isComponentCc(msg);
+			notify(m);
+			processCc(msg); // extended CC handling
+			break;
+		case 0xc:   // program change
+			m.type = MessageEx::Type::PROGRAM_CHANGE;
+			notify(m);
+			break;
+		case 0xd:   // channel pressure
+			m.type = MessageEx::Type::CHANNEL_PRESSURE;
+			notify(m);
+			break;
+		case 0xe:   // pitch wheel
+			m.type = MessageEx::Type::PITCH_BEND;
+			m.extraValue = ((uint16_t)msg.getValue() << 7) | msg.getNote();
+			notify(m);
+			break;
+		case 0xf: { // system
+			uint8_t sys = msg.getChannel();
+			switch (sys) {
+				case 0x0: // sysex
+					m.type = MessageEx::Type::SYSEX;
+					notify(m);
+					break;
+				case 0x2: // song pointer
+					m.type = MessageEx::Type::SONG_POINTER;
+					m.extraValue = ((uint16_t)msg.getValue() << 7) | msg.getNote();
+					notify(m);
+					break;
+				case 0x3: // song select
+					m.type = MessageEx::Type::SONG_SELECT;
+					notify(m);
+					break;
+				case 0x8: // timing clock
+					m.type = MessageEx::Type::CLOCK;
+					notify(m);
+					break;
+				case 0xa: // start
+					m.type = MessageEx::Type::START;
+					notify(m);
+					break;
+				case 0xb: // continue
+					m.type = MessageEx::Type::CONTINUE;
+					notify(m); 
+					break;
+				case 0xc: // stop
+					m.type = MessageEx::Type::STOP;
+					notify(m);
+					break;
+				case 0xf: // reset
+					m.type = MessageEx::Type::RESET;
+					notify(m);
+					break;
+				default:
+					break;
+			}
+			break;
+		}
+		default:
+			break;
+	}
+}
+
+bool MidiProcessor::isComponentCc(const rack::midi::Message& msg) const {
+	uint8_t ch = msg.getChannel();
+	uint8_t cc = msg.getNote();
+
+	// Parameter select is always a component, whether or not it completes a pair.
+	if (cc == 98 || cc == 99 || cc == 100 || cc == 101) return true;
+	// Data entry only counts while a parameter is actually armed; otherwise
+	// CC 6/38 are ordinary controllers.
+	if ((cc == 6 || cc == 38) && (ccNrpnParam[ch] >= 0 || ccRpnParam[ch] >= 0)) return true;
+	// 14-bit halves count only once the pair is being tracked -- see the note on
+	// MessageEx::isComponent about the first MSB.
+	if (cc < 32) return cc14bitMsb[ch][cc] >= 0;
+	if (cc < 64) return cc14bitMsb[ch][cc - 32] >= 0;
+	return false;
 }
 
 void MidiProcessor::processCc(const rack::midi::Message& msg) {
 	uint8_t ch = msg.getChannel();
 	uint8_t cc = msg.getNote();
-	int8_t value = msg.bytes[2];
+	uint8_t value = msg.bytes[2];
 
 	// RPN selection: CC 101 (MSB) sets pending MSB, CC 100 (LSB) completes selection
 	if (cc == 101) {

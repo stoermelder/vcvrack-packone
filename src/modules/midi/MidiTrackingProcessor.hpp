@@ -42,6 +42,10 @@ struct MidiTrackingProcessor : MidiProcessorHandler {
 		return midiProcessor.getInput();
 	}
 
+	void reset() {
+		midiProcessor.reset();
+	}
+
 	void processBypass(int64_t frame) {
 		midiProcessor.processBypass(frame);
 	}
@@ -118,6 +122,19 @@ struct MidiTrackingProcessor : MidiProcessorHandler {
 	}
 
 	void setMap(MidiTrackingType type, uint16_t mapId, uint16_t param) {
+		// Guard against out-of-range values from a corrupt preset: mapId indexes
+		// the revMap array and param indexes the 128-element cc/note vectors.
+		if (mapId >= MAPCOUNT) return;
+		switch (type) {
+			case MidiTrackingType::CC:
+				if (param >= mapCc.size()) return;
+				break;
+			case MidiTrackingType::NOTE:
+				if (param >= mapNote.size()) return;
+				break;
+			default:
+				break;
+		}
 		revMap[mapId].type = type;
 		revMap[mapId].param = param;
 		switch (type) {
@@ -205,6 +222,7 @@ struct MidiTrackingProcessor : MidiProcessorHandler {
 		json_t* mapJ;
 		size_t i;
 		json_array_foreach(mapsJ, i, mapJ) {
+			if (i >= MAPCOUNT) break;
 			MidiTrackingType type = (MidiTrackingType)json_integer_value(json_object_get(mapJ, "type"));
 			uint16_t param = json_integer_value(json_object_get(mapJ, "param"));
 			setMap(type, i, param);
