@@ -2059,9 +2059,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		
 		if (argc < 1) return jsThrow(ctx, "trig.sendTipsy: requires data argument");
 		
-		// Handle both string and ArrayBuffer for data
+		// Handle both string and ArrayBuffer for data. A string's C buffer must
+		// stay alive until sendTipsyOut() copies it (see the free below).
 		const unsigned char* data = nullptr;
 		uint32_t dataLen = 0;
+		bool dataIsString = false;
 		
 		if (JS_IsString(argv[0])) {
 			size_t len;
@@ -2071,7 +2073,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			}
 			data = reinterpret_cast<const unsigned char*>(str);
 			dataLen = static_cast<uint32_t>(len);
-			JS_FreeCString(ctx, str);
+			dataIsString = true;
 		}
 		else {
 			// JS_GetArrayBuffer returns NULL when the value is not an ArrayBuffer
@@ -2088,12 +2090,18 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		const char* mimeDyn = nullptr;
 		if (argc >= 2) {
 			mimeDyn = JS_ToCString(ctx, argv[1]);
-			if (!mimeDyn) return jsThrow(ctx, "trig.sendTipsy: invalid mimeType");
+			if (!mimeDyn) {
+				if (dataIsString) JS_FreeCString(ctx, reinterpret_cast<const char*>(data));
+				return jsThrow(ctx, "trig.sendTipsy: invalid mimeType");
+			}
 			mimeType = mimeDyn;
 		}
 		
 		auto* e = getEngine(ctx);
 		bool success = e->handler->sendTipsyOut(mimeType, data, dataLen);
+		// sendTipsyOut() copies both payloads synchronously; free the C strings
+		// now that they're no longer needed.
+		if (dataIsString) JS_FreeCString(ctx, reinterpret_cast<const char*>(data));
 		if (mimeDyn) JS_FreeCString(ctx, mimeDyn);
 		
 		if (!success) {

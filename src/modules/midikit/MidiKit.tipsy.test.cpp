@@ -88,6 +88,42 @@ end
 	Test::destroyModule(m);
 }
 
+// The string path used to JS_FreeCString() the data buffer before
+// sendTipsyOut() copied it (audit #1: use-after-free). Passing an explicit
+// mimeType makes JS_ToCString allocate between the free and the copy, so the
+// bug would corrupt the queued payload — check the queued bytes directly,
+// including an embedded NUL.
+TEST_CASE("trig.sendTipsy string payload arrives intact in the out-queue", "[MidiKit][Tipsy]") {
+	const char* JS_SCRIPT = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(midiPort, msg) {
+	trig.sendTipsy("binary\x00payload", "application/octet-stream");
+};
+)";
+
+	MidiKitModule* m = createModule();
+	m->loadScript(JS_SCRIPT);
+	REQUIRE(m->activeEngine != nullptr);
+
+	// loadScript() queues a discard sentinel; consume it so the queue starts empty.
+	m->processTipsyOutput(0);
+	REQUIRE(m->tipsyOutQueue.empty());
+
+	midi::Message in = noteOn(1, 60, 100);
+	m->activeEngine->processInMessage(0, in);
+	m->activeEngine->process(); // SyncTaskWorker: runs midi.onMessage inline
+
+	REQUIRE(m->tipsyOutQueue.size() == 1);
+	auto p = m->tipsyOutQueue.shift();
+	// The 14-byte payload (with embedded NUL) and 24-byte mime were copied intact.
+	REQUIRE(p.dataSize == 14);
+	REQUIRE(std::string(reinterpret_cast<const char*>(p.data), p.dataSize) == std::string("binary\0payload", 14));
+	REQUIRE(p.mimeSize == 24);
+	REQUIRE(std::string(p.mime, p.mimeSize) == "application/octet-stream");
+	Test::destroyModule(m);
+}
+
 TEST_CASE("sendTipsy rejects invalid arguments", "[MidiKit][Tipsy]") {
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
