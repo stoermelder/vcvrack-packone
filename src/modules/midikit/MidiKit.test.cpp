@@ -434,7 +434,12 @@ struct RecordingEngine : MidiScriptEngine {
 	bool testScript(const std::string& script) override { return false; }
 	void closeStateOnWorker() override { }
 	bool captureConfig(std::string& out) override { return false; }
-	void processInMessage(int midiPort, midi::Message& msg) override { }
+	// Everything the module handed over, in order, so tests can assert on the
+	// decode result the audio thread produced.
+	std::vector<StoermelderPackOne::MidiScript::QueuedMessage> received;
+	void processInMessage(int midiPort, const StoermelderPackOne::MidiScript::QueuedMessage& msg) override {
+		received.push_back(msg);
+	}
 	void processInTick(int trigPort, uint8_t channel) override { }
 	void dispatchMidiMessage(int midiPort, midi::Message& msg) override { }
 	void dispatchTrigger(int trigPort, uint8_t channel) override { }
@@ -1192,5 +1197,117 @@ TEST_CASE("appendExampleItems shows 'None found' when nothing matches", "[MidiKi
 	delete menu2;
 
 	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
+// ─── MidiProcessor integration ───────────────────────────────────────────────
+// The module decodes the incoming stream through MidiProcessor before it
+// reaches the engine, so NRPN/RPN/14-bit CC assembly happens once on the audio
+// thread rather than in every script.
+
+// Feeds raw MIDI into the module's real input queue and runs process() enough
+// times to clear the divider (8), so the queue is actually pumped.
+static void feedMidi(MidiKitModule* m, std::vector<midi::Message> msgs, int64_t& frame) {
+	for (auto& msg : msgs) m->midiInput.onMessage(msg);
+	for (int i = 0; i < 9; i++) m->process(Test::makeProcessArgs(frame++));
+}
+
+static midi::Message cc(uint8_t ch, uint8_t num, uint8_t value) {
+	return Test::makeMidiMessage(0xb, ch, num, value);
+}
+
+TEST_CASE("Incoming MIDI is decoded before reaching the engine", "[MidiKit][MidiProcessor]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+	RecordingEngine eng(m);
+	m->activeEngine = &eng;
+	int64_t frame = 1;
+
+	SECTION("A plain CC arrives as an undecoded message") {
+		feedMidi(m, { cc(0, 7, 64) }, frame);
+
+		REQUIRE(eng.received.size() == 1);
+		REQUIRE(eng.received[0].type == StoermelderPackOne::MessageEx::Type::CC);
+		REQUIRE(eng.received[0].msg.getNote() == 7);
+		REQUIRE(eng.received[0].msg.getValue() == 64);
+		// Not part of an extended message, so no decode result rides along.
+		REQUIRE(eng.received[0].isComponent == false);
+		REQUIRE(eng.received[0].paramNumber == -1);
+		REQUIRE(eng.received[0].extraValue == -1);
+	}
+
+	SECTION("A note is passed through untouched") {
+		feedMidi(m, { Test::makeMidiMessage(0x9, 0, 60, 100) }, frame);
+
+		REQUIRE(eng.received.size() == 1);
+		REQUIRE(eng.received[0].type == StoermelderPackOne::MessageEx::Type::NOTE_ON);
+		REQUIRE(eng.received[0].msg.getNote() == 60);
+	}
+
+	SECTION("NRPN components are flagged, and the assembled event is not queued") {
+		// Four CCs make one NRPN. Every one of them still reaches the engine as a
+		// raw CC -- this integration must not change what onMessage sees -- but
+		// each is marked as belonging to an extended message.
+		feedMidi(m, { cc(0, 99, 4), cc(0, 98, 5), cc(0, 6, 20), cc(0, 38, 2) }, frame);
+
+		// Exactly four: the assembled NRPN events are dropped rather than queued,
+		// so onMessage still fires once per real MIDI message.
+		REQUIRE(eng.received.size() == 4);
+		for (auto& q : eng.received) {
+			CATCH_INFO("cc=" << int(q.msg.getNote()));
+			REQUIRE(q.type == StoermelderPackOne::MessageEx::Type::CC);
+			REQUIRE(q.isComponent == true);
+		}
+	}
+
+	SECTION("A 14-bit CC pair is flagged from the second message on") {
+		// The decoder cannot know a pair is coming, so the first MSB escapes
+		// unflagged; the LSB completes a tracked pair and is flagged.
+		feedMidi(m, { cc(0, 5, 3), cc(0, 32 + 5, 10) }, frame);
+
+		REQUIRE(eng.received.size() == 2);
+		REQUIRE(eng.received[0].isComponent == false);
+		REQUIRE(eng.received[1].isComponent == true);
+	}
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Decoder state is cleared on reset and script load", "[MidiKit][MidiProcessor]") {
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+	RecordingEngine eng(m);
+	m->activeEngine = &eng;
+	int64_t frame = 1;
+
+	// Arm an NRPN parameter, leaving the decoder mid-sequence.
+	feedMidi(m, { cc(0, 99, 4), cc(0, 98, 5) }, frame);
+	REQUIRE(m->midiProcessor.ccNrpnParam[0] == (4 * 128 + 5));
+
+	SECTION("onReset() drops it") {
+		m->onReset();
+		REQUIRE(m->midiProcessor.ccNrpnParam[0] == -1);
+	}
+
+	SECTION("loadScript() drops it, so a new script inherits no half-read state") {
+		// Detach the recorder first: loadScript() closes the outgoing engine, and
+		// the real Lua engine it installs must be the one teardown sees. Leaving a
+		// stack-allocated RecordingEngine as activeEngine across the switch calls
+		// virtuals on it during module destruction, after it has gone out of scope.
+		m->activeEngine = nullptr;
+		m->loadScript(LUA_SCRIPT);
+		REQUIRE(m->midiProcessor.ccNrpnParam[0] == -1);
+	}
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("The processor decodes the module's own queue, not a private one", "[MidiKit][MidiProcessor]") {
+	// The queue is injected rather than owned, so midiInput keeps its widget
+	// binding and JSON. Pins that wiring: no separate queue was allocated, and
+	// getInput() resolves to the module's member.
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+
+	REQUIRE(m->midiProcessor.ownedInput == nullptr);
+	REQUIRE(&m->midiProcessor.getInput() == &m->midiInput);
+
 	Test::destroyModule(m);
 }

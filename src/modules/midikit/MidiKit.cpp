@@ -6,6 +6,7 @@
 #include "../../components/LedTextField.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
+#include "../midi/MidiProcessor.hpp"
 #include "tipsy-encoder/include/tipsy/tipsy.h"
 #include <osdialog.h>
 #include <fstream>
@@ -141,7 +142,7 @@ static std::shared_ptr<ITaskWorker> defaultWorker() {
 	return shared.lock();
 }
 
-struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
+struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcessorHandler {
 	enum ParamIds {
 		ENUMS(PARAM, 4),
 		NUM_PARAMS
@@ -164,6 +165,18 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 
 	/** [Stored to Json] */
 	midi::InputQueue midiInput;
+
+	// Decodes the incoming stream into semantic events (NRPN/RPN/14-bit CC
+	// assembly) before it reaches the script. The queue is injected rather than
+	// owned: midiInput stays the module's, keeping its widget binding and JSON
+	// exactly as they were. MUST stay declared after midiInput so destruction
+	// order keeps the queue alive for the processor's whole lifetime.
+	//
+	// Only processMessage() is used -- never process(): the module pumps the
+	// queue itself under processDivider, and each decoded message has to be
+	// queued for the worker thread rather than dispatched inline.
+	MidiProcessor midiProcessor{&midiInput};
+
 	/** [Stored to Json] */
 	MidiOutput midiOutput;
 	/** [Stored to Json] */
@@ -555,6 +568,10 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 		}
 
 		processDivider.setDivision(8);
+		// Routes decoded messages into processMidi() below. Without this the
+		// processor decodes into an empty handler list and nothing reaches the
+		// engine at all.
+		midiProcessor.subscribe(this);
 		seLua.setWorker(worker);
 		seQuickJs.setWorker(worker);
 		onReset();
@@ -586,6 +603,10 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 
 	void onReset() override {
 		midiInput.reset();
+		// Emptying the queue leaves the stream discontinuous, so drop any
+		// half-received NRPN/RPN/14-bit CC state with it: a parameter still armed
+		// from before the reset would capture the next data entry that arrives.
+		midiProcessor.reset();
 		midiOutput.reset();
 		sample = 0;
 		// No script claims the trigger input until its trig.enableIn() runs.
@@ -619,6 +640,45 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		sampleRate = e.sampleRate;
+	}
+
+	// MidiProcessorHandler. Called synchronously from midiProcessor.processMessage()
+	// on the AUDIO thread, so it stays a pure enqueue -- script code runs on the
+	// shared worker and must never be entered from here.
+	//
+	// A CC belonging to an extended message is notified TWICE: once as Type::CC
+	// (with isComponent set) and again as NRPN/RPN/CC_14BIT once assembled. Only
+	// the raw forms are queued for now, so every queued entry still corresponds
+	// to exactly one midi.onMessage call and scripts see precisely what they saw
+	// before this change. Queuing the assembled events too would double-fire
+	// onMessage for every NRPN component.
+	//
+	// The assembled events become useful once the script API gains onNrpn/onRpn/
+	// onCc14bit; the dispatch and consumption rules land with those callbacks.
+	//
+	// Returning false keeps the message available to any other handler.
+	bool processMidi(const MessageEx& m) override {
+		if (!activeEngine) return false;
+
+		switch (m.type) {
+			case MessageEx::Type::NRPN:
+			case MessageEx::Type::RPN:
+			case MessageEx::Type::CC_14BIT:
+				// Assembled: nothing consumes these yet. Dropping rather than
+				// queuing keeps onMessage firing once per real MIDI message.
+				return false;
+			default:
+				break;
+		}
+
+		MidiScript::QueuedMessage q;
+		q.msg = m.msg;
+		q.type = m.type;
+		q.paramNumber = m.paramNumber;
+		q.extraValue = m.extraValue;
+		q.isComponent = m.isComponent;
+		activeEngine->processInMessage(0, q);
+		return false;
 	}
 
 	void processBypass(const ProcessArgs& args) override {
@@ -670,9 +730,13 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 
 		if (processDivider.process()) {
 			if (activeEngine) {
+				// Pumped here rather than via midiProcessor.process() because each
+				// decoded message must be queued for the worker thread, not
+				// dispatched inline: processMessage() notifies processMidi() below
+				// synchronously, and script code never runs on the audio thread.
 				midi::Message msg;
 				while (midiInput.tryPop(&msg, args.frame)) {
-					activeEngine->processInMessage(0, msg);
+					midiProcessor.processMessage(msg);
 				}
 
 				activeEngine->process();
@@ -782,6 +846,10 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler {
 	void loadScript(std::string s, std::string configJson = "") {
 		script = s;
 		sample = 0;
+		// The incoming script inherits no half-received NRPN/RPN/14-bit CC state
+		// from the previous one: assembly belongs to the script's view of the
+		// stream, not to the module.
+		midiProcessor.reset();
 		for (int i = 0; i < PORT_MAX_CHANNELS; i++) inputTriggerTick[i] = 0;
 		// Forgets every trig.enableIn()d channel BEFORE the new script loads, so
 		// it starts with all callbacks disabled.

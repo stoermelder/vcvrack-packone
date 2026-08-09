@@ -420,7 +420,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return parsed;
 	}
 
-	void processInMessage(int midiPort, Message& msg) override {
+	void processInMessage(int midiPort, const MidiScript::QueuedMessage& msg) override {
 		if (ctx) {
 			midiInQueue.push(std::make_tuple(midiPort, msg));
 		}

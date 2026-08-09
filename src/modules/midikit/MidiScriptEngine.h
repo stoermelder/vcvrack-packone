@@ -1,6 +1,7 @@
 #pragma once
 #include "../../plugin.hpp"
 #include "../../utils/TaskWorker.hpp"
+#include "../midi/MidiProcessor.hpp"
 #include <atomic>
 #include <chrono>
 #include <future>
@@ -10,6 +11,7 @@ namespace StoermelderPackOne {
 namespace MidiScript {
 
 using rack::midi::Message;
+using MessageEx = StoermelderPackOne::MessageEx;
 
 
 // Caps on Tipsy payloads: queue entries are fixed-size PODs so the audio
@@ -31,6 +33,35 @@ struct TipsyMessage {
 	uint16_t dataSize;
 	char mime[tipsyMaxMimeTypeSize];
 	unsigned char data[tipsyMaxPayloadLength];
+};
+
+
+// One inbound MIDI message on its way from the audio thread to the worker.
+//
+// Carries the decode result alongside the raw message because the assembled
+// forms cannot be expressed by rack::midi::Message alone: an NRPN/RPN parameter
+// number and a 14-bit value do not fit its 7-bit data bytes. Together these four
+// fields reconstruct a StoermelderPackOne::MessageEx exactly — it holds nothing
+// else — so the worker can rebuild one without the module keeping decoder state
+// of its own.
+//
+// A plain (unassembled) message uses type CC/NOTE_ON/… with both extras at -1,
+// which is what MessageEx itself defaults them to.
+struct QueuedMessage {
+	Message msg;
+	MessageEx::Type type = MessageEx::Type::RESET;
+	int16_t paramNumber = -1;
+	int16_t extraValue = -1;
+	// Whether this CC is part of an extended message (see MessageEx::isComponent).
+	// Set by the module on the audio thread; the worker uses it to decide whether
+	// the script should see the raw CC as well as the assembled event.
+	bool isComponent = false;
+
+	QueuedMessage() {}
+	// Deliberately implicit: a bare Message IS an undecoded QueuedMessage, and
+	// callers that inject raw MIDI (tests, and any path with no decoder in front
+	// of it) should not have to spell out four defaulted fields to say so.
+	QueuedMessage(const Message& msg) : msg(msg) {}
 };
 
 
@@ -139,7 +170,7 @@ struct MidiScriptEngine {
 		: handler(handler), inputCount(inputCount), inputTrigCount(inputTrigCount), outputTrigCount(outputTrigCount), paramCount(paramCount), midiInputCount(midiInputCount), midiOutputCount(midiOutputCount) {}
 
 	std::shared_ptr<ITaskWorker> taskWorker;
-	dsp::RingBuffer<std::tuple<int, Message>, 128> midiInQueue;
+	dsp::RingBuffer<std::tuple<int, QueuedMessage>, 128> midiInQueue;
 	// (trigPort, channel) — the trigger input is polyphonic, so each tick
 	// carries the channel that fired.
 	dsp::RingBuffer<std::tuple<int, uint8_t>, 4> tickInQueue;
@@ -261,8 +292,10 @@ struct MidiScriptEngine {
 	// Callable from any thread; implementations dispatch via runSync().
 	virtual bool captureConfig(std::string& out) = 0;
 
-	// Main interface for message processing
-	virtual void processInMessage(int midiPort, Message& msg) = 0;
+	// Main interface for message processing. Takes the decoded form so the
+	// assembly the module already performed (NRPN/RPN/14-bit CC) travels with
+	// the raw message instead of being redone on the worker.
+	virtual void processInMessage(int midiPort, const QueuedMessage& msg) = 0;
 	virtual void processInTick(int trigPort, uint8_t channel) = 0;
 
 	// Decoded Tipsy messages awaiting dispatch. Engine-owned, like midiInQueue:
@@ -280,8 +313,11 @@ struct MidiScriptEngine {
 				while (!midiInQueue.empty()) {
 					auto t = midiInQueue.shift();
 					int midiPort = std::get<0>(t);
-					Message msg = std::get<1>(t);
-					dispatchMidiMessage(midiPort, msg);
+					QueuedMessage q = std::get<1>(t);
+					// Only the raw message reaches the script today; the decode
+					// result rides along in `q` for the NRPN/14-bit callbacks to
+					// use once the script API gains them.
+					dispatchMidiMessage(midiPort, q.msg);
 				}
 				while (!tickInQueue.empty()) {
 					auto t = tickInQueue.shift();
