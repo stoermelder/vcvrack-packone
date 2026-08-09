@@ -1,15 +1,15 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine QuickJs
+ * @engine QuickJs@v1
  * @author stoermelder
  * @description Duplicates all CC messages on channel 1 on channel 2
  */
 
-rack.onMidiMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg) {
     if (midi.getChannel(msg) === 1) {
         if (midi.isCc(msg)) {
             let msg2 = midi.create();
-            midi.setCc(msg2, 2, midi.getNote(msg), midi.getValue(msg));
+            midi.setCc(msg2, 2, midi.getControl(msg), midi.getValue(msg));
             midiOut.send(msg2);
         }
     }

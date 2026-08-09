@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine QuickJs
+ * @engine QuickJs@v1
  * @author stoermelder
  * @description Arpeggiator clocked by the trigger input, with clock division, octave range, note length and playmode params
  */
@@ -34,17 +34,11 @@
 
 // Configuration - change these values as needed
 let config = {
-    // Trigger input driving the arp (1-based)
-    trigPort: 1,
-
     // Only arpeggiate notes on this channel; 0 = every channel
     channel: 0,
 
     // Output channel for arpeggiated notes; 0 = same as input note's channel
-    outChannel: 0,
-
-    // Show the currently playing step in the panel overlay
-    showOverlay: true
+    outChannel: 0
 };
 
 // Clock division choices, in trigger ticks per arp step (fewer ticks = faster)
@@ -73,6 +67,11 @@ param.enable(1);
 param.enable(2);
 param.enable(3);
 param.enable(4);
+
+// Clock the arp from trigger channel 1 only: trig.onTrigger fires per poly
+// channel, and trig.enableIn() gates it — enabling just channel 1 means the
+// other channels are ignored.
+trig.enableIn(1, 1);
 
 param.getName = function(i) {
     if (i === 1) return "Clock division";
@@ -103,7 +102,7 @@ function playmodeIndex() {
 param.getValueFormat = function(i) {
     if (i === 1) return DIVISIONS[divisionIndex()] + " ticks/step";
     if (i === 2) return octaveRange() + " oct";
-    if (i === 3) return number.toFixed(param.getValue(3) * 100, 0) + " %";
+    if (i === 3) return (param.getValue(3) * 100).toFixed(0) + " %";
     if (i === 4) return PLAYMODES[playmodeIndex()];
     return number.toString(param.getValue(i));
 };
@@ -160,14 +159,46 @@ function releaseSounding() {
 
 rack.onLoad = function() {
     rack.log("Arpeggiator initialized");
-    rack.log("Trigger input: ", config.trigPort);
 };
 
 rack.onUnload = function() {
     releaseSounding();
 };
 
-rack.onMidiMessage = function(midiPort, msg) {
+// Context menu - right-click the module to change these settings live.
+// Each menu mirrors a `config` value above; onChange applies the choice.
+let CHANNEL_LABELS = ["All"];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+let OUT_CHANNEL_LABELS = ["Same as input"];
+for (let c = 1; c <= 16; c++) OUT_CHANNEL_LABELS[OUT_CHANNEL_LABELS.length] = String(c);
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Input channel",
+    options: CHANNEL_LABELS,
+    onGetValue: function() {
+        return config.channel;
+    },
+    onChange: function(idx) {
+        config.channel = idx;
+        rack.log("Input channel: ", CHANNEL_LABELS[idx]);
+    }
+});
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Output channel",
+    options: OUT_CHANNEL_LABELS,
+    onGetValue: function() {
+        return config.outChannel;
+    },
+    onChange: function(idx) {
+        config.outChannel = idx;
+        rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx]);
+    }
+});
+
+midi.onMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     if (midi.isNoteOn(msg) && matchesChannel(ch) && midi.getValue(msg) > 0) {
@@ -206,9 +237,7 @@ rack.onMidiMessage = function(midiPort, msg) {
     midiOut.send(msg);
 };
 
-rack.onTrigger = function(trigPort) {
-    if (trigPort !== config.trigPort) return;
-
+trig.onTrigger = function(trigPort, channel) {
     let division = DIVISIONS[divisionIndex()];
     state.tickCount++;
     if (state.tickCount < division) return;
@@ -231,14 +260,10 @@ rack.onTrigger = function(trigPort) {
 
     let off = midi.create();
     midi.setNoteOff(off, ch, note);
-    midiOut.sendAfterTrigger(off, config.trigPort, lengthTicks);
+    midiOut.sendAfterTrigger(off, lengthTicks);
 
     state.soundingNote = note;
     state.soundingChannel = ch;
-
-    if (config.showOverlay) {
-        rack.overlay("Arp " + PLAYMODES[playmodeIndex()], "note " + note + " (" + (state.step + 1) + "/" + state.pattern.length + ")");
-    }
 
     state.step = state.step + 1;
     if (state.step >= state.pattern.length) state.step = 0;

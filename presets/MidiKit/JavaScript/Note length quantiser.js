@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine QuickJs
+ * @engine QuickJs@v1
  * @author stoermelder
  * @description Replaces every note's held length with a fixed number of clock ticks, so all notes end on the grid
  */
@@ -16,8 +16,8 @@
 // midiOut.sendAfterTrigger(). Every note then lasts the same musical duration
 // regardless of how it was played.
 //
-// Requires a clock on the module's trigger input (config.trigPort): the length
-// is counted in ticks of that input, not in milliseconds, so it follows tempo.
+// Requires a clock on the module's trigger input: the length is counted in
+// ticks of that input, not in milliseconds, so it follows tempo.
 // Feed the same clock that drives the rest of the patch. With a 24 ppqn MIDI
 // clock routed to the trigger input:
 //
@@ -35,9 +35,6 @@ let config = {
     // Fixed note length, in ticks of the trigger input's clock
     lengthTicks: 12,
 
-    // Trigger input the length is counted on (1-based)
-    trigPort: 1,
-
     // Only quantise this channel; set to 0 to quantise every channel
     channel: 0,
 
@@ -54,12 +51,17 @@ let state = {
     sounding: []
 };
 
+// The scheduled Note-Offs are counted in ticks of the trigger input's clock,
+// so that clock must be enabled — without trig.enableIn() the module does not
+// process the trigger input at all and the scheduled sends never fire.
+trig.enableIn(1, 1);
+
 rack.onLoad = function() {
     for (let n = 0; n < 128; n++) {
         state.sounding[n] = false;
     }
     rack.log("Note length quantiser initialized");
-    rack.log("Length: ", config.lengthTicks, " ticks on trigger input ", config.trigPort);
+    rack.log("Length: ", config.lengthTicks, " ticks");
     if (config.channel === 0) {
         rack.log("Channel: all");
     }
@@ -95,10 +97,72 @@ function matchesChannel(ch) {
 function scheduleNoteOff(ch, note) {
     let off = midi.create();
     midi.setNoteOff(off, ch, note);
-    midiOut.sendAfterTrigger(off, config.trigPort, config.lengthTicks);
+    midiOut.sendAfterTrigger(off, config.lengthTicks);
 };
 
-rack.onMidiMessage = function(midiPort, msg) {
+// Context menu - right-click the module to change these settings live.
+// Each menu mirrors a `config` value above; onChange applies the choice.
+let LENGTH_TICKS = [6, 12, 24, 48];
+let LENGTH_LABELS = ["6 (16th)", "12 (8th)", "24 (quarter)", "48 (half)"];
+let CHANNEL_LABELS = ["All"];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
+function lengthTicksIndex() {
+    for (let i = 0; i < LENGTH_TICKS.length; i++) {
+        if (LENGTH_TICKS[i] === config.lengthTicks) return i;
+    }
+    return 0;
+};
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Note length",
+    options: LENGTH_LABELS,
+    onGetValue: function() {
+        return lengthTicksIndex();
+    },
+    onChange: function(idx) {
+        config.lengthTicks = LENGTH_TICKS[idx];
+        rack.log("Length: ", config.lengthTicks, " ticks");
+    }
+});
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Channel",
+    options: CHANNEL_LABELS,
+    onGetValue: function() {
+        return config.channel;
+    },
+    onChange: function(idx) {
+        config.channel = idx;
+        rack.log("Channel: ", CHANNEL_LABELS[idx]);
+    }
+});
+
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Pass through other messages",
+    onGetValue: function() {
+        return config.passThroughOther;
+    },
+    onChange: function(checked) {
+        config.passThroughOther = checked;
+    }
+});
+
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Log quantised notes",
+    onGetValue: function() {
+        return config.verbose;
+    },
+    onChange: function(checked) {
+        config.verbose = checked;
+    }
+});
+
+midi.onMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     if (midi.isNoteOn(msg) && matchesChannel(ch)) {

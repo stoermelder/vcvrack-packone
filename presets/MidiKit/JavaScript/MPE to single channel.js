@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine QuickJs
+ * @engine QuickJs@v1
  * @author stoermelder
  * @description Flattens MPE (one note per member channel) to a single channel, folding per-note pitch bend into note numbers
  */
@@ -117,7 +117,47 @@ function isActiveChannel(ch) {
     return ch === state.lastChannel;
 };
 
-rack.onMidiMessage = function(midiPort, msg) {
+// Context menu - right-click the module to change these settings live.
+// Each menu mirrors a `config` value above; onChange applies the choice.
+let CHANNEL_LABELS = [];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Output channel",
+    options: CHANNEL_LABELS,
+    onGetValue: function() {
+        return config.outChannel - 1;
+    },
+    onChange: function(idx) {
+        config.outChannel = idx + 1;
+        rack.log("Output channel: ", config.outChannel);
+    }
+});
+
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Forward channel pressure",
+    onGetValue: function() {
+        return config.forwardPressure;
+    },
+    onChange: function(checked) {
+        config.forwardPressure = checked;
+    }
+});
+
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Forward CC 74 (timbre)",
+    onGetValue: function() {
+        return config.forwardTimbre;
+    },
+    onChange: function(checked) {
+        config.forwardTimbre = checked;
+    }
+});
+
+midi.onMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
     // Master channel and anything outside the zone passes through untouched
@@ -221,7 +261,7 @@ rack.onMidiMessage = function(midiPort, msg) {
         return;
     }
 
-    if (midi.isCc(msg) && midi.getNote(msg) === 74) {
+    if (midi.isCc(msg) && midi.getControl(msg) === 74) {
         if (!config.forwardTimbre || !isActiveChannel(ch)) return;
         let out = midi.create();
         midi.setCc(out, config.outChannel, 74, midi.getValue(msg));
@@ -232,7 +272,7 @@ rack.onMidiMessage = function(midiPort, msg) {
     // Any other CC on a member channel is forwarded on the output channel
     if (midi.isCc(msg)) {
         let out = midi.create();
-        midi.setCc(out, config.outChannel, midi.getNote(msg), midi.getValue(msg));
+        midi.setCc(out, config.outChannel, midi.getControl(msg), midi.getValue(msg));
         midiOut.send(out);
     }
 };

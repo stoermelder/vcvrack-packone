@@ -6,9 +6,12 @@
 #include "../../components/LedTextField.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
+#include "../midi/MidiProcessor.hpp"
+#include "tipsy-encoder/include/tipsy/tipsy.h"
 #include <osdialog.h>
 #include <fstream>
 #include <queue>
+#include <atomic>
 
 namespace StoermelderPackOne {
 namespace MidiKit {
@@ -38,7 +41,10 @@ struct MidiOutput : midi::Output {
 	};
 
 	std::priority_queue<FrameSchedule> frameQueue;
-	std::priority_queue<TickSchedule> tickQueue;
+	// One tick queue per polyphonic channel: sendAfterTrigger() schedules a
+	// message against a specific channel's trigger clock, and only that
+	// channel's clock advancing can flush it.
+	std::priority_queue<TickSchedule> tickQueue[PORT_MAX_CHANNELS];
 
 	std::vector<int> getChannels() override {
 		std::vector<int> channels;
@@ -51,16 +57,18 @@ struct MidiOutput : midi::Output {
 	void reset() {
 		Output::reset();
 		while (!frameQueue.empty()) frameQueue.pop();
-		while (!tickQueue.empty()) tickQueue.pop();
+		for (int i = 0; i < PORT_MAX_CHANNELS; i++) {
+			while (!tickQueue[i].empty()) tickQueue[i].pop();
+		}
 		channel = -1;
 	}
 
-	void send(midi::Message& msg, uint64_t tick) {
+	void send(midi::Message& msg, uint8_t channel, uint64_t tick) {
 		if (tick != 0) {
 			TickSchedule s;
 			s.msg = msg;
 			s.tick = tick;
-			tickQueue.push(s);
+			tickQueue[channel < PORT_MAX_CHANNELS ? channel : 0].push(s);
 			return;
 		}
 
@@ -93,16 +101,20 @@ struct MidiOutput : midi::Output {
 		}
 	}
 
-	void processTick(uint64_t tick) {
+	void processTick(uint8_t channel, uint64_t tick) {
+		// Each channel's messages are only ever drained by that channel's own
+		// clock — a message scheduled against channel N must not fire on
+		// another channel's trigger, so its queue is touched only when N fires.
+		auto& q = tickQueue[channel < PORT_MAX_CHANNELS ? channel : 0];
 		while (true) {
-			if (tickQueue.size() == 0) return;
-			TickSchedule s = tickQueue.top();
+			if (q.size() == 0) return;
+			TickSchedule s = q.top();
 			// ">=" and not "==": process() calls processTick() before draining the
 			// engine's out-queue, so a script can schedule for a tick the counter has
 			// already consumed. With "==" such a message is never sent and, since the
 			// queue is ordered smallest-tick-first, it blocks every later one behind it.
 			if (tick >= s.tick) {
-				tickQueue.pop();
+				q.pop();
 				sendMessage(s.msg);
 			}
 			else {
@@ -130,7 +142,7 @@ static std::shared_ptr<ITaskWorker> defaultWorker() {
 	return shared.lock();
 }
 
-struct MidiKitModule : Module {
+struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcessorHandler {
 	enum ParamIds {
 		ENUMS(PARAM, 4),
 		NUM_PARAMS
@@ -153,10 +165,24 @@ struct MidiKitModule : Module {
 
 	/** [Stored to Json] */
 	midi::InputQueue midiInput;
+
+	// Decodes the incoming stream into semantic events (NRPN/RPN/14-bit CC
+	// assembly) before it reaches the script. The queue is injected rather than
+	// owned: midiInput stays the module's, keeping its widget binding and JSON
+	// exactly as they were. MUST stay declared after midiInput so destruction
+	// order keeps the queue alive for the processor's whole lifetime.
+	//
+	// Only processMessage() is used -- never process(): the module pumps the
+	// queue itself under processDivider, and each decoded message has to be
+	// queued for the worker thread rather than dispatched inline.
+	MidiProcessor midiProcessor{&midiInput};
+
 	/** [Stored to Json] */
 	MidiOutput midiOutput;
 	/** [Stored to Json] */
 	std::string script = "";
+	/** [Stored to Json] */
+	std::string scriptConfigJson = "";
 
 	// MPMC queue: midiLogMessages is pushed from the worker thread (writeLog)
 	// and from the caller of loadScript/onReset, so it needs concurrent-producer
@@ -166,155 +192,468 @@ struct MidiKitModule : Module {
 	dsp::RingBuffer<int, 8> overlayQueue;
 	std::tuple<std::string, std::string, std::string> overlayMessage;
 
+	// MIDI output queue, owned by the module rather than either engine, so its
+	// contents outlive engine switches and clearScript() rather than being tied
+	// to whichever engine happened to be active when they were queued. Written
+	// by sendMidi() (worker thread), drained by process() (audio thread) and by
+	// onRemove() at teardown.
+	dsp::RingBuffer<std::tuple<int, MidiScript::Message, uint8_t, uint64_t>, 128> midiOutQueue;
+	// Set (worker thread) when sendMidi() drops a group for lack of room;
+	// cleared and reported once (audio thread) in process(). A saturated output
+	// must not flood the log through the same bottleneck that is already
+	// saturated.
+	std::atomic<bool> midiOutOverflow{false};
+
+	// ── Tipsy output ─────────────────────────────────────────────────────────
+	// Module-owned for the same reason as midiOutQueue: the encoder drives the
+	// trigger CV output, so it belongs to the hardware side rather than to
+	// whichever engine happened to queue a message. Scripts reach it through
+	// the handler's sendTipsyOut(), exactly like sendMidi().
+
+	// TipsyMessage and its size caps live in MidiScriptEngine.h — both
+	// directions share the POD.
+	using TipsyMessage = MidiScript::TipsyMessage;
+
+	// Encodes Tipsy messages onto the trigger CV output. Audio thread only.
+	tipsy::ProtocolEncoder tipsyOutEncoder;
+
+	// SPSC queue of pending Tipsy messages (worker → audio). sendTipsyOut() only
+	// copies the payload; encoding happens in processTipsyOutput() on the audio
+	// thread, which owns the encoder.
+	//
+	// Never cleared: clear() writes `start`, the consumer's index, so calling it
+	// from the worker would break the single-consumer contract. Discarding goes
+	// through tipsyOutDiscardCount + a queued sentinel instead.
+	dsp::RingBuffer<TipsyMessage, 8> tipsyOutQueue;
+
+	// Discard sentinels enqueued so far. Written by requestTipsyOutDiscard()
+	// (worker), read by processTipsyOutput() (audio); tipsyOutDiscardSeen is the
+	// audio thread's private count of the ones it has consumed.
+	//
+	// A counter rather than a flag: two reloads in quick succession must discard
+	// both batches, and a bool cleared after the first sentinel would let the
+	// second play. The queued sentinel supplies the position the counter lacks —
+	// anything pushed after it is new and survives.
+	std::atomic<uint32_t> tipsyOutDiscardCount{0};
+	uint32_t tipsyOutDiscardSeen = 0;
+
+	// The message the encoder is streaming out. The encoder holds pointers into
+	// its buffers for the whole (multi-cycle) message, so it must outlive the
+	// encoding — a member, not a local (shift() hands out copies). Only ever
+	// overwritten while the encoder is dormant, so an in-flight message is never
+	// pulled out from under it.
+	TipsyMessage tipsyOutCurrentMessage;
+
+	// ── Tipsy input ──────────────────────────────────────────────────────────
+	// Decodes a Tipsy stream from the trigger input into the active engine's
+	// tipsyInQueue. The roles are mirrored from the output side: here the audio
+	// thread produces and the worker consumes.
+
+	// Which trigger input carries the Tipsy stream, or -1 when disabled. Written
+	// by enableTipsyIn() (worker), read by process() (audio).
+	std::atomic<int> tipsyInPort{-1};
+
+	// Decodes voltages back into messages. Audio thread only.
+	tipsy::ProtocolDecoder tipsyInDecoder;
+
+	// The decoder writes the payload here, so it must outlive the message being
+	// assembled. Handed over once via provideDataBuffer() — which refuses while
+	// a body is in flight, so it is only ever called when the decoder is idle.
+	unsigned char tipsyInBuffer[MidiScript::tipsyMaxPayloadLength];
+
+	// Set (audio thread) when a decoded message is dropped for lack of room, or
+	// when the decoder reports a malformed stream; cleared and reported once in
+	// process(). Same rate-limiting reason as midiOutOverflow — readFloat() runs
+	// per sample, so logging inline would flood the log from noise on the port.
+	std::atomic<bool> tipsyInOverflow{false};
+	std::atomic<bool> tipsyInError{false};
+
 	dsp::ClockDivider processDivider;
 	dsp::Timer rateLimiterTimer;
 
-	dsp::SchmittTrigger inputTrigger;
-	uint64_t inputTriggerTick;
+	// One SchmittTrigger and tick counter per polyphonic channel of the trigger
+	// input — trig.onTrigger/trig.getTicks() are channel-aware.
+	dsp::SchmittTrigger inputTrigger[PORT_MAX_CHANNELS];
+	uint64_t inputTriggerTick[PORT_MAX_CHANNELS];
 	bool outputTriggerActive[PORT_MAX_CHANNELS];
 	dsp::PulseGenerator outputPulseGenerator[PORT_MAX_CHANNELS];
+
+	// Trigger inputs enabled by the script (trig.enableIn()), as a bitmask of
+	// polyphonic channels (bit c = channel c of port 0). The module gates all
+	// trigger processing on this: disabled channels get no ticks, no
+	// sendAfterTrigger drains, and no trig.onTrigger. Atomic: written by the
+	// worker (trig.enableIn()), read by the audio thread (process()).
+	std::atomic<uint16_t> triggerEnabledMask{0};
+
+	// ── Extended-CC input, enabled by the script ─────────────────────────────
+	// Per-MIDI-channel bitmasks of what the script asked to have assembled
+	// (midi.enableNrpnIn/enableRpnIn/enableCc14bitIn). Bit c = MIDI channel c;
+	// "all channels" sets every bit. Nothing is assembled for the script until
+	// it asks, matching trig.enableIn()/trig.enableTipsyIn().
+	//
+	// Atomic for the same reason as triggerEnabledMask: written by the worker
+	// from the enable bindings, read by the audio thread in processMidi().
+	std::atomic<uint16_t> nrpnEnabledMask{0};
+	std::atomic<uint16_t> rpnEnabledMask{0};
+	// One mask per 14-bit MSB controller (0-31), since registration is per-CC:
+	// a script can take CC 7 as 14-bit while still seeing CC 39 raw.
+	std::atomic<uint16_t> cc14bitEnabledMask[32];
 
 	uint64_t sample;
 	float sampleRate;
 
-	struct MidiKitScriptEngineLua : MidiScript::Lua::MidiScriptEngineLua {
-		MidiKitModule* module;
+	// ── MidiScriptEngineHandler ──────────────────────────────────────────────
+	// The engines call back into the module through these methods for every
+	// module-facing operation (log/overlay/input/trig/param).
 
-		MidiKitScriptEngineLua() {
-			inputCount      = 4;
-			inputTrigCount  = 1;
-			outputTrigCount = 1;
-			paramCount      = 4;
-			midiInputCount  = 1;
-			midiOutputCount = 1;
+	// MidiScriptEngineHandler
+	void writeLog(const std::string& log, bool useTimestamp = true) override {
+		float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
+		if (useTimestamp) {
+			midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
+		}
+		else {
+			midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, log));
+		}
+	}
+
+	// MidiScriptEngineHandler
+	void writeOverlay(const std::string& s1, const std::string& s2, const std::string& s3) override {
+		overlayQueue.push(0);
+		overlayMessage = std::make_tuple(s1, s2, s3);
+	}
+
+	// MidiScriptEngineHandler
+	void enableInput(int i) override {
+		reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = true;
+	}
+
+	// MidiScriptEngineHandler — trig.enableIn() binding (worker thread).
+	void enableTrigger(int port, uint8_t channel) override {
+		if (port != 0) return;
+		if (channel >= PORT_MAX_CHANNELS) return;
+		triggerEnabledMask.fetch_or(static_cast<uint16_t>(1) << channel, std::memory_order_relaxed);
+	}
+
+	// Gate for all trigger processing; see triggerEnabledMask. Audio thread.
+	bool isTriggerEnabled(int port, uint8_t channel) const {
+		if (port != 0) return false;
+		if (channel >= PORT_MAX_CHANNELS) return false;
+		return (triggerEnabledMask.load(std::memory_order_relaxed) >> channel) & 1;
+	}
+
+	// Forgets every enabled (port, channel) on script load/reset.
+	void clearTriggerEnabled() {
+		for (int i = 0; i < PORT_MAX_CHANNELS; i++) inputTriggerTick[i] = 0;
+		triggerEnabledMask.store(0, std::memory_order_relaxed);
+	}
+
+	// MidiScriptEngineHandler
+	float getInputVoltage(int i, uint8_t ch) override {
+		if (reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled)
+			return inputs[INPUT + i].getVoltage(ch);
+		return 0.f;
+	}
+
+	// MidiScriptEngineHandler
+	void enableTipsyIn(int i) override {
+		// i is a 0-based trigger input index, or -1 to disable decoding. The
+		// script-facing trig.enableTipsyIn() exposes no port — it always targets
+		// the first (only) trigger input, so i is always 0 from scripts.
+		tipsyInPort.store(i, std::memory_order_relaxed);
+	}
+
+	// MidiScriptEngineHandler — midi.enableNrpnIn()/enableRpnIn() bindings
+	// (worker thread). channel is 0-based, or -1 for all.
+	void enableNrpnIn(int midiPort, int kind, int channel) override {
+		if (midiPort != 0) return;
+		uint16_t bits = channelBits(channel);
+		if (bits == 0) return;
+		(kind == 1 ? rpnEnabledMask : nrpnEnabledMask).fetch_or(bits, std::memory_order_relaxed);
+	}
+
+	// MidiScriptEngineHandler — midi.enableCc14bitIn() binding (worker thread).
+	// cc is the 0-31 MSB controller, or -1 for all of them.
+	void enableCc14bitIn(int midiPort, int cc, int channel) override {
+		if (midiPort != 0) return;
+		if (cc >= 32) return;
+		uint16_t bits = channelBits(channel);
+		if (bits == 0) return;
+		if (cc < 0) {
+			for (int i = 0; i < 32; i++) cc14bitEnabledMask[i].fetch_or(bits, std::memory_order_relaxed);
+		}
+		else {
+			cc14bitEnabledMask[cc].fetch_or(bits, std::memory_order_relaxed);
+		}
+	}
+
+	// Expands a script-supplied channel (0-based, or -1 for all) into a mask.
+	// Returns 0 for an out-of-range channel, so the caller enables nothing.
+	static uint16_t channelBits(int channel) {
+		if (channel < 0) return 0xffff;
+		if (channel >= 16) return 0;
+		return static_cast<uint16_t>(1) << channel;
+	}
+
+	// Whether the script asked for assembled events of each kind on this MIDI
+	// channel. Audio thread.
+	bool isNrpnEnabled(uint8_t ch, bool isRpn) const {
+		if (ch >= 16) return false;
+		auto& mask = isRpn ? rpnEnabledMask : nrpnEnabledMask;
+		return (mask.load(std::memory_order_relaxed) >> ch) & 1;
+	}
+	bool isCc14bitEnabled(uint8_t ch, uint8_t cc) const {
+		if (ch >= 16 || cc >= 32) return false;
+		return (cc14bitEnabledMask[cc].load(std::memory_order_relaxed) >> ch) & 1;
+	}
+
+	// Whether a raw CC that MidiProcessor flagged as a component should be
+	// withheld from midi.onMessage — true only if the script enabled the kind of
+	// assembly this CC feeds. Audio thread.
+	//
+	// The controller ranges overlap and that is deliberate (see the plan's §4.1):
+	// CC 0-31 are 14-bit MSBs, and CC 6/38 are simultaneously Data Entry for an
+	// armed RPN/NRPN parameter. Both readings are honoured, so a script enabling
+	// either kind stops seeing the CCs that feed it; a script enabling blanket
+	// 14-bit therefore also consumes CC 6/38, which is why registration is
+	// per-CC — that is the escape hatch for scripts wanting them raw.
+	bool isComponentEnabled(const MessageEx& m) const {
+		uint8_t ch = m.getChannel();
+		uint8_t cc = m.getNote();
+
+		// Parameter select belongs to whichever kind it selects.
+		if (cc == 99 || cc == 98) return isNrpnEnabled(ch, false);
+		if (cc == 101 || cc == 100) return isNrpnEnabled(ch, true);
+
+		// Data entry for an armed parameter. MidiProcessor only flags 6/38 as
+		// components while one is armed, so reaching here means it was.
+		if (cc == 6 || cc == 38) {
+			if (isNrpnEnabled(ch, false) || isNrpnEnabled(ch, true)) return true;
+			// Fall through: 6/38 are also a 14-bit pair by the spec's numbering.
 		}
 
-		void writeLog(std::string log, bool useTimestamp = true) override {
-			float timestamp = float(module->sample) / module->sampleRate;
-			if (useTimestamp) {
-				module->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
+		if (cc < 32) return isCc14bitEnabled(ch, cc);
+		if (cc < 64) return isCc14bitEnabled(ch, cc - 32);
+		return false;
+	}
+
+	// Forgets every enabled extended-CC kind. Called on script load/reset, like
+	// clearTriggerEnabled(): the enables belong to the script, not the module.
+	void clearExtendedCcEnabled() {
+		nrpnEnabledMask.store(0, std::memory_order_relaxed);
+		rpnEnabledMask.store(0, std::memory_order_relaxed);
+		for (int i = 0; i < 32; i++) cc14bitEnabledMask[i].store(0, std::memory_order_relaxed);
+	}
+
+	// MidiScriptEngineHandler
+	float getTrigVoltage(int i, uint8_t ch) override {
+		// Only channel 0 of the claimed trigger input carries the Tipsy stream:
+		// that channel reads as 0 — the raw encoded voltages are protocol, not
+		// a gate a script should act on. Other channels are unaffected.
+		if (ch == 0 && i == tipsyInPort.load(std::memory_order_relaxed)) return 0.f;
+		return inputs[INPUT_TRIG + i].getVoltage(ch);
+	}
+
+	// MidiScriptEngineHandler
+	uint64_t getTrigTicks(int i, uint8_t ch) override {
+		if (ch >= PORT_MAX_CHANNELS) return 0;
+		return inputTriggerTick[ch];
+	}
+
+	// MidiScriptEngineHandler
+	void enableParam(int i) override {
+		reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = true;
+	}
+
+	// MidiScriptEngineHandler
+	float getParamValue(int i) override {
+		if (reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled)
+			return params[PARAM + i].getValue();
+		return 0.f;
+	}
+
+	// MidiScriptEngineHandler
+	void setTrig(int i, uint8_t ch, float duration = 1e-3f) override {
+		outputTriggerActive[ch] = true;
+		outputPulseGenerator[ch].trigger(duration);
+	}
+
+	// MidiScriptEngineHandler
+	void setTrigVoltage(int i, uint8_t ch, float voltage) override {
+		outputTriggerActive[ch] = false;
+		outputs[OUTPUT_TRIG].setVoltage(voltage, ch);
+	}
+
+	// MidiScriptEngineHandler
+	bool sendMidi(int midiPort, const MidiScript::Message* msgs, size_t count, uint8_t channel, uint64_t tick) override {
+		// Capacity is checked for the whole group, so a multi-message value — an
+		// NRPN quad or a 14-bit CC pair — is never half-emitted.
+		// dsp::RingBuffer::push() does not bounds-check: on a full
+		// buffer it overwrites unread entries and leaves size() > capacity.
+		if (midiOutQueue.capacity() < count) {
+			midiOutOverflow.store(true, std::memory_order_relaxed);
+			return false;
+		}
+		for (size_t i = 0; i < count; i++) {
+			midiOutQueue.push(std::make_tuple(midiPort, msgs[i], channel, tick));
+		}
+		return true;
+	}
+
+	// MidiScriptEngineHandler
+	bool sendTipsyOut(const char* mimeType, const unsigned char* data, uint32_t dataBytes) override {
+		if (!mimeType || !data || dataBytes > MidiScript::tipsyMaxPayloadLength) {
+			writeLog("Tipsy: invalid parameters", false);
+			return false;
+		}
+		size_t mimeSize = strlen(mimeType);
+		// An empty mime type would be indistinguishable from a discard sentinel.
+		if (mimeSize == 0) {
+			writeLog("Tipsy: mime type must not be empty", false);
+			return false;
+		}
+		if (mimeSize + 1 > MidiScript::tipsyMaxMimeTypeSize) {
+			writeLog("Tipsy: mime type too long", false);
+			return false;
+		}
+		// One slot is kept free so sendTipsyOutReset() can always enqueue its
+		// sentinel. A dropped sentinel would leave tipsyOutDiscardCount permanently
+		// ahead of the queue, discarding live messages from then on.
+		if (tipsyOutQueue.capacity() <= 1) {
+			writeLog("Tipsy: pending queue full", false);
+			return false;
+		}
+
+		TipsyMessage p;
+		p.mimeSize = (uint16_t)mimeSize;
+		p.dataSize = (uint16_t)dataBytes;
+		std::memcpy(p.mime, mimeType, mimeSize + 1);
+		std::memcpy(p.data, data, dataBytes);
+		tipsyOutQueue.push(p);
+		return true;
+	}
+
+	// MidiScriptEngineHandler
+	void sendTipsyOutReset() override {
+		// Order matters: the sentinel goes in first, so the audio thread can
+		// never see the raised count without the sentinel that bounds it.
+		TipsyMessage p;
+		p.mimeSize = 0;
+		p.dataSize = 0;
+		tipsyOutQueue.push(p);
+		tipsyOutDiscardCount.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	// Outputs the next Tipsy-encoded voltage on the trigger output (audio
+	// thread). If the encoder is idle, drops any stale messages, starts the next
+	// pending one, then drains one encoded float. Returns true if a voltage was
+	// output.
+	bool processTipsyOutput(uint8_t channel = 0) {
+		if (tipsyOutEncoder.isDormant()) {
+			// Everything ahead of an unconsumed sentinel was queued by a script
+			// that has since been replaced. Only done while dormant, so a message
+			// already going out still completes. Bounded by the queue size, and
+			// Tipsy messages are rare, so draining the run in one call is fine.
+			while (tipsyOutDiscardSeen < tipsyOutDiscardCount.load(std::memory_order_relaxed) && !tipsyOutQueue.empty()) {
+				if (tipsyOutQueue.shift().mimeSize == 0) tipsyOutDiscardSeen++;
 			}
-			else {
-				module->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, log));
+
+			if (!tipsyOutQueue.empty()) {
+				// Copy into the member the encoder points into for the whole message
+				// (shift() returns a copy, so not a local).
+				tipsyOutCurrentMessage = tipsyOutQueue.shift();
+				auto initResult = tipsyOutEncoder.initiateMessage(tipsyOutCurrentMessage.mime, tipsyOutCurrentMessage.dataSize, tipsyOutCurrentMessage.data);
+				if (tipsyOutEncoder.isError(initResult)) {
+					writeLog("Tipsy encoder error: " + std::to_string(static_cast<int>(initResult)), false);
+					return false;
+				}
 			}
 		}
 
-		void writeOverlay(std::string s1, std::string s2, std::string s3) override {
-			module->overlayQueue.push(0);
-			module->overlayMessage = std::make_tuple(s1, s2, s3);
+		if (tipsyOutEncoder.isDormant()) {
+			return false;
 		}
 
-		void enableInput(int i) override {
-			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(module->inputInfos[i])->enabled = true;
+		float f;
+		auto result = tipsyOutEncoder.getNextMessageFloat(f);
+		if (tipsyOutEncoder.isError(result)) {
+			writeLog("Tipsy encoding error", false);
+			tipsyOutEncoder.terminateCurrentMessage();
+			return false;
+		}
+		// Tipsy messages always go to the first trigger output (port 0).
+		setTrigVoltage(0, channel, f);
+		return true;
+	}
+
+	// Feeds one sample from the Tipsy input trigger into the decoder (audio
+	// thread). On a completed message, copies it into the active engine's
+	// tipsyInQueue for the worker to dispatch. Returns true if a message
+	// completed on this sample.
+	//
+	// The Tipsy stream is always carried on channel 0 of the trigger input —
+	// other channels are never decoded. No-op unless a script claimed the
+	// trigger input via trig.enableTipsyIn().
+	bool processTipsyInput() {
+		int port = tipsyInPort.load(std::memory_order_relaxed);
+		if (port < 0 || !activeEngine) return false;
+		if (!inputs[INPUT_TRIG + port].isConnected()) return false;
+
+		auto result = tipsyInDecoder.readFloat(inputs[INPUT_TRIG + port].getVoltage(0));
+
+		if (tipsy::ProtocolDecoder::isError(result)) {
+			// Malformed stream (bad version, bad header, oversized payload).
+			// Flagged rather than logged: readFloat() runs every sample, so a
+			// noisy port would otherwise flood the log. The decoder resyncs on
+			// its own at the next message-begin sentinel.
+			tipsyInError.store(true, std::memory_order_relaxed);
+			return false;
+		}
+		if (result != tipsy::ProtocolDecoder::DecoderResult::BODY_READY) {
+			return false;
 		}
 
-		float getInputVoltage(int i, uint8_t ch) override {
-			if (reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(module->inputInfos[i])->enabled)
-				return module->inputs[INPUT + i].getVoltage(ch);
-			return 0.f;
+		// BODY_READY: the payload is complete in tipsyInBuffer, which the
+		// decoder reuses for the next message — so copy it out now.
+		if (activeEngine->tipsyInQueue.full()) {
+			tipsyInOverflow.store(true, std::memory_order_relaxed);
+			return false;
 		}
 
-		float getTrigVoltage(int i, uint8_t ch) override {
-			return module->inputs[INPUT_TRIG + i].getVoltage(ch);
+		TipsyMessage p;
+		size_t mimeSize = strnlen(tipsyInDecoder.getMimeType(), MidiScript::tipsyMaxMimeTypeSize - 1);
+		uint32_t dataSize = tipsyInDecoder.getDataSize();
+		if (dataSize > MidiScript::tipsyMaxPayloadLength) {
+			// provideDataBuffer() sized the store, so the decoder should have
+			// rejected this as ERROR_DATA_TOO_LARGE already. Defensive.
+			tipsyInError.store(true, std::memory_order_relaxed);
+			return false;
 		}
+		p.mimeSize = (uint16_t)mimeSize;
+		p.dataSize = (uint16_t)dataSize;
+		std::memcpy(p.mime, tipsyInDecoder.getMimeType(), mimeSize);
+		p.mime[mimeSize] = '\0';
+		std::memcpy(p.data, tipsyInBuffer, dataSize);
+		activeEngine->tipsyInQueue.push(p);
+		return true;
+	}
 
-		uint64_t getTrigTicks(int i) override {
-			return module->inputTriggerTick;
-		}
+	// Port/param counts injected into both engines at construction.
+	static constexpr int engineInputCount = 4;
+	static constexpr int engineInputTrigCount = 1;
+	static constexpr int engineOutputTrigCount = 1;
+	static constexpr int engineParamCount = 4;
+	static constexpr int engineMidiInputCount = 1;
+	static constexpr int engineMidiOutputCount = 1;
 
-		void enableParam(int i) override {
-			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(module->paramQuantities[i])->enabled = true;
-		}
-
-		float getParamValue(int i) override {
-			if (reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(module->paramQuantities[i])->enabled)
-				return module->params[PARAM + i].getValue();
-			return 0.f;
-		}
-
-		void setTrig(int i, uint8_t ch, float duration = 1e-3f) override {
-			module->outputTriggerActive[ch] = true;
-			module->outputPulseGenerator[ch].trigger(duration);
-		}
-
-		void setTrigVoltage(int i, uint8_t ch, float voltage) override {
-			module->outputTriggerActive[ch] = false;
-			module->outputs[OUTPUT_TRIG].setVoltage(voltage, ch);
-		}
-	};
-
-	struct MidiKitScriptEngineQuickJs : MidiScript::QuickJs::MidiScriptEngineQuickJs {
-		MidiKitModule* module;
-
-		MidiKitScriptEngineQuickJs() {
-			inputCount      = 4;
-			inputTrigCount  = 1;
-			outputTrigCount = 1;
-			paramCount      = 4;
-			midiInputCount  = 1;
-			midiOutputCount = 1;
-		}
-
-		void writeLog(std::string log, bool useTimestamp = true) override {
-			float timestamp = module->sampleRate != 0.f ? float(module->sample) / module->sampleRate : 0.f;
-			if (useTimestamp) {
-				module->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
-			}
-			else {
-				module->midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, log));
-			}
-		}
-
-		void writeOverlay(std::string s1, std::string s2, std::string s3) override {
-			module->overlayQueue.push(0);
-			module->overlayMessage = std::make_tuple(s1, s2, s3);
-		}
-
-		void enableInput(int i) override {
-			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(module->inputInfos[i])->enabled = true;
-		}
-
-		float getInputVoltage(int i, uint8_t ch) override {
-			if (reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(module->inputInfos[i])->enabled)
-				return module->inputs[INPUT + i].getVoltage(ch);
-			return 0.f;
-		}
-
-		float getTrigVoltage(int i, uint8_t ch) override {
-			return module->inputs[INPUT_TRIG + i].getVoltage(ch);
-		}
-
-		uint64_t getTrigTicks(int i) override {
-			return module->inputTriggerTick;
-		}
-
-		void enableParam(int i) override {
-			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(module->paramQuantities[i])->enabled = true;
-		}
-
-		float getParamValue(int i) override {
-			if (reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(module->paramQuantities[i])->enabled)
-				return module->params[PARAM + i].getValue();
-			return 0.f;
-		}
-
-		void setTrig(int i, uint8_t ch, float duration = 1e-3f) override {
-			module->outputTriggerActive[ch] = true;
-			module->outputPulseGenerator[ch].trigger(duration);
-		}
-
-		void setTrigVoltage(int i, uint8_t ch, float voltage) override {
-			module->outputTriggerActive[ch] = false;
-			module->outputs[OUTPUT_TRIG].setVoltage(voltage, ch);
-		}
-	};
-
-	MidiKitScriptEngineLua seLua;
-	MidiKitScriptEngineQuickJs seQuickJs;
-	MidiScript::MidiScriptEngine* activeEngine = &seQuickJs;
+	MidiScript::Lua::MidiScriptEngineLua seLua;
+	MidiScript::QuickJs::MidiScriptEngineQuickJs seQuickJs;
+	MidiScript::MidiScriptEngine* activeEngine = nullptr;
 
 	MidiKitModule() : MidiKitModule(defaultWorker()) {}
-	explicit MidiKitModule(std::shared_ptr<ITaskWorker> worker) {
+	explicit MidiKitModule(std::shared_ptr<ITaskWorker> worker)
+		: seLua(this, engineInputCount, engineInputTrigCount, engineOutputTrigCount, engineParamCount, engineMidiInputCount, engineMidiOutputCount),
+		  seQuickJs(this, engineInputCount, engineInputTrigCount, engineOutputTrigCount, engineParamCount, engineMidiInputCount, engineMidiOutputCount) {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_TRIG, "Trigger");
@@ -325,47 +664,132 @@ struct MidiKitModule : Module {
 		}
 
 		processDivider.setDivision(8);
-		seLua.module = this;
-		seQuickJs.module = this;
+		// Routes decoded messages into processMidi() below. Without this the
+		// processor decodes into an empty handler list and nothing reaches the
+		// engine at all.
+		midiProcessor.subscribe(this);
 		seLua.setWorker(worker);
 		seQuickJs.setWorker(worker);
 		onReset();
 	}
 
-	// Runs the active script's onUnload() (all-notes-off etc.) while
-	// seLua/seQuickJs are still fully-constructed MidiKitScriptEngine*
-	// objects, i.e. before Module's own destructor (and this object's other
-	// members) start tearing down. Calling closeState() later, from each
-	// engine's own destructor, would run onUnload() through a vtable that no
-	// longer has this class's overrides (writeLog, trig.*, input.*, param.*
-	// are all pure virtual there) — undefined behaviour.
-	~MidiKitModule() {
-		seLua.closeState();
-		seQuickJs.closeState();
+	// Closes the active engine and drains whatever its onUnload() queued. Rack
+	// dispatches this before the module leaves the engine and holds the engine
+	// mutex across it, so process() cannot run concurrently.
+	//
+	// closeState() blocks, so the worker has stopped producing before the drain
+	// — preserve that order, it is what makes the drain safe.
+	void onRemove(const RemoveEvent& e) override {
+		MidiScript::MidiScriptEngine* engine = activeEngine;
+		activeEngine = nullptr;   // stop process() dispatching
+		if (engine) engine->closeState();
+		flushOutput();            // drains the module queue; no engine needed
+	}
+
+	// Sends whatever is left in the module's out-queue straight to the device,
+	// ignoring frame/tick scheduling — teardown is the last chance to emit.
+	void flushOutput() {
+		while (!midiOutQueue.empty()) {
+			auto t = midiOutQueue.shift();
+			midi::Message msg = std::get<1>(t);
+			msg.frame = -1;
+			midiOutput.sendMessage(msg);
+		}
 	}
 
 	void onReset() override {
 		midiInput.reset();
+		// Emptying the queue leaves the stream discontinuous, so drop any
+		// half-received NRPN/RPN/14-bit CC state with it: a parameter still armed
+		// from before the reset would capture the next data entry that arrives.
+		midiProcessor.reset();
 		midiOutput.reset();
 		sample = 0;
-		inputTriggerTick = 0;
+		// No script claims the trigger input until its trig.enableIn() runs.
+		clearTriggerEnabled();
+		// Likewise no NRPN/RPN/14-bit assembly until midi.enableNrpnIn() and
+		// friends run.
+		clearExtendedCcEnabled();
+		// A script claims the trigger input for Tipsy explicitly, so a reset
+		// releases it. Re-arming the decoder's data store here is safe: nothing
+		// is decoding at reset, and provideDataBuffer() refuses mid-body.
+		tipsyInPort.store(-1, std::memory_order_relaxed);
+		tipsyInDecoder.provideDataBuffer(tipsyInBuffer, sizeof(tipsyInBuffer));
 		for (int i = 0; i < 4; i++) {
 			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
 		}
-		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::RESET, 0.f, std::string("")));
 		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
 			outputTriggerActive[i] = true;
 			outputPulseGenerator[i].reset();
 		}
-		activeEngine = &seQuickJs;
-		seQuickJs.loadScript("");
-		seLua.loadScript("");
-		seQuickJs.loadScript("");
+		// Only the previously active engine can have real state — loadScript()
+		// maintains that invariant by only ever loading one engine at a time and
+		// closing the other on switch — so that is the only one that needs
+		// tearing down here. Blocking (closeState()) rather than fire-and-forget,
+		// same reasoning as loadScript(): once this returns, activeEngine is
+		// again the only engine that can have any outstanding worker task.
+		MidiScript::MidiScriptEngine* prevEngine = activeEngine;
+		activeEngine = nullptr;
+		if (prevEngine) prevEngine->closeState();
+
+		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::RESET, 0.f, std::string("")));
+		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, std::string("No script")));
 	}
 
-	void onSampleRateChange(const Module::SampleRateChangeEvent& e) override {
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		sampleRate = e.sampleRate;
+	}
+
+	// MidiProcessorHandler. Called synchronously from midiProcessor.processMessage()
+	// on the AUDIO thread, so it stays a pure enqueue -- script code runs on the
+	// shared worker and must never be entered from here.
+	//
+	// A CC belonging to an extended message is notified TWICE: once as Type::CC
+	// (with isComponent set) and again as NRPN/RPN/CC_14BIT once assembled. What
+	// the script asked for decides which of the two it sees:
+	//
+	//  - Assembled events are queued only when the matching enable is set,
+	//    otherwise dropped. Queuing unconditionally would fire callbacks the
+	//    script never asked for, and (before the callbacks existed) double-fire
+	//    onMessage for every component.
+	//  - The raw CC is dropped when it is a component AND the script enabled the
+	//    kind of assembly it belongs to. isComponent alone must not decide: a
+	//    script that enabled only 14-bit CC still wants to see CC 98 raw.
+	//
+	// Returning false keeps the message available to any other handler.
+	bool processMidi(const MessageEx& m) override {
+		if (!activeEngine) return false;
+
+		switch (m.type) {
+			case MessageEx::Type::NRPN:
+			case MessageEx::Type::RPN: {
+				bool isRpn = (m.type == MessageEx::Type::RPN);
+				// Parameter-select notifications carry no value (extraValue < 0),
+				// and the RPN 127/127 reset carries paramNumber < 0. Neither is a
+				// parameter change, so neither reaches the script.
+				if (!m.hasValue() || m.getParamNumber() < 0) return false;
+				if (!isNrpnEnabled(m.getChannel(), isRpn)) return false;
+				break;
+			}
+			case MessageEx::Type::CC_14BIT:
+				if (!isCc14bitEnabled(m.getChannel(), uint8_t(m.getParamNumber()))) return false;
+				break;
+			case MessageEx::Type::CC:
+				if (m.isComponent && isComponentEnabled(m)) return false;
+				break;
+			default:
+				break;
+		}
+
+		MidiScript::QueuedMessage q;
+		q.msg = m.msg;
+		q.type = m.type;
+		q.paramNumber = m.paramNumber;
+		q.extraValue = m.extraValue;
+		q.isComponent = m.isComponent;
+		activeEngine->processInMessage(0, q);
+		return false;
 	}
 
 	void processBypass(const ProcessArgs& args) override {
@@ -387,34 +811,86 @@ struct MidiKitModule : Module {
 			return;
 		*/
 
-		if (inputTrigger.process(inputs[INPUT_TRIG].getVoltage())) {
-			inputTriggerTick++;
-			midiOutput.processTick(inputTriggerTick);
-			activeEngine->processInTick(0);
+		// While the trigger input carries a Tipsy stream on channel 1, the
+		// encoded voltages cross the trigger threshold constantly — suppress
+		// trig.onTrigger and tick counting on THAT channel only so decoding
+		// isn't mistaken for clock ticks. Other channels keep firing normally.
+		// The SchmittTriggers are still stepped so their states stay current.
+		//
+		// Each channel is detected independently: its tick clock advances and
+		// drains that channel's tick-scheduled (sendAfterTrigger) messages.
+		// All of it is gated on trig.enableIn() — disabled channels get no
+		// ticks and no trig.onTrigger.
+		bool tipsyStreaming = tipsyInPort.load(std::memory_order_relaxed) >= 0;
+		int channels = inputs[INPUT_TRIG].getChannels();
+		if (channels <= 0) channels = 1;
+		for (uint8_t c = 0; c < channels; c++) {
+			// Tipsy only takes over channel 1's trigger; the other channels are
+			// ordinary gates and must still fire trig.onTrigger.
+			bool tipsyOnChannel = (c == 0) && tipsyStreaming;
+			if (activeEngine && isTriggerEnabled(0, c) && inputTrigger[c].process(inputs[INPUT_TRIG].getVoltage(c)) && !tipsyOnChannel) {
+				inputTriggerTick[c]++;
+				midiOutput.processTick(c, inputTriggerTick[c]);
+				activeEngine->processInTick(0, c);
+			}
 		}
 
+		// Every sample, not under processDivider: the sender emits one encoded
+		// float per sample, so a divided read would drop most of the stream.
+		processTipsyInput();
+
 		if (processDivider.process()) {
-			midi::Message msg;
-			while (midiInput.tryPop(&msg, args.frame)) {
-				activeEngine->processInMessage(0, msg);
+			if (activeEngine) {
+				// Pumped here rather than via midiProcessor.process() because each
+				// decoded message must be queued for the worker thread, not
+				// dispatched inline: processMessage() notifies processMidi() below
+				// synchronously, and script code never runs on the audio thread.
+				midi::Message msg;
+				while (midiInput.tryPop(&msg, args.frame)) {
+					midiProcessor.processMessage(msg);
+				}
+
+				activeEngine->process();
 			}
 
-			activeEngine->process();
-
-			int midiPort;
-			int ticks;
-			while (activeEngine->processOutMessage(midiPort, msg, ticks)) {
-				midiOutput.send(msg, ticks);
+			// Drains the module's own out-queue regardless of activeEngine, so a
+			// cleared script's onUnload() output (queued while activeEngine was
+			// still set) still reaches the device even though activeEngine is now
+			// null. Runs after dispatch so output produced by this tick's
+			// activeEngine->process() above still drains this same tick.
+			if (midiOutOverflow.exchange(false, std::memory_order_relaxed)) {
+				float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
+				midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, std::string("MIDI output queue full, message(s) dropped")));
 			}
-			
+			if (tipsyInOverflow.exchange(false, std::memory_order_relaxed)) {
+				float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
+				midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, std::string("Tipsy input queue full, message(s) dropped")));
+			}
+			if (tipsyInError.exchange(false, std::memory_order_relaxed)) {
+				float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
+				midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, std::string("Tipsy input: malformed stream")));
+			}
+			while (!midiOutQueue.empty()) {
+				auto t = midiOutQueue.shift();
+				midi::Message msg = std::get<1>(t);
+				uint8_t channel = std::get<2>(t);
+				midiOutput.send(msg, channel, std::get<3>(t));
+			}
 			midiOutput.processFrame(args.frame);
 		}
 
-		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
-			bool s = outputPulseGenerator[i].process(args.sampleTime);
-			if (outputTriggerActive[i]) {
-				outputs[OUTPUT_TRIG].setVoltage(s ? 10.f : 0.f, i);
+		if (outputs[OUTPUT_TRIG].isConnected()) {
+			for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
+				bool s = outputPulseGenerator[i].process(args.sampleTime);
+				if (outputTriggerActive[i]) {
+					outputs[OUTPUT_TRIG].setVoltage(s ? 10.f : 0.f, i);
+				}
 			}
+			
+			// Drains the Tipsy queue regardless of activeEngine, for the same
+			// reason as the MIDI out-queue above: messages queued by a script's
+			// onUnload() must still reach the output after the engine is gone.
+			processTipsyOutput(0);
 		}
 
 		sample++;
@@ -427,6 +903,29 @@ struct MidiKitModule : Module {
 		json_object_set_new(rootJ, "midiInput", midiInput.toJson());
 		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
 		json_object_set_new(rootJ, "script", json_string(script.c_str()));
+
+		// Refresh here rather than in onSave(): Rack's periodic autosave calls
+		// saveAutosave() without dispatching onSave() first, so an onSave()-only
+		// refresh would leave autosaves writing stale config. rack.onSave() is
+		// side-effect-free by contract, so running it on every save is harmless.
+		//
+		// Only overwrite on success: false means the config couldn't be
+		// determined (dispatch dropped or timed out), so keeping the last known
+		// value writes slightly stale config instead of erasing the user's
+		// settings. A script with no onSave() returns true with an empty string
+		// and correctly clears any stale value.
+		if (activeEngine) {
+			std::string captured;
+			if (activeEngine->captureConfig(captured)) {
+				scriptConfigJson = captured;
+			}
+		}
+		if (!scriptConfigJson.empty()) {
+			json_t* configJ = json_loads(scriptConfigJson.c_str(), 0, NULL);
+			if (configJ) {
+				json_object_set_new(rootJ, "scriptConfig", configJ);
+			}
+		}
 		return rootJ;
 	}
 
@@ -440,29 +939,53 @@ struct MidiKitModule : Module {
 		if (midiOutputJ && json_is_object(midiOutputJ)) midiOutput.fromJson(midiOutputJ);
 
 		json_t* scriptJ = json_object_get(rootJ, "script");
-		if (scriptJ && json_is_string(scriptJ)) loadScript(json_string_value(scriptJ));
+		if (scriptJ && json_is_string(scriptJ)) {
+			// Restore any persisted script config alongside the script itself.
+			json_t* configJ = json_object_get(rootJ, "scriptConfig");
+			std::string configJson;
+			if (configJ && json_is_object(configJ)) {
+				char* s = json_dumps(configJ, JSON_COMPACT);
+				if (s) {
+					configJson = s;
+					free(s);
+				}
+			}
+			loadScript(json_string_value(scriptJ), configJson);
+		}
 	}
 
-	void loadScript(std::string s) {
+	void loadScript(std::string s, std::string configJson = "") {
 		script = s;
 		sample = 0;
-		inputTriggerTick = 0;
+		// The incoming script inherits no half-received NRPN/RPN/14-bit CC state
+		// from the previous one: assembly belongs to the script's view of the
+		// stream, not to the module.
+		midiProcessor.reset();
+		for (int i = 0; i < PORT_MAX_CHANNELS; i++) inputTriggerTick[i] = 0;
+		// Forgets every trig.enableIn()d channel BEFORE the new script loads, so
+		// it starts with all callbacks disabled. Same for the extended-CC enables:
+		// they belong to the outgoing script, not to the module.
+		clearTriggerEnabled();
+		clearExtendedCcEnabled();
 		for (int i = 0; i < 4; i++) {
 			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
 		}
 		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::RESET, 0.f, std::string("")));
 
-		// Detect engine from script header (@engine Lua, default QuickJs)
-		bool isLua = s.find("@engine Lua") != std::string::npos;
-
 		MidiScript::MidiScriptEngine* prevEngine = activeEngine;
-		activeEngine = isLua ? static_cast<MidiScript::MidiScriptEngine*>(&seLua)
-		                     : static_cast<MidiScript::MidiScriptEngine*>(&seQuickJs);
+		activeEngine = nullptr;
+		if (seLua.testScript(s)) activeEngine = &seLua;
+		if (seQuickJs.testScript(s)) activeEngine = &seQuickJs;
 
-		// Clear the engine that is no longer active (silently — RESET was already pushed)
-		if (prevEngine != activeEngine)
-			prevEngine->loadScript("");
+		// Close the engine that is no longer active (silently — RESET was already
+		// pushed). Blocking rather than the async loadScript("") this used to be:
+		// once this call returns, activeEngine is again the only engine that can
+		// have any state or outstanding worker task, which is the invariant
+		// onRemove() (and onReset()) rely on to know what needs tearing down.
+		if (prevEngine && prevEngine != activeEngine) {
+			prevEngine->closeState();
+		}
 
 		// Keep port/param info pointers in sync with the active engine
 		for (int i = 0; i < 4; i++) {
@@ -470,7 +993,8 @@ struct MidiKitModule : Module {
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->se = activeEngine;
 		}
 
-		activeEngine->loadScript(script.c_str());
+		scriptConfigJson = configJson;
+		if (activeEngine) activeEngine->loadScript(script.c_str(), scriptConfigJson);
 	}
 
 	void clearScript() {
@@ -520,6 +1044,69 @@ struct LogDisplay : LedTextDisplay {
 	void reset() {
 		buffer->clear();
 		dirty = true;
+	}
+};
+
+// Placeholder menu entry that builds the script-registered items
+// (rack.registerContextMenu) asynchronously. getContextMenus() evaluates each
+// item's onGetValue callback on the worker thread and then invokes its
+// callback with the evaluated specs.
+struct ScriptContextMenuItems : ui::MenuEntry {
+	struct Context {
+		std::vector<MidiScript::ScriptMenuItem> specs;
+		std::atomic<bool> loaded{false};
+	};
+	MidiKitModule* module;
+	std::shared_ptr<Context> ctx;
+	bool built = false;
+
+	ScriptContextMenuItems(MidiKitModule* module) : module(module) {
+		ctx = std::make_shared<Context>();
+		// Capture a local copy: Apple's Clang rejects capturing the data
+		// member `ctx` by name in a capture list.
+		std::shared_ptr<Context> c = ctx;
+		module->activeEngine->getContextMenus([c](const std::vector<MidiScript::ScriptMenuItem>& specs) {
+			// Runs on the worker thread once every onGetValue has been
+			// evaluated. Only publishes the specs; the menu widgets are
+			// constructed by step() on the UI thread.
+			c->specs = specs;
+			c->loaded.store(true, std::memory_order_release);
+		});
+	}
+
+	void step() override {
+		if (!built && ctx->loaded.load(std::memory_order_acquire)) {
+			built = true;
+			buildItems();
+			requestDelete();
+		}
+		ui::MenuEntry::step();
+	}
+
+	void buildItems() {
+		Menu* menu = dynamic_cast<Menu*>(parent);
+		if (!menu) return;
+		MidiKitModule* m = module;
+		Widget* anchor = this;
+		for (const MidiScript::ScriptMenuItem& spec : ctx->specs) {
+			Widget* item;
+			if (spec.type == MidiScript::ScriptMenuItem::Type::Boolean) {
+				item = createMenuItem(spec.label, CHECKMARK(spec.checked), [m, spec]() {
+					m->activeEngine->invokeContextMenuCallback(spec.callbackId, spec.checked ? 0 : 1);
+				});
+			}
+			else {
+				item = createSubmenuItem(spec.label, "", [m, spec](Menu* sub) {
+					for (size_t i = 0; i < spec.options.size(); i++) {
+						sub->addChild(createMenuItem(spec.options[i], CHECKMARK(i == static_cast<size_t>(spec.selected)), [m, spec, i]() {
+							m->activeEngine->invokeContextMenuCallback(spec.callbackId, static_cast<int>(i));
+						}));
+					}
+				});
+			}
+			menu->addChildAbove(item, anchor);
+			anchor = item;
+		}
 	}
 };
 
@@ -607,30 +1194,35 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MidiKitModule>::appendContextMenu(menu);
-		menu->addChild(new MenuSeparator());
-		if (module->activeEngine == &module->seLua) {
-			size_t used;
-			if (module->seLua.getMemoryUsage(used)) {
-				menu->addChild(createMenuLabel(string::f("RAM usage: %zu KB", used / 1024)));
+
+		if (module->activeEngine) {
+			menu->addChild(new MenuSeparator());
+			if (module->activeEngine == &module->seLua) {
+				menu->addChild(createMenuLabel("Running Script (Lua)"));
+				size_t used;
+				if (module->seLua.getMemoryUsage(used)) {
+					menu->addChild(createMenuLabel(string::f("RAM usage: %zu KB", used / 1024)));
+				}
 			}
-		}
-		else if (module->activeEngine == &module->seQuickJs) {
-			size_t used, total;
-			if (module->seQuickJs.getMemoryUsage(used, total)) {
-				float pct = total > 0 ? 100.f * used / total : 0.f;
-				menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
+			if (module->activeEngine == &module->seQuickJs) {
+				menu->addChild(createMenuLabel("Running Script (QuickJs)"));
+				size_t used, total;
+				if (module->seQuickJs.getMemoryUsage(used, total)) {
+					float pct = total > 0 ? 100.f * used / total : 0.f;
+					menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
+				}
 			}
+
+			menu->addChild(new ScriptContextMenuItems(module));
 		}
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Script"));
-		menu->addChild(createSubmenuItem("Examples", "", [=](Menu* menu) {
-			menu->addChild(createSubmenuItem("JavaScript", "", [=](Menu* menu) {
-				appendExampleItems(menu, asset::plugin(pluginInstance, "presets/MidiKit/JavaScript"), ".js");
-			}));
-			menu->addChild(createSubmenuItem("Lua", "", [=](Menu* menu) {
-				appendExampleItems(menu, asset::plugin(pluginInstance, "presets/MidiKit/Lua"), ".lua");
-			}));
+		menu->addChild(createSubmenuItem("Examples (JavaScript)", "", [=](Menu* menu) {
+			appendExampleItems(menu, asset::plugin(pluginInstance, "presets/MidiKit/JavaScript"), ".js");
+		}));
+		menu->addChild(createSubmenuItem("Examples (Lua)", "", [=](Menu* menu) {
+			appendExampleItems(menu, asset::plugin(pluginInstance, "presets/MidiKit/Lua"), ".lua");
 		}));
 		menu->addChild(createMenuItem("Clear", "", [=]() { module->clearScript(); }));
 		menu->addChild(createMenuItem("Paste from clipboard", RACK_MOD_ALT_NAME "+V", [=]() { pasteJsClipboard(); }));
@@ -689,15 +1281,45 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 		}
 	}
 
-	// Lists .js/.lua example scripts bundled under src/modules/midikit/, sorted, as clickable
-	// menu items (mirrors ModuleWidget's factory-preset submenu, but for raw scripts). All
-	// other file types in that folder (.cpp, .h, .md, ...) are ignored.
+	// Returns true if dir (or any of its subfolders, recursively) contains at
+	// least one script file with the given extension. Used to avoid creating
+	// empty submenus for folders that hold no scripts of the active engine.
+	bool hasExampleScripts(std::string dir, std::string ext) {
+		if (!system::isDirectory(dir)) return false;
+		for (std::string path : system::getEntries(dir)) {
+			if (system::isDirectory(path)) {
+				if (hasExampleScripts(path, ext)) return true;
+			}
+			else if (system::getExtension(path) == ext) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Lists .js/.lua example scripts bundled under src/modules/midikit/, sorted,
+	// as clickable menu items (mirrors ModuleWidget's factory-preset submenu, but
+	// for raw scripts). Subfolders become nested submenus, recursing arbitrarily
+	// deep. All other file types in those folders (.cpp, .h, .md, ...) are
+	// ignored. Subfolders are listed before files within each directory.
 	void appendExampleItems(Menu* menu, std::string dir, std::string ext) {
 		bool hasExamples = false;
 		if (system::isDirectory(dir)) {
 			std::vector<std::string> entries = system::getEntries(dir);
 			std::sort(entries.begin(), entries.end());
+			// Subfolders first (sorted)
 			for (std::string path : entries) {
+				if (!system::isDirectory(path)) continue;
+				if (!hasExampleScripts(path, ext)) continue;
+				hasExamples = true;
+				std::string name = system::getFilename(path);
+				menu->addChild(createSubmenuItem(name, "", [=](Menu* menu) {
+					appendExampleItems(menu, path, ext);
+				}));
+			}
+			// Files second (sorted)
+			for (std::string path : entries) {
+				if (system::isDirectory(path)) continue;
 				if (system::getExtension(path) != ext) continue;
 				hasExamples = true;
 				std::string name = system::getStem(path);

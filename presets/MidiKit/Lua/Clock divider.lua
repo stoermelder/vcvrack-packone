@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Divides incoming MIDI clock, forwarding every Nth tick and emitting a trigger on the trigger output
 --]]
@@ -37,12 +37,6 @@ local config = {
     -- Also emit a trigger on trigger output 1 for every forwarded tick
     emitTrigger = true,
 
-    -- Trigger output port used when emitTrigger is set
-    trigPort = 1,
-
-    -- Show the running pulse count in the panel overlay
-    showOverlay = true,
-
     -- Forward all non-clock messages (notes, CC, ...) unchanged
     passThroughOther = true
 }
@@ -50,7 +44,6 @@ local config = {
 -- Internal state
 local state = {
     tickCount = 0,
-    pulseCount = 0,
     running = false
 }
 
@@ -61,10 +54,57 @@ end
 
 local function resetPhase()
     state.tickCount = 0
-    state.pulseCount = 0
 end
 
-rack.onMidiMessage = function(midiPort, msg)
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local DIVISORS = { 1, 2, 3, 6, 12, 24 }
+local DIVISOR_LABELS = { "1 (24 ppqn)", "2 (12 ppqn)", "3 (8 ppq)", "6 (16th)", "12 (8th)", "24 (quarter)" }
+
+local function divisorIndex()
+    for i = 1, #DIVISORS do
+        if DIVISORS[i] == config.divisor then return i - 1 end
+    end
+    return 0
+end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Divisor",
+    options = DIVISOR_LABELS,
+    onGetValue = function()
+        return divisorIndex()
+    end,
+    onChange = function(idx)
+        config.divisor = DIVISORS[idx + 1]
+        rack.log("Divisor: ", config.divisor, " (24 ppqn / ", config.divisor, ")")
+    end
+})
+
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Emit trigger output",
+    onGetValue = function()
+        return config.emitTrigger
+    end,
+    onChange = function(checked)
+        config.emitTrigger = checked
+        rack.log("Emit trigger: ", checked)
+    end
+})
+
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Pass through other messages",
+    onGetValue = function()
+        return config.passThroughOther
+    end,
+    onChange = function(checked)
+        config.passThroughOther = checked
+    end
+})
+
+midi.onMessage = function(midiPort, msg)
     if midi.isStart(msg) then
         resetPhase()
         state.running = true
@@ -94,14 +134,10 @@ rack.onMidiMessage = function(midiPort, msg)
             return
         end
         state.tickCount = 0
-        state.pulseCount = state.pulseCount + 1
 
         midiOut.send(msg)
         if config.emitTrigger then
-            trig.setTrigger(config.trigPort)
-        end
-        if config.showOverlay then
-            rack.overlay("Clock /" .. config.divisor, "pulse " .. state.pulseCount)
+            trig.setTrigger(1)
         end
         return
     end

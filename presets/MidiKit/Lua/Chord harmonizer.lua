@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Turns every incoming note into a chord by adding transposed copies, with matching Note-Offs
 --]]
@@ -44,12 +44,7 @@ local config = {
 
     -- Velocity scaling for the added voices, relative to the played note.
     -- The 0-offset voice is always sent at full velocity.
-    harmonyVelocity = 0.8,
-
-    -- Show each harmonized note in the panel overlay.
-    -- Note: voices transposed outside 0..127 are dropped rather than clamped -
-    -- clamping would pile several voices onto the same edge note.
-    showOverlay = true
+    harmonyVelocity = 0.8
 }
 
 -- Internal state.
@@ -104,7 +99,60 @@ local function releaseVoices(ch, note)
     state.voicesOf[note] = {}
 end
 
-rack.onMidiMessage = function(midiPort, msg)
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local CHORD_INTERVALS = {
+    { 0, 4, 7 },     -- Major triad
+    { 0, 3, 7 },     -- Minor triad
+    { 0, 3, 7, 10 }, -- Minor seventh
+    { 0, 7 },        -- Power chord
+    { 0, 12 },       -- Octave doubling
+    { 0, -12, 12 }   -- Three octaves
+}
+local CHORD_LABELS = { "Major triad", "Minor triad", "Minor seventh", "Power chord", "Octave doubling", "Three octaves" }
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+
+local function chordIndex()
+    for i = 1, #CHORD_INTERVALS do
+        if #config.intervals == #CHORD_INTERVALS[i] then
+            local same = true
+            for j = 1, #CHORD_INTERVALS[i] do
+                if config.intervals[j] ~= CHORD_INTERVALS[i][j] then same = false break end
+            end
+            if same then return i - 1 end
+        end
+    end
+    return 0
+end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Chord",
+    options = CHORD_LABELS,
+    onGetValue = function()
+        return chordIndex()
+    end,
+    onChange = function(idx)
+        config.intervals = CHORD_INTERVALS[idx + 1]
+        rack.log("Chord: ", CHORD_LABELS[idx + 1], " (", #config.intervals, " voices)")
+    end
+})
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Channel",
+    options = CHANNEL_LABELS,
+    onGetValue = function()
+        return config.channel
+    end,
+    onChange = function(idx)
+        config.channel = idx
+        rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
+    end
+})
+
+midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 
     if not matchesChannel(ch) then
@@ -145,9 +193,6 @@ rack.onMidiMessage = function(midiPort, msg)
 
         state.voicesOf[note] = voices
 
-        if config.showOverlay then
-            rack.overlay("Harmonize", note .. " + " .. #voices .. " voices")
-        end
         return
     end
 

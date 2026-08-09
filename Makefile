@@ -44,6 +44,8 @@ SOURCES += $(QUICKJS_SOURCES)
 # Exclude test files from the main build
 SOURCES := $(filter-out src/test/%.cpp,$(SOURCES))
 SOURCES := $(filter-out %.test.cpp,$(SOURCES))
+# Performance harnesses are a standalone measurement tool, never part of the plugin dylib
+SOURCES := $(filter-out %.perf.cpp,$(SOURCES))
 SOURCES += $(ORCA_SOURCES)
 SOURCES += $(SOUNDTOUCH_SOURCES)
 
@@ -110,3 +112,7 @@ endif
 
 # Test build rules live in plugin-test.mk
 include plugin-test.mk
+
+# Performance binaries (*.perf.cpp) live in their own makefile so they stay
+# out of the main build/test flow. See perf.mk for the `perf`/`perfrun` targets.
+include plugin-perf.mk

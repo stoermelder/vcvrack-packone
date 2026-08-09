@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine QuickJs
+ * @engine QuickJs@v1
  * @author stoermelder
  * @description Reshapes Note-On velocity with a knob-controlled curve, plus configurable floor and ceiling
  */
@@ -42,10 +42,7 @@ let config = {
     curveAmount: 2,
 
     // Only process this channel; 0 = every channel
-    channel: 0,
-
-    // Show each remapped velocity in the panel overlay
-    showOverlay: true
+    channel: 0
 };
 
 param.enable(config.curveParam);
@@ -59,8 +56,10 @@ param.getValueFormat = function(port) {
     if (port === config.curveParam) {
         let v = param.getValue(config.curveParam);
         // Report the curve as a signed shape amount rather than a raw 0..1,
-        // so the panel reads "-4.0 .. 0.0 .. +4.0" around linear.
-        let shaped = (v - 0.5) * 2 * config.curveAmount;
+        // so the panel reads "-2.0 .. 0.0 .. +2.0" around linear (curveAmount=2).
+        // Same sign as shapeVelocity()'s curve, so the readout matches the
+        // curve actually applied.
+        let shaped = -(v - 0.5) * 2 * config.curveAmount;
         return number.toString(shaped);
     }
     return "";
@@ -81,7 +80,11 @@ function matchesChannel(ch) {
 // exponential shaping wanted here - no manual pow() needed.
 function shapeVelocity(vel) {
     let knob = param.getValue(config.curveParam);
-    let curve = (knob - 0.5) * 2 * config.curveAmount;
+    // Negated so a low knob (exponential) squashes soft notes toward the floor
+    // and a high knob (logarithmic) lifts them toward the ceiling - matching
+    // the header description. The sign was inverted until 2026-08-03, which
+    // made knob 0.0 boost instead of squash.
+    let curve = -(knob - 0.5) * 2 * config.curveAmount;
     let out = number.rescale(vel, 1, 127, config.minVelocity, config.maxVelocity, curve);
 
     // Guard the endpoints: rescale works in floats and can land a hair outside
@@ -91,7 +94,25 @@ function shapeVelocity(vel) {
     return out;
 };
 
-rack.onMidiMessage = function(midiPort, msg) {
+// Context menu - right-click the module to change these settings live.
+// Each menu mirrors a `config` value above; onChange applies the choice.
+let CHANNEL_LABELS = ["All"];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Channel",
+    options: CHANNEL_LABELS,
+    onGetValue: function() {
+        return config.channel;
+    },
+    onChange: function(idx) {
+        config.channel = idx;
+        rack.log("Channel: ", CHANNEL_LABELS[idx]);
+    }
+});
+
+midi.onMessage = function(midiPort, msg) {
     if (midi.isNoteOn(msg) && matchesChannel(midi.getChannel(msg))) {
         let vel = midi.getValue(msg);
 
@@ -103,10 +124,6 @@ rack.onMidiMessage = function(midiPort, msg) {
 
         let shaped = shapeVelocity(vel);
         midi.setValue(msg, shaped);
-
-        if (config.showOverlay) {
-            rack.overlay("Velocity", number.toString(vel) + " -> " + number.toString(shaped));
-        }
     }
 
     midiOut.send(msg);

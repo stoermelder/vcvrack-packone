@@ -1,8 +1,8 @@
 # MIDI-KIT scripting reference
 
-MIDI-KIT scripts run in one of two embedded engines, chosen by the `@engine`
-header tag: **QuickJs** (a full JavaScript engine) or **Lua** (a sandboxed Lua 5.4 via
-minilua). Both engines expose the *same* API (`midi`, `midiOut`, `input`,
+MIDI-KIT scripts run in one of two embedded engines, chosen by a versioned
+`@engine` header tag: `QuickJs@v1` (a full JavaScript engine) or `minilua@v1`
+(a sandboxed Lua 5.4 via minilua). Both engines expose the *same* API (`midi`, `midiOut`, `input`,
 `trig`, `param`, `number`, `rack`) with 1-based indices for ports,
 channels, and params. Pick the engine per script; the module identifies it
 from the header, not the file extension.
@@ -15,14 +15,14 @@ Implementation: [MidiScriptEngineQuickJs.h](MidiScriptEngineQuickJs.h) (uses
 ## When to write QuickJs (JavaScript) vs Lua
 
 Both engines are similarly capable for the common case (reacting to
-`rack.onMidiMessage`, building/sending messages). Pick based on these differences:
+`midi.onMessage`, building/sending messages). Pick based on these differences:
 
 | | QuickJs (JS) | Lua |
 |---|---|---|
 | Language completeness | Full JavaScript (ES2020): `while`, `switch`, `try`, `class`, `new`, `this`, `var`/`let`/`const`, function declarations, arrow functions — see [QuickJS language support](#quickjs-language-support) | Full Lua 5.4 syntax; only the *library* is trimmed |
 | Data structures | Array literals `[1,2,3]`, object literals `{a:1}` | Only tables (`{}`); no literal array sugar, must use `{ {...}, {...} }` and `#t`/`ipairs` |
 | Stdlib | Full JS standard library: `Math`, `JSON`, `String`, `Array`, ... | Real Lua stdlib subset: `math`, `string`, `table` (no `io`, `os`, `package`, `debug` — sandboxed) |
-| String formatting | JS auto-coerces numbers in `+` concatenation; `number.toString()`/`number.toFixed()` helpers available | Lua auto-coerces numbers in `..` concatenation; `string.format` available |
+| String formatting | JS auto-coerces numbers in `+` concatenation; `number.toString()` helper available | Lua auto-coerces numbers in `..` concatenation; `string.format` available |
 | Familiarity | Preferred if the user/preset is JS-oriented or ports logic from another JS script | Preferred if the script needs `string.format`, `table.sort`, pattern matching, or other real stdlib features |
 | Performance/footprint | QuickJS is a full embeddable JS engine with a 1 MiB memory limit | minilua is a stripped full Lua VM; similarly small footprint |
 
@@ -43,7 +43,7 @@ QuickJs (JS-style `/** ... */`):
 ```javascript
 /**
  * @target stoermelder MIDI-KIT
- * @engine QuickJs
+ * @engine QuickJs@v1
  * @author yourname
  * @description One-line summary shown in the module log on load
  */
@@ -53,63 +53,143 @@ Lua (Lua-style `--[[ ... --]]`):
 ```lua
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author yourname
 @description One-line summary shown in the module log on load
 --]]
 ```
 
-`@engine` is mandatory and must exactly match `QuickJs` or `Lua` for the
-respective loader, or the script is rejected. `@author`/`@description` are
-optional but get echoed to the module's log on load. `@target` is
-conventionally present but not checked by the loader.
+`@engine` is mandatory and must exactly match `QuickJs@v1` or `minilua@v1` for
+the respective loader, or the script is rejected. The `@v1` suffix pins the
+script to a specific engine protocol revision, so a future breaking engine
+change can bump it (e.g. `@v2`) and old scripts are cleanly rejected instead
+of misbehaving. `@author`/`@description` are optional but get echoed to the
+module's log on load. `@target` is conventionally present but not checked by
+the loader.
+
+Engine selection is a simple substring match: the module asks each engine's
+`testScript()` whether the script is for it (QuickJs matches `@engine QuickJs@v1`,
+Lua matches `@engine minilua@v1`) and routes to the engine that says yes — the file
+extension is never used. Because the match is a plain `@engine <name>@vN`
+substring search, a script that mentions the tag only in a comment or a string
+(after the header block) can be misrouted; keep the `@engine` tag in the
+leading comment block.
 
 ## Script structure
 
 - Top-level code runs once, synchronously, when the script is (re)loaded.
-- `rack.onMidiMessage(midiPort, msg)` is called for every incoming MIDI
-  message (`midiPort` is 1-based). Define it as a method on the `rack`
+- `midi.onMessage(midiPort, msg)` is called for every incoming MIDI
+  message (`midiPort` is 1-based). Define it as a method on the `midi`
   object — it's the only callback the engine looks for per message; a
   script that never defines it loads fine but silently ignores all incoming
-  MIDI (logged once at load time). In QuickJs, assign it to the `rack`
-  object — `rack.onMidiMessage = function(midiPort, msg) {...}`. Lua
-  likewise: `rack.onMidiMessage = function(...) end` or
-  `rack.onMidiMessage = function(midiPort, msg) end`.
+  MIDI (logged once at load time). In QuickJs, assign it to the `midi`
+  object — `midi.onMessage = function(midiPort, msg) {...}`. Lua
+  likewise: `midi.onMessage = function(...) end` or
+  `midi.onMessage = function(midiPort, msg) end`.
 - Optional `input.getName(i)`, `param.getName(i)`, `param.getValueFormat(i)`
   functions may be overridden to customize panel/input labeling; both
   engines seed defaults (`"Port " .. i` / `"Param " .. i`) that scripts can
   replace by reassigning the table field.
-- Optional `rack.onTrigger(trigPort)` is called whenever the module's
+- Optional `trig.onTrigger(trigPort, channel)` is called whenever the module's
   trigger/gate input (`trigPort`, 1-based — MIDI-KIT currently exposes a
-  single trigger input, so this is always `1`) crosses the trigger
-  threshold. It is the only way to run script logic that isn't driven by an
-  incoming MIDI message — e.g. reading `trig.getTicks()`/`input.*` and
-  sending a MIDI message in response to an external clock/gate. A script
-  that never defines it simply never has it called; unlike
-  `rack.onMidiMessage`, there is no load-time log warning for omitting it.
-  In QuickJs, assign it to the `rack` object —
-  `rack.onTrigger = function(trigPort) {...}`. Lua likewise:
-  `rack.onTrigger = function(trigPort) end` or
-  `function rack.onTrigger(trigPort) end`.
+  single trigger input, so this is always `1`) crosses the trigger threshold
+  on an enabled channel. `channel` (1-based) is the polyphonic channel of the
+  trigger input that fired — a polyphonic clock/gate fires the callback once
+  per rising edge on each enabled channel. It is the only way to run script
+  logic that isn't driven by an incoming MIDI message — e.g. reading
+  `trig.getTicks()`/`input.*` and sending a MIDI message in response to an
+  external clock/gate, or streaming a
+  [Tipsy](#trig-dedicated-triggergate-ports) message with `trig.sendTipsy()`
+  on the trigger output.
+  **The callback is not used at all until `trig.enableIn(trigPort, [channel])`
+  is called.** A script that defines `trig.onTrigger` but never calls
+  `trig.enableIn()` gets no callback; moreover the module does not process the
+  trigger input at all on a channel that isn't enabled — it counts no ticks
+  (`trig.getTicks()` stays 0), drains no tick-scheduled (`sendAfterTrigger`)
+  messages, and dispatches no `trig.onTrigger`. Unlike `midi.onMessage`,
+  there is no load-time log warning for omitting it. In QuickJs, assign it to
+  the `trig` object — `trig.enableIn(1); trig.onTrigger = function(trigPort,
+  channel) {...}`. Lua likewise: `trig.enableIn(1)` /
+  `trig.onTrigger = function(trigPort, channel) end` or
+  `function trig.onTrigger(trigPort, channel) end`.
+- Optional `trig.onTipsyMessage(data, mimeType)` is called once for every
+  complete [Tipsy](#trig-dedicated-triggergate-ports) message decoded from
+  the trigger input claimed with `trig.enableTipsyIn()`. `data` and `mimeType` are
+  both strings; `data` may contain arbitrary bytes, including NULs, and is
+  capped at 256 bytes. A script that never claims a port, or never defines
+  the hook, simply never has it called — there is no load-time warning.
+  In QuickJs, assign it to the `trig` object —
+  `trig.onTipsyMessage = function(data, mimeType) {...}`. Lua likewise:
+  `trig.onTipsyMessage = function(data, mimeType) end`.
 - There is no per-sample or per-frame callback — logic only runs in
-  response to incoming MIDI messages (including clock 0xF8 realtime bytes)
-  or trigger-input ticks via `rack.onTrigger`.
-- Optional `rack.onLoad()` and `rack.onUnload()` hooks run once each:
-  - `rack.onLoad()` runs once, right after top-level code, when the script
-    has parsed and loaded successfully.
-  - `rack.onUnload()` runs once, right before the *current* script's state
-    is torn down — because it's about to be replaced by another script, the
-    module was reset, or the module is being removed from the patch. This
-    is the only place a script can reliably clean up: sending an
-    all-notes-off for anything it left sounding is the main use case, since
-    nothing else will ever get a chance to release those notes once the
-    script's own state is gone.
-  - Both can call `midi.create()`/`midiOut.send()` like `rack.onMidiMessage`
-    can; messages sent from either are flushed the same way.
+  response to incoming MIDI messages (including clock 0xF8 realtime bytes),
+  trigger-input ticks via `trig.onTrigger`, or decoded Tipsy messages via
+  `trig.onTipsyMessage`.
+- Optional `rack.onLoad()`, `rack.onUnload()`, and `rack.onSave()` hooks:
+  - `rack.onLoad([persistedConfig])` runs once, right after top-level code,
+    when the script has parsed and loaded successfully. If a config was
+    persisted by a previous save (see [Persistence](#persistence)), it is
+    passed as `persistedConfig` (a JavaScript object in QuickJs, a Lua table
+    in Lua); otherwise the argument is `undefined` (QuickJs) / `nil` (Lua).
+  - `rack.onUnload()` runs every time the *current* script's state is torn
+    down for real — because it's about to be replaced by another script, the
+    module was reset, or the module is being removed from the patch. This is
+    the only place a script can reliably clean up: sending an all-notes-off
+    for anything it left sounding is the main use case, since nothing else
+    will ever get a chance to release those notes once the script's own
+    state is gone. **Its return value is ignored** — `onUnload()` is
+    teardown-only; use `rack.onSave()` to persist config.
+  - `rack.onSave()` is the config-bearing hook: if it returns a value, that
+    value is serialized to JSON and stored with the module's patch data (see
+    [Persistence](#persistence)). It **must be side-effect-free** — it may be
+    called repeatedly (e.g. on every explicit patch save) without tearing
+    down or otherwise disturbing the script's state, so it should only read
+    state, never mutate it or send MIDI messages meant to have an audible
+    effect (any it does send are discarded, see
+    [Persistence](#persistence)).
+  - All three can call `midi.create()`/`midiOut.send()` like
+    `midi.onMessage` can; messages sent from any of them are flushed the
+    same way, except `onSave()`'s are always discarded (see above).
   - In QuickJs, assign them to the `rack` object —
-    `rack.onLoad = function() {...}` / `rack.onUnload = function() {...}`.
-    Lua likewise: `rack.onLoad = function() ... end` /
-    `rack.onUnload = function() ... end`.
+    `rack.onLoad = function(...) {...}` / `rack.onUnload = function() {...}`
+    / `rack.onSave = function() {...}`. Lua likewise:
+    `rack.onLoad = function(...) ... end` / `rack.onUnload = function() ... end`
+    / `rack.onSave = function() ... end`.
+
+### Hooks and predefined objects are resolved once, at load time
+
+`midi.onMessage` is read from the `midi` object **exactly once**;
+`rack.onLoad`, `rack.onUnload`, and `rack.onSave` from the `rack` object;
+and `trig.onTrigger`/`trig.onTipsyMessage` from the `trig` object, right
+after the script's top-level code finishes running. **Reassigning any of them
+afterward — from
+inside a callback or anywhere else in the script — has no effect.** The
+function that was present at load time keeps running for the lifetime of the
+script; a later assignment to `midi.onMessage` (or the others) is simply
+never looked at again. The same applies to defining a hook **late**: a
+script that never defines `midi.onMessage` at load time but assigns it
+later (e.g. from inside `trig.onTrigger`) will never have that later
+definition called — the "no `midi.onMessage` defined" warning logged at load
+time is the last word on it. (`trig.enableIn()` is not a hook — it is a live
+API call like `param.enable()`, so calling it at any time takes effect for
+subsequent trigger dispatch.)
+
+This is a deliberate, permanent design choice, not a limitation to be worked
+around: resolving the hooks once (rather than looking them up by name on
+every incoming MIDI message or trigger tick) is what keeps message dispatch
+fast. Write scripts so every hook is assigned exactly once, at the top
+level, during initial load — this is what every shipped preset already does
+and the only supported pattern.
+
+Reassigning (or otherwise clobbering — e.g. `rack = 42`) one of the
+predefined globals (`rack`, `midi`, `midiOut`, `trig`, `input`, `param`,
+`number`) at runtime is likewise unsupported. Both engines are tested to
+degrade gracefully rather than crash if a script does this anyway — expect
+either the reassignment to be silently ignored (for a hook function, per
+above) or a caught, logged script error on the next statement that tries to
+use the clobbered value (for everything else) — but the resulting behavior
+is undefined and may differ in wording between QuickJs and Lua. Treat any of
+this as a bug in the script, not a supported technique.
 
 ## QuickJS language support
 
@@ -151,11 +231,149 @@ every example in this document does.
   engines.
 - `rack.overlay(s1 [, s2 [, s3]])` — show up to 3 lines in the on-panel overlay.
 - `rack.getFrame()` — the current engine frame number (`APP->engine->getFrame()`).
+- `rack.random()` — a random number in the interval [0, 1), drawn from Rack's own
+  RNG (`rack::random::uniform()`), so it shares the patch's seed/determinism.
+- `rack.registerContextMenu(options)` — add one item to the module's right-click
+  context menu, in registration order (multiple items are allowed). Returns
+  `true` on success; throws (load fails) if `options` is malformed. Two variants:
+
+  *Boolean toggle* — a single menu line with a checkmark:
+  ```js
+  rack.registerContextMenu({
+      type: "boolean",
+      label: "Velocity to CC",
+      onGetValue: function() {
+          // Return true/false: the checkmark is read lazily, when the
+          // menu is opened, so it always reflects the current state
+          // (e.g. a config restored by onLoad()).
+          return config.emitTrigger;
+      },
+      onChange: function(checked) {
+          // checked: true/false (boolean)
+      }
+  });
+  ```
+  *Options submenu* — a submenu with one entry per option, checkmark on the
+  current selection:
+  ```js
+  rack.registerContextMenu({
+      type: "options",
+      label: "Out mode",
+      options: ["Internal", "External", "Both"],
+      onGetValue: function() {
+          // Return the selected index, read lazily when the menu is
+          // opened. Return the index, or -1 for no selection.
+          return config.outMode;
+      },
+      onChange: function(selectedIndex, selectedLabel) {
+          // selectedIndex: number, selectedLabel: string
+      }
+  });
+  ```
+  Notes:
+  - `label` must be a non-empty string; `options` must be a non-empty array of
+    strings; `onChange` must be a function.
+  - `onGetValue` is optional and, when present, must be a function returning
+    the item's current value: a boolean for `type: "boolean"`, an index
+    number for `type: "options"`. It is evaluated just-in-time on the worker
+    thread every time the context menu is opened, so the checkmark/selection
+    always reflects the script's live state — including config restored by
+    `onLoad()` on a patch reload. When `onGetValue` is absent the value
+    defaults to `false` / `0`.
+  - `onChange` runs on the worker thread (like the other callbacks) when the
+    menu item is clicked, and may call any other `rack.*` function. Exceptions
+    inside it are logged as `Context menu callback error: ...` without
+    crashing.
+  - The module's presentation state (checkmark/selection) is updated as soon as
+    the item is clicked, so the menu reflects the change immediately even
+    before the callback has run.
+  - All registered items are cleared when the script is reloaded or cleared.
+  - Lua uses an equivalent table: `{ type = "boolean", label = "...",
+    onGetValue = function() return config.emitTrigger end,
+    onChange = function(checked) ... end }`.
+
+### Persistence
+
+Scripts can persist their configuration across patch saves and reloads via a
+pair of hooks:
+
+- **`rack.onSave()`** — called to snapshot the script's current config for
+  persistence. If it returns a value, that value is serialized to JSON and
+  stored with the module's patch data. It **must be side-effect-free**: it
+  may be called repeatedly (e.g. on every explicit save), so it should only
+  read state, never mutate it.
+- **`rack.onLoad(persistedConfig)`** — called when the script loads. If a
+  config was persisted, it is deserialized from JSON and passed as
+  `persistedConfig` (a JavaScript object in QuickJs, a Lua table in Lua). If
+  no config was persisted, `persistedConfig` is `undefined` (QuickJs) / `nil`
+  (Lua) and the script initializes from its defaults.
+
+`rack.onUnload()` is a separate, teardown-only hook (see above) — **its
+return value is ignored** and it is not part of the persistence contract.
+Scripts written before `rack.onSave()` existed that only returned their
+config from `onUnload()` will persist nothing until migrated to
+`rack.onSave()`; there is no automatic fallback.
+
+The persisted value must be a plain JSON-serializable object (booleans,
+numbers, strings, arrays, and nested objects); functions and other
+non-serializable values are silently dropped. If `onSave()` returns nothing
+(or a non-serializable value), no config is persisted and `onLoad()` receives
+`undefined`/`nil`.
+
+A typical pattern:
+
+```js
+let config = { channel: 1, passThrough: false };
+
+rack.onLoad = function(persistedConfig) {
+    if (persistedConfig) {
+        config = Object.assign({}, config, persistedConfig);
+    }
+};
+
+rack.onSave = function() {
+    return config;
+};
+```
+
+```lua
+config = { channel = 1, passThrough = false }
+
+rack.onLoad = function(persistedConfig)
+    if persistedConfig then
+        for k, v in pairs(persistedConfig) do
+            config[k] = v
+        end
+    end
+end
+
+rack.onSave = function()
+    return config
+end
+```
+
+Timing notes:
+
+- On a patch save, the module snapshots the config by running `onSave()`
+  synchronously on the GUI thread, without touching `onUnload()` or tearing
+  the script down — the script keeps running and the return value reflects
+  live state (e.g. the latest context-menu setting). Because `onSave()` must
+  be side-effect-free, it may be called on every save (including the
+  periodic autosave) with no audible effect; any messages it sends anyway are
+  **discarded**.
+- When the script is actually replaced, the module reset, or the module
+  removed, `rack.onUnload()` runs as a real teardown and its messages (e.g.
+  an all-notes-off) **are** delivered — but its return value, even if
+  present, is never persisted. `onUnload()` can run more than once over a
+  script's lifetime (e.g. on module reset followed by removal), so keep any
+  side effects idempotent rather than assuming it runs exactly once.
+- The persisted config is only written when Rack serializes the module
+  (`dataToJson()`, i.e. on patch save); replacing/removing the module or
+  script does not by itself save it.
 
 ### `number.*`
-`random()` (0..1 uniform), `rescale(x, xMin, xMax, yMin, yMax [, curve])`,
-`crossfade(a, b, pos)`, `toString(x)`, `toFixed(x, digits)` (fixed-precision
-string, `digits` 0-20). Present in both engines identically (Lua re-exposes
+`rescale(x, xMin, xMax, yMin, yMax [, curve])`,
+`crossfade(a, b, pos)`, `toString(x)`. Present in both engines identically (Lua re-exposes
 these even though `math.*` is also available, for script portability).
 
 ### `input.*` (CV inputs on the module, 1-based)
@@ -165,10 +383,66 @@ these even though `math.*` is also available, for script portability).
 - Override `input.getName(i)` to customize the panel label.
 
 ### `trig.*` (dedicated trigger/gate ports)
-- `trig.getTicks(i)` — clock tick counter for trigger input `i`.
+- `trig.enableIn(trigPort [, ch])` — enable trigger input `trigPort` (polyphonic
+  channel defaults to 1) for trigger processing and the `trig.onTrigger`
+  callback. **The trigger input does nothing until this is called**: a
+  channel that is never enabled counts no ticks (`trig.getTicks()` stays 0),
+  drains no tick-scheduled (`sendAfterTrigger`) messages, and never fires
+  `trig.onTrigger`. Call once per (port, channel) the script wants to hear; a
+  polyphonic clock is enabled per channel, e.g. `trig.enableIn(1, 1)` plus
+  `trig.enableIn(1, 2)`.
+- `trig.onTrigger(trigPort, ch)` — the trigger callback, assigned on the
+  `trig` object (resolved once at load, like the `rack` hooks). Called on
+  every rising edge of an *enabled* (port, channel); `trigPort` is 1-based
+  (always `1`), `ch` is the 1-based polyphonic channel that fired. Without a
+  matching `trig.enableIn()` call it is never called.
+- `trig.onTipsyMessage(data, mimeType)` — the Tipsy input callback, assigned
+  on the `trig` object (resolved once at load, like the `rack` hooks). Called
+  once for every complete [Tipsy](#trig-dedicated-triggergate-ports) message
+  decoded from the trigger input claimed with `trig.enableTipsyIn()`; see
+  that entry below. `data` and `mimeType` are strings; `data` may contain
+  arbitrary bytes (including NULs) and is capped at 256 bytes.
+- `trig.getTicks(i [, ch])` — clock tick counter for trigger input `i`
+  (polyphonic channel defaults to 1).
 - `trig.isHigh(i [, ch])`, `trig.isLow(i [, ch])`.
 - `trig.setHigh(i [, ch])`, `trig.setLow(i [, ch])`, `trig.setTrigger(i [, ch])`
   (momentary trigger), `trig.setGate(i [, ch], durationMs)`.
+- `trig.sendTipsy(data [, mimeType])` — encode `data` (a string) with the
+  [Tipsy protocol](https://github.com/baconpaul/tipsy-encoder) and stream it
+  out the trigger output as CV voltages, one voltage per sample until the
+  message is complete. The optional `mimeType` (a string) specifies the
+  content type and defaults to `"text/plain"`; the payload is capped at
+  256 bytes. The stream is meant for modules that understand the Tipsy
+  protocol (such as [TRANSIT](../../transit/Transit.md)) and temporarily
+  takes over the trigger output while it is being transmitted. Unlike the
+  `midiOut.*` senders, `sendTipsy` sends no MIDI: it is not routed through
+  `midiOut.selectPort()`, does not consume a message-handle slot, and is not
+  subject to the "sent once per callback" rule.
+  ```js
+  trig.enableIn(1);
+  trig.onTrigger = function(trigPort, channel) {
+      trig.sendTipsy("Hello Tipsy!");                              // mime defaults to "text/plain"
+      trig.sendTipsy('{"label":"My snapshot","value":42}', "application/json");
+  };
+  ```
+- `trig.enableTipsyIn([enabled])` — decode an incoming Tipsy stream from the
+  trigger input, delivering each completed message to `trig.onTipsyMessage`.
+  The optional boolean `enabled` defaults to `true`; pass `false` to release
+  the trigger input again. Tipsy input is only supported on the first trigger
+  input, so — like `trig.sendTipsy()` — there is no port argument.
+
+  While the trigger input is claimed, it stops behaving as a trigger on
+  channel 1: `trig.onTrigger` doesn't fire and `trig.getTicks()` doesn't
+  advance there, and `trig.isHigh()`/`trig.isLow()` on channel 1 read `0` —
+  the encoded voltages are protocol, not a gate a script should act on.
+  Other channels are unaffected. A Tipsy stream would otherwise fire
+  `trig.onTrigger` continuously as the encoded voltages cross the trigger
+  threshold.
+  ```js
+  rack.onLoad = function() {
+      trig.enableTipsyIn();        // decode from the trigger input
+  };
+  ```
 
 ### `param.*` (panel knobs)
 - `param.enable(i)` — activate param `i`.
@@ -177,24 +451,49 @@ these even though `math.*` is also available, for script portability).
 
 ### `midi.*` — message construction/inspection
 Messages are opaque handles (indices into an internal store, max 32 live per
-callback) created with `midi.create()` or `midi.createNRPN()`; `rack.onMidiMessage`
+callback) created with `midi.create()`, `midi.createNRPN()`, or
+`midi.createCc14bit()`; `midi.onMessage`
 also receives the incoming message as handle `0`/implicit first arg (Lua:
 index `0`, QuickJs: same convention).
 
+**The store holds at most 32 live handles per callback.** Once it is full,
+`midi.create()`, `midi.clone()`, `midi.createNRPN()`, and `midi.createCc14bit()`
+raise a script error
+that aborts the rest of the callback. Messages already marked for send before
+the error are still flushed, so a multi-message sequence (e.g. an NRPN pair,
+or a wide chord release) can be emitted partially — a message created but
+never sent is dropped. Keep callbacks within the cap, or create/send in
+batches (one handle per message, per the send-once rule below).
+
+- `midi.onMessage(midiPort, msg)` — the incoming-MIDI entry point (see
+  [Script structure](#script-structure)): called with each incoming message
+  that nothing else claimed (see
+  [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc)
+  for the callbacks that receive assembled parameter changes instead).
+- `midi.onNrpn(midiPort, msg)` / `midi.onRpn(midiPort, msg)` /
+  `midi.onCc14bit(midiPort, msg)` — called with an assembled NRPN/RPN
+  parameter change or 14-bit controller change (see
+  [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc)).
+  Only fire for what the script enabled; `midi.onMessage` does not see the
+  component CCs such a change was built from.
 - `midi.create()` → new empty message handle.
 - `midi.clone(msg)` → new message handle carrying an independent copy of
   `msg`'s MIDI payload. The clone starts as a fresh, unsent message (its own
   store slot), so it can be modified and sent without affecting the source.
   This is the canonical way to "send a modified copy of the incoming message",
   e.g. `let copy = midi.clone(msg); midi.setChannel(copy, 5); midiOut.send(copy);`
-  Note: NRPN state is not copied — a clone of an NRPN handle is a single plain
-  message, not a chained quad.
+  Note: NRPN/14-bit-CC chain state is not copied — a clone of an NRPN or
+  `createCc14bit()` handle is a single plain message, not a chained group.
 - `midi.createNRPN()` → 4 chained handles (param LSB/MSB + value LSB/MSB),
   used only with `midi.setNRPN`.
+- `midi.createCc14bit()` → 2 chained handles (value MSB at CC `cc`, value LSB
+  at CC `cc + 32`), used only with `midi.setCc14bit`; the pair is sent
+  atomically — a receiver never sees the MSB without its LSB.
 - Getters: `getChannel(msg)` (1-based; `-1` for realtime/SysEx messages —
   clock, start/stop/continue, SysEx framing — which have no channel),
-  `getChanPressure(msg)`, `getNote(msg)`,
-  `getValue(msg)`, `getLength(msg)`, `getPitchWheel(msg)`, `getProgramChange(msg)`,
+  `getChanPressure(msg)`, `getControl(msg)`,
+  `getNote(msg)`, `getValue(msg)`, `getLength(msg)`, `getPitchWheel(msg)`,
+  `getProgramChange(msg)`,
   `getSysEx(msg)` (hex string, the payload only — without the `f0`/`f7`
   framing), `getSysExLength(msg)` (payload length in bytes, framing excluded —
   check it before reading the payload with `getSysEx`), `getRaw(msg)`
@@ -202,13 +501,18 @@ index `0`, QuickJs: same convention).
   framing added or removed).
 - Type predicates: `isCc`, `isNoteOn`, `isNoteOff`, `isKeyPressure`,
   `isChanPressure`, `isProgramChange`, `isPitchWheel`, `isSysEx`, `isClock`,
-  `isStart`, `isContinue`, `isStop`.
+  `isStart`, `isContinue`, `isStop`, plus `isNrpn`, `isRpn`, `isCc14bit` —
+  true only for assembled extended messages (see
+  [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc)).
 - Setters (every `ch` argument below is a MIDI channel and is silently
   clamped to 1-16, e.g. `setNoteOn(msg, -5, ...)` is treated as channel 1):
   `setCc(msg, ch, cc, value)` (`value` is clamped to 0-127),
-  `setCc14bit(msgMsb, msgLsb, ch, cc, value)`
-  (value is a float, MSB=int part/LSB=fractional*128 — see `nrpn_to_cc.js`/`.lua`
-  for the canonical use), `setChannel(msg, ch)`,
+  `setCc14bit(msgMsb, msgLsb, ch, cc, value)` (fills two independent handles,
+  sent as two separate messages with no atomicity) — or
+  `setCc14bit(cc14, ch, cc, value)` where `cc14` is the first handle of a
+  `midi.createCc14bit()` pair (both CCs are sent atomically as a unit). In both
+  forms `value` is a float, MSB=int part/LSB=fractional*128 — see
+  `nrpn_to_cc.js`/`.lua` for the canonical use), `setChannel(msg, ch)`,
   `setChanPressure(msg, ch, value)` (2-byte message; read back with
   `getChanPressure`, not `getValue`),
   `setKeyPressure(msg, ch, note, vel)` (`vel` is clamped to 0-127), `setNote(msg, note)`,
@@ -224,11 +528,86 @@ index `0`, QuickJs: same convention).
   e.g. `"f11a"` for an MTC quarter-frame — use this for message types with no
   dedicated setter), `setValue(msg, value)`.
 
+#### Assembled extended input (NRPN / RPN / 14-bit CC)
+
+`midi.onMessage` sees the MIDI stream as it arrives — including the raw CCs
+that make up a spec-compliant NRPN/RPN parameter change or a 14-bit CC pair.
+Reading those by hand (a select handshake on CC 99/98, data entry on 6/38, an
+MSB/LSB pair on CC `n`/`n + 32`) is exactly the boilerplate the old
+`NRPN to CC` example shipped. If you want *parameter changes*, not raw CCs,
+the engine can assemble them for you — the mirror image of `midi.setNRPN()` /
+`midi.setCc14bit()` on the way out.
+
+- `midi.enableNrpnIn(midiPort [, channel])` /
+  `midi.enableRpnIn(midiPort [, channel])` — assemble NRPN (kind 0) or RPN
+  (kind 1) parameter changes on `midiPort` into `midi.onNrpn` /
+  `midi.onRpn` calls. `channel` is the 1-based MIDI channel to listen on
+  (default: all).
+- `midi.enableCc14bitIn(midiPort [, cc] [, channel])` — assemble 14-bit CC
+  pairs on `midiPort` into `midi.onCc14bit` calls. `cc` is the MSB controller
+  number 0-31 (its LSB is implicitly `cc + 32`); omit it to enable every
+  14-bit CC. `channel` is 1-based (default: all).
+- `midi.onNrpn(midiPort, msg)` / `midi.onRpn(midiPort, msg)` /
+  `midi.onCc14bit(midiPort, msg)` — called once per completed, enabled
+  parameter change, with `msg` an ordinary handle you read through the usual
+  accessors. **Enabling a kind without defining its callback is a mistake**:
+  the message then reaches nothing at all, and its component CCs are withheld
+  from `midi.onMessage` (see below), so the script sees strictly less MIDI
+  than before.
+- `midi.isNrpn(msg)` / `midi.isRpn(msg)` / `midi.isCc14bit(msg)` — true only
+  for an assembled message of that kind; useful when a handle is passed to a
+  helper or inspected later. Redundant inside the matching callback, but makes
+  the handle self-describing.
+- `midi.getControl(msg)` — "which controller is this?", for every
+  controller-ish message: the controller number of a plain CC (0-127), the
+  MSB controller of an assembled 14-bit CC (0-31), the parameter number of an
+  assembled NRPN/RPN (0-16383), and `-1` for anything that addresses none
+  (notes, pitch bend, clock, ...). **This is the preferred way to read a
+  controller number**; on a plain CC `midi.getNote(msg)` returns the same
+  byte and still works, but it is the older spelling. Assembled messages
+  carry all three alongside each other: `getControl()` = the parameter,
+  `getValue()` = the combined 14-bit value, `getNote()` = the raw CC that
+  completed the message (e.g. 38, the Data Entry LSB).
+- `midi.getValue(msg)` is **type-aware**: on an assembled NRPN/RPN/14-bit CC
+  it returns the combined 14-bit value (0-16383); on everything else the raw
+  7-bit data byte exactly as before.
+
+**Consumption.** Once a kind is enabled, the CCs it is built from stop
+reaching `midi.onMessage` — a script that asked for assembled events should
+not also have to filter the parts they were assembled from. This mirrors
+`trig.enableTipsyIn()`, which stops `trig.onTrigger` while the trigger input
+is claimed. The raw CCs are swallowed, not released: if a device drops a
+message mid-quad, the consumed components are gone.
+
+- **The matching-enable rule.** `midi.onMessage` keeps its meaning — "a
+  message arrived that nothing else claimed". A component CC is withheld only
+  when the *kind* of assembly it belongs to is enabled: a script that enabled
+  only 14-bit CC still sees CC 98/99 (NRPN parameter select) raw, because it
+  did not enable NRPN.
+- **Parameter select only** — a parameter *select* (CC 99/98 or 101/100
+  without a following data entry) fires no callback; only the completed change
+  (data entry CC 6/38) does. The RPN 127/127 reset likewise.
+- **The CC 6/38 overlap.** CC 0-31 are simultaneously 14-bit MSBs and, for
+  CC 6, Data Entry MSB — the spec's ranges overlap. So with blanket 14-bit CC
+  *and* NRPN enabled, CC 6/38 are consumed as a 14-bit pair (they *are* one
+  by the spec's numbering) and a data entry can fire both `onCc14bit` and
+  `onNrpn`. This is accepted behaviour, not a bug; register per-CC with
+  `midi.enableCc14bitIn(midiPort, cc)` if you want a specific 14-bit CC
+  enabled while leaving 6/38 alone.
+- **MSB of 0.** An MSB of value 0 on a controller that was never seen is
+  ignored, so no spurious 14-bit event fires after a MIDI reset; only a zero
+  MSB on a controller that was already seen produces one.
+- **Sending an assembled handle back out** emits only its final CC — a clone
+  or `midiOut.send()` of an assembled handle is a single plain message, not a
+  reconstructed quad (same rule as the send-side chain handles). Use
+  `midi.setNRPN()` / `midi.setCc14bit()` to rebuild the full sequence on the
+  way out.
+
 ### `midiOut.*` — sending
 
 - `midiOut.selectPort(midiPort)` — selects the output port (1-based) that every
   subsequent `midiOut.*` call sends on, until `selectPort` is called again.
-  The selection is sticky across `rack.onMidiMessage` invocations, not reset per
+  The selection is sticky across `midi.onMessage` invocations, not reset per
   callback. MIDI-KIT currently exposes a single output, so
   `midiOut.selectPort(1)` is a no-op today beyond validating the index — it
   exists so scripts written against a future multi-output engine don't need to
@@ -238,17 +617,19 @@ The sending functions below take no port argument — the destination is
 whatever `midiOut.selectPort()` last selected (port 1 if it was never called):
 
 - `midiOut.send(msg)` — send immediately.
-- `midiOut.send(nrpnHandle)` — sending the first handle of an NRPN quad
-  automatically flushes all 4 underlying CC messages in order.
+- `midiOut.send(nrpnHandle)` / `midiOut.send(cc14Handle)` — sending the first
+  handle of an NRPN quad (4 messages) or a 14-bit CC pair (2 messages)
+  automatically flushes the whole group in order.
 - `midiOut.sendAfterMs(msg, ms)` — delayed send, scheduled from the current
   engine frame.
-- `midiOut.sendAfterTrigger(msg [, trigPort], ticks)` — send after `ticks`
-  clock ticks counted from `trigPort` (1-based, defaults to trig input 1).
+- `midiOut.sendAfterTrigger(msg, ticks [, trigPort [, channel]])` — send
+  after `ticks` clock ticks counted from `trigPort` (1-based, defaults to
+  trig input 1) on polyphonic `channel` (defaults to 1).
 
 **A message can only be sent once per callback.** `midiOut.send(msg)` (and the
 `sendAfter*` variants) mark the handle as sent; the actual enqueue happens once
 per handle in the post-callback flush, so a second `send` of the *same* handle
-within one `rack.onMidiMessage`/`rack.onLoad`/`rack.onUnload` is not a second message — only
+within one `midi.onMessage`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` is not a second message — only
 one goes out, and if the message body was changed in between, the last change
 wins. To send the same bytes twice, build a fresh handle first with
 `midi.create()` or `midi.clone(msg)` and send that. Each message sent consumes
@@ -263,21 +644,25 @@ Clock=0xF8, Start=0xFA, Continue=0xFB, Stop=0xFC (encoded as status 0xf with
 rather than decoding this by hand).
 
 ## Gotchas
-- Message handles are only valid within the `rack.onMidiMessage` call that
+- Message handles are only valid within the `midi.onMessage` call that
   created them — the store resets each callback invocation. Creating a
-  message at top level (outside `rack.onMidiMessage`) logs a warning and the
+  message at top level (outside `midi.onMessage`) logs a warning and the
   handle is discarded as soon as the next MIDI message arrives, so build
-  messages inside the callback. `rack.onLoad()`/`rack.onUnload()`/`rack.onTrigger()`
+  messages inside the callback. `rack.onLoad()`/`rack.onUnload()`/`rack.onSave()`/`trig.onTrigger()`
   are full callbacks in this sense too — a message created and sent inside
-  any of them is delivered normally, and (unlike bare top-level code)
-  doesn't warn.
+  any of them is delivered normally (except `onSave()`'s, which are always
+  discarded — see [Persistence](#persistence)), and (unlike bare top-level
+  code) doesn't warn.
 - `midi.setCc14bit`/`setNRPN` split a 14-bit value across two 7-bit CC
   messages (`cc` = MSB, `cc + 32` = LSB per the NRPN/14-bit CC convention);
   see [nrpn_to_cc.js](nrpn_to_cc.js)/[nrpn_to_cc.lua](nrpn_to_cc.lua) for a
   full worked example, and [nrpn_generator.js](nrpn_generator.js)/
   [nrpn_generator.lua](nrpn_generator.lua) for constructing NRPN messages.
+  Use `midi.createCc14bit()` + the 4-arg `setCc14bit` for a 14-bit CC pair
+  that must land atomically; the two-handle form sends two independent
+  messages.
 - Lua's sandboxed stdlib excludes `io`, `os`, `package`, `debug` — no file
   access, no OS calls, by design.
 - Both engines only see `@engine`-matching scripts; loading a QuickJs script
-  into what expects `@engine Lua` (or vice versa) fails with an explicit
+  into what expects `@engine minilua@v1` (or vice versa) fails with an explicit
   "not compatible" log message rather than silently misinterpreting it.

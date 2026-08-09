@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Replaces every note's held length with a fixed number of clock ticks, so all notes end on the grid
 --]]
@@ -16,8 +16,8 @@
 -- midiOut.sendAfterTrigger(). Every note then lasts the same musical duration
 -- regardless of how it was played.
 --
--- Requires a clock on the module's trigger input (config.trigPort): the length
--- is counted in ticks of that input, not in milliseconds, so it follows tempo.
+-- Requires a clock on the module's trigger input: the length is counted in
+-- ticks of that input, not in milliseconds, so it follows tempo.
 -- Feed the same clock that drives the rest of the patch. With a 24 ppqn MIDI
 -- clock routed to the trigger input:
 --
@@ -35,9 +35,6 @@ local config = {
     -- Fixed note length, in ticks of the trigger input's clock
     lengthTicks = 12,
 
-    -- Trigger input the length is counted on (1-based)
-    trigPort = 1,
-
     -- Only quantise this channel; set to 0 to quantise every channel
     channel = 0,
 
@@ -54,12 +51,17 @@ local state = {
     sounding = {}
 }
 
+-- The scheduled Note-Offs are counted in ticks of the trigger input's clock,
+-- so that clock must be enabled — without trig.enableIn() the module does not
+-- process the trigger input at all and the scheduled sends never fire.
+trig.enableIn(1, 1)
+
 rack.onLoad = function()
     for n = 0, 127 do
         state.sounding[n] = false
     end
     rack.log("Note length quantiser initialized")
-    rack.log("Length: ", config.lengthTicks, " ticks on trigger input ", config.trigPort)
+    rack.log("Length: ", config.lengthTicks, " ticks")
     if config.channel == 0 then
         rack.log("Channel: all")
     else
@@ -94,10 +96,72 @@ end
 local function scheduleNoteOff(ch, note)
     local off = midi.create()
     midi.setNoteOff(off, ch, note)
-    midiOut.sendAfterTrigger(off, config.trigPort, config.lengthTicks)
+    midiOut.sendAfterTrigger(off, config.lengthTicks)
 end
 
-rack.onMidiMessage = function(midiPort, msg)
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local LENGTH_TICKS = { 6, 12, 24, 48 }
+local LENGTH_LABELS = { "6 (16th)", "12 (8th)", "24 (quarter)", "48 (half)" }
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+
+local function lengthTicksIndex()
+    for i = 1, #LENGTH_TICKS do
+        if LENGTH_TICKS[i] == config.lengthTicks then return i - 1 end
+    end
+    return 0
+end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Note length",
+    options = LENGTH_LABELS,
+    onGetValue = function()
+        return lengthTicksIndex()
+    end,
+    onChange = function(idx)
+        config.lengthTicks = LENGTH_TICKS[idx + 1]
+        rack.log("Length: ", config.lengthTicks, " ticks")
+    end
+})
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Channel",
+    options = CHANNEL_LABELS,
+    onGetValue = function()
+        return config.channel
+    end,
+    onChange = function(idx)
+        config.channel = idx
+        rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
+    end
+})
+
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Pass through other messages",
+    onGetValue = function()
+        return config.passThroughOther
+    end,
+    onChange = function(checked)
+        config.passThroughOther = checked
+    end
+})
+
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Log quantised notes",
+    onGetValue = function()
+        return config.verbose
+    end,
+    onChange = function(checked)
+        config.verbose = checked
+    end
+})
+
+midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 
     if midi.isNoteOn(msg) and matchesChannel(ch) then

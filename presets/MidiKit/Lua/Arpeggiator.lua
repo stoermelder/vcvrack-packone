@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Arpeggiator clocked by the trigger input, with clock division, octave range, note length and playmode params
 --]]
@@ -34,17 +34,11 @@
 
 -- Configuration - change these values as needed
 local config = {
-    -- Trigger input driving the arp (1-based)
-    trigPort = 1,
-
     -- Only arpeggiate notes on this channel; 0 = every channel
     channel = 0,
 
     -- Output channel for arpeggiated notes; 0 = same as input note's channel
-    outChannel = 0,
-
-    -- Show the currently playing step in the panel overlay
-    showOverlay = true
+    outChannel = 0
 }
 
 -- Clock division choices, in trigger ticks per arp step (fewer ticks = faster)
@@ -73,6 +67,11 @@ param.enable(1)
 param.enable(2)
 param.enable(3)
 param.enable(4)
+
+-- Clock the arp from trigger channel 1 only: trig.onTrigger fires per poly
+-- channel, and trig.enableIn() gates it — enabling just channel 1 means the
+-- other channels are ignored.
+trig.enableIn(1, 1)
 
 param.getName = function(i)
     if i == 1 then return "Clock division" end
@@ -103,7 +102,7 @@ end
 param.getValueFormat = function(i)
     if i == 1 then return number.toString(DIVISIONS[divisionIndex()]) .. " ticks/step" end
     if i == 2 then return number.toString(octaveRange()) .. " oct" end
-    if i == 3 then return number.toFixed(param.getValue(3) * 100, 0) .. " %" end
+    if i == 3 then return string.format("%.0f", param.getValue(3) * 100) .. " %" end
     if i == 4 then return PLAYMODES[playmodeIndex()] end
     return number.toString(param.getValue(i))
 end
@@ -158,14 +157,46 @@ end
 
 rack.onLoad = function()
     rack.log("Arpeggiator initialized")
-    rack.log("Trigger input: ", config.trigPort)
 end
 
 rack.onUnload = function()
     releaseSounding()
 end
 
-rack.onMidiMessage = function(midiPort, msg)
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+local OUT_CHANNEL_LABELS = { "Same as input" }
+for c = 1, 16 do OUT_CHANNEL_LABELS[c + 1] = tostring(c) end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Input channel",
+    options = CHANNEL_LABELS,
+    onGetValue = function() 
+        return config.channel
+    end,
+    onChange = function(idx)
+        config.channel = idx
+        rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
+    end
+})
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Output channel",
+    options = OUT_CHANNEL_LABELS,
+    onGetValue = function()
+        return config.outChannel
+    end,
+    onChange = function(idx)
+        config.outChannel = idx
+        rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx + 1])
+    end
+})
+
+midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 
     if midi.isNoteOn(msg) and matchesChannel(ch) and midi.getValue(msg) > 0 then
@@ -204,9 +235,7 @@ rack.onMidiMessage = function(midiPort, msg)
     midiOut.send(msg)
 end
 
-function rack.onTrigger(trigPort)
-    if trigPort ~= config.trigPort then return end
-
+function trig.onTrigger(trigPort, channel)
     local division = DIVISIONS[divisionIndex()]
     state.tickCount = state.tickCount + 1
     if state.tickCount < division then return end
@@ -231,14 +260,10 @@ function rack.onTrigger(trigPort)
 
     local off = midi.create()
     midi.setNoteOff(off, ch, note)
-    midiOut.sendAfterTrigger(off, config.trigPort, lengthTicks)
+    midiOut.sendAfterTrigger(off, lengthTicks)
 
     state.soundingNote = note
     state.soundingChannel = ch
-
-    if config.showOverlay then
-        rack.overlay("Arp " .. PLAYMODES[playmodeIndex()], "note " .. number.toString(note) .. " (" .. number.toString(state.step) .. "/" .. number.toString(#state.pattern) .. ")")
-    end
 
     state.step = state.step + 1
     if state.step > #state.pattern then state.step = 1 end

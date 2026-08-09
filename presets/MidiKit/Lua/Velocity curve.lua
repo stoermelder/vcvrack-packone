@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Reshapes Note-On velocity with a knob-controlled curve, plus configurable floor and ceiling
 --]]
@@ -42,10 +42,7 @@ local config = {
     curveAmount = 2,
 
     -- Only process this channel; 0 = every channel
-    channel = 0,
-
-    -- Show each remapped velocity in the panel overlay
-    showOverlay = true
+    channel = 0
 }
 
 param.enable(config.curveParam)
@@ -59,8 +56,10 @@ param.getValueFormat = function(port)
     if port == config.curveParam then
         local v = param.getValue(config.curveParam)
         -- Report the curve as a signed shape amount rather than a raw 0..1,
-        -- so the panel reads "-2.0 .. 0.0 .. +2.0" around linear.
-        return string.format("%+.1f", (v - 0.5) * 2 * config.curveAmount)
+        -- so the panel reads "-2.0 .. 0.0 .. +2.0" around linear (curveAmount=2).
+        -- Same sign as shapeVelocity()'s curve, so the readout matches the
+        -- curve actually applied.
+        return string.format("%+.1f", -((v - 0.5) * 2 * config.curveAmount))
     end
     return ""
 end
@@ -80,7 +79,11 @@ end
 -- exponential shaping wanted here.
 local function shapeVelocity(vel)
     local knob = param.getValue(config.curveParam)
-    local curve = (knob - 0.5) * 2 * config.curveAmount
+    -- Negated so a low knob (exponential) squashes soft notes toward the floor
+    -- and a high knob (logarithmic) lifts them toward the ceiling - matching
+    -- the header description. The sign was inverted until 2026-08-03, which
+    -- made knob 0.0 boost instead of squash.
+    local curve = -((knob - 0.5) * 2 * config.curveAmount)
     local out = number.rescale(vel, 1, 127, config.minVelocity, config.maxVelocity, curve)
 
     -- Guard the endpoints: rescale works in floats and can land a hair outside
@@ -89,7 +92,25 @@ local function shapeVelocity(vel)
     return math.max(config.minVelocity, math.min(config.maxVelocity, out))
 end
 
-rack.onMidiMessage = function(midiPort, msg)
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Channel",
+    options = CHANNEL_LABELS,
+    onGetValue = function()
+        return config.channel
+    end,
+    onChange = function(idx)
+        config.channel = idx
+        rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
+    end
+})
+
+midi.onMessage = function(midiPort, msg)
     if midi.isNoteOn(msg) and matchesChannel(midi.getChannel(msg)) then
         local vel = midi.getValue(msg)
 
@@ -101,10 +122,6 @@ rack.onMidiMessage = function(midiPort, msg)
 
         local shaped = shapeVelocity(vel)
         midi.setValue(msg, shaped)
-
-        if config.showOverlay then
-            rack.overlay("Velocity", vel .. " -> " .. shaped)
-        end
     end
 
     midiOut.send(msg)

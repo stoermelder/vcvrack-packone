@@ -1,6 +1,6 @@
 /**
  * @target stoermelder MIDI-KIT
- * @engine QuickJs
+ * @engine QuickJs@v1
  * @author stoermelder
  * @description Divides incoming MIDI clock, forwarding every Nth tick and emitting a trigger on the trigger output
  */
@@ -37,12 +37,6 @@ let config = {
     // Also emit a trigger on trigger output 1 for every forwarded tick
     emitTrigger: true,
 
-    // Trigger output port used when emitTrigger is set
-    trigPort: 1,
-
-    // Show the running pulse count in the panel overlay
-    showOverlay: true,
-
     // Forward all non-clock messages (notes, CC, ...) unchanged
     passThroughOther: true
 };
@@ -50,7 +44,6 @@ let config = {
 // Internal state
 let state = {
     tickCount: 0,
-    pulseCount: 0,
     running: false
 };
 
@@ -61,10 +54,57 @@ rack.onLoad = function() {
 
 function resetPhase() {
     state.tickCount = 0;
-    state.pulseCount = 0;
 };
 
-rack.onMidiMessage = function(midiPort, msg) {
+// Context menu - right-click the module to change these settings live.
+// Each menu mirrors a `config` value above; onChange applies the choice.
+let DIVISORS = [1, 2, 3, 6, 12, 24];
+let DIVISOR_LABELS = ["1 (24 ppqn)", "2 (12 ppqn)", "3 (8 ppq)", "6 (16th)", "12 (8th)", "24 (quarter)"];
+
+function divisorIndex() {
+    for (let i = 0; i < DIVISORS.length; i++) {
+        if (DIVISORS[i] === config.divisor) return i;
+    }
+    return 0;
+};
+
+rack.registerContextMenu({
+    type: "options",
+    label: "Divisor",
+    options: DIVISOR_LABELS,
+    onGetValue: function() {
+        return divisorIndex();
+    },
+    onChange: function(idx) {
+        config.divisor = DIVISORS[idx];
+        rack.log("Divisor: ", config.divisor, " (24 ppqn / ", config.divisor, ")");
+    }
+});
+
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Emit trigger output",
+    onGetValue: function() {
+        return config.emitTrigger;
+    },
+    onChange: function(checked) {
+        config.emitTrigger = checked;
+        rack.log("Emit trigger: ", checked);
+    }
+});
+
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Pass through other messages",
+    onGetValue: function() {
+        return config.passThroughOther;
+    },
+    onChange: function(checked) {
+        config.passThroughOther = checked;
+    }
+});
+
+midi.onMessage = function(midiPort, msg) {
     if (midi.isStart(msg)) {
         resetPhase();
         state.running = true;
@@ -94,14 +134,10 @@ rack.onMidiMessage = function(midiPort, msg) {
             return;
         }
         state.tickCount = 0;
-        state.pulseCount++;
 
         midiOut.send(msg);
         if (config.emitTrigger) {
-            trig.setTrigger(config.trigPort);
-        }
-        if (config.showOverlay) {
-            rack.overlay("Clock /" + config.divisor, "pulse " + state.pulseCount);
+            trig.setTrigger(1);
         }
         return;
     }

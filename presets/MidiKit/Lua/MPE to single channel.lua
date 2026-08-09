@@ -1,6 +1,6 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description Flattens MPE (one note per member channel) to a single channel, folding per-note pitch bend into note numbers
 --]]
@@ -112,7 +112,47 @@ local function isActiveChannel(ch)
     return ch == state.lastChannel
 end
 
-rack.onMidiMessage = function(midiPort, msg)
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local CHANNEL_LABELS = {}
+for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "Output channel",
+    options = CHANNEL_LABELS,
+    onGetValue = function()
+        return config.outChannel - 1
+    end,
+    onChange = function(idx)
+        config.outChannel = idx + 1
+        rack.log("Output channel: ", config.outChannel)
+    end
+})
+
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Forward channel pressure",
+    onGetValue = function()
+        return config.forwardPressure
+    end,
+    onChange = function(checked)
+        config.forwardPressure = checked
+    end
+})
+
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Forward CC 74 (timbre)",
+    onGetValue = function()
+        return config.forwardTimbre
+    end,
+    onChange = function(checked)
+        config.forwardTimbre = checked
+    end
+})
+
+midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 
     -- Master channel and anything outside the zone passes through untouched
@@ -216,7 +256,7 @@ rack.onMidiMessage = function(midiPort, msg)
         return
     end
 
-    if midi.isCc(msg) and midi.getNote(msg) == 74 then
+    if midi.isCc(msg) and midi.getControl(msg) == 74 then
         if not config.forwardTimbre or not isActiveChannel(ch) then return end
         local out = midi.create()
         midi.setCc(out, config.outChannel, 74, midi.getValue(msg))
@@ -227,7 +267,7 @@ rack.onMidiMessage = function(midiPort, msg)
     -- Any other CC on a member channel is forwarded on the output channel
     if midi.isCc(msg) then
         local out = midi.create()
-        midi.setCc(out, config.outChannel, midi.getNote(msg), midi.getValue(msg))
+        midi.setCc(out, config.outChannel, midi.getControl(msg), midi.getValue(msg))
         midiOut.send(out)
     end
 end

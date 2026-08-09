@@ -2,7 +2,7 @@
 
 
 static const char* LUA_EMPTY = R"(--[[
-@engine Lua
+@engine minilua@v1
 --]]
 )";
 
@@ -19,7 +19,7 @@ TEST_CASE("Lua-tagged script loads and creates Lua state", "[MidiKit][Lua]") {
 
 
 static const char* LUA_INPUT_NAME = R"(--[[
-@engine Lua
+@engine minilua@v1
 --]]
 input.getName = function(i) return 'CV-' .. i end
 )";
@@ -38,7 +38,7 @@ TEST_CASE("Script can override input.getName", "[MidiKit][Lua]") {
 
 
 static const char* QUICKJS_HEADER = R"(/**
- * @engine QuickJs
+ * @engine QuickJs@v1
  */
 )";
 
@@ -54,7 +54,7 @@ TEST_CASE("QuickJs-tagged script is rejected by Lua engine", "[MidiKit][Lua]") {
 
 
 static const char* LUA_BAD_SYNTAX = R"(--[[
-@engine Lua
+@engine minilua@v1
 --]]
 local x = ?
 )";
@@ -79,7 +79,7 @@ TEST_CASE("Syntax error is handled gracefully", "[MidiKit][Lua]") {
 // "script:7:".
 
 static const char* LUA_BAD_ON_LINE_7 = R"(--[[
-@engine Lua
+@engine minilua@v1
 @description test
 --]]
 local a = 1
@@ -103,13 +103,13 @@ TEST_CASE("Load error reports a clean chunk name and line", "[MidiKit][Lua]") {
 }
 
 
-// Runtime errors inside onMidiMessage carry a position too, and go through the
+// Runtime errors inside midi.onMessage carry a position too, and go through the
 // same chunk name.
 static const char* LUA_RUNTIME_ERROR = R"(--[[
-@engine Lua
+@engine minilua@v1
 @description test
 --]]
-rack.onMidiMessage = function(port, msg)
+midi.onMessage = function(port, msg)
   local x = nil
   return x.field
 end
@@ -153,9 +153,9 @@ TEST_CASE("Successful load reports no error position", "[MidiKit][Lua]") {
 
 
 static const char* LUA_ON_UNLOAD = R"(--[[
-@engine Lua
+@engine minilua@v1
 --]]
-rack.onMidiMessage = function(midiPort, msg) end
+midi.onMessage = function(midiPort, msg) end
 rack.onUnload = function()
 	rack.log("onUnload ran")
 	local msg = midi.create()
@@ -168,10 +168,10 @@ end
 TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua]") {
 	// See the matching QuickJs test for why this can only assert "doesn't crash":
 	// MidiKitModule's destructor calls closeState() (which runs onUnload())
-	// while se/seLua are still fully alive, specifically so that virtuals
-	// like writeLog/trig.*/input.*/param.* resolve correctly — calling them
-	// from ~MidiScriptEngineLua() itself, after MidiKitScriptEngineLua's part
-	// of the object is already gone, would be undefined behaviour.
+	// while the module — the engines' handler — is still fully alive, so that
+	// callbacks like writeLog/trig.*/input.*/param.* resolve through the
+	// handler. Calling them from ~MidiScriptEngineLua() itself, after the
+	// module (and its handler) is already gone, would be undefined behaviour.
 	MidiKitModule* m = createModule();
 	m->loadScript(LUA_ON_UNLOAD);
 	REQUIRE(m->seLua.L != nullptr);
@@ -182,7 +182,7 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua
 
 // ─── Memory / garbage collection ────────────────────────────────────────────
 
-// RAM-usage tests for the Lua engine. Each onMidiMessage callback allocates
+// RAM-usage tests for the Lua engine. Each midi.onMessage callback allocates
 // scratch garbage (strings, tables) that nothing retains; across a large number
 // of callbacks the heap must not grow. Under real use the engine's automatic
 // incremental GC is what keeps it flat, so the no-growth test below does NOT
@@ -191,10 +191,10 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua
 // because reachable objects are never collected (pinned by the retain test).
 
 static const char* LUA_GC_SCRATCH = R"(--[[
-@engine Lua
+@engine minilua@v1
 @description test
 --]]
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
   local n = number.toString(midi.getNote(msg))
   local s = n .. "_" .. n
   local o = { a = 1, b = "b", c = s }
@@ -254,12 +254,12 @@ TEST_CASE("Lua garbage-generating callbacks do not grow RAM usage", "[MidiKit][L
 // growth. Without this the no-growth test could pass vacuously if
 // getMemoryUsage stopped reflecting allocations at all.
 static const char* LUA_GC_RETAIN = R"(--[[
-@engine Lua
+@engine minilua@v1
 @description test
 --]]
 leaked = {}
 count = 0
-rack.onMidiMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg)
   count = count + 1
   leaked[count] = number.toString(midi.getNote(msg)) .. "_"
 end

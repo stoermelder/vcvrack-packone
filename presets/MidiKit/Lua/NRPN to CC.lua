@@ -1,12 +1,17 @@
 --[[
 @target stoermelder MIDI-KIT
-@engine Lua
+@engine minilua@v1
 @author stoermelder
 @description NRPN to 14-bit CC converter
 --]]
 
 -- NRPN to CC Converter for MidiKit
 -- Converts NRPN (Non-Registered Parameter Number) messages to 14-bit CC messages
+--
+-- RECOMMENDED: use the "NRPN to CC (assembled)" example instead — it does the
+-- same job through MIDI-KIT's assembled-input API (midi.enableNrpnIn +
+-- midi.onNrpn) without this hand-rolled state machine. This manual version is
+-- kept as a worked example of the underlying protocol.
 --
 -- A spec-compliant NRPN message is sent as 4 CC messages on the same channel:
 -- - CC 98 (0x62): NRPN parameter number, LSB
@@ -71,12 +76,30 @@ rack.onLoad = function()
     rack.log("Channel: ", config.ccChannel)
 end
 
-rack.onMidiMessage = function(midiPort, msg)
+-- Context menu - right-click the module to change these settings live.
+-- Each menu mirrors a `config` value above; onChange applies the choice.
+local CHANNEL_LABELS = {}
+for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
+
+rack.registerContextMenu({
+    type = "options",
+    label = "CC channel",
+    options = CHANNEL_LABELS,
+    onGetValue = function()
+        return config.ccChannel - 1
+    end,
+    onChange = function(idx)
+        config.ccChannel = idx + 1
+        rack.log("CC channel: ", config.ccChannel)
+    end
+})
+
+midi.onMessage = function(midiPort, msg)
     if not midi.isCc(msg) then
         return
     end
 
-    local cc = midi.getNote(msg) -- CC number
+    local cc = midi.getControl(msg)
     local value = midi.getValue(msg) -- CC value (0-127)
 
     if cc == 98 then -- NRPN number LSB
@@ -109,10 +132,9 @@ rack.onMidiMessage = function(midiPort, msg)
 
         rack.log("nrpn #", nrpnNumber, ": value=", nrpnValue, " -> cc", ccNumber)
 
-        local ccMsb = midi.create()
-        local ccLsb = midi.create()
-        midi.setCc14bit(ccMsb, ccLsb, config.ccChannel, ccNumber, nrpnValue / 128)
-        midiOut.send(ccMsb)
-        midiOut.send(ccLsb)
+        local cc14 = midi.createCc14bit()
+        midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue / 128)
+        -- The pair (CC ccNumber = MSB, CC ccNumber + 32 = LSB) is sent atomically.
+        midiOut.send(cc14)
     end
 end
