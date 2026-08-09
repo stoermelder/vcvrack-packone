@@ -63,6 +63,9 @@ struct MidiProcessor {
     MidiProcessor();
 
     rack::midi::InputQueue& getInput();
+
+    void reset();
+
     void processBypass(int64_t frame);
     void process(int64_t frame);
     void processCc(const rack::midi::Message& msg);

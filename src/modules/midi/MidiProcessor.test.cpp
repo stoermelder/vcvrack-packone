@@ -222,3 +222,117 @@ TEST_CASE("NRPN selection and data entry", "[MidiProcessor]") {
 	REQUIRE(itNrpn->getParamNumber() == (4 * 128 + 5));
 	REQUIRE(itNrpn->getValue() == (20 * 128 + 2));
 }
+
+// Counts messages of one type, for assertions of the form "nothing was emitted".
+static size_t countType(const std::vector<MessageEx>& msgs, MessageEx::Type type) {
+	return std::count_if(msgs.begin(), msgs.end(), [type](const MessageEx& m){ return m.type == type; });
+}
+
+TEST_CASE("reset() clears NRPN state", "[MidiProcessor][reset]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	// Arm an NRPN parameter, then reset before any data entry arrives.
+	mp.processCc(Test::makeMidiMessage(0xb, 3, 99, 4));
+	mp.processCc(Test::makeMidiMessage(0xb, 3, 98, 5));
+	REQUIRE(countType(h.msgs, MessageEx::Type::NRPN) == 1);   // the select
+
+	mp.reset();
+	h.msgs.clear();
+
+	// Data entry with no armed parameter must not produce an NRPN message.
+	mp.processCc(Test::makeMidiMessage(0xb, 3, 6, 20));
+	mp.processCc(Test::makeMidiMessage(0xb, 3, 38, 2));
+	CATCH_INFO("data entry after reset must be ignored");
+	REQUIRE(countType(h.msgs, MessageEx::Type::NRPN) == 0);
+}
+
+TEST_CASE("reset() clears RPN state", "[MidiProcessor][reset]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	mp.processCc(Test::makeMidiMessage(0xb, 2, 101, 0));
+	mp.processCc(Test::makeMidiMessage(0xb, 2, 100, 1));
+	REQUIRE(countType(h.msgs, MessageEx::Type::RPN) == 1);
+
+	mp.reset();
+	h.msgs.clear();
+
+	mp.processCc(Test::makeMidiMessage(0xb, 2, 6, 10));
+	mp.processCc(Test::makeMidiMessage(0xb, 2, 38, 3));
+	REQUIRE(countType(h.msgs, MessageEx::Type::RPN) == 0);
+}
+
+TEST_CASE("reset() clears a pending parameter-select MSB", "[MidiProcessor][reset]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	// Only the MSB half of an NRPN select: the parameter is not armed yet, but
+	// pendingNrpnMsb is set. A reset must drop it, otherwise a later CC 98 would
+	// complete a selection begun before the reset.
+	mp.processCc(Test::makeMidiMessage(0xb, 5, 99, 4));
+
+	mp.reset();
+	h.msgs.clear();
+
+	mp.processCc(Test::makeMidiMessage(0xb, 5, 98, 5));
+	CATCH_INFO("a stale pending MSB must not complete a selection after reset");
+	REQUIRE(countType(h.msgs, MessageEx::Type::NRPN) == 0);
+}
+
+TEST_CASE("reset() clears 14-bit CC state", "[MidiProcessor][reset]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	// Store an MSB, then reset before the matching LSB arrives.
+	mp.processCc(Test::makeMidiMessage(0xb, 1, 5, 3));
+
+	mp.reset();
+	h.msgs.clear();
+
+	// The LSB alone must not emit a 14-bit CC -- there is no stored MSB anymore.
+	mp.processCc(Test::makeMidiMessage(0xb, 1, 32 + 5, 10));
+	CATCH_INFO("orphaned LSB after reset must be ignored");
+	REQUIRE(countType(h.msgs, MessageEx::Type::CC_14BIT) == 0);
+}
+
+TEST_CASE("reset() leaves handlers and the queue alone", "[MidiProcessor][reset]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	mp.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
+	REQUIRE(mp.getInput().size() == 1);
+
+	mp.reset();
+
+	// Subscription survives: reset() is about stream state, not wiring.
+	REQUIRE(mp.getInput().size() == 1);
+	mp.process(0);
+	REQUIRE(countType(h.msgs, MessageEx::Type::NOTE_ON) == 1);
+}
+
+TEST_CASE("reset() is per-channel-complete", "[MidiProcessor][reset]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	// Arm a parameter on every channel, then reset once.
+	for (uint8_t ch = 0; ch < 16; ch++) {
+		mp.processCc(Test::makeMidiMessage(0xb, ch, 99, 1));
+		mp.processCc(Test::makeMidiMessage(0xb, ch, 98, ch));
+	}
+	mp.reset();
+	h.msgs.clear();
+
+	for (uint8_t ch = 0; ch < 16; ch++) {
+		mp.processCc(Test::makeMidiMessage(0xb, ch, 6, 20));
+		mp.processCc(Test::makeMidiMessage(0xb, ch, 38, 2));
+	}
+	CATCH_INFO("no channel may keep armed state after reset");
+	REQUIRE(countType(h.msgs, MessageEx::Type::NRPN) == 0);
+}

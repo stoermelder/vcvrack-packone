@@ -304,6 +304,30 @@ TEST_CASE("onReset clears active state", "[MidiKey]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("onReset clears tracked NRPN/14-bit CC state", "[MidiKey][reset]") {
+	// MidiKey itself only maps notes and plain CCs, so this state never reaches
+	// its handler -- but it lives in the shared MidiProcessor, and leaving it
+	// armed across a reset means the first CC 6 (or a 14-bit LSB) after the
+	// reset is decoded against a parameter selected before it.
+	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	auto& mp = m->trackingProcessor.midiProcessor;
+
+	// Arm an NRPN parameter and store a 14-bit CC MSB on channel 0.
+	mp.processCc(Test::makeMidiMessage(0xb, 0, 99, 4));
+	mp.processCc(Test::makeMidiMessage(0xb, 0, 98, 5));
+	mp.processCc(Test::makeMidiMessage(0xb, 0, 5, 3));
+	REQUIRE(mp.ccNrpnParam[0] == (4 * 128 + 5));
+	REQUIRE(mp.cc14bitMsb[0][5] == 3);
+
+	Module::ResetEvent re;
+	m->onReset(re);
+
+	REQUIRE(mp.ccNrpnParam[0] == -1);
+	REQUIRE(mp.cc14bitMsb[0][5] == -1);
+
+	Test::destroyModule(m);
+}
+
 TEST_CASE("clearMaps clears active state", "[MidiKey]") {
 	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
 

@@ -232,6 +232,70 @@ TEST_CASE("processBypass drains the MIDI queue without logging", "[MidiMon]") {
 	Test::destroyModule(module);
 }
 
+// Pumps the module until its process divider has certainly fired, so queued
+// MIDI is actually decoded. The divider is seeded randomly by setDivision(),
+// so one extra full division guarantees at least one tick.
+static void pump(MidiMonModule* module, int64_t& frame) {
+	for (uint32_t i = 0; i < module->processDivider.getDivision() + 1; i++) {
+		module->process(Test::makeProcessArgs(frame++));
+	}
+}
+
+TEST_CASE("onReset clears NRPN state so data entry cannot resume", "[MidiMon][reset]") {
+	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	module->showRpnNrpnMsg = true;
+	int64_t frame = 1;
+
+	// Arm an NRPN parameter (CC 99 then CC 98) and let it decode.
+	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 99, 4));
+	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 98, 5));
+	pump(module, frame);
+	drain(module);
+
+	Module::ResetEvent re;
+	module->onReset(re);
+	drain(module); // discard the fresh timestamp header
+
+	// Data entry after the reset must not be attributed to the old parameter.
+	module->showRpnNrpnMsg = true;
+	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 6, 20));
+	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 38, 2));
+	pump(module, frame);
+
+	for (auto& e : drain(module)) {
+		CATCH_INFO("logged: " << textOf(e));
+		REQUIRE(textOf(e).find("nrpn") == std::string::npos);
+	}
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("onReset clears 14-bit CC state so an orphan LSB is not paired", "[MidiMon][reset]") {
+	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	module->showCcExMsg = true;
+	int64_t frame = 1;
+
+	// Store a 14-bit MSB, then reset before the matching LSB arrives.
+	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 5, 3));
+	pump(module, frame);
+	drain(module);
+
+	Module::ResetEvent re;
+	module->onReset(re);
+	drain(module);
+
+	module->showCcExMsg = true;
+	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 32 + 5, 10));
+	pump(module, frame);
+
+	for (auto& e : drain(module)) {
+		CATCH_INFO("logged: " << textOf(e));
+		REQUIRE(textOf(e).find("14-bit") == std::string::npos);
+	}
+
+	Test::destroyModule(module);
+}
+
 TEST_CASE("processMidi never consumes the message", "[MidiMon]") {
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 	// Returning false keeps the message available to other handlers.

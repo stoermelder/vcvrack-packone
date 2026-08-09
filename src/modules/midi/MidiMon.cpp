@@ -100,6 +100,8 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		showSystemMsg = true;
 		showFrame = false;
 
+		midiProcessor.reset();
+
 		logTimestampReset();
 		Module::onReset(e);
 	}

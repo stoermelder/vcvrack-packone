@@ -44,6 +44,10 @@ std::vector<unsigned char> MessageEx::getSysExBytes() const {
 }
 
 MidiProcessor::MidiProcessor() {
+	reset();
+}
+
+void MidiProcessor::reset() {
 	for (int i = 0; i < 16; ++i) {
 		ccNrpnParam[i] = -1;
 		ccRpnParam[i] = -1;

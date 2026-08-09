@@ -85,6 +85,7 @@ struct MidiKeyModule : Module, MidiTrackingProcessorHandler {
 		trackingProcessor.disableMapLearn();
 		trackingProcessor.clearMaps();
 		trackingProcessor.getInput().reset();
+		trackingProcessor.reset();
 		Module::onReset(e);
 	}
 
