@@ -61,6 +61,38 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// effect across callbacks until changed again.
 	int selectedPort = 0;
 
+	// ── Script execution budget ──────────────────────────────────────────────
+	// A count hook (lua_sethook, LUA_MASKCOUNT) fires every interruptInterval
+	// instructions; past interruptCountLimit countHook() aborts the script via
+	// luaL_error(), so a `while true do end` can't wedge the shared worker.
+	// Reset by beginScriptExecution() per callback (worker-thread only).
+	static const int interruptInterval = 10000;  // hook fires every 10k instructions
+	static const int interruptCountLimit = 10000;   // 10k counts * 10k instr = 100M
+	int interruptCount = 0;
+
+	// The hook gets a lua_State*, not the engine — reach it via a function-local
+	// static thread_local (header-only, C++14: no out-of-line definition).
+	static MidiScriptEngineLua*& currentEngine() {
+		static thread_local MidiScriptEngineLua* e = nullptr;
+		return e;
+	}
+
+	static void countHook(lua_State* L, lua_Debug* ar) {
+		(void)ar;
+		MidiScriptEngineLua* e = currentEngine();
+		// Ignore foreign states (registerAPI stubs, teardown finalizers).
+		if (!e || e->L != L) return;
+		if (++e->interruptCount >= interruptCountLimit) {
+			luaL_error(L, "script exceeded execution budget");
+		}
+	}
+
+	// Resets the budget; call before every user lua_pcall.
+	void beginScriptExecution() {
+		interruptCount = 0;
+		currentEngine() = this;
+	}
+
 	// The lifecycle hooks are resolved once at load and kept as registry refs,
 	// not re-looked-up per dispatch — so defining/reassigning a hook later has
 	// no effect; only what was present at load runs. LUA_NOREF = "not defined".
@@ -183,6 +215,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		luaL_requiref(L, "string",   luaopen_string, 1); lua_pop(L, 1);
 		luaL_requiref(L, "table",    luaopen_table,  1); lua_pop(L, 1);
 
+		// ── Script execution budget ─────────────────────────────────────────
+		// Install the count hook. currentEngine stays null until the first
+		// beginScriptExecution(), so registerAPI()'s trusted stubs aren't budgeted.
+		currentEngine() = nullptr;
+		interruptCount = 0;
+		lua_sethook(L, &countHook, LUA_MASKCOUNT, interruptInterval);
+
 		// ── Register engine API ──────────────────────────────────────────────
 		registerAPI();
 
@@ -190,6 +229,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// luaL_loadbuffer, not luaL_dostring: the latter names the chunk with
 		// the whole script text, so errors read as [string "/**..."]:12:.
 		// Naming the chunk "script" makes them read as "script:12:".
+		beginScriptExecution();
 		if (luaL_loadbuffer(L, script, strlen(script), CHUNK_NAME) != LUA_OK ||
 		    lua_pcall(L, 0, LUA_MULTRET, 0) != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
@@ -290,6 +330,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			onUnloadRef = LUA_NOREF;
 			onSaveRef = LUA_NOREF;
 			hasOnSave.store(false, std::memory_order_release);
+			// Null currentEngine first: lua_close runs finalizers with no pcall
+			// boundary, where a hook luaL_error would longjmp nowhere.
+			if (currentEngine() == this) currentEngine() = nullptr;
 			lua_close(L);
 			L = nullptr;
 		}
@@ -306,6 +349,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 		msgCount = 0;
 		inCallback = true;
+		beginScriptExecution();
 		int status = lua_pcall(L, nargs, 0, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
@@ -324,6 +368,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onUnloadRef);
 		msgCount = 0;
 		inCallback = true;
+		beginScriptExecution();
 		int status = lua_pcall(L, 0, 1, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
@@ -344,6 +389,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onSaveRef);
 		msgCount = 0;
 		inCallback = true;
+		beginScriptExecution();
 		int status = lua_pcall(L, 0, 1, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
@@ -649,6 +695,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 				int ref = s.onGetValueRef;
 				if (ref != LUA_NOREF) {
 					lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+					beginScriptExecution();
 					int status = lua_pcall(L, 0, 1, 0);
 					if (status == LUA_OK) {
 						if (spec.type == ScriptMenuItem::Type::Boolean) {
@@ -707,6 +754,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 				lua_pushlstring(L, label.c_str(), label.size());
 				nargs = 2;
 			}
+			beginScriptExecution();
 			int status = lua_pcall(L, nargs, 0, 0);
 			if (status != LUA_OK) {
 				const char* err = lua_tostring(L, -1);
@@ -751,6 +799,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_pushinteger(L, midiPort + 1);
 		lua_pushinteger(L, 0);
 		inCallback = true;
+		beginScriptExecution();
 		int status = lua_pcall(L, 2, 0, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
@@ -773,6 +822,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_pushinteger(L, channel + 1);
 		msgCount = 0;
 		inCallback = true;
+		beginScriptExecution();
 		int status = lua_pcall(L, 2, 0, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
@@ -808,6 +858,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_pushinteger(L, midiPort + 1);
 		lua_pushinteger(L, 0);   // handle 0 — the message just stored
 		inCallback = true;
+		beginScriptExecution();
 		int status = lua_pcall(L, 2, 0, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
@@ -839,6 +890,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_pushstring(L, msg.mime);
 		msgCount = 0;
 		inCallback = true;
+		beginScriptExecution();
 		int status = lua_pcall(L, 2, 0, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
@@ -860,6 +912,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		lua_pushinteger(L, arg);
 		std::string result;
+		beginScriptExecution();
 		if (lua_pcall(L, 1, 1, 0) == LUA_OK) {
 			const char* s = lua_tostring(L, -1);
 			result = s ? s : "";

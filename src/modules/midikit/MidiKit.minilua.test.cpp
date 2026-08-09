@@ -203,7 +203,7 @@ midi.onMessage = function(midiPort, msg)
 end
 )";
 
-TEST_CASE("Lua garbage-generating callbacks do not grow RAM usage", "[MidiKit][Lua][GC]") {
+TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Lua][GC]") {
 	MidiKitModule* m = createModule();
 	m->loadScript(LUA_GC_SCRATCH);
 	REQUIRE(m->seLua.L != nullptr);
@@ -265,7 +265,7 @@ midi.onMessage = function(midiPort, msg)
 end
 )";
 
-TEST_CASE("Lua retaining callbacks do grow RAM usage", "[MidiKit][Lua][GC]") {
+TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][Lua][GC]") {
 	MidiKitModule* m = createModule();
 	m->loadScript(LUA_GC_RETAIN);
 	REQUIRE(m->seLua.L != nullptr);
@@ -303,6 +303,118 @@ TEST_CASE("Lua retaining callbacks do grow RAM usage", "[MidiKit][Lua][GC]") {
 	// against the automatic GC's equilibrium noise (measured here ~34KB of
 	// growth vs ~5KB of noise).
 	REQUIRE(used1 > used0 + 16384);
+
+	Test::destroyModule(m);
+}
+
+
+
+// ── Lua script execution budget ──────────────────────────────────
+// A while true do end is aborted via luaL_error(); without the guard the sync
+// test hangs and the async test trips barrier()'s timeout.
+
+// File-local Note-On helper (engine.test.cpp's isn't visible here).
+static midi::Message noteOn(int ch, int note, int vel) {
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);
+	msg.setChannel(ch);
+	msg.setNote(note);
+	msg.setValue(vel);
+	return msg;
+}
+
+// Valid script proving the engine recovers after a failed load.
+static const char* LUA_RECOVERY = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(midiPort, msg)
+    rack.log("recovered")
+end
+)";
+
+static const char* LUA_WHILE_TRUE_ONMESSAGE = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(midiPort, msg)
+    while true do end
+end
+)";
+
+TEST_CASE("Infinite loop in onMessage is interrupted, not a hang", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+	m->loadScript(LUA_WHILE_TRUE_ONMESSAGE);
+	drainLog(m);
+
+	midi::Message in = noteOn(1, 60, 100);
+	m->activeEngine->processInMessage(0, in);
+	// SyncTaskWorker runs inline — without the count hook this would hang.
+	m->activeEngine->process();
+
+	std::string log = drainLog(m);
+	REQUIRE(log.find("onMessage error") != std::string::npos);
+	REQUIRE(log.find("exceeded execution budget") != std::string::npos);
+
+	// Engine recovered: a second message is interrupted again.
+	m->activeEngine->processInMessage(0, in);
+	m->activeEngine->process();
+	std::string log2 = drainLog(m);
+	REQUIRE(log2.find("exceeded execution budget") != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Infinite loop in onMessage does not wedge the shared worker", "[MidiKit][Lua][Async]") {
+	auto worker = asyncWorker();
+	MidiKitModule* m = createModule(worker);
+
+	m->loadScript(LUA_WHILE_TRUE_ONMESSAGE);
+	barrier(worker, 10.0);        // the LOAD is async; wait for it
+	drainLog(m);
+
+	midi::Message in = noteOn(1, 60, 100);
+	m->activeEngine->processInMessage(0, in);
+	m->activeEngine->process();   // enqueues the dispatch task
+
+	// Without the count hook the worker spins forever and barrier() times out.
+	barrier(worker, 10.0);
+
+	std::string log = drainLog(m);
+	REQUIRE(log.find("exceeded execution budget") != std::string::npos);
+
+	// A second message still dispatches — the worker recovered.
+	m->activeEngine->processInMessage(0, in);
+	m->activeEngine->process();
+	barrier(worker, 10.0);
+	std::string log2 = drainLog(m);
+	REQUIRE(log2.find("exceeded execution budget") != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+static const char* LUA_WHILE_TRUE_TOPLEVEL = R"(--[[
+@engine minilua@v1
+--]]
+while true do end
+)";
+
+TEST_CASE("Infinite loop at script top level fails the load, and the module recovers", "[MidiKit][Lua]") {
+	MidiKitModule* m = createModule();
+	// Load runs inline; the count hook aborts the top-level lua_pcall.
+	m->loadScript(LUA_WHILE_TRUE_TOPLEVEL);
+	std::string log = drainLog(m);
+	REQUIRE(log.find("Error loading script") != std::string::npos);
+	REQUIRE(log.find("exceeded execution budget") != std::string::npos);
+
+	// The module survives the failed load.
+	m->loadScript(LUA_RECOVERY);
+	drainLog(m);
+
+	midi::Message in = noteOn(1, 60, 100);
+	m->activeEngine->processInMessage(0, in);
+	m->activeEngine->process();
+	std::string reloadLog = drainLog(m);
+	REQUIRE(reloadLog.find("recovered") != std::string::npos);
 
 	Test::destroyModule(m);
 }

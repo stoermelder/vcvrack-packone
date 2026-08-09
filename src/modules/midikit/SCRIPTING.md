@@ -204,6 +204,14 @@ The only constraints come from the module, not the language:
 
 - A **1 MiB memory limit** on the QuickJS heap (see
   `MidiScriptEngineQuickJs.h`).
+- An **execution budget** (both engines): each script callback (e.g.
+  `midi.onMessage`, `trig.onTrigger`, `rack.onLoad`) may run at most ~100M
+  bytecode instructions. An infinite loop (`while (true) {}` /
+  `while true do end`) is aborted with an `interrupted (script execution
+  limit)` error (QuickJs) or `script exceeded execution budget` error (Lua)
+  in the module log, so it can never hang the module's shared worker thread.
+  The budget resets for every callback, so it only bounds a single call —
+  heavy but finite work is fine.
 - The script runs in a **sandboxed API**: only the globals documented here
   (`rack`, `number`, `input`, `trig`, `param`, `midi`, `midiOut`) are
   available. There is no `require`/`import`, no `console`, and no file or
