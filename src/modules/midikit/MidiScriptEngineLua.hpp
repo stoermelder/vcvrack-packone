@@ -1,4 +1,4 @@
-#include "MidiScriptEngine.h"
+#include "MidiScriptEngine.hpp"
 extern "C" {
 	#include "minilua.h"
 }

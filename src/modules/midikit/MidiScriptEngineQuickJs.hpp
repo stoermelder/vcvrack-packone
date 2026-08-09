@@ -1,4 +1,4 @@
-#include "MidiScriptEngine.h"
+#include "MidiScriptEngine.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../../../dep/quickjs/quickjs.h"
 #include <algorithm>
