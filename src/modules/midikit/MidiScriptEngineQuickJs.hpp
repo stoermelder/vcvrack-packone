@@ -1476,7 +1476,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (argc != 0) return jsThrow(ctx, "midi.createNrpn: bad args");
 		warnIfOutsideCallback(ctx, "midi.createNRPN");
 		size_t* s = &getEngine(ctx)->msgCount;
-		if (*s + 4 >= msgStoreSize) return jsThrow(ctx, "midi.createNRPN: message store full");
+		if (*s + 4 > msgStoreSize) return jsThrow(ctx, "midi.createNRPN: message store full");
 		getEngine(ctx)->msgStore[*s + 0] = MessageEx();
 		getEngine(ctx)->msgStore[*s + 0].isNrpn = true;
 		getEngine(ctx)->msgStore[*s + 1] = MessageEx();
@@ -1491,7 +1491,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (argc != 0) return jsThrow(ctx, "midi.createCc14bit: bad args");
 		warnIfOutsideCallback(ctx, "midi.createCc14bit");
 		size_t* s = &getEngine(ctx)->msgCount;
-		if (*s + 2 >= msgStoreSize) return jsThrow(ctx, "midi.createCc14bit: message store full");
+		if (*s + 2 > msgStoreSize) return jsThrow(ctx, "midi.createCc14bit: message store full");
 		// 2 consecutive entries, filled by setCc14bit: CC cc (value MSB) and
 		// CC cc+32 (value LSB), flushed atomically as a pair.
 		getEngine(ctx)->msgStore[*s + 0] = MessageEx();
