@@ -194,3 +194,36 @@ TEST_CASE("Mapping persistence", "[MidiTrackingProcessor]") {
 	auto r0 = p2.getMap(0);
 	REQUIRE(r0.type == MidiTrackingType::NONE);
 }
+
+TEST_CASE("reset() clears decoder state but keeps mappings", "[MidiTrackingProcessor][reset]") {
+	MidiTrackingProcessor<19> p;
+	TestHandler h;
+	p.handler = &h;
+	p.enableCc();
+	p.enableNotes();
+
+	// A mapping is user configuration; NRPN/14-bit accumulation is stream state.
+	// reset() must drop the latter without disturbing the former.
+	p.setMap(MidiTrackingType::CC, 0, 21);
+	p.midiProcessor.processCc(makeMidiMessage(0xb, 0, 99, 4));
+	p.midiProcessor.processCc(makeMidiMessage(0xb, 0, 98, 5));
+	p.midiProcessor.processCc(makeMidiMessage(0xb, 0, 5, 3));
+	REQUIRE(p.midiProcessor.ccNrpnParam[0] == (4 * 128 + 5));
+	REQUIRE(p.midiProcessor.cc14bitMsb[0][5] == 3);
+
+	p.reset();
+
+	REQUIRE(p.midiProcessor.ccNrpnParam[0] == -1);
+	REQUIRE(p.midiProcessor.cc14bitMsb[0][5] == -1);
+
+	auto m0 = p.getMap(0);
+	REQUIRE(m0.type == MidiTrackingType::CC);
+	REQUIRE(m0.param == 21);
+
+	// The mapping still routes after the reset.
+	p.getInput().onMessage(makeMidiMessage(0xb, 0, 21, 100));
+	p.process(1);
+	REQUIRE(!h.updates.empty());
+	REQUIRE(std::get<1>(h.updates.back()) == 0);
+	REQUIRE(std::get<2>(h.updates.back()) == 100);
+}

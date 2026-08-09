@@ -8,6 +8,8 @@
     - Fixed broken sorting option "Last used"
 - Modules [MIDI-CAT](./docs/midicat/MidiCat.md), [MIDI-ESX](./docs/midiesx/MidiEsx.md), [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md), [MIDI-PLUG](./docs/midi/MidiPlug.md), [MIDI-STEP](./docs/midi/MidiStep.md)
     - Ignore incoming MIDI messages while module is bypassed
+- Modules [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md):
+    - Fixed incorrect reset behavior
 - Module [MIDI-MON](./docs/midi/MidiMon.md)
     - Splitted display option for 14bit CC and RPN/NRPN messages
 - Module [SIREN](./docs/siren/Siren.md)

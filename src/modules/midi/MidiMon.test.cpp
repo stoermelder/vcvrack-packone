@@ -303,6 +303,139 @@ TEST_CASE("processBypass drains the MIDI queue without logging", "[MidiMon]") {
 	Test::destroyModule(module);
 }
 
+// Pumps the module until its process divider has certainly fired, so queued
+// MIDI is actually decoded. The divider is seeded randomly by setDivision(),
+// so one extra full division guarantees at least one tick.
+static void pump(MidiMonModule* module, int64_t& frame) {
+	for (uint32_t i = 0; i < module->processDivider.getDivision() + 1; i++) {
+		module->process(Test::makeProcessArgs(frame++));
+	}
+}
+
+TEST_CASE("onReset clears NRPN state so data entry cannot resume", "[MidiMon][reset]") {
+	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	module->showRpnNrpnMsg = true;
+	int64_t frame = 1;
+
+	// Arm an NRPN parameter (CC 99 then CC 98) and let it decode.
+	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 99, 4));
+	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 98, 5));
+	pump(module, frame);
+	drain(module);
+
+	Module::ResetEvent re;
+	module->onReset(re);
+	drain(module); // discard the fresh timestamp header
+
+	// Data entry after the reset must not be attributed to the old parameter.
+	module->showRpnNrpnMsg = true;
+	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 6, 20));
+	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 38, 2));
+	pump(module, frame);
+
+	for (auto& e : drain(module)) {
+		CATCH_INFO("logged: " << textOf(e));
+		REQUIRE(textOf(e).find("nrpn") == std::string::npos);
+	}
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("onReset clears 14-bit CC state so an orphan LSB is not paired", "[MidiMon][reset]") {
+	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	module->showCcExMsg = true;
+	int64_t frame = 1;
+
+	// Store a 14-bit MSB, then reset before the matching LSB arrives.
+	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 5, 3));
+	pump(module, frame);
+	drain(module);
+
+	Module::ResetEvent re;
+	module->onReset(re);
+	drain(module);
+
+	module->showCcExMsg = true;
+	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 32 + 5, 10));
+	pump(module, frame);
+
+	for (auto& e : drain(module)) {
+		CATCH_INFO("logged: " << textOf(e));
+		REQUIRE(textOf(e).find("14-bit") == std::string::npos);
+	}
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("RPN/NRPN select and data entry render differently", "[MidiMon]") {
+	// Pins the hasValue() predicate that chooses between the "selected" and
+	// "value=" forms. extraValue < 0 means the notification carries a parameter
+	// number only; >= 0 means data entry supplied a reading.
+	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	module->showRpnNrpnMsg = true;
+	drain(module);
+
+	SECTION("NRPN select has no value") {
+		auto m = makeEx(MType::NRPN, Test::makeMidiMessage(0xb, 0, 98, 5));
+		m.paramNumber = 517;
+		module->processMidi(m);
+		auto entries = drain(module);
+		REQUIRE(entries.size() == 1);
+		REQUIRE(textOf(entries[0]) == "ch01 nrpn param=517 selected");
+	}
+
+	SECTION("NRPN data entry reports the value") {
+		auto m = makeEx(MType::NRPN, Test::makeMidiMessage(0xb, 0, 38, 2));
+		m.paramNumber = 517;
+		m.extraValue = 2562;
+		module->processMidi(m);
+		auto entries = drain(module);
+		REQUIRE(entries.size() == 1);
+		REQUIRE(textOf(entries[0]) == "ch01 nrpn param=517 value=2562");
+	}
+
+	SECTION("A zero value is still a value, not a select") {
+		// The boundary the predicate turns on: 0 is a legitimate reading.
+		auto m = makeEx(MType::NRPN, Test::makeMidiMessage(0xb, 0, 38, 0));
+		m.paramNumber = 517;
+		m.extraValue = 0;
+		module->processMidi(m);
+		auto entries = drain(module);
+		REQUIRE(entries.size() == 1);
+		REQUIRE(textOf(entries[0]) == "ch01 nrpn param=517 value=0");
+	}
+
+	SECTION("RPN select falls through to the named-parameter text") {
+		auto m = makeEx(MType::RPN, Test::makeMidiMessage(0xb, 0, 100, 0));
+		m.paramNumber = 0;
+		module->processMidi(m);
+		auto entries = drain(module);
+		REQUIRE(entries.size() == 1);
+		REQUIRE(textOf(entries[0]) == "ch01 rpn param=0 (Pitch Bend Sensitivity)");
+	}
+
+	SECTION("RPN data entry reports the value instead of the name") {
+		auto m = makeEx(MType::RPN, Test::makeMidiMessage(0xb, 0, 38, 7));
+		m.paramNumber = 0;
+		m.extraValue = 1287;
+		module->processMidi(m);
+		auto entries = drain(module);
+		REQUIRE(entries.size() == 1);
+		REQUIRE(textOf(entries[0]) == "ch01 rpn param=0 value=1287");
+	}
+
+	SECTION("The RPN reset notification outranks both") {
+		auto m = makeEx(MType::RPN, Test::makeMidiMessage(0xb, 0, 100, 127));
+		m.paramNumber = -1;
+		module->processMidi(m);
+		auto entries = drain(module);
+		REQUIRE(entries.size() == 1);
+		REQUIRE(textOf(entries[0]) == "ch01 rpn/nrpn reset");
+	}
+
+	Test::destroyModule(module);
+}
+
 TEST_CASE("processMidi never consumes the message", "[MidiMon]") {
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 	// Returning false keeps the message available to other handlers.
