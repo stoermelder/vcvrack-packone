@@ -8,6 +8,11 @@
 // NRPN to CC Converter for MidiKit
 // Converts NRPN (Non-Registered Parameter Number) messages to 14-bit CC messages
 //
+// RECOMMENDED: use the "NRPN to CC (assembled)" example instead — it does the
+// same job through MIDI-KIT's assembled-input API (midi.enableNrpnIn +
+// midi.onNrpn) without this hand-rolled state machine. This manual version is
+// kept as a worked example of the underlying protocol.
+//
 // A spec-compliant NRPN message is sent as 4 CC messages on the same channel:
 // - CC 98 (0x62): NRPN parameter number, LSB
 // - CC 99 (0x63): NRPN parameter number, MSB
@@ -95,7 +100,7 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    let cc = midi.getNote(msg); // CC number
+    let cc = midi.getControl(msg);
     let value = midi.getValue(msg); // CC value (0-127)
 
     if (cc === 98) { // NRPN number LSB

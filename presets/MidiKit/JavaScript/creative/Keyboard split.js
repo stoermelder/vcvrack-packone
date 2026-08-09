@@ -91,7 +91,7 @@ midi.onMessage = function(midiPort, msg) {
     // of the presets arrives with value > 0, then consume it so it never
     // reaches the synths.
     if (midi.isCc(msg) && (config.controlChannel === 0 || ch === config.controlChannel)) {
-        let cc = midi.getNote(msg);
+        let cc = midi.getControl(msg);
         for (let i = 0; i < config.presets.length; i++) {
             if (config.presets[i].cc === cc) {
                 if (midi.getValue(msg) > 0) {

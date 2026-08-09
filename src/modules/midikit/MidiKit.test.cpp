@@ -442,6 +442,8 @@ struct RecordingEngine : MidiScriptEngine {
 	}
 	void processInTick(int trigPort, uint8_t channel) override { }
 	void dispatchMidiMessage(int midiPort, midi::Message& msg) override { }
+	void dispatchNrpn(int midiPort, const StoermelderPackOne::MidiScript::QueuedMessage& q, bool isRpn) override { }
+	void dispatchCc14bit(int midiPort, const StoermelderPackOne::MidiScript::QueuedMessage& q) override { }
 	void dispatchTrigger(int trigPort, uint8_t channel) override { }
 	void dispatchTipsyMessage(const StoermelderPackOne::MidiScript::TipsyMessage& msg) override { }
 	std::string getInputName(int i) override { return ""; }

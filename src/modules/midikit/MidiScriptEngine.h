@@ -107,6 +107,24 @@ struct MidiScriptEngineHandler {
 	// unaffected). Worker thread.
 	virtual void enableTipsyIn(int i) = 0;
 
+	// Enables assembly of NRPN (kind 0) or RPN (kind 1) on midiPort, delivering
+	// completed parameter changes to midi.onNrpn/onRpn. channel is 0-based, or
+	// -1 for every channel. Worker thread.
+	//
+	// While enabled the component CCs (98/99/100/101, and 6/38 while a parameter
+	// is armed) stop reaching midi.onMessage: a script that asked for assembled
+	// events should not also have to filter the parts they were built from.
+	virtual void enableNrpnIn(int midiPort, int kind, int channel) = 0;
+
+	// Enables 14-bit CC assembly on midiPort for MSB controller `cc` (0-31, its
+	// LSB is implicitly cc + 32), or every one of them when cc < 0. channel is
+	// 0-based, or -1 for every channel. Worker thread.
+	//
+	// Consumption matches enableNrpnIn(): both halves of an enabled pair stop
+	// reaching midi.onMessage. Registration is per-CC precisely so a script can
+	// take CC 7 as 14-bit while still seeing CC 39 raw.
+	virtual void enableCc14bitIn(int midiPort, int cc, int channel) = 0;
+
 	virtual float getInputVoltage(int i, uint8_t ch) = 0;
 	virtual float getTrigVoltage(int i, uint8_t ch) = 0;
 	virtual uint64_t getTrigTicks(int i, uint8_t ch) = 0;
@@ -314,10 +332,18 @@ struct MidiScriptEngine {
 					auto t = midiInQueue.shift();
 					int midiPort = std::get<0>(t);
 					QueuedMessage q = std::get<1>(t);
-					// Only the raw message reaches the script today; the decode
-					// result rides along in `q` for the NRPN/14-bit callbacks to
-					// use once the script API gains them.
-					dispatchMidiMessage(midiPort, q.msg);
+					switch (q.type) {
+						case MessageEx::Type::NRPN:
+						case MessageEx::Type::RPN:
+							dispatchNrpn(midiPort, q, q.type == MessageEx::Type::RPN);
+							break;
+						case MessageEx::Type::CC_14BIT:
+							dispatchCc14bit(midiPort, q);
+							break;
+						default:
+							dispatchMidiMessage(midiPort, q.msg);
+							break;
+					}
 				}
 				while (!tickInQueue.empty()) {
 					auto t = tickInQueue.shift();
@@ -334,6 +360,17 @@ struct MidiScriptEngine {
 	// Engine-specific dispatch of a single message/tick, invoked from
 	// process() above on the worker thread.
 	virtual void dispatchMidiMessage(int midiPort, Message& msg) = 0;
+
+	// Dispatches an assembled parameter change to midi.onNrpn/onRpn, or a 14-bit
+	// controller change to midi.onCc14bit.
+	//
+	// The whole QueuedMessage is passed, not the decoded scalars, because the
+	// script receives it as a message HANDLE — the same shape onMessage gets —
+	// and reads it through midi.getControl()/getValue()/getChannel(). That keeps
+	// the raw bytes reachable and lets the handle be cloned or forwarded like any
+	// other. Worker thread.
+	virtual void dispatchNrpn(int midiPort, const QueuedMessage& q, bool isRpn) = 0;
+	virtual void dispatchCc14bit(int midiPort, const QueuedMessage& q) = 0;
 	virtual void dispatchTrigger(int trigPort, uint8_t channel) = 0;
 	virtual void dispatchTipsyMessage(const TipsyMessage& msg) = 0;
 

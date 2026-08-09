@@ -197,6 +197,24 @@ static std::vector<OutEvent> feedCollect(MidiKitModule* m, midi::Message msg) {
 	return drainOut(m);
 }
 
+// Feeds a raw message through the module's MidiProcessor — the production
+// decode path that assembles NRPN/RPN/14-bit CC — and dispatches it, without
+// draining the out-queue (the smoke test reads the queue once at the end).
+// The feed()/feedCollect() helpers above go straight to the engine and thus
+// bypass MidiProcessor; scripts that opt in via midi.enableNrpnIn() and
+// friends need this instead.
+static void feedDecoded(MidiKitModule* m, midi::Message msg) {
+	m->midiProcessor.processMessage(msg);
+	m->activeEngine->process();
+}
+
+// feedDecoded() plus a drain of the out-queue, for the behavioural tests.
+static std::vector<OutEvent> feedDecodedCollect(MidiKitModule* m, midi::Message msg) {
+	m->midiProcessor.processMessage(msg);
+	m->activeEngine->process();
+	return drainOut(m);
+}
+
 
 // Preset metadata.
 //
@@ -221,6 +239,7 @@ static const PresetInfo PRESETS[] = {
 	{"", "Scale quantiser", true},
 	{"", "Chord harmonizer", true},
 	{"", "NRPN to CC", true},
+	{"", "NRPN to CC (assembled)", true},
 	{"", "NRPN Generator", true},
 	{"", "Copy Ch1 CC to Ch2", true},
 	{"", "Rewrite Ch1 to Ch2", true},
@@ -284,11 +303,14 @@ static void checkPreset(const PresetInfo& p, const char* engine) {
 
 	// A complete NRPN write (parameter 1, which the NRPN preset maps) plus a
 	// plain CC - note/clock traffic alone leaves the CC-driven presets silent.
-	feed(m, cc(1, 99, 0));    // parameter number MSB
-	feed(m, cc(1, 98, 1));    // parameter number LSB
-	feed(m, cc(1, 6, 64));    // data entry MSB
-	feed(m, cc(1, 38, 0));    // data entry LSB
-	feed(m, cc(1, 20, 100));
+	// Fed through MidiProcessor so scripts using the assembled-input API
+	// (midi.enableNrpnIn and friends) see it as a parameter change too; the
+	// engine-direct feed() above would bypass that assembly.
+	feedDecoded(m, cc(1, 99, 0));    // parameter number MSB
+	feedDecoded(m, cc(1, 98, 1));    // parameter number LSB
+	feedDecoded(m, cc(1, 6, 64));    // data entry MSB
+	feedDecoded(m, cc(1, 38, 0));    // data entry LSB
+	feedDecoded(m, cc(1, 20, 100));
 
 	std::string runLog = drainLog(m);
 	CATCH_INFO("runtime log:\n" << runLog);
@@ -2407,6 +2429,46 @@ TEST_CASE("'NRPN to CC.js/.lua' drops non-NRPN CCs and non-CC messages silently"
 	feedCollect(m, cc(1, 6, 64));
 	auto ev = feedCollect(m, cc(1, 38, 0));
 	REQUIRE(ev == std::vector<OutEvent>{{0xb, 0, 1, 64, 0}, {0xb, 0, 33, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the "NRPN to CC (assembled)" preset — the same
+// converter as above, but via MIDI-KIT's assembled-input API
+// (midi.enableNrpnIn + midi.onNrpn) instead of the hand-rolled state machine.
+// Assembly happens in the module's MidiProcessor, so these tests feed through
+// it (feedDecodedCollect) rather than the engine-direct feedCollect the manual
+// version uses.
+TEST_CASE("'NRPN to CC (assembled).js/.lua' converts a mapped NRPN to a 14-bit CC pair", "[MidiKit][NRPN]") {
+	std::string path = GENERATE(presetPaths("NRPN to CC (assembled)"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// NRPN 1 (number MSB 0, LSB 1) with value 8192 (value MSB 64, LSB 0).
+	// Mapped to CC 1: CC 1 = MSB 64, CC 33 = LSB 0, both on channel 1 (int 0).
+	feedDecoded(m, cc(1, 99, 0));
+	feedDecoded(m, cc(1, 98, 1));
+	feedDecoded(m, cc(1, 6, 64));
+	auto ev = feedDecodedCollect(m, cc(1, 38, 0));
+	REQUIRE(ev == std::vector<OutEvent>{{0xb, 0, 1, 64, 0}, {0xb, 0, 33, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'NRPN to CC (assembled).js/.lua' ignores unmapped NRPN numbers", "[MidiKit][NRPN]") {
+	std::string path = GENERATE(presetPaths("NRPN to CC (assembled)"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// NRPN 5 is not in config.map, so the complete write produces nothing.
+	feedDecoded(m, cc(1, 99, 0));
+	feedDecoded(m, cc(1, 98, 5));
+	feedDecoded(m, cc(1, 6, 64));
+	auto ev = feedDecodedCollect(m, cc(1, 38, 0));
+	REQUIRE(ev.empty());
 
 	Test::destroyModule(m);
 }

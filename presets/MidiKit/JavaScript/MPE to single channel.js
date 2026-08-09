@@ -261,7 +261,7 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    if (midi.isCc(msg) && midi.getNote(msg) === 74) {
+    if (midi.isCc(msg) && midi.getControl(msg) === 74) {
         if (!config.forwardTimbre || !isActiveChannel(ch)) return;
         let out = midi.create();
         midi.setCc(out, config.outChannel, 74, midi.getValue(msg));
@@ -272,7 +272,7 @@ midi.onMessage = function(midiPort, msg) {
     // Any other CC on a member channel is forwarded on the output channel
     if (midi.isCc(msg)) {
         let out = midi.create();
-        midi.setCc(out, config.outChannel, midi.getNote(msg), midi.getValue(msg));
+        midi.setCc(out, config.outChannel, midi.getControl(msg), midi.getValue(msg));
         midiOut.send(out);
     }
 };

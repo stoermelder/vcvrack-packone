@@ -466,7 +466,16 @@ never sent is dropped. Keep callbacks within the cap, or create/send in
 batches (one handle per message, per the send-once rule below).
 
 - `midi.onMessage(midiPort, msg)` — the incoming-MIDI entry point (see
-  [Script structure](#script-structure)): called with each incoming message.
+  [Script structure](#script-structure)): called with each incoming message
+  that nothing else claimed (see
+  [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc)
+  for the callbacks that receive assembled parameter changes instead).
+- `midi.onNrpn(midiPort, msg)` / `midi.onRpn(midiPort, msg)` /
+  `midi.onCc14bit(midiPort, msg)` — called with an assembled NRPN/RPN
+  parameter change or 14-bit controller change (see
+  [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc)).
+  Only fire for what the script enabled; `midi.onMessage` does not see the
+  component CCs such a change was built from.
 - `midi.create()` → new empty message handle.
 - `midi.clone(msg)` → new message handle carrying an independent copy of
   `msg`'s MIDI payload. The clone starts as a fresh, unsent message (its own
@@ -482,8 +491,9 @@ batches (one handle per message, per the send-once rule below).
   atomically — a receiver never sees the MSB without its LSB.
 - Getters: `getChannel(msg)` (1-based; `-1` for realtime/SysEx messages —
   clock, start/stop/continue, SysEx framing — which have no channel),
-  `getChanPressure(msg)`, `getNote(msg)`,
-  `getValue(msg)`, `getLength(msg)`, `getPitchWheel(msg)`, `getProgramChange(msg)`,
+  `getChanPressure(msg)`, `getControl(msg)`,
+  `getNote(msg)`, `getValue(msg)`, `getLength(msg)`, `getPitchWheel(msg)`,
+  `getProgramChange(msg)`,
   `getSysEx(msg)` (hex string, the payload only — without the `f0`/`f7`
   framing), `getSysExLength(msg)` (payload length in bytes, framing excluded —
   check it before reading the payload with `getSysEx`), `getRaw(msg)`
@@ -491,7 +501,9 @@ batches (one handle per message, per the send-once rule below).
   framing added or removed).
 - Type predicates: `isCc`, `isNoteOn`, `isNoteOff`, `isKeyPressure`,
   `isChanPressure`, `isProgramChange`, `isPitchWheel`, `isSysEx`, `isClock`,
-  `isStart`, `isContinue`, `isStop`.
+  `isStart`, `isContinue`, `isStop`, plus `isNrpn`, `isRpn`, `isCc14bit` —
+  true only for assembled extended messages (see
+  [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc)).
 - Setters (every `ch` argument below is a MIDI channel and is silently
   clamped to 1-16, e.g. `setNoteOn(msg, -5, ...)` is treated as channel 1):
   `setCc(msg, ch, cc, value)` (`value` is clamped to 0-127),
@@ -515,6 +527,81 @@ batches (one handle per message, per the send-once rule below).
   `setRaw(msg, hexString)` (writes the exact bytes with no framing added,
   e.g. `"f11a"` for an MTC quarter-frame — use this for message types with no
   dedicated setter), `setValue(msg, value)`.
+
+#### Assembled extended input (NRPN / RPN / 14-bit CC)
+
+`midi.onMessage` sees the MIDI stream as it arrives — including the raw CCs
+that make up a spec-compliant NRPN/RPN parameter change or a 14-bit CC pair.
+Reading those by hand (a select handshake on CC 99/98, data entry on 6/38, an
+MSB/LSB pair on CC `n`/`n + 32`) is exactly the boilerplate the old
+`NRPN to CC` example shipped. If you want *parameter changes*, not raw CCs,
+the engine can assemble them for you — the mirror image of `midi.setNRPN()` /
+`midi.setCc14bit()` on the way out.
+
+- `midi.enableNrpnIn(midiPort [, channel])` /
+  `midi.enableRpnIn(midiPort [, channel])` — assemble NRPN (kind 0) or RPN
+  (kind 1) parameter changes on `midiPort` into `midi.onNrpn` /
+  `midi.onRpn` calls. `channel` is the 1-based MIDI channel to listen on
+  (default: all).
+- `midi.enableCc14bitIn(midiPort [, cc] [, channel])` — assemble 14-bit CC
+  pairs on `midiPort` into `midi.onCc14bit` calls. `cc` is the MSB controller
+  number 0-31 (its LSB is implicitly `cc + 32`); omit it to enable every
+  14-bit CC. `channel` is 1-based (default: all).
+- `midi.onNrpn(midiPort, msg)` / `midi.onRpn(midiPort, msg)` /
+  `midi.onCc14bit(midiPort, msg)` — called once per completed, enabled
+  parameter change, with `msg` an ordinary handle you read through the usual
+  accessors. **Enabling a kind without defining its callback is a mistake**:
+  the message then reaches nothing at all, and its component CCs are withheld
+  from `midi.onMessage` (see below), so the script sees strictly less MIDI
+  than before.
+- `midi.isNrpn(msg)` / `midi.isRpn(msg)` / `midi.isCc14bit(msg)` — true only
+  for an assembled message of that kind; useful when a handle is passed to a
+  helper or inspected later. Redundant inside the matching callback, but makes
+  the handle self-describing.
+- `midi.getControl(msg)` — "which controller is this?", for every
+  controller-ish message: the controller number of a plain CC (0-127), the
+  MSB controller of an assembled 14-bit CC (0-31), the parameter number of an
+  assembled NRPN/RPN (0-16383), and `-1` for anything that addresses none
+  (notes, pitch bend, clock, ...). **This is the preferred way to read a
+  controller number**; on a plain CC `midi.getNote(msg)` returns the same
+  byte and still works, but it is the older spelling. Assembled messages
+  carry all three alongside each other: `getControl()` = the parameter,
+  `getValue()` = the combined 14-bit value, `getNote()` = the raw CC that
+  completed the message (e.g. 38, the Data Entry LSB).
+- `midi.getValue(msg)` is **type-aware**: on an assembled NRPN/RPN/14-bit CC
+  it returns the combined 14-bit value (0-16383); on everything else the raw
+  7-bit data byte exactly as before.
+
+**Consumption.** Once a kind is enabled, the CCs it is built from stop
+reaching `midi.onMessage` — a script that asked for assembled events should
+not also have to filter the parts they were assembled from. This mirrors
+`trig.enableTipsyIn()`, which stops `trig.onTrigger` while the trigger input
+is claimed. The raw CCs are swallowed, not released: if a device drops a
+message mid-quad, the consumed components are gone.
+
+- **The matching-enable rule.** `midi.onMessage` keeps its meaning — "a
+  message arrived that nothing else claimed". A component CC is withheld only
+  when the *kind* of assembly it belongs to is enabled: a script that enabled
+  only 14-bit CC still sees CC 98/99 (NRPN parameter select) raw, because it
+  did not enable NRPN.
+- **Parameter select only** — a parameter *select* (CC 99/98 or 101/100
+  without a following data entry) fires no callback; only the completed change
+  (data entry CC 6/38) does. The RPN 127/127 reset likewise.
+- **The CC 6/38 overlap.** CC 0-31 are simultaneously 14-bit MSBs and, for
+  CC 6, Data Entry MSB — the spec's ranges overlap. So with blanket 14-bit CC
+  *and* NRPN enabled, CC 6/38 are consumed as a 14-bit pair (they *are* one
+  by the spec's numbering) and a data entry can fire both `onCc14bit` and
+  `onNrpn`. This is accepted behaviour, not a bug; register per-CC with
+  `midi.enableCc14bitIn(midiPort, cc)` if you want a specific 14-bit CC
+  enabled while leaving 6/38 alone.
+- **MSB of 0.** An MSB of value 0 on a controller that was never seen is
+  ignored, so no spurious 14-bit event fires after a MIDI reset; only a zero
+  MSB on a controller that was already seen produces one.
+- **Sending an assembled handle back out** emits only its final CC — a clone
+  or `midiOut.send()` of an assembled handle is a single plain message, not a
+  reconstructed quad (same rule as the send-side chain handles). Use
+  `midi.setNRPN()` / `midi.setCc14bit()` to rebuild the full sequence on the
+  way out.
 
 ### `midiOut.*` — sending
 

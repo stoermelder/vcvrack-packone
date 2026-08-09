@@ -285,6 +285,20 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	// worker (trig.enableIn()), read by the audio thread (process()).
 	std::atomic<uint16_t> triggerEnabledMask{0};
 
+	// ── Extended-CC input, enabled by the script ─────────────────────────────
+	// Per-MIDI-channel bitmasks of what the script asked to have assembled
+	// (midi.enableNrpnIn/enableRpnIn/enableCc14bitIn). Bit c = MIDI channel c;
+	// "all channels" sets every bit. Nothing is assembled for the script until
+	// it asks, matching trig.enableIn()/trig.enableTipsyIn().
+	//
+	// Atomic for the same reason as triggerEnabledMask: written by the worker
+	// from the enable bindings, read by the audio thread in processMidi().
+	std::atomic<uint16_t> nrpnEnabledMask{0};
+	std::atomic<uint16_t> rpnEnabledMask{0};
+	// One mask per 14-bit MSB controller (0-31), since registration is per-CC:
+	// a script can take CC 7 as 14-bit while still seeing CC 39 raw.
+	std::atomic<uint16_t> cc14bitEnabledMask[32];
+
 	uint64_t sample;
 	float sampleRate;
 
@@ -347,6 +361,88 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		// script-facing trig.enableTipsyIn() exposes no port — it always targets
 		// the first (only) trigger input, so i is always 0 from scripts.
 		tipsyInPort.store(i, std::memory_order_relaxed);
+	}
+
+	// MidiScriptEngineHandler — midi.enableNrpnIn()/enableRpnIn() bindings
+	// (worker thread). channel is 0-based, or -1 for all.
+	void enableNrpnIn(int midiPort, int kind, int channel) override {
+		if (midiPort != 0) return;
+		uint16_t bits = channelBits(channel);
+		if (bits == 0) return;
+		(kind == 1 ? rpnEnabledMask : nrpnEnabledMask).fetch_or(bits, std::memory_order_relaxed);
+	}
+
+	// MidiScriptEngineHandler — midi.enableCc14bitIn() binding (worker thread).
+	// cc is the 0-31 MSB controller, or -1 for all of them.
+	void enableCc14bitIn(int midiPort, int cc, int channel) override {
+		if (midiPort != 0) return;
+		if (cc >= 32) return;
+		uint16_t bits = channelBits(channel);
+		if (bits == 0) return;
+		if (cc < 0) {
+			for (int i = 0; i < 32; i++) cc14bitEnabledMask[i].fetch_or(bits, std::memory_order_relaxed);
+		}
+		else {
+			cc14bitEnabledMask[cc].fetch_or(bits, std::memory_order_relaxed);
+		}
+	}
+
+	// Expands a script-supplied channel (0-based, or -1 for all) into a mask.
+	// Returns 0 for an out-of-range channel, so the caller enables nothing.
+	static uint16_t channelBits(int channel) {
+		if (channel < 0) return 0xffff;
+		if (channel >= 16) return 0;
+		return static_cast<uint16_t>(1) << channel;
+	}
+
+	// Whether the script asked for assembled events of each kind on this MIDI
+	// channel. Audio thread.
+	bool isNrpnEnabled(uint8_t ch, bool isRpn) const {
+		if (ch >= 16) return false;
+		auto& mask = isRpn ? rpnEnabledMask : nrpnEnabledMask;
+		return (mask.load(std::memory_order_relaxed) >> ch) & 1;
+	}
+	bool isCc14bitEnabled(uint8_t ch, uint8_t cc) const {
+		if (ch >= 16 || cc >= 32) return false;
+		return (cc14bitEnabledMask[cc].load(std::memory_order_relaxed) >> ch) & 1;
+	}
+
+	// Whether a raw CC that MidiProcessor flagged as a component should be
+	// withheld from midi.onMessage — true only if the script enabled the kind of
+	// assembly this CC feeds. Audio thread.
+	//
+	// The controller ranges overlap and that is deliberate (see the plan's §4.1):
+	// CC 0-31 are 14-bit MSBs, and CC 6/38 are simultaneously Data Entry for an
+	// armed RPN/NRPN parameter. Both readings are honoured, so a script enabling
+	// either kind stops seeing the CCs that feed it; a script enabling blanket
+	// 14-bit therefore also consumes CC 6/38, which is why registration is
+	// per-CC — that is the escape hatch for scripts wanting them raw.
+	bool isComponentEnabled(const MessageEx& m) const {
+		uint8_t ch = m.getChannel();
+		uint8_t cc = m.getNote();
+
+		// Parameter select belongs to whichever kind it selects.
+		if (cc == 99 || cc == 98) return isNrpnEnabled(ch, false);
+		if (cc == 101 || cc == 100) return isNrpnEnabled(ch, true);
+
+		// Data entry for an armed parameter. MidiProcessor only flags 6/38 as
+		// components while one is armed, so reaching here means it was.
+		if (cc == 6 || cc == 38) {
+			if (isNrpnEnabled(ch, false) || isNrpnEnabled(ch, true)) return true;
+			// Fall through: 6/38 are also a 14-bit pair by the spec's numbering.
+		}
+
+		if (cc < 32) return isCc14bitEnabled(ch, cc);
+		if (cc < 64) return isCc14bitEnabled(ch, cc - 32);
+		return false;
+	}
+
+	// Forgets every enabled extended-CC kind. Called on script load/reset, like
+	// clearTriggerEnabled(): the enables belong to the script, not the module.
+	void clearExtendedCcEnabled() {
+		nrpnEnabledMask.store(0, std::memory_order_relaxed);
+		rpnEnabledMask.store(0, std::memory_order_relaxed);
+		for (int i = 0; i < 32; i++) cc14bitEnabledMask[i].store(0, std::memory_order_relaxed);
 	}
 
 	// MidiScriptEngineHandler
@@ -611,6 +707,9 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		sample = 0;
 		// No script claims the trigger input until its trig.enableIn() runs.
 		clearTriggerEnabled();
+		// Likewise no NRPN/RPN/14-bit assembly until midi.enableNrpnIn() and
+		// friends run.
+		clearExtendedCcEnabled();
 		// A script claims the trigger input for Tipsy explicitly, so a reset
 		// releases it. Re-arming the decoder's data store here is safe: nothing
 		// is decoding at reset, and provideDataBuffer() refuses mid-body.
@@ -647,14 +746,16 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	// shared worker and must never be entered from here.
 	//
 	// A CC belonging to an extended message is notified TWICE: once as Type::CC
-	// (with isComponent set) and again as NRPN/RPN/CC_14BIT once assembled. Only
-	// the raw forms are queued for now, so every queued entry still corresponds
-	// to exactly one midi.onMessage call and scripts see precisely what they saw
-	// before this change. Queuing the assembled events too would double-fire
-	// onMessage for every NRPN component.
+	// (with isComponent set) and again as NRPN/RPN/CC_14BIT once assembled. What
+	// the script asked for decides which of the two it sees:
 	//
-	// The assembled events become useful once the script API gains onNrpn/onRpn/
-	// onCc14bit; the dispatch and consumption rules land with those callbacks.
+	//  - Assembled events are queued only when the matching enable is set,
+	//    otherwise dropped. Queuing unconditionally would fire callbacks the
+	//    script never asked for, and (before the callbacks existed) double-fire
+	//    onMessage for every component.
+	//  - The raw CC is dropped when it is a component AND the script enabled the
+	//    kind of assembly it belongs to. isComponent alone must not decide: a
+	//    script that enabled only 14-bit CC still wants to see CC 98 raw.
 	//
 	// Returning false keeps the message available to any other handler.
 	bool processMidi(const MessageEx& m) override {
@@ -662,11 +763,21 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 
 		switch (m.type) {
 			case MessageEx::Type::NRPN:
-			case MessageEx::Type::RPN:
+			case MessageEx::Type::RPN: {
+				bool isRpn = (m.type == MessageEx::Type::RPN);
+				// Parameter-select notifications carry no value (extraValue < 0),
+				// and the RPN 127/127 reset carries paramNumber < 0. Neither is a
+				// parameter change, so neither reaches the script.
+				if (!m.hasValue() || m.getParamNumber() < 0) return false;
+				if (!isNrpnEnabled(m.getChannel(), isRpn)) return false;
+				break;
+			}
 			case MessageEx::Type::CC_14BIT:
-				// Assembled: nothing consumes these yet. Dropping rather than
-				// queuing keeps onMessage firing once per real MIDI message.
-				return false;
+				if (!isCc14bitEnabled(m.getChannel(), uint8_t(m.getParamNumber()))) return false;
+				break;
+			case MessageEx::Type::CC:
+				if (m.isComponent && isComponentEnabled(m)) return false;
+				break;
 			default:
 				break;
 		}
@@ -852,8 +963,10 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		midiProcessor.reset();
 		for (int i = 0; i < PORT_MAX_CHANNELS; i++) inputTriggerTick[i] = 0;
 		// Forgets every trig.enableIn()d channel BEFORE the new script loads, so
-		// it starts with all callbacks disabled.
+		// it starts with all callbacks disabled. Same for the extended-CC enables:
+		// they belong to the outgoing script, not to the module.
 		clearTriggerEnabled();
+		clearExtendedCcEnabled();
 		for (int i = 0; i < 4; i++) {
 			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;

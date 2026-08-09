@@ -93,7 +93,7 @@ midi.onMessage = function(midiPort, msg)
     -- of the presets arrives with value > 0, then consume it so it never
     -- reaches the synths.
     if midi.isCc(msg) and (config.controlChannel == 0 or ch == config.controlChannel) then
-        local cc = midi.getNote(msg)
+        local cc = midi.getControl(msg)
         for i = 1, #config.presets do
             if config.presets[i].cc == cc then
                 if midi.getValue(msg) > 0 then
