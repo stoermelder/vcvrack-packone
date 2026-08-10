@@ -223,16 +223,16 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Lua][
 		m->host.seLua.process();
 	}
 
-	size_t used0;
-	REQUIRE(m->host.seLua.getMemoryUsage(used0));
+	size_t used0, total0;
+	REQUIRE(m->host.seLua.getMemoryUsage(used0, total0));
 
 	for (int i = 0; i < run; i++) {
 		m->host.seLua.processInMessage(0, msg);
 		m->host.seLua.process();
 	}
 
-	size_t used1;
-	REQUIRE(m->host.seLua.getMemoryUsage(used1));
+	size_t used1, total1;
+	REQUIRE(m->host.seLua.getMemoryUsage(used1, total1));
 
 	// The callbacks must have actually run (no load/callback errors), so the
 	// allocations really happened rather than the test passing vacuously.
@@ -247,7 +247,6 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Lua][
 
 	Test::destroyModule(m);
 }
-
 
 // Sensitivity control for the test above: a script that DOES retain its
 // per-callback allocation (grows a global table) must show up as clear
@@ -285,16 +284,16 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][Lua][GC]") {
 		m->host.seLua.process();
 	}
 
-	size_t used0;
-	REQUIRE(m->host.seLua.getMemoryUsage(used0));
+	size_t used0, total0;
+	REQUIRE(m->host.seLua.getMemoryUsage(used0, total0));
 
 	for (int i = 0; i < run; i++) {
 		m->host.seLua.processInMessage(0, msg);
 		m->host.seLua.process();
 	}
 
-	size_t used1;
-	REQUIRE(m->host.seLua.getMemoryUsage(used1));
+	size_t used1, total1;
+	REQUIRE(m->host.seLua.getMemoryUsage(used1, total1));
 
 	std::string log = drainLog(m);
 	REQUIRE(log.find("rror") == std::string::npos);
@@ -415,6 +414,94 @@ TEST_CASE("Infinite loop at script top level fails the load, and the module reco
 	m->host.getActiveEngine()->process();
 	std::string reloadLog = drainLog(m);
 	REQUIRE(reloadLog.find("recovered") != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+// ── Memory limit ────────────────────────────────────────────────────────────
+// A retaining/allocation-heavy script is stopped (state torn down, memory
+// freed) once its GC-managed heap passes memoryLimit (1 MiB, like QuickJS).
+// Stop happens after the callback that crossed the line, so dispatch after
+// that no-ops via a null L. The module stays usable — a fresh load resets the
+// watchdog.
+
+// Allocates 2 MiB at top level — a single string.rep, well past the limit.
+static const char* LUA_MEMORY_BLOWUP_LOAD = R"(--[[
+@engine minilua@v1
+--]]
+big = string.rep("x", 2 * 1024 * 1024)
+)";
+
+TEST_CASE("Script that exceeds the memory limit at load is stopped", "[MidiKit][Lua][MemoryLimit]") {
+	MidiKitModule* m = createModule();
+	m->loadScript(LUA_MEMORY_BLOWUP_LOAD);
+
+	// The top-level allocation passed the limit; the engine stopped itself.
+	REQUIRE(m->host.seLua.L == nullptr);
+	std::string log = drainLog(m);
+	REQUIRE(log.find("memory limit and was stopped") != std::string::npos);
+
+	// The module recovers: loading a normal script resets the watchdog.
+	m->loadScript(LUA_RECOVERY);
+	REQUIRE(m->host.seLua.L != nullptr);
+	drainLog(m);
+	midi::Message in = noteOn(1, 60, 100);
+	m->host.seLua.processInMessage(0, in);
+	m->host.seLua.process();
+	REQUIRE(drainLog(m).find("recovered") != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+// Retains 4 KiB per onMessage in a global table, so the heap crosses the limit
+// after a few hundred messages.
+static const char* LUA_MEMORY_BLOWUP_RETAIN = R"(--[[
+@engine minilua@v1
+--]]
+leaked = {}
+count = 0
+midi.onMessage = function(midiPort, msg)
+  count = count + 1
+  leaked[count] = string.rep("x", 4096)
+end
+)";
+
+TEST_CASE("Retaining script is stopped when it exceeds the memory limit", "[MidiKit][Lua][MemoryLimit]") {
+	MidiKitModule* m = createModule();
+	m->loadScript(LUA_MEMORY_BLOWUP_RETAIN);
+	REQUIRE(m->host.seLua.L != nullptr);
+	drainLog(m);
+
+	midi::Message in = noteOn(1, 60, 100);
+	// Keep sending until the watchdog has certainly fired and torn the state
+	// down (a few hundred callbacks cross 1 MiB; this leaves a wide margin).
+	for (int i = 0; i < 2000; i++) {
+		m->host.seLua.processInMessage(0, in);
+		m->host.seLua.process();
+	}
+
+	REQUIRE(m->host.seLua.L == nullptr);
+	std::string log = drainLog(m);
+	REQUIRE(log.find("memory limit and was stopped") != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+// A script that stays within the limit must NOT be stopped.
+TEST_CASE("Script within the memory limit keeps running", "[MidiKit][Lua][MemoryLimit]") {
+	MidiKitModule* m = createModule();
+	m->loadScript(LUA_RECOVERY);
+	REQUIRE(m->host.seLua.L != nullptr);
+	drainLog(m);
+
+	midi::Message in = noteOn(1, 60, 100);
+	for (int i = 0; i < 50; i++) {
+		m->host.seLua.processInMessage(0, in);
+		m->host.seLua.process();
+	}
+
+	REQUIRE(m->host.seLua.L != nullptr);
+	REQUIRE(drainLog(m).find("memory limit and was stopped") == std::string::npos);
 
 	Test::destroyModule(m);
 }

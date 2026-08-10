@@ -1552,9 +1552,10 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 			menu->addChild(new MenuSeparator());
 			if (module->host.isLuaEngine()) {
 				menu->addChild(createMenuLabel("Running Script (Lua)"));
-				size_t used;
-				if (module->host.seLua.getMemoryUsage(used)) {
-					menu->addChild(createMenuLabel(string::f("RAM usage: %zu KB", used / 1024)));
+				size_t used, total;
+				if (module->host.seLua.getMemoryUsage(used, total)) {
+					float pct = total > 0 ? 100.f * used / total : 0.f;
+					menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
 				}
 			}
 			if (module->host.isQuickJsEngine()) {
