@@ -696,8 +696,8 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	// bindings, read by the audio thread in processMidi().
 	ExtendedCcEnables extendedCc;
 
-	uint64_t sample;
-	float sampleRate;
+	uint64_t sample = 0;
+	float sampleRate = 0.f;
 
 	// Points every per-CV-port/param engine back-pointer at the active engine.
 	// Passing null clears instead — no active engine means no port/param can be

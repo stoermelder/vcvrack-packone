@@ -408,6 +408,11 @@ struct RecordingEngine : MidiScriptEngine {
 	std::vector<int> pending;
 	// inputTriggerTick observed at the moment the engine emitted each message.
 	std::vector<uint64_t> tickAtEmit;
+	// Ordered record of which engine callbacks the module made, for asserting
+	// the relative order of trigger/inbound/outbound effects in one process()
+	// call. Appended by processInTick/processInMessage/process.
+	std::vector<int> events;
+	enum Event { TICK = 1, MESSAGE, PROCESS };
 	MidiKitModule* module;
 
 	// Uses the real MidiKitModule as its handler rather than a test double, so
@@ -421,6 +426,7 @@ struct RecordingEngine : MidiScriptEngine {
 
 	void process() override {
 		processCalls++;
+		events.push_back(PROCESS);
 		for (int ticks : pending) {
 			midi::Message msg = makeCc();
 			handler->sendMidi(0, &msg, 1, 0, ticks);
@@ -439,8 +445,11 @@ struct RecordingEngine : MidiScriptEngine {
 	std::vector<StoermelderPackOne::MidiScript::QueuedMessage> received;
 	void processInMessage(int midiPort, const StoermelderPackOne::MidiScript::QueuedMessage& msg) override {
 		received.push_back(msg);
+		events.push_back(MESSAGE);
 	}
-	void processInTick(int trigPort, uint8_t channel) override { }
+	void processInTick(int trigPort, uint8_t channel) override {
+		events.push_back(TICK);
+	}
 	void dispatchMidiMessage(int midiPort, midi::Message& msg) override { }
 	void dispatchNrpn(int midiPort, const StoermelderPackOne::MidiScript::QueuedMessage& q, bool isRpn) override { }
 	void dispatchCc14bit(int midiPort, const StoermelderPackOne::MidiScript::QueuedMessage& q) override { }
@@ -614,6 +623,60 @@ TEST_CASE("process() sends frame-scheduled messages on divider ticks only", "[Mi
 	// The next divider tick drains it.
 	step(m, 0.f, 15);
 	REQUIRE(m->midiOutput.frameQueue.size() == 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("process() orders trigger, inbound, and outbound effects in one call", "[MidiKit]") {
+	// Refactor plan §7.1: one divider-tick process() call that has a trigger
+	// edge, a pending inbound message, and a queued outbound message, asserting
+	// the observable order of effects. This is the ordering the extractions
+	// most risk breaking, and nothing else pins it down:
+	//   1. the trigger edge is consumed first (tick queued to the engine);
+	//   2. the inbound message is decoded and queued to the engine;
+	//   3. the engine runs, so it can see the just-queued inbound and emit.
+	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
+	RecordingEngine eng(m);
+	m->host.getActiveEngine() = &eng;
+	patchTrigger(m);
+	m->enableTrigger(0, 0);
+
+	// Prime the SchmittTrigger LOW and advance to one call short of a divider
+	// tick (the divider fires on call index 7).
+	for (int64_t f = 0; f < 7; f++) {
+		step(m, 0.f, f);
+	}
+	REQUIRE(eng.events.empty());
+
+	// One call with all three at once: a rising edge on channel 0, an inbound
+	// CC queued for this sample (frame -1 processes immediately), and an
+	// outbound message the engine emits during its pump, scheduled for the tick
+	// just consumed.
+	midi::Message in = makeCc();
+	m->midiInput.onMessage(in);
+	eng.pending = {1};
+	step(m, 10.f, 7);
+
+	// The engine was pumped exactly once, on this divider tick.
+	REQUIRE(eng.processCalls == 1);
+
+	// The observable order of effects within that single call:
+	// trigger edge → inbound decode → engine pump.
+	REQUIRE(eng.events.size() == 3);
+	REQUIRE(eng.events[0] == RecordingEngine::TICK);
+	REQUIRE(eng.events[1] == RecordingEngine::MESSAGE);
+	REQUIRE(eng.events[2] == RecordingEngine::PROCESS);
+
+	// The side effects that order produces: the edge was consumed, the inbound
+	// reached the engine, and the engine's outbound landed after the tick was
+	// consumed (so it stays queued until the next trigger).
+	REQUIRE(m->inputTriggerTick[0] == 1);
+	REQUIRE(eng.received.size() == 1);
+	REQUIRE(eng.received[0].type == StoermelderPackOne::MessageEx::Type::CC);
+	REQUIRE(eng.tickAtEmit.size() == 1);
+	REQUIRE(eng.tickAtEmit[0] == 1);
+	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);
+	REQUIRE(m->midiOutput.tickQueue[0].top().tick == 1);
 
 	Test::destroyModule(m);
 }
