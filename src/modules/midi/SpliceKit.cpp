@@ -1,6 +1,7 @@
 #include "../../plugin.hpp"
 #include "../../components/MatrixButton.hpp"
 #include "../../components/MidiWidget.hpp"
+#include "../../ui/InfoWindow.hpp"
 #include "../../ui/ModuleSelectProcessor.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "../../utils/vcv_cables.hpp"
@@ -1974,6 +1975,24 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		}
 	};
 
+	// Called right after a controller preset has been made active (picked from the submenu
+	// list or loaded from file). If the preset carries an input mapping layout, asks the user
+	// whether to apply it too, same action as the "Apply input mappings from preset" menu item.
+	void promptApplyPresetLayout() {
+		SpliceKitModule* module = this->module;
+		const MidiOutPreset* preset = module->getActivePreset();
+		if (!preset || !preset->hasLayout()) return;
+
+		widget::Widget* overlay = confirmOverlayCreate(
+			"Apply input mapping",
+			"This controller preset also defines a MIDI input mapping.\nApply it as well?",
+			"Apply",
+			[]() { /* cancel: keep existing input mapping */ },
+			[module]() { module->applyPresetLayout(); }
+		);
+		addChild(overlay);
+	}
+
 	void appendContextMenu(Menu* menu) override {
 		SpliceKitModule* module = this->module;
 		if (!module) return;
@@ -1999,6 +2018,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 					[=]() {
 						module->setActivePresetJson(json);
 						module->invalidateLedStates();
+						promptApplyPresetLayout();
 					}
 				);
 				item->description = lp.preset.description;
@@ -2033,6 +2053,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 					std::string text(bytes.begin(), bytes.end());
 					module->setActivePresetJson(text);
 					module->invalidateLedStates();
+					promptApplyPresetLayout();
 				}
 			));
 			bool canSave = !module->activePresetJson.empty();
