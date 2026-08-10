@@ -102,7 +102,7 @@ static bool processOutMessage(MidiKitModule* m, int& midiPort, midi::Message& ms
 static std::string drainLog(MidiKitModule* m) {
 	std::string all;
 	std::tuple<LOG_FORMAT, float, std::string> t;
-	while (m->midiLogMessages.try_pop(t)) {
+	while (m->log.midiLogMessages.try_pop(t)) {
 		all += std::get<2>(t) + "\n";
 	}
 	return all;
@@ -114,7 +114,7 @@ static std::string drainLog(MidiKitModule* m) {
 static std::vector<std::tuple<LOG_FORMAT, std::string>> drainLogEntries(MidiKitModule* m) {
 	std::vector<std::tuple<LOG_FORMAT, std::string>> out;
 	std::tuple<LOG_FORMAT, float, std::string> t;
-	while (m->midiLogMessages.try_pop(t)) {
+	while (m->log.midiLogMessages.try_pop(t)) {
 		out.push_back(std::make_tuple(std::get<0>(t), std::get<2>(t)));
 	}
 	return out;

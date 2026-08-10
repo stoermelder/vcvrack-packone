@@ -429,6 +429,43 @@ struct TipsyPort {
 };
 
 
+// ── Script log + overlay, one per module ───────────────────────────────────
+// Everything the module tells the widget about: the runtime log and the
+// current overlay message. Touched from three threads, which is why the
+// contract is stated here once rather than inferred from call sites:
+//
+//   - worker thread: writeLog()/writeOverlay() produce log entries + overlay;
+//   - audio thread: overflow reporting in process() produces log entries;
+//   - loadScript()/onReset() callers produce RESET markers and "No script";
+//   - UI thread: the widget drains the log (midiLogMessages.try_pop) and the
+//     overlay ring (nextOverlayMessageId/getOverlayMessage).
+//
+// midiLogMessages is an MPMC queue because the log has concurrent producers;
+// overlayQueue is a single-producer ring (worker) drained by the widget.
+struct ScriptLog {
+	// Log entries, FIFO. MPMC: pushed by the worker (writeLog), the audio
+	// thread (overflow reporting), and the loadScript/onReset callers.
+	rigtorp::MPMCQueue<std::tuple<LOG_FORMAT, float, std::string>> midiLogMessages{512};
+
+	// Overlay ring + current message. Single-producer (worker via writeOverlay),
+	// single-consumer (widget).
+	dsp::RingBuffer<int, 8> overlayQueue;
+	std::tuple<std::string, std::string, std::string> overlayMessage;
+
+	// Worker side — writeLog(). Enqueues one entry.
+	void push(LOG_FORMAT format, float timestamp, const std::string& text) {
+		midiLogMessages.try_push(std::make_tuple(format, timestamp, text));
+	}
+
+	// Worker side — writeOverlay(). Marks one overlay slot with the current
+	// message.
+	void pushOverlay(const std::string& s1, const std::string& s2, const std::string& s3) {
+		overlayQueue.push(0);
+		overlayMessage = std::make_tuple(s1, s2, s3);
+	}
+};
+
+
 // Returns the one shared async worker for all MidiKit modules.
 // The weak_ptr lets it be destroyed when the last module is removed.
 //
@@ -488,13 +525,9 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	/** [Stored to Json] */
 	std::string scriptConfigJson = "";
 
-	// MPMC queue: midiLogMessages is pushed from the worker thread (writeLog)
-	// and from the caller of loadScript/onReset, so it needs concurrent-producer
-	// support rather than dsp::RingBuffer's single-producer contract.
-	rigtorp::MPMCQueue<std::tuple<LOG_FORMAT, float, std::string>> midiLogMessages{512};
-
-	dsp::RingBuffer<int, 8> overlayQueue;
-	std::tuple<std::string, std::string, std::string> overlayMessage;
+	// Script log + overlay, in their own struct (see ScriptLog for the
+	// threading contract).
+	ScriptLog log;
 
 	// MIDI output queue, owned by the module rather than either engine, so its
 	// contents outlive engine switches and clearScript() rather than being tied
@@ -543,20 +576,14 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	// module-facing operation (log/overlay/input/trig/param).
 
 	// MidiScriptEngineHandler
-	void writeLog(const std::string& log, bool useTimestamp = true) override {
+	void writeLog(const std::string& text, bool useTimestamp = true) override {
 		float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
-		if (useTimestamp) {
-			midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
-		}
-		else {
-			midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, log));
-		}
+		log.push(useTimestamp ? LOG_FORMAT::TIMESTAMP : LOG_FORMAT::TEXT, timestamp, text);
 	}
 
 	// MidiScriptEngineHandler
 	void writeOverlay(const std::string& s1, const std::string& s2, const std::string& s3) override {
-		overlayQueue.push(0);
-		overlayMessage = std::make_tuple(s1, s2, s3);
+		log.pushOverlay(s1, s2, s3);
 	}
 
 	// MidiScriptEngineHandler
@@ -844,8 +871,8 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		activeEngine = nullptr;
 		if (prevEngine) prevEngine->closeState();
 
-		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::RESET, 0.f, std::string("")));
-		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, std::string("No script")));
+		log.push(LOG_FORMAT::RESET, 0.f, std::string(""));
+		log.push(LOG_FORMAT::TEXT, 0.f, std::string("No script"));
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
@@ -971,15 +998,15 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 			// activeEngine->process() above still drains this same tick.
 			if (midiOutOverflow.exchange(false, std::memory_order_relaxed)) {
 				float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
-				midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, std::string("MIDI output queue full, message(s) dropped")));
+				log.push(LOG_FORMAT::TEXT, timestamp, std::string("MIDI output queue full, message(s) dropped"));
 			}
 			if (tipsyPort.takeOverflow()) {
 				float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
-				midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, std::string("Tipsy input queue full, message(s) dropped")));
+				log.push(LOG_FORMAT::TEXT, timestamp, std::string("Tipsy input queue full, message(s) dropped"));
 			}
 			if (tipsyPort.takeError()) {
 				float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
-				midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, std::string("Tipsy input: malformed stream")));
+				log.push(LOG_FORMAT::TEXT, timestamp, std::string("Tipsy input: malformed stream"));
 			}
 			while (!midiOutQueue.empty()) {
 				auto t = midiOutQueue.shift();
@@ -1082,7 +1109,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
 		}
-		midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::RESET, 0.f, std::string("")));
+		log.push(LOG_FORMAT::RESET, 0.f, std::string(""));
 
 		MidiScript::MidiScriptEngine* prevEngine = activeEngine;
 		activeEngine = nullptr;
@@ -1286,7 +1313,7 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 		ThemedModuleWidget<MidiKitModule>::step();
 		if (!module) return;
 		std::tuple<LOG_FORMAT, float, std::string> s;
-		while (module->midiLogMessages.try_pop(s)) {
+		while (module->log.midiLogMessages.try_pop(s)) {
 			if (buffer.size() == BUFFERSIZE) buffer.pop_back();
 			if (std::get<0>(s) == LOG_FORMAT::RESET) {
 				resetLog();
@@ -1344,15 +1371,15 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 	}
 
 	int nextOverlayMessageId() override {
-		if (module->overlayQueue.empty())
+		if (module->log.overlayQueue.empty())
 			return -1;
-		return module->overlayQueue.shift();
+		return module->log.overlayQueue.shift();
 	}
 
 	void getOverlayMessage(int id, OverlayMessageProvider::Message& m) override {
-		m.title = std::get<0>(module->overlayMessage);
-		m.subtitle[0] = std::get<1>(module->overlayMessage);
-		m.subtitle[1] = std::get<2>(module->overlayMessage);
+		m.title = std::get<0>(module->log.overlayMessage);
+		m.subtitle[0] = std::get<1>(module->log.overlayMessage);
+		m.subtitle[1] = std::get<2>(module->log.overlayMessage);
 	}
 
 	void loadJsDialog() {
