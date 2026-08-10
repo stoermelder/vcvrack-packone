@@ -224,13 +224,13 @@ struct ExtendedCcEnables {
 
 // ── Tipsy output: encoding onto the trigger CV, one per module ─────────────
 // Encodes queued Tipsy messages onto the trigger CV output. The worker thread
-// enqueues outbound messages (send/sendReset); the audio thread drains one
-// encoded float per call (processOutput). The only boundaries to the rest of
+// enqueues outbound messages (send/reset); the audio thread drains one
+// encoded float per call (process). The only boundaries to the rest of
 // the module are the output voltage and lastInitErrorCode for the log line.
 struct TipsyOutput {
 	using TipsyMessage = MidiScript::TipsyMessage;
 
-	// What processOutput() did on one call (audio thread).
+	// What process() did on one call (audio thread).
 	enum class Output {
 		IDLE,         // no message in flight; nothing written
 		WROTE,        // one encoded float written to the out voltage
@@ -242,7 +242,7 @@ struct TipsyOutput {
 	tipsy::ProtocolEncoder encoder;
 
 	// SPSC queue of pending Tipsy messages (worker → audio). send() only
-	// copies the payload; encoding happens in processOutput() on the audio
+	// copies the payload; encoding happens in process() on the audio
 	// thread, which owns the encoder.
 	//
 	// Never cleared: clear() writes `start`, the consumer's index, so calling it
@@ -250,8 +250,8 @@ struct TipsyOutput {
 	// through discardCount + a queued sentinel instead.
 	dsp::RingBuffer<TipsyMessage, 8> outQueue;
 
-	// Discard sentinels enqueued so far. Written by sendReset() (worker), read
-	// by processOutput() (audio); discardSeen is the audio thread's private
+	// Discard sentinels enqueued so far. Written by reset() (worker), read
+	// by process() (audio); discardSeen is the audio thread's private
 	// count of the ones it has consumed.
 	//
 	// A counter rather than a flag: two reloads in quick succession must discard
@@ -272,7 +272,7 @@ struct TipsyOutput {
 	int lastInitErrorCode = 0;
 
 	// Worker side. Enqueues a validated message; keeps the last slot free so
-	// sendReset() can always enqueue its sentinel. Returns false (without
+	// reset() can always enqueue its sentinel. Returns false (without
 	// queuing) when the queue has no room — the caller logs the drop.
 	bool send(const char* mimeType, const unsigned char* data, uint32_t bytes) {
 		if (outQueue.capacity() <= 1) return false;
@@ -336,14 +336,14 @@ struct TipsyOutput {
 // ── Tipsy input: decoding the trigger CV, one per module ───────────────────
 // Decodes the trigger CV input back into completed messages. The worker thread
 // claims the input (claim); the audio thread feeds one sample per call
-// (processInput) and reports drops (reportOverflow). The only boundaries to
+// (process) and reports drops (reportOverflow). The only boundaries to
 // the rest of the module are the input voltage and the log flags
 // (takeOverflow/takeError).
 struct TipsyInput {
 	using TipsyMessage = MidiScript::TipsyMessage;
 
 	// Which trigger input carries the Tipsy stream, or -1 when disabled. Written
-	// by claim() (worker), read by claimedInput() (audio).
+	// by claim() (worker), read by claimed() (audio).
 	std::atomic<int> inPort{-1};
 
 	// Decodes voltages back into messages. Audio thread only.
@@ -355,7 +355,7 @@ struct TipsyInput {
 	unsigned char buffer[MidiScript::tipsyMaxPayloadLength];
 
 	// Completed message copied out of decoder's reusable buffer, so the
-	// pointer processInput() returns stays valid until the next call.
+	// pointer process() returns stays valid until the next call.
 	TipsyMessage currentMessage;
 
 	// Set (audio thread) when a decoded message is dropped for lack of room, or
@@ -607,13 +607,13 @@ struct ScriptHost {
 // (defaults to 1 — the module's single trigger input).
 template <int TPORTS = 1>
 struct TriggerInputs {
-	// Wired by the module to inputs[INPUT_TRIG] so processIns() can read the
+	// Wired by the module to inputs[INPUT_TRIG] so process() can read the
 	// trigger voltages directly. Set once in the constructor after config()
 	// sizes the port vector.
 	rack::engine::Input* input = nullptr;
 
 	// One SchmittTrigger and tick counter per (port, channel) of the trigger
-	// input — trig.onTrigger/trig.getTicksIn() are channel-aware.
+	// input — trig.onTrigger/trig.getTicks() are channel-aware.
 	dsp::SchmittTrigger trigger[TPORTS][PORT_MAX_CHANNELS];
 	uint64_t triggerTick[TPORTS][PORT_MAX_CHANNELS];
 
@@ -645,7 +645,7 @@ struct TriggerInputs {
 		}
 	}
 
-	// Audio thread — the tick counter for a channel, for trig.getTicksIn().
+	// Audio thread — the tick counter for a channel, for trig.getTicks().
 	uint64_t getTicks(int port, uint8_t channel) const {
 		if (port < 0 || port >= TPORTS) return 0;
 		if (channel >= PORT_MAX_CHANNELS) return 0;
@@ -671,12 +671,12 @@ struct TriggerInputs {
 
 // ── Trigger outputs, one per module ────────────────────────────────────────
 // The trigger CV output side: per-port, per-channel pulse generators. Worker
-// thread arms/clears pulses (trig.setGate/setOutGateVoltage); the audio thread
+// thread arms/clears pulses (setGate/setGateVoltage); the audio thread
 // steps them in process(). Templated over the number of trigger output ports
 // (defaults to 1 — the module's single trigger output).
 template <int TPORTS = 1>
 struct TriggerOutputs {
-	// Wired by the module to outputs[OUTPUT_TRIG] so processOuts() can write
+	// Wired by the module to outputs[OUTPUT_TRIG] so process() can write
 	// the trigger voltages directly. Set once in the constructor.
 	rack::engine::Output* output = nullptr;
 
@@ -690,8 +690,8 @@ struct TriggerOutputs {
 		pulseGenerator[port][channel].trigger(duration);
 	}
 
-	// Worker side — trig.setTrigVoltage(): deactivates the pulse so the raw
-	// voltage the caller writes wins on the output.
+	// Worker side — trig.setHigh()/trig.setLow(): deactivates the pulse so the
+	// raw voltage the caller writes wins on the output.
 	void setGateVoltage(int port, uint8_t channel) {
 		if (port < 0 || port >= TPORTS) return;
 		triggerActive[port][channel] = false;
@@ -709,7 +709,7 @@ struct TriggerOutputs {
 
 	// Audio thread — one sample of the output pulse loop for `port`. Writes
 	// 10 V / 0 V to each active channel's gate pulse; channels not in a pulse
-	// keep whatever setOutGateVoltage() last wrote.
+	// keep whatever setGateVoltage() last wrote.
 	void process(int port, float sampleTime) {
 		if (port < 0 || port >= TPORTS) return;
 		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {

@@ -1936,7 +1936,7 @@ TEST_CASE("'Micro scale.js/.lua' input-channel filter retunes only the chosen ch
 // config.lengthTicks=12 counted on trigger input 1. Every Note-On is
 // re-articulated immediately and a Note-Off scheduled exactly 12 ticks later
 // via midiOut.sendAfterTrigger(); the incoming Note-Off is discarded.
-// inputTriggerTick only advances on a real trigger edge inside
+// triggerTick only advances on a real trigger edge inside
 // Module::process(), which these engine-level tests do not run, so the tests
 // write the counter directly - also proving the scheduled tick is *relative*
 // to the note-on's tick count, not a fixed absolute tick.

@@ -518,7 +518,7 @@ TEST_CASE("MidiKit idle process() cost: no script vs QuickJs vs Lua", "[perf]") 
 	std::cout << "\n=== MidiKit idle process() cost (no MIDI/trigger activity) ===" << std::endl;
 	std::cout << "  process() returns immediately via `if (!activeEngine) return;` when no\n"
 	          << "  script is loaded, so ANY loaded script (trivial or not) turns on the full\n"
-	          << "  per-sample body below, including the 16-channel outputPulseGenerator loop\n"
+	          << "  per-sample body below, including the 16-channel pulseGenerator loop\n"
 	          << "  that runs whether or not the script uses triggers at all." << std::endl;
 
 	// No script loaded
@@ -559,7 +559,7 @@ TEST_CASE("MidiKit idle process() cost: no script vs QuickJs vs Lua", "[perf]") 
 	std::cout << std::endl;
 }
 
-// Isolates the 16-channel outputPulseGenerator/setVoltage loop (the part of
+// Isolates the 16-channel pulseGenerator/setVoltage loop (the part of
 // process() that only runs once a script is loaded, gated by the early
 // `if (!activeEngine) return;`) from everything else in process() when idle,
 // by timing the trigger-out loop's own cost directly. If this alone accounts

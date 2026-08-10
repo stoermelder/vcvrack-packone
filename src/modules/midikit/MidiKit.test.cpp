@@ -106,7 +106,7 @@ TEST_CASE("clearScript resets to empty and restores no engine", "[MidiKit]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("Trigger input increments inputTriggerTick", "[MidiKit]") {
+TEST_CASE("Trigger input increments triggerTick", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	// With no default engine, load a script so process() runs past the
@@ -406,7 +406,7 @@ struct RecordingEngine : MidiScriptEngine {
 	// Messages to emit via handler->sendMidi() on the next process() call, as
 	// (ticks) — one per pending entry, all drained in one call.
 	std::vector<int> pending;
-	// inputTriggerTick observed at the moment the engine emitted each message.
+	// triggerTick observed at the moment the engine emitted each message.
 	std::vector<uint64_t> tickAtEmit;
 	// Ordered record of which engine callbacks the module made, for asserting
 	// the relative order of trigger/inbound/outbound effects in one process()
