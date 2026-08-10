@@ -24,7 +24,7 @@ TEST_CASE("Construction and initialization", "[MidiKit]") {
 	REQUIRE(m->NUM_INPUTS == 5);   // 4 voltage + 1 trigger
 	REQUIRE(m->NUM_OUTPUTS == 1);  // trigger out
 	REQUIRE(m->NUM_LIGHTS == 0);
-	REQUIRE(m->script == "");
+	REQUIRE(m->host.script == "");
 	REQUIRE(m->sample == 0);
 	REQUIRE(m->inputTriggerTick[0] == 0);
 
@@ -64,7 +64,7 @@ TEST_CASE("process() does not crash with no script", "[MidiKit]") {
 TEST_CASE("Default engine it not set", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
-	REQUIRE(m->activeEngine == nullptr);
+	REQUIRE(m->host.getActiveEngine() == nullptr);
 
 	Test::destroyModule(m);
 }
@@ -74,7 +74,7 @@ TEST_CASE("@engine minilua@v1 header selects Lua engine", "[MidiKit]") {
 
 	m->loadScript(LUA_SCRIPT);
 
-	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seLua));
+	REQUIRE(m->host.isLuaEngine());
 
 	Test::destroyModule(m);
 }
@@ -84,10 +84,10 @@ TEST_CASE("QuickJs header keeps QuickJs engine active", "[MidiKit]") {
 
 	// First switch to Lua, then switch back via a QuickJs-tagged script
 	m->loadScript(LUA_SCRIPT);
-	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seLua));
+	REQUIRE(m->host.isLuaEngine());
 
 	m->loadScript(QUICKJS_SCRIPT);
-	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seQuickJs));
+	REQUIRE(m->host.isQuickJsEngine());
 
 	Test::destroyModule(m);
 }
@@ -96,12 +96,12 @@ TEST_CASE("clearScript resets to empty and restores no engine", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 
 	m->loadScript(LUA_SCRIPT);
-	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seLua));
+	REQUIRE(m->host.isLuaEngine());
 
 	m->clearScript();
 
-	REQUIRE(m->script == "");
-	REQUIRE(m->activeEngine == nullptr);
+	REQUIRE(m->host.script == "");
+	REQUIRE(m->host.getActiveEngine() == nullptr);
 
 	Test::destroyModule(m);
 }
@@ -215,14 +215,14 @@ TEST_CASE("JSON round-trip preserves panelTheme and script", "[MidiKit]") {
 
 	m->panelTheme = 0;
 	m->clearScript();
-	REQUIRE(m->script == "");
+	REQUIRE(m->host.script == "");
 
 	m->dataFromJson(j);
 	json_decref(j);
 
 	REQUIRE(m->panelTheme == 2);
-	REQUIRE(m->script == LUA_SCRIPT);
-	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seLua));
+	REQUIRE(m->host.script == LUA_SCRIPT);
+	REQUIRE(m->host.isLuaEngine());
 
 	Test::destroyModule(m);
 }
@@ -470,7 +470,7 @@ static void patchTrigger(MidiKitModule* m) {
 TEST_CASE("process() runs the engine only on divider ticks", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 	RecordingEngine eng(m);
-	m->activeEngine = &eng;
+	m->host.getActiveEngine() = &eng;
 
 	// processDivider is set to a division of 8. dsp::ClockDivider increments
 	// before comparing, so it fires on every 8th call — call indices 7, 15, 23
@@ -494,7 +494,7 @@ TEST_CASE("process() runs the engine only on divider ticks", "[MidiKit]") {
 TEST_CASE("process() drains the engine out-queue on a divider tick", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 	RecordingEngine eng(m);
-	m->activeEngine = &eng;
+	m->host.getActiveEngine() = &eng;
 
 	// Three messages scheduled for tick 1; all must be pulled in a single
 	// divider tick, not one per call.
@@ -518,7 +518,7 @@ TEST_CASE("process() drains the engine out-queue on a divider tick", "[MidiKit]"
 TEST_CASE("process() consumes the tick before the engine schedules on it", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 	RecordingEngine eng(m);
-	m->activeEngine = &eng;
+	m->host.getActiveEngine() = &eng;
 	patchTrigger(m);
 	// The module only processes triggers on enabled channels — as the script's
 	// trig.enableIn(1) would do.
@@ -562,7 +562,7 @@ TEST_CASE("process() consumes the tick before the engine schedules on it", "[Mid
 TEST_CASE("process() handles triggers arriving between divider ticks", "[MidiKit]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 	RecordingEngine eng(m);
-	m->activeEngine = &eng;
+	m->host.getActiveEngine() = &eng;
 	patchTrigger(m);
 	// The module only processes triggers on enabled channels — as the script's
 	// trig.enableIn(1) would do.
@@ -1167,8 +1167,8 @@ TEST_CASE("appendExampleItems leaf click loads the script", "[MidiKit][Examples]
 	alpha->doAction(true);
 
 	REQUIRE(mw->filename == path);
-	REQUIRE(m->script == CONTENT);
-	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seQuickJs));
+	REQUIRE(m->host.script == CONTENT);
+	REQUIRE(m->host.isQuickJsEngine());
 
 	delete menu;
 	Test::destroyWidget(mw);
@@ -1221,7 +1221,7 @@ static midi::Message cc(uint8_t ch, uint8_t num, uint8_t value) {
 TEST_CASE("Incoming MIDI is decoded before reaching the engine", "[MidiKit][MidiProcessor]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 	RecordingEngine eng(m);
-	m->activeEngine = &eng;
+	m->host.getActiveEngine() = &eng;
 	int64_t frame = 1;
 
 	SECTION("A plain CC arrives as an undecoded message") {
@@ -1277,7 +1277,7 @@ TEST_CASE("Incoming MIDI is decoded before reaching the engine", "[MidiKit][Midi
 TEST_CASE("Decoder state is cleared on reset and script load", "[MidiKit][MidiProcessor]") {
 	MidiKitModule* m = Test::createModule<MidiKitModule>("MidiKit");
 	RecordingEngine eng(m);
-	m->activeEngine = &eng;
+	m->host.getActiveEngine() = &eng;
 	int64_t frame = 1;
 
 	// Arm an NRPN parameter, leaving the decoder mid-sequence.
@@ -1294,7 +1294,7 @@ TEST_CASE("Decoder state is cleared on reset and script load", "[MidiKit][MidiPr
 		// the real Lua engine it installs must be the one teardown sees. Leaving a
 		// stack-allocated RecordingEngine as activeEngine across the switch calls
 		// virtuals on it during module destruction, after it has gone out of scope.
-		m->activeEngine = nullptr;
+		m->host.getActiveEngine() = nullptr;
 		m->loadScript(LUA_SCRIPT);
 		REQUIRE(m->midiProcessor.ccNrpnParam[0] == -1);
 	}

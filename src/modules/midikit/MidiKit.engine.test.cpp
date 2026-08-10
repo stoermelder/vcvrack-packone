@@ -67,11 +67,11 @@ static EngineResult run(const std::string& script, const midi::Message& in) {
 	r.loadLog = drainLog(m);
 	CATCH_INFO("load log:\n" << r.loadLog);
 	REQUIRE(r.loadLog.find("rror") == std::string::npos);
-	REQUIRE(m->activeEngine != nullptr);
+	REQUIRE(m->host.getActiveEngine() != nullptr);
 
 	midi::Message inCopy = in;
-	m->activeEngine->processInMessage(0, inCopy);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, inCopy);
+	m->host.getActiveEngine()->process();
 
 	int port, ticks;
 	midi::Message out;
@@ -1549,8 +1549,8 @@ TEST_CASE("trig.getTicks counts identical rising edges in both engines", "[MidiK
 		midi::Message in;
 		in.setSize(3);
 		in.setStatus(0x9);
-		m->activeEngine->processInMessage(0, in);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
 
 		int port, ticks;
 		midi::Message out;
@@ -1629,8 +1629,8 @@ TEST_CASE("trig.getTicks(1, channel) counts each channel independently, in both 
 		midi::Message in;
 		in.setSize(3);
 		in.setStatus(0x9);
-		m->activeEngine->processInMessage(0, in);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
 
 		int port, ticks;
 		midi::Message out;
@@ -1770,8 +1770,8 @@ TEST_CASE("param.getValue reads identical value in both engines", "[MidiKit][Cro
 		midi::Message in;
 		in.setSize(3);
 		in.setStatus(0x9);
-		m->activeEngine->processInMessage(0, in);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
 
 		int port, ticks;
 		midi::Message out;
@@ -1907,8 +1907,8 @@ TEST_CASE("midiOut.sendAfterMs schedules an identical future-frame message", "[M
 		drainLog(m);
 
 		midi::Message in = noteOn(1, 60, 100);
-		m->activeEngine->processInMessage(0, in);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
 
 		int port, ticks;
 		midi::Message out;
@@ -2239,7 +2239,7 @@ TEST_CASE("onRemove() sends onUnload's message to the device rather than leaving
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
 		drainLog(m);
-		REQUIRE(m->activeEngine != nullptr);
+		REQUIRE(m->host.getActiveEngine() != nullptr);
 
 		Module::RemoveEvent eRemove;
 		m->onRemove(eRemove);
@@ -2295,10 +2295,10 @@ TEST_CASE("switching engines keeps the outgoing engine's onUnload output", "[Mid
 	MidiKitModule* m = createModule();
 	m->loadScript(JS_ON_UNLOAD);
 	drainLog(m);
-	REQUIRE(m->activeEngine == &m->seQuickJs);
+	REQUIRE(m->host.isQuickJsEngine());
 
 	m->loadScript(LUA_ON_UNLOAD);
-	REQUIRE(m->activeEngine == &m->seLua);
+	REQUIRE(m->host.isLuaEngine());
 
 	std::string log = drainLog(m);
 	REQUIRE(log.find("onUnload ran") != std::string::npos);   // the outgoing (JS) engine's onUnload
@@ -2337,7 +2337,7 @@ TEST_CASE("Switching engines closes the outgoing engine before returning", "[Mid
 	m->loadScript(JS_ON_UNLOAD);
 	barrier(worker);                 // the LOAD is still async; wait for it
 	drainLog(m);
-	REQUIRE(m->activeEngine == &m->seQuickJs);
+	REQUIRE(m->host.isQuickJsEngine());
 
 	m->loadScript(LUA_ON_UNLOAD);    // switch: closes QuickJs synchronously
 
@@ -2366,7 +2366,7 @@ TEST_CASE("onRemove() waits for onUnload before draining", "[MidiKit][CrossEngin
 		m->loadScript(script);
 		barrier(worker);
 		drainLog(m);
-		REQUIRE(m->activeEngine != nullptr);
+		REQUIRE(m->host.getActiveEngine() != nullptr);
 
 		Module::RemoveEvent eRemove;
 		m->onRemove(eRemove);        // no barrier: onRemove() must do the waiting
@@ -2402,7 +2402,7 @@ TEST_CASE("onReset() closes the active engine synchronously", "[MidiKit][CrossEn
 
 		std::string log = drainLog(m);
 		REQUIRE(log.find("onUnload ran") != std::string::npos);
-		REQUIRE(m->activeEngine == nullptr);
+		REQUIRE(m->host.getActiveEngine() == nullptr);
 
 		int port, ticks;
 		midi::Message out;
@@ -2439,7 +2439,7 @@ TEST_CASE("process() drains the out-queue after the script is cleared", "[MidiKi
 		drainLog(m);
 
 		m->clearScript();
-		REQUIRE(m->activeEngine == nullptr);
+		REQUIRE(m->host.getActiveEngine() == nullptr);
 		REQUIRE_FALSE(m->midiOutQueue.empty());   // onUnload()'s message is queued
 
 		processOneDividerPeriod(m);
@@ -2744,7 +2744,7 @@ TEST_CASE("captureConfig() calls onSave, not onUnload, and does not run teardown
 		// config-bearing hook, so a save would spuriously log "onUnload ran"
 		// and (for scripts with real teardown side effects) fire them on
 		// every save.
-		std::string config = captureConfig(m->activeEngine);
+		std::string config = captureConfig(m->host.getActiveEngine());
 		std::string log = drainLog(m);
 		REQUIRE(log.find("onSave ran") != std::string::npos);
 		REQUIRE(log.find("onUnload ran") == std::string::npos);
@@ -2854,19 +2854,19 @@ TEST_CASE("Script config survives capture and reload in both engines", "[MidiKit
 		drainLog(m);
 
 		// Initial config, as returned by onSave().
-		std::string config = captureConfig(m->activeEngine);
+		std::string config = captureConfig(m->host.getActiveEngine());
 		REQUIRE(configInt(config, "divisor") == 6);
 		REQUIRE(configBool(config, "emitTrigger") == true);
 
 		// The user flips a setting via the script's context menu.
 		std::vector<ScriptMenuItem> specs;
-		m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+		m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 		REQUIRE(specs.size() == 1);
-		m->activeEngine->invokeContextMenuCallback(specs[0].callbackId, 0);
+		m->host.getActiveEngine()->invokeContextMenuCallback(specs[0].callbackId, 0);
 		drainLog(m);
 
 		// The modified config is what a save would persist.
-		config = captureConfig(m->activeEngine);
+		config = captureConfig(m->host.getActiveEngine());
 		REQUIRE(configBool(config, "emitTrigger") == false);
 
 		// Reload with the persisted config: onLoad() must restore it.
@@ -2880,7 +2880,7 @@ TEST_CASE("Script config survives capture and reload in both engines", "[MidiKit
 		REQUIRE(reloadLog.find("emitTrigger=false") != std::string::npos);
 
 		// The script's config after the reload is the persisted, flipped one.
-		std::string restored = captureConfig(m->activeEngine);
+		std::string restored = captureConfig(m->host.getActiveEngine());
 		REQUIRE(configInt(restored, "divisor") == 6);
 		REQUIRE(configBool(restored, "emitTrigger") == false);
 
@@ -2907,7 +2907,7 @@ TEST_CASE("A script with only onUnload (no onSave) persists nothing, in both eng
 		m->loadScript(script);
 		drainLog(m);
 
-		std::string config = captureConfig(m->activeEngine);
+		std::string config = captureConfig(m->host.getActiveEngine());
 		REQUIRE(config.empty());
 
 		Test::destroyModule(m);
@@ -2940,8 +2940,8 @@ TEST_CASE("captureConfig on an engine with no script loaded reports nothing to p
 	// config to preserve, so the caller should clear whatever it stored rather
 	// than keep it. false is reserved for a failed dispatch.
 	MidiKitModule* m = createModule();
-	REQUIRE(captureConfig(&m->seLua).empty());
-	REQUIRE(captureConfig(&m->seQuickJs).empty());
+	REQUIRE(captureConfig(&m->host.seLua).empty());
+	REQUIRE(captureConfig(&m->host.seQuickJs).empty());
 	Test::destroyModule(m);
 }
 
@@ -2976,8 +2976,8 @@ TEST_CASE("onTrigger fires on a trigger input tick and sends an identical messag
 		m->loadScript(script);
 		drainLog(m);
 
-		m->activeEngine->processInTick(0, 0);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInTick(0, 0);
+		m->host.getActiveEngine()->process();
 
 		std::string log = drainLog(m);
 		REQUIRE(log.find("onTrigger 1") != std::string::npos);
@@ -3024,10 +3024,10 @@ TEST_CASE("onTrigger receives the firing channel, in both engines", "[MidiKit][C
 		drainLog(m);
 
 		// Channels are 1-based in the callback: index 0 -> "1", index 1 -> "2".
-		m->activeEngine->processInTick(0, 0);
-		m->activeEngine->process();
-		m->activeEngine->processInTick(0, 1);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInTick(0, 0);
+		m->host.getActiveEngine()->process();
+		m->host.getActiveEngine()->processInTick(0, 1);
+		m->host.getActiveEngine()->process();
 
 		std::string log = drainLog(m);
 		Test::destroyModule(m);
@@ -3049,8 +3049,8 @@ TEST_CASE("Script without onTrigger silently ignores trigger ticks, in both engi
 		m->loadScript(script);
 		drainLog(m);
 
-		m->activeEngine->processInTick(0, 0);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInTick(0, 0);
+		m->host.getActiveEngine()->process();
 
 		std::string log = drainLog(m);
 		int port, ticks;
@@ -3096,7 +3096,7 @@ TEST_CASE("trig.onTrigger is not called until trig.enableIn() is used, in both e
 		m->process(Test::makeProcessArgs(0));
 		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
 		m->process(Test::makeProcessArgs(1));
-		m->activeEngine->process();
+		m->host.getActiveEngine()->process();
 
 		std::string log = drainLog(m);
 		Test::destroyModule(m);
@@ -3144,13 +3144,13 @@ TEST_CASE("trig.enableIn gates trig.onTrigger per channel, in both engines", "[M
 		// Rising edge on channel 1 (enabled) fires the callback.
 		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
 		m->process(Test::makeProcessArgs(1));
-		m->activeEngine->process();
+		m->host.getActiveEngine()->process();
 		std::string log1 = drainLog(m);
 
 		// Rising edge on channel 2 (never enabled) is ignored.
 		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 1);
 		m->process(Test::makeProcessArgs(2));
-		m->activeEngine->process();
+		m->host.getActiveEngine()->process();
 		std::string log2 = drainLog(m);
 
 		Test::destroyModule(m);
@@ -3255,8 +3255,8 @@ static MenuResult runMenu(const std::string& script, int clickId = -1, int click
 	m->loadScript(script);
 
 	MenuResult r;
-	r.loaded = (m->activeEngine == &m->seQuickJs) ? (m->seQuickJs.ctx != nullptr)
-	                                              : (m->seLua.L != nullptr);
+	r.loaded = (m->host.isQuickJsEngine()) ? (m->host.seQuickJs.ctx != nullptr)
+	                                              : (m->host.seLua.L != nullptr);
 	r.loadLog = drainLog(m);
 	if (r.loaded) {
 		// getContextMenus is asynchronous: the worker evaluates onGetValue and
@@ -3265,13 +3265,13 @@ static MenuResult runMenu(const std::string& script, int clickId = -1, int click
 		// thread, so the callback has already fired by the time getContextMenus
 		// returns and r.specs is filled synchronously.
 		auto queryMenus = [&]() {
-			m->activeEngine->getContextMenus([&r](const std::vector<ScriptMenuItem>& specs) {
+			m->host.getActiveEngine()->getContextMenus([&r](const std::vector<ScriptMenuItem>& specs) {
 				r.specs = specs;
 			});
 		};
 		queryMenus();
 		if (clickId >= 0) {
-			m->activeEngine->invokeContextMenuCallback(clickId, clickValue);
+			m->host.getActiveEngine()->invokeContextMenuCallback(clickId, clickValue);
 			r.log = drainLog(m);
 			queryMenus();
 		}
@@ -3908,13 +3908,13 @@ static TwoDispatchResult runTwoMidiDispatches(const std::string& script) {
 
 	TwoDispatchResult r;
 	midi::Message in1 = noteOn(1, 60, 100);
-	m->activeEngine->processInMessage(0, in1);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, in1);
+	m->host.getActiveEngine()->process();
 	r.log1 = drainLog(m);
 
 	midi::Message in2 = noteOn(1, 61, 100);
-	m->activeEngine->processInMessage(0, in2);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, in2);
+	m->host.getActiveEngine()->process();
 	r.log2 = drainLog(m);
 
 	Test::destroyModule(m);
@@ -4105,14 +4105,14 @@ TEST_CASE("Defining midi.onMessage late (from onTrigger) never gets called, in b
 		// though the script goes on to define it moments later.
 		REQUIRE(loadLog.find("No midi.onMessage") != std::string::npos);
 
-		m->activeEngine->processInTick(0, 0);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInTick(0, 0);
+		m->host.getActiveEngine()->process();
 		std::string triggerLog = drainLog(m);
 		REQUIRE(triggerLog.find("onTrigger fired") != std::string::npos);
 
 		midi::Message in = noteOn(1, 60, 100);
-		m->activeEngine->processInMessage(0, in);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
 		std::string midiLog = drainLog(m);
 		REQUIRE(midiLog.find("late midi.onMessage called") == std::string::npos);
 
@@ -4166,8 +4166,8 @@ TEST_CASE("Clobbering midi with a number at top-level load time does not crash e
 		REQUIRE(loadLog.find("No midi.onMessage") != std::string::npos);
 
 		midi::Message in = noteOn(1, 60, 100);
-		m->activeEngine->processInMessage(0, in);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
 		std::string midiLog = drainLog(m);
 		REQUIRE(midiLog.empty());
 
@@ -4179,8 +4179,8 @@ TEST_CASE("Clobbering midi with a number at top-level load time does not crash e
 		bool isJs = script.find("QuickJs") != std::string::npos;
 		m->loadScript(isJs ? JS_REASSIGN_ON_MIDI_MESSAGE : LUA_REASSIGN_ON_MIDI_MESSAGE);
 		drainLog(m);
-		m->activeEngine->processInMessage(0, in);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
 		std::string reloadMidiLog = drainLog(m);
 		REQUIRE(reloadMidiLog.find("call 1") != std::string::npos);
 
@@ -4223,8 +4223,8 @@ TEST_CASE("Clobbering midi with null during top-level load code does not leave a
 	REQUIRE(loadLog.find("No midi.onMessage") != std::string::npos);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->activeEngine->processInMessage(0, in);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->process();
 	std::string midiLog = drainLog(m);
 	REQUIRE(midiLog.empty());
 
@@ -4235,8 +4235,8 @@ TEST_CASE("Clobbering midi with null during top-level load code does not leave a
 	// running for the first time on that ctx.
 	m->loadScript(JS_REASSIGN_ON_MIDI_MESSAGE);
 	drainLog(m);
-	m->activeEngine->processInMessage(0, in);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->process();
 	std::string reloadMidiLog = drainLog(m);
 	REQUIRE(reloadMidiLog.find("call 1") != std::string::npos);
 

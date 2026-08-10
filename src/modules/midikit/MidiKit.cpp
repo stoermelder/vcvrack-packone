@@ -466,6 +466,133 @@ struct ScriptLog {
 };
 
 
+// ── Script host: engines + live script, one per module ─────────────────────
+// Owns the two engine instances and which one is live, plus the script source
+// and its persisted config. Every call into script code goes through here, so
+// the "is there an active engine?" check lives in one place instead of at
+// eight call sites.
+//
+// Threading: the engines are worker-thread-owned once loaded (interpreter and
+// cached hook refs); the module's audio thread only enqueues into their SPSC
+// queues (queueMessage/queueTick) and drains via pump(). load()/closeState()
+// run on the UI thread and BLOCK — closeState() must complete before the active
+// pointer is reassigned, so only one engine ever has outstanding worker tasks.
+// The port/param `se` pointers (module-side) are re-bound by the module after
+// load().
+struct ScriptHost {
+	// Port/param counts injected into both engines at construction.
+	static constexpr int inputCount = 4;
+	static constexpr int inputTrigCount = 1;
+	static constexpr int outputTrigCount = 1;
+	static constexpr int paramCount = 4;
+	static constexpr int midiInputCount = 1;
+	static constexpr int midiOutputCount = 1;
+
+	// The engine currently selected to run the loaded script, or null. Written
+	// only by load()/closeState(); read via getActiveEngine().
+	MidiScript::MidiScriptEngine* activeEngine = nullptr;
+
+	// The two engines. Only one is ever loaded (activeEngine); the other is
+	// closed on switch. Widget/tests reach these directly (RAM usage, state).
+	MidiScript::Lua::MidiScriptEngineLua seLua;
+	MidiScript::QuickJs::MidiScriptEngineQuickJs seQuickJs;
+
+	/** [Stored to JSON] */
+	std::string script = "";
+	/** [Stored to JSON] */
+	std::string scriptConfigJson = "";
+
+	ScriptHost(MidiScript::MidiScriptEngineHandler* handler)
+		: seLua(handler, inputCount, inputTrigCount, outputTrigCount, paramCount, midiInputCount, midiOutputCount),
+		  seQuickJs(handler, inputCount, inputTrigCount, outputTrigCount, paramCount, midiInputCount, midiOutputCount) {}
+
+	// UI thread: wires the shared worker into both engines.
+	void setWorker(std::shared_ptr<ITaskWorker> worker) {
+		seLua.setWorker(worker);
+		seQuickJs.setWorker(worker);
+	}
+
+	// The engine currently selected to run the loaded script, or null.
+	MidiScript::MidiScriptEngine* getActiveEngine() const {
+		return activeEngine;
+	}
+	// Non-const accessor returning the pointer by reference, so tests can inject
+	// a mock engine (m->host.getActiveEngine() = &mock).
+	MidiScript::MidiScriptEngine*& getActiveEngine() {
+		return activeEngine;
+	}
+
+	// Whether the loaded script is running on the Lua engine.
+	bool isLuaEngine() const {
+		return activeEngine == &seLua;
+	}
+	// Whether the loaded script is running on the QuickJs engine.
+	bool isQuickJsEngine() const {
+		return activeEngine == &seQuickJs;
+	}
+
+	// Selects the engine for `src`, closes the previously active one (blocking,
+	// so only one engine ever has outstanding worker tasks), and starts loading
+	// the new script into it. Returns the newly selected engine (null if the
+	// script matched neither engine). The port/param `se` pointers are the
+	// module's to re-bind after this returns.
+	MidiScript::MidiScriptEngine* load(const std::string& src, const std::string& configJson) {
+		script = src;
+		MidiScript::MidiScriptEngine* prevEngine = activeEngine;
+		activeEngine = nullptr;
+		if (seLua.testScript(src)) activeEngine = &seLua;
+		if (seQuickJs.testScript(src)) activeEngine = &seQuickJs;
+
+		// Close the engine that is no longer active (silently — the caller has
+		// already pushed the RESET marker). Blocking rather than the async
+		// loadScript("") this used to be: once this call returns, activeEngine is
+		// again the only engine that can have any state or outstanding worker
+		// task, which is the invariant onRemove() (and onReset()) rely on to know
+		// what needs tearing down.
+		if (prevEngine && prevEngine != activeEngine) prevEngine->closeState();
+
+		scriptConfigJson = configJson;
+		if (activeEngine) activeEngine->loadScript(script.c_str(), scriptConfigJson);
+		return activeEngine;
+	}
+
+	// Closes the active engine and nulls the pointer, so process() stops
+	// dispatching. Blocking: closeState() runs onUnload() to completion. Rack
+	// dispatches onRemove()/onReset() with the engine mutex held, so process()
+	// cannot run concurrently.
+	void closeState() {
+		MidiScript::MidiScriptEngine* engine = activeEngine;
+		activeEngine = nullptr;   // stop process() dispatching
+		if (engine) engine->closeState();
+	}
+
+	// Audio-thread dispatch; no-ops when nothing is loaded.
+	void queueMessage(int port, const MidiScript::QueuedMessage& msg) {
+		if (activeEngine) activeEngine->processInMessage(port, msg);
+	}
+	void queueTick(int trigPort, uint8_t channel) {
+		if (activeEngine) activeEngine->processInTick(trigPort, channel);
+	}
+	// Audio thread: runs one pump of the active engine's queued work.
+	void process() {
+		if (activeEngine) activeEngine->process();
+	}
+
+	// Refreshes scriptConfigJson from the active engine's onSave(), only
+	// overwriting on success (false means the config couldn't be determined —
+	// keep the last known value). Returns the current config.
+	std::string captureConfig() {
+		if (activeEngine) {
+			std::string captured;
+			if (activeEngine->captureConfig(captured)) {
+				scriptConfigJson = captured;
+			}
+		}
+		return scriptConfigJson;
+	}
+};
+
+
 // Returns the one shared async worker for all MidiKit modules.
 // The weak_ptr lets it be destroyed when the last module is removed.
 //
@@ -520,14 +647,15 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 
 	/** [Stored to Json] */
 	MidiOutput midiOutput;
-	/** [Stored to Json] */
-	std::string script = "";
-	/** [Stored to Json] */
-	std::string scriptConfigJson = "";
 
 	// Script log + overlay, in their own struct (see ScriptLog for the
 	// threading contract).
 	ScriptLog log;
+
+	// Script engines + live script, in their own struct (see ScriptHost for the
+	// threading contract).
+	/** [Stored to Json] */
+	ScriptHost host;
 
 	// MIDI output queue, owned by the module rather than either engine, so its
 	// contents outlive engine switches and clearScript() rather than being tied
@@ -570,6 +698,21 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 
 	uint64_t sample;
 	float sampleRate;
+
+	// Points every per-CV-port/param engine back-pointer at the active engine.
+	// Passing null clears instead — no active engine means no port/param can be
+	// enabled (a script re-enables via its bindings). Called at construction, on
+	// reset, before a script loads (null), and after loadScript() selects it.
+	void bindPortParamEngine(MidiScript::MidiScriptEngine* engine) {
+		for (int i = 0; i < 4; i++) {
+			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->se = engine;
+			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->se = engine;
+			if (!engine) {
+				reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
+				reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
+			}
+		}
+	}
 
 	// ── MidiScriptEngineHandler ──────────────────────────────────────────────
 	// The engines call back into the module through these methods for every
@@ -763,52 +906,41 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	// trigger input via trig.enableTipsyIn().
 	bool processTipsyInput() {
 		int port = tipsyPort.claimedInput();
-		if (port < 0 || !activeEngine) return false;
+		if (port < 0 || !host.getActiveEngine()) return false;
 		if (!inputs[INPUT_TRIG + port].isConnected()) return false;
 
 		const TipsyPort::TipsyMessage* m = tipsyPort.processInput(inputs[INPUT_TRIG + port].getVoltage(0));
 		if (!m) return false;
 
-		if (activeEngine->tipsyInQueue.full()) {
+		if (host.getActiveEngine()->tipsyInQueue.full()) {
 			tipsyPort.reportOverflow();
 			return false;
 		}
-		activeEngine->tipsyInQueue.push(*m);
+		host.getActiveEngine()->tipsyInQueue.push(*m);
 		return true;
 	}
 
-	// Port/param counts injected into both engines at construction.
-	static constexpr int engineInputCount = 4;
-	static constexpr int engineInputTrigCount = 1;
-	static constexpr int engineOutputTrigCount = 1;
-	static constexpr int engineParamCount = 4;
-	static constexpr int engineMidiInputCount = 1;
-	static constexpr int engineMidiOutputCount = 1;
-
-	MidiScript::Lua::MidiScriptEngineLua seLua;
-	MidiScript::QuickJs::MidiScriptEngineQuickJs seQuickJs;
-	MidiScript::MidiScriptEngine* activeEngine = nullptr;
-
 	MidiKitModule() : MidiKitModule(defaultWorker()) {}
 	explicit MidiKitModule(std::shared_ptr<ITaskWorker> worker)
-		: seLua(this, engineInputCount, engineInputTrigCount, engineOutputTrigCount, engineParamCount, engineMidiInputCount, engineMidiOutputCount),
-		  seQuickJs(this, engineInputCount, engineInputTrigCount, engineOutputTrigCount, engineParamCount, engineMidiInputCount, engineMidiOutputCount) {
+		: host(this) {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_TRIG, "Trigger");
 		configOutput(OUTPUT_TRIG, "Trigger");
 		for (int i = 0; i < 4; i++) {
-			configInput<MidiScript::MidiScriptEnginePortInfo>(INPUT + i)->se = &seQuickJs;
-			configParam<MidiScript::MidiScriptEngineParamQuantity>(PARAM + i, 0.f, 1.f, 0.f)->se = &seQuickJs;
+			configInput<MidiScript::MidiScriptEnginePortInfo>(INPUT + i);
+			configParam<MidiScript::MidiScriptEngineParamQuantity>(PARAM + i, 0.f, 1.f, 0.f);
 		}
+		// No engine is loaded yet — bind to null (clears the UI state); it is
+		// bound to the active engine by loadScript() once a script loads.
+		bindPortParamEngine(nullptr);
 
 		processDivider.setDivision(8);
 		// Routes decoded messages into processMidi() below. Without this the
 		// processor decodes into an empty handler list and nothing reaches the
 		// engine at all.
 		midiProcessor.subscribe(this);
-		seLua.setWorker(worker);
-		seQuickJs.setWorker(worker);
+		host.setWorker(worker);
 		onReset();
 	}
 
@@ -819,9 +951,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	// closeState() blocks, so the worker has stopped producing before the drain
 	// — preserve that order, it is what makes the drain safe.
 	void onRemove(const RemoveEvent& e) override {
-		MidiScript::MidiScriptEngine* engine = activeEngine;
-		activeEngine = nullptr;   // stop process() dispatching
-		if (engine) engine->closeState();
+		host.closeState();        // closes + nulls the active engine (blocking)
 		flushOutput();            // drains the module queue; no engine needed
 	}
 
@@ -853,10 +983,9 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		// releases it and re-arms the decoder's data store (safe: nothing is
 		// decoding at reset, and provideDataBuffer() refuses mid-body).
 		tipsyPort.reset();
-		for (int i = 0; i < 4; i++) {
-			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
-			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
-		}
+		// No engine is active after a reset (host.closeState() nulls it), so
+		// bind to null — it is rebound by the next loadScript().
+		bindPortParamEngine(nullptr);
 		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
 			outputTriggerActive[i] = true;
 			outputPulseGenerator[i].reset();
@@ -867,9 +996,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		// tearing down here. Blocking (closeState()) rather than fire-and-forget,
 		// same reasoning as loadScript(): once this returns, activeEngine is
 		// again the only engine that can have any outstanding worker task.
-		MidiScript::MidiScriptEngine* prevEngine = activeEngine;
-		activeEngine = nullptr;
-		if (prevEngine) prevEngine->closeState();
+		host.closeState();
 
 		log.push(LOG_FORMAT::RESET, 0.f, std::string(""));
 		log.push(LOG_FORMAT::TEXT, 0.f, std::string("No script"));
@@ -897,7 +1024,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	//
 	// Returning false keeps the message available to any other handler.
 	bool processMidi(const MessageEx& m) override {
-		if (!activeEngine) return false;
+		if (!host.getActiveEngine()) return false;
 
 		switch (m.type) {
 			case MessageEx::Type::NRPN:
@@ -926,7 +1053,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		q.paramNumber = m.paramNumber;
 		q.extraValue = m.extraValue;
 		q.isComponent = m.isComponent;
-		activeEngine->processInMessage(0, q);
+		host.queueMessage(0, q);
 		return false;
 	}
 
@@ -966,10 +1093,10 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 			// Tipsy only takes over channel 1's trigger; the other channels are
 			// ordinary gates and must still fire trig.onTrigger.
 			bool tipsyOnChannel = (c == 0) && tipsyStreaming;
-			if (activeEngine && isTriggerEnabled(0, c) && inputTrigger[c].process(inputs[INPUT_TRIG].getVoltage(c)) && !tipsyOnChannel) {
+			if (host.getActiveEngine() && isTriggerEnabled(0, c) && inputTrigger[c].process(inputs[INPUT_TRIG].getVoltage(c)) && !tipsyOnChannel) {
 				inputTriggerTick[c]++;
 				midiOutput.processTick(c, inputTriggerTick[c]);
-				activeEngine->processInTick(0, c);
+				host.queueTick(0, c);
 			}
 		}
 
@@ -978,7 +1105,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		processTipsyInput();
 
 		if (processDivider.process()) {
-			if (activeEngine) {
+			if (host.getActiveEngine()) {
 				// Pumped here rather than via midiProcessor.process() because each
 				// decoded message must be queued for the worker thread, not
 				// dispatched inline: processMessage() notifies processMidi() below
@@ -988,7 +1115,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 					midiProcessor.processMessage(msg);
 				}
 
-				activeEngine->process();
+				host.process();
 			}
 
 			// Drains the module's own out-queue regardless of activeEngine, so a
@@ -1040,7 +1167,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 
 		json_object_set_new(rootJ, "midiInput", midiInput.toJson());
 		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
-		json_object_set_new(rootJ, "script", json_string(script.c_str()));
+		json_object_set_new(rootJ, "script", json_string(host.script.c_str()));
 
 		// Refresh here rather than in onSave(): Rack's periodic autosave calls
 		// saveAutosave() without dispatching onSave() first, so an onSave()-only
@@ -1052,14 +1179,9 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		// value writes slightly stale config instead of erasing the user's
 		// settings. A script with no onSave() returns true with an empty string
 		// and correctly clears any stale value.
-		if (activeEngine) {
-			std::string captured;
-			if (activeEngine->captureConfig(captured)) {
-				scriptConfigJson = captured;
-			}
-		}
-		if (!scriptConfigJson.empty()) {
-			json_t* configJ = json_loads(scriptConfigJson.c_str(), 0, NULL);
+		std::string configJson = host.captureConfig();
+		if (!configJson.empty()) {
+			json_t* configJ = json_loads(configJson.c_str(), 0, NULL);
 			if (configJ) {
 				json_object_set_new(rootJ, "scriptConfig", configJ);
 			}
@@ -1093,7 +1215,6 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	}
 
 	void loadScript(std::string s, std::string configJson = "") {
-		script = s;
 		sample = 0;
 		// The incoming script inherits no half-received NRPN/RPN/14-bit CC state
 		// from the previous one: assembly belongs to the script's view of the
@@ -1105,34 +1226,16 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		// they belong to the outgoing script, not to the module.
 		clearTriggerEnabled();
 		extendedCc.clear();
-		for (int i = 0; i < 4; i++) {
-			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
-			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
-		}
+		// Disable the outgoing script's ports/params before loading the new one.
+		bindPortParamEngine(nullptr);
 		log.push(LOG_FORMAT::RESET, 0.f, std::string(""));
 
-		MidiScript::MidiScriptEngine* prevEngine = activeEngine;
-		activeEngine = nullptr;
-		if (seLua.testScript(s)) activeEngine = &seLua;
-		if (seQuickJs.testScript(s)) activeEngine = &seQuickJs;
-
-		// Close the engine that is no longer active (silently — RESET was already
-		// pushed). Blocking rather than the async loadScript("") this used to be:
-		// once this call returns, activeEngine is again the only engine that can
-		// have any state or outstanding worker task, which is the invariant
-		// onRemove() (and onReset()) rely on to know what needs tearing down.
-		if (prevEngine && prevEngine != activeEngine) {
-			prevEngine->closeState();
-		}
+		// Select the engine for the script and load it, closing the outgoing
+		// engine (blocking) — see ScriptHost::load().
+		MidiScript::MidiScriptEngine* engine = host.load(s, configJson);
 
 		// Keep port/param info pointers in sync with the active engine
-		for (int i = 0; i < 4; i++) {
-			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->se = activeEngine;
-			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->se = activeEngine;
-		}
-
-		scriptConfigJson = configJson;
-		if (activeEngine) activeEngine->loadScript(script.c_str(), scriptConfigJson);
+		bindPortParamEngine(engine);
 	}
 
 	void clearScript() {
@@ -1203,7 +1306,7 @@ struct ScriptContextMenuItems : ui::MenuEntry {
 		// Capture a local copy: Apple's Clang rejects capturing the data
 		// member `ctx` by name in a capture list.
 		std::shared_ptr<Context> c = ctx;
-		module->activeEngine->getContextMenus([c](const std::vector<MidiScript::ScriptMenuItem>& specs) {
+		module->host.getActiveEngine()->getContextMenus([c](const std::vector<MidiScript::ScriptMenuItem>& specs) {
 			// Runs on the worker thread once every onGetValue has been
 			// evaluated. Only publishes the specs; the menu widgets are
 			// constructed by step() on the UI thread.
@@ -1230,14 +1333,14 @@ struct ScriptContextMenuItems : ui::MenuEntry {
 			Widget* item;
 			if (spec.type == MidiScript::ScriptMenuItem::Type::Boolean) {
 				item = createMenuItem(spec.label, CHECKMARK(spec.checked), [m, spec]() {
-					m->activeEngine->invokeContextMenuCallback(spec.callbackId, spec.checked ? 0 : 1);
+					m->host.getActiveEngine()->invokeContextMenuCallback(spec.callbackId, spec.checked ? 0 : 1);
 				});
 			}
 			else {
 				item = createSubmenuItem(spec.label, "", [m, spec](Menu* sub) {
 					for (size_t i = 0; i < spec.options.size(); i++) {
 						sub->addChild(createMenuItem(spec.options[i], CHECKMARK(i == static_cast<size_t>(spec.selected)), [m, spec, i]() {
-							m->activeEngine->invokeContextMenuCallback(spec.callbackId, static_cast<int>(i));
+							m->host.getActiveEngine()->invokeContextMenuCallback(spec.callbackId, static_cast<int>(i));
 						}));
 					}
 				});
@@ -1333,19 +1436,19 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MidiKitModule>::appendContextMenu(menu);
 
-		if (module->activeEngine) {
+		if (module->host.getActiveEngine()) {
 			menu->addChild(new MenuSeparator());
-			if (module->activeEngine == &module->seLua) {
+			if (module->host.isLuaEngine()) {
 				menu->addChild(createMenuLabel("Running Script (Lua)"));
 				size_t used;
-				if (module->seLua.getMemoryUsage(used)) {
+				if (module->host.seLua.getMemoryUsage(used)) {
 					menu->addChild(createMenuLabel(string::f("RAM usage: %zu KB", used / 1024)));
 				}
 			}
-			if (module->activeEngine == &module->seQuickJs) {
+			if (module->host.isQuickJsEngine()) {
 				menu->addChild(createMenuLabel("Running Script (QuickJs)"));
 				size_t used, total;
-				if (module->seQuickJs.getMemoryUsage(used, total)) {
+				if (module->host.seQuickJs.getMemoryUsage(used, total)) {
 					float pct = total > 0 ? 100.f * used / total : 0.f;
 					menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
 				}
@@ -1473,7 +1576,7 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 	}
 
 	void saveScriptDialog() {
-		if (module->script == "")
+		if (module->host.script == "")
 			return;
 
 		std::string dir = asset::userDir;
@@ -1491,7 +1594,7 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 		// Write and close file
 		{
 			std::ofstream f(newPath);
-			f << module->script;
+			f << module->host.script;
 		}
 	}
 
@@ -1533,7 +1636,7 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 	}
 
 	void copyJsClipboard() {
-		const char* script = module->script.c_str();
+		const char* script = module->host.script.c_str();
 		glfwSetClipboardString(APP->window->win, script);
 	}
 };

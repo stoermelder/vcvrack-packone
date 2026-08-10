@@ -11,8 +11,8 @@ TEST_CASE("Lua-tagged script loads and creates Lua state", "[MidiKit][Lua]") {
 
 	m->loadScript(LUA_EMPTY);
 
-	REQUIRE(m->seLua.L != nullptr);
-	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seLua));
+	REQUIRE(m->host.seLua.L != nullptr);
+	REQUIRE(m->host.isLuaEngine());
 
 	Test::destroyModule(m);
 }
@@ -28,10 +28,10 @@ TEST_CASE("Script can override input.getName", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_INPUT_NAME);
-	REQUIRE(m->seLua.L != nullptr);
+	REQUIRE(m->host.seLua.L != nullptr);
 
-	REQUIRE(m->seLua.getInputName(0) == "CV-1");
-	REQUIRE(m->seLua.getInputName(3) == "CV-4");
+	REQUIRE(m->host.seLua.getInputName(0) == "CV-1");
+	REQUIRE(m->host.seLua.getInputName(3) == "CV-4");
 
 	Test::destroyModule(m);
 }
@@ -45,9 +45,9 @@ static const char* QUICKJS_HEADER = R"(/**
 TEST_CASE("QuickJs-tagged script is rejected by Lua engine", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
-	m->seLua.loadScript(QUICKJS_HEADER);
+	m->host.seLua.loadScript(QUICKJS_HEADER);
 
-	REQUIRE(m->seLua.L == nullptr);
+	REQUIRE(m->host.seLua.L == nullptr);
 
 	Test::destroyModule(m);
 }
@@ -62,9 +62,9 @@ local x = ?
 TEST_CASE("Syntax error is handled gracefully", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
-	m->seLua.loadScript(LUA_BAD_SYNTAX);
+	m->host.seLua.loadScript(LUA_BAD_SYNTAX);
 
-	REQUIRE(m->seLua.L == nullptr);
+	REQUIRE(m->host.seLua.L == nullptr);
 
 	Test::destroyModule(m);
 }
@@ -92,7 +92,7 @@ TEST_CASE("Load error reports a clean chunk name and line", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_BAD_ON_LINE_7);
-	REQUIRE(m->seLua.L == nullptr);
+	REQUIRE(m->host.seLua.L == nullptr);
 
 	std::string log = drainLog(m);
 	REQUIRE(log.find("script:7:") != std::string::npos);
@@ -119,14 +119,14 @@ TEST_CASE("Runtime error reports a clean chunk name and line", "[MidiKit][Lua]")
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_RUNTIME_ERROR);
-	REQUIRE(m->seLua.L != nullptr);
+	REQUIRE(m->host.seLua.L != nullptr);
 	drainLog(m);  // discard load-time messages
 
 	midi::Message msg;
 	msg.setSize(3);
 	msg.setStatus(0xb);
-	m->seLua.processInMessage(0, msg);
-	m->seLua.process();
+	m->host.seLua.processInMessage(0, msg);
+	m->host.seLua.process();
 
 	std::string log = drainLog(m);
 	// x.field is on line 7
@@ -142,7 +142,7 @@ TEST_CASE("Successful load reports no error position", "[MidiKit][Lua]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(LUA_EMPTY);
-	REQUIRE(m->seLua.L != nullptr);
+	REQUIRE(m->host.seLua.L != nullptr);
 
 	std::string log = drainLog(m);
 	REQUIRE(log.find("script:") == std::string::npos);
@@ -174,7 +174,7 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua
 	// module (and its handler) is already gone, would be undefined behaviour.
 	MidiKitModule* m = createModule();
 	m->loadScript(LUA_ON_UNLOAD);
-	REQUIRE(m->seLua.L != nullptr);
+	REQUIRE(m->host.seLua.L != nullptr);
 
 	Test::destroyModule(m);
 }
@@ -206,7 +206,7 @@ end
 TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Lua][GC]") {
 	MidiKitModule* m = createModule();
 	m->loadScript(LUA_GC_SCRATCH);
-	REQUIRE(m->seLua.L != nullptr);
+	REQUIRE(m->host.seLua.L != nullptr);
 
 	const int warmup = 200;
 	const int run = 5000;
@@ -219,20 +219,20 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Lua][
 	msg.setValue(100);
 
 	for (int i = 0; i < warmup; i++) {
-		m->seLua.processInMessage(0, msg);
-		m->seLua.process();
+		m->host.seLua.processInMessage(0, msg);
+		m->host.seLua.process();
 	}
 
 	size_t used0;
-	REQUIRE(m->seLua.getMemoryUsage(used0));
+	REQUIRE(m->host.seLua.getMemoryUsage(used0));
 
 	for (int i = 0; i < run; i++) {
-		m->seLua.processInMessage(0, msg);
-		m->seLua.process();
+		m->host.seLua.processInMessage(0, msg);
+		m->host.seLua.process();
 	}
 
 	size_t used1;
-	REQUIRE(m->seLua.getMemoryUsage(used1));
+	REQUIRE(m->host.seLua.getMemoryUsage(used1));
 
 	// The callbacks must have actually run (no load/callback errors), so the
 	// allocations really happened rather than the test passing vacuously.
@@ -268,7 +268,7 @@ end
 TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][Lua][GC]") {
 	MidiKitModule* m = createModule();
 	m->loadScript(LUA_GC_RETAIN);
-	REQUIRE(m->seLua.L != nullptr);
+	REQUIRE(m->host.seLua.L != nullptr);
 
 	const int warmup = 20;
 	const int run = 3000;
@@ -281,20 +281,20 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][Lua][GC]") {
 	msg.setValue(100);
 
 	for (int i = 0; i < warmup; i++) {
-		m->seLua.processInMessage(0, msg);
-		m->seLua.process();
+		m->host.seLua.processInMessage(0, msg);
+		m->host.seLua.process();
 	}
 
 	size_t used0;
-	REQUIRE(m->seLua.getMemoryUsage(used0));
+	REQUIRE(m->host.seLua.getMemoryUsage(used0));
 
 	for (int i = 0; i < run; i++) {
-		m->seLua.processInMessage(0, msg);
-		m->seLua.process();
+		m->host.seLua.processInMessage(0, msg);
+		m->host.seLua.process();
 	}
 
 	size_t used1;
-	REQUIRE(m->seLua.getMemoryUsage(used1));
+	REQUIRE(m->host.seLua.getMemoryUsage(used1));
 
 	std::string log = drainLog(m);
 	REQUIRE(log.find("rror") == std::string::npos);
@@ -347,17 +347,17 @@ TEST_CASE("Infinite loop in onMessage is interrupted, not a hang", "[MidiKit][Lu
 	drainLog(m);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->activeEngine->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, in);
 	// SyncTaskWorker runs inline — without the count hook this would hang.
-	m->activeEngine->process();
+	m->host.getActiveEngine()->process();
 
 	std::string log = drainLog(m);
 	REQUIRE(log.find("onMessage error") != std::string::npos);
 	REQUIRE(log.find("exceeded execution budget") != std::string::npos);
 
 	// Engine recovered: a second message is interrupted again.
-	m->activeEngine->processInMessage(0, in);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->process();
 	std::string log2 = drainLog(m);
 	REQUIRE(log2.find("exceeded execution budget") != std::string::npos);
 
@@ -373,8 +373,8 @@ TEST_CASE("Infinite loop in onMessage does not wedge the shared worker", "[MidiK
 	drainLog(m);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->activeEngine->processInMessage(0, in);
-	m->activeEngine->process();   // enqueues the dispatch task
+	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->process();   // enqueues the dispatch task
 
 	// Without the count hook the worker spins forever and barrier() times out.
 	barrier(worker, 10.0);
@@ -383,8 +383,8 @@ TEST_CASE("Infinite loop in onMessage does not wedge the shared worker", "[MidiK
 	REQUIRE(log.find("exceeded execution budget") != std::string::npos);
 
 	// A second message still dispatches — the worker recovered.
-	m->activeEngine->processInMessage(0, in);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->process();
 	barrier(worker, 10.0);
 	std::string log2 = drainLog(m);
 	REQUIRE(log2.find("exceeded execution budget") != std::string::npos);
@@ -411,8 +411,8 @@ TEST_CASE("Infinite loop at script top level fails the load, and the module reco
 	drainLog(m);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->activeEngine->processInMessage(0, in);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->process();
 	std::string reloadLog = drainLog(m);
 	REQUIRE(reloadLog.find("recovered") != std::string::npos);
 

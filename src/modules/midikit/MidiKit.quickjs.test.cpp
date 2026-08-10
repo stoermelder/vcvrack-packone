@@ -12,8 +12,8 @@ TEST_CASE("QuickJs-tagged script loads and creates a context", "[MidiKit][QuickJ
 
 	m->loadScript(QJS_EMPTY);
 
-	REQUIRE(m->seQuickJs.ctx != nullptr);
-	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seQuickJs));
+	REQUIRE(m->host.seQuickJs.ctx != nullptr);
+	REQUIRE(m->host.isQuickJsEngine());
 
 	Test::destroyModule(m);
 }
@@ -29,8 +29,8 @@ TEST_CASE("QuickJs script loads with @engine as the only header tag", "[MidiKit]
 
 	m->loadScript(QJS_ONLY_ENGINE);
 
-	REQUIRE(m->seQuickJs.ctx != nullptr);
-	REQUIRE(m->activeEngine == static_cast<MidiScriptEngine*>(&m->seQuickJs));
+	REQUIRE(m->host.seQuickJs.ctx != nullptr);
+	REQUIRE(m->host.isQuickJsEngine());
 
 	Test::destroyModule(m);
 }
@@ -44,9 +44,9 @@ static const char* LUA_HEADER = R"(--[[
 TEST_CASE("Lua-tagged script is rejected by QuickJs engine", "[MidiKit][QuickJs]") {
 	MidiKitModule* m = createModule();
 
-	m->seQuickJs.loadScript(LUA_HEADER);
+	m->host.seQuickJs.loadScript(LUA_HEADER);
 
-	REQUIRE(m->seQuickJs.ctx == nullptr);
+	REQUIRE(m->host.seQuickJs.ctx == nullptr);
 
 	Test::destroyModule(m);
 }
@@ -61,9 +61,9 @@ let x = ;
 TEST_CASE("JS syntax error is handled gracefully", "[MidiKit][QuickJs]") {
 	MidiKitModule* m = createModule();
 
-	m->seQuickJs.loadScript(QJS_BAD_SYNTAX);
+	m->host.seQuickJs.loadScript(QJS_BAD_SYNTAX);
 
-	REQUIRE(m->seQuickJs.ctx == nullptr);
+	REQUIRE(m->host.seQuickJs.ctx == nullptr);
 
 	Test::destroyModule(m);
 }
@@ -88,7 +88,7 @@ TEST_CASE("Parse error reports the line it failed on", "[MidiKit][QuickJs]") {
 
 	m->loadScript(QJS_BAD_ON_LINE_6);
 	// A failed load tears the state down
-	REQUIRE(m->seQuickJs.ctx == nullptr);
+	REQUIRE(m->host.seQuickJs.ctx == nullptr);
 
 	std::string log = drainLog(m);
 	REQUIRE(log.find("Error while loading script") != std::string::npos);
@@ -113,7 +113,7 @@ TEST_CASE("Parse error line number tracks the error position", "[MidiKit][QuickJ
 	MidiKitModule* m = createModule();
 
 	m->loadScript(QJS_BAD_ON_LINE_5);
-	REQUIRE(m->seQuickJs.ctx == nullptr);
+	REQUIRE(m->host.seQuickJs.ctx == nullptr);
 
 	std::string log = drainLog(m);
 	REQUIRE(log.find(":5:") != std::string::npos);
@@ -128,7 +128,7 @@ TEST_CASE("Successful load reports no error", "[MidiKit][QuickJs]") {
 	MidiKitModule* m = createModule();
 
 	m->loadScript(QJS_EMPTY);
-	REQUIRE(m->seQuickJs.ctx != nullptr);
+	REQUIRE(m->host.seQuickJs.ctx != nullptr);
 
 	std::string log = drainLog(m);
 	REQUIRE(log.find("rror") == std::string::npos);
@@ -163,7 +163,7 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Qui
 	// prove destroyModule() doesn't crash, which is what it's for.
 	MidiKitModule* m = createModule();
 	m->loadScript(QJS_ON_UNLOAD);
-	REQUIRE(m->seQuickJs.ctx != nullptr);
+	REQUIRE(m->host.seQuickJs.ctx != nullptr);
 
 	Test::destroyModule(m);
 }
@@ -186,8 +186,8 @@ midi.onMessage = function(port, m) {
 TEST_CASE("midi.onMessage dispatch round-trips a CC message through midi.*/midiOut.*", "[MidiKit][QuickJs]") {
 	MidiKitModule* m = createModule();
 	m->loadScript(QJS_MIDI_ROUNDTRIP);
-	REQUIRE(m->seQuickJs.ctx != nullptr);
-	REQUIRE(JS_IsFunction(m->seQuickJs.ctx, m->seQuickJs.onMessageFn));
+	REQUIRE(m->host.seQuickJs.ctx != nullptr);
+	REQUIRE(JS_IsFunction(m->host.seQuickJs.ctx, m->host.seQuickJs.onMessageFn));
 
 	midi::Message msg;
 	msg.setSize(3);
@@ -196,8 +196,8 @@ TEST_CASE("midi.onMessage dispatch round-trips a CC message through midi.*/midiO
 	msg.setNote(20);
 	msg.setValue(99);
 
-	m->seQuickJs.processInMessage(0, msg);
-	m->seQuickJs.process();
+	m->host.seQuickJs.processInMessage(0, msg);
+	m->host.seQuickJs.process();
 
 	int port, ticks;
 	midi::Message out;
@@ -227,12 +227,12 @@ midi.onMessage = function(port, m) {
 TEST_CASE("midi.createNRPN/setNRPN queue all four CC messages in order", "[MidiKit][QuickJs]") {
 	MidiKitModule* m = createModule();
 	m->loadScript(QJS_NRPN);
-	REQUIRE(m->seQuickJs.ctx != nullptr);
+	REQUIRE(m->host.seQuickJs.ctx != nullptr);
 
 	midi::Message msg;
 	msg.setSize(3);
-	m->seQuickJs.processInMessage(0, msg);
-	m->seQuickJs.process();
+	m->host.seQuickJs.processInMessage(0, msg);
+	m->host.seQuickJs.process();
 
 	REQUIRE(m->midiOutQueue.size() == 4);
 	int expectedNote[4] = {99, 98, 6, 38};
@@ -280,7 +280,7 @@ midi.onMessage = function(midiPort, msg) {
 TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][QuickJs][GC]") {
 	MidiKitModule* m = createModule();
 	m->loadScript(QJS_GC_SCRATCH);
-	REQUIRE(m->seQuickJs.ctx != nullptr);
+	REQUIRE(m->host.seQuickJs.ctx != nullptr);
 
 	const int warmup = 200;
 	const int run = 5000;
@@ -293,22 +293,22 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Quick
 	msg.setValue(100);
 
 	for (int i = 0; i < warmup; i++) {
-		m->seQuickJs.processInMessage(0, msg);
-		m->seQuickJs.process();
+		m->host.seQuickJs.processInMessage(0, msg);
+		m->host.seQuickJs.process();
 	}
 
-	JS_RunGC(m->seQuickJs.rt);
+	JS_RunGC(m->host.seQuickJs.rt);
 	size_t used0, total;
-	REQUIRE(m->seQuickJs.getMemoryUsage(used0, total));
+	REQUIRE(m->host.seQuickJs.getMemoryUsage(used0, total));
 
 	for (int i = 0; i < run; i++) {
-		m->seQuickJs.processInMessage(0, msg);
-		m->seQuickJs.process();
+		m->host.seQuickJs.processInMessage(0, msg);
+		m->host.seQuickJs.process();
 	}
 
-	JS_RunGC(m->seQuickJs.rt);
+	JS_RunGC(m->host.seQuickJs.rt);
 	size_t used1, total1;
-	REQUIRE(m->seQuickJs.getMemoryUsage(used1, total1));
+	REQUIRE(m->host.seQuickJs.getMemoryUsage(used1, total1));
 
 	// The callbacks must have actually run (no load/callback errors), so the
 	// allocations really happened rather than the test passing vacuously.
@@ -342,7 +342,7 @@ midi.onMessage = function(midiPort, msg) {
 TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][QuickJs][GC]") {
 	MidiKitModule* m = createModule();
 	m->loadScript(QJS_GC_RETAIN);
-	REQUIRE(m->seQuickJs.ctx != nullptr);
+	REQUIRE(m->host.seQuickJs.ctx != nullptr);
 
 	const int warmup = 20;
 	const int run = 200;
@@ -355,22 +355,22 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][QuickJs][GC]") {
 	msg.setValue(100);
 
 	for (int i = 0; i < warmup; i++) {
-		m->seQuickJs.processInMessage(0, msg);
-		m->seQuickJs.process();
+		m->host.seQuickJs.processInMessage(0, msg);
+		m->host.seQuickJs.process();
 	}
 
-	JS_RunGC(m->seQuickJs.rt);
+	JS_RunGC(m->host.seQuickJs.rt);
 	size_t used0, total;
-	REQUIRE(m->seQuickJs.getMemoryUsage(used0, total));
+	REQUIRE(m->host.seQuickJs.getMemoryUsage(used0, total));
 
 	for (int i = 0; i < run; i++) {
-		m->seQuickJs.processInMessage(0, msg);
-		m->seQuickJs.process();
+		m->host.seQuickJs.processInMessage(0, msg);
+		m->host.seQuickJs.process();
 	}
 
-	JS_RunGC(m->seQuickJs.rt);
+	JS_RunGC(m->host.seQuickJs.rt);
 	size_t used1, total1;
-	REQUIRE(m->seQuickJs.getMemoryUsage(used1, total1));
+	REQUIRE(m->host.seQuickJs.getMemoryUsage(used1, total1));
 
 	std::string log = drainLog(m);
 	REQUIRE(log.find("rror") == std::string::npos);
@@ -421,17 +421,17 @@ TEST_CASE("Infinite loop in onMessage is interrupted, not a hang", "[MidiKit][Qu
 	drainLog(m);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->activeEngine->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, in);
 	// SyncTaskWorker runs inline — without the interrupt handler this would hang.
-	m->activeEngine->process();
+	m->host.getActiveEngine()->process();
 
 	std::string log = drainLog(m);
 	REQUIRE(log.find("interrupted") != std::string::npos);
 	REQUIRE(log.find("onMessage error") != std::string::npos);
 
 	// Engine recovered: a second message is interrupted again.
-	m->activeEngine->processInMessage(0, in);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->process();
 	std::string log2 = drainLog(m);
 	REQUIRE(log2.find("interrupted") != std::string::npos);
 
@@ -447,8 +447,8 @@ TEST_CASE("Infinite loop in onMessage does not wedge the shared worker", "[MidiK
 	drainLog(m);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->activeEngine->processInMessage(0, in);
-	m->activeEngine->process();   // enqueues the dispatch task
+	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->process();   // enqueues the dispatch task
 
 	// Without the guard the worker spins forever and barrier() times out.
 	barrier(worker, 10.0);
@@ -457,8 +457,8 @@ TEST_CASE("Infinite loop in onMessage does not wedge the shared worker", "[MidiK
 	REQUIRE(log.find("interrupted") != std::string::npos);
 
 	// A second message still dispatches — the worker recovered.
-	m->activeEngine->processInMessage(0, in);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->process();
 	barrier(worker, 10.0);
 	std::string log2 = drainLog(m);
 	REQUIRE(log2.find("interrupted") != std::string::npos);
@@ -485,8 +485,8 @@ TEST_CASE("Infinite loop at script top level fails the load, and the module reco
 	drainLog(m);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->activeEngine->processInMessage(0, in);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->process();
 	std::string reloadLog = drainLog(m);
 	REQUIRE(reloadLog.find("recovered") != std::string::npos);
 

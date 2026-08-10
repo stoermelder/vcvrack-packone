@@ -36,8 +36,8 @@ static std::string readFile(const std::string& path) {
 // processInMessage only queues the message — process() is what actually runs
 // midi.onMessage(), so both are needed or the script never executes at all.
 static void feed(MidiKitModule* m, midi::Message msg) {
-	m->activeEngine->processInMessage(0, msg);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, msg);
+	m->host.getActiveEngine()->process();
 }
 
 static midi::Message noteOn(int ch, int note, int vel) {
@@ -131,8 +131,8 @@ struct NoteEvent {
 };
 
 static std::vector<NoteEvent> feedTick(MidiKitModule* m) {
-	m->activeEngine->processInTick(0, 0);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInTick(0, 0);
+	m->host.getActiveEngine()->process();
 
 	std::vector<NoteEvent> events;
 	int port, ticks;
@@ -192,8 +192,8 @@ static std::vector<OutEvent> drainOut(MidiKitModule* m) {
 // the actual outgoing messages (and their tick scheduling), not just "ran
 // without erroring".
 static std::vector<OutEvent> feedCollect(MidiKitModule* m, midi::Message msg) {
-	m->activeEngine->processInMessage(0, msg);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, msg);
+	m->host.getActiveEngine()->process();
 	return drainOut(m);
 }
 
@@ -205,13 +205,13 @@ static std::vector<OutEvent> feedCollect(MidiKitModule* m, midi::Message msg) {
 // friends need this instead.
 static void feedDecoded(MidiKitModule* m, midi::Message msg) {
 	m->midiProcessor.processMessage(msg);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->process();
 }
 
 // feedDecoded() plus a drain of the out-queue, for the behavioural tests.
 static std::vector<OutEvent> feedDecodedCollect(MidiKitModule* m, midi::Message msg) {
 	m->midiProcessor.processMessage(msg);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->process();
 	return drainOut(m);
 }
 
@@ -859,10 +859,10 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' output channel menu changes the 
 
 	// "Output channel" option index 1 -> MIDI channel 2 (internal 1).
 	std::vector<ScriptMenuItem> specs;
-	m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 	REQUIRE(specs.size() == 1);
 	REQUIRE(specs[0].label == "Output channel");
-	m->activeEngine->invokeContextMenuCallback(specs[0].callbackId, 1);
+	m->host.getActiveEngine()->invokeContextMenuCallback(specs[0].callbackId, 1);
 	drainLog(m);
 
 	// The first hit (tick 2) goes out on the new channel.
@@ -1028,13 +1028,13 @@ TEST_CASE("'Keyboard split.js/.lua' the preset menu switches the active preset",
 	MidiKitModule* m = loadPreset(path);
 
 	std::vector<ScriptMenuItem> specs;
-	m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 	REQUIRE(specs.size() == 1);
 	REQUIRE(specs[0].label == "Preset");
 	REQUIRE(specs[0].options.size() == 3);
 
 	// Option index 2 -> preset 3 (A=5 internal 4, B=6 internal 5, split 72).
-	m->activeEngine->invokeContextMenuCallback(specs[0].callbackId, 2);
+	m->host.getActiveEngine()->invokeContextMenuCallback(specs[0].callbackId, 2);
 	drainLog(m);
 
 	auto below = feedCollect(m, noteOn(1, 70, 100));   // below 72 -> A
@@ -1117,8 +1117,8 @@ struct FrameEvent {
 };
 
 static std::vector<FrameEvent> feedFrames(MidiKitModule* m, midi::Message msg) {
-	m->activeEngine->processInMessage(0, msg);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, msg);
+	m->host.getActiveEngine()->process();
 	std::vector<FrameEvent> events;
 	int port, ticks;
 	midi::Message out;
@@ -1525,15 +1525,15 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	MidiKitModule* m = loadPreset(path);
 
 	std::vector<ScriptMenuItem> specs;
-	m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 	REQUIRE(specs.size() == 3);
 	REQUIRE(specs[1].label == "Channel");
 	REQUIRE(specs[2].label == "Round up on ties");
 
 	// "Channel" option index 1 selects MIDI channel 2 (internal channel 1).
-	m->activeEngine->invokeContextMenuCallback(specs[1].callbackId, 1);
+	m->host.getActiveEngine()->invokeContextMenuCallback(specs[1].callbackId, 1);
 	// Switch "Round up on ties" on.
-	m->activeEngine->invokeContextMenuCallback(specs[2].callbackId, 1);
+	m->host.getActiveEngine()->invokeContextMenuCallback(specs[2].callbackId, 1);
 	drainLog(m);
 
 	// Save: dataToJson() itself refreshes the config (via rack.onSave(), which
@@ -1557,7 +1557,7 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	json_decref(rootJ);
 
 	// The reloaded module's config must match what the user changed.
-	std::string restored = captureConfig(m2->activeEngine);
+	std::string restored = captureConfig(m2->host.getActiveEngine());
 	REQUIRE(configInt(restored, "channel") == 1);
 	REQUIRE(configBool(restored, "preferUpward") == true);
 
@@ -1566,7 +1566,7 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	// this fix targets (checked/selected used to be captured at script load
 	// time, before onLoad() restored the persisted config).
 	std::vector<ScriptMenuItem> restoredSpecs;
-	m2->activeEngine->getContextMenus([&restoredSpecs](const std::vector<ScriptMenuItem>& s) { restoredSpecs = s; });
+	m2->host.getActiveEngine()->getContextMenus([&restoredSpecs](const std::vector<ScriptMenuItem>& s) { restoredSpecs = s; });
 	REQUIRE(restoredSpecs.size() == 3);
 	REQUIRE(restoredSpecs[1].label == "Channel");
 	REQUIRE(restoredSpecs[2].label == "Round up on ties");
@@ -1861,14 +1861,14 @@ TEST_CASE("'Micro scale.js/.lua' alwaysSendBend forces a bend even for the tonic
 	MidiKitModule* m = loadPreset(path);
 
 	std::vector<ScriptMenuItem> specs;
-	m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 	REQUIRE(specs.size() == 2);
 	REQUIRE(specs[0].label == "Input channel");
 	REQUIRE(specs[1].label == "Always send pitch bend");
 
 	// Switch the option on; the next tonic Note-On must be preceded by the
 	// centre bend 8192 (LSB 0, MSB 64) even though it is unchanged.
-	m->activeEngine->invokeContextMenuCallback(specs[1].callbackId, 1);
+	m->host.getActiveEngine()->invokeContextMenuCallback(specs[1].callbackId, 1);
 	drainLog(m);
 
 	auto ev = feedCollect(m, noteOn(1, 60, 100));
@@ -1878,7 +1878,7 @@ TEST_CASE("'Micro scale.js/.lua' alwaysSendBend forces a bend even for the tonic
 	// Switch it back off: the receiver still remembers the last bend per
 	// channel, so the next tonic (on a fresh round-robin channel) goes out
 	// bend-free again.
-	m->activeEngine->invokeContextMenuCallback(specs[1].callbackId, 0);
+	m->host.getActiveEngine()->invokeContextMenuCallback(specs[1].callbackId, 0);
 	drainLog(m);
 
 	auto again = feedCollect(m, noteOn(1, 60, 100));
@@ -1898,12 +1898,12 @@ TEST_CASE("'Micro scale.js/.lua' input-channel filter retunes only the chosen ch
 	MidiKitModule* m = loadPreset(path);
 
 	std::vector<ScriptMenuItem> specs;
-	m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 	// "Input channel" option index 1 selects script channel 1. The script's
 	// channels are 1-based (midi.getChannel returns the Rack nibble + 1), so
 	// the matching note is fed as noteOn(0, ...) and the non-matching one as
 	// noteOn(1, ...).
-	m->activeEngine->invokeContextMenuCallback(specs[0].callbackId, 1);
+	m->host.getActiveEngine()->invokeContextMenuCallback(specs[0].callbackId, 1);
 	drainLog(m);
 
 	// Channel 1 is still retuned exactly as before.
@@ -2601,15 +2601,15 @@ TEST_CASE("'NRPN Generator.js/.lua' context menu changes ticks per step and chan
 	MidiKitModule* m = loadPreset(path);
 
 	std::vector<ScriptMenuItem> specs;
-	m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 	REQUIRE(specs.size() == 2);
 	REQUIRE(specs[0].label == "Channel");
 	REQUIRE(specs[1].label == "Ticks per step");
 
 	// "Ticks per step" option index 1 -> TICKS_PER_STEP[1] = 2 ticks/step.
-	m->activeEngine->invokeContextMenuCallback(specs[1].callbackId, 1);
+	m->host.getActiveEngine()->invokeContextMenuCallback(specs[1].callbackId, 1);
 	// "Channel" option index 1 -> MIDI channel 2 (internal channel 1).
-	m->activeEngine->invokeContextMenuCallback(specs[0].callbackId, 1);
+	m->host.getActiveEngine()->invokeContextMenuCallback(specs[0].callbackId, 1);
 	drainLog(m);
 
 	// 2 ticks now complete a step; the quad goes out on the new channel.
@@ -2617,7 +2617,7 @@ TEST_CASE("'NRPN Generator.js/.lua' context menu changes ticks per step and chan
 
 	// The menus report the new selections (read back through onGetValue).
 	std::vector<ScriptMenuItem> after;
-	m->activeEngine->getContextMenus([&after](const std::vector<ScriptMenuItem>& s) { after = s; });
+	m->host.getActiveEngine()->getContextMenus([&after](const std::vector<ScriptMenuItem>& s) { after = s; });
 	REQUIRE(after[0].selected == 1);
 	REQUIRE(after[1].selected == 1);
 
