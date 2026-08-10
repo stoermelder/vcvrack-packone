@@ -26,7 +26,7 @@ TEST_CASE("Construction and initialization", "[MidiKit]") {
 	REQUIRE(m->NUM_LIGHTS == 0);
 	REQUIRE(m->host.script == "");
 	REQUIRE(m->sample == 0);
-	REQUIRE(m->inputTriggerTick[0] == 0);
+	REQUIRE(m->triggersIn.triggerTick[0][0] == 0);
 
 	Test::destroyModule(m);
 }
@@ -124,16 +124,16 @@ TEST_CASE("Trigger input increments inputTriggerTick", "[MidiKit]") {
 	// Rising edge → tick increments
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(1));
-	REQUIRE(m->inputTriggerTick[0] == 1);
+	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
 
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
 	m->process(Test::makeProcessArgs(2));
-	REQUIRE(m->inputTriggerTick[0] == 1);  // no change on falling edge
+	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);  // no change on falling edge
 
 	// Second pulse
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(3));
-	REQUIRE(m->inputTriggerTick[0] == 2);
+	REQUIRE(m->triggersIn.triggerTick[0][0] == 2);
 
 	Test::destroyModule(m);
 }
@@ -158,7 +158,7 @@ TEST_CASE("Trigger input is not processed until the trigger is enabled", "[MidiK
 	m->process(Test::makeProcessArgs(2));
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(3));
-	REQUIRE(m->inputTriggerTick[0] == 0);
+	REQUIRE(m->triggersIn.triggerTick[0][0] == 0);
 
 	// Enabling the channel (as the script's trig.enableIn(1) would do) turns
 	// trigger processing on — the next rising edge counts a tick.
@@ -167,7 +167,7 @@ TEST_CASE("Trigger input is not processed until the trigger is enabled", "[MidiK
 	m->process(Test::makeProcessArgs(4));
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(5));
-	REQUIRE(m->inputTriggerTick[0] == 1);
+	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
 
 	Test::destroyModule(m);
 }
@@ -199,8 +199,8 @@ TEST_CASE("Polyphonic trigger input counts ticks per channel", "[MidiKit]") {
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 1);
 	m->process(Test::makeProcessArgs(4));
 
-	REQUIRE(m->inputTriggerTick[0] == 2);
-	REQUIRE(m->inputTriggerTick[1] == 1);
+	REQUIRE(m->triggersIn.triggerTick[0][0] == 2);
+	REQUIRE(m->triggersIn.triggerTick[0][1] == 1);
 
 	Test::destroyModule(m);
 }
@@ -430,7 +430,7 @@ struct RecordingEngine : MidiScriptEngine {
 		for (int ticks : pending) {
 			midi::Message msg = makeCc();
 			handler->sendMidi(0, &msg, 1, 0, ticks);
-			tickAtEmit.push_back(module->inputTriggerTick[0]);
+			tickAtEmit.push_back(module->triggersIn.triggerTick[0][0]);
 		}
 		pending.clear();
 	}
@@ -548,7 +548,7 @@ TEST_CASE("process() consumes the tick before the engine schedules on it", "[Mid
 	step(m, 10.f, 7);
 	REQUIRE(eng.processCalls == 1);
 
-	REQUIRE(m->inputTriggerTick[0] == 1);
+	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
 	REQUIRE(eng.tickAtEmit.size() == 1);
 	REQUIRE(eng.tickAtEmit[0] == 1);       // emitted after the tick was consumed
 	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);
@@ -561,7 +561,7 @@ TEST_CASE("process() consumes the tick before the engine schedules on it", "[Mid
 	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);   // falling edge: no tick
 	step(m, 10.f, 9);
 
-	REQUIRE(m->inputTriggerTick[0] == 2);
+	REQUIRE(m->triggersIn.triggerTick[0][0] == 2);
 	REQUIRE(eng.tickAtEmit.size() == 1);           // engine emitted only once
 	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
 
@@ -587,12 +587,12 @@ TEST_CASE("process() handles triggers arriving between divider ticks", "[MidiKit
 	// Triggers are handled every sample, independent of the divider. These land
 	// between divider boundaries and must not send the tick-2 message early.
 	step(m, 10.f, 8);
-	REQUIRE(m->inputTriggerTick[0] == 1);
+	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
 	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);
 
 	step(m, 0.f, 9);
 	step(m, 10.f, 10);
-	REQUIRE(m->inputTriggerTick[0] == 2);
+	REQUIRE(m->triggersIn.triggerTick[0][0] == 2);
 	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
 
 	Test::destroyModule(m);
@@ -670,7 +670,7 @@ TEST_CASE("process() orders trigger, inbound, and outbound effects in one call",
 	// The side effects that order produces: the edge was consumed, the inbound
 	// reached the engine, and the engine's outbound landed after the tick was
 	// consumed (so it stays queued until the next trigger).
-	REQUIRE(m->inputTriggerTick[0] == 1);
+	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
 	REQUIRE(eng.received.size() == 1);
 	REQUIRE(eng.received[0].type == StoermelderPackOne::MessageEx::Type::CC);
 	REQUIRE(eng.tickAtEmit.size() == 1);
@@ -710,7 +710,7 @@ TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKi
 		m->process(Test::makeProcessArgs(frame++));
 	}
 
-	REQUIRE(m->inputTriggerTick[0] == 3);
+	REQUIRE(m->triggersIn.triggerTick[0][0] == 3);
 	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
 
 	Test::destroyModule(m);
@@ -745,8 +745,8 @@ TEST_CASE("sendAfterTrigger on one channel is only drained by that channel's clo
 		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
 		m->process(Test::makeProcessArgs(pulse * 2 + 2));
 	}
-	REQUIRE(m->inputTriggerTick[0] == 2);
-	REQUIRE(m->inputTriggerTick[1] == 0);
+	REQUIRE(m->triggersIn.triggerTick[0][0] == 2);
+	REQUIRE(m->triggersIn.triggerTick[0][1] == 0);
 	REQUIRE(m->midiOutput.tickQueue[1].size() == 1);   // still queued
 
 	// Two pulses on channel 2 drain it (tick 2 reached).
@@ -756,7 +756,7 @@ TEST_CASE("sendAfterTrigger on one channel is only drained by that channel's clo
 		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 1);
 		m->process(Test::makeProcessArgs(pulse * 2 + 11));
 	}
-	REQUIRE(m->inputTriggerTick[1] == 2);
+	REQUIRE(m->triggersIn.triggerTick[0][1] == 2);
 	REQUIRE(m->midiOutput.tickQueue[1].size() == 0);   // drained
 
 	Test::destroyModule(m);

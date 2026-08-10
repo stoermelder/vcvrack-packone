@@ -593,6 +593,130 @@ struct ScriptHost {
 };
 
 
+// ── Trigger inputs, one per module ─────────────────────────────────────────
+// The trigger CV input side: per-port, per-channel SchmittTriggers and tick
+// counters, and the enable mask that gates input processing. Worker thread
+// writes the mask (trig.enableIn); the audio thread reads it and steps the
+// triggers in process(). Templated over the number of trigger input ports
+// (defaults to 1 — the module's single trigger input).
+template <int TPORTS = 1>
+struct TriggerInputs {
+	// Wired by the module to inputs[INPUT_TRIG] so processIns() can read the
+	// trigger voltages directly. Set once in the constructor after config()
+	// sizes the port vector.
+	rack::engine::Input* input = nullptr;
+
+	// One SchmittTrigger and tick counter per (port, channel) of the trigger
+	// input — trig.onTrigger/trig.getTicksIn() are channel-aware.
+	dsp::SchmittTrigger trigger[TPORTS][PORT_MAX_CHANNELS];
+	uint64_t triggerTick[TPORTS][PORT_MAX_CHANNELS];
+
+	// Trigger inputs enabled by the script (trig.enableIn()), one mask per
+	// port: bit c = channel c. Atomic: written by the worker (trig.enableIn()),
+	// read by the audio thread (process()).
+	std::atomic<uint16_t> enabledMask[TPORTS];
+
+	// Worker side — trig.enableIn() binding.
+	void enable(int port, uint8_t channel) {
+		if (port < 0 || port >= TPORTS) return;
+		if (channel >= PORT_MAX_CHANNELS) return;
+		enabledMask[port].fetch_or(static_cast<uint16_t>(1) << channel, std::memory_order_relaxed);
+	}
+
+	// Audio thread — whether channel of `port` is enabled.
+	bool isEnabled(int port, uint8_t channel) const {
+		if (port < 0 || port >= TPORTS) return false;
+		if (channel >= PORT_MAX_CHANNELS) return false;
+		return (enabledMask[port].load(std::memory_order_relaxed) >> channel) & 1;
+	}
+
+	// Forgets every enabled channel on script load/reset, and with it the tick
+	// counters: the enables belong to the script, not the module.
+	void reset() {
+		for (int p = 0; p < TPORTS; p++) {
+			for (int i = 0; i < PORT_MAX_CHANNELS; i++) triggerTick[p][i] = 0;
+			enabledMask[p].store(0, std::memory_order_relaxed);
+		}
+	}
+
+	// Audio thread — the tick counter for a channel, for trig.getTicksIn().
+	uint64_t getTicks(int port, uint8_t channel) const {
+		if (port < 0 || port >= TPORTS) return 0;
+		if (channel >= PORT_MAX_CHANNELS) return 0;
+		return triggerTick[port][channel];
+	}
+
+	// Audio thread — one sample of input detection for `port`. Steps each
+	// channel's SchmittTrigger and calls onTick(channel, tick) for every rising
+	// edge. The SchmittTriggers are always stepped for enabled channels so
+	// their states stay current; while a Tipsy stream owns channel 0
+	// (tipsyClaimed), that channel is stepped but never fires.
+	template <typename TickFn>
+	void process(int port, int channels, bool tipsyClaimed, TickFn&& onTick) {
+		for (uint8_t c = 0; c < channels; c++) {
+			bool tipsyOnChannel = (c == 0) && tipsyClaimed;
+			if (isEnabled(port, c) && trigger[port][c].process(input->getVoltage(c)) && !tipsyOnChannel) {
+				triggerTick[port][c]++;
+				onTick(c, triggerTick[port][c]);
+			}
+		}
+	}
+};
+
+
+// ── Trigger outputs, one per module ────────────────────────────────────────
+// The trigger CV output side: per-port, per-channel pulse generators. Worker
+// thread arms/clears pulses (trig.setGate/setOutGateVoltage); the audio thread
+// steps them in process(). Templated over the number of trigger output ports
+// (defaults to 1 — the module's single trigger output).
+template <int TPORTS = 1>
+struct TriggerOutputs {
+	// Wired by the module to outputs[OUTPUT_TRIG] so processOuts() can write
+	// the trigger voltages directly. Set once in the constructor.
+	rack::engine::Output* output = nullptr;
+
+	bool triggerActive[TPORTS][PORT_MAX_CHANNELS];
+	dsp::PulseGenerator pulseGenerator[TPORTS][PORT_MAX_CHANNELS];
+
+	// Worker side — trig.setGate(): marks channel active and arms its pulse.
+	void setGate(int port, uint8_t channel, float duration) {
+		if (port < 0 || port >= TPORTS) return;
+		triggerActive[port][channel] = true;
+		pulseGenerator[port][channel].trigger(duration);
+	}
+
+	// Worker side — trig.setTrigVoltage(): deactivates the pulse so the raw
+	// voltage the caller writes wins on the output.
+	void setGateVoltage(int port, uint8_t channel) {
+		if (port < 0 || port >= TPORTS) return;
+		triggerActive[port][channel] = false;
+	}
+
+	// Resets per-channel output state (onReset()).
+	void reset() {
+		for (int p = 0; p < TPORTS; p++) {
+			for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
+				triggerActive[p][i] = true;
+				pulseGenerator[p][i].reset();
+			}
+		}
+	}
+
+	// Audio thread — one sample of the output pulse loop for `port`. Writes
+	// 10 V / 0 V to each active channel's gate pulse; channels not in a pulse
+	// keep whatever setOutGateVoltage() last wrote.
+	void process(int port, float sampleTime) {
+		if (port < 0 || port >= TPORTS) return;
+		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
+			bool s = pulseGenerator[port][i].process(sampleTime);
+			if (triggerActive[port][i]) {
+				output->setVoltage(s ? 10.f : 0.f, i);
+			}
+		}
+	}
+};
+
+
 // Returns the one shared async worker for all MidiKit modules.
 // The weak_ptr lets it be destroyed when the last module is removed.
 //
@@ -677,19 +801,10 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	dsp::ClockDivider processDivider;
 	dsp::Timer rateLimiterTimer;
 
-	// One SchmittTrigger and tick counter per polyphonic channel of the trigger
-	// input — trig.onTrigger/trig.getTicks() are channel-aware.
-	dsp::SchmittTrigger inputTrigger[PORT_MAX_CHANNELS];
-	uint64_t inputTriggerTick[PORT_MAX_CHANNELS];
-	bool outputTriggerActive[PORT_MAX_CHANNELS];
-	dsp::PulseGenerator outputPulseGenerator[PORT_MAX_CHANNELS];
-
-	// Trigger inputs enabled by the script (trig.enableIn()), as a bitmask of
-	// polyphonic channels (bit c = channel c of port 0). The module gates all
-	// trigger processing on this: disabled channels get no ticks, no
-	// sendAfterTrigger drains, and no trig.onTrigger. Atomic: written by the
-	// worker (trig.enableIn()), read by the audio thread (process()).
-	std::atomic<uint16_t> triggerEnabledMask{0};
+	// Trigger inputs and outputs, in their own structs (see TriggerInputs /
+	// TriggerOutputs for the threading contract).
+	TriggerInputs<> triggersIn;
+	TriggerOutputs<> triggersOut;
 
 	// Extended-CC input enables (midi.enableNrpnIn/enableRpnIn/enableCc14bitIn),
 	// in their own struct. Atomic masks written by the worker from the enable
@@ -736,22 +851,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 
 	// MidiScriptEngineHandler — trig.enableIn() binding (worker thread).
 	void enableTrigger(int port, uint8_t channel) override {
-		if (port != 0) return;
-		if (channel >= PORT_MAX_CHANNELS) return;
-		triggerEnabledMask.fetch_or(static_cast<uint16_t>(1) << channel, std::memory_order_relaxed);
-	}
-
-	// Gate for all trigger processing; see triggerEnabledMask. Audio thread.
-	bool isTriggerEnabled(int port, uint8_t channel) const {
-		if (port != 0) return false;
-		if (channel >= PORT_MAX_CHANNELS) return false;
-		return (triggerEnabledMask.load(std::memory_order_relaxed) >> channel) & 1;
-	}
-
-	// Forgets every enabled (port, channel) on script load/reset.
-	void clearTriggerEnabled() {
-		for (int i = 0; i < PORT_MAX_CHANNELS; i++) inputTriggerTick[i] = 0;
-		triggerEnabledMask.store(0, std::memory_order_relaxed);
+		triggersIn.enable(port, channel);
 	}
 
 	// MidiScriptEngineHandler
@@ -801,8 +901,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 
 	// MidiScriptEngineHandler
 	uint64_t getTrigTicks(int i, uint8_t ch) override {
-		if (ch >= PORT_MAX_CHANNELS) return 0;
-		return inputTriggerTick[ch];
+		return triggersIn.getTicks(i, ch);
 	}
 
 	// MidiScriptEngineHandler
@@ -819,13 +918,12 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 
 	// MidiScriptEngineHandler
 	void setTrig(int i, uint8_t ch, float duration = 1e-3f) override {
-		outputTriggerActive[ch] = true;
-		outputPulseGenerator[ch].trigger(duration);
+		triggersOut.setGate(i, ch, duration);
 	}
 
 	// MidiScriptEngineHandler
 	void setTrigVoltage(int i, uint8_t ch, float voltage) override {
-		outputTriggerActive[ch] = false;
+		triggersOut.setGateVoltage(i, ch);
 		outputs[OUTPUT_TRIG].setVoltage(voltage, ch);
 	}
 
@@ -925,6 +1023,11 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		: host(this) {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		// Wire the trigger ports into TriggerInputs/TriggerOutputs so they can
+		// read/write them directly; the vectors are fully sized by config() and
+		// never resized.
+		triggersIn.input = &inputs[INPUT_TRIG];
+		triggersOut.output = &outputs[OUTPUT_TRIG];
 		configInput(INPUT_TRIG, "Trigger");
 		configOutput(OUTPUT_TRIG, "Trigger");
 		for (int i = 0; i < 4; i++) {
@@ -975,7 +1078,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		midiOutput.reset();
 		sample = 0;
 		// No script claims the trigger input until its trig.enableIn() runs.
-		clearTriggerEnabled();
+		triggersIn.reset();
 		// Likewise no NRPN/RPN/14-bit assembly until midi.enableNrpnIn() and
 		// friends run.
 		extendedCc.clear();
@@ -986,10 +1089,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		// No engine is active after a reset (host.closeState() nulls it), so
 		// bind to null — it is rebound by the next loadScript().
 		bindPortParamEngine(nullptr);
-		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
-			outputTriggerActive[i] = true;
-			outputPulseGenerator[i].reset();
-		}
+		triggersOut.reset();
 		// Only the previously active engine can have real state — loadScript()
 		// maintains that invariant by only ever loading one engine at a time and
 		// closing the other on switch — so that is the only one that needs
@@ -1076,28 +1176,20 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 			return;
 		*/
 
-		// While the trigger input carries a Tipsy stream on channel 1, the
-		// encoded voltages cross the trigger threshold constantly — suppress
-		// trig.onTrigger and tick counting on THAT channel only so decoding
-		// isn't mistaken for clock ticks. Other channels keep firing normally.
-		// The SchmittTriggers are still stepped so their states stay current.
-		//
-		// Each channel is detected independently: its tick clock advances and
-		// drains that channel's tick-scheduled (sendAfterTrigger) messages.
-		// All of it is gated on trig.enableIn() — disabled channels get no
-		// ticks and no trig.onTrigger.
-		bool tipsyStreaming = tipsyPort.claimedInput() >= 0;
-		int channels = inputs[INPUT_TRIG].getChannels();
-		if (channels <= 0) channels = 1;
-		for (uint8_t c = 0; c < channels; c++) {
-			// Tipsy only takes over channel 1's trigger; the other channels are
-			// ordinary gates and must still fire trig.onTrigger.
-			bool tipsyOnChannel = (c == 0) && tipsyStreaming;
-			if (host.getActiveEngine() && isTriggerEnabled(0, c) && inputTrigger[c].process(inputs[INPUT_TRIG].getVoltage(c)) && !tipsyOnChannel) {
-				inputTriggerTick[c]++;
-				midiOutput.processTick(c, inputTriggerTick[c]);
-				host.queueTick(0, c);
-			}
+		// Trigger detection, per channel: a rising edge advances that channel's
+		// tick clock and drains its tick-scheduled (sendAfterTrigger) messages.
+		// Skipped entirely with no active engine — the SchmittTriggers are only
+		// stepped while a script is loaded. Gated on trig.enableIn(); while a
+		// Tipsy stream owns channel 0 its encoded voltages are stepped but not
+		// counted.
+		if (host.getActiveEngine()) {
+			int channels = triggersIn.input->getChannels();
+			if (channels <= 0) channels = 1;
+			triggersIn.process(0, channels, tipsyPort.claimedInput() >= 0,
+				[&](uint8_t c, uint64_t tick) {
+					midiOutput.processTick(c, tick);
+					host.queueTick(0, c);
+				});
 		}
 
 		// Every sample, not under processDivider: the sender emits one encoded
@@ -1145,13 +1237,8 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		}
 
 		if (outputs[OUTPUT_TRIG].isConnected()) {
-			for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
-				bool s = outputPulseGenerator[i].process(args.sampleTime);
-				if (outputTriggerActive[i]) {
-					outputs[OUTPUT_TRIG].setVoltage(s ? 10.f : 0.f, i);
-				}
-			}
-			
+			triggersOut.process(0, args.sampleTime);
+
 			// Drains the Tipsy queue regardless of activeEngine, for the same
 			// reason as the MIDI out-queue above: messages queued by a script's
 			// onUnload() must still reach the output after the engine is gone.
@@ -1220,11 +1307,11 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		// from the previous one: assembly belongs to the script's view of the
 		// stream, not to the module.
 		midiProcessor.reset();
-		for (int i = 0; i < PORT_MAX_CHANNELS; i++) inputTriggerTick[i] = 0;
-		// Forgets every trig.enableIn()d channel BEFORE the new script loads, so
-		// it starts with all callbacks disabled. Same for the extended-CC enables:
-		// they belong to the outgoing script, not to the module.
-		clearTriggerEnabled();
+		// Forgets every trig.enableIn()d channel (and its tick counter) BEFORE
+		// the new script loads, so it starts with all callbacks disabled. Same
+		// for the extended-CC enables: they belong to the outgoing script, not
+		// to the module.
+		triggersIn.reset();
 		extendedCc.clear();
 		// Disable the outgoing script's ports/params before loading the new one.
 		bindPortParamEngine(nullptr);

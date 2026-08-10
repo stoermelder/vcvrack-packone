@@ -1688,7 +1688,7 @@ TEST_CASE("trig.setTrigger produces identical output-trigger state", "[MidiKit][
 		m->process(args);
 
 		float voltage = m->outputs[MidiKitModule::OUTPUT_TRIG].getVoltage(0);
-		bool active = m->outputTriggerActive[0];
+		bool active = m->triggersOut.triggerActive[0][0];
 		Test::destroyModule(m);
 		return std::make_pair(voltage, active);
 	};

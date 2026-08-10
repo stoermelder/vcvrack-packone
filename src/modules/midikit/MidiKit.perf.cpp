@@ -582,8 +582,8 @@ TEST_CASE("MidiKit idle process() cost: trigger-output loop in isolation", "[per
 	auto start = Clock::now();
 	for (int i = 0; i < N; i++) {
 		for (uint8_t ch = 0; ch < PORT_MAX_CHANNELS; ch++) {
-			bool s = m->outputPulseGenerator[ch].process(args.sampleTime);
-			if (m->outputTriggerActive[ch]) {
+			bool s = m->triggersOut.pulseGenerator[0][ch].process(args.sampleTime);
+			if (m->triggersOut.triggerActive[0][ch]) {
 				m->outputs[MidiKitModule::OUTPUT_TRIG].setVoltage(s ? 10.f : 0.f, ch);
 			}
 		}

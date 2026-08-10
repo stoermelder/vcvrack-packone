@@ -1947,7 +1947,7 @@ TEST_CASE("'Note length quantiser.js/.lua' schedules the Note-Off lengthTicks af
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
-	m->inputTriggerTick[0] = 40;
+	m->triggersIn.triggerTick[0][0] = 40;
 
 	// Note-On passes through, and its Note-Off is scheduled at 40 + 12.
 	auto ev = feedCollect(m, noteOn(1, 60, 100));
@@ -1975,7 +1975,7 @@ TEST_CASE("'Note length quantiser.js/.lua' cuts a retriggered note before re-art
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
-	m->inputTriggerTick[0] = 40;
+	m->triggersIn.triggerTick[0][0] = 40;
 	feedCollect(m, noteOn(1, 60, 100));   // drains [on, off@52]; sounding[60] stays true
 
 	// Retriggering 60 while it's still sounding cuts the old note immediately
