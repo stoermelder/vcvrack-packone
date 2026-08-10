@@ -30,7 +30,7 @@ static std::vector<float> drainTipsy(MidiKitModule* m) {
 			out.push_back(m->outputs[MidiKitModule::OUTPUT_TRIG].getVoltage(0));
 		}
 	}
-    while (any || !m->tipsyPort.outQueue.empty());
+    while (any || !m->tipsyOut.outQueue.empty());
 	return out;
 }
 
@@ -53,7 +53,7 @@ midi.onMessage = function(midiPort, msg) {
 	m->host.getActiveEngine()->process(); // SyncTaskWorker: runs midi.onMessage inline
 
 	// sendTipsy must have queued the payload for the audio thread.
-	REQUIRE(m->tipsyPort.outQueue.size() > 0);
+	REQUIRE(m->tipsyOut.outQueue.size() > 0);
 
 	std::vector<float> voltages = drainTipsy(m);
 	REQUIRE(voltages.size() > 0);
@@ -62,8 +62,8 @@ midi.onMessage = function(midiPort, msg) {
 	// The trigger output reflects the last drained voltage.
 	REQUIRE(m->outputs[MidiKitModule::OUTPUT_TRIG].getVoltage(0) == voltages.back());
 	// Everything was drained: no pending messages, encoder idle.
-	REQUIRE(m->tipsyPort.outQueue.empty());
-	REQUIRE(m->tipsyPort.encoder.isDormant());
+	REQUIRE(m->tipsyOut.outQueue.empty());
+	REQUIRE(m->tipsyOut.encoder.isDormant());
 	Test::destroyModule(m);
 
 	// Lua (explicit mime, reversed argument order — must match JS output)
@@ -82,7 +82,7 @@ end
 	m->host.getActiveEngine()->processInMessage(0, in);
 	m->host.getActiveEngine()->process();
 
-	REQUIRE(m->tipsyPort.outQueue.size() > 0);
+	REQUIRE(m->tipsyOut.outQueue.size() > 0);
 	std::vector<float> luaVoltages = drainTipsy(m);
 	REQUIRE(luaVoltages == voltages);
 	Test::destroyModule(m);
@@ -108,14 +108,14 @@ midi.onMessage = function(midiPort, msg) {
 
 	// loadScript() queues a discard sentinel; consume it so the queue starts empty.
 	m->processTipsyOutput(0);
-	REQUIRE(m->tipsyPort.outQueue.empty());
+	REQUIRE(m->tipsyOut.outQueue.empty());
 
 	midi::Message in = noteOn(1, 60, 100);
 	m->host.getActiveEngine()->processInMessage(0, in);
 	m->host.getActiveEngine()->process(); // SyncTaskWorker: runs midi.onMessage inline
 
-	REQUIRE(m->tipsyPort.outQueue.size() == 1);
-	auto p = m->tipsyPort.outQueue.shift();
+	REQUIRE(m->tipsyOut.outQueue.size() == 1);
+	auto p = m->tipsyOut.outQueue.shift();
 	// The 14-byte payload (with embedded NUL) and 24-byte mime were copied intact.
 	REQUIRE(p.dataSize == 14);
 	REQUIRE(std::string(reinterpret_cast<const char*>(p.data), p.dataSize) == std::string("binary\0payload", 14));
@@ -139,7 +139,7 @@ midi.onMessage = function(midiPort, msg) {
 
 	// loadScript() queues a discard sentinel; consume it so the queue starts empty.
 	m->processTipsyOutput(0);
-	REQUIRE(m->tipsyPort.outQueue.empty());
+	REQUIRE(m->tipsyOut.outQueue.empty());
 
 	const unsigned char* data = reinterpret_cast<const unsigned char*>("data");
 	// A missing mime type or payload is rejected.
@@ -148,11 +148,11 @@ midi.onMessage = function(midiPort, msg) {
 	// An empty mime type is rejected: it would be indistinguishable from the
 	// discard sentinel sendTipsyOutReset() enqueues.
 	REQUIRE_FALSE(m->sendTipsyOut("", data, 4));
-	REQUIRE(m->tipsyPort.outQueue.empty());
+	REQUIRE(m->tipsyOut.outQueue.empty());
 
 	// A valid call succeeds and queues the payload.
 	REQUIRE(m->sendTipsyOut("text/plain", data, 4));
-	REQUIRE(m->tipsyPort.outQueue.size() == 1);
+	REQUIRE(m->tipsyOut.outQueue.size() == 1);
 	Test::destroyModule(m);
 }
 
@@ -171,7 +171,7 @@ midi.onMessage = function(midiPort, msg) {
 
 	// loadScript() queues a discard sentinel; consume it so the queue starts empty.
 	m->processTipsyOutput(0);
-	REQUIRE(m->tipsyPort.outQueue.empty());
+	REQUIRE(m->tipsyOut.outQueue.empty());
 
 	const unsigned char* data = reinterpret_cast<const unsigned char*>("data");
 
@@ -180,22 +180,22 @@ midi.onMessage = function(midiPort, msg) {
 	for (int i = 0; i < 7; i++) {
 		REQUIRE(m->sendTipsyOut("text/plain", data, 4));
 	}
-	REQUIRE(m->tipsyPort.outQueue.size() == 7);
+	REQUIRE(m->tipsyOut.outQueue.size() == 7);
 
 	// An 8th message overflows: it is rejected and nothing is queued.
 	REQUIRE_FALSE(m->sendTipsyOut("text/plain", data, 4));
-	REQUIRE(m->tipsyPort.outQueue.size() == 7);
+	REQUIRE(m->tipsyOut.outQueue.size() == 7);
 
 	// The reserved slot is still available to a discard, even when full.
 	m->sendTipsyOutReset();
-	REQUIRE(m->tipsyPort.outQueue.full());
+	REQUIRE(m->tipsyOut.outQueue.full());
 
 	// Draining frees slots so new messages can be queued again. The pending
 	// messages are ahead of the sentinel, so the discard drops them all.
 	drainTipsy(m);
-	REQUIRE(m->tipsyPort.outQueue.empty());
+	REQUIRE(m->tipsyOut.outQueue.empty());
 	REQUIRE(m->sendTipsyOut("text/plain", data, 4));
-	REQUIRE(m->tipsyPort.outQueue.size() == 1);
+	REQUIRE(m->tipsyOut.outQueue.size() == 1);
 	Test::destroyModule(m);
 }
 
@@ -214,7 +214,7 @@ midi.onMessage = function(midiPort, msg) {
 
 	// loadScript() queues a discard sentinel; consume it so the queue starts empty.
 	m->processTipsyOutput(0);
-	REQUIRE(m->tipsyPort.outQueue.empty());
+	REQUIRE(m->tipsyOut.outQueue.empty());
 
 	const unsigned char* data = reinterpret_cast<const unsigned char*>("data");
 	REQUIRE(m->sendTipsyOut("text/plain", data, 4));
@@ -222,13 +222,13 @@ midi.onMessage = function(midiPort, msg) {
 
 	// Start encoding the first message, then discard mid-stream.
 	REQUIRE(m->processTipsyOutput(0));
-	REQUIRE_FALSE(m->tipsyPort.encoder.isDormant());
+	REQUIRE_FALSE(m->tipsyOut.encoder.isDormant());
 	m->sendTipsyOutReset();
 
 	// The in-flight message still finishes: voltages keep coming until the
 	// encoder goes dormant of its own accord.
 	int emitted = 1;
-	while (!m->tipsyPort.encoder.isDormant()) {
+	while (!m->tipsyOut.encoder.isDormant()) {
 		REQUIRE(m->processTipsyOutput(0));
 		emitted++;
 	}
@@ -237,7 +237,7 @@ midi.onMessage = function(midiPort, msg) {
 	// The queued message behind it was dropped rather than emitted, and the
 	// sentinel was consumed with it.
 	REQUIRE_FALSE(m->processTipsyOutput(0));
-	REQUIRE(m->tipsyPort.outQueue.empty());
+	REQUIRE(m->tipsyOut.outQueue.empty());
 
 	// A message queued after the discard survives.
 	REQUIRE(m->sendTipsyOut("text/plain", data, 4));
@@ -265,7 +265,7 @@ midi.onMessage = function(midiPort, msg) {
 
 	// loadScript() queues a discard sentinel; consume it so the queue starts empty.
 	m->processTipsyOutput(0);
-	REQUIRE(m->tipsyPort.outQueue.empty());
+	REQUIRE(m->tipsyOut.outQueue.empty());
 
 	const unsigned char* data = reinterpret_cast<const unsigned char*>("data");
 	REQUIRE(m->sendTipsyOut("text/plain", data, 4));
@@ -275,8 +275,8 @@ midi.onMessage = function(midiPort, msg) {
 
 	// Nothing is emitted: both batches sit ahead of an unconsumed sentinel.
 	REQUIRE_FALSE(m->processTipsyOutput(0));
-	REQUIRE(m->tipsyPort.outQueue.empty());
-	REQUIRE(m->tipsyPort.encoder.isDormant());
+	REQUIRE(m->tipsyOut.outQueue.empty());
+	REQUIRE(m->tipsyOut.encoder.isDormant());
 	Test::destroyModule(m);
 }
 
@@ -298,7 +298,7 @@ midi.onMessage = function(midiPort, msg) {
 	m->host.getActiveEngine()->process();
 
 	// Empty payload still encodes the header and end sentinel.
-	REQUIRE(m->tipsyPort.outQueue.size() > 0);
+	REQUIRE(m->tipsyOut.outQueue.size() > 0);
 	std::vector<float> voltages = drainTipsy(m);
 	REQUIRE(voltages.size() > 0);
 	REQUIRE(voltages[0] == tipsy::kMessageBeginSentinel);
@@ -329,22 +329,22 @@ midi.onMessage = function(midiPort, msg) {
 	midi::Message in = noteOn(1, 60, 100);
 	m->host.getActiveEngine()->processInMessage(0, in);
 	m->host.getActiveEngine()->process();
-	REQUIRE(m->tipsyPort.outQueue.size() > 0);
+	REQUIRE(m->tipsyOut.outQueue.size() > 0);
 
 	// Loading a script requests a discard, which queues a sentinel rather than
 	// clearing (clear() writes the consumer's index and the worker must not
 	// touch it). The stale message is still queued until the audio thread runs.
 	m->loadScript(JS_SCRIPT_2);
-	REQUIRE(m->tipsyPort.encoder.isDormant());
+	REQUIRE(m->tipsyOut.encoder.isDormant());
 
 	// The audio thread drops the stale message instead of emitting it.
 	REQUIRE_FALSE(m->processTipsyOutput(0));
-	REQUIRE(m->tipsyPort.outQueue.empty());
+	REQUIRE(m->tipsyOut.outQueue.empty());
 
 	// The new script's sendTipsy works normally afterwards.
 	m->host.getActiveEngine()->processInMessage(0, in);
 	m->host.getActiveEngine()->process();
-	REQUIRE(m->tipsyPort.outQueue.size() > 0);
+	REQUIRE(m->tipsyOut.outQueue.size() > 0);
 	std::vector<float> voltages = drainTipsy(m);
 	REQUIRE(voltages.size() > 0);
 	REQUIRE(voltages[0] == tipsy::kMessageBeginSentinel);
@@ -366,7 +366,7 @@ TEST_CASE("bundled Tipsy output example scripts work", "[MidiKit][Tipsy]") {
 		// trig.onTrigger(1) must enqueue a Tipsy message on the trigger output.
 		m->host.getActiveEngine()->processInTick(0, 0);
 		m->host.getActiveEngine()->process(); // SyncTaskWorker: runs trig.onTrigger inline
-		REQUIRE(m->tipsyPort.outQueue.size() > 0);
+		REQUIRE(m->tipsyOut.outQueue.size() > 0);
 
 		std::vector<float> voltages = drainTipsy(m);
 		REQUIRE(voltages.size() > 0);
