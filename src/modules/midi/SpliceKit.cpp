@@ -77,6 +77,21 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	};
 	static std::map<Context*, CrossPendingState> crossPending;
 
+	// All live instances in this Rack context, maintained by the constructor/destructor.
+	// Cross-instance patching needs to enumerate its peers every GUI frame (see
+	// collectCableEndCandidates); walking APP->engine->getModuleIds() would allocate a
+	// vector of every module in the patch and dynamic_cast each one, 60x per second.
+	// Same keying as crossPending, and the same GUI-thread-only ownership rule.
+	//
+	// Function-local static rather than a class static with an out-of-line definition:
+	// the test build both links the plugin binary and #includes this .cpp, so a class
+	// static would exist twice and the constructor would populate a different copy than
+	// collectCableEndCandidates() reads.
+	static std::map<Context*, std::set<SpliceKitModule*>>& getInstances() {
+		static std::map<Context*, std::set<SpliceKitModule*>> instances;
+		return instances;
+	}
+
 	struct SpliceKitCellQuantity : ParamQuantity {
 		// Returns the assigned port label, or "Cell N" if unassigned.
 		std::string getLabel() override {
@@ -325,13 +340,21 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		midiOutput.onDeviceChanged = [this]() { invalidateLedStates(); };
 		processDivider.setDivision(256);
 		registerModuleListener("SpliceKit-SceneLink", this);
+		getInstances()[APP].insert(this);
 	}
 
 	// Runs on plain deletion too (unlike onRemove(), which only fires when the module is
 	// removed through the engine) — this is what keeps the static ModuleChangeListener
-	// registry free of dangling pointers regardless of how the module's lifetime ends.
+	// registry and the instance set free of dangling pointers regardless of how the
+	// module's lifetime ends.
 	~SpliceKitModule() {
 		unregisterModuleListener("SpliceKit-SceneLink", this);
+		auto& reg = getInstances();
+		auto it = reg.find(APP);
+		if (it != reg.end()) {
+			it->second.erase(this);
+			if (it->second.empty()) reg.erase(it);
+		}
 	}
 
 	void onRemove() override {
@@ -585,6 +608,47 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	int getCellColorSet(int i) const {
 		if (cellColorSet[i] >= 0) return cellColorSet[i];
 		return (portAssignments[i].type == engine::Port::OUTPUT) ? 0 : 1;
+	}
+
+	// Adds this instance's assigned ports to out, keyed as (moduleId, portId*2 + type) —
+	// the lookup form SpliceKitWidget::step() uses to test whether a cable's far end lands
+	// on a cell. Split out from step() so the cross-instance collection below is testable
+	// without ModuleWidget/PortWidget scaffolding.
+	void collectAssignedPorts(std::set<std::pair<int64_t, int>>& out) const {
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			const PortAssignment& pa = portAssignments[i];
+			if (pa.isValid()) {
+				out.insert({pa.moduleId, pa.portId * 2 + (int)pa.type});
+			}
+		}
+	}
+
+	// GUI thread — collects the assigned ports of every SpliceKit instance whose cells may
+	// share a cable with this one, i.e. this instance plus, when cross-instance patching is
+	// enabled, every other instance that also has it enabled.
+	//
+	// A cable created by the cross-instance gesture (see triggerCell) lands on a port owned
+	// by a *different* instance, so testing it against this module's assignments alone would
+	// report "no cable" and leave the cell rendering as unconnected. Both ends must therefore
+	// be resolved against the union.
+	std::set<std::pair<int64_t, int>> collectCableEndCandidates() const {
+		std::set<std::pair<int64_t, int>> ports;
+		collectAssignedPorts(ports);
+		if (!crossInstanceEnabled) return ports;
+
+		// Iterates the instance registry rather than every module in the patch: this runs
+		// once per GUI frame, and the registry is already narrowed to SpliceKit instances.
+		auto& reg = getInstances();
+		auto it = reg.find(APP);
+		if (it == reg.end()) return ports;
+		for (SpliceKitModule* other : it->second) {
+			if (other == this) continue;
+			// Respect the other instance's opt-out: a module with cross-instance patching
+			// disabled never participates in such a cable, so its cells are not candidates.
+			if (!other->crossInstanceEnabled) continue;
+			other->collectAssignedPorts(ports);
+		}
+		return ports;
 	}
 
 	// Engine thread — MidiTrackingProcessorHandler callback, fired for every mapped
@@ -1908,15 +1972,10 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		}
 
 		// Update cable presence for each assigned cell (read by process() for light colors).
-		// Build a set of all assigned (moduleId, portId*2+type) pairs once so each cable-end
-		// lookup is O(log n) instead of an O(n) scan over all assignments.
-		std::set<std::pair<int64_t, int>> assignedPorts;
-		for (int j = 0; j < MATRIX_COUNT; j++) {
-			const PortAssignment& pb = module->portAssignments[j];
-			if (pb.isValid()) {
-				assignedPorts.insert({pb.moduleId, pb.portId * 2 + (int)pb.type});
-			}
-		}
+		// Build the set of candidate cable ends once so each lookup is O(log n) instead of an
+		// O(n) scan. Spans every participating instance, so cables created by the
+		// cross-instance gesture light both of their cells.
+		std::set<std::pair<int64_t, int>> assignedPorts = module->collectCableEndCandidates();
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			const PortAssignment& pa = module->portAssignments[i];
 			if (!pa.isValid()) {
