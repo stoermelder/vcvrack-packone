@@ -67,6 +67,16 @@ struct CellVisual {
 	int stateId;
 };
 
+// Resolves which of two assignments is the output and which the input.
+// Returns {nullptr, nullptr} when both share a direction or either is invalid.
+std::pair<const PortAssignment*, const PortAssignment*>
+resolveDirection(const PortAssignment& a, const PortAssignment& b) {
+	if (!a.isValid() || !b.isValid()) return { nullptr, nullptr };
+	if (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) return { &a, &b };
+	if (a.type == engine::Port::INPUT && b.type == engine::Port::OUTPUT) return { &b, &a };
+	return { nullptr, nullptr };
+}
+
 struct SceneVisual {
 	float brightness;
 	int stateId;
@@ -1140,12 +1150,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	void removeCableBetween(int cellIdA, int cellIdB) {
 		const PortAssignment& a = portAssignments[cellIdA];
 		const PortAssignment& b = portAssignments[cellIdB];
-		if (!a.isValid() || !b.isValid()) return;
-		const PortAssignment* outPd = nullptr;
-		const PortAssignment* inPd = nullptr;
-		if (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) { outPd = &a; inPd = &b; }
-		else if (a.type == engine::Port::INPUT  && b.type == engine::Port::OUTPUT) { outPd = &b; inPd = &a; }
-		else return;
+		auto dir = resolveDirection(a, b);
+		const PortAssignment* outPd = dir.first;
+		const PortAssignment* inPd = dir.second;
+		if (!outPd) return;
 		CableWidget* cw = vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
 		if (cw) vcv::removeCable(cw, false);
 	}
@@ -1157,24 +1165,20 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		const PortAssignment& a = portAssignments[cellIdA];
 		const PortAssignment& b = portAssignments[cellIdB];
 
-		const PortAssignment* outPd = nullptr;
-		const PortAssignment* inPd = nullptr;
-		int outCell, inCell;
 		if (!a.isValid() || !b.isValid()) {
 			return;
 		}
-		if (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) {
-			outPd = &a; inPd = &b; outCell = cellIdA; inCell = cellIdB;
-		} 
-		else if (a.type == engine::Port::INPUT && b.type == engine::Port::OUTPUT) {
-			outPd = &b; inPd = &a; outCell = cellIdB; inCell = cellIdA;
-		} 
-		else {
+		auto dir = resolveDirection(a, b);
+		const PortAssignment* outPd = dir.first;
+		const PortAssignment* inPd = dir.second;
+		if (!outPd) {
 			bool bothOut = (a.type == engine::Port::OUTPUT && b.type == engine::Port::OUTPUT);
 			setOverlayMessage(bothOut ? "Both ports are outputs" : "Both ports are inputs",
 				portLabel(a), portLabel(b));
 			return;
 		}
+		int outCell = (outPd == &a) ? cellIdA : cellIdB;
+		int inCell  = (inPd  == &a) ? cellIdA : cellIdB;
 
 		if (isConnected(currentScene, outCell, inCell)) {
 			setConnection(currentScene, outCell, inCell, false);
@@ -1223,11 +1227,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 					removeCableBetween(i, j);
 				}
 				else {
-					const PortAssignment* outPd = nullptr;
-					const PortAssignment* inPd  = nullptr;
-					if (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) { outPd = &a; inPd = &b; }
-					else if (a.type == engine::Port::INPUT  && b.type == engine::Port::OUTPUT) { outPd = &b; inPd = &a; }
-					else continue;
+					auto dir = resolveDirection(a, b);
+					const PortAssignment* outPd = dir.first;
+					const PortAssignment* inPd = dir.second;
+					if (!outPd) continue;
 					vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
 				}
 			}
@@ -1319,14 +1322,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 					cp.clear();
 					initiator->clearPendingLocal();
 					clearPendingLocal();  // reset our own tentative pendingCellId
-					const PortAssignment* outPd = nullptr;
-					const PortAssignment* inPd  = nullptr;
-					if (iPort.type == engine::Port::OUTPUT && rPort.type == engine::Port::INPUT) {
-						outPd = &iPort; inPd = &rPort;
-					}
-					else if (iPort.type == engine::Port::INPUT && rPort.type == engine::Port::OUTPUT) {
-						outPd = &rPort; inPd = &iPort;
-					}
+					auto dir = resolveDirection(iPort, rPort);
+					const PortAssignment* outPd = dir.first;
+					const PortAssignment* inPd = dir.second;
 					if (outPd) {
 						CableWidget* cw = vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
 						if (!cw) {

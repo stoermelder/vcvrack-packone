@@ -61,6 +61,49 @@ TEST_CASE("isConnected and setConnection bitmask", "[SpliceKit]") {
 }
 
 
+// ─── resolveDirection ─────────────────────────────────────────────────────────────────────
+// Pure, no module needed — the four call sites (removeCableBetween, toggleConnection,
+// applyConnectionDiff, the cross-instance path) all delegate to this.
+
+TEST_CASE("resolveDirection - output/input resolves output first regardless of argument order", "[SpliceKit]") {
+	PortAssignment out; out.moduleId = 1; out.portId = 0; out.type = engine::Port::OUTPUT;
+	PortAssignment in;  in.moduleId  = 2; in.portId  = 0; in.type  = engine::Port::INPUT;
+
+	auto dir1 = resolveDirection(out, in);
+	REQUIRE(dir1.first == &out);
+	REQUIRE(dir1.second == &in);
+
+	auto dir2 = resolveDirection(in, out);
+	REQUIRE(dir2.first == &out);
+	REQUIRE(dir2.second == &in);
+}
+
+TEST_CASE("resolveDirection - same-direction pairs return nullptr", "[SpliceKit]") {
+	PortAssignment a; a.moduleId = 1; a.portId = 0; a.type = engine::Port::OUTPUT;
+	PortAssignment b; b.moduleId = 2; b.portId = 0; b.type = engine::Port::OUTPUT;
+	auto dir = resolveDirection(a, b);
+	REQUIRE(dir.first == nullptr);
+	REQUIRE(dir.second == nullptr);
+
+	PortAssignment c; c.moduleId = 3; c.portId = 0; c.type = engine::Port::INPUT;
+	PortAssignment d; d.moduleId = 4; d.portId = 0; d.type = engine::Port::INPUT;
+	auto dir2 = resolveDirection(c, d);
+	REQUIRE(dir2.first == nullptr);
+	REQUIRE(dir2.second == nullptr);
+}
+
+TEST_CASE("resolveDirection - either assignment invalid returns nullptr", "[SpliceKit]") {
+	PortAssignment valid; valid.moduleId = 1; valid.portId = 0; valid.type = engine::Port::OUTPUT;
+	PortAssignment invalid;  // default-constructed, not valid
+
+	auto dir1 = resolveDirection(valid, invalid);
+	REQUIRE(dir1.first == nullptr);
+
+	auto dir2 = resolveDirection(invalid, valid);
+	REQUIRE(dir2.first == nullptr);
+}
+
+
 TEST_CASE("clearPending resets pendingCellId and pendingCellIsPhysical", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
