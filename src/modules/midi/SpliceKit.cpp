@@ -52,6 +52,8 @@ static const int LED_STATE_CONNECTED_BY_SET[COLOR_SET_COUNT] = {
 	LED_STATE_CONNECTED0, LED_STATE_CONNECTED1, LED_STATE_CONNECTED2, LED_STATE_CONNECTED3
 };
 
+static const int TOTAL_MAPS = MATRIX_COUNT + SCENE_COUNT;  // 64 cells + 8 scenes
+
 
 struct PortAssignment {
 	int64_t moduleId = -1;
@@ -67,6 +69,11 @@ struct CellVisual {
 	int stateId;
 };
 
+struct SceneVisual {
+	float brightness;
+	int stateId;
+};
+
 // Resolves which of two assignments is the output and which the input.
 // Returns {nullptr, nullptr} when both share a direction or either is invalid.
 std::pair<const PortAssignment*, const PortAssignment*>
@@ -77,12 +84,241 @@ resolveDirection(const PortAssignment& a, const PortAssignment& b) {
 	return { nullptr, nullptr };
 }
 
-struct SceneVisual {
-	float brightness;
-	int stateId;
+
+struct SpliceKitOutput : midi::Output {
+	// Hook to the owner's invalidateLedStates(), set once by the owner.
+	// SpliceKitOutput has no back-pointer of its own, so a callback is used
+	// instead of duplicating the cache-invalidation logic here.
+	std::function<void()> onDeviceChanged;
+
+	midi::Message lastSentMsg;
+	// The message before lastSentMsg — lets tests assert on send ORDER (e.g. setState()'s
+	// off-before-on) without needing a full history.
+	midi::Message prevSentMsg;
+	int sentCount = 0;
+
+	SpliceKitOutput() {
+		channel = -1;
+	}
+
+	void sendMessage(const midi::Message& msg) {
+		prevSentMsg = lastSentMsg;
+		lastSentMsg = msg;
+		sentCount++;
+		midi::Output::sendMessage(msg);
+	}
+
+	// Prepends a "All channels" entry (-1) to the device channel list.
+	std::vector<int> getChannels() override {
+		std::vector<int> channels = midi::Output::getChannels();
+		channels.emplace(channels.begin(), -1);
+		return channels;
+	}
+
+	// Forces a full LED refresh after the device changes, which makes the next
+	// process() tick re-send every cell and scene button.
+	void setDeviceId(int deviceId) override {
+		midi::Output::setDeviceId(deviceId);
+		if (onDeviceChanged) onDeviceChanged();
+	}
 };
 
-static const int TOTAL_MAPS = MATRIX_COUNT + SCENE_COUNT;  // 64 cells + 8 scenes
+
+// Engine thread only — translates a cell/scene LED state id into a MIDI message per the
+// active preset. Its one external dependency is note/CC resolution for FROM_SLOT specs,
+// which needs the owning module's MidiTrackingProcessor; that is injected as a callback
+// (resolveFromSlot) rather than named directly, since MidiTrackingProcessor is a template
+// and this struct should not have to name an instantiation of it.
+struct FeedbackSender {
+	SpliceKitOutput midiOutput;
+
+	/** [Stored to JSON] — raw JSON of the currently active preset (built-in or user-loaded); empty means feedback is off. */
+	std::string activePresetJson;
+	/** Parsed from activePresetJson; kept in sync whenever activePresetJson changes. */
+	MidiOutPreset activePreset;
+
+	// -1 forces a send on the first light-divider tick after load.
+	int cellLedState[MATRIX_COUNT];
+	int sceneLedState[SCENE_COUNT];
+
+	// Engine thread — resolves a FROM_SLOT spec's note/CC number via the owning module's
+	// MidiTrackingProcessor. Returns false when the slot is unmapped. Set once by the module.
+	std::function<bool(int cellId, MidiTrackingType& slotType, int& noteNum)> resolveFromSlot;
+
+	FeedbackSender() {
+		invalidateLedStates();
+		midiOutput.onDeviceChanged = [this]() { invalidateLedStates(); };
+	}
+
+	// Returns a pointer to the currently active preset, or nullptr when feedback is off.
+	const MidiOutPreset* getActivePreset() const {
+		if (activePresetJson.empty()) return nullptr;
+		return &activePreset;
+	}
+
+	// True when a preset is active (feedback is on).
+	bool isActive() const {
+		return !activePresetJson.empty();
+	}
+
+	// True when the given raw preset JSON is the one currently active.
+	bool isActivePreset(const std::string& json) const {
+		return activePresetJson == json;
+	}
+
+	// Display name of the active preset, or a fallback for a custom/unknown one.
+	// Meaningless when !isActive() (returns the fallback).
+	std::string activePresetName(const std::string& fallback = "Custom preset") const {
+		return activePreset.name.empty() ? fallback : activePreset.name;
+	}
+
+	// Raw JSON of the active preset, for exporting via "Save preset to file...".
+	const std::string& activePresetJsonText() const {
+		return activePresetJson;
+	}
+
+	// Sets the active preset from raw JSON text (from a built-in file or a user-loaded file)
+	// and re-parses it into activePreset. Passing an empty string turns feedback off.
+	void setActivePresetJson(const std::string& json) {
+		activePresetJson = json;
+		activePreset = MidiOutPreset();
+		if (!json.empty()) {
+			json_error_t err;
+			json_t* root = json_loads(json.c_str(), 0, &err);
+			if (root) { activePreset.fromJson(root); json_decref(root); }
+			else activePresetJson.clear();
+		}
+	}
+
+	// Sets the active preset directly from a struct (e.g. built programmatically),
+	// serializing it to keep activePresetJson genuine and exportable via "Save preset to file...".
+	void setActivePreset(const MidiOutPreset& preset) {
+		activePreset = preset;
+		json_t* root = preset.toJson();
+		char* text = json_dumps(root, JSON_INDENT(2));
+		json_decref(root);
+		activePresetJson = text;
+		std::free(text);
+	}
+
+	// Any thread — forces a full MIDI LED refresh on the next process() tick by resetting
+	// all cached LED states to -1, causing every cell and scene button to be re-sent.
+	void invalidateLedStates() {
+		std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
+		std::fill(sceneLedState, sceneLedState + SCENE_COUNT, -1);
+	}
+
+	// Resolves the note/CC number and the slot's own type for a spec. Returns false when
+	// the spec's note mode has no resolvable number (unmapped FROM_SLOT, or unknown mode).
+	bool resolveNote(const MidiOutSpec& spec, int cellId, int& noteNum, MidiTrackingType& slotType) {
+		switch (spec.noteMode) {
+			case MIDI_OUT_FROM_SLOT:
+				return resolveFromSlot && resolveFromSlot(cellId, slotType, noteNum);
+			case MIDI_OUT_FIXED: {
+				noteNum = spec.note;
+				slotType = MidiTrackingType::NONE;
+				return true;
+			}
+			default: return false;
+		}
+	}
+
+	// Engine thread — sends a MIDI note-off for the previous LED state before a transition,
+	// clearing the controller LED that was lit by a NOTE_ON-based spec. No-op for CC specs,
+	// off states, or when no preset is active.
+	void sendFeedbackOff(int cellId, int oldStateId) {
+		if (oldStateId < 0) return;
+		const MidiOutPreset* preset = getActivePreset();
+		if (!preset) return;
+		const MidiOutSpec& spec = preset->specs[oldStateId];
+		if (spec.type == MIDI_OUT_NONE) return;
+		if (spec.type != MIDI_OUT_NOTE_ON && spec.type != MIDI_OUT_FROM_SLOT_TYPE) return;
+		MidiTrackingType slotType = MidiTrackingType::NONE;
+		int noteNum;
+		if (!resolveNote(spec, cellId, noteNum, slotType)) return;
+		if (spec.type == MIDI_OUT_FROM_SLOT_TYPE && slotType != MidiTrackingType::NOTE) return;
+		midi::Message msg;
+		msg.bytes[0] = 0x80 | (uint8_t)(spec.channel & 0x0F);
+		msg.bytes[1] = (uint8_t)(noteNum & 0x7F);
+		msg.bytes[2] = 0x00;
+		msg.frame = APP->engine->getFrame() + 1;
+		midiOutput.sendMessage(msg);
+	}
+
+	// Engine thread — sends a single MIDI message to the output device to update the
+	// controller LED for mapId to the given stateId. Called only when the state changes.
+	// mapId 0–63: matrix cells; mapId 64–71: scene buttons (MATRIX_COUNT + sceneId).
+	void sendFeedback(int cellId, int stateId) {
+		const MidiOutPreset* preset = getActivePreset();
+		if (!preset) return;
+		const MidiOutSpec& spec = preset->specs[stateId];
+		if (spec.type == MIDI_OUT_NONE) return;
+		MidiTrackingType slotType = MidiTrackingType::NONE;
+		int noteNum;
+		if (!resolveNote(spec, cellId, noteNum, slotType)) return;
+		uint8_t status;
+		switch (spec.type) {
+			case MIDI_OUT_NOTE_ON:
+				status = 0x90;
+				break;
+			case MIDI_OUT_NOTE_OFF:
+				status = 0x80;
+				break;
+			case MIDI_OUT_CC:
+				status = 0xB0;
+				break;
+			case MIDI_OUT_FROM_SLOT_TYPE:
+				if (slotType == MidiTrackingType::NOTE) status = 0x90;
+				else if (slotType == MidiTrackingType::CC) status = 0xB0;
+				else return;
+				break;
+			default: return;
+		}
+		midi::Message msg;
+		msg.bytes[0] = status | (uint8_t)(spec.channel & 0x0F);
+		msg.bytes[1] = (uint8_t)(noteNum  & 0x7F);
+		msg.bytes[2] = (uint8_t)(spec.value & 0x7F);
+		msg.frame = APP->engine->getFrame() + 2;
+		midiOutput.sendMessage(msg);
+	}
+
+	// Engine thread — transitions cell/scene mapId to newState, emitting the note-off for
+	// the outgoing state first (while it is still addressable) and the on-message for the
+	// incoming one. No-op when the state is unchanged. mapId 0–63: matrix cells; mapId
+	// 64–71: scene buttons (MATRIX_COUNT + sceneId), addressing sceneLedState.
+	void setState(int mapId, int newState) {
+		int* cache = mapId < MATRIX_COUNT ? &cellLedState[mapId] : &sceneLedState[mapId - MATRIX_COUNT];
+		if (newState == *cache) return;
+		sendFeedbackOff(mapId, *cache);
+		*cache = newState;
+		sendFeedback(mapId, newState);
+	}
+
+	// GUI thread — replaces all MIDI input mappings with those defined by the currently
+	// selected feedback preset's slot layout. No-op if the preset has no layout. clearMap/
+	// setMap are the owning module's MidiTrackingProcessor calls, injected as callbacks so
+	// this struct does not have to name the template instantiation.
+	void applyPresetLayout(const std::function<void()>& clearMaps,
+			const std::function<void(MidiTrackingType, int, uint16_t)>& setMap) {
+		const MidiOutPreset* preset = getActivePreset();
+		if (!preset || !preset->hasLayout()) return;
+		clearMaps();
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			const auto& s = preset->cells[i];
+			if (s.type != MidiTrackingType::NONE) {
+				setMap(s.type, i, s.number);
+			}
+		}
+		for (int i = 0; i < SCENE_COUNT; i++) {
+			const auto& s = preset->scenes[i];
+			if (s.type != MidiTrackingType::NONE) {
+				setMap(s.type, MATRIX_COUNT + i, s.number);
+			}
+		}
+		invalidateLedStates();
+	}
+};
+
 
 struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListener {
 	// Cross-instance pending state: the initiator module + its pending cell, shared across all
@@ -192,40 +428,6 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		NUM_LIGHTS
 	};
 
-	struct SpliceKitOutput : midi::Output {
-		// Hook to the owning module's invalidateLedStates(), set once by the module.
-		// SpliceKitOutput has no module back-pointer of its own, so a callback is used
-		// instead of duplicating the cache-invalidation logic here.
-		std::function<void()> onDeviceChanged;
-
-		midi::Message lastSentMsg;
-		int sentCount = 0;
-
-		SpliceKitOutput() {
-			channel = -1;
-		}
-
-		void sendMessage(const midi::Message& msg) {
-			lastSentMsg = msg;
-			sentCount++;
-			midi::Output::sendMessage(msg);
-		}
-
-		// Prepends a "All channels" entry (-1) to the device channel list.
-		std::vector<int> getChannels() override {
-			std::vector<int> channels = midi::Output::getChannels();
-			channels.emplace(channels.begin(), -1);
-			return channels;
-		}
-
-		// Forces a full LED refresh after the device changes, which makes the next
-		// process() tick re-send every cell and scene button.
-		void setDeviceId(int deviceId) override {
-			midi::Output::setDeviceId(deviceId);
-			if (onDeviceChanged) onDeviceChanged();
-		}
-	};
-
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
@@ -241,7 +443,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	StoermelderPackOne::MidiTrackingProcessor<TOTAL_MAPS> trackingProcessor;
 
 	/** [Stored to JSON] */
-	SpliceKitOutput midiOutput;
+	FeedbackSender feedback;
 
 	/** [Stored to JSON] */
 	PortAssignment portAssignments[MATRIX_COUNT];
@@ -321,15 +523,6 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	int portLearningId = -1;
 	StoermelderPackOne::PortSelectProcessor portSelectProcessor;
 
-	/** [Stored to JSON] — raw JSON of the currently active preset (built-in or user-loaded); empty means feedback is off. */
-	std::string activePresetJson;
-	/** Parsed from activePresetJson; kept in sync whenever activePresetJson changes. */
-	MidiOutPreset activePreset;
-
-	// -1 forces a send on the first light-divider tick after load.
-	int cellLedState[MATRIX_COUNT];
-	int sceneLedState[SCENE_COUNT];
-
 	/** [Stored to JSON — only non-empty entries are written] */
 	std::string cellLabels[MATRIX_COUNT];
 
@@ -358,7 +551,6 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		memset(cellColorSet, -1, sizeof(cellColorSet));
-		invalidateLedStates();
 		// Momentary button representations, not meaningful knob/switch values — excluded from
 		// Rack's default param randomization. onRandomize() below generates a random cable
 		// topology instead; randomizing these directly would just spuriously trigger button
@@ -373,7 +565,13 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		trackingProcessor.handler = this;
 		trackingProcessor.enableCc();
 		trackingProcessor.enableNotes();
-		midiOutput.onDeviceChanged = [this]() { invalidateLedStates(); };
+		feedback.resolveFromSlot = [this](int cellId, MidiTrackingType& slotType, int& noteNum) {
+			auto m = trackingProcessor.getMap(cellId);
+			if (m.type == MidiTrackingType::NONE) return false;
+			noteNum = m.param;
+			slotType = m.type;
+			return true;
+		};
 		// With no window there is no SpliceKitWidget::step() to refresh portHasCable[], so
 		// the worker takes that over after each drain — otherwise the flag stays frozen and
 		// the edge-triggered MIDI feedback in process() never sees a cell change state.
@@ -464,7 +662,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		for (size_t i = 0; i < count; i++) {
 			portAssignments[i] = shuffled[i];
 		}
-		invalidateLedStates();
+		feedback.invalidateLedStates();
 	}
 
 	// GUI thread — replaces the current scene's connections with a random valid topology:
@@ -561,11 +759,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			bool slowBlinkOn = slowBlinkPhase < 0.5f;
 			for (int i = 0; i < MATRIX_COUNT; i++) {
 				CellVisual v = resolveCellVisual(i, blinkOn, slowBlinkOn);
-				if (v.stateId != cellLedState[i]) {
-					sendFeedbackOff(i, cellLedState[i]);
-					cellLedState[i] = v.stateId;
-					sendFeedback(i, v.stateId);
-				}
+				feedback.setState(i, v.stateId);
 				float f = args.sampleTime * processDivider.division;
 				lights[LIGHT_MATRIX + i * 3 + 0].setBrightnessSmooth(v.color.r, f);
 				lights[LIGHT_MATRIX + i * 3 + 1].setBrightnessSmooth(v.color.g, f);
@@ -573,11 +767,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			}
 			for (int s = 0; s < SCENE_COUNT; s++) {
 				SceneVisual v = resolveSceneVisual(s, blinkOn);
-				if (v.stateId != sceneLedState[s]) {
-					sendFeedbackOff(MATRIX_COUNT + s, sceneLedState[s]);
-					sceneLedState[s] = v.stateId;
-					sendFeedback(MATRIX_COUNT + s, v.stateId);
-				}
+				feedback.setState(MATRIX_COUNT + s, v.stateId);
 				lights[LIGHT_SCENE + s].setBrightness(v.brightness);
 			}
 		}
@@ -799,43 +989,6 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// Returns a pointer to the currently active preset, or nullptr when feedback is off.
-	const MidiOutPreset* getActivePreset() const {
-		if (activePresetJson.empty()) return nullptr;
-		return &activePreset;
-	}
-
-	// Sets the active preset from raw JSON text (from a built-in file or a user-loaded file)
-	// and re-parses it into activePreset. Passing an empty string turns feedback off.
-	void setActivePresetJson(const std::string& json) {
-		activePresetJson = json;
-		activePreset = MidiOutPreset();
-		if (!json.empty()) {
-			json_error_t err;
-			json_t* root = json_loads(json.c_str(), 0, &err);
-			if (root) { activePreset.fromJson(root); json_decref(root); }
-			else activePresetJson.clear();
-		}
-	}
-
-	// Sets the active preset directly from a struct (e.g. built programmatically),
-	// serializing it to keep activePresetJson genuine and exportable via "Save preset to file...".
-	void setActivePreset(const MidiOutPreset& preset) {
-		activePreset = preset;
-		json_t* root = preset.toJson();
-		char* text = json_dumps(root, JSON_INDENT(2));
-		json_decref(root);
-		activePresetJson = text;
-		std::free(text);
-	}
-
-	// Any thread — forces a full MIDI LED refresh on the next process() tick by resetting
-	// all cached LED states to -1, causing every cell and scene button to be re-sent.
-	void invalidateLedStates() {
-		std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
-		std::fill(sceneLedState, sceneLedState + SCENE_COUNT, -1);
-	}
-
 	// GUI thread — starts MIDI learn for a single cell (id < MATRIX_COUNT) or scene button
 	// (id >= MATRIX_COUNT). Cancels any previously active learn first.
 	void enableLearn(int id) {
@@ -924,104 +1077,13 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		return portLearningId == id && portSelectProcessor.isLearning();
 	}
 
-	// Resolves the note/CC number and the slot's own type for a spec. Returns false when
-	// the spec's note mode has no resolvable number (unmapped FROM_SLOT, or unknown mode).
-	bool resolveNote(const MidiOutSpec& spec, int cellId, int& noteNum, MidiTrackingType& slotType) {
-		switch (spec.noteMode) {
-			case MIDI_OUT_FROM_SLOT: {
-				auto m = trackingProcessor.getMap(cellId);
-				if (m.type == MidiTrackingType::NONE) return false;
-				noteNum  = m.param;
-				slotType = m.type;
-				return true;
-			}
-			case MIDI_OUT_FIXED: {
-				noteNum = spec.note;
-				slotType = MidiTrackingType::NONE;
-				return true;
-			}
-			default: return false;
-		}
-	}
-
-	// Engine thread — sends a MIDI note-off for the previous LED state before a transition,
-	// clearing the controller LED that was lit by a NOTE_ON-based spec. No-op for CC specs,
-	// off states, or when no preset is active.
-	void sendFeedbackOff(int cellId, int oldStateId) {
-		if (oldStateId < 0) return;
-		const MidiOutPreset* preset = getActivePreset();
-		if (!preset) return;
-		const MidiOutSpec& spec = preset->specs[oldStateId];
-		if (spec.type == MIDI_OUT_NONE) return;
-		if (spec.type != MIDI_OUT_NOTE_ON && spec.type != MIDI_OUT_FROM_SLOT_TYPE) return;
-		MidiTrackingType slotType = MidiTrackingType::NONE;
-		int noteNum;
-		if (!resolveNote(spec, cellId, noteNum, slotType)) return;
-		if (spec.type == MIDI_OUT_FROM_SLOT_TYPE && slotType != MidiTrackingType::NOTE) return;
-		midi::Message msg;
-		msg.bytes[0] = 0x80 | (uint8_t)(spec.channel & 0x0F);
-		msg.bytes[1] = (uint8_t)(noteNum & 0x7F);
-		msg.bytes[2] = 0x00;
-		msg.frame = APP->engine->getFrame() + 1;
-		midiOutput.sendMessage(msg);
-	}
-
-	// Engine thread — sends a single MIDI message to the output device to update the
-	// controller LED for mapId to the given stateId. Called only when the state changes.
-	// mapId 0–63: matrix cells; mapId 64–71: scene buttons (MATRIX_COUNT + sceneId).
-	void sendFeedback(int cellId, int stateId) {
-		const MidiOutPreset* preset = getActivePreset();
-		if (!preset) return;
-		const MidiOutSpec& spec = preset->specs[stateId];
-		if (spec.type == MIDI_OUT_NONE) return;
-		MidiTrackingType slotType = MidiTrackingType::NONE;
-		int noteNum;
-		if (!resolveNote(spec, cellId, noteNum, slotType)) return;
-		uint8_t status;
-		switch (spec.type) {
-			case MIDI_OUT_NOTE_ON:
-				status = 0x90;
-				break;
-			case MIDI_OUT_NOTE_OFF:
-				status = 0x80;
-				break;
-			case MIDI_OUT_CC:
-				status = 0xB0;
-				break;
-			case MIDI_OUT_FROM_SLOT_TYPE:
-				if (slotType == MidiTrackingType::NOTE) status = 0x90;
-				else if (slotType == MidiTrackingType::CC) status = 0xB0;
-				else return;
-				break;
-			default: return;
-		}
-		midi::Message msg;
-		msg.bytes[0] = status | (uint8_t)(spec.channel & 0x0F);
-		msg.bytes[1] = (uint8_t)(noteNum  & 0x7F);
-		msg.bytes[2] = (uint8_t)(spec.value & 0x7F);
-		msg.frame = APP->engine->getFrame() + 2;
-		midiOutput.sendMessage(msg);
-	}
-
 	// GUI thread — replaces all MIDI input mappings with those defined by the currently
 	// selected feedback preset's slot layout. No-op if the preset has no layout.
 	void applyPresetLayout() {
-		const MidiOutPreset* preset = getActivePreset();
-		if (!preset || !preset->hasLayout()) return;
-		trackingProcessor.clearMaps();
-		for (int i = 0; i < MATRIX_COUNT; i++) {
-			const auto& s = preset->cells[i];
-			if (s.type != MidiTrackingType::NONE) {
-				trackingProcessor.setMap(s.type, i, s.number);
-			}
-		}
-		for (int i = 0; i < SCENE_COUNT; i++) {
-			const auto& s = preset->scenes[i];
-			if (s.type != MidiTrackingType::NONE) {
-				trackingProcessor.setMap(s.type, MATRIX_COUNT + i, s.number);
-			}
-		}
-		invalidateLedStates();
+		feedback.applyPresetLayout(
+			[this]() { trackingProcessor.clearMaps(); },
+			[this](MidiTrackingType type, int id, uint16_t number) { trackingProcessor.setMap(type, id, number); }
+		);
 	}
 
 	// GUI thread — serializes all persistent state to JSON (called on patch save / undo snapshot).
@@ -1079,8 +1141,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
 		json_object_set_new(rootJ, "crossInstanceEnabled", json_boolean(crossInstanceEnabled));
 		json_object_set_new(rootJ, "sceneLinkMasterId", json_integer(sceneLinkMasterId));
-		if (!activePresetJson.empty()) {
-			json_object_set_new(rootJ, "activePreset", json_string(activePresetJson.c_str()));
+		if (feedback.isActive()) {
+			json_object_set_new(rootJ, "activePreset", json_string(feedback.activePresetJsonText().c_str()));
 		}
 		json_t* labelsJ = json_object();
 		for (int i = 0; i < MATRIX_COUNT; i++) {
@@ -1107,7 +1169,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			json_decref(colorSetsJ);
 		}
 		json_object_set_new(rootJ, "midiInput",  trackingProcessor.getInput().toJson());
-		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
+		json_object_set_new(rootJ, "midiOutput", feedback.midiOutput.toJson());
 		return rootJ;
 	}
 
@@ -1160,8 +1222,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 
 		json_t* activePresetJ = json_object_get(rootJ, "activePreset");
 		const char* activePresetStr = (activePresetJ && json_is_string(activePresetJ)) ? json_string_value(activePresetJ) : nullptr;
-		setActivePresetJson(activePresetStr ? activePresetStr : "");
-		invalidateLedStates();
+		feedback.setActivePresetJson(activePresetStr ? activePresetStr : "");
+		feedback.invalidateLedStates();
 
 		for (auto& l : cellLabels) l.clear();
 		json_t* labelsJ = json_object_get(rootJ, "cellLabels");
@@ -1192,7 +1254,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
 		if (midiInputJ) trackingProcessor.getInput().fromJson(midiInputJ);
 		json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
-		if (midiOutputJ) midiOutput.fromJson(midiOutputJ);
+		if (midiOutputJ) feedback.midiOutput.fromJson(midiOutputJ);
 
 		memset(sceneConnections, 0, sizeof(sceneConnections));
 		json_t* scenesJ = json_object_get(rootJ, "scenes");
@@ -1476,8 +1538,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		// Turn off both LEDs now, while each cell still has its own MIDI mapping.
 		// sendFeedbackOff uses the mapping to address the right note/CC; clearing
 		// the mappings first would cause the off-message to be lost.
-		sendFeedbackOff(fromId, cellLedState[fromId]);
-		sendFeedbackOff(toId, cellLedState[toId]);
+		feedback.sendFeedbackOff(fromId, feedback.cellLedState[fromId]);
+		feedback.sendFeedbackOff(toId, feedback.cellLedState[toId]);
 
 		// Remove only toId's existing cables — fromId's cables stay, because toId
 		// will inherit fromId's port and those cables are already in the right place.
@@ -1519,7 +1581,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		cellColorSet[toId] = cellColorSet[fromId];
 		cellColorSet[fromId] = -1;
 
-		invalidateLedStates();
+		feedback.invalidateLedStates();
 		setOverlayMessage("Moved cell", portLabel(portAssignments[toId]));
 	}
 
@@ -1542,7 +1604,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 
 		if (portAssignments[cellId].isValid()) {
 			// Turn the LED off while the old MIDI mapping and state are still addressable.
-			sendFeedbackOff(cellId, cellLedState[cellId]);
+			feedback.sendFeedbackOff(cellId, feedback.cellLedState[cellId]);
 			removeCellConnections(cellId);
 			for (int s = 0; s < SCENE_COUNT; s++) {
 				uint64_t mask = sceneConnections[s][cellId];
@@ -1557,7 +1619,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		portAssignments[cellId].moduleId = moduleId;
 		portAssignments[cellId].portId = portId;
 		portAssignments[cellId].type = type;
-		invalidateLedStates();
+		feedback.invalidateLedStates();
 	}
 
 	// GUI thread — discards cellId's port assignment entirely (menu "Clear"). Shares
@@ -1568,7 +1630,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		if (cellId < 0 || cellId >= MATRIX_COUNT) return;
 		if (!portAssignments[cellId].isValid()) return;
 
-		sendFeedbackOff(cellId, cellLedState[cellId]);
+		feedback.sendFeedbackOff(cellId, feedback.cellLedState[cellId]);
 		removeCellConnections(cellId);
 		for (int s = 0; s < SCENE_COUNT; s++) {
 			uint64_t mask = sceneConnections[s][cellId];
@@ -1579,7 +1641,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 		cellLabels[cellId].clear();
 		portAssignments[cellId].clear();
-		invalidateLedStates();
+		feedback.invalidateLedStates();
 	}
 
 	// GUI thread — performs a full module reset. Removes all current-scene cables, clears all
@@ -1594,8 +1656,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		for (int i = 0; i < MATRIX_COUNT; i++) portAssignments[i].clear();
 		for (int i = 0; i < TOTAL_MAPS; i++) trackingProcessor.clearMap(i);
 		currentScene   = 0;
-		setActivePresetJson("");
-		invalidateLedStates();
+		feedback.setActivePresetJson("");
+		feedback.invalidateLedStates();
 		std::fill(portHasCable, portHasCable  + MATRIX_COUNT, false);
 	}
 };
@@ -2092,7 +2154,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 	// whether to apply it too, same action as the "Apply input mappings from preset" menu item.
 	void promptApplyPresetLayout() {
 		SpliceKitModule* module = this->module;
-		const MidiOutPreset* preset = module->getActivePreset();
+		const MidiOutPreset* preset = module->feedback.getActivePreset();
 		if (!preset || !preset->hasLayout()) return;
 
 		widget::Widget* overlay = confirmOverlayCreate(
@@ -2111,25 +2173,25 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(StoermelderPackOne::Rack::createStickyMidiMenuItem("MIDI Input",  &module->trackingProcessor.getInput()));
-		menu->addChild(StoermelderPackOne::Rack::createStickyMidiMenuItem("MIDI Output", &module->midiOutput));
+		menu->addChild(StoermelderPackOne::Rack::createStickyMidiMenuItem("MIDI Output", &module->feedback.midiOutput));
 		menu->addChild(createSubmenuItem("MIDI Preset", "", [=](Menu* menu) {
 			menu->addChild(createMenuLabel("MIDI feedback"));
 			menu->addChild(createCheckMenuItem("No preset", "",
-				[=]() { return module->activePresetJson.empty(); },
+				[=]() { return !module->feedback.isActive(); },
 				[=]() {
-					module->setActivePresetJson("");
-					module->invalidateLedStates();
+					module->feedback.setActivePresetJson("");
+					module->feedback.invalidateLedStates();
 				}
 			));
-			bool isKnownPreset = module->activePresetJson.empty();
+			bool isKnownPreset = !module->feedback.isActive();
 			for (const LoadedPreset& lp : getLoadedPresets()) {
 				std::string json = lp.json;
-				if (module->activePresetJson == json) isKnownPreset = true;
+				if (module->feedback.isActivePreset(json)) isKnownPreset = true;
 				auto* item = createCheckMenuItem<DescriptionMenuItem>(lp.preset.name, "",
-					[=]() { return module->activePresetJson == json; },
+					[=]() { return module->feedback.isActivePreset(json); },
 					[=]() {
-						module->setActivePresetJson(json);
-						module->invalidateLedStates();
+						module->feedback.setActivePresetJson(json);
+						module->feedback.invalidateLedStates();
 						promptApplyPresetLayout();
 					}
 				);
@@ -2137,7 +2199,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 				menu->addChild(item);
 			}
 			if (!isKnownPreset) {
-				std::string name = module->activePreset.name.empty() ? "Custom preset" : module->activePreset.name;
+				std::string name = module->feedback.activePresetName();
 				menu->addChild(createCheckMenuItem(name, "",
 					[=]() { return true; },
 					[=]() {}
@@ -2145,7 +2207,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			}
 			menu->addChild(new MenuSeparator);
 			menu->addChild(createMenuLabel("MIDI mapping"));
-			const MidiOutPreset* activeP = module->getActivePreset();
+			const MidiOutPreset* activeP = module->feedback.getActivePreset();
 			bool hasLayout = activeP && activeP->hasLayout();
 			menu->addChild(createMenuItem("Apply input mappings from preset", "",
 				[=]() { module->applyPresetLayout(); },
@@ -2163,16 +2225,16 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 					std::vector<uint8_t> bytes = system::readFile(path);
 					if (bytes.empty()) return;
 					std::string text(bytes.begin(), bytes.end());
-					module->setActivePresetJson(text);
-					module->invalidateLedStates();
+					module->feedback.setActivePresetJson(text);
+					module->feedback.invalidateLedStates();
 					promptApplyPresetLayout();
 				}
 			));
-			bool canSave = !module->activePresetJson.empty();
+			bool canSave = module->feedback.isActive();
 			menu->addChild(createMenuItem("Save preset to file...", "",
 				[=]() {
 					osdialog_filters* filters = osdialog_filters_parse("SpliceKit Preset:ctrl.json");
-					std::string defName = module->activePreset.name;
+					std::string defName = module->feedback.activePresetName("");
 					if (!defName.empty()) defName += ".ctrl.json";
 					char* pathC = osdialog_file(OSDIALOG_SAVE, NULL,
 						defName.empty() ? "preset.ctrl.json" : defName.c_str(), filters);
@@ -2180,7 +2242,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 					if (!pathC) return;
 					std::string path = pathC;
 					free(pathC);
-					const std::string& text = module->activePresetJson;
+					const std::string& text = module->feedback.activePresetJsonText();
 					system::writeFile(path, std::vector<uint8_t>(text.begin(), text.end()));
 				},
 				!canSave
