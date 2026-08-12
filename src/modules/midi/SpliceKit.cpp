@@ -9,6 +9,7 @@
 #include "MidiTrackingProcessor.hpp"
 #include "SpliceKit_controllers.hpp"
 #include <osdialog.h>
+#include <array>
 
 namespace StoermelderPackOne {
 namespace SpliceKit {
