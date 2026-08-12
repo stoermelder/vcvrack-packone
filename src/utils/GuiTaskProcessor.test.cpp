@@ -286,3 +286,120 @@ TEST_CASE("Repeated window transitions stay stable", "[GuiTaskProcessor]") {
 	REQUIRE(execCount.load() == CYCLES);
 	REQUIRE(gtp.workerState.load() != State::Starting);
 }
+
+TEST_CASE("onWorkerDrained runs on the worker after a drain", "[GuiTaskProcessor]") {
+	Test::TestContext<> ctx;
+	using State = GuiTaskProcessor<8>::WorkerState;
+	GuiTaskProcessor<8> gtp;
+
+	std::thread::id callerId = std::this_thread::get_id();
+	std::atomic<int> hookCount{0};
+	std::atomic<bool> hookOnOtherThread{false};
+	std::atomic<bool> taskRanFirst{false};
+	std::atomic<bool> taskRan{false};
+
+	gtp.onWorkerDrained = [&]() {
+		if (std::this_thread::get_id() != callerId) hookOnOtherThread = true;
+		if (taskRan) taskRanFirst = true;   // hook must observe the drain's effects
+		hookCount.fetch_add(1);
+	};
+
+	starveUiThread(gtp);
+	REQUIRE(waitForState(gtp, State::Running));
+
+	std::shared_ptr<std::promise<void>> prom;
+	auto fut = makePromise(prom);
+	gtp.enqueue([&taskRan, prom]() { taskRan = true; prom->set_value(); });
+	REQUIRE(fut.wait_for(std::chrono::seconds(5)) == std::future_status::ready);
+
+	// The hook fires after drain() returns, so give it a moment to land.
+	auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+	while (hookCount.load() == 0 && std::chrono::steady_clock::now() < deadline) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
+	REQUIRE(hookCount.load() > 0);
+	REQUIRE(hookOnOtherThread == true);
+	REQUIRE(taskRanFirst == true);
+}
+
+TEST_CASE("onWorkerDrained does not run on the step() drain path", "[GuiTaskProcessor]") {
+	Test::TestContext<> ctx;
+	GuiTaskProcessor<8> gtp;
+
+	std::atomic<int> hookCount{0};
+	gtp.onWorkerDrained = [&hookCount]() { hookCount.fetch_add(1); };
+
+	// Window present throughout — no worker, so the widget is doing this work itself and
+	// the hook must stay silent.
+	int execCount = 0;
+	for (int i = 0; i < 10; i++) {
+		gtp.process(FAKE_WINDOW);
+		gtp.enqueue([&execCount]() { execCount++; });
+		gtp.step();
+	}
+
+	REQUIRE(execCount == 10);
+	REQUIRE(hookCount.load() == 0);
+}
+
+TEST_CASE("onWorkerDrained may re-enter drain() without deadlocking", "[GuiTaskProcessor]") {
+	Test::TestContext<> ctx;
+	using State = GuiTaskProcessor<8>::WorkerState;
+	GuiTaskProcessor<8> gtp;
+
+	// The hook runs after drain() has released `draining`, so re-entering the drain path
+	// from inside it must be safe rather than self-deadlocking. (The hook must NOT enqueue:
+	// that would make the worker a second producer, which the class forbids — so this only
+	// exercises the drain side.)
+	std::atomic<int> hookCount{0};
+	std::atomic<int> tasksRun{0};
+	gtp.onWorkerDrained = [&]() {
+		hookCount.fetch_add(1);
+		gtp.drain();
+	};
+
+	starveUiThread(gtp, 1);
+	REQUIRE(waitForState(gtp, State::Running));
+
+	// Producer stays on this thread only. Each task drives a drain, whose hook drains again.
+	for (int i = 0; i < 8; i++) gtp.enqueue([&tasksRun]() { tasksRun.fetch_add(1); });
+
+	auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+	while (tasksRun.load() < 8 && std::chrono::steady_clock::now() < deadline) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
+	REQUIRE(tasksRun.load() == 8);
+	REQUIRE(hookCount.load() > 0);
+}
+
+TEST_CASE("process() does not wake an idle worker — the hook is task-driven, not a timer", "[GuiTaskProcessor]") {
+	Test::TestContext<> ctx;
+	using State = GuiTaskProcessor<8>::WorkerState;
+	GuiTaskProcessor<8> gtp;
+
+	std::atomic<int> hookCount{0};
+	gtp.onWorkerDrained = [&hookCount]() { hookCount.fetch_add(1); };
+
+	starveUiThread(gtp, 1);
+	REQUIRE(waitForState(gtp, State::Running));
+
+	// The startup post gives the worker one wake; after that, repeated process() calls with
+	// nothing queued must leave it parked rather than spinning the hook every tick.
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	int afterStart = hookCount.load();
+	for (int i = 0; i < 100; i++) gtp.process(nullptr);
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	REQUIRE(hookCount.load() == afterStart);
+
+	// A queued task is what drives it.
+	std::shared_ptr<std::promise<void>> prom;
+	auto fut = makePromise(prom);
+	gtp.enqueue([prom]() { prom->set_value(); });
+	REQUIRE(fut.wait_for(std::chrono::seconds(5)) == std::future_status::ready);
+
+	auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+	while (hookCount.load() <= afterStart && std::chrono::steady_clock::now() < deadline) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
+	REQUIRE(hookCount.load() > afterStart);
+}

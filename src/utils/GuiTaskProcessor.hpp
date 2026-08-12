@@ -102,6 +102,23 @@ struct GuiTaskProcessor {
 	std::thread* worker = nullptr;  // only touched by whichever thread completes Starting/Stopping
 	Context* workerContext = nullptr;
 
+	// Optional hook run on the worker thread after each drain. Exists for state that the
+	// widget's step() would normally maintain: while a worker is doing the draining there
+	// is by definition no step() running, so anything step() refreshes would otherwise go
+	// stale — and callers that edge-trigger off such state (e.g. MIDI feedback comparing a
+	// resolved LED state id) would silently stop firing. Not called on the step() drain
+	// path, where the widget already does that work.
+	//
+	// Runs when the worker wakes, i.e. after tasks queued through enqueue() — the changes
+	// this class exists to carry. It is not a timer: state invalidated by something that
+	// queued no task here (a cable the user pulled) is not picked up until the next task,
+	// or until someone calls wake(). Keeping it task-driven is deliberate, so an idle
+	// worker stays genuinely idle.
+	//
+	// Must be installed before the worker can start (i.e. before the first process() call)
+	// and not mutated afterwards: the worker reads it without synchronization.
+	std::function<void()> onWorkerDrained;
+
 	~GuiTaskProcessor() {
 		stopWorker();
 	}
@@ -165,6 +182,17 @@ struct GuiTaskProcessor {
 		if (draining.test_and_set(std::memory_order_acquire)) return;
 		internalQueue.process();
 		draining.clear(std::memory_order_release);
+	}
+
+	// The worker's drain: the queue, then the post-drain hook. Paired here rather than at
+	// each call site so the hook cannot be forgotten on a new one — it must run on every
+	// worker drain, including the final one during shutdown, since that may be the pass
+	// that applies the last queued change. The hook runs after drain() has released
+	// `draining`, so it may call drain() again without deadlocking. It must NOT enqueue():
+	// the worker is not the producer thread, and a second producer corrupts the queue.
+	void drainWithCallback() {
+		drain();
+		if (onWorkerDrained) onWorkerDrained();
 	}
 
 	// Engine thread — starts the worker on first need. Idempotent: the CAS on
@@ -251,11 +279,11 @@ struct GuiTaskProcessor {
 		contextSet(workerContext);
 		while (true) {
 			taskSignal.wait();
-			drain();
+			drainWithCallback();
 			if (!workerShouldRun.load(std::memory_order_acquire)) {
 				// Final drain in case a task (and its post) arrived concurrently
 				// with the shutdown request, after the check above would have missed it.
-				drain();
+				drainWithCallback();
 				return;
 			}
 		}
