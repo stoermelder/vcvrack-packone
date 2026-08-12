@@ -202,6 +202,31 @@ TEST_CASE("FILTER/BLOCK ignore system messages", "[MidiPlug]") {
 }
 
 
+TEST_CASE("processBypass drains both input queues without sending output", "[MidiPlug]") {
+	auto module = Test::createModule<Module2>("MidiPlug");
+	CaptureDevice* out0 = attachCapture(module, 0);
+	CaptureDevice* out1 = attachCapture(module, 1);
+
+	module->midiInput[0].onMessage(Test::makeMidiMessage(0xb, 2, 7, 64));
+	module->midiInput[1].onMessage(Test::makeMidiMessage(0x9, 4, 60, 100));
+
+	Module::ProcessArgs args = Test::makeProcessArgs(1);
+	module->processBypass(args);
+
+	REQUIRE(out0->sent.empty());
+	REQUIRE(out1->sent.empty());
+
+	// Queues are drained; a subsequent normal process() call has nothing left to forward.
+	module->process(Test::makeProcessArgs(2));
+	REQUIRE(out0->sent.empty());
+	REQUIRE(out1->sent.empty());
+
+	delete out0;
+	delete out1;
+	Test::destroyModule(module);
+}
+
+
 TEST_CASE("JSON round-trip", "[MidiPlug][JSON]") {
 	auto module = Test::createModule<Module2>("MidiPlug");
 	module->panelTheme = 1;

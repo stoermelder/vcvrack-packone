@@ -873,6 +873,10 @@ struct SirenWidget : ThemedModuleWidget<SirenModule>, ModuleChangeListener {
 						if (m) m->activeRootIdx = newIdx;
 						browserPane->setRoots(sirenSettings.rootContainers, newIdx);
 						browserPane->startIndexing();
+						// Persist the shared root list immediately — don't rely on the
+						// widget destructor, which may not run (crash/force-quit) or may
+						// save a stale set if another instance reloaded meanwhile.
+						sirenSettings.save();
 						// Other Siren instances must refresh their root list now
 						// that the global settings have a new entry.
 						notifyModuleListeners("Siren");
@@ -912,6 +916,8 @@ struct SirenWidget : ThemedModuleWidget<SirenModule>, ModuleChangeListener {
 							: (int)sirenSettings.rootContainers.size() - 1;
 					}
 					browserPane->setRoots(sirenSettings.rootContainers, m ? m->activeRootIdx : -1);
+					// Persist the shared root list immediately (see onAddRoot).
+					sirenSettings.save();
 					// Other Siren instances must drop the removed root from their list.
 					notifyModuleListeners("Siren");
 					// Skip self: see onAddRoot above.

@@ -122,6 +122,8 @@ static T* createModule(std::string modelSlug) {
 }
 
 static void destroyModule(rack::Module* m) {
+	Module::RemoveEvent eRemove;
+	m->onRemove(eRemove);
 	delete m;
 }
 

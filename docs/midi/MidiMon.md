@@ -26,3 +26,4 @@ Each log entry is prefixed with a timing indicator in square brackets. By defaul
     - Fixed saving of SysEx data logging setting
 - v2.x.x
     - Ignore incoming MIDI messages while module is bypassed
+    - Splitted display option for 14bit CC and RPN/NRPN messages
