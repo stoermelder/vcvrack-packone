@@ -374,6 +374,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		trackingProcessor.enableCc();
 		trackingProcessor.enableNotes();
 		midiOutput.onDeviceChanged = [this]() { invalidateLedStates(); };
+		// With no window there is no SpliceKitWidget::step() to refresh portHasCable[], so
+		// the worker takes that over after each drain — otherwise the flag stays frozen and
+		// the edge-triggered MIDI feedback in process() never sees a cell change state.
+		taskProcessorUi.onWorkerDrained = [this]() { refreshPortHasCable(); };
 		processDivider.setDivision(256);
 		registerModuleListener("SpliceKit-SceneLink", this);
 		getInstances()[APP].insert(this);
@@ -686,6 +690,55 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			other->collectAssignedPorts(ports);
 		}
 		return ports;
+	}
+
+	// Recomputes portHasCable[] for every cell, from the widget tree.
+	//
+	// Normally driven by SpliceKitWidget::step(), but that only runs while Rack is stepping
+	// widgets. When it is not (plugin editor closed, headless), nothing would refresh the
+	// flag and it would stay frozen — and because the MIDI feedback loop in process() is
+	// edge-triggered on the resolved stateId, and resolveCellVisual() folds portHasCable[]
+	// into that id, a stale flag means cell activation/deactivation feedback is never sent
+	// at all. The GuiTaskProcessor worker therefore also calls this after each drain, which
+	// is safe for the same reason step() is: both run off the engine thread.
+	//
+	// Deliberately walks the widget tree rather than APP->engine->getCableIds(): the engine
+	// accessors each take a SharedLock on the engine mutex, so an engine-side scan would
+	// lock once per cable, every tick. The widget tree carries the same information lock
+	// free. Only complete cables count — a cable being dragged has a null far end and is
+	// skipped, which also keeps this in step with what the engine would report.
+	//
+	// Builds the candidate-end set once so each lookup is O(log n) instead of an O(n) scan.
+	// Spans every participating instance, so cables created by the cross-instance gesture
+	// light both of their cells.
+	void refreshPortHasCable() {
+		std::set<std::pair<int64_t, int>> assignedPorts = collectCableEndCandidates();
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			const PortAssignment& pa = portAssignments[i];
+			if (!pa.isValid()) {
+				portHasCable[i] = false;
+				continue;
+			}
+			ModuleWidget* mw = APP->scene->rack->getModule(pa.moduleId);
+			if (!mw) {
+				portHasCable[i] = false;
+				continue;
+			}
+			auto ports = (pa.type == engine::Port::OUTPUT) ? mw->getOutputs() : mw->getInputs();
+			portHasCable[i] = false;
+			for (PortWidget* pw : ports) {
+				if (pw->portId != pa.portId) continue;
+				for (CableWidget* cw : APP->scene->rack->getCablesOnPort(pw)) {
+					PortWidget* other = (pa.type == engine::Port::OUTPUT) ? cw->inputPort : cw->outputPort;
+					if (!other || !other->module) continue;
+					if (assignedPorts.count({other->module->getId(), other->portId * 2 + (int)other->type})) {
+						portHasCable[i] = true;
+						break;
+					}
+				}
+				break;
+			}
+		}
 	}
 
 	// Engine thread — MidiTrackingProcessorHandler callback, fired for every mapped
@@ -1999,36 +2052,9 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		module->taskProcessorUi.step();
 
 		// Update cable presence for each assigned cell (read by process() for light colors).
-		// Build the set of candidate cable ends once so each lookup is O(log n) instead of an
-		// O(n) scan. Spans every participating instance, so cables created by the
-		// cross-instance gesture light both of their cells.
-		std::set<std::pair<int64_t, int>> assignedPorts = module->collectCableEndCandidates();
-		for (int i = 0; i < MATRIX_COUNT; i++) {
-			const PortAssignment& pa = module->portAssignments[i];
-			if (!pa.isValid()) {
-				module->portHasCable[i] = false;
-				continue;
-			}
-			ModuleWidget* mw = APP->scene->rack->getModule(pa.moduleId);
-			if (!mw) {
-				module->portHasCable[i] = false;
-				continue;
-			}
-			auto ports = (pa.type == engine::Port::OUTPUT) ? mw->getOutputs() : mw->getInputs();
-			module->portHasCable[i] = false;
-			for (PortWidget* pw : ports) {
-				if (pw->portId != pa.portId) continue;
-				for (CableWidget* cw : APP->scene->rack->getCablesOnPort(pw)) {
-					PortWidget* other = (pa.type == engine::Port::OUTPUT) ? cw->inputPort : cw->outputPort;
-					if (!other || !other->module) continue;
-					if (assignedPorts.count({other->module->getId(), other->portId * 2 + (int)other->type})) {
-						module->portHasCable[i] = true;
-						break;
-					}
-				}
-				break;
-			}
-		}
+		// Same scan the worker runs when there is no window, so one piece of logic maintains
+		// the flag on both paths.
+		module->refreshPortHasCable();
 	}
 
 	// A MenuLabel with a fixed pixel width instead of growing to fit the text on one line.
