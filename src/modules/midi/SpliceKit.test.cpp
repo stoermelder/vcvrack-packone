@@ -30,6 +30,25 @@ TEST_CASE("Construction and initialization", "[SpliceKit]") {
 }
 
 
+TEST_CASE("onSampleRateChange - sets lightDivider relative to sample rate, independent of processDivider", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	Module::SampleRateChangeEvent e;
+	e.sampleRate = 48000.f;
+	e.sampleTime = 1.f / e.sampleRate;
+	m->onSampleRateChange(e);
+	REQUIRE(m->lightDivider.getDivision() == (uint32_t)(48000.f / 100.f));
+	REQUIRE(m->processDivider.getDivision() == 256);  // unaffected by sample rate
+
+	e.sampleRate = 96000.f;
+	e.sampleTime = 1.f / e.sampleRate;
+	m->onSampleRateChange(e);
+	REQUIRE(m->lightDivider.getDivision() == (uint32_t)(96000.f / 100.f));
+
+	Test::destroyModule(m);
+}
+
+
 TEST_CASE("Preset JSON null-guards", "[SpliceKit][JSON]") {
 	auto module = Test::createModule<SpliceKitModule>("SpliceKit");
 
@@ -492,6 +511,7 @@ static MidiOutPreset makeNoteOnPreset(int note = 36, int value = 127) {
 
 TEST_CASE("process - unassigned cell transitions cellLedState to OFF", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->lightDivider.setDivision(256);  // lightDivider defaults sample-rate-relative; pin for the loop below
 
 	// Pre-set to a non-OFF state to force a transition
 	m->feedback.cellLedState[0] = LED_STATE_COLOR0;
@@ -506,6 +526,7 @@ TEST_CASE("process - unassigned cell transitions cellLedState to OFF", "[SpliceK
 
 TEST_CASE("process - assigned cell without cable transitions to DIM state", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->lightDivider.setDivision(256);
 
 	m->portAssignments[0].moduleId = 42;
 	m->portAssignments[0].portId   = 0;
@@ -522,6 +543,7 @@ TEST_CASE("process - assigned cell without cable transitions to DIM state", "[Sp
 
 TEST_CASE("process - cellLedState transitions from old state to OFF when cell unassigned", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->lightDivider.setDivision(256);
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
 	// Simulate a previous state that the LED was in
@@ -538,6 +560,7 @@ TEST_CASE("process - cellLedState transitions from old state to OFF when cell un
 
 TEST_CASE("process - scene cellLedState transitions to SCENE_ACTIVE for currentScene", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->lightDivider.setDivision(256);
 
 	m->currentScene     = 2;
 	m->feedback.sceneLedState[2] = -1;  // force a state send
@@ -803,6 +826,7 @@ TEST_CASE("moveCell - overlay message is posted", "[SpliceKit]") {
 
 TEST_CASE("process - scene state transitions from active to dim after scene switch", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->lightDivider.setDivision(256);
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
 	m->currentScene = 0;
@@ -1376,6 +1400,7 @@ TEST_CASE("drainPendingOffs - preserves queue order (FIFO)", "[SpliceKit]") {
 
 TEST_CASE("process - drains pending offs before emitting new on-messages", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->lightDivider.setDivision(256);
 	MidiOutPreset preset;
 	for (int s = 0; s < LED_STATE_COUNT; s++) {
 		preset.specs[s].type     = MIDI_OUT_NOTE_ON;
@@ -1663,6 +1688,7 @@ TEST_CASE("JSON roundtrip - panelTheme and currentScene survive a full save/load
 
 TEST_CASE("process - pending cell transitions cellLedState to PENDING", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->lightDivider.setDivision(256);
 
 	m->portAssignments[0].moduleId = 42;
 	m->portAssignments[0].portId   = 0;
@@ -1682,6 +1708,7 @@ TEST_CASE("process - pending cell transitions cellLedState to PENDING", "[Splice
 
 TEST_CASE("process - port-learning cell transitions cellLedState to PORT_LEARN", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->lightDivider.setDivision(256);
 
 	m->portLearningId = 7;
 	// m->portSelectProcessor is in learn mode iff isLearning() is true; without
@@ -1699,6 +1726,7 @@ TEST_CASE("process - port-learning cell transitions cellLedState to PORT_LEARN",
 
 TEST_CASE("process - midi-learning cell transitions cellLedState to MIDI_LEARN", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->lightDivider.setDivision(256);
 
 	m->learningId = 11;
 
@@ -1712,6 +1740,7 @@ TEST_CASE("process - midi-learning cell transitions cellLedState to MIDI_LEARN",
 
 TEST_CASE("process - cell connected to pending cell transitions to CONNECTED1", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->lightDivider.setDivision(256);
 
 	// Cell 0 is pending and connected to cell 5 in scene 0.
 	m->portAssignments[0].moduleId = 1;
@@ -1821,6 +1850,7 @@ TEST_CASE("resolveSceneVisual - precedence order midi-learn > active > has-conne
 
 TEST_CASE("process - cell with port assignment and no cable transitions to COLOR0_DIM", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->lightDivider.setDivision(256);
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
 	m->portAssignments[2].moduleId = 1;

@@ -505,7 +505,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// SPSC ring buffer, so a concurrent GUI-thread push would corrupt it. Code already on the
 	// GUI thread must call the target function directly instead of enqueueing.
 	GuiTaskProcessor<16> taskProcessorUi;
+
 	ClockDividerEx processDivider;
+	ClockDividerEx lightDivider;
+
 	// Written by GUI thread (step), read by DSP thread (process) — accepted race for LEDs
 	bool portHasCable[MATRIX_COUNT] = {};
 	float blinkPhase = 0.f;
@@ -641,6 +644,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
+	}
+
 	void onRemove() override {
 		auto& cp = crossPending[APP];
 		if (cp.initiator == this) cp.clear();
@@ -734,86 +741,114 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		Module::processBypass(args);
 	}
 
+	// Engine thread — if this instance follows a scene link master, picks up the master's
+	// current scene. Enqueues the actual switchScene() on the GUI thread via taskProcessorUi
+	// (cables), since the switch itself must not run on the engine thread.
+	void processSceneLinkMaster() {
+		if (!moduleChangedFlag) return;
+		moduleChangedFlag = false;
+		if (sceneLinkMasterId < 0) return;
+		auto* master = dynamic_cast<SpliceKitModule*>(APP->engine->getModule(sceneLinkMasterId));
+		if (!master) {
+			// Master was removed from the patch (or never existed) — stop following.
+			sceneLinkMasterId = -1;
+		}
+		else if (master->currentScene != currentScene) {
+			int targetScene = master->currentScene;
+			taskProcessorUi.enqueue([this, targetScene]() { switchScene(targetScene); });
+		}
+	}
+
+	// Engine thread — reads the physical matrix buttons for rising/falling edges and routes
+	// them into learn-cancel, cell trigger, or momentary-release handling.
+	void processCellButtons() {
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			bool high = params[PARAM_MATRIX + i].getValue() > 0.5f;
+			if (buttonTriggers[i].process(high)) {
+				if (learningId == i) {
+					disableLearn();
+				}
+				else if (portLearningId == i) {
+					disablePortLearn();
+				}
+				else {
+					triggerCell(i);
+					pendingCellIsPhysical = true;
+				}
+				blinkPhase = 0.f;
+			}
+			else if (buttonMode == BUTTON_MOMENTARY && pendingCellIsPhysical
+				  && pendingCellId == i && !high) {
+				clearPending();
+			}
+		}
+	}
+
+	// Engine thread — reads the physical scene buttons for rising edges and routes them into
+	// learn-cancel or a scene change request.
+	void processSceneButtons() {
+		for (int i = 0; i < SCENE_COUNT; i++) {
+			if (sceneTriggers[i].process(params[PARAM_SCENE + i].getValue() > 0.5f)) {
+				if (learningId == MATRIX_COUNT + i) {
+					disableLearn();
+				}
+				// Scene buttons are inert while following a scene link master — the active
+				// scene is driven entirely by the master (see processSceneLinkMaster()), not
+				// by this instance's own buttons.
+				else if (sceneLinkMasterId < 0) {
+					requestSceneChange(i);
+				}
+			}
+		}
+	}
+
+	// Engine thread — advances the two LED blink phases by one lightDivider tick.
+	void advanceBlinkPhases(float sampleTime) {
+		blinkPhase += sampleTime * 4.f * lightDivider.division;
+		if (blinkPhase >= 1.f) blinkPhase -= 1.f;
+		slowBlinkPhase += sampleTime * 2.f * lightDivider.division;
+		if (slowBlinkPhase >= 1.f) slowBlinkPhase -= 1.f;
+	}
+
+	// Engine thread — resolves and applies every cell/scene LED's color, blink state and
+	// MIDI feedback. Runs on lightDivider rather than processDivider so refresh rate (and
+	// MIDI feedback resend cadence, via feedback.setState()) doesn't scale with the
+	// button/trigger/scene-link logic rate.
+	void processLights(float sampleTime) {
+		advanceBlinkPhases(sampleTime);
+
+		// Before any new on-message below: flush note-offs the GUI thread resolved against
+		// mappings it has since rewritten (moveCell/assignPort/clearPort).
+		feedback.drainPendingOffs();
+
+		bool blinkOn = blinkPhase < 0.5f;
+		bool slowBlinkOn = slowBlinkPhase < 0.5f;
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			CellVisual v = resolveCellVisual(i, blinkOn, slowBlinkOn);
+			feedback.setState(i, v.stateId);
+			float f = sampleTime * lightDivider.division;
+			lights[LIGHT_MATRIX + i * 3 + 0].setBrightnessSmooth(v.color.r, f);
+			lights[LIGHT_MATRIX + i * 3 + 1].setBrightnessSmooth(v.color.g, f);
+			lights[LIGHT_MATRIX + i * 3 + 2].setBrightnessSmooth(v.color.b, f);
+		}
+		for (int s = 0; s < SCENE_COUNT; s++) {
+			SceneVisual v = resolveSceneVisual(s, blinkOn);
+			feedback.setState(MATRIX_COUNT + s, v.stateId);
+			lights[LIGHT_SCENE + s].setBrightness(v.brightness);
+		}
+	}
+
 	void process(const ProcessArgs& args) override {
 		trackingProcessor.process(args.frame);
 
 		if (processDivider.process()) {
 			taskProcessorUi.process();
-
-			if (moduleChangedFlag) {
-				moduleChangedFlag = false;
-				if (sceneLinkMasterId >= 0) {
-					auto* master = dynamic_cast<SpliceKitModule*>(APP->engine->getModule(sceneLinkMasterId));
-					if (!master) {
-						// Master was removed from the patch (or never existed) — stop following.
-						sceneLinkMasterId = -1;
-					}
-					else if (master->currentScene != currentScene) {
-						int targetScene = master->currentScene;
-						taskProcessorUi.enqueue([this, targetScene]() { switchScene(targetScene); });
-					}
-				}
-			}
-
-			for (int i = 0; i < MATRIX_COUNT; i++) {
-				bool high = params[PARAM_MATRIX + i].getValue() > 0.5f;
-				if (buttonTriggers[i].process(high)) {
-					if (learningId == i) {
-						disableLearn();
-					}
-					else if (portLearningId == i) {
-						disablePortLearn();
-					}
-					else {
-						triggerCell(i);
-						pendingCellIsPhysical = true;
-					}
-					blinkPhase = 0.f;
-				}
-				else if (buttonMode == BUTTON_MOMENTARY && pendingCellIsPhysical
-					  && pendingCellId == i && !high) {
-					clearPending();
-				}
-			}
-
-			for (int i = 0; i < SCENE_COUNT; i++) {
-				if (sceneTriggers[i].process(params[PARAM_SCENE + i].getValue() > 0.5f)) {
-					if (learningId == MATRIX_COUNT + i) {
-						disableLearn();
-					}
-					// Scene buttons are inert while following a scene link master — the active
-					// scene is driven entirely by the master (see process()'s moduleChangedFlag
-					// handling), not by this instance's own buttons.
-					else if (sceneLinkMasterId < 0) {
-						requestSceneChange(i);
-					}
-				}
-			}
-
-			blinkPhase += args.sampleTime * 4.f * processDivider.division;
-			if (blinkPhase >= 1.f) blinkPhase -= 1.f;
-			slowBlinkPhase += args.sampleTime * 2.f * processDivider.division;
-			if (slowBlinkPhase >= 1.f) slowBlinkPhase -= 1.f;
-
-			// Before any new on-message below: flush note-offs the GUI thread resolved
-			// against mappings it has since rewritten (moveCell/assignPort/clearPort).
-			feedback.drainPendingOffs();
-
-			bool blinkOn = blinkPhase < 0.5f;
-			bool slowBlinkOn = slowBlinkPhase < 0.5f;
-			for (int i = 0; i < MATRIX_COUNT; i++) {
-				CellVisual v = resolveCellVisual(i, blinkOn, slowBlinkOn);
-				feedback.setState(i, v.stateId);
-				float f = args.sampleTime * processDivider.division;
-				lights[LIGHT_MATRIX + i * 3 + 0].setBrightnessSmooth(v.color.r, f);
-				lights[LIGHT_MATRIX + i * 3 + 1].setBrightnessSmooth(v.color.g, f);
-				lights[LIGHT_MATRIX + i * 3 + 2].setBrightnessSmooth(v.color.b, f);
-			}
-			for (int s = 0; s < SCENE_COUNT; s++) {
-				SceneVisual v = resolveSceneVisual(s, blinkOn);
-				feedback.setState(MATRIX_COUNT + s, v.stateId);
-				lights[LIGHT_SCENE + s].setBrightness(v.brightness);
-			}
+			processSceneLinkMaster();
+			processCellButtons();
+			processSceneButtons();
+		}
+		if (lightDivider.process()) {
+			processLights(args.sampleTime);
 		}
 	}
 
