@@ -84,6 +84,14 @@ resolveDirection(const PortAssignment& a, const PortAssignment& b) {
 	return { nullptr, nullptr };
 }
 
+// Formats a MIDI mapping as "CC N" / "Note N", or "" when unmapped. Callers add their
+// own prefix/fallback for context (tooltip vs. menu item).
+std::string midiMapLabel(const MidiTrackingProcessor<TOTAL_MAPS>::RevMap& map) {
+	if (map.type == MidiTrackingType::CC) return string::f("CC %d", map.param);
+	if (map.type == MidiTrackingType::NOTE) return string::f("Note %d", map.param);
+	return "";
+}
+
 
 struct SpliceKitOutput : midi::Output {
 	// Hook to the owner's invalidateLedStates(), set once by the owner.
@@ -91,6 +99,7 @@ struct SpliceKitOutput : midi::Output {
 	// instead of duplicating the cache-invalidation logic here.
 	std::function<void()> onDeviceChanged;
 
+	// lastSentMsg/prevSentMsg/sentCount are test-observation fields, only read by tests.
 	midi::Message lastSentMsg;
 	// The message before lastSentMsg — lets tests assert on send ORDER (e.g. setState()'s
 	// off-before-on) without needing a full history.
@@ -101,6 +110,8 @@ struct SpliceKitOutput : midi::Output {
 		channel = -1;
 	}
 
+	// Shadows, not overrides (midi::Output::sendMessage is non-virtual) — safe only
+	// because every call site holds a SpliceKitOutput, never a base-class ref/pointer.
 	void sendMessage(const midi::Message& msg) {
 		prevSentMsg = lastSentMsg;
 		lastSentMsg = msg;
@@ -172,9 +183,9 @@ struct FeedbackSender {
 		return activePresetJson == json;
 	}
 
-	// Display name of the active preset, or a fallback for a custom/unknown one.
-	// Meaningless when !isActive() (returns the fallback).
-	std::string activePresetName(const std::string& fallback = "Custom preset") const {
+	// Display name of the active preset, or the given fallback (meaningless when
+	// !isActive()). No default value — callers want different fallbacks.
+	std::string activePresetName(const std::string& fallback) const {
 		return activePreset.name.empty() ? fallback : activePreset.name;
 	}
 
@@ -369,6 +380,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		bool isValid() const { return initiator != nullptr && cellId >= 0; }
 		void clear() { initiator = nullptr; cellId = -1; port.clear(); }
 	};
+	// Entries are never erased when a Context is destroyed — a small leak bounded by the
+	// number of Contexts ever opened; not worth fixing.
 	static std::map<Context*, CrossPendingState> crossPending;
 
 	// All live instances in this Rack context, maintained by the constructor/destructor.
@@ -411,13 +424,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			auto* m = static_cast<SpliceKitModule*>(module);
 			int cellId = paramId - PARAM_MATRIX;
 			auto& mm = m->trackingProcessor.getMap(cellId);
-			if (mm.type == MidiTrackingType::CC) {
-				return string::f("MIDI: CC %d", mm.param);
-			}
-			if (mm.type == MidiTrackingType::NOTE) {
-				return string::f("MIDI: Note %d", mm.param);
-			}
-			return "MIDI: (unmapped)";
+			std::string label = midiMapLabel(mm);
+			return label.empty() ? "MIDI: (unmapped)" : "MIDI: " + label;
 		}
 	};
 
@@ -438,13 +446,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			auto* m = static_cast<SpliceKitModule*>(module);
 			int sceneId = paramId - PARAM_SCENE;
 			auto& mm = m->trackingProcessor.getMap(MATRIX_COUNT + sceneId);
-			if (mm.type == MidiTrackingType::CC) {
-				return string::f("MIDI: CC %d", mm.param);
-			}
-			if (mm.type == MidiTrackingType::NOTE) {
-				return string::f("MIDI: Note %d", mm.param);
-			}
-			return "MIDI: (unmapped)";
+			std::string label = midiMapLabel(mm);
+			return label.empty() ? "MIDI: (unmapped)" : "MIDI: " + label;
 		}
 	};
 
@@ -649,13 +652,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		resetModuleState();
 	}
 
-	// GUI thread — called by Rack when the user randomizes the module. Reaches us synchronously
-	// from ModuleWidget::randomizeAction() via Engine::randomizeModule(), so the ModuleWidget/
-	// PortWidget reads in randomizePortAssignments() are safe to do directly. Button params are
-	// excluded from default randomization (see the constructor); this instead reassigns every
-	// matrix cell to a random port somewhere in the patch. (Generating a random cable topology
-	// for the current scene, keeping the existing port assignments, is available separately via
-	// "Randomize" in the scene button's context menu — see randomizeCurrentScene().)
+	// GUI thread — reached synchronously via Engine::randomizeModule(), so the ModuleWidget/
+	// PortWidget reads in randomizePortAssignments() are safe to do directly. Reassigns every
+	// matrix cell to a random port; for randomizing the current scene's cable topology instead,
+	// see randomizeCurrentScene() (scene button context menu).
 	void onRandomize() override {
 		randomizePortAssignments();
 	}
@@ -677,13 +677,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		randomizePortAssignmentsFrom(candidates);
 	}
 
-	// GUI thread — clears every cell's port assignment and label, then reassigns as many cells
-	// as possible to a distinct, shuffled entry from candidates (sampling without replacement,
-	// so no two cells ever end up on the same port). If there are fewer candidates than
-	// MATRIX_COUNT, the surplus cells are left cleared rather than duplicating a port; if there
-	// are more candidates than cells, the extras are simply not used. Existing scene connections
-	// are left as-is. Split out from randomizePortAssignments() so the actual assignment logic
-	// is testable without needing real ModuleWidget/PortWidget scaffolding.
+	// GUI thread — reassigns cells to a shuffled, non-repeating subset of candidates; surplus
+	// cells (too few candidates) are left cleared, surplus candidates are unused. Scene
+	// connections are left as-is. Split from randomizePortAssignments() to be testable without
+	// ModuleWidget/PortWidget scaffolding.
 	void randomizePortAssignmentsFrom(const std::vector<PortAssignment>& candidates) {
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			portAssignments[i].clear();
@@ -939,9 +936,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// free. Only complete cables count — a cable being dragged has a null far end and is
 	// skipped, which also keeps this in step with what the engine would report.
 	//
-	// Builds the candidate-end set once so each lookup is O(log n) instead of an O(n) scan.
-	// Spans every participating instance, so cables created by the cross-instance gesture
-	// light both of their cells.
+	// Builds the candidate-end set once (collectCableEndCandidates()) so each lookup is
+	// O(log n) instead of an O(n) scan.
 	void refreshPortHasCable() {
 		std::set<std::pair<int64_t, int>> assignedPorts = collectCableEndCandidates();
 		for (int i = 0; i < MATRIX_COUNT; i++) {
@@ -2242,7 +2238,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 				menu->addChild(item);
 			}
 			if (!isKnownPreset) {
-				std::string name = module->feedback.activePresetName();
+				std::string name = module->feedback.activePresetName("Custom preset");
 				menu->addChild(createCheckMenuItem(name, "",
 					[=]() { return true; },
 					[=]() {}
@@ -2405,9 +2401,7 @@ void SpliceKitSceneButton::createSceneMenu() {
 
 	int mapId = MATRIX_COUNT + sceneId;
 	auto& midiMap = module->trackingProcessor.getMap(mapId);
-	std::string midiLabel;
-	if (midiMap.type == MidiTrackingType::CC)   midiLabel = string::f("CC %d",   midiMap.param);
-	if (midiMap.type == MidiTrackingType::NOTE)  midiLabel = string::f("Note %d", midiMap.param);
+	std::string midiLabel = midiMapLabel(midiMap);
 
 	std::string learnLabel = midiLabel.empty() ? "Learn MIDI" : string::f("Learn MIDI (%s)", midiLabel.c_str());
 	menu->addChild(createCheckMenuItem(learnLabel, "",
@@ -2433,13 +2427,7 @@ void SpliceKitCellButton::createCellMenu() {
 	std::string label = SpliceKitModule::portLabel(pa);
 
 	auto& midiMap = module->trackingProcessor.getMap(cellId);
-	std::string midiLabel;
-	if (midiMap.type == MidiTrackingType::CC) {
-		midiLabel = string::f("CC %d", midiMap.param);
-	}
-	else if (midiMap.type == MidiTrackingType::NOTE) {
-		midiLabel = string::f("Note %d", midiMap.param);
-	}
+	std::string midiLabel = midiMapLabel(midiMap);
 
 	ui::Menu* menu = createMenu();
 	menu->addChild(createMenuLabel(label.empty() ? string::f("Cell %d (unassigned)", cellId + 1) : label));
