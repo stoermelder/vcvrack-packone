@@ -54,6 +54,10 @@ static const int LED_STATE_CONNECTED_BY_SET[COLOR_SET_COUNT] = {
 
 static const int TOTAL_MAPS = MATRIX_COUNT + SCENE_COUNT;  // 64 cells + 8 scenes
 
+// One scene's connection bitmask, one entry per cell. std::array (not a raw uint64_t[64])
+// keeps the element assignable/copyable so it can live in a std::vector.
+using SceneConns = std::array<uint64_t, MATRIX_COUNT>;
+
 
 struct PortAssignment {
 	int64_t moduleId = -1;
@@ -151,7 +155,7 @@ struct FeedbackSender {
 
 	// -1 forces a send on the first light-divider tick after load.
 	int cellLedState[MATRIX_COUNT];
-	int sceneLedState[SCENE_COUNT];
+	std::vector<int> sceneLedState;
 
 	// Any thread — resolves a FROM_SLOT spec's note/CC number via the owning module's
 	// MidiTrackingProcessor. Returns false when the slot is unmapped. Set once by the module.
@@ -163,6 +167,7 @@ struct FeedbackSender {
 	dsp::RingBuffer<midi::Message, 16> pendingOffs;
 
 	FeedbackSender() {
+		sceneLedState.resize(SCENE_COUNT);
 		invalidateLedStates();
 		midiOutput.onDeviceChanged = [this]() { invalidateLedStates(); };
 	}
@@ -222,7 +227,7 @@ struct FeedbackSender {
 	// all cached LED states to -1, causing every cell and scene button to be re-sent.
 	void invalidateLedStates() {
 		std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
-		std::fill(sceneLedState, sceneLedState + SCENE_COUNT, -1);
+		std::fill(sceneLedState.begin(), sceneLedState.end(), -1);
 	}
 
 	// Resolves the note/CC number and the slot's own type for a spec. Returns false when
@@ -491,7 +496,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// Per-scene connection bitmasks. sceneConnections[scene][cellA] has bit cellB set
 	// when cellA and cellB are connected in that scene.
 	/** [Stored to JSON] */
-	uint64_t sceneConnections[SCENE_COUNT][MATRIX_COUNT] = {};
+	std::vector<SceneConns> sceneConnections;
 
 	dsp::BooleanTrigger buttonTriggers[MATRIX_COUNT];
 	dsp::BooleanTrigger sceneTriggers[SCENE_COUNT];
@@ -578,7 +583,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	int overlayMessageId = -1;
 	OverlayMessageProvider::Message overlayMessage;
 
-	uint64_t sceneClipboard[MATRIX_COUNT] = {};
+	SceneConns sceneClipboard{};
 	bool sceneClipboardValid = false;
 
 	// -1 = no scene link master. Otherwise the engine module ID of another SpliceKit
@@ -591,6 +596,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		memset(cellColorSet, -1, sizeof(cellColorSet));
+		sceneConnections.resize(SCENE_COUNT);
 		// Momentary button representations, not meaningful knob/switch values — excluded from
 		// Rack's default param randomization. onRandomize() below generates a random cable
 		// topology instead; randomizing these directly would just spuriously trigger button
@@ -713,7 +719,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		std::shuffle(outputs.begin(), outputs.end(), rng);
 		std::shuffle(inputs.begin(), inputs.end(), rng);
 
-		uint64_t newConns[MATRIX_COUNT] = {};
+		SceneConns newConns{};
 		size_t pairs = std::min(outputs.size(), inputs.size());
 		for (size_t i = 0; i < pairs; i++) {
 			int a = outputs[i], b = inputs[i];
@@ -1293,7 +1299,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
 		if (midiOutputJ) feedback.midiOutput.fromJson(midiOutputJ);
 
-		memset(sceneConnections, 0, sizeof(sceneConnections));
+		for (auto& s : sceneConnections) s.fill(0);
 		json_t* scenesJ = json_object_get(rootJ, "scenes");
 		if (scenesJ) {
 			const char* key;
@@ -1370,7 +1376,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// present in the patch for the assigned ports. Used before switching scenes so that
 	// any manual cable changes the user made are not lost.
 	void captureScene(int scene) {
-		memset(sceneConnections[scene], 0, sizeof(sceneConnections[scene]));
+		sceneConnections[scene].fill(0);
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			const PortAssignment& a = portAssignments[i];
 			if (!a.isValid() || a.type != engine::Port::OUTPUT) continue;
@@ -1388,7 +1394,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// GUI thread — reconciles the patch so it matches newConns, starting from oldConns.
 	// For each pair (i,j): if a connection was present in old but not new the cable is removed;
 	// if it is present in new but not old a cable is added. Pairs that haven't changed are skipped.
-	void applyConnectionDiff(const uint64_t* oldConns, const uint64_t* newConns) {
+	void applyConnectionDiff(const SceneConns& oldConns, const SceneConns& newConns) {
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			for (int j = i + 1; j < MATRIX_COUNT; j++) {
 				bool was = (oldConns[i] >> j) & 1;
@@ -1415,12 +1421,12 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// If the target scene is the currently active one, the patch cables are updated live
 	// (capture current state first, then diff against newConns). Always persists newConns
 	// into sceneConnections[scene].
-	void reconcileScene(int scene, const uint64_t* newConns) {
+	void reconcileScene(int scene, const SceneConns& newConns) {
 		if (scene == currentScene) {
 			captureScene(scene);
 			applyConnectionDiff(sceneConnections[scene], newConns);
 		}
-		memcpy(sceneConnections[scene], newConns, MATRIX_COUNT * sizeof(uint64_t));
+		sceneConnections[scene] = newConns;
 	}
 
 	// GUI thread — switches to newScene: captures the outgoing scene's current cable state,
@@ -1688,10 +1694,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// state. Touches cables and widget state, so engine-thread callers must route through
 	// taskProcessorUi rather than calling this directly.
 	void resetModuleState() {
-		static const uint64_t empty[MATRIX_COUNT] = {};
+		static const SceneConns empty{};
 		captureScene(currentScene);
 		applyConnectionDiff(sceneConnections[currentScene], empty);
-		memset(sceneConnections, 0, sizeof(sceneConnections));
+		for (auto& s : sceneConnections) s.fill(0);
 		for (int i = 0; i < MATRIX_COUNT; i++) portAssignments[i].clear();
 		for (int i = 0; i < TOTAL_MAPS; i++) trackingProcessor.clearMap(i);
 		currentScene   = 0;
@@ -2378,12 +2384,12 @@ void SpliceKitSceneButton::createSceneMenu() {
 	menu->addChild(new MenuSeparator);
 
 	menu->addChild(createMenuItem("Clear", "", [=]() {
-		uint64_t empty[MATRIX_COUNT] = {};
+		SceneConns empty{};
 		module->reconcileScene(sceneId, empty);
 	}));
 	menu->addChild(createMenuItem("Copy", "", [=]() {
 		if (sceneId == module->currentScene) module->captureScene(sceneId);
-		memcpy(module->sceneClipboard, module->sceneConnections[sceneId], MATRIX_COUNT * sizeof(uint64_t));
+		module->sceneClipboard = module->sceneConnections[sceneId];
 		module->sceneClipboardValid = true;
 	}));
 	menu->addChild(createMenuItem("Paste", "", [=]() {

@@ -21,6 +21,9 @@ TEST_CASE("Construction and initialization", "[SpliceKit]") {
 	REQUIRE(m->pendingCellId == -1);
 	REQUIRE(m->buttonMode == SpliceKitModule::BUTTON_TOGGLE);
 	REQUIRE(m->overlayEnabled == true);
+	REQUIRE(m->sceneConnections.size() == (size_t)SCENE_COUNT);
+	REQUIRE(m->sceneConnections.capacity() >= (size_t)SCENE_COUNT);
+	REQUIRE(m->feedback.sceneLedState.size() == (size_t)SCENE_COUNT);
 
 	Test::destroyWidget(mw);
 	Test::destroyModule(m);
@@ -873,7 +876,7 @@ TEST_CASE("copyScene - unrelated scenes are not affected", "[SpliceKit]") {
 
 TEST_CASE("copyScene - can copy to current scene (bitmask transfer, no cables in test)", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	// src=1 is inactive, dst=4 is current. reconcileScene always memcpy's newConns.
+	// src=1 is inactive, dst=4 is current. reconcileScene always assigns newConns.
 	m->currentScene = 4;
 	m->setConnection(1, 0, 3, true);
 	m->copyScene(1, 4);
@@ -2047,7 +2050,7 @@ TEST_CASE("reconcileScene - non-current scene copies newConns without touching c
 	m->setConnection(0, 0, 1, true);  // current scene has a connection
 	m->setConnection(2, 5, 7, true);  // scene 2 has its own connection (will be overwritten)
 
-	uint64_t newConns[MATRIX_COUNT] = {};
+	SceneConns newConns{};
 	newConns[2] = (1ULL << 3) | (1ULL << 9);  // 2↔3 and 2↔9
 	m->reconcileScene(2, newConns);
 
@@ -2067,7 +2070,7 @@ TEST_CASE("reconcileScene - non-current scene with all-zero newConns clears that
 	m->setConnection(3, 1, 2, true);
 	REQUIRE(m->isConnected(3, 1, 2) == true);
 
-	uint64_t empty[MATRIX_COUNT] = {};
+	SceneConns empty{};
 	m->reconcileScene(3, empty);
 	REQUIRE(m->isConnected(3, 1, 2) == false);
 	Test::destroyModule(m);
