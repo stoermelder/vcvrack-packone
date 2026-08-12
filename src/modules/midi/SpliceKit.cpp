@@ -4,7 +4,7 @@
 #include "../../ui/InfoWindow.hpp"
 #include "../../ui/ModuleSelectProcessor.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
-#include "../../utils/TaskProcessor.hpp"
+#include "../../utils/GuiTaskProcessor.hpp"
 #include "../../utils/vcv_cables.hpp"
 #include "MidiTrackingProcessor.hpp"
 #include "SpliceKit_controllers.hpp"
@@ -253,7 +253,11 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 
 	dsp::BooleanTrigger buttonTriggers[MATRIX_COUNT];
 	dsp::BooleanTrigger sceneTriggers[SCENE_COUNT];
-	TaskProcessor<16> taskProcessorUi;
+	// Defers GUI-thread work (cables, widget state) requested from the engine thread.
+	// SINGLE PRODUCER: only the engine thread may enqueue() here — the backing queue is an
+	// SPSC ring buffer, so a concurrent GUI-thread push would corrupt it. Code already on the
+	// GUI thread must call the target function directly instead of enqueueing.
+	GuiTaskProcessor<16> taskProcessorUi;
 	ClockDividerEx processDivider;
 	// Written by GUI thread (step), read by DSP thread (process) — accepted race for LEDs
 	bool portHasCable[MATRIX_COUNT] = {};
@@ -277,7 +281,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	int pendingMidiSceneId = -1;
 
 	// Resets the local pending-cell selection only. Safe to call from either thread —
-	// unlike clearPending()/clearPendingCrossGui(), it never touches crossPending.
+	// unlike clearPendingGui()/clearPending()/clearPendingCrossGui(), it never touches
+	// crossPending. Callers that also need the shared cross-instance entry cleared want
+	// clearPendingGui() (GUI thread) or clearPending() (engine thread) instead.
 	void clearPendingLocal() {
 		pendingCellId = -1;
 		pendingCellIsPhysical = false;
@@ -291,11 +297,22 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		if (cp.initiator == this) cp.clear();
 	}
 
-	// Resets the pending-cell selection (called on cancel, completion, mode switch, and reset).
-	// Callable from the engine thread: the local reset happens immediately, while the
-	// cross-instance cleanup (if this module was the initiator) is deferred to the GUI
-	// thread via taskProcessorUi. GUI-thread callers that need the cross-instance cleanup to
-	// happen immediately should call clearPendingLocal() + clearPendingCrossGui() instead.
+	// GUI thread only — the full pending-selection reset: local state plus the shared
+	// cross-instance entry. Both halves are needed and neither implies the other —
+	// clearPendingLocal() only touches our own pendingCellId, while crossPending is a
+	// static map keyed by APP that other instances consult in triggerCell(); leaving our
+	// entry behind lets another instance complete a gesture against a cell we just cleared.
+	void clearPendingGui() {
+		clearPendingLocal();
+		clearPendingCrossGui();
+	}
+
+	// Engine thread only — same reset as clearPendingGui(), but the cross-instance half is
+	// deferred to the GUI thread via taskProcessorUi, since crossPending must not be
+	// touched from the engine thread. GUI-thread callers must NOT use this: enqueueing from
+	// the GUI thread would make taskProcessorUi multi-producer, which its SPSC queue does
+	// not support (see GuiTaskProcessor.hpp). Call clearPendingGui() instead, which also
+	// performs the cleanup immediately rather than a frame later.
 	void clearPending() {
 		clearPendingLocal();
 		taskProcessorUi.enqueue([this]() { clearPendingCrossGui(); });
@@ -381,24 +398,27 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		if (cp.initiator == this) cp.clear();
 	}
 
-	// Engine thread — called by Rack when the user resets the module.
+	// GUI thread — called by Rack when the user resets the module. Reaches us synchronously
+	// from ModuleWidget::resetAction() (menu item or keyboard shortcut) via
+	// Engine::resetModule(), so the deferred work can run directly.
 	void onReset() override {
 		disableLearn();
 		disablePortLearn();
-		clearPending();
+		clearPendingGui();
 		for (auto& l : cellLabels) l.clear();
 		memset(cellColorSet, -1, sizeof(cellColorSet));
-		requestReset();
+		resetModuleState();
 	}
 
-	// Engine thread — called by Rack when the user randomizes the module. Button params are
+	// GUI thread — called by Rack when the user randomizes the module. Reaches us synchronously
+	// from ModuleWidget::randomizeAction() via Engine::randomizeModule(), so the ModuleWidget/
+	// PortWidget reads in randomizePortAssignments() are safe to do directly. Button params are
 	// excluded from default randomization (see the constructor); this instead reassigns every
-	// matrix cell to a random port somewhere in the patch. Deferred to the GUI thread since it
-	// reads ModuleWidget/PortWidget state. (Generating a random cable topology for the current
-	// scene, keeping the existing port assignments, is available separately via "Randomize" in
-	// the scene button's context menu — see randomizeCurrentScene().)
+	// matrix cell to a random port somewhere in the patch. (Generating a random cable topology
+	// for the current scene, keeping the existing port assignments, is available separately via
+	// "Randomize" in the scene button's context menu — see randomizeCurrentScene().)
 	void onRandomize() override {
-		taskProcessorUi.enqueue([this]() { randomizePortAssignments(); });
+		randomizePortAssignments();
 	}
 
 	// GUI thread — collects every port of every module currently in the rack (SpliceKit itself
@@ -476,6 +496,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		trackingProcessor.process(args.frame);
 
 		if (processDivider.process()) {
+			taskProcessorUi.process();
+
 			if (moduleChangedFlag) {
 				moduleChangedFlag = false;
 				if (sceneLinkMasterId >= 0) {
@@ -1507,22 +1529,21 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		invalidateLedStates();
 	}
 
-	// Engine thread — enqueues a full module reset on the GUI thread via taskProcessorUi.
-	// Removes all current-scene cables, clears all stored scenes and port assignments,
-	// resets scene and preset selection, and clears LED state.
-	void requestReset() {
-		taskProcessorUi.enqueue([this]() {
-			static const uint64_t empty[MATRIX_COUNT] = {};
-			captureScene(currentScene);
-			applyConnectionDiff(sceneConnections[currentScene], empty);
-			memset(sceneConnections, 0, sizeof(sceneConnections));
-			for (int i = 0; i < MATRIX_COUNT; i++) portAssignments[i].clear();
-			for (int i = 0; i < TOTAL_MAPS; i++) trackingProcessor.clearMap(i);
-			currentScene   = 0;
-			setActivePresetJson("");
-			invalidateLedStates();
-			std::fill(portHasCable, portHasCable  + MATRIX_COUNT, false);
-		});
+	// GUI thread — performs a full module reset. Removes all current-scene cables, clears all
+	// stored scenes and port assignments, resets scene and preset selection, and clears LED
+	// state. Touches cables and widget state, so engine-thread callers must route through
+	// taskProcessorUi rather than calling this directly.
+	void resetModuleState() {
+		static const uint64_t empty[MATRIX_COUNT] = {};
+		captureScene(currentScene);
+		applyConnectionDiff(sceneConnections[currentScene], empty);
+		memset(sceneConnections, 0, sizeof(sceneConnections));
+		for (int i = 0; i < MATRIX_COUNT; i++) portAssignments[i].clear();
+		for (int i = 0; i < TOTAL_MAPS; i++) trackingProcessor.clearMap(i);
+		currentScene   = 0;
+		setActivePresetJson("");
+		invalidateLedStates();
+		std::fill(portHasCable, portHasCable  + MATRIX_COUNT, false);
 	}
 };
 
@@ -1850,10 +1871,11 @@ struct SpliceKitCellButton : app::SvgSwitch {
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			// Either gesture rewrites the cells it touches, so a pending selection made against
 			// their previous state is stale afterwards and is dropped for both paths.
-			module->clearPendingLocal();
-			module->clearPendingCrossGui();
-			if (src->shiftDrag) module->taskProcessorUi.enqueue([=]() { module->moveCell(a, b); });
-			else module->taskProcessorUi.enqueue([=]() { module->toggleConnection(a, b); });
+			module->clearPendingGui();
+			// Already on the GUI thread — run directly rather than queueing. taskProcessorUi's
+			// queue is single-producer (engine thread only); see GuiTaskProcessor.hpp.
+			if (src->shiftDrag) module->moveCell(a, b);
+			else module->toggleConnection(a, b);
 		}
 	}
 
@@ -1974,7 +1996,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		module->portSelectProcessor.step();
 
 		// Execute actions queued from the engine thread
-		module->taskProcessorUi.process();
+		module->taskProcessorUi.step();
 
 		// Update cable presence for each assigned cell (read by process() for light colors).
 		// Build the set of candidate cable ends once so each lookup is O(log n) instead of an
@@ -2167,8 +2189,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			[=]() {
 				module->crossInstanceEnabled = !module->crossInstanceEnabled;
 				if (!module->crossInstanceEnabled) {
-					module->clearPendingLocal();
-					module->clearPendingCrossGui();
+					module->clearPendingGui();
 				}
 			}
 		));
@@ -2197,16 +2218,14 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 				[=]() { return module->buttonMode == SpliceKitModule::BUTTON_TOGGLE; },
 				[=]() {
 					module->buttonMode = SpliceKitModule::BUTTON_TOGGLE;
-					module->clearPendingLocal();
-					module->clearPendingCrossGui();
+					module->clearPendingGui();
 				}
 			));
 			menu->addChild(createCheckMenuItem("Momentary", "",
 				[=]() { return module->buttonMode == SpliceKitModule::BUTTON_MOMENTARY; },
 				[=]() {
 					module->buttonMode = SpliceKitModule::BUTTON_MOMENTARY;
-					module->clearPendingLocal();
-					module->clearPendingCrossGui();
+					module->clearPendingGui();
 				}
 			));
 		}));
