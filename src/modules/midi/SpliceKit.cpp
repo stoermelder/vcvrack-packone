@@ -500,6 +500,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 
 	dsp::BooleanTrigger buttonTriggers[MATRIX_COUNT];
 	dsp::BooleanTrigger sceneTriggers[SCENE_COUNT];
+
 	// Defers GUI-thread work (cables, widget state) requested from the engine thread.
 	// SINGLE PRODUCER: only the engine thread may enqueue() here — the backing queue is an
 	// SPSC ring buffer, so a concurrent GUI-thread push would corrupt it. Code already on the
@@ -530,44 +531,6 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// the pair is interpreted as a copy from pendingMidiSceneId → new sceneId.
 	int pendingMidiSceneId = -1;
 
-	// Resets the local pending-cell selection only. Safe to call from either thread —
-	// unlike clearPendingGui()/clearPending()/clearPendingCrossGui(), it never touches
-	// crossPending. Callers that also need the shared cross-instance entry cleared want
-	// clearPendingGui() (GUI thread) or clearPending() (engine thread) instead.
-	void clearPendingLocal() {
-		pendingCellId = -1;
-		pendingCellIsPhysical = false;
-	}
-
-	// GUI thread only — clears the global cross-instance pending state if this module
-	// is the current initiator. crossPending is a static map shared across all module
-	// instances; mutating it from the engine thread would race with GUI-thread access.
-	void clearPendingCrossGui() {
-		auto& cp = crossPending[APP];
-		if (cp.initiator == this) cp.clear();
-	}
-
-	// GUI thread only — the full pending-selection reset: local state plus the shared
-	// cross-instance entry. Both halves are needed and neither implies the other —
-	// clearPendingLocal() only touches our own pendingCellId, while crossPending is a
-	// static map keyed by APP that other instances consult in triggerCell(); leaving our
-	// entry behind lets another instance complete a gesture against a cell we just cleared.
-	void clearPendingGui() {
-		clearPendingLocal();
-		clearPendingCrossGui();
-	}
-
-	// Engine thread only — same reset as clearPendingGui(), but the cross-instance half is
-	// deferred to the GUI thread via taskProcessorUi, since crossPending must not be
-	// touched from the engine thread. GUI-thread callers must NOT use this: enqueueing from
-	// the GUI thread would make taskProcessorUi multi-producer, which its SPSC queue does
-	// not support (see GuiTaskProcessor.hpp). Call clearPendingGui() instead, which also
-	// performs the cleanup immediately rather than a frame later.
-	void clearPending() {
-		clearPendingLocal();
-		taskProcessorUi.enqueue([this]() { clearPendingCrossGui(); });
-	}
-
 	int portLearningId = -1;
 	StoermelderPackOne::PortSelectProcessor portSelectProcessor;
 
@@ -583,6 +546,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	bool overlayEnabled = true;
 	/** [Stored to JSON] */
 	bool crossInstanceEnabled = true;
+
 	int overlayMessageId = -1;
 	OverlayMessageProvider::Message overlayMessage;
 
@@ -594,6 +558,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// consumption in process()).
 	/** [Stored to JSON] */
 	int64_t sceneLinkMasterId = -1;
+
 
 	SpliceKitModule() : ModuleChangeListener{false} {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -672,6 +637,46 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	void onRandomize() override {
 		randomizePortAssignments();
 	}
+
+
+	// Resets the local pending-cell selection only. Safe to call from either thread —
+	// unlike clearPendingGui()/clearPending()/clearPendingCrossGui(), it never touches
+	// crossPending. Callers that also need the shared cross-instance entry cleared want
+	// clearPendingGui() (GUI thread) or clearPending() (engine thread) instead.
+	void clearPendingLocal() {
+		pendingCellId = -1;
+		pendingCellIsPhysical = false;
+	}
+
+	// GUI thread only — clears the global cross-instance pending state if this module
+	// is the current initiator. crossPending is a static map shared across all module
+	// instances; mutating it from the engine thread would race with GUI-thread access.
+	void clearPendingCrossGui() {
+		auto& cp = crossPending[APP];
+		if (cp.initiator == this) cp.clear();
+	}
+
+	// GUI thread only — the full pending-selection reset: local state plus the shared
+	// cross-instance entry. Both halves are needed and neither implies the other —
+	// clearPendingLocal() only touches our own pendingCellId, while crossPending is a
+	// static map keyed by APP that other instances consult in triggerCell(); leaving our
+	// entry behind lets another instance complete a gesture against a cell we just cleared.
+	void clearPendingGui() {
+		clearPendingLocal();
+		clearPendingCrossGui();
+	}
+
+	// Engine thread only — same reset as clearPendingGui(), but the cross-instance half is
+	// deferred to the GUI thread via taskProcessorUi, since crossPending must not be
+	// touched from the engine thread. GUI-thread callers must NOT use this: enqueueing from
+	// the GUI thread would make taskProcessorUi multi-producer, which its SPSC queue does
+	// not support (see GuiTaskProcessor.hpp). Call clearPendingGui() instead, which also
+	// performs the cleanup immediately rather than a frame later.
+	void clearPending() {
+		clearPendingLocal();
+		taskProcessorUi.enqueue([this]() { clearPendingCrossGui(); });
+	}
+
 
 	// GUI thread — collects every port of every module currently in the rack (SpliceKit itself
 	// has none) as candidates and hands them to randomizePortAssignmentsFrom().
@@ -802,24 +807,16 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// Engine thread — advances the two LED blink phases by one lightDivider tick.
-	void advanceBlinkPhases(float sampleTime) {
+	// Engine thread — resolves and applies every cell/scene LED's color and blink state.
+	// Runs on lightDivider rather than processDivider so refresh rate (and, via
+	// feedback.setState(), MIDI feedback resend cadence) doesn't scale with the
+	// button/trigger/scene-link logic rate.
+	void processLights(float sampleTime) {
+		// Advances the two LED blink phases by one lightDivider tick.
 		blinkPhase += sampleTime * 4.f * lightDivider.division;
 		if (blinkPhase >= 1.f) blinkPhase -= 1.f;
 		slowBlinkPhase += sampleTime * 2.f * lightDivider.division;
 		if (slowBlinkPhase >= 1.f) slowBlinkPhase -= 1.f;
-	}
-
-	// Engine thread — resolves and applies every cell/scene LED's color, blink state and
-	// MIDI feedback. Runs on lightDivider rather than processDivider so refresh rate (and
-	// MIDI feedback resend cadence, via feedback.setState()) doesn't scale with the
-	// button/trigger/scene-link logic rate.
-	void processLights(float sampleTime) {
-		advanceBlinkPhases(sampleTime);
-
-		// Before any new on-message below: flush note-offs the GUI thread resolved against
-		// mappings it has since rewritten (moveCell/assignPort/clearPort).
-		feedback.drainPendingOffs();
 
 		bool blinkOn = blinkPhase < 0.5f;
 		bool slowBlinkOn = slowBlinkPhase < 0.5f;
@@ -848,6 +845,13 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			processSceneButtons();
 		}
 		if (lightDivider.process()) {
+			// Before any new on-message in processLights(): flush note-offs the GUI thread
+			// resolved against mappings it has since rewritten (moveCell/assignPort/clearPort).
+			// Must run immediately before processLights(), on the same tick — moveCell etc.
+			// also call invalidateLedStates(), so the light loop below will re-resolve and
+			// re-send state for the same cell; the queued message is the only one still
+			// addressing the OLD mapping.
+			feedback.drainPendingOffs();
 			processLights(args.sampleTime);
 		}
 	}
