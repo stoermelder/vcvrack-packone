@@ -1226,6 +1226,273 @@ TEST_CASE("setState - first call after construction sends only the on-message (c
 
 
 // ---------------------------------------------------------------------------
+// FeedbackSender::queueFeedbackOff / drainPendingOffs  (GUI -> engine deferral)
+// ---------------------------------------------------------------------------
+
+// A preset whose note number comes from the cell's own MIDI mapping. This is the mode
+// that makes the deferral order observable: the note a note-off addresses depends on
+// what trackingProcessor.getMap(cellId) says AT RESOLUTION TIME, so resolving before
+// vs. after a remap produces different bytes on the wire.
+static void setPortAssignment(SpliceKitModule* m, int cellId, int64_t moduleId, int portId,
+		engine::Port::Type type) {
+	m->portAssignments[cellId].moduleId = moduleId;
+	m->portAssignments[cellId].portId   = portId;
+	m->portAssignments[cellId].type     = type;
+}
+
+static MidiOutPreset makeFromSlotPreset() {
+	MidiOutPreset preset;
+	for (int s = 0; s < LED_STATE_COUNT; s++) {
+		preset.specs[s].type     = MIDI_OUT_NOTE_ON;
+		preset.specs[s].noteMode = MIDI_OUT_FROM_SLOT;
+		preset.specs[s].value    = 127;
+	}
+	return preset;
+}
+
+TEST_CASE("queueFeedbackOff - does not send on the calling thread", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->feedback.setActivePreset(makeNoteOnPreset());
+
+	m->feedback.queueFeedbackOff(0, LED_STATE_COLOR0);
+
+	// The whole point of the queue: nothing reaches midi::Output from the GUI thread.
+	REQUIRE(m->feedback.midiOutput.sentCount == 0);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("drainPendingOffs - sends a queued off and empties the queue", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->feedback.setActivePreset(makeNoteOnPreset(36, 127));
+
+	m->feedback.queueFeedbackOff(0, LED_STATE_COLOR0);
+	m->feedback.drainPendingOffs();
+
+	REQUIRE(m->feedback.midiOutput.sentCount == 1);
+	REQUIRE(m->feedback.midiOutput.lastSentMsg.bytes[0] == 0x80);  // note-off
+	REQUIRE(m->feedback.midiOutput.lastSentMsg.bytes[1] == 36);
+	REQUIRE(m->feedback.midiOutput.lastSentMsg.bytes[2] == 0);
+
+	// A second drain has nothing left to send.
+	m->feedback.drainPendingOffs();
+	REQUIRE(m->feedback.midiOutput.sentCount == 1);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("queueFeedbackOff - resolves the note at QUEUE time, not at drain time", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->feedback.setActivePreset(makeFromSlotPreset());
+
+	// Cell 0 is mapped to note 60 when the off is queued...
+	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 0, 60);
+	m->feedback.queueFeedbackOff(0, LED_STATE_COLOR0);
+
+	// ...and remapped to note 72 before the engine drains it. This mirrors what
+	// moveCell/assignPort/clearPort do: queue the off, then rewrite the mapping.
+	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 0, 72);
+	m->feedback.drainPendingOffs();
+
+	REQUIRE(m->feedback.midiOutput.sentCount == 1);
+	REQUIRE(m->feedback.midiOutput.lastSentMsg.bytes[0] == 0x80);
+	// 60, not 72 — the off must clear the LED the OLD mapping addressed. Deferring
+	// resolution to drain time (queueing the state id instead of the message) would
+	// send 72 here and leave the controller's note-60 LED stuck on.
+	REQUIRE(m->feedback.midiOutput.lastSentMsg.bytes[1] == 60);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("queueFeedbackOff - applies the same spec filters as sendFeedbackOff", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	SECTION("no-op for an invalid state id") {
+		m->feedback.setActivePreset(makeNoteOnPreset());
+		m->feedback.queueFeedbackOff(0, -1);
+		m->feedback.drainPendingOffs();
+		REQUIRE(m->feedback.midiOutput.sentCount == 0);
+	}
+	SECTION("no-op when no preset is active") {
+		m->feedback.setActivePresetJson("");
+		m->feedback.queueFeedbackOff(0, LED_STATE_COLOR0);
+		m->feedback.drainPendingOffs();
+		REQUIRE(m->feedback.midiOutput.sentCount == 0);
+	}
+	SECTION("no-op for a CC-type spec") {
+		MidiOutPreset preset;
+		preset.specs[LED_STATE_COLOR0].type     = MIDI_OUT_CC;
+		preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FIXED;
+		preset.specs[LED_STATE_COLOR0].note     = 20;
+		m->feedback.setActivePreset(preset);
+		m->feedback.queueFeedbackOff(0, LED_STATE_COLOR0);
+		m->feedback.drainPendingOffs();
+		REQUIRE(m->feedback.midiOutput.sentCount == 0);
+	}
+	SECTION("no-op for an unmapped FROM_SLOT spec") {
+		m->feedback.setActivePreset(makeFromSlotPreset());
+		// Cell 0 has no mapping, so there is no note number to address.
+		m->feedback.queueFeedbackOff(0, LED_STATE_COLOR0);
+		m->feedback.drainPendingOffs();
+		REQUIRE(m->feedback.midiOutput.sentCount == 0);
+	}
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("queueFeedbackOff - drops silently when the queue is full", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->feedback.setActivePreset(makeNoteOnPreset());
+
+	// The queue holds 16; push well past that. Overflow must not throw, corrupt the
+	// buffer, or block — the LED state is invalidated by every caller anyway, so the
+	// next engine tick re-sends the correct on-message regardless.
+	for (int i = 0; i < 100; i++) m->feedback.queueFeedbackOff(0, LED_STATE_COLOR0);
+	m->feedback.drainPendingOffs();
+
+	REQUIRE(m->feedback.midiOutput.sentCount == 16);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("drainPendingOffs - preserves queue order (FIFO)", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	MidiOutPreset preset;
+	for (int s = 0; s < LED_STATE_COUNT; s++) {
+		preset.specs[s].type     = MIDI_OUT_NOTE_ON;
+		preset.specs[s].noteMode = MIDI_OUT_FIXED;
+		preset.specs[s].note     = 20 + s;
+	}
+	m->feedback.setActivePreset(preset);
+
+	m->feedback.queueFeedbackOff(0, LED_STATE_COLOR0);
+	m->feedback.queueFeedbackOff(1, LED_STATE_COLOR1);
+	m->feedback.drainPendingOffs();
+
+	REQUIRE(m->feedback.midiOutput.sentCount == 2);
+	REQUIRE(m->feedback.midiOutput.prevSentMsg.bytes[1] == 20 + LED_STATE_COLOR0);
+	REQUIRE(m->feedback.midiOutput.lastSentMsg.bytes[1] == 20 + LED_STATE_COLOR1);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("process - drains pending offs before emitting new on-messages", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	MidiOutPreset preset;
+	for (int s = 0; s < LED_STATE_COUNT; s++) {
+		preset.specs[s].type     = MIDI_OUT_NOTE_ON;
+		preset.specs[s].noteMode = MIDI_OUT_FIXED;
+		preset.specs[s].note     = 20 + s;
+	}
+	m->feedback.setActivePreset(preset);
+	m->feedback.queueFeedbackOff(0, LED_STATE_COLOR2);
+
+	Test::SimpleEngine engine;
+	engine.registerModule(m);
+	for (int i = 0; i < 256; i++) engine.step();
+
+	// The queued off went out, and it did so before the light loop's on-messages: the
+	// very first message of the tick is the off for COLOR2.
+	REQUIRE(m->feedback.midiOutput.sentCount > 0);
+	REQUIRE(m->feedback.pendingOffs.empty());
+	Test::destroyModule(m);
+}
+
+
+// ---------------------------------------------------------------------------
+// Task 8 — GUI-thread mutators defer their note-off to the engine thread
+// ---------------------------------------------------------------------------
+
+TEST_CASE("moveCell - queues offs for both cells instead of sending them", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->feedback.setActivePreset(makeNoteOnPreset());
+	setPortAssignment(m, 0, 1, 0, engine::Port::OUTPUT);
+	m->feedback.cellLedState[0] = LED_STATE_COLOR0;
+	m->feedback.cellLedState[1] = LED_STATE_COLOR1;
+
+	m->moveCell(0, 1);
+
+	// moveCell runs on the GUI thread — it must not touch midi::Output itself.
+	REQUIRE(m->feedback.midiOutput.sentCount == 0);
+	m->feedback.drainPendingOffs();
+	REQUIRE(m->feedback.midiOutput.sentCount == 2);  // one per cell
+	Test::destroyModule(m);
+}
+
+TEST_CASE("moveCell - the queued off addresses the note the cell had BEFORE the move", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->feedback.setActivePreset(makeFromSlotPreset());
+	setPortAssignment(m, 0, 1, 0, engine::Port::OUTPUT);
+	// Only cell 0 has a lit LED and a mapping, so exactly one off is expected.
+	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 0, 60);
+	m->feedback.cellLedState[0] = LED_STATE_COLOR0;
+
+	m->moveCell(0, 1);
+	m->feedback.drainPendingOffs();
+
+	REQUIRE(m->feedback.midiOutput.sentCount == 1);
+	REQUIRE(m->feedback.midiOutput.lastSentMsg.bytes[0] == 0x80);
+	// Note 60 — cell 0's mapping. MIDI mappings stay on their physical button position
+	// across a move, so this also documents that the off targets the source button.
+	REQUIRE(m->feedback.midiOutput.lastSentMsg.bytes[1] == 60);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - rebinding a cell queues the off rather than sending it", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->feedback.setActivePreset(makeNoteOnPreset());
+	setPortAssignment(m, 3, 1, 0, engine::Port::OUTPUT);
+	m->feedback.cellLedState[3] = LED_STATE_COLOR0;
+
+	m->assignPort(3, 2, 1, engine::Port::INPUT);
+
+	REQUIRE(m->feedback.midiOutput.sentCount == 0);
+	m->feedback.drainPendingOffs();
+	REQUIRE(m->feedback.midiOutput.sentCount == 1);
+	REQUIRE(m->feedback.midiOutput.lastSentMsg.bytes[0] == 0x80);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - no off is queued for a cell that had no prior assignment", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->feedback.setActivePreset(makeNoteOnPreset());
+	m->feedback.cellLedState[3] = LED_STATE_COLOR0;
+
+	// Cell 3 is unassigned, so assignPort takes the no-cleanup path.
+	m->assignPort(3, 2, 1, engine::Port::INPUT);
+	m->feedback.drainPendingOffs();
+
+	REQUIRE(m->feedback.midiOutput.sentCount == 0);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("clearPort - queues the off rather than sending it", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->feedback.setActivePreset(makeNoteOnPreset());
+	setPortAssignment(m, 7, 1, 0, engine::Port::OUTPUT);
+	m->feedback.cellLedState[7] = LED_STATE_COLOR0;
+
+	m->clearPort(7);
+
+	REQUIRE(m->feedback.midiOutput.sentCount == 0);
+	m->feedback.drainPendingOffs();
+	REQUIRE(m->feedback.midiOutput.sentCount == 1);
+	REQUIRE(m->feedback.midiOutput.lastSentMsg.bytes[0] == 0x80);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("clearPort - the queued off addresses the note the cell had before clearing", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->feedback.setActivePreset(makeFromSlotPreset());
+	setPortAssignment(m, 7, 1, 0, engine::Port::OUTPUT);
+	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 7, 48);
+	m->feedback.cellLedState[7] = LED_STATE_COLOR0;
+
+	m->clearPort(7);
+	m->feedback.drainPendingOffs();
+
+	REQUIRE(m->feedback.midiOutput.sentCount == 1);
+	REQUIRE(m->feedback.midiOutput.lastSentMsg.bytes[1] == 48);
+	Test::destroyModule(m);
+}
+
+
+// ---------------------------------------------------------------------------
 // getActivePreset
 // ---------------------------------------------------------------------------
 

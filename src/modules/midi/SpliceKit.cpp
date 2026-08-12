@@ -124,11 +124,12 @@ struct SpliceKitOutput : midi::Output {
 };
 
 
-// Engine thread only — translates a cell/scene LED state id into a MIDI message per the
-// active preset. Its one external dependency is note/CC resolution for FROM_SLOT specs,
-// which needs the owning module's MidiTrackingProcessor; that is injected as a callback
-// (resolveFromSlot) rather than named directly, since MidiTrackingProcessor is a template
-// and this struct should not have to name an instantiation of it.
+// Translates a cell/scene LED state id into a MIDI message per the active preset. Note/CC
+// resolution for FROM_SLOT specs is injected as a callback (resolveFromSlot) rather than
+// named directly, since MidiTrackingProcessor is a template.
+//
+// All sends go out on the engine thread — midi::Output is unsynchronised and process()
+// sends every divider tick. GUI-thread callers use queueFeedbackOff(), not sendFeedbackOff().
 struct FeedbackSender {
 	SpliceKitOutput midiOutput;
 
@@ -141,9 +142,14 @@ struct FeedbackSender {
 	int cellLedState[MATRIX_COUNT];
 	int sceneLedState[SCENE_COUNT];
 
-	// Engine thread — resolves a FROM_SLOT spec's note/CC number via the owning module's
+	// Any thread — resolves a FROM_SLOT spec's note/CC number via the owning module's
 	// MidiTrackingProcessor. Returns false when the slot is unmapped. Set once by the module.
+	// Called from both threads; the getMap() read races with the GUI thread's setMap(), which
+	// is accepted as for learningId — worst case one wrong LED until the next invalidate.
 	std::function<bool(int cellId, MidiTrackingType& slotType, int& noteNum)> resolveFromSlot;
+
+	// GUI produces, engine consumes. See queueFeedbackOff()/drainPendingOffs().
+	dsp::RingBuffer<midi::Message, 16> pendingOffs;
 
 	FeedbackSender() {
 		invalidateLedStates();
@@ -223,26 +229,57 @@ struct FeedbackSender {
 		}
 	}
 
+	// Any thread — builds the note-off for a cell's previous LED state without sending it.
+	// Returns false when no off is needed: invalid state id, no preset, or a non-NOTE_ON spec.
+	// Split out so GUI callers can resolve the note against the mapping still in place and
+	// defer only the send; resolving later would address the note through the new mapping.
+	bool buildFeedbackOff(int cellId, int oldStateId, midi::Message& out) {
+		if (oldStateId < 0) return false;
+		const MidiOutPreset* preset = getActivePreset();
+		if (!preset) return false;
+		const MidiOutSpec& spec = preset->specs[oldStateId];
+		if (spec.type == MIDI_OUT_NONE) return false;
+		if (spec.type != MIDI_OUT_NOTE_ON && spec.type != MIDI_OUT_FROM_SLOT_TYPE) return false;
+		MidiTrackingType slotType = MidiTrackingType::NONE;
+		int noteNum;
+		if (!resolveNote(spec, cellId, noteNum, slotType)) return false;
+		if (spec.type == MIDI_OUT_FROM_SLOT_TYPE && slotType != MidiTrackingType::NOTE) return false;
+		out.bytes[0] = 0x80 | (uint8_t)(spec.channel & 0x0F);
+		out.bytes[1] = (uint8_t)(noteNum & 0x7F);
+		out.bytes[2] = 0x00;
+		return true;
+	}
+
 	// Engine thread — sends a MIDI note-off for the previous LED state before a transition,
 	// clearing the controller LED that was lit by a NOTE_ON-based spec. No-op for CC specs,
 	// off states, or when no preset is active.
 	void sendFeedbackOff(int cellId, int oldStateId) {
-		if (oldStateId < 0) return;
-		const MidiOutPreset* preset = getActivePreset();
-		if (!preset) return;
-		const MidiOutSpec& spec = preset->specs[oldStateId];
-		if (spec.type == MIDI_OUT_NONE) return;
-		if (spec.type != MIDI_OUT_NOTE_ON && spec.type != MIDI_OUT_FROM_SLOT_TYPE) return;
-		MidiTrackingType slotType = MidiTrackingType::NONE;
-		int noteNum;
-		if (!resolveNote(spec, cellId, noteNum, slotType)) return;
-		if (spec.type == MIDI_OUT_FROM_SLOT_TYPE && slotType != MidiTrackingType::NOTE) return;
 		midi::Message msg;
-		msg.bytes[0] = 0x80 | (uint8_t)(spec.channel & 0x0F);
-		msg.bytes[1] = (uint8_t)(noteNum & 0x7F);
-		msg.bytes[2] = 0x00;
+		if (!buildFeedbackOff(cellId, oldStateId, msg)) return;
 		msg.frame = APP->engine->getFrame() + 1;
 		midiOutput.sendMessage(msg);
+	}
+
+	// GUI thread — deferred counterpart to sendFeedbackOff(): resolves the note-off against
+	// the mapping in place now, and leaves the send to the engine thread's next tick.
+	// Drops when full; every caller invalidates the LED state, so the next tick re-sends the
+	// correct on-message anyway — only the off for the stale mapping is lost.
+	void queueFeedbackOff(int cellId, int oldStateId) {
+		midi::Message msg;
+		if (!buildFeedbackOff(cellId, oldStateId, msg)) return;
+		if (pendingOffs.full()) return;
+		pendingOffs.push(msg);
+	}
+
+	// Engine thread — sends every note-off queued by the GUI thread since the last tick.
+	// Runs before the light loop's setState() calls, so a queued off always precedes the
+	// on-message for the state that replaced it.
+	void drainPendingOffs() {
+		while (!pendingOffs.empty()) {
+			midi::Message msg = pendingOffs.shift();
+			msg.frame = APP->engine->getFrame() + 1;
+			midiOutput.sendMessage(msg);
+		}
 	}
 
 	// Engine thread — sends a single MIDI message to the output device to update the
@@ -754,6 +791,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			if (blinkPhase >= 1.f) blinkPhase -= 1.f;
 			slowBlinkPhase += args.sampleTime * 2.f * processDivider.division;
 			if (slowBlinkPhase >= 1.f) slowBlinkPhase -= 1.f;
+
+			// Before any new on-message below: flush note-offs the GUI thread resolved
+			// against mappings it has since rewritten (moveCell/assignPort/clearPort).
+			feedback.drainPendingOffs();
 
 			bool blinkOn = blinkPhase < 0.5f;
 			bool slowBlinkOn = slowBlinkPhase < 0.5f;
@@ -1535,11 +1576,11 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	void moveCell(int fromId, int toId) {
 		if (fromId == toId) return;
 
-		// Turn off both LEDs now, while each cell still has its own MIDI mapping.
-		// sendFeedbackOff uses the mapping to address the right note/CC; clearing
-		// the mappings first would cause the off-message to be lost.
-		feedback.sendFeedbackOff(fromId, feedback.cellLedState[fromId]);
-		feedback.sendFeedbackOff(toId, feedback.cellLedState[toId]);
+		// Resolve both note-offs now, while each cell still has its own MIDI mapping;
+		// rewriting it first would make the off address the wrong note. The send itself
+		// is deferred to the engine thread (drainPendingOffs).
+		feedback.queueFeedbackOff(fromId, feedback.cellLedState[fromId]);
+		feedback.queueFeedbackOff(toId, feedback.cellLedState[toId]);
 
 		// Remove only toId's existing cables — fromId's cables stay, because toId
 		// will inherit fromId's port and those cables are already in the right place.
@@ -1603,8 +1644,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		if (cellId < 0 || cellId >= MATRIX_COUNT) return;
 
 		if (portAssignments[cellId].isValid()) {
-			// Turn the LED off while the old MIDI mapping and state are still addressable.
-			feedback.sendFeedbackOff(cellId, feedback.cellLedState[cellId]);
+			// Resolve the note-off while the old mapping and state are still addressable;
+			// the engine thread sends it on its next tick.
+			feedback.queueFeedbackOff(cellId, feedback.cellLedState[cellId]);
 			removeCellConnections(cellId);
 			for (int s = 0; s < SCENE_COUNT; s++) {
 				uint64_t mask = sceneConnections[s][cellId];
@@ -1630,7 +1672,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		if (cellId < 0 || cellId >= MATRIX_COUNT) return;
 		if (!portAssignments[cellId].isValid()) return;
 
-		feedback.sendFeedbackOff(cellId, feedback.cellLedState[cellId]);
+		// Resolve the note-off while the old mapping still addresses the right note.
+		feedback.queueFeedbackOff(cellId, feedback.cellLedState[cellId]);
 		removeCellConnections(cellId);
 		for (int s = 0; s < SCENE_COUNT; s++) {
 			uint64_t mask = sceneConnections[s][cellId];
