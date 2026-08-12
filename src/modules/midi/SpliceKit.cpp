@@ -4,6 +4,7 @@
 #include "../../ui/InfoWindow.hpp"
 #include "../../ui/ModuleSelectProcessor.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
+#include "../../utils/TaskProcessor.hpp"
 #include "../../utils/vcv_cables.hpp"
 #include "MidiTrackingProcessor.hpp"
 #include "SpliceKit_controllers.hpp"
@@ -242,7 +243,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 
 	dsp::BooleanTrigger buttonTriggers[MATRIX_COUNT];
 	dsp::BooleanTrigger sceneTriggers[SCENE_COUNT];
-	dsp::RingBuffer<std::function<void()>, 16> guiQueue;
+	TaskProcessor<16> taskProcessorUi;
 	ClockDividerEx processDivider;
 	// Written by GUI thread (step), read by DSP thread (process) — accepted race for LEDs
 	bool portHasCable[MATRIX_COUNT] = {};
@@ -283,13 +284,11 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// Resets the pending-cell selection (called on cancel, completion, mode switch, and reset).
 	// Callable from the engine thread: the local reset happens immediately, while the
 	// cross-instance cleanup (if this module was the initiator) is deferred to the GUI
-	// thread via guiQueue. GUI-thread callers that need the cross-instance cleanup to
+	// thread via taskProcessorUi. GUI-thread callers that need the cross-instance cleanup to
 	// happen immediately should call clearPendingLocal() + clearPendingCrossGui() instead.
 	void clearPending() {
 		clearPendingLocal();
-		if (!guiQueue.full()) {
-			guiQueue.push([this]() { clearPendingCrossGui(); });
-		}
+		taskProcessorUi.enqueue([this]() { clearPendingCrossGui(); });
 	}
 
 	int portLearningId = -1;
@@ -389,9 +388,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// scene, keeping the existing port assignments, is available separately via "Randomize" in
 	// the scene button's context menu — see randomizeCurrentScene().)
 	void onRandomize() override {
-		if (!guiQueue.full()) {
-			guiQueue.push([this]() { randomizePortAssignments(); });
-		}
+		taskProcessorUi.enqueue([this]() { randomizePortAssignments(); });
 	}
 
 	// GUI thread — collects every port of every module currently in the rack (SpliceKit itself
@@ -477,9 +474,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 						// Master was removed from the patch (or never existed) — stop following.
 						sceneLinkMasterId = -1;
 					}
-					else if (master->currentScene != currentScene && !guiQueue.full()) {
+					else if (master->currentScene != currentScene) {
 						int targetScene = master->currentScene;
-						guiQueue.push([this, targetScene]() { switchScene(targetScene); });
+						taskProcessorUi.enqueue([this, targetScene]() { switchScene(targetScene); });
 					}
 				}
 			}
@@ -660,7 +657,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	}
 
 	// Engine thread — MidiTrackingProcessorHandler callback, fired for every mapped
-	// MIDI message. Routes matrix cell triggers and scene changes into guiQueue.
+	// MIDI message. Routes matrix cell triggers and scene changes into taskProcessorUi.
 	void processMapUpdate(StoermelderPackOne::MidiTrackingType type, uint16_t mapId, uint16_t value) override {
 		if (mapId < (uint16_t)MATRIX_COUNT) {
 			if (value > 0) {
@@ -1303,68 +1300,64 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 
 	// Engine thread — handles a single cell activation (button press or MIDI trigger).
 	// First press sets pendingCellId and defers all cross-instance logic to the GUI thread
-	// via guiQueue, so that crossPending is only ever touched from one thread. Second press
-	// on a different cell (same instance) enqueues toggleConnection. Same cell cancels.
+	// via taskProcessorUi, so that crossPending is only ever touched from one thread. Second
+	// press on a different cell (same instance) enqueues toggleConnection. Same cell cancels.
 	void triggerCell(int id) {
 		if (!portAssignments[id].isValid()) return;
 
 		if (pendingCellId < 0) {
 			pendingCellId = id;
-			if (!guiQueue.full()) {
-				guiQueue.push([this, id]() {
-					// GUI thread — sole owner of crossPending. Re-check cp validity here
-					// because another instance's lambda may have already consumed it.
-					auto& cp = crossPending[APP];
-					if (crossInstanceEnabled && cp.isValid() && cp.initiator != this) {
-						// Responder path: create the cable directly (we are on the GUI thread).
-						SpliceKitModule* initiator = cp.initiator;
-						PortAssignment iPort = cp.port;
-						PortAssignment rPort = portAssignments[id];
-						cp.clear();
-						initiator->clearPendingLocal();
-						clearPendingLocal();  // reset our own tentative pendingCellId
-						const PortAssignment* outPd = nullptr;
-						const PortAssignment* inPd  = nullptr;
-						if (iPort.type == engine::Port::OUTPUT && rPort.type == engine::Port::INPUT) {
-							outPd = &iPort; inPd = &rPort;
+			taskProcessorUi.enqueue([this, id]() {
+				// GUI thread — sole owner of crossPending. Re-check cp validity here
+				// because another instance's lambda may have already consumed it.
+				auto& cp = crossPending[APP];
+				if (crossInstanceEnabled && cp.isValid() && cp.initiator != this) {
+					// Responder path: create the cable directly (we are on the GUI thread).
+					SpliceKitModule* initiator = cp.initiator;
+					PortAssignment iPort = cp.port;
+					PortAssignment rPort = portAssignments[id];
+					cp.clear();
+					initiator->clearPendingLocal();
+					clearPendingLocal();  // reset our own tentative pendingCellId
+					const PortAssignment* outPd = nullptr;
+					const PortAssignment* inPd  = nullptr;
+					if (iPort.type == engine::Port::OUTPUT && rPort.type == engine::Port::INPUT) {
+						outPd = &iPort; inPd = &rPort;
+					}
+					else if (iPort.type == engine::Port::INPUT && rPort.type == engine::Port::OUTPUT) {
+						outPd = &rPort; inPd = &iPort;
+					}
+					if (outPd) {
+						CableWidget* cw = vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
+						if (!cw) {
+							vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
+							setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
 						}
-						else if (iPort.type == engine::Port::INPUT && rPort.type == engine::Port::OUTPUT) {
-							outPd = &rPort; inPd = &iPort;
-						}
-						if (outPd) {
-							CableWidget* cw = vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
-							if (!cw) {
-								vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
-								setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
-							}
-							else {
-								vcv::removeCable(cw, false);
-								setOverlayMessage("Cable removed", portLabel(*outPd), portLabel(*inPd));
-							}
+						else {
+							vcv::removeCable(cw, false);
+							setOverlayMessage("Cable removed", portLabel(*outPd), portLabel(*inPd));
 						}
 					}
-					else {
-						// Initiator path (cp was already consumed, or no cross-pending).
-						if (crossInstanceEnabled) {
-							cp.initiator = this;
-							cp.cellId = id;
-							cp.port = portAssignments[id];
-						}
-						const std::string& lbl = cellLabels[id];
-						if (!lbl.empty()) setOverlayMessage(lbl, portLabel(portAssignments[id]));
-						else setOverlayMessage("Port selected", portLabel(portAssignments[id]));
+				}
+				else {
+					// Initiator path (cp was already consumed, or no cross-pending).
+					if (crossInstanceEnabled) {
+						cp.initiator = this;
+						cp.cellId = id;
+						cp.port = portAssignments[id];
 					}
-				});
-			}
+					const std::string& lbl = cellLabels[id];
+					if (!lbl.empty()) setOverlayMessage(lbl, portLabel(portAssignments[id]));
+					else setOverlayMessage("Port selected", portLabel(portAssignments[id]));
+				}
+			});
 		}
 		else if (pendingCellId == id) {
 			clearPending();
 		}
 		else {
 			int a = pendingCellId, b = id;
-			if (!guiQueue.full()) {
-				guiQueue.push([this, a, b]() { toggleConnection(a, b); });
-			}
+			taskProcessorUi.enqueue([this, a, b]() { toggleConnection(a, b); });
 			clearPending();
 		}
 	}
@@ -1379,11 +1372,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// Engine thread — enqueues a switchScene call on the GUI thread via guiQueue.
+	// Engine thread — enqueues a switchScene call on the GUI thread via taskProcessorUi.
 	void requestSceneChange(int i) {
-		if (!guiQueue.full()) {
-			guiQueue.push([this, i]() { switchScene(i); });
-		}
+		taskProcessorUi.enqueue([this, i]() { switchScene(i); });
 	}
 
 	// GUI thread — copies scene src's connection topology to scene dst.
@@ -1395,11 +1386,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		setOverlayMessage("Scene copied", string::f("%d \xe2\x86\x92 %d", src + 1, dst + 1));
 	}
 
-	// Engine thread — enqueues a copyScene call on the GUI thread via guiQueue.
+	// Engine thread — enqueues a copyScene call on the GUI thread via taskProcessorUi.
 	void requestCopyScene(int src, int dst) {
-		if (!guiQueue.full()) {
-			guiQueue.push([this, src, dst]() { copyScene(src, dst); });
-		}
+		taskProcessorUi.enqueue([this, src, dst]() { copyScene(src, dst); });
 	}
 
 	// GUI thread — moves the port assignment, label, color, and all scene
@@ -1498,24 +1487,22 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		invalidateLedStates();
 	}
 
-	// Engine thread — enqueues a full module reset on the GUI thread via guiQueue.
+	// Engine thread — enqueues a full module reset on the GUI thread via taskProcessorUi.
 	// Removes all current-scene cables, clears all stored scenes and port assignments,
 	// resets scene and preset selection, and clears LED state.
 	void requestReset() {
-		if (!guiQueue.full()) {
-			guiQueue.push([this]() {
-				static const uint64_t empty[MATRIX_COUNT] = {};
-				captureScene(currentScene);
-				applyConnectionDiff(sceneConnections[currentScene], empty);
-				memset(sceneConnections, 0, sizeof(sceneConnections));
-				for (int i = 0; i < MATRIX_COUNT; i++) portAssignments[i].clear();
-				for (int i = 0; i < TOTAL_MAPS; i++) trackingProcessor.clearMap(i);
-				currentScene   = 0;
-				setActivePresetJson("");
-				invalidateLedStates();
-				std::fill(portHasCable, portHasCable  + MATRIX_COUNT, false);
-			});
-		}
+		taskProcessorUi.enqueue([this]() {
+			static const uint64_t empty[MATRIX_COUNT] = {};
+			captureScene(currentScene);
+			applyConnectionDiff(sceneConnections[currentScene], empty);
+			memset(sceneConnections, 0, sizeof(sceneConnections));
+			for (int i = 0; i < MATRIX_COUNT; i++) portAssignments[i].clear();
+			for (int i = 0; i < TOTAL_MAPS; i++) trackingProcessor.clearMap(i);
+			currentScene   = 0;
+			setActivePresetJson("");
+			invalidateLedStates();
+			std::fill(portHasCable, portHasCable  + MATRIX_COUNT, false);
+		});
 	}
 };
 
@@ -1845,10 +1832,8 @@ struct SpliceKitCellButton : app::SvgSwitch {
 			// their previous state is stale afterwards and is dropped for both paths.
 			module->clearPendingLocal();
 			module->clearPendingCrossGui();
-			if (!module->guiQueue.full()) {
-				if (src->shiftDrag) module->guiQueue.push([=]() { module->moveCell(a, b); });
-				else module->guiQueue.push([=]() { module->toggleConnection(a, b); });
-			}
+			if (src->shiftDrag) module->taskProcessorUi.enqueue([=]() { module->moveCell(a, b); });
+			else module->taskProcessorUi.enqueue([=]() { module->toggleConnection(a, b); });
 		}
 	}
 
@@ -1969,9 +1954,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		module->portSelectProcessor.step();
 
 		// Execute actions queued from the engine thread
-		while (module->guiQueue.size() > 0) {
-			module->guiQueue.shift()();
-		}
+		module->taskProcessorUi.process();
 
 		// Update cable presence for each assigned cell (read by process() for light colors).
 		// Build the set of candidate cable ends once so each lookup is O(log n) instead of an

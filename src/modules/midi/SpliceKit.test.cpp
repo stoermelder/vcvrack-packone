@@ -515,8 +515,8 @@ TEST_CASE("process - physical scene button press works normally when not linked"
 	m->params[SpliceKitModule::PARAM_SCENE + 1].setValue(1.f);
 	for (int i = 0; i < 256; i++) engine.step();  // rising edge on the next divided tick
 
-	REQUIRE(m->guiQueue.size() == 1);  // switchScene(1) queued
-	m->guiQueue.shift()();
+	REQUIRE(m->taskProcessorUi.queue.size() == 1);  // switchScene(1) queued
+	m->taskProcessorUi.queue.shift()();
 	REQUIRE(m->currentScene == 1);
 
 	Test::destroyModule(m);
@@ -535,7 +535,7 @@ TEST_CASE("process - physical scene button press is ignored while following a sc
 	for (int i = 0; i < 256; i++) engine.step();  // rising edge on the next divided tick
 
 	REQUIRE(m->currentScene == 0);   // unaffected — scene button press ignored while linked
-	REQUIRE(m->guiQueue.size() == 0);
+	REQUIRE(m->taskProcessorUi.queue.size() == 0);
 
 	Test::destroyModule(m);
 }
@@ -852,14 +852,14 @@ TEST_CASE("copyScene - posts overlay message", "[SpliceKit]") {
 // requestCopyScene
 // ---------------------------------------------------------------------------
 
-TEST_CASE("requestCopyScene - enqueues a guiQueue item that performs the copy", "[SpliceKit]") {
+TEST_CASE("requestCopyScene - enqueues a taskProcessorUi item that performs the copy", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	m->currentScene = 7;
 	m->setConnection(2, 0, 1, true);
-	REQUIRE(m->guiQueue.size() == 0);
+	REQUIRE(m->taskProcessorUi.queue.size() == 0);
 	m->requestCopyScene(2, 5);
-	REQUIRE(m->guiQueue.size() == 1);
-	m->guiQueue.shift()();
+	REQUIRE(m->taskProcessorUi.queue.size() == 1);
+	m->taskProcessorUi.queue.shift()();
 	REQUIRE(m->isConnected(5, 0, 1) == true);
 	Test::destroyModule(m);
 }
@@ -874,7 +874,7 @@ TEST_CASE("processMapUpdate - single scene activation sets pendingMidiSceneId an
 	REQUIRE(m->pendingMidiSceneId == -1);
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 2, 100);
 	REQUIRE(m->pendingMidiSceneId == 2);
-	REQUIRE(m->guiQueue.size() == 1);  // switchScene enqueued
+	REQUIRE(m->taskProcessorUi.queue.size() == 1);  // switchScene enqueued
 	Test::destroyModule(m);
 }
 
@@ -885,7 +885,7 @@ TEST_CASE("processMapUpdate - MIDI scene activation is ignored while following a
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 2, 100);
 
 	REQUIRE(m->pendingMidiSceneId == -1);
-	REQUIRE(m->guiQueue.size() == 0);
+	REQUIRE(m->taskProcessorUi.queue.size() == 0);
 	Test::destroyModule(m);
 }
 
@@ -912,12 +912,12 @@ TEST_CASE("processMapUpdate - two activations without release queues scene copy"
 	// First activation: normal scene change, pending set.
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 1, 100);
 	REQUIRE(m->pendingMidiSceneId == 1);
-	REQUIRE(m->guiQueue.size() == 1);
+	REQUIRE(m->taskProcessorUi.queue.size() == 1);
 
 	// Second activation (different scene, no release): copy queued, pending cleared.
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 5, 100);
 	REQUIRE(m->pendingMidiSceneId == -1);
-	REQUIRE(m->guiQueue.size() == 2);  // switchScene(1) + copyScene(1, 5)
+	REQUIRE(m->taskProcessorUi.queue.size() == 2);  // switchScene(1) + copyScene(1, 5)
 
 	Test::destroyModule(m);
 }
@@ -926,11 +926,11 @@ TEST_CASE("processMapUpdate - same scene activated twice without release is not 
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 4, 100);
 	REQUIRE(m->pendingMidiSceneId == 4);
-	size_t queueSize = m->guiQueue.size();
+	size_t queueSize = m->taskProcessorUi.queue.size();
 
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 4, 100);  // same scene again
 	REQUIRE(m->pendingMidiSceneId == 4);         // pending still set to same scene
-	REQUIRE(m->guiQueue.size() == queueSize + 1);  // another switchScene, not copyScene
+	REQUIRE(m->taskProcessorUi.queue.size() == queueSize + 1);  // another switchScene, not copyScene
 
 	Test::destroyModule(m);
 }
@@ -1440,7 +1440,7 @@ TEST_CASE("process - cell with port assignment and no cable transitions to COLOR
 
 
 // ---------------------------------------------------------------------------
-// requestSceneChange and requestReset — guiQueue dispatch
+// requestSceneChange and requestReset — taskProcessorUi dispatch
 // ---------------------------------------------------------------------------
 
 TEST_CASE("requestSceneChange - enqueues a switchScene lambda", "[SpliceKit]") {
@@ -1448,12 +1448,12 @@ TEST_CASE("requestSceneChange - enqueues a switchScene lambda", "[SpliceKit]") {
 	m->currentScene = 0;
 	m->setConnection(1, 0, 1, true);  // scene 1 has a stored connection
 
-	REQUIRE(m->guiQueue.size() == 0);
+	REQUIRE(m->taskProcessorUi.queue.size() == 0);
 	m->requestSceneChange(1);
-	REQUIRE(m->guiQueue.size() == 1);
+	REQUIRE(m->taskProcessorUi.queue.size() == 1);
 
 	// Running the lambda switches the scene.
-	m->guiQueue.shift()();
+	m->taskProcessorUi.queue.shift()();
 	REQUIRE(m->currentScene == 1);
 	Test::destroyModule(m);
 }
@@ -1475,10 +1475,10 @@ TEST_CASE("requestReset - enqueues a reset lambda that clears all state", "[Spli
 	// A scene-button map (index MATRIX_COUNT..TOTAL_MAPS-1) must be cleared too.
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, MATRIX_COUNT + 1, 70);
 
-	REQUIRE(m->guiQueue.size() == 0);
+	REQUIRE(m->taskProcessorUi.queue.size() == 0);
 	m->requestReset();
-	REQUIRE(m->guiQueue.size() == 1);
-	m->guiQueue.shift()();
+	REQUIRE(m->taskProcessorUi.queue.size() == 1);
+	m->taskProcessorUi.queue.shift()();
 
 	REQUIRE(m->currentScene         == 0);
 	REQUIRE(m->getActivePreset()    == nullptr);
@@ -1520,8 +1520,8 @@ TEST_CASE("Scene link - follower adopts master's scene after a change", "[Splice
 	engine.registerModule(follower);
 	for (int i = 0; i < 256; i++) engine.step();  // let processDivider fire and drain moduleChangedFlag
 
-	REQUIRE(follower->guiQueue.size() == 1);
-	follower->guiQueue.shift()();
+	REQUIRE(follower->taskProcessorUi.queue.size() == 1);
+	follower->taskProcessorUi.queue.shift()();
 	REQUIRE(follower->currentScene == 3);
 
 	Test::unregisterModule(follower);
@@ -1540,7 +1540,7 @@ TEST_CASE("Scene link - no-op when sceneLinkMasterId is unset", "[SpliceKit]") {
 	engine.registerModule(m);
 	for (int i = 0; i < 256; i++) engine.step();
 
-	REQUIRE(m->guiQueue.size() == 0);
+	REQUIRE(m->taskProcessorUi.queue.size() == 0);
 	REQUIRE(m->currentScene == 0);
 
 	Test::unregisterModule(m);
@@ -1561,7 +1561,7 @@ TEST_CASE("Scene link - unrelated instance without a configured master ignores t
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(bystander->currentScene == 0);
-	REQUIRE(bystander->guiQueue.size() == 0);
+	REQUIRE(bystander->taskProcessorUi.queue.size() == 0);
 
 	Test::unregisterModule(bystander);
 	Test::unregisterModule(master);
@@ -1585,7 +1585,7 @@ TEST_CASE("Scene link - stale master reference is cleared once the master no lon
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(follower->sceneLinkMasterId == -1);
-	REQUIRE(follower->guiQueue.size() == 0);
+	REQUIRE(follower->taskProcessorUi.queue.size() == 0);
 
 	Test::unregisterModule(follower);
 	Test::destroyModule(follower);
@@ -1840,15 +1840,15 @@ TEST_CASE("randomizePortAssignmentsFrom - fills every cell without duplicates wh
 	Test::destroyModule(m);
 }
 
-TEST_CASE("onRandomize - enqueues randomizePortAssignments via guiQueue", "[SpliceKit]") {
+TEST_CASE("onRandomize - enqueues randomizePortAssignments via taskProcessorUi", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
-	REQUIRE(m->guiQueue.size() == 0);
+	REQUIRE(m->taskProcessorUi.queue.size() == 0);
 	m->onRandomize();
-	REQUIRE(m->guiQueue.size() == 1);
+	REQUIRE(m->taskProcessorUi.queue.size() == 1);
 	// No modules in the rack in this test, so the queued job is a safe no-op; just confirm
 	// it runs without throwing (real port enumeration is exercised via randomizePortAssignmentsFrom).
-	REQUIRE_NOTHROW(m->guiQueue.shift()());
+	REQUIRE_NOTHROW(m->taskProcessorUi.queue.shift()());
 
 	Test::destroyModule(m);
 }
@@ -2486,8 +2486,8 @@ TEST_CASE("onReset - queues the state-clearing reset on the GUI queue", "[Splice
 
 	m->onReset();
 	// clearPending() and requestReset() each enqueue one item.
-	REQUIRE(m->guiQueue.size() == 2);
-	while (m->guiQueue.size() > 0) m->guiQueue.shift()();
+	REQUIRE(m->taskProcessorUi.queue.size() == 2);
+	while (m->taskProcessorUi.queue.size() > 0) m->taskProcessorUi.queue.shift()();
 
 	REQUIRE(m->currentScene == 0);
 	REQUIRE(m->sceneConnections[5][0] == 0);
