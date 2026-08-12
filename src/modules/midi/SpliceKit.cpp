@@ -61,6 +61,16 @@ struct PortAssignment {
 	void clear() { moduleId = -1; portId = -1; }
 };
 
+struct CellVisual {
+	NVGcolor color;
+	int stateId;
+};
+
+struct SceneVisual {
+	float brightness;
+	int stateId;
+};
+
 static const int TOTAL_MAPS = MATRIX_COUNT + SCENE_COUNT;  // 64 cells + 8 scenes
 
 struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListener {
@@ -517,78 +527,31 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			bool blinkOn = blinkPhase < 0.5f;
 			bool slowBlinkOn = slowBlinkPhase < 0.5f;
 			for (int i = 0; i < MATRIX_COUNT; i++) {
-				bool assigned = portAssignments[i].isValid();
-				bool hasCable = portHasCable[i];
-				bool connectedToPending = pendingCellId >= 0 && i != pendingCellId
-					&& isConnected(currentScene, pendingCellId, i);
-				int cs = getCellColorSet(i);  // 0–3
-				NVGcolor col;
-				int stateId;
-				if (pendingCellId == i) {
-					col = blinkOn ? LED_PENDING : LED_OFF;
-					stateId = LED_STATE_PENDING;
-				}
-				else if (connectedToPending) {
-					col = slowBlinkOn ? COLOR_SETS[cs].color : nvgRGBf(0.f, 0.f, 0.f);
-					stateId = LED_STATE_CONNECTED_BY_SET[cs];
-				}
-				else if (portLearningId == i) {
-					col = blinkOn ? LED_PORT_LEARN : LED_OFF;
-					stateId = LED_STATE_PORT_LEARN;
-				}
-				else if (learningId == i) {
-					col = blinkOn ? LED_MIDI_LEARN : LED_OFF;
-					stateId = LED_STATE_MIDI_LEARN;
-				}
-				else if (assigned) {
-					col = color::mult(COLOR_SETS[cs].color, hasCable ? LED_BRIGHT : LED_DIM);
-					stateId = hasCable ? LED_STATE_COLOR_BY_SET[cs] : LED_STATE_COLOR_DIM_BY_SET[cs];
-				}
-				else {
-					col = LED_OFF;
-					stateId = LED_STATE_OFF;
-				}
-				if (stateId != cellLedState[i]) {
+				CellVisual v = resolveCellVisual(i, blinkOn, slowBlinkOn);
+				if (v.stateId != cellLedState[i]) {
 					sendFeedbackOff(i, cellLedState[i]);
-					cellLedState[i] = stateId;
-					sendFeedback(i, stateId);
+					cellLedState[i] = v.stateId;
+					sendFeedback(i, v.stateId);
 				}
 				float f = args.sampleTime * processDivider.division;
-				lights[LIGHT_MATRIX + i * 3 + 0].setBrightnessSmooth(col.r, f);
-				lights[LIGHT_MATRIX + i * 3 + 1].setBrightnessSmooth(col.g, f);
-				lights[LIGHT_MATRIX + i * 3 + 2].setBrightnessSmooth(col.b, f);
+				lights[LIGHT_MATRIX + i * 3 + 0].setBrightnessSmooth(v.color.r, f);
+				lights[LIGHT_MATRIX + i * 3 + 1].setBrightnessSmooth(v.color.g, f);
+				lights[LIGHT_MATRIX + i * 3 + 2].setBrightnessSmooth(v.color.b, f);
 			}
 			for (int s = 0; s < SCENE_COUNT; s++) {
-				float bright;
-				int sceneState;
-				if (learningId == MATRIX_COUNT + s) {
-					bright = blinkOn ? LED_BRIGHT : 0.f;
-					sceneState = LED_STATE_MIDI_LEARN;
-				}
-				else if (s == currentScene) {
-					bright = LED_BRIGHT;
-					sceneState = LED_STATE_SCENE_ACTIVE;
-				}
-				else {
-					bool hasConn = false;
-					for (int i = 0; i < MATRIX_COUNT; i++) {
-						if (sceneConnections[s][i]) { hasConn = true; break; }
-					}
-					bright = hasConn ? LED_SCENE_DIM : 0.f;
-					sceneState = hasConn ? LED_STATE_SCENE_DIM : LED_STATE_OFF;
-				}
-				if (sceneState != sceneLedState[s]) {
+				SceneVisual v = resolveSceneVisual(s, blinkOn);
+				if (v.stateId != sceneLedState[s]) {
 					sendFeedbackOff(MATRIX_COUNT + s, sceneLedState[s]);
-					sceneLedState[s] = sceneState;
-					sendFeedback(MATRIX_COUNT + s, sceneState);
+					sceneLedState[s] = v.stateId;
+					sendFeedback(MATRIX_COUNT + s, v.stateId);
 				}
-				lights[LIGHT_SCENE + s].setBrightness(bright);
+				lights[LIGHT_SCENE + s].setBrightness(v.brightness);
 			}
 		}
 	}
 
 	// Any thread — pure bitmask read; no side effects.
-	bool isConnected(int scene, int a, int b) {
+	bool isConnected(int scene, int a, int b) const {
 		return (sceneConnections[scene][a] >> b) & 1;
 	}
 
@@ -608,6 +571,51 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	int getCellColorSet(int i) const {
 		if (cellColorSet[i] >= 0) return cellColorSet[i];
 		return (portAssignments[i].type == engine::Port::OUTPUT) ? 0 : 1;
+	}
+
+	// Pure — resolves one cell's LED colour and state id from the module's current state.
+	// Precedence: pending > connected-to-pending > port-learn > midi-learn > assigned > off.
+	CellVisual resolveCellVisual(int i, bool blinkOn, bool slowBlinkOn) const {
+		bool assigned = portAssignments[i].isValid();
+		bool hasCable = portHasCable[i];
+		bool connectedToPending = pendingCellId >= 0 && i != pendingCellId
+			&& isConnected(currentScene, pendingCellId, i);
+		int cs = getCellColorSet(i);  // 0–3
+		if (pendingCellId == i) {
+			return { blinkOn ? LED_PENDING : LED_OFF, LED_STATE_PENDING };
+		}
+		if (connectedToPending) {
+			NVGcolor col = slowBlinkOn ? COLOR_SETS[cs].color : nvgRGBf(0.f, 0.f, 0.f);
+			return { col, LED_STATE_CONNECTED_BY_SET[cs] };
+		}
+		if (portLearningId == i) {
+			return { blinkOn ? LED_PORT_LEARN : LED_OFF, LED_STATE_PORT_LEARN };
+		}
+		if (learningId == i) {
+			return { blinkOn ? LED_MIDI_LEARN : LED_OFF, LED_STATE_MIDI_LEARN };
+		}
+		if (assigned) {
+			NVGcolor col = color::mult(COLOR_SETS[cs].color, hasCable ? LED_BRIGHT : LED_DIM);
+			int stateId = hasCable ? LED_STATE_COLOR_BY_SET[cs] : LED_STATE_COLOR_DIM_BY_SET[cs];
+			return { col, stateId };
+		}
+		return { LED_OFF, LED_STATE_OFF };
+	}
+
+	// Pure — resolves one scene button's LED brightness and state id from the module's
+	// current state. Precedence: midi-learn > active > has-connections > off.
+	SceneVisual resolveSceneVisual(int s, bool blinkOn) const {
+		if (learningId == MATRIX_COUNT + s) {
+			return { blinkOn ? LED_BRIGHT : 0.f, LED_STATE_MIDI_LEARN };
+		}
+		if (s == currentScene) {
+			return { LED_BRIGHT, LED_STATE_SCENE_ACTIVE };
+		}
+		bool hasConn = false;
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			if (sceneConnections[s][i]) { hasConn = true; break; }
+		}
+		return { hasConn ? LED_SCENE_DIM : 0.f, hasConn ? LED_STATE_SCENE_DIM : LED_STATE_OFF };
 	}
 
 	// Adds this instance's assigned ports to out, keyed as (moduleId, portId*2 + type) —
@@ -834,6 +842,26 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		return portLearningId == id && portSelectProcessor.isLearning();
 	}
 
+	// Resolves the note/CC number and the slot's own type for a spec. Returns false when
+	// the spec's note mode has no resolvable number (unmapped FROM_SLOT, or unknown mode).
+	bool resolveNote(const MidiOutSpec& spec, int cellId, int& noteNum, MidiTrackingType& slotType) {
+		switch (spec.noteMode) {
+			case MIDI_OUT_FROM_SLOT: {
+				auto m = trackingProcessor.getMap(cellId);
+				if (m.type == MidiTrackingType::NONE) return false;
+				noteNum  = m.param;
+				slotType = m.type;
+				return true;
+			}
+			case MIDI_OUT_FIXED: {
+				noteNum = spec.note;
+				slotType = MidiTrackingType::NONE;
+				return true;
+			}
+			default: return false;
+		}
+	}
+
 	// Engine thread — sends a MIDI note-off for the previous LED state before a transition,
 	// clearing the controller LED that was lit by a NOTE_ON-based spec. No-op for CC specs,
 	// off states, or when no preset is active.
@@ -846,20 +874,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		if (spec.type != MIDI_OUT_NOTE_ON && spec.type != MIDI_OUT_FROM_SLOT_TYPE) return;
 		MidiTrackingType slotType = MidiTrackingType::NONE;
 		int noteNum;
-		switch (spec.noteMode) {
-			case MIDI_OUT_FROM_SLOT: {
-				auto m = trackingProcessor.getMap(cellId);
-				if (m.type == MidiTrackingType::NONE) return;
-				noteNum  = m.param;
-				slotType = m.type;
-				break;
-			}
-			case MIDI_OUT_FIXED: {
-				noteNum = spec.note;
-				break;
-			}
-			default: return;
-		}
+		if (!resolveNote(spec, cellId, noteNum, slotType)) return;
 		if (spec.type == MIDI_OUT_FROM_SLOT_TYPE && slotType != MidiTrackingType::NOTE) return;
 		midi::Message msg;
 		msg.bytes[0] = 0x80 | (uint8_t)(spec.channel & 0x0F);
@@ -879,20 +894,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		if (spec.type == MIDI_OUT_NONE) return;
 		MidiTrackingType slotType = MidiTrackingType::NONE;
 		int noteNum;
-		switch (spec.noteMode) {
-			case MIDI_OUT_FROM_SLOT: {
-				auto m = trackingProcessor.getMap(cellId);
-				if (m.type == MidiTrackingType::NONE) return;
-				noteNum  = m.param;
-				slotType = m.type;
-				break;
-			}
-			case MIDI_OUT_FIXED: {
-				noteNum = spec.note;
-				break;
-			}
-			default: return;
-		}
+		if (!resolveNote(spec, cellId, noteNum, slotType)) return;
 		uint8_t status;
 		switch (spec.type) {
 			case MIDI_OUT_NOTE_ON:

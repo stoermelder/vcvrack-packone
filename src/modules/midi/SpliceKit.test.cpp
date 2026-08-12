@@ -1336,6 +1336,90 @@ TEST_CASE("process - cell connected to pending cell transitions to CONNECTED1", 
 	Test::destroyModule(m);
 }
 
+TEST_CASE("resolveCellVisual - precedence order pending > connected > port-learn > midi-learn > assigned > off", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	// Cell 5 is connected to cell 0 in the current scene, and every lower-precedence
+	// flag is also set on cell 5, so this only passes if resolveCellVisual checks
+	// precedence in the documented order rather than any other.
+	m->portAssignments[0].moduleId = 1;
+	m->portAssignments[0].portId   = 0;
+	m->portAssignments[0].type     = engine::Port::OUTPUT;
+	m->portAssignments[5].moduleId = 1;
+	m->portAssignments[5].portId   = 1;
+	m->portAssignments[5].type     = engine::Port::INPUT;
+	m->portHasCable[5] = true;
+	m->setConnection(0, 0, 5, true);
+
+	m->pendingCellId = 0;
+	m->portLearningId = 5;
+	m->learningId = 5;
+
+	// pending: cell 0 itself.
+	CellVisual pending = m->resolveCellVisual(0, true, true);
+	REQUIRE(pending.stateId == LED_STATE_PENDING);
+
+	// connected-to-pending beats port-learn and midi-learn, both also set on cell 5.
+	CellVisual connected = m->resolveCellVisual(5, true, true);
+	REQUIRE(connected.stateId == LED_STATE_CONNECTED1);
+
+	// port-learn beats midi-learn and assigned, once connected-to-pending is removed.
+	m->pendingCellId = -1;
+	CellVisual portLearn = m->resolveCellVisual(5, true, true);
+	REQUIRE(portLearn.stateId == LED_STATE_PORT_LEARN);
+
+	// midi-learn beats assigned, once port-learn is removed.
+	m->portLearningId = -1;
+	CellVisual midiLearn = m->resolveCellVisual(5, true, true);
+	REQUIRE(midiLearn.stateId == LED_STATE_MIDI_LEARN);
+
+	// assigned beats off, once midi-learn is removed.
+	m->learningId = -1;
+	CellVisual assigned = m->resolveCellVisual(5, true, true);
+	REQUIRE(assigned.stateId == LED_STATE_COLOR1);
+
+	// off: cell 6 has no assignment and none of the above flags.
+	CellVisual off = m->resolveCellVisual(6, true, true);
+	REQUIRE(off.stateId == LED_STATE_OFF);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("resolveSceneVisual - precedence order midi-learn > active > has-connections > off", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->portAssignments[0].moduleId = 1;
+	m->portAssignments[0].portId   = 0;
+	m->portAssignments[0].type     = engine::Port::OUTPUT;
+	m->portAssignments[1].moduleId = 1;
+	m->portAssignments[1].portId   = 1;
+	m->portAssignments[1].type     = engine::Port::INPUT;
+	m->setConnection(2, 0, 1, true);
+
+	m->currentScene = 2;
+	m->learningId = MATRIX_COUNT + 2;
+
+	// midi-learn beats active, both set on scene 2.
+	SceneVisual midiLearn = m->resolveSceneVisual(2, true);
+	REQUIRE(midiLearn.stateId == LED_STATE_MIDI_LEARN);
+
+	// active beats has-connections, once midi-learn is removed.
+	m->learningId = -1;
+	SceneVisual active = m->resolveSceneVisual(2, true);
+	REQUIRE(active.stateId == LED_STATE_SCENE_ACTIVE);
+
+	// has-connections beats off, once active is removed (scene 2 no longer current).
+	m->currentScene = 0;
+	SceneVisual hasConn = m->resolveSceneVisual(2, true);
+	REQUIRE(hasConn.stateId == LED_STATE_SCENE_DIM);
+
+	// off: scene 3 has no connections and is not current or midi-learning.
+	SceneVisual off = m->resolveSceneVisual(3, true);
+	REQUIRE(off.stateId == LED_STATE_OFF);
+
+	Test::destroyModule(m);
+}
+
 TEST_CASE("process - cell with port assignment and no cable transitions to COLOR0_DIM", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	m->setActivePreset(makeNoteOnPreset());
