@@ -1487,6 +1487,28 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		invalidateLedStates();
 	}
 
+	// GUI thread — discards cellId's port assignment entirely (menu "Clear"). Shares
+	// assignPort()'s cleanup contract above, since a cleared port must be forgotten by
+	// the same set of state a rebound port must forget: current-scene cables, every
+	// scene's connection bitmask, and the label.
+	void clearPort(int cellId) {
+		if (cellId < 0 || cellId >= MATRIX_COUNT) return;
+		if (!portAssignments[cellId].isValid()) return;
+
+		sendFeedbackOff(cellId, cellLedState[cellId]);
+		removeCellConnections(cellId);
+		for (int s = 0; s < SCENE_COUNT; s++) {
+			uint64_t mask = sceneConnections[s][cellId];
+			for (int j = 0; j < MATRIX_COUNT; j++) {
+				if ((mask >> j) & 1) sceneConnections[s][j] &= ~(1ULL << cellId);
+			}
+			sceneConnections[s][cellId] = 0;
+		}
+		cellLabels[cellId].clear();
+		portAssignments[cellId].clear();
+		invalidateLedStates();
+	}
+
 	// Engine thread — enqueues a full module reset on the GUI thread via taskProcessorUi.
 	// Removes all current-scene cables, clears all stored scenes and port assignments,
 	// resets scene and preset selection, and clears LED state.
@@ -2353,7 +2375,7 @@ void SpliceKitCellButton::createCellMenu() {
 		module->startGlobalPortLearn(mw);
 	}));
 	menu->addChild(createMenuItem("Clear", "", [=]() {
-		module->portAssignments[cellId].clear();
+		module->clearPort(cellId);
 	}, !pa.isValid()));
 
 	menu->addChild(new MenuSeparator);

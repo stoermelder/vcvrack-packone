@@ -2259,6 +2259,111 @@ TEST_CASE("assignPort - explicit color set override survives a rebind", "[Splice
 }
 
 
+// ─── clearPort ────────────────────────────────────────────────────────────────────────────
+
+TEST_CASE("clearPort - discards the port assignment", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(4, 42, 3, engine::Port::OUTPUT);
+
+	m->clearPort(4);
+
+	REQUIRE(m->portAssignments[4].isValid() == false);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("clearPort - clears connections in every scene, not just the current one", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+	m->assignPort(2, 44, 0, engine::Port::INPUT);
+
+	// Cell 0 is wired in the active scene (0) and in an inactive one (3).
+	m->setConnection(0, 0, 1, true);
+	m->setConnection(3, 0, 2, true);
+	REQUIRE(m->isConnected(0, 0, 1));
+	REQUIRE(m->isConnected(3, 0, 2));
+
+	m->clearPort(0);
+
+	// A stale bit in an inactive scene would recreate a cable to the wrong port if cell 0
+	// were later reassigned and that scene activated (see the regression test below).
+	REQUIRE(m->isConnected(0, 0, 1) == false);
+	REQUIRE(m->isConnected(3, 0, 2) == false);
+	// Symmetric halves must be cleared too, or the neighbour still claims the connection.
+	REQUIRE(m->sceneConnections[0][1] == 0);
+	REQUIRE(m->sceneConnections[3][2] == 0);
+	REQUIRE(m->sceneConnections[0][0] == 0);
+	REQUIRE(m->sceneConnections[3][0] == 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("clearPort - drops the label describing the old port", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(5, 42, 0, engine::Port::OUTPUT);
+	m->cellLabels[5] = "Filter cutoff";
+
+	m->clearPort(5);
+
+	REQUIRE(m->cellLabels[5].empty());
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("clearPort - invalidates LED state so the cleared cell is re-sent as off", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	std::fill(m->cellLedState, m->cellLedState + MATRIX_COUNT, LED_STATE_OFF);
+
+	m->clearPort(0);
+
+	REQUIRE(m->cellLedState[0] == -1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("clearPort - no-op on an already-empty cell", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	REQUIRE_NOTHROW(m->clearPort(4));
+	REQUIRE(m->portAssignments[4].isValid() == false);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("clearPort - out-of-range cell ids are ignored", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	REQUIRE_NOTHROW(m->clearPort(-1));
+	REQUIRE_NOTHROW(m->clearPort(MATRIX_COUNT));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("clearPort - regression: bypassing this cleanup let a stale bit resurrect a "
+          "connection to the wrong port on a later rebind", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(5, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(9, 43, 0, engine::Port::INPUT);
+
+	// Scene 3 (inactive) holds a connection 5<->9.
+	m->setConnection(3, 5, 9, true);
+
+	// Clear cell 5's port via the same path the cell menu's "Clear" item now uses.
+	m->clearPort(5);
+
+	// Reassign cell 5 to a different port entirely.
+	m->assignPort(5, 77, 1, engine::Port::OUTPUT);
+
+	// Without clearPort's cleanup, the stale bit in scene 3 would still connect 5<->9,
+	// recreating a cable to a port the user never chose once scene 3 becomes active.
+	REQUIRE(m->isConnected(3, 5, 9) == false);
+
+	Test::destroyModule(m);
+}
+
+
 // ─── moveCell + pending selection (issue 17) ─────────────────────────────────────────────
 // SpliceKitCellButton::onDragDrop needs real widget/event plumbing, so these cover the
 // module-level invariant the widget fix relies on: moveCell() rewrites both cells, so a
