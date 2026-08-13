@@ -98,6 +98,227 @@ std::string midiMapLabel(const MidiTrackingProcessor<TOTAL_MAPS>::RevMap& map) {
 }
 
 
+// GUI thread only, unconditionally — every method here touches APP->scene->rack or
+// state that must not be read concurrently with it. Reaching this class from the
+// engine thread is a bug; go through GuiTaskProcessor.
+struct SceneStore {
+	std::vector<SceneConns> connections;
+	int current = 0;
+
+	// Non-owning view of the module's portAssignments array, set once at construction.
+	// The store's job is scene topology, not port ownership: SpliceKitModule owns the
+	// array and stays the single source of truth, the store only reads it to resolve
+	// cell ids into cable endpoints.
+	const PortAssignment* ports = nullptr;
+
+	// Fired by switchTo() after `current` changes. Lets the owning module react (e.g.
+	// notify scene-link followers) without SceneStore knowing about Module/listeners.
+	std::function<void()> onSwitch;
+
+	bool isConnected(int scene, int a, int b) const {
+		return (connections[scene][a] >> b) & 1;
+	}
+
+	// Bitmask of cells connected to `cell` in `scene` — bit j set means cell is connected to j.
+	uint64_t connectionMask(int scene, int cell) const {
+		return connections[scene][cell];
+	}
+
+	// True if `scene` has any stored connection at all, in any cell.
+	bool hasConnections(int scene) const {
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			if (connections[scene][i]) return true;
+		}
+		return false;
+	}
+
+	// The full stored connection topology for `scene`.
+	const SceneConns& sceneConns(int scene) const {
+		return connections[scene];
+	}
+
+	void setConnection(int scene, int a, int b, bool value) {
+		if (value) {
+			connections[scene][a] |= (1ULL << b);
+			connections[scene][b] |= (1ULL << a);
+		}
+		else {
+			connections[scene][a] &= ~(1ULL << b);
+			connections[scene][b] &= ~(1ULL << a);
+		}
+	}
+
+	// GUI thread — resolves port directions for the two cells and removes the cable
+	// between them. No-op if both ports are the same direction or either assignment is
+	// invalid. Private: breaking a connection must also clear the bitmask, so callers
+	// go through disconnectLive() instead.
+	void removeCableBetween(int cellIdA, int cellIdB) {
+		auto dir = resolveDirection(ports[cellIdA], ports[cellIdB]);
+		const PortAssignment* outPd = dir.first;
+		const PortAssignment* inPd = dir.second;
+		if (!outPd) return;
+		CableWidget* cw = vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
+		if (cw) vcv::removeCable(cw, false);
+	}
+
+	// GUI thread — the mirror of removeCableBetween(). Same no-op rules, same reason for
+	// being private: callers go through connectLive().
+	void addCableBetween(int cellIdA, int cellIdB) {
+		auto dir = resolveDirection(ports[cellIdA], ports[cellIdB]);
+		const PortAssignment* outPd = dir.first;
+		const PortAssignment* inPd = dir.second;
+		if (!outPd) return;
+		vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
+	}
+
+	// GUI thread — make/break a connection between two cells in the CURRENT scene,
+	// updating the stored bitmask and the patch cable together. The two must never
+	// diverge (a stale bit recreates a cable on the next switchTo(), a stale cable
+	// survives one), so these are the only public way to change a live connection.
+	void connectLive(int cellIdA, int cellIdB) {
+		setConnection(current, cellIdA, cellIdB, true);
+		addCableBetween(cellIdA, cellIdB);
+	}
+
+	void disconnectLive(int cellIdA, int cellIdB) {
+		setConnection(current, cellIdA, cellIdB, false);
+		removeCableBetween(cellIdA, cellIdB);
+	}
+
+	// GUI thread — rewrites connections[scene] to match the actual cables currently
+	// present in the patch for the assigned ports. Used before switching scenes so that
+	// any manual cable changes the user made are not lost.
+	void capture(int scene) {
+		connections[scene].fill(0);
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			const PortAssignment& a = ports[i];
+			if (!a.isValid() || a.type != engine::Port::OUTPUT) continue;
+			for (int j = 0; j < MATRIX_COUNT; j++) {
+				if (j == i) continue;
+				const PortAssignment& b = ports[j];
+				if (!b.isValid() || b.type != engine::Port::INPUT) continue;
+				if (vcv::findCable(a.moduleId, a.portId, b.moduleId, b.portId)) {
+					setConnection(scene, i, j, true);
+				}
+			}
+		}
+	}
+
+	// GUI thread — reconciles the patch AND connections[current] to match newConns,
+	// starting from whatever connections[current] currently holds. For each pair (i,j)
+	// that differs, the cable is added or removed and the bitmask updated with it, so
+	// the store is left consistent without the caller storing newConns afterwards.
+	// Pairs that haven't changed are skipped.
+	//
+	// Callers that want the *incoming* scene's cables realised must set `current` first;
+	// this always writes to whichever scene is active (see switchTo).
+	void applyToCurrent(const SceneConns& newConns) {
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			for (int j = i + 1; j < MATRIX_COUNT; j++) {
+				bool was = (connections[current][i] >> j) & 1;
+				bool will = (newConns[i] >> j) & 1;
+				if (was == will) continue;
+				if (!ports[i].isValid() || !ports[j].isValid()) {
+					// Unassigned cells have no cable to reconcile, but the bitmask still
+					// has to track newConns or the difference would survive the call.
+					setConnection(current, i, j, will);
+					continue;
+				}
+				if (was) disconnectLive(i, j);
+				else connectLive(i, j);
+			}
+		}
+	}
+
+	// GUI thread — applies a new connection topology to an arbitrary scene.
+	// If the target scene is the currently active one, the patch cables are updated live
+	// (capture current state first, then diff against newConns). Always persists newConns
+	// into connections[scene].
+	void reconcile(int scene, const SceneConns& newConns) {
+		if (scene == current) {
+			capture(scene);
+			applyToCurrent(newConns);
+		}
+		connections[scene] = newConns;
+	}
+
+	// GUI thread — switches to newScene: captures the outgoing scene's current cable
+	// state, then realises the incoming scene's stored topology in the patch. No-op if
+	// newScene is already current. `current` advances *before* the diff, since
+	// applyToCurrent() writes the bitmask of whichever scene is active — the incoming
+	// one is the one that must end up matching the cables. Fires onSwitch() last.
+	void switchTo(int newScene) {
+		if (newScene == current) return;
+		capture(current);
+		SceneConns incoming = connections[newScene];
+		current = newScene;
+		applyToCurrent(incoming);
+		if (onSwitch) onSwitch();
+	}
+
+	// GUI thread — copies scene src's connection topology to scene dst.
+	// If dst is the active scene, cables are updated live via reconcile.
+	void copy(int src, int dst) {
+		if (src == dst) return;
+		if (src == current) capture(src);
+		reconcile(dst, connections[src]);
+	}
+
+	// GUI thread — clears cellId's bit out of every other cell's mask and its own mask,
+	// in every scene. Does not touch cables in the current scene — callers that need the
+	// current-scene cable removed too must call removeCellConnections() first.
+	void clearCell(int cellId) {
+		for (int s = 0; s < SCENE_COUNT; s++) {
+			uint64_t mask = connections[s][cellId];
+			for (int j = 0; j < MATRIX_COUNT; j++) {
+				if ((mask >> j) & 1) connections[s][j] &= ~(1ULL << cellId);
+			}
+			connections[s][cellId] = 0;
+		}
+	}
+
+	// GUI thread — removes cellId's cables in the current scene, updating both the patch
+	// and the current scene's bitmask. Used before a rebind/clear/move discards cellId's
+	// old port, while it is still resolvable.
+	void removeCellConnections(int cellId) {
+		uint64_t mask = connections[current][cellId];
+		for (int j = 0; j < MATRIX_COUNT; j++) {
+			if (!((mask >> j) & 1)) continue;
+			disconnectLive(cellId, j);
+		}
+	}
+
+	// GUI thread — moves fromId's connections (in every scene) onto toId, first tearing
+	// out toId's existing connections from its neighbours. Mirrors moveCell()'s handling
+	// of portAssignments/cellLabels/cellColorSet; callers are responsible for removing
+	// toId's current-scene cables (removeCellConnections) before calling this, since that
+	// needs the still-valid old port assignment.
+	void moveCellBits(int fromId, int toId) {
+		for (int s = 0; s < SCENE_COUNT; s++) {
+			uint64_t oldToMask = connections[s][toId];
+			for (int j = 0; j < MATRIX_COUNT; j++) {
+				if ((oldToMask >> j) & 1) {
+					connections[s][j] &= ~(1ULL << toId);
+				}
+			}
+			connections[s][toId] = 0;
+
+			uint64_t fromMask = connections[s][fromId];
+			for (int j = 0; j < MATRIX_COUNT; j++) {
+				if (!((fromMask >> j) & 1)) continue;
+				connections[s][j] &= ~(1ULL << fromId);
+				if (j != toId) {
+					connections[s][j] |= (1ULL << toId);
+				}
+			}
+			// fromId's connections become toId's, minus any self-connection bit.
+			connections[s][toId]   = fromMask & ~(1ULL << toId);
+			connections[s][fromId] = 0;
+		}
+	}
+};
+
+
 struct SpliceKitOutput : midi::Output {
 	// Hook to the owner's invalidateLedStates(), set once by the owner.
 	// SpliceKitOutput has no back-pointer of its own, so a callback is used
@@ -483,9 +704,6 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	int lastClickedCell = 0;
 
 	/** [Stored to JSON] */
-	int currentScene = 0;
-
-	/** [Stored to JSON] */
 	StoermelderPackOne::MidiTrackingProcessor<TOTAL_MAPS> trackingProcessor;
 
 	/** [Stored to JSON] */
@@ -494,10 +712,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	/** [Stored to JSON] */
 	PortAssignment portAssignments[MATRIX_COUNT];
 
-	// Per-scene connection bitmasks. sceneConnections[scene][cellA] has bit cellB set
-	// when cellA and cellB are connected in that scene.
-	/** [Stored to JSON] */
-	std::vector<SceneConns> sceneConnections;
+	// Scene topology (connections + current scene index). GUI thread only, unconditionally.
+	// currentScene and per-scene connection bitmasks are [Stored to JSON] via sceneStore.
+	SceneStore sceneStore;
 
 	dsp::BooleanTrigger buttonTriggers[MATRIX_COUNT];
 	dsp::BooleanTrigger sceneTriggers[SCENE_COUNT];
@@ -565,7 +782,11 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		memset(cellColorSet, -1, sizeof(cellColorSet));
-		sceneConnections.resize(SCENE_COUNT);
+		sceneStore.connections.resize(SCENE_COUNT);
+		sceneStore.ports = portAssignments;
+		sceneStore.onSwitch = []() {
+			notifyModuleListeners("SpliceKit-SceneLink");
+		};
 		// Momentary button representations, not meaningful knob/switch values — excluded from
 		// Rack's default param randomization. onRandomize() below generates a random cable
 		// topology instead; randomizing these directly would just spuriously trigger button
@@ -739,7 +960,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			newConns[a] |= (1ULL << b);
 			newConns[b] |= (1ULL << a);
 		}
-		reconcileScene(currentScene, newConns);
+		sceneStore.reconcile(sceneStore.current, newConns);
 	}
 
 	void processBypass(const ProcessArgs& args) override {
@@ -748,8 +969,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	}
 
 	// Engine thread — if this instance follows a scene link master, picks up the master's
-	// current scene. Enqueues the actual switchScene() on the GUI thread via taskProcessorUi
-	// (cables), since the switch itself must not run on the engine thread.
+	// current scene. Enqueues the actual sceneStore.switchTo() on the GUI thread via
+	// taskProcessorUi (cables), since the switch itself must not run on the engine thread.
 	void processSceneLinkMaster() {
 		if (!moduleChangedFlag) return;
 		moduleChangedFlag = false;
@@ -759,9 +980,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			// Master was removed from the patch (or never existed) — stop following.
 			sceneLinkMasterId = -1;
 		}
-		else if (master->currentScene != currentScene) {
-			int targetScene = master->currentScene;
-			taskProcessorUi.enqueue([this, targetScene]() { switchScene(targetScene); });
+		else if (master->sceneStore.current != sceneStore.current) {
+			int targetScene = master->sceneStore.current;
+			taskProcessorUi.enqueue([this, targetScene]() { sceneStore.switchTo(targetScene); });
 		}
 	}
 
@@ -857,23 +1078,6 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// Any thread — pure bitmask read; no side effects.
-	bool isConnected(int scene, int a, int b) const {
-		return (sceneConnections[scene][a] >> b) & 1;
-	}
-
-	// Any thread — updates both symmetric bitmask entries for the (a, b) pair.
-	void setConnection(int scene, int a, int b, bool value) {
-		if (value) {
-			sceneConnections[scene][a] |= (1ULL << b);
-			sceneConnections[scene][b] |= (1ULL << a);
-		} 
-		else {
-			sceneConnections[scene][a] &= ~(1ULL << b);
-			sceneConnections[scene][b] &= ~(1ULL << a);
-		}
-	}
-
 	// Returns the resolved color-set index for cell i (0–3). Auto mode maps by port direction.
 	int getCellColorSet(int i) const {
 		if (cellColorSet[i] >= 0) return cellColorSet[i];
@@ -886,7 +1090,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		bool assigned = portAssignments[i].isValid();
 		bool hasCable = portHasCable[i];
 		bool connectedToPending = pendingCellId >= 0 && i != pendingCellId
-			&& isConnected(currentScene, pendingCellId, i);
+			&& sceneStore.isConnected(sceneStore.current, pendingCellId, i);
 		int cs = getCellColorSet(i);  // 0–3
 		if (pendingCellId == i) {
 			return { blinkOn ? LED_PENDING : LED_OFF, LED_STATE_PENDING };
@@ -915,13 +1119,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		if (learningId == MATRIX_COUNT + s) {
 			return { blinkOn ? LED_BRIGHT : 0.f, LED_STATE_MIDI_LEARN };
 		}
-		if (s == currentScene) {
+		if (s == sceneStore.current) {
 			return { LED_BRIGHT, LED_STATE_SCENE_ACTIVE };
 		}
-		bool hasConn = false;
-		for (int i = 0; i < MATRIX_COUNT; i++) {
-			if (sceneConnections[s][i]) { hasConn = true; break; }
-		}
+		bool hasConn = sceneStore.hasConnections(s);
 		return { hasConn ? LED_SCENE_DIM : 0.f, hasConn ? LED_STATE_SCENE_DIM : LED_STATE_OFF };
 	}
 
@@ -1173,7 +1374,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
-		json_object_set_new(rootJ, "currentScene", json_integer(currentScene));
+		json_object_set_new(rootJ, "currentScene", json_integer(sceneStore.current));
 
 		json_t* mapsJ = json_object();
 		for (int i = 0; i < TOTAL_MAPS; i++) {
@@ -1202,7 +1403,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			json_t* connJ = json_array();
 			for (int a = 0; a < MATRIX_COUNT; a++) {
 				for (int b = a + 1; b < MATRIX_COUNT; b++) {
-					if (isConnected(s, a, b)) {
+					if (sceneStore.isConnected(s, a, b)) {
 						json_t* pairJ = json_array();
 						json_array_append_new(pairJ, json_integer(a));
 						json_array_append_new(pairJ, json_integer(b));
@@ -1262,9 +1463,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		// Clamped: an out-of-range value from a corrupted or hand-edited patch would otherwise
-		// be used unchecked to index sceneConnections[currentScene] (captureScene, switchScene,
+		// be used unchecked to index sceneStore.connections[current] (captureScene, switchScene,
 		// randomizeCurrentScene, the cell context menu), reading and writing past the array.
-		currentScene = clamp((int)json_integer_value(json_object_get(rootJ, "currentScene")), 0, SCENE_COUNT - 1);
+		sceneStore.current = clamp((int)json_integer_value(json_object_get(rootJ, "currentScene")), 0, SCENE_COUNT - 1);
 		json_t* buttonModeJ = json_object_get(rootJ, "buttonMode");
 		if (buttonModeJ) buttonMode = (ButtonMode)json_integer_value(buttonModeJ);
 		json_t* overlayEnabledJ = json_object_get(rootJ, "overlayEnabled");
@@ -1339,7 +1540,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
 		if (midiOutputJ) feedback.midiOutput.fromJson(midiOutputJ);
 
-		for (auto& s : sceneConnections) s.fill(0);
+		for (auto& s : sceneStore.connections) s.fill(0);
 		json_t* scenesJ = json_object_get(rootJ, "scenes");
 		if (scenesJ) {
 			const char* key;
@@ -1355,7 +1556,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 					int a = json_integer_value(json_array_get(pairJ, 0));
 					int b = json_integer_value(json_array_get(pairJ, 1));
 					if (a >= 0 && a < MATRIX_COUNT && b >= 0 && b < MATRIX_COUNT) {
-						setConnection(s, a, b, true);
+						sceneStore.setConnection(s, a, b, true);
 					}
 				}
 			}
@@ -1364,19 +1565,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 
 	// --- Cable manipulation (GUI thread only) ---
 	// Low-level helpers (findCable, removeCable, addCableToPort) live in SpliceKit_cable.hpp.
-
-	// GUI thread — resolves port directions for the two cells and removes the cable between
-	// them. No-op if both ports are the same direction or either assignment is invalid.
-	void removeCableBetween(int cellIdA, int cellIdB) {
-		const PortAssignment& a = portAssignments[cellIdA];
-		const PortAssignment& b = portAssignments[cellIdB];
-		auto dir = resolveDirection(a, b);
-		const PortAssignment* outPd = dir.first;
-		const PortAssignment* inPd = dir.second;
-		if (!outPd) return;
-		CableWidget* cw = vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
-		if (cw) vcv::removeCable(cw, false);
-	}
+	// The scene-topology bitmask and its patch-reconciliation logic live in SceneStore; the
+	// wrappers that remain here add module-level side effects (overlay messages, listener
+	// notification) that don't belong on a class whose job is GUI-thread scene storage.
 
 	// GUI thread — creates or removes the cable between cellIdA and cellIdB in the current
 	// scene, then updates overlayMessage so the overlay bar shows what changed.
@@ -1400,85 +1591,14 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		int outCell = (outPd == &a) ? cellIdA : cellIdB;
 		int inCell  = (inPd  == &a) ? cellIdA : cellIdB;
 
-		if (isConnected(currentScene, outCell, inCell)) {
-			setConnection(currentScene, outCell, inCell, false);
-			removeCableBetween(outCell, inCell);
+		if (sceneStore.isConnected(sceneStore.current, outCell, inCell)) {
+			sceneStore.disconnectLive(outCell, inCell);
 			setOverlayMessage("Cable removed", portLabel(*outPd), portLabel(*inPd));
-		} 
+		}
 		else {
-			setConnection(currentScene, outCell, inCell, true);
-			vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
+			sceneStore.connectLive(outCell, inCell);
 			setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
 		}
-	}
-
-	// GUI thread — rewrites sceneConnections[scene] to match the actual cables currently
-	// present in the patch for the assigned ports. Used before switching scenes so that
-	// any manual cable changes the user made are not lost.
-	void captureScene(int scene) {
-		sceneConnections[scene].fill(0);
-		for (int i = 0; i < MATRIX_COUNT; i++) {
-			const PortAssignment& a = portAssignments[i];
-			if (!a.isValid() || a.type != engine::Port::OUTPUT) continue;
-			for (int j = 0; j < MATRIX_COUNT; j++) {
-				if (j == i) continue;
-				const PortAssignment& b = portAssignments[j];
-				if (!b.isValid() || b.type != engine::Port::INPUT) continue;
-				if (vcv::findCable(a.moduleId, a.portId, b.moduleId, b.portId)) {
-					setConnection(scene, i, j, true);
-				}
-			}
-		}
-	}
-
-	// GUI thread — reconciles the patch so it matches newConns, starting from oldConns.
-	// For each pair (i,j): if a connection was present in old but not new the cable is removed;
-	// if it is present in new but not old a cable is added. Pairs that haven't changed are skipped.
-	void applyConnectionDiff(const SceneConns& oldConns, const SceneConns& newConns) {
-		for (int i = 0; i < MATRIX_COUNT; i++) {
-			for (int j = i + 1; j < MATRIX_COUNT; j++) {
-				bool was = (oldConns[i] >> j) & 1;
-				bool will = (newConns[i] >> j) & 1;
-				if (was == will) continue;
-				const PortAssignment& a = portAssignments[i];
-				const PortAssignment& b = portAssignments[j];
-				if (!a.isValid() || !b.isValid()) continue;
-				if (was) {
-					removeCableBetween(i, j);
-				}
-				else {
-					auto dir = resolveDirection(a, b);
-					const PortAssignment* outPd = dir.first;
-					const PortAssignment* inPd = dir.second;
-					if (!outPd) continue;
-					vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
-				}
-			}
-		}
-	}
-
-	// GUI thread — applies a new connection topology to an arbitrary scene.
-	// If the target scene is the currently active one, the patch cables are updated live
-	// (capture current state first, then diff against newConns). Always persists newConns
-	// into sceneConnections[scene].
-	void reconcileScene(int scene, const SceneConns& newConns) {
-		if (scene == currentScene) {
-			captureScene(scene);
-			applyConnectionDiff(sceneConnections[scene], newConns);
-		}
-		sceneConnections[scene] = newConns;
-	}
-
-	// GUI thread — switches to newScene: captures the outgoing scene's current cable state,
-	// diffs it against the incoming scene's stored topology, and updates patch cables accordingly.
-	// Pings "SpliceKit-SceneLink" listeners so any instance following this one as its scene
-	// link master can pick up the change (see the moduleChangedFlag handling in process()).
-	void switchScene(int newScene) {
-		if (newScene == currentScene) return;
-		captureScene(currentScene);
-		applyConnectionDiff(sceneConnections[currentScene], sceneConnections[newScene]);
-		currentScene = newScene;
-		notifyModuleListeners("SpliceKit-SceneLink");
 	}
 
 	// GUI thread — chains are disallowed entirely: a module can only be picked as a scene
@@ -1580,33 +1700,14 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// GUI thread — removes all cables connected to cellId in the current scene.
-	void removeCellConnections(int cellId) {
-		uint64_t mask = sceneConnections[currentScene][cellId];
-		for (int j = 0; j < MATRIX_COUNT; j++) {
-			if (!((mask >> j) & 1)) continue;
-			setConnection(currentScene, cellId, j, false);
-			removeCableBetween(cellId, j);
-		}
-	}
-
-	// Engine thread — enqueues a switchScene call on the GUI thread via taskProcessorUi.
+	// Engine thread — enqueues a sceneStore.switchTo call on the GUI thread via taskProcessorUi.
 	void requestSceneChange(int i) {
-		taskProcessorUi.enqueue([this, i]() { switchScene(i); });
+		taskProcessorUi.enqueue([this, i]() { sceneStore.switchTo(i); });
 	}
 
-	// GUI thread — copies scene src's connection topology to scene dst.
-	// If dst is the active scene, cables are updated live via reconcileScene.
-	void copyScene(int src, int dst) {
-		if (src == dst) return;
-		if (src == currentScene) captureScene(src);
-		reconcileScene(dst, sceneConnections[src]);
-		setOverlayMessage("Scene copied", string::f("%d \xe2\x86\x92 %d", src + 1, dst + 1));
-	}
-
-	// Engine thread — enqueues a copyScene call on the GUI thread via taskProcessorUi.
+	// Engine thread — enqueues a sceneStore.copy call on the GUI thread via taskProcessorUi.
 	void requestCopyScene(int src, int dst) {
-		taskProcessorUi.enqueue([this, src, dst]() { copyScene(src, dst); });
+		taskProcessorUi.enqueue([this, src, dst]() { sceneStore.copy(src, dst); });
 	}
 
 	// GUI thread — moves the port assignment, label, color, and all scene
@@ -1626,32 +1727,12 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 
 		// Remove only toId's existing cables — fromId's cables stay, because toId
 		// will inherit fromId's port and those cables are already in the right place.
-		removeCellConnections(toId);
+		sceneStore.removeCellConnections(toId);
 
-		// Rewrite sceneConnections for every scene:
+		// Rewrite sceneStore's connections for every scene:
 		//   Step A — tear out toId's existing connections from its neighbours.
 		//   Step B — redirect fromId's connections to toId.
-		for (int s = 0; s < SCENE_COUNT; s++) {
-			uint64_t oldToMask = sceneConnections[s][toId];
-			for (int j = 0; j < MATRIX_COUNT; j++) {
-				if ((oldToMask >> j) & 1) {
-					sceneConnections[s][j] &= ~(1ULL << toId);
-				}
-			}
-			sceneConnections[s][toId] = 0;
-
-			uint64_t fromMask = sceneConnections[s][fromId];
-			for (int j = 0; j < MATRIX_COUNT; j++) {
-				if (!((fromMask >> j) & 1)) continue;
-				sceneConnections[s][j] &= ~(1ULL << fromId);
-				if (j != toId) {
-					sceneConnections[s][j] |= (1ULL << toId);
-				}
-			}
-			// fromId's connections become toId's, minus any self-connection bit.
-			sceneConnections[s][toId]   = fromMask & ~(1ULL << toId);
-			sceneConnections[s][fromId] = 0;
-		}
+		sceneStore.moveCellBits(fromId, toId);
 
 		// Move port assignment, label, and color. MIDI mapping is intentionally
 		// kept on each cell: it is tied to the physical button position on the
@@ -1674,8 +1755,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// Rebinding discards the cell's previous port, so — exactly as in moveCell() for the
 	// destination cell — everything derived from that old port must go with it:
 	//   * current-scene cables are removed while the old assignment is still in place
-	//     (removeCableBetween() resolves coordinates from portAssignments, so this must
-	//     happen before the overwrite or the cables become unreachable orphans),
+	//     (SceneStore resolves cable coordinates by reading portAssignments through its
+	//     `ports` view, so this must happen before the overwrite or it would resolve the
+	//     NEW port and leave the old cables as unreachable orphans),
 	//   * the connection bitmasks are cleared in *every* scene, not just the current one —
 	//     a stale bit in an inactive scene would recreate a cable to the wrong port on the
 	//     next switchScene(),
@@ -1689,14 +1771,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			// Resolve the note-off while the old mapping and state are still addressable;
 			// the engine thread sends it on its next tick.
 			feedback.queueFeedbackOff(cellId, feedback.cellLedState[cellId]);
-			removeCellConnections(cellId);
-			for (int s = 0; s < SCENE_COUNT; s++) {
-				uint64_t mask = sceneConnections[s][cellId];
-				for (int j = 0; j < MATRIX_COUNT; j++) {
-					if ((mask >> j) & 1) sceneConnections[s][j] &= ~(1ULL << cellId);
-				}
-				sceneConnections[s][cellId] = 0;
-			}
+			sceneStore.removeCellConnections(cellId);
+			sceneStore.clearCell(cellId);
 			cellLabels[cellId].clear();
 		}
 
@@ -1716,14 +1792,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 
 		// Resolve the note-off while the old mapping still addresses the right note.
 		feedback.queueFeedbackOff(cellId, feedback.cellLedState[cellId]);
-		removeCellConnections(cellId);
-		for (int s = 0; s < SCENE_COUNT; s++) {
-			uint64_t mask = sceneConnections[s][cellId];
-			for (int j = 0; j < MATRIX_COUNT; j++) {
-				if ((mask >> j) & 1) sceneConnections[s][j] &= ~(1ULL << cellId);
-			}
-			sceneConnections[s][cellId] = 0;
-		}
+		sceneStore.removeCellConnections(cellId);
+		sceneStore.clearCell(cellId);
 		cellLabels[cellId].clear();
 		portAssignments[cellId].clear();
 		feedback.invalidateLedStates();
@@ -1735,12 +1805,12 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// taskProcessorUi rather than calling this directly.
 	void resetModuleState() {
 		static const SceneConns empty{};
-		captureScene(currentScene);
-		applyConnectionDiff(sceneConnections[currentScene], empty);
-		for (auto& s : sceneConnections) s.fill(0);
+		sceneStore.capture(sceneStore.current);
+		sceneStore.applyToCurrent(empty);
+		for (auto& s : sceneStore.connections) s.fill(0);
 		for (int i = 0; i < MATRIX_COUNT; i++) portAssignments[i].clear();
 		for (int i = 0; i < TOTAL_MAPS; i++) trackingProcessor.clearMap(i);
-		currentScene   = 0;
+		sceneStore.current = 0;
 		feedback.setActivePresetJson("");
 		feedback.invalidateLedStates();
 		std::fill(portHasCable, portHasCable  + MATRIX_COUNT, false);
@@ -1838,7 +1908,7 @@ struct SpliceKitVizOverlay : TransparentWidget {
 
 		// Build bitmask of cells connected to the hovered cell in the current scene.
 		uint64_t connectedMask = anyHover
-			? module->sceneConnections[module->currentScene][hoveredCell]
+			? module->sceneStore.connectionMask(module->sceneStore.current, hoveredCell)
 			: 0;
 
 		// Helper: resolve a cell's port widget, or return nullptr.
@@ -1981,7 +2051,7 @@ struct SpliceKitSceneButton : app::SvgSwitch {
 		auto* src = dynamic_cast<SpliceKitSceneButton*>(e.origin);
 		if (!src || src->module != module || src->sceneId == sceneId) return;
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			module->copyScene(src->sceneId, sceneId);
+			module->sceneStore.copy(src->sceneId, sceneId);
 		}
 	}
 
@@ -2425,20 +2495,20 @@ void SpliceKitSceneButton::createSceneMenu() {
 
 	menu->addChild(createMenuItem("Clear", "", [=]() {
 		SceneConns empty{};
-		module->reconcileScene(sceneId, empty);
+		module->sceneStore.reconcile(sceneId, empty);
 	}));
 	menu->addChild(createMenuItem("Copy", "", [=]() {
-		if (sceneId == module->currentScene) module->captureScene(sceneId);
-		module->sceneClipboard = module->sceneConnections[sceneId];
+		if (sceneId == module->sceneStore.current) module->sceneStore.capture(sceneId);
+		module->sceneClipboard = module->sceneStore.sceneConns(sceneId);
 		module->sceneClipboardValid = true;
 	}));
 	menu->addChild(createMenuItem("Paste", "", [=]() {
 		if (!module->sceneClipboardValid) return;
-		module->reconcileScene(sceneId, module->sceneClipboard);
+		module->sceneStore.reconcile(sceneId, module->sceneClipboard);
 	}, !module->sceneClipboardValid));
 	// randomizeCurrentScene() always targets the active scene, not necessarily the one whose
 	// button was clicked — only offer it here when they're the same scene.
-	bool notCurrent = sceneId != module->currentScene;
+	bool notCurrent = sceneId != module->sceneStore.current;
 	menu->addChild(createMenuItem("Randomize", "", [=]() {
 		module->randomizeCurrentScene();
 	}, notCurrent));
@@ -2526,25 +2596,23 @@ void SpliceKitCellButton::createCellMenu() {
 	}));
 
 	menu->addChild(new MenuSeparator);
-	bool hasConns = module->sceneConnections[module->currentScene][cellId] != 0;
+	bool hasConns = module->sceneStore.connectionMask(module->sceneStore.current, cellId) != 0;
 	menu->addChild(createSubmenuItem("Remove cable", "",
 		[=](Menu* menu) {
-			uint64_t mask = module->sceneConnections[module->currentScene][cellId];
+			uint64_t mask = module->sceneStore.connectionMask(module->sceneStore.current, cellId);
 			for (int j = 0; j < MATRIX_COUNT; j++) {
 				if (!((mask >> j) & 1)) continue;
 				std::string connLabel = SpliceKitModule::portLabel(module->portAssignments[j]);
 				int cid = cellId, jid = j;
-				SpliceKitModule* mod = module;
 				menu->addChild(createMenuItem(connLabel, "", [=]() {
-					mod->setConnection(mod->currentScene, cid, jid, false);
-					mod->removeCableBetween(cid, jid);
+					module->sceneStore.disconnectLive(cid, jid);
 				}));
 			}
 		},
 		!hasConns
 	));
 	menu->addChild(createMenuItem("Remove all cables", "",
-		[=]() { module->removeCellConnections(cellId); },
+		[=]() { module->sceneStore.removeCellConnections(cellId); },
 		!hasConns
 	));
 

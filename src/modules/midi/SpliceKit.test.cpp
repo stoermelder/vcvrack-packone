@@ -17,12 +17,12 @@ TEST_CASE("Construction and initialization", "[SpliceKit]") {
 	REQUIRE(m != nullptr);
 	REQUIRE(mw != nullptr);
 	REQUIRE(mw->module == nullptr);
-	REQUIRE(m->currentScene == 0);
+	REQUIRE(m->sceneStore.current == 0);
 	REQUIRE(m->pendingCellId == -1);
 	REQUIRE(m->buttonMode == SpliceKitModule::BUTTON_TOGGLE);
 	REQUIRE(m->overlayEnabled == true);
-	REQUIRE(m->sceneConnections.size() == (size_t)SCENE_COUNT);
-	REQUIRE(m->sceneConnections.capacity() >= (size_t)SCENE_COUNT);
+	REQUIRE(m->sceneStore.connections.size() == (size_t)SCENE_COUNT);
+	REQUIRE(m->sceneStore.connections.capacity() >= (size_t)SCENE_COUNT);
 	REQUIRE(m->feedback.sceneLedState.size() == (size_t)SCENE_COUNT);
 
 	Test::destroyWidget(mw);
@@ -66,26 +66,27 @@ TEST_CASE("Preset JSON null-guards", "[SpliceKit][JSON]") {
 TEST_CASE("isConnected and setConnection bitmask", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
-	REQUIRE(m->isConnected(0, 0, 1) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 0, 1) == false);
 
-	m->setConnection(0, 0, 1, true);
-	REQUIRE(m->isConnected(0, 0, 1) == true);
-	REQUIRE(m->isConnected(0, 1, 0) == true);  // symmetric
+	m->sceneStore.setConnection(0, 0, 1, true);
+	REQUIRE(m->sceneStore.isConnected(0, 0, 1) == true);
+	REQUIRE(m->sceneStore.isConnected(0, 1, 0) == true);  // symmetric
 
-	m->setConnection(0, 0, 1, false);
-	REQUIRE(m->isConnected(0, 0, 1) == false);
-	REQUIRE(m->isConnected(0, 1, 0) == false);
+	m->sceneStore.setConnection(0, 0, 1, false);
+	REQUIRE(m->sceneStore.isConnected(0, 0, 1) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 1, 0) == false);
 
 	// Different scene is unaffected
-	REQUIRE(m->isConnected(1, 0, 1) == false);
+	REQUIRE(m->sceneStore.isConnected(1, 0, 1) == false);
 
 	Test::destroyModule(m);
 }
 
 
 // ─── resolveDirection ─────────────────────────────────────────────────────────────────────
-// Pure, no module needed — the four call sites (removeCableBetween, toggleConnection,
-// applyConnectionDiff, the cross-instance path) all delegate to this.
+// Pure, no module needed — the call sites (removeCableBetween/addCableBetween, which
+// every live connection change funnels through, toggleConnection, and the cross-instance
+// path) all delegate to this.
 
 TEST_CASE("resolveDirection - output/input resolves output first regardless of argument order", "[SpliceKit]") {
 	PortAssignment out; out.moduleId = 1; out.portId = 0; out.type = engine::Port::OUTPUT;
@@ -241,10 +242,10 @@ TEST_CASE("processMapUpdate - toggle mode ignores note-off", "[SpliceKit]") {
 TEST_CASE("JSON roundtrip preserves scene and button mode", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
-	m->currentScene    = 3;
+	m->sceneStore.current    = 3;
 	m->buttonMode      = SpliceKitModule::BUTTON_MOMENTARY;
 	m->overlayEnabled  = false;
-	m->setConnection(3, 1, 5, true);
+	m->sceneStore.setConnection(3, 1, 5, true);
 
 	json_t* j = m->dataToJson();
 
@@ -252,12 +253,12 @@ TEST_CASE("JSON roundtrip preserves scene and button mode", "[SpliceKit]") {
 	m2->dataFromJson(j);
 	json_decref(j);
 
-	REQUIRE(m2->currentScene   == 3);
+	REQUIRE(m2->sceneStore.current   == 3);
 	REQUIRE(m2->buttonMode     == SpliceKitModule::BUTTON_MOMENTARY);
 	REQUIRE(m2->overlayEnabled == false);
-	REQUIRE(m2->isConnected(3, 1, 5) == true);
-	REQUIRE(m2->isConnected(3, 5, 1) == true);  // symmetric
-	REQUIRE(m2->isConnected(0, 1, 5) == false);  // other scene untouched
+	REQUIRE(m2->sceneStore.isConnected(3, 1, 5) == true);
+	REQUIRE(m2->sceneStore.isConnected(3, 5, 1) == true);  // symmetric
+	REQUIRE(m2->sceneStore.isConnected(0, 1, 5) == false);  // other scene untouched
 
 	Test::destroyModule(m2);
 	Test::destroyModule(m);
@@ -562,7 +563,7 @@ TEST_CASE("process - scene cellLedState transitions to SCENE_ACTIVE for currentS
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	m->lightDivider.setDivision(256);
 
-	m->currentScene     = 2;
+	m->sceneStore.current     = 2;
 	m->feedback.sceneLedState[2] = -1;  // force a state send
 
 	Test::SimpleEngine engine;
@@ -575,7 +576,7 @@ TEST_CASE("process - scene cellLedState transitions to SCENE_ACTIVE for currentS
 
 TEST_CASE("process - physical scene button press works normally when not linked", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->currentScene = 0;  // sceneLinkMasterId stays -1 (default)
+	m->sceneStore.current = 0;  // sceneLinkMasterId stays -1 (default)
 
 	Test::SimpleEngine engine;
 	engine.registerModule(m);
@@ -586,7 +587,7 @@ TEST_CASE("process - physical scene button press works normally when not linked"
 
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 1);  // switchScene(1) queued
 	m->taskProcessorUi.internalQueue.queue.shift()();
-	REQUIRE(m->currentScene == 1);
+	REQUIRE(m->sceneStore.current == 1);
 
 	Test::destroyModule(m);
 }
@@ -594,7 +595,7 @@ TEST_CASE("process - physical scene button press works normally when not linked"
 TEST_CASE("process - physical scene button press is ignored while following a scene link master", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	m->sceneLinkMasterId = 999;  // any id — process() only checks it's >= 0
-	m->currentScene = 0;
+	m->sceneStore.current = 0;
 
 	Test::SimpleEngine engine;
 	engine.registerModule(m);
@@ -603,7 +604,7 @@ TEST_CASE("process - physical scene button press is ignored while following a sc
 	m->params[SpliceKitModule::PARAM_SCENE + 1].setValue(1.f);
 	for (int i = 0; i < 256; i++) engine.step();  // rising edge on the next divided tick
 
-	REQUIRE(m->currentScene == 0);   // unaffected — scene button press ignored while linked
+	REQUIRE(m->sceneStore.current == 0);   // unaffected — scene button press ignored while linked
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 0);
 
 	Test::destroyModule(m);
@@ -706,8 +707,8 @@ TEST_CASE("moveCell - label and color are transferred and source is reset", "[Sp
 TEST_CASE("moveCell - scene connections are redirected in current scene", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
-	m->setConnection(0, 0, 2, true);
-	m->setConnection(0, 0, 4, true);
+	m->sceneStore.setConnection(0, 0, 2, true);
+	m->sceneStore.setConnection(0, 0, 4, true);
 
 	m->portAssignments[0].moduleId = 1;
 	m->portAssignments[0].portId   = 0;
@@ -716,21 +717,21 @@ TEST_CASE("moveCell - scene connections are redirected in current scene", "[Spli
 	m->moveCell(0, 5);
 
 	// toId inherits fromId's connections.
-	REQUIRE(m->isConnected(0, 5, 2) == true);
-	REQUIRE(m->isConnected(0, 5, 4) == true);
+	REQUIRE(m->sceneStore.isConnected(0, 5, 2) == true);
+	REQUIRE(m->sceneStore.isConnected(0, 5, 4) == true);
 	// fromId is cleared.
-	REQUIRE(m->isConnected(0, 0, 2) == false);
-	REQUIRE(m->isConnected(0, 0, 4) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 0, 2) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 0, 4) == false);
 	// Neighbours now point at toId, not fromId.
-	REQUIRE(m->isConnected(0, 2, 5) == true);
-	REQUIRE(m->isConnected(0, 2, 0) == false);
-	REQUIRE(m->isConnected(0, 4, 5) == true);
-	REQUIRE(m->isConnected(0, 4, 0) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 2, 5) == true);
+	REQUIRE(m->sceneStore.isConnected(0, 2, 0) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 4, 5) == true);
+	REQUIRE(m->sceneStore.isConnected(0, 4, 0) == false);
 
 	// fromId's bitmask was never zeroed — its connections survived as toId's.
 	// In production this means the physical cables remain in the patch untouched.
-	REQUIRE(m->isConnected(0, 5, 2) == true);
-	REQUIRE(m->isConnected(0, 5, 4) == true);
+	REQUIRE(m->sceneStore.isConnected(0, 5, 2) == true);
+	REQUIRE(m->sceneStore.isConnected(0, 5, 4) == true);
 
 	Test::destroyModule(m);
 }
@@ -739,9 +740,9 @@ TEST_CASE("moveCell - scene connections are redirected in current scene", "[Spli
 TEST_CASE("moveCell - toId's existing connections are discarded", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
-	m->setConnection(0, 3, 7, true);  // fromId=3 → cell 7
-	m->setConnection(0, 5, 8, true);  // toId=5 existing connections — discarded
-	m->setConnection(0, 5, 9, true);
+	m->sceneStore.setConnection(0, 3, 7, true);  // fromId=3 → cell 7
+	m->sceneStore.setConnection(0, 5, 8, true);  // toId=5 existing connections — discarded
+	m->sceneStore.setConnection(0, 5, 9, true);
 
 	m->portAssignments[3].moduleId = 1;
 	m->portAssignments[3].portId   = 0;
@@ -750,12 +751,12 @@ TEST_CASE("moveCell - toId's existing connections are discarded", "[SpliceKit]")
 	m->moveCell(3, 5);
 
 	// toId has fromId's connection only.
-	REQUIRE(m->isConnected(0, 5, 7) == true);
-	REQUIRE(m->isConnected(0, 5, 8) == false);
-	REQUIRE(m->isConnected(0, 5, 9) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 5, 7) == true);
+	REQUIRE(m->sceneStore.isConnected(0, 5, 8) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 5, 9) == false);
 	// Discarded neighbours no longer reference toId.
-	REQUIRE(m->isConnected(0, 8, 5) == false);
-	REQUIRE(m->isConnected(0, 9, 5) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 8, 5) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 9, 5) == false);
 
 	Test::destroyModule(m);
 }
@@ -764,8 +765,8 @@ TEST_CASE("moveCell - toId's existing connections are discarded", "[SpliceKit]")
 TEST_CASE("moveCell - fromId-toId connection is dropped and not a self-connection", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
-	m->setConnection(0, 0, 3, true);  // fromId↔toId: will not become self-connection
-	m->setConnection(0, 0, 7, true);  // other connection — should transfer
+	m->sceneStore.setConnection(0, 0, 3, true);  // fromId↔toId: will not become self-connection
+	m->sceneStore.setConnection(0, 0, 7, true);  // other connection — should transfer
 
 	m->portAssignments[0].moduleId = 1;
 	m->portAssignments[0].portId   = 0;
@@ -773,10 +774,10 @@ TEST_CASE("moveCell - fromId-toId connection is dropped and not a self-connectio
 
 	m->moveCell(0, 3);
 
-	REQUIRE(m->isConnected(0, 3, 3) == false);  // no self-connection
-	REQUIRE(m->isConnected(0, 3, 7) == true);   // other connection transferred
-	REQUIRE(m->isConnected(0, 0, 7) == false);  // fromId cleared
-	REQUIRE(m->isConnected(0, 0, 3) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 3, 3) == false);  // no self-connection
+	REQUIRE(m->sceneStore.isConnected(0, 3, 7) == true);   // other connection transferred
+	REQUIRE(m->sceneStore.isConnected(0, 0, 7) == false);  // fromId cleared
+	REQUIRE(m->sceneStore.isConnected(0, 0, 3) == false);
 
 	Test::destroyModule(m);
 }
@@ -786,9 +787,9 @@ TEST_CASE("moveCell - connections transferred across all scenes independently", 
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
 	// Different connection topology in scenes 1, 2, 3.
-	m->setConnection(1, 10, 20, true);
-	m->setConnection(2, 10, 30, true);
-	m->setConnection(3, 10, 40, true);
+	m->sceneStore.setConnection(1, 10, 20, true);
+	m->sceneStore.setConnection(2, 10, 30, true);
+	m->sceneStore.setConnection(3, 10, 40, true);
 
 	m->portAssignments[10].moduleId = 1;
 	m->portAssignments[10].portId   = 0;
@@ -796,12 +797,12 @@ TEST_CASE("moveCell - connections transferred across all scenes independently", 
 
 	m->moveCell(10, 50);
 
-	REQUIRE(m->isConnected(1, 50, 20) == true);
-	REQUIRE(m->isConnected(2, 50, 30) == true);
-	REQUIRE(m->isConnected(3, 50, 40) == true);
-	REQUIRE(m->isConnected(1, 10, 20) == false);
-	REQUIRE(m->isConnected(2, 10, 30) == false);
-	REQUIRE(m->isConnected(3, 10, 40) == false);
+	REQUIRE(m->sceneStore.isConnected(1, 50, 20) == true);
+	REQUIRE(m->sceneStore.isConnected(2, 50, 30) == true);
+	REQUIRE(m->sceneStore.isConnected(3, 50, 40) == true);
+	REQUIRE(m->sceneStore.isConnected(1, 10, 20) == false);
+	REQUIRE(m->sceneStore.isConnected(2, 10, 30) == false);
+	REQUIRE(m->sceneStore.isConnected(3, 10, 40) == false);
 
 	Test::destroyModule(m);
 }
@@ -829,9 +830,9 @@ TEST_CASE("process - scene state transitions from active to dim after scene swit
 	m->lightDivider.setDivision(256);
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
-	m->currentScene = 0;
+	m->sceneStore.current = 0;
 	// Give scene 1 a stored connection so it becomes DIM
-	m->setConnection(1, 0, 1, true);
+	m->sceneStore.setConnection(1, 0, 1, true);
 
 	Test::SimpleEngine engine;
 	engine.registerModule(m);
@@ -849,71 +850,62 @@ TEST_CASE("process - scene state transitions from active to dim after scene swit
 
 TEST_CASE("copyScene - no-op when src equals dst", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->setConnection(2, 0, 1, true);
-	m->copyScene(2, 2);
-	REQUIRE(m->isConnected(2, 0, 1) == true);  // unchanged
+	m->sceneStore.setConnection(2, 0, 1, true);
+	m->sceneStore.copy(2, 2);
+	REQUIRE(m->sceneStore.isConnected(2, 0, 1) == true);  // unchanged
 	Test::destroyModule(m);
 }
 
 TEST_CASE("copyScene - copies connections from src to dst", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->currentScene = 7;  // keep src and dst both inactive
-	m->setConnection(1, 0, 5, true);
-	m->setConnection(1, 3, 7, true);
-	m->copyScene(1, 4);
-	REQUIRE(m->isConnected(4, 0, 5) == true);
-	REQUIRE(m->isConnected(4, 3, 7) == true);
-	REQUIRE(m->isConnected(4, 5, 0) == true);  // symmetric
+	m->sceneStore.current = 7;  // keep src and dst both inactive
+	m->sceneStore.setConnection(1, 0, 5, true);
+	m->sceneStore.setConnection(1, 3, 7, true);
+	m->sceneStore.copy(1, 4);
+	REQUIRE(m->sceneStore.isConnected(4, 0, 5) == true);
+	REQUIRE(m->sceneStore.isConnected(4, 3, 7) == true);
+	REQUIRE(m->sceneStore.isConnected(4, 5, 0) == true);  // symmetric
 	Test::destroyModule(m);
 }
 
 TEST_CASE("copyScene - overwrites existing connections in dst", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->currentScene = 7;
-	m->setConnection(0, 1, 2, true);  // src has 1↔2
-	m->setConnection(3, 4, 5, true);  // dst has 4↔5 (will be overwritten)
-	m->copyScene(0, 3);
-	REQUIRE(m->isConnected(3, 1, 2) == true);
-	REQUIRE(m->isConnected(3, 4, 5) == false);
+	m->sceneStore.current = 7;
+	m->sceneStore.setConnection(0, 1, 2, true);  // src has 1↔2
+	m->sceneStore.setConnection(3, 4, 5, true);  // dst has 4↔5 (will be overwritten)
+	m->sceneStore.copy(0, 3);
+	REQUIRE(m->sceneStore.isConnected(3, 1, 2) == true);
+	REQUIRE(m->sceneStore.isConnected(3, 4, 5) == false);
 	Test::destroyModule(m);
 }
 
 TEST_CASE("copyScene - src scene remains unchanged", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->currentScene = 7;
-	m->setConnection(2, 0, 3, true);
-	m->copyScene(2, 5);
-	REQUIRE(m->isConnected(2, 0, 3) == true);
+	m->sceneStore.current = 7;
+	m->sceneStore.setConnection(2, 0, 3, true);
+	m->sceneStore.copy(2, 5);
+	REQUIRE(m->sceneStore.isConnected(2, 0, 3) == true);
 	Test::destroyModule(m);
 }
 
 TEST_CASE("copyScene - unrelated scenes are not affected", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->currentScene = 7;
-	m->setConnection(1, 0, 5, true);
-	m->setConnection(6, 10, 20, true);
-	m->copyScene(1, 4);
-	REQUIRE(m->isConnected(6, 10, 20) == true);
-	REQUIRE(m->isConnected(4, 10, 20) == false);
+	m->sceneStore.current = 7;
+	m->sceneStore.setConnection(1, 0, 5, true);
+	m->sceneStore.setConnection(6, 10, 20, true);
+	m->sceneStore.copy(1, 4);
+	REQUIRE(m->sceneStore.isConnected(6, 10, 20) == true);
+	REQUIRE(m->sceneStore.isConnected(4, 10, 20) == false);
 	Test::destroyModule(m);
 }
 
 TEST_CASE("copyScene - can copy to current scene (bitmask transfer, no cables in test)", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	// src=1 is inactive, dst=4 is current. reconcileScene always assigns newConns.
-	m->currentScene = 4;
-	m->setConnection(1, 0, 3, true);
-	m->copyScene(1, 4);
-	REQUIRE(m->isConnected(4, 0, 3) == true);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("copyScene - posts overlay message", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->overlayEnabled   = true;
-	m->overlayMessageId = -1;
-	m->copyScene(1, 3);
-	REQUIRE(m->overlayMessageId == 0);
+	m->sceneStore.current = 4;
+	m->sceneStore.setConnection(1, 0, 3, true);
+	m->sceneStore.copy(1, 4);
+	REQUIRE(m->sceneStore.isConnected(4, 0, 3) == true);
 	Test::destroyModule(m);
 }
 
@@ -924,13 +916,13 @@ TEST_CASE("copyScene - posts overlay message", "[SpliceKit]") {
 
 TEST_CASE("requestCopyScene - enqueues a taskProcessorUi item that performs the copy", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->currentScene = 7;
-	m->setConnection(2, 0, 1, true);
+	m->sceneStore.current = 7;
+	m->sceneStore.setConnection(2, 0, 1, true);
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 0);
 	m->requestCopyScene(2, 5);
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 1);
 	m->taskProcessorUi.internalQueue.queue.shift()();
-	REQUIRE(m->isConnected(5, 0, 1) == true);
+	REQUIRE(m->sceneStore.isConnected(5, 0, 1) == true);
 	Test::destroyModule(m);
 }
 
@@ -1670,13 +1662,13 @@ TEST_CASE("JSON roundtrip preserves cellLabels", "[SpliceKit][JSON]") {
 TEST_CASE("JSON roundtrip - panelTheme and currentScene survive a full save/load", "[SpliceKit][JSON]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	m->panelTheme   = 1;  // dark
-	m->currentScene = 5;
+	m->sceneStore.current = 5;
 	json_t* j = m->dataToJson();
 	SpliceKitModule* m2 = Test::createModule<SpliceKitModule>("SpliceKit");
 	m2->dataFromJson(j);
 	json_decref(j);
 	REQUIRE(m2->panelTheme   == 1);
-	REQUIRE(m2->currentScene == 5);
+	REQUIRE(m2->sceneStore.current == 5);
 	Test::destroyModule(m2);
 	Test::destroyModule(m);
 }
@@ -1749,7 +1741,7 @@ TEST_CASE("process - cell connected to pending cell transitions to CONNECTED1", 
 	m->portAssignments[5].moduleId = 1;
 	m->portAssignments[5].portId   = 1;
 	m->portAssignments[5].type     = engine::Port::INPUT;
-	m->setConnection(0, 0, 5, true);
+	m->sceneStore.setConnection(0, 0, 5, true);
 
 	m->triggerCell(0);  // pendingCellId = 0
 
@@ -1777,7 +1769,7 @@ TEST_CASE("resolveCellVisual - precedence order pending > connected > port-learn
 	m->portAssignments[5].portId   = 1;
 	m->portAssignments[5].type     = engine::Port::INPUT;
 	m->portHasCable[5] = true;
-	m->setConnection(0, 0, 5, true);
+	m->sceneStore.setConnection(0, 0, 5, true);
 
 	m->pendingCellId = 0;
 	m->portLearningId = 5;
@@ -1822,9 +1814,9 @@ TEST_CASE("resolveSceneVisual - precedence order midi-learn > active > has-conne
 	m->portAssignments[1].moduleId = 1;
 	m->portAssignments[1].portId   = 1;
 	m->portAssignments[1].type     = engine::Port::INPUT;
-	m->setConnection(2, 0, 1, true);
+	m->sceneStore.setConnection(2, 0, 1, true);
 
-	m->currentScene = 2;
+	m->sceneStore.current = 2;
 	m->learningId = MATRIX_COUNT + 2;
 
 	// midi-learn beats active, both set on scene 2.
@@ -1837,7 +1829,7 @@ TEST_CASE("resolveSceneVisual - precedence order midi-learn > active > has-conne
 	REQUIRE(active.stateId == LED_STATE_SCENE_ACTIVE);
 
 	// has-connections beats off, once active is removed (scene 2 no longer current).
-	m->currentScene = 0;
+	m->sceneStore.current = 0;
 	SceneVisual hasConn = m->resolveSceneVisual(2, true);
 	REQUIRE(hasConn.stateId == LED_STATE_SCENE_DIM);
 
@@ -1875,8 +1867,8 @@ TEST_CASE("process - cell with port assignment and no cable transitions to COLOR
 
 TEST_CASE("requestSceneChange - enqueues a switchScene lambda", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->currentScene = 0;
-	m->setConnection(1, 0, 1, true);  // scene 1 has a stored connection
+	m->sceneStore.current = 0;
+	m->sceneStore.setConnection(1, 0, 1, true);  // scene 1 has a stored connection
 
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 0);
 	m->requestSceneChange(1);
@@ -1884,7 +1876,7 @@ TEST_CASE("requestSceneChange - enqueues a switchScene lambda", "[SpliceKit]") {
 
 	// Running the lambda switches the scene.
 	m->taskProcessorUi.internalQueue.queue.shift()();
-	REQUIRE(m->currentScene == 1);
+	REQUIRE(m->sceneStore.current == 1);
 	Test::destroyModule(m);
 }
 
@@ -1892,11 +1884,11 @@ TEST_CASE("resetModuleState - clears all state", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
 	// Populate state that should be wiped by reset.
-	m->currentScene        = 4;
+	m->sceneStore.current        = 4;
 	MidiOutPreset preset;
 	preset.name = "Test";
 	m->feedback.setActivePreset(preset);
-	m->setConnection(2, 0, 1, true);
+	m->sceneStore.setConnection(2, 0, 1, true);
 	m->portAssignments[3].moduleId = 1;
 	m->portAssignments[3].portId   = 0;
 	m->portAssignments[3].type     = engine::Port::OUTPUT;
@@ -1909,14 +1901,14 @@ TEST_CASE("resetModuleState - clears all state", "[SpliceKit]") {
 	m->resetModuleState();
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 0);
 
-	REQUIRE(m->currentScene         == 0);
+	REQUIRE(m->sceneStore.current         == 0);
 	REQUIRE(m->feedback.getActivePreset()    == nullptr);
 	REQUIRE(m->portAssignments[3].isValid() == false);
 	REQUIRE(m->portHasCable[3]      == false);
 	// All scenes cleared
 	for (int s = 0; s < SCENE_COUNT; s++) {
 		for (int c = 0; c < MATRIX_COUNT; c++) {
-			REQUIRE(m->sceneConnections[s][c] == 0);
+			REQUIRE(m->sceneStore.connections[s][c] == 0);
 		}
 	}
 	// MIDI map for cell 5 was cleared
@@ -1942,8 +1934,8 @@ TEST_CASE("Scene link - follower adopts master's scene after a change", "[Splice
 	Test::registerModule(follower);
 
 	follower->sceneLinkMasterId = master->id;
-	master->switchScene(3);  // also calls notifyModuleListeners("SpliceKit-SceneLink")
-	REQUIRE(follower->currentScene == 0);  // not yet applied
+	master->sceneStore.switchTo(3);  // fires onSwitch -> notifyModuleListeners("SpliceKit-SceneLink")
+	REQUIRE(follower->sceneStore.current == 0);  // not yet applied
 
 	Test::SimpleEngine engine;
 	engine.registerModule(follower);
@@ -1951,7 +1943,7 @@ TEST_CASE("Scene link - follower adopts master's scene after a change", "[Splice
 
 	REQUIRE(follower->taskProcessorUi.internalQueue.queue.size() == 1);
 	follower->taskProcessorUi.internalQueue.queue.shift()();
-	REQUIRE(follower->currentScene == 3);
+	REQUIRE(follower->sceneStore.current == 3);
 
 	Test::unregisterModule(follower);
 	Test::unregisterModule(master);
@@ -1970,7 +1962,7 @@ TEST_CASE("Scene link - no-op when sceneLinkMasterId is unset", "[SpliceKit]") {
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 0);
-	REQUIRE(m->currentScene == 0);
+	REQUIRE(m->sceneStore.current == 0);
 
 	Test::unregisterModule(m);
 	Test::destroyModule(m);
@@ -1983,13 +1975,13 @@ TEST_CASE("Scene link - unrelated instance without a configured master ignores t
 	Test::registerModule(bystander);
 	// bystander->sceneLinkMasterId stays -1
 
-	master->switchScene(2);  // notifies every registered SpliceKit instance, including bystander
+	master->sceneStore.switchTo(2);  // notifies every registered SpliceKit instance, including bystander
 
 	Test::SimpleEngine engine;
 	engine.registerModule(bystander);
 	for (int i = 0; i < 256; i++) engine.step();
 
-	REQUIRE(bystander->currentScene == 0);
+	REQUIRE(bystander->sceneStore.current == 0);
 	REQUIRE(bystander->taskProcessorUi.internalQueue.queue.size() == 0);
 
 	Test::unregisterModule(bystander);
@@ -2076,33 +2068,33 @@ TEST_CASE("Scene link - sceneLinkHasFollowers detects when a module already serv
 TEST_CASE("reconcileScene - non-current scene copies newConns without touching currentScene cables", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
-	m->currentScene = 0;
-	m->setConnection(0, 0, 1, true);  // current scene has a connection
-	m->setConnection(2, 5, 7, true);  // scene 2 has its own connection (will be overwritten)
+	m->sceneStore.current = 0;
+	m->sceneStore.setConnection(0, 0, 1, true);  // current scene has a connection
+	m->sceneStore.setConnection(2, 5, 7, true);  // scene 2 has its own connection (will be overwritten)
 
 	SceneConns newConns{};
 	newConns[2] = (1ULL << 3) | (1ULL << 9);  // 2↔3 and 2↔9
-	m->reconcileScene(2, newConns);
+	m->sceneStore.reconcile(2, newConns);
 
 	// Scene 0 (current) is unchanged
-	REQUIRE(m->isConnected(0, 0, 1) == true);
+	REQUIRE(m->sceneStore.isConnected(0, 0, 1) == true);
 	// Scene 2 reflects newConns
-	REQUIRE(m->isConnected(2, 2, 3) == true);
-	REQUIRE(m->isConnected(2, 2, 9) == true);
+	REQUIRE(m->sceneStore.isConnected(2, 2, 3) == true);
+	REQUIRE(m->sceneStore.isConnected(2, 2, 9) == true);
 	// Old scene-2 connections are gone
-	REQUIRE(m->isConnected(2, 5, 7) == false);
+	REQUIRE(m->sceneStore.isConnected(2, 5, 7) == false);
 	Test::destroyModule(m);
 }
 
 TEST_CASE("reconcileScene - non-current scene with all-zero newConns clears that scene", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->currentScene = 7;  // keep current scene inactive
-	m->setConnection(3, 1, 2, true);
-	REQUIRE(m->isConnected(3, 1, 2) == true);
+	m->sceneStore.current = 7;  // keep current scene inactive
+	m->sceneStore.setConnection(3, 1, 2, true);
+	REQUIRE(m->sceneStore.isConnected(3, 1, 2) == true);
 
 	SceneConns empty{};
-	m->reconcileScene(3, empty);
-	REQUIRE(m->isConnected(3, 1, 2) == false);
+	m->sceneStore.reconcile(3, empty);
+	REQUIRE(m->sceneStore.isConnected(3, 1, 2) == false);
 	Test::destroyModule(m);
 }
 
@@ -2121,7 +2113,7 @@ TEST_CASE("Construction - matrix and scene param quantities exclude default rand
 TEST_CASE("randomizeCurrentScene - no connections when no ports are assigned", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	m->randomizeCurrentScene();
-	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->sceneConnections[m->currentScene][i] == 0);
+	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->sceneStore.connections[m->sceneStore.current][i] == 0);
 	Test::destroyModule(m);
 }
 
@@ -2146,7 +2138,7 @@ TEST_CASE("randomizeCurrentScene - only pairs assigned outputs with assigned inp
 	int connectionCount = 0;
 	for (int i = 0; i < MATRIX_COUNT; i++) {
 		for (int j = i + 1; j < MATRIX_COUNT; j++) {
-			if (!m->isConnected(m->currentScene, i, j)) continue;
+			if (!m->sceneStore.isConnected(m->sceneStore.current, i, j)) continue;
 			connectionCount++;
 			bool iOut = m->portAssignments[i].isValid() && m->portAssignments[i].type == engine::Port::OUTPUT;
 			bool jOut = m->portAssignments[j].isValid() && m->portAssignments[j].type == engine::Port::OUTPUT;
@@ -2165,13 +2157,13 @@ TEST_CASE("randomizeCurrentScene - replaces the scene's previous topology", "[Sp
 	m->portAssignments[0].moduleId = 42; m->portAssignments[0].portId = 0; m->portAssignments[0].type = engine::Port::OUTPUT;
 	m->portAssignments[1].moduleId = 42; m->portAssignments[1].portId = 1; m->portAssignments[1].type = engine::Port::INPUT;
 	// Stale connection between cells with no valid port assignment — must disappear.
-	m->sceneConnections[m->currentScene][5] |= (1ULL << 6);
-	m->sceneConnections[m->currentScene][6] |= (1ULL << 5);
+	m->sceneStore.connections[m->sceneStore.current][5] |= (1ULL << 6);
+	m->sceneStore.connections[m->sceneStore.current][6] |= (1ULL << 5);
 
 	m->randomizeCurrentScene();
 
-	REQUIRE(m->isConnected(m->currentScene, 5, 6) == false);
-	REQUIRE(m->isConnected(m->currentScene, 0, 1) == true);  // the only valid pair — deterministic
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 5, 6) == false);
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == true);  // the only valid pair — deterministic
 
 	Test::destroyModule(m);
 }
@@ -2388,33 +2380,33 @@ TEST_CASE("setOverlayMessage - both subtitles can be empty", "[SpliceKit]") {
 
 TEST_CASE("removeCellConnections - clears all bitmask bits for the cell in the current scene", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->currentScene = 0;
+	m->sceneStore.current = 0;
 
-	m->setConnection(0, 4, 1, true);
-	m->setConnection(0, 4, 7, true);
-	m->setConnection(0, 4, 9, true);
-	REQUIRE(m->sceneConnections[0][4] != 0);
+	m->sceneStore.setConnection(0, 4, 1, true);
+	m->sceneStore.setConnection(0, 4, 7, true);
+	m->sceneStore.setConnection(0, 4, 9, true);
+	REQUIRE(m->sceneStore.connections[0][4] != 0);
 
-	// removeCellConnections also calls removeCableBetween() for each neighbour,
-	// which dereferences the rack's module list. With no port assignments set
-	// removeCableBetween() is a no-op so this is safe to call.
-	m->removeCellConnections(4);
+	// removeCellConnections also tears down the cable for each neighbour, which
+	// dereferences the rack's module list. With no port assignments set the cable
+	// half of disconnectLive() is a no-op, so this is safe to call.
+	m->sceneStore.removeCellConnections(4);
 
-	REQUIRE(m->sceneConnections[0][4] == 0);
-	REQUIRE(m->isConnected(0, 4, 1) == false);
-	REQUIRE(m->isConnected(0, 4, 7) == false);
-	REQUIRE(m->isConnected(0, 4, 9) == false);
+	REQUIRE(m->sceneStore.connections[0][4] == 0);
+	REQUIRE(m->sceneStore.isConnected(0, 4, 1) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 4, 7) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 4, 9) == false);
 	// Other scenes unaffected
-	REQUIRE(m->sceneConnections[3][4] == 0);
-	REQUIRE(m->sceneConnections[0][1] == 0);
+	REQUIRE(m->sceneStore.connections[3][4] == 0);
+	REQUIRE(m->sceneStore.connections[0][1] == 0);
 	Test::destroyModule(m);
 }
 
 TEST_CASE("removeCellConnections - no-op when cell has no connections", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	// No connections set anywhere — removeCellConnections must be safe.
-	REQUIRE_NOTHROW(m->removeCellConnections(20));
-	REQUIRE(m->sceneConnections[0][20] == 0);
+	REQUIRE_NOTHROW(m->sceneStore.removeCellConnections(20));
+	REQUIRE(m->sceneStore.connections[0][20] == 0);
 	Test::destroyModule(m);
 }
 
@@ -2600,10 +2592,10 @@ TEST_CASE("assignPort - rebinding clears connections in every scene, not just th
 	m->assignPort(2, 44, 0, engine::Port::INPUT);
 
 	// Cell 0 is wired in the active scene (0) and in an inactive one (3).
-	m->setConnection(0, 0, 1, true);
-	m->setConnection(3, 0, 2, true);
-	REQUIRE(m->isConnected(0, 0, 1));
-	REQUIRE(m->isConnected(3, 0, 2));
+	m->sceneStore.setConnection(0, 0, 1, true);
+	m->sceneStore.setConnection(3, 0, 2, true);
+	REQUIRE(m->sceneStore.isConnected(0, 0, 1));
+	REQUIRE(m->sceneStore.isConnected(3, 0, 2));
 
 	// Rebind cell 0 to a different port — its old connections describe the discarded port.
 	m->assignPort(0, 99, 7, engine::Port::OUTPUT);
@@ -2612,13 +2604,13 @@ TEST_CASE("assignPort - rebinding clears connections in every scene, not just th
 	REQUIRE(m->portAssignments[0].portId == 7);
 
 	// A stale bit in an inactive scene would recreate a cable to the wrong port on switchScene().
-	REQUIRE(m->isConnected(0, 0, 1) == false);
-	REQUIRE(m->isConnected(3, 0, 2) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 0, 1) == false);
+	REQUIRE(m->sceneStore.isConnected(3, 0, 2) == false);
 	// Symmetric halves must be cleared too, or the neighbour still claims the connection.
-	REQUIRE(m->sceneConnections[0][1] == 0);
-	REQUIRE(m->sceneConnections[3][2] == 0);
-	REQUIRE(m->sceneConnections[0][0] == 0);
-	REQUIRE(m->sceneConnections[3][0] == 0);
+	REQUIRE(m->sceneStore.connections[0][1] == 0);
+	REQUIRE(m->sceneStore.connections[3][2] == 0);
+	REQUIRE(m->sceneStore.connections[0][0] == 0);
+	REQUIRE(m->sceneStore.connections[3][0] == 0);
 
 	Test::destroyModule(m);
 }
@@ -2708,22 +2700,22 @@ TEST_CASE("clearPort - clears connections in every scene, not just the current o
 	m->assignPort(2, 44, 0, engine::Port::INPUT);
 
 	// Cell 0 is wired in the active scene (0) and in an inactive one (3).
-	m->setConnection(0, 0, 1, true);
-	m->setConnection(3, 0, 2, true);
-	REQUIRE(m->isConnected(0, 0, 1));
-	REQUIRE(m->isConnected(3, 0, 2));
+	m->sceneStore.setConnection(0, 0, 1, true);
+	m->sceneStore.setConnection(3, 0, 2, true);
+	REQUIRE(m->sceneStore.isConnected(0, 0, 1));
+	REQUIRE(m->sceneStore.isConnected(3, 0, 2));
 
 	m->clearPort(0);
 
 	// A stale bit in an inactive scene would recreate a cable to the wrong port if cell 0
 	// were later reassigned and that scene activated (see the regression test below).
-	REQUIRE(m->isConnected(0, 0, 1) == false);
-	REQUIRE(m->isConnected(3, 0, 2) == false);
+	REQUIRE(m->sceneStore.isConnected(0, 0, 1) == false);
+	REQUIRE(m->sceneStore.isConnected(3, 0, 2) == false);
 	// Symmetric halves must be cleared too, or the neighbour still claims the connection.
-	REQUIRE(m->sceneConnections[0][1] == 0);
-	REQUIRE(m->sceneConnections[3][2] == 0);
-	REQUIRE(m->sceneConnections[0][0] == 0);
-	REQUIRE(m->sceneConnections[3][0] == 0);
+	REQUIRE(m->sceneStore.connections[0][1] == 0);
+	REQUIRE(m->sceneStore.connections[3][2] == 0);
+	REQUIRE(m->sceneStore.connections[0][0] == 0);
+	REQUIRE(m->sceneStore.connections[3][0] == 0);
 
 	Test::destroyModule(m);
 }
@@ -2777,7 +2769,7 @@ TEST_CASE("clearPort - regression: bypassing this cleanup let a stale bit resurr
 	m->assignPort(9, 43, 0, engine::Port::INPUT);
 
 	// Scene 3 (inactive) holds a connection 5<->9.
-	m->setConnection(3, 5, 9, true);
+	m->sceneStore.setConnection(3, 5, 9, true);
 
 	// Clear cell 5's port via the same path the cell menu's "Clear" item now uses.
 	m->clearPort(5);
@@ -2787,7 +2779,7 @@ TEST_CASE("clearPort - regression: bypassing this cleanup let a stale bit resurr
 
 	// Without clearPort's cleanup, the stale bit in scene 3 would still connect 5<->9,
 	// recreating a cable to a port the user never chose once scene 3 becomes active.
-	REQUIRE(m->isConnected(3, 5, 9) == false);
+	REQUIRE(m->sceneStore.isConnected(3, 5, 9) == false);
 
 	Test::destroyModule(m);
 }
@@ -2869,7 +2861,7 @@ TEST_CASE("dataFromJson - out-of-range currentScene is clamped into bounds", "[S
 		json_object_set_new(j, "currentScene", json_integer(v));
 		m->dataFromJson(j);
 		json_decref(j);
-		int result = m->currentScene;
+		int result = m->sceneStore.current;
 		Test::destroyModule(m);
 		return result;
 	};
@@ -2891,10 +2883,10 @@ TEST_CASE("dataFromJson - clamped currentScene leaves scene state safely address
 
 	// The whole point of the clamp: these operations index sceneConnections[currentScene]
 	// and must stay in bounds after loading a malformed patch.
-	REQUIRE_NOTHROW(m->setConnection(m->currentScene, 0, 1, true));
-	REQUIRE(m->isConnected(m->currentScene, 0, 1));
-	REQUIRE_NOTHROW(m->removeCellConnections(0));
-	REQUIRE(m->sceneConnections[m->currentScene][0] == 0);
+	REQUIRE_NOTHROW(m->sceneStore.setConnection(m->sceneStore.current, 0, 1, true));
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1));
+	REQUIRE_NOTHROW(m->sceneStore.removeCellConnections(0));
+	REQUIRE(m->sceneStore.connections[m->sceneStore.current][0] == 0);
 
 	Test::destroyModule(m);
 }
@@ -2911,11 +2903,11 @@ TEST_CASE("toggleConnection - output to input creates the connection", "[SpliceK
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 
 	m->toggleConnection(0, 1);
-	REQUIRE(m->isConnected(m->currentScene, 0, 1));
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1));
 
 	// Toggling again removes it.
 	m->toggleConnection(0, 1);
-	REQUIRE(m->isConnected(m->currentScene, 0, 1) == false);
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
 
 	Test::destroyModule(m);
 }
@@ -2927,7 +2919,7 @@ TEST_CASE("toggleConnection - argument order does not matter", "[SpliceKit]") {
 
 	// input-first must resolve the same pair as output-first.
 	m->toggleConnection(1, 0);
-	REQUIRE(m->isConnected(m->currentScene, 0, 1));
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1));
 
 	Test::destroyModule(m);
 }
@@ -2939,7 +2931,7 @@ TEST_CASE("toggleConnection - two outputs are rejected and reported", "[SpliceKi
 
 	m->toggleConnection(0, 1);
 
-	REQUIRE(m->isConnected(m->currentScene, 0, 1) == false);
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
 	REQUIRE(m->overlayMessage.title == "Both ports are outputs");
 
 	Test::destroyModule(m);
@@ -2952,7 +2944,7 @@ TEST_CASE("toggleConnection - two inputs are rejected and reported", "[SpliceKit
 
 	m->toggleConnection(0, 1);
 
-	REQUIRE(m->isConnected(m->currentScene, 0, 1) == false);
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
 	REQUIRE(m->overlayMessage.title == "Both ports are inputs");
 
 	Test::destroyModule(m);
@@ -2966,7 +2958,7 @@ TEST_CASE("toggleConnection - unassigned cell is ignored without an overlay mess
 
 	m->toggleConnection(0, 1);
 
-	REQUIRE(m->isConnected(m->currentScene, 0, 1) == false);
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
 	// The !isValid() branch returns before any setOverlayMessage call.
 	REQUIRE(m->overlayMessage.title == "sentinel");
 
@@ -2977,13 +2969,13 @@ TEST_CASE("toggleConnection - only the current scene is affected", "[SpliceKit]"
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
-	m->currentScene = 3;
+	m->sceneStore.current = 3;
 
 	m->toggleConnection(0, 1);
 
-	REQUIRE(m->isConnected(3, 0, 1));
+	REQUIRE(m->sceneStore.isConnected(3, 0, 1));
 	for (int s = 0; s < SCENE_COUNT; s++) {
-		if (s != 3) REQUIRE(m->isConnected(s, 0, 1) == false);
+		if (s != 3) REQUIRE(m->sceneStore.isConnected(s, 0, 1) == false);
 	}
 
 	Test::destroyModule(m);
@@ -3015,16 +3007,16 @@ TEST_CASE("onReset - clears labels, color overrides and cancels learn", "[Splice
 
 TEST_CASE("onReset - clears state directly without queueing", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
-	m->currentScene = 5;
-	m->setConnection(5, 0, 1, true);
+	m->sceneStore.current = 5;
+	m->sceneStore.setConnection(5, 0, 1, true);
 
 	m->onReset();
 	// Rack calls onReset() on the GUI thread, so it does its work inline — enqueueing here
 	// would make taskProcessorUi multi-producer against the engine thread.
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 0);
 
-	REQUIRE(m->currentScene == 0);
-	REQUIRE(m->sceneConnections[5][0] == 0);
+	REQUIRE(m->sceneStore.current == 0);
+	REQUIRE(m->sceneStore.connections[5][0] == 0);
 
 	Test::destroyModule(m);
 }
@@ -3181,9 +3173,9 @@ TEST_CASE("dataFromJson - out-of-range scene and connection indices are skipped"
 	REQUIRE_NOTHROW(m->dataFromJson(j));
 	json_decref(j);
 
-	REQUIRE(m->isConnected(1, 2, 4));
-	REQUIRE(m->sceneConnections[1][0] == 0);
-	REQUIRE(m->sceneConnections[1][3] == 0);
+	REQUIRE(m->sceneStore.isConnected(1, 2, 4));
+	REQUIRE(m->sceneStore.connections[1][0] == 0);
+	REQUIRE(m->sceneStore.connections[1][3] == 0);
 
 	Test::destroyModule(m);
 }
