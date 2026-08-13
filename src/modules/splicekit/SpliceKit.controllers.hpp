@@ -1,6 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
-#include "MidiTrackingProcessor.hpp"
+#include "../midi/MidiTrackingProcessor.hpp"
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -8,13 +8,14 @@
 namespace StoermelderPackOne {
 namespace SpliceKit {
 
-static const int MATRIX_SIZE  = 8;
+static const int MATRIX_SIZE = 8;
 static const int MATRIX_COUNT = MATRIX_SIZE * MATRIX_SIZE;
+
 // Number of onboard scene slots. Currently equal to MATRIX_SIZE (the matrix's row/column
 // count) but conceptually independent — kept as its own constant so scene-related code
 // doesn't implicitly depend on the matrix's dimensions, which matter for an unrelated reason
 // (SpliceKitVizOverlay::cellCenter() and the grid layout in SpliceKitWidget's constructor).
-static const int SCENE_COUNT  = 8;
+static const int SCENE_COUNT = 8;
 
 // LED state identifiers — order must match the light-loop state assignment in SpliceKit.cpp.
 // Color sets 0–3: dim then bright for each set, then connected per set.
@@ -44,39 +45,48 @@ enum {
 // MIDI output message type.
 // MIDI_OUT_FROM_SLOT_TYPE: derive status byte from the slot's own type (Note→NoteOn, CC→CC).
 // Requires noteMode=from-slot; the slot type must be NOTE or CC.
-enum MidiOutMsgType { MIDI_OUT_NONE = 0, MIDI_OUT_NOTE_ON, MIDI_OUT_NOTE_OFF, MIDI_OUT_CC, MIDI_OUT_FROM_SLOT_TYPE };
+enum MidiOutMsgType {
+	MIDI_OUT_NONE = 0,
+	MIDI_OUT_NOTE_ON,
+	MIDI_OUT_NOTE_OFF,
+	MIDI_OUT_CC,
+	MIDI_OUT_FROM_SLOT_TYPE
+};
 
 // How the note/CC number is resolved when sending MIDI output for an LED state.
 //   FROM_SLOT — use the button's current MIDI input mapping number (the note/CC
 //               that was learned or applied from the preset layout).
 //   FIXED     — use spec.note for every button, regardless of its mapping.
-enum MidiOutNoteMode { MIDI_OUT_FROM_SLOT = 0, MIDI_OUT_FIXED };
+enum MidiOutNoteMode {
+	MIDI_OUT_FROM_SLOT = 0,
+	MIDI_OUT_FIXED
+};
 
 // One MIDI output message specification per LED state.
 struct MidiOutSpec {
-	MidiOutMsgType  type     = MIDI_OUT_NONE;
-	int             channel  = 0;               // 0–15
+	MidiOutMsgType type = MIDI_OUT_NONE;
+	int channel = 0;            // 0–15
 	MidiOutNoteMode noteMode = MIDI_OUT_FROM_SLOT;
-	int             note     = 0;               // used only with MIDI_OUT_FIXED
-	int             value    = 0;               // velocity or CC value
+	int note = 0;               // used only with MIDI_OUT_FIXED
+	int value = 0;              // velocity or CC value
 
 	void fromJson(json_t* j) {
 		if (!j) return;
 		auto gi = [j](const char* k) { return (int)json_integer_value(json_object_get(j, k)); };
-		type     = (MidiOutMsgType) gi("type");
-		channel  = gi("channel");
+		type = (MidiOutMsgType) gi("type");
+		channel = gi("channel");
 		noteMode = (MidiOutNoteMode)gi("noteMode");
-		note     = gi("note");
-		value    = gi("value");
+		note = gi("note");
+		value = gi("value");
 	}
 
 	json_t* toJson() const {
 		json_t* j = json_object();
-		json_object_set_new(j, "type",     json_integer(type));
-		json_object_set_new(j, "channel",  json_integer(channel));
+		json_object_set_new(j, "type", json_integer(type));
+		json_object_set_new(j, "channel", json_integer(channel));
 		json_object_set_new(j, "noteMode", json_integer(noteMode));
-		json_object_set_new(j, "note",     json_integer(note));
-		json_object_set_new(j, "value",    json_integer(value));
+		json_object_set_new(j, "note", json_integer(note));
+		json_object_set_new(j, "value", json_integer(value));
 		return j;
 	}
 };
@@ -84,8 +94,8 @@ struct MidiOutSpec {
 // A single input slot: which MIDI message triggers this button.
 // type==NONE means no auto-mapping; the user must learn manually.
 struct MidiSlot {
-	MidiTrackingType type   = MidiTrackingType::NONE;
-	int              number = 0;    // note or CC number
+	MidiTrackingType type = MidiTrackingType::NONE;
+	int number = 0;  // note or CC number
 };
 
 // Parse a slot block from JSON:
@@ -98,7 +108,7 @@ static void parseSlotsBlock(json_t* j, MidiSlot* slots, int count) {
 	if (!numsJ) return;
 	int n = std::min((int)json_array_size(numsJ), count);
 	for (int i = 0; i < n; i++) {
-		slots[i].type   = type;
+		slots[i].type = type;
 		slots[i].number = (int)json_integer_value(json_array_get(numsJ, i));
 	}
 }
@@ -109,7 +119,10 @@ static void parseSlotsBlock(json_t* j, MidiSlot* slots, int count) {
 static json_t* slotsBlockToJson(const MidiSlot* slots, int count) {
 	MidiTrackingType type = MidiTrackingType::NONE;
 	for (int i = 0; i < count; i++) {
-		if (slots[i].type != MidiTrackingType::NONE) { type = slots[i].type; break; }
+		if (slots[i].type != MidiTrackingType::NONE) {
+			type = slots[i].type;
+			break;
+		}
 	}
 	if (type == MidiTrackingType::NONE) return nullptr;
 
@@ -144,11 +157,11 @@ struct MidiOutPreset {
 	bool hasLayout() const {
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			if (cells[i].type != MidiTrackingType::NONE) return true;
-        }
-        for (int i = 0; i < SCENE_COUNT; i++) {
+		}
+		for (int i = 0; i < SCENE_COUNT; i++) {
 			if (scenes[i].type != MidiTrackingType::NONE) return true;
-        }
-        return false;
+		}
+		return false;
 	}
 
 	void fromJson(json_t* rootJ) {
@@ -158,13 +171,14 @@ struct MidiOutPreset {
 		json_t* descJ = json_object_get(rootJ, "description");
 		if (descJ) description = json_string_value(descJ);
 
-		parseSlotsBlock(json_object_get(rootJ, "cells"),  cells,  MATRIX_COUNT);
+		parseSlotsBlock(json_object_get(rootJ, "cells"), cells, MATRIX_COUNT);
 		parseSlotsBlock(json_object_get(rootJ, "scenes"), scenes, SCENE_COUNT);
 
 		json_t* specsJ = json_object_get(rootJ, "specs");
 		if (specsJ) {
-			for (int i = 0; i < LED_STATE_COUNT; i++)
+			for (int i = 0; i < LED_STATE_COUNT; i++) {
 				specs[i].fromJson(json_object_get(specsJ, LED_STATE_KEYS[i]));
+			}
 		}
 	}
 

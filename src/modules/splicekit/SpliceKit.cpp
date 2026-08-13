@@ -6,8 +6,8 @@
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "../../utils/GuiTaskProcessor.hpp"
 #include "../../utils/vcv_cables.hpp"
-#include "MidiTrackingProcessor.hpp"
-#include "SpliceKit_controllers.hpp"
+#include "../midi/MidiTrackingProcessor.hpp"
+#include "SpliceKit.controllers.hpp"
 #include <osdialog.h>
 #include <array>
 
@@ -312,7 +312,7 @@ struct SceneStore {
 				}
 			}
 			// fromId's connections become toId's, minus any self-connection bit.
-			connections[s][toId]   = fromMask & ~(1ULL << toId);
+			connections[s][toId] = fromMask & ~(1ULL << toId);
 			connections[s][fromId] = 0;
 		}
 	}
@@ -909,8 +909,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			for (PortWidget* pw : mw->getPorts()) {
 				PortAssignment pa;
 				pa.moduleId = pw->module->getId();
-				pa.portId   = pw->portId;
-				pa.type     = pw->type;
+				pa.portId = pw->portId;
+				pa.type = pw->type;
 				candidates.push_back(pa);
 			}
 		}
@@ -1589,7 +1589,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			return;
 		}
 		int outCell = (outPd == &a) ? cellIdA : cellIdB;
-		int inCell  = (inPd  == &a) ? cellIdA : cellIdB;
+		int inCell = (inPd == &a) ? cellIdA : cellIdB;
 
 		if (sceneStore.isConnected(sceneStore.current, outCell, inCell)) {
 			sceneStore.disconnectLive(outCell, inCell);
@@ -2083,8 +2083,9 @@ struct SpliceKitCellButton : app::SvgSwitch {
 	void onLeave(const event::Leave& e) override;
 
 	void onButton(const event::Button& e) override {
-		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS)
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
 			shiftDrag = (e.mods & RACK_MOD_SHIFT) != 0;
+		}
 		if (e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 			if (e.action == GLFW_PRESS && module) {
 				createCellMenu();
@@ -2332,7 +2333,9 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		menu->addChild(createSubmenuItem("MIDI Preset", "", [=](Menu* menu) {
 			menu->addChild(createMenuLabel("MIDI feedback"));
 			menu->addChild(createCheckMenuItem("No preset", "",
-				[=]() { return !module->feedback.isActive(); },
+				[=]() {
+					return !module->feedback.isActive();
+				},
 				[=]() {
 					module->feedback.setActivePresetJson("");
 					module->feedback.invalidateLedStates();
@@ -2343,7 +2346,9 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 				std::string json = lp.json;
 				if (module->feedback.isActivePreset(json)) isKnownPreset = true;
 				auto* item = createCheckMenuItem<DescriptionMenuItem>(lp.preset.name, "",
-					[=]() { return module->feedback.isActivePreset(json); },
+					[=]() {
+						return module->feedback.isActivePreset(json);
+					},
 					[=]() {
 						module->feedback.setActivePresetJson(json);
 						module->feedback.invalidateLedStates();
@@ -2405,14 +2410,18 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		}));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createCheckMenuItem("Sequential MIDI learn", "",
-			[=]() { return module->midiLearnMode; },
+			[=]() {
+				return module->midiLearnMode;
+			},
 			[=]() {
 				if (module->midiLearnMode) module->disableLearn();
 				else module->startGlobalLearn();
 			}
 		));
 		menu->addChild(createCheckMenuItem("Sequential port learn", "",
-			[=]() { return module->portLearnMode; },
+			[=]() {
+				return module->portLearnMode;
+			},
 			[=]() {
 				if (module->portLearnMode) module->disablePortLearn();
 				else module->startGlobalPortLearn(this);
@@ -2458,14 +2467,18 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		}, isMaster));
 		menu->addChild(createSubmenuItem("Button mode", "", [=](Menu* menu) {
 			menu->addChild(createCheckMenuItem("Toggle", "",
-				[=]() { return module->buttonMode == SpliceKitModule::BUTTON_TOGGLE; },
+				[=]() {
+					return module->buttonMode == SpliceKitModule::BUTTON_TOGGLE;
+				},
 				[=]() {
 					module->buttonMode = SpliceKitModule::BUTTON_TOGGLE;
 					module->clearPendingGui();
 				}
 			));
 			menu->addChild(createCheckMenuItem("Momentary", "",
-				[=]() { return module->buttonMode == SpliceKitModule::BUTTON_MOMENTARY; },
+				[=]() {
+					return module->buttonMode == SpliceKitModule::BUTTON_MOMENTARY;
+				},
 				[=]() {
 					module->buttonMode = SpliceKitModule::BUTTON_MOMENTARY;
 					module->clearPendingGui();
@@ -2506,6 +2519,7 @@ void SpliceKitSceneButton::createSceneMenu() {
 		if (!module->sceneClipboardValid) return;
 		module->sceneStore.reconcile(sceneId, module->sceneClipboard);
 	}, !module->sceneClipboardValid));
+
 	// randomizeCurrentScene() always targets the active scene, not necessarily the one whose
 	// button was clicked — only offer it here when they're the same scene.
 	bool notCurrent = sceneId != module->sceneStore.current;
@@ -2521,7 +2535,9 @@ void SpliceKitSceneButton::createSceneMenu() {
 
 	std::string learnLabel = midiLabel.empty() ? "Learn MIDI" : string::f("Learn MIDI (%s)", midiLabel.c_str());
 	menu->addChild(createCheckMenuItem(learnLabel, "",
-		[=]() { return module->learningId == MATRIX_COUNT + sceneId; },
+		[=]() {
+			return module->learningId == MATRIX_COUNT + sceneId;
+		},
 		[=]() {
 			if (module->learningId == MATRIX_COUNT + sceneId) module->disableLearn();
 			else module->enableLearn(MATRIX_COUNT + sceneId);
@@ -2632,7 +2648,9 @@ void SpliceKitCellButton::createCellMenu() {
 	menu->addChild(createMenuLabel("MIDI"));
 	std::string learnMidiLabel = midiLabel.empty() ? "Learn" : string::f("Learn MIDI (%s)", midiLabel.c_str());
 	menu->addChild(createCheckMenuItem(learnMidiLabel, "",
-		[=]() { return module->learningId == cellId; },
+		[=]() {
+			return module->learningId == cellId;
+		},
 		[=]() {
 			if (module->learningId == cellId) module->disableLearn();
 			else module->enableLearn(cellId);
