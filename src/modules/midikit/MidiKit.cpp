@@ -1371,9 +1371,10 @@ struct LogDisplay : LedTextDisplay {
 		LedTextDisplay::step();
 		if (dirty) {
 			text = "";
-			size_t size = std::min(buffer->size(), static_cast<size_t>(box.size.x / fontSize) + 1);
+			// Cap to the number of lines that vertically fit.
+			size_t size = std::min(buffer->size(), static_cast<size_t>(box.size.y / fontSize) + 1);
 			size_t i = 0;
-			for (std::tuple<LOG_FORMAT, float, std::string> s : *buffer) {
+			for (const auto& s : *buffer) {
 				if (i >= size) break;
 				LOG_FORMAT f = std::get<0>(s);
 				float timestamp = std::get<1>(s);
@@ -1390,7 +1391,9 @@ struct LogDisplay : LedTextDisplay {
 					default:
 						break;
 				};
+				i++;
 			}
+			dirty = false;
 		}
 	}
 
