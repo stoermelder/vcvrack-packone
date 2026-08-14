@@ -387,17 +387,6 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][QuickJs][GC]") {
 // A while(true) is aborted (uncatchable "interrupted"); without the guard the
 // sync test hangs and the async test trips barrier()'s timeout.
 
-// File-local Note-On helper (engine.test.cpp's isn't visible here).
-static midi::Message noteOn(int ch, int note, int vel) {
-	midi::Message msg;
-	msg.setSize(3);
-	msg.setStatus(0x9);
-	msg.setChannel(ch);
-	msg.setNote(note);
-	msg.setValue(vel);
-	return msg;
-}
-
 // Valid script proving the engine recovers after a failed load.
 static const char* QJS_RECOVERY = R"(/**
  * @engine QuickJs@v1

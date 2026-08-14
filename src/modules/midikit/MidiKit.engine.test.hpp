@@ -19,16 +19,6 @@ using StoermelderPackOne::MidiScript::ScriptMenuItem;
 // mirrored in the other fails here even if both engines individually still
 // pass their own suite.
 
-static midi::Message noteOn(int ch, int note, int vel) {
-	midi::Message msg;
-	msg.setSize(3);
-	msg.setStatus(0x9);
-	msg.setChannel(ch);
-	msg.setNote(note);
-	msg.setValue(vel);
-	return msg;
-}
-
 // One engine's observable result for a single script run: the messages it
 // sent (in order) plus whatever landed in the log. Comparing this struct
 // between engines is the actual equivalence check.
@@ -1226,7 +1216,7 @@ TEST_CASE("14-bit CC pairs flush in send() order, not handle-creation order, in 
 // when passed the first handle of an NRPN quad (per SCRIPTING.md), so
 // sending it is what actually exercises setNRPN's byte layout end to end.
 
-static const char* JS_NRPN = R"(/**
+static const char* JS_4MESSAGE_NRPN = R"(/**
  * @engine QuickJs@v1
  */
 midi.onMessage = function(port, msg) {
@@ -1236,7 +1226,7 @@ midi.onMessage = function(port, msg) {
 };
 )";
 
-static const char* LUA_NRPN = R"(--[[
+static const char* LUA_4MESSAGE_NRPN = R"(--[[
 @engine minilua@v1
 --]]
 midi.onMessage = function(midiPort, msg)
@@ -1247,7 +1237,7 @@ end
 )";
 
 TEST_CASE("setNRPN produces identical 4-message wire sequence", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_NRPN, LUA_NRPN);
+	requireEquivalent(JS_4MESSAGE_NRPN, LUA_4MESSAGE_NRPN);
 }
 
 // Cross-engine equivalence above only pins JS and Lua to each other — it
@@ -1257,7 +1247,7 @@ TEST_CASE("setNRPN produces identical 4-message wire sequence", "[MidiKit][Cross
 // after the first). This asserts the actual wire bytes/order against the
 // spec: CC99 (param MSB), CC98 (param LSB), CC6 (data MSB), CC38 (data LSB).
 TEST_CASE("setNRPN wire order is spec-compliant (MSB before LSB)", "[MidiKit]") {
-	EngineResult r = run(JS_NRPN);
+	EngineResult r = run(JS_4MESSAGE_NRPN);
 	REQUIRE(r.sent.size() == 4);
 	// channel 9 -> status/channel byte 0xb8; number=1234 -> msb=9,lsb=82; value=5678 -> msb=44,lsb=46
 	REQUIRE(r.sent[0].bytes == std::vector<uint8_t>{0xb8, 99, 9});
@@ -2738,18 +2728,6 @@ TEST_CASE("onUnload runs again when a second script replaces the first, in both 
 }
 
 
-// Reads an integer field out of a config JSON string (jansson).
-static json_int_t configInt(const std::string& json, const char* key) {
-	json_error_t error;
-	json_t* j = json_loads(json.c_str(), 0, &error);
-	REQUIRE(j != nullptr);
-	json_t* v = json_object_get(j, key);
-	REQUIRE(v != nullptr);
-	json_int_t result = json_integer_value(v);
-	json_decref(j);
-	return result;
-}
-
 // --- rack.onSave() vs rack.onUnload() -------------------------------------
 //
 // rack.onSave() is the config-bearing hook; rack.onUnload() is teardown-only
@@ -2885,18 +2863,6 @@ rack.registerContextMenu({
 })
 midi.onMessage = function(midiPort, msg) end
 )";
-
-// Reads a boolean field out of a config JSON string (jansson).
-static bool configBool(const std::string& json, const char* key) {
-	json_error_t error;
-	json_t* j = json_loads(json.c_str(), 0, &error);
-	REQUIRE(j != nullptr);
-	json_t* v = json_object_get(j, key);
-	REQUIRE(v != nullptr);
-	bool result = json_is_true(v);
-	json_decref(j);
-	return result;
-}
 
 TEST_CASE("Script config survives capture and reload in both engines", "[MidiKit][CrossEngine]") {
 	auto check = [](const std::string& script) {

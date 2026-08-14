@@ -40,26 +40,6 @@ static void feed(MidiKitModule* m, midi::Message msg) {
 	m->host.getActiveEngine()->process();
 }
 
-static midi::Message noteOn(int ch, int note, int vel) {
-	midi::Message msg;
-	msg.setSize(3);
-	msg.setStatus(0x9);
-	msg.setChannel(ch);
-	msg.setNote(note);
-	msg.setValue(vel);
-	return msg;
-}
-
-static midi::Message noteOff(int ch, int note) {
-	midi::Message msg;
-	msg.setSize(3);
-	msg.setStatus(0x8);
-	msg.setChannel(ch);
-	msg.setNote(note);
-	msg.setValue(0);
-	return msg;
-}
-
 static midi::Message cc(int ch, int num, int value) {
 	midi::Message msg;
 	msg.setSize(3);
@@ -157,22 +137,6 @@ struct OutEvent {
 		return status == o.status && channel == o.channel && note == o.note && value == o.value && ticks == o.ticks;
 	}
 };
-
-// Let Catch2 print OutEvent contents in assertion expansions (otherwise the
-// "with expansion" line just shows { {?} } and hides the actual message).
-namespace Catch {
-	template<> struct StringMaker<OutEvent> {
-		static std::string convert(OutEvent const& e) {
-			std::ostringstream os;
-			os << "0x" << std::hex << (int)e.status << std::dec
-			   << " ch=" << (int)e.channel
-			   << " n=" << (int)e.note
-			   << " v=" << (int)e.value
-			   << " t=" << e.ticks;
-			return os.str();
-		}
-	};
-}
 
 // Drains the module's out-queue into OutEvents. Also used after loadScript("")
 // to read the messages onUnload() queued while switching or clearing scripts
@@ -1498,23 +1462,6 @@ TEST_CASE("'Scale quantiser.js/.lua' reads the root from CV input 1", "[MidiKit]
 	Test::destroyModule(m);
 }
 
-
-// Parses a single value out of the compact JSON returned by captureConfig().
-static json_int_t configInt(const std::string& json, const char* key) {
-	json_t* root = json_loads(json.c_str(), 0, NULL);
-	if (!root) return 0;
-	json_int_t v = json_integer_value(json_object_get(root, key));
-	json_decref(root);
-	return v;
-}
-
-static bool configBool(const std::string& json, const char* key) {
-	json_t* root = json_loads(json.c_str(), 0, NULL);
-	if (!root) return false;
-	bool v = json_is_true(json_object_get(root, key));
-	json_decref(root);
-	return v;
-}
 
 TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", "[MidiKit][ScaleQuantiser][JSON]") {
 	std::string path = GENERATE(presetPaths("Scale quantiser"));

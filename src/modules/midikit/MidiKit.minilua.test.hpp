@@ -152,7 +152,9 @@ TEST_CASE("Successful load reports no error position", "[MidiKit][Lua]") {
 }
 
 
-static const char* LUA_ON_UNLOAD = R"(--[[
+// Local copy of the Lua onUnload script — kept per-header so this test stays
+// independent of the engine suite's LUA_ON_UNLOAD.
+static const char* LUA_ON_UNLOAD_CRASH = R"(--[[
 @engine minilua@v1
 --]]
 midi.onMessage = function(midiPort, msg) end
@@ -173,7 +175,7 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua
 	// handler. Calling them from ~MidiScriptEngineLua() itself, after the
 	// module (and its handler) is already gone, would be undefined behaviour.
 	MidiKitModule* m = createModule();
-	m->loadScript(LUA_ON_UNLOAD);
+	m->loadScript(LUA_ON_UNLOAD_CRASH);
 	REQUIRE(m->host.seLua.L != nullptr);
 
 	Test::destroyModule(m);
@@ -311,17 +313,6 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][Lua][GC]") {
 // ── Lua script execution budget ──────────────────────────────────
 // A while true do end is aborted via luaL_error(); without the guard the sync
 // test hangs and the async test trips barrier()'s timeout.
-
-// File-local Note-On helper (engine.test.cpp's isn't visible here).
-static midi::Message noteOn(int ch, int note, int vel) {
-	midi::Message msg;
-	msg.setSize(3);
-	msg.setStatus(0x9);
-	msg.setChannel(ch);
-	msg.setNote(note);
-	msg.setValue(vel);
-	return msg;
-}
 
 // Valid script proving the engine recovers after a failed load.
 static const char* LUA_RECOVERY = R"(--[[

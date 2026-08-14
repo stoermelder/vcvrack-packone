@@ -1,23 +1,12 @@
 #include "MidiKit.test.hpp"
 
 // Tests for trig.sendTipsy() API.
-//
 // sendTipsy(data, [mimeType]) queues a Tipsy protocol message for output on
 // the module's trigger CV output. The payload is enqueued on the script
 // (worker) thread via the handler; the actual encoding runs on the audio thread
 // in MidiKitModule::processTipsyOutput(), which initiates the next pending
 // message when the encoder is idle and drains one encoded float per call. The
 // first float of every message is the Tipsy message-begin sentinel (3.1f).
-
-static midi::Message noteOn(int ch, int note, int vel) {
-	midi::Message msg;
-	msg.setSize(3);
-	msg.setStatus(0x9);
-	msg.setChannel(ch);
-	msg.setNote(note);
-	msg.setValue(vel);
-	return msg;
-}
 
 // Drains every pending Tipsy message through processTipsyOutput() and returns
 // the voltages, in order, as they land on the module's trigger output.

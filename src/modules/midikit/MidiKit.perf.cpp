@@ -61,26 +61,6 @@ static std::string readFile(const std::string& path) {
 	return ss.str();
 }
 
-static midi::Message noteOn(int ch, int note, int vel) {
-	midi::Message msg;
-	msg.setSize(3);
-	msg.setStatus(0x9);
-	msg.setChannel(ch);
-	msg.setNote(note);
-	msg.setValue(vel);
-	return msg;
-}
-
-static midi::Message noteOff(int ch, int note) {
-	midi::Message msg;
-	msg.setSize(3);
-	msg.setStatus(0x8);
-	msg.setChannel(ch);
-	msg.setNote(note);
-	msg.setValue(0);
-	return msg;
-}
-
 static void drainOut(MidiKitModule* m) {
 	int port, ticks;
 	midi::Message msg;

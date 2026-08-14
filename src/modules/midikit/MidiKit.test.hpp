@@ -9,6 +9,56 @@ using StoermelderPackOne::MidiScript::MidiScriptEngine;
 SYNC_MODEL(modelMidiKit, "MidiKit");
 Test::TestContext<> testContext;
 
+// ── Shared helpers ───────────────────────────────────────────────────────
+// The test headers are one TU and must not depend on each other, so anything
+// used by more than one header lives here in MidiKit.test.hpp.
+
+// Shared Note-On helper (also used by the perf harness).
+static midi::Message noteOn(int ch, int note, int vel) {
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x9);
+	msg.setChannel(ch);
+	msg.setNote(note);
+	msg.setValue(vel);
+	return msg;
+}
+
+// Shared Note-Off helper (also used by the perf harness).
+static midi::Message noteOff(int ch, int note) {
+	midi::Message msg;
+	msg.setSize(3);
+	msg.setStatus(0x8);
+	msg.setChannel(ch);
+	msg.setNote(note);
+	msg.setValue(0);
+	return msg;
+}
+
+// Reads an integer field out of a config JSON string (jansson).
+static json_int_t configInt(const std::string& json, const char* key) {
+	json_error_t error;
+	json_t* j = json_loads(json.c_str(), 0, &error);
+	REQUIRE(j != nullptr);
+	json_t* v = json_object_get(j, key);
+	REQUIRE(v != nullptr);
+	json_int_t result = json_integer_value(v);
+	json_decref(j);
+	return result;
+}
+
+// Reads a boolean field out of a config JSON string (jansson).
+static bool configBool(const std::string& json, const char* key) {
+	json_error_t error;
+	json_t* j = json_loads(json.c_str(), 0, &error);
+	REQUIRE(j != nullptr);
+	json_t* v = json_object_get(j, key);
+	REQUIRE(v != nullptr);
+	bool result = json_is_true(v);
+	json_decref(j);
+	return result;
+}
+
 // Bypass the dylib factory — create directly so the injected worker is used
 // instead of the module's default async TaskWorker. Tests default to a
 // synchronous worker; the perf harness passes a real (async) worker.
