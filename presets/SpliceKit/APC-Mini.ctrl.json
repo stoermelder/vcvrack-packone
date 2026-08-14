@@ -1,5 +1,5 @@
 {
-    "name": "APC Mini",
+    "name": "APC Mini [untested]",
     "description": "Grid cells: Note On, row r (0=top) col c (0=left) -> note = (7-r)*8 + c (top row = 56-63, bottom row = 0-7).\n\nScene Launch 1-8 (right-side buttons): notes 82-89, top to bottom.\n\nVelocity: 0=off 1=green 2=green blink 3=red 4=red blink 5=yellow 6=yellow blink. Only 3 colors available; color2 maps to green, color3 to yellow.",
     "cells": {
         "type": 1,

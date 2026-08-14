@@ -1,5 +1,5 @@
 {
-    "name": "Launchpad / S (X-Y mode)",
+    "name": "Launchpad / S (X-Y mode) [untested]",
     "description": "Grid cells: Note On, row r (0=top) col c (0=left) -> note = 16*r + c (top row = 0-7, bottom row = 112-119).\n\nScene launch buttons (right-side column): Note On, note = 16*r + 8 -> notes 8, 24, 40, 56, 72, 88, 104, 120 (top to bottom).\n\nBi-colour LEDs: velocity = 16*Green + Red + 12 (no RGB; no hardware init needed).\n\nhttps://userguides.novationmusic.com/hc/en-gb/articles/23731330800146-Launchpad-Mini-s-default-MIDI-mappings\nhttps://downloads.novationmusic.com/novation/launchpad-mk1/launchpad",
     "cells": {
         "type": 1,
