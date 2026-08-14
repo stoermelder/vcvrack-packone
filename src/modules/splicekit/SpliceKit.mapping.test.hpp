@@ -638,6 +638,96 @@ TEST_CASE("moveCell - a pending selection on the destination cell silently chang
 }
 
 
+// clearPort/assignPort + pending selection
+// Unlike moveCell above — where the widget-level caller does the clearing, because that
+// gesture rewrites two cells at once — these two clear their own cell's pending selection,
+// since they are reached from several call sites (cell menu, drag-drop, both port-learn
+// paths) that would otherwise each have to remember to do it.
+
+TEST_CASE("clearPort - drops a pending selection on the cleared cell", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(3, 42, 0, engine::Port::OUTPUT);
+
+	m->triggerCell(3);
+	REQUIRE(m->pendingCellId == 3);
+
+	m->clearPort(3);
+
+	// Regression: the cell used to stay pending here. It kept blinking (resolveCellVisual
+	// tests pendingCellId before `assigned`) and could not be cancelled by pressing it,
+	// because triggerCell() returns on the !isValid() guard first — leaving a state the
+	// user could only clear by accident.
+	REQUIRE(m->portAssignments[3].isValid() == false);
+	REQUIRE(m->pendingCellId == -1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("clearPort - leaves a pending selection on an unrelated cell alone", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(3, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(7, 43, 0, engine::Port::INPUT);
+
+	m->triggerCell(7);
+	REQUIRE(m->pendingCellId == 7);
+
+	// Clearing a different cell must not cancel the user's in-progress selection.
+	m->clearPort(3);
+	REQUIRE(m->pendingCellId == 7);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - rebinding drops a pending selection on the rebound cell", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(4, 42, 0, engine::Port::OUTPUT);
+
+	// Cell 4 is pending, selected while it still referred to port 42:0.
+	m->triggerCell(4);
+	REQUIRE(m->pendingCellId == 4);
+
+	// Rebinding to a different port makes that selection stale — a second press would
+	// otherwise connect a port the user never selected.
+	m->assignPort(4, 77, 1, engine::Port::OUTPUT);
+
+	REQUIRE(m->pendingCellId == -1);
+	REQUIRE(m->portAssignments[4].moduleId == 77);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - assigning an empty cell drops a pending selection on it", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(2, 42, 0, engine::Port::OUTPUT);
+
+	m->triggerCell(2);
+	REQUIRE(m->pendingCellId == 2);
+	m->clearPort(2);
+
+	// The cell is empty now but assignPort must still clear pending, since its early-out
+	// for empty cells skips the rest of the cleanup contract.
+	m->pendingCellId = 2;
+	m->assignPort(2, 99, 4, engine::Port::INPUT);
+	REQUIRE(m->pendingCellId == -1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("assignPort - leaves a pending selection on an unrelated cell alone", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->assignPort(3, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(7, 43, 0, engine::Port::INPUT);
+
+	m->triggerCell(7);
+	REQUIRE(m->pendingCellId == 7);
+
+	m->assignPort(3, 77, 2, engine::Port::OUTPUT);
+	REQUIRE(m->pendingCellId == 7);
+
+	Test::destroyModule(m);
+}
+
+
 // toggleConnection — direction validation
 // The connect/disconnect branches call into vcv:: cable helpers, which bail early when the
 // module widgets don't exist (as in these tests); the bitmask update happens first either

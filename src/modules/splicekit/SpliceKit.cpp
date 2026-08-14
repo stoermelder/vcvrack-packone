@@ -888,6 +888,21 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		clearPendingCrossGui();
 	}
 
+	// GUI thread only — drops the pending selection if it points at cellId. For callers that
+	// are about to discard cellId's port assignment (assignPort/clearPort): a selection made
+	// against the old port is stale afterwards, and leaving it behind strands the cell in a
+	// state the user cannot clear — resolveCellVisual() tests pendingCellId before it tests
+	// `assigned`, so the cell keeps blinking, while triggerCell() returns at its isValid()
+	// guard before reaching the cancel branch, so pressing it cannot cancel either.
+	//
+	// Scoped to the one cell rather than clearing unconditionally: rebinding cell A must not
+	// silently cancel a pending selection on the unrelated cell B. moveCell()'s callers clear
+	// unconditionally instead, because that gesture rewrites two cells at once.
+	void clearPendingForCell(int cellId) {
+		if (pendingCellId != cellId) return;
+		clearPendingGui();
+	}
+
 	// Engine thread only — same reset as clearPendingGui(), but the cross-instance half is
 	// deferred to the GUI thread via taskProcessorUi, since crossPending must not be
 	// touched from the engine thread. GUI-thread callers must NOT use this: enqueueing from
@@ -1763,10 +1778,13 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	//     next switchScene(),
 	//   * the label is dropped, since it described the old port,
 	//   * LED state is invalidated, because the color set is derived from the port direction
-	//     (see getCellColorSet) and would otherwise keep the previous set's color.
+	//     (see getCellColorSet) and would otherwise keep the previous set's color,
+	//   * a pending selection is dropped, since it was made against the old port — see
+	//     clearPendingForCell() for why leaving it behind strands the cell.
 	void assignPort(int cellId, int64_t moduleId, int portId, engine::Port::Type type) {
 		if (cellId < 0 || cellId >= MATRIX_COUNT) return;
 
+		clearPendingForCell(cellId);
 		if (portAssignments[cellId].isValid()) {
 			// Resolve the note-off while the old mapping and state are still addressable;
 			// the engine thread sends it on its next tick.
@@ -1790,6 +1808,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		if (cellId < 0 || cellId >= MATRIX_COUNT) return;
 		if (!portAssignments[cellId].isValid()) return;
 
+		clearPendingForCell(cellId);
 		// Resolve the note-off while the old mapping still addresses the right note.
 		feedback.queueFeedbackOff(cellId, feedback.cellLedState[cellId]);
 		sceneStore.removeCellConnections(cellId);
