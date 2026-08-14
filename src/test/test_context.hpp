@@ -47,6 +47,14 @@ struct TestContext {
 	TestContext() {
 		// Ensure headless mode for tests
 		settings::headless = true;
+		// Thread assertions (see utils/thread.hpp) verify against Rack's UI thread and a
+		// module's own GuiTaskProcessor worker, neither of which runs in a test binary —
+		// the tests drive module methods from their own thread. Each module instance
+		// builds its own ThreadVerifier via thread::makeVerifier() in its constructor,
+		// which reads this flag, so setting it here — before Test::createModule() ever
+		// constructs a module — is enough to make every module's asserts inert for the
+		// whole test binary.
+		StoermelderPackOne::thread::verifyEnabled = false;
 
 		// If this is the first TestContext, create and initialize the pluginInstance and context
 		if (testContextCount.fetch_add(1, std::memory_order_acq_rel) == 0) {

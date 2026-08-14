@@ -102,6 +102,14 @@ struct GuiTaskProcessor {
 	std::thread* worker = nullptr;  // only touched by whichever thread completes Starting/Stopping
 	Context* workerContext = nullptr;
 
+	// The worker thread's id, published the moment the thread object is constructed in
+	// startWorker() (before runWorker() itself starts executing) and cleared in
+	// reapWorker(). Atomic because it is read from arbitrary threads via isWorkerThread()
+	// at thread-assertion sites. Backs this instance's own ThreadVerifier (see thread.hpp)
+	// — there is no cross-module registry, so each GuiTaskProcessor answers only for its
+	// own worker.
+	std::atomic<std::thread::id> workerThreadId{std::thread::id()};
+
 	// Optional hook run on the worker thread after each drain. Exists for state that the
 	// widget's step() would normally maintain: while a worker is doing the draining there
 	// is by definition no step() running, so anything step() refreshes would otherwise go
@@ -121,6 +129,13 @@ struct GuiTaskProcessor {
 
 	~GuiTaskProcessor() {
 		stopWorker();
+	}
+
+	// True when called from this processor's own worker thread. A default-constructed
+	// std::thread::id (the "no worker" state) never equals a real thread's id, so this is
+	// false whenever no worker is running.
+	bool isWorkerThread() const {
+		return std::this_thread::get_id() == workerThreadId.load(std::memory_order_acquire);
 	}
 
 	// Producer thread ONLY — see the SINGLE PRODUCER note on the class comment; calling
@@ -226,6 +241,10 @@ struct GuiTaskProcessor {
 			workerState.store(WorkerState::Absent, std::memory_order_release);
 			return;
 		}
+		// The thread object exists now, so its id is stable — publish it before the
+		// worker itself has necessarily started running, so isWorkerThread() is correct
+		// for any assertion the instant runWorker() begins.
+		workerThreadId.store(worker->get_id(), std::memory_order_release);
 		workerState.store(WorkerState::Running, std::memory_order_release);
 		// Tasks enqueued between the queue filling up and this moment (i.e. before any
 		// worker existed to post for) are still sitting there — make sure the new
@@ -242,6 +261,7 @@ struct GuiTaskProcessor {
 		worker->join();
 		delete worker;
 		worker = nullptr;
+		workerThreadId.store(std::thread::id(), std::memory_order_release);
 	}
 
 	// Whichever thread destroys the module. If a start is in flight (Starting) wait it

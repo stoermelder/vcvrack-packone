@@ -2,6 +2,7 @@
 #include <rack.hpp>
 #include "components/components.hpp"
 #include "utils/digital.hpp"
+#include "utils/thread.hpp"
 #include "ui/ThemedModuleWidget.hpp"
 #include "pluginhelpers.hpp"
 #include "pluginsettings.hpp"
