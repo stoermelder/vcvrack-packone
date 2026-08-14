@@ -162,12 +162,15 @@ struct SceneStore {
 	}
 
 	// GUI thread — the mirror of removeCableBetween(). Same no-op rules, same reason for
-	// being private: callers go through connectLive().
+	// being private: callers go through connectLive(). Also guards against creating a
+	// duplicate cable: Rack's API silently allows multiple cables between the same two
+	// ports, so skip when one already exists (mirroring removeCableBetween's findCable).
 	void addCableBetween(int cellIdA, int cellIdB) {
 		auto dir = resolveDirection(ports[cellIdA], ports[cellIdB]);
 		const PortAssignment* outPd = dir.first;
 		const PortAssignment* inPd = dir.second;
 		if (!outPd) return;
+		if (vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId)) return;
 		vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
 	}
 
