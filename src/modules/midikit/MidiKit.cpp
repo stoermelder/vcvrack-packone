@@ -1550,6 +1550,7 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MidiKitModule>::appendContextMenu(menu);
+		if (!module) return;
 
 		if (module->host.getActiveEngine()) {
 			menu->addChild(new MenuSeparator());
@@ -1590,12 +1591,13 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 	}
 
 	int nextOverlayMessageId() override {
-		if (module->log.overlayQueue.empty())
+		if (!module || module->log.overlayQueue.empty())
 			return -1;
 		return module->log.overlayQueue.shift();
 	}
 
 	void getOverlayMessage(int id, OverlayMessageProvider::Message& m) override {
+		if (!module) return;
 		m.title = std::get<0>(module->log.overlayMessage);
 		m.subtitle[0] = std::get<1>(module->log.overlayMessage);
 		m.subtitle[1] = std::get<2>(module->log.overlayMessage);
@@ -1748,6 +1750,7 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 
 	void pasteJsClipboard() {
 		const char* script = glfwGetClipboardString(APP->window->win);
+		if (!module || !script) return;
 		module->loadScript(script);
 	}
 
