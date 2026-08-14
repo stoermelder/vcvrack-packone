@@ -4,13 +4,21 @@ SPLICE-KIT is an 8×8 matrix patch bay. Each of the 64 buttons represents a sing
 
 ### Port assignment
 
-Before a button can be used, a port from the current patch must be assigned to it. Right-click any matrix button to open its context menu and select **Learn port**. The cursor changes to a crosshair — click on any input or output port in the patch to complete the assignment. The port label and direction are shown at the top of the context menu once a port is assigned.
+Before a button can be used, a port from the current patch must be assigned to it. Right-click any matrix button to open its context menu and, under **Module port**, select **Learn**. The cursor changes to a crosshair — click on any input or output port in the patch to complete the assignment. The port label and direction are shown at the top of the context menu once a port is assigned.
 
 As a faster alternative, drag a cable from any port in the patch and drop it directly onto a matrix button to assign that port — no modal learn step required. The dragged cable itself is discarded; no patch cable is created by this gesture. If the button already had a port assigned, it is replaced.
 
-To remove a port assignment select **Clear port** from the context menu. Any connections involving that button are removed from all scenes.
+To assign many buttons in one pass, choose **Module port → Start sequential learn...** (or **Sequential port learn** in the module context menu). Each port you click is assigned to the next button in turn, starting from the button you right-clicked and continuing to button 64. Selecting the option again ends the run early.
+
+To remove a port assignment select **Module port → Clear**. Any connections involving that button are removed from all scenes.
 
 Hovering over a button shows a tooltip with the assigned port label and its current MIDI mapping.
+
+#### Labels and colors
+
+The text field at the top of a matrix button's context menu sets a custom label for that button, shown in its tooltip and in overlay messages instead of the port name. Press `Enter` to confirm. Clearing the field restores the port name.
+
+The **Color** submenu overrides the button's LED color set. **Auto** (the default) picks the color by port direction — red for outputs, blue for inputs. A label and an explicit color both follow the port when a button is moved, and are dropped when its port is cleared or reassigned.
 
 ### Creating and removing cables
 
@@ -21,6 +29,21 @@ Once two buttons have ports assigned, pressing them in sequence creates or remov
 3. Pressing the same button again cancels the selection.
 
 Only an output port and an input port can be connected. Two ports of the same direction cannot be connected and the second press is ignored.
+
+While a button is pending, every button already connected to it blinks slowly in its own color, so the existing connections of the selected port are visible at a glance.
+
+A button's context menu also lists **Remove cable**, which removes one selected connection of that button in the current scene, and **Remove all cables**, which removes all of them. Both are unavailable when the button has no connections.
+
+#### Button mode
+
+**Button mode** in the module context menu controls how a press is interpreted:
+
+- **Toggle** (default) — the first press selects a button and it stays selected until a second press, whether or not you keep it held. This is the two-press workflow described above.
+- **Momentary** — releasing the first button cancels the selection, so the second button must be pressed while the first is still held. This suits controllers whose pads send a note-off on release.
+
+#### Overlay messages
+
+Each action posts a short on-screen message naming the ports involved (for example _Cable created_ with both port names). Turn these off with **Show overlay messages** in the module context menu.
 
 ### Cross-instance patching
 
@@ -68,7 +91,7 @@ As a faster alternative to the two-press workflow, connections can be created or
 
 - **Left-drag** cell A → cell B — toggle the connection between those two ports (same effect as pressing A then B in sequence).
 - **Shift + left-drag** cell A → cell B — move cell A's assignment to cell B: port, label, color, and all scene connections are transferred. Any previous assignment on cell B is discarded. MIDI mappings are **not** moved — each cell keeps its own mapping because it corresponds to a fixed physical button on the controller.
-- **Left-drag on scene buttons** — creates a copy of the scene.
+- **Left-drag** scene A → scene B — copy scene A's connections onto scene B, replacing them.
 
 While dragging, the source shows a faint border so it remains identifiable.
 
@@ -77,40 +100,46 @@ While dragging, the source shows a faint border so it remains identifiable.
 | Color | Pattern | Meaning |
 |---|---|---|
 | Off | — | No port assigned |
-| Red-orange (dim) | Steady | Output port assigned, no cable connected |
-| Red-orange (bright) | Steady | Output port assigned, cable connected |
-| Sky blue (dim) | Steady | Input port assigned, no cable connected |
-| Sky blue (bright) | Steady | Input port assigned, cable connected |
+| Red (dim) | Steady | Output port assigned, no cable connected |
+| Red (bright) | Steady | Output port assigned, cable connected |
+| Blue (dim) | Steady | Input port assigned, no cable connected |
+| Blue (bright) | Steady | Input port assigned, cable connected |
 | White | Blinking | First button pressed, waiting for second press |
-| Sky blue | Blinking | Port learn active for this button |
-| Yellow-green | Blinking | MIDI learn active for this button |
+| Button's own color | Slow blink | Connected to the currently pending button |
+| Grey | Blinking | Port learn active for this button |
+| Pale blue | Blinking | MIDI learn active for this button |
 
-Each LED uses a single base color channel in isolation. Mixing channels is avoided because VCV Rack's sky blue base color already contains a large green component that would otherwise produce teal or white when combined.
+Red and blue are the defaults for output and input ports; the **Color** submenu can set any button to red, blue, orange, or green instead.
 
-Scene button LEDs are white at full brightness for the active scene and dim white when a scene contains stored connections.
+Scene button LEDs are white only: full brightness for the active scene, dim when an inactive scene contains stored connections, off when it is empty, and blinking while MIDI learn is active.
 
 ### Port map view
 
 Press `Space` while hovering over the module to toggle the port map view. In this mode:
 
 - All patch cables are temporarily hidden.
-- A spline is drawn from each matrix cell to its assigned port on the target module. Output-port connections are shown in red-orange; input-port connections in sky blue.
+- A spline is drawn from each matrix cell to its assigned port on the target module, in that button's LED color.
+- Hovering a button dims every unrelated spline and draws an arc to each button it is connected to in the current scene.
 
-Press `Space` again to return to the normal patch view with cables restored.
+Press `Space` again to return to the normal patch view with cables restored. The same toggle is available as **Visualize** in the module context menu.
 
 ### MIDI triggering
 
 SPLICE-KIT accepts MIDI input to trigger both matrix buttons and scene buttons. Any assigned CC or note event with a non-zero value triggers the corresponding button, equivalent to pressing it with the mouse. Configure the MIDI input device in the **MIDI Input** submenu of the module context menu.
 
+**Copying a scene from the controller** — holding one mapped scene button and pressing a second one copies the first scene's connections onto the second, the same as dragging one scene button onto another. The gesture is recognised when a second scene activation arrives before the first button's release (note-off or CC 0).
+
+> **Note:** this relies on your controller sending a release message. A controller or mapping that only sends presses will make *every second scene selection* copy the previous scene over the one you select, overwriting its stored connections. If your controller behaves this way, avoid mapping the scene buttons, or verify in a scratch patch first — the copy cannot be undone.
+
 ### MIDI learn
 
 Each matrix button and each scene button can be mapped to a MIDI CC or note individually.
 
-**Single button learn** — right-click the button and select **Learn MIDI**. The LED starts blinking magenta (matrix) or white (scene). Send any CC or note with a non-zero value from your controller to complete the mapping. The current mapping (e.g. _CC 91_ or _Note 36_) is shown in the **Learn MIDI** label once assigned. Pressing the blinking button again also cancels the learn without mapping.
+**Single button learn** — right-click the button and select **MIDI → Learn** (**Learn MIDI** on scene buttons). The LED starts blinking — pale blue on matrix buttons, white on scene buttons. Send any CC or note with a non-zero value from your controller to complete the mapping. The current mapping (e.g. _CC 91_ or _Note 36_) is shown in the menu label once assigned. Pressing the blinking button again cancels the learn without mapping.
 
-Select **Clear MIDI** from the context menu to remove the mapping.
+Select **MIDI → Clear** (**Clear MIDI** on scene buttons) to remove the mapping.
 
-**Sequential learn** maps all 64 matrix buttons in order with a single workflow. Open the module context menu and enable **Sequential MIDI learn**. SPLICE-KIT starts learning button 1; after each received message it automatically advances to the next button until all 64 are mapped or the option is disabled again. Scene buttons are not included in sequential learn — assign them individually or use a controller preset.
+**Sequential learn** maps a run of matrix buttons in one pass. Choose **MIDI → Start sequential learn...** from a button's context menu to begin at that button, or **Sequential MIDI learn** from the module context menu. After each received message SPLICE-KIT advances to the next button, continuing to button 64 or until the option is disabled again. Scene buttons are not included — assign them individually or use a controller preset.
 
 ### MIDI feedback and controller presets
 
@@ -188,7 +217,7 @@ Each **`<spec>`** object describes the MIDI message sent to the controller for o
 
 **LED states:**
 
-SPLICE-KIT uses four color sets (0–3). The defaults are: set 0 = red (output ports), set 1 = blue (input ports), set 2 = green, set 3 = white/neutral. Each set has a dim state (port assigned, no cable), an active state (cable connected), and a connected state (port is linked to the currently pending button).
+SPLICE-KIT uses four color sets (0–3): set 0 = red, set 1 = blue, set 2 = orange, set 3 = green. Buttons use set 0 for output ports and set 1 for input ports unless overridden in the **Color** submenu. Each set has a dim state (port assigned, no cable), an active state (cable connected), and a connected state (port is linked to the currently pending button).
 
 | Key | Meaning |
 |---|---|
