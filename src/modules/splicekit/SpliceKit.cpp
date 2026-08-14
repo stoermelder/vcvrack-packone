@@ -604,9 +604,22 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		int cellId = -1;
 		PortAssignment port;
 
-		bool isValid() const { return initiator != nullptr && cellId >= 0; }
-		void clear() { initiator = nullptr; cellId = -1; port.clear(); }
+		// Far end of every cable on `port`, keyed (moduleId, portId). Published once by the
+		// initiator, read by peers — deriving it per peer would be N widget-tree walks a frame
+		// for one fact. A snapshot: cable changes mid-gesture are not reflected until it ends.
+		std::set<std::pair<int64_t, int>> partners;
+
+		bool isValid() const {
+			return initiator != nullptr && cellId >= 0;
+		}
+		void clear() {
+			initiator = nullptr;
+			cellId = -1;
+			port.clear();
+			partners.clear();
+		}
 	};
+	
 	// Entries are never erased when a Context is destroyed — a small leak bounded by the
 	// number of Contexts ever opened; not worth fixing.
 	static std::map<Context*, CrossPendingState> crossPending;
@@ -730,6 +743,14 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 
 	// Written by GUI thread (step), read by DSP thread (process) — accepted race for LEDs
 	bool portHasCable[MATRIX_COUNT] = {};
+
+	// This cell shares a cross-instance cable with the port a peer has armed — the
+	// cross-instance analogue of connectedToPending, which sceneStore cannot answer because
+	// such a cable is never stored in a scene. Same accepted race as portHasCable[]: written
+	// by refreshPeerConnected() on the GUI thread, read by the light loop. The engine thread
+	// must not read crossPending directly — std::map::operator[] can insert.
+	bool peerConnected[MATRIX_COUNT] = {};
+
 	float blinkPhase = 0.f;
 	float slowBlinkPhase = 0.f;
 
@@ -811,7 +832,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		// With no window there is no SpliceKitWidget::step() to refresh portHasCable[], so
 		// the worker takes that over after each drain — otherwise the flag stays frozen and
 		// the edge-triggered MIDI feedback in process() never sees a cell change state.
-		taskProcessorUi.onWorkerDrained = [this]() { refreshPortHasCable(); };
+		taskProcessorUi.onWorkerDrained = [this]() {
+			refreshPortHasCable();
+			refreshPeerConnected();
+		};
 		processDivider.setDivision(256);
 		registerModuleListener("SpliceKit-SceneLink", this);
 		getInstances()[APP].insert(this);
@@ -1114,6 +1138,13 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			NVGcolor col = slowBlinkOn ? COLOR_SETS[cs].color : nvgRGBf(0.f, 0.f, 0.f);
 			return { col, LED_STATE_CONNECTED_BY_SET[cs] };
 		}
+		// Connected to a peer's armed port, so an armed cell reveals its partners on every
+		// instance. Reuses the connected-to-pending state id on purpose: both mean "connected
+		// to the active selection", so every controller preset lights it as-is.
+		if (peerConnected[i]) {
+			NVGcolor col = slowBlinkOn ? COLOR_SETS[cs].color : nvgRGBf(0.f, 0.f, 0.f);
+			return { col, LED_STATE_CONNECTED_BY_SET[cs] };
+		}
 		if (portLearningId == i) {
 			return { blinkOn ? LED_PORT_LEARN : LED_OFF, LED_STATE_PORT_LEARN };
 		}
@@ -1227,6 +1258,47 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 				}
 				break;
 			}
+		}
+	}
+
+	// GUI thread — recomputes peerConnected[] against the cable list the armed peer published.
+	// Never touches the widget tree: the initiator resolved that once when it armed. Called
+	// alongside refreshPortHasCable(), from widget step() or the GuiTaskProcessor worker.
+	void refreshPeerConnected() {
+		// Safe to read crossPending here (GUI thread), unlike from resolveCellVisual().
+		auto it = crossPending.find(APP);
+		const CrossPendingState* cp = (it != crossPending.end()) ? &it->second : nullptr;
+		// Nobody armed, we are the initiator (our own pendingCellId drives our LEDs), or we
+		// opted out.
+		if (!crossInstanceEnabled || !cp || !cp->isValid() || cp->initiator == this) {
+			std::fill(peerConnected, peerConnected + MATRIX_COUNT, false);
+			return;
+		}
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			const PortAssignment& pa = portAssignments[i];
+			// resolveDirection() also rejects same-direction and invalid pairs.
+			peerConnected[i] = resolveDirection(cp->port, pa).first
+				&& cp->partners.count({pa.moduleId, pa.portId}) > 0;
+		}
+	}
+
+	// GUI thread — collects the far end of every complete cable on `pa`, keyed (moduleId,
+	// portId). Direction is not part of the key: a far end is necessarily the opposite
+	// direction, and callers re-check legality via resolveDirection().
+	static void collectCablePartners(const PortAssignment& pa, std::set<std::pair<int64_t, int>>& out) {
+		if (!pa.isValid()) return;
+		ModuleWidget* mw = APP->scene->rack->getModule(pa.moduleId);
+		if (!mw) return;
+		bool isOutput = (pa.type == engine::Port::OUTPUT);
+		for (PortWidget* pw : (isOutput ? mw->getOutputs() : mw->getInputs())) {
+			if (pw->portId != pa.portId) continue;
+			for (CableWidget* cw : APP->scene->rack->getCablesOnPort(pw)) {
+				// Incomplete cables (one end still being dragged) have a null far end.
+				PortWidget* far = isOutput ? cw->inputPort : cw->outputPort;
+				if (!far || !far->module) continue;
+				out.insert({far->module->getId(), far->portId});
+			}
+			break;
 		}
 	}
 
@@ -1698,6 +1770,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 						cp.initiator = this;
 						cp.cellId = id;
 						cp.port = portAssignments[id];
+						// Resolve once here for every peer to read; see partners' declaration.
+						cp.partners.clear();
+						collectCablePartners(cp.port, cp.partners);
 					}
 					const std::string& lbl = cellLabels[id];
 					if (!lbl.empty()) setOverlayMessage(lbl, portLabel(portAssignments[id]));
@@ -2292,6 +2367,8 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		// Same scan the worker runs when there is no window, so one piece of logic maintains
 		// the flag on both paths.
 		module->refreshPortHasCable();
+		// Likewise for the cross-instance "connected to the armed port" highlight.
+		module->refreshPeerConnected();
 	}
 
 	// A MenuLabel with a fixed pixel width instead of growing to fit the text on one line.
