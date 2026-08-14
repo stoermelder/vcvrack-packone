@@ -1700,6 +1700,57 @@ TEST_CASE("trig.setTrigger produces identical output-trigger state", "[MidiKit][
 	REQUIRE(js == lua);
 }
 
+// Pins the ms contract of trig.setGate: the docs specify durationMs, so a
+// 100 ms gate must fall after ~4410 samples at 44.1 kHz. Dedicated scripts
+// (setGate only — setHigh would clear triggerActive and pin the output high).
+static const char* JS_TRIG_SET_GATE_MS = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.setGate(1, 100);
+)";
+
+static const char* LUA_TRIG_SET_GATE_MS = R"(--[[
+@engine minilua@v1
+--]]
+trig.setGate(1, 100)
+)";
+
+TEST_CASE("trig.setGate duration is milliseconds: gate falls after ~100 ms", "[MidiKit][CrossEngine]") {
+	auto checkGateLength = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+
+		// process() only writes the trigger output voltage while a cable is
+		// connected (see the isConnected() gate in MidiKitModule::process).
+		m->outputs[MidiKitModule::OUTPUT_TRIG].channels = 1;
+
+		Module::ProcessArgs args;
+		args.sampleTime = 1.0f / 44100.0f;
+		args.sampleRate = 44100.0f;
+		args.frame = 0;
+
+		// Count the samples the gate is high (10V).
+		int highSamples = 0;
+		for (int i = 0; i < 5000; i++) {
+			m->process(args);
+			if (m->outputs[MidiKitModule::OUTPUT_TRIG].getVoltage(0) > 5.f)
+				highSamples++;
+		}
+
+		Test::destroyModule(m);
+		return highSamples;
+	};
+
+	auto js = checkGateLength(JS_TRIG_SET_GATE_MS);
+	auto lua = checkGateLength(LUA_TRIG_SET_GATE_MS);
+	// 100 ms @ 44.1 kHz = 4410 samples. The window guards float rounding at the
+	// exact boundary while still failing the old seconds interpretation (which
+	// would still be high at sample 5000).
+	REQUIRE(js > 4300);
+	REQUIRE(js < 4500);
+	REQUIRE(js == lua);
+}
+
 
 // --- param.enable ------------------------------------------------------------
 

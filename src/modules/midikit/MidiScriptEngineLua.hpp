@@ -1483,7 +1483,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			duration = static_cast<float>(luaL_checknumber(L, 2));
 		}
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
-		e->handler->setTrig(i - 1, ch - 1, duration);
+		// The script API is milliseconds (per docs); dsp::PulseGenerator::trigger()
+		// takes seconds, so convert here.
+		e->handler->setTrig(i - 1, ch - 1, duration / 1000.f);
 		return 0;
 	}
 

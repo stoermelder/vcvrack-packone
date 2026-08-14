@@ -1299,8 +1299,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		int ch = 1;
 		if (argc == 3) ch = static_cast<int>(argNum(ctx, argv[1]));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) return jsThrow(ctx, "trig.setGate: bad channel");
+		// The script API is milliseconds (per docs); dsp::PulseGenerator::trigger()
+		// takes seconds, so convert here.
 		float duration = argNum(ctx, argv[argc - 1]);
-		getEngine(ctx)->handler->setTrig(i - 1, ch - 1, duration);
+		getEngine(ctx)->handler->setTrig(i - 1, ch - 1, duration / 1000.f);
 		return JS_UNDEFINED;
 	}
 
