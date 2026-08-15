@@ -90,6 +90,31 @@ resolveDirection(const PortAssignment& a, const PortAssignment& b) {
 	return { nullptr, nullptr };
 }
 
+// Pure — diffs two scene topologies and reports which cell pairs need their cable
+// removed (present in `from`, absent in `to`) and which need one added (absent in
+// `from`, present in `to`). Pairs with unassigned ports or with no valid output→input
+// direction are excluded — such cells cannot carry a cable, and the add/remove helpers
+// re-check direction anyway. Split out of SceneStore::switchTo() so the scene-switch
+// diff is testable without rack/cable scaffolding (the cable layer is a no-op in tests).
+static void topologyDiff(const SceneConns& from, const SceneConns& to,
+		const PortAssignment* ports,
+		std::vector<std::pair<int, int>>& toRemove,
+		std::vector<std::pair<int, int>>& toAdd) {
+	toRemove.clear();
+	toAdd.clear();
+	for (int i = 0; i < MATRIX_COUNT; i++) {
+		for (int j = i + 1; j < MATRIX_COUNT; j++) {
+			bool was = (from[i] >> j) & 1;
+			bool will = (to[i] >> j) & 1;
+			if (was == will) continue;
+			if (!ports[i].isValid() || !ports[j].isValid()) continue;
+			if (!resolveDirection(ports[i], ports[j]).first) continue;
+			if (was) toRemove.push_back({i, j});
+			else toAdd.push_back({i, j});
+		}
+	}
+}
+
 // Formats a MIDI mapping as "CC N" / "Note N", or "" when unmapped. Callers add their
 // own prefix/fallback for context (tooltip vs. menu item).
 std::string midiMapLabel(const MidiTrackingProcessor<TOTAL_MAPS>::RevMap& map) {
@@ -222,10 +247,9 @@ struct SceneStore {
 	// starting from whatever connections[current] currently holds. For each pair (i,j)
 	// that differs, the cable is added or removed and the bitmask updated with it, so
 	// the store is left consistent without the caller storing newConns afterwards.
-	// Pairs that haven't changed are skipped.
-	//
-	// Callers that want the *incoming* scene's cables realised must set `current` first;
-	// this always writes to whichever scene is active (see switchTo).
+	// Pairs that haven't changed are skipped. Unlike switchTo(), this always writes the
+	// diff into whichever scene `current` names, so it is only used where the current
+	// scene's stored topology is meant to end up as newConns (reconcile, resetModuleState).
 	void applyToCurrent(const SceneConns& newConns) {
 		assert(verifier.isUiOrWorker());
 		for (int i = 0; i < MATRIX_COUNT; i++) {
@@ -260,16 +284,24 @@ struct SceneStore {
 
 	// GUI thread — switches to newScene: captures the outgoing scene's current cable
 	// state, then realises the incoming scene's stored topology in the patch. No-op if
-	// newScene is already current. `current` advances *before* the diff, since
-	// applyToCurrent() writes the bitmask of whichever scene is active — the incoming
-	// one is the one that must end up matching the cables. Fires onSwitch() last.
+	// newScene is already current. Fires onSwitch() last.
+	//
+	// The diff runs while `current` still names the outgoing scene, so its captured
+	// state is the "from" baseline. Cable changes are applied with the bitmask-free
+	// helpers (removeCableBetween/addCableBetween): neither scene's stored bitmask may
+	// be rewritten here — the outgoing scene keeps its just-captured state (it is no
+	// longer active) and the incoming scene already holds the desired topology. That
+	// rules out applyToCurrent(), which always writes the diff into whichever scene
+	// `current` names.
 	void switchTo(int newScene) {
 		assert(verifier.isUiOrWorker());
 		if (newScene == current) return;
 		capture(current);
-		SceneConns incoming = connections[newScene];
+		std::vector<std::pair<int, int>> toRemove, toAdd;
+		topologyDiff(connections[current], connections[newScene], ports, toRemove, toAdd);
+		for (const auto& p : toRemove) removeCableBetween(p.first, p.second);
+		for (const auto& p : toAdd) addCableBetween(p.first, p.second);
 		current = newScene;
-		applyToCurrent(incoming);
 		if (onSwitch) onSwitch();
 	}
 

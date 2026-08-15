@@ -342,3 +342,107 @@ TEST_CASE("reconcileScene - non-current scene with all-zero newConns clears that
 	REQUIRE(m->sceneStore.isConnected(3, 1, 2) == false);
 	Test::destroyModule(m);
 }
+
+
+// ---------------------------------------------------------------------------
+// switchTo — switching scenes must realise the incoming scene's cables in the patch
+// ---------------------------------------------------------------------------
+
+TEST_CASE("switchTo - advances current, fires onSwitch, and leaves the incoming scene's topology intact", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	int switchCount = 0;
+	m->sceneStore.onSwitch = [&]() { switchCount++; };
+
+	// Valid, correctly-directed assignments so the diff considers these pairs.
+	m->portAssignments[0] = {1, engine::Port::OUTPUT, 0};
+	m->portAssignments[1] = {1, engine::Port::INPUT, 1};
+	m->portAssignments[2] = {2, engine::Port::OUTPUT, 0};
+	m->portAssignments[3] = {2, engine::Port::INPUT, 1};
+
+	m->sceneStore.current = 0;
+	m->sceneStore.setConnection(0, 0, 1, true);  // outgoing scene 0 has 0↔1
+	m->sceneStore.setConnection(3, 2, 3, true);  // incoming scene 3 has 2↔3
+
+	m->sceneStore.switchTo(3);
+
+	REQUIRE(m->sceneStore.current == 3);
+	REQUIRE(switchCount == 1);
+	// The incoming scene's stored topology is untouched — the switch must not copy the
+	// outgoing scene onto it (cables are applied via the bitmask-free helpers, which are
+	// no-ops here without cable scaffolding, but the bitmask must not be rewritten).
+	REQUIRE(m->sceneStore.isConnected(3, 2, 3) == true);
+	REQUIRE(m->sceneStore.isConnected(3, 0, 1) == false);
+
+	// Switching to the same scene is a no-op.
+	m->sceneStore.switchTo(3);
+	REQUIRE(switchCount == 1);
+	Test::destroyModule(m);
+}
+
+
+// topologyDiff — the pure scene-switch diff. Regression: switchTo() used to advance
+// `current` before diffing, turning the diff into a self-diff so the patch never changed
+// and the next capture() silently copied the active cables onto the scene being left.
+
+TEST_CASE("topologyDiff - reports removals and additions between two topologies", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->portAssignments[0] = {1, engine::Port::OUTPUT, 0};
+	m->portAssignments[1] = {1, engine::Port::INPUT, 1};
+	m->portAssignments[2] = {2, engine::Port::OUTPUT, 0};
+	m->portAssignments[3] = {2, engine::Port::INPUT, 1};
+
+	SceneConns from{};
+	from[0] = (1ULL << 1);  // 0↔1 present
+	SceneConns to{};
+	to[2] = (1ULL << 3);    // 2↔3 present
+
+	std::vector<std::pair<int, int>> toRemove, toAdd;
+	topologyDiff(from, to, m->portAssignments, toRemove, toAdd);
+
+	REQUIRE(toRemove.size() == 1);
+	REQUIRE(toRemove[0] == std::make_pair(0, 1));
+	REQUIRE(toAdd.size() == 1);
+	REQUIRE(toAdd[0] == std::make_pair(2, 3));
+	Test::destroyModule(m);
+}
+
+TEST_CASE("topologyDiff - identical topologies produce no changes", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->portAssignments[0] = {1, engine::Port::OUTPUT, 0};
+	m->portAssignments[1] = {1, engine::Port::INPUT, 1};
+
+	SceneConns from{};
+	from[0] = (1ULL << 1);
+	from[1] = (1ULL << 0);
+	SceneConns to = from;
+
+	std::vector<std::pair<int, int>> toRemove, toAdd;
+	topologyDiff(from, to, m->portAssignments, toRemove, toAdd);
+	REQUIRE(toRemove.empty());
+	REQUIRE(toAdd.empty());
+	Test::destroyModule(m);
+}
+
+TEST_CASE("topologyDiff - unassigned or same-direction cells are excluded", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	// Cells 0/1 are same-direction (both outputs) — can never share a cable.
+	m->portAssignments[0] = {1, engine::Port::OUTPUT, 0};
+	m->portAssignments[1] = {2, engine::Port::OUTPUT, 1};
+	// Cells 2/3 are valid.
+	m->portAssignments[2] = {3, engine::Port::OUTPUT, 0};
+	m->portAssignments[3] = {3, engine::Port::INPUT, 1};
+
+	SceneConns from{};
+	from[0] = (1ULL << 1);  // 0↔1 — same direction, must be ignored
+	SceneConns to{};
+	to[4] = (1ULL << 5);    // 4↔5 — cells unassigned, must be ignored
+	to[2] = (1ULL << 3);    // 2↔3 — valid, must be added
+
+	std::vector<std::pair<int, int>> toRemove, toAdd;
+	topologyDiff(from, to, m->portAssignments, toRemove, toAdd);
+
+	REQUIRE(toRemove.empty());
+	REQUIRE(toAdd.size() == 1);
+	REQUIRE(toAdd[0] == std::make_pair(2, 3));
+	Test::destroyModule(m);
+}
