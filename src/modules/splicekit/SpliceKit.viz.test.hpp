@@ -25,8 +25,8 @@
 
 
 TEST_CASE("setVizMode - cables stay hidden while another instance is in viz mode", "[SpliceKit][viz]") {
-	SpliceKitModule* mA = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* mB = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* mA = createModule();
+	SpliceKitModule* mB = createModule();
 	SpliceKitWidget* mwA = Test::createWidget<SpliceKitWidget>(mA);
 	SpliceKitWidget* mwB = Test::createWidget<SpliceKitWidget>(mB);
 	Widget* cableContainer = APP->scene->rack->getCableContainer();
@@ -63,8 +63,8 @@ TEST_CASE("setVizMode - cables stay hidden while another instance is in viz mode
 }
 
 TEST_CASE("setVizMode - deleting an instance releases only its own hide request", "[SpliceKit][viz]") {
-	SpliceKitModule* mA = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* mB = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* mA = createModule();
+	SpliceKitModule* mB = createModule();
 	SpliceKitWidget* mwA = Test::createWidget<SpliceKitWidget>(mA);
 	SpliceKitWidget* mwB = Test::createWidget<SpliceKitWidget>(mB);
 	Widget* cableContainer = APP->scene->rack->getCableContainer();

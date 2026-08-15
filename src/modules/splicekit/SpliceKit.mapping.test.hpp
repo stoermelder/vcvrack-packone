@@ -8,7 +8,7 @@
 // moveCell
 
 TEST_CASE("moveCell - no-op when source equals target", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->portAssignments[4].moduleId = 42;
 	m->portAssignments[4].portId = 0;
@@ -31,7 +31,7 @@ TEST_CASE("moveCell - no-op when source equals target", "[SpliceKit]") {
 
 
 TEST_CASE("moveCell - port assignment is transferred and source is cleared", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->portAssignments[3].moduleId = 42;
 	m->portAssignments[3].portId = 1;
@@ -53,7 +53,7 @@ TEST_CASE("moveCell - port assignment is transferred and source is cleared", "[S
 
 
 TEST_CASE("moveCell - MIDI mappings stay on their original cells", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->portAssignments[5].moduleId = 1;
 	m->portAssignments[5].portId = 0;
@@ -78,7 +78,7 @@ TEST_CASE("moveCell - MIDI mappings stay on their original cells", "[SpliceKit]"
 
 
 TEST_CASE("moveCell - label and color are transferred and source is reset", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->portAssignments[2].moduleId = 1;
 	m->portAssignments[2].portId = 0;
@@ -98,7 +98,7 @@ TEST_CASE("moveCell - label and color are transferred and source is reset", "[Sp
 
 
 TEST_CASE("moveCell - scene connections are redirected in current scene", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->sceneStore.setConnection(0, 0, 2, true);
 	m->sceneStore.setConnection(0, 0, 4, true);
@@ -131,7 +131,7 @@ TEST_CASE("moveCell - scene connections are redirected in current scene", "[Spli
 
 
 TEST_CASE("moveCell - toId's existing connections are discarded", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->sceneStore.setConnection(0, 3, 7, true);  // fromId=3 → cell 7
 	m->sceneStore.setConnection(0, 5, 8, true);  // toId=5 existing connections — discarded
@@ -156,7 +156,7 @@ TEST_CASE("moveCell - toId's existing connections are discarded", "[SpliceKit]")
 
 
 TEST_CASE("moveCell - fromId-toId connection is dropped and not a self-connection", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->sceneStore.setConnection(0, 0, 3, true);  // fromId↔toId: will not become self-connection
 	m->sceneStore.setConnection(0, 0, 7, true);  // other connection — should transfer
@@ -177,7 +177,7 @@ TEST_CASE("moveCell - fromId-toId connection is dropped and not a self-connectio
 
 
 TEST_CASE("moveCell - connections transferred across all scenes independently", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	// Different connection topology in scenes 1, 2, 3.
 	m->sceneStore.setConnection(1, 10, 20, true);
@@ -202,7 +202,7 @@ TEST_CASE("moveCell - connections transferred across all scenes independently", 
 
 
 TEST_CASE("moveCell - overlay message is posted", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->portAssignments[1].moduleId = 1;
 	m->portAssignments[1].portId = 0;
@@ -221,7 +221,7 @@ TEST_CASE("moveCell - overlay message is posted", "[SpliceKit]") {
 // removeCellConnections
 
 TEST_CASE("removeCellConnections - clears all bitmask bits for the cell in the current scene", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->sceneStore.current = 0;
 
 	m->sceneStore.setConnection(0, 4, 1, true);
@@ -245,7 +245,7 @@ TEST_CASE("removeCellConnections - clears all bitmask bits for the cell in the c
 }
 
 TEST_CASE("removeCellConnections - no-op when cell has no connections", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	// No connections set anywhere — removeCellConnections must be safe.
 	REQUIRE_NOTHROW(m->sceneStore.removeCellConnections(20));
 	REQUIRE(m->sceneStore.connections[0][20] == 0);
@@ -256,7 +256,7 @@ TEST_CASE("removeCellConnections - no-op when cell has no connections", "[Splice
 // applyPresetLayout — sets up the trackingProcessor from a custom preset
 
 TEST_CASE("applyPresetLayout - applies cell and scene mappings from custom preset", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	MidiOutPreset preset;
 	preset.cells[0].type = MidiTrackingType::NOTE;
@@ -298,7 +298,7 @@ TEST_CASE("applyPresetLayout - maps every valid MIDI note/CC number 0..127, incl
 	// full valid range for both cell and scene slots to guard against any
 	// other off-by-one at the boundaries.
 	for (int number = 0; number <= 127; number++) {
-		SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+		SpliceKitModule* m = createModule();
 
 		MidiOutPreset preset;
 		preset.cells[0].type = MidiTrackingType::NOTE;
@@ -327,7 +327,7 @@ TEST_CASE("applyPresetLayout - maps every valid MIDI note/CC number 0..127, incl
 }
 
 TEST_CASE("applyPresetLayout - no-op when no preset is active", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePresetJson("");  // no preset
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 5, 60);
 
@@ -340,7 +340,7 @@ TEST_CASE("applyPresetLayout - no-op when no preset is active", "[SpliceKit]") {
 }
 
 TEST_CASE("applyPresetLayout - invalidates LED states so they are re-sent", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	// Pre-populate LED state with non-(-1) values.
 	for (int i = 0; i < MATRIX_COUNT; i++) m->feedback.cellLedState[i] = LED_STATE_COLOR0;
@@ -361,7 +361,7 @@ TEST_CASE("applyPresetLayout - invalidates LED states so they are re-sent", "[Sp
 // assignPort — rebinding a cell must discard everything derived from the old port
 
 TEST_CASE("assignPort - assigns port to an empty cell", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->assignPort(4, 42, 3, engine::Port::OUTPUT);
 
@@ -374,7 +374,7 @@ TEST_CASE("assignPort - assigns port to an empty cell", "[SpliceKit]") {
 }
 
 TEST_CASE("assignPort - rebinding clears connections in every scene, not just the current one", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 	m->assignPort(2, 44, 0, engine::Port::INPUT);
@@ -404,7 +404,7 @@ TEST_CASE("assignPort - rebinding clears connections in every scene, not just th
 }
 
 TEST_CASE("assignPort - rebinding drops the label describing the old port", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(5, 42, 0, engine::Port::OUTPUT);
 	m->cellLabels[5] = "Filter cutoff";
 
@@ -416,7 +416,7 @@ TEST_CASE("assignPort - rebinding drops the label describing the old port", "[Sp
 }
 
 TEST_CASE("assignPort - assigning to an empty cell preserves a pre-set label", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	// No previous port, so there is nothing stale to discard — a label the user typed on an
 	// unassigned cell must survive the first assignment.
 	m->cellLabels[6] = "Reverb send";
@@ -429,7 +429,7 @@ TEST_CASE("assignPort - assigning to an empty cell preserves a pre-set label", "
 }
 
 TEST_CASE("assignPort - invalidates LED states so a changed color set is re-sent", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	std::fill(m->feedback.cellLedState, m->feedback.cellLedState + MATRIX_COUNT, LED_STATE_OFF);
 
@@ -444,7 +444,7 @@ TEST_CASE("assignPort - invalidates LED states so a changed color set is re-sent
 }
 
 TEST_CASE("assignPort - out-of-range cell ids are ignored", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	REQUIRE_NOTHROW(m->assignPort(-1, 42, 0, engine::Port::OUTPUT));
 	REQUIRE_NOTHROW(m->assignPort(MATRIX_COUNT, 42, 0, engine::Port::OUTPUT));
@@ -453,7 +453,7 @@ TEST_CASE("assignPort - out-of-range cell ids are ignored", "[SpliceKit]") {
 }
 
 TEST_CASE("assignPort - explicit color set override survives a rebind", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(2, 42, 0, engine::Port::OUTPUT);
 	m->cellColorSet[2] = 3;  // explicit green, chosen by the user for this button position
 
@@ -471,7 +471,7 @@ TEST_CASE("assignPort - explicit color set override survives a rebind", "[Splice
 // clearPort
 
 TEST_CASE("clearPort - discards the port assignment", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(4, 42, 3, engine::Port::OUTPUT);
 
 	m->clearPort(4);
@@ -482,7 +482,7 @@ TEST_CASE("clearPort - discards the port assignment", "[SpliceKit]") {
 }
 
 TEST_CASE("clearPort - clears connections in every scene, not just the current one", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 	m->assignPort(2, 44, 0, engine::Port::INPUT);
@@ -509,7 +509,7 @@ TEST_CASE("clearPort - clears connections in every scene, not just the current o
 }
 
 TEST_CASE("clearPort - drops the label describing the old port", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(5, 42, 0, engine::Port::OUTPUT);
 	m->cellLabels[5] = "Filter cutoff";
 
@@ -521,7 +521,7 @@ TEST_CASE("clearPort - drops the label describing the old port", "[SpliceKit]") 
 }
 
 TEST_CASE("clearPort - invalidates LED state so the cleared cell is re-sent as off", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	std::fill(m->feedback.cellLedState, m->feedback.cellLedState + MATRIX_COUNT, LED_STATE_OFF);
 
@@ -533,7 +533,7 @@ TEST_CASE("clearPort - invalidates LED state so the cleared cell is re-sent as o
 }
 
 TEST_CASE("clearPort - no-op on an already-empty cell", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	REQUIRE_NOTHROW(m->clearPort(4));
 	REQUIRE(m->portAssignments[4].isValid() == false);
@@ -542,7 +542,7 @@ TEST_CASE("clearPort - no-op on an already-empty cell", "[SpliceKit]") {
 }
 
 TEST_CASE("clearPort - out-of-range cell ids are ignored", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	REQUIRE_NOTHROW(m->clearPort(-1));
 	REQUIRE_NOTHROW(m->clearPort(MATRIX_COUNT));
@@ -552,7 +552,7 @@ TEST_CASE("clearPort - out-of-range cell ids are ignored", "[SpliceKit]") {
 
 TEST_CASE("clearPort - regression: bypassing this cleanup let a stale bit resurrect a "
           "connection to the wrong port on a later rebind", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(5, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(9, 43, 0, engine::Port::INPUT);
 
@@ -578,7 +578,7 @@ TEST_CASE("clearPort - regression: bypassing this cleanup let a stale bit resurr
 // pending selection left on either one is stale and must be cleared by the caller.
 
 TEST_CASE("moveCell - leaves a stale pending selection on the source cell", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 
@@ -596,7 +596,7 @@ TEST_CASE("moveCell - leaves a stale pending selection on the source cell", "[Sp
 }
 
 TEST_CASE("moveCell - a pending selection on the moved-away cell cannot be cancelled by pressing it", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 
 	m->triggerCell(0);
@@ -618,7 +618,7 @@ TEST_CASE("moveCell - a pending selection on the moved-away cell cannot be cance
 }
 
 TEST_CASE("moveCell - a pending selection on the destination cell silently changes meaning", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(5, 77, 3, engine::Port::INPUT);
 
@@ -645,7 +645,7 @@ TEST_CASE("moveCell - a pending selection on the destination cell silently chang
 // paths) that would otherwise each have to remember to do it.
 
 TEST_CASE("clearPort - drops a pending selection on the cleared cell", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(3, 42, 0, engine::Port::OUTPUT);
 
 	m->triggerCell(3);
@@ -664,7 +664,7 @@ TEST_CASE("clearPort - drops a pending selection on the cleared cell", "[SpliceK
 }
 
 TEST_CASE("clearPort - leaves a pending selection on an unrelated cell alone", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(3, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(7, 43, 0, engine::Port::INPUT);
 
@@ -679,7 +679,7 @@ TEST_CASE("clearPort - leaves a pending selection on an unrelated cell alone", "
 }
 
 TEST_CASE("assignPort - rebinding drops a pending selection on the rebound cell", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(4, 42, 0, engine::Port::OUTPUT);
 
 	// Cell 4 is pending, selected while it still referred to port 42:0.
@@ -697,7 +697,7 @@ TEST_CASE("assignPort - rebinding drops a pending selection on the rebound cell"
 }
 
 TEST_CASE("assignPort - assigning an empty cell drops a pending selection on it", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(2, 42, 0, engine::Port::OUTPUT);
 
 	m->triggerCell(2);
@@ -714,7 +714,7 @@ TEST_CASE("assignPort - assigning an empty cell drops a pending selection on it"
 }
 
 TEST_CASE("assignPort - leaves a pending selection on an unrelated cell alone", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(3, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(7, 43, 0, engine::Port::INPUT);
 
@@ -734,7 +734,7 @@ TEST_CASE("assignPort - leaves a pending selection on an unrelated cell alone", 
 // way, so the direction logic is fully exercisable here.
 
 TEST_CASE("toggleConnection - output to input creates the connection", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 
@@ -749,7 +749,7 @@ TEST_CASE("toggleConnection - output to input creates the connection", "[SpliceK
 }
 
 TEST_CASE("toggleConnection - argument order does not matter", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 
@@ -761,7 +761,7 @@ TEST_CASE("toggleConnection - argument order does not matter", "[SpliceKit]") {
 }
 
 TEST_CASE("toggleConnection - two outputs are rejected and reported", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::OUTPUT);
 
@@ -774,7 +774,7 @@ TEST_CASE("toggleConnection - two outputs are rejected and reported", "[SpliceKi
 }
 
 TEST_CASE("toggleConnection - two inputs are rejected and reported", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::INPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 
@@ -787,7 +787,7 @@ TEST_CASE("toggleConnection - two inputs are rejected and reported", "[SpliceKit
 }
 
 TEST_CASE("toggleConnection - unassigned cell is ignored without an overlay message", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	// Cell 1 is left unassigned.
 	m->setOverlayMessage("sentinel", "");
@@ -802,7 +802,7 @@ TEST_CASE("toggleConnection - unassigned cell is ignored without an overlay mess
 }
 
 TEST_CASE("toggleConnection - only the current scene is affected", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 	m->sceneStore.current = 3;
@@ -821,7 +821,7 @@ TEST_CASE("toggleConnection - only the current scene is affected", "[SpliceKit]"
 // onReset — what it adds on top of resetModuleState()
 
 TEST_CASE("onReset - clears labels, color overrides and cancels learn", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->cellLabels[2] = "Filter cutoff";
 	m->cellColorSet[2] = 3;
 	m->pendingCellId = 4;
@@ -842,7 +842,7 @@ TEST_CASE("onReset - clears labels, color overrides and cancels learn", "[Splice
 }
 
 TEST_CASE("onReset - clears state directly without queueing", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->sceneStore.current = 5;
 	m->sceneStore.setConnection(5, 0, 1, true);
 

@@ -9,7 +9,7 @@
 // sendFeedbackOff integration — state transitions in process()
 
 TEST_CASE("process - unassigned cell transitions cellLedState to OFF", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->lightDivider.setDivision(256);  // lightDivider defaults sample-rate-relative; pin for the loop below
 
 	// Pre-set to a non-OFF state to force a transition
@@ -24,7 +24,7 @@ TEST_CASE("process - unassigned cell transitions cellLedState to OFF", "[SpliceK
 }
 
 TEST_CASE("process - assigned cell without cable transitions to DIM state", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->lightDivider.setDivision(256);
 
 	m->portAssignments[0].moduleId = 42;
@@ -41,7 +41,7 @@ TEST_CASE("process - assigned cell without cable transitions to DIM state", "[Sp
 }
 
 TEST_CASE("process - cellLedState transitions from old state to OFF when cell unassigned", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->lightDivider.setDivision(256);
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
@@ -58,7 +58,7 @@ TEST_CASE("process - cellLedState transitions from old state to OFF when cell un
 }
 
 TEST_CASE("process - scene cellLedState transitions to SCENE_ACTIVE for currentScene", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->lightDivider.setDivision(256);
 
 	m->sceneStore.current = 2;
@@ -73,7 +73,7 @@ TEST_CASE("process - scene cellLedState transitions to SCENE_ACTIVE for currentS
 }
 
 TEST_CASE("process - physical scene button press works normally when not linked", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->sceneStore.current = 0;  // sceneLinkMasterId stays -1 (default)
 
 	Test::SimpleEngine engine;
@@ -83,21 +83,15 @@ TEST_CASE("process - physical scene button press works normally when not linked"
 	m->params[SpliceKitModule::PARAM_SCENE + 1].setValue(1.f);
 	for (int i = 0; i < 256; i++) engine.step();  // rising edge on the next divided tick
 
-	// requestSceneChange() enqueues switchScene(1) onto taskProcessorUi rather than
-	// applying it inline. With no window present (as in this test binary), the divider
-	// ticks above already started a real background worker for m, so poking
-	// internalQueue's ring buffer directly here would race that worker's own drain.
-	// step() goes through the same CAS-guarded drain() the worker uses, so it is safe to
-	// call concurrently — whichever of the two gets there first runs the task, the other
-	// is a no-op — and the effect is observable either way via sceneStore.current.
-	m->taskProcessorUi.step();
+	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 1);  // switchScene(1) queued
+	m->taskProcessorUi.internalQueue.queue.shift()();
 	REQUIRE(m->sceneStore.current == 1);
 
 	Test::destroyModule(m);
 }
 
 TEST_CASE("process - physical scene button press is ignored while following a scene link master", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->sceneLinkMasterId = 999;  // any id — process() only checks it's >= 0
 	m->sceneStore.current = 0;
 
@@ -116,7 +110,7 @@ TEST_CASE("process - physical scene button press is ignored while following a sc
 
 
 TEST_CASE("process - scene state transitions from active to dim after scene switch", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->lightDivider.setDivision(256);
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
@@ -137,7 +131,7 @@ TEST_CASE("process - scene state transitions from active to dim after scene swit
 // process() — PENDING, PORT_LEARN, MIDI_LEARN LED state transitions
 
 TEST_CASE("process - pending cell transitions cellLedState to PENDING", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->lightDivider.setDivision(256);
 
 	m->portAssignments[0].moduleId = 42;
@@ -147,19 +141,9 @@ TEST_CASE("process - pending cell transitions cellLedState to PENDING", "[Splice
 	// First press → triggerCell sets pendingCellId
 	m->triggerCell(0);
 	REQUIRE(m->pendingCellId == 0);
-	// triggerCell() enqueues the cross-instance half onto taskProcessorUi; drain it
-	// synchronously (as every other triggerCell() test does) before the loop below gets
-	// a chance to spin up a background worker for it — see the loop's own comment.
-	m->taskProcessorUi.step();
-	SpliceKitModule::crossPending[APP].clear();
 
 	Test::SimpleEngine engine;
 	engine.registerModule(m);
-	// 256 steps trips processDivider, which calls taskProcessorUi.process(). With no
-	// window present (as in this test binary) that starts a real background worker
-	// thread for m — harmless on its own, but combined with a still-queued task it
-	// would race destroyModule() below. The drain above prevents that by ensuring the
-	// queue is already empty before the worker could ever start.
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->feedback.cellLedState[0] == LED_STATE_PENDING);
@@ -167,7 +151,7 @@ TEST_CASE("process - pending cell transitions cellLedState to PENDING", "[Splice
 }
 
 TEST_CASE("process - port-learning cell transitions cellLedState to PORT_LEARN", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->lightDivider.setDivision(256);
 
 	m->portLearningId = 7;
@@ -185,7 +169,7 @@ TEST_CASE("process - port-learning cell transitions cellLedState to PORT_LEARN",
 }
 
 TEST_CASE("process - midi-learning cell transitions cellLedState to MIDI_LEARN", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->lightDivider.setDivision(256);
 
 	m->learningId = 11;
@@ -199,7 +183,7 @@ TEST_CASE("process - midi-learning cell transitions cellLedState to MIDI_LEARN",
 }
 
 TEST_CASE("process - cell connected to pending cell transitions to CONNECTED1", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->lightDivider.setDivision(256);
 
 	// Cell 0 is pending and connected to cell 5 in scene 0.
@@ -212,11 +196,6 @@ TEST_CASE("process - cell connected to pending cell transitions to CONNECTED1", 
 	m->sceneStore.setConnection(0, 0, 5, true);
 
 	m->triggerCell(0);  // pendingCellId = 0
-	// Drain the cross-instance half synchronously before the loop below — see the
-	// identical drain in the PENDING test above for why an undrained queue plus this
-	// loop races a background worker against destroyModule().
-	m->taskProcessorUi.step();
-	SpliceKitModule::crossPending[APP].clear();
 
 	Test::SimpleEngine engine;
 	engine.registerModule(m);
@@ -230,7 +209,7 @@ TEST_CASE("process - cell connected to pending cell transitions to CONNECTED1", 
 }
 
 TEST_CASE("resolveCellVisual - precedence order pending > connected > port-learn > midi-learn > assigned > off", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	// Cell 5 is connected to cell 0 in the current scene, and every lower-precedence
 	// flag is also set on cell 5, so this only passes if resolveCellVisual checks
@@ -279,7 +258,7 @@ TEST_CASE("resolveCellVisual - precedence order pending > connected > port-learn
 }
 
 TEST_CASE("resolveSceneVisual - precedence order midi-learn > active > has-connections > off", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->portAssignments[0].moduleId = 1;
 	m->portAssignments[0].portId = 0;
@@ -314,7 +293,7 @@ TEST_CASE("resolveSceneVisual - precedence order midi-learn > active > has-conne
 }
 
 TEST_CASE("process - cell with port assignment and no cable transitions to COLOR0_DIM", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->lightDivider.setDivision(256);
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
@@ -337,7 +316,7 @@ TEST_CASE("process - cell with port assignment and no cable transitions to COLOR
 // directly on the GUI thread rather than being queued.
 
 TEST_CASE("requestSceneChange - enqueues a switchScene lambda", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->sceneStore.current = 0;
 	m->sceneStore.setConnection(1, 0, 1, true);  // scene 1 has a stored connection
 
@@ -352,7 +331,7 @@ TEST_CASE("requestSceneChange - enqueues a switchScene lambda", "[SpliceKit]") {
 }
 
 TEST_CASE("resetModuleState - clears all state", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	// Populate state that should be wiped by reset.
 	m->sceneStore.current = 4;

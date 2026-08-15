@@ -685,13 +685,25 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	
 	// Entries are never erased when a Context is destroyed — a small leak bounded by the
 	// number of Contexts ever opened; not worth fixing.
-	static std::map<Context*, CrossPendingState> crossPending;
+	//
+	// Function-local static rather than a class static with an out-of-line definition: the
+	// test build both links the plugin binary and #includes this .cpp, so a class static
+	// would exist twice — one copy in plugin.dylib, one in the test TU — and a write through
+	// one (e.g. onRemove()'s clear()) would be invisible to a read through the other (e.g.
+	// triggerCell()'s lambda), leaving a stale `initiator` pointing at an already-destroyed
+	// module. (Caught as a heap-use-after-free in clearPendingLocal(), reached via
+	// initiator->clearPendingLocal() in the responder branch below.) Same fix and same
+	// rationale as getInstances() just below.
+	static std::map<Context*, CrossPendingState>& crossPending() {
+		static std::map<Context*, CrossPendingState> crossPending;
+		return crossPending;
+	}
 
 	// All live instances in this Rack context, maintained by the constructor/destructor.
 	// Cross-instance patching needs to enumerate its peers every GUI frame (see
 	// collectCableEndCandidates); walking APP->engine->getModuleIds() would allocate a
 	// vector of every module in the patch and dynamic_cast each one, 60x per second.
-	// Same keying as crossPending, and the same GUI-thread-only ownership rule.
+	// Same keying as crossPending(), and the same GUI-thread-only ownership rule.
 	//
 	// Function-local static rather than a class static with an out-of-line definition:
 	// the test build both links the plugin binary and #includes this .cpp, so a class
@@ -938,7 +950,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	}
 
 	void onRemove() override {
-		auto& cp = crossPending[APP];
+		auto& cp = crossPending()[APP];
 		if (cp.initiator == this) cp.clear();
 	}
 
@@ -977,7 +989,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// instances; mutating it from the engine thread would race with GUI-thread access.
 	void clearPendingCrossGui() {
 		assert(verifier.isUiOrWorker());
-		auto& cp = crossPending[APP];
+		auto& cp = crossPending()[APP];
 		if (cp.initiator == this) cp.clear();
 	}
 
@@ -1358,8 +1370,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	void refreshPeerConnected() {
 		assert(verifier.isUiOrWorker());
 		// Safe to read crossPending here (GUI thread), unlike from resolveCellVisual().
-		auto it = crossPending.find(APP);
-		const CrossPendingState* cp = (it != crossPending.end()) ? &it->second : nullptr;
+		auto& reg = crossPending();
+		auto it = reg.find(APP);
+		const CrossPendingState* cp = (it != reg.end()) ? &it->second : nullptr;
 		// Nobody armed, we are the initiator (our own pendingCellId drives our LEDs), or we
 		// opted out.
 		if (!crossInstanceEnabled || !cp || !cp->isValid() || cp->initiator == this) {
@@ -1842,7 +1855,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			taskProcessorUi.enqueue([this, id]() {
 				// GUI thread — sole owner of crossPending. Re-check cp validity here
 				// because another instance's lambda may have already consumed it.
-				auto& cp = crossPending[APP];
+				auto& cp = crossPending()[APP];
 				if (crossInstanceEnabled && cp.isValid() && cp.initiator != this) {
 					// Responder path: create the cable directly (we are on the GUI thread).
 					SpliceKitModule* initiator = cp.initiator;
@@ -2016,9 +2029,6 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		std::fill(portHasCable, portHasCable  + MATRIX_COUNT, false);
 	}
 };
-
-// Static field to communicate a pending state accross instances
-std::map<Context*, SpliceKitModule::CrossPendingState> SpliceKitModule::crossPending;
 
 
 // Overlay widget added directly to APP->scene->rack — drawn in rack coordinates.

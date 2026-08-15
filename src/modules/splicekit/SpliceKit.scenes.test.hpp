@@ -9,7 +9,7 @@
 // copyScene
 
 TEST_CASE("copyScene - no-op when src equals dst", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->sceneStore.setConnection(2, 0, 1, true);
 	m->sceneStore.copy(2, 2);
 	REQUIRE(m->sceneStore.isConnected(2, 0, 1) == true);  // unchanged
@@ -17,7 +17,7 @@ TEST_CASE("copyScene - no-op when src equals dst", "[SpliceKit]") {
 }
 
 TEST_CASE("copyScene - copies connections from src to dst", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->sceneStore.current = 7;  // keep src and dst both inactive
 	m->sceneStore.setConnection(1, 0, 5, true);
 	m->sceneStore.setConnection(1, 3, 7, true);
@@ -29,7 +29,7 @@ TEST_CASE("copyScene - copies connections from src to dst", "[SpliceKit]") {
 }
 
 TEST_CASE("copyScene - overwrites existing connections in dst", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->sceneStore.current = 7;
 	m->sceneStore.setConnection(0, 1, 2, true);  // src has 1↔2
 	m->sceneStore.setConnection(3, 4, 5, true);  // dst has 4↔5 (will be overwritten)
@@ -40,7 +40,7 @@ TEST_CASE("copyScene - overwrites existing connections in dst", "[SpliceKit]") {
 }
 
 TEST_CASE("copyScene - src scene remains unchanged", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->sceneStore.current = 7;
 	m->sceneStore.setConnection(2, 0, 3, true);
 	m->sceneStore.copy(2, 5);
@@ -49,7 +49,7 @@ TEST_CASE("copyScene - src scene remains unchanged", "[SpliceKit]") {
 }
 
 TEST_CASE("copyScene - unrelated scenes are not affected", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->sceneStore.current = 7;
 	m->sceneStore.setConnection(1, 0, 5, true);
 	m->sceneStore.setConnection(6, 10, 20, true);
@@ -60,7 +60,7 @@ TEST_CASE("copyScene - unrelated scenes are not affected", "[SpliceKit]") {
 }
 
 TEST_CASE("copyScene - can copy to current scene (bitmask transfer, no cables in test)", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	// src=1 is inactive, dst=4 is current. reconcileScene always assigns newConns.
 	m->sceneStore.current = 4;
 	m->sceneStore.setConnection(1, 0, 3, true);
@@ -75,7 +75,7 @@ TEST_CASE("copyScene - can copy to current scene (bitmask transfer, no cables in
 // ---------------------------------------------------------------------------
 
 TEST_CASE("requestCopyScene - enqueues a taskProcessorUi item that performs the copy", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->sceneStore.current = 7;
 	m->sceneStore.setConnection(2, 0, 1, true);
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 0);
@@ -90,7 +90,7 @@ TEST_CASE("requestCopyScene - enqueues a taskProcessorUi item that performs the 
 // MIDI scene copy detection (processMapUpdate)
 
 TEST_CASE("processMapUpdate - single scene activation sets pendingMidiSceneId and queues scene change", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	REQUIRE(m->pendingMidiSceneId == -1);
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 2, 100);
 	REQUIRE(m->pendingMidiSceneId == 2);
@@ -99,7 +99,7 @@ TEST_CASE("processMapUpdate - single scene activation sets pendingMidiSceneId an
 }
 
 TEST_CASE("processMapUpdate - MIDI scene activation is ignored while following a scene link master", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->sceneLinkMasterId = 999;  // any id — process()/processMapUpdate only check it's >= 0
 
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 2, 100);
@@ -110,7 +110,7 @@ TEST_CASE("processMapUpdate - MIDI scene activation is ignored while following a
 }
 
 TEST_CASE("processMapUpdate - note-off clears pendingMidiSceneId", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 3, 100);
 	REQUIRE(m->pendingMidiSceneId == 3);
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 3, 0);
@@ -119,7 +119,7 @@ TEST_CASE("processMapUpdate - note-off clears pendingMidiSceneId", "[SpliceKit]"
 }
 
 TEST_CASE("processMapUpdate - note-off for a different scene is a no-op", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->pendingMidiSceneId = 4;
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 7, 0);  // different scene
 	REQUIRE(m->pendingMidiSceneId == 4);  // unchanged
@@ -127,7 +127,7 @@ TEST_CASE("processMapUpdate - note-off for a different scene is a no-op", "[Spli
 }
 
 TEST_CASE("processMapUpdate - two activations without release queues scene copy", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	// First activation: normal scene change, pending set.
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 1, 100);
@@ -143,7 +143,7 @@ TEST_CASE("processMapUpdate - two activations without release queues scene copy"
 }
 
 TEST_CASE("processMapUpdate - same scene activated twice without release is not a copy", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 4, 100);
 	REQUIRE(m->pendingMidiSceneId == 4);
 	size_t queueSize = m->taskProcessorUi.internalQueue.queue.size();
@@ -156,7 +156,7 @@ TEST_CASE("processMapUpdate - same scene activated twice without release is not 
 }
 
 TEST_CASE("processMapUpdate - after a copy, the next activation is treated normally", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	// Trigger a copy: press scene 1, then scene 2 (no release).
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 1, 100);
@@ -175,8 +175,8 @@ TEST_CASE("processMapUpdate - after a copy, the next activation is treated norma
 // currentScene, driven by notifyModuleListeners("SpliceKit-SceneLink") + process().
 
 TEST_CASE("Scene link - follower adopts master's scene after a change", "[SpliceKit]") {
-	SpliceKitModule* master = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* follower = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* master = createModule();
+	SpliceKitModule* follower = createModule();
 	Test::registerModule(master);
 	Test::registerModule(follower);
 
@@ -199,7 +199,7 @@ TEST_CASE("Scene link - follower adopts master's scene after a change", "[Splice
 }
 
 TEST_CASE("Scene link - no-op when sceneLinkMasterId is unset", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	Test::registerModule(m);
 	REQUIRE(m->sceneLinkMasterId == -1);
 
@@ -216,8 +216,8 @@ TEST_CASE("Scene link - no-op when sceneLinkMasterId is unset", "[SpliceKit]") {
 }
 
 TEST_CASE("Scene link - unrelated instance without a configured master ignores the notification", "[SpliceKit]") {
-	SpliceKitModule* master = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* bystander = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* master = createModule();
+	SpliceKitModule* bystander = createModule();
 	Test::registerModule(master);
 	Test::registerModule(bystander);
 	// bystander->sceneLinkMasterId stays -1
@@ -238,8 +238,8 @@ TEST_CASE("Scene link - unrelated instance without a configured master ignores t
 }
 
 TEST_CASE("Scene link - stale master reference is cleared once the master no longer exists", "[SpliceKit]") {
-	SpliceKitModule* master = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* follower = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* master = createModule();
+	SpliceKitModule* follower = createModule();
 	Test::registerModule(master);
 	Test::registerModule(follower);
 	follower->sceneLinkMasterId = master->id;
@@ -260,9 +260,9 @@ TEST_CASE("Scene link - stale master reference is cleared once the master no lon
 }
 
 TEST_CASE("Scene link - sceneLinkCandidateIsFollower rejects chaining through an already-following module", "[SpliceKit]") {
-	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* c = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
+	SpliceKitModule* c = createModule();
 	Test::registerModule(a);
 	Test::registerModule(b);
 	Test::registerModule(c);
@@ -288,8 +288,8 @@ TEST_CASE("Scene link - sceneLinkCandidateIsFollower rejects chaining through an
 }
 
 TEST_CASE("Scene link - sceneLinkHasFollowers detects when a module already serves as a master", "[SpliceKit]") {
-	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
 	Test::registerModule(a);
 	Test::registerModule(b);
 
@@ -311,7 +311,7 @@ TEST_CASE("Scene link - sceneLinkHasFollowers detects when a module already serv
 // reconcileScene — non-current scene path
 
 TEST_CASE("reconcileScene - non-current scene copies newConns without touching currentScene cables", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->sceneStore.current = 0;
 	m->sceneStore.setConnection(0, 0, 1, true);  // current scene has a connection
@@ -332,7 +332,7 @@ TEST_CASE("reconcileScene - non-current scene copies newConns without touching c
 }
 
 TEST_CASE("reconcileScene - non-current scene with all-zero newConns clears that scene", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->sceneStore.current = 7;  // keep current scene inactive
 	m->sceneStore.setConnection(3, 1, 2, true);
 	REQUIRE(m->sceneStore.isConnected(3, 1, 2) == true);
@@ -349,7 +349,7 @@ TEST_CASE("reconcileScene - non-current scene with all-zero newConns clears that
 // ---------------------------------------------------------------------------
 
 TEST_CASE("switchTo - advances current, fires onSwitch, and leaves the incoming scene's topology intact", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	int switchCount = 0;
 	m->sceneStore.onSwitch = [&]() { switchCount++; };
 
@@ -385,7 +385,7 @@ TEST_CASE("switchTo - advances current, fires onSwitch, and leaves the incoming 
 // and the next capture() silently copied the active cables onto the scene being left.
 
 TEST_CASE("topologyDiff - reports removals and additions between two topologies", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->portAssignments[0] = {1, engine::Port::OUTPUT, 0};
 	m->portAssignments[1] = {1, engine::Port::INPUT, 1};
 	m->portAssignments[2] = {2, engine::Port::OUTPUT, 0};
@@ -407,7 +407,7 @@ TEST_CASE("topologyDiff - reports removals and additions between two topologies"
 }
 
 TEST_CASE("topologyDiff - identical topologies produce no changes", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->portAssignments[0] = {1, engine::Port::OUTPUT, 0};
 	m->portAssignments[1] = {1, engine::Port::INPUT, 1};
 
@@ -424,7 +424,7 @@ TEST_CASE("topologyDiff - identical topologies produce no changes", "[SpliceKit]
 }
 
 TEST_CASE("topologyDiff - unassigned or same-direction cells are excluded", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	// Cells 0/1 are same-direction (both outputs) — can never share a cable.
 	m->portAssignments[0] = {1, engine::Port::OUTPUT, 0};
 	m->portAssignments[1] = {2, engine::Port::OUTPUT, 1};

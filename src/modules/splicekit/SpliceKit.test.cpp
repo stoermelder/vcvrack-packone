@@ -17,7 +17,7 @@
 
 
 TEST_CASE("Construction and initialization", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	SpliceKitWidget* mw = Test::createWidget<SpliceKitWidget>("SpliceKit");
 
 	REQUIRE(m != nullptr);
@@ -37,7 +37,7 @@ TEST_CASE("Construction and initialization", "[SpliceKit]") {
 
 
 TEST_CASE("onSampleRateChange - sets lightDivider relative to sample rate, independent of processDivider", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	Module::SampleRateChangeEvent e;
 	e.sampleRate = 48000.f;
@@ -56,7 +56,7 @@ TEST_CASE("onSampleRateChange - sets lightDivider relative to sample rate, indep
 
 
 TEST_CASE("isConnected and setConnection bitmask", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	REQUIRE(m->sceneStore.isConnected(0, 0, 1) == false);
 
@@ -126,7 +126,7 @@ TEST_CASE("resolveDirection - either assignment invalid returns nullptr", "[Spli
 
 
 TEST_CASE("clearPending resets pendingCellId and pendingCellIsPhysical", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->pendingCellId = 5;
 	m->pendingCellIsPhysical = true;
@@ -140,7 +140,7 @@ TEST_CASE("clearPending resets pendingCellId and pendingCellIsPhysical", "[Splic
 
 
 TEST_CASE("triggerCell - first press sets pending", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	// Assign cell 3 a port so triggerCell doesn't bail early
 	m->portAssignments[3].moduleId = 42;
@@ -156,7 +156,7 @@ TEST_CASE("triggerCell - first press sets pending", "[SpliceKit]") {
 
 
 TEST_CASE("triggerCell - pressing same cell cancels pending", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->portAssignments[2].moduleId = 42;
 	m->portAssignments[2].portId = 0;
@@ -173,7 +173,7 @@ TEST_CASE("triggerCell - pressing same cell cancels pending", "[SpliceKit]") {
 
 
 TEST_CASE("triggerCell - unassigned cell is ignored", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	// Cell 10 has no port assignment
 	m->triggerCell(10);
@@ -184,7 +184,7 @@ TEST_CASE("triggerCell - unassigned cell is ignored", "[SpliceKit]") {
 
 
 TEST_CASE("processMapUpdate - MIDI note-on sets pending", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->portAssignments[5].moduleId = 1;
 	m->portAssignments[5].portId = 0;
@@ -199,7 +199,7 @@ TEST_CASE("processMapUpdate - MIDI note-on sets pending", "[SpliceKit]") {
 
 
 TEST_CASE("processMapUpdate - momentary MIDI note-off clears pending", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->buttonMode = SpliceKitModule::BUTTON_MOMENTARY;
 	m->portAssignments[7].moduleId = 1;
@@ -219,7 +219,7 @@ TEST_CASE("processMapUpdate - momentary MIDI note-off clears pending", "[SpliceK
 
 
 TEST_CASE("processMapUpdate - toggle mode ignores note-off", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->buttonMode = SpliceKitModule::BUTTON_TOGGLE;
 	m->portAssignments[4].moduleId = 1;
@@ -238,7 +238,7 @@ TEST_CASE("processMapUpdate - toggle mode ignores note-off", "[SpliceKit]") {
 
 
 TEST_CASE("portAssignment isValid and clear", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	REQUIRE(m->portAssignments[0].isValid() == false);
 
