@@ -127,6 +127,16 @@ struct GuiTaskProcessor {
 	// and not mutated afterwards: the worker reads it without synchronization.
 	std::function<void()> onWorkerDrained;
 
+	// Set once stopWorker() begins tearing the worker down. Guards the final
+	// drainWithCallback() in runWorker() (see its comment): once shutdown has started, the
+	// owning object may itself be mid-destruction (this is normally called from the owner's
+	// own destructor), so neither a queued task nor onWorkerDrained — both of which
+	// typically capture/touch the owner — may run anymore. Plain bool, not atomic: only
+	// ever written by stopWorker() before the shutdown taskSignal.post() that the worker
+	// thread's wait() synchronizes with, so the worker's read of it after waking is
+	// already ordered by that release/acquire pair.
+	bool shuttingDown = false;
+
 	~GuiTaskProcessor() {
 		stopWorker();
 	}
@@ -285,6 +295,14 @@ struct GuiTaskProcessor {
 		}
 
 		workerShouldRun.store(false, std::memory_order_release);
+		// Once shutdown has started the owner may be mid-destruction: neither a task still
+		// in the queue nor onWorkerDrained may run anymore (both typically capture/touch
+		// the owner), so drop whatever is left rather than let the worker's final drain
+		// execute it. drain() happens-before the post below, which is what the worker's
+		// wait()/drainWithCallback() synchronizes on, so runWorker() is guaranteed to see
+		// both the empty queue and shuttingDown == true once it wakes for this post.
+		shuttingDown = true;
+		internalQueue.drain();
 		// Wakes the worker out of taskSignal.wait() the same way MpmcTaskWorker's
 		// shutdown post does: an extra signal with no matching task, so the worker
 		// drains anything left, observes workerShouldRun == false, and exits instead
@@ -293,12 +311,20 @@ struct GuiTaskProcessor {
 		taskSignal.post();
 		reapWorker();
 		workerState.store(WorkerState::Absent, std::memory_order_release);
+		shuttingDown = false;
 	}
 
 	void runWorker() {
 		contextSet(workerContext);
 		while (true) {
 			taskSignal.wait();
+			if (shuttingDown) {
+				// Shutdown discarded the queue and does not want onWorkerDrained run
+				// against a possibly half-destroyed owner — just drain() (there is
+				// nothing left to run, but this keeps `draining` consistent) and exit.
+				drain();
+				return;
+			}
 			drainWithCallback();
 			if (!workerShouldRun.load(std::memory_order_acquire)) {
 				// Final drain in case a task (and its post) arrived concurrently
