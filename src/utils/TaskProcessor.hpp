@@ -18,6 +18,10 @@ struct TaskProcessor {
             queue.push(t);
         }
     }
+
+    void drain() {
+        queue.clear();
+    }
 }; // struct TaskProcessor
 
 } // namespace StoermelderPackOne

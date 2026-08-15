@@ -151,6 +151,7 @@ static T* createWidget(std::string modelSlug) {
 }
 
 static void destroyWidget(rack::ModuleWidget* mw) {
+	APP->event->finalizeWidget(mw);
 	mw->module = NULL;
 	delete mw;
 }
