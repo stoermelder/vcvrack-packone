@@ -13,6 +13,7 @@
 #include "SpliceKit.process.test.hpp"
 #include "SpliceKit.randomize.test.hpp"
 #include "SpliceKit.scenes.test.hpp"
+#include "SpliceKit.viz.test.hpp"
 
 
 TEST_CASE("Construction and initialization", "[SpliceKit]") {
