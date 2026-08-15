@@ -724,10 +724,13 @@ inline ui::MenuItem* createStickySubmenuItem(const std::string& text, const std:
  * Use createStickyMidiMenuItem() rather than instantiating this directly.
  */
 struct StickyMidiMenu : ui::Menu {
-	midi::Port* port     = nullptr;
-	int lastDriverId     = INT_MIN;
+	midi::Port* port = nullptr;
+	int lastDriverId = INT_MIN;
+	bool enableChannelMenu = true;
 
-	void onAction(const event::Action& e) override { e.unconsume(); }
+	void onAction(const event::Action& e) override {
+		e.unconsume();
+	}
 
 	void populate() {
 		clearChildren();
@@ -786,12 +789,14 @@ struct StickyMidiMenu : ui::Menu {
 			addChild(item);
 		}
 
-		addChild(new ui::MenuSeparator);
-		ChannelSubmenuItem* channelItem = new ChannelSubmenuItem;
-		channelItem->text = string::translate("MidiDisplay.channel");
-		channelItem->rightText = RIGHT_ARROW;
-		channelItem->port = port;
-		addChild(channelItem);
+		if (enableChannelMenu) {
+			addChild(new ui::MenuSeparator);
+			ChannelSubmenuItem* channelItem = new ChannelSubmenuItem;
+			channelItem->text = string::translate("MidiDisplay.channel");
+			channelItem->rightText = RIGHT_ARROW;
+			channelItem->port = port;
+			addChild(channelItem);
+		}
 	}
 
 	void step() override {
@@ -815,20 +820,23 @@ struct StickyMidiMenu : ui::Menu {
  *   menu->addChild(createStickyMidiMenuItem("MIDI Input",  &module->midiInput));
  *   menu->addChild(createStickyMidiMenuItem("MIDI Output", &module->midiOutput));
  */
-inline ui::MenuItem* createStickyMidiMenuItem(const std::string& text, midi::Port* port) {
+inline ui::MenuItem* createStickyMidiMenuItem(const std::string& text, midi::Port* port, bool enableChannelMenu = true) {
 	struct Item : ui::MenuItem {
 		midi::Port* port;
+		bool enableChannelMenu;
 		ui::Menu* createChildMenu() override {
 			StickyMidiMenu* menu = new StickyMidiMenu;
 			menu->port = port;
+			menu->enableChannelMenu = enableChannelMenu;
 			menu->populate();
 			return menu;
 		}
 	};
 	Item* item = new Item;
-	item->text      = text;
+	item->text = text;
 	item->rightText = RIGHT_ARROW;
-	item->port      = port;
+	item->port = port;
+	item->enableChannelMenu = enableChannelMenu;
 	return item;
 }
 

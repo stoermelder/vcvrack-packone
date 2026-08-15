@@ -1561,3 +1561,51 @@ TEST_CASE("Clear field flushes pending note-offs and blasts All Notes Off", "[MI
 	Test::unregisterModule(m);
 	Test::destroyModule(m);
 }
+
+TEST_CASE("MIDI output preserves the outgoing message channel", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	// Simulate the bug: a non-negative port channel (e.g. restored from a preset)
+	// would overwrite the channel of every outgoing MIDI message.
+	m->midiOutPort.channel = 5;
+
+	// onReset must reset the port channel to -1 so outgoing messages keep their
+	// own channel (the fix).
+	Module::ResetEvent e;
+	m->onReset(e);
+	REQUIRE(m->midiOutPort.channel == -1);
+
+	// Attach a mock device WITHOUT touching the channel. (onReset reset the port,
+	// detaching any device; setupMockMidiOutput would also set channel = -1 and
+	// mask the bug, so attach manually.)
+	MockMidiOutputDevice* mockDevice = new MockMidiOutputDevice();
+	m->midiOutPort.outputDevice = mockDevice;
+	m->midiOutPort.device = mockDevice;
+	m->midiOutEnabled = true;
+
+	// A note event on channel 2
+	Oevent_list olist;
+	oevent_list_init(&olist);
+	Oevent* ev = oevent_list_alloc_item(&olist);
+	ev->any.oevent_type = Oevent_type_midi_note;
+	ev->midi_note.channel = 2;
+	ev->midi_note.octave = 4;
+	ev->midi_note.note = 0; // C
+	ev->midi_note.velocity = 100;
+	ev->midi_note.duration = 1;
+	m->processEvents(&olist);
+
+	// The outgoing note-on keeps the source channel (not overwritten)
+	REQUIRE(mockDevice->getMessageCount() == 1);
+	const auto& msg = mockDevice->getMessage(0);
+	REQUIRE(msg.getStatus() == 0x9); // Note On
+	REQUIRE(msg.getChannel() == 2);
+	REQUIRE(msg.getNote() == 48); // C4
+	REQUIRE(msg.getValue() == 100);
+
+	oevent_list_deinit(&olist);
+	cleanupMockMidiOutput(m, mockDevice);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}

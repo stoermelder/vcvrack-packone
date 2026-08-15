@@ -127,6 +127,7 @@ struct AhabModule : Module {
 		midiVirtualPortId = 0;
 		midiOutEnabled = true;
 		midiOutPort.reset();
+		midiOutPort.setChannel(-1);
 		midiCcOffset = 64;
 		scheduledOffs.clear();
 
@@ -1371,9 +1372,7 @@ struct AhabSimWidget : OpaqueWidget {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("MIDI", "", [this](ui::Menu* menu) {
 			menu->addChild(createBoolPtrMenuItem("Driver enabled", "", &module->midiOutEnabled));
-			menu->addChild(createSubmenuItem("Driver", "", [this](ui::Menu* menu) {
-				rack::app::appendMidiMenu(menu, &module->midiOutPort);
-			}));
+			menu->addChild(Rack::createStickyMidiMenuItem("Driver", &module->midiOutPort, false));
 
 			menu->addChild(new MenuSeparator());
 			menu->addChild(createBoolMenuItem("Virtual driver enabled", "",

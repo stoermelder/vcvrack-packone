@@ -3,7 +3,8 @@
 ### Changes and Fixes
 
 - Module [AHAB](./docs/ahab/Ahab.md)
-    - Fixed reset behavior when loading fields
+    - Fixed reset behavior on loading files or examples
+    - Fixed wrong MIDI channel on MIDI output messages
     - Fixed various minor issues
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added sorting option "Newest" to *v2 mod* browser
