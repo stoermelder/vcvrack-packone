@@ -290,13 +290,19 @@ TEST_CASE("Repeated window transitions stay stable", "[GuiTaskProcessor]") {
 TEST_CASE("onWorkerDrained runs on the worker after a drain", "[GuiTaskProcessor]") {
 	Test::TestContext<> ctx;
 	using State = GuiTaskProcessor<8>::WorkerState;
-	GuiTaskProcessor<8> gtp;
 
+	// Declared before `gtp` so they outlive it: gtp's destructor joins the worker
+	// thread, which may still invoke onWorkerDrained (capturing these by reference)
+	// during that shutdown drain. Locals are destroyed in reverse declaration order,
+	// so gtp must come last, or its dtor would run against already-destroyed locals
+	// (ASan: stack-use-after-scope).
 	std::thread::id callerId = std::this_thread::get_id();
 	std::atomic<int> hookCount{0};
 	std::atomic<bool> hookOnOtherThread{false};
 	std::atomic<bool> taskRanFirst{false};
 	std::atomic<bool> taskRan{false};
+
+	GuiTaskProcessor<8> gtp;
 
 	gtp.onWorkerDrained = [&]() {
 		if (std::this_thread::get_id() != callerId) hookOnOtherThread = true;
@@ -345,14 +351,19 @@ TEST_CASE("onWorkerDrained does not run on the step() drain path", "[GuiTaskProc
 TEST_CASE("onWorkerDrained may re-enter drain() without deadlocking", "[GuiTaskProcessor]") {
 	Test::TestContext<> ctx;
 	using State = GuiTaskProcessor<8>::WorkerState;
+
+	// Declared before `gtp` — see the comment in the "runs on the worker after a drain"
+	// test above for why: gtp's dtor may still invoke this hook during shutdown, so the
+	// captured locals must outlive gtp.
+	std::atomic<int> hookCount{0};
+	std::atomic<int> tasksRun{0};
+
 	GuiTaskProcessor<8> gtp;
 
 	// The hook runs after drain() has released `draining`, so re-entering the drain path
 	// from inside it must be safe rather than self-deadlocking. (The hook must NOT enqueue:
 	// that would make the worker a second producer, which the class forbids — so this only
 	// exercises the drain side.)
-	std::atomic<int> hookCount{0};
-	std::atomic<int> tasksRun{0};
 	gtp.onWorkerDrained = [&]() {
 		hookCount.fetch_add(1);
 		gtp.drain();
@@ -375,9 +386,12 @@ TEST_CASE("onWorkerDrained may re-enter drain() without deadlocking", "[GuiTaskP
 TEST_CASE("process() does not wake an idle worker — the hook is task-driven, not a timer", "[GuiTaskProcessor]") {
 	Test::TestContext<> ctx;
 	using State = GuiTaskProcessor<8>::WorkerState;
-	GuiTaskProcessor<8> gtp;
 
+	// Declared before `gtp` — see the comment in the "runs on the worker after a drain"
+	// test above: gtp's dtor may still invoke this hook during shutdown.
 	std::atomic<int> hookCount{0};
+
+	GuiTaskProcessor<8> gtp;
 	gtp.onWorkerDrained = [&hookCount]() { hookCount.fetch_add(1); };
 
 	starveUiThread(gtp, 1);
