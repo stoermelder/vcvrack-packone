@@ -71,7 +71,7 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 	MidiProcessor midiProcessor;
 
 	ClockDividerEx processDivider;
-	dsp::RingBuffer<LogEntry, 512> midiLogMessages;
+	dsp::RingBuffer<LogEntry, 4096> midiLogMessages;
 	bool isProcessing = false;
 
 	MidiMonModule() {

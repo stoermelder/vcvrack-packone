@@ -1389,7 +1389,7 @@ TEST_CASE("MIDI Virtual reset - sends note-off to all notes and channels", "[MID
 	// Subscribe a mock input to port 0 to capture reset messages
 	MockMidiVirtualInput* mockVirtualInput = setupMockVirtualMidiInput(0);
 
-	Ahab::Midi::reset(0);
+	Ahab::Midi::resetMidi(0);
 
 	// Note-off message for every note (0-127) on every channel (0-15)
 	REQUIRE(mockVirtualInput->getMessageCount() == 16 * 128);
@@ -1417,18 +1417,195 @@ TEST_CASE("MIDI Virtual reset - guards and port isolation", "[MIDI][Ahab]") {
 	MockMidiVirtualInput* mockVirtualInput = setupMockVirtualMidiInput(1);
 
 	// Invalid device IDs are ignored
-	Ahab::Midi::reset(-1);
+	Ahab::Midi::resetMidi(-1);
 	REQUIRE(mockVirtualInput->getMessageCount() == 0);
-	Ahab::Midi::reset(4);
+	Ahab::Midi::resetMidi(4);
 	REQUIRE(mockVirtualInput->getMessageCount() == 0);
 
 	// Resetting another port does not deliver to this one
-	Ahab::Midi::reset(0);
+	Ahab::Midi::resetMidi(0);
 	REQUIRE(mockVirtualInput->getMessageCount() == 0);
 
 	// Resetting the subscribed port delivers note-off for all notes and channels
-	Ahab::Midi::reset(1);
+	Ahab::Midi::resetMidi(1);
 	REQUIRE(mockVirtualInput->getMessageCount() == 16 * 128);
 
 	cleanupMockVirtualMidiInput(mockVirtualInput);
+}
+
+TEST_CASE("Sim reset command drops pending note-offs and blasts All Notes Off", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	// Enable virtual MIDI driver and subscribe mocks on both MIDI outputs
+	pluginSettings.ahabMidiVirtualEnabled = true;
+	Ahab::Midi::init();
+	MockMidiVirtualInput* mockVirtualInput = setupMockVirtualMidiInput(0);
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiVirtualPortId = 0;
+	m->midiOutEnabled = true;
+
+	// A couple of pending note-offs
+	m->scheduledOffs.push_back({3, 0, 60});
+	m->scheduledOffs.push_back({1, 2, 62});
+
+	// Reset command processed on the DSP thread
+	m->sim->resetRequest();
+	m->process({});
+
+	// Pending note-offs dropped and All Notes Off blasted across both MIDI outputs
+	REQUIRE(m->scheduledOffs.empty());
+	REQUIRE(mockVirtualInput->getMessageCount() == 16 * 128);
+	REQUIRE(mockDevice->getMessageCount() == 16 * 128);
+
+	cleanupMockMidiOutput(m, mockDevice);
+	cleanupMockVirtualMidiInput(mockVirtualInput);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Field replace drops pending note-offs and blasts All Notes Off", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	// Enable virtual MIDI driver and subscribe mocks on both MIDI outputs
+	pluginSettings.ahabMidiVirtualEnabled = true;
+	Ahab::Midi::init();
+	MockMidiVirtualInput* mockVirtualInput = setupMockVirtualMidiInput(0);
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiVirtualPortId = 0;
+	m->midiOutEnabled = true;
+
+	m->scheduledOffs.push_back({3, 0, 60});
+	m->scheduledOffs.push_back({1, 2, 62});
+
+	// Load a new field (REPLACE_FIELD command)
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest("AB\nCD", 0, 0, h, w, true) == true);
+	m->process({});
+
+	// Pending note-offs are dropped and All Notes Off blasted across both MIDI outputs
+	REQUIRE(m->scheduledOffs.empty());
+	REQUIRE(mockVirtualInput->getMessageCount() == 16 * 128);
+	REQUIRE(mockDevice->getMessageCount() == 16 * 128);
+
+	cleanupMockMidiOutput(m, mockDevice);
+	cleanupMockVirtualMidiInput(mockVirtualInput);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("onReset sends All Notes Off via virtual MIDI", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	// Enable virtual MIDI driver and subscribe a mock on port 0
+	pluginSettings.ahabMidiVirtualEnabled = true;
+	Ahab::Midi::init();
+	MockMidiVirtualInput* mockVirtualInput = setupMockVirtualMidiInput(0);
+
+	m->scheduledOffs.push_back({3, 0, 60});
+
+	Module::ResetEvent e;
+	m->onReset(e);
+
+	// Note: the midiOutPort All Notes Off blast is not asserted here because
+	// onReset() resets midiOutPort (detaching any device) before flushNotes()
+	// runs via sim->reset(). The midiOutPort blast is covered by the
+	// reset-command and field-replace tests above.
+
+	// Pending note-offs dropped and All Notes Off blasted across all channels
+	REQUIRE(m->scheduledOffs.empty());
+	REQUIRE(mockVirtualInput->getMessageCount() == 16 * 128);
+	for (int i = 0; i < 16 * 128; ++i) {
+		REQUIRE(mockVirtualInput->getMessage(i).getStatus() == 0x8);
+	}
+
+	cleanupMockVirtualMidiInput(mockVirtualInput);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Clear field flushes pending note-offs and blasts All Notes Off", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	// Enable virtual MIDI driver and subscribe mocks on both MIDI outputs
+	pluginSettings.ahabMidiVirtualEnabled = true;
+	Ahab::Midi::init();
+	MockMidiVirtualInput* mockVirtualInput = setupMockVirtualMidiInput(0);
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiVirtualPortId = 0;
+	m->midiOutEnabled = true;
+
+	m->scheduledOffs.push_back({3, 0, 60});
+	m->scheduledOffs.push_back({1, 2, 62});
+
+	// Replicate AhabSimWidget::simClear(): a reset that clears the whole field
+	// (keeping the field size) and flushes notes.
+	Usz fh = m->sim->getFieldHeight();
+	Usz fw = m->sim->getFieldWidth();
+	m->sim->resetRequest();
+	m->process({});
+
+	// Pending note-offs dropped, All Notes Off blasted across both MIDI outputs,
+	// and the field size is preserved.
+	REQUIRE(m->scheduledOffs.empty());
+	REQUIRE(mockVirtualInput->getMessageCount() == 16 * 128);
+	REQUIRE(mockDevice->getMessageCount() == 16 * 128);
+	REQUIRE(m->sim->getFieldHeight() == fh);
+	REQUIRE(m->sim->getFieldWidth() == fw);
+
+	cleanupMockMidiOutput(m, mockDevice);
+	cleanupMockVirtualMidiInput(mockVirtualInput);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI output preserves the outgoing message channel", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	// Simulate the bug: a non-negative port channel (e.g. restored from a preset)
+	// would overwrite the channel of every outgoing MIDI message.
+	m->midiOutPort.channel = 5;
+
+	// onReset must reset the port channel to -1 so outgoing messages keep their
+	// own channel (the fix).
+	Module::ResetEvent e;
+	m->onReset(e);
+	REQUIRE(m->midiOutPort.channel == -1);
+
+	// Attach a mock device WITHOUT touching the channel. (onReset reset the port,
+	// detaching any device; setupMockMidiOutput would also set channel = -1 and
+	// mask the bug, so attach manually.)
+	MockMidiOutputDevice* mockDevice = new MockMidiOutputDevice();
+	m->midiOutPort.outputDevice = mockDevice;
+	m->midiOutPort.device = mockDevice;
+	m->midiOutEnabled = true;
+
+	// A note event on channel 2
+	Oevent_list olist;
+	oevent_list_init(&olist);
+	Oevent* ev = oevent_list_alloc_item(&olist);
+	ev->any.oevent_type = Oevent_type_midi_note;
+	ev->midi_note.channel = 2;
+	ev->midi_note.octave = 4;
+	ev->midi_note.note = 0; // C
+	ev->midi_note.velocity = 100;
+	ev->midi_note.duration = 1;
+	m->processEvents(&olist);
+
+	// The outgoing note-on keeps the source channel (not overwritten)
+	REQUIRE(mockDevice->getMessageCount() == 1);
+	const auto& msg = mockDevice->getMessage(0);
+	REQUIRE(msg.getStatus() == 0x9); // Note On
+	REQUIRE(msg.getChannel() == 2);
+	REQUIRE(msg.getNote() == 48); // C4
+	REQUIRE(msg.getValue() == 100);
+
+	oevent_list_deinit(&olist);
+	cleanupMockMidiOutput(m, mockDevice);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
 }

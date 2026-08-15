@@ -107,6 +107,7 @@ struct AhabModule : Module {
 		sim->setDspTickCallback(std::bind(&AhabModule::processEvents, this, std::placeholders::_1));
 		sim->setDspInputReader(std::bind(&AhabModule::readDspInput, this, std::placeholders::_1));
 		sim->setDspOutputWriter(std::bind(&AhabModule::writeDspOutput, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+		sim->setDspResetCallback(std::bind(&AhabModule::flushNotes, this));
 		
 		ResetEvent e;
 		onReset(e);
@@ -126,6 +127,7 @@ struct AhabModule : Module {
 		midiVirtualPortId = 0;
 		midiOutEnabled = true;
 		midiOutPort.reset();
+		midiOutPort.setChannel(-1);
 		midiCcOffset = 64;
 		scheduledOffs.clear();
 
@@ -295,6 +297,32 @@ struct AhabModule : Module {
 		}
 	}
 
+	// Called from the sim's DSP reset callback whenever the simulation is reset
+	// (RESET command / resetRequest) or a new field is loaded (REPLACE_FIELD), and
+	// indirectly from onReset via sim->reset(). Drops any pending note-offs so they
+	// never fire against a newly loaded field, and sends All Notes Off across all
+	// channels so no notes stay stuck.
+	void flushNotes() {
+		scheduledOffs.clear();
+		if (pluginSettings.ahabMidiVirtualEnabled) {
+			Ahab::Midi::resetMidi(midiVirtualPortId);
+		}
+		if (midiOutEnabled) {
+			for (int ch = 0; ch < 16; ++ch) {
+				for (int note = 0; note <= 127; note++) {
+					// Note off
+					midi::Message m;
+					m.setStatus(0x8);
+					m.setChannel(ch);
+					m.setNote(note);
+					m.setValue(0);
+					m.setFrame(APP->engine->getFrame());
+					midiOutPort.sendMessage(m);
+				}
+			}
+		}
+	}
+
 	// Input callback from the simulator, it tied to operator '<'
 	float readDspInput(uint8_t port_num) {
 		if (port_num > 3) port_num = 3;
@@ -449,9 +477,10 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	void simClear() {
-		Usz fh = module->sim->getFieldHeight();
-		Usz fw = module->sim->getFieldWidth();
-		module->sim->fillRectRequest(0, 0, fh, fw);
+		// Clearing the whole field is a content reset: reuse the existing reset
+		// request, which clears the grid (keeping the field size), drops pending
+		// note-offs and sends All Notes Off, just like loading a file/example.
+		module->sim->resetRequest();
 	}
 
 	void simRandomize(float density = 0.3f) {
@@ -527,7 +556,9 @@ struct AhabSimWidget : OpaqueWidget {
 		DEFER({ free(path); });
 		Usz sy, sx, sh, sw;
 		renderer.getSelectionRect(sy, sx, sh, sw);
-		std::string content = module->sim->convertRectToOrca(sy, sx, sh, sw);
+		// Serialize the UI snapshot, not the sim's live buffer (the DSP thread
+		// may be writing it from step()).
+		std::string content = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 		FILE* file = fopen(path, "w");
 		if (!file) {
 			std::string message = string::f("Could not write to patch file %s", path);
@@ -924,7 +955,8 @@ struct AhabSimWidget : OpaqueWidget {
 		// Ctrl/Cmd+C -> Copy selection to clipboard (ORCA plain text)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'c') {
 			Usz sy, sx, sh, sw; renderer.getSelectionRect(sy, sx, sh, sw);
-			std::string s = module->sim->convertRectToOrca(sy, sx, sh, sw);
+			// Read from the UI snapshot (display_field), not the sim's live buffer.
+			std::string s = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 			if (!s.empty()) glfwSetClipboardString(APP->window->win, s.c_str());
 			e.consume(this);
 			return;
@@ -933,7 +965,8 @@ struct AhabSimWidget : OpaqueWidget {
 		// Ctrl/Cmd+X -> Cut selection to clipboard (ORCA plain text)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'x') {
 			Usz sy, sx, sh, sw; renderer.getSelectionRect(sy, sx, sh, sw);
-			std::string s = module->sim->convertRectToOrca(sy, sx, sh, sw);
+			// Read from the UI snapshot (display_field), not the sim's live buffer.
+			std::string s = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 			if (!s.empty()) glfwSetClipboardString(APP->window->win, s.c_str());
 			module->sim->cutRectRequest(sy, sx, sh, sw);
 			e.consume(this);
@@ -1288,7 +1321,6 @@ struct AhabSimWidget : OpaqueWidget {
 				osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, "Failed to load example");
 			} 
 			else {
-				module->midiOutPort.reset();
 				APP->event->setSelectedWidget(this);
 			}
 		};
@@ -1340,9 +1372,7 @@ struct AhabSimWidget : OpaqueWidget {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("MIDI", "", [this](ui::Menu* menu) {
 			menu->addChild(createBoolPtrMenuItem("Driver enabled", "", &module->midiOutEnabled));
-			menu->addChild(createSubmenuItem("Driver", "", [this](ui::Menu* menu) {
-				rack::app::appendMidiMenu(menu, &module->midiOutPort);
-			}));
+			menu->addChild(Rack::createStickyMidiMenuItem("Driver", &module->midiOutPort, false));
 
 			menu->addChild(new MenuSeparator());
 			menu->addChild(createBoolMenuItem("Virtual driver enabled", "",

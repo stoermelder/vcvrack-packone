@@ -36,9 +36,9 @@ public:
 	AhabSim();
 	~AhabSim();
 
-	// Maximum field dimensions. The field is capped at this size so the
-	// undo/redo scratch buffer (undo_scratch_) can be preallocated once and
-	// reused by the DSP thread without shipping heap buffers across the queue.
+	// Maximum field dimensions. The field is capped at this size so the fixed
+	// DSP-thread scratch buffer (scratch_) is always large enough, and no heap
+	// buffer is ever shipped across the UI->DSP command queue.
 	static constexpr Usz MAX_FIELD_HEIGHT = 100;
 	static constexpr Usz MAX_FIELD_WIDTH = 100;
 
@@ -50,6 +50,9 @@ public:
 	using UiTickCallback = std::function<void(Field const*)>;
 	// Reset callback: used to notify when the sim has been reset
 	using UiResetCallback = std::function<void()>;
+	// Reset callback: used to notify DSP-side consumers (e.g. the module) when the
+	// sim has been reset or its field replaced, so they can drop pending state.
+	using DspResetCallback = std::function<void()>;
 	// Callback type for tick notifications to the DSP object
 	using TickDspCallback = std::function<void(Oevent_list const*)>;
 	// Input reader callback: used to query the module inputs (e.g. for vcvin)
@@ -70,9 +73,12 @@ public:
 	// Replace the current field with provided cells of given dimensions.
 	void replaceField(Glyph* cells, Usz new_h, Usz new_w);
 
-	// Serialize a rectangular region of the displayed field to ORCA plain text.
-	// Each row will be written as a line terminated by '\n'.
-	std::string convertRectToOrca(Usz y, Usz x, Usz h, Usz w) const;
+	// Serialize a rectangular region of a field to ORCA plain text. Each row
+	// will be written as a line terminated by '\n'. Static so UI-thread callers
+	// can serialize their own consistent snapshot (e.g. the widget's
+	// `display_field`) instead of reading the sim's live field buffer, which the
+	// DSP thread may be writing to from step().
+	static std::string convertRectToOrca(const Field& field, Usz y, Usz x, Usz h, Usz w);
 
 	// Single-step the VM (one tick). Increments internal tick counter and
 	// invokes the tick callback if set. Called from DSP thread - must be lock-free.
@@ -107,6 +113,10 @@ public:
 
 	void setUiResetCallback(UiResetCallback cb) {
 		ui_reset_callback_ptr = cb ? std::move(cb) : 0;
+	}
+
+	void setDspResetCallback(DspResetCallback cb) {
+		dsp_reset_callback_ptr = cb ? std::move(cb) : 0;
 	}
 
 	// Write output via the registered DspOutputWriter (safe to call from C callbacks)
@@ -204,6 +214,8 @@ private:
 	UiTickCallback ui_tick_callback_ptr;
 	// Reset callback (stored atomically as shared_ptr)
 	UiResetCallback ui_reset_callback_ptr;
+	// Reset callback for DSP-side consumers (e.g. the module)
+	DspResetCallback dsp_reset_callback_ptr;
 	// Callback for into DSP class
 	TickDspCallback dsp_tick_callback_ptr;
 	// Input reader callback (stored atomically as shared_ptr)
@@ -217,11 +229,12 @@ private:
 	std::deque<UndoNode> redo_history_;
 	Usz undo_limit_ = 30;
 
-	// Scratch buffer owned by the DSP thread, used as a staging area when
-	// capturing undo/redo snapshots. Preallocated to the maximum field size
-	// (MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH) so no heap buffer is ever shipped
-	// across the UI->DSP command queue for undo/redo.
-	std::vector<Glyph> undo_scratch_;
+	// Fixed scratch buffer owned by the DSP thread, sized for the maximum field
+	// (MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH). Used as a staging area by
+	// moveRect/setFieldSize (no stack alloca) and by undo/redo when capturing
+	// snapshots, so no heap buffer is ever shipped across the UI->DSP command
+	// queue and the stack bound is explicit.
+	Glyph scratch_[MAX_FIELD_HEIGHT * MAX_FIELD_WIDTH];
 
 
 	// Command types for operations requested by the UI thread

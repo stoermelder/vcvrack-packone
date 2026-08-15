@@ -148,20 +148,20 @@ TEST_CASE("Op vcvout letter-port gate length uses b parameter", "[AhabSim]") {
 	REQUIRE(out_gate_ticks == 11);
 }
 
+TEST_CASE("Static convertRectToOrca serializes an arbitrary field", "[AhabSim]") {
+	// The widget serializes its display_field snapshot through the static
+	// overload, so verify it works on a standalone Field.
+	Field f;
+	field_init_fill(&f, 2, 3, '.');
+	DEFER({ field_deinit(&f); });
+	f.buffer[0] = 'A'; f.buffer[1] = 'B'; f.buffer[2] = 'C';
+	f.buffer[3] = 'D'; f.buffer[4] = 'E'; f.buffer[5] = 'F';
 
-TEST_CASE("Field serialization to ORCA text", "[AhabSim]") {
-	AhabSim sim;
-	
-	// Create a simple field for testing
-	sim.setFieldSizeRequest(3, 5, false);
-	sim.process();
-	
-	std::string orca = sim.convertRectToOrca(0, 0, 3, 5);
-	REQUIRE(orca.length() > 0);
-	
-	// Should contain newlines for each row (except last)
-	size_t newlineCount = std::count(orca.begin(), orca.end(), '\n');
-	REQUIRE(newlineCount == 2); // 3 rows - 1 = 2 newlines
+	REQUIRE(AhabSim::convertRectToOrca(f, 0, 0, 2, 3) == "ABC\nDEF");
+	REQUIRE(AhabSim::convertRectToOrca(f, 1, 1, 1, 2) == "EF");
+	// Out-of-bounds / zero-size requests are safe and return empty
+	REQUIRE(AhabSim::convertRectToOrca(f, 5, 5, 2, 2).empty());
+	REQUIRE(AhabSim::convertRectToOrca(f, 0, 0, 0, 0).empty());
 }
 
 TEST_CASE("ORCA text parsing builds valid field", "[AhabSim]") {
@@ -638,6 +638,55 @@ TEST_CASE("Callbacks are invoked", "[AhabSim]") {
 	sim.process();
 	
 	REQUIRE(reset_called == true);
+}
+
+TEST_CASE("DSP reset callback fires on reset and field replace", "[AhabSim]") {
+	AhabSim sim;
+
+	int reset_calls = 0;
+	sim.setDspResetCallback([&]() {
+		reset_calls++;
+	});
+
+	// RESET command
+	sim.resetRequest();
+	sim.process();
+	REQUIRE(reset_calls == 1);
+
+	// REPLACE_FIELD command
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest("AB\nCD", 0, 0, h, w, true) == true);
+	sim.process();
+	REQUIRE(reset_calls == 2);
+}
+
+TEST_CASE("Reset and field replace clear pending events", "[AhabSim]") {
+	AhabSim sim;
+
+	// Field with a banged MIDI operator ':' that emits a note event on step.
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest(":04C21\n*.....", 0, 0, h, w, true) == true);
+	sim.process();
+	sim.stepRequest();
+	sim.process();
+	REQUIRE(sim.getEventCount() > 0);
+
+	// RESET command clears pending events
+	sim.resetRequest();
+	sim.process();
+	REQUIRE(sim.getEventCount() == 0);
+
+	// Generate events again
+	REQUIRE(sim.loadRectFromOrcaRequest(":04C21\n*.....", 0, 0, h, w, true) == true);
+	sim.process();
+	sim.stepRequest();
+	sim.process();
+	REQUIRE(sim.getEventCount() > 0);
+
+	// Loading a new field (REPLACE_FIELD) also clears pending events
+	REQUIRE(sim.loadRectFromOrcaRequest("..\n..", 0, 0, h, w, true) == true);
+	sim.process();
+	REQUIRE(sim.getEventCount() == 0);
 }
 
 TEST_CASE("Display buffer access is thread-safe", "[AhabSim]") {

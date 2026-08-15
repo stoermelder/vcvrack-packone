@@ -81,7 +81,7 @@ int numPorts() {
 
 // Reset virtual ports by sending All Notes Off / All Sound Off / Reset Controllers
 // to all channels so connected inputs are put into a known state.
-void reset(int deviceId) {
+void resetMidi(int deviceId) {
 	if (!midiDriver) return;
 	if (deviceId < 0 || deviceId >= AHAB_PORT_NUM) return;
 	for (int ch = 0; ch < 16; ++ch) {
