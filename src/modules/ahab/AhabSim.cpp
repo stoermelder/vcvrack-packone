@@ -117,6 +117,10 @@ AhabSim::AhabSim()
 	mbuf_reusable_init(&mbuf_);
 	mbuf_reusable_ensure_size(&mbuf_, 1, 1);
 	oevent_list_init(&oevent_list_);
+
+	// Preallocate the undo/redo scratch buffer (owned by the DSP thread) to the
+	// maximum field size so it can be reused without heap allocation.
+	undo_scratch_.resize((size_t)MAX_FIELD_HEIGHT * (size_t)MAX_FIELD_WIDTH);
 }
 
 AhabSim::~AhabSim() {
@@ -160,6 +164,10 @@ void AhabSim::fromJson(json_t* rootJ) {
 	int h = (int)json_integer_value(hJ);
 	int w = (int)json_integer_value(wJ);
 	if (h <= 0 || w <= 0) return;
+	// Enforce the maximum field size so the preallocated undo/redo scratch
+	// buffer (sized to MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH) is always sufficient.
+	if (h > (int)MAX_FIELD_HEIGHT) h = (int)MAX_FIELD_HEIGHT;
+	if (w > (int)MAX_FIELD_WIDTH) w = (int)MAX_FIELD_WIDTH;
 	auto cells = rack::string::fromBase64(json_string_value(cellsJ));
 	size_t cells_len = cells.size();
 	field_init_fill(&tmp, (Usz)h, (Usz)w, '.');
@@ -483,10 +491,8 @@ void AhabSim::setFieldSizeRequest(Usz h, Usz w, bool doUndo) {
 void AhabSim::setFieldSize(Usz height, Usz width) {
 	// Enforce maximum field size to prevent stack overflow from alloca.
 	// UI limits are 97x49, but clamp here for safety (max ~10KB on stack).
-	const Usz MAX_HEIGHT = 100;
-	const Usz MAX_WIDTH = 100;
-	if (height > MAX_HEIGHT) height = MAX_HEIGHT;
-	if (width > MAX_WIDTH) width = MAX_WIDTH;
+	if (height > MAX_FIELD_HEIGHT) height = MAX_FIELD_HEIGHT;
+	if (width > MAX_FIELD_WIDTH) width = MAX_FIELD_WIDTH;
 	if (height == 0) height = 1;
 	if (width == 0) width = 1;
 
@@ -527,29 +533,28 @@ void AhabSim::undoRequest() {
 	UiCommand* cmd = new UiCommand(); 
 	if (!cmd) return;
 	cmd->type = UiCommandType::UNDO;  
-
-	// Pre-allocate a buffer for the redo operation on the UI thread
-	size_t sz = (size_t)field_.height * (size_t)field_.width;
-	Glyph* tmpbuf = (Glyph*)malloc(sz);
-	if (!tmpbuf) { delete cmd; return; }
-	cmd->cells = tmpbuf;
-
 	ui_cmd_queue_.push(cmd);
+
 	notifyTick();
 }
 
-// DSP thread operation, transfers ownership of redoBuf from UI thread
-void AhabSim::undo(Glyph* redoBuf) {
-	UndoNode node;
+// DSP thread operation
+void AhabSim::undo() {
 	if (undo_history_.empty()) return;
 	// Save current state into redo history
 	{
-		// Use the provided temporary buffer for the current field copy
+		// Copy the current field into the DSP-owned max-size scratch, then into a
+		// fresh node buffer allocated on the DSP thread. The scratch is always large
+		// enough for any field (capped at MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH), so the
+		// copy never depends on a buffer sized by the UI thread.
+		Field tmp;
+		tmp.buffer = undo_scratch_.data();
+		tmp.height = field_.height;
+		tmp.width = field_.width;
+		field_copy(&field_, &tmp);
 		UndoNode cur;
-		cur.f.buffer = redoBuf;
-		cur.f.height = field_.height;
-		cur.f.width = field_.width;
-		field_copy(&field_, &cur.f);
+		field_init(&cur.f);
+		field_copy(&tmp, &cur.f);
 		cur.tick = tick_number_.load();
 		// enforce redo size limit (match undo_limit_)
 		if (redo_history_.size() == undo_limit_) {
@@ -559,7 +564,7 @@ void AhabSim::undo(Glyph* redoBuf) {
 		redo_history_.push_back(std::move(cur));
 	}
 	// Pop last undo and apply it
-	node = std::move(undo_history_.back());
+	UndoNode node = std::move(undo_history_.back());
 	undo_history_.pop_back();
 	// Apply into the buffer
 	field_copy(&node.f, &field_);
@@ -577,30 +582,26 @@ void AhabSim::redoRequest() {
 	UiCommand* cmd = new UiCommand();
 	if (!cmd) return;
 	cmd->type = UiCommandType::REDO;
-
-	// Pre-allocate a buffer for the undo operation on the UI thread
-	size_t sz = (size_t)field_.height * (size_t)field_.width;
-	Glyph* tmpbuf = (Glyph*)malloc(sz);
-	if (!tmpbuf) { delete cmd; return; }
-	cmd->cells = tmpbuf;
-
 	ui_cmd_queue_.push(cmd);
 
 	notifyTick();
 }
 
-// DSP thread operation, transfers ownership of undoBuf from UI thread
-void AhabSim::redo(Glyph* undoBuf) {
-	UndoNode node;
+// DSP thread operation
+void AhabSim::redo() {
 	if (redo_history_.empty()) return;
 	// Save current state into undo history
 	{
-		// Use the provided temporary buffer for the current field copy
+		// Copy the current field into the DSP-owned max-size scratch, then into a
+		// fresh node buffer allocated on the DSP thread (see undo()).
+		Field tmp;
+		tmp.buffer = undo_scratch_.data();
+		tmp.height = field_.height;
+		tmp.width = field_.width;
+		field_copy(&field_, &tmp);
 		UndoNode cur;
-		cur.f.buffer = undoBuf;
-		cur.f.height = field_.height;
-		cur.f.width = field_.width;
-		field_copy(&field_, &cur.f);
+		field_init(&cur.f);
+		field_copy(&tmp, &cur.f);
 		cur.tick = tick_number_.load();
 		if (undo_history_.size() == undo_limit_) {
 			field_deinit(&undo_history_.front().f);
@@ -609,7 +610,7 @@ void AhabSim::redo(Glyph* undoBuf) {
 		undo_history_.push_back(std::move(cur));
 	}
 	// Pop last redo and apply it
-	node = std::move(redo_history_.back());
+	UndoNode node = std::move(redo_history_.back());
 	redo_history_.pop_back();
 	// Apply into the buffer
 	field_copy(&node.f, &field_);
@@ -726,6 +727,10 @@ bool AhabSim::pasteCells(Glyph* cells, Usz h, Usz w, Usz dest_y, Usz dest_x) {
 
 // DSP thread operation
 void AhabSim::replaceField(Glyph* cells, Usz nh, Usz nw) {
+	// Enforce the maximum field size so the preallocated undo/redo scratch
+	// buffer (sized to MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH) is always sufficient.
+	if (nh > MAX_FIELD_HEIGHT) nh = MAX_FIELD_HEIGHT;
+	if (nw > MAX_FIELD_WIDTH) nw = MAX_FIELD_WIDTH;
 	mbuf_reusable_ensure_size(&mbuf_, nh, nw);
 	mbuf_uninit_mark(mbuf_.buffer, nh, nw);
 	Field tmp;
@@ -856,13 +861,11 @@ void AhabSim::process() {
 				break;
 			}
 			case UiCommandType::UNDO: {
-				undo(cmd->cells);
-				cmd->cells = nullptr; // ownership transferred
+				undo();
 				break;
 			}
 			case UiCommandType::REDO: {
-				redo(cmd->cells);
-				cmd->cells = nullptr; // ownership transferred
+				redo();
 				break;
 			}
 			default: break;

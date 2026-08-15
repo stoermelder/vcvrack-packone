@@ -36,6 +36,12 @@ public:
 	AhabSim();
 	~AhabSim();
 
+	// Maximum field dimensions. The field is capped at this size so the
+	// undo/redo scratch buffer (undo_scratch_) can be preallocated once and
+	// reused by the DSP thread without shipping heap buffers across the queue.
+	static constexpr Usz MAX_FIELD_HEIGHT = 100;
+	static constexpr Usz MAX_FIELD_WIDTH = 100;
+
 	// Non-copyable
 	AhabSim(const AhabSim&) = delete;
 	AhabSim& operator=(const AhabSim&) = delete;
@@ -144,11 +150,11 @@ public:
 	bool pushUndo(); // push current field/tick onto undo stack
 	bool canUndo() const;
 	Usz getUndoCount() const;
-	void undo(Glyph* redoBuf);
+	void undo();
 	// Redo support
 	bool canRedo() const { return !redo_history_.empty(); }
 	Usz getRedoCount() const { return (Usz)redo_history_.size(); }
-	void redo(Glyph* undoBuf);
+	void redo();
 	void resetUndo();
 
 	bool cutRect(Usz y, Usz x, Usz h, Usz w);
@@ -210,6 +216,12 @@ private:
 	std::deque<UndoNode> undo_history_;
 	std::deque<UndoNode> redo_history_;
 	Usz undo_limit_ = 30;
+
+	// Scratch buffer owned by the DSP thread, used as a staging area when
+	// capturing undo/redo snapshots. Preallocated to the maximum field size
+	// (MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH) so no heap buffer is ever shipped
+	// across the UI->DSP command queue for undo/redo.
+	std::vector<Glyph> undo_scratch_;
 
 
 	// Command types for operations requested by the UI thread

@@ -405,6 +405,34 @@ TEST_CASE("Undo limit enforcement", "[AhabSim]") {
 	REQUIRE(sim.getUndoCount() <= 2);
 }
 
+TEST_CASE("Undo after resize in same queue drain", "[AhabSim]") {
+	AhabSim sim;
+	
+	sim.setFieldSizeRequest(3, 3, false);
+	sim.process();
+	
+	// Make a change with undo
+	sim.fillRectRequest(0, 0, 1, 1, 'X');
+	sim.process();
+	REQUIRE(sim.canUndo() == true);
+	
+	// Enqueue a resize AND an undo; both drain in the same process() call, so the
+	// undo snapshot must be captured against the already-resized field (previously
+	// this wrote past the too-small UI-allocated buffer, caught by ASan).
+	sim.setFieldSizeRequest(5, 5, false);
+	sim.undoRequest();
+	sim.process();
+	
+	// Undo restores the pre-fill 3x3 state; the redo snapshot holds the 5x5 state
+	Usz h, w;
+	sim.getDisplayBuffer(h, w);
+	Glyph const* buffer = sim.getFieldBuffer();
+	REQUIRE(h == 3);
+	REQUIRE(w == 3);
+	REQUIRE(buffer[0] == '.');
+	REQUIRE(sim.canRedo() == true);
+}
+
 TEST_CASE("Reset clears field and state", "[AhabSim]") {
 	AhabSim sim;
 	

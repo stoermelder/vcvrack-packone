@@ -89,6 +89,7 @@ void reset(int deviceId) {
 			// Note off
 			midi::Message m;
 			m.setStatus(0x8);
+			m.setChannel(ch);
 			m.setNote(note);
 			m.setValue(0);
 			m.setFrame(APP->engine->getFrame());
