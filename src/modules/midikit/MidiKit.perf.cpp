@@ -61,26 +61,6 @@ static std::string readFile(const std::string& path) {
 	return ss.str();
 }
 
-static midi::Message noteOn(int ch, int note, int vel) {
-	midi::Message msg;
-	msg.setSize(3);
-	msg.setStatus(0x9);
-	msg.setChannel(ch);
-	msg.setNote(note);
-	msg.setValue(vel);
-	return msg;
-}
-
-static midi::Message noteOff(int ch, int note) {
-	midi::Message msg;
-	msg.setSize(3);
-	msg.setStatus(0x8);
-	msg.setChannel(ch);
-	msg.setNote(note);
-	msg.setValue(0);
-	return msg;
-}
-
 static void drainOut(MidiKitModule* m) {
 	int port, ticks;
 	midi::Message msg;
@@ -119,7 +99,7 @@ struct Script {
 struct PassThroughScript : Script {
 	const char* name() const override { return "PassThrough"; }
 	PushFn pushFn(MidiKitModule* m) const override {
-		MidiScriptEngine* se = m->activeEngine;
+		MidiScriptEngine* se = m->host.getActiveEngine();
 		return [se](int) {
 			midi::Message msg = noteOn(1, 60, 100);
 			se->processInMessage(0, msg);
@@ -134,7 +114,7 @@ struct PassThroughScript : Script {
 struct NoteLengthScript : Script {
 	const char* name() const override { return "Note length quantiser"; }
 	PushFn pushFn(MidiKitModule* m) const override {
-		MidiScriptEngine* se = m->activeEngine;
+		MidiScriptEngine* se = m->host.getActiveEngine();
 		return [se](int i) {
 			int note = (i % 2 == 0) ? 60 : 62;
 			midi::Message msg = noteOn(1, note, 100);
@@ -152,7 +132,7 @@ struct NoteLengthScript : Script {
 struct ArpeggiatorScript : Script {
 	const char* name() const override { return "Arpeggiator"; }
 	PushFn pushFn(MidiKitModule* m) const override {
-		MidiScriptEngine* se = m->activeEngine;
+		MidiScriptEngine* se = m->host.getActiveEngine();
 		m->params[MidiKitModule::PARAM + 1].setValue(0.99f);  // octave range -> 4
 		m->params[MidiKitModule::PARAM + 2].setValue(0.5f);   // note length 50%
 		m->params[MidiKitModule::PARAM + 3].setValue(0.99f);  // playmode -> Up
@@ -174,7 +154,7 @@ struct ArpeggiatorScript : Script {
 	// measured run instead of a 1-note pattern. The worker barrier guarantees
 	// the seed note-ons have been processed (pattern rebuilt) before returning.
 	void seed(MidiKitModule* m, std::shared_ptr<ITaskWorker> worker) const override {
-		MidiScriptEngine* se = m->activeEngine;
+		MidiScriptEngine* se = m->host.getActiveEngine();
 		for (int note : {60, 64, 67}) {
 			midi::Message on = noteOn(1, note, 100);
 			se->processInMessage(0, on);
@@ -518,7 +498,7 @@ TEST_CASE("MidiKit idle process() cost: no script vs QuickJs vs Lua", "[perf]") 
 	std::cout << "\n=== MidiKit idle process() cost (no MIDI/trigger activity) ===" << std::endl;
 	std::cout << "  process() returns immediately via `if (!activeEngine) return;` when no\n"
 	          << "  script is loaded, so ANY loaded script (trivial or not) turns on the full\n"
-	          << "  per-sample body below, including the 16-channel outputPulseGenerator loop\n"
+	          << "  per-sample body below, including the 16-channel pulseGenerator loop\n"
 	          << "  that runs whether or not the script uses triggers at all." << std::endl;
 
 	// No script loaded
@@ -559,7 +539,7 @@ TEST_CASE("MidiKit idle process() cost: no script vs QuickJs vs Lua", "[perf]") 
 	std::cout << std::endl;
 }
 
-// Isolates the 16-channel outputPulseGenerator/setVoltage loop (the part of
+// Isolates the 16-channel pulseGenerator/setVoltage loop (the part of
 // process() that only runs once a script is loaded, gated by the early
 // `if (!activeEngine) return;`) from everything else in process() when idle,
 // by timing the trigger-out loop's own cost directly. If this alone accounts
@@ -582,8 +562,8 @@ TEST_CASE("MidiKit idle process() cost: trigger-output loop in isolation", "[per
 	auto start = Clock::now();
 	for (int i = 0; i < N; i++) {
 		for (uint8_t ch = 0; ch < PORT_MAX_CHANNELS; ch++) {
-			bool s = m->outputPulseGenerator[ch].process(args.sampleTime);
-			if (m->outputTriggerActive[ch]) {
+			bool s = m->triggersOut.pulseGenerator[0][ch].process(args.sampleTime);
+			if (m->triggersOut.triggerActive[0][ch]) {
 				m->outputs[MidiKitModule::OUTPUT_TRIG].setVoltage(s ? 10.f : 0.f, ch);
 			}
 		}

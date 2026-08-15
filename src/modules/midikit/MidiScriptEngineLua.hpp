@@ -1,4 +1,4 @@
-#include "MidiScriptEngine.h"
+#include "MidiScriptEngine.hpp"
 extern "C" {
 	#include "minilua.h"
 }
@@ -60,6 +60,107 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// Sticky output port selected via midiOut.selectPort(), 0-based. Stays in
 	// effect across callbacks until changed again.
 	int selectedPort = 0;
+
+	// ── Script execution budget ──────────────────────────────────────────────
+	// A count hook (lua_sethook, LUA_MASKCOUNT) fires every interruptInterval
+	// instructions; past interruptCountLimit countHook() aborts the script via
+	// luaL_error(), so a `while true do end` can't wedge the shared worker.
+	// Reset by beginScriptExecution() per callback (worker-thread only).
+	static const int interruptInterval = 10000;  // hook fires every 10k instructions
+	static const int interruptCountLimit = 10000;   // 10k counts * 10k instr = 100M
+	int interruptCount = 0;
+
+	// The hook gets a lua_State*, not the engine — reach it via a function-local
+	// static thread_local (header-only, C++14: no out-of-line definition).
+	static MidiScriptEngineLua*& currentEngine() {
+		static thread_local MidiScriptEngineLua* e = nullptr;
+		return e;
+	}
+
+	static void countHook(lua_State* L, lua_Debug* ar) {
+		(void)ar;
+		MidiScriptEngineLua* e = currentEngine();
+		// Ignore foreign states (registerAPI stubs, teardown finalizers).
+		if (!e || e->L != L) return;
+		if (++e->interruptCount >= interruptCountLimit) {
+			luaL_error(L, "script exceeded execution budget");
+		}
+	}
+
+	// Resets the budget; call before every user lua_pcall.
+	void beginScriptExecution() {
+		interruptCount = 0;
+		currentEngine() = this;
+	}
+
+	// ── Memory watchdog ──────────────────────────────────────────────────────
+	// miniLua's allocator grows via realloc() with no cap — and, worse, large
+	// strings are "external" (zero-copy, data allocated through the allocator
+	// but invisible to lua_gc(LUA_GCCOUNT)) — so the only reliable footprint is
+	// the allocator's own net byte count. Rather than fail individual
+	// allocations, the engine watches that count after every user callback and,
+	// once past memoryLimit, tears the state down (closeStateOnWorker()): the
+	// script stops running and its memory is freed instead of the process being
+	// ground down. Mirrors the QuickJS engine's JS_SetMemoryLimit(1 MiB) cap in
+	// spirit (same threshold).
+	static const size_t memoryLimit = 1024 * 1024;
+	// Net bytes handed to the script's Lua state by the allocator (external
+	// strings included). Written by memoryLimitedAlloc() on the worker thread;
+	// read by checkMemoryLimit() (worker) and getMemoryUsage() (UI). Atomic
+	// for the cross-thread UI read; relaxed is plenty for a display + watchdog.
+	std::atomic<size_t> allocatedBytes{0};
+	// Set when the limit is hit so the teardown+log can't re-fire; the teardown
+	// also nulls L, which alone stops all further dispatch. Reset per load.
+	bool memoryLimitExceeded = false;
+
+	// Lua state allocator (installed via lua_newstate): forwards to
+	// realloc/free, never failing, and keeps `allocatedBytes` as the running
+	// net byte count. `ud` is `this`.
+	static void* memoryLimitedAlloc(void* ud, void* ptr, size_t osize, size_t nsize) {
+		MidiScriptEngineLua* e = static_cast<MidiScriptEngineLua*>(ud);
+		// When ptr is NULL, this is a brand-new allocation (luaM_malloc_'s
+		// firsttry(g, NULL, tag, size) call): Lua passes a GC type tag in osize
+		// here, NOT an old size — per the frealloc contract, "osize" is only
+		// meaningful when block != NULL. Treating that tag as a real byte count
+		// undercounted every fresh allocation by a few bytes; the error
+		// accumulated over thousands of allocations until allocatedBytes wrapped
+		// around (size_t underflow), which spuriously tripped the memory limit
+		// on scripts using only a few KB.
+		size_t realOsize = ptr ? osize : 0;
+		if (nsize == 0) {
+			e->allocatedBytes.fetch_sub(realOsize, std::memory_order_relaxed);
+			free(ptr);
+			return NULL;
+		}
+		void* newptr = realloc(ptr, nsize);
+		if (newptr != NULL) {
+			e->allocatedBytes.fetch_add(nsize - realOsize, std::memory_order_relaxed);
+		}
+		return newptr;
+	}
+
+	// Replaces luaL_newstate()'s standard panic handler (static inside
+	// minilua, hence not reachable): prints and returns 0 so Lua aborts, as
+	// upstream does. Only reachable on an unprotected error, which the
+	// pcall-wrapped callbacks prevent.
+	static int luaPanic(lua_State* L) {
+		const char* msg = lua_tostring(L, -1);
+		fprintf(stderr, "PANIC: unprotected error in call to Lua API (%s)\n", msg ? msg : "error object is not a string");
+		return 0;
+	}
+
+	// Stops the engine if the script's Lua heap (allocator-tracked, external
+	// strings included) has grown past memoryLimit. Called after every user
+	// callback; once it tears the state down, L is null and every later
+	// dispatch path no-ops, so this fires at most once per script.
+	void checkMemoryLimit() {
+		if (!L || memoryLimitExceeded) return;
+		if (allocatedBytes.load(std::memory_order_relaxed) > memoryLimit) {
+			memoryLimitExceeded = true;
+			handler->writeLog(string::f("Script exceeded the %d KB memory limit and was stopped", (int)(memoryLimit / 1024)));
+			closeStateOnWorker();
+		}
+	}
 
 	// The lifecycle hooks are resolved once at load and kept as registry refs,
 	// not re-looked-up per dispatch — so defining/reassigning a hook later has
@@ -170,8 +271,18 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		// ── Create Lua state ─────────────────────────────────────────────────
-
-		L = luaL_newstate();
+		// lua_newstate (not luaL_newstate) so every allocation — including the
+		// buffers behind miniLua's zero-copy external strings — runs through
+		// memoryLimitedAlloc and the net byte count is exact. luaL_newstate's
+		// panic handler is replicated via lua_atpanic.
+		L = lua_newstate(&memoryLimitedAlloc, this, luaL_makeseed(NULL));
+		if (!L) {
+			handler->writeLog("Error creating Lua state", false);
+			return;
+		}
+		lua_atpanic(L, &luaPanic);
+		allocatedBytes.store(0, std::memory_order_relaxed);
+		memoryLimitExceeded = false;   // fresh state starts under the limit
 
 		// Store engine pointer in registry so C callbacks can retrieve it
 		lua_pushlightuserdata(L, this);
@@ -183,6 +294,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		luaL_requiref(L, "string",   luaopen_string, 1); lua_pop(L, 1);
 		luaL_requiref(L, "table",    luaopen_table,  1); lua_pop(L, 1);
 
+		// ── Script execution budget ─────────────────────────────────────────
+		// Install the count hook. currentEngine stays null until the first
+		// beginScriptExecution(), so registerAPI()'s trusted stubs aren't budgeted.
+		currentEngine() = nullptr;
+		interruptCount = 0;
+		lua_sethook(L, &countHook, LUA_MASKCOUNT, interruptInterval);
+
 		// ── Register engine API ──────────────────────────────────────────────
 		registerAPI();
 
@@ -190,6 +308,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// luaL_loadbuffer, not luaL_dostring: the latter names the chunk with
 		// the whole script text, so errors read as [string "/**..."]:12:.
 		// Naming the chunk "script" makes them read as "script:12:".
+		beginScriptExecution();
 		if (luaL_loadbuffer(L, script, strlen(script), CHUNK_NAME) != LUA_OK ||
 		    lua_pcall(L, 0, LUA_MULTRET, 0) != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
@@ -234,6 +353,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		callOnLoad(persistedConfigJson);
+		// Top-level code and onLoad() may have grown the heap past the limit;
+		// stop the engine (freeing the memory) if so.
+		checkMemoryLimit();
 	}
 
 	// Reads rack[name], keeping a registry ref to it if it's a function, else
@@ -262,6 +384,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return runSync([this]() -> std::string {
 			if (!L) return "";
 			int nRet = callOnSave();
+			// callOnSave() may tear the state down if the script exceeded the
+			// memory limit; nothing to persist in that case.
+			if (!L) return "";
 			std::string configJson;
 			if (nRet > 0) {
 				configJson = luaTableToJson(L, -1);
@@ -290,8 +415,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			onUnloadRef = LUA_NOREF;
 			onSaveRef = LUA_NOREF;
 			hasOnSave.store(false, std::memory_order_release);
+			// Null currentEngine first: lua_close runs finalizers with no pcall
+			// boundary, where a hook luaL_error would longjmp nowhere.
+			if (currentEngine() == this) currentEngine() = nullptr;
 			lua_close(L);
 			L = nullptr;
+			// Keeps "no state ⇒ zero bytes" true unconditionally, rather than
+			// relying on every allocatedBytes reader to guard on L itself.
+			allocatedBytes.store(0, std::memory_order_relaxed);
 		}
 	}
 
@@ -306,6 +437,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 		msgCount = 0;
 		inCallback = true;
+		beginScriptExecution();
 		int status = lua_pcall(L, nargs, 0, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
@@ -324,6 +456,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onUnloadRef);
 		msgCount = 0;
 		inCallback = true;
+		beginScriptExecution();
 		int status = lua_pcall(L, 0, 1, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
@@ -344,20 +477,26 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onSaveRef);
 		msgCount = 0;
 		inCallback = true;
+		beginScriptExecution();
 		int status = lua_pcall(L, 0, 1, 0);
 		inCallback = false;
+		int nRet = 0;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
 			handler->writeLog(string::f("onSave error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
-			return 0;
 		}
 		// Stack is now [result].
-		if (lua_istable(L, -1)) {
-			return 1;
+		else if (lua_istable(L, -1)) {
+			nRet = 1;
 		}
-		lua_pop(L, 1); // pop non-table result
-		return 0;
+		else {
+			lua_pop(L, 1); // pop non-table result
+		}
+		// May tear the state down if the script exceeded the memory limit; the
+		// caller guards on L afterwards.
+		checkMemoryLimit();
+		return nRet;
 	}
 
 	// ── Config persistence JSON helpers ──────────────────────────────────────
@@ -649,6 +788,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 				int ref = s.onGetValueRef;
 				if (ref != LUA_NOREF) {
 					lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+					beginScriptExecution();
 					int status = lua_pcall(L, 0, 1, 0);
 					if (status == LUA_OK) {
 						if (spec.type == ScriptMenuItem::Type::Boolean) {
@@ -671,6 +811,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			// Run the caller's callback with the evaluated specs. It only touches
 			// memory the caller owns (never constructs widgets), so it's safe on
 			// the worker thread.
+			checkMemoryLimit();
 			callback(result);
 		});
 	}
@@ -707,23 +848,30 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 				lua_pushlstring(L, label.c_str(), label.size());
 				nargs = 2;
 			}
+			beginScriptExecution();
 			int status = lua_pcall(L, nargs, 0, 0);
 			if (status != LUA_OK) {
 				const char* err = lua_tostring(L, -1);
 				handler->writeLog(string::f("Context menu callback error: %s", err ? err : "(unknown)"));
 				lua_pop(L, 1); // pop error message
 			}
+			checkMemoryLimit();
 		});
 	}
 
-	// Current bytes used by the Lua heap, or false if no script is loaded.
-	// minilua's allocator grows via realloc() with no cap, so only an absolute
-	// count is available.
-	bool getMemoryUsage(size_t& used) {
+	// Current/total bytes for the Lua state, or false if no script is loaded.
+	// Unlike lua_gc(LUA_GCCOUNT) — which misses miniLua's zero-copy external
+	// strings —`used` reports the allocator-tracked footprint (external
+	// strings included), the same number the memory watchdog enforces against.
+	// `total` is memoryLimit: unlike QuickJS's JS_SetMemoryLimit, nothing here
+	// rejects individual allocations at that ceiling — checkMemoryLimit() only
+	// notices and tears the state down after the fact — but it's the same
+	// number the watchdog acts on, so showing it alongside `used` (matching
+	// the QuickJS UI) tells the user how close a script is to being stopped.
+	bool getMemoryUsage(size_t& used, size_t& total) {
 		if (!L) return false;
-		int kb = lua_gc(L, LUA_GCCOUNT);
-		int b = lua_gc(L, LUA_GCCOUNTB);
-		used = (size_t) kb * 1024 + (size_t) b;
+		used = allocatedBytes.load(std::memory_order_relaxed);
+		total = memoryLimit;
 		return true;
 	}
 
@@ -751,6 +899,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_pushinteger(L, midiPort + 1);
 		lua_pushinteger(L, 0);
 		inCallback = true;
+		beginScriptExecution();
 		int status = lua_pcall(L, 2, 0, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
@@ -760,6 +909,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		flushMsgStore();
+		checkMemoryLimit();
 	}
 
 	// Dispatches onTrigger(trigPort, channel) via the cached onTriggerRef.
@@ -773,6 +923,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_pushinteger(L, channel + 1);
 		msgCount = 0;
 		inCallback = true;
+		beginScriptExecution();
 		int status = lua_pcall(L, 2, 0, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
@@ -782,6 +933,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		flushMsgStore();
+		checkMemoryLimit();
 	}
 
 	// Dispatches an assembled message to onNrpn/onRpn/onCc14bit as a handle,
@@ -808,6 +960,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_pushinteger(L, midiPort + 1);
 		lua_pushinteger(L, 0);   // handle 0 — the message just stored
 		inCallback = true;
+		beginScriptExecution();
 		int status = lua_pcall(L, 2, 0, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
@@ -817,6 +970,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		flushMsgStore();
+		checkMemoryLimit();
 	}
 
 	void dispatchNrpn(int midiPort, const QueuedMessage& q, bool isRpn) override {
@@ -839,6 +993,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_pushstring(L, msg.mime);
 		msgCount = 0;
 		inCallback = true;
+		beginScriptExecution();
 		int status = lua_pcall(L, 2, 0, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
@@ -848,6 +1003,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		flushMsgStore();
+		checkMemoryLimit();
 	}
 
 	std::string callLuaTableFunc(const char* tableName, const char* funcName, int arg) {
@@ -860,6 +1016,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		lua_pushinteger(L, arg);
 		std::string result;
+		beginScriptExecution();
 		if (lua_pcall(L, 1, 1, 0) == LUA_OK) {
 			const char* s = lua_tostring(L, -1);
 			result = s ? s : "";
@@ -869,6 +1026,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			lua_pop(L, 1); // error message
 		}
 		lua_pop(L, 1); // table
+		checkMemoryLimit();
 		return result;
 	}
 
@@ -1325,7 +1483,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			duration = static_cast<float>(luaL_checknumber(L, 2));
 		}
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
-		e->handler->setTrig(i - 1, ch - 1, duration);
+		// The script API is milliseconds (per docs); dsp::PulseGenerator::trigger()
+		// takes seconds, so convert here.
+		e->handler->setTrig(i - 1, ch - 1, duration / 1000.f);
 		return 0;
 	}
 

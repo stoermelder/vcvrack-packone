@@ -19,16 +19,6 @@ using StoermelderPackOne::MidiScript::ScriptMenuItem;
 // mirrored in the other fails here even if both engines individually still
 // pass their own suite.
 
-static midi::Message noteOn(int ch, int note, int vel) {
-	midi::Message msg;
-	msg.setSize(3);
-	msg.setStatus(0x9);
-	msg.setChannel(ch);
-	msg.setNote(note);
-	msg.setValue(vel);
-	return msg;
-}
-
 // One engine's observable result for a single script run: the messages it
 // sent (in order) plus whatever landed in the log. Comparing this struct
 // between engines is the actual equivalence check.
@@ -67,11 +57,11 @@ static EngineResult run(const std::string& script, const midi::Message& in) {
 	r.loadLog = drainLog(m);
 	CATCH_INFO("load log:\n" << r.loadLog);
 	REQUIRE(r.loadLog.find("rror") == std::string::npos);
-	REQUIRE(m->activeEngine != nullptr);
+	REQUIRE(m->host.getActiveEngine() != nullptr);
 
 	midi::Message inCopy = in;
-	m->activeEngine->processInMessage(0, inCopy);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, inCopy);
+	m->host.getActiveEngine()->process();
 
 	int port, ticks;
 	midi::Message out;
@@ -1226,7 +1216,7 @@ TEST_CASE("14-bit CC pairs flush in send() order, not handle-creation order, in 
 // when passed the first handle of an NRPN quad (per SCRIPTING.md), so
 // sending it is what actually exercises setNRPN's byte layout end to end.
 
-static const char* JS_NRPN = R"(/**
+static const char* JS_4MESSAGE_NRPN = R"(/**
  * @engine QuickJs@v1
  */
 midi.onMessage = function(port, msg) {
@@ -1236,7 +1226,7 @@ midi.onMessage = function(port, msg) {
 };
 )";
 
-static const char* LUA_NRPN = R"(--[[
+static const char* LUA_4MESSAGE_NRPN = R"(--[[
 @engine minilua@v1
 --]]
 midi.onMessage = function(midiPort, msg)
@@ -1247,7 +1237,7 @@ end
 )";
 
 TEST_CASE("setNRPN produces identical 4-message wire sequence", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_NRPN, LUA_NRPN);
+	requireEquivalent(JS_4MESSAGE_NRPN, LUA_4MESSAGE_NRPN);
 }
 
 // Cross-engine equivalence above only pins JS and Lua to each other — it
@@ -1257,7 +1247,7 @@ TEST_CASE("setNRPN produces identical 4-message wire sequence", "[MidiKit][Cross
 // after the first). This asserts the actual wire bytes/order against the
 // spec: CC99 (param MSB), CC98 (param LSB), CC6 (data MSB), CC38 (data LSB).
 TEST_CASE("setNRPN wire order is spec-compliant (MSB before LSB)", "[MidiKit]") {
-	EngineResult r = run(JS_NRPN);
+	EngineResult r = run(JS_4MESSAGE_NRPN);
 	REQUIRE(r.sent.size() == 4);
 	// channel 9 -> status/channel byte 0xb8; number=1234 -> msb=9,lsb=82; value=5678 -> msb=44,lsb=46
 	REQUIRE(r.sent[0].bytes == std::vector<uint8_t>{0xb8, 99, 9});
@@ -1549,8 +1539,8 @@ TEST_CASE("trig.getTicks counts identical rising edges in both engines", "[MidiK
 		midi::Message in;
 		in.setSize(3);
 		in.setStatus(0x9);
-		m->activeEngine->processInMessage(0, in);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
 
 		int port, ticks;
 		midi::Message out;
@@ -1629,8 +1619,8 @@ TEST_CASE("trig.getTicks(1, channel) counts each channel independently, in both 
 		midi::Message in;
 		in.setSize(3);
 		in.setStatus(0x9);
-		m->activeEngine->processInMessage(0, in);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
 
 		int port, ticks;
 		midi::Message out;
@@ -1688,7 +1678,7 @@ TEST_CASE("trig.setTrigger produces identical output-trigger state", "[MidiKit][
 		m->process(args);
 
 		float voltage = m->outputs[MidiKitModule::OUTPUT_TRIG].getVoltage(0);
-		bool active = m->outputTriggerActive[0];
+		bool active = m->triggersOut.triggerActive[0][0];
 		Test::destroyModule(m);
 		return std::make_pair(voltage, active);
 	};
@@ -1697,6 +1687,57 @@ TEST_CASE("trig.setTrigger produces identical output-trigger state", "[MidiKit][
 	auto lua = checkTriggerActive(LUA_TRIG_SET_FUNCTIONS);
 	REQUIRE(js.first == Catch::Approx(10.0f));
 	REQUIRE(js.second == true);
+	REQUIRE(js == lua);
+}
+
+// Pins the ms contract of trig.setGate: the docs specify durationMs, so a
+// 100 ms gate must fall after ~4410 samples at 44.1 kHz. Dedicated scripts
+// (setGate only — setHigh would clear triggerActive and pin the output high).
+static const char* JS_TRIG_SET_GATE_MS = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.setGate(1, 100);
+)";
+
+static const char* LUA_TRIG_SET_GATE_MS = R"(--[[
+@engine minilua@v1
+--]]
+trig.setGate(1, 100)
+)";
+
+TEST_CASE("trig.setGate duration is milliseconds: gate falls after ~100 ms", "[MidiKit][CrossEngine]") {
+	auto checkGateLength = [](const std::string& script) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+
+		// process() only writes the trigger output voltage while a cable is
+		// connected (see the isConnected() gate in MidiKitModule::process).
+		m->outputs[MidiKitModule::OUTPUT_TRIG].channels = 1;
+
+		Module::ProcessArgs args;
+		args.sampleTime = 1.0f / 44100.0f;
+		args.sampleRate = 44100.0f;
+		args.frame = 0;
+
+		// Count the samples the gate is high (10V).
+		int highSamples = 0;
+		for (int i = 0; i < 5000; i++) {
+			m->process(args);
+			if (m->outputs[MidiKitModule::OUTPUT_TRIG].getVoltage(0) > 5.f)
+				highSamples++;
+		}
+
+		Test::destroyModule(m);
+		return highSamples;
+	};
+
+	auto js = checkGateLength(JS_TRIG_SET_GATE_MS);
+	auto lua = checkGateLength(LUA_TRIG_SET_GATE_MS);
+	// 100 ms @ 44.1 kHz = 4410 samples. The window guards float rounding at the
+	// exact boundary while still failing the old seconds interpretation (which
+	// would still be high at sample 5000).
+	REQUIRE(js > 4300);
+	REQUIRE(js < 4500);
 	REQUIRE(js == lua);
 }
 
@@ -1770,8 +1811,8 @@ TEST_CASE("param.getValue reads identical value in both engines", "[MidiKit][Cro
 		midi::Message in;
 		in.setSize(3);
 		in.setStatus(0x9);
-		m->activeEngine->processInMessage(0, in);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
 
 		int port, ticks;
 		midi::Message out;
@@ -1907,8 +1948,8 @@ TEST_CASE("midiOut.sendAfterMs schedules an identical future-frame message", "[M
 		drainLog(m);
 
 		midi::Message in = noteOn(1, 60, 100);
-		m->activeEngine->processInMessage(0, in);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
 
 		int port, ticks;
 		midi::Message out;
@@ -2239,7 +2280,7 @@ TEST_CASE("onRemove() sends onUnload's message to the device rather than leaving
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
 		drainLog(m);
-		REQUIRE(m->activeEngine != nullptr);
+		REQUIRE(m->host.getActiveEngine() != nullptr);
 
 		Module::RemoveEvent eRemove;
 		m->onRemove(eRemove);
@@ -2295,10 +2336,10 @@ TEST_CASE("switching engines keeps the outgoing engine's onUnload output", "[Mid
 	MidiKitModule* m = createModule();
 	m->loadScript(JS_ON_UNLOAD);
 	drainLog(m);
-	REQUIRE(m->activeEngine == &m->seQuickJs);
+	REQUIRE(m->host.isQuickJsEngine());
 
 	m->loadScript(LUA_ON_UNLOAD);
-	REQUIRE(m->activeEngine == &m->seLua);
+	REQUIRE(m->host.isLuaEngine());
 
 	std::string log = drainLog(m);
 	REQUIRE(log.find("onUnload ran") != std::string::npos);   // the outgoing (JS) engine's onUnload
@@ -2337,7 +2378,7 @@ TEST_CASE("Switching engines closes the outgoing engine before returning", "[Mid
 	m->loadScript(JS_ON_UNLOAD);
 	barrier(worker);                 // the LOAD is still async; wait for it
 	drainLog(m);
-	REQUIRE(m->activeEngine == &m->seQuickJs);
+	REQUIRE(m->host.isQuickJsEngine());
 
 	m->loadScript(LUA_ON_UNLOAD);    // switch: closes QuickJs synchronously
 
@@ -2366,7 +2407,7 @@ TEST_CASE("onRemove() waits for onUnload before draining", "[MidiKit][CrossEngin
 		m->loadScript(script);
 		barrier(worker);
 		drainLog(m);
-		REQUIRE(m->activeEngine != nullptr);
+		REQUIRE(m->host.getActiveEngine() != nullptr);
 
 		Module::RemoveEvent eRemove;
 		m->onRemove(eRemove);        // no barrier: onRemove() must do the waiting
@@ -2402,7 +2443,7 @@ TEST_CASE("onReset() closes the active engine synchronously", "[MidiKit][CrossEn
 
 		std::string log = drainLog(m);
 		REQUIRE(log.find("onUnload ran") != std::string::npos);
-		REQUIRE(m->activeEngine == nullptr);
+		REQUIRE(m->host.getActiveEngine() == nullptr);
 
 		int port, ticks;
 		midi::Message out;
@@ -2439,7 +2480,7 @@ TEST_CASE("process() drains the out-queue after the script is cleared", "[MidiKi
 		drainLog(m);
 
 		m->clearScript();
-		REQUIRE(m->activeEngine == nullptr);
+		REQUIRE(m->host.getActiveEngine() == nullptr);
 		REQUIRE_FALSE(m->midiOutQueue.empty());   // onUnload()'s message is queued
 
 		processOneDividerPeriod(m);
@@ -2687,18 +2728,6 @@ TEST_CASE("onUnload runs again when a second script replaces the first, in both 
 }
 
 
-// Reads an integer field out of a config JSON string (jansson).
-static json_int_t configInt(const std::string& json, const char* key) {
-	json_error_t error;
-	json_t* j = json_loads(json.c_str(), 0, &error);
-	REQUIRE(j != nullptr);
-	json_t* v = json_object_get(j, key);
-	REQUIRE(v != nullptr);
-	json_int_t result = json_integer_value(v);
-	json_decref(j);
-	return result;
-}
-
 // --- rack.onSave() vs rack.onUnload() -------------------------------------
 //
 // rack.onSave() is the config-bearing hook; rack.onUnload() is teardown-only
@@ -2744,7 +2773,7 @@ TEST_CASE("captureConfig() calls onSave, not onUnload, and does not run teardown
 		// config-bearing hook, so a save would spuriously log "onUnload ran"
 		// and (for scripts with real teardown side effects) fire them on
 		// every save.
-		std::string config = captureConfig(m->activeEngine);
+		std::string config = captureConfig(m->host.getActiveEngine());
 		std::string log = drainLog(m);
 		REQUIRE(log.find("onSave ran") != std::string::npos);
 		REQUIRE(log.find("onUnload ran") == std::string::npos);
@@ -2835,18 +2864,6 @@ rack.registerContextMenu({
 midi.onMessage = function(midiPort, msg) end
 )";
 
-// Reads a boolean field out of a config JSON string (jansson).
-static bool configBool(const std::string& json, const char* key) {
-	json_error_t error;
-	json_t* j = json_loads(json.c_str(), 0, &error);
-	REQUIRE(j != nullptr);
-	json_t* v = json_object_get(j, key);
-	REQUIRE(v != nullptr);
-	bool result = json_is_true(v);
-	json_decref(j);
-	return result;
-}
-
 TEST_CASE("Script config survives capture and reload in both engines", "[MidiKit][CrossEngine]") {
 	auto check = [](const std::string& script) {
 		MidiKitModule* m = createModule();
@@ -2854,19 +2871,19 @@ TEST_CASE("Script config survives capture and reload in both engines", "[MidiKit
 		drainLog(m);
 
 		// Initial config, as returned by onSave().
-		std::string config = captureConfig(m->activeEngine);
+		std::string config = captureConfig(m->host.getActiveEngine());
 		REQUIRE(configInt(config, "divisor") == 6);
 		REQUIRE(configBool(config, "emitTrigger") == true);
 
 		// The user flips a setting via the script's context menu.
 		std::vector<ScriptMenuItem> specs;
-		m->activeEngine->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+		m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 		REQUIRE(specs.size() == 1);
-		m->activeEngine->invokeContextMenuCallback(specs[0].callbackId, 0);
+		m->host.getActiveEngine()->invokeContextMenuCallback(specs[0].callbackId, 0);
 		drainLog(m);
 
 		// The modified config is what a save would persist.
-		config = captureConfig(m->activeEngine);
+		config = captureConfig(m->host.getActiveEngine());
 		REQUIRE(configBool(config, "emitTrigger") == false);
 
 		// Reload with the persisted config: onLoad() must restore it.
@@ -2880,7 +2897,7 @@ TEST_CASE("Script config survives capture and reload in both engines", "[MidiKit
 		REQUIRE(reloadLog.find("emitTrigger=false") != std::string::npos);
 
 		// The script's config after the reload is the persisted, flipped one.
-		std::string restored = captureConfig(m->activeEngine);
+		std::string restored = captureConfig(m->host.getActiveEngine());
 		REQUIRE(configInt(restored, "divisor") == 6);
 		REQUIRE(configBool(restored, "emitTrigger") == false);
 
@@ -2907,7 +2924,7 @@ TEST_CASE("A script with only onUnload (no onSave) persists nothing, in both eng
 		m->loadScript(script);
 		drainLog(m);
 
-		std::string config = captureConfig(m->activeEngine);
+		std::string config = captureConfig(m->host.getActiveEngine());
 		REQUIRE(config.empty());
 
 		Test::destroyModule(m);
@@ -2940,8 +2957,8 @@ TEST_CASE("captureConfig on an engine with no script loaded reports nothing to p
 	// config to preserve, so the caller should clear whatever it stored rather
 	// than keep it. false is reserved for a failed dispatch.
 	MidiKitModule* m = createModule();
-	REQUIRE(captureConfig(&m->seLua).empty());
-	REQUIRE(captureConfig(&m->seQuickJs).empty());
+	REQUIRE(captureConfig(&m->host.seLua).empty());
+	REQUIRE(captureConfig(&m->host.seQuickJs).empty());
 	Test::destroyModule(m);
 }
 
@@ -2976,8 +2993,8 @@ TEST_CASE("onTrigger fires on a trigger input tick and sends an identical messag
 		m->loadScript(script);
 		drainLog(m);
 
-		m->activeEngine->processInTick(0, 0);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInTick(0, 0);
+		m->host.getActiveEngine()->process();
 
 		std::string log = drainLog(m);
 		REQUIRE(log.find("onTrigger 1") != std::string::npos);
@@ -3024,10 +3041,10 @@ TEST_CASE("onTrigger receives the firing channel, in both engines", "[MidiKit][C
 		drainLog(m);
 
 		// Channels are 1-based in the callback: index 0 -> "1", index 1 -> "2".
-		m->activeEngine->processInTick(0, 0);
-		m->activeEngine->process();
-		m->activeEngine->processInTick(0, 1);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInTick(0, 0);
+		m->host.getActiveEngine()->process();
+		m->host.getActiveEngine()->processInTick(0, 1);
+		m->host.getActiveEngine()->process();
 
 		std::string log = drainLog(m);
 		Test::destroyModule(m);
@@ -3049,8 +3066,8 @@ TEST_CASE("Script without onTrigger silently ignores trigger ticks, in both engi
 		m->loadScript(script);
 		drainLog(m);
 
-		m->activeEngine->processInTick(0, 0);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInTick(0, 0);
+		m->host.getActiveEngine()->process();
 
 		std::string log = drainLog(m);
 		int port, ticks;
@@ -3096,7 +3113,7 @@ TEST_CASE("trig.onTrigger is not called until trig.enableIn() is used, in both e
 		m->process(Test::makeProcessArgs(0));
 		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
 		m->process(Test::makeProcessArgs(1));
-		m->activeEngine->process();
+		m->host.getActiveEngine()->process();
 
 		std::string log = drainLog(m);
 		Test::destroyModule(m);
@@ -3144,13 +3161,13 @@ TEST_CASE("trig.enableIn gates trig.onTrigger per channel, in both engines", "[M
 		// Rising edge on channel 1 (enabled) fires the callback.
 		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
 		m->process(Test::makeProcessArgs(1));
-		m->activeEngine->process();
+		m->host.getActiveEngine()->process();
 		std::string log1 = drainLog(m);
 
 		// Rising edge on channel 2 (never enabled) is ignored.
 		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 1);
 		m->process(Test::makeProcessArgs(2));
-		m->activeEngine->process();
+		m->host.getActiveEngine()->process();
 		std::string log2 = drainLog(m);
 
 		Test::destroyModule(m);
@@ -3255,8 +3272,8 @@ static MenuResult runMenu(const std::string& script, int clickId = -1, int click
 	m->loadScript(script);
 
 	MenuResult r;
-	r.loaded = (m->activeEngine == &m->seQuickJs) ? (m->seQuickJs.ctx != nullptr)
-	                                              : (m->seLua.L != nullptr);
+	r.loaded = (m->host.isQuickJsEngine()) ? (m->host.seQuickJs.ctx != nullptr)
+	                                              : (m->host.seLua.L != nullptr);
 	r.loadLog = drainLog(m);
 	if (r.loaded) {
 		// getContextMenus is asynchronous: the worker evaluates onGetValue and
@@ -3265,13 +3282,13 @@ static MenuResult runMenu(const std::string& script, int clickId = -1, int click
 		// thread, so the callback has already fired by the time getContextMenus
 		// returns and r.specs is filled synchronously.
 		auto queryMenus = [&]() {
-			m->activeEngine->getContextMenus([&r](const std::vector<ScriptMenuItem>& specs) {
+			m->host.getActiveEngine()->getContextMenus([&r](const std::vector<ScriptMenuItem>& specs) {
 				r.specs = specs;
 			});
 		};
 		queryMenus();
 		if (clickId >= 0) {
-			m->activeEngine->invokeContextMenuCallback(clickId, clickValue);
+			m->host.getActiveEngine()->invokeContextMenuCallback(clickId, clickValue);
 			r.log = drainLog(m);
 			queryMenus();
 		}
@@ -3721,6 +3738,166 @@ TEST_CASE("midi.create past the 32-handle cap errors and flushes only pre-error 
 }
 
 
+// --- createNRPN/createCc14bit store-boundary (audit #4) ------------------
+//
+// Slot 0 of the 32-slot store is the incoming message, so msgCount starts at
+// 1 inside onMessage. createNRPN() needs 4 consecutive slots and
+// createCc14bit() 2; the last valid starting positions are 28 and 30. The
+// QuickJS bounds checks used >= instead of >, wrongly rejecting those last
+// valid positions (Lua was already correct). These pin the boundary: at the
+// last valid slot the calls succeed and emit spec-compliant bytes; one slot
+// past, they error "store full".
+
+static const char* JS_NRPN_AT_BOUNDARY = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    // 27 creates -> msgCount 28; createNRPN() at slot 28 (slots 28-31) fits.
+    for (let i = 0; i < 27; i++) {
+        midi.create();
+    }
+    let nrpn = midi.createNRPN();
+    midi.setNRPN(nrpn, 9, 1234, 5678);
+    midiOut.send(nrpn);
+};
+)";
+
+static const char* LUA_NRPN_AT_BOUNDARY = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(midiPort, msg)
+    for i = 1, 27 do
+        midi.create()
+    end
+    local nrpn = midi.createNRPN()
+    midi.setNRPN(nrpn, 9, 1234, 5678)
+    midiOut.send(nrpn)
+end
+)";
+
+static const char* JS_CC14_AT_BOUNDARY = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    // 29 creates -> msgCount 30; createCc14bit() at slot 30 (slots 30-31) fits.
+    for (let i = 0; i < 29; i++) {
+        midi.create();
+    }
+    let cc14 = midi.createCc14bit();
+    midi.setCc14bit(cc14, 8, 1, 100.5);
+    midiOut.send(cc14);
+};
+)";
+
+static const char* LUA_CC14_AT_BOUNDARY = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(midiPort, msg)
+    for i = 1, 29 do
+        midi.create()
+    end
+    local cc14 = midi.createCc14bit()
+    midi.setCc14bit(cc14, 8, 1, 100.5)
+    midiOut.send(cc14)
+end
+)";
+
+static const char* JS_NRPN_PAST_BOUNDARY = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    for (let i = 0; i < 28; i++) {
+        midi.create();
+    }
+    midi.createNRPN();   // slot 29 needs slots 29-32; only 29-31 exist
+};
+)";
+
+static const char* LUA_NRPN_PAST_BOUNDARY = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(midiPort, msg)
+    for i = 1, 28 do
+        midi.create()
+    end
+    midi.createNRPN()
+end
+)";
+
+static const char* JS_CC14_PAST_BOUNDARY = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    for (let i = 0; i < 30; i++) {
+        midi.create();
+    }
+    midi.createCc14bit();   // slot 31 needs slots 31-32; only 31 exists
+};
+)";
+
+static const char* LUA_CC14_PAST_BOUNDARY = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(midiPort, msg)
+    for i = 1, 30 do
+        midi.create()
+    end
+    midi.createCc14bit()
+end
+)";
+
+TEST_CASE("createNRPN at the last valid store slot succeeds in both engines", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(JS_NRPN_AT_BOUNDARY);
+	EngineResult lua = run(LUA_NRPN_AT_BOUNDARY);
+	CATCH_INFO("JS log:\n" << js.log);
+	CATCH_INFO("Lua log:\n" << lua.log);
+	REQUIRE(js.log.find("message store full") == std::string::npos);
+	REQUIRE(lua.log.find("message store full") == std::string::npos);
+	// ch 9, number=1234 -> CC99=9, CC98=82; value=5678 -> CC6=44, CC38=46
+	std::vector<uint8_t> expect[4] = {{0xb8, 99, 9}, {0xb8, 98, 82}, {0xb8, 6, 44}, {0xb8, 38, 46}};
+	REQUIRE(js.sent.size() == 4);
+	REQUIRE(lua.sent.size() == 4);
+	for (int i = 0; i < 4; i++) {
+		REQUIRE(js.sent[i].bytes == expect[i]);
+		REQUIRE(lua.sent[i].bytes == expect[i]);
+	}
+}
+
+TEST_CASE("createCc14bit at the last valid store slot succeeds in both engines", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(JS_CC14_AT_BOUNDARY);
+	EngineResult lua = run(LUA_CC14_AT_BOUNDARY);
+	REQUIRE(js.log.find("message store full") == std::string::npos);
+	REQUIRE(lua.log.find("message store full") == std::string::npos);
+	// ch 8, cc=1 value=100.5 -> CC1=100 (MSB), CC33=64 (LSB)
+	std::vector<uint8_t> m0 = {0xb7, 1, 100};
+	std::vector<uint8_t> m1 = {0xb7, 33, 64};
+	REQUIRE(js.sent.size() == 2);
+	REQUIRE(lua.sent.size() == 2);
+	REQUIRE(js.sent[0].bytes == m0);
+	REQUIRE(js.sent[1].bytes == m1);
+	REQUIRE(lua.sent[0].bytes == m0);
+	REQUIRE(lua.sent[1].bytes == m1);
+}
+
+TEST_CASE("createNRPN one slot past the boundary errors in both engines", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(JS_NRPN_PAST_BOUNDARY);
+	EngineResult lua = run(LUA_NRPN_PAST_BOUNDARY);
+	REQUIRE(js.log.find("midi.createNRPN: message store full") != std::string::npos);
+	REQUIRE(lua.log.find("midi.createNRPN: message store full") != std::string::npos);
+	REQUIRE(js.sent.empty());
+	REQUIRE(lua.sent.empty());
+}
+
+TEST_CASE("createCc14bit one slot past the boundary errors in both engines", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(JS_CC14_PAST_BOUNDARY);
+	EngineResult lua = run(LUA_CC14_PAST_BOUNDARY);
+	REQUIRE(js.log.find("midi.createCc14bit: message store full") != std::string::npos);
+	REQUIRE(lua.log.find("midi.createCc14bit: message store full") != std::string::npos);
+	REQUIRE(js.sent.empty());
+	REQUIRE(lua.sent.empty());
+}
+
+
 // --- runtime API mutation: forbidden by contract, must not crash ---------
 //
 // SCRIPTING.md documents that midi.onMessage/onLoad/onUnload and
@@ -3748,13 +3925,13 @@ static TwoDispatchResult runTwoMidiDispatches(const std::string& script) {
 
 	TwoDispatchResult r;
 	midi::Message in1 = noteOn(1, 60, 100);
-	m->activeEngine->processInMessage(0, in1);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, in1);
+	m->host.getActiveEngine()->process();
 	r.log1 = drainLog(m);
 
 	midi::Message in2 = noteOn(1, 61, 100);
-	m->activeEngine->processInMessage(0, in2);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, in2);
+	m->host.getActiveEngine()->process();
 	r.log2 = drainLog(m);
 
 	Test::destroyModule(m);
@@ -3945,14 +4122,14 @@ TEST_CASE("Defining midi.onMessage late (from onTrigger) never gets called, in b
 		// though the script goes on to define it moments later.
 		REQUIRE(loadLog.find("No midi.onMessage") != std::string::npos);
 
-		m->activeEngine->processInTick(0, 0);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInTick(0, 0);
+		m->host.getActiveEngine()->process();
 		std::string triggerLog = drainLog(m);
 		REQUIRE(triggerLog.find("onTrigger fired") != std::string::npos);
 
 		midi::Message in = noteOn(1, 60, 100);
-		m->activeEngine->processInMessage(0, in);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
 		std::string midiLog = drainLog(m);
 		REQUIRE(midiLog.find("late midi.onMessage called") == std::string::npos);
 
@@ -4006,8 +4183,8 @@ TEST_CASE("Clobbering midi with a number at top-level load time does not crash e
 		REQUIRE(loadLog.find("No midi.onMessage") != std::string::npos);
 
 		midi::Message in = noteOn(1, 60, 100);
-		m->activeEngine->processInMessage(0, in);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
 		std::string midiLog = drainLog(m);
 		REQUIRE(midiLog.empty());
 
@@ -4019,8 +4196,8 @@ TEST_CASE("Clobbering midi with a number at top-level load time does not crash e
 		bool isJs = script.find("QuickJs") != std::string::npos;
 		m->loadScript(isJs ? JS_REASSIGN_ON_MIDI_MESSAGE : LUA_REASSIGN_ON_MIDI_MESSAGE);
 		drainLog(m);
-		m->activeEngine->processInMessage(0, in);
-		m->activeEngine->process();
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
 		std::string reloadMidiLog = drainLog(m);
 		REQUIRE(reloadMidiLog.find("call 1") != std::string::npos);
 
@@ -4063,8 +4240,8 @@ TEST_CASE("Clobbering midi with null during top-level load code does not leave a
 	REQUIRE(loadLog.find("No midi.onMessage") != std::string::npos);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->activeEngine->processInMessage(0, in);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->process();
 	std::string midiLog = drainLog(m);
 	REQUIRE(midiLog.empty());
 
@@ -4075,8 +4252,8 @@ TEST_CASE("Clobbering midi with null during top-level load code does not leave a
 	// running for the first time on that ctx.
 	m->loadScript(JS_REASSIGN_ON_MIDI_MESSAGE);
 	drainLog(m);
-	m->activeEngine->processInMessage(0, in);
-	m->activeEngine->process();
+	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->process();
 	std::string reloadMidiLog = drainLog(m);
 	REQUIRE(reloadMidiLog.find("call 1") != std::string::npos);
 

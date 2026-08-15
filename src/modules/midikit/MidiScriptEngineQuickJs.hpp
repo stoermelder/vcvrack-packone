@@ -1,4 +1,4 @@
-#include "MidiScriptEngine.h"
+#include "MidiScriptEngine.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../../../dep/quickjs/quickjs.h"
 #include <algorithm>
@@ -69,6 +69,27 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// Sticky output port selected via midiOut.selectPort(), 0-based. Stays in
 	// effect across callbacks until changed again.
 	int selectedPort = 0;
+
+	// ── Script execution budget ──────────────────────────────────────────────
+	// A per-runtime interrupt handler is polled every 10k instructions; past
+	// interruptCountLimit it aborts the script with an UNCATCHABLE "interrupted"
+	// error, so a `while(true)` can't wedge the shared worker. Reset by
+	// beginScriptExecution() per callback (worker-thread only).
+	static const int interruptCountLimit = 10000;   // 10k polls * 10k instr = 100M
+	int interruptCount = 0;
+
+	// JS_SetInterruptHandler callback; opaque is `this`. Non-zero throws the
+	// uncatchable "interrupted" error that aborts the script.
+	static int jsInterruptHandler(JSRuntime* rt, void* opaque) {
+		(void)rt;
+		MidiScriptEngineQuickJs* e = static_cast<MidiScriptEngineQuickJs*>(opaque);
+		return ++e->interruptCount >= interruptCountLimit ? 1 : 0;
+	}
+
+	// Resets the budget; call before every user JS_Call/JS_Eval.
+	void beginScriptExecution() {
+		interruptCount = 0;
+	}
 
 	// Script-registered context menus. The JSValue callback lives here (not in
 	// ScriptMenuItem) because it's only ever touched on the worker thread; the
@@ -203,11 +224,14 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		rt = JS_NewRuntime();
 		JS_SetMemoryLimit(rt, memoryLimit);
 		JS_SetMaxStackSize(rt, 256 * 1024);
+		// Budget: aborts scripts that exceed interruptCountLimit (jsInterruptHandler).
+		JS_SetInterruptHandler(rt, &jsInterruptHandler, this);
 		ctx = JS_NewContext(rt);
 		JS_SetContextOpaque(ctx, this);
 
 		registerApi();
 
+		beginScriptExecution();
 		JSValue r = JS_Eval(ctx, script, strlen(script), "script", JS_EVAL_TYPE_GLOBAL);
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
@@ -307,6 +331,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JSValue ret = callOnSave();
 			std::string configJson;
 			if (!JS_IsUndefined(ret) && !JS_IsNull(ret) && !JS_IsException(ret)) {
+				// JSONStringify can run user toJSON() methods — budget it too.
+				beginScriptExecution();
 				JSValue jsonVal = JS_JSONStringify(ctx, ret, JS_UNDEFINED, JS_UNDEFINED);
 				if (!JS_IsException(jsonVal)) {
 					configJson = jsToStdString(jsonVal);
@@ -369,6 +395,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 		msgCount = 0;
 		inCallback = true;
+		beginScriptExecution();
 		JSValue r;
 		if (JS_IsUndefined(persistedConfig)) {
 			r = JS_Call(ctx, onLoadFn, rackObj, 0, NULL);
@@ -398,6 +425,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 		msgCount = 0;
 		inCallback = true;
+		beginScriptExecution();
 		JSValue r = JS_Call(ctx, onUnloadFn, rackObj, 0, NULL);
 		inCallback = false;
 		if (JS_IsException(r)) {
@@ -419,6 +447,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 		msgCount = 0;
 		inCallback = true;
+		beginScriptExecution();
 		JSValue r = JS_Call(ctx, onSaveFn, rackObj, 0, NULL);
 		inCallback = false;
 		if (JS_IsException(r)) {
@@ -481,6 +510,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			// guarantees a function or JS_UNDEFINED, so the tag test suffices
 			// and is cheaper on this per-dispatch path.
 			if (!JS_IsUndefined(onMessageFn)) {
+				beginScriptExecution();
 				JSValue args[2] = { JS_NewInt32(ctx, midiPort + 1), JS_NewInt32(ctx, 0) };
 				JSValue r = JS_Call(ctx, onMessageFn, midiObj, 2, args);
 				JS_FreeValue(ctx, args[0]);
@@ -524,6 +554,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		msgCount = 1;
 
 		inCallback = true;
+		beginScriptExecution();
 		JSValue args[2] = { JS_NewInt32(ctx, midiPort + 1), JS_NewInt32(ctx, 0) };
 		JSValue r = JS_Call(ctx, fn, midiObj, 2, args);
 		JS_FreeValue(ctx, args[0]);
@@ -555,6 +586,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (ctx && !JS_IsUndefined(onTriggerFn)) {
 			msgCount = 0;
 			inCallback = true;
+			beginScriptExecution();
 			// Calls the cached onTriggerFn with trigObj as thisVal.
 			JSValue args[2] = { JS_NewInt32(ctx, trigPort + 1), JS_NewInt32(ctx, channel + 1) };
 			JSValue r = JS_Call(ctx, onTriggerFn, trigObj, 2, args);
@@ -583,6 +615,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			inCallback = true;
 			// Calls the cached onTipsyMessageFn with trigObj as thisVal.
 			if (!JS_IsUndefined(onTipsyMessageFn)) {
+				beginScriptExecution();
 				JSValue args[2] = {
 					JS_NewStringLen(ctx, reinterpret_cast<const char*>(msg.data), msg.dataSize),
 					JS_NewString(ctx, msg.mime)
@@ -657,6 +690,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JSValue fn = JS_GetPropertyStr(ctx, obj, fnName);
 		std::string result;
 		if (JS_IsFunction(ctx, fn)) {
+			beginScriptExecution();
 			JSValue arg = JS_NewInt32(ctx, i + 1);
 			JSValue r = JS_Call(ctx, fn, obj, 1, &arg);
 			JS_FreeValue(ctx, arg);
@@ -731,6 +765,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				// Each snapshot owns one dup'd reference; freed after use below.
 				JSValue fn = s.onGetValueFn;
 				if (JS_IsFunction(ctx, fn)) {
+					beginScriptExecution();
 					JSValue r = JS_Call(ctx, fn, rackObj, 0, NULL);
 					if (JS_IsException(r)) {
 						JS_FreeValue(ctx, r);
@@ -799,6 +834,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				args[1] = JS_NewString(ctx, label.c_str());
 				argc = 2;
 			}
+			beginScriptExecution();
 			JSValue r = JS_Call(ctx, fn, rackObj, argc, args);
 			for (int i = 0; i < argc; i++) JS_FreeValue(ctx, args[i]);
 			JS_FreeValue(ctx, fn);
@@ -1263,8 +1299,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		int ch = 1;
 		if (argc == 3) ch = static_cast<int>(argNum(ctx, argv[1]));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) return jsThrow(ctx, "trig.setGate: bad channel");
+		// The script API is milliseconds (per docs); dsp::PulseGenerator::trigger()
+		// takes seconds, so convert here.
 		float duration = argNum(ctx, argv[argc - 1]);
-		getEngine(ctx)->handler->setTrig(i - 1, ch - 1, duration);
+		getEngine(ctx)->handler->setTrig(i - 1, ch - 1, duration / 1000.f);
 		return JS_UNDEFINED;
 	}
 
@@ -1440,7 +1478,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (argc != 0) return jsThrow(ctx, "midi.createNrpn: bad args");
 		warnIfOutsideCallback(ctx, "midi.createNRPN");
 		size_t* s = &getEngine(ctx)->msgCount;
-		if (*s + 4 >= msgStoreSize) return jsThrow(ctx, "midi.createNRPN: message store full");
+		if (*s + 4 > msgStoreSize) return jsThrow(ctx, "midi.createNRPN: message store full");
 		getEngine(ctx)->msgStore[*s + 0] = MessageEx();
 		getEngine(ctx)->msgStore[*s + 0].isNrpn = true;
 		getEngine(ctx)->msgStore[*s + 1] = MessageEx();
@@ -1455,7 +1493,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (argc != 0) return jsThrow(ctx, "midi.createCc14bit: bad args");
 		warnIfOutsideCallback(ctx, "midi.createCc14bit");
 		size_t* s = &getEngine(ctx)->msgCount;
-		if (*s + 2 >= msgStoreSize) return jsThrow(ctx, "midi.createCc14bit: message store full");
+		if (*s + 2 > msgStoreSize) return jsThrow(ctx, "midi.createCc14bit: message store full");
 		// 2 consecutive entries, filled by setCc14bit: CC cc (value MSB) and
 		// CC cc+32 (value LSB), flushed atomically as a pair.
 		getEngine(ctx)->msgStore[*s + 0] = MessageEx();
@@ -2023,9 +2061,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		
 		if (argc < 1) return jsThrow(ctx, "trig.sendTipsy: requires data argument");
 		
-		// Handle both string and ArrayBuffer for data
+		// Handle both string and ArrayBuffer for data. A string's C buffer must
+		// stay alive until sendTipsyOut() copies it (see the free below).
 		const unsigned char* data = nullptr;
 		uint32_t dataLen = 0;
+		bool dataIsString = false;
 		
 		if (JS_IsString(argv[0])) {
 			size_t len;
@@ -2035,7 +2075,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			}
 			data = reinterpret_cast<const unsigned char*>(str);
 			dataLen = static_cast<uint32_t>(len);
-			JS_FreeCString(ctx, str);
+			dataIsString = true;
 		}
 		else {
 			// JS_GetArrayBuffer returns NULL when the value is not an ArrayBuffer
@@ -2052,12 +2092,18 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		const char* mimeDyn = nullptr;
 		if (argc >= 2) {
 			mimeDyn = JS_ToCString(ctx, argv[1]);
-			if (!mimeDyn) return jsThrow(ctx, "trig.sendTipsy: invalid mimeType");
+			if (!mimeDyn) {
+				if (dataIsString) JS_FreeCString(ctx, reinterpret_cast<const char*>(data));
+				return jsThrow(ctx, "trig.sendTipsy: invalid mimeType");
+			}
 			mimeType = mimeDyn;
 		}
 		
 		auto* e = getEngine(ctx);
 		bool success = e->handler->sendTipsyOut(mimeType, data, dataLen);
+		// sendTipsyOut() copies both payloads synchronously; free the C strings
+		// now that they're no longer needed.
+		if (dataIsString) JS_FreeCString(ctx, reinterpret_cast<const char*>(data));
 		if (mimeDyn) JS_FreeCString(ctx, mimeDyn);
 		
 		if (!success) {

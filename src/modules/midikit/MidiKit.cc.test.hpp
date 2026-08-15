@@ -105,7 +105,7 @@ static NrpnResult runIn(const std::string& script, const std::vector<midi::Messa
 	r.loadLog = drainLog(m);
 	CATCH_INFO("load log:\n" << r.loadLog);
 	REQUIRE(r.loadLog.find("rror") == std::string::npos);
-	REQUIRE(m->activeEngine != nullptr);
+	REQUIRE(m->host.getActiveEngine() != nullptr);
 
 	feedMidiPump(m, in);
 	r.probes = extractProbes(drainLog(m));
@@ -187,9 +187,9 @@ static void assertLoadRejected(const std::string& script, const char* token) {
 	CATCH_INFO("log:\n" << log);
 	REQUIRE(log.find(token) != std::string::npos);
 	if (script.find("@engine QuickJs@v1") != std::string::npos)
-		REQUIRE(m->seQuickJs.ctx == nullptr);
+		REQUIRE(m->host.seQuickJs.ctx == nullptr);
 	else
-		REQUIRE(m->seLua.L == nullptr);
+		REQUIRE(m->host.seLua.L == nullptr);
 	Test::destroyModule(m);
 }
 
@@ -226,7 +226,7 @@ TEST_CASE("enableNrpnIn accepts channel 16 and arms bit 15", "[MidiKit][MidiProc
 	CATCH_INFO("engine: " << v.engine);
 	MidiKitModule* m = createModule();
 	m->loadScript(v.script);
-	REQUIRE(m->activeEngine != nullptr);
+	REQUIRE(m->host.getActiveEngine() != nullptr);
 	REQUIRE(m->isNrpnEnabled(15, false));
 	REQUIRE(!m->isNrpnEnabled(0, false));
 	Test::destroyModule(m);
@@ -237,7 +237,7 @@ TEST_CASE("enableCc14bitIn accepts channel 16 and arms bit 15", "[MidiKit][MidiP
 	CATCH_INFO("engine: " << v.engine);
 	MidiKitModule* m = createModule();
 	m->loadScript(v.script);
-	REQUIRE(m->activeEngine != nullptr);
+	REQUIRE(m->host.getActiveEngine() != nullptr);
 	REQUIRE(m->isCc14bitEnabled(15, 7));
 	REQUIRE(!m->isCc14bitEnabled(0, 7));
 	Test::destroyModule(m);
@@ -755,7 +755,7 @@ midi.onNrpn = function(midiPort, msg) {
 TEST_CASE("Script reload clears enables and decoder state", "[MidiKit][MidiProcessor]") {
 	MidiKitModule* m = createModule();
 	m->loadScript(JS_RELOAD_A);
-	REQUIRE(m->activeEngine != nullptr);
+	REQUIRE(m->host.getActiveEngine() != nullptr);
 	drainLog(m);   // discard load chatter
 
 	// Arm an NRPN parameter (select only).
@@ -784,7 +784,7 @@ TEST_CASE("Script reload clears enables and decoder state", "[MidiKit][MidiProce
 TEST_CASE("onReset clears decoder state and enables", "[MidiKit][MidiProcessor]") {
 	MidiKitModule* m = createModule();
 	m->loadScript(JS_RELOAD_A);
-	REQUIRE(m->activeEngine != nullptr);
+	REQUIRE(m->host.getActiveEngine() != nullptr);
 
 	// Arm an NRPN parameter.
 	feedMidiPump(m, {makeCc(0, 99, 4), makeCc(0, 98, 5)});
@@ -802,7 +802,7 @@ TEST_CASE("onReset clears decoder state and enables", "[MidiKit][MidiProcessor]"
 	// a parameter armed before the reset does not capture data entry after it,
 	// and nothing is consumed — the raw CCs reach onMessage.
 	m->loadScript(JS_RELOAD_B);
-	REQUIRE(m->activeEngine != nullptr);
+	REQUIRE(m->host.getActiveEngine() != nullptr);
 	drainLog(m);   // discard reload chatter
 	feedMidiPump(m, {makeCc(0, 6, 20), makeCc(0, 38, 2)});
 	auto probes = extractProbes(drainLog(m));
@@ -831,7 +831,7 @@ TEST_CASE("enableCc14bitIn without cc enables all 32 MSBs on every channel", "[M
 	CATCH_INFO("engine: " << v.engine);
 	MidiKitModule* m = createModule();
 	m->loadScript(v.script);
-	REQUIRE(m->activeEngine != nullptr);
+	REQUIRE(m->host.getActiveEngine() != nullptr);
 
 	for (int ch = 0; ch < 16; ch++) {
 		for (int cc = 0; cc < 32; cc++) {
@@ -878,7 +878,7 @@ TEST_CASE("enableCc14bitIn honours a per-channel argument", "[MidiKit][MidiProce
 	CATCH_INFO("engine: " << v.engine);
 	MidiKitModule* m = createModule();
 	m->loadScript(v.script);
-	REQUIRE(m->activeEngine != nullptr);
+	REQUIRE(m->host.getActiveEngine() != nullptr);
 	REQUIRE(m->isCc14bitEnabled(2, 7));
 	REQUIRE(!m->isCc14bitEnabled(0, 7));
 	REQUIRE(!m->isCc14bitEnabled(2, 8));
@@ -891,7 +891,7 @@ TEST_CASE("enableNrpnIn honours a per-channel argument", "[MidiKit][MidiProcesso
 	CATCH_INFO("engine: " << v.engine);
 	MidiKitModule* m = createModule();
 	m->loadScript(v.script);
-	REQUIRE(m->activeEngine != nullptr);
+	REQUIRE(m->host.getActiveEngine() != nullptr);
 	REQUIRE(m->isNrpnEnabled(2, false));
 	REQUIRE(!m->isNrpnEnabled(0, false));
 	Test::destroyModule(m);
@@ -924,7 +924,7 @@ TEST_CASE("enableRpnIn honours a per-channel argument and arms the RPN mask", "[
 	CATCH_INFO("engine: " << v.engine);
 	MidiKitModule* m = createModule();
 	m->loadScript(v.script);
-	REQUIRE(m->activeEngine != nullptr);
+	REQUIRE(m->host.getActiveEngine() != nullptr);
 
 	// midi.enableRpnIn(1, 3) → channel 3 (0-based 2), RPN mask only.
 	REQUIRE(m->isNrpnEnabled(2, true));    // RPN mask bit set
