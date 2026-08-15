@@ -4,7 +4,7 @@
 #include "../../ui/InfoWindow.hpp"
 #include "../../ui/ModuleSelectProcessor.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
-#include "../../ui/VisibilityTracker.hpp"
+#include "../../ui/CableOpacityState.hpp"
 #include "../../utils/GuiTaskProcessor.hpp"
 #include "../../utils/vcv_cables.hpp"
 #include "../midi/MidiTrackingProcessor.hpp"
@@ -2416,7 +2416,9 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			vizOverlay = nullptr;
 		}
 		if (module) {
-			VisibilityTracker::release(APP->scene->rack->getCableContainer(), this);
+			// Releases this instance's cable-opacity hold if it is still in viz mode (a
+			// no-op otherwise), so a widget deleted mid-viz-mode restores the cables.
+			Rack::cableOpacityState().release(this);
 			OverlayMessageWidget::unregisterProvider(this);
 		}
 	}
@@ -2451,8 +2453,8 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		int hovered = vizOverlay ? vizOverlay->hoveredCellId : -1;
 		vizMode = active;
 		if (vizOverlay) vizOverlay->visible = active;
-		if (active) VisibilityTracker::hide(APP->scene->rack->getCableContainer(), this);
-		else VisibilityTracker::release(APP->scene->rack->getCableContainer(), this);
+		if (active) Rack::cableOpacityState().hide(this);
+		else Rack::cableOpacityState().release(this);
 		if (hovered >= 0 && hovered < MATRIX_COUNT) {
 			SpliceKitCellButton* btn = findCellButton(hovered);
 			if (btn) {

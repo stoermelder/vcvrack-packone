@@ -27,6 +27,3 @@ namespace __randomize {
 namespace __scenes {
 	#include "SpliceKit.scenes.test.hpp"
 }
-namespace __ui {
-	#include "SpliceKit.ui.test.hpp"
-}
