@@ -532,6 +532,7 @@ struct AhabSimWidget : OpaqueWidget {
 		if (!file) {
 			std::string message = string::f("Could not write to patch file %s", path);
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			return;
 		}
 		DEFER({ fclose(file); });
 		fputs(content.c_str(), file);
