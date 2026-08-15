@@ -36,9 +36,9 @@ public:
 	AhabSim();
 	~AhabSim();
 
-	// Maximum field dimensions. The field is capped at this size so the
-	// undo/redo scratch buffer (undo_scratch_) can be preallocated once and
-	// reused by the DSP thread without shipping heap buffers across the queue.
+	// Maximum field dimensions. The field is capped at this size so the fixed
+	// DSP-thread scratch buffer (scratch_) is always large enough, and no heap
+	// buffer is ever shipped across the UI->DSP command queue.
 	static constexpr Usz MAX_FIELD_HEIGHT = 100;
 	static constexpr Usz MAX_FIELD_WIDTH = 100;
 
@@ -229,11 +229,12 @@ private:
 	std::deque<UndoNode> redo_history_;
 	Usz undo_limit_ = 30;
 
-	// Scratch buffer owned by the DSP thread, used as a staging area when
-	// capturing undo/redo snapshots. Preallocated to the maximum field size
-	// (MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH) so no heap buffer is ever shipped
-	// across the UI->DSP command queue for undo/redo.
-	std::vector<Glyph> undo_scratch_;
+	// Fixed scratch buffer owned by the DSP thread, sized for the maximum field
+	// (MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH). Used as a staging area by
+	// moveRect/setFieldSize (no stack alloca) and by undo/redo when capturing
+	// snapshots, so no heap buffer is ever shipped across the UI->DSP command
+	// queue and the stack bound is explicit.
+	Glyph scratch_[MAX_FIELD_HEIGHT * MAX_FIELD_WIDTH];
 
 
 	// Command types for operations requested by the UI thread

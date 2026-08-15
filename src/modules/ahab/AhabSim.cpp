@@ -117,10 +117,6 @@ AhabSim::AhabSim()
 	mbuf_reusable_init(&mbuf_);
 	mbuf_reusable_ensure_size(&mbuf_, 1, 1);
 	oevent_list_init(&oevent_list_);
-
-	// Preallocate the undo/redo scratch buffer (owned by the DSP thread) to the
-	// maximum field size so it can be reused without heap allocation.
-	undo_scratch_.resize((size_t)MAX_FIELD_HEIGHT * (size_t)MAX_FIELD_WIDTH);
 }
 
 AhabSim::~AhabSim() {
@@ -164,8 +160,8 @@ void AhabSim::fromJson(json_t* rootJ) {
 	int h = (int)json_integer_value(hJ);
 	int w = (int)json_integer_value(wJ);
 	if (h <= 0 || w <= 0) return;
-	// Enforce the maximum field size so the preallocated undo/redo scratch
-	// buffer (sized to MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH) is always sufficient.
+	// Enforce the maximum field size so the fixed DSP-thread scratch buffer
+	// (sized to MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH) is always sufficient.
 	if (h > (int)MAX_FIELD_HEIGHT) h = (int)MAX_FIELD_HEIGHT;
 	if (w > (int)MAX_FIELD_WIDTH) w = (int)MAX_FIELD_WIDTH;
 	auto cells = rack::string::fromBase64(json_string_value(cellsJ));
@@ -424,9 +420,9 @@ bool AhabSim::moveRect(Usz y, Usz x, Usz h, Usz w, Isz dest_y, Isz dest_x) {
 		return false;
 	}
 
-	// Allocate temporary buffer on the stack for the move operation
-	size_t sz = (size_t)h * (size_t)w;
-	Glyph* tmpbuf = (Glyph*)alloca(sz * sizeof(Glyph));
+	// Stage the move in the fixed DSP-thread scratch buffer (sized for the max
+	// field) instead of a stack alloca whose bound is only implicit.
+	Glyph* tmpbuf = scratch_;
 
 	// Copy source region into a temporary buffer
 	gbuffer_copy_subrect(field_.buffer, tmpbuf, field_.height, field_.width,
@@ -491,17 +487,17 @@ void AhabSim::setFieldSizeRequest(Usz h, Usz w, bool doUndo) {
 
 // DSP thread operation - resize the field buffer, preserving overlapping region
 void AhabSim::setFieldSize(Usz height, Usz width) {
-	// Enforce maximum field size to prevent stack overflow from alloca.
-	// UI limits are 97x49, but clamp here for safety (max ~10KB on stack).
+	// Enforce maximum field size so the fixed DSP-thread scratch buffer is
+	// always large enough. UI limits are 97x49, but clamp here for safety.
 	if (height > MAX_FIELD_HEIGHT) height = MAX_FIELD_HEIGHT;
 	if (width > MAX_FIELD_WIDTH) width = MAX_FIELD_WIDTH;
 	if (height == 0) height = 1;
 	if (width == 0) width = 1;
 
-	// Create a new field filled with '.' and copy the overlapping region from the current field
-	// Use a stack-allocated temporary buffer to avoid heap allocations on the DSP thread.
+	// Create a new field filled with '.' and copy the overlapping region from the current field.
+	// Use the fixed DSP-thread scratch buffer (sized for the max field) instead of a stack alloca.
 	size_t sz = (size_t)height * (size_t)width;
-	Glyph* tmpbuf = (Glyph*)alloca(sz * sizeof(Glyph));
+	Glyph* tmpbuf = scratch_;
 	memset(tmpbuf, '.', sz * sizeof(Glyph));
 
 	Usz old_h = field_.height;
@@ -550,7 +546,7 @@ void AhabSim::undo() {
 		// enough for any field (capped at MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH), so the
 		// copy never depends on a buffer sized by the UI thread.
 		Field tmp;
-		tmp.buffer = undo_scratch_.data();
+		tmp.buffer = scratch_;
 		tmp.height = field_.height;
 		tmp.width = field_.width;
 		field_copy(&field_, &tmp);
@@ -597,7 +593,7 @@ void AhabSim::redo() {
 		// Copy the current field into the DSP-owned max-size scratch, then into a
 		// fresh node buffer allocated on the DSP thread (see undo()).
 		Field tmp;
-		tmp.buffer = undo_scratch_.data();
+		tmp.buffer = scratch_;
 		tmp.height = field_.height;
 		tmp.width = field_.width;
 		field_copy(&field_, &tmp);
@@ -730,8 +726,8 @@ bool AhabSim::pasteCells(Glyph* cells, Usz h, Usz w, Usz dest_y, Usz dest_x) {
 
 // DSP thread operation
 void AhabSim::replaceField(Glyph* cells, Usz nh, Usz nw) {
-	// Enforce the maximum field size so the preallocated undo/redo scratch
-	// buffer (sized to MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH) is always sufficient.
+	// Enforce the maximum field size so the fixed DSP-thread scratch buffer
+	// (sized to MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH) is always sufficient.
 	if (nh > MAX_FIELD_HEIGHT) nh = MAX_FIELD_HEIGHT;
 	if (nw > MAX_FIELD_WIDTH) nw = MAX_FIELD_WIDTH;
 	mbuf_reusable_ensure_size(&mbuf_, nh, nw);
