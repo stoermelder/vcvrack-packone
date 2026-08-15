@@ -640,6 +640,55 @@ TEST_CASE("Callbacks are invoked", "[AhabSim]") {
 	REQUIRE(reset_called == true);
 }
 
+TEST_CASE("DSP reset callback fires on reset and field replace", "[AhabSim]") {
+	AhabSim sim;
+
+	int reset_calls = 0;
+	sim.setDspResetCallback([&]() {
+		reset_calls++;
+	});
+
+	// RESET command
+	sim.resetRequest();
+	sim.process();
+	REQUIRE(reset_calls == 1);
+
+	// REPLACE_FIELD command
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest("AB\nCD", 0, 0, h, w, true) == true);
+	sim.process();
+	REQUIRE(reset_calls == 2);
+}
+
+TEST_CASE("Reset and field replace clear pending events", "[AhabSim]") {
+	AhabSim sim;
+
+	// Field with a banged MIDI operator ':' that emits a note event on step.
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest(":04C21\n*.....", 0, 0, h, w, true) == true);
+	sim.process();
+	sim.stepRequest();
+	sim.process();
+	REQUIRE(sim.getEventCount() > 0);
+
+	// RESET command clears pending events
+	sim.resetRequest();
+	sim.process();
+	REQUIRE(sim.getEventCount() == 0);
+
+	// Generate events again
+	REQUIRE(sim.loadRectFromOrcaRequest(":04C21\n*.....", 0, 0, h, w, true) == true);
+	sim.process();
+	sim.stepRequest();
+	sim.process();
+	REQUIRE(sim.getEventCount() > 0);
+
+	// Loading a new field (REPLACE_FIELD) also clears pending events
+	REQUIRE(sim.loadRectFromOrcaRequest("..\n..", 0, 0, h, w, true) == true);
+	sim.process();
+	REQUIRE(sim.getEventCount() == 0);
+}
+
 TEST_CASE("Display buffer access is thread-safe", "[AhabSim]") {
 	AhabSim sim;
 	

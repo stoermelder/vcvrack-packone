@@ -50,6 +50,9 @@ public:
 	using UiTickCallback = std::function<void(Field const*)>;
 	// Reset callback: used to notify when the sim has been reset
 	using UiResetCallback = std::function<void()>;
+	// Reset callback: used to notify DSP-side consumers (e.g. the module) when the
+	// sim has been reset or its field replaced, so they can drop pending state.
+	using DspResetCallback = std::function<void()>;
 	// Callback type for tick notifications to the DSP object
 	using TickDspCallback = std::function<void(Oevent_list const*)>;
 	// Input reader callback: used to query the module inputs (e.g. for vcvin)
@@ -107,6 +110,10 @@ public:
 
 	void setUiResetCallback(UiResetCallback cb) {
 		ui_reset_callback_ptr = cb ? std::move(cb) : 0;
+	}
+
+	void setDspResetCallback(DspResetCallback cb) {
+		dsp_reset_callback_ptr = cb ? std::move(cb) : 0;
 	}
 
 	// Write output via the registered DspOutputWriter (safe to call from C callbacks)
@@ -204,6 +211,8 @@ private:
 	UiTickCallback ui_tick_callback_ptr;
 	// Reset callback (stored atomically as shared_ptr)
 	UiResetCallback ui_reset_callback_ptr;
+	// Reset callback for DSP-side consumers (e.g. the module)
+	DspResetCallback dsp_reset_callback_ptr;
 	// Callback for into DSP class
 	TickDspCallback dsp_tick_callback_ptr;
 	// Input reader callback (stored atomically as shared_ptr)

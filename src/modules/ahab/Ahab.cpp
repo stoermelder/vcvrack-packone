@@ -107,6 +107,7 @@ struct AhabModule : Module {
 		sim->setDspTickCallback(std::bind(&AhabModule::processEvents, this, std::placeholders::_1));
 		sim->setDspInputReader(std::bind(&AhabModule::readDspInput, this, std::placeholders::_1));
 		sim->setDspOutputWriter(std::bind(&AhabModule::writeDspOutput, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+		sim->setDspResetCallback(std::bind(&AhabModule::flushNotes, this));
 		
 		ResetEvent e;
 		onReset(e);
@@ -292,6 +293,32 @@ struct AhabModule : Module {
 		}
 		if (midiOutEnabled) {
 			midiOutPort.sendMessage(m);
+		}
+	}
+
+	// Called from the sim's DSP reset callback whenever the simulation is reset
+	// (RESET command / resetRequest) or a new field is loaded (REPLACE_FIELD), and
+	// indirectly from onReset via sim->reset(). Drops any pending note-offs so they
+	// never fire against a newly loaded field, and sends All Notes Off across all
+	// channels so no notes stay stuck.
+	void flushNotes() {
+		scheduledOffs.clear();
+		if (pluginSettings.ahabMidiVirtualEnabled) {
+			Ahab::Midi::resetMidi(midiVirtualPortId);
+		}
+		if (midiOutEnabled) {
+			for (int ch = 0; ch < 16; ++ch) {
+				for (int note = 0; note <= 127; note++) {
+					// Note off
+					midi::Message m;
+					m.setStatus(0x8);
+					m.setChannel(ch);
+					m.setNote(note);
+					m.setValue(0);
+					m.setFrame(APP->engine->getFrame());
+					midiOutPort.sendMessage(m);
+				}
+			}
 		}
 	}
 
@@ -1288,7 +1315,6 @@ struct AhabSimWidget : OpaqueWidget {
 				osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, "Failed to load example");
 			} 
 			else {
-				module->midiOutPort.reset();
 				APP->event->setSelectedWidget(this);
 			}
 		};

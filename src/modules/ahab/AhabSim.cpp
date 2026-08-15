@@ -686,6 +686,7 @@ void AhabSim::reset() {
 	tick_number_.store(0);
 
 	if (ui_reset_callback_ptr) ui_reset_callback_ptr();
+	if (dsp_reset_callback_ptr) dsp_reset_callback_ptr();
 }
 
 // UI thread operation - enqueue an setGlyph command
@@ -739,6 +740,10 @@ void AhabSim::replaceField(Glyph* cells, Usz nh, Usz nw) {
 	tmp.width = (U16)nw;
 	field_copy(&tmp, &field_);
 	tick_number_.store(0);
+	// Drop any events emitted by the previous field so they never fire against
+	// the newly loaded one (mirrors AhabSim::reset()).
+	oevent_list_clear(&oevent_list_);
+	if (dsp_reset_callback_ptr) dsp_reset_callback_ptr();
 }
 
 
