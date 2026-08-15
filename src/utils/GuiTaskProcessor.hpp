@@ -137,6 +137,18 @@ struct GuiTaskProcessor {
 	// already ordered by that release/acquire pair.
 	bool shuttingDown = false;
 
+	// Test-only escape hatch: when true, process() never starts a worker — tasks still
+	// queue normally on enqueue() and only ever run when something explicitly calls
+	// step()/drain(), same as the real "window present" path. This keeps tests that
+	// assert on the queue itself (a task is pending, then drain it and check the effect)
+	// meaningful, while removing the one thing that made them racy: a real background
+	// thread the test harness's single logical thread was never designed to share static
+	// module state with (see the class comment's "SINGLE PRODUCER" note, and
+	// getInstances()/crossPending() in SpliceKit.cpp for what that state looks like).
+	// Must be set right after construction, before the first process() call — not meant
+	// to be flipped mid-flight.
+	bool syncMode = false;
+
 	~GuiTaskProcessor() {
 		stopWorker();
 	}
@@ -183,6 +195,7 @@ struct GuiTaskProcessor {
 	// stopWorker() at destruction. Until it exits it stays a legal second drainer, since
 	// drain() tolerates two of them.
 	void process(rack::window::Window* window = APP->window) {
+		if (syncMode) return;
 		if (!window) {
 			startWorker();
 		}
