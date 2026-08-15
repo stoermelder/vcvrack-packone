@@ -1380,3 +1380,55 @@ TEST_CASE("Integration test - preset loading and simulation", "[Ahab]") {
 	Test::unregisterModule(m);
 	Test::destroyModule(m);
 }
+
+TEST_CASE("MIDI Virtual reset - sends note-off to all notes and channels", "[MIDI][Ahab]") {
+	// Enable virtual MIDI driver
+	pluginSettings.ahabMidiVirtualEnabled = true;
+	Ahab::Midi::init();
+
+	// Subscribe a mock input to port 0 to capture reset messages
+	MockMidiVirtualInput* mockVirtualInput = setupMockVirtualMidiInput(0);
+
+	Ahab::Midi::reset(0);
+
+	// Note-off message for every note (0-127) on every channel (0-15)
+	REQUIRE(mockVirtualInput->getMessageCount() == 16 * 128);
+
+	for (int ch = 0; ch < 16; ++ch) {
+		for (int note = 0; note < 128; ++note) {
+			int index = ch * 128 + note;
+			const auto& msg = mockVirtualInput->getMessage(index);
+			REQUIRE(msg.getStatus() == 0x8);   // Note Off
+			REQUIRE(msg.getChannel() == ch);
+			REQUIRE(msg.getNote() == note);
+			REQUIRE(msg.getValue() == 0);
+		}
+	}
+
+	cleanupMockVirtualMidiInput(mockVirtualInput);
+}
+
+TEST_CASE("MIDI Virtual reset - guards and port isolation", "[MIDI][Ahab]") {
+	// Enable virtual MIDI driver
+	pluginSettings.ahabMidiVirtualEnabled = true;
+	Ahab::Midi::init();
+
+	// Subscribe a mock input to port 1
+	MockMidiVirtualInput* mockVirtualInput = setupMockVirtualMidiInput(1);
+
+	// Invalid device IDs are ignored
+	Ahab::Midi::reset(-1);
+	REQUIRE(mockVirtualInput->getMessageCount() == 0);
+	Ahab::Midi::reset(4);
+	REQUIRE(mockVirtualInput->getMessageCount() == 0);
+
+	// Resetting another port does not deliver to this one
+	Ahab::Midi::reset(0);
+	REQUIRE(mockVirtualInput->getMessageCount() == 0);
+
+	// Resetting the subscribed port delivers note-off for all notes and channels
+	Ahab::Midi::reset(1);
+	REQUIRE(mockVirtualInput->getMessageCount() == 16 * 128);
+
+	cleanupMockVirtualMidiInput(mockVirtualInput);
+}
