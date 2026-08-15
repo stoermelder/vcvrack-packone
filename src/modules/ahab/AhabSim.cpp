@@ -287,10 +287,12 @@ bool AhabSim::loadRectFromOrcaRequest(const std::string& orcaStr, Usz dest_y, Us
 	return true;
 }
 
-// Serialize a rectangular region into ORCA plain text
-std::string AhabSim::convertRectToOrca(Usz y, Usz x, Usz h, Usz w) const {
-	Usz fh = field_.height;
-	Usz fw = field_.width;
+// Serialize a rectangular region of a field into ORCA plain text. Operates on
+// the passed-in field so UI-thread callers can serialize their own snapshot
+// (e.g. the widget's display_field) instead of the sim's live buffer.
+std::string AhabSim::convertRectToOrca(const Field& field, Usz y, Usz x, Usz h, Usz w) {
+	Usz fh = field.height;
+	Usz fw = field.width;
 	if (fh == 0 || fw == 0) return std::string();
 	if (y >= fh || x >= fw) return std::string();
 	if (y + h > fh) h = fh - y;
@@ -298,7 +300,7 @@ std::string AhabSim::convertRectToOrca(Usz y, Usz x, Usz h, Usz w) const {
 	std::string out;
 	out.reserve((size_t)h * ((size_t)w + 1));
 	for (Usz ry = 0; ry < h; ++ry) {
-		const Glyph* row = field_.buffer + (y + ry) * fw;
+		const Glyph* row = field.buffer + (y + ry) * fw;
 		for (Usz cx = 0; cx < w; ++cx) out.push_back(row[x + cx]);
 		if (ry + 1 < h) out.push_back('\n');
 	}

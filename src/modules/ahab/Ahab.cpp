@@ -554,7 +554,9 @@ struct AhabSimWidget : OpaqueWidget {
 		DEFER({ free(path); });
 		Usz sy, sx, sh, sw;
 		renderer.getSelectionRect(sy, sx, sh, sw);
-		std::string content = module->sim->convertRectToOrca(sy, sx, sh, sw);
+		// Serialize the UI snapshot, not the sim's live buffer (the DSP thread
+		// may be writing it from step()).
+		std::string content = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 		FILE* file = fopen(path, "w");
 		if (!file) {
 			std::string message = string::f("Could not write to patch file %s", path);
@@ -951,7 +953,8 @@ struct AhabSimWidget : OpaqueWidget {
 		// Ctrl/Cmd+C -> Copy selection to clipboard (ORCA plain text)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'c') {
 			Usz sy, sx, sh, sw; renderer.getSelectionRect(sy, sx, sh, sw);
-			std::string s = module->sim->convertRectToOrca(sy, sx, sh, sw);
+			// Read from the UI snapshot (display_field), not the sim's live buffer.
+			std::string s = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 			if (!s.empty()) glfwSetClipboardString(APP->window->win, s.c_str());
 			e.consume(this);
 			return;
@@ -960,7 +963,8 @@ struct AhabSimWidget : OpaqueWidget {
 		// Ctrl/Cmd+X -> Cut selection to clipboard (ORCA plain text)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'x') {
 			Usz sy, sx, sh, sw; renderer.getSelectionRect(sy, sx, sh, sw);
-			std::string s = module->sim->convertRectToOrca(sy, sx, sh, sw);
+			// Read from the UI snapshot (display_field), not the sim's live buffer.
+			std::string s = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 			if (!s.empty()) glfwSetClipboardString(APP->window->win, s.c_str());
 			module->sim->cutRectRequest(sy, sx, sh, sw);
 			e.consume(this);

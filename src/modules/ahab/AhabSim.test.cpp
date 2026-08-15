@@ -148,20 +148,20 @@ TEST_CASE("Op vcvout letter-port gate length uses b parameter", "[AhabSim]") {
 	REQUIRE(out_gate_ticks == 11);
 }
 
+TEST_CASE("Static convertRectToOrca serializes an arbitrary field", "[AhabSim]") {
+	// The widget serializes its display_field snapshot through the static
+	// overload, so verify it works on a standalone Field.
+	Field f;
+	field_init_fill(&f, 2, 3, '.');
+	DEFER({ field_deinit(&f); });
+	f.buffer[0] = 'A'; f.buffer[1] = 'B'; f.buffer[2] = 'C';
+	f.buffer[3] = 'D'; f.buffer[4] = 'E'; f.buffer[5] = 'F';
 
-TEST_CASE("Field serialization to ORCA text", "[AhabSim]") {
-	AhabSim sim;
-	
-	// Create a simple field for testing
-	sim.setFieldSizeRequest(3, 5, false);
-	sim.process();
-	
-	std::string orca = sim.convertRectToOrca(0, 0, 3, 5);
-	REQUIRE(orca.length() > 0);
-	
-	// Should contain newlines for each row (except last)
-	size_t newlineCount = std::count(orca.begin(), orca.end(), '\n');
-	REQUIRE(newlineCount == 2); // 3 rows - 1 = 2 newlines
+	REQUIRE(AhabSim::convertRectToOrca(f, 0, 0, 2, 3) == "ABC\nDEF");
+	REQUIRE(AhabSim::convertRectToOrca(f, 1, 1, 1, 2) == "EF");
+	// Out-of-bounds / zero-size requests are safe and return empty
+	REQUIRE(AhabSim::convertRectToOrca(f, 5, 5, 2, 2).empty());
+	REQUIRE(AhabSim::convertRectToOrca(f, 0, 0, 0, 0).empty());
 }
 
 TEST_CASE("ORCA text parsing builds valid field", "[AhabSim]") {
