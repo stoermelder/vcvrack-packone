@@ -476,9 +476,10 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	void simClear() {
-		Usz fh = module->sim->getFieldHeight();
-		Usz fw = module->sim->getFieldWidth();
-		module->sim->fillRectRequest(0, 0, fh, fw);
+		// Clearing the whole field is a content reset: reuse the existing reset
+		// request, which clears the grid (keeping the field size), drops pending
+		// note-offs and sends All Notes Off, just like loading a file/example.
+		module->sim->resetRequest();
 	}
 
 	void simRandomize(float density = 0.3f) {

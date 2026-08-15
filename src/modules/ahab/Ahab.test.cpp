@@ -1525,3 +1525,39 @@ TEST_CASE("onReset sends All Notes Off via virtual MIDI", "[MIDI][Ahab]") {
 	Test::unregisterModule(m);
 	Test::destroyModule(m);
 }
+
+TEST_CASE("Clear field flushes pending note-offs and blasts All Notes Off", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	// Enable virtual MIDI driver and subscribe mocks on both MIDI outputs
+	pluginSettings.ahabMidiVirtualEnabled = true;
+	Ahab::Midi::init();
+	MockMidiVirtualInput* mockVirtualInput = setupMockVirtualMidiInput(0);
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiVirtualPortId = 0;
+	m->midiOutEnabled = true;
+
+	m->scheduledOffs.push_back({3, 0, 60});
+	m->scheduledOffs.push_back({1, 2, 62});
+
+	// Replicate AhabSimWidget::simClear(): a reset that clears the whole field
+	// (keeping the field size) and flushes notes.
+	Usz fh = m->sim->getFieldHeight();
+	Usz fw = m->sim->getFieldWidth();
+	m->sim->resetRequest();
+	m->process({});
+
+	// Pending note-offs dropped, All Notes Off blasted across both MIDI outputs,
+	// and the field size is preserved.
+	REQUIRE(m->scheduledOffs.empty());
+	REQUIRE(mockVirtualInput->getMessageCount() == 16 * 128);
+	REQUIRE(mockDevice->getMessageCount() == 16 * 128);
+	REQUIRE(m->sim->getFieldHeight() == fh);
+	REQUIRE(m->sim->getFieldWidth() == fw);
+
+	cleanupMockMidiOutput(m, mockDevice);
+	cleanupMockVirtualMidiInput(mockVirtualInput);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
