@@ -1,5 +1,5 @@
 {
-    "name": "Ableton Push 2",
+    "name": "Ableton Push 2 [untested]",
     "description": "Grid cells: Note On, row r (0=top) col c (0=left) -> note = (9-r)*8 + c + 28 (top row = 92-99, bottom row = 36-43).\n\nScene buttons (below the display, left to right): CC 20-27; these use CC for both button press input and LED feedback.\n\nLED colour palette (index 0-127, documented subset): 0=off 122=white(204,204,204) 123=light-gray(64,64,64) 124=dark-gray(20,20,20) 125=blue 126=green 127=red.\n\nAnimation channels: 0=static, 6=pulse(1/24)...10=pulse(1/2), 11=blink(1/24)...15=blink(1/2); ch10 (slowest pulse, ~0.5s at 120 BPM) used for idle/dim states, ch6 (fastest pulse) used for connected highlights, ch11 (fastest blink) used for pending/learn states.\n\nspec type 4 (from-slot-type) sends Note On for pad cells, CC for scene buttons. Push 2 must be in User mode (not Live mode) for direct MIDI control.\n\nhttps://github.com/Ableton/push-interface/blob/main/doc/AbletonPush2MIDIDisplayInterface.asc",
     "cells": {
         "type": 1,

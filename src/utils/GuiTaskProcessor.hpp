@@ -102,6 +102,14 @@ struct GuiTaskProcessor {
 	std::thread* worker = nullptr;  // only touched by whichever thread completes Starting/Stopping
 	Context* workerContext = nullptr;
 
+	// The worker thread's id, published the moment the thread object is constructed in
+	// startWorker() (before runWorker() itself starts executing) and cleared in
+	// reapWorker(). Atomic because it is read from arbitrary threads via isWorkerThread()
+	// at thread-assertion sites. Backs this instance's own ThreadVerifier (see thread.hpp)
+	// — there is no cross-module registry, so each GuiTaskProcessor answers only for its
+	// own worker.
+	std::atomic<std::thread::id> workerThreadId{std::thread::id()};
+
 	// Optional hook run on the worker thread after each drain. Exists for state that the
 	// widget's step() would normally maintain: while a worker is doing the draining there
 	// is by definition no step() running, so anything step() refreshes would otherwise go
@@ -119,8 +127,25 @@ struct GuiTaskProcessor {
 	// and not mutated afterwards: the worker reads it without synchronization.
 	std::function<void()> onWorkerDrained;
 
+	// Set once stopWorker() begins tearing the worker down. Guards the final
+	// drainWithCallback() in runWorker() (see its comment): once shutdown has started, the
+	// owning object may itself be mid-destruction (this is normally called from the owner's
+	// own destructor), so neither a queued task nor onWorkerDrained — both of which
+	// typically capture/touch the owner — may run anymore. Plain bool, not atomic: only
+	// ever written by stopWorker() before the shutdown taskSignal.post() that the worker
+	// thread's wait() synchronizes with, so the worker's read of it after waking is
+	// already ordered by that release/acquire pair.
+	bool shuttingDown = false;
+
 	~GuiTaskProcessor() {
 		stopWorker();
+	}
+
+	// True when called from this processor's own worker thread. A default-constructed
+	// std::thread::id (the "no worker" state) never equals a real thread's id, so this is
+	// false whenever no worker is running.
+	bool isWorkerThread() const {
+		return std::this_thread::get_id() == workerThreadId.load(std::memory_order_acquire);
 	}
 
 	// Producer thread ONLY — see the SINGLE PRODUCER note on the class comment; calling
@@ -226,6 +251,10 @@ struct GuiTaskProcessor {
 			workerState.store(WorkerState::Absent, std::memory_order_release);
 			return;
 		}
+		// The thread object exists now, so its id is stable — publish it before the
+		// worker itself has necessarily started running, so isWorkerThread() is correct
+		// for any assertion the instant runWorker() begins.
+		workerThreadId.store(worker->get_id(), std::memory_order_release);
 		workerState.store(WorkerState::Running, std::memory_order_release);
 		// Tasks enqueued between the queue filling up and this moment (i.e. before any
 		// worker existed to post for) are still sitting there — make sure the new
@@ -242,6 +271,7 @@ struct GuiTaskProcessor {
 		worker->join();
 		delete worker;
 		worker = nullptr;
+		workerThreadId.store(std::thread::id(), std::memory_order_release);
 	}
 
 	// Whichever thread destroys the module. If a start is in flight (Starting) wait it
@@ -265,6 +295,14 @@ struct GuiTaskProcessor {
 		}
 
 		workerShouldRun.store(false, std::memory_order_release);
+		// Once shutdown has started the owner may be mid-destruction: neither a task still
+		// in the queue nor onWorkerDrained may run anymore (both typically capture/touch
+		// the owner), so drop whatever is left rather than let the worker's final drain
+		// execute it. drain() happens-before the post below, which is what the worker's
+		// wait()/drainWithCallback() synchronizes on, so runWorker() is guaranteed to see
+		// both the empty queue and shuttingDown == true once it wakes for this post.
+		shuttingDown = true;
+		internalQueue.drain();
 		// Wakes the worker out of taskSignal.wait() the same way MpmcTaskWorker's
 		// shutdown post does: an extra signal with no matching task, so the worker
 		// drains anything left, observes workerShouldRun == false, and exits instead
@@ -273,12 +311,20 @@ struct GuiTaskProcessor {
 		taskSignal.post();
 		reapWorker();
 		workerState.store(WorkerState::Absent, std::memory_order_release);
+		shuttingDown = false;
 	}
 
 	void runWorker() {
 		contextSet(workerContext);
 		while (true) {
 			taskSignal.wait();
+			if (shuttingDown) {
+				// Shutdown discarded the queue and does not want onWorkerDrained run
+				// against a possibly half-destroyed owner — just drain() (there is
+				// nothing left to run, but this keeps `draining` consistent) and exit.
+				drain();
+				return;
+			}
 			drainWithCallback();
 			if (!workerShouldRun.load(std::memory_order_acquire)) {
 				// Final drain in case a task (and its post) arrived concurrently

@@ -1,5 +1,5 @@
 {
-    "name": "Launchpad MK2 (Session mode)",
+    "name": "Launchpad MK2 (Session mode) [untested]",
     "description": "Grid cells: Note On, row r (0=top) col c (0=left) -> note = (7-r)*10 + c + 11.\n\nTop-row round buttons (scene): CC 104-111 (fixed regardless of layout, p.7/8).\n\nchannel 0 = static colour (MIDI ch 1); channel 1 = flash: alternates between this colour and current static colour, one beat (MIDI ch 2); channel 2 = pulse: breathes dark->full, two beats (MIDI ch 3).\n\nhttps://downloads.novationmusic.com/novation/launchpad-mk2/launchpad-mini-mk2",
     "cells": {
         "type": 1,

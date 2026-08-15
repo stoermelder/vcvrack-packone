@@ -1,5 +1,5 @@
 {
-    "name": "APC Mini MK2",
+    "name": "APC Mini MK2 [untested]",
     "description": "Grid cells: Note On, row r (0=top) col c (0=left) -> note = (7-r)*8 + c (top row = 56-63, bottom row = 0-7, same convention as original APC Mini).\n\nScene Launch 1-8 (right-side buttons): notes 112-119, single-color green, ch 0 only (blink/pulse not supported on single-color LEDs).\n\nMIDI channel determines LED behaviour (p.3): ch 0-6 = solid at 10-100% brightness (ch 6 used here for 100%); ch 7-10 = pulsing at 1/16-1/2 note (ch 7, 1/16, used for learn); ch 11-15 = blinking at 1/24-1/2 note (ch 11, 1/24, used for pending/connected).\n\nColour palette (p.4-5): 0=off 3=white 5=red 9=amber 21=green 45=blue.\n\nhttps://cdn.inmusicbrands.com/akai/attachments/APC%20mini%20mk2%20-%20Communication%20Protocol%20-%20v1.0.pdf",
     "cells": {
         "type": 1,

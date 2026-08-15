@@ -83,8 +83,14 @@ TEST_CASE("process - physical scene button press works normally when not linked"
 	m->params[SpliceKitModule::PARAM_SCENE + 1].setValue(1.f);
 	for (int i = 0; i < 256; i++) engine.step();  // rising edge on the next divided tick
 
-	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 1);  // switchScene(1) queued
-	m->taskProcessorUi.internalQueue.queue.shift()();
+	// requestSceneChange() enqueues switchScene(1) onto taskProcessorUi rather than
+	// applying it inline. With no window present (as in this test binary), the divider
+	// ticks above already started a real background worker for m, so poking
+	// internalQueue's ring buffer directly here would race that worker's own drain.
+	// step() goes through the same CAS-guarded drain() the worker uses, so it is safe to
+	// call concurrently — whichever of the two gets there first runs the task, the other
+	// is a no-op — and the effect is observable either way via sceneStore.current.
+	m->taskProcessorUi.step();
 	REQUIRE(m->sceneStore.current == 1);
 
 	Test::destroyModule(m);
@@ -141,9 +147,19 @@ TEST_CASE("process - pending cell transitions cellLedState to PENDING", "[Splice
 	// First press → triggerCell sets pendingCellId
 	m->triggerCell(0);
 	REQUIRE(m->pendingCellId == 0);
+	// triggerCell() enqueues the cross-instance half onto taskProcessorUi; drain it
+	// synchronously (as every other triggerCell() test does) before the loop below gets
+	// a chance to spin up a background worker for it — see the loop's own comment.
+	m->taskProcessorUi.step();
+	SpliceKitModule::crossPending[APP].clear();
 
 	Test::SimpleEngine engine;
 	engine.registerModule(m);
+	// 256 steps trips processDivider, which calls taskProcessorUi.process(). With no
+	// window present (as in this test binary) that starts a real background worker
+	// thread for m — harmless on its own, but combined with a still-queued task it
+	// would race destroyModule() below. The drain above prevents that by ensuring the
+	// queue is already empty before the worker could ever start.
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->feedback.cellLedState[0] == LED_STATE_PENDING);
@@ -196,6 +212,11 @@ TEST_CASE("process - cell connected to pending cell transitions to CONNECTED1", 
 	m->sceneStore.setConnection(0, 0, 5, true);
 
 	m->triggerCell(0);  // pendingCellId = 0
+	// Drain the cross-instance half synchronously before the loop below — see the
+	// identical drain in the PENDING test above for why an undrained queue plus this
+	// loop races a background worker against destroyModule().
+	m->taskProcessorUi.step();
+	SpliceKitModule::crossPending[APP].clear();
 
 	Test::SimpleEngine engine;
 	engine.registerModule(m);
