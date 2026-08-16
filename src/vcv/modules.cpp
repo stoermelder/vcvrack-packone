@@ -9,68 +9,69 @@ namespace vcv {
 // createModuleWidget + APP->scene->rack->addModule + setModulePosForce, and mw->fromJson
 // for applyPreset. LEFT/RIGHT placement is geometry — the caller computes the absolute
 // `pos` (eventually via the layer-1 layout functions) and calls addModule with it.
-struct RackModuleAccess : ModuleAccess {
-	ModuleWidget* getModuleWidget(int64_t moduleId) const override {
-		return APP->scene->rack->getModule(moduleId);
-	}
-
-	std::vector<ModuleWidget*> getModuleWidgets() const override {
-		return APP->scene->rack->getModules();
-	}
-
-	int64_t addModule(const ModuleRef& ref, Vec pos) override {
-		plugin::Model* model = plugin::getModel(ref.pluginSlug, ref.modelSlug);
-		if (!model) return -1;
-
-		// Create Module
-		engine::Module* addedModule = model->createModule();
-		APP->engine->addModule(addedModule);
-
-		// Create ModuleWidget
-		ModuleWidget* mw = model->createModuleWidget(addedModule);
-		assert(mw);
-		mw->box.pos = pos;
-		APP->scene->rack->addModule(mw);
-		APP->scene->rack->setModulePosForce(mw, pos);
-		return mw->module->id;
-	}
-
-	void removeModule(int64_t moduleId) override {
-		ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
-		if (!mw) return;
-		// Transfers ownership to the caller, who must delete it.
-		APP->scene->rack->removeModule(mw);
-		delete mw;
-	}
-
-	void setModuleWidgetPos(int64_t moduleId, Vec pos) override {
-		ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
-		if (!mw) return;
-		APP->scene->rack->setModulePosForce(mw, pos);
-	}
-
-	void applyPreset(int64_t moduleId, json_t* moduleJ) override {
-		ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
-		if (!mw) return;
-		mw->fromJson(moduleJ);
-	}
-
-	json_t* toJson(int64_t moduleId) const override {
-		ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
-		return mw ? mw->toJson() : nullptr;
-	}
-};
-
-// The single definition of the swappable module layer's active access — same reasoning as
-// cableAccess above: external linkage, exactly one definition in this TU. A test that
-// installs a mock `moduleAccess` in its own TU will not be seen by code compiled into the
-// plugin dylib if this were `static` in the header instead.
-ModuleAccess* moduleAccess = nullptr;
-
-ModuleAccess& moduleAccessFor() {
-	static RackModuleAccess rackAccess;
-	return moduleAccess ? *moduleAccess : rackAccess;
+ModuleWidget* RackModuleAccess::getModuleWidget(int64_t moduleId) const {
+	return APP->scene->rack->getModule(moduleId);
 }
+
+std::vector<ModuleWidget*> RackModuleAccess::getModuleWidgets() const {
+	return APP->scene->rack->getModules();
+}
+
+int64_t RackModuleAccess::addModule(const ModuleRef& ref, Vec pos) {
+	plugin::Model* model = plugin::getModel(ref.pluginSlug, ref.modelSlug);
+	if (!model) return -1;
+
+	// Create Module
+	engine::Module* addedModule = model->createModule();
+	APP->engine->addModule(addedModule);
+
+	// Create ModuleWidget
+	ModuleWidget* mw = model->createModuleWidget(addedModule);
+	assert(mw);
+	mw->box.pos = pos;
+	APP->scene->rack->addModule(mw);
+	APP->scene->rack->setModulePosForce(mw, pos);
+	return mw->module->id;
+}
+
+void RackModuleAccess::removeModule(int64_t moduleId) {
+	ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+	if (!mw) return;
+	// Transfers ownership to the caller, who must delete it.
+	APP->scene->rack->removeModule(mw);
+	delete mw;
+}
+
+void RackModuleAccess::setModuleWidgetPos(int64_t moduleId, Vec pos) {
+	ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+	if (!mw) return;
+	APP->scene->rack->setModulePosForce(mw, pos);
+}
+
+void RackModuleAccess::applyPreset(int64_t moduleId, json_t* moduleJ) {
+	ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+	if (!mw) return;
+	mw->fromJson(moduleJ);
+}
+
+json_t* RackModuleAccess::toJson(int64_t moduleId) const {
+	ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+	return mw ? mw->toJson() : nullptr;
+}
+
+// The shared production instance; namespace-scope so no __cxa_guard is tested on access.
+// In a release build this is what the moduleAccessFor() macro names directly.
+RackModuleAccess rackModuleAccess;
+
+
+#ifdef DEBUGPLUGIN
+// One definition, external linkage: a mock installed in a test TU must be seen by
+// code compiled into the dylib. See the declaration in the header.
+ModuleAccess* moduleAccess = nullptr;
+ModuleAccess& moduleAccessFor() {
+	return moduleAccess ? *moduleAccess : rackModuleAccess;
+}
+#endif
 
 } // namespace vcv
 } // namespace StoermelderPackOne

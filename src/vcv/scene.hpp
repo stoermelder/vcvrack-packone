@@ -37,20 +37,32 @@ struct SceneAccess {
 	virtual std::vector<int64_t> getSelectedModuleIds() const { return {}; }
 };
 
-// The active access. Null in production → the shared RackSceneAccess is used. Tests point
-// this at a mock.
-// This MUST have external linkage with exactly one definition (in scene.cpp), not the
-// `static` per-TU form.
-extern SceneAccess* sceneAccess;
 
+// The production implementation; bodies in the .cpp. Declared here — and `final` — so a
+// release build's call sites see the concrete type and devirtualize. See cables.hpp.
+struct RackSceneAccess final : SceneAccess {
+	void select(int64_t moduleId) override;
+	void deselect(int64_t moduleId) override;
+	void deselectAll() override;
+	bool isSelected(int64_t moduleId) const override;
+	std::vector<int64_t> getSelectedModuleIds() const override;
+};
+// The shared production instance, defined in the .cpp.
+extern RackSceneAccess rackSceneAccess;
+
+
+// Debug builds keep the mockable seam; release resolves the access statically. See
+// cables.hpp for why, and for the DEBUGPLUGIN contract.
+#ifdef DEBUGPLUGIN
+// Null by default -> the shared instance above is used. Tests point this at a mock.
+extern SceneAccess* sceneAccess;
 SceneAccess& sceneAccessFor();
+#else
+#define sceneAccessFor() ::StoermelderPackOne::vcv::rackSceneAccess
+#endif
 
 
 namespace scene {
-
-// Thin dispatch wrappers — keep the original free-function spelling (select/deselect/
-// deselectAll/isSelected/getSelectedModuleIds) so call sites can route through the active
-// SceneAccess without change; every operation now goes through the swappable layer.
 
 P1_UNUSED
 static void select(int64_t moduleId) {

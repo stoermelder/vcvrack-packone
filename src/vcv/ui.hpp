@@ -47,20 +47,33 @@ struct UiAccess {
 	virtual void openBrowser(const std::string& url) {}
 };
 
-// The active access. Null in production → the shared RealUiAccess is used. Tests point this
-// at a mock.
-// This MUST have external linkage with exactly one definition (in vcv_ui.cpp), not the
-// `static` per-TU form.
-extern UiAccess* uiAccess;
 
+// The production implementation; bodies in the .cpp. Declared here — and `final` — so a
+// release build's call sites see the concrete type and devirtualize. See cables.hpp.
+struct RealUiAccess final : UiAccess {
+	bool message(MessageType type, MessageButtons buttons, const std::string& msg) override;
+	std::string openDialog(const std::string& filters, const std::string& dir) override;
+	std::string saveDialog(const std::string& filters, const std::string& dir, const std::string& filename) override;
+	std::string getClipboard() const override;
+	void setClipboard(const std::string& text) override;
+	void openBrowser(const std::string& url) override;
+};
+// The shared production instance, defined in the .cpp.
+extern RealUiAccess realUiAccess;
+
+
+// Debug builds keep the mockable seam; release resolves the access statically. See
+// cables.hpp for why, and for the DEBUGPLUGIN contract.
+#ifdef DEBUGPLUGIN
+// Null by default -> the shared instance above is used. Tests point this at a mock.
+extern UiAccess* uiAccess;
 UiAccess& uiAccessFor();
+#else
+#define uiAccessFor() ::StoermelderPackOne::vcv::realUiAccess
+#endif
 
 
 namespace ui {
-
-// Thin dispatch wrappers — keep the original free-function spelling (message/openDialog/
-// saveDialog/getClipboard/setClipboard/openBrowser) so call sites can route through the
-// active UiAccess without change; every operation now goes through the swappable layer.
 
 P1_UNUSED
 static bool message(MessageType type, MessageButtons buttons, const std::string& msg) {

@@ -27,20 +27,28 @@ struct HistoryAccess {
 	virtual void push(::rack::history::Action* a) { delete a; }
 };
 
-// The active access. Null in production → the shared RackHistoryAccess is used. Tests point
-// this at a mock.
-// This MUST have external linkage with exactly one definition (in history.cpp), not the
-// `static` per-TU form.
-extern HistoryAccess* historyAccess;
 
+// The production implementation; bodies in the .cpp. Declared here — and `final` — so a
+// release build's call sites see the concrete type and devirtualize. See cables.hpp.
+struct RackHistoryAccess final : HistoryAccess {
+	void push(::rack::history::Action* a) override;
+};
+// The shared production instance, defined in the .cpp.
+extern RackHistoryAccess rackHistoryAccess;
+
+
+// Debug builds keep the mockable seam; release resolves the access statically. See
+// cables.hpp for why, and for the DEBUGPLUGIN contract.
+#ifdef DEBUGPLUGIN
+// Null by default -> the shared instance above is used. Tests point this at a mock.
+extern HistoryAccess* historyAccess;
 HistoryAccess& historyAccessFor();
+#else
+#define historyAccessFor() ::StoermelderPackOne::vcv::rackHistoryAccess
+#endif
 
 
 namespace history {
-
-// Thin dispatch wrapper — keep the original free-function spelling (push) so call sites can
-// route through the active HistoryAccess without change; every operation now goes through
-// the swappable layer.
 
 P1_UNUSED
 static void push(::rack::history::Action* a) {
