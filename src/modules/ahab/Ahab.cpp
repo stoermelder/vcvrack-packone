@@ -151,6 +151,9 @@ struct AhabModule : Module {
 		simRunning = true;
 		sim->setFieldSize(25, 49);
 		sim->reset();
+		// A full module reset wipes the edit history (unlike "Clear", which is
+		// undoable content editing).
+		sim->resetUndo();
 
 		Module::onReset(e);
 	}
@@ -496,7 +499,9 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	void reset() {
-		module->sim->resetUndo();
+		// Do NOT clear the undo history here: this runs as the sim's UI reset
+		// callback for "Clear" (via AhabSim::reset()), which must stay undoable.
+		// Full-module resets clear the history explicitly in AhabModule::onReset().
 		editorState.setCursor(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 		editorState.setSelection(0, 0, 1, 1, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 		rendererGridStepChanged();

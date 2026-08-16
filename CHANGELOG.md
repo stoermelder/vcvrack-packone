@@ -3,8 +3,9 @@
 ### Changes and Fixes
 
 - Module [AHAB](./docs/ahab/Ahab.md)
+    - Added undo for "Clear"
     - Fixed reset behavior on loading files or examples
-    - Fixed wrong MIDI channel on MIDI output messages
+    - Fixed broken MIDI channel on MIDI operators
     - Fixed various minor issues
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added sorting option "Newest" to *v2 mod* browser

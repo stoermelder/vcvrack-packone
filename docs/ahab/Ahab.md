@@ -113,6 +113,7 @@ Features missing in AHAB compared to ORCA:
     - Added "pending bang" operator `+` (#427)
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
 - v2.x.x
+    - Added undo for "Clear"
     - Fixed reset behavior on loading files or examples
-    - Fixed wrong MIDI channel on MIDI output messages
+    - Fixed broken MIDI channel on MIDI operators
     - Fixed various minor issues

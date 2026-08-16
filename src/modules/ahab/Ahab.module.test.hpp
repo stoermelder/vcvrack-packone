@@ -769,3 +769,47 @@ TEST_CASE("Integration test - preset loading and simulation", "[Ahab]") {
 	Test::unregisterModule(m);
 	Test::destroyModule(m);
 }
+
+TEST_CASE("Clear field is undoable", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	// Attach the widget: this wires the sim's UI reset callback
+	// (AhabSimWidget::reset) exactly like a placed module in the rack.
+	AhabWidget* mw = Test::createWidget<AhabWidget>(m);
+
+	// Put some content in the field.
+	m->sim->setGlyphRequest(5, 5, 'A', Mark_flag_input, true);
+	m->process({});
+	Usz h, w;
+	m->sim->getDisplayBuffer(h, w);
+	REQUIRE(m->sim->getFieldBuffer()[5 * w + 5] == 'A');
+	REQUIRE(m->sim->canUndo() == true);
+
+	// Clear the whole field via the widget's Clear handler.
+	mw->simWidget->simClear();
+	m->process({});
+
+	// The field is emptied, keeping its size...
+	REQUIRE(m->sim->getFieldBuffer()[5 * w + 5] == '.');
+	REQUIRE(m->sim->getFieldHeight() == h);
+	REQUIRE(m->sim->getFieldWidth() == w);
+
+	// ...and stays undoable (regression: the UI reset callback used to wipe the
+	// undo history that resetRequest() pushes, so Clear was not undoable).
+	REQUIRE(m->sim->canUndo() == true);
+
+	// Undo restores the pre-clear content.
+	m->sim->undoRequest();
+	m->process({});
+	REQUIRE(m->sim->getFieldBuffer()[5 * w + 5] == 'A');
+
+	// Redo re-clears the field again.
+	REQUIRE(m->sim->canRedo() == true);
+	m->sim->redoRequest();
+	m->process({});
+	REQUIRE(m->sim->getFieldBuffer()[5 * w + 5] == '.');
+
+	Test::destroyWidget(mw);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
