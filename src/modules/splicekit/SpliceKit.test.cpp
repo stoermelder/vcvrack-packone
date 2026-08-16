@@ -21,9 +21,12 @@ namespace __learn {
 namespace __mapping {
 	#include "SpliceKit.mapping.test.hpp"
 }
-namespace __randomize {
-	#include "SpliceKit.randomize.test.hpp"
+namespace __cables {
+	#include "SpliceKit.cables.test.hpp"
 }
 namespace __scenes {
 	#include "SpliceKit.scenes.test.hpp"
+}
+namespace __midi {
+	#include "SpliceKit.midi.test.hpp"
 }

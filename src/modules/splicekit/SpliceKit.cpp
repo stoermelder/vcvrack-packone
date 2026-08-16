@@ -189,8 +189,7 @@ struct SceneStore {
 		const PortAssignment* outPd = dir.first;
 		const PortAssignment* inPd = dir.second;
 		if (!outPd) return;
-		CableWidget* cw = vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
-		if (cw) vcv::removeCable(cw, false);
+		vcv::removeCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
 	}
 
 	// GUI thread — the mirror of removeCableBetween(). Same no-op rules, same reason for
@@ -203,8 +202,8 @@ struct SceneStore {
 		const PortAssignment* outPd = dir.first;
 		const PortAssignment* inPd = dir.second;
 		if (!outPd) return;
-		if (vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId)) return;
-		vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
+		if (vcv::hasCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId)) return;
+		vcv::addCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
 	}
 
 	// GUI thread — make/break a connection between two cells in the CURRENT scene,
@@ -236,7 +235,7 @@ struct SceneStore {
 				if (j == i) continue;
 				const PortAssignment& b = ports[j];
 				if (!b.isValid() || b.type != engine::Port::INPUT) continue;
-				if (vcv::findCable(a.moduleId, a.portId, b.moduleId, b.portId)) {
+				if (vcv::hasCable(a.moduleId, a.portId, b.moduleId, b.portId)) {
 					setConnection(scene, i, j, true);
 				}
 			}
@@ -1881,14 +1880,13 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 					const PortAssignment* outPd = dir.first;
 					const PortAssignment* inPd = dir.second;
 					if (outPd) {
-						CableWidget* cw = vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
-						if (!cw) {
-							vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
-							setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
+						if (vcv::hasCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId)) {
+							vcv::removeCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
+							setOverlayMessage("Cable removed", portLabel(*outPd), portLabel(*inPd));
 						}
 						else {
-							vcv::removeCable(cw, false);
-							setOverlayMessage("Cable removed", portLabel(*outPd), portLabel(*inPd));
+							vcv::addCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
+							setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
 						}
 					}
 					else {

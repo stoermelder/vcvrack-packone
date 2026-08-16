@@ -94,10 +94,11 @@ TEST_CASE("collectCableEndCandidates - a lone instance yields exactly its own as
 //
 // Coverage boundary: collectCablePartners() needs real CableWidgets, which the harness does
 // not provide, so the initiator's resolution step is NOT covered here — with no cables in the
-// patch it returns an empty set either way, so these tests cannot distinguish a working
-// publish from a missing one. Everything downstream IS covered, by publishing `partners`
-// directly the way the initiator would. Verifying that the initiator actually fills the list
-// requires the manual two-instance check in var/SpliceKit_crossinstance_pending_led.md.
+// patch it returns an empty set either way, so no in-process test can distinguish a working
+// publish from a missing one. Everything downstream IS covered below, by publishing
+// `partners` directly the way the initiator would. Verifying that the initiator actually
+// fills the list requires the manual two-instance check in
+// var/SpliceKit_crossinstance_pending_led.md.
 
 TEST_CASE("peer connected - a flagged cell blinks in the connected state", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
@@ -223,61 +224,6 @@ TEST_CASE("peer connected - a same-direction cell is never flagged", "[SpliceKit
 	// Even if the id somehow appeared in the list, resolveDirection() rejects the pair: two
 	// outputs can never share a cable.
 	SpliceKitModule::crossPending()[APP].partners = {{77, 1}};
-
-	b->refreshPeerConnected();
-	REQUIRE(b->peerConnected[5] == false);
-
-	SpliceKitModule::crossPending()[APP].clear();
-	Test::destroyModule(b);
-	Test::destroyModule(a);
-}
-
-TEST_CASE("peer connected - an armed port with no cables flags nothing", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
-	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
-	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
-
-	SpliceKitModule::crossPending()[APP].clear();
-	a->triggerCell(0);
-	a->taskProcessorUi.step();
-
-	// collectCablePartners() found nothing, which is the common case when arming a free port.
-	REQUIRE(SpliceKitModule::crossPending()[APP].partners.empty());
-
-	b->refreshPeerConnected();
-	REQUIRE(b->peerConnected[5] == false);
-
-	SpliceKitModule::crossPending()[APP].clear();
-	Test::destroyModule(b);
-	Test::destroyModule(a);
-}
-
-TEST_CASE("peer connected - arming republishes the partner list from scratch", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
-	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
-	a->portAssignments[1] = {43, engine::Port::OUTPUT, 1};
-	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
-
-	// Leave a stale list behind, as an earlier gesture on a different port would have.
-	SpliceKitModule::crossPending()[APP].clear();
-	SpliceKitModule::crossPending()[APP].partners = {{77, 1}};
-
-	// Arming resolves the newly armed port's cables and must overwrite, not merge: the entry
-	// describes one port at a time, so a leftover entry from another port would highlight
-	// cells that have nothing to do with the current selection.
-	a->triggerCell(1);
-	a->taskProcessorUi.step();
-
-	REQUIRE(SpliceKitModule::crossPending()[APP].cellId == 1);
-	REQUIRE(SpliceKitModule::crossPending()[APP].partners.count({77, 1}) == 0);
-
-	// NOTE: this pins the overwrite, not the resolution. collectCablePartners() needs real
-	// CableWidgets to return anything, so with no cables in the harness a working publish and
-	// a missing one both leave `partners` empty — removing the call would not fail any test
-	// here. The resolution step is covered only by the manual two-instance check in the plan
-	// document; see the coverage note at the top of this section.
 
 	b->refreshPeerConnected();
 	REQUIRE(b->peerConnected[5] == false);

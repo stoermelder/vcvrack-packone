@@ -175,24 +175,8 @@ TEST_CASE("sendFeedback - no-op for FROM_SLOT when slot is unmapped", "[SpliceKi
 	Test::destroyModule(m);
 }
 
-TEST_CASE("sendFeedback - no-op for FROM_SLOT_TYPE when slot is CC", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
-	MidiOutPreset preset;
-	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_FROM_SLOT_TYPE;
-	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FROM_SLOT;
-	preset.specs[LED_STATE_COLOR0].value = 127;
-	m->feedback.setActivePreset(preset);
-	m->trackingProcessor.setMap(MidiTrackingType::CC, 0, 74);
-	// CC slot with FROM_SLOT_TYPE resolves to a CC status — but for the *on-side*
-	// (MIDI_OUT_FROM_SLOT_TYPE), the code does support CC→0xB0. This test instead
-	// verifies the *no-op* case: if we set a NONE-type spec on top, it still
-	// returns early before any branch is taken.
-	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_NONE;
-	m->feedback.setActivePreset(preset);
-	m->feedback.sendFeedback(0, LED_STATE_COLOR0);
-	REQUIRE(m->feedback.midiOutput.sentCount == 0);
-	Test::destroyModule(m);
-}
+// NOTE: unlike the off-side, the on-side DOES support a CC slot under FROM_SLOT_TYPE
+// (it resolves to 0xB0) — that positive case is covered further down.
 
 TEST_CASE("sendFeedback - sends note-on 0x90 for NOTE_ON + FIXED mode", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();

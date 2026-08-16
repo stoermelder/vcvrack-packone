@@ -109,6 +109,114 @@ TEST_CASE("process - physical scene button press is ignored while following a sc
 }
 
 
+// physical matrix button release: in momentary mode a release clears the pending
+// selection (the processCellButtons() path); in toggle mode it does not. The MIDI note-off
+// analogue is covered by processMapUpdate's tests; this is the physical-button path.
+
+TEST_CASE("process - momentary mode: releasing a pressed cell clears the pending selection", "[SpliceKit]") {
+	SpliceKitModule* m = createModule();
+	m->buttonMode = SpliceKitModule::BUTTON_MOMENTARY;
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+
+	Test::SimpleEngine engine;
+	engine.registerModule(m);
+	for (int i = 0; i < 256; i++) engine.step();  // initialize trigger at low
+
+	// Press cell 0 → rising edge arms it.
+	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(1.f);
+	for (int i = 0; i < 256; i++) engine.step();
+	REQUIRE(m->pendingCellId == 0);
+	REQUIRE(m->pendingCellIsPhysical);
+
+	// Release cell 0 → momentary mode clears the pending selection.
+	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(0.f);
+	for (int i = 0; i < 256; i++) engine.step();
+	REQUIRE(m->pendingCellId == -1);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("process - toggle mode: releasing a pressed cell keeps the pending selection", "[SpliceKit]") {
+	SpliceKitModule* m = createModule();
+	// buttonMode defaults to BUTTON_TOGGLE
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+
+	Test::SimpleEngine engine;
+	engine.registerModule(m);
+	for (int i = 0; i < 256; i++) engine.step();  // initialize trigger at low
+
+	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(1.f);
+	for (int i = 0; i < 256; i++) engine.step();
+	REQUIRE(m->pendingCellId == 0);
+
+	// Release — toggle mode does not clear.
+	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(0.f);
+	for (int i = 0; i < 256; i++) engine.step();
+	REQUIRE(m->pendingCellId == 0);
+
+	Test::destroyModule(m);
+}
+
+// two-press matrix-cell flow through process(): the physical-button path via
+// processCellButtons(), where the first press arms the cell and a second press on another
+// cell toggles the connection. The MIDI analogue is covered in SpliceKit.midi.test.hpp; this
+// drives params[PARAM_MATRIX] the way a real button press would.
+
+TEST_CASE("process - first press arms the cell, second press creates the cable", "[SpliceKit]") {
+	CableScaffold cables;
+	SpliceKitModule* m = createModule();
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+
+	Test::SimpleEngine engine;
+	engine.registerModule(m);
+	for (int i = 0; i < 256; i++) engine.step();  // initialize triggers at low
+
+	// First press: cell 0 → rising edge arms it.
+	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(1.f);
+	for (int i = 0; i < 256; i++) engine.step();
+	REQUIRE(m->pendingCellId == 0);
+
+	// Second press on a different cell → toggleConnection(0, 1) is queued and pending cleared.
+	m->params[SpliceKitModule::PARAM_MATRIX + 1].setValue(1.f);
+	for (int i = 0; i < 256; i++) engine.step();
+	REQUIRE(m->pendingCellId == -1);
+
+	// Draining the GUI queue runs the queued toggleConnection → a real cable appears.
+	m->taskProcessorUi.step();
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
+
+	Test::destroyModule(m);
+}
+
+// physical matrix button edge case: pressing the same cell again cancels the armed selection
+// (triggerCell's pendingCellId == id branch) — the physical counterpart of the MIDI test.
+
+TEST_CASE("process - pressing the same cell again cancels the selection", "[SpliceKit]") {
+	SpliceKitModule* m = createModule();
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+
+	Test::SimpleEngine engine;
+	engine.registerModule(m);
+	for (int i = 0; i < 256; i++) engine.step();  // initialize trigger at low
+
+	// Press cell 0 → arms it.
+	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(1.f);
+	for (int i = 0; i < 256; i++) engine.step();
+	REQUIRE(m->pendingCellId == 0);
+
+	// Release and press the same cell again → cancels the selection (toggle mode keeps the
+	// release from clearing, so the second rising edge sees pendingCellId == 0).
+	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(0.f);
+	for (int i = 0; i < 256; i++) engine.step();
+	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(1.f);
+	for (int i = 0; i < 256; i++) engine.step();
+	REQUIRE(m->pendingCellId == -1);
+
+	Test::destroyModule(m);
+}
+
+
 TEST_CASE("process - scene state transitions from active to dim after scene switch", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
 	m->lightDivider.setDivision(256);
@@ -128,7 +236,9 @@ TEST_CASE("process - scene state transitions from active to dim after scene swit
 }
 
 
-// process() — PENDING, PORT_LEARN, MIDI_LEARN LED state transitions
+// process() — PENDING LED state transition. The PORT_LEARN/MIDI_LEARN transitions are
+// covered by resolveCellVisual's precedence test below, which drives them through the same
+// branch while also pinning the order they resolve in.
 
 TEST_CASE("process - pending cell transitions cellLedState to PENDING", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
@@ -147,38 +257,6 @@ TEST_CASE("process - pending cell transitions cellLedState to PENDING", "[Splice
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->feedback.cellLedState[0] == LED_STATE_PENDING);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("process - port-learning cell transitions cellLedState to PORT_LEARN", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
-	m->lightDivider.setDivision(256);
-
-	m->portLearningId = 7;
-	// m->portSelectProcessor is in learn mode iff isLearning() is true; without
-	// starting learn() the LED branch for portLearningId is still taken because
-	// the process() code only checks portLearningId, not isLearning(). This
-	// matches the current production behaviour.
-
-	Test::SimpleEngine engine;
-	engine.registerModule(m);
-	for (int i = 0; i < 256; i++) engine.step();
-
-	REQUIRE(m->feedback.cellLedState[7] == LED_STATE_PORT_LEARN);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("process - midi-learning cell transitions cellLedState to MIDI_LEARN", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
-	m->lightDivider.setDivision(256);
-
-	m->learningId = 11;
-
-	Test::SimpleEngine engine;
-	engine.registerModule(m);
-	for (int i = 0; i < 256; i++) engine.step();
-
-	REQUIRE(m->feedback.cellLedState[11] == LED_STATE_MIDI_LEARN);
 	Test::destroyModule(m);
 }
 
