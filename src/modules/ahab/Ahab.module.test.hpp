@@ -20,6 +20,39 @@ TEST_CASE("Construction and initialization", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Operator description strings", "[Ahab]") {
+	// getOperatorDescription is a pure (glyph, mark) -> text helper on the sim
+	// widget (used by the hover tooltip); a bare widget is enough to exercise
+	// it — no module, sim or sockets involved.
+	AhabSimWidget w;
+
+	// Empty cell.
+	REQUIRE(w.getOperatorDescription('.', 0) == "empty cell");
+
+	// Operators that have a description but no port-info table entry.
+	REQUIRE(w.getOperatorDescription('E', 0) == "east: Moves eastward, or bangs");
+	REQUIRE(w.getOperatorDescription('#', 0) == "comment: Halts a line");
+	REQUIRE(w.getOperatorDescription('$', 0) == "command: not supported in Ahab");
+
+	// Operators whose description is extended by their port-info entry.
+	REQUIRE(w.getOperatorDescription('A', 0) ==
+		"add: Outputs sum of inputs\n  ←1: a\n  →1: b\n  ↓1: output");
+	REQUIRE(w.getOperatorDescription(':', 0) ==
+		"midi: Sends a MIDI note\n  →1: channel\n  →2: octave\n  →3: note\n  →4: velocity\n  →5: length");
+	REQUIRE(w.getOperatorDescription(';', 0) ==
+		"udp: Sends UDP message\n  →1+: string");
+	REQUIRE(w.getOperatorDescription('=', 0) ==
+		"osc: Sends OSC message\n  →1: path\n  →2: len\n  →3+: in");
+
+	// Unknown glyphs fall back to "<glyph>: variable / unknown operator".
+	REQUIRE(w.getOperatorDescription('a', 0) == "a: variable / unknown operator");
+	REQUIRE(w.getOperatorDescription('@', 0) == "@: variable / unknown operator");
+
+	// The mark flags currently do not affect the description text (the flags
+	// block in getOperatorDescription is commented out).
+	REQUIRE(w.getOperatorDescription(':', Mark_flag_output) == w.getOperatorDescription(':', 0));
+}
+
 TEST_CASE("BPM-based clock", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);

@@ -10,6 +10,7 @@
 #include "AhabRenderer.hpp"
 #include "AhabRandomizer.hpp"
 #include <osdialog.h>
+#include <array>
 #include <memory>
 
 namespace StoermelderPackOne {
@@ -606,92 +607,101 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	std::string getOperatorDescription(Glyph g, Mark m) {
+		// Flat glyph-indexed lookup tables — a direct array index replaces the
+		// former std::map<char, std::string>. Sized 256 so any byte value (Glyph
+		// is a signed char) is a safe index via (unsigned char).
+		static const std::array<const char*, 256> kOperatorDescriptions = [] {
+			std::array<const char*, 256> t{};
+			t['A'] = "add: Outputs sum of inputs";
+			t['B'] = "subtract: Outputs difference of inputs";
+			t['C'] = "clock: Outputs modulo of frame";
+			t['D'] = "delay: Bangs on modulo of frame";
+			t['E'] = "east: Moves eastward, or bangs";
+			t['F'] = "if: Bangs if inputs are equal";
+			t['G'] = "generator: Writes operands with offset";
+			t['H'] = "halt: Halts southward operand";
+			t['I'] = "increment: Increments southward operand";
+			t['J'] = "jumper: Outputs northward operand";
+			t['K'] = "konkat: Reads multiple variables";
+			t['L'] = "less: Outputs smallest of inputs";
+			t['M'] = "multiply: Outputs product of inputs";
+			t['N'] = "north: Moves Northward, or bangs";
+			t['O'] = "read: Reads operand with offset";
+			t['P'] = "push: Writes eastward operand";
+			t['Q'] = "query: Reads operands with offset";
+			t['R'] = "random: Outputs random value";
+			t['S'] = "south: Moves southward, or bangs";
+			t['T'] = "track: Reads eastward operand";
+			t['U'] = "uclid: Bangs on Euclidean rhythm";
+			t['V'] = "variable: Reads and writes variable";
+			t['W'] = "west: Moves westward, or bangs";
+			t['X'] = "write: Writes operand with offset";
+			t['Y'] = "jymper: Outputs westward operand";
+			t['Z'] = "lerp: Transitions operand to input";
+			t['*'] = "bang: Bangs neighboring operands";
+			t['#'] = "comment: Halts a line";
+			t[':'] = "midi: Sends a MIDI note";
+			t['%'] = "mono: Sends monophonic MIDI note";
+			t['!'] = "cc: Sends MIDI control change";
+			t['?'] = "pb: Sends MIDI pitch bench";
+			t[';'] = "udp: Sends UDP message";
+			t['='] = "osc: Sends OSC message";
+			t['<'] = "cv-input: Reads a value from a CV input";
+			t['>'] = "cv-output: Writes a value to a CV output";
+			t['$'] = "command: not supported in Ahab";
+			return t;
+		}();
+
+		static const std::array<const char*, 256> kOperatorPortInfos = [] {
+			std::array<const char*, 256> t{};
+			t[':'] = "  →1: channel\n  →2: octave\n  →3: note\n  →4: velocity\n  →5: length";
+			t['%'] = "  →1: channel\n  →2: octave\n  →3: note\n  →4: velocity\n  →5: length";
+			t['!'] = "  →1: channel\n  →2: knob\n  →3: value";
+			t['?'] = "  →1: channel\n  →2: lsb\n  →3: msb";
+			t[';'] = "  →1+: string";
+			t['='] = "  →1: path\n  →2: len\n  →3+: in";
+			t['A'] = "  ←1: a\n  →1: b\n  ↓1: output";
+			t['B'] = "  ←1: a\n  →1: b\n  ↓1: output";
+			t['C'] = "  ←1: rate\n  →1: mod\n  ↓1: output";
+			t['D'] = "  ←1: rate\n  →1: mod\n  ↓1: output";
+			t['F'] = "  ←1: a\n  →1: b\n  ↓1: output";
+			t['G'] = "  ←1: x\n  ↑1: y\n  →1: len\n  →2+: in\n  (x,y)+: out";
+			t['H'] = "  ↓1: output";
+			t['I'] = "  ←1: step\n  →1: mod\n  ↓1: output";
+			t['J'] = "  ↑1: val\n  ↓1: output";
+			t['K'] = "  ←1: len\n  →1+: in\n  ↓1+: out";
+			t['L'] = "  ←1: a\n  →1: b\n  ↓1: output";
+			t['M'] = "  ←1: a\n  →1: b\n  ↓1: output";
+			t['N'] = "  (moves north)";
+			t['O'] = "  ←1: y\n  ↑1: x\n  (y,x): read\n  ↓1: output";
+			t['P'] = "  ←1: len\n  ↑1: key\n  →1: val\n  ↓(len(key)+1): output";
+			t['Q'] = "  ←1: len\n  ↑1: y\n  →1: x\n  (y,x)+: in\n  ↓1+: out";
+			t['R'] = "  ←1: min\n  →1: max\n  ↓1: val";
+			t['S'] = "  (moves south)";
+			t['T'] = "  ←1: len\n  ↑1: key\n  →(len(key)+1): val\n  ↓1: output";
+			t['U'] = "  ←1: write\n  →1: read\n  ↓1: output";
+			t['V'] = "  ←1: write\n  →1: read\n  ↓1: output";
+			t['W'] = "  (moves west)";
+			t['X'] = "  ←1: y\n  ↑1: x\n  →1: val\n  (y,x): output";
+			t['Y'] = "  ←1: val\n  →1: output";
+			t['Z'] = "  ←1: rate\n  →1: target\n  ↓1: output";
+			t['*'] = "  (bangs neighbors)";
+			t['<'] = "  →1: min\n  →2: port number (1-4 for cv mode / a-d for v/oct mode)\n  →3: max\n  ↓1: output";
+			t['>'] = "cv mode\n  →1: port number (1-4)\n  →2: min\n  →3: val\n  →4: max\nv/oct mode\n  →1: port number (a-d)\n  →2: octave\n  →3: note\n  →4: gate length";
+			return t;
+		}();
+
 		std::string desc;
 		if (g == '.') {
 			desc = "empty cell";
 		} 
 		else {
-			static const std::map<char, std::string> descriptions = {
-				{'A', "add: Outputs sum of inputs"},
-				{'B', "subtract: Outputs difference of inputs"},
-				{'C', "clock: Outputs modulo of frame"},
-				{'D', "delay: Bangs on modulo of frame"},
-				{'E', "east: Moves eastward, or bangs"},
-				{'F', "if: Bangs if inputs are equal"},
-				{'G', "generator: Writes operands with offset"},
-				{'H', "halt: Halts southward operand"},
-				{'I', "increment: Increments southward operand"},
-				{'J', "jumper: Outputs northward operand"},
-				{'K', "konkat: Reads multiple variables"},
-				{'L', "less: Outputs smallest of inputs"},
-				{'M', "multiply: Outputs product of inputs"},
-				{'N', "north: Moves Northward, or bangs"},
-				{'O', "read: Reads operand with offset"},
-				{'P', "push: Writes eastward operand"},
-				{'Q', "query: Reads operands with offset"},
-				{'R', "random: Outputs random value"},
-				{'S', "south: Moves southward, or bangs"},
-				{'T', "track: Reads eastward operand"},
-				{'U', "uclid: Bangs on Euclidean rhythm"},
-				{'V', "variable: Reads and writes variable"},
-				{'W', "west: Moves westward, or bangs"},
-				{'X', "write: Writes operand with offset"},
-				{'Y', "jymper: Outputs westward operand"},
-				{'Z', "lerp: Transitions operand to input"},
-				{'*', "bang: Bangs neighboring operands"},
-				{'#', "comment: Halts a line"},
-				{':', "midi: Sends a MIDI note"},
-				{'%', "mono: Sends monophonic MIDI note"},
-				{'!', "cc: Sends MIDI control change"},
-				{'?', "pb: Sends MIDI pitch bench"},
-				{';', "udp: Sends UDP message"},
-				{'=', "osc: Sends OSC message"},
-				{'<', "cv-input: Reads a value from a CV input"},
-				{'>', "cv-output: Writes a value to a CV output"},
-				{'$', "command: not supported in Ahab"}
-			};
-			auto it = descriptions.find(g);
-			desc = (it != descriptions.end()) ? it->second : std::string(1, g) + ": variable / unknown operator";
+			const char* d = kOperatorDescriptions[(unsigned char)g];
+			desc = d ? d : std::string(1, (char)g) + ": variable / unknown operator";
 
-			static const std::map<char, std::string> portInfos = {
-				{':', "  →1: channel\n  →2: octave\n  →3: note\n  →4: velocity\n  →5: length"},
-				{'%', "  →1: channel\n  →2: octave\n  →3: note\n  →4: velocity\n  →5: length"},
-				{'!', "  →1: channel\n  →2: knob\n  →3: value"},
-				{'?', "  →1: channel\n  →2: lsb\n  →3: msb"},
-				{';', "  →1+: string"},
-				{'=', "  →1: path\n  →2: len\n  →3+: in"},
-				{'A', "  ←1: a\n  →1: b\n  ↓1: output"},
-				{'B', "  ←1: a\n  →1: b\n  ↓1: output"},
-				{'C', "  ←1: rate\n  →1: mod\n  ↓1: output"},
-				{'D', "  ←1: rate\n  →1: mod\n  ↓1: output"},
-				{'F', "  ←1: a\n  →1: b\n  ↓1: output"},
-				{'G', "  ←1: x\n  ↑1: y\n  →1: len\n  →2+: in\n  (x,y)+: out"},
-				{'H', "  ↓1: output"},
-				{'I', "  ←1: step\n  →1: mod\n  ↓1: output"},
-				{'J', "  ↑1: val\n  ↓1: output"},
-				{'K', "  ←1: len\n  →1+: in\n  ↓1+: out"},
-				{'L', "  ←1: a\n  →1: b\n  ↓1: output"},
-				{'M', "  ←1: a\n  →1: b\n  ↓1: output"},
-				{'N', "  (moves north)"},
-				{'O', "  ←1: y\n  ↑1: x\n  (y,x): read\n  ↓1: output"},
-				{'P', "  ←1: len\n  ↑1: key\n  →1: val\n  ↓(len(key)+1): output"},
-				{'Q', "  ←1: len\n  ↑1: y\n  →1: x\n  (y,x)+: in\n  ↓1+: out"},
-				{'R', "  ←1: min\n  →1: max\n  ↓1: val"},
-				{'S', "  (moves south)"},
-				{'T', "  ←1: len\n  ↑1: key\n  →(len(key)+1): val\n  ↓1: output"},
-				{'U', "  ←1: write\n  →1: read\n  ↓1: output"},
-				{'V', "  ←1: write\n  →1: read\n  ↓1: output"},
-				{'W', "  (moves west)"},
-				{'X', "  ←1: y\n  ↑1: x\n  →1: val\n  (y,x): output"},
-				{'Y', "  ←1: val\n  →1: output"},
-				{'Z', "  ←1: rate\n  →1: target\n  ↓1: output"},
-				{'*', "  (bangs neighbors)"},
-				{'<', "  →1: min\n  →2: port number (1-4 for cv mode / a-d for v/oct mode)\n  →3: max\n  ↓1: output"},
-				{'>', "cv mode\n  →1: port number (1-4)\n  →2: min\n  →3: val\n  →4: max\nv/oct mode\n  →1: port number (a-d)\n  →2: octave\n  →3: note\n  →4: gate length"}
-			};
-			auto pit = portInfos.find(g);
-			if (pit != portInfos.end()) {
-				desc += "\n" + pit->second;
+			if (const char* p = kOperatorPortInfos[(unsigned char)g]) {
+				desc += "\n";
+				desc += p;
 			}
 		}
 
@@ -1202,6 +1212,11 @@ struct AhabSimWidget : OpaqueWidget {
 	void onEnter(const event::Enter& e) override {
 		struct CellTooltip : ui::Tooltip {
 			AhabSimWidget* widget = nullptr;
+			// Last hovered cell, so the description text is only rebuilt (and the
+			// tooltip string reassigned) when the hovered cell actually changes —
+			// getOperatorDescription is otherwise called every frame.
+			Glyph lastGlyph_ = 0;
+			Mark lastMark_ = 0;
 			void step() override {
 				if (widget->display_mbuf.buffer) {
 					visible = false;
@@ -1214,7 +1229,11 @@ struct AhabSimWidget : OpaqueWidget {
 						visible = 
 							((g == ':' || g == ';' || g == '%' || g == '?' || g == '!' || g == '=' || g == '<' || g == '>') && (!(flags & (Mark_flag_lock)) || (flags & Mark_flag_output))) || 
 							((g != '.') && !(flags & (Mark_flag_lock | Mark_flag_sleep)));
-						if (visible) text = widget->getOperatorDescription(g, m);
+						if (visible && (g != lastGlyph_ || m != lastMark_)) {
+							lastGlyph_ = g;
+							lastMark_ = m;
+							text = widget->getOperatorDescription(g, m);
+						}
 					}
 				}
 				Tooltip::step();
