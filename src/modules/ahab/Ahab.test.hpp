@@ -123,3 +123,11 @@ static void cleanupMockVirtualMidiInput(MockMidiVirtualInput* mockInput) {
 		delete mockInput;
 	}
 }
+
+// Enqueue one sim step and drain it through the module's process() (the same
+// path the UI "step" command uses). One drain == one VM tick. Shared by the
+// end-to-end MIDI and CV operator tests.
+static void stepSim(AhabModule* m) {
+	m->sim->stepRequest();
+	m->process({});
+}

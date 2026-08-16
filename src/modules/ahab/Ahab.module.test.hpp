@@ -496,6 +496,138 @@ TEST_CASE("JSON deserialization", "[JSON][Ahab]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Module JSON round-trip includes the sim sub-object", "[JSON][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	// Distinct module state.
+	m->panelTheme = 2;
+	m->midiVirtualPortId = 3;
+	m->midiOutEnabled = false;
+	m->midiCcOffset = 100;
+	m->simRunning = false;
+	m->overwriteZeroNoteDuration = false;
+	m->gridStepCol = 4;
+	m->gridStepRow = 6;
+
+	// Distinct sim state: a small field, a non-zero tick, a seed and UDP/OSC
+	// destinations, all persisted under the module's "sim" key.
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest(":04C21\n*.....", 0, 0, h, w, true) == true);
+	m->process({}); // drain the field load
+	for (int i = 0; i < 5; ++i) stepSim(m); // tick → 5
+	m->sim->setRandomSeed(777);
+	m->sim->setUdpDestination("192.168.1.50", "7000");
+	m->sim->setOscDestination("10.0.0.5", "8000");
+	REQUIRE(m->sim->getTickNumber() == 5);
+
+	// Serialize, reset to defaults, then restore through the module.
+	json_t* j = m->dataToJson();
+	REQUIRE(j != nullptr);
+	Module::ResetEvent e;
+	m->onReset(e);
+	m->dataFromJson(j);
+
+	// Module state restored.
+	REQUIRE(m->panelTheme == 2);
+	REQUIRE(m->midiVirtualPortId == 3);
+	REQUIRE(m->midiOutEnabled == false);
+	REQUIRE(m->midiCcOffset == 100);
+	REQUIRE(m->simRunning == false);
+	REQUIRE(m->overwriteZeroNoteDuration == false);
+	REQUIRE(m->gridStepCol == 4);
+	REQUIRE(m->gridStepRow == 6);
+
+	// Sim state restored through the module.
+	REQUIRE(m->sim->getFieldHeight() == 2);
+	REQUIRE(m->sim->getFieldWidth() == 6);
+	Glyph const* buf = m->sim->getFieldBuffer();
+	REQUIRE(buf[0] == ':');
+	REQUIRE(m->sim->getTickNumber() == 5);
+	REQUIRE(m->sim->getRandomSeed() == 777);
+	REQUIRE(m->sim->getUdpAddress() == "192.168.1.50");
+	REQUIRE(m->sim->getUdpPort() == "7000");
+	REQUIRE(m->sim->getOscAddress() == "10.0.0.5");
+	REQUIRE(m->sim->getOscPort() == "8000");
+
+	json_decref(j);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("onReset restores all defaults", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	// Corrupt a bunch of state.
+	m->midiVirtualPortId = 3;
+	m->midiOutEnabled = false;
+	m->midiOutPort.channel = 5;
+	m->midiCcOffset = 99;
+	m->overwriteZeroNoteDuration = false;
+	m->gridStepCol = 1;
+	m->gridStepRow = 2;
+	m->simRunning = false;
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest(":04C21\n*.....", 0, 0, h, w, true) == true);
+	m->process({});
+	REQUIRE(m->sim->getFieldHeight() != 25); // field was changed away from default
+
+	// Reset restores every default.
+	Module::ResetEvent e;
+	m->onReset(e);
+
+	REQUIRE(m->midiVirtualPortId == 0);
+	REQUIRE(m->midiOutEnabled == true);
+	REQUIRE(m->midiOutPort.channel == -1);
+	REQUIRE(m->midiCcOffset == 64);
+	REQUIRE(m->overwriteZeroNoteDuration == true);
+	REQUIRE(m->gridStepCol == 8);
+	REQUIRE(m->gridStepRow == 8);
+	REQUIRE(m->simRunning == true);
+	REQUIRE(m->sim->getFieldHeight() == 25);
+	REQUIRE(m->sim->getFieldWidth() == 49);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Missing or invalid sim JSON is ignored safely", "[JSON][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	// Set up sim state that must be preserved.
+	m->sim->setRandomSeed(123);
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest(":04C21\n*.....", 0, 0, h, w, true) == true);
+	m->process({});
+	Usz fh = m->sim->getFieldHeight();
+	Usz fw = m->sim->getFieldWidth();
+
+	// JSON with no "sim" key at all: sim state must be untouched.
+	json_t* j = json_object();
+	json_object_set_new(j, "panelTheme", json_integer(2));
+	REQUIRE_NOTHROW(m->dataFromJson(j));
+	REQUIRE(m->sim->getFieldHeight() == fh);
+	REQUIRE(m->sim->getFieldWidth() == fw);
+	REQUIRE(m->sim->getRandomSeed() == 123);
+	json_decref(j);
+
+	// JSON with a non-object "sim" (json_null()): must be ignored — the guard is
+	// `simJ && json_is_object(simJ)`, so json_null() fails it even though the
+	// pointer is non-null.
+	json_t* j2 = json_object();
+	json_object_set_new(j2, "sim", json_null());
+	REQUIRE_NOTHROW(m->dataFromJson(j2));
+	REQUIRE(m->sim->getFieldHeight() == fh);
+	REQUIRE(m->sim->getFieldWidth() == fw);
+	REQUIRE(m->sim->getRandomSeed() == 123);
+	json_decref(j2);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
 TEST_CASE("Clock output pulse", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
@@ -521,6 +653,193 @@ TEST_CASE("Clock output pulse", "[Ahab]") {
 	v = m->outputs[AhabModule::CLK_OUTPUT].getVoltage();
 	REQUIRE(v < 1.0f);
 	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+
+// Clocking edge cases: the run/stop, manual clock and external
+// clock paths are checked here by their resulting step behaviour (tick counter
+// / CLK_OUTPUT pulse), not just by the simRunning flag.
+
+TEST_CASE("Run/stop gates BPM stepping", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	// High BPM so a modest sample count produces several ticks (16 Hz at 240).
+	m->params[AhabModule::BPM_PARAM].setValue(240.0f);
+	float sampleRate = 44100.f;
+	int64_t frame = 0;
+	int numSamples = (int)(sampleRate / 16.0f * 3); // ~3 ticks worth
+
+	// Stop via the run button (Schmitt trigger low→high).
+	m->params[AhabModule::RUN_PARAM].setValue(0.0f);
+	m->process(Test::makeProcessArgs(frame++, sampleRate));
+	m->params[AhabModule::RUN_PARAM].setValue(1.0f);
+	m->process(Test::makeProcessArgs(frame++, sampleRate));
+	REQUIRE(m->simRunning == false);
+
+	// ~3 ticks worth of samples while stopped: zero steps.
+	Usz tickBefore = m->sim->getTickNumber();
+	for (int i = 0; i < numSamples; ++i) {
+		m->process(Test::makeProcessArgs(frame++, sampleRate));
+	}
+	REQUIRE(m->sim->getTickNumber() == tickBefore);
+
+	// Start again; the same sample count advances the tick counter.
+	m->params[AhabModule::RUN_PARAM].setValue(0.0f);
+	m->process(Test::makeProcessArgs(frame++, sampleRate));
+	m->params[AhabModule::RUN_PARAM].setValue(1.0f);
+	m->process(Test::makeProcessArgs(frame++, sampleRate));
+	REQUIRE(m->simRunning == true);
+
+	tickBefore = m->sim->getTickNumber();
+	for (int i = 0; i < numSamples; ++i) {
+		m->process(Test::makeProcessArgs(frame++, sampleRate));
+	}
+	REQUIRE(m->sim->getTickNumber() > tickBefore);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Manual clock steps while stopped", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	m->simRunning = false; // stopped
+
+	// Press the clock button (Schmitt trigger low→high).
+	m->params[AhabModule::CLK_PARAM].setValue(0.0f);
+	m->process({});
+	Usz tickBefore = m->sim->getTickNumber();
+	m->params[AhabModule::CLK_PARAM].setValue(1.0f);
+	m->process({});
+
+	// The manual clock always steps, even while stopped.
+	REQUIRE(m->sim->getTickNumber() == tickBefore + 1);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("External clock disables internal BPM", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	m->params[AhabModule::BPM_PARAM].setValue(240.0f); // 16 Hz
+	float sampleRate = 44100.f;
+	int64_t frame = 0;
+
+	// Connect the external clock (channels > 0 → isConnected()) and hold it at
+	// a DC level: no rising edges, so no external steps occur.
+	m->inputs[AhabModule::CLK_INPUT].channels = 1;
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(5.0f);
+
+	// ~3 ticks worth of samples. If BPM were active this would step; the
+	// connected external clock must disable the BPM accumulator.
+	Usz tickBefore = m->sim->getTickNumber();
+	int numSamples = (int)(sampleRate / 16.0f * 3);
+	for (int i = 0; i < numSamples; ++i) {
+		m->process(Test::makeProcessArgs(frame++, sampleRate));
+	}
+	REQUIRE(m->sim->getTickNumber() == tickBefore);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("External clock does not step while stopped", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	m->simRunning = false; // stopped
+
+	// Rising edge on the external clock while stopped must not step.
+	m->inputs[AhabModule::CLK_INPUT].channels = 1;
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(0.0f);
+	m->process({}); // initialize the trigger low
+	Usz tickBefore = m->sim->getTickNumber();
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(10.0f);
+	m->process({}); // rising edge — but simRunning is false
+
+	REQUIRE(m->sim->getTickNumber() == tickBefore);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Clock phase resets on run toggle and external clock", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	float sampleRate = 44100.f;
+	int64_t frame = 0;
+	m->params[AhabModule::BPM_PARAM].setValue(240.0f);
+
+	// Accumulate some BPM phase (well under one tick: 1000 * 16/44100 ≈ 0.36).
+	for (int i = 0; i < 1000; ++i) {
+		m->process(Test::makeProcessArgs(frame++, sampleRate));
+	}
+	REQUIRE(m->clockPhase > 0.0f);
+
+	// Toggling run off then on resets the phase accumulator. The reset lands at
+	// ~0, not exactly 0: the BPM path re-accumulates a single sample's worth in
+	// the same process() call that restarts the run (simRunning is already true
+	// when the phase-accumulation block runs).
+	m->params[AhabModule::RUN_PARAM].setValue(0.0f);
+	m->process(Test::makeProcessArgs(frame++, sampleRate));
+	m->params[AhabModule::RUN_PARAM].setValue(1.0f);
+	m->process(Test::makeProcessArgs(frame++, sampleRate));
+	m->params[AhabModule::RUN_PARAM].setValue(0.0f);
+	m->process(Test::makeProcessArgs(frame++, sampleRate));
+	m->params[AhabModule::RUN_PARAM].setValue(1.0f);
+	m->process(Test::makeProcessArgs(frame++, sampleRate));
+	REQUIRE(m->clockPhase < 0.001f);
+
+	// An external clock edge also resets the phase accumulator.
+	for (int i = 0; i < 1000; ++i) {
+		m->process(Test::makeProcessArgs(frame++, sampleRate));
+	}
+	REQUIRE(m->clockPhase > 0.0f);
+	m->inputs[AhabModule::CLK_INPUT].channels = 1;
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(0.0f);
+	m->process(Test::makeProcessArgs(frame++, sampleRate));
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(10.0f);
+	m->process(Test::makeProcessArgs(frame++, sampleRate)); // edge → phase = 0
+	REQUIRE(m->clockPhase == 0.0f);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Clock output pulse width", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	float sampleRate = 44100.f;
+	int64_t frame = 0;
+	m->simRunning = false; // no BPM retriggers; pulse driven only by manual clock
+
+	// Step once → clkPulseGen.trigger(0.01) → 10ms CLK_OUTPUT pulse.
+	m->params[AhabModule::CLK_PARAM].setValue(0.0f);
+	m->process(Test::makeProcessArgs(frame++, sampleRate));
+	m->params[AhabModule::CLK_PARAM].setValue(1.0f);
+	m->process(Test::makeProcessArgs(frame++, sampleRate));
+	REQUIRE(m->outputs[AhabModule::CLK_OUTPUT].getVoltage() > 5.0f);
+
+	// ~5ms in, still high (10ms pulse).
+	for (int i = 0; i < 220; ++i) {
+		m->process(Test::makeProcessArgs(frame++, sampleRate));
+	}
+	REQUIRE(m->outputs[AhabModule::CLK_OUTPUT].getVoltage() > 5.0f);
+
+	// Past 10ms, the pulse has decayed to 0V.
+	for (int i = 0; i < 600; ++i) {
+		m->process(Test::makeProcessArgs(frame++, sampleRate));
+	}
+	REQUIRE(m->outputs[AhabModule::CLK_OUTPUT].getVoltage() < 1.0f);
+
 	Test::unregisterModule(m);
 	Test::destroyModule(m);
 }
@@ -552,17 +871,20 @@ TEST_CASE("Integration test - preset loading and simulation", "[Ahab]") {
 	// Setup mock MIDI output to capture generated events
 	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
 	
-	// Run simulation for steps to allow events to be generated
-	// The preset contains an Ahab pattern that should generate MIDI notes
-	for (int step = 0; step < 4 * 4 * 10; ++step) {
-		m->process({});
+	// Step the VM so the preset's ORCA pattern (a MIDI sequencer of ':'/'%' note
+	// operators driven by its clock/delay operators) actually runs and emits
+	// MIDI. The previous version pumped m->process({}) ~160 times, which at the
+	// default 44.1kHz sample rate never accumulates enough BPM clock phase for a
+	// single tick — so no MIDI ever fired and the only assertion
+	// (getMessageCount() >= 0) was trivially true.
+	for (int step = 0; step < 256; ++step) {
+		stepSim(m);
 	}
 	
-	// Verify that MIDI events were generated during simulation
-	// The exact number of notes depends on the pattern in the preset
-	REQUIRE(mockDevice->getMessageCount() >= 0); // At minimum, should have run without error
+	// Stepping the sequencer must produce real MIDI output.
+	REQUIRE(mockDevice->getMessageCount() > 0);
 	
-	// If MIDI notes were genserated, verify they are valid MIDI messages
+	// Verify every generated message is a valid note/CC/pitchbend event
 	for (size_t i = 0; i < mockDevice->getMessageCount(); ++i) {
 		const auto& msg = mockDevice->getMessage(i);
 		uint8_t status = msg.getStatus();
@@ -579,7 +901,6 @@ TEST_CASE("Integration test - preset loading and simulation", "[Ahab]") {
 		// For note messages, verify note number is valid
 		if (status == 0x9 || status == 0x8) {
 			uint8_t note = msg.getNote();
-			REQUIRE(note >= 0);
 			REQUIRE(note <= 127);
 		}
 	}

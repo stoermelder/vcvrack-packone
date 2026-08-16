@@ -921,3 +921,196 @@ TEST_CASE("MIDI output preserves the outgoing message channel", "[MIDI][Ahab]") 
 	Test::unregisterModule(m);
 	Test::destroyModule(m);
 }
+
+// MIDI edge cases: byte-level clamping/guards in the module's
+// MIDI routing that the happy-path tests above don't cover.
+
+TEST_CASE("MIDI Driver CC offset clamps at 127", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+
+	// midiCcOffset(96) + control(35) = 131 → clamped to 127.
+	m->midiCcOffset = 96;
+	{
+		Oevent_list olist;
+		oevent_list_init(&olist);
+		Oevent* ev = oevent_list_alloc_item(&olist);
+		ev->any.oevent_type = Oevent_type_midi_cc;
+		ev->midi_cc.channel = 0;
+		ev->midi_cc.control = 35;
+		ev->midi_cc.value = 64;
+		m->processEvents(&olist);
+		REQUIRE(mockDevice->getMessageCount() == 1);
+		REQUIRE(mockDevice->getMessage(0).bytes[1] == 127);
+		oevent_list_deinit(&olist);
+	}
+
+	// midiCcOffset(64) + control(100) = 164 → clamped to 127.
+	m->midiCcOffset = 64;
+	mockDevice->clear();
+	{
+		Oevent_list olist;
+		oevent_list_init(&olist);
+		Oevent* ev = oevent_list_alloc_item(&olist);
+		ev->any.oevent_type = Oevent_type_midi_cc;
+		ev->midi_cc.channel = 0;
+		ev->midi_cc.control = 100;
+		ev->midi_cc.value = 64;
+		m->processEvents(&olist);
+		REQUIRE(mockDevice->getMessageCount() == 1);
+		REQUIRE(mockDevice->getMessage(0).bytes[1] == 127);
+		oevent_list_deinit(&olist);
+	}
+
+	// midiCcOffset(64) + control(4) = 68 — below the clamp, unchanged.
+	mockDevice->clear();
+	{
+		Oevent_list olist;
+		oevent_list_init(&olist);
+		Oevent* ev = oevent_list_alloc_item(&olist);
+		ev->any.oevent_type = Oevent_type_midi_cc;
+		ev->midi_cc.channel = 0;
+		ev->midi_cc.control = 4;
+		ev->midi_cc.value = 64;
+		m->processEvents(&olist);
+		REQUIRE(mockDevice->getMessageCount() == 1);
+		REQUIRE(mockDevice->getMessage(0).bytes[1] == 68);
+		oevent_list_deinit(&olist);
+	}
+
+	cleanupMockMidiOutput(m, mockDevice);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI Driver note octave overflow stays in 7 bits", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+
+	// High but fitting: note F (5) + octave 9 → 113 (≤ 127, no wrap).
+	{
+		Oevent_list olist;
+		oevent_list_init(&olist);
+		Oevent* ev = oevent_list_alloc_item(&olist);
+		ev->any.oevent_type = Oevent_type_midi_note;
+		ev->midi_note.channel = 0;
+		ev->midi_note.octave = 9;
+		ev->midi_note.note = 5; // F
+		ev->midi_note.velocity = 100;
+		ev->midi_note.duration = 1;
+		m->processEvents(&olist);
+		REQUIRE(mockDevice->getMessageCount() == 1);
+		REQUIRE(mockDevice->getMessage(0).getNote() == 113);
+		oevent_list_deinit(&olist);
+		m->scheduledOffs.clear();
+		mockDevice->clear();
+	}
+
+	// Out of range: note 7 + octave 11 → 139 wraps via & 0x7f to 11.
+	{
+		Oevent_list olist;
+		oevent_list_init(&olist);
+		Oevent* ev = oevent_list_alloc_item(&olist);
+		ev->any.oevent_type = Oevent_type_midi_note;
+		ev->midi_note.channel = 0;
+		ev->midi_note.octave = 11;
+		ev->midi_note.note = 7;
+		ev->midi_note.velocity = 100;
+		ev->midi_note.duration = 1;
+		m->processEvents(&olist);
+		REQUIRE(mockDevice->getMessageCount() == 1);
+		REQUIRE(mockDevice->getMessage(0).getNote() == 11);
+		oevent_list_deinit(&olist);
+	}
+
+	cleanupMockMidiOutput(m, mockDevice);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI Driver velocity clamps to 7 bits", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+
+	// velocity 200 → 200 & 0x7f = 72.
+	Oevent_list olist;
+	oevent_list_init(&olist);
+	Oevent* ev = oevent_list_alloc_item(&olist);
+	ev->any.oevent_type = Oevent_type_midi_note;
+	ev->midi_note.channel = 0;
+	ev->midi_note.octave = 4;
+	ev->midi_note.note = 0;
+	ev->midi_note.velocity = 200;
+	ev->midi_note.duration = 1;
+	m->processEvents(&olist);
+	REQUIRE(mockDevice->getMessageCount() == 1);
+	REQUIRE(mockDevice->getMessage(0).getValue() == 72);
+	oevent_list_deinit(&olist);
+
+	cleanupMockMidiOutput(m, mockDevice);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI Driver duration-0 note is held when overwriteZeroNoteDuration is off", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+	m->overwriteZeroNoteDuration = false;
+
+	// Duration-0 note with the overwrite flag off: Note-On is sent but no
+	// note-off is scheduled (the note is intentionally held).
+	Oevent_list olist;
+	oevent_list_init(&olist);
+	Oevent* ev = oevent_list_alloc_item(&olist);
+	ev->any.oevent_type = Oevent_type_midi_note;
+	ev->midi_note.channel = 0;
+	ev->midi_note.octave = 4;
+	ev->midi_note.note = 0;
+	ev->midi_note.velocity = 100;
+	ev->midi_note.duration = 0;
+	m->processEvents(&olist);
+
+	REQUIRE(mockDevice->getMessageCount() == 1);
+	REQUIRE(mockDevice->getMessage(0).getStatus() == 0x9); // Note On
+	REQUIRE(m->scheduledOffs.empty()); // no note-off scheduled
+
+	oevent_list_deinit(&olist);
+	cleanupMockMidiOutput(m, mockDevice);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Ahab::Midi::sendToPort guards out-of-range device IDs", "[MIDI][Ahab]") {
+	pluginSettings.ahabMidiVirtualEnabled = true;
+	Ahab::Midi::init();
+
+	// Subscribe a mock input to port 0 to prove valid delivery works.
+	MockMidiVirtualInput* mockVirtualInput = setupMockVirtualMidiInput(0);
+
+	rack::midi::Message m;
+	m.setStatus(0x9);
+	m.setChannel(0);
+	m.setNote(60);
+	m.setValue(100);
+
+	// Out-of-range device IDs are ignored.
+	Ahab::Midi::sendToPort(-1, m);
+	Ahab::Midi::sendToPort(4, m);
+	REQUIRE(mockVirtualInput->getMessageCount() == 0);
+
+	// A valid device ID delivers the message.
+	Ahab::Midi::sendToPort(0, m);
+	REQUIRE(mockVirtualInput->getMessageCount() == 1);
+	REQUIRE(mockVirtualInput->getMessage(0).getStatus() == 0x9);
+	REQUIRE(mockVirtualInput->getMessage(0).getNote() == 60);
+
+	cleanupMockVirtualMidiInput(mockVirtualInput);
+}

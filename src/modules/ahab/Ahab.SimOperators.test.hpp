@@ -201,3 +201,386 @@ TEST_CASE("Successive E bang separation #426", "[AhabSim]") {
 	REQUIRE(buffer[7] == '*');
 	REQUIRE(buffer[8] == '.');
 }
+
+
+// End-to-end ORCA → MIDI output tests
+// These load an ORCA pattern into the sim, step the VM through the module, and
+// assert the resulting MIDI bytes on the mock device — the full VM → Oevent →
+// module → midiOutPort path. A bang ('*') is consumed when it fires, so the
+// patterns below are one-shot: the first tick emits, later ticks emit nothing.
+
+TEST_CASE("End-to-end MIDI note from ORCA ':' operator", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+	m->simRunning = false; // disable BPM auto-step; drive ticks explicitly
+
+	// ':' = MIDI note. Pattern args: channel '0', octave '4', note 'C' (=0),
+	// velocity '2' (→ 2*8-1 = 15), length '1'. Banged by the '*' below it.
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest(":04C21\n*.....", 0, 0, h, w, false) == true);
+	m->process({}); // drain the paste
+
+	// Tick 1: ':' fires → Note-On C4 + schedules a Note-Off in 1 tick.
+	stepSim(m);
+	REQUIRE(mockDevice->getMessageCount() == 1);
+	const auto& on = mockDevice->getMessage(0);
+	REQUIRE(on.getStatus() == 0x9);  // Note On
+	REQUIRE(on.getChannel() == 0);
+	REQUIRE(on.getNote() == 48);     // C4 = note 0 + octave 4*12
+	REQUIRE(on.getValue() == 15);    // velocity = index_of('2')*8 - 1
+
+	// Tick 2: the scheduled Note-Off fires; the consumed bang emits no new note.
+	stepSim(m);
+	REQUIRE(mockDevice->getMessageCount() == 2);
+	const auto& off = mockDevice->getMessage(1);
+	REQUIRE(off.getStatus() == 0x8);  // Note Off
+	REQUIRE(off.getChannel() == 0);
+	REQUIRE(off.getNote() == 48);
+	REQUIRE(off.getValue() == 0);
+
+	// Tick 3: nothing further.
+	stepSim(m);
+	REQUIRE(mockDevice->getMessageCount() == 2);
+
+	cleanupMockMidiOutput(m, mockDevice);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("End-to-end MIDI CC from ORCA '!' operator", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+	m->simRunning = false;
+
+	// '!' = MIDI CC. Pattern args: channel '0', control '4', value '2'
+	// (→ 2*127/35 = 7). Banged by the '*' below it.
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest("!042\n*...", 0, 0, h, w, false) == true);
+	m->process({});
+
+	stepSim(m);
+	REQUIRE(mockDevice->getMessageCount() == 1);
+	const auto& cc = mockDevice->getMessage(0);
+	REQUIRE(cc.getStatus() == 0xB);      // CC
+	REQUIRE(cc.getChannel() == 0);
+	REQUIRE(cc.bytes[1] == 68);          // midiCcOffset(64) + control(4)
+	REQUIRE(cc.getValue() == 7);         // index_of('2')*127/35
+
+	// One-shot: a second tick emits nothing more.
+	stepSim(m);
+	REQUIRE(mockDevice->getMessageCount() == 1);
+
+	cleanupMockMidiOutput(m, mockDevice);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("End-to-end MIDI pitchbend from ORCA '?' operator", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+	m->simRunning = false;
+
+	// '?' = MIDI pitchbend. Pattern args: channel '0', msb '2' (→ 7), lsb '4' (→ 14).
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest("?024\n*...", 0, 0, h, w, false) == true);
+	m->process({});
+
+	stepSim(m);
+	REQUIRE(mockDevice->getMessageCount() == 1);
+	const auto& pb = mockDevice->getMessage(0);
+	REQUIRE(pb.getStatus() == 0xE);      // Pitchbend
+	REQUIRE(pb.getChannel() == 0);
+	REQUIRE(pb.bytes[1] == 14);          // lsb = index_of('4')*127/35
+	REQUIRE(pb.bytes[2] == 7);           // msb = index_of('2')*127/35
+
+	cleanupMockMidiOutput(m, mockDevice);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("End-to-end MIDI note from monophonic ORCA '%' operator", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+	m->simRunning = false;
+
+	// '%' is the monophonic MIDI note operator — same args as ':'.
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest("%04C21\n*.....", 0, 0, h, w, false) == true);
+	m->process({});
+
+	stepSim(m);
+	REQUIRE(mockDevice->getMessageCount() == 1);
+	const auto& on = mockDevice->getMessage(0);
+	REQUIRE(on.getStatus() == 0x9);  // Note On
+	REQUIRE(on.getChannel() == 0);
+	REQUIRE(on.getNote() == 48);     // C4
+	REQUIRE(on.getValue() == 15);
+
+	stepSim(m);
+	REQUIRE(mockDevice->getMessageCount() == 2);
+	const auto& off = mockDevice->getMessage(1);
+	REQUIRE(off.getStatus() == 0x8);  // Note Off
+	REQUIRE(off.getNote() == 48);
+	REQUIRE(off.getValue() == 0);
+
+	cleanupMockMidiOutput(m, mockDevice);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+
+// End-to-end CV in/out tests through the '<' and '>' operators
+// These drive the operators through a loaded field + module jacks (the full
+// jack → readDspInput → '<' → field glyph, and field → '>' → writeDspOutput →
+// jack path), complementing the direct custom_vcvin/custom_vcvout tests above.
+
+TEST_CASE("End-to-end CV input via ORCA '<' operator", "[AhabSim][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	m->simRunning = false; // disable BPM auto-step; drive ticks explicitly
+
+	// '<' port '1' maps to input jack 0. Full-scale 10V over range [0,35]
+	// → value 35 → glyph 'z'. Banged by the '*' below it.
+	m->inputs[AhabModule::IN_INPUT + 0].channels = 1;
+	m->inputs[AhabModule::IN_INPUT + 0].setVoltage(10.0f);
+
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest(".<.1..\n.*....", 0, 0, h, w, false) == true);
+	m->process({});
+
+	stepSim(m);
+
+	Usz fh, fw;
+	m->sim->getDisplayBuffer(fh, fw);
+	Glyph const* buf = m->sim->getFieldBuffer();
+	REQUIRE(buf[1 * fw + 1] == 'z'); // result written directly below '<'
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("End-to-end CV input via ORCA '<' scales mid-range voltage", "[AhabSim][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	m->simRunning = false;
+
+	// 2.5V → round(2.5*3.5) = 9 over [0,35] → glyph '9'.
+	m->inputs[AhabModule::IN_INPUT + 0].channels = 1;
+	m->inputs[AhabModule::IN_INPUT + 0].setVoltage(2.5f);
+
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest(".<.1..\n.*....", 0, 0, h, w, false) == true);
+	m->process({});
+
+	stepSim(m);
+
+	Usz fh, fw;
+	m->sim->getDisplayBuffer(fh, fw);
+	Glyph const* buf = m->sim->getFieldBuffer();
+	REQUIRE(buf[1 * fw + 1] == '9');
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("End-to-end CV output via ORCA '>' numeric port", "[AhabSim][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	m->simRunning = false;
+
+	// '>' port '1' → output jack 0. value 6 in [0,12] → (6-0)/(12-0)*10 = 5V.
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest(">106C\n*.....", 0, 0, h, w, false) == true);
+	m->process({});
+
+	stepSim(m);
+	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(5.0f));
+
+	// Numeric port has no gate: the voltage persists on later ticks.
+	stepSim(m);
+	stepSim(m);
+	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(5.0f));
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("End-to-end CV gate via ORCA '>' letter port", "[AhabSim][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	m->simRunning = false;
+
+	// '>' port 'a' → output jack 0. Note 'C' (0) at octave 3 → (0+36)/12 = 3V,
+	// gate length 4 ticks.
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest(">a3C4\n*.....", 0, 0, h, w, false) == true);
+	m->process({});
+
+	// Tick 1: gate fires → 3V.
+	stepSim(m);
+	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(3.0f));
+
+	// Gate length 4: stays high for 3 more ticks, then drops to 0V on the 4th.
+	for (int i = 0; i < 3; ++i) {
+		stepSim(m);
+		REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(3.0f));
+	}
+	stepSim(m);
+	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 0].getVoltage() == 0.0f);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+
+
+// End-to-end UDP / OSC output tests
+// The ';' (UDP string) and '=' (OSC) operators are handled inside
+// AhabSim::step() (the module ignores these events), so these tests drive the
+// sim directly. Deterministic Oevent checks complement real loopback-socket
+// assertions (POSIX only). A bang ('*') is consumed when it fires, so the
+// patterns below send exactly one datagram on the first tick.
+
+TEST_CASE("ORCA ';' operator emits a udp_string event", "[AhabSim][UDP]") {
+	AhabSim sim;
+
+	// ';' = UDP string operator: sends the glyphs to its right.
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest(";HELLO\n*.....", 0, 0, h, w, true) == true);
+	sim.process();
+	sim.stepRequest();
+	sim.process();
+
+	REQUIRE(sim.getEventCount() == 1);
+	const Oevent* oe = &sim.getEvents()->buffer[0];
+	REQUIRE(oe->any.oevent_type == Oevent_type_udp_string);
+	REQUIRE(oe->udp_string.count == 5);
+	REQUIRE(std::string(oe->udp_string.chars, oe->udp_string.count) == "HELLO");
+}
+
+TEST_CASE("ORCA '=' operator emits an osc_ints event", "[AhabSim][UDP]") {
+	AhabSim sim;
+
+	// '=' = OSC operator: path glyph 'f', length 2, values 'B'(11) 'C'(12).
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest("=f2BC\n*....", 0, 0, h, w, true) == true);
+	sim.process();
+	sim.stepRequest();
+	sim.process();
+
+	REQUIRE(sim.getEventCount() == 1);
+	const Oevent* oe = &sim.getEvents()->buffer[0];
+	REQUIRE(oe->any.oevent_type == Oevent_type_osc_ints);
+	REQUIRE(oe->osc_ints.glyph == 'f');
+	REQUIRE(oe->osc_ints.count == 2);
+	REQUIRE(oe->osc_ints.numbers[0] == 11);
+	REQUIRE(oe->osc_ints.numbers[1] == 12);
+}
+
+// Loopback UDP receiver used to assert the actual datagrams the sim sends.
+#ifndef _WIN32
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+struct UdpReceiver {
+	int fd = -1;
+	uint16_t port = 0;
+
+	UdpReceiver() {
+		fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+		if (fd < 0) return;
+		struct sockaddr_in addr{};
+		addr.sin_family = AF_INET;
+		addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		addr.sin_port = 0; // ephemeral
+		if (::bind(fd, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+			::close(fd); fd = -1; return;
+		}
+		socklen_t len = sizeof(addr);
+		if (::getsockname(fd, (struct sockaddr*)&addr, &len) != 0) {
+			::close(fd); fd = -1; return;
+		}
+		port = ntohs(addr.sin_port);
+		// 1s receive timeout so recv never hangs the suite
+		struct timeval tv{1, 0};
+		::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	}
+
+	~UdpReceiver() {
+		if (fd >= 0) ::close(fd);
+	}
+
+	// Receive one datagram (up to cap bytes). Returns the byte count, or -1 on
+	// timeout / no datagram.
+	ssize_t recv(void* buf, size_t cap) {
+		if (fd < 0) return -1;
+		return ::recv(fd, buf, cap, 0);
+	}
+};
+
+TEST_CASE("End-to-end UDP datagram from ORCA ';' operator", "[AhabSim][UDP]") {
+	UdpReceiver rx;
+	REQUIRE(rx.fd >= 0); // loopback socket must be available
+
+	AhabSim sim;
+	sim.setUdpDestination("127.0.0.1", std::to_string(rx.port));
+
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest(";HELLO\n*.....", 0, 0, h, w, true) == true);
+	sim.process();
+	sim.stepRequest();
+	sim.process();
+
+	char buf[64];
+	ssize_t n = rx.recv(buf, sizeof(buf));
+	REQUIRE(n == 5);
+	REQUIRE(std::string(buf, (size_t)n) == "HELLO");
+}
+
+TEST_CASE("End-to-end OSC message from ORCA '=' operator", "[AhabSim][UDP]") {
+	UdpReceiver rx;
+	REQUIRE(rx.fd >= 0);
+
+	AhabSim sim;
+	sim.setOscDestination("127.0.0.1", std::to_string(rx.port));
+
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest("=f2BC\n*....", 0, 0, h, w, true) == true);
+	sim.process();
+	sim.stepRequest();
+	sim.process();
+
+	char buf[64];
+	ssize_t n = rx.recv(buf, sizeof(buf));
+	REQUIRE(n == 16);
+
+	// OSC address "/f\0\0" + typetag ",ii\0" + two big-endian int32s (11, 12)
+	REQUIRE(memcmp(buf, "/f\0\0", 4) == 0);
+	REQUIRE(memcmp(buf + 4, ",ii\0", 4) == 0);
+	uint32_t v0, v1;
+	memcpy(&v0, buf + 8, 4); v0 = ntohl(v0);
+	memcpy(&v1, buf + 12, 4); v1 = ntohl(v1);
+	REQUIRE(v0 == 11);
+	REQUIRE(v1 == 12);
+}
+#endif // !_WIN32
+
+TEST_CASE("UDP/OSC output is safe with no destination configured", "[AhabSim][UDP]") {
+	// No destination: sendUdpDatagram/sendOscInts fall back to 127.0.0.1:49161.
+	// With nothing listening there the datagram is dropped without crashing.
+	AhabSim sim;
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest(";HELLO\n*.....", 0, 0, h, w, true) == true);
+	sim.process();
+	REQUIRE_NOTHROW([&]{ sim.stepRequest(); sim.process(); }());
+}
