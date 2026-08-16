@@ -53,21 +53,37 @@ struct CableAccess {
 	}
 };
 
-// The production implementation (RackCableAccess) lives in vcv_cables.cpp; this header only
-// declares the swappable interface and the one-definition access pointer.
+// The production implementation. Only the declaration lives here — bodies stay in cables.cpp
+// so this header need not pull in modules.hpp/history.hpp. It is declared here, rather than
+// being private to the .cpp, so a release build's call sites see the concrete type and
+// devirtualize; `final` is what lets the compiler prove no further override exists.
+struct RackCableAccess final : CableAccess {
+	using CableAccess::removeCable;  // keep the port-pair overload visible beside the object one
+	CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t inputModuleId, int inputPortId) const override;
+	void removeCable(CableWidget* cw, bool addToHistory) override;
+	const std::vector<CableWidget*> getCompleteCables() const override;
+	void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory, NVGcolor color = color::BLACK_TRANSPARENT) override;
+};
+// The shared production instance, defined in cables.cpp.
+extern RackCableAccess rackAccess;
 
-// The active access. Null in production → the shared RackCableAccess is used. Tests point
-// this at a mock registry (see SpliceKit.test.hpp).
-// This MUST have external linkage with exactly one definition (in vcv_cables.cpp), not the
-// `static` per-TU form.
+
+// The mockable seam is keyed on DEBUGPLUGIN rather than a flag of its own: `make
+// DEBUGPLUGIN=1` and the test binaries (plugin-test.mk) both define it, so one locally-built
+// dylib serves debugging and the test suite alike. This is the contract the other five vcv
+// layers follow; vcv/build.cpp carries a sentinel that catches a mismatched dylib.
+#ifdef DEBUGPLUGIN
+// Null by default → `rackAccess` is used. Tests point this at a mock registry per test (see
+// SpliceKit.test.hpp / CableScaffold). MUST have external linkage with exactly one
+// definition (in cables.cpp), not the `static` per-TU form.
 extern CableAccess* cableAccess;
-
 CableAccess& cableAccessFor();
+#else
+// Naming the concrete `rackAccess` object gives every wrapper below a known dynamic type, so
+// the calls devirtualize and the cross-TU call to cableAccessFor() disappears entirely.
+#define cableAccessFor() ::StoermelderPackOne::vcv::rackAccess
+#endif
 
-
-// Thin dispatch wrappers — keep the original free-function API (findCable/removeCable/
-// addCableToPort/getCompleteCables) so existing call sites (Splice-Kit, PanicRoom) are
-// unchanged; every operation now routes through the active CableAccess.
 
 P1_UNUSED
 static CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t inputModuleId, int inputPortId) {

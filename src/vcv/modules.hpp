@@ -56,22 +56,31 @@ struct ModuleAccess {
 	virtual json_t* toJson(int64_t moduleId) const { return nullptr; }
 };
 
-// The production implementation (RackModuleAccess) lives in vcv_modules.cpp; this header
-// only declares the swappable interface and the one-definition access pointer.
+// The production implementation; bodies in the .cpp. Declared here — and `final` — so a
+// release build's call sites see the concrete type and devirtualize. See cables.hpp.
+struct RackModuleAccess final : ModuleAccess {
+	ModuleWidget* getModuleWidget(int64_t moduleId) const override;
+	std::vector<ModuleWidget*> getModuleWidgets() const override;
+	int64_t addModule(const ModuleRef& ref, Vec pos) override;
+	void removeModule(int64_t moduleId) override;
+	void setModuleWidgetPos(int64_t moduleId, Vec pos) override;
+	void applyPreset(int64_t moduleId, json_t* moduleJ) override;
+	json_t* toJson(int64_t moduleId) const override;
+};
+// The shared production instance, defined in the .cpp.
+extern RackModuleAccess rackModuleAccess;
 
-// The active access. Null in production → the shared RackModuleAccess is used. Tests point
-// this at a mock registry.
-// This MUST have external linkage with exactly one definition (in vcv_modules.cpp), not the
-// `static` per-TU form.
+
+// Debug builds keep the mockable seam; release resolves the access statically. See
+// cables.hpp for why, and for the DEBUGPLUGIN contract.
+#ifdef DEBUGPLUGIN
+// Null by default -> the shared instance above is used. Tests point this at a mock.
 extern ModuleAccess* moduleAccess;
-
 ModuleAccess& moduleAccessFor();
+#else
+#define moduleAccessFor() ::StoermelderPackOne::vcv::rackModuleAccess
+#endif
 
-
-// Thin dispatch wrappers — keep the original free-function spelling (getModuleWidget/
-// getModule/addModule/removeModule/setModuleWidgetPos/applyPreset/...) so future call sites can
-// route through the active ModuleAccess without change; every operation now goes through
-// the swappable layer.
 
 P1_UNUSED
 static ModuleWidget* getModuleWidget(int64_t moduleId) {

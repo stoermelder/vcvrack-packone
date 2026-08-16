@@ -38,20 +38,32 @@ struct FileAccess {
 	virtual void setLastDir(const std::string& key, const std::string& dir) {}
 };
 
-// The active access. Null in production → the shared RealFileAccess is used. Tests point
-// this at a mock.
-// This MUST have external linkage with exactly one definition (in vcv_fs.cpp), not the
-// `static` per-TU form.
-extern FileAccess* fileAccess;
 
+// The production implementation; bodies in the .cpp. Declared here — and `final` — so a
+// release build's call sites see the concrete type and devirtualize. See cables.hpp.
+struct RealFileAccess final : FileAccess {
+	bool read(const std::string& path, std::string& data) const override;
+	bool write(const std::string& path, const std::string& data) override;
+	bool exists(const std::string& path) const override;
+	std::string getLastDir(const std::string& key) const override;
+	void setLastDir(const std::string& key, const std::string& dir) override;
+};
+// The shared production instance, defined in the .cpp.
+extern RealFileAccess realFileAccess;
+
+
+// Debug builds keep the mockable seam; release resolves the access statically. See
+// cables.hpp for why, and for the DEBUGPLUGIN contract.
+#ifdef DEBUGPLUGIN
+// Null by default -> the shared instance above is used. Tests point this at a mock.
+extern FileAccess* fileAccess;
 FileAccess& fileAccessFor();
+#else
+#define fileAccessFor() ::StoermelderPackOne::vcv::realFileAccess
+#endif
 
 
 namespace fs {
-
-// Thin dispatch wrappers — keep the original free-function spelling (read/write/exists/
-// getLastDir/setLastDir) so call sites can route through the active FileAccess without
-// change; every operation now goes through the swappable layer.
 
 P1_UNUSED
 static bool read(const std::string& path, std::string& data) {
