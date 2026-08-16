@@ -30,7 +30,7 @@ SOUNDTOUCH_SOURCES = \
 	dep/soundtouch/source/SoundTouch/sse_optimized.cpp
 
 # Add .cpp files to the build
-SOURCES += $(wildcard src/*.cpp src/**/**/*.cpp)
+SOURCES += $(wildcard src/*.cpp src/**/*.cpp src/**/**/*.cpp)
 # Exclude test files from the main build
 SOURCES := $(filter-out src/test/%.cpp,$(SOURCES))
 SOURCES := $(filter-out %.test.cpp,$(SOURCES))
