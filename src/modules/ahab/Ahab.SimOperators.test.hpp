@@ -443,10 +443,11 @@ TEST_CASE("End-to-end CV gate via ORCA '>' letter port", "[AhabSim][Ahab]") {
 
 
 // End-to-end UDP / OSC output tests
-// The ';' (UDP string) and '=' (OSC) operators are handled inside
-// AhabSim::step() (the module ignores these events), so these tests drive the
-// sim directly. Deterministic Oevent checks complement real loopback-socket
-// assertions (POSIX only). A bang ('*') is consumed when it fires, so the
+// The ';' (UDP string) and '=' (OSC) operators emit events the sim exposes via
+// getEvents() (checked deterministically below) and the module routes to its
+// AhabUdpOutput. The end-to-end tests drive the operators through a loaded
+// field + module and capture the sends with the injected recording fake — no
+// sockets, fully deterministic. A bang ('*') is consumed when it fires, so the
 // patterns below send exactly one datagram on the first tick.
 
 TEST_CASE("ORCA ';' operator emits a udp_string event", "[AhabSim][UDP]") {
@@ -485,102 +486,113 @@ TEST_CASE("ORCA '=' operator emits an osc_ints event", "[AhabSim][UDP]") {
 	REQUIRE(oe->osc_ints.numbers[1] == 12);
 }
 
-// Loopback UDP receiver used to assert the actual datagrams the sim sends.
-#ifndef _WIN32
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+// End-to-end through the module, captured by the injected recording fake: the
+// full ORCA ';'/'=' operator → sim event → module → AhabUdpOutput path with no
+// sockets (constructor injection — Test::createModule can't inject).
+TEST_CASE("End-to-end UDP datagram from ORCA ';' operator", "[Ahab][UDP]") {
+	RecordingUdpOutput* fake = new RecordingUdpOutput();
+	AhabModule* m = createModuleWithUdp(fake);
+	Test::registerModule(m);
+	m->simRunning = false; // disable BPM auto-step; drive ticks explicitly
 
-struct UdpReceiver {
-	int fd = -1;
-	uint16_t port = 0;
-
-	UdpReceiver() {
-		fd = ::socket(AF_INET, SOCK_DGRAM, 0);
-		if (fd < 0) return;
-		struct sockaddr_in addr{};
-		addr.sin_family = AF_INET;
-		addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		addr.sin_port = 0; // ephemeral
-		if (::bind(fd, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
-			::close(fd); fd = -1; return;
-		}
-		socklen_t len = sizeof(addr);
-		if (::getsockname(fd, (struct sockaddr*)&addr, &len) != 0) {
-			::close(fd); fd = -1; return;
-		}
-		port = ntohs(addr.sin_port);
-		// 1s receive timeout so recv never hangs the suite
-		struct timeval tv{1, 0};
-		::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	}
-
-	~UdpReceiver() {
-		if (fd >= 0) ::close(fd);
-	}
-
-	// Receive one datagram (up to cap bytes). Returns the byte count, or -1 on
-	// timeout / no datagram.
-	ssize_t recv(void* buf, size_t cap) {
-		if (fd < 0) return -1;
-		return ::recv(fd, buf, cap, 0);
-	}
-};
-
-TEST_CASE("End-to-end UDP datagram from ORCA ';' operator", "[AhabSim][UDP]") {
-	UdpReceiver rx;
-	REQUIRE(rx.fd >= 0); // loopback socket must be available
-
-	AhabSim sim;
-	sim.setUdpDestination("127.0.0.1", std::to_string(rx.port));
-
+	// ';' = UDP string operator: sends the glyphs to its right ("HELLO").
 	Usz h, w;
-	REQUIRE(sim.loadRectFromOrcaRequest(";HELLO\n*.....", 0, 0, h, w, true) == true);
-	sim.process();
-	sim.stepRequest();
-	sim.process();
+	REQUIRE(m->sim->loadRectFromOrcaRequest(";HELLO\n*.....", 0, 0, h, w, false) == true);
+	m->process({}); // drain the paste
 
-	char buf[64];
-	ssize_t n = rx.recv(buf, sizeof(buf));
-	REQUIRE(n == 5);
-	REQUIRE(std::string(buf, (size_t)n) == "HELLO");
+	// One tick: the ';' operator sends its string once (the bang is consumed).
+	stepSim(m);
+	REQUIRE(fake->udpDatagrams.size() == 1);
+	REQUIRE(std::string(fake->udpDatagrams[0].begin(), fake->udpDatagrams[0].end()) == "HELLO");
+
+	// A second tick emits nothing more.
+	stepSim(m);
+	REQUIRE(fake->udpDatagrams.size() == 1);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m); // the module owns + deletes the fake
 }
 
-TEST_CASE("End-to-end OSC message from ORCA '=' operator", "[AhabSim][UDP]") {
-	UdpReceiver rx;
-	REQUIRE(rx.fd >= 0);
+TEST_CASE("End-to-end OSC message from ORCA '=' operator", "[Ahab][UDP]") {
+	RecordingUdpOutput* fake = new RecordingUdpOutput();
+	AhabModule* m = createModuleWithUdp(fake);
+	Test::registerModule(m);
+	m->simRunning = false;
 
-	AhabSim sim;
-	sim.setOscDestination("127.0.0.1", std::to_string(rx.port));
-
+	// '=' = OSC operator: path glyph 'f', length 2, values 'B'(11) 'C'(12).
 	Usz h, w;
-	REQUIRE(sim.loadRectFromOrcaRequest("=f2BC\n*....", 0, 0, h, w, true) == true);
-	sim.process();
-	sim.stepRequest();
-	sim.process();
+	REQUIRE(m->sim->loadRectFromOrcaRequest("=f2BC\n*....", 0, 0, h, w, false) == true);
+	m->process({});
 
-	char buf[64];
-	ssize_t n = rx.recv(buf, sizeof(buf));
-	REQUIRE(n == 16);
+	// One tick: the '=' operator sends "/f" with ints 11, 12 (index_of of
+	// 'B'/'C'). The module builds the OSC address as {'/', glyph, '\0'} → "/f",
+	// which oosc_send_int32s pads to the 4-byte OSC address "/f\0\0".
+	stepSim(m);
+	REQUIRE(fake->oscInts.size() == 1);
+	REQUIRE(fake->oscInts[0].first == std::string("/f"));
+	REQUIRE(fake->oscInts[0].second.size() == 2);
+	REQUIRE(fake->oscInts[0].second[0] == 11);
+	REQUIRE(fake->oscInts[0].second[1] == 12);
 
-	// OSC address "/f\0\0" + typetag ",ii\0" + two big-endian int32s (11, 12)
-	REQUIRE(memcmp(buf, "/f\0\0", 4) == 0);
-	REQUIRE(memcmp(buf + 4, ",ii\0", 4) == 0);
-	uint32_t v0, v1;
-	memcpy(&v0, buf + 8, 4); v0 = ntohl(v0);
-	memcpy(&v1, buf + 12, 4); v1 = ntohl(v1);
-	REQUIRE(v0 == 11);
-	REQUIRE(v1 == 12);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
 }
-#endif // !_WIN32
 
-TEST_CASE("UDP/OSC output is safe with no destination configured", "[AhabSim][UDP]") {
-	// No destination: sendUdpDatagram/sendOscInts fall back to 127.0.0.1:49161.
+TEST_CASE("UDP/OSC output is safe with no destination configured", "[Ahab][UDP]") {
+	// No destination: the module's real output falls back to 127.0.0.1:49161.
 	// With nothing listening there the datagram is dropped without crashing.
-	AhabSim sim;
+	AhabModule* m = Test::createModule<AhabModule>("Ahab"); // real output
+	Test::registerModule(m);
+	m->simRunning = false;
+
 	Usz h, w;
-	REQUIRE(sim.loadRectFromOrcaRequest(";HELLO\n*.....", 0, 0, h, w, true) == true);
-	sim.process();
-	REQUIRE_NOTHROW([&]{ sim.stepRequest(); sim.process(); }());
+	REQUIRE(m->sim->loadRectFromOrcaRequest(";HELLO\n*.....", 0, 0, h, w, false) == true);
+	m->process({});
+	REQUIRE_NOTHROW([&]{ stepSim(m); }());
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+
+// AhabOoscUdpOutput destination configuration and validation (direct, no sockets).
+TEST_CASE("UDP destination configuration", "[AhabUdp]") {
+	AhabOoscUdpOutput out;
+	
+	out.setUdpDestination("192.168.1.1", "8000");
+	REQUIRE(out.getUdpAddress() == "192.168.1.1");
+	REQUIRE(out.getUdpPort() == "8000");
+	
+	// Test with whitespace (should be trimmed)
+	out.setUdpDestination("  10.0.0.1  ", "  9000  ");
+	REQUIRE(out.getUdpAddress() == "10.0.0.1");
+	REQUIRE(out.getUdpPort() == "9000");
+}
+
+TEST_CASE("OSC destination configuration", "[AhabUdp]") {
+	AhabOoscUdpOutput out;
+	
+	out.setOscDestination("localhost", "9001");
+	REQUIRE(out.getOscAddress() == "localhost");
+	REQUIRE(out.getOscPort() == "9001");
+	
+	// Test with whitespace (should be trimmed)
+	out.setOscDestination("  127.0.0.1  ", "  9002  ");
+	REQUIRE(out.getOscAddress() == "127.0.0.1");
+	REQUIRE(out.getOscPort() == "9002");
+}
+
+TEST_CASE("Invalid port numbers rejected", "[AhabUdp]") {
+	AhabOoscUdpOutput out;
+	
+	out.setUdpDestination("127.0.0.1", "8000");
+	REQUIRE(out.getUdpPort() == "8000");
+	
+	// Try to set invalid port (should be ignored)
+	out.setUdpDestination("127.0.0.1", "invalid");
+	REQUIRE(out.getUdpPort() == "8000"); // Should remain unchanged
+	
+	// Try to set out-of-range port
+	out.setUdpDestination("127.0.0.1", "99999");
+	REQUIRE(out.getUdpPort() == "8000"); // Should remain unchanged
 }

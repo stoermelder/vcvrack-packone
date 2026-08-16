@@ -8,38 +8,8 @@
 #include <sstream>
 #include <algorithm>
 
-extern "C" {
-	#include <orca-c/osc_out.h>
-}
-
 namespace StoermelderPackOne {
 namespace Ahab {
-
-static inline void trimStr(std::string &s) {
-	// left
-	size_t i = 0;
-	while (i < s.size() && std::isspace((unsigned char)s[i])) ++i;
-	s.erase(0, i);
-	// right
-	if (!s.empty()) {
-		size_t j = s.size() - 1;
-		while (j != (size_t)-1 && std::isspace((unsigned char)s[j])) --j;
-		s.erase(j + 1);
-	}
-}
-
-static inline bool isValidPort(const std::string &s) {
-	if (s.empty()) return true;
-	for (char c : s) if (!std::isdigit((unsigned char)c)) return false;
-	long p = 0;
-	try { p = std::stol(s); } catch (...) { return false; }
-	return (p >= 1 && p <= 65535);
-}
-
-static inline bool containsWhitespace(const std::string &s) {
-	for (char c : s) if (std::isspace((unsigned char)c)) return true;
-	return false;
-}
 
 static void mbuf_uninit_mark(Mark* mbr, Usz height, Usz width) {
 	for (Usz y = 0; y < height; ++y) {
@@ -126,9 +96,6 @@ AhabSim::~AhabSim() {
 	oevent_list_deinit(&oevent_list_);
 	mbuf_reusable_deinit(&mbuf_);
 	field_deinit(&field_);
-
-	// Clean up UDP device if created
-	destroyUdpDev();
 }
 
 // UI thread operation - no locking needed (single UI thread assumed)
@@ -141,12 +108,6 @@ json_t* AhabSim::toJson() const {
 	// Other properties
 	json_object_set_new(j, "tick", json_integer((int)tick_number_.load()));
 	json_object_set_new(j, "random_seed", json_integer((int)random_seed_));
-	// UDP settings persisted with the sim
-	json_object_set_new(j, "udpAddress", json_string(udpAddress_.c_str()));
-	json_object_set_new(j, "udpPort", json_string(udpPort_.c_str()));
-	// OSC settings persisted with the sim
-	json_object_set_new(j, "oscAddress", json_string(oscAddress_.c_str()));
-	json_object_set_new(j, "oscPort", json_string(oscPort_.c_str()));
 	return j;
 }
 
@@ -180,26 +141,6 @@ void AhabSim::fromJson(json_t* rootJ) {
 	if (tickJ) tick_number_.store((Usz)json_integer_value(tickJ));
 	json_t* rsJ = json_object_get(rootJ, "random_seed");
 	if (rsJ) random_seed_ = (Usz)json_integer_value(rsJ);
-	// Restore UDP settings if present
-	json_t* addrJ = json_object_get(rootJ, "udpAddress");
-	json_t* portJ = json_object_get(rootJ, "udpPort");
-	std::string addr;
-	std::string port;
-	if (addrJ && json_is_string(addrJ)) addr = json_string_value(addrJ);
-	if (portJ && json_is_string(portJ)) port = json_string_value(portJ);
-	if (!addr.empty() || !port.empty()) {
-		setUdpDestination(addr, port);
-	}
-	// Restore OSC settings if present
-	json_t* oscAddrJ = json_object_get(rootJ, "oscAddress");
-	json_t* oscPortJ = json_object_get(rootJ, "oscPort");
-	std::string oscAddr;
-	std::string oscPort;
-	if (oscAddrJ && json_is_string(oscAddrJ)) oscAddr = json_string_value(oscAddrJ);
-	if (oscPortJ && json_is_string(oscPortJ)) oscPort = json_string_value(oscPortJ);
-	if (!oscAddr.empty() || !oscPort.empty()) {
-		setOscDestination(oscAddr, oscPort);
-	}
 }
 
 // UI thread operation - load file into a temporary buffer, then schedule a ReplaceField command
@@ -775,39 +716,6 @@ void AhabSim::step() {
 	orca_run(field_.buffer, mbuf_.buffer, field_.height, field_.width, t, &oevent_list_, random_seed_);
 	tick_number_.fetch_add(1, std::memory_order_relaxed);
 
-	// Handle OSC and UDP events directly in the sim so they don't need to be
-	// processed by the module layer.
-	for (Usz ei = 0; ei < oevent_list_.count; ++ei) {
-		Oevent const *oe = &oevent_list_.buffer[ei];
-		switch ((Oevent_types)oe->any.oevent_type) {
-			case Oevent_type_osc_ints: {
-				Oevent_osc_ints const *eo = &oe->osc_ints;
-				// Build OSC address from configured prefix + glyph
-				std::string addr = {'/', eo->glyph, '\0'};
-				if (eo->count > 0) {
-					I32 vals[Oevent_osc_int_count];
-					for (Usz j = 0; j < (Usz)eo->count; ++j) vals[j] = (I32)eo->numbers[j];
-					sendOscInts(addr.c_str(), vals, (Usz)eo->count);
-				} 
-				else {
-					sendOscInts(addr.c_str(), nullptr, 0);
-				}
-				break;
-			}
-			case Oevent_type_udp_string: {
-				Oevent_udp_string const *ud = &oe->udp_string;
-				if (ud && ud->count > 0) {
-					sendUdpDatagram(ud->chars, (Usz)ud->count);
-				}
-				break;
-			}
-			default: {
-				// handled by module layer
-				break;
-			}
-		}
-	}
-
 	// Call the callback without holding any locks
 	if (ui_tick_callback_ptr) ui_tick_callback_ptr(&field_);
 	if (dsp_tick_callback_ptr) dsp_tick_callback_ptr(&oevent_list_);
@@ -878,78 +786,6 @@ void AhabSim::process() {
 
 	if (ui_tick_callback_ptr) ui_tick_callback_ptr(&field_);
 }
-
-// UDP helper: ensure device, send, destroy
-bool AhabSim::ensureUdpDev(const char* addr, const char* port) {
-	if (udp_dev_) return true;
-	if (oosc_dev_create_udp(&udp_dev_, addr, port) != Oosc_udp_create_error_ok) {
-		udp_dev_ = nullptr;
-		return false;
-	}
-	// store the destination
-	udpAddress_ = addr ? addr : std::string();
-	udpPort_ = port ? port : std::string();
-	return true;
-}
-
-void AhabSim::destroyUdpDev() {
-	if (udp_dev_) {
-		oosc_dev_destroy(udp_dev_);
-		udp_dev_ = nullptr;
-	}
-}
-
-
-void AhabSim::setUdpDestination(const std::string& address, const std::string& port) {
-	std::string newAddr = address;
-	std::string newPort = port;
-	trimStr(newAddr);
-	trimStr(newPort);
-	if (!isValidPort(newPort)) return;
-	if (!newAddr.empty() && containsWhitespace(newAddr)) return;
-
-	udpAddress_ = newAddr;
-	udpPort_ = newPort;
-	destroyUdpDev();
-}
-
-void AhabSim::sendUdpDatagram(const char* data, Usz size) {
-	// If the sim has a configured destination, use it; otherwise try defaults
-	if (!udp_dev_) {
-		if (!udpAddress_.empty()) {
-			if (!ensureUdpDev(udpAddress_.c_str(), udpPort_.c_str())) return;
-		} else {
-			if (!ensureUdpDev("127.0.0.1", "49161")) return;
-		}
-	}
-	oosc_send_datagram(udp_dev_, data, size);
-}
-
-void AhabSim::setOscDestination(const std::string& address, const std::string& port) {
-	std::string newAddr = address;
-	std::string newPort = port;
-	trimStr(newAddr);
-	trimStr(newPort);
-	if (!isValidPort(newPort)) return;
-	if (!newAddr.empty() && containsWhitespace(newAddr)) return;
-
-	oscAddress_ = newAddr;
-	oscPort_ = newPort;
-	destroyUdpDev();
-}
-
-void AhabSim::sendOscInts(const char* osc_path, I32 const* vals, Usz count) {
-	// Ensure UDP device exists (respect configured destination or use defaults)
-	if (!udp_dev_) {
-		if (!oscAddress_.empty()) {
-			if (!ensureUdpDev(oscAddress_.c_str(), oscPort_.c_str())) return;
-		} else {
-			if (!ensureUdpDev("127.0.0.1", "49161")) return;
-		}
-	}
-	oosc_send_int32s(udp_dev_, osc_path, vals, count);
-}
-
 
 // Callback function for operator '<' to read CV port value
 extern "C" Usz custom_vcvin(void* ptr, Usz port_num, Usz a, Usz b) {

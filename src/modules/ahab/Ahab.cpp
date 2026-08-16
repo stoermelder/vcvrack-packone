@@ -5,14 +5,12 @@
 #include "../../ui/FocusMode.hpp"
 #include "orca_examples.hpp"
 #include "AhabSim.hpp"
+#include "AhabUdpOutput.hpp"
 #include "AhabMidiDriver.hpp"
 #include "AhabRenderer.hpp"
 #include "AhabRandomizer.hpp"
 #include <osdialog.h>
-
-extern "C" {
-	#include <orca-c/osc_out.h>
-}
+#include <memory>
 
 namespace StoermelderPackOne {
 namespace Ahab {
@@ -51,6 +49,9 @@ struct AhabModule : Module {
 	bool simRunning = true;
 	bool simRunToggleRequest = false;
 
+	// UDP/OSC output transport (real socket by default; tests inject a fake).
+	std::unique_ptr<AhabUdpOutput> udpOutput;
+
 	// Timing for simulation steps
 	float clockPhase = 0.0f;  // Phase accumulator for timing
 
@@ -87,7 +88,12 @@ struct AhabModule : Module {
 
 	dsp::ClockDivider lightDivider;
 
-	AhabModule() {
+	// Default constructor: owns a real socket-backed UDP/OSC output.
+	AhabModule() : AhabModule(new AhabOoscUdpOutput()) {}
+
+	// Injection constructor: takes ownership of the supplied output (tests pass
+	// a recording fake).
+	AhabModule(AhabUdpOutput* udpOutput) {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(BPM_PARAM, 30.0, 300.0, 120.0, "BPM");
@@ -109,6 +115,8 @@ struct AhabModule : Module {
 		sim->setDspOutputWriter(std::bind(&AhabModule::writeDspOutput, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 		sim->setDspResetCallback(std::bind(&AhabModule::flushNotes, this));
 		
+		this->udpOutput = std::unique_ptr<AhabUdpOutput>(udpOutput);
+
 		ResetEvent e;
 		onReset(e);
 	}
@@ -276,10 +284,27 @@ struct AhabModule : Module {
 						sendMidiMessage(m);
 						break;
 					}
-					case Oevent_type_osc_ints:
-					case Oevent_type_udp_string:
-						// OSC and UDP events are handled inside AhabSim::step()
+					case Oevent_type_osc_ints: {
+						Oevent_osc_ints const* eo = &oe->osc_ints;
+						// Build OSC address from configured prefix + glyph
+						std::string addr = {'/', eo->glyph, '\0'};
+						if (eo->count > 0) {
+							I32 vals[Oevent_osc_int_count];
+							for (Usz j = 0; j < (Usz)eo->count; ++j) vals[j] = (I32)eo->numbers[j];
+							udpOutput->sendOscInts(addr.c_str(), vals, (Usz)eo->count);
+						}
+						else {
+							udpOutput->sendOscInts(addr.c_str(), nullptr, 0);
+						}
 						break;
+					}
+					case Oevent_type_udp_string: {
+						Oevent_udp_string const* ud = &oe->udp_string;
+						if (ud && ud->count > 0) {
+							udpOutput->sendUdpDatagram(ud->chars, (Usz)ud->count);
+						}
+						break;
+					}
 				}
 			}
 		}
@@ -350,7 +375,9 @@ struct AhabModule : Module {
 		json_object_set_new(rootJ, "midiOutEnabled", json_boolean(midiOutEnabled));
 		json_object_set_new(rootJ, "midiOutPort", midiOutPort.toJson());
 		json_object_set_new(rootJ, "midiCcOffset", json_integer(midiCcOffset));
-		json_object_set_new(rootJ, "sim", sim->toJson());
+		json_t* simJ = sim->toJson();
+		udpOutput->toJson(simJ); // adds the four destination keys into simJ
+		json_object_set_new(rootJ, "sim", simJ); // steals simJ's reference
 		json_object_set_new(rootJ, "simRunning", json_boolean(simRunning));
 		json_object_set_new(rootJ, "overwriteZeroNoteDuration", json_boolean(overwriteZeroNoteDuration));
 		json_object_set_new(rootJ, "gridStepCol", json_integer(gridStepCol));
@@ -371,7 +398,10 @@ struct AhabModule : Module {
 		json_t* midiCcOffsetJ = json_object_get(rootJ, "midiCcOffset");
 		if (midiCcOffsetJ) midiCcOffset = (uint8_t)json_integer_value(midiCcOffsetJ);
 		json_t* simJ = json_object_get(rootJ, "sim");
-		if (simJ && json_is_object(simJ)) sim->fromJson(simJ);
+		if (simJ && json_is_object(simJ)) {
+			sim->fromJson(simJ);
+			udpOutput->fromJson(simJ);
+		}
 		json_t* simRunningJ = json_object_get(rootJ, "simRunning");
 		if (simRunningJ) simRunning = json_boolean_value(simRunningJ);
 		json_t* overwriteZeroNoteDurationJ = json_object_get(rootJ, "overwriteZeroNoteDuration");
@@ -1405,22 +1435,22 @@ struct AhabSimWidget : OpaqueWidget {
 		}));
 
 		menu->addChild(createSubmenuItem("UDP", "", [this](ui::Menu* m) {
-			auto* addrField = Rack::createTextField(module->sim->getUdpAddress(), "Address");
+			auto* addrField = Rack::createTextField(module->udpOutput->getUdpAddress(), "Address");
 			m->addChild(addrField);
-			auto* portField = Rack::createTextField(module->sim->getUdpPort(), "Port");
+			auto* portField = Rack::createTextField(module->udpOutput->getUdpPort(), "Port");
 			m->addChild(portField);
 			m->addChild(createMenuItem("Apply", "", [this, addrField, portField]() { 
-				module->sim->setUdpDestination(addrField->text, portField->text); 
+				module->udpOutput->setUdpDestination(addrField->text, portField->text); 
 			}));
 		}));
 
 		menu->addChild(createSubmenuItem("OSC", "", [this](ui::Menu* m) {
-			auto* addrField = Rack::createTextField(module->sim->getOscAddress(), "Address");
+			auto* addrField = Rack::createTextField(module->udpOutput->getOscAddress(), "Address");
 			m->addChild(addrField);
-			auto* portField = Rack::createTextField(module->sim->getOscPort(), "Port");
+			auto* portField = Rack::createTextField(module->udpOutput->getOscPort(), "Port");
 			m->addChild(portField);
 			m->addChild(createMenuItem("Apply", "", [this, addrField, portField]() { 
-				module->sim->setOscDestination(addrField->text, portField->text); 
+				module->udpOutput->setOscDestination(addrField->text, portField->text); 
 			}));
 		}));
 
