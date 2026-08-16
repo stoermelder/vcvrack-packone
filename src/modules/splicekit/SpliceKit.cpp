@@ -1110,16 +1110,27 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	void processSceneLinkMaster() {
 		assert(verifier.isEngine());
 		if (!moduleChangedFlag) return;
-		moduleChangedFlag = false;
-		if (sceneLinkMasterId < 0) return;
+		if (sceneLinkMasterId < 0) {
+			// No master configured — nothing to follow, so the notification is consumed.
+			moduleChangedFlag = false;
+			return;
+		}
 		auto* master = dynamic_cast<SpliceKitModule*>(APP->engine->getModule(sceneLinkMasterId));
 		if (!master) {
 			// Master was removed from the patch (or never existed) — stop following.
 			sceneLinkMasterId = -1;
+			moduleChangedFlag = false;
 		}
 		else if (master->sceneStore.current != sceneStore.current) {
 			int targetScene = master->sceneStore.current;
-			taskProcessorUi.enqueue([this, targetScene]() { sceneStore.switchTo(targetScene); });
+			// Clear the flag only after a successful enqueue.
+			if (taskProcessorUi.enqueue([this, targetScene]() { sceneStore.switchTo(targetScene); })) {
+				moduleChangedFlag = false;
+			}
+		}
+		else {
+			// Master exists and already agrees — nothing to enqueue.
+			moduleChangedFlag = false;
 		}
 	}
 
