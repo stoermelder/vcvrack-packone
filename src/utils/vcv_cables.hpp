@@ -104,7 +104,7 @@ struct RackCableAccess : CableAccess {
 
 // The active access. Null in production → the shared RackCableAccess is used. Tests point
 // this at a mock registry (see SpliceKit.test.hpp).
-// This MUST have external linkage with exactly one definition (in vcv_cables.cpp), not the
+// This MUST have external linkage with exactly one definition (in vcv.cpp), not the
 // `static` per-TU form.
 extern CableAccess* cableAccess;
 
