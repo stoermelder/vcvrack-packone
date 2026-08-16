@@ -1862,6 +1862,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		if (!portAssignments[id].isValid()) return;
 
 		if (pendingCellId < 0) {
+			// pendingCellId is set here on the engine thread, but the responder lambda
+			// above only clears it via clearPendingLocal() on the GUI thread a frame later.
 			pendingCellId = id;
 			taskProcessorUi.enqueue([this, id]() {
 				// GUI thread — sole owner of crossPending. Re-check cp validity here
@@ -1888,6 +1890,12 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 							vcv::removeCable(cw, false);
 							setOverlayMessage("Cable removed", portLabel(*outPd), portLabel(*inPd));
 						}
+					}
+					else {
+						// Same-direction pair (both outputs or both inputs) — the peer's gesture cannot complete.
+						bool bothOut = (iPort.type == engine::Port::OUTPUT && rPort.type == engine::Port::OUTPUT);
+						setOverlayMessage(bothOut ? "Both ports are outputs" : "Both ports are inputs",
+							portLabel(iPort), portLabel(rPort));
 					}
 				}
 				else {

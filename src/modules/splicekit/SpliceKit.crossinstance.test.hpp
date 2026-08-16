@@ -352,3 +352,52 @@ TEST_CASE("collectCableEndCandidates - a destroyed instance leaves no dangling e
 
 	Test::destroyModule(a);
 }
+
+// Cross-instance responder direction clash
+// The responder resolves the initiator's armed port against its own; a same-direction pair
+// (two outputs, or two inputs) can never share a cable, so no cable is made and the user is
+// told why — the cross-instance counterpart of toggleConnection()'s rejection on a single
+// instance. (The cable-making half of the responder path is NOT covered here: it needs real
+// CableWidgets, which the harness does not provide — same boundary as the
+// collectCablePartners() coverage note above.)
+TEST_CASE("cross-instance responder - same-direction pair reports the clash", "[SpliceKit]") {
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
+	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
+	b->portAssignments[5] = {77, engine::Port::OUTPUT, 1};  // same direction as a's armed port
+
+	SpliceKitModule::crossPending()[APP].clear();
+	a->triggerCell(0);
+	a->taskProcessorUi.step();   // a becomes the initiator in crossPending
+
+	// b completes a's gesture, but the pair is same-direction: no cable, and the user sees
+	// the same rejection toggleConnection() would have shown on a single instance.
+	b->triggerCell(5);
+	b->taskProcessorUi.step();
+
+	REQUIRE(b->overlayMessage.title == "Both ports are outputs");
+
+	SpliceKitModule::crossPending()[APP].clear();
+	Test::destroyModule(b);
+	Test::destroyModule(a);
+}
+
+TEST_CASE("cross-instance responder - two inputs report the clash", "[SpliceKit]") {
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
+	a->portAssignments[0] = {42, engine::Port::INPUT, 0};
+	b->portAssignments[5] = {77, engine::Port::INPUT, 1};  // same direction as a's armed port
+
+	SpliceKitModule::crossPending()[APP].clear();
+	a->triggerCell(0);
+	a->taskProcessorUi.step();   // a becomes the initiator in crossPending
+
+	b->triggerCell(5);
+	b->taskProcessorUi.step();
+
+	REQUIRE(b->overlayMessage.title == "Both ports are inputs");
+
+	SpliceKitModule::crossPending()[APP].clear();
+	Test::destroyModule(b);
+	Test::destroyModule(a);
+}
