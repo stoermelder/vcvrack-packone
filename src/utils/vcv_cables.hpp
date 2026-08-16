@@ -102,18 +102,13 @@ struct RackCableAccess : CableAccess {
 	}
 };
 
-// The active access. Null in production → the per-TU RackCableAccess below is used. Tests
-// point this at a mock registry (see SpliceKit.test.hpp). Per-TU like every static here,
-// which is what the harness relies on: the test binary is a single TU, so a mock installed
-// by a test is visible to the module code compiled into the same binary.
-P1_UNUSED
-static CableAccess* cableAccess = nullptr;
+// The active access. Null in production → the shared RackCableAccess is used. Tests point
+// this at a mock registry (see SpliceKit.test.hpp).
+// This MUST have external linkage with exactly one definition (in vcv_cables.cpp), not the
+// `static` per-TU form.
+extern CableAccess* cableAccess;
 
-P1_UNUSED
-static CableAccess& cableAccessFor() {
-	static RackCableAccess rackAccess;
-	return cableAccess ? *cableAccess : rackAccess;
-}
+CableAccess& cableAccessFor();
 
 
 // Thin dispatch wrappers — keep the original free-function API (findCable/removeCable/
@@ -154,4 +149,4 @@ static void removeCable(int64_t outModuleId, int outPortId, int64_t inModuleId, 
 } // namespace vcv
 } // namespace StoermelderPackOne
 
-#undef STOEL_UNUSED
+#undef P1_UNUSED
