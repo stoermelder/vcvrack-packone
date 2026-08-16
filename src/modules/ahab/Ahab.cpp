@@ -8,6 +8,7 @@
 #include "AhabUdpOutput.hpp"
 #include "AhabMidiDriver.hpp"
 #include "AhabRenderer.hpp"
+#include "AhabEditorState.hpp"
 #include "AhabRandomizer.hpp"
 #include <osdialog.h>
 #include <array>
@@ -417,6 +418,7 @@ struct AhabModule : Module {
 
 struct AhabSimWidget : OpaqueWidget {
 	AhabModule* module = nullptr;
+	AhabEditorState editorState;
 	AhabRenderer renderer;
 
 	// Display snapshot using lock-free reads from sim
@@ -453,7 +455,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 	// Accessors for status widget
 	void getCursorPos(Usz &y, Usz &x) {
-		renderer.getCursor(y, x);
+		editorState.getCursor(y, x);
 	}
 
 	Usz getTickNumber() const {
@@ -485,7 +487,7 @@ struct AhabSimWidget : OpaqueWidget {
 			size_t exampleIndex = rack::random::u32() % examples.size();
 			std::string example = examples[exampleIndex].second;
 			AhabSim::buildFieldFromOrcaText(example, display_field);
-			renderer.setCursor(0, 0);
+			editorState.setCursor(0, 0);
 		}
 	}
 
@@ -495,8 +497,8 @@ struct AhabSimWidget : OpaqueWidget {
 
 	void reset() {
 		module->sim->resetUndo();
-		renderer.setCursor(0, 0);
-		renderer.setSelection(0, 0, 1, 1, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+		editorState.setCursor(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+		editorState.setSelection(0, 0, 1, 1, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 		rendererGridStepChanged();
 		notifyUiChanged();
 	}
@@ -519,7 +521,7 @@ struct AhabSimWidget : OpaqueWidget {
 		
 		// Get current selection bounds
 		Usz sy, sx, sh, sw;
-		renderer.getSelectionRect(sy, sx, sh, sw);
+		editorState.getSelectionRect(sy, sx, sh, sw);
 		
 		// Use the AhabRandomizer class
 		StoermelderPackOne::Ahab::AhabRandomizer randomizer;
@@ -538,8 +540,8 @@ struct AhabSimWidget : OpaqueWidget {
 			std::string msg = "Failed to load field from file:\n" + std::string(path);
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, msg.c_str());
 		}
-		renderer.setCursor(0, 0);
-		renderer.setSelection(0, 0, 1, 1);
+		editorState.setCursor(0, 0);
+		editorState.setSelection(0, 0, 1, 1);
 	}
 
 	void simInjectFile() {
@@ -558,13 +560,13 @@ struct AhabSimWidget : OpaqueWidget {
 			glfwSetClipboardString(APP->window->win, orca.c_str());
 		}
 		// Place selection at cursor and clip to field
-		Usz cy, cx; renderer.getCursor(cy, cx);
+		Usz cy, cx; editorState.getCursor(cy, cx);
 		Usz fh = module->sim->getFieldHeight();
 		Usz fw = module->sim->getFieldWidth();
 		if (cy + sh > fh) sh = fh - cy;
 		if (cx + sw > fw) sw = fw - cx;
 		if (sh == 0 || sw == 0) return;
-		renderer.setSelection(cy, cx, sh, sw, fh, fw);
+		editorState.setSelection(cy, cx, sh, sw, fh, fw);
 	}
 
 	void simSave() {
@@ -586,7 +588,7 @@ struct AhabSimWidget : OpaqueWidget {
 		if (!path) return;
 		DEFER({ free(path); });
 		Usz sy, sx, sh, sw;
-		renderer.getSelectionRect(sy, sx, sh, sw);
+		editorState.getSelectionRect(sy, sx, sh, sw);
 		// Serialize the UI snapshot, not the sim's live buffer (the DSP thread
 		// may be writing it from step()).
 		std::string content = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
@@ -776,7 +778,7 @@ struct AhabSimWidget : OpaqueWidget {
 			display_ready = nullptr;
 		}
 		// Draw the display field
-		renderer.draw(args.vg, &display_field, display_mbuf.buffer, box.size, module ? module->simRunning : false);
+		renderer.draw(args.vg, &display_field, display_mbuf.buffer, box.size, editorState, module ? module->simRunning : false);
 
 		// Corner vignette — subtle darkening toward edges for screen depth
 		NVGpaint vignette = nvgRadialGradient(args.vg,
@@ -841,7 +843,6 @@ struct AhabSimWidget : OpaqueWidget {
 
 			// Selection toggle via quote (covers unshifted and Shift+quote)
 			if (c == '\'') {
-				//renderer.toggleSelectionAtCursor();
 				e.consume(this);
 				// Return for skipping character
 				return;
@@ -873,15 +874,15 @@ struct AhabSimWidget : OpaqueWidget {
 			// General printable characters (letters, numbers, punctuation)
 			if ((c >= 48 && c <= 90) || (c >= 97 && c <= 122) || c == 33 || (c >= 35 && c <= 38) || c == 42 || c == 43 || c == 46) {
 				Glyph g = (Glyph)c;
-				Usz cy, cx; renderer.getCursor(cy, cx);
+				Usz cy, cx; editorState.getCursor(cy, cx);
 				module->sim->setGlyphRequest(cy, cx, g);
-				// If insert mode is active (held by renderer), advance cursor one cell to the right
-				if (renderer.getInsertMode()) {
+				// If insert mode is active, advance cursor one cell to the right
+				if (editorState.getInsertMode()) {
 					Usz fh = module->sim->getFieldHeight();
 					Usz fw = module->sim->getFieldWidth();
-					renderer.moveCursorRelative(0, 1, fh, fw, false);
-					renderer.getCursor(cy, cx);
-					renderer.setSelection(cy, cx, 1, 1, fh, fw);
+					editorState.moveCursorRelative(0, 1, fh, fw, false);
+					editorState.getCursor(cy, cx);
+					editorState.setSelection(cy, cx, 1, 1, fh, fw);
 				}
 				e.consume(this);
 				OpaqueWidget::onSelectText(e);
@@ -898,12 +899,12 @@ struct AhabSimWidget : OpaqueWidget {
 		const char* k = glfwGetKeyName(e.key, 0);
 
 		// Spacebar in insert mode -> advance cursor one cell to the right
-		if (renderer.getInsertMode() && (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) && e.key == GLFW_KEY_SPACE) {
+		if (editorState.getInsertMode() && (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) && e.key == GLFW_KEY_SPACE) {
 			Usz fh = module->sim->getFieldHeight();
 			Usz fw = module->sim->getFieldWidth();
-			renderer.moveCursorRelative(0, 1, fh, fw, false);
-			Usz cy, cx; renderer.getCursor(cy, cx);
-			renderer.setSelection(cy, cx, 1, 1, fh, fw);
+			editorState.moveCursorRelative(0, 1, fh, fw, false);
+			Usz cy, cx; editorState.getCursor(cy, cx);
+			editorState.setSelection(cy, cx, 1, 1, fh, fw);
 			e.consume(this);
 			notifyUiChanged();
 			return;
@@ -919,7 +920,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+Backspace -> Clear selection
 		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_BACKSPACE) {
-			Usz sy, sx, sh, sw; renderer.getSelectionRect(sy, sx, sh, sw);
+			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
 			module->sim->fillRectRequest(sy, sx, sh, sw);
 			e.consume(this);
 			return;
@@ -928,7 +929,7 @@ struct AhabSimWidget : OpaqueWidget {
 		// Ctrl/Cmd+A -> Select all
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'a') {
 			// Ctrl/Cmd+Y -> Redo
-			renderer.setSelection(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+			editorState.setSelection(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 			e.consume(this);
 			return;
 		}
@@ -986,7 +987,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+I -> Toggle insert mode (cursor moves forward after each input char)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'i') {
-			renderer.toggleInsertMode();
+			editorState.toggleInsertMode();
 			e.consume(this);
 			notifyUiChanged();
 			return;
@@ -994,7 +995,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+C -> Copy selection to clipboard (ORCA plain text)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'c') {
-			Usz sy, sx, sh, sw; renderer.getSelectionRect(sy, sx, sh, sw);
+			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
 			// Read from the UI snapshot (display_field), not the sim's live buffer.
 			std::string s = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 			if (!s.empty()) glfwSetClipboardString(APP->window->win, s.c_str());
@@ -1004,7 +1005,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+X -> Cut selection to clipboard (ORCA plain text)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'x') {
-			Usz sy, sx, sh, sw; renderer.getSelectionRect(sy, sx, sh, sw);
+			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
 			// Read from the UI snapshot (display_field), not the sim's live buffer.
 			std::string s = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 			if (!s.empty()) glfwSetClipboardString(APP->window->win, s.c_str());
@@ -1015,13 +1016,13 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+V -> Paste selection from clipboard (accept ORCA plain text or JSON)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'v') {
-			Usz cy, cx; renderer.getCursor(cy, cx);
+			Usz cy, cx; editorState.getCursor(cy, cx);
 			const char* clip = glfwGetClipboardString(APP->window->win);
 			if (clip) {
 				Usz pasted_h = 0, pasted_w = 0;
 				std::string clipStr(clip);
 				if (module->sim->loadRectFromOrcaRequest(clipStr, cy, cx, pasted_h, pasted_w)) {
-					if (pasted_h > 0 && pasted_w > 0) renderer.setSelection(cy, cx, pasted_h, pasted_w, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+					if (pasted_h > 0 && pasted_w > 0) editorState.setSelection(cy, cx, pasted_h, pasted_w, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 				}
 			}
 			e.consume(this);
@@ -1036,7 +1037,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+P -> Trigger operator on cursor
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_P) {
-			Usz cy, cx; renderer.getCursor(cy, cx);
+			Usz cy, cx; editorState.getCursor(cy, cx);
 			// TODO
 			// Unclear how to implement this, it looks like orca-c does not have this feature
 			e.consume(this);
@@ -1054,8 +1055,8 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Escape -> Clear selection
 		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
-			Usz cy, cx; renderer.getCursor(cy, cx);
-			renderer.setSelection(cy, cx, 1, 1);
+			Usz cy, cx; editorState.getCursor(cy, cx);
+			editorState.setSelection(cy, cx, 1, 1);
 			e.consume(this);
 			notifyUiChanged();
 			return;
@@ -1063,7 +1064,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+Shift+7 -> Toggle comment block
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT) && e.key == GLFW_KEY_7) {
-			Usz sy, sx, sh, sw; renderer.getSelectionRect(sy, sx, sh, sw);
+			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
 			Usz w = display_field.width;
 			bool isComment = true;
 			for (Usz y = sy; y < sy + sh; ++y) {
@@ -1101,33 +1102,33 @@ struct AhabSimWidget : OpaqueWidget {
 			else if (e.key == GLFW_KEY_LEFT) dx = -ddx;
 			else if (e.key == GLFW_KEY_RIGHT) dx = ddx;
 
-			Usz sy, sx, sh, sw; renderer.getSelectionRect(sy, sx, sh, sw);
+			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
 			Isz dest_y = (Isz)sy + dy;
 			Isz dest_x = (Isz)sx + dx;
 			
 			if (e.mods & RACK_MOD_ALT) {
-				// Schedule move; update renderer optimistically to reflect the intended move.
+				// Schedule move; update editor state optimistically to reflect the intended move.
 				module->sim->moveRectRequest(sy, sx, sh, sw, dest_y, dest_x);
 			}
 
 			Usz fh = module->sim->getFieldHeight();
 			Usz fw = module->sim->getFieldWidth();
 			if (e.mods & RACK_MOD_SHIFT) {
-				// Extend selection by moving the cursor; renderer anchor will handle left-side extension
+				// Extend selection by moving the cursor; the anchor will handle left-side extension
 				// Move cursor while requesting selection extension so anchor/cursor logic takes effect
-				renderer.moveCursorRelative((int)dy, (int)dx, fh, fw, true);
-				renderer.updateSelectionToCursor();
+				editorState.moveCursorRelative(dy, dx, fh, fw, true);
+				editorState.updateSelectionToCursor();
 				e.consume(this);
 				notifyUiChanged();
 			} 
 			else {
 				// Move selection normally
-				// Delegate clamping to renderer; provide a reasonable start (clip negatives to 0)
+				// Provide a reasonable start (clip negatives to 0); setSelection clamps to field bounds.
 				Usz start_y = dest_y < 0 ? 0 : (Usz)dest_y;
 				Usz start_x = dest_x < 0 ? 0 : (Usz)dest_x;
 				// Move cursor by requested delta; moveCursorRelative will itself clamp to field bounds.
-				renderer.moveCursorRelative((int)dy, (int)dx, fh, fw, false);
-				renderer.setSelection(start_y, start_x, sh, sw, fh, fw);
+				editorState.moveCursorRelative(dy, dx, fh, fw, false);
+				editorState.setSelection(start_y, start_x, sh, sw, fh, fw);
 				notifyUiChanged();
 			}
 			e.consume(this);
@@ -1152,11 +1153,11 @@ struct AhabSimWidget : OpaqueWidget {
 			if (e.action == GLFW_PRESS) {
 				Usz cy, cx;
 				if (renderer.pixelToCell(e.pos, box.size, &display_field, cy, cx)) {
-					renderer.setCursor(cy, cx);
+					editorState.setCursor(cy, cx);
 					mouse_selecting = true;
 					mouse_selection_start = e.pos;
 					// If a selection already exists, extend it immediately to the cursor
-					renderer.updateSelectionToCursor();
+					editorState.updateSelectionToCursor();
 					notifyUiChanged();
 					e.consume(this);
 					return;
@@ -1190,8 +1191,8 @@ struct AhabSimWidget : OpaqueWidget {
 				Usz sx = std::min(x0, x1);
 				Usz sh = std::max(y0, y1) - sy + 1;
 				Usz sw = std::max(x0, x1) - sx + 1;
-				renderer.setCursor(y1, x1);
-				renderer.setSelection(sy, sx, sh, sw, display_field.height, display_field.width);
+				editorState.setCursor(y1, x1);
+				editorState.setSelection(sy, sx, sh, sw, display_field.height, display_field.width);
 				notifyUiChanged();
 			}
 			e.consume(this);
@@ -1301,7 +1302,7 @@ struct AhabSimWidget : OpaqueWidget {
 					if (d != 0.f) {
 						Usz h = std::max((Usz)1, (Usz)(module->sim->getFieldHeight() + (d > 0.f ? 1 : -1)));
 						module->sim->setFieldSizeRequest(h, fw, fh == fh_);
-						renderer.moveCursorRelative(0, 0, h, fw);
+						editorState.moveCursorRelative(0, 0, h, fw);
 						fh = (float)h;
 						fh_ = 0;
 					}
@@ -1315,7 +1316,7 @@ struct AhabSimWidget : OpaqueWidget {
 					if (d != 0.f) {
 						Usz w = std::max((Usz)1, (Usz)(module->sim->getFieldWidth() + (d > 0.f ? 1 : -1)));
 						module->sim->setFieldSizeRequest(fh, w, fw == fw_);
-						renderer.moveCursorRelative(0, 0, fh, w);
+						editorState.moveCursorRelative(0, 0, fh, w);
 						fw = (float)w;
 						fw_ = 0;
 					}
