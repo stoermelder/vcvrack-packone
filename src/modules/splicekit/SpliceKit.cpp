@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 #include "../../components/MatrixButton.hpp"
 #include "../../components/MidiWidget.hpp"
 #include "../../ui/InfoWindow.hpp"
@@ -6,7 +7,6 @@
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "../../ui/CableOpacityState.hpp"
 #include "../../utils/GuiTaskProcessor.hpp"
-#include "../../utils/vcv_cables.hpp"
 #include "../midi/MidiTrackingProcessor.hpp"
 #include "SpliceKit.controllers.hpp"
 #include <osdialog.h>
