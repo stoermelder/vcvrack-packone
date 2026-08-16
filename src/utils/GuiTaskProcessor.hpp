@@ -162,18 +162,23 @@ struct GuiTaskProcessor {
 
 	// Producer thread ONLY — see the SINGLE PRODUCER note on the class comment; calling
 	// this from a second thread corrupts the queue. Never runs the task inline — see the
-	// class comment for why. Posts to the worker's semaphore whenever a worker is (or
-	// might be about to be) running, so a task enqueued right as the worker is parking is
-	// never stranded until the next unrelated wake — see TaskSignal's counted-signal
-	// rationale. The post is skipped only in the Absent state, where there is no worker
-	// to wake and step() is the drainer. Posting while Retiring is likewise fine whether
-	// or not the worker is still alive to consume it: that state is only ever entered
-	// because a window came back, so step() is draining again.
-	void enqueue(std::function<void()> t) {
-		internalQueue.enqueue(std::move(t));
+	// class comment for why. Returns whether t was actually queued: false when the ring
+	// buffer is full and the task is dropped (as before), so a caller that must not lose
+	// a task can detect the drop and retry later. Posts to the worker's semaphore
+	// whenever a worker is (or might be about to be) running, so a task enqueued right as
+	// the worker is parking is never stranded until the next unrelated wake — see
+	// TaskSignal's counted-signal rationale. The post is skipped only in the Absent
+	// state, where there is no worker to wake and step() is the drainer, and on a dropped
+	// enqueue, where there is nothing new for the worker to consume. Posting while
+	// Retiring is likewise fine whether or not the worker is still alive to consume it:
+	// that state is only ever entered because a window came back, so step() is draining
+	// again.
+	bool enqueue(std::function<void()> t) {
+		if (!internalQueue.enqueue(std::move(t))) return false;
 		if (workerState.load(std::memory_order_acquire) != WorkerState::Absent) {
 			taskSignal.post();
 		}
+		return true;
 	}
 
 	// GUI thread — drains pending tasks. Called from the widget's step().
