@@ -5,14 +5,14 @@
 #include "../../ui/FocusMode.hpp"
 #include "orca_examples.hpp"
 #include "AhabSim.hpp"
+#include "AhabUdpOutput.hpp"
 #include "AhabMidiDriver.hpp"
 #include "AhabRenderer.hpp"
+#include "AhabEditorState.hpp"
 #include "AhabRandomizer.hpp"
 #include <osdialog.h>
-
-extern "C" {
-	#include <orca-c/osc_out.h>
-}
+#include <array>
+#include <memory>
 
 namespace StoermelderPackOne {
 namespace Ahab {
@@ -51,6 +51,9 @@ struct AhabModule : Module {
 	bool simRunning = true;
 	bool simRunToggleRequest = false;
 
+	// UDP/OSC output transport (real socket by default; tests inject a fake).
+	std::unique_ptr<AhabUdpOutput> udpOutput;
+
 	// Timing for simulation steps
 	float clockPhase = 0.0f;  // Phase accumulator for timing
 
@@ -87,7 +90,12 @@ struct AhabModule : Module {
 
 	dsp::ClockDivider lightDivider;
 
-	AhabModule() {
+	// Default constructor: owns a real socket-backed UDP/OSC output.
+	AhabModule() : AhabModule(new AhabOoscUdpOutput()) {}
+
+	// Injection constructor: takes ownership of the supplied output (tests pass
+	// a recording fake).
+	AhabModule(AhabUdpOutput* udpOutput) {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(BPM_PARAM, 30.0, 300.0, 120.0, "BPM");
@@ -109,6 +117,8 @@ struct AhabModule : Module {
 		sim->setDspOutputWriter(std::bind(&AhabModule::writeDspOutput, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 		sim->setDspResetCallback(std::bind(&AhabModule::flushNotes, this));
 		
+		this->udpOutput = std::unique_ptr<AhabUdpOutput>(udpOutput);
+
 		ResetEvent e;
 		onReset(e);
 	}
@@ -141,6 +151,9 @@ struct AhabModule : Module {
 		simRunning = true;
 		sim->setFieldSize(25, 49);
 		sim->reset();
+		// A full module reset wipes the edit history (unlike "Clear", which is
+		// undoable content editing).
+		sim->resetUndo();
 
 		Module::onReset(e);
 	}
@@ -276,10 +289,27 @@ struct AhabModule : Module {
 						sendMidiMessage(m);
 						break;
 					}
-					case Oevent_type_osc_ints:
-					case Oevent_type_udp_string:
-						// OSC and UDP events are handled inside AhabSim::step()
+					case Oevent_type_osc_ints: {
+						Oevent_osc_ints const* eo = &oe->osc_ints;
+						// Build OSC address from configured prefix + glyph
+						std::string addr = {'/', eo->glyph, '\0'};
+						if (eo->count > 0) {
+							I32 vals[Oevent_osc_int_count];
+							for (Usz j = 0; j < (Usz)eo->count; ++j) vals[j] = (I32)eo->numbers[j];
+							udpOutput->sendOscInts(addr.c_str(), vals, (Usz)eo->count);
+						}
+						else {
+							udpOutput->sendOscInts(addr.c_str(), nullptr, 0);
+						}
 						break;
+					}
+					case Oevent_type_udp_string: {
+						Oevent_udp_string const* ud = &oe->udp_string;
+						if (ud && ud->count > 0) {
+							udpOutput->sendUdpDatagram(ud->chars, (Usz)ud->count);
+						}
+						break;
+					}
 				}
 			}
 		}
@@ -350,7 +380,9 @@ struct AhabModule : Module {
 		json_object_set_new(rootJ, "midiOutEnabled", json_boolean(midiOutEnabled));
 		json_object_set_new(rootJ, "midiOutPort", midiOutPort.toJson());
 		json_object_set_new(rootJ, "midiCcOffset", json_integer(midiCcOffset));
-		json_object_set_new(rootJ, "sim", sim->toJson());
+		json_t* simJ = sim->toJson();
+		udpOutput->toJson(simJ); // adds the four destination keys into simJ
+		json_object_set_new(rootJ, "sim", simJ); // steals simJ's reference
 		json_object_set_new(rootJ, "simRunning", json_boolean(simRunning));
 		json_object_set_new(rootJ, "overwriteZeroNoteDuration", json_boolean(overwriteZeroNoteDuration));
 		json_object_set_new(rootJ, "gridStepCol", json_integer(gridStepCol));
@@ -371,7 +403,10 @@ struct AhabModule : Module {
 		json_t* midiCcOffsetJ = json_object_get(rootJ, "midiCcOffset");
 		if (midiCcOffsetJ) midiCcOffset = (uint8_t)json_integer_value(midiCcOffsetJ);
 		json_t* simJ = json_object_get(rootJ, "sim");
-		if (simJ && json_is_object(simJ)) sim->fromJson(simJ);
+		if (simJ && json_is_object(simJ)) {
+			sim->fromJson(simJ);
+			udpOutput->fromJson(simJ);
+		}
 		json_t* simRunningJ = json_object_get(rootJ, "simRunning");
 		if (simRunningJ) simRunning = json_boolean_value(simRunningJ);
 		json_t* overwriteZeroNoteDurationJ = json_object_get(rootJ, "overwriteZeroNoteDuration");
@@ -386,6 +421,7 @@ struct AhabModule : Module {
 
 struct AhabSimWidget : OpaqueWidget {
 	AhabModule* module = nullptr;
+	AhabEditorState editorState;
 	AhabRenderer renderer;
 
 	// Display snapshot using lock-free reads from sim
@@ -422,7 +458,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 	// Accessors for status widget
 	void getCursorPos(Usz &y, Usz &x) {
-		renderer.getCursor(y, x);
+		editorState.getCursor(y, x);
 	}
 
 	Usz getTickNumber() const {
@@ -454,7 +490,7 @@ struct AhabSimWidget : OpaqueWidget {
 			size_t exampleIndex = rack::random::u32() % examples.size();
 			std::string example = examples[exampleIndex].second;
 			AhabSim::buildFieldFromOrcaText(example, display_field);
-			renderer.setCursor(0, 0);
+			editorState.setCursor(0, 0);
 		}
 	}
 
@@ -463,9 +499,11 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	void reset() {
-		module->sim->resetUndo();
-		renderer.setCursor(0, 0);
-		renderer.setSelection(0, 0, 1, 1, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+		// Do NOT clear the undo history here: this runs as the sim's UI reset
+		// callback for "Clear" (via AhabSim::reset()), which must stay undoable.
+		// Full-module resets clear the history explicitly in AhabModule::onReset().
+		editorState.setCursor(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+		editorState.setSelection(0, 0, 1, 1, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 		rendererGridStepChanged();
 		notifyUiChanged();
 	}
@@ -488,7 +526,7 @@ struct AhabSimWidget : OpaqueWidget {
 		
 		// Get current selection bounds
 		Usz sy, sx, sh, sw;
-		renderer.getSelectionRect(sy, sx, sh, sw);
+		editorState.getSelectionRect(sy, sx, sh, sw);
 		
 		// Use the AhabRandomizer class
 		StoermelderPackOne::Ahab::AhabRandomizer randomizer;
@@ -507,8 +545,8 @@ struct AhabSimWidget : OpaqueWidget {
 			std::string msg = "Failed to load field from file:\n" + std::string(path);
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, msg.c_str());
 		}
-		renderer.setCursor(0, 0);
-		renderer.setSelection(0, 0, 1, 1);
+		editorState.setCursor(0, 0);
+		editorState.setSelection(0, 0, 1, 1);
 	}
 
 	void simInjectFile() {
@@ -527,13 +565,13 @@ struct AhabSimWidget : OpaqueWidget {
 			glfwSetClipboardString(APP->window->win, orca.c_str());
 		}
 		// Place selection at cursor and clip to field
-		Usz cy, cx; renderer.getCursor(cy, cx);
+		Usz cy, cx; editorState.getCursor(cy, cx);
 		Usz fh = module->sim->getFieldHeight();
 		Usz fw = module->sim->getFieldWidth();
 		if (cy + sh > fh) sh = fh - cy;
 		if (cx + sw > fw) sw = fw - cx;
 		if (sh == 0 || sw == 0) return;
-		renderer.setSelection(cy, cx, sh, sw, fh, fw);
+		editorState.setSelection(cy, cx, sh, sw, fh, fw);
 	}
 
 	void simSave() {
@@ -555,7 +593,7 @@ struct AhabSimWidget : OpaqueWidget {
 		if (!path) return;
 		DEFER({ free(path); });
 		Usz sy, sx, sh, sw;
-		renderer.getSelectionRect(sy, sx, sh, sw);
+		editorState.getSelectionRect(sy, sx, sh, sw);
 		// Serialize the UI snapshot, not the sim's live buffer (the DSP thread
 		// may be writing it from step()).
 		std::string content = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
@@ -576,92 +614,101 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	std::string getOperatorDescription(Glyph g, Mark m) {
+		// Flat glyph-indexed lookup tables — a direct array index replaces the
+		// former std::map<char, std::string>. Sized 256 so any byte value (Glyph
+		// is a signed char) is a safe index via (unsigned char).
+		static const std::array<const char*, 256> kOperatorDescriptions = [] {
+			std::array<const char*, 256> t{};
+			t['A'] = "add: Outputs sum of inputs";
+			t['B'] = "subtract: Outputs difference of inputs";
+			t['C'] = "clock: Outputs modulo of frame";
+			t['D'] = "delay: Bangs on modulo of frame";
+			t['E'] = "east: Moves eastward, or bangs";
+			t['F'] = "if: Bangs if inputs are equal";
+			t['G'] = "generator: Writes operands with offset";
+			t['H'] = "halt: Halts southward operand";
+			t['I'] = "increment: Increments southward operand";
+			t['J'] = "jumper: Outputs northward operand";
+			t['K'] = "konkat: Reads multiple variables";
+			t['L'] = "less: Outputs smallest of inputs";
+			t['M'] = "multiply: Outputs product of inputs";
+			t['N'] = "north: Moves Northward, or bangs";
+			t['O'] = "read: Reads operand with offset";
+			t['P'] = "push: Writes eastward operand";
+			t['Q'] = "query: Reads operands with offset";
+			t['R'] = "random: Outputs random value";
+			t['S'] = "south: Moves southward, or bangs";
+			t['T'] = "track: Reads eastward operand";
+			t['U'] = "uclid: Bangs on Euclidean rhythm";
+			t['V'] = "variable: Reads and writes variable";
+			t['W'] = "west: Moves westward, or bangs";
+			t['X'] = "write: Writes operand with offset";
+			t['Y'] = "jymper: Outputs westward operand";
+			t['Z'] = "lerp: Transitions operand to input";
+			t['*'] = "bang: Bangs neighboring operands";
+			t['#'] = "comment: Halts a line";
+			t[':'] = "midi: Sends a MIDI note";
+			t['%'] = "mono: Sends monophonic MIDI note";
+			t['!'] = "cc: Sends MIDI control change";
+			t['?'] = "pb: Sends MIDI pitch bench";
+			t[';'] = "udp: Sends UDP message";
+			t['='] = "osc: Sends OSC message";
+			t['<'] = "cv-input: Reads a value from a CV input";
+			t['>'] = "cv-output: Writes a value to a CV output";
+			t['$'] = "command: not supported in Ahab";
+			return t;
+		}();
+
+		static const std::array<const char*, 256> kOperatorPortInfos = [] {
+			std::array<const char*, 256> t{};
+			t[':'] = "  →1: channel\n  →2: octave\n  →3: note\n  →4: velocity\n  →5: length";
+			t['%'] = "  →1: channel\n  →2: octave\n  →3: note\n  →4: velocity\n  →5: length";
+			t['!'] = "  →1: channel\n  →2: knob\n  →3: value";
+			t['?'] = "  →1: channel\n  →2: lsb\n  →3: msb";
+			t[';'] = "  →1+: string";
+			t['='] = "  →1: path\n  →2: len\n  →3+: in";
+			t['A'] = "  ←1: a\n  →1: b\n  ↓1: output";
+			t['B'] = "  ←1: a\n  →1: b\n  ↓1: output";
+			t['C'] = "  ←1: rate\n  →1: mod\n  ↓1: output";
+			t['D'] = "  ←1: rate\n  →1: mod\n  ↓1: output";
+			t['F'] = "  ←1: a\n  →1: b\n  ↓1: output";
+			t['G'] = "  ←1: x\n  ↑1: y\n  →1: len\n  →2+: in\n  (x,y)+: out";
+			t['H'] = "  ↓1: output";
+			t['I'] = "  ←1: step\n  →1: mod\n  ↓1: output";
+			t['J'] = "  ↑1: val\n  ↓1: output";
+			t['K'] = "  ←1: len\n  →1+: in\n  ↓1+: out";
+			t['L'] = "  ←1: a\n  →1: b\n  ↓1: output";
+			t['M'] = "  ←1: a\n  →1: b\n  ↓1: output";
+			t['N'] = "  (moves north)";
+			t['O'] = "  ←1: y\n  ↑1: x\n  (y,x): read\n  ↓1: output";
+			t['P'] = "  ←1: len\n  ↑1: key\n  →1: val\n  ↓(len(key)+1): output";
+			t['Q'] = "  ←1: len\n  ↑1: y\n  →1: x\n  (y,x)+: in\n  ↓1+: out";
+			t['R'] = "  ←1: min\n  →1: max\n  ↓1: val";
+			t['S'] = "  (moves south)";
+			t['T'] = "  ←1: len\n  ↑1: key\n  →(len(key)+1): val\n  ↓1: output";
+			t['U'] = "  ←1: write\n  →1: read\n  ↓1: output";
+			t['V'] = "  ←1: write\n  →1: read\n  ↓1: output";
+			t['W'] = "  (moves west)";
+			t['X'] = "  ←1: y\n  ↑1: x\n  →1: val\n  (y,x): output";
+			t['Y'] = "  ←1: val\n  →1: output";
+			t['Z'] = "  ←1: rate\n  →1: target\n  ↓1: output";
+			t['*'] = "  (bangs neighbors)";
+			t['<'] = "  →1: min\n  →2: port number (1-4 for cv mode / a-d for v/oct mode)\n  →3: max\n  ↓1: output";
+			t['>'] = "cv mode\n  →1: port number (1-4)\n  →2: min\n  →3: val\n  →4: max\nv/oct mode\n  →1: port number (a-d)\n  →2: octave\n  →3: note\n  →4: gate length";
+			return t;
+		}();
+
 		std::string desc;
 		if (g == '.') {
 			desc = "empty cell";
 		} 
 		else {
-			static const std::map<char, std::string> descriptions = {
-				{'A', "add: Outputs sum of inputs"},
-				{'B', "subtract: Outputs difference of inputs"},
-				{'C', "clock: Outputs modulo of frame"},
-				{'D', "delay: Bangs on modulo of frame"},
-				{'E', "east: Moves eastward, or bangs"},
-				{'F', "if: Bangs if inputs are equal"},
-				{'G', "generator: Writes operands with offset"},
-				{'H', "halt: Halts southward operand"},
-				{'I', "increment: Increments southward operand"},
-				{'J', "jumper: Outputs northward operand"},
-				{'K', "konkat: Reads multiple variables"},
-				{'L', "less: Outputs smallest of inputs"},
-				{'M', "multiply: Outputs product of inputs"},
-				{'N', "north: Moves Northward, or bangs"},
-				{'O', "read: Reads operand with offset"},
-				{'P', "push: Writes eastward operand"},
-				{'Q', "query: Reads operands with offset"},
-				{'R', "random: Outputs random value"},
-				{'S', "south: Moves southward, or bangs"},
-				{'T', "track: Reads eastward operand"},
-				{'U', "uclid: Bangs on Euclidean rhythm"},
-				{'V', "variable: Reads and writes variable"},
-				{'W', "west: Moves westward, or bangs"},
-				{'X', "write: Writes operand with offset"},
-				{'Y', "jymper: Outputs westward operand"},
-				{'Z', "lerp: Transitions operand to input"},
-				{'*', "bang: Bangs neighboring operands"},
-				{'#', "comment: Halts a line"},
-				{':', "midi: Sends a MIDI note"},
-				{'%', "mono: Sends monophonic MIDI note"},
-				{'!', "cc: Sends MIDI control change"},
-				{'?', "pb: Sends MIDI pitch bench"},
-				{';', "udp: Sends UDP message"},
-				{'=', "osc: Sends OSC message"},
-				{'<', "cv-input: Reads a value from a CV input"},
-				{'>', "cv-output: Writes a value to a CV output"},
-				{'$', "command: not supported in Ahab"}
-			};
-			auto it = descriptions.find(g);
-			desc = (it != descriptions.end()) ? it->second : std::string(1, g) + ": variable / unknown operator";
+			const char* d = kOperatorDescriptions[(unsigned char)g];
+			desc = d ? d : std::string(1, (char)g) + ": variable / unknown operator";
 
-			static const std::map<char, std::string> portInfos = {
-				{':', "  →1: channel\n  →2: octave\n  →3: note\n  →4: velocity\n  →5: length"},
-				{'%', "  →1: channel\n  →2: octave\n  →3: note\n  →4: velocity\n  →5: length"},
-				{'!', "  →1: channel\n  →2: knob\n  →3: value"},
-				{'?', "  →1: channel\n  →2: lsb\n  →3: msb"},
-				{';', "  →1+: string"},
-				{'=', "  →1: path\n  →2: len\n  →3+: in"},
-				{'A', "  ←1: a\n  →1: b\n  ↓1: output"},
-				{'B', "  ←1: a\n  →1: b\n  ↓1: output"},
-				{'C', "  ←1: rate\n  →1: mod\n  ↓1: output"},
-				{'D', "  ←1: rate\n  →1: mod\n  ↓1: output"},
-				{'F', "  ←1: a\n  →1: b\n  ↓1: output"},
-				{'G', "  ←1: x\n  ↑1: y\n  →1: len\n  →2+: in\n  (x,y)+: out"},
-				{'H', "  ↓1: output"},
-				{'I', "  ←1: step\n  →1: mod\n  ↓1: output"},
-				{'J', "  ↑1: val\n  ↓1: output"},
-				{'K', "  ←1: len\n  →1+: in\n  ↓1+: out"},
-				{'L', "  ←1: a\n  →1: b\n  ↓1: output"},
-				{'M', "  ←1: a\n  →1: b\n  ↓1: output"},
-				{'N', "  (moves north)"},
-				{'O', "  ←1: y\n  ↑1: x\n  (y,x): read\n  ↓1: output"},
-				{'P', "  ←1: len\n  ↑1: key\n  →1: val\n  ↓(len(key)+1): output"},
-				{'Q', "  ←1: len\n  ↑1: y\n  →1: x\n  (y,x)+: in\n  ↓1+: out"},
-				{'R', "  ←1: min\n  →1: max\n  ↓1: val"},
-				{'S', "  (moves south)"},
-				{'T', "  ←1: len\n  ↑1: key\n  →(len(key)+1): val\n  ↓1: output"},
-				{'U', "  ←1: write\n  →1: read\n  ↓1: output"},
-				{'V', "  ←1: write\n  →1: read\n  ↓1: output"},
-				{'W', "  (moves west)"},
-				{'X', "  ←1: y\n  ↑1: x\n  →1: val\n  (y,x): output"},
-				{'Y', "  ←1: val\n  →1: output"},
-				{'Z', "  ←1: rate\n  →1: target\n  ↓1: output"},
-				{'*', "  (bangs neighbors)"},
-				{'<', "  →1: min\n  →2: port number (1-4 for cv mode / a-d for v/oct mode)\n  →3: max\n  ↓1: output"},
-				{'>', "cv mode\n  →1: port number (1-4)\n  →2: min\n  →3: val\n  →4: max\nv/oct mode\n  →1: port number (a-d)\n  →2: octave\n  →3: note\n  →4: gate length"}
-			};
-			auto pit = portInfos.find(g);
-			if (pit != portInfos.end()) {
-				desc += "\n" + pit->second;
+			if (const char* p = kOperatorPortInfos[(unsigned char)g]) {
+				desc += "\n";
+				desc += p;
 			}
 		}
 
@@ -736,7 +783,7 @@ struct AhabSimWidget : OpaqueWidget {
 			display_ready = nullptr;
 		}
 		// Draw the display field
-		renderer.draw(args.vg, &display_field, display_mbuf.buffer, box.size, module ? module->simRunning : false);
+		renderer.draw(args.vg, &display_field, display_mbuf.buffer, box.size, editorState, module ? module->simRunning : false);
 
 		// Corner vignette — subtle darkening toward edges for screen depth
 		NVGpaint vignette = nvgRadialGradient(args.vg,
@@ -801,7 +848,6 @@ struct AhabSimWidget : OpaqueWidget {
 
 			// Selection toggle via quote (covers unshifted and Shift+quote)
 			if (c == '\'') {
-				//renderer.toggleSelectionAtCursor();
 				e.consume(this);
 				// Return for skipping character
 				return;
@@ -833,15 +879,15 @@ struct AhabSimWidget : OpaqueWidget {
 			// General printable characters (letters, numbers, punctuation)
 			if ((c >= 48 && c <= 90) || (c >= 97 && c <= 122) || c == 33 || (c >= 35 && c <= 38) || c == 42 || c == 43 || c == 46) {
 				Glyph g = (Glyph)c;
-				Usz cy, cx; renderer.getCursor(cy, cx);
+				Usz cy, cx; editorState.getCursor(cy, cx);
 				module->sim->setGlyphRequest(cy, cx, g);
-				// If insert mode is active (held by renderer), advance cursor one cell to the right
-				if (renderer.getInsertMode()) {
+				// If insert mode is active, advance cursor one cell to the right
+				if (editorState.getInsertMode()) {
 					Usz fh = module->sim->getFieldHeight();
 					Usz fw = module->sim->getFieldWidth();
-					renderer.moveCursorRelative(0, 1, fh, fw, false);
-					renderer.getCursor(cy, cx);
-					renderer.setSelection(cy, cx, 1, 1, fh, fw);
+					editorState.moveCursorRelative(0, 1, fh, fw, false);
+					editorState.getCursor(cy, cx);
+					editorState.setSelection(cy, cx, 1, 1, fh, fw);
 				}
 				e.consume(this);
 				OpaqueWidget::onSelectText(e);
@@ -858,12 +904,12 @@ struct AhabSimWidget : OpaqueWidget {
 		const char* k = glfwGetKeyName(e.key, 0);
 
 		// Spacebar in insert mode -> advance cursor one cell to the right
-		if (renderer.getInsertMode() && (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) && e.key == GLFW_KEY_SPACE) {
+		if (editorState.getInsertMode() && (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) && e.key == GLFW_KEY_SPACE) {
 			Usz fh = module->sim->getFieldHeight();
 			Usz fw = module->sim->getFieldWidth();
-			renderer.moveCursorRelative(0, 1, fh, fw, false);
-			Usz cy, cx; renderer.getCursor(cy, cx);
-			renderer.setSelection(cy, cx, 1, 1, fh, fw);
+			editorState.moveCursorRelative(0, 1, fh, fw, false);
+			Usz cy, cx; editorState.getCursor(cy, cx);
+			editorState.setSelection(cy, cx, 1, 1, fh, fw);
 			e.consume(this);
 			notifyUiChanged();
 			return;
@@ -879,7 +925,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+Backspace -> Clear selection
 		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_BACKSPACE) {
-			Usz sy, sx, sh, sw; renderer.getSelectionRect(sy, sx, sh, sw);
+			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
 			module->sim->fillRectRequest(sy, sx, sh, sw);
 			e.consume(this);
 			return;
@@ -888,7 +934,7 @@ struct AhabSimWidget : OpaqueWidget {
 		// Ctrl/Cmd+A -> Select all
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'a') {
 			// Ctrl/Cmd+Y -> Redo
-			renderer.setSelection(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+			editorState.setSelection(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 			e.consume(this);
 			return;
 		}
@@ -946,7 +992,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+I -> Toggle insert mode (cursor moves forward after each input char)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'i') {
-			renderer.toggleInsertMode();
+			editorState.toggleInsertMode();
 			e.consume(this);
 			notifyUiChanged();
 			return;
@@ -954,7 +1000,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+C -> Copy selection to clipboard (ORCA plain text)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'c') {
-			Usz sy, sx, sh, sw; renderer.getSelectionRect(sy, sx, sh, sw);
+			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
 			// Read from the UI snapshot (display_field), not the sim's live buffer.
 			std::string s = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 			if (!s.empty()) glfwSetClipboardString(APP->window->win, s.c_str());
@@ -964,7 +1010,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+X -> Cut selection to clipboard (ORCA plain text)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'x') {
-			Usz sy, sx, sh, sw; renderer.getSelectionRect(sy, sx, sh, sw);
+			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
 			// Read from the UI snapshot (display_field), not the sim's live buffer.
 			std::string s = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 			if (!s.empty()) glfwSetClipboardString(APP->window->win, s.c_str());
@@ -975,13 +1021,13 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+V -> Paste selection from clipboard (accept ORCA plain text or JSON)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'v') {
-			Usz cy, cx; renderer.getCursor(cy, cx);
+			Usz cy, cx; editorState.getCursor(cy, cx);
 			const char* clip = glfwGetClipboardString(APP->window->win);
 			if (clip) {
 				Usz pasted_h = 0, pasted_w = 0;
 				std::string clipStr(clip);
 				if (module->sim->loadRectFromOrcaRequest(clipStr, cy, cx, pasted_h, pasted_w)) {
-					if (pasted_h > 0 && pasted_w > 0) renderer.setSelection(cy, cx, pasted_h, pasted_w, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+					if (pasted_h > 0 && pasted_w > 0) editorState.setSelection(cy, cx, pasted_h, pasted_w, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 				}
 			}
 			e.consume(this);
@@ -996,7 +1042,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+P -> Trigger operator on cursor
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_P) {
-			Usz cy, cx; renderer.getCursor(cy, cx);
+			Usz cy, cx; editorState.getCursor(cy, cx);
 			// TODO
 			// Unclear how to implement this, it looks like orca-c does not have this feature
 			e.consume(this);
@@ -1014,8 +1060,8 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Escape -> Clear selection
 		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
-			Usz cy, cx; renderer.getCursor(cy, cx);
-			renderer.setSelection(cy, cx, 1, 1);
+			Usz cy, cx; editorState.getCursor(cy, cx);
+			editorState.setSelection(cy, cx, 1, 1);
 			e.consume(this);
 			notifyUiChanged();
 			return;
@@ -1023,7 +1069,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+Shift+7 -> Toggle comment block
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT) && e.key == GLFW_KEY_7) {
-			Usz sy, sx, sh, sw; renderer.getSelectionRect(sy, sx, sh, sw);
+			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
 			Usz w = display_field.width;
 			bool isComment = true;
 			for (Usz y = sy; y < sy + sh; ++y) {
@@ -1061,33 +1107,33 @@ struct AhabSimWidget : OpaqueWidget {
 			else if (e.key == GLFW_KEY_LEFT) dx = -ddx;
 			else if (e.key == GLFW_KEY_RIGHT) dx = ddx;
 
-			Usz sy, sx, sh, sw; renderer.getSelectionRect(sy, sx, sh, sw);
+			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
 			Isz dest_y = (Isz)sy + dy;
 			Isz dest_x = (Isz)sx + dx;
 			
 			if (e.mods & RACK_MOD_ALT) {
-				// Schedule move; update renderer optimistically to reflect the intended move.
+				// Schedule move; update editor state optimistically to reflect the intended move.
 				module->sim->moveRectRequest(sy, sx, sh, sw, dest_y, dest_x);
 			}
 
 			Usz fh = module->sim->getFieldHeight();
 			Usz fw = module->sim->getFieldWidth();
 			if (e.mods & RACK_MOD_SHIFT) {
-				// Extend selection by moving the cursor; renderer anchor will handle left-side extension
+				// Extend selection by moving the cursor; the anchor will handle left-side extension
 				// Move cursor while requesting selection extension so anchor/cursor logic takes effect
-				renderer.moveCursorRelative((int)dy, (int)dx, fh, fw, true);
-				renderer.updateSelectionToCursor();
+				editorState.moveCursorRelative(dy, dx, fh, fw, true);
+				editorState.updateSelectionToCursor();
 				e.consume(this);
 				notifyUiChanged();
 			} 
 			else {
 				// Move selection normally
-				// Delegate clamping to renderer; provide a reasonable start (clip negatives to 0)
+				// Provide a reasonable start (clip negatives to 0); setSelection clamps to field bounds.
 				Usz start_y = dest_y < 0 ? 0 : (Usz)dest_y;
 				Usz start_x = dest_x < 0 ? 0 : (Usz)dest_x;
 				// Move cursor by requested delta; moveCursorRelative will itself clamp to field bounds.
-				renderer.moveCursorRelative((int)dy, (int)dx, fh, fw, false);
-				renderer.setSelection(start_y, start_x, sh, sw, fh, fw);
+				editorState.moveCursorRelative(dy, dx, fh, fw, false);
+				editorState.setSelection(start_y, start_x, sh, sw, fh, fw);
 				notifyUiChanged();
 			}
 			e.consume(this);
@@ -1112,11 +1158,11 @@ struct AhabSimWidget : OpaqueWidget {
 			if (e.action == GLFW_PRESS) {
 				Usz cy, cx;
 				if (renderer.pixelToCell(e.pos, box.size, &display_field, cy, cx)) {
-					renderer.setCursor(cy, cx);
+					editorState.setCursor(cy, cx);
 					mouse_selecting = true;
 					mouse_selection_start = e.pos;
 					// If a selection already exists, extend it immediately to the cursor
-					renderer.updateSelectionToCursor();
+					editorState.updateSelectionToCursor();
 					notifyUiChanged();
 					e.consume(this);
 					return;
@@ -1150,8 +1196,8 @@ struct AhabSimWidget : OpaqueWidget {
 				Usz sx = std::min(x0, x1);
 				Usz sh = std::max(y0, y1) - sy + 1;
 				Usz sw = std::max(x0, x1) - sx + 1;
-				renderer.setCursor(y1, x1);
-				renderer.setSelection(sy, sx, sh, sw, display_field.height, display_field.width);
+				editorState.setCursor(y1, x1);
+				editorState.setSelection(sy, sx, sh, sw, display_field.height, display_field.width);
 				notifyUiChanged();
 			}
 			e.consume(this);
@@ -1172,6 +1218,11 @@ struct AhabSimWidget : OpaqueWidget {
 	void onEnter(const event::Enter& e) override {
 		struct CellTooltip : ui::Tooltip {
 			AhabSimWidget* widget = nullptr;
+			// Last hovered cell, so the description text is only rebuilt (and the
+			// tooltip string reassigned) when the hovered cell actually changes —
+			// getOperatorDescription is otherwise called every frame.
+			Glyph lastGlyph_ = 0;
+			Mark lastMark_ = 0;
 			void step() override {
 				if (widget->display_mbuf.buffer) {
 					visible = false;
@@ -1184,7 +1235,11 @@ struct AhabSimWidget : OpaqueWidget {
 						visible = 
 							((g == ':' || g == ';' || g == '%' || g == '?' || g == '!' || g == '=' || g == '<' || g == '>') && (!(flags & (Mark_flag_lock)) || (flags & Mark_flag_output))) || 
 							((g != '.') && !(flags & (Mark_flag_lock | Mark_flag_sleep)));
-						if (visible) text = widget->getOperatorDescription(g, m);
+						if (visible && (g != lastGlyph_ || m != lastMark_)) {
+							lastGlyph_ = g;
+							lastMark_ = m;
+							text = widget->getOperatorDescription(g, m);
+						}
 					}
 				}
 				Tooltip::step();
@@ -1252,7 +1307,7 @@ struct AhabSimWidget : OpaqueWidget {
 					if (d != 0.f) {
 						Usz h = std::max((Usz)1, (Usz)(module->sim->getFieldHeight() + (d > 0.f ? 1 : -1)));
 						module->sim->setFieldSizeRequest(h, fw, fh == fh_);
-						renderer.moveCursorRelative(0, 0, h, fw);
+						editorState.moveCursorRelative(0, 0, h, fw);
 						fh = (float)h;
 						fh_ = 0;
 					}
@@ -1266,7 +1321,7 @@ struct AhabSimWidget : OpaqueWidget {
 					if (d != 0.f) {
 						Usz w = std::max((Usz)1, (Usz)(module->sim->getFieldWidth() + (d > 0.f ? 1 : -1)));
 						module->sim->setFieldSizeRequest(fh, w, fw == fw_);
-						renderer.moveCursorRelative(0, 0, fh, w);
+						editorState.moveCursorRelative(0, 0, fh, w);
 						fw = (float)w;
 						fw_ = 0;
 					}
@@ -1405,22 +1460,22 @@ struct AhabSimWidget : OpaqueWidget {
 		}));
 
 		menu->addChild(createSubmenuItem("UDP", "", [this](ui::Menu* m) {
-			auto* addrField = Rack::createTextField(module->sim->getUdpAddress(), "Address");
+			auto* addrField = Rack::createTextField(module->udpOutput->getUdpAddress(), "Address");
 			m->addChild(addrField);
-			auto* portField = Rack::createTextField(module->sim->getUdpPort(), "Port");
+			auto* portField = Rack::createTextField(module->udpOutput->getUdpPort(), "Port");
 			m->addChild(portField);
 			m->addChild(createMenuItem("Apply", "", [this, addrField, portField]() { 
-				module->sim->setUdpDestination(addrField->text, portField->text); 
+				module->udpOutput->setUdpDestination(addrField->text, portField->text); 
 			}));
 		}));
 
 		menu->addChild(createSubmenuItem("OSC", "", [this](ui::Menu* m) {
-			auto* addrField = Rack::createTextField(module->sim->getOscAddress(), "Address");
+			auto* addrField = Rack::createTextField(module->udpOutput->getOscAddress(), "Address");
 			m->addChild(addrField);
-			auto* portField = Rack::createTextField(module->sim->getOscPort(), "Port");
+			auto* portField = Rack::createTextField(module->udpOutput->getOscPort(), "Port");
 			m->addChild(portField);
 			m->addChild(createMenuItem("Apply", "", [this, addrField, portField]() { 
-				module->sim->setOscDestination(addrField->text, portField->text); 
+				module->udpOutput->setOscDestination(addrField->text, portField->text); 
 			}));
 		}));
 

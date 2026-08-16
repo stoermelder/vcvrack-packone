@@ -14,7 +14,6 @@ extern "C" {
 	#include <orca-c/gbuffer.h>
 	#include <orca-c/vmio.h>
 	#include <orca-c/sim.h>
-	#include <orca-c/osc_out.h>
 }
 
 namespace StoermelderPackOne {
@@ -190,16 +189,6 @@ public:
 	void redoRequest();
 	void resetRequest();
 
-	// UDP destination persisted in sim
-	void setUdpDestination(const std::string& address, const std::string& port);
-	std::string getUdpAddress() const { return udpAddress_; }
-	std::string getUdpPort() const { return udpPort_; }
-
-	// OSC destination persisted in sim
-	void setOscDestination(const std::string& address, const std::string& port);
-	std::string getOscAddress() const { return oscAddress_; }
-	std::string getOscPort() const { return oscPort_; }
-
 private:
 	Field field_;
 	Mbuf_reusable mbuf_;
@@ -271,24 +260,6 @@ private:
 	// Request made by UI to force a display publish before the next step.
 	// Set by `notifyTick()` on UI thread, processed by `process()` on DSP thread.
 	std::atomic<bool> pending_ui_update_{false};
-
-	// UDP device and destination
-	Oosc_dev* udp_dev_ = nullptr;
-	// Ensure UDP device exists (tries to create with given address/port if missing).
-	bool ensureUdpDev(const char* addr, const char* port);
-	// Send a list/array of 32-bit integers in OSC format to the configured destination.
-	// Destroy UDP device if present.
-	void destroyUdpDev();
-
-	std::string udpAddress_ = "127.0.0.1";
-	std::string udpPort_ = "49161";
-	// Send a raw UDP datagram (no-op if device creation fails).
-	void sendUdpDatagram(const char* data, Usz size);
-
-	std::string oscAddress_ = "127.0.0.1";
-	std::string oscPort_ = "49162";
-	// OSC path prefix used as base when building addresses from glyphs (e.g. "/OSC_MIDI_0/MIDI").
-	void sendOscInts(const char* osc_path, I32 const* vals, Usz count);
 
 	// Concurrency model:
 	// - DSP thread (process): calls step() lock-free, writes to double buffers
