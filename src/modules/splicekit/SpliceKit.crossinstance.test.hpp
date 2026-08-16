@@ -11,7 +11,7 @@
 // instance. collectCableEndCandidates() must therefore span every participating instance,
 // otherwise SpliceKitWidget::step() reports "no cable" and the cell renders as unconnected.
 TEST_CASE("collectAssignedPorts - collects only valid assignments, keyed by direction", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->portAssignments[0] = {42, engine::Port::OUTPUT, 3};
 	m->portAssignments[1] = {42, engine::Port::INPUT, 3};   // same port id, other direction
@@ -28,8 +28,8 @@ TEST_CASE("collectAssignedPorts - collects only valid assignments, keyed by dire
 }
 
 TEST_CASE("collectCableEndCandidates - includes another instance's assignments", "[SpliceKit]") {
-	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
 
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
@@ -48,8 +48,8 @@ TEST_CASE("collectCableEndCandidates - includes another instance's assignments",
 }
 
 TEST_CASE("collectCableEndCandidates - excludes instances that opted out of cross-instance patching", "[SpliceKit]") {
-	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
 
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
@@ -73,7 +73,7 @@ TEST_CASE("collectCableEndCandidates - excludes instances that opted out of cros
 }
 
 TEST_CASE("collectCableEndCandidates - a lone instance yields exactly its own assignments", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	m->portAssignments[1] = {43, engine::Port::INPUT, 2};
@@ -100,7 +100,7 @@ TEST_CASE("collectCableEndCandidates - a lone instance yields exactly its own as
 // requires the manual two-instance check in var/SpliceKit_crossinstance_pending_led.md.
 
 TEST_CASE("peer connected - a flagged cell blinks in the connected state", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->portAssignments[5] = {77, engine::Port::INPUT, 1};
 
 	// Not flagged: ordinary assigned appearance.
@@ -115,7 +115,7 @@ TEST_CASE("peer connected - a flagged cell blinks in the connected state", "[Spl
 }
 
 TEST_CASE("peer connected - a local selection still wins", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->portAssignments[5] = {77, engine::Port::INPUT, 1};
 	m->peerConnected[5] = true;
 
@@ -127,8 +127,8 @@ TEST_CASE("peer connected - a local selection still wins", "[SpliceKit]") {
 }
 
 TEST_CASE("peer connected - no armed peer clears every flag", "[SpliceKit]") {
-	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
 	b->peerConnected[5] = true;   // left over from an earlier gesture
 
@@ -136,18 +136,18 @@ TEST_CASE("peer connected - no armed peer clears every flag", "[SpliceKit]") {
 	b->refreshPeerConnected();
 	REQUIRE(b->peerConnected[5] == false);
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	Test::destroyModule(b);
 	Test::destroyModule(a);
 }
 
 TEST_CASE("peer connected - the initiator does not highlight its own cells", "[SpliceKit]") {
-	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	a->peerConnected[0] = true;
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	a->triggerCell(0);
 	a->taskProcessorUi.step();   // a becomes the initiator in crossPending
 
@@ -155,18 +155,18 @@ TEST_CASE("peer connected - the initiator does not highlight its own cells", "[S
 	a->refreshPeerConnected();
 	REQUIRE(a->peerConnected[0] == false);
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	Test::destroyModule(b);
 	Test::destroyModule(a);
 }
 
 TEST_CASE("peer connected - an opted-out instance shows no highlight", "[SpliceKit]") {
-	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	a->triggerCell(0);
 	a->taskProcessorUi.step();
 
@@ -176,7 +176,7 @@ TEST_CASE("peer connected - an opted-out instance shows no highlight", "[SpliceK
 	// b cannot participate in the gesture, so it must not advertise a connection to it.
 	REQUIRE(b->peerConnected[5] == false);
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	Test::destroyModule(b);
 	Test::destroyModule(a);
 }
@@ -186,18 +186,18 @@ TEST_CASE("peer connected - an opted-out instance shows no highlight", "[SpliceK
 // CableWidget scaffolding.
 
 TEST_CASE("peer connected - a cell in the published partner list is flagged", "[SpliceKit]") {
-	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};   // cabled to a's armed port
 	b->portAssignments[6] = {88, engine::Port::INPUT, 2};   // an input, but not cabled to it
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	a->triggerCell(0);
 	a->taskProcessorUi.step();
 
 	// What the initiator would have published for a cable 42:0 -> 77:1.
-	SpliceKitModule::crossPending[APP].partners = {{77, 1}};
+	SpliceKitModule::crossPending()[APP].partners = {{77, 1}};
 
 	b->refreshPeerConnected();
 	REQUIRE(b->peerConnected[5] == true);
@@ -205,64 +205,64 @@ TEST_CASE("peer connected - a cell in the published partner list is flagged", "[
 	// this is what distinguishes "already connected" from "could be connected".
 	REQUIRE(b->peerConnected[6] == false);
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	Test::destroyModule(b);
 	Test::destroyModule(a);
 }
 
 TEST_CASE("peer connected - a same-direction cell is never flagged", "[SpliceKit]") {
-	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::OUTPUT, 1};  // same direction as the armed port
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	a->triggerCell(0);
 	a->taskProcessorUi.step();
 
 	// Even if the id somehow appeared in the list, resolveDirection() rejects the pair: two
 	// outputs can never share a cable.
-	SpliceKitModule::crossPending[APP].partners = {{77, 1}};
+	SpliceKitModule::crossPending()[APP].partners = {{77, 1}};
 
 	b->refreshPeerConnected();
 	REQUIRE(b->peerConnected[5] == false);
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	Test::destroyModule(b);
 	Test::destroyModule(a);
 }
 
 TEST_CASE("peer connected - an armed port with no cables flags nothing", "[SpliceKit]") {
-	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	a->triggerCell(0);
 	a->taskProcessorUi.step();
 
 	// collectCablePartners() found nothing, which is the common case when arming a free port.
-	REQUIRE(SpliceKitModule::crossPending[APP].partners.empty());
+	REQUIRE(SpliceKitModule::crossPending()[APP].partners.empty());
 
 	b->refreshPeerConnected();
 	REQUIRE(b->peerConnected[5] == false);
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	Test::destroyModule(b);
 	Test::destroyModule(a);
 }
 
 TEST_CASE("peer connected - arming republishes the partner list from scratch", "[SpliceKit]") {
-	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	a->portAssignments[1] = {43, engine::Port::OUTPUT, 1};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
 
 	// Leave a stale list behind, as an earlier gesture on a different port would have.
-	SpliceKitModule::crossPending[APP].clear();
-	SpliceKitModule::crossPending[APP].partners = {{77, 1}};
+	SpliceKitModule::crossPending()[APP].clear();
+	SpliceKitModule::crossPending()[APP].partners = {{77, 1}};
 
 	// Arming resolves the newly armed port's cables and must overwrite, not merge: the entry
 	// describes one port at a time, so a leftover entry from another port would highlight
@@ -270,8 +270,8 @@ TEST_CASE("peer connected - arming republishes the partner list from scratch", "
 	a->triggerCell(1);
 	a->taskProcessorUi.step();
 
-	REQUIRE(SpliceKitModule::crossPending[APP].cellId == 1);
-	REQUIRE(SpliceKitModule::crossPending[APP].partners.count({77, 1}) == 0);
+	REQUIRE(SpliceKitModule::crossPending()[APP].cellId == 1);
+	REQUIRE(SpliceKitModule::crossPending()[APP].partners.count({77, 1}) == 0);
 
 	// NOTE: this pins the overwrite, not the resolution. collectCablePartners() needs real
 	// CableWidgets to return anything, so with no cables in the harness a working publish and
@@ -282,44 +282,44 @@ TEST_CASE("peer connected - arming republishes the partner list from scratch", "
 	b->refreshPeerConnected();
 	REQUIRE(b->peerConnected[5] == false);
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	Test::destroyModule(b);
 	Test::destroyModule(a);
 }
 
 TEST_CASE("peer connected - clearing the pending entry drops the published partners", "[SpliceKit]") {
-	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	a->triggerCell(0);
 	a->taskProcessorUi.step();
-	SpliceKitModule::crossPending[APP].partners = {{77, 1}};
+	SpliceKitModule::crossPending()[APP].partners = {{77, 1}};
 	b->refreshPeerConnected();
 	REQUIRE(b->peerConnected[5] == true);
 
 	// The published list is part of the entry, so cancelling the gesture must drop it — a
 	// leftover list would keep peers highlighting a selection that no longer exists.
 	a->clearPendingGui();
-	REQUIRE(SpliceKitModule::crossPending[APP].partners.empty());
+	REQUIRE(SpliceKitModule::crossPending()[APP].partners.empty());
 
 	b->refreshPeerConnected();
 	REQUIRE(b->peerConnected[5] == false);
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	Test::destroyModule(b);
 	Test::destroyModule(a);
 }
 
 TEST_CASE("peer connected - unassigned cells are never flagged", "[SpliceKit]") {
-	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
-	SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	// b has no assignments at all.
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	a->triggerCell(0);
 	a->taskProcessorUi.step();
 
@@ -328,17 +328,17 @@ TEST_CASE("peer connected - unassigned cells are never flagged", "[SpliceKit]") 
 		REQUIRE(b->peerConnected[i] == false);
 	}
 
-	SpliceKitModule::crossPending[APP].clear();
+	SpliceKitModule::crossPending()[APP].clear();
 	Test::destroyModule(b);
 	Test::destroyModule(a);
 }
 
 TEST_CASE("collectCableEndCandidates - a destroyed instance leaves no dangling entry", "[SpliceKit]") {
-	SpliceKitModule* a = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* a = createModule();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 
 	{
-		SpliceKitModule* b = Test::createModule<SpliceKitModule>("SpliceKit");
+		SpliceKitModule* b = createModule();
 		b->portAssignments[5] = {77, engine::Port::INPUT, 1};
 		REQUIRE(a->collectCableEndCandidates().count({77, 1 * 2 + (int)engine::Port::INPUT}) == 1);
 		Test::destroyModule(b);
@@ -350,5 +350,54 @@ TEST_CASE("collectCableEndCandidates - a destroyed instance leaves no dangling e
 	REQUIRE(ports.size() == 1);
 	REQUIRE(ports.count({77, 1 * 2 + (int)engine::Port::INPUT}) == 0);
 
+	Test::destroyModule(a);
+}
+
+// Cross-instance responder direction clash
+// The responder resolves the initiator's armed port against its own; a same-direction pair
+// (two outputs, or two inputs) can never share a cable, so no cable is made and the user is
+// told why — the cross-instance counterpart of toggleConnection()'s rejection on a single
+// instance. (The cable-making half of the responder path is NOT covered here: it needs real
+// CableWidgets, which the harness does not provide — same boundary as the
+// collectCablePartners() coverage note above.)
+TEST_CASE("cross-instance responder - same-direction pair reports the clash", "[SpliceKit]") {
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
+	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
+	b->portAssignments[5] = {77, engine::Port::OUTPUT, 1};  // same direction as a's armed port
+
+	SpliceKitModule::crossPending()[APP].clear();
+	a->triggerCell(0);
+	a->taskProcessorUi.step();   // a becomes the initiator in crossPending
+
+	// b completes a's gesture, but the pair is same-direction: no cable, and the user sees
+	// the same rejection toggleConnection() would have shown on a single instance.
+	b->triggerCell(5);
+	b->taskProcessorUi.step();
+
+	REQUIRE(b->overlayMessage.title == "Both ports are outputs");
+
+	SpliceKitModule::crossPending()[APP].clear();
+	Test::destroyModule(b);
+	Test::destroyModule(a);
+}
+
+TEST_CASE("cross-instance responder - two inputs report the clash", "[SpliceKit]") {
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
+	a->portAssignments[0] = {42, engine::Port::INPUT, 0};
+	b->portAssignments[5] = {77, engine::Port::INPUT, 1};  // same direction as a's armed port
+
+	SpliceKitModule::crossPending()[APP].clear();
+	a->triggerCell(0);
+	a->taskProcessorUi.step();   // a becomes the initiator in crossPending
+
+	b->triggerCell(5);
+	b->taskProcessorUi.step();
+
+	REQUIRE(b->overlayMessage.title == "Both ports are inputs");
+
+	SpliceKitModule::crossPending()[APP].clear();
+	Test::destroyModule(b);
 	Test::destroyModule(a);
 }

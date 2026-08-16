@@ -4,7 +4,7 @@
 #include "../../ui/InfoWindow.hpp"
 #include "../../ui/ModuleSelectProcessor.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
-#include "../../ui/VisibilityTracker.hpp"
+#include "../../ui/CableOpacityState.hpp"
 #include "../../utils/GuiTaskProcessor.hpp"
 #include "../../utils/vcv_cables.hpp"
 #include "../midi/MidiTrackingProcessor.hpp"
@@ -88,6 +88,31 @@ resolveDirection(const PortAssignment& a, const PortAssignment& b) {
 	if (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) return { &a, &b };
 	if (a.type == engine::Port::INPUT && b.type == engine::Port::OUTPUT) return { &b, &a };
 	return { nullptr, nullptr };
+}
+
+// Pure — diffs two scene topologies and reports which cell pairs need their cable
+// removed (present in `from`, absent in `to`) and which need one added (absent in
+// `from`, present in `to`). Pairs with unassigned ports or with no valid output→input
+// direction are excluded — such cells cannot carry a cable, and the add/remove helpers
+// re-check direction anyway. Split out of SceneStore::switchTo() so the scene-switch
+// diff is testable without rack/cable scaffolding (the cable layer is a no-op in tests).
+static void topologyDiff(const SceneConns& from, const SceneConns& to,
+		const PortAssignment* ports,
+		std::vector<std::pair<int, int>>& toRemove,
+		std::vector<std::pair<int, int>>& toAdd) {
+	toRemove.clear();
+	toAdd.clear();
+	for (int i = 0; i < MATRIX_COUNT; i++) {
+		for (int j = i + 1; j < MATRIX_COUNT; j++) {
+			bool was = (from[i] >> j) & 1;
+			bool will = (to[i] >> j) & 1;
+			if (was == will) continue;
+			if (!ports[i].isValid() || !ports[j].isValid()) continue;
+			if (!resolveDirection(ports[i], ports[j]).first) continue;
+			if (was) toRemove.push_back({i, j});
+			else toAdd.push_back({i, j});
+		}
+	}
 }
 
 // Formats a MIDI mapping as "CC N" / "Note N", or "" when unmapped. Callers add their
@@ -222,10 +247,9 @@ struct SceneStore {
 	// starting from whatever connections[current] currently holds. For each pair (i,j)
 	// that differs, the cable is added or removed and the bitmask updated with it, so
 	// the store is left consistent without the caller storing newConns afterwards.
-	// Pairs that haven't changed are skipped.
-	//
-	// Callers that want the *incoming* scene's cables realised must set `current` first;
-	// this always writes to whichever scene is active (see switchTo).
+	// Pairs that haven't changed are skipped. Unlike switchTo(), this always writes the
+	// diff into whichever scene `current` names, so it is only used where the current
+	// scene's stored topology is meant to end up as newConns (reconcile, resetModuleState).
 	void applyToCurrent(const SceneConns& newConns) {
 		assert(verifier.isUiOrWorker());
 		for (int i = 0; i < MATRIX_COUNT; i++) {
@@ -260,16 +284,24 @@ struct SceneStore {
 
 	// GUI thread — switches to newScene: captures the outgoing scene's current cable
 	// state, then realises the incoming scene's stored topology in the patch. No-op if
-	// newScene is already current. `current` advances *before* the diff, since
-	// applyToCurrent() writes the bitmask of whichever scene is active — the incoming
-	// one is the one that must end up matching the cables. Fires onSwitch() last.
+	// newScene is already current. Fires onSwitch() last.
+	//
+	// The diff runs while `current` still names the outgoing scene, so its captured
+	// state is the "from" baseline. Cable changes are applied with the bitmask-free
+	// helpers (removeCableBetween/addCableBetween): neither scene's stored bitmask may
+	// be rewritten here — the outgoing scene keeps its just-captured state (it is no
+	// longer active) and the incoming scene already holds the desired topology. That
+	// rules out applyToCurrent(), which always writes the diff into whichever scene
+	// `current` names.
 	void switchTo(int newScene) {
 		assert(verifier.isUiOrWorker());
 		if (newScene == current) return;
 		capture(current);
-		SceneConns incoming = connections[newScene];
+		std::vector<std::pair<int, int>> toRemove, toAdd;
+		topologyDiff(connections[current], connections[newScene], ports, toRemove, toAdd);
+		for (const auto& p : toRemove) removeCableBetween(p.first, p.second);
+		for (const auto& p : toAdd) addCableBetween(p.first, p.second);
 		current = newScene;
-		applyToCurrent(incoming);
 		if (onSwitch) onSwitch();
 	}
 
@@ -653,13 +685,25 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	
 	// Entries are never erased when a Context is destroyed — a small leak bounded by the
 	// number of Contexts ever opened; not worth fixing.
-	static std::map<Context*, CrossPendingState> crossPending;
+	//
+	// Function-local static rather than a class static with an out-of-line definition: the
+	// test build both links the plugin binary and #includes this .cpp, so a class static
+	// would exist twice — one copy in plugin.dylib, one in the test TU — and a write through
+	// one (e.g. onRemove()'s clear()) would be invisible to a read through the other (e.g.
+	// triggerCell()'s lambda), leaving a stale `initiator` pointing at an already-destroyed
+	// module. (Caught as a heap-use-after-free in clearPendingLocal(), reached via
+	// initiator->clearPendingLocal() in the responder branch below.) Same fix and same
+	// rationale as getInstances() just below.
+	static std::map<Context*, CrossPendingState>& crossPending() {
+		static std::map<Context*, CrossPendingState> crossPending;
+		return crossPending;
+	}
 
 	// All live instances in this Rack context, maintained by the constructor/destructor.
 	// Cross-instance patching needs to enumerate its peers every GUI frame (see
 	// collectCableEndCandidates); walking APP->engine->getModuleIds() would allocate a
 	// vector of every module in the patch and dynamic_cast each one, 60x per second.
-	// Same keying as crossPending, and the same GUI-thread-only ownership rule.
+	// Same keying as crossPending(), and the same GUI-thread-only ownership rule.
 	//
 	// Function-local static rather than a class static with an out-of-line definition:
 	// the test build both links the plugin binary and #includes this .cpp, so a class
@@ -906,7 +950,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	}
 
 	void onRemove() override {
-		auto& cp = crossPending[APP];
+		auto& cp = crossPending()[APP];
 		if (cp.initiator == this) cp.clear();
 	}
 
@@ -945,7 +989,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	// instances; mutating it from the engine thread would race with GUI-thread access.
 	void clearPendingCrossGui() {
 		assert(verifier.isUiOrWorker());
-		auto& cp = crossPending[APP];
+		auto& cp = crossPending()[APP];
 		if (cp.initiator == this) cp.clear();
 	}
 
@@ -1066,16 +1110,27 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	void processSceneLinkMaster() {
 		assert(verifier.isEngine());
 		if (!moduleChangedFlag) return;
-		moduleChangedFlag = false;
-		if (sceneLinkMasterId < 0) return;
+		if (sceneLinkMasterId < 0) {
+			// No master configured — nothing to follow, so the notification is consumed.
+			moduleChangedFlag = false;
+			return;
+		}
 		auto* master = dynamic_cast<SpliceKitModule*>(APP->engine->getModule(sceneLinkMasterId));
 		if (!master) {
 			// Master was removed from the patch (or never existed) — stop following.
 			sceneLinkMasterId = -1;
+			moduleChangedFlag = false;
 		}
 		else if (master->sceneStore.current != sceneStore.current) {
 			int targetScene = master->sceneStore.current;
-			taskProcessorUi.enqueue([this, targetScene]() { sceneStore.switchTo(targetScene); });
+			// Clear the flag only after a successful enqueue.
+			if (taskProcessorUi.enqueue([this, targetScene]() { sceneStore.switchTo(targetScene); })) {
+				moduleChangedFlag = false;
+			}
+		}
+		else {
+			// Master exists and already agrees — nothing to enqueue.
+			moduleChangedFlag = false;
 		}
 	}
 
@@ -1326,8 +1381,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	void refreshPeerConnected() {
 		assert(verifier.isUiOrWorker());
 		// Safe to read crossPending here (GUI thread), unlike from resolveCellVisual().
-		auto it = crossPending.find(APP);
-		const CrossPendingState* cp = (it != crossPending.end()) ? &it->second : nullptr;
+		auto& reg = crossPending();
+		auto it = reg.find(APP);
+		const CrossPendingState* cp = (it != reg.end()) ? &it->second : nullptr;
 		// Nobody armed, we are the initiator (our own pendingCellId drives our LEDs), or we
 		// opted out.
 		if (!crossInstanceEnabled || !cp || !cp->isValid() || cp->initiator == this) {
@@ -1806,11 +1862,13 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		if (!portAssignments[id].isValid()) return;
 
 		if (pendingCellId < 0) {
+			// pendingCellId is set here on the engine thread, but the responder lambda
+			// above only clears it via clearPendingLocal() on the GUI thread a frame later.
 			pendingCellId = id;
 			taskProcessorUi.enqueue([this, id]() {
 				// GUI thread — sole owner of crossPending. Re-check cp validity here
 				// because another instance's lambda may have already consumed it.
-				auto& cp = crossPending[APP];
+				auto& cp = crossPending()[APP];
 				if (crossInstanceEnabled && cp.isValid() && cp.initiator != this) {
 					// Responder path: create the cable directly (we are on the GUI thread).
 					SpliceKitModule* initiator = cp.initiator;
@@ -1832,6 +1890,12 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 							vcv::removeCable(cw, false);
 							setOverlayMessage("Cable removed", portLabel(*outPd), portLabel(*inPd));
 						}
+					}
+					else {
+						// Same-direction pair (both outputs or both inputs) — the peer's gesture cannot complete.
+						bool bothOut = (iPort.type == engine::Port::OUTPUT && rPort.type == engine::Port::OUTPUT);
+						setOverlayMessage(bothOut ? "Both ports are outputs" : "Both ports are inputs",
+							portLabel(iPort), portLabel(rPort));
 					}
 				}
 				else {
@@ -1984,9 +2048,6 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		std::fill(portHasCable, portHasCable  + MATRIX_COUNT, false);
 	}
 };
-
-// Static field to communicate a pending state accross instances
-std::map<Context*, SpliceKitModule::CrossPendingState> SpliceKitModule::crossPending;
 
 
 // Overlay widget added directly to APP->scene->rack — drawn in rack coordinates.
@@ -2374,7 +2435,9 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			vizOverlay = nullptr;
 		}
 		if (module) {
-			VisibilityTracker::release(APP->scene->rack->getCableContainer(), this);
+			// Releases this instance's cable-opacity hold if it is still in viz mode (a
+			// no-op otherwise), so a widget deleted mid-viz-mode restores the cables.
+			Rack::cableOpacityState().release(this);
 			OverlayMessageWidget::unregisterProvider(this);
 		}
 	}
@@ -2409,8 +2472,8 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		int hovered = vizOverlay ? vizOverlay->hoveredCellId : -1;
 		vizMode = active;
 		if (vizOverlay) vizOverlay->visible = active;
-		if (active) VisibilityTracker::hide(APP->scene->rack->getCableContainer(), this);
-		else VisibilityTracker::release(APP->scene->rack->getCableContainer(), this);
+		if (active) Rack::cableOpacityState().hide(this);
+		else Rack::cableOpacityState().release(this);
 		if (hovered >= 0 && hovered < MATRIX_COUNT) {
 			SpliceKitCellButton* btn = findCellButton(hovered);
 			if (btn) {

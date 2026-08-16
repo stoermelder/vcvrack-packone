@@ -9,21 +9,21 @@
 // onRandomize / randomizeCurrentScene — random valid topology for the current scene
 
 TEST_CASE("Construction - matrix and scene param quantities exclude default randomization", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	REQUIRE(m->paramQuantities[SpliceKitModule::PARAM_MATRIX]->randomizeEnabled == false);
 	REQUIRE(m->paramQuantities[SpliceKitModule::PARAM_SCENE]->randomizeEnabled == false);
 	Test::destroyModule(m);
 }
 
 TEST_CASE("randomizeCurrentScene - no connections when no ports are assigned", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->randomizeCurrentScene();
 	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->sceneStore.connections[m->sceneStore.current][i] == 0);
 	Test::destroyModule(m);
 }
 
 TEST_CASE("randomizeCurrentScene - only pairs assigned outputs with assigned inputs", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	int outs[] = {0, 5};
 	int ins[] = {1, 2, 10};
 	for (int i : outs) {
@@ -58,7 +58,7 @@ TEST_CASE("randomizeCurrentScene - only pairs assigned outputs with assigned inp
 }
 
 TEST_CASE("randomizeCurrentScene - replaces the scene's previous topology", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->portAssignments[0].moduleId = 42; m->portAssignments[0].portId = 0; m->portAssignments[0].type = engine::Port::OUTPUT;
 	m->portAssignments[1].moduleId = 42; m->portAssignments[1].portId = 1; m->portAssignments[1].type = engine::Port::INPUT;
 	// Stale connection between cells with no valid port assignment — must disappear.
@@ -74,7 +74,7 @@ TEST_CASE("randomizeCurrentScene - replaces the scene's previous topology", "[Sp
 }
 
 TEST_CASE("randomizePortAssignmentsFrom - clears every cell even when candidates is empty", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->portAssignments[0].moduleId = 42; m->portAssignments[0].portId = 0; m->portAssignments[0].type = engine::Port::OUTPUT;
 	m->cellLabels[0] = "stale label";
 
@@ -87,7 +87,7 @@ TEST_CASE("randomizePortAssignmentsFrom - clears every cell even when candidates
 }
 
 TEST_CASE("randomizePortAssignmentsFrom - a single candidate is assigned to exactly one cell", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	for (int i = 0; i < MATRIX_COUNT; i++) m->cellLabels[i] = "stale label";
 
 	std::vector<PortAssignment> candidates(1);
@@ -114,7 +114,7 @@ TEST_CASE("randomizePortAssignmentsFrom - a single candidate is assigned to exac
 }
 
 TEST_CASE("randomizePortAssignmentsFrom - each candidate is used at most once, surplus cells cleared", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	std::vector<PortAssignment> candidates(3);
 	candidates[0] = {10, engine::Port::OUTPUT, 0};
@@ -147,7 +147,7 @@ TEST_CASE("randomizePortAssignmentsFrom - each candidate is used at most once, s
 }
 
 TEST_CASE("randomizePortAssignmentsFrom - fills every cell without duplicates when there are more candidates than cells", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	std::vector<PortAssignment> candidates(MATRIX_COUNT + 20);
 	for (size_t i = 0; i < candidates.size(); i++) {
@@ -167,7 +167,7 @@ TEST_CASE("randomizePortAssignmentsFrom - fills every cell without duplicates wh
 }
 
 TEST_CASE("onRandomize - runs randomizePortAssignments directly without queueing", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	// Rack calls onRandomize() on the GUI thread, so it enumerates ports inline rather than
 	// enqueueing — which would make taskProcessorUi multi-producer against the engine thread.

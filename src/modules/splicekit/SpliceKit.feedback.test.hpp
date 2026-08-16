@@ -9,14 +9,14 @@
 // sendFeedbackOff — guard conditions
 
 TEST_CASE("sendFeedbackOff - no-op for invalid state id (-1)", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.sendFeedbackOff(0, -1);
 	REQUIRE(m->feedback.midiOutput.sentCount == 0);
 	Test::destroyModule(m);
 }
 
 TEST_CASE("sendFeedbackOff - no-op when feedback preset is off", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePresetJson("");  // no output
 	m->feedback.sendFeedbackOff(0, LED_STATE_COLOR0);
 	REQUIRE(m->feedback.midiOutput.sentCount == 0);
@@ -24,7 +24,7 @@ TEST_CASE("sendFeedbackOff - no-op when feedback preset is off", "[SpliceKit]") 
 }
 
 TEST_CASE("sendFeedbackOff - no-op for MIDI_OUT_NONE spec", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_NONE;
 	m->feedback.setActivePreset(preset);
@@ -34,7 +34,7 @@ TEST_CASE("sendFeedbackOff - no-op for MIDI_OUT_NONE spec", "[SpliceKit]") {
 }
 
 TEST_CASE("sendFeedbackOff - no-op for CC-type spec", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_CC;
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FIXED;
@@ -47,7 +47,7 @@ TEST_CASE("sendFeedbackOff - no-op for CC-type spec", "[SpliceKit]") {
 }
 
 TEST_CASE("sendFeedbackOff - no-op for NOTE_OFF-type spec", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_NOTE_OFF;
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FIXED;
@@ -60,7 +60,7 @@ TEST_CASE("sendFeedbackOff - no-op for NOTE_OFF-type spec", "[SpliceKit]") {
 }
 
 TEST_CASE("sendFeedbackOff - no-op when FROM_SLOT note mode has no mapping", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_NOTE_ON;
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FROM_SLOT;
@@ -73,7 +73,7 @@ TEST_CASE("sendFeedbackOff - no-op when FROM_SLOT note mode has no mapping", "[S
 }
 
 TEST_CASE("sendFeedbackOff - no-op for FROM_SLOT_TYPE when slot is CC", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_FROM_SLOT_TYPE;
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FROM_SLOT;
@@ -87,7 +87,7 @@ TEST_CASE("sendFeedbackOff - no-op for FROM_SLOT_TYPE when slot is CC", "[Splice
 }
 
 TEST_CASE("sendFeedbackOff - sends note-off 0x80 for NOTE_ON + FIXED mode", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_NOTE_ON;
 	preset.specs[LED_STATE_COLOR0].channel = 0;
@@ -104,7 +104,7 @@ TEST_CASE("sendFeedbackOff - sends note-off 0x80 for NOTE_ON + FIXED mode", "[Sp
 }
 
 TEST_CASE("sendFeedbackOff - sends note-off with note from slot mapping (FROM_SLOT)", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR1].type = MIDI_OUT_NOTE_ON;
 	preset.specs[LED_STATE_COLOR1].channel = 2;
@@ -121,7 +121,7 @@ TEST_CASE("sendFeedbackOff - sends note-off with note from slot mapping (FROM_SL
 }
 
 TEST_CASE("sendFeedbackOff - sends note-off for FROM_SLOT_TYPE with NOTE slot", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_FROM_SLOT_TYPE;
 	preset.specs[LED_STATE_COLOR0].channel = 1;
@@ -145,7 +145,7 @@ TEST_CASE("sendFeedbackOff - sends note-off for FROM_SLOT_TYPE with NOTE slot", 
 // NOTE_OFF and CC message types and resolves channel/value/byte2 correctly.
 
 TEST_CASE("sendFeedback - no-op when no preset is active", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePresetJson("");  // no output
 	m->feedback.sendFeedback(0, LED_STATE_COLOR0);
 	REQUIRE(m->feedback.midiOutput.sentCount == 0);
@@ -153,7 +153,7 @@ TEST_CASE("sendFeedback - no-op when no preset is active", "[SpliceKit]") {
 }
 
 TEST_CASE("sendFeedback - no-op for NONE-type spec", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_NONE;
 	m->feedback.setActivePreset(preset);
@@ -163,7 +163,7 @@ TEST_CASE("sendFeedback - no-op for NONE-type spec", "[SpliceKit]") {
 }
 
 TEST_CASE("sendFeedback - no-op for FROM_SLOT when slot is unmapped", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_NOTE_ON;
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FROM_SLOT;
@@ -176,7 +176,7 @@ TEST_CASE("sendFeedback - no-op for FROM_SLOT when slot is unmapped", "[SpliceKi
 }
 
 TEST_CASE("sendFeedback - no-op for FROM_SLOT_TYPE when slot is CC", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_FROM_SLOT_TYPE;
 	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FROM_SLOT;
@@ -195,7 +195,7 @@ TEST_CASE("sendFeedback - no-op for FROM_SLOT_TYPE when slot is CC", "[SpliceKit
 }
 
 TEST_CASE("sendFeedback - sends note-on 0x90 for NOTE_ON + FIXED mode", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_NOTE_ON;
 	preset.specs[LED_STATE_COLOR0].channel = 0;
@@ -212,7 +212,7 @@ TEST_CASE("sendFeedback - sends note-on 0x90 for NOTE_ON + FIXED mode", "[Splice
 }
 
 TEST_CASE("sendFeedback - sends note-off 0x80 for NOTE_OFF + FIXED mode", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_NOTE_OFF;
 	preset.specs[LED_STATE_COLOR0].channel = 1;
@@ -229,7 +229,7 @@ TEST_CASE("sendFeedback - sends note-off 0x80 for NOTE_OFF + FIXED mode", "[Spli
 }
 
 TEST_CASE("sendFeedback - sends CC 0xB0 for CC + FROM_SLOT mode with CC slot", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_CC;
 	preset.specs[LED_STATE_COLOR0].channel = 2;
@@ -246,7 +246,7 @@ TEST_CASE("sendFeedback - sends CC 0xB0 for CC + FROM_SLOT mode with CC slot", "
 }
 
 TEST_CASE("sendFeedback - sends note-on 0x90 for FROM_SLOT_TYPE with NOTE slot", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_FROM_SLOT_TYPE;
 	preset.specs[LED_STATE_COLOR0].channel = 0;
@@ -263,7 +263,7 @@ TEST_CASE("sendFeedback - sends note-on 0x90 for FROM_SLOT_TYPE with NOTE slot",
 }
 
 TEST_CASE("sendFeedback - sends CC 0xB0 for FROM_SLOT_TYPE with CC slot", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_FROM_SLOT_TYPE;
 	preset.specs[LED_STATE_COLOR0].channel = 3;
@@ -283,7 +283,7 @@ TEST_CASE("sendFeedback - sends CC 0xB0 for FROM_SLOT_TYPE with CC slot", "[Spli
 // FeedbackSender::setState
 
 TEST_CASE("setState - no-op when newState equals the cached state", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePreset(makeNoteOnPreset());
 	m->feedback.cellLedState[0] = LED_STATE_COLOR0;
 
@@ -295,7 +295,7 @@ TEST_CASE("setState - no-op when newState equals the cached state", "[SpliceKit]
 }
 
 TEST_CASE("setState - on change, sends off then on and updates the cache", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePreset(makeNoteOnPreset(36, 127));
 	m->feedback.cellLedState[0] = LED_STATE_COLOR0;
 
@@ -312,7 +312,7 @@ TEST_CASE("setState - on change, sends off then on and updates the cache", "[Spl
 }
 
 TEST_CASE("setState - off message addresses the outgoing (old) state, not the incoming one", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	// Distinct notes per state id so the off-message's note number pins down which
 	// state it addressed — this is the invariant setState() exists to protect: the
 	// cache must still hold the OLD state when sendFeedbackOff() runs, since
@@ -339,7 +339,7 @@ TEST_CASE("setState - off message addresses the outgoing (old) state, not the in
 }
 
 TEST_CASE("setState - scene mapId (>= MATRIX_COUNT) addresses sceneLedState, not cellLedState", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePreset(makeNoteOnPreset());
 	m->feedback.sceneLedState[0] = LED_STATE_COLOR0;
 
@@ -351,7 +351,7 @@ TEST_CASE("setState - scene mapId (>= MATRIX_COUNT) addresses sceneLedState, not
 }
 
 TEST_CASE("setState - first call after construction sends only the on-message (cache starts at -1)", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
 	m->feedback.setState(0, LED_STATE_COLOR0);
@@ -387,7 +387,7 @@ static MidiOutPreset makeFromSlotPreset() {
 }
 
 TEST_CASE("queueFeedbackOff - does not send on the calling thread", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
 	m->feedback.queueFeedbackOff(0, LED_STATE_COLOR0);
@@ -398,7 +398,7 @@ TEST_CASE("queueFeedbackOff - does not send on the calling thread", "[SpliceKit]
 }
 
 TEST_CASE("drainPendingOffs - sends a queued off and empties the queue", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePreset(makeNoteOnPreset(36, 127));
 
 	m->feedback.queueFeedbackOff(0, LED_STATE_COLOR0);
@@ -416,7 +416,7 @@ TEST_CASE("drainPendingOffs - sends a queued off and empties the queue", "[Splic
 }
 
 TEST_CASE("queueFeedbackOff - resolves the note at QUEUE time, not at drain time", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePreset(makeFromSlotPreset());
 
 	// Cell 0 is mapped to note 60 when the off is queued...
@@ -438,7 +438,7 @@ TEST_CASE("queueFeedbackOff - resolves the note at QUEUE time, not at drain time
 }
 
 TEST_CASE("queueFeedbackOff - applies the same spec filters as sendFeedbackOff", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	SECTION("no-op for an invalid state id") {
 		m->feedback.setActivePreset(makeNoteOnPreset());
@@ -474,7 +474,7 @@ TEST_CASE("queueFeedbackOff - applies the same spec filters as sendFeedbackOff",
 }
 
 TEST_CASE("queueFeedbackOff - drops silently when the queue is full", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
 	// The queue holds 16; push well past that. Overflow must not throw, corrupt the
@@ -488,7 +488,7 @@ TEST_CASE("queueFeedbackOff - drops silently when the queue is full", "[SpliceKi
 }
 
 TEST_CASE("drainPendingOffs - preserves queue order (FIFO)", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	for (int s = 0; s < LED_STATE_COUNT; s++) {
 		preset.specs[s].type = MIDI_OUT_NOTE_ON;
@@ -508,7 +508,7 @@ TEST_CASE("drainPendingOffs - preserves queue order (FIFO)", "[SpliceKit]") {
 }
 
 TEST_CASE("process - drains pending offs before emitting new on-messages", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->lightDivider.setDivision(256);
 	MidiOutPreset preset;
 	for (int s = 0; s < LED_STATE_COUNT; s++) {
@@ -534,7 +534,7 @@ TEST_CASE("process - drains pending offs before emitting new on-messages", "[Spl
 // GUI-thread mutators defer their note-off to the engine thread
 
 TEST_CASE("moveCell - queues offs for both cells instead of sending them", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePreset(makeNoteOnPreset());
 	setPortAssignment(m, 0, 1, 0, engine::Port::OUTPUT);
 	m->feedback.cellLedState[0] = LED_STATE_COLOR0;
@@ -550,7 +550,7 @@ TEST_CASE("moveCell - queues offs for both cells instead of sending them", "[Spl
 }
 
 TEST_CASE("moveCell - the queued off addresses the note the cell had BEFORE the move", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePreset(makeFromSlotPreset());
 	setPortAssignment(m, 0, 1, 0, engine::Port::OUTPUT);
 	// Only cell 0 has a lit LED and a mapping, so exactly one off is expected.
@@ -569,7 +569,7 @@ TEST_CASE("moveCell - the queued off addresses the note the cell had BEFORE the 
 }
 
 TEST_CASE("assignPort - rebinding a cell queues the off rather than sending it", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePreset(makeNoteOnPreset());
 	setPortAssignment(m, 3, 1, 0, engine::Port::OUTPUT);
 	m->feedback.cellLedState[3] = LED_STATE_COLOR0;
@@ -584,7 +584,7 @@ TEST_CASE("assignPort - rebinding a cell queues the off rather than sending it",
 }
 
 TEST_CASE("assignPort - no off is queued for a cell that had no prior assignment", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePreset(makeNoteOnPreset());
 	m->feedback.cellLedState[3] = LED_STATE_COLOR0;
 
@@ -597,7 +597,7 @@ TEST_CASE("assignPort - no off is queued for a cell that had no prior assignment
 }
 
 TEST_CASE("clearPort - queues the off rather than sending it", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePreset(makeNoteOnPreset());
 	setPortAssignment(m, 7, 1, 0, engine::Port::OUTPUT);
 	m->feedback.cellLedState[7] = LED_STATE_COLOR0;
@@ -612,7 +612,7 @@ TEST_CASE("clearPort - queues the off rather than sending it", "[SpliceKit]") {
 }
 
 TEST_CASE("clearPort - the queued off addresses the note the cell had before clearing", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePreset(makeFromSlotPreset());
 	setPortAssignment(m, 7, 1, 0, engine::Port::OUTPUT);
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 7, 48);
@@ -630,14 +630,14 @@ TEST_CASE("clearPort - the queued off addresses the note the cell had before cle
 // getActivePreset
 
 TEST_CASE("getActivePreset - returns nullptr when no preset is active", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->feedback.setActivePresetJson("");
 	REQUIRE(m->feedback.getActivePreset() == nullptr);
 	Test::destroyModule(m);
 }
 
 TEST_CASE("getActivePreset - returns &activePreset once a preset is set", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	MidiOutPreset preset;
 	preset.name = "Test";
 	m->feedback.setActivePreset(preset);
@@ -652,7 +652,7 @@ TEST_CASE("getActivePreset - returns &activePreset once a preset is set", "[Spli
 // invalidateLedStates
 
 TEST_CASE("invalidateLedStates - resets both LED state arrays to -1", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	for (int i = 0; i < MATRIX_COUNT; i++) m->feedback.cellLedState[i] = i;
 	for (int i = 0; i < SCENE_COUNT; i++) m->feedback.sceneLedState[i] = i;
 	m->feedback.invalidateLedStates();
@@ -665,7 +665,7 @@ TEST_CASE("invalidateLedStates - resets both LED state arrays to -1", "[SpliceKi
 // getCellColorSet — auto mode vs explicit override
 
 TEST_CASE("getCellColorSet - auto mode returns 0 (red) for OUTPUT ports", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->cellColorSet[0] = -1;  // auto
 	m->portAssignments[0].moduleId = 1;
 	m->portAssignments[0].portId = 0;
@@ -675,7 +675,7 @@ TEST_CASE("getCellColorSet - auto mode returns 0 (red) for OUTPUT ports", "[Spli
 }
 
 TEST_CASE("getCellColorSet - auto mode returns 1 (blue) for INPUT ports", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->cellColorSet[0] = -1;  // auto
 	m->portAssignments[0].moduleId = 1;
 	m->portAssignments[0].portId = 0;
@@ -685,7 +685,7 @@ TEST_CASE("getCellColorSet - auto mode returns 1 (blue) for INPUT ports", "[Spli
 }
 
 TEST_CASE("getCellColorSet - returns the explicit override when set", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	// Explicitly set to orange (2) on an INPUT port — auto would give 1.
 	m->cellColorSet[0] = 2;
 	m->portAssignments[0].moduleId = 1;
@@ -696,7 +696,7 @@ TEST_CASE("getCellColorSet - returns the explicit override when set", "[SpliceKi
 }
 
 TEST_CASE("SpliceKitOutput::setDeviceId invalidates LED states via the FeedbackSender hook", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	// Pre-populate LED state with non-(-1) values.
 	for (int i = 0; i < MATRIX_COUNT; i++) m->feedback.cellLedState[i] = LED_STATE_COLOR0;

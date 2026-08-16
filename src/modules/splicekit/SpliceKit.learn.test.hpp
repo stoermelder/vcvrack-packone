@@ -6,7 +6,7 @@
 
 
 TEST_CASE("overlayEnabled gates setOverlayMessage", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->overlayEnabled = false;
 	m->overlayMessageId = -1;
@@ -22,7 +22,7 @@ TEST_CASE("overlayEnabled gates setOverlayMessage", "[SpliceKit]") {
 
 
 TEST_CASE("enableLearn and disableLearn", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	REQUIRE(m->learningId == -1);
 
@@ -39,7 +39,7 @@ TEST_CASE("enableLearn and disableLearn", "[SpliceKit]") {
 
 
 TEST_CASE("startGlobalLearn advances through cells via processMapLearn", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->startGlobalLearn();
 	REQUIRE(m->midiLearnMode == true);
@@ -61,7 +61,7 @@ TEST_CASE("startGlobalLearn advances through cells via processMapLearn", "[Splic
 // processMapLearn — completion paths beyond sequential
 
 TEST_CASE("processMapLearn - single-learn mode clears learningId but leaves learnActive alone", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->midiLearnMode = false;       // single-learn mode
 	m->learningId = 7;
@@ -84,7 +84,7 @@ TEST_CASE("processMapLearn - single-learn mode clears learningId but leaves lear
 }
 
 TEST_CASE("processMapLearn - sequential learn ends after the last cell", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->midiLearnMode = true;
 	m->learningId = MATRIX_COUNT - 1;  // last cell
@@ -104,7 +104,7 @@ TEST_CASE("processMapLearn - sequential learn ends after the last cell", "[Splic
 }
 
 TEST_CASE("processMapLearn - single learn does not advance to the next cell", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->midiLearnMode = false;
 	m->learningId = 42;
@@ -123,7 +123,7 @@ TEST_CASE("processMapLearn - single learn does not advance to the next cell", "[
 // MidiTrackingProcessor — clearMap on a cell with no prior mapping is a no-op
 
 TEST_CASE("trackingProcessor.clearMap - on an unmapped cell is a safe no-op", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	REQUIRE_NOTHROW(m->trackingProcessor.clearMap(20));
 	auto m0 = m->trackingProcessor.getMap(20);
@@ -137,7 +137,7 @@ TEST_CASE("trackingProcessor.clearMap - on an unmapped cell is a safe no-op", "[
 // setOverlayMessage - empty/garbage title is still queued (callers are trusted)
 
 TEST_CASE("setOverlayMessage - both subtitles can be empty", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	m->overlayEnabled = true;
 	m->overlayMessageId = -1;
 
@@ -154,7 +154,7 @@ TEST_CASE("setOverlayMessage - both subtitles can be empty", "[SpliceKit]") {
 // port learn — range guard and mode interaction
 
 TEST_CASE("enablePortLearn - out-of-range ids are ignored", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	SpliceKitWidget* w = Test::createWidget<SpliceKitWidget>("SpliceKit");
 
 	m->enablePortLearn(-1, w);
@@ -167,7 +167,7 @@ TEST_CASE("enablePortLearn - out-of-range ids are ignored", "[SpliceKit]") {
 }
 
 TEST_CASE("enablePortLearn - sets the learning cell and cancels an active MIDI learn", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	SpliceKitWidget* w = Test::createWidget<SpliceKitWidget>("SpliceKit");
 
 	// MIDI learn and port learn are mutually exclusive — starting one cancels the other.
@@ -184,7 +184,7 @@ TEST_CASE("enablePortLearn - sets the learning cell and cancels an active MIDI l
 }
 
 TEST_CASE("disablePortLearn - clears the learning cell and sequential mode", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->portLearningId = 9;
 	m->portLearnMode = true;
@@ -199,7 +199,7 @@ TEST_CASE("disablePortLearn - clears the learning cell and sequential mode", "[S
 }
 
 TEST_CASE("enableLearn - starting MIDI learn cancels an active port learn", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 	SpliceKitWidget* w = Test::createWidget<SpliceKitWidget>("SpliceKit");
 
 	m->enablePortLearn(3, w);
@@ -215,7 +215,7 @@ TEST_CASE("enableLearn - starting MIDI learn cancels an active port learn", "[Sp
 }
 
 TEST_CASE("enableLearn - out-of-range ids are ignored", "[SpliceKit]") {
-	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitModule* m = createModule();
 
 	m->enableLearn(-1);
 	REQUIRE(m->learningId == -1);
