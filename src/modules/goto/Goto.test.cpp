@@ -1,12 +1,24 @@
 #include "../../test/test_plugin.hpp"
 #include "../../test/test_context.hpp"
+#include "../../test/test_mock.hpp"
 
 #include "Goto.cpp"
 
+using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::Goto;
 
 SYNC_MODEL(modelGoto, "Goto");
 Test::TestContext<> testContext;
+
+// A ModuleAccess mock that records getModuleWidget lookups (returns nullptr).
+struct MockModuleAccess : vcv::ModuleAccess {
+	mutable std::vector<int64_t> getModuleWidgetCalls;
+	ModuleWidget* getModuleWidget(int64_t moduleId) const override {
+		getModuleWidgetCalls.push_back(moduleId);
+		return nullptr;
+	}
+};
+
 
 TEST_CASE("Construction and initialization", "[Goto]") {
 	GotoModule<10>* m = Test::createModule<GotoModule<10>>("Goto");
@@ -270,6 +282,24 @@ TEST_CASE("JSON legacy single-moduleId field is loaded correctly", "[Goto]") {
 		REQUIRE(module->jumpPoints[0].moduleIds.empty());
 		REQUIRE(module->jumpPoints[9].moduleIds.empty());
 	}
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("executeJump routes through the module access layer", "[Goto][vcv]") {
+	auto mock = Test::makeMockVcv<MockModuleAccess>();
+	auto module = Test::createModule<GotoModule<10>>("Goto");
+
+	GotoContainer<10> container;
+	container.module = module;
+	container.mw = nullptr;
+
+	module->jumpPoints[0].moduleIds = {42, 43};
+	container.executeJump(0);
+
+	REQUIRE(mock.modules.getModuleWidgetCalls.size() == 2);
+	CHECK(mock.modules.getModuleWidgetCalls[0] == 42);
+	CHECK(mock.modules.getModuleWidgetCalls[1] == 43);
 
 	Test::destroyModule(module);
 }

@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 #include "../../components/MidiWidget.hpp"
 #include "../../utils/keyboard.hpp"
 #include "../../ui/ModuleSelectProcessor.hpp"
@@ -482,14 +483,14 @@ struct MidiKeyChoice : LedDisplayChoice {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuLabel("Module"));
 		if (module->slot[id].moduleId != -1) {
-			ModuleWidget* mw = APP->scene->rack->getModule(module->slot[id].moduleId);
+			ModuleWidget* mw = vcv::getModuleWidget(module->slot[id].moduleId);
 			std::string name = mw ? string::f("%s %s", mw->model->plugin->brand.c_str(), mw->module->model->name.c_str()) : "<ERROR>";
 			menu->addChild(createMenuLabel(name));
 			if (mw) menu->addChild(createMenuItem("Show", "", [=]() { Rack::ViewportCenter{mw}; }));
 			menu->addChild(createMenuItem("Clear", "", [=]() { module->slot[id].moduleId = -1; }));
 		}
 		menu->addChild(createMenuItem("Learn", "", [=]() {
-			module->moduleSelectProcessor.setOwner(APP->scene->rack->getModule(module->id));
+			module->moduleSelectProcessor.setOwner(vcv::getModuleWidget(module->id));
 			module->moduleSelectProcessor.startLearn([=](ModuleWidget* mw, Vec pos) {
 				int64_t moduleId = -1;
 				if (mw) moduleId = mw->module->getId();
@@ -641,7 +642,7 @@ struct MidiKeyWidget : ThemedModuleWidget<MidiKeyModule<>> {
 			int64_t moduleId = std::get<1>(t);
 			
 			if (moduleId != -1) {
-				ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+				ModuleWidget* mw = vcv::getModuleWidget(moduleId);
 				if (mw) mw->onHoverKey(e);
 			}
 			else {

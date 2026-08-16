@@ -1,5 +1,5 @@
 #include "../../plugin.hpp"
-#include "../../utils/vcv_cables.hpp"
+#include "../../vcv/api.hpp"
 #include <queue>
 
 namespace StoermelderPackOne {
@@ -332,9 +332,9 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
             selectionWidget->module = module;
             APP->scene->rack->addChild(selectionWidget);
 
-            cableNumberWhenAdded = APP->scene->rack->getCompleteCables().size();
+            cableNumberWhenAdded = vcv::getCompleteCables().size();
             cableLimitReached = false;
-            moduleNumberWhenAdded = APP->scene->rack->getModules().size();
+            moduleNumberWhenAdded = vcv::getModuleWidgets().size();
             moduleLimitReached = false;
         }
     }
@@ -358,7 +358,7 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
 
     void step() override {
         if (module && module->restrictionEnabled) {
-            for (ModuleWidget* mw : APP->scene->rack->getModules()) {
+            for (ModuleWidget* mw : vcv::getModuleWidgets()) {
                 if (!isInsideRestriction(mw->box)) {
                     Module* m = mw->getModule();
                     if (!m->isBypassed()) {
@@ -376,8 +376,7 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
         }
 
         if (module && module->cableLimitEnabled) {
-            std::vector<CableWidget*> cables = APP->scene->rack->getCompleteCables();
-
+            std::vector<CableWidget*> cables = vcv::getCompleteCables();
             // If the module has been added, wait until we drop below the number of allowed
             // cables. This ensures, we are not deleting cables randomly, but only the most
             // recently added.
@@ -392,12 +391,13 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
                     // Cable might not been added completely, wait until it has a parent
                     if (!newest->parent) break;
                     vcv::removeCable(newest);
+                    cables.pop_back();
                 }
             }
         }
 
         if (module && module->moduleLimitEnabled) {
-            std::vector<ModuleWidget*> modules = APP->scene->rack->getModules();
+            std::vector<ModuleWidget*> modules = vcv::getModuleWidgets();
 
             // If the module has been added, wait until we drop below the number of allowed
             // modules. This ensures, we are not deleting modules randomly, but only the most
@@ -412,8 +412,8 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
                     ModuleWidget* newest = modules.back();
                     // Module might not been added completely, wait until it has a parent
                     if (!newest->parent) break;
-                    APP->scene->rack->removeModule(newest);
-                    delete newest;
+                    vcv::removeModule(newest->module->id);
+                    modules.pop_back();
                 }
             }
         }
@@ -453,7 +453,7 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
                         if (!module->restrictionEnabled) {
                             // Determine center from modules if available, otherwise use rack center
                             Vec center;
-                            auto modules = APP->scene->rack->getModules();
+                            auto modules = vcv::getModuleWidgets();
                             float minX = INFINITY, minY = INFINITY, maxX = -INFINITY, maxY = -INFINITY;
                             for (ModuleWidget* mw : modules) {
                                 const Rect& b = mw->box;
@@ -493,7 +493,7 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
         menu->addChild(Rack::createPtrSlider(&module->outsideAlpha, 0.f, 1.f, 0.5f, "Opacity", "%", 100.f, 200.0f));
 
         menu->addChild(new MenuSeparator());
-        int cableCount = (int)APP->scene->rack->getCompleteCables().size();
+        int cableCount = (int)vcv::getCompleteCables().size();
         menu->addChild(createSubmenuItem("Cable limit", string::f("%d cables", cableCount),
             [=](Menu* menu) {
                 menu->addChild(createBoolMenuItem("Enabled", "", [=]() { return module->cableLimitEnabled; }, [=](bool v) { module->cableLimitEnabled = v; }));
@@ -506,7 +506,7 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
             }
         ));
 
-        int moduleCount = (int)APP->scene->rack->getModules().size();
+        int moduleCount = (int)vcv::getModuleWidgets().size();
         menu->addChild(createSubmenuItem("Module limit", string::f("%d modules", moduleCount),
             [=](Menu* menu) {
                 menu->addChild(createBoolMenuItem("Enabled", "", [=]() { return module->moduleLimitEnabled; }, [=](bool v) { module->moduleLimitEnabled = v; }));

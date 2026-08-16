@@ -34,7 +34,11 @@ struct CableAccess {
 	// RackCableAccess (or a mock that specifically wants the object view) overrides these.
 	virtual CableWidget* findCable(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId) const { return nullptr; }
 	virtual void removeCable(CableWidget* cw, bool addToHistory) {}
-	virtual void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory) {}
+	// color: cable color; a fully transparent color (the default color::BLACK_TRANSPARENT)
+	// means "use Rack's default next cable color".
+	virtual void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory, NVGcolor color = color::BLACK_TRANSPARENT) {}
+	// Enumerate all complete (both ends patched) cables in the rack.
+	virtual const std::vector<CableWidget*> getCompleteCables() const { return {}; }
 
 	// Port-pair view — expressed in terms of the object view by default.
 	virtual bool hasCable(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId) const {
@@ -49,58 +53,8 @@ struct CableAccess {
 	}
 };
 
-// The production implementation, backed by the live Rack widget tree.
-struct RackCableAccess : CableAccess {
-	using CableAccess::removeCable;  // keep the port-pair overload visible beside the object one
-
-	CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t inputModuleId, int inputPortId) const override {
-		ModuleWidget* outputMw = APP->scene->rack->getModule(outputModuleId);
-		if (!outputMw) return nullptr;
-		for (PortWidget* outPort : outputMw->getOutputs()) {
-			if (outPort->portId != outputPortId) continue;
-			for (CableWidget* cw : APP->scene->rack->getCablesOnPort(outPort)) {
-				if (cw->inputPort && cw->inputPort->module &&
-					cw->inputPort->module->getId() == inputModuleId &&
-					cw->inputPort->portId == inputPortId) {
-					return cw;
-				}
-			}
-			break;
-		}
-		return nullptr;
-	}
-
-	void removeCable(CableWidget* cw, bool addToHistory) override {
-		history::CableRemove* h = new history::CableRemove;
-		h->setCable(cw);
-		if (addToHistory) APP->history->push(h);
-		else delete h;
-		APP->scene->rack->removeCable(cw);
-		delete cw;
-	}
-
-	void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory) override {
-		ModuleWidget* outputMw = APP->scene->rack->getModule(outModuleId);
-		ModuleWidget* inputMw  = APP->scene->rack->getModule(inModuleId);
-		if (!outputMw || !inputMw) return;
-
-		engine::Cable* c = new engine::Cable;
-		c->outputId     = outPortId;
-		c->outputModule = outputMw->module;
-		c->inputId      = inPortId;
-		c->inputModule  = inputMw->module;
-		APP->engine->addCable(c);
-
-		CableWidget* cw = new CableWidget;
-		cw->color = APP->scene->rack->getNextCableColor();
-		cw->setCable(c);
-		APP->scene->rack->addCable(cw);
-		history::CableAdd* h = new history::CableAdd;
-		h->setCable(cw);
-		if (addToHistory) APP->history->push(h);
-		else delete h;
-	}
-};
+// The production implementation (RackCableAccess) lives in vcv_cables.cpp; this header only
+// declares the swappable interface and the one-definition access pointer.
 
 // The active access. Null in production → the shared RackCableAccess is used. Tests point
 // this at a mock registry (see SpliceKit.test.hpp).
@@ -112,8 +66,8 @@ CableAccess& cableAccessFor();
 
 
 // Thin dispatch wrappers — keep the original free-function API (findCable/removeCable/
-// addCableToPort) so existing call sites (Splice-Kit, PanicRoom) are unchanged; all six
-// operations now route through the active CableAccess.
+// addCableToPort/getCompleteCables) so existing call sites (Splice-Kit, PanicRoom) are
+// unchanged; every operation now routes through the active CableAccess.
 
 P1_UNUSED
 static CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t inputModuleId, int inputPortId) {
@@ -126,8 +80,13 @@ static void removeCable(CableWidget* cw, bool addToHistory = true) {
 }
 
 P1_UNUSED
-static void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory = true) {
-	cableAccessFor().addCableToPort(outModuleId, outPortId, inModuleId, inPortId, addToHistory);
+static std::vector<CableWidget*> getCompleteCables() {
+	return cableAccessFor().getCompleteCables();
+}
+
+P1_UNUSED
+static void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory = true, NVGcolor color = color::BLACK_TRANSPARENT) {
+	cableAccessFor().addCableToPort(outModuleId, outPortId, inModuleId, inPortId, addToHistory, color);
 }
 
 P1_UNUSED
