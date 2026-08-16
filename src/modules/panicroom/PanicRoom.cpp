@@ -391,6 +391,7 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
                     // Cable might not been added completely, wait until it has a parent
                     if (!newest->parent) break;
                     vcv::removeCable(newest);
+                    cables.pop_back();
                 }
             }
         }
@@ -412,7 +413,7 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
                     // Module might not been added completely, wait until it has a parent
                     if (!newest->parent) break;
                     vcv::removeModule(newest->module->id);
-                    delete newest;
+                    modules.pop_back();
                 }
             }
         }
