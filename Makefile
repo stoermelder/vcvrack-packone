@@ -38,9 +38,9 @@ QUICKJS_SOURCES = \
 	dep/quickjs/dtoa.c
 
 # Add .cpp files to the build
-SOURCES += $(wildcard src/*.cpp src/**/**/*.cpp)
 SOURCES += src/modules/midikit/minilua.c
 SOURCES += $(QUICKJS_SOURCES)
+SOURCES += $(wildcard src/*.cpp src/**/*.cpp src/**/**/*.cpp)
 # Exclude test files from the main build
 SOURCES := $(filter-out src/test/%.cpp,$(SOURCES))
 SOURCES := $(filter-out %.test.cpp,$(SOURCES))

@@ -137,6 +137,18 @@ struct GuiTaskProcessor {
 	// already ordered by that release/acquire pair.
 	bool shuttingDown = false;
 
+	// Test-only escape hatch: when true, process() never starts a worker — tasks still
+	// queue normally on enqueue() and only ever run when something explicitly calls
+	// step()/drain(), same as the real "window present" path. This keeps tests that
+	// assert on the queue itself (a task is pending, then drain it and check the effect)
+	// meaningful, while removing the one thing that made them racy: a real background
+	// thread the test harness's single logical thread was never designed to share static
+	// module state with (see the class comment's "SINGLE PRODUCER" note, and
+	// getInstances()/crossPending() in SpliceKit.cpp for what that state looks like).
+	// Must be set right after construction, before the first process() call — not meant
+	// to be flipped mid-flight.
+	bool syncMode = false;
+
 	~GuiTaskProcessor() {
 		stopWorker();
 	}
@@ -150,18 +162,23 @@ struct GuiTaskProcessor {
 
 	// Producer thread ONLY — see the SINGLE PRODUCER note on the class comment; calling
 	// this from a second thread corrupts the queue. Never runs the task inline — see the
-	// class comment for why. Posts to the worker's semaphore whenever a worker is (or
-	// might be about to be) running, so a task enqueued right as the worker is parking is
-	// never stranded until the next unrelated wake — see TaskSignal's counted-signal
-	// rationale. The post is skipped only in the Absent state, where there is no worker
-	// to wake and step() is the drainer. Posting while Retiring is likewise fine whether
-	// or not the worker is still alive to consume it: that state is only ever entered
-	// because a window came back, so step() is draining again.
-	void enqueue(std::function<void()> t) {
-		internalQueue.enqueue(std::move(t));
+	// class comment for why. Returns whether t was actually queued: false when the ring
+	// buffer is full and the task is dropped (as before), so a caller that must not lose
+	// a task can detect the drop and retry later. Posts to the worker's semaphore
+	// whenever a worker is (or might be about to be) running, so a task enqueued right as
+	// the worker is parking is never stranded until the next unrelated wake — see
+	// TaskSignal's counted-signal rationale. The post is skipped only in the Absent
+	// state, where there is no worker to wake and step() is the drainer, and on a dropped
+	// enqueue, where there is nothing new for the worker to consume. Posting while
+	// Retiring is likewise fine whether or not the worker is still alive to consume it:
+	// that state is only ever entered because a window came back, so step() is draining
+	// again.
+	bool enqueue(std::function<void()> t) {
+		if (!internalQueue.enqueue(std::move(t))) return false;
 		if (workerState.load(std::memory_order_acquire) != WorkerState::Absent) {
 			taskSignal.post();
 		}
+		return true;
 	}
 
 	// GUI thread — drains pending tasks. Called from the widget's step().
@@ -183,6 +200,7 @@ struct GuiTaskProcessor {
 	// stopWorker() at destruction. Until it exits it stays a legal second drainer, since
 	// drain() tolerates two of them.
 	void process(rack::window::Window* window = APP->window) {
+		if (syncMode) return;
 		if (!window) {
 			startWorker();
 		}
