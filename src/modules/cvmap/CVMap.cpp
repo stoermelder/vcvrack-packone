@@ -1,5 +1,5 @@
 #include "../../plugin.hpp"
-#include "../../utils/vcv_cables.hpp"
+#include "../../vcv/api.hpp"
 #include "MapModuleBase.hpp"
 #include "CVMap.hpp"
 #include "../../components/MenuColorLabel.hpp"
