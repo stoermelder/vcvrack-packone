@@ -32,17 +32,80 @@ bool RealFileAccess::exists(const std::string& path) const {
 	return true;
 }
 
-std::string RealFileAccess::getLastDir(const std::string& key) const {
-	if (key == "stripDirVcvs") return pluginSettings.stripDirVcvs;
-	if (key == "stripDirVcvss") return pluginSettings.stripDirVcvss;
-	return "";
+std::string RealFileAccess::join(const std::string& path1, const std::string& path2) {
+	return rack::system::join(path1, path2);
 }
 
-void RealFileAccess::setLastDir(const std::string& key, const std::string& dir) {
-	if (key == "stripDirVcvs") pluginSettings.stripDirVcvs = dir;
-	else if (key == "stripDirVcvss") pluginSettings.stripDirVcvss = dir;
-	else return;
-	pluginSettings.saveToJson();
+std::string RealFileAccess::getDirectory(const std::string& path) {
+	return rack::system::getDirectory(path);
+}
+
+std::string RealFileAccess::getFilename(const std::string& path) {
+	return rack::system::getFilename(path);
+}
+
+std::string RealFileAccess::getStem(const std::string& path) {
+	return rack::system::getStem(path);
+}
+
+std::string RealFileAccess::getExtension(const std::string& path) {
+	return rack::system::getExtension(path);
+}
+
+std::vector<std::string> RealFileAccess::getEntries(const std::string& dirPath, int depth) {
+	return rack::system::getEntries(dirPath, depth);
+}
+
+bool RealFileAccess::exists(const std::string& path) {
+	return rack::system::exists(path);
+}
+
+bool RealFileAccess::isFile(const std::string& path) {
+	return rack::system::isFile(path);
+}
+
+bool RealFileAccess::isDirectory(const std::string& path) {
+	return rack::system::isDirectory(path);
+}
+
+uint64_t RealFileAccess::getFileSize(const std::string& path) {
+	return rack::system::getFileSize(path);
+}
+
+bool RealFileAccess::rename(const std::string& srcPath, const std::string& destPath) {
+	return rack::system::rename(srcPath, destPath);
+}
+
+bool RealFileAccess::copy(const std::string& srcPath, const std::string& destPath) {
+	return rack::system::copy(srcPath, destPath);
+}
+
+bool RealFileAccess::createDirectory(const std::string& path) {
+	return rack::system::createDirectory(path);
+}
+
+bool RealFileAccess::createDirectories(const std::string& path) {
+	return rack::system::createDirectories(path);
+}
+
+bool RealFileAccess::remove(const std::string& path) {
+	return rack::system::remove(path);
+}
+
+int RealFileAccess::removeRecursively(const std::string& path) {
+	return rack::system::removeRecursively(path);
+}
+
+std::string RealFileAccess::getTempDirectory() {
+	return rack::system::getTempDirectory();
+}
+
+double RealFileAccess::getTime() {
+	return rack::system::getTime();
+}
+
+void RealFileAccess::openDirectory(const std::string& path) {
+	rack::system::openDirectory(path);
 }
 
 // The shared production instance; namespace-scope so no __cxa_guard is tested on access.

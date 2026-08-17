@@ -31,11 +31,32 @@ struct FileAccess {
 	virtual bool write(const std::string& path, const std::string& data) { return false; }
 	virtual bool exists(const std::string& path) const { return false; }
 
-	// The "last used directory" pair that pluginSettings persists. Keyed, so Siren's file
-	// browsing and Strip's dialogs can share one access instead of each growing a bespoke
-	// accessor.
-	virtual std::string getLastDir(const std::string& key) const { return ""; }
-	virtual void setLastDir(const std::string& key, const std::string& dir) {}
+	// Path helpers (pure string manipulation; mockable for root redirection).
+	virtual std::string join(const std::string& path1, const std::string& path2) { return path1 + path2; }
+	virtual std::string getDirectory(const std::string& path) { return ""; }
+	virtual std::string getFilename(const std::string& path) { return ""; }
+	virtual std::string getStem(const std::string& path) { return ""; }
+	virtual std::string getExtension(const std::string& path) { return ""; }
+
+	// Filesystem queries.
+	virtual std::vector<std::string> getEntries(const std::string& dirPath, int depth) { return {}; }
+	virtual bool exists(const std::string& path) { return false; }
+	virtual bool isFile(const std::string& path) { return false; }
+	virtual bool isDirectory(const std::string& path) { return false; }
+	virtual uint64_t getFileSize(const std::string& path) { return 0; }
+
+	// Filesystem mutations.
+	virtual bool rename(const std::string& srcPath, const std::string& destPath) { return false; }
+	virtual bool copy(const std::string& srcPath, const std::string& destPath) { return false; }
+	virtual bool createDirectory(const std::string& path) { return false; }
+	virtual bool createDirectories(const std::string& path) { return false; }
+	virtual bool remove(const std::string& path) { return false; }
+	virtual int removeRecursively(const std::string& path) { return 0; }
+
+	// Environment / applications.
+	virtual std::string getTempDirectory() { return ""; }
+	virtual double getTime() { return 0.0; }
+	virtual void openDirectory(const std::string& path) {}
 };
 
 
@@ -45,8 +66,25 @@ struct RealFileAccess final : FileAccess {
 	bool read(const std::string& path, std::string& data) const override;
 	bool write(const std::string& path, const std::string& data) override;
 	bool exists(const std::string& path) const override;
-	std::string getLastDir(const std::string& key) const override;
-	void setLastDir(const std::string& key, const std::string& dir) override;
+	std::string join(const std::string& path1, const std::string& path2) override;
+	std::string getDirectory(const std::string& path) override;
+	std::string getFilename(const std::string& path) override;
+	std::string getStem(const std::string& path) override;
+	std::string getExtension(const std::string& path) override;
+	std::vector<std::string> getEntries(const std::string& dirPath, int depth) override;
+	bool exists(const std::string& path) override;
+	bool isFile(const std::string& path) override;
+	bool isDirectory(const std::string& path) override;
+	uint64_t getFileSize(const std::string& path) override;
+	bool rename(const std::string& srcPath, const std::string& destPath) override;
+	bool copy(const std::string& srcPath, const std::string& destPath) override;
+	bool createDirectory(const std::string& path) override;
+	bool createDirectories(const std::string& path) override;
+	bool remove(const std::string& path) override;
+	int removeRecursively(const std::string& path) override;
+	std::string getTempDirectory() override;
+	double getTime() override;
+	void openDirectory(const std::string& path) override;
 };
 // The shared production instance, defined in the .cpp.
 extern RealFileAccess realFileAccess;
@@ -81,13 +119,93 @@ static bool exists(const std::string& path) {
 }
 
 P1_UNUSED
-static std::string getLastDir(const std::string& key) {
-	return fileAccessFor().getLastDir(key);
+static std::string join(const std::string& path1, const std::string& path2) {
+	return fileAccessFor().join(path1, path2);
 }
 
 P1_UNUSED
-static void setLastDir(const std::string& key, const std::string& dir) {
-	fileAccessFor().setLastDir(key, dir);
+static std::string getDirectory(const std::string& path) {
+	return fileAccessFor().getDirectory(path);
+}
+
+P1_UNUSED
+static std::string getFilename(const std::string& path) {
+	return fileAccessFor().getFilename(path);
+}
+
+P1_UNUSED
+static std::string getStem(const std::string& path) {
+	return fileAccessFor().getStem(path);
+}
+
+P1_UNUSED
+static std::string getExtension(const std::string& path) {
+	return fileAccessFor().getExtension(path);
+}
+
+P1_UNUSED
+static std::vector<std::string> getEntries(const std::string& dirPath, int depth = 0) {
+	return fileAccessFor().getEntries(dirPath, depth);
+}
+
+P1_UNUSED
+static bool isFile(const std::string& path) {
+	return fileAccessFor().isFile(path);
+}
+
+P1_UNUSED
+static bool isDirectory(const std::string& path) {
+	return fileAccessFor().isDirectory(path);
+}
+
+P1_UNUSED
+static uint64_t getFileSize(const std::string& path) {
+	return fileAccessFor().getFileSize(path);
+}
+
+P1_UNUSED
+static bool rename(const std::string& srcPath, const std::string& destPath) {
+	return fileAccessFor().rename(srcPath, destPath);
+}
+
+P1_UNUSED
+static bool copy(const std::string& srcPath, const std::string& destPath) {
+	return fileAccessFor().copy(srcPath, destPath);
+}
+
+P1_UNUSED
+static bool createDirectory(const std::string& path) {
+	return fileAccessFor().createDirectory(path);
+}
+
+P1_UNUSED
+static bool createDirectories(const std::string& path) {
+	return fileAccessFor().createDirectories(path);
+}
+
+P1_UNUSED
+static bool remove(const std::string& path) {
+	return fileAccessFor().remove(path);
+}
+
+P1_UNUSED
+static int removeRecursively(const std::string& path) {
+	return fileAccessFor().removeRecursively(path);
+}
+
+P1_UNUSED
+static std::string getTempDirectory() {
+	return fileAccessFor().getTempDirectory();
+}
+
+P1_UNUSED
+static double getTime() {
+	return fileAccessFor().getTime();
+}
+
+P1_UNUSED
+static void openDirectory(const std::string& path) {
+	fileAccessFor().openDirectory(path);
 }
 
 } // namespace fs

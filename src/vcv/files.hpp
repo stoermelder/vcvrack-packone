@@ -177,6 +177,7 @@ inline void vcvsPasteClipboard(const std::string& undoActionName = "") {
  * @param undoActionName Undo entry name
  * @return The selected file path, or empty string if cancelled
  */
+/*
 inline std::string vcvsLoadFileDialog(bool load, const std::string& undoActionName = "") {
 	std::string path = uiAccessFor().openDialog(SELECTION_FILTERS, fileAccessFor().getLastDir("stripDirVcvs"));
 	if (path.empty()) {
@@ -189,6 +190,7 @@ inline std::string vcvsLoadFileDialog(bool load, const std::string& undoActionNa
 
 	return path;
 }
+*/
 
 } // namespace vcv
 } // namespace StoermelderPackOne

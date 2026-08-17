@@ -40,6 +40,13 @@ std::string RealUiAccess::saveDialog(const std::string& filters, const std::stri
 	return std::string(pathC);
 }
 
+std::string RealUiAccess::openDirDialog() {
+	char* pathC = osdialog_file(OSDIALOG_OPEN_DIR, NULL, NULL, NULL);
+	if (!pathC) return "";
+	DEFER({ std::free(pathC); });
+	return std::string(pathC);
+}
+
 std::string RealUiAccess::getClipboard() const {
 	const char* text = glfwGetClipboardString(APP->window->win);
 	return text ? std::string(text) : "";

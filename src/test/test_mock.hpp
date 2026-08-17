@@ -86,6 +86,34 @@ struct SlotOf<Base, T, Ts...> {
 	>::type;
 };
 
+
+// Default SystemAccess mock: forwards every call to the real rack::system, so a test
+// that only cares about a few filesystem calls can inherit from this and override just
+// those methods (e.g. to record or veto them) instead of re-implementing the whole
+// interface. Install it directly with makeMockVcv<MockSystemAccess>() for a pure
+// pass-through system layer, or derive a recording mock from it.
+struct MockFileAccess : StoermelderPackOne::vcv::FileAccess {
+	std::string join(const std::string& path1, const std::string& path2) override { return rack::system::join(path1, path2); }
+	std::string getDirectory(const std::string& path) override { return rack::system::getDirectory(path); }
+	std::string getFilename(const std::string& path) override { return rack::system::getFilename(path); }
+	std::string getStem(const std::string& path) override { return rack::system::getStem(path); }
+	std::string getExtension(const std::string& path) override { return rack::system::getExtension(path); }
+	std::vector<std::string> getEntries(const std::string& dirPath, int depth) override { return rack::system::getEntries(dirPath, depth); }
+	bool exists(const std::string& path) override { return rack::system::exists(path); }
+	bool isFile(const std::string& path) override { return rack::system::isFile(path); }
+	bool isDirectory(const std::string& path) override { return rack::system::isDirectory(path); }
+	uint64_t getFileSize(const std::string& path) override { return rack::system::getFileSize(path); }
+	bool rename(const std::string& srcPath, const std::string& destPath) override { return rack::system::rename(srcPath, destPath); }
+	bool copy(const std::string& srcPath, const std::string& destPath) override { return rack::system::copy(srcPath, destPath); }
+	bool createDirectory(const std::string& path) override { return rack::system::createDirectory(path); }
+	bool createDirectories(const std::string& path) override { return rack::system::createDirectories(path); }
+	bool remove(const std::string& path) override { return rack::system::remove(path); }
+	int removeRecursively(const std::string& path) override { return rack::system::removeRecursively(path); }
+	std::string getTempDirectory() override { return rack::system::getTempDirectory(); }
+	double getTime() override { return rack::system::getTime(); }
+	void openDirectory(const std::string& path) override { rack::system::openDirectory(path); }
+};
+
 } // namespace MockVcv
 
 
