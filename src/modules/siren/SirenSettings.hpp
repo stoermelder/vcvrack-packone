@@ -1,5 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 #include "SirenDataSource.hpp"
 
 
@@ -37,7 +38,6 @@ struct SirenSettings {
 	// the new file is written and parsed back to confirm it's valid JSON, and
 	// only then is the backup removed. On verification failure the backup is restored.
 	void save() const {
-		if (isTesting()) return;
 		// Never persist state that was never loaded. The module-browser thumbnail
 		// constructs a SirenWidget with a null module that returns before calling
 		// load(), yet its destructor still calls save(); without this guard that
@@ -45,29 +45,28 @@ struct SirenSettings {
 		// all configured roots and preferences before any real instance reads them.
 		if (!loaded) return;
 		std::string jsonPath = sirenFilePath();
-		rack::system::createDirectories(settingsDirPath());
+		vcv::fs::createDirectories(settingsDirPath());
 
 		json_t* j = toJson();
 		DEFER({ json_decref(j); });
 
 		std::string bakPath = jsonPath + ".bak";
-		bool hadExisting = rack::system::exists(jsonPath);
+		bool hadExisting = vcv::fs::exists(jsonPath);
 		if (hadExisting) {
-			rack::system::rename(jsonPath, bakPath);
+			vcv::fs::rename(jsonPath, bakPath);
 		}
 
-		FILE* f = fopen(jsonPath.c_str(), "w");
-		if (f) {
-			json_dumpf(j, f, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
-			fclose(f);
+		char* dumped = json_dumps(j, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+		if (dumped) {
+			vcv::fs::write(jsonPath, dumped);
+			free(dumped);
 		}
 
 		bool verified = false;
-		FILE* check = fopen(jsonPath.c_str(), "r");
-		if (check) {
+		std::string checkData;
+		if (vcv::fs::read(jsonPath, checkData)) {
 			json_error_t err;
-			json_t* verifyJ = json_loadf(check, 0, &err);
-			fclose(check);
+			json_t* verifyJ = json_loads(checkData.c_str(), 0, &err);
 			if (verifyJ) {
 				verified = true;
 				json_decref(verifyJ);
@@ -76,11 +75,11 @@ struct SirenSettings {
 
 		if (hadExisting) {
 			if (verified) {
-				rack::system::remove(bakPath);
+				vcv::fs::remove(bakPath);
 			}
 			else {
-				rack::system::remove(jsonPath);
-				rack::system::rename(bakPath, jsonPath);
+				vcv::fs::remove(jsonPath);
+				vcv::fs::rename(bakPath, jsonPath);
 			}
 		}
 	}
@@ -95,14 +94,12 @@ struct SirenSettings {
 	bool loaded = false;
 
 	void load() {
-		if (isTesting()) return;
 		if (loaded) return;
 		loaded = true;
-		FILE* f = fopen(sirenFilePath().c_str(), "r");
-		if (!f) return;
+		std::string data;
+		if (!vcv::fs::read(sirenFilePath(), data)) return;
 		json_error_t err;
-		json_t* j = json_loadf(f, 0, &err);
-		fclose(f);
+		json_t* j = json_loads(data.c_str(), 0, &err);
 		if (!j) return;
 		fromJson(j);
 		json_decref(j);

@@ -8,7 +8,7 @@
 //   scene.hpp    — the rack scene: selection (SceneAccess)
 //   ui.hpp       — the user: dialogs, clipboard, browser (UiAccess)
 //   fs.hpp       — the filesystem + pure parseJson (FileAccess)
-//.  history.hpp. - HistoryAccess
+//   history.hpp  - HistoryAccess
 //
 // All headers are #pragma once, so this is safe to include alongside any of
 // the individual ones; nothing here introduces new definitions.

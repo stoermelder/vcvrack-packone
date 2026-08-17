@@ -747,7 +747,7 @@ struct SirenOcWidget : OpaqueWidget {
 
 	void onButton(const ButtonEvent& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			system::openBrowser("https://omricohen-music.com/");
+			vcv::ui::openBrowser("https://omricohen-music.com/");
 			e.consume(this);
 			return;
 		}

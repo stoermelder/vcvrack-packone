@@ -22,10 +22,10 @@ namespace vcv {
 // the header graph (vcv_files.hpp / Strip.hpp currently spread it everywhere).
 //
 // `message` returns bool (OK/Yes = true), not an int: the only two shapes actually used are
-// "tell the user" and "ask yes/no". `openDialog`/`saveDialog` return "" on cancellation,
-// and `getClipboard` returns "" when the clipboard holds no text. `filters` is a plain
-// osdialog filter string, parsed/freed inside RealUiAccess so callers never own an
-// osdialog_filters*.
+// "tell the user" and "ask yes/no". `openDialog`/`saveDialog`/`openDirectoryDialog` return
+// "" on cancellation, and `getClipboard` returns "" when the clipboard holds no text.
+// `filters` is a plain osdialog filter string, parsed/freed inside RealUiAccess so callers
+// never own an osdialog_filters*.
 // Must not be called from the engine thread (the UI API is GUI-thread only).
 enum class MessageType { INFO, WARNING, ERROR };
 enum class MessageButtons { OK, YES_NO };
@@ -41,6 +41,9 @@ struct UiAccess {
 	virtual std::string saveDialog(const std::string& filters, const std::string& dir,
 	                               const std::string& filename) { return ""; }
 
+	// Folder picker (OSDIALOG_OPEN_DIR). Empty string = cancelled.
+	virtual std::string openDirDialog() { return ""; }
+
 	virtual std::string getClipboard() const { return ""; }
 	virtual void setClipboard(const std::string& text) {}
 
@@ -54,6 +57,7 @@ struct RealUiAccess final : UiAccess {
 	bool message(MessageType type, MessageButtons buttons, const std::string& msg) override;
 	std::string openDialog(const std::string& filters, const std::string& dir) override;
 	std::string saveDialog(const std::string& filters, const std::string& dir, const std::string& filename) override;
+	std::string openDirDialog() override;
 	std::string getClipboard() const override;
 	void setClipboard(const std::string& text) override;
 	void openBrowser(const std::string& url) override;
@@ -83,6 +87,11 @@ static bool message(MessageType type, MessageButtons buttons, const std::string&
 P1_UNUSED
 static std::string openDialog(const std::string& filters, const std::string& dir) {
 	return uiAccessFor().openDialog(filters, dir);
+}
+
+P1_UNUSED
+static std::string openDirectoryDialog() {
+	return uiAccessFor().openDirDialog();
 }
 
 P1_UNUSED
