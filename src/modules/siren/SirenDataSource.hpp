@@ -2,6 +2,7 @@
 #include <rack.hpp>
 #include <sstream>
 #include "../../utils/TaskWorker.hpp"
+#include "../../vcv/api.hpp"
 #include "SirenPaths.hpp"
 #include "SirenMetadata.hpp"
 #include "SirenAudioStream.hpp"
@@ -324,7 +325,7 @@ struct DataSource {
 	// directory if necessary.
 	virtual void saveWaveformCache(const std::string& id, const AudioWaveformCache& cache) const {
 		std::string path = cacheFilePathFor(id);
-		rack::system::createDirectories(rack::system::getDirectory(path));
+		vcv::fs::createDirectories(vcv::fs::getDirectory(path));
 		saveWaveformCacheFile(path, cache);
 	}
 

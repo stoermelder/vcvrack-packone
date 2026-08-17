@@ -1,5 +1,6 @@
 #pragma once
 #include "../../pluginsettings.hpp"
+#include "../../vcv/api.hpp"
 #include <rack.hpp>
 #include <ghc/filesystem.hpp>
 
@@ -97,12 +98,10 @@ inline std::vector<uint8_t> b64Decode(const std::string& s) {
 
 // expectedTimestamp == 0 disables cache validation (always load if file exists).
 inline bool loadWaveformCacheFile(const std::string& cachePath, int64_t expectedTimestamp, AudioWaveformCache& out) {
-	if (isTesting()) return false;
-	FILE* f = fopen(cachePath.c_str(), "r");
-	if (!f) return false;
-	json_error_t error;
-	json_t* rootJ = json_loadf(f, 0, &error);
-	fclose(f);
+	std::string data;
+	if (!vcv::fs::read(cachePath, data)) return false;
+	std::string errorOut;
+	json_t* rootJ = vcv::parseJson(data, errorOut);
 	if (!rootJ) return false;
 	DEFER({ json_decref(rootJ); });
 
@@ -142,7 +141,6 @@ inline bool loadWaveformCacheFile(const std::string& cachePath, int64_t expected
 }
 
 inline void saveWaveformCacheFile(const std::string& cachePath, const AudioWaveformCache& cache) {
-	if (isTesting()) return;
 	if (cache.samples.empty() || cache.sampleCount == 0) return;
 
 	json_t* rootJ = json_object();
@@ -161,10 +159,10 @@ inline void saveWaveformCacheFile(const std::string& cachePath, const AudioWavef
 	}
 	json_object_set_new(rootJ, "channels", channelsJ);
 
-	FILE* f = fopen(cachePath.c_str(), "w");
-	if (f) {
-		json_dumpf(rootJ, f, 0);
-		fclose(f);
+	char* dumped = json_dumps(rootJ, 0);
+	if (dumped) {
+		vcv::fs::write(cachePath, dumped);
+		free(dumped);
 	}
 	json_decref(rootJ);
 }

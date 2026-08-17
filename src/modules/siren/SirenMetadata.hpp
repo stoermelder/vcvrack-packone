@@ -1,5 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 #include <rack.hpp>
 #include <map>
 #include <utility>
@@ -23,8 +24,7 @@ namespace Siren {
 //
 // Why a function and not a constant: we want the list to be editable
 // without recompiling the plugin, and the file is small (a few KB) so the
-// per-load cost is negligible. `isTesting()` short-circuits the disk read
-// in the test harness.
+// per-load cost is negligible.
 inline std::string tagManifestPath() {
 	return rack::asset::plugin(pluginInstance, "res/data/SirenTags.json");
 }
@@ -59,21 +59,15 @@ inline const TagManifest& tagManifest() {
 	if (loaded) return manifest;
 	loaded = true;
 
-	if (isTesting()) {
-		manifest.tags = fallbackTags();
-		return manifest;
-	}
-
 	std::string path = tagManifestPath();
-	FILE* f = std::fopen(path.c_str(), "r");
-	if (!f) {
+	std::string data;
+	if (!vcv::fs::read(path, data)) {
 		WARN("Siren: failed to read SirenTags.json at %s; using built-in fallback.", path.c_str());
 		manifest.tags = fallbackTags();
 		return manifest;
 	}
 	json_error_t err;
-	json_t* rootJ = json_loadf(f, 0, &err);
-	std::fclose(f);
+	json_t* rootJ = json_loads(data.c_str(), 0, &err);
 	if (!rootJ) {
 		WARN("Siren: failed to parse SirenTags.json: %s; using built-in fallback.", err.text);
 		manifest.tags = fallbackTags();
@@ -161,11 +155,10 @@ struct MetadataStore {
 	}
 
 	void load() {
-		FILE* file = fopen(filePath().c_str(), "r");
-		if (!file) return;
+		std::string data;
+		if (!vcv::fs::read(filePath(), data)) return;
 		json_error_t error;
-		json_t* rootJ = json_loadf(file, 0, &error);
-		fclose(file);
+		json_t* rootJ = json_loads(data.c_str(), 0, &error);
 		if (!rootJ) return;
 		DEFER({ json_decref(rootJ); });
 		fromJson(rootJ);
@@ -177,29 +170,28 @@ struct MetadataStore {
 	// only then is the backup removed. On verification failure the backup is restored.
 	void save() const {
 		std::string jsonPath = filePath();
-		rack::system::createDirectories(rack::system::getDirectory(jsonPath));
+		vcv::fs::createDirectories(vcv::fs::getDirectory(jsonPath));
 
 		json_t* rootJ = toJson();
 		DEFER({ json_decref(rootJ); });
 
 		std::string bakPath = jsonPath + ".bak";
-		bool hadExisting = rack::system::exists(jsonPath);
+		bool hadExisting = vcv::fs::exists(jsonPath);
 		if (hadExisting) {
-			rack::system::rename(jsonPath, bakPath);
+			vcv::fs::rename(jsonPath, bakPath);
 		}
 
-		FILE* file = fopen(jsonPath.c_str(), "w");
-		if (file) {
-			json_dumpf(rootJ, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
-			fclose(file);
+		char* dumped = json_dumps(rootJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+		if (dumped) {
+			vcv::fs::write(jsonPath, dumped);
+			free(dumped);
 		}
 
 		bool verified = false;
-		FILE* check = fopen(jsonPath.c_str(), "r");
-		if (check) {
+		std::string checkData;
+		if (vcv::fs::read(jsonPath, checkData)) {
 			json_error_t error;
-			json_t* verifyJ = json_loadf(check, 0, &error);
-			fclose(check);
+			json_t* verifyJ = json_loads(checkData.c_str(), 0, &error);
 			if (verifyJ) {
 				verified = true;
 				json_decref(verifyJ);
@@ -208,11 +200,11 @@ struct MetadataStore {
 
 		if (hadExisting) {
 			if (verified) {
-				rack::system::remove(bakPath);
+				vcv::fs::remove(bakPath);
 			}
 			else {
-				rack::system::remove(jsonPath);
-				rack::system::rename(bakPath, jsonPath);
+				vcv::fs::remove(jsonPath);
+				vcv::fs::rename(bakPath, jsonPath);
 			}
 		}
 	}
