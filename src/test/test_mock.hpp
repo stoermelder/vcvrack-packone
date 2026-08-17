@@ -11,7 +11,7 @@ using namespace StoermelderPackOne;
 namespace MockVcv {
 
 // Installs the mock accesses into the swappable vcv access globals for the duration of
-// the scope, restoring all six to nullptr on destruction. Template on the concrete mock
+// the scope, restoring all seven to nullptr on destruction. Template on the concrete mock
 // types so each test binary supplies its own recording mocks (see src/vcv/files.test.cpp
 // for a full example).
 //
@@ -26,7 +26,8 @@ template <
 	typename CableT = StoermelderPackOne::vcv::CableAccess,
 	typename UiT = StoermelderPackOne::vcv::UiAccess,
 	typename FsT = StoermelderPackOne::vcv::FileAccess,
-	typename HistoryT = StoermelderPackOne::vcv::HistoryAccess
+	typename HistoryT = StoermelderPackOne::vcv::HistoryAccess,
+	typename NwT = StoermelderPackOne::vcv::NwAccess
 >
 struct Mock {
 	ModuleT modules;
@@ -35,6 +36,7 @@ struct Mock {
 	UiT ui;
 	FsT fs;
 	HistoryT history;
+	NwT nw;
 
 	Mock() {
 		installIfMock(&modules, StoermelderPackOne::vcv::moduleAccess);
@@ -43,6 +45,7 @@ struct Mock {
 		installIfMock(&ui, StoermelderPackOne::vcv::uiAccess);
 		installIfMock(&fs, StoermelderPackOne::vcv::fileAccess);
 		installIfMock(&history, StoermelderPackOne::vcv::historyAccess);
+		installIfMock(&nw, StoermelderPackOne::vcv::nwAccess);
 	}
 	~Mock() {
 		StoermelderPackOne::vcv::moduleAccess = nullptr;
@@ -51,6 +54,7 @@ struct Mock {
 		StoermelderPackOne::vcv::uiAccess = nullptr;
 		StoermelderPackOne::vcv::fileAccess = nullptr;
 		StoermelderPackOne::vcv::historyAccess = nullptr;
+		StoermelderPackOne::vcv::nwAccess = nullptr;
 	}
 
 private:
@@ -129,7 +133,8 @@ auto makeMockVcv() {
 		typename MockVcv::SlotOf<vcv::CableAccess, Ts...>::type,
 		typename MockVcv::SlotOf<vcv::UiAccess, Ts...>::type,
 		typename MockVcv::SlotOf<vcv::FileAccess, Ts...>::type,
-		typename MockVcv::SlotOf<vcv::HistoryAccess, Ts...>::type
+		typename MockVcv::SlotOf<vcv::HistoryAccess, Ts...>::type,
+		typename MockVcv::SlotOf<vcv::NwAccess, Ts...>::type
 	>();
 }
 
