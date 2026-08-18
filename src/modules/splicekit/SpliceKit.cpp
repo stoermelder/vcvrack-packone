@@ -1097,6 +1097,36 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		sceneStore.reconcile(sceneStore.current, newConns);
 	}
 
+	// GUI thread — replaces the current scene's connections with a random topology in which
+	// every assigned port gets at least one cable. Like randomizeCurrentScene(), outputs and
+	// inputs are shuffled independently and paired one-to-one in order; but once the shorter
+	// side is exhausted, its ports are reused (wrapping from the start) so the longer side's
+	// remaining ports still get a partner. Every assigned port ends up with at least one
+	// connection, at the cost of some ports being fanned out to several partners.
+	void randomizeCurrentSceneFull() {
+		assert(verifier.isUiOrWorker());
+		std::vector<int> outputs, inputs;
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			if (!portAssignments[i].isValid()) continue;
+			(portAssignments[i].type == engine::Port::OUTPUT ? outputs : inputs).push_back(i);
+		}
+		std::mt19937 rng(random::u32());
+		std::shuffle(outputs.begin(), outputs.end(), rng);
+		std::shuffle(inputs.begin(), inputs.end(), rng);
+
+		SceneConns newConns{};
+		if (!outputs.empty() && !inputs.empty()) {
+			size_t n = std::max(outputs.size(), inputs.size());
+			for (size_t i = 0; i < n; i++) {
+				int a = outputs[i % outputs.size()];
+				int b = inputs[i % inputs.size()];
+				newConns[a] |= (1ULL << b);
+				newConns[b] |= (1ULL << a);
+			}
+		}
+		sceneStore.reconcile(sceneStore.current, newConns);
+	}
+
 	void processBypass(const ProcessArgs& args) override {
 		assert(verifier.isEngine());
 		trackingProcessor.processBypass(args.frame);
@@ -2752,11 +2782,17 @@ void SpliceKitSceneButton::createSceneMenu() {
 		module->sceneStore.reconcile(sceneId, module->sceneClipboard);
 	}, !module->sceneClipboardValid));
 
-	// randomizeCurrentScene() always targets the active scene, not necessarily the one whose
-	// button was clicked — only offer it here when they're the same scene.
+	// randomizeCurrentScene()/randomizeCurrentSceneFull() always target the active scene, not
+	// necessarily the one whose button was clicked — only offer them here when they're the
+	// same scene.
 	bool notCurrent = sceneId != module->sceneStore.current;
-	menu->addChild(createMenuItem("Randomize", "", [=]() {
-		module->randomizeCurrentScene();
+	menu->addChild(createSubmenuItem("Randomize", "", [=](Menu* menu) {
+		menu->addChild(createMenuItem("Sparse", "", [=]() {
+			module->randomizeCurrentScene();
+		}, notCurrent));
+		menu->addChild(createMenuItem("Full", "", [=]() {
+			module->randomizeCurrentSceneFull();
+		}, notCurrent));
 	}, notCurrent));
 
 	menu->addChild(new MenuSeparator);

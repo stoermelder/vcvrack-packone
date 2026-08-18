@@ -252,6 +252,75 @@ TEST_CASE("randomizeCurrentScene - replaces the scene's previous topology", "[Sp
 	Test::destroyModule(m);
 }
 
+TEST_CASE("randomizeCurrentSceneFull - no connections when no ports are assigned", "[SpliceKit]") {
+	SpliceKitModule* m = createModule();
+	m->randomizeCurrentSceneFull();
+	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->sceneStore.connections[m->sceneStore.current][i] == 0);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("randomizeCurrentSceneFull - no connections when only outputs or only inputs are assigned", "[SpliceKit]") {
+	SpliceKitModule* m = createModule();
+	m->portAssignments[0].moduleId = 42; m->portAssignments[0].portId = 0; m->portAssignments[0].type = engine::Port::OUTPUT;
+	m->portAssignments[1].moduleId = 42; m->portAssignments[1].portId = 1; m->portAssignments[1].type = engine::Port::OUTPUT;
+
+	m->randomizeCurrentSceneFull();
+
+	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->sceneStore.connections[m->sceneStore.current][i] == 0);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("randomizeCurrentSceneFull - every assigned port gets at least one connection", "[SpliceKit]") {
+	SpliceKitModule* m = createModule();
+	int outs[] = {0, 5};
+	int ins[] = {1, 2, 10};
+	for (int i : outs) {
+		m->portAssignments[i].moduleId = 42;
+		m->portAssignments[i].portId = i;
+		m->portAssignments[i].type = engine::Port::OUTPUT;
+	}
+	for (int i : ins) {
+		m->portAssignments[i].moduleId = 42;
+		m->portAssignments[i].portId = i;
+		m->portAssignments[i].type = engine::Port::INPUT;
+	}
+
+	m->randomizeCurrentSceneFull();
+
+	for (int i : outs) REQUIRE(m->sceneStore.connectionMask(m->sceneStore.current, i) != 0);
+	for (int i : ins) REQUIRE(m->sceneStore.connectionMask(m->sceneStore.current, i) != 0);
+
+	// Every connection still respects the output->input direction rule.
+	for (int i = 0; i < MATRIX_COUNT; i++) {
+		for (int j = i + 1; j < MATRIX_COUNT; j++) {
+			if (!m->sceneStore.isConnected(m->sceneStore.current, i, j)) continue;
+			bool iOut = m->portAssignments[i].isValid() && m->portAssignments[i].type == engine::Port::OUTPUT;
+			bool jOut = m->portAssignments[j].isValid() && m->portAssignments[j].type == engine::Port::OUTPUT;
+			bool iIn = m->portAssignments[i].isValid() && m->portAssignments[i].type == engine::Port::INPUT;
+			bool jIn = m->portAssignments[j].isValid() && m->portAssignments[j].type == engine::Port::INPUT;
+			REQUIRE(((iOut && jIn) || (iIn && jOut)));
+		}
+	}
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("randomizeCurrentSceneFull - replaces the scene's previous topology", "[SpliceKit]") {
+	SpliceKitModule* m = createModule();
+	m->portAssignments[0].moduleId = 42; m->portAssignments[0].portId = 0; m->portAssignments[0].type = engine::Port::OUTPUT;
+	m->portAssignments[1].moduleId = 42; m->portAssignments[1].portId = 1; m->portAssignments[1].type = engine::Port::INPUT;
+	// Stale connection between cells with no valid port assignment — must disappear.
+	m->sceneStore.connections[m->sceneStore.current][5] |= (1ULL << 6);
+	m->sceneStore.connections[m->sceneStore.current][6] |= (1ULL << 5);
+
+	m->randomizeCurrentSceneFull();
+
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 5, 6) == false);
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == true);  // the only valid pair — deterministic
+
+	Test::destroyModule(m);
+}
+
 TEST_CASE("randomizePortAssignmentsFrom - clears every cell even when candidates is empty", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
 	m->portAssignments[0].moduleId = 42; m->portAssignments[0].portId = 0; m->portAssignments[0].type = engine::Port::OUTPUT;
