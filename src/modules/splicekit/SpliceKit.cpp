@@ -220,6 +220,52 @@ struct SceneStore {
 		assert(verifier.isUiOrWorker());
 		setConnection(current, cellIdA, cellIdB, false);
 		removeCableBetween(cellIdA, cellIdB);
+		clearAliasBits(cellIdA, cellIdB);
+	}
+
+	// True if the cable cellIdA/cellIdB would create or remove already exists in the
+	// patch. Used by toggleConnection() instead of the cell-pair bitmask bit so that two
+	// cells aliased to the same port pair (see clearAliasBits()) agree with the patch
+	// rather than only with each other.
+	bool cableIsLive(int cellIdA, int cellIdB) const {
+		auto dir = resolveDirection(ports[cellIdA], ports[cellIdB]);
+		const PortAssignment* outPd = dir.first;
+		const PortAssignment* inPd = dir.second;
+		if (!outPd) return false;
+		return vcv::hasCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
+	}
+
+	// After the cable between cellIdA/cellIdB is removed, clear the current scene's bit
+	// for every OTHER cell pair that resolves to the same two ports (aliasing — nothing
+	// prevents two cells from being assigned to the same port). Without this a surviving
+	// alias bit claims a connection the patch no longer has, and switchTo() would recreate
+	// the cable the user just deleted.
+	void clearAliasBits(int cellIdA, int cellIdB) {
+		assert(verifier.isUiOrWorker());
+		auto dir = resolveDirection(ports[cellIdA], ports[cellIdB]);
+		const PortAssignment* outPd = dir.first;
+		const PortAssignment* inPd = dir.second;
+		if (!outPd) return;
+
+		// Any stale alias pair must use a cell whose assigned port matches outPd or inPd —
+		// gather those (usually just cellIdA/cellIdB themselves) in one pass instead of
+		// scanning all O(MATRIX_COUNT^2) cell pairs.
+		auto samePort = [](const PortAssignment& p, const PortAssignment* ref) {
+			return p.moduleId == ref->moduleId && p.portId == ref->portId;
+		};
+		int outAliases[MATRIX_COUNT], inAliases[MATRIX_COUNT];
+		int outCount = 0, inCount = 0;
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			if (samePort(ports[i], outPd)) outAliases[outCount++] = i;
+			else if (samePort(ports[i], inPd)) inAliases[inCount++] = i;
+		}
+		for (int oi = 0; oi < outCount; oi++) {
+			for (int ii = 0; ii < inCount; ii++) {
+				int i = outAliases[oi], j = inAliases[ii];
+				if ((i == cellIdA && j == cellIdB) || (i == cellIdB && j == cellIdA)) continue;
+				if (isConnected(current, i, j)) setConnection(current, i, j, false);
+			}
+		}
 	}
 
 	// GUI thread — rewrites connections[scene] to match the actual cables currently
@@ -1832,7 +1878,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		int outCell = (outPd == &a) ? cellIdA : cellIdB;
 		int inCell = (inPd == &a) ? cellIdA : cellIdB;
 
-		if (sceneStore.isConnected(sceneStore.current, outCell, inCell)) {
+		if (sceneStore.cableIsLive(outCell, inCell)) {
 			sceneStore.disconnectLive(outCell, inCell);
 			setOverlayMessage("Cable removed", portLabel(*outPd), portLabel(*inPd));
 		}

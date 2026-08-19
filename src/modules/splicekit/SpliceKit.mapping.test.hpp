@@ -729,11 +729,13 @@ TEST_CASE("assignPort - leaves a pending selection on an unrelated cell alone", 
 
 
 // toggleConnection — direction validation
-// The connect/disconnect branches call into vcv:: cable helpers, which bail early when the
-// module widgets don't exist (as in these tests); the bitmask update happens first either
-// way, so the direction logic is fully exercisable here.
+// toggleConnection() decides create-vs-remove from the patch (vcv::hasCable()), not the
+// cell-pair bitmask bit (see the aliased-cells tests in SpliceKit.cables.test.hpp), so
+// exercising both directions of the toggle needs a CableScaffold to report cable state
+// back accurately. The reject-and-report cases below don't toggle, so they're unaffected.
 
 TEST_CASE("toggleConnection - output to input creates the connection", "[SpliceKit]") {
+	CableScaffold cables;
 	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
@@ -749,6 +751,7 @@ TEST_CASE("toggleConnection - output to input creates the connection", "[SpliceK
 }
 
 TEST_CASE("toggleConnection - argument order does not matter", "[SpliceKit]") {
+	CableScaffold cables;
 	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
@@ -802,6 +805,7 @@ TEST_CASE("toggleConnection - unassigned cell is ignored without an overlay mess
 }
 
 TEST_CASE("toggleConnection - only the current scene is affected", "[SpliceKit]") {
+	CableScaffold cables;
 	SpliceKitModule* m = createModule();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
