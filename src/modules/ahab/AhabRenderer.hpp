@@ -3,6 +3,7 @@
 #include <orca-c/field.h>
 #include <orca-c/gbuffer.h>
 #include <nanovg.h>
+#include "AhabEditorState.hpp"
 
 namespace StoermelderPackOne {
 namespace Ahab {
@@ -36,18 +37,6 @@ struct AhabRenderer {
 		Glyph_bang,
 	};
 
-	// Cursor state
-	Usz cursor_y = 0;
-	Usz cursor_x = 0;
-
-	// Rectangle selection state
-	Usz sel_anchor_y = 0;
-	Usz sel_anchor_x = 0;
-	Usz sel_y = 0;
-	Usz sel_x = 0;
-	Usz sel_h = 0;
-	Usz sel_w = 0;
-
 	AhabRenderer();
 
 	void setFontSize(float size);
@@ -56,22 +45,13 @@ struct AhabRenderer {
 	// Compute cell sizing for a given Field within an area size
 	void computeCellAndPadding(const math::Vec& areaSize, const Field* f, float& cell_w_out, float& cell_h_out);
 	// Draw a field within the given areaSize. Padding and font are chosen by the renderer.
+	// `editorState` supplies the cursor / selection / insert-mode editing state.
 	// `isPlaying` controls whether cursor-over-empty shows '@' (playing) or '~' (stopped)
-	void draw(NVGcontext* vg, const Field* field, const Mark* mbuf, const math::Vec& areaSize, bool isPlaying = false);
-
-	// Cursor
-	void setCursor(Usz y, Usz x);
-	void getCursor(Usz& y, Usz& x) const;
+	void draw(NVGcontext* vg, const Field* field, const Mark* mbuf, const math::Vec& areaSize, const AhabEditorState& editorState, bool isPlaying = false);
 
 	// Cursor fill color (used to draw a filled rectangle under the cursor)
 	// Darkened green with transparency by default
 	NVGcolor cursorColor = nvgRGBAf(0.06f, 0.44f, 0.20f, 0.55f);
-
-	// Insert mode: when true, cursor moves forward one cell after each typed glyph
-	bool insertMode = false;
-	inline void setInsertMode(bool v) { insertMode = v; }
-	inline bool getInsertMode() const { return insertMode; }
-	inline void toggleInsertMode() { insertMode = !insertMode; }
 
 	// Palette colors used by the renderer (adjustable as public members)
 	NVGcolor fgDefault = nvgRGBAf(1, 1, 1, 1);
@@ -90,18 +70,6 @@ struct AhabRenderer {
 	NVGcolor varHighlightColor = nvgRGBAf(0.14f, 0.86f, 0.88f, 0.22f);
 	// Highlight font color to use instead of default when highlighting variables
 	NVGcolor varHighlightFontColor = nvgRGBAf(0.95f, 0.8f, 0.2f, 1.0f);
-
-	// Move cursor by (dy,dx) and clamp to [0..h-1]/[0..w-1]
-	// If `extendSelection` is true and a selection is active, the selection
-	// rectangle will be updated to the current cursor position (for Shift+arrow)
-	void moveCursorRelative(int dy, int dx, Usz field_h, Usz field_w, bool extendSelection = false);
-
-	// Selections
-	void toggleSelectionAtCursor();
-	void clearSelection();
-	void updateSelectionToCursor();
-	void setSelection(Usz y, Usz x, Usz h, Usz w, Usz field_h = (Usz)std::numeric_limits<Usz>::max(), Usz field_w = (Usz)std::numeric_limits<Usz>::max());
-	void getSelectionRect(Usz& y, Usz& x, Usz& h, Usz& w) const;
 
 	// Convert a pixel position (local to widget) to cell coordinates within a given area.
 	bool pixelToCell(const math::Vec& pos, const math::Vec& areaSize, const Field* f, Usz& y, Usz& x);

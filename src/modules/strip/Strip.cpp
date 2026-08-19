@@ -111,9 +111,18 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	void onReset(const ResetEvent& e) override {
 		randomParamsOnly = false;
 		presetLoadReplace = false;
-		// Initialize snapshot to empty set so UI can read safely immediately
-		excludedParams.clear();
-		excludedParamsPtr.store({});
+		// excludedParams and its engine->UI snapshot (excludedParamsPtr) are owned by
+		// the engine thread. onReset may run on the UI/main thread (e.g. "Initialize"
+		// from the context menu), so clearing them inline would make both the UI thread
+		// and the engine thread write the same SpscLatestValue, breaking its strict
+		// single-writer contract and corrupting the heap. Defer the clear to the engine
+		// thread via the same task mechanism used by every other exclude mutation.
+		// (SpscLatestValue default-constructs to an empty set, so UI reads stay safe
+		// until the task runs on the next process() tick.)
+		groupExcludeClearRequest();
+		// excludedParamsPtrUi is the UI->engine channel; its writer is the UI/main
+		// thread, so resetting it here is safe and prevents a stale snapshot from
+		// being reloaded later.
 		excludedParamsPtrUi.store({});
 		Module::onReset(e);
 	}

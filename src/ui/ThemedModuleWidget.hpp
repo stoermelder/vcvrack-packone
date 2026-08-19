@@ -18,6 +18,8 @@ struct ThemedModuleWidget : BASE {
 
 	bool disableDuplicateAction = false;
 	bool disableDarkPanel = false;
+	// Set to true on a module to skip the base-class panel decoration (border + edge vignette).
+	bool disablePanelDecoration = false;
 
 	struct HalfPanel : SvgPanel {
 		ThemedModuleWidget<MODULE, BASE>* w;
@@ -144,6 +146,44 @@ struct ThemedModuleWidget : BASE {
 			case 2:
 				return "res/bright/" + baseName + ".svg";
 		}
+	}
+
+	void draw(const typename BASE::DrawArgs& args) override {
+		BASE::draw(args);
+
+		if (disablePanelDecoration || settings::headless) return;
+
+		const float w = this->box.size.x;
+		const float h = this->box.size.y;
+		if (w <= 0.f || h <= 0.f) return;
+
+		const float radius = 2.5f;
+		const float feather = mm2px(3.f);
+
+		// Effective panel brightness, taking the Rack-wide dark-panel preference into account.
+		bool dark = panelTheme == 1 || (panelTheme == -1 && settings::preferDarkPanels && !disableDarkPanel);
+
+		NVGcolor vignetteColor = nvgRGBAf(0.f, 0.f, 0.f, 0.07f);
+		NVGcolor borderColor = dark ? nvgRGBAf(1.f, 1.f, 1.f, 0.07f) : nvgRGBAf(0.f, 0.f, 0.f, 0.13f);
+
+		nvgSave(args.vg);
+
+		// Soft darkening towards the panel edges for a bit of depth.
+		NVGpaint vignette = nvgBoxGradient(args.vg, feather, feather, w - 2.f * feather, h - 2.f * feather,
+			radius, feather, nvgRGBAf(0.f, 0.f, 0.f, 0.f), vignetteColor);
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.f, 0.f, w, h, radius);
+		nvgFillPaint(args.vg, vignette);
+		nvgFill(args.vg);
+
+		// Thin inset border to crisp up the panel outline.
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.5f, 0.5f, w - 1.f, h - 1.f, radius);
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStrokeColor(args.vg, borderColor);
+		nvgStroke(args.vg);
+
+		nvgRestore(args.vg);
 	}
 
 	void onHoverKey(const Widget::HoverKeyEvent& e) override {

@@ -24,7 +24,7 @@ struct TestParamModule : Module {
 static void connectClk(MidiCatModule* midicat, MidiCatClkModule* clk) {
 	midicat->rightExpander.module = clk;
 	clk->leftExpander.module = midicat;
-	midicat->expandersChanged = true;
+	midicat->moduleChangedFlag = true;
 	midicat->process(Test::makeProcessArgs(1));
 }
 
@@ -111,7 +111,7 @@ TEST_CASE("MidiCatClk: MidiCat detects expander", "[MidiCatClk][MidiCat]") {
 	Test::registerModule(midicat);
 	Test::registerModule(clk);
 
-	// Flush initial expandersChanged so expClk is properly null before connecting
+	// Flush initial moduleChangedFlag so expClk is properly null before connecting
 	midicat->process(Test::makeProcessArgs(0));
 	REQUIRE(midicat->expClk.load() == nullptr);
 
@@ -142,7 +142,7 @@ TEST_CASE("MidiCatClk: disconnecting expander clears expClk and resets clockMode
 	// Disconnect
 	midicat->rightExpander.module = nullptr;
 	clk->leftExpander.module = nullptr;
-	midicat->expandersChanged = true;
+	midicat->moduleChangedFlag = true;
 	midicat->process(Test::makeProcessArgs(10));
 
 	REQUIRE(midicat->expClk.load() == nullptr);

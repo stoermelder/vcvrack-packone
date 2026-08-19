@@ -67,7 +67,9 @@ void init(rack::Plugin* p) {
 	p->addModel(modelAudioInterface64);
 	p->addModel(modelMb);
 	p->addModel(modelMe);
+	p->addModel(modelSiren);
 
+	StoermelderPackOne::thread::captureUiThreadId();
 	StoermelderPackOne::pluginSettings.readFromJson();
 	StoermelderPackOne::Ahab::Midi::init();
 #else
@@ -90,6 +92,48 @@ void init(rack::Plugin* p) {
 
 
 namespace StoermelderPackOne {
+namespace thread {
+
+static std::thread::id uiThreadId;
+
+void captureUiThreadId() {
+	uiThreadId = std::this_thread::get_id();
+}
+
+std::thread::id getUiThreadId() {
+	return uiThreadId;
+}
+
+bool verifyEnabled = true;
+
+ThreadVerifier makeVerifier(std::function<bool()> isMyWorkerThread) {
+#ifdef DEBUGPLUGIN
+	if (verifyEnabled) {
+		ThreadVerifier v;
+		v.isUiThread = []() {
+			return std::this_thread::get_id() == uiThreadId;
+		};
+		v.isWorkerThread = isMyWorkerThread;
+		v.isUiOrWorker = [isMyWorkerThread]() {
+			if (std::this_thread::get_id() == uiThreadId) return true;
+			return isMyWorkerThread();
+		};
+		v.isEngine = [isMyWorkerThread]() {
+			return !isMyWorkerThread();
+		};
+		return v;
+	}
+#endif
+	ThreadVerifier v;
+	v.isUiThread = []() { return true; };
+	v.isWorkerThread = []() { return true; };
+	v.isUiOrWorker = []() { return true; };
+	v.isEngine = []() { return true; };
+	return v;
+}
+
+} // namespace thread
+
 
 std::map<std::tuple<std::string, Context*>, Widget*> singletons;
 
@@ -117,18 +161,18 @@ Widget* getSingleton(std::string name) {
 }
 
 
-std::map<std::tuple<std::string, Context*>, std::set<ExpanderChangeListener*>*> expanderListeners;
+std::map<std::tuple<std::string, Context*>, std::set<ModuleChangeListener*>*> expanderListeners;
 
-void registerExpanderListener(std::string topic, ExpanderChangeListener* l) {
+void registerModuleListener(std::string topic, ModuleChangeListener* l) {
 	auto index = std::make_tuple(topic, APP);
 	auto it = expanderListeners.find(index);
 	if (it == expanderListeners.end()) {
-		expanderListeners[index] = new std::set<ExpanderChangeListener *>;
+		expanderListeners[index] = new std::set<ModuleChangeListener *>;
 	}
 	expanderListeners[index]->insert(l);
 }
 
-void unregisterExpanderListener(std::string topic, ExpanderChangeListener* l) {
+void unregisterModuleListener(std::string topic, ModuleChangeListener* l) {
 	auto index = std::make_tuple(topic, APP);
 	auto i = expanderListeners[index];
 	i->erase(l);
@@ -138,12 +182,12 @@ void unregisterExpanderListener(std::string topic, ExpanderChangeListener* l) {
 	}
 }
 
-void notifyExpanderListeners(std::string topic) {
+void notifyModuleListeners(std::string topic) {
 	auto index = std::make_tuple(topic, APP);
 	auto it = expanderListeners.find(index);
 	if (it != expanderListeners.end()) {
 		for (auto l : *expanderListeners[index]) {
-			l->expandersChanged = true;
+			l->moduleChangedFlag = true;
 		}
 	}
 }

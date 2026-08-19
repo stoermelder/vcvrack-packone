@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 #include "MapModuleBase.hpp"
 #include "CVMap.hpp"
 #include "../../components/MenuColorLabel.hpp"
@@ -329,13 +330,7 @@ struct CVMapPort : StoermelderPort {
 			void onAction(const event::Action& e) override {
 				CableWidget* cw = APP->scene->rack->getTopCable(pw);
 				if (cw) {
-					// history::CableRemove
-					history::CableRemove* h = new history::CableRemove;
-					h->setCable(cw);
-					APP->history->push(h);
-
-					APP->scene->rack->removeCable(cw);
-					delete cw;
+					vcv::removeCable(cw);
 				}
 			}
 		}; // struct DisconnectItem

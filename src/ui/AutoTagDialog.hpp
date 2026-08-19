@@ -2,6 +2,7 @@
 #include <rack.hpp>
 #include <ui/ScrollWidget.hpp>
 #include <osdialog.h>
+#include <atomic>
 #include <functional>
 #include <map>
 #include <memory>
@@ -14,6 +15,12 @@ namespace ui {
 
 using namespace rack;
 
+template <typename TPayload>
+struct TagGroup {
+	std::string        tag;
+	std::set<TPayload> payloads;
+};
+
 // ─── TagConfirmDialog ───────────────────────────────────────────────────────
 //
 // A generic tag-confirmation dialog: a centered MenuOverlay that lists one
@@ -22,30 +29,17 @@ using namespace rack;
 // filenames in Siren). The user can toggle which tags to apply and presses
 // "Apply" to invoke the apply callback with the filtered per-tag payload map.
 //
-// Two entry points:
-//   - `TagConfirmDialog<TPayload>` for an immediate-use dialog that already
-//     has its per-tag data when the user opens the menu.
-//   - `AsyncTagConfirmDialog<TPayload>` for a dialog whose per-tag data is
-//     produced by a background thread; the dialog itself is just a tiny
-//     widget that swaps itself out for the real confirm dialog once the
-//     worker thread writes to its `result` field.
-//
-// TPayload is the value type of the per-tag set: `plugin::Model*` in Mb,
-// `std::string` (sample relative path) in Siren. The dialog itself is
-// otherwise type-agnostic.
-
-template <typename TPayload>
-struct TagGroup {
-	std::string tag;
-	std::set<TPayload> payloads;
-};
+// Rows can be added after construction via addGroup() — used by
+// AsyncTagConfirmDialog to populate the dialog once the worker thread finishes.
 
 template <typename TPayload>
 struct TagConfirmDialog : widget::OpaqueWidget {
 
 	using GroupVector = std::vector<TagGroup<TPayload>>;
-	using BuildLabelCallback = std::function<widget::Widget*(TPayload)>;
+	using BuildLabelCallback = std::function<widget::Widget*(const std::string& /*tag*/, TPayload)>;
 	using ApplyCallback = std::function<void(const std::map<std::string, std::set<TPayload>>&)>;
+
+	static constexpr float kMargin = 10.f;
 
 	// ── inner widgets ─────────────────────────────────────────────────────
 
@@ -95,96 +89,72 @@ struct TagConfirmDialog : widget::OpaqueWidget {
 
 	// ── state ─────────────────────────────────────────────────────────────
 
-	CancelButton* cancelButton = nullptr;
-	OkButton* okButton = nullptr;
-	ui::Label* summaryLabel = nullptr;
-	ui::SequentialLayout* tagListLayout = nullptr;
-	ui::ScrollWidget* scroll = nullptr;
+	ui::Label*             headerLabel    = nullptr;
+	CancelButton*          cancelButton   = nullptr;
+	OkButton*              okButton       = nullptr;
+	ui::Label*             summaryLabel   = nullptr;
+	ui::SequentialLayout*  tagListLayout  = nullptr;
+	ui::ScrollWidget*      scroll         = nullptr;
 
-	std::map<std::string, bool> selectedTags;
-	GroupVector groups;
-	BuildLabelCallback buildLabelFn;
-	ApplyCallback applyFn;
+	std::map<std::string, bool>                  selectedTags;
+	std::map<std::string, ui::SequentialLayout*> labelLayoutByTag;
+	std::map<widget::Widget*, std::string>       tagByRow;  // inverse of rowByTag
+	GroupVector                                  groups;
+	BuildLabelCallback                           buildLabelCallback;
+	ApplyCallback                                applyCallback;
+	std::function<std::string(int, int)>        summaryCallback;
 
 	// ── ctor ──────────────────────────────────────────────────────────────
 
-	TagConfirmDialog(std::string headerText, GroupVector groups, BuildLabelCallback buildLabel, ApplyCallback apply)
+	TagConfirmDialog(std::string headerText, GroupVector groups,
+	                 BuildLabelCallback buildLabel, ApplyCallback apply,
+	                 std::function<std::string(int, int)> summaryFn = {})
 		: groups(std::move(groups))
-		, buildLabelFn(std::move(buildLabel))
-		, applyFn(std::move(apply)) {
+		, buildLabelCallback(std::move(buildLabel))
+		, applyCallback(std::move(apply))
+		, summaryCallback(std::move(summaryFn)) {
 
 		box.size = math::Vec(800.f, 500.f);
 
-		// Pre-select all tags by default
-		for (const auto& g : this->groups) {
+		for (const auto& g : this->groups)
 			selectedTags[g.tag] = true;
-		}
-
-		const float margin = 10.f;
 
 		ui::SequentialLayout* layout = new ui::SequentialLayout;
-		layout->box.pos = math::Vec(0.f, 10.f);
+		layout->box.pos  = math::Vec(0.f, 10.f);
 		layout->box.size = box.size;
 		layout->orientation = ui::SequentialLayout::VERTICAL_ORIENTATION;
-		layout->margin = math::Vec(margin, margin);
-		layout->spacing = math::Vec(margin, 8.f);
-		layout->wrap = false;
+		layout->margin  = math::Vec(kMargin, kMargin);
+		layout->spacing = math::Vec(kMargin, 8.f);
+		layout->wrap    = false;
 		addChild(layout);
 
-		ui::Label* header = new ui::Label;
-		header->box.size.y = 24.f;
-		header->fontSize = 18.f;
-		header->text = headerText;
-		layout->addChild(header);
+		headerLabel = new ui::Label;
+		headerLabel->box.size.y = 24.f;
+		headerLabel->fontSize   = 18.f;
+		headerLabel->text       = headerText;
+		layout->addChild(headerLabel);
 
 		scroll = new ui::ScrollWidget;
 		scroll->horizontalScrollbar->hide();
 		layout->addChild(scroll);
 
 		tagListLayout = new ui::SequentialLayout;
-		tagListLayout->box.pos = math::Vec(0.f, 0.f);
-        tagListLayout->box.size.y = 0.f;
+		tagListLayout->box.pos  = math::Vec(0.f, 0.f);
+		tagListLayout->box.size.y = 0.f;
 		tagListLayout->orientation = ui::SequentialLayout::VERTICAL_ORIENTATION;
-		tagListLayout->spacing = math::Vec(0.f, 4.f);
+		tagListLayout->spacing  = math::Vec(0.f, 4.f);
 		scroll->container->addChild(tagListLayout);
 
 		for (const auto& g : this->groups) {
-			widget::Widget* row = new widget::Widget;
-			row->box.size.y = 20.f;
-			row->box.size.x = box.size.x - 2.f * margin - 40.f;
-
-			TagButton* cb = new TagButton(g.tag, this);
-			cb->box.pos = math::Vec(6.f, 0.f);
-			cb->box.size.x = 180.f;
-			row->addChild(cb);
-
-			// Caller-built per-row label widgets in a horizontal layout
-			ui::SequentialLayout* labelLayout = new ui::SequentialLayout;
-			labelLayout->box.pos = math::Vec(cb->box.pos.x + cb->box.size.x + 10.f, 0.f);
-			labelLayout->box.size.x = box.size.x - cb->box.size.x - 20.f;
-			labelLayout->orientation = ui::SequentialLayout::HORIZONTAL_ORIENTATION;
-			labelLayout->spacing = math::Vec(-.5f, -.5f);
-			row->addChild(labelLayout);
-
-			if (buildLabelFn) {
-				for (const TPayload& p : g.payloads) {
-					widget::Widget* labelWidget = buildLabelFn(p);
-					if (labelWidget) {
-						labelLayout->addChild(labelWidget);
-					}
-				}
-			}
-
-			labelLayout->step();
-			row->box.size.y = std::max(row->box.size.y, labelLayout->box.size.y);
+			widget::Widget* row = buildRow(g);
 			tagListLayout->addChild(row);
-            tagListLayout->box.size.y += row->box.size.y + tagListLayout->spacing.y;
+			tagListLayout->box.size.y += row->box.size.y + tagListLayout->spacing.y;
 		}
 
 		// Button row
 		ui::SequentialLayout* buttonLayout = new ui::SequentialLayout;
-		buttonLayout->box.size.x = box.size.x - 2.f * margin;
-		buttonLayout->spacing = math::Vec(margin, margin);
+		buttonLayout->box.size.x = box.size.x - 2.f * kMargin;
+		buttonLayout->spacing    = math::Vec(kMargin, kMargin);
 		buttonLayout->orientation = ui::SequentialLayout::HORIZONTAL_ORIENTATION;
 		layout->addChild(buttonLayout);
 
@@ -196,13 +166,13 @@ struct TagConfirmDialog : widget::OpaqueWidget {
 		cancelButton = new CancelButton;
 		cancelButton->box.size.x = 100.f;
 		cancelButton->text = "Cancel";
-		cancelButton->w = this;
+		cancelButton->w   = this;
 		buttonLayout->addChild(cancelButton);
 
 		okButton = new OkButton;
 		okButton->box.size.x = 100.f;
 		okButton->text = "Apply";
-		okButton->w = this;
+		okButton->w   = this;
 		buttonLayout->addChild(okButton);
 
 		summaryLabel = new ui::Label;
@@ -212,13 +182,13 @@ struct TagConfirmDialog : widget::OpaqueWidget {
 		buttonLayout->addChild(summaryLabel);
 	}
 
-	// Subclass-overridable: footer summary text. The default talks about
-	// "tags across modules" because that's the original Mb use case; Siren
-	// and other consumers can override.
+	// ── overridable summary ───────────────────────────────────────────────
+
 	virtual std::string summaryText(int selectedTagCount, int totalItemCount) const {
+		if (summaryCallback) return summaryCallback(selectedTagCount, totalItemCount);
 		return string::f("%d tag%s selected across %d module%s",
 			selectedTagCount, selectedTagCount == 1 ? "" : "s",
-			totalItemCount, totalItemCount == 1 ? "" : "s");
+			totalItemCount,   totalItemCount   == 1 ? "" : "s");
 	}
 
 	void updateSummary() {
@@ -227,66 +197,118 @@ struct TagConfirmDialog : widget::OpaqueWidget {
 		for (const auto& g : groups) {
 			if (selectedTags[g.tag]) {
 				selected++;
-				for (const TPayload& p : g.payloads) {
+				for (const TPayload& p : g.payloads)
 					uniqueItems.insert(p);
-				}
 			}
 		}
 		summaryLabel->text = summaryText(selected, (int)uniqueItems.size());
 	}
 
 	void applySelected() {
-		if (!applyFn) return;
+		if (!applyCallback) return;
 		std::map<std::string, std::set<TPayload>> filtered;
-		for (const auto& g : groups) {
-			if (selectedTags[g.tag]) {
+		for (const auto& g : groups)
+			if (selectedTags[g.tag])
 				filtered[g.tag] = g.payloads;
-			}
-		}
-		applyFn(filtered);
+		applyCallback(filtered);
 	}
 
 	void step() override {
 		box.pos = parent->box.size.minus(box.size).div(2).round();
 		scroll->box.size = box.size - Vec(20.f, 104.f);
-        tagListLayout->box.size.x = scroll->box.size.x;
+		tagListLayout->box.size.x = scroll->box.size.x;
 		OpaqueWidget::step();
+
+		// After all children have stepped (label sizes are now valid), sync
+		// each row's height from its label layout and recompute the total height.
+		// Rows are then repositioned in-place so the layout is correct this frame.
+		float y = 0.f;
+		bool first = true;
+		for (widget::Widget* child : tagListLayout->children) {
+			if (!first) y += tagListLayout->spacing.y;
+			first = false;
+			auto tagIt = tagByRow.find(child);
+			if (tagIt != tagByRow.end()) {
+				auto llIt = labelLayoutByTag.find(tagIt->second);
+				if (llIt != labelLayoutByTag.end())
+					child->box.size.y = std::max(20.f, llIt->second->box.size.y);
+			}
+			child->box.pos.y = y;
+			y += child->box.size.y;
+		}
+		tagListLayout->box.size.y = y;
 	}
 
 	void draw(const DrawArgs& args) override {
 		bndMenuBackground(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0);
 		Widget::draw(args);
 	}
+
+private:
+	// Build a single tag row widget — shared by the constructor loop and addGroup().
+	widget::Widget* buildRow(const TagGroup<TPayload>& g) {
+		widget::Widget* row = new widget::Widget;
+		row->box.size.y = 20.f;
+		row->box.size.x = box.size.x - 2.f * kMargin - 40.f;
+
+		TagButton* cb  = new TagButton(g.tag, this);
+		cb->box.pos    = math::Vec(6.f, 0.f);
+		cb->box.size.x = 180.f;
+		row->addChild(cb);
+
+		ui::SequentialLayout* labelLayout = new ui::SequentialLayout;
+		labelLayout->box.pos   = math::Vec(cb->box.pos.x + cb->box.size.x + 10.f, 0.f);
+		labelLayout->box.size.x = box.size.x - cb->box.size.x - 20.f;
+		labelLayout->orientation = ui::SequentialLayout::HORIZONTAL_ORIENTATION;
+		labelLayout->spacing   = math::Vec(-.5f, -.5f);
+		row->addChild(labelLayout);
+
+		// Save layout reference so addPayloadToGroup() can append to it later.
+		labelLayoutByTag[g.tag] = labelLayout;
+
+		if (buildLabelCallback) {
+			for (const TPayload& p : g.payloads) {
+				widget::Widget* lw = buildLabelCallback(g.tag, p);
+				if (lw) labelLayout->addChild(lw);
+			}
+		}
+
+		labelLayout->step();
+		row->box.size.y = std::max(row->box.size.y, labelLayout->box.size.y);
+		tagByRow[row] = g.tag;
+		return row;
+	}
 };
 
 
 // ─── AsyncTagConfirmDialog ──────────────────────────────────────────────────
 //
-// Drop-in replacement for the old `AsyncTagResultWidget`: a tiny placeholder
-// widget that lives on the scene while a worker thread fills in
-// `result`. Once non-null, the placeholder removes itself and constructs a
-// real `TagConfirmDialog` with the same per-row label builder and apply
-// callback. Mirrors the existing pattern but is templated on TPayload.
+// Original batch async pattern: a background thread sets `result` once when
+// all work is done; step() then tears down the loading overlay and constructs
+// the real TagConfirmDialog. Kept for backward compatibility (used by Mb).
+// New code should prefer StreamingTagDialog for a responsive UI.
 
 template <typename TPayload>
 struct AsyncTagConfirmDialog : widget::OpaqueWidget {
-	using GroupVector = std::vector<TagGroup<TPayload>>;
+	using GroupVector        = std::vector<TagGroup<TPayload>>;
 	using BuildLabelCallback = typename TagConfirmDialog<TPayload>::BuildLabelCallback;
-	using ApplyCallback = typename TagConfirmDialog<TPayload>::ApplyCallback;
+	using ApplyCallback      = typename TagConfirmDialog<TPayload>::ApplyCallback;
 
 	std::shared_ptr<GroupVector> result;
-	ui::MenuOverlay* loadingOverlay;
-	BuildLabelCallback buildLabelCallback;
-	ApplyCallback applyCallback;
-	std::string headerText;
+	ui::MenuOverlay*             loadingOverlay;
+	BuildLabelCallback           buildLabelCallback;
+	ApplyCallback                applyCallback;
+	std::string                  headerText;
 	std::function<std::string(int, int)> summaryCallback;
 	bool ready = false;
 
 	AsyncTagConfirmDialog(ui::MenuOverlay* lo, BuildLabelCallback buildLabel, ApplyCallback apply,
 	        std::string header = "", std::function<std::string(int, int)> summary = {})
-		: loadingOverlay(lo), buildLabelCallback(std::move(buildLabel)), applyCallback(std::move(apply)), 
-            headerText(std::move(header)), summaryCallback(std::move(summary)) {}
-
+		: loadingOverlay(lo)
+		, buildLabelCallback(std::move(buildLabel))
+		, applyCallback(std::move(apply))
+		, headerText(std::move(header))
+		, summaryCallback(std::move(summary)) {}
 
 	void step() override {
 		if (result && !ready) {
@@ -302,21 +324,9 @@ struct AsyncTagConfirmDialog : widget::OpaqueWidget {
 			ui::MenuOverlay* overlay = new ui::MenuOverlay;
 			overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
 
-			// Pick the concrete dialog subclass based on which overrides
-			// the caller supplied. Single subclass handles both header and
-			// summary (defaults kick in for the empty case).
-            struct Dialog : TagConfirmDialog<TPayload> {
-                std::function<std::string(int, int)> sumFn;
-                Dialog(GroupVector g, BuildLabelCallback b, ApplyCallback a,
-                        std::string headerText, std::function<std::string(int, int)> s)
-                    : TagConfirmDialog<TPayload>(headerText, std::move(g), std::move(b), std::move(a)),
-                        sumFn(std::move(s)) {}
-                std::string summaryText(int sel, int items) const override {
-                    return sumFn ? sumFn(sel, items) : TagConfirmDialog<TPayload>::summaryText(sel, items);
-                }
-            };
-
-			TagConfirmDialog<TPayload>* dlg = new Dialog(*result, buildLabelCallback, applyCallback, headerText, summaryCallback);
+			auto* dlg = new TagConfirmDialog<TPayload>(
+				headerText, *result, buildLabelCallback, applyCallback, summaryCallback);
+			dlg->updateSummary();
 			overlay->addChild(dlg);
 			APP->scene->addChild(overlay);
 			requestDelete();
@@ -328,17 +338,18 @@ struct AsyncTagConfirmDialog : widget::OpaqueWidget {
 
 // ─── Convenience opener ─────────────────────────────────────────────────────
 
-// Show a `TagConfirmDialog` centered on the scene. Equivalent to the three
-// lines of MenuOverlay construction that appear at every call site.
 template <typename TPayload>
 inline void openTagConfirmDialog(
         std::string headerText,
 		typename TagConfirmDialog<TPayload>::GroupVector groups,
 		typename TagConfirmDialog<TPayload>::BuildLabelCallback buildLabel,
-		typename TagConfirmDialog<TPayload>::ApplyCallback apply) {
+		typename TagConfirmDialog<TPayload>::ApplyCallback apply,
+		std::function<std::string(int, int)> summaryFn = {}) {
 	ui::MenuOverlay* overlay = new ui::MenuOverlay;
 	overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
-	overlay->addChild(new TagConfirmDialog<TPayload>(headerText, std::move(groups), std::move(buildLabel), std::move(apply)));
+	auto* dlg = new TagConfirmDialog<TPayload>(headerText, std::move(groups), std::move(buildLabel), std::move(apply), std::move(summaryFn));
+	dlg->updateSummary();
+	overlay->addChild(dlg);
 	APP->scene->addChild(overlay);
 }
 

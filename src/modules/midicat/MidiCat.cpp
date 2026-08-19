@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 #include "../../utils/StripIdFixModule.hpp"
 #include "../../utils/ScaledMapParam.hpp"
 #include "../../utils/TaskProcessor.hpp"
@@ -13,7 +14,6 @@
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "../cvmap/MapModuleBase.hpp"
 #include "MidiCat.hpp"
-#include <osdialog.h>
 
 namespace StoermelderPackOne {
 namespace MidiCat {
@@ -211,7 +211,7 @@ struct MidiCatParam : ScaledMapParam<int> {
 };
 
 
-struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
+struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	/** [Stored to Json] */
 	midi::InputQueue midiInput;
 	/** [Stored to Json] */
@@ -458,7 +458,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
-		registerExpanderListener("MidiCat", this);
+		registerModuleListener("MidiCat", this);
 		config(0, 0, 0, 0);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandles[id].color = mappingIndicatorColor;
@@ -475,18 +475,18 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 	}
 
 	~MidiCatModule() {
-		unregisterExpanderListener("MidiCat", this);
+		unregisterModuleListener("MidiCat", this);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			APP->engine->removeParamHandle(&paramHandles[id]);
 		}
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		notifyExpanderListeners("MidiCat");
+		notifyModuleListeners("MidiCat");
 	}
 
 	void onReset(const Module::ResetEvent& e) override {
-		expandersChanged = true;
+		moduleChangedFlag = true;
 
 		learningId = -1;
 		learnedCc = false;
@@ -538,6 +538,15 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		longPressDuration = (uint64_t)(e.sampleRate / 2);
 	}
 
+	void processBypass(const ProcessArgs &args) override {
+		midi::Message msg;
+		// Drain the queue while bypassed
+		while (midiInput.tryPop(&msg, args.frame)) {
+			(void)0;
+		}
+		Module::processBypass(args);
+	}
+
 	void process(const ProcessArgs &args) override {
 		ts++;
 
@@ -573,7 +582,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		}
 
 		// Expanders
-		if (expandersChanged) {
+		if (moduleChangedFlag) {
 			bool expMemFound = false;
 			bool expCtxFound = false;
 			bool expClkFound = false;
@@ -629,7 +638,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 				ccFineMode = false;
 			}
 
-			expandersChanged = false;
+			moduleChangedFlag = false;
 		}
 
 		if (expClk.load()) expClkProcess();
@@ -888,7 +897,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 					if (indicate) {
 						int64_t moduleId = paramQuantity->module->getId();
 						taskProcessorUi.enqueue([this, id, moduleId]() {
-							ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+							ModuleWidget* mw = vcv::getModuleWidget(moduleId);
 							paramHandles[id].indicate(mw);
 						});
 					}
@@ -1656,7 +1665,7 @@ struct MidiCatSelectionWidget : Widget {
 	void mapParamsFromRect() {
 		math::Rect selectionBox = math::Rect::fromCorners(selectionStart, selectionEnd);
 		std::list<ModuleWidget*> selected;
-		for (ModuleWidget* mw : APP->scene->rack->getModules()) {
+		for (ModuleWidget* mw : vcv::getModuleWidgets()) {
 			if (selectionBox.intersects(mw->box)) {
 				selected.push_back(mw);
 			}
@@ -1853,7 +1862,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 
 	void prependContextMenu(Menu* menu) override {
 		menu->addChild(createSubmenuItem("MIDI-CAT Menu", "", [=](Menu* menu) {
-			ModuleWidget* moduleWidget = APP->scene->rack->getModule(module->getId());
+			ModuleWidget* moduleWidget = vcv::getModuleWidget(module->getId());
 			moduleWidget->appendContextMenu(menu);
 		}));
 	}
@@ -2201,19 +2210,11 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 	}
 
 	void loadMidiMapPreset_dialog() {
-		osdialog_filters* filters = osdialog_filters_parse(PRESET_FILTERS);
-		DEFER({
-			osdialog_filters_free(filters);
-		});
-
-		char* path = osdialog_file(OSDIALOG_OPEN, "", NULL, filters);
-		if (!path) {
+		std::string path = vcv::ui::openDialog(PRESET_FILTERS, "");
+		if (path.empty()) {
 			// No path selected
 			return;
 		}
-		DEFER({
-			free(path);
-		});
 
 		loadMidiMapPreset_action(path);
 	}
@@ -2221,20 +2222,17 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 	void loadMidiMapPreset_action(std::string filename) {
 		INFO("Loading preset %s", filename.c_str());
 
-		FILE* file = fopen(filename.c_str(), "r");
-		if (!file) {
+		std::string data;
+		if (!vcv::fs::read(filename, data)) {
 			WARN("Could not load patch file %s", filename.c_str());
 			return;
 		}
-		DEFER({
-			fclose(file);
-		});
 
-		json_error_t error;
-		json_t* moduleJ = json_loadf(file, 0, &error);
+		std::string error;
+		json_t* moduleJ = vcv::parseJson(data, error);
 		if (!moduleJ) {
-			std::string message = string::f("File is not a valid patch file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			std::string message = string::f("File is not a valid patch file. %s", error.c_str());
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, message.c_str());
 			return;
 		}
 		DEFER({
@@ -2253,7 +2251,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		module->fromJson(moduleJ);
 
 		h->newModuleJ = toJson();
-		APP->history->push(h);
+		vcv::history::push(h);
 	}
 
 	bool loadMidiMapPreset_convert(json_t* moduleJ) {

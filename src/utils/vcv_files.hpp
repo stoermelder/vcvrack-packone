@@ -10,6 +10,26 @@ namespace vcv {
 static const char SELECTION_FILTERS[] = "VCV Rack module selection (.vcvs):vcvs";
 
 /**
+ * Removes engine-runtime binding fields from a module's JSON before it is applied
+ * to an already-created module with ModuleWidget::fromJson(). Mirrors Rack's own
+ * engine::Module::jsonStripIds(), which every Rack preset/clipboard load calls
+ * before fromJson(). Restoring these fields would transplant another instance's
+ * bindings onto the new module; in particular a stale "automId" desyncs the module
+ * from the engine's host-automation map (automModuleMap) and causes a use-after-free
+ * in getAutomParamQuantity() on the next module removal.
+ * NB: unlike Rack's version, "id" is intentionally kept - callers read it for id
+ * remapping (StripIdFixModule) and rely on it.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
+static void jsonStripIds(json_t* moduleJ) {
+    json_object_del(moduleJ, "leftModuleId");
+    json_object_del(moduleJ, "rightModuleId");
+    json_object_del(moduleJ, "automId");
+}
+
+/**
  * Creates a module from JSON data, also returns the previous id of the module.
  * @param moduleJ JSON representation of the module
  * @param oldId Output parameter for the previous module id
@@ -154,8 +174,8 @@ static void vcvsCheckUnavailable(json_t* rootJ) {
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((unused))
 #endif
-static std::vector<history::Action*>* vcvsFromJson_modules(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
-    std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
+static std::vector<::rack::history::Action*>* vcvsFromJson_modules(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
+    std::vector<::rack::history::Action*>* undoActions = new std::vector<::rack::history::Action*>;
 
     Vec mousePos = APP->scene->rack->getMousePos();
     json_t* modulesJ = json_object_get(rootJ, "modules");
@@ -192,7 +212,7 @@ static std::vector<history::Action*>* vcvsFromJson_modules(json_t* rootJ, std::m
 
             if (mw) {
                 // ModuleAdd history action
-                history::ModuleAdd* h = new history::ModuleAdd;
+                ::rack::history::ModuleAdd* h = new ::rack::history::ModuleAdd;
                 h->name = "create module";
                 h->setModule(mw);
                 undoActions->push_back(h);
@@ -262,8 +282,8 @@ static void vcvsFromJson_presets_fixMapping(json_t* moduleJ, std::map<int64_t, M
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((unused))
 #endif
-static std::vector<history::Action*>* vcvsFromJson_presets(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
-    std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
+static std::vector<::rack::history::Action*>* vcvsFromJson_presets(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
+    std::vector<::rack::history::Action*>* undoActions = new std::vector<::rack::history::Action*>;
 
     json_t* modulesJ = json_object_get(rootJ, "modules");
     json_t* moduleJ;
@@ -274,13 +294,16 @@ static std::vector<history::Action*>* vcvsFromJson_presets(json_t* rootJ, std::m
         ModuleWidget* mw = modules[oldId];
         if (mw != NULL) {
             // history::ModuleChange
-            history::ModuleChange* h = new history::ModuleChange;
+            ::rack::history::ModuleChange* h = new ::rack::history::ModuleChange;
             h->name = "load module preset";
             h->moduleId = mw->module->id;
             h->oldModuleJ = mw->toJson();
 
             StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
             if (m) m->idFixDataFromJson(modules);
+
+            // Drop engine-runtime binding fields, like Rack's own preset loader.
+            jsonStripIds(moduleJ);
 
             mw->fromJson(moduleJ);
 
@@ -303,8 +326,8 @@ static std::vector<history::Action*>* vcvsFromJson_presets(json_t* rootJ, std::m
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((unused))
 #endif
-static std::vector<history::Action*>* vcvsFromJson_cables(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
-    std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
+static std::vector<::rack::history::Action*>* vcvsFromJson_cables(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
+    std::vector<::rack::history::Action*>* undoActions = new std::vector<::rack::history::Action*>;
 
     json_t* cablesJ = json_object_get(rootJ, "cables");
     if (cablesJ) {
@@ -339,7 +362,7 @@ static std::vector<history::Action*>* vcvsFromJson_cables(json_t* rootJ, std::ma
             APP->scene->rack->addCable(cw);
 
             // history::CableAdd
-            history::CableAdd* h = new history::CableAdd;
+            ::rack::history::CableAdd* h = new ::rack::history::CableAdd;
             h->setCable(cw);
             undoActions->push_back(h);
         }
@@ -365,12 +388,12 @@ static const std::string vcvsFromJson(json_t* rootJ, std::string undoActionName 
     // Maps old moduleId to the newly created modules (with new id)
     std::map<int64_t, ModuleWidget*> modules;
     // Add modules
-    std::vector<history::Action*>* h2 = vcvsFromJson_modules(rootJ, modules);
+    std::vector<::rack::history::Action*>* h2 = vcvsFromJson_modules(rootJ, modules);
     // Load presets for modules, also fixes parameter mappings
-    std::vector<history::Action*>* h3 = vcvsFromJson_presets(rootJ, modules);
+    std::vector<::rack::history::Action*>* h3 = vcvsFromJson_presets(rootJ, modules);
 
     // Add cables
-    std::vector<history::Action*>* h4 = vcvsFromJson_cables(rootJ, modules);
+    std::vector<::rack::history::Action*>* h4 = vcvsFromJson_cables(rootJ, modules);
 
     // Does nothing, but fixes https://github.com/VCVRack/Rack/issues/1444 for Rack <= 1.1.1
     //APP->scene->rack->requestModulePos(this, this->box.pos);
@@ -379,13 +402,13 @@ static const std::string vcvsFromJson(json_t* rootJ, std::string undoActionName 
         osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, warningLog.c_str());
     }
 
-    history::ComplexAction* complexAction = new history::ComplexAction;
+    ::rack::history::ComplexAction* complexAction = new ::rack::history::ComplexAction;
     complexAction->name = undoActionName.empty() ? "Load selection" : undoActionName;
-    for (history::Action* h : *h2) complexAction->push(h);
+    for (::rack::history::Action* h : *h2) complexAction->push(h);
     delete h2;
-    for (history::Action* h : *h3) complexAction->push(h);
+    for (::rack::history::Action* h : *h3) complexAction->push(h);
     delete h3;
-    for (history::Action* h : *h4) complexAction->push(h);
+    for (::rack::history::Action* h : *h4) complexAction->push(h);
     delete h4;
     APP->history->push(complexAction);
 

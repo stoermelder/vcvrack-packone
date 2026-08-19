@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 #include "../../components/MapButton.hpp"
 #include "../../components/VoltageLedDisplay.hpp"
 #include "../../components/Knobs.hpp"
@@ -326,13 +327,7 @@ struct MacroPort : StoermelderPort {
 			void onAction(const event::Action& e) override {
 				CableWidget* cw = APP->scene->rack->getTopCable(pw);
 				if (cw) {
-					// history::CableRemove
-					history::CableRemove* h = new history::CableRemove;
-					h->setCable(cw);
-					APP->history->push(h);
-
-					APP->scene->rack->removeCable(cw);
-					delete cw;
+					vcv::removeCable(cw);
 				}
 			}
 		}; // struct DisconnectItem
