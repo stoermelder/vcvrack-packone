@@ -17,7 +17,7 @@ struct InfoOverlayWidget : widget::OpaqueWidget {
 	struct UrlButton : ui::Button {
 		std::string url;
 		void onAction(const ActionEvent& e) override {
-			system::openBrowser(url);
+			vcv::ui::openBrowser(url);
 		}
 	};
 

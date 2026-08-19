@@ -1,10 +1,80 @@
 #include "../../test/test_plugin.hpp"
 #include "../../test/test_context.hpp"
+#include "../../test/test_mock.hpp"
 #include "MidiCat.hpp"
 #include "MidiCat.cpp"
 #include "../midi/MidiTrackingProcessor.hpp"
 
+using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::MidiCat;
+
+// A UiAccess mock that records saveDialog and openDialog calls and returns scripted answers.
+struct MockUiAccess : StoermelderPackOne::vcv::UiAccess {
+	struct SaveCall { std::string filters, dir, filename; };
+	std::vector<SaveCall> saveCalls;
+	std::vector<std::string> saveResults;  // queue consumed in order
+	int saveIndex = 0;
+
+	struct OpenCall { std::string filters, dir; };
+	std::vector<OpenCall> openCalls;
+	std::vector<std::string> openResults;  // queue consumed in order
+	int openIndex = 0;
+
+	struct Message { vcv::MessageType type; vcv::MessageButtons buttons; std::string msg; };
+	std::vector<Message> messages;
+
+	std::string saveDialog(const std::string& filters, const std::string& dir, const std::string& filename) override {
+		saveCalls.push_back({filters, dir, filename});
+		if (saveIndex < (int) saveResults.size()) return saveResults[saveIndex++];
+		return "";
+	}
+
+	std::string openDialog(const std::string& filters, const std::string& dir) override {
+		openCalls.push_back({filters, dir});
+		if (openIndex < (int) openResults.size()) return openResults[openIndex++];
+		return "";  // cancelled by default
+	}
+
+	bool message(vcv::MessageType type, vcv::MessageButtons buttons, const std::string& msg) override {
+		messages.push_back({type, buttons, msg});
+		return true;
+	}
+};
+
+// A FileAccess mock that records read()/write() calls and returns scripted content.
+struct MockFileAccess : StoermelderPackOne::vcv::FileAccess {
+	struct ReadCall { std::string path; };
+	std::vector<ReadCall> reads;
+	mutable std::vector<std::string> readResults;  // queue consumed in order
+	mutable int readIndex = 0;
+
+	struct WriteCall { std::string path, data; };
+	std::vector<WriteCall> writes;
+	bool failWrites = false;
+
+	bool read(const std::string& path, std::string& data) const override {
+		const_cast<MockFileAccess*>(this)->reads.push_back({path});
+		if (readIndex < (int) readResults.size()) {
+			data = readResults[readIndex++];
+			return true;
+		}
+		return false;
+	}
+
+	bool write(const std::string& path, const std::string& data) override {
+		if (failWrites) return false;
+		writes.push_back({path, data});
+		return true;
+	}
+};
+
+// A recording HistoryAccess. Owns the actions it records (push takes ownership).
+struct MockHistoryAccess : StoermelderPackOne::vcv::HistoryAccess {
+	std::vector<::rack::history::Action*> pushed;
+	void push(::rack::history::Action* a) override { pushed.push_back(a); }
+	~MockHistoryAccess() { for (auto* a : pushed) delete a; }
+};
+
 
 SYNC_MODEL(modelMidiCat, "MidiCat");
 Test::TestContext<> testContext;
@@ -1068,3 +1138,138 @@ TEST_CASE("Map length management", "[MidiCat]") {
 	delete module;
 }
 */
+
+
+
+// A real preset file exported by the Core "MIDI-Map" module (verbatim, as saved).
+static const char MIDI_MAP_PRESET[] = R"JSON(
+{
+  "plugin": "Core",
+  "model": "MIDI-Map",
+  "version": "2.6.6",
+  "params": [],
+  "data": {
+    "maps": [
+      {
+        "cc": 2,
+        "moduleId": 5211596373228541,
+        "paramId": 1
+      },
+      {
+        "cc": 1,
+        "moduleId": 5211596373228541,
+        "paramId": 2
+      },
+      {
+        "cc": -1,
+        "moduleId": -1,
+        "paramId": 0
+      }
+    ],
+    "smooth": true,
+    "midi": {
+      "driver": -12,
+      "deviceName": "Loopback 3",
+      "channel": 3
+    }
+  }
+}
+)JSON";
+
+TEST_CASE("loadMidiMapPreset end-to-end reads, parses, and applies the preset", "[MidiCat][ui]") {
+	auto mock = Test::makeMockVcv<MockUiAccess, MockFileAccess, MockHistoryAccess>();
+	auto module = Test::createModule<MidiCatModule>("MidiCat");
+	auto widget = Test::createWidget<MidiCatBaseWidget>(module);
+
+	SECTION("Cancelled dialog reads nothing") {
+		// openDialog returns "" (cancelled) → loadMidiMapPreset_dialog returns early.
+		widget->loadMidiMapPreset_dialog();
+
+		REQUIRE(mock.ui.openCalls.size() == 1);
+		CHECK(mock.ui.openCalls[0].filters == PRESET_FILTERS);
+		CHECK(mock.ui.openCalls[0].dir == "");
+		REQUIRE(mock.fs.reads.empty());
+		REQUIRE(mock.history.pushed.empty());
+	}
+
+	SECTION("Selected path is read, parsed, and applied to the module") {
+		// Script the dialog to return a path and the fs to return a valid MIDI-MAP preset.
+		mock.ui.openResults = { "/tmp/MidiCat.vcvm" };
+		mock.fs.readResults = {
+			R"({"plugin":"Core","model":"MIDI-Map","data":{)"
+			R"("maps":[{"cc":7,"ccMode":0,"cc14bit":false,"note":-1,"noteMode":0,)"
+			R"("moduleId":-1,"paramId":0,"label":"","midiOptions":0,"slew":0.0,)"
+			R"("min":0.0,"max":1.0,"curve":1.0,"clockMode":0,"clockSource":0,)"
+			R"("lightFirstId":-1,"lightNumColors":0}],)"
+			R"("midi":{"channels":[0]},"midiOutput":{"channels":[0]}}})"
+		};
+
+		widget->loadMidiMapPreset_dialog();
+
+		// Dialog routed through the UI layer.
+		REQUIRE(mock.ui.openCalls.size() == 1);
+		CHECK(mock.ui.openCalls[0].filters == PRESET_FILTERS);
+		// File read routed through the fs layer.
+		REQUIRE(mock.fs.reads.size() == 1);
+		CHECK(mock.fs.reads[0].path == "/tmp/MidiCat.vcvm");
+		// The preset was parsed and applied: CC7 is now mapped on slot 0.
+		REQUIRE(module->ccs[0].getCc() == 7);
+		REQUIRE(module->ccs[0].ccMode == CCMODE::DIRECT);
+		REQUIRE(module->notes[0].getNote() == -1);
+		// The load was recorded as an undoable history action.
+		REQUIRE(mock.history.pushed.size() == 1);
+	}
+
+	SECTION("Real MIDI-Map preset is imported") {
+		// A real preset exported by the Core "MIDI-Map" module — a different module
+		// than Midi-Cat. loadMidiMapPreset_convert rewrites plugin/model to Midi-Cat
+		// and copies data.midi → data.midiInput before fromJson applies it.
+		mock.ui.openResults = { "/tmp/Untitled.vcvm" };
+		mock.fs.readResults = { MIDI_MAP_PRESET };
+
+		widget->loadMidiMapPreset_dialog();
+
+		REQUIRE(mock.ui.openCalls.size() == 1);
+		REQUIRE(mock.fs.reads.size() == 1);
+		CHECK(mock.fs.reads[0].path == "/tmp/Untitled.vcvm");
+		// Maps from the MIDI-Map preset are applied.
+		REQUIRE(module->ccs[0].getCc() == 2);
+		REQUIRE(module->ccs[0].ccMode == CCMODE::DIRECT);
+		REQUIRE(module->notes[0].getNote() == -1);
+		REQUIRE(module->ccs[1].getCc() == 1);
+		REQUIRE(module->ccs[1].ccMode == CCMODE::DIRECT);
+		REQUIRE(module->notes[1].getNote() == -1);
+		REQUIRE(module->ccs[2].getCc() == -1);
+		// Param handles are bound to the preset's module ids (module not in engine → NULL).
+		REQUIRE(module->paramHandles[0].moduleId == 5211596373228541);
+		REQUIRE(module->paramHandles[0].paramId == 1);
+		REQUIRE(module->paramHandles[1].moduleId == 5211596373228541);
+		REQUIRE(module->paramHandles[1].paramId == 2);
+		// mapLen covers the two real maps plus the trailing empty "Mapping..." slot.
+		REQUIRE(module->mapLen == 3);
+		// data.midi was copied to midiInput; channel applied, driver unavailable headless.
+		REQUIRE(module->midiInput.getChannel() == 3);
+		REQUIRE(module->midiInput.getDriverId() == -1);
+		REQUIRE(mock.history.pushed.size() == 1);
+	}
+
+	SECTION("Corrupt JSON shows a warning and applies nothing") {
+		mock.ui.openResults = { "/tmp/MidiCat.vcvm" };
+		mock.fs.readResults = { "not valid json" };
+
+		widget->loadMidiMapPreset_dialog();
+
+		REQUIRE(mock.ui.openCalls.size() == 1);
+		REQUIRE(mock.fs.reads.size() == 1);
+		// A warning dialog was raised through the UI layer.
+		REQUIRE(mock.ui.messages.size() == 1);
+		CHECK(mock.ui.messages[0].type == vcv::MessageType::WARNING);
+		CHECK(mock.ui.messages[0].msg.find("JSON parsing error") != std::string::npos);
+		// Nothing was applied and no history action was pushed.
+		REQUIRE(module->ccs[0].getCc() == -1);
+		REQUIRE(mock.history.pushed.empty());
+	}
+
+	Test::destroyWidget(widget);
+	Test::destroyModule(module);
+}

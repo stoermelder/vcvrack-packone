@@ -1,5 +1,6 @@
 #include "../../plugin.hpp"
 #include "../../pluginhelpers.hpp"
+#include "../../vcv/api.hpp"
 #include "../../components/Knobs.hpp"
 #include "../../ui/InfoWindow.hpp"
 #include "../../ui/FocusMode.hpp"
@@ -10,7 +11,6 @@
 #include "AhabRenderer.hpp"
 #include "AhabEditorState.hpp"
 #include "AhabRandomizer.hpp"
-#include <osdialog.h>
 #include <array>
 #include <memory>
 
@@ -536,33 +536,27 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	void simLoad() {
-		osdialog_filters* filters = osdialog_filters_parse("Orca Files (*.orca):orca");
-		DEFER({ osdialog_filters_free(filters); });
-		char* path = osdialog_file(OSDIALOG_OPEN, NULL, NULL, filters);
-		if (!path) return;
-		DEFER({ free(path); });
+		std::string path = vcv::ui::openDialog("Orca Files (*.orca):orca", "");
+		if (path.empty()) return;
 		if (!module->sim->loadFromFileRequest(path)) {
-			std::string msg = "Failed to load field from file:\n" + std::string(path);
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, msg.c_str());
+			std::string msg = "Failed to load field from file:\n" + path;
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, msg);
 		}
 		editorState.setCursor(0, 0);
 		editorState.setSelection(0, 0, 1, 1);
 	}
 
 	void simInjectFile() {
-		osdialog_filters* filters = osdialog_filters_parse("Orca Files (*.orca):orca");
-		DEFER({ osdialog_filters_free(filters); });
-		char* path = osdialog_file(OSDIALOG_OPEN, NULL, NULL, filters);
-		if (!path) return;
-		DEFER({ free(path); });
+		std::string path = vcv::ui::openDialog("Orca Files (*.orca):orca", "");
+		if (path.empty()) return;
 		Usz sh = 0, sw = 0;
 		std::string orca;
-		if (!module->sim->convertFileToOrca(std::string(path), orca, sh, sw)) {
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, "Failed to load ORCA file into selection");
+		if (!module->sim->convertFileToOrca(path, orca, sh, sw)) {
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, "Failed to load ORCA file into selection");
 			return;
 		}
 		if (!orca.empty()) {
-			glfwSetClipboardString(APP->window->win, orca.c_str());
+			vcv::ui::setClipboard(orca);
 		}
 		// Place selection at cursor and clip to field
 		Usz cy, cx; editorState.getCursor(cy, cx);
@@ -575,36 +569,26 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	void simSave() {
-		osdialog_filters* filters = osdialog_filters_parse("Orca Files (*.orca):orca");
-		DEFER({ osdialog_filters_free(filters); });
-		char* path = osdialog_file(OSDIALOG_SAVE, NULL, "patch.orca", filters);
-		if (!path) return;
-		DEFER({ free(path); });
+		std::string path = vcv::ui::saveDialog("Orca Files (*.orca):orca", "", "patch.orca");
+		if (path.empty()) return;
 		if (!module->sim->saveToFile(path)) {
-			std::string msg = "Failed to save field to file:\n" + std::string(path);
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, msg.c_str());
+			std::string msg = "Failed to save field to file:\n" + path;
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, msg);
 		}
 	}
 
 	void simSaveSelection() {
-		osdialog_filters* filters = osdialog_filters_parse("Orca Files (*.orca):orca");
-		DEFER({ osdialog_filters_free(filters); });	
-		char* path = osdialog_file(OSDIALOG_SAVE, NULL, "selection.orca", filters);
-		if (!path) return;
-		DEFER({ free(path); });
+		std::string path = vcv::ui::saveDialog("Orca Files (*.orca):orca", "", "selection.orca");
+		if (path.empty()) return;
 		Usz sy, sx, sh, sw;
 		editorState.getSelectionRect(sy, sx, sh, sw);
 		// Serialize the UI snapshot, not the sim's live buffer (the DSP thread
 		// may be writing it from step()).
 		std::string content = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
-		FILE* file = fopen(path, "w");
-		if (!file) {
-			std::string message = string::f("Could not write to patch file %s", path);
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
-			return;
+		if (!vcv::fs::write(path, content)) {
+			std::string message = string::f("Could not write to patch file %s", path.c_str());
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, message);
 		}
-		DEFER({ fclose(file); });
-		fputs(content.c_str(), file);
 	}
 
 	void rendererGridStepChanged() {
@@ -899,6 +883,19 @@ struct AhabSimWidget : OpaqueWidget {
 		return;
 	}
 
+	// Serialize the current selection from the UI snapshot (display_field) and
+	// push it to the clipboard via the vcv UI layer. Returns the serialized
+	// text (empty when the selection is empty). Used by the Copy and Cut key
+	// handlers; extracted so the clipboard routing is testable headless (the
+	// key handlers themselves gate on glfwGetKeyName, which is NULL in tests).
+	std::string copySelectionToClipboard() {
+		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
+		// Read from the UI snapshot (display_field), not the sim's live buffer.
+		std::string s = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
+		if (!s.empty()) vcv::ui::setClipboard(s);
+		return s;
+	}
+
 	void onSelectKey(const SelectKeyEvent& e) override {
 		if (!module || !module->sim) return;
 		const char* k = glfwGetKeyName(e.key, 0);
@@ -1000,20 +997,15 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+C -> Copy selection to clipboard (ORCA plain text)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'c') {
-			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
-			// Read from the UI snapshot (display_field), not the sim's live buffer.
-			std::string s = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
-			if (!s.empty()) glfwSetClipboardString(APP->window->win, s.c_str());
+			copySelectionToClipboard();
 			e.consume(this);
 			return;
 		}
 
 		// Ctrl/Cmd+X -> Cut selection to clipboard (ORCA plain text)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'x') {
+			copySelectionToClipboard();
 			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
-			// Read from the UI snapshot (display_field), not the sim's live buffer.
-			std::string s = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
-			if (!s.empty()) glfwSetClipboardString(APP->window->win, s.c_str());
 			module->sim->cutRectRequest(sy, sx, sh, sw);
 			e.consume(this);
 			return;
@@ -1022,11 +1014,10 @@ struct AhabSimWidget : OpaqueWidget {
 		// Ctrl/Cmd+V -> Paste selection from clipboard (accept ORCA plain text or JSON)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'v') {
 			Usz cy, cx; editorState.getCursor(cy, cx);
-			const char* clip = glfwGetClipboardString(APP->window->win);
-			if (clip) {
+			std::string clip = vcv::ui::getClipboard();
+			if (!clip.empty()) {
 				Usz pasted_h = 0, pasted_w = 0;
-				std::string clipStr(clip);
-				if (module->sim->loadRectFromOrcaRequest(clipStr, cy, cx, pasted_h, pasted_w)) {
+				if (module->sim->loadRectFromOrcaRequest(clip, cy, cx, pasted_h, pasted_w)) {
 					if (pasted_h > 0 && pasted_w > 0) editorState.setSelection(cy, cx, pasted_h, pasted_w, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 				}
 			}
@@ -1373,7 +1364,7 @@ struct AhabSimWidget : OpaqueWidget {
 		auto loadString = [this](const std::string& content) {
 			Usz tmp_h = 0, tmp_w = 0;
 			if (!module->sim->loadRectFromOrcaRequest(content, 0, 0, tmp_h, tmp_w, true)) {
-				osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, "Failed to load example");
+				vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, "Failed to load example");
 			} 
 			else {
 				APP->event->setSelectedWidget(this);
@@ -1482,16 +1473,16 @@ struct AhabSimWidget : OpaqueWidget {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Help", "", [](ui::Menu* menu) {
 			menu->addChild(createMenuItem("Learn ORCΛ", "", []() {
-				system::openBrowser("https://metasyn.srht.site/learn-orca/");
+				vcv::ui::openBrowser("https://metasyn.srht.site/learn-orca/");
 			}));
 			menu->addChild(createMenuItem("ORCΛ cheat sheet", "", []() {
-				system::openBrowser("https://100r.co/media/content/projects/zine_orca.png");
+				vcv::ui::openBrowser("https://100r.co/media/content/projects/zine_orca.png");
 			}));
 			menu->addChild(createMenuItem("ORCΛ online manual", "", []() {
-				system::openBrowser("https://100r.co/site/orca.html");
+				vcv::ui::openBrowser("https://100r.co/site/orca.html");
 			}));
 			menu->addChild(createMenuItem("ORCΛ GitHub repository", "", []() {
-				system::openBrowser("https://github.com/hundredrabbits/Orca");
+				vcv::ui::openBrowser("https://github.com/hundredrabbits/Orca");
 			}));
 		}));
 	}

@@ -4,6 +4,7 @@
 // Included by Ahab.test.cpp, which brings Ahab.cpp into the TU first so
 // AhabModule is fully defined here.
 
+#include "../../test/test_mock.hpp"
 #include "Ahab.test.hpp"
 #include "Ahab.vcvm.test.hpp"
 
@@ -812,4 +813,185 @@ TEST_CASE("Clear field is undoable", "[Ahab]") {
 	Test::destroyWidget(mw);
 	Test::unregisterModule(m);
 	Test::destroyModule(m);
+}
+
+
+
+// vcv access-layer tests for Ahab's UI / file operations.
+//
+// AhabSimWidget's file dialogs (simLoad / simInjectFile / simSave /
+// simSaveSelection) and its clipboard / browser calls route through the
+// swappable StoermelderPackOne::vcv layer. These tests install recording mocks
+// and drive the widget's handlers directly, asserting the migrated calls go
+// through the layer instead of raw osdialog / glfw / fopen.
+//
+// The clipboard copy/cut/paste key handlers (Ctrl+C/X/V) are NOT exercised
+// here: they gate on glfwGetKeyName(), which returns NULL for every printable
+// key in headless tests (no window/keyboard layout), so the handlers never
+// fire. setClipboard is instead covered via the extracted
+// copySelectionToClipboard() helper, which reads the in-memory UI snapshot
+// (display_field) and needs no disk I/O.
+
+struct MockUiAccess : vcv::UiAccess {
+	struct OpenCall { std::string filters, dir; };
+	std::vector<OpenCall> openCalls;
+	std::vector<std::string> openResults;  // queue consumed in order
+	int openIndex = 0;
+
+	struct SaveCall { std::string filters, dir, filename; };
+	std::vector<SaveCall> saveCalls;
+	std::vector<std::string> saveResults;  // queue consumed in order
+	int saveIndex = 0;
+
+	struct Message { vcv::MessageType type; vcv::MessageButtons buttons; std::string msg; };
+	std::vector<Message> messages;
+
+	std::vector<std::string> clipboardWrites;
+	std::string clipboardText;  // scripted clipboard content for reads
+
+	std::string openDialog(const std::string& filters, const std::string& dir) override {
+		openCalls.push_back({filters, dir});
+		if (openIndex < (int) openResults.size()) return openResults[openIndex++];
+		return "";
+	}
+
+	std::string saveDialog(const std::string& filters, const std::string& dir, const std::string& filename) override {
+		saveCalls.push_back({filters, dir, filename});
+		if (saveIndex < (int) saveResults.size()) return saveResults[saveIndex++];
+		return "";
+	}
+
+	bool message(vcv::MessageType type, vcv::MessageButtons buttons, const std::string& msg) override {
+		messages.push_back({type, buttons, msg});
+		return true;
+	}
+
+	std::string getClipboard() const override {
+		return clipboardText;
+	}
+
+	void setClipboard(const std::string& text) override {
+		clipboardWrites.push_back(text);
+	}
+};
+
+// A FileAccess mock that records write() calls; failWrites forces the failure path.
+struct MockFileAccess : vcv::FileAccess {
+	struct WriteCall { std::string path, data; };
+	std::vector<WriteCall> writes;
+	bool failWrites = false;
+
+	bool write(const std::string& path, const std::string& data) override {
+		if (failWrites) return false;
+		writes.push_back({path, data});
+		return true;
+	}
+};
+
+
+TEST_CASE("Ahab file dialogs route through the vcv UI layer", "[Ahab][vcv][ui]") {
+	auto mock = Test::makeMockVcv<MockUiAccess, MockFileAccess>();
+	auto module = Test::createModule<AhabModule>("Ahab");
+	auto widget = Test::createWidget<AhabWidget>(module);
+
+	SECTION("simLoad cancel: openDialog returns empty -> early return, no message") {
+		widget->simWidget->simLoad();
+		REQUIRE(mock.ui.openCalls.size() == 1);
+		CHECK(mock.ui.openCalls[0].filters.find("orca") != std::string::npos);
+		CHECK(mock.ui.messages.empty());
+	}
+
+	SECTION("simLoad failure: unreadable path warns through the UI") {
+		mock.ui.openResults = { "/nonexistent/ahab_load.orca" };
+		widget->simWidget->simLoad();
+		REQUIRE(mock.ui.messages.size() == 1);
+		CHECK(mock.ui.messages[0].type == vcv::MessageType::WARNING);
+		CHECK(mock.ui.messages[0].buttons == vcv::MessageButtons::OK);
+		CHECK(mock.ui.messages[0].msg.find("Failed to load field from file") != std::string::npos);
+	}
+
+	SECTION("simInjectFile cancel: openDialog returns empty -> early return, no clipboard") {
+		widget->simWidget->simInjectFile();
+		REQUIRE(mock.ui.openCalls.size() == 1);
+		CHECK(mock.ui.clipboardWrites.empty());
+		CHECK(mock.ui.messages.empty());
+	}
+
+	SECTION("simInjectFile failure: unreadable path warns through the UI") {
+		mock.ui.openResults = { "/nonexistent/ahab_inject.orca" };
+		widget->simWidget->simInjectFile();
+		REQUIRE(mock.ui.messages.size() == 1);
+		CHECK(mock.ui.messages[0].type == vcv::MessageType::WARNING);
+		CHECK(mock.ui.messages[0].msg.find("Failed to load ORCA file into selection") != std::string::npos);
+		CHECK(mock.ui.clipboardWrites.empty());
+	}
+
+	SECTION("simSave cancel: saveDialog returns empty -> early return, no message") {
+		widget->simWidget->simSave();
+		REQUIRE(mock.ui.saveCalls.size() == 1);
+		CHECK(mock.ui.saveCalls[0].filename == "patch.orca");
+		CHECK(mock.ui.messages.empty());
+	}
+
+	SECTION("simSave failure: unwritable path warns through the UI") {
+		mock.ui.saveResults = { "/nonexistent/dir/patch.orca" };
+		widget->simWidget->simSave();
+		REQUIRE(mock.ui.messages.size() == 1);
+		CHECK(mock.ui.messages[0].type == vcv::MessageType::WARNING);
+		CHECK(mock.ui.messages[0].msg.find("Failed to save field to file") != std::string::npos);
+	}
+
+	SECTION("simSaveSelection cancel: saveDialog returns empty -> no fs write") {
+		widget->simWidget->simSaveSelection();
+		REQUIRE(mock.ui.saveCalls.size() == 1);
+		CHECK(mock.ui.saveCalls[0].filename == "selection.orca");
+		CHECK(mock.fs.writes.empty());
+	}
+
+	SECTION("simSaveSelection writes the selection through the fs layer") {
+		mock.ui.saveResults = { "/tmp/selection.orca" };
+		widget->simWidget->simSaveSelection();
+		REQUIRE(mock.ui.saveCalls.size() == 1);
+		REQUIRE(mock.fs.writes.size() == 1);
+		CHECK(mock.fs.writes[0].path == "/tmp/selection.orca");
+		CHECK(mock.ui.messages.empty());
+	}
+
+	SECTION("simSaveSelection write failure warns through the UI") {
+		mock.fs.failWrites = true;
+		mock.ui.saveResults = { "/tmp/selection.orca" };
+		widget->simWidget->simSaveSelection();
+		REQUIRE(mock.ui.messages.size() == 1);
+		CHECK(mock.ui.messages[0].type == vcv::MessageType::WARNING);
+		CHECK(mock.ui.messages[0].msg.find("Could not write to patch file") != std::string::npos);
+	}
+
+	Test::destroyWidget(widget);
+	Test::destroyModule(module);
+}
+
+
+TEST_CASE("Ahab copy selection routes through the vcv clipboard layer", "[Ahab][vcv][ui]") {
+	auto mock = Test::makeMockVcv<MockUiAccess, MockFileAccess>();
+	auto module = Test::createModule<AhabModule>("Ahab");
+	auto widget = Test::createWidget<AhabWidget>(module);
+
+	// Populate the widget's UI snapshot (display_field) with a small field and
+	// select it all. copySelectionToClipboard() serializes the selection and
+	// pushes it to the clipboard via the vcv UI layer — no disk I/O.
+	field_init_fill(&widget->simWidget->display_field, 2, 2, '.');
+	widget->simWidget->display_field.buffer[0] = 'A';
+	widget->simWidget->display_field.buffer[1] = 'B';
+	widget->simWidget->display_field.buffer[2] = 'C';
+	widget->simWidget->display_field.buffer[3] = 'D';
+	widget->simWidget->editorState.setSelection(0, 0, 2, 2, 2, 2);
+
+	widget->simWidget->copySelectionToClipboard();
+
+	REQUIRE(mock.ui.clipboardWrites.size() == 1);
+	CHECK(mock.ui.clipboardWrites[0] == "AB\nCD");
+	CHECK(mock.ui.messages.empty());
+
+	Test::destroyWidget(widget);
+	Test::destroyModule(module);
 }

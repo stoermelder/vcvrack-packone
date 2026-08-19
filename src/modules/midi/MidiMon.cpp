@@ -503,8 +503,8 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 
 	void exportLogDialog() {
 		std::string log = asset::user("MidiMon.log");
-		std::string dir = system::getDirectory(log);
-		std::string filename = system::getFilename(log);
+		std::string dir = vcv::fs::getDirectory(log);
+		std::string filename = vcv::fs::getFilename(log);
 
 		std::string path = vcv::ui::saveDialog("Log file (.log):log;Text file (.txt):txt", dir, filename);
 		if (path.empty()) {
