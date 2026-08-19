@@ -88,3 +88,15 @@ struct CableScaffold {
 	CableScaffold() : prev(vcv::cableAccess) { vcv::cableAccess = &mock; }
 	~CableScaffold() { vcv::cableAccess = prev; }
 };
+
+// RAII owner for modules under test — see Test::ModuleScaffold in test_context.hpp for why
+// the bare create/destroy pattern is unsafe once an assertion can fail.
+//
+// This binds the generic scaffold to this suite's own createModule() shadow above, so every
+// scaffolded module gets taskProcessorUi.syncMode set the same way a directly-created one
+// does. SpliceKitModule needs no special teardown beyond that: it registers itself in two
+// process-wide statics (getInstances() and, once armed, crossPending()), and both are dropped
+// by its destructor and onRemove() respectively — which Test::destroyModule() fires.
+struct ModuleScaffold : Test::ModuleScaffold<SpliceKitModule> {
+	ModuleScaffold() : Test::ModuleScaffold<SpliceKitModule>([]() { return createModule(); }) {}
+};

@@ -268,3 +268,181 @@ TEST_CASE("cross-instance responder - an opted-out responder creates no cable", 
 	Test::destroyModule(b);
 	Test::destroyModule(a);
 }
+
+TEST_CASE("cross-instance responder - an opted-out initiator never publishes, so no cable is made", "[SpliceKit]") {
+	CableScaffold cables;
+	SpliceKitModule* a = createModule();
+	SpliceKitModule* b = createModule();
+	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
+	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
+
+	SpliceKitModule::crossPending()[APP].clear();
+	// The doc's other half of the opt-out rule: "disabling it on either instance stops that
+	// instance from initiating". a arms locally but publishes nothing to crossPending, so b's
+	// press is a plain local arm rather than a completing gesture.
+	a->crossInstanceEnabled = false;
+	a->triggerCell(0);
+	a->taskProcessorUi.step();
+
+	b->triggerCell(5);
+	b->taskProcessorUi.step();
+
+	REQUIRE(cables.mock.hasCable(42, 0, 77, 1) == false);
+	// Both instances are left merely armed on their own cell.
+	REQUIRE(a->pendingCellId == 0);
+	REQUIRE(b->pendingCellId == 5);
+
+	SpliceKitModule::crossPending()[APP].clear();
+	Test::destroyModule(b);
+	Test::destroyModule(a);
+}
+
+
+// Scene switching must not disturb a cable both scenes agree on. topologyDiff() skips pairs
+// whose bit is unchanged, so the cable is never torn down and rebuilt — a rebuild would be an
+// audible break in the signal path for a connection the user never asked to change.
+
+TEST_CASE("switchTo - a cable stored in both scenes is left untouched", "[SpliceKit]") {
+	CableScaffold cables;
+	SpliceKitModule* m = createModule();
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+
+	m->sceneStore.current = 0;
+	m->sceneStore.connectLive(0, 1);
+	m->sceneStore.setConnection(1, 0, 1, true);   // scene 1 stores the same pair
+
+	m->sceneStore.switchTo(1);
+
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
+	REQUIRE(m->sceneStore.isConnected(1, 0, 1));
+	REQUIRE(m->sceneStore.current == 1);
+
+	Test::destroyModule(m);
+}
+
+
+// capture() re-reads the patch rather than trusting the stored bitmask, so a cable the user
+// pulled out by hand disappears from the scene on the next capture (the documented "SPLICE-KIT
+// reads the current cable state of assigned ports" promise, in its removal direction).
+
+TEST_CASE("capture - a cable removed by hand is dropped from the scene", "[SpliceKit]") {
+	CableScaffold cables;
+	SpliceKitModule* m = createModule();
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+
+	m->sceneStore.connectLive(0, 1);
+	m->sceneStore.capture(0);
+	REQUIRE(m->sceneStore.isConnected(0, 0, 1));
+
+	// The user yanks the cable in the patch, bypassing SpliceKit entirely.
+	cables.mock.removeCable(42, 0, 43, 0, false);
+	m->sceneStore.capture(0);
+
+	REQUIRE(m->sceneStore.isConnected(0, 0, 1) == false);
+
+	Test::destroyModule(m);
+}
+
+
+// moveCell (shift+drag) — the patch-level half of the gesture. The moved cell's own cables
+// must survive (the port moves with them), while the destination cell's previous cables are
+// torn out, because its old port assignment is discarded by the move.
+
+TEST_CASE("moveCell - source cables survive and the destination's own cables are removed", "[SpliceKit]") {
+	CableScaffold cables;
+	SpliceKitModule* m = createModule();
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+	m->assignPort(5, 99, 3, engine::Port::INPUT);   // destination has its own port and cable
+
+	m->sceneStore.connectLive(0, 1);
+	m->sceneStore.connectLive(0, 5);
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
+	REQUIRE(cables.mock.hasCable(42, 0, 99, 3));
+
+	m->moveCell(1, 5);
+
+	// Cell 1's port (43:0) moved to cell 5 — the cable on it is still the right cable.
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
+	// Cell 5's discarded port (99:3) took its cable with it.
+	REQUIRE(cables.mock.hasCable(42, 0, 99, 3) == false);
+	// The bitmask followed the port: 0↔5 now names the moved connection.
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 5));
+	REQUIRE(m->portAssignments[5].moduleId == 43);
+	REQUIRE(m->portAssignments[1].isValid() == false);
+
+	Test::destroyModule(m);
+}
+
+
+// Aliased cells — two cells assigned to the SAME patch port. Nothing prevents this: port
+// learn, drag-to-assign and a hand-edited patch can all produce it (only randomize is
+// documented as duplicate-free). One physical cable is then described by two independent
+// bitmask bits, which the current implementation does not reconcile.
+//
+// FAILING — these assert the CORRECT behavior against a known defect, so they are red until
+// toggleConnection() is fixed. See var/SpliceKit_test_review.md §2.19 for the analysis and
+// the two candidate fixes. Do not "fix" these by relaxing the assertions.
+//
+// The root cause is that toggleConnection() decides create-vs-remove from the bitmask bit of
+// the two CELL ids, while the thing it actually creates and removes is a cable between two
+// PORTS. When two cells name the same port those two views disagree.
+
+TEST_CASE("aliased cells - pressing an alias cell removes the existing cable rather than reporting a create", "[SpliceKit]") {
+	CableScaffold cables;
+	// ModuleScaffold, not a bare createModule(): these assertions are expected to FAIL until
+	// the defect is fixed, and a failing REQUIRE unwinds past any trailing destroyModule().
+	// Without RAII the module would leak into the shared instance registry and break later
+	// cross-instance tests.
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+	m->assignPort(2, 43, 0, engine::Port::INPUT);   // same port as cell 1
+
+	m->toggleConnection(0, 1);
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
+
+	// Cell 2 names the same port as cell 1, so the cable 0↔2 would create is already there.
+	// The gesture must therefore REMOVE it, and say so — not report a create for a cable that
+	// already exists and silently no-op at addCableBetween's duplicate guard.
+	m->toggleConnection(0, 2);
+
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0) == false);
+	REQUIRE(m->overlayMessage.title == "Cable removed");
+	// With the cable gone, no cell may still claim a connection to it.
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 2) == false);
+}
+
+TEST_CASE("aliased cells - removing a cable leaves no stale bit on the alias cell", "[SpliceKit]") {
+	CableScaffold cables;
+	ModuleScaffold mods;   // see the note above — this test is expected to fail until fixed
+	SpliceKitModule* m = mods.create();
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+	m->assignPort(2, 43, 0, engine::Port::INPUT);   // same port as cell 1
+
+	// Drive both cells' bits set for the one cable, the state the current implementation
+	// reaches after two presses (see the test above).
+	m->sceneStore.connectLive(0, 1);
+	m->sceneStore.connectLive(0, 2);
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
+
+	// Removing through cell 1 takes the single real cable away. Cell 2's bit describes that
+	// same cable, so it must go too: a bit with no cable behind it recreates the cable on the
+	// next switchTo(), resurrecting a connection the user deleted.
+	m->toggleConnection(0, 1);
+
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0) == false);
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 2) == false);
+
+	// The concrete consequence of a surviving bit: a scene round-trip must not bring the
+	// deleted cable back.
+	m->sceneStore.switchTo(1);
+	m->sceneStore.switchTo(0);
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0) == false);
+}

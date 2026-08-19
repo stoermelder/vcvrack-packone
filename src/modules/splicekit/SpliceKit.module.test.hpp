@@ -426,3 +426,91 @@ TEST_CASE("onRandomize - runs randomizePortAssignments directly without queueing
 
 	Test::destroyModule(m);
 }
+
+
+// Param-quantity tooltips — what the user reads when hovering a button.
+// The label falls back port name → custom label, the numeric 0/1 value is suppressed, and the
+// description names the current MIDI mapping.
+
+TEST_CASE("SpliceKitCellQuantity - label falls back from custom label to port name to cell number", "[SpliceKit]") {
+	SpliceKitModule* m = createModule();
+	ParamQuantity* pq = m->paramQuantities[SpliceKitModule::PARAM_MATRIX + 3];
+	REQUIRE(pq != nullptr);
+
+	// Unassigned and unlabelled → "Cell N", 1-based.
+	REQUIRE(pq->getLabel() == "Cell 4");
+
+	// A custom label wins over everything else.
+	m->cellLabels[3] = "Filter cutoff";
+	REQUIRE(pq->getLabel() == "Filter cutoff");
+
+	// With the label cleared and a port assigned, the port label is used. No ModuleWidget
+	// exists in this harness, so portLabel() takes its documented missing-module fallback.
+	m->cellLabels[3].clear();
+	m->assignPort(3, 42, 6, engine::Port::OUTPUT);
+	REQUIRE(pq->getLabel() == "(missing module, port 7)");
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("SpliceKitCellQuantity - the numeric button value is suppressed", "[SpliceKit]") {
+	SpliceKitModule* m = createModule();
+	ParamQuantity* pq = m->paramQuantities[SpliceKitModule::PARAM_MATRIX + 0];
+
+	// A momentary button's 0/1 is meaningless to the user, so the tooltip shows nothing.
+	pq->setValue(1.f);
+	REQUIRE(pq->getDisplayValueString() == "");
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("SpliceKitCellQuantity - description reports the cell's MIDI mapping", "[SpliceKit]") {
+	SpliceKitModule* m = createModule();
+	ParamQuantity* pq = m->paramQuantities[SpliceKitModule::PARAM_MATRIX + 2];
+
+	REQUIRE(pq->getDescription() == "MIDI: (unmapped)");
+
+	m->trackingProcessor.setMap(MidiTrackingType::CC, 2, 91);
+	REQUIRE(pq->getDescription() == "MIDI: CC 91");
+
+	m->trackingProcessor.clearMap(2);
+	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 2, 36);
+	REQUIRE(pq->getDescription() == "MIDI: Note 36");
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("SpliceKitSceneQuantity - label is the 1-based scene name and description its mapping", "[SpliceKit]") {
+	SpliceKitModule* m = createModule();
+	ParamQuantity* pq = m->paramQuantities[SpliceKitModule::PARAM_SCENE + 4];
+
+	REQUIRE(pq->getLabel() == "Scene 5");
+	REQUIRE(pq->getDisplayValueString() == "");
+	REQUIRE(pq->getDescription() == "MIDI: (unmapped)");
+
+	m->trackingProcessor.setMap(MidiTrackingType::CC, MATRIX_COUNT + 4, 95);
+	REQUIRE(pq->getDescription() == "MIDI: CC 95");
+
+	Test::destroyModule(m);
+}
+
+
+// processBypass — a bypassed module must still drain its MIDI input so
+// messages received while bypassed do not pile up and fire late on un-bypass.
+
+TEST_CASE("processBypass - runs without triggering cells and leaves no pending selection", "[SpliceKit]") {
+	SpliceKitModule* m = createModule();
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 0, 36);
+
+	// A mapped note arrives while the module is bypassed.
+	m->trackingProcessor.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 36, 100));
+	auto args = Test::makeProcessArgs(1);
+	REQUIRE_NOTHROW(m->processBypass(args));
+	m->taskProcessorUi.step();
+
+	// The message was consumed by the bypass pump, not turned into a button press.
+	REQUIRE(m->pendingCellId == -1);
+
+	Test::destroyModule(m);
+}

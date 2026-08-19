@@ -453,3 +453,58 @@ TEST_CASE("MidiOutPreset roundtrip - block type comes from the first mapped slot
 	REQUIRE(dst.cells[1].number == 0);
 	REQUIRE(dst.hasLayout());
 }
+
+// midiInput / midiOutput sub-object roundtrip. dataToJson writes both,
+// dataFromJson reads both, but nothing covered the pair — a patch that lost its configured
+// MIDI channel on reload would be a silent, user-visible regression.
+
+TEST_CASE("JSON roundtrip preserves the midiInput and midiOutput sub-objects", "[SpliceKit][JSON]") {
+	SpliceKitModule* src = createModule();
+	src->trackingProcessor.getInput().channel = 7;
+	src->feedback.midiOutput.channel = 3;
+
+	json_t* rootJ = src->dataToJson();
+	// Both sub-objects are actually written, not silently omitted.
+	REQUIRE(json_object_get(rootJ, "midiInput") != nullptr);
+	REQUIRE(json_object_get(rootJ, "midiOutput") != nullptr);
+
+	SpliceKitModule* dst = createModule();
+	dst->dataFromJson(rootJ);
+	json_decref(rootJ);
+
+	REQUIRE(dst->trackingProcessor.getInput().channel == 7);
+	REQUIRE(dst->feedback.midiOutput.channel == 3);
+
+	Test::destroyModule(dst);
+	Test::destroyModule(src);
+}
+
+
+// setActivePresetJson's own parse-failure path. The dataFromJson-side
+// malformed case was covered; this drives the setter directly, including the recovery
+// path where a valid preset replaces a rejected one.
+
+TEST_CASE("setActivePresetJson - malformed JSON turns feedback off rather than half-loading", "[SpliceKit][JSON]") {
+	SpliceKitModule* m = createModule();
+
+	// Start from a valid, active preset.
+	m->feedback.setActivePreset(makeNoteOnPreset());
+	REQUIRE(m->feedback.isActive());
+
+	// Malformed input clears activePresetJson, so isActive() reports feedback off and
+	// getActivePreset() hands back nullptr instead of a partially-parsed preset.
+	m->feedback.setActivePresetJson("{ this is not json");
+	REQUIRE(m->feedback.isActive() == false);
+	REQUIRE(m->feedback.getActivePreset() == nullptr);
+
+	// A valid preset afterwards is accepted again — the failure is not sticky.
+	m->feedback.setActivePreset(makeNoteOnPreset());
+	REQUIRE(m->feedback.isActive());
+	REQUIRE(m->feedback.getActivePreset() != nullptr);
+
+	// The empty string is the documented "turn feedback off" input.
+	m->feedback.setActivePresetJson("");
+	REQUIRE(m->feedback.isActive() == false);
+
+	Test::destroyModule(m);
+}
