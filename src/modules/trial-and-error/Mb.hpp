@@ -80,6 +80,13 @@ void hiddenModelsReset();
 
 extern std::map<std::string, std::set<Model*>> customTagModels;
 
+inline std::set<std::string> customTagsAll() {
+	std::set<std::string> result;
+	for (auto& pair : customTagModels)
+		result.insert(pair.first);
+	return result;
+}
+
 
 void customTagAdd(Model* model, const std::string& tag);
 void customTagRemove(Model* model, const std::string& tag);
