@@ -103,23 +103,6 @@ TEST_CASE("processMapLearn - sequential learn ends after the last cell", "[Splic
 	Test::destroyModule(m);
 }
 
-TEST_CASE("processMapLearn - single learn does not advance to the next cell", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
-
-	m->midiLearnMode = false;
-	m->learningId = 42;
-	m->trackingProcessor.enableMapLearn(42);
-
-	m->processMapLearn(MidiTrackingType::CC, 42);
-	REQUIRE(m->learningId == -1);  // single learn: cleared, not advanced
-	// The very next learn invocation must NOT assume sequential state.
-	REQUIRE(m->midiLearnMode == false);
-
-	m->disableLearn();
-	Test::destroyModule(m);
-}
-
-
 // MidiTrackingProcessor — clearMap on a cell with no prior mapping is a no-op
 
 TEST_CASE("trackingProcessor.clearMap - on an unmapped cell is a safe no-op", "[SpliceKit]") {

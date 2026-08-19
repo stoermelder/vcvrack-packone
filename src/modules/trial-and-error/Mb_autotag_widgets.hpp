@@ -1,8 +1,8 @@
 #pragma once
 #include "../../plugin.hpp"
 #include "../../ui/AutoTagDialog.hpp"
+#include "../../vcv/api.hpp"
 #include "Mb_autotag.hpp"
-#include <osdialog.h>
 #include <memory>
 
 namespace StoermelderPackOne {
@@ -32,7 +32,7 @@ struct ModelLabel : MenuItem {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			std::string fullSlug = model->plugin->slug + "/" + model->slug;
 			std::string url = "https://library.vcvrack.com/?modules=" + fullSlug;
-			system::openBrowser(url);
+			vcv::ui::openBrowser(url);
 			e.consume(this);
 		}
 	}
@@ -91,7 +91,7 @@ using AsyncTagResultWidget = ui::AsyncTagConfirmDialog<plugin::Model*>;
 
 inline void openAutoTagConfirmDialog(std::shared_ptr<AutoTagResult> result) {
 	if (!result || result->assignments.empty()) {
-		osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
+		vcv::ui::message(vcv::MessageType::INFO, vcv::MessageButtons::OK, "No new tag assignments found.");
 		return;
 	}
 	ui::openTagConfirmDialog<plugin::Model*>(

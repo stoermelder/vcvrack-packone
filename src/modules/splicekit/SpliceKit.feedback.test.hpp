@@ -175,24 +175,8 @@ TEST_CASE("sendFeedback - no-op for FROM_SLOT when slot is unmapped", "[SpliceKi
 	Test::destroyModule(m);
 }
 
-TEST_CASE("sendFeedback - no-op for FROM_SLOT_TYPE when slot is CC", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
-	MidiOutPreset preset;
-	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_FROM_SLOT_TYPE;
-	preset.specs[LED_STATE_COLOR0].noteMode = MIDI_OUT_FROM_SLOT;
-	preset.specs[LED_STATE_COLOR0].value = 127;
-	m->feedback.setActivePreset(preset);
-	m->trackingProcessor.setMap(MidiTrackingType::CC, 0, 74);
-	// CC slot with FROM_SLOT_TYPE resolves to a CC status — but for the *on-side*
-	// (MIDI_OUT_FROM_SLOT_TYPE), the code does support CC→0xB0. This test instead
-	// verifies the *no-op* case: if we set a NONE-type spec on top, it still
-	// returns early before any branch is taken.
-	preset.specs[LED_STATE_COLOR0].type = MIDI_OUT_NONE;
-	m->feedback.setActivePreset(preset);
-	m->feedback.sendFeedback(0, LED_STATE_COLOR0);
-	REQUIRE(m->feedback.midiOutput.sentCount == 0);
-	Test::destroyModule(m);
-}
+// NOTE: unlike the off-side, the on-side DOES support a CC slot under FROM_SLOT_TYPE
+// (it resolves to 0xB0) — that positive case is covered further down.
 
 TEST_CASE("sendFeedback - sends note-on 0x90 for NOTE_ON + FIXED mode", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
@@ -708,5 +692,127 @@ TEST_CASE("SpliceKitOutput::setDeviceId invalidates LED states via the FeedbackS
 
 	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->feedback.cellLedState[i] == -1);
 	for (int i = 0; i < SCENE_COUNT; i++) REQUIRE(m->feedback.sceneLedState[i] == -1);
+	Test::destroyModule(m);
+}
+
+
+// Every shipped controller preset file must load and parse. A malformed or silently
+// dropped preset would ship without any test noticing, so assert the production loader
+// (getLoadedPresets(), which reads presets/SpliceKit/*.ctrl.json sorted by filename) returns
+// exactly the files on disk and that each one parsed into a valid MidiOutPreset.
+
+TEST_CASE("controller presets - every shipped .ctrl.json loads and parses", "[SpliceKit][JSON]") {
+	// Every .ctrl.json on disk must be loaded: a malformed file is silently dropped by
+	// getLoadedPresets(), so a count mismatch is the only signal.
+	std::vector<std::string> files = rack::system::getEntries("presets/SpliceKit");
+	std::vector<std::string> ctrlFiles;
+	for (const std::string& path : files) {
+		if (path.size() >= 10 && path.compare(path.size() - 10, 10, ".ctrl.json") == 0) ctrlFiles.push_back(path);
+	}
+	REQUIRE(ctrlFiles.size() >= 1);
+
+	const std::vector<LoadedPreset>& presets = getLoadedPresets();
+	REQUIRE(presets.size() == ctrlFiles.size());
+
+	// GENERATE runs the body once per shipped preset, so a failure names the exact preset.
+	// The generator must not reference locals (GENERATE's lambda has no capture), hence
+	// getLoadedPresets() directly.
+	const LoadedPreset lp = GENERATE(Catch::Generators::from_range(getLoadedPresets()));
+	const MidiOutPreset& p = lp.preset;
+	REQUIRE(!p.name.empty());
+	for (int s = 0; s < LED_STATE_COUNT; s++) {
+		const MidiOutSpec& spec = p.specs[s];
+		REQUIRE((spec.type >= MIDI_OUT_NONE && spec.type <= MIDI_OUT_FROM_SLOT_TYPE));
+		REQUIRE((spec.channel >= 0 && spec.channel <= 15));
+		REQUIRE((spec.noteMode == MIDI_OUT_FROM_SLOT || spec.noteMode == MIDI_OUT_FIXED));
+		REQUIRE((spec.note >= 0 && spec.note <= 127));
+		REQUIRE((spec.value >= 0 && spec.value <= 127));
+	}
+}
+
+TEST_CASE("controller presets - getLoadedPresets is ordered by filename", "[SpliceKit][JSON]") {
+	// The menu lists presets in filename order (getLoadedPresets() sorts *.ctrl.json). Verify
+	// by re-parsing each sorted file independently and checking the display names line up.
+	std::vector<std::string> files = rack::system::getEntries("presets/SpliceKit");
+	std::vector<std::string> ctrlFiles;
+	for (const std::string& path : files) {
+		if (path.size() >= 10 && path.compare(path.size() - 10, 10, ".ctrl.json") == 0) ctrlFiles.push_back(path);
+	}
+	std::sort(ctrlFiles.begin(), ctrlFiles.end());
+	REQUIRE(ctrlFiles.size() >= 1);
+
+	const std::vector<LoadedPreset>& presets = getLoadedPresets();
+	REQUIRE(presets.size() == ctrlFiles.size());
+
+	// One iteration per file: the cached preset at index i must match an independent
+	// re-parse of the i-th filename-sorted file (filename order == menu order). The bounds
+	// must not reference locals (GENERATE's lambda has no capture), hence the direct call.
+	const size_t i = GENERATE(Catch::Generators::range<size_t>(0, getLoadedPresets().size()));
+
+	std::vector<uint8_t> raw = rack::system::readFile(ctrlFiles[i]);
+	REQUIRE(!raw.empty());
+	json_error_t err;
+	json_t* root = json_loads(std::string(raw.begin(), raw.end()).c_str(), 0, &err);
+	REQUIRE(root != nullptr);
+	MidiOutPreset mp;
+	mp.fromJson(root);
+	json_decref(root);
+	REQUIRE(presets[i].preset.name == mp.name);
+}
+
+
+// End-to-end feedback: loading a shipped controller preset and driving an LED state through
+// the real feedback path (FeedbackSender::setState, the method processLights() calls) must
+// emit exactly the MIDI message the preset's spec encodes — status byte from type+channel,
+// note from the mapping (or the fixed number), value from the spec.
+
+TEST_CASE("controller presets - feedback emits the MIDI message each spec encodes", "[SpliceKit][JSON]") {
+	// One iteration per shipped preset; load it from its raw JSON, exactly as the module does.
+	const LoadedPreset lp = GENERATE(Catch::Generators::from_range(getLoadedPresets()));
+
+	SpliceKitModule* m = createModule();
+	m->feedback.setActivePresetJson(lp.json);
+	// Cell 0 → note 60 (NOTE) so FROM_SLOT / FROM_SLOT_TYPE specs resolve to a number.
+	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 0, 60);
+
+	for (int s = 0; s < LED_STATE_COUNT; s++) {
+		CATCH_CAPTURE(s);
+		const MidiOutSpec& spec = m->feedback.activePreset.specs[s];
+		// Cache -1 makes setState send exactly one on-message (the off for -1 is a no-op).
+		m->feedback.invalidateLedStates();
+		int before = m->feedback.midiOutput.sentCount;
+
+		m->feedback.setState(0, s);
+
+		// Expected bytes, mirroring FeedbackSender::sendFeedback's encoding.
+		int noteNum;
+		MidiTrackingType slotType;
+		bool sends = spec.type != MIDI_OUT_NONE && m->feedback.resolveNote(spec, 0, noteNum, slotType);
+		uint8_t status = 0;
+		if (sends) {
+			switch (spec.type) {
+				case MIDI_OUT_NOTE_ON: status = 0x90; break;
+				case MIDI_OUT_NOTE_OFF: status = 0x80; break;
+				case MIDI_OUT_CC: status = 0xB0; break;
+				case MIDI_OUT_FROM_SLOT_TYPE:
+					if (slotType == MidiTrackingType::NOTE) status = 0x90;
+					else if (slotType == MidiTrackingType::CC) status = 0xB0;
+					else sends = false;
+					break;
+				default: sends = false;
+			}
+		}
+
+		if (!sends) {
+			REQUIRE(m->feedback.midiOutput.sentCount == before);
+			continue;
+		}
+
+		REQUIRE(m->feedback.midiOutput.sentCount == before + 1);
+		REQUIRE(m->feedback.midiOutput.lastSentMsg.bytes[0] == (status | (uint8_t)(spec.channel & 0x0F)));
+		REQUIRE(m->feedback.midiOutput.lastSentMsg.bytes[1] == (uint8_t)(noteNum & 0x7F));
+		REQUIRE(m->feedback.midiOutput.lastSentMsg.bytes[2] == (uint8_t)(spec.value & 0x7F));
+	}
+
 	Test::destroyModule(m);
 }

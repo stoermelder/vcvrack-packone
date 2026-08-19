@@ -2,60 +2,23 @@
 #include "../../test/test_context.hpp"
 #include "SirenFileSystem.hpp"
 #include "SirenBackgroundTasks.hpp"
-#include "SirenTest.hpp"
+#include "Siren.test.hpp"
 
 using namespace StoermelderPackOne::Siren;
 using namespace StoermelderPackOne::Siren::filesystem;
 
 Test::TestContext<> testContext;
 
-// ─── TempDir RAII helper ──────────────────────────────────────────────────────
-// Creates a unique temporary directory; removes it on destruction.
 
-struct TempDir {
-	std::string path;
-
-	TempDir() {
-		static int seq = 0;
-		path = rack::system::join(rack::system::getTempDirectory(),
-			"siren_index_test_" + std::to_string(++seq));
-		rack::system::createDirectories(path);
-	}
-
-	~TempDir() { rack::system::removeRecursively(path); }
-
-	std::string filePath(const std::string& name) const { return rack::system::join(path, name); }
-	std::string str() const { return path; }
-};
-
-// ─── SirenIndexTask ───────────────────────────────────────────────────────────
-
-namespace {
-
-// Writes a short decodable silent WAV file so loadAudioInfo() can read its header.
-void writeIndexTestWav(const std::string& path, int frames = 4410, int sampleRate = 44100, int channels = 2) {
-	drwav_data_format fmt = {};
-	fmt.container = drwav_container_riff;
-	fmt.format = DR_WAVE_FORMAT_IEEE_FLOAT;
-	fmt.channels = (drwav_uint32)channels;
-	fmt.sampleRate = (drwav_uint32)sampleRate;
-	fmt.bitsPerSample = 32;
-	drwav wav;
-	drwav_init_file_write(&wav, path.c_str(), &fmt, nullptr);
-	std::vector<float> samples((size_t)frames * channels, 0.f);
-	drwav_write_pcm_frames(&wav, (drwav_uint64)frames, samples.data());
-	drwav_uninit(&wav);
-}
-
-} // namespace
+// SirenIndexTask
 
 // start() scans every file below the root, fills in audio info (duration,
 // sample rate, bit depth, channels) and detects BPM from filenames — without
 // overwriting BPM values that were already set.
 TEST_CASE("SirenIndexTask: fills audio info and filename-based BPM, preserves existing BPM", "[Siren][Indexing]") {
 	TempDir tmp;
-	writeIndexTestWav(tmp.filePath("loop_120bpm.wav"), 4410, 44100, 2);
-	writeIndexTestWav(tmp.filePath("other.wav"), 4410, 48000, 1);
+	writeTestWav(tmp.filePath("loop_120bpm.wav"), 4410, 44100, 2);
+	writeTestWav(tmp.filePath("other.wav"), 4410, 48000, 1);
 
 	auto src = std::make_shared<FileSystemDataSource>(tmp.str(), scratchMetadataStore());
 	// Pre-existing BPM must survive indexing unchanged.
@@ -94,7 +57,7 @@ TEST_CASE("SirenIndexTask: fills audio info and filename-based BPM, preserves ex
 // start() is a no-op when called again while a scan is still running.
 TEST_CASE("SirenIndexTask: re-entrant call while running is ignored", "[Siren][Indexing]") {
 	TempDir tmp;
-	writeIndexTestWav(tmp.filePath("a.wav"));
+	writeTestWav(tmp.filePath("a.wav"));
 
 	auto src = std::make_shared<FileSystemDataSource>(tmp.str(), scratchMetadataStore());
 
@@ -118,27 +81,6 @@ TEST_CASE("SirenIndexTask: re-entrant call while running is ignored", "[Siren][I
 // ─── SirenClassifyTask ────────────────────────────────────────────────────────
 
 namespace {
-
-// Writes a short stereo sine-wave WAV — needed because classify() is skipped
-// when ds->openAudioStream() fails to decode the file's header.
-void writeClassifyTestWav(const std::string& path, float freqHz = 440.f,
-		int frames = 4410, int sampleRate = 44100, int channels = 2) {
-	drwav_data_format fmt = {};
-	fmt.container = drwav_container_riff;
-	fmt.format = DR_WAVE_FORMAT_IEEE_FLOAT;
-	fmt.channels = (drwav_uint32)channels;
-	fmt.sampleRate = (drwav_uint32)sampleRate;
-	fmt.bitsPerSample = 32;
-	drwav wav;
-	drwav_init_file_write(&wav, path.c_str(), &fmt, nullptr);
-	std::vector<float> samples((size_t)frames * channels);
-	for (int i = 0; i < frames; i++) {
-		float v = 0.5f * std::sin(2.f * float(M_PI) * freqHz * float(i) / float(sampleRate));
-		for (int c = 0; c < channels; c++) samples[i * channels + c] = v;
-	}
-	drwav_write_pcm_frames(&wav, (drwav_uint64)frames, samples.data());
-	drwav_uninit(&wav);
-}
 
 // In-memory DataSource for tests where exercising classify()'s worker pipeline
 // (file collection, progress, tag filtering, recursion) is the goal — the

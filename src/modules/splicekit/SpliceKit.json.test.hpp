@@ -343,3 +343,168 @@ TEST_CASE("dataFromJson - out-of-range MIDI map indices are skipped", "[SpliceKi
 
 	Test::destroyModule(m);
 }
+
+
+
+// MidiOutPreset toJson/fromJson roundtrip. The module-level activePreset *string*
+// roundtrip was already covered; these pin the preset file format itself (cells/scenes/specs
+// structure, slotsBlockToJson/parseSlotsBlock) and its documented edge cases: empty slot
+// blocks omitted, block type from the first mapped slot, and note/CC 0 preserved.
+
+static void requirePresetEqual(const MidiOutPreset& a, const MidiOutPreset& b) {
+	REQUIRE(a.name == b.name);
+	REQUIRE(a.description == b.description);
+	for (int i = 0; i < MATRIX_COUNT; i++) {
+		REQUIRE(a.cells[i].type == b.cells[i].type);
+		REQUIRE(a.cells[i].number == b.cells[i].number);
+	}
+	for (int i = 0; i < SCENE_COUNT; i++) {
+		REQUIRE(a.scenes[i].type == b.scenes[i].type);
+		REQUIRE(a.scenes[i].number == b.scenes[i].number);
+	}
+	for (int s = 0; s < LED_STATE_COUNT; s++) {
+		REQUIRE(a.specs[s].type == b.specs[s].type);
+		REQUIRE(a.specs[s].channel == b.specs[s].channel);
+		REQUIRE(a.specs[s].noteMode == b.specs[s].noteMode);
+		REQUIRE(a.specs[s].note == b.specs[s].note);
+		REQUIRE(a.specs[s].value == b.specs[s].value);
+	}
+}
+
+static MidiOutPreset roundtripPreset(const MidiOutPreset& src) {
+	json_t* j = src.toJson();
+	MidiOutPreset dst;
+	dst.fromJson(j);
+	json_decref(j);
+	return dst;
+}
+
+TEST_CASE("MidiOutPreset roundtrip - preserves a fully populated preset", "[SpliceKit][JSON]") {
+	MidiOutPreset src;
+	src.name = "Roundtrip";
+	src.description = "a description";
+	for (int i = 0; i < MATRIX_COUNT; i++) src.cells[i] = {MidiTrackingType::NOTE, i};
+	for (int i = 0; i < SCENE_COUNT; i++) src.scenes[i] = {MidiTrackingType::CC, i};
+	for (int s = 0; s < LED_STATE_COUNT; s++) {
+		src.specs[s].type = (s % 2) ? MIDI_OUT_NOTE_ON : MIDI_OUT_CC;
+		src.specs[s].channel = s % 16;
+		src.specs[s].noteMode = MIDI_OUT_FIXED;
+		src.specs[s].note = s;
+		src.specs[s].value = 127 - s;
+	}
+
+	requirePresetEqual(src, roundtripPreset(src));
+}
+
+TEST_CASE("MidiOutPreset roundtrip - every shipped preset roundtrips unchanged", "[SpliceKit][JSON]") {
+	// The shipped files use either no slot block (Generic) or a complete one (all cells
+	// listed), so toJson → fromJson must reproduce each one exactly.
+	const LoadedPreset lp = GENERATE(Catch::Generators::from_range(getLoadedPresets()));
+	requirePresetEqual(lp.preset, roundtripPreset(lp.preset));
+}
+
+TEST_CASE("MidiOutPreset roundtrip - empty slot blocks are omitted from JSON", "[SpliceKit][JSON]") {
+	MidiOutPreset src;
+	src.name = "Specs only";
+	// No cells/scenes mapped — only specs.
+
+	json_t* j = src.toJson();
+	// slotsBlockToJson returns nullptr for an unmapped block, so the key is omitted.
+	REQUIRE(json_object_get(j, "cells") == nullptr);
+	REQUIRE(json_object_get(j, "scenes") == nullptr);
+	MidiOutPreset dst;
+	dst.fromJson(j);
+	json_decref(j);
+
+	REQUIRE(dst.hasLayout() == false);
+	for (int i = 0; i < MATRIX_COUNT; i++) {
+		REQUIRE(dst.cells[i].type == MidiTrackingType::NONE);
+	}
+	for (int i = 0; i < SCENE_COUNT; i++) {
+		REQUIRE(dst.scenes[i].type == MidiTrackingType::NONE);
+	}
+}
+
+TEST_CASE("MidiOutPreset roundtrip - block type comes from the first mapped slot; note/CC 0 preserved", "[SpliceKit][JSON]") {
+	// A slot block carries one type for the whole block. cells[0] is the first mapped slot
+	// (NOTE, number 0 — which must survive the roundtrip), cells[3] is CC but is overridden
+	// by the block's type on re-parse, and the unmapped cells come back mapped to note 0.
+	MidiOutPreset src;
+	src.cells[0] = {MidiTrackingType::NOTE, 0};
+	src.cells[3] = {MidiTrackingType::CC, 74};
+
+	json_t* j = src.toJson();
+	// The first mapped slot (cells[0], NOTE) determines the block's type.
+	json_t* cellsJ = json_object_get(j, "cells");
+	REQUIRE(cellsJ != nullptr);
+	REQUIRE(json_integer_value(json_object_get(cellsJ, "type")) == (int)MidiTrackingType::NOTE);
+	MidiOutPreset dst;
+	dst.fromJson(j);
+	json_decref(j);
+
+	// Number 0 was preserved...
+	REQUIRE(dst.cells[0].type == MidiTrackingType::NOTE);
+	REQUIRE(dst.cells[0].number == 0);
+	// ...cells[3]'s CC was overridden by the block's NOTE type...
+	REQUIRE(dst.cells[3].type == MidiTrackingType::NOTE);
+	REQUIRE(dst.cells[3].number == 74);
+	// ...and the rest of the block came back mapped to note 0.
+	REQUIRE(dst.cells[1].type == MidiTrackingType::NOTE);
+	REQUIRE(dst.cells[1].number == 0);
+	REQUIRE(dst.hasLayout());
+}
+
+// midiInput / midiOutput sub-object roundtrip. dataToJson writes both,
+// dataFromJson reads both, but nothing covered the pair — a patch that lost its configured
+// MIDI channel on reload would be a silent, user-visible regression.
+
+TEST_CASE("JSON roundtrip preserves the midiInput and midiOutput sub-objects", "[SpliceKit][JSON]") {
+	SpliceKitModule* src = createModule();
+	src->trackingProcessor.getInput().channel = 7;
+	src->feedback.midiOutput.channel = 3;
+
+	json_t* rootJ = src->dataToJson();
+	// Both sub-objects are actually written, not silently omitted.
+	REQUIRE(json_object_get(rootJ, "midiInput") != nullptr);
+	REQUIRE(json_object_get(rootJ, "midiOutput") != nullptr);
+
+	SpliceKitModule* dst = createModule();
+	dst->dataFromJson(rootJ);
+	json_decref(rootJ);
+
+	REQUIRE(dst->trackingProcessor.getInput().channel == 7);
+	REQUIRE(dst->feedback.midiOutput.channel == 3);
+
+	Test::destroyModule(dst);
+	Test::destroyModule(src);
+}
+
+
+// setActivePresetJson's own parse-failure path. The dataFromJson-side
+// malformed case was covered; this drives the setter directly, including the recovery
+// path where a valid preset replaces a rejected one.
+
+TEST_CASE("setActivePresetJson - malformed JSON turns feedback off rather than half-loading", "[SpliceKit][JSON]") {
+	SpliceKitModule* m = createModule();
+
+	// Start from a valid, active preset.
+	m->feedback.setActivePreset(makeNoteOnPreset());
+	REQUIRE(m->feedback.isActive());
+
+	// Malformed input clears activePresetJson, so isActive() reports feedback off and
+	// getActivePreset() hands back nullptr instead of a partially-parsed preset.
+	m->feedback.setActivePresetJson("{ this is not json");
+	REQUIRE(m->feedback.isActive() == false);
+	REQUIRE(m->feedback.getActivePreset() == nullptr);
+
+	// A valid preset afterwards is accepted again — the failure is not sticky.
+	m->feedback.setActivePreset(makeNoteOnPreset());
+	REQUIRE(m->feedback.isActive());
+	REQUIRE(m->feedback.getActivePreset() != nullptr);
+
+	// The empty string is the documented "turn feedback off" input.
+	m->feedback.setActivePresetJson("");
+	REQUIRE(m->feedback.isActive() == false);
+
+	Test::destroyModule(m);
+}

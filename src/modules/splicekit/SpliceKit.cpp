@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 #include "../../components/MatrixButton.hpp"
 #include "../../components/MidiWidget.hpp"
 #include "../../ui/InfoWindow.hpp"
@@ -6,7 +7,6 @@
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "../../ui/CableOpacityState.hpp"
 #include "../../utils/GuiTaskProcessor.hpp"
-#include "../../utils/vcv_cables.hpp"
 #include "../midi/MidiTrackingProcessor.hpp"
 #include "SpliceKit.controllers.hpp"
 #include <osdialog.h>
@@ -189,8 +189,7 @@ struct SceneStore {
 		const PortAssignment* outPd = dir.first;
 		const PortAssignment* inPd = dir.second;
 		if (!outPd) return;
-		CableWidget* cw = vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
-		if (cw) vcv::removeCable(cw, false);
+		vcv::removeCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
 	}
 
 	// GUI thread — the mirror of removeCableBetween(). Same no-op rules, same reason for
@@ -203,8 +202,8 @@ struct SceneStore {
 		const PortAssignment* outPd = dir.first;
 		const PortAssignment* inPd = dir.second;
 		if (!outPd) return;
-		if (vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId)) return;
-		vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
+		if (vcv::hasCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId)) return;
+		vcv::addCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
 	}
 
 	// GUI thread — make/break a connection between two cells in the CURRENT scene,
@@ -221,6 +220,52 @@ struct SceneStore {
 		assert(verifier.isUiOrWorker());
 		setConnection(current, cellIdA, cellIdB, false);
 		removeCableBetween(cellIdA, cellIdB);
+		clearAliasBits(cellIdA, cellIdB);
+	}
+
+	// True if the cable cellIdA/cellIdB would create or remove already exists in the
+	// patch. Used by toggleConnection() instead of the cell-pair bitmask bit so that two
+	// cells aliased to the same port pair (see clearAliasBits()) agree with the patch
+	// rather than only with each other.
+	bool cableIsLive(int cellIdA, int cellIdB) const {
+		auto dir = resolveDirection(ports[cellIdA], ports[cellIdB]);
+		const PortAssignment* outPd = dir.first;
+		const PortAssignment* inPd = dir.second;
+		if (!outPd) return false;
+		return vcv::hasCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
+	}
+
+	// After the cable between cellIdA/cellIdB is removed, clear the current scene's bit
+	// for every OTHER cell pair that resolves to the same two ports (aliasing — nothing
+	// prevents two cells from being assigned to the same port). Without this a surviving
+	// alias bit claims a connection the patch no longer has, and switchTo() would recreate
+	// the cable the user just deleted.
+	void clearAliasBits(int cellIdA, int cellIdB) {
+		assert(verifier.isUiOrWorker());
+		auto dir = resolveDirection(ports[cellIdA], ports[cellIdB]);
+		const PortAssignment* outPd = dir.first;
+		const PortAssignment* inPd = dir.second;
+		if (!outPd) return;
+
+		// Any stale alias pair must use a cell whose assigned port matches outPd or inPd —
+		// gather those (usually just cellIdA/cellIdB themselves) in one pass instead of
+		// scanning all O(MATRIX_COUNT^2) cell pairs.
+		auto samePort = [](const PortAssignment& p, const PortAssignment* ref) {
+			return p.moduleId == ref->moduleId && p.portId == ref->portId;
+		};
+		int outAliases[MATRIX_COUNT], inAliases[MATRIX_COUNT];
+		int outCount = 0, inCount = 0;
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			if (samePort(ports[i], outPd)) outAliases[outCount++] = i;
+			else if (samePort(ports[i], inPd)) inAliases[inCount++] = i;
+		}
+		for (int oi = 0; oi < outCount; oi++) {
+			for (int ii = 0; ii < inCount; ii++) {
+				int i = outAliases[oi], j = inAliases[ii];
+				if ((i == cellIdA && j == cellIdB) || (i == cellIdB && j == cellIdA)) continue;
+				if (isConnected(current, i, j)) setConnection(current, i, j, false);
+			}
+		}
 	}
 
 	// GUI thread — rewrites connections[scene] to match the actual cables currently
@@ -236,7 +281,7 @@ struct SceneStore {
 				if (j == i) continue;
 				const PortAssignment& b = ports[j];
 				if (!b.isValid() || b.type != engine::Port::INPUT) continue;
-				if (vcv::findCable(a.moduleId, a.portId, b.moduleId, b.portId)) {
+				if (vcv::hasCable(a.moduleId, a.portId, b.moduleId, b.portId)) {
 					setConnection(scene, i, j, true);
 				}
 			}
@@ -1098,6 +1143,36 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		sceneStore.reconcile(sceneStore.current, newConns);
 	}
 
+	// GUI thread — replaces the current scene's connections with a random topology in which
+	// every assigned port gets at least one cable. Like randomizeCurrentScene(), outputs and
+	// inputs are shuffled independently and paired one-to-one in order; but once the shorter
+	// side is exhausted, its ports are reused (wrapping from the start) so the longer side's
+	// remaining ports still get a partner. Every assigned port ends up with at least one
+	// connection, at the cost of some ports being fanned out to several partners.
+	void randomizeCurrentSceneFull() {
+		assert(verifier.isUiOrWorker());
+		std::vector<int> outputs, inputs;
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			if (!portAssignments[i].isValid()) continue;
+			(portAssignments[i].type == engine::Port::OUTPUT ? outputs : inputs).push_back(i);
+		}
+		std::mt19937 rng(random::u32());
+		std::shuffle(outputs.begin(), outputs.end(), rng);
+		std::shuffle(inputs.begin(), inputs.end(), rng);
+
+		SceneConns newConns{};
+		if (!outputs.empty() && !inputs.empty()) {
+			size_t n = std::max(outputs.size(), inputs.size());
+			for (size_t i = 0; i < n; i++) {
+				int a = outputs[i % outputs.size()];
+				int b = inputs[i % inputs.size()];
+				newConns[a] |= (1ULL << b);
+				newConns[b] |= (1ULL << a);
+			}
+		}
+		sceneStore.reconcile(sceneStore.current, newConns);
+	}
+
 	void processBypass(const ProcessArgs& args) override {
 		assert(verifier.isEngine());
 		trackingProcessor.processBypass(args.frame);
@@ -1803,7 +1878,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		int outCell = (outPd == &a) ? cellIdA : cellIdB;
 		int inCell = (inPd == &a) ? cellIdA : cellIdB;
 
-		if (sceneStore.isConnected(sceneStore.current, outCell, inCell)) {
+		if (sceneStore.cableIsLive(outCell, inCell)) {
 			sceneStore.disconnectLive(outCell, inCell);
 			setOverlayMessage("Cable removed", portLabel(*outPd), portLabel(*inPd));
 		}
@@ -1881,14 +1956,13 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 					const PortAssignment* outPd = dir.first;
 					const PortAssignment* inPd = dir.second;
 					if (outPd) {
-						CableWidget* cw = vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
-						if (!cw) {
-							vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
-							setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
+						if (vcv::hasCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId)) {
+							vcv::removeCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
+							setOverlayMessage("Cable removed", portLabel(*outPd), portLabel(*inPd));
 						}
 						else {
-							vcv::removeCable(cw, false);
-							setOverlayMessage("Cable removed", portLabel(*outPd), portLabel(*inPd));
+							vcv::addCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
+							setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
 						}
 					}
 					else {
@@ -2754,11 +2828,17 @@ void SpliceKitSceneButton::createSceneMenu() {
 		module->sceneStore.reconcile(sceneId, module->sceneClipboard);
 	}, !module->sceneClipboardValid));
 
-	// randomizeCurrentScene() always targets the active scene, not necessarily the one whose
-	// button was clicked — only offer it here when they're the same scene.
+	// randomizeCurrentScene()/randomizeCurrentSceneFull() always target the active scene, not
+	// necessarily the one whose button was clicked — only offer them here when they're the
+	// same scene.
 	bool notCurrent = sceneId != module->sceneStore.current;
-	menu->addChild(createMenuItem("Randomize", "", [=]() {
-		module->randomizeCurrentScene();
+	menu->addChild(createSubmenuItem("Randomize", "", [=](Menu* menu) {
+		menu->addChild(createMenuItem("Sparse", "", [=]() {
+			module->randomizeCurrentScene();
+		}, notCurrent));
+		menu->addChild(createMenuItem("Full", "", [=]() {
+			module->randomizeCurrentSceneFull();
+		}, notCurrent));
 	}, notCurrent));
 
 	menu->addChild(new MenuSeparator);

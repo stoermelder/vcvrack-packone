@@ -1,5 +1,6 @@
 #include "../../test/test_plugin.hpp"
 #include "../../test/test_context.hpp"
+#include "../../test/test_mock.hpp"
 #include "MidiMon.cpp"
 
 using namespace StoermelderPackOne;
@@ -492,5 +493,103 @@ TEST_CASE("Legacy preset defaults showCcExMsg to showCcMsg", "[MidiMon][JSON]") 
 	REQUIRE(module->showCcExMsg == false);
 
 	json_decref(rootJ);
+	Test::destroyModule(module);
+}
+
+
+// A UiAccess mock that records saveDialog and message calls and returns scripted answers.
+struct MockUiAccess : vcv::UiAccess {
+	struct SaveCall { std::string filters, dir, filename; };
+	std::vector<SaveCall> saveCalls;
+	std::vector<std::string> saveResults;  // queue consumed in order
+	int saveIndex = 0;
+
+	struct Message { vcv::MessageType type; vcv::MessageButtons buttons; std::string msg; };
+	std::vector<Message> messages;
+
+	std::string saveDialog(const std::string& filters, const std::string& dir, const std::string& filename) override {
+		saveCalls.push_back({filters, dir, filename});
+		if (saveIndex < (int) saveResults.size()) return saveResults[saveIndex++];
+		return "";
+	}
+
+	bool message(vcv::MessageType type, vcv::MessageButtons buttons, const std::string& msg) override {
+		messages.push_back({type, buttons, msg});
+		return true;
+	}
+};
+
+// A FileAccess mock that records write() calls; failWrites forces the failure path.
+// Path helpers (getDirectory/getFilename) forward to rack::system so exportLogDialog
+// computes the real default filename ("MidiMon.log") for the save dialog.
+struct MockFileAccess : Test::MockVcv::MockFileAccess {
+	struct WriteCall { std::string path, data; };
+	std::vector<WriteCall> writes;
+	bool failWrites = false;
+
+	bool write(const std::string& path, const std::string& data) override {
+		if (failWrites) return false;
+		writes.push_back({path, data});
+		return true;
+	}
+};
+
+TEST_CASE("exportLogDialog routes through the UI save dialog", "[MidiMon][ui]") {
+	auto mock = Test::makeMockVcv<MockUiAccess, MockFileAccess>();
+	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	auto widget = Test::createWidget<MidiMonWidget>(module);
+
+	SECTION("Cancelled dialog writes nothing") {
+		// saveDialog returns "" (cancelled) → exportLogDialog returns early.
+		widget->exportLogDialog();
+
+		REQUIRE(mock.ui.saveCalls.size() == 1);
+		CHECK(mock.ui.saveCalls[0].filename == "MidiMon.log");
+		// filters must be a valid osdialog filter string ("name:ext...") — passing ""
+		// makes osdialog_filters_parse assert and abort in the real UI layer.
+		CHECK_FALSE(mock.ui.saveCalls[0].filters.empty());
+		CHECK(mock.ui.saveCalls[0].filters.find(':') != std::string::npos);
+		CHECK(mock.fs.writes.empty());
+	}
+
+	SECTION("Selected path writes the log through the fs layer") {
+		mock.ui.saveResults = { "/tmp/MidiMon.log" };
+		// The widget display buffer (newest at front) is exported oldest-first.
+		widget->buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 1.25f, 0LL, std::string("ch01 note on  60 vel 100")));
+		widget->buffer.push_front(std::make_tuple(LOG_FORMAT::TEXT, 0.f, 0LL, std::string("f0 7e 7f f7")));
+		widget->buffer.push_front(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, 0LL, std::string("ch01 14-bit cc7=1234")));
+
+		widget->exportLogDialog();
+
+		REQUIRE(mock.ui.saveCalls.size() == 1);
+		REQUIRE(mock.fs.writes.size() == 1);
+		CHECK(mock.fs.writes[0].path == "/tmp/MidiMon.log");
+
+		const std::string& content = mock.fs.writes[0].data;
+		// Header lines (MIDI unconfigured in tests → widget display fallbacks).
+		CHECK(content.find(" v") != std::string::npos);
+		CHECK(content.find("MIDI driver: (No driver)") != std::string::npos);
+		CHECK(content.find("MIDI device: (No device)") != std::string::npos);
+		CHECK(content.find("MIDI channel: (All channels)") != std::string::npos);
+		CHECK(content.find("--------------------------------------------------------------------") != std::string::npos);
+		// Body lines from the display buffer, including the formatted timestamp.
+		CHECK(content.find("1.2500] ch01 note on  60 vel 100") != std::string::npos);
+		CHECK(content.find("f0 7e 7f f7") != std::string::npos);
+		CHECK(content.find("ch01 14-bit cc7=1234") != std::string::npos);
+		// No error was surfaced.
+		CHECK(mock.ui.messages.empty());
+	}
+
+	SECTION("Write failure warns through the UI") {
+		mock.fs.failWrites = true;
+		widget->exportLog("/tmp/MidiMon.log");
+
+		REQUIRE(mock.ui.messages.size() == 1);
+		CHECK(mock.ui.messages[0].type == vcv::MessageType::WARNING);
+		CHECK(mock.ui.messages[0].buttons == vcv::MessageButtons::OK);
+		CHECK(mock.ui.messages[0].msg.find("Could not write") != std::string::npos);
+	}
+
+	Test::destroyWidget(widget);
 	Test::destroyModule(module);
 }

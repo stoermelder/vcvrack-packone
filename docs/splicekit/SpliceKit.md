@@ -1,6 +1,30 @@
 # stoermelder SPLICE-KIT
 
-SPLICE-KIT is an 8×8 matrix patch bay. Each of the 64 buttons represents a single port anywhere in the current patch. Pressing two buttons creates or removes a cable between the corresponding ports. Eight independent scenes allow storing and recalling different cable configurations. All buttons — matrix cells and scene selectors — can be triggered from a MIDI controller, and SPLICE-KIT can send LED feedback back to the controller.
+- [Port assignment](#port-assignment)
+- [Creating and removing cables](#creating-and-removing-cables)
+- [Cross-instance patching](#cross-instance-patching)
+- [Scenes](#scenes)
+- [Scene link](#scene-link)
+- [Drag gestures](#drag-gestures)
+- [LED colors](#led-colors)
+- [Port map view](#port-map-view)
+- [MIDI triggering](#midi-triggering)
+- [MIDI learn](#midi-learn)
+- [MIDI feedback and controller presets](#midi-feedback-and-controller-presets)
+- [Changelog](#changelog)
+
+### Overview
+
+SPLICE-KIT is an 8×8 matrix patch bay. Each of the 64 buttons represents a single port anywhere in the current patch, and pressing two buttons creates or removes a cable between them — turning cable-heavy patching into something you can play from a grid controller.
+
+- **64-button matrix**, each cell assigned to any input or output port in the patch, with fast per-port drag-to-assign and sequential learn for setting up many buttons at once.
+- **Eight independent scenes** store separate cable topologies over the same port assignments, so a single button layout can drive several completely different patches.
+- **Cross-instance patching** lets buttons on different SPLICE-KIT modules connect to each other directly, and **scene link** lets one instance follow another's scene selection.
+- **Full MIDI control** — every matrix and scene button can be triggered by a MIDI note or CC, with single or sequential learn.
+- **MIDI feedback** drives LEDs back on the controller, with built-in presets for popular grid controllers (Launchpad, APC Mini, Push 2, and more) plus a documented JSON format for custom ones.
+- **Port map view** overlays lines from each cell to its assigned port, for tracing the patch bay's wiring at a glance.
+
+SPLICE-KIT has no CV inputs or outputs of its own by design — it only creates and removes cables between ports that already exist elsewhere in the patch, rather than sitting inline in the signal path.
 
 ### Port assignment
 
@@ -52,13 +76,15 @@ When multiple SPLICE-KIT modules are present in the same patch, buttons from dif
 1. Press a button on any SPLICE-KIT instance — it starts blinking white as the initiator.
 2. Press a button on a **different** SPLICE-KIT instance — the initiating module creates a cable between the two ports.
 
-Cross-instance cables are **not part of the scene system**. They exist as ordinary patch cables and are not stored in or affected by scene changes on either module. The feature can be disabled per-instance via **Cross-instance patching** in the module context menu.
+Cross-instance cables are **not part of the scene system**. They exist as ordinary patch cables and are not stored in or affected by scene changes on either module. The feature is **enabled by default** and can be disabled per-instance via **Cross-instance patching** in the module context menu; disabling it on either instance stops that instance from initiating, responding to, or highlighting cross-instance gestures.
 
 ### Scenes
 
 The row of eight buttons at the bottom of the module selects the active scene. Each scene maintains its own independent cable state. Switching scenes reconciles the patch: cables that belong to the previous scene are removed and cables stored in the new scene are created.
 
 All eight scenes share the same port assignments. Scenes store only the connection topology, not the port assignments themselves.
+
+Only cables where **both** endpoints are assigned to a matrix button are stored in a scene. A cable with just one end on a SPLICE-KIT button — or neither — is left alone by scene switching and is not part of any scene's state. A stored cable is captured the same way whether it was created with SPLICE-KIT's button patching or by dragging an ordinary cable by hand between the same two ports; SPLICE-KIT reads the current cable state of assigned ports rather than tracking how each cable came to exist.
 
 Right-clicking a scene button opens its context menu:
 
@@ -71,7 +97,10 @@ Right-clicking a scene button opens its context menu:
 | **Clear MIDI** | Remove the MIDI mapping from this scene button |
 | **Randomize** | Generate a random valid connection topology for this scene (only available on the currently active scene) |
 
-**Randomize** on the currently active scene's context menu pairs every assigned output port with a random assigned input port, one-to-one, respecting the same output→input direction rule as manual patching. It only changes that scene's connections — port assignments and other scenes are untouched.
+**Randomize** on the currently active scene's context menu opens a submenu with two modes. Both respect the same output→input direction rule as manual patching, and both only change that scene's connections — port assignments and other scenes are untouched.
+
+- **Sparse** pairs every assigned output port with a random assigned input port, one-to-one. If one side has more assigned ports than the other, the surplus ports on the larger side are left unconnected.
+- **Full** also pairs outputs and inputs one-to-one, but reuses ports on the shorter side once it runs out, so every assigned port ends up with at least one connection. Ports on the shorter side may end up fanned out to several partners.
 
 Right-click the module and choose **Randomize** (or press `Ctrl+R`/`Cmd+R`) to instead clear every existing port assignment and label, then reassign as many matrix cells as possible to a distinct random port from anywhere in the patch — no two cells are ever assigned the same port. If the patch has fewer available ports than 64, the surplus cells are simply left unassigned rather than duplicating a port. This is a full reshuffle of the patch bay itself, independent of scenes — use the scene button's **Randomize** instead if you just want a new random cable topology between the ports you've already assigned.
 
@@ -152,13 +181,15 @@ Open the **MIDI Preset** submenu to select a preset:
 | Preset | Description |
 |---|---|
 | **No preset** | No feedback sent |
-| **Launchpad / S (X-Y mode)** | Novation Launchpad (original) and Launchpad S in X-Y (default) layout. Bi-colour LEDs driven by Note On velocity. Grid cells use notes 0–119 (row×16+col); right-side scene launch buttons use notes 8, 24, 40, 56, 72, 88, 104, 120. |
+| **Launchpad / S (X-Y mode)** ⚠️ | Novation Launchpad (original) and Launchpad S in X-Y (default) layout. Bi-colour LEDs driven by Note On velocity. Grid cells use notes 0–119 (row×16+col); right-side scene launch buttons use notes 8, 24, 40, 56, 72, 88, 104, 120. |
 | **Launchpad X / MK3 (Programmer mode)** | Novation Launchpad X / Mini MK3 in Programmer mode. Uses hardware flash (channel 1) for pending state and hardware pulse (channel 2) for learn states, synced to MIDI clock. Grid cells use Note On; top-row scene buttons use CC 91–98. |
-| **Launchpad MK2 (Session mode)** | Novation Launchpad MK2 / S in Session mode. Grid cells use Note On; top-row scene buttons use CC 104–111. Uses hardware flash (channel 2) for pending state and hardware pulse (channel 3) for learn states, synced to MIDI clock. |
-| **APC Mini** | Akai APC Mini (original). LED colors via Note On velocity. |
-| **APC Mini MK2** | Akai APC Mini MK2. RGB LED palette via Note On velocity; MIDI channel encodes behavior (solid/pulse/blink). Grid cells use notes 0–63 (top-left to bottom-right); Scene Launch buttons 1–8 use notes 112–119. |
-| **Ableton Push 2** | Ableton Push 2 in User mode. 8×8 pad grid uses Note On (notes 36–99, bottom-left to top-right); the eight buttons below the display (CC 20–27) serve as scene selectors. MIDI channel encodes animation: 0=static, 6–10=pulse, 11–15=blink. Color palette indices: 0=off, 127=red, 125=blue, 126=green, 122=white, 124=dark gray. |
+| **Launchpad MK2 (Session mode)** ⚠️ | Novation Launchpad MK2 / S in Session mode. Grid cells use Note On; top-row scene buttons use CC 104–111. Uses hardware flash (channel 2) for pending state and hardware pulse (channel 3) for learn states, synced to MIDI clock. |
+| **APC Mini** ⚠️ | Akai APC Mini (original). LED colors via Note On velocity. |
+| **APC Mini MK2** ⚠️ | Akai APC Mini MK2. RGB LED palette via Note On velocity; MIDI channel encodes behavior (solid/pulse/blink). Grid cells use notes 0–63 (top-left to bottom-right); Scene Launch buttons 1–8 use notes 112–119. |
+| **Ableton Push 2** ⚠️ | Ableton Push 2 in User mode. 8×8 pad grid uses Note On (notes 36–99, bottom-left to top-right); the eight buttons below the display (CC 20–27) serve as scene selectors. MIDI channel encodes animation: 0=static, 6–10=pulse, 11–15=blink. Color palette indices (partial reference, see hover text for the full set): 0=off, 127=red, 125=blue, 126=green, 122=white, 124=dark gray. |
 | **Generic (Note On)** | Any controller that accepts Note On for LED control. Velocity values 0–6 map to off through the various states. |
+
+⚠️ marks presets not yet verified against real hardware — the menu label itself shows "[untested]". They follow the manufacturer's documented MIDI implementation but have not been confirmed to work correctly on the physical controller. If you have the hardware and can confirm or fix one, please report back so the tag can be removed.
 
 Each preset defines the MIDI message type, channel, and value sent for every LED state (off, four color sets each with dim/active/connected variants, pending, port-learn, MIDI-learn, scene-active, scene-dim). Hover a preset entry to see additional notes about its layout and hardware, where available.
 
@@ -247,5 +278,5 @@ Presets that define a fixed button layout (Launchpad / S, Launchpad MK3, Launchp
 
 ## Changelog
 
-- v2.5.0
+- v2.x.x
     - Initial release of SPLICE-KIT

@@ -34,7 +34,11 @@ struct CableAccess {
 	// RackCableAccess (or a mock that specifically wants the object view) overrides these.
 	virtual CableWidget* findCable(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId) const { return nullptr; }
 	virtual void removeCable(CableWidget* cw, bool addToHistory) {}
-	virtual void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory) {}
+	// color: cable color; a fully transparent color (the default color::BLACK_TRANSPARENT)
+	// means "use Rack's default next cable color".
+	virtual void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory, NVGcolor color = color::BLACK_TRANSPARENT) {}
+	// Enumerate all complete (both ends patched) cables in the rack.
+	virtual const std::vector<CableWidget*> getCompleteCables() const { return {}; }
 
 	// Port-pair view — expressed in terms of the object view by default.
 	virtual bool hasCable(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId) const {
@@ -49,71 +53,37 @@ struct CableAccess {
 	}
 };
 
-// The production implementation, backed by the live Rack widget tree.
-struct RackCableAccess : CableAccess {
+// The production implementation. Only the declaration lives here — bodies stay in cables.cpp
+// so this header need not pull in modules.hpp/history.hpp. It is declared here, rather than
+// being private to the .cpp, so a release build's call sites see the concrete type and
+// devirtualize; `final` is what lets the compiler prove no further override exists.
+struct RackCableAccess final : CableAccess {
 	using CableAccess::removeCable;  // keep the port-pair overload visible beside the object one
-
-	CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t inputModuleId, int inputPortId) const override {
-		ModuleWidget* outputMw = APP->scene->rack->getModule(outputModuleId);
-		if (!outputMw) return nullptr;
-		for (PortWidget* outPort : outputMw->getOutputs()) {
-			if (outPort->portId != outputPortId) continue;
-			for (CableWidget* cw : APP->scene->rack->getCablesOnPort(outPort)) {
-				if (cw->inputPort && cw->inputPort->module &&
-					cw->inputPort->module->getId() == inputModuleId &&
-					cw->inputPort->portId == inputPortId) {
-					return cw;
-				}
-			}
-			break;
-		}
-		return nullptr;
-	}
-
-	void removeCable(CableWidget* cw, bool addToHistory) override {
-		history::CableRemove* h = new history::CableRemove;
-		h->setCable(cw);
-		if (addToHistory) APP->history->push(h);
-		else delete h;
-		APP->scene->rack->removeCable(cw);
-		delete cw;
-	}
-
-	void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory) override {
-		ModuleWidget* outputMw = APP->scene->rack->getModule(outModuleId);
-		ModuleWidget* inputMw  = APP->scene->rack->getModule(inModuleId);
-		if (!outputMw || !inputMw) return;
-
-		engine::Cable* c = new engine::Cable;
-		c->outputId     = outPortId;
-		c->outputModule = outputMw->module;
-		c->inputId      = inPortId;
-		c->inputModule  = inputMw->module;
-		APP->engine->addCable(c);
-
-		CableWidget* cw = new CableWidget;
-		cw->color = APP->scene->rack->getNextCableColor();
-		cw->setCable(c);
-		APP->scene->rack->addCable(cw);
-		history::CableAdd* h = new history::CableAdd;
-		h->setCable(cw);
-		if (addToHistory) APP->history->push(h);
-		else delete h;
-	}
+	CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t inputModuleId, int inputPortId) const override;
+	void removeCable(CableWidget* cw, bool addToHistory) override;
+	const std::vector<CableWidget*> getCompleteCables() const override;
+	void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory, NVGcolor color = color::BLACK_TRANSPARENT) override;
 };
+// The shared production instance, defined in cables.cpp.
+extern RackCableAccess rackAccess;
 
-// The active access. Null in production → the shared RackCableAccess is used. Tests point
-// this at a mock registry (see SpliceKit.test.hpp).
-// This MUST have external linkage with exactly one definition (in vcv_cables.cpp), not the
-// `static` per-TU form.
+
+// The mockable seam is keyed on DEBUGPLUGIN rather than a flag of its own: `make
+// DEBUGPLUGIN=1` and the test binaries (plugin-test.mk) both define it, so one locally-built
+// dylib serves debugging and the test suite alike. This is the contract the other five vcv
+// layers follow; vcv/build.cpp carries a sentinel that catches a mismatched dylib.
+#ifdef DEBUGPLUGIN
+// Null by default → `rackAccess` is used. Tests point this at a mock registry per test (see
+// SpliceKit.test.hpp / CableScaffold). MUST have external linkage with exactly one
+// definition (in cables.cpp), not the `static` per-TU form.
 extern CableAccess* cableAccess;
-
 CableAccess& cableAccessFor();
+#else
+// Naming the concrete `rackAccess` object gives every wrapper below a known dynamic type, so
+// the calls devirtualize and the cross-TU call to cableAccessFor() disappears entirely.
+#define cableAccessFor() ::StoermelderPackOne::vcv::rackAccess
+#endif
 
-
-// Thin dispatch wrappers — keep the original free-function API (findCable/removeCable/
-// addCableToPort) so existing call sites (Splice-Kit, PanicRoom) are unchanged; all six
-// operations now route through the active CableAccess.
 
 P1_UNUSED
 static CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t inputModuleId, int inputPortId) {
@@ -126,8 +96,13 @@ static void removeCable(CableWidget* cw, bool addToHistory = true) {
 }
 
 P1_UNUSED
-static void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory = true) {
-	cableAccessFor().addCableToPort(outModuleId, outPortId, inModuleId, inPortId, addToHistory);
+static std::vector<CableWidget*> getCompleteCables() {
+	return cableAccessFor().getCompleteCables();
+}
+
+P1_UNUSED
+static void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory = true, NVGcolor color = color::BLACK_TRANSPARENT) {
+	cableAccessFor().addCableToPort(outModuleId, outPortId, inModuleId, inPortId, addToHistory, color);
 }
 
 P1_UNUSED
