@@ -6,6 +6,7 @@
     - Added undo for "Clear"
     - Added toggle for Focus mode using Shift+Esc
     - Added clock divider/multiplier for clock input
+    - Added MIDI Panic option
     - Fixed reset behavior on loading files or examples
     - Fixed broken MIDI channel on MIDI operators
     - Fixed various minor issues

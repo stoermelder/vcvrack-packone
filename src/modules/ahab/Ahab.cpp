@@ -392,6 +392,9 @@ struct AhabModule : Module {
 	// channels so no notes stay stuck.
 	void flushNotes() {
 		scheduledOffs.clear();
+		for (int i = 0; i < 4; ++i) {
+			outputs[OUT_OUTPUT + i].setVoltage(0.f);
+		}
 		if (pluginSettings.ahabMidiVirtualEnabled) {
 			Ahab::Midi::resetMidi(midiVirtualPortId);
 		}
@@ -1542,6 +1545,8 @@ struct AhabSimWidget : OpaqueWidget {
 
 			menu->addChild(new MenuSeparator());
 			menu->addChild(createBoolPtrMenuItem("Always send Note Off", "", &module->overwriteZeroNoteDuration));
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createMenuItem("MIDI Panic", "", [this]() { module->flushNotes(); }));
 		}));
 
 		menu->addChild(createSubmenuItem("UDP", "", [this](ui::Menu* m) {
