@@ -136,8 +136,8 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 	FADE_LENGTH fadeLengthMode = FADE_LENGTH_4S;
 
 	LinearFade fader[PORTS][PORTS][PORT_MAX_CHANNELS];
-	uint32_t fadeInTs[PORTS];
-	uint32_t fadeOutTs[PORTS];
+	uint32_t fadeInTs[PORTS] = {};
+	uint32_t fadeOutTs[PORTS] = {};
 	//dsp::TSlewLimiter<simd::float_4> outputAtSlew[PORTS / 4];
 
 	uint32_t ts = 0;
