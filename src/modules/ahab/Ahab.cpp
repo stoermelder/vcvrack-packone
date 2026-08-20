@@ -2,6 +2,7 @@
 #include "../../pluginhelpers.hpp"
 #include "../../vcv/api.hpp"
 #include "../../components/Knobs.hpp"
+#include "../../utils/digital.hpp"
 #include "../../ui/InfoWindow.hpp"
 #include "../../ui/FocusMode.hpp"
 #include "orca_examples.hpp"
@@ -39,6 +40,15 @@ struct AhabModule : Module {
 		RUN_LIGHT,
 		CLK_LIGHT,
 		NUM_LIGHTS
+	};
+
+	// Clock ratio applied to the external CLK input (see process()).
+	enum ClkRatio {
+		CLK_RATIO_DIV4 = 0,
+		CLK_RATIO_DIV2 = 1,
+		CLK_RATIO_MUL1 = 2,
+		CLK_RATIO_MUL2 = 3,
+		CLK_RATIO_MUL4 = 4,
 	};
 
 	/** [Stored to JSON] */
@@ -87,6 +97,15 @@ struct AhabModule : Module {
 	dsp::SchmittTrigger clkInTrigger;
 	dsp::PulseGenerator clkPulseGen;
 	dsp::SchmittTrigger resetTrigger;
+
+	// Clock divider/multiplier applied to the external CLK input.
+	ClockDividerEx clkDivider;
+	ClockMultiplier clkMultiplier;
+	/** [Stored to JSON] Clock ratio applied to the external CLK input. */
+	int clkRatioSetting = CLK_RATIO_MUL1;
+	/** Tracks the last applied ratio so the divider/multiplier are only
+	reconfigured when the ratio actually changes. */
+	int clkRatio = -1;
 
 	dsp::ClockDivider lightDivider;
 
@@ -149,6 +168,9 @@ struct AhabModule : Module {
 
 		clockPhase = 0.0;
 		simRunning = true;
+		clkDivider.reset();
+		clkMultiplier.reset();
+		clkRatio = -1;
 		sim->setFieldSize(25, 49);
 		sim->reset();
 		// A full module reset wipes the edit history (unlike "Clear", which is
@@ -156,6 +178,46 @@ struct AhabModule : Module {
 		sim->resetUndo();
 
 		Module::onReset(e);
+	}
+
+	void processExternalClock() {
+		if (!simRunning) return;
+		int ratio = clkRatioSetting;
+		// Reconfigure the divider/multiplier only when the ratio changes.
+		if (ratio != clkRatio) {
+			clkRatio = ratio;
+			if (ratio == CLK_RATIO_DIV2) clkDivider.setDivision(2);
+			else if (ratio == CLK_RATIO_DIV4) clkDivider.setDivision(4);
+			else if (ratio == CLK_RATIO_MUL2 || ratio == CLK_RATIO_MUL4) clkMultiplier.reset();
+		}
+
+		if (clkInTrigger.process(inputs[CLK_INPUT].getVoltage())) {
+			// Raw clock edge on the CLK input
+			if (ratio == CLK_RATIO_MUL1) {
+				sim->step();
+				clockPhase = 0.0;
+			}
+			else if (ratio == CLK_RATIO_DIV2 || ratio == CLK_RATIO_DIV4) {
+				// Divider: emit one tick every N raw edges
+				if (clkDivider.process()) {
+					sim->step();
+					clockPhase = 0.0;
+				}
+			}
+			else {
+				// Multiplier: set up subdivisions for this clock cycle
+				clkMultiplier.tick();
+				clkMultiplier.trigger(ratio == CLK_RATIO_MUL2 ? 2 : 4);
+			}
+		}
+
+		// Multiplier emits its subdivided pulses across the clock cycle
+		if (ratio == CLK_RATIO_MUL2 || ratio == CLK_RATIO_MUL4) {
+			if (clkMultiplier.process()) {
+				sim->step();
+				clockPhase = 0.0;
+			}
+		}
 	}
 
 	void process(const ProcessArgs &args) override {
@@ -184,12 +246,8 @@ struct AhabModule : Module {
 			sim->step();
 		}
 
-		// External clock input
 		bool clkInputConnected = inputs[CLK_INPUT].isConnected();
-		if (simRunning && clkInTrigger.process(inputs[CLK_INPUT].getVoltage())) {
-			sim->step();
-			clockPhase = 0.0;  // Reset phase on external clock
-		}
+		processExternalClock();
 
 		// Reset input
 		if (resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
@@ -387,6 +445,7 @@ struct AhabModule : Module {
 		json_object_set_new(rootJ, "overwriteZeroNoteDuration", json_boolean(overwriteZeroNoteDuration));
 		json_object_set_new(rootJ, "gridStepCol", json_integer(gridStepCol));
 		json_object_set_new(rootJ, "gridStepRow", json_integer(gridStepRow));
+		json_object_set_new(rootJ, "clkRatio", json_integer(clkRatioSetting));
 		return rootJ;
 	}
 
@@ -415,6 +474,8 @@ struct AhabModule : Module {
 		if (gridStepColJ) gridStepCol = (int)json_integer_value(gridStepColJ);
 		json_t* gridStepRowJ = json_object_get(rootJ, "gridStepRow");
 		if (gridStepRowJ) gridStepRow = (int)json_integer_value(gridStepRowJ);
+		json_t* clkRatioJ = json_object_get(rootJ, "clkRatio");
+		if (clkRatioJ) clkRatioSetting = (int)json_integer_value(clkRatioJ);
 	}
 };
 
@@ -1302,6 +1363,24 @@ struct AhabSimWidget : OpaqueWidget {
 				APP->event->setSelectedWidget(this);
 			}
 		));
+
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createSubmenuItem("Clock ratio", "", [this](ui::Menu* menu) {
+			const std::vector<std::pair<int, std::string>> ratios = {
+				{(int)AhabModule::CLK_RATIO_DIV4, "÷4"},
+				{(int)AhabModule::CLK_RATIO_DIV2, "÷2"},
+				{(int)AhabModule::CLK_RATIO_MUL1, "×1"},
+				{(int)AhabModule::CLK_RATIO_MUL2, "×2"},
+				{(int)AhabModule::CLK_RATIO_MUL4, "×4"},
+			};
+			for (size_t i = 0; i < ratios.size(); i++) {
+				int value = ratios[i].first;
+				menu->addChild(createCheckMenuItem(ratios[i].second, "",
+					[this, value]() { return module->clkRatioSetting == value; },
+					[this, value]() { module->clkRatioSetting = value; }
+				));
+			}
+		}));
 
 		menu->addChild(createSubmenuItem("Terminal", "", [this](ui::Menu* menu) {
 			fh = fh_ = module->sim->getFieldHeight();

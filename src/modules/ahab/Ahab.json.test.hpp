@@ -83,6 +83,30 @@ TEST_CASE("JSON deserialization", "[JSON][Ahab]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Clock ratio is serialized to JSON", "[JSON][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	// Non-default ratio must round-trip through dataToJson/dataFromJson.
+	m->clkRatioSetting = AhabModule::CLK_RATIO_MUL4;
+
+	json_t* j = m->dataToJson();
+	REQUIRE(json_integer_value(json_object_get(j, "clkRatio")) == (int)AhabModule::CLK_RATIO_MUL4);
+
+	// Restore into a fresh module and confirm the value survived.
+	AhabModule* m2 = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m2);
+	REQUIRE(m2->clkRatioSetting == (int)AhabModule::CLK_RATIO_MUL1); // default
+	m2->dataFromJson(j);
+	REQUIRE(m2->clkRatioSetting == (int)AhabModule::CLK_RATIO_MUL4);
+
+	json_decref(j);
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+	Test::unregisterModule(m2);
+	Test::destroyModule(m2);
+}
+
 TEST_CASE("Module JSON round-trip includes the sim sub-object", "[JSON][Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);

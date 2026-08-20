@@ -151,6 +151,141 @@ TEST_CASE("External clock input", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("External clock ratio defaults to ×1", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	// Default clock ratio is ×1 (no division/multiplication)
+	REQUIRE(m->clkRatioSetting == (int)AhabModule::CLK_RATIO_MUL1);
+
+	m->simRunning = true;
+
+	Usz tick_before = m->sim->getTickNumber();
+
+	// A single raw edge should produce exactly one tick at ×1
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(0.0f);
+	m->process({});
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(10.0f);
+	m->process({});
+
+	REQUIRE(m->sim->getTickNumber() - tick_before == 1);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("External clock divider ÷2", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	m->simRunning = true;
+	m->clkRatioSetting = AhabModule::CLK_RATIO_DIV2;
+
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(0.0f);
+	m->process({});
+
+	Usz tick_before = m->sim->getTickNumber();
+
+	// Two raw edges -> one effective tick
+	for (int e = 0; e < 2; ++e) {
+		m->inputs[AhabModule::CLK_INPUT].setVoltage(10.0f);
+		m->process({});
+		m->inputs[AhabModule::CLK_INPUT].setVoltage(0.0f);
+		m->process({});
+	}
+
+	REQUIRE(m->sim->getTickNumber() - tick_before == 1);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("External clock divider ÷4", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	m->simRunning = true;
+	m->clkRatioSetting = AhabModule::CLK_RATIO_DIV4;
+
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(0.0f);
+	m->process({});
+
+	Usz tick_before = m->sim->getTickNumber();
+
+	// Four raw edges -> one effective tick
+	for (int e = 0; e < 4; ++e) {
+		m->inputs[AhabModule::CLK_INPUT].setVoltage(10.0f);
+		m->process({});
+		m->inputs[AhabModule::CLK_INPUT].setVoltage(0.0f);
+		m->process({});
+	}
+
+	REQUIRE(m->sim->getTickNumber() - tick_before == 1);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("External clock multiplier ×2", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	m->simRunning = true;
+	m->clkRatioSetting = AhabModule::CLK_RATIO_MUL2;
+
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(0.0f);
+	m->process({});
+
+	// Edge 1 establishes the cycle length (no pulses on the first edge)
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(10.0f);
+	m->process({});
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(0.0f);
+	m->process({});
+	for (int i = 0; i < 100; ++i) m->process({});
+
+	// Edge 2 sets up the ×2 subdivision; count every tick from here on.
+	// The first subdivided pulse fires in the same process() call as the edge.
+	Usz tick_before = m->sim->getTickNumber();
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(10.0f);
+	m->process({});
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(0.0f);
+	m->process({});
+	for (int i = 0; i < 100; ++i) m->process({});
+
+	REQUIRE(m->sim->getTickNumber() - tick_before == 2);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("External clock multiplier ×4", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	m->simRunning = true;
+	m->clkRatioSetting = AhabModule::CLK_RATIO_MUL4;
+
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(0.0f);
+	m->process({});
+
+	// Edge 1 establishes the cycle length (no pulses on the first edge)
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(10.0f);
+	m->process({});
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(0.0f);
+	m->process({});
+	for (int i = 0; i < 100; ++i) m->process({});
+
+	// Edge 2 sets up the ×4 subdivision; count every tick from here on.
+	// The first subdivided pulse fires in the same process() call as the edge.
+	Usz tick_before = m->sim->getTickNumber();
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(10.0f);
+	m->process({});
+	m->inputs[AhabModule::CLK_INPUT].setVoltage(0.0f);
+	m->process({});
+	for (int i = 0; i < 100; ++i) m->process({});
+
+	REQUIRE(m->sim->getTickNumber() - tick_before == 4);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
 TEST_CASE("Manual clock button", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
