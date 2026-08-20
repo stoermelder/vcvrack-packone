@@ -597,6 +597,17 @@ struct AhabSimWidget : OpaqueWidget {
 		notifyUiChanged();
 	}
 
+	// Toggle Focus mode: activate (with zoom-to-fit) when off, deactivate when on.
+	void toggleFocusMode() {
+		if (focusMode.active) {
+			focusMode.deactivate();
+		}
+		else {
+			APP->scene->rackScroll->zoomToBound(Rect(parent->parent->box.pos + parent->box.pos, box.size).grow(Vec(4.f, 4.f)));
+			focusMode.activate(this);
+		}
+	}
+
 	std::string getOperatorDescription(Glyph g, Mark m) {
 		// Flat glyph-indexed lookup tables — a direct array index replaces the
 		// former std::map<char, std::string>. Sized 256 so any byte value (Glyph
@@ -1040,11 +1051,9 @@ struct AhabSimWidget : OpaqueWidget {
 			return;
 		}
 
-		// Shift+Escape -> Exit focus mode
+		// Shift+Escape -> Toggle focus mode
 		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE && (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
-			if (focusMode.active) {
-				focusMode.deactivate();
-			}
+			toggleFocusMode();
 			e.consume(this);
 			return;
 		}
@@ -1129,6 +1138,18 @@ struct AhabSimWidget : OpaqueWidget {
 			}
 			e.consume(this);
 		}
+	}
+
+	void onHoverKey(const event::HoverKey& e) override {
+		// Only handle when the module is hovered but not already focused, so the
+		// Shift+Esc toggle isn't fired twice (onSelectKey covers the focused case).
+		if (APP->event->getSelectedWidget() != this) {
+			if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE && (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
+				toggleFocusMode();
+				e.consume(this);
+			}
+		}
+		OpaqueWidget::onHoverKey(e);
 	}
 
 	void onHover(const HoverEvent& e) override {
@@ -1275,15 +1296,9 @@ struct AhabSimWidget : OpaqueWidget {
 			APP->scene->rackScroll->zoomToBound(Rect(parent->parent->box.pos + parent->box.pos, box.size).shrink(Vec(24.f, 24.f)));
 			APP->event->setSelectedWidget(this);
 		}, focusMode.active));
-		menu->addChild(createMenuItem(focusMode.active ? "Exit focus mode" : "Focus mode", RACK_MOD_SHIFT_NAME "+Esc", 
+		menu->addChild(createMenuItem(focusMode.active ? "Exit focus mode" : "Focus mode", RACK_MOD_SHIFT_NAME "+Esc",
 			[this]() {
-				if (focusMode.active) {
-					focusMode.deactivate();
-				} 
-				else {
-					APP->scene->rackScroll->zoomToBound(Rect(parent->parent->box.pos + parent->box.pos, box.size).grow(Vec(4.f, 4.f)));
-					focusMode.activate(this);
-				}
+				toggleFocusMode();
 				APP->event->setSelectedWidget(this);
 			}
 		));

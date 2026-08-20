@@ -4,6 +4,7 @@
 
 - Module [AHAB](./docs/ahab/Ahab.md)
     - Added undo for "Clear"
+    - Added toggle for Focus mode using Shift+Esc
     - Fixed reset behavior on loading files or examples
     - Fixed broken MIDI channel on MIDI operators
     - Fixed various minor issues
