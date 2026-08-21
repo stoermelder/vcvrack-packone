@@ -586,7 +586,7 @@ struct TestParamModule : rack::Module {
 static void connectPad(TransitModule<12>* transit, TransitPadModule<>* pad) {
 	transit->rightExpander.module = pad;
 	pad->leftExpander.module = transit;
-	transit->expandersChanged = true;
+	transit->moduleChangedFlag = true;
 	transit->setProcessDivision(1);
 	transit->process(Test::makeProcessArgs(0));
 }
@@ -658,7 +658,7 @@ TEST_CASE("Transit disconnects from TransitPad when expander is removed", "[Tran
 	// Disconnect
 	transit->rightExpander.module = nullptr;
 	pad->leftExpander.module = nullptr;
-	transit->expandersChanged = true;
+	transit->moduleChangedFlag = true;
 	transit->process(Test::makeProcessArgs(10));
 
 	REQUIRE_FALSE(transit->isXyPadActive());
