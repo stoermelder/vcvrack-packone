@@ -474,7 +474,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		snapshotsUsed = std::max(0, std::min(su, (int)SNAPSHOTS));
 
 		json_t* setsJ = json_object_get(rootJ, "sets");
-		for (size_t s = 0; s < json_array_size(setsJ); ++s) {
+		size_t maxs = std::min((size_t)SETS, json_array_size(setsJ));
+		for (size_t s = 0; s < maxs; ++s) {
 			json_t* setJ = json_array_get(setsJ, s);
 			json_t* snapshotsJ = json_object_get(setJ, "snapshots");
 			if (json_is_array(snapshotsJ)) {
@@ -487,9 +488,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 				}
 			}
 			json_t* colorJ = json_object_get(setJ, "color");
-			if (colorJ) setColor[s] = color::fromHexString(json_string_value(colorJ));
+			if (const char* color = json_string_value(colorJ)) setColor[s] = color::fromHexString(color);
 			json_t* labelJ = json_object_get(setJ, "label");
-			if (labelJ) setLabel[s] = json_string_value(labelJ);
+			if (const char* label = json_string_value(labelJ)) setLabel[s] = label;
 		}
 
 		json_t* outputJ = json_object_get(rootJ, "output");

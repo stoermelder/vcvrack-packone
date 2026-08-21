@@ -784,7 +784,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 
 	void presetProcessXyPad(float sampleTime) {
 		if (presetProcessDivider.process()) {
-			auto snapshots = transitPad->getPadFactors();
+			const auto& snapshots = transitPad->getPadFactors();
 
 			float weight = 0.f;
 			std::vector<float> v(sourceHandles.size(), 0.f);

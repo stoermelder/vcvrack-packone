@@ -604,6 +604,63 @@ static void runTransitFrames(TransitModule<12>* transit, int n, int64_t startFra
 		transit->process(Test::makeProcessArgs(startFrame + i));
 }
 
+// Helper: run N frames through BOTH modules — pad first (computes snapshot
+// weights from the mix-position inputs), then Transit (applies the weights to
+// the bound parameters). Mirrors the Rack engine ticking both modules.
+static void runPadAndTransit(TransitPadModule<>* pad, TransitModule<12>* transit, int n, int64_t startFrame) {
+	for (int i = 0; i < n; i++) {
+		pad->process(Test::makeProcessArgs(startFrame + i));
+		transit->process(Test::makeProcessArgs(startFrame + i));
+	}
+}
+
+// Standard rig for the end-to-end tests: Transit + TransitPad expander + a
+// target module whose PARAM_A Transit binds and drives. Call connectPad()
+// after saving presets (same setup order as the tests below).
+struct PadRig {
+	TransitModule<12>* transit;
+	TransitPadModule<>* pad;
+	TestParamModule* target;
+
+	static PadRig make() {
+		PadRig r;
+		r.transit = Test::createModule<TransitModule<12>>("Transit");
+		r.pad = Test::createModule<TransitPadModule<>>("TransitPad");
+		r.target = new TestParamModule();
+		Test::registerModule(r.transit);
+		Test::registerModule(r.pad);
+		Test::registerModule(r.target);
+		return r;
+	}
+	void bind(int64_t frame = 1) { bindParam(transit, target->id, TestParamModule::PARAM_A, frame); }
+	void save(int slot, float value) {
+		target->params[TestParamModule::PARAM_A].setValue(value);
+		transit->presetSave(slot);
+	}
+	float paramValue() { return target->params[TestParamModule::PARAM_A].getValue(); }
+	void run(int n, int64_t startFrame) { runPadAndTransit(pad, transit, n, startFrame); }
+	void destroy() {
+		Test::unregisterModule(target);
+		delete target;
+		Test::unregisterModule(pad);
+		Test::destroyModule(pad);
+		Test::unregisterModule(transit);
+		Test::destroyModule(transit);
+	}
+};
+
+// Connect the mix-position CV inputs (simulates cables)
+static void connectMixInputs(TransitPadModule<>* pad) {
+	pad->inputs[TransitPadModule<>::OUT_X_INPUT].channels = 1;
+	pad->inputs[TransitPadModule<>::OUT_Y_INPUT].channels = 1;
+}
+
+// Drive the mix point to ((x+5)/10, (y+5)/10) — ±5V maps to the pad corners
+static void setMixVoltage(TransitPadModule<>* pad, float xVolt, float yVolt) {
+	pad->inputs[TransitPadModule<>::OUT_X_INPUT].setVoltage(xVolt);
+	pad->inputs[TransitPadModule<>::OUT_Y_INPUT].setVoltage(yVolt);
+}
+
 
 TEST_CASE("Transit detects TransitPad as right expander", "[TransitPad][Transit]") {
 	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
@@ -952,4 +1009,293 @@ TEST_CASE("presetProcessXyPad: interpolates two bound parameters independently",
 	Test::destroyModule(pad);
 	Test::unregisterModule(transit);
 	Test::destroyModule(transit);
+}
+
+
+// ============================================================
+// End-to-end signal chain:
+// mix position (CV/sequence) → dist[] → radius/amount → weight → Transit param
+// Unlike the tests above, the weights are never assigned directly — they are
+// computed by pad->process() from the mix-position inputs.
+// ============================================================
+
+TEST_CASE("XY-pad chain: mix position CV drives the target parameter between presets", "[TransitPad][Transit]") {
+	PadRig r = PadRig::make();
+	r.bind();
+	r.save(0, 0.0f);
+	r.save(1, 1.0f);
+	connectPad(r.transit, r.pad);
+
+	// Default layout: snapshot A at (0,0) bound to slot 0, B at (1,0) bound to slot 1
+	r.pad->snapshotsUsed = 2;
+	connectMixInputs(r.pad);
+
+	// Mix point on corner A → only preset 0 contributes
+	setMixVoltage(r.pad, -5.f, -5.f);
+	r.run(5, 100);
+	REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
+
+	// Mix point on corner B → only preset 1 contributes
+	setMixVoltage(r.pad, 5.f, -5.f);
+	r.run(5, 200);
+	REQUIRE(r.paramValue() == Catch::Approx(1.0f).margin(0.001f));
+
+	// Mix point halfway between them → equal weights → midpoint
+	setMixVoltage(r.pad, 0.f, -5.f);
+	r.run(5, 300);
+	REQUIRE(r.paramValue() == Catch::Approx(0.5f).margin(0.001f));
+
+	r.destroy();
+}
+
+
+TEST_CASE("XY-pad chain: amount scales snapshot weight and shifts the blend", "[TransitPad][Transit]") {
+	PadRig r = PadRig::make();
+	r.bind();
+	r.save(0, 0.0f);
+	r.save(1, 1.0f);
+	connectPad(r.transit, r.pad);
+
+	// Both snapshots equidistant (0.5) from the mix point at (0.5, 0)
+	r.pad->snapshotsUsed = 2;
+	connectMixInputs(r.pad);
+	setMixVoltage(r.pad, 0.f, -5.f);
+
+	// Default amount 1.0: equal weights → midpoint blend
+	r.run(5, 100);
+	REQUIRE(r.pad->snapshots[0][0].weight == Catch::Approx(0.55f).margin(0.001f));
+	REQUIRE(r.pad->snapshots[0][1].weight == Catch::Approx(0.55f).margin(0.001f));
+	REQUIRE(r.paramValue() == Catch::Approx(0.5f).margin(0.001f));
+
+	// Halving snapshot B's amount halves its weight and pulls the blend toward A:
+	// (0 * 0.55 + 1 * 0.275) / (0.55 + 0.275) = 1/3
+	r.pad->scSetAmountImmediate(1, 0.5f);
+	r.run(5, 200);
+	REQUIRE(r.pad->snapshots[0][1].weight == Catch::Approx(0.275f).margin(0.001f));
+	REQUIRE(r.paramValue() == Catch::Approx(1.f / 3.f).margin(0.001f));
+
+	r.destroy();
+}
+
+
+TEST_CASE("XY-pad chain: radius cuts off snapshot contribution at the boundary", "[TransitPad][Transit]") {
+	PadRig r = PadRig::make();
+	r.bind();
+	r.save(0, 0.25f);
+	connectPad(r.transit, r.pad);
+
+	// Snapshot A at (0,0); the mix point moves along the x-axis so dist == mix.x
+	// (X voltage → mix.x = v/10 + 0.5)
+	r.pad->snapshotsUsed = 1;
+	connectMixInputs(r.pad);
+	setMixVoltage(r.pad, 0.f, -5.f);
+
+	// Default radius 1.0: dist 0.5 is well inside
+	r.run(5, 100);
+	REQUIRE(r.pad->snapshots[0][0].weight == Catch::Approx(0.55f).margin(0.001f));
+
+	// Shrinking the radius to 0.6 shrinks the weight at the same point
+	r.pad->scSetRadiusImmediate(0, 0.6f);
+	r.run(5, 200);
+	REQUIRE(r.pad->snapshots[0][0].weight == Catch::Approx((0.6f - 0.5f) / 0.6f * 1.1f).margin(0.001f));
+
+	// Outside the radius the weight is exactly zero and nothing is written
+	setMixVoltage(r.pad, 2.f, -5.f);
+	r.run(5, 300);
+	REQUIRE(r.pad->snapshots[0][0].weight == 0.f);
+	r.target->params[TestParamModule::PARAM_A].setValue(0.9f);
+	r.run(5, 400);
+	REQUIRE(r.paramValue() == Catch::Approx(0.9f).margin(0.001f));
+
+	// Back inside the radius the preset value takes over again
+	setMixVoltage(r.pad, 0.f, -5.f);
+	r.run(5, 500);
+	REQUIRE(r.paramValue() == Catch::Approx(0.25f).margin(0.001f));
+
+	r.destroy();
+}
+
+
+TEST_CASE("XY-pad chain: switching sets via button and CV changes the Transit output", "[TransitPad][Transit]") {
+	PadRig r = PadRig::make();
+	r.bind();
+	r.save(0, 0.0f);
+	r.save(1, 1.0f);
+	connectPad(r.transit, r.pad);
+
+	// Snapshot A sits near the mix point with a nonzero weight in every set;
+	// which preset it reaches depends on the per-set binding
+	r.pad->snapshotsUsed = 1;
+
+	// Set 0 keeps the default binding to slot 0
+	r.run(5, 100);
+	REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
+
+	// Switch to set 1 via button, then rebind snapshot A to slot 1 there
+	r.pad->params[TransitPadModule<>::SET_PARAM + 1].setValue(1.f);
+	r.run(100, 200);
+	REQUIRE(r.pad->currentSet == 1);
+	r.pad->bindSnapshot(0, 1);
+	r.pad->params[TransitPadModule<>::SET_PARAM + 1].setValue(0.f);
+	r.run(5, 400);
+	REQUIRE(r.paramValue() == Catch::Approx(1.0f).margin(0.001f));
+
+	// Back to set 0 via button
+	r.pad->params[TransitPadModule<>::SET_PARAM + 0].setValue(1.f);
+	r.run(100, 500);
+	REQUIRE(r.pad->currentSet == 0);
+	r.pad->params[TransitPadModule<>::SET_PARAM + 0].setValue(0.f);
+	r.run(5, 700);
+	REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
+
+	// Set selection via CV in VOLT mode: 1.25V → set 1, 0V → set 0
+	r.pad->setCvMode = SETCVMODE::VOLT;
+	r.pad->inputs[TransitPadModule<>::SET_CV_INPUT].channels = 1;
+	r.pad->inputs[TransitPadModule<>::SET_CV_INPUT].setVoltage(1.25f);
+	r.run(5, 800);
+	REQUIRE(r.pad->currentSet == 1);
+	REQUIRE(r.paramValue() == Catch::Approx(1.0f).margin(0.001f));
+
+	r.pad->inputs[TransitPadModule<>::SET_CV_INPUT].setVoltage(0.f);
+	r.run(5, 900);
+	REQUIRE(r.pad->currentSet == 0);
+	REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
+
+	r.destroy();
+}
+
+
+TEST_CASE("XY-pad chain: motion sequence drives the mix position", "[TransitPad][Transit]") {
+	PadRig r = PadRig::make();
+
+	SECTION("Phase input sweeps the mix point along the sequence") {
+		r.bind();
+		// Snapshot A at (0,0) → slot 0, C at (1,1) → slot 2; slot 1 stays unused
+		r.save(0, 0.0f);
+		r.save(2, 1.0f);
+		connectPad(r.transit, r.pad);
+		r.pad->snapshotsUsed = 3;
+
+		// Two-point linear sequence along the A→C diagonal
+		r.pad->seqData[0][0].length = 2;
+		r.pad->seqData[0][0].x[0] = 0.f; r.pad->seqData[0][0].y[0] = 0.f;
+		r.pad->seqData[0][0].x[1] = 1.f; r.pad->seqData[0][0].y[1] = 1.f;
+
+		r.pad->inputs[TransitPadModule<>::OUT_SEQ_PH_INPUT].channels = 1;
+
+		r.pad->inputs[TransitPadModule<>::OUT_SEQ_PH_INPUT].setVoltage(0.f);
+		r.run(5, 100);
+		REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
+
+		r.pad->inputs[TransitPadModule<>::OUT_SEQ_PH_INPUT].setVoltage(10.f);
+		r.run(5, 200);
+		REQUIRE(r.paramValue() == Catch::Approx(1.0f).margin(0.001f));
+
+		r.pad->inputs[TransitPadModule<>::OUT_SEQ_PH_INPUT].setVoltage(5.f);
+		r.run(5, 300);
+		REQUIRE(r.paramValue() == Catch::Approx(0.5f).margin(0.001f));
+	}
+
+	SECTION("Sequence-select input advances to the next sequence") {
+		// Sequence 0 starts at (0,0), sequence 1 at (1,0)
+		r.pad->seqData[0][0].length = 2;
+		r.pad->seqData[0][0].x[0] = 0.f; r.pad->seqData[0][0].y[0] = 0.f;
+		r.pad->seqData[0][0].x[1] = 1.f; r.pad->seqData[0][0].y[1] = 1.f;
+		r.pad->seqData[0][1].length = 2;
+		r.pad->seqData[0][1].x[0] = 1.f; r.pad->seqData[0][1].y[0] = 0.f;
+		r.pad->seqData[0][1].x[1] = 1.f; r.pad->seqData[0][1].y[1] = 1.f;
+
+		r.pad->inputs[TransitPadModule<>::OUT_SEQ_PH_INPUT].channels = 1;
+		r.pad->inputs[TransitPadModule<>::OUT_SEQ_PH_INPUT].setVoltage(0.f);
+		runFrames(r.pad, 5);
+		REQUIRE(r.pad->params[TransitPadModule<>::OUT_X_POS].getValue() == Catch::Approx(0.f).margin(0.001f));
+		REQUIRE(r.pad->params[TransitPadModule<>::OUT_Y_POS].getValue() == Catch::Approx(0.f).margin(0.001f));
+
+		fireTrigger(r.pad, TransitPadModule<>::OUT_SEQ_INPUT, 10);
+		REQUIRE(r.pad->seqSelected[0] == 1);
+
+		runFrames(r.pad, 5, 20);
+		REQUIRE(r.pad->params[TransitPadModule<>::OUT_X_POS].getValue() == Catch::Approx(1.f).margin(0.001f));
+		REQUIRE(r.pad->params[TransitPadModule<>::OUT_Y_POS].getValue() == Catch::Approx(0.f).margin(0.001f));
+	}
+
+	r.destroy();
+}
+
+
+TEST_CASE("XY-pad chain: snapshotsUsed bounds which snapshots contribute weight", "[TransitPad][Transit]") {
+	PadRig r = PadRig::make();
+	r.bind();
+	// Slots 0,1 = 0.0 and slots 2,3 = 1.0; snapshots A–D sit at the four
+	// corners, all equidistant from the mix point at the centre (0.5, 0.5)
+	r.save(0, 0.0f);
+	r.save(1, 0.0f);
+	r.save(2, 1.0f);
+	r.save(3, 1.0f);
+	connectPad(r.transit, r.pad);
+
+	// Limit set BEFORE the first run: snapshots C/D keep their initial weight
+	// of 0 and never contribute. (Lowering the count only prevents NEW weight
+	// computation — already-computed weights are not reset.)
+	r.pad->snapshotsUsed = 2;
+	r.run(5, 100);
+	REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
+
+	// Raising the count lets C/D join the blend
+	r.pad->snapshotsUsed = 4;
+	r.run(5, 200);
+	REQUIRE(r.paramValue() == Catch::Approx(0.5f).margin(0.001f));
+
+	r.destroy();
+}
+
+
+TEST_CASE("bindSnapshot binds and unbinds pad points to Transit slots", "[TransitPad]") {
+	SECTION("Binding semantics") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+
+		// Defaults: snapshots A–D bound to slot indexes 0–3, E–H unbound
+		REQUIRE(m->snapshots[0][0].id == 0);
+		REQUIRE(m->snapshots[0][3].id == 3);
+		REQUIRE(m->snapshots[0][4].id == -1);
+
+		m->bindSnapshot(4, 7);
+		REQUIRE(m->snapshots[0][4].id == 7);
+
+		// -1 unbinds
+		m->bindSnapshot(4, -1);
+		REQUIRE(m->snapshots[0][4].id == -1);
+
+		// Binding applies to the current set only
+		m->currentSet = 2;
+		m->bindSnapshot(0, 6);
+		REQUIRE(m->snapshots[2][0].id == 6);
+		REQUIRE(m->snapshots[0][0].id == 0);
+
+		Test::destroyModule(m);
+	}
+
+	SECTION("Bound snapshot drives the Transit output; unbinding stops it") {
+		PadRig r = PadRig::make();
+		r.bind();
+		r.save(5, 0.77f);
+		connectPad(r.transit, r.pad);
+
+		// Park the mix point on snapshot A (weight saturates at 1.0)
+		r.pad->snapshotsUsed = 1;
+		connectMixInputs(r.pad);
+		setMixVoltage(r.pad, -5.f, -5.f);
+
+		r.pad->bindSnapshot(0, 5);
+		r.run(5, 100);
+		REQUIRE(r.paramValue() == Catch::Approx(0.77f).margin(0.001f));
+
+		// Unbinding removes the last contribution → no write happens
+		r.target->params[TestParamModule::PARAM_A].setValue(0.42f);
+		r.pad->bindSnapshot(0, -1);
+		r.run(5, 200);
+		REQUIRE(r.paramValue() == Catch::Approx(0.42f).margin(0.001f));
+
+		r.destroy();
+	}
 }
