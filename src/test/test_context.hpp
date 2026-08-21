@@ -47,6 +47,14 @@ struct TestContext {
 	TestContext() {
 		// Ensure headless mode for tests
 		settings::headless = true;
+		// Thread assertions (see utils/thread.hpp) verify against Rack's UI thread and a
+		// module's own GuiTaskProcessor worker, neither of which runs in a test binary —
+		// the tests drive module methods from their own thread. Each module instance
+		// builds its own ThreadVerifier via thread::makeVerifier() in its constructor,
+		// which reads this flag, so setting it here — before Test::createModule() ever
+		// constructs a module — is enough to make every module's asserts inert for the
+		// whole test binary.
+		StoermelderPackOne::thread::verifyEnabled = false;
 
 		// If this is the first TestContext, create and initialize the pluginInstance and context
 		if (testContextCount.fetch_add(1, std::memory_order_acq_rel) == 0) {
@@ -122,8 +130,66 @@ static T* createModule(std::string modelSlug) {
 }
 
 static void destroyModule(rack::Module* m) {
+	Module::RemoveEvent eRemove;
+	m->onRemove(eRemove);
 	delete m;
 }
+
+// RAII owner for modules under test — destroys them even when Catch2 unwinds the body.
+//
+// The usual `T* m = Test::createModule<T>(...); ... Test::destroyModule(m);` pattern leaks the
+// module whenever an assertion fails, because a failing REQUIRE throws and the trailing
+// destroyModule() never runs. For a self-contained module that only wastes memory, but any
+// module that registers itself in process-wide state — a static instance registry, a listener
+// list, a shared "pending" entry — leaves that entry behind pointing at freed memory. Every
+// later test in the same binary then sees the leaked peer, so ONE genuine failure cascades
+// into several misleading ones. (Observed in the SpliceKit suite: 2 real failures reported as
+// 4, via SpliceKitModule::getInstances().)
+//
+// Modules are destroyed in reverse creation order, and destroyModule() fires each module's
+// onRemove() — which is where a well-behaved module drops its own shared-state entries.
+//
+// Usage:
+//   Test::ModuleScaffold<MyModule> mods;
+//   MyModule* m = mods.create("MyModule");        // model slug, as createModule<T>()
+//   MyModule* peer = mods.create("MyModule");     // destroyed before m, no explicit cleanup
+//
+// Suites that shadow Test::createModule() with their own factory (e.g. to set a flag right
+// after construction) can pass it instead, keeping that setup on every scaffolded module:
+//   Test::ModuleScaffold<MyModule> mods{[]{ return myCreateModule(); }};
+//   MyModule* m = mods.create();
+template <typename T>
+struct ModuleScaffold {
+	// Optional factory; when unset, create(slug) uses Test::createModule<T>(slug).
+	std::function<T*()> factory;
+	std::vector<T*> modules;
+
+	ModuleScaffold() = default;
+	explicit ModuleScaffold(std::function<T*()> factory) : factory(std::move(factory)) {}
+
+	// Creates a module via the factory, if one was supplied, otherwise via the model slug.
+	T* create(const std::string& modelSlug = "") {
+		T* m = factory ? factory() : Test::createModule<T>(modelSlug);
+		modules.push_back(m);
+		return m;
+	}
+
+	// Hands ownership of an already-created module to the scaffold.
+	T* adopt(T* m) {
+		modules.push_back(m);
+		return m;
+	}
+
+	~ModuleScaffold() {
+		for (auto it = modules.rbegin(); it != modules.rend(); ++it) {
+			Test::destroyModule(*it);
+		}
+	}
+
+	// Non-copyable: two scaffolds owning the same module would double-free it.
+	ModuleScaffold(const ModuleScaffold&) = delete;
+	ModuleScaffold& operator=(const ModuleScaffold&) = delete;
+};
 
 // Creates a ModuleWidget and adds it to the engine
 template <typename T>
@@ -141,6 +207,7 @@ static T* createWidget(std::string modelSlug) {
 }
 
 static void destroyWidget(rack::ModuleWidget* mw) {
+	APP->event->finalizeWidget(mw);
 	mw->module = NULL;
 	delete mw;
 }

@@ -58,7 +58,7 @@ struct EightFaceMk2ExModule : EightFaceMk2Base<NUM_PRESETS> {
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		notifyExpanderListeners("8FaceMk2");
+		notifyModuleListeners("8FaceMk2");
 	}
 
 	void onReset(const Module::ResetEvent& e) override {

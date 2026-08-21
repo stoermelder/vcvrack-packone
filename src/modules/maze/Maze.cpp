@@ -2,6 +2,7 @@
 #include "../../utils/digital.hpp"
 #include <random>
 #include <chrono>
+#include <atomic>
 
 namespace StoermelderPackOne {
 namespace Maze {
@@ -68,7 +69,13 @@ struct MazeModule : Module {
 	const int numPorts = NUM_PORTS;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
-	std::geometric_distribution<int>* geoDist[NUM_PORTS] = {};
+	std::geometric_distribution<int> geoDist[NUM_PORTS]{
+		std::geometric_distribution<int>(0.35f),
+		std::geometric_distribution<int>(0.35f),
+		std::geometric_distribution<int>(0.35f),
+		std::geometric_distribution<int>(0.35f)
+	};
+	std::atomic<float> ratchetingProbAtomic[NUM_PORTS];
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
@@ -133,6 +140,7 @@ struct MazeModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < NUM_PORTS; i++) {
+			ratchetingProbAtomic[i].store(0.35f, std::memory_order_relaxed);
 			configInput(CLK_INPUT + i, string::f("Clock %i", i + 1));
 			if (i > 0) inputInfos[CLK_INPUT + i]->description = "Normalized to \"Yellow\" if not disabled on the context menu.";
 			configInput(RESET_INPUT + i, string::f("Reset %i", i + 1));
@@ -151,11 +159,6 @@ struct MazeModule : Module {
 		onReset(re);
 	}
 
-	~MazeModule() {
-		for (int i = 0; i < NUM_PORTS; i++) {
-			delete geoDist[i];
-		}
-	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
@@ -223,16 +226,20 @@ struct MazeModule : Module {
 								doPulse = random::uniform() >= 0.5f;
 								break;
 							case RATCHETMODE::DEFAULT:
-								if (geoDist[i]) multiplier[i].trigger((*geoDist[i])(randGen));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(geoDist[i](randGen));
 								break;
 							case RATCHETMODE::MULT_TWO:
-								if (geoDist[i]) multiplier[i].trigger(2 * ((*geoDist[i])(randGen) + 1));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(2 * (geoDist[i](randGen) + 1));
 								break;
 							case RATCHETMODE::MULT_THREE:
-								if (geoDist[i]) multiplier[i].trigger(3 * ((*geoDist[i])(randGen) + 1));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(3 * (geoDist[i](randGen) + 1));
 								break;
 							case RATCHETMODE::POWER_TWO:
-								if (geoDist[i]) multiplier[i].trigger(std::pow(2, (*geoDist[i])(randGen)));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(std::pow(2, geoDist[i](randGen)));
 								break;
 						}
 						break;
@@ -412,10 +419,16 @@ struct MazeModule : Module {
 	}
 
 	void ratchetingSetProb(int id, float prob = 0.35f) {
-		auto geoDistOld = geoDist[id];
-		geoDist[id] = new std::geometric_distribution<int>(prob);
-		if (geoDistOld) delete geoDistOld;
 		ratchetingProb[id] = prob;
+		ratchetingProbAtomic[id].store(prob, std::memory_order_release);
+	}
+
+	inline void updateRatchetingDist(int id) {
+		float newProb = ratchetingProbAtomic[id].load(std::memory_order_acquire);
+		if (newProb != ratchetingProb[id]) {
+			ratchetingProb[id] = newProb;
+			geoDist[id] = std::geometric_distribution<int>(newProb);
+		}
 	}
 
 	json_t* dataToJson() override {

@@ -32,6 +32,41 @@ All three options show a confirmation dialog listing the proposed tag assignment
 
 MB allows you to add or remove predefined tags (the classic VCV Rack tag aliases like "Attenuator", "Mixer", "MIDI", etc.) on individual modules. This is useful if a module has incorrect or incomplete tags. Please note, that modification on predefined tags are only visible within the module browsers of the MB module.
 
+
+## Width filter (*v2 mod*)
+
+The *v2 mod* browser includes a **Width** filter button in the header bar. Module widths are measured in HP (horizontal pitch units) and are determined from each module's actual panel widget — this information is not stored in the plugin manifest.
+
+### Filtering by width
+
+Click the **Width** button to open a dropdown listing all HP values known for installed modules. Clicking an entry cycles through three filter modes:
+
+| Click | Mode | Effect |
+|-------|------|--------|
+| 1st | `=` | Show only modules of exactly this width |
+| 2nd | `≤` | Show all modules this width or narrower |
+| 3rd | `≥` | Show all modules this width or wider |
+| 4th | — | Clear the width filter |
+
+The active entry shows the mode symbol (`=`, `≤`, `≥`). All other HP values currently passing the filter are marked with a checkmark (✔). The Width button label reflects the active filter, for example *Width: ≤ 8 HP*.
+
+A **Filter by N HP** shortcut is also available in the right-click context menu of any module whose width is already known — it sets an exact-match filter for that module's HP value.
+
+### Populating width data
+
+Width data is determined lazily: it is captured automatically the first time a module preview is rendered in the browser. To populate widths for all installed modules at once (making the full HP range available in the dropdown without browsing through everything first), use **Determine width for all modules**. This re-scans every model and saves the result immediately.
+
+
+## Sorting (*v2 mod*)
+
+The *v2 mod* browser's **Sort** button offers several ordering options, one of which is **Newest** — sorting modules by the date each was first added to its plugin, rather than by the date the plugin itself was last updated (as "Recently updated" does).
+
+This information is not part of the plugin manifest and is not available locally, so MB downloads it separately from the [VCV Rack Library](https://github.com/VCVRack/library) and caches it in your local Rack directory. The **Newest** entry stays disabled (greyed out) in the Sort menu until this data has been downloaded at least once.
+
+**Auto-download data for 'Newest' sort** — a menu option (disabled by default) that automatically downloads this data in the background whenever a new or updated plugin is detected in your plugins folder. Enabling it shows a confirmation dialog, since it connects to an external service.
+
+The Sort menu also has two **Width** entries (*narrow → wide* / *wide → narrow*), which sort modules by their HP width instead of by the selected sort option above. Clicking an active width entry again disables it and returns to the previous sort option. Modules with unknown width (see [Width filter](#width-filter-v2-mod)) are sorted to the end. 
+
 ## *v2_mod* keyboard shortcuts
 
 The *v2-mod* browser variant supports keyboard navigation and shortcuts:
@@ -120,3 +155,11 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
     - Added option to show deprecated module models (now hidden by default) (#440)
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
+- v2.5.0
+    - Added width (HP) filter and sorting to *v2 mod* browser
+    - Fixed *v2 mod* scroll position when reopening the browser overlay
+    - Fixed module placement to trace back to the right click mouse position
+- v2.x.x
+    - Added sorting option "Newest" to *v2 mod* browser
+    - Improved context menus for tags (#461)
+    - Fixed broken sorting option "Last used"

@@ -1,5 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "Mb_manifests.hpp"
 #include <plugin.hpp>
 #include <FuzzySearchDatabase.hpp>
 
@@ -16,16 +17,35 @@ extern bool sortBySearchScore;
 void modelDbInit();
 ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser = true);
 
+
+// Model Widths (HP, determined from actual panel widget)
+
+extern std::map<Model*, int> modelWidths;
+
+void modelWidthSet(Model* model, int hp);
+int modelWidthGet(Model* model); // returns -1 if unknown
+void modelWidthScanAll();
+void modelWidthsFromJson();
+void modelWidthsToJson();
+
+
 // Model Usage
 
 struct ModelUsage {
 	int usedCount = 0;
-	int64_t usedTimestamp = -std::numeric_limits<int64_t>::infinity();
+	int64_t usedTimestamp = 0;
 };
 extern std::map<Model*, ModelUsage*> modelUsage;
 
 void modelUsageTouch(Model* model);
 void modelUsageReset();
+
+// Sort-key accessors for the browser's usage-based sorts. Both return 0 for a model
+// that has never been used. 0 is a safe sentinel: real timestamps/counts are always
+// positive, so unused models sort last, and negating the value (as the "last used" /
+// "most used" sorts do) can never overflow — unlike an INT64_MIN sentinel would.
+int64_t modelUsageTimestamp(Model* model);
+int modelUsageCount(Model* model);
 
 
 // Favorite
@@ -206,9 +226,22 @@ struct BrowserOverlay : widget::OpaqueWidget {
 
 	MODE* mode;
 
+	// Rack-space position captured when the browser is shown via right-click.
+	// Used to place the new module at the right-click position rather than at
+	// the current mouse position (which is inside the browser UI).
+	math::Vec rackMousePosAtOpen = math::Vec(NAN, NAN);
+
+	// Pending immediate drag: if non-null, the user is still holding the mouse
+	// button after adding a module. Once they move far enough (in screen space)
+	// the drag is transferred to the module widget; otherwise the module stays
+	// at rackMousePosAtOpen when they release.
+	ModuleWidget* pendingDragModule = nullptr;
+	math::Vec pendingDragSceneAnchor = math::Vec(NAN, NAN);
+
 	BrowserOverlay();
 	~BrowserOverlay();
 
+	void onShow(const event::Show& e) override;
 	void step() override;
 	void draw(const DrawArgs& args) override;
 	void onButton(const event::Button& e) override;

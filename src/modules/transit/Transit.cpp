@@ -48,7 +48,7 @@ struct ParamHandleEx : ParamHandleIndicator {
 
 
 template <int NUM_PRESETS>
-struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChangeListener {
+struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeListener {
 	typedef TransitBase<NUM_PRESETS> BASE;
 	typedef typename TransitBase<NUM_PRESETS>::Slot SLOT;
 
@@ -158,7 +158,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 
 	TransitModule() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
-		registerExpanderListener("Transit", this);
+		registerModuleListener("Transit", this);
 		sourceHandlesPtr.store({});
 
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -194,7 +194,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 	}
 
 	~TransitModule() {
-		unregisterExpanderListener("Transit", this);
+		unregisterModuleListener("Transit", this);
 		for (ParamHandle* sourceHandle : sourceHandles) {
 			APP->engine->removeParamHandle(sourceHandle);
 			delete sourceHandle;
@@ -206,7 +206,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		notifyExpanderListeners("Transit");
+		notifyModuleListeners("Transit");
 	}
 
 	void onReset(const Module::ResetEvent& e) override {
@@ -215,7 +215,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 	}
 
 	void reset(bool stateOnly, bool createUiTask = false) {
-		expandersChanged = true;
+		moduleChangedFlag = true;
 
 		if (!stateOnly) {
 			taskProcessorUi.enqueue([=]() { bindClearParameterRequest(); });
@@ -280,7 +280,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 
 		CTRLMODE ctrlMode = (CTRLMODE)Module::params[PARAM_CTRLMODE].getValue();
 
-		if (expandersChanged || ctrlMode != BASE::ctrlMode) {
+		if (moduleChangedFlag || ctrlMode != BASE::ctrlMode) {
 			presetTotal = NUM_PRESETS;
 			transitPad = nullptr;
 			Module* m = this;
@@ -311,7 +311,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 				t->ctrlMode = BASE::ctrlMode;
 				presetTotal += NUM_PRESETS;
 			}
-			expandersChanged = false;
+			moduleChangedFlag = false;
 		}
 		int presetFirst = std::min(this->presetFirst, presetTotal);
 		int presetLast = std::min(this->presetLast, presetTotal);

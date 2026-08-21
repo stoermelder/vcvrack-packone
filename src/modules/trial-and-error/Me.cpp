@@ -20,6 +20,8 @@ struct MeModule : Module {
 		NUM_LIGHTS
 	};
 
+	int panelTheme = 0;
+
 	MeModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
@@ -197,16 +199,16 @@ struct OverlayMagnifierWidget : widget::Widget {
 };
 
 
-struct MeWidget : ModuleWidget, OverlayMessageProvider {
+struct MeWidget : ThemedModuleWidget<MeModule>, OverlayMessageProvider {
 	bool active = false;
 	Widget* lastSelectedWidget = NULL;
 	ParamWidget* pw = NULL;
 	int p = -1;
 	OverlayMagnifierWidget* magnifierOverlay = NULL;
 
-	MeWidget(MeModule* module) {
+	MeWidget(MeModule* module)
+		: ThemedModuleWidget<MeModule>(module, "Me", "", true) {
 		setModule(module);
-		setPanel(Svg::load(asset::plugin(pluginInstance, "res/Me.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(0, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -236,7 +238,7 @@ struct MeWidget : ModuleWidget, OverlayMessageProvider {
 	}
 
 	void step() override {
-		ModuleWidget::step();
+		ThemedModuleWidget<MeModule>::step();
 		if (!module) return;
 
 		module->lights[MeModule::LIGHT_ACTIVE].setBrightness(active);

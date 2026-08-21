@@ -8,38 +8,8 @@
 #include <sstream>
 #include <algorithm>
 
-extern "C" {
-	#include <orca-c/osc_out.h>
-}
-
 namespace StoermelderPackOne {
 namespace Ahab {
-
-static inline void trimStr(std::string &s) {
-	// left
-	size_t i = 0;
-	while (i < s.size() && std::isspace((unsigned char)s[i])) ++i;
-	s.erase(0, i);
-	// right
-	if (!s.empty()) {
-		size_t j = s.size() - 1;
-		while (j != (size_t)-1 && std::isspace((unsigned char)s[j])) --j;
-		s.erase(j + 1);
-	}
-}
-
-static inline bool isValidPort(const std::string &s) {
-	if (s.empty()) return true;
-	for (char c : s) if (!std::isdigit((unsigned char)c)) return false;
-	long p = 0;
-	try { p = std::stol(s); } catch (...) { return false; }
-	return (p >= 1 && p <= 65535);
-}
-
-static inline bool containsWhitespace(const std::string &s) {
-	for (char c : s) if (std::isspace((unsigned char)c)) return true;
-	return false;
-}
 
 static void mbuf_uninit_mark(Mark* mbr, Usz height, Usz width) {
 	for (Usz y = 0; y < height; ++y) {
@@ -126,9 +96,6 @@ AhabSim::~AhabSim() {
 	oevent_list_deinit(&oevent_list_);
 	mbuf_reusable_deinit(&mbuf_);
 	field_deinit(&field_);
-
-	// Clean up UDP device if created
-	destroyUdpDev();
 }
 
 // UI thread operation - no locking needed (single UI thread assumed)
@@ -141,12 +108,6 @@ json_t* AhabSim::toJson() const {
 	// Other properties
 	json_object_set_new(j, "tick", json_integer((int)tick_number_.load()));
 	json_object_set_new(j, "random_seed", json_integer((int)random_seed_));
-	// UDP settings persisted with the sim
-	json_object_set_new(j, "udpAddress", json_string(udpAddress_.c_str()));
-	json_object_set_new(j, "udpPort", json_string(udpPort_.c_str()));
-	// OSC settings persisted with the sim
-	json_object_set_new(j, "oscAddress", json_string(oscAddress_.c_str()));
-	json_object_set_new(j, "oscPort", json_string(oscPort_.c_str()));
 	return j;
 }
 
@@ -160,6 +121,10 @@ void AhabSim::fromJson(json_t* rootJ) {
 	int h = (int)json_integer_value(hJ);
 	int w = (int)json_integer_value(wJ);
 	if (h <= 0 || w <= 0) return;
+	// Enforce the maximum field size so the fixed DSP-thread scratch buffer
+	// (sized to MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH) is always sufficient.
+	if (h > (int)MAX_FIELD_HEIGHT) h = (int)MAX_FIELD_HEIGHT;
+	if (w > (int)MAX_FIELD_WIDTH) w = (int)MAX_FIELD_WIDTH;
 	auto cells = rack::string::fromBase64(json_string_value(cellsJ));
 	size_t cells_len = cells.size();
 	field_init_fill(&tmp, (Usz)h, (Usz)w, '.');
@@ -176,26 +141,6 @@ void AhabSim::fromJson(json_t* rootJ) {
 	if (tickJ) tick_number_.store((Usz)json_integer_value(tickJ));
 	json_t* rsJ = json_object_get(rootJ, "random_seed");
 	if (rsJ) random_seed_ = (Usz)json_integer_value(rsJ);
-	// Restore UDP settings if present
-	json_t* addrJ = json_object_get(rootJ, "udpAddress");
-	json_t* portJ = json_object_get(rootJ, "udpPort");
-	std::string addr;
-	std::string port;
-	if (addrJ && json_is_string(addrJ)) addr = json_string_value(addrJ);
-	if (portJ && json_is_string(portJ)) port = json_string_value(portJ);
-	if (!addr.empty() || !port.empty()) {
-		setUdpDestination(addr, port);
-	}
-	// Restore OSC settings if present
-	json_t* oscAddrJ = json_object_get(rootJ, "oscAddress");
-	json_t* oscPortJ = json_object_get(rootJ, "oscPort");
-	std::string oscAddr;
-	std::string oscPort;
-	if (oscAddrJ && json_is_string(oscAddrJ)) oscAddr = json_string_value(oscAddrJ);
-	if (oscPortJ && json_is_string(oscPortJ)) oscPort = json_string_value(oscPortJ);
-	if (!oscAddr.empty() || !oscPort.empty()) {
-		setOscDestination(oscAddr, oscPort);
-	}
 }
 
 // UI thread operation - load file into a temporary buffer, then schedule a ReplaceField command
@@ -279,10 +224,12 @@ bool AhabSim::loadRectFromOrcaRequest(const std::string& orcaStr, Usz dest_y, Us
 	return true;
 }
 
-// Serialize a rectangular region into ORCA plain text
-std::string AhabSim::convertRectToOrca(Usz y, Usz x, Usz h, Usz w) const {
-	Usz fh = field_.height;
-	Usz fw = field_.width;
+// Serialize a rectangular region of a field into ORCA plain text. Operates on
+// the passed-in field so UI-thread callers can serialize their own snapshot
+// (e.g. the widget's display_field) instead of the sim's live buffer.
+std::string AhabSim::convertRectToOrca(const Field& field, Usz y, Usz x, Usz h, Usz w) {
+	Usz fh = field.height;
+	Usz fw = field.width;
 	if (fh == 0 || fw == 0) return std::string();
 	if (y >= fh || x >= fw) return std::string();
 	if (y + h > fh) h = fh - y;
@@ -290,7 +237,7 @@ std::string AhabSim::convertRectToOrca(Usz y, Usz x, Usz h, Usz w) const {
 	std::string out;
 	out.reserve((size_t)h * ((size_t)w + 1));
 	for (Usz ry = 0; ry < h; ++ry) {
-		const Glyph* row = field_.buffer + (y + ry) * fw;
+		const Glyph* row = field.buffer + (y + ry) * fw;
 		for (Usz cx = 0; cx < w; ++cx) out.push_back(row[x + cx]);
 		if (ry + 1 < h) out.push_back('\n');
 	}
@@ -414,9 +361,9 @@ bool AhabSim::moveRect(Usz y, Usz x, Usz h, Usz w, Isz dest_y, Isz dest_x) {
 		return false;
 	}
 
-	// Allocate temporary buffer on the stack for the move operation
-	size_t sz = (size_t)h * (size_t)w;
-	Glyph* tmpbuf = (Glyph*)alloca(sz * sizeof(Glyph));
+	// Stage the move in the fixed DSP-thread scratch buffer (sized for the max
+	// field) instead of a stack alloca whose bound is only implicit.
+	Glyph* tmpbuf = scratch_;
 
 	// Copy source region into a temporary buffer
 	gbuffer_copy_subrect(field_.buffer, tmpbuf, field_.height, field_.width,
@@ -481,19 +428,17 @@ void AhabSim::setFieldSizeRequest(Usz h, Usz w, bool doUndo) {
 
 // DSP thread operation - resize the field buffer, preserving overlapping region
 void AhabSim::setFieldSize(Usz height, Usz width) {
-	// Enforce maximum field size to prevent stack overflow from alloca.
-	// UI limits are 97x49, but clamp here for safety (max ~10KB on stack).
-	const Usz MAX_HEIGHT = 100;
-	const Usz MAX_WIDTH = 100;
-	if (height > MAX_HEIGHT) height = MAX_HEIGHT;
-	if (width > MAX_WIDTH) width = MAX_WIDTH;
+	// Enforce maximum field size so the fixed DSP-thread scratch buffer is
+	// always large enough. UI limits are 97x49, but clamp here for safety.
+	if (height > MAX_FIELD_HEIGHT) height = MAX_FIELD_HEIGHT;
+	if (width > MAX_FIELD_WIDTH) width = MAX_FIELD_WIDTH;
 	if (height == 0) height = 1;
 	if (width == 0) width = 1;
 
-	// Create a new field filled with '.' and copy the overlapping region from the current field
-	// Use a stack-allocated temporary buffer to avoid heap allocations on the DSP thread.
+	// Create a new field filled with '.' and copy the overlapping region from the current field.
+	// Use the fixed DSP-thread scratch buffer (sized for the max field) instead of a stack alloca.
 	size_t sz = (size_t)height * (size_t)width;
-	Glyph* tmpbuf = (Glyph*)alloca(sz * sizeof(Glyph));
+	Glyph* tmpbuf = scratch_;
 	memset(tmpbuf, '.', sz * sizeof(Glyph));
 
 	Usz old_h = field_.height;
@@ -527,29 +472,28 @@ void AhabSim::undoRequest() {
 	UiCommand* cmd = new UiCommand(); 
 	if (!cmd) return;
 	cmd->type = UiCommandType::UNDO;  
-
-	// Pre-allocate a buffer for the redo operation on the UI thread
-	size_t sz = (size_t)field_.height * (size_t)field_.width;
-	Glyph* tmpbuf = (Glyph*)malloc(sz);
-	if (!tmpbuf) { delete cmd; return; }
-	cmd->cells = tmpbuf;
-
 	ui_cmd_queue_.push(cmd);
+
 	notifyTick();
 }
 
-// DSP thread operation, transfers ownership of redoBuf from UI thread
-void AhabSim::undo(Glyph* redoBuf) {
-	UndoNode node;
+// DSP thread operation
+void AhabSim::undo() {
 	if (undo_history_.empty()) return;
 	// Save current state into redo history
 	{
-		// Use the provided temporary buffer for the current field copy
+		// Copy the current field into the DSP-owned max-size scratch, then into a
+		// fresh node buffer allocated on the DSP thread. The scratch is always large
+		// enough for any field (capped at MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH), so the
+		// copy never depends on a buffer sized by the UI thread.
+		Field tmp;
+		tmp.buffer = scratch_;
+		tmp.height = field_.height;
+		tmp.width = field_.width;
+		field_copy(&field_, &tmp);
 		UndoNode cur;
-		cur.f.buffer = redoBuf;
-		cur.f.height = field_.height;
-		cur.f.width = field_.width;
-		field_copy(&field_, &cur.f);
+		field_init(&cur.f);
+		field_copy(&tmp, &cur.f);
 		cur.tick = tick_number_.load();
 		// enforce redo size limit (match undo_limit_)
 		if (redo_history_.size() == undo_limit_) {
@@ -559,7 +503,7 @@ void AhabSim::undo(Glyph* redoBuf) {
 		redo_history_.push_back(std::move(cur));
 	}
 	// Pop last undo and apply it
-	node = std::move(undo_history_.back());
+	UndoNode node = std::move(undo_history_.back());
 	undo_history_.pop_back();
 	// Apply into the buffer
 	field_copy(&node.f, &field_);
@@ -577,30 +521,26 @@ void AhabSim::redoRequest() {
 	UiCommand* cmd = new UiCommand();
 	if (!cmd) return;
 	cmd->type = UiCommandType::REDO;
-
-	// Pre-allocate a buffer for the undo operation on the UI thread
-	size_t sz = (size_t)field_.height * (size_t)field_.width;
-	Glyph* tmpbuf = (Glyph*)malloc(sz);
-	if (!tmpbuf) { delete cmd; return; }
-	cmd->cells = tmpbuf;
-
 	ui_cmd_queue_.push(cmd);
 
 	notifyTick();
 }
 
-// DSP thread operation, transfers ownership of undoBuf from UI thread
-void AhabSim::redo(Glyph* undoBuf) {
-	UndoNode node;
+// DSP thread operation
+void AhabSim::redo() {
 	if (redo_history_.empty()) return;
 	// Save current state into undo history
 	{
-		// Use the provided temporary buffer for the current field copy
+		// Copy the current field into the DSP-owned max-size scratch, then into a
+		// fresh node buffer allocated on the DSP thread (see undo()).
+		Field tmp;
+		tmp.buffer = scratch_;
+		tmp.height = field_.height;
+		tmp.width = field_.width;
+		field_copy(&field_, &tmp);
 		UndoNode cur;
-		cur.f.buffer = undoBuf;
-		cur.f.height = field_.height;
-		cur.f.width = field_.width;
-		field_copy(&field_, &cur.f);
+		field_init(&cur.f);
+		field_copy(&tmp, &cur.f);
 		cur.tick = tick_number_.load();
 		if (undo_history_.size() == undo_limit_) {
 			field_deinit(&undo_history_.front().f);
@@ -609,7 +549,7 @@ void AhabSim::redo(Glyph* undoBuf) {
 		undo_history_.push_back(std::move(cur));
 	}
 	// Pop last redo and apply it
-	node = std::move(redo_history_.back());
+	UndoNode node = std::move(redo_history_.back());
 	redo_history_.pop_back();
 	// Apply into the buffer
 	field_copy(&node.f, &field_);
@@ -685,6 +625,7 @@ void AhabSim::reset() {
 	tick_number_.store(0);
 
 	if (ui_reset_callback_ptr) ui_reset_callback_ptr();
+	if (dsp_reset_callback_ptr) dsp_reset_callback_ptr();
 }
 
 // UI thread operation - enqueue an setGlyph command
@@ -726,6 +667,10 @@ bool AhabSim::pasteCells(Glyph* cells, Usz h, Usz w, Usz dest_y, Usz dest_x) {
 
 // DSP thread operation
 void AhabSim::replaceField(Glyph* cells, Usz nh, Usz nw) {
+	// Enforce the maximum field size so the fixed DSP-thread scratch buffer
+	// (sized to MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH) is always sufficient.
+	if (nh > MAX_FIELD_HEIGHT) nh = MAX_FIELD_HEIGHT;
+	if (nw > MAX_FIELD_WIDTH) nw = MAX_FIELD_WIDTH;
 	mbuf_reusable_ensure_size(&mbuf_, nh, nw);
 	mbuf_uninit_mark(mbuf_.buffer, nh, nw);
 	Field tmp;
@@ -734,6 +679,10 @@ void AhabSim::replaceField(Glyph* cells, Usz nh, Usz nw) {
 	tmp.width = (U16)nw;
 	field_copy(&tmp, &field_);
 	tick_number_.store(0);
+	// Drop any events emitted by the previous field so they never fire against
+	// the newly loaded one (mirrors AhabSim::reset()).
+	oevent_list_clear(&oevent_list_);
+	if (dsp_reset_callback_ptr) dsp_reset_callback_ptr();
 }
 
 
@@ -766,39 +715,6 @@ void AhabSim::step() {
 	Usz t = tick_number_.load(std::memory_order_relaxed);
 	orca_run(field_.buffer, mbuf_.buffer, field_.height, field_.width, t, &oevent_list_, random_seed_);
 	tick_number_.fetch_add(1, std::memory_order_relaxed);
-
-	// Handle OSC and UDP events directly in the sim so they don't need to be
-	// processed by the module layer.
-	for (Usz ei = 0; ei < oevent_list_.count; ++ei) {
-		Oevent const *oe = &oevent_list_.buffer[ei];
-		switch ((Oevent_types)oe->any.oevent_type) {
-			case Oevent_type_osc_ints: {
-				Oevent_osc_ints const *eo = &oe->osc_ints;
-				// Build OSC address from configured prefix + glyph
-				std::string addr = {'/', eo->glyph, '\0'};
-				if (eo->count > 0) {
-					I32 vals[Oevent_osc_int_count];
-					for (Usz j = 0; j < (Usz)eo->count; ++j) vals[j] = (I32)eo->numbers[j];
-					sendOscInts(addr.c_str(), vals, (Usz)eo->count);
-				} 
-				else {
-					sendOscInts(addr.c_str(), nullptr, 0);
-				}
-				break;
-			}
-			case Oevent_type_udp_string: {
-				Oevent_udp_string const *ud = &oe->udp_string;
-				if (ud && ud->count > 0) {
-					sendUdpDatagram(ud->chars, (Usz)ud->count);
-				}
-				break;
-			}
-			default: {
-				// handled by module layer
-				break;
-			}
-		}
-	}
 
 	// Call the callback without holding any locks
 	if (ui_tick_callback_ptr) ui_tick_callback_ptr(&field_);
@@ -856,13 +772,11 @@ void AhabSim::process() {
 				break;
 			}
 			case UiCommandType::UNDO: {
-				undo(cmd->cells);
-				cmd->cells = nullptr; // ownership transferred
+				undo();
 				break;
 			}
 			case UiCommandType::REDO: {
-				redo(cmd->cells);
-				cmd->cells = nullptr; // ownership transferred
+				redo();
 				break;
 			}
 			default: break;
@@ -872,78 +786,6 @@ void AhabSim::process() {
 
 	if (ui_tick_callback_ptr) ui_tick_callback_ptr(&field_);
 }
-
-// UDP helper: ensure device, send, destroy
-bool AhabSim::ensureUdpDev(const char* addr, const char* port) {
-	if (udp_dev_) return true;
-	if (oosc_dev_create_udp(&udp_dev_, addr, port) != Oosc_udp_create_error_ok) {
-		udp_dev_ = nullptr;
-		return false;
-	}
-	// store the destination
-	udpAddress_ = addr ? addr : std::string();
-	udpPort_ = port ? port : std::string();
-	return true;
-}
-
-void AhabSim::destroyUdpDev() {
-	if (udp_dev_) {
-		oosc_dev_destroy(udp_dev_);
-		udp_dev_ = nullptr;
-	}
-}
-
-
-void AhabSim::setUdpDestination(const std::string& address, const std::string& port) {
-	std::string newAddr = address;
-	std::string newPort = port;
-	trimStr(newAddr);
-	trimStr(newPort);
-	if (!isValidPort(newPort)) return;
-	if (!newAddr.empty() && containsWhitespace(newAddr)) return;
-
-	udpAddress_ = newAddr;
-	udpPort_ = newPort;
-	destroyUdpDev();
-}
-
-void AhabSim::sendUdpDatagram(const char* data, Usz size) {
-	// If the sim has a configured destination, use it; otherwise try defaults
-	if (!udp_dev_) {
-		if (!udpAddress_.empty()) {
-			if (!ensureUdpDev(udpAddress_.c_str(), udpPort_.c_str())) return;
-		} else {
-			if (!ensureUdpDev("127.0.0.1", "49161")) return;
-		}
-	}
-	oosc_send_datagram(udp_dev_, data, size);
-}
-
-void AhabSim::setOscDestination(const std::string& address, const std::string& port) {
-	std::string newAddr = address;
-	std::string newPort = port;
-	trimStr(newAddr);
-	trimStr(newPort);
-	if (!isValidPort(newPort)) return;
-	if (!newAddr.empty() && containsWhitespace(newAddr)) return;
-
-	oscAddress_ = newAddr;
-	oscPort_ = newPort;
-	destroyUdpDev();
-}
-
-void AhabSim::sendOscInts(const char* osc_path, I32 const* vals, Usz count) {
-	// Ensure UDP device exists (respect configured destination or use defaults)
-	if (!udp_dev_) {
-		if (!oscAddress_.empty()) {
-			if (!ensureUdpDev(oscAddress_.c_str(), oscPort_.c_str())) return;
-		} else {
-			if (!ensureUdpDev("127.0.0.1", "49161")) return;
-		}
-	}
-	oosc_send_int32s(udp_dev_, osc_path, vals, count);
-}
-
 
 // Callback function for operator '<' to read CV port value
 extern "C" Usz custom_vcvin(void* ptr, Usz port_num, Usz a, Usz b) {

@@ -38,10 +38,6 @@ static bool saveJsonFile(const std::string& path, json_t* j) {
 	return true;
 }
 
-static bool isTesting() {
-	return getenv("TESTING") != nullptr;
-}
-
 // ── mb.json (models only) ─────────────────────────────────────────────────────
 
 static json_t* buildMbJson(const Settings& s) {
@@ -65,6 +61,7 @@ static json_t* buildPluginJson(const Settings& s) {
 	json_t* mbJ = json_object();
 	json_object_set_new(mbJ, "zoom", json_real(s.mbZoom));
 	json_object_set_new(mbJ, "sort", json_integer(s.mbSort));
+	json_object_set_new(mbJ, "sortV2", json_integer(s.mbSortV2));
 	json_object_set_new(mbJ, "hideBrands", json_boolean(s.mbHideBrands));
 	json_object_set_new(mbJ, "searchDescriptions", json_boolean(s.mbSearchDescriptions));
 	json_object_set_new(mbJ, "sortBySearchScore", json_boolean(s.mbSortBySearchScore));
@@ -73,6 +70,7 @@ static json_t* buildPluginJson(const Settings& s) {
 	json_object_set_new(mbJ, "magnifierEnabled", json_boolean(s.mbMagnifierEnabled));
 	json_object_set_new(mbJ, "applyLibraryWhitelist", json_boolean(s.mbApplyLibraryWhitelist));
 	json_object_set_new(mbJ, "showDeprecated", json_boolean(s.mbShowDeprecated));
+	json_object_set_new(mbJ, "newestAutoUpdate", json_boolean(s.mbNewestAutoUpdate));
 	json_object_set_new(j, "mb", mbJ);
 
 	json_t* overlayJ = json_object();
@@ -116,6 +114,7 @@ static void parsePluginJson(json_t* j, Settings& s) {
 	if (mbJ) {
 		v = json_object_get(mbJ, "zoom");              if (v) s.mbZoom = json_real_value(v);
 		v = json_object_get(mbJ, "sort");              if (v) s.mbSort = json_integer_value(v);
+		v = json_object_get(mbJ, "sortV2");             if (v) s.mbSortV2 = json_integer_value(v);
 		v = json_object_get(mbJ, "hideBrands");        if (v) s.mbHideBrands = json_boolean_value(v);
 		v = json_object_get(mbJ, "searchDescriptions");if (v) s.mbSearchDescriptions = json_boolean_value(v);
 		v = json_object_get(mbJ, "sortBySearchScore");   if (v) s.mbSortBySearchScore = json_boolean_value(v);
@@ -124,6 +123,7 @@ static void parsePluginJson(json_t* j, Settings& s) {
 		v = json_object_get(mbJ, "magnifierEnabled");    if (v) s.mbMagnifierEnabled = json_boolean_value(v);
 		v = json_object_get(mbJ, "applyLibraryWhitelist"); if (v) s.mbApplyLibraryWhitelist = json_boolean_value(v);
 		v = json_object_get(mbJ, "showDeprecated");     if (v) s.mbShowDeprecated = json_boolean_value(v);
+		v = json_object_get(mbJ, "newestAutoUpdate");   if (v) s.mbNewestAutoUpdate = json_boolean_value(v);
 	}
 
 	json_t* overlayJ = json_object_get(j, "overlay");

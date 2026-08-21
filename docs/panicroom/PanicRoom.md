@@ -8,7 +8,15 @@ After adding PANIC ROOM to your patch, choose _Learn_ from the context menu and 
 
 ![PANIC ROOM Intro](./PanicRoom.gif)
 
+### Module & Cable limit
+
+PANIC ROOM can also limit the number of modules or cables in your patch. Enable the option in the context menu and set a maximum number of modules or cables. When the limit is reached, the most recently added modules/cables are automatically removed to stay within the limit.
+
 ## Changelog
 
 - v2.2.0
     - Initial release
+- v2.5.0
+    - Added option to limit the number of modules and cables
+- v2.x.x
+    - Fixed potential crash on cable and module limit
