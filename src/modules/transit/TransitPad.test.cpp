@@ -59,7 +59,91 @@ TEST_CASE("Preset JSON null-guards", "[TransitPad][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
+}
+
+
+TEST_CASE("Regression: 'sets' array longer than SETS is bounded", "[TransitPad][JSON]") {
+	// BUG-1: dataFromJson() iterated the full length of "sets", writing past
+	// the fixed-size snapshots[SETS]/setColor[SETS]/setLabel[SETS] members.
+	// Loading a hand-edited patch with >8 entries crashed (ASan: SEGV).
+	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+
+	json_t* rootJ = m->dataToJson();
+	REQUIRE(rootJ != nullptr);
+
+	// Label each of the 8 real sets, then pad the array out to 40 entries with
+	// duplicates of set 0. All values stay well-typed, isolating the missing
+	// outer-loop bound from any type confusion.
+	json_t* setsJ = json_object_get(rootJ, "sets");
+	REQUIRE(json_is_array(setsJ));
+	for (size_t s = 0; s < json_array_size(setsJ); s++) {
+		json_object_set_new(json_array_get(setsJ, s), "label", json_string(("S" + std::to_string(s)).c_str()));
+	}
+	json_t* firstJ = json_array_get(setsJ, 0);
+	while (json_array_size(setsJ) < 40) {
+		REQUIRE(json_array_append(setsJ, firstJ) == 0);
+	}
+
+	REQUIRE_NOTHROW(m->dataFromJson(rootJ));
+
+	// The first SETS labels must land on their own set; entries beyond SETS
+	// must be ignored entirely.
+	for (size_t s = 0; s < m->getSetCount(); s++) {
+		REQUIRE(m->setLabel[s] == "S" + std::to_string(s));
+	}
+
+	json_decref(rootJ);
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("Regression: non-string 'color'/'label' values are ignored", "[TransitPad][JSON]") {
+	// BUG-2: json_string_value() returns NULL for non-string values; assigning
+	// it to std::string was UB (ASan: SEGV in _platform_strlen).
+	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+
+	// Distinctive state that must survive loading malformed color/label keys
+	NVGcolor color0 = m->setColor[0];
+	m->setLabel[1] = "keep";
+
+	json_t* rootJ = m->dataToJson();
+	REQUIRE(rootJ != nullptr);
+
+	json_t* setsJ = json_object_get(rootJ, "sets");
+	REQUIRE(json_is_array(setsJ));
+	size_t s;
+	json_t* setJ;
+	json_array_foreach(setsJ, s, setJ) {
+		json_object_set_new(setJ, "color", json_integer(42));
+		json_object_set_new(setJ, "label", json_real(3.14));
+	}
+
+	REQUIRE_NOTHROW(m->dataFromJson(rootJ));
+
+	// Wrong-typed keys are skipped: existing colors and labels are preserved
+	REQUIRE(m->setColor[0].r == color0.r);
+	REQUIRE(m->setColor[0].g == color0.g);
+	REQUIRE(m->setColor[0].b == color0.b);
+	REQUIRE(m->setColor[0].a == color0.a);
+	REQUIRE(m->setLabel[1] == "keep");
+
+	json_decref(rootJ);
+	Test::destroyModule(m);
 }
 
 
