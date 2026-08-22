@@ -599,11 +599,17 @@ struct AhabSimWidget : OpaqueWidget {
 		// Get current selection bounds
 		Usz sy, sx, sh, sw;
 		editorState.getSelectionRect(sy, sx, sh, sw);
-		
+
+		AhabRandomizer::Config cfg;
+		cfg.density = density;
+
 		// Use the AhabRandomizer class
 		StoermelderPackOne::Ahab::AhabRandomizer randomizer;
-		randomizer.randomize(module->sim, sy, sx, sh, sw, density);
-		
+		if (!randomizer.randomize(module->sim, sy, sx, sh, sw, cfg)) {
+			// Nothing was generated or the command queue was full — previously silent.
+			return;
+		}
+
 		notifyUiChanged();
 	}
 
