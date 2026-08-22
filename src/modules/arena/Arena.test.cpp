@@ -17,10 +17,10 @@ Test::TestContext<> testContext;
 
 // Set the effective position of an IN port by loading filters and params directly.
 static void setInPosition(MODULE* m, int j, float x, float y) {
-	m->inputUiX[j] = x;
-	m->inputXfilter[j].out = x;
-	m->inputUiY[j] = y;
-	m->inputYfilter[j].out = y;
+	m->nodes.uiX[j] = x;
+	m->nodes.xFilter[j].out = x;
+	m->nodes.uiY[j] = y;
+	m->nodes.yFilter[j].out = y;
 	m->params[MODULE::IN_X_POS + j].setValue(x);
 	m->params[MODULE::IN_Y_POS + j].setValue(y);
 }
@@ -37,8 +37,8 @@ static void setMixPosition(MODULE* m, int i, float x, float y) {
 
 // Set an IN port's radius filter and stored value.
 static void setRadius(MODULE* m, int j, float r) {
-	m->radiusUi[j] = r;
-	m->radiusFilter[j].out = r;
+	m->nodes.radiusUi[j] = r;
+	m->nodes.radiusFilter[j].out = r;
 }
 
 
@@ -98,13 +98,13 @@ TEST_CASE("JSON round-trip preserves module state", "[Arena]") {
 		m->outputMode[j] = outModes[j];
 		m->inputXBipolar[j] = j % 2 == 0;
 		m->inputYBipolar[j] = j % 3 == 0;
-		// radius/amount persist via the ENGINE-final arrays (scGetRadiusFinal);
+		// radius/amount persist via the ENGINE-final arrays (getNodeRadiusFinal);
 		// loading restores them into the UI arrays and process() re-derives
 		// the final arrays from those, so set both sides deterministically.
 		setRadius(m, j, 0.15f * (j + 1));
-		m->scSetRadiusFinal(j, 0.15f * (j + 1));
-		m->scSetAmountImmediate(j, 0.2f + 0.1f * j);
-		m->scSetAmountFinal(j, 0.2f + 0.1f * j);
+		m->nodes.setRadius(j, 0.15f * (j + 1));
+		m->nodes.setAmountImmediate(j, 0.2f + 0.1f * j);
+		m->nodes.setAmount(j, 0.2f + 0.1f * j);
 	}
 	for (int i = 0; i < MIX_PORTS; i++) {
 		m->mixportXBipolar[i] = i % 2 == 1;
@@ -143,15 +143,15 @@ TEST_CASE("JSON round-trip preserves module state", "[Arena]") {
 	SECTION("IN ports: radius and amount") {
 		for (int j = 0; j < IN_PORTS; j++) {
 			// Restored into the UI arrays immediately...
-			REQUIRE(m2->radiusUi[j] == Catch::Approx(0.15f * (j + 1)));
-			REQUIRE(m2->amountUi[j] == Catch::Approx(0.2f + 0.1f * j));
+			REQUIRE(m2->nodes.radiusUi[j] == Catch::Approx(0.15f * (j + 1)));
+			REQUIRE(m2->nodes.amountUi[j] == Catch::Approx(0.2f + 0.1f * j));
 		}
 		// ...and re-derived into the engine-final arrays on the next tick,
 		// but only for ACTIVE ports (j < inportsUsed)
 		m2->process(Test::makeProcessArgs(1));
 		for (int j = 0; j < m2->inportsUsed; j++) {
-			REQUIRE(m2->scGetRadiusFinal(j) == Catch::Approx(0.15f * (j + 1)));
-			REQUIRE(m2->scGetAmountFinal(j) == Catch::Approx(0.2f + 0.1f * j));
+			REQUIRE(m2->getNodeRadiusFinal(j) == Catch::Approx(0.15f * (j + 1)));
+			REQUIRE(m2->getNodeAmountFinal(j) == Catch::Approx(0.2f + 0.1f * j));
 		}
 	}
 
@@ -181,12 +181,12 @@ TEST_CASE("JSON round-trip preserves module state", "[Arena]") {
 
 
 
-// scGetDistance: mirrors TransitPad's dist[]/weight coverage. Arena is the
-// higher-risk consumer for the XyScreenNodes/XyScreenCursor refactor because
-// MIX_PORTS > 1 exercises cursor (type-1) ids >= 1, which TransitPad's single
-// Out cursor never does.
+// getCursorToNodeDistance: mirrors TransitPad's dist[]/weight coverage.
+// Arena is the higher-risk consumer for the XyScreenNodes/XyScreenCursor
+// refactor because MIX_PORTS > 1 exercises cursor ids >= 1, which
+// TransitPad's single Out cursor never does.
 
-TEST_CASE("scGetDistance returns the per-(mixport,inport) distance", "[Arena]") {
+TEST_CASE("getCursorToNodeDistance returns the per-(mixport,inport) distance", "[Arena]") {
 	auto* m = Test::createModule<MODULE>("Arena");
 
 	setInPosition(m, 0, 0.f, 0.f);
@@ -200,33 +200,9 @@ TEST_CASE("scGetDistance returns the per-(mixport,inport) distance", "[Arena]") 
 	m->process(Test::makeProcessArgs(1));
 
 	// MIX-0 co-located with IN-0
-	REQUIRE(m->scGetDistance(1, 0, 0, 0) == Catch::Approx(0.f).margin(0.001f));
+	REQUIRE(m->getCursorToNodeDistance(0, 0) == Catch::Approx(0.f).margin(0.001f));
 	// MIX-1 at (3,4) from IN-0 at (0,0): classic 3-4-5 triangle
-	REQUIRE(m->scGetDistance(1, 1, 0, 0) == Catch::Approx(5.f).margin(0.001f));
-
-	Test::destroyModule(m);
-}
-
-TEST_CASE("scGetDistance ignores its source-type/dest-type arguments", "[Arena]") {
-	// Per the refactor plan (XyScreenNodes_refactor_plan.md §3), the 4-argument
-	// scGetDistance is only ever called as scGetDistance(1, cursorId, 0, nodeId)
-	// from the cursor widget, and both implementations ignore typeSource/typeDest
-	// entirely. Confirm that empirically before the refactor collapses the
-	// signature to getCursorToNodeDistance(cursorId, nodeId).
-	auto* m = Test::createModule<MODULE>("Arena");
-
-	setInPosition(m, 0, 0.f, 0.f);
-	setMixPosition(m, 0, 6.f, 8.f);
-	setRadius(m, 0, 100.f);
-	m->inportsUsed = 1;
-
-	m->process(Test::makeProcessArgs(1));
-
-	float withDeclaredTypes = m->scGetDistance(1, 0, 0, 0);
-	float withBogusTypes = m->scGetDistance(99, 0, 42, 0);
-
-	REQUIRE(withDeclaredTypes == Catch::Approx(10.f).margin(0.001f));
-	REQUIRE(withBogusTypes == withDeclaredTypes);
+	REQUIRE(m->getCursorToNodeDistance(1, 0) == Catch::Approx(5.f).margin(0.001f));
 
 	Test::destroyModule(m);
 }
@@ -255,24 +231,23 @@ TEST_CASE("MIX id >= 1 correctly indexes its own distance/weight, independent of
 	Test::destroyModule(m);
 }
 
-// Sc::dataToJson()/dataFromJson() write "radius"/"amount" for type 0 (nodes)
-// only, and silently no-op for type 1 (cursor/MIX ports) today. This test
-// pins the exact JSON produced for a distinctive node state so any refactor
-// that moves or renames those keys fails loudly. It also proves empirically
-// (rather than by reading the "if (type == 0)" guard) that the type-1 calls
-// write no "radius"/"amount" keys into "mixports" entries, which is the fact
-// Stage 3 of the plan needs verified before it can delete those calls.
+// XyScreenNodes::dataToJson()/dataFromJson() write "radius"/"amount"
+// unconditionally — they are only ever called for nodes now (Stage 3/4 of
+// the refactor deleted the cursor persistence calls entirely, rather than
+// keeping an always-false branch). This test pins the exact JSON produced
+// for a distinctive node state so any future change that moves or renames
+// those keys fails loudly.
 
 TEST_CASE("Golden JSON: node (IN port) radius/amount round-trip byte-identically", "[Arena][JSON]") {
 	auto* m = Test::createModule<MODULE>("Arena");
 
-	m->scSetRadiusImmediate(0, 0.125f);
-	m->scSetRadiusFinal(0, 0.125f);
-	m->scSetAmountImmediate(0, 0.875f);
-	m->scSetAmountFinal(0, 0.875f);
+	m->nodes.setRadiusImmediate(0, 0.125f);
+	m->nodes.setRadius(0, 0.125f);
+	m->nodes.setAmountImmediate(0, 0.875f);
+	m->nodes.setAmount(0, 0.875f);
 
 	json_t* dataJ = json_object();
-	m->Sc::dataToJson(dataJ, 0, 0);
+	m->Sc::nodes.dataToJson(dataJ, 0);
 
 	char* dumped = json_dumps(dataJ, JSON_SORT_KEYS | JSON_COMPACT | JSON_REAL_PRECISION(9));
 	std::string actual(dumped);
@@ -284,41 +259,6 @@ TEST_CASE("Golden JSON: node (IN port) radius/amount round-trip byte-identically
 	Test::destroyModule(m);
 }
 
-TEST_CASE("Golden JSON: cursor (MIX port) dataToJson writes no keys", "[Arena][JSON]") {
-	auto* m = Test::createModule<MODULE>("Arena");
-
-	setMixPosition(m, 1, 0.3f, 0.7f);
-
-	json_t* dataJ = json_object();
-	m->Sc::dataToJson(dataJ, 1, 1);
-
-	REQUIRE(json_object_size(dataJ) == 0);
-
-	json_decref(dataJ);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("Golden JSON: cursor (MIX port) dataFromJson on an empty object is a no-op self-assignment", "[Arena][JSON]") {
-	// Sc::dataFromJson(dataJ, 1, id) unconditionally calls
-	// scSetXyImmediate(1, id, scGetXFinal(1, id), scGetYFinal(1, id)) — reading
-	// the MIX port's own current position and writing it straight back. Confirm
-	// that round-trips the position exactly rather than zeroing or perturbing it.
-	auto* m = Test::createModule<MODULE>("Arena");
-
-	setMixPosition(m, 1, 0.3f, 0.7f);
-	float xBefore = m->params[MODULE::MIX_X_POS + 1].getValue();
-	float yBefore = m->params[MODULE::MIX_Y_POS + 1].getValue();
-
-	json_t* dataJ = json_object();
-	m->Sc::dataFromJson(dataJ, 1, 1);
-	json_decref(dataJ);
-
-	REQUIRE(m->params[MODULE::MIX_X_POS + 1].getValue() == Catch::Approx(xBefore));
-	REQUIRE(m->params[MODULE::MIX_Y_POS + 1].getValue() == Catch::Approx(yBefore));
-
-	Test::destroyModule(m);
-}
-
 TEST_CASE("Golden JSON: full module dataToJson is byte-identical for a distinctive state", "[Arena][JSON]") {
 	auto* m = Test::createModule<MODULE>("Arena");
 
@@ -326,10 +266,10 @@ TEST_CASE("Golden JSON: full module dataToJson is byte-identical for a distincti
 	m->inportsUsed = 1;
 	m->mixportsUsed = 1;
 
-	m->scSetRadiusImmediate(0, 0.25f);
-	m->scSetRadiusFinal(0, 0.25f);
-	m->scSetAmountImmediate(0, 0.5f);
-	m->scSetAmountFinal(0, 0.5f);
+	m->nodes.setRadiusImmediate(0, 0.25f);
+	m->nodes.setRadius(0, 0.25f);
+	m->nodes.setAmountImmediate(0, 0.5f);
+	m->nodes.setAmount(0, 0.5f);
 	m->modMode[0] = MODMODE::RADIUS;
 	m->outputMode[0] = OUTPUTMODE::CLIP_BI;
 	m->inputXBipolar[0] = true;
@@ -723,7 +663,7 @@ TEST_CASE("MODMODE::RADIUS: MOD input controls effective radius", "[Arena]") {
 	// dist=0, radius=1.0 → within range → output > 0
 	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 0].getVoltage() > 0.f);
 	// radius was set to 1.0 via mod input
-	REQUIRE(m->scGetRadiusFinal(0) == Catch::Approx(1.0f).margin(0.01f));
+	REQUIRE(m->getNodeRadiusFinal(0) == Catch::Approx(1.0f).margin(0.01f));
 
 	Test::destroyModule(m);
 }
@@ -892,8 +832,8 @@ TEST_CASE("Zero amount scales IN signal to zero", "[Arena]") {
 	setInPosition(m, 0, 0.5f, 0.5f);
 	setMixPosition(m, 0, 0.5f, 0.5f);
 	setRadius(m, 0, 1.0f);
-	m->scSetAmountImmediate(0, 0.0f);
-	m->scSetAmountFinal(0, 0.0f);
+	m->nodes.setAmountImmediate(0, 0.0f);
+	m->nodes.setAmount(0, 0.0f);
 
 	m->inputs[MODULE::IN + 0].channels = 1;
 	m->inputs[MODULE::IN + 0].setVoltage(5.f);
@@ -959,6 +899,38 @@ TEST_CASE("MIX_X_INPUT CV moves the MIX port x-position", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->params[MODULE::MIX_X_POS + 0].getValue() == Catch::Approx(0.5f).margin(0.01f));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("getCursorXFinal/getCursorYFinal track CV-driven MIX position, not the UI shadow", "[Arena]") {
+	// Regression: the cursor drag widget must draw from the param-backed
+	// "final" position (what process() writes from CV/sequencer/ParamHandle
+	// inputs), not from mixUiX/mixUiY, which is only ever written by a mouse
+	// drag or setCursorXyImmediate/Filtered and does not move with CV.
+	auto* m = Test::createModule<MODULE>("Arena");
+
+	m->params[MODULE::MIX_X_PARAM + 0].setValue(1.f);
+	m->params[MODULE::MIX_Y_PARAM + 0].setValue(1.f);
+	m->mixportXBipolar[0] = false;
+	m->mixportYBipolar[0] = false;
+
+	m->inputs[MODULE::MIX_X_INPUT + 0].channels = 1;
+	m->inputs[MODULE::MIX_X_INPUT + 0].setVoltage(5.f); // → x = 0.5
+	m->inputs[MODULE::MIX_Y_INPUT + 0].channels = 1;
+	m->inputs[MODULE::MIX_Y_INPUT + 0].setVoltage(2.f); // → y = 0.2
+
+	// UI shadow starts at its default (0,0 for MIX-0) and is never touched by CV.
+	float mixUiXBefore = m->mixUiX[0];
+	float mixUiYBefore = m->mixUiY[0];
+
+	m->process(Test::makeProcessArgs(1));
+
+	REQUIRE(m->getCursorXFinal(0) == Catch::Approx(0.5f).margin(0.01f));
+	REQUIRE(m->getCursorYFinal(0) == Catch::Approx(0.2f).margin(0.01f));
+	// The UI shadow is untouched by CV — proves it would be the wrong read source.
+	REQUIRE(m->mixUiX[0] == Catch::Approx(mixUiXBefore));
+	REQUIRE(m->mixUiY[0] == Catch::Approx(mixUiYBefore));
 
 	Test::destroyModule(m);
 }
@@ -1055,15 +1027,80 @@ TEST_CASE("MOD attenuverter scales modulation depth", "[Arena]") {
 	m->inputs[MODULE::IN + 0].channels = 1;
 	m->inputs[MODULE::IN + 0].setVoltage(5.f);
 	m->process(Test::makeProcessArgs(1));
-	float fullRadius = m->scGetRadiusFinal(0);
+	float fullRadius = m->getNodeRadiusFinal(0);
 
 	// Half attenuation → radius = clamp(10/10 * 0.5, 0, 1) = 0.5
 	m->params[MODULE::MOD_PARAM + 0].setValue(0.5f);
 	m->process(Test::makeProcessArgs(2));
-	float halfRadius = m->scGetRadiusFinal(0);
+	float halfRadius = m->getNodeRadiusFinal(0);
 
 	REQUIRE(fullRadius == Catch::Approx(1.0f).margin(0.01f));
 	REQUIRE(halfRadius == Catch::Approx(0.5f).margin(0.01f));
+
+	Test::destroyModule(m);
+}
+
+
+// Bounds correctness (refactor plan Stage 5, §1c): setCursorXyImmediate/
+// setCursorXyFiltered previously had no bound check at all on the cursor
+// path (unlike XyScreenNodes's own guards), so an out-of-range MIX id would
+// have written past paramQuantities[MIX_X_POS + id]. Confirm the guard is a
+// silent no-op — consistent with the rest of the codebase's convention for
+// bad indices — rather than a crash, and that it leaves in-range cursors alone.
+
+TEST_CASE("setCursorXyImmediate with an out-of-range id is a silent no-op", "[Arena]") {
+	auto* m = Test::createModule<MODULE>("Arena");
+
+	setMixPosition(m, 0, 0.2f, 0.3f);
+	float x0Before = m->params[MODULE::MIX_X_POS + 0].getValue();
+	float y0Before = m->params[MODULE::MIX_Y_POS + 0].getValue();
+
+	// MIX_PORTS == 4 for this MODULE alias; id 4 is one past the end.
+	REQUIRE_NOTHROW(m->setCursorXyImmediate(MIX_PORTS, 0.9f, 0.9f));
+
+	// In-range cursor state is untouched.
+	REQUIRE(m->params[MODULE::MIX_X_POS + 0].getValue() == Catch::Approx(x0Before));
+	REQUIRE(m->params[MODULE::MIX_Y_POS + 0].getValue() == Catch::Approx(y0Before));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("setCursorXyFiltered with an out-of-range id is a silent no-op", "[Arena]") {
+	auto* m = Test::createModule<MODULE>("Arena");
+
+	setMixPosition(m, 0, 0.2f, 0.3f);
+	float x0Before = m->mixUiX[0];
+	float y0Before = m->mixUiY[0];
+
+	REQUIRE_NOTHROW(m->setCursorXyFiltered(MIX_PORTS, 0.9f, 0.9f));
+
+	REQUIRE(m->mixUiX[0] == Catch::Approx(x0Before));
+	REQUIRE(m->mixUiY[0] == Catch::Approx(y0Before));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("XyScreenNodes setters with an out-of-range id are a silent no-op", "[Arena]") {
+	// The node side of the same bound (COUNT, i.e. IN_PORTS here) predates
+	// this stage — XyScreenNodes has always guarded on its own COUNT — but
+	// had no direct test. Cover it alongside the cursor-side fix above.
+	auto* m = Test::createModule<MODULE>("Arena");
+
+	setInPosition(m, 0, 0.2f, 0.3f);
+	setRadius(m, 0, 0.4f);
+	m->nodes.setAmountImmediate(0, 0.6f);
+
+	float x0Before = m->nodes.uiX[0];
+	float radius0Before = m->nodes.radiusUi[0];
+	float amount0Before = m->nodes.amountUi[0];
+
+	REQUIRE_NOTHROW(m->nodes.setXyImmediate(IN_PORTS, 0.9f, 0.9f));
+	REQUIRE_NOTHROW(m->nodes.setRadiusImmediate(IN_PORTS, 0.9f));
+	REQUIRE_NOTHROW(m->nodes.setAmountImmediate(IN_PORTS, 0.9f));
+
+	REQUIRE(m->nodes.uiX[0] == Catch::Approx(x0Before));
+	REQUIRE(m->nodes.radiusUi[0] == Catch::Approx(radius0Before));
+	REQUIRE(m->nodes.amountUi[0] == Catch::Approx(amount0Before));
 
 	Test::destroyModule(m);
 }
