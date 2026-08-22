@@ -290,6 +290,19 @@ TEST_CASE("Ignores non-CC messages", "[MidiStep]") {
 }
 
 
+TEST_CASE("Ignores unmapped CC numbers", "[MidiStep]") {
+	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	module->mode = MODE::BEATSTEP_R1;
+	// Only CCs 0..15 are mapped by default; CC 64 has no channel.
+	module->processMessage(cc(64, 70));
+	for (int i = 0; i < MidiStepModule::CHANNELS; i++) {
+		REQUIRE(module->incPulseCount[i] == 0);
+		REQUIRE(module->decPulseCount[i] == 0);
+	}
+	Test::destroyModule(module);
+}
+
+
 TEST_CASE("CC learning", "[MidiStep]") {
 	auto module = Test::createModule<MidiStepModule>("MidiStep");
 
