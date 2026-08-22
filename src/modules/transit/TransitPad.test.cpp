@@ -76,26 +76,23 @@ TEST_CASE("Preset JSON null-guards", "[TransitPad][JSON]") {
 	Test::destroyModule(module);
 }
 
-// Sc::dataToJson()/dataFromJson() write "radius"/"amount" for
-// type 0 (snapshot nodes) only, and silently no-op for type 1 (the Out
-// cursor) today. This pins the exact JSON produced for a distinctive
-// snapshot state so any refactor that moves or renames those keys fails
-// loudly. It also proves empirically (rather than by reading the
-// "if (type == 0)" guard) that the type-1 dataToJson call at
-// TransitPad.cpp:454 writes no "radius"/"amount" keys into "output", and
-// that its dataFromJson counterpart at TransitPad.cpp:497 is a genuine
-// self-assignment no-op.
+// XyScreenNodes::dataToJson()/dataFromJson() write "radius"/"amount"
+// unconditionally — they are only ever called for nodes now (Stage 3/4 of
+// the refactor deleted the cursor persistence calls entirely, rather than
+// keeping an always-false branch). This pins the exact JSON produced for a
+// distinctive snapshot state so any future change that moves or renames
+// those keys fails loudly.
 
 TEST_CASE("Golden JSON: snapshot (node) radius/amount round-trip byte-identically", "[TransitPad][JSON]") {
 	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
 
-	m->scSetRadiusImmediate(0, 0.125f);
-	m->scSetRadiusFinal(0, 0.125f);
-	m->scSetAmountImmediate(0, 0.875f);
-	m->scSetAmountFinal(0, 0.875f);
+	m->nodes.setRadiusImmediate(0, 0.125f);
+	m->nodes.setRadius(0, 0.125f);
+	m->nodes.setAmountImmediate(0, 0.875f);
+	m->nodes.setAmount(0, 0.875f);
 
 	json_t* dataJ = json_object();
-	m->Sc::dataToJson(dataJ, 0, 0);
+	m->Sc::nodes.dataToJson(dataJ, 0);
 
 	char* dumped = json_dumps(dataJ, JSON_SORT_KEYS | JSON_COMPACT | JSON_REAL_PRECISION(9));
 	std::string actual(dumped);
@@ -107,49 +104,14 @@ TEST_CASE("Golden JSON: snapshot (node) radius/amount round-trip byte-identicall
 	Test::destroyModule(m);
 }
 
-TEST_CASE("Golden JSON: cursor (Out) dataToJson writes no keys", "[TransitPad][JSON]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
-
-	m->scSetItemImmediate(1, 0, 0.3f, 0.7f);
-
-	json_t* dataJ = json_object();
-	m->Sc::dataToJson(dataJ, 1, 0);
-
-	REQUIRE(json_object_size(dataJ) == 0);
-
-	json_decref(dataJ);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("Golden JSON: cursor (Out) dataFromJson on an empty object is a no-op self-assignment", "[TransitPad][JSON]") {
-	// Sc::dataFromJson(dataJ, 1, 0) unconditionally calls
-	// scSetXyImmediate(1, 0, scGetXFinal(1, 0), scGetYFinal(1, 0)) — reading the
-	// Out cursor's own current position and writing it straight back. Confirm
-	// that round-trips the position exactly rather than zeroing or perturbing it.
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
-
-	m->scSetItemImmediate(1, 0, 0.3f, 0.7f);
-	float xBefore = m->params[TransitPadModule<>::OUT_X_POS].getValue();
-	float yBefore = m->params[TransitPadModule<>::OUT_Y_POS].getValue();
-
-	json_t* dataJ = json_object();
-	m->Sc::dataFromJson(dataJ, 1, 0);
-	json_decref(dataJ);
-
-	REQUIRE(m->params[TransitPadModule<>::OUT_X_POS].getValue() == Catch::Approx(xBefore));
-	REQUIRE(m->params[TransitPadModule<>::OUT_Y_POS].getValue() == Catch::Approx(yBefore));
-
-	Test::destroyModule(m);
-}
-
 TEST_CASE("Golden JSON: full module dataToJson is byte-identical for a distinctive snapshot state", "[TransitPad][JSON]") {
 	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
 
 	m->snapshots[0][0].id = 3;
-	m->scSetRadiusImmediate(0, 0.25f);
-	m->scSetRadiusFinal(0, 0.25f);
-	m->scSetAmountImmediate(0, 0.5f);
-	m->scSetAmountFinal(0, 0.5f);
+	m->nodes.setRadiusImmediate(0, 0.25f);
+	m->nodes.setRadius(0, 0.25f);
+	m->nodes.setAmountImmediate(0, 0.5f);
+	m->nodes.setAmount(0, 0.5f);
 
 	json_t* rootJ = m->dataToJson();
 	json_t* setsJ = json_object_get(rootJ, "sets");
@@ -164,8 +126,8 @@ TEST_CASE("Golden JSON: full module dataToJson is byte-identical for a distincti
 
 	REQUIRE(snapshotActual == "{\"amount\":0.5,\"id\":3,\"radius\":0.25}");
 
-	// "output" never carries "radius"/"amount" — Sc::dataToJson(outputJ, 1, 0)
-	// is a no-op; only Seq::dataToJson writes into it.
+	// "output" never carries "radius"/"amount" — the cursor has no
+	// persistence method at all; only Seq::dataToJson writes into it.
 	REQUIRE(json_object_get(outputJ, "radius") == nullptr);
 	REQUIRE(json_object_get(outputJ, "amount") == nullptr);
 
@@ -698,6 +660,33 @@ TEST_CASE("Locked state", "[TransitPad]") {
 }
 
 
+TEST_CASE("getCursorXFinal/getCursorYFinal track CV-driven Out position, not the UI shadow", "[TransitPad]") {
+	// Regression: the cursor drag widget must draw from the param-backed
+	// "final" position (what process() writes from CV/sequencer/ParamHandle
+	// inputs), not from outUiX/outUiY, which is only ever written by a mouse
+	// drag or setCursorXyImmediate/Filtered and does not move with CV.
+	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+
+	m->inputs[TransitPadModule<>::OUT_X_INPUT].channels = 1;
+	m->inputs[TransitPadModule<>::OUT_X_INPUT].setVoltage(3.f); // → x = 3/10 + 0.5 = 0.8
+	m->inputs[TransitPadModule<>::OUT_Y_INPUT].channels = 1;
+	m->inputs[TransitPadModule<>::OUT_Y_INPUT].setVoltage(-2.f); // → y = -2/10 + 0.5 = 0.3
+
+	float outUiXBefore = m->outUiX;
+	float outUiYBefore = m->outUiY;
+
+	runFrames(m, 5);
+
+	REQUIRE(m->getCursorXFinal(0) == Catch::Approx(0.8f).margin(0.01f));
+	REQUIRE(m->getCursorYFinal(0) == Catch::Approx(0.3f).margin(0.01f));
+	// The UI shadow is untouched by CV — proves it would be the wrong read source.
+	REQUIRE(m->outUiX == Catch::Approx(outUiXBefore));
+	REQUIRE(m->outUiY == Catch::Approx(outUiYBefore));
+
+	Test::destroyModule(m);
+}
+
+
 TEST_CASE("Snapshot weights: point inside radius gets nonzero weight", "[TransitPad]") {
 	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
 	m->snapshotsUsed = 1;
@@ -719,7 +708,7 @@ TEST_CASE("Snapshot weights: point outside radius gets zero weight", "[TransitPa
 	// Move mix point to (0.9, 0.9) via the filter state so process() respects it.
 	// Snapshot 0 defaults to (0.1, 0.1).
 	// Distance = sqrt(0.8^2 + 0.8^2) ≈ 1.131, default radius = 1.0 → outside
-	m->scSetItemImmediate(1, 0, 0.9f, 0.9f);
+	m->setCursorXyImmediate(0, 0.9f, 0.9f);
 	runFrames(m, 5);
 
 	REQUIRE(m->snapshots[0][0].weight == 0.f);
@@ -958,7 +947,7 @@ TEST_CASE("presetProcessXyPad: two equal-weight snapshots produce the midpoint",
 	transit->presetSave(1);
 
 	connectPad(transit, pad);
-	// snapshots[0][0] → slot 0, snapshots[0][1] → slot 1 (ids set by scInitItems)
+	// snapshots[0][0] → slot 0, snapshots[0][1] → slot 1 (ids set by initExtra)
 	pad->snapshots[0][0].weight = 1.f;
 	pad->snapshots[0][1].weight = 1.f;
 
@@ -1096,7 +1085,7 @@ TEST_CASE("presetProcessXyPad: all zero weights leave parameters unchanged", "[T
 	target->params[TestParamModule::PARAM_A].setValue(0.55f);
 
 	connectPad(transit, pad);
-	// All snapshot weights remain 0 (initialized that way in scInitItems)
+	// All snapshot weights remain 0 (initialized that way in initExtra)
 
 	runTransitFrames(transit, 5);
 
@@ -1250,7 +1239,7 @@ TEST_CASE("XY-pad chain: amount scales snapshot weight and shifts the blend", "[
 
 	// Halving snapshot B's amount halves its weight and pulls the blend toward A:
 	// (0 * 0.55 + 1 * 0.275) / (0.55 + 0.275) = 1/3
-	r.pad->scSetAmountImmediate(1, 0.5f);
+	r.pad->nodes.setAmountImmediate(1, 0.5f);
 	r.run(5, 200);
 	REQUIRE(r.pad->snapshots[0][1].weight == Catch::Approx(0.275f).margin(0.001f));
 	REQUIRE(r.paramValue() == Catch::Approx(1.f / 3.f).margin(0.001f));
@@ -1276,7 +1265,7 @@ TEST_CASE("XY-pad chain: radius cuts off snapshot contribution at the boundary",
 	REQUIRE(r.pad->snapshots[0][0].weight == Catch::Approx(0.55f).margin(0.001f));
 
 	// Shrinking the radius to 0.6 shrinks the weight at the same point
-	r.pad->scSetRadiusImmediate(0, 0.6f);
+	r.pad->nodes.setRadiusImmediate(0, 0.6f);
 	r.run(5, 200);
 	REQUIRE(r.pad->snapshots[0][0].weight == Catch::Approx((0.6f - 0.5f) / 0.6f * 1.1f).margin(0.001f));
 
@@ -1479,4 +1468,66 @@ TEST_CASE("bindSnapshot binds and unbinds pad points to Transit slots", "[Transi
 
 		r.destroy();
 	}
+}
+
+
+// Bounds correctness (refactor plan Stage 5, §1c): setCursorXyImmediate/
+// setCursorXyFiltered previously had no bound check on the cursor path at
+// all. TransitPad has exactly one cursor (the Out point), always at id 0;
+// confirm an out-of-range id is a silent no-op rather than silently acting
+// as if it addressed Out — the exact failure the plan's example describes
+// (a stray id of 7 reaching storage where only id 0 is meaningful).
+
+TEST_CASE("setCursorXyImmediate with an out-of-range id is a silent no-op", "[TransitPad]") {
+	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+
+	m->setCursorXyImmediate(0, 0.2f, 0.3f);
+	float xBefore = m->params[TransitPadModule<>::OUT_X_POS].getValue();
+	float yBefore = m->params[TransitPadModule<>::OUT_Y_POS].getValue();
+
+	REQUIRE_NOTHROW(m->setCursorXyImmediate(1, 0.9f, 0.9f));
+
+	REQUIRE(m->params[TransitPadModule<>::OUT_X_POS].getValue() == Catch::Approx(xBefore));
+	REQUIRE(m->params[TransitPadModule<>::OUT_Y_POS].getValue() == Catch::Approx(yBefore));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("setCursorXyFiltered with an out-of-range id is a silent no-op", "[TransitPad]") {
+	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+
+	m->setCursorXyImmediate(0, 0.2f, 0.3f);
+	float xBefore = m->outUiX;
+	float yBefore = m->outUiY;
+
+	REQUIRE_NOTHROW(m->setCursorXyFiltered(1, 0.9f, 0.9f));
+
+	REQUIRE(m->outUiX == Catch::Approx(xBefore));
+	REQUIRE(m->outUiY == Catch::Approx(yBefore));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("XyScreenNodes setters with an out-of-range id are a silent no-op", "[TransitPad]") {
+	// The node side of the same bound (COUNT, i.e. SNAPSHOTS here) predates
+	// this stage — XyScreenNodes has always guarded on its own COUNT — but
+	// had no direct test. Cover it alongside the cursor-side fix above.
+	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+
+	m->nodes.setRadiusImmediate(0, 0.4f);
+	m->nodes.setAmountImmediate(0, 0.6f);
+
+	float radius0Before = m->nodes.radiusUi[0];
+	float amount0Before = m->nodes.amountUi[0];
+	float x0Before = m->nodes.uiX[0];
+
+	REQUIRE_NOTHROW(m->nodes.setXyImmediate(8, 0.9f, 0.9f));
+	REQUIRE_NOTHROW(m->nodes.setRadiusImmediate(8, 0.9f));
+	REQUIRE_NOTHROW(m->nodes.setAmountImmediate(8, 0.9f));
+
+	REQUIRE(m->nodes.uiX[0] == Catch::Approx(x0Before));
+	REQUIRE(m->nodes.radiusUi[0] == Catch::Approx(radius0Before));
+	REQUIRE(m->nodes.amountUi[0] == Catch::Approx(amount0Before));
+
+	Test::destroyModule(m);
 }
