@@ -100,6 +100,7 @@ Features missing in AHAB compared to ORCA:
 | Alt + Arrow keys | Move selected cells |
 | Ctrl/Cmd + Arrow keys | Move by grid step (rows/cols) |
 | Escape | Collapse selection to cursor |
+| Shift + Escape | Toggle focus mode |
 | `{`, `}` | Decrease/increase grid step rows |
 | `[`, `]` | Decrease/increase grid step columns |
 
@@ -112,3 +113,11 @@ Features missing in AHAB compared to ORCA:
     - Added reset input for tick counter (#429)
     - Added "pending bang" operator `+` (#427)
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
+- v2.x.x
+    - Added undo for "Clear"
+    - Added toggle for Focus mode using Shift+Esc
+    - Added clock divider/multiplier for clock input
+    - Added MIDI Panic option
+    - Fixed reset behavior on loading files or examples
+    - Fixed broken MIDI channel on MIDI operators
+    - Fixed various minor issues

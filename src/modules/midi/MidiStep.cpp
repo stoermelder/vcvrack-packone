@@ -169,6 +169,10 @@ struct MidiStepModule : Module {
 			return;
 		}
 
+		// Unmapped CC numbers must be ignored: indexing the pulse counters
+		// with ccs[cc] == -1 would corrupt adjacent memory.
+		if (ccs[cc] < 0) return;
+
 		switch (mode) {
 			case MODE::BEATSTEP_R1:
 			case MODE::XTOUCH_R2: {
@@ -249,9 +253,16 @@ struct MidiStepModule : Module {
 		if (ccsJ) {
 			for (int i = 0; i < CHANNELS; i++) {
 				json_t* ccJ = json_array_get(ccsJ, i);
-				if (ccJ) {
-					learnedCcs[i] = json_integer_value(ccJ);
-					ccs[learnedCcs[i]] = i;
+				if (!ccJ) continue;
+				int cc = json_integer_value(ccJ);
+				// -1 is a stored unmapped channel; out-of-range values from a
+				// corrupt preset would index past ccs[] and must be dropped.
+				if (0 <= cc && cc < 128) {
+					learnedCcs[i] = cc;
+					ccs[cc] = i;
+				}
+				else {
+					learnedCcs[i] = -1;
 				}
 			}
 		}

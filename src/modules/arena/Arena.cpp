@@ -510,9 +510,12 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 
 		json_t* inportsJ = json_object_get(rootJ, "inports");
 		if (inportsJ) {
-			json_t* inportJ;
-			uint8_t inputIndex;
-			json_array_foreach(inportsJ, inputIndex, inportJ) {	
+			// Bounded to the fixed-size destinations: hand-edited or corrupted
+			// patches may contain more ports than the [IN_PORTS]/[MIX_PORTS]
+			// members hold.
+			size_t maxInports = std::min((size_t)IN_PORTS, json_array_size(inportsJ));
+			for (size_t inputIndex = 0; inputIndex < maxInports; inputIndex++) {
+				json_t* inportJ = json_array_get(inportsJ, inputIndex);
 				json_t* modModeJ = json_object_get(inportJ, "modMode");
 				if (modModeJ) modMode[inputIndex] = (MODMODE)json_integer_value(modModeJ);
 				json_t* inputXBipolarJ = json_object_get(inportJ, "inputXBipolar");
@@ -527,9 +530,9 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 
 		json_t* mixportsJ = json_object_get(rootJ, "mixports");
 		if (mixportsJ) {
-			json_t* mixportJ;
-			uint8_t mixputIndex;
-			json_array_foreach(mixportsJ, mixputIndex, mixportJ) {
+			size_t maxMixports = std::min((size_t)MIX_PORTS, json_array_size(mixportsJ));
+			for (size_t mixputIndex = 0; mixputIndex < maxMixports; mixputIndex++) {
+				json_t* mixportJ = json_array_get(mixportsJ, mixputIndex);
 				json_t* mixportXBipolarJ = json_object_get(mixportJ, "mixportXBipolar");
 				if (mixportXBipolarJ) mixportXBipolar[mixputIndex] = json_boolean_value(mixportXBipolarJ);
 				json_t* mixportYBipolarJ = json_object_get(mixportJ, "mixportYBipolar");

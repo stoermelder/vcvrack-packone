@@ -1,4 +1,6 @@
 #include "Mb_autotag.hpp"
+#include "../../vcv/api.hpp"
+#include <sstream>
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -77,9 +79,9 @@ AutoTagResult customTagSearch(const std::string& query, const std::vector<Plugin
 
 // Performs network download and YAML parsing
 const std::string downloadMetamoduleYaml() {
-	std::string tmpFile = rack::system::getTempDirectory() + "/metamodule-plugins.yml";
+	std::string tmpFile = vcv::fs::getTempDirectory() + "/metamodule-plugins.yml";
 
-	if (!rack::network::requestDownload("https://metamodule.info/dl/plugins.yml", tmpFile))
+	if (!vcv::nw::requestDownload("https://metamodule.info/dl/plugins.yml", tmpFile))
 		return "";
 
 	return tmpFile;
@@ -89,15 +91,15 @@ const std::string downloadMetamoduleYaml() {
 std::set<std::pair<std::string, std::string>> parseMetamoduleYaml(const std::string& tmpFile) {
 	std::set<std::pair<std::string, std::string>> result;
 
-	FILE* file = fopen(tmpFile.c_str(), "r");
-	if (!file) return result;
+	std::string data;
+	if (!vcv::fs::read(tmpFile, data)) return result;
 
 	const std::string prefix = "VCVSlug: ";
 	std::string currentPlugin;
-	char buf[512];
+	std::istringstream stream(data);
+	std::string line;
 
-	while (fgets(buf, sizeof(buf), file)) {
-		std::string line(buf);
+	while (std::getline(stream, line)) {
 		// Count leading spaces to determine nesting level
 		size_t indent = 0;
 		while (indent < line.size() && line[indent] == ' ') indent++;
@@ -117,7 +119,6 @@ std::set<std::pair<std::string, std::string>> parseMetamoduleYaml(const std::str
 		}
 	}
 
-	fclose(file);
 	return result;
 }
 

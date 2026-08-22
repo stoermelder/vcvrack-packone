@@ -1,6 +1,6 @@
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 #include "../../utils/StripIdFixModule.hpp"
-#include "../../utils/ScaledMapParam.hpp"
 #include "../../utils/TaskProcessor.hpp"
 #include "../../components/MenuLabelEx.hpp"
 #include "../../components/CurveMenuItem.hpp"
@@ -13,7 +13,11 @@
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "../cvmap/MapModuleBase.hpp"
 #include "MidiCat.hpp"
-#include <osdialog.h>
+#include "MidiCat.output.hpp"
+#include "MidiCat.input.hpp"
+#include "MidiCat.param.hpp"
+#include "MidiCat.slot.hpp"
+#include "MidiCat.expanders.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiCat {
@@ -21,195 +25,10 @@ namespace MidiCat {
 static const char PRESET_FILTERS[] = "VCV Rack module preset (.vcvm):vcvm";
 static const NVGcolor MAPPING_INDICATOR_COLOR_DEFAULT = nvgRGB(0xff, 0xff, 0x40);
 
-struct MidiCatOutput : midi::Output {
-	int lastValues[128];
-	bool lastGates[128];
-
-	MidiCatOutput() {
-		reset();
-	}
-
-	void reset() {
-		for (int n = 0; n < 128; n++) {
-			lastValues[n] = -1;
-			lastGates[n] = false;
-		}
-	}
-
-	void setValue(int value, int cc, bool force = false) {
-		if (value == lastValues[cc] && !force)
-			return;
-		lastValues[cc] = value;
-		// CC
-		midi::Message m;
-		m.setStatus(0xb);
-		m.setNote(cc);
-		m.setValue(value);
-		sendMessage(m);
-	}
-
-	void setGate(int vel, int note, bool noteOffVelocityZero, bool force = false) {
-		if (vel > 0) {
-			// Note on
-			if (!lastGates[note] || force) {
-				midi::Message m;
-				m.setStatus(0x9);
-				m.setNote(note);
-				m.setValue(vel);
-				sendMessage(m);
-			}
-		}
-		else if (vel == 0) {
-			// Note off
-			if (lastGates[note] || force) {
-				midi::Message m;
-				m.setStatus(noteOffVelocityZero ? 0x9 : 0x8);
-				m.setNote(note);
-				m.setValue(0);
-				sendMessage(m);
-			}
-		}
-		lastGates[note] = vel > 0;
-	}
-};
-
-
 enum MIDIMODE {
 	MIDIMODE_DEFAULT = 0,
 	MIDIMODE_LOCATE = 1
 };
-
-struct MidiCatPrecisionProcessor {
-	bool pickedUp;
-	int midiRefPoint;
-	float paramValue;
-	float precision;
-
-	void init(int midiMin, int midiMax) {
-		pickedUp = false;
-		this->midiRefPoint = (midiMax - midiMin) / 2;
-	}
-
-	void setPrecision(float precision, float paramValue, int midiRefPoint = -1) {
-		this->precision = precision;
-		this->paramValue = paramValue;
-		if (midiRefPoint != -1) this->midiRefPoint = midiRefPoint;
-	}
-
-	float process(int midiValue) {
-		if (!pickedUp) {
-			if (midiValue == midiRefPoint) {
-				pickedUp = true;
-			}
-			return paramValue;
-		}
-		else {
-			float diff = float(midiValue - midiRefPoint) * precision;
-			return paramValue + diff;
-		}
-	}
-};
-
-struct MidiCatParam : ScaledMapParam<int> {
-	enum class CLOCKMODE {
-		OFF = 0,
-		ARM = 1,
-		ARM_DEFERRED_FEEDBACK = 2
-	};
-
-	CLOCKMODE clockMode = CLOCKMODE::OFF;
-	int clockSource = 0;
-
-	int setValueDeffered;
-	int getValueLast;
-
-	int lightFirstId = -1;
-	int lightNumColors = 0;
-
-	MidiCatPrecisionProcessor precProcessor;
-
-	void reset(bool resetSettings = true) override {
-		if (resetSettings) {
-			clockMode = CLOCKMODE::OFF;
-			clockSource = 0;
-		}
-		lightFirstId = -1;
-		lightNumColors = 0;
-		ScaledMapParam<int>::reset(resetSettings);
-	}
-
-	void setValue(float i) override {
-		switch (clockMode) {
-			case CLOCKMODE::OFF:
-				ScaledMapParam<int>::setValue(i);
-				break;
-			case CLOCKMODE::ARM:
-			case CLOCKMODE::ARM_DEFERRED_FEEDBACK:
-				setValueDeffered = i;
-				break;
-		}
-	}
-
-	int getValue() override {
-		if (!hasLight()) {
-			switch (clockMode) {
-				case CLOCKMODE::OFF:
-					return ScaledMapParam<int>::getValue();
-				case CLOCKMODE::ARM:
-					return setValueDeffered;
-				case CLOCKMODE::ARM_DEFERRED_FEEDBACK:
-					return getValueLast;
-			}
-		}
-		else {
-			if (paramQuantity->module->lights.size() >= size_t(lightFirstId + lightNumColors)) {
-				int f = 0;
-				for (int i = 0; i < lightNumColors; i++) {
-					int b = int(std::ceil(paramQuantity->module->lights[lightFirstId + i].getBrightness() * 4.f));
-					f += b << (i * 2);
-				}
-				return std::min(f << ((3 - lightNumColors) * 2 + 1), 127);
-			}
-		}
-		return 0;
-	}
-
-	void tick(int clock) {
-		if (clockMode != CLOCKMODE::OFF && clockSource == clock) {
-			ScaledMapParam<int>::setValue(setValueDeffered);
-		}
-		if (clockMode == CLOCKMODE::ARM_DEFERRED_FEEDBACK) {
-			getValueLast = ScaledMapParam<int>::getValue();
-		}
-	}
-
-	bool isNear(int value, int jump = -1) {
-		if (value == -1) return false;
-		int p = getValue();
-		int delta3p = (limitMaxT - limitMinT + 1) * 3 / 100;
-		bool r = p - delta3p <= value && value <= p + delta3p;
-
-		if (jump >= 0) {
-			int delta7p = (limitMaxT - limitMinT + 1) * 7 / 100;
-			r = r && p - delta7p <= jump && jump <= p + delta7p;
-		}
-
-		return r;
-	}
-
-	void setLight(int lightFirstId = -1, int lightNumColors = 0) {
-		this->lightFirstId = lightFirstId;
-		this->lightNumColors = lightNumColors;
-		if (lightFirstId >= 0 && clockMode == CLOCKMODE::ARM_DEFERRED_FEEDBACK) {
-			clockMode = CLOCKMODE::ARM;
-		}
-	}
-
-	inline bool hasLight() {
-		return lightFirstId >= 0;
-	}
-};
-
 
 struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	/** [Stored to Json] */
@@ -220,149 +39,10 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
-	struct MidiCcAdapter {
-		MidiCatModule* module;
-		int id;
-		int current = -1;
-		uint64_t lastTs = 0;
-		uint64_t diffTs;
-
-		/** [Stored to Json] */
-		int cc;
-		/** [Stored to Json] */
-		CCMODE ccMode;
-		/** [Stored to Json] */
-		bool cc14bit = false;
-
-		bool process() {
-			int previous = current;
-			if (cc14bit) {
-				if (module->valuesCcTs[cc] > lastTs && module->valuesCcTs[cc + 32] > lastTs) {
-					current = module->valuesCc[cc] * 128 + module->valuesCc[cc + 32];
-					diffTs = module->ts - lastTs;
-					lastTs = module->ts;
-				}
-			}
-			else {
-				if (module->valuesCcTs[cc] > lastTs) {
-					current = module->valuesCc[cc];
-					diffTs = module->ts - lastTs;
-					lastTs = module->ts;
-				}
-			}
-			return current >= 0 && current != previous;
-		}
-
-		int getValue() {
-			return current;
-		}
-
-		void setValue(int value, bool sendOnly) {
-			if (cc == -1) return;
-			if (cc14bit) {
-				module->midiOutput.setValue(value / 128, cc, true);
-				module->midiOutput.setValue(value % 128, cc + 32, true);
-			}
-			else {
-				module->midiOutput.setValue(value, cc, current == -1 || sendOnly);
-			}
-			if (!sendOnly) current = value;
-		}
-
-		void reset() {
-			cc = -1;
-			current = -1;
-		}
-
-		void resetValue() {
-			current = -1;
-		}
-
-		int getCc() {
-			return cc;
-		}
-
-		void setCc(int cc) {
-			this->cc = cc;
-			if (cc == -1 || cc > 32) set14bit(false);
-			current = -1;
-		}
-
-		bool get14bit() {
-			return cc14bit;
-		}
-
-		void set14bit(bool value) {
-			cc14bit = value;
-			current = -1;
-			if (cc14bit) {
-				module->midiParam[id].setLimits(0, 128 * 128 - 1, -1);
-			}
-			else {
-				module->midiParam[id].setLimits(0, 127, -1);
-			}
-		}
-	};
-
-	struct MidiNoteAdapter {
-		MidiCatModule* module;
-		int id;
-		int current = -1;
-		uint64_t lastTs = 0;
-		uint64_t diffTs;
-
-		/** [Stored to Json] */
-		int note;
-		/** [Stored to Json] Use the velocity value of each channel when notes are used */
-		NOTEMODE noteMode;
-
-		bool process() {
-			int previous = current;
-			if (module->valuesNoteTs[note] > lastTs) {
-				current = module->valuesNote[note];
-				diffTs = module->ts - lastTs;
-				lastTs = module->ts;
-			}
-			return current >= 0 && current != previous;
-		}
-
-		int getValue() {
-			return current;
-		}
-
-		void setValue(int value, bool sendOnly) {
-			if (note == -1) return;
-			module->midiOutput.setGate(value, note, (module->midiOptions[id] >> MIDIOPTION_VELZERO_BIT) & 1U, current == -1 || sendOnly);
-			if (!sendOnly) current = value;
-		}
-
-		void reset() {
-			note = -1;
-			current = -1;
-		}
-
-		void resetValue() {
-			current = -1;
-		}
-
-		int getNote() {
-			return note;
-		}
-
-		void setNote(int note) {
-			this->note = note;
-			current = -1;
-		}
-	};
-
 	/** Number of maps */
 	int mapLen = 0;
-	/** [Stored to Json] The mapped CC number of each channel */
-	MidiCcAdapter ccs[MAX_CHANNELS];
-	/** [Stored to Json] The mapped note number of each channel */
-	MidiNoteAdapter notes[MAX_CHANNELS];
-	/** [Stored to JSON] */
-	int midiOptions[MAX_CHANNELS];
+	/** [Stored to Json] The mapping slots: MIDI binding, scaling and tracking state */
+	MappingSlot slots[MAX_CHANNELS];
 	/** [Stored to JSON] */
 	bool midiIgnoreDevices;
 	/** [Stored to JSON] */
@@ -390,8 +70,6 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	/** [Stored to Json] */
 	bool textScrolling = true;
 	/** [Stored to Json] */
-	std::string textLabel[MAX_CHANNELS];
-	/** [Stored to Json] */
 	bool locked;
 
 	/** [Stored to Json] */
@@ -399,31 +77,18 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	/** [Stored to Json] */
 	bool mappingIndicatorHidden = false;
 
-	uint64_t ts = 0;
-
-	/** The value of each CC number */
-	int valuesCc[128];
-	uint64_t valuesCcTs[128];
-	/** The value of each note number */
-	int valuesNote[128];
-	uint64_t valuesNoteTs[128];
+	/** Last-seen value of every CC and note number, shared by all slots */
+	MidiInputState midiInputState;
 
 	MIDIMODE midiMode = MIDIMODE::MIDIMODE_DEFAULT;
 	bool ccFineMode = false;
 	// Use for temporary override of CC mode to DIRECT
 	bool ccModeOverride = false;
 
-	/** Track last values */
-	int lastValueIn[MAX_CHANNELS];
-	int lastValueInIndicate[MAX_CHANNELS];
-	int lastValueOut[MAX_CHANNELS];
-
 	dsp::RingBuffer<int, 8> overlayQueue;
 	/** [Stored to Json] */
 	bool overlayEnabled;
 
-	/** [Stored to Json] */
-	MidiCatParam midiParam[MAX_CHANNELS];
 	/** [Stored to Json] */
 	bool midiResendPeriodically;
 	ClockDividerEx midiResendDivider;
@@ -441,20 +106,13 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	TaskProcessor<> taskProcessorUi;
 
 	// MEM-expander
-	std::atomic<MidiCatMemBase*> expMem{NULL};
+	/** The four right-side expanders, if attached */
+	ExpanderSet expanders;
+	/** The module the MEM-expander mapping was last applied to */
 	int64_t expMemModuleId = -1;
 
-	// CTX-expander
-	std::atomic<MidiCatCtxBase*> expCtx{NULL};
-
-	// CLK-expander
-	std::atomic<Module*> expClk{NULL};
-	dsp::SchmittTrigger expClkTrigger[4];
-
-	// FINE-expander
-	std::atomic<MidiCatFineBase*> expFine{NULL};
-	dsp::SchmittTrigger expFineLowTrigger;
-	dsp::SchmittTrigger expFineHighTrigger;
+	ClkExpanderDriver expClkDriver;
+	FineExpanderDriver expFineDriver;
 
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -463,9 +121,7 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandles[id].color = mappingIndicatorColor;
 			APP->engine->addParamHandle(&paramHandles[id]);
-			midiParam[id].setLimits(0, 127, -1);
-			ccs[id].module = notes[id].module = this;
-			ccs[id].id = notes[id].id = id;
+			slots[id].applyCcLimits();
 		}
 		indicatorDivider.setDivision(2048);
 		midiResendDivider.setDivision(APP->engine->getSampleRate() / 2);
@@ -498,20 +154,9 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 		// so this should be safe.
 		clearMaps_NoLock();
 		mapLen = 1;
-		for (int i = 0; i < 128; i++) {
-			valuesCc[i] = -1;
-			valuesCcTs[i] = 0;
-			valuesNote[i] = -1;
-			valuesNoteTs[i] = 0;
-		}
+		midiInputState.reset();
 		for (int i = 0; i < MAX_CHANNELS; i++) {
-			lastValueIn[i] = -1;
-			lastValueOut[i] = -1;
-			ccs[i].ccMode = CCMODE::DIRECT;
-			notes[i].noteMode = NOTEMODE::MOMENTARY;
-			textLabel[i] = "";
-			midiOptions[i] = 0;
-			midiParam[i].reset();
+			slots[i].reset();
 		}
 		mappingIndicatorHidden = false;
 		mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
@@ -548,7 +193,7 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	}
 
 	void process(const ProcessArgs &args) override {
-		ts++;
+		midiInputState.tick();
 
 		// Aquire new MIDI messages from the queue
 		midi::Message msg;
@@ -583,321 +228,57 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 
 		// Expanders
 		if (moduleChangedFlag) {
-			bool expMemFound = false;
-			bool expCtxFound = false;
-			bool expClkFound = false;
-			bool expFineFound = false;
-
-			Module* exp = rightExpander.module;
-			for (int i = 0; i < 4; i++) {
-				if (!exp) break;	
-				if (exp->model == modelMidiCatMem && !expMemFound) {
-					expMem.store(dynamic_cast<MidiCatMemBase*>(exp));
-					expMemFound = true;
-					exp = exp->rightExpander.module;
-					continue;
+			auto detached = expanders.scan(this);
+			if (detached.clk) {
+				for (int i = 0; i < MAX_CHANNELS; i++) {
+					slots[i].resetClockMode();
 				}
-				if (exp->model == modelMidiCatCtx && !expCtxFound) {
-					expCtx.store(dynamic_cast<MidiCatCtxBase*>(exp));
-					expCtxFound = true;
-					exp = exp->rightExpander.module;
-					continue;
-				}
-				if (exp->model == modelMidiCatClk && !expClkFound) {
-					expClk.store(exp);
-					expClkFound = true;
-					exp = exp->rightExpander.module;
-					continue;
-				}
-				if (exp->model == modelMidiCatFine && !expFineFound) {
-					expFine.store(dynamic_cast<MidiCatFineBase*>(exp));
-					expFineFound = true;
-					exp = exp->rightExpander.module;
-					continue;
-				}
-				break;
 			}
-
-			if (!expMemFound) {
-				expMem.store(NULL);
-			}
-			if (!expCtxFound) {
-				expCtx.store(NULL);
-			}
-			if (!expClkFound) {
-				if (expClk) {
-					for (int i = 0; i < MAX_CHANNELS; i++) {
-						midiParam[i].clockMode = MidiCatParam::CLOCKMODE::OFF;
-						midiParam[i].clockSource = 0;
-					}
-				}
-				expClk.store(NULL);
-			}
-			if (!expFineFound) {
-				expFine.store(NULL);
+			if (detached.fine) {
 				ccFineMode = false;
 			}
-
 			moduleChangedFlag = false;
 		}
 
-		if (expClk.load()) expClkProcess();
-		if (expFine.load()) expFineProcess();
+		if (auto expClk = expanders.clk()) {
+			expClkDriver.process(expClk, slots, mapLen);
+		}
+		if (auto expFine = expanders.fine()) {
+			auto r = expFineDriver.process(expFine);
+			if (r.changed) setFineMode(r.enabled, r.precision, r.updateRefPoint);
+		}
 	}
 
 	void processMappings(float sampleTime) {
 		float st = sampleTime * float(processDivision);
 
 		for (int id = 0; id < mapLen; id++) {
-			int cc = ccs[id].getCc();
-			int note = notes[id].getNote();
-			if (cc < 0 && note < 0)
+			if (!slots[id].isBound())
 				continue;
 
-			// Get Module
-			Module* module = paramHandles[id].module;
-			if (!module)
-				continue;
-
-			// Get ParamQuantity
-			int paramId = paramHandles[id].paramId;
-			if (paramId >= (int)module->paramQuantities.size())
-				continue;
-			ParamQuantity* paramQuantity = module->paramQuantities[paramId];
+			ParamQuantity* paramQuantity = MappingSlot::resolveTarget(paramHandles[id]);
 			if (!paramQuantity)
-				continue;
-
-			if (!paramQuantity->isBounded())
 				continue;
 
 			switch (midiMode) {
 				case MIDIMODE::MIDIMODE_DEFAULT: {
-					midiParam[id].setParamQuantity(paramQuantity);
-					int t = -1;
-					float t_p = 0.f;
+					slots[id].param.setParamQuantity(paramQuantity);
 
-					// Check if CC value has been set and changed
-					if (cc >= 0 && ccs[id].process()) {
-						CCMODE mode = ccModeOverride ? CCMODE::DIRECT : ccs[id].ccMode;
-						switch (mode) {
-							case CCMODE::DIRECT:
-								if (lastValueIn[id] != ccs[id].getValue()) {
-									lastValueIn[id] = ccs[id].getValue();
-									t = ccs[id].getValue();
-								}
-								break;
-							case CCMODE::PICKUP1:
-								if (lastValueIn[id] != ccs[id].getValue()) {
-									if (!ccFineMode) {
-										if (midiParam[id].isNear(lastValueIn[id])) {
-											midiParam[id].resetFilter();
-											t = ccs[id].getValue();
-										}
-									}
-									else {
-										t = 0;
-										t_p = midiParam[id].precProcessor.process(ccs[id].getValue());
-									}
-									lastValueIn[id] = ccs[id].getValue();
-								}
-								break;
-							case CCMODE::PICKUP2:
-								if (lastValueIn[id] != ccs[id].getValue()) {
-									if (!ccFineMode) {
-										if (midiParam[id].isNear(lastValueIn[id], ccs[id].getValue())) {
-											midiParam[id].resetFilter();
-											t = ccs[id].getValue();
-										}
-									}
-									else {
-										t = 0;
-										t_p = midiParam[id].precProcessor.process(ccs[id].getValue());
-									}
-									lastValueIn[id] = ccs[id].getValue();
-								}
-								break;
-							case CCMODE::TOGGLE:
-								if (ccs[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
-									t = midiParam[id].getLimitMax();
-									lastValueIn[id] = -2;
-								} 
-								else if (ccs[id].getValue() == 0 && lastValueIn[id] == -2) {
-									t = midiParam[id].getLimitMax();
-									lastValueIn[id] = -3;
-								}
-								else if (ccs[id].getValue() > 0 && lastValueIn[id] == -3) {
-									t = midiParam[id].getLimitMin();
-									lastValueIn[id] = -4;
-								}
-								else if (ccs[id].getValue() == 0 && lastValueIn[id] == -4) {
-									t = midiParam[id].getLimitMin();
-									lastValueIn[id] = -1;
-								}
-								break;
-							case CCMODE::TOGGLE_VALUE:
-								if (ccs[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
-									t = ccs[id].getValue();
-									lastValueIn[id] = -2;
-								} 
-								else if (ccs[id].getValue() == 0 && lastValueIn[id] == -2) {
-									t = midiParam[id].getValue();
-									lastValueIn[id] = -3;
-								}
-								else if (ccs[id].getValue() > 0 && lastValueIn[id] == -3) {
-									t = midiParam[id].getLimitMin();
-									lastValueIn[id] = -4;
-								}
-								else if (ccs[id].getValue() == 0 && lastValueIn[id] == -4) {
-									t = midiParam[id].getLimitMin();
-									lastValueIn[id] = -1;
-								}
-								break;
-							case CCMODE::SNAPPED:
-								if (ccs[id].getValue() > 0)
-									t = midiParam[id].getNextSnappedValue();
-								else
-									t = midiParam[id].getValue();
-								lastValueIn[id] = -1;
-								break;
-							case CCMODE::SNAPPED_SL:
-								if (ccs[id].getValue() == 0)
-									if (ccs[id].diffTs < longPressDuration)
-										t = midiParam[id].getNextSnappedValue();
-									else
-										t = midiParam[id].getPrevSnappedValue();
-								else
-									t = midiParam[id].getValue();
-								lastValueIn[id] = -1;
-								break;
-						}
-					}
-
-					// Check if note value has been set and changed
-					if (note >= 0 && notes[id].process()) {
-						switch (notes[id].noteMode) {
-							case NOTEMODE::MOMENTARY:
-								if (lastValueIn[id] != notes[id].getValue()) {
-									t = notes[id].getValue();
-									if (t > 0) t = 127;
-									lastValueIn[id] = notes[id].getValue();
-								} 
-								break;
-							case NOTEMODE::MOMENTARY_VEL:
-								if (lastValueIn[id] != notes[id].getValue()) {
-									t = notes[id].getValue();
-									lastValueIn[id] = notes[id].getValue();
-								}
-								break;
-							case NOTEMODE::TOGGLE:
-								if (notes[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
-									t = 127;
-									lastValueIn[id] = -2;
-								} 
-								else if (notes[id].getValue() == 0 && lastValueIn[id] == -2) {
-									t = 127;
-									lastValueIn[id] = -3;
-								}
-								else if (notes[id].getValue() > 0 && lastValueIn[id] == -3) {
-									t = 0;
-									lastValueIn[id] = -4;
-								}
-								else if (notes[id].getValue() == 0 && lastValueIn[id] == -4) {
-									t = 0;
-									lastValueIn[id] = -1;
-								}
-								break;
-							case NOTEMODE::TOGGLE_VEL:
-								if (notes[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
-									t = notes[id].getValue();
-									lastValueIn[id] = -2;
-								} 
-								else if (notes[id].getValue() == 0 && lastValueIn[id] == -2) {
-									t = midiParam[id].getValue();
-									lastValueIn[id] = -3;
-								}
-								else if (notes[id].getValue() > 0 && lastValueIn[id] == -3) {
-									t = 0;
-									lastValueIn[id] = -4;
-								}
-								else if (notes[id].getValue() == 0 && lastValueIn[id] == -4) {
-									t = 0;
-									lastValueIn[id] = -1;
-								}
-								break;
-							case NOTEMODE::SNAPPED:
-								if (notes[id].getValue() > 0)
-									t = midiParam[id].getNextSnappedValue();
-								else
-									t = midiParam[id].getValue();
-								lastValueIn[id] = -1;
-								break;
-							case NOTEMODE::SNAPPED_SL:
-								if (notes[id].getValue() == 0) {
-									if (notes[id].diffTs < longPressDuration)
-										t = midiParam[id].getNextSnappedValue();
-									else
-										t = midiParam[id].getPrevSnappedValue();
-								}
-								else {
-									t = midiParam[id].getValue();
-								}
-								lastValueIn[id] = -1;
-								break;
-						}
-					}
-
-					// Set a new value for the mapped parameter
-					if (t >= 0) {
-						midiParam[id].setValue(t + t_p);
+					auto r = slots[id].processInput(midiInputState, ccModeOverride, ccFineMode, longPressDuration);
+					if (r.value >= 0) {
+						slots[id].param.setValue(r.value + r.fine);
 						if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(id);
 					}
 
-					// Apply value on the mapped parameter (respecting slew and scale)
-					midiParam[id].process(st);
-
-					// Retrieve the current value of the parameter (ignoring slew and scale)
-					int v = midiParam[id].getValue();
-
-					// In some cases the MIDI feedback is detached from the actual parameter value
-					// (toggle mode, attached to a light)
-					// 2026-01-05: Also, do not update the parameter value here when in snap mode, because the tracked
-					// value might be different to the actual value due to snapping
-					bool sendOnlyFeedback = false;
-					if (lastValueIn[id] < 0 || midiParam[id].hasLight() || paramQuantity->snapEnabled) {
-						sendOnlyFeedback = true;
-					}
-
-					// Midi feedback
-					if (lastValueOut[id] != v) {
-						if (cc >= 0 && ccs[id].ccMode == CCMODE::DIRECT)
-							lastValueIn[id] = v;
-						// 2026-01-02: Fixes feedback in note/momentary mode
-						// Update the internal state... does it break something else?
-						// -- Fixed wrong internal state after manual parameter adjustment
-						// -- 2026-01-05: Breaks snapped params, but fixed by "sendOnlyFeedback"
-						if (!sendOnlyFeedback) midiParam[id].setValue(v);
-						// --
-						ccs[id].setValue(v, sendOnlyFeedback);
-						notes[id].setValue(v, sendOnlyFeedback);
-						lastValueOut[id] = v;
-					}
+					slots[id].processOutput(midiOutput, paramQuantity, st);
 				} 
 				break;
 
 				case MIDIMODE::MIDIMODE_LOCATE: {
-					bool indicate = false;
-					if ((cc >= 0 && valuesCc[cc] >= 0) && lastValueInIndicate[id] != valuesCc[cc]) {
-						lastValueInIndicate[id] = valuesCc[cc];
-						indicate = true;
-					}
-					if ((note >= 0 && valuesNote[note] >= 0) && lastValueInIndicate[id] != valuesNote[note]) {
-						lastValueInIndicate[id] = valuesNote[note];
-						indicate = true;
-					}
-					if (indicate) {
+					if (slots[id].pollIndicate(midiInputState)) {
 						int64_t moduleId = paramQuantity->module->getId();
 						taskProcessorUi.enqueue([this, id, moduleId]() {
-							ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+							ModuleWidget* mw = vcv::getModuleWidget(moduleId);
 							paramHandles[id].indicate(mw);
 						});
 					}
@@ -940,20 +321,16 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 		uint8_t cc = msg.getNote();
 		uint8_t value = msg.getValue();
 		// Learn
-		if (learningId >= 0 && learnedCcLast != cc && (learnedCcLast == -1 || learnedCcLast != cc - 32) && valuesCc[cc] != value) {
-			ccs[learningId].setCc(cc);
-			ccs[learningId].ccMode = CCMODE::DIRECT;
-			notes[learningId].setNote(-1);
+		if (learningId >= 0 && learnedCcLast != cc && (learnedCcLast == -1 || learnedCcLast != cc - 32) && midiInputState.getCc(cc) != value) {
+			slots[learningId].bindCc(cc);
+			slots[learningId].cc.ccMode = CCMODE::DIRECT;
 			learnedCc = true;
 			learnedCcLast = cc;
 			commitLearn();
 			updateMapLen();
 			refreshParamHandleText(learningId);
 		}
-		bool midiReceived = valuesCc[cc] != value;
-		valuesCc[cc] = value;
-		valuesCcTs[cc] = ts;
-		return midiReceived;
+		return midiInputState.setCc(cc, value);
 	}
 
 	bool midiNotePress(const midi::Message& msg) {
@@ -961,55 +338,45 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 		uint8_t vel = msg.getValue();
 		// Learn
 		if (learningId >= 0 && learnedNoteLast != note) {
-			ccs[learningId].setCc(-1);
-			notes[learningId].setNote(note);
-			notes[learningId].noteMode = NOTEMODE::MOMENTARY;
+			slots[learningId].bindNote(note);
+			slots[learningId].note.noteMode = NOTEMODE::MOMENTARY;
 			learnedNote = true;
 			learnedNoteLast = note;
 			commitLearn();
 			updateMapLen();
 			refreshParamHandleText(learningId);
 		}
-		bool midiReceived = valuesNote[note] != vel;
-		valuesNote[note] = vel;
-		valuesNoteTs[note] = ts;
-		return midiReceived;
+		return midiInputState.setNote(note, vel);
 	}
 
 	bool midiNoteRelease(const midi::Message& msg) {
 		uint8_t note = msg.getNote();
-		bool midiReceived = valuesNote[note] != 0;
-		valuesNote[note] = 0;
-		valuesNoteTs[note] = ts;
-		return midiReceived;
+		return midiInputState.setNote(note, 0);
 	}
 
 	void midiResendFeedback() {
 		for (int i = 0; i < MAX_CHANNELS; i++) {
-			lastValueOut[i] = -1;
-			ccs[i].resetValue();
-			notes[i].resetValue();
+			slots[i].lastValueOut = -1;
+			slots[i].cc.resetValue();
+			slots[i].note.resetValue();
 		}
 	}
 
 	void midiReset() {
 		for (size_t i = 0; i < MAX_CHANNELS; i++) {
-			lastValueIn[i] = -1;
+			slots[i].tracker.reset();
 		}
 	}
 
 	MidiCatParam& getMap(int id) {
-		return midiParam[id];
+		return slots[id].param;
 	}
 
 	void clearMap(int id, bool midiOnly = false) {
 		learningId = -1;
-		ccs[id].reset();
-		notes[id].reset();
-		midiOptions[id] = 0;
-		midiParam[id].reset();
+		slots[id].clearMidi();
 		if (!midiOnly) {
-			textLabel[id] = "";
+			slots[id].label = "";
 			APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 			updateMapLen();
 			refreshParamHandleText(id);
@@ -1019,11 +386,8 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	void clearMaps_WithLock() {
 		learningId = -1;
 		for (int id = 0; id < MAX_CHANNELS; id++) {
-			ccs[id].reset();
-			notes[id].reset();
-			textLabel[id] = "";
-			midiOptions[id] = 0;
-			midiParam[id].reset();
+			slots[id].clearMidi();
+			slots[id].label = "";
 			APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 			refreshParamHandleText(id);
 		}
@@ -1034,11 +398,8 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	void clearMaps_NoLock() {
 		learningId = -1;
 		for (int id = 0; id < MAX_CHANNELS; id++) {
-			ccs[id].reset();
-			notes[id].reset();
-			textLabel[id] = "";
-			midiOptions[id] = 0;
-			midiParam[id].reset();
+			slots[id].clearMidi();
+			slots[id].label = "";
 			APP->engine->updateParamHandle_NoLock(&paramHandles[id], -1, 0, true);
 			refreshParamHandleText(id);
 		}
@@ -1050,7 +411,7 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 		// Find last nonempty map
 		int id;
 		for (id = MAX_CHANNELS - 1; id >= 0; id--) {
-			if (ccs[id].getCc() >= 0 || notes[id].getNote() >= 0 || paramHandles[id].moduleId >= 0)
+			if (slots[id].isUsed(paramHandles[id]))
 				break;
 		}
 		mapLen = id + 1;
@@ -1070,18 +431,10 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 
 		// Copy settings from the previous slot
 		if (learningId > 0) {
-			ccs[learningId].ccMode = ccs[learningId - 1].ccMode;
-			ccs[learningId].set14bit(ccs[learningId - 1].get14bit() && learnedCc && learnedCcLast < 32);
-			notes[learningId].noteMode = notes[learningId - 1].noteMode;
-			midiOptions[learningId] = midiOptions[learningId - 1];
-			midiParam[learningId].setSlew(midiParam[learningId - 1].getSlew());
-			midiParam[learningId].setMin(midiParam[learningId - 1].getMin());
-			midiParam[learningId].setMax(midiParam[learningId - 1].getMax());
-			midiParam[learningId].setCurve(midiParam[learningId - 1].getCurve());
-			midiParam[learningId].clockMode = midiParam[learningId - 1].clockMode;
-			midiParam[learningId].clockSource = midiParam[learningId - 1].clockSource;
+			bool copy14bit = slots[learningId - 1].cc.get14bit() && learnedCc && learnedCcLast < 32;
+			slots[learningId].copySettingsFrom(slots[learningId - 1], copy14bit);
 		}
-		textLabel[learningId] = "";
+		slots[learningId].label = "";
 
 		// Reset learned state
 		learnedCc = false;
@@ -1090,7 +443,7 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 
 		// Find next incomplete map
 		while (!learnSingleSlot && ++learningId < MAX_CHANNELS) {
-			if ((ccs[learningId].getCc() < 0 && notes[learningId].getNote() < 0) || paramHandles[learningId].moduleId < 0)
+			if (slots[learningId].isIncomplete(paramHandles[learningId]))
 				return;
 		}
 		learningId = -1;
@@ -1100,7 +453,7 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 		if (id == -1) {
 			// Find next incomplete map
 			while (++id < MAX_CHANNELS) {
-				if (ccs[id].getCc() < 0 && notes[id].getNote() < 0 && paramHandles[id].moduleId < 0)
+				if (slots[id].isEmpty(paramHandles[id]))
 					break;
 			}
 			if (id == MAX_CHANNELS) {
@@ -1136,9 +489,10 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 
 	void learnParam(int id, int64_t moduleId, int paramId, bool resetMidiSettings = true) {
 		APP->engine->updateParamHandle(&paramHandles[id], moduleId, paramId, true);
-		midiParam[id].reset(resetMidiSettings);
-		// Reset binding to light
-		midiParam[learningId].setLight();
+		slots[id].param.reset(resetMidiSettings);
+		// Reset binding to light. Must use `id`, not `learningId`: moduleBind() and
+		// moduleBindMem() call this with learningId == -1, which indexed slots[-1].
+		slots[id].param.setLight();
 		learnedParam = true;
 		commitLearn();
 		updateMapLen();
@@ -1176,160 +530,30 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 		moduleBind(m, keepCcAndNote);
 	}
 
-	void refreshParamHandleText(int id) {
-		std::string text = "MIDI-CAT";
-		if (ccs[id].getCc() >= 0) {
-			text += string::f(" cc%02d", ccs[id].getCc());
-		}
-		if (notes[id].getNote() >= 0) {
-			static const char* noteNames[] = {
-				"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
-			};
-			int oct = notes[id].getNote() / 12 - 1;
-			int semi = notes[id].getNote() % 12;
-			text += string::f(" note %s%d", noteNames[semi], oct);
-		}
-		paramHandles[id].text = text;
-	}
-
-	/** Save mapping to the expander for the given model.
+	/** Bind a module to the slots using the mapping stored for its model in the
+	 *  MEM-expander. A sibling of moduleBind()/moduleBindExpander(): it rebinds every
+	 *  slot and so goes through the same learn and map-length bookkeeping, differing
+	 *  only in where the binding comes from. Does nothing if no mapping is stored.
 	 *  Called from the UI thread.
 	 */
-	void expMemSave(std::string pluginSlug, std::string moduleSlug) {
-		MemModule* m = new MemModule;
-		Module* module = NULL;
-		for (size_t i = 0; i < MAX_CHANNELS; i++) {
-			if (paramHandles[i].moduleId < 0) continue;
-			if (paramHandles[i].module->model->plugin->slug != pluginSlug && paramHandles[i].module->model->slug == moduleSlug) continue;
-			module = paramHandles[i].module;
-
-			MemParam* p = new MemParam;
-			p->paramId = paramHandles[i].paramId;
-			p->cc = ccs[i].getCc();
-			p->ccMode = ccs[i].ccMode;
-			p->cc14bit = ccs[i].get14bit();
-			p->note = notes[i].getNote();
-			p->noteMode = notes[i].noteMode;
-			p->label = textLabel[i];
-			p->midiOptions = midiOptions[i];
-			p->slew = midiParam[i].getSlew();
-			p->min = midiParam[i].getMin();
-			p->max = midiParam[i].getMax();
-			p->curve = midiParam[i].getCurve();
-			p->lightFirstId = midiParam[i].lightFirstId;
-			p->lightNumColors = midiParam[i].lightNumColors;
-			m->paramMap.push_back(p);
-		}
-		m->pluginName = module->model->plugin->name;
-		m->moduleName = module->model->name;
-
-		auto expMem = this->expMem.load();
-		auto p = std::pair<std::string, std::string>(pluginSlug, moduleSlug);
-		auto it = expMem->getMemStorage()->find(p);
-		if (it != expMem->getMemStorage()->end()) {
-			delete it->second;
-		}
-
-		(*expMem->getMemStorage())[p] = m;
-	}
-
-	/** Delete mapping from the expander for the given model.
-	 *  Called from the UI thread.
-	 */
-	void expMemDelete(std::string pluginSlug, std::string moduleSlug) {
-		auto expMem = this->expMem.load();
-		auto p = std::pair<std::string, std::string>(pluginSlug, moduleSlug);
-		auto it = expMem->getMemStorage()->find(p);
-		delete it->second;
-		expMem->getMemStorage()->erase(p);
-	}
-
-	/** Apply mapping from the expander to the given module.
-	 *  Called from the UI thread.
-	 */
-	void expMemApply(Module* m) {
+	void moduleBindMem(Module* m) {
 		if (!m) return;
-		auto expMem = this->expMem.load();
-		auto p = std::pair<std::string, std::string>(m->model->plugin->slug, m->model->slug);
-		auto it = expMem->getMemStorage()->find(p);
-		if (it == expMem->getMemStorage()->end()) return;
-		MemModule* map = it->second;
+		MemModule* map = expanders.memStore().find(MemStore::keyOf(m));
+		if (!map) return;
 
 		clearMaps_WithLock();
 		expMemModuleId = m->id;
 		int i = 0;
 		for (MemParam* it : map->paramMap) {
 			learnParam(i, m->id, it->paramId);
-			ccs[i].setCc(it->cc);
-			ccs[i].ccMode = it->ccMode;
-			ccs[i].set14bit(it->cc14bit);
-			notes[i].setNote(it->note);
-			notes[i].noteMode = it->noteMode;
-			textLabel[i] = it->label;
-			midiOptions[i] = it->midiOptions;
-			midiParam[i].setSlew(it->slew);
-			midiParam[i].setMin(it->min);
-			midiParam[i].setMax(it->max);
-			midiParam[i].setCurve(it->curve);
-			midiParam[i].lightFirstId = it->lightFirstId;
-			midiParam[i].lightNumColors = it->lightNumColors;
+			slots[i].fromMemParam(*it);
 			i++;
 		}
 		updateMapLen();
 	}
 
-	/** Test if there is a mapping for the given module in the expander.
-	 *  Called from the UI thread.
-	 */
-	bool expMemTest(Module* m) {
-		if (!m) return false;
-		auto expMem = this->expMem.load();
-		auto p = std::pair<std::string, std::string>(m->model->plugin->slug, m->model->slug);
-		auto it = expMem->getMemStorage()->find(p);
-		if (it == expMem->getMemStorage()->end()) return false;
-		if (expMem->getMemModuleRestriction()->size() > 0) {
-			auto it2 = expMem->getMemModuleRestriction()->find(m->getId());
-			if (it2 == expMem->getMemModuleRestriction()->end()) return false;
-		}
-		return true;
-	}
-
-	/** process-function for the CLK-expander - handles the four clock inputs.
-	 *  Called from the dsp thread.
-	 */
-	void expClkProcess() {
-		auto expClk = this->expClk.load();
-		for (int i = 0; i < 4; i++) {
-			if (expClkTrigger[i].process(expClk->inputs[i].getVoltage())) {
-				for (int j = 0; j < mapLen; j++) {
-					midiParam[j].tick(i);
-				}
-			}
-		}
-	}
-
-	/** process-function for the FINE-expander.
-	 *  Called from the dsp thread.
-	 */
-	void expFineProcess() {
-		auto expFine = this->expFine.load();
-		auto e1 = expFineLowTrigger.processEvent(expFine->getLowRangeVoltage());
-		auto e2 = expFineHighTrigger.processEvent(expFine->getHighRangeVoltage());
-		if (e1 == dsp::SchmittTrigger::TRIGGERED && !expFineHighTrigger.isHigh()) {
-			setFineMode(true, expFine->getLowRange());
-		}
-		if (e1 == dsp::SchmittTrigger::UNTRIGGERED && !expFineHighTrigger.isHigh()) {
-			setFineMode(false, 0.f);
-		}
-		if (e2 == dsp::SchmittTrigger::TRIGGERED) {
-			setFineMode(true, expFine->getHighRange(), expFineLowTrigger.isHigh());
-		}
-		if (e2 == dsp::SchmittTrigger::UNTRIGGERED) {
-			if (expFineLowTrigger.isHigh())
-				setFineMode(true, expFine->getLowRange(), true);
-			else
-				setFineMode(false, 0.f);
-		}
+	void refreshParamHandleText(int id) {
+		paramHandles[id].text = "MIDI-CAT" + slots[id].bindingText();
 	}
 
 	json_t* dataToJson() override {
@@ -1349,23 +573,23 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 		json_t* mapsJ = json_array();
 		for (int id = 0; id < mapLen; id++) {
 			json_t* mapJ = json_object();
-			json_object_set_new(mapJ, "cc", json_integer(ccs[id].getCc()));
-			json_object_set_new(mapJ, "ccMode", json_integer((int)ccs[id].ccMode));
-			json_object_set_new(mapJ, "cc14bit", json_boolean(ccs[id].get14bit()));
-			json_object_set_new(mapJ, "note", json_integer(notes[id].getNote()));
-			json_object_set_new(mapJ, "noteMode", json_integer((int)notes[id].noteMode));
+			json_object_set_new(mapJ, "cc", json_integer(slots[id].cc.getCc()));
+			json_object_set_new(mapJ, "ccMode", json_integer((int)slots[id].cc.ccMode));
+			json_object_set_new(mapJ, "cc14bit", json_boolean(slots[id].cc.get14bit()));
+			json_object_set_new(mapJ, "note", json_integer(slots[id].note.getNote()));
+			json_object_set_new(mapJ, "noteMode", json_integer((int)slots[id].note.noteMode));
 			json_object_set_new(mapJ, "moduleId", json_integer(paramHandles[id].moduleId));
 			json_object_set_new(mapJ, "paramId", json_integer(paramHandles[id].paramId));
-			json_object_set_new(mapJ, "label", json_string(textLabel[id].c_str()));
-			json_object_set_new(mapJ, "midiOptions", json_integer(midiOptions[id]));
-			json_object_set_new(mapJ, "slew", json_real(midiParam[id].getSlew()));
-			json_object_set_new(mapJ, "min", json_real(midiParam[id].getMin()));
-			json_object_set_new(mapJ, "max", json_real(midiParam[id].getMax()));
-			json_object_set_new(mapJ, "curve", json_real(midiParam[id].getCurve()));
-			json_object_set_new(mapJ, "clockMode", json_integer((int)midiParam[id].clockMode));
-			json_object_set_new(mapJ, "clockSource", json_integer(midiParam[id].clockSource));
-			json_object_set_new(mapJ, "lightFirstId", json_integer(midiParam[id].lightFirstId));
-			json_object_set_new(mapJ, "lightNumColors", json_integer(midiParam[id].lightNumColors));
+			json_object_set_new(mapJ, "label", json_string(slots[id].label.c_str()));
+			json_object_set_new(mapJ, "midiOptions", json_integer(slots[id].midiOptions));
+			json_object_set_new(mapJ, "slew", json_real(slots[id].param.getSlew()));
+			json_object_set_new(mapJ, "min", json_real(slots[id].param.getMin()));
+			json_object_set_new(mapJ, "max", json_real(slots[id].param.getMax()));
+			json_object_set_new(mapJ, "curve", json_real(slots[id].param.getCurve()));
+			json_object_set_new(mapJ, "clockMode", json_integer((int)slots[id].param.clockMode));
+			json_object_set_new(mapJ, "clockSource", json_integer(slots[id].param.clockSource));
+			json_object_set_new(mapJ, "lightFirstId", json_integer(slots[id].param.lightFirstId));
+			json_object_set_new(mapJ, "lightNumColors", json_integer(slots[id].param.lightNumColors));
 			json_array_append_new(mapsJ, mapJ);
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
@@ -1432,8 +656,7 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 				json_t* lightNumColorsJ = json_object_get(mapJ, "lightNumColors");
 
 				if (!(ccJ || noteJ)) {
-					ccs[mapIndex].setCc(-1);
-					notes[mapIndex].setNote(-1);
+					slots[mapIndex].setBinding(-1, -1);
 					APP->engine->updateParamHandle_NoLock(&paramHandles[mapIndex], -1, 0, true);
 					continue;
 				}
@@ -1441,12 +664,12 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 					APP->engine->updateParamHandle_NoLock(&paramHandles[mapIndex], -1, 0, true);
 				}
 
-				ccs[mapIndex].setCc(ccJ ? json_integer_value(ccJ) : -1);
-				ccs[mapIndex].ccMode = (CCMODE)json_integer_value(ccModeJ);
-				if (cc14bitJ) ccs[mapIndex].set14bit(json_boolean_value(cc14bitJ));
-				notes[mapIndex].setNote(noteJ ? json_integer_value(noteJ) : -1);
-				notes[mapIndex].noteMode = (NOTEMODE)json_integer_value(noteModeJ);
-				midiOptions[mapIndex] = json_integer_value(midiOptionsJ);
+				slots[mapIndex].setCc(ccJ ? json_integer_value(ccJ) : -1);
+				slots[mapIndex].cc.ccMode = (CCMODE)json_integer_value(ccModeJ);
+				if (cc14bitJ) slots[mapIndex].setCc14bit(json_boolean_value(cc14bitJ));
+				slots[mapIndex].setNote(noteJ ? json_integer_value(noteJ) : -1);
+				slots[mapIndex].note.noteMode = (NOTEMODE)json_integer_value(noteModeJ);
+				slots[mapIndex].midiOptions = json_integer_value(midiOptionsJ);
 				int64_t moduleId = moduleIdJ ? json_integer_value(moduleIdJ) : -1;
 				int paramId = paramIdJ ? json_integer_value(paramIdJ) : 0;
 				if (moduleId >= 0) {
@@ -1456,15 +679,15 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 						refreshParamHandleText(mapIndex);
 					}
 				}
-				if (labelJ) textLabel[mapIndex] = json_string_value(labelJ);
-				if (slewJ) midiParam[mapIndex].setSlew(json_real_value(slewJ));
-				if (minJ) midiParam[mapIndex].setMin(json_real_value(minJ));
-				if (maxJ) midiParam[mapIndex].setMax(json_real_value(maxJ));
-				if (curveJ) midiParam[mapIndex].setCurve(json_real_value(curveJ));
-				if (clockModeJ) midiParam[mapIndex].clockMode = (MidiCatParam::CLOCKMODE)json_integer_value(clockModeJ);
-				if (clockSourceJ) midiParam[mapIndex].clockSource = json_integer_value(clockSourceJ);
-				if (lightFirstIdJ) midiParam[mapIndex].lightFirstId = json_integer_value(lightFirstIdJ);
-				if (lightNumColorsJ) midiParam[mapIndex].lightNumColors = json_integer_value(lightNumColorsJ);
+				if (const char* label = json_string_value(labelJ)) slots[mapIndex].label = label;
+				if (slewJ) slots[mapIndex].param.setSlew(json_real_value(slewJ));
+				if (minJ) slots[mapIndex].param.setMin(json_real_value(minJ));
+				if (maxJ) slots[mapIndex].param.setMax(json_real_value(maxJ));
+				if (curveJ) slots[mapIndex].param.setCurve(json_real_value(curveJ));
+				if (clockModeJ) slots[mapIndex].param.clockMode = (MidiCatParam::CLOCKMODE)json_integer_value(clockModeJ);
+				if (clockSourceJ) slots[mapIndex].param.clockSource = json_integer_value(clockSourceJ);
+				if (lightFirstIdJ) slots[mapIndex].param.lightFirstId = json_integer_value(lightFirstIdJ);
+				if (lightNumColorsJ) slots[mapIndex].param.lightNumColors = json_integer_value(lightNumColorsJ);
 			}
 		}
 
@@ -1497,7 +720,7 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 		switch (midiMode) {
 			case MIDIMODE::MIDIMODE_LOCATE:
 				for (int i = 0; i < MAX_CHANNELS; i++)
-					lastValueInIndicate[i] = std::max(0, lastValueIn[i]);
+					slots[i].primeIndicate();
 				break;
 			default:
 				break;
@@ -1507,7 +730,7 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	void setParameterChangesDirect(bool b) {
 		parameterChangesDirect = b;
 		for (int id = 0; id < MAX_CHANNELS; id++) {
-			midiParam[id].parameterChangesDirect = parameterChangesDirect;
+			slots[id].param.parameterChangesDirect = parameterChangesDirect;
 		}		
 	}
 
@@ -1515,15 +738,11 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 		if (enabled) {
 			if (!ccFineMode) {
 				for (int id = 0; id < MAX_CHANNELS; id++) {
-					if (midiParam[id].paramQuantity) {
-						midiParam[id].precProcessor.init(midiParam[id].getLimitMin(), midiParam[id].getLimitMax());
-					}
+					slots[id].initFineMode();
 				}
 			}
 			for (int id = 0; id < MAX_CHANNELS; id++) {
-				if (midiParam[id].paramQuantity) {
-					midiParam[id].precProcessor.setPrecision(precision, midiParam[id].getRawValue(), updateRefPoint ? ccs[id].getValue() : -1);
-				}
+				slots[id].setFinePrecision(precision, updateRefPoint);
 			}
 			ccFineMode = true;
 		}
@@ -1533,20 +752,11 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	}
 
 	MidiCatParam::CLOCKMODE getClockMode(int id) {
-		return midiParam[id].clockMode;
+		return slots[id].getClockMode();
 	}
 
 	void setClockMode(int id, MidiCatParam::CLOCKMODE mode) {
-		if (mode != MidiCatParam::CLOCKMODE::OFF) {
-			if (ccs[id].getCc() >= 0 && (ccs[id].ccMode == CCMODE::PICKUP1 || ccs[id].ccMode == CCMODE::PICKUP2)) {
-				ccs[id].ccMode = CCMODE::DIRECT;
-			}
-			if (notes[id].getNote() >= 0 && (notes[id].noteMode == NOTEMODE::MOMENTARY || notes[id].noteMode == NOTEMODE::MOMENTARY_VEL)) {
-				notes[id].noteMode = NOTEMODE::TOGGLE;
-			}
-			midiParam[id].setSlew(0.f);
-		}
-		midiParam[id].clockMode = mode;
+		slots[id].setClockMode(mode);
 	}
 };
 
@@ -1577,7 +787,7 @@ struct ScalingInputLabel : MenuLabelEx {
 		g2 = clamp(g2, p->limitMin, p->limitMax);
 		int g2a = std::round(g2);
 
-		rightText = string::f("[%i, %i]", g1a, g2a);
+		rightText = rack::string::f("[%i, %i]", g1a, g2a);
 	}
 }; // struct ScalingInputLabel
 
@@ -1592,7 +802,7 @@ struct ScalingOutputLabel : MenuLabelEx {
 		float f2 = rescale(p->limitMax, p->limitMin, p->limitMax, min, max);
 		f2 = clamp(f2, 0.f, 1.f) * 100.f;
 
-		rightText = string::f("[%.1f%%, %.1f%%]", f1, f2);
+		rightText = rack::string::f("[%.1f%%, %.1f%%]", f1, f2);
 	}
 }; // struct ScalingOutputLabel
 
@@ -1665,7 +875,7 @@ struct MidiCatSelectionWidget : Widget {
 	void mapParamsFromRect() {
 		math::Rect selectionBox = math::Rect::fromCorners(selectionStart, selectionEnd);
 		std::list<ModuleWidget*> selected;
-		for (ModuleWidget* mw : APP->scene->rack->getModules()) {
+		for (ModuleWidget* mw : vcv::getModuleWidgets()) {
 			if (selectionBox.intersects(mw->box)) {
 				selected.push_back(mw);
 			}
@@ -1826,25 +1036,19 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	}
 
 	std::string getSlotPrefix() override {
-		static const char* noteNames[] = {
-			" C", "C#", " D", "D#", " E", " F", "F#", " G", "G#", " A", "A#", " B"
-		};
 		if (module) {
 			char light = ' ';
 			if (module->getMap(id).hasLight()) {
 				light = '*';
 			}
-			if (module->ccs[id].getCc() >= 0) {
-				return string::f("cc%02d%c", module->ccs[id].getCc(), light);
+			if (module->slots[id].cc.getCc() >= 0) {
+				return rack::string::f("cc%02d%c", module->slots[id].cc.getCc(), light);
 			}
-			else if (module->notes[id].getNote() >= 0) {
-
-				int oct = module->notes[id].getNote() / 12 - 1;
-				int semi = module->notes[id].getNote() % 12;
-				return string::f(" %s%d%c", noteNames[semi], oct, light);
+			else if (module->slots[id].note.getNote() >= 0) {
+				return rack::string::f(" %s%c", noteName(module->slots[id].note.getNote(), true).c_str(), light);
 			}
 			else if (module->paramHandles[id].moduleId >= 0) {
-				return string::f("....%c", light);
+				return rack::string::f("....%c", light);
 			}
 			else {
 				return "";
@@ -1852,17 +1056,17 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		}
 		else {
 			// fake data for module browser
-			return id % 2 == 0 ? string::f("cc%02d ", id) : string::f(" %s2 ", noteNames[id % 12]);
+			return id % 2 == 0 ? rack::string::f("cc%02d ", id) : rack::string::f(" %s ", noteName(id % 12 + 36, true).c_str());
 		}
 	}
 
 	std::string getSlotLabel() override {
-		return module->textLabel[id];
+		return module->slots[id].label;
 	}
 
 	void prependContextMenu(Menu* menu) override {
 		menu->addChild(createSubmenuItem("MIDI-CAT Menu", "", [=](Menu* menu) {
-			ModuleWidget* moduleWidget = APP->scene->rack->getModule(module->getId());
+			ModuleWidget* moduleWidget = vcv::getModuleWidget(module->getId());
 			moduleWidget->appendContextMenu(menu);
 		}));
 	}
@@ -1882,10 +1086,10 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				CCMODE ccMode;
 
 				void onAction(const event::Action& e) override {
-					module->ccs[id].ccMode = ccMode;
+					module->slots[id].cc.ccMode = ccMode;
 				}
 				void step() override {
-					rightText = module->ccs[id].ccMode == ccMode ? "✔" : "";
+					rightText = module->slots[id].cc.ccMode == ccMode ? "✔" : "";
 					MenuItem::step();
 				}
 			};
@@ -1894,9 +1098,9 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				Menu* menu = new Menu;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Direct", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::DIRECT));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (snap)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::PICKUP1));
-				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
+				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->slots[id].param.clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (jump)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::PICKUP2));
-				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
+				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->slots[id].param.clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle + Value", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE_VALUE));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Snapped", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::SNAPPED));
@@ -1909,10 +1113,10 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			MidiCatModule* module;
 			int id;
 			void onAction(const event::Action& e) override {
-				module->ccs[id].set14bit(!module->ccs[id].get14bit());
+				module->slots[id].setCc14bit(!module->slots[id].cc.get14bit());
 			}
 			void step() override {
-				rightText = CHECKMARK(module->ccs[id].get14bit());
+				rightText = CHECKMARK(module->slots[id].cc.get14bit());
 				MenuItem::step();
 			}
 		};
@@ -1931,10 +1135,10 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				NOTEMODE noteMode;
 
 				void onAction(const event::Action& e) override {
-					module->notes[id].noteMode = noteMode;
+					module->slots[id].note.noteMode = noteMode;
 				}
 				void step() override {
-					rightText = module->notes[id].noteMode == noteMode ? "✔" : "";
+					rightText = module->slots[id].note.noteMode == noteMode ? "✔" : "";
 					MenuItem::step();
 				}
 			};
@@ -1942,9 +1146,9 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::MOMENTARY));
-				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
+				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->slots[id].param.clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::MOMENTARY_VEL));
-				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
+				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->slots[id].param.clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE_VEL));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Snapped", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::SNAPPED));
@@ -1958,29 +1162,29 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			int id;
 
 			void onAction(const event::Action& e) override {
-				module->midiOptions[id] ^= 1UL << MIDIOPTION_VELZERO_BIT;
+				module->slots[id].midiOptions ^= 1UL << MIDIOPTION_VELZERO_BIT;
 			}
 			void step() override {
-				rightText = CHECKMARK((module->midiOptions[id] >> MIDIOPTION_VELZERO_BIT) & 1U);
+				rightText = CHECKMARK((module->slots[id].midiOptions >> MIDIOPTION_VELZERO_BIT) & 1U);
 				MenuItem::step();
 			}
 		}; // struct NoteVelZeroMenuItem
 
-		if (module->ccs[id].getCc() >= 0 || module->notes[id].getNote() >= 0) {
+		if (module->slots[id].cc.getCc() >= 0 || module->slots[id].note.getNote() >= 0) {
 			menu->addChild(createMenuItem("Clear MIDI assignment", "", [=]() { module->clearMap(id, true); }));
 		}
 
 		menu->addChild(createMenuItem("Bind feedback to LED (experimental)", CHECKMARK(module->getMap(id).hasLight()), [this] { enableLearnLight(); }));
-		if (module->midiParam[id].hasLight()) {
+		if (module->slots[id].param.hasLight()) {
 			menu->addChild(createMenuItem("Remove LED binding", "", [this] { module->getMap(id).setLight(); }));
 		}
 
-		if (module->ccs[id].getCc() >= 0) {
+		if (module->slots[id].cc.getCc() >= 0) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(construct<CcModeMenuItem>(&MenuItem::text, "Input mode for CC", &CcModeMenuItem::module, module, &CcModeMenuItem::id, id));
-			menu->addChild(construct<Cc14bitItem>(&MenuItem::text, "14-bit", &MenuItem::disabled, module->ccs[id].getCc() > 32, &Cc14bitItem::module, module, &Cc14bitItem::id, id));
+			menu->addChild(construct<Cc14bitItem>(&MenuItem::text, "14-bit", &MenuItem::disabled, module->slots[id].cc.getCc() > 32, &Cc14bitItem::module, module, &Cc14bitItem::id, id));
 		}
-		if (module->notes[id].getNote() >= 0) {
+		if (module->slots[id].note.getNote() >= 0) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(construct<NoteModeMenuItem>(&MenuItem::text, "Input mode for notes", &NoteModeMenuItem::module, module, &NoteModeMenuItem::id, id));
 			menu->addChild(construct<NoteVelZeroMenuItem>(&MenuItem::text, "Send \"note on, velocity 0\"", &NoteVelZeroMenuItem::module, module, &NoteVelZeroMenuItem::id, id));
@@ -2004,10 +1208,10 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				};
 
 				Menu* menu = new Menu;
-				menu->addChild(construct<PresetItem>(&MenuItem::text, "Default", &PresetItem::p, &module->midiParam[id], &PresetItem::min, 0.f, &PresetItem::max, 1.f));
-				menu->addChild(construct<PresetItem>(&MenuItem::text, "Inverted", &PresetItem::p, &module->midiParam[id], &PresetItem::min, 1.f, &PresetItem::max, 0.f));
-				menu->addChild(construct<PresetItem>(&MenuItem::text, "Lower 50%", &PresetItem::p, &module->midiParam[id], &PresetItem::min, 0.f, &PresetItem::max, 0.5f));
-				menu->addChild(construct<PresetItem>(&MenuItem::text, "Upper 50%", &PresetItem::p, &module->midiParam[id], &PresetItem::min, 0.5f, &PresetItem::max, 1.f));
+				menu->addChild(construct<PresetItem>(&MenuItem::text, "Default", &PresetItem::p, &module->slots[id].param, &PresetItem::min, 0.f, &PresetItem::max, 1.f));
+				menu->addChild(construct<PresetItem>(&MenuItem::text, "Inverted", &PresetItem::p, &module->slots[id].param, &PresetItem::min, 1.f, &PresetItem::max, 0.f));
+				menu->addChild(construct<PresetItem>(&MenuItem::text, "Lower 50%", &PresetItem::p, &module->slots[id].param, &PresetItem::min, 0.f, &PresetItem::max, 0.5f));
+				menu->addChild(construct<PresetItem>(&MenuItem::text, "Upper 50%", &PresetItem::p, &module->slots[id].param, &PresetItem::min, 0.5f, &PresetItem::max, 1.f));
 				return menu;
 			}
 		}; // struct PresetMenuItem
@@ -2025,7 +1229,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				int id;
 				void onSelectKey(const event::SelectKey& e) override {
 					if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-						module->textLabel[id] = text;
+						module->slots[id].label = text;
 
 						ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
 						overlay->requestDelete();
@@ -2042,7 +1246,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				MidiCatModule* module;
 				int id;
 				void onAction(const event::Action& e) override {
-					module->textLabel[id] = "";
+					module->slots[id].label = "";
 				}
 			};
 
@@ -2051,7 +1255,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 
 				LabelField* labelField = new LabelField;
 				labelField->placeholder = "Label";
-				labelField->text = module->textLabel[id];
+				labelField->text = module->slots[id].label;
 				labelField->box.size.x = 180;
 				labelField->module = module;
 				labelField->id = id;
@@ -2068,30 +1272,30 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		}; // struct LabelMenuItem
 
 		menu->addChild(Rack::createSlider(
-			[this]() { return module->midiParam[id].getSlew(); },
-			[this](float v) { module->midiParam[id].setSlew(clamp(v, 0.f, 5.f)); },
+			[this]() { return module->slots[id].param.getSlew(); },
+			[this](float v) { module->slots[id].param.setSlew(clamp(v, 0.f, 5.f)); },
 			0.f, 5.f, 0.f, "Slew-limiting", "", 1.f, 220.0f
 		));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
-		std::string l = string::f("Input %s", module->ccs[id].getCc() >= 0 ? "MIDI CC" : (module->notes[id].getNote() >= 0 ? "MIDI vel" : ""));
-		menu->addChild(construct<ScalingInputLabel>(&MenuLabel::text, l, &ScalingInputLabel::p, &module->midiParam[id]));
-		menu->addChild(construct<ScalingOutputLabel>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel::p, &module->midiParam[id]));
+		std::string l = string::f("Input %s", module->slots[id].cc.getCc() >= 0 ? "MIDI CC" : (module->slots[id].note.getNote() >= 0 ? "MIDI vel" : ""));
+		menu->addChild(construct<ScalingInputLabel>(&MenuLabel::text, l, &ScalingInputLabel::p, &module->slots[id].param));
+		menu->addChild(construct<ScalingOutputLabel>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel::p, &module->slots[id].param));
 		menu->addChild(Rack::createSlider(
-			[this]() { return module->midiParam[id].getMin(); },
-			[this](float v) { module->midiParam[id].setMin(v); },
+			[this]() { return module->slots[id].param.getMin(); },
+			[this](float v) { module->slots[id].param.setMin(v); },
 			-1.f, 2.f, 0.f, "Low", "%", 100.f, 220.0f
 		));
 		menu->addChild(Rack::createSlider(
-			[this]() { return module->midiParam[id].getMax(); },
-			[this](float v) { module->midiParam[id].setMax(v); },
+			[this]() { return module->slots[id].param.getMax(); },
+			[this](float v) { module->slots[id].param.setMax(v); },
 			-1.f, 2.f, 1.f, "High", "%", 100.f, 220.0f
 		));
 		menu->addChild(construct<PresetMenuItem>(&MenuItem::text, "Presets", &PresetMenuItem::module, module, &PresetMenuItem::id, id));
-		menu->addChild(new MidiCatCurveMenuItem(&module->midiParam[id]));
+		menu->addChild(new MidiCatCurveMenuItem(&module->slots[id].param));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
 
-		if (module->expClk != NULL) {
+		if (module->expanders.clk() != NULL) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(createMenuLabel("CLK-expander"));
 			if (!module->getMap(id).hasLight()) {
@@ -2122,7 +1326,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 					{ 2, "Clock 3" },
 					{ 3, "Clock 4" }
 				},
-				&module->midiParam[id].clockSource
+				&module->slots[id].param.clockSource
 			));
 		}
 	}
@@ -2210,19 +1414,11 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 	}
 
 	void loadMidiMapPreset_dialog() {
-		osdialog_filters* filters = osdialog_filters_parse(PRESET_FILTERS);
-		DEFER({
-			osdialog_filters_free(filters);
-		});
-
-		char* path = osdialog_file(OSDIALOG_OPEN, "", NULL, filters);
-		if (!path) {
+		std::string path = vcv::ui::openDialog(PRESET_FILTERS, "");
+		if (path.empty()) {
 			// No path selected
 			return;
 		}
-		DEFER({
-			free(path);
-		});
 
 		loadMidiMapPreset_action(path);
 	}
@@ -2230,20 +1426,17 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 	void loadMidiMapPreset_action(std::string filename) {
 		INFO("Loading preset %s", filename.c_str());
 
-		FILE* file = fopen(filename.c_str(), "r");
-		if (!file) {
+		std::string data;
+		if (!vcv::fs::read(filename, data)) {
 			WARN("Could not load patch file %s", filename.c_str());
 			return;
 		}
-		DEFER({
-			fclose(file);
-		});
 
-		json_error_t error;
-		json_t* moduleJ = json_loadf(file, 0, &error);
+		std::string error;
+		json_t* moduleJ = vcv::parseJson(data, error);
 		if (!moduleJ) {
-			std::string message = string::f("File is not a valid patch file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			std::string message = rack::string::f("File is not a valid patch file. %s", error.c_str());
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, message.c_str());
 			return;
 		}
 		DEFER({
@@ -2254,7 +1447,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 			return;
 
 		// history::ModuleChange
-		history::ModuleChange* h = new history::ModuleChange;
+		rack::history::ModuleChange* h = new rack::history::ModuleChange;
 		h->name = "load module preset";
 		h->moduleId = module->id;
 		h->oldModuleJ = toJson();
@@ -2262,12 +1455,16 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		module->fromJson(moduleJ);
 
 		h->newModuleJ = toJson();
-		APP->history->push(h);
+		vcv::history::push(h);
 	}
 
 	bool loadMidiMapPreset_convert(json_t* moduleJ) {
-		std::string pluginSlug = json_string_value(json_object_get(moduleJ, "plugin"));
-		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
+		// Null-safe: hand-edited or foreign preset files may lack these keys or
+		// carry non-string values; json_string_value would return NULL (UB).
+		json_t* pluginJ = json_object_get(moduleJ, "plugin");
+		json_t* modelJ = json_object_get(moduleJ, "model");
+		std::string pluginSlug = json_is_string(pluginJ) ? json_string_value(pluginJ) : "";
+		std::string modelSlug = json_is_string(modelJ) ? json_string_value(modelJ) : "";
 
 		// Only handle presets for MIDI-Map
 		if (!(pluginSlug == "Core" && modelSlug == "MIDI-Map"))
@@ -2284,7 +1481,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		ThemedModuleWidget<MidiCatModule>::step();
 		if (module) {
 			// MEM-expander
-			auto expMem_ = module->expMem.load();
+			auto expMem_ = module->expanders.mem();
 			if (expMem_ != expMem) {
 				expMem = expMem_;
 				if (expMem) {
@@ -2313,7 +1510,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 			}
 
 			// CTX-expander
-			auto expCtx_ = module->expCtx.load();
+			auto expCtx_ = module->expanders.ctx();
 			if (expCtx_ != expCtx) {
 				expCtx = expCtx_;
 				if (expCtx) {
@@ -2378,8 +1575,8 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		for (; it != modules.end(); it++) {
 			ModuleWidget* mw = *it;
 			Module* m = mw->module;
-			if (module->expMemTest(m)) {
-				module->expMemApply(m);
+			if (module->expanders.memStore().test(m)) {
+				module->moduleBindMem(m);
 				return;
 			}
 		}
@@ -2460,22 +1657,8 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 				if (module->mapLen > 0) {
 					menu->addChild(new MenuSeparator);
 					for (int i = 0; i < module->mapLen; i++) {
-						if (module->ccs[i].getCc() >= 0 || module->notes[i].getNote() >= 0) {
-							std::string text;
-							if (module->textLabel[i] != "") {
-								text = module->textLabel[i];
-							}
-							else if (module->ccs[i].getCc() >= 0) {
-								text = string::f("MIDI CC %02d", module->ccs[i].getCc());
-							}
-							else {
-								static const char* noteNames[] = {
-									"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
-								};
-								int oct = module->notes[i].getNote() / 12 - 1;
-								int semi = module->notes[i].getNote() % 12;
-								text = string::f("MIDI note %s%d", noteNames[semi], oct);
-							}
+						if (module->slots[i].cc.getCc() >= 0 || module->slots[i].note.getNote() >= 0) {
+							std::string text = module->slots[i].menuLabel();
 							menu->addChild(construct<RemapItem>(&MenuItem::text, text, &RemapItem::module, module, &RemapItem::pq, pq, &RemapItem::id, i, &RemapItem::currentId, currentId));
 						}
 					}
@@ -2504,27 +1687,27 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 			if (module->paramHandles[id].moduleId == pq->module->id && module->paramHandles[id].paramId == pq->paramId) {
 				std::string midiCatId = expCtx ? "on \"" + expCtx->getMidiCatId() + "\"" : "";
 				std::list<Widget*> w;
-				w.push_back(construct<MapMenuItem>(&MenuItem::text, string::f("Re-map %s", midiCatId.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq, &MapMenuItem::currentId, id));
+				w.push_back(construct<MapMenuItem>(&MenuItem::text, rack::string::f("Re-map %s", midiCatId.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq, &MapMenuItem::currentId, id));
 				w.push_back(Rack::createSlider(
-					[this, id]() { return module->midiParam[id].getSlew(); },
-					[this, id](float v) { module->midiParam[id].setSlew(clamp(v, 0.f, 5.f)); },
+					[this, id]() { return module->slots[id].param.getSlew(); },
+					[this, id](float v) { module->slots[id].param.setSlew(clamp(v, 0.f, 5.f)); },
 					0.f, 5.f, 0.f, "Slew-limiting", "", 1.f, 220.0f
 				));
 				w.push_back(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
-				std::string l = string::f("Input %s", module->ccs[id].getCc() >= 0 ? "MIDI CC" : (module->notes[id].getNote() >= 0 ? "MIDI vel" : ""));
-				w.push_back(construct<ScalingInputLabel>(&MenuLabel::text, l, &ScalingInputLabel::p, &module->midiParam[id]));
-				w.push_back(construct<ScalingOutputLabel>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel::p, &module->midiParam[id]));
+				std::string l = rack::string::f("Input %s", module->slots[id].cc.getCc() >= 0 ? "MIDI CC" : (module->slots[id].note.getNote() >= 0 ? "MIDI vel" : ""));
+				w.push_back(construct<ScalingInputLabel>(&MenuLabel::text, l, &ScalingInputLabel::p, &module->slots[id].param));
+				w.push_back(construct<ScalingOutputLabel>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel::p, &module->slots[id].param));
 				w.push_back(Rack::createSlider(
-					[this, id]() { return module->midiParam[id].getMin(); },
-					[this, id](float v) { module->midiParam[id].setMin(v); },
+					[this, id]() { return module->slots[id].param.getMin(); },
+					[this, id](float v) { module->slots[id].param.setMin(v); },
 					-1.f, 2.f, 0.f, "Low", "%", 100.f, 220.0f
 				));
 				w.push_back(Rack::createSlider(
-					[this, id]() { return module->midiParam[id].getMax(); },
-					[this, id](float v) { module->midiParam[id].setMax(v); },
+					[this, id]() { return module->slots[id].param.getMax(); },
+					[this, id](float v) { module->slots[id].param.setMax(v); },
 					-1.f, 2.f, 1.f, "High", "%", 100.f, 220.0f
 				));
-				w.push_back(new MidiCatCurveMenuItem(&module->midiParam[id]));
+				w.push_back(new MidiCatCurveMenuItem(&module->slots[id].param));
 				w.push_back(construct<CenterModuleItem>(&MenuItem::text, "Go to mapping module", &CenterModuleItem::mw, this));
 				w.push_back(new MidiCatEndItem);
 
@@ -2550,7 +1733,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		if (expCtx) {
 			std::string midiCatId = expCtx->getMidiCatId();
 			if (midiCatId != "") {
-				MenuItem* mapMenuItem = construct<MapMenuItem>(&MenuItem::text, string::f("Map on \"%s\"", midiCatId.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq);
+				MenuItem* mapMenuItem = construct<MapMenuItem>(&MenuItem::text, rack::string::f("Map on \"%s\"", midiCatId.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq);
 				if (itCvBegin == end) {
 					menu->addChild(new MenuSeparator);
 					menu->addChild(construct<MidiCatBeginItem>());
@@ -2588,7 +1771,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 				case LEARN_MODE::BIND_KEEP:
 					module->moduleBind(m, true); break;
 				case LEARN_MODE::MEM:
-					module->expMemApply(m); break;
+					module->moduleBindMem(m); break;
 				case LEARN_MODE::OFF:
 					break;
 			}
@@ -2723,10 +1906,10 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 			}
 		));
 		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<int>("Precision", {
-				{ 1, string::f("Samplerate (%i Hz)", sampleRate / 1) },
-				{ 8, string::f("High (%i Hz)", sampleRate / 8) },
-				{ 64, string::f("Moderate (%i Hz)", sampleRate / 64) },
-				{ 256, string::f("Lowest (%i Hz)", sampleRate / 256) }
+				{ 1, rack::string::f("Samplerate (%i Hz)", sampleRate / 1) },
+				{ 8, rack::string::f("High (%i Hz)", sampleRate / 8) },
+				{ 64, rack::string::f("Moderate (%i Hz)", sampleRate / 64) },
+				{ 256, rack::string::f("Lowest (%i Hz)", sampleRate / 256) }
 			},
 			[=]() {
 				return module->processDivision;
@@ -2804,7 +1987,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 			}
 		));
 
-		if (module->expMem != NULL) {
+		if (module->expanders.mem() != NULL) {
 			appendContextMenuMem(menu);
 		}
 	}
@@ -2834,7 +2017,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 							std::string pluginSlug;
 							std::string moduleSlug;
 							void onAction(const event::Action& e) override {
-								module->expMemDelete(pluginSlug, moduleSlug);
+								module->expanders.memStore().erase(MemStore::Key(pluginSlug, moduleSlug));
 							}
 						}; // DeleteItem
 
@@ -2845,11 +2028,11 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 				}; // MidimapModuleItem
 
 				std::list<std::pair<std::string, MidimapModuleItem*>> l;
-				auto expMem = module->expMem.load();
+				auto expMem = module->expanders.mem();
 				for (auto it : *expMem->getMemStorage()) {
 					MemModule* a = it.second;
 					MidimapModuleItem* midimapModuleItem = new MidimapModuleItem;
-					midimapModuleItem->text = string::f("%s %s", a->pluginName.c_str(), a->moduleName.c_str());
+					midimapModuleItem->text = rack::string::f("%s %s", a->pluginName.c_str(), a->moduleName.c_str());
 					midimapModuleItem->module = module;
 					midimapModuleItem->midimapModule = a;
 					midimapModuleItem->pluginSlug = it.first.first;
@@ -2878,7 +2061,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 					std::string pluginSlug;
 					std::string moduleSlug;
 					void onAction(const event::Action& e) override {
-						module->expMemSave(pluginSlug, moduleSlug);
+						module->expanders.memStore().save(MemStore::Key(pluginSlug, moduleSlug), module->slots, module->paramHandles, MAX_CHANNELS);
 					}
 				}; // SaveItem
 
@@ -2894,7 +2077,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 					s.insert(q);
 
 					if (!m) continue;
-					std::string l = string::f("%s %s", m->model->plugin->name.c_str(), m->model->name.c_str());
+					std::string l = rack::string::f("%s %s", m->model->plugin->name.c_str(), m->model->name.c_str());
 					auto p = std::pair<std::string, ppair>(l, q);
 					list.push_back(p);
 				}
@@ -2914,7 +2097,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		menu->addChild(construct<SaveMenuItem>(&MenuItem::text, "Store mapping", &SaveMenuItem::module, module));
 		menu->addChild(createMenuItem("Apply mapping", RACK_MOD_SHIFT_NAME "+V", [=]() { enableLearn(LEARN_MODE::MEM); }));
 		menu->addChild(createSubmenuItem("Restriction", 
-			expMem->getMemModuleRestriction()->size() == 0 ? "Disabled" : string::f("%i modules", expMem->getMemModuleRestriction()->size()),
+			expMem->getMemModuleRestriction()->size() == 0 ? "Disabled" : rack::string::f("%i modules", expMem->getMemModuleRestriction()->size()),
 			[=](Menu* menu) {
 				if (APP->scene->rack->hasSelection()) {
 					menu->addChild(createMenuItem("Save selection", "", [=]() {

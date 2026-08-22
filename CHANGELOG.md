@@ -2,6 +2,16 @@
 
 ### Changes and Fixes
 
+- Module [AHAB](./docs/ahab/Ahab.md)
+    - Added undo for "Clear"
+    - Added toggle for Focus mode using Shift+Esc
+    - Added clock divider/multiplier for clock input
+    - Added MIDI Panic option
+    - Fixed reset behavior on loading files or examples
+    - Fixed broken MIDI channel on MIDI operators
+    - Fixed various minor issues
+- Module [DIRT](./docs/dirt/Dirt.md)
+    - Fixed broken preset loading
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added sorting option "Newest" to *v2 mod* browser
     - Improved context menus for tags (#461)
@@ -12,6 +22,9 @@
     - Fixed incorrect reset behavior
 - Module [MIDI-MON](./docs/midi/MidiMon.md)
     - Splitted display option for 14bit CC and RPN/NRPN messages
+    - Increased buffered message count from 512 to 4096
+- Module [PANIC ROOM](./docs/panicroom/PanicRoom.md)
+    - Fixed potential crash on cable and module limit
 - Module [SIREN](./docs/siren/Siren.md)
     - Added support for multi-channel files on Re-pitch and Crossfade-loop
     - Ignore files starting with "." (#460)

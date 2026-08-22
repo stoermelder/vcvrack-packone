@@ -30,8 +30,44 @@ TEST_CASE("Preset JSON null-guards", "[Orbit][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("JSON round-trip preserves state", "[JSON][Orbit]") {
+	auto module = Test::createModule<OrbitModule>("Orbit");
+	module->panelTheme = 1;
+	module->polyOut = true;
+	module->dist = DISTRIBUTION::UNIFORM;
+	
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	
+	auto moduleNew = Test::createModule<OrbitModule>("Orbit");
+	moduleNew->dataFromJson(rootJ);
+	
+	REQUIRE(moduleNew->panelTheme == 1);
+	REQUIRE(moduleNew->polyOut == true);
+	REQUIRE(moduleNew->dist == DISTRIBUTION::UNIFORM);
+	
+	json_decref(rootJ);
+	Test::destroyModule(moduleNew);
+	Test::destroyModule(module);
+}
+
 
 TEST_CASE("Stereo panning basic", "[Orbit]") {
 	auto module = Test::createModule<OrbitModule>("Orbit");
@@ -446,31 +482,6 @@ TEST_CASE("Trigger behavior", "[Orbit]") {
 		// Both channels should be processed (trigger normalized to all channels)
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_L].getVoltage() >= 0.0f);
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getVoltage() >= 0.0f);
-	}
-
-	Test::destroyModule(module);
-}
-
-TEST_CASE("JSON serialization", "[JSON][Orbit]") {
-	auto module = Test::createModule<OrbitModule>("Orbit");
-
-	SECTION("Module state is serialized and deserialized") {
-		module->panelTheme = 1;
-		module->polyOut = true;
-		module->dist = DISTRIBUTION::UNIFORM;
-		
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		
-		auto moduleNew = Test::createModule<OrbitModule>("Orbit");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->panelTheme == 1);
-		REQUIRE(moduleNew->polyOut == true);
-		REQUIRE(moduleNew->dist == DISTRIBUTION::UNIFORM);
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
 	}
 
 	Test::destroyModule(module);

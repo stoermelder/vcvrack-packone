@@ -570,7 +570,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 			float np = rack::math::clamp(pos, 0.f, 1.f);
 			if (np != scrubPos) {
 				scrubPos = np;
-				double now = rack::system::getTime();
+				double now = vcv::fs::getTime();
 				if (now - lastScrubTime >= SCRUB_INTERVAL) {
 					lastScrubTime = now;
 					if (onScrubTo) onScrubTo(scrubPos);

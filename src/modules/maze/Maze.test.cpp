@@ -48,8 +48,133 @@ TEST_CASE("Preset JSON null-guards", "[Maze][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("JSON round-trip preserves state", "[JSON][Maze]") {
+	MazeMod* m = Test::createModule<MazeMod>("Maze");
+	MazeMod* m2 = Test::createModule<MazeMod>("Maze");
+
+	SECTION("Scalar settings round-trip") {
+		// Non-default values (defaults: panelTheme 0, usedSize 8, normalizePorts true)
+		m->panelTheme = 1;
+		m->gridResize(12);
+		m->normalizePorts = false;
+
+		json_t* j = m->dataToJson();
+		// Start m2 at defaults so dataFromJson() is genuinely exercised
+		m2->panelTheme = 0;
+		m2->usedSize = 8;
+		m2->normalizePorts = true;
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m2->panelTheme == 1);
+		REQUIRE(m2->usedSize == 12);
+		REQUIRE(m2->normalizePorts == false);
+	}
+
+	SECTION("Grid arrays (grid/gridCv) round-trip") {
+		m->gridResize(12);
+		m->gridSetState(2, 3, GRIDSTATE::ON, 0.6f);
+		m->gridSetState(5, 1, GRIDSTATE::RANDOM, 0.3f);
+		m->gridSetState(10, 7, GRIDSTATE::ON, 0.9f);
+
+		json_t* j = m->dataToJson();
+		// The grid arrays must be serialized as flat SIZE*SIZE elements
+		json_t* gridJ = json_object_get(j, "grid");
+		json_t* gridCvJ = json_object_get(j, "gridCv");
+		REQUIRE(gridJ != nullptr);
+		REQUIRE(gridCvJ != nullptr);
+		REQUIRE(json_array_size(gridJ) == (size_t)(32 * 32));
+		REQUIRE(json_array_size(gridCvJ) == (size_t)(32 * 32));
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m2->grid[2][3] == GRIDSTATE::ON);
+		REQUIRE(m2->gridCv[2][3] == Catch::Approx(0.6f));
+		REQUIRE(m2->grid[5][1] == GRIDSTATE::RANDOM);
+		REQUIRE(m2->gridCv[5][1] == Catch::Approx(0.3f));
+		REQUIRE(m2->grid[10][7] == GRIDSTATE::ON);
+		REQUIRE(m2->gridCv[10][7] == Catch::Approx(0.9f));
+		// Untouched cells stay OFF with zero CV
+		REQUIRE(m2->grid[0][0] == GRIDSTATE::OFF);
+		REQUIRE(m2->gridCv[0][0] == Catch::Approx(0.f));
+	}
+
+	SECTION("Ports array round-trip") {
+		// Distinctive per-port start/direction/position and mode settings
+		m->xStartPos[0] = 1; m->yStartPos[0] = 2;
+		m->xStartDir[0] = -1; m->yStartDir[0] = 0;
+		m->xPos[0] = 3; m->yPos[0] = 4;
+		m->xDir[0] = 0; m->yDir[0] = 1;
+		m->turnMode[0] = TURNMODE::ONEEIGHTY;
+		m->outMode[0] = OUTMODE::BI_5V;
+		m->ratchetingEnabled[0] = RATCHETMODE::MULT_TWO;
+		m->ratchetingSetProb(0, 0.7f);
+
+		m->xStartPos[2] = 5; m->yStartPos[2] = 6;
+		m->xStartDir[2] = 1; m->yStartDir[2] = 0;
+		m->xPos[2] = 7; m->yPos[2] = 8;
+		m->xDir[2] = -1; m->yDir[2] = 0;
+		m->turnMode[2] = TURNMODE::NINETY;
+		m->outMode[2] = OUTMODE::UNI_1V;
+		m->ratchetingEnabled[2] = RATCHETMODE::POWER_TWO;
+		m->ratchetingSetProb(2, 0.2f);
+
+		json_t* j = m->dataToJson();
+		// The ports array must be serialized with one entry per port
+		json_t* portsJ = json_object_get(j, "ports");
+		REQUIRE(portsJ != nullptr);
+		REQUIRE(json_array_size(portsJ) == (size_t) 4);
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m2->xStartPos[0] == 1);
+		REQUIRE(m2->yStartPos[0] == 2);
+		REQUIRE(m2->xStartDir[0] == -1);
+		REQUIRE(m2->yStartDir[0] == 0);
+		REQUIRE(m2->xPos[0] == 3);
+		REQUIRE(m2->yPos[0] == 4);
+		REQUIRE(m2->xDir[0] == 0);
+		REQUIRE(m2->yDir[0] == 1);
+		REQUIRE(m2->turnMode[0] == TURNMODE::ONEEIGHTY);
+		REQUIRE(m2->outMode[0] == OUTMODE::BI_5V);
+		REQUIRE(m2->ratchetingEnabled[0] == RATCHETMODE::MULT_TWO);
+		REQUIRE(m2->ratchetingProb[0] == Catch::Approx(0.7f));
+
+		REQUIRE(m2->xStartPos[2] == 5);
+		REQUIRE(m2->yStartPos[2] == 6);
+		REQUIRE(m2->xStartDir[2] == 1);
+		REQUIRE(m2->yStartDir[2] == 0);
+		REQUIRE(m2->xPos[2] == 7);
+		REQUIRE(m2->yPos[2] == 8);
+		REQUIRE(m2->xDir[2] == -1);
+		REQUIRE(m2->yDir[2] == 0);
+		REQUIRE(m2->turnMode[2] == TURNMODE::NINETY);
+		REQUIRE(m2->outMode[2] == OUTMODE::UNI_1V);
+		REQUIRE(m2->ratchetingEnabled[2] == RATCHETMODE::POWER_TWO);
+		REQUIRE(m2->ratchetingProb[2] == Catch::Approx(0.2f));
+	}
+
+	Test::destroyModule(m);
+	Test::destroyModule(m2);
+}
+
 
 TEST_CASE("Reset clears grid and restores cursor defaults", "[Maze]") {
 	auto module = Test::createModule<MazeMod>("Maze");
@@ -314,56 +439,4 @@ TEST_CASE("normalizePorts propagates clock from port 0 to port 1", "[Maze]") {
 	}
 
 	Test::destroyModule(module);
-}
-
-TEST_CASE("JSON round-trip preserves grid state and cursor configuration", "[JSON][Maze]") {
-	auto module = Test::createModule<MazeMod>("Maze");
-
-	module->gridResize(12);
-	module->gridSetState(2, 3, GRIDSTATE::ON, 0.6f);
-	module->gridSetState(5, 1, GRIDSTATE::RANDOM, 0.3f);
-	module->normalizePorts = false;
-	module->turnMode[0] = TURNMODE::ONEEIGHTY;
-	module->outMode[1] = OUTMODE::BI_5V;
-	module->xPos[2] = 5;
-	module->yPos[2] = 7;
-
-	json_t* j = module->dataToJson();
-
-	auto module2 = Test::createModule<MazeMod>("Maze");
-	module2->dataFromJson(j);
-	json_decref(j);
-
-	SECTION("usedSize preserved") {
-		REQUIRE(module2->usedSize == 12);
-	}
-
-	SECTION("Grid cell ON state and CV preserved") {
-		REQUIRE(module2->grid[2][3] == GRIDSTATE::ON);
-		REQUIRE(module2->gridCv[2][3] == Catch::Approx(0.6f));
-	}
-
-	SECTION("Grid cell RANDOM state preserved") {
-		REQUIRE(module2->grid[5][1] == GRIDSTATE::RANDOM);
-	}
-
-	SECTION("normalizePorts preserved") {
-		REQUIRE(module2->normalizePorts == false);
-	}
-
-	SECTION("Port 0 turnMode preserved") {
-		REQUIRE(module2->turnMode[0] == TURNMODE::ONEEIGHTY);
-	}
-
-	SECTION("Port 1 outMode preserved") {
-		REQUIRE(module2->outMode[1] == OUTMODE::BI_5V);
-	}
-
-	SECTION("Cursor position preserved") {
-		REQUIRE(module2->xPos[2] == 5);
-		REQUIRE(module2->yPos[2] == 7);
-	}
-
-	Test::destroyModule(module);
-	Test::destroyModule(module2);
 }

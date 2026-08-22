@@ -30,7 +30,7 @@ build/test/%: %.cpp $(TEST_HEADERS) $(TARGET)
 	@mkdir -p $(dir $@)
 	@echo "Building $@..."
 	@$(CXX) -std=c++14 \
-		-I$(CURDIR)/src/test -I$(CURDIR)/src/test $(FLAGS) -O0 -UNDEBUG \
+		-I$(CURDIR)/src/test -I$(CURDIR)/src/test $(FLAGS) -O0 -UNDEBUG -DDEBUGPLUGIN -fsanitize=address -fno-omit-frame-pointer \
 		-L$(RACK_DIR) -lRack \
 		-o $@ $(TEST_ADD_SOURCES) $(CURDIR)/$(TARGET) $<
 

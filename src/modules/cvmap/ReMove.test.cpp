@@ -23,11 +23,248 @@ TEST_CASE("Construction and initialization", "[ReMove]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("Constructor allocates seqData buffer", "[ReMove][init]") {
+TEST_CASE("Preset JSON null-guards", "[ReMove][JSON]") {
 	auto module = Test::createModule<ReMoveModule>("ReMoveLite");
-	REQUIRE(module->seqData != nullptr);
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("dataToJson writes the recorder array and config fields", "[ReMove][JSON]") {
+	auto module = Test::createModule<ReMoveModule>("ReMoveLite");
+
+	module->panelTheme = 2;
+	module->audioRate = true;
+	module->seqCount = 6;
+	module->seq = 3;
+	module->seqCvMode = SEQCVMODE_C4;
+	module->seqChangeMode = SEQCHANGEMODE_OFFSET;
+	module->runCvMode = RUNCVMODE_TRIG;
+	module->recOutCvMode = RECOUTCVMODE_TRIG;
+	module->inCvMode = INCVMODE_BI;
+	module->outCvMode = OUTCVMODE_CV_BI;
+	module->recMode = RECMODE_MOVE;
+	module->recAutoplay = true;
+	module->playMode = PLAYMODE_PINGPONG;
+	module->sampleRate = 1.f / 120.f;
+	module->isPlaying = true;
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+
+	REQUIRE(json_integer_value(json_object_get(rootJ, "panelTheme")) == 2);
+	REQUIRE(json_boolean_value(json_object_get(rootJ, "audioRate")) == true);
+
+	json_t* recJ = json_object_get(rootJ, "recorder");
+	REQUIRE(recJ != nullptr);
+	REQUIRE(json_array_size(recJ) == 1);
+	json_t* rec0J = json_array_get(recJ, 0);
+	REQUIRE(rec0J != nullptr);
+
+	REQUIRE(json_integer_value(json_object_get(rec0J, "seqCount")) == 6);
+	REQUIRE(json_integer_value(json_object_get(rec0J, "seq")) == 3);
+	REQUIRE(json_integer_value(json_object_get(rec0J, "seqCvMode")) == (int)SEQCVMODE_C4);
+	REQUIRE(json_integer_value(json_object_get(rec0J, "seqChangeMode")) == (int)SEQCHANGEMODE_OFFSET);
+	REQUIRE(json_integer_value(json_object_get(rec0J, "runCvMode")) == (int)RUNCVMODE_TRIG);
+	REQUIRE(json_integer_value(json_object_get(rec0J, "recOutCvMode")) == (int)RECOUTCVMODE_TRIG);
+	REQUIRE(json_integer_value(json_object_get(rec0J, "inCvMode")) == (int)INCVMODE_BI);
+	REQUIRE(json_integer_value(json_object_get(rec0J, "outCvMode")) == (int)OUTCVMODE_CV_BI);
+	REQUIRE(json_integer_value(json_object_get(rec0J, "recMode")) == (int)RECMODE_MOVE);
+	REQUIRE(json_boolean_value(json_object_get(rec0J, "recAutoplay")) == true);
+	REQUIRE(json_integer_value(json_object_get(rec0J, "playMode")) == (int)PLAYMODE_PINGPONG);
+	REQUIRE(json_real_value(json_object_get(rec0J, "sampleRate")) == Catch::Approx(1.f / 120.f));
+	REQUIRE(json_boolean_value(json_object_get(rec0J, "isPlaying")) == true);
+
+	json_decref(rootJ);
+	Test::destroyModule(module);
+}
+
+TEST_CASE("dataFromJson round-trip preserves all config fields", "[ReMove][JSON]") {
+	auto src = Test::createModule<ReMoveModule>("ReMoveLite");
+	auto dst = Test::createModule<ReMoveModule>("ReMoveLite");
+
+	src->panelTheme = 9;
+	src->audioRate = true;
+	src->parameterChangesDirect = true;
+	src->seqCount = 6;
+	src->seq = 2;
+	src->seqCvMode = SEQCVMODE_C4;
+	src->seqChangeMode = SEQCHANGEMODE_OFFSET;
+	src->runCvMode = RUNCVMODE_TRIG;
+	src->recOutCvMode = RECOUTCVMODE_TRIG;
+	src->inCvMode = INCVMODE_BI;
+	src->outCvMode = OUTCVMODE_CV_BI;
+	src->recMode = RECMODE_MOVE;
+	src->recAutoplay = true;
+	src->playMode = PLAYMODE_PINGPONG;
+	src->sampleRate = 1.f / 100.f;
+	src->isPlaying = true;
+
+	json_t* rootJ = src->dataToJson();
+	REQUIRE_NOTHROW(dst->dataFromJson(rootJ));
+
+	REQUIRE(dst->panelTheme == 9);
+	REQUIRE(dst->audioRate == true);
+	REQUIRE(dst->parameterChangesDirect == true);
+	REQUIRE(dst->seqCount == 6);
+	REQUIRE(dst->seq == 2);
+	REQUIRE(dst->seqCvMode == SEQCVMODE_C4);
+	REQUIRE(dst->seqChangeMode == SEQCHANGEMODE_OFFSET);
+	REQUIRE(dst->runCvMode == RUNCVMODE_TRIG);
+	REQUIRE(dst->recOutCvMode == RECOUTCVMODE_TRIG);
+	REQUIRE(dst->inCvMode == INCVMODE_BI);
+	REQUIRE(dst->outCvMode == OUTCVMODE_CV_BI);
+	REQUIRE(dst->recMode == RECMODE_MOVE);
+	REQUIRE(dst->recAutoplay == true);
+	REQUIRE(dst->playMode == PLAYMODE_PINGPONG);
+	REQUIRE(dst->sampleRate == Catch::Approx(1.f / 100.f));
+	REQUIRE(dst->isPlaying == true);
+	// dataFromJson forces isRecording = false.
+	REQUIRE(dst->isRecording == false);
+
+	json_decref(rootJ);
+	Test::destroyModule(src);
+	Test::destroyModule(dst);
+}
+
+TEST_CASE("dataFromJson resets REC_PARAM and triggers seqUpdate", "[ReMove][JSON]") {
+	auto module = Test::createModule<ReMoveModule>("ReMoveLite");
+
+	module->params[ReMoveModule::REC_PARAM].setValue(1.f);
+	module->dataPtr = 999;
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE_NOTHROW(module->dataFromJson(rootJ));
+
+	REQUIRE(module->params[ReMoveModule::REC_PARAM].getValue() == 0.f);
+	// dataPtr is reset by seqUpdate() (RESTART mode) to seqLow.
+	REQUIRE(module->dataPtr == module->seqLow);
+
+	json_decref(rootJ);
+	Test::destroyModule(module);
+}
+
+TEST_CASE("dataFromJson handles empty JSON object", "[ReMove][JSON]") {
+	auto module = Test::createModule<ReMoveModule>("ReMoveLite");
+
+	// Dirty state so we can detect accidental clobbering on missing keys.
+	module->panelTheme = 7;
+	module->seqCount = 6;
+	module->seq = 2;
+	module->recAutoplay = true;
+	module->isPlaying = true;
+
+	json_t* emptyJ = json_object();
+	REQUIRE_NOTHROW(module->dataFromJson(emptyJ));
+
+	// Nothing should be overwritten (every property is null-guarded).
+	REQUIRE(module->panelTheme == 7);
+	REQUIRE(module->seqCount == 6);
+	REQUIRE(module->seq == 2);
+	REQUIRE(module->recAutoplay == true);
+	REQUIRE(module->isPlaying == true);
+
+	json_decref(emptyJ);
+	Test::destroyModule(module);
+}
+
+TEST_CASE("dataFromJson decompresses run-length-encoded seqData", "[ReMove][JSON]") {
+	auto src = Test::createModule<ReMoveModule>("ReMoveLite");
+	auto dst = Test::createModule<ReMoveModule>("ReMoveLite");
+
+	// Write a sequence with a run-length pattern: three 0.5s then two 0.7s.
+	// Source's dataToJson compresses consecutive same values to a count integer.
+	src->seqResize(4);
+	src->seq = 0;
+	src->seqLength[0] = 5;
+	for (int i = 0; i < 5; i++) src->seqData[i] = (i < 3) ? 0.5f : 0.7f;
+
+	json_t* rootJ = src->dataToJson();
+	REQUIRE_NOTHROW(dst->dataFromJson(rootJ));
+
+	REQUIRE(dst->seqCount == 4);
+	REQUIRE(dst->seq == 0);
+	REQUIRE(dst->seqLength[0] == 5);
+
+	// Verify the values decompressed correctly.
+	for (int i = 0; i < 3; i++) {
+		REQUIRE(dst->seqData[i] == Catch::Approx(0.5f));
+	}
+	REQUIRE(dst->seqData[3] == Catch::Approx(0.7f));
+	REQUIRE(dst->seqData[4] == Catch::Approx(0.7f));
+
+	json_decref(rootJ);
+	Test::destroyModule(src);
+	Test::destroyModule(dst);
+}
+
+TEST_CASE("dataFromJson clips seqData writes to seqLength", "[ReMove][JSON]") {
+	// Build a JSON object with a seqData array longer than the declared seqLength.
+	// dataFromJson should refuse to write past seqLength[i].
+	auto module = Test::createModule<ReMoveModule>("ReMoveLite");
+	module->seqResize(4);
+	module->seq = 0;
+
+	json_t* rootJ = json_object();
+	json_object_set_new(rootJ, "panelTheme", json_integer(0));
+	json_object_set_new(rootJ, "audioRate", json_boolean(false));
+	json_object_set_new(rootJ, "parameterChangesDirect", json_boolean(false));
+
+	json_t* recJ = json_array();
+	json_t* rec0J = json_object();
+
+	json_object_set_new(rec0J, "seqCount", json_integer(4));
+	json_object_set_new(rec0J, "seq", json_integer(0));
+
+	// seqLength[0] = 2, but seqData[0] has 10 elements.
+	json_t* seqLengthJ = json_array();
+	json_array_append_new(seqLengthJ, json_integer(2));
+	for (int i = 1; i < 4; i++) json_array_append_new(seqLengthJ, json_integer(0));
+	json_object_set_new(rec0J, "seqLength", seqLengthJ);
+
+	json_t* seqDataJ = json_array();
+	json_t* seqData0J = json_array();
+	for (int i = 0; i < 10; i++) {
+		json_array_append_new(seqData0J, json_real(0.5));
+	}
+	json_array_append_new(seqDataJ, seqData0J);
+	for (int i = 1; i < 4; i++) json_array_append_new(seqDataJ, json_array());
+	json_object_set_new(rec0J, "seqData", seqDataJ);
+
+	json_array_append_new(recJ, rec0J);
+	json_object_set_new(rootJ, "recorder", recJ);
+
+	REQUIRE_NOTHROW(module->dataFromJson(rootJ));
+
+	REQUIRE(module->seqLength[0] == 2);
+	REQUIRE(module->seqData[0] == Catch::Approx(0.5f));
+	REQUIRE(module->seqData[1] == Catch::Approx(0.5f));
+	// Should NOT have written seqData[2..9] because seqLength=2.
+
+	json_decref(rootJ);
+	Test::destroyModule(module);
+}
+
 
 TEST_CASE("onReset clears playback state and sequence data", "[ReMove][init]") {
 	auto module = Test::createModule<ReMoveModule>("ReMoveLite");
@@ -572,238 +809,6 @@ TEST_CASE("INCVMODE_BI rescales -5..5V to 0..1 from CV_INPUT", "[ReMove][out]") 
 
 	Test::destroyModule(module);
 }
-
-
-// JSON serialization
-
-TEST_CASE("Preset JSON null-guards", "[ReMove][JSON]") {
-	auto module = Test::createModule<ReMoveModule>("ReMoveLite");
-
-	SECTION("All top-level properties are null-guarded in dataFromJson()") {
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		Test::testPresetNullGuards(module, rootJ);
-		json_decref(rootJ);
-	}
-
-	Test::destroyModule(module);
-}
-
-TEST_CASE("dataToJson writes the recorder array and config fields", "[ReMove][JSON]") {
-	auto module = Test::createModule<ReMoveModule>("ReMoveLite");
-
-	module->panelTheme = 2;
-	module->audioRate = true;
-	module->seqCount = 6;
-	module->seq = 3;
-	module->seqCvMode = SEQCVMODE_C4;
-	module->seqChangeMode = SEQCHANGEMODE_OFFSET;
-	module->runCvMode = RUNCVMODE_TRIG;
-	module->recOutCvMode = RECOUTCVMODE_TRIG;
-	module->inCvMode = INCVMODE_BI;
-	module->outCvMode = OUTCVMODE_CV_BI;
-	module->recMode = RECMODE_MOVE;
-	module->recAutoplay = true;
-	module->playMode = PLAYMODE_PINGPONG;
-	module->sampleRate = 1.f / 120.f;
-	module->isPlaying = true;
-
-	json_t* rootJ = module->dataToJson();
-	REQUIRE(rootJ != nullptr);
-
-	REQUIRE(json_integer_value(json_object_get(rootJ, "panelTheme")) == 2);
-	REQUIRE(json_boolean_value(json_object_get(rootJ, "audioRate")) == true);
-
-	json_t* recJ = json_object_get(rootJ, "recorder");
-	REQUIRE(recJ != nullptr);
-	REQUIRE(json_array_size(recJ) == 1);
-	json_t* rec0J = json_array_get(recJ, 0);
-	REQUIRE(rec0J != nullptr);
-
-	REQUIRE(json_integer_value(json_object_get(rec0J, "seqCount")) == 6);
-	REQUIRE(json_integer_value(json_object_get(rec0J, "seq")) == 3);
-	REQUIRE(json_integer_value(json_object_get(rec0J, "seqCvMode")) == (int)SEQCVMODE_C4);
-	REQUIRE(json_integer_value(json_object_get(rec0J, "seqChangeMode")) == (int)SEQCHANGEMODE_OFFSET);
-	REQUIRE(json_integer_value(json_object_get(rec0J, "runCvMode")) == (int)RUNCVMODE_TRIG);
-	REQUIRE(json_integer_value(json_object_get(rec0J, "recOutCvMode")) == (int)RECOUTCVMODE_TRIG);
-	REQUIRE(json_integer_value(json_object_get(rec0J, "inCvMode")) == (int)INCVMODE_BI);
-	REQUIRE(json_integer_value(json_object_get(rec0J, "outCvMode")) == (int)OUTCVMODE_CV_BI);
-	REQUIRE(json_integer_value(json_object_get(rec0J, "recMode")) == (int)RECMODE_MOVE);
-	REQUIRE(json_boolean_value(json_object_get(rec0J, "recAutoplay")) == true);
-	REQUIRE(json_integer_value(json_object_get(rec0J, "playMode")) == (int)PLAYMODE_PINGPONG);
-	REQUIRE(json_real_value(json_object_get(rec0J, "sampleRate")) == Catch::Approx(1.f / 120.f));
-	REQUIRE(json_boolean_value(json_object_get(rec0J, "isPlaying")) == true);
-
-	json_decref(rootJ);
-	Test::destroyModule(module);
-}
-
-TEST_CASE("dataFromJson round-trip preserves all config fields", "[ReMove][JSON]") {
-	auto src = Test::createModule<ReMoveModule>("ReMoveLite");
-	auto dst = Test::createModule<ReMoveModule>("ReMoveLite");
-
-	src->panelTheme = 9;
-	src->audioRate = true;
-	src->parameterChangesDirect = true;
-	src->seqCount = 6;
-	src->seq = 2;
-	src->seqCvMode = SEQCVMODE_C4;
-	src->seqChangeMode = SEQCHANGEMODE_OFFSET;
-	src->runCvMode = RUNCVMODE_TRIG;
-	src->recOutCvMode = RECOUTCVMODE_TRIG;
-	src->inCvMode = INCVMODE_BI;
-	src->outCvMode = OUTCVMODE_CV_BI;
-	src->recMode = RECMODE_MOVE;
-	src->recAutoplay = true;
-	src->playMode = PLAYMODE_PINGPONG;
-	src->sampleRate = 1.f / 100.f;
-	src->isPlaying = true;
-
-	json_t* rootJ = src->dataToJson();
-	REQUIRE_NOTHROW(dst->dataFromJson(rootJ));
-
-	REQUIRE(dst->panelTheme == 9);
-	REQUIRE(dst->audioRate == true);
-	REQUIRE(dst->parameterChangesDirect == true);
-	REQUIRE(dst->seqCount == 6);
-	REQUIRE(dst->seq == 2);
-	REQUIRE(dst->seqCvMode == SEQCVMODE_C4);
-	REQUIRE(dst->seqChangeMode == SEQCHANGEMODE_OFFSET);
-	REQUIRE(dst->runCvMode == RUNCVMODE_TRIG);
-	REQUIRE(dst->recOutCvMode == RECOUTCVMODE_TRIG);
-	REQUIRE(dst->inCvMode == INCVMODE_BI);
-	REQUIRE(dst->outCvMode == OUTCVMODE_CV_BI);
-	REQUIRE(dst->recMode == RECMODE_MOVE);
-	REQUIRE(dst->recAutoplay == true);
-	REQUIRE(dst->playMode == PLAYMODE_PINGPONG);
-	REQUIRE(dst->sampleRate == Catch::Approx(1.f / 100.f));
-	REQUIRE(dst->isPlaying == true);
-	// dataFromJson forces isRecording = false.
-	REQUIRE(dst->isRecording == false);
-
-	json_decref(rootJ);
-	Test::destroyModule(src);
-	Test::destroyModule(dst);
-}
-
-TEST_CASE("dataFromJson resets REC_PARAM and triggers seqUpdate", "[ReMove][JSON]") {
-	auto module = Test::createModule<ReMoveModule>("ReMoveLite");
-
-	module->params[ReMoveModule::REC_PARAM].setValue(1.f);
-	module->dataPtr = 999;
-
-	json_t* rootJ = module->dataToJson();
-	REQUIRE_NOTHROW(module->dataFromJson(rootJ));
-
-	REQUIRE(module->params[ReMoveModule::REC_PARAM].getValue() == 0.f);
-	// dataPtr is reset by seqUpdate() (RESTART mode) to seqLow.
-	REQUIRE(module->dataPtr == module->seqLow);
-
-	json_decref(rootJ);
-	Test::destroyModule(module);
-}
-
-TEST_CASE("dataFromJson handles empty JSON object", "[ReMove][JSON]") {
-	auto module = Test::createModule<ReMoveModule>("ReMoveLite");
-
-	// Dirty state so we can detect accidental clobbering on missing keys.
-	module->panelTheme = 7;
-	module->seqCount = 6;
-	module->seq = 2;
-	module->recAutoplay = true;
-	module->isPlaying = true;
-
-	json_t* emptyJ = json_object();
-	REQUIRE_NOTHROW(module->dataFromJson(emptyJ));
-
-	// Nothing should be overwritten (every property is null-guarded).
-	REQUIRE(module->panelTheme == 7);
-	REQUIRE(module->seqCount == 6);
-	REQUIRE(module->seq == 2);
-	REQUIRE(module->recAutoplay == true);
-	REQUIRE(module->isPlaying == true);
-
-	json_decref(emptyJ);
-	Test::destroyModule(module);
-}
-
-TEST_CASE("dataFromJson decompresses run-length-encoded seqData", "[ReMove][JSON]") {
-	auto src = Test::createModule<ReMoveModule>("ReMoveLite");
-	auto dst = Test::createModule<ReMoveModule>("ReMoveLite");
-
-	// Write a sequence with a run-length pattern: three 0.5s then two 0.7s.
-	// Source's dataToJson compresses consecutive same values to a count integer.
-	src->seqResize(4);
-	src->seq = 0;
-	src->seqLength[0] = 5;
-	for (int i = 0; i < 5; i++) src->seqData[i] = (i < 3) ? 0.5f : 0.7f;
-
-	json_t* rootJ = src->dataToJson();
-	REQUIRE_NOTHROW(dst->dataFromJson(rootJ));
-
-	REQUIRE(dst->seqCount == 4);
-	REQUIRE(dst->seq == 0);
-	REQUIRE(dst->seqLength[0] == 5);
-
-	// Verify the values decompressed correctly.
-	for (int i = 0; i < 3; i++) {
-		REQUIRE(dst->seqData[i] == Catch::Approx(0.5f));
-	}
-	REQUIRE(dst->seqData[3] == Catch::Approx(0.7f));
-	REQUIRE(dst->seqData[4] == Catch::Approx(0.7f));
-
-	json_decref(rootJ);
-	Test::destroyModule(src);
-	Test::destroyModule(dst);
-}
-
-TEST_CASE("dataFromJson clips seqData writes to seqLength", "[ReMove][JSON]") {
-	// Build a JSON object with a seqData array longer than the declared seqLength.
-	// dataFromJson should refuse to write past seqLength[i].
-	auto module = Test::createModule<ReMoveModule>("ReMoveLite");
-	module->seqResize(4);
-	module->seq = 0;
-
-	json_t* rootJ = json_object();
-	json_object_set_new(rootJ, "panelTheme", json_integer(0));
-	json_object_set_new(rootJ, "audioRate", json_boolean(false));
-	json_object_set_new(rootJ, "parameterChangesDirect", json_boolean(false));
-
-	json_t* recJ = json_array();
-	json_t* rec0J = json_object();
-
-	json_object_set_new(rec0J, "seqCount", json_integer(4));
-	json_object_set_new(rec0J, "seq", json_integer(0));
-
-	// seqLength[0] = 2, but seqData[0] has 10 elements.
-	json_t* seqLengthJ = json_array();
-	json_array_append_new(seqLengthJ, json_integer(2));
-	for (int i = 1; i < 4; i++) json_array_append_new(seqLengthJ, json_integer(0));
-	json_object_set_new(rec0J, "seqLength", seqLengthJ);
-
-	json_t* seqDataJ = json_array();
-	json_t* seqData0J = json_array();
-	for (int i = 0; i < 10; i++) {
-		json_array_append_new(seqData0J, json_real(0.5));
-	}
-	json_array_append_new(seqDataJ, seqData0J);
-	for (int i = 1; i < 4; i++) json_array_append_new(seqDataJ, json_array());
-	json_object_set_new(rec0J, "seqData", seqDataJ);
-
-	json_array_append_new(recJ, rec0J);
-	json_object_set_new(rootJ, "recorder", recJ);
-
-	REQUIRE_NOTHROW(module->dataFromJson(rootJ));
-
-	REQUIRE(module->seqLength[0] == 2);
-	REQUIRE(module->seqData[0] == Catch::Approx(0.5f));
-	REQUIRE(module->seqData[1] == Catch::Approx(0.5f));
-	// Should NOT have written seqData[2..9] because seqLength=2.
-
-	json_decref(rootJ);
-	Test::destroyModule(module);
-}
-
 
 // Recording lifecycle
 

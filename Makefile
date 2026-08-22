@@ -38,7 +38,7 @@ QUICKJS_SOURCES = \
 	dep/quickjs/dtoa.c
 
 # Add .cpp files to the build
-SOURCES += $(wildcard src/*.cpp src/**/**/*.cpp)
+SOURCES += $(wildcard src/*.cpp src/**/*.cpp src/**/**/*.cpp)
 SOURCES += src/modules/midikit/minilua.c
 SOURCES += $(QUICKJS_SOURCES)
 # Exclude test files from the main build
@@ -101,13 +101,13 @@ DEP_LOCAL := build/.dep
 
 include $(RACK_DIR)/plugin.mk
 
-ifdef DEBUG
+ifdef DEBUGPLUGIN
 	CXXFLAGS := $(filter-out -fno-omit-frame-pointer,$(CXXFLAGS))
 	CXXFLAGS := $(filter-out -funsafe-math-optimizations,$(CXXFLAGS))
 	CXXFLAGS := $(filter-out -O3,$(CXXFLAGS))
-	CXXFLAGS += -O0 -g
+	CXXFLAGS += -O0 -g -DDEBUGPLUGIN
 	CFLAGS := $(filter-out -O3,$(CFLAGS))
-	CFLAGS += -O0 -g
+	CFLAGS += -O0 -g -DDEBUGPLUGIN
 endif
 
 # Test build rules live in plugin-test.mk

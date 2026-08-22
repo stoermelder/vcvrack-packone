@@ -19,7 +19,7 @@ struct TestParamModule : Module {
 };
 
 // Helper: connect MidiCatClk to MidiCat as right expander and let MidiCat discover it.
-// After connectClk(), expClk is non-null and all expClkTriggers are in LOW state (primed
+// After connectClk(), expClk is non-null and all ClkExpanderDriver triggers are in LOW state (primed
 // by the process() call inside which reads 0V from all unconnected inputs).
 static void connectClk(MidiCatModule* midicat, MidiCatClkModule* clk) {
 	midicat->rightExpander.module = clk;
@@ -47,13 +47,13 @@ static void setupBinding(MidiCatModule* midicat, TestParamModule* target, int id
 	midicat->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, cc, 64));
 	midicat->learnParam(id, target->id, TestParamModule::PARAM_A);
 	midicat->process(Test::makeProcessArgs(1));
-	midicat->ccs[id].ccMode = CCMODE::DIRECT;
+	midicat->slots[id].cc.ccMode = CCMODE::DIRECT;
 }
 
 
 // ─── Standalone tests ───────────────────────────────────────────────────────
 
-TEST_CASE("MidiCatClk: construction and initialization", "[MidiCatClk]") {
+TEST_CASE("Construction and initialization", "[MidiCatClk]") {
 	MidiCatClkModule* m = Test::createModule<MidiCatClkModule>("MidiCatClk");
 
 	REQUIRE(m != nullptr);
@@ -79,10 +79,24 @@ TEST_CASE("Preset JSON null-guards", "[MidiCatClk][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
 
-TEST_CASE("MidiCatClk: JSON round-trip stores and restores panelTheme", "[MidiCatClk]") {
+TEST_CASE("JSON round-trip preserves state", "[MidiCatClk]") {
 	MidiCatClkModule* m = Test::createModule<MidiCatClkModule>("MidiCatClk");
 
 	m->panelTheme = 3;
@@ -96,7 +110,7 @@ TEST_CASE("MidiCatClk: JSON round-trip stores and restores panelTheme", "[MidiCa
 	Test::destroyModule(m);
 }
 
-TEST_CASE("MidiCatClk: process() does not crash without expander", "[MidiCatClk]") {
+TEST_CASE("process() does not crash without expander", "[MidiCatClk]") {
 	MidiCatClkModule* m = Test::createModule<MidiCatClkModule>("MidiCatClk");
 	REQUIRE_NOTHROW(m->process(Test::makeProcessArgs(1)));
 	Test::destroyModule(m);
@@ -105,7 +119,7 @@ TEST_CASE("MidiCatClk: process() does not crash without expander", "[MidiCatClk]
 
 // ─── Integration tests ──────────────────────────────────────────────────────
 
-TEST_CASE("MidiCatClk: MidiCat detects expander", "[MidiCatClk][MidiCat]") {
+TEST_CASE("MidiCat detects expander", "[MidiCatClk][MidiCat]") {
 	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
 	MidiCatClkModule* clk = Test::createModule<MidiCatClkModule>("MidiCatClk");
 	Test::registerModule(midicat);
@@ -113,12 +127,12 @@ TEST_CASE("MidiCatClk: MidiCat detects expander", "[MidiCatClk][MidiCat]") {
 
 	// Flush initial moduleChangedFlag so expClk is properly null before connecting
 	midicat->process(Test::makeProcessArgs(0));
-	REQUIRE(midicat->expClk.load() == nullptr);
+	REQUIRE(midicat->expanders.clk() == nullptr);
 
 	connectClk(midicat, clk);
 
-	REQUIRE(midicat->expClk.load() != nullptr);
-	REQUIRE(midicat->expClk.load() == clk);
+	REQUIRE(midicat->expanders.clk() != nullptr);
+	REQUIRE(midicat->expanders.clk() == clk);
 
 	Test::unregisterModule(clk);
 	Test::destroyModule(clk);
@@ -126,14 +140,14 @@ TEST_CASE("MidiCatClk: MidiCat detects expander", "[MidiCatClk][MidiCat]") {
 	Test::destroyModule(midicat);
 }
 
-TEST_CASE("MidiCatClk: disconnecting expander clears expClk and resets clockModes", "[MidiCatClk][MidiCat]") {
+TEST_CASE("Disconnecting expander clears expClk and resets clockModes", "[MidiCatClk][MidiCat]") {
 	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
 	MidiCatClkModule* clk = Test::createModule<MidiCatClkModule>("MidiCatClk");
 	Test::registerModule(midicat);
 	Test::registerModule(clk);
 
 	connectClk(midicat, clk);
-	REQUIRE(midicat->expClk.load() != nullptr);
+	REQUIRE(midicat->expanders.clk() != nullptr);
 
 	// Set some clock modes to non-OFF
 	midicat->setClockMode(0, MidiCatParam::CLOCKMODE::ARM);
@@ -145,7 +159,7 @@ TEST_CASE("MidiCatClk: disconnecting expander clears expClk and resets clockMode
 	midicat->moduleChangedFlag = true;
 	midicat->process(Test::makeProcessArgs(10));
 
-	REQUIRE(midicat->expClk.load() == nullptr);
+	REQUIRE(midicat->expanders.clk() == nullptr);
 	REQUIRE(midicat->getClockMode(0) == MidiCatParam::CLOCKMODE::OFF);
 	REQUIRE(midicat->getClockMode(1) == MidiCatParam::CLOCKMODE::OFF);
 
@@ -155,7 +169,7 @@ TEST_CASE("MidiCatClk: disconnecting expander clears expClk and resets clockMode
 	Test::destroyModule(midicat);
 }
 
-TEST_CASE("MidiCatClk: ARM mode defers param update until clock tick", "[MidiCatClk][MidiCat]") {
+TEST_CASE("ARM mode defers param update until clock tick", "[MidiCatClk][MidiCat]") {
 	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
 	MidiCatClkModule* clk = Test::createModule<MidiCatClkModule>("MidiCatClk");
 	TestParamModule* target = new TestParamModule();
@@ -171,7 +185,7 @@ TEST_CASE("MidiCatClk: ARM mode defers param update until clock tick", "[MidiCat
 
 	// Enable ARM mode on channel 0, clock source 0
 	midicat->setClockMode(0, MidiCatParam::CLOCKMODE::ARM);
-	midicat->midiParam[0].clockSource = 0;
+	midicat->slots[0].param.clockSource = 0;
 
 	connectClk(midicat, clk);
 
@@ -193,7 +207,7 @@ TEST_CASE("MidiCatClk: ARM mode defers param update until clock tick", "[MidiCat
 	Test::destroyModule(midicat);
 }
 
-TEST_CASE("MidiCatClk: ARM mode ignores clock on wrong source", "[MidiCatClk][MidiCat]") {
+TEST_CASE("ARM mode ignores clock on wrong source", "[MidiCatClk][MidiCat]") {
 	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
 	MidiCatClkModule* clk = Test::createModule<MidiCatClkModule>("MidiCatClk");
 	TestParamModule* target = new TestParamModule();
@@ -208,7 +222,7 @@ TEST_CASE("MidiCatClk: ARM mode ignores clock on wrong source", "[MidiCatClk][Mi
 	float baseValue = target->getParamQuantity(TestParamModule::PARAM_A)->getValue();
 
 	midicat->setClockMode(0, MidiCatParam::CLOCKMODE::ARM);
-	midicat->midiParam[0].clockSource = 2;  // param listens to clock 2
+	midicat->slots[0].param.clockSource = 2;  // param listens to clock 2
 
 	connectClk(midicat, clk);
 
@@ -233,7 +247,7 @@ TEST_CASE("MidiCatClk: ARM mode ignores clock on wrong source", "[MidiCatClk][Mi
 	Test::destroyModule(midicat);
 }
 
-TEST_CASE("MidiCatClk: ARM_DEFERRED_FEEDBACK withholds MIDI feedback until clock tick", "[MidiCatClk][MidiCat]") {
+TEST_CASE("ARM_DEFERRED_FEEDBACK withholds MIDI feedback until clock tick", "[MidiCatClk][MidiCat]") {
 	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
 	MidiCatClkModule* clk = Test::createModule<MidiCatClkModule>("MidiCatClk");
 	TestParamModule* target = new TestParamModule();
@@ -243,7 +257,7 @@ TEST_CASE("MidiCatClk: ARM_DEFERRED_FEEDBACK withholds MIDI feedback until clock
 
 	setupBinding(midicat, target, 0, 7);
 	midicat->setClockMode(0, MidiCatParam::CLOCKMODE::ARM_DEFERRED_FEEDBACK);
-	midicat->midiParam[0].clockSource = 0;
+	midicat->slots[0].param.clockSource = 0;
 
 	connectClk(midicat, clk);
 
@@ -253,16 +267,16 @@ TEST_CASE("MidiCatClk: ARM_DEFERRED_FEEDBACK withholds MIDI feedback until clock
 
 	// Tick clock 0: applies setValueDeffered=40 and sets getValueLast=40
 	sendClockPulse(midicat, clk, 0, 10);
-	REQUIRE(midicat->midiParam[0].getValue() == 40);
+	REQUIRE(midicat->slots[0].param.getValue() == 40);
 
 	// Send CC 7 = 100 — deferred; getValueLast (and getValue()) still equals 40
 	midicat->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 7, 100));
 	midicat->process(Test::makeProcessArgs(13));
-	REQUIRE(midicat->midiParam[0].getValue() == 40);  // old value until tick
+	REQUIRE(midicat->slots[0].param.getValue() == 40);  // old value until tick
 
 	// Tick clock 0 — applies deferred value, getValueLast advances to 100
 	sendClockPulse(midicat, clk, 0, 20);
-	REQUIRE(midicat->midiParam[0].getValue() == 100);
+	REQUIRE(midicat->slots[0].param.getValue() == 100);
 
 	Test::unregisterModule(target);
 	delete target;
@@ -272,7 +286,7 @@ TEST_CASE("MidiCatClk: ARM_DEFERRED_FEEDBACK withholds MIDI feedback until clock
 	Test::destroyModule(midicat);
 }
 
-TEST_CASE("MidiCatClk: each of the four clock inputs fires its trigger", "[MidiCatClk][MidiCat]") {
+TEST_CASE("Each of the four clock inputs fires its trigger", "[MidiCatClk][MidiCat]") {
 	// Each SECTION reuses the same test setup but tests a different clock input.
 	// The single channel 0 binding has its clockSource changed per section.
 	for (int input = 0; input < 4; input++) {
@@ -286,7 +300,7 @@ TEST_CASE("MidiCatClk: each of the four clock inputs fires its trigger", "[MidiC
 		// Bind CC 7 to PARAM_A with ARM quantization on clock input `input`
 		setupBinding(midicat, target, 0, 7);
 		midicat->setClockMode(0, MidiCatParam::CLOCKMODE::ARM);
-		midicat->midiParam[0].clockSource = input;
+		midicat->slots[0].param.clockSource = input;
 
 		connectClk(midicat, clk);
 

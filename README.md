@@ -88,6 +88,19 @@ Feel free to contact me or create a GitHub issue if you have any problems or que
 
 Follow the [build instructions](https://vcvrack.com/manual/Building#Building-Rack-plugins) for VCV Rack or the [build instructions](https://github.com/4ms/metamodule-plugin-sdk?tab=readme-ov-file#path-to-the-sdk) for MetaModule.
 
+## Testing
+
+The unit tests use [Catch2](https://github.com/catchorg/Catch2). Tests live next to the code they cover as `*.test.cpp`, with larger suites split into `*.test.hpp` fragments; each `*.test.cpp` is built into its own binary under `build/test/` and linked against the plugin, with AddressSanitizer enabled.
+
+```bash
+make testrun                   # build and run all tests
+make testrun SUCCESS=1         # also print passing assertions
+make test-one NAME=<Module>    # rebuild and run a single test binary
+make test                      # build only, don't run
+```
+
+The test binaries are always compiled with `DEBUGPLUGIN`, and they link the plugin, so the plugin has to be built the same way: use `make DEBUGPLUGIN=1` for it. Modules reach the VCV Rack API through a swappable access layer (`src/vcv/`) that the tests replace with mocks, and that seam only exists in a debug build. Note that toggling the flag does not invalidate existing object files, so run `make clean` when switching between a release and a debug build.
+
 ## License
 
 All **source code** is copyright © 2026 Benjamin Dill and is distributed under the [GNU General Public License, version v3.0](./LICENSE.txt) or any later version (SPDX: GPL-3.0-or-later).

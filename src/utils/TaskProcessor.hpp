@@ -13,10 +13,18 @@ struct TaskProcessor {
         }
     }
 
-    void enqueue(std::function<void()> t) {
+    // Returns false when the ring buffer is full and t was dropped (never run inline).
+    // Callers that must not lose a task can use the return value to retry later.
+    bool enqueue(std::function<void()> t) {
         if (!queue.full()) {
             queue.push(t);
+            return true;
         }
+        return false;
+    }
+
+    void drain() {
+        queue.clear();
     }
 }; // struct TaskProcessor
 
