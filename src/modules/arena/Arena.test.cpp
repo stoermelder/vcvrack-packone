@@ -180,6 +180,185 @@ TEST_CASE("JSON round-trip preserves module state", "[Arena]") {
 }
 
 
+
+// scGetDistance: mirrors TransitPad's dist[]/weight coverage. Arena is the
+// higher-risk consumer for the XyScreenNodes/XyScreenCursor refactor because
+// MIX_PORTS > 1 exercises cursor (type-1) ids >= 1, which TransitPad's single
+// Out cursor never does.
+
+TEST_CASE("scGetDistance returns the per-(mixport,inport) distance", "[Arena]") {
+	auto* m = Test::createModule<MODULE>("Arena");
+
+	setInPosition(m, 0, 0.f, 0.f);
+	setMixPosition(m, 0, 0.f, 0.f);
+	setMixPosition(m, 1, 3.f, 4.f);
+	// A radius large enough that the process() loop actually writes dist[][]
+	// for both mixports (dist is only computed up to inportsUsed).
+	setRadius(m, 0, 100.f);
+	m->inportsUsed = 1;
+
+	m->process(Test::makeProcessArgs(1));
+
+	// MIX-0 co-located with IN-0
+	REQUIRE(m->scGetDistance(1, 0, 0, 0) == Catch::Approx(0.f).margin(0.001f));
+	// MIX-1 at (3,4) from IN-0 at (0,0): classic 3-4-5 triangle
+	REQUIRE(m->scGetDistance(1, 1, 0, 0) == Catch::Approx(5.f).margin(0.001f));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("scGetDistance ignores its source-type/dest-type arguments", "[Arena]") {
+	// Per the refactor plan (XyScreenNodes_refactor_plan.md §3), the 4-argument
+	// scGetDistance is only ever called as scGetDistance(1, cursorId, 0, nodeId)
+	// from the cursor widget, and both implementations ignore typeSource/typeDest
+	// entirely. Confirm that empirically before the refactor collapses the
+	// signature to getCursorToNodeDistance(cursorId, nodeId).
+	auto* m = Test::createModule<MODULE>("Arena");
+
+	setInPosition(m, 0, 0.f, 0.f);
+	setMixPosition(m, 0, 6.f, 8.f);
+	setRadius(m, 0, 100.f);
+	m->inportsUsed = 1;
+
+	m->process(Test::makeProcessArgs(1));
+
+	float withDeclaredTypes = m->scGetDistance(1, 0, 0, 0);
+	float withBogusTypes = m->scGetDistance(99, 0, 42, 0);
+
+	REQUIRE(withDeclaredTypes == Catch::Approx(10.f).margin(0.001f));
+	REQUIRE(withBogusTypes == withDeclaredTypes);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIX id >= 1 correctly indexes its own distance/weight, independent of MIX-0", "[Arena]") {
+	// The refactor plan flags this as the concrete case where the current
+	// INPUTS-bound guard would silently misbehave for cursor ids >= 1 once
+	// cursor storage moves out of XyScreenModule (§1c). Lock down today's
+	// correct behaviour before that move.
+	auto* m = Test::createModule<MODULE>("Arena");
+
+	setInPosition(m, 0, 0.5f, 0.5f);
+	setMixPosition(m, 0, 0.5f, 0.5f);   // co-located with IN-0: inside radius
+	setMixPosition(m, 1, 0.f, 0.f);     // far from IN-0: outside radius
+	setRadius(m, 0, 0.2f);
+	m->inportsUsed = 1;
+
+	m->inputs[MODULE::IN + 0].channels = 1;
+	m->inputs[MODULE::IN + 0].setVoltage(5.f);
+
+	m->process(Test::makeProcessArgs(1));
+
+	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 0].getVoltage() > 0.f);
+	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 1].getVoltage() == Catch::Approx(0.f).margin(0.001f));
+
+	Test::destroyModule(m);
+}
+
+// Sc::dataToJson()/dataFromJson() write "radius"/"amount" for type 0 (nodes)
+// only, and silently no-op for type 1 (cursor/MIX ports) today. This test
+// pins the exact JSON produced for a distinctive node state so any refactor
+// that moves or renames those keys fails loudly. It also proves empirically
+// (rather than by reading the "if (type == 0)" guard) that the type-1 calls
+// write no "radius"/"amount" keys into "mixports" entries, which is the fact
+// Stage 3 of the plan needs verified before it can delete those calls.
+
+TEST_CASE("Golden JSON: node (IN port) radius/amount round-trip byte-identically", "[Arena][JSON]") {
+	auto* m = Test::createModule<MODULE>("Arena");
+
+	m->scSetRadiusImmediate(0, 0.125f);
+	m->scSetRadiusFinal(0, 0.125f);
+	m->scSetAmountImmediate(0, 0.875f);
+	m->scSetAmountFinal(0, 0.875f);
+
+	json_t* dataJ = json_object();
+	m->Sc::dataToJson(dataJ, 0, 0);
+
+	char* dumped = json_dumps(dataJ, JSON_SORT_KEYS | JSON_COMPACT | JSON_REAL_PRECISION(9));
+	std::string actual(dumped);
+	free(dumped);
+	json_decref(dataJ);
+
+	REQUIRE(actual == "{\"amount\":0.875,\"radius\":0.125}");
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Golden JSON: cursor (MIX port) dataToJson writes no keys", "[Arena][JSON]") {
+	auto* m = Test::createModule<MODULE>("Arena");
+
+	setMixPosition(m, 1, 0.3f, 0.7f);
+
+	json_t* dataJ = json_object();
+	m->Sc::dataToJson(dataJ, 1, 1);
+
+	REQUIRE(json_object_size(dataJ) == 0);
+
+	json_decref(dataJ);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Golden JSON: cursor (MIX port) dataFromJson on an empty object is a no-op self-assignment", "[Arena][JSON]") {
+	// Sc::dataFromJson(dataJ, 1, id) unconditionally calls
+	// scSetXyImmediate(1, id, scGetXFinal(1, id), scGetYFinal(1, id)) — reading
+	// the MIX port's own current position and writing it straight back. Confirm
+	// that round-trips the position exactly rather than zeroing or perturbing it.
+	auto* m = Test::createModule<MODULE>("Arena");
+
+	setMixPosition(m, 1, 0.3f, 0.7f);
+	float xBefore = m->params[MODULE::MIX_X_POS + 1].getValue();
+	float yBefore = m->params[MODULE::MIX_Y_POS + 1].getValue();
+
+	json_t* dataJ = json_object();
+	m->Sc::dataFromJson(dataJ, 1, 1);
+	json_decref(dataJ);
+
+	REQUIRE(m->params[MODULE::MIX_X_POS + 1].getValue() == Catch::Approx(xBefore));
+	REQUIRE(m->params[MODULE::MIX_Y_POS + 1].getValue() == Catch::Approx(yBefore));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Golden JSON: full module dataToJson is byte-identical for a distinctive state", "[Arena][JSON]") {
+	auto* m = Test::createModule<MODULE>("Arena");
+
+	m->panelTheme = 0;
+	m->inportsUsed = 1;
+	m->mixportsUsed = 1;
+
+	m->scSetRadiusImmediate(0, 0.25f);
+	m->scSetRadiusFinal(0, 0.25f);
+	m->scSetAmountImmediate(0, 0.5f);
+	m->scSetAmountFinal(0, 0.5f);
+	m->modMode[0] = MODMODE::RADIUS;
+	m->outputMode[0] = OUTPUTMODE::CLIP_BI;
+	m->inputXBipolar[0] = true;
+	m->inputYBipolar[0] = false;
+	m->mixportXBipolar[0] = false;
+	m->mixportYBipolar[0] = true;
+
+	json_t* rootJ = m->dataToJson();
+	json_t* inportsJ = json_object_get(rootJ, "inports");
+	json_t* inport0J = json_array_get(inportsJ, 0);
+	json_t* mixportsJ = json_object_get(rootJ, "mixports");
+	json_t* mixport0J = json_array_get(mixportsJ, 0);
+
+	char* inportDumped = json_dumps(inport0J, JSON_SORT_KEYS | JSON_COMPACT | JSON_REAL_PRECISION(9));
+	std::string inportActual(inportDumped);
+	free(inportDumped);
+
+	REQUIRE(inportActual == "{\"amount\":0.5,\"inputXBipolar\":true,\"inputYBipolar\":false,\"modMode\":0,\"outputMode\":3,\"radius\":0.25}");
+
+	// mixport entries never carry "radius"/"amount" — only the module-owned
+	// bipolar flags and the (empty) Seq state.
+	REQUIRE(json_object_get(mixport0J, "radius") == nullptr);
+	REQUIRE(json_object_get(mixport0J, "amount") == nullptr);
+
+	json_decref(rootJ);
+	Test::destroyModule(m);
+}
+
+
 // Proximity mixing: MIX output
 
 TEST_CASE("MIX output is non-zero when IN is within radius", "[Arena]") {
