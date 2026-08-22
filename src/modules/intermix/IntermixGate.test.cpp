@@ -60,19 +60,52 @@ TEST_CASE("Preset JSON null-guards", "[IntermixGate][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("JSON round-trip preserves state", "[IntermixGate]") {
+	IntermixGateModule<8>* m = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+	IntermixGateModule<8>* m2 = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+
+	// Non-default value (default is pluginSettings.panelThemeDefault, usually 0)
+	m->panelTheme = 1;
+
+	json_t* j = m->dataToJson();
+	// Start m2 at a different value so dataFromJson() is genuinely exercised
+	// (otherwise a fresh module's default could mask a broken restore).
+	m2->panelTheme = 0;
+	m2->dataFromJson(j);
+	json_decref(j);
+
+	REQUIRE(m2->panelTheme == 1);
+
+	Test::destroyModule(m);
+	Test::destroyModule(m2);
+}
+
 
 TEST_CASE("Expander connection", "[IntermixGate]") {
 	auto gateModule = Test::createModule<IntermixGateModule<8>>("IntermixGate");
 
-	SECTION("Module processes without expander") {
-		// Should not crash
-		gateModule->process(Test::makeProcessArgs(1));
-		
-		for (int i = 0; i < 8; i++) {
-			REQUIRE(gateModule->outputs[IntermixGateModule<8>::OUTPUT + i].getVoltage() == 0.f);
-		}
+	// Should not crash
+	gateModule->process(Test::makeProcessArgs(1));
+	
+	for (int i = 0; i < 8; i++) {
+		REQUIRE(gateModule->outputs[IntermixGateModule<8>::OUTPUT + i].getVoltage() == 0.f);
 	}
 
 	Test::destroyModule(gateModule);
@@ -208,27 +241,6 @@ TEST_CASE("Gate logic with varying matrix values", "[IntermixGate]") {
 
 	Test::destroyModule(gateModule);
 	delete intermixModule;
-}
-
-TEST_CASE("JSON serialization", "[IntermixGate]") {
-	auto module = Test::createModule<IntermixGateModule<8>>("IntermixGate");
-
-	SECTION("Module state is serialized and deserialized") {
-		module->panelTheme = 1;
-		
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		
-		auto moduleNew = Test::createModule<IntermixGateModule<8>>("IntermixGate");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->panelTheme == 1);
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
-	}
-
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Expander chain with gate module", "[IntermixGate]") {

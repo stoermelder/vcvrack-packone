@@ -30,8 +30,56 @@ TEST_CASE("Preset JSON null-guards", "[FourRounds][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("JSON round-trip preserves state", "[JSON][FourRounds]") {
+	auto module = Test::createModule<FourRoundsModule>("FourRounds");
+
+	// Set known state
+	module->mode = MODE::SH;
+	module->inverted = true;
+	for (int i = 0; i < FourRoundsModule::SIZE; i++) {
+		module->state[i] = (i % 2 == 0) ? 0.f : 1.f;
+	}
+	for (int i = 0; i < 16; i++) {
+		module->lastValue[i] = float(i) * 0.5f;
+	}
+
+	json_t* j = module->dataToJson();
+
+	// Restore into fresh module
+	auto module2 = Test::createModule<FourRoundsModule>("FourRounds");
+	module2->dataFromJson(j);
+	json_decref(j);
+
+	REQUIRE(module2->mode == MODE::SH);
+	REQUIRE(module2->inverted == true);
+	for (int i = 0; i < FourRoundsModule::SIZE; i++) {
+		REQUIRE(module2->state[i] == Catch::Approx((i % 2 == 0) ? 0.f : 1.f));
+	}
+	for (int i = 0; i < 16; i++) {
+		REQUIRE(module2->lastValue[i] == Catch::Approx(float(i) * 0.5f));
+	}
+
+	Test::destroyModule(module);
+	Test::destroyModule(module2);
+}
+
 
 TEST_CASE("DIRECT mode routes winner through the bracket", "[FourRounds]") {
 	auto module = Test::createModule<FourRoundsModule>("FourRounds");
@@ -262,48 +310,4 @@ TEST_CASE("QUANTUM mode state=0 passes first input unchanged", "[FourRounds]") {
 	}
 
 	Test::destroyModule(module);
-}
-
-TEST_CASE("JSON round-trip preserves state", "[JSON][FourRounds]") {
-	auto module = Test::createModule<FourRoundsModule>("FourRounds");
-
-	// Set known state
-	module->mode = MODE::SH;
-	module->inverted = true;
-	for (int i = 0; i < FourRoundsModule::SIZE; i++) {
-		module->state[i] = (i % 2 == 0) ? 0.f : 1.f;
-	}
-	for (int i = 0; i < 16; i++) {
-		module->lastValue[i] = float(i) * 0.5f;
-	}
-
-	json_t* j = module->dataToJson();
-
-	// Restore into fresh module
-	auto module2 = Test::createModule<FourRoundsModule>("FourRounds");
-	module2->dataFromJson(j);
-	json_decref(j);
-
-	SECTION("Mode is preserved") {
-		REQUIRE(module2->mode == MODE::SH);
-	}
-
-	SECTION("Inverted flag is preserved") {
-		REQUIRE(module2->inverted == true);
-	}
-
-	SECTION("State array is preserved") {
-		for (int i = 0; i < FourRoundsModule::SIZE; i++) {
-			REQUIRE(module2->state[i] == Catch::Approx((i % 2 == 0) ? 0.f : 1.f));
-		}
-	}
-
-	SECTION("lastValue array is preserved") {
-		for (int i = 0; i < 16; i++) {
-			REQUIRE(module2->lastValue[i] == Catch::Approx(float(i) * 0.5f));
-		}
-	}
-
-	Test::destroyModule(module);
-	Test::destroyModule(module2);
 }

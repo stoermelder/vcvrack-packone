@@ -111,8 +111,8 @@ struct PanicRoomModule : Module {
         }
         // outsideColor
         json_t* outsideColorJ = json_object_get(rootJ, "outsideColor");
-        if (outsideColorJ) {
-            outsideColor = color::fromHexString(json_string_value(outsideColorJ));
+        if (const char* hex = json_string_value(outsideColorJ)) {
+            outsideColor = color::fromHexString(hex);
         }
         // outsideAlpha
         json_t* outsideAlphaJ = json_object_get(rootJ, "outsideAlpha");

@@ -14,30 +14,6 @@ SYNC_MODEL(modelTransit, "Transit");
 SYNC_MODEL(modelTransitEx, "TransitEx");
 Test::TestContext<> testContext;
 
-TEST_CASE("Construction and initialization", "[TransitEx]") {
-	TransitExModule<12>* m = Test::createModule<TransitExModule<12>>("TransitEx");
-	TransitExWidget<12>* mw = Test::createWidget<TransitExWidget<12>>("TransitEx");
-
-	REQUIRE(m != nullptr);
-	REQUIRE(mw != nullptr);
-	REQUIRE(mw->module == nullptr);
-
-	Test::destroyWidget(mw);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("Preset JSON null-guards", "[TransitEx][JSON]") {
-	auto module = Test::createModule<TransitExModule<12>>("TransitEx");
-
-	SECTION("All top-level properties are null-guarded in dataFromJson()") {
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		Test::testPresetNullGuards(module, rootJ);
-		json_decref(rootJ);
-	}
-
-	Test::destroyModule(module);
-}
 
 // Helper module with test parameters
 struct TestModule : rack::Module {
@@ -101,6 +77,92 @@ static void disconnectExpander(TransitModule<12>* transit) {
 	transit->rightExpander.module = nullptr;
 	transit->moduleChangedFlag = true;
 	transit->process(Test::makeProcessArgs(1));
+}
+
+
+
+TEST_CASE("Construction and initialization", "[TransitEx]") {
+	TransitExModule<12>* m = Test::createModule<TransitExModule<12>>("TransitEx");
+	TransitExWidget<12>* mw = Test::createWidget<TransitExWidget<12>>("TransitEx");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Preset JSON null-guards", "[TransitEx][JSON]") {
+	auto module = Test::createModule<TransitExModule<12>>("TransitEx");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("JSON round-trip preserves state", "[TransitEx][JSON]") {
+	Module* exModule = createExModule();
+	TransitBase<12>* exBase = dynamic_cast<TransitBase<12>*>(exModule);
+	REQUIRE(exBase != nullptr);
+
+	// Populate some slots with test data
+	exBase->presetSlotUsed[0] = true;
+	exBase->preset[0] = {0.1f, 0.5f, 0.9f};
+	exBase->textLabel[0] = "MyLabel";
+	exBase->fadeTime[0] = 0.3f;
+
+	exBase->presetSlotUsed[3] = true;
+	exBase->preset[3] = {0.7f};
+	exBase->fadeTime[3] = -1.f;
+
+	// Serialize
+	json_t* rootJ = exModule->dataToJson();
+	REQUIRE(rootJ != nullptr);
+
+	// Create a new expander and deserialize
+	Module* exModule2 = createExModule();
+	TransitBase<12>* exBase2 = dynamic_cast<TransitBase<12>*>(exModule2);
+	REQUIRE(exBase2 != nullptr);
+	exModule2->dataFromJson(rootJ);
+
+	REQUIRE(exBase2->presetSlotUsed[0] == true);
+	REQUIRE(exBase2->preset[0].size() == 3);
+	REQUIRE(exBase2->preset[0][0] == Catch::Approx(0.1f).margin(0.001f));
+	REQUIRE(exBase2->preset[0][1] == Catch::Approx(0.5f).margin(0.001f));
+	REQUIRE(exBase2->preset[0][2] == Catch::Approx(0.9f).margin(0.001f));
+	REQUIRE(exBase2->textLabel[0] == "MyLabel");
+	REQUIRE(exBase2->fadeTime[0] == Catch::Approx(0.3f).margin(0.001f));
+	REQUIRE(exBase2->presetSlotUsed[3] == true);
+	REQUIRE(exBase2->preset[3].size() == 1);
+	REQUIRE(exBase2->preset[3][0] == Catch::Approx(0.7f).margin(0.001f));
+
+	for (int i = 1; i <= 2; i++) {
+		REQUIRE(exBase2->presetSlotUsed[i] == false);
+	}
+
+	json_decref(rootJ);
+	delete exModule2;
+	delete exModule;
 }
 
 
@@ -504,69 +566,6 @@ TEST_CASE("TRIG_FWD wraps correctly when presetLast is in expander range", "[Tra
 	Test::unregisterModule(transit);
 	Test::destroyModule(transit);
 }
-
-
-TEST_CASE("TransitEx JSON serialization preserves slot data", "[TransitEx][JSON]") {
-	Module* exModule = createExModule();
-	TransitBase<12>* exBase = dynamic_cast<TransitBase<12>*>(exModule);
-	REQUIRE(exBase != nullptr);
-
-	// Populate some slots with test data
-	exBase->presetSlotUsed[0] = true;
-	exBase->preset[0] = {0.1f, 0.5f, 0.9f};
-	exBase->textLabel[0] = "MyLabel";
-	exBase->fadeTime[0] = 0.3f;
-
-	exBase->presetSlotUsed[3] = true;
-	exBase->preset[3] = {0.7f};
-	exBase->fadeTime[3] = -1.f;
-
-	// Serialize
-	json_t* rootJ = exModule->dataToJson();
-	REQUIRE(rootJ != nullptr);
-
-	// Create a new expander and deserialize
-	Module* exModule2 = createExModule();
-	TransitBase<12>* exBase2 = dynamic_cast<TransitBase<12>*>(exModule2);
-	REQUIRE(exBase2 != nullptr);
-	exModule2->dataFromJson(rootJ);
-
-	SECTION("Slot 0 used flag is preserved") {
-		REQUIRE(exBase2->presetSlotUsed[0] == true);
-	}
-
-	SECTION("Slot 0 preset values are preserved") {
-		REQUIRE(exBase2->preset[0].size() == 3);
-		REQUIRE(exBase2->preset[0][0] == Catch::Approx(0.1f).margin(0.001f));
-		REQUIRE(exBase2->preset[0][1] == Catch::Approx(0.5f).margin(0.001f));
-		REQUIRE(exBase2->preset[0][2] == Catch::Approx(0.9f).margin(0.001f));
-	}
-
-	SECTION("Slot 0 text label is preserved") {
-		REQUIRE(exBase2->textLabel[0] == "MyLabel");
-	}
-
-	SECTION("Slot 0 fade time is preserved") {
-		REQUIRE(exBase2->fadeTime[0] == Catch::Approx(0.3f).margin(0.001f));
-	}
-
-	SECTION("Slot 3 data is preserved") {
-		REQUIRE(exBase2->presetSlotUsed[3] == true);
-		REQUIRE(exBase2->preset[3].size() == 1);
-		REQUIRE(exBase2->preset[3][0] == Catch::Approx(0.7f).margin(0.001f));
-	}
-
-	SECTION("Unused slots remain unused") {
-		for (int i = 1; i <= 2; i++) {
-			REQUIRE(exBase2->presetSlotUsed[i] == false);
-		}
-	}
-
-	json_decref(rootJ);
-	delete exModule2;
-	delete exModule;
-}
-
 
 TEST_CASE("ctrlUniqueId is preserved in TransitEx JSON round-trip", "[TransitEx][JSON]") {
 	Module* exModule = createExModule();

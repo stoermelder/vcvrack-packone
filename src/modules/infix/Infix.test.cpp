@@ -57,7 +57,41 @@ TEST_CASE("Preset JSON null-guards", "[Infix][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
+}
+
+TEST_CASE("JSON round-trip preserves state", "[Infix][JSON]") {
+	InfixModule<16>* m = Test::createModule<InfixModule<16>>("Infix");
+	InfixModule<16>* m2 = Test::createModule<InfixModule<16>>("Infix");
+
+	// Non-default value; Infix stores only panelTheme to JSON.
+	m->panelTheme = 1;
+
+	json_t* j = m->dataToJson();
+	// Start m2 at a different value so dataFromJson() is genuinely exercised
+	// (otherwise a fresh module's default could mask a broken restore).
+	m2->panelTheme = 0;
+	m2->dataFromJson(j);
+	json_decref(j);
+
+	REQUIRE(m2->panelTheme == 1);
+
+	Test::destroyModule(m);
+	Test::destroyModule(m2);
 }
 
 

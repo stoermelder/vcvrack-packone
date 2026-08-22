@@ -31,11 +31,25 @@ TEST_CASE("Preset JSON null-guards", "[Siren][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
 
 // JSON round-trip preserves lastFile, lastPlayheadPos, activeRootIdx and trim.
-TEST_CASE("JSON serialization", "[Siren][JSON]") {
+TEST_CASE("JSON round-trip preserves module state", "[Siren][JSON]") {
 	auto* m = Test::createModule<SirenModule>("Siren");
 
 	// Set state and serialise

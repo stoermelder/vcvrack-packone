@@ -500,9 +500,11 @@ struct MazeModule : Module {
 
 		json_t* portsJ = json_object_get(rootJ, "ports");
 		if (portsJ) {
-			json_t* portJ;
-			size_t portIndex;
-			json_array_foreach(portsJ, portIndex, portJ) {
+			// Bounded to the fixed-size destinations: hand-edited or corrupted
+			// patches may contain more ports than the [NUM_PORTS] members hold.
+			size_t maxPorts = std::min((size_t)NUM_PORTS, json_array_size(portsJ));
+			for (size_t portIndex = 0; portIndex < maxPorts; portIndex++) {
+				json_t* portJ = json_array_get(portsJ, portIndex);
 				json_t* xStartPosJ = json_object_get(portJ, "xStartPos");
 				if (xStartPosJ) xStartPos[portIndex] = json_integer_value(xStartPosJ);
 				json_t* yStartPosJ = json_object_get(portJ, "yStartPos");

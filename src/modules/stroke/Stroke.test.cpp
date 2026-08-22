@@ -37,6 +37,20 @@ TEST_CASE("Preset JSON null-guards", "[Stroke][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
 
@@ -73,80 +87,105 @@ TEST_CASE("onReset clears key configuration", "[Stroke][init]") {
 
 // JSON serialization
 
-TEST_CASE("dataToJson writes panelTheme and a keys array", "[Stroke][JSON]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
-
-	module->panelTheme = 3;
-	module->keys[0].button = 2;
-	module->keys[0].key = GLFW_KEY_A;
-	module->keys[0].mods = GLFW_MOD_SHIFT;
-	module->keys[0].mode = KEY_MODE::CV_GATE;
-	module->keys[0].high = true;
-	module->keys[0].data = "hello";
-
-	json_t* rootJ = module->dataToJson();
-	REQUIRE(rootJ != nullptr);
-	REQUIRE(json_is_object(rootJ));
-
-	json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
-	REQUIRE(panelThemeJ != nullptr);
-	REQUIRE(json_integer_value(panelThemeJ) == 3);
-
-	json_t* keysJ = json_object_get(rootJ, "keys");
-	REQUIRE(keysJ != nullptr);
-	REQUIRE(json_array_size(keysJ) == STROKE_PORTS);
-
-	json_t* key0J = json_array_get(keysJ, 0);
-	REQUIRE(key0J != nullptr);
-	REQUIRE(json_integer_value(json_object_get(key0J, "button")) == 2);
-	REQUIRE(json_integer_value(json_object_get(key0J, "key")) == GLFW_KEY_A);
-	REQUIRE(json_integer_value(json_object_get(key0J, "mods")) == GLFW_MOD_SHIFT);
-	REQUIRE(json_integer_value(json_object_get(key0J, "mode")) == (int)KEY_MODE::CV_GATE);
-	REQUIRE(json_boolean_value(json_object_get(key0J, "high")) == true);
-	REQUIRE(std::string(json_string_value(json_object_get(key0J, "data"))) == "hello");
-
-	json_decref(rootJ);
-	Test::destroyModule(module);
-}
-
-TEST_CASE("dataFromJson round-trip preserves key configuration", "[Stroke][JSON]") {
+TEST_CASE("JSON round-trip preserves state", "[Stroke][JSON]") {
 	auto src = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
 	auto dst = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
 
-	src->panelTheme = 5;
-	src->keys[0].button = -1;
-	src->keys[0].key = GLFW_KEY_KP_5; // a numpad key to verify keyFix runs on load
-	src->keys[0].mods = GLFW_MOD_ALT | GLFW_MOD_SHIFT;
-	src->keys[0].mode = KEY_MODE::S_ZOOM_OUT;
-	src->keys[0].high = true;
-	src->keys[0].data = "abc";
+	SECTION("Serialized JSON structure") {
+		src->panelTheme = 3;
+		src->keys[0].button = 2;
+		src->keys[0].key = GLFW_KEY_A;
+		src->keys[0].mods = GLFW_MOD_SHIFT;
+		src->keys[0].mode = KEY_MODE::CV_GATE;
+		src->keys[0].high = true;
+		src->keys[0].data = "hello";
 
-	src->keys[3].button = 1;
-	src->keys[3].key = -1;
-	src->keys[3].mods = RACK_MOD_CTRL;
-	src->keys[3].mode = KEY_MODE::CV_GATE;
-	src->keys[3].high = false;
-	src->keys[3].data = "";
+		json_t* rootJ = src->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		REQUIRE(json_is_object(rootJ));
 
-	json_t* rootJ = src->dataToJson();
-	REQUIRE_NOTHROW(dst->dataFromJson(rootJ));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		REQUIRE(panelThemeJ != nullptr);
+		REQUIRE(json_integer_value(panelThemeJ) == 3);
 
-	REQUIRE(dst->panelTheme == 5);
-	REQUIRE(dst->keys[0].button == -1);
-	// keyFix converts numpad keys to their non-numpad equivalents
-	REQUIRE(dst->keys[0].key == GLFW_KEY_5);
-	REQUIRE(dst->keys[0].mods == (GLFW_MOD_ALT | GLFW_MOD_SHIFT));
-	REQUIRE(dst->keys[0].mode == KEY_MODE::S_ZOOM_OUT);
-	REQUIRE(dst->keys[0].high == true);
-	REQUIRE(dst->keys[0].data == "abc");
+		// The keys array must be serialized with one entry per port
+		json_t* keysJ = json_object_get(rootJ, "keys");
+		REQUIRE(keysJ != nullptr);
+		REQUIRE(json_array_size(keysJ) == STROKE_PORTS);
 
-	REQUIRE(dst->keys[3].button == 1);
-	REQUIRE(dst->keys[3].key == -1);
-	REQUIRE(dst->keys[3].mods == RACK_MOD_CTRL);
-	REQUIRE(dst->keys[3].mode == KEY_MODE::CV_GATE);
-	REQUIRE(dst->keys[3].high == false);
+		json_t* key0J = json_array_get(keysJ, 0);
+		REQUIRE(key0J != nullptr);
+		REQUIRE(json_integer_value(json_object_get(key0J, "button")) == 2);
+		REQUIRE(json_integer_value(json_object_get(key0J, "key")) == GLFW_KEY_A);
+		REQUIRE(json_integer_value(json_object_get(key0J, "mods")) == GLFW_MOD_SHIFT);
+		REQUIRE(json_integer_value(json_object_get(key0J, "mode")) == (int)KEY_MODE::CV_GATE);
+		REQUIRE(json_boolean_value(json_object_get(key0J, "high")) == true);
+		REQUIRE(std::string(json_string_value(json_object_get(key0J, "data"))) == "hello");
 
-	json_decref(rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("panelTheme round-trips") {
+		src->panelTheme = 5;
+		dst->panelTheme = 0;
+		json_t* j = src->dataToJson();
+		dst->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(dst->panelTheme == 5);
+	}
+
+	SECTION("Key slots (keys array) round-trip") {
+		src->panelTheme = 5;
+		src->keys[0].button = -1;
+		src->keys[0].key = GLFW_KEY_KP_5; // a numpad key to verify keyFix runs on load
+		src->keys[0].mods = GLFW_MOD_ALT | GLFW_MOD_SHIFT;
+		src->keys[0].mode = KEY_MODE::S_ZOOM_OUT;
+		src->keys[0].high = true;
+		src->keys[0].data = "abc";
+
+		src->keys[3].button = 1;
+		src->keys[3].key = -1;
+		src->keys[3].mods = RACK_MOD_CTRL;
+		src->keys[3].mode = KEY_MODE::CV_GATE;
+		src->keys[3].high = false;
+		src->keys[3].data = "";
+
+		// A third slot exercises the full array, not just [0]/[3]
+		src->keys[7].button = 0;
+		src->keys[7].key = GLFW_KEY_B;
+		src->keys[7].mods = GLFW_MOD_SHIFT;
+		src->keys[7].mode = KEY_MODE::CV_TRIGGER;
+		src->keys[7].high = true;
+		src->keys[7].data = "slot7";
+
+		json_t* rootJ = src->dataToJson();
+		REQUIRE_NOTHROW(dst->dataFromJson(rootJ));
+
+		REQUIRE(dst->panelTheme == 5);
+		REQUIRE(dst->keys[0].button == -1);
+		// keyFix converts numpad keys to their non-numpad equivalents
+		REQUIRE(dst->keys[0].key == GLFW_KEY_5);
+		REQUIRE(dst->keys[0].mods == (GLFW_MOD_ALT | GLFW_MOD_SHIFT));
+		REQUIRE(dst->keys[0].mode == KEY_MODE::S_ZOOM_OUT);
+		REQUIRE(dst->keys[0].high == true);
+		REQUIRE(dst->keys[0].data == "abc");
+
+		REQUIRE(dst->keys[3].button == 1);
+		REQUIRE(dst->keys[3].key == -1);
+		REQUIRE(dst->keys[3].mods == RACK_MOD_CTRL);
+		REQUIRE(dst->keys[3].mode == KEY_MODE::CV_GATE);
+		REQUIRE(dst->keys[3].high == false);
+
+		REQUIRE(dst->keys[7].button == 0);
+		REQUIRE(dst->keys[7].key == GLFW_KEY_B);
+		REQUIRE(dst->keys[7].mods == GLFW_MOD_SHIFT);
+		REQUIRE(dst->keys[7].mode == KEY_MODE::CV_TRIGGER);
+		REQUIRE(dst->keys[7].high == true);
+		REQUIRE(dst->keys[7].data == "slot7");
+
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(src);
 	Test::destroyModule(dst);
 }
@@ -199,6 +238,70 @@ TEST_CASE("dataFromJson handles empty JSON object", "[Stroke][JSON]") {
 	}
 
 	json_decref(emptyJ);
+	Test::destroyModule(module);
+}
+
+TEST_CASE("dataFromJson tolerates a keys array shorter than PORTS", "[Stroke][JSON][bug]") {
+	// Review §2. keysJ is never null-checked and json_array_get returns NULL
+	// past the end; jansson's null-tolerant accessors keep this from crashing.
+	// Slots beyond the array must retain their prior values.
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+
+	for (int i = 0; i < STROKE_PORTS; i++) {
+		module->keys[i].mode = KEY_MODE::CV_TOGGLE;
+		module->keys[i].data = "prior";
+	}
+
+	json_t* rootJ = json_object();
+	json_t* keysJ = json_array();
+	// Only two entries for a ten-slot module.
+	for (int i = 0; i < 2; i++) {
+		json_t* keyJ = json_object();
+		json_object_set_new(keyJ, "key", json_integer(GLFW_KEY_A + i));
+		json_object_set_new(keyJ, "mode", json_integer((int)KEY_MODE::CV_GATE));
+		json_object_set_new(keyJ, "data", json_string("loaded"));
+		json_array_append_new(keysJ, keyJ);
+	}
+	json_object_set_new(rootJ, "keys", keysJ);
+
+	REQUIRE_NOTHROW(module->dataFromJson(rootJ));
+
+	for (int i = 0; i < 2; i++) {
+		REQUIRE(module->keys[i].key == GLFW_KEY_A + i);
+		REQUIRE(module->keys[i].mode == KEY_MODE::CV_GATE);
+		REQUIRE(module->keys[i].data == "loaded");
+	}
+	for (int i = 2; i < STROKE_PORTS; i++) {
+		REQUIRE(module->keys[i].mode == KEY_MODE::CV_TOGGLE);
+		REQUIRE(module->keys[i].data == "prior");
+	}
+
+	json_decref(rootJ);
+	Test::destroyModule(module);
+}
+
+TEST_CASE("dataFromJson accepts an out-of-range mode without validation", "[Stroke][JSON][bug]") {
+	// Review §8. The mode integer is cast straight to KEY_MODE (Stroke.cpp:218),
+	// so a retired or corrupt value survives load and lands in a state with no
+	// menu entry. A fix should map unknown modes to KEY_MODE::OFF.
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+
+	json_t* rootJ = json_object();
+	json_t* keysJ = json_array();
+	json_t* keyJ = json_object();
+	json_object_set_new(keyJ, "key", json_integer(GLFW_KEY_A));
+	json_object_set_new(keyJ, "mode", json_integer(9999));
+	json_array_append_new(keysJ, keyJ);
+	json_object_set_new(rootJ, "keys", keysJ);
+
+	REQUIRE_NOTHROW(module->dataFromJson(rootJ));
+	REQUIRE((int)module->keys[0].mode == 9999);
+
+	// process() falls through its switch, so the output stays silent.
+	module->process(Test::makeProcessArgs(1));
+	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 0].getVoltage() == 0.f);
+
+	json_decref(rootJ);
 	Test::destroyModule(module);
 }
 
@@ -1645,70 +1748,6 @@ TEST_CASE("CmdCableOpacity is stuck when the saved value is zero", "[Stroke][cmd
 	}
 
 	settings::cableOpacity = saved;
-}
-
-TEST_CASE("dataFromJson tolerates a keys array shorter than PORTS", "[Stroke][JSON][bug]") {
-	// Review §2. keysJ is never null-checked and json_array_get returns NULL
-	// past the end; jansson's null-tolerant accessors keep this from crashing.
-	// Slots beyond the array must retain their prior values.
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
-
-	for (int i = 0; i < STROKE_PORTS; i++) {
-		module->keys[i].mode = KEY_MODE::CV_TOGGLE;
-		module->keys[i].data = "prior";
-	}
-
-	json_t* rootJ = json_object();
-	json_t* keysJ = json_array();
-	// Only two entries for a ten-slot module.
-	for (int i = 0; i < 2; i++) {
-		json_t* keyJ = json_object();
-		json_object_set_new(keyJ, "key", json_integer(GLFW_KEY_A + i));
-		json_object_set_new(keyJ, "mode", json_integer((int)KEY_MODE::CV_GATE));
-		json_object_set_new(keyJ, "data", json_string("loaded"));
-		json_array_append_new(keysJ, keyJ);
-	}
-	json_object_set_new(rootJ, "keys", keysJ);
-
-	REQUIRE_NOTHROW(module->dataFromJson(rootJ));
-
-	for (int i = 0; i < 2; i++) {
-		REQUIRE(module->keys[i].key == GLFW_KEY_A + i);
-		REQUIRE(module->keys[i].mode == KEY_MODE::CV_GATE);
-		REQUIRE(module->keys[i].data == "loaded");
-	}
-	for (int i = 2; i < STROKE_PORTS; i++) {
-		REQUIRE(module->keys[i].mode == KEY_MODE::CV_TOGGLE);
-		REQUIRE(module->keys[i].data == "prior");
-	}
-
-	json_decref(rootJ);
-	Test::destroyModule(module);
-}
-
-TEST_CASE("dataFromJson accepts an out-of-range mode without validation", "[Stroke][JSON][bug]") {
-	// Review §8. The mode integer is cast straight to KEY_MODE (Stroke.cpp:218),
-	// so a retired or corrupt value survives load and lands in a state with no
-	// menu entry. A fix should map unknown modes to KEY_MODE::OFF.
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
-
-	json_t* rootJ = json_object();
-	json_t* keysJ = json_array();
-	json_t* keyJ = json_object();
-	json_object_set_new(keyJ, "key", json_integer(GLFW_KEY_A));
-	json_object_set_new(keyJ, "mode", json_integer(9999));
-	json_array_append_new(keysJ, keyJ);
-	json_object_set_new(rootJ, "keys", keysJ);
-
-	REQUIRE_NOTHROW(module->dataFromJson(rootJ));
-	REQUIRE((int)module->keys[0].mode == 9999);
-
-	// process() falls through its switch, so the output stays silent.
-	module->process(Test::makeProcessArgs(1));
-	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 0].getVoltage() == 0.f);
-
-	json_decref(rootJ);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("A retired KEY_MODE loaded from a v1 preset dispatches to nothing", "[Stroke][JSON][bug]") {

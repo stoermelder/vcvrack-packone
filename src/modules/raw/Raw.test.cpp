@@ -26,8 +26,39 @@ TEST_CASE("Preset JSON null-guards", "[Raw][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("JSON round-trip preserves state", "[JSON][Raw]") {
+	auto module = Test::createModule<RawModule>("Raw");
+	module->panelTheme = 1;
+
+	json_t* j = module->dataToJson();
+
+	auto module2 = Test::createModule<RawModule>("Raw");
+	module2->dataFromJson(j);
+	json_decref(j);
+
+	REQUIRE(module2->panelTheme == 1);
+
+	Test::destroyModule(module);
+	Test::destroyModule(module2);
+}
+
 
 TEST_CASE("Reset clears internal delay buffers", "[Raw]") {
 	auto module = Test::createModule<RawModule>("Raw");
@@ -212,22 +243,4 @@ TEST_CASE("Output voltage scales linearly with out_gain", "[Raw]") {
 
 	Test::destroyModule(modLow);
 	Test::destroyModule(modHigh);
-}
-
-TEST_CASE("JSON round-trip preserves panelTheme", "[JSON][Raw]") {
-	auto module = Test::createModule<RawModule>("Raw");
-	module->panelTheme = 1;
-
-	json_t* j = module->dataToJson();
-
-	auto module2 = Test::createModule<RawModule>("Raw");
-	module2->dataFromJson(j);
-	json_decref(j);
-
-	SECTION("panelTheme restored") {
-		REQUIRE(module2->panelTheme == 1);
-	}
-
-	Test::destroyModule(module);
-	Test::destroyModule(module2);
 }
