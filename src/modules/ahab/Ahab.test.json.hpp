@@ -275,6 +275,96 @@ TEST_CASE("Deserialization from JSON", "[JSON][AhabSim]") {
 	json_decref(j);
 }
 
+TEST_CASE("fromJson clamps oversized fields", "[JSON][AhabSim]") {
+	AhabSim sim;
+
+	// height/width above MAX_FIELD_HEIGHT/WIDTH must clamp so the fixed
+	// DSP-thread scratch buffer (sized 100x100) can't overflow.
+	json_t* j = json_object();
+	json_object_set_new(j, "height", json_integer(500));
+	json_object_set_new(j, "width", json_integer(500));
+	std::vector<uint8_t> cells(500 * 500, '.');
+	cells[0] = 'A';
+	cells[99] = 'Z'; // last cell of the clamped row 0
+	cells[499 * 500 + 499] = 'Q'; // bottom-right of the oversized field
+	std::string encoded = rack::string::toBase64(cells.data(), cells.size());
+	json_object_set_new(j, "cells", json_string(encoded.c_str()));
+
+	sim.fromJson(j);
+	json_decref(j);
+
+	REQUIRE(sim.getFieldHeight() == AhabSim::MAX_FIELD_HEIGHT);
+	REQUIRE(sim.getFieldWidth() == AhabSim::MAX_FIELD_WIDTH);
+
+	Glyph const* buf = sim.getFieldBuffer();
+	REQUIRE(buf[0] == 'A');
+	REQUIRE(buf[99] == 'Z');
+	// Bytes past the clamped area are truncated, not wrapped anywhere
+	for (Usz i = 0; i < AhabSim::MAX_FIELD_HEIGHT * AhabSim::MAX_FIELD_WIDTH; ++i) {
+		REQUIRE(buf[i] != 'Q');
+	}
+
+	// Stepping the clamped max-size field is safe.
+	for (int i = 0; i < 4; ++i) sim.step();
+}
+
+TEST_CASE("fromJson rejects non-positive dimensions", "[JSON][AhabSim]") {
+	AhabSim sim;
+
+	// Establish known state that must remain untouched on rejection.
+	sim.setFieldSizeRequest(3, 4, false);
+	sim.process();
+
+	SECTION("Zero dimensions") {
+		json_t* j = json_object();
+		json_object_set_new(j, "height", json_integer(0));
+		json_object_set_new(j, "width", json_integer(8));
+		json_object_set_new(j, "cells", json_string(""));
+		sim.fromJson(j);
+		json_decref(j);
+
+		REQUIRE(sim.getFieldHeight() == 3);
+		REQUIRE(sim.getFieldWidth() == 4);
+	}
+
+	SECTION("Negative dimensions") {
+		json_t* j = json_object();
+		json_object_set_new(j, "height", json_integer(-5));
+		json_object_set_new(j, "width", json_integer(8));
+		json_object_set_new(j, "cells", json_string(""));
+		sim.fromJson(j);
+		json_decref(j);
+
+		REQUIRE(sim.getFieldHeight() == 3);
+		REQUIRE(sim.getFieldWidth() == 4);
+	}
+}
+
+TEST_CASE("Module-level sim JSON clamps oversized fields", "[JSON][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	AhabModule* m2 = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	Test::registerModule(m2);
+
+	// Tamper with a real preset: force the "sim" sub-object to oversized dims.
+	json_t* j = m->dataToJson();
+	json_t* simJ = json_object_get(j, "sim");
+	REQUIRE(json_is_object(simJ));
+	json_object_set_new(simJ, "height", json_integer(500));
+	json_object_set_new(simJ, "width", json_integer(500));
+
+	m2->dataFromJson(j);
+	json_decref(j);
+
+	REQUIRE(m2->sim->getFieldHeight() == AhabSim::MAX_FIELD_HEIGHT);
+	REQUIRE(m2->sim->getFieldWidth() == AhabSim::MAX_FIELD_WIDTH);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+	Test::unregisterModule(m2);
+	Test::destroyModule(m2);
+}
+
 TEST_CASE("AhabOoscOutput JSON round-trip (UDP)", "[JSON][AhabUdp]") {
 	AhabOoscOutput out(AhabOoscOutput::Kind::UDP);
 	out.setDestination("192.168.1.100", "7000");
