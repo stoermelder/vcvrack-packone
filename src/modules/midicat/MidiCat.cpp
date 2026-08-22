@@ -679,7 +679,7 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 						refreshParamHandleText(mapIndex);
 					}
 				}
-				if (labelJ) slots[mapIndex].label = json_string_value(labelJ);
+				if (const char* label = json_string_value(labelJ)) slots[mapIndex].label = label;
 				if (slewJ) slots[mapIndex].param.setSlew(json_real_value(slewJ));
 				if (minJ) slots[mapIndex].param.setMin(json_real_value(minJ));
 				if (maxJ) slots[mapIndex].param.setMax(json_real_value(maxJ));
@@ -1459,8 +1459,12 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 	}
 
 	bool loadMidiMapPreset_convert(json_t* moduleJ) {
-		std::string pluginSlug = json_string_value(json_object_get(moduleJ, "plugin"));
-		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
+		// Null-safe: hand-edited or foreign preset files may lack these keys or
+		// carry non-string values; json_string_value would return NULL (UB).
+		json_t* pluginJ = json_object_get(moduleJ, "plugin");
+		json_t* modelJ = json_object_get(moduleJ, "model");
+		std::string pluginSlug = json_is_string(pluginJ) ? json_string_value(pluginJ) : "";
+		std::string modelSlug = json_is_string(modelJ) ? json_string_value(modelJ) : "";
 
 		// Only handle presets for MIDI-Map
 		if (!(pluginSlug == "Core" && modelSlug == "MIDI-Map"))

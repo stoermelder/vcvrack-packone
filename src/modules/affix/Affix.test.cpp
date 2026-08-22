@@ -38,8 +38,69 @@ TEST_CASE("Preset JSON null-guards", "[Affix][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("JSON round-trip preserves module state", "[Affix]") {
+	auto module = Test::createModule<AffixModule<16>>("Affix");
+	auto moduleNew = Test::createModule<AffixModule<16>>("Affix");
+
+	SECTION("panelTheme and numberOfChannels round-trip") {
+		module->panelTheme = 1;
+		// Distinct, non-default channel count
+		module->numberOfChannels = 8;
+
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+
+		moduleNew->dataFromJson(rootJ);
+		json_decref(rootJ);
+
+		REQUIRE(moduleNew->panelTheme == 1);
+		REQUIRE(moduleNew->numberOfChannels == 8);
+	}
+
+	SECTION("numberOfChannels = 0 (automatic) round-trips") {
+		module->numberOfChannels = 0;
+
+		json_t* rootJ = module->dataToJson();
+		moduleNew->dataFromJson(rootJ);
+		json_decref(rootJ);
+
+		REQUIRE(moduleNew->numberOfChannels == 0);
+	}
+
+	SECTION("paramMode round-trips for every enum value") {
+		// Each mode drives distinct setParamMode() behavior, so verify all
+		// three survive a serialize/deserialize cycle.
+		PARAM_MODE modes[] = {PARAM_MODE::VOLTAGE, PARAM_MODE::SEMITONE, PARAM_MODE::OCTAVE};
+		for (PARAM_MODE mode : modes) {
+			module->paramMode = mode;
+			json_t* rootJ = module->dataToJson();
+			moduleNew->dataFromJson(rootJ);
+			json_decref(rootJ);
+			REQUIRE(moduleNew->paramMode == mode);
+		}
+	}
+
+	Test::destroyModule(moduleNew);
+	Test::destroyModule(module);
+}
+
 
 TEST_CASE("Voltage mode", "[Affix]") {
 	auto module = Test::createModule<AffixModule<16>>("Affix");
@@ -54,32 +115,6 @@ TEST_CASE("Voltage mode", "[Affix]") {
 		// Verify values are set
 		REQUIRE(module->params[AffixModule<16>::PARAM_MONO + 0].getValue() == Catch::Approx(1.5f).margin(0.01f));
 		REQUIRE(module->params[AffixModule<16>::PARAM_MONO + 1].getValue() == Catch::Approx(-0.5f).margin(0.01f));
-	}
-
-	Test::destroyModule(module);
-}
-
-TEST_CASE("JSON serialization", "[Affix]") {
-	auto module = Test::createModule<AffixModule<16>>("Affix");
-	
-	SECTION("Module state is serialized and deserialized") {
-		module->panelTheme = 1;
-		module->paramMode = PARAM_MODE::SEMITONE;
-		module->numberOfChannels = 8;
-		
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		
-		// Create a new module and load state
-		auto moduleNew = Test::createModule<AffixModule<16>>("Affix");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->panelTheme == 1);
-		REQUIRE(moduleNew->paramMode == PARAM_MODE::SEMITONE);
-		REQUIRE(moduleNew->numberOfChannels == 8);
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
 	}
 
 	Test::destroyModule(module);

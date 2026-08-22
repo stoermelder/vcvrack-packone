@@ -8,162 +8,147 @@
 #include "Ahab.test.hpp"
 
 
-TEST_CASE("JSON serialization", "[JSON][Ahab]") {
+TEST_CASE("JSON round-trip preserves state", "[JSON][Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
-	Test::registerModule(m);
-	
-	// Set some values
-	m->panelTheme = 1;
-	m->midiVirtualPortId = 2;
-	m->midiOutEnabled = false;
-	m->midiCcOffset = 80;
-	m->simRunning = false;
-	m->overwriteZeroNoteDuration = false;
-	m->gridStepCol = 16;
-	m->gridStepRow = 12;
-	
-	// Serialize
-	json_t* j = m->dataToJson();
-	REQUIRE(j != nullptr);
-	
-	// Check values
-	REQUIRE(json_integer_value(json_object_get(j, "panelTheme")) == 1);
-	REQUIRE(json_integer_value(json_object_get(j, "midiVirtualPortId")) == 2);
-	REQUIRE(json_boolean_value(json_object_get(j, "midiOutEnabled")) == false);
-	REQUIRE(json_integer_value(json_object_get(j, "midiCcOffset")) == 80);
-	REQUIRE(json_boolean_value(json_object_get(j, "simRunning")) == false);
-	REQUIRE(json_boolean_value(json_object_get(j, "overwriteZeroNoteDuration")) == false);
-	REQUIRE(json_integer_value(json_object_get(j, "gridStepCol")) == 16);
-	REQUIRE(json_integer_value(json_object_get(j, "gridStepRow")) == 12);
-	
-	json_decref(j);
-	
-	Test::unregisterModule(m);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("JSON deserialization", "[JSON][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
-	Test::registerModule(m);
-	
-	// Create JSON
-	json_t* j = json_object();
-	json_object_set_new(j, "panelTheme", json_integer(2));
-	json_object_set_new(j, "midiVirtualPortId", json_integer(3));
-	json_object_set_new(j, "midiOutEnabled", json_boolean(false));
-	json_object_set_new(j, "midiCcOffset", json_integer(100));
-	json_object_set_new(j, "simRunning", json_boolean(false));
-	json_object_set_new(j, "overwriteZeroNoteDuration", json_boolean(false));
-	json_object_set_new(j, "gridStepCol", json_integer(4));
-	json_object_set_new(j, "gridStepRow", json_integer(6));
-	
-	// Create sim JSON
-	json_t* simJ = m->sim->toJson();
-	json_object_set_new(j, "sim", simJ);
-	
-	// Create midi port JSON
-	json_object_set_new(j, "midiOutPort", json_object());
-	
-	// Deserialize
-	m->dataFromJson(j);
-	
-	// Check values
-	REQUIRE(m->panelTheme == 2);
-	REQUIRE(m->midiVirtualPortId == 3);
-	REQUIRE(m->midiOutEnabled == false);
-	REQUIRE(m->midiCcOffset == 100);
-	REQUIRE(m->simRunning == false);
-	REQUIRE(m->overwriteZeroNoteDuration == false);
-	REQUIRE(m->gridStepCol == 4);
-	REQUIRE(m->gridStepRow == 6);
-	
-	json_decref(j);
-	
-	Test::unregisterModule(m);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("Clock ratio is serialized to JSON", "[JSON][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
-	Test::registerModule(m);
-
-	// Non-default ratio must round-trip through dataToJson/dataFromJson.
-	m->clkRatioSetting = AhabModule::CLK_RATIO_MUL4;
-
-	json_t* j = m->dataToJson();
-	REQUIRE(json_integer_value(json_object_get(j, "clkRatio")) == (int)AhabModule::CLK_RATIO_MUL4);
-
-	// Restore into a fresh module and confirm the value survived.
 	AhabModule* m2 = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
 	Test::registerModule(m2);
-	REQUIRE(m2->clkRatioSetting == (int)AhabModule::CLK_RATIO_MUL1); // default
-	m2->dataFromJson(j);
-	REQUIRE(m2->clkRatioSetting == (int)AhabModule::CLK_RATIO_MUL4);
 
-	json_decref(j);
+	SECTION("Serialized JSON structure") {
+		m->panelTheme = 1;
+		m->midiVirtualPortId = 2;
+		m->midiOutEnabled = false;
+		m->midiCcOffset = 80;
+		m->simRunning = false;
+		m->overwriteZeroNoteDuration = false;
+		m->gridStepCol = 16;
+		m->gridStepRow = 12;
+		m->clkRatioSetting = AhabModule::CLK_RATIO_MUL4;
+		m->midiOutPort.channel = 5;
+
+		json_t* j = m->dataToJson();
+		REQUIRE(j != nullptr);
+		REQUIRE(json_is_object(j));
+		// All 11 top-level keys must be present
+		REQUIRE(json_object_get(j, "panelTheme") != nullptr);
+		REQUIRE(json_object_get(j, "midiVirtualPortId") != nullptr);
+		REQUIRE(json_object_get(j, "midiOutEnabled") != nullptr);
+		REQUIRE(json_object_get(j, "midiOutPort") != nullptr);
+		REQUIRE(json_object_get(j, "midiCcOffset") != nullptr);
+		REQUIRE(json_object_get(j, "sim") != nullptr);
+		REQUIRE(json_object_get(j, "simRunning") != nullptr);
+		REQUIRE(json_object_get(j, "overwriteZeroNoteDuration") != nullptr);
+		REQUIRE(json_object_get(j, "gridStepCol") != nullptr);
+		REQUIRE(json_object_get(j, "gridStepRow") != nullptr);
+		REQUIRE(json_object_get(j, "clkRatio") != nullptr);
+		// The two nested objects must themselves be objects
+		REQUIRE(json_is_object(json_object_get(j, "midiOutPort")));
+		REQUIRE(json_is_object(json_object_get(j, "sim")));
+		json_decref(j);
+	}
+
+	SECTION("Top-level scalars round-trip") {
+		// Distinctive non-default values for every scalar stored to JSON
+		m->panelTheme = 1;
+		m->midiVirtualPortId = 2;
+		m->midiOutEnabled = false;
+		m->midiCcOffset = 80;
+		m->simRunning = false;
+		m->overwriteZeroNoteDuration = false;
+		m->gridStepCol = 16;
+		m->gridStepRow = 12;
+		m->clkRatioSetting = AhabModule::CLK_RATIO_MUL4;
+
+		json_t* j = m->dataToJson();
+		// Start m2 at defaults so dataFromJson() is genuinely exercised
+		m2->panelTheme = 0;
+		m2->midiVirtualPortId = 0;
+		m2->midiOutEnabled = true;
+		m2->midiCcOffset = 0;
+		m2->simRunning = true;
+		m2->overwriteZeroNoteDuration = true;
+		m2->gridStepCol = 0;
+		m2->gridStepRow = 0;
+		m2->clkRatioSetting = AhabModule::CLK_RATIO_MUL1;
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m2->panelTheme == 1);
+		REQUIRE(m2->midiVirtualPortId == 2);
+		REQUIRE(m2->midiOutEnabled == false);
+		REQUIRE(m2->midiCcOffset == 80);
+		REQUIRE(m2->simRunning == false);
+		REQUIRE(m2->overwriteZeroNoteDuration == false);
+		REQUIRE(m2->gridStepCol == 16);
+		REQUIRE(m2->gridStepRow == 12);
+		REQUIRE(m2->clkRatioSetting == AhabModule::CLK_RATIO_MUL4);
+	}
+
+	SECTION("midiOutPort (nested object) round-trips") {
+		// midiOutPort is a rack::midi::Output; its channel must survive a round-trip.
+		m->midiOutPort.channel = 5;
+
+		json_t* j = m->dataToJson();
+		m2->midiOutPort.channel = -1; // default
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m2->midiOutPort.channel == 5);
+	}
+
+	SECTION("sim sub-object round-trips") {
+		// Distinct module state.
+		m->panelTheme = 2;
+		m->midiVirtualPortId = 3;
+		m->midiOutEnabled = false;
+		m->midiCcOffset = 100;
+		m->simRunning = false;
+		m->overwriteZeroNoteDuration = false;
+		m->gridStepCol = 4;
+		m->gridStepRow = 6;
+
+		// Distinct sim state: a small field, a non-zero tick, a seed and UDP/OSC
+		// destinations, all persisted under the module's "sim" key.
+		Usz h, w;
+		REQUIRE(m->sim->loadRectFromOrcaRequest(":04C21\n*.....", 0, 0, h, w, true) == true);
+		m->process({}); // drain the field load
+		for (int i = 0; i < 5; ++i) stepSim(m); // tick → 5
+		m->sim->setRandomSeed(777);
+		m->udpOutput->setUdpDestination("192.168.1.50", "7000");
+		m->udpOutput->setOscDestination("10.0.0.5", "8000");
+		REQUIRE(m->sim->getTickNumber() == 5);
+
+		json_t* j = m->dataToJson();
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		// Module state restored.
+		REQUIRE(m2->panelTheme == 2);
+		REQUIRE(m2->midiVirtualPortId == 3);
+		REQUIRE(m2->midiOutEnabled == false);
+		REQUIRE(m2->midiCcOffset == 100);
+		REQUIRE(m2->simRunning == false);
+		REQUIRE(m2->overwriteZeroNoteDuration == false);
+		REQUIRE(m2->gridStepCol == 4);
+		REQUIRE(m2->gridStepRow == 6);
+
+		// Sim state restored through the module.
+		REQUIRE(m2->sim->getFieldHeight() == 2);
+		REQUIRE(m2->sim->getFieldWidth() == 6);
+		Glyph const* buf = m2->sim->getFieldBuffer();
+		REQUIRE(buf[0] == ':');
+		REQUIRE(m2->sim->getTickNumber() == 5);
+		REQUIRE(m2->sim->getRandomSeed() == 777);
+		REQUIRE(m2->udpOutput->getUdpAddress() == "192.168.1.50");
+		REQUIRE(m2->udpOutput->getUdpPort() == "7000");
+		REQUIRE(m2->udpOutput->getOscAddress() == "10.0.0.5");
+		REQUIRE(m2->udpOutput->getOscPort() == "8000");
+	}
+
 	Test::unregisterModule(m);
 	Test::destroyModule(m);
 	Test::unregisterModule(m2);
 	Test::destroyModule(m2);
-}
-
-TEST_CASE("Module JSON round-trip includes the sim sub-object", "[JSON][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
-	Test::registerModule(m);
-
-	// Distinct module state.
-	m->panelTheme = 2;
-	m->midiVirtualPortId = 3;
-	m->midiOutEnabled = false;
-	m->midiCcOffset = 100;
-	m->simRunning = false;
-	m->overwriteZeroNoteDuration = false;
-	m->gridStepCol = 4;
-	m->gridStepRow = 6;
-
-	// Distinct sim state: a small field, a non-zero tick, a seed and UDP/OSC
-	// destinations, all persisted under the module's "sim" key.
-	Usz h, w;
-	REQUIRE(m->sim->loadRectFromOrcaRequest(":04C21\n*.....", 0, 0, h, w, true) == true);
-	m->process({}); // drain the field load
-	for (int i = 0; i < 5; ++i) stepSim(m); // tick → 5
-	m->sim->setRandomSeed(777);
-	m->udpOutput->setUdpDestination("192.168.1.50", "7000");
-	m->udpOutput->setOscDestination("10.0.0.5", "8000");
-	REQUIRE(m->sim->getTickNumber() == 5);
-
-	// Serialize, reset to defaults, then restore through the module.
-	json_t* j = m->dataToJson();
-	REQUIRE(j != nullptr);
-	Module::ResetEvent e;
-	m->onReset(e);
-	m->dataFromJson(j);
-
-	// Module state restored.
-	REQUIRE(m->panelTheme == 2);
-	REQUIRE(m->midiVirtualPortId == 3);
-	REQUIRE(m->midiOutEnabled == false);
-	REQUIRE(m->midiCcOffset == 100);
-	REQUIRE(m->simRunning == false);
-	REQUIRE(m->overwriteZeroNoteDuration == false);
-	REQUIRE(m->gridStepCol == 4);
-	REQUIRE(m->gridStepRow == 6);
-
-	// Sim state restored through the module.
-	REQUIRE(m->sim->getFieldHeight() == 2);
-	REQUIRE(m->sim->getFieldWidth() == 6);
-	Glyph const* buf = m->sim->getFieldBuffer();
-	REQUIRE(buf[0] == ':');
-	REQUIRE(m->sim->getTickNumber() == 5);
-	REQUIRE(m->sim->getRandomSeed() == 777);
-	REQUIRE(m->udpOutput->getUdpAddress() == "192.168.1.50");
-	REQUIRE(m->udpOutput->getUdpPort() == "7000");
-	REQUIRE(m->udpOutput->getOscAddress() == "10.0.0.5");
-	REQUIRE(m->udpOutput->getOscPort() == "8000");
-
-	json_decref(j);
-	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Missing or invalid sim JSON is ignored safely", "[JSON][Ahab]") {
@@ -209,6 +194,20 @@ TEST_CASE("Preset JSON null-guards", "[Ahab][JSON]") {
 		json_t* rootJ = module->dataToJson();
 		REQUIRE(rootJ != nullptr);
 		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
 

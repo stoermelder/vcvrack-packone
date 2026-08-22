@@ -42,8 +42,77 @@ TEST_CASE("Preset JSON null-guards", "[Goto][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("JSON round-trip preserves state", "[Goto]") {
+	auto module = Test::createModule<GotoModule<10>>("Goto");
+	auto module2 = Test::createModule<GotoModule<10>>("Goto");
+
+	SECTION("Scalar settings round-trip") {
+		// Distinct, non-default values for every scalar stored to JSON
+		module->panelTheme = 1;
+		module->triggerMode = TRIGGERMODE::C5;
+		module->smoothTransition = true;
+		module->jumpPos = JUMPPOS::MODULE_TOPLEFT;
+		module->ignoreZoom = true;
+
+		json_t* j = module->dataToJson();
+		module2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(module2->panelTheme == 1);
+		REQUIRE(module2->triggerMode == TRIGGERMODE::C5);
+		REQUIRE(module2->smoothTransition == true);
+		REQUIRE(module2->jumpPos == JUMPPOS::MODULE_TOPLEFT);
+		REQUIRE(module2->ignoreZoom == true);
+	}
+
+	SECTION("jumpPoints array round-trips (variable moduleIds count + zoom)") {
+		// Use a non-uniform shape: vary the number of moduleIds per slot
+		// (0, 1, 2, 3, ...) and non-linear zoom values, so an indexing or
+		// scaling bug would be caught.
+		for (int i = 0; i < 10; i++) {
+			module->jumpPoints[i].moduleIds.clear();
+			size_t count = i % 4;
+			for (size_t k = 0; k < count; k++) {
+				module->jumpPoints[i].moduleIds.push_back(i * 1000 + (int)k);
+			}
+			module->jumpPoints[i].zoom = 0.25f + 0.1f * i;
+		}
+
+		json_t* j = module->dataToJson();
+		module2->dataFromJson(j);
+		json_decref(j);
+
+		for (int i = 0; i < 10; i++) {
+			size_t count = i % 4;
+			REQUIRE(module2->jumpPoints[i].moduleIds.size() == count);
+			for (size_t k = 0; k < count; k++) {
+				REQUIRE(module2->jumpPoints[i].moduleIds[k] == i * 1000 + (int)k);
+			}
+			REQUIRE(module2->jumpPoints[i].zoom == Catch::Approx(0.25f + 0.1f * i).margin(0.01f));
+		}
+	}
+
+	Test::destroyModule(module);
+	Test::destroyModule(module2);
+}
+
 
 TEST_CASE("POLYTRIGGER mode sets jumpTrigger on rising edge", "[Goto]") {
 	auto module = Test::createModule<GotoModule<10>>("Goto");
@@ -186,64 +255,6 @@ TEST_CASE("jumpTriggerUsed reflects cable connection state", "[Goto]") {
 	Test::destroyModule(module);
 }
 
-TEST_CASE("JSON round-trip preserves all settings", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
-
-	module->triggerMode = TRIGGERMODE::C5;
-	module->smoothTransition = true;
-	module->jumpPos = JUMPPOS::MODULE_TOPLEFT;
-	module->ignoreZoom = true;
-
-	module->jumpPoints[0].moduleIds = {111, 222};
-	module->jumpPoints[0].zoom = 0.5f;
-	module->jumpPoints[5].moduleIds = {999};
-	module->jumpPoints[5].zoom = 1.0f;
-
-	json_t* j = module->dataToJson();
-
-	auto module2 = Test::createModule<GotoModule<10>>("Goto");
-	module2->dataFromJson(j);
-	json_decref(j);
-
-	SECTION("triggerMode preserved") {
-		REQUIRE(module2->triggerMode == TRIGGERMODE::C5);
-	}
-
-	SECTION("smoothTransition preserved") {
-		REQUIRE(module2->smoothTransition == true);
-	}
-
-	SECTION("jumpPos preserved") {
-		REQUIRE(module2->jumpPos == JUMPPOS::MODULE_TOPLEFT);
-	}
-
-	SECTION("ignoreZoom preserved") {
-		REQUIRE(module2->ignoreZoom == true);
-	}
-
-	SECTION("Jump point 0 module IDs preserved") {
-		REQUIRE(module2->jumpPoints[0].moduleIds.size() == 2);
-		REQUIRE(module2->jumpPoints[0].moduleIds[0] == 111);
-		REQUIRE(module2->jumpPoints[0].moduleIds[1] == 222);
-	}
-
-	SECTION("Jump point 0 zoom preserved") {
-		REQUIRE(module2->jumpPoints[0].zoom == Catch::Approx(0.5f));
-	}
-
-	SECTION("Jump point 5 module IDs preserved") {
-		REQUIRE(module2->jumpPoints[5].moduleIds.size() == 1);
-		REQUIRE(module2->jumpPoints[5].moduleIds[0] == 999);
-	}
-
-	SECTION("Empty jump points remain empty") {
-		REQUIRE(module2->jumpPoints[1].moduleIds.empty());
-		REQUIRE(module2->jumpPoints[9].moduleIds.empty());
-	}
-
-	Test::destroyModule(module);
-	Test::destroyModule(module2);
-}
 
 TEST_CASE("JSON legacy single-moduleId field is loaded correctly", "[Goto]") {
 	auto module = Test::createModule<GotoModule<10>>("Goto");

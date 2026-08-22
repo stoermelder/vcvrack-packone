@@ -60,8 +60,44 @@ TEST_CASE("Preset JSON null-guards", "[IntermixEnv][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("JSON round-trip preserves state", "[JSON][IntermixEnv]") {
+	IntermixEnvModule<8>* m = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
+	IntermixEnvModule<8>* m2 = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
+
+	m->panelTheme = 1;
+	m->input = 5;
+
+	json_t* j = m->dataToJson();
+	// Start m2 at a different value so dataFromJson() is genuinely exercised
+	m2->panelTheme = 0;
+	m2->input = 0;
+	m2->dataFromJson(j);
+	json_decref(j);
+
+	REQUIRE(m2->panelTheme == 1);
+	REQUIRE(m2->input == 5);
+
+	Test::destroyModule(m);
+	Test::destroyModule(m2);
+}
+
 
 TEST_CASE("Input selection", "[IntermixEnv]") {
 	auto module = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
@@ -143,27 +179,6 @@ TEST_CASE("Envelope output", "[IntermixEnv]") {
 
 	Test::destroyModule(envModule);
 	delete intermixModule;
-}
-
-TEST_CASE("JSON serialization", "[JSON][IntermixEnv]") {
-	auto module = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
-
-	SECTION("Module state is serialized and deserialized") {
-		module->input = 5;
-		
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		
-		auto moduleNew = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->input == 5);
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
-	}
-
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Expander chain", "[IntermixEnv]") {

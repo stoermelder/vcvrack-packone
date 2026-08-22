@@ -29,56 +29,46 @@ TEST_CASE("Preset JSON null-guards", "[Bolt][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
-}
-
-TEST_CASE("JSON serialization", "[Bolt]") {
-	auto module = Test::createModule<BoltModule>("Bolt");
-
-	SECTION("State persists after serialization") {
-		module->panelTheme = 1;
-		module->op = 2;
-		module->opCvMode = BOLT_OPCV_MODE_C4;
-		module->outCvMode = BOLT_OUTCV_MODE_TRIG_HIGH;
-		
+	SECTION("All properties tolerate wrong-typed values") {
 		json_t* rootJ = module->dataToJson();
-		
-		auto moduleNew = Test::createModule<BoltModule>("Bolt");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->panelTheme == 1);
-		REQUIRE(moduleNew->op == 2);
-		REQUIRE(moduleNew->opCvMode == BOLT_OPCV_MODE_C4);
-		REQUIRE(moduleNew->outCvMode == BOLT_OUTCV_MODE_TRIG_HIGH);
-		
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
 		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
 	}
 
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+	
 	Test::destroyModule(module);
 }
 
-TEST_CASE("Configuration persistence", "[JSON][Bolt]") {
+TEST_CASE("JSON round-trip preserves module state", "[Bolt]") {
 	auto module = Test::createModule<BoltModule>("Bolt");
 
-	SECTION("CV modes persist through JSON") {
-		module->opCvMode = BOLT_OPCV_MODE_C4;
-		module->outCvMode = BOLT_OUTCV_MODE_TRIG_CHANGE;
-		
-		json_t* rootJ = module->dataToJson();
-		
-		auto moduleNew = Test::createModule<BoltModule>("Bolt");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->opCvMode == BOLT_OPCV_MODE_C4);
-		REQUIRE(moduleNew->outCvMode == BOLT_OUTCV_MODE_TRIG_CHANGE);
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
-	}
-
+	module->panelTheme = 1;
+	module->op = 2;
+	module->opCvMode = BOLT_OPCV_MODE_C4;
+	module->outCvMode = BOLT_OUTCV_MODE_TRIG_HIGH;
+	
+	json_t* rootJ = module->dataToJson();
+	
+	auto moduleNew = Test::createModule<BoltModule>("Bolt");
+	moduleNew->dataFromJson(rootJ);
+	
+	REQUIRE(moduleNew->panelTheme == 1);
+	REQUIRE(moduleNew->op == 2);
+	REQUIRE(moduleNew->opCvMode == BOLT_OPCV_MODE_C4);
+	REQUIRE(moduleNew->outCvMode == BOLT_OUTCV_MODE_TRIG_HIGH);
+	
+	json_decref(rootJ);
+	Test::destroyModule(moduleNew);
 	Test::destroyModule(module);
 }
+
 
 TEST_CASE("Processing without connections", "[Bolt]") {
 	auto module = Test::createModule<BoltModule>("Bolt");

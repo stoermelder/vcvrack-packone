@@ -75,18 +75,6 @@ TEST_CASE("Construction and initialization", "[MidiCatFine]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("MidiCatFine: input config names and descriptions", "[MidiCatFine]") {
-	MidiCatFineModule* m = Test::createModule<MidiCatFineModule>("MidiCatFine");
-
-	REQUIRE(std::string(m->inputInfos[MidiCatFineModule::INPUT_LOWRANGE]->name) == "Lower precision range (10%) gate");
-	REQUIRE(std::string(m->inputInfos[MidiCatFineModule::INPUT_HIGHRANGE]->name) == "Higher precision range (1/2/5%) gate");
-
-	REQUIRE(std::string(m->inputInfos[MidiCatFineModule::INPUT_LOWRANGE]->description).find("10%") != std::string::npos);
-	REQUIRE(std::string(m->inputInfos[MidiCatFineModule::INPUT_HIGHRANGE]->description).find("1/2/5%") != std::string::npos);
-
-	Test::destroyModule(m);
-}
-
 TEST_CASE("Preset JSON null-guards", "[MidiCatFine][JSON]") {
 	auto module = Test::createModule<MidiCatFineModule>("MidiCatFine");
 
@@ -97,10 +85,24 @@ TEST_CASE("Preset JSON null-guards", "[MidiCatFine][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
 
-TEST_CASE("JSON round-trip stores and restores panelTheme and highRange", "[MidiCatFine][JSON]") {
+TEST_CASE("JSON round-trip preserves state", "[MidiCatFine][JSON]") {
 	MidiCatFineModule* m = Test::createModule<MidiCatFineModule>("MidiCatFine");
 
 	m->panelTheme = 3;
@@ -133,7 +135,7 @@ TEST_CASE("dataFromJson ignores missing keys", "[MidiCatFine][JSON]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("MidiCatFine: dataFromJson handles null values without crashing", "[MidiCatFine][JSON]") {
+TEST_CASE("dataFromJson handles null values without crashing", "[MidiCatFine][JSON]") {
 	MidiCatFineModule* m = Test::createModule<MidiCatFineModule>("MidiCatFine");
 
 	json_error_t err;

@@ -64,8 +64,121 @@ TEST_CASE("Preset JSON null-guards", "[Arena][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("JSON round-trip preserves module state", "[Arena]") {
+	auto* m = Test::createModule<MODULE>("Arena");
+
+	m->panelTheme = 1;
+	m->inportsUsed = 5;
+	m->mixportsUsed = 3;
+
+	// Distinctive values across ALL ports, not just the first few entries
+	const MODMODE modModes[IN_PORTS] = {MODMODE::RADIUS, MODMODE::AMOUNT, MODMODE::OFFSET_X, MODMODE::OFFSET_Y,
+		MODMODE::WALK, MODMODE::OFFSET_Y, MODMODE::OFFSET_X, MODMODE::AMOUNT};
+	const OUTPUTMODE outModes[IN_PORTS] = {OUTPUTMODE::SCALE, OUTPUTMODE::LIMIT, OUTPUTMODE::CLIP_UNI, OUTPUTMODE::CLIP_BI,
+		OUTPUTMODE::FOLD_UNI, OUTPUTMODE::FOLD_BI, OUTPUTMODE::LIMIT, OUTPUTMODE::SCALE};
+	for (int j = 0; j < IN_PORTS; j++) {
+		m->modMode[j] = modModes[j];
+		m->outputMode[j] = outModes[j];
+		m->inputXBipolar[j] = j % 2 == 0;
+		m->inputYBipolar[j] = j % 3 == 0;
+		// radius/amount persist via the ENGINE-final arrays (scGetRadiusFinal);
+		// loading restores them into the UI arrays and process() re-derives
+		// the final arrays from those, so set both sides deterministically.
+		setRadius(m, j, 0.15f * (j + 1));
+		m->scSetRadiusFinal(j, 0.15f * (j + 1));
+		m->scSetAmountImmediate(j, 0.2f + 0.1f * j);
+		m->scSetAmountFinal(j, 0.2f + 0.1f * j);
+	}
+	for (int i = 0; i < MIX_PORTS; i++) {
+		m->mixportXBipolar[i] = i % 2 == 1;
+		m->mixportYBipolar[i] = i >= 2;
+		// Nested per-port sequence state (Seq::dataToJson)
+		m->seqSelected[i] = (i + 2) % StoermelderPackOne::XYSEQ_COUNT;
+		m->seqMode[i] = (i % 2 == 0) ? StoermelderPackOne::XYSEQ_MODE::TRIG_FWD : StoermelderPackOne::XYSEQ_MODE::TRIG_REV;
+		m->seqInterpolate[i] = (i < 2) ? StoermelderPackOne::XYSEQ_INTERPOLATE::LINEAR : StoermelderPackOne::XYSEQ_INTERPOLATE::CUBIC;
+		m->seqData[i][i].length = 3;
+		m->seqData[i][i].x[0] = 0.1f * i; m->seqData[i][i].y[0] = 0.2f * i;
+		m->seqData[i][i].x[1] = 0.3f * i; m->seqData[i][i].y[1] = 0.4f * i;
+		m->seqData[i][i].x[2] = 0.5f * i; m->seqData[i][i].y[2] = 0.6f * i;
+	}
+
+	json_t* j = m->dataToJson();
+
+	auto* m2 = Test::createModule<MODULE>("Arena");
+	m2->dataFromJson(j);
+	json_decref(j);
+
+	SECTION("Scalars") {
+		REQUIRE(m2->panelTheme == 1);
+		REQUIRE(m2->inportsUsed == 5);
+		REQUIRE(m2->mixportsUsed == 3);
+	}
+
+	SECTION("IN ports: modes and bipolar flags") {
+		for (int j = 0; j < IN_PORTS; j++) {
+			REQUIRE(m2->modMode[j] == modModes[j]);
+			REQUIRE(m2->outputMode[j] == outModes[j]);
+			REQUIRE(m2->inputXBipolar[j] == (j % 2 == 0));
+			REQUIRE(m2->inputYBipolar[j] == (j % 3 == 0));
+		}
+	}
+
+	SECTION("IN ports: radius and amount") {
+		for (int j = 0; j < IN_PORTS; j++) {
+			// Restored into the UI arrays immediately...
+			REQUIRE(m2->radiusUi[j] == Catch::Approx(0.15f * (j + 1)));
+			REQUIRE(m2->amountUi[j] == Catch::Approx(0.2f + 0.1f * j));
+		}
+		// ...and re-derived into the engine-final arrays on the next tick,
+		// but only for ACTIVE ports (j < inportsUsed)
+		m2->process(Test::makeProcessArgs(1));
+		for (int j = 0; j < m2->inportsUsed; j++) {
+			REQUIRE(m2->scGetRadiusFinal(j) == Catch::Approx(0.15f * (j + 1)));
+			REQUIRE(m2->scGetAmountFinal(j) == Catch::Approx(0.2f + 0.1f * j));
+		}
+	}
+
+	SECTION("MIX ports: bipolar flags") {
+		for (int i = 0; i < MIX_PORTS; i++) {
+			REQUIRE(m2->mixportXBipolar[i] == (i % 2 == 1));
+			REQUIRE(m2->mixportYBipolar[i] == (i >= 2));
+		}
+	}
+
+	SECTION("MIX ports: sequence state") {
+		for (int i = 0; i < MIX_PORTS; i++) {
+			REQUIRE(m2->seqSelected[i] == (i + 2) % StoermelderPackOne::XYSEQ_COUNT);
+			REQUIRE(m2->seqMode[i] == ((i % 2 == 0) ? StoermelderPackOne::XYSEQ_MODE::TRIG_FWD : StoermelderPackOne::XYSEQ_MODE::TRIG_REV));
+			REQUIRE(m2->seqInterpolate[i] == ((i < 2) ? StoermelderPackOne::XYSEQ_INTERPOLATE::LINEAR : StoermelderPackOne::XYSEQ_INTERPOLATE::CUBIC));
+			REQUIRE(m2->seqData[i][i].length == 3);
+			REQUIRE(m2->seqData[i][i].x[0] == Catch::Approx(0.1f * i));
+			REQUIRE(m2->seqData[i][i].y[0] == Catch::Approx(0.2f * i));
+			REQUIRE(m2->seqData[i][i].x[2] == Catch::Approx(0.5f * i));
+			REQUIRE(m2->seqData[i][i].y[2] == Catch::Approx(0.6f * i));
+		}
+	}
+
+	Test::destroyModule(m);
+	Test::destroyModule(m2);
+}
+
 
 // Proximity mixing: MIX output
 
@@ -519,65 +632,7 @@ TEST_CASE("MODMODE::OFFSET_X: MOD input shifts IN-port x position", "[Arena]") {
 }
 
 
-// JSON serialization
-
-TEST_CASE("JSON round-trip preserves module state", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
-
-	m->panelTheme = 1;
-	m->inportsUsed = 5;
-	m->mixportsUsed = 3;
-	m->modMode[0] = MODMODE::AMOUNT;
-	m->modMode[3] = MODMODE::OFFSET_Y;
-	m->outputMode[1] = OUTPUTMODE::FOLD_BI;
-	m->inputXBipolar[2] = true;
-	m->mixportYBipolar[1] = true;
-
-	json_t* j = m->dataToJson();
-
-	auto* m2 = Test::createModule<MODULE>("Arena");
-	m2->dataFromJson(j);
-	json_decref(j);
-
-	SECTION("panelTheme") {
-		REQUIRE(m2->panelTheme == 1);
-	}
-
-	SECTION("inportsUsed") {
-		REQUIRE(m2->inportsUsed == 5);
-	}
-
-	SECTION("mixportsUsed") {
-		REQUIRE(m2->mixportsUsed == 3);
-	}
-
-	SECTION("modMode[0]") {
-		REQUIRE(m2->modMode[0] == MODMODE::AMOUNT);
-	}
-
-	SECTION("modMode[3]") {
-		REQUIRE(m2->modMode[3] == MODMODE::OFFSET_Y);
-	}
-
-	SECTION("outputMode[1]") {
-		REQUIRE(m2->outputMode[1] == OUTPUTMODE::FOLD_BI);
-	}
-
-	SECTION("inputXBipolar[2]") {
-		REQUIRE(m2->inputXBipolar[2] == true);
-	}
-
-	SECTION("mixportYBipolar[1]") {
-		REQUIRE(m2->mixportYBipolar[1] == true);
-	}
-
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
-}
-
-
 // MIX CV position control
-
 
 TEST_CASE("MODMODE::OFFSET_Y: MOD input shifts IN-port y position", "[Arena]") {
 	auto* m = Test::createModule<MODULE>("Arena");

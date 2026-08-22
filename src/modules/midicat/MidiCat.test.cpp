@@ -141,8 +141,180 @@ TEST_CASE("Preset JSON null-guards", "[MidiCat][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("JSON round-trip preserves state", "[MidiCat][JSON]") {
+	MidiCatModule* m = Test::createModule<MidiCatModule>("MidiCat");
+
+	SECTION("Top-level scalars round-trip") {
+		m->panelTheme = 1;
+		m->textScrolling = true;
+		m->mappingIndicatorHidden = true;
+		m->mappingIndicatorColor = color::fromHexString("#ff8800");
+		m->locked = true;
+		m->processDivision = 7;
+		m->overlayEnabled = true;
+		m->clearMapsOnLoad = true;
+		m->parameterChangesDirect = true;
+		m->midiResendPeriodically = true;
+		m->midiIgnoreDevices = true;
+
+		json_t* j = m->dataToJson();
+
+		MidiCatModule* m2 = Test::createModule<MidiCatModule>("MidiCat");
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m2->panelTheme == 1);
+		REQUIRE(m2->textScrolling == true);
+		REQUIRE(m2->mappingIndicatorHidden == true);
+		REQUIRE(color::toHexString(m2->mappingIndicatorColor) == color::toHexString(m->mappingIndicatorColor));
+		REQUIRE(m2->locked == true);
+		REQUIRE(m2->processDivision == 7);
+		REQUIRE(m2->overlayEnabled == true);
+		REQUIRE(m2->clearMapsOnLoad == true);
+		REQUIRE(m2->parameterChangesDirect == true);
+		REQUIRE(m2->midiResendPeriodically == true);
+		REQUIRE(m2->midiIgnoreDevices == true);
+
+		Test::destroyModule(m2);
+	}
+
+	SECTION("Mapping slots (maps array) round-trip") {
+		// A registered target module so moduleId/paramId resolve during dataFromJson
+		TestModule* target = new TestModule();
+		Test::registerModule(target);
+
+		// Slot 0: a full set of distinctive values across every serialized field
+		m->slots[0].cc.setCc(10);
+		m->slots[0].cc.ccMode = CCMODE::TOGGLE;
+		m->slots[0].setCc14bit(true);
+		m->slots[0].note.setNote(60);
+		m->slots[0].note.noteMode = NOTEMODE::TOGGLE;
+		m->slots[0].label = "Volume";
+		m->slots[0].midiOptions = 1;
+		m->learnParam(0, target->id, TestModule::TEST_PARAM_1);
+		// learnParam() resets the per-slot param settings, so set them afterwards
+		m->slots[0].param.setSlew(0.5f);
+		m->slots[0].param.setMin(0.1f);
+		m->slots[0].param.setMax(0.9f);
+		m->slots[0].param.setCurve(0.3f);
+		m->slots[0].param.clockMode = MidiCatParam::CLOCKMODE::ARM;
+		m->slots[0].param.clockSource = 2;
+		m->slots[0].param.lightFirstId = 3;
+		m->slots[0].param.lightNumColors = 4;
+
+		// Slot 3: a second active slot with different values
+		m->slots[3].cc.setCc(11);
+		m->slots[3].cc.ccMode = CCMODE::PICKUP1;
+		m->slots[3].note.setNote(72);
+		m->slots[3].note.noteMode = NOTEMODE::MOMENTARY;
+		m->slots[3].label = "Mod Wheel";
+		m->slots[3].midiOptions = 2;
+		m->learnParam(3, target->id, TestModule::TEST_PARAM_2);
+		// learnParam() resets the per-slot param settings, so set them afterwards
+		m->slots[3].param.setSlew(0.25f);
+		m->slots[3].param.setMin(0.2f);
+		m->slots[3].param.setMax(0.8f);
+		m->slots[3].param.setCurve(0.6f);
+		m->slots[3].param.clockMode = MidiCatParam::CLOCKMODE::ARM_DEFERRED_FEEDBACK;
+		m->slots[3].param.clockSource = 1;
+		m->slots[3].param.lightFirstId = 5;
+		m->slots[3].param.lightNumColors = 6;
+
+		m->updateMapLen(); // mapLen == 5 (slots 0..3 active + trailing empty slot)
+
+		json_t* j = m->dataToJson();
+
+		// The maps array must contain exactly mapLen entries
+		json_t* mapsJ = json_object_get(j, "maps");
+		REQUIRE(mapsJ != nullptr);
+		REQUIRE(json_array_size(mapsJ) == (size_t) m->mapLen);
+
+		// Release m's param-handle claims so m2 can take them during dataFromJson():
+		// updateParamHandle_NoLock() with overwrite=false resets the new handle when
+		// another handle (still held by m) claims the same (moduleId, paramId). This
+		// mirrors a real preset load, where the old module instance is destroyed first.
+		m->clearMaps_WithLock();
+
+		MidiCatModule* m2 = Test::createModule<MidiCatModule>("MidiCat");
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		// Slot 0 — every serialized field
+		REQUIRE(m2->slots[0].cc.getCc() == 10);
+		REQUIRE(m2->slots[0].cc.ccMode == CCMODE::TOGGLE);
+		REQUIRE(m2->slots[0].cc.get14bit() == true);
+		REQUIRE(m2->slots[0].note.getNote() == 60);
+		REQUIRE(m2->slots[0].note.noteMode == NOTEMODE::TOGGLE);
+		REQUIRE(m2->paramHandles[0].moduleId == target->id);
+		REQUIRE(m2->paramHandles[0].paramId == TestModule::TEST_PARAM_1);
+		REQUIRE(m2->slots[0].label == "Volume");
+		REQUIRE(m2->slots[0].midiOptions == 1);
+		REQUIRE(m2->slots[0].param.getSlew() == Catch::Approx(0.5f));
+		REQUIRE(m2->slots[0].param.getMin() == Catch::Approx(0.1f));
+		REQUIRE(m2->slots[0].param.getMax() == Catch::Approx(0.9f));
+		REQUIRE(m2->slots[0].param.getCurve() == Catch::Approx(0.3f));
+		REQUIRE(m2->slots[0].param.clockMode == MidiCatParam::CLOCKMODE::ARM);
+		REQUIRE(m2->slots[0].param.clockSource == 2);
+		REQUIRE(m2->slots[0].param.lightFirstId == 3);
+		REQUIRE(m2->slots[0].param.lightNumColors == 4);
+
+		// Slot 3 — every serialized field
+		REQUIRE(m2->slots[3].cc.getCc() == 11);
+		REQUIRE(m2->slots[3].cc.ccMode == CCMODE::PICKUP1);
+		REQUIRE(m2->slots[3].note.getNote() == 72);
+		REQUIRE(m2->slots[3].note.noteMode == NOTEMODE::MOMENTARY);
+		REQUIRE(m2->slots[3].label == "Mod Wheel");
+		REQUIRE(m2->slots[3].midiOptions == 2);
+		REQUIRE(m2->slots[3].param.getSlew() == Catch::Approx(0.25f));
+		REQUIRE(m2->slots[3].param.getMin() == Catch::Approx(0.2f));
+		REQUIRE(m2->slots[3].param.getMax() == Catch::Approx(0.8f));
+		REQUIRE(m2->slots[3].param.getCurve() == Catch::Approx(0.6f));
+		REQUIRE(m2->slots[3].param.clockMode == MidiCatParam::CLOCKMODE::ARM_DEFERRED_FEEDBACK);
+		REQUIRE(m2->slots[3].param.clockSource == 1);
+		REQUIRE(m2->slots[3].param.lightFirstId == 5);
+		REQUIRE(m2->slots[3].param.lightNumColors == 6);
+
+		Test::destroyModule(m2);
+		Test::unregisterModule(target);
+		delete target;
+	}
+
+	SECTION("MIDI I/O (midiInput/midiOutput) round-trip") {
+		m->midiInput.channel = 5;
+		m->midiOutput.channel = 7;
+
+		json_t* j = m->dataToJson();
+
+		MidiCatModule* m2 = Test::createModule<MidiCatModule>("MidiCat");
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m2->midiInput.channel == 5);
+		REQUIRE(m2->midiOutput.channel == 7);
+
+		Test::destroyModule(m2);
+	}
+
+	Test::destroyModule(m);
+}
+
 
 TEST_CASE("MIDI learning functionality", "[MidiCat]") {
 	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");

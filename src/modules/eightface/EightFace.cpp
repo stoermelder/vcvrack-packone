@@ -602,15 +602,15 @@ struct EightFaceModule : Module {
 		}
 
 		json_t* presetsJ = json_object_get(rootJ, "presets");
-		if (presetsJ) {
-			json_t* presetItemJ;
-			size_t presetIndex;
-			json_array_foreach(presetsJ, presetIndex, presetItemJ) {
-				json_t* slotUsedJ = json_object_get(presetItemJ, "slotUsed");
-				if (slotUsedJ) presetSlotUsed[presetIndex] = json_boolean_value(slotUsedJ);
-				json_t* slotJ = json_object_get(presetItemJ, "slot");
-				if (slotJ) presetSlot[presetIndex] = json_deep_copy(slotJ);
-			}
+		// Bounded to the fixed-size destinations: hand-edited or corrupted
+		// patches may contain more presets than the [NUM_PRESETS] members hold.
+		size_t maxPresets = std::min((size_t)NUM_PRESETS, json_array_size(presetsJ));
+		for (size_t presetIndex = 0; presetIndex < maxPresets; presetIndex++) {
+			json_t* presetItemJ = json_array_get(presetsJ, presetIndex);
+			json_t* slotUsedJ = json_object_get(presetItemJ, "slotUsed");
+			if (slotUsedJ) presetSlotUsed[presetIndex] = json_boolean_value(slotUsedJ);
+			json_t* slotJ = json_object_get(presetItemJ, "slot");
+			if (slotJ) presetSlot[presetIndex] = json_deep_copy(slotJ);
 		}
 
 		presetPrev = -1;

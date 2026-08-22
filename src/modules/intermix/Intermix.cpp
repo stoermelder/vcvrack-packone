@@ -725,48 +725,46 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 
 		json_t* inputsJ = json_object_get(rootJ, "inputMode");
 		if (inputsJ) {
-			json_t* inputJ;
-			size_t inputIndex;
-			json_array_foreach(inputsJ, inputIndex, inputJ) {
-				inputMode[inputIndex] = (IN_MODE)json_integer_value(inputJ);
+			// Bounded to the fixed-size destinations: hand-edited or corrupted
+			// patches may contain more entries than these members hold.
+			size_t maxInputs = std::min((size_t)PORTS, json_array_size(inputsJ));
+			for (size_t inputIndex = 0; inputIndex < maxInputs; inputIndex++) {
+				inputMode[inputIndex] = (IN_MODE)json_integer_value(json_array_get(inputsJ, inputIndex));
 			}
 		}
 
 		json_t* scenesJ = json_object_get(rootJ, "scenes");
 		if (scenesJ) {
-			json_t* sceneJ;
-			size_t sceneIndex;
-			json_array_foreach(scenesJ, sceneIndex, sceneJ) {
+			size_t maxScenes = std::min((size_t)SCENE_MAX, json_array_size(scenesJ));
+			for (size_t sceneIndex = 0; sceneIndex < maxScenes; sceneIndex++) {
+				json_t* sceneJ = json_array_get(scenesJ, sceneIndex);
 				json_t* inputJ = json_object_get(sceneJ, "input");
 				json_t* outputJ = json_object_get(sceneJ, "output");
 				json_t* outputAtJ = json_object_get(sceneJ, "outputAt");
 				json_t* matrixJ = json_object_get(sceneJ, "matrix");
 				if (inputJ) {
-					json_t* valueJ;
-					size_t index;
-					json_array_foreach(inputJ, index, valueJ) {
-						scenes[sceneIndex].input[index] = (IN_MODE)json_integer_value(valueJ);
+					size_t maxIn = std::min((size_t)PORTS, json_array_size(inputJ));
+					for (size_t index = 0; index < maxIn; index++) {
+						scenes[sceneIndex].input[index] = (IN_MODE)json_integer_value(json_array_get(inputJ, index));
 					}
 				}
 				if (outputJ) {
-					json_t* valueJ;
-					size_t index;
-					json_array_foreach(outputJ, index, valueJ) {
-						scenes[sceneIndex].output[index] = (OUT_MODE)json_integer_value(valueJ);
+					size_t maxOut = std::min((size_t)PORTS, json_array_size(outputJ));
+					for (size_t index = 0; index < maxOut; index++) {
+						scenes[sceneIndex].output[index] = (OUT_MODE)json_integer_value(json_array_get(outputJ, index));
 					}
 				}
 				if (outputAtJ) {
-					json_t* valueJ;
-					size_t index;
-					json_array_foreach(outputAtJ, index, valueJ) {
-						scenes[sceneIndex].outputAt[index] = json_real_value(valueJ);
+					size_t maxAt = std::min((size_t)PORTS, json_array_size(outputAtJ));
+					for (size_t index = 0; index < maxAt; index++) {
+						scenes[sceneIndex].outputAt[index] = json_real_value(json_array_get(outputAtJ, index));
 					}
 				}
 				if (matrixJ) {
-					json_t* valueJ;
-					size_t index;
-					json_array_foreach(matrixJ, index, valueJ) {
-						scenes[sceneIndex].matrix[index / PORTS][index % PORTS] = json_real_value(valueJ);
+					// matrix is [PORTS][PORTS]; a longer array is truncated row-wise
+					size_t maxMatrix = std::min((size_t)(PORTS * PORTS), json_array_size(matrixJ));
+					for (size_t index = 0; index < maxMatrix; index++) {
+						scenes[sceneIndex].matrix[index / PORTS][index % PORTS] = json_real_value(json_array_get(matrixJ, index));
 					}
 				}
 			}

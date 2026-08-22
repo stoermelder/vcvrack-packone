@@ -36,6 +36,20 @@ TEST_CASE("Preset JSON null-guards", "[MidiKey][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
 
@@ -88,7 +102,7 @@ TEST_CASE("Legacy preset migrates cc/note into the tracking processor", "[MidiKe
 	Test::destroyModule(m);
 }
 
-TEST_CASE("Preset round-trip preserves slots and MIDI maps", "[MidiKey][JSON]") {
+TEST_CASE("JSON round-trip preserves state", "[MidiKey][JSON]") {
 	MidiKeyModule<>* src = Test::createModule<MidiKeyModule<>>("MidiKey");
 
 	// Build a state that spans both dimensions: a modifier row with a MIDI
