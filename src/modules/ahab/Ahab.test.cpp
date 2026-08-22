@@ -14,17 +14,17 @@ static Test::TestContext<> testContext;
 // - Ahab.midi.test.hpp:  MIDI output (midiOutPort) + virtual MIDI driver (Ahab::Midi)
 // - Ahab.json.test.hpp:  JSON serialization/deserialization (module, sim, AhabOoscUdpOutput)
 // - Ahab.state.test.hpp: headless cursor/selection clamping math (no widget)
-#include "Ahab.module.test.hpp"
-#include "Ahab.midi.test.hpp"
-#include "Ahab.json.test.hpp"
-#include "Ahab.state.test.hpp"
+#include "Ahab.test.module.hpp"
+#include "Ahab.test.midi.hpp"
+#include "Ahab.test.json.hpp"
+#include "Ahab.test.state.hpp"
 
 // Test cases are split by target into the headers included below.
 // - AhabSimOperators.test.hpp: vcvin/vcvout operators + E bang propagation + UDP/OSC output (incl. destination config)
 // - AhabSimField.test.hpp:     ORCA parsing, field sizing, fill/cut/move/paste/replace
 // - AhabSimState.test.hpp:     undo/redo, reset, step, seed
 // - AhabSimCallbacks.test.hpp: UI/DSP callbacks, event clearing, display buffer
-#include "Ahab.SimOperators.test.hpp"
-#include "Ahab.SimField.test.hpp"
-#include "Ahab.SimState.test.hpp"
-#include "Ahab.SimCallbacks.test.hpp"
+#include "Ahab.test.SimOperators.hpp"
+#include "Ahab.test.SimField.hpp"
+#include "Ahab.test.SimState.hpp"
+#include "Ahab.test.SimCallbacks.hpp"

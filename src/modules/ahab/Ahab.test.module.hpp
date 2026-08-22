@@ -6,7 +6,7 @@
 
 #include "../../test/test_mock.hpp"
 #include "Ahab.test.hpp"
-#include "Ahab.vcvm.test.hpp"
+#include "Ahab.test.vcvm.hpp"
 
 
 TEST_CASE("Construction and initialization", "[Ahab]") {
