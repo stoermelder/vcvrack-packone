@@ -76,6 +76,103 @@ TEST_CASE("Preset JSON null-guards", "[TransitPad][JSON]") {
 	Test::destroyModule(module);
 }
 
+// Sc::dataToJson()/dataFromJson() write "radius"/"amount" for
+// type 0 (snapshot nodes) only, and silently no-op for type 1 (the Out
+// cursor) today. This pins the exact JSON produced for a distinctive
+// snapshot state so any refactor that moves or renames those keys fails
+// loudly. It also proves empirically (rather than by reading the
+// "if (type == 0)" guard) that the type-1 dataToJson call at
+// TransitPad.cpp:454 writes no "radius"/"amount" keys into "output", and
+// that its dataFromJson counterpart at TransitPad.cpp:497 is a genuine
+// self-assignment no-op.
+
+TEST_CASE("Golden JSON: snapshot (node) radius/amount round-trip byte-identically", "[TransitPad][JSON]") {
+	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+
+	m->scSetRadiusImmediate(0, 0.125f);
+	m->scSetRadiusFinal(0, 0.125f);
+	m->scSetAmountImmediate(0, 0.875f);
+	m->scSetAmountFinal(0, 0.875f);
+
+	json_t* dataJ = json_object();
+	m->Sc::dataToJson(dataJ, 0, 0);
+
+	char* dumped = json_dumps(dataJ, JSON_SORT_KEYS | JSON_COMPACT | JSON_REAL_PRECISION(9));
+	std::string actual(dumped);
+	free(dumped);
+	json_decref(dataJ);
+
+	REQUIRE(actual == "{\"amount\":0.875,\"radius\":0.125}");
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Golden JSON: cursor (Out) dataToJson writes no keys", "[TransitPad][JSON]") {
+	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+
+	m->scSetItemImmediate(1, 0, 0.3f, 0.7f);
+
+	json_t* dataJ = json_object();
+	m->Sc::dataToJson(dataJ, 1, 0);
+
+	REQUIRE(json_object_size(dataJ) == 0);
+
+	json_decref(dataJ);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Golden JSON: cursor (Out) dataFromJson on an empty object is a no-op self-assignment", "[TransitPad][JSON]") {
+	// Sc::dataFromJson(dataJ, 1, 0) unconditionally calls
+	// scSetXyImmediate(1, 0, scGetXFinal(1, 0), scGetYFinal(1, 0)) — reading the
+	// Out cursor's own current position and writing it straight back. Confirm
+	// that round-trips the position exactly rather than zeroing or perturbing it.
+	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+
+	m->scSetItemImmediate(1, 0, 0.3f, 0.7f);
+	float xBefore = m->params[TransitPadModule<>::OUT_X_POS].getValue();
+	float yBefore = m->params[TransitPadModule<>::OUT_Y_POS].getValue();
+
+	json_t* dataJ = json_object();
+	m->Sc::dataFromJson(dataJ, 1, 0);
+	json_decref(dataJ);
+
+	REQUIRE(m->params[TransitPadModule<>::OUT_X_POS].getValue() == Catch::Approx(xBefore));
+	REQUIRE(m->params[TransitPadModule<>::OUT_Y_POS].getValue() == Catch::Approx(yBefore));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Golden JSON: full module dataToJson is byte-identical for a distinctive snapshot state", "[TransitPad][JSON]") {
+	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+
+	m->snapshots[0][0].id = 3;
+	m->scSetRadiusImmediate(0, 0.25f);
+	m->scSetRadiusFinal(0, 0.25f);
+	m->scSetAmountImmediate(0, 0.5f);
+	m->scSetAmountFinal(0, 0.5f);
+
+	json_t* rootJ = m->dataToJson();
+	json_t* setsJ = json_object_get(rootJ, "sets");
+	json_t* set0J = json_array_get(setsJ, 0);
+	json_t* snapshotsJ = json_object_get(set0J, "snapshots");
+	json_t* snapshot0J = json_array_get(snapshotsJ, 0);
+	json_t* outputJ = json_object_get(rootJ, "output");
+
+	char* snapshotDumped = json_dumps(snapshot0J, JSON_SORT_KEYS | JSON_COMPACT | JSON_REAL_PRECISION(9));
+	std::string snapshotActual(snapshotDumped);
+	free(snapshotDumped);
+
+	REQUIRE(snapshotActual == "{\"amount\":0.5,\"id\":3,\"radius\":0.25}");
+
+	// "output" never carries "radius"/"amount" — Sc::dataToJson(outputJ, 1, 0)
+	// is a no-op; only Seq::dataToJson writes into it.
+	REQUIRE(json_object_get(outputJ, "radius") == nullptr);
+	REQUIRE(json_object_get(outputJ, "amount") == nullptr);
+
+	json_decref(rootJ);
+	Test::destroyModule(m);
+}
+
 
 TEST_CASE("Regression: 'sets' array longer than SETS is bounded", "[TransitPad][JSON]") {
 	// BUG-1: dataFromJson() iterated the full length of "sets", writing past
