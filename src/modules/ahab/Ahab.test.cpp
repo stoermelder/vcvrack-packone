@@ -12,7 +12,7 @@ static Test::TestContext<> testContext;
 // Test cases are split by target into the headers included below.
 // - AhabModule.test.hpp: AhabModule core (clock, run/stop, reset, CV I/O, preset)
 // - Ahab.midi.test.hpp:  MIDI output (midiOutPort) + virtual MIDI driver (Ahab::Midi)
-// - Ahab.json.test.hpp:  JSON serialization/deserialization (module, sim, AhabOoscUdpOutput)
+// - Ahab.json.test.hpp:  JSON serialization/deserialization (module, sim, AhabOoscOutput)
 // - Ahab.state.test.hpp: headless cursor/selection clamping math (no widget)
 #include "Ahab.test.module.hpp"
 #include "Ahab.test.midi.hpp"

@@ -1,7 +1,7 @@
 #pragma once
 // Test cases for JSON serialization/deserialization across the Ahab subsystem:
 // the module's dataToJson/dataFromJson (top-level keys, the "sim" sub-object,
-// null-guards), AhabSim's field/tick/seed, and AhabOoscUdpOutput's four
+// null-guards), AhabSim's field/tick/seed, and AhabOoscOutput's
 // destination keys (which live inside the module's "sim" sub-object).
 // Included by Ahab.test.cpp.
 
@@ -114,8 +114,8 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Ahab]") {
 		m->process({}); // drain the field load
 		for (int i = 0; i < 5; ++i) stepSim(m); // tick → 5
 		m->sim->setRandomSeed(777);
-		m->udpOutput->setUdpDestination("192.168.1.50", "7000");
-		m->udpOutput->setOscDestination("10.0.0.5", "8000");
+		m->udpOutput->setDestination("192.168.1.50", "7000");
+		m->oscOutput->setDestination("10.0.0.5", "8000");
 		REQUIRE(m->sim->getTickNumber() == 5);
 
 		json_t* j = m->dataToJson();
@@ -139,10 +139,10 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Ahab]") {
 		REQUIRE(buf[0] == ':');
 		REQUIRE(m2->sim->getTickNumber() == 5);
 		REQUIRE(m2->sim->getRandomSeed() == 777);
-		REQUIRE(m2->udpOutput->getUdpAddress() == "192.168.1.50");
-		REQUIRE(m2->udpOutput->getUdpPort() == "7000");
-		REQUIRE(m2->udpOutput->getOscAddress() == "10.0.0.5");
-		REQUIRE(m2->udpOutput->getOscPort() == "8000");
+		REQUIRE(m2->udpOutput->getAddress() == "192.168.1.50");
+		REQUIRE(m2->udpOutput->getPort() == "7000");
+		REQUIRE(m2->oscOutput->getAddress() == "10.0.0.5");
+		REQUIRE(m2->oscOutput->getPort() == "8000");
 	}
 
 	Test::unregisterModule(m);
@@ -234,7 +234,7 @@ TEST_CASE("Serialization to JSON", "[JSON][AhabSim]") {
 	REQUIRE(json_integer_value(seedJ) == 999);
 	
 	// The sim no longer serializes the UDP/OSC destination keys — the module
-	// adds them via udpOutput->toJson(simJ) (see the AhabOoscUdpOutput JSON
+	// adds them via udpOutput->toJson(simJ) (see the AhabOoscOutput JSON
 	// tests below).
 	REQUIRE(json_object_get(j, "udpAddress") == nullptr);
 	
@@ -275,44 +275,55 @@ TEST_CASE("Deserialization from JSON", "[JSON][AhabSim]") {
 	json_decref(j);
 }
 
-TEST_CASE("AhabOoscUdpOutput JSON round-trip", "[JSON][AhabUdp]") {
-	AhabOoscUdpOutput out;
-	out.setUdpDestination("192.168.1.100", "7000");
-	out.setOscDestination("10.0.0.1", "8000");
+TEST_CASE("AhabOoscOutput JSON round-trip (UDP)", "[JSON][AhabUdp]") {
+	AhabOoscOutput out(AhabOoscOutput::Kind::UDP);
+	out.setDestination("192.168.1.100", "7000");
 
-	// toJson writes the four keys into the passed (sim-shaped) object.
+	// toJson writes the udpAddress / udpPort keys into the passed (sim-shaped) object.
 	json_t* simJ = json_object();
 	out.toJson(simJ);
 	REQUIRE(std::string(json_string_value(json_object_get(simJ, "udpAddress"))) == "192.168.1.100");
 	REQUIRE(std::string(json_string_value(json_object_get(simJ, "udpPort"))) == "7000");
+	json_decref(simJ);
+
+	// fromJson reads the udpAddress / udpPort keys back from a sim-shaped object.
+	json_t* j2 = json_object();
+	json_object_set_new(j2, "udpAddress", json_string("172.16.0.1"));
+	json_object_set_new(j2, "udpPort", json_string("6000"));
+	AhabOoscOutput out2(AhabOoscOutput::Kind::UDP);
+	out2.fromJson(j2);
+	REQUIRE(out2.getAddress() == "172.16.0.1");
+	REQUIRE(out2.getPort() == "6000");
+	json_decref(j2);
+}
+
+TEST_CASE("AhabOoscOutput JSON round-trip (OSC)", "[JSON][AhabUdp]") {
+	AhabOoscOutput out(AhabOoscOutput::Kind::OSC);
+	out.setDestination("10.0.0.1", "8000");
+
+	json_t* simJ = json_object();
+	out.toJson(simJ);
 	REQUIRE(std::string(json_string_value(json_object_get(simJ, "oscAddress"))) == "10.0.0.1");
 	REQUIRE(std::string(json_string_value(json_object_get(simJ, "oscPort"))) == "8000");
 	json_decref(simJ);
 
-	// fromJson reads the four keys back from a sim-shaped object.
 	json_t* j2 = json_object();
-	json_object_set_new(j2, "udpAddress", json_string("172.16.0.1"));
-	json_object_set_new(j2, "udpPort", json_string("6000"));
 	json_object_set_new(j2, "oscAddress", json_string("192.168.0.1"));
 	json_object_set_new(j2, "oscPort", json_string("7000"));
-	AhabOoscUdpOutput out2;
+	AhabOoscOutput out2(AhabOoscOutput::Kind::OSC);
 	out2.fromJson(j2);
-	REQUIRE(out2.getUdpAddress() == "172.16.0.1");
-	REQUIRE(out2.getUdpPort() == "6000");
-	REQUIRE(out2.getOscAddress() == "192.168.0.1");
-	REQUIRE(out2.getOscPort() == "7000");
+	REQUIRE(out2.getAddress() == "192.168.0.1");
+	REQUIRE(out2.getPort() == "7000");
 	json_decref(j2);
 }
 
-TEST_CASE("AhabOoscUdpOutput fromJson with missing keys is a safe no-op", "[JSON][AhabUdp]") {
-	// fromJson on an object without the four keys leaves the defaults untouched.
+TEST_CASE("AhabOoscOutput fromJson with missing keys is a safe no-op", "[JSON][AhabUdp]") {
+	// fromJson on an object without the relevant keys leaves the defaults untouched.
 	json_t* j = json_object();
 	json_object_set_new(j, "height", json_integer(3)); // unrelated key
-	AhabOoscUdpOutput out;
+	AhabOoscOutput out(AhabOoscOutput::Kind::UDP);
 	REQUIRE_NOTHROW(out.fromJson(j));
-	REQUIRE(out.getUdpAddress() == "127.0.0.1");
-	REQUIRE(out.getUdpPort() == "49161");
-	REQUIRE(out.getOscAddress() == "127.0.0.1");
-	REQUIRE(out.getOscPort() == "49162");
+	REQUIRE(out.getAddress() == "127.0.0.1");
+	REQUIRE(out.getPort() == "49161");
 	json_decref(j);
 }

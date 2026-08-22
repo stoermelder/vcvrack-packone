@@ -120,4 +120,5 @@ Features missing in AHAB compared to ORCA:
     - Added MIDI Panic option
     - Fixed reset behavior on loading files or examples
     - Fixed broken MIDI channel on MIDI operators
+    - Fixed concurrent usage of UDP and OSC output
     - Fixed various minor issues
