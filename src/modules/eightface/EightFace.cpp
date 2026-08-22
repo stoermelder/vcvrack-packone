@@ -148,6 +148,7 @@ struct EightFaceModule : Module {
 			configSwitch(PRESET_PARAM + i, 0.f, 1.f, 0.f, string::f("Preset slot %d", i + 1));
 			typeButtons[i].param = &params[PRESET_PARAM + i];
 			presetSlotUsed[i] = false;
+			presetSlot[i] = NULL;
 		}
 
 		buttonDivider.setDivision(4);
@@ -181,8 +182,8 @@ struct EightFaceModule : Module {
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (presetSlotUsed[i]) {
 				json_decref(presetSlot[i]);
-				presetSlot[i] = NULL;
 			}
+			presetSlot[i] = NULL;
 			presetSlotUsed[i] = false;
 		}
 
@@ -596,8 +597,8 @@ struct EightFaceModule : Module {
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (presetSlotUsed[i]) {
 				json_decref(presetSlot[i]);
-				presetSlot[i] = NULL;
 			}
+			presetSlot[i] = NULL;
 			presetSlotUsed[i] = false;
 		}
 
