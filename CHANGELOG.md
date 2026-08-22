@@ -10,6 +10,8 @@
     - Fixed reset behavior on loading files or examples
     - Fixed broken MIDI channel on MIDI operators
     - Fixed various minor issues
+- Module [DIRT](./docs/dirt/Dirt.md)
+    - Fixed broken preset loading
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added sorting option "Newest" to *v2 mod* browser
     - Improved context menus for tags (#461)
