@@ -562,6 +562,10 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 		}
 
 		// Expander
+		// Up-cast to IntermixBase<PORTS>* before storing: consumers
+		// reinterpret_cast the void* back to IntermixBase<PORTS>* and make
+		// virtual calls, so the stored pointer must already carry the correct
+		// multiple-inheritance offset.
 		rightExpander.producerMessage = (IntermixBase<PORTS>*)this;
 		rightExpander.messageFlipRequested = true;
 	}

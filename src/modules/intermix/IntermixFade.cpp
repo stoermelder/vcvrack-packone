@@ -72,7 +72,7 @@ struct IntermixFadeModule : IntermixChainModule {
 
 		// Expander
 		Module* exp = leftExpander.module;
-		if (!exp || (exp->model != modelIntermix && exp->model != modelIntermixGate && exp->model != modelIntermixEnv && exp->model != modelIntermixFade) || !exp->rightExpander.consumerMessage) return;
+		if (!exp || !isIntermixModel(exp->model) || !exp->rightExpander.consumerMessage) return;
 		IntermixBase<PORTS>* module = reinterpret_cast<IntermixBase<PORTS>*>(exp->rightExpander.consumerMessage);
 		rightExpander.producerMessage = module;
 		rightExpander.messageFlipRequested = true;

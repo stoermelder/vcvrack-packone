@@ -50,7 +50,7 @@ struct IntermixGateModule : IntermixChainModule {
 
 		// Expander
 		Module* exp = leftExpander.module;
-		if (!exp || (exp->model != modelIntermix && exp->model != modelIntermixGate && exp->model != modelIntermixEnv && exp->model != modelIntermixFade) || !exp->rightExpander.consumerMessage) {
+		if (!exp || !isIntermixModel(exp->model) || !exp->rightExpander.consumerMessage) {
 			// Disconnected from the chain: outputs go low
 			resetOutputs();
 			return;

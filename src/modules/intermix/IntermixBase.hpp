@@ -19,6 +19,13 @@ struct IntermixBase {
 	virtual void expSetFade(int i, float* fadeIn, float* fadeOut) { }
 };
 
+inline bool isIntermixModel(Model* model) {
+	return model == modelIntermix
+		|| model == modelIntermixGate
+		|| model == modelIntermixEnv
+		|| model == modelIntermixFade;
+}
+
 /** Common base for all modules of the Intermix expander-chain (Intermix,
  * IntermixGate, IntermixEnv, IntermixFade).
  *
