@@ -191,8 +191,10 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 		padBrightness = 0.75f;
 		inputVisualize = false;
 		outputClamp = true;
-		for (int i = 0; i < SCENE_MAX; i++) {
+		for (int i = 0; i < PORTS; i++) {
 			inputMode[i] = IM_DIRECT;
+		}
+		for (int i = 0; i < SCENE_MAX; i++) {
 			for (int j = 0; j < PORTS; j++) {
 				scenes[i].input[j] = IM_DIRECT;
 				scenes[i].output[j] = OM_OUT;
