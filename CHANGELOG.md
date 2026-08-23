@@ -7,6 +7,7 @@
     - Added toggle for Focus mode using Shift+Esc
     - Added clock divider/multiplier for clock input
     - Added MIDI Panic option
+    - Added context menu options for selections
     - Fixed reset behavior on loading files or examples
     - Fixed broken MIDI channel on MIDI operators
     - Fixed concurrent usage of UDP and OSC output

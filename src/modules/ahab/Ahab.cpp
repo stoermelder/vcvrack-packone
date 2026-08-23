@@ -985,6 +985,52 @@ struct AhabSimWidget : OpaqueWidget {
 		return s;
 	}
 
+	// Toggle comment markers ('#') on the left and right edges of the current
+	// selection. If every edge cell is already a comment, the markers are
+	// removed; otherwise they are added. Shared by the Ctrl/Cmd+Shift+7 hotkey
+	// and the "Toggle comment block" context-menu item.
+	void toggleCommentBlock() {
+		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
+		Usz w = display_field.width;
+		bool isComment = true;
+		for (Usz y = sy; y < sy + sh; ++y) {
+			char c1 = display_field.buffer[y * w + sx];
+			char c2 = display_field.buffer[y * w + sx + sw - 1];
+			if (c1 != '#' || c2 != '#') {
+				isComment = false;
+				break;
+			}
+		}
+		// If all cells are marked as comment, remove comments; otherwise add comments
+		module->sim->pushUndo();
+		for (Usz y = sy; y < sy + sh; ++y) {
+			module->sim->setGlyphRequest(y, sx, isComment ? '.' : '#', Mark_flag_input, false);
+			module->sim->setGlyphRequest(y, sx + sw - 1, isComment ? '.' : '#', Mark_flag_input, false);
+		}
+	}
+
+	void clearSelection() {
+		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
+		module->sim->fillRectRequest(sy, sx, sh, sw);
+	}
+
+	void cutSelection() {
+		copySelectionToClipboard();
+		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
+		module->sim->cutRectRequest(sy, sx, sh, sw);
+	}
+
+	void pasteSelection() {
+		Usz cy, cx; editorState.getCursor(cy, cx);
+		std::string clip = vcv::ui::getClipboard();
+		if (!clip.empty()) {
+			Usz pasted_h = 0, pasted_w = 0;
+			if (module->sim->loadRectFromOrcaRequest(clip, cy, cx, pasted_h, pasted_w)) {
+				if (pasted_h > 0 && pasted_w > 0) editorState.setSelection(cy, cx, pasted_h, pasted_w, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+			}
+		}
+	}
+
 	void onSelectKey(const SelectKeyEvent& e) override {
 		if (!module || !module->sim) return;
 		const char* k = glfwGetKeyName(e.key, 0);
@@ -1011,8 +1057,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+Backspace -> Clear selection
 		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_BACKSPACE) {
-			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
-			module->sim->fillRectRequest(sy, sx, sh, sw);
+			clearSelection();
 			e.consume(this);
 			return;
 		}
@@ -1093,23 +1138,14 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+X -> Cut selection to clipboard (ORCA plain text)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'x') {
-			copySelectionToClipboard();
-			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
-			module->sim->cutRectRequest(sy, sx, sh, sw);
+			cutSelection();
 			e.consume(this);
 			return;
 		}
 
 		// Ctrl/Cmd+V -> Paste selection from clipboard (accept ORCA plain text or JSON)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'v') {
-			Usz cy, cx; editorState.getCursor(cy, cx);
-			std::string clip = vcv::ui::getClipboard();
-			if (!clip.empty()) {
-				Usz pasted_h = 0, pasted_w = 0;
-				if (module->sim->loadRectFromOrcaRequest(clip, cy, cx, pasted_h, pasted_w)) {
-					if (pasted_h > 0 && pasted_w > 0) editorState.setSelection(cy, cx, pasted_h, pasted_w, module->sim->getFieldHeight(), module->sim->getFieldWidth());
-				}
-			}
+			pasteSelection();
 			e.consume(this);
 			return;
 		}
@@ -1147,23 +1183,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+Shift+7 -> Toggle comment block
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT) && e.key == GLFW_KEY_7) {
-			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
-			Usz w = display_field.width;
-			bool isComment = true;
-			for (Usz y = sy; y < sy + sh; ++y) {
-				char c1 = display_field.buffer[y * w + sx];
-				char c2 = display_field.buffer[y * w + sx + sw - 1];
-				if (c1 != '#' || c2 != '#') {
-					isComment = false;
-					break;
-				}
-			}
-			// If all cells are marked as comment, remove comments; otherwise add comments
-			module->sim->pushUndo();
-			for (Usz y = sy; y < sy + sh; ++y) {
-				module->sim->setGlyphRequest(y, sx, isComment ? '.' : '#', Mark_flag_input, false);
-				module->sim->setGlyphRequest(y, sx + sw - 1, isComment ? '.' : '#', Mark_flag_input, false);
-			}
+			toggleCommentBlock();
 			e.consume(this);
 			return;
 		}
@@ -1448,6 +1468,35 @@ struct AhabSimWidget : OpaqueWidget {
 				},
 				1.f, 32.f, 8.f, "Grid step rows", " cells"
 			));
+		}));
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createSubmenuItem("Selection", "", [this](ui::Menu* menu) {
+			menu->addChild(createMenuItem("Select all", RACK_MOD_CTRL_NAME "+A", [this]() {
+				editorState.setSelection(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Clear", "Backspace", [this]() {
+				clearSelection();
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Copy", RACK_MOD_CTRL_NAME "+C", [this]() {
+				copySelectionToClipboard();
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Cut", RACK_MOD_CTRL_NAME "+X", [this]() {
+				cutSelection();
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Paste", RACK_MOD_CTRL_NAME "+V", [this]() {
+				pasteSelection();
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createMenuItem("Toggle comment", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+7", [this]() {
+				toggleCommentBlock();
+				APP->event->setSelectedWidget(this);
+			}));
 		}));
 
 		menu->addChild(new MenuSeparator());
