@@ -6,7 +6,7 @@
 namespace StoermelderPackOne {
 namespace Ahab {
 
-// A plain rectangular glyph grid the AhabRandomizer writes into before handing
+// A plain rectangular glyph grid the AhabGenerator writes into before handing
 // the result to the sim. Replaces the old per-glyph trySet(AhabSim*, ...) path:
 // generation becomes a pure function into this buffer, and the result can be
 // committed to AhabSim as ONE paste command instead of one queued command per

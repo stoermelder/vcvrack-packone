@@ -28,3 +28,7 @@ static Test::TestContext<> testContext;
 #include "Ahab.test.SimField.hpp"
 #include "Ahab.test.SimState.hpp"
 #include "Ahab.test.SimCallbacks.hpp"
+
+// Headless pure-data tests (no sim, no widget), included last:
+// - Ahab.test.generator.hpp: AhabPatternBuffer + randomizer generation
+#include "Ahab.test.generator.hpp"

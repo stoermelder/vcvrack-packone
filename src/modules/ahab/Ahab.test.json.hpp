@@ -29,7 +29,7 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Ahab]") {
 		json_t* j = m->dataToJson();
 		REQUIRE(j != nullptr);
 		REQUIRE(json_is_object(j));
-		// All 11 top-level keys must be present
+		// All 12 top-level keys must be present
 		REQUIRE(json_object_get(j, "panelTheme") != nullptr);
 		REQUIRE(json_object_get(j, "midiVirtualPortId") != nullptr);
 		REQUIRE(json_object_get(j, "midiOutEnabled") != nullptr);
@@ -41,9 +41,11 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Ahab]") {
 		REQUIRE(json_object_get(j, "gridStepCol") != nullptr);
 		REQUIRE(json_object_get(j, "gridStepRow") != nullptr);
 		REQUIRE(json_object_get(j, "clkRatio") != nullptr);
+		REQUIRE(json_object_get(j, "generator") != nullptr);
 		// The two nested objects must themselves be objects
 		REQUIRE(json_is_object(json_object_get(j, "midiOutPort")));
 		REQUIRE(json_is_object(json_object_get(j, "sim")));
+		REQUIRE(json_is_object(json_object_get(j, "generator")));
 		json_decref(j);
 	}
 
@@ -58,6 +60,9 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Ahab]") {
 		m->gridStepCol = 16;
 		m->gridStepRow = 12;
 		m->clkRatioSetting = AhabModule::CLK_RATIO_MUL4;
+		m->lastGenerator.seed = 123456;
+		m->lastGenerator.density = 0.55f;
+		m->lastGenerator.qualityGate = false;
 
 		json_t* j = m->dataToJson();
 		// Start m2 at defaults so dataFromJson() is genuinely exercised
@@ -70,6 +75,9 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Ahab]") {
 		m2->gridStepCol = 0;
 		m2->gridStepRow = 0;
 		m2->clkRatioSetting = AhabModule::CLK_RATIO_MUL1;
+		m2->lastGenerator.seed = 0;
+		m2->lastGenerator.density = 0.3f;
+		m2->lastGenerator.qualityGate = true;
 		m2->dataFromJson(j);
 		json_decref(j);
 
@@ -82,8 +90,22 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Ahab]") {
 		REQUIRE(m2->gridStepCol == 16);
 		REQUIRE(m2->gridStepRow == 12);
 		REQUIRE(m2->clkRatioSetting == AhabModule::CLK_RATIO_MUL4);
+		REQUIRE(m2->lastGenerator.seed == 123456u);
+		REQUIRE(m2->lastGenerator.density == 0.55f);
+		REQUIRE(m2->lastGenerator.qualityGate == false);
 	}
 
+	SECTION("Legacy flat lastRandomizerSeed loads into generator settings") {
+		// Patches saved before the "generator" subobject existed carry a flat
+		// lastRandomizerSeed; it must land in lastGenerator.seed, with density
+		// keeping its default (it was session-only and cannot be recovered).
+		m2->lastGenerator.seed = 999; // prove the stored value wins
+		json_t* j = json_object();
+		json_object_set_new(j, "lastRandomizerSeed", json_integer(777));
+		m2->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(m2->lastGenerator.seed == 777u);
+	}
 	SECTION("midiOutPort (nested object) round-trips") {
 		// midiOutPort is a rack::midi::Output; its channel must survive a round-trip.
 		m->midiOutPort.channel = 5;

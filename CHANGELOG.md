@@ -8,6 +8,7 @@
     - Added clock divider/multiplier for clock input
     - Added MIDI Panic option
     - Added context menu options for selections
+    - Major enhacements for [Random generator](./docs/ahab/AhabRandomizer.md)
     - Fixed reset behavior on loading files or examples
     - Fixed broken MIDI channel on MIDI operators
     - Fixed concurrent usage of UDP and OSC output

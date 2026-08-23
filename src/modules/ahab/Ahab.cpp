@@ -11,7 +11,7 @@
 #include "AhabMidiDriver.hpp"
 #include "AhabRenderer.hpp"
 #include "AhabEditorState.hpp"
-#include "AhabRandomizer.hpp"
+#include "Ahab.generator.hpp"
 #include <array>
 #include <memory>
 
@@ -93,6 +93,13 @@ struct AhabModule : Module {
 
 	/** [Stored to JSON] */
 	bool overwriteZeroNoteDuration = true;
+
+	/** [Stored to JSON as the "generator" subobject] The generation settings
+	 * that produced the most recent randomize result. "Randomize (same seed)"
+	 * reuses them to reproduce the pattern deterministically; vocabulary plan
+	 * §5 will grow more steerable fields into this Config, all persisting via
+	 * Config::toJson/fromJson. */
+	AhabGenerator::Config lastGenerator;
 
 	dsp::SchmittTrigger simRunTrigger;
 	dsp::SchmittTrigger clkButtonTrigger;
@@ -456,6 +463,7 @@ struct AhabModule : Module {
 		json_object_set_new(rootJ, "gridStepCol", json_integer(gridStepCol));
 		json_object_set_new(rootJ, "gridStepRow", json_integer(gridStepRow));
 		json_object_set_new(rootJ, "clkRatio", json_integer(clkRatioSetting));
+		json_object_set_new(rootJ, "generator", AhabGenerator::Config::toJson(lastGenerator));
 		return rootJ;
 	}
 
@@ -487,6 +495,16 @@ struct AhabModule : Module {
 		if (gridStepRowJ) gridStepRow = (int)json_integer_value(gridStepRowJ);
 		json_t* clkRatioJ = json_object_get(rootJ, "clkRatio");
 		if (clkRatioJ) clkRatioSetting = (int)json_integer_value(clkRatioJ);
+		json_t* generatorJ = json_object_get(rootJ, "generator");
+		if (generatorJ && json_is_object(generatorJ)) {
+			lastGenerator = AhabGenerator::Config::fromJson(generatorJ);
+		}
+		else {
+			// Legacy patches stored a flat lastRandomizerSeed; density was
+			// session-only and cannot be recovered, so it keeps its default.
+			json_t* legacySeedJ = json_object_get(rootJ, "lastRandomizerSeed");
+			if (legacySeedJ && json_is_integer(legacySeedJ)) lastGenerator.seed = (uint32_t)json_integer_value(legacySeedJ);
+		}
 	}
 };
 
@@ -593,22 +611,28 @@ struct AhabSimWidget : OpaqueWidget {
 		module->sim->resetRequest();
 	}
 
-	void simRandomize(float density = 0.3f) {
+	void simRandomize(float density = 0.3f, uint32_t seed = 0) {
 		if (!module || !module->sim) return;
 		
 		// Get current selection bounds
 		Usz sy, sx, sh, sw;
 		editorState.getSelectionRect(sy, sx, sh, sw);
 
-		AhabRandomizer::Config cfg;
+		AhabGenerator::Config cfg;
 		cfg.density = density;
+		cfg.seed = seed; // 0 = fresh nondeterministic seed
 
-		// Use the AhabRandomizer class
-		StoermelderPackOne::Ahab::AhabRandomizer randomizer;
+		// Use the AhabGenerator class
+		StoermelderPackOne::Ahab::AhabGenerator randomizer(seed);
 		if (!randomizer.randomize(module->sim, sy, sx, sh, sw, cfg)) {
 			// Nothing was generated or the command queue was full — previously silent.
 			return;
 		}
+
+		// Remember what produced this result so "Randomize (same seed)" can
+		// reproduce it; the settings also persist with the patch.
+		module->lastGenerator.seed = randomizer.getSeed();
+		module->lastGenerator.density = density;
 
 		notifyUiChanged();
 	}
@@ -1499,6 +1523,36 @@ struct AhabSimWidget : OpaqueWidget {
 			}));
 		}));
 
+		menu->addChild(createSubmenuItem("Random generator", "", [this](ui::Menu* menu) {
+			if (module->lastGenerator.seed != 0) {
+				menu->addChild(createMenuItem("Same seed again", string::f("seed %u", module->lastGenerator.seed), [this]() {
+					simRandomize(module->lastGenerator.density, module->lastGenerator.seed);
+					APP->event->setSelectedWidget(this);
+				}));
+				menu->addChild(new MenuSeparator());
+			}
+			menu->addChild(createMenuItem("Sparse (20%)", "", [this]() {
+				simRandomize(0.2f);
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Sparse (20%)", "", [this]() {
+				simRandomize(0.2f);
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Medium (40%)", "", [this]() {
+				simRandomize(0.4f);
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Very dense (70%)", "", [this]() {
+				simRandomize(0.7f);
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Packed (100%)", "", [this]() {
+				simRandomize(1.0f);
+				APP->event->setSelectedWidget(this);
+			}));
+		}));
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Clear", isWidgetMenu ? RACK_MOD_CTRL_NAME "+N" : "", [this]() {
 			simClear();
@@ -1558,21 +1612,6 @@ struct AhabSimWidget : OpaqueWidget {
 					}));
 				}
 			}
-		}));
-
-		menu->addChild(createSubmenuItem("Randomize selection", "", [this](ui::Menu* menu) {
-			menu->addChild(createMenuItem("Sparse (10%)", "", [this]() { 
-				simRandomize(0.1f); 
-				APP->event->setSelectedWidget(this);
-			}));
-			menu->addChild(createMenuItem("Medium (30%)", "", [this]() { 
-				simRandomize(0.3f); 
-				APP->event->setSelectedWidget(this);
-			}));
-			menu->addChild(createMenuItem("Very dense (50%)", "", [this]() { 
-				simRandomize(0.5f); 
-				APP->event->setSelectedWidget(this);
-			}));
 		}));
 
 		menu->addChild(new MenuSeparator());
