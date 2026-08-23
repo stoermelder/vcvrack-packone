@@ -60,7 +60,7 @@ enum OUT_MODE {
 };
 
 template < int PORTS >
-struct IntermixModule : Module, IntermixBase<PORTS> {
+struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 	enum ParamIds {
 		ENUMS(PARAM_MATRIX, PORTS * PORTS),
 		ENUMS(PARAM_OUTPUT, PORTS),
@@ -210,20 +210,6 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		sceneSet(0);
 		Module::onReset(e);
 	}
-
-#ifndef METAMODULE
-	void onRemove(const Module::RemoveEvent& e) override {
-		// hack for clearing the module-pointers on the expander-chain
-		Module* m = this;
-		while (m) {
-			if (m->model != modelIntermix && m->model != modelIntermixEnv && m->model != modelIntermixFade && m->model != modelIntermixGate) break;
-			m->rightExpander.producerMessage = NULL;
-			m->rightExpander.consumerMessage = NULL;
-			m = m->rightExpander.module;
-		}
-		Module::onRemove(e);
-	}
-#endif
 
 	void process(const ProcessArgs& args) override {
 		ts++;
