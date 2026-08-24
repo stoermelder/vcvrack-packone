@@ -87,6 +87,23 @@ Three rows: read the lead's note, transpose, play.
 
 Because `A` adds a constant interval, a harmony moves in strict parallel motion with its lead. When there is room, the harmony also republishes its transposed note — a `vV.` row whose value cell sits exactly where the `A` pokes — so further voices can chain off it; depth-3 chains appear in larger selections.
 
+### Bass
+
+Exactly one per take, planned before the leads and only when a clock bus exists (a bass with its own free-running clock defeats the point). It reuses the lead's five-row arpeggio shape with two deliberate constraints:
+
+- **Pinned low register** — its octave is fixed low rather than drawn from the channel-correlated band, so the foundation never depends on shuffle order.
+- **Root and fifth only** — the track alternates between the scale's root and fifth. No wandering: a bass line that strays chromatically is not a foundation.
+
+```
+.Vr.......     r drives the track key: a slow bus division
+..4TCGCG..     alternating root and fifth of the patch scale
+..bV......     current note published into b
+.4D2..Vb..     bang + read of b parked over the note cell
+...:12.f4.     ':' on its own channel, octave pinned low
+```
+
+It plays on its own MIDI channel like any melodic voice and publishes its current note — so harmonies or gates can chain off it just as they chain off leads.
+
 ### Gate voices (call and response)
 
 Same read, but `F` compares instead of `A` adding:
@@ -162,7 +179,7 @@ A few decisions are made once per generation and applied everywhere, which is wh
 - **One key and one scale** per take (major, natural minor, pentatonic or dorian). Every note in every voice belongs to it.
 - **One bar length** — 8 or 12 ticks. Every clock, delay and rhythm period in the arrangement divides it evenly, so all voices realign every bar and the whole pattern repeats as a unit.
 - **Channel plan**: the first four melodic voices each get their own MIDI channel (1–4), so lines stay separate; drums always use channel 10.
-- **Register spread**: octaves are distributed across bands so the voices do not all pile into the same pitch range.
+- **Register spread**: octaves are distributed across bands so the voices do not all pile into the same pitch range — except the bass, which is deliberately pinned low as the arrangement's foundation.
 
 ## Repeating a take you like (seeds)
 

@@ -74,6 +74,54 @@ void AhabGenerator::fillPatchWalk(std::string& notes, Usz len) {
 	fillScaleWalkWith(notes, len, rng, patchRoot_, patchScaleIdx_);
 }
 
+// Same mapping as sim.c's from_midi_note_number: lowercase glyph == sharp.
+// (Defined further down next to fillScaleWalkWith; forward-declared here so
+// fillBassWalkWith can use it.)
+static Glyph glyphForSemitone(U8 note);
+
+void AhabGenerator::fillBassWalkWith(std::string& notes, Usz len, std::mt19937& rng, int root, int scaleIdx) {
+	// Vocabulary plan Step 3: a bass line is a foundation — root and fifth
+	// of the patch scale only, alternating with occasional octave jumps.
+	// No random walk: a bass that wanders chromatically is not a foundation.
+	static int const kMajor[]        = {0, 2, 4, 5, 7, 9, 11};
+	static int const kNaturalMinor[] = {0, 2, 3, 5, 7, 8, 10};
+	static int const kPentatonic[]   = {0, 2, 4, 7, 9};
+	static int const kDorian[]       = {0, 2, 3, 5, 7, 9, 10};
+	struct Scale { int const* semi; int n; };
+	static Scale const kScales[] = {
+		{kMajor, 7}, {kNaturalMinor, 7}, {kPentatonic, 5}, {kDorian, 7},
+	};
+
+	Scale const& scale = kScales[scaleIdx % 4];
+	int rootPc = ((root % 12) + 12) % 12;
+
+	// The FIFTH: pick the scale degree closest to 7 semitones above the
+	// root. Index arithmetic (n/2) picks the middle DEGREE, which is a
+	// fourth in 7-note scales (C-F, not C-G) and a third in pentatonic.
+	int fifthSemi = scale.semi[0];
+	int bestDist = 99;
+	for (int d = 1; d < scale.n; ++d) {
+		int dist = scale.semi[d] > 7 ? scale.semi[d] - 7 : 7 - scale.semi[d];
+		if (dist < bestDist) { bestDist = dist; fifthSemi = scale.semi[d]; }
+	}
+	// NB: no per-note randomness at all. A track glyph carries only the
+	// pitch CLASS — the ':' row's octave operand sets the register — so
+	// an "octave-up accent" (+12) would reduce to the same glyph in
+	// glyphForSemitone and never be audible. The line is a strict
+	// root/fifth alternation.
+	bool onRoot = true;
+	notes.clear();
+	for (Usz i = 0; i < len; ++i) {
+		int semi = onRoot ? 0 : fifthSemi;
+		notes += glyphForSemitone((U8)(rootPc + semi));
+		onRoot = !onRoot;
+	}
+}
+
+void AhabGenerator::fillBassWalk(std::string& notes, Usz len) {
+	fillBassWalkWith(notes, len, rng, patchRoot_, patchScaleIdx_);
+}
+
 char AhabGenerator::allocateVarName() {
 	// Unique names per generate() call; 'g' is excluded from the
 	// pool because it is reserved for the arrangement's master clock.
@@ -352,9 +400,11 @@ AhabGenerator::Extent AhabGenerator::generateSimplePattern(ScratchPad& buf, Usz 
 // order IS the topological order of the coupling graph.
 
 // Only these roles publish a pitch variable other voices
-// can read. Gates produce bangs; textures publish nothing.
+// can read. Gates produce bangs; textures publish nothing. Bass publishes
+// too: its root/fifth line is a legitimate chain source.
 bool publishesPitch(VoiceNode const& vn) {
-	return vn.role == VoiceNode::Lead || vn.role == VoiceNode::Harmony;
+	return vn.role == VoiceNode::Lead || vn.role == VoiceNode::Harmony
+		|| vn.role == VoiceNode::Bass;
 }
 
 std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float density, size_t nBus) {
@@ -387,6 +437,21 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 		VoiceNode bus;
 		bus.role = VoiceNode::Bus;
 		plan.push_back(bus);
+	}
+
+	// Bass: exactly one, before the leads, and only when a bus exists — a
+	// bass with its own free-running clock defeats the point.
+	// Clock edge prefers the LAST bus division: divisions are
+	// placed slowest-first is not guaranteed, but the highest index tends to
+	// be the longest period in practice; the layout resolves it via busVars_.
+	if (nBus > 0 && capacity >= 2) {
+		VoiceNode vp;
+		vp.role = VoiceNode::Bass;
+		vp.channel = randomChannel();
+		vp.param = '2'; // pinned low octave (see placeArpeggioVoice)
+		vp.inputs.push_back(Edge(0, Edge::Clock, (char)(nBus - 1)));
+		fillBassWalk(vp.notes, 4);
+		plan.push_back(vp);
 	}
 
 	// Leads: one per bus division (so divisions get used), at least one.
@@ -436,7 +501,7 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 		size_t const upTo = plan.size(); // snapshot: don't chain within a round
 		for (size_t i = 0; i < upTo && (int)plan.size() < capacity; ++i) {
 			if (!publishesPitch(plan[i])) continue;
-			// Risk 3: stop planning publishers once the variable pool runs
+			// Stop planning publishers once the variable pool runs
 			// low, instead of planning voices that silently drop out. Round 0
 			// keeps legacy behaviour (the pool may legitimately be unmanaged
 			// when planArrangement is driven standalone).
@@ -517,14 +582,15 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 			case 1: vp.role = VoiceNode::Uclid; break;
 			default: vp.role = VoiceNode::Chord; break;
 		}
-		// §4.1: occasionally a texture hit's velocity follows a publisher's
+		// Occasionally a texture hit's velocity follows a publisher's
 		// pitch — accents that track the melody. Same source rules as the
 		// lead case above; the K row costs no extra space in these builders.
 		if (chance(0.3f)) {
 			size_t pubs[8];
 			int np = 0;
-			for (size_t j = 0; j < plan.size() && np < 8; ++j)
+			for (size_t j = 0; j < plan.size() && np < 8; ++j) {
 				if (publishesPitch(plan[j])) pubs[np++] = j;
+			}
 			if (np > 0) vp.inputs.push_back(Edge(pubs[randInt(0, np - 1)], Edge::Operand, Edge::kOpVelocity));
 		}
 		plan.push_back(vp);
@@ -565,14 +631,29 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 	// One case per role, each calling the same builder its zone did before.
 	auto placeVoice = [&](VoiceNode& vn, char srcVar, char velVar, Usz cy, Usz cx, Usz avH, Usz avW) -> Extent {
 		switch (vn.role) {
+			case VoiceNode::Bass:
 			case VoiceNode::Lead: {
 				char sharedVar = 0;
-				for (Edge const& e : vn.inputs)
-					if (e.kind == Edge::Clock && (size_t)e.param < busVars_.size())
+				for (Edge const& e : vn.inputs) {
+					if (e.kind == Edge::Clock && (size_t)e.param < busVars_.size()) {
 						sharedVar = busVars_[(size_t)e.param];
+					}
+				}
+				// A Bass without its bus variable would silently fall back to
+				// placeArpeggioVoice's own-clock branch — exactly the
+				// free-running bass the planner refuses to build. Drop it
+				// instead; the plan-level guard (nBus > 0) cannot see a bus
+				// that failed to PLACE here.
+				if (vn.role == VoiceNode::Bass && sharedVar == 0) {
+					vn.publishedVar = 0;
+					return Extent();
+				}
 				char var = 0;
+				// Bass pins its octave low ('2'), bypassing the
+				// channel-correlated band draw entirely.
+				char const oct = vn.role == VoiceNode::Bass ? vn.param : 0;
 				Extent e = avH >= 5
-					? placeArpeggioVoice(buf, cy, cx, avH, avW, vn.channel, vn.notes, sharedVar, &var, velVar)
+					? placeArpeggioVoice(buf, cy, cx, avH, avW, vn.channel, vn.notes, sharedVar, &var, velVar, oct)
 					: Extent();
 				vn.publishedVar = var;
 				return e;
@@ -585,10 +666,11 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 					// A second Trigger edge gates this voice on another
 					// publisher's pitch.
 					char srcB = 0, parB = 0;
-					for (Edge const& e : vn.inputs)
+					for (Edge const& e : vn.inputs) {
 						if (e.kind == Edge::Trigger && plan[e.from].publishedVar != 0) {
 							srcB = plan[e.from].publishedVar;
 							parB = e.param;
+						}
 					}
 					bool const fanIn = srcB != 0;
 					// Both gate layouts span 12 columns; the
@@ -702,6 +784,7 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 		switch (vn.role) {
 			case VoiceNode::Bus:
 				eh = 2; ew = nBus * 5 - 1; break;
+			case VoiceNode::Bass:
 			case VoiceNode::Lead: eh = 5; ew = 13; break;
 			case VoiceNode::Harmony: eh = 5; ew = 8; break;
 			case VoiceNode::Gate: {
@@ -736,8 +819,9 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 		Usz bestDist = h;
 		for (Usz cx = x; cx + ewRun <= x + w; ++cx) {
 			Usz req = minY;
-			for (Usz dx = 0; dx < ewRun; ++dx)
+			for (Usz dx = 0; dx < ewRun; ++dx) {
 				req = std::max(req, sky[cx - x + dx]);
+			}
 			if (req + eh > h) continue;
 			Usz const dist = req > targetY ? req - targetY : targetY - req;
 			if (!found || dist < bestDist) { bestDist = dist; bestY = req; bestX = cx; found = true; }
@@ -782,14 +866,12 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 		}
 		if (!e.empty()) {
 			// Raise the skyline over the real footprint PLUS the density
-			// margin (vertically and horizontally). No unconditional separator:
-			// every builder keeps all of its pokes inside its own extent (bang
-			// rows are part of it; no V-read sits on a last row), so even a
-			// zero-margin follower is never clobbered — its top row is
-			// uppercase everywhere, so a stray '*' above cannot misfire it.
+			// margin (vertically and horizontally), plus ONE
+			// separator row even at zero margin: a K row's pokes can never
+			// cross into a neighbour's MIDI row below.
 			for (Usz dx = 0; dx < e.w + gapX && bestX - x + dx < w; ++dx) {
 				Usz& s = sky[bestX - x + dx];
-				s = std::max(s, bestY + e.h + gapY);
+				s = std::max(s, bestY + e.h + gapY + 1);
 			}
 		}
 	}
@@ -1077,7 +1159,7 @@ AhabGenerator::Extent AhabGenerator::placeUclidMidiVoice(ScratchPad& buf, Usz y,
 
 AhabGenerator::Extent AhabGenerator::placeArpeggioVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
 										  char channel, const std::string& notes, char sharedVar, char* allocatedVar,
-										  char velocityVar) {
+										  char velocityVar, char octave) {
 	Usz noteLen = notes.size();
 	// 5 rows: clock / track / V-write / bang+V-read / MIDI. Width: the ':'
 	// block spans x..x+8; track values extend to x+5+noteLen-1.
@@ -1088,7 +1170,10 @@ AhabGenerator::Extent AhabGenerator::placeArpeggioVoice(ScratchPad& buf, Usz y, 
 	if (allocatedVar) *allocatedVar = varName;
 
 	char mod = (noteLen < 10) ? '0' + noteLen : 'a' + (noteLen - 10);
-	char octave = randomOctave();
+	// octave == 0: random channel-correlated band (legacy behaviour); a
+	// pinned octave ('2'..'4') bypasses the shuffle entirely — the Bass
+	// role uses this so its register never depends on channel order.
+	if (octave == 0) octave = randomOctave();
 	char bangRate = randomSmallDigit();
 
 	// Anchor every column off the ':' so operand offsets stay explicit — bare

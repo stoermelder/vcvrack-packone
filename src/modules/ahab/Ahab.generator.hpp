@@ -63,7 +63,7 @@ struct Edge {
 // filling publishedVar as each voice is placed. Part of the tested surface:
 // tests can assert on graph shape directly.
 struct VoiceNode {
-	enum Role { Bus, Lead, Harmony, Gate, Drums, Delay, Uclid, Chord };
+	enum Role { Bus, Bass, Lead, Harmony, Gate, Drums, Delay, Uclid, Chord };
 	Role role;
 
 	char channel = '0';   // melodic voices draw unique channels from the pool
@@ -196,6 +196,13 @@ struct AhabGenerator {
 	static void fillScaleWalkWith(std::string& notes, Usz len, std::mt19937& rng, int root, int scaleIdx);
 
 	/**
+	 * Bass line: root and fifth of the patch scale only (vocabulary plan
+	 * Step 3) — a foundation, not a melody. Static and rng-parameterised
+	 * so tests can drive it directly.
+	 */
+	static void fillBassWalkWith(std::string& notes, Usz len, std::mt19937& rng, int root, int scaleIdx);
+
+	/**
 	 * Chord pattern: multiple MIDI notes triggered together
 	 * From chord.orca example. N stacked delay+MIDI pairs with IDENTICAL
 	 * rate/mod: D fires when Tick%(rate*mod)==0 regardless of position, so
@@ -242,6 +249,21 @@ struct AhabGenerator {
 	 */
 	std::vector<VoiceNode> planArrangement(Usz h, Usz w, float density, size_t nBus);
 
+	/**
+	 * Arpeggio pattern: clock (or the shared clock bus) → track → variable → MIDI
+	 * Example from examples: .gC4 / .14T1324 / .aV3
+	 * When sharedVar is a bus variable (q/w/e/r), the voice reads that bus
+	 * clock instead of carrying its own C row; 0 = own clock.
+	 * If allocatedVar is non-null it receives the variable the voice publishes
+	 * its current pitch into — the hook derived voices follow.
+	 */
+	Extent placeArpeggioVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
+												char channel, const std::string& notes, char sharedVar = 0, char* allocatedVar = nullptr,
+												char velocityVar = 0, char octave = 0);
+	// octave: 0 = random (channel-correlated band), '2'..'4' = pinned low
+	// register — the Bass role passes a fixed low octave so the foundation
+	// never depends on the channel shuffle (vocabulary plan Step 3).
+
 private:
 	uint32_t seed_;
 	std::mt19937 rng;
@@ -279,6 +301,8 @@ private:
 	char barDivisorMod();
 	// fillScaleWalk over the patch's own key + scale.
 	void fillPatchWalk(std::string& notes, Usz len);
+	// fillBassWalkWith over the patch's own key + scale.
+	void fillBassWalk(std::string& notes, Usz len);
 	// Unique variable name from this call's pool, or 0 when exhausted.
 	char allocateVarName();
 	// Unique CC control number from this call's pool, or 0 when exhausted.
@@ -422,18 +446,6 @@ private:
 	 */
 	Extent placeUclidMidiVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
 							 char steps, char max, char channel, char octave, char note, char velocityVar = 0);
-
-	/**
-	 * Arpeggio pattern: clock (or the shared clock bus) → track → variable → MIDI
-	 * Example from examples: .gC4 / .14T1324 / .aV3
-	 * When sharedVar is a bus variable (q/w/e/r), the voice reads that bus
-	 * clock instead of carrying its own C row; 0 = own clock.
-	 * If allocatedVar is non-null it receives the variable the voice publishes
-	 * its current pitch into — the hook derived voices follow.
-	 */
-	Extent placeArpeggioVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
-						   char channel, const std::string& notes, char sharedVar = 0, char* allocatedVar = nullptr,
-						   char velocityVar = 0);
 
 };
 
