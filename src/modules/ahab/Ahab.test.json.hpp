@@ -63,6 +63,7 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Ahab]") {
 		m->lastGenerator.seed = 123456;
 		m->lastGenerator.density = 0.55f;
 		m->lastGenerator.qualityGate = false;
+		m->lastGenerator.channels = 7;
 
 		json_t* j = m->dataToJson();
 		// Start m2 at defaults so dataFromJson() is genuinely exercised
@@ -78,6 +79,7 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Ahab]") {
 		m2->lastGenerator.seed = 0;
 		m2->lastGenerator.density = 0.3f;
 		m2->lastGenerator.qualityGate = true;
+		m2->lastGenerator.channels = 4;
 		m2->dataFromJson(j);
 		json_decref(j);
 
@@ -93,6 +95,7 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Ahab]") {
 		REQUIRE(m2->lastGenerator.seed == 123456u);
 		REQUIRE(m2->lastGenerator.density == 0.55f);
 		REQUIRE(m2->lastGenerator.qualityGate == false);
+		REQUIRE(m2->lastGenerator.channels == 7);
 	}
 
 	SECTION("Legacy flat lastRandomizerSeed loads into generator settings") {

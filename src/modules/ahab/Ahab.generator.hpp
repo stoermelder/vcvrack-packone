@@ -66,7 +66,7 @@ struct VoiceNode {
 	enum Role { Bus, Bass, Lead, Harmony, Gate, Drums, Delay, Uclid, Chord };
 	Role role;
 
-	char channel = '0';   // melodic voices draw unique channels from the pool
+	char channel = '0';   // kRoleChannel entry for reserved roles; a free-region draw otherwise
 	std::string notes;    // Lead sequence / Chord tones (patch scale)
 	char param = '2';     // Harmony: transpose steps; Gate: trigger note
 
@@ -77,6 +77,42 @@ struct VoiceNode {
 	// Inbound edges. Empty => a root voice (its own clock, no dependency).
 	std::vector<Edge> inputs;
 };
+
+// Channel policy, replacing the shuffled "0123" pool.
+//
+// RESERVED: one fixed channel per primary role. Channel identity is
+// MEANINGFUL here — ch0 is always the bass — so a user patches these into
+// a rack once and re-rolls freely. CV-backed channels are the first four
+// BY DESIGN: OUT_OUTPUT jacks exist only for channels 0-3, so the
+// four roles most worth patching as CV — Bass, Lead, Harmony, Chord, the
+// harmonic core — take them; Gate is reserved but MIDI-only. Rows are in
+// VoiceNode::Role declaration order and ordered by register within that
+// constraint, so Step 4's octave derivation stays coherent.
+//
+// FREE ('a'-'f' = base36, MIDI channels 10-15): no fixed meaning. Texture
+// voices and anything without a reserved entry draw from here, so the
+// reserved mapping is never disturbed. A 0 entry means "draw from the
+// free region".
+static char const kRoleChannel[] = {
+	/* Bus     */ 0,    // places no notes
+	/* Bass    */ '0',
+	/* Lead    */ '1',
+	/* Harmony */ '2',
+	/* Gate    */ '5',
+	/* Drums   */ '9',  // GM convention; the drum builder hardcodes it too
+	/* Delay   */ 0,    // free region
+	/* Uclid   */ 0,    // free region
+	/* Chord   */ '3',
+};
+static char const kFreeChannels[] = "abcdef"; // base36: MIDI channels 10-15
+static_assert(sizeof(kRoleChannel) == static_cast<size_t>(VoiceNode::Chord) + 1,
+	"one channel-policy row per VoiceNode::Role — decide reserved-or-free for any new role");
+
+// Channel-budget bounds (§5.3): how many voices may sound at all. At least
+// a solo lead; at most the reserved table plus the free region with slack
+// (beyond 12 the free region wraps, so the promise degrades among texture).
+static int const kMinChannelBudget = 1;
+static int const kMaxChannelBudget = 16;
 
 /**
  * AhabRandomizer - Generates musically meaningful random ORCA patterns
@@ -107,7 +143,12 @@ struct AhabGenerator {
 		float density = 0.3f;
 		uint32_t seed = 0;       // 0 = keep the seed given to the constructor
 		bool clearFirst = true;  // paste overwrites the whole rect; overlay mode not yet supported
-		// 6.3 runtime gate: generate-and-reject. When on (default), generate()
+		// Channel budget: how many voices may sound at all. Caps the
+		// voice count, selects which roles appear (first N in priority
+		// order), and matches the patch to the rig — default 4 so every
+		// generated voice lands on a CV-patchable channel.
+		int channels = 4;
+		// Generate-and-reject. When on (default), generate()
 		// scores each attempt with scorePattern() and re-rolls deterministically,
 		// keeping the best. Turn OFF when measuring the raw generator (the CI
 		// gate in Ahab.test.Randomizer.hpp does exactly that).
@@ -124,6 +165,7 @@ struct AhabGenerator {
 			json_object_set_new(j, "density", json_real(cfg.density));
 			json_object_set_new(j, "seed", json_integer((int)cfg.seed));
 			json_object_set_new(j, "qualityGate", json_boolean(cfg.qualityGate));
+			json_object_set_new(j, "channels", json_integer(cfg.channels));
 			return j;
 		}
 		static Config fromJson(json_t* j) {
@@ -135,6 +177,10 @@ struct AhabGenerator {
 			if (seedJ && json_is_integer(seedJ)) cfg.seed = (uint32_t)json_integer_value(seedJ);
 			json_t* gateJ = json_object_get(j, "qualityGate");
 			if (gateJ) cfg.qualityGate = json_boolean_value(gateJ);
+			json_t* channelsJ = json_object_get(j, "channels");
+			if (channelsJ && json_is_number(channelsJ)) cfg.channels = (int)json_number_value(channelsJ);
+			if (cfg.channels < kMinChannelBudget) cfg.channels = kMinChannelBudget;
+			if (cfg.channels > kMaxChannelBudget) cfg.channels = kMaxChannelBudget;
 			return cfg;
 		}
 	};
@@ -196,8 +242,8 @@ struct AhabGenerator {
 	static void fillScaleWalkWith(std::string& notes, Usz len, std::mt19937& rng, int root, int scaleIdx);
 
 	/**
-	 * Bass line: root and fifth of the patch scale only (vocabulary plan
-	 * Step 3) — a foundation, not a melody. Static and rng-parameterised
+	 * Bass line: root and fifth of the patch scale only
+	 * — a foundation, not a melody. Static and rng-parameterised
 	 * so tests can drive it directly.
 	 */
 	static void fillBassWalkWith(std::string& notes, Usz len, std::mt19937& rng, int root, int scaleIdx);
@@ -246,8 +292,13 @@ struct AhabGenerator {
 	 * given the instance seed, so tests can assert on plan shape directly.
 	 * Returns an empty vector when the area/density budget is exhausted.
 	 * @param nBus number of clock-bus divisions already placed above
+	 * @param budget sounding-voice cap; the bus node does not count.
+	 * Default 64 = capacity's own hard cap, i.e. no budget beyond capacity —
+	 * direct planner calls (tests) stay unbounded; the module passes
+	 * Config::channels.
 	 */
-	std::vector<VoiceNode> planArrangement(Usz h, Usz w, float density, size_t nBus);
+	std::vector<VoiceNode> planArrangement(Usz h, Usz w, float density, size_t nBus,
+		size_t budget = 64);
 
 	/**
 	 * Arpeggio pattern: clock (or the shared clock bus) → track → variable → MIDI
@@ -260,9 +311,9 @@ struct AhabGenerator {
 	Extent placeArpeggioVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
 												char channel, const std::string& notes, char sharedVar = 0, char* allocatedVar = nullptr,
 												char velocityVar = 0, char octave = 0);
-	// octave: 0 = random (channel-correlated band), '2'..'4' = pinned low
-	// register — the Bass role passes a fixed low octave so the foundation
-	// never depends on the channel shuffle (vocabulary plan Step 3).
+	// octave: 0 = draw the LEAD register band (the only role relying on
+	// the random draw), '2'..'4' = pinned low register — the Bass role
+	// passes a fixed low octave so the foundation never depends on a draw.
 
 private:
 	uint32_t seed_;
@@ -277,8 +328,8 @@ private:
 	Usz barMod_ = 8;        // every modulus in the patch divides this
 	int patchRoot_ = 0;     // patch key, semitone 0..11
 	int patchScaleIdx_ = 0; // patch scale, see fillScaleWalkWith
-	std::string chanPool_;  // shuffled "0123": unique melodic channel per voice
-	int lastChanIdx_ = 0;   // channel index of the most recently planned voice
+	std::string freeChanPool_; // shuffled kFreeChannels: unique texture channel per call
+	Usz freeWrap_ = 0;         // round-robin once the free pool runs dry
 	std::string ccPool_;    // shuffled "0123": unique CC control number per
 							// Modulation edge. Two
 							// tails on one (channel, control) pair fight; low
@@ -292,8 +343,14 @@ private:
 	char randomBase36();
 	char randomSmallDigit();  // 1-8 for rates/mods
 	char randomNote();
-	char randomOctave();
-	char randomChannel();
+	// Register band per ROLE: Bass < Chord < Harmony < Lead with the
+	// existing ±1 jitter; gates and texture sit mid. Replaces the old
+	// channel-latched draw and its evaluation-order hazard.
+	char randomOctaveForRole(VoiceNode::Role role);
+	// Channel policy lookup: the role's reserved entry, or a unique
+	// draw from the free region when it has none.
+	char channelForRole(VoiceNode::Role role);
+	char allocateFreeChannel();
 	// Picks a euclidean pair whose modulus DIVIDES the patch bar:
 	// with steps in 2..max-1.
 	void randomEuclid(char& steps, char& max);
@@ -326,7 +383,8 @@ private:
 	 * Generate a complete multi-voice arrangement
 	 * Creates multiple independent voices with shared timing
 	 */
-	void generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Usz w, float density);
+	void generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Usz w, float density,
+		size_t budget);
 
 	/**
 	 * One raw generation pass, no retry loop (the body of the old generate()).

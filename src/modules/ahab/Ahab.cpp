@@ -611,7 +611,7 @@ struct AhabSimWidget : OpaqueWidget {
 		module->sim->resetRequest();
 	}
 
-	void simRandomize(float density = 0.3f, uint32_t seed = 0) {
+	void simRandomize(float density = 0.3f, uint32_t seed = 0, int channels = -1) {
 		if (!module || !module->sim) return;
 		
 		// Get current selection bounds
@@ -621,6 +621,9 @@ struct AhabSimWidget : OpaqueWidget {
 		AhabGenerator::Config cfg;
 		cfg.density = density;
 		cfg.seed = seed; // 0 = fresh nondeterministic seed
+		// channels < 0 keeps the stored budget: every menu item except the
+		// Channels picker itself leaves the setting untouched.
+		cfg.channels = channels < 0 ? module->lastGenerator.channels : channels;
 
 		// Use the AhabGenerator class
 		StoermelderPackOne::Ahab::AhabGenerator randomizer(seed);
@@ -633,6 +636,7 @@ struct AhabSimWidget : OpaqueWidget {
 		// reproduce it; the settings also persist with the patch.
 		module->lastGenerator.seed = randomizer.getSeed();
 		module->lastGenerator.density = density;
+		module->lastGenerator.channels = cfg.channels;
 
 		notifyUiChanged();
 	}
@@ -1550,6 +1554,19 @@ struct AhabSimWidget : OpaqueWidget {
 			menu->addChild(createMenuItem("Packed (100%)", "", [this]() {
 				simRandomize(1.0f);
 				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createSubmenuItem("Channels", string::f("%d", module->lastGenerator.channels), [this](ui::Menu* m) {
+				// How many voices may sound at all. The budget picks the
+				// first N roles in priority order and matches the patch to the rig.
+				for (int n = kMinChannelBudget; n <= 12; ++n) {
+					m->addChild(createMenuItem(string::f("%d voices", n),
+						n == module->lastGenerator.channels ? CHECKMARK(true) : "",
+						[this, n]() {
+							simRandomize(module->lastGenerator.density, 0, n);
+							APP->event->setSelectedWidget(this);
+						}));
+				}
 			}));
 		}));
 

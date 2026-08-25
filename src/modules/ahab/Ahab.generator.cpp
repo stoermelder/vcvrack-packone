@@ -21,15 +21,25 @@ char AhabGenerator::randomNote() {
 	return notes[randInt(0, 6)];
 }
 
-char AhabGenerator::randomOctave() {
-	// Octave bands correlate with the planned channel
-	// (ch0 low/bass ... ch3 high/lead) with a little jitter. NB: builders that
-	// pass randomChannel() and randomOctave() in one argument list have
-	// unspecified evaluation order (C++11), so the band may latch to the
-	// previous voice's channel — still correlated patch-wide.
-	int band = lastChanIdx_ < 0 ? 0 : (lastChanIdx_ > 3 ? 3 : lastChanIdx_);
-	int oct = 2 + band + randInt(0, 1);
-	return (char)('2' + (oct > 4 ? 4 : oct)); // octaves 2-6
+char AhabGenerator::randomOctaveForRole(VoiceNode::Role role) {
+	// Register follows ROLE, not the last channel handed out (§5.5): low
+	// channels are low voices, now by construction instead of via a latch
+	// the old shuffle had already destroyed. Bands low to high —
+	// Bass < Chord < Harmony < Lead — with the existing ±1 jitter; gates
+	// and texture sit mid. Bus places no notes, Drums pin '2' in their
+	// builder and Bass pins '2' through placeArpeggioVoice, so band 0 is
+	// effectively never drawn.
+	int band;
+	switch (role) {
+		case VoiceNode::Lead:    band = 3; break;
+		case VoiceNode::Harmony: band = 2; break;
+		case VoiceNode::Gate:    band = 2; break;
+		case VoiceNode::Delay:   band = 2; break;
+		case VoiceNode::Uclid:   band = 2; break;
+		case VoiceNode::Chord:   band = 1; break;
+		default:                 band = 0; break; // Bass / Bus / Drums
+	}
+	return (char)('2' + band + randInt(0, 1)); // octaves 2-6
 }
 
 // Base36 helpers for euclid pair generation
@@ -133,7 +143,7 @@ char AhabGenerator::allocateVarName() {
 
 char AhabGenerator::allocateCcNumber() {
 	// Control numbers come from a small per-call
-	// pool exactly like chanPool_, so two Modulation edges never target the
+	// pool exactly like freeChanPool_, so two Modulation edges never target the
 	// same CC. Numbers stay in '0'..'3': midiCcOffset (default 64) is added
 	// downstream and clamped to 127, so high base36 controls would collapse.
 	if (ccPool_.empty()) return 0;
@@ -142,18 +152,29 @@ char AhabGenerator::allocateCcNumber() {
 	return c;
 }
 
-char AhabGenerator::randomChannel() {
-	// Melodic voices draw UNIQUE channels from a
-	// per-call shuffled pool, so two voices never land on the same channel
-	// and cut each other off. Drums bypass this (hardcoded channel 9).
-	if (!chanPool_.empty()) {
-		char c = chanPool_.back();
-		chanPool_.pop_back();
-		lastChanIdx_ = c - '0';
+char AhabGenerator::allocateFreeChannel() {
+	// Free-region voices draw UNIQUE channels from a per-call shuffled
+	// pool. Once it runs dry the fallback is DEFINED, not random:
+	// round-robin spreads latecomers across the region instead of colliding
+	// at random. Only interchangeable texture voices contend here — the
+	// reserved mapping a user has patched into their rack is never touched.
+	if (!freeChanPool_.empty()) {
+		char c = freeChanPool_.back();
+		freeChanPool_.pop_back();
 		return c;
 	}
-	lastChanIdx_ = randInt(0, 3);
-	return '0' + lastChanIdx_; // pool exhausted
+	char c = kFreeChannels[freeWrap_ % (sizeof(kFreeChannels) - 1)];
+	++freeWrap_;
+	return c;
+}
+
+char AhabGenerator::channelForRole(VoiceNode::Role role) {
+	// The channel-policy lookup that replaces the shuffled "0123" pool:
+	// reserved roles return their fixed table entry — ch0 IS the
+	// bass, on every re-roll — and anything without an entry draws from
+	// the free region.
+	char const reserved = kRoleChannel[role];
+	return reserved != 0 ? reserved : allocateFreeChannel();
 }
 
 // Same mapping as sim.c's from_midi_note_number: lowercase glyph == sharp.
@@ -297,7 +318,7 @@ ScratchPad AhabGenerator::generateOnce(Usz height, Usz width, Config const& cfg)
 	}
 	else {
 		// Full arrangement mode
-		generateArrangement(buf, 0, 0, height, width, cfg.density);
+		generateArrangement(buf, 0, 0, height, width, cfg.density, (size_t)cfg.channels);
 	}
 
 	return buf;
@@ -378,7 +399,10 @@ AhabGenerator::Extent AhabGenerator::generateSimplePattern(ScratchPad& buf, Usz 
 		case 11: // Offset read
 			return placeOffsetPattern(buf, y, x, availW, randInt(0, 9) + '0', randInt(0, 9) + '0');
 		case 12: // MIDI row (silent without a bang neighbour — decoration)
-			return placeMidiPattern(buf, y, x, availW, randomChannel(), randomOctave(), randomNote(), 'f', '4');
+			// Decorative standalone row rides the lead's channel and register;
+			// neither draw touches shared state, so argument evaluation order
+			// cannot matter.
+			return placeMidiPattern(buf, y, x, availW, channelForRole(VoiceNode::Lead), randomOctaveForRole(VoiceNode::Lead), randomNote(), 'f', '4');
 		case 13: { // Variable round-trip: write then read on the SAME row
 			// A standalone var-read can never see a write (vars do
 			// not persist across ticks and order matters) — that is exactly a
@@ -407,13 +431,14 @@ bool publishesPitch(VoiceNode const& vn) {
 		|| vn.role == VoiceNode::Bass;
 }
 
-std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float density, size_t nBus) {
-	// Unique melodic channel plan - reset here (not just in generateOnce) so
+std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float density, size_t nBus,
+	size_t budget) {
+	// Free-region channel pool - reset here (not just in generateOnce) so
 	// standalone planner calls are self-contained. Shuffled so the hand-out
-	// order varies with the seed instead of always running 3,2,1,0.
-	chanPool_ = "0123";
-	std::shuffle(chanPool_.begin(), chanPool_.end(), rng);
-	lastChanIdx_ = 0;
+	// order varies with the seed instead of always running f,e,d,c,b,a.
+	freeChanPool_ = kFreeChannels;
+	std::shuffle(freeChanPool_.begin(), freeChanPool_.end(), rng);
+	freeWrap_ = 0;
 	// Same treatment for the CC control-number pool.
 	ccPool_ = "0123";
 	std::shuffle(ccPool_.begin(), ccPool_.end(), rng);
@@ -430,6 +455,17 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 	if (capacity <= 0) return {};
 
 	std::vector<VoiceNode> plan;
+	// Sounding voices planned so far. The bus node is excluded: it places
+	// no notes and owns no channel, and the budget means "how many voices
+	// may sound". Every site below gates on BOTH budgets — area/
+	// density capacity and the channel budget — whichever binds first wins.
+	// NB: counted FROM THE PLAN, not from nBus — if the bus push ever gains
+	// another guard, deriving from nBus would underflow size_t on an empty
+	// plan and silently pass every budget check.
+	auto sounding = [&]() {
+		size_t const busNodes = !plan.empty() && plan.front().role == VoiceNode::Bus ? 1 : 0;
+		return plan.size() - busNodes;
+	};
 
 	// Node 0: the clock bus when present. Clock edges reference division
 	// indices via param, so the whole bus is an ordinary graph participant.
@@ -439,29 +475,23 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 		plan.push_back(bus);
 	}
 
-	// Bass: exactly one, before the leads, and only when a bus exists — a
-	// bass with its own free-running clock defeats the point.
-	// Clock edge prefers the LAST bus division: divisions are
-	// placed slowest-first is not guaranteed, but the highest index tends to
-	// be the longest period in practice; the layout resolves it via busVars_.
-	if (nBus > 0 && capacity >= 2) {
-		VoiceNode vp;
-		vp.role = VoiceNode::Bass;
-		vp.channel = randomChannel();
-		vp.param = '2'; // pinned low octave (see placeArpeggioVoice)
-		vp.inputs.push_back(Edge(0, Edge::Clock, (char)(nBus - 1)));
-		fillBassWalk(vp.notes, 4);
-		plan.push_back(vp);
-	}
+	// Roles are planned in priority order — Lead, Drums, Bass,
+	// Harmony, Chord, Gate, then free-region texture — so a capacity that
+	// truncates the sequence leaves a coherent head (lead + drums) rather
+	// than whatever the old emission order reached first. Uniqueness is
+	// STRUCTURAL: exactly one creation site per reserved role below, each
+	// pushing at most one node — no role-membership checks needed — so each
+	// reserved entry in kRoleChannel is claimed at most once per plan and
+	// channels are distinct by construction instead of by luck.
 
-	// Leads: one per bus division (so divisions get used), at least one.
-	size_t const nLeads = std::min(std::max(nBus, (size_t)1), (size_t)std::max<Usz>(1, w / 14));
-	for (size_t i = 0; i < nLeads && (int)plan.size() < capacity; ++i) {
+	// Lead: exactly one (was one per bus division). Clocked by the FIRST
+	// bus division; without a bus it free-runs on its own clock.
+	if ((int)plan.size() < capacity && sounding() < budget) {
 		VoiceNode vp;
 		vp.role = VoiceNode::Lead;
-		vp.channel = randomChannel();
+		vp.channel = channelForRole(vp.role); // '1'
 		if (nBus > 0) {
-			vp.inputs.push_back(Edge(0, Edge::Clock, (char)i));
+			vp.inputs.push_back(Edge(0, Edge::Clock, (char)0));
 		}
 		// Sequence length doubles as the clock modulus: pick it from the
 		// patch bar's divisors so the voice walks its sequence in one bar.
@@ -471,120 +501,152 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 			if (barMod_ % d == 0 && nd < 4) divisors[nd++] = d;
 		}
 		fillPatchWalk(vp.notes, nd ? divisors[randInt(0, nd - 1)] : 4);
-		// Occasionally a lead's VELOCITY
-		// follows another publisher's pitch contour — layout turns the edge
-		// into a K (konkat) row feeding the ':'s note+velocity cells. Sources
-		// are pitch publishers only: their glyphs never index to 0, which the
-		// midi operator treats as a note-off (a bus counter hitting '0'
-		// would silently drop one note in every cycle).
-		if (chance(0.3f)) {
-			for (size_t j = 0; j < plan.size(); ++j) {
-				if (!publishesPitch(plan[j])) continue;
-				vp.inputs.push_back(Edge(j, Edge::Operand, Edge::kOpVelocity));
-				break;
-			}
-		}
+		// NB: the old velocity-follows Operand edge has no home here — it
+		// needs an EARLIER pitch publisher to point at, and the lead is now
+		// the first sounding voice in the plan. The K-velocity feature
+		// lives on in the texture voices' Operand edges below.
 		plan.push_back(vp);
 	}
 
-	// Rounds of harmony/gate voices attached
-	// to anything that publishes a pitch. Round 0 attaches to leads; later
-	// rounds attach to publishers created in earlier rounds, so coupling
-	// depth accumulates. Gates narrow when chained (review Risk 2), so only
-	// round 0 makes them — harmonies carry the deeper chains.
-	// Coupling depth scales with selection area - small
-	// selections stay at one dependent round, large ones reach three. (Risk
-	// 2 watch: gates only spawn in round 0, so deep chains are Harmony-only
-	// and do not thin out the way stacked gates would.)
-	int const rounds = (w * h) < 700 ? 1 : ((w * h) < 2400 ? 2 : 3);
-	for (int round = 0; round < rounds && (int)plan.size() < capacity; ++round) {
-		size_t const upTo = plan.size(); // snapshot: don't chain within a round
-		for (size_t i = 0; i < upTo && (int)plan.size() < capacity; ++i) {
-			if (!publishesPitch(plan[i])) continue;
-			// Stop planning publishers once the variable pool runs
-			// low, instead of planning voices that silently drop out. Round 0
-			// keeps legacy behaviour (the pool may legitimately be unmanaged
-			// when planArrangement is driven standalone).
-			if (round >= 1 && varPool_.size() < 4) break;
-			if (!chance(round == 0 ? 0.65f : 0.4f)) continue;
-
-			// Occasionally the new node is a
-			// Gate playing THIS publisher's pitch, gated on a DIFFERENT
-			// publisher hitting one of its notes.
-			size_t trigFrom = 0;
-			char trigNote = 0;
-			bool foundTrig = false;
-			if (round >= 1 && chance(0.35f)) {
-				for (size_t j = 0; j < upTo; ++j) {
-					if (j == i || !publishesPitch(plan[j])) continue;
-					if (plan[j].notes.empty()) continue;
-					trigFrom = j;
-					trigNote = plan[j].notes[randInt(0, (int)plan[j].notes.size() - 1)];
-					foundTrig = true;
-					break;
-				}
-			}
-
-			VoiceNode vp;
-			vp.channel = randomChannel();
-			// `i` is an ABSOLUTE plan index in every round (the bus node
-			// included in the iteration), so the edge target needs no offset.
-			// Applying the round-0 +1 bus offset here created self-edges when
-			// the last lead spawned a dependent - a cycle the topo sort
-			// correctly rejected.
-			size_t const from = i;
-			if (foundTrig) {
-				vp.role = VoiceNode::Gate;
-				vp.param = trigNote;
-				vp.inputs.push_back(Edge(from, Edge::Pitch, '0'));
-				vp.inputs.push_back(Edge(trigFrom, Edge::Trigger, trigNote));
-			}
-			else {
-				vp.role = (round == 0 && chance(0.5f)) ? VoiceNode::Gate : VoiceNode::Harmony;
-				vp.param = vp.role == VoiceNode::Gate
-					? plan[from].notes[randInt(0, (int)plan[from].notes.size() - 1)]
-					: (char)('0' + randInt(1, 3));
-				vp.inputs.push_back(Edge(from,
-					vp.role == VoiceNode::Gate ? Edge::Trigger : Edge::Pitch,
-					vp.param));
-			}
-			// Occasionally hang a Modulation edge
-			// off the Pitch this voice already consumes — layout turns it
-			// into a '!'-operator CC tail below the voice. This adds an edge
-			// to an existing node rather than a new one: no plan capacity,
-			// no channel, only a control number from the per-call pool (the
-			// producer's published variable is reused, so no var either).
-			bool hasPitch = false;
-			for (Edge const& e : vp.inputs) {
-				if (e.kind == Edge::Pitch) hasPitch = true;
-			}
-			if (hasPitch && chance(0.35f)) {
-				char cc = allocateCcNumber();
-				if (cc != 0) vp.inputs.push_back(Edge(from, Edge::Modulation, cc));
-			}
-			plan.push_back(vp);
-		}
-	}
-
-	// Rhythm section: tuned percussion hits drawn from the patch scale.
+	// Drums: tuned percussion hits drawn from the patch scale. Not a
+	// reserved role — the GM drum channel carries multiple hits — but
+	// planned right after the lead so a small budget still yields rhythm
+	// behind the melody.
 	size_t const nDrums = w >= 24 ? 2 : 1;
-	for (size_t i = 0; i < nDrums && (int)plan.size() < capacity; ++i) {
+	for (size_t i = 0; i < nDrums && (int)plan.size() < capacity && sounding() < budget; ++i) {
 		VoiceNode vp;
 		vp.role = VoiceNode::Drums;
+		vp.channel = channelForRole(vp.role); // '9': GM convention
 		plan.push_back(vp);
 	}
 
-	// Texture fills the remaining capacity.
-	while ((int)plan.size() < capacity) {
+	// Bass: exactly one, and only when a bus exists — a bass with its own
+	// free-running clock defeats the point. Clock edge prefers the LAST bus
+	// division: divisions are placed slowest-first is not guaranteed, but
+	// the highest index tends to be the longest period in practice; the
+	// layout resolves it via busVars_.
+	if (nBus > 0 && (int)plan.size() < capacity && sounding() < budget) {
 		VoiceNode vp;
-		switch (randInt(0, 2)) {
-			case 0: vp.role = VoiceNode::Delay; break;
-			case 1: vp.role = VoiceNode::Uclid; break;
-			default: vp.role = VoiceNode::Chord; break;
+		vp.role = VoiceNode::Bass;
+		vp.channel = channelForRole(vp.role); // '0'
+		vp.param = '2'; // pinned low octave (see placeArpeggioVoice)
+		vp.inputs.push_back(Edge(0, Edge::Clock, (char)(nBus - 1)));
+		fillBassWalk(vp.notes, 4);
+		plan.push_back(vp);
+	}
+
+	// Harmony: exactly one, transposing the first publisher that passes the
+	// chance gate (the lead, usually — plan order scans publishers before
+	// this node). Same per-publisher probability shape as the old round 0,
+	// so presence statistics carry over; a second harmony would fight over
+	// its role's reserved channel, so the scan stops at the first success.
+	if ((int)plan.size() < capacity && sounding() < budget) {
+		for (size_t j = 0; j < plan.size(); ++j) {
+			if (!publishesPitch(plan[j]) || plan[j].notes.empty()) continue;
+			if (!chance(0.65f)) continue;
+			VoiceNode vp;
+			vp.role = VoiceNode::Harmony;
+			vp.channel = channelForRole(vp.role); // '2'
+			vp.param = (char)('0' + randInt(1, 3));
+			vp.inputs.push_back(Edge(j, Edge::Pitch, vp.param));
+			// Occasionally hang a Modulation edge off the Pitch this voice
+			// already consumes — layout turns it into a '!'-operator CC tail
+			// below the voice. An extra edge on an existing node rather than
+			// a new one: no plan capacity, no channel, only a control number
+			// from the per-call pool (the producer's published variable is
+			// reused, so no var either).
+			if (chance(0.35f)) {
+				char cc = allocateCcNumber();
+				if (cc != 0) vp.inputs.push_back(Edge(j, Edge::Modulation, cc));
+			}
+			plan.push_back(vp);
+			break;
 		}
+	}
+
+	// Chord: exactly one. Texture in character, but it pins a reserved
+	// channel from Step 3's table on, so uniqueness applies here too.
+	if ((int)plan.size() < capacity && sounding() < budget) {
+		VoiceNode vp;
+		vp.role = VoiceNode::Chord;
+		vp.channel = channelForRole(vp.role); // '3'
+		// Occasionally the chord's VELOCITY follows a publisher's pitch —
+		// accents that track the melody (K-fed cell, see layout).
+		if (chance(0.3f)) {
+			size_t pubs[8];
+			int np = 0;
+			for (size_t j = 0; j < plan.size() && np < 8; ++j) {
+				if (publishesPitch(plan[j])) pubs[np++] = j;
+			}
+			if (np > 0) vp.inputs.push_back(Edge(pubs[randInt(0, np - 1)], Edge::Operand, Edge::kOpVelocity));
+		}
+		plan.push_back(vp);
+	}
+
+	// Gate: exactly one, banging a publisher's note; occasionally gated ON
+	// a SECOND publisher hitting one of its notes (fan-in). The old rounds
+	// made gates round-0-only because stacked gates thin out when chained;
+	// uniqueness makes that concern moot — there is only ever this one.
+	if ((int)plan.size() < capacity && sounding() < budget) {
+		// Primary source first: the first publisher that passes the chance
+		// gate. Deciding fan-in only AFTER a primary exists means a failed
+		// chance never wastes an already-drawn trigger note, and a gate
+		// falls back to the plain branch instead of vanishing.
+		for (size_t j = 0; j < plan.size(); ++j) {
+			if (!publishesPitch(plan[j]) || plan[j].notes.empty()) continue;
+			if (!chance(0.65f)) continue;
+
+			// Fan-in: gate this note on a DIFFERENT publisher hitting one
+			// of its own — chosen at random among the remaining qualifiers.
+			// A lowest-index pick here would always make the Lead the
+			// trigger and bar it from being the Pitch source.
+			size_t others[8];
+			int no = 0;
+			for (size_t t = 0; t < plan.size() && no < 8; ++t) {
+				if (t == j || !publishesPitch(plan[t]) || plan[t].notes.empty()) continue;
+				others[no++] = t;
+			}
+			bool const fanIn = no > 0 && chance(0.35f);
+
+			VoiceNode vp;
+			vp.role = VoiceNode::Gate;
+			vp.channel = channelForRole(vp.role); // '5'
+			if (fanIn) {
+				size_t const trigFrom = others[randInt(0, no - 1)];
+				char const trigNote =
+					plan[trigFrom].notes[randInt(0, (int)plan[trigFrom].notes.size() - 1)];
+				vp.param = trigNote;
+				vp.inputs.push_back(Edge(j, Edge::Pitch, '0'));
+				vp.inputs.push_back(Edge(trigFrom, Edge::Trigger, trigNote));
+				// A fan-in gate carries a Pitch, so it too may host a
+				// Modulation tail on its own Pitch source.
+				if (chance(0.35f)) {
+					char cc = allocateCcNumber();
+					if (cc != 0) vp.inputs.push_back(Edge(j, Edge::Modulation, cc));
+				}
+			}
+			else {
+				vp.param = plan[j].notes[randInt(0, (int)plan[j].notes.size() - 1)];
+				vp.inputs.push_back(Edge(j, Edge::Trigger, vp.param));
+			}
+			plan.push_back(vp);
+			break;
+		}
+	}
+
+	// Texture fills the remaining capacity. Delay and Uclid live in the
+	// FREE region — no fixed channel identity — so unlike the reserved
+	// roles above they may repeat freely. (Chord left this rotation for
+	// its own reserved slot above; the draw keeps the old 0=Delay,
+	// 1=Uclid mapping, minus the third value.)
+	while ((int)plan.size() < capacity && sounding() < budget) {
+		VoiceNode vp;
+		vp.role = randInt(0, 1) == 0 ? VoiceNode::Delay : VoiceNode::Uclid;
+		vp.channel = channelForRole(vp.role); // free-region draw
 		// Occasionally a texture hit's velocity follows a publisher's
-		// pitch — accents that track the melody. Same source rules as the
-		// lead case above; the K row costs no extra space in these builders.
+		// pitch — accents that track the melody. Same source rules as
+		// everywhere else: pitch publishers only (their glyphs never index
+		// to velocity 0, the midi operator's note-off).
 		if (chance(0.3f)) {
 			size_t pubs[8];
 			int np = 0;
@@ -601,7 +663,8 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 
 
 
-void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Usz w, float density) {
+void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Usz w, float density,
+	size_t budget) {
 	// Identity + bus. The bus is packed by the same skyline as every other
 	// voice — usually the top-left corner — and the voices reading it share
 	// its band to the right: ORCA scans left-to-right, so a same-row write
@@ -611,7 +674,7 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 	bool const busPlaced = h >= 2 && w >= 8 && density > 0.2f;
 	size_t const nBus = busPlaced ? busUnits : 0;
 
-	std::vector<VoiceNode> plan = planArrangement(h, w, density, nBus);
+	std::vector<VoiceNode> plan = planArrangement(h, w, density, nBus, budget);
 	if (plan.empty()) return;
 
 	// Topological layout. Every reader of a PITCH variable is placed below
@@ -708,7 +771,7 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 				return avH >= 2
 					? placeDelayMidiVoice(buf, cy, cx, avH, avW,
 										  randomSmallDigit(), barDivisorMod(),
-										  vn.channel, randomOctave(), note[0], velVar)
+										  vn.channel, randomOctaveForRole(vn.role), note[0], velVar)
 					: Extent();
 			}
 			case VoiceNode::Uclid: {
@@ -718,14 +781,14 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 				fillPatchWalk(note, 1); // in the patch key
 				return avH >= 2
 					? placeUclidMidiVoice(buf, cy, cx, avH, avW,
-										  uSteps, uMax, vn.channel, randomOctave(), note[0], velVar)
+										  uSteps, uMax, vn.channel, randomOctaveForRole(vn.role), note[0], velVar)
 					: Extent();
 			}
 			case VoiceNode::Chord: {
 				std::string tones;
 				fillPatchWalk(tones, 3 + randInt(0, 1)); // triad-ish, in the patch key
 				return placeChordVoice(buf, cy, cx, avH, avW,
-									   randomSmallDigit(), barDivisorMod(), vn.channel, randomOctave(),
+									   randomSmallDigit(), barDivisorMod(), vn.channel, randomOctaveForRole(vn.role),
 									   std::vector<char>(tones.begin(), tones.end()), velVar);
 			}
 			default: {
@@ -1170,10 +1233,10 @@ AhabGenerator::Extent AhabGenerator::placeArpeggioVoice(ScratchPad& buf, Usz y, 
 	if (allocatedVar) *allocatedVar = varName;
 
 	char mod = (noteLen < 10) ? '0' + noteLen : 'a' + (noteLen - 10);
-	// octave == 0: random channel-correlated band (legacy behaviour); a
-	// pinned octave ('2'..'4') bypasses the shuffle entirely — the Bass
-	// role uses this so its register never depends on channel order.
-	if (octave == 0) octave = randomOctave();
+	// octave == 0: draw the LEAD register band — the only role that still
+	// relies on the random draw, since Bass pins '2' through vn.param. A
+	// pinned octave ('2'..'4') bypasses the draw entirely.
+	if (octave == 0) octave = randomOctaveForRole(VoiceNode::Lead);
 	char bangRate = randomSmallDigit();
 
 	// Anchor every column off the ':' so operand offsets stay explicit — bare
@@ -1257,7 +1320,7 @@ AhabGenerator::Extent AhabGenerator::placeChordVoice(ScratchPad& buf, Usz y, Usz
 	for (Usz i = 0; i < n; ++i) {
 		Usz ry = y + 2 * i;
 		placeDelayPattern(buf, ry, x, maxW, rate, mod); // D at x+2
-		// §4.1: with a velocity source, a K row feeds every chord note's
+		// With a velocity source, a K row feeds every chord note's
 		// velocity cell from one publisher — accents on whole stacks.
 		if (velocityVar != 0) {
 			buf.set(ry, x + 5, '1');     // K length: velocity only
@@ -1298,7 +1361,7 @@ AhabGenerator::Extent AhabGenerator::placeDerivedVoice(ScratchPad& buf, Usz y, U
 	}
 
 	Usz const colV = x + (publish ? 5 : 4);
-	char octave = randomOctave();
+	char octave = randomOctaveForRole(gate ? VoiceNode::Gate : VoiceNode::Harmony);
 
 	// Row 0: read the lead pitch — '.' left of V selects read mode; the
 	// output pokes (y+1, colV).

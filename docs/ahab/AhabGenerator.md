@@ -17,6 +17,8 @@ The Random generator fills a selected area of AHAB's grid with a complete, ready
 
 Density shapes **both** halves of the result: how many voices are generated *and* how much room each one keeps from its neighbours — sparse takes scatter widely, packed takes fill edge to edge.
 
+The same submenu holds a ***Channels*** picker: how many voices may sound at all, from 1 to 12 (default 4). Voices are chosen in a fixed order of musical priority — lead, drums, bass, harmony, chord, gate, then ambient texture — so a small budget yields a coherent core rather than a crowd. Raise it when your rack has more inputs to feed; the setting is saved with the patch and applies to every later generation, whichever density you pick.
+
 3. Press **Run** (or the spacebar) to hear it. Make sure a MIDI output is configured — see the [main AHAB manual](./Ahab.md).
 
 Things worth knowing:
@@ -49,49 +51,37 @@ qV.
 
 `C` pokes `glyph_of(tick/rate%mod)` directly below itself, which is exactly the value cell of the `qV` write. Several units side by side publish divisions `q`, `w`, `e`, `r`; every modulus is a divisor of the bar, making the bus the rhythmic spine of the arrangement. At *Sparse* density the bus is omitted entirely and voices fall back to their own clocks — looser, more chaotic.
 
-### Lead voices
+### The lead
 
-The classic ORCA arpeggio, five rows — but fed by a bus division instead of its own clock:
+Exactly one per take — the melody everything else arranges around. The classic ORCA arpeggio, five rows, fed by the first bus division instead of its own clock:
 
 ```
 .Vq.......     q steps the track key from above
 ..4T1324..     track walks a 4-note scale walk
 ..pV......     current note published into p
 .4D2..Vp..     bang + read of p parked over the note cell
-...:31.f4.     ':' on the voice's own channel
+...:15.f4.     ':' on the lead's own channel, MIDI 2
 ```
 
-The sequence length doubles as the track modulus and is drawn from the bar's divisors, so the lead completes its walk within one bar. Each lead owns one of MIDI channels 1–4 and publishes `p` for anything placed below it.
+The sequence length doubles as the track modulus and is drawn from the bar's divisors, so the lead completes its walk within one bar. It plays on MIDI channel 2 and publishes `p` for anything placed below it.
 
-Some leads go one step further: their velocity is *live* too. A `K` (konkat) row replaces the V-read — it reads two variable names and pokes both values straight down into the note **and** velocity cells, at no extra height:
+### Harmony
 
-```
-.Vq.......
-..4T1324..
-..pV......
-.4D22Kpv..     K reads p + another voice's publication...
-...:31.f4.     ...and fills the note AND velocity cells each tick
-```
-
-That second name belongs to another publisher placed above, so the lead plays louder and softer along with the contour of the line it follows.
-
-### Harmony voices
-
-Three rows: read the lead's note, transpose, play.
+Exactly one, three rows: read the lead's note, transpose, play.
 
 ```
 ...Vs...
 .4D2.A2     A adds 2 letter-steps (C -> E in base36 space)
-..:41.f4    note cell fed by the A output each tick
+..:24.f4    note cell fed by the A output each tick
 ```
 
-Because `A` adds a constant interval, a harmony moves in strict parallel motion with its lead. When there is room, the harmony also republishes its transposed note — a `vV.` row whose value cell sits exactly where the `A` pokes — so further voices can chain off it; depth-3 chains appear in larger selections.
+Because `A` adds a constant interval, a harmony moves in strict parallel motion with its lead. When there is room, the harmony also republishes its transposed note — a `vV.` row whose value cell sits exactly where the `A` pokes — so texture accents can follow the transposed line.
 
 ### Bass
 
-Exactly one per take, planned before the leads and only when a clock bus exists (a bass with its own free-running clock defeats the point). It reuses the lead's five-row arpeggio shape with two deliberate constraints:
+Exactly one per take, planned right after the lead and drums, and only when a clock bus exists (a bass with its own free-running clock defeats the point). It reuses the lead's five-row arpeggio shape with two deliberate constraints:
 
-- **Pinned low register** — its octave is fixed low rather than drawn from the channel-correlated band, so the foundation never depends on shuffle order.
+- **Pinned low register** — its octave is fixed at the bottom of the arrangement's range rather than drawn with the other voices, so the foundation never moves.
 - **Root and fifth only** — the track alternates between the scale's root and fifth. No wandering: a bass line that strays chromatically is not a foundation.
 
 ```
@@ -99,19 +89,19 @@ Exactly one per take, planned before the leads and only when a clock bus exists 
 ..4TCGCG..     alternating root and fifth of the patch scale
 ..bV......     current note published into b
 .4D2..Vb..     bang + read of b parked over the note cell
-...:12.f4.     ':' on its own channel, octave pinned low
+...:02.f4.     ':' on MIDI channel 1, octave pinned low
 ```
 
 It plays on its own MIDI channel like any melodic voice and publishes its current note — so harmonies or gates can chain off it just as they chain off leads.
 
-### Gate voices (call and response)
+### Gate (call and response)
 
-Same read, but `F` compares instead of `A` adding:
+Exactly one, same read, but `F` compares instead of `A` adding:
 
 ```
 ....Vs......
 .....FC.....     F pokes '*' below itself while the lead plays C
-......:24Cf4     that cell is the ':'s left neighbour: the bang
+......:54Cf4     that cell is the ':'s left neighbour: the bang
 ```
 
 The gate answers with its own note only while the lead holds the watched pitch. The stricter two-input variant sounds only when *two* publishers match at once — the first verdict is relayed down past the second publisher's read by `J`, both verdicts meet in `L` (which yields `.` unless both inputs are `*`), and a final `F…0` converts the double-star back into a bang:
@@ -123,7 +113,7 @@ The gate answers with its own note only while the lead holds the watched pitch. 
 ...FqJ......
 ....L.......
 .....F0.....
-......:24Af4
+......:54Af4
 ```
 
 ### Drums
@@ -150,11 +140,11 @@ The value cell is fed straight from the source's published note, so the CC trace
 
 ### Texture
 
-Remaining space is filled with input-less filler. Chords are N stacked delay+`:` pairs sharing one rate/modulus — `D` fires wherever `tick%(rate*mod)` is 0 regardless of position, so all notes land on the same tick:
+Remaining space is filled with input-less filler on the upper MIDI channels (11–16). Chords are N stacked delay+`:` pairs sharing one rate/modulus — `D` fires wherever `tick%(rate*mod)` is 0 regardless of position, so all notes land on the same tick:
 
 ```
 .4D8.....
-...:35Cc8
+...:34Cc8
 .4D8.....
 ...:37Cc8
 ```
@@ -178,12 +168,12 @@ A few decisions are made once per generation and applied everywhere, which is wh
 
 - **One key and one scale** per take (major, natural minor, pentatonic or dorian). Every note in every voice belongs to it.
 - **One bar length** — 8 or 12 ticks. Every clock, delay and rhythm period in the arrangement divides it evenly, so all voices realign every bar and the whole pattern repeats as a unit.
-- **Channel plan**: the first four melodic voices each get their own MIDI channel (1–4), so lines stay separate; drums always use channel 10.
-- **Register spread**: octaves are distributed across bands so the voices do not all pile into the same pitch range — except the bass, which is deliberately pinned low as the arrangement's foundation.
+- **Fixed channel plan**: every role owns its own MIDI channel, always the same one — bass 1, lead 2, harmony 3, chords 4, gates 6, drums 10, texture hits 11–16. Wire your rack once, then re-roll freely: the bass is always on channel 1.
+- **Role-based register spread**: each role plays in its own octave band — bass low, then chords, harmonies, gates and texture, with the lead on top — so the voices stack into a range instead of piling into one pitch.
 
 ## Repeating a take you like (seeds)
 
-Every generation starts from a *seed* — the number that produced exactly what you see. Generation is fully deterministic: the same seed with the same selection size and the same density reproduces the identical pattern, on any machine.
+Every generation starts from a *seed* — the number that produced exactly what you see. Generation is fully deterministic: the same seed with the same selection size, the same density and the same *Channels* setting reproduces the identical pattern, on any machine.
 
 - Liked a take? Use ***Same seed again*** from the menu to get it back byte for byte.
 - The last seed is **saved with your patch**, so the reproduction keeps working after reloading.
@@ -210,7 +200,7 @@ Being honest about what the randomizer does *not* do:
 
 - **It needs room.** Tiny selections yield either nothing or a few disconnected fragments. For a proper arrangement give it at least ~16×32 cells; bigger selections hold more voices.
 - **It replaces, it does not evolve.** Each generation is a fresh snapshot of the selection. There is no "develop this pattern" — regenerate and hope, or edit by hand.
-- **Four melodic channels.** Melodic voices share the pool of MIDI channels 1–4. In dense arrangements the pool runs out and later voices reuse channels; two voices on one channel blur into each other and can cut each other's notes off.
+- **The Channels cap *is* the arrangement.** However dense the selection, no more voices sound than the *Channels* setting allows (default 4) — they are chosen lead-first, so raising it adds harmony, chords, gates and then more texture. Beyond twelve voices even the texture channels start sharing, and those voices blur into each other.
 - **Overlapping notes.** Generated lines do not end the previous note when starting a new one (the MIDI note operator is polyphonic). Fast lines with long note lengths stack overlapping notes on one channel.
 - **One identity per take.** Key, scale, bar length and channel plan are fixed for a single generation. A different vibe means a new generation.
 - **Modulation follows pitch only.** CC tails track the melody they accompany; there is no modulation from drums or from LFO-style free movement, and no pitch-bend is generated.
