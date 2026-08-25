@@ -1836,6 +1836,351 @@ TEST_CASE("Generated fields emit only policy channels", "[AhabGenerator][gate]")
 	}
 }
 
+TEST_CASE("Legend text composes from placed roles only", "[AhabGenerator]") {
+	// Pure function of
+	// (plan, placed) — plan order, duplicate roles collapsed, unplaced
+	// roles absent, Bus never named (no channel), empty when nothing placed,
+	// charset [a-z0-9 ] with no 'v' (lowercase: invisible to the uppercase
+	// operator-fingerprint scans used by generated-field tests).
+	auto node = [](VoiceNode::Role role, char channel) {
+		VoiceNode vn;
+		vn.role = role;
+		vn.channel = channel;
+		return vn;
+	};
+
+	SECTION("Plan order, dedupe, placed filter, Bus skipped") {
+		std::vector<VoiceNode> plan = {
+			node(VoiceNode::Bus, '0'),     // placed: skipped, no channel
+			node(VoiceNode::Lead, '1'),    // placed
+			node(VoiceNode::Drums, '9'),   // placed
+			node(VoiceNode::Delay, 'a'),   // NOT placed: must be absent
+			node(VoiceNode::Drums, '9'),   // placed again: collapsed
+			node(VoiceNode::Bass, '0'),    // placed
+		};
+		std::vector<bool> placed = {true, true, true, false, true, true};
+
+		std::vector<std::string> const lines =
+			AhabGenerator::composeChannelLegend(plan, placed);
+		std::vector<std::string> const expected = {"1 lead", "9 drum", "0 bass"};
+		REQUIRE(lines == expected);
+	}
+
+	SECTION("Nothing placed yields empty output") {
+		std::vector<VoiceNode> plan = {
+			node(VoiceNode::Lead, '1'),
+			node(VoiceNode::Drums, '9'),
+		};
+		REQUIRE(AhabGenerator::composeChannelLegend(plan, {}).empty());
+		REQUIRE(AhabGenerator::composeChannelLegend({}, {}).empty());
+		std::vector<bool> none(plan.size(), false);
+		REQUIRE(AhabGenerator::composeChannelLegend(plan, none).empty());
+	}
+
+	SECTION("Free-region channels print as raw base36 values") {
+		std::vector<VoiceNode> plan = {node(VoiceNode::Uclid, 'c')}; // idx 12
+		std::vector<bool> placed = {true};
+		std::vector<std::string> const lines =
+			AhabGenerator::composeChannelLegend(plan, placed);
+		REQUIRE(lines == std::vector<std::string>{"12 ucld"});
+	}
+
+	SECTION("Real plans: charset, no V, channels match vn.channel") {
+		// Sweep real plans (placed simulated as all-true — compose only
+		// filters): every character in [a-z0-9 ], no 'v', and each entry's
+		// number equals index_of(vn.channel) of its role's FIRST occurrence.
+		for (uint32_t seed = 1; seed <= 32; ++seed) {
+			AhabGenerator r(seed);
+			AhabGenerator::Config warm;
+			warm.density = 0.6f;
+			warm.qualityGate = false;
+			r.generate(24, 40, warm); // primes pools
+
+			for (size_t nBus : {(size_t)0, (size_t)3}) {
+				std::vector<VoiceNode> const plan = r.planArrangement(24, 40, 0.6f, nBus);
+				std::vector<bool> allPlaced(plan.size(), true);
+				std::vector<std::string> const lines =
+					AhabGenerator::composeChannelLegend(plan, allPlaced);
+
+				// Expected: first-occurrence order, Bus excluded; only the
+				// numeric prefix is compared here (the abbreviation table
+				// itself is pinned by the hand-built sections above).
+				std::vector<std::string> expected;
+				bool seen[static_cast<size_t>(VoiceNode::RoleCount)] = {false};
+				auto b36 = [](char c) {
+					return c >= '0' && c <= '9' ? c - '0' : c - 'a' + 10;
+				};
+				for (VoiceNode const& vn : plan) {
+					size_t const ri = static_cast<size_t>(vn.role);
+					if (vn.role == VoiceNode::Bus || seen[ri]) continue;
+					seen[ri] = true;
+					expected.push_back(std::to_string(b36(vn.channel)));
+				}
+				// Compare only the numeric prefixes here; the abbreviation
+				// table itself is pinned by the hand-built cases above.
+				REQUIRE(lines.size() == expected.size());
+				for (size_t i = 0; i < lines.size() && i < expected.size(); ++i) {
+					REQUIRE(lines[i].substr(0, expected[i].size()) == expected[i]);
+				}
+
+				for (std::string const& l : lines) {
+					for (char c : l) {
+						REQUIRE((c == ' ' || (c >= 'a' && c <= 'z')
+							|| (c >= '0' && c <= '9')));
+						REQUIRE(c != 'v');
+					}
+				}
+			}
+		}
+	}
+}
+
+TEST_CASE("Free-rectangle search: skyline proposes, buffer disposes", "[AhabGenerator]") {
+	// None on a full
+	// field, returned rect verifiably all-'.', deterministic lowest-(y,x).
+	auto fillAll = [](ScratchPad& buf, Glyph g) {
+		for (Usz y = 0; y < buf.height(); ++y) {
+			for (Usz x = 0; x < buf.width(); ++x) buf.set(y, x, g);
+		}
+	};
+	auto rectIsDots = [](ScratchPad const& buf, Usz y, Usz x, Usz h, Usz w) {
+		for (Usz yy = y; yy < y + h; ++yy) {
+			for (Usz xx = x; xx < x + w; ++xx) {
+				if (buf.get(yy, xx) != '.') return false;
+			}
+		}
+		return true;
+	};
+
+	SECTION("Empty buffer: anchor is the top-left of the selection") {
+		ScratchPad buf(10, 20);
+		std::vector<Usz> sky(20, 0);
+		Usz fy = 99, fx = 99;
+		REQUIRE(AhabGenerator::findFreeRect(buf, sky, 2, 3, 8, 17, 1, 10, fy, fx));
+		REQUIRE(fy == 2);
+		REQUIRE(fx == 3);
+	}
+
+	SECTION("Hand-filled field: none rather than an overlapping anchor") {
+		ScratchPad buf(6, 16);
+		fillAll(buf, 'A');
+		std::vector<Usz> sky(16, 0); // lying skyline must not matter
+		Usz fy = 99, fx = 99;
+		REQUIRE_FALSE(AhabGenerator::findFreeRect(buf, sky, 0, 0, 6, 16, 1, 4, fy, fx));
+	}
+
+	SECTION("Occupied block: anchor routes around it, rect is all-dots") {
+		ScratchPad buf(6, 16);
+		for (Usz x = 0; x < 16; ++x) buf.set(2, x, ':'); // one blocked row
+		std::vector<Usz> sky(16, 0);
+		Usz fy = 99, fx = 99;
+		REQUIRE(AhabGenerator::findFreeRect(buf, sky, 0, 0, 6, 16, 2, 8, fy, fx));
+		REQUIRE(rectIsDots(buf, fy, fx, 2, 8));
+	}
+
+	SECTION("Lying skyline: buffer is the authority (Risk 2)") {
+		// Sky claims everything free from row 0; the buffer has content in
+		// rows 0-1. The search must route below it anyway.
+		ScratchPad buf(6, 16);
+		for (Usz x = 0; x < 16; ++x) { buf.set(0, x, 'C'); buf.set(1, x, 'T'); }
+		std::vector<Usz> sky(16, 0);
+		Usz fy = 99, fx = 99;
+		REQUIRE(AhabGenerator::findFreeRect(buf, sky, 0, 0, 6, 16, 2, 8, fy, fx));
+		REQUIRE(fy >= 2);
+		REQUIRE(rectIsDots(buf, fy, fx, 2, 8));
+	}
+
+	SECTION("Deterministic: same buffer, same anchor") {
+		AhabGenerator r(11);
+		AhabGenerator::Config cfg;
+		cfg.density = 0.5f;
+		cfg.qualityGate = false;
+		ScratchPad buf = r.generate(24, 40, cfg);
+		std::vector<Usz> sky(40, 0);
+		Usz y1 = 0, x1 = 0, y2 = 0, x2 = 0;
+		bool f1 = AhabGenerator::findFreeRect(buf, sky, 0, 0, 24, 40, 1, 12, y1, x1);
+		bool f2 = AhabGenerator::findFreeRect(buf, sky, 0, 0, 24, 40, 1, 12, y2, x2);
+		REQUIRE(f1 == f2);
+		if (f1) {
+			REQUIRE(y1 == y2);
+			REQUIRE(x1 == x2);
+			REQUIRE(rectIsDots(buf, y1, x1, 1, 12));
+		}
+	}
+
+	SECTION("Generated 16x32 at density 1.0: no room for a 3x26 block") {
+		// Measured ZERO fitting anchors for 3x26 on 16x32 at every
+		// density — the skip path is the whole behaviour there.
+		Usz misses = 0;
+		for (uint32_t seed = 1; seed <= 16; ++seed) {
+			AhabGenerator r(seed);
+			AhabGenerator::Config cfg;
+			cfg.density = 1.0f;
+			cfg.qualityGate = false;
+			cfg.channels = kMaxChannelBudget;
+			ScratchPad buf = r.generate(16, 32, cfg);
+			std::vector<Usz> sky(32, 0);
+			Usz fy = 0, fx = 0;
+			if (!AhabGenerator::findFreeRect(buf, sky, 0, 0, 16, 32, 3, 26, fy, fx)) {
+				++misses;
+			}
+			else {
+				REQUIRE(rectIsDots(buf, fy, fx, 3, 26));
+			}
+		}
+		CATCH_INFO("16x32 d1.0: free 3x26 anchors found: " << (16 - misses) << "/16");
+		REQUIRE(misses == 16); // per §2.2's measurement
+	}
+}
+
+TEST_CASE("Legend block writer: terminated rows, surgical writes", "[AhabGenerator]") {
+	// Every row starts
+	// AND ends with '#' (non-negotiable), no cell outside the written
+	// rectangle changes, and the all-or-nothing guard refuses '#' in input.
+	auto snapshot = [](ScratchPad const& buf) {
+		std::string s;
+		for (Usz y = 0; y < buf.height(); ++y) {
+			for (Usz x = 0; x < buf.width(); ++x) {
+				s += buf.get(y, x);
+			}
+		}
+		return s;
+	};
+
+	SECTION("Rows are #-terminated on both edges; padding equalises width") {
+		ScratchPad buf(6, 20);
+		std::vector<std::string> const lines = {"1 lead", "10 drum"};
+		AhabGenerator::Extent e = AhabGenerator::writeLegendBlock(buf, 1, 2, lines);
+		REQUIRE(e.h == 2);
+		REQUIRE(e.w == 9); // "10 DRUM" is 7 wide + 2 markers
+		for (Usz yy = 1; yy < 3; ++yy) {
+			REQUIRE(buf.get(yy, 2) == '#');            // left marker
+			REQUIRE(buf.get(yy, 2 + e.w - 1) == '#');  // right marker
+		}
+		// Row 0: '#1 LEAD #'-style — content then one pad space before '#'
+		REQUIRE(buf.get(1, 3) == '1');
+		REQUIRE(buf.get(1, 8) == 'd'); // last char of "1 lead"
+		REQUIRE(buf.get(1, 9) == ' '); // pad to the widest row's width
+		REQUIRE(buf.get(1, 10) == '#');
+	}
+
+	SECTION("No cell outside the rectangle changes") {
+		ScratchPad buf(8, 24);
+		// Some pre-existing content the legend must not touch.
+		for (Usz x = 0; x < 24; ++x) buf.set(0, x, 'C');
+		for (Usz y = 0; y < 8; ++y) buf.set(y, 23, ':');
+		std::string const before = snapshot(buf);
+
+		std::vector<std::string> const lines = {"1 lead", "0 bass", "9 drum"};
+		AhabGenerator::Extent e = AhabGenerator::writeLegendBlock(buf, 2, 4, lines);
+		REQUIRE(e.h == 3);
+		REQUIRE(e.w == 8); // "1 lead"/"0 bass"/"9 drum" all 6 wide + 2
+
+		std::string const after = snapshot(buf);
+		for (Usz y = 0; y < 8; ++y) {
+			for (Usz x = 0; x < 24; ++x) {
+				bool inside = y >= 2 && y < 2 + e.h && x >= 4 && x < 4 + e.w;
+				if (!inside) {
+					REQUIRE(after[y * 24 + x] == before[y * 24 + x]);
+				}
+			}
+		}
+	}
+
+	SECTION("All-or-nothing on '#' in the input") {
+		ScratchPad buf(4, 16);
+		std::string const before = snapshot(buf);
+		std::vector<std::string> const bad = {"1 lead", "9 #drum"};
+		AhabGenerator::Extent e = AhabGenerator::writeLegendBlock(buf, 1, 1, bad);
+		REQUIRE(e.h == 0);
+		REQUIRE(e.w == 0);
+		REQUIRE(snapshot(buf) == before); // nothing written at all
+	}
+
+	SECTION("Empty input writes nothing; a real write marks the buffer dirty") {
+		ScratchPad buf(4, 16);
+		REQUIRE(AhabGenerator::writeLegendBlock(buf, 0, 0, {}).h == 0);
+		CHECK_FALSE(buf.dirty());
+		std::vector<std::string> const lines = {"1 lead"};
+		AhabGenerator::writeLegendBlock(buf, 0, 0, lines);
+		CHECK(buf.dirty()); // set() marks dirtiness like any glyph write
+	}
+}
+
+TEST_CASE("Channel legend lands in generated fields", "[AhabGenerator][gate]") {
+	// The legend is
+	// reachable on realistic sizes, skipped on small ones, every strip is
+	// '#'-terminated with safe interior glyphs, and it is invisible to the
+	// quality gate's static scan. '#' is emitted nowhere else, so its
+	// presence fingerprints the legend.
+	Usz fieldsWithLegend = 0;
+	constexpr Usz kSeeds = 32;
+	for (uint32_t seed = 1; seed <= kSeeds; ++seed) {
+		AhabGenerator r(seed);
+		AhabGenerator::Config cfg;
+		cfg.density = 0.6f;
+		cfg.qualityGate = false;
+
+		// 24x40: legend expected in most fields.
+		{
+			ScratchPad buf = r.generate(24, 40, cfg);
+			std::string const orca = buf.toOrca();
+			if (orca.find('#') == std::string::npos) continue;
+			++fieldsWithLegend;
+
+			// Every '#' row: first marker < last marker, only [a-z0-9 ]
+			// between them. '#' never appears elsewhere.
+			for (Usz y = 0; y < buf.height(); ++y) {
+				Usz first = 40, last = 0;
+				for (Usz x = 0; x < 40; ++x) {
+					if (buf.get(y, x) == '#') { 
+						first = std::min(first, x); last = std::max(last, x);
+					}
+				}
+				if (first == 40) continue; // no marker on this row
+				REQUIRE(first < last);     // terminated on both ends
+				for (Usz x = first + 1; x < last; ++x) {
+					char const c = buf.get(y, x);
+					REQUIRE((c == ' ' || (c >= 'a' && c <= 'z')
+						|| (c >= '0' && c <= '9')));
+				}
+			}
+
+			PatternScore s = scorePattern(buf, 8);
+			REQUIRE(s.danglingReads == 0); // static scan unaffected
+		}
+
+		// 16x32: measured zero fitting 3x26 blocks here, but the
+		// single-row strip is shallower and CAN fit — so the legend
+		// is allowed; whenever present it must be well-formed. The hard
+		// skip guarantee is density 0 (no arrangement, no legend).
+		for (float density : {0.4f, 0.7f}) {
+			AhabGenerator::Config small = cfg;
+			small.density = density;
+			ScratchPad buf = r.generate(16, 32, small);
+			std::string const orca = buf.toOrca();
+			if (orca.find('#') == std::string::npos) continue;
+			for (Usz y = 0; y < buf.height(); ++y) {
+				Usz first = 32, last = 0;
+				for (Usz x = 0; x < 32; ++x) {
+					if (buf.get(y, x) == '#') { 
+						first = std::min(first, x); last = std::max(last, x);
+					}
+				}
+				if (first == 32) continue; // no marker on this row
+				REQUIRE(first < last);
+				for (Usz x = first + 1; x < last; ++x) {
+					char const c = buf.get(y, x);
+					REQUIRE((c == ' ' || (c >= 'a' && c <= 'z')
+						|| (c >= '0' && c <= '9')));
+				}
+			}
+		}
+	}
+	CATCH_INFO("fields with legend: " << fieldsWithLegend << "/" << kSeeds);
+	REQUIRE(fieldsWithLegend >= kSeeds / 2); // routinely reachable on 24x40
+}
+
 TEST_CASE("Counter reflects its source around the z axis", "[AhabGenerator]") {
 	// `pivot B src`. The pivot is pinned
 	// to 'Z' (top of the base36 range AND uppercase). B is |src − pivot|

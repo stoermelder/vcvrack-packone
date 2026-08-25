@@ -434,6 +434,138 @@ bool publishesPitch(VoiceNode const& vn) {
 		|| vn.role == VoiceNode::Bass || vn.role == VoiceNode::Counter;
 }
 
+std::vector<std::string> AhabGenerator::composeChannelLegend(
+	std::vector<VoiceNode> const& plan, std::vector<bool> const& placed) {
+	// Abbreviation per role, kept LOWERCASE with no 'V'/'v' anywhere.
+	// Lowercase matters twice: the quality gate's static variable-flow scan
+	// reads a 'V' as a variable operation even inside a comment span, and
+	// generated-field tests use RARE UPPERCASE LETTERS as operator
+	// fingerprints ('U' uclid, 'K' konkat, 'J'/'L' fan-in) — uppercase
+	// legend text would collide with those scans (observed: "DRUM" broke
+	// the shared-identity test's U-modulus parse).
+	// Bus is nullptr: it places no notes and owns no channel.
+	static char const* const kAbbr[static_cast<size_t>(VoiceNode::RoleCount)] = {
+		/* Bus     */ nullptr,
+		/* Bass    */ "bass",
+		/* Lead    */ "lead",
+		/* Harmony */ "harm",
+		/* Gate    */ "gate",
+		/* Drums   */ "drum",
+		/* Delay   */ "dlay",
+		/* Uclid   */ "ucld",
+		/* Chord   */ "chrd",
+		/* Counter */ "cntr",
+	};
+	std::vector<std::string> lines;
+	bool seen[static_cast<size_t>(VoiceNode::RoleCount)] = { false };
+	size_t const n = std::min(plan.size(), placed.size());
+	for (size_t i = 0; i < n; ++i) {
+		if (!placed[i]) continue;              // planned but dropped by layout
+		size_t const r = static_cast<size_t>(plan[i].role);
+		if (r >= static_cast<size_t>(VoiceNode::RoleCount)) continue; // defensive
+		char const* abbr = kAbbr[r];
+		if (!abbr) continue;                   // Bus: no channel to name
+		if (seen[r]) continue;                 // Drums x2 on wide rects: one entry
+		seen[r] = true;
+		// RAW 0-based channel number, matching the ':' glyph the user looks
+		// at next — derived from vn.channel, never from kRoleChannel,
+		// so the legend cannot disagree with what was generated.
+		lines.push_back(std::to_string(b36Val(plan[i].channel)) + " " + abbr);
+	}
+	return lines;
+}
+
+bool AhabGenerator::findFreeRect(ScratchPad const& buf, std::vector<Usz> const& sky,
+	Usz y, Usz x, Usz h, Usz w, Usz needH, Usz needW, Usz& outY, Usz& outX) {
+	if (needH == 0 || needW == 0) return false;
+	if (needH > h || needW > w) return false;
+	bool const haveSky = sky.size() == w; // defensive: skyline is optional
+	for (Usz cy = y; cy + needH <= y + h; ++cy) {
+		for (Usz cx = x; cx + needW <= x + w; ++cx) {
+			// Skyline short-circuit: this column run is packed up to its
+			// max, so any anchor above that fails the buffer scan anyway.
+			if (haveSky) {
+				Usz req = 0;
+				for (Usz dx = 0; dx < needW; ++dx) {
+					req = std::max(req, sky[cx - x + dx]);
+				}
+				if (cy < req) continue;
+			}
+			// The buffer decides: every cell of the exact target
+			// rectangle must be '.' before anything may be written there.
+			bool free = true;
+			for (Usz dy = 0; dy < needH && free; ++dy) {
+				for (Usz dx = 0; dx < needW && free; ++dx) {
+					free = buf.get(cy + dy, cx + dx) == '.';
+				}
+			}
+			if (free) {
+				outY = cy;
+				outX = cx;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+AhabGenerator::Extent AhabGenerator::writeLegendBlock(ScratchPad& buf, Usz y, Usz x,
+	std::vector<std::string> const& lines) {
+	// All-or-nothing: a '#' inside the text would terminate the comment
+	// early and unlock every cell right of it — refuse
+	// the whole block instead of writing a partial one.
+	for (std::string const& l : lines) {
+		if (l.find('#') != std::string::npos) return Extent();
+	}
+	if (lines.empty()) return Extent();
+
+	Usz contentW = 0;
+	for (std::string const& l : lines) {
+		contentW = std::max(contentW, l.size());
+	}
+	Usz const w = contentW + 2; // '#' + text + '#'
+
+	for (size_t i = 0; i < lines.size(); ++i) {
+		buf.set(y + i, x, '#');
+		for (Usz dx = 0; dx < contentW; ++dx) {
+			buf.set(y + i, x + 1 + dx, dx < lines[i].size() ? lines[i][dx] : ' ');
+		}
+		buf.set(y + i, x + w - 1, '#');
+	}
+	return Extent{lines.size(), w};
+}
+
+void AhabGenerator::placeChannelLegend(ScratchPad& buf, Usz y, Usz x, Usz h, Usz w,
+	std::vector<VoiceNode> const& plan, std::vector<bool> const& placed,
+	std::vector<Usz> const& sky) {
+	// Multi-row preferred (more legible AND placement-friendlier —
+	// its width is one entry wide, ~9 cols, so it fits interior gaps the
+	// ~30-col single-row strip cannot). The "ch" header states the
+	// convention (raw 0-based, matching the ':' glyph). Single-row strip is
+	// the fallback for wide-but-shallow gaps; skip when neither fits.
+	std::vector<std::string> lines = composeChannelLegend(plan, placed);
+	if (lines.empty()) return; // nothing placed: nothing to summarise
+
+	Usz fy = 0, fx = 0;
+	std::vector<std::string> block;
+	block.push_back("ch");
+	block.insert(block.end(), lines.begin(), lines.end());
+	Usz multiW = 0;
+	for (std::string const& l : block) multiW = std::max(multiW, l.size());
+	multiW += 2; // '#' markers on both sides
+	if (findFreeRect(buf, sky, y, x, h, w, block.size(), multiW, fy, fx)) {
+		writeLegendBlock(buf, fy, fx, block);
+		return;
+	}
+
+	std::string strip = "ch";
+	for (std::string const& l : lines) strip += " " + l;
+	if (findFreeRect(buf, sky, y, x, h, w, 1, strip.size() + 2, fy, fx))
+		writeLegendBlock(buf, fy, fx, {strip});
+	// else: no room for either shape — skip silently. On small selections
+	// that is the normal outcome, never an error.
+}
+
 std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float density, size_t nBus,
 	size_t budget) {
 	// Free-region channel pool - reset here (not just in generateOnce) so
@@ -856,6 +988,12 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 	// dependents slot below their producers, texture backfills the rest.
 	std::vector<Usz> sky(w, top);
 	std::vector<Usz> placedBottom(plan.size(), h); // sentinel: not yet placed
+	// Legend support: whether voice i
+	// actually PLACED. "Planned" and "placed" genuinely differ — the packer
+	// drops voices when no column run fits (!found) and builders return empty
+	// extents when their minimum footprint doesn't fit. Set ONLY at the
+	// placedBottom assignment below, so every continue path leaves it false.
+	std::vector<bool> placed(plan.size(), false);
 
 	for (size_t i = 0; i < plan.size(); ++i) {
 		VoiceNode& vn = plan[i];
@@ -967,6 +1105,7 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 		}
 		if (e.empty()) continue;
 
+		placed[i] = true;
 		placedBottom[i] = bestY + e.h;
 		if (isBus) {
 			// Readers of the bus may share its band, but their reads must not
@@ -986,6 +1125,11 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 			}
 		}
 	}
+
+	// Last statement: the channel legend, in whatever interior gap is left.
+	// Draws no rng; skipped
+	// silently when nothing placed or no strip fits.
+	placeChannelLegend(buf, y, x, h, w, plan, placed, sky);
 }
 
 AhabGenerator::Extent AhabGenerator::generateClockBus(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW) {

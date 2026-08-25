@@ -223,6 +223,54 @@ struct AhabGenerator {
 	std::string const& getBusVars() const { return busVars_; }
 	// number of derived voices placed by the last generate().
 	int getDerivedPlaced() const { return derivedPlaced_; }
+
+	/**
+	 * Legend text: one entry per
+	 * PLACED role, in plan order, duplicate roles collapsed — "N ABBR"
+	 * where N is the RAW 0-based MIDI channel (matching the ':' glyph the
+	 * user looks at next) and ABBR names the role. Pure: no rng, no
+	 * ScratchPad, no placement. Empty output when nothing placed.
+	 *
+	 * Abbreviations deliberately contain NO 'V': scorePattern's static
+	 * variable-flow scan reads a 'V' as a variable operation even inside
+	 * a comment span, and legend text must stay invisible to it.
+	 */
+	static std::vector<std::string> composeChannelLegend(
+		std::vector<VoiceNode> const& plan, std::vector<bool> const& placed);
+
+	/**
+	 * Free-rectangle search: true
+	 * and outY/outX set when an all-'.' needH x needW rectangle fits inside
+	 * the selection at (y, x, h, w); false otherwise. Deterministic — scans
+	 * row-major, so the FIRST fitting anchor (lowest y, then lowest x) wins.
+	 *
+	 * The skyline only short-circuits: cells above sky[c] are packed, so a
+	 * rectangle overlapping them fails the buffer scan anyway — skipping the
+	 * reads is purely an optimisation. The BUFFER is the sole authority:
+	 * skyline and reality can disagree (inflated separators,
+	 * builders smaller than their reserved footprint, the known
+	 * footprint-overlap bug), and makes writing over live cells
+	 * non-recoverable.
+	 */
+	static bool findFreeRect(ScratchPad const& buf, std::vector<Usz> const& sky,
+		Usz y, Usz x, Usz h, Usz w, Usz needH, Usz needW, Usz& outY, Usz& outX);
+
+	/**
+	 * Writes each
+	 * line as one '#'-'#' delimited row anchored at (y, x), all rows padded
+	 * to equal width (widest line + 2) — the same marker shape as the
+	 * widget's toggleCommentBlock. Returns the extent actually written,
+	 * {0, 0} when nothing was written.
+	 *
+	 * Precondition: the caller verified the target rectangle is free
+	 * (findFreeRect) and wide enough for the widest line — this function
+	 * writes unconditionally. All-or-nothing: if any line contains '#'
+	 * (which would terminate the comment early and unlock everything right
+	 * of it), NOTHING is written.
+	 */
+	static Extent writeLegendBlock(ScratchPad& buf, Usz y, Usz x,
+		std::vector<std::string> const& lines);
+
 	// One key + scale per patch: root semitone 0..11 and scale index
 	// 0=major 1=naturalMinor 2=pentatonic 3=dorian.
 	int getPatchRoot() const { return patchRoot_; }
@@ -320,6 +368,19 @@ struct AhabGenerator {
 	// passes a fixed low octave so the foundation never depends on a draw.
 
 private:
+	/**
+	 * Names
+	 * the channel each placed role sounds on, as a single '#'-'#' strip in
+	 * spare space. Decorative and optional — skipped silently when nothing
+	 * placed or no free rectangle fits, which is the normal outcome on
+	 * small selections (16x32 and below). Draws NOTHING from rng: fully
+	 * deterministic given (plan, placed), so seeded streams and snapshots
+	 * are untouched.
+	 */
+	void placeChannelLegend(ScratchPad& buf, Usz y, Usz x, Usz h, Usz w,
+		std::vector<VoiceNode> const& plan, std::vector<bool> const& placed,
+		std::vector<Usz> const& sky);
+
 	uint32_t seed_;
 	std::mt19937 rng;
 
