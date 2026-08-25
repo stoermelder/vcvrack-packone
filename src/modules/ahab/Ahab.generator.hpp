@@ -43,7 +43,8 @@ struct Edge {
 		// is also non-linear (idx*8-1, clamped at 127 from index 16).
 		Operand
 	} kind;
-	char param;         // Clock: division index; Pitch: interval; Trigger: note;
+	char param;         // Clock: division index; Pitch: interval (Counter:
+						// reflection pivot); Trigger: note;
 						// Modulation: CC control number (kept low: midiCcOffset,
 						// default 64, is added downstream and clamped to 127);
 						// Operand: which ':' cell the K row feeds (OpCell)
@@ -63,7 +64,8 @@ struct Edge {
 // filling publishedVar as each voice is placed. Part of the tested surface:
 // tests can assert on graph shape directly.
 struct VoiceNode {
-	enum Role { Bus, Bass, Lead, Harmony, Gate, Drums, Delay, Uclid, Chord };
+	enum Role { Bus, Bass, Lead, Harmony, Gate, Drums, Delay, Uclid, Chord,
+		Counter, RoleCount };
 	Role role;
 
 	char channel = '0';   // kRoleChannel entry for reserved roles; a free-region draw otherwise
@@ -103,12 +105,13 @@ static char const kRoleChannel[] = {
 	/* Delay   */ 0,    // free region
 	/* Uclid   */ 0,    // free region
 	/* Chord   */ '3',
+	/* Counter */ '4',  // vocabulary plan Step 4: reflected counter-line
 };
 static char const kFreeChannels[] = "abcdef"; // base36: MIDI channels 10-15
-static_assert(sizeof(kRoleChannel) == static_cast<size_t>(VoiceNode::Chord) + 1,
+static_assert(sizeof(kRoleChannel) == static_cast<size_t>(VoiceNode::RoleCount),
 	"one channel-policy row per VoiceNode::Role — decide reserved-or-free for any new role");
 
-// Channel-budget bounds (§5.3): how many voices may sound at all. At least
+// How many voices may sound at all. At least
 // a solo lead; at most the reserved table plus the free region with slack
 // (beyond 12 the free region wraps, so the promise degrades among texture).
 static int const kMinChannelBudget = 1;
@@ -276,7 +279,8 @@ struct AhabGenerator {
 	Extent placeDerivedVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
 						char channel, char sourceVar, bool gate, char param,
 						char* allocatedVar = nullptr,
-						char sourceVarB = 0, char paramB = 0);
+						char sourceVarB = 0, char paramB = 0,
+						char arithGlyph = 'A');
 	/**
 	 * Modulation tail: maps a producer's published
 	 * pitch variable onto a MIDI CC on channel/control. Two rows hung BELOW

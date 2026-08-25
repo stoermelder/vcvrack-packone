@@ -33,6 +33,7 @@ char AhabGenerator::randomOctaveForRole(VoiceNode::Role role) {
 	switch (role) {
 		case VoiceNode::Lead:    band = 3; break;
 		case VoiceNode::Harmony: band = 2; break;
+		case VoiceNode::Counter: band = 2; break;
 		case VoiceNode::Gate:    band = 2; break;
 		case VoiceNode::Delay:   band = 2; break;
 		case VoiceNode::Uclid:   band = 2; break;
@@ -425,10 +426,12 @@ AhabGenerator::Extent AhabGenerator::generateSimplePattern(ScratchPad& buf, Usz 
 
 // Only these roles publish a pitch variable other voices
 // can read. Gates produce bangs; textures publish nothing. Bass publishes
-// too: its root/fifth line is a legitimate chain source.
+// too: its root/fifth line is a legitimate chain source. Counter publishes
+// its reflected line — but see the Operand scans below for why it must not
+// feed velocity cells.
 bool publishesPitch(VoiceNode const& vn) {
 	return vn.role == VoiceNode::Lead || vn.role == VoiceNode::Harmony
-		|| vn.role == VoiceNode::Bass;
+		|| vn.role == VoiceNode::Bass || vn.role == VoiceNode::Counter;
 }
 
 std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float density, size_t nBus,
@@ -576,11 +579,48 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 			size_t pubs[8];
 			int np = 0;
 			for (size_t j = 0; j < plan.size() && np < 8; ++j) {
-				if (publishesPitch(plan[j])) pubs[np++] = j;
+				// Counter excluded: its reflected glyphs can dip below the
+				// note-letter indices, and a K-fed velocity of index 0 IS a
+				// note-off — the hit would silently drop.
+				if (publishesPitch(plan[j]) && plan[j].role != VoiceNode::Counter)
+					pubs[np++] = j;
 			}
 			if (np > 0) vp.inputs.push_back(Edge(pubs[randInt(0, np - 1)], Edge::Operand, Edge::kOpVelocity));
 		}
 		plan.push_back(vp);
+	}
+
+	// Counter: exactly one, a reflected second line:
+	// `pivot B src`. B is |idx(src) − idx(pivot)| poked with the CASE of the
+	// right operand, so the pivot decides both the range and the pitch-class
+	// spelling. It is pinned to 'Z' — TOP of the base36 range, UPPERCASE —
+	// for three reasons: an interior pivot reflects part of the line onto
+	// DIGIT glyphs, which midi_note_number_of rejects (silently dropped
+	// notes); a top-of-range pivot reflects every real source (note letters,
+	// indices 10..22) back into 13..25, also always letters; and the
+	// absolute difference is contrary to the source everywhere while the
+	// source stays below the pivot — which top-of-range makes unconditional.
+	// Uppercase matters: a lowercase pivot would spell every note SHARP
+	// (midi reads case as accidental), off the patch key. Publishes like
+	// Harmony does.
+	if ((int)plan.size() < capacity && sounding() < budget) {
+		for (size_t j = 0; j < plan.size(); ++j) {
+			if (!publishesPitch(plan[j]) || plan[j].notes.empty()) continue;
+			if (!chance(0.65f)) continue;
+			VoiceNode vp;
+			vp.role = VoiceNode::Counter;
+			vp.channel = channelForRole(vp.role); // '4'
+			vp.param = 'Z'; // top of range AND uppercase: naturals, not sharps
+			vp.inputs.push_back(Edge(j, Edge::Pitch, vp.param));
+			// Same Modulation-tail chance as Harmony: the reflected contour
+			// streams as CC on this voice's own channel.
+			if (chance(0.35f)) {
+				char cc = allocateCcNumber();
+				if (cc != 0) vp.inputs.push_back(Edge(j, Edge::Modulation, cc));
+			}
+			plan.push_back(vp);
+			break;
+		}
 	}
 
 	// Gate: exactly one, banging a publisher's note; occasionally gated ON
@@ -646,12 +686,14 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 		// Occasionally a texture hit's velocity follows a publisher's
 		// pitch — accents that track the melody. Same source rules as
 		// everywhere else: pitch publishers only (their glyphs never index
-		// to velocity 0, the midi operator's note-off).
+		// to velocity 0, the midi operator's note-off). Counter excluded:
+		// reflected glyphs can dip below note-letter indices.
 		if (chance(0.3f)) {
 			size_t pubs[8];
 			int np = 0;
 			for (size_t j = 0; j < plan.size() && np < 8; ++j) {
-				if (publishesPitch(plan[j])) pubs[np++] = j;
+				if (publishesPitch(plan[j]) && plan[j].role != VoiceNode::Counter)
+					pubs[np++] = j;
 			}
 			if (np > 0) vp.inputs.push_back(Edge(pubs[randInt(0, np - 1)], Edge::Operand, Edge::kOpVelocity));
 		}
@@ -722,6 +764,7 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 				return e;
 			}
 			case VoiceNode::Harmony:
+			case VoiceNode::Counter:
 			case VoiceNode::Gate: {
 				bool const gate = vn.role == VoiceNode::Gate;
 				if (srcVar == 0) return Extent();
@@ -747,14 +790,18 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 					return e;
 				}
 				// Harmony publishes when there is room for the extra V-write
-				// row, so chains can attach to this voice.
+				// row, so chains can attach to this voice. Counter uses the
+				// same shape with 'B': pivot B src reflects the source around
+				// the 'Z' axis — contrary motion that always lands back on
+				// (upper-case, natural) note letters (see the planner comment).
+				char const arith = vn.role == VoiceNode::Counter ? 'B' : 'A';
 				char pubVar = 0;
 				Extent e;
 				if (avH >= 5) {
-					e = placeDerivedVoice(buf, cy, cx, avH, avW, vn.channel, srcVar, false, vn.param, &pubVar);
+					e = placeDerivedVoice(buf, cy, cx, avH, avW, vn.channel, srcVar, false, vn.param, &pubVar, 0, 0, arith);
 				}
 				else if (avH >= 3) {
-					e = placeDerivedVoice(buf, cy, cx, avH, avW, vn.channel, srcVar, false, vn.param);
+					e = placeDerivedVoice(buf, cy, cx, avH, avW, vn.channel, srcVar, false, vn.param, nullptr, 0, 0, arith);
 				}
 				else {
 					return Extent();
@@ -850,6 +897,7 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 			case VoiceNode::Bass:
 			case VoiceNode::Lead: eh = 5; ew = 13; break;
 			case VoiceNode::Harmony: eh = 5; ew = 8; break;
+			case VoiceNode::Counter: eh = 5; ew = 8; break;
 			case VoiceNode::Gate: {
 				ew = 12;
 				// Fan-in needs BOTH a Pitch and a Trigger edge; publishedVar is
@@ -1341,7 +1389,8 @@ AhabGenerator::Extent AhabGenerator::placeChordVoice(ScratchPad& buf, Usz y, Usz
 AhabGenerator::Extent AhabGenerator::placeDerivedVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
 														 char channel, char sourceVar, bool gate, char param,
 														 char* allocatedVar,
-														 char sourceVarB, char paramB) {
+														 char sourceVarB, char paramB,
+														 char arithGlyph) {
 	// Columns anchor on colV (the read's V).
 	// The source variable MUST be written above this voice (vars are
 	// within-tick). Requires maxH >= 3; a harmony that PUBLISHES
@@ -1374,12 +1423,13 @@ AhabGenerator::Extent AhabGenerator::placeDerivedVoice(ScratchPad& buf, Usz y, U
 			// Harmony: 'A' adds param letter-steps to the lead pitch (C+2=E in
 			// base36 letter space). Its left operand is the poked cell
 			// (y+1, colV); output lands at (y+2, colV+1) == the note cell below.
-			buf.set(y+1, colV + 1, 'A');
+			buf.set(y+1, colV + 1, arithGlyph);
 			buf.set(y+1, colV + 2, param);
 
 			// Bang: D at (y+1, colV-3) pokes '*' to (y+2, colV-3), the ':'
-			// operator's left neighbour.
-			buf.set(y+1, colV - 4, randomSmallDigit());
+			// operator's left neighbour. Period 2 pinned — see the publish
+			// path below for the phase-lock reasoning.
+			buf.set(y+1, colV - 4, '1');
 			buf.set(y+1, colV - 3, 'D');
 			buf.set(y+1, colV - 2, '2');
 
@@ -1411,11 +1461,14 @@ AhabGenerator::Extent AhabGenerator::placeDerivedVoice(ScratchPad& buf, Usz y, U
 		buf.set(y,   c,     'V');
 		buf.set(y,   c + 1, sourceVar);
 
-		// Row 1: transpose; bang source for the MIDI row below.
-		buf.set(y+1, c - 5, randomSmallDigit());
+		// Row 1: transpose; bang source for the MIDI row below. The bang is
+		// pinned to period 2 (rate '1'): a random rate can phase-lock onto the
+		// source's track cycle (rate 7 vs a mod-7 clock samples only src=0 —
+		// observed live), freezing the derived line at one pitch.
+		buf.set(y+1, c - 5, '1');
 		buf.set(y+1, c - 4, 'D');
 		buf.set(y+1, c - 3, '2');
-		buf.set(y+1, c + 1, 'A');
+		buf.set(y+1, c + 1, arithGlyph);
 		buf.set(y+1, c + 2, param);
 
 		// Row 2: publish the transposed pitch into v.
@@ -1423,11 +1476,12 @@ AhabGenerator::Extent AhabGenerator::placeDerivedVoice(ScratchPad& buf, Usz y, U
 		buf.set(y+2, c,     'V');
 		buf.set(y+2, c + 1, '.');         // value cell, poked by the A each tick
 
-		// Row 3: read v back; bang source for the MIDI row below.
+		// Row 3: read v back; bang source for the MIDI row below. Period 2,
+		// same phase-lock reasoning as row 1.
 		buf.set(y+3, c - 1, '.');
 		buf.set(y+3, c,     'V');
 		buf.set(y+3, c + 1, v);
-		buf.set(y+3, c - 5, randomSmallDigit());
+		buf.set(y+3, c - 5, '1');
 		buf.set(y+3, c - 4, 'D');
 		buf.set(y+3, c - 3, '2');
 

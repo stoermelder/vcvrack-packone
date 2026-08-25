@@ -1522,6 +1522,7 @@ TEST_CASE("Planned graph mirrors the legacy plan shape", "[AhabGenerator]") {
 
 		size_t leads = 0, textures = 0, basses = 0;
 		size_t harmonies = 0, gates = 0, chords = 0;
+		size_t counters = 0;
 		size_t leadIndex = 0;
 		for (size_t i = 0; i < plan.size(); ++i) {
 			VoiceNode const& vn = plan[i];
@@ -1553,6 +1554,17 @@ TEST_CASE("Planned graph mirrors the legacy plan shape", "[AhabGenerator]") {
 					REQUIRE(vn.inputs.size() == 1);
 					REQUIRE(vn.inputs[0].kind == Edge::Clock);
 					REQUIRE(vn.inputs[0].from == 0);
+					break;
+				case VoiceNode::Counter:
+					// Vocabulary Step 4: exactly one, a Pitch edge from a
+					// publisher (param carries the reflection pivot),
+					// optionally a Modulation tail.
+					++counters;
+					REQUIRE(counters <= 1);
+					REQUIRE(i > leadIndex); // after its source exists
+					REQUIRE(vn.inputs.size() >= 1);
+					REQUIRE(vn.inputs.size() <= 2);
+					REQUIRE(vn.inputs[0].kind == Edge::Pitch);
 					break;
 				case VoiceNode::Harmony:
 				case VoiceNode::Gate:
@@ -1627,7 +1639,8 @@ TEST_CASE("Planned graph mirrors the legacy plan shape", "[AhabGenerator]") {
 		std::set<char> melodicChans;
 		for (VoiceNode const& vn : plan) {
 			if (vn.role == VoiceNode::Lead || vn.role == VoiceNode::Harmony
-					|| vn.role == VoiceNode::Gate || vn.role == VoiceNode::Bass) {
+					|| vn.role == VoiceNode::Gate || vn.role == VoiceNode::Bass
+					|| vn.role == VoiceNode::Counter) {
 				REQUIRE(melodicChans.insert(vn.channel).second);
 			}
 		}
@@ -1722,6 +1735,7 @@ TEST_CASE("Reserved roles pin their table channels", "[AhabGenerator]") {
 						case VoiceNode::Lead: expect = '1'; break;
 						case VoiceNode::Harmony: expect = '2'; break;
 						case VoiceNode::Chord: expect = '3'; break;
+						case VoiceNode::Counter: expect = '4'; break;
 						case VoiceNode::Gate: expect = '5'; break;
 						case VoiceNode::Drums: expect = '9'; break;
 						default: break; // Bus places no notes; Delay/Uclid are free-region
@@ -1822,10 +1836,186 @@ TEST_CASE("Generated fields emit only policy channels", "[AhabGenerator][gate]")
 	}
 }
 
+TEST_CASE("Counter reflects its source around the z axis", "[AhabGenerator]") {
+	// `pivot B src`. The pivot is pinned
+	// to 'Z' (top of the base36 range AND uppercase). B is |src − pivot|
+	// poked with the CASE of the right operand: an interior pivot would reflect
+	// part of the line onto DIGIT glyphs, and midi_note_number_of drops
+	// any note operand that is not a letter (UINT8_MAX -> silent); a lowercase
+	// pivot would spell every note SHARP. With the
+	// 'Z' axis the reflected line always lands back on (natural) note letters AND
+	// moves contrary to its source for as long as the source stays below it. — out = 35 - src.
+	//
+	// Source: a mod-7 clock walking p through glyphs '0'..'6' (indices 0..6),
+	// so the counter emits |35−k| = 29..35 = 't'..'z', mapped by
+	// midi_note_number_of to the NATURAL byte set {29,31,33,35,36,38,40}
+	// (deg/7*12 + semis[deg%7], no sharp: uppercase pivot).
+	ScratchPad buf(8, 12);
+	// Source writer: C at (0,2) pokes (1,2) — exactly the value cell of the
+	// pV write at cols 0-1. Counter cycles 0..6 into p.
+	buf.set(0, 1, '1'); buf.set(0, 2, 'C'); buf.set(0, 3, '7');
+	buf.set(1, 0, 'p'); buf.set(1, 1, 'V');
+
+	AhabGenerator rr(9);
+	AhabGenerator::Config warm;
+	warm.density = 0.5f;
+	warm.qualityGate = false;
+	rr.generate(8, 20, warm); // primes varPool_
+
+	char v = 0;
+	AhabGenerator::Extent e = rr.placeDerivedVoice(buf, 2, 0, 6, 12, '4', 'p', false, 'Z', &v, 0, 0, 'B');
+	REQUIRE(e.h == 5);
+	REQUIRE(v != 0);
+
+	AhabSim sim;
+	sim.setFieldSizeRequest(buf.height(), buf.width(), false);
+	sim.process();
+	sim.setRandomSeed(1);
+	Usz oh = 0, ow = 0;
+	REQUIRE(sim.loadRectFromOrcaRequest(buf.toOrca(), 0, 0, oh, ow, false));
+	sim.process();
+
+	// 32 ticks: the ':' bang is pinned to period 2, so the source cycle of
+	// 7 is fully sampled within 14 ticks; 32 gives comfortable margin.
+	std::set<int> notesSeen;
+	Usz notes = 0;
+	for (int t = 0; t < 32; ++t) {
+		sim.stepRequest();
+		sim.process();
+		Oevent_list const* ev = sim.getEvents();
+		for (Usz i = 0; i < ev->count; ++i) {
+			Oevent const& o = ev->buffer[i];
+			if (o.any.oevent_type != Oevent_type_midi_note) continue;
+			if (o.midi_note.channel != 4) continue; // Counter's reserved channel
+			++notes;
+			notesSeen.insert(o.midi_note.note);
+		}
+	}
+	CATCH_INFO("notes = " << notes << " distinct = " << notesSeen.size()
+		<< "\n" << buf.toOrca());
+	REQUIRE(notes > 0); // sounds on its own channel
+	std::set<int> const expected = {29, 31, 33, 35, 36, 38, 40}; // naturals via 'Z'
+	REQUIRE(notesSeen == expected); // the full reflected set — not an offset line
+
+	PatternScore s = scorePattern(buf, 16);
+	REQUIRE(s.danglingReads == 0);
+}
+
+TEST_CASE("Counter reflects real note-letter sources", "[AhabGenerator]") {
+	// The digit-walk test above pins the arithmetic; this one feeds what the
+	// planner actually produces — a Lead publishing NOTE LETTERS. Letters sit
+	// in a different base36 region (indices 10..22 vs 0..9): they reflect to
+	// 13..25, still always letters. For source "CD" (indices 12,13) the
+	// outputs are |35−idx| = 23,22 = 'N','M' (uppercase — the pivot's case),
+	// which midi_note_number_of maps to NATURAL bytes {19,17} (deg/7*12 +
+	// semis[deg%7]) — strictly DESCENDING as the source ascends: contrary
+	// motion, on the patch key.
+	ScratchPad buf(12, 24);
+	AhabGenerator rr(31);
+	AhabGenerator::Config warm;
+	warm.density = 0.5f;
+	warm.qualityGate = false;
+	rr.generate(12, 24, warm); // primes varPool_
+
+	// A real lead on its own clock, publishing into v1; two letters so any
+	// track modulus (>= 2) cycles both.
+	char leadVar = 0;
+	AhabGenerator::Extent le =
+		rr.placeArpeggioVoice(buf, 0, 0, 5, 24, '2', "CD", 0, &leadVar);
+	REQUIRE(le.h == 5);
+	REQUIRE(leadVar != 0);
+
+	char counterVar = 0;
+	AhabGenerator::Extent ce =
+		rr.placeDerivedVoice(buf, 5, 0, 6, 24, '4', leadVar, false, 'Z', &counterVar, 0, 0, 'B');
+	REQUIRE(ce.h == 5);
+	REQUIRE(counterVar != 0);
+
+	AhabSim sim;
+	sim.setFieldSizeRequest(buf.height(), buf.width(), false);
+	sim.process();
+	sim.setRandomSeed(1);
+	Usz oh = 0, ow = 0;
+	REQUIRE(sim.loadRectFromOrcaRequest(buf.toOrca(), 0, 0, oh, ow, false));
+	sim.process();
+
+	// 256 ticks: the counter bangs every 2 ticks and the lead's own clock
+	// cycle is at most rate(8) * barMod(12) = 96 — lcm coverage with margin.
+	std::set<int> notesSeen;
+	Usz notes = 0;
+	for (int t = 0; t < 256; ++t) {
+		sim.stepRequest();
+		sim.process();
+		Oevent_list const* ev = sim.getEvents();
+		for (Usz i = 0; i < ev->count; ++i) {
+			Oevent const& o = ev->buffer[i];
+			if (o.any.oevent_type != Oevent_type_midi_note) continue;
+			if (o.midi_note.channel != 4) continue; // Counter's reserved channel
+			++notes;
+			notesSeen.insert(o.midi_note.note);
+		}
+	}
+	CATCH_INFO("notes = " << notes << " distinct = " << notesSeen.size()
+		<< "\n" << buf.toOrca());
+	REQUIRE(notes > 0); // sounds on its own channel
+	std::set<int> const expected = {17, 19}; // 'M' <- D, 'N' <- C: naturals via 'Z'
+	REQUIRE(notesSeen == expected); // both letters reflected, letters-domain mapping
+
+	PatternScore s2 = scorePattern(buf, 16);
+	REQUIRE(s2.danglingReads == 0);
+}
+
+TEST_CASE("Planned Counters are placed and emit on channel 4", "[AhabGenerator][gate]") {
+	// the placeVoice switch originally
+	// lacked a Counter case label, so plans carried the role — spending a
+	// budget slot and displacing texture — while the layout silently dropped
+	// it. Channel 4 belongs to Counter alone, so any ch-4 note event proves
+	// a Counter was planned AND placed AND sounds. Aggregate floor: which
+	// seeds plan a Counter varies (chance-gated), so individual fields may
+	// legitimately lack one.
+	Usz fieldsEmittingCh4 = 0;
+	constexpr Usz kSeeds = 32;
+	for (uint32_t seed = 1; seed <= kSeeds; ++seed) {
+		AhabGenerator r(seed);
+		AhabGenerator::Config cfg;
+		cfg.density = 0.6f;
+		cfg.qualityGate = false;
+		cfg.channels = kMaxChannelBudget; // reachability needs slots beyond the default budget
+		ScratchPad buf = r.generate(24, 40, cfg);
+
+		AhabSim sim;
+		sim.setFieldSizeRequest(buf.height(), buf.width(), false);
+		sim.process();
+		Usz oh = 0, ow = 0;
+		REQUIRE(sim.loadRectFromOrcaRequest(buf.toOrca(), 0, 0, oh, ow, false));
+		sim.process();
+		bool ch4Here = false;
+		for (int t = 0; t < 32 && !ch4Here; ++t) {
+			sim.stepRequest();
+			sim.process();
+			Oevent_list const* ev = sim.getEvents();
+			for (Usz i = 0; i < ev->count; ++i) {
+				if (ev->buffer[i].any.oevent_type == Oevent_type_midi_note
+					&& ev->buffer[i].midi_note.channel == 4) {
+					ch4Here = true;
+					break;
+				}
+			}
+		}
+		CATCH_INFO("seed = " << seed << " counter audible: " << ch4Here);
+		if (ch4Here) ++fieldsEmittingCh4;
+
+		PatternScore s = scorePattern(buf, 8);
+		REQUIRE(s.danglingReads == 0);
+	}
+	CATCH_INFO("fields with audible counter: " << fieldsEmittingCh4 << "/" << kSeeds);
+	REQUIRE(fieldsEmittingCh4 >= kSeeds / 4); // the role routinely reaches the field
+}
+
 TEST_CASE("Channel budget caps sounding voices and orders roles", "[AhabGenerator]") {
-	// Step 5 done-when: never more sounding voices than the budget allows
+	// never more sounding voices than the budget allows
 	// (the bus node does not count — it places no notes), and the roles
-	// that appear follow §5.3 priority order — Lead, Drums, Bass, Harmony,
+	// that appear follow priority order — Lead, Drums, Bass, Harmony,
 	// Chord, Gate, texture — never N copies of one role. Lead, Drums and
 	// Bass are unconditional; Harmony/Gate are chance-gated, so exact
 	// prefixes are asserted only where every slot is unconditional.
@@ -1836,8 +2026,9 @@ TEST_CASE("Channel budget caps sounding voices and orders roles", "[AhabGenerato
 			case VoiceNode::Bass: return 2;
 			case VoiceNode::Harmony: return 3;
 			case VoiceNode::Chord: return 4;
-			case VoiceNode::Gate: return 5;
-			default: return 6; // free-region texture
+			case VoiceNode::Counter: return 5;
+			case VoiceNode::Gate: return 6;
+			default: return 7; // free-region texture
 		}
 	};
 	for (uint32_t seed = 13; seed <= 20; ++seed) {
