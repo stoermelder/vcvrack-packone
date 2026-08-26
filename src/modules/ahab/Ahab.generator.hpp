@@ -209,6 +209,14 @@ struct AhabGenerator {
 	std::string const& getBusVars() const { return busVars_; }
 	// Number of derived voices placed by the last generate().
 	int getDerivedPlaced() const { return derivedPlaced_; }
+	// Silent-drop diagnostics for planned coupling edges: how many Modulation
+	// tails / Operand (velocity) feeds did or did not survive layout. A
+	// 100%-dropped rate at a size where edges were planned is the failure
+	// signature this guards against.
+	int getModTailsAttached() const { return drops_.modTailsAttached; }
+	int getModTailsDropped() const { return drops_.modTailsDropped; }
+	int getOperandResolved() const { return drops_.operandResolved; }
+	int getOperandUnresolved() const { return drops_.operandUnresolved; }
 
 	/**
 	 * Legend text: one entry per PLACED role, in plan order, duplicate roles
@@ -323,13 +331,15 @@ struct AhabGenerator {
 	 * seed, so tests can assert on plan shape directly. Returns an empty vector
 	 * when the area/density budget is exhausted.
 	 * @param nBus number of clock-bus divisions already placed above
-	 * @param budget sounding-voice cap; the bus node does not count.
-	 * Default 64 = capacity's own hard cap, i.e. no budget beyond capacity —
-	 * direct planner calls (tests) stay unbounded; the module passes
-	 * Config::channels.
+	 * @param maxChannels cap on DISTINCT MIDI channels the plan may use; the
+	 *      bus node does not count. Default 64 = capacity's own hard cap (no
+	 *      cap beyond capacity) — direct planner calls (tests) stay
+	 *      unbounded; the module passes Config::channels. Density still
+	 *      drives voice count: once the set is full, texture voices share
+	 *      already-claimed channels instead of stopping.
 	 */
 	std::vector<VoiceNode> planArrangement(Usz h, Usz w, float density, size_t nBus,
-		size_t budget = 64);
+		size_t maxChannels = 64);
 
 	/**
 	 * Arpeggio pattern: clock (or the shared clock bus) → track → variable →
@@ -376,14 +386,29 @@ private:
 						// pair fight; low numbers also survive midiCcOffset's
 						// 127 clamp.
 	std::string busVars_;   // clock-bus variables placed this call:
-	int derivedPlaced_ = 0; // derived voices placed this call.
-	                        // generate() captures it on adoption so it always
-	                        // describes the RETURNED attempt, not a later
-	                        // rejected retry
+	int derivedPlaced_ = 0; // derived voices placed this call. generate() captures
+	                        // it on adoption so it always describes the RETURNED
+	                        // attempt, not a later rejected retry
+	// Silent-drop counters (see getters), snapshotted like derivedPlaced_
+	// so they describe the returned attempt.
+	struct DropStats {
+		int modTailsAttached = 0;
+		int modTailsDropped = 0;
+		int operandResolved = 0;
+		int operandUnresolved = 0;
+	};
+	DropStats drops_;
 	// Helper functions for random values
 	char randomBase36();
 	char randomSmallDigit();  // 1-8 for rates/mods
 	char randomNote();
+	// A non-zero velocity literal from {'8','c','f'} — the placeholder a K
+	// row may still overwrite; 0 is a note-off, never drawn.
+	char randomVelocityLiteral();
+	// A note-length glyph from {'2','4','8'}, weighted toward the role's
+	// natural articulation. Draw ONCE per voice (not per note): length is a
+	// property of how the voice speaks.
+	char randomLengthForRole(VoiceNode::Role role);
 	// Register band per ROLE: Bass < Chord < Harmony < Lead with ±1 jitter;
 	// gates and texture sit mid. Replaces the old channel-latched draw and its
 	// evaluation-order hazard.
@@ -425,7 +450,7 @@ private:
 	 * with shared timing.
 	 */
 	void generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Usz w, float density,
-		size_t budget);
+		size_t maxChannels);
 
 	/**
 	 * One raw generation pass, no retry loop (the body of the old generate()).

@@ -24,6 +24,7 @@ static void mbuf_uninit_mark(Mark* mbr, Usz height, Usz width) {
 // A trailing newline producing an empty last line is ignored.
 bool AhabSim::buildFieldFromOrcaText(const std::string& orcaText, Field& out) {
 	std::vector<std::string> lines;
+	lines.reserve(orcaText.size() / 4 + 1); // avoid growth-relocation
 	{
 		std::string cur;
 		for (char ch : orcaText) {

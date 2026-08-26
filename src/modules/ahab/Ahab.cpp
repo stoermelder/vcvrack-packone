@@ -1516,10 +1516,6 @@ struct AhabSimWidget : OpaqueWidget {
 				simRandomize(0.2f);
 				APP->event->setSelectedWidget(this);
 			}));
-			menu->addChild(createMenuItem("Sparse (20%)", "", [this]() {
-				simRandomize(0.2f);
-				APP->event->setSelectedWidget(this);
-			}));
 			menu->addChild(createMenuItem("Medium (40%)", "", [this]() {
 				simRandomize(0.4f);
 				APP->event->setSelectedWidget(this);

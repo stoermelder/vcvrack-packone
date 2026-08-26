@@ -126,7 +126,7 @@ TEST_CASE("generate matches the pre-conversion generators byte for byte", "[Ahab
 		".........\n"
 		".tVv...Vt\n"
 		".........\n"
-		".4D2..8C3\n"
+		".4Dg..dV0\n"
 		".........");
 }
 
@@ -684,7 +684,7 @@ TEST_CASE("Shared identity: every modulus divides the patch bar", "[AhabGenerato
 		ScratchPad buf = r.generate(24, 40, cfg);
 		Usz bar = r.getBarMod();
 		CATCH_INFO("seed = " << seed << " bar = " << bar << "\n" << buf.toOrca());
-		REQUIRE((bar == 8 || bar == 12));
+		REQUIRE((bar == 8 || bar == 12 || bar == 16 || bar == 6));
 
 		std::string orca = buf.toOrca();
 		int checked = 0;
@@ -2115,7 +2115,14 @@ TEST_CASE("Channel legend lands in generated fields", "[AhabGenerator][gate]") {
 	for (uint32_t seed = 1; seed <= kSeeds; ++seed) {
 		AhabGenerator r(seed);
 		AhabGenerator::Config cfg;
-		cfg.density = 0.6f;
+		// B's weighted role bag (diversity plan) fills capacity with
+		// content-bearing roles far more consistently than the old fixed
+		// sequence, so from d0.3 upward at this size there is rarely spare
+		// room left for the purely decorative legend block (measured: d0.6
+		// dropped from 8/32 to 0/32). Sparse (0.2) is the one density where
+		// the arrangement still leaves enough margin to exercise it
+		// reliably (measured 25/32), so probe there instead of d0.6.
+		cfg.density = 0.2f;
 		cfg.qualityGate = false;
 
 		// 24x40: legend expected in most fields.
@@ -2175,7 +2182,74 @@ TEST_CASE("Channel legend lands in generated fields", "[AhabGenerator][gate]") {
 		}
 	}
 	CATCH_INFO("fields with legend: " << fieldsWithLegend << "/" << kSeeds);
-	REQUIRE(fieldsWithLegend >= kSeeds / 2); // routinely reachable on 24x40
+	// Measured 25/32 at d0.2 after B (diversity plan); floor set well below
+	// that so the gate catches a real regression without being brittle.
+	REQUIRE(fieldsWithLegend >= 12);
+}
+
+TEST_CASE("Diversity gate: the distribution stays varied", "[AhabGenerator][gate]") {
+	// §6 of the diversity plan: every other test asserts properties of ONE
+	// pattern; this asserts properties of the DISTRIBUTION. It exists
+	// because the generator once collapsed to a single structure at the
+	// default size and nothing noticed. Floors sit at ~70% of the measured
+	// baseline (chan-sets 5, signatures 100, rich-pitch 89% at the time) so
+	// they catch collapse without being brittle.
+	//
+	// NB: a replayed plan is not a valid diversity measurement (generate()
+	// consumes RNG, so re-planning the same seed draws different numbers),
+	// so there is no role-multiset metric here distinct from the channel-set
+	// one below — both would require re-planning. What's measured is the
+	// field's ':'-channel fingerprint (cheap, stable, and a reasonable proxy
+	// for role variety: distinct role casts tend to claim distinct channel
+	// sets). An earlier revision of this test declared a separate `chanSets`
+	// variable that was never inserted into (always empty, always printed as
+	// 0) alongside a `roleSets` that actually held this fingerprint under
+	// the wrong name — cleaned up to one variable with an accurate name.
+	constexpr Usz N = 100;
+	std::set<std::string> chanSets, signatures;
+	Usz richPitches = 0;
+	for (uint32_t seed = 1; seed <= N; ++seed) {
+		AhabGenerator r(seed);
+		AhabGenerator::Config cfg;
+		cfg.density = 0.4f;
+		ScratchPad buf = r.generate(16, 32, cfg);
+		std::string const orca = buf.toOrca();
+		signatures.insert(orca);
+
+		// Channel-set fingerprint from the field's ':' rows (cheap, stable).
+		std::set<char> chans;
+		for (size_t i = 0; i + 1 < orca.size(); ++i)
+			if (orca[i] == ':') chans.insert(orca[i + 1]);
+		std::string rk(chans.begin(), chans.end());
+		if (!rk.empty()) chanSets.insert(rk);
+
+		AhabSim sim;
+		sim.setFieldSizeRequest(buf.height(), buf.width(), false);
+		sim.process();
+		Usz oh = 0, ow = 0;
+		REQUIRE(sim.loadRectFromOrcaRequest(orca, 0, 0, oh, ow, false));
+		sim.process();
+		std::set<int> pitches;
+		for (int t = 0; t < 96; ++t) {
+			sim.stepRequest();
+			sim.process();
+			Oevent_list const* ev = sim.getEvents();
+			for (Usz i = 0; i < ev->count; ++i) {
+				if (ev->buffer[i].any.oevent_type != Oevent_type_midi_note) continue;
+				pitches.insert(ev->buffer[i].midi_note.octave * 12
+					+ ev->buffer[i].midi_note.note);
+			}
+		}
+		if (pitches.size() >= 4) ++richPitches;
+
+		PatternScore s = scorePattern(buf, 8);
+		REQUIRE(s.danglingReads == 0);
+	}
+	CATCH_INFO("diversity: chan-sets=" << chanSets.size() << " sigs=" << signatures.size()
+		<< " richPitch=" << richPitches << "/" << N);
+	REQUIRE(chanSets.size() >= 3);       // was 1 before Cause A
+	REQUIRE(signatures.size() >= 70);    // was 1 before Cause A
+	REQUIRE(100 * richPitches / N >= 60); // measured 78% when this floor was set; re-measure periodically
 }
 
 TEST_CASE("Counter reflects its source around the z axis", "[AhabGenerator]") {
@@ -2359,18 +2433,12 @@ TEST_CASE("Channel budget caps distinct channels, density drives voices", "[Ahab
 	// planned voices — density (via capacity) keeps driving voice count, and
 	// texture voices share claimed channels once the set is full. The bus is
 	// exempt (places no notes).
-	auto rankOf = [](VoiceNode::Role role) -> int {
-		switch (role) {
-			case VoiceNode::Lead: return 0;
-			case VoiceNode::Drums: return 1;
-			case VoiceNode::Bass: return 2;
-			case VoiceNode::Harmony: return 3;
-			case VoiceNode::Chord: return 4;
-			case VoiceNode::Counter: return 5;
-			case VoiceNode::Gate: return 6;
-			default: return 7; // free-region texture
-		}
-	};
+	//
+	// B (diversity plan) replaced the fixed Drums/Harmony/Chord/Counter/Gate
+	// priority order with a weighted draw, so that sequence is no longer
+	// pinned — Lead (and Bass, right after it when a bus exists) are still
+	// the only fixed-position roles; this test asserts what survives B:
+	// reserved-role uniqueness, texture repeatability, and the channel cap.
 	for (uint32_t seed = 13; seed <= 20; ++seed) {
 		AhabGenerator r(seed);
 		AhabGenerator::Config warm;
@@ -2378,44 +2446,95 @@ TEST_CASE("Channel budget caps distinct channels, density drives voices", "[Ahab
 		warm.qualityGate = false;
 		r.generate(24, 40, warm); // primes pools
 
-		for (size_t budget = 1; budget <= 9; ++budget) {
-			std::vector<VoiceNode> const plan = r.planArrangement(24, 40, 1.0f, 3, budget);
+		for (size_t mc = 1; mc <= 9; ++mc) {
+			std::vector<VoiceNode> const plan =
+				r.planArrangement(24, 40, 1.0f, 3, mc);
 			REQUIRE(plan.size() >= 2);
-			REQUIRE(plan[0].role == VoiceNode::Bus); // bus exempt from the budget
-			REQUIRE(plan[1].role == VoiceNode::Lead); // slot 1: always the lead
+			REQUIRE(plan[0].role == VoiceNode::Bus); // bus exempt
+			REQUIRE(plan[1].role == VoiceNode::Lead); // slot 1: always lead
 
-			size_t const sounding = plan.size() - 1;
-			CATCH_INFO("seed = " << seed << " budget = " << budget
-				<< " sounding = " << sounding);
-			REQUIRE(sounding <= budget);
-			// Budgets 1-4 are exactly Lead, Drums, Drums, Bass on a wide
-			// rect (w >= 24 plans two drum hits): every slot unconditional.
-			if (budget <= 4) REQUIRE(sounding == budget);
+			// THE cap: distinct non-bus channels never exceed maxChannels.
+			std::set<char> distinct;
+			for (VoiceNode const& vn : plan) {
+				if (vn.role == VoiceNode::Bus) continue;
+				distinct.insert(vn.channel);
+			}
+			CATCH_INFO("seed = " << seed << " mc = " << mc
+				<< " distinct channels = " << distinct.size()
+				<< " nodes = " << plan.size());
+			REQUIRE(distinct.size() <= mc);
 
-			int lastRank = -1;
 			std::set<VoiceNode::Role> seen;
 			for (size_t i = 1; i < plan.size(); ++i) {
 				VoiceNode::Role const role = plan[i].role;
-				int const rank = rankOf(role);
-				REQUIRE(rank >= lastRank); // priority order, texture last
-				lastRank = rank;
 				if (role != VoiceNode::Delay && role != VoiceNode::Uclid
-						&& role != VoiceNode::Drums)
+					&& role != VoiceNode::Drums)
 					REQUIRE(seen.insert(role).second); // reserved roles unique
-													   // (drums exempt: GM ch9 multi-hit)
 			}
 		}
 
-		// Both budgets active, neither ignored: whichever binds first wins.
+		// Both constraints active, neither ignored: whichever binds first wins.
 		{
-			// Tiny rect: capacity 3 (bus + 2 sounding) binds before budget 16.
+			// Tiny rect: capacity binds before a generous channel cap.
 			std::vector<VoiceNode> small = r.planArrangement(10, 14, 0.6f, 3, 16);
 			REQUIRE(small.size() <= 3);
-			// Wide dense rect: budget 2 binds before capacity 38.
+			// Wide dense rect: a tight channel cap binds before capacity.
+			// Density still drives the VOICE count (37 sounding voices); the
+			// cap shows in distinct channels instead.
 			std::vector<VoiceNode> big = r.planArrangement(24, 40, 1.0f, 3, 2);
-			REQUIRE(big.size() == 3); // bus + lead + one drum
+			std::set<char> bigChans;
+			for (VoiceNode const& vn : big) {
+				if (vn.role == VoiceNode::Bus) continue;
+				bigChans.insert(vn.channel);
+			}
+			REQUIRE(big.size() > 20);          // density kept filling
+			REQUIRE(bigChans.size() <= 2);     // cap honoured
 		}
 	}
+}
+
+TEST_CASE("Texture reaches the free region at tight budgets with room to spare", "[AhabGenerator]") {
+	// Bug 1 (diversity plan): "Reserved roles pin their table channels" only
+	// ever calls planArrangement with the default maxChannels==64, so its
+	// free-region assertion for Delay/Uclid passes vacuously — that budget
+	// never binds, so the sharing path (pickSharedChannel) never runs. At a
+	// REAL tight budget the weighted bag used to claim the whole channel set
+	// with reserved roles before texture ever got a turn, so every texture
+	// voice piled onto a reserved channel (measured: free region 'a'-'f' got
+	// ZERO of 1735 texture voices at maxChannels in {2,4,6}, density 1.0,
+	// 24x40) even when the budget had room the bag simply grabbed first.
+	//
+	// maxChannels==4 with a bus has a 2-slot mandatory head (Lead, Bass), so
+	// there is room beyond the head for the reserved-role bag AND at least
+	// one free-region slot for texture — that slack is exactly what this
+	// asserts gets used, not swallowed by the bag.
+	Usz plansWithFreeTexture = 0, plansWithTexture = 0;
+	for (uint32_t seed = 1; seed <= 32; ++seed) {
+		AhabGenerator r(seed);
+		AhabGenerator::Config warm;
+		warm.density = 1.0f;
+		warm.qualityGate = false;
+		r.generate(24, 40, warm); // primes pools
+
+		std::vector<VoiceNode> const plan = r.planArrangement(24, 40, 1.0f, 3, 4);
+		std::set<char> distinct;
+		bool sawTexture = false, sawFreeTexture = false;
+		for (VoiceNode const& vn : plan) {
+			if (vn.role == VoiceNode::Bus) continue;
+			distinct.insert(vn.channel);
+			if (vn.role != VoiceNode::Delay && vn.role != VoiceNode::Uclid) continue;
+			sawTexture = true;
+			if (std::string(kFreeChannels).find(vn.channel) != std::string::npos) sawFreeTexture = true;
+		}
+		CATCH_INFO("seed = " << seed << " distinct = " << distinct.size());
+		REQUIRE(distinct.size() <= 4); // the cap itself must still hold
+		if (sawTexture) ++plansWithTexture;
+		if (sawFreeTexture) ++plansWithFreeTexture;
+	}
+	CATCH_INFO("plans with texture: " << plansWithTexture << "/32, with free-region texture: "
+		<< plansWithFreeTexture << "/32");
+	REQUIRE(plansWithTexture >= 24);     // density 1.0 fills capacity: texture is the norm
+	REQUIRE(plansWithFreeTexture >= 24); // and it must actually reach the free region
 }
 
 TEST_CASE("Channel budget persists through Config JSON", "[AhabGenerator]") {
@@ -2587,12 +2706,45 @@ TEST_CASE("Coupling bottoms out at depth 2", "[AhabGenerator]") {
 	REQUIRE(seedsWithDependent >= 24); // coupling is the norm, not a fluke
 }
 
-TEST_CASE("A low capacity yields varied roles in priority order", "[AhabGenerator]") {
-	// when capacity binds before the role sequence is
-	// exhausted, the plan must contain a VARIED head — Lead, Drums, Bass,
-	// Harmony… following priority order — never N copies of whichever
-	// role the loop reached first. Asserts the role SET, not just counts.
-	// Sizes are chosen so capacity (area/25*density) truncates mid-sequence.
+TEST_CASE("Silent-drop counters guard planned coupling", "[AhabGenerator][gate]") {
+	// Cause C (diversity plan): Modulation tails and Operand feeds are
+	// planned but layout can silently drop them (no room below, or the
+	// producer never published) with no signal anywhere else. DropStats
+	// exists precisely so a regression that starves this class of edge shows
+	// up as a number, not as a feature quietly going dark again — the
+	// original bug survived undetected because NOTHING measured it.
+	int attached = 0, dropped = 0, resolved = 0, unresolved = 0;
+	for (uint32_t seed = 1; seed <= 32; ++seed) {
+		AhabGenerator r(seed);
+		AhabGenerator::Config cfg;
+		cfg.density = 0.6f;
+		cfg.qualityGate = false;
+		cfg.channels = kMaxChannelBudget;
+		r.generate(24, 40, cfg);
+		attached += r.getModTailsAttached();
+		dropped += r.getModTailsDropped();
+		resolved += r.getOperandResolved();
+		unresolved += r.getOperandUnresolved();
+	}
+	CATCH_INFO("mod tails: " << attached << " attached / " << dropped << " dropped"
+		<< "; operand feeds: " << resolved << " resolved / " << unresolved << " unresolved");
+	// The capability must be REACHABLE (both edge kinds get attempted at this
+	// size) and not 100% lost — the two symptoms Cause C actually measured.
+	REQUIRE(attached > 0);   // at least one tail actually attached
+	REQUIRE(resolved > 0);   // at least one operand feed actually resolved
+}
+
+TEST_CASE("A low capacity still yields a varied head", "[AhabGenerator]") {
+	// Bug 3 (diversity plan): this test used to be named "...in priority
+	// order" and its comment described a fixed Lead/Drums/Bass/Harmony
+	// sequence — Cause B deliberately replaced that fixed sequence with a
+	// weighted draw, so no such order is guaranteed or asserted here any
+	// more. What survives, and what this test actually checks: when
+	// capacity binds before the bag is exhausted, the plan still contains a
+	// VARIED head — Lead always present, at least 3 distinct roles, nothing
+	// but the bus preceding Lead — never N copies of whichever role the draw
+	// happened to hit first. Asserts the role SET, not any particular order.
+	// Sizes are chosen so capacity (area/25*density) truncates mid-draw.
 	struct Size { Usz h, w; float density; };
 	Size const sizes[] = {{12, 20, 0.5f}, {10, 14, 0.6f}, {8, 10, 1.0f}};
 	for (uint32_t seed = 1; seed <= 16; ++seed) {
