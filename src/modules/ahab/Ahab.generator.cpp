@@ -22,13 +22,9 @@ char AhabGenerator::randomNote() {
 }
 
 char AhabGenerator::randomOctaveForRole(VoiceNode::Role role) {
-	// Register follows ROLE, not the last channel handed out (§5.5): low
-	// channels are low voices, now by construction instead of via a latch
-	// the old shuffle had already destroyed. Bands low to high —
-	// Bass < Chord < Harmony < Lead — with the existing ±1 jitter; gates
-	// and texture sit mid. Bus places no notes, Drums pin '2' in their
-	// builder and Bass pins '2' through placeArpeggioVoice, so band 0 is
-	// effectively never drawn.
+	// Register follows ROLE, not the last channel: bands low→high
+	// (Bass < Chord < Harmony < Lead) with ±1 jitter; gates/texture sit mid.
+	// Bus places no notes; Drums/Bass pin '2', so band 0 is never drawn.
 	int band;
 	switch (role) {
 		case VoiceNode::Lead:    band = 3; break;
@@ -91,9 +87,8 @@ void AhabGenerator::fillPatchWalk(std::string& notes, Usz len) {
 static Glyph glyphForSemitone(U8 note);
 
 void AhabGenerator::fillBassWalkWith(std::string& notes, Usz len, std::mt19937& rng, int root, int scaleIdx) {
-	// Vocabulary plan Step 3: a bass line is a foundation — root and fifth
-	// of the patch scale only, alternating with occasional octave jumps.
-	// No random walk: a bass that wanders chromatically is not a foundation.
+	// A bass line is a foundation: root and fifth of the patch scale only,
+	// alternating with occasional octave jumps — no random walk.
 	static int const kMajor[]        = {0, 2, 4, 5, 7, 9, 11};
 	static int const kNaturalMinor[] = {0, 2, 3, 5, 7, 8, 10};
 	static int const kPentatonic[]   = {0, 2, 4, 7, 9};
@@ -115,11 +110,9 @@ void AhabGenerator::fillBassWalkWith(std::string& notes, Usz len, std::mt19937& 
 		int dist = scale.semi[d] > 7 ? scale.semi[d] - 7 : 7 - scale.semi[d];
 		if (dist < bestDist) { bestDist = dist; fifthSemi = scale.semi[d]; }
 	}
-	// NB: no per-note randomness at all. A track glyph carries only the
-	// pitch CLASS — the ':' row's octave operand sets the register — so
-	// an "octave-up accent" (+12) would reduce to the same glyph in
-	// glyphForSemitone and never be audible. The line is a strict
-	// root/fifth alternation.
+	// NB: no per-note randomness. A track glyph carries only the pitch
+	// class (the ':' row's octave operand sets register), so an octave-up
+	// accent would collapse to the same glyph and never be audible.
 	bool onRoot = true;
 	notes.clear();
 	for (Usz i = 0; i < len; ++i) {
@@ -154,11 +147,10 @@ char AhabGenerator::allocateCcNumber() {
 }
 
 char AhabGenerator::allocateFreeChannel() {
-	// Free-region voices draw UNIQUE channels from a per-call shuffled
-	// pool. Once it runs dry the fallback is DEFINED, not random:
-	// round-robin spreads latecomers across the region instead of colliding
-	// at random. Only interchangeable texture voices contend here — the
-	// reserved mapping a user has patched into their rack is never touched.
+	// Free-region voices draw UNIQUE channels from a per-call shuffled pool.
+	// When it runs dry the fallback is defined (round-robin), not random, so
+	// latecomers spread across the region instead of colliding. User-patched
+	// reserved mappings are never touched.
 	if (!freeChanPool_.empty()) {
 		char c = freeChanPool_.back();
 		freeChanPool_.pop_back();
@@ -185,9 +177,8 @@ static Glyph glyphForSemitone(U8 note) {
 }
 
 void AhabGenerator::fillScaleWalkWith(std::string& notes, Usz len, std::mt19937& rng, int root, int scaleIdx) {
-	// Scales as semitone offsets from the root — the old hand-typed
-	// letter strings were not the scales they claimed to be and contained
-	// duplicate degrees.
+	// Scales as semitone offsets from the root (the old hand-typed letter
+	// strings were wrong and had duplicate degrees).
 	static int const kMajor[]        = {0, 2, 4, 5, 7, 9, 11};
 	static int const kNaturalMinor[] = {0, 2, 3, 5, 7, 8, 10};
 	static int const kPentatonic[]   = {0, 2, 4, 7, 9};
@@ -220,9 +211,8 @@ void AhabGenerator::fillScaleWalk(std::string& notes, Usz len, std::mt19937& rng
 	fillScaleWalkWith(notes, len, rng, std::uniform_int_distribution<int>(0, 11)(rng), std::uniform_int_distribution<int>(0, 3)(rng));
 }
 
-// The mechanical preconditions of "sounding like
-// anything at all". Deliberately stricter than the CI gate's aggregate bounds
-// because a rejected attempt costs only a re-roll, not a build failure.
+// Mechanical preconditions of "sounding like anything at all", stricter
+// than the CI gate's aggregate bounds — a rejected attempt costs a re-roll.
 static bool acceptable(PatternScore const& s) {
 	return !s.silent()
 		&& s.firstEventTick < 64
@@ -240,10 +230,9 @@ static bool acceptable(PatternScore const& s) {
 		&& (s.ccEvents == 0 || s.distinctCcValues > 1);
 }
 
-// Pure core generate-and-reject loop: score each attempt in a
-// throwaway sim and keep the best. Deterministic — retries derive their seeds
-// from the original seed, so the whole chain is reproducible and getSeed()
-// still describes the returned result. The returned buffer is selection-local.
+// Pure core generate-and-reject loop: score each attempt in a throwaway
+// sim and keep the best. Deterministic — retries derive seeds from the
+// original, so getSeed() still describes the returned result.
 ScratchPad AhabGenerator::generate(Usz height, Usz width, Config const& cfg) {
 	if (cfg.seed != 0) {
 		seed_ = cfg.seed;
@@ -287,10 +276,9 @@ ScratchPad AhabGenerator::generateOnce(Usz height, Usz width, Config const& cfg)
 	busVars_.clear();                        // clock bus placed by this call
 	derivedPlaced_ = 0;                      // Step 0 of the graph plan: counts THIS
 											 // attempt only, not discarded retries
-	// Refill the variable pool for this call — every letter except
-	// the reserved ones ('g' drives the master clock, 'qwer…' the clock
-	// bus) — voices must never collide with bus writers. Guarded erase:
-	// a typo in the alphabet must throw-free skip, not crash the UI.
+	// Refill the variable pool for this call, excluding reserved letters
+	// ('g' = master clock, 'qwer' = clock bus) so voices never collide with
+	// bus writers. Guarded erase: a typo in the alphabet skips, not crashes.
 	varPool_ = "abcdefghijklmnopqrstuvwxyz";
 	static char const* const kReservedVars = "gqwer";
 	for (char const* p = kReservedVars; *p; ++p) {
@@ -308,7 +296,8 @@ ScratchPad AhabGenerator::generateOnce(Usz height, Usz width, Config const& cfg)
 				if (chance(cfg.density)) {
 					Extent used = generateSimplePattern(buf, y, x, height, width);
 					x += used.empty() ? 1 : used.w + 1;
-				} else {
+				}
+				else {
 					x++;
 				}
 			}
@@ -341,14 +330,12 @@ bool AhabGenerator::randomize(AhabSim* sim, Usz startY, Usz startX,
 
 	ScratchPad buf = generate(height, width, cfg);
 
-	// Nothing generated -> no undo entry, no notify, no queue traffic.
+	// Nothing generated -> no undo entry, notify, or queue traffic.
 	if (!buf.dirty()) return false;
 
-	// One command, not one per glyph. loadRectFromOrcaRequest already does
-	// pushUndo() + notifyTick() internally, so we must NOT do either here.
-	// Untouched cells are '.', so the full-rect paste also clears prior content
-	// in the rect (cfg.clearFirst); overlay mode would need the existing field
-	// contents and is not supported yet.
+	// One command, not one per glyph. loadRectFromOrcaRequest does
+	// pushUndo()+notifyTick() internally, so we must not here. Untouched
+	// cells are '.', so the full-rect paste also clears prior content.
 	Usz outH = 0, outW = 0;
 	return sim->loadRectFromOrcaRequest(buf.toOrca(), startY, startX, outH, outW, /*replace_field=*/false);
 }
@@ -385,8 +372,8 @@ AhabGenerator::Extent AhabGenerator::generateSimplePattern(ScratchPad& buf, Usz 
 		case 7: { // Track with short sequence
 			std::string notes;
 			fillPatchWalk(notes, 4); // in the patch key
-			// Fixed key '0': a standalone pattern has no clock driving the key
-			// cell, so a random key would just read one arbitrary fixed slot.
+			// Fixed key '0': no clock drives the key cell, so a random key
+			// would just read one arbitrary fixed slot.
 			return placeTrackPattern(buf, y, x, availW, '0', notes);
 		}
 		// The remaining primitives are wired in as standalone
@@ -400,14 +387,13 @@ AhabGenerator::Extent AhabGenerator::generateSimplePattern(ScratchPad& buf, Usz 
 		case 11: // Offset read
 			return placeOffsetPattern(buf, y, x, availW, randInt(0, 9) + '0', randInt(0, 9) + '0');
 		case 12: // MIDI row (silent without a bang neighbour — decoration)
-			// Decorative standalone row rides the lead's channel and register;
-			// neither draw touches shared state, so argument evaluation order
-			// cannot matter.
+			// Decorative standalone row rides the lead's channel/register;
+			// neither draw touches shared state, so eval order can't matter.
 			return placeMidiPattern(buf, y, x, availW, channelForRole(VoiceNode::Lead), randomOctaveForRole(VoiceNode::Lead), randomNote(), 'f', '4');
 		case 13: { // Variable round-trip: write then read on the SAME row
-			// A standalone var-read can never see a write (vars do
-			// not persist across ticks and order matters) — that is exactly a
-			// dangling read. Pair it with its own write instead.
+			// A standalone var-read can never see a write (vars don't persist
+			// across ticks and order matters) — a dangling read. Pair with its
+			// own write instead.
 			char name = allocateVarName();
 			if (!name) return {};
 			if (availW < 9) return {}; // 4 (write) + 1 gap + 4 (read)
@@ -418,17 +404,14 @@ AhabGenerator::Extent AhabGenerator::generateSimplePattern(ScratchPad& buf, Usz 
 	return {};
 }
 
-// Relationships first, layout second. planArrangement() decides
-// the cast and their couplings; the layout below emits leads before their
-// dependents so every reader sits physically below its writer (vars are
-// within-tick only). With only lead->dependent edges, emission
-// order IS the topological order of the coupling graph.
+// Relationships first, layout second. planArrangement() decides the cast
+// and couplings; the layout emits leads before dependents so every reader
+// sits below its writer (vars are within-tick only), making emission order
+// the topological order of the coupling graph.
 
-// Only these roles publish a pitch variable other voices
-// can read. Gates produce bangs; textures publish nothing. Bass publishes
-// too: its root/fifth line is a legitimate chain source. Counter publishes
-// its reflected line — but see the Operand scans below for why it must not
-// feed velocity cells.
+// Only these roles publish a pitch variable others can read. Gates produce
+// bangs; textures publish nothing. Bass and Counter publish too (see the
+// Operand scans below for why Counter must not feed velocity cells).
 bool publishesPitch(VoiceNode const& vn) {
 	return vn.role == VoiceNode::Lead || vn.role == VoiceNode::Harmony
 		|| vn.role == VoiceNode::Bass || vn.role == VoiceNode::Counter;
@@ -436,14 +419,12 @@ bool publishesPitch(VoiceNode const& vn) {
 
 std::vector<std::string> AhabGenerator::composeChannelLegend(
 	std::vector<VoiceNode> const& plan, std::vector<bool> const& placed) {
-	// Abbreviation per role, kept LOWERCASE with no 'V'/'v' anywhere.
-	// Lowercase matters twice: the quality gate's static variable-flow scan
-	// reads a 'V' as a variable operation even inside a comment span, and
-	// generated-field tests use RARE UPPERCASE LETTERS as operator
-	// fingerprints ('U' uclid, 'K' konkat, 'J'/'L' fan-in) — uppercase
-	// legend text would collide with those scans (observed: "DRUM" broke
-	// the shared-identity test's U-modulus parse).
-	// Bus is nullptr: it places no notes and owns no channel.
+	// Abbreviation per role, LOWERCASE with no 'V'/'v'. Lowercase matters
+	// twice: the quality gate's static variable-flow scan reads 'V' as a
+	// variable op even inside a comment, and generated-field tests use rare
+	// UPPERCASE letters as operator fingerprints ('U' uclid, 'K' konkat) —
+	// uppercase legend text would collide (observed: "DRUM" broke the
+	// shared-identity test's U-modulus parse). Bus is nullptr: no notes.
 	static char const* const kAbbr[static_cast<size_t>(VoiceNode::RoleCount)] = {
 		/* Bus     */ nullptr,
 		/* Bass    */ "bass",
@@ -538,11 +519,9 @@ AhabGenerator::Extent AhabGenerator::writeLegendBlock(ScratchPad& buf, Usz y, Us
 void AhabGenerator::placeChannelLegend(ScratchPad& buf, Usz y, Usz x, Usz h, Usz w,
 	std::vector<VoiceNode> const& plan, std::vector<bool> const& placed,
 	std::vector<Usz> const& sky) {
-	// Multi-row preferred (more legible AND placement-friendlier —
-	// its width is one entry wide, ~9 cols, so it fits interior gaps the
-	// ~30-col single-row strip cannot). The "ch" header states the
-	// convention (raw 0-based, matching the ':' glyph). Single-row strip is
-	// the fallback for wide-but-shallow gaps; skip when neither fits.
+	// Multi-row preferred (more legible and fits interior gaps the ~30-col
+	// single-row strip can't). The "ch" header states the convention (raw
+	// 0-based, matching the ':' glyph). Single-row strip is the fallback.
 	std::vector<std::string> lines = composeChannelLegend(plan, placed);
 	if (lines.empty()) return; // nothing placed: nothing to summarise
 
@@ -579,13 +558,9 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 	std::shuffle(ccPool_.begin(), ccPool_.end(), rng);
 
 	// Capacity scales with AREA so large scratchpads fill proportionally
-	// instead of capping at a handful of voices. The divisor is tuned to the
-	// real footprint of a voice plus its separator gap (~40 cells): density
-	// 0.5 now means "fill the selection", 0.1 leaves it airy. The old
-	// area/60 under-planned badly — a 16x32 Medium take planned three voices
-	// in a rect that fits ten. Hard-capped at 64 to bound layout work.
-	// Density 0 MUST plan nothing (the empty-generation contract pinned by
-	// the Phase 1 tests).
+	// (divisor tuned to a voice's ~40-cell footprint). Hard-capped at 64 to
+	// bound layout work. Density 0 MUST plan nothing (empty-generation
+	// contract pinned by tests).
 	int const capacity = std::min(64, (int)((float)(w * h) / 25.f * density + 0.5f));
 	if (capacity <= 0) return {};
 
@@ -619,7 +594,7 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 	// reserved entry in kRoleChannel is claimed at most once per plan and
 	// channels are distinct by construction instead of by luck.
 
-	// Lead: exactly one (was one per bus division). Clocked by the FIRST
+	// Lead: exactly one (was one per bus division). Clocked by the first
 	// bus division; without a bus it free-runs on its own clock.
 	if ((int)plan.size() < capacity && sounding() < budget) {
 		VoiceNode vp;
@@ -685,11 +660,9 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 			vp.param = (char)('0' + randInt(1, 3));
 			vp.inputs.push_back(Edge(j, Edge::Pitch, vp.param));
 			// Occasionally hang a Modulation edge off the Pitch this voice
-			// already consumes — layout turns it into a '!'-operator CC tail
-			// below the voice. An extra edge on an existing node rather than
-			// a new one: no plan capacity, no channel, only a control number
-			// from the per-call pool (the producer's published variable is
-			// reused, so no var either).
+			// already consumes — layout turns it into a '!'-operator CC tail.
+			// An extra edge on an existing node: no plan capacity, no channel,
+			// only a CC number from the per-call pool (reuses the variable).
 			if (chance(0.35f)) {
 				char cc = allocateCcNumber();
 				if (cc != 0) vp.inputs.push_back(Edge(j, Edge::Modulation, cc));
@@ -722,20 +695,12 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 		plan.push_back(vp);
 	}
 
-	// Counter: exactly one, a reflected second line:
-	// `pivot B src`. B is |idx(src) − idx(pivot)| poked with the CASE of the
-	// right operand, so the pivot decides both the range and the pitch-class
-	// spelling. It is pinned to 'Z' — TOP of the base36 range, UPPERCASE —
-	// for three reasons: an interior pivot reflects part of the line onto
-	// DIGIT glyphs, which midi_note_number_of rejects (silently dropped
-	// notes); a top-of-range pivot reflects every real source (note letters,
-	// indices 10..22) back into 13..25, also always letters; and the
-	// absolute difference is contrary to the source everywhere while the
-	// source stays below the pivot — which top-of-range makes unconditional.
-	// Uppercase matters: a lowercase pivot would spell every note SHARP
-	// (midi reads case as accidental), off the patch key. Publishes like
-	// Harmony does.
-	if ((int)plan.size() < capacity && sounding() < budget) {
+	// Counter: exactly one, a reflected second line `pivot B src`. B pokes
+	// |src - pivot| with the case of its right operand, so the pivot decides
+	// range and spelling. Pinned to 'Z': top-of-range keeps reflections on
+	// letter glyphs (interior pivots reflect onto digits, which are dropped),
+	// makes motion contrary below the pivot, and uppercase spells naturals.
+	// Publishes like Harmony.
 		for (size_t j = 0; j < plan.size(); ++j) {
 			if (!publishesPitch(plan[j]) || plan[j].notes.empty()) continue;
 			if (!chance(0.65f)) continue;
@@ -761,17 +726,17 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 	// uniqueness makes that concern moot — there is only ever this one.
 	if ((int)plan.size() < capacity && sounding() < budget) {
 		// Primary source first: the first publisher that passes the chance
-		// gate. Deciding fan-in only AFTER a primary exists means a failed
-		// chance never wastes an already-drawn trigger note, and a gate
-		// falls back to the plain branch instead of vanishing.
+		// gate. Deciding fan-in only after a primary exists means a failed
+		// chance never wastes a drawn trigger note, and a gate falls back to
+		// the plain branch instead of vanishing.
 		for (size_t j = 0; j < plan.size(); ++j) {
 			if (!publishesPitch(plan[j]) || plan[j].notes.empty()) continue;
 			if (!chance(0.65f)) continue;
 
-			// Fan-in: gate this note on a DIFFERENT publisher hitting one
-			// of its own — chosen at random among the remaining qualifiers.
-			// A lowest-index pick here would always make the Lead the
-			// trigger and bar it from being the Pitch source.
+			// Fan-in: gate this note on a DIFFERENT publisher hitting one of
+			// its own — chosen at random among the remaining qualifiers. A
+			// lowest-index pick would always make the Lead the trigger and bar
+			// it from being the Pitch source.
 			size_t others[8];
 			int no = 0;
 			for (size_t t = 0; t < plan.size() && no < 8; ++t) {
@@ -840,10 +805,10 @@ std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float densit
 void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Usz w, float density,
 	size_t budget) {
 	// Identity + bus. The bus is packed by the same skyline as every other
-	// voice — usually the top-left corner — and the voices reading it share
-	// its band to the right: ORCA scans left-to-right, so a same-row write
-	// left of a read is visible. Reserving a full band for ~15 columns of
-	// clocks stranded the entire top-right of wide selections.
+	// voice — usually the top-left corner — and voices reading it share its
+	// band to the right (ORCA scans left-to-right, so a same-row write left
+	// of a read is visible). Reserving a full band for ~15 columns of clocks
+	// stranded the entire top-right of wide selections.
 	size_t const busUnits = std::min<Usz>(4, (w + 1) / 5);
 	bool const busPlaced = h >= 2 && w >= 8 && density > 0.2f;
 	size_t const nBus = busPlaced ? busUnits : 0;
@@ -856,9 +821,9 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 	// visible same-row-left of its readers (scan order).
 	Usz const top = y;
 	// Density buys breathing room as well as count: the sparser the choice,
-	// the wider the margin the packer reserves around every voice, so the
-	// few blocks of a Sparse take spread across the whole selection instead
-	// of clustering in one corner. Packed (100%) keeps zero margins.
+	// the wider the margin the packer reserves, so a Sparse take's few
+	// blocks spread across the whole selection instead of clustering. Packed
+	// (100%) keeps zero margins.
 	Usz const gapX = (Usz)((1.f - density) * 6.f);
 	Usz const gapY = (Usz)((1.f - density) * 3.f);
 
@@ -878,9 +843,9 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 				}
 				// A Bass without its bus variable would silently fall back to
 				// placeArpeggioVoice's own-clock branch — exactly the
-				// free-running bass the planner refuses to build. Drop it
-				// instead; the plan-level guard (nBus > 0) cannot see a bus
-				// that failed to PLACE here.
+				// free-running bass the planner refuses to build. Drop it;
+				// the plan-level guard (nBus > 0) can't see a bus that failed
+				// to PLACE here.
 				if (vn.role == VoiceNode::Bass && sharedVar == 0) {
 					vn.publishedVar = 0;
 					return Extent();
@@ -976,33 +941,25 @@ void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Us
 		}
 	};
 
-	// Skyline packing. The shelf packer before it advanced one cursor left
-	// to right and only moved down on wrap, so the space UNDER a short
-	// voice — a 2-row texture beside a 5-row lead strands three rows for
-	// the rest of the band — stayed blank no matter how many voices were
-	// planned. sky[c] tracks the first free row of selection column c; each
-	// voice takes the SHALLOWEST column run that clears the skyline and its
-	// producers' bottoms, and later voices reclaim exactly those under-band
-	// gaps. Processing stays in plan-index order (already topological:
-	// every edge points to an earlier node), so leads claim the top first,
-	// dependents slot below their producers, texture backfills the rest.
+	// Skyline packing: sky[c] is the first free row of selection column c.
+	// Each voice takes the column run that clears the skyline and its
+	// producers' bottoms, landing closest to a depth target from plan order
+	// (leads high, texture deep). Plan-index order is already topological.
 	std::vector<Usz> sky(w, top);
 	std::vector<Usz> placedBottom(plan.size(), h); // sentinel: not yet placed
-	// Legend support: whether voice i
-	// actually PLACED. "Planned" and "placed" genuinely differ — the packer
-	// drops voices when no column run fits (!found) and builders return empty
-	// extents when their minimum footprint doesn't fit. Set ONLY at the
-	// placedBottom assignment below, so every continue path leaves it false.
+	// Legend support: whether voice i actually PLACED. "Planned" and
+	// "placed" differ — the packer drops voices when no column run fits and
+	// builders return empty extents when their minimum footprint doesn't
+	// fit. Set ONLY at the placedBottom assignment below.
 	std::vector<bool> placed(plan.size(), false);
 
 	for (size_t i = 0; i < plan.size(); ++i) {
 		VoiceNode& vn = plan[i];
 
 		// A voice must start below the content bottom of every producer whose
-		// variables it reads (producers precede it in plan order). For the
-		// bus that "bottom" is its WRITE row (see placement below): readers
-		// of the bus may share its band, but only at or below the row the
-		// write happens on.
+		// variables it reads (producers precede it in plan order). For the bus
+		// that "bottom" is its WRITE row: readers may share its band only at
+		// or below the row the write happens on.
 		Usz minY = top;
 		for (Edge const& e : vn.inputs) {
 			minY = std::max(minY, placedBottom[e.from]);
@@ -1270,8 +1227,8 @@ AhabGenerator::Extent AhabGenerator::placeMidiPattern(ScratchPad& buf, Usz y, Us
 
 AhabGenerator::Extent AhabGenerator::placeVarWrite(ScratchPad& buf, Usz y, Usz x, Usz maxW, char name, char value) {
 	if (maxW < 4) return {};
-	// '.' as the value would store a literal '.' into the variable forever
-	// (review §1.3): pass a real initial value even if a producer above
+	// '.' as the value would store a literal '.' into the variable forever:
+	// pass a real initial value even if a producer above
 	// overwrites the cell every tick.
 	assert(value != '.' && "V-write with '.' value is a permanent no-op store");
 	// .nVv format
@@ -1283,7 +1240,7 @@ AhabGenerator::Extent AhabGenerator::placeVarWrite(ScratchPad& buf, Usz y, Usz x
 }
 
 AhabGenerator::Extent AhabGenerator::placeVarRead(ScratchPad& buf, Usz y, Usz x, Usz maxW, char name) {
-	// Writes 4 cells (..Vn), so require 4 columns of budget (review §1.4)
+	// Writes 4 cells (..Vn), so require 4 columns of budget
 	if (maxW < 4) return {};
 	// ..Vn format (read variable, output below)
 	buf.set(y, x, '.');
@@ -1351,8 +1308,8 @@ AhabGenerator::Extent AhabGenerator::placeHaltPattern(ScratchPad& buf, Usz y, Us
 
 AhabGenerator::Extent AhabGenerator::placeOffsetPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char offX, char offY) {
 	if (maxW < 4) return {};
-	// .y x O format — O reads its x operand from (0,-1) and y from (0,-2), so
-	// the cell next to 'O' is offX and the one before it is offY (review §1.5)
+	// .y x O format — O reads its x operand from (0,-1) and y from (0,-2),
+	// so the cell next to 'O' is offX and the one before it is offY
 	buf.set(y, x, '.');
 	buf.set(y, x+1, offY);
 	buf.set(y, x+2, offX);
@@ -1369,7 +1326,7 @@ AhabGenerator::Extent AhabGenerator::placeDelayMidiVoice(ScratchPad& buf, Usz y,
 	if (maxH < 2 || maxW < 9) return {};
 	// Row 0: .rDm — D at x+2 pokes its '*' output to (y+1, x+2)
 	placeDelayPattern(buf, y, x, maxW, rate, mod);
-	// §4.1: with a velocity source, a K row pokes it into the velocity cell
+	// With a velocity source, a K row pokes it into the velocity cell
 	// below — same footprint, one live operand instead of a fixed 'f'.
 	if (velocityVar != 0) {
 		buf.set(y, x + 5, '1');      // K length: velocity only
@@ -1395,7 +1352,7 @@ AhabGenerator::Extent AhabGenerator::placeUclidMidiVoice(ScratchPad& buf, Usz y,
 	if (maxH < 2 || maxW < 9) return {};
 	// Row 0: .sUm — U at x+2 pokes its '*' output to (y+1, x+2)
 	placeUclidPattern(buf, y, x, maxW, steps, max);
-	// §4.1: with a velocity source, a K row pokes it into the velocity cell
+	// With a velocity source, a K row pokes it into the velocity cell
 	// below — same footprint, one live operand instead of a fixed 'c'.
 	if (velocityVar != 0) {
 		buf.set(y, x + 5, '1');      // K length: velocity only
@@ -1432,7 +1389,7 @@ AhabGenerator::Extent AhabGenerator::placeArpeggioVoice(ScratchPad& buf, Usz y, 
 	char bangRate = randomSmallDigit();
 
 	// Anchor every column off the ':' so operand offsets stay explicit — bare
-	// x+2/x+3 literals are exactly how review §1's off-by-ones hid.
+	// x+2/x+3 literals are how off-by-ones hide.
 	const Usz colMidi = x + 3;       // ':' itself
 	const Usz colNote = colMidi + 3; // channel +1, octave +2, note +3
 
@@ -1467,7 +1424,7 @@ AhabGenerator::Extent AhabGenerator::placeArpeggioVoice(ScratchPad& buf, Usz y, 
 	buf.set(y+2, x+4, '.');          // value slot, poked by the track each tick
 
 	// Row 3: bang source (D pokes '*' to (y+4, x+2)) plus the read that fills
-	// the note cell. With a velocity source (§4.1), a K (konkat) row replaces
+	// the note cell. With a velocity source, a K (konkat) row replaces
 	// the V-read: it reads TWO variable names and pokes their values into the
 	// note AND velocity cells below — exactly the V-read's footprint, one
 	// more live operand. The velocity cell keeps its literal as a prefill:
@@ -1642,21 +1599,17 @@ AhabGenerator::Extent AhabGenerator::placeDerivedVoice(ScratchPad& buf, Usz y, U
 	}
 
 	if (sourceVarB != 0) {
-		// This voice sounds only when BOTH
-		// conditions hold — the lead pitch equals param AND the second
-		// publisher's pitch equals paramB. The two compares are merged
-		// exactly, and every operator in the chain is uppercase, so each
-		// cell is refreshed EVERY tick — no stale '*' can linger:
+		// Sounds only when BOTH holds: lead pitch == param AND second
+		// publisher pitch == paramB. Every operator is uppercase, so each
+		// cell refreshes every tick - no stale '*' can linger:
 		//
-		//   r0:  .  V  sA                      read lead pitch -> (r1,x+4)
-		//   r1:           F  p                 oA = '*' iff lead == param
-		//   r2:  .  V  sB       oA             read 2nd pitch; oA lands here
-		//   r3:        F  q  J                 oB = '*' iff 2nd == paramB;
-		//   r4:      oB L  oA                  L: '.' if either input is '.',
-		//                              else min. '*' has index 0, so two
-		//                              stars min to index 0 -> glyph '0'
-		//   r5:         F  0                   '*' iff the merge saw two stars
-		//   r6:         :  c  o  n  f  4       banged by that F on its left
+		//   r0:  .  V  sA          read lead pitch -> (r1,x+4)
+		//   r1:           F  p     oA = '*' iff lead == param
+		//   r2:  .  V  sB   oA     read 2nd pitch; oA lands here
+		//   r3:        F  q  J     oB = '*' iff 2nd == paramB; J relays oA
+		//   r4:      oB L  oA      L: '.' if either input is '.', else min
+		//   r5:         F  0       '*' iff the merge saw two stars
+		//   r6:         :  c  o  n f 4   banged by that F on its left
 		//
 		// (Columns relative to x; the lead read on r0 was emitted above.)
 		buf.set(y + 2, x + 1, '.');
@@ -1704,21 +1657,15 @@ AhabGenerator::Extent AhabGenerator::placeDerivedVoice(ScratchPad& buf, Usz y, U
 
 AhabGenerator::Extent AhabGenerator::placeModulationTail(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
 														   char channel, char control, char sourceVar) {
-	// Two rows hung below the voice they express;
-	// the producer's V-write must sit above (vars are within-tick):
+	// Two rows hung below the voice they express; the producer V-write
+	// must sit above (vars are within-tick):
 	//
-	//   r0: . r D 2 . V s    D pokes '*' to (r1,c+1); the read pokes (r1,c+5)
-	//   r1: . * ! c k .      '!' banged from its left; value cell fed above
+	//   r0: . r D 2 . V s    D pokes '*' to (r1,c+1); read pokes (r1,c+5)
+	//   r1: . * ! c k .      '!' banged from its left; value fed from above
 	//
-	// (columns relative to x; midicc operands are channel +1, control +2,
-	// value +3 from the '!' — so the V-read parks exactly over the value
-	// cell.) midicc needs a neighbouring bang exactly like ':' and does NOT
-	// early-return on a '.' value: an unwritten variable would emit a
-	// constant 0 forever — the failure signature of distinctCcValues
-	// exists to catch. The plan's optional 'A' scaling row is deliberately
-	// omitted: 'A' only SHIFTS the value (note glyphs C..B sit at base36
-	// indices 12..23, i.e. mid-range CC ~43..83 through midicc's
-	// idx*127/35), it cannot compress, so the extra row bought nothing.
+	// midicc needs a bang like ':' and does NOT early-return on a '.'
+	// value: an unwritten variable would emit a constant 0 forever - the
+	// stuck-CC failure the quality gate catches.
 	if (maxH < 2 || maxW < 7) return {};
 
 	Usz const colV = x + 5; // the read's V; also the value cell below it

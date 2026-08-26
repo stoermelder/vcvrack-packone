@@ -14,33 +14,30 @@ extern "C" {
 namespace StoermelderPackOne {
 namespace Ahab {
 
-// An inbound coupling edge: the consumer
-// reads from VoiceNode `from` according to `kind`.
-// NB: explicit constructors instead of NSDMI-only — the plugin builds as
-// C++11, where NSDMIs disable aggregate brace-initialization (see Extent).
+// An inbound coupling edge: the consumer reads from VoiceNode `from` per
+// `kind`. NB: explicit constructors instead of NSDMI-only — the plugin builds
+// as C++11, where NSDMIs disable aggregate brace-initialization (see Extent).
 struct Edge {
 	size_t from;        // index of the producing VoiceNode
 	enum Kind {
 		Clock,          // drives the consumer's track key (today: bus division)
 		Pitch,          // consumer transposes/derives from the producer's pitch
 		Trigger,        // consumer fires only when the producer's pitch matches
-		// the consumer maps the producer's published
-		// pitch onto a MIDI CC ('!' operator) on the CONSUMER's channel.
-		// A tail on an existing voice, not a new voice: it consumes no plan
-		// capacity and no channel, only a control number (param).
+		// The consumer maps the producer's published pitch onto a MIDI CC ('!'
+		// operator) on the CONSUMER's channel. A tail on an existing voice, not
+		// a new voice: it consumes no plan capacity and no channel, only a
+		// control number (param).
 		Modulation,
-		// An OPERAND CELL of the consumer's
-		// ':' row is fed from the producer's published pitch through a K
-		// (konkat) row — no new event, one more live field in the note the
-		// voice already fires. One K row mirrors several Operand edges on the
-		// same node; `param` names the target cell (OpCell constants).
-		// Deliberately NOT merged into Modulation: different destination
-		// (operand cell vs separate CC event), and a different risk class —
-		// the midi operator returns early on velocity 0 (it IS a note-off),
-		// so an Operand edge can cause silence where Modulation cannot.
-		// Builders keep a non-zero literal floor in every K-fed cell and
-		// sources are pitch publishers only (glyph indices >= 12). Velocity
-		// is also non-linear (idx*8-1, clamped at 127 from index 16).
+		// An OPERAND CELL of the consumer's ':' row is fed from the producer's
+		// published pitch via a K (konkat) row — no new event, one extra live
+		// field in the note the voice already fires. One K row mirrors several
+		// Operand edges; `param` names the target cell (OpCell constants).
+		// Kept separate from Modulation: different destination (operand cell vs
+		// CC event) and risk class — the midi operator returns early on
+		// velocity 0 (a note-off), so an Operand edge can silence where
+		// Modulation cannot. Builders keep a non-zero literal floor in every
+		// K-fed cell; sources are pitch publishers only (glyph index >= 12).
+		// Velocity is non-linear (idx*8-1, clamped at 127 from index 16).
 		Operand
 	} kind;
 	char param;         // Clock: division index; Pitch: interval (Counter:
@@ -59,10 +56,9 @@ struct Edge {
 	Edge(size_t from_, Kind kind_, char param_) : from(from_), kind(kind_), param(param_) {}
 };
 
-// One planned voice in an arrangement. The
-// planner produces these WITHOUT touching a ScratchPad; layout consumes them,
-// filling publishedVar as each voice is placed. Part of the tested surface:
-// tests can assert on graph shape directly.
+// One planned voice in an arrangement. The planner produces these without
+// touching a ScratchPad; layout fills publishedVar as each voice is placed.
+// Tests can assert on graph shape directly.
 struct VoiceNode {
 	enum Role { Bus, Bass, Lead, Harmony, Gate, Drums, Delay, Uclid, Chord,
 		Counter, RoleCount };
@@ -72,29 +68,24 @@ struct VoiceNode {
 	std::string notes;    // Lead sequence / Chord tones (patch scale)
 	char param = '2';     // Harmony: transpose steps; Gate: trigger note
 
-	// Set by layout once the voice is placed: the variable it publishes its
-	// pitch into, or 0 if it publishes nothing. Consumers read this.
+	// Set by layout once placed: the variable this voice publishes its pitch
+	// into, or 0 if none. Consumers read this.
 	char publishedVar = 0;
 
 	// Inbound edges. Empty => a root voice (its own clock, no dependency).
 	std::vector<Edge> inputs;
 };
 
-// Channel policy, replacing the shuffled "0123" pool.
+// Channel policy: which MIDI channel carries which role.
 //
-// RESERVED: one fixed channel per primary role. Channel identity is
-// MEANINGFUL here — ch0 is always the bass — so a user patches these into
-// a rack once and re-rolls freely. CV-backed channels are the first four
-// BY DESIGN: OUT_OUTPUT jacks exist only for channels 0-3, so the
-// four roles most worth patching as CV — Bass, Lead, Harmony, Chord, the
-// harmonic core — take them; Gate is reserved but MIDI-only. Rows are in
-// VoiceNode::Role declaration order and ordered by register within that
-// constraint, so Step 4's octave derivation stays coherent.
+// RESERVED entries give every primary role a fixed channel (ch0 is always the
+// bass) so a rack can be patched once and re-rolled freely. Channels 0-3 are
+// the four with CV jacks, so Bass/Lead/Harmony/Chord (the harmonic core) take
+// them; Gate is reserved but MIDI-only. Rows follow VoiceNode::Role order.
 //
 // FREE ('a'-'f' = base36, MIDI channels 10-15): no fixed meaning. Texture
-// voices and anything without a reserved entry draw from here, so the
-// reserved mapping is never disturbed. A 0 entry means "draw from the
-// free region".
+// voices and anything without a reserved entry draw from here, so the reserved
+// mapping is never disturbed. A 0 entry means "draw from the free region".
 static char const kRoleChannel[] = {
 	/* Bus     */ 0,    // places no notes
 	/* Bass    */ '0',
@@ -105,15 +96,14 @@ static char const kRoleChannel[] = {
 	/* Delay   */ 0,    // free region
 	/* Uclid   */ 0,    // free region
 	/* Chord   */ '3',
-	/* Counter */ '4',  // vocabulary plan Step 4: reflected counter-line
+	/* Counter */ '4',  // reflected counter-line
 };
 static char const kFreeChannels[] = "abcdef"; // base36: MIDI channels 10-15
 static_assert(sizeof(kRoleChannel) == static_cast<size_t>(VoiceNode::RoleCount),
 	"one channel-policy row per VoiceNode::Role — decide reserved-or-free for any new role");
 
-// How many voices may sound at all. At least
-// a solo lead; at most the reserved table plus the free region with slack
-// (beyond 12 the free region wraps, so the promise degrades among texture).
+// How many voices may sound at all: at least a solo lead; at most the reserved
+// table plus the free region with slack (beyond 12 the free region wraps).
 static int const kMinChannelBudget = 1;
 static int const kMaxChannelBudget = 16;
 
@@ -130,10 +120,9 @@ static int const kMaxChannelBudget = 16;
  */
 struct AhabGenerator {
 	// Occupied size of a placed pattern/voice. Voices report their real height
-	// so the arrangement advances past the tallest voice in a row instead of a
-	// fixed 3 rows that made 5-row voices overlap each other.
-	// NB: explicit constructors instead of NSDMI-only — the plugin builds as
-	// C++11, where NSDMIs disable aggregate brace-initialization.
+	// so the arrangement advances past the tallest voice in a row (a fixed 3
+	// rows made 5-row voices overlap). NB: explicit constructors (C++11 NSDMI
+	// disables aggregate brace-initialization).
 	struct Extent {
 		Usz h;
 		Usz w;
@@ -146,23 +135,20 @@ struct AhabGenerator {
 		float density = 0.3f;
 		uint32_t seed = 0;       // 0 = keep the seed given to the constructor
 		bool clearFirst = true;  // paste overwrites the whole rect; overlay mode not yet supported
-		// Channel budget: how many voices may sound at all. Caps the
-		// voice count, selects which roles appear (first N in priority
-		// order), and matches the patch to the rig — default 4 so every
-		// generated voice lands on a CV-patchable channel.
+		// Channel budget: how many DISTINCT channels may sound. Density still
+		// drives voice count; this caps the channel set only, and matches the
+		// patch to the rig - default 4 so every reserved role lands on a CV
+		// channel. Texture voices share channels once the set is full.
 		int channels = 4;
-		// Generate-and-reject. When on (default), generate()
-		// scores each attempt with scorePattern() and re-rolls deterministically,
-		// keeping the best. Turn OFF when measuring the raw generator (the CI
-		// gate in Ahab.test.Randomizer.hpp does exactly that).
+		// Generate-and-reject: when on (default), generate() scores each attempt
+		// with scorePattern() and re-rolls deterministically, keeping the best.
+		// Turn OFF when measuring the raw generator (the CI gate does exactly that).
 		bool qualityGate = true;
 
-		// JSON round-trip for everything that should survive patch save/load.
-		// The module persists its "settings that produced the current result"
-		// as a "generator" subobject; vocabulary plan §5 will add key/scale/
-		// feel/coupling fields to Config, and persistence comes along in this
-		// one place. clearFirst is deliberately excluded: overlay mode is not
-		// implemented and not user-facing.
+		// JSON round-trip for everything that survives patch save/load. The
+		// module persists its generator settings as a "generator" subobject; new
+		// steerable fields go here. clearFirst is excluded (overlay mode is
+		// unimplemented and not user-facing).
 		static json_t* toJson(Config const& cfg) {
 			json_t* j = json_object();
 			json_object_set_new(j, "density", json_real(cfg.density));
@@ -194,7 +180,7 @@ struct AhabGenerator {
 
 	/**
 	 * Pure core: decide what glyphs to place — deterministic given a seed.
-	 * With cfg.qualityGate on, runs the generate-and-reject loop (6.3): each
+	 * With cfg.qualityGate on, runs a generate-and-reject loop: each
 	 * attempt is scored in a throwaway AhabSim, which ALLOCATES — therefore
 	 * UI-thread only (simRandomize). Never call from the DSP thread.
 	 * @param height Number of rows to generate
@@ -214,59 +200,56 @@ struct AhabGenerator {
 
 	uint32_t getSeed() const { return seed_; }
 
-	// Shared rhythmic identity, valid after generate(): every
-	// clock/delay/uclid modulus in the patch divides this bar length.
+	// Shared rhythmic identity, valid after generate(): every clock/delay/uclid
+	// modulus in the patch divides this bar length.
 	Usz getBarMod() const { return barMod_; }
-	// Clock bus: the variables the top-of-field bus published this
-	// call (a subset of "qwer"), in placement order. Voices read these
-	// instead of carrying their own clocks.
+	// Clock bus: the variables the top-of-field bus published this call (a
+	// subset of "qwer"), in placement order. Voices read these instead of
+	// carrying their own clocks.
 	std::string const& getBusVars() const { return busVars_; }
-	// number of derived voices placed by the last generate().
+	// Number of derived voices placed by the last generate().
 	int getDerivedPlaced() const { return derivedPlaced_; }
 
 	/**
-	 * Legend text: one entry per
-	 * PLACED role, in plan order, duplicate roles collapsed — "N ABBR"
-	 * where N is the RAW 0-based MIDI channel (matching the ':' glyph the
-	 * user looks at next) and ABBR names the role. Pure: no rng, no
-	 * ScratchPad, no placement. Empty output when nothing placed.
+	 * Legend text: one entry per PLACED role, in plan order, duplicate roles
+	 * collapsed — "N ABBR" where N is the RAW 0-based MIDI channel (matching
+	 * the ':' glyph the user looks at next) and ABBR names the role. Pure: no
+	 * rng, no ScratchPad, no placement. Empty output when nothing placed.
 	 *
-	 * Abbreviations deliberately contain NO 'V': scorePattern's static
-	 * variable-flow scan reads a 'V' as a variable operation even inside
-	 * a comment span, and legend text must stay invisible to it.
+	 * Abbreviations contain NO 'V': scorePattern's static variable-flow scan
+	 * reads a 'V' as a variable operation even inside a comment span, so
+	 * legend text must stay invisible to it.
 	 */
 	static std::vector<std::string> composeChannelLegend(
 		std::vector<VoiceNode> const& plan, std::vector<bool> const& placed);
 
 	/**
-	 * Free-rectangle search: true
-	 * and outY/outX set when an all-'.' needH x needW rectangle fits inside
-	 * the selection at (y, x, h, w); false otherwise. Deterministic — scans
-	 * row-major, so the FIRST fitting anchor (lowest y, then lowest x) wins.
+	 * Free-rectangle search: true and outY/outX set when an all-'.' needH x
+	 * needW rectangle fits inside the selection at (y, x, h, w); false otherwise.
+	 * Deterministic — scans row-major, so the FIRST fitting anchor (lowest y,
+	 * then lowest x) wins.
 	 *
 	 * The skyline only short-circuits: cells above sky[c] are packed, so a
 	 * rectangle overlapping them fails the buffer scan anyway — skipping the
 	 * reads is purely an optimisation. The BUFFER is the sole authority:
-	 * skyline and reality can disagree (inflated separators,
-	 * builders smaller than their reserved footprint, the known
-	 * footprint-overlap bug), and makes writing over live cells
-	 * non-recoverable.
+	 * skyline and reality can disagree (inflated separators, builders smaller
+	 * than their reserved footprint, the known footprint-overlap bug), making
+	 * writes over live cells non-recoverable.
 	 */
 	static bool findFreeRect(ScratchPad const& buf, std::vector<Usz> const& sky,
 		Usz y, Usz x, Usz h, Usz w, Usz needH, Usz needW, Usz& outY, Usz& outX);
 
 	/**
-	 * Writes each
-	 * line as one '#'-'#' delimited row anchored at (y, x), all rows padded
-	 * to equal width (widest line + 2) — the same marker shape as the
-	 * widget's toggleCommentBlock. Returns the extent actually written,
+	 * Writes each line as one '#'-'#' delimited row anchored at (y, x), all
+	 * rows padded to equal width (widest line + 2) — the same marker shape as
+	 * the widget's toggleCommentBlock. Returns the extent actually written,
 	 * {0, 0} when nothing was written.
 	 *
 	 * Precondition: the caller verified the target rectangle is free
-	 * (findFreeRect) and wide enough for the widest line — this function
-	 * writes unconditionally. All-or-nothing: if any line contains '#'
-	 * (which would terminate the comment early and unlock everything right
-	 * of it), NOTHING is written.
+	 * (findFreeRect) and wide enough for the widest line — this writes
+	 * unconditionally. All-or-nothing: if any line contains '#' (which would
+	 * terminate the comment early and unlock everything right of it), NOTHING
+	 * is written.
 	 */
 	static Extent writeLegendBlock(ScratchPad& buf, Usz y, Usz x,
 		std::vector<std::string> const& lines);
@@ -277,12 +260,11 @@ struct AhabGenerator {
 	int getPatchScaleIndex() const { return patchScaleIdx_; }
 
 	/**
-	 * Fill notes with a random walk over a random scale (major / natural
-	 * minor / pentatonic / dorian). Scales are stored as semitone offsets and
-	 * converted to glyphs with the same mapping sim.c uses
-	 * (from_midi_note_number: lowercase = sharp), so every emitted glyph is a
-	 * note the ':' operator accepts. Static and rng-parameterised so tests can
-	 * drive it directly.
+	 * Fill notes with a random walk over a random scale (major / natural minor
+	 * / pentatonic / dorian). Scales are stored as semitone offsets and
+	 * converted to glyphs with sim.c's mapping (from_midi_note_number:
+	 * lowercase = sharp), so every emitted glyph is a note the ':' operator
+	 * accepts. Static and rng-parameterised so tests can drive it directly.
 	 */
 	static void fillScaleWalk(std::string& notes, Usz len, std::mt19937& rng);
 
@@ -293,36 +275,34 @@ struct AhabGenerator {
 	static void fillScaleWalkWith(std::string& notes, Usz len, std::mt19937& rng, int root, int scaleIdx);
 
 	/**
-	 * Bass line: root and fifth of the patch scale only
-	 * — a foundation, not a melody. Static and rng-parameterised
-	 * so tests can drive it directly.
+	 * Bass line: root and fifth of the patch scale only — a foundation, not a
+	 * melody. Static and rng-parameterised so tests can drive it directly.
 	 */
 	static void fillBassWalkWith(std::string& notes, Usz len, std::mt19937& rng, int root, int scaleIdx);
 
 	/**
-	 * Chord pattern: multiple MIDI notes triggered together
-	 * From chord.orca example. N stacked delay+MIDI pairs with IDENTICAL
-	 * rate/mod: D fires when Tick%(rate*mod)==0 regardless of position, so
-	 * every note's bang lands on the same tick — a true simultaneous chord.
-	 * (The old single-delay fan-out left notes 2..N without a bang neighbour
-	 * and permanently silent.)
+	 * Chord pattern: multiple MIDI notes triggered together (from chord.orca).
+	 * N stacked delay+MIDI pairs with IDENTICAL rate/mod: D fires when
+	 * Tick%(rate*mod)==0 regardless of position, so every note's bang lands on
+	 * the same tick — a true simultaneous chord. (The old single-delay fan-out
+	 * left notes 2..N without a bang neighbour and permanently silent.)
 	 */
 	Extent placeChordVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
 						   char rate, char mod, char channel, char octave, const std::vector<char>& notes,
 						   char velocityVar = 0);
 	/**
-	 * Derived voice: reads another voice's published pitch variable
-	 * (which must be WRITTEN ABOVE this voice — vars are within-tick only,
-	 * and derives from it:
-	 *   gate == false: transposes by param scale-degree steps ('A' add)
-	 *                  -> a harmony line locked to the lead.
-	 *   gate == true:  fires ONLY when the lead pitch equals param ('F' if)
-	 *                  -> call-and-response gating. With sourceVarB != 0 the
-	 *                  voice additionally requires the second publisher's
-	 *                  pitch to equal paramB: an
-	 *                  exact AND-merge (F/J/L/F chain, Extent 7x12) with
-	 *                  every cell refreshed each tick, so no stale bang.
-	 * Public so tests can drive it against a hand-placed writer.
+	 * Derived voice: reads another voice's published pitch variable (which must
+	 * be WRITTEN ABOVE this voice — vars are within-tick only) and derives from
+	 * it:
+	 *   gate == false: transposes by param scale-degree steps ('A' add) -> a
+	 *                  harmony line locked to the lead.
+	 *   gate == true:  fires ONLY when the lead pitch equals param ('F' if) ->
+	 *                  call-and-response gating. With sourceVarB != 0 the voice
+	 *                  additionally requires the second publisher's pitch to
+	 *                  equal paramB: an exact AND-merge (F/J/L/F chain, Extent
+	 *                  7x12) with every cell refreshed each tick, so no stale
+	 *                  bang. Public so tests can drive it against a hand-placed
+	 *                  writer.
 	 */
 	Extent placeDerivedVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
 						char channel, char sourceVar, bool gate, char param,
@@ -330,19 +310,18 @@ struct AhabGenerator {
 						char sourceVarB = 0, char paramB = 0,
 						char arithGlyph = 'A');
 	/**
-	 * Modulation tail: maps a producer's published
-	 * pitch variable onto a MIDI CC on channel/control. Two rows hung BELOW
-	 * the voice it expresses; the producer's V-write must sit above (vars
-	 * are within-tick). Public so tests can drive it against a hand-placed
-	 * writer.
+	 * Modulation tail: maps a producer's published pitch variable onto a MIDI
+	 * CC on channel/control. Two rows hung BELOW the voice it expresses; the
+	 * producer's V-write must sit above (vars are within-tick). Public so tests
+	 * can drive it against a hand-placed writer.
 	 */
 	Extent placeModulationTail(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
 						char channel, char control, char sourceVar);
 	/**
-	 * Plan half of the arrangement: returns the cast and
-	 * their couplings. No glyphs placed, no ScratchPad touched — deterministic
-	 * given the instance seed, so tests can assert on plan shape directly.
-	 * Returns an empty vector when the area/density budget is exhausted.
+	 * Plan half of the arrangement: returns the cast and their couplings. No
+	 * glyphs placed, no ScratchPad touched — deterministic given the instance
+	 * seed, so tests can assert on plan shape directly. Returns an empty vector
+	 * when the area/density budget is exhausted.
 	 * @param nBus number of clock-bus divisions already placed above
 	 * @param budget sounding-voice cap; the bus node does not count.
 	 * Default 64 = capacity's own hard cap, i.e. no budget beyond capacity —
@@ -353,12 +332,11 @@ struct AhabGenerator {
 		size_t budget = 64);
 
 	/**
-	 * Arpeggio pattern: clock (or the shared clock bus) → track → variable → MIDI
-	 * Example from examples: .gC4 / .14T1324 / .aV3
-	 * When sharedVar is a bus variable (q/w/e/r), the voice reads that bus
-	 * clock instead of carrying its own C row; 0 = own clock.
-	 * If allocatedVar is non-null it receives the variable the voice publishes
-	 * its current pitch into — the hook derived voices follow.
+	 * Arpeggio pattern: clock (or the shared clock bus) → track → variable →
+	 * MIDI. Example: .gC4 / .14T1324 / .aV3. When sharedVar is a bus variable
+	 * (q/w/e/r), the voice reads that bus clock instead of its own C row; 0 =
+	 * own clock. If allocatedVar is non-null it receives the variable the voice
+	 * publishes its current pitch into — the hook derived voices follow.
 	 */
 	Extent placeArpeggioVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
 												char channel, const std::string& notes, char sharedVar = 0, char* allocatedVar = nullptr,
@@ -369,13 +347,11 @@ struct AhabGenerator {
 
 private:
 	/**
-	 * Names
-	 * the channel each placed role sounds on, as a single '#'-'#' strip in
-	 * spare space. Decorative and optional — skipped silently when nothing
-	 * placed or no free rectangle fits, which is the normal outcome on
-	 * small selections (16x32 and below). Draws NOTHING from rng: fully
-	 * deterministic given (plan, placed), so seeded streams and snapshots
-	 * are untouched.
+	 * Names the channel each placed role sounds on, as a single '#'-'#' strip
+	 * in spare space. Decorative and optional — skipped silently when nothing
+	 * placed or no free rectangle fits (normal on small selections, 16x32 and
+	 * below). Draws NOTHING from rng: fully deterministic given (plan, placed),
+	 * so seeded streams and snapshots are untouched.
 	 */
 	void placeChannelLegend(ScratchPad& buf, Usz y, Usz x, Usz h, Usz w,
 		std::vector<VoiceNode> const& plan, std::vector<bool> const& placed,
@@ -396,9 +372,9 @@ private:
 	std::string freeChanPool_; // shuffled kFreeChannels: unique texture channel per call
 	Usz freeWrap_ = 0;         // round-robin once the free pool runs dry
 	std::string ccPool_;    // shuffled "0123": unique CC control number per
-							// Modulation edge. Two
-							// tails on one (channel, control) pair fight; low
-							// numbers also survive midiCcOffset's 127 clamp.
+						// Modulation edge. Two tails on one (channel, control)
+						// pair fight; low numbers also survive midiCcOffset's
+						// 127 clamp.
 	std::string busVars_;   // clock-bus variables placed this call:
 	int derivedPlaced_ = 0; // derived voices placed this call.
 	                        // generate() captures it on adoption so it always
@@ -408,9 +384,9 @@ private:
 	char randomBase36();
 	char randomSmallDigit();  // 1-8 for rates/mods
 	char randomNote();
-	// Register band per ROLE: Bass < Chord < Harmony < Lead with the
-	// existing ±1 jitter; gates and texture sit mid. Replaces the old
-	// channel-latched draw and its evaluation-order hazard.
+	// Register band per ROLE: Bass < Chord < Harmony < Lead with ±1 jitter;
+	// gates and texture sit mid. Replaces the old channel-latched draw and its
+	// evaluation-order hazard.
 	char randomOctaveForRole(VoiceNode::Role role);
 	// Channel policy lookup: the role's reserved entry, or a unique
 	// draw from the free region when it has none.
@@ -445,8 +421,8 @@ private:
 	// High-level structure generators
 
 	/**
-	 * Generate a complete multi-voice arrangement
-	 * Creates multiple independent voices with shared timing
+	 * Generate a complete multi-voice arrangement: multiple independent voices
+	 * with shared timing.
 	 */
 	void generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Usz w, float density,
 		size_t budget);
@@ -463,11 +439,10 @@ private:
 	Extent generateSimplePattern(ScratchPad& buf, Usz y, Usz x, Usz maxY, Usz maxX);
 
 	/**
-	 * Clock bus: a row of clock divisions at the very top of the
-	 * arrangement, each publishing its counter into a reserved variable
-	 * (q, w, e, r ...). Writers sit ABOVE their readers (vars are wiped every
-	 * tick and only visible below/right — review §7.1). Placed vars are
-	 * recorded in busVars_.
+	 * Clock bus: a row of clock divisions at the very top of the arrangement,
+	 * each publishing its counter into a reserved variable (q, w, e, r ...).
+	 * Writers sit ABOVE their readers (vars are wiped every tick and only
+	 * visible below/right). Placed vars are recorded in busVars_.
 	 */
 	Extent generateClockBus(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW);
 
@@ -479,33 +454,33 @@ private:
 	// Pattern building blocks - these are the fundamental ORCA idioms
 
 	/**
-	 * Clock pattern: .rCm (rate, modulo) → outputs index below
-	 * Used to drive sequencers and create timing divisions
+	 * Clock pattern: .rCm (rate, modulo) → outputs index below. Used to drive
+	 * sequencers and create timing divisions.
 	 */
 	Extent placeClockPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char rate, char mod);
 
 	/**
-	 * Delay/Bang pattern: .rDm → outputs * below on trigger
-	 * Used to create rhythmic patterns
+	 * Delay/Bang pattern: .rDm → outputs * below on trigger. Used to create
+	 * rhythmic patterns.
 	 */
 	Extent placeDelayPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char rate, char mod);
 
 	/**
-	 * Track sequencer: .keyTlen_values → outputs value at key below
-	 * The key cell may be poked externally (e.g. by a clock above) to walk
-	 * the sequence; a constant key reads one fixed slot.
+	 * Track sequencer: .keyTlen_values → outputs value at key below. The key
+	 * cell may be poked externally (e.g. by a clock above) to walk the sequence;
+	 * a constant key reads one fixed slot.
 	 */
 	Extent placeTrackPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char key, const std::string& values);
 
 	/**
-	 * Euclidean rhythm: .stepsUmax → outputs * on euclidean hits
-	 * Great for polyrhythmic patterns
+	 * Euclidean rhythm: .stepsUmax → outputs * on euclidean hits. Great for
+	 * polyrhythmic patterns.
 	 */
 	Extent placeUclidPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char steps, char max);
 
 	/**
-	 * MIDI note output: :channelOctaveNoteVelLen
-	 * Needs a bang in a neighbouring cell to fire
+	 * MIDI note output: :channelOctaveNoteVelLen. Needs a bang in a neighbouring
+	 * cell to fire.
 	 */
 	Extent placeMidiPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char channel, char octave, char note, char vel, char len);
 
@@ -557,15 +532,13 @@ private:
 	// Compound patterns - combinations that create musical structures
 
 	/**
-	 * Delay triggering MIDI output
-	 * Basic rhythmic pattern
+	 * Delay triggering MIDI output. Basic rhythmic pattern.
 	 */
 	Extent placeDelayMidiVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
 							 char rate, char mod, char channel, char octave, char note, char velocityVar = 0);
 
 	/**
-	 * Euclidean rhythm with MIDI output
-	 * Polyrhythmic pattern
+	 * Euclidean rhythm with MIDI output. Polyrhythmic pattern.
 	 */
 	Extent placeUclidMidiVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
 							 char steps, char max, char channel, char octave, char note, char velocityVar = 0);

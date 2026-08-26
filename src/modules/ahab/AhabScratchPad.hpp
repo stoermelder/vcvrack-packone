@@ -8,15 +8,14 @@ namespace Ahab {
 
 // A plain rectangular glyph grid the AhabGenerator writes into before handing
 // the result to the sim. Replaces the old per-glyph trySet(AhabSim*, ...) path:
-// generation becomes a pure function into this buffer, and the result can be
-// committed to AhabSim as ONE paste command instead of one queued command per
-// cell (which could silently overflow the sim's 512-slot command queue).
+// generation is a pure function into this buffer, committed to AhabSim as ONE
+// paste command instead of one queued command per cell (which could silently
+// overflow the 512-slot command queue).
 //
-// The buffer is SELECTION-LOCAL: coordinate (0,0) is the top-left corner of the
-// region being generated, not of the field. Generators therefore cannot
-// scribble outside the selection — writes outside the rect are dropped (like
-// the old trySet clamping to field bounds) and reported via set()'s return
-// value.
+// The buffer is SELECTION-LOCAL: (0,0) is the top-left corner of the region
+// being generated, not of the field. Generators cannot scribble outside the
+// selection — writes outside the rect are dropped (like the old trySet clamping
+// to field bounds) and reported via set()'s return value.
 struct ScratchPad {
 	Usz h_;
 	Usz w_;

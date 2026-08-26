@@ -61,15 +61,13 @@ struct AhabModule : Module {
 	bool simRunning = true;
 	bool simRunToggleRequest = false;
 
-	// UDP/OSC output transports (real sockets by default; tests inject fakes).
-	// Two instances of the same class so configuring both destinations no
-	// longer makes one send steal the other's socket (the old single-socket
-	// quirk from §4.2).
+	// Separate UDP/OSC transports so configuring one destination can't steal
+	// the other's socket (tests inject fakes).
 	std::unique_ptr<AhabOoscOutput> udpOutput;
 	std::unique_ptr<AhabOoscOutput> oscOutput;
 
-	// Timing for simulation steps
-	float clockPhase = 0.0f;  // Phase accumulator for timing
+	// Phase accumulator for simulation step timing
+	float clockPhase = 0.0f;
 
 	// Scheduled note-offs (handled on simulator tick)
 	struct ScheduledOff { Usz remaining_ticks; uint8_t channel; uint8_t note; };
@@ -94,11 +92,8 @@ struct AhabModule : Module {
 	/** [Stored to JSON] */
 	bool overwriteZeroNoteDuration = true;
 
-	/** [Stored to JSON as the "generator" subobject] The generation settings
-	 * that produced the most recent randomize result. "Randomize (same seed)"
-	 * reuses them to reproduce the pattern deterministically; vocabulary plan
-	 * §5 will grow more steerable fields into this Config, all persisting via
-	 * Config::toJson/fromJson. */
+	/** [Stored to JSON as the "generator" subobject] Settings that produced the
+	 * last randomize result; "Randomize (same seed)" reuses them. */
 	AhabGenerator::Config lastGenerator;
 
 	dsp::SchmittTrigger simRunTrigger;
@@ -114,18 +109,16 @@ struct AhabModule : Module {
 	ClockMultiplier clkMultiplier;
 	/** [Stored to JSON] Clock ratio applied to the external CLK input. */
 	int clkRatioSetting = CLK_RATIO_MUL1;
-	/** Tracks the last applied ratio so the divider/multiplier are only
-	reconfigured when the ratio actually changes. */
+	/** Last applied ratio; divider/multiplier reconfigured only on change. */
 	int clkRatio = -1;
 
 	dsp::ClockDivider lightDivider;
 
-	// Default constructor: owns real socket-backed UDP and OSC outputs.
+	// Default constructor owns real socket-backed UDP and OSC outputs.
 	AhabModule() : AhabModule(new AhabOoscOutput(AhabOoscOutput::Kind::UDP),
 	                          new AhabOoscOutput(AhabOoscOutput::Kind::OSC)) {}
 
-	// Injection constructor: takes ownership of the supplied outputs (tests
-	// pass recording fakes).
+	// Injection constructor (tests pass recording fakes).
 	AhabModule(AhabOoscOutput* udpOutput, AhabOoscOutput* oscOutput) {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -186,8 +179,7 @@ struct AhabModule : Module {
 		clkRatio = -1;
 		sim->setFieldSize(25, 49);
 		sim->reset();
-		// A full module reset wipes the edit history (unlike "Clear", which is
-		// undoable content editing).
+		// Full reset wipes edit history (unlike "Clear", which is undoable).
 		sim->resetUndo();
 
 		Module::onReset(e);
@@ -398,11 +390,8 @@ struct AhabModule : Module {
 		}
 	}
 
-	// Called from the sim's DSP reset callback whenever the simulation is reset
-	// (RESET command / resetRequest) or a new field is loaded (REPLACE_FIELD), and
-	// indirectly from onReset via sim->reset(). Drops any pending note-offs so they
-	// never fire against a newly loaded field, and sends All Notes Off across all
-	// channels so no notes stay stuck.
+	// Called on sim reset / field load / onReset: drops pending note-offs and
+	// sends All Notes Off so nothing stays stuck.
 	void flushNotes() {
 		scheduledOffs.clear();
 		for (int i = 0; i < 4; ++i) {
@@ -427,7 +416,7 @@ struct AhabModule : Module {
 		}
 	}
 
-	// Input callback from the simulator, it tied to operator '<'
+	// Sim input callback for the '<' operator
 	float readDspInput(uint8_t port_num) {
 		if (port_num > 3) port_num = 3;
 		int id = IN_INPUT + (int)port_num;
@@ -436,7 +425,7 @@ struct AhabModule : Module {
 		return val;
 	}
 
-	// Output callback from the simulator, it tied to operator '>'
+	// Sim output callback for the '>' operator
 	void writeDspOutput(size_t port_num, float value, int gateTicks = 0) {
 		if (port_num > 3) port_num = 3;
 		int id = OUT_OUTPUT + (int)port_num;
@@ -589,9 +578,8 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	void reset() {
-		// Do NOT clear the undo history here: this runs as the sim's UI reset
-		// callback for "Clear" (via AhabSim::reset()), which must stay undoable.
-		// Full-module resets clear the history explicitly in AhabModule::onReset().
+		// Keep undo history: this is the UI reset for "Clear" (undoable), unlike
+		// AhabModule::onReset() which wipes it.
 		editorState.setCursor(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 		editorState.setSelection(0, 0, 1, 1, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 		rendererGridStepChanged();
@@ -605,9 +593,8 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	void simClear() {
-		// Clearing the whole field is a content reset: reuse the existing reset
-		// request, which clears the grid (keeping the field size), drops pending
-		// note-offs and sends All Notes Off, just like loading a file/example.
+		// Content reset: reuse resetRequest (clears grid, drops note-offs, All
+		// Notes Off) like loading a file/example.
 		module->sim->resetRequest();
 	}
 
@@ -621,19 +608,18 @@ struct AhabSimWidget : OpaqueWidget {
 		AhabGenerator::Config cfg;
 		cfg.density = density;
 		cfg.seed = seed; // 0 = fresh nondeterministic seed
-		// channels < 0 keeps the stored budget: every menu item except the
-		// Channels picker itself leaves the setting untouched.
+		// channels < 0 keeps the stored budget (all items except the Channels picker leave it untouched).
 		cfg.channels = channels < 0 ? module->lastGenerator.channels : channels;
 
 		// Use the AhabGenerator class
 		StoermelderPackOne::Ahab::AhabGenerator randomizer(seed);
 		if (!randomizer.randomize(module->sim, sy, sx, sh, sw, cfg)) {
-			// Nothing was generated or the command queue was full — previously silent.
+			// Generation failed or queue full — previously silent.
 			return;
 		}
 
-		// Remember what produced this result so "Randomize (same seed)" can
-		// reproduce it; the settings also persist with the patch.
+		// Store what produced this result so "Randomize (same seed)" reproduces
+		// it; settings also persist with the patch.
 		module->lastGenerator.seed = randomizer.getSeed();
 		module->lastGenerator.density = density;
 		module->lastGenerator.channels = cfg.channels;
@@ -688,8 +674,7 @@ struct AhabSimWidget : OpaqueWidget {
 		if (path.empty()) return;
 		Usz sy, sx, sh, sw;
 		editorState.getSelectionRect(sy, sx, sh, sw);
-		// Serialize the UI snapshot, not the sim's live buffer (the DSP thread
-		// may be writing it from step()).
+		// Serialize the UI snapshot, not the sim's live buffer (DSP may write it).
 		std::string content = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 		if (!vcv::fs::write(path, content)) {
 			std::string message = string::f("Could not write to patch file %s", path.c_str());
@@ -715,9 +700,8 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	std::string getOperatorDescription(Glyph g, Mark m) {
-		// Flat glyph-indexed lookup tables — a direct array index replaces the
-		// former std::map<char, std::string>. Sized 256 so any byte value (Glyph
-		// is a signed char) is a safe index via (unsigned char).
+		// Flat 256-entry glyph-indexed tables (Glyph is signed, so index via
+		// unsigned char) replacing the former std::map<char, std::string>.
 		static const std::array<const char*, 256> kOperatorDescriptions = [] {
 			std::array<const char*, 256> t{};
 			t['A'] = "add: Outputs sum of inputs";
@@ -1000,11 +984,8 @@ struct AhabSimWidget : OpaqueWidget {
 		return;
 	}
 
-	// Serialize the current selection from the UI snapshot (display_field) and
-	// push it to the clipboard via the vcv UI layer. Returns the serialized
-	// text (empty when the selection is empty). Used by the Copy and Cut key
-	// handlers; extracted so the clipboard routing is testable headless (the
-	// key handlers themselves gate on glfwGetKeyName, which is NULL in tests).
+	// Serialize the selection from display_field and push to the clipboard
+	// (extracted so routing is testable headless; key handlers gate on glfw).
 	std::string copySelectionToClipboard() {
 		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
 		// Read from the UI snapshot (display_field), not the sim's live buffer.
@@ -1013,10 +994,8 @@ struct AhabSimWidget : OpaqueWidget {
 		return s;
 	}
 
-	// Toggle comment markers ('#') on the left and right edges of the current
-	// selection. If every edge cell is already a comment, the markers are
-	// removed; otherwise they are added. Shared by the Ctrl/Cmd+Shift+7 hotkey
-	// and the "Toggle comment block" context-menu item.
+	// Toggle '#' markers on the selection's left/right edges: remove if all
+	// edges are comments, else add. Shared by Ctrl/Cmd+Shift+7 and the menu.
 	void toggleCommentBlock() {
 		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
 		Usz w = display_field.width;
@@ -1029,7 +1008,7 @@ struct AhabSimWidget : OpaqueWidget {
 				break;
 			}
 		}
-		// If all cells are marked as comment, remove comments; otherwise add comments
+		// Remove comments if all edges are comments, else add them.
 		module->sim->pushUndo();
 		for (Usz y = sy; y < sy + sh; ++y) {
 			module->sim->setGlyphRequest(y, sx, isComment ? '.' : '#', Mark_flag_input, false);
@@ -1187,8 +1166,7 @@ struct AhabSimWidget : OpaqueWidget {
 		// Ctrl/Cmd+P -> Trigger operator on cursor
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_P) {
 			Usz cy, cx; editorState.getCursor(cy, cx);
-			// TODO
-			// Unclear how to implement this, it looks like orca-c does not have this feature
+			// TODO: orca-c has no trigger-operator feature; unclear how to implement.
 			e.consume(this);
 			return;
 		}
@@ -1267,8 +1245,8 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
-		// Only handle when the module is hovered but not already focused, so the
-		// Shift+Esc toggle isn't fired twice (onSelectKey covers the focused case).
+		// Handle only when hovered but not focused, so Shift+Esc isn't fired
+		// twice (onSelectKey covers the focused case).
 		if (APP->event->getSelectedWidget() != this) {
 			if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE && (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
 				toggleFocusMode();
@@ -1319,7 +1297,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 	void onDragStart(const DragStartEvent& e) override {
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			// Don't implicitly start selection here; selection must be initiated on Button press with Shift held.
+			// Selection starts on Button press (Shift held), not here.
 			e.consume(this);
 		}
 		OpaqueWidget::onDragStart(e);
@@ -1356,9 +1334,8 @@ struct AhabSimWidget : OpaqueWidget {
 	void onEnter(const event::Enter& e) override {
 		struct CellTooltip : ui::Tooltip {
 			AhabSimWidget* widget = nullptr;
-			// Last hovered cell, so the description text is only rebuilt (and the
-			// tooltip string reassigned) when the hovered cell actually changes —
-			// getOperatorDescription is otherwise called every frame.
+			// Cache last hovered cell so the description is only rebuilt on change
+			// (getOperatorDescription would otherwise run every frame).
 			Glyph lastGlyph_ = 0;
 			Mark lastMark_ = 0;
 			void step() override {

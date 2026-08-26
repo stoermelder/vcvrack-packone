@@ -9,10 +9,10 @@
 namespace StoermelderPackOne {
 namespace Ahab {
 
-// Automatic quality gate: a pure
-// function that runs a generated ScratchPad through a real AhabSim for N ticks
-// and reports measurable facts about what came out. Production code (not
-// test-only) because the runtime gate needs it too.
+// Automatic quality gate: a pure function that runs a generated ScratchPad
+// through a real AhabSim for N ticks and reports measurable facts about what
+// came out. Production code (not test-only) because the runtime gate needs it
+// too.
 //
 // Deterministic: the same buffer always yields the same score — the sim's RNG
 // is pinned so R-operator output cannot vary between runs.
@@ -26,11 +26,11 @@ struct PatternScore {
 	Usz activeTicks = 0;   // ticks that produced >= 1 event
 	Usz distinctPitches = 0;   // unique (octave * 12 + note)
 	Usz distinctChannels = 0;
-	// Max distinct values emitted on any single (channel, control) pair.
-	// A CC stuck at one value is not modulation — the likeliest silent
-	// failure of a '!' row is a value cell that never varies (a '.' value
-	// still emits, as a constant 0), and danglingReads cannot see it when
-	// the variable IS written but simply never changes.
+	// Max distinct values emitted on any single (channel, control) pair. A CC
+	// stuck at one value is not modulation — the likeliest silent failure of a
+	// '!' row is a value cell that never varies (a '.' value still emits, as a
+	// constant 0), and danglingReads cannot see it when the variable IS written
+	// but simply never changes.
 	Usz distinctCcValues = 0;
 	Usz firstEventTick = kNever; // how long until the pattern speaks
 	Usz longestSilence = 0;      // longest run of silent ticks
@@ -51,12 +51,12 @@ struct PatternScore {
 inline PatternScore scorePattern(ScratchPad const& buf, Usz ticks = 128, Usz simSeed = 1) {
 	PatternScore s;
 
-	// Static variable-flow scan
-	// Mirrors orca_run's evaluation order: top-to-bottom, left-to-right.
-	// V semantics from sim.c: left != '.' -> WRITE of index_of(left);
-	// left == '.' && right != '.' -> READ of index_of(right). vars_slots are
-	// wiped every tick, so a read can only ever see a write that is above it
-	// or on the same row to its left — anything else yields '.' forever.
+	// Static variable-flow scan: mirrors orca_run's evaluation order
+	// (top-to-bottom, left-to-right). V semantics from sim.c: left != '.' ->
+	// WRITE of index_of(left); left == '.' && right != '.' -> READ of
+	// index_of(right). vars_slots are wiped every tick, so a read can only ever
+	// see a write that is above it or on the same row to its left — anything
+	// else yields '.' forever.
 	auto varIndex = [](Glyph g) -> int {
 		if (g >= '0' && g <= '9') return g - '0';
 		if (g >= 'a' && g <= 'z') return g - 'a' + 10;
@@ -147,8 +147,8 @@ inline PatternScore scorePattern(ScratchPad const& buf, Usz ticks = 128, Usz sim
 		s.distinctCcValues = std::max(s.distinctCcValues, kv.second.size());
 	}
 	s.density = ticks ? (float)s.activeTicks / (float)ticks : 0.f;
-	// Coupling proxy: do voices play TOGETHER rather than take
-	// turns? Share of note-active ticks where two or more channels sounded.
+	// Coupling proxy: do voices play TOGETHER rather than take turns? Share of
+	// note-active ticks where two or more channels sounded.
 	s.pitchCorrelation = noteActiveTicks ? (float)multiChannelTicks / (float)noteActiveTicks : 0.f;
 	return s;
 }

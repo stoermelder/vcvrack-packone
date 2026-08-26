@@ -20,8 +20,8 @@ static void mbuf_uninit_mark(Mark* mbr, Usz height, Usz width) {
 }
 
 
-// Parse ORCA plain text into a Field object. The ORCA text format is rows of characters
-// separated by '\n'. Trailing newline that produces an empty last line is ignored.
+// Parse ORCA plain text (rows of characters separated by '\n') into a Field.
+// A trailing newline producing an empty last line is ignored.
 bool AhabSim::buildFieldFromOrcaText(const std::string& orcaText, Field& out) {
 	std::vector<std::string> lines;
 	{

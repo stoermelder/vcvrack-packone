@@ -1,6 +1,6 @@
 #pragma once
 // Headless unit tests for the AhabGenerator surface: ScratchPad plus the
-// generate()/randomize() of var/Ahab_randomizer_review.md.
+// generate()/randomize() surface.
 // Pure data — no live sim for the core; AhabSim appears only as the adapter's
 // commit target. Included by Ahab.test.cpp.
 
@@ -121,9 +121,6 @@ TEST_CASE("generate matches the pre-conversion generators byte for byte", "[Ahab
 	ScratchPad buf = r.generate(6, 9, cfg);
 
 	// Simple-pattern path (w < 10): three 4-wide patterns on alternating rows.
-	// (Regenerated for the cleanup pass: varPool_/chanPool_ lost their
-	// documented shuffles in the graph-plan rework; restoring them shifts
-	// the RNG stream.)
 	REQUIRE(buf.toOrca() ==
 		".0R7..77O\n"
 		".........\n"
@@ -791,7 +788,7 @@ TEST_CASE("Scorer sees CC events and separates modulation from a stuck value", "
 		REQUIRE(s.ccEvents == 16);        // banged every tick
 		REQUIRE(s.distinctCcValues == 8); // values 0..7 cycle twice
 		REQUIRE(s.noteEvents == 0);
-		REQUIRE(s.silent());              // pure CC is still silent (plan §2a)
+		REQUIRE(s.silent());              // pure CC is still silent
 	}
 
 	// Stuck value: the value cell is a V-read of an UNWRITTEN variable, so
@@ -922,7 +919,7 @@ TEST_CASE("Plans attach Modulation edges to Pitch consumers", "[AhabGenerator]")
 TEST_CASE("Modulation edges emit varying CC in generated fields", "[AhabGenerator][gate]") {
 	// Patches whose plan carries a
 	// Modulation edge score ccEvents > 0 AND distinctCcValues >= 2 — a
-	// placed-but-stuck tail is exactly the failure Step 2a exists to catch.
+	// placed-but-stuck tail is exactly the failure this guards against.
 	// '!' is emitted nowhere else in AhabGenerator, so its presence
 	// fingerprints a placed tail. Notes must survive: modulation decorates
 	// voices, it never replaces them.
@@ -1568,7 +1565,7 @@ TEST_CASE("Planned graph mirrors the legacy plan shape", "[AhabGenerator]") {
 					break;
 				case VoiceNode::Harmony:
 				case VoiceNode::Gate:
-					// Step 2: at most one of each — both roles pin a channel.
+					// At most one of each — both roles pin a channel.
 					if (vn.role == VoiceNode::Harmony) {
 						++harmonies;
 						REQUIRE(harmonies <= 1);
@@ -1615,7 +1612,7 @@ TEST_CASE("Planned graph mirrors the legacy plan shape", "[AhabGenerator]") {
 					break;
 				default: // textures
 					if (vn.role == VoiceNode::Chord) {
-						// Reserved role since Step 2: at most one chord.
+						// Reserved role: at most one chord.
 						++chords;
 						REQUIRE(chords <= 1);
 					}
@@ -1665,7 +1662,7 @@ TEST_CASE("Plan channels are distinct across a seed sweep", "[AhabGenerator]") {
 	// are distinct"; Step 2 made it hold BY CONSTRUCTION: at most one voice
 	// per reserved role caps melodic draws at the four-entry pool, so the
 	// randInt(0,3) exhaustion fallback is unreachable and collisions cannot
-	// occur. Step 3 replaced the pool outright: reserved roles carry fixed
+	// occur. Reserved roles carry fixed
 	// table entries ('0'-'5', drums '9'), texture draws the free region
 	// 'a'-'f'. Reserved channels are unique by construction; only
 	// interchangeable free-region voices contend once the six free channels
@@ -2029,7 +2026,7 @@ TEST_CASE("Free-rectangle search: skyline proposes, buffer disposes", "[AhabGene
 			}
 		}
 		CATCH_INFO("16x32 d1.0: free 3x26 anchors found: " << (16 - misses) << "/16");
-		REQUIRE(misses == 16); // per §2.2's measurement
+		REQUIRE(misses == 16); // matches the measured distribution
 	}
 }
 
@@ -2357,13 +2354,11 @@ TEST_CASE("Planned Counters are placed and emit on channel 4", "[AhabGenerator][
 	REQUIRE(fieldsEmittingCh4 >= kSeeds / 4); // the role routinely reaches the field
 }
 
-TEST_CASE("Channel budget caps sounding voices and orders roles", "[AhabGenerator]") {
-	// never more sounding voices than the budget allows
-	// (the bus node does not count — it places no notes), and the roles
-	// that appear follow priority order — Lead, Drums, Bass, Harmony,
-	// Chord, Gate, texture — never N copies of one role. Lead, Drums and
-	// Bass are unconditional; Harmony/Gate are chance-gated, so exact
-	// prefixes are asserted only where every slot is unconditional.
+TEST_CASE("Channel budget caps distinct channels, density drives voices", "[AhabGenerator]") {
+	// Cause A (diversity plan): maxChannels caps DISTINCT MIDI channels, not
+	// planned voices — density (via capacity) keeps driving voice count, and
+	// texture voices share claimed channels once the set is full. The bus is
+	// exempt (places no notes).
 	auto rankOf = [](VoiceNode::Role role) -> int {
 		switch (role) {
 			case VoiceNode::Lead: return 0;
@@ -2627,7 +2622,7 @@ TEST_CASE("A low capacity yields varied roles in priority order", "[AhabGenerato
 
 				REQUIRE(roles.count(VoiceNode::Lead) == 1); // priority head present
 				REQUIRE(roles.size() >= 3);                 // varied, not N copies
-				// Nothing precedes the lead except the bus (§5.3).
+				// Nothing precedes the lead except the bus.
 				for (size_t i = 0; i < plan.size() && plan[i].role != VoiceNode::Lead; ++i) {
 					REQUIRE(plan[i].role == VoiceNode::Bus);
 				}
