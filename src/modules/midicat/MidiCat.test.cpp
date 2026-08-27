@@ -1324,6 +1324,50 @@ TEST_CASE("MIDI feedback after preset load", "[MidiCat]") {
 	Test::destroyModule(module);
 }
 
+TEST_CASE("MIDI feedback does not overwrite a param after midiReset before new MIDI arrives", "[MidiCat]") {
+	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	module->processDivider.setDivision(1);
+	TestModule* testModule = new TestModule();
+	Test::registerModule(testModule);
+
+	// Learn CC7 -> TEST_PARAM_2 (range 0..127) in DIRECT mode and receive one MIDI
+	// message, so the slot's MidiCatParam caches a value and starts driving the
+	// parameter on every process() call via param.process().
+	module->enableLearn(0, true);
+	module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 7, 0)); // initial CC
+	module->learnParam(0, testModule->id, TestModule::TEST_PARAM_2);
+	module->slots[0].cc.ccMode = CCMODE::DIRECT;
+	module->process(Test::makeProcessArgs(1));
+	module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 7, 63));
+	module->process(Test::makeProcessArgs(2));
+
+	ParamQuantity* pq = testModule->getParamQuantity(TestModule::TEST_PARAM_2);
+	REQUIRE(pq->getValue() == Catch::Approx(63.f));
+
+	// A system MIDI reset (Shift+Ctrl+R, or an incoming MIDI reset message) clears
+	// tracker.lastValue back to -1 and detached back to false on every mapped slot,
+	// without touching the mapping or the parameter itself.
+	module->midiReset();
+	REQUIRE(module->slots[0].tracker.lastValue == -1);
+	REQUIRE(module->slots[0].tracker.detached == false);
+
+	// Now the user edits the parameter manually, before any new MIDI arrives. The first
+	// process() call reads this back through MidiCatParam::getValue(), which self-heals
+	// from the live parameter -- so it takes a second edit + process() cycle to expose
+	// the lagged param.process() write-back that actually clobbers the parameter.
+	pq->setValue(20.f);
+	module->process(Test::makeProcessArgs(3));
+	pq->setValue(30.f);
+	module->process(Test::makeProcessArgs(4));
+
+	// The manual edit must stick: with tracker.lastValue < 0 and detached == false,
+	// MIDI-CAT has no valid tracked value to write back and must not clobber it.
+	REQUIRE(pq->getValue() == Catch::Approx(30.f));
+
+	Test::unregisterModule(testModule);
+	Test::destroyModule(module);
+}
+
 TEST_CASE("MIDIMODE LOCATE", "[MidiCat]") {
     MidiCatModule* m = Test::createModule<MidiCatModule>("MidiCat");
 	MidiCatWidget* mw = Test::createWidget<MidiCatWidget>(m);
