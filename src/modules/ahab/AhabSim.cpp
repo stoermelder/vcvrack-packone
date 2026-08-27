@@ -642,6 +642,7 @@ void AhabSim::setGlyphRequest(Usz y, Usz x, Glyph g, Mark_flags flags, bool doUn
 
 // DSP thread operation - set a glyph at (y,x) in the field buffer, applying mark flags
 void AhabSim::setGlyph(Usz y, Usz x, Glyph g, Mark_flags flags) {
+	if (y >= field_.height || x >= field_.width) return;
 	field_.buffer[y * field_.width + x] = g;
 	mbuf_.buffer[y * field_.width + x] |= (Mark)flags;
 }

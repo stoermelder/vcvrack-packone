@@ -984,6 +984,19 @@ struct AhabSimWidget : OpaqueWidget {
 		return;
 	}
 
+	// display_field only catches up to the sim's dimensions on the next
+	// drawLayer, so a resize can leave it briefly larger or smaller than the
+	// live sim. Any code that reads display_field and/or issues sim requests
+	// from the same coordinates must clamp to the smaller of the two.
+	void syncedFieldSize(Usz& fh, Usz& fw) {
+		fh = display_field.height;
+		fw = display_field.width;
+		if (module && module->sim) {
+			fh = std::min(fh, module->sim->getFieldHeight());
+			fw = std::min(fw, module->sim->getFieldWidth());
+		}
+	}
+
 	// Serialize the selection from display_field and push to the clipboard
 	// (extracted so routing is testable headless; key handlers gate on glfw).
 	std::string copySelectionToClipboard() {
@@ -998,6 +1011,14 @@ struct AhabSimWidget : OpaqueWidget {
 	// edges are comments, else add. Shared by Ctrl/Cmd+Shift+7 and the menu.
 	void toggleCommentBlock() {
 		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
+		// Selection was clamped against display_field, which may lag the sim's
+		// current dimensions after a resize. Re-clamp before reading
+		// display_field or issuing sim writes from these coordinates.
+		Usz fh, fw; syncedFieldSize(fh, fw);
+		if (fh == 0 || fw == 0) return;
+		if (sy >= fh || sx >= fw) return;
+		if (sy + sh > fh) sh = fh - sy;
+		if (sx + sw > fw) sw = fw - sx;
 		Usz w = display_field.width;
 		bool isComment = true;
 		for (Usz y = sy; y < sy + sh; ++y) {
@@ -1274,7 +1295,8 @@ struct AhabSimWidget : OpaqueWidget {
 			if (e.action == GLFW_PRESS) {
 				Usz cy, cx;
 				if (renderer.pixelToCell(e.pos, box.size, &display_field, cy, cx)) {
-					editorState.setCursor(cy, cx);
+					Usz fh, fw; syncedFieldSize(fh, fw);
+					editorState.setCursor(cy, cx, fh, fw);
 					mouse_selecting = true;
 					mouse_selection_start = e.pos;
 					// If a selection already exists, extend it immediately to the cursor
@@ -1312,8 +1334,9 @@ struct AhabSimWidget : OpaqueWidget {
 				Usz sx = std::min(x0, x1);
 				Usz sh = std::max(y0, y1) - sy + 1;
 				Usz sw = std::max(x0, x1) - sx + 1;
-				editorState.setCursor(y1, x1);
-				editorState.setSelection(sy, sx, sh, sw, display_field.height, display_field.width);
+				Usz fh, fw; syncedFieldSize(fh, fw);
+				editorState.setCursor(y1, x1, fh, fw);
+				editorState.setSelection(sy, sx, sh, sw, fh, fw);
 				notifyUiChanged();
 			}
 			e.consume(this);
