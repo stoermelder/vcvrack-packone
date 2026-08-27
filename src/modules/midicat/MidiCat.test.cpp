@@ -315,6 +315,32 @@ TEST_CASE("JSON round-trip preserves state", "[MidiCat][JSON]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("dataFromJson clears stale 14-bit mode when a legacy preset omits cc14bit", "[MidiCat][JSON]") {
+	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+
+	// Put slot 0 into 14-bit mode, matching the value range it implies.
+	module->slots[0].setCc(10);
+	module->slots[0].setCc14bit(true);
+	REQUIRE(module->slots[0].cc.get14bit() == true);
+	REQUIRE(module->slots[0].param.getLimitMax() == 128 * 128 - 1);
+
+	// Serialize, then strip "cc14bit" from the map entry to simulate a preset saved
+	// before 14-bit CC support existed.
+	json_t* rootJ = module->dataToJson();
+	json_t* mapJ = json_array_get(json_object_get(rootJ, "maps"), 0);
+	json_object_del(mapJ, "cc14bit");
+
+	module->dataFromJson(rootJ);
+	json_decref(rootJ);
+
+	// A missing "cc14bit" key must be treated as false, not "leave whatever the slot
+	// already had": otherwise a slot already in 14-bit mode stays stuck there with a
+	// stale 14-bit value range after loading a legacy preset.
+	REQUIRE(module->slots[0].cc.get14bit() == false);
+	REQUIRE(module->slots[0].param.getLimitMax() == 127);
+
+	Test::destroyModule(module);
+}
 
 TEST_CASE("MIDI learning functionality", "[MidiCat]") {
 	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
