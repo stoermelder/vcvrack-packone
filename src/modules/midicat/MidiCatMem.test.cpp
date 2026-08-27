@@ -272,6 +272,36 @@ TEST_CASE("MemStore::save stores current MidiCat CC mapping", "[MidiCatMem][Midi
 	Test::destroyModule(midicat);
 }
 
+// The "Store mapping" menu is built from currently bound slots, but the mapping can be
+// cleared or the target module removed in the window between opening the menu and
+// clicking the item -- so save() must tolerate a key that no longer matches any slot,
+// rather than dereferencing the never-assigned `module` pointer.
+TEST_CASE("MemStore::save does not crash and does not store when no slot matches the key", "[MidiCatMem][MidiCat]") {
+	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
+	MidiCatMemModule* mem  = Test::createModule<MidiCatMemModule>("MidiCatEx");
+	MidiCatMemModule* target = Test::createModule<MidiCatMemModule>("MidiCatEx");
+	Test::registerModule(midicat);
+	Test::registerModule(mem);
+	Test::registerModule(target);
+
+	connectMem(midicat, mem);
+
+	// No slot is bound to `target` at all -- every slot has moduleId < 0.
+	REQUIRE_NOTHROW(midicat->expanders.memStore().save(
+		MemStore::Key(target->model->plugin->slug, target->model->slug), midicat->slots, midicat->paramHandles, MAX_CHANNELS));
+
+	// Nothing was stored: there was no matching module to save.
+	REQUIRE_FALSE(midicat->expanders.memStore().test(target));
+	REQUIRE(mem->midiMap.empty());
+
+	Test::unregisterModule(target);
+	Test::destroyModule(target);
+	Test::unregisterModule(mem);
+	Test::destroyModule(mem);
+	Test::unregisterModule(midicat);
+	Test::destroyModule(midicat);
+}
+
 TEST_CASE("moduleBindMem restores CC and param binding into MidiCat", "[MidiCatMem][MidiCat]") {
 	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
 	MidiCatMemModule* mem  = Test::createModule<MidiCatMemModule>("MidiCatEx");

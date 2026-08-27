@@ -233,9 +233,16 @@ struct MemStore {
 		Module* module = NULL;
 		for (int i = 0; i < numSlots; i++) {
 			if (handles[i].moduleId < 0) continue;
-			if (handles[i].module->model->plugin->slug != key.first && handles[i].module->model->slug == key.second) continue;
+			if (handles[i].module->model->plugin->slug != key.first || handles[i].module->model->slug != key.second) continue;
 			module = handles[i].module;
 			m->paramMap.push_back(slots[i].toMemParam(handles[i].paramId));
+		}
+		// No bound slot matched `key` -- e.g. the mapping was cleared or the target module
+		// removed between opening the menu and clicking "Store mapping" -- so there is
+		// nothing to save.
+		if (!module) {
+			delete m;
+			return;
 		}
 		m->pluginName = module->model->plugin->name;
 		m->moduleName = module->model->name;
