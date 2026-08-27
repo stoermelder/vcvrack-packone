@@ -960,9 +960,70 @@ TEST_CASE("CC 14-bit", "[MidiCat]") {
 		REQUIRE(module->slots[0].cc.getValue() == 8224);
 	}
 
+	SECTION("CC 31 keeps 14-bit (its LSB partner CC63 is in range)") {
+		module->slots[0].setCc(31);
+		module->slots[0].setCc14bit(true);
+		REQUIRE(module->slots[0].cc.setCc(31) == false);
+		REQUIRE(module->slots[0].cc.get14bit() == true);
+	}
+
+	SECTION("CC 32 clears 14-bit (its LSB partner CC64 is not a valid pairing)") {
+		module->slots[0].setCc(7);
+		module->slots[0].setCc14bit(true);
+		REQUIRE(module->slots[0].cc.setCc(32) == true);
+		REQUIRE(module->slots[0].cc.get14bit() == false);
+	}
+
 	Test::destroyModule(module);
 }
 
+// commitLearn() copies MIDI-behaviour settings from the previous slot into a newly
+// learned one, e.g. so a bank of CCs learned in sequence all inherit the first's mode.
+// 14-bit is only copied when the newly learned CC itself has a valid low-order partner
+// (CC 0-31) -- otherwise a slot that can never be 14-bit would get stuck reporting it.
+TEST_CASE("commitLearn copies 14-bit to the next slot only when the learned CC allows it", "[MidiCat]") {
+	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	module->processDivider.setDivision(1);
+	TestModule* testModule = new TestModule();
+	Test::registerModule(testModule);
+
+	SECTION("Next slot's CC has a valid partner (< 32): 14-bit is copied") {
+		// Learn slot 0 as CC7 in 14-bit mode.
+		module->enableLearn(0, true);
+		module->learnParam(0, testModule->id, TestModule::TEST_PARAM_1);
+		module->midiCc(Test::makeMidiMessage(0xb, 0, 7, 64));
+		module->slots[0].setCc14bit(true);
+
+		// Learn slot 1 as CC10 -- a valid MSB (< 32).
+		module->enableLearn(1, true);
+		module->learnParam(1, testModule->id, TestModule::TEST_PARAM_2);
+		module->midiCc(Test::makeMidiMessage(0xb, 0, 10, 64));
+
+		REQUIRE(module->slots[1].cc.getCc() == 10);
+		REQUIRE(module->slots[1].cc.get14bit() == true);
+		REQUIRE(module->slots[1].param.getLimitMax() == 128 * 128 - 1);
+	}
+
+	SECTION("Next slot's CC has no valid partner (>= 32): 14-bit is not copied") {
+		// Learn slot 0 as CC7 in 14-bit mode.
+		module->enableLearn(0, true);
+		module->learnParam(0, testModule->id, TestModule::TEST_PARAM_1);
+		module->midiCc(Test::makeMidiMessage(0xb, 0, 7, 64));
+		module->slots[0].setCc14bit(true);
+
+		// Learn slot 1 as CC40 -- not eligible as an MSB.
+		module->enableLearn(1, true);
+		module->learnParam(1, testModule->id, TestModule::TEST_PARAM_2);
+		module->midiCc(Test::makeMidiMessage(0xb, 0, 40, 64));
+
+		REQUIRE(module->slots[1].cc.getCc() == 40);
+		REQUIRE(module->slots[1].cc.get14bit() == false);
+		REQUIRE(module->slots[1].param.getLimitMax() == 127);
+	}
+
+	Test::unregisterModule(testModule);
+	Test::destroyModule(module);
+}
 
 TEST_CASE("Note basic processing", "[MidiCat]") {
 	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");

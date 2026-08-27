@@ -1185,7 +1185,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		if (module->slots[id].cc.getCc() >= 0) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(construct<CcModeMenuItem>(&MenuItem::text, "Input mode for CC", &CcModeMenuItem::module, module, &CcModeMenuItem::id, id));
-			menu->addChild(construct<Cc14bitItem>(&MenuItem::text, "14-bit", &MenuItem::disabled, module->slots[id].cc.getCc() > 32, &Cc14bitItem::module, module, &Cc14bitItem::id, id));
+			menu->addChild(construct<Cc14bitItem>(&MenuItem::text, "14-bit", &MenuItem::disabled, module->slots[id].cc.getCc() >= 32, &Cc14bitItem::module, module, &Cc14bitItem::id, id));
 		}
 		if (module->slots[id].note.getNote() >= 0) {
 			menu->addChild(new MenuSeparator());

@@ -21,6 +21,8 @@
     - Fixed broken sorting option "Last used"
 - Modules [MIDI-CAT](./docs/midicat/MidiCat.md), [MIDI-ESX](./docs/midiesx/MidiEsx.md), [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md), [MIDI-PLUG](./docs/midi/MidiPlug.md), [MIDI-STEP](./docs/midi/MidiStep.md)
     - Ignore incoming MIDI messages while module is bypassed
+- Module [MIDI-CAT](./docs/midicat/MidiCat.md)
+    - Fixed incorrect 14-bit handling of CC32
 - Modules [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md):
     - Fixed incorrect reset behavior
 - Module [MIDI-MON](./docs/midi/MidiMon.md)
