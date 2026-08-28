@@ -20,10 +20,11 @@ static void mbuf_uninit_mark(Mark* mbr, Usz height, Usz width) {
 }
 
 
-// Parse ORCA plain text into a Field object. The ORCA text format is rows of characters
-// separated by '\n'. Trailing newline that produces an empty last line is ignored.
+// Parse ORCA plain text (rows of characters separated by '\n') into a Field.
+// A trailing newline producing an empty last line is ignored.
 bool AhabSim::buildFieldFromOrcaText(const std::string& orcaText, Field& out) {
 	std::vector<std::string> lines;
+	lines.reserve(orcaText.size() / 4 + 1); // avoid growth-relocation
 	{
 		std::string cur;
 		for (char ch : orcaText) {
@@ -641,6 +642,7 @@ void AhabSim::setGlyphRequest(Usz y, Usz x, Glyph g, Mark_flags flags, bool doUn
 
 // DSP thread operation - set a glyph at (y,x) in the field buffer, applying mark flags
 void AhabSim::setGlyph(Usz y, Usz x, Glyph g, Mark_flags flags) {
+	if (y >= field_.height || x >= field_.width) return;
 	field_.buffer[y * field_.width + x] = g;
 	mbuf_.buffer[y * field_.width + x] |= (Mark)flags;
 }

@@ -6,7 +6,7 @@
 
 #include "../../test/test_mock.hpp"
 #include "Ahab.test.hpp"
-#include "Ahab.vcvm.test.hpp"
+#include "Ahab.test.vcvm.hpp"
 
 
 TEST_CASE("Construction and initialization", "[Ahab]") {
@@ -857,10 +857,10 @@ TEST_CASE("Integration test - preset loading and simulation", "[Ahab]") {
 
 	// The preset's UDP/OSC keys live inside "sim" and are restored through
 	// udpOutput->fromJson(simJ) — pins that the stored JSON format is unchanged.
-	REQUIRE(m->udpOutput->getUdpAddress() == "127.0.0.1");
-	REQUIRE(m->udpOutput->getUdpPort() == "49161");
-	REQUIRE(m->udpOutput->getOscAddress() == "127.0.0.1");
-	REQUIRE(m->udpOutput->getOscPort() == "49162");
+	REQUIRE(m->udpOutput->getAddress() == "127.0.0.1");
+	REQUIRE(m->udpOutput->getPort() == "49161");
+	REQUIRE(m->oscOutput->getAddress() == "127.0.0.1");
+	REQUIRE(m->oscOutput->getPort() == "49162");
 	
 	// Setup mock MIDI output to capture generated events
 	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);

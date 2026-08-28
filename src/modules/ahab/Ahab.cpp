@@ -11,7 +11,7 @@
 #include "AhabMidiDriver.hpp"
 #include "AhabRenderer.hpp"
 #include "AhabEditorState.hpp"
-#include "AhabRandomizer.hpp"
+#include "Ahab.generator.hpp"
 #include <array>
 #include <memory>
 
@@ -61,11 +61,13 @@ struct AhabModule : Module {
 	bool simRunning = true;
 	bool simRunToggleRequest = false;
 
-	// UDP/OSC output transport (real socket by default; tests inject a fake).
-	std::unique_ptr<AhabUdpOutput> udpOutput;
+	// Separate UDP/OSC transports so configuring one destination can't steal
+	// the other's socket (tests inject fakes).
+	std::unique_ptr<AhabOoscOutput> udpOutput;
+	std::unique_ptr<AhabOoscOutput> oscOutput;
 
-	// Timing for simulation steps
-	float clockPhase = 0.0f;  // Phase accumulator for timing
+	// Phase accumulator for simulation step timing
+	float clockPhase = 0.0f;
 
 	// Scheduled note-offs (handled on simulator tick)
 	struct ScheduledOff { Usz remaining_ticks; uint8_t channel; uint8_t note; };
@@ -90,6 +92,10 @@ struct AhabModule : Module {
 	/** [Stored to JSON] */
 	bool overwriteZeroNoteDuration = true;
 
+	/** [Stored to JSON as the "generator" subobject] Settings that produced the
+	 * last randomize result; "Randomize (same seed)" reuses them. */
+	AhabGenerator::Config lastGenerator;
+
 	dsp::SchmittTrigger simRunTrigger;
 	dsp::SchmittTrigger clkButtonTrigger;
 	dsp::SchmittTrigger clkInConnectTrigger;
@@ -103,18 +109,17 @@ struct AhabModule : Module {
 	ClockMultiplier clkMultiplier;
 	/** [Stored to JSON] Clock ratio applied to the external CLK input. */
 	int clkRatioSetting = CLK_RATIO_MUL1;
-	/** Tracks the last applied ratio so the divider/multiplier are only
-	reconfigured when the ratio actually changes. */
+	/** Last applied ratio; divider/multiplier reconfigured only on change. */
 	int clkRatio = -1;
 
 	dsp::ClockDivider lightDivider;
 
-	// Default constructor: owns a real socket-backed UDP/OSC output.
-	AhabModule() : AhabModule(new AhabOoscUdpOutput()) {}
+	// Default constructor owns real socket-backed UDP and OSC outputs.
+	AhabModule() : AhabModule(new AhabOoscOutput(AhabOoscOutput::Kind::UDP),
+	                          new AhabOoscOutput(AhabOoscOutput::Kind::OSC)) {}
 
-	// Injection constructor: takes ownership of the supplied output (tests pass
-	// a recording fake).
-	AhabModule(AhabUdpOutput* udpOutput) {
+	// Injection constructor (tests pass recording fakes).
+	AhabModule(AhabOoscOutput* udpOutput, AhabOoscOutput* oscOutput) {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(BPM_PARAM, 30.0, 300.0, 120.0, "BPM");
@@ -136,7 +141,8 @@ struct AhabModule : Module {
 		sim->setDspOutputWriter(std::bind(&AhabModule::writeDspOutput, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 		sim->setDspResetCallback(std::bind(&AhabModule::flushNotes, this));
 		
-		this->udpOutput = std::unique_ptr<AhabUdpOutput>(udpOutput);
+		this->udpOutput = std::unique_ptr<AhabOoscOutput>(udpOutput);
+		this->oscOutput = std::unique_ptr<AhabOoscOutput>(oscOutput);
 
 		ResetEvent e;
 		onReset(e);
@@ -173,8 +179,7 @@ struct AhabModule : Module {
 		clkRatio = -1;
 		sim->setFieldSize(25, 49);
 		sim->reset();
-		// A full module reset wipes the edit history (unlike "Clear", which is
-		// undoable content editing).
+		// Full reset wipes edit history (unlike "Clear", which is undoable).
 		sim->resetUndo();
 
 		Module::onReset(e);
@@ -354,17 +359,17 @@ struct AhabModule : Module {
 						if (eo->count > 0) {
 							I32 vals[Oevent_osc_int_count];
 							for (Usz j = 0; j < (Usz)eo->count; ++j) vals[j] = (I32)eo->numbers[j];
-							udpOutput->sendOscInts(addr.c_str(), vals, (Usz)eo->count);
+							oscOutput->sendInts(addr.c_str(), vals, (Usz)eo->count);
 						}
 						else {
-							udpOutput->sendOscInts(addr.c_str(), nullptr, 0);
+							oscOutput->sendInts(addr.c_str(), nullptr, 0);
 						}
 						break;
 					}
 					case Oevent_type_udp_string: {
 						Oevent_udp_string const* ud = &oe->udp_string;
 						if (ud && ud->count > 0) {
-							udpOutput->sendUdpDatagram(ud->chars, (Usz)ud->count);
+							udpOutput->sendDatagram(ud->chars, (Usz)ud->count);
 						}
 						break;
 					}
@@ -385,11 +390,8 @@ struct AhabModule : Module {
 		}
 	}
 
-	// Called from the sim's DSP reset callback whenever the simulation is reset
-	// (RESET command / resetRequest) or a new field is loaded (REPLACE_FIELD), and
-	// indirectly from onReset via sim->reset(). Drops any pending note-offs so they
-	// never fire against a newly loaded field, and sends All Notes Off across all
-	// channels so no notes stay stuck.
+	// Called on sim reset / field load / onReset: drops pending note-offs and
+	// sends All Notes Off so nothing stays stuck.
 	void flushNotes() {
 		scheduledOffs.clear();
 		for (int i = 0; i < 4; ++i) {
@@ -414,7 +416,7 @@ struct AhabModule : Module {
 		}
 	}
 
-	// Input callback from the simulator, it tied to operator '<'
+	// Sim input callback for the '<' operator
 	float readDspInput(uint8_t port_num) {
 		if (port_num > 3) port_num = 3;
 		int id = IN_INPUT + (int)port_num;
@@ -423,7 +425,7 @@ struct AhabModule : Module {
 		return val;
 	}
 
-	// Output callback from the simulator, it tied to operator '>'
+	// Sim output callback for the '>' operator
 	void writeDspOutput(size_t port_num, float value, int gateTicks = 0) {
 		if (port_num > 3) port_num = 3;
 		int id = OUT_OUTPUT + (int)port_num;
@@ -442,13 +444,15 @@ struct AhabModule : Module {
 		json_object_set_new(rootJ, "midiOutPort", midiOutPort.toJson());
 		json_object_set_new(rootJ, "midiCcOffset", json_integer(midiCcOffset));
 		json_t* simJ = sim->toJson();
-		udpOutput->toJson(simJ); // adds the four destination keys into simJ
+		udpOutput->toJson(simJ);   // adds udpAddress / udpPort
+		oscOutput->toJson(simJ);   // adds oscAddress / oscPort
 		json_object_set_new(rootJ, "sim", simJ); // steals simJ's reference
 		json_object_set_new(rootJ, "simRunning", json_boolean(simRunning));
 		json_object_set_new(rootJ, "overwriteZeroNoteDuration", json_boolean(overwriteZeroNoteDuration));
 		json_object_set_new(rootJ, "gridStepCol", json_integer(gridStepCol));
 		json_object_set_new(rootJ, "gridStepRow", json_integer(gridStepRow));
 		json_object_set_new(rootJ, "clkRatio", json_integer(clkRatioSetting));
+		json_object_set_new(rootJ, "generator", AhabGenerator::Config::toJson(lastGenerator));
 		return rootJ;
 	}
 
@@ -468,6 +472,7 @@ struct AhabModule : Module {
 		if (simJ && json_is_object(simJ)) {
 			sim->fromJson(simJ);
 			udpOutput->fromJson(simJ);
+			oscOutput->fromJson(simJ);
 		}
 		json_t* simRunningJ = json_object_get(rootJ, "simRunning");
 		if (simRunningJ) simRunning = json_boolean_value(simRunningJ);
@@ -479,6 +484,16 @@ struct AhabModule : Module {
 		if (gridStepRowJ) gridStepRow = (int)json_integer_value(gridStepRowJ);
 		json_t* clkRatioJ = json_object_get(rootJ, "clkRatio");
 		if (clkRatioJ) clkRatioSetting = (int)json_integer_value(clkRatioJ);
+		json_t* generatorJ = json_object_get(rootJ, "generator");
+		if (generatorJ && json_is_object(generatorJ)) {
+			lastGenerator = AhabGenerator::Config::fromJson(generatorJ);
+		}
+		else {
+			// Legacy patches stored a flat lastRandomizerSeed; density was
+			// session-only and cannot be recovered, so it keeps its default.
+			json_t* legacySeedJ = json_object_get(rootJ, "lastRandomizerSeed");
+			if (legacySeedJ && json_is_integer(legacySeedJ)) lastGenerator.seed = (uint32_t)json_integer_value(legacySeedJ);
+		}
 	}
 };
 
@@ -563,9 +578,8 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	void reset() {
-		// Do NOT clear the undo history here: this runs as the sim's UI reset
-		// callback for "Clear" (via AhabSim::reset()), which must stay undoable.
-		// Full-module resets clear the history explicitly in AhabModule::onReset().
+		// Keep undo history: this is the UI reset for "Clear" (undoable), unlike
+		// AhabModule::onReset() which wipes it.
 		editorState.setCursor(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 		editorState.setSelection(0, 0, 1, 1, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 		rendererGridStepChanged();
@@ -579,23 +593,37 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	void simClear() {
-		// Clearing the whole field is a content reset: reuse the existing reset
-		// request, which clears the grid (keeping the field size), drops pending
-		// note-offs and sends All Notes Off, just like loading a file/example.
+		// Content reset: reuse resetRequest (clears grid, drops note-offs, All
+		// Notes Off) like loading a file/example.
 		module->sim->resetRequest();
 	}
 
-	void simRandomize(float density = 0.3f) {
+	void simRandomize(float density = 0.3f, uint32_t seed = 0, int channels = -1) {
 		if (!module || !module->sim) return;
 		
 		// Get current selection bounds
 		Usz sy, sx, sh, sw;
 		editorState.getSelectionRect(sy, sx, sh, sw);
-		
-		// Use the AhabRandomizer class
-		StoermelderPackOne::Ahab::AhabRandomizer randomizer;
-		randomizer.randomize(module->sim, sy, sx, sh, sw, density);
-		
+
+		AhabGenerator::Config cfg;
+		cfg.density = density;
+		cfg.seed = seed; // 0 = fresh nondeterministic seed
+		// channels < 0 keeps the stored budget (all items except the Channels picker leave it untouched).
+		cfg.channels = channels < 0 ? module->lastGenerator.channels : channels;
+
+		// Use the AhabGenerator class
+		StoermelderPackOne::Ahab::AhabGenerator randomizer(seed);
+		if (!randomizer.randomize(module->sim, sy, sx, sh, sw, cfg)) {
+			// Generation failed or queue full — previously silent.
+			return;
+		}
+
+		// Store what produced this result so "Randomize (same seed)" reproduces
+		// it; settings also persist with the patch.
+		module->lastGenerator.seed = randomizer.getSeed();
+		module->lastGenerator.density = density;
+		module->lastGenerator.channels = cfg.channels;
+
 		notifyUiChanged();
 	}
 
@@ -646,8 +674,7 @@ struct AhabSimWidget : OpaqueWidget {
 		if (path.empty()) return;
 		Usz sy, sx, sh, sw;
 		editorState.getSelectionRect(sy, sx, sh, sw);
-		// Serialize the UI snapshot, not the sim's live buffer (the DSP thread
-		// may be writing it from step()).
+		// Serialize the UI snapshot, not the sim's live buffer (DSP may write it).
 		std::string content = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 		if (!vcv::fs::write(path, content)) {
 			std::string message = string::f("Could not write to patch file %s", path.c_str());
@@ -673,9 +700,8 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	std::string getOperatorDescription(Glyph g, Mark m) {
-		// Flat glyph-indexed lookup tables — a direct array index replaces the
-		// former std::map<char, std::string>. Sized 256 so any byte value (Glyph
-		// is a signed char) is a safe index via (unsigned char).
+		// Flat 256-entry glyph-indexed tables (Glyph is signed, so index via
+		// unsigned char) replacing the former std::map<char, std::string>.
 		static const std::array<const char*, 256> kOperatorDescriptions = [] {
 			std::array<const char*, 256> t{};
 			t['A'] = "add: Outputs sum of inputs";
@@ -958,17 +984,79 @@ struct AhabSimWidget : OpaqueWidget {
 		return;
 	}
 
-	// Serialize the current selection from the UI snapshot (display_field) and
-	// push it to the clipboard via the vcv UI layer. Returns the serialized
-	// text (empty when the selection is empty). Used by the Copy and Cut key
-	// handlers; extracted so the clipboard routing is testable headless (the
-	// key handlers themselves gate on glfwGetKeyName, which is NULL in tests).
+	// display_field only catches up to the sim's dimensions on the next
+	// drawLayer, so a resize can leave it briefly larger or smaller than the
+	// live sim. Any code that reads display_field and/or issues sim requests
+	// from the same coordinates must clamp to the smaller of the two.
+	void syncedFieldSize(Usz& fh, Usz& fw) {
+		fh = display_field.height;
+		fw = display_field.width;
+		if (module && module->sim) {
+			fh = std::min(fh, module->sim->getFieldHeight());
+			fw = std::min(fw, module->sim->getFieldWidth());
+		}
+	}
+
+	// Serialize the selection from display_field and push to the clipboard
+	// (extracted so routing is testable headless; key handlers gate on glfw).
 	std::string copySelectionToClipboard() {
 		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
 		// Read from the UI snapshot (display_field), not the sim's live buffer.
 		std::string s = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 		if (!s.empty()) vcv::ui::setClipboard(s);
 		return s;
+	}
+
+	// Toggle '#' markers on the selection's left/right edges: remove if all
+	// edges are comments, else add. Shared by Ctrl/Cmd+Shift+7 and the menu.
+	void toggleCommentBlock() {
+		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
+		// Selection was clamped against display_field, which may lag the sim's
+		// current dimensions after a resize. Re-clamp before reading
+		// display_field or issuing sim writes from these coordinates.
+		Usz fh, fw; syncedFieldSize(fh, fw);
+		if (fh == 0 || fw == 0) return;
+		if (sy >= fh || sx >= fw) return;
+		if (sy + sh > fh) sh = fh - sy;
+		if (sx + sw > fw) sw = fw - sx;
+		Usz w = display_field.width;
+		bool isComment = true;
+		for (Usz y = sy; y < sy + sh; ++y) {
+			char c1 = display_field.buffer[y * w + sx];
+			char c2 = display_field.buffer[y * w + sx + sw - 1];
+			if (c1 != '#' || c2 != '#') {
+				isComment = false;
+				break;
+			}
+		}
+		// Remove comments if all edges are comments, else add them.
+		module->sim->pushUndo();
+		for (Usz y = sy; y < sy + sh; ++y) {
+			module->sim->setGlyphRequest(y, sx, isComment ? '.' : '#', Mark_flag_input, false);
+			module->sim->setGlyphRequest(y, sx + sw - 1, isComment ? '.' : '#', Mark_flag_input, false);
+		}
+	}
+
+	void clearSelection() {
+		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
+		module->sim->fillRectRequest(sy, sx, sh, sw);
+	}
+
+	void cutSelection() {
+		copySelectionToClipboard();
+		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
+		module->sim->cutRectRequest(sy, sx, sh, sw);
+	}
+
+	void pasteSelection() {
+		Usz cy, cx; editorState.getCursor(cy, cx);
+		std::string clip = vcv::ui::getClipboard();
+		if (!clip.empty()) {
+			Usz pasted_h = 0, pasted_w = 0;
+			if (module->sim->loadRectFromOrcaRequest(clip, cy, cx, pasted_h, pasted_w)) {
+				if (pasted_h > 0 && pasted_w > 0) editorState.setSelection(cy, cx, pasted_h, pasted_w, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+			}
+		}
 	}
 
 	void onSelectKey(const SelectKeyEvent& e) override {
@@ -997,8 +1085,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+Backspace -> Clear selection
 		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_BACKSPACE) {
-			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
-			module->sim->fillRectRequest(sy, sx, sh, sw);
+			clearSelection();
 			e.consume(this);
 			return;
 		}
@@ -1079,23 +1166,14 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+X -> Cut selection to clipboard (ORCA plain text)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'x') {
-			copySelectionToClipboard();
-			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
-			module->sim->cutRectRequest(sy, sx, sh, sw);
+			cutSelection();
 			e.consume(this);
 			return;
 		}
 
 		// Ctrl/Cmd+V -> Paste selection from clipboard (accept ORCA plain text or JSON)
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'v') {
-			Usz cy, cx; editorState.getCursor(cy, cx);
-			std::string clip = vcv::ui::getClipboard();
-			if (!clip.empty()) {
-				Usz pasted_h = 0, pasted_w = 0;
-				if (module->sim->loadRectFromOrcaRequest(clip, cy, cx, pasted_h, pasted_w)) {
-					if (pasted_h > 0 && pasted_w > 0) editorState.setSelection(cy, cx, pasted_h, pasted_w, module->sim->getFieldHeight(), module->sim->getFieldWidth());
-				}
-			}
+			pasteSelection();
 			e.consume(this);
 			return;
 		}
@@ -1109,8 +1187,7 @@ struct AhabSimWidget : OpaqueWidget {
 		// Ctrl/Cmd+P -> Trigger operator on cursor
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_P) {
 			Usz cy, cx; editorState.getCursor(cy, cx);
-			// TODO
-			// Unclear how to implement this, it looks like orca-c does not have this feature
+			// TODO: orca-c has no trigger-operator feature; unclear how to implement.
 			e.consume(this);
 			return;
 		}
@@ -1133,23 +1210,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 		// Ctrl/Cmd+Shift+7 -> Toggle comment block
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT) && e.key == GLFW_KEY_7) {
-			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
-			Usz w = display_field.width;
-			bool isComment = true;
-			for (Usz y = sy; y < sy + sh; ++y) {
-				char c1 = display_field.buffer[y * w + sx];
-				char c2 = display_field.buffer[y * w + sx + sw - 1];
-				if (c1 != '#' || c2 != '#') {
-					isComment = false;
-					break;
-				}
-			}
-			// If all cells are marked as comment, remove comments; otherwise add comments
-			module->sim->pushUndo();
-			for (Usz y = sy; y < sy + sh; ++y) {
-				module->sim->setGlyphRequest(y, sx, isComment ? '.' : '#', Mark_flag_input, false);
-				module->sim->setGlyphRequest(y, sx + sw - 1, isComment ? '.' : '#', Mark_flag_input, false);
-			}
+			toggleCommentBlock();
 			e.consume(this);
 			return;
 		}
@@ -1205,8 +1266,8 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
-		// Only handle when the module is hovered but not already focused, so the
-		// Shift+Esc toggle isn't fired twice (onSelectKey covers the focused case).
+		// Handle only when hovered but not focused, so Shift+Esc isn't fired
+		// twice (onSelectKey covers the focused case).
 		if (APP->event->getSelectedWidget() != this) {
 			if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE && (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
 				toggleFocusMode();
@@ -1234,7 +1295,8 @@ struct AhabSimWidget : OpaqueWidget {
 			if (e.action == GLFW_PRESS) {
 				Usz cy, cx;
 				if (renderer.pixelToCell(e.pos, box.size, &display_field, cy, cx)) {
-					editorState.setCursor(cy, cx);
+					Usz fh, fw; syncedFieldSize(fh, fw);
+					editorState.setCursor(cy, cx, fh, fw);
 					mouse_selecting = true;
 					mouse_selection_start = e.pos;
 					// If a selection already exists, extend it immediately to the cursor
@@ -1257,7 +1319,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 	void onDragStart(const DragStartEvent& e) override {
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			// Don't implicitly start selection here; selection must be initiated on Button press with Shift held.
+			// Selection starts on Button press (Shift held), not here.
 			e.consume(this);
 		}
 		OpaqueWidget::onDragStart(e);
@@ -1272,8 +1334,9 @@ struct AhabSimWidget : OpaqueWidget {
 				Usz sx = std::min(x0, x1);
 				Usz sh = std::max(y0, y1) - sy + 1;
 				Usz sw = std::max(x0, x1) - sx + 1;
-				editorState.setCursor(y1, x1);
-				editorState.setSelection(sy, sx, sh, sw, display_field.height, display_field.width);
+				Usz fh, fw; syncedFieldSize(fh, fw);
+				editorState.setCursor(y1, x1, fh, fw);
+				editorState.setSelection(sy, sx, sh, sw, fh, fw);
 				notifyUiChanged();
 			}
 			e.consume(this);
@@ -1294,9 +1357,8 @@ struct AhabSimWidget : OpaqueWidget {
 	void onEnter(const event::Enter& e) override {
 		struct CellTooltip : ui::Tooltip {
 			AhabSimWidget* widget = nullptr;
-			// Last hovered cell, so the description text is only rebuilt (and the
-			// tooltip string reassigned) when the hovered cell actually changes —
-			// getOperatorDescription is otherwise called every frame.
+			// Cache last hovered cell so the description is only rebuilt on change
+			// (getOperatorDescription would otherwise run every frame).
 			Glyph lastGlyph_ = 0;
 			Mark lastMark_ = 0;
 			void step() override {
@@ -1437,6 +1499,74 @@ struct AhabSimWidget : OpaqueWidget {
 		}));
 
 		menu->addChild(new MenuSeparator());
+		menu->addChild(createSubmenuItem("Selection", "", [this](ui::Menu* menu) {
+			menu->addChild(createMenuItem("Select all", RACK_MOD_CTRL_NAME "+A", [this]() {
+				editorState.setSelection(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Clear", "Backspace", [this]() {
+				clearSelection();
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Copy", RACK_MOD_CTRL_NAME "+C", [this]() {
+				copySelectionToClipboard();
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Cut", RACK_MOD_CTRL_NAME "+X", [this]() {
+				cutSelection();
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Paste", RACK_MOD_CTRL_NAME "+V", [this]() {
+				pasteSelection();
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createMenuItem("Toggle comment", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+7", [this]() {
+				toggleCommentBlock();
+				APP->event->setSelectedWidget(this);
+			}));
+		}));
+
+		menu->addChild(createSubmenuItem("Random generator", "", [this](ui::Menu* menu) {
+			if (module->lastGenerator.seed != 0) {
+				menu->addChild(createMenuItem("Same seed again", string::f("seed %u", module->lastGenerator.seed), [this]() {
+					simRandomize(module->lastGenerator.density, module->lastGenerator.seed);
+					APP->event->setSelectedWidget(this);
+				}));
+				menu->addChild(new MenuSeparator());
+			}
+			menu->addChild(createMenuItem("Sparse (20%)", "", [this]() {
+				simRandomize(0.2f);
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Medium (40%)", "", [this]() {
+				simRandomize(0.4f);
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Very dense (70%)", "", [this]() {
+				simRandomize(0.7f);
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Packed (100%)", "", [this]() {
+				simRandomize(1.0f);
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createSubmenuItem("Channels", string::f("%d", module->lastGenerator.channels), [this](ui::Menu* m) {
+				// How many voices may sound at all. The budget picks the
+				// first N roles in priority order and matches the patch to the rig.
+				for (int n = kMinChannelBudget; n <= 12; ++n) {
+					m->addChild(createMenuItem(string::f("%d voices", n),
+						n == module->lastGenerator.channels ? CHECKMARK(true) : "",
+						[this, n]() {
+							simRandomize(module->lastGenerator.density, 0, n);
+							APP->event->setSelectedWidget(this);
+						}));
+				}
+			}));
+		}));
+
+		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Clear", isWidgetMenu ? RACK_MOD_CTRL_NAME "+N" : "", [this]() {
 			simClear();
 			APP->event->setSelectedWidget(this);
@@ -1497,21 +1627,6 @@ struct AhabSimWidget : OpaqueWidget {
 			}
 		}));
 
-		menu->addChild(createSubmenuItem("Randomize selection", "", [this](ui::Menu* menu) {
-			menu->addChild(createMenuItem("Sparse (10%)", "", [this]() { 
-				simRandomize(0.1f); 
-				APP->event->setSelectedWidget(this);
-			}));
-			menu->addChild(createMenuItem("Medium (30%)", "", [this]() { 
-				simRandomize(0.3f); 
-				APP->event->setSelectedWidget(this);
-			}));
-			menu->addChild(createMenuItem("Very dense (50%)", "", [this]() { 
-				simRandomize(0.5f); 
-				APP->event->setSelectedWidget(this);
-			}));
-		}));
-
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("MIDI", "", [this](ui::Menu* menu) {
 			menu->addChild(createBoolPtrMenuItem("Driver enabled", "", &module->midiOutEnabled));
@@ -1550,22 +1665,22 @@ struct AhabSimWidget : OpaqueWidget {
 		}));
 
 		menu->addChild(createSubmenuItem("UDP", "", [this](ui::Menu* m) {
-			auto* addrField = Rack::createTextField(module->udpOutput->getUdpAddress(), "Address");
+			auto* addrField = Rack::createTextField(module->udpOutput->getAddress(), "Address");
 			m->addChild(addrField);
-			auto* portField = Rack::createTextField(module->udpOutput->getUdpPort(), "Port");
+			auto* portField = Rack::createTextField(module->udpOutput->getPort(), "Port");
 			m->addChild(portField);
 			m->addChild(createMenuItem("Apply", "", [this, addrField, portField]() { 
-				module->udpOutput->setUdpDestination(addrField->text, portField->text); 
+				module->udpOutput->setDestination(addrField->text, portField->text); 
 			}));
 		}));
 
 		menu->addChild(createSubmenuItem("OSC", "", [this](ui::Menu* m) {
-			auto* addrField = Rack::createTextField(module->udpOutput->getOscAddress(), "Address");
+			auto* addrField = Rack::createTextField(module->oscOutput->getAddress(), "Address");
 			m->addChild(addrField);
-			auto* portField = Rack::createTextField(module->udpOutput->getOscPort(), "Port");
+			auto* portField = Rack::createTextField(module->oscOutput->getPort(), "Port");
 			m->addChild(portField);
 			m->addChild(createMenuItem("Apply", "", [this, addrField, portField]() { 
-				module->udpOutput->setOscDestination(addrField->text, portField->text); 
+				module->oscOutput->setDestination(addrField->text, portField->text); 
 			}));
 		}));
 

@@ -146,7 +146,7 @@ struct CcSource {
 	bool setCc(int cc) {
 		this->cc = cc;
 		bool cleared14bit = false;
-		if (cc == -1 || cc > 32) {
+		if (cc == -1 || cc >= 32) {
 			cleared14bit = cc14bit;
 			cc14bit = false;
 		}

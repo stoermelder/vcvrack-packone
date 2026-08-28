@@ -445,7 +445,7 @@ TEST_CASE("End-to-end CV gate via ORCA '>' letter port", "[AhabSim][Ahab]") {
 // End-to-end UDP / OSC output tests
 // The ';' (UDP string) and '=' (OSC) operators emit events the sim exposes via
 // getEvents() (checked deterministically below) and the module routes to its
-// AhabUdpOutput. The end-to-end tests drive the operators through a loaded
+// AhabOoscOutput. The end-to-end tests drive the operators through a loaded
 // field + module and capture the sends with the injected recording fake — no
 // sockets, fully deterministic. A bang ('*') is consumed when it fires, so the
 // patterns below send exactly one datagram on the first tick.
@@ -487,11 +487,14 @@ TEST_CASE("ORCA '=' operator emits an osc_ints event", "[AhabSim][UDP]") {
 }
 
 // End-to-end through the module, captured by the injected recording fake: the
-// full ORCA ';'/'=' operator → sim event → module → AhabUdpOutput path with no
+// full ORCA ';'/'=' operator → sim event → module → AhabOoscOutput path with no
 // sockets (constructor injection — Test::createModule can't inject).
 TEST_CASE("End-to-end UDP datagram from ORCA ';' operator", "[Ahab][UDP]") {
-	RecordingUdpOutput* fake = new RecordingUdpOutput();
-	AhabModule* m = createModuleWithUdp(fake);
+	// Two distinct fakes: the module takes ownership of each via unique_ptr, so
+	// passing the same object twice would double-free on destruction.
+	RecordingUdpOutput* fakeUdp = new RecordingUdpOutput();
+	RecordingUdpOutput* fakeOsc = new RecordingUdpOutput();
+	AhabModule* m = createModuleWithOutputs(fakeUdp, fakeOsc);
 	Test::registerModule(m);
 	m->simRunning = false; // disable BPM auto-step; drive ticks explicitly
 
@@ -502,20 +505,23 @@ TEST_CASE("End-to-end UDP datagram from ORCA ';' operator", "[Ahab][UDP]") {
 
 	// One tick: the ';' operator sends its string once (the bang is consumed).
 	stepSim(m);
-	REQUIRE(fake->udpDatagrams.size() == 1);
-	REQUIRE(std::string(fake->udpDatagrams[0].begin(), fake->udpDatagrams[0].end()) == "HELLO");
+	REQUIRE(fakeUdp->udpDatagrams.size() == 1);
+	REQUIRE(std::string(fakeUdp->udpDatagrams[0].begin(), fakeUdp->udpDatagrams[0].end()) == "HELLO");
 
 	// A second tick emits nothing more.
 	stepSim(m);
-	REQUIRE(fake->udpDatagrams.size() == 1);
+	REQUIRE(fakeUdp->udpDatagrams.size() == 1);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m); // the module owns + deletes the fake
+	Test::destroyModule(m); // the module owns + deletes both fakes
 }
 
 TEST_CASE("End-to-end OSC message from ORCA '=' operator", "[Ahab][UDP]") {
-	RecordingUdpOutput* fake = new RecordingUdpOutput();
-	AhabModule* m = createModuleWithUdp(fake);
+	// Two distinct fakes: the module takes ownership of each via unique_ptr, so
+	// passing the same object twice would double-free on destruction.
+	RecordingUdpOutput* fakeUdp = new RecordingUdpOutput();
+	RecordingUdpOutput* fakeOsc = new RecordingUdpOutput();
+	AhabModule* m = createModuleWithOutputs(fakeUdp, fakeOsc);
 	Test::registerModule(m);
 	m->simRunning = false;
 
@@ -528,11 +534,11 @@ TEST_CASE("End-to-end OSC message from ORCA '=' operator", "[Ahab][UDP]") {
 	// 'B'/'C'). The module builds the OSC address as {'/', glyph, '\0'} → "/f",
 	// which oosc_send_int32s pads to the 4-byte OSC address "/f\0\0".
 	stepSim(m);
-	REQUIRE(fake->oscInts.size() == 1);
-	REQUIRE(fake->oscInts[0].first == std::string("/f"));
-	REQUIRE(fake->oscInts[0].second.size() == 2);
-	REQUIRE(fake->oscInts[0].second[0] == 11);
-	REQUIRE(fake->oscInts[0].second[1] == 12);
+	REQUIRE(fakeOsc->oscInts.size() == 1);
+	REQUIRE(fakeOsc->oscInts[0].first == std::string("/f"));
+	REQUIRE(fakeOsc->oscInts[0].second.size() == 2);
+	REQUIRE(fakeOsc->oscInts[0].second[0] == 11);
+	REQUIRE(fakeOsc->oscInts[0].second[1] == 12);
 
 	Test::unregisterModule(m);
 	Test::destroyModule(m);
@@ -555,44 +561,44 @@ TEST_CASE("UDP/OSC output is safe with no destination configured", "[Ahab][UDP]"
 }
 
 
-// AhabOoscUdpOutput destination configuration and validation (direct, no sockets).
+// AhabOoscOutput destination configuration and validation (direct, no sockets).
 TEST_CASE("UDP destination configuration", "[AhabUdp]") {
-	AhabOoscUdpOutput out;
+	AhabOoscOutput out(AhabOoscOutput::Kind::UDP);
 	
-	out.setUdpDestination("192.168.1.1", "8000");
-	REQUIRE(out.getUdpAddress() == "192.168.1.1");
-	REQUIRE(out.getUdpPort() == "8000");
+	out.setDestination("192.168.1.1", "8000");
+	REQUIRE(out.getAddress() == "192.168.1.1");
+	REQUIRE(out.getPort() == "8000");
 	
 	// Test with whitespace (should be trimmed)
-	out.setUdpDestination("  10.0.0.1  ", "  9000  ");
-	REQUIRE(out.getUdpAddress() == "10.0.0.1");
-	REQUIRE(out.getUdpPort() == "9000");
+	out.setDestination("  10.0.0.1  ", "  9000  ");
+	REQUIRE(out.getAddress() == "10.0.0.1");
+	REQUIRE(out.getPort() == "9000");
 }
 
 TEST_CASE("OSC destination configuration", "[AhabUdp]") {
-	AhabOoscUdpOutput out;
+	AhabOoscOutput out(AhabOoscOutput::Kind::OSC);
 	
-	out.setOscDestination("localhost", "9001");
-	REQUIRE(out.getOscAddress() == "localhost");
-	REQUIRE(out.getOscPort() == "9001");
+	out.setDestination("localhost", "9001");
+	REQUIRE(out.getAddress() == "localhost");
+	REQUIRE(out.getPort() == "9001");
 	
 	// Test with whitespace (should be trimmed)
-	out.setOscDestination("  127.0.0.1  ", "  9002  ");
-	REQUIRE(out.getOscAddress() == "127.0.0.1");
-	REQUIRE(out.getOscPort() == "9002");
+	out.setDestination("  127.0.0.1  ", "  9002  ");
+	REQUIRE(out.getAddress() == "127.0.0.1");
+	REQUIRE(out.getPort() == "9002");
 }
 
 TEST_CASE("Invalid port numbers rejected", "[AhabUdp]") {
-	AhabOoscUdpOutput out;
+	AhabOoscOutput out(AhabOoscOutput::Kind::UDP);
 	
-	out.setUdpDestination("127.0.0.1", "8000");
-	REQUIRE(out.getUdpPort() == "8000");
+	out.setDestination("127.0.0.1", "8000");
+	REQUIRE(out.getPort() == "8000");
 	
 	// Try to set invalid port (should be ignored)
-	out.setUdpDestination("127.0.0.1", "invalid");
-	REQUIRE(out.getUdpPort() == "8000"); // Should remain unchanged
+	out.setDestination("127.0.0.1", "invalid");
+	REQUIRE(out.getPort() == "8000"); // Should remain unchanged
 	
 	// Try to set out-of-range port
-	out.setUdpDestination("127.0.0.1", "99999");
-	REQUIRE(out.getUdpPort() == "8000"); // Should remain unchanged
+	out.setDestination("127.0.0.1", "99999");
+	REQUIRE(out.getPort() == "8000"); // Should remain unchanged
 }

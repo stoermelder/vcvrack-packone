@@ -72,11 +72,11 @@ public:
 	// Replace the current field with provided cells of given dimensions.
 	void replaceField(Glyph* cells, Usz new_h, Usz new_w);
 
-	// Serialize a rectangular region of a field to ORCA plain text. Each row
-	// will be written as a line terminated by '\n'. Static so UI-thread callers
-	// can serialize their own consistent snapshot (e.g. the widget's
-	// `display_field`) instead of reading the sim's live field buffer, which the
-	// DSP thread may be writing to from step().
+	// Serialize a rectangular region of a field to ORCA plain text. Each row is
+	// a line terminated by '\n'. Static so UI-thread callers can serialize their
+	// own consistent snapshot (e.g. the widget's `display_field`) instead of
+	// reading the sim's live field buffer, which the DSP thread may be writing
+	// to from step().
 	static std::string convertRectToOrca(const Field& field, Usz y, Usz x, Usz h, Usz w);
 
 	// Single-step the VM (one tick). Increments internal tick counter and
@@ -84,9 +84,9 @@ public:
 	void step();
 	void stepRequest();
 
-	// Process any pending UI requests (to be called from DSP thread before stepping).
-	// If notifyTick() was called from the UI, `process()` will publish the current
-	// write buffer for display (without advancing the simulation) and invoke the
+	// Process any pending UI requests (call from the DSP thread before stepping).
+	// If notifyTick() was called from the UI, `process()` publishes the current
+	// write buffer for display (without advancing the simulation) and invokes the
 	// tick callback with step_happened == false.
 	void process();
 
@@ -219,9 +219,9 @@ private:
 	Usz undo_limit_ = 30;
 
 	// Fixed scratch buffer owned by the DSP thread, sized for the maximum field
-	// (MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH). Used as a staging area by
-	// moveRect/setFieldSize (no stack alloca) and by undo/redo when capturing
-	// snapshots, so no heap buffer is ever shipped across the UI->DSP command
+	// (MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH). Staging area for moveRect/setFieldSize
+	// (no stack alloca) and undo/redo snapshots, so no heap buffer crosses the
+	// UI->DSP command
 	// queue and the stack bound is explicit.
 	Glyph scratch_[MAX_FIELD_HEIGHT * MAX_FIELD_WIDTH];
 

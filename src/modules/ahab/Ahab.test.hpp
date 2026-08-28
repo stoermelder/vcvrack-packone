@@ -133,16 +133,19 @@ static void stepSim(AhabModule* m) {
 }
 
 
-// Recording fake for AhabUdpOutput — records every send/set call so the module
-// can be tested for UDP/OSC event routing without any sockets. The module owns
-// the fake (std::unique_ptr), so tests allocate it with `new` and let
-// Test::destroyModule(m) delete it.
-struct RecordingUdpOutput : AhabUdpOutput {
-	// sendUdpDatagram payloads (raw bytes)
+// Recording fake for AhabOoscOutput — records every send/set call so the
+// module can be tested for UDP/OSC event routing without any sockets. Derives
+// from AhabOoscOutput so a single fake object can stand in for either instance
+// the module owns. The module owns the fakes (std::unique_ptr), so tests
+// allocate them with `new` and let Test::destroyModule(m) delete them.
+struct RecordingUdpOutput : AhabOoscOutput {
+	RecordingUdpOutput() : AhabOoscOutput(Kind::UDP) {}
+
+	// sendDatagram payloads (raw bytes)
 	std::vector<std::vector<uint8_t>> udpDatagrams;
-	// sendOscInts calls (OSC path + int payload)
+	// sendInts calls (OSC path + int payload)
 	std::vector<std::pair<std::string, std::vector<I32>>> oscInts;
-	// setUdpDestination / setOscDestination calls (for the config tests)
+	// setDestination calls (for the config tests)
 	std::vector<std::pair<std::string, std::string>> udpDestinations;
 	std::vector<std::pair<std::string, std::string>> oscDestinations;
 
@@ -152,26 +155,23 @@ struct RecordingUdpOutput : AhabUdpOutput {
 	std::string oscAddress = "127.0.0.1";
 	std::string oscPort = "49162";
 
-	void setUdpDestination(const std::string& address, const std::string& port) override {
+	// One override covers both base setDestination()s; the fake records the call
+	// under both transports since it stands in for either instance.
+	void setDestination(const std::string& address, const std::string& port) override {
 		udpDestinations.emplace_back(address, port);
+		oscDestinations.emplace_back(address, port);
 		udpAddress = address;
 		udpPort = port;
-	}
-	std::string getUdpAddress() const override { return udpAddress; }
-	std::string getUdpPort() const override { return udpPort; }
-
-	void setOscDestination(const std::string& address, const std::string& port) override {
-		oscDestinations.emplace_back(address, port);
 		oscAddress = address;
 		oscPort = port;
 	}
-	std::string getOscAddress() const override { return oscAddress; }
-	std::string getOscPort() const override { return oscPort; }
+	std::string getAddress() const override { return udpAddress; }
+	std::string getPort() const override { return udpPort; }
 
-	void sendUdpDatagram(const char* data, Usz size) override {
+	void sendDatagram(const char* data, Usz size) override {
 		udpDatagrams.emplace_back(data, data + size);
 	}
-	void sendOscInts(const char* osc_path, I32 const* vals, Usz count) override {
+	void sendInts(const char* osc_path, I32 const* vals, Usz count) override {
 		std::vector<I32> v;
 		if (vals && count > 0) v.assign(vals, vals + count);
 		oscInts.emplace_back(std::string(osc_path), std::move(v));
@@ -195,12 +195,12 @@ struct RecordingUdpOutput : AhabUdpOutput {
 	}
 };
 
-// Construct an AhabModule with an injected UDP output (e.g. a
-// RecordingUdpOutput fake). Test::createModule uses the dylib factory, which
-// cannot inject, so injection tests build the module directly and mirror its
-// post-construction setup (id + onSampleRateChange).
-static AhabModule* createModuleWithUdp(AhabUdpOutput* udpOutput) {
-	AhabModule* m = new AhabModule(udpOutput);
+// Construct an AhabModule with injected UDP and OSC outputs (e.g. a
+// RecordingUdpOutput fake for each). Test::createModule uses the dylib factory,
+// which cannot inject, so injection tests build the module directly and mirror
+// its post-construction setup (id + onSampleRateChange).
+static AhabModule* createModuleWithOutputs(AhabOoscOutput* udpOutput, AhabOoscOutput* oscOutput) {
+	AhabModule* m = new AhabModule(udpOutput, oscOutput);
 	m->id = Test::getModuleId();
 	Module::SampleRateChangeEvent e;
 	e.sampleRate = APP->engine->getSampleRate();

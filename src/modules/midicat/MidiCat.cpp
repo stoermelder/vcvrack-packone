@@ -666,7 +666,10 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 
 				slots[mapIndex].setCc(ccJ ? json_integer_value(ccJ) : -1);
 				slots[mapIndex].cc.ccMode = (CCMODE)json_integer_value(ccModeJ);
-				if (cc14bitJ) slots[mapIndex].setCc14bit(json_boolean_value(cc14bitJ));
+				// A legacy preset predates 14-bit support and has no "cc14bit" key at all --
+				// treat that the same as an explicit false, otherwise a slot already in
+				// 14-bit mode stays there with a stale 14-bit value range.
+				slots[mapIndex].setCc14bit(cc14bitJ ? json_boolean_value(cc14bitJ) : false);
 				slots[mapIndex].setNote(noteJ ? json_integer_value(noteJ) : -1);
 				slots[mapIndex].note.noteMode = (NOTEMODE)json_integer_value(noteModeJ);
 				slots[mapIndex].midiOptions = json_integer_value(midiOptionsJ);
@@ -1182,7 +1185,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		if (module->slots[id].cc.getCc() >= 0) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(construct<CcModeMenuItem>(&MenuItem::text, "Input mode for CC", &CcModeMenuItem::module, module, &CcModeMenuItem::id, id));
-			menu->addChild(construct<Cc14bitItem>(&MenuItem::text, "14-bit", &MenuItem::disabled, module->slots[id].cc.getCc() > 32, &Cc14bitItem::module, module, &Cc14bitItem::id, id));
+			menu->addChild(construct<Cc14bitItem>(&MenuItem::text, "14-bit", &MenuItem::disabled, module->slots[id].cc.getCc() >= 32, &Cc14bitItem::module, module, &Cc14bitItem::id, id));
 		}
 		if (module->slots[id].note.getNote() >= 0) {
 			menu->addChild(new MenuSeparator());

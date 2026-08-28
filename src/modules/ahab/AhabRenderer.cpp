@@ -107,9 +107,9 @@ void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, co
 	// Compute cell sizes based on areaSize and field
 	float cell_w, cell_h;
 	computeCellAndPadding(areaSize, field, cell_w, cell_h);
-	// Choose font size so glyphPaddingRatio == 1.0 fills a cell exactly (no extra border).
-	// For the chosen monospace font, a glyph's width is approximately fontSize * 0.5,
-	// so we pick fontSize = glyphPaddingRatio * min(cell_h * 2.0f, cell_w * 2.0f).
+	// Choose font size so glyphPaddingRatio == 1.0 fills a cell exactly (no extra
+	// border). For the chosen monospace font a glyph is ~fontSize*0.5 wide, so
+	// fontSize = glyphPaddingRatio * min(cell_h, cell_w) * 2.0f.
 	float chosenFontSize = this->glyphPaddingRatio * std::min(cell_h * 2.0f, cell_w * 2.0f);
 	setFontSize(chosenFontSize);
 	// Use renderer's pad as origin for drawing

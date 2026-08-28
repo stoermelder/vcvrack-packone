@@ -355,3 +355,112 @@ TEST_CASE("All outputs independent", "[IntermixGate]") {
 	Test::destroyModule(gateModule);
 	delete intermixModule;
 }
+
+TEST_CASE("Chain member removal invalidates forwarded expander messages", "[IntermixGate]") {
+	auto intermixModule = new IntermixModuleMock<8>();
+	auto gateModule1 = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+	auto gateModule2 = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+
+	// Chain: MockHead -> Gate1 -> Gate2; both gates forward the head pointer
+	intermixModule->rightExpander.module = gateModule1;
+	gateModule1->leftExpander.module = intermixModule;
+	gateModule1->rightExpander.module = gateModule2;
+	gateModule2->leftExpander.module = gateModule1;
+
+	intermixModule->currentMatrix[0][0] = 0.5f;
+	intermixModule->process(Test::makeProcessArgs(1));
+	intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
+	gateModule1->process(Test::makeProcessArgs(1));
+	gateModule1->rightExpander.consumerMessage = gateModule1->rightExpander.producerMessage;
+	gateModule2->process(Test::makeProcessArgs(1));
+	gateModule2->rightExpander.consumerMessage = gateModule2->rightExpander.producerMessage;
+
+	// Both gates now publish a forwarded head pointer to their right neighbor
+	REQUIRE(gateModule1->rightExpander.producerMessage != nullptr);
+	REQUIRE(gateModule2->rightExpander.producerMessage != nullptr);
+	// Row 0 of the matrix is active, so both gates drove their output high
+	REQUIRE(gateModule1->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 10.f);
+	REQUIRE(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 10.f);
+
+	SECTION("Removal notification makes survivors drop forwarded messages") {
+		// IntermixChainModule::onRemove() notifies the surviving members.
+		StoermelderPackOne::notifyModuleListeners("Intermix");
+
+		// Both gates consume the notification: they unpublish, reset their
+		// outputs and skip the sample instead of dereferencing a possibly
+		// dangling pointer.
+		gateModule1->process(Test::makeProcessArgs(2));
+		gateModule2->process(Test::makeProcessArgs(2));
+
+		CHECK(gateModule1->rightExpander.producerMessage == nullptr);
+		CHECK(gateModule1->rightExpander.consumerMessage == nullptr);
+		CHECK(gateModule2->rightExpander.producerMessage == nullptr);
+		CHECK(gateModule2->rightExpander.consumerMessage == nullptr);
+		CHECK(gateModule1->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 0.f);
+		CHECK(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 0.f);
+	}
+
+	SECTION("onRemove() of a middle member unpublishes and notifies survivors") {
+		Module::RemoveEvent e;
+		gateModule1->onRemove(e);
+
+		CHECK(gateModule1->rightExpander.producerMessage == nullptr);
+		CHECK(gateModule1->rightExpander.consumerMessage == nullptr);
+
+		// gateModule2 received the notification: drops its forwarded copy
+		// and resets its outputs.
+		gateModule2->process(Test::makeProcessArgs(2));
+		CHECK(gateModule2->rightExpander.producerMessage == nullptr);
+		CHECK(gateModule2->rightExpander.consumerMessage == nullptr);
+		CHECK(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 0.f);
+	}
+
+	SECTION("Disconnected expander resets outputs down the chain") {
+		// The engine clears the adjacency of the survivor and dispatches
+		// ExpanderChangeEvent when the head is removed or moved away.
+		gateModule1->leftExpander.module = NULL;
+		Module::ExpanderChangeEvent e;
+		e.side = 0; // left
+		gateModule1->onExpanderChange(e);
+
+		gateModule1->process(Test::makeProcessArgs(2));
+		gateModule2->process(Test::makeProcessArgs(2));
+
+		// Both gates went low; gate2 dropped the no-longer-refreshed message
+		CHECK(gateModule1->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 0.f);
+		CHECK(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 0.f);
+	}
+
+	Test::destroyModule(gateModule2);
+	Test::destroyModule(gateModule1);
+	delete intermixModule;
+}
+
+TEST_CASE("ExpanderChangeEvent invalidates forwarded messages", "[IntermixGate]") {
+	auto intermixModule = new IntermixModuleMock<8>();
+	auto gateModule = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+
+	intermixModule->rightExpander.module = gateModule;
+	gateModule->leftExpander.module = intermixModule;
+
+	intermixModule->currentMatrix[0][0] = 0.5f;
+	intermixModule->process(Test::makeProcessArgs(1));
+	intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
+	gateModule->process(Test::makeProcessArgs(1));
+
+	REQUIRE(gateModule->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 10.f);
+
+	// The engine dispatches this when the left neighbor is removed, replaced
+	// or the rack is rearranged.
+	Module::ExpanderChangeEvent e;
+	e.side = 0; // left
+	gateModule->onExpanderChange(e);
+
+	// Forwarded message dropped and outputs reset immediately at event time
+	CHECK(gateModule->rightExpander.producerMessage == nullptr);
+	CHECK(gateModule->rightExpander.consumerMessage == nullptr);
+	CHECK(gateModule->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 0.f);
+
+	Test::destroyModule(gateModule);
+	delete intermixModule;
+}

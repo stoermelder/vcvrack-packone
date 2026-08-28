@@ -335,10 +335,12 @@ struct MappingSlot {
 
 		// MIDI feedback is detached from the actual parameter value when the tracked
 		// value is not the parameter's: the toggle and snapped modes drive the parameter
-		// without tracking it, feedback bound to a light reads the light instead, and a
+		// without tracking it, feedback bound to a light reads the light instead, a
 		// snapped parameter's actual value may differ from the tracked one due to
-		// rounding. In those cases we send feedback but must not write the value back.
-		bool sendOnlyFeedback = tracker.detached || param.hasLight() || pq->snapEnabled;
+		// rounding, and no MIDI has been received yet (tracker.lastValue < 0) so there is
+		// nothing valid to write back. In those cases we send feedback but must not write
+		// the value back.
+		bool sendOnlyFeedback = tracker.detached || tracker.lastValue < 0 || param.hasLight() || pq->snapEnabled;
 
 		if (lastValueOut == v) return;
 
