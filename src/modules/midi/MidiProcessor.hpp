@@ -91,6 +91,12 @@ struct MidiProcessor {
     int16_t pendingRpnMsb[16];
     int16_t pendingNrpnMsb[16];
 
+    // Reusable scratch MIDI message for the audio thread. `midi::Message`
+    // heap-allocates its internal byte vector on construction, so creating one
+    // per call inside `process()`/`processBypass()` would be a per-pump
+    // malloc/free.
+    rack::midi::Message scratchMidiMessage;
+
     // Default: own the input queue, pumping it in process()/processBypass().
     //
     // Injected: the CALLER owns the queue and must keep it alive for at least as

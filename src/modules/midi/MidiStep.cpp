@@ -58,6 +58,11 @@ struct MidiStepModule : Module {
 	int decPulseCount[CHANNELS];
 	dsp::PulseGenerator decPulse[CHANNELS];
 
+	// Reusable scratch MIDI message for the audio thread. `midi::Message`
+	// heap-allocates its internal byte vector on construction, so creating one
+	// per sample inside `process()` would be a per-sample malloc/free.
+	midi::Message scratchMidiMessage;
+
 #ifdef METAMODULE
 	CircularBuffer<midi::Message, 8> msg_history;
 #endif
@@ -93,7 +98,9 @@ struct MidiStepModule : Module {
 	}
 
 	void processBypass(const ProcessArgs& args) override {
-		midi::Message msg;
+		// Reuse the module-level scratch message so bypass doesn't perform
+		// a per-sample heap allocation on the audio thread.
+		midi::Message& msg = scratchMidiMessage;
 		// Drain the queue while bypassed
 		while (midiInput.tryPop(&msg, args.frame)) {
 			(void)0;
@@ -102,7 +109,7 @@ struct MidiStepModule : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
-		midi::Message msg;
+		midi::Message& msg = scratchMidiMessage;
 		while (midiInput.tryPop(&msg, args.frame)) {
 #ifdef METAMODULE
 			if (msg.getStatus() == 0xb) {
