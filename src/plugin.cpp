@@ -86,9 +86,11 @@ void init(rack::Plugin* p) {
 
 	StoermelderPackOne::pluginSettings.readFromJson();
 
+#ifndef METAMODULE
 	if (StoermelderPackOne::pluginSettings.midiEsxDriverEnabled) {
 		StoermelderPackOne::MidiEsx::init();
 	}
+#endif
 }
 
 
