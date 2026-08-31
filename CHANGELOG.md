@@ -1,5 +1,10 @@
 ## 2.6.0
 
+### New modules
+
+- Module [SPLICE-KIT](./docs/splicekit/SpliceKit.md)
+    - 8x8 matrix patch-bay for creating and removing cables by pressing button pairs. Stores up to eight independent scenes per instance, with full MIDI control and feedback for playing your patch from a grid controller
+
 ### Changes and Fixes
 
 - Module [AHAB](./docs/ahab/Ahab.md)
