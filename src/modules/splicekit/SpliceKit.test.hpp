@@ -14,18 +14,11 @@ using namespace StoermelderPackOne::SpliceKit;
 SYNC_MODEL(modelSpliceKit, "SpliceKit");
 Test::TestContext<> testContext;
 
-// Shadows Test::createModule<SpliceKitModule> for this suite: puts taskProcessorUi into
-// sync mode (see GuiTaskProcessor::syncMode) right after construction, before any test
-// code can call triggerCell()/process() and give it a chance to enqueue something. With
-// sync mode off, taskProcessorUi.process() (called every processDivider tick, from
-// SpliceKitModule::process()) starts a REAL background worker thread the instant
-// APP->window is null — which it always is in this headless test binary. That worker
-// then races the test's own thread over crossPending/the instance registry (both
-// documented GUI-thread-only, an invariant the production code upholds by construction
-// but this harness cannot), and over any module the test destroys while the worker is
-// still mid-callback. Sync mode collapses enqueue() to an inline call and makes
-// process() a no-op, so no such thread ever exists — the same fix MidiKit's
-// SyncTaskWorker (TaskWorker.hpp) applies for its own worker abstraction.
+// Shadows Test::createModule to put taskProcessorUi in sync mode right after construction.
+// Without it, taskProcessorUi.process() (every processDivider tick) starts a real worker
+// thread once APP->window is null — always true headless — which races the test thread over
+// crossPending/the instance registry (GUI-thread-only in production) and any module destroyed
+// mid-callback. Sync mode collapses enqueue() to an inline call and makes process() a no-op.
 static SpliceKitModule* createModule() {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	m->taskProcessorUi.syncMode = true;
@@ -45,13 +38,10 @@ static MidiOutPreset makeNoteOnPreset(int note = 36, int value = 127) {
 }
 
 
-// ---- Mock cable registry (SpliceKit test review 2.1) ----
-// Production Splice-Kit routes cable create/remove/find through vcv::hasCable/addCable/
-// removeCable (see vcv_cables.hpp), which consult the null-by-default cableAccess pointer.
-// Installing this registry lets the suite assert the observable patch effect — a cable
-// actually appearing/disappearing — without a RackWidget/CableWidget tree. Cables are keyed
-// by output port -> set of input ports, the same orientation every vcv:: call site uses
-// (output first).
+// ---- Mock cable registry ----
+// Production routes cables through vcv::hasCable/addCable/removeCable (vcv_cables.hpp), which
+// consult the null-by-default cableAccess. This registry lets the suite assert a cable
+// actually appears/disappears without a RackWidget/CableWidget tree. Keyed output -> inputs.
 #include <map>
 #include <set>
 #include <cstdint>
@@ -78,10 +68,9 @@ struct MockCableRegistry : vcv::CableAccess {
 	}
 };
 
-// RAII installs a MockCableRegistry as the active vcv::cableAccess for the enclosing test
-// and restores the previous access on exit. Declare it first in a test body: it owns the
-// mock, so the mock outlives the override and both are torn down on scope exit — also when
-// a REQUIRE fails and Catch2 unwinds the body.
+// RAII installs a MockCableRegistry as the active vcv::cableAccess, restoring the previous on
+// exit. Declare first in a test body so the mock outlives the override through scope exit
+// (including Catch2 unwinding on a failed REQUIRE).
 struct CableScaffold {
 	MockCableRegistry mock;
 	vcv::CableAccess* prev;
@@ -89,14 +78,11 @@ struct CableScaffold {
 	~CableScaffold() { vcv::cableAccess = prev; }
 };
 
-// RAII owner for modules under test — see Test::ModuleScaffold in test_context.hpp for why
-// the bare create/destroy pattern is unsafe once an assertion can fail.
-//
-// This binds the generic scaffold to this suite's own createModule() shadow above, so every
-// scaffolded module gets taskProcessorUi.syncMode set the same way a directly-created one
-// does. SpliceKitModule needs no special teardown beyond that: it registers itself in two
-// process-wide statics (getInstances() and, once armed, crossPending()), and both are dropped
-// by its destructor and onRemove() respectively — which Test::destroyModule() fires.
+// RAII owner for modules under test (see Test::ModuleScaffold for why bare create/destroy is
+// unsafe once an assertion can fail). Binds to this suite's createModule() shadow so every
+// scaffolded module gets taskProcessorUi.syncMode set. SpliceKitModule needs no extra teardown:
+// it drops its two process-wide statics (getInstances(), crossPending()) in its destructor and
+// onRemove(), both fired by Test::destroyModule().
 struct ModuleScaffold : Test::ModuleScaffold<SpliceKitModule> {
 	ModuleScaffold() : Test::ModuleScaffold<SpliceKitModule>([]() { return createModule(); }) {}
 };

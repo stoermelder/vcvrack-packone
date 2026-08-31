@@ -37,50 +37,38 @@ static inline bool containsWhitespace(const std::string &s) {
 	return false;
 }
 
-// Transport for ORCA ';' (raw UDP datagram) and '=' (OSC-over-UDP) output.
-// The module owns one; tests inject a recording fake to assert event routing
-// with no sockets. All send methods are DSP-thread-safe by contract.
-struct AhabUdpOutput {
-	virtual ~AhabUdpOutput() = default;
+// One transport class, instantiated twice (UDP + OSC). Each instance owns its
+// own lazily-created Oosc_dev socket, so configuring both destinations no
+// longer makes one send steal the other's socket.
+// Sockets are created on first send — users rarely use either
+// output, so we avoid opening a socket until it is actually needed.
+//
+// The two instances differ only in their default port and the JSON keys they
+// persist under (udpAddress/udpPort vs oscAddress/oscPort), selected by Kind.
+struct AhabOoscOutput {
+	enum class Kind { UDP, OSC };
 
-	virtual void setUdpDestination(const std::string& address, const std::string& port) = 0;
-	virtual std::string getUdpAddress() const = 0;
-	virtual std::string getUdpPort() const = 0;
+	Kind kind;
+	Oosc_dev* dev_ = nullptr;   // bound to address_ / port_
 
-	virtual void setOscDestination(const std::string& address, const std::string& port) = 0;
-	virtual std::string getOscAddress() const = 0;
-	virtual std::string getOscPort() const = 0;
+	std::string address_ = "127.0.0.1";
+	std::string port_ = "49161";
 
-	virtual void sendUdpDatagram(const char* data, Usz size) = 0;
-	virtual void sendOscInts(const char* osc_path, I32 const* vals, Usz count) = 0;
-
-	// Persistence. Writes/reads the four destination keys (udpAddress, udpPort,
-	// oscAddress, oscPort) into/from the passed-in object — which the module
-	// passes as the "sim" sub-object, keeping the stored JSON format unchanged.
-	virtual void toJson(json_t* simJ) const = 0;
-	virtual void fromJson(json_t* simJ) = 0;
-};
-
-// Real implementation over orca-c's Oosc_dev UDP socket. One socket is shared
-// by both the UDP and OSC destinations (preserving the original behaviour).
-struct AhabOoscUdpOutput : AhabUdpOutput {
-	// UDP device and destinations
-	Oosc_dev* udp_dev_ = nullptr;
-	std::string udpAddress_ = "127.0.0.1";
-	std::string udpPort_ = "49161";
-	std::string oscAddress_ = "127.0.0.1";
-	std::string oscPort_ = "49162";
-
-	~AhabOoscUdpOutput() override {
-		destroyUdpDev();
+	AhabOoscOutput(Kind k) : kind(k) {
+		port_ = (k == Kind::UDP) ? "49161" : "49162";
+	}
+	virtual ~AhabOoscOutput() {
+		destroyDev();
 	}
 
-	std::string getUdpAddress() const override { return udpAddress_; }
-	std::string getUdpPort() const override { return udpPort_; }
-	std::string getOscAddress() const override { return oscAddress_; }
-	std::string getOscPort() const override { return oscPort_; }
+	virtual std::string getAddress() const {
+		return address_;
+	}
+	virtual std::string getPort() const {
+		return port_;
+	}
 
-	void setUdpDestination(const std::string& address, const std::string& port) override {
+	virtual void setDestination(const std::string& address, const std::string& port) {
 		std::string newAddr = address;
 		std::string newPort = port;
 		trimStr(newAddr);
@@ -88,98 +76,72 @@ struct AhabOoscUdpOutput : AhabUdpOutput {
 		if (!isValidPort(newPort)) return;
 		if (!newAddr.empty() && containsWhitespace(newAddr)) return;
 
-		udpAddress_ = newAddr;
-		udpPort_ = newPort;
-		destroyUdpDev();
+		address_ = newAddr;
+		port_ = newPort;
+		destroyDev();   // only this socket depends on this destination
 	}
 
-	void sendUdpDatagram(const char* data, Usz size) override {
-		// If a configured destination exists, use it; otherwise try defaults
-		if (!udp_dev_) {
-			if (!udpAddress_.empty()) {
-				if (!ensureUdpDev(udpAddress_.c_str(), udpPort_.c_str())) return;
+	// UDP datagram (ORCA ';' operator).
+	virtual void sendDatagram(const char* data, Usz size) {
+		if (!dev_) {
+			if (!address_.empty()) {
+				if (!ensureDev(address_.c_str(), port_.c_str())) return;
 			} else {
-				if (!ensureUdpDev("127.0.0.1", "49161")) return;
+				if (!ensureDev("127.0.0.1", "49161")) return;
 			}
 		}
-		oosc_send_datagram(udp_dev_, data, size);
+		oosc_send_datagram(dev_, data, size);
 	}
 
-	void setOscDestination(const std::string& address, const std::string& port) override {
-		std::string newAddr = address;
-		std::string newPort = port;
-		trimStr(newAddr);
-		trimStr(newPort);
-		if (!isValidPort(newPort)) return;
-		if (!newAddr.empty() && containsWhitespace(newAddr)) return;
-
-		oscAddress_ = newAddr;
-		oscPort_ = newPort;
-		destroyUdpDev();
-	}
-
-	void sendOscInts(const char* osc_path, I32 const* vals, Usz count) override {
-		// Ensure UDP device exists (respect configured destination or use defaults)
-		if (!udp_dev_) {
-			if (!oscAddress_.empty()) {
-				if (!ensureUdpDev(oscAddress_.c_str(), oscPort_.c_str())) return;
+	// OSC ints (ORCA '=' operator).
+	virtual void sendInts(const char* osc_path, I32 const* vals, Usz count) {
+		if (!dev_) {
+			if (!address_.empty()) {
+				if (!ensureDev(address_.c_str(), port_.c_str())) return;
 			} else {
-				if (!ensureUdpDev("127.0.0.1", "49161")) return;
+				if (!ensureDev("127.0.0.1", "49161")) return;
 			}
 		}
-		oosc_send_int32s(udp_dev_, osc_path, vals, count);
+		oosc_send_int32s(dev_, osc_path, vals, count);
 	}
 
-	// Persistence. The passed object is the module's "sim" sub-object; the four
-	// keys are added to it so the stored JSON format is unchanged.
-	void toJson(json_t* simJ) const override {
-		json_object_set_new(simJ, "udpAddress", json_string(udpAddress_.c_str()));
-		json_object_set_new(simJ, "udpPort", json_string(udpPort_.c_str()));
-		json_object_set_new(simJ, "oscAddress", json_string(oscAddress_.c_str()));
-		json_object_set_new(simJ, "oscPort", json_string(oscPort_.c_str()));
+	// Persistence: writes/reads the address / port keys (udpAddress/udpPort or
+	// oscAddress/oscPort, chosen by Kind) into the module's "sim" sub-object,
+	// keeping the stored JSON format unchanged.
+	virtual void toJson(json_t* simJ) const {
+		const char* addrKey = (kind == Kind::UDP) ? "udpAddress" : "oscAddress";
+		const char* portKey = (kind == Kind::UDP) ? "udpPort" : "oscPort";
+		json_object_set_new(simJ, addrKey, json_string(address_.c_str()));
+		json_object_set_new(simJ, portKey, json_string(port_.c_str()));
 	}
 
-	void fromJson(json_t* simJ) override {
-		// Restore UDP settings if present
-		json_t* addrJ = json_object_get(simJ, "udpAddress");
-		json_t* portJ = json_object_get(simJ, "udpPort");
+	virtual void fromJson(json_t* simJ) {
+		const char* addrKey = (kind == Kind::UDP) ? "udpAddress" : "oscAddress";
+		const char* portKey = (kind == Kind::UDP) ? "udpPort" : "oscPort";
+		json_t* addrJ = json_object_get(simJ, addrKey);
+		json_t* portJ = json_object_get(simJ, portKey);
 		std::string addr;
 		std::string port;
 		if (addrJ && json_is_string(addrJ)) addr = json_string_value(addrJ);
 		if (portJ && json_is_string(portJ)) port = json_string_value(portJ);
-		if (!addr.empty() || !port.empty()) {
-			setUdpDestination(addr, port);
-		}
-		// Restore OSC settings if present
-		json_t* oscAddrJ = json_object_get(simJ, "oscAddress");
-		json_t* oscPortJ = json_object_get(simJ, "oscPort");
-		std::string oscAddr;
-		std::string oscPort;
-		if (oscAddrJ && json_is_string(oscAddrJ)) oscAddr = json_string_value(oscAddrJ);
-		if (oscPortJ && json_is_string(oscPortJ)) oscPort = json_string_value(oscPortJ);
-		if (!oscAddr.empty() || !oscPort.empty()) {
-			setOscDestination(oscAddr, oscPort);
-		}
+		if (!addr.empty() || !port.empty()) setDestination(addr, port);
 	}
 
-	// Ensure UDP device exists (tries to create with given address/port if missing).
-	bool ensureUdpDev(const char* addr, const char* port) {
-		if (udp_dev_) return true;
-		if (oosc_dev_create_udp(&udp_dev_, addr, port) != Oosc_udp_create_error_ok) {
-			udp_dev_ = nullptr;
+	bool ensureDev(const char* addr, const char* port) {
+		if (dev_) return true;
+		if (oosc_dev_create_udp(&dev_, addr, port) != Oosc_udp_create_error_ok) {
+			dev_ = nullptr;
 			return false;
 		}
-		// store the destination
-		udpAddress_ = addr ? addr : std::string();
-		udpPort_ = port ? port : std::string();
+		address_ = addr ? addr : std::string();
+		port_ = port ? port : std::string();
 		return true;
 	}
 
-	// Destroy UDP device if present.
-	void destroyUdpDev() {
-		if (udp_dev_) {
-			oosc_dev_destroy(udp_dev_);
-			udp_dev_ = nullptr;
+	void destroyDev() {
+		if (dev_) {
+			oosc_dev_destroy(dev_);
+			dev_ = nullptr;
 		}
 	}
 };

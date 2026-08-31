@@ -29,5 +29,36 @@ TEST_CASE("Preset JSON null-guards", "[CVMapCtx][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
+}
+
+TEST_CASE("JSON round-trip preserves state", "[CVMapCtx][JSON]") {
+	CVMapCtxModule* m = Test::createModule<CVMapCtxModule>("CVMapCtx");
+	CVMapCtxModule* m2 = Test::createModule<CVMapCtxModule>("CVMapCtx");
+
+	m->panelTheme = 1;
+	m->cvMapId = "ABC123xy";
+	json_t* j = m->dataToJson();
+	m2->dataFromJson(j);
+	json_decref(j);
+
+	REQUIRE(m2->panelTheme == 1);
+	REQUIRE(m2->cvMapId == "ABC123xy");
+
+	Test::destroyModule(m);
+	Test::destroyModule(m2);
 }

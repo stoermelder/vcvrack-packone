@@ -11,10 +11,7 @@ namespace SpliceKit {
 static const int MATRIX_SIZE = 8;
 static const int MATRIX_COUNT = MATRIX_SIZE * MATRIX_SIZE;
 
-// Number of onboard scene slots. Currently equal to MATRIX_SIZE (the matrix's row/column
-// count) but conceptually independent — kept as its own constant so scene-related code
-// doesn't implicitly depend on the matrix's dimensions, which matter for an unrelated reason
-// (SpliceKitVizOverlay::cellCenter() and the grid layout in SpliceKitWidget's constructor).
+// Scene slots; kept independent of MATRIX_SIZE so scene code doesn't depend on matrix dims.
 static const int SCENE_COUNT = 8;
 
 // LED state identifiers — order must match the light-loop state assignment in SpliceKit.cpp.
@@ -42,9 +39,8 @@ enum {
 	LED_STATE_COUNT
 };
 
-// MIDI output message type.
-// MIDI_OUT_FROM_SLOT_TYPE: derive status byte from the slot's own type (Note→NoteOn, CC→CC).
-// Requires noteMode=from-slot; the slot type must be NOTE or CC.
+// MIDI output message type. FROM_SLOT_TYPE derives status from the slot's own type
+// (Note→NoteOn, CC→CC); requires noteMode=from-slot with a NOTE/CC slot.
 enum MidiOutMsgType {
 	MIDI_OUT_NONE = 0,
 	MIDI_OUT_NOTE_ON,
@@ -53,10 +49,8 @@ enum MidiOutMsgType {
 	MIDI_OUT_FROM_SLOT_TYPE
 };
 
-// How the note/CC number is resolved when sending MIDI output for an LED state.
-//   FROM_SLOT — use the button's current MIDI input mapping number (the note/CC
-//               that was learned or applied from the preset layout).
-//   FIXED     — use spec.note for every button, regardless of its mapping.
+// How the note/CC number is resolved for an LED state: FROM_SLOT uses the button's
+// learned mapping number; FIXED uses spec.note for every button.
 enum MidiOutNoteMode {
 	MIDI_OUT_FROM_SLOT = 0,
 	MIDI_OUT_FIXED
@@ -113,9 +107,8 @@ static void parseSlotsBlock(json_t* j, MidiSlot* slots, int count) {
 	}
 }
 
-// Serialize a slot block to JSON, mirroring parseSlotsBlock(). All slots in a block share
-// one MidiTrackingType (the layout format has no per-slot type), so the first mapped slot's
-// type is used for the whole block; returns nullptr if no slot in the block is mapped.
+// Serialize a slot block to JSON (mirrors parseSlotsBlock). All slots share one type, so the
+// first mapped slot's type is used; returns nullptr if no slot in the block is mapped.
 static json_t* slotsBlockToJson(const MidiSlot* slots, int count) {
 	MidiTrackingType type = MidiTrackingType::NONE;
 	for (int i = 0; i < count; i++) {
@@ -262,10 +255,9 @@ struct MidiOutPreset {
 //
 // ---------------------------------------------------------------------------
 
-// Directory containing the built-in *.ctrl.json preset files, resolved relative
-// to the plugin install directory. Under the test harness (TESTING=1) the
-// plugin path is empty and tests run with the repo root as the working
-// directory, so a plain relative path resolves correctly there too.
+// Directory of built-in *.ctrl.json presets, relative to the plugin install dir. Under the
+// test harness (TESTING=1) the plugin path is empty and the repo root is the working dir, so
+// a plain relative path resolves correctly there too.
 static std::string controllerPresetsDir() {
 	if (isTesting() || !pluginInstance || pluginInstance->path.empty()) {
 		return "presets/SpliceKit";
@@ -273,15 +265,15 @@ static std::string controllerPresetsDir() {
 	return pluginInstance->path + "/presets/SpliceKit";
 }
 
-// One loaded preset plus the raw JSON text it was parsed from, so
-// "Save preset to file..." can write back the exact source file contents.
+// One loaded preset plus its raw JSON text, so "Save preset to file..." can write back the
+// exact source file contents.
 struct LoadedPreset {
 	MidiOutPreset preset;
 	std::string json;
 };
 
-// Parse and cache all presets on first call (C++11 magic-static, thread-safe).
-// Reads every *.ctrl.json file in controllerPresetsDir(), sorted by filename.
+// Parse and cache all presets on first call (C++11 magic-static, thread-safe). Reads every
+// *.ctrl.json file in controllerPresetsDir(), sorted by filename.
 static std::vector<LoadedPreset>& getLoadedPresets() {
 	static std::vector<LoadedPreset> presets = []() {
 		std::vector<LoadedPreset> v;

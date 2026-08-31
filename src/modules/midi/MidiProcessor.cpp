@@ -72,14 +72,16 @@ rack::midi::InputQueue& MidiProcessor::getInput() {
 
 
 void MidiProcessor::processBypass(int64_t frame) {
-	rack::midi::Message msg;
+	// Reuse the member scratch message so the audio thread never heap-allocates
+	// a `midi::Message` per pump.
+	rack::midi::Message& msg = scratchMidiMessage;
 	while (input->tryPop(&msg, frame)) {
 		(void)0;
 	}
 }
 
 void MidiProcessor::process(int64_t frame) {
-	rack::midi::Message msg;
+	rack::midi::Message& msg = scratchMidiMessage;
 	while (input->tryPop(&msg, frame)) {
 		processMessage(msg);
 	}

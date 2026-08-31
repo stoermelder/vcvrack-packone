@@ -229,9 +229,8 @@ TEST_CASE("removeCellConnections - clears all bitmask bits for the cell in the c
 	m->sceneStore.setConnection(0, 4, 9, true);
 	REQUIRE(m->sceneStore.connections[0][4] != 0);
 
-	// removeCellConnections also tears down the cable for each neighbour, which
-	// dereferences the rack's module list. With no port assignments set the cable
-	// half of disconnectLive() is a no-op, so this is safe to call.
+	// removeCellConnections also tears down each neighbour's cable (dereferencing the rack
+	// module list); with no port assignments the cable half of disconnectLive() is a no-op, so safe.
 	m->sceneStore.removeCellConnections(4);
 
 	REQUIRE(m->sceneStore.connections[0][4] == 0);
@@ -294,9 +293,8 @@ TEST_CASE("applyPresetLayout - applies cell and scene mappings from custom prese
 }
 
 TEST_CASE("applyPresetLayout - maps every valid MIDI note/CC number 0..127, including 0", "[SpliceKit]") {
-	// Note 0 and CC 0 are legal MIDI values and must not be skipped; sweep the
-	// full valid range for both cell and scene slots to guard against any
-	// other off-by-one at the boundaries.
+	// Note 0 and CC 0 are legal MIDI values and must not be skipped; sweep the full range for
+	// both cell and scene slots to guard against any other off-by-one at the boundaries.
 	for (int number = 0; number <= 127; number++) {
 		SpliceKitModule* m = createModule();
 
@@ -417,8 +415,7 @@ TEST_CASE("assignPort - rebinding drops the label describing the old port", "[Sp
 
 TEST_CASE("assignPort - assigning to an empty cell preserves a pre-set label", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
-	// No previous port, so there is nothing stale to discard — a label the user typed on an
-	// unassigned cell must survive the first assignment.
+	// No previous port, so nothing stale to discard — a label typed on an unassigned cell must survive.
 	m->cellLabels[6] = "Reverb send";
 
 	m->assignPort(6, 42, 0, engine::Port::OUTPUT);
@@ -433,8 +430,8 @@ TEST_CASE("assignPort - invalidates LED states so a changed color set is re-sent
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	std::fill(m->feedback.cellLedState, m->feedback.cellLedState + MATRIX_COUNT, LED_STATE_OFF);
 
-	// OUTPUT → INPUT flips the auto color set (0/red → 1/blue), so the cached LED state
-	// must be invalidated or the controller keeps showing the previous set's color.
+	// OUTPUT → INPUT flips the auto color set (0/red → 1/blue); invalidate the cached LED state
+	// or the controller keeps showing the previous set's color.
 	m->assignPort(0, 42, 0, engine::Port::INPUT);
 
 	REQUIRE(m->getCellColorSet(0) == 1);
@@ -459,8 +456,8 @@ TEST_CASE("assignPort - explicit color set override survives a rebind", "[Splice
 
 	m->assignPort(2, 88, 4, engine::Port::INPUT);
 
-	// The color set is a property of the physical button the user configured, not of the
-	// port — like the MIDI mapping, it stays put across a rebind.
+	// The color set is a property of the physical button, not the port — like the MIDI mapping,
+	// it stays put across a rebind.
 	REQUIRE(m->cellColorSet[2] == 3);
 	REQUIRE(m->getCellColorSet(2) == 3);
 
@@ -495,8 +492,8 @@ TEST_CASE("clearPort - clears connections in every scene, not just the current o
 
 	m->clearPort(0);
 
-	// A stale bit in an inactive scene would recreate a cable to the wrong port if cell 0
-	// were later reassigned and that scene activated (see the regression test below).
+	// A stale bit in an inactive scene would recreate a cable to the wrong port if cell 0 were
+	// later reassigned and that scene activated (see the regression test below).
 	REQUIRE(m->sceneStore.isConnected(0, 0, 1) == false);
 	REQUIRE(m->sceneStore.isConnected(3, 0, 2) == false);
 	// Symmetric halves must be cleared too, or the neighbour still claims the connection.
@@ -573,9 +570,8 @@ TEST_CASE("clearPort - regression: bypassing this cleanup let a stale bit resurr
 }
 
 
-// SpliceKitCellButton::onDragDrop needs real widget/event plumbing, so these cover the
-// module-level invariant the widget fix relies on: moveCell() rewrites both cells, so a
-// pending selection left on either one is stale and must be cleared by the caller.
+// onDragDrop needs real widget/event plumbing, so these cover the module-level invariant the
+// widget fix relies on: moveCell() rewrites both cells, so a pending selection on either is stale.
 
 TEST_CASE("moveCell - leaves a stale pending selection on the source cell", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
@@ -587,8 +583,8 @@ TEST_CASE("moveCell - leaves a stale pending selection on the source cell", "[Sp
 
 	m->moveCell(0, 5);
 
-	// moveCell deliberately does not touch pendingCellId — the drag-drop caller is
-	// responsible for clearing it (SpliceKitCellButton::onDragDrop, shiftDrag branch).
+	// moveCell deliberately does not touch pendingCellId — the drag-drop caller clears it
+	// (SpliceKitCellButton::onDragDrop, shiftDrag branch).
 	REQUIRE(m->portAssignments[0].isValid() == false);
 	REQUIRE(m->pendingCellId == 0);
 
@@ -604,9 +600,8 @@ TEST_CASE("moveCell - a pending selection on the moved-away cell cannot be cance
 
 	m->moveCell(0, 5);
 
-	// This is what makes issue 17 worse than a cosmetic stale blink: triggerCell() returns
-	// on the !isValid() guard before it reaches the "pressing the pending cell cancels it"
-	// branch, so the user cannot clear the selection by pressing the blinking cell.
+	// This is what makes issue 17 worse than a cosmetic stale blink: triggerCell() returns on the
+	// !isValid() guard before reaching the "pressing the pending cell cancels it" branch.
 	m->triggerCell(0);
 	REQUIRE(m->pendingCellId == 0);
 
@@ -628,8 +623,8 @@ TEST_CASE("moveCell - a pending selection on the destination cell silently chang
 
 	m->moveCell(0, 5);
 
-	// Still pending, but now pointing at a different port than the user selected — a second
-	// press would connect the wrong one. Hence the unconditional clear in the drag-drop path.
+	// Still pending but now pointing at a different port than the user selected — a second press
+	// would connect the wrong one. Hence the unconditional clear in the drag-drop path.
 	REQUIRE(m->pendingCellId == 5);
 	REQUIRE(m->portAssignments[5].moduleId == 42);
 	REQUIRE(m->portAssignments[5].portId == 0);
@@ -639,10 +634,9 @@ TEST_CASE("moveCell - a pending selection on the destination cell silently chang
 
 
 // clearPort/assignPort + pending selection
-// Unlike moveCell above — where the widget-level caller does the clearing, because that
-// gesture rewrites two cells at once — these two clear their own cell's pending selection,
-// since they are reached from several call sites (cell menu, drag-drop, both port-learn
-// paths) that would otherwise each have to remember to do it.
+// Unlike moveCell (widget caller clears, since it rewrites two cells at once), these clear their
+// own cell's pending selection — they're reached from several call sites (cell menu, drag-drop,
+// both port-learn paths) that would otherwise each have to remember to do it.
 
 TEST_CASE("clearPort - drops a pending selection on the cleared cell", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
@@ -653,10 +647,9 @@ TEST_CASE("clearPort - drops a pending selection on the cleared cell", "[SpliceK
 
 	m->clearPort(3);
 
-	// Regression: the cell used to stay pending here. It kept blinking (resolveCellVisual
-	// tests pendingCellId before `assigned`) and could not be cancelled by pressing it,
-	// because triggerCell() returns on the !isValid() guard first — leaving a state the
-	// user could only clear by accident.
+	// Regression: the cell used to stay pending here. It kept blinking (resolveCellVisual tests
+	// pendingCellId before `assigned`) and could not be cancelled by pressing it, because
+	// triggerCell() returns on the !isValid() guard first.
 	REQUIRE(m->portAssignments[3].isValid() == false);
 	REQUIRE(m->pendingCellId == -1);
 
@@ -686,8 +679,8 @@ TEST_CASE("assignPort - rebinding drops a pending selection on the rebound cell"
 	m->triggerCell(4);
 	REQUIRE(m->pendingCellId == 4);
 
-	// Rebinding to a different port makes that selection stale — a second press would
-	// otherwise connect a port the user never selected.
+	// Rebinding to a different port makes that selection stale — a second press would otherwise
+	// connect a port the user never selected.
 	m->assignPort(4, 77, 1, engine::Port::OUTPUT);
 
 	REQUIRE(m->pendingCellId == -1);
@@ -704,8 +697,8 @@ TEST_CASE("assignPort - assigning an empty cell drops a pending selection on it"
 	REQUIRE(m->pendingCellId == 2);
 	m->clearPort(2);
 
-	// The cell is empty now but assignPort must still clear pending, since its early-out
-	// for empty cells skips the rest of the cleanup contract.
+	// The cell is empty now but assignPort must still clear pending, since its early-out for empty
+	// cells skips the rest of the cleanup contract.
 	m->pendingCellId = 2;
 	m->assignPort(2, 99, 4, engine::Port::INPUT);
 	REQUIRE(m->pendingCellId == -1);
@@ -729,10 +722,10 @@ TEST_CASE("assignPort - leaves a pending selection on an unrelated cell alone", 
 
 
 // toggleConnection — direction validation
-// toggleConnection() decides create-vs-remove from the patch (vcv::hasCable()), not the
-// cell-pair bitmask bit (see the aliased-cells tests in SpliceKit.cables.test.hpp), so
-// exercising both directions of the toggle needs a CableScaffold to report cable state
-// back accurately. The reject-and-report cases below don't toggle, so they're unaffected.
+// toggleConnection() decides create-vs-remove from the patch (vcv::hasCable()), not the cell-pair
+// bitmask bit (see the aliased-cells tests in SpliceKit.cables.test.hpp), so exercising both
+// directions needs a CableScaffold to report cable state accurately. The reject-and-report cases
+// below don't toggle, so they're unaffected.
 
 TEST_CASE("toggleConnection - output to input creates the connection", "[SpliceKit]") {
 	CableScaffold cables;
@@ -851,8 +844,8 @@ TEST_CASE("onReset - clears state directly without queueing", "[SpliceKit]") {
 	m->sceneStore.setConnection(5, 0, 1, true);
 
 	m->onReset();
-	// Rack calls onReset() on the GUI thread, so it does its work inline — enqueueing here
-	// would make taskProcessorUi multi-producer against the engine thread.
+	// Rack calls onReset() on the GUI thread, so it works inline — enqueueing here would make
+	// taskProcessorUi multi-producer against the engine thread.
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 0);
 
 	REQUIRE(m->sceneStore.current == 0);

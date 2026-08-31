@@ -4,6 +4,7 @@
 // Included by AhabSim.test.cpp.
 
 #include "Ahab.test.hpp"
+#include "../../test/test_mock.hpp"
 
 
 TEST_CASE("Static convertRectToOrca serializes an arbitrary field", "[AhabSim]") {
@@ -54,6 +55,42 @@ TEST_CASE("Field size setting", "[AhabSim]") {
 	
 	REQUIRE(sim.getFieldHeight() == 10);
 	REQUIRE(sim.getFieldWidth() == 20);
+}
+
+TEST_CASE("Field size clamps to maximum", "[AhabSim]") {
+	AhabSim sim;
+
+	// Requests above MAX_FIELD_HEIGHT/WIDTH must be clamped so the fixed
+	// DSP-thread scratch buffer (sized 100x100) is never overflowed.
+	sim.setFieldSizeRequest(3, 3, false);
+	sim.process();
+	sim.fillRectRequest(0, 0, 3, 3, 'X');
+	sim.process();
+
+	sim.setFieldSizeRequest(500, 500, false);
+	sim.process();
+
+	REQUIRE(sim.getFieldHeight() == AhabSim::MAX_FIELD_HEIGHT);
+	REQUIRE(sim.getFieldWidth() == AhabSim::MAX_FIELD_WIDTH);
+
+	// Content in the overlapping region survives; the rest is '.'
+	Usz h, w;
+	sim.getDisplayBuffer(h, w);
+	Glyph const* buf = sim.getFieldBuffer();
+	for (Usz y = 0; y < 3; ++y) {
+		for (Usz x = 0; x < 3; ++x) {
+			REQUIRE(buf[y * w + x] == 'X');
+		}
+	}
+	REQUIRE(buf[3 * w + 3] == '.');
+
+	// The direct DSP-side entry point clamps too.
+	sim.setFieldSize(1000, 250);
+	REQUIRE(sim.getFieldHeight() == AhabSim::MAX_FIELD_HEIGHT);
+	REQUIRE(sim.getFieldWidth() == AhabSim::MAX_FIELD_WIDTH);
+
+	// Stepping a max-size field after a clamped resize is safe.
+	for (int i = 0; i < 4; ++i) sim.step();
 }
 
 TEST_CASE("Glyph setting and retrieval", "[AhabSim]") {
@@ -233,4 +270,130 @@ TEST_CASE("Clipping behavior for paste outside bounds", "[AhabSim]") {
 	REQUIRE(buffer[3 * w + 4] == 'B');
 	REQUIRE(buffer[4 * w + 3] == 'F');
 	REQUIRE(buffer[4 * w + 4] == 'G');
+}
+
+// AhabSim's saveToFile/loadFromFileRequest/convertFileToOrca use raw stdio on
+// paths (no vcv-layer seam inside AhabSim), so these tests exercise REAL file
+// I/O in the OS temp dir. Temp-dir lookup and fixture I/O still route through
+// the swappable vcv fs layer via the pass-through mock from test_mock.hpp.
+static std::string ahabTempPath(const char* name) {
+	auto mock = Test::makeMockVcv<Test::MockVcv::MockFileAccess>();
+	std::string dir = vcv::fs::getTempDirectory();
+	REQUIRE(!dir.empty());
+	return dir + "/" + name;
+}
+
+TEST_CASE("Save to file and load back round-trip", "[AhabSim][file]") {
+	std::string path = ahabTempPath("ahab_test_roundtrip.orca");
+	vcv::fs::remove(path); // clean any leftover
+	DEFER({ vcv::fs::remove(path); });
+
+	AhabSim sim;
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest(".aBc\nD3e4\n.5F.", 0, 0, h, w, true) == true);
+	sim.process();
+	REQUIRE(sim.getFieldHeight() == 3);
+	REQUIRE(sim.getFieldWidth() == 4);
+
+	REQUIRE(sim.saveToFile(path) == true);
+
+	// The saved file is ORCA plain text with one '\n'-terminated row per line
+	// (i.e. it ends with a trailing newline).
+	std::string contents;
+	REQUIRE(vcv::fs::read(path, contents) == true);
+	REQUIRE(contents == ".aBc\nD3e4\n.5F.\n");
+
+	// Loading into a fresh sim restores the exact grid.
+	AhabSim sim2;
+	REQUIRE(sim2.loadFromFileRequest(path) == true);
+	sim2.process(); // applies the queued ReplaceField command
+
+	REQUIRE(sim2.getFieldHeight() == 3);
+	REQUIRE(sim2.getFieldWidth() == 4);
+	Glyph const* buf = sim.getFieldBuffer();
+	Glyph const* buf2 = sim2.getFieldBuffer();
+	for (Usz i = 0; i < 3 * 4; ++i) {
+		REQUIRE(buf2[i] == buf[i]);
+	}
+
+	// Loading pushes an undo entry so the replace can be undone.
+	REQUIRE(sim2.canUndo());
+}
+
+TEST_CASE("Load a file without trailing newline", "[AhabSim][file]") {
+	std::string path = ahabTempPath("ahab_test_notrail.orca");
+	vcv::fs::remove(path);
+	DEFER({ vcv::fs::remove(path); });
+
+	// Hand-written fixture whose last row has no trailing '\n'.
+	REQUIRE(vcv::fs::write(path, "AB\nCD") == true);
+
+	AhabSim sim;
+	REQUIRE(sim.loadFromFileRequest(path) == true);
+	sim.process();
+
+	// The last row must not be dropped.
+	REQUIRE(sim.getFieldHeight() == 2);
+	REQUIRE(sim.getFieldWidth() == 2);
+	Glyph const* buf = sim.getFieldBuffer();
+	REQUIRE(buf[0] == 'A');
+	REQUIRE(buf[1] == 'B');
+	REQUIRE(buf[2] == 'C');
+	REQUIRE(buf[3] == 'D');
+}
+
+TEST_CASE("loadFromFileRequest failure leaves state unchanged", "[AhabSim][file]") {
+	AhabSim sim;
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest("X.Y\nZ.W", 0, 0, h, w, true) == true);
+	sim.process();
+
+	SECTION("Nonexistent file") {
+		CHECK(sim.loadFromFileRequest("/nonexistent/dir/ahab_missing.orca") == false);
+	}
+
+	SECTION("Not a rectangle") {
+		std::string path = ahabTempPath("ahab_test_badrect.orca");
+		vcv::fs::remove(path);
+		DEFER({ vcv::fs::remove(path); });
+		REQUIRE(vcv::fs::write(path, "AB\nC\n") == true);
+		CHECK(sim.loadFromFileRequest(path) == false);
+	}
+
+	// Field is untouched in every failure case.
+	REQUIRE(sim.getFieldHeight() == 2);
+	REQUIRE(sim.getFieldWidth() == 3);
+	Glyph const* buf = sim.getFieldBuffer();
+	REQUIRE(buf[0] == 'X');
+	REQUIRE(buf[1] == '.');
+	REQUIRE(buf[2] == 'Y');
+	REQUIRE(buf[3] == 'Z');
+	REQUIRE(buf[5] == 'W');
+}
+
+TEST_CASE("Static convertFileToOrca serializes a file to ORCA text", "[AhabSim][file]") {
+	SECTION("Success: rows joined by newline, no trailing newline") {
+		std::string path = ahabTempPath("ahab_test_convert.orca");
+		vcv::fs::remove(path);
+		DEFER({ vcv::fs::remove(path); });
+
+		AhabSim sim;
+		Usz h, w;
+		REQUIRE(sim.loadRectFromOrcaRequest(".aBc\nD3e4", 0, 0, h, w, true) == true);
+		sim.process();
+		REQUIRE(sim.saveToFile(path) == true);
+
+		std::string orca;
+		Usz oh = 0, ow = 0;
+		REQUIRE(AhabSim::convertFileToOrca(path, orca, oh, ow) == true);
+		REQUIRE(oh == 2);
+		REQUIRE(ow == 4);
+		REQUIRE(orca == ".aBc\nD3e4"); // no trailing newline
+	}
+
+	SECTION("Failure: nonexistent file") {
+		std::string orca;
+		Usz oh = 0, ow = 0;
+		REQUIRE(AhabSim::convertFileToOrca("/nonexistent/dir/ahab_missing.orca", orca, oh, ow) == false);
+	}
 }

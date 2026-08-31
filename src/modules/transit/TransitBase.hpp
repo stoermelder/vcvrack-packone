@@ -154,17 +154,19 @@ struct TransitBase : Module, StripIdFixModule {
 		ctrlUniqueId = ctrlUniqueIdJ ? json_integer_value(ctrlUniqueIdJ) : -2;
 
 		json_t* presetsJ = json_object_get(rootJ, "presets");
-		json_t* presetJ;
-		size_t presetIndex;
-		json_array_foreach(presetsJ, presetIndex, presetJ) {
+		// Bounded to the fixed-size destinations: hand-edited or corrupted
+		// patches may contain more presets than the [NUM_PRESETS] members hold.
+		size_t maxPresets = std::min((size_t)NUM_PRESETS, json_array_size(presetsJ));
+		for (size_t presetIndex = 0; presetIndex < maxPresets; presetIndex++) {
+			json_t* presetJ = json_array_get(presetsJ, presetIndex);
 			presetSlotUsed[presetIndex] = json_boolean_value(json_object_get(presetJ, "slotUsed"));
 			json_t* textLabelJ = json_object_get(presetJ, "textLabel");
-			if (textLabelJ) textLabel[presetIndex] = json_string_value(textLabelJ);
+			if (const char* label = json_string_value(textLabelJ)) textLabel[presetIndex] = label;
 			json_t* fadeTimeJ = json_object_get(presetJ, "fadeTime");
 			if (fadeTimeJ) fadeTime[presetIndex] = json_real_value(fadeTimeJ);
 			json_t* colorJ = json_object_get(presetJ, "color");
-			if (colorJ) {
-				slotColor[presetIndex] = color::fromHexString(json_string_value(colorJ));
+			if (const char* hex = json_string_value(colorJ)) {
+				slotColor[presetIndex] = color::fromHexString(hex);
 				slotColorSet[presetIndex] = true;
 			}
 			else {

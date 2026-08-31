@@ -1,7 +1,6 @@
-// SpliceKit.process.test.cpp — process() behavior and visual resolution.
-// Tests per-cell/per-scene LED state transitions in process(), the
-// resolveCellVisual/resolveSceneVisual precedence rules, requestSceneChange
-// and resetModuleState.
+// SpliceKit.process.test.hpp — process() behavior and visual resolution.
+// LED state transitions, resolveCellVisual/resolveSceneVisual precedence,
+// requestSceneChange and resetModuleState.
 
 #include "SpliceKit.test.hpp"
 
@@ -109,9 +108,9 @@ TEST_CASE("process - physical scene button press is ignored while following a sc
 }
 
 
-// physical matrix button release: in momentary mode a release clears the pending
-// selection (the processCellButtons() path); in toggle mode it does not. The MIDI note-off
-// analogue is covered by processMapUpdate's tests; this is the physical-button path.
+// physical matrix button release: in momentary mode a release clears the pending selection
+// (processCellButtons()); in toggle mode it does not. The MIDI note-off analogue is in
+// SpliceKit.midi.test.hpp; this is the physical-button path.
 
 TEST_CASE("process - momentary mode: releasing a pressed cell clears the pending selection", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
@@ -159,8 +158,8 @@ TEST_CASE("process - toggle mode: releasing a pressed cell keeps the pending sel
 
 // two-press matrix-cell flow through process(): the physical-button path via
 // processCellButtons(), where the first press arms the cell and a second press on another
-// cell toggles the connection. The MIDI analogue is covered in SpliceKit.midi.test.hpp; this
-// drives params[PARAM_MATRIX] the way a real button press would.
+// cell toggles the connection. The MIDI analogue is in SpliceKit.midi.test.hpp; this drives
+// params[PARAM_MATRIX] as a real button press would.
 
 TEST_CASE("process - first press arms the cell, second press creates the cable", "[SpliceKit]") {
 	CableScaffold cables;
@@ -237,8 +236,7 @@ TEST_CASE("process - scene state transitions from active to dim after scene swit
 
 
 // process() — PENDING LED state transition. The PORT_LEARN/MIDI_LEARN transitions are
-// covered by resolveCellVisual's precedence test below, which drives them through the same
-// branch while also pinning the order they resolve in.
+// covered by resolveCellVisual's precedence test below, which also pins their resolution order.
 
 TEST_CASE("process - pending cell transitions cellLedState to PENDING", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
@@ -390,8 +388,8 @@ TEST_CASE("process - cell with port assignment and no cable transitions to COLOR
 }
 
 
-// requestSceneChange — taskProcessorUi dispatch — and resetModuleState, which runs
-// directly on the GUI thread rather than being queued.
+// requestSceneChange — taskProcessorUi dispatch — and resetModuleState, which runs directly
+// on the GUI thread rather than being queued.
 
 TEST_CASE("requestSceneChange - enqueues a switchScene lambda", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
@@ -424,6 +422,8 @@ TEST_CASE("resetModuleState - clears all state", "[SpliceKit]") {
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 5, 60);
 	// A scene-button map (index MATRIX_COUNT..TOTAL_MAPS-1) must be cleared too.
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, MATRIX_COUNT + 1, 70);
+	// A scene link is patch wiring, not a user setting — it must not survive Initialize.
+	m->sceneLinkMasterId = 999;
 
 	// Runs synchronously — nothing is queued.
 	m->resetModuleState();
@@ -433,6 +433,7 @@ TEST_CASE("resetModuleState - clears all state", "[SpliceKit]") {
 	REQUIRE(m->feedback.getActivePreset() == nullptr);
 	REQUIRE(m->portAssignments[3].isValid() == false);
 	REQUIRE(m->portHasCable[3] == false);
+	REQUIRE(m->sceneLinkMasterId == -1);
 	// All scenes cleared
 	for (int s = 0; s < SCENE_COUNT; s++) {
 		for (int c = 0; c < MATRIX_COUNT; c++) {

@@ -1,6 +1,6 @@
-// SpliceKit.json.test.cpp — preset (JSON) serialization.
-// Tests dataToJson/dataFromJson roundtrips plus dataFromJson robustness
-// against malformed, missing or out-of-range fields.
+// SpliceKit.json.test.hpp — preset (JSON) serialization.
+// dataToJson/dataFromJson roundtrips plus dataFromJson robustness against
+// malformed, missing or out-of-range fields.
 
 #include "SpliceKit.test.hpp"
 
@@ -12,6 +12,20 @@ TEST_CASE("Preset JSON null-guards", "[SpliceKit][JSON]") {
 		json_t* rootJ = module->dataToJson();
 		REQUIRE(rootJ != nullptr);
 		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
 
@@ -316,6 +330,70 @@ TEST_CASE("dataFromJson - out-of-range scene and connection indices are skipped"
 	Test::destroyModule(m);
 }
 
+TEST_CASE("dataFromJson - a self-connection pair (a == b) is rejected", "[SpliceKit][JSON]") {
+	// A corrupt/hand-edited patch containing [3, 3] would otherwise set bit 3 in cell 3's
+	// own connection mask — both indices are in range, so the existing bounds check alone
+	// doesn't catch it. hasConnections() would then report true for an otherwise-empty
+	// scene, and the cell's "Remove cable" submenu would list its own port as a partner.
+	auto makePair = [](int a, int b) {
+		json_t* pair = json_array();
+		json_array_append_new(pair, json_integer(a));
+		json_array_append_new(pair, json_integer(b));
+		return pair;
+	};
+
+	json_t* connJ = json_array();
+	json_array_append_new(connJ, makePair(3, 3));   // self-connection — must be rejected
+	json_array_append_new(connJ, makePair(2, 4));   // valid — must still be applied
+
+	json_t* sceneJ = json_object();
+	json_object_set_new(sceneJ, "connections", connJ);
+	json_t* scenesJ = json_object();
+	json_object_set_new(scenesJ, "1", sceneJ);
+	json_t* j = json_object();
+	json_object_set_new(j, "scenes", scenesJ);
+
+	SpliceKitModule* m = createModule();
+	REQUIRE_NOTHROW(m->dataFromJson(j));
+	json_decref(j);
+
+	REQUIRE(m->sceneStore.isConnected(1, 2, 4));
+	REQUIRE(m->sceneStore.connections[1][3] == 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("dataFromJson - stale port assignments absent from the JSON are cleared", "[SpliceKit][JSON]") {
+	// dataToJson only writes valid (assigned) cells, so a preset saved with fewer
+	// assigned cells than the module currently holds must not leave the extra cells'
+	// old assignments in place — every other per-cell store (labels, colors, scenes)
+	// is reset before restoring; portAssignments must be too.
+	json_t* portsJ = json_object();
+	json_t* p = json_object();
+	json_object_set_new(p, "moduleId", json_integer(77));
+	json_object_set_new(p, "type", json_integer((int)engine::Port::INPUT));
+	json_object_set_new(p, "portId", json_integer(2));
+	json_object_set_new(portsJ, "5", p);
+	json_t* j = json_object();
+	json_object_set_new(j, "ports", portsJ);
+
+	SpliceKitModule* m = createModule();
+	// Cell 9 has a pre-existing assignment that is absent from the JSON being loaded.
+	m->portAssignments[9].moduleId = 42;
+	m->portAssignments[9].type = engine::Port::OUTPUT;
+	m->portAssignments[9].portId = 0;
+	REQUIRE(m->portAssignments[9].isValid());
+
+	m->dataFromJson(j);
+	json_decref(j);
+
+	REQUIRE(m->portAssignments[5].moduleId == 77);
+	REQUIRE(m->portAssignments[5].isValid());
+	REQUIRE(m->portAssignments[9].isValid() == false);
+
+	Test::destroyModule(m);
+}
+
 TEST_CASE("dataFromJson - out-of-range MIDI map indices are skipped", "[SpliceKit][JSON]") {
 	json_t* mapsJ = json_object();
 	for (const char* key : {"-1", "72", "999"}) {
@@ -346,10 +424,10 @@ TEST_CASE("dataFromJson - out-of-range MIDI map indices are skipped", "[SpliceKi
 
 
 
-// MidiOutPreset toJson/fromJson roundtrip. The module-level activePreset *string*
-// roundtrip was already covered; these pin the preset file format itself (cells/scenes/specs
-// structure, slotsBlockToJson/parseSlotsBlock) and its documented edge cases: empty slot
-// blocks omitted, block type from the first mapped slot, and note/CC 0 preserved.
+// MidiOutPreset toJson/fromJson roundtrip. The module-level activePreset *string* roundtrip
+// was already covered; these pin the preset file format itself (cells/scenes/specs structure,
+// slotsBlockToJson/parseSlotsBlock) and its edge cases: empty slot blocks omitted, block type
+// from the first mapped slot, and note/CC 0 preserved.
 
 static void requirePresetEqual(const MidiOutPreset& a, const MidiOutPreset& b) {
 	REQUIRE(a.name == b.name);
@@ -454,9 +532,9 @@ TEST_CASE("MidiOutPreset roundtrip - block type comes from the first mapped slot
 	REQUIRE(dst.hasLayout());
 }
 
-// midiInput / midiOutput sub-object roundtrip. dataToJson writes both,
-// dataFromJson reads both, but nothing covered the pair — a patch that lost its configured
-// MIDI channel on reload would be a silent, user-visible regression.
+// midiInput / midiOutput sub-object roundtrip. dataToJson writes both, dataFromJson reads
+// both, but nothing covered the pair — a patch that lost its configured MIDI channel on reload
+// would be a silent, user-visible regression.
 
 TEST_CASE("JSON roundtrip preserves the midiInput and midiOutput sub-objects", "[SpliceKit][JSON]") {
 	SpliceKitModule* src = createModule();
@@ -480,9 +558,9 @@ TEST_CASE("JSON roundtrip preserves the midiInput and midiOutput sub-objects", "
 }
 
 
-// setActivePresetJson's own parse-failure path. The dataFromJson-side
-// malformed case was covered; this drives the setter directly, including the recovery
-// path where a valid preset replaces a rejected one.
+// setActivePresetJson's own parse-failure path. The dataFromJson-side malformed case was
+// covered; this drives the setter directly, including the recovery path where a valid preset
+// replaces a rejected one.
 
 TEST_CASE("setActivePresetJson - malformed JSON turns feedback off rather than half-loading", "[SpliceKit][JSON]") {
 	SpliceKitModule* m = createModule();

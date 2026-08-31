@@ -1,7 +1,6 @@
-// SpliceKit.scenes.test.cpp — scene management.
-// Tests copyScene and requestCopyScene, MIDI scene activation (including the
-// double-activation copy gesture), scene linking between instances, and
-// reconcileScene.
+// SpliceKit.scenes.test.hpp — scene management.
+// copyScene/requestCopyScene, MIDI scene activation (incl. double-activation copy),
+// scene linking between instances, and reconcileScene.
 
 #include "SpliceKit.test.hpp"
 
@@ -126,8 +125,29 @@ TEST_CASE("processMapUpdate - note-off for a different scene is a no-op", "[Spli
 	Test::destroyModule(m);
 }
 
+TEST_CASE("processMapUpdate - scene copy gesture is off by default: second activation is a normal scene change", "[SpliceKit]") {
+	SpliceKitModule* m = createModule();
+	REQUIRE(m->midiSceneCopyEnabled == false);
+
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 1, 100);
+	REQUIRE(m->pendingMidiSceneId == 1);
+	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 1);  // switchScene(1)
+
+	// Second activation without a release: with the gate off this must select scene 5,
+	// not copy 1 → 5.
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 5, 100);
+	REQUIRE(m->pendingMidiSceneId == 5);  // tracked as a normal selection
+	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 2);  // switchScene(1) + switchScene(5)
+	m->taskProcessorUi.internalQueue.queue.shift()();
+	m->taskProcessorUi.internalQueue.queue.shift()();
+	REQUIRE(m->sceneStore.current == 5);
+
+	Test::destroyModule(m);
+}
+
 TEST_CASE("processMapUpdate - two activations without release queues scene copy", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
+	m->midiSceneCopyEnabled = true;
 
 	// First activation: normal scene change, pending set.
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 1, 100);
@@ -157,6 +177,7 @@ TEST_CASE("processMapUpdate - same scene activated twice without release is not 
 
 TEST_CASE("processMapUpdate - after a copy, the next activation is treated normally", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
+	m->midiSceneCopyEnabled = true;
 
 	// Trigger a copy: press scene 1, then scene 2 (no release).
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 1, 100);
@@ -171,8 +192,8 @@ TEST_CASE("processMapUpdate - after a copy, the next activation is treated norma
 }
 
 
-// Scene link — a follower re-syncs its currentScene from its configured master's
-// currentScene, driven by notifyModuleListeners("SpliceKit-SceneLink") + process().
+// Scene link — a follower re-syncs its currentScene from its master's currentScene,
+// driven by notifyModuleListeners("SpliceKit-SceneLink") + process().
 
 TEST_CASE("Scene link - follower adopts master's scene after a change", "[SpliceKit]") {
 	SpliceKitModule* master = createModule();
@@ -258,55 +279,6 @@ TEST_CASE("Scene link - stale master reference is cleared once the master no lon
 	Test::unregisterModule(follower);
 	Test::destroyModule(follower);
 }
-
-TEST_CASE("Scene link - sceneLinkCandidateIsFollower rejects chaining through an already-following module", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
-	SpliceKitModule* c = createModule();
-	Test::registerModule(a);
-	Test::registerModule(b);
-	Test::registerModule(c);
-
-	// No links yet: any module is a valid pick.
-	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(a->id) == false);
-	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(b->id) == false);
-
-	// b now follows a, so b is no longer a valid master for anyone (chains are disallowed).
-	b->sceneLinkMasterId = a->id;
-	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(b->id) == true);
-	// a itself is still a valid pick (a follows nobody).
-	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(a->id) == false);
-	// c is unrelated and still a valid pick.
-	REQUIRE(SpliceKitModule::sceneLinkCandidateIsFollower(c->id) == false);
-
-	Test::unregisterModule(c);
-	Test::unregisterModule(b);
-	Test::unregisterModule(a);
-	Test::destroyModule(c);
-	Test::destroyModule(b);
-	Test::destroyModule(a);
-}
-
-TEST_CASE("Scene link - sceneLinkHasFollowers detects when a module already serves as a master", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
-	Test::registerModule(a);
-	Test::registerModule(b);
-
-	REQUIRE(a->sceneLinkHasFollowers() == false);
-	REQUIRE(b->sceneLinkHasFollowers() == false);
-
-	// b follows a, so a now has a follower and must not be allowed to pick its own master.
-	b->sceneLinkMasterId = a->id;
-	REQUIRE(a->sceneLinkHasFollowers() == true);
-	REQUIRE(b->sceneLinkHasFollowers() == false);
-
-	Test::unregisterModule(b);
-	Test::unregisterModule(a);
-	Test::destroyModule(b);
-	Test::destroyModule(a);
-}
-
 
 // reconcileScene — non-current scene path
 

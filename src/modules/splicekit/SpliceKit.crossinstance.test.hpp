@@ -1,7 +1,7 @@
-// SpliceKit.crossinstance.test.cpp — cross-instance patching.
-// Tests collectAssignedPorts()/collectCableEndCandidates(), which gather
-// cable-end candidates across every participating SpliceKit instance so the
-// cross-instance gesture lands on ports owned by other instances.
+// SpliceKit.crossinstance.test.hpp — cross-instance patching.
+// collectAssignedPorts()/collectCableEndCandidates(), which gather cable-end
+// candidates across every participating SpliceKit instance so the cross-instance
+// gesture lands on ports owned by other instances.
 
 #include "SpliceKit.test.hpp"
 
@@ -86,19 +86,18 @@ TEST_CASE("collectCableEndCandidates - a lone instance yields exactly its own as
 
 // cross-instance connected highlight
 // When one instance arms a cell, the cells on OTHER instances that already share a
-// cross-instance cable with that armed port blink — the cross-instance counterpart of
-// resolveCellVisual()'s local connectedToPending. Because such a cable is deliberately never
-// stored in a scene, the initiator resolves its port's cables once when it arms and publishes
-// them on CrossPendingState::partners; peers match their cells against that list in
-// refreshPeerConnected() and leave the result in peerConnected[] for the engine-thread loop.
+// cross-instance connected highlight
+// When one instance arms a cell, cells on OTHER instances that already share a cross-instance
+// cable with that armed port blink — the cross-instance counterpart of resolveCellVisual()'s
+// local connectedToPending. Such a cable is never stored in a scene, so the initiator resolves
+// its port's cables once when it arms and publishes them on CrossPendingState::partners; peers
+// match their cells against that list in refreshPeerConnected() and leave the result in
+// peerConnected[] for the engine-thread loop.
 //
 // Coverage boundary: collectCablePartners() needs real CableWidgets, which the harness does
 // not provide, so the initiator's resolution step is NOT covered here — with no cables in the
-// patch it returns an empty set either way, so no in-process test can distinguish a working
-// publish from a missing one. Everything downstream IS covered below, by publishing
-// `partners` directly the way the initiator would. Verifying that the initiator actually
-// fills the list requires the manual two-instance check in
-// var/SpliceKit_crossinstance_pending_led.md.
+// patch it returns an empty set either way. Everything downstream IS covered below by
+// publishing `partners` directly the way the initiator would.
 
 TEST_CASE("peer connected - a flagged cell blinks in the connected state", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
@@ -302,10 +301,9 @@ TEST_CASE("collectCableEndCandidates - a destroyed instance leaves no dangling e
 // Cross-instance responder direction clash
 // The responder resolves the initiator's armed port against its own; a same-direction pair
 // (two outputs, or two inputs) can never share a cable, so no cable is made and the user is
-// told why — the cross-instance counterpart of toggleConnection()'s rejection on a single
-// instance. (The cable-making half of the responder path is NOT covered here: it needs real
-// CableWidgets, which the harness does not provide — same boundary as the
-// collectCablePartners() coverage note above.)
+// told why — the cross-instance counterpart of toggleConnection()'s single-instance rejection.
+// (The cable-making half of the responder needs real CableWidgets, which the harness does not
+// provide — same boundary as the collectCablePartners() note above.)
 TEST_CASE("cross-instance responder - same-direction pair reports the clash", "[SpliceKit]") {
 	SpliceKitModule* a = createModule();
 	SpliceKitModule* b = createModule();

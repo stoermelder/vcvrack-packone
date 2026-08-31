@@ -1,11 +1,10 @@
 // SpliceKit.cables.test.hpp — the patch-cable layer.
 // connectLive/disconnectLive/toggleConnection/switchTo/applyToCurrent/capture/
 // removeCellConnections and the cross-instance responder were previously tested only on
-// their bitmask half; the vcv::addCableToPort/removeCable/findCable half was a no-op
-// without a widget tree. These tests install a MockCableRegistry (via CableScaffold, see
-// SpliceKit.test.hpp) and assert the observable effect: a cable actually appears or
-// disappears in the patch. Also covers the create/remove overlay messages and the
-// cross-instance responder's cable creation.
+// their bitmask half; the vcv::addCable/removeCable half was a no-op without a widget tree.
+// These tests install a MockCableRegistry (via CableScaffold, see SpliceKit.test.hpp) and
+// assert the observable effect: a cable actually appears or disappears in the patch. Also
+// covers the create/remove overlay messages and the cross-instance responder's cable.
 
 #include "SpliceKit.test.hpp"
 
@@ -88,8 +87,7 @@ TEST_CASE("capture - records the patch's current cables into the scene", "[Splic
 
 
 // switchTo — the doc's central promise: switching scenes reconciles the patch, removing
-// cables that belong to the outgoing scene and creating cables stored in the incoming one
-// (2.5).
+// cables of the outgoing scene and creating those stored in the incoming one (2.5).
 
 TEST_CASE("switchTo - reconciles the patch: old cables removed, new cables created", "[SpliceKit]") {
 	CableScaffold cables;
@@ -148,8 +146,8 @@ TEST_CASE("applyToCurrent - reconciles the patch and current scene to the new to
 
 
 // reconcile on the current scene — the public path (capture + applyToCurrent + persist)
-// that rewrites the patch AND connections[current] to newConns (2.5). This is what the
-// scene-save / scene-copy menu actions and randomizeCurrentScene() use.
+// that rewrites the patch AND connections[current] to newConns (2.5). Used by the scene-save
+// / scene-copy menu actions and randomizeCurrentScene().
 
 TEST_CASE("reconcile - on the current scene captures the patch and applies the new topology", "[SpliceKit]") {
 	CableScaffold cables;
@@ -323,8 +321,8 @@ TEST_CASE("switchTo - a cable stored in both scenes is left untouched", "[Splice
 
 
 // capture() re-reads the patch rather than trusting the stored bitmask, so a cable the user
-// pulled out by hand disappears from the scene on the next capture (the documented "SPLICE-KIT
-// reads the current cable state of assigned ports" promise, in its removal direction).
+// pulled out by hand disappears from the scene on the next capture (the "reads the current
+// cable state of assigned ports" promise, in its removal direction).
 
 TEST_CASE("capture - a cable removed by hand is dropped from the scene", "[SpliceKit]") {
 	CableScaffold cables;
@@ -347,8 +345,8 @@ TEST_CASE("capture - a cable removed by hand is dropped from the scene", "[Splic
 
 
 // moveCell (shift+drag) — the patch-level half of the gesture. The moved cell's own cables
-// must survive (the port moves with them), while the destination cell's previous cables are
-// torn out, because its old port assignment is discarded by the move.
+// survive (the port moves with them), while the destination's previous cables are torn out,
+// because its old port assignment is discarded by the move.
 
 TEST_CASE("moveCell - source cables survive and the destination's own cables are removed", "[SpliceKit]") {
 	CableScaffold cables;
@@ -386,9 +384,9 @@ TEST_CASE("moveCell - source cables survive and the destination's own cables are
 // toggleConnection() is fixed. See var/SpliceKit_test_review.md §2.19 for the analysis and
 // the two candidate fixes. Do not "fix" these by relaxing the assertions.
 //
-// The root cause is that toggleConnection() decides create-vs-remove from the bitmask bit of
-// the two CELL ids, while the thing it actually creates and removes is a cable between two
-// PORTS. When two cells name the same port those two views disagree.
+// Root cause: toggleConnection() decides create-vs-remove from the bitmask bit of the two
+// CELL ids, while it actually creates/removes a cable between two PORTS. When two cells name
+// the same port those two views disagree.
 
 TEST_CASE("aliased cells - pressing an alias cell removes the existing cable rather than reporting a create", "[SpliceKit]") {
 	CableScaffold cables;

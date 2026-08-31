@@ -71,7 +71,56 @@ TEST_CASE("Preset JSON null-guards", "[MidiMon][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
+}
+
+TEST_CASE("JSON round-trip preserves state", "[MidiMon][JSON]") {
+	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	module->panelTheme = 1;
+	module->showNoteMsg = false;
+	module->showCcMsg = false;
+	module->showCcExMsg = true;
+	module->showRpnNrpnMsg = true;
+	module->showClockMsg = true;
+	module->showSysExMsg = true;
+	module->showSysExData = true;
+	module->showSystemMsg = false;
+	module->showFrame = true;
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+
+	auto restored = Test::createModule<MidiMonModule>("MidiMon");
+	restored->dataFromJson(rootJ);
+
+	REQUIRE(restored->panelTheme == 1);
+	REQUIRE(restored->showNoteMsg == false);
+	REQUIRE(restored->showCcMsg == false);
+	REQUIRE(restored->showCcExMsg == true);
+	REQUIRE(restored->showRpnNrpnMsg == true);
+	REQUIRE(restored->showClockMsg == true);
+	REQUIRE(restored->showSysExMsg == true);
+	REQUIRE(restored->showSysExData == true);
+	REQUIRE(restored->showSystemMsg == false);
+	REQUIRE(restored->showFrame == true);
+
+	json_decref(rootJ);
+	Test::destroyModule(module);
+	Test::destroyModule(restored);
 }
 
 
@@ -443,42 +492,6 @@ TEST_CASE("processMidi never consumes the message", "[MidiMon]") {
 	REQUIRE(module->processMidi(makeEx(MType::NOTE_ON, Test::makeMidiMessage(0x9, 0, 60, 1))) == false);
 	REQUIRE(module->processMidi(makeEx(MType::CLOCK, Test::makeMidiMessage(0xf, 0x8, 0, 0))) == false);
 	Test::destroyModule(module);
-}
-
-
-TEST_CASE("JSON round-trip", "[MidiMon][JSON]") {
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
-	module->panelTheme = 1;
-	module->showNoteMsg = false;
-	module->showCcMsg = false;
-	module->showCcExMsg = true;
-	module->showRpnNrpnMsg = true;
-	module->showClockMsg = true;
-	module->showSysExMsg = true;
-	module->showSysExData = true;
-	module->showSystemMsg = false;
-	module->showFrame = true;
-
-	json_t* rootJ = module->dataToJson();
-	REQUIRE(rootJ != nullptr);
-
-	auto restored = Test::createModule<MidiMonModule>("MidiMon");
-	restored->dataFromJson(rootJ);
-
-	REQUIRE(restored->panelTheme == 1);
-	REQUIRE(restored->showNoteMsg == false);
-	REQUIRE(restored->showCcMsg == false);
-	REQUIRE(restored->showCcExMsg == true);
-	REQUIRE(restored->showRpnNrpnMsg == true);
-	REQUIRE(restored->showClockMsg == true);
-	REQUIRE(restored->showSysExMsg == true);
-	REQUIRE(restored->showSysExData == true);
-	REQUIRE(restored->showSystemMsg == false);
-	REQUIRE(restored->showFrame == true);
-
-	json_decref(rootJ);
-	Test::destroyModule(module);
-	Test::destroyModule(restored);
 }
 
 

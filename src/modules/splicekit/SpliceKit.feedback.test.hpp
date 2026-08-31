@@ -1,7 +1,7 @@
-// SpliceKit.feedback.test.cpp — MIDI feedback.
-// Tests FeedbackSender: the sendFeedback/sendFeedbackOff guard conditions and
-// emitted messages, setState LED-state caching, deferred note-off queueing
-// (queueFeedbackOff/drainPendingOffs), and the LED color-set helpers.
+// SpliceKit.feedback.test.hpp — MIDI feedback.
+// FeedbackSender: sendFeedback/sendFeedbackOff guards and emitted messages,
+// setState LED-state caching, deferred note-off queueing (queueFeedbackOff/
+// drainPendingOffs), and the LED color-set helpers.
 
 #include "SpliceKit.test.hpp"
 
@@ -138,11 +138,10 @@ TEST_CASE("sendFeedbackOff - sends note-off for FROM_SLOT_TYPE with NOTE slot", 
 }
 
 
-// sendFeedback (on-side) — guard conditions and message construction
-// These mirror the sendFeedbackOff tests but exercise the on-side path that
-// actually lights the controller LED. The off-side was a strict subset of the
-// on-side types (only NOTE_ON and FROM_SLOT_TYPE); the on-side also handles
-// NOTE_OFF and CC message types and resolves channel/value/byte2 correctly.
+// sendFeedback (on-side) — guard conditions and message construction. Mirrors the
+// sendFeedbackOff tests but exercises the path that lights the LED. The on-side also
+// handles NOTE_OFF and CC (the off-side only NOTE_ON and FROM_SLOT_TYPE) and resolves
+// channel/value/byte2 correctly.
 
 TEST_CASE("sendFeedback - no-op when no preset is active", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
@@ -697,9 +696,9 @@ TEST_CASE("SpliceKitOutput::setDeviceId invalidates LED states via the FeedbackS
 
 
 // Every shipped controller preset file must load and parse. A malformed or silently
-// dropped preset would ship without any test noticing, so assert the production loader
-// (getLoadedPresets(), which reads presets/SpliceKit/*.ctrl.json sorted by filename) returns
-// exactly the files on disk and that each one parsed into a valid MidiOutPreset.
+// dropped preset would ship unnoticed, so assert the production loader (getLoadedPresets(),
+// which reads presets/SpliceKit/*.ctrl.json sorted by filename) returns exactly the files on
+// disk and each parsed into a valid MidiOutPreset.
 
 TEST_CASE("controller presets - every shipped .ctrl.json loads and parses", "[SpliceKit][JSON]") {
 	// Every .ctrl.json on disk must be loaded: a malformed file is silently dropped by
@@ -762,9 +761,9 @@ TEST_CASE("controller presets - getLoadedPresets is ordered by filename", "[Spli
 
 
 // End-to-end feedback: loading a shipped controller preset and driving an LED state through
-// the real feedback path (FeedbackSender::setState, the method processLights() calls) must
-// emit exactly the MIDI message the preset's spec encodes — status byte from type+channel,
-// note from the mapping (or the fixed number), value from the spec.
+// the real feedback path (FeedbackSender::setState, called by processLights()) must emit
+// exactly the MIDI message the preset's spec encodes — status from type+channel, note from
+// the mapping (or the fixed number), value from the spec.
 
 TEST_CASE("controller presets - feedback emits the MIDI message each spec encodes", "[SpliceKit][JSON]") {
 	// One iteration per shipped preset; load it from its raw JSON, exactly as the module does.

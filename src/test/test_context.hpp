@@ -312,6 +312,36 @@ struct SimpleEngine {
 
 
 
+// Renders a JSON path as a dotted string for CATCH_INFO annotations
+// (e.g. {"a", "b", "c"} -> "a.b.c"). Array indices are encoded as their
+// decimal representation.
+static std::string formatJsonPath(const std::vector<std::string>& path) {
+	std::string s;
+	for (size_t i = 0; i < path.size(); i++) {
+		if (i > 0) s += ".";
+		s += path[i];
+	}
+	return s;
+}
+
+// Resolves a path of keys/indices (array indices encoded as decimal strings)
+// to its node within a JSON document. An empty path resolves to the root
+// itself. Returns NULL if any step is missing or passes through a scalar -
+// callers treat this as a no-op rather than an error.
+static json_t* resolveJsonPath(json_t* root, const std::vector<std::string>& path) {
+	json_t* current = root;
+	for (const auto& step : path) {
+		if (json_is_array(current))
+			current = json_array_get(current, (size_t)std::stoul(step));
+		else if (json_is_object(current))
+			current = json_object_get(current, step.c_str());
+		else
+			return nullptr;
+		if (!current) return nullptr;
+	}
+	return current;
+}
+
 // Verifies that every property (at any nesting depth) in a preset JSON
 // is properly null-guarded in the module's dataFromJson() implementation.
 //
@@ -371,17 +401,6 @@ static void testPresetNullGuards(T* module, json_t* rootJ) {
 	};
 	collectPaths(rootJ);
 
-	// Render a path as a dotted string for the CATCH_INFO annotation
-	// (e.g. {"a", "b", "c"} -> "a.b.c").
-	auto formatPath = [](const std::vector<std::string>& path) -> std::string {
-		std::string s;
-		for (size_t i = 0; i < path.size(); i++) {
-			if (i > 0) s += ".";
-			s += path[i];
-		}
-		return s;
-	};
-
 	// Walk the path in a (deep-copied) JSON object and replace the
 	// leaf value with json_null(). Intermediate objects that are not
 	// themselves objects (e.g. null due to a previous iteration) are
@@ -399,7 +418,7 @@ static void testPresetNullGuards(T* module, json_t* rootJ) {
 
 	// For each path, set the value to null and test the loader.
 	for (const auto& path : paths) {
-		CATCH_INFO("Property '" << formatPath(path) << "' should be null-guarded in dataFromJson()");
+		CATCH_INFO("Property '" << formatJsonPath(path) << "' should be null-guarded in dataFromJson()");
 
 		json_t* copyJ = json_deep_copy(rootJ);
 		REQUIRE(copyJ != nullptr);
@@ -414,6 +433,170 @@ static void testPresetNullGuards(T* module, json_t* rootJ) {
 	json_t* emptyJ = json_object();
 	REQUIRE_NOTHROW(module->dataFromJson(emptyJ));
 	json_decref(emptyJ);
+}
+
+
+// Verifies that every value (at any nesting depth, including inside arrays)
+// tolerates being replaced with a value of a deliberately WRONG type without
+// crashing the module's dataFromJson() implementation.
+//
+// Unlike testPresetNullGuards(), arrays ARE descended into: wrong-typed values
+// inside array elements are exactly the shape of real-world patch corruption
+// (e.g. "label": 42 where a string is expected). For every node except the
+// root itself:
+//   1. A deep copy of the JSON is created.
+//   2. The value at that path is replaced with a wrong-typed value:
+//        - strings become integers, catching unguarded json_string_value()
+//          which returns NULL for non-strings (UB when assigned to
+//          std::string);
+//        - everything else becomes a string, catching iteration over
+//          non-containers and type-punned reads.
+//   3. The copy is loaded via the module's dataFromJson().
+//
+// Usage: same as testPresetNullGuards().
+template <typename T>
+static void testPresetTypeConfusion(T* module, json_t* rootJ) {
+	REQUIRE(module != nullptr);
+	REQUIRE(rootJ != nullptr);
+	REQUIRE(json_is_object(rootJ));
+
+	// Recursive collector for the path and type of every node except the root.
+	struct NodeVisit {
+		std::vector<std::string> path;
+		json_type type;
+	};
+	std::vector<NodeVisit> visits;
+	std::vector<std::string> currentPath;
+	std::function<void(json_t*)> collectPaths = [&](json_t* node) {
+		if (json_is_object(node)) {
+			const char* key;
+			json_t* value;
+			json_object_foreach(node, key, value) {
+				currentPath.push_back(key);
+				visits.push_back({currentPath, json_typeof(value)});
+				collectPaths(value);
+				currentPath.pop_back();
+			}
+		}
+		else if (json_is_array(node)) {
+			for (size_t i = 0; i < json_array_size(node); i++) {
+				json_t* value = json_array_get(node, i);
+				currentPath.push_back(std::to_string(i));
+				visits.push_back({currentPath, json_typeof(value)});
+				collectPaths(value);
+				currentPath.pop_back();
+			}
+		}
+	};
+	collectPaths(rootJ);
+
+	// Returns a replacement of a deliberately wrong type for a node of the
+	// given JSON type.
+	auto makeWrongType = [](json_type type) -> json_t* {
+		switch (type) {
+			case JSON_STRING: return json_integer(-42);
+			default: return json_string("wrong-type");
+		}
+	};
+
+	for (const auto& visit : visits) {
+		CATCH_INFO("Property '" << formatJsonPath(visit.path) << "' should tolerate a wrong-typed value in dataFromJson()");
+
+		json_t* copyJ = json_deep_copy(rootJ);
+		REQUIRE(copyJ != nullptr);
+
+		// Replace the value within its parent container; NULL cannot happen on
+		// a fresh deep copy but is treated as a no-op rather than an error.
+		json_t* parent = resolveJsonPath(copyJ, std::vector<std::string>(visit.path.begin(), visit.path.end() - 1));
+		if (parent) {
+			const std::string& last = visit.path.back();
+			json_t* replacement = makeWrongType(visit.type);
+			if (json_is_array(parent))
+				json_array_set_new(parent, (size_t)std::stoul(last), replacement);
+			else
+				json_object_set_new(parent, last.c_str(), replacement);
+		}
+
+		REQUIRE_NOTHROW(module->dataFromJson(copyJ));
+		json_decref(copyJ);
+	}
+}
+
+
+// Verifies that array-valued properties tolerate being much longer than any
+// fixed-size destination ([SETS], [SNAPSHOTS], ...) in the module's
+// dataFromJson() implementation.
+//
+// For every array in the JSON tree (at any nesting depth):
+//   1. A deep copy of the JSON is created.
+//   2. The array is grown well past any plausible fixed-size destination by
+//      duplicating its first element, so all values stay well-typed.
+//   3. The copy is loaded via the module's dataFromJson().
+//
+// Catches unbounded loops like
+//     for (size_t s = 0; s < json_array_size(setsJ); ++s)
+//         snapshots[s][i].id = ...;   // snapshots[] is a fixed [SETS] member
+// which write past the end of fixed-size members when loading hand-edited or
+// corrupted patches.
+//
+// Usage: same as testPresetNullGuards().
+template <typename T>
+static void testPresetOversizedArrays(T* module, json_t* rootJ) {
+	REQUIRE(module != nullptr);
+	REQUIRE(rootJ != nullptr);
+	REQUIRE(json_is_object(rootJ));
+
+	// Collect the path of every array node except the root itself, descending
+	// into both objects and arrays.
+	std::vector<std::vector<std::string>> paths;
+	std::vector<std::string> currentPath;
+	std::function<void(json_t*)> collectArrays = [&](json_t* node) {
+		if (json_is_object(node)) {
+			const char* key;
+			json_t* value;
+			json_object_foreach(node, key, value) {
+				currentPath.push_back(key);
+				if (json_is_array(value)) paths.push_back(currentPath);
+				collectArrays(value);
+				currentPath.pop_back();
+			}
+		}
+		else if (json_is_array(node)) {
+			for (size_t i = 0; i < json_array_size(node); i++) {
+				json_t* value = json_array_get(node, i);
+				currentPath.push_back(std::to_string(i));
+				if (json_is_array(value)) paths.push_back(currentPath);
+				collectArrays(value);
+				currentPath.pop_back();
+			}
+		}
+	};
+	collectArrays(rootJ);
+
+	// Number of elements appended past the original length - comfortably more
+	// than every fixed-size destination in the codebase.
+	const size_t oversizeBy = 64;
+
+	for (const auto& path : paths) {
+		CATCH_INFO("Array '" << formatJsonPath(path) << "' should tolerate being oversized in dataFromJson()");
+
+		json_t* copyJ = json_deep_copy(rootJ);
+		REQUIRE(copyJ != nullptr);
+
+		// Grow the array by duplicating its first element; an empty array has
+		// no element to duplicate and is left untouched.
+		json_t* arr = resolveJsonPath(copyJ, path);
+		if (json_is_array(arr) && json_array_size(arr) > 0) {
+			json_t* firstJ = json_array_get(arr, 0);
+			size_t target = json_array_size(arr) + oversizeBy;
+			while (json_array_size(arr) < target) {
+				if (json_array_append(arr, firstJ) != 0) break;
+			}
+		}
+
+		REQUIRE_NOTHROW(module->dataFromJson(copyJ));
+		json_decref(copyJ);
+	}
 }
 
 

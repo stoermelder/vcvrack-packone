@@ -561,9 +561,11 @@ struct HiveModule : Module {
 		}
 
 		json_t* mirrorsJ = json_object_get(rootJ, "mirrorCenters");
-		json_t* mirrorJ;
-		size_t mirrorIndex;
-		json_array_foreach(mirrorsJ, mirrorIndex, mirrorJ) {
+		// Bounded to the fixed-size destinations: hand-edited or corrupted
+		// patches may contain more entries than mirrorCenters[]/cursor[] hold.
+		size_t maxMirrors = std::min((size_t)6, json_array_size(mirrorsJ));
+		for (size_t mirrorIndex = 0; mirrorIndex < maxMirrors; mirrorIndex++) {
+			json_t* mirrorJ = json_array_get(mirrorsJ, mirrorIndex);
 			json_t* xJ = json_object_get(mirrorJ, "x");
 			if (xJ) grid.mirrorCenters[mirrorIndex].x = json_integer_value(xJ);
 			json_t* yJ = json_object_get(mirrorJ, "y");
@@ -573,9 +575,9 @@ struct HiveModule : Module {
 		}
 
 		json_t* portsJ = json_object_get(rootJ, "ports");
-		json_t* portJ;
-		size_t portIndex;
-		json_array_foreach(portsJ, portIndex, portJ) {
+		size_t maxPorts = std::min((size_t)NUM_PORTS, json_array_size(portsJ));
+		for (size_t portIndex = 0; portIndex < maxPorts; portIndex++) {
+			json_t* portJ = json_array_get(portsJ, portIndex);
 			json_t* qStartPosJ = json_object_get(portJ, "qStartPos");
 			if (qStartPosJ) grid.cursor[portIndex].startPos.q = json_integer_value(qStartPosJ);
 			json_t* rStartPosJ = json_object_get(portJ, "rStartPos");

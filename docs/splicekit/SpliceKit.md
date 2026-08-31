@@ -156,9 +156,9 @@ Press `Space` again to return to the normal patch view with cables restored. The
 
 SPLICE-KIT accepts MIDI input to trigger both matrix buttons and scene buttons. Any assigned CC or note event with a non-zero value triggers the corresponding button, equivalent to pressing it with the mouse. Configure the MIDI input device in the **MIDI Input** submenu of the module context menu.
 
-**Copying a scene from the controller** — holding one mapped scene button and pressing a second one copies the first scene's connections onto the second, the same as dragging one scene button onto another. The gesture is recognised when a second scene activation arrives before the first button's release (note-off or CC 0).
+**Copying a scene from the controller** — with **MIDI scene-copy gesture** enabled in the module context menu (off by default), holding one mapped scene button and pressing a second one copies the first scene's connections onto the second, the same as dragging one scene button onto another. The gesture is recognised when a second scene activation arrives before the first button's release (note-off or CC 0). While the option is off, the second activation simply selects that scene.
 
-> **Note:** this relies on your controller sending a release message. A controller or mapping that only sends presses will make *every second scene selection* copy the previous scene over the one you select, overwriting its stored connections. If your controller behaves this way, avoid mapping the scene buttons, or verify in a scratch patch first — the copy cannot be undone.
+> **Note:** the gesture relies on your controller sending a release message. A controller or mapping that only sends presses will make *every second scene selection* copy the previous scene over the one you select, overwriting its stored connections — this is why the option is off by default. Only enable it if your controller sends note-off / CC 0 on release, and verify in a scratch patch first — the copy cannot be undone.
 
 ### MIDI learn
 

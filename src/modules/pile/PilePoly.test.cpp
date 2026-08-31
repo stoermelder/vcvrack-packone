@@ -30,8 +30,52 @@ TEST_CASE("Preset JSON null-guards", "[PilePoly][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("JSON round-trip preserves state", "[JSON][PilePoly]") {
+	auto module = Test::createModule<PilePolyModule>("PilePoly");
+	module->panelTheme = 1;
+	module->range = RANGE::BI_5V;
+	
+	// Set various channel voltages
+	for (int i = 0; i < 16; i++) {
+		module->currentVoltage[i / 4][i % 4] = (float)i;
+	}
+	
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	
+	auto moduleNew = Test::createModule<PilePolyModule>("PilePoly");
+	moduleNew->dataFromJson(rootJ);
+	
+	REQUIRE(moduleNew->panelTheme == 1);
+	REQUIRE(moduleNew->range == RANGE::BI_5V);
+	
+	// Verify all voltages restored
+	for (int i = 0; i < 16; i++) {
+		REQUIRE(moduleNew->currentVoltage[i / 4][i % 4] == Catch::Approx((float)i).margin(0.01f));
+	}
+	
+	json_decref(rootJ);
+	Test::destroyModule(moduleNew);
+	Test::destroyModule(module);
+}
+
 
 TEST_CASE("Polyphonic increment and decrement", "[PilePoly]") {
 	auto module = Test::createModule<PilePolyModule>("PilePoly");
@@ -476,39 +520,6 @@ TEST_CASE("High channel count SIMD processing", "[PilePoly]") {
 		for (int c = 0; c < channels; c++) {
 			REQUIRE(module->currentVoltage[c / 4][c % 4] == 1.0f);
 		}
-	}
-
-	Test::destroyModule(module);
-}
-
-TEST_CASE("JSON serialization", "[JSON][PilePoly]") {
-	auto module = Test::createModule<PilePolyModule>("PilePoly");
-
-	SECTION("Module state is serialized and deserialized") {
-		module->panelTheme = 1;
-		module->range = RANGE::BI_5V;
-		
-		// Set various channel voltages
-		for (int i = 0; i < 16; i++) {
-			module->currentVoltage[i / 4][i % 4] = (float)i;
-		}
-		
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		
-		auto moduleNew = Test::createModule<PilePolyModule>("PilePoly");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->panelTheme == 1);
-		REQUIRE(moduleNew->range == RANGE::BI_5V);
-		
-		// Verify all voltages restored
-		for (int i = 0; i < 16; i++) {
-			REQUIRE(moduleNew->currentVoltage[i / 4][i % 4] == Catch::Approx((float)i).margin(0.01f));
-		}
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
 	}
 
 	Test::destroyModule(module);

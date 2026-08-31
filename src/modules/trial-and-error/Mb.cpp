@@ -78,7 +78,14 @@ ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser) {
 	else {
 		APP->scene->rack->addModuleAtMouse(moduleWidget);
 	}
-	APP->scene->rack->setModulePosForce(moduleWidget, overlay->rackMousePosAtOpen - moduleWidget->box.size.div(2));
+
+	Vec pos = overlay->rackMousePosAtOpen - moduleWidget->box.size.div(2);
+	if (settings::squeezeModules) {
+		APP->scene->rack->setModulePosForce(moduleWidget, pos);
+	}
+	else {
+		APP->scene->rack->setModulePosNearest(moduleWidget, pos);
+	}
 
 	// Load template preset
 	moduleWidget->loadTemplate();

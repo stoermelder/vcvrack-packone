@@ -215,16 +215,18 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 
 		json_t* inputConfigsJ = json_object_get(rootJ, "inputConfig");
 		if (inputConfigsJ) {
-			size_t i;
-			json_t* inputConfigJ;
-			json_array_foreach(inputConfigsJ, i, inputConfigJ) {
+			// Bounded to the fixed-size destinations: hand-edited or corrupted
+			// patches may contain more entries than inputConfig[]/label[] hold.
+			size_t maxConfigs = std::min((size_t)2, json_array_size(inputConfigsJ));
+			for (size_t i = 0; i < maxConfigs; i++) {
+				json_t* inputConfigJ = json_array_get(inputConfigsJ, i);
 				json_t* hideUnusedJ = json_object_get(inputConfigJ, "hideUnused");
 				if (hideUnusedJ) inputConfig[i].hideUnused = json_boolean_value(hideUnusedJ);
 				json_t* labelJ = json_object_get(inputConfigJ, "label");
 				if (labelJ) {
-					size_t j;
-					json_t* lJ;
-					json_array_foreach(labelJ, j, lJ) {
+					size_t maxLabels = std::min((size_t)16, json_array_size(labelJ));
+					for (size_t j = 0; j < maxLabels; j++) {
+						json_t* lJ = json_array_get(labelJ, j);
 						if (lJ && json_is_string(lJ)) inputConfig[i].label[j] = json_string_value(lJ);
 					}
 				}

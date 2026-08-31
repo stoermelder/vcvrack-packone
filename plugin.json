@@ -1,6 +1,6 @@
 {
 	"slug": "Stoermelder-P1",
-	"version": "2.5.0",
+	"version": "2.6.0",
 	"license": "GPL-3.0-or-later",
 	"author": "Benjamin Dill",
 	"name": "PackOne",
@@ -15,54 +15,9 @@
 	"minRackVersion": "2.6.1",
 	"modules": [
 		{
-			"slug": "MidiKit",
-			"name": "MIDI-KIT",
-			"description": "",
-			"tags": [
-				"MIDI", "Utility"
-			],
-			"manualUrl": ""
-		},
-		{
-			"slug": "FlowerSeq",
-			"name": "FLOWER",
-			"description": "",
-			"tags": [
-				"Sequencer"
-			],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/flower/FlowerSeq.md"
-		},
-		{
-			"slug": "FlowerSeqEx",
-			"name": "OFFSPRING",
-			"description": "",
-			"tags": [
-				"Sequencer"
-			],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/flower/FlowerSeq.md"
-		},
-		{
-			"slug": "FlowerSeqTrig",
-			"name": "SEEDS",
-			"description": "",
-			"tags": [
-				"Sequencer"
-			],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/flower/FlowerSeq.md"
-		},
-		{
-			"slug": "Reel",
-			"name": "REEL",
-			"description": "Patch memory for a group of modules \u2014 captures module parameters and internal cables across named snapshot slots",
-			"tags": [
-				"Utility",
-				"Controller"
-			]
-		},
-		{
 			"slug": "SpliceKit",
 			"name": "SPLICE-KIT",
-			"description": "MIDI patch-bay for connecting cables",
+			"description": "8x8 matrix patch-bay for creating and removing cables by pressing button pairs.\nStores up to eight independent scenes per instance, with full MIDI control and feedback for playing your patch from a grid controller.",
 			"tags": [
 				"MIDI", "Controller", "Utility"
 			],

@@ -15,9 +15,7 @@
 namespace StoermelderPackOne {
 namespace SpliceKit {
 
-// Each LED uses a single SCHEME channel in isolation. Mixing channels is avoided
-// because SCHEME_BLUE (#29b2ef) already contains G=178/255, which saturates the
-// green channel and produces teal/white when combined with the green channel.
+// Each LED uses one SCHEME channel; mixing saturates green (SCHEME_BLUE has G=178/255) → teal/white.
 static const float LED_BRIGHT = 1.f;
 static const float LED_DIM = 0.65f;  		// assigned port, no cable attached
 static const float LED_SCENE_DIM = 0.3f;    // inactive scene that has stored connections
@@ -27,11 +25,7 @@ static const NVGcolor LED_PENDING    = nvgRGBf(LED_BRIGHT, LED_BRIGHT, LED_BRIGH
 static const NVGcolor LED_PORT_LEARN = nvgRGBf(0.7f,       0.7f,       0.7f      );
 static const NVGcolor LED_MIDI_LEARN = nvgRGBf(0.7f,       0.7f,       1.f       );
 
-// Four assignable color sets using Rack's standard scheme palette.
-//   set 0: red    (default for OUTPUT ports)
-//   set 1: blue   (default for INPUT ports)
-//   set 2: orange
-//   set 3: green
+// Four assignable color sets (Rack scheme palette): 0=red (OUTPUT), 1=blue (INPUT), 2=orange, 3=green.
 static const int COLOR_SET_COUNT = 4;
 struct ColorSet { NVGcolor color; const char* name; };
 static const ColorSet COLOR_SETS[COLOR_SET_COUNT] = {
@@ -41,9 +35,7 @@ static const ColorSet COLOR_SETS[COLOR_SET_COUNT] = {
 	{ SCHEME_GREEN,             "Green"  }
 };
 
-// Per-color-set LED state lookups, named explicitly rather than computed via
-// enum-stride arithmetic (e.g. LED_STATE_COLOR0 + cs * 2) — safe against any
-// future reordering/insertion in the LED_STATE_* enum.
+// Per-color-set LED state lookups, named explicitly (not enum-stride arithmetic) so enum reordering is safe.
 static const int LED_STATE_COLOR_DIM_BY_SET[COLOR_SET_COUNT] = {
 	LED_STATE_COLOR0_DIM, LED_STATE_COLOR1_DIM, LED_STATE_COLOR2_DIM, LED_STATE_COLOR3_DIM
 };
@@ -56,8 +48,7 @@ static const int LED_STATE_CONNECTED_BY_SET[COLOR_SET_COUNT] = {
 
 static const int TOTAL_MAPS = MATRIX_COUNT + SCENE_COUNT;  // 64 cells + 8 scenes
 
-// One scene's connection bitmask, one entry per cell. std::array (not a raw uint64_t[64])
-// keeps the element assignable/copyable so it can live in a std::vector.
+// One scene's connection bitmask (one entry per cell). std::array keeps it assignable/copyable for a std::vector.
 using SceneConns = std::array<uint64_t, MATRIX_COUNT>;
 
 
@@ -90,12 +81,8 @@ resolveDirection(const PortAssignment& a, const PortAssignment& b) {
 	return { nullptr, nullptr };
 }
 
-// Pure — diffs two scene topologies and reports which cell pairs need their cable
-// removed (present in `from`, absent in `to`) and which need one added (absent in
-// `from`, present in `to`). Pairs with unassigned ports or with no valid output→input
-// direction are excluded — such cells cannot carry a cable, and the add/remove helpers
-// re-check direction anyway. Split out of SceneStore::switchTo() so the scene-switch
-// diff is testable without rack/cable scaffolding (the cable layer is a no-op in tests).
+// Pure — diffs two scene topologies: reports cell pairs to remove (in `from`, absent in `to`) or add.
+// Excludes unassigned/invalid-direction pairs (helpers re-check). Split from switchTo() for testability.
 static void topologyDiff(const SceneConns& from, const SceneConns& to,
 		const PortAssignment* ports,
 		std::vector<std::pair<int, int>>& toRemove,
@@ -115,8 +102,7 @@ static void topologyDiff(const SceneConns& from, const SceneConns& to,
 	}
 }
 
-// Formats a MIDI mapping as "CC N" / "Note N", or "" when unmapped. Callers add their
-// own prefix/fallback for context (tooltip vs. menu item).
+// Formats a MIDI mapping as "CC N" / "Note N", or "" when unmapped. Callers add context.
 std::string midiMapLabel(const MidiTrackingProcessor<TOTAL_MAPS>::RevMap& map) {
 	if (map.type == MidiTrackingType::CC) return string::f("CC %d", map.param);
 	if (map.type == MidiTrackingType::NOTE) return string::f("Note %d", map.param);
@@ -124,23 +110,19 @@ std::string midiMapLabel(const MidiTrackingProcessor<TOTAL_MAPS>::RevMap& map) {
 }
 
 
-// GUI thread only, unconditionally — every method here touches APP->scene->rack or
-// state that must not be read concurrently with it. Reaching this class from the
-// engine thread is a bug; go through GuiTaskProcessor.
+// GUI thread only — every method touches APP->scene->rack or state that must not be read concurrently.
+// Reaching this from the engine thread is a bug; go through GuiTaskProcessor.
 struct SceneStore {
 	thread::ThreadVerifier& verifier;
 
 	std::vector<SceneConns> connections;
 	int current = 0;
 
-	// Non-owning view of the module's portAssignments array, set once at construction.
-	// The store's job is scene topology, not port ownership: SpliceKitModule owns the
-	// array and stays the single source of truth, the store only reads it to resolve
-	// cell ids into cable endpoints.
+	// Non-owning view of the module's portAssignments (set once). The module owns the array;
+	// the store only reads it to resolve cell ids into cable endpoints.
 	const PortAssignment* ports = nullptr;
 
-	// Fired by switchTo() after `current` changes. Lets the owning module react (e.g.
-	// notify scene-link followers) without SceneStore knowing about Module/listeners.
+	// Fired by switchTo() after `current` changes, so the module can react (e.g. notify scene-link followers).
 	std::function<void()> onSwitch;
 
 	explicit SceneStore(thread::ThreadVerifier& verifier) : verifier(verifier) {}
@@ -179,10 +161,8 @@ struct SceneStore {
 		}
 	}
 
-	// GUI thread — resolves port directions for the two cells and removes the cable
-	// between them. No-op if both ports are the same direction or either assignment is
-	// invalid. Private: breaking a connection must also clear the bitmask, so callers
-	// go through disconnectLive() instead.
+	// GUI thread — removes the cable between two cells; no-op if same direction or invalid.
+	// Private: callers must go through disconnectLive() so the bitmask is cleared too.
 	void removeCableBetween(int cellIdA, int cellIdB) {
 		assert(verifier.isUiOrWorker());
 		auto dir = resolveDirection(ports[cellIdA], ports[cellIdB]);
@@ -192,10 +172,8 @@ struct SceneStore {
 		vcv::removeCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
 	}
 
-	// GUI thread — the mirror of removeCableBetween(). Same no-op rules, same reason for
-	// being private: callers go through connectLive(). Also guards against creating a
-	// duplicate cable: Rack's API silently allows multiple cables between the same two
-	// ports, so skip when one already exists (mirroring removeCableBetween's findCable).
+	// GUI thread — mirror of removeCableBetween(): same no-op rules, private (use connectLive()).
+	// Skips when a cable already exists (Rack allows duplicates between the same two ports).
 	void addCableBetween(int cellIdA, int cellIdB) {
 		assert(verifier.isUiOrWorker());
 		auto dir = resolveDirection(ports[cellIdA], ports[cellIdB]);
@@ -206,10 +184,9 @@ struct SceneStore {
 		vcv::addCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
 	}
 
-	// GUI thread — make/break a connection between two cells in the CURRENT scene,
-	// updating the stored bitmask and the patch cable together. The two must never
-	// diverge (a stale bit recreates a cable on the next switchTo(), a stale cable
-	// survives one), so these are the only public way to change a live connection.
+	// GUI thread — make/break a connection in the CURRENT scene, updating bitmask and cable together.
+	// They must never diverge (stale bit recreates a cable; stale cable survives a switch), so these
+	// are the only public way to change a live connection.
 	void connectLive(int cellIdA, int cellIdB) {
 		assert(verifier.isUiOrWorker());
 		setConnection(current, cellIdA, cellIdB, true);
@@ -223,10 +200,8 @@ struct SceneStore {
 		clearAliasBits(cellIdA, cellIdB);
 	}
 
-	// True if the cable cellIdA/cellIdB would create or remove already exists in the
-	// patch. Used by toggleConnection() instead of the cell-pair bitmask bit so that two
-	// cells aliased to the same port pair (see clearAliasBits()) agree with the patch
-	// rather than only with each other.
+	// True if the cable between cellIdA/cellIdB already exists in the patch. Used by toggleConnection()
+	// instead of the bitmask bit, so cells aliased to the same port pair agree with the patch, not just each other.
 	bool cableIsLive(int cellIdA, int cellIdB) const {
 		auto dir = resolveDirection(ports[cellIdA], ports[cellIdB]);
 		const PortAssignment* outPd = dir.first;
@@ -235,11 +210,9 @@ struct SceneStore {
 		return vcv::hasCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
 	}
 
-	// After the cable between cellIdA/cellIdB is removed, clear the current scene's bit
-	// for every OTHER cell pair that resolves to the same two ports (aliasing — nothing
-	// prevents two cells from being assigned to the same port). Without this a surviving
-	// alias bit claims a connection the patch no longer has, and switchTo() would recreate
-	// the cable the user just deleted.
+	// After removing the cable, clear the current scene's bit for every OTHER pair resolving to the same
+	// two ports (aliasing — two cells can share a port). Without this a surviving alias bit would make
+	// switchTo() recreate the cable the user just deleted.
 	void clearAliasBits(int cellIdA, int cellIdB) {
 		assert(verifier.isUiOrWorker());
 		auto dir = resolveDirection(ports[cellIdA], ports[cellIdB]);
@@ -247,9 +220,8 @@ struct SceneStore {
 		const PortAssignment* inPd = dir.second;
 		if (!outPd) return;
 
-		// Any stale alias pair must use a cell whose assigned port matches outPd or inPd —
-		// gather those (usually just cellIdA/cellIdB themselves) in one pass instead of
-		// scanning all O(MATRIX_COUNT^2) cell pairs.
+		// Stale aliases use a cell whose port matches outPd or inPd — gather those in one pass
+		// instead of scanning all O(MATRIX_COUNT^2) pairs.
 		auto samePort = [](const PortAssignment& p, const PortAssignment* ref) {
 			return p.moduleId == ref->moduleId && p.portId == ref->portId;
 		};
@@ -268,9 +240,8 @@ struct SceneStore {
 		}
 	}
 
-	// GUI thread — rewrites connections[scene] to match the actual cables currently
-	// present in the patch for the assigned ports. Used before switching scenes so that
-	// any manual cable changes the user made are not lost.
+	// GUI thread — rewrites connections[scene] to match the actual cables present for the assigned ports.
+	// Used before switching scenes so manual cable changes are not lost.
 	void capture(int scene) {
 		assert(verifier.isUiOrWorker());
 		connections[scene].fill(0);
@@ -288,13 +259,9 @@ struct SceneStore {
 		}
 	}
 
-	// GUI thread — reconciles the patch AND connections[current] to match newConns,
-	// starting from whatever connections[current] currently holds. For each pair (i,j)
-	// that differs, the cable is added or removed and the bitmask updated with it, so
-	// the store is left consistent without the caller storing newConns afterwards.
-	// Pairs that haven't changed are skipped. Unlike switchTo(), this always writes the
-	// diff into whichever scene `current` names, so it is only used where the current
-	// scene's stored topology is meant to end up as newConns (reconcile, resetModuleState).
+	// GUI thread — reconciles the patch AND connections[current] to match newConns, starting from the
+	// current state. Each differing pair's cable and bitmask are updated together; unchanged pairs are
+	// skipped. Unlike switchTo(), always writes into `current` (used by reconcile/resetModuleState).
 	void applyToCurrent(const SceneConns& newConns) {
 		assert(verifier.isUiOrWorker());
 		for (int i = 0; i < MATRIX_COUNT; i++) {
@@ -314,10 +281,8 @@ struct SceneStore {
 		}
 	}
 
-	// GUI thread — applies a new connection topology to an arbitrary scene.
-	// If the target scene is the currently active one, the patch cables are updated live
-	// (capture current state first, then diff against newConns). Always persists newConns
-	// into connections[scene].
+	// GUI thread — applies newConns to an arbitrary scene, persisting it into connections[scene].
+	// If it is the active scene, the patch cables are updated live (capture, then diff).
 	void reconcile(int scene, const SceneConns& newConns) {
 		assert(verifier.isUiOrWorker());
 		if (scene == current) {
@@ -327,17 +292,11 @@ struct SceneStore {
 		connections[scene] = newConns;
 	}
 
-	// GUI thread — switches to newScene: captures the outgoing scene's current cable
-	// state, then realises the incoming scene's stored topology in the patch. No-op if
-	// newScene is already current. Fires onSwitch() last.
-	//
-	// The diff runs while `current` still names the outgoing scene, so its captured
-	// state is the "from" baseline. Cable changes are applied with the bitmask-free
-	// helpers (removeCableBetween/addCableBetween): neither scene's stored bitmask may
-	// be rewritten here — the outgoing scene keeps its just-captured state (it is no
-	// longer active) and the incoming scene already holds the desired topology. That
-	// rules out applyToCurrent(), which always writes the diff into whichever scene
-	// `current` names.
+	// GUI thread — captures the outgoing scene's cables, then realises the incoming scene's stored
+	// topology in the patch. No-op if already current; fires onSwitch() last.
+	// The diff runs while `current` still names the outgoing scene (its captured state is the "from"
+	// baseline) and uses the bitmask-free helpers, so neither scene's stored bitmask is rewritten here
+	// (outgoing keeps its captured state; incoming already holds the desired topology). Rules out applyToCurrent().
 	void switchTo(int newScene) {
 		assert(verifier.isUiOrWorker());
 		if (newScene == current) return;
@@ -350,8 +309,7 @@ struct SceneStore {
 		if (onSwitch) onSwitch();
 	}
 
-	// GUI thread — copies scene src's connection topology to scene dst.
-	// If dst is the active scene, cables are updated live via reconcile.
+	// GUI thread — copies src's topology to dst (live via reconcile if dst is active).
 	void copy(int src, int dst) {
 		assert(verifier.isUiOrWorker());
 		if (src == dst) return;
@@ -359,9 +317,8 @@ struct SceneStore {
 		reconcile(dst, connections[src]);
 	}
 
-	// GUI thread — clears cellId's bit out of every other cell's mask and its own mask,
-	// in every scene. Does not touch cables in the current scene — callers that need the
-	// current-scene cable removed too must call removeCellConnections() first.
+	// GUI thread — clears cellId's bit from every other cell's mask and its own, in every scene.
+	// Does not touch current-scene cables; callers needing that removed too use removeCellConnections() first.
 	void clearCell(int cellId) {
 		assert(verifier.isUiOrWorker());
 		for (int s = 0; s < SCENE_COUNT; s++) {
@@ -373,9 +330,8 @@ struct SceneStore {
 		}
 	}
 
-	// GUI thread — removes cellId's cables in the current scene, updating both the patch
-	// and the current scene's bitmask. Used before a rebind/clear/move discards cellId's
-	// old port, while it is still resolvable.
+	// GUI thread — removes cellId's current-scene cables, updating the patch and bitmask.
+	// Used before a rebind/clear/move discards the old port, while it is still resolvable.
 	void removeCellConnections(int cellId) {
 		assert(verifier.isUiOrWorker());
 		uint64_t mask = connections[current][cellId];
@@ -385,11 +341,9 @@ struct SceneStore {
 		}
 	}
 
-	// GUI thread — moves fromId's connections (in every scene) onto toId, first tearing
-	// out toId's existing connections from its neighbours. Mirrors moveCell()'s handling
-	// of portAssignments/cellLabels/cellColorSet; callers are responsible for removing
-	// toId's current-scene cables (removeCellConnections) before calling this, since that
-	// needs the still-valid old port assignment.
+	// GUI thread — moves fromId's connections (every scene) onto toId, first tearing out toId's existing
+	// connections. Mirrors moveCell()'s port/label/color handling; callers must removeCellConnections(toId)
+	// first (needs the still-valid old port).
 	void moveCellBits(int fromId, int toId) {
 		assert(verifier.isUiOrWorker());
 		for (int s = 0; s < SCENE_COUNT; s++) {
@@ -418,15 +372,13 @@ struct SceneStore {
 
 
 struct SpliceKitOutput : midi::Output {
-	// Hook to the owner's invalidateLedStates(), set once by the owner.
-	// SpliceKitOutput has no back-pointer of its own, so a callback is used
-	// instead of duplicating the cache-invalidation logic here.
+	// Hook to the owner's invalidateLedStates(), set once. SpliceKitOutput has no back-pointer,
+	// so a callback avoids duplicating the cache-invalidation logic.
 	std::function<void()> onDeviceChanged;
 
 	// lastSentMsg/prevSentMsg/sentCount are test-observation fields, only read by tests.
 	midi::Message lastSentMsg;
-	// The message before lastSentMsg — lets tests assert on send ORDER (e.g. setState()'s
-	// off-before-on) without needing a full history.
+	// The message before lastSentMsg — lets tests assert send ORDER (e.g. setState()'s off-before-on).
 	midi::Message prevSentMsg;
 	int sentCount = 0;
 
@@ -434,8 +386,8 @@ struct SpliceKitOutput : midi::Output {
 		channel = -1;
 	}
 
-	// Shadows, not overrides (midi::Output::sendMessage is non-virtual) — safe only
-	// because every call site holds a SpliceKitOutput, never a base-class ref/pointer.
+	// Shadows, not overrides (midi::Output::sendMessage is non-virtual) — safe only because every
+	// call site holds a SpliceKitOutput, never a base-class ref/pointer.
 	void sendMessage(const midi::Message& msg) {
 		prevSentMsg = lastSentMsg;
 		lastSentMsg = msg;
@@ -450,8 +402,7 @@ struct SpliceKitOutput : midi::Output {
 		return channels;
 	}
 
-	// Forces a full LED refresh after the device changes, which makes the next
-	// process() tick re-send every cell and scene button.
+	// Forces a full LED refresh after a device change, so the next process() tick re-sends everything.
 	void setDeviceId(int deviceId) override {
 		midi::Output::setDeviceId(deviceId);
 		if (onDeviceChanged) onDeviceChanged();
@@ -459,12 +410,10 @@ struct SpliceKitOutput : midi::Output {
 };
 
 
-// Translates a cell/scene LED state id into a MIDI message per the active preset. Note/CC
-// resolution for FROM_SLOT specs is injected as a callback (resolveFromSlot) rather than
-// named directly, since MidiTrackingProcessor is a template.
-//
-// All sends go out on the engine thread — midi::Output is unsynchronised and process()
-// sends every divider tick. GUI-thread callers use queueFeedbackOff(), not sendFeedbackOff().
+// Translates a cell/scene LED state id into a MIDI message per the active preset. FROM_SLOT note/CC
+// resolution is injected as resolveFromSlot (MidiTrackingProcessor is a template).
+// All sends run on the engine thread (midi::Output is unsynchronised, process() sends every tick).
+// GUI-thread callers use queueFeedbackOff(), not sendFeedbackOff().
 struct FeedbackSender {
 	thread::ThreadVerifier& verifier;
 
@@ -479,10 +428,9 @@ struct FeedbackSender {
 	int cellLedState[MATRIX_COUNT];
 	std::vector<int> sceneLedState;
 
-	// Any thread — resolves a FROM_SLOT spec's note/CC number via the owning module's
-	// MidiTrackingProcessor. Returns false when the slot is unmapped. Set once by the module.
-	// Called from both threads; the getMap() read races with the GUI thread's setMap(), which
-	// is accepted as for learningId — worst case one wrong LED until the next invalidate.
+	// Any thread — resolves a FROM_SLOT spec's note/CC via the module's MidiTrackingProcessor; returns
+	// false if unmapped. Set once. The getMap() read races with the GUI thread's setMap() (accepted, like
+	// learningId): worst case one wrong LED until the next invalidate.
 	std::function<bool(int cellId, MidiTrackingType& slotType, int& noteNum)> resolveFromSlot;
 
 	// GUI produces, engine consumes. See queueFeedbackOff()/drainPendingOffs().
@@ -521,8 +469,7 @@ struct FeedbackSender {
 		return activePresetJson;
 	}
 
-	// Sets the active preset from raw JSON text (from a built-in file or a user-loaded file)
-	// and re-parses it into activePreset. Passing an empty string turns feedback off.
+	// Sets the active preset from raw JSON text (built-in or user-loaded); empty string turns feedback off.
 	void setActivePresetJson(const std::string& json) {
 		assert(verifier.isUiOrWorker());
 		activePresetJson = json;
@@ -535,8 +482,7 @@ struct FeedbackSender {
 		}
 	}
 
-	// Sets the active preset directly from a struct (e.g. built programmatically),
-	// serializing it to keep activePresetJson genuine and exportable via "Save preset to file...".
+	// Sets the active preset from a struct, serializing it so activePresetJson stays genuine/exportable.
 	void setActivePreset(const MidiOutPreset& preset) {
 		assert(verifier.isUiOrWorker());
 		activePreset = preset;
@@ -547,15 +493,13 @@ struct FeedbackSender {
 		std::free(text);
 	}
 
-	// Any thread — forces a full MIDI LED refresh on the next process() tick by resetting
-	// all cached LED states to -1, causing every cell and scene button to be re-sent.
+	// Any thread — forces a full MIDI LED refresh on the next process() tick (resets cached states to -1).
 	void invalidateLedStates() {
 		std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
 		std::fill(sceneLedState.begin(), sceneLedState.end(), -1);
 	}
 
-	// Resolves the note/CC number and the slot's own type for a spec. Returns false when
-	// the spec's note mode has no resolvable number (unmapped FROM_SLOT, or unknown mode).
+	// Resolves the note/CC number and slot type for a spec; returns false if the note mode has no resolvable number.
 	bool resolveNote(const MidiOutSpec& spec, int cellId, int& noteNum, MidiTrackingType& slotType) {
 		switch (spec.noteMode) {
 			case MIDI_OUT_FROM_SLOT:
@@ -569,10 +513,9 @@ struct FeedbackSender {
 		}
 	}
 
-	// Any thread — builds the note-off for a cell's previous LED state without sending it.
-	// Returns false when no off is needed: invalid state id, no preset, or a non-NOTE_ON spec.
-	// Split out so GUI callers can resolve the note against the mapping still in place and
-	// defer only the send; resolving later would address the note through the new mapping.
+	// Any thread — builds (without sending) the note-off for a cell's previous LED state. Returns false when
+	// no off is needed (invalid state, no preset, non-NOTE_ON spec). Split out so GUI callers resolve the note
+	// against the mapping still in place and defer only the send (resolving later would use the new mapping).
 	bool buildFeedbackOff(int cellId, int oldStateId, midi::Message& out) {
 		if (oldStateId < 0) return false;
 		const MidiOutPreset* preset = getActivePreset();
@@ -590,9 +533,8 @@ struct FeedbackSender {
 		return true;
 	}
 
-	// Engine thread — sends a MIDI note-off for the previous LED state before a transition,
-	// clearing the controller LED that was lit by a NOTE_ON-based spec. No-op for CC specs,
-	// off states, or when no preset is active.
+	// Engine thread — sends the note-off for the previous LED state before a transition (clears the
+	// controller LED lit by a NOTE_ON spec). No-op for CC specs, off states, or no active preset.
 	void sendFeedbackOff(int cellId, int oldStateId) {
 		assert(verifier.isEngine());
 		midi::Message msg;
@@ -601,10 +543,9 @@ struct FeedbackSender {
 		midiOutput.sendMessage(msg);
 	}
 
-	// GUI thread — deferred counterpart to sendFeedbackOff(): resolves the note-off against
-	// the mapping in place now, and leaves the send to the engine thread's next tick.
-	// Drops when full; every caller invalidates the LED state, so the next tick re-sends the
-	// correct on-message anyway — only the off for the stale mapping is lost.
+	// GUI thread — deferred counterpart to sendFeedbackOff(): resolves the note-off against the current
+	// mapping and leaves the send to the engine thread's next tick. Drops when full; every caller invalidates
+	// the LED state, so the next tick re-sends the correct on-message — only the stale off is lost.
 	void queueFeedbackOff(int cellId, int oldStateId) {
 		assert(verifier.isUiOrWorker());
 		midi::Message msg;
@@ -613,9 +554,8 @@ struct FeedbackSender {
 		pendingOffs.push(msg);
 	}
 
-	// Engine thread — sends every note-off queued by the GUI thread since the last tick.
-	// Runs before the light loop's setState() calls, so a queued off always precedes the
-	// on-message for the state that replaced it.
+	// Engine thread — sends every note-off queued by the GUI thread since the last tick, before the light
+	// loop's setState() calls, so a queued off always precedes the on-message for the state that replaced it.
 	void drainPendingOffs() {
 		assert(verifier.isEngine());
 		while (!pendingOffs.empty()) {
@@ -625,9 +565,8 @@ struct FeedbackSender {
 		}
 	}
 
-	// Engine thread — sends a single MIDI message to the output device to update the
-	// controller LED for mapId to the given stateId. Called only when the state changes.
-	// mapId 0–63: matrix cells; mapId 64–71: scene buttons (MATRIX_COUNT + sceneId).
+	// Engine thread — sends one MIDI message to update the controller LED for mapId to stateId (only on change).
+	// mapId 0–63: matrix cells; 64–71: scene buttons (MATRIX_COUNT + sceneId).
 	void sendFeedback(int cellId, int stateId) {
 		assert(verifier.isEngine());
 		const MidiOutPreset* preset = getActivePreset();
@@ -663,10 +602,8 @@ struct FeedbackSender {
 		midiOutput.sendMessage(msg);
 	}
 
-	// Engine thread — transitions cell/scene mapId to newState, emitting the note-off for
-	// the outgoing state first (while it is still addressable) and the on-message for the
-	// incoming one. No-op when the state is unchanged. mapId 0–63: matrix cells; mapId
-	// 64–71: scene buttons (MATRIX_COUNT + sceneId), addressing sceneLedState.
+	// Engine thread — transitions mapId to newState, emitting the outgoing note-off first (while still
+	// addressable) then the on-message. No-op when unchanged. mapId 0–63: cells; 64–71: scene buttons.
 	void setState(int mapId, int newState) {
 		assert(verifier.isEngine());
 		int* cache = mapId < MATRIX_COUNT ? &cellLedState[mapId] : &sceneLedState[mapId - MATRIX_COUNT];
@@ -676,10 +613,8 @@ struct FeedbackSender {
 		sendFeedback(mapId, newState);
 	}
 
-	// GUI thread — replaces all MIDI input mappings with those defined by the currently
-	// selected feedback preset's slot layout. No-op if the preset has no layout. clearMap/
-	// setMap are the owning module's MidiTrackingProcessor calls, injected as callbacks so
-	// this struct does not have to name the template instantiation.
+	// GUI thread — replaces all MIDI input mappings with the active preset's slot layout (no-op if none).
+	// clearMap/setMap are injected callbacks so this struct need not name the MidiTrackingProcessor template.
 	void applyPresetLayout(const std::function<void()>& clearMaps,
 			const std::function<void(MidiTrackingType, int, uint16_t)>& setMap) {
 		assert(verifier.isUiOrWorker());
@@ -704,17 +639,16 @@ struct FeedbackSender {
 
 
 struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListener {
-	// Cross-instance pending state: the initiator module + its pending cell, shared across all
-	// SpliceKit instances in the same Rack context. Cleared by the responder or when the
-	// initiator cancels/completes its local pending.
+	// Cross-instance pending state (initiator + its pending cell), shared across all SpliceKit instances
+	// in the same Rack context. Cleared by the responder or when the initiator cancels/completes.
 	struct CrossPendingState {
 		SpliceKitModule* initiator = nullptr;
 		int cellId = -1;
 		PortAssignment port;
 
-		// Far end of every cable on `port`, keyed (moduleId, portId). Published once by the
-		// initiator, read by peers — deriving it per peer would be N widget-tree walks a frame
-		// for one fact. A snapshot: cable changes mid-gesture are not reflected until it ends.
+		// Far end of every cable on `port`, keyed (moduleId, portId). Published once by the initiator and
+		// read by peers (deriving per peer would be N widget-tree walks a frame for one fact). A snapshot:
+		// mid-gesture cable changes are not reflected until the gesture ends.
 		std::set<std::pair<int64_t, int>> partners;
 
 		bool isValid() const {
@@ -728,31 +662,22 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	};
 	
-	// Entries are never erased when a Context is destroyed — a small leak bounded by the
-	// number of Contexts ever opened; not worth fixing.
-	//
-	// Function-local static rather than a class static with an out-of-line definition: the
-	// test build both links the plugin binary and #includes this .cpp, so a class static
-	// would exist twice — one copy in plugin.dylib, one in the test TU — and a write through
-	// one (e.g. onRemove()'s clear()) would be invisible to a read through the other (e.g.
-	// triggerCell()'s lambda), leaving a stale `initiator` pointing at an already-destroyed
-	// module. (Caught as a heap-use-after-free in clearPendingLocal(), reached via
-	// initiator->clearPendingLocal() in the responder branch below.) Same fix and same
-	// rationale as getInstances() just below.
+	// Entries are never erased when a Context is destroyed — a small, bounded leak, not worth fixing.
+	// Function-local static (not a class static): the test build both links the plugin binary and
+	// #includes this .cpp, so a class static would exist twice (plugin.dylib + test TU) and a write through
+	// one would be invisible to a read through the other — leaving a stale `initiator` pointing at a
+	// destroyed module (caught as a heap-use-after-free in clearPendingLocal()). Same fix/rationale as
+	// getInstances() below.
 	static std::map<Context*, CrossPendingState>& crossPending() {
 		static std::map<Context*, CrossPendingState> crossPending;
 		return crossPending;
 	}
 
-	// All live instances in this Rack context, maintained by the constructor/destructor.
-	// Cross-instance patching needs to enumerate its peers every GUI frame (see
-	// collectCableEndCandidates); walking APP->engine->getModuleIds() would allocate a
-	// vector of every module in the patch and dynamic_cast each one, 60x per second.
-	// Same keying as crossPending(), and the same GUI-thread-only ownership rule.
-	//
-	// Function-local static rather than a class static with an out-of-line definition:
-	// the test build both links the plugin binary and #includes this .cpp, so a class
-	// static would exist twice and the constructor would populate a different copy than
+	// All live instances in this Rack context (maintained by ctor/dtor). Cross-instance patching enumerates
+	// peers every GUI frame; walking APP->engine->getModuleIds() would allocate + dynamic_cast every module
+	// 60x/sec. Same keying and GUI-thread-only rule as crossPending().
+	// Function-local static (not a class static): the test build both links the binary and #includes this
+	// .cpp, so a class static would exist twice and the ctor would populate a different copy than
 	// collectCableEndCandidates() reads.
 	static std::map<Context*, std::set<SpliceKitModule*>>& getInstances() {
 		static std::map<Context*, std::set<SpliceKitModule*>> instances;
@@ -828,20 +753,15 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		NUM_LIGHTS
 	};
 
-	// Defers GUI-thread work (cables, widget state) requested from the engine thread.
-	// SINGLE PRODUCER: only the engine thread may enqueue() here — the backing queue is an
-	// SPSC ring buffer, so a concurrent GUI-thread push would corrupt it. Code already on the
-	// GUI thread must call the target function directly instead of enqueueing.
-	//
-	// Declared before verifier/feedback/sceneStore below: verifier's constructor binds a
-	// lambda over taskProcessorUi, and feedback/sceneStore each require a constructed
-	// ThreadVerifier& to initialize their own reference member — members initialize in
-	// declaration order regardless of initializer-list order, so this order is load-bearing.
+	// Defers GUI-thread work (cables, widget state) requested from the engine thread. SINGLE PRODUCER: only
+	// the engine thread may enqueue() — the SPSC ring buffer would corrupt on a concurrent GUI-thread push,
+	// so GUI-thread code must call the target directly.
+	// Declared before verifier/feedback/sceneStore: verifier's ctor binds a lambda over taskProcessorUi and
+	// feedback/sceneStore need a constructed ThreadVerifier&; members init in declaration order, so this is load-bearing.
 	GuiTaskProcessor<16> taskProcessorUi;
 
-	// This instance's own thread-assertion state (see utils/thread.hpp) — checks against
-	// taskProcessorUi's own worker thread, not any shared/global registry, so it can never
-	// be confused with another module instance's worker.
+	// This instance's own thread-assertion state — checks against taskProcessorUi's worker thread, not a
+	// shared/global registry, so it can never be confused with another instance's worker.
 	thread::ThreadVerifier verifier;
 
 	/** [Stored to JSON] */
@@ -861,8 +781,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	/** [Stored to JSON] */
 	PortAssignment portAssignments[MATRIX_COUNT];
 
-	// Scene topology (connections + current scene index). GUI thread only, unconditionally.
-	// currentScene and per-scene connection bitmasks are [Stored to JSON] via sceneStore.
+	// Scene topology (connections + current scene index). GUI thread only. [Stored to JSON] via sceneStore.
 	SceneStore sceneStore;
 
 	dsp::BooleanTrigger buttonTriggers[MATRIX_COUNT];
@@ -871,14 +790,12 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	ClockDividerEx processDivider;
 	ClockDividerEx lightDivider;
 
-	// Written by GUI thread (step), read by DSP thread (process) — accepted race for LEDs
+	// Written by GUI thread (step), read by DSP thread (process) — accepted race for LEDs.
 	bool portHasCable[MATRIX_COUNT] = {};
 
-	// This cell shares a cross-instance cable with the port a peer has armed — the
-	// cross-instance analogue of connectedToPending, which sceneStore cannot answer because
-	// such a cable is never stored in a scene. Same accepted race as portHasCable[]: written
-	// by refreshPeerConnected() on the GUI thread, read by the light loop. The engine thread
-	// must not read crossPending directly — std::map::operator[] can insert.
+	// This cell shares a cross-instance cable with a peer's armed port (sceneStore can't answer this, since
+	// such a cable is never stored in a scene). Same accepted race as portHasCable[]: written by the GUI
+	// thread, read by the light loop. The engine thread must not read crossPending directly (operator[] can insert).
 	bool peerConnected[MATRIX_COUNT] = {};
 
 	float blinkPhase = 0.f;
@@ -891,13 +808,12 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	/** [Stored to JSON] */
 	ButtonMode buttonMode = BUTTON_TOGGLE;
 
-	// -1 = no pending; >=0 = first button pressed, awaiting second press
+	// -1 = no pending; >=0 = first button pressed, awaiting second press.
 	int pendingCellId = -1;
 	bool pendingCellIsPhysical = false; // true = set by physical button, false = set by MIDI
 
-	// Tracks the last MIDI-activated scene that has not yet received a note-off / CC=0.
-	// When a second scene activation arrives while this is set (no release in between),
-	// the pair is interpreted as a copy from pendingMidiSceneId → new sceneId.
+	// Tracks the last MIDI-activated scene still awaiting a note-off/CC=0. A second activation while set
+	// (no release between) is interpreted as a copy from pendingMidiSceneId → new sceneId.
 	int pendingMidiSceneId = -1;
 
 	int portLearningId = -1;
@@ -907,14 +823,17 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	std::string cellLabels[MATRIX_COUNT];
 
 	/** [Stored to JSON — only non-default (-1) entries are written]
-	 *  -1 = auto (OUTPUT → set 0 / red, INPUT → set 1 / blue)
-	 *   0–3 = explicit color set override */
+	 *  -1 = auto (OUTPUT→set 0/red, INPUT→set 1/blue); 0–3 = explicit color set override */
 	int8_t cellColorSet[MATRIX_COUNT];
 
 	/** [Stored to JSON] */
 	bool overlayEnabled = true;
 	/** [Stored to JSON] */
 	bool crossInstanceEnabled = true;
+	/** [Stored to JSON] — opt-in MIDI double-activation scene-copy gesture (see processMapUpdate). Off by
+	 *  default: assumes the controller sends a release between selections; on a press-only controller every
+	 *  second selection would otherwise become a destructive scene overwrite. */
+	bool midiSceneCopyEnabled = false;
 
 	int overlayMessageId = -1;
 	OverlayMessageProvider::Message overlayMessage;
@@ -922,9 +841,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	SceneConns sceneClipboard{};
 	bool sceneClipboardValid = false;
 
-	// -1 = no scene link master. Otherwise the engine module ID of another SpliceKit
-	// instance whose currentScene this instance follows (see notifyModuleListeners
-	// consumption in process()).
+	// -1 = no scene link master; otherwise the engine module ID of another SpliceKit instance whose
+	// currentScene this one follows (see process()'s notifyModuleListeners consumption).
 	/** [Stored to JSON] */
 	int64_t sceneLinkMasterId = -1;
 
@@ -943,10 +861,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		sceneStore.onSwitch = []() {
 			notifyModuleListeners("SpliceKit-SceneLink");
 		};
-		// Momentary button representations, not meaningful knob/switch values — excluded from
-		// Rack's default param randomization. onRandomize() below generates a random cable
-		// topology instead; randomizing these directly would just spuriously trigger button
-		// presses on the next process() tick.
+		// Momentary button representations, not meaningful knob/switch values — excluded from Rack's default
+		// param randomization. onRandomize() generates a random cable topology instead; randomizing these
+		// directly would just spuriously trigger button presses on the next process() tick.
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			configParam<SpliceKitCellQuantity>(PARAM_MATRIX + i, 0.f, 1.f, 0.f)->randomizeEnabled = false;
 		}
@@ -964,9 +881,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			slotType = m.type;
 			return true;
 		};
-		// With no window there is no SpliceKitWidget::step() to refresh portHasCable[], so
-		// the worker takes that over after each drain — otherwise the flag stays frozen and
-		// the edge-triggered MIDI feedback in process() never sees a cell change state.
+		// With no window there is no SpliceKitWidget::step() to refresh portHasCable[], so the worker takes
+		// that over after each drain — otherwise the flag stays frozen and the edge-triggered MIDI feedback
+		// in process() never sees a cell change state.
 		taskProcessorUi.onWorkerDrained = [this]() {
 			refreshPortHasCable();
 			refreshPeerConnected();
@@ -976,10 +893,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		getInstances()[APP].insert(this);
 	}
 
-	// Runs on plain deletion too (unlike onRemove(), which only fires when the module is
-	// removed through the engine) — this is what keeps the static ModuleChangeListener
-	// registry and the instance set free of dangling pointers regardless of how the
-	// module's lifetime ends.
+	// Runs on plain deletion too (unlike onRemove(), which only fires on engine removal) — this keeps the
+	// static ModuleChangeListener registry and instance set free of dangling pointers regardless of lifetime end.
 	~SpliceKitModule() {
 		unregisterModuleListener("SpliceKit-SceneLink", this);
 		auto& reg = getInstances();
@@ -999,9 +914,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		if (cp.initiator == this) cp.clear();
 	}
 
-	// GUI thread — called by Rack when the user resets the module. Reaches us synchronously
-	// from ModuleWidget::resetAction() (menu item or keyboard shortcut) via
-	// Engine::resetModule(), so the deferred work can run directly.
+	// GUI thread — called by Rack on user reset (ModuleWidget::resetAction() → Engine::resetModule()),
+	// synchronously, so the deferred work can run directly.
 	void onReset() override {
 		disableLearn();
 		disablePortLearn();
@@ -1011,74 +925,63 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		resetModuleState();
 	}
 
-	// GUI thread — reached synchronously via Engine::randomizeModule(), so the ModuleWidget/
-	// PortWidget reads in randomizePortAssignments() are safe to do directly. Reassigns every
-	// matrix cell to a random port; for randomizing the current scene's cable topology instead,
-	// see randomizeCurrentScene() (scene button context menu).
+	// GUI thread — reached synchronously via Engine::randomizeModule(), so the ModuleWidget/PortWidget reads
+	// in randomizePortAssignments() are safe. Reassigns every cell to a random port; for the current scene's
+	// cable topology see randomizeCurrentScene() (scene button menu).
 	void onRandomize() override {
 		randomizePortAssignments();
 	}
 
 
-	// Resets the local pending-cell selection only. Safe to call from either thread —
-	// unlike clearPendingGui()/clearPending()/clearPendingCrossGui(), it never touches
-	// crossPending. Callers that also need the shared cross-instance entry cleared want
-	// clearPendingGui() (GUI thread) or clearPending() (engine thread) instead.
+	// Resets only the local pending-cell selection. Safe from either thread — unlike clearPendingGui()/
+	// clearPending()/clearPendingCrossGui(), it never touches crossPending. Callers needing the shared
+	// cross-instance entry cleared want clearPendingGui() (GUI) or clearPending() (engine) instead.
 	void clearPendingLocal() {
 		pendingCellId = -1;
 		pendingCellIsPhysical = false;
 	}
 
-	// GUI thread only — clears the global cross-instance pending state if this module
-	// is the current initiator. crossPending is a static map shared across all module
-	// instances; mutating it from the engine thread would race with GUI-thread access.
+	// GUI thread only — clears the global cross-instance pending state if this module is the current initiator.
+	// crossPending is a static map shared across all instances; mutating it from the engine thread would race.
 	void clearPendingCrossGui() {
 		assert(verifier.isUiOrWorker());
 		auto& cp = crossPending()[APP];
 		if (cp.initiator == this) cp.clear();
 	}
 
-	// GUI thread only — the full pending-selection reset: local state plus the shared
-	// cross-instance entry. Both halves are needed and neither implies the other —
-	// clearPendingLocal() only touches our own pendingCellId, while crossPending is a
-	// static map keyed by APP that other instances consult in triggerCell(); leaving our
-	// entry behind lets another instance complete a gesture against a cell we just cleared.
+	// GUI thread only — full pending-selection reset: local state plus the shared cross-instance entry.
+	// Both halves are needed (clearPendingLocal() only touches pendingCellId; crossPending is a static map
+	// other instances consult in triggerCell()); leaving our entry behind lets another instance complete a
+	// gesture against a cell we just cleared.
 	void clearPendingGui() {
 		assert(verifier.isUiOrWorker());
 		clearPendingLocal();
 		clearPendingCrossGui();
 	}
 
-	// GUI thread only — drops the pending selection if it points at cellId. For callers that
-	// are about to discard cellId's port assignment (assignPort/clearPort): a selection made
-	// against the old port is stale afterwards, and leaving it behind strands the cell in a
-	// state the user cannot clear — resolveCellVisual() tests pendingCellId before it tests
-	// `assigned`, so the cell keeps blinking, while triggerCell() returns at its isValid()
-	// guard before reaching the cancel branch, so pressing it cannot cancel either.
-	//
-	// Scoped to the one cell rather than clearing unconditionally: rebinding cell A must not
-	// silently cancel a pending selection on the unrelated cell B. moveCell()'s callers clear
-	// unconditionally instead, because that gesture rewrites two cells at once.
+	// GUI thread only — drops the pending selection if it points at cellId. Callers about to discard cellId's
+	// port (assignPort/clearPort) need this: a selection against the old port is stale afterwards, and leaving
+	// it strands the cell — resolveCellVisual() tests pendingCellId before `assigned` (cell keeps blinking) and
+	// triggerCell() returns at its isValid() guard (pressing cannot cancel).
+	// Scoped to one cell (not unconditional): rebinding A must not cancel an unrelated pending B. moveCell()
+	// clears unconditionally because it rewrites two cells at once.
 	void clearPendingForCell(int cellId) {
 		assert(verifier.isUiOrWorker());
 		if (pendingCellId != cellId) return;
 		clearPendingGui();
 	}
 
-	// Engine thread only — same reset as clearPendingGui(), but the cross-instance half is
-	// deferred to the GUI thread via taskProcessorUi, since crossPending must not be
-	// touched from the engine thread. GUI-thread callers must NOT use this: enqueueing from
-	// the GUI thread would make taskProcessorUi multi-producer, which its SPSC queue does
-	// not support (see GuiTaskProcessor.hpp). Call clearPendingGui() instead, which also
-	// performs the cleanup immediately rather than a frame later.
+	// Engine thread only — same reset as clearPendingGui(), but the cross-instance half is deferred to the GUI
+	// thread via taskProcessorUi (crossPending must not be touched from the engine thread). GUI-thread callers
+	// must NOT use this: enqueueing from the GUI thread would make taskProcessorUi multi-producer (unsupported
+	// by its SPSC queue). Call clearPendingGui() instead, which also cleans up immediately.
 	void clearPending() {
 		clearPendingLocal();
 		taskProcessorUi.enqueue([this]() { clearPendingCrossGui(); });
 	}
 
 
-	// GUI thread — collects every port of every module currently in the rack (SpliceKit itself
-	// has none) as candidates and hands them to randomizePortAssignmentsFrom().
+	// GUI thread — collects every port of every module in the rack (SpliceKit has none) as candidates for randomizePortAssignmentsFrom().
 	void randomizePortAssignments() {
 		assert(verifier.isUiOrWorker());
 		std::vector<PortAssignment> candidates;
@@ -1095,16 +998,23 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		randomizePortAssignmentsFrom(candidates);
 	}
 
-	// GUI thread — reassigns cells to a shuffled, non-repeating subset of candidates; surplus
-	// cells (too few candidates) are left cleared, surplus candidates are unused. Scene
-	// connections are left as-is. Split from randomizePortAssignments() to be testable without
-	// ModuleWidget/PortWidget scaffolding.
+	// GUI thread — reassigns cells to a shuffled, non-repeating subset of candidates; surplus cells are left
+	// cleared, surplus candidates unused. Scene connections are left as-is. Split from randomizePortAssignments()
+	// for testability without ModuleWidget/PortWidget scaffolding.
 	void randomizePortAssignmentsFrom(const std::vector<PortAssignment>& candidates) {
 		assert(verifier.isUiOrWorker());
+		// Same cleanup contract as assignPort(): a rebound cell's old cables and connection bitmasks must go
+		// with it in every scene, or they orphan a cable / resurrect a stale connection to the wrong port on
+		// the next switchScene() (see assignPort() above for the full rationale).
 		for (int i = 0; i < MATRIX_COUNT; i++) {
+			if (portAssignments[i].isValid()) {
+				sceneStore.removeCellConnections(i);
+				sceneStore.clearCell(i);
+			}
 			portAssignments[i].clear();
 			cellLabels[i].clear();
 		}
+		clearPendingGui();
 		if (candidates.empty()) return;
 
 		std::vector<PortAssignment> shuffled = candidates;
@@ -1118,10 +1028,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		feedback.invalidateLedStates();
 	}
 
-	// GUI thread — replaces the current scene's connections with a random valid topology:
-	// assigned output ports and assigned input ports are each shuffled independently, then
-	// paired up one-to-one in order, respecting the out→in direction constraint enforced
-	// everywhere else in this file. Any surplus ports on the larger side are left unconnected.
+	// GUI thread — replaces the current scene's connections with a random valid topology: outputs and inputs
+	// are each shuffled independently, then paired one-to-one in order (respecting the out→in constraint).
+	// Surplus ports on the larger side are left unconnected.
 	void randomizeCurrentScene() {
 		assert(verifier.isUiOrWorker());
 		std::vector<int> outputs, inputs;
@@ -1143,12 +1052,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		sceneStore.reconcile(sceneStore.current, newConns);
 	}
 
-	// GUI thread — replaces the current scene's connections with a random topology in which
-	// every assigned port gets at least one cable. Like randomizeCurrentScene(), outputs and
-	// inputs are shuffled independently and paired one-to-one in order; but once the shorter
-	// side is exhausted, its ports are reused (wrapping from the start) so the longer side's
-	// remaining ports still get a partner. Every assigned port ends up with at least one
-	// connection, at the cost of some ports being fanned out to several partners.
+	// GUI thread — replaces the current scene's connections with a random topology where every assigned port
+	// gets at least one cable. Like randomizeCurrentScene() but, once the shorter side is exhausted, its ports
+	// are reused (wrapping) so the longer side's remaining ports still get a partner — some ports fan out.
 	void randomizeCurrentSceneFull() {
 		assert(verifier.isUiOrWorker());
 		std::vector<int> outputs, inputs;
@@ -1179,9 +1085,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		Module::processBypass(args);
 	}
 
-	// Engine thread — if this instance follows a scene link master, picks up the master's
-	// current scene. Enqueues the actual sceneStore.switchTo() on the GUI thread via
-	// taskProcessorUi (cables), since the switch itself must not run on the engine thread.
+	// Engine thread — if this instance follows a scene link master, picks up the master's current scene.
+	// Enqueues the actual sceneStore.switchTo() on the GUI thread via taskProcessorUi (cables must not run here).
 	void processSceneLinkMaster() {
 		assert(verifier.isEngine());
 		if (!moduleChangedFlag) return;
@@ -1209,8 +1114,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// Engine thread — reads the physical matrix buttons for rising/falling edges and routes
-	// them into learn-cancel, cell trigger, or momentary-release handling.
+	// Engine thread — reads the physical matrix buttons for edges and routes them to learn-cancel, cell trigger, or momentary-release.
 	void processCellButtons() {
 		assert(verifier.isEngine());
 		for (int i = 0; i < MATRIX_COUNT; i++) {
@@ -1220,7 +1124,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 					disableLearn();
 				}
 				else if (portLearningId == i) {
-					disablePortLearn();
+					requestDisablePortLearn();
 				}
 				else {
 					triggerCell(i);
@@ -1235,8 +1139,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// Engine thread — reads the physical scene buttons for rising edges and routes them into
-	// learn-cancel or a scene change request.
+	// Engine thread — reads the physical scene buttons for rising edges and routes them to learn-cancel or a scene change.
 	void processSceneButtons() {
 		assert(verifier.isEngine());
 		for (int i = 0; i < SCENE_COUNT; i++) {
@@ -1244,9 +1147,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 				if (learningId == MATRIX_COUNT + i) {
 					disableLearn();
 				}
-				// Scene buttons are inert while following a scene link master — the active
-				// scene is driven entirely by the master (see processSceneLinkMaster()), not
-				// by this instance's own buttons.
+				// Scene buttons are inert while following a scene link master — the active scene is driven
+				// entirely by the master (see processSceneLinkMaster()), not by this instance's own buttons.
 				else if (sceneLinkMasterId < 0) {
 					requestSceneChange(i);
 				}
@@ -1254,10 +1156,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// Engine thread — resolves and applies every cell/scene LED's color and blink state.
-	// Runs on lightDivider rather than processDivider so refresh rate (and, via
-	// feedback.setState(), MIDI feedback resend cadence) doesn't scale with the
-	// button/trigger/scene-link logic rate.
+	// Engine thread — resolves and applies every cell/scene LED's color and blink state. Runs on lightDivider
+	// (not processDivider) so refresh rate and MIDI feedback resend cadence don't scale with the button/trigger/scene-link logic rate.
 	void processLights(float sampleTime) {
 		assert(verifier.isEngine());
 		// Advances the two LED blink phases by one lightDivider tick.
@@ -1294,12 +1194,10 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			processSceneButtons();
 		}
 		if (lightDivider.process()) {
-			// Before any new on-message in processLights(): flush note-offs the GUI thread
-			// resolved against mappings it has since rewritten (moveCell/assignPort/clearPort).
-			// Must run immediately before processLights(), on the same tick — moveCell etc.
-			// also call invalidateLedStates(), so the light loop below will re-resolve and
-			// re-send state for the same cell; the queued message is the only one still
-			// addressing the OLD mapping.
+			// Before any new on-message in processLights(): flush note-offs the GUI thread resolved against mappings
+			// it has since rewritten (moveCell/assignPort/clearPort). Must run immediately before processLights() on
+			// the same tick — moveCell etc. also call invalidateLedStates(), so the queued message is the only one
+			// still addressing the OLD mapping.
 			feedback.drainPendingOffs();
 			processLights(args.sampleTime);
 		}
@@ -1311,8 +1209,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		return (portAssignments[i].type == engine::Port::OUTPUT) ? 0 : 1;
 	}
 
-	// Pure — resolves one cell's LED colour and state id from the module's current state.
-	// Precedence: pending > connected-to-pending > port-learn > midi-learn > assigned > off.
+	// Pure — resolves one cell's LED colour and state id. Precedence: pending > connected-to-pending > port-learn > midi-learn > assigned > off.
 	CellVisual resolveCellVisual(int i, bool blinkOn, bool slowBlinkOn) const {
 		bool assigned = portAssignments[i].isValid();
 		bool hasCable = portHasCable[i];
@@ -1326,9 +1223,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			NVGcolor col = slowBlinkOn ? COLOR_SETS[cs].color : nvgRGBf(0.f, 0.f, 0.f);
 			return { col, LED_STATE_CONNECTED_BY_SET[cs] };
 		}
-		// Connected to a peer's armed port, so an armed cell reveals its partners on every
-		// instance. Reuses the connected-to-pending state id on purpose: both mean "connected
-		// to the active selection", so every controller preset lights it as-is.
+		// Connected to a peer's armed port, so an armed cell reveals its partners on every instance. Reuses the
+		// connected-to-pending state id on purpose: both mean "connected to the active selection", so every preset lights it as-is.
 		if (peerConnected[i]) {
 			NVGcolor col = slowBlinkOn ? COLOR_SETS[cs].color : nvgRGBf(0.f, 0.f, 0.f);
 			return { col, LED_STATE_CONNECTED_BY_SET[cs] };
@@ -1347,8 +1243,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		return { LED_OFF, LED_STATE_OFF };
 	}
 
-	// Pure — resolves one scene button's LED brightness and state id from the module's
-	// current state. Precedence: midi-learn > active > has-connections > off.
+	// Pure — resolves one scene button's LED brightness and state id. Precedence: midi-learn > active > has-connections > off.
 	SceneVisual resolveSceneVisual(int s, bool blinkOn) const {
 		if (learningId == MATRIX_COUNT + s) {
 			return { blinkOn ? LED_BRIGHT : 0.f, LED_STATE_MIDI_LEARN };
@@ -1360,10 +1255,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		return { hasConn ? LED_SCENE_DIM : 0.f, hasConn ? LED_STATE_SCENE_DIM : LED_STATE_OFF };
 	}
 
-	// Adds this instance's assigned ports to out, keyed as (moduleId, portId*2 + type) —
-	// the lookup form SpliceKitWidget::step() uses to test whether a cable's far end lands
-	// on a cell. Split out from step() so the cross-instance collection below is testable
-	// without ModuleWidget/PortWidget scaffolding.
+	// Adds this instance's assigned ports to out, keyed (moduleId, portId*2 + type) — the lookup form
+	// SpliceKitWidget::step() uses to test whether a cable's far end lands on a cell. Split from step() for testability.
 	void collectAssignedPorts(std::set<std::pair<int64_t, int>>& out) const {
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			const PortAssignment& pa = portAssignments[i];
@@ -1373,28 +1266,24 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// GUI thread — collects the assigned ports of every SpliceKit instance whose cells may
-	// share a cable with this one, i.e. this instance plus, when cross-instance patching is
-	// enabled, every other instance that also has it enabled.
-	//
-	// A cable created by the cross-instance gesture (see triggerCell) lands on a port owned
-	// by a *different* instance, so testing it against this module's assignments alone would
-	// report "no cable" and leave the cell rendering as unconnected. Both ends must therefore
-	// be resolved against the union.
+	// GUI thread — collects the assigned ports of every SpliceKit instance whose cells may share a cable with
+	// this one: this instance plus, when cross-instance patching is enabled, every other instance that also has it on.
+	// A cross-instance cable lands on a *different* instance's port, so testing against this module's assignments
+	// alone would report "no cable" and render the cell unconnected. Both ends must be resolved against the union.
 	std::set<std::pair<int64_t, int>> collectCableEndCandidates() const {
 		std::set<std::pair<int64_t, int>> ports;
 		collectAssignedPorts(ports);
 		if (!crossInstanceEnabled) return ports;
 
-		// Iterates the instance registry rather than every module in the patch: this runs
-		// once per GUI frame, and the registry is already narrowed to SpliceKit instances.
+		// Iterates the instance registry rather than every module in the patch: this runs once per GUI frame
+		// and the registry is already narrowed to SpliceKit instances.
 		auto& reg = getInstances();
 		auto it = reg.find(APP);
 		if (it == reg.end()) return ports;
 		for (SpliceKitModule* other : it->second) {
 			if (other == this) continue;
-			// Respect the other instance's opt-out: a module with cross-instance patching
-			// disabled never participates in such a cable, so its cells are not candidates.
+			// Respect the other instance's opt-out: a module with cross-instance patching disabled never
+			// participates, so its cells are not candidates.
 			if (!other->crossInstanceEnabled) continue;
 			other->collectAssignedPorts(ports);
 		}
@@ -1402,23 +1291,16 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	}
 
 	// Recomputes portHasCable[] for every cell, from the widget tree.
-	//
-	// Normally driven by SpliceKitWidget::step(), but that only runs while Rack is stepping
-	// widgets. When it is not (plugin editor closed, headless), nothing would refresh the
-	// flag and it would stay frozen — and because the MIDI feedback loop in process() is
-	// edge-triggered on the resolved stateId, and resolveCellVisual() folds portHasCable[]
-	// into that id, a stale flag means cell activation/deactivation feedback is never sent
-	// at all. The GuiTaskProcessor worker therefore also calls this after each drain, which
-	// is safe for the same reason step() is: both run off the engine thread.
-	//
-	// Deliberately walks the widget tree rather than APP->engine->getCableIds(): the engine
-	// accessors each take a SharedLock on the engine mutex, so an engine-side scan would
-	// lock once per cable, every tick. The widget tree carries the same information lock
-	// free. Only complete cables count — a cable being dragged has a null far end and is
-	// skipped, which also keeps this in step with what the engine would report.
-	//
-	// Builds the candidate-end set once (collectCableEndCandidates()) so each lookup is
-	// O(log n) instead of an O(n) scan.
+	// Normally driven by SpliceKitWidget::step(), which only runs while Rack is stepping widgets. When it is not
+	// (editor closed, headless), the flag would stay frozen — and since the MIDI feedback loop in process() is
+	// edge-triggered on the resolved stateId (which folds portHasCable[] in), a stale flag means activation/
+	// deactivation feedback is never sent. The GuiTaskProcessor worker also calls this after each drain (safe:
+	// both run off the engine thread, like step()).
+	// Walks the widget tree rather than APP->engine->getCableIds(): the engine accessors each take a SharedLock,
+	// so an engine-side scan would lock once per cable every tick; the widget tree is lock-free and carries the
+	// same info. Only complete cables count (a cable being dragged has a null far end and is skipped), matching
+	// what the engine would report.
+	// Builds the candidate-end set once (collectCableEndCandidates()) so each lookup is O(log n) not O(n).
 	void refreshPortHasCable() {
 		assert(verifier.isUiOrWorker());
 		std::set<std::pair<int64_t, int>> assignedPorts = collectCableEndCandidates();
@@ -1450,9 +1332,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// GUI thread — recomputes peerConnected[] against the cable list the armed peer published.
-	// Never touches the widget tree: the initiator resolved that once when it armed. Called
-	// alongside refreshPortHasCable(), from widget step() or the GuiTaskProcessor worker.
+	// GUI thread — recomputes peerConnected[] against the cable list the armed peer published. Never touches the
+	// widget tree (the initiator resolved that once when it armed). Called alongside refreshPortHasCable(), from
+	// widget step() or the GuiTaskProcessor worker.
 	void refreshPeerConnected() {
 		assert(verifier.isUiOrWorker());
 		// Safe to read crossPending here (GUI thread), unlike from resolveCellVisual().
@@ -1473,9 +1355,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// GUI thread — collects the far end of every complete cable on `pa`, keyed (moduleId,
-	// portId). Direction is not part of the key: a far end is necessarily the opposite
-	// direction, and callers re-check legality via resolveDirection().
+	// GUI thread — collects the far end of every complete cable on `pa`, keyed (moduleId, portId). Direction is
+	// not part of the key (a far end is necessarily the opposite direction); callers re-check via resolveDirection().
 	static void collectCablePartners(const PortAssignment& pa, std::set<std::pair<int64_t, int>>& out) {
 		if (!pa.isValid()) return;
 		ModuleWidget* mw = APP->scene->rack->getModule(pa.moduleId);
@@ -1493,8 +1374,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// Engine thread — MidiTrackingProcessorHandler callback, fired for every mapped
-	// MIDI message. Routes matrix cell triggers and scene changes into taskProcessorUi.
+	// Engine thread — MidiTrackingProcessorHandler callback for every mapped MIDI message. Routes cell
+	// triggers and scene changes into taskProcessorUi.
 	void processMapUpdate(StoermelderPackOne::MidiTrackingType type, uint16_t mapId, uint16_t value) override {
 		if (mapId < (uint16_t)MATRIX_COUNT) {
 			if (value > 0) {
@@ -1506,13 +1387,14 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			}
 		}
 		else if (mapId < (uint16_t)TOTAL_MAPS) {
-			// Scene buttons are inert while following a scene link master — see the matching
-			// guard in process()'s physical scene-button handling.
+			// Scene buttons are inert while following a scene link master — see the matching guard in process()'s physical scene-button handling.
 			if (sceneLinkMasterId >= 0) return;
 			int sceneId = (int)(mapId - MATRIX_COUNT);
 			if (value > 0) {
-				if (pendingMidiSceneId >= 0 && pendingMidiSceneId != sceneId) {
-					// Two consecutive activations without a release: treat as scene copy.
+				if (midiSceneCopyEnabled && pendingMidiSceneId >= 0 && pendingMidiSceneId != sceneId) {
+					// Two consecutive activations without a release: treat as scene copy. Opt-in (midiSceneCopyEnabled) —
+					// assumes the controller sends a release between selections; with the gate off, the second activation
+					// falls through to a normal scene selection below.
 					int src = pendingMidiSceneId;
 					pendingMidiSceneId = -1;
 					requestCopyScene(src, sceneId);
@@ -1529,10 +1411,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// Engine thread — MidiTrackingProcessorHandler callback, fired when a MIDI learn
-	// completes. Advances the cursor in sequential learn mode, or clears it for single learn.
-	// NOTE: writes learningId and midiLearnMode which are also read/written by the GUI thread
-	// (context menus). The race is accepted — both sides only write simple scalars.
+	// Engine thread — MidiTrackingProcessorHandler callback fired when a MIDI learn completes. Advances the cursor
+	// in sequential learn mode, or clears it for single learn. NOTE: writes learningId/midiLearnMode which the GUI
+	// thread also reads/writes (context menus) — the race is accepted (both sides only write simple scalars).
 	void processMapLearn(StoermelderPackOne::MidiTrackingType type, uint16_t mapId) override {
 		if (midiLearnMode) {
 			// Sequential: advance to next cell
@@ -1551,8 +1432,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// GUI thread — starts MIDI learn for a single cell (id < MATRIX_COUNT) or scene button
-	// (id >= MATRIX_COUNT). Cancels any previously active learn first.
+	// GUI thread — starts MIDI learn for a single cell (id < MATRIX_COUNT) or scene button (id >= MATRIX_COUNT); cancels any active learn first.
 	void enableLearn(int id) {
 		assert(verifier.isUiOrWorker());
 		disableLearn();
@@ -1562,8 +1442,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		trackingProcessor.enableMapLearn(id);
 	}
 
-	// GUI thread — starts sequential MIDI learn from lastClickedCell through cell 63.
-	// Scene buttons are excluded; assign them individually or via applyPresetLayout().
+	// GUI thread — starts sequential MIDI learn from lastClickedCell through cell 63. Scene buttons are excluded
+	// (assign individually or via applyPresetLayout()).
 	void startGlobalLearn() {
 		assert(verifier.isUiOrWorker());
 		disableLearn();
@@ -1573,9 +1453,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		trackingProcessor.enableMapLearn(lastClickedCell);
 	}
 
-	// GUI thread — starts sequential port-assignment learn from lastClickedCell through cell 63.
-	// Uses LEARN_MODE::MULTI so the owner widget stays focused across clicks (step() keeps
-	// re-asserting selection). A single persistent callback advances portLearningId in place.
+	// GUI thread — starts sequential port-assignment learn from lastClickedCell through cell 63. Uses
+	// LEARN_MODE::MULTI so the owner widget stays focused across clicks (step() re-asserts selection); a single
+	// persistent callback advances portLearningId in place.
 	void startGlobalPortLearn(Widget* owner) {
 		assert(verifier.isUiOrWorker());
 		disableLearn();
@@ -1604,17 +1484,16 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		);
 	}
 
-	// Engine or GUI thread — cancels any active MIDI learn.
-	// Called from process() (engine thread) when the user presses the blinking cell,
-	// and from GUI thread via context menus and onReset(). The race on learningId is accepted.
+	// Engine or GUI thread — cancels any active MIDI learn. Called from process() (engine) when the user presses
+	// the blinking cell, and from the GUI thread via context menus and onReset(). The race on learningId is accepted.
 	void disableLearn() {
 		trackingProcessor.disableMapLearn();
 		learningId = -1;
 		midiLearnMode = false;
 	}
 
-	// GUI thread — starts port-assignment learn for a single cell. The portSelectProcessor
-	// intercepts the next port-widget click and writes portAssignments[id].
+	// GUI thread — starts port-assignment learn for a single cell; portSelectProcessor intercepts the next
+	// port-widget click and writes portAssignments[id].
 	void enablePortLearn(int id, Widget* owner) {
 		assert(verifier.isUiOrWorker());
 		if (id < 0 || id >= MATRIX_COUNT) return;
@@ -1639,13 +1518,22 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		portLearnMode = false;
 	}
 
+	// Engine thread — cancels an active port-assignment learn from the audio thread. Cannot call
+	// disablePortLearn() directly: PortSelectProcessor::disableLearn() calls glfwSetCursor(), which is
+	// GUI-thread-only. Clears portLearningId here so the blinking cell stops immediately even if the
+	// queue is full, and defers the processor/cursor teardown to the GUI thread.
+	void requestDisablePortLearn() {
+		assert(verifier.isEngine());
+		portLearningId = -1;
+		taskProcessorUi.enqueue([this]() { disablePortLearn(); });
+	}
+
 	// GUI thread — returns true if the given cell is currently in port-learn mode.
 	bool isPortLearning(int id) {
 		return portLearningId == id && portSelectProcessor.isLearning();
 	}
 
-	// GUI thread — replaces all MIDI input mappings with those defined by the currently
-	// selected feedback preset's slot layout. No-op if the preset has no layout.
+	// GUI thread — replaces all MIDI input mappings with the active feedback preset's slot layout (no-op if none).
 	void applyPresetLayout() {
 		assert(verifier.isUiOrWorker());
 		feedback.applyPresetLayout(
@@ -1709,6 +1597,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		json_object_set_new(rootJ, "buttonMode", json_integer((int)buttonMode));
 		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
 		json_object_set_new(rootJ, "crossInstanceEnabled", json_boolean(crossInstanceEnabled));
+		json_object_set_new(rootJ, "midiSceneCopyEnabled", json_boolean(midiSceneCopyEnabled));
 		json_object_set_new(rootJ, "sceneLinkMasterId", json_integer(sceneLinkMasterId));
 		if (feedback.isActive()) {
 			json_object_set_new(rootJ, "activePreset", json_string(feedback.activePresetJsonText().c_str()));
@@ -1742,15 +1631,19 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		return rootJ;
 	}
 
-	// GUI thread — restores all persistent state from JSON (called on patch load / undo).
-	// clearMaps() is called before restoring maps to prevent duplicate vector entries
-	// that would occur if setMap() is called multiple times for the same slot (undo/redo).
+	// GUI thread — restores all persistent state from JSON (patch load / undo). clearMaps() is called first to
+	// prevent duplicate vector entries if setMap() runs multiple times for the same slot (undo/redo).
 	void dataFromJson(json_t* rootJ) override {
 		assert(verifier.isUiOrWorker());
+		// A pending selection or active learn made against the pre-load assignments is stale afterwards
+		// (clearPendingForCell() documents the same stranding hazard).
+		clearPendingGui();
+		disableLearn();
+		disablePortLearn();
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		// Clamped: an out-of-range value from a corrupted or hand-edited patch would otherwise
-		// be used unchecked to index sceneStore.connections[current] (captureScene, switchScene,
-		// randomizeCurrentScene, the cell context menu), reading and writing past the array.
+		// Clamped: an out-of-range value from a corrupted/hand-edited patch would otherwise be used unchecked to
+		// index sceneStore.connections[current] (captureScene, switchScene, randomizeCurrentScene, cell menu),
+		// reading/writing past the array.
 		sceneStore.current = clamp((int)json_integer_value(json_object_get(rootJ, "currentScene")), 0, SCENE_COUNT - 1);
 		json_t* buttonModeJ = json_object_get(rootJ, "buttonMode");
 		if (buttonModeJ) buttonMode = (ButtonMode)json_integer_value(buttonModeJ);
@@ -1758,6 +1651,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		if (overlayEnabledJ) overlayEnabled = json_boolean_value(overlayEnabledJ);
 		json_t* crossInstanceEnabledJ = json_object_get(rootJ, "crossInstanceEnabled");
 		if (crossInstanceEnabledJ) crossInstanceEnabled = json_boolean_value(crossInstanceEnabledJ);
+		json_t* midiSceneCopyEnabledJ = json_object_get(rootJ, "midiSceneCopyEnabled");
+		midiSceneCopyEnabled = midiSceneCopyEnabledJ ? json_boolean_value(midiSceneCopyEnabledJ) : false;
 		json_t* sceneLinkMasterIdJ = json_object_get(rootJ, "sceneLinkMasterId");
 		sceneLinkMasterId = sceneLinkMasterIdJ ? json_integer_value(sceneLinkMasterIdJ) : -1;
 
@@ -1777,6 +1672,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 			}
 		}
 
+		for (auto& pa : portAssignments) pa.clear();
 		json_t* portsJ = json_object_get(rootJ, "ports");
 		if (portsJ) {
 			const char* key;
@@ -1841,7 +1737,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 				json_array_foreach(connJ, k, pairJ) {
 					int a = json_integer_value(json_array_get(pairJ, 0));
 					int b = json_integer_value(json_array_get(pairJ, 1));
-					if (a >= 0 && a < MATRIX_COUNT && b >= 0 && b < MATRIX_COUNT) {
+					if (a >= 0 && a < MATRIX_COUNT && b >= 0 && b < MATRIX_COUNT && a != b) {
 						sceneStore.setConnection(s, a, b, true);
 					}
 				}
@@ -1850,14 +1746,12 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 	}
 
 	// --- Cable manipulation (GUI thread only) ---
-	// Low-level helpers (findCable, removeCable, addCableToPort) live in SpliceKit_cable.hpp.
-	// The scene-topology bitmask and its patch-reconciliation logic live in SceneStore; the
-	// wrappers that remain here add module-level side effects (overlay messages, listener
-	// notification) that don't belong on a class whose job is GUI-thread scene storage.
+	// Low-level helpers (findCable, removeCable, addCableToPort) live in SpliceKit_cable.hpp; the scene-topology
+	// bitmask and its patch-reconciliation logic live in SceneStore. The wrappers here add module-level side effects
+	// (overlay messages, listener notification) that don't belong on a GUI-thread scene-storage class.
 
-	// GUI thread — creates or removes the cable between cellIdA and cellIdB in the current
-	// scene, then updates overlayMessage so the overlay bar shows what changed.
-	// One cell must be an output and the other an input; same-direction pairs are ignored.
+	// GUI thread — creates or removes the cable between cellIdA and cellIdB in the current scene, then updates
+	// overlayMessage. One cell must be an output and the other an input; same-direction pairs are ignored.
 	void toggleConnection(int cellIdA, int cellIdB) {
 		assert(verifier.isUiOrWorker());
 		const PortAssignment& a = portAssignments[cellIdA];
@@ -1888,30 +1782,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		}
 	}
 
-	// GUI thread — chains are disallowed entirely: a module can only be picked as a scene
-	// link master if it isn't itself following another module. This keeps the topology a
-	// flat star (root masters with any number of followers) so cycles are structurally
-	// impossible rather than merely detected.
-	static bool sceneLinkCandidateIsFollower(int64_t candidateId) {
-		auto* m = dynamic_cast<SpliceKitModule*>(APP->engine->getModule(candidateId));
-		return m && m->sceneLinkMasterId >= 0;
-	}
 
-	// GUI thread — returns true if another SpliceKit instance currently follows this one.
-	// A module already serving as a master must not itself pick a master, for the same
-	// flat-topology reason as sceneLinkCandidateIsFollower().
-	bool sceneLinkHasFollowers() const {
-		assert(verifier.isUiOrWorker());
-		for (int64_t otherId : APP->engine->getModuleIds()) {
-			if (otherId == id) continue;
-			auto* m = dynamic_cast<SpliceKitModule*>(APP->engine->getModule(otherId));
-			if (m && m->sceneLinkMasterId == id) return true;
-		}
-		return false;
-	}
-
-	// GUI thread — returns a human-readable label for a port assignment, e.g. "VCO · Out 1".
-	// Falls back to a placeholder string if the module widget is no longer in the rack.
+	// GUI thread — returns a human-readable label for a port assignment (e.g. "VCO · Out 1"); falls back to a
+	// placeholder if the module widget is no longer in the rack.
 	static std::string portLabel(const PortAssignment& pa) {
 		if (!pa.isValid()) return "";
 		ModuleWidget* mw = APP->scene->rack->getModule(pa.moduleId);
@@ -1929,20 +1802,19 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		overlayMessageId = 0;
 	}
 
-	// Engine thread — handles a single cell activation (button press or MIDI trigger).
-	// First press sets pendingCellId and defers all cross-instance logic to the GUI thread
-	// via taskProcessorUi, so that crossPending is only ever touched from one thread. Second
-	// press on a different cell (same instance) enqueues toggleConnection. Same cell cancels.
+	// Engine thread — handles a single cell activation (button press or MIDI trigger). First press sets
+	// pendingCellId and defers all cross-instance logic to the GUI thread via taskProcessorUi (so crossPending is
+	// only ever touched from one thread). Second press on a different cell enqueues toggleConnection; same cell cancels.
 	void triggerCell(int id) {
 		if (!portAssignments[id].isValid()) return;
 
 		if (pendingCellId < 0) {
-			// pendingCellId is set here on the engine thread, but the responder lambda
-			// above only clears it via clearPendingLocal() on the GUI thread a frame later.
+			// pendingCellId is set here on the engine thread, but the responder lambda only clears it via
+			// clearPendingLocal() on the GUI thread a frame later.
 			pendingCellId = id;
 			taskProcessorUi.enqueue([this, id]() {
-				// GUI thread — sole owner of crossPending. Re-check cp validity here
-				// because another instance's lambda may have already consumed it.
+				// GUI thread — sole owner of crossPending. Re-check cp validity here because another
+				// instance's lambda may have already consumed it.
 				auto& cp = crossPending()[APP];
 				if (crossInstanceEnabled && cp.isValid() && cp.initiator != this) {
 					// Responder path: create the cable directly (we are on the GUI thread).
@@ -1978,7 +1850,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 						cp.initiator = this;
 						cp.cellId = id;
 						cp.port = portAssignments[id];
-						// Resolve once here for every peer to read; see partners' declaration.
+						// Resolve once here for every peer to read (see partners' declaration).
 						cp.partners.clear();
 						collectCablePartners(cp.port, cp.partners);
 					}
@@ -2008,34 +1880,29 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		taskProcessorUi.enqueue([this, src, dst]() { sceneStore.copy(src, dst); });
 	}
 
-	// GUI thread — moves the port assignment, label, color, and all scene
-	// connections from fromId to toId. Any existing assignment on toId is
-	// discarded. MIDI mappings stay on their original cells (they are tied to
-	// physical button positions, not to ports). fromId's physical cables are NOT
-	// touched: they connect fromId's port (which toId inherits) and remain valid.
-	// Only toId's existing cables are removed because its old port is discarded.
+	// GUI thread — moves the port assignment, label, color, and all scene connections from fromId to toId.
+	// toId's existing assignment is discarded. MIDI mappings stay on their original cells (tied to physical
+	// button positions, not ports). fromId's physical cables are NOT touched (they connect fromId's port, which
+	// toId inherits, and remain valid); only toId's existing cables are removed (its old port is discarded).
 	void moveCell(int fromId, int toId) {
 		assert(verifier.isUiOrWorker());
 		if (fromId == toId) return;
 
-		// Resolve both note-offs now, while each cell still has its own MIDI mapping;
-		// rewriting it first would make the off address the wrong note. The send itself
-		// is deferred to the engine thread (drainPendingOffs).
+		// Resolve both note-offs now, while each cell still has its own MIDI mapping; rewriting it first would make
+		// the off address the wrong note. The send itself is deferred to the engine thread (drainPendingOffs).
 		feedback.queueFeedbackOff(fromId, feedback.cellLedState[fromId]);
 		feedback.queueFeedbackOff(toId, feedback.cellLedState[toId]);
 
-		// Remove only toId's existing cables — fromId's cables stay, because toId
-		// will inherit fromId's port and those cables are already in the right place.
+		// Remove only toId's existing cables — fromId's cables stay because toId will inherit fromId's port
+		// and those cables are already in the right place.
 		sceneStore.removeCellConnections(toId);
 
-		// Rewrite sceneStore's connections for every scene:
-		//   Step A — tear out toId's existing connections from its neighbours.
-		//   Step B — redirect fromId's connections to toId.
+		// Rewrite sceneStore's connections for every scene (Step A: tear out toId's existing connections;
+		// Step B: redirect fromId's connections to toId).
 		sceneStore.moveCellBits(fromId, toId);
 
-		// Move port assignment, label, and color. MIDI mapping is intentionally
-		// kept on each cell: it is tied to the physical button position on the
-		// controller and must not follow the port when it is relocated.
+		// Move port assignment, label, and color. MIDI mapping is intentionally kept on each cell (tied to the
+		// physical button position, not the port) and must not follow the port when relocated.
 		portAssignments[toId] = portAssignments[fromId];
 		portAssignments[fromId].clear();
 
@@ -2048,31 +1915,27 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		setOverlayMessage("Moved cell", portLabel(portAssignments[toId]));
 	}
 
-	// GUI thread — (re)binds cellId to a module port. Used by all three assignment gestures:
-	// dropping a cable end on a cell, single "Learn port", and sequential port learn.
-	//
-	// Rebinding discards the cell's previous port, so — exactly as in moveCell() for the
-	// destination cell — everything derived from that old port must go with it:
-	//   * current-scene cables are removed while the old assignment is still in place
-	//     (SceneStore resolves cable coordinates by reading portAssignments through its
-	//     `ports` view, so this must happen before the overwrite or it would resolve the
-	//     NEW port and leave the old cables as unreachable orphans),
-	//   * the connection bitmasks are cleared in *every* scene, not just the current one —
-	//     a stale bit in an inactive scene would recreate a cable to the wrong port on the
-	//     next switchScene(),
-	//   * the label is dropped, since it described the old port,
-	//   * LED state is invalidated, because the color set is derived from the port direction
-	//     (see getCellColorSet) and would otherwise keep the previous set's color,
-	//   * a pending selection is dropped, since it was made against the old port — see
-	//     clearPendingForCell() for why leaving it behind strands the cell.
+	// GUI thread — (re)binds cellId to a module port. Used by all three assignment gestures: dropping a cable
+	// end on a cell, single "Learn port", and sequential port learn.
+	// Rebinding discards the cell's previous port, so — exactly as in moveCell() for the destination cell —
+	// everything derived from that old port must go with it:
+	//   * current-scene cables are removed while the old assignment is still in place (SceneStore resolves cable
+	//     coordinates via its `ports` view of portAssignments, so this must happen before the overwrite or it
+	//     would resolve the NEW port and orphan the old cables),
+	//   * the connection bitmasks are cleared in *every* scene — a stale bit in an inactive scene would recreate a
+	//     cable to the wrong port on the next switchScene(),
+	//   * the label is dropped (it described the old port),
+	//   * LED state is invalidated (the color set is derived from port direction — see getCellColorSet — and would
+	//     otherwise keep the previous set's color),
+	//   * a pending selection is dropped (made against the old port — see clearPendingForCell() for the stranding hazard).
 	void assignPort(int cellId, int64_t moduleId, int portId, engine::Port::Type type) {
 		assert(verifier.isUiOrWorker());
 		if (cellId < 0 || cellId >= MATRIX_COUNT) return;
 
 		clearPendingForCell(cellId);
 		if (portAssignments[cellId].isValid()) {
-			// Resolve the note-off while the old mapping and state are still addressable;
-			// the engine thread sends it on its next tick.
+			// Resolve the note-off while the old mapping and state are still addressable; the engine thread
+			// sends it on its next tick.
 			feedback.queueFeedbackOff(cellId, feedback.cellLedState[cellId]);
 			sceneStore.removeCellConnections(cellId);
 			sceneStore.clearCell(cellId);
@@ -2085,10 +1948,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		feedback.invalidateLedStates();
 	}
 
-	// GUI thread — discards cellId's port assignment entirely (menu "Clear"). Shares
-	// assignPort()'s cleanup contract above, since a cleared port must be forgotten by
-	// the same set of state a rebound port must forget: current-scene cables, every
-	// scene's connection bitmask, and the label.
+	// GUI thread — discards cellId's port assignment entirely (menu "Clear"). Shares assignPort()'s cleanup
+	// contract: a cleared port must be forgotten by the same state a rebound port forgets — current-scene cables,
+	// every scene's connection bitmask, and the label.
 	void clearPort(int cellId) {
 		assert(verifier.isUiOrWorker());
 		if (cellId < 0 || cellId >= MATRIX_COUNT) return;
@@ -2104,10 +1966,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		feedback.invalidateLedStates();
 	}
 
-	// GUI thread — performs a full module reset. Removes all current-scene cables, clears all
-	// stored scenes and port assignments, resets scene and preset selection, and clears LED
-	// state. Touches cables and widget state, so engine-thread callers must route through
-	// taskProcessorUi rather than calling this directly.
+	// GUI thread — full module reset: removes all current-scene cables, clears all stored scenes and port
+	// assignments, resets scene/preset selection, and clears LED state. Touches cables and widget state, so
+	// engine-thread callers must route through taskProcessorUi rather than calling this directly.
 	void resetModuleState() {
 		assert(verifier.isUiOrWorker());
 		static const SceneConns empty{};
@@ -2117,6 +1978,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		for (int i = 0; i < MATRIX_COUNT; i++) portAssignments[i].clear();
 		for (int i = 0; i < TOTAL_MAPS; i++) trackingProcessor.clearMap(i);
 		sceneStore.current = 0;
+		sceneLinkMasterId = -1;
 		feedback.setActivePresetJson("");
 		feedback.invalidateLedStates();
 		std::fill(portHasCable, portHasCable  + MATRIX_COUNT, false);
@@ -2124,8 +1986,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 };
 
 
-// Overlay widget added directly to APP->scene->rack — drawn in rack coordinates.
-// Activated by the space key; hides cables and draws cell→port assignment splines.
+// Overlay widget added directly to APP->scene->rack (rack coordinates). Activated by space; hides cables
+// and draws cell→port assignment splines.
 struct SpliceKitVizOverlay : TransparentWidget {
 	SpliceKitModule* module = nullptr;
 	// Non-owning pointer to the host widget (for position).
@@ -2153,8 +2015,7 @@ struct SpliceKitVizOverlay : TransparentWidget {
 		return Vec(cellCenterX(sceneId), 324.3f);
 	}
 
-	// Deterministic value in [-1, +1] for a given cell — golden-ratio sequence
-	// gives an even spread with no visible repetition pattern.
+	// Deterministic value in [-1, +1] for a given cell — golden-ratio sequence gives an even, non-repeating spread.
 	static float cellJitter(int cellId) {
 		return std::fmod(cellId * 0.618033988f, 1.f) * 2.f - 1.f;
 	}
@@ -2180,8 +2041,7 @@ struct SpliceKitVizOverlay : TransparentWidget {
 		nvgStroke(vg);
 	}
 
-	// Draws a short arc between two cell-button centers on the module face.
-	// Used to show which cells are wired together in the active scene.
+	// Draws a short arc between two cell-button centers to show which cells are wired together in the active scene.
 	void drawCellArc(NVGcontext* vg, Vec a, Vec b) {
 		Vec diff = b.minus(a);
 		Vec perp = Vec(-diff.y, diff.x).mult(0.12f);  // ~12% of distance, perpendicular
@@ -2300,9 +2160,8 @@ struct SpliceKitVizOverlay : TransparentWidget {
 
 struct SpliceKitWidget;
 
-// Scene button with right-click context menu and drag-and-drop support.
-//   Left-drag  A → B : copy scene A's connections to scene B.
-//   Right-click      : open the per-scene context menu.
+// Scene button with right-click context menu and drag-and-drop. Left-drag A→B copies scene A's connections to
+// scene B; right-click opens the per-scene context menu.
 struct SpliceKitSceneButton : app::SvgSwitch {
 	SpliceKitModule* module = nullptr;
 	SpliceKitWidget* mw = nullptr;
@@ -2361,12 +2220,9 @@ struct SpliceKitSceneButton : app::SvgSwitch {
 	void createSceneMenu();
 };
 
-// Matrix cell button with right-click context menu and drag-and-drop support.
-//   Left-drag        A → B : toggle connection between A and B.
-//   Shift+left-drag  A → B : move A's port, label, color, and scene connections
-//                            onto B (B's assignment is discarded). MIDI mappings
-//                            stay on their physical cell positions, not the port.
-//   Right-click            : open the per-cell context menu.
+// Matrix cell button with right-click context menu and drag-and-drop. Left-drag A→B toggles the connection;
+// shift+left-drag A→B moves A's port/label/color/scene connections onto B (B's assignment discarded; MIDI
+// mappings stay on the physical cell, not the port); right-click opens the per-cell context menu.
 struct SpliceKitCellButton : app::SvgSwitch {
 	SpliceKitModule* module = nullptr;
 	SpliceKitWidget* mw = nullptr;
@@ -2424,15 +2280,14 @@ struct SpliceKitCellButton : app::SvgSwitch {
 		}
 	}
 
-	// Left-drag → toggle connection; shift+left-drag → move cell assignment; dropping an
-	// in-progress cable (dragged from any port in the patch) → assign that port to this cell.
+	// Left-drag → toggle connection; shift+left-drag → move cell assignment; dropping an in-progress cable
+	// (dragged from any port) → assign that port to this cell.
 	void onDragDrop(const event::DragDrop& e) override {
 		SvgSwitch::onDragDrop(e);
 		if (!module) return;
 
-		// Alternative to the modal "Learn port" gesture: dragging a cable's loose end onto a
-		// cell assigns that port directly. The temporary cable itself is left untouched here —
-		// PortWidget::onDragEnd() discards it automatically since it never gets completed.
+		// Alternative to the modal "Learn port" gesture: dragging a cable's loose end onto a cell assigns that
+		// port directly. The temporary cable is left untouched — PortWidget::onDragEnd() discards it (never completed).
 		if (auto* pw = dynamic_cast<PortWidget*>(e.origin)) {
 			if (e.button != GLFW_MOUSE_BUTTON_LEFT || !pw->module) return;
 			module->assignPort(cellId, pw->module->getId(), pw->portId, pw->type);
@@ -2443,11 +2298,11 @@ struct SpliceKitCellButton : app::SvgSwitch {
 		if (!src || src->module != module || src->cellId == cellId) return;
 		int a = src->cellId, b = cellId;
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			// Either gesture rewrites the cells it touches, so a pending selection made against
-			// their previous state is stale afterwards and is dropped for both paths.
+			// Either gesture rewrites the cells it touches, so a pending selection against their previous state is
+			// stale and dropped for both paths.
 			module->clearPendingGui();
-			// Already on the GUI thread — run directly rather than queueing. taskProcessorUi's
-			// queue is single-producer (engine thread only); see GuiTaskProcessor.hpp.
+			// Already on the GUI thread — run directly. taskProcessorUi's queue is single-producer (engine only);
+			// see GuiTaskProcessor.hpp.
 			if (src->shiftDrag) module->moveCell(a, b);
 			else module->toggleConnection(a, b);
 		}
@@ -2509,8 +2364,8 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			vizOverlay = nullptr;
 		}
 		if (module) {
-			// Releases this instance's cable-opacity hold if it is still in viz mode (a
-			// no-op otherwise), so a widget deleted mid-viz-mode restores the cables.
+			// Releases this instance's cable-opacity hold if still in viz mode (no-op otherwise), so a
+			// widget deleted mid-viz-mode restores the cables.
 			Rack::cableOpacityState().release(this);
 			OverlayMessageWidget::unregisterProvider(this);
 		}
@@ -2575,19 +2430,16 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		// Execute actions queued from the engine thread
 		module->taskProcessorUi.step();
 
-		// Update cable presence for each assigned cell (read by process() for light colors).
-		// Same scan the worker runs when there is no window, so one piece of logic maintains
-		// the flag on both paths.
+		// Update cable presence for each assigned cell (read by process() for light colors). Same scan the worker
+		// runs when there is no window, so one piece of logic maintains the flag on both paths.
 		module->refreshPortHasCable();
 		// Likewise for the cross-instance "connected to the armed port" highlight.
 		module->refreshPeerConnected();
 	}
 
-	// A MenuLabel with a fixed pixel width instead of growing to fit the text on one line.
-	// MenuLabel::step() normally sets box.size.x to the unwrapped text width, so a long
-	// description would render as one very wide line; blendish's underlying nvgTextBox()
-	// call already wraps to whatever width it is given (see bndIconLabelValue()), so fixing
-	// the width here is enough to get word-wrapped, multi-line text.
+	// A MenuLabel with a fixed pixel width instead of growing to fit the text on one line. MenuLabel::step() sets
+	// box.size.x to the unwrapped text width, so a long description would render as one very wide line; blendish's
+	// nvgTextBox() already wraps to whatever width it is given, so fixing the width here yields word-wrapped text.
 	struct WrappedMenuLabel : ui::MenuLabel {
 		static constexpr float WRAP_WIDTH = 300.f;
 		void step() override {
@@ -2597,10 +2449,9 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		}
 	};
 
-	// MenuItem base that opens a submenu on hover containing a single disabled label with
-	// the given description — used as the TMenuItem base for createCheckMenuItem() below,
-	// so the resulting item both selects the preset on click and shows its description
-	// on hover, the same way "MIDI Preset" itself opens a submenu.
+	// MenuItem base that opens a submenu on hover containing a single disabled label with the given description.
+	// Used as the TMenuItem base for createCheckMenuItem() below, so the item both selects the preset on click and
+	// shows its description on hover (like "MIDI Preset" itself).
 	struct DescriptionMenuItem : ui::MenuItem {
 		std::string description;
 		ui::Menu* createChildMenu() override {
@@ -2613,9 +2464,8 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		}
 	};
 
-	// Called right after a controller preset has been made active (picked from the submenu
-	// list or loaded from file). If the preset carries an input mapping layout, asks the user
-	// whether to apply it too, same action as the "Apply input mappings from preset" menu item.
+	// Called right after a controller preset becomes active (picked from the submenu or loaded from file). If the
+	// preset carries an input mapping layout, whether to apply it too (same as the menu item).
 	void promptApplyPresetLayout() {
 		SpliceKitModule* module = this->module;
 		const MidiOutPreset* preset = module->feedback.getActivePreset();
@@ -2716,6 +2566,10 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 				!canSave
 			));
 		}));
+		menu->addChild(createCheckMenuItem("MIDI scene-copy gesture", "",
+			[=]() { return module->midiSceneCopyEnabled; },
+			[=]() { module->midiSceneCopyEnabled = !module->midiSceneCopyEnabled; }
+		));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createCheckMenuItem("Sequential MIDI learn", "",
 			[=]() {
@@ -2753,26 +2607,6 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 				}
 			}
 		));
-		bool isMaster = module->sceneLinkHasFollowers();
-		menu->addChild(createSubmenuItem("Scene link master", isMaster ? "(has followers)" : "", [=](Menu* menu) {
-			menu->addChild(createCheckMenuItem("None", "",
-				[=]() { return module->sceneLinkMasterId < 0; },
-				[=]() { module->sceneLinkMasterId = -1; }
-			));
-			menu->addChild(new MenuSeparator);
-			for (int64_t id : APP->engine->getModuleIds()) {
-				if (id == module->id) continue;
-				Module* m = APP->engine->getModule(id);
-				if (!m || m->model != modelSpliceKit) continue;
-				bool isFollower = SpliceKitModule::sceneLinkCandidateIsFollower(id);
-				std::string label = string::f("id %lld", (long long)id);
-				menu->addChild(createCheckMenuItem(label, isFollower ? "(already follows)" : "",
-					[=]() { return module->sceneLinkMasterId == id; },
-					[=]() { module->sceneLinkMasterId = id; },
-					isFollower
-				));
-			}
-		}, isMaster));
 		menu->addChild(createSubmenuItem("Button mode", "", [=](Menu* menu) {
 			menu->addChild(createCheckMenuItem("Toggle", "",
 				[=]() {
@@ -2793,6 +2627,41 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 				}
 			));
 		}));
+
+		menu->addChild(new MenuSeparator);
+		// Collect the other SpliceKit instances in a single pass, with whether each already follows another module
+		// (chains disallowed, see sceneLinkCandidateIsFollower) and whether any follows this module. Uses the widget
+		// tree rather than APP->engine, which the UI thread must not touch.
+		bool isMaster = false;
+		std::vector<std::pair<int64_t, bool>> otherIdsFollower;
+		for (Widget* w : APP->scene->rack->getModules()) {
+			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+			if (!mw || !mw->module || mw->module->id == module->id) continue;
+			auto* m = dynamic_cast<SpliceKitModule*>(mw->module);
+			if (!m) continue;
+			otherIdsFollower.push_back({m->id, m->sceneLinkMasterId >= 0});
+			if (m->sceneLinkMasterId == module->id) isMaster = true;
+		}
+		// The submenu is disabled when there are no other SpliceKit instances to link to
+		// (or when this module already has followers).
+		bool noOthers = otherIdsFollower.empty();
+		menu->addChild(createSubmenuItem("Scene link master", "", [=](Menu* menu) {
+			menu->addChild(createCheckMenuItem("None", "",
+				[=]() { return module->sceneLinkMasterId < 0; },
+				[=]() { module->sceneLinkMasterId = -1; }
+			));
+			if (!otherIdsFollower.empty()) menu->addChild(new MenuSeparator);
+			for (auto& idFollower : otherIdsFollower) {
+				int64_t id = idFollower.first;
+				bool isFollower = idFollower.second;
+				std::string label = rack::string::f("id %lld", (long long)id);
+				menu->addChild(createCheckMenuItem(label, isFollower ? "(already follows)" : "",
+					[=]() { return module->sceneLinkMasterId == id; },
+					[=]() { module->sceneLinkMasterId = id; },
+					isFollower
+				));
+			}
+		}, isMaster || noOthers));
 	}
 };
 
@@ -2828,9 +2697,8 @@ void SpliceKitSceneButton::createSceneMenu() {
 		module->sceneStore.reconcile(sceneId, module->sceneClipboard);
 	}, !module->sceneClipboardValid));
 
-	// randomizeCurrentScene()/randomizeCurrentSceneFull() always target the active scene, not
-	// necessarily the one whose button was clicked — only offer them here when they're the
-	// same scene.
+	// randomizeCurrentScene()/randomizeCurrentSceneFull() always target the active scene, not necessarily the one
+	// clicked — only offer them here when they're the same scene.
 	bool notCurrent = sceneId != module->sceneStore.current;
 	menu->addChild(createSubmenuItem("Randomize", "", [=](Menu* menu) {
 		menu->addChild(createMenuItem("Sparse", "", [=]() {
@@ -2865,9 +2733,8 @@ void SpliceKitSceneButton::createSceneMenu() {
 }
 
 void SpliceKitCellButton::createCellMenu() {
-	// Intended: this is what makes the per-cell "Start sequential learn..." item begin at
-	// this cell rather than cell 0 — the module-level context menu has no such click to
-	// anchor on, which is the actual bug (see startGlobalLearn/startGlobalPortLearn).
+	// This makes the per-cell "Start sequential learn..." item begin at this cell rather than cell 0 — the
+	// module-level context menu has no click to anchor on (the actual bug; see startGlobalLearn/startGlobalPortLearn).
 	module->lastClickedCell = cellId;
 	auto& pa = module->portAssignments[cellId];
 	std::string label = SpliceKitModule::portLabel(pa);

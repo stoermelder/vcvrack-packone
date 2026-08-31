@@ -30,8 +30,40 @@ TEST_CASE("Preset JSON null-guards", "[RotorA][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("JSON round-trip preserves state", "[RotorA][JSON]") {
+	RotorAModule* m = Test::createModule<RotorAModule>("RotorA");
+	RotorAModule* m2 = Test::createModule<RotorAModule>("RotorA");
+
+	// The only scalar stored to JSON is panelTheme
+	m->panelTheme = 1;
+
+	json_t* j = m->dataToJson();
+	m2->dataFromJson(j);
+	json_decref(j);
+
+	REQUIRE(m2->panelTheme == 1);
+
+	Test::destroyModule(m);
+	Test::destroyModule(m2);
+}
+
 
 TEST_CASE("Basic modulation", "[RotorA]") {
 	auto module = Test::createModule<RotorAModule>("RotorA");
@@ -453,27 +485,6 @@ TEST_CASE("Clock divider updates", "[RotorA]") {
 		
 		REQUIRE(module->channels == 4);
 		REQUIRE(module->channelsOffset == 2);
-	}
-
-	Test::destroyModule(module);
-}
-
-TEST_CASE("JSON serialization", "[JSON][RotorA]") {
-	auto module = Test::createModule<RotorAModule>("RotorA");
-
-	SECTION("Module state is serialized and deserialized") {
-		module->panelTheme = 1;
-		
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		
-		auto moduleNew = Test::createModule<RotorAModule>("RotorA");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->panelTheme == 1);
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
 	}
 
 	Test::destroyModule(module);

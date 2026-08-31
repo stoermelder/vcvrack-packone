@@ -1,7 +1,7 @@
-// SpliceKit.test.cpp — core module behavior.
-// Covers construction and initialization, the port-assignment bitmask store,
-// cable direction resolution, and pending-cell/trigger handling including
-// MIDI note-pending and note-off resolution.
+// SpliceKit.module.test.hpp — core module behavior.
+// Construction/initialization, the port-assignment bitmask store, cable
+// direction resolution, and pending-cell/trigger handling (incl. MIDI
+// note-pending and note-off resolution).
 
 #include "SpliceKit.test.hpp"
 
@@ -47,9 +47,8 @@ TEST_CASE("isConnected and setConnection bitmask", "[SpliceKit]") {
 
 
 // ─── resolveDirection ─────────────────────────────────────────────────────────────────────
-// Pure, no module needed — the call sites (removeCableBetween/addCableBetween, which
-// every live connection change funnels through, toggleConnection, and the cross-instance
-// path) all delegate to this.
+// Pure, no module needed — every live connection change (removeCableBetween/addCableBetween,
+// toggleConnection, the cross-instance path) delegates to this.
 
 TEST_CASE("resolveDirection - output/input resolves output first regardless of argument order", "[SpliceKit]") {
 	PortAssignment out;
@@ -414,6 +413,36 @@ TEST_CASE("randomizePortAssignmentsFrom - fills every cell without duplicates wh
 	Test::destroyModule(m);
 }
 
+TEST_CASE("randomizePortAssignmentsFrom - tears down scene connections and pending state like assignPort", "[SpliceKit]") {
+	// assignPort()'s cleanup contract (SpliceKit.cpp ~2040) exists because SceneStore resolves
+	// cable coordinates through portAssignments: a stale connection bit referencing an overwritten
+	// port leaves an orphaned cable in the current scene, or recreates one to the wrong port on
+	// the next switchScene(). randomizePortAssignmentsFrom() rewrites every cell at once and must
+	// honor the same contract cell-by-cell.
+	SpliceKitModule* m = createModule();
+	m->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
+	m->portAssignments[1] = {42, engine::Port::INPUT, 1};
+	m->sceneStore.setConnection(m->sceneStore.current, 0, 1, true);
+	int otherScene = (m->sceneStore.current + 1) % SCENE_COUNT;
+	m->sceneStore.connections[otherScene][0] |= (1ULL << 1);
+	m->sceneStore.connections[otherScene][1] |= (1ULL << 0);
+	m->pendingCellId = 0;
+
+	std::vector<PortAssignment> candidates(2);
+	candidates[0] = {10, engine::Port::OUTPUT, 0};
+	candidates[1] = {20, engine::Port::INPUT, 1};
+	m->randomizePortAssignmentsFrom(candidates);
+
+	// Every scene's bitmask involving the rewritten cells must be cleared, not just the
+	// current one's.
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
+	REQUIRE(m->sceneStore.isConnected(otherScene, 0, 1) == false);
+	// A pending selection made against the old assignment is stale and must be dropped.
+	REQUIRE(m->pendingCellId == -1);
+
+	Test::destroyModule(m);
+}
+
 TEST_CASE("onRandomize - runs randomizePortAssignments directly without queueing", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
 
@@ -428,9 +457,9 @@ TEST_CASE("onRandomize - runs randomizePortAssignments directly without queueing
 }
 
 
-// Param-quantity tooltips — what the user reads when hovering a button.
-// The label falls back port name → custom label, the numeric 0/1 value is suppressed, and the
-// description names the current MIDI mapping.
+// Param-quantity tooltips — what the user reads when hovering a button. The label falls back
+// port name → custom label, the numeric 0/1 value is suppressed, and the description names the
+// current MIDI mapping.
 
 TEST_CASE("SpliceKitCellQuantity - label falls back from custom label to port name to cell number", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();
@@ -495,8 +524,8 @@ TEST_CASE("SpliceKitSceneQuantity - label is the 1-based scene name and descript
 }
 
 
-// processBypass — a bypassed module must still drain its MIDI input so
-// messages received while bypassed do not pile up and fire late on un-bypass.
+// processBypass — a bypassed module must still drain its MIDI input so messages received
+// while bypassed do not pile up and fire late on un-bypass.
 
 TEST_CASE("processBypass - runs without triggering cells and leaves no pending selection", "[SpliceKit]") {
 	SpliceKitModule* m = createModule();

@@ -1,7 +1,7 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/Version-2.5.0-green.svg?style=flat-square)
+![Version](https://img.shields.io/badge/Version-2.6.0-green.svg?style=flat-square)
 ![Rack](https://img.shields.io/badge/VCV_Rack-v2-red.svg?style=flat-square)
 ![MetaModule](https://img.shields.io/badge/MetaModule-v2-orange.svg?style=flat-square)
 ![License](https://img.shields.io/badge/License-GPLv3+-blue.svg?style=flat-square)
@@ -63,6 +63,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder, but d
 - [SIREN](./docs/siren/Siren.md): Sample browser collaboration with Omri Cohen — browse, preview and drag WAV/FLAC/MP3 samples to other modules
 - [SIPO](./docs/sipo/Sipo.md): serial-in parallel-out shift register with polyphonic output and CV controls
 - [SPIN](./docs/spin/Spin.md): utility for converting mouse-wheel or middle mouse-button events into triggers
+- [SPLICE-KIT](./docs/splicekit/SpliceKit.md): 8x8 matrix patch-bay for creating and removing cables by pressing button pairs
 - [STROKE](./docs/stroke/Stroke.md): utility which converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
 - [STRIP](./docs/strip/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
 - [STRIP-BAY](./docs/strip/Strip.md#stoermelder-strip-bay): a companion module for STRIP for keeping input/output connections while replacing strips
