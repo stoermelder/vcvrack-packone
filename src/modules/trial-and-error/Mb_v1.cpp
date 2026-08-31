@@ -165,6 +165,11 @@ struct ModelBox : widget::OpaqueWidget {
 		// Save the width, used for correct width of blank before rendered
 		modelBoxWidth = moduleWidget->box.size.x;
 
+		// Widgets such as lights only compute their initial visible state (color, layout, nested dirty
+		// framebuffers) inside step(). Without running it once here, the framebuffer bakes its first snapshot
+		// from an unstepped, just-constructed tree.
+		moduleWidget->step();
+
 		sizePreview();
 	}
 
