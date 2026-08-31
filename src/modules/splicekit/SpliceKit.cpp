@@ -1124,7 +1124,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 					disableLearn();
 				}
 				else if (portLearningId == i) {
-					disablePortLearn();
+					requestDisablePortLearn();
 				}
 				else {
 					triggerCell(i);
@@ -1516,6 +1516,16 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 		portSelectProcessor.disableLearn();
 		portLearningId = -1;
 		portLearnMode = false;
+	}
+
+	// Engine thread — cancels an active port-assignment learn from the audio thread. Cannot call
+	// disablePortLearn() directly: PortSelectProcessor::disableLearn() calls glfwSetCursor(), which is
+	// GUI-thread-only. Clears portLearningId here so the blinking cell stops immediately even if the
+	// queue is full, and defers the processor/cursor teardown to the GUI thread.
+	void requestDisablePortLearn() {
+		assert(verifier.isEngine());
+		portLearningId = -1;
+		taskProcessorUi.enqueue([this]() { disablePortLearn(); });
 	}
 
 	// GUI thread — returns true if the given cell is currently in port-learn mode.
