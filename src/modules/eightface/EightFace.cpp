@@ -722,13 +722,17 @@ struct EightFaceWidgetTemplate : ThemedModuleWidget<MODULE> {
 	};
 
 	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 		assert(module);
 
 		menu->addChild(new MenuSeparator());
 		if (module->moduleName != "") {
-			menu->addChild(createMenuLabel("Configured for..."));
+			menu->addChild(createMenuLabel("Bound for..."));
 			menu->addChild(createMenuLabel(module->moduleName));
+		}
+		else {
+			menu->addChild(createMenuLabel("No bound module"));
 		}
 
 		menu->addChild(new MenuSeparator());
