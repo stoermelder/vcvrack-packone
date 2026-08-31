@@ -43,6 +43,8 @@
     - Improved context menus for tags
     - Fixed crash when playing multi-channel files
     - Fixed occasionally lost settings
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Fixed "Bind parameters by selection" when spanning multiple modules
 
 ## 2.5.0
 
