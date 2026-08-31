@@ -111,8 +111,51 @@ TEST_CASE("Preset JSON null-guards", "[IntermixFade][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("JSON round-trip preserves state", "[JSON][IntermixFade]") {
+	IntermixFadeModule<8>* m = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	IntermixFadeModule<8>* m2 = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+
+	m->panelTheme = 1;
+	m->input = 4;
+	m->fade = FADE::OUT;
+	m->fadeLengthMode = FADE_LENGTH_60S;
+
+	json_t* j = m->dataToJson();
+	// Start m2 at a different value so dataFromJson() is genuinely exercised
+	// (otherwise a fresh module's default could mask a broken restore).
+	m2->panelTheme = 0;
+	m2->input = 0;
+	m2->fade = FADE::INOUT;
+	m2->fadeLengthMode = FADE_LENGTH_15S;
+	m2->dataFromJson(j);
+	json_decref(j);
+
+	REQUIRE(m2->panelTheme == 1);
+	REQUIRE(m2->input == 4);
+	REQUIRE(m2->fade == FADE::OUT);
+	REQUIRE(m2->fadeLengthMode == FADE_LENGTH_60S);
+
+	Test::destroyModule(m);
+	Test::destroyModule(m2);
+}
+
 
 TEST_CASE("Reset behavior", "[IntermixFade]") {
 	auto module = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
@@ -283,31 +326,6 @@ TEST_CASE("Fade control via expander", "[IntermixFade]") {
 
 	Test::destroyModule(fadeModule);
 	delete intermixModule;
-}
-
-TEST_CASE("JSON serialization", "[JSON][IntermixFade]") {
-	auto module = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
-
-	SECTION("Module state is serialized and deserialized") {
-		module->panelTheme = 1;
-		module->input = 4;
-		module->fade = FADE::OUT;
-		
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		
-		auto moduleNew = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->panelTheme == 1);
-		REQUIRE(moduleNew->input == 4);
-		REQUIRE(moduleNew->fade == FADE::OUT);
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
-	}
-
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Different inputs with fade", "[IntermixFade]") {

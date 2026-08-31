@@ -1,48 +1,17 @@
 #include "../../test/test_plugin.hpp"
 #include "../../test/test_context.hpp"
+#include "../../test/test_mock.hpp"
 #include "SirenFileSystem.hpp"
-#include "SirenTest.hpp"
+#include "Siren.test.hpp"
 #include <fstream>
 #include <algorithm>
 #include <sstream>
 
+using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::Siren;
 using namespace StoermelderPackOne::Siren::filesystem;
 
 Test::TestContext<> testContext;
-
-// ─── TempDir RAII helper ──────────────────────────────────────────────────────
-// Creates a unique temporary directory; removes it on destruction.
-
-struct TempDir {
-	std::string path;
-
-	TempDir() {
-		static int seq = 0;
-		path = rack::system::join(rack::system::getTempDirectory(),
-			"sirenfs_test_" + std::to_string(++seq));
-		rack::system::createDirectories(path);
-	}
-
-	~TempDir() {
-		rack::system::removeRecursively(path);
-	}
-
-	// Create an empty file with the given name inside this directory.
-	void touch(const std::string& name) const {
-		std::ofstream f(rack::system::join(path, name));
-	}
-
-	std::string filePath(const std::string& name) const {
-		return rack::system::join(path, name);
-	}
-
-	std::string str() const {
-		return path;
-	}
-};
-
-// ─── prepareForDrop helper ────────────────────────────────────────────────────
 
 // prepareForDrop() returns a task lambda; calling it executes the (possibly heavy)
 // work synchronously. In tests this is fine — no real conversion is attempted since
@@ -51,22 +20,6 @@ static std::string callPrepareForDrop(FileSystemDataSource& src, const std::stri
 	return src.prepareForDrop(id, convertToWav)();
 }
 
-// Writes a short but decodable silent stereo WAV file — needed to exercise the
-// trim/convert path in prepareForDrop(), which falls back to the source path
-// whenever loadAudioInfo() can't decode a header (e.g. the empty files from touch()).
-static void writeTestWav(const std::string& path, int frames = 4410, int sampleRate = 44100, int channels = 2) {
-	drwav_data_format fmt = {};
-	fmt.container = drwav_container_riff;
-	fmt.format = DR_WAVE_FORMAT_IEEE_FLOAT;
-	fmt.channels = (drwav_uint32)channels;
-	fmt.sampleRate = (drwav_uint32)sampleRate;
-	fmt.bitsPerSample = 32;
-	drwav wav;
-	drwav_init_file_write(&wav, path.c_str(), &fmt, nullptr);
-	std::vector<float> samples((size_t)frames * channels, 0.f);
-	drwav_write_pcm_frames(&wav, (drwav_uint64)frames, samples.data());
-	drwav_uninit(&wav);
-}
 
 // ─── isGeneratedFile ──────────────────────────────────────────────────────────
 // pattern: _siren_ + exactly 6 lowercase letters + .wav suffix, must be at position size-17.
@@ -100,14 +53,17 @@ TEST_CASE("isGeneratedFile: rejects old .converted.wav and other edge cases", "[
 
 // ─── loadChildrenSync: generated-file filtering ────────────────────────────
 // files matching the _siren_ pattern are excluded from directory listings.
-TEST_CASE("loadChildrenSync: excludes _siren_ files from results", "[Siren][FileSystem]") {
-	TempDir tmp;
-	tmp.touch("kick.wav");
-	tmp.touch("kick_siren_abcdef.wav");
-	tmp.touch("pad.flac");
+// The directory tree is scripted in the virtual filesystem mock — no real files.
+TEST_CASE("loadChildrenSync: excludes _siren_ files from results", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	mock.fs.touch(VFS_ROOT + "/kick.wav");
+	mock.fs.touch(VFS_ROOT + "/kick_siren_abcdef.wav");
+	mock.fs.touch(VFS_ROOT + "/pad.flac");
 
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
-	auto nodes = src.loadChildrenSync("");
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
+	// withAudioInfo=false: these tests only care about names/isContainer, so the
+	// listing never probes the (virtual) files for audio headers.
+	auto nodes = src.loadChildrenSync("", /*withAudioInfo=*/false);
 
 	std::vector<std::string> names;
 	for (const auto& n : nodes) names.push_back(n.name);
@@ -118,15 +74,15 @@ TEST_CASE("loadChildrenSync: excludes _siren_ files from results", "[Siren][File
 }
 
 // valid generated files are filtered; count reflects only visible files.
-TEST_CASE("loadChildrenSync: correct count when multiple _siren_ files are present", "[Siren][FileSystem]") {
-	TempDir tmp;
-	tmp.touch("a.wav");
-	tmp.touch("a_siren_abcdef.wav");
-	tmp.touch("b.mp3");
-	tmp.touch("b_siren_uvwxyz.wav");
+TEST_CASE("loadChildrenSync: correct count when multiple _siren_ files are present", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	mock.fs.touch(VFS_ROOT + "/a.wav");
+	mock.fs.touch(VFS_ROOT + "/a_siren_abcdef.wav");
+	mock.fs.touch(VFS_ROOT + "/b.mp3");
+	mock.fs.touch(VFS_ROOT + "/b_siren_uvwxyz.wav");
 
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
-	auto nodes = src.loadChildrenSync("");
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
+	auto nodes = src.loadChildrenSync("", /*withAudioInfo=*/false);
 
 	REQUIRE(nodes.size() == 2);
 	for (const auto& n : nodes) {
@@ -135,14 +91,14 @@ TEST_CASE("loadChildrenSync: correct count when multiple _siren_ files are prese
 }
 
 // directories are returned alongside audio files with no interference.
-TEST_CASE("loadChildrenSync: container (directory) alongside _siren_ files is unaffected", "[Siren][FileSystem]") {
-	TempDir tmp;
-	tmp.touch("sample.flac");
-	tmp.touch("sample_siren_abcdef.wav");
-	rack::system::createDirectories(rack::system::join(tmp.str(), "Drums"));
+TEST_CASE("loadChildrenSync: container (directory) alongside _siren_ files is unaffected", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	mock.fs.touch(VFS_ROOT + "/sample.flac");
+	mock.fs.touch(VFS_ROOT + "/sample_siren_abcdef.wav");
+	mock.fs.mkdir(VFS_ROOT + "/Drums");
 
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
-	auto nodes = src.loadChildrenSync("");
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
+	auto nodes = src.loadChildrenSync("", /*withAudioInfo=*/false);
 
 	std::vector<std::string> names;
 	for (const auto& n : nodes) names.push_back(n.name);
@@ -153,13 +109,13 @@ TEST_CASE("loadChildrenSync: container (directory) alongside _siren_ files is un
 }
 
 // isContainer flag is true for directories, false for files.
-TEST_CASE("loadChildrenSync: node isContainer flag is correct", "[Siren][FileSystem]") {
-	TempDir tmp;
-	tmp.touch("kick.wav");
-	rack::system::createDirectories(rack::system::join(tmp.str(), "Loops"));
+TEST_CASE("loadChildrenSync: node isContainer flag is correct", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	mock.fs.touch(VFS_ROOT + "/kick.wav");
+	mock.fs.mkdir(VFS_ROOT + "/Loops");
 
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
-	auto nodes = src.loadChildrenSync("");
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
+	auto nodes = src.loadChildrenSync("", /*withAudioInfo=*/false);
 
 	const DataSourceNode* fileNode = nullptr;
 	const DataSourceNode* containerNode = nullptr;
@@ -178,63 +134,63 @@ TEST_CASE("loadChildrenSync: node isContainer flag is correct", "[Siren][FileSys
 // IDs are relative paths; the returned absolute path is what the rack uses for drop.
 
 // when convertToWav is false, the returned path is the resolved absolute path.
-TEST_CASE("prepareForDrop: returns absolute path when convertToWav is false", "[Siren][FileSystem]") {
-	TempDir tmp;
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
-	REQUIRE(callPrepareForDrop(src, "/drone.mp3", false) == tmp.filePath("drone.mp3"));
+TEST_CASE("prepareForDrop: returns absolute path when convertToWav is false", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
+	REQUIRE(callPrepareForDrop(src, "/drone.mp3", false) == VFS_ROOT + "/drone.mp3");
 }
 
 // .wav files pass through without conversion regardless of the flag.
-TEST_CASE("prepareForDrop: returns absolute path for .wav files even when flag is true", "[Siren][FileSystem]") {
-	TempDir tmp;
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
-	REQUIRE(callPrepareForDrop(src, "/kick.wav", true) == tmp.filePath("kick.wav"));
+TEST_CASE("prepareForDrop: returns absolute path for .wav files even when flag is true", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
+	REQUIRE(callPrepareForDrop(src, "/kick.wav", true) == VFS_ROOT + "/kick.wav");
 }
 
 // uppercase .WAV is also recognised and passed through unchanged.
-TEST_CASE("prepareForDrop: .WAV extension (uppercase) also treated as wav — no conversion", "[Siren][FileSystem]") {
-	TempDir tmp;
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
-	REQUIRE(callPrepareForDrop(src, "/sample.WAV", true) == tmp.filePath("sample.WAV"));
+TEST_CASE("prepareForDrop: .WAV extension (uppercase) also treated as wav — no conversion", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
+	REQUIRE(callPrepareForDrop(src, "/sample.WAV", true) == VFS_ROOT + "/sample.WAV");
 }
 
 // A _siren_-named WAV file passed with convertToWav=true is returned unchanged:
 // the .wav extension means needConvert=false, and the early-return path fires
 // without any decode attempt — so previously-generated files are never re-encoded.
-TEST_CASE("prepareForDrop: generated _siren_ WAV file is returned without re-conversion", "[Siren][FileSystem]") {
-	TempDir tmp;
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
-	REQUIRE(callPrepareForDrop(src, "/kick_siren_abcdef.wav", true) == tmp.filePath("kick_siren_abcdef.wav"));
+TEST_CASE("prepareForDrop: generated _siren_ WAV file is returned without re-conversion", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
+	REQUIRE(callPrepareForDrop(src, "/kick_siren_abcdef.wav", true) == VFS_ROOT + "/kick_siren_abcdef.wav");
 }
 
 // decode failure (e.g. non-existent file) falls back to the resolved absolute path.
-TEST_CASE("prepareForDrop: falls back to absolute path when source cannot be decoded", "[Siren][FileSystem]") {
-	TempDir tmp;
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
-	REQUIRE(callPrepareForDrop(src, "/ghost.flac", true) == tmp.filePath("ghost.flac"));
+TEST_CASE("prepareForDrop: falls back to absolute path when source cannot be decoded", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
+	REQUIRE(callPrepareForDrop(src, "/ghost.flac", true) == VFS_ROOT + "/ghost.flac");
 }
 
 // decode failure for non-existent .mp3 also falls back to absolute path.
-TEST_CASE("prepareForDrop: non-existent .mp3 with flag true also falls back", "[Siren][FileSystem]") {
-	TempDir tmp;
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
-	REQUIRE(callPrepareForDrop(src, "/missing.mp3", true) == tmp.filePath("missing.mp3"));
+TEST_CASE("prepareForDrop: non-existent .mp3 with flag true also falls back", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
+	REQUIRE(callPrepareForDrop(src, "/missing.mp3", true) == VFS_ROOT + "/missing.mp3");
 }
 
 // The new resampleQuality parameter must be accepted and not break the early-return
 // path. When targetSampleRate is 0, prepareForDrop short-circuits with the absolute path
 // regardless of quality, and the returned lambda must still be a valid (non-null) call.
-TEST_CASE("prepareForDrop: resampleQuality parameter is accepted (no-op when no resample requested)", "[Siren][FileSystem]") {
-	TempDir tmp;
-	tmp.touch("kick.wav");
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+TEST_CASE("prepareForDrop: resampleQuality parameter is accepted (no-op when no resample requested)", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	mock.fs.touch(VFS_ROOT + "/kick.wav");
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
 
 	for (int q : { 0, 1, 4, 7, 10 }) {
 		// targetSampleRate=0 → no resample, no convert, no trim → identity lambda returning abs path.
 		auto task = src.prepareForDrop("/kick.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
 			/*trimIn=*/0.f, /*trimOut=*/1.f, q);
 		REQUIRE(task != nullptr);
-		REQUIRE(task() == tmp.filePath("kick.wav"));
+		REQUIRE(task() == VFS_ROOT + "/kick.wav");
 	}
 }
 
@@ -278,15 +234,14 @@ TEST_CASE("prepareForDrop: writes trimmed file beside source when outputDir is e
 
 // outputDir must be ignored on the early-return (no-op) path — the resolved
 // absolute source path is returned unchanged regardless of the destination hint.
-TEST_CASE("prepareForDrop: outputDir is ignored when no conversion/trim/resample is needed", "[Siren][FileSystem]") {
-	TempDir tmp;
-	TempDir outDir;
-	tmp.touch("kick.wav");
+TEST_CASE("prepareForDrop: outputDir is ignored when no conversion/trim/resample is needed", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	mock.fs.touch(VFS_ROOT + "/kick.wav");
 
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
 	auto task = src.prepareForDrop("/kick.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
-		/*trimIn=*/0.f, /*trimOut=*/1.f, /*resampleQuality=*/6, outDir.str());
-	REQUIRE(task() == tmp.filePath("kick.wav"));
+		/*trimIn=*/0.f, /*trimOut=*/1.f, /*resampleQuality=*/6, "/vfs/out");
+	REQUIRE(task() == VFS_ROOT + "/kick.wav");
 }
 
 // ─── prepareForDrop: alwaysCopy ──────────────────────────────────────────────
@@ -362,12 +317,12 @@ TEST_CASE("prepareForDrop: alwaysCopy defers to processAudioForDrop when a trans
 // copyFileForDrop is the binary-copy helper used by the alwaysCopy path. A
 // missing source file should fall back to the source path so the rest of the
 // drop pipeline can decide what to do.
-TEST_CASE("copyFileForDrop: missing source returns the source path", "[Siren][FileSystem]") {
-	TempDir outDir;
-	std::string result = FileSystemDataSource::copyFileForDrop("/does/not/exist.wav",
-		outDir.str() + "/out.wav");
-	REQUIRE(result == "/does/not/exist.wav");
-	REQUIRE(!rack::system::exists(outDir.str() + "/out.wav"));
+TEST_CASE("copyFileForDrop: missing source returns the source path", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	std::string result = FileSystemDataSource::copyFileForDrop("/vfs/does/not/exist.wav",
+		"/vfs/out.wav");
+	REQUIRE(result == "/vfs/does/not/exist.wav");
+	REQUIRE(!mock.fs.exists("/vfs/out.wav"));
 }
 
 // ─── isSupportedAudioFile ───────────────────────────────────────────────────
@@ -389,40 +344,40 @@ TEST_CASE("isSupportedAudioFile: recognises wav/flac/mp3 (any case), rejects eve
 }
 
 // isSupportedFile delegates to isSupportedAudioFile on the path.
-TEST_CASE("FileSystemDataSource: isSupportedFile delegates to isSupportedAudioFile", "[Siren][FileSystem]") {
-	TempDir tmp;
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+TEST_CASE("FileSystemDataSource: isSupportedFile delegates to isSupportedAudioFile", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
 	REQUIRE(src.isSupportedFile("/path/to/kick.wav") == true);
 	REQUIRE(src.isSupportedFile("/path/to/kick.mp3") == true);
 	REQUIRE(src.isSupportedFile("/path/to/kick.ogg") == false);
 }
 
 // getDisplayName extracts just the filename component from a relative id.
-TEST_CASE("FileSystemDataSource: getDisplayName returns filename only", "[Siren][FileSystem]") {
-	TempDir tmp;
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+TEST_CASE("FileSystemDataSource: getDisplayName returns filename only", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
 	REQUIRE(src.getDisplayName("/samples/kick.wav") == "kick.wav");
 	REQUIRE(src.getDisplayName("/samples/drum loop.flac") == "drum loop.flac");
 }
 
 // getRelativePath is identity: ids are already relative paths.
-TEST_CASE("FileSystemDataSource: getRelativePath is identity for relative ids", "[Siren][FileSystem]") {
-	TempDir tmp;
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+TEST_CASE("FileSystemDataSource: getRelativePath is identity for relative ids", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
 	REQUIRE(src.getRelativePath("/kick.wav") == "/kick.wav");
 	REQUIRE(src.getRelativePath("/sub/loop.flac") == "/sub/loop.flac");
 }
 
 // directories sort before files; both groups sort case-insensitively.
-TEST_CASE("loadChildrenSync: directories appear before audio files (case-insensitive sort)", "[Siren][FileSystem]") {
-	TempDir tmp;
-	tmp.touch("Zebra.wav");
-	tmp.touch("alpha.mp3");
-	rack::system::createDirectories(rack::system::join(tmp.str(), "Beta"));
-	rack::system::createDirectories(rack::system::join(tmp.str(), "alpha"));
+TEST_CASE("loadChildrenSync: directories appear before audio files (case-insensitive sort)", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	mock.fs.touch(VFS_ROOT + "/Zebra.wav");
+	mock.fs.touch(VFS_ROOT + "/alpha.mp3");
+	mock.fs.mkdir(VFS_ROOT + "/Beta");
+	mock.fs.mkdir(VFS_ROOT + "/alpha");
 
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
-	auto nodes = src.loadChildrenSync("");
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
+	auto nodes = src.loadChildrenSync("", /*withAudioInfo=*/false);
 
 	REQUIRE(nodes.size() == 4);
 	REQUIRE(nodes[0].isContainer == true);
@@ -451,9 +406,163 @@ TEST_CASE("randomFileSuffix: format is '_siren_' + 6 lowercase letters and works
 
 // MetadataStore::filePath is deterministic: two independent instances with the same root
 // produce the same file path, so metadata is shared rather than duplicated.
-TEST_CASE("FileSystemDataSource: metadata file path is deterministic for same root", "[Siren][FileSystem]") {
-	TempDir tmp;
-	FileSystemDataSource src1(tmp.str(), scratchMetadataStore());
-	FileSystemDataSource src2(tmp.str(), scratchMetadataStore());
+TEST_CASE("FileSystemDataSource: metadata file path is deterministic for same root", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	FileSystemDataSource src1(VFS_ROOT, scratchMetadataStore());
+	FileSystemDataSource src2(VFS_ROOT, scratchMetadataStore());
 	REQUIRE(src1.getMetadata()->filePath() == src2.getMetadata()->filePath());
+}
+
+// ─── buildRepitchPreview / buildLoopPreview: multi-channel support ───────────
+// Regression test for the same bug fixed in the fill thread: readF32() always
+// interleaves the decoder's real channel count, but these functions allocated
+// their read buffer sized for a stereo-clamped channel count, overflowing it
+// for files with more than 2 channels (e.g. 5.1 surround). The fix keeps the
+// full channel count all the way through — these functions no longer clamp
+// to stereo at all; downmixing (if any) happens only at the fill-thread
+// playback stage, not here.
+
+// semitones = 0 is a no-op in applyRepitch, so the result reflects the raw
+// read exactly — letting this test assert precise sample values per channel.
+TEST_CASE("buildRepitchPreview: multi-channel file keeps its full channel count", "[Siren][Audio][Repitch]") {
+	TempDir tmp;
+	const int frames = 4410;
+	writeMultichannelTestWav(tmp.filePath("surround.wav"), frames, 44100, 6, 0.6f, -0.3f, 0.15f);
+
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+	AudioPreviewResult result = buildRepitchPreview(src, "/surround.wav", 0.f, 1.f, 0.f);
+
+	REQUIRE(result.ok == true);
+	REQUIRE(result.channels == 6);
+	REQUIRE(!result.samples.empty());
+	for (size_t f = 0; f < result.samples.size() / 6; f++) {
+		REQUIRE(result.samples[f * 6 + 0] == Catch::Approx(0.6f));
+		REQUIRE(result.samples[f * 6 + 1] == Catch::Approx(-0.3f));
+		for (int c = 2; c < 6; c++) {
+			REQUIRE(result.samples[f * 6 + c] == Catch::Approx(0.15f));
+		}
+	}
+}
+
+// An actual pitch shift on a >2-channel file must complete without crashing
+// and preserve the full channel count.
+TEST_CASE("buildRepitchPreview: multi-channel file with actual pitch shift does not crash", "[Siren][Audio][Repitch]") {
+	TempDir tmp;
+	writeMultichannelTestWav(tmp.filePath("surround.wav"), 4410, 44100, 8, 0.5f, 0.2f, 0.1f);
+
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+	AudioPreviewResult result = buildRepitchPreview(src, "/surround.wav", 0.f, 1.f, 5.f);
+
+	REQUIRE(result.ok == true);
+	REQUIRE(result.channels == 8);
+	REQUIRE(!result.samples.empty());
+}
+
+// A mono file is unaffected — regression guard against accidentally forcing
+// a minimum channel count.
+TEST_CASE("buildRepitchPreview: mono file is read correctly", "[Siren][Audio][Repitch]") {
+	TempDir tmp;
+	writeMultichannelTestWav(tmp.filePath("mono.wav"), 4410, 44100, 1, 0.42f, 0.f, 0.f);
+
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+	AudioPreviewResult result = buildRepitchPreview(src, "/mono.wav", 0.f, 1.f, 0.f);
+
+	REQUIRE(result.ok == true);
+	REQUIRE(result.channels == 1);
+	REQUIRE(!result.samples.empty());
+	for (float s : result.samples) {
+		REQUIRE(s == Catch::Approx(0.42f));
+	}
+}
+
+TEST_CASE("buildLoopPreview: multi-channel file keeps its full channel count without crashing", "[Siren][Audio][Loop]") {
+	TempDir tmp;
+	writeMultichannelTestWav(tmp.filePath("surround.wav"), 8820, 44100, 6, 0.4f, -0.2f, 0.1f);
+
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+	AudioPreviewResult result = buildLoopPreview(src, "/surround.wav", 0.f, 1.f, 0.05f);
+
+	REQUIRE(result.ok == true);
+	REQUIRE(result.channels == 6);
+	REQUIRE(!result.samples.empty());
+	// The loop-crossfade rotation/blend only ever mixes ch0/ch1 (0.4 / -0.2)
+	// with the same-index channel across the splice, and channels 2-5 (0.1)
+	// with themselves — so with the equal-power crossfade's worst-case
+	// sqrt(2) gain, no output sample can exceed ~0.6. A misaligned/overflowing
+	// read would instead blend unrelated channels together and break this bound.
+	for (float s : result.samples) {
+		REQUIRE(std::abs(s) <= 0.6f);
+	}
+}
+
+// ─── SystemAccess routing ─────────────────────────────────────────────────────
+// cleanup() used to be gated by isTesting() (a no-op in the test harness). With
+// the SystemAccess mock installed, the real logic runs and the mock records the
+// cache-file removals instead of touching disk.
+
+TEST_CASE("FileSystemDataSource: cleanup removes cache files through SystemAccess", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
+
+	// Populate the metadata so cleanup() has cache files to remove.
+	src.getMetadata()->setAudioInfo("/kick.wav", 1.0f, 44100, 32, 2, 12345);
+	src.getMetadata()->setAudioInfo("/pad.flac", 2.0f, 44100, 16, 2, 67890);
+
+	src.cleanup();
+
+	REQUIRE(mock.fs.removed.size() == 2);
+	REQUIRE(mock.fs.removed[0] == src.cacheFilePathFor("/kick.wav"));
+	REQUIRE(mock.fs.removed[1] == src.cacheFilePathFor("/pad.flac"));
+}
+
+// cleanup() with no metadata entries is a no-op — nothing is removed.
+TEST_CASE("FileSystemDataSource: cleanup with no samples removes nothing", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
+
+	src.cleanup();
+
+	REQUIRE(mock.fs.removed.empty());
+}
+
+// The directory scan in loadChildrenSync goes through the SystemAccess layer.
+TEST_CASE("FileSystemDataSource: loadChildrenSync routes getEntries through SystemAccess", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	mock.fs.touch(VFS_ROOT + "/kick.wav");
+	mock.fs.touch(VFS_ROOT + "/pad.flac");
+	mock.fs.mkdir(VFS_ROOT + "/Drums");
+
+	FileSystemDataSource src(VFS_ROOT, scratchMetadataStore());
+	auto nodes = src.loadChildrenSync("", /*withAudioInfo=*/false);
+
+	REQUIRE(mock.fs.getEntriesCalls.size() == 1);
+	REQUIRE(mock.fs.getEntriesCalls[0] == VFS_ROOT);
+
+	std::vector<std::string> names;
+	for (const auto& n : nodes) names.push_back(n.name);
+	REQUIRE(std::find(names.begin(), names.end(), "kick.wav") != names.end());
+	REQUIRE(std::find(names.begin(), names.end(), "pad.flac") != names.end());
+	REQUIRE(std::find(names.begin(), names.end(), "Drums") != names.end());
+}
+
+// ─── createNewRootContainer ───────────────────────────────────────────────────
+// The folder picker routes through the vcv::ui layer; the mock scripts the answer.
+// A cancelled dialog (empty string) returns false and leaves `out` untouched.
+
+TEST_CASE("createNewRootContainer: cancelled dialog returns false", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	RootContainer rc;
+	REQUIRE(createNewRootContainer(rc) == false);
+}
+
+// A picked folder is turned into a RootContainer with the name derived from the path.
+TEST_CASE("createNewRootContainer: selected folder builds a RootContainer", "[Siren][FileSystem][vcv]") {
+	Mock mock;
+	mock.ui.dirResults.push_back("/vfs/root");
+
+	RootContainer rc;
+	REQUIRE(createNewRootContainer(rc) == true);
+	REQUIRE(rc.path == "/vfs/root");
+	REQUIRE(rc.type == "fs");
+	REQUIRE(rc.name == "root");
 }

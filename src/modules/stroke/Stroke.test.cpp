@@ -37,6 +37,20 @@ TEST_CASE("Preset JSON null-guards", "[Stroke][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
 
@@ -73,80 +87,105 @@ TEST_CASE("onReset clears key configuration", "[Stroke][init]") {
 
 // JSON serialization
 
-TEST_CASE("dataToJson writes panelTheme and a keys array", "[Stroke][JSON]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
-
-	module->panelTheme = 3;
-	module->keys[0].button = 2;
-	module->keys[0].key = GLFW_KEY_A;
-	module->keys[0].mods = GLFW_MOD_SHIFT;
-	module->keys[0].mode = KEY_MODE::CV_GATE;
-	module->keys[0].high = true;
-	module->keys[0].data = "hello";
-
-	json_t* rootJ = module->dataToJson();
-	REQUIRE(rootJ != nullptr);
-	REQUIRE(json_is_object(rootJ));
-
-	json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
-	REQUIRE(panelThemeJ != nullptr);
-	REQUIRE(json_integer_value(panelThemeJ) == 3);
-
-	json_t* keysJ = json_object_get(rootJ, "keys");
-	REQUIRE(keysJ != nullptr);
-	REQUIRE(json_array_size(keysJ) == STROKE_PORTS);
-
-	json_t* key0J = json_array_get(keysJ, 0);
-	REQUIRE(key0J != nullptr);
-	REQUIRE(json_integer_value(json_object_get(key0J, "button")) == 2);
-	REQUIRE(json_integer_value(json_object_get(key0J, "key")) == GLFW_KEY_A);
-	REQUIRE(json_integer_value(json_object_get(key0J, "mods")) == GLFW_MOD_SHIFT);
-	REQUIRE(json_integer_value(json_object_get(key0J, "mode")) == (int)KEY_MODE::CV_GATE);
-	REQUIRE(json_boolean_value(json_object_get(key0J, "high")) == true);
-	REQUIRE(std::string(json_string_value(json_object_get(key0J, "data"))) == "hello");
-
-	json_decref(rootJ);
-	Test::destroyModule(module);
-}
-
-TEST_CASE("dataFromJson round-trip preserves key configuration", "[Stroke][JSON]") {
+TEST_CASE("JSON round-trip preserves state", "[Stroke][JSON]") {
 	auto src = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
 	auto dst = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
 
-	src->panelTheme = 5;
-	src->keys[0].button = -1;
-	src->keys[0].key = GLFW_KEY_KP_5; // a numpad key to verify keyFix runs on load
-	src->keys[0].mods = GLFW_MOD_ALT | GLFW_MOD_SHIFT;
-	src->keys[0].mode = KEY_MODE::S_ZOOM_OUT;
-	src->keys[0].high = true;
-	src->keys[0].data = "abc";
+	SECTION("Serialized JSON structure") {
+		src->panelTheme = 3;
+		src->keys[0].button = 2;
+		src->keys[0].key = GLFW_KEY_A;
+		src->keys[0].mods = GLFW_MOD_SHIFT;
+		src->keys[0].mode = KEY_MODE::CV_GATE;
+		src->keys[0].high = true;
+		src->keys[0].data = "hello";
 
-	src->keys[3].button = 1;
-	src->keys[3].key = -1;
-	src->keys[3].mods = RACK_MOD_CTRL;
-	src->keys[3].mode = KEY_MODE::CV_GATE;
-	src->keys[3].high = false;
-	src->keys[3].data = "";
+		json_t* rootJ = src->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		REQUIRE(json_is_object(rootJ));
 
-	json_t* rootJ = src->dataToJson();
-	REQUIRE_NOTHROW(dst->dataFromJson(rootJ));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		REQUIRE(panelThemeJ != nullptr);
+		REQUIRE(json_integer_value(panelThemeJ) == 3);
 
-	REQUIRE(dst->panelTheme == 5);
-	REQUIRE(dst->keys[0].button == -1);
-	// keyFix converts numpad keys to their non-numpad equivalents
-	REQUIRE(dst->keys[0].key == GLFW_KEY_5);
-	REQUIRE(dst->keys[0].mods == (GLFW_MOD_ALT | GLFW_MOD_SHIFT));
-	REQUIRE(dst->keys[0].mode == KEY_MODE::S_ZOOM_OUT);
-	REQUIRE(dst->keys[0].high == true);
-	REQUIRE(dst->keys[0].data == "abc");
+		// The keys array must be serialized with one entry per port
+		json_t* keysJ = json_object_get(rootJ, "keys");
+		REQUIRE(keysJ != nullptr);
+		REQUIRE(json_array_size(keysJ) == STROKE_PORTS);
 
-	REQUIRE(dst->keys[3].button == 1);
-	REQUIRE(dst->keys[3].key == -1);
-	REQUIRE(dst->keys[3].mods == RACK_MOD_CTRL);
-	REQUIRE(dst->keys[3].mode == KEY_MODE::CV_GATE);
-	REQUIRE(dst->keys[3].high == false);
+		json_t* key0J = json_array_get(keysJ, 0);
+		REQUIRE(key0J != nullptr);
+		REQUIRE(json_integer_value(json_object_get(key0J, "button")) == 2);
+		REQUIRE(json_integer_value(json_object_get(key0J, "key")) == GLFW_KEY_A);
+		REQUIRE(json_integer_value(json_object_get(key0J, "mods")) == GLFW_MOD_SHIFT);
+		REQUIRE(json_integer_value(json_object_get(key0J, "mode")) == (int)KEY_MODE::CV_GATE);
+		REQUIRE(json_boolean_value(json_object_get(key0J, "high")) == true);
+		REQUIRE(std::string(json_string_value(json_object_get(key0J, "data"))) == "hello");
 
-	json_decref(rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("panelTheme round-trips") {
+		src->panelTheme = 5;
+		dst->panelTheme = 0;
+		json_t* j = src->dataToJson();
+		dst->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(dst->panelTheme == 5);
+	}
+
+	SECTION("Key slots (keys array) round-trip") {
+		src->panelTheme = 5;
+		src->keys[0].button = -1;
+		src->keys[0].key = GLFW_KEY_KP_5; // a numpad key to verify keyFix runs on load
+		src->keys[0].mods = GLFW_MOD_ALT | GLFW_MOD_SHIFT;
+		src->keys[0].mode = KEY_MODE::S_ZOOM_OUT;
+		src->keys[0].high = true;
+		src->keys[0].data = "abc";
+
+		src->keys[3].button = 1;
+		src->keys[3].key = -1;
+		src->keys[3].mods = RACK_MOD_CTRL;
+		src->keys[3].mode = KEY_MODE::CV_GATE;
+		src->keys[3].high = false;
+		src->keys[3].data = "";
+
+		// A third slot exercises the full array, not just [0]/[3]
+		src->keys[7].button = 0;
+		src->keys[7].key = GLFW_KEY_B;
+		src->keys[7].mods = GLFW_MOD_SHIFT;
+		src->keys[7].mode = KEY_MODE::CV_TRIGGER;
+		src->keys[7].high = true;
+		src->keys[7].data = "slot7";
+
+		json_t* rootJ = src->dataToJson();
+		REQUIRE_NOTHROW(dst->dataFromJson(rootJ));
+
+		REQUIRE(dst->panelTheme == 5);
+		REQUIRE(dst->keys[0].button == -1);
+		// keyFix converts numpad keys to their non-numpad equivalents
+		REQUIRE(dst->keys[0].key == GLFW_KEY_5);
+		REQUIRE(dst->keys[0].mods == (GLFW_MOD_ALT | GLFW_MOD_SHIFT));
+		REQUIRE(dst->keys[0].mode == KEY_MODE::S_ZOOM_OUT);
+		REQUIRE(dst->keys[0].high == true);
+		REQUIRE(dst->keys[0].data == "abc");
+
+		REQUIRE(dst->keys[3].button == 1);
+		REQUIRE(dst->keys[3].key == -1);
+		REQUIRE(dst->keys[3].mods == RACK_MOD_CTRL);
+		REQUIRE(dst->keys[3].mode == KEY_MODE::CV_GATE);
+		REQUIRE(dst->keys[3].high == false);
+
+		REQUIRE(dst->keys[7].button == 0);
+		REQUIRE(dst->keys[7].key == GLFW_KEY_B);
+		REQUIRE(dst->keys[7].mods == GLFW_MOD_SHIFT);
+		REQUIRE(dst->keys[7].mode == KEY_MODE::CV_TRIGGER);
+		REQUIRE(dst->keys[7].high == true);
+		REQUIRE(dst->keys[7].data == "slot7");
+
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(src);
 	Test::destroyModule(dst);
 }
@@ -199,6 +238,70 @@ TEST_CASE("dataFromJson handles empty JSON object", "[Stroke][JSON]") {
 	}
 
 	json_decref(emptyJ);
+	Test::destroyModule(module);
+}
+
+TEST_CASE("dataFromJson tolerates a keys array shorter than PORTS", "[Stroke][JSON][bug]") {
+	// Review §2. keysJ is never null-checked and json_array_get returns NULL
+	// past the end; jansson's null-tolerant accessors keep this from crashing.
+	// Slots beyond the array must retain their prior values.
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+
+	for (int i = 0; i < STROKE_PORTS; i++) {
+		module->keys[i].mode = KEY_MODE::CV_TOGGLE;
+		module->keys[i].data = "prior";
+	}
+
+	json_t* rootJ = json_object();
+	json_t* keysJ = json_array();
+	// Only two entries for a ten-slot module.
+	for (int i = 0; i < 2; i++) {
+		json_t* keyJ = json_object();
+		json_object_set_new(keyJ, "key", json_integer(GLFW_KEY_A + i));
+		json_object_set_new(keyJ, "mode", json_integer((int)KEY_MODE::CV_GATE));
+		json_object_set_new(keyJ, "data", json_string("loaded"));
+		json_array_append_new(keysJ, keyJ);
+	}
+	json_object_set_new(rootJ, "keys", keysJ);
+
+	REQUIRE_NOTHROW(module->dataFromJson(rootJ));
+
+	for (int i = 0; i < 2; i++) {
+		REQUIRE(module->keys[i].key == GLFW_KEY_A + i);
+		REQUIRE(module->keys[i].mode == KEY_MODE::CV_GATE);
+		REQUIRE(module->keys[i].data == "loaded");
+	}
+	for (int i = 2; i < STROKE_PORTS; i++) {
+		REQUIRE(module->keys[i].mode == KEY_MODE::CV_TOGGLE);
+		REQUIRE(module->keys[i].data == "prior");
+	}
+
+	json_decref(rootJ);
+	Test::destroyModule(module);
+}
+
+TEST_CASE("dataFromJson accepts an out-of-range mode without validation", "[Stroke][JSON][bug]") {
+	// Review §8. The mode integer is cast straight to KEY_MODE (Stroke.cpp:218),
+	// so a retired or corrupt value survives load and lands in a state with no
+	// menu entry. A fix should map unknown modes to KEY_MODE::OFF.
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+
+	json_t* rootJ = json_object();
+	json_t* keysJ = json_array();
+	json_t* keyJ = json_object();
+	json_object_set_new(keyJ, "key", json_integer(GLFW_KEY_A));
+	json_object_set_new(keyJ, "mode", json_integer(9999));
+	json_array_append_new(keysJ, keyJ);
+	json_object_set_new(rootJ, "keys", keysJ);
+
+	REQUIRE_NOTHROW(module->dataFromJson(rootJ));
+	REQUIRE((int)module->keys[0].mode == 9999);
+
+	// process() falls through its switch, so the output stays silent.
+	module->process(Test::makeProcessArgs(1));
+	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 0].getVoltage() == 0.f);
+
+	json_decref(rootJ);
 	Test::destroyModule(module);
 }
 
@@ -1228,5 +1331,509 @@ TEST_CASE("KeyContainer::draw handles keyDisable for disabled modes", "[Stroke][
 	REQUIRE(module->keyTempDisable == nullptr);
 
 	APP->scene->rack->removeChild(&kc);
+	Test::destroyModule(module);
+}
+
+
+// Event handling — onHoverKey / onButton
+//
+// These drive KeyContainer's real event entry points rather than poking
+// keyTemp* directly. Events are built by hand (Rack's EventState is not
+// usable headless for synthetic dispatch), so each test constructs the
+// event, sets a context, and calls the handler directly — which is exactly
+// what Rack's dispatcher does after hit-testing.
+
+// Builds a HoverKey event with an owned context. The context must outlive the
+// call, so callers keep it on the stack.
+static event::HoverKey makeHoverKey(EventContext* c, int key, int mods, int action) {
+	event::HoverKey e;
+	e.context = c;
+	e.key = key;
+	e.scancode = 0;
+	e.keyName = "";
+	e.mods = mods;
+	e.action = action;
+	e.pos = Vec(0.f, 0.f);
+	return e;
+}
+
+static event::Button makeButton(EventContext* c, int button, int mods, int action) {
+	event::Button e;
+	e.context = c;
+	e.button = button;
+	e.mods = mods;
+	e.action = action;
+	e.pos = Vec(0.f, 0.f);
+	return e;
+}
+
+TEST_CASE("onHoverKey fires keyEnable for a matching key and modifiers", "[Stroke][event][key]") {
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	module->keys[0].key = GLFW_KEY_A;
+	module->keys[0].mods = GLFW_MOD_SHIFT;
+	module->keys[0].mode = KEY_MODE::CV_GATE;
+
+	EventContext c;
+	event::HoverKey e = makeHoverKey(&c, GLFW_KEY_A, GLFW_MOD_SHIFT, GLFW_PRESS);
+	kc.onHoverKey(e);
+
+	REQUIRE(module->keys[0].high == true);
+	REQUIRE(e.isConsumed());
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("onHoverKey ignores a matching key with the wrong modifiers", "[Stroke][event][key]") {
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	module->keys[0].key = GLFW_KEY_A;
+	module->keys[0].mods = GLFW_MOD_SHIFT;
+	module->keys[0].mode = KEY_MODE::CV_GATE;
+
+	// Same key, no modifier — must not fire.
+	EventContext c;
+	event::HoverKey e = makeHoverKey(&c, GLFW_KEY_A, 0, GLFW_PRESS);
+	kc.onHoverKey(e);
+
+	REQUIRE(module->keys[0].high == false);
+	REQUIRE_FALSE(e.isConsumed());
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("onHoverKey strips non-ALT/CTRL/SHIFT modifier bits before matching", "[Stroke][event][key]") {
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	module->keys[0].key = GLFW_KEY_A;
+	module->keys[0].mods = GLFW_MOD_SHIFT;
+	module->keys[0].mode = KEY_MODE::CV_GATE;
+
+	// NUM_LOCK set in addition to SHIFT — must still match (regression guard
+	// for the Num Lock bug fixed in v1.9.0, issue #220).
+	EventContext c;
+	event::HoverKey e = makeHoverKey(&c, GLFW_KEY_A, GLFW_MOD_SHIFT | GLFW_MOD_NUM_LOCK, GLFW_PRESS);
+	kc.onHoverKey(e);
+
+	REQUIRE(module->keys[0].high == true);
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("onHoverKey applies keyFix so numpad keys match their plain binding", "[Stroke][event][key]") {
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	// Bound to plain "5"; pressing numpad-5 must match (issue #220).
+	module->keys[0].key = GLFW_KEY_5;
+	module->keys[0].mods = 0;
+	module->keys[0].mode = KEY_MODE::CV_GATE;
+
+	EventContext c;
+	event::HoverKey e = makeHoverKey(&c, GLFW_KEY_KP_5, 0, GLFW_PRESS);
+	kc.onHoverKey(e);
+
+	REQUIRE(module->keys[0].high == true);
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("onHoverKey release clears a gate", "[Stroke][event][key]") {
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	module->keys[0].key = GLFW_KEY_A;
+	module->keys[0].mods = 0;
+	module->keys[0].mode = KEY_MODE::CV_GATE;
+
+	EventContext c1;
+	event::HoverKey press = makeHoverKey(&c1, GLFW_KEY_A, 0, GLFW_PRESS);
+	kc.onHoverKey(press);
+	REQUIRE(module->keys[0].high == true);
+
+	EventContext c2;
+	event::HoverKey release = makeHoverKey(&c2, GLFW_KEY_A, 0, GLFW_RELEASE);
+	kc.onHoverKey(release);
+	REQUIRE(module->keys[0].high == false);
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("onHoverKey release ignores modifiers, so a modified binding is cleared by a bare release", "[Stroke][event][key]") {
+	// Documents the press/release asymmetry: press matches key AND mods
+	// (Stroke.cpp:1130) but release matches key only (Stroke.cpp:1147).
+	// Consequence: two slots on the same key with different modifiers
+	// interfere — releasing either clears both gates.
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	// Slot 0: Shift+A. Slot 1: bare A. Both gates.
+	module->keys[0].key = GLFW_KEY_A;
+	module->keys[0].mods = GLFW_MOD_SHIFT;
+	module->keys[0].mode = KEY_MODE::CV_GATE;
+	module->keys[1].key = GLFW_KEY_A;
+	module->keys[1].mods = 0;
+	module->keys[1].mode = KEY_MODE::CV_GATE;
+
+	// Press Shift+A: only slot 0 should go high.
+	EventContext c1;
+	event::HoverKey press = makeHoverKey(&c1, GLFW_KEY_A, GLFW_MOD_SHIFT, GLFW_PRESS);
+	kc.onHoverKey(press);
+	REQUIRE(module->keys[0].high == true);
+	REQUIRE(module->keys[1].high == false);
+
+	// Release bare A (user let go of Shift first): clears slot 0 as well,
+	// because the release path does not compare modifiers.
+	EventContext c2;
+	event::HoverKey release = makeHoverKey(&c2, GLFW_KEY_A, 0, GLFW_RELEASE);
+	kc.onHoverKey(release);
+	REQUIRE(module->keys[0].high == false);
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("onHoverKey held routes to keyHeld", "[Stroke][event][key]") {
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	module->keys[0].key = GLFW_KEY_A;
+	module->keys[0].mods = 0;
+	module->keys[0].mode = KEY_MODE::S_SCROLL_LEFT;
+
+	EventContext c;
+	event::HoverKey e = makeHoverKey(&c, GLFW_KEY_A, 0, RACK_HELD);
+	kc.onHoverKey(e);
+
+	REQUIRE(module->keyTempHeld == &module->keys[0]);
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("onHoverKey does nothing while the module is bypassed", "[Stroke][event][key]") {
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::registerModule(module);
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	module->keys[0].key = GLFW_KEY_A;
+	module->keys[0].mods = 0;
+	module->keys[0].mode = KEY_MODE::CV_GATE;
+
+	APP->engine->bypassModule(module, true);
+
+	EventContext c;
+	event::HoverKey e = makeHoverKey(&c, GLFW_KEY_A, 0, GLFW_PRESS);
+	kc.onHoverKey(e);
+
+	REQUIRE(module->keys[0].high == false);
+	REQUIRE_FALSE(e.isConsumed());
+
+	APP->engine->bypassModule(module, false);
+	Test::unregisterModule(module);
+	Test::destroyModule(module);
+}
+
+// NOTE on key choice in the learn tests below.
+//
+// The learn paths gate on keyName() being non-empty (Stroke.cpp:1110, :1119).
+// keyName() asks glfwGetKeyName() first and only falls back to its own switch
+// for keys GLFW does not name. Headless — as these tests run — GLFW has no
+// window or keyboard layout, so glfwGetKeyName() returns NULL for *every*
+// printable key: keyName(GLFW_KEY_A) is "" under test but "A" in a real Rack.
+// Learn tests must therefore use keys covered by the fallback switch (F1,
+// SPACE, arrows, …), which resolve identically headless and windowed.
+
+TEST_CASE("onHoverKey in learn mode captures key and modifiers instead of firing", "[Stroke][event][learn]") {
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	REQUIRE_FALSE(keyName(GLFW_KEY_F1).empty()); // guards the headless caveat above
+
+	// Pre-existing button binding must be cleared when a key is learned.
+	module->keys[2].button = 4;
+	module->keys[2].mode = KEY_MODE::CV_GATE;
+	kc.enableLearn(2);
+	REQUIRE(kc.learnIdx == 2);
+
+	EventContext c;
+	event::HoverKey e = makeHoverKey(&c, GLFW_KEY_F1, GLFW_MOD_ALT, GLFW_PRESS);
+	kc.onHoverKey(e);
+
+	REQUIRE(module->keys[2].key == GLFW_KEY_F1);
+	REQUIRE(module->keys[2].mods == GLFW_MOD_ALT);
+	REQUIRE(module->keys[2].button == -1);
+	// Learn is a one-shot: the index resets.
+	REQUIRE(kc.learnIdx == -1);
+	// Learning must not also fire the command.
+	REQUIRE(module->keys[2].high == false);
+	REQUIRE(e.isConsumed());
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("onHoverKey learn ignores keys with no display name", "[Stroke][event][learn]") {
+	// keyName() doubles as the bindability predicate (Stroke.cpp:1119): a key
+	// it cannot name is silently unbindable and learn mode stays armed.
+	// GLFW_KEY_MENU is absent from both GLFW's names and the fallback switch,
+	// so it is unnamed in a real Rack too — not just headless.
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	REQUIRE(keyName(GLFW_KEY_MENU).empty());
+
+	kc.enableLearn(0);
+	EventContext c;
+	event::HoverKey e = makeHoverKey(&c, GLFW_KEY_MENU, 0, GLFW_PRESS);
+	kc.onHoverKey(e);
+
+	REQUIRE(module->keys[0].key == -1);
+	REQUIRE(kc.learnIdx == 0); // still armed
+	REQUIRE_FALSE(e.isConsumed());
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("onHoverKey learn callback takes precedence over slot learning", "[Stroke][event][learn]") {
+	// The two-argument enableLearn arms a callback used by "Learn hotkey" in
+	// the Send-hotkey-to-module submenu; it must not overwrite keys[idx].
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	int gotKey = -1, gotMods = -1;
+	kc.enableLearn(0, [&](int key, int, int mods) { gotKey = key; gotMods = mods; });
+
+	EventContext c;
+	event::HoverKey e = makeHoverKey(&c, GLFW_KEY_SPACE, RACK_MOD_CTRL, GLFW_PRESS);
+	kc.onHoverKey(e);
+
+	REQUIRE(gotKey == GLFW_KEY_SPACE);
+	REQUIRE(gotMods == RACK_MOD_CTRL);
+	// The slot binding itself is untouched.
+	REQUIRE(module->keys[0].key == -1);
+	// Both the callback and the learn index are cleared afterwards.
+	REQUIRE_FALSE(static_cast<bool>(kc.learnCallback));
+	REQUIRE(kc.learnIdx == -1);
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("onButton fires for a mapped extra mouse button", "[Stroke][event][button]") {
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	// Button 3 (>2) needs no modifier to be handled.
+	module->keys[0].button = 3;
+	module->keys[0].key = -1;
+	module->keys[0].mods = 0;
+	module->keys[0].mode = KEY_MODE::CV_GATE;
+
+	EventContext c;
+	event::Button e = makeButton(&c, 3, 0, GLFW_PRESS);
+	kc.onButton(e);
+
+	REQUIRE(module->keys[0].high == true);
+	// Buttons >2 are consumed so Rack does not also act on them.
+	REQUIRE(e.isConsumed());
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("onButton requires a modifier for buttons 0/1/2 and never consumes them", "[Stroke][event][button]") {
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	module->keys[0].button = GLFW_MOUSE_BUTTON_LEFT;
+	module->keys[0].key = -1;
+	module->keys[0].mods = GLFW_MOD_SHIFT;
+	module->keys[0].mode = KEY_MODE::CV_GATE;
+
+	// Unmodified left click: the guard at Stroke.cpp:1061 rejects it entirely.
+	EventContext c1;
+	event::Button plain = makeButton(&c1, GLFW_MOUSE_BUTTON_LEFT, 0, GLFW_PRESS);
+	kc.onButton(plain);
+	REQUIRE(module->keys[0].high == false);
+	REQUIRE_FALSE(plain.isConsumed());
+
+	// Shift+left click matches — but must NOT be consumed, so normal Rack
+	// interaction (dragging, selection) still works.
+	EventContext c2;
+	event::Button modified = makeButton(&c2, GLFW_MOUSE_BUTTON_LEFT, GLFW_MOD_SHIFT, GLFW_PRESS);
+	kc.onButton(modified);
+	REQUIRE(module->keys[0].high == true);
+	REQUIRE_FALSE(modified.isConsumed());
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("onButton in learn mode captures the button and clears any key binding", "[Stroke][event][learn]") {
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	module->keys[1].key = GLFW_KEY_A;
+	kc.enableLearn(1);
+
+	EventContext c;
+	event::Button e = makeButton(&c, 4, GLFW_MOD_ALT, GLFW_PRESS);
+	kc.onButton(e);
+
+	REQUIRE(module->keys[1].button == 4);
+	REQUIRE(module->keys[1].mods == GLFW_MOD_ALT);
+	REQUIRE(module->keys[1].key == -1);
+	REQUIRE(kc.learnIdx == -1);
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("Two slots bound to the same key both fire on one press", "[Stroke][event][key]") {
+	// The press loop has no early exit (Stroke.cpp:1129-1134), so duplicate
+	// bindings all fire. The manual states "only one of them will work",
+	// which is not what the code does.
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+
+	for (int i = 0; i < 2; i++) {
+		module->keys[i].key = GLFW_KEY_A;
+		module->keys[i].mods = 0;
+		module->keys[i].mode = KEY_MODE::CV_GATE;
+	}
+
+	EventContext c;
+	event::HoverKey e = makeHoverKey(&c, GLFW_KEY_A, 0, GLFW_PRESS);
+	kc.onHoverKey(e);
+
+	REQUIRE(module->keys[0].high == true);
+	REQUIRE(module->keys[1].high == true);
+
+	Test::destroyModule(module);
+}
+
+
+// Bug pins — see var/Stroke_review.md
+//
+// These record current, incorrect behaviour so a fix trips the test.
+
+TEST_CASE("CmdCableOpacity is stuck when the saved value is zero", "[Stroke][cmd][cable][bug]") {
+	// Review §4. The menu action seeds data = "0" (Stroke.cpp:1599). If cable
+	// opacity is already 0 on first use, the restore branch sets it to
+	// stof("0") == 0 and never records a non-zero value — the toggle can never
+	// escape. Pinning current behaviour; a fix should make this test fail.
+	float saved = settings::cableOpacity;
+
+	std::string data = "0";
+	CmdCableOpacity cmd;
+	cmd.data = &data;
+	settings::cableOpacity = 0.f;
+
+	for (int i = 0; i < 5; i++) {
+		cmd.initialCmd(KEY_MODE::S_CABLE_OPACITY);
+		REQUIRE(settings::cableOpacity == 0.f);
+		REQUIRE(data == "0");
+	}
+
+	settings::cableOpacity = saved;
+}
+
+TEST_CASE("A retired KEY_MODE loaded from a v1 preset dispatches to nothing", "[Stroke][JSON][bug]") {
+	// Review §8. S_FRAMERATE/S_BUSBOARD/S_ENGINE_PAUSE are unsupported in v2:
+	// their processCmd calls are commented out, so draw() clears keyTemp and
+	// constructs no command — the hotkey is silently inert.
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	KeyContainer<STROKE_PORTS> kc;
+	kc.module = module;
+	APP->scene->rack->addChild(&kc);
+
+	module->keys[0].key = GLFW_KEY_A;
+	module->keys[0].mode = KEY_MODE::S_ENGINE_PAUSE;
+	module->keyEnable(0);
+	REQUIRE(module->keyTemp == &module->keys[0]);
+
+	widget::Widget::DrawArgs dargs;
+	dargs.vg = nullptr;
+	dargs.clipBox = math::Rect();
+	kc.draw(dargs);
+
+	REQUIRE(module->keyTemp == nullptr);
+	REQUIRE(kc.previousCmd == nullptr);
+
+	APP->scene->rack->removeChild(&kc);
+	Test::destroyModule(module);
+}
+
+TEST_CASE("CmdParamCopyPaste clipboard persists across command instances", "[Stroke][cmd][param][bug]") {
+	// Review §10. The clipboard lives in function-local statics, so it is
+	// shared by every Stroke instance in every patch and is never reset.
+	// Without a hovered ParamWidget the function early-returns true, which is
+	// what pins the "no widget" contract here.
+	CmdParamCopyPaste a;
+	CmdParamCopyPaste b;
+
+	REQUIRE(CmdParamCopyPaste::cmd(KEY_MODE::S_PARAM_COPY) == true);
+	REQUIRE(CmdParamCopyPaste::cmd(KEY_MODE::S_PARAM_PASTE) == true);
+
+	// followUpCmd only acts on PASTE; every other mode clears the command.
+	REQUIRE(a.followUpCmd(KEY_MODE::S_PARAM_COPY) == true);
+	REQUIRE(b.followUpCmd(KEY_MODE::S_ZOOM_OUT) == true);
+}
+
+
+// Light state
+
+TEST_CASE("process drives the trigger light through the clock divider", "[Stroke][light]") {
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+
+	module->keys[0].key = GLFW_KEY_A;
+	module->keys[0].mode = KEY_MODE::CV_TRIGGER;
+
+	// The light divider only updates every sampleRate/100 samples, and
+	// ClockDividerEx::setDivision seeds the phase randomly, so run enough
+	// samples to guarantee at least one tick.
+	module->keyEnable(0);
+	for (int i = 0; i < 1000; i++) {
+		module->process(Test::makeProcessArgs(i));
+	}
+	REQUIRE(module->lights[StrokeModule<STROKE_PORTS>::LIGHT_TRIG + 0].getBrightness() > 0.f);
+
+	// lightPulse was triggered for 0.2s; after well beyond that it returns to 0.
+	for (int i = 0; i < 44100; i++) {
+		module->process(Test::makeProcessArgs(1000 + i));
+	}
+	REQUIRE(module->lights[StrokeModule<STROKE_PORTS>::LIGHT_TRIG + 0].getBrightness() == 0.f);
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("Trigger light fires even for command modes that emit no CV", "[Stroke][light]") {
+	// keyEnable triggers lightPulse unconditionally (Stroke.cpp:166), so a
+	// command-mode hotkey still gives visual feedback on the panel.
+	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+
+	module->keys[0].key = GLFW_KEY_A;
+	module->keys[0].mode = KEY_MODE::S_ZOOM_OUT;
+
+	module->keyEnable(0);
+	for (int i = 0; i < 1000; i++) {
+		module->process(Test::makeProcessArgs(i));
+	}
+
+	REQUIRE(module->lights[StrokeModule<STROKE_PORTS>::LIGHT_TRIG + 0].getBrightness() > 0.f);
+	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 0].getVoltage() == 0.f);
+
 	Test::destroyModule(module);
 }

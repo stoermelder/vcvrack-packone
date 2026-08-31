@@ -2,6 +2,7 @@
 #include <rack.hpp>
 #include <sstream>
 #include "../../utils/TaskWorker.hpp"
+#include "../../vcv/api.hpp"
 #include "SirenPaths.hpp"
 #include "SirenMetadata.hpp"
 #include "SirenAudioStream.hpp"
@@ -324,7 +325,7 @@ struct DataSource {
 	// directory if necessary.
 	virtual void saveWaveformCache(const std::string& id, const AudioWaveformCache& cache) const {
 		std::string path = cacheFilePathFor(id);
-		rack::system::createDirectories(rack::system::getDirectory(path));
+		vcv::fs::createDirectories(vcv::fs::getDirectory(path));
 		saveWaveformCacheFile(path, cache);
 	}
 
@@ -402,7 +403,10 @@ inline void applyRepitch(std::vector<float>& samples, int channels, int sampleRa
 
 // Decode the trimmed region from src/id and shift its pitch by `semitones`
 // without changing its duration. Runs on the worker thread.
-// trimIn/trimOut are normalised [0, 1] over the full file.
+// trimIn/trimOut are normalised [0, 1] over the full file. Preserves the
+// source's full channel count (e.g. 5.1 surround stays 6-channel) — playback
+// downmixes to stereo at the fill-thread stage, not here, and applyRepitch()
+// is channel-count agnostic.
 inline AudioPreviewResult buildRepitchPreview(DataSource& src, const std::string& id,
 		float trimIn, float trimOut, float semitones) {
 	AudioPreviewResult result;
@@ -418,8 +422,7 @@ inline AudioPreviewResult buildRepitchPreview(DataSource& src, const std::string
 	int64_t trimFrames = endFrame - startFrame;
 	if (trimFrames <= 0) return result;
 
-	// Cap at stereo to match the downstream fill-thread resampler.
-	int ch = std::min(info.channels, 2);
+	int ch = info.channels;
 	result.samples.resize((size_t)(trimFrames * ch));
 
 	auto stream = src.openAudioStream(id);
@@ -631,7 +634,10 @@ inline void applyLoopCrossfade(std::vector<float>& samples, int channels, int sa
 
 // Decode the trimmed region from src/id, apply rotation+crossfade, and return
 // the result as an in-memory buffer. Runs on the worker thread.
-// trimIn/trimOut are normalised [0, 1] over the full file.
+// trimIn/trimOut are normalised [0, 1] over the full file. Preserves the
+// source's full channel count (e.g. 5.1 surround stays 6-channel) — playback
+// downmixes to stereo at the fill-thread stage, not here, and
+// applyLoopCrossfade() is channel-count agnostic.
 inline AudioPreviewResult buildLoopPreview(DataSource& src, const std::string& id,
 		float trimIn, float trimOut, float crossfadeDuration) {
 	AudioPreviewResult result;
@@ -647,8 +653,7 @@ inline AudioPreviewResult buildLoopPreview(DataSource& src, const std::string& i
 	int64_t trimFrames = endFrame - startFrame;
 	if (trimFrames <= 0) return result;
 
-	// Cap at stereo to match the downstream fill-thread resampler.
-	int ch = std::min(info.channels, 2);
+	int ch = info.channels;
 	result.samples.resize((size_t)(trimFrames * ch));
 
 	auto stream = src.openAudioStream(id);

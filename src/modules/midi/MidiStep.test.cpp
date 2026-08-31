@@ -67,6 +67,140 @@ TEST_CASE("Preset JSON null-guards", "[MidiStep][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("JSON round-trip preserves state", "[MidiStep][JSON]") {
+	SECTION("Scalars and remapped channels") {
+		auto module = Test::createModule<MidiStepModule>("MidiStep");
+		module->mode = MODE::AKAI_MPD218;
+		module->polyphonicOutput = true;
+		module->panelTheme = 1;
+		// Remap a couple of channels.
+		module->learningId = 0;
+		module->learnCC(100);
+		module->learningId = 3;
+		module->learnCC(64);
+
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+
+		auto restored = Test::createModule<MidiStepModule>("MidiStep");
+		restored->dataFromJson(rootJ);
+
+		REQUIRE(restored->mode == MODE::AKAI_MPD218);
+		REQUIRE(restored->panelTheme == 1);
+		REQUIRE(restored->polyphonicOutput == true);
+		REQUIRE(restored->learnedCcs[0] == 100);
+		REQUIRE(restored->ccs[100] == 0);
+		REQUIRE(restored->learnedCcs[3] == 64);
+		REQUIRE(restored->ccs[64] == 3);
+
+		json_decref(rootJ);
+		Test::destroyModule(module);
+		Test::destroyModule(restored);
+	}
+
+	SECTION("Entire ccs array including unmapped (-1) channels") {
+		auto module = Test::createModule<MidiStepModule>("MidiStep");
+		// Remap every channel to a distinct high CC number...
+		for (int i = 0; i < MidiStepModule::CHANNELS; i++) {
+			module->learningId = i;
+			module->learnCC(100 + i);
+		}
+		// ...then steal channel 1's CC onto channel 2, leaving channel 1 unmapped.
+		module->learningId = 2;
+		module->learnCC(module->learnedCcs[1]);
+
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+
+		auto restored = Test::createModule<MidiStepModule>("MidiStep");
+		restored->dataFromJson(rootJ);
+
+		// Every slot survives, including the unmapped entry.
+		for (int i = 0; i < MidiStepModule::CHANNELS; i++) {
+			CATCH_INFO("Channel " << i);
+			REQUIRE(restored->learnedCcs[i] == module->learnedCcs[i]);
+		}
+		// The reverse mapping matches exactly, unmapped CCs included.
+		for (int ccNum = 0; ccNum < 128; ccNum++) {
+			REQUIRE(restored->ccs[ccNum] == module->ccs[ccNum]);
+		}
+
+		// The restored map routes pulses identically to the original.
+		module->mode = restored->mode = MODE::BEATSTEP_R1;
+		module->processMessage(cc(105, 70));
+		restored->processMessage(cc(105, 70));
+		for (int i = 0; i < MidiStepModule::CHANNELS; i++) {
+			REQUIRE(restored->incPulseCount[i] == module->incPulseCount[i]);
+		}
+		REQUIRE(restored->incPulseCount[5] == 6);
+
+		json_decref(rootJ);
+		Test::destroyModule(module);
+		Test::destroyModule(restored);
+	}
+
+	SECTION("Nested midi input object") {
+		auto module = Test::createModule<MidiStepModule>("MidiStep");
+		module->midiInput.channel = 7;
+
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+
+		auto restored = Test::createModule<MidiStepModule>("MidiStep");
+		restored->dataFromJson(rootJ);
+
+		REQUIRE(restored->midiInput.channel == 7);
+
+		json_decref(rootJ);
+		Test::destroyModule(module);
+		Test::destroyModule(restored);
+	}
+}
+
+
+TEST_CASE("dataFromJson drops out-of-range CC numbers in ccs array", "[MidiStep][JSON]") {
+	// ccs entries index the 128-element ccs[] vector, so values from a corrupt
+	// preset must be range-checked before use (REQUIRE_NOTHROW alone would not
+	// catch an out-of-bounds write: it is UB, not an exception).
+	auto module = Test::createModule<MidiStepModule>("MidiStep");
+
+	json_t* rootJ = json_object();
+	json_t* ccsJ = json_array();
+	for (int i = 0; i < MidiStepModule::CHANNELS; i++) {
+		// Entries 0/1 are out-of-range; the rest keep their default mapping.
+		json_array_append_new(ccsJ, json_integer(i == 0 ? 9999 : (i == 1 ? -5 : i)));
+	}
+	json_object_set_new(rootJ, "ccs", ccsJ);
+
+	module->dataFromJson(rootJ);
+
+	// Out-of-range entries are treated as unmapped.
+	REQUIRE(module->learnedCcs[0] == -1);
+	REQUIRE(module->learnedCcs[1] == -1);
+	// Valid entries still route: CC 2 drives channel 2.
+	REQUIRE(module->ccs[2] == 2);
+	module->mode = MODE::BEATSTEP_R1;
+	module->processMessage(cc(2, 70));
+	REQUIRE(module->incPulseCount[2] == 6);
+
+	json_decref(rootJ);
 	Test::destroyModule(module);
 }
 
@@ -148,6 +282,19 @@ TEST_CASE("Ignores non-CC messages", "[MidiStep]") {
 	auto module = Test::createModule<MidiStepModule>("MidiStep");
 	// Note-on, status 0x9 — should be ignored entirely.
 	module->processMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
+	for (int i = 0; i < MidiStepModule::CHANNELS; i++) {
+		REQUIRE(module->incPulseCount[i] == 0);
+		REQUIRE(module->decPulseCount[i] == 0);
+	}
+	Test::destroyModule(module);
+}
+
+
+TEST_CASE("Ignores unmapped CC numbers", "[MidiStep]") {
+	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	module->mode = MODE::BEATSTEP_R1;
+	// Only CCs 0..15 are mapped by default; CC 64 has no channel.
+	module->processMessage(cc(64, 70));
 	for (int i = 0; i < MidiStepModule::CHANNELS; i++) {
 		REQUIRE(module->incPulseCount[i] == 0);
 		REQUIRE(module->decPulseCount[i] == 0);
@@ -267,34 +414,21 @@ TEST_CASE("MIDI queue is processed", "[MidiStep]") {
 }
 
 
-TEST_CASE("JSON round-trip", "[MidiStep][JSON]") {
+TEST_CASE("processBypass drains the MIDI queue without producing triggers", "[MidiStep]") {
 	auto module = Test::createModule<MidiStepModule>("MidiStep");
-	module->mode = MODE::AKAI_MPD218;
-	module->polyphonicOutput = true;
-	module->panelTheme = 1;
-	// Remap a couple of channels.
-	module->learningId = 0;
-	module->learnCC(100);
-	module->learningId = 3;
-	module->learnCC(64);
+	module->mode = MODE::BEATSTEP_R1;
 
-	json_t* rootJ = module->dataToJson();
-	REQUIRE(rootJ != nullptr);
+	// Push a CC that would normally produce an increment pulse.
+	module->midiInput.onMessage(cc(0, 70));
 
-	auto restored = Test::createModule<MidiStepModule>("MidiStep");
-	restored->dataFromJson(rootJ);
+	module->processBypass(Test::makeProcessArgs(1));
 
-	REQUIRE(restored->mode == MODE::AKAI_MPD218);
-	REQUIRE(restored->panelTheme == 1);
-#ifndef METAMODULE
-	REQUIRE(restored->polyphonicOutput == true);
-#endif
-	REQUIRE(restored->learnedCcs[0] == 100);
-	REQUIRE(restored->ccs[100] == 0);
-	REQUIRE(restored->learnedCcs[3] == 64);
-	REQUIRE(restored->ccs[64] == 3);
+	REQUIRE(module->incPulseCount[0] == 0);
+	REQUIRE(module->outputs[MidiStepModule::OUTPUT_INC].getVoltage() == 0.f);
 
-	json_decref(rootJ);
+	// The queue was drained by processBypass, so a following process() sees nothing.
+	module->process(Test::makeProcessArgs(2));
+	REQUIRE(module->incPulseCount[0] == 0);
+
 	Test::destroyModule(module);
-	Test::destroyModule(restored);
 }

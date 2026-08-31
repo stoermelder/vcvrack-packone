@@ -29,6 +29,7 @@
 #include "HiveGrid.hpp"
 #include <random>
 #include <chrono>
+#include <atomic>
 
 namespace StoermelderPackOne {
 namespace Hive {
@@ -133,7 +134,13 @@ struct HiveModule : Module {
 	const int numPorts = NUM_PORTS;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
-	std::geometric_distribution<int>* geoDist[NUM_PORTS] = {};
+	std::geometric_distribution<int> geoDist[NUM_PORTS]{
+		std::geometric_distribution<int>(0.35f),
+		std::geometric_distribution<int>(0.35f),
+		std::geometric_distribution<int>(0.35f),
+		std::geometric_distribution<int>(0.35f)
+	};
+	std::atomic<float> ratchetingProbAtomic[NUM_PORTS];
 	
 	typedef HexGrid <HiveCell, HiveCursor, NUM_PORTS, RADIUS, POINTY> HIVEGRID;
 
@@ -178,6 +185,7 @@ struct HiveModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < NUM_PORTS; i++) {
+			ratchetingProbAtomic[i].store(0.35f, std::memory_order_relaxed);
 			configInput(CLK_INPUT + i, string::f("Clock %i", i + 1));
 			if (i > 0) inputInfos[CLK_INPUT + i]->description = "Normalized to \"Yellow\" if not disabled on the context menu.";
 			configInput(RESET_INPUT + i, string::f("Reset %i", i + 1));
@@ -200,11 +208,6 @@ struct HiveModule : Module {
 		onReset(re);
 	}
 
-	~HiveModule() {
-		for (int i = 0; i < NUM_PORTS; i++) {
-			delete geoDist[i];
-		}
-	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
@@ -268,16 +271,20 @@ struct HiveModule : Module {
 								doPulse = random::uniform() >= 0.5f;
 								break;
 							case RATCHETMODE::DEFAULT:
-								if (geoDist[i]) multiplier[i].trigger((*geoDist[i])(randGen));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(geoDist[i](randGen));
 								break;
 							case RATCHETMODE::MULT_TWO:
-								if (geoDist[i]) multiplier[i].trigger(2 * ((*geoDist[i])(randGen) + 1));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(2 * (geoDist[i](randGen) + 1));
 								break;
 							case RATCHETMODE::MULT_THREE:
-								if (geoDist[i]) multiplier[i].trigger(3 * ((*geoDist[i])(randGen) + 1));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(3 * (geoDist[i](randGen) + 1));
 								break;
 							case RATCHETMODE::POWER_TWO:
-								if (geoDist[i]) multiplier[i].trigger(std::pow(2, (*geoDist[i])(randGen)));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(std::pow(2, geoDist[i](randGen)));
 								break;
 						}
 						break;
@@ -467,10 +474,16 @@ struct HiveModule : Module {
 	}
 
 	void ratchetingSetProb(int id, float prob = 0.35f) {
-		auto geoDistOld = geoDist[id];
-		geoDist[id] = new std::geometric_distribution<int>(prob);
-		if (geoDistOld) delete geoDistOld;
 		grid.cursor[id].ratchetingProb = prob;
+		ratchetingProbAtomic[id].store(prob, std::memory_order_release);
+	}
+
+	inline void updateRatchetingDist(int id) {
+		float newProb = ratchetingProbAtomic[id].load(std::memory_order_acquire);
+		if (newProb != grid.cursor[id].ratchetingProb) {
+			grid.cursor[id].ratchetingProb = newProb;
+			geoDist[id] = std::geometric_distribution<int>(newProb);
+		}
 	}
 
 	json_t* dataToJson() override {
@@ -548,9 +561,11 @@ struct HiveModule : Module {
 		}
 
 		json_t* mirrorsJ = json_object_get(rootJ, "mirrorCenters");
-		json_t* mirrorJ;
-		size_t mirrorIndex;
-		json_array_foreach(mirrorsJ, mirrorIndex, mirrorJ) {
+		// Bounded to the fixed-size destinations: hand-edited or corrupted
+		// patches may contain more entries than mirrorCenters[]/cursor[] hold.
+		size_t maxMirrors = std::min((size_t)6, json_array_size(mirrorsJ));
+		for (size_t mirrorIndex = 0; mirrorIndex < maxMirrors; mirrorIndex++) {
+			json_t* mirrorJ = json_array_get(mirrorsJ, mirrorIndex);
 			json_t* xJ = json_object_get(mirrorJ, "x");
 			if (xJ) grid.mirrorCenters[mirrorIndex].x = json_integer_value(xJ);
 			json_t* yJ = json_object_get(mirrorJ, "y");
@@ -560,9 +575,9 @@ struct HiveModule : Module {
 		}
 
 		json_t* portsJ = json_object_get(rootJ, "ports");
-		json_t* portJ;
-		size_t portIndex;
-		json_array_foreach(portsJ, portIndex, portJ) {
+		size_t maxPorts = std::min((size_t)NUM_PORTS, json_array_size(portsJ));
+		for (size_t portIndex = 0; portIndex < maxPorts; portIndex++) {
+			json_t* portJ = json_array_get(portsJ, portIndex);
 			json_t* qStartPosJ = json_object_get(portJ, "qStartPos");
 			if (qStartPosJ) grid.cursor[portIndex].startPos.q = json_integer_value(qStartPosJ);
 			json_t* rStartPosJ = json_object_get(portJ, "rStartPos");

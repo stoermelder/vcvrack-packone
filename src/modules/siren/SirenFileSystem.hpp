@@ -2,8 +2,9 @@
 #include <rack.hpp>
 #include "SirenDataSource.hpp"
 #include "SirenAudio.hpp"
-#include <osdialog.h>
 #include <fstream>
+#include "../../vcv/fs.hpp"
+#include "../../vcv/ui.hpp"
 
 // dr_libs — declarations only (implementations compiled in SirenDrLibs.cpp)
 #include "../../../dep/drlibs/dr_wav.h"
@@ -18,7 +19,12 @@ namespace filesystem {
 
 inline bool isSupportedAudioFile(const std::string& path) {
 	static const std::vector<std::string> SUPPORTED_EXTENSIONS = { ".wav", ".WAV", ".flac", ".FLAC", ".mp3", ".MP3" };
-	std::string ext = rack::system::getExtension(rack::system::getFilename(path));
+	std::string filename = vcv::fs::getFilename(path);
+	if (filename[0] == '.') {
+		// Ignore files beginning with dot
+		return false;
+	}
+	std::string ext = vcv::fs::getExtension(filename);
 	for (const std::string& e : SUPPORTED_EXTENSIONS) {
 		if (ext == e) return true;
 	}
@@ -61,7 +67,7 @@ inline bool isGeneratedFile(const std::string& filename) {
 
 // Decode header-only metadata (fast; does not decode PCM).
 inline bool loadAudioInfo(const std::string& path, AudioInfo& out) {
-	std::string ext = rack::system::getExtension(rack::system::getFilename(path));
+	std::string ext = vcv::fs::getExtension(vcv::fs::getFilename(path));
 	for (char& c : ext) c = (char)tolower(c);
 
 	if (ext == ".wav") {
@@ -187,12 +193,11 @@ struct FileSystemDataSource : DataSource {
 	// metadata. The metadata itself is intentionally left untouched on disk so
 	// re-adding the same root later preserves tags/favorites/BPM.
 	void cleanup() override {
-		if (isTesting()) return;
 		if (metadata->samples.empty()) return;
 
 		for (const auto& pair : metadata->samples) {
 			std::string cacheFile = cacheFilePathFor(pair.first);
-			rack::system::remove(cacheFile);
+			vcv::fs::remove(cacheFile);
 		}
 	}
 
@@ -207,7 +212,7 @@ struct FileSystemDataSource : DataSource {
 	DataSourceNode resolveNode(const std::string& relativePath) const override {
 		DataSourceNode node;
 		node.relativePath = relativePath;
-		node.name = rack::system::getFilename(relativePath);
+		node.name = vcv::fs::getFilename(relativePath);
 		node.isContainer = false;
 		node.durationSeconds = loadCachedDuration(relativePath, resolveAbsPath(relativePath));
 		return node;
@@ -236,10 +241,10 @@ struct FileSystemDataSource : DataSource {
 	std::vector<DataSourceNode> loadChildrenSync(const std::string& id, bool withAudioInfo = true) override {
 		std::vector<DataSourceNode> result;
 		std::string scanPath = root + id;
-		for (const std::string& entryPath : rack::system::getEntries(scanPath, 0)) {
+		for (const std::string& entryPath : vcv::fs::getEntries(scanPath, 0)) {
 			DataSourceNode node;
-			node.name = rack::system::getFilename(entryPath);
-			node.isContainer = rack::system::isDirectory(entryPath);
+			node.name = vcv::fs::getFilename(entryPath);
+			node.isContainer = vcv::fs::isDirectory(entryPath);
 			node.relativePath = entryPath.substr(root.size());
 			if (node.isContainer || isSupportedAudioFile(node.name)) {
 				if (!node.isContainer) {
@@ -264,10 +269,10 @@ struct FileSystemDataSource : DataSource {
 		std::string rootCopy = root;
 		worker.work([this, scanPath, rootCopy, onDone]() {
 			std::vector<DataSourceNode> result;
-			for (const std::string& entryPath : rack::system::getEntries(scanPath, 0)) {
+			for (const std::string& entryPath : vcv::fs::getEntries(scanPath, 0)) {
 				DataSourceNode node;
-				node.name = rack::system::getFilename(entryPath);
-				node.isContainer = rack::system::isDirectory(entryPath);
+				node.name = vcv::fs::getFilename(entryPath);
+				node.isContainer = vcv::fs::isDirectory(entryPath);
 				node.relativePath = entryPath.substr(rootCopy.size());
 				if (node.isContainer || isSupportedAudioFile(node.name)) {
 					if (!node.isContainer) {
@@ -286,7 +291,7 @@ struct FileSystemDataSource : DataSource {
 	}
 
 	std::string getDisplayName(const std::string& id) const override {
-		return rack::system::getFilename(id);
+		return vcv::fs::getFilename(id);
 	}
 
 	std::string getRelativePath(const std::string& id) const override {
@@ -303,7 +308,7 @@ struct FileSystemDataSource : DataSource {
 
 	std::unique_ptr<AudioStream> openAudioStream(const std::string& id) const override {
 		std::string absPath = resolveAbsPath(id);
-		std::string ext = rack::system::getExtension(rack::system::getFilename(absPath));
+		std::string ext = vcv::fs::getExtension(vcv::fs::getFilename(absPath));
 		for (char& c : ext) c = (char)tolower(c);
 
 		auto s = std::unique_ptr<FileSystemAudioStream>(new FileSystemAudioStream());
@@ -355,7 +360,7 @@ struct FileSystemDataSource : DataSource {
 			float repitchSemitones = 0.f, bool alwaysCopy = false) override {
 
 		std::string absPath = resolveAbsPath(id);
-		std::string ext = rack::system::getExtension(rack::system::getFilename(absPath));
+		std::string ext = vcv::fs::getExtension(vcv::fs::getFilename(absPath));
 		for (char& c : ext) c = (char)tolower(c);
 
 		bool needConvert = convertToWav && (ext == ".flac" || ext == ".mp3");
@@ -370,8 +375,8 @@ struct FileSystemDataSource : DataSource {
 
 		if (!needConvert && !needResample && !needTrim && !loopOnDrop && !needRepitch && !needCopy) return [absPath]() { return absPath; };
 
-		std::string dir = !outputDir.empty() ? outputDir : rack::system::getDirectory(absPath);
-		std::string fname = rack::system::getFilename(absPath);
+		std::string dir = !outputDir.empty() ? outputDir : vcv::fs::getDirectory(absPath);
+		std::string fname = vcv::fs::getFilename(absPath);
 		size_t dot = fname.rfind('.');
 		std::string stem = (dot != std::string::npos) ? fname.substr(0, dot) : fname;
 		std::string outPath = dir + "/" + stem + randomFileSuffix() + ".wav";
@@ -393,15 +398,11 @@ struct FileSystemDataSource : DataSource {
 	// intact is faster and avoids the lossy re-encode that processAudioForDrop
 	// would otherwise do (WAV float32 regardless of source format).
 	static std::string copyFileForDrop(const std::string& srcPath, const std::string& dstPath) {
-		std::ifstream in(srcPath, std::ios::binary);
-		if (!in) return srcPath;
 		// Make sure the destination directory exists; patch storage is created
 		// for us, but a user-chosen custom folder might be a brand-new path.
-		rack::system::createDirectories(rack::system::getDirectory(dstPath));
-		std::ofstream out(dstPath, std::ios::binary | std::ios::trunc);
-		if (!out) return srcPath;
-		out << in.rdbuf();
-		if (!out.good()) return srcPath;
+		vcv::fs::createDirectories(vcv::fs::getDirectory(dstPath));
+		bool r = vcv::fs::copy(srcPath, dstPath);
+		if (!r) return srcPath;
 		return dstPath;
 	}
 
@@ -432,7 +433,7 @@ struct FileSystemDataSource : DataSource {
 		if (trimFrames <= 0) return srcPath;
 
 		// Decode only the trimmed region by seeking before reading.
-		std::string ext = rack::system::getExtension(rack::system::getFilename(srcPath));
+		std::string ext = vcv::fs::getExtension(vcv::fs::getFilename(srcPath));
 		for (char& c : ext) c = (char)tolower(c);
 
 		std::vector<float> samples((size_t)(trimFrames * channels));
@@ -548,12 +549,35 @@ struct FileSystemDataSource : DataSource {
 		return dstPath;
 	}
 
+	// Adds `tag` to every audio file under `folderId`, recursing into
+	// subfolders. Runs on the UI thread; acceptable for a menu action.
+	void addTagRecursive(const std::string& folderId, const std::string& tag) {
+		for (const auto& child : loadChildrenSync(folderId, false)) {
+			if (child.isContainer) {
+				addTagRecursive(child.relativePath, tag);
+			}
+			else {
+				getMetadata()->addTag(child.relativePath, tag);
+			}
+		}
+	}
+
 	void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node, std::function<void()> onChanged) override {
+		// Shared between the new-tag text field and the tag menu items below:
+		// the typed text doubles as a live case-insensitive filter on the
+		// existing tags while still creating a new tag on enter.
+		auto tagFilter = std::make_shared<std::string>();
+
 		auto addNewTagField = [&](std::function<void(const std::string&)> applyTag) {
 			struct NewTagField : ui::TextField {
 				FileSystemDataSource* src;
 				std::function<void()> onChanged;
 				std::function<void(const std::string&)> applyTag;
+				std::shared_ptr<std::string> filter;
+				void onChange(const event::Change& e) override {
+					ui::TextField::onChange(e);
+					*filter = rack::string::trim(text);
+				}
 				void onSelectKey(const event::SelectKey& e) override {
 					if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
 						std::string tag = rack::string::trim(text);
@@ -573,10 +597,11 @@ struct FileSystemDataSource : DataSource {
 
 			NewTagField* ntf = new NewTagField;
 			ntf->box.size.x = 150.f;
-			ntf->placeholder = "New tag...";
+			ntf->placeholder = "Filter / new tag...";
 			ntf->src = this;
 			ntf->onChanged = onChanged;
 			ntf->applyTag = applyTag;
+			ntf->filter = tagFilter;
 			menu->addChild(ntf);
 			APP->event->setSelectedWidget(ntf);
 		};
@@ -584,87 +609,58 @@ struct FileSystemDataSource : DataSource {
 		if (node.isContainer) {
 			std::string absPath = resolveAbsPath(node.relativePath);
 			menu->addChild(createMenuItem("Show folder", "", [absPath]() {
-				rack::system::openDirectory(absPath);
+				vcv::fs::openDirectory(absPath);
 			}));
 
 			menu->addChild(new ui::MenuSeparator);
 			menu->addChild(createMenuLabel("Tags"));
 			std::string folderId = node.relativePath;
 			addNewTagField([this, folderId](const std::string& tag) {
-				auto children = loadChildrenSync(folderId, false);
-				for (const auto& child : children) {
-					if (!child.isContainer) {
-						getMetadata()->addTag(child.relativePath, tag);
-					}
-				}
+				addTagRecursive(folderId, tag);
 			});
 
-			// Sticky submenu: scan container, then show all tags; clicking adds/removes
-			// the tag for every direct audio file in the container.
+			// Sticky submenu listing all known tags; clicking adds the tag to every
+			// audio file under the container (recursively). The container is scanned
+			// only when a tag is actually applied, not when the menu is shown — so no
+			// checkmarks / toggle state on these items.
 			std::string id = node.relativePath;
-			menu->addChild(Rack::createStickySubmenuItem("Tag all files", RIGHT_ARROW, [this, id, onChanged](ui::Menu* tagMenu) {
-				// Scan for direct audio children (runs on UI thread; acceptable for a menu action)
-				auto children = loadChildrenSync(id, false);
-				std::vector<std::string> audioRels;
-				for (const auto& child : children) {
-					if (!child.isContainer) {
-						audioRels.push_back(child.relativePath);
+			menu->addChild(Rack::createStickySubmenuItem("Tag all files", RIGHT_ARROW, [this, id, onChanged, tagFilter](ui::Menu* tagMenu) {
+				struct ContainerTagItem : ui::MenuItem {
+					FileSystemDataSource* src;
+					std::string folderId;
+					std::string tag;
+					std::function<void()> onChanged;
+					std::shared_ptr<std::string> filter;
+					void step() override {
+						visible = Rack::menuFilterMatches(filter, text);
+						MenuItem::step();
 					}
-				}
-				if (audioRels.empty()) {
-					tagMenu->addChild(createMenuLabel("No audio files in folder"));
-					return;
-				}
-
-				auto allHave = [this, audioRels](std::string tag) {
-					for (const auto& rel : audioRels) {
-						auto fileTags = metadata->getTags(rel);
-						if (std::find(fileTags.begin(), fileTags.end(), tag) == fileTags.end()) {
-							return false;
-							break;
-						}
+					void onAction(const event::Action& e) override {
+						src->addTagRecursive(folderId, tag);
+						src->saveMetadata();
+						if (onChanged) onChanged();
 					}
-					return true;
 				};
 
 				auto allTagsSet = metadata->allTags();
 				std::vector<std::string> sorted(allTagsSet.begin(), allTagsSet.end());
 				std::sort(sorted.begin(), sorted.end());
-				Rack::addGroupedMenuItems<std::string>(tagMenu, sorted, [this, audioRels, allHave, onChanged](const std::string& tag) -> ui::MenuItem* {
-					struct ContainerTagItem : ui::MenuItem {
-						FileSystemDataSource* src;
-						std::vector<std::string> rels;
-						std::string tag;
-						bool wasAllHave;
-						std::function<void()> onChanged;
-						void onAction(const event::Action& e) override {
-							if (wasAllHave) {
-								for (const auto& rel : rels) src->getMetadata()->removeTag(rel, tag);
-							}
-							else {
-								for (const auto& rel : rels) src->getMetadata()->addTag(rel, tag);
-							}
-							src->saveMetadata();
-							if (onChanged) onChanged();
-						}
-					};
-
+				Rack::addGroupedMenuItems<std::string>(tagMenu, sorted, [this, id, onChanged, tagFilter](const std::string& tag) -> ui::MenuItem* {
 					ContainerTagItem* item = new ContainerTagItem;
 					item->text = tag;
-					item->rightText = CHECKMARK(allHave(tag));
 					item->src = this;
-					item->rels = audioRels;
+					item->folderId = id;
 					item->tag = tag;
-					item->wasAllHave = allHave(tag);
 					item->onChanged = onChanged;
+					item->filter = tagFilter;
 					return item;
-				}, 16);
+				}, 16, 16, tagFilter);
 			}));
 		}
 		else {
-			std::string dir = rack::system::getDirectory(resolveAbsPath(node.relativePath));
+			std::string dir = vcv::fs::getDirectory(resolveAbsPath(node.relativePath));
 			menu->addChild(createMenuItem("Open containing folder", "", [dir]() {
-				rack::system::openDirectory(dir);
+				vcv::fs::openDirectory(dir);
 			}));
 
 			menu->addChild(new ui::MenuSeparator);
@@ -690,6 +686,7 @@ struct FileSystemDataSource : DataSource {
 				std::string tag;
 				FileSystemDataSource* src;
 				std::function<void()> onChanged;
+				std::shared_ptr<std::string> filter;
 				void onAction(const event::Action& e) override {
 					if (has()) src->getMetadata()->removeTag(rel, tag);
 					else src->getMetadata()->addTag(rel, tag);
@@ -698,6 +695,7 @@ struct FileSystemDataSource : DataSource {
 					e.unconsume();
 				}
 				void step() override {
+					visible = Rack::menuFilterMatches(filter, text);
 					rightText = CHECKMARK(has());
 					MenuItem::step();
 				}
@@ -714,15 +712,16 @@ struct FileSystemDataSource : DataSource {
 			auto allTagsSet = metadata->allTags();
 			std::vector<std::string> sorted(allTagsSet.begin(), allTagsSet.end());
 			std::sort(sorted.begin(), sorted.end());
-			Rack::addGroupedMenuItems<std::string>(menu, sorted, [this, rel, onChanged](const std::string& tag) -> ui::MenuItem* {
+			Rack::addGroupedMenuItems<std::string>(menu, sorted, [this, rel, onChanged, tagFilter](const std::string& tag) -> ui::MenuItem* {
 				FileTagItem* item = new FileTagItem;
 				item->text = tag;
 				item->rel = rel;
 				item->tag = tag;
 				item->src = this;
 				item->onChanged = onChanged;
+				item->filter = tagFilter;
 				return item;
-			}, 16);
+			}, 16, 16, tagFilter);
 		}
 	}
 };
@@ -737,7 +736,7 @@ inline std::shared_ptr<DataSource> createDataSource(const RootContainer& root) {
 // Builds the RootContainer for a filesystem path (e.g. picked via an
 // "Add root..." folder dialog) — the "fs" type tag is filesystem-specific.
 inline RootContainer createRootContainer(const std::string& path) {
-	std::string name = rack::system::getFilename(path);
+	std::string name = vcv::fs::getFilename(path);
 	std::string displayName = name.empty() ? path : name;
 	return RootContainer(path, "fs", displayName);
 }
@@ -746,11 +745,9 @@ inline RootContainer createRootContainer(const std::string& path) {
 // `out` with the corresponding RootContainer. Returns false if the dialog
 // was cancelled.
 inline bool createNewRootContainer(RootContainer& out) {
-	char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
-	if (!path) return false;
-	std::string p(path);
-	free(path);
-	out = createRootContainer(p);
+	std::string path = vcv::ui::openDirectoryDialog();
+	if (path.empty()) return false;
+	out = createRootContainer(path);
 	return true;
 }
 

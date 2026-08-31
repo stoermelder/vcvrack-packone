@@ -30,7 +30,62 @@ TEST_CASE("Preset JSON null-guards", "[Intermix][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
+}
+
+TEST_CASE("JSON round-trip preserves state", "[Intermix][JSON]") {
+	IntermixModule<8>* m = Test::createModule<IntermixModule<8>>("Intermix");
+
+	// Distinctive values across all 8 input modes
+	for (int i = 0; i < 8; i++) {
+		m->inputMode[i] = (i % 2 == 0) ? IM_DIRECT : IM_FADE;
+	}
+	
+	// Distinctive values across all 8 scenes
+	for (int s = 0; s < 8; s++) {
+		for (int i = 0; i < 8; i++) {
+			m->scenes[s].input[i] = (i % 2 == 0) ? IM_DIRECT : IM_FADE;
+			m->scenes[s].output[i] = (i % 3 == 0) ? OM_OFF : OM_OUT;
+			m->scenes[s].outputAt[i] = 0.1f * s + 0.01f * i;
+			m->scenes[s].matrix[i][i] = 0.1f * s + 0.01f * i;
+		}
+	}
+
+	json_t* j = m->dataToJson();
+
+	IntermixModule<8>* m2 = Test::createModule<IntermixModule<8>>("Intermix");
+	m2->dataFromJson(j);
+	json_decref(j);
+
+	for (int i = 0; i < 8; i++) {
+		REQUIRE(m2->inputMode[i] == ((i % 2 == 0) ? IM_DIRECT : IM_FADE));
+	}
+
+	for (int s = 0; s < 8; s++) {
+		for (int i = 0; i < 8; i++) {
+			REQUIRE(m2->scenes[s].input[i] == ((i % 2 == 0) ? IM_DIRECT : IM_FADE));
+			REQUIRE(m2->scenes[s].output[i] == ((i % 3 == 0) ? OM_OFF : OM_OUT));
+			REQUIRE(m2->scenes[s].outputAt[i] == Catch::Approx(0.1f * s + 0.01f * i).margin(0.01f));
+			REQUIRE(m2->scenes[s].matrix[i][i] == Catch::Approx(0.1f * s + 0.01f * i).margin(0.01f));
+		}
+	}
+
+	Test::destroyModule(m);
+	Test::destroyModule(m2);
 }
 
 
@@ -876,6 +931,53 @@ TEST_CASE("Scene CV modes with reset", "[Intermix]") {
 		// Trigger should load the queued scene
 		triggerCv(200);
 		REQUIRE(module->sceneSelected == 2);
+	}
+
+	SECTION("TRIG_PINGPONG walks the full 0..7..0 sequence") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_PINGPONG;
+		module->sceneCount = 8;
+		module->sceneCvModeDir = 1;
+		module->sceneSet(0);
+		initializeInputs();
+
+		// Expected ping-pong walk: 0,1,2,3,4,5,6,7,6,5,4,3,2,1,0,1,2,...
+		// Both endpoints are visited exactly once per traversal (reflect), and
+		// the walk reverses symmetrically at 7 and at 0.
+		std::vector<int> expected = {1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2};
+		for (size_t i = 0; i < expected.size(); i++) {
+			triggerCv(200 + (int)(i * 100));
+			REQUIRE(module->sceneSelected == expected[i]);
+		}
+	}
+
+	SECTION("TRIG_PINGPONG bounces symmetrically at both endpoints") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_PINGPONG;
+		module->sceneCount = 8;
+		// Distinct matrices so we can observe whether the endpoint's routing is
+		// re-applied when the walk bounces off an endpoint.
+		for (int s = 0; s < 8; s++)
+			for (int i = 0; i < 8; i++)
+				for (int j = 0; j < 8; j++)
+					module->scenes[s].matrix[i][j] = (float)(s * 100 + i * 10 + j);
+		initializeInputs();
+
+		// Top bounce: start at last (7), dir = 1 -> stay at 7, reverse direction.
+		module->sceneCvModeDir = 1;
+		module->sceneSet(7);
+		module->params[IntermixModule<8>::PARAM_MATRIX + 0].setValue(999.f); // corrupt
+		triggerCv(200);
+		REQUIRE(module->sceneSelected == 7);
+		REQUIRE(module->sceneCvModeDir == -1);
+		REQUIRE(module->params[IntermixModule<8>::PARAM_MATRIX + 0].getValue() == Catch::Approx(700.f));
+
+		// Bottom bounce: start at first (0), dir = -1 -> stay at 0, reverse direction.
+		module->sceneCvModeDir = -1;
+		module->sceneSet(0);
+		module->params[IntermixModule<8>::PARAM_MATRIX + 0].setValue(999.f); // corrupt
+		triggerCv(300);
+		REQUIRE(module->sceneSelected == 0);
+		REQUIRE(module->sceneCvModeDir == 1);
+		REQUIRE(module->params[IntermixModule<8>::PARAM_MATRIX + 0].getValue() == Catch::Approx(0.f));
 	}
 
 	Test::destroyModule(module);

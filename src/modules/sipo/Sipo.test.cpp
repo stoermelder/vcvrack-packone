@@ -29,52 +29,58 @@ TEST_CASE("Preset JSON null-guards", "[Sipo][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
 
-TEST_CASE("JSON serialization", "[Sipo]") {
+TEST_CASE("JSON round-trip preserves state", "[Sipo]") {
 	auto module = Test::createModule<SipoModule>("Sipo");
-
-	SECTION("Theme persists through JSON") {
-		module->panelTheme = 2;
-		json_t* rootJ = module->dataToJson();
-		
-		auto moduleNew = Test::createModule<SipoModule>("Sipo");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->panelTheme == 2);
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
-	}
-
+	module->panelTheme = 2;
+	json_t* rootJ = module->dataToJson();
+	
+	auto moduleNew = Test::createModule<SipoModule>("Sipo");
+	moduleNew->dataFromJson(rootJ);
+	
+	REQUIRE(moduleNew->panelTheme == 2);
+	json_decref(rootJ);
+	Test::destroyModule(moduleNew);
 	Test::destroyModule(module);
 }
 
 TEST_CASE("Data serialization", "[Sipo]") {
 	auto module = Test::createModule<SipoModule>("Sipo");
-
-	SECTION("Buffer data persists through JSON") {
-		module->data[0] = 1.0f;
-		module->data[1] = 2.5f;
-		module->data[2] = -3.7f;
-		module->dataPtr = 2;
-		module->dataUsed = 3;
-		
-		json_t* rootJ = module->dataToJson();
-		
-		auto moduleNew = Test::createModule<SipoModule>("Sipo");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->dataPtr == 2);
-		REQUIRE(moduleNew->dataUsed == 3);
-		REQUIRE(moduleNew->data[0] == Catch::Approx(1.0f));
-		REQUIRE(moduleNew->data[1] == Catch::Approx(2.5f));
-		REQUIRE(moduleNew->data[2] == Catch::Approx(-3.7f));
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
-	}
-
+	module->data[0] = 1.0f;
+	module->data[1] = 2.5f;
+	module->data[2] = -3.7f;
+	module->dataPtr = 2;
+	module->dataUsed = 3;
+	
+	json_t* rootJ = module->dataToJson();
+	
+	auto moduleNew = Test::createModule<SipoModule>("Sipo");
+	moduleNew->dataFromJson(rootJ);
+	
+	REQUIRE(moduleNew->dataPtr == 2);
+	REQUIRE(moduleNew->dataUsed == 3);
+	REQUIRE(moduleNew->data[0] == Catch::Approx(1.0f));
+	REQUIRE(moduleNew->data[1] == Catch::Approx(2.5f));
+	REQUIRE(moduleNew->data[2] == Catch::Approx(-3.7f));
+	
+	json_decref(rootJ);
+	Test::destroyModule(moduleNew);
 	Test::destroyModule(module);
 }
 

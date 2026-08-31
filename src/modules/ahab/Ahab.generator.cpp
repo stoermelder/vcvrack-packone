@@ -1,0 +1,1863 @@
+#include "Ahab.generator.hpp"
+#include "AhabPatternScore.hpp"
+#include <algorithm>
+#include <set>
+#include <cassert>
+
+namespace StoermelderPackOne {
+namespace Ahab {
+
+// Helper functions
+char AhabGenerator::randomBase36() {
+	static const char* b36 = "0123456789abcdefghijklmnopqrstuvwxyz";
+	return b36[randInt(0, 35)];
+}
+
+char AhabGenerator::randomSmallDigit() {
+	return '1' + randInt(0, 7);
+}
+
+char AhabGenerator::randomNote() {
+	static const char* notes = "CDEFGAB";
+	return notes[randInt(0, 6)];
+}
+
+char AhabGenerator::randomVelocityLiteral() {
+	// D2 (diversity plan): the non-zero placeholder every MIDI row plants in
+	// its velocity cell (0 is a note-off — see sim.c) was a single hardcoded
+	// glyph everywhere. A small varied set changes dynamics across voices
+	// without touching the K-fed path: this is only ever the LITERAL a K row
+	// may still overwrite, never the mechanism.
+	static char const kVelocities[] = {'8', 'c', 'f'};
+	return kVelocities[randInt(0, 2)];
+}
+
+char AhabGenerator::randomLengthForRole(VoiceNode::Role role) {
+	// D2: note length was a hardcoded literal per builder ('4' arpeggio/
+	// derived, '2' uclid, '8' chord), so two patches with different notes
+	// still had identical articulation. Drawn per VOICE (once per builder
+	// call, reused for every row that voice emits) rather than per note —
+	// length is a property of how a voice speaks, not of which pitch it
+	// hits. Weighted toward each role's natural articulation: melodic roles
+	// that retrigger on every clock tick (Lead/Harmony/Counter) lean short;
+	// one-shot hits with room to breathe (Gate/Delay/Uclid/Chord) lean long.
+	static char const kShortLeaning[] = {'2', '2', '4', '8'};
+	static char const kLongLeaning[]  = {'2', '4', '8', '8'};
+	switch (role) {
+		case VoiceNode::Lead:
+		case VoiceNode::Harmony:
+		case VoiceNode::Counter:
+			return kShortLeaning[randInt(0, 3)];
+		default:
+			return kLongLeaning[randInt(0, 3)];
+	}
+}
+
+char AhabGenerator::randomOctaveForRole(VoiceNode::Role role) {
+	// Register follows ROLE, not the last channel: bands low→high
+	// (Bass < Chord < Harmony < Lead) with ±1 jitter; gates/texture sit mid.
+	// Bus places no notes; Drums/Bass pin '2', so band 0 is never drawn.
+	int band;
+	switch (role) {
+		case VoiceNode::Lead:    band = 3; break;
+		case VoiceNode::Harmony: band = 2; break;
+		case VoiceNode::Counter: band = 2; break;
+		case VoiceNode::Gate:    band = 2; break;
+		case VoiceNode::Delay:   band = 2; break;
+		case VoiceNode::Uclid:   band = 2; break;
+		case VoiceNode::Chord:   band = 1; break;
+		default:                 band = 0; break; // Bass / Bus / Drums
+	}
+	// Widened from a 2-value jitter to 3 — registers
+	// were nearly fixed per role. Bass never reaches this function (it pins
+	// '2' via vn.param, bypassing the draw entirely; see placeArpeggioVoice),
+	// so widening here cannot disturb the bass-below-lead ordering "Bass
+	// sounds below every lead" relies on.
+	return (char)('2' + band + randInt(0, 2)); // octaves 2-7
+}
+
+// Base36 helpers for euclid pair generation
+static char b36Char(Usz v) {
+	return "0123456789abcdefghijklmnopqrstuvwxyz"[v];
+}
+static Usz b36Val(char c) {
+	if (c >= '0' && c <= '9') return c - '0';
+	if (c >= 'a' && c <= 'z') return c - 'a' + 10;
+	return 0;
+}
+
+void AhabGenerator::randomEuclid(char& steps, char& max) {
+	// The modulus must DIVIDE the patch bar so every euclidean voice
+	// locks to the same groove (the old free-for-all across 3..16 was
+	// mathematically interesting but musically incoherent).
+	Usz candidates[8];
+	int n = 0;
+	for (Usz d = 3; d <= barMod_; ++d) {
+		if (barMod_ % d == 0 && n < 8) candidates[n++] = d;
+	}
+	if (n == 0) { max = b36Char(barMod_); }
+	else max = b36Char(candidates[randInt(0, n - 1)]);
+	Usz maxVal = b36Val(max);
+	Usz s = (Usz)randInt(2, (int)maxVal - 1); // 2..maxVal-1: neither empty nor solid
+	steps = b36Char(s);
+}
+
+char AhabGenerator::barDivisorMod() {
+	// A modulus glyph dividing the patch bar. Divisors >= 2 keep
+	// periods musical; the bar itself is included so voices can also span a
+	// whole bar.
+	Usz candidates[8];
+	int n = 0;
+	for (Usz d = 2; d <= barMod_; ++d) {
+		if (barMod_ % d == 0 && n < 8) candidates[n++] = d;
+	}
+	return b36Char(candidates[randInt(0, n - 1)]);
+}
+
+void AhabGenerator::fillPatchWalk(std::string& notes, Usz len) {
+	fillScaleWalkWith(notes, len, rng, patchRoot_, patchScaleIdx_);
+}
+
+// Same mapping as sim.c's from_midi_note_number: lowercase glyph == sharp.
+// (Defined further down next to fillScaleWalkWith; forward-declared here so
+// fillBassWalkWith can use it.)
+static Glyph glyphForSemitone(U8 note);
+
+void AhabGenerator::fillBassWalkWith(std::string& notes, Usz len, std::mt19937& rng, int root, int scaleIdx) {
+	// A bass line is a foundation: root and fifth of the patch scale only,
+	// alternating with occasional octave jumps — no random walk.
+	static int const kMajor[]        = {0, 2, 4, 5, 7, 9, 11};
+	static int const kNaturalMinor[] = {0, 2, 3, 5, 7, 8, 10};
+	static int const kPentatonic[]   = {0, 2, 4, 7, 9};
+	static int const kDorian[]       = {0, 2, 3, 5, 7, 9, 10};
+	struct Scale { int const* semi; int n; };
+	static Scale const kScales[] = {
+		{kMajor, 7}, {kNaturalMinor, 7}, {kPentatonic, 5}, {kDorian, 7},
+	};
+
+	Scale const& scale = kScales[scaleIdx % 4];
+	int rootPc = ((root % 12) + 12) % 12;
+
+	// The FIFTH: pick the scale degree closest to 7 semitones above the
+	// root. Index arithmetic (n/2) picks the middle DEGREE, which is a
+	// fourth in 7-note scales (C-F, not C-G) and a third in pentatonic.
+	int fifthSemi = scale.semi[0];
+	int bestDist = 99;
+	for (int d = 1; d < scale.n; ++d) {
+		int dist = scale.semi[d] > 7 ? scale.semi[d] - 7 : 7 - scale.semi[d];
+		if (dist < bestDist) { bestDist = dist; fifthSemi = scale.semi[d]; }
+	}
+	// NB: no per-note randomness. A track glyph carries only the pitch
+	// class (the ':' row's octave operand sets register), so an octave-up
+	// accent would collapse to the same glyph and never be audible.
+	bool onRoot = true;
+	notes.clear();
+	for (Usz i = 0; i < len; ++i) {
+		int semi = onRoot ? 0 : fifthSemi;
+		notes += glyphForSemitone((U8)(rootPc + semi));
+		onRoot = !onRoot;
+	}
+}
+
+void AhabGenerator::fillBassWalk(std::string& notes, Usz len) {
+	fillBassWalkWith(notes, len, rng, patchRoot_, patchScaleIdx_);
+}
+
+char AhabGenerator::allocateVarName() {
+	// Unique names per generate() call; 'g' is excluded from the
+	// pool because it is reserved for the arrangement's master clock.
+	if (varPool_.empty()) return 0;
+	char c = varPool_.back();
+	varPool_.pop_back();
+	return c;
+}
+
+char AhabGenerator::allocateCcNumber() {
+	// Control numbers come from a small per-call
+	// pool exactly like freeChanPool_, so two Modulation edges never target the
+	// same CC. Numbers stay in '0'..'3': midiCcOffset (default 64) is added
+	// downstream and clamped to 127, so high base36 controls would collapse.
+	if (ccPool_.empty()) return 0;
+	char c = ccPool_.back();
+	ccPool_.pop_back();
+	return c;
+}
+
+char AhabGenerator::allocateFreeChannel() {
+	// Free-region voices draw UNIQUE channels from a per-call shuffled pool.
+	// When it runs dry the fallback is defined (round-robin), not random, so
+	// latecomers spread across the region instead of colliding. User-patched
+	// reserved mappings are never touched.
+	if (!freeChanPool_.empty()) {
+		char c = freeChanPool_.back();
+		freeChanPool_.pop_back();
+		return c;
+	}
+	char c = kFreeChannels[freeWrap_ % (sizeof(kFreeChannels) - 1)];
+	++freeWrap_;
+	return c;
+}
+
+char AhabGenerator::channelForRole(VoiceNode::Role role) {
+	// The channel-policy lookup that replaces the shuffled "0123" pool:
+	// reserved roles return their fixed table entry — ch0 IS the
+	// bass, on every re-roll — and anything without an entry draws from
+	// the free region.
+	char const reserved = kRoleChannel[role];
+	return reserved != 0 ? reserved : allocateFreeChannel();
+}
+
+// Same mapping as sim.c's from_midi_note_number: lowercase glyph == sharp.
+static Glyph glyphForSemitone(U8 note) {
+	static Glyph const kNotes[12] = {'C', 'c', 'D', 'd', 'E', 'F', 'f', 'G', 'g', 'A', 'a', 'B'};
+	return kNotes[note % 12];
+}
+
+void AhabGenerator::fillScaleWalkWith(std::string& notes, Usz len, std::mt19937& rng, int root, int scaleIdx) {
+	// Scales as semitone offsets from the root (the old hand-typed letter
+	// strings were wrong and had duplicate degrees).
+	static int const kMajor[]        = {0, 2, 4, 5, 7, 9, 11};
+	static int const kNaturalMinor[] = {0, 2, 3, 5, 7, 8, 10};
+	static int const kPentatonic[]   = {0, 2, 4, 7, 9};
+	static int const kDorian[]       = {0, 2, 3, 5, 7, 9, 10};
+	struct Scale { int const* semi; int n; };
+	static Scale const kScales[] = {
+		{kMajor, 7}, {kNaturalMinor, 7}, {kPentatonic, 5}, {kDorian, 7},
+	};
+
+	Scale const& scale = kScales[scaleIdx % 4];
+	int rootPc = ((root % 12) + 12) % 12;
+
+	// Bounded random walk over scale degrees (~2 octaves) — far more melodic
+	// than uniform sampling of the table.
+	std::uniform_int_distribution<int> walk(-2, 2);
+	int degree = (int)(len / 2);
+	if (degree > scale.n * 2) degree = scale.n * 2;
+	notes.clear();
+	for (Usz i = 0; i < len; ++i) {
+		int octave = degree / scale.n;
+		int semi = scale.semi[degree % scale.n];
+		notes += glyphForSemitone((U8)(rootPc + octave * 12 + semi)); // patch key
+		degree += walk(rng);                                          // step -2..+2
+		if (degree < 0) degree = 0;
+		if (degree > scale.n * 2) degree = scale.n * 2;
+	}
+}
+
+void AhabGenerator::fillScaleWalk(std::string& notes, Usz len, std::mt19937& rng) {
+	fillScaleWalkWith(notes, len, rng, std::uniform_int_distribution<int>(0, 11)(rng), std::uniform_int_distribution<int>(0, 3)(rng));
+}
+
+// Mechanical preconditions of "sounding like anything at all", stricter
+// than the CI gate's aggregate bounds — a rejected attempt costs a re-roll.
+static bool acceptable(PatternScore const& s) {
+	return !s.silent()
+		&& s.firstEventTick < 64
+		&& s.distinctPitches >= 2
+		// Upper bound relaxed from 0.9: capacity/packing now fill selections
+		// properly, and a well-filled arrangement is simply active most
+		// ticks — that is the point, not a wall-of-sound defect.
+		&& s.density >= 0.05f && s.density <= 0.95f
+		// A variable read with no preceding write always yields '.'
+		// (vars_slots are wiped every tick). A bug marker, not taste — re-roll.
+		&& s.danglingReads == 0
+		// a '!' tail that emits but never varies is
+		// the classic silent failure (midicc sends a constant 0 for a '.'
+		// value).
+		&& (s.ccEvents == 0 || s.distinctCcValues > 1);
+}
+
+// Pure core generate-and-reject loop: score each attempt in a throwaway
+// sim and keep the best. Deterministic — retries derive seeds from the
+// original, so getSeed() still describes the returned result.
+ScratchPad AhabGenerator::generate(Usz height, Usz width, Config const& cfg) {
+	if (cfg.seed != 0) {
+		seed_ = cfg.seed;
+	}
+	rng.seed(seed_);
+
+	ScratchPad best = generateOnce(height, width, cfg);
+	if (!cfg.qualityGate) return best;
+
+	// Bound the attempts: eight scored attempts at 64 ticks is ~a millisecond —
+	// fine on the UI thread. Never unbounded.
+	constexpr int kMaxAttempts = 8;
+	uint32_t const origSeed = seed_;
+	PatternScore bestScore = scorePattern(best, /*ticks=*/64);
+	int bestDerivedCount = derivedPlaced_; // attempt 0's count
+	DropStats bestDrops = drops_;
+	for (int attempt = 1; attempt < kMaxAttempts && !acceptable(bestScore); ++attempt) {
+		uint32_t retrySeed = origSeed + (uint32_t)attempt;
+		rng.seed(retrySeed);
+		ScratchPad cand = generateOnce(height, width, cfg);
+		PatternScore cs = scorePattern(cand, /*ticks=*/64);
+		if (cs.noteEvents > bestScore.noteEvents) {
+			best = std::move(cand);
+			bestScore = cs;
+			seed_ = retrySeed; // getSeed() describes what the user got
+			bestDerivedCount = derivedPlaced_; // ...and so does the counter
+			bestDrops = drops_;
+		}
+	}
+	// The loop may run rejected attempts AFTER the last adoption; the
+	// counter must describe the RETURNED pattern, not the last one tried.
+	derivedPlaced_ = bestDerivedCount;
+	drops_ = bestDrops;
+	// Always return the best attempt, even if none passed — never nothing.
+	return best;
+}
+
+// One raw generation pass (no retry loop). Seeding is managed by generate().
+ScratchPad AhabGenerator::generateOnce(Usz height, Usz width, Config const& cfg) {
+	// Decide the piece's shared identity ONCE per call:
+	static Usz const kBarMods[] = {8, 12, 16, 6};
+	barMod_ = kBarMods[randInt(0, 3)]; // one bar length for everything
+	patchRoot_ = randInt(0, 11);             // one key
+	patchScaleIdx_ = randInt(0, 3);          // one scale
+	busVars_.clear();                        // clock bus placed by this call
+	derivedPlaced_ = 0;                      // counts THIS
+	drops_ = {};                             // same contract for edge diagnostics
+											 // attempt only, not discarded retries
+	// Refill the variable pool for this call, excluding reserved letters
+	// ('g' = master clock, 'qwer' = clock bus) so voices never collide with
+	// bus writers. Guarded erase: a typo in the alphabet skips, not crashes.
+	varPool_ = "abcdefghijklmnopqrstuvwxyz";
+	static char const* const kReservedVars = "gqwer";
+	for (char const* p = kReservedVars; *p; ++p) {
+		size_t pos = varPool_.find(*p);
+		if (pos != std::string::npos) varPool_.erase(pos, 1);
+	}
+	std::shuffle(varPool_.begin(), varPool_.end(), rng);
+	ScratchPad buf(height, width);
+
+	// For small selections, just fill with simpler patterns
+	if (height < 4 || width < 10) {
+		// Simple fill mode - individual patterns
+		for (Usz y = 0; y < height; ) {
+			for (Usz x = 0; x < width; ) {
+				if (chance(cfg.density)) {
+					Extent used = generateSimplePattern(buf, y, x, height, width);
+					x += used.empty() ? 1 : used.w + 1;
+				}
+				else {
+					x++;
+				}
+			}
+			// The vertical advance is density-dependent too, so low
+			// density is genuinely sparse rather than fixed at every 2nd row.
+			y += 2 + (chance(1.0f - cfg.density) ? 1 : 0);
+		}
+	}
+	else {
+		// Full arrangement mode
+		generateArrangement(buf, 0, 0, height, width, cfg.density, (size_t)cfg.channels);
+	}
+
+	return buf;
+}
+
+// Sim adapter: generates into a buffer, then commits it in ONE queued command.
+bool AhabGenerator::randomize(AhabSim* sim, Usz startY, Usz startX,
+							   Usz height, Usz width, Config const& cfg) {
+	if (!sim) return false;
+
+	Usz fieldH = sim->getFieldHeight();
+	Usz fieldW = sim->getFieldWidth();
+
+	// Clamp selection to field bounds
+	if (startY >= fieldH || startX >= fieldW) return false;
+	if (startY + height > fieldH) height = fieldH - startY;
+	if (startX + width > fieldW) width = fieldW - startX;
+	if (height == 0 || width == 0) return false;
+
+	ScratchPad buf = generate(height, width, cfg);
+
+	// Nothing generated -> no undo entry, notify, or queue traffic.
+	if (!buf.dirty()) return false;
+
+	// One command, not one per glyph. loadRectFromOrcaRequest does
+	// pushUndo()+notifyTick() internally, so we must not here. Untouched
+	// cells are '.', so the full-rect paste also clears prior content.
+	Usz outH = 0, outW = 0;
+	return sim->loadRectFromOrcaRequest(buf.toOrca(), startY, startX, outH, outW, /*replace_field=*/false);
+}
+
+AhabGenerator::Extent AhabGenerator::generateSimplePattern(ScratchPad& buf, Usz y, Usz x, Usz maxY, Usz maxX) {
+	Usz availW = maxX > x ? maxX - x : 0;
+	Usz availH = maxY > y ? maxY - y : 0;
+	
+	if (availW < 4 || availH < 1) return {};
+	
+	int patternType = randInt(0, 13);
+	
+	switch (patternType) {
+		case 0: // Clock
+			return placeClockPattern(buf, y, x, availW, randomSmallDigit(), randomBase36());
+		case 1: // Delay (modulus divides the patch bar)
+			return placeDelayPattern(buf, y, x, availW, randomSmallDigit(), barDivisorMod());
+		case 2: // Random
+			return placeRandomPattern(buf, y, x, availW, '0', randomBase36());
+		case 3: { // Uclid (modulus divides the patch bar)
+			char uSteps, uMax;
+			randomEuclid(uSteps, uMax);
+			return placeUclidPattern(buf, y, x, availW, uSteps, uMax);
+		}
+		case 4: { // Variable write
+			char name = allocateVarName();
+			if (!name) return {};
+			return placeVarWrite(buf, y, x, availW, name, randomBase36());
+		}
+		case 5: // Add
+			return placeAddPattern(buf, y, x, availW, randomBase36(), randomBase36());
+		case 6: // If (compares cell values, not variables)
+			return placeIfPattern(buf, y, x, availW, randomBase36(), randomBase36());
+		case 7: { // Track with short sequence
+			std::string notes;
+			fillPatchWalk(notes, 4); // in the patch key
+			// Fixed key '0': no clock drives the key cell, so a random key
+			// would just read one arbitrary fixed slot.
+			return placeTrackPattern(buf, y, x, availW, '0', notes);
+		}
+		// The remaining primitives are wired in as standalone
+		// decorations so every builder is reachable from the generator.
+		case 8: // Increment counter below each frame
+			return placeIncrementPattern(buf, y, x, availW, randomSmallDigit(), randomBase36());
+		case 9: // Multiply
+			return placeMultiplyPattern(buf, y, x, availW, randomBase36(), randomBase36());
+		case 10: // Halt operators below until banged
+			return placeHaltPattern(buf, y, x, availW);
+		case 11: // Offset read
+			return placeOffsetPattern(buf, y, x, availW, randInt(0, 9) + '0', randInt(0, 9) + '0');
+		case 12: // MIDI row (silent without a bang neighbour — decoration)
+			// Decorative standalone row rides the lead's channel/register;
+			// neither draw touches shared state, so eval order can't matter.
+			return placeMidiPattern(buf, y, x, availW, channelForRole(VoiceNode::Lead), randomOctaveForRole(VoiceNode::Lead), randomNote(), 'f', '4');
+		case 13: { // Variable round-trip: write then read on the SAME row
+			// A standalone var-read can never see a write (vars don't persist
+			// across ticks and order matters) — a dangling read. Pair with its
+			// own write instead.
+			char name = allocateVarName();
+			if (!name) return {};
+			if (availW < 9) return {}; // 4 (write) + 1 gap + 4 (read)
+			placeVarWrite(buf, y, x, availW, name, randomBase36());
+			return placeVarRead(buf, y, x + 5, availW - 5, name);
+		}
+	}
+	return {};
+}
+
+// Relationships first, layout second. planArrangement() decides the cast
+// and couplings; the layout emits leads before dependents so every reader
+// sits below its writer (vars are within-tick only), making emission order
+// the topological order of the coupling graph.
+
+// Only these roles publish a pitch variable others can read. Gates produce
+// bangs; textures publish nothing. Bass and Counter publish too (see the
+// Operand scans below for why Counter must not feed velocity cells).
+bool publishesPitch(VoiceNode const& vn) {
+	return vn.role == VoiceNode::Lead || vn.role == VoiceNode::Harmony
+		|| vn.role == VoiceNode::Bass || vn.role == VoiceNode::Counter;
+}
+
+std::vector<std::string> AhabGenerator::composeChannelLegend(
+	std::vector<VoiceNode> const& plan, std::vector<bool> const& placed) {
+	// Abbreviation per role, LOWERCASE with no 'V'/'v'. Lowercase matters
+	// twice: the quality gate's static variable-flow scan reads 'V' as a
+	// variable op even inside a comment, and generated-field tests use rare
+	// UPPERCASE letters as operator fingerprints ('U' uclid, 'K' konkat) —
+	// uppercase legend text would collide (observed: "DRUM" broke the
+	// shared-identity test's U-modulus parse). Bus is nullptr: no notes.
+	static char const* const kAbbr[static_cast<size_t>(VoiceNode::RoleCount)] = {
+		/* Bus     */ nullptr,
+		/* Bass    */ "bass",
+		/* Lead    */ "lead",
+		/* Harmony */ "harm",
+		/* Gate    */ "gate",
+		/* Drums   */ "drum",
+		/* Delay   */ "dlay",
+		/* Uclid   */ "ucld",
+		/* Chord   */ "chrd",
+		/* Counter */ "cntr",
+	};
+	std::vector<std::string> lines;
+	bool seen[static_cast<size_t>(VoiceNode::RoleCount)] = { false };
+	size_t const n = std::min(plan.size(), placed.size());
+	for (size_t i = 0; i < n; ++i) {
+		if (!placed[i]) continue;              // planned but dropped by layout
+		size_t const r = static_cast<size_t>(plan[i].role);
+		if (r >= static_cast<size_t>(VoiceNode::RoleCount)) continue; // defensive
+		char const* abbr = kAbbr[r];
+		if (!abbr) continue;                   // Bus: no channel to name
+		if (seen[r]) continue;                 // Drums x2 on wide rects: one entry
+		seen[r] = true;
+		// RAW 0-based channel number, matching the ':' glyph the user looks
+		// at next — derived from vn.channel, never from kRoleChannel,
+		// so the legend cannot disagree with what was generated.
+		lines.push_back(std::to_string(b36Val(plan[i].channel)) + " " + abbr);
+	}
+	return lines;
+}
+
+bool AhabGenerator::findFreeRect(ScratchPad const& buf, std::vector<Usz> const& sky,
+	Usz y, Usz x, Usz h, Usz w, Usz needH, Usz needW, Usz& outY, Usz& outX) {
+	if (needH == 0 || needW == 0) return false;
+	if (needH > h || needW > w) return false;
+	bool const haveSky = sky.size() == w; // defensive: skyline is optional
+	for (Usz cy = y; cy + needH <= y + h; ++cy) {
+		for (Usz cx = x; cx + needW <= x + w; ++cx) {
+			// Skyline short-circuit: this column run is packed up to its
+			// max, so any anchor above that fails the buffer scan anyway.
+			if (haveSky) {
+				Usz req = 0;
+				for (Usz dx = 0; dx < needW; ++dx) {
+					req = std::max(req, sky[cx - x + dx]);
+				}
+				if (cy < req) continue;
+			}
+			// The buffer decides: every cell of the exact target
+			// rectangle must be '.' before anything may be written there.
+			bool free = true;
+			for (Usz dy = 0; dy < needH && free; ++dy) {
+				for (Usz dx = 0; dx < needW && free; ++dx) {
+					free = buf.get(cy + dy, cx + dx) == '.';
+				}
+			}
+			if (free) {
+				outY = cy;
+				outX = cx;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+AhabGenerator::Extent AhabGenerator::writeLegendBlock(ScratchPad& buf, Usz y, Usz x,
+	std::vector<std::string> const& lines) {
+	// All-or-nothing: a '#' inside the text would terminate the comment
+	// early and unlock every cell right of it — refuse
+	// the whole block instead of writing a partial one.
+	for (std::string const& l : lines) {
+		if (l.find('#') != std::string::npos) return Extent();
+	}
+	if (lines.empty()) return Extent();
+
+	Usz contentW = 0;
+	for (std::string const& l : lines) {
+		contentW = std::max(contentW, l.size());
+	}
+	Usz const w = contentW + 2; // '#' + text + '#'
+
+	for (size_t i = 0; i < lines.size(); ++i) {
+		buf.set(y + i, x, '#');
+		for (Usz dx = 0; dx < contentW; ++dx) {
+			buf.set(y + i, x + 1 + dx, dx < lines[i].size() ? lines[i][dx] : ' ');
+		}
+		buf.set(y + i, x + w - 1, '#');
+	}
+	return Extent{lines.size(), w};
+}
+
+void AhabGenerator::placeChannelLegend(ScratchPad& buf, Usz y, Usz x, Usz h, Usz w,
+	std::vector<VoiceNode> const& plan, std::vector<bool> const& placed,
+	std::vector<Usz> const& sky) {
+	// Multi-row preferred (more legible and fits interior gaps the ~30-col
+	// single-row strip can't). The "ch" header states the convention (raw
+	// 0-based, matching the ':' glyph). Single-row strip is the fallback.
+	std::vector<std::string> lines = composeChannelLegend(plan, placed);
+	if (lines.empty()) return; // nothing placed: nothing to summarise
+
+	Usz fy = 0, fx = 0;
+	std::vector<std::string> block;
+	block.push_back("ch");
+	block.insert(block.end(), lines.begin(), lines.end());
+	Usz multiW = 0;
+	for (std::string const& l : block) multiW = std::max(multiW, l.size());
+	multiW += 2; // '#' markers on both sides
+	if (findFreeRect(buf, sky, y, x, h, w, block.size(), multiW, fy, fx)) {
+		writeLegendBlock(buf, fy, fx, block);
+		return;
+	}
+
+	std::string strip = "ch";
+	for (std::string const& l : lines) strip += " " + l;
+	if (findFreeRect(buf, sky, y, x, h, w, 1, strip.size() + 2, fy, fx))
+		writeLegendBlock(buf, fy, fx, {strip});
+	// else: no room for either shape — skip silently. On small selections
+	// that is the normal outcome, never an error.
+}
+
+std::vector<VoiceNode> AhabGenerator::planArrangement(Usz h, Usz w, float density, size_t nBus,
+	size_t maxChannels) {
+	// Free-region channel pool - reset here (not just in generateOnce) so
+	// standalone planner calls are self-contained. Shuffled so the hand-out
+	// order varies with the seed instead of always running f,e,d,c,b,a.
+	freeChanPool_ = kFreeChannels;
+	std::shuffle(freeChanPool_.begin(), freeChanPool_.end(), rng);
+	freeWrap_ = 0;
+	// Same treatment for the CC control-number pool.
+	ccPool_ = "0123";
+	std::shuffle(ccPool_.begin(), ccPool_.end(), rng);
+
+	// Capacity scales with AREA so large scratchpads fill proportionally
+	// (divisor tuned to a voice's ~40-cell footprint). Hard-capped at 64 to
+	// bound layout work. Density 0 MUST plan nothing (empty-generation
+	// contract pinned by tests).
+	int const capacity = std::min(64, (int)((float)(w * h) / 25.f * density + 0.5f));
+	if (capacity <= 0) return {};
+
+	std::vector<VoiceNode> plan;
+	// Distinct MIDI channels claimed so far. Density (via capacity) drives
+	// HOW MANY voices are planned; maxChannels only caps how many DISTINCT
+	// channels they may use. A node is admitted when its channel is already
+	// claimed (free to share - drums do this) or the set still has room.
+	std::set<char> claimed;
+	auto canClaim = [&](char ch) {
+		return claimed.count(ch) > 0 || (int)claimed.size() < (int)maxChannels;
+	};
+	// Texture sharing once the set is full: prefer an already-claimed
+	// free-region channel so the reserved mapping is never disturbed; at
+	// tight budgets (reserved roles alone fill the set) share any claimed
+	// channel except the bass - polyphonically safe, and it keeps density
+	// working on small rigs.
+	auto pickSharedChannel = [&]() {
+		char freeShared[6];
+		int nf = 0;
+		for (char const* q = kFreeChannels; *q; ++q)
+			if (claimed.count(*q)) freeShared[nf++] = *q;
+		if (nf > 0) return freeShared[randInt(0, nf - 1)];
+		std::vector<char> any(claimed.begin(), claimed.end());
+		any.erase(std::remove(any.begin(), any.end(), '0'), any.end());
+		return any.empty() ? char('1') : any[randInt(0, (int)any.size() - 1)];
+	};
+	// Node 0: the clock bus when present. Clock edges reference division
+	// indices via param, so the whole bus is an ordinary graph participant.
+	if (nBus > 0) {
+		VoiceNode bus;
+		bus.role = VoiceNode::Bus;
+		plan.push_back(bus);
+	}
+
+	// Lead and Bass are a MANDATORY head, planned before everything else —
+	// they are the only roles that establish a root publisher (a plan entry
+	// with non-empty .notes), so every other role's "pick an existing
+	// publisher" scan needs at least one of them to already be in the plan.
+	// Nothing else has a fixed position: the rest of the cast is drawn from
+	// a weighted bag below, so a capacity that truncates mid-draw still
+	// yields a varied head instead of the same fixed prefix every time.
+
+	// Lead: exactly one (was one per bus division). Clocked by the first
+	// bus division; without a bus it free-runs on its own clock.
+	if ((int)plan.size() < capacity && canClaim(kRoleChannel[VoiceNode::Lead])) {
+		VoiceNode vp;
+		vp.role = VoiceNode::Lead;
+		vp.channel = '1';
+		claimed.insert('1');
+		if (nBus > 0) {
+			vp.inputs.push_back(Edge(0, Edge::Clock, (char)0));
+		}
+		// Sequence length doubles as the clock modulus: pick it from the
+		// patch bar's divisors so the voice walks its sequence in one bar.
+		Usz divisors[8];
+		int nd = 0;
+		for (Usz d = 2; d <= barMod_; ++d) {
+			if (barMod_ % d == 0 && nd < 8) divisors[nd++] = d;
+		}
+		fillPatchWalk(vp.notes, nd ? divisors[randInt(0, nd - 1)] : 4);
+		// NB: the old velocity-follows Operand edge has no home here — it
+		// needs an EARLIER pitch publisher to point at, and the lead is now
+		// the first sounding voice in the plan. The K-velocity feature
+		// lives on in the texture voices' Operand edges below.
+		plan.push_back(vp);
+	}
+
+	// Bass: exactly one, and only when a bus exists — a bass with its own
+	// free-running clock defeats the point. Clock edge prefers the LAST bus
+	// division: divisions are placed slowest-first is not guaranteed, but
+	// the highest index tends to be the longest period in practice; the
+	// layout resolves it via busVars_.
+	if (nBus > 0 && (int)plan.size() < capacity && canClaim(kRoleChannel[VoiceNode::Bass])) {
+		VoiceNode vp;
+		vp.role = VoiceNode::Bass;
+		vp.channel = '0';
+		claimed.insert('0');
+		vp.param = '2'; // pinned low octave (see placeArpeggioVoice)
+		vp.inputs.push_back(Edge(0, Edge::Clock, (char)(nBus - 1)));
+		fillBassWalk(vp.notes, 4);
+		plan.push_back(vp);
+	}
+
+	// The rest of the cast: a weighted bag, drawn without replacement except
+	// for the explicitly repeatable entries (Drums up to its own cap, plus
+	// the free-region Delay/Uclid texture below). Reserved roles that fail
+	// their internal chance gate (no publisher yet, or the coin toss misses)
+	// are NOT retried — they drop out of this draw and never come back, same
+	// as the old fixed sequence, just in a randomized order.
+	struct RoleSlot { VoiceNode::Role role; int weight; };
+	std::vector<RoleSlot> bag = {
+		{VoiceNode::Drums,   3}, // repeatable up to nDrums, handled below
+		{VoiceNode::Harmony, 3},
+		{VoiceNode::Chord,   2},
+		{VoiceNode::Counter, 2},
+		{VoiceNode::Gate,    2},
+	};
+	size_t const nDrums = w >= 24 ? 2 : 1;
+	size_t drumsPlaced = 0;
+
+	// Texture (Delay/Uclid) is free-region by design — "no fixed
+	// channel identity" — but the bag above claimed the WHOLE budget with
+	// reserved-role channels before texture ever got a turn, so at any
+	// budget the reserved cast could fill on its own, texture was flooded
+	// onto reserved channels (measured: 833/1735 texture voices landing on
+	// the Lead's channel alone at tight budgets) even though a free-region
+	// slot was mathematically available. Reserve ONE slot in the budget for
+	// texture's first free-region claim, but only when there is room beyond
+	// the mandatory head (Lead, +Bass when a bus exists) — at budgets that
+	// tight (e.g. maxChannels==2 with a bus), the head alone already uses
+	// the whole cap and there is nothing left to reserve.
+	size_t const headCount = 1 + (nBus > 0 ? 1 : 0);
+	size_t const bagChannelBudget =
+		maxChannels > headCount ? maxChannels - 1 : maxChannels;
+	auto canClaimBag = [&](char ch) {
+		return claimed.count(ch) > 0 || claimed.size() < bagChannelBudget;
+	};
+
+	while (!bag.empty() && (int)plan.size() < capacity) {
+		int totalWeight = 0;
+		for (RoleSlot const& s : bag) totalWeight += s.weight;
+		int pick = randInt(0, totalWeight - 1);
+		size_t idx = 0;
+		for (; idx < bag.size(); ++idx) {
+			pick -= bag[idx].weight;
+			if (pick < 0) break;
+		}
+		VoiceNode::Role const role = bag[idx].role;
+		bool consumed = false; // false => this role never fires again either way
+
+		switch (role) {
+			case VoiceNode::Drums: {
+				// Not a reserved role — the GM drum channel carries multiple
+				// hits — so it may repeat up to nDrums while it keeps winning
+				// the draw.
+				if (canClaimBag(kRoleChannel[VoiceNode::Drums])) {
+					VoiceNode vp;
+					vp.role = VoiceNode::Drums;
+					vp.channel = '9'; // GM convention
+					claimed.insert('9');
+					plan.push_back(vp);
+				}
+				if (++drumsPlaced >= nDrums) consumed = true;
+				break;
+			}
+			case VoiceNode::Harmony: {
+				// Transposing the first publisher that passes the chance
+				// gate (usually the lead). A second would fight over the
+				// reserved channel, so the scan stops at the first success.
+				consumed = true;
+				if (!canClaimBag(kRoleChannel[VoiceNode::Harmony])) break;
+				for (size_t j = 0; j < plan.size(); ++j) {
+					if (!publishesPitch(plan[j]) || plan[j].notes.empty()) continue;
+					if (!chance(0.65f)) continue;
+					VoiceNode vp;
+					vp.role = VoiceNode::Harmony;
+					vp.channel = '2';
+					claimed.insert('2');
+					vp.param = (char)('0' + randInt(1, 3));
+					vp.inputs.push_back(Edge(j, Edge::Pitch, vp.param));
+					// Occasionally hang a Modulation edge off the Pitch this
+					// voice already consumes — layout turns it into a
+					// '!'-operator CC tail. An extra edge on an existing
+					// node: no plan capacity, no channel, only a CC number
+					// from the per-call pool (reuses the variable).
+					if (chance(0.35f)) {
+						char cc = allocateCcNumber();
+						if (cc != 0) vp.inputs.push_back(Edge(j, Edge::Modulation, cc));
+					}
+					plan.push_back(vp);
+					break;
+				}
+				break;
+			}
+			case VoiceNode::Chord: {
+				// Texture in character, but pins a reserved channel.
+				consumed = true;
+				if (!canClaimBag(kRoleChannel[VoiceNode::Chord])) break;
+				VoiceNode vp;
+				vp.role = VoiceNode::Chord;
+				vp.channel = '3';
+				claimed.insert('3');
+				// Occasionally the chord's VELOCITY follows a publisher's
+				// pitch — accents that track the melody (K-fed cell, see
+				// layout).
+				if (chance(0.3f)) {
+					size_t pubs[8];
+					int np = 0;
+					for (size_t j = 0; j < plan.size() && np < 8; ++j) {
+						// Counter excluded: its reflected glyphs can dip
+						// below the note-letter indices, and a K-fed
+						// velocity of index 0 IS a note-off — the hit would
+						// silently drop.
+						if (publishesPitch(plan[j]) && plan[j].role != VoiceNode::Counter)
+							pubs[np++] = j;
+					}
+					if (np > 0) vp.inputs.push_back(Edge(pubs[randInt(0, np - 1)], Edge::Operand, Edge::kOpVelocity));
+				}
+				plan.push_back(vp);
+				break;
+			}
+			case VoiceNode::Counter: {
+				// A reflected second line `pivot B src`. B pokes |src -
+				// pivot| with the case of its right operand, so the pivot
+				// decides range and spelling. Pinned to 'Z': top-of-range
+				// keeps reflections on letter glyphs (interior pivots
+				// reflect onto digits, which are dropped), makes motion
+				// contrary below the pivot, and uppercase spells naturals.
+				// Publishes like Harmony.
+				consumed = true;
+				if (!canClaimBag(kRoleChannel[VoiceNode::Counter])) break;
+				for (size_t j = 0; j < plan.size(); ++j) {
+					if (!publishesPitch(plan[j]) || plan[j].notes.empty()) continue;
+					if (!chance(0.65f)) continue;
+					VoiceNode vp;
+					vp.role = VoiceNode::Counter;
+					vp.channel = '4';
+					claimed.insert('4');
+					vp.param = 'Z'; // top of range AND uppercase: naturals, not sharps
+					vp.inputs.push_back(Edge(j, Edge::Pitch, vp.param));
+					// Same Modulation-tail chance as Harmony: the reflected
+					// contour streams as CC on this voice's own channel.
+					if (chance(0.35f)) {
+						char cc = allocateCcNumber();
+						if (cc != 0) vp.inputs.push_back(Edge(j, Edge::Modulation, cc));
+					}
+					plan.push_back(vp);
+					break;
+				}
+				break;
+			}
+			case VoiceNode::Gate: {
+				// Banging a publisher's note; occasionally gated ON a
+				// SECOND publisher hitting one of its notes (fan-in).
+				consumed = true;
+				if (!canClaimBag(kRoleChannel[VoiceNode::Gate])) break;
+				// Primary source first: the first publisher that passes the
+				// chance gate. Deciding fan-in only after a primary exists
+				// means a failed chance never wastes a drawn trigger note,
+				// and a gate falls back to the plain branch instead of
+				// vanishing.
+				for (size_t j = 0; j < plan.size(); ++j) {
+					if (!publishesPitch(plan[j]) || plan[j].notes.empty()) continue;
+					if (!chance(0.65f)) continue;
+
+					// Fan-in: gate this note on a DIFFERENT publisher
+					// hitting one of its own — chosen at random among the
+					// remaining qualifiers. A lowest-index pick would
+					// always make the Lead the trigger and bar it from ever
+					// being the Pitch source.
+					size_t others[8];
+					int no = 0;
+					for (size_t t = 0; t < plan.size() && no < 8; ++t) {
+						if (t == j || !publishesPitch(plan[t]) || plan[t].notes.empty()) continue;
+						others[no++] = t;
+					}
+					bool const fanIn = no > 0 && chance(0.35f);
+
+					VoiceNode vp;
+					vp.role = VoiceNode::Gate;
+					vp.channel = '5';
+					claimed.insert('5');
+					if (fanIn) {
+						size_t const trigFrom = others[randInt(0, no - 1)];
+						char const trigNote =
+							plan[trigFrom].notes[randInt(0, (int)plan[trigFrom].notes.size() - 1)];
+						vp.param = trigNote;
+						vp.inputs.push_back(Edge(j, Edge::Pitch, '0'));
+						vp.inputs.push_back(Edge(trigFrom, Edge::Trigger, trigNote));
+						// A fan-in gate carries a Pitch, so it too may host
+						// a Modulation tail on its own Pitch source.
+						if (chance(0.35f)) {
+							char cc = allocateCcNumber();
+							if (cc != 0) vp.inputs.push_back(Edge(j, Edge::Modulation, cc));
+						}
+					}
+					else {
+						vp.param = plan[j].notes[randInt(0, (int)plan[j].notes.size() - 1)];
+						vp.inputs.push_back(Edge(j, Edge::Trigger, vp.param));
+					}
+					plan.push_back(vp);
+					break;
+				}
+				break;
+			}
+			default: consumed = true; break; // unreachable: bag holds no other role
+		}
+
+		if (consumed || !canClaimBag(kRoleChannel[role])) bag.erase(bag.begin() + idx);
+	}
+
+	// Texture fills the remaining capacity. Delay and Uclid live in the
+	// FREE region — no fixed channel identity — so unlike the reserved
+	// roles they may repeat freely (draw keeps the old 0=Delay, 1=Uclid).
+	while ((int)plan.size() < capacity) {
+		VoiceNode vp;
+		vp.role = randInt(0, 1) == 0 ? VoiceNode::Delay : VoiceNode::Uclid;
+		// Claim a fresh free-region channel while the set has room; once
+		// full, share an already-claimed one so density keeps filling the
+		// selection (the budget caps distinct channels, not voices).
+		char const fresh = freeChanPool_.empty()
+			? kFreeChannels[freeWrap_ % (sizeof(kFreeChannels) - 1)]
+			: freeChanPool_.back();
+		if (canClaim(fresh)) {
+			vp.channel = allocateFreeChannel();
+			claimed.insert(vp.channel);
+		}
+		else {
+			vp.channel = pickSharedChannel();
+		}
+		// Occasionally a texture hit's velocity follows a publisher's pitch
+		// — melody-tracking accents. Same source rules: pitch publishers
+		// only (glyphs never index to velocity 0, the midi note-off). Counter
+		// excluded: reflected glyphs can dip below note-letter indices.
+		if (chance(0.3f)) {
+			size_t pubs[8];
+			int np = 0;
+			for (size_t j = 0; j < plan.size() && np < 8; ++j) {
+				if (publishesPitch(plan[j]) && plan[j].role != VoiceNode::Counter)
+					pubs[np++] = j;
+			}
+			if (np > 0) vp.inputs.push_back(Edge(pubs[randInt(0, np - 1)], Edge::Operand, Edge::kOpVelocity));
+		}
+		plan.push_back(vp);
+	}
+
+	return plan;
+}
+
+
+
+void AhabGenerator::generateArrangement(ScratchPad& buf, Usz y, Usz x, Usz h, Usz w, float density,
+	size_t maxChannels) {
+	// Identity + bus. The bus is packed by the same skyline as every other
+	// voice — usually the top-left corner — and voices reading it share its
+	// band to the right (ORCA scans left-to-right, so a same-row write left
+	// of a read is visible). Reserving a full band for ~15 columns of clocks
+	// stranded the entire top-right of wide selections.
+	size_t const busUnits = std::min<Usz>(4, (w + 1) / 5);
+	bool const busPlaced = h >= 2 && w >= 8 && density > 0.2f;
+	size_t const nBus = busPlaced ? busUnits : 0;
+
+	std::vector<VoiceNode> plan = planArrangement(h, w, density, nBus, maxChannels);
+	if (plan.empty()) return;
+
+	// Topological layout. Every reader of a PITCH variable is placed below
+	// the writer; the only exception is the clock bus, whose writes are
+	// visible same-row-left of its readers (scan order).
+	Usz const top = y;
+	// Density buys breathing room as well as count: the sparser the choice,
+	// the wider the margin the packer reserves, so a Sparse take's few
+	// blocks spread across the whole selection instead of clustering. Packed
+	// (100%) keeps zero margins.
+	Usz const gapX = (Usz)((1.f - density) * 6.f);
+	Usz const gapY = (Usz)((1.f - density) * 3.f);
+
+	// Vertical appetite cap: generous enough for a publishing harmony (5)
+	// plus its modulation tail (2) and a K row — the skyline packer, not
+	// this, actually bounds placement.
+	auto availH = [&](Usz cy) { return std::min(h > cy ? h - cy : (Usz)0, (Usz)12); };
+	auto availW = [&](Usz cx) { return std::min(x + w > cx ? x + w - cx : (Usz)0, (Usz)16); };
+
+	// One case per role, each calling the same builder its zone did before.
+	auto placeVoice = [&](VoiceNode& vn, char srcVar, char velVar, Usz cy, Usz cx, Usz avH, Usz avW) -> Extent {
+		switch (vn.role) {
+			case VoiceNode::Bass:
+			case VoiceNode::Lead: {
+				char sharedVar = 0;
+				for (Edge const& e : vn.inputs) {
+					if (e.kind == Edge::Clock && (size_t)e.param < busVars_.size()) {
+						sharedVar = busVars_[(size_t)e.param];
+					}
+				}
+				// A Bass without its bus variable would silently fall back to
+				// placeArpeggioVoice's own-clock branch — exactly the
+				// free-running bass the planner refuses to build. Drop it;
+				// the plan-level guard (nBus > 0) can't see a bus that failed
+				// to PLACE here.
+				if (vn.role == VoiceNode::Bass && sharedVar == 0) {
+					vn.publishedVar = 0;
+					return Extent();
+				}
+				char var = 0;
+				// Bass pins its octave low ('2'), bypassing the
+				// channel-correlated band draw entirely.
+				char const oct = vn.role == VoiceNode::Bass ? vn.param : 0;
+				Extent e = avH >= 5
+					? placeArpeggioVoice(buf, cy, cx, avH, avW, vn.channel, vn.notes, sharedVar, &var, velVar, oct)
+					: Extent();
+				vn.publishedVar = var;
+				return e;
+			}
+			case VoiceNode::Harmony:
+			case VoiceNode::Counter:
+			case VoiceNode::Gate: {
+				bool const gate = vn.role == VoiceNode::Gate;
+				if (srcVar == 0) return Extent();
+				if (gate) {
+					// A second Trigger edge gates this voice on another
+					// publisher's pitch.
+					char srcB = 0, parB = 0;
+					for (Edge const& e : vn.inputs) {
+						if (e.kind == Edge::Trigger && plan[e.from].publishedVar != 0) {
+							srcB = plan[e.from].publishedVar;
+							parB = e.param;
+						}
+					}
+					bool const fanIn = srcB != 0;
+					// Both gate layouts span 12 columns; the
+					// fan-in merge adds four rows on top of the single gate.
+					Usz const needH = fanIn ? 7 : 3;
+					Usz const needW = 12;
+					if (avH < needH || avW < needW) return Extent();
+					Extent e = placeDerivedVoice(buf, cy, cx, avH, avW,
+						vn.channel, srcVar, true, vn.param, nullptr, srcB, parB);
+					if (e.empty() == false) ++derivedPlaced_;
+					return e;
+				}
+				// Harmony publishes when there is room for the extra V-write
+				// row, so chains can attach to this voice. Counter uses the
+				// same shape with 'B': pivot B src reflects the source around
+				// the 'Z' axis — contrary motion that always lands back on
+				// (upper-case, natural) note letters (see the planner comment).
+				char const arith = vn.role == VoiceNode::Counter ? 'B' : 'A';
+				char pubVar = 0;
+				Extent e;
+				if (avH >= 5) {
+					e = placeDerivedVoice(buf, cy, cx, avH, avW, vn.channel, srcVar, false, vn.param, &pubVar, 0, 0, arith);
+				}
+				else if (avH >= 3) {
+					e = placeDerivedVoice(buf, cy, cx, avH, avW, vn.channel, srcVar, false, vn.param, nullptr, 0, 0, arith);
+				}
+				else {
+					return Extent();
+				}
+				vn.publishedVar = pubVar;
+				if (!e.empty()) ++derivedPlaced_;
+				return e;
+			}
+			case VoiceNode::Drums:
+				return avH >= 2 ? generateDrumVoice(buf, cy, cx, avH, avW) : Extent();
+			case VoiceNode::Delay: {
+				std::string note;
+				fillPatchWalk(note, 1); // in the patch key
+				return avH >= 2
+					? placeDelayMidiVoice(buf, cy, cx, avH, avW,
+										  randomSmallDigit(), barDivisorMod(),
+										  vn.channel, randomOctaveForRole(vn.role), note[0], velVar)
+					: Extent();
+			}
+			case VoiceNode::Uclid: {
+				char uSteps, uMax;
+				randomEuclid(uSteps, uMax);
+				std::string note;
+				fillPatchWalk(note, 1); // in the patch key
+				return avH >= 2
+					? placeUclidMidiVoice(buf, cy, cx, avH, avW,
+										  uSteps, uMax, vn.channel, randomOctaveForRole(vn.role), note[0], velVar)
+					: Extent();
+			}
+			case VoiceNode::Chord: {
+				std::string tones;
+				fillPatchWalk(tones, 3 + randInt(0, 1)); // triad-ish, in the patch key
+				return placeChordVoice(buf, cy, cx, avH, avW,
+									   randomSmallDigit(), barDivisorMod(), vn.channel, randomOctaveForRole(vn.role),
+									   std::vector<char>(tones.begin(), tones.end()), velVar);
+			}
+			default: {
+				return Extent();
+			}
+		}
+	};
+
+	// Skyline packing: sky[c] is the first free row of selection column c.
+	// Each voice takes the column run that clears the skyline and its
+	// producers' bottoms, landing closest to a depth target from plan order
+	// (leads high, texture deep). Plan-index order is already topological.
+	std::vector<Usz> sky(w, top);
+	std::vector<Usz> placedBottom(plan.size(), h); // sentinel: not yet placed
+	// Legend support: whether voice i actually PLACED. "Planned" and
+	// "placed" differ — the packer drops voices when no column run fits and
+	// builders return empty extents when their minimum footprint doesn't
+	// fit. Set ONLY at the placedBottom assignment below.
+	std::vector<bool> placed(plan.size(), false);
+
+	for (size_t i = 0; i < plan.size(); ++i) {
+		VoiceNode& vn = plan[i];
+
+		// A voice must start below the content bottom of every producer whose
+		// variables it reads (producers precede it in plan order). For the bus
+		// that "bottom" is its WRITE row: readers may share its band only at
+		// or below the row the write happens on.
+		Usz minY = top;
+		for (Edge const& e : vn.inputs) {
+			minY = std::max(minY, placedBottom[e.from]);
+		}
+
+		// Only the Pitch edge feeds the note source; a Gate resolves its own
+		// Trigger edges inside placeVoice. An Operand edge feeds the velocity
+		// cell from another publisher's pitch — falling back to the literal
+		// velocity when it never published.
+		char srcVar = 0;
+		for (Edge const& e : vn.inputs) {
+			if (e.kind == Edge::Pitch) {
+				srcVar = plan[e.from].publishedVar;
+			}
+		}
+		char velVar = 0;
+		bool hasOperand = false;
+		for (Edge const& e : vn.inputs) {
+			if (e.kind == Edge::Operand && e.param == Edge::kOpVelocity) {
+				hasOperand = true;
+				velVar = plan[e.from].publishedVar;
+			}
+		}
+		// An Operand edge whose producer never published is a
+		// silently degraded accent (the builder falls back to a literal).
+		if (hasOperand) ++(velVar ? drops_.operandResolved : drops_.operandUnresolved);
+		// Upper-bound footprint per role/state, used only to choose the
+		// position; builders return their real extent, which drives the
+		// skyline update below.
+		Usz eh = 2, ew = 9; // drums / delay / uclid
+		switch (vn.role) {
+			case VoiceNode::Bus:
+				eh = 2; ew = nBus * 5 - 1; break;
+			case VoiceNode::Bass:
+			case VoiceNode::Lead: eh = 5; ew = 13; break;
+			case VoiceNode::Harmony: eh = 5; ew = 8; break;
+			case VoiceNode::Counter: eh = 5; ew = 8; break;
+			case VoiceNode::Gate: {
+				ew = 12;
+				// Fan-in needs BOTH a Pitch and a Trigger edge; publishedVar is
+				// not known at planning time, so it cannot be consulted here.
+				bool hasP = false, hasT = false;
+				for (Edge const& e : vn.inputs) {
+					hasP |= e.kind == Edge::Pitch;
+					hasT |= e.kind == Edge::Trigger;
+				}
+				eh = hasP && hasT ? 7 : 3;
+				break;
+			}
+			case VoiceNode::Chord: eh = 8; break;
+			default: break;
+		}
+		// A Modulation edge hangs a 2-row CC tail directly
+		// below the voice (see placeModulationTail below). Folding that into
+		// the footprint ESTIMATE — not just the post-hoc fit check — means the
+		// skyline scan picks a column run that actually has room for it,
+		// instead of positioning the voice as if it had no tail and then
+		// silently dropping the tail when it doesn't fit.
+		for (Edge const& en : vn.inputs) {
+			if (en.kind == Edge::Modulation) { eh += 2; break; }
+		}
+
+		// Shallowest-fitting column run would stack everything at the top; the
+		// point is COVERAGE. Map plan order onto depth — leads aim high, their
+		// dependents middle, drums/textures progressively deeper — and pick the
+		// column run whose required row lands closest to that target while
+		// clearing producers AND skyline. Scanning left to right with a strict
+		// compare keeps the leftmost of equals.
+		float const frac = plan.size() > 1 ? (float)i / (float)(plan.size() - 1) : 0.f;
+		Usz const targetY = top + (Usz)(frac * (float)(h - 1 - top));
+		// The scanned run includes the horizontal margin, so a follower cannot
+		// start closer than gapX columns to this voice's right edge.
+		Usz const ewRun = std::min(ew + gapX, w);
+		bool found = false;
+		Usz bestY = h, bestX = x;
+		Usz bestDist = h;
+		for (Usz cx = x; cx + ewRun <= x + w; ++cx) {
+			Usz req = minY;
+			for (Usz dx = 0; dx < ewRun; ++dx) {
+				req = std::max(req, sky[cx - x + dx]);
+			}
+			if (req + eh > h) continue;
+			Usz const dist = req > targetY ? req - targetY : targetY - req;
+			if (!found || dist < bestDist) { bestDist = dist; bestY = req; bestX = cx; found = true; }
+		}
+		if (!found) continue; // genuinely no room: dropped, consumers degrade
+
+		Extent e;
+		bool const isBus = vn.role == VoiceNode::Bus;
+		if (isBus) {
+			e = generateClockBus(buf, bestY, bestX, eh, ew + 1);
+		}
+		else {
+			Usz const avH = availH(bestY);
+			e = placeVoice(vn, srcVar, velVar, bestY, bestX, avH, availW(bestX));
+
+			// A Modulation edge hangs a '!'-operator CC tail directly below the
+			// voice, mapping its producer's published pitch onto a control change
+			// on THIS voice's channel. Decorative by design: skipped silently
+			// when the producer never published or there is no room below —
+			// never at the cost of notes.
+			if (!e.empty()) {
+				bool hasMod = false, attached = false;
+				for (Edge const& en : vn.inputs) {
+					if (en.kind != Edge::Modulation) continue;
+					hasMod = true;
+					char const ccVar = plan[en.from].publishedVar;
+					if (ccVar == 0 || e.h + 2 > avH) continue;
+					Extent t = placeModulationTail(buf, bestY + e.h, bestX, avH - e.h,
+												   availW(bestX), vn.channel, en.param, ccVar);
+					if (!t.empty()) { e = Extent(e.h + t.h, std::max(e.w, t.w)); attached = true; }
+					break;
+				}
+				// A planned tail that attached to a placed voice
+				// but did not survive layout is a silently lost CC stream.
+				if (hasMod) ++(attached ? drops_.modTailsAttached : drops_.modTailsDropped);
+			}
+		}
+		if (e.empty()) continue;
+
+		placed[i] = true;
+		placedBottom[i] = bestY + e.h;
+		if (isBus) {
+			// Readers of the bus may share its band, but their reads must not
+			// precede the WRITE row (it is the bus's SECOND row): for minY
+			// purposes the bus ends there, so bus-reading voices start at or
+			// below the write row — same-row-right of the write is visible.
+			placedBottom[i] = bestY + e.h - 1;
+		}
+		if (!e.empty()) {
+			// Raise the skyline over the real footprint PLUS the density
+			// margin (vertically and horizontally), plus ONE
+			// separator row even at zero margin: a K row's pokes can never
+			// cross into a neighbour's MIDI row below.
+			for (Usz dx = 0; dx < e.w + gapX && bestX - x + dx < w; ++dx) {
+				Usz& s = sky[bestX - x + dx];
+				s = std::max(s, bestY + e.h + gapY + 1);
+			}
+		}
+	}
+
+	// Last statement: the channel legend, in whatever interior gap is left.
+	// Draws no rng; skipped
+	// silently when nothing placed or no strip fits.
+	placeChannelLegend(buf, y, x, h, w, plan, placed, sky);
+}
+
+AhabGenerator::Extent AhabGenerator::generateClockBus(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW) {
+	if (maxH < 2 || maxW < 5) return {};
+
+	// Several clock divisions at the very top of the arrangement,
+	// each publishing its counter into a reserved variable (q, w, e, ...).
+	// Unit layout at column cx (4 wide, stride 5):
+	//   row 0: . r C m   C at cx+2, output lands at (y+1, cx+2)
+	//   row 1: v V .     name@cx selects write mode; value@cx+2 is exactly
+	//                    where the clock pokes — the old .vV. layout stored a
+	//                    literal '.' into the var forever.
+	// Writers sit above their readers: vars are wiped every tick and only
+	// visible below/right, and voices start 3 rows down.
+	static char const kBusVars[] = "qwer";
+	int const maxUnits = (int)std::min<Usz>(4, (maxW + 1) / 5);
+	if (maxUnits <= 0) return {};
+
+	// Distinct bar-divisor mods per unit, starting at a random offset.
+	Usz divs[4];
+	int nd = 0;
+	for (Usz d = 2; d <= barMod_; ++d) {
+		if (barMod_ % d == 0 && nd < 4) divs[nd++] = d;
+	}
+	int start = nd ? randInt(0, nd - 1) : 0;
+
+	busVars_.clear();
+	for (int i = 0; i < maxUnits; ++i) {
+		Usz cx = x + (Usz)i * 5;
+		char var = kBusVars[i];
+		char mod = b36Char(nd ? divs[(start + i) % nd] : barMod_);
+
+		buf.set(y, cx,   '.');
+		buf.set(y, cx+1, randomSmallDigit());
+		buf.set(y, cx+2, 'C');
+		buf.set(y, cx+3, mod);
+
+		buf.set(y+1, cx,   var);
+		buf.set(y+1, cx+1, 'V');
+		buf.set(y+1, cx+2, '.');
+
+		busVars_ += var;
+	}
+
+	return Extent{2, x + (Usz)maxUnits * 5 - 1 - x}; // rows; width covered
+}
+
+AhabGenerator::Extent AhabGenerator::generateDrumVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW) {
+	if (maxH < 2 || maxW < 9) return {};
+
+	// Euclidean pattern with a varied modulus
+	char steps, eMax;
+	randomEuclid(steps, eMax);
+	
+	// Row 0: Uclid - .sUm (U at x+2 pokes its '*' to (y+1, x+2))
+	buf.set(y, x, '.');
+	buf.set(y, x+1, steps);
+	buf.set(y, x+2, 'U');
+	buf.set(y, x+3, eMax);
+	
+	// Row 1: MIDI one column right of the bang column
+	buf.set(y+1, x+3, ':');
+	buf.set(y+1, x+4, '9');  // MIDI channel 10 (drums)
+	buf.set(y+1, x+5, '2');  // Octave 2
+	{
+		std::string hit;
+		fillPatchWalk(hit, 1); // tuned percussion, in the patch key
+		buf.set(y+1, x+6, hit[0]);
+	}
+	buf.set(y+1, x+7, 'f');  // High velocity
+	buf.set(y+1, x+8, '1');  // Short duration
+	
+	return Extent{2, 9};
+}
+
+// Pattern building blocks implementation
+
+AhabGenerator::Extent AhabGenerator::placeClockPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char rate, char mod) {
+	if (maxW < 4) return {};
+	// .rCm format
+	buf.set(y, x, '.');
+	buf.set(y, x+1, rate);
+	buf.set(y, x+2, 'C');
+	buf.set(y, x+3, mod);
+	return Extent{1, 4};
+}
+
+AhabGenerator::Extent AhabGenerator::placeDelayPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char rate, char mod) {
+	if (maxW < 4) return {};
+	// .rDm format
+	buf.set(y, x, '.');
+	buf.set(y, x+1, rate);
+	buf.set(y, x+2, 'D');
+	buf.set(y, x+3, mod);
+	return Extent{1, 4};
+}
+
+AhabGenerator::Extent AhabGenerator::placeTrackPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char key, const std::string& values) {
+	Usz len = values.size();
+	if (maxW < 4 + len) return {};
+	
+	// .keyTlen_values format: ..kT + values
+	buf.set(y, x, '.');
+	buf.set(y, x+1, key);
+	char lenChar = (len < 10) ? '0' + len : 'a' + (len - 10);
+	buf.set(y, x+2, lenChar);
+	buf.set(y, x+3, 'T');
+	
+	for (Usz i = 0; i < len; ++i) {
+		buf.set(y, x+4+i, values[i]);
+	}
+	
+	return Extent{1, 4 + len};
+}
+
+AhabGenerator::Extent AhabGenerator::placeUclidPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char steps, char max) {
+	if (maxW < 4) return {};
+	// .sUm format
+	buf.set(y, x, '.');
+	buf.set(y, x+1, steps);
+	buf.set(y, x+2, 'U');
+	buf.set(y, x+3, max);
+	return Extent{1, 4};
+}
+
+AhabGenerator::Extent AhabGenerator::placeMidiPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, 
+									  char channel, char octave, char note, char vel, char len) {
+	if (maxW < 6) return {};
+	// :cOnvl format (colon operator for MIDI)
+	buf.set(y, x, ':');
+	buf.set(y, x+1, channel);
+	buf.set(y, x+2, octave);
+	buf.set(y, x+3, note);
+	buf.set(y, x+4, vel);
+	buf.set(y, x+5, len);
+	return Extent{1, 6};
+}
+
+AhabGenerator::Extent AhabGenerator::placeVarWrite(ScratchPad& buf, Usz y, Usz x, Usz maxW, char name, char value) {
+	if (maxW < 4) return {};
+	// '.' as the value would store a literal '.' into the variable forever:
+	// pass a real initial value even if a producer above
+	// overwrites the cell every tick.
+	assert(value != '.' && "V-write with '.' value is a permanent no-op store");
+	// .nVv format
+	buf.set(y, x, '.');
+	buf.set(y, x+1, name);
+	buf.set(y, x+2, 'V');
+	buf.set(y, x+3, value);
+	return Extent{1, 4};
+}
+
+AhabGenerator::Extent AhabGenerator::placeVarRead(ScratchPad& buf, Usz y, Usz x, Usz maxW, char name) {
+	// Writes 4 cells (..Vn), so require 4 columns of budget
+	if (maxW < 4) return {};
+	// ..Vn format (read variable, output below)
+	buf.set(y, x, '.');
+	buf.set(y, x+1, '.');
+	buf.set(y, x+2, 'V');
+	buf.set(y, x+3, name);
+	return Extent{1, 4};
+}
+
+AhabGenerator::Extent AhabGenerator::placeRandomPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char min, char max) {
+	if (maxW < 4) return {};
+	// .mRx format
+	buf.set(y, x, '.');
+	buf.set(y, x+1, min);
+	buf.set(y, x+2, 'R');
+	buf.set(y, x+3, max);
+	return Extent{1, 4};
+}
+
+AhabGenerator::Extent AhabGenerator::placeIncrementPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char step, char mod) {
+	if (maxW < 4) return {};
+	// .sIm format
+	buf.set(y, x, '.');
+	buf.set(y, x+1, step);
+	buf.set(y, x+2, 'I');
+	buf.set(y, x+3, mod);
+	return Extent{1, 4};
+}
+
+AhabGenerator::Extent AhabGenerator::placeAddPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char a, char b) {
+	if (maxW < 4) return {};
+	// .aAb format
+	buf.set(y, x, '.');
+	buf.set(y, x+1, a);
+	buf.set(y, x+2, 'A');
+	buf.set(y, x+3, b);
+	return Extent{1, 4};
+}
+
+AhabGenerator::Extent AhabGenerator::placeMultiplyPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char a, char b) {
+	if (maxW < 4) return {};
+	// .aMb format
+	buf.set(y, x, '.');
+	buf.set(y, x+1, a);
+	buf.set(y, x+2, 'M');
+	buf.set(y, x+3, b);
+	return Extent{1, 4};
+}
+
+AhabGenerator::Extent AhabGenerator::placeIfPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char a, char b) {
+	if (maxW < 4) return {};
+	// .aFb format
+	buf.set(y, x, '.');
+	buf.set(y, x+1, a);
+	buf.set(y, x+2, 'F');
+	buf.set(y, x+3, b);
+	return Extent{1, 4};
+}
+
+AhabGenerator::Extent AhabGenerator::placeHaltPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW) {
+	if (maxW < 1) return {};
+	buf.set(y, x, 'H');
+	return Extent{1, 1};
+}
+
+AhabGenerator::Extent AhabGenerator::placeOffsetPattern(ScratchPad& buf, Usz y, Usz x, Usz maxW, char offX, char offY) {
+	if (maxW < 4) return {};
+	// .y x O format — O reads its x operand from (0,-1) and y from (0,-2),
+	// so the cell next to 'O' is offX and the one before it is offY
+	buf.set(y, x, '.');
+	buf.set(y, x+1, offY);
+	buf.set(y, x+2, offX);
+	buf.set(y, x+3, 'O');
+	return Extent{1, 4};
+}
+
+// Compound pattern implementations
+
+AhabGenerator::Extent AhabGenerator::placeDelayMidiVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
+										   char rate, char mod, char channel, char octave, char note,
+										   char velocityVar) {
+	// Needs 9 columns now: '.' r D m  +  ':' c o n v l starting at x+3
+	if (maxH < 2 || maxW < 9) return {};
+	// Row 0: .rDm — D at x+2 pokes its '*' output to (y+1, x+2)
+	placeDelayPattern(buf, y, x, maxW, rate, mod);
+	// With a velocity source, a K row pokes it into the velocity cell
+	// below — same footprint, one live operand instead of a fixed 'f'.
+	if (velocityVar != 0) {
+		buf.set(y, x + 5, '1');      // K length: velocity only
+		buf.set(y, x + 6, 'K');      // pokes (y+1, x+7)
+		buf.set(y, x + 7, velocityVar);
+	}
+	// Row 1: ':' at x+3 is the right-hand neighbour of the bang column, so
+	// oper_has_neighboring_bang() sees it. (A ':' ON the bang cell would be
+	// overwritten by the '*')
+	buf.set(y+1, x+3, ':');
+	buf.set(y+1, x+4, channel);
+	buf.set(y+1, x+5, octave);
+	buf.set(y+1, x+6, note);
+	buf.set(y+1, x+7, randomVelocityLiteral()); // velocity (non-zero: 0 is a note-off; K-fed when sourced)
+	buf.set(y+1, x+8, randomLengthForRole(VoiceNode::Delay)); // length
+	return Extent{2, 9};
+}
+
+AhabGenerator::Extent AhabGenerator::placeUclidMidiVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
+										   char steps, char max, char channel, char octave, char note,
+										   char velocityVar) {
+	// Same alignment as placeDelayMidiVoice: U at x+2, ':' at x+3
+	if (maxH < 2 || maxW < 9) return {};
+	// Row 0: .sUm — U at x+2 pokes its '*' output to (y+1, x+2)
+	placeUclidPattern(buf, y, x, maxW, steps, max);
+	// With a velocity source, a K row pokes it into the velocity cell
+	// below — same footprint, one live operand instead of a fixed 'c'.
+	if (velocityVar != 0) {
+		buf.set(y, x + 5, '1');      // K length: velocity only
+		buf.set(y, x + 6, 'K');      // pokes (y+1, x+7)
+		buf.set(y, x + 7, velocityVar);
+	}
+	// Row 1: MIDI one column right of the bang column
+	buf.set(y+1, x+3, ':');
+	buf.set(y+1, x+4, channel);
+	buf.set(y+1, x+5, octave);
+	buf.set(y+1, x+6, note);
+	buf.set(y+1, x+7, randomVelocityLiteral()); // velocity (K-fed when sourced)
+	buf.set(y+1, x+8, randomLengthForRole(VoiceNode::Uclid)); // length
+	return Extent{2, 9};
+}
+
+AhabGenerator::Extent AhabGenerator::placeArpeggioVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
+										  char channel, const std::string& notes, char sharedVar, char* allocatedVar,
+										  char velocityVar, char octave) {
+	Usz noteLen = notes.size();
+	// 5 rows: clock / track / V-write / bang+V-read / MIDI. Width: the ':'
+	// block spans x..x+8; track values extend to x+5+noteLen-1.
+	if (maxH < 5 || maxW < std::max((Usz)9, 5 + noteLen)) return {};
+
+	char varName = allocateVarName();
+	if (!varName) return {}; // variable pool exhausted
+	if (allocatedVar) *allocatedVar = varName;
+
+	char mod = (noteLen < 10) ? '0' + noteLen : 'a' + (noteLen - 10);
+	// octave == 0: draw the LEAD register band — the only role that still
+	// relies on the random draw, since Bass pins '2' through vn.param. A
+	// pinned octave ('2'..'4') bypasses the draw entirely. Captured before
+	// the reassignment below: it is also the only signal this function has
+	// for which role it is building (see randomLengthForRole below).
+	bool const isBass = octave != 0;
+	if (octave == 0) octave = randomOctaveForRole(VoiceNode::Lead);
+	char bangRate = randomSmallDigit();
+	char const velLiteral = randomVelocityLiteral();
+	char const lenLiteral = randomLengthForRole(isBass ? VoiceNode::Bass : VoiceNode::Lead);
+
+	// Anchor every column off the ':' so operand offsets stay explicit — bare
+	// x+2/x+3 literals are how off-by-ones hide.
+	const Usz colMidi = x + 3;       // ':' itself
+	const Usz colNote = colMidi + 3; // channel +1, octave +2, note +3
+
+	// Row 0 drives the track KEY slot at (y+1, x+2): either the voice's own
+	// clock (.rCm, output lands exactly on the key cell), or a read of a
+	// clock-bus division published above.
+	if (sharedVar) {
+		buf.set(y, x,   '.');
+		buf.set(y, x+1, '.');
+		buf.set(y, x+2, 'V'); // read mode; output lands at (y+1, x+2)
+		buf.set(y, x+3, sharedVar);
+	}
+	else {
+		placeClockPattern(buf, y, x, maxW, randomSmallDigit(), mod);
+	}
+
+	// Row 1: track — T at x+4 reads key at -2 (= x+2, fed by the clock above)
+	// and len at -1 (= x+3); values start at +1 (= x+5). Its output pokes
+	// (y+2, x+4).
+	buf.set(y+1, x+1, '.');
+	buf.set(y+1, x+2, '.');          // key slot, written by the clock each tick
+	buf.set(y+1, x+3, mod);          // len == number of notes
+	buf.set(y+1, x+4, 'T');
+	for (Usz i = 0; i < noteLen; ++i) {
+		buf.set(y+1, x+5+i, notes[i]);
+	}
+
+	// Row 2: V-write — left operand varName selects write mode; the right
+	// operand (y+2, x+4) is exactly where the track output lands.
+	buf.set(y+2, x+2, varName);
+	buf.set(y+2, x+3, 'V');
+	buf.set(y+2, x+4, '.');          // value slot, poked by the track each tick
+
+	// Row 3: bang source (D pokes '*' to (y+4, x+2)) plus the read that fills
+	// the note cell. With a velocity source, a K (konkat) row replaces
+	// the V-read: it reads TWO variable names and pokes their values into the
+	// note AND velocity cells below — exactly the V-read's footprint, one
+	// more live operand. The velocity cell keeps its literal as a prefill:
+	// K skips '.' names without writing, so no stale glyph can linger.
+	buf.set(y+3, x+1, bangRate);
+	buf.set(y+3, x+2, 'D');
+	buf.set(y+3, x+3, '2');
+	if (velocityVar != 0) {
+		buf.set(y+3, x+4, '2');      // K length: note + velocity
+		buf.set(y+3, x+5, 'K');      // pokes (y+4, colNote) and (y+4, colNote+1)
+		buf.set(y+3, x+6, varName);
+		buf.set(y+3, x+7, velocityVar);
+	}
+	else {
+		buf.set(y+3, colNote - 1, '.');
+		buf.set(y+3, colNote,     'V');
+		buf.set(y+3, colNote + 1, varName);
+	}
+
+	// Row 4: ':' — banged from the left, note cell filled by the V-read/K above.
+	buf.set(y+4, colMidi,     ':');
+	buf.set(y+4, colMidi + 1, channel);
+	buf.set(y+4, colMidi + 2, octave);
+	buf.set(y+4, colNote,     '.');  // note cell, poked by the V-read
+	buf.set(y+4, colMidi + 4, velLiteral); // velocity (non-zero: 0 is a note-off)
+	buf.set(y+4, colMidi + 5, lenLiteral); // length
+
+	return Extent{5, std::max((Usz)9, 5 + noteLen)};
+}
+
+AhabGenerator::Extent AhabGenerator::placeChordVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
+													   char rate, char mod, char channel, char octave,
+													   const std::vector<char>& notes, char velocityVar) {
+	// A delay pokes exactly ONE cell, so the old single-delay fan-out left
+	// chord notes 2..N without a bang neighbour and permanently silent.
+	// Fix: N stacked delay+MIDI pairs with IDENTICAL rate/mod - D fires when
+	// Tick%(rate*mod)==0 regardless of position, so every note bang lands on
+	// the same tick: a true simultaneous chord.
+	Usz const n = notes.size();
+	if (n == 0 || maxH < 2 * n || maxW < 9) return {};
+
+	// Drawn ONCE for the whole stack, not per note: a chord speaks with one
+	// articulation, not a different one per stacked pitch.
+	char const velLiteral = randomVelocityLiteral();
+	char const lenLiteral = randomLengthForRole(VoiceNode::Chord);
+
+	for (Usz i = 0; i < n; ++i) {
+		Usz ry = y + 2 * i;
+		placeDelayPattern(buf, ry, x, maxW, rate, mod); // D at x+2
+		// With a velocity source, a K row feeds every chord note's
+		// velocity cell from one publisher — accents on whole stacks.
+		if (velocityVar != 0) {
+			buf.set(ry, x + 5, '1');     // K length: velocity only
+			buf.set(ry, x + 6, 'K');     // pokes (ry+1, x+7)
+			buf.set(ry, x + 7, velocityVar);
+		}
+		buf.set(ry + 1, x + 3, ':');                    // right of the bang column
+		buf.set(ry + 1, x + 4, channel);
+		buf.set(ry + 1, x + 5, octave);
+		buf.set(ry + 1, x + 6, notes[i]);
+		buf.set(ry + 1, x + 7, velLiteral);             // velocity (K-fed when sourced)
+		buf.set(ry + 1, x + 8, lenLiteral);              // length
+	}
+
+	return Extent{2 * n, 9};
+}
+
+AhabGenerator::Extent AhabGenerator::placeDerivedVoice(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
+														 char channel, char sourceVar, bool gate, char param,
+														 char* allocatedVar,
+														 char sourceVarB, char paramB,
+														 char arithGlyph) {
+	// Columns anchor on colV (the read's V).
+	// The source variable MUST be written above this voice (vars are
+	// within-tick). Requires maxH >= 3; a harmony that PUBLISHES
+	// (allocatedVar != null) needs 5 rows for the extra V-write row.
+	bool const publish = allocatedVar != nullptr && !gate;
+	bool const fanIn = gate && sourceVarB != 0;
+	if (maxH < (fanIn ? 7 : 3)) return {};
+	Usz const needed = fanIn ? 12 : (gate ? 12 : 8);
+	if (maxW < needed) return {};
+	if (publish && (maxH < 5 || maxW < 8)) return {};
+
+	char v = 0;
+	if (publish) {
+		v = allocateVarName();
+		if (v == 0) return {}; // pool exhausted: skip rather than degrade
+		*allocatedVar = v;
+	}
+
+	Usz const colV = x + (publish ? 5 : 4);
+	VoiceNode::Role const role = gate ? VoiceNode::Gate : VoiceNode::Harmony;
+	char octave = randomOctaveForRole(role);
+	char const velLiteral = randomVelocityLiteral();
+	char const lenLiteral = randomLengthForRole(role);
+
+	// Row 0: read the lead pitch — '.' left of V selects read mode; the
+	// output pokes (y+1, colV).
+	buf.set(y, colV - 1, '.');
+	buf.set(y, colV,     'V');
+	buf.set(y, colV + 1, sourceVar);
+
+	if (!gate) {
+		if (!publish) {
+			// Harmony: 'A' adds param letter-steps to the lead pitch (C+2=E in
+			// base36 letter space). Its left operand is the poked cell
+			// (y+1, colV); output lands at (y+2, colV+1) == the note cell below.
+			buf.set(y+1, colV + 1, arithGlyph);
+			buf.set(y+1, colV + 2, param);
+
+			// Bang: D at (y+1, colV-3) pokes '*' to (y+2, colV-3), the ':'
+			// operator's left neighbour. Period 2 pinned — see the publish
+			// path below for the phase-lock reasoning.
+			buf.set(y+1, colV - 4, '1');
+			buf.set(y+1, colV - 3, 'D');
+			buf.set(y+1, colV - 2, '2');
+
+			// MIDI row: note cell at colV+1 is fed by the A output.
+			buf.set(y+2, colV - 2, ':');
+			buf.set(y+2, colV - 1, channel);
+			buf.set(y+2, colV,     octave);
+			buf.set(y+2, colV + 1, '.');      // note, poked by the A each tick
+			buf.set(y+2, colV + 2, velLiteral); // velocity
+			buf.set(y+2, colV + 3, lenLiteral); // length
+
+			return Extent{3, 8};
+		}
+
+		// Publishing harmony: same chain, plus a V-write
+		// on row y+2 whose VALUE cell (y+2, colV+1) is exactly where the A
+		// pokes — so var v holds the transposed pitch every tick, and this
+		// voice can itself be a Pitch source for chains.
+		//
+		//   r0: . V s        read src -> poke (r1, c)
+		//   r1: A amt        A reads (r1,c), pokes (r2, c+1)
+		//   r2: v V .        write vars[v] = transposed pitch
+		//   r3: . V v  D     read v -> poke (r4, c); D pokes (r4, c-4)
+		//   r4: * : c o n f l  banged from the left, note cell fed by the read
+		Usz const c = colV;
+
+		// Row 0: read the source pitch.
+		buf.set(y,   c - 1, '.');
+		buf.set(y,   c,     'V');
+		buf.set(y,   c + 1, sourceVar);
+
+		// Row 1: transpose; bang source for the MIDI row below. The bang is
+		// pinned to period 2 (rate '1'): a random rate can phase-lock onto the
+		// source's track cycle (rate 7 vs a mod-7 clock samples only src=0 —
+		// observed live), freezing the derived line at one pitch.
+		buf.set(y+1, c - 5, '1');
+		buf.set(y+1, c - 4, 'D');
+		buf.set(y+1, c - 3, '2');
+		buf.set(y+1, c + 1, arithGlyph);
+		buf.set(y+1, c + 2, param);
+
+		// Row 2: publish the transposed pitch into v.
+		buf.set(y+2, c - 1, v);
+		buf.set(y+2, c,     'V');
+		buf.set(y+2, c + 1, '.');         // value cell, poked by the A each tick
+
+		// Row 3: read v back; bang source for the MIDI row below. Period 2,
+		// same phase-lock reasoning as row 1.
+		buf.set(y+3, c - 1, '.');
+		buf.set(y+3, c,     'V');
+		buf.set(y+3, c + 1, v);
+		buf.set(y+3, c - 5, '1');
+		buf.set(y+3, c - 4, 'D');
+		buf.set(y+3, c - 3, '2');
+
+		// Row 4: ':' banged from the left, note cell fed by the read above.
+		buf.set(y+4, c - 4, '*');         // poked by the D each period
+		buf.set(y+4, c - 3, ':');
+		buf.set(y+4, c - 2, channel);
+		buf.set(y+4, c - 1, octave);
+		buf.set(y+4, c,     '.');         // note, poked by the V-read each tick
+		buf.set(y+4, c + 1, velLiteral);  // velocity
+		buf.set(y+4, c + 2, lenLiteral);  // length
+
+		return Extent{5, 8};
+	}
+
+	if (sourceVarB != 0) {
+		// Sounds only when BOTH holds: lead pitch == param AND second
+		// publisher pitch == paramB. Every operator is uppercase, so each
+		// cell refreshes every tick - no stale '*' can linger:
+		//
+		//   r0:  .  V  sA          read lead pitch -> (r1,x+4)
+		//   r1:           F  p     oA = '*' iff lead == param
+		//   r2:  .  V  sB   oA     read 2nd pitch; oA lands here
+		//   r3:        F  q  J     oB = '*' iff 2nd == paramB; J relays oA
+		//   r4:      oB L  oA      L: '.' if either input is '.', else min
+		//   r5:         F  0       '*' iff the merge saw two stars
+		//   r6:         :  c  o  n f 4   banged by that F on its left
+		//
+		// (Columns relative to x; the lead read on r0 was emitted above.)
+		buf.set(y + 2, x + 1, '.');
+		buf.set(y + 2, x + 2, 'V');
+		buf.set(y + 2, x + 3, sourceVarB);
+
+		buf.set(y + 1, x + 5, 'F'); // left operand: lead pitch poked at (y+1,x+4)
+		buf.set(y + 1, x + 6, param);
+		// (y+2,x+5) stays empty: the lead F above pokes its '*'/'.' there.
+
+		buf.set(y + 3, x + 3, 'F'); // left operand: pitch poked at (y+3,x+2)
+		buf.set(y + 3, x + 4, paramB);
+		buf.set(y + 3, x + 5, 'J'); // reads oA above, relays it down one row
+
+		buf.set(y + 4, x + 4, 'L');
+
+		buf.set(y + 5, x + 5, 'F');
+		buf.set(y + 5, x + 6, '0');
+
+		buf.set(y + 6, x + 6, ':');
+		buf.set(y + 6, x + 7, channel);
+		buf.set(y + 6, x + 8, octave);
+		buf.set(y + 6, x + 9, randomNote()); // its own note, doubly gated
+		buf.set(y + 6, x + 10, velLiteral);
+		buf.set(y + 6, x + 11, lenLiteral);
+
+		return Extent{7, 12};
+	}
+
+	// Call-and-response gate: 'F' compares the lead pitch with param and
+	// pokes '*' (bang) or '.' to (y+2, colV+1) — the ':'s left neighbour,
+	// so this voice sounds ONLY when the lead hits that exact pitch.
+	buf.set(y+1, colV + 1, 'F');
+	buf.set(y+1, colV + 2, param);
+
+	buf.set(y+2, colV + 2, ':');
+	buf.set(y+2, colV + 3, channel);
+	buf.set(y+2, colV + 4, octave);
+	buf.set(y+2, colV + 5, randomNote()); // its own note, gated
+	buf.set(y+2, colV + 6, velLiteral);
+	buf.set(y+2, colV + 7, lenLiteral);
+
+	return Extent{3, 12};
+}
+
+AhabGenerator::Extent AhabGenerator::placeModulationTail(ScratchPad& buf, Usz y, Usz x, Usz maxH, Usz maxW,
+														   char channel, char control, char sourceVar) {
+	// Two rows hung below the voice they express; the producer V-write
+	// must sit above (vars are within-tick):
+	//
+	//   r0: . r D 2 . V s    D pokes '*' to (r1,c+1); read pokes (r1,c+5)
+	//   r1: . * ! c k .      '!' banged from its left; value fed from above
+	//
+	// midicc needs a bang like ':' and does NOT early-return on a '.'
+	// value: an unwritten variable would emit a constant 0 forever - the
+	// stuck-CC failure the quality gate catches.
+	if (maxH < 2 || maxW < 7) return {};
+
+	Usz const colV = x + 5; // the read's V; also the value cell below it
+
+	// Row 0: bang source + read of the producer's published pitch. The bang
+	// period is pinned to 2 (rate '1'): D drives its output cell BOTH ways
+	// ('*' on fire, '.' off), so the tail samples the source every 2nd tick.
+	// A random period can be a multiple of the source's track length and
+	// phase-lock onto one pitch — the stuck-CC failure all over again.
+	buf.set(y, x,         '1');
+	buf.set(y, x + 1,     'D');
+	buf.set(y, x + 2,     '2');
+	buf.set(y, colV - 1,  '.');
+	buf.set(y, colV,      'V');
+	buf.set(y, colV + 1,  sourceVar);
+
+	// Row 1: '!' banged from the left, value cell fed by the read above.
+	buf.set(y + 1, x + 1, '.');       // poked by the D each period
+	buf.set(y + 1, x + 2, '!');
+	buf.set(y + 1, x + 3, channel);
+	buf.set(y + 1, x + 4, control);
+	buf.set(y + 1, colV,  '.');       // value, poked by the V-read each tick
+
+	return Extent{2, 7};
+}
+
+} // namespace Ahab
+} // namespace StoermelderPackOne

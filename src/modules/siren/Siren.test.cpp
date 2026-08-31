@@ -1,7 +1,7 @@
 #include "../../test/test_plugin.hpp"
 #include "../../test/test_context.hpp"
 #include "Siren.cpp"
-#include "SirenTest.hpp"
+#include "Siren.test.hpp"
 
 using namespace StoermelderPackOne::Siren;
 
@@ -31,11 +31,25 @@ TEST_CASE("Preset JSON null-guards", "[Siren][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
 
 // JSON round-trip preserves lastFile, lastPlayheadPos, activeRootIdx and trim.
-TEST_CASE("JSON serialization", "[Siren][JSON]") {
+TEST_CASE("JSON round-trip preserves module state", "[Siren][JSON]") {
 	auto* m = Test::createModule<SirenModule>("Siren");
 
 	// Set state and serialise
@@ -304,11 +318,11 @@ TEST_CASE("MetadataStore: JSON round-trip", "[Siren][Metadata]") {
 // save() persists via a real file and is readable back through load(); ScratchMetadataStore
 // redirects both to a scratch folder so the rename/verify/cleanup sequence runs for real.
 
-// save() then load() round-trips favorites, tags and BPM through real file I/O.
-TEST_CASE("MetadataStore::save: round-trips through real file I/O", "[Siren][Metadata][Persistence]") {
+// save() then load() round-trips favorites, tags and BPM through the virtual fs.
+TEST_CASE("MetadataStore::save: round-trips through the virtual filesystem", "[Siren][Metadata][Persistence][vcv]") {
+	Mock mock;
 	ScratchMetadataStore store;
 	store.rootPath = "/test/save-roundtrip";
-	DEFER({ rack::system::remove(store.filePath()); });
 
 	store.setFavorite("a.wav", true);
 	store.addTag("a.wav", "drone");
@@ -316,7 +330,7 @@ TEST_CASE("MetadataStore::save: round-trips through real file I/O", "[Siren][Met
 	store.setAudioInfo("a.wav", 12.5f, 44100, 16, 2);
 	store.save();
 
-	REQUIRE(rack::system::exists(store.filePath()));
+	REQUIRE(mock.fs.exists(store.filePath()));
 
 	ScratchMetadataStore loaded;
 	loaded.rootPath = store.rootPath;
@@ -334,45 +348,35 @@ TEST_CASE("MetadataStore::save: round-trips through real file I/O", "[Siren][Met
 
 // A successful save leaves no ".bak" file behind — the backup is removed once
 // the freshly written file has been verified to parse as valid JSON.
-TEST_CASE("MetadataStore::save: leaves no stray .bak file on success", "[Siren][Metadata][Persistence]") {
+TEST_CASE("MetadataStore::save: leaves no stray .bak file on success", "[Siren][Metadata][Persistence][vcv]") {
+	Mock mock;
 	ScratchMetadataStore store;
 	store.rootPath = "/test/save-no-bak";
-	DEFER({
-		rack::system::remove(store.filePath());
-		rack::system::remove(store.filePath() + ".bak");
-	});
 
 	store.addTag("a.wav", "loop");
 	store.save();
-	REQUIRE(rack::system::exists(store.filePath()));
-	REQUIRE_FALSE(rack::system::exists(store.filePath() + ".bak"));
+	REQUIRE(mock.fs.exists(store.filePath()));
+	REQUIRE_FALSE(mock.fs.exists(store.filePath() + ".bak"));
 
 	// Saving again over an existing file also cleans up its own backup.
 	store.addTag("a.wav", "drone");
 	store.save();
-	REQUIRE_FALSE(rack::system::exists(store.filePath() + ".bak"));
+	REQUIRE_FALSE(mock.fs.exists(store.filePath() + ".bak"));
 }
 
 // save() overwrites a previously-existing file, even one with stale or corrupted
 // content — the new file is what verification checks, not the old one.
-TEST_CASE("MetadataStore::save: overwrites a corrupted prior file", "[Siren][Metadata][Persistence]") {
+TEST_CASE("MetadataStore::save: overwrites a corrupted prior file", "[Siren][Metadata][Persistence][vcv]") {
+	Mock mock;
 	ScratchMetadataStore store;
 	store.rootPath = "/test/save-overwrites-corrupt";
-	DEFER({
-		rack::system::remove(store.filePath());
-		rack::system::remove(store.filePath() + ".bak");
-	});
 
-	rack::system::createDirectories(rack::system::getDirectory(store.filePath()));
-	FILE* f = fopen(store.filePath().c_str(), "w");
-	REQUIRE(f != nullptr);
-	fputs("{ this is not valid json", f);
-	fclose(f);
+	mock.fs.write(store.filePath(), "{ this is not valid json");
 
 	store.addTag("a.wav", "percussion");
 	store.save();
 
-	REQUIRE_FALSE(rack::system::exists(store.filePath() + ".bak"));
+	REQUIRE_FALSE(mock.fs.exists(store.filePath() + ".bak"));
 
 	ScratchMetadataStore loaded;
 	loaded.rootPath = store.rootPath;
@@ -382,16 +386,12 @@ TEST_CASE("MetadataStore::save: overwrites a corrupted prior file", "[Siren][Met
 
 // load() against a corrupt/unparsable file is a no-op: it neither crashes nor
 // mutates the store's existing in-memory state.
-TEST_CASE("MetadataStore::load: ignores a corrupt file without crashing", "[Siren][Metadata][Persistence]") {
+TEST_CASE("MetadataStore::load: ignores a corrupt file without crashing", "[Siren][Metadata][Persistence][vcv]") {
+	Mock mock;
 	ScratchMetadataStore store;
 	store.rootPath = "/test/load-ignores-corrupt";
-	DEFER({ rack::system::remove(store.filePath()); });
 
-	rack::system::createDirectories(rack::system::getDirectory(store.filePath()));
-	FILE* f = fopen(store.filePath().c_str(), "w");
-	REQUIRE(f != nullptr);
-	fputs("not json at all", f);
-	fclose(f);
+	mock.fs.write(store.filePath(), "not json at all");
 
 	store.addTag("a.wav", "kept");
 	store.load();
@@ -401,9 +401,9 @@ TEST_CASE("MetadataStore::load: ignores a corrupt file without crashing", "[Sire
 }
 
 // ─── AudioWaveformCache ────────────────────────────────────────────────────────
-// empty() state and buildWaveformCache output (loadWaveformCacheFile /
-// saveWaveformCacheFile are gated by isTesting() and cannot run in the test
-// harness, so we exercise buildWaveformCache directly instead).
+// empty() state and buildWaveformCache output. loadWaveformCacheFile /
+// saveWaveformCacheFile route through the vcv fs layer, so they are exercised
+// against the virtual-fs mock below; buildWaveformCache is tested directly here.
 
 struct FakeAudioStream : AudioStream {
 	std::vector<float> data;
@@ -493,6 +493,66 @@ TEST_CASE("buildWaveformCache: rejects degenerate inputs", "[Siren][Audio]") {
 		AudioWaveformCache c;
 		REQUIRE(buildWaveformCache(0, s, 100, c) == false);
 	}
+}
+
+// loadWaveformCacheFile / saveWaveformCacheFile route through the vcv fs layer;
+// with Mock installed the I/O lands in the in-memory file map.
+TEST_CASE("AudioWaveformCache: save/load round-trips through the vcv fs layer", "[Siren][Audio][vcv]") {
+	Mock mock;
+	AudioWaveformCache cache;
+	cache.fileTimestamp = 12345;
+	cache.sampleCount = 4;
+	cache.samples = {{0.5f, -0.5f, 0.25f, -0.25f}, {1.0f, -1.0f, 0.0f, 0.5f}};
+
+	const std::string path = "/vfs/cache.json";
+	saveWaveformCacheFile(path, cache);
+	REQUIRE(mock.fs.exists(path));
+
+	AudioWaveformCache loaded;
+	REQUIRE(loadWaveformCacheFile(path, 0, loaded) == true);
+	REQUIRE(loaded.fileTimestamp == 12345);
+	REQUIRE(loaded.sampleCount == 4);
+	REQUIRE(loaded.samples.size() == 2);
+	// int16 quantization: 0.5 -> 16383/32767
+	REQUIRE(loaded.samples[0][0] == Catch::Approx(0.5f).margin(1.f / 32767.f));
+	REQUIRE(loaded.samples[0][1] == Catch::Approx(-0.5f).margin(1.f / 32767.f));
+	REQUIRE(loaded.samples[1][0] == Catch::Approx(1.0f).margin(1.f / 32767.f));
+	REQUIRE(loaded.samples[1][1] == Catch::Approx(-1.0f).margin(1.f / 32767.f));
+}
+
+TEST_CASE("AudioWaveformCache: load rejects a stale timestamp", "[Siren][Audio][vcv]") {
+	Mock mock;
+	AudioWaveformCache cache;
+	cache.fileTimestamp = 111;
+	cache.sampleCount = 2;
+	cache.samples = {{0.5f, -0.5f}};
+
+	const std::string path = "/vfs/cache.json";
+	saveWaveformCacheFile(path, cache);
+
+	AudioWaveformCache loaded;
+	REQUIRE(loadWaveformCacheFile(path, 999, loaded) == false);  // expected != stored
+	REQUIRE(loadWaveformCacheFile(path, 111, loaded) == true);   // matches
+}
+
+TEST_CASE("AudioWaveformCache: load handles missing and corrupt files", "[Siren][Audio][vcv]") {
+	Mock mock;
+	AudioWaveformCache loaded;
+
+	// Missing file -> fs::read() returns false.
+	REQUIRE(loadWaveformCacheFile("/vfs/nope.json", 0, loaded) == false);
+
+	// Corrupt JSON -> parseJson() returns nullptr.
+	mock.fs.write("/vfs/bad.json", "not json at all");
+	REQUIRE(loadWaveformCacheFile("/vfs/bad.json", 0, loaded) == false);
+}
+
+TEST_CASE("AudioWaveformCache: save with empty cache writes nothing", "[Siren][Audio][vcv]") {
+	Mock mock;
+	AudioWaveformCache empty;
+	const std::string path = "/vfs/cache.json";
+	saveWaveformCacheFile(path, empty);
+	REQUIRE(mock.fs.exists(path) == false);
 }
 
 // ─── hashPath ─────────────────────────────────────────────────────────────────
@@ -592,13 +652,12 @@ TEST_CASE("allTags: user tags merge with starter tags without duplicates", "[Sir
 // starter tags are loaded from SirenTags.json at runtime; in tests we use
 // the hard-coded fallback (mirrors the JSON contents).
 TEST_CASE("starterTags: returns 15-tag canonical list in tests", "[Siren][Metadata][Manifest]") {
-	auto tags = starterTags();
-	REQUIRE(tags.size() == 15);
+	auto tags = tagManifest().tags;
+	REQUIRE(tags.size() == 18);
 	// Spot-check a few representative tags from the new vocabulary
 	REQUIRE(std::find(tags.begin(), tags.end(), "Drone") != tags.end());
 	REQUIRE(std::find(tags.begin(), tags.end(), "Pad") != tags.end());
 	REQUIRE(std::find(tags.begin(), tags.end(), "Lead") != tags.end());
-	REQUIRE(std::find(tags.begin(), tags.end(), "Stab") != tags.end());
 	REQUIRE(std::find(tags.begin(), tags.end(), "Noise") != tags.end());
 	// Removed from the old list
 	REQUIRE(std::find(tags.begin(), tags.end(), "Fx") == tags.end());
@@ -683,7 +742,7 @@ TEST_CASE("loadItem resets view state but preserves trim range", "[Siren][Previe
 	pane.canvas->outPoint = 0.9f;
 	pane.canvas->scrubPos = 0.7f;
 
-	pane.loadItem(DataSourceNode{}, nullptr);
+	pane.loadItem(DataSourceNode{}, nullptr, false, false, /*resetTrim=*/false);
 
 	// View state resets
 	REQUIRE(pane.canvas->scrubPos == 0.f);
@@ -991,6 +1050,50 @@ TEST_CASE("openStream: null source leaves pendingStream nullptr", "[Siren][Audio
 	Test::destroyModule(m);
 }
 
+// Fill thread plays back only the first two channels of a multi-channel file.
+// Regression test: stream->readF32() always interleaves the decoder's real
+// channel count, but the fill thread's scratch buffers (zcBuf, tmp, loopHead/
+// loopTail) were sized assuming <=2 channels (the already-clamped fillCh).
+// A file with more channels (e.g. 5.1 surround) overflowed those stack
+// buffers, corrupting memory and crashing during playback (though the
+// preview path, which sizes its buffers to the real channel count, was fine).
+TEST_CASE("Fill thread: multi-channel stream plays back first two channels only", "[Siren][Audio]") {
+	auto* m = Test::createModule<SirenModule>("Siren");
+	m->engineSampleRate = 44100;
+
+	// 6-channel stream (5.1 surround). Channels 0/1 carry distinct constant
+	// values so the test can verify they pass through correctly; channels
+	// 2-5 carry a different value that must never leak into the output.
+	const int frames = 8192;
+	const int channels = 6;
+	auto stream = std::unique_ptr<FakeAudioStream>(new FakeAudioStream(frames, channels, 44100, 0.f));
+	for (int f = 0; f < frames; f++) {
+		stream->data[(size_t)f * channels + 0] = 0.8f;
+		stream->data[(size_t)f * channels + 1] = -0.4f;
+		for (int c = 2; c < channels; c++) stream->data[(size_t)f * channels + c] = 1.f;
+	}
+
+	m->adoptStream(std::move(stream), frames);
+	m->startPlayback(0.f);
+
+	// Drive process() until the fill thread has caught up and the declick
+	// ramp (~660 frames at 44.1 kHz) has settled; interleave short sleeps so
+	// the background fill thread actually gets scheduled.
+	float l = 0.f, r = 0.f;
+	for (int i = 0; i < 3000; i++) {
+		m->process(Test::makeProcessArgs(1));
+		l = m->outputs[SirenModule::OUTPUT_L].getVoltage();
+		r = m->outputs[SirenModule::OUTPUT_R].getVoltage();
+		if (i % 20 == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
+
+	// Output = sample * volume(1.0) * 5.f
+	REQUIRE(l == Catch::Approx(0.8f * 5.f).margin(0.05f));
+	REQUIRE(r == Catch::Approx(-0.4f * 5.f).margin(0.05f));
+
+	Test::destroyModule(m);
+}
+
 // ─── sampleMatchesFilter: tag filtering logic ─────────────────────────────────
 // Tests for include/exclude/favorites filtering on SirenBrowserPane.
 // SirenBrowserPane is instantiated without init() — sampleMatchesFilter only
@@ -1242,6 +1345,7 @@ static void destroyWidgetPair(SirenWidgetPair& p) {
 }
 
 TEST_CASE("Cross-instance settings sync: notifyModuleListeners reaches every SirenWidget", "[Siren][SettingsSync]") {
+	Mock mock;
 	SirenSettingsGuard guard;
 	auto a = makeWidgetPair();
 	auto b = makeWidgetPair();
@@ -1266,6 +1370,7 @@ TEST_CASE("Cross-instance settings sync: originator clears its own flag after no
 	// Reproduce the originator-clears-self pattern used by the root/file
 	// mutation callbacks: notify, then immediately reset the local flag so
 	// step() does not redundantly refresh the UI we just updated inline.
+	Mock mock;
 	SirenSettingsGuard guard;
 	auto a = makeWidgetPair();
 	auto b = makeWidgetPair();
@@ -1289,6 +1394,7 @@ TEST_CASE("Cross-instance settings sync: destroyed widget is removed from the li
 	// broadcasts must not touch the freed pointer. We exercise this by
 	// destroying widget a, then broadcasting, then verifying widget b's flag
 	// flips — without a crash or use-after-free.
+	Mock mock;
 	SirenSettingsGuard guard;
 	auto a = makeWidgetPair();
 	auto b = makeWidgetPair();
@@ -1335,6 +1441,7 @@ TEST_CASE("Cross-instance settings sync: SirenWidget step() refreshes browser pa
 	// the module's own activeRootIdx as the active selection. We seed the
 	// global with one root entry, give the module its own active root, set
 	// the flag, run step(), and verify the browser pane picked up the change.
+	Mock mock;
 	SirenSettingsGuard guard;
 	sirenSettings.rootContainers.push_back(createRootContainer("/seeded/path", "fs"));
 
@@ -1354,6 +1461,59 @@ TEST_CASE("Cross-instance settings sync: SirenWidget step() refreshes browser pa
 	destroyWidgetPair(p);
 }
 
+// ─── Settings persistence: module-browser thumbnail must not wipe the file ────
+//
+// Regression: the module browser instantiates a SirenWidget with a null module
+// to render its thumbnail. That constructor returns before ever calling
+// sirenSettings.load(), yet ~SirenWidget still calls sirenSettings.save(). With
+// the process-global sirenSettings still at empty defaults, the save wrote an
+// empty siren.json over the user's existing one — silently discarding every
+// configured root before any real instance had a chance to read them. The fix
+// makes save() a no-op until the settings have actually been load()ed.
+//
+// save()/load() short-circuit under isTesting() only while no mock is installed;
+// SirenMock redirects the vcv I/O layer, so isTesting() reports false and the
+// real save/load path runs against the virtual filesystem — no real disk is
+// touched and no backup/restore of a real file is needed.
+TEST_CASE("Settings persistence: module-browser widget destruction does not wipe siren.json", "[Siren][SettingsPersistence][vcv]") {
+	Mock mock;
+	const std::string path = sirenFilePath();
+
+	// Preserve and restore the global singleton we mutate below.
+	const std::vector<RootContainer> savedRoots = sirenSettings.rootContainers;
+	const bool savedLoaded = sirenSettings.loaded;
+	DEFER({
+		sirenSettings.rootContainers = savedRoots;
+		sirenSettings.loaded = savedLoaded;
+	});
+
+	// 1) A previous session persisted a valid settings file with two roots.
+	sirenSettings.rootContainers.clear();
+	sirenSettings.rootContainers.push_back(createRootContainer("/root-a", "fs"));
+	sirenSettings.rootContainers.push_back(createRootContainer("/root-b", "fs"));
+	sirenSettings.loaded = true;   // a genuinely-loaded singleton may persist
+	sirenSettings.save();
+	REQUIRE(mock.fs.exists(path));
+
+	// 2) Fresh process: nothing has load()ed the settings yet.
+	sirenSettings.rootContainers.clear();
+	sirenSettings.loaded = false;
+
+	// 3) The module browser builds a thumbnail SirenWidget with no module, then
+	//    destroys it. The constructor returns before load(); the destructor's
+	//    save() must be suppressed by the !loaded guard.
+	SirenWidget* mw = Test::createWidget<SirenWidget>("Siren");
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+	Test::destroyWidget(mw);
+
+	// 4) The virtual file must still hold both roots. Before the fix it would
+	//    have been overwritten with an empty rootContainers array.
+	SirenSettings check;
+	check.load();
+	REQUIRE(check.rootContainers.size() == 2);
+}
+
 // ─── Per-instance state (refactor: moved off the process-global SirenSettings) ─
 //
 // activeRootIdx, lastFilePath and lastPlayheadPos used to live on the
@@ -1366,9 +1526,10 @@ TEST_CASE("Cross-instance settings sync: SirenWidget step() refreshes browser pa
 // Constructing a widget reads module->activeRootIdx; changing it on one
 // instance must NOT change the other.
 TEST_CASE("Per-instance activeRootIdx: two Siren instances keep separate selections", "[Siren][PerInstance]") {
+	Mock mock;
 	SirenSettingsGuard guard;
-	sirenSettings.rootContainers.push_back(createRootContainer("/root-a", "fs"));
-	sirenSettings.rootContainers.push_back(createRootContainer("/root-b", "fs"));
+	sirenSettings.rootContainers.push_back(createRootContainer("/vfs/root-a", "fs"));
+	sirenSettings.rootContainers.push_back(createRootContainer("/vfs/root-b", "fs"));
 
 	auto a = makeWidgetPair();
 	auto b = makeWidgetPair();
@@ -1403,10 +1564,11 @@ TEST_CASE("Per-instance activeRootIdx: two Siren instances keep separate selecti
 // changes; each instance's activeRootIdx is per-instance and must be
 // clamped by B's step() refresh.
 TEST_CASE("Per-instance activeRootIdx: removing a root before another instance's idx shifts it", "[Siren][PerInstance]") {
+	Mock mock;
 	SirenSettingsGuard guard;
-	sirenSettings.rootContainers.push_back(createRootContainer("/r0", "fs"));
-	sirenSettings.rootContainers.push_back(createRootContainer("/r1", "fs"));
-	sirenSettings.rootContainers.push_back(createRootContainer("/r2", "fs"));
+	sirenSettings.rootContainers.push_back(createRootContainer("/vfs/r0", "fs"));
+	sirenSettings.rootContainers.push_back(createRootContainer("/vfs/r1", "fs"));
+	sirenSettings.rootContainers.push_back(createRootContainer("/vfs/r2", "fs"));
 
 	auto a = makeWidgetPair();
 	auto b = makeWidgetPair();
@@ -1442,6 +1604,7 @@ TEST_CASE("Per-instance activeRootIdx: removing a root before another instance's
 // lastFilePath is per-instance: setting it on one module must not bleed into
 // another.
 TEST_CASE("Per-instance lastFilePath: two Siren instances keep separate files", "[Siren][PerInstance]") {
+	Mock mock;
 	SirenSettingsGuard guard;
 	auto a = makeWidgetPair();
 	auto b = makeWidgetPair();
@@ -1462,6 +1625,7 @@ TEST_CASE("Per-instance lastFilePath: two Siren instances keep separate files", 
 // range into the patch JSON — they must round-trip even though SirenSettings
 // no longer touches them.
 TEST_CASE("Per-instance state: JSON round-trips activeRootIdx, lastFilePath, lastPlayheadPos, trim", "[Siren][PerInstance][JSON]") {
+	Mock mock;
 	SirenSettingsGuard guard;
 	auto m = Test::createModule<SirenModule>("Siren");
 
@@ -1502,6 +1666,7 @@ TEST_CASE("Per-instance state: JSON round-trips activeRootIdx, lastFilePath, las
 // malformed patch can never produce an out-of-range trim that breaks loop
 // wrapping at trimOut → trimIn.
 TEST_CASE("Per-instance state: out-of-range trim is clamped on dataFromJson", "[Siren][PerInstance][JSON]") {
+	Mock mock;
 	SirenSettingsGuard guard;
 	auto m = Test::createModule<SirenModule>("Siren");
 

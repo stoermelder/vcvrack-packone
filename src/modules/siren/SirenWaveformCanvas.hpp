@@ -262,10 +262,13 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 				nvgStrokeWidth(args.vg, 0.5f);
 				nvgStroke(args.vg);
 
-				// Channel label
+				// Channel label — "L"/"R" only makes sense for exactly 2 channels;
+				// anything else (mono, or >2 for surround files) is labelled by
+				// its 1-based channel number.
 				nvgFontSize(args.vg, 9.f);
 				nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.30f));
-				nvgText(args.vg, WAVE_X + 2.f, chY + 11.f, ch == 0 ? "L" : "R", nullptr);
+				std::string chLabel = (numCh == 2) ? (ch == 0 ? "L" : "R") : std::to_string(ch + 1);
+				nvgText(args.vg, WAVE_X + 2.f, chY + 11.f, chLabel.c_str(), nullptr);
 			}
 
 			// Filter overlay: fade the waveform toward the background color
@@ -567,7 +570,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 			float np = rack::math::clamp(pos, 0.f, 1.f);
 			if (np != scrubPos) {
 				scrubPos = np;
-				double now = rack::system::getTime();
+				double now = vcv::fs::getTime();
 				if (now - lastScrubTime >= SCRUB_INTERVAL) {
 					lastScrubTime = now;
 					if (onScrubTo) onScrubTo(scrubPos);

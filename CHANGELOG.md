@@ -1,3 +1,44 @@
+## 2.6.0
+
+### Changes and Fixes
+
+- Module [AHAB](./docs/ahab/Ahab.md)
+    - Added undo for "Clear"
+    - Added toggle for Focus mode using Shift+Esc
+    - Added clock divider/multiplier for clock input
+    - Added MIDI Panic option
+    - Added context menu options for selections
+    - Major enhacements for [Random generator](./docs/ahab/AhabRandomizer.md)
+    - Fixed reset behavior on loading files or examples
+    - Fixed broken MIDI channel on MIDI operators
+    - Fixed concurrent usage of UDP and OSC output
+    - Fixed various minor issues
+- Module [DIRT](./docs/dirt/Dirt.md)
+    - Fixed broken preset loading
+- Module [MB](./docs/trial-and-error/Mb.md)
+    - Added sorting option "Newest" to *v2 mod* browser
+    - Improved context menus for tags (#461)
+    - Fixed module placement when "Smart Rearrangement" is disabled
+    - Fixed broken sorting option "Last used"
+    - Fixed module preview in *v1 mod* browser
+- Modules [MIDI-CAT](./docs/midicat/MidiCat.md), [MIDI-ESX](./docs/midiesx/MidiEsx.md), [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md), [MIDI-PLUG](./docs/midi/MidiPlug.md), [MIDI-STEP](./docs/midi/MidiStep.md)
+    - Ignore incoming MIDI messages while module is bypassed
+- Module [MIDI-CAT](./docs/midicat/MidiCat.md)
+    - Fixed incorrect 14-bit handling of CC32
+- Modules [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md):
+    - Fixed incorrect reset behavior
+- Module [MIDI-MON](./docs/midi/MidiMon.md)
+    - Splitted display option for 14bit CC and RPN/NRPN messages
+    - Increased buffered message count from 512 to 4096
+- Module [PANIC ROOM](./docs/panicroom/PanicRoom.md)
+    - Fixed potential crash on cable and module limit
+- Module [SIREN](./docs/siren/Siren.md)
+    - Added support for multi-channel files on Re-pitch and Crossfade-loop
+    - Ignore files starting with "." (#460)
+    - Improved context menus for tags
+    - Fixed crash when playing multi-channel files
+    - Fixed occasionally lost settings
+
 ## 2.5.0
 
 ### New modules

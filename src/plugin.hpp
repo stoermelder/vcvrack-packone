@@ -2,6 +2,7 @@
 #include <rack.hpp>
 #include "components/components.hpp"
 #include "utils/digital.hpp"
+#include "utils/thread.hpp"
 #include "ui/ThemedModuleWidget.hpp"
 #include "pluginhelpers.hpp"
 #include "pluginsettings.hpp"
@@ -69,6 +70,7 @@ extern Model* modelMidiKey;
 extern Model* modelPanicRoom;
 extern Model* modelMidiEsx;
 extern Model* modelAhab;
+extern Model* modelSpliceKit;
 extern Model* modelAudioInterface64;
 extern Model* modelMb;
 extern Model* modelMe;

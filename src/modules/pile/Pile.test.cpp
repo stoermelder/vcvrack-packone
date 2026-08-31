@@ -30,8 +30,44 @@ TEST_CASE("Preset JSON null-guards", "[Pile][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
 }
+
+TEST_CASE("JSON round-trip preserves state", "[JSON][Pile]") {
+	auto module = Test::createModule<PileModule>("Pile");
+	module->panelTheme = 1;
+	module->currentVoltage = 7.5f;
+	module->range = RANGE::BI_5V;
+	
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	
+	auto moduleNew = Test::createModule<PileModule>("Pile");
+	moduleNew->dataFromJson(rootJ);
+	
+	REQUIRE(moduleNew->panelTheme == 1);
+	REQUIRE(moduleNew->currentVoltage == Catch::Approx(7.5f).margin(0.01f));
+	REQUIRE(moduleNew->range == RANGE::BI_5V);
+	
+	json_decref(rootJ);
+	Test::destroyModule(moduleNew);
+	Test::destroyModule(module);
+}
+
 
 TEST_CASE("Increment and decrement", "[Pile]") {
 	auto module = Test::createModule<PileModule>("Pile");
@@ -427,31 +463,6 @@ TEST_CASE("Output voltage", "[Pile]") {
 		float output = module->outputs[PileModule::OUTPUT].getVoltage();
 		
 		REQUIRE(output == Catch::Approx(internal).margin(0.1f));
-	}
-
-	Test::destroyModule(module);
-}
-
-TEST_CASE("JSON serialization", "[JSON][Pile]") {
-	auto module = Test::createModule<PileModule>("Pile");
-
-	SECTION("Module state is serialized and deserialized") {
-		module->panelTheme = 1;
-		module->currentVoltage = 7.5f;
-		module->range = RANGE::BI_5V;
-		
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		
-		auto moduleNew = Test::createModule<PileModule>("Pile");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->panelTheme == 1);
-		REQUIRE(moduleNew->currentVoltage == Catch::Approx(7.5f).margin(0.01f));
-		REQUIRE(moduleNew->range == RANGE::BI_5V);
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
 	}
 
 	Test::destroyModule(module);

@@ -72,7 +72,80 @@ TEST_CASE("Preset JSON null-guards", "[MidiPlug][JSON]") {
 		json_decref(rootJ);
 	}
 
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 	Test::destroyModule(module);
+}
+
+TEST_CASE("JSON round-trip preserves state", "[MidiPlug][JSON]") {
+	Module2* m = Test::createModule<Module2>("MidiPlug");
+	Module2* m2 = Test::createModule<Module2>("MidiPlug");
+
+	SECTION("Scalar settings round-trip") {
+		// Non-default value (default is pluginSettings.panelThemeDefault, usually 0)
+		m->panelTheme = 1;
+
+		json_t* j = m->dataToJson();
+		// Start m2 at a different value so dataFromJson() is genuinely exercised
+		m2->panelTheme = 0;
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m2->panelTheme == 1);
+	}
+
+	SECTION("MIDI outputs (midiOutput array) round-trip") {
+		// Distinctive per-output channel and plug mode
+		m->midiOutput[0].channel = 7;
+		m->midiOutput[0].plugMode = MODE::FILTER;
+		m->midiOutput[1].channel = 2;
+		m->midiOutput[1].plugMode = MODE::BLOCK;
+
+		json_t* j = m->dataToJson();
+		// The midiOutput array must be serialized with one entry per output
+		json_t* midiOutputJ = json_object_get(j, "midiOutput");
+		REQUIRE(midiOutputJ != nullptr);
+		REQUIRE(json_array_size(midiOutputJ) == (size_t) 2);
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m2->midiOutput[0].channel == 7);
+		REQUIRE(m2->midiOutput[0].plugMode == MODE::FILTER);
+		REQUIRE(m2->midiOutput[1].channel == 2);
+		REQUIRE(m2->midiOutput[1].plugMode == MODE::BLOCK);
+	}
+
+	SECTION("MIDI inputs (midiInput array) round-trip") {
+		// Distinctive per-input channel (the midiInput array was previously untested)
+		m->midiInput[0].channel = 5;
+		m->midiInput[1].channel = 3;
+
+		json_t* j = m->dataToJson();
+		// The midiInput array must be serialized with one entry per input
+		json_t* midiInputJ = json_object_get(j, "midiInput");
+		REQUIRE(midiInputJ != nullptr);
+		REQUIRE(json_array_size(midiInputJ) == (size_t) 2);
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m2->midiInput[0].channel == 5);
+		REQUIRE(m2->midiInput[1].channel == 3);
+	}
+
+	Test::destroyModule(m);
+	Test::destroyModule(m2);
 }
 
 
@@ -202,27 +275,26 @@ TEST_CASE("FILTER/BLOCK ignore system messages", "[MidiPlug]") {
 }
 
 
-TEST_CASE("JSON round-trip", "[MidiPlug][JSON]") {
+TEST_CASE("processBypass drains both input queues without sending output", "[MidiPlug]") {
 	auto module = Test::createModule<Module2>("MidiPlug");
-	module->panelTheme = 1;
-	module->midiOutput[0].channel = 7;
-	module->midiOutput[0].plugMode = MODE::FILTER;
-	module->midiOutput[1].channel = 2;
-	module->midiOutput[1].plugMode = MODE::BLOCK;
+	CaptureDevice* out0 = attachCapture(module, 0);
+	CaptureDevice* out1 = attachCapture(module, 1);
 
-	json_t* rootJ = module->dataToJson();
-	REQUIRE(rootJ != nullptr);
+	module->midiInput[0].onMessage(Test::makeMidiMessage(0xb, 2, 7, 64));
+	module->midiInput[1].onMessage(Test::makeMidiMessage(0x9, 4, 60, 100));
 
-	auto restored = Test::createModule<Module2>("MidiPlug");
-	restored->dataFromJson(rootJ);
+	Module::ProcessArgs args = Test::makeProcessArgs(1);
+	module->processBypass(args);
 
-	REQUIRE(restored->panelTheme == 1);
-	REQUIRE(restored->midiOutput[0].channel == 7);
-	REQUIRE(restored->midiOutput[0].plugMode == MODE::FILTER);
-	REQUIRE(restored->midiOutput[1].channel == 2);
-	REQUIRE(restored->midiOutput[1].plugMode == MODE::BLOCK);
+	REQUIRE(out0->sent.empty());
+	REQUIRE(out1->sent.empty());
 
-	json_decref(rootJ);
+	// Queues are drained; a subsequent normal process() call has nothing left to forward.
+	module->process(Test::makeProcessArgs(2));
+	REQUIRE(out0->sent.empty());
+	REQUIRE(out1->sent.empty());
+
+	delete out0;
+	delete out1;
 	Test::destroyModule(module);
-	Test::destroyModule(restored);
 }
