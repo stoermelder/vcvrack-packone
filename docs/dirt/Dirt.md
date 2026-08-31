@@ -17,5 +17,5 @@ Please note: Every instance of DIRT is unique, two modules will not sound the sa
     - Initial release of DIRT
 - v2.2.0
     - Added new defects _Pitch_, _Crush_ and _Dropout_
-- v2.x.x
+- v2.6.0
     - Fixed broken preset loading

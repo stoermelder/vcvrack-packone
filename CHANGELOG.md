@@ -1,4 +1,4 @@
-## 2.x.x
+## 2.6.0
 
 ### Changes and Fixes
 

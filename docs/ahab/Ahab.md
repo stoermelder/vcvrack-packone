@@ -118,7 +118,7 @@ Features missing in AHAB compared to ORCA:
     - Added reset input for tick counter (#429)
     - Added "pending bang" operator `+` (#427)
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
-- v2.x.x
+- v2.6.0
     - Added undo for "Clear"
     - Added toggle for Focus mode using Shift+Esc
     - Added clock divider/multiplier for clock input

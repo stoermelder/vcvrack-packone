@@ -159,7 +159,7 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
     - Added width (HP) filter and sorting to *v2 mod* browser
     - Fixed *v2 mod* scroll position when reopening the browser overlay
     - Fixed module placement to trace back to the right click mouse position
-- v2.x.x
+- v2.6.0
     - Added sorting option "Newest" to *v2 mod* browser
     - Improved context menus for tags (#461)
     - Fixed module placement when "Smart Rearrangement" is disabled
