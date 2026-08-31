@@ -48,7 +48,7 @@ struct ParamHandleEx : ParamHandleIndicator {
 
 
 template <int NUM_PRESETS>
-struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMaster, ModuleChangeListener {
+struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeListener {
 	typedef TransitBase<NUM_PRESETS> BASE;
 	typedef typename TransitBase<NUM_PRESETS>::Slot SLOT;
 
@@ -826,7 +826,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 
 	void presetProcessXyPad(float sampleTime) {
 		if (presetProcessDivider.process()) {
-			auto snapshots = transitPad->getPadFactors();
+			const auto& snapshots = transitPad->getPadFactors();
 
 			float weight = 0.f;
 			std::vector<float> v(sourceHandles.size(), 0.f);

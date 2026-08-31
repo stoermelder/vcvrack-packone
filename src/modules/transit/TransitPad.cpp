@@ -27,7 +27,7 @@ enum class SETCVMODE {
 };
 
 template <uint8_t SNAPSHOTS = 8, uint8_t SETS = 8>
-struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
+struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>, XyScreenCursor, XySeqModule<1> {
 	struct TransitPadSetParamQuantity : SwitchQuantity {
 		TransitPadModule<SNAPSHOTS, SETS>* tpModule = NULL;
 		int id = -1;
@@ -166,7 +166,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	}
 
 	void onReset() override {
-		Sc::scResetSelection();
+		Sc::selection = XyScreenSelection();
 		init();
 		snapshotsUsed = 4;
 		currentSet = 0;
@@ -176,26 +176,26 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			setLabel[s] = "";
 		}
 
-		Sc::scReset();
+		Sc::resetNodes();
 		Seq::seqReset();
 		Module::onReset();
 	}
 
 	void onRandomize() override {
-		Sc::scRandomizeAmountAll();
-		Sc::scRandomizeRadiusAll();
-		Sc::scRandomizeXAll();
-		Sc::scRandomizeYAll();
+		Sc::nodes.randomizeAmountAll();
+		Sc::nodes.randomizeRadiusAll();
+		Sc::nodes.randomizeXAll();
+		Sc::nodes.randomizeYAll();
 		Module::onRandomize();
 	}
 
 	void init() {
-		scInitItems();
-		Sc::scInit();
+		initExtra();
+		Sc::initNodes();
 		Seq::seqInit();
 	}
 
-	// TransitPadInterface
+	/** TransitPadInterface: the snapshot weights Transit reads to blend presets. */
 	const std::vector<TransitPadSource>& getPadFactors() override {
 		return snapshots[currentSet];
 	}
@@ -238,11 +238,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 
 		for (uint8_t j = 0; j < n; j++) {
-			inputInX[j] = Sc::scGetXFiltered(j, args.sampleTime);
-			inputInY[j] = Sc::scGetYFiltered(j, args.sampleTime);
+			inputInX[j] = Sc::nodes.getXFiltered(j, args.sampleTime);
+			inputInY[j] = Sc::nodes.getYFiltered(j, args.sampleTime);
 
-			Sc::scSetRadiusFinal(j, Sc::scGetRadiusRaw(j, args.sampleTime));
-			Sc::scSetAmountFinal(j, Sc::scGetAmountFiltered(j, args.sampleTime));
+			Sc::nodes.setRadius(j, Sc::nodes.getRadiusRaw(j, args.sampleTime));
+			Sc::nodes.setAmount(j, Sc::nodes.getAmountFiltered(j, args.sampleTime));
 
 			float x = inputInX[j];
 			x = clamp(x, 0.f, 1.f);
@@ -307,9 +307,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			Vec inVec = Vec(inX, inY);
 			dist[j] = inVec.minus(outVec).norm();
 
-			float r = Sc::scGetRadiusFinal(j);
+			float r = Sc::getNodeRadiusFinal(j);
 			if (dist[j] < r) {
-				float f = (r - dist[j]) / r * Sc::scGetAmountFinal(j);
+				float f = (r - dist[j]) / r * Sc::getNodeAmountFinal(j);
 				snapshots[currentSet][j].weight = std::min(1.0f, f * 1.1f);
 			}
 			else {
@@ -324,12 +324,14 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 	}
 
+	/** XySeqModule: the only motion-sequence port is the Out cursor's (index 0). */
 	bool seqPortUsed(int port) override {
 		return port != 0;
 	}
 
-	void scInitItems() override {		
-		scSetItemImmediate(1, 0, paramQuantities[OUT_X_POS]->getDefaultValue(), paramQuantities[OUT_Y_POS]->getDefaultValue());
+	/** XyScreenModule: one-time setup for the Out (cursor) point, called from initNodes(). */
+	void initExtra() override {
+		setCursorXyImmediate(0, paramQuantities[OUT_X_POS]->getDefaultValue(), paramQuantities[OUT_Y_POS]->getDefaultValue());
 		outXfilter.setTau(0.05f);
 		outYfilter.setTau(0.05f);
 		for (uint8_t s = 0; s < SETS; s++) {
@@ -343,54 +345,75 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 	}
 
-	inline uint8_t scGetItemCount(uint8_t type) override {
-		return type == 0 ? SNAPSHOTS : 1;
+	/** XyScreenModule: how many of the SNAPSHOTS nodes are currently active. */
+	inline uint8_t nodeCountActive() override {
+		return (uint8_t)snapshotsUsed.load(std::memory_order_relaxed);
 	}
 
-	inline uint8_t scGetItemCountActive(uint8_t type) override {
-		return type == 0 ? (uint8_t)snapshotsUsed.load(std::memory_order_relaxed) : 1;
+	/** XyScreenModule: the node (snapshot) x-position param. */
+	engine::ParamQuantity* getNodePqX(uint8_t id) override {
+		return paramQuantities[SNAPSHOT_X_POS + id];
 	}
 
-	engine::ParamQuantity* scGetPqX(uint8_t type, uint8_t id) override {
-		if (type == 0)
-			return paramQuantities[SNAPSHOT_X_POS + id];
-		else
-			return paramQuantities[OUT_X_POS];
+	/** XyScreenModule: the node (snapshot) y-position param. */
+	engine::ParamQuantity* getNodePqY(uint8_t id) override {
+		return paramQuantities[SNAPSHOT_Y_POS + id];
 	}
 
-	engine::ParamQuantity* scGetPqY(uint8_t type, uint8_t id) override {
-		if (type == 0)
-			return paramQuantities[SNAPSHOT_Y_POS + id];
-		else
-			return paramQuantities[OUT_Y_POS];
+	/** XyScreenCursor: the single Out cursor. */
+	uint8_t cursorCount() const override {
+		return 1;
 	}
 
-	inline void scSetItemFiltered(uint8_t type, uint8_t id, float x, float y) override {
-		if (type == 1) {
-			outUiX = x;
-			outUiY = y;
-		}
+	/** XyScreenCursor: the param-backed x-position the Out cursor widget draws. */
+	float getCursorXFinal(uint8_t id) const override {
+		return paramQuantities[OUT_X_POS]->getParam()->getValue();
 	}
 
-	inline void scSetItemImmediate(uint8_t type, uint8_t id, float x, float y) override {
-		if (type == 1) {
-			paramQuantities[OUT_X_POS]->getParam()->setValue(x);
-			outXfilter.out = outUiX = x;
-			paramQuantities[OUT_Y_POS]->getParam()->setValue(y);
-			outYfilter.out = outUiY = y;
-		}
+	/** XyScreenCursor: the param-backed y-position the Out cursor widget draws. */
+	float getCursorYFinal(uint8_t id) const override {
+		return paramQuantities[OUT_Y_POS]->getParam()->getValue();
 	}
 
-	inline float scGetDistance(uint8_t typeSource, uint8_t idSource, uint8_t typeDest, uint8_t idDest) override {
-		return dist[idDest];
+	/** XyScreenCursor: write the Out cursor's position immediately (drag end, undo/redo).
+	 * Out-of-range id is a silent no-op, matching XyScreenNodes's bounds
+	 * checks and the rest of the codebase's convention for bad indices.
+	 * (There is only one cursor here, always at id 0, so the array-overrun
+	 * risk this guards against elsewhere doesn't apply — but an id != 0
+	 * still shouldn't silently act as if it addressed the Out cursor.) */
+	void setCursorXyImmediate(uint8_t id, float x, float y) override {
+		if (id >= 1) return;
+		paramQuantities[OUT_X_POS]->getParam()->setValue(x);
+		outXfilter.out = outUiX = x;
+		paramQuantities[OUT_Y_POS]->getParam()->setValue(y);
+		outYfilter.out = outUiY = y;
 	}
 
-	inline float scGetRadiusDefault(uint8_t type) override {
+	/** XyScreenCursor: write the Out cursor's position through the UI filter (live drag). */
+	void setCursorXyFiltered(uint8_t id, float x, float y) override {
+		if (id >= 1) return;
+		outUiX = x;
+		outUiY = y;
+	}
+
+	/** XyScreenModule: distance from the Out cursor to a snapshot node, for the connector-line draw. */
+	inline float getCursorToNodeDistance(uint8_t cursorId, uint8_t nodeId) override {
+		return dist[nodeId];
+	}
+
+	/** XyScreenModule: default radius for a new snapshot node. */
+	inline float getNodeRadiusDefault(uint8_t id) override {
 		return 1.f;
 	}
 
-	virtual inline NVGcolor scGetColor(uint8_t type, uint8_t id) override {
-		return type == 0 ? setColor[currentSet] : color::WHITE;
+	/** XyScreenModule: color a snapshot node is drawn with — the active set's color. */
+	virtual inline NVGcolor getNodeColor(uint8_t id) override {
+		return setColor[currentSet];
+	}
+
+	/** XyScreenCursor: color the Out cursor is drawn with. */
+	virtual inline NVGcolor getCursorColor(uint8_t id) const override {
+		return color::WHITE;
 	}
 
 	std::string getSetLabel(uint8_t s) {
@@ -438,7 +461,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			for (uint8_t i = 0; i < SNAPSHOTS; i++) {
 				json_t* snapshotJ = json_object();
 				json_object_set_new(snapshotJ, "id", json_integer(snapshots[s][i].id));
-				Sc::dataToJson(snapshotJ, 0, i);
+				Sc::nodes.dataToJson(snapshotJ, i);
 				json_array_append_new(snapshotsJ, snapshotJ);
 			}
 			json_object_set_new(setJ, "snapshots", snapshotsJ);
@@ -451,7 +474,6 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		json_object_set_new(rootJ, "sets", setsJ);
 
 		json_t* outputJ = json_object();
-		Sc::dataToJson(outputJ, 1, 0);
 		Seq::dataToJson(outputJ, 0);
 		json_object_set_new(rootJ, "output", outputJ);
 
@@ -474,7 +496,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		snapshotsUsed = std::max(0, std::min(su, (int)SNAPSHOTS));
 
 		json_t* setsJ = json_object_get(rootJ, "sets");
-		for (size_t s = 0; s < json_array_size(setsJ); ++s) {
+		size_t maxs = std::min((size_t)SETS, json_array_size(setsJ));
+		for (size_t s = 0; s < maxs; ++s) {
 			json_t* setJ = json_array_get(setsJ, s);
 			json_t* snapshotsJ = json_object_get(setJ, "snapshots");
 			if (json_is_array(snapshotsJ)) {
@@ -483,25 +506,24 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 				for (size_t i = 0; i < maxn; ++i) {
 					json_t* snapshotJ = json_array_get(snapshotsJ, i);
 					snapshots[s][i].id = json_integer_value(json_object_get(snapshotJ, "id"));
-					Sc::dataFromJson(snapshotJ, 0, i);
+					Sc::nodes.dataFromJson(snapshotJ, i);
 				}
 			}
 			json_t* colorJ = json_object_get(setJ, "color");
-			if (colorJ) setColor[s] = color::fromHexString(json_string_value(colorJ));
+			if (const char* color = json_string_value(colorJ)) setColor[s] = color::fromHexString(color);
 			json_t* labelJ = json_object_get(setJ, "label");
-			if (labelJ) setLabel[s] = json_string_value(labelJ);
+			if (const char* label = json_string_value(labelJ)) setLabel[s] = label;
 		}
 
 		json_t* outputJ = json_object_get(rootJ, "output");
-		Sc::dataFromJson(outputJ, 1, 0);
 		Seq::dataFromJson(outputJ, 0);
 	}
 };
 
 
 template <typename MODULE>
-struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
-	typedef XyScreenDragWidget<MODULE> AW;
+struct TransitPadSnapshotDragWidget : XyScreenNodeDragWidget<MODULE> {
+	typedef XyScreenNodeDragWidget<MODULE> AW;
 	ui::Tooltip* tooltip = NULL;
 	// True while a drag from a TransitLedButton is hovering over this node,
 	// so the draw code can highlight it as a valid drop target.
@@ -514,14 +536,17 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 		}
 	}
 
+	/** XyScreenDragWidgetBase: single-character label drawn inside this node. */
 	char getItemChar() override {
 		return 'A' + AW::id;
 	}
 
+	/** XyScreenDragWidgetBase: label shown in this node's context menu and tooltip. */
  	std::string getItemName() override {
 		return AW::module->getItemLabel(AW::module->currentSet, AW::id);
 	}
 
+	/** XyScreenDragWidgetBase: items prepended to this node's context menu. */
 	void prependContextMenu(Menu* menu) override {
 		menu->addChild(createMenuItem("Bind snapshot", "", [=]() {
 			// Re-check masterModule inside the lambda; Transit may have been
@@ -543,7 +568,7 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 	}
 
 	void onEnter(const event::Enter& e) override {
-		if (!AW::module->scIsActive(AW::type, AW::id)) return;
+		if (!AW::module->isNodeActive(AW::id)) return;
 		this->module->vizHoveredId = this->id;
 		if (settings::tooltips && !tooltip) {
 			tooltip = new ui::Tooltip;
@@ -554,7 +579,7 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 	}
 
 	void onLeave(const event::Leave& e) override {
-		if (!AW::module->scIsActive(AW::type, AW::id)) return;
+		if (!AW::module->isNodeActive(AW::id)) return;
 		if (this->module->vizHoveredId == this->id) {
 			this->module->vizHoveredId = -1;
 		}
@@ -581,7 +606,7 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 	}
 
 	void onDragDrop(const event::DragDrop& e) override {
-		if (!AW::module->scIsActive(AW::type, AW::id)) return;
+		if (!AW::module->isNodeActive(AW::id)) return;
 		// Bind the pad point to the slot of the dropped TransitLedButton.
 		TransitSnapshotButton* src = dynamic_cast<TransitSnapshotButton*>(e.origin);
 		if (src && e.button == GLFW_MOUSE_BUTTON_LEFT) {
@@ -597,7 +622,7 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 
 	void drawLayer(const Widget::DrawArgs& args, int layer) override {
 		AW::drawLayer(args, layer);
-		if (!AW::module->scIsActive(AW::type, AW::id)) return;
+		if (!AW::module->isNodeActive(AW::id)) return;
 		if (layer != 1 || !dropArmed) return;
 
 		// Bright halo around the node while a snapshot button is being dragged over it,
@@ -616,17 +641,20 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 
 
 template <typename MODULE>
-struct TransitPadOutDragWidget : XyScreenDragWidget<MODULE> {
-	typedef XyScreenDragWidget<MODULE> B;
+struct TransitPadOutDragWidget : XyScreenCursorDragWidget<MODULE> {
+	typedef XyScreenCursorDragWidget<MODULE> B;
 
+	/** XyScreenDragWidgetBase: label shown in this cursor's context menu and tooltip. */
  	std::string getItemName() override {
 		return "Mix";
 	}
 
+	/** XyScreenDragWidgetBase: single-character label drawn inside this cursor. */
 	char getItemChar() override {
 		return '+';
 	}
 
+	/** XyScreenDragWidgetBase: extra items appended to this cursor's context menu. */
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Motion-Sequence"));
@@ -639,18 +667,18 @@ struct TransitPadOutDragWidget : XyScreenDragWidget<MODULE> {
 template <typename MODULE>
 struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 	TransitPadXyScreenWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) : XyScreenWidget<MODULE>(module) {
-		uint8_t t0 = module ? module->scGetItemCount(0) : 4;
-		this->template createDragWidgets<TransitPadSnapshotDragWidget<MODULE>>(module, 0, t0);
-		uint8_t t1 = module ? module->scGetItemCount(1) : 1;
-		this->template createDragWidgets<TransitPadOutDragWidget<MODULE>>(module, 1, t1);
+		uint8_t t0 = module ? module->nodeCount() : 4;
+		this->template createNodeWidgets<TransitPadSnapshotDragWidget<MODULE>>(module, t0);
+		uint8_t t1 = module ? module->cursorCount() : 1;
+		this->template createCursorWidgets<TransitPadOutDragWidget<MODULE>>(module, t1);
 	}
 
 	void step() override {
 		if (this->module) {
 			// Preview interpolated automation line if mixport is selected
 			this->module->seqPreview = -1;
-			for (uint8_t i = 0; i < this->module->scGetItemCountActive(1); i++) {
-				if (this->module->scIsSelected(1, i))
+			for (uint8_t i = 0; i < this->module->cursorCountActive(); i++) {
+				if (this->module->selection.isCursor(i))
 					this->module->seqPreview = i;
 			}
 		}
@@ -688,13 +716,14 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 		nvgFill(vg);
 	}
 
+	/** XyScreenWidget: extra items appended to the whole screen's context menu. */
 	void appendContextMenu(Menu* menu) override {
 		using StoermelderPackOne::Rack::createAtomicValuePtrMenuItem;
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolPtrMenuItem("Visualize", "Space", &this->module->vizMode));
 		menu->addChild(createSubmenuItem("Number of snapshots", string::f("%i", this->module->snapshotsUsed.load(std::memory_order_relaxed)),
 			[=](Menu* menu) {
-				for (int i = 0; i < this->module->scGetItemCount(0); i++) {
+				for (int i = 0; i < this->module->nodeCount(); i++) {
 					const int target = i + 1;
 					menu->addChild(createAtomicValuePtrMenuItem(string::f("%i", target), &this->module->snapshotsUsed, target));
 				}
@@ -717,6 +746,7 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 
 template <typename MODULE>
 struct TransitPadXySeqLedDisplay : XySeqLedDisplay<MODULE> {
+	/** XySeqLedDisplay: label shown for this port's motion-sequence editor. */
 	std::string getPortName() override {
 		return "Mix";
 	}
@@ -799,7 +829,7 @@ struct TransitPadSetButton : VCVButton {
 		labelItem->setIndex = setIndex;
 		menu->addChild(labelItem);
 		menu->addChild(new MenuSeparator());
-		for (size_t i = 0; i < module->scGetItemCountActive(0); i++) {
+		for (size_t i = 0; i < module->nodeCountActive(); i++) {
 			menu->addChild(createMenuLabel(module->getItemLabel(setIndex, i)));
 		}
 	}
