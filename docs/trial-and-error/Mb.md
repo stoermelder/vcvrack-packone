@@ -164,3 +164,4 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
     - Improved context menus for tags (#461)
     - Fixed module placement when "Smart Rearrangement" is disabled
     - Fixed broken sorting option "Last used"
+    - Fixed module preview in *v1 mod* browser
