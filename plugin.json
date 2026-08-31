@@ -1,6 +1,6 @@
 {
 	"slug": "Stoermelder-P1",
-	"version": "2.5.0",
+	"version": "2.6.0",
 	"license": "GPL-3.0-or-later",
 	"author": "Benjamin Dill",
 	"name": "PackOne",
@@ -17,7 +17,7 @@
 		{
 			"slug": "SpliceKit",
 			"name": "SPLICE-KIT",
-			"description": "MIDI patch-bay for connecting cables",
+			"description": "8x8 matrix patch-bay for creating and removing cables by pressing button pairs.\nStores up to eight independent scenes per instance, with full MIDI control and feedback for playing your patch from a grid controller.",
 			"tags": [
 				"MIDI", "Controller", "Utility"
 			],
