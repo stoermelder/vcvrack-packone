@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "MidiCatMem.cpp"
 #include "MidiCat.cpp"
 #include "../midi/MidiTrackingProcessor.hpp"

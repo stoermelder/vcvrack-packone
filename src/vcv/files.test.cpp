@@ -1,6 +1,4 @@
-#include "../test/test_plugin.hpp"
-#include "../test/test_context.hpp"
-#include "../test/test_mock.hpp"
+#include "../test/framework.hpp"
 #include "files.hpp"
 
 using namespace StoermelderPackOne;

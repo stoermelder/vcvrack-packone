@@ -4,8 +4,7 @@
 // Included by every SpliceKit*.test.cpp file; each test file builds its
 // own binary (see plugin-test.mk), so the test context is per-binary.
 
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "SpliceKit.cpp"
 
 using namespace StoermelderPackOne;
