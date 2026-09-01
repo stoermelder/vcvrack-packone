@@ -80,5 +80,6 @@ ifdef DEBUGPLUGIN
 	CFLAGS += -O0 -g -DDEBUGPLUGIN
 endif
 
-# Test build rules live in plugin-test.mk
+
 include plugin-test.mk
+include plugin-check.mk
