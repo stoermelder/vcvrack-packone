@@ -108,9 +108,13 @@ struct TestContext {
 			// scene, event, history and engine unconditionally ("Deleting NULL is safe in
 			// C++"), so `delete ctx` below is sufficient to free all three of these — they
 			// must NOT also be deleted here, or ~TestContext() would double-free them.
+			TEST_SUPPRESS_DEPRECATED_BEGIN
 			ctx->engine = new rack::engine::Engine;
+			TEST_SUPPRESS_DEPRECATED_END
 			ctx->event = new rack::widget::EventState();
+			TEST_SUPPRESS_DEPRECATED_BEGIN
 			scene = new TScene();
+			TEST_SUPPRESS_DEPRECATED_END
 			ctx->scene = scene;
 			ctx->event->rootWidget = ctx->scene;
 		}
@@ -247,7 +251,9 @@ static void destroyWidget(rack::ModuleWidget* mw) {
 }
 
 static void registerModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
+	TEST_SUPPRESS_DEPRECATED_BEGIN
 	APP->engine->addModule_NoLock(m);
+	TEST_SUPPRESS_DEPRECATED_END
 	if (mw) {
 		APP->scene->rack->addModule(mw);
 	}
@@ -256,14 +262,18 @@ static void registerModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
 static void unregisterModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
 	if (mw) {
 		APP->scene->rack->removeModule(mw);
+		TEST_SUPPRESS_DEPRECATED_BEGIN
 		APP->engine->removeModule_NoLock(m);
+		TEST_SUPPRESS_DEPRECATED_END
 		// Delegates to destroyWidget() for teardown so this path also calls
 		// APP->event->finalizeWidget(mw) — otherwise a widget that was hovered, dragged or
 		// selected leaves a dangling pointer behind in EventState.
 		destroyWidget(mw);
 	}
 	else {
+		TEST_SUPPRESS_DEPRECATED_BEGIN
 		APP->engine->removeModule_NoLock(m);
+		TEST_SUPPRESS_DEPRECATED_END
 	}
 }
 
