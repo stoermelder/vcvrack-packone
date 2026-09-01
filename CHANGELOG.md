@@ -1,3 +1,10 @@
+## 2.6.1
+
+### Changes and Fixes
+
+- Module [DIRT](./docs/dirt/Dirt.md)
+    - Fixed broken "Initialize" on Crush defects
+
 ## 2.6.0
 
 ### New modules

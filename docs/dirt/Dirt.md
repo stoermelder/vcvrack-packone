@@ -19,3 +19,5 @@ Please note: Every instance of DIRT is unique, two modules will not sound the sa
     - Added new defects _Pitch_, _Crush_ and _Dropout_
 - v2.6.0
     - Fixed broken preset loading
+- v2.6.1
+    - Fixed broken "Initialize" on Crush defects
