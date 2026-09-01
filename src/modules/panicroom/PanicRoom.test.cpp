@@ -37,6 +37,14 @@ struct MockCableAccess : vcv::CableAccess {
 	}
 };
 
+struct ModuleMock {
+	TEST_MOCK_MODULES(MockModuleAccess);
+};
+
+struct CableMock {
+	TEST_MOCK_CABLES(MockCableAccess);
+};
+
 // A non-null parent so the module-limit loop doesn't break on the first widget.
 static rack::widget::Widget dummyParent;
 
@@ -138,7 +146,7 @@ TEST_CASE("JSON round-trip preserves state", "[PanicRoom][JSON]") {
 
 
 TEST_CASE("Module limit reads modules through the module access", "[PanicRoom][module]") {
-	auto mock = Test::makeMockVcv<MockModuleAccess>();
+	ModuleMock mock;
 	auto module = Test::createModule<PanicRoomModule>("PanicRoom");
 	auto widget = Test::createWidget<PanicRoomWidget>(module);
 
@@ -168,7 +176,7 @@ TEST_CASE("Module limit reads modules through the module access", "[PanicRoom][m
 }
 
 TEST_CASE("Module limit removes excess modules through the module access", "[PanicRoom][module]") {
-	auto mock = Test::makeMockVcv<MockModuleAccess>();
+	ModuleMock mock;
 	auto module = Test::createModule<PanicRoomModule>("PanicRoom");
 	auto widget = Test::createWidget<PanicRoomWidget>(module);
 
@@ -199,7 +207,7 @@ TEST_CASE("Module limit removes excess modules through the module access", "[Pan
 }
 
 TEST_CASE("Cable limit removes excess cables through the cable access", "[PanicRoom][cable]") {
-	auto mock = Test::makeMockVcv<MockCableAccess>();
+	CableMock mock;
 	auto module = Test::createModule<PanicRoomModule>("PanicRoom");
 	auto widget = Test::createWidget<PanicRoomWidget>(module);
 

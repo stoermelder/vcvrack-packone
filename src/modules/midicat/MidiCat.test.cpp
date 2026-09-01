@@ -1694,7 +1694,11 @@ static const char MIDI_MAP_PRESET[] = R"JSON(
 )JSON";
 
 TEST_CASE("loadMidiMapPreset end-to-end reads, parses, and applies the preset", "[MidiCat][ui]") {
-	auto mock = Test::makeMockVcv<MockUiAccess, MockFileAccess, MockHistoryAccess>();
+	struct Mock {
+		TEST_MOCK_UI(MockUiAccess);
+		TEST_MOCK_FS(MockFileAccess);
+		TEST_MOCK_HISTORY(MockHistoryAccess);
+	} mock;
 	auto module = Test::createModule<MidiCatModule>("MidiCat");
 	auto widget = Test::createWidget<MidiCatBaseWidget>(module);
 

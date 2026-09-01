@@ -296,7 +296,9 @@ TEST_CASE("JSON legacy single-moduleId field is loaded correctly", "[Goto]") {
 }
 
 TEST_CASE("executeJump routes through the module access layer", "[Goto][vcv]") {
-	auto mock = Test::makeMockVcv<MockModuleAccess>();
+	struct Mock {
+		TEST_MOCK_MODULES(MockModuleAccess);
+	} mock;
 	auto module = Test::createModule<GotoModule<10>>("Goto");
 
 	GotoContainer<10> container;

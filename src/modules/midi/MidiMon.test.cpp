@@ -475,7 +475,10 @@ struct MockFileAccess : Test::MockVcv::MockFileAccess {
 };
 
 TEST_CASE("exportLogDialog routes through the UI save dialog", "[MidiMon][ui]") {
-	auto mock = Test::makeMockVcv<MockUiAccess, MockFileAccess>();
+	struct Mock {
+		TEST_MOCK_UI(MockUiAccess);
+		TEST_MOCK_FS(MockFileAccess);
+	} mock;
 	auto module = Test::createModule<MidiMonModule>("MidiMon");
 	auto widget = Test::createWidget<MidiMonWidget>(module);
 

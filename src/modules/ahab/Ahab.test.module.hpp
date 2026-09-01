@@ -1023,9 +1023,14 @@ struct MockFileAccess : vcv::FileAccess {
 	}
 };
 
+struct Mock {
+	TEST_MOCK_UI(MockUiAccess);
+	TEST_MOCK_FS(MockFileAccess);
+};
+
 
 TEST_CASE("Ahab file dialogs route through the vcv UI layer", "[Ahab][vcv][ui]") {
-	auto mock = Test::makeMockVcv<MockUiAccess, MockFileAccess>();
+	Mock mock;
 	auto module = Test::createModule<AhabModule>("Ahab");
 	auto widget = Test::createWidget<AhabWidget>(module);
 
@@ -1107,7 +1112,7 @@ TEST_CASE("Ahab file dialogs route through the vcv UI layer", "[Ahab][vcv][ui]")
 
 
 TEST_CASE("Ahab copy selection routes through the vcv clipboard layer", "[Ahab][vcv][ui]") {
-	auto mock = Test::makeMockVcv<MockUiAccess, MockFileAccess>();
+	Mock mock;
 	auto module = Test::createModule<AhabModule>("Ahab");
 	auto widget = Test::createWidget<AhabWidget>(module);
 

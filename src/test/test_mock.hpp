@@ -1,9 +1,6 @@
 #pragma once
-#include "test_mock.hpp"
 #include "../vcv/api.hpp"
 #include <rack.hpp>
-#include <type_traits>
-#include <utility>
 
 namespace Test {
 
@@ -11,166 +8,42 @@ using namespace StoermelderPackOne;
 
 namespace MockVcv {
 
-// Installs the mock accesses into the swappable vcv access globals for the duration of
-// the scope, restoring all seven to nullptr on destruction. Template on the concrete mock
-// types so each test binary supplies its own recording mocks (see src/vcv/files.test.cpp
-// for a full example).
+// Installs one mock into one vcv access slot for the duration of the scope, restoring the
+// slot's previous value (nullptr if it wasn't already mocked) on destruction.
 //
-// A template parameter left at its default (the base interface) means "not mocked": that
-// slot is NOT installed, so *AccessFor() falls back to the real Rack implementation. Only
-// the accesses you actually mock need concrete mock classes — and any access your code
-// path touches must be one of them (a real UiAccess would pop dialogs, a real HistoryAccess
-// would crash: APP->history is null in TestContext).
-template <
-	typename ModuleT = StoermelderPackOne::vcv::ModuleAccess,
-	typename SceneT = StoermelderPackOne::vcv::SceneAccess,
-	typename CableT = StoermelderPackOne::vcv::CableAccess,
-	typename UiT = StoermelderPackOne::vcv::UiAccess,
-	typename FsT = StoermelderPackOne::vcv::FileAccess,
-	typename HistoryT = StoermelderPackOne::vcv::HistoryAccess,
-	typename NwT = StoermelderPackOne::vcv::NwAccess
->
-struct Mock {
-	ModuleT modules;
-	SceneT scene;
-	CableT cables;
-	UiT ui;
-	FsT fs;
-	HistoryT history;
-	NwT nw;
+// Base is the access interface (vcv::UiAccess, vcv::FileAccess, ...); `slot` is the matching
+// global pointer (vcv::uiAccess, vcv::fileAccess, ...). Compose one Guard per slot you need to
+// mock into a per-suite Mock struct — see src/modules/siren/Siren.test.hpp for the pattern this
+// replaces by hand, or the example below.
+//
+// Usage:
+//   struct Mock {
+//       MockUiAccess ui;
+//       MockFileAccess fs;
+//       Test::MockVcv::Guard<vcv::UiAccess> uiGuard{vcv::uiAccess, &ui};
+//       Test::MockVcv::Guard<vcv::FileAccess> fsGuard{vcv::fileAccess, &fs};
+//   };
+template <typename Base>
+struct Guard {
+	Base*& slot;
+	Base* prev;
 
-	Mock() {
-		installIfMock(&modules, StoermelderPackOne::vcv::moduleAccess, prevModules);
-		installIfMock(&scene, StoermelderPackOne::vcv::sceneAccess, prevScene);
-		installIfMock(&cables, StoermelderPackOne::vcv::cableAccess, prevCables);
-		installIfMock(&ui, StoermelderPackOne::vcv::uiAccess, prevUi);
-		installIfMock(&fs, StoermelderPackOne::vcv::fileAccess, prevFs);
-		installIfMock(&history, StoermelderPackOne::vcv::historyAccess, prevHistory);
-		installIfMock(&nw, StoermelderPackOne::vcv::nwAccess, prevNw);
+	Guard(Base*& slot, Base* mock) : slot(slot), prev(slot) {
+		slot = mock;
 	}
-	~Mock() {
-		if (!armed) return;
-		restoreIfMock<ModuleT>(StoermelderPackOne::vcv::moduleAccess, prevModules);
-		restoreIfMock<SceneT>(StoermelderPackOne::vcv::sceneAccess, prevScene);
-		restoreIfMock<CableT>(StoermelderPackOne::vcv::cableAccess, prevCables);
-		restoreIfMock<UiT>(StoermelderPackOne::vcv::uiAccess, prevUi);
-		restoreIfMock<FsT>(StoermelderPackOne::vcv::fileAccess, prevFs);
-		restoreIfMock<HistoryT>(StoermelderPackOne::vcv::historyAccess, prevHistory);
-		restoreIfMock<NwT>(StoermelderPackOne::vcv::nwAccess, prevNw);
-	}
-
-	// Movable so factories like makeMockVcv() can return one by value: ownership of the
-	// installed slots (and the saved previous values) transfers to the new instance, and
-	// the moved-from source is disarmed so its destructor is a no-op instead of restoring
-	// (or double-restoring) slots it no longer owns.
-	//
-	// Non-copyable: a copy would restore a slot to a stale saved pointer, or restore it
-	// twice.
-	Mock(const Mock&) = delete;
-	Mock& operator=(const Mock&) = delete;
-
-	Mock(Mock&& other) noexcept
-		: modules(std::move(other.modules)), scene(std::move(other.scene)),
-		  cables(std::move(other.cables)), ui(std::move(other.ui)), fs(std::move(other.fs)),
-		  history(std::move(other.history)), nw(std::move(other.nw)),
-		  armed(other.armed),
-		  prevModules(other.prevModules), prevScene(other.prevScene), prevCables(other.prevCables),
-		  prevUi(other.prevUi), prevFs(other.prevFs), prevHistory(other.prevHistory), prevNw(other.prevNw) {
-		other.armed = false;
-		rebindSlotIfMock<ModuleT>(StoermelderPackOne::vcv::moduleAccess, &modules);
-		rebindSlotIfMock<SceneT>(StoermelderPackOne::vcv::sceneAccess, &scene);
-		rebindSlotIfMock<CableT>(StoermelderPackOne::vcv::cableAccess, &cables);
-		rebindSlotIfMock<UiT>(StoermelderPackOne::vcv::uiAccess, &ui);
-		rebindSlotIfMock<FsT>(StoermelderPackOne::vcv::fileAccess, &fs);
-		rebindSlotIfMock<HistoryT>(StoermelderPackOne::vcv::historyAccess, &history);
-		rebindSlotIfMock<NwT>(StoermelderPackOne::vcv::nwAccess, &nw);
-	}
-	Mock& operator=(Mock&&) = delete;
-
-private:
-	bool armed = true;
-
-	// After a move, the global slot still points at the moved-from sub-object's address
-	// (copied verbatim by installIfMock at construction time). Repoints it at the new
-	// sub-object so the mock keeps working and restoreIfMock() on the new instance is
-	// the one that runs at destruction.
-	template <typename T, typename Base>
-	static void rebindSlotIfMock(Base*& slot, T* m) {
-		rebindSlotIfMockImpl(slot, m, std::is_same<T, Base>());
-	}
-	template <typename T, typename Base>
-	static void rebindSlotIfMockImpl(Base*& slot, T* m, std::true_type) {
-		// T is the base interface — this Mock never installed anything here.
-	}
-	template <typename T, typename Base>
-	static void rebindSlotIfMockImpl(Base*& slot, T* m, std::false_type) {
-		slot = m;
-	}
-
-	StoermelderPackOne::vcv::ModuleAccess* prevModules = nullptr;
-	StoermelderPackOne::vcv::SceneAccess* prevScene = nullptr;
-	StoermelderPackOne::vcv::CableAccess* prevCables = nullptr;
-	StoermelderPackOne::vcv::UiAccess* prevUi = nullptr;
-	StoermelderPackOne::vcv::FileAccess* prevFs = nullptr;
-	StoermelderPackOne::vcv::HistoryAccess* prevHistory = nullptr;
-	StoermelderPackOne::vcv::NwAccess* prevNw = nullptr;
-
-	// Installs `m` into `slot` only if `T` is a concrete mock (not the base interface),
-	// saving the slot's previous value into `prev` first so it can be restored later.
-	// A base-interface slot stays untouched, so the real Rack API remains active.
-	template <typename T, typename Base>
-	static void installIfMock(T* m, Base*& slot, Base*& prev) {
-		installIfMockImpl(m, slot, prev, std::is_same<T, Base>());
-	}
-	template <typename T, typename Base>
-	static void installIfMockImpl(T* m, Base*& slot, Base*& prev, std::true_type) {
-		// T is the base interface — leave the slot untouched (real Rack API active).
-	}
-	template <typename T, typename Base>
-	static void installIfMockImpl(T* m, Base*& slot, Base*& prev, std::false_type) {
-		prev = slot;
-		slot = m;
-	}
-
-	// Restores `slot` to its saved previous value, but only if this Mock actually
-	// installed it (matching installIfMock's condition) — otherwise the slot was never
-	// touched and must be left alone.
-	template <typename T, typename Base>
-	static void restoreIfMock(Base*& slot, Base* prev) {
-		restoreIfMockImpl<T>(slot, prev, std::is_same<T, Base>());
-	}
-	template <typename T, typename Base>
-	static void restoreIfMockImpl(Base*& slot, Base* prev, std::true_type) {
-		// T is the base interface — this Mock never installed anything here.
-	}
-	template <typename T, typename Base>
-	static void restoreIfMockImpl(Base*& slot, Base* prev, std::false_type) {
+	~Guard() {
 		slot = prev;
 	}
+
+	Guard(const Guard&) = delete;
+	Guard& operator=(const Guard&) = delete;
+	Guard(Guard&&) = delete;
+	Guard& operator=(Guard&&) = delete;
 };
 
-// Maps each mock type in Ts... to its slot by the base interface it derives from.
-// A slot with no matching mock keeps the base interface (and is therefore NOT
-// installed — the real Rack API stays active for it).
-template <typename Base, typename... Ts>
-struct SlotOf {
-	using type = Base;
-};
-template <typename Base, typename T, typename... Ts>
-struct SlotOf<Base, T, Ts...> {
-	using type = typename std::conditional<
-		std::is_base_of<Base, T>::value,
-		T,
-		typename SlotOf<Base, Ts...>::type
-	>::type;
-};
-
-
-// Default SystemAccess mock: forwards every call to the real rack::system, so a test
-// that only cares about a few filesystem calls can inherit from this and override just
-// those methods (e.g. to record or veto them) instead of re-implementing the whole
-// interface. Install it directly with makeMockVcv<MockSystemAccess>() for a pure
-// pass-through system layer, or derive a recording mock from it.
+// Default FileAccess mock: forwards every call to the real rack::system, so a test that only
+// cares about a few filesystem calls can inherit from this and override just those methods
+// (e.g. to record or veto them) instead of re-implementing the whole interface.
 struct MockFileAccess : StoermelderPackOne::vcv::FileAccess {
 	std::string join(const std::string& path1, const std::string& path2) override { return rack::system::join(path1, path2); }
 	std::string getDirectory(const std::string& path) override { return rack::system::getDirectory(path); }
@@ -195,22 +68,25 @@ struct MockFileAccess : StoermelderPackOne::vcv::FileAccess {
 
 } // namespace MockVcv
 
-
-// Factory: name only the mocks you want (in any order); the rest default to the
-// base interfaces. Avoids spelling out the leading default template parameters of
-// MockAccess, e.g. makeMockVcv<MockUiAccess>() instead of
-// MockAccess<ModuleAccess, SceneAccess, CableAccess, MockUiAccess>().
-template <typename... Ts>
-auto makeMockVcv() {
-	return MockVcv::Mock<
-		typename MockVcv::SlotOf<vcv::ModuleAccess, Ts...>::type,
-		typename MockVcv::SlotOf<vcv::SceneAccess, Ts...>::type,
-		typename MockVcv::SlotOf<vcv::CableAccess, Ts...>::type,
-		typename MockVcv::SlotOf<vcv::UiAccess, Ts...>::type,
-		typename MockVcv::SlotOf<vcv::FileAccess, Ts...>::type,
-		typename MockVcv::SlotOf<vcv::HistoryAccess, Ts...>::type,
-		typename MockVcv::SlotOf<vcv::NwAccess, Ts...>::type
-	>();
-}
+// One macro per access slot: declares the mock member (named after the slot: modules, scene,
+// cables, ui, fs, history, nw) of the given type, plus a Guard that installs it into the
+// matching global for the enclosing struct's lifetime. Each macro hardcodes its own member
+// name, Base type and global — there is no shared naming convention to infer the latter two
+// from (e.g. the FileAccess global is `fileAccess`, not `fsAccess`), so this stays 7 explicit
+// one-liners rather than a single macro with a lookup table.
+//
+// Usage — replaces the 2-line member+Guard pair per slot:
+//   struct Mock {
+//       TEST_MOCK_UI(MockUiAccess);
+//       TEST_MOCK_FS(MockFileAccess);
+//       TEST_MOCK_HISTORY(MockHistoryAccess);
+//   } mock;   // mock.ui, mock.fs, mock.history
+#define TEST_MOCK_MODULES(Type) Type modules; Test::MockVcv::Guard<vcv::ModuleAccess> modulesGuard{vcv::moduleAccess, &modules}
+#define TEST_MOCK_SCENE(Type)   Type scene; Test::MockVcv::Guard<vcv::SceneAccess> sceneGuard{vcv::sceneAccess, &scene}
+#define TEST_MOCK_CABLES(Type)  Type cables; Test::MockVcv::Guard<vcv::CableAccess> cablesGuard{vcv::cableAccess, &cables}
+#define TEST_MOCK_UI(Type)      Type ui; Test::MockVcv::Guard<vcv::UiAccess> uiGuard{vcv::uiAccess, &ui}
+#define TEST_MOCK_FS(Type)      Type fs; Test::MockVcv::Guard<vcv::FileAccess> fsGuard{vcv::fileAccess, &fs}
+#define TEST_MOCK_HISTORY(Type) Type history; Test::MockVcv::Guard<vcv::HistoryAccess> historyGuard{vcv::historyAccess, &history}
+#define TEST_MOCK_NW(Type)      Type nw; Test::MockVcv::Guard<vcv::NwAccess> nwGuard{vcv::nwAccess, &nw}
 
 } // namespace Test
