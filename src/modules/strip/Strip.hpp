@@ -928,6 +928,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		if (!file) {
 			std::string message = string::f("Could not write to patch file %s", filename.c_str());
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			return;
 		}
 		DEFER({
 			fclose(file);
