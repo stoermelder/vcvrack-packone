@@ -36,6 +36,32 @@ static void registerModelSync(const std::string& slug, Model** ptr) {
 #define SYNC_MODEL(ptr, slug) \
 	static bool _syncModel_##ptr = (Test::registerModelSync(slug, &ptr), true)
 
+// Asserts that `model` (a TU-local model global, e.g. modelFoo) was actually synced to the
+// slug's model in the plugin dylib — i.e. that a matching SYNC_MODEL(model, slug) ran before
+// this call. Call it once, right after constructing the peer(s) whose `->model` you are about
+// to compare against `model` (an expander check like `exp->model == modelMidiCatMem`).
+//
+// SYNC_MODEL itself cannot enforce this: registerModelSync() only records an *intent* to sync,
+// and the sync loop in TestContext's constructor runs unconditionally for every registered
+// entry, so a present SYNC_MODEL can't fail quietly. The bug this catches is the opposite one —
+// a module whose expander code compares against a global for which SYNC_MODEL was never called
+// at all. Without this, `exp->model == modelMidiCatMem` silently compares the test TU's own
+// stale copy of the model pointer against the dylib's, which never matches, and the resulting
+// "wrong expander" behaviour reads as a logic bug rather than a missing test-harness call.
+//
+// Usage: SYNC_MODEL(modelMidiCatMem, "MidiCatMem"); ... Test::requireModelSync(modelMidiCatMem, "MidiCatMem");
+static void requireModelSync(Model* model, const std::string& slug) {
+	CATCH_INFO("Missing SYNC_MODEL(..., \"" << slug << "\") — model global for '" << slug
+		<< "' was never registered for sync with the plugin dylib, or TestContext hasn't run yet");
+	REQUIRE(model != nullptr);
+	REQUIRE(pluginInstance != nullptr);
+	Model* dylibModel = pluginInstance->getModel(slug);
+	CATCH_INFO("Model global for '" << slug << "' does not match the plugin dylib's model for that "
+		"slug — check that SYNC_MODEL(..., \"" << slug << "\") passes the same global that gets "
+		"compared elsewhere (e.g. in expander peer checks)");
+	REQUIRE(model == dylibModel);
+}
+
 // Test-only context initializer to prevent APP (rack::contextGet()) from being null
 // Included by test harness only.
 // Allows specifying a custom Scene type for event testing.

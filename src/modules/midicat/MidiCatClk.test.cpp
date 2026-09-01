@@ -122,6 +122,9 @@ TEST_CASE("process() does not crash without expander", "[MidiCatClk]") {
 TEST_CASE("MidiCat detects expander", "[MidiCatClk][MidiCat]") {
 	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
 	MidiCatClkModule* clk = Test::createModule<MidiCatClkModule>("MidiCatClk");
+	// MidiCat.expanders.hpp detects clk via `exp->model == modelMidiCatClk` — a mismatch here
+	// (missing/wrong SYNC_MODEL) would make the REQUIRE below fail with no useful diagnosis.
+	Test::requireModelSync(modelMidiCatClk, "MidiCatClk");
 	Test::registerModule(midicat);
 	Test::registerModule(clk);
 

@@ -175,6 +175,9 @@ TEST_CASE("onReset clears midiMap and moduleRestriction", "[MidiCatMem]") {
 TEST_CASE("MidiCat detects expander", "[MidiCatMem][MidiCat]") {
 	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
 	MidiCatMemModule* mem   = Test::createModule<MidiCatMemModule>("MidiCatEx");
+	// MidiCat.expanders.hpp detects mem via `exp->model == modelMidiCatMem` — a mismatch here
+	// (missing/wrong SYNC_MODEL) would make the REQUIRE below fail with no useful diagnosis.
+	Test::requireModelSync(modelMidiCatMem, "MidiCatEx");
 	Test::registerModule(midicat);
 	Test::registerModule(mem);
 

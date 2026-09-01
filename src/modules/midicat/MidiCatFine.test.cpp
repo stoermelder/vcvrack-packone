@@ -184,6 +184,9 @@ TEST_CASE("Voltage getters return input voltages", "[MidiCatFine]") {
 TEST_CASE("MidiCat detects expander", "[MidiCatFine][MidiCat]") {
 	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
 	MidiCatFineModule* fine = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	// MidiCat.expanders.hpp detects fine via `exp->model == modelMidiCatFine` — a mismatch here
+	// (missing/wrong SYNC_MODEL) would make the REQUIRE below fail with no useful diagnosis.
+	Test::requireModelSync(modelMidiCatFine, "MidiCatFine");
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
 

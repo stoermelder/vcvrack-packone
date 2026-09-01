@@ -25,6 +25,10 @@ struct CapturingIntermixMock : Module, IntermixBase<PORTS> {
 
 	CapturingIntermixMock() {
 		config(0, 0, 0, 0);
+		// Set model so expander check passes (isIntermixModel(), IntermixBase.hpp) — relies on
+		// SYNC_MODEL(modelIntermix, "Intermix") above actually having landed; a missing/wrong
+		// sync would make that check silently fail instead of erroring here.
+		Test::requireModelSync(modelIntermix, "Intermix");
 		model = modelIntermix;
 		for (int i = 0; i < PORTS; i++)
 			for (int j = 0; j < PORTS; j++)
@@ -62,7 +66,10 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 	
 	IntermixModuleMock() {
 		config(0, 0, 0, 0);
-		// Set model so expander check passes
+		// Set model so expander check passes (isIntermixModel(), IntermixBase.hpp) — relies on
+		// SYNC_MODEL(modelIntermix, "Intermix") above actually having landed; a missing/wrong
+		// sync would make that check silently fail instead of erroring here.
+		Test::requireModelSync(modelIntermix, "Intermix");
 		model = modelIntermix;
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
