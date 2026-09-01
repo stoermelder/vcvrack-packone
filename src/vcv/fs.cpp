@@ -11,8 +11,9 @@ bool RealFileAccess::read(const std::string& path, std::string& data) const {
 	if (!file) return false;
 	DEFER({ std::fclose(file); });
 	char buffer[4096];
-	size_t n;
-	while ((n = std::fread(buffer, 1, sizeof(buffer), file)) > 0) {
+	while (true) {
+		size_t n = std::fread(buffer, 1, sizeof(buffer), file);
+		if (n == 0) break;
 		data.append(buffer, n);
 	}
 	return true;

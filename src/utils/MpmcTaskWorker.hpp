@@ -101,6 +101,9 @@ struct MpmcTaskWorker : ITaskWorker {
 		worker = new std::thread(&MpmcTaskWorker::processWorker, this);
 	}
 
+	MpmcTaskWorker(const MpmcTaskWorker&) = delete;
+	MpmcTaskWorker& operator=(const MpmcTaskWorker&) = delete;
+
 	~MpmcTaskWorker() {
 		cancel.store(true, std::memory_order_relaxed);
 		workerIsRunning.store(false, std::memory_order_release);

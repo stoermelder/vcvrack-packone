@@ -496,6 +496,7 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	}
 
 	void learnParam(int id, int64_t moduleId, int paramId, bool resetMidiSettings = true) {
+		assert(id >= 0 && id < MAX_CHANNELS);
 		APP->engine->updateParamHandle(&paramHandles[id], moduleId, paramId, true);
 		slots[id].param.reset(resetMidiSettings);
 		// Reset binding to light. Must use `id`, not `learningId`: moduleBind() and

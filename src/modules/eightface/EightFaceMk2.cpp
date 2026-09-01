@@ -223,12 +223,14 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 	inline EightFaceMk2Slot* expSlot(int index) {
 		if (index >= presetTotal) return NULL;
 		int n = index / NUM_PRESETS;
+		assert(n < MAX_EXPANDERS + 1);
 		return N[n]->faceSlot(index % NUM_PRESETS);
 	}
 
 	inline std::string* expSlotLabel(int index) {
 		if (index >= presetTotal) return NULL;
 		int n = index / NUM_PRESETS;
+		assert(n < MAX_EXPANDERS + 1);
 		return &N[n]->textLabel[index % NUM_PRESETS];
 	}
 

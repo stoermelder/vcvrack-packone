@@ -252,6 +252,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ModuleChangeListener {
 	inline SLOT* getSlot(int index) {
 		if (index >= presetTotal) return NULL;
 		int n = index / NUM_PRESETS;
+		assert(n < MAX_EXPANDERS + 1);
 		return &N[n]->slot[index % NUM_PRESETS];
 	}
 

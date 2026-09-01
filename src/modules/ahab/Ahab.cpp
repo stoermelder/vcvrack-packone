@@ -227,9 +227,7 @@ struct AhabModule : Module {
 
 	void process(const ProcessArgs &args) override {
 		// Ensure any UI-requested publishes are processed on the DSP thread
-		if (sim) {
-			sim->process();
-		}
+		sim->process();
 
 		if (simRunToggleRequest || simRunTrigger.process(params[RUN_PARAM].getValue())) {
 			if (simRunning) {

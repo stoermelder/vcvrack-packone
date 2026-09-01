@@ -307,6 +307,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
 				m = m->rightExpander.module;
+				assert(m);
 				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo.push_back(sc);
 				moduleIds.insert(m->id);
@@ -317,6 +318,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
 				m = m->leftExpander.module;
+				assert(m);
 				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo.push_back(sc);
 				moduleIds.insert(m->id);
