@@ -91,13 +91,17 @@ Follow the [build instructions](https://vcvrack.com/manual/Building#Building-Rac
 
 ## Testing
 
-The unit tests use [Catch2](https://github.com/catchorg/Catch2). Tests live next to the code they cover as `*.test.cpp`, with larger suites split into `*.test.hpp` fragments; each `*.test.cpp` is built into its own binary under `build/test/` and linked against the plugin, with AddressSanitizer enabled.
+The unit tests use [Catch2](https://github.com/catchorg/Catch2). Tests live next to the code they cover as `*.test.cpp`, with larger suites split into `*.test.hpp` fragments; each `*.test.cpp` is built into its own binary under `build/test/` and linked against the plugin, with AddressSanitizer enabled by default.
 
 ```bash
-make testrun                   # build and run all tests
-make testrun SUCCESS=1         # also print passing assertions
-make test-one NAME=<Module>    # rebuild and run a single test binary
-make test                      # build only, don't run
+make testrun                             # build and run all tests (parallel, JOBS=8 by default)
+make testrun JOBS=4                      # ...with a different fan-out
+make testrun SUCCESS=1                   # also print passing assertions
+make test-one NAME=<Module>              # rebuild and run a single test binary
+make testrun-one NAME=<Module>           # run a single test binary without rebuilding
+make testrun-one NAME=<Module> FILTER='[tag]'  # ...only TEST_CASEs matching a Catch2 tag/name filter
+make test                                # build only, don't run
+make test SANITIZER=undefined            # build with UBSan instead of ASan (also: thread)
 ```
 
 The test binaries are always compiled with `DEBUGPLUGIN`, and they link the plugin, so the plugin has to be built the same way: use `make DEBUGPLUGIN=1` for it. Modules reach the VCV Rack API through a swappable access layer (`src/vcv/`) that the tests replace with mocks, and that seam only exists in a debug build. Note that toggling the flag does not invalidate existing object files, so run `make clean` when switching between a release and a debug build.
