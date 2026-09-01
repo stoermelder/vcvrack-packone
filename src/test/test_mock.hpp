@@ -3,6 +3,7 @@
 #include "../vcv/api.hpp"
 #include <rack.hpp>
 #include <type_traits>
+#include <utility>
 
 namespace Test {
 
@@ -39,38 +40,112 @@ struct Mock {
 	NwT nw;
 
 	Mock() {
-		installIfMock(&modules, StoermelderPackOne::vcv::moduleAccess);
-		installIfMock(&scene, StoermelderPackOne::vcv::sceneAccess);
-		installIfMock(&cables, StoermelderPackOne::vcv::cableAccess);
-		installIfMock(&ui, StoermelderPackOne::vcv::uiAccess);
-		installIfMock(&fs, StoermelderPackOne::vcv::fileAccess);
-		installIfMock(&history, StoermelderPackOne::vcv::historyAccess);
-		installIfMock(&nw, StoermelderPackOne::vcv::nwAccess);
+		installIfMock(&modules, StoermelderPackOne::vcv::moduleAccess, prevModules);
+		installIfMock(&scene, StoermelderPackOne::vcv::sceneAccess, prevScene);
+		installIfMock(&cables, StoermelderPackOne::vcv::cableAccess, prevCables);
+		installIfMock(&ui, StoermelderPackOne::vcv::uiAccess, prevUi);
+		installIfMock(&fs, StoermelderPackOne::vcv::fileAccess, prevFs);
+		installIfMock(&history, StoermelderPackOne::vcv::historyAccess, prevHistory);
+		installIfMock(&nw, StoermelderPackOne::vcv::nwAccess, prevNw);
 	}
 	~Mock() {
-		StoermelderPackOne::vcv::moduleAccess = nullptr;
-		StoermelderPackOne::vcv::sceneAccess = nullptr;
-		StoermelderPackOne::vcv::cableAccess = nullptr;
-		StoermelderPackOne::vcv::uiAccess = nullptr;
-		StoermelderPackOne::vcv::fileAccess = nullptr;
-		StoermelderPackOne::vcv::historyAccess = nullptr;
-		StoermelderPackOne::vcv::nwAccess = nullptr;
+		if (!armed) return;
+		restoreIfMock<ModuleT>(StoermelderPackOne::vcv::moduleAccess, prevModules);
+		restoreIfMock<SceneT>(StoermelderPackOne::vcv::sceneAccess, prevScene);
+		restoreIfMock<CableT>(StoermelderPackOne::vcv::cableAccess, prevCables);
+		restoreIfMock<UiT>(StoermelderPackOne::vcv::uiAccess, prevUi);
+		restoreIfMock<FsT>(StoermelderPackOne::vcv::fileAccess, prevFs);
+		restoreIfMock<HistoryT>(StoermelderPackOne::vcv::historyAccess, prevHistory);
+		restoreIfMock<NwT>(StoermelderPackOne::vcv::nwAccess, prevNw);
 	}
 
+	// Movable so factories like makeMockVcv() can return one by value: ownership of the
+	// installed slots (and the saved previous values) transfers to the new instance, and
+	// the moved-from source is disarmed so its destructor is a no-op instead of restoring
+	// (or double-restoring) slots it no longer owns.
+	//
+	// Non-copyable: a copy would restore a slot to a stale saved pointer, or restore it
+	// twice.
+	Mock(const Mock&) = delete;
+	Mock& operator=(const Mock&) = delete;
+
+	Mock(Mock&& other) noexcept
+		: modules(std::move(other.modules)), scene(std::move(other.scene)),
+		  cables(std::move(other.cables)), ui(std::move(other.ui)), fs(std::move(other.fs)),
+		  history(std::move(other.history)), nw(std::move(other.nw)),
+		  armed(other.armed),
+		  prevModules(other.prevModules), prevScene(other.prevScene), prevCables(other.prevCables),
+		  prevUi(other.prevUi), prevFs(other.prevFs), prevHistory(other.prevHistory), prevNw(other.prevNw) {
+		other.armed = false;
+		rebindSlotIfMock<ModuleT>(StoermelderPackOne::vcv::moduleAccess, &modules);
+		rebindSlotIfMock<SceneT>(StoermelderPackOne::vcv::sceneAccess, &scene);
+		rebindSlotIfMock<CableT>(StoermelderPackOne::vcv::cableAccess, &cables);
+		rebindSlotIfMock<UiT>(StoermelderPackOne::vcv::uiAccess, &ui);
+		rebindSlotIfMock<FsT>(StoermelderPackOne::vcv::fileAccess, &fs);
+		rebindSlotIfMock<HistoryT>(StoermelderPackOne::vcv::historyAccess, &history);
+		rebindSlotIfMock<NwT>(StoermelderPackOne::vcv::nwAccess, &nw);
+	}
+	Mock& operator=(Mock&&) = delete;
+
 private:
-	// Installs `m` into `slot` only if `T` is a concrete mock (not the base interface).
-	// A base-interface slot stays at nullptr, so the real Rack API remains active.
+	bool armed = true;
+
+	// After a move, the global slot still points at the moved-from sub-object's address
+	// (copied verbatim by installIfMock at construction time). Repoints it at the new
+	// sub-object so the mock keeps working and restoreIfMock() on the new instance is
+	// the one that runs at destruction.
 	template <typename T, typename Base>
-	static void installIfMock(T* m, Base*& slot) {
-		installIfMockImpl(m, slot, std::is_same<T, Base>());
+	static void rebindSlotIfMock(Base*& slot, T* m) {
+		rebindSlotIfMockImpl(slot, m, std::is_same<T, Base>());
 	}
 	template <typename T, typename Base>
-	static void installIfMockImpl(T* m, Base*& slot, std::true_type) {
+	static void rebindSlotIfMockImpl(Base*& slot, T* m, std::true_type) {
+		// T is the base interface — this Mock never installed anything here.
+	}
+	template <typename T, typename Base>
+	static void rebindSlotIfMockImpl(Base*& slot, T* m, std::false_type) {
+		slot = m;
+	}
+
+	StoermelderPackOne::vcv::ModuleAccess* prevModules = nullptr;
+	StoermelderPackOne::vcv::SceneAccess* prevScene = nullptr;
+	StoermelderPackOne::vcv::CableAccess* prevCables = nullptr;
+	StoermelderPackOne::vcv::UiAccess* prevUi = nullptr;
+	StoermelderPackOne::vcv::FileAccess* prevFs = nullptr;
+	StoermelderPackOne::vcv::HistoryAccess* prevHistory = nullptr;
+	StoermelderPackOne::vcv::NwAccess* prevNw = nullptr;
+
+	// Installs `m` into `slot` only if `T` is a concrete mock (not the base interface),
+	// saving the slot's previous value into `prev` first so it can be restored later.
+	// A base-interface slot stays untouched, so the real Rack API remains active.
+	template <typename T, typename Base>
+	static void installIfMock(T* m, Base*& slot, Base*& prev) {
+		installIfMockImpl(m, slot, prev, std::is_same<T, Base>());
+	}
+	template <typename T, typename Base>
+	static void installIfMockImpl(T* m, Base*& slot, Base*& prev, std::true_type) {
 		// T is the base interface — leave the slot untouched (real Rack API active).
 	}
 	template <typename T, typename Base>
-	static void installIfMockImpl(T* m, Base*& slot, std::false_type) {
+	static void installIfMockImpl(T* m, Base*& slot, Base*& prev, std::false_type) {
+		prev = slot;
 		slot = m;
+	}
+
+	// Restores `slot` to its saved previous value, but only if this Mock actually
+	// installed it (matching installIfMock's condition) — otherwise the slot was never
+	// touched and must be left alone.
+	template <typename T, typename Base>
+	static void restoreIfMock(Base*& slot, Base* prev) {
+		restoreIfMockImpl<T>(slot, prev, std::is_same<T, Base>());
+	}
+	template <typename T, typename Base>
+	static void restoreIfMockImpl(Base*& slot, Base* prev, std::true_type) {
+		// T is the base interface — this Mock never installed anything here.
+	}
+	template <typename T, typename Base>
+	static void restoreIfMockImpl(Base*& slot, Base* prev, std::false_type) {
+		slot = prev;
 	}
 };
 

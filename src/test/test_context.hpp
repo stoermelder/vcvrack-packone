@@ -77,7 +77,11 @@ struct TestContext {
 
 			ctx = new rack::Context();
 			rack::contextSet(ctx);
-			// Create a minimal EventState so code that dereferences APP->event won't segfault
+			// Create a minimal EventState so code that dereferences APP->event won't segfault.
+			// Ownership: rack::Context::~Context() (src/context.cpp) deletes window, patch,
+			// scene, event, history and engine unconditionally ("Deleting NULL is safe in
+			// C++"), so `delete ctx` below is sufficient to free all three of these — they
+			// must NOT also be deleted here, or ~TestContext() would double-free them.
 			ctx->engine = new rack::engine::Engine;
 			ctx->event = new rack::widget::EventState();
 			scene = new TScene();
@@ -88,6 +92,9 @@ struct TestContext {
 			// Context already exists; reuse it
 			ctx = rack::contextGet();
 			scene = dynamic_cast<TScene*>(ctx->scene);
+			// A second TestContext<CustomScene> after a first TestContext<> (or with a
+			// different CustomScene) would otherwise silently leave `scene` null.
+			REQUIRE(scene != nullptr);
 		}
 	}
 
@@ -99,10 +106,11 @@ struct TestContext {
 			delete pluginInstance;
 			pluginInstance = nullptr;
 
-			// Context destructor handled by Rack; free our allocation
-			if (ctx) {
-				delete ctx;
-			}
+			// Frees ctx->engine, ctx->event and ctx->scene too — see the ownership note
+			// in the constructor above.
+			delete ctx;
+			ctx = nullptr;
+			rack::contextSet(nullptr);
 		}
 	}
 };
@@ -222,9 +230,11 @@ static void registerModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
 static void unregisterModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
 	if (mw) {
 		APP->scene->rack->removeModule(mw);
-		mw->module = NULL;
 		APP->engine->removeModule_NoLock(m);
-		delete mw;
+		// Delegates to destroyWidget() for teardown so this path also calls
+		// APP->event->finalizeWidget(mw) — otherwise a widget that was hovered, dragged or
+		// selected leaves a dangling pointer behind in EventState.
+		destroyWidget(mw);
 	}
 	else {
 		APP->engine->removeModule_NoLock(m);
@@ -272,8 +282,14 @@ struct SimpleEngine {
 		auto args = Test::makeProcessArgs(frame);
 		for (Module* module : modules) {
 			module->process(args);
-			std::swap(module->leftExpander.producerMessage, module->leftExpander.consumerMessage);
-			std::swap(module->rightExpander.producerMessage, module->rightExpander.consumerMessage);
+			if (module->leftExpander.messageFlipRequested) {
+				std::swap(module->leftExpander.producerMessage, module->leftExpander.consumerMessage);
+				module->leftExpander.messageFlipRequested = false;
+			}
+			if (module->rightExpander.messageFlipRequested) {
+				std::swap(module->rightExpander.producerMessage, module->rightExpander.consumerMessage);
+				module->rightExpander.messageFlipRequested = false;
+			}
 		}
 		frame++;
  	}
