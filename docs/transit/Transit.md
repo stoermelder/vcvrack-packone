@@ -325,5 +325,5 @@ Right-clicking on the empty area of the XY-display opens the following menu:
 - v2.5.0
     - Fade CV input is now additive to per-slot fade time (previously CV was only additive to the global _FADE_ knob)
     - Added Output-mode "Tipsy" for sending the snapshot text label (for modules with Tipsy-support like [TTY](https://library.vcvrack.com/StochasticTelegraph/TTY))
-- v2.x.0
-    - Added new expander TRANSIT-PAD for 2-dimensional morphing between snapshots through an XY-pad with up to 8 snapshot-sets and 16 motion-sequences
+- v2.6.0
+    - Fixed "Bind parameters by selection" when spanning multiple modules

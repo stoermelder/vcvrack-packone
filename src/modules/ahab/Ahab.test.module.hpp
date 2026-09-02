@@ -6,11 +6,12 @@
 
 #include "../../test/test_mock.hpp"
 #include "Ahab.test.hpp"
-#include "Ahab.vcvm.test.hpp"
+#include "Ahab.test.vcvm.hpp"
 
 
 TEST_CASE("Construction and initialization", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	AhabWidget* mw = Test::createWidget<AhabWidget>("Ahab");
 
 	REQUIRE(m != nullptr);
@@ -18,7 +19,6 @@ TEST_CASE("Construction and initialization", "[Ahab]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Operator description strings", "[Ahab]") {
@@ -55,7 +55,8 @@ TEST_CASE("Operator description strings", "[Ahab]") {
 }
 
 TEST_CASE("BPM-based clock", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Set BPM to 120 (default)
@@ -86,16 +87,16 @@ TEST_CASE("BPM-based clock", "[Ahab]") {
 	REQUIRE(ticks_elapsed <= (Usz)(expected_ticks * 1.01f));
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("BPM-based clock accuracy at different tempos", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Test at different BPM values
 	std::vector<float> bpm_values = {60.0f, 120.0f, 180.0f, 240.0f};
-	float sampleRate = 44100.f;
+	float sampleRate = Test::sampleRate();
 	int64_t frame = 0;
 	
 	for (float bpm : bpm_values) {
@@ -125,11 +126,11 @@ TEST_CASE("BPM-based clock accuracy at different tempos", "[Ahab]") {
 	}
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("External clock input", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	m->simRunning = true;
@@ -148,11 +149,11 @@ TEST_CASE("External clock input", "[Ahab]") {
 	REQUIRE(m->sim->getTickNumber() > tick_before);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("External clock ratio defaults to ×1", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
 	// Default clock ratio is ×1 (no division/multiplication)
@@ -171,11 +172,11 @@ TEST_CASE("External clock ratio defaults to ×1", "[Ahab]") {
 	REQUIRE(m->sim->getTickNumber() - tick_before == 1);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("External clock divider ÷2", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	m->simRunning = true;
 	m->clkRatioSetting = AhabModule::CLK_RATIO_DIV2;
@@ -196,11 +197,11 @@ TEST_CASE("External clock divider ÷2", "[Ahab]") {
 	REQUIRE(m->sim->getTickNumber() - tick_before == 1);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("External clock divider ÷4", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	m->simRunning = true;
 	m->clkRatioSetting = AhabModule::CLK_RATIO_DIV4;
@@ -221,11 +222,11 @@ TEST_CASE("External clock divider ÷4", "[Ahab]") {
 	REQUIRE(m->sim->getTickNumber() - tick_before == 1);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("External clock multiplier ×2", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	m->simRunning = true;
 	m->clkRatioSetting = AhabModule::CLK_RATIO_MUL2;
@@ -252,11 +253,11 @@ TEST_CASE("External clock multiplier ×2", "[Ahab]") {
 	REQUIRE(m->sim->getTickNumber() - tick_before == 2);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("External clock multiplier ×4", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	m->simRunning = true;
 	m->clkRatioSetting = AhabModule::CLK_RATIO_MUL4;
@@ -283,11 +284,11 @@ TEST_CASE("External clock multiplier ×4", "[Ahab]") {
 	REQUIRE(m->sim->getTickNumber() - tick_before == 4);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Manual clock button", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Process any pending UI updates first
@@ -311,11 +312,11 @@ TEST_CASE("Manual clock button", "[Ahab]") {
 	m->process({});
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Run/stop toggle", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	REQUIRE(m->simRunning == true);
@@ -339,11 +340,11 @@ TEST_CASE("Run/stop toggle", "[Ahab]") {
 	REQUIRE(m->simRunning == true);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Reset input triggers tick counter reset", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	m->process({});
@@ -371,11 +372,11 @@ TEST_CASE("Reset input triggers tick counter reset", "[Ahab]") {
 	REQUIRE(m->sim->getTickNumber() == 0);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Reset input responds to edge detection", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	m->process({});
@@ -410,11 +411,11 @@ TEST_CASE("Reset input responds to edge detection", "[Ahab]") {
 	REQUIRE(m->sim->getTickNumber() > 0);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Reset input with gate signal (continuous voltage)", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	m->process({});
@@ -444,11 +445,11 @@ TEST_CASE("Reset input with gate signal (continuous voltage)", "[Ahab]") {
 	REQUIRE(m->sim->getTickNumber() == 0);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("CV input reading", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Set input voltages and mark as connected (must set channels directly in test environment)
@@ -483,11 +484,11 @@ TEST_CASE("CV input reading", "[Ahab]") {
 	REQUIRE(m->readDspInput(0) == 0.0f);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("CV output writing", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	m->process({});
@@ -505,11 +506,11 @@ TEST_CASE("CV output writing", "[Ahab]") {
 	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 3].getVoltage() == 7.5f);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("CV output gate scheduling with non-zero gateTicks", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
 	m->process({});
@@ -549,11 +550,11 @@ TEST_CASE("CV output gate scheduling with non-zero gateTicks", "[Ahab]") {
 	oevent_list_deinit(&emptyEvents);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("CV output gate scheduling clamps output port", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
 	m->process({});
@@ -575,11 +576,11 @@ TEST_CASE("CV output gate scheduling clamps output port", "[Ahab]") {
 	oevent_list_deinit(&emptyEvents);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("onReset restores all defaults", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
 	// Corrupt a bunch of state.
@@ -612,11 +613,11 @@ TEST_CASE("onReset restores all defaults", "[Ahab]") {
 	REQUIRE(m->sim->getFieldWidth() == 49);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Clock output pulse", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	m->simRunning = true;
@@ -641,7 +642,6 @@ TEST_CASE("Clock output pulse", "[Ahab]") {
 	REQUIRE(v < 1.0f);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 
@@ -650,12 +650,13 @@ TEST_CASE("Clock output pulse", "[Ahab]") {
 // / CLK_OUTPUT pulse), not just by the simRunning flag.
 
 TEST_CASE("Run/stop gates BPM stepping", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
 	// High BPM so a modest sample count produces several ticks (16 Hz at 240).
 	m->params[AhabModule::BPM_PARAM].setValue(240.0f);
-	float sampleRate = 44100.f;
+	float sampleRate = Test::sampleRate();
 	int64_t frame = 0;
 	int numSamples = (int)(sampleRate / 16.0f * 3); // ~3 ticks worth
 
@@ -687,11 +688,11 @@ TEST_CASE("Run/stop gates BPM stepping", "[Ahab]") {
 	REQUIRE(m->sim->getTickNumber() > tickBefore);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Manual clock steps while stopped", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
 	m->simRunning = false; // stopped
@@ -707,15 +708,15 @@ TEST_CASE("Manual clock steps while stopped", "[Ahab]") {
 	REQUIRE(m->sim->getTickNumber() == tickBefore + 1);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("External clock disables internal BPM", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
 	m->params[AhabModule::BPM_PARAM].setValue(240.0f); // 16 Hz
-	float sampleRate = 44100.f;
+	float sampleRate = Test::sampleRate();
 	int64_t frame = 0;
 
 	// Connect the external clock (channels > 0 → isConnected()) and hold it at
@@ -733,11 +734,11 @@ TEST_CASE("External clock disables internal BPM", "[Ahab]") {
 	REQUIRE(m->sim->getTickNumber() == tickBefore);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("External clock does not step while stopped", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
 	m->simRunning = false; // stopped
@@ -753,14 +754,14 @@ TEST_CASE("External clock does not step while stopped", "[Ahab]") {
 	REQUIRE(m->sim->getTickNumber() == tickBefore);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Clock phase resets on run toggle and external clock", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
-	float sampleRate = 44100.f;
+	float sampleRate = Test::sampleRate();
 	int64_t frame = 0;
 	m->params[AhabModule::BPM_PARAM].setValue(240.0f);
 
@@ -797,14 +798,14 @@ TEST_CASE("Clock phase resets on run toggle and external clock", "[Ahab]") {
 	REQUIRE(m->clockPhase == 0.0f);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Clock output pulse width", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
-	float sampleRate = 44100.f;
+	float sampleRate = Test::sampleRate();
 	int64_t frame = 0;
 	m->simRunning = false; // no BPM retriggers; pulse driven only by manual clock
 
@@ -828,11 +829,11 @@ TEST_CASE("Clock output pulse width", "[Ahab]") {
 	REQUIRE(m->outputs[AhabModule::CLK_OUTPUT].getVoltage() < 1.0f);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Integration test - preset loading and simulation", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Parse the preset JSON
@@ -857,10 +858,10 @@ TEST_CASE("Integration test - preset loading and simulation", "[Ahab]") {
 
 	// The preset's UDP/OSC keys live inside "sim" and are restored through
 	// udpOutput->fromJson(simJ) — pins that the stored JSON format is unchanged.
-	REQUIRE(m->udpOutput->getUdpAddress() == "127.0.0.1");
-	REQUIRE(m->udpOutput->getUdpPort() == "49161");
-	REQUIRE(m->udpOutput->getOscAddress() == "127.0.0.1");
-	REQUIRE(m->udpOutput->getOscPort() == "49162");
+	REQUIRE(m->udpOutput->getAddress() == "127.0.0.1");
+	REQUIRE(m->udpOutput->getPort() == "49161");
+	REQUIRE(m->oscOutput->getAddress() == "127.0.0.1");
+	REQUIRE(m->oscOutput->getPort() == "49162");
 	
 	// Setup mock MIDI output to capture generated events
 	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
@@ -903,11 +904,11 @@ TEST_CASE("Integration test - preset loading and simulation", "[Ahab]") {
 	cleanupMockMidiOutput(m, mockDevice);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Clear field is undoable", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	// Attach the widget: this wires the sim's UI reset callback
 	// (AhabSimWidget::reset) exactly like a placed module in the rack.
@@ -947,7 +948,6 @@ TEST_CASE("Clear field is undoable", "[Ahab]") {
 
 	Test::destroyWidget(mw);
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 
@@ -1023,10 +1023,16 @@ struct MockFileAccess : vcv::FileAccess {
 	}
 };
 
+struct Mock {
+	TEST_MOCK_UI(MockUiAccess);
+	TEST_MOCK_FS(MockFileAccess);
+};
+
 
 TEST_CASE("Ahab file dialogs route through the vcv UI layer", "[Ahab][vcv][ui]") {
-	auto mock = Test::makeMockVcv<MockUiAccess, MockFileAccess>();
-	auto module = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	Mock mock;
+	auto module = mods.create("Ahab");
 	auto widget = Test::createWidget<AhabWidget>(module);
 
 	SECTION("simLoad cancel: openDialog returns empty -> early return, no message") {
@@ -1102,13 +1108,13 @@ TEST_CASE("Ahab file dialogs route through the vcv UI layer", "[Ahab][vcv][ui]")
 	}
 
 	Test::destroyWidget(widget);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Ahab copy selection routes through the vcv clipboard layer", "[Ahab][vcv][ui]") {
-	auto mock = Test::makeMockVcv<MockUiAccess, MockFileAccess>();
-	auto module = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	Mock mock;
+	auto module = mods.create("Ahab");
 	auto widget = Test::createWidget<AhabWidget>(module);
 
 	// Populate the widget's UI snapshot (display_field) with a small field and
@@ -1128,5 +1134,4 @@ TEST_CASE("Ahab copy selection routes through the vcv clipboard layer", "[Ahab][
 	CHECK(mock.ui.messages.empty());
 
 	Test::destroyWidget(widget);
-	Test::destroyModule(module);
 }

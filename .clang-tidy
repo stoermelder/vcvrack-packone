@@ -1,0 +1,111 @@
+# clang-tidy configuration for stoermelder-packone.
+#
+# Run with:  make tidy            (whole tree)
+#            make tidy-one FILE=src/modules/dirt/Dirt.cpp
+#
+# Selection principle: this list is tuned to find *bugs*, not to restyle the
+# codebase. Checks that would flag existing deliberate idioms are disabled
+# explicitly below, with the reason — an analyser that reports thousands of
+# style findings gets ignored, and then it finds nothing at all.
+
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  concurrency-*,
+  misc-*,
+  performance-*,
+  readability-inconsistent-declaration-parameter-name,
+  readability-misleading-indentation,
+  readability-non-const-parameter,
+
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -cert-err58-cpp,
+  -misc-const-correctness,
+  -misc-explicit-constructor,
+  -misc-include-cleaner,
+  -misc-no-recursion,
+  -misc-unused-parameters,
+  -misc-use-internal-linkage,
+  -misc-non-private-member-variables-in-classes,
+  -misc-use-anonymous-namespace,
+  -performance-avoid-endl,
+  -performance-enum-size,
+  -readability-magic-numbers,
+
+# Rationale for each disabled check:
+#
+#   bugprone-easily-swappable-parameters
+#     DSP code is full of (float a, float b) signatures — process(l, r),
+#     crossfade(from, to, t). Flagging these is pure noise.
+#
+#   bugprone-narrowing-conversions
+#     float/double/int mixing is inherent to audio code and to Rack's own API
+#     (getVoltage returns float, sample counts are int). Thousands of findings,
+#     approximately none of them bugs.
+#
+#   cert-err58-cpp
+#     Fires on static objects with throwing constructors. The plugin's static
+#     Model* globals and the test harness's file-scope TestContext are both
+#     deliberate and required by Rack's plugin model.
+#
+#   misc-const-correctness
+#     Wants `const` on nearly every local in every draw() body. Hundreds of
+#     findings, all pure churn.
+#
+#   misc-explicit-constructor
+#     Rack's widget idiom is single-argument constructors used as implicit
+#     conversions throughout (see src/components/).
+#
+#   misc-include-cleaner
+#     Wants a direct #include for every name used — including every json_*
+#     symbol and every rack:: helper reached through <rack.hpp>. Was ~40% of all
+#     findings on its own, and "fixing" it means hundreds of redundant includes.
+#
+#   misc-unused-parameters / misc-use-internal-linkage
+#     Rack's override signatures fix the parameter lists, and module/widget
+#     structs are registered by name so they cannot move to anonymous namespaces.
+#
+#   performance-enum-size
+#     Suggests uint8_t base types for enums. Not worth the diff on a plugin.
+#
+#   misc-no-recursion
+#     JSON tree walking (see the preset fuzzers in src/test/test_context.hpp)
+#     and the Orca sim are legitimately recursive.
+#
+#   misc-non-private-member-variables-in-classes
+#     Rack's entire API is public-struct based; every module follows it.
+#
+#   misc-use-anonymous-namespace
+#     The test harness uses file-scope statics deliberately.
+#
+#   performance-avoid-endl
+#     Diagnostic logging only; not on any hot path.
+#
+#   readability-magic-numbers
+#     Audio constants (10.f for Rack's voltage range, 0.5f, sample rates) read
+#     better inline than behind names.
+#
+# NOT disabled, and deliberately so — these are the high-value ones for this
+# codebase:
+#
+#   concurrency-*            The UI/DSP thread split is where the real bugs are
+#                            (see var/TestFramework_review.md, Phase 2).
+#   clang-analyzer-*         Path-sensitive uninitialised-memory and null-deref
+#                            detection; already has known findings in Dirt.
+#   bugprone-branch-clone,
+#   bugprone-copy-constructor-init,
+#   bugprone-use-after-move   Classic real-bug detectors.
+
+# Report findings in the plugin's own headers only — Rack's headers and the
+# vendored deps (orca-c, soundtouch, quickjs, hidapi) produce thousands that are
+# not actionable here. Plain regex, no negative lookahead: clang-tidy's engine
+# does not support it, and a pattern it cannot parse silently matches nothing.
+HeaderFilterRegex: 'src/(modules|utils|ui|vcv|components)/'
+
+# Report-only by default; `make tidy STRICT=1` promotes findings to errors.
+WarningsAsErrors: ''
+
+FormatStyle: none

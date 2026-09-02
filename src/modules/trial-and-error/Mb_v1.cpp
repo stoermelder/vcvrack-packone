@@ -105,6 +105,13 @@ struct TogglePredefinedTagItem : MenuItem {
 // Widgets
 
 struct ModelBox : widget::OpaqueWidget {
+	struct ModuleWidgetContainer : widget::Widget {
+		void draw(const DrawArgs& args) override {
+			Widget::draw(args);
+			Widget::drawLayer(args, 1);
+		}
+	};
+
 	plugin::Model* model;
 	widget::Widget* previewWidget;
 	ui::Tooltip* tooltip = NULL;
@@ -151,9 +158,17 @@ struct ModelBox : widget::OpaqueWidget {
 		zoomWidget->addChild(previewFb);
 
 		ModuleWidget* moduleWidget = model->createModuleWidget(NULL);
-		previewFb->addChild(moduleWidget);
+		ModuleWidgetContainer* mwc = new ModuleWidgetContainer;
+		mwc->addChild(moduleWidget);
+		mwc->box.size = moduleWidget->box.size;
+		previewFb->addChild(mwc);
 		// Save the width, used for correct width of blank before rendered
 		modelBoxWidth = moduleWidget->box.size.x;
+
+		// Widgets such as lights only compute their initial visible state (color, layout, nested dirty
+		// framebuffers) inside step(). Without running it once here, the framebuffer bakes its first snapshot
+		// from an unstepped, just-constructed tree.
+		moduleWidget->step();
 
 		sizePreview();
 	}

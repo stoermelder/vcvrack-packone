@@ -1,6 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
-#include "../../test/test_mock.hpp"
+#include "../../test/framework.hpp"
 #include "MidiMon.cpp"
 
 using namespace StoermelderPackOne;
@@ -32,7 +30,8 @@ static LOG_FORMAT formatOf(const LogEntry& e) { return std::get<0>(e); }
 
 
 TEST_CASE("Construction and reset", "[MidiMon]") {
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	Test::ModuleScaffold<MidiMonModule> mods;
+	auto module = mods.create("MidiMon");
 
 	SECTION("Default visibility flags after reset") {
 		REQUIRE(module->showNoteMsg == true);
@@ -58,11 +57,11 @@ TEST_CASE("Construction and reset", "[MidiMon]") {
 		REQUIRE(textOf(entries[1]).find("sample rate") != std::string::npos);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Preset JSON null-guards", "[MidiMon][JSON]") {
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	Test::ModuleScaffold<MidiMonModule> mods;
+	auto module = mods.create("MidiMon");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -85,11 +84,11 @@ TEST_CASE("Preset JSON null-guards", "[MidiMon][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[MidiMon][JSON]") {
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	Test::ModuleScaffold<MidiMonModule> mods;
+	auto module = mods.create("MidiMon");
 	module->panelTheme = 1;
 	module->showNoteMsg = false;
 	module->showCcMsg = false;
@@ -104,7 +103,7 @@ TEST_CASE("JSON round-trip preserves state", "[MidiMon][JSON]") {
 	json_t* rootJ = module->dataToJson();
 	REQUIRE(rootJ != nullptr);
 
-	auto restored = Test::createModule<MidiMonModule>("MidiMon");
+	auto restored = mods.create("MidiMon");
 	restored->dataFromJson(rootJ);
 
 	REQUIRE(restored->panelTheme == 1);
@@ -119,13 +118,12 @@ TEST_CASE("JSON round-trip preserves state", "[MidiMon][JSON]") {
 	REQUIRE(restored->showFrame == true);
 
 	json_decref(rootJ);
-	Test::destroyModule(module);
-	Test::destroyModule(restored);
 }
 
 
 TEST_CASE("Logs and formats channel messages", "[MidiMon]") {
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	Test::ModuleScaffold<MidiMonModule> mods;
+	auto module = mods.create("MidiMon");
 	drain(module); // discard header lines
 
 	SECTION("Note on (channel is displayed 1-based)") {
@@ -167,12 +165,12 @@ TEST_CASE("Logs and formats channel messages", "[MidiMon]") {
 		REQUIRE(textOf(entries[0]) == "ch01 14-bit cc7=1234");
 	}
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Respects visibility flags", "[MidiMon]") {
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	Test::ModuleScaffold<MidiMonModule> mods;
+	auto module = mods.create("MidiMon");
 	drain(module);
 
 	SECTION("Disabled note messages are dropped") {
@@ -198,12 +196,12 @@ TEST_CASE("Respects visibility flags", "[MidiMon]") {
 		REQUIRE(textOf(entries[0]) == "clock tick");
 	}
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Logs system real-time messages", "[MidiMon]") {
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	Test::ModuleScaffold<MidiMonModule> mods;
+	auto module = mods.create("MidiMon");
 	drain(module);
 	REQUIRE(module->showSystemMsg == true);
 
@@ -224,12 +222,12 @@ TEST_CASE("Logs system real-time messages", "[MidiMon]") {
 	module->processMidi(makeEx(c.type, Test::makeMidiMessage(0xf, 0, 0, 0)));
 	REQUIRE(drain(module).empty());
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("SysEx logging", "[MidiMon]") {
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	Test::ModuleScaffold<MidiMonModule> mods;
+	auto module = mods.create("MidiMon");
 	drain(module);
 
 	rack::midi::Message sysex;
@@ -263,12 +261,12 @@ TEST_CASE("SysEx logging", "[MidiMon]") {
 		REQUIRE(drain(module).empty());
 	}
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("processBypass drains the MIDI queue without logging", "[MidiMon]") {
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	Test::ModuleScaffold<MidiMonModule> mods;
+	auto module = mods.create("MidiMon");
 	drain(module); // discard header lines
 
 	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
@@ -279,7 +277,6 @@ TEST_CASE("processBypass drains the MIDI queue without logging", "[MidiMon]") {
 	REQUIRE(module->midiProcessor.getInput().size() == 0);
 	REQUIRE(drain(module).empty());
 
-	Test::destroyModule(module);
 }
 
 // Pumps the module until its process divider has certainly fired, so queued
@@ -292,7 +289,8 @@ static void pump(MidiMonModule* module, int64_t& frame) {
 }
 
 TEST_CASE("onReset clears NRPN state so data entry cannot resume", "[MidiMon][reset]") {
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	Test::ModuleScaffold<MidiMonModule> mods;
+	auto module = mods.create("MidiMon");
 	module->showRpnNrpnMsg = true;
 	int64_t frame = 1;
 
@@ -317,11 +315,11 @@ TEST_CASE("onReset clears NRPN state so data entry cannot resume", "[MidiMon][re
 		REQUIRE(textOf(e).find("nrpn") == std::string::npos);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("onReset clears 14-bit CC state so an orphan LSB is not paired", "[MidiMon][reset]") {
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	Test::ModuleScaffold<MidiMonModule> mods;
+	auto module = mods.create("MidiMon");
 	module->showCcExMsg = true;
 	int64_t frame = 1;
 
@@ -343,14 +341,14 @@ TEST_CASE("onReset clears 14-bit CC state so an orphan LSB is not paired", "[Mid
 		REQUIRE(textOf(e).find("14-bit") == std::string::npos);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("RPN/NRPN select and data entry render differently", "[MidiMon]") {
+	Test::ModuleScaffold<MidiMonModule> mods;
 	// Pins the hasValue() predicate that chooses between the "selected" and
 	// "value=" forms. extraValue < 0 means the notification carries a parameter
 	// number only; >= 0 means data entry supplied a reading.
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	auto module = mods.create("MidiMon");
 	module->showRpnNrpnMsg = true;
 	drain(module);
 
@@ -412,21 +410,21 @@ TEST_CASE("RPN/NRPN select and data entry render differently", "[MidiMon]") {
 		REQUIRE(textOf(entries[0]) == "ch01 rpn/nrpn reset");
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("processMidi never consumes the message", "[MidiMon]") {
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	Test::ModuleScaffold<MidiMonModule> mods;
+	auto module = mods.create("MidiMon");
 	// Returning false keeps the message available to other handlers.
 	REQUIRE(module->processMidi(makeEx(MType::NOTE_ON, Test::makeMidiMessage(0x9, 0, 60, 1))) == false);
 	REQUIRE(module->processMidi(makeEx(MType::CLOCK, Test::makeMidiMessage(0xf, 0x8, 0, 0))) == false);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Legacy preset defaults showCcExMsg to showCcMsg", "[MidiMon][JSON]") {
+	Test::ModuleScaffold<MidiMonModule> mods;
 	// Older presets had no "showCcExMsg" key; it should inherit showCcMsg.
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	auto module = mods.create("MidiMon");
 
 	json_t* rootJ = json_object();
 	json_object_set_new(rootJ, "showCcMsg", json_boolean(false));
@@ -435,7 +433,6 @@ TEST_CASE("Legacy preset defaults showCcExMsg to showCcMsg", "[MidiMon][JSON]") 
 	REQUIRE(module->showCcExMsg == false);
 
 	json_decref(rootJ);
-	Test::destroyModule(module);
 }
 
 
@@ -464,7 +461,7 @@ struct MockUiAccess : vcv::UiAccess {
 // A FileAccess mock that records write() calls; failWrites forces the failure path.
 // Path helpers (getDirectory/getFilename) forward to rack::system so exportLogDialog
 // computes the real default filename ("MidiMon.log") for the save dialog.
-struct MockFileAccess : Test::MockVcv::MockFileAccess {
+struct MockFileAccess : Test::mock::MockFileAccess {
 	struct WriteCall { std::string path, data; };
 	std::vector<WriteCall> writes;
 	bool failWrites = false;
@@ -477,8 +474,12 @@ struct MockFileAccess : Test::MockVcv::MockFileAccess {
 };
 
 TEST_CASE("exportLogDialog routes through the UI save dialog", "[MidiMon][ui]") {
-	auto mock = Test::makeMockVcv<MockUiAccess, MockFileAccess>();
-	auto module = Test::createModule<MidiMonModule>("MidiMon");
+	Test::ModuleScaffold<MidiMonModule> mods;
+	struct Mock {
+		TEST_MOCK_UI(MockUiAccess);
+		TEST_MOCK_FS(MockFileAccess);
+	} mock;
+	auto module = mods.create("MidiMon");
 	auto widget = Test::createWidget<MidiMonWidget>(module);
 
 	SECTION("Cancelled dialog writes nothing") {
@@ -533,5 +534,4 @@ TEST_CASE("exportLogDialog routes through the UI save dialog", "[MidiMon][ui]") 
 	}
 
 	Test::destroyWidget(widget);
-	Test::destroyModule(module);
 }

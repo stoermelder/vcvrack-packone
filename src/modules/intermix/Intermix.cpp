@@ -60,7 +60,7 @@ enum OUT_MODE {
 };
 
 template < int PORTS >
-struct IntermixModule : Module, IntermixBase<PORTS> {
+struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 	enum ParamIds {
 		ENUMS(PARAM_MATRIX, PORTS * PORTS),
 		ENUMS(PARAM_OUTPUT, PORTS),
@@ -191,8 +191,10 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		padBrightness = 0.75f;
 		inputVisualize = false;
 		outputClamp = true;
-		for (int i = 0; i < SCENE_MAX; i++) {
+		for (int i = 0; i < PORTS; i++) {
 			inputMode[i] = IM_DIRECT;
+		}
+		for (int i = 0; i < SCENE_MAX; i++) {
 			for (int j = 0; j < PORTS; j++) {
 				scenes[i].input[j] = IM_DIRECT;
 				scenes[i].output[j] = OM_OUT;
@@ -210,20 +212,6 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		sceneSet(0);
 		Module::onReset(e);
 	}
-
-#ifndef METAMODULE
-	void onRemove(const Module::RemoveEvent& e) override {
-		// hack for clearing the module-pointers on the expander-chain
-		Module* m = this;
-		while (m) {
-			if (m->model != modelIntermix && m->model != modelIntermixEnv && m->model != modelIntermixFade && m->model != modelIntermixGate) break;
-			m->rightExpander.producerMessage = NULL;
-			m->rightExpander.consumerMessage = NULL;
-			m = m->rightExpander.module;
-		}
-		Module::onRemove(e);
-	}
-#endif
 
 	void process(const ProcessArgs& args) override {
 		ts++;
@@ -305,11 +293,23 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 					if (sceneTrigger.process(inputs[INPUT_SCENE].getVoltage())) {
 						if (!inputs[INPUT_RESET].isConnected() || resetTimer.getTime() >= 1e-3f) {
 							int s = sceneSelected + sceneCvModeDir;
-							if (s >= sceneCount - 1)
+							if (s >= sceneCount - 1) {
 								sceneCvModeDir = -1;
-							if (s <= 0)
+								s = sceneCount - 1;
+							}
+							else if (s <= 0) {
 								sceneCvModeDir = 1;
-							sceneSet(s);
+								s = 0;
+							}
+							// On a bounce `s` coincides with the already-selected endpoint, so
+							// sceneSet() would early-return and skip re-applying the endpoint's
+							// routing. Re-apply explicitly so both endpoints behave identically.
+							if (s == sceneSelected) {
+								sceneApply(sceneSelected);
+							}
+							else {
+								sceneSet(s);
+							}
 						}
 					}
 					break;
@@ -320,13 +320,25 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 							int s = 0;
 							if (sceneSelected == 0) {
 								s = sceneCvModeAlt + sceneCvModeDir;
-								if (s >= sceneCount - 1)
+								if (s >= sceneCount - 1) {
 									sceneCvModeDir = -1;
-								if (s <= 0)
+									s = sceneCount - 1;
+								}
+								else if (s <= 0) {
 									sceneCvModeDir = 1;
+									s = 0;
+								}
 								sceneCvModeAlt = std::max(0, std::min(s, sceneCount - 1));
 							}
-							sceneSet(s);
+							// On a bounce `s` coincides with the already-selected endpoint, so
+							// sceneSet() would early-return and skip re-applying the endpoint's
+							// routing. Re-apply explicitly so both endpoints behave identically.
+							if (s == sceneSelected) {
+								sceneApply(sceneSelected);
+							}
+							else {
+								sceneSet(s);
+							}
 						}
 					}
 					break;
@@ -550,17 +562,18 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		}
 
 		// Expander
+		// Up-cast to IntermixBase<PORTS>* before storing: consumers
+		// reinterpret_cast the void* back to IntermixBase<PORTS>* and make
+		// virtual calls, so the stored pointer must already carry the correct
+		// multiple-inheritance offset.
 		rightExpander.producerMessage = (IntermixBase<PORTS>*)this;
 		rightExpander.messageFlipRequested = true;
 	}
 
-	inline void sceneSet(int scene) {
-		if (sceneSelected == scene) return;
-		if (scene < 0) return;
-		int scenePrevious = sceneSelected;
-		sceneSelected = std::min(scene, sceneCount - 1);
-		sceneNext = -1;
-
+	// Re-applies the currently selected scene's routing (matrix, outputs, fades)
+	// to the module parameters. `scenePrevious` is the scene that was active
+	// before; it is only used to retrigger fades on cells whose value changed.
+	inline void sceneApply(int scenePrevious) {
 		for (int i = 0; i < SCENE_MAX; i++) {
 			params[PARAM_SCENE + i].setValue(i == sceneSelected);
 		}
@@ -596,6 +609,15 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 			outputAtSlew[i].setRiseFall(at[i] / f1, at[i] / f2);
 		}
 		*/
+	}
+
+	inline void sceneSet(int scene) {
+		if (sceneSelected == scene) return;
+		if (scene < 0) return;
+		int scenePrevious = sceneSelected;
+		sceneSelected = std::min(scene, sceneCount - 1);
+		sceneNext = -1;
+		sceneApply(scenePrevious);
 	}
 
 	void sceneCopy(int scene) {

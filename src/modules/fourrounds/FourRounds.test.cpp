@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 
 #include "FourRounds.cpp"
 
@@ -9,7 +8,8 @@ SYNC_MODEL(modelFourRounds, "FourRounds");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[FourRounds]") {
-	FourRoundsModule* m = Test::createModule<FourRoundsModule>("FourRounds");
+	Test::ModuleScaffold<FourRoundsModule> mods;
+	FourRoundsModule* m = mods.create("FourRounds");
 	FourRoundsWidget* mw = Test::createWidget<FourRoundsWidget>("FourRounds");
 
 	REQUIRE(m != nullptr);
@@ -17,11 +17,11 @@ TEST_CASE("Construction and initialization", "[FourRounds]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[FourRounds][JSON]") {
-	auto module = Test::createModule<FourRoundsModule>("FourRounds");
+	Test::ModuleScaffold<FourRoundsModule> mods;
+	auto module = mods.create("FourRounds");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -44,11 +44,11 @@ TEST_CASE("Preset JSON null-guards", "[FourRounds][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[JSON][FourRounds]") {
-	auto module = Test::createModule<FourRoundsModule>("FourRounds");
+	Test::ModuleScaffold<FourRoundsModule> mods;
+	auto module = mods.create("FourRounds");
 
 	// Set known state
 	module->mode = MODE::SH;
@@ -63,7 +63,7 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][FourRounds]") {
 	json_t* j = module->dataToJson();
 
 	// Restore into fresh module
-	auto module2 = Test::createModule<FourRoundsModule>("FourRounds");
+	auto module2 = mods.create("FourRounds");
 	module2->dataFromJson(j);
 	json_decref(j);
 
@@ -76,13 +76,12 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][FourRounds]") {
 		REQUIRE(module2->lastValue[i] == Catch::Approx(float(i) * 0.5f));
 	}
 
-	Test::destroyModule(module);
-	Test::destroyModule(module2);
 }
 
 
 TEST_CASE("DIRECT mode routes winner through the bracket", "[FourRounds]") {
-	auto module = Test::createModule<FourRoundsModule>("FourRounds");
+	Test::ModuleScaffold<FourRoundsModule> mods;
+	auto module = mods.create("FourRounds");
 	module->mode = MODE::DIRECT;
 
 	// state==0 makes even-indexed inputs win
@@ -107,11 +106,11 @@ TEST_CASE("DIRECT mode routes winner through the bracket", "[FourRounds]") {
 		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(5.f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("DIRECT mode state=1 selects right input", "[FourRounds]") {
-	auto module = Test::createModule<FourRoundsModule>("FourRounds");
+	Test::ModuleScaffold<FourRoundsModule> mods;
+	auto module = mods.create("FourRounds");
 	module->mode = MODE::DIRECT;
 
 	// state==1 makes odd-indexed inputs win
@@ -136,11 +135,11 @@ TEST_CASE("DIRECT mode state=1 selects right input", "[FourRounds]") {
 		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(7.f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Inverted flag swaps winner selection", "[FourRounds]") {
-	auto module = Test::createModule<FourRoundsModule>("FourRounds");
+	Test::ModuleScaffold<FourRoundsModule> mods;
+	auto module = mods.create("FourRounds");
 	module->mode = MODE::DIRECT;
 
 	// state=0 normally selects even inputs; with inverted it should select odd inputs
@@ -160,11 +159,11 @@ TEST_CASE("Inverted flag swaps winner selection", "[FourRounds]") {
 		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(9.f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("INV trigger toggles inverted flag", "[FourRounds]") {
-	auto module = Test::createModule<FourRoundsModule>("FourRounds");
+	Test::ModuleScaffold<FourRoundsModule> mods;
+	auto module = mods.create("FourRounds");
 	REQUIRE(module->inverted == false);
 
 	module->inputs[FourRoundsModule::INV_INPUT].channels = 1;
@@ -184,11 +183,11 @@ TEST_CASE("INV trigger toggles inverted flag", "[FourRounds]") {
 	module->process(Test::makeProcessArgs(4));
 	REQUIRE(module->inverted == false);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("TRIG input captures lastValue in SH mode", "[FourRounds]") {
-	auto module = Test::createModule<FourRoundsModule>("FourRounds");
+	Test::ModuleScaffold<FourRoundsModule> mods;
+	auto module = mods.create("FourRounds");
 	module->mode = MODE::SH;
 
 	for (int i = 0; i < 16; i++) {
@@ -212,11 +211,11 @@ TEST_CASE("TRIG input captures lastValue in SH mode", "[FourRounds]") {
 		}
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("SH mode holds sampled voltages after input changes", "[FourRounds]") {
-	auto module = Test::createModule<FourRoundsModule>("FourRounds");
+	Test::ModuleScaffold<FourRoundsModule> mods;
+	auto module = mods.create("FourRounds");
 	module->mode = MODE::SH;
 
 	// Set initial voltages
@@ -257,11 +256,11 @@ TEST_CASE("SH mode holds sampled voltages after input changes", "[FourRounds]") 
 		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(4.f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("QUANTUM mode blends inputs by state weight", "[FourRounds]") {
-	auto module = Test::createModule<FourRoundsModule>("FourRounds");
+	Test::ModuleScaffold<FourRoundsModule> mods;
+	auto module = mods.create("FourRounds");
 	module->mode = MODE::QUANTUM;
 
 	// state=0.5 means equal blend of both inputs
@@ -287,11 +286,11 @@ TEST_CASE("QUANTUM mode blends inputs by state weight", "[FourRounds]") {
 		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(6.f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("QUANTUM mode state=0 passes first input unchanged", "[FourRounds]") {
-	auto module = Test::createModule<FourRoundsModule>("FourRounds");
+	Test::ModuleScaffold<FourRoundsModule> mods;
+	auto module = mods.create("FourRounds");
 	module->mode = MODE::QUANTUM;
 
 	for (int i = 0; i < FourRoundsModule::SIZE; i++) {
@@ -309,5 +308,4 @@ TEST_CASE("QUANTUM mode state=0 passes first input unchanged", "[FourRounds]") {
 		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(3.f));
 	}
 
-	Test::destroyModule(module);
 }

@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 
 #include "Hive.cpp"
 
@@ -27,7 +26,8 @@ static void clockEdge(HiveMod* module, int frame = 200) {
 }
 
 TEST_CASE("Construction and initialization", "[Hive]") {
-	HiveMod* m = Test::createModule<HiveMod>("Hive");
+	Test::ModuleScaffold<HiveMod> mods;
+	HiveMod* m = mods.create("Hive");
 	HiveWidget* mw = Test::createWidget<HiveWidget>("Hive");
 
 	REQUIRE(m != nullptr);
@@ -35,11 +35,11 @@ TEST_CASE("Construction and initialization", "[Hive]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Hive][JSON]") {
-	auto module = Test::createModule<HiveMod>("Hive");
+	Test::ModuleScaffold<HiveMod> mods;
+	auto module = mods.create("Hive");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -62,12 +62,12 @@ TEST_CASE("Preset JSON null-guards", "[Hive][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[JSON][Hive]") {
-	HiveMod* m = Test::createModule<HiveMod>("Hive");
-	HiveMod* m2 = Test::createModule<HiveMod>("Hive");
+	Test::ModuleScaffold<HiveMod> mods;
+	HiveMod* m = mods.create("Hive");
+	HiveMod* m2 = mods.create("Hive");
 
 	SECTION("Scalar settings round-trip") {
 		// Non-default values (defaults: panelTheme 0, usedRadius 4, sizeFactor computed, normalizePorts true)
@@ -203,13 +203,12 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Hive]") {
 		REQUIRE(m2->grid.cursor[2].ratchetingProb == Catch::Approx(0.2f));
 	}
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
 }
 
 
 TEST_CASE("Reset clears grid and restores cursor defaults", "[Hive]") {
-	auto module = Test::createModule<HiveMod>("Hive");
+	Test::ModuleScaffold<HiveMod> mods;
+	auto module = mods.create("Hive");
 
 	// Dirty up state
 	module->grid.cursor[0].pos.q = 2;
@@ -244,11 +243,11 @@ TEST_CASE("Reset clears grid and restores cursor defaults", "[Hive]") {
 		REQUIRE(module->grid.getCell(RoundAxialVec(0, 0)).state == GRIDSTATE::OFF);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("gridClear sets all visible cells to OFF with zero CV", "[Hive]") {
-	auto module = Test::createModule<HiveMod>("Hive");
+	Test::ModuleScaffold<HiveMod> mods;
+	auto module = mods.create("Hive");
 
 	// Set a visible cell to ON
 	HiveCell cell;
@@ -269,11 +268,11 @@ TEST_CASE("gridClear sets all visible cells to OFF with zero CV", "[Hive]") {
 		REQUIRE(module->grid.getCell(RoundAxialVec(0, 0)).state == GRIDSTATE::OFF);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Clock input advances cursor position (NE direction)", "[Hive]") {
-	auto module = Test::createModule<HiveMod>("Hive");
+	Test::ModuleScaffold<HiveMod> mods;
+	auto module = mods.create("Hive");
 	// Initial: cursor[0] at (-4, 0), dir=NE
 	// After one NE move (POINTY): q += 1, r -= 1 → (-3, -1)
 
@@ -288,11 +287,11 @@ TEST_CASE("Clock input advances cursor position (NE direction)", "[Hive]") {
 		REQUIRE(module->grid.cursor[0].pos.r == -1);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Cursor stepping onto ON cell fires trigger and CV outputs", "[Hive]") {
-	auto module = Test::createModule<HiveMod>("Hive");
+	Test::ModuleScaffold<HiveMod> mods;
+	auto module = mods.create("Hive");
 	// Cursor starts at (-4, 0), NE → will step to (-3, -1)
 	HiveCell cell;
 	cell.pos = RoundAxialVec(-3, -1);
@@ -311,11 +310,11 @@ TEST_CASE("Cursor stepping onto ON cell fires trigger and CV outputs", "[Hive]")
 		REQUIRE(module->outputs[HiveMod::CV_OUTPUT].getVoltage() == Catch::Approx(1.5f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Cursor stepping onto OFF cell produces no trigger", "[Hive]") {
-	auto module = Test::createModule<HiveMod>("Hive");
+	Test::ModuleScaffold<HiveMod> mods;
+	auto module = mods.create("Hive");
 	// All cells OFF by default
 
 	warmupTimer(module);
@@ -325,11 +324,11 @@ TEST_CASE("Cursor stepping onto OFF cell produces no trigger", "[Hive]") {
 		REQUIRE(module->outputs[HiveMod::TRIG_OUTPUT].getVoltage() == Catch::Approx(0.f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Turn trigger rotates cursor direction in SIXTY mode", "[Hive]") {
-	auto module = Test::createModule<HiveMod>("Hive");
+	Test::ModuleScaffold<HiveMod> mods;
+	auto module = mods.create("Hive");
 	// Initial: dir = NE = 1, turnMode = SIXTY
 	// SIXTY turn: dir = (1 + 2) % 12 = 3 = E
 
@@ -346,11 +345,11 @@ TEST_CASE("Turn trigger rotates cursor direction in SIXTY mode", "[Hive]") {
 		REQUIRE(module->grid.cursor[0].dir == DIRECTION::E);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Turn trigger rotates direction in ONETWENTY mode", "[Hive]") {
-	auto module = Test::createModule<HiveMod>("Hive");
+	Test::ModuleScaffold<HiveMod> mods;
+	auto module = mods.create("Hive");
 	module->grid.cursor[0].turnMode = TURNMODE::ONETWENTY;
 	// ONETWENTY: dir = (NE=1 + 4) % 12 = 5 = SE
 
@@ -364,7 +363,6 @@ TEST_CASE("Turn trigger rotates direction in ONETWENTY mode", "[Hive]") {
 		REQUIRE(module->grid.cursor[0].dir == DIRECTION::SE);
 	}
 
-	Test::destroyModule(module);
 }
 
 // Fire a single rising edge on the given input
@@ -419,7 +417,8 @@ TEST_CASE("All four side-shift inputs move the cursor", "[Hive]") {
 }
 
 TEST_CASE("Reset input returns cursor to start position", "[Hive]") {
-	auto module = Test::createModule<HiveMod>("Hive");
+	Test::ModuleScaffold<HiveMod> mods;
+	auto module = mods.create("Hive");
 	module->inputs[HiveMod::RESET_INPUT].channels = 1;
 	module->inputs[HiveMod::RESET_INPUT].setVoltage(0.f);
 
@@ -437,11 +436,11 @@ TEST_CASE("Reset input returns cursor to start position", "[Hive]") {
 		REQUIRE(module->grid.cursor[0].pos.r == module->grid.cursor[0].startPos.r);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("normalizePorts propagates clock from port 0 to port 1", "[Hive]") {
-	auto module = Test::createModule<HiveMod>("Hive");
+	Test::ModuleScaffold<HiveMod> mods;
+	auto module = mods.create("Hive");
 	REQUIRE(module->normalizePorts == true);
 	// CLK port 1 not connected (channels=0)
 
@@ -458,5 +457,4 @@ TEST_CASE("normalizePorts propagates clock from port 0 to port 1", "[Hive]") {
 		REQUIRE(module->grid.cursor[1].pos.q != qBefore1);
 	}
 
-	Test::destroyModule(module);
 }

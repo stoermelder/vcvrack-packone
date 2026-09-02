@@ -159,7 +159,7 @@ struct TempDir {
 // MetadataStore::save()'s rename-write-verify-restore dance, which checks
 // exists()/rename() through the system layer and writes/reads through the fs layer,
 // sees a single consistent filesystem.
-struct MockFileAccess : Test::MockVcv::MockFileAccess {
+struct MockFileAccess : Test::mock::MockFileAccess {
 	// path → contents; a missing key means "no such file".
 	std::map<std::string, std::string> files;
 	// directories that exist (even if empty).

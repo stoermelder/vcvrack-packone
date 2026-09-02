@@ -1,6 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
-#include "../../test/test_mock.hpp"
+#include "../../test/framework.hpp"
 #include "MidiCat.hpp"
 #include "MidiCat.cpp"
 #include "../midi/MidiTrackingProcessor.hpp"
@@ -106,7 +104,8 @@ struct TestModule : rack::Module {
 
 
 TEST_CASE("Construction and initialization", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	MidiCatWidget* mw = Test::createWidget<MidiCatWidget>(module);
 
 	SECTION("CC values are initialized to -1") {
@@ -128,11 +127,11 @@ TEST_CASE("Construction and initialization", "[MidiCat]") {
 	}
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Preset JSON null-guards", "[MidiCat][JSON]") {
-	auto module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	auto module = mods.create("MidiCat");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -154,12 +153,11 @@ TEST_CASE("Preset JSON null-guards", "[MidiCat][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[MidiCat][JSON]") {
-	MidiCatModule* m = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* m = mods.create("MidiCat");
 
 	SECTION("Top-level scalars round-trip") {
 		m->panelTheme = 1;
@@ -176,7 +174,7 @@ TEST_CASE("JSON round-trip preserves state", "[MidiCat][JSON]") {
 
 		json_t* j = m->dataToJson();
 
-		MidiCatModule* m2 = Test::createModule<MidiCatModule>("MidiCat");
+		MidiCatModule* m2 = mods.create("MidiCat");
 		m2->dataFromJson(j);
 		json_decref(j);
 
@@ -191,8 +189,6 @@ TEST_CASE("JSON round-trip preserves state", "[MidiCat][JSON]") {
 		REQUIRE(m2->parameterChangesDirect == true);
 		REQUIRE(m2->midiResendPeriodically == true);
 		REQUIRE(m2->midiIgnoreDevices == true);
-
-		Test::destroyModule(m2);
 	}
 
 	SECTION("Mapping slots (maps array) round-trip") {
@@ -252,7 +248,7 @@ TEST_CASE("JSON round-trip preserves state", "[MidiCat][JSON]") {
 		// mirrors a real preset load, where the old module instance is destroyed first.
 		m->clearMaps_WithLock();
 
-		MidiCatModule* m2 = Test::createModule<MidiCatModule>("MidiCat");
+		MidiCatModule* m2 = mods.create("MidiCat");
 		m2->dataFromJson(j);
 		json_decref(j);
 
@@ -291,7 +287,6 @@ TEST_CASE("JSON round-trip preserves state", "[MidiCat][JSON]") {
 		REQUIRE(m2->slots[3].param.lightFirstId == 5);
 		REQUIRE(m2->slots[3].param.lightNumColors == 6);
 
-		Test::destroyModule(m2);
 		Test::unregisterModule(target);
 		delete target;
 	}
@@ -302,22 +297,44 @@ TEST_CASE("JSON round-trip preserves state", "[MidiCat][JSON]") {
 
 		json_t* j = m->dataToJson();
 
-		MidiCatModule* m2 = Test::createModule<MidiCatModule>("MidiCat");
+		MidiCatModule* m2 = mods.create("MidiCat");
 		m2->dataFromJson(j);
 		json_decref(j);
 
 		REQUIRE(m2->midiInput.channel == 5);
 		REQUIRE(m2->midiOutput.channel == 7);
-
-		Test::destroyModule(m2);
 	}
-
-	Test::destroyModule(m);
 }
 
+TEST_CASE("dataFromJson clears stale 14-bit mode when a legacy preset omits cc14bit", "[MidiCat][JSON]") {
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
+
+	// Put slot 0 into 14-bit mode, matching the value range it implies.
+	module->slots[0].setCc(10);
+	module->slots[0].setCc14bit(true);
+	REQUIRE(module->slots[0].cc.get14bit() == true);
+	REQUIRE(module->slots[0].param.getLimitMax() == 128 * 128 - 1);
+
+	// Serialize, then strip "cc14bit" from the map entry to simulate a preset saved
+	// before 14-bit CC support existed.
+	json_t* rootJ = module->dataToJson();
+	json_t* mapJ = json_array_get(json_object_get(rootJ, "maps"), 0);
+	json_object_del(mapJ, "cc14bit");
+
+	module->dataFromJson(rootJ);
+	json_decref(rootJ);
+
+	// A missing "cc14bit" key must be treated as false, not "leave whatever the slot
+	// already had": otherwise a slot already in 14-bit mode stays stuck there with a
+	// stale 14-bit value range after loading a legacy preset.
+	REQUIRE(module->slots[0].cc.get14bit() == false);
+	REQUIRE(module->slots[0].param.getLimitMax() == 127);
+}
 
 TEST_CASE("MIDI learning functionality", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->processDivider.setDivision(1); // Process every sample for testing
 	int j = 1;
 
@@ -359,13 +376,12 @@ TEST_CASE("MIDI learning functionality", "[MidiCat]") {
 		}
 		REQUIRE(v.size() == 0);
 	}
-
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Parameter mapping core functionality", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
-	
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
+
 	SECTION("Process increments timestamp") {
 		uint64_t tsBefore = module->midiInputState.ts;	
 		module->process(Test::makeProcessArgs(0));		
@@ -401,13 +417,12 @@ TEST_CASE("Parameter mapping core functionality", "[MidiCat]") {
 
 		Test::unregisterModule(testModule);
 	}
-
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("processBypass drains the MIDI queue without updating mappings", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
 
@@ -430,12 +445,12 @@ TEST_CASE("processBypass drains the MIDI queue without updating mappings", "[Mid
 	REQUIRE(pq->getValue() == Catch::Approx(valueBefore));
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("CC basic processing", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 
 	SECTION("Message updates internal state") {
 		bool result = module->midiCc(Test::makeMidiMessage(0xb, 0, 7, 64)); // CC7, value 64
@@ -457,11 +472,11 @@ TEST_CASE("CC basic processing", "[MidiCat]") {
 		REQUIRE(module->midiInputState.valuesCc[2] == 75);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("CC Mode DIRECT", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
 	ParamQuantity* pq = testModule->getParamQuantity(TestModule::TEST_PARAM_1);
@@ -483,12 +498,12 @@ TEST_CASE("CC Mode DIRECT", "[MidiCat]") {
 	REQUIRE(pq->getValue() == Catch::Approx(64.0f / 127.0f).margin(0.1f));
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("CC Mode DIRECT for snapEnabled params", "[MidiCat]") {
 	SECTION("Regular snapped param") {
-		MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+		Test::ModuleScaffold<MidiCatModule> mods;
+		MidiCatModule* module = mods.create("MidiCat");
 		module->processDivider.setDivision(1);
 		TestModule* testModule = new TestModule();
 		Test::registerModule(testModule);
@@ -523,11 +538,11 @@ TEST_CASE("CC Mode DIRECT for snapEnabled params", "[MidiCat]") {
 		REQUIRE(pq->getValue() == 1.f);
 
 		Test::unregisterModule(testModule);
-		Test::destroyModule(module);
 	}
 
 	SECTION("High snap count param") {
-		MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+		Test::ModuleScaffold<MidiCatModule> mods;
+		MidiCatModule* module = mods.create("MidiCat");
 		module->processDivider.setDivision(1);
 		TestModule* testModule = new TestModule();
 		Test::registerModule(testModule);
@@ -560,12 +575,12 @@ TEST_CASE("CC Mode DIRECT for snapEnabled params", "[MidiCat]") {
 		REQUIRE(pq->getValue() == 1.f);
 
 		Test::unregisterModule(testModule);
-		Test::destroyModule(module);
 	}
 }
 
 TEST_CASE("ccModeOverride forces DIRECT mode temporarily", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->processDivider.setDivision(1);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -598,11 +613,11 @@ TEST_CASE("ccModeOverride forces DIRECT mode temporarily", "[MidiCat]") {
 	REQUIRE(pq->getValue() == pq->getMaxValue());
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("CC Mode TOGGLE", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->processDivider.setDivision(1);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -648,11 +663,11 @@ TEST_CASE("CC Mode TOGGLE", "[MidiCat]") {
 	REQUIRE(pq->getValue() == pq->getMinValue());
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("CC Mode TOGGLE_VALUE", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->processDivider.setDivision(1);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -693,11 +708,11 @@ TEST_CASE("CC Mode TOGGLE_VALUE", "[MidiCat]") {
 	REQUIRE(pq->getValue() == pq->getMinValue());
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("CC Mode PICKUP1", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->processDivider.setDivision(1);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -751,11 +766,11 @@ TEST_CASE("CC Mode PICKUP1", "[MidiCat]") {
 	REQUIRE(pq->getValue() == 20.f);
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("CC Mode PICKUP2", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->processDivider.setDivision(1);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -804,11 +819,11 @@ TEST_CASE("CC Mode PICKUP2", "[MidiCat]") {
 	REQUIRE(pq->getValue() == 64.f);
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("CC Mode SNAPPED", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->processDivider.setDivision(1);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -857,11 +872,11 @@ TEST_CASE("CC Mode SNAPPED", "[MidiCat]") {
 	REQUIRE(pq->getValue() == pq->getMinValue());
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("CC Mode SNAPPED_SL", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->processDivider.setDivision(1);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -910,12 +925,12 @@ TEST_CASE("CC Mode SNAPPED_SL", "[MidiCat]") {
 	REQUIRE(pq->getValue() == 2.0f);
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("CC 14-bit", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->process(Test::makeProcessArgs(1));
 
 	SECTION("14-bit mode combines MSB and LSB") {
@@ -934,12 +949,73 @@ TEST_CASE("CC 14-bit", "[MidiCat]") {
 		REQUIRE(module->slots[0].cc.getValue() == 8224);
 	}
 
-	Test::destroyModule(module);
+	SECTION("CC 31 keeps 14-bit (its LSB partner CC63 is in range)") {
+		module->slots[0].setCc(31);
+		module->slots[0].setCc14bit(true);
+		REQUIRE(module->slots[0].cc.setCc(31) == false);
+		REQUIRE(module->slots[0].cc.get14bit() == true);
+	}
+
+	SECTION("CC 32 clears 14-bit (its LSB partner CC64 is not a valid pairing)") {
+		module->slots[0].setCc(7);
+		module->slots[0].setCc14bit(true);
+		REQUIRE(module->slots[0].cc.setCc(32) == true);
+		REQUIRE(module->slots[0].cc.get14bit() == false);
+	}
+
 }
 
+// commitLearn() copies MIDI-behaviour settings from the previous slot into a newly
+// learned one, e.g. so a bank of CCs learned in sequence all inherit the first's mode.
+// 14-bit is only copied when the newly learned CC itself has a valid low-order partner
+// (CC 0-31) -- otherwise a slot that can never be 14-bit would get stuck reporting it.
+TEST_CASE("commitLearn copies 14-bit to the next slot only when the learned CC allows it", "[MidiCat]") {
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
+	module->processDivider.setDivision(1);
+	TestModule* testModule = new TestModule();
+	Test::registerModule(testModule);
+
+	SECTION("Next slot's CC has a valid partner (< 32): 14-bit is copied") {
+		// Learn slot 0 as CC7 in 14-bit mode.
+		module->enableLearn(0, true);
+		module->learnParam(0, testModule->id, TestModule::TEST_PARAM_1);
+		module->midiCc(Test::makeMidiMessage(0xb, 0, 7, 64));
+		module->slots[0].setCc14bit(true);
+
+		// Learn slot 1 as CC10 -- a valid MSB (< 32).
+		module->enableLearn(1, true);
+		module->learnParam(1, testModule->id, TestModule::TEST_PARAM_2);
+		module->midiCc(Test::makeMidiMessage(0xb, 0, 10, 64));
+
+		REQUIRE(module->slots[1].cc.getCc() == 10);
+		REQUIRE(module->slots[1].cc.get14bit() == true);
+		REQUIRE(module->slots[1].param.getLimitMax() == 128 * 128 - 1);
+	}
+
+	SECTION("Next slot's CC has no valid partner (>= 32): 14-bit is not copied") {
+		// Learn slot 0 as CC7 in 14-bit mode.
+		module->enableLearn(0, true);
+		module->learnParam(0, testModule->id, TestModule::TEST_PARAM_1);
+		module->midiCc(Test::makeMidiMessage(0xb, 0, 7, 64));
+		module->slots[0].setCc14bit(true);
+
+		// Learn slot 1 as CC40 -- not eligible as an MSB.
+		module->enableLearn(1, true);
+		module->learnParam(1, testModule->id, TestModule::TEST_PARAM_2);
+		module->midiCc(Test::makeMidiMessage(0xb, 0, 40, 64));
+
+		REQUIRE(module->slots[1].cc.getCc() == 40);
+		REQUIRE(module->slots[1].cc.get14bit() == false);
+		REQUIRE(module->slots[1].param.getLimitMax() == 127);
+	}
+
+	Test::unregisterModule(testModule);
+}
 
 TEST_CASE("Note basic processing", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	int i = 1;
 
 	SECTION("Message updates internal state") {
@@ -967,11 +1043,11 @@ TEST_CASE("Note basic processing", "[MidiCat]") {
 		REQUIRE(module->midiInputState.valuesNote[62] == 127);	
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Note Mode MOMENTARY", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
 	int i = 1;
@@ -996,11 +1072,11 @@ TEST_CASE("Note Mode MOMENTARY", "[MidiCat]") {
 	REQUIRE(module->midiInputState.valuesNote[60] == 0);
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Note Mode MOMENTARY_VEL", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->processDivider.setDivision(1);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -1035,11 +1111,11 @@ TEST_CASE("Note Mode MOMENTARY_VEL", "[MidiCat]") {
 	REQUIRE(pq->getValue() == Catch::Approx(40.0f / 127.0f).margin(0.01f));
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Note Mode TOGGLE", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->processDivider.setDivision(1);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -1083,11 +1159,11 @@ TEST_CASE("Note Mode TOGGLE", "[MidiCat]") {
 	REQUIRE(pq->getValue() == pq->getMinValue());
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Note Mode TOGGLE_VEL", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->processDivider.setDivision(1);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -1130,11 +1206,11 @@ TEST_CASE("Note Mode TOGGLE_VEL", "[MidiCat]") {
 	REQUIRE(pq->getValue() == pq->getMinValue());
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Note Mode SNAPPED", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->processDivider.setDivision(1);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -1184,11 +1260,11 @@ TEST_CASE("Note Mode SNAPPED", "[MidiCat]") {
 	REQUIRE(pq->getValue() == pq->getMinValue());
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Note Mode SNAPPED_SL", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->processDivider.setDivision(1);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -1240,13 +1316,13 @@ TEST_CASE("Note Mode SNAPPED_SL", "[MidiCat]") {
 	REQUIRE(pq->getValue() == 2.0f);
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("MIDI feedback", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
-	
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
+
 	SECTION("Output tracks last CC values sent") {
 		module->midiOutput.setValue(64, 7, false);
 		REQUIRE(module->midiOutput.lastValues[7] == 64);		
@@ -1270,11 +1346,11 @@ TEST_CASE("MIDI feedback", "[MidiCat]") {
 		REQUIRE(module->midiOutput.lastGates[60] == false);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("MIDI feedback after preset load", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 	module->processDivider.setDivision(1);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -1321,11 +1397,55 @@ TEST_CASE("MIDI feedback after preset load", "[MidiCat]") {
 	REQUIRE(module->midiOutput.lastValues[7] == 127);
 
 	Test::unregisterModule(testModule);
-	Test::destroyModule(module);
+}
+
+TEST_CASE("MIDI feedback does not overwrite a param after midiReset before new MIDI arrives", "[MidiCat]") {
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
+	module->processDivider.setDivision(1);
+	TestModule* testModule = new TestModule();
+	Test::registerModule(testModule);
+
+	// Learn CC7 -> TEST_PARAM_2 (range 0..127) in DIRECT mode and receive one MIDI
+	// message, so the slot's MidiCatParam caches a value and starts driving the
+	// parameter on every process() call via param.process().
+	module->enableLearn(0, true);
+	module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 7, 0)); // initial CC
+	module->learnParam(0, testModule->id, TestModule::TEST_PARAM_2);
+	module->slots[0].cc.ccMode = CCMODE::DIRECT;
+	module->process(Test::makeProcessArgs(1));
+	module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 7, 63));
+	module->process(Test::makeProcessArgs(2));
+
+	ParamQuantity* pq = testModule->getParamQuantity(TestModule::TEST_PARAM_2);
+	REQUIRE(pq->getValue() == Catch::Approx(63.f));
+
+	// A system MIDI reset (Shift+Ctrl+R, or an incoming MIDI reset message) clears
+	// tracker.lastValue back to -1 and detached back to false on every mapped slot,
+	// without touching the mapping or the parameter itself.
+	module->midiReset();
+	REQUIRE(module->slots[0].tracker.lastValue == -1);
+	REQUIRE(module->slots[0].tracker.detached == false);
+
+	// Now the user edits the parameter manually, before any new MIDI arrives. The first
+	// process() call reads this back through MidiCatParam::getValue(), which self-heals
+	// from the live parameter -- so it takes a second edit + process() cycle to expose
+	// the lagged param.process() write-back that actually clobbers the parameter.
+	pq->setValue(20.f);
+	module->process(Test::makeProcessArgs(3));
+	pq->setValue(30.f);
+	module->process(Test::makeProcessArgs(4));
+
+	// The manual edit must stick: with tracker.lastValue < 0 and detached == false,
+	// MIDI-CAT has no valid tracked value to write back and must not clobber it.
+	REQUIRE(pq->getValue() == Catch::Approx(30.f));
+
+	Test::unregisterModule(testModule);
 }
 
 TEST_CASE("MIDIMODE LOCATE", "[MidiCat]") {
-    MidiCatModule* m = Test::createModule<MidiCatModule>("MidiCat");
+    Test::ModuleScaffold<MidiCatModule> mods;
+    MidiCatModule* m = mods.create("MidiCat");
 	MidiCatWidget* mw = Test::createWidget<MidiCatWidget>(m);
     m->processDivider.setDivision(1);
 	Test::registerModule(m, mw);
@@ -1379,7 +1499,6 @@ TEST_CASE("MIDIMODE LOCATE", "[MidiCat]") {
 
     Test::unregisterModule(testModule);
 	Test::unregisterModule(m, mw);
-    Test::destroyModule(m);
 }
 
 /*
@@ -1565,8 +1684,13 @@ static const char MIDI_MAP_PRESET[] = R"JSON(
 )JSON";
 
 TEST_CASE("loadMidiMapPreset end-to-end reads, parses, and applies the preset", "[MidiCat][ui]") {
-	auto mock = Test::makeMockVcv<MockUiAccess, MockFileAccess, MockHistoryAccess>();
-	auto module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	struct Mock {
+		TEST_MOCK_UI(MockUiAccess);
+		TEST_MOCK_FS(MockFileAccess);
+		TEST_MOCK_HISTORY(MockHistoryAccess);
+	} mock;
+	auto module = mods.create("MidiCat");
 	auto widget = Test::createWidget<MidiCatBaseWidget>(module);
 
 	SECTION("Cancelled dialog reads nothing") {
@@ -1659,7 +1783,6 @@ TEST_CASE("loadMidiMapPreset end-to-end reads, parses, and applies the preset", 
 	}
 
 	Test::destroyWidget(widget);
-	Test::destroyModule(module);
 }
 
 // moduleBind()/moduleBindExpander() call APP->engine->updateParamHandle(), which takes the
@@ -1785,7 +1908,8 @@ TEST_CASE("moduleBindExpander binds the left expander's module", "[MidiCat]") {
 // refactor: it now calls tracker.reset(), which also resets the toggle ladder — nothing
 // else checks that, so it is pinned here.
 TEST_CASE("midiReset resets the toggle ladder and tracker state", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 
 	// Drive a few slots' toggle ladders into each non-IDLE state and dirty the trackers.
 	module->slots[0].tracker.toggle.advance(1);  // IDLE -> PRESSED
@@ -1815,11 +1939,11 @@ TEST_CASE("midiReset resets the toggle ladder and tracker state", "[MidiCat]") {
 		REQUIRE(module->slots[i].tracker.detached == false);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("midiReset is triggered by a system reset MIDI message", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 
 	// Drive slot 0's toggle ladder into a non-IDLE state.
 	module->slots[0].tracker.toggle.advance(1);  // IDLE -> PRESSED
@@ -1830,11 +1954,11 @@ TEST_CASE("midiReset is triggered by a system reset MIDI message", "[MidiCat]") 
 
 	REQUIRE(module->slots[0].tracker.toggle.state == ToggleValueLadder::STATE::IDLE);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("midiResendFeedback resets the feedback state", "[MidiCat]") {
-	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	Test::ModuleScaffold<MidiCatModule> mods;
+	MidiCatModule* module = mods.create("MidiCat");
 
 	// Dirty the feedback state on a few slots.
 	module->slots[0].lastValueOut = 64;
@@ -1860,6 +1984,4 @@ TEST_CASE("midiResendFeedback resets the feedback state", "[MidiCat]") {
 	module->slots[0].tracker.toggle.advance(1);  // IDLE -> PRESSED
 	module->midiResendFeedback();
 	REQUIRE(module->slots[0].tracker.toggle.state == ToggleValueLadder::STATE::PRESSED);
-
-	Test::destroyModule(module);
 }

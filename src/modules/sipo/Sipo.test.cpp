@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "Sipo.cpp"
 
 using namespace StoermelderPackOne::Sipo;
@@ -8,7 +7,8 @@ SYNC_MODEL(modelSipo, "Sipo");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Sipo]") {
-	SipoModule* m = Test::createModule<SipoModule>("Sipo");
+	Test::ModuleScaffold<SipoModule> mods;
+	SipoModule* m = mods.create("Sipo");
 	SipoWidget* mw = Test::createWidget<SipoWidget>("Sipo");
 
 	REQUIRE(m != nullptr);
@@ -16,11 +16,11 @@ TEST_CASE("Construction and initialization", "[Sipo]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Sipo][JSON]") {
-	auto module = Test::createModule<SipoModule>("Sipo");
+	Test::ModuleScaffold<SipoModule> mods;
+	auto module = mods.create("Sipo");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -43,25 +43,24 @@ TEST_CASE("Preset JSON null-guards", "[Sipo][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[Sipo]") {
-	auto module = Test::createModule<SipoModule>("Sipo");
+	Test::ModuleScaffold<SipoModule> mods;
+	auto module = mods.create("Sipo");
 	module->panelTheme = 2;
 	json_t* rootJ = module->dataToJson();
 	
-	auto moduleNew = Test::createModule<SipoModule>("Sipo");
+	auto moduleNew = mods.create("Sipo");
 	moduleNew->dataFromJson(rootJ);
 	
 	REQUIRE(moduleNew->panelTheme == 2);
 	json_decref(rootJ);
-	Test::destroyModule(moduleNew);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Data serialization", "[Sipo]") {
-	auto module = Test::createModule<SipoModule>("Sipo");
+	Test::ModuleScaffold<SipoModule> mods;
+	auto module = mods.create("Sipo");
 	module->data[0] = 1.0f;
 	module->data[1] = 2.5f;
 	module->data[2] = -3.7f;
@@ -70,7 +69,7 @@ TEST_CASE("Data serialization", "[Sipo]") {
 	
 	json_t* rootJ = module->dataToJson();
 	
-	auto moduleNew = Test::createModule<SipoModule>("Sipo");
+	auto moduleNew = mods.create("Sipo");
 	moduleNew->dataFromJson(rootJ);
 	
 	REQUIRE(moduleNew->dataPtr == 2);
@@ -80,12 +79,11 @@ TEST_CASE("Data serialization", "[Sipo]") {
 	REQUIRE(moduleNew->data[2] == Catch::Approx(-3.7f));
 	
 	json_decref(rootJ);
-	Test::destroyModule(moduleNew);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Buffer bounds", "[Sipo]") {
-	auto module = Test::createModule<SipoModule>("Sipo");
+	Test::ModuleScaffold<SipoModule> mods;
+	auto module = mods.create("Sipo");
 
 	SECTION("Can access all buffer positions") {
 		for (int i = 0; i < 100; i++) {
@@ -103,5 +101,4 @@ TEST_CASE("Buffer bounds", "[Sipo]") {
 		REQUIRE(module->data[4095] == 42.0f);
 	}
 
-	Test::destroyModule(module);
 }

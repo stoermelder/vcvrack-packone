@@ -84,7 +84,10 @@ struct BoltModule : Module {
 		for (int c = 0; c < 16; c++) {
 			out[c] = false;
 			outPulseGenerator[c].reset();
+			trigTrigger[c].reset();
 		}
+		opButtonTrigger.reset();
+		opCvTrigger.reset();
 	}
 
 	void process(const ProcessArgs& args) override {

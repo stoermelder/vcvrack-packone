@@ -36,6 +36,11 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	/** [Stored to Json] */
 	MidiCatOutput midiOutput;
 
+	// Reusable scratch MIDI message for the audio thread. `midi::Message`
+	// heap-allocates its internal byte vector on construction, so creating one
+	// per sample inside `process()` would be a per-sample malloc/free.
+	midi::Message scratchMidiMessage;
+
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
@@ -184,7 +189,9 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	}
 
 	void processBypass(const ProcessArgs &args) override {
-		midi::Message msg;
+		// Reuse the module-level scratch message to avoid per-sample heap
+		// allocations on the audio thread.
+		midi::Message& msg = scratchMidiMessage;
 		// Drain the queue while bypassed
 		while (midiInput.tryPop(&msg, args.frame)) {
 			(void)0;
@@ -195,8 +202,9 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	void process(const ProcessArgs &args) override {
 		midiInputState.tick();
 
-		// Aquire new MIDI messages from the queue
-		midi::Message msg;
+		// Aquire new MIDI messages from the queue. `msg` aliases the
+		// module-level scratch buffer so the audio thread never heap-allocates.
+		midi::Message& msg = scratchMidiMessage;
 		bool midiReceived = false;
 		while (midiInput.tryPop(&msg, args.frame)) {
 			bool r = midiProcessMessage(msg);
@@ -488,6 +496,7 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	}
 
 	void learnParam(int id, int64_t moduleId, int paramId, bool resetMidiSettings = true) {
+		assert(id >= 0 && id < MAX_CHANNELS);
 		APP->engine->updateParamHandle(&paramHandles[id], moduleId, paramId, true);
 		slots[id].param.reset(resetMidiSettings);
 		// Reset binding to light. Must use `id`, not `learningId`: moduleBind() and
@@ -666,7 +675,10 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 
 				slots[mapIndex].setCc(ccJ ? json_integer_value(ccJ) : -1);
 				slots[mapIndex].cc.ccMode = (CCMODE)json_integer_value(ccModeJ);
-				if (cc14bitJ) slots[mapIndex].setCc14bit(json_boolean_value(cc14bitJ));
+				// A legacy preset predates 14-bit support and has no "cc14bit" key at all --
+				// treat that the same as an explicit false, otherwise a slot already in
+				// 14-bit mode stays there with a stale 14-bit value range.
+				slots[mapIndex].setCc14bit(cc14bitJ ? json_boolean_value(cc14bitJ) : false);
 				slots[mapIndex].setNote(noteJ ? json_integer_value(noteJ) : -1);
 				slots[mapIndex].note.noteMode = (NOTEMODE)json_integer_value(noteModeJ);
 				slots[mapIndex].midiOptions = json_integer_value(midiOptionsJ);
@@ -1182,7 +1194,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		if (module->slots[id].cc.getCc() >= 0) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(construct<CcModeMenuItem>(&MenuItem::text, "Input mode for CC", &CcModeMenuItem::module, module, &CcModeMenuItem::id, id));
-			menu->addChild(construct<Cc14bitItem>(&MenuItem::text, "14-bit", &MenuItem::disabled, module->slots[id].cc.getCc() > 32, &Cc14bitItem::module, module, &Cc14bitItem::id, id));
+			menu->addChild(construct<Cc14bitItem>(&MenuItem::text, "14-bit", &MenuItem::disabled, module->slots[id].cc.getCc() >= 32, &Cc14bitItem::module, module, &Cc14bitItem::id, id));
 		}
 		if (module->slots[id].note.getNote() >= 0) {
 			menu->addChild(new MenuSeparator());

@@ -78,6 +78,11 @@ struct MidiPlugModule : Module {
 	/** [Stored to Json] */
 	MidiPlugOutput midiOutput[OUTPUT];
 
+	// Reusable scratch MIDI message for the audio thread. `midi::Message`
+	// heap-allocates its internal byte vector on construction, so creating one
+	// per sample inside `process()` would be a per-sample malloc/free.
+	midi::Message scratchMidiMessage;
+
 	MidiPlugModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 
@@ -96,7 +101,9 @@ struct MidiPlugModule : Module {
 	}
 
 	void processBypass(const ProcessArgs& args) override {
-		midi::Message msg;
+		// Reuse the module-level scratch message to avoid per-sample heap
+		// allocations on the audio thread.
+		midi::Message& msg = scratchMidiMessage;
 		for (int i = 0; i < INPUT; i++) {
 			// Drain the queue while bypassed
 			while (midiInput[i].tryPop(&msg, args.frame)) {
@@ -107,7 +114,9 @@ struct MidiPlugModule : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
-		midi::Message msg;
+		// Reuse the module-level scratch message so the audio thread never
+		// heap-allocates a `midi::Message` per sample.
+		midi::Message& msg = scratchMidiMessage;
 		for (int i = 0; i < INPUT; i++) {
 			while (midiInput[i].tryPop(&msg, args.frame)) {
 				for (int j = 0; j < OUTPUT; j++) {

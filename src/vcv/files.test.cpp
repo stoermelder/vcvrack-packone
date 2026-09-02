@@ -1,6 +1,4 @@
-#include "../test/test_plugin.hpp"
-#include "../test/test_context.hpp"
-#include "../test/test_mock.hpp"
+#include "../test/framework.hpp"
 #include "files.hpp"
 
 using namespace StoermelderPackOne;
@@ -90,15 +88,16 @@ struct MockHistoryAccess : HistoryAccess {
 };
 
 
-// Installs all six recording mocks via the shared Test::MockAccess helper.
-
-auto createMock = []() { 
-    return Test::makeMockVcv<
-        MockModuleAccess, MockSceneAccess, MockCableAccess,
-        MockUiAccess, MockFileAccess, MockHistoryAccess
-    >();
+// Installs all six recording mocks for the duration of the scope, restoring whatever was
+// installed before (nullptr, since nothing else mocks these in this binary) on destruction.
+struct Mock {
+	TEST_MOCK_MODULES(MockModuleAccess);
+	TEST_MOCK_SCENE(MockSceneAccess);
+	TEST_MOCK_CABLES(MockCableAccess);
+	TEST_MOCK_UI(MockUiAccess);
+	TEST_MOCK_FS(MockFileAccess);
+	TEST_MOCK_HISTORY(MockHistoryAccess);
 };
-
 
 static json_t* loadJson(const char* s) {
 	return json_loads(s, 0, nullptr);
@@ -108,7 +107,7 @@ static json_t* loadJson(const char* s) {
 // promptUnavailableModules
 
 TEST_CASE("promptUnavailableModules asks once and opens the browser on yes", "[files]") {
-	auto mock = createMock();
+	Mock mock;
 	mock.ui.messageResult = true;
 
 	promptUnavailableModules({"A/Missing", "B/Gone"});
@@ -122,14 +121,14 @@ TEST_CASE("promptUnavailableModules asks once and opens the browser on yes", "[f
 }
 
 TEST_CASE("promptUnavailableModules is silent for no missing modules", "[files]") {
-	auto mock = createMock();
+	Mock mock;
 	promptUnavailableModules({});
 	CHECK(mock.ui.messages.empty());
 	CHECK(mock.ui.openedBrowsers.empty());
 }
 
 TEST_CASE("promptUnavailableModules does not open the browser on no", "[files]") {
-	auto mock = createMock();
+	Mock mock;
 	mock.ui.messageResult = false;
 	promptUnavailableModules({"A/Missing"});
 	REQUIRE(mock.ui.messages.size() == 1);
@@ -139,7 +138,7 @@ TEST_CASE("promptUnavailableModules does not open the browser on no", "[files]")
 // vcvsLoadFile
 
 TEST_CASE("vcvsLoadFile warns when the file cannot be opened", "[files]") {
-	auto mock = createMock();
+	Mock mock;
 	vcvsLoadFile("missing.vcvs");
 
 	REQUIRE(mock.ui.messages.size() == 1);
@@ -151,7 +150,7 @@ TEST_CASE("vcvsLoadFile warns when the file cannot be opened", "[files]") {
 }
 
 TEST_CASE("vcvsLoadFile warns when the JSON is malformed", "[files]") {
-	auto mock = createMock();
+	Mock mock;
 	mock.fs.files["bad.vcvs"] = "{ not json";
 	vcvsLoadFile("bad.vcvs");
 
@@ -163,7 +162,7 @@ TEST_CASE("vcvsLoadFile warns when the JSON is malformed", "[files]") {
 }
 
 TEST_CASE("vcvsLoadFile loads a selection and pushes one undo entry", "[files]") {
-	auto mock = createMock();
+	Mock mock;
 	// Fake plugin/model slugs are guaranteed unregistered, so the unavailable-modules
 	// prompt is deterministic: exactly one YES_NO question, "No" → no browser.
 	mock.fs.files["sel.vcvs"] = R"({
@@ -205,7 +204,7 @@ TEST_CASE("vcvsLoadFile loads a selection and pushes one undo entry", "[files]")
 // vcvsPasteClipboard
 
 TEST_CASE("vcvsPasteClipboard warns when the clipboard is empty", "[files]") {
-	auto mock = createMock();
+	Mock mock;
 	mock.ui.clipboard = "";
 	vcvsPasteClipboard();
 
@@ -216,7 +215,7 @@ TEST_CASE("vcvsPasteClipboard warns when the clipboard is empty", "[files]") {
 }
 
 TEST_CASE("vcvsPasteClipboard loads a selection from the clipboard", "[files]") {
-	auto mock = createMock();
+	Mock mock;
 	mock.ui.clipboard = R"({"modules":[{"plugin":"NoSuchPlugin","model":"M1","id":1,"pos":[0,0]}]})";
 	vcvsPasteClipboard();
 
@@ -229,7 +228,7 @@ TEST_CASE("vcvsPasteClipboard loads a selection from the clipboard", "[files]") 
 
 /*
 TEST_CASE("vcvsLoadFileDialog returns empty when cancelled", "[files]") {
-	auto mock = createMock();
+	Mock mock;
 	CHECK(vcvsLoadFileDialog(true) == "");
 	CHECK(mock.modules.added.empty());
 	CHECK(mock.fs.lastDirs.empty());
@@ -251,7 +250,7 @@ TEST_CASE("vcvsLoadFileDialog records the last directory and loads", "[files]") 
 // vcvsFromJson
 
 TEST_CASE("vcvsFromJson orchestrates modules, presets, cables and one undo entry", "[files]") {
-	auto mock = createMock();
+	Mock mock;
 	json_t* rootJ = loadJson(R"({
 		"modules": [
 			{"plugin":"A","model":"M1","id":1,"pos":[0,0]},
@@ -281,7 +280,7 @@ TEST_CASE("vcvsFromJson orchestrates modules, presets, cables and one undo entry
 }
 
 TEST_CASE("vcvsFromJson skips cables whose modules failed to load", "[files]") {
-	auto mock = createMock();
+	Mock mock;
 	json_t* rootJ = loadJson(R"({
 		"modules": [
 			{"plugin":"A","model":"M1","id":1,"pos":[0,0]}
@@ -301,18 +300,17 @@ TEST_CASE("vcvsFromJson skips cables whose modules failed to load", "[files]") {
 	json_decref(rootJ);
 }
 
-// MockAccess
+// Mock
 
-TEST_CASE("MockAccess leaves un-mocked accesses on the real Rack API", "[files]") {
-	// Only ui is mocked; the other slots default to the base interfaces, which are
-	// NOT installed — so *AccessFor() keeps using the real Rack implementations.
-	// The scope owns the mock instances (its `ui` member is what gets installed).
-	auto scope = Test::makeMockVcv<MockUiAccess>();
+TEST_CASE("Guard<UiAccess> leaves the other access slots untouched", "[files]") {
+	// Only ui is mocked here; the other slots are never touched, so they stay whatever
+	// they already were (nullptr — nothing else in this binary mocks them).
+	TEST_MOCK_UI(MockUiAccess);
 
 	CHECK(vcv::moduleAccess == nullptr);
 	CHECK(vcv::sceneAccess == nullptr);
 	CHECK(vcv::cableAccess == nullptr);
-	CHECK(vcv::uiAccess == &scope.ui);
+	CHECK(vcv::uiAccess == &ui);
 	CHECK(vcv::fileAccess == nullptr);
 	CHECK(vcv::historyAccess == nullptr);
 }
