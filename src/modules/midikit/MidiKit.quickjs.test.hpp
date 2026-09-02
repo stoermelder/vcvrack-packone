@@ -8,14 +8,14 @@ static const char* QJS_EMPTY = R"(/**
 )";
 
 TEST_CASE("QuickJs-tagged script loads and creates a context", "[MidiKit][QuickJs]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	m->loadScript(QJS_EMPTY);
 
 	REQUIRE(m->host.seQuickJs.ctx != nullptr);
 	REQUIRE(m->host.isQuickJsEngine());
 
-	Test::destroyModule(m);
 }
 
 
@@ -25,14 +25,14 @@ static const char* QJS_ONLY_ENGINE = R"(/**
 )";
 
 TEST_CASE("QuickJs script loads with @engine as the only header tag", "[MidiKit][QuickJs]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	m->loadScript(QJS_ONLY_ENGINE);
 
 	REQUIRE(m->host.seQuickJs.ctx != nullptr);
 	REQUIRE(m->host.isQuickJsEngine());
 
-	Test::destroyModule(m);
 }
 
 
@@ -42,13 +42,13 @@ static const char* LUA_HEADER = R"(--[[
 )";
 
 TEST_CASE("Lua-tagged script is rejected by QuickJs engine", "[MidiKit][QuickJs]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	m->host.seQuickJs.loadScript(LUA_HEADER);
 
 	REQUIRE(m->host.seQuickJs.ctx == nullptr);
 
-	Test::destroyModule(m);
 }
 
 
@@ -59,13 +59,13 @@ let x = ;
 )";
 
 TEST_CASE("JS syntax error is handled gracefully", "[MidiKit][QuickJs]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	m->host.seQuickJs.loadScript(QJS_BAD_SYNTAX);
 
 	REQUIRE(m->host.seQuickJs.ctx == nullptr);
 
-	Test::destroyModule(m);
 }
 
 
@@ -84,7 +84,8 @@ let d = 3;
 )";
 
 TEST_CASE("Parse error reports the line it failed on", "[MidiKit][QuickJs]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	m->loadScript(QJS_BAD_ON_LINE_6);
 	// A failed load tears the state down
@@ -95,7 +96,6 @@ TEST_CASE("Parse error reports the line it failed on", "[MidiKit][QuickJs]") {
 	// QuickJS reports the offending line number in the exception's stack trace
 	REQUIRE(log.find(":6:") != std::string::npos);
 
-	Test::destroyModule(m);
 }
 
 
@@ -110,7 +110,8 @@ let c = 3;
 )";
 
 TEST_CASE("Parse error line number tracks the error position", "[MidiKit][QuickJs]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	m->loadScript(QJS_BAD_ON_LINE_5);
 	REQUIRE(m->host.seQuickJs.ctx == nullptr);
@@ -119,13 +120,13 @@ TEST_CASE("Parse error line number tracks the error position", "[MidiKit][QuickJ
 	REQUIRE(log.find(":5:") != std::string::npos);
 	REQUIRE(log.find(":6:") == std::string::npos);
 
-	Test::destroyModule(m);
 }
 
 
 // A script that loads cleanly must not emit any error noise.
 TEST_CASE("Successful load reports no error", "[MidiKit][QuickJs]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	m->loadScript(QJS_EMPTY);
 	REQUIRE(m->host.seQuickJs.ctx != nullptr);
@@ -134,7 +135,6 @@ TEST_CASE("Successful load reports no error", "[MidiKit][QuickJs]") {
 	REQUIRE(log.find("rror") == std::string::npos);
 	REQUIRE(log.find("Script loaded") != std::string::npos);
 
-	Test::destroyModule(m);
 }
 
 
@@ -152,6 +152,7 @@ rack.onUnload = function() {
 
 
 TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][QuickJs]") {
+	ModuleScaffold mods;
 	// Regression guard: writeLog/writeOverlay/input.*/trig.*/param.* live on
 	// the MidiScriptEngineHandler (implemented by MidiKitModule). Running
 	// onUnload from ~MidiScriptEngineQuickJs() itself would route those
@@ -161,11 +162,10 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Qui
 	// (the handler) is still fully alive, specifically to avoid that. This
 	// test does not (and cannot) assert a log/message result — it can only
 	// prove destroyModule() doesn't crash, which is what it's for.
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	m->loadScript(QJS_ON_UNLOAD);
 	REQUIRE(m->host.seQuickJs.ctx != nullptr);
 
-	Test::destroyModule(m);
 }
 
 
@@ -184,7 +184,8 @@ midi.onMessage = function(port, m) {
 )";
 
 TEST_CASE("midi.onMessage dispatch round-trips a CC message through midi.*/midiOut.*", "[MidiKit][QuickJs]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	m->loadScript(QJS_MIDI_ROUNDTRIP);
 	REQUIRE(m->host.seQuickJs.ctx != nullptr);
 	REQUIRE(JS_IsFunction(m->host.seQuickJs.ctx, m->host.seQuickJs.onMessageFn));
@@ -210,7 +211,6 @@ TEST_CASE("midi.onMessage dispatch round-trips a CC message through midi.*/midiO
 	std::string log = drainLog(m);
 	REQUIRE(log.find("got cc 99") != std::string::npos);
 
-	Test::destroyModule(m);
 }
 
 
@@ -225,7 +225,8 @@ midi.onMessage = function(port, m) {
 )";
 
 TEST_CASE("midi.createNRPN/setNRPN queue all four CC messages in order", "[MidiKit][QuickJs]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	m->loadScript(QJS_NRPN);
 	REQUIRE(m->host.seQuickJs.ctx != nullptr);
 
@@ -244,7 +245,6 @@ TEST_CASE("midi.createNRPN/setNRPN queue all four CC messages in order", "[MidiK
 		REQUIRE(out.getNote() == expectedNote[i]);
 	}
 
-	Test::destroyModule(m);
 }
 
 
@@ -278,7 +278,8 @@ midi.onMessage = function(midiPort, msg) {
 )";
 
 TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][QuickJs][GC]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	m->loadScript(QJS_GC_SCRATCH);
 	REQUIRE(m->host.seQuickJs.ctx != nullptr);
 
@@ -322,7 +323,6 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Quick
 	REQUIRE(used1 < total1);
 	REQUIRE(used1 <= used0 + 64 * 1024);
 
-	Test::destroyModule(m);
 }
 
 
@@ -340,7 +340,8 @@ midi.onMessage = function(midiPort, msg) {
 )";
 
 TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][QuickJs][GC]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	m->loadScript(QJS_GC_RETAIN);
 	REQUIRE(m->host.seQuickJs.ctx != nullptr);
 
@@ -378,7 +379,6 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][QuickJs][GC]") {
 	// 200 retained strings + their array slots must be clearly visible.
 	REQUIRE(used1 > used0 + 2048);
 
-	Test::destroyModule(m);
 }
 
 
@@ -405,7 +405,8 @@ midi.onMessage = function(midiPort, msg) {
 )";
 
 TEST_CASE("Infinite loop in onMessage is interrupted, not a hang", "[MidiKit][QuickJs]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	m->loadScript(JS_WHILE_TRUE_ONMESSAGE);
 	drainLog(m);
 
@@ -424,7 +425,6 @@ TEST_CASE("Infinite loop in onMessage is interrupted, not a hang", "[MidiKit][Qu
 	std::string log2 = drainLog(m);
 	REQUIRE(log2.find("interrupted") != std::string::npos);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Infinite loop in onMessage does not wedge the shared worker", "[MidiKit][QuickJs][Async]") {
@@ -462,7 +462,8 @@ while (true) {}
 )";
 
 TEST_CASE("Infinite loop at script top level fails the load, and the module recovers", "[MidiKit][QuickJs]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	// Load runs inline; the interrupt aborts the top-level JS_Eval.
 	m->loadScript(JS_WHILE_TRUE_TOPLEVEL);
 	std::string log = drainLog(m);
@@ -479,5 +480,4 @@ TEST_CASE("Infinite loop at script top level fails the load, and the module reco
 	std::string reloadLog = drainLog(m);
 	REQUIRE(reloadLog.find("recovered") != std::string::npos);
 
-	Test::destroyModule(m);
 }

@@ -69,6 +69,15 @@ static MidiKitModule* createModule(std::shared_ptr<StoermelderPackOne::ITaskWork
 	return m;
 }
 
+// RAII owner for modules under test (see Test::ModuleScaffold for why bare
+// create/destroy is unsafe once an assertion can fail). Binds to this suite's
+// createModule() shadow so every scaffolded module gets the injected
+// SyncTaskWorker — the dylib factory (Test::createModule) would use the
+// module's default async worker instead.
+struct ModuleScaffold : Test::ModuleScaffold<MidiKitModule> {
+	ModuleScaffold() : Test::ModuleScaffold<MidiKitModule>([]() { return createModule(); }) {}
+};
+
 // A real background worker, for the few tests that must distinguish async
 // dispatch from blocking dispatch.
 //

@@ -1464,6 +1464,7 @@ TEST_CASE("'Scale quantiser.js/.lua' reads the root from CV input 1", "[MidiKit]
 
 
 TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", "[MidiKit][ScaleQuantiser][JSON]") {
+	ModuleScaffold mods;
 	std::string path = GENERATE(presetPaths("Scale quantiser"));
 	CATCH_INFO("preset: " << path);
 
@@ -1490,7 +1491,6 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	rack::engine::Module::SaveEvent saveEvent;
 	m->onSave(saveEvent);
 	json_t* rootJ = m->dataToJson();
-	Test::destroyModule(m);
 
 	json_t* configJ = json_object_get(rootJ, "scriptConfig");
 	REQUIRE(configJ != NULL);
@@ -1499,7 +1499,7 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	REQUIRE(json_is_true(json_object_get(configJ, "preferUpward")));
 
 	// Second module: reload the patch and confirm the config came back.
-	MidiKitModule* m2 = createModule();
+	MidiKitModule* m2 = mods.create();
 	m2->dataFromJson(rootJ);
 	json_decref(rootJ);
 
@@ -1520,7 +1520,6 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	REQUIRE(restoredSpecs[1].selected == 1);
 	REQUIRE(restoredSpecs[2].checked == true);
 
-	Test::destroyModule(m2);
 }
 
 

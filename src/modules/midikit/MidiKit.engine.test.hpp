@@ -1443,6 +1443,7 @@ input.enable(2)
 )";
 
 TEST_CASE("input.enable sets identical module state in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto checkEnabled = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -1520,6 +1521,7 @@ end
 )";
 
 TEST_CASE("trig.getTicks counts identical rising edges in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto ticksAfterTwoPulses = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -1589,6 +1591,7 @@ end
 )";
 
 TEST_CASE("trig.getTicks(1, channel) counts each channel independently, in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto ticksPerChannel = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -1661,6 +1664,7 @@ trig.setTrigger(1)
 )";
 
 TEST_CASE("trig.setTrigger produces identical output-trigger state", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto checkTriggerActive = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -1706,6 +1710,7 @@ trig.setGate(1, 100)
 )";
 
 TEST_CASE("trig.setGate duration is milliseconds: gate falls after ~100 ms", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto checkGateLength = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -1759,6 +1764,7 @@ param.enable(3)
 )";
 
 TEST_CASE("param.enable sets identical module state in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto checkEnabled = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -1803,6 +1809,7 @@ end
 )";
 
 TEST_CASE("param.getValue reads identical value in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto valueAt = [](const std::string& script, float paramValue) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -1937,6 +1944,7 @@ end
 )";
 
 TEST_CASE("midiOut.sendAfterMs schedules an identical future-frame message", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	// frame is a scheduling detail specific to each engine's own sample-time
 	// bookkeeping, so it's checked for "> 0" per engine rather than compared
 	// for equality between them — requireEquivalent already pins the wire
@@ -2150,6 +2158,7 @@ end
 )";
 
 TEST_CASE("onLoad runs once and sends an identical message in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto checkOnLoad = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -2244,6 +2253,7 @@ end
 )";
 
 TEST_CASE("onUnload runs when replaced and sends an identical message in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto checkOnUnload = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -2325,6 +2335,7 @@ TEST_CASE("onRemove() twice does not crash or re-run onUnload", "[MidiKit][Cross
 
 
 TEST_CASE("switching engines keeps the outgoing engine's onUnload output", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	// Covers the queue consolidation: the outgoing engine's onUnload() message
 	// used to be queued on THAT engine's own out-queue, which nothing drained
 	// once activeEngine moved on. With a module-owned queue nothing is keyed on
@@ -2333,7 +2344,7 @@ TEST_CASE("switching engines keeps the outgoing engine's onUnload output", "[Mid
 	// This does NOT cover the switch being a blocking closeState() rather than
 	// an async loadScript("") — under SyncTaskWorker both run onUnload() inline,
 	// so the message lands either way. See the async-worker test below.
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	m->loadScript(JS_ON_UNLOAD);
 	drainLog(m);
 	REQUIRE(m->host.isQuickJsEngine());
@@ -2350,7 +2361,6 @@ TEST_CASE("switching engines keeps the outgoing engine's onUnload output", "[Mid
 	REQUIRE(out.getStatus() == 0x8);   // note off
 	REQUIRE(out.getNote() == 60);
 
-	Test::destroyModule(m);
 }
 
 
@@ -2468,6 +2478,7 @@ static void processOneDividerPeriod(MidiKitModule* m, int64_t startFrame = 0) {
 }
 
 TEST_CASE("process() drains the out-queue after the script is cleared", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	// The drain in process() sits ABOVE the activeEngine null check, on purpose.
 	// clearScript() runs onUnload() (queuing its message) and leaves
 	// activeEngine null; if the drain were still gated on activeEngine, that
@@ -2496,11 +2507,12 @@ TEST_CASE("process() drains the out-queue after the script is cleared", "[MidiKi
 
 
 TEST_CASE("process() drains a tick-scheduled message into midiOutput", "[MidiKit]") {
+	ModuleScaffold mods;
 	// End-to-end for the drain: a message the engine queued with a non-zero tick
 	// must reach midiOutput's tick queue, not merely leave the module queue.
 	// midi::Output::sendMessage() no-ops without a subscribed device, so
 	// midiOutput's scheduling queues are the observable endpoint.
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	midi::Message msg = noteOn(1, 60, 100);
 
 	REQUIRE(m->sendMidi(0, &msg, 1, 0, 5));   // tick 5: lands in tickQueue
@@ -2512,16 +2524,16 @@ TEST_CASE("process() drains a tick-scheduled message into midiOutput", "[MidiKit
 	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);
 	REQUIRE(m->midiOutput.tickQueue[0].top().tick == 5);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("process() drains the queue in FIFO order across an engine switch", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	// The per-engine queues could never interleave; the shared one can. Messages
 	// queued by the outgoing engine must still precede those from the incoming
 	// engine — a switch must not reorder output. Distinguishable notes stand in
 	// for the two producers.
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 
 	midi::Message first = noteOn(1, 60, 100);
 	midi::Message second = noteOn(1, 61, 100);
@@ -2540,15 +2552,15 @@ TEST_CASE("process() drains the queue in FIFO order across an engine switch", "[
 	REQUIRE(out.getNote() == 62);
 	REQUIRE_FALSE(processOutMessage(m, port, out, ticks));
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("An NRPN group is queued whole and in order", "[MidiKit]") {
+	ModuleScaffold mods;
 	// The atomicity contract has two halves: dropped whole when short on room
 	// (below), and — here — queued as four consecutive messages in the order
 	// given, with no interleaving from a message queued after it.
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 
 	midi::Message group[4] = {noteOn(1, 60, 100), noteOn(1, 61, 100), noteOn(1, 62, 100), noteOn(1, 63, 100)};
 	midi::Message after = noteOn(1, 70, 100);
@@ -2564,7 +2576,6 @@ TEST_CASE("An NRPN group is queued whole and in order", "[MidiKit]") {
 	REQUIRE(processOutMessage(m, port, out, ticks));
 	REQUIRE(out.getNote() == 70);
 
-	Test::destroyModule(m);
 }
 
 
@@ -2591,12 +2602,13 @@ TEST_CASE("onRemove() flushes teardown output immediately, bypassing scheduling"
 
 
 TEST_CASE("MIDI output overflow drops without corrupting the queue", "[MidiKit]") {
+	ModuleScaffold mods;
 	// dsp::RingBuffer::push() has no overflow check: on a full buffer it
 	// overwrites unread entries and leaves size() > capacity, and
 	// empty()/full() go incoherent from there. sendMidi() adds the check the
 	// container lacks — this pins that the queue's invariants survive being
 	// pushed past capacity.
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	midi::Message msg = noteOn(1, 60, 100);
 
 	size_t capacity = m->midiOutQueue.capacity();
@@ -2611,12 +2623,12 @@ TEST_CASE("MIDI output overflow drops without corrupting the queue", "[MidiKit]"
 	REQUIRE(m->midiOutQueue.size() == capacity);
 	REQUIRE_FALSE(m->midiOutQueue.empty());
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("MIDI output overflow is reported once per episode, not once per drop", "[MidiKit]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	midi::Message msg = noteOn(1, 60, 100);
 
 	size_t capacity = m->midiOutQueue.capacity();
@@ -2640,7 +2652,6 @@ TEST_CASE("MIDI output overflow is reported once per episode, not once per drop"
 	}
 	REQUIRE(count == 1);
 
-	Test::destroyModule(m);
 }
 
 
@@ -2687,10 +2698,11 @@ TEST_CASE("MIDI output overflow is reported again after the queue recovers", "[M
 
 
 TEST_CASE("An NRPN group is dropped whole, never truncated, when free capacity is short", "[MidiKit]") {
+	ModuleScaffold mods;
 	// The all-or-nothing contract in sendMidi(): an NRPN is 4 messages sharing
 	// one parameter change, and a partial group is a malformed parameter
 	// change, worse than dropping it outright.
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	midi::Message msg = noteOn(1, 60, 100);
 
 	// Leave exactly 3 free slots — one short of the 4-message group.
@@ -2706,11 +2718,11 @@ TEST_CASE("An NRPN group is dropped whole, never truncated, when free capacity i
 	// consumed by the first 3 messages of the group.
 	REQUIRE(m->midiOutQueue.capacity() == 3);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("onUnload runs again when a second script replaces the first, in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto checkOnUnloadReplaced = [](const std::string& onUnloadScript, const std::string& replacementScript) {
 		MidiKitModule* m = createModule();
 		m->loadScript(onUnloadScript);
@@ -2763,6 +2775,7 @@ end
 )";
 
 TEST_CASE("captureConfig() calls onSave, not onUnload, and does not run teardown, in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto check = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -2786,6 +2799,7 @@ TEST_CASE("captureConfig() calls onSave, not onUnload, and does not run teardown
 }
 
 TEST_CASE("onUnload's return value is ignored on real teardown, in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto check = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -2865,6 +2879,7 @@ midi.onMessage = function(midiPort, msg) end
 )";
 
 TEST_CASE("Script config survives capture and reload in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto check = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -2909,6 +2924,7 @@ TEST_CASE("Script config survives capture and reload in both engines", "[MidiKit
 
 
 TEST_CASE("A script with only onUnload (no onSave) persists nothing, in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	// There is no legacy fallback from onSave() to onUnload()'s return value:
 	// a script written before rack.onSave() existed, which only returns its
 	// config from onUnload(), simply persists nothing until migrated. Reuses
@@ -2953,13 +2969,13 @@ end
 
 
 TEST_CASE("captureConfig on an engine with no script loaded reports nothing to persist", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	// No script is a definite "nothing to persist", not a failure: there is no
 	// config to preserve, so the caller should clear whatever it stored rather
 	// than keep it. false is reserved for a failed dispatch.
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	REQUIRE(captureConfig(&m->host.seLua).empty());
 	REQUIRE(captureConfig(&m->host.seQuickJs).empty());
-	Test::destroyModule(m);
 }
 
 
@@ -2988,6 +3004,7 @@ end
 )";
 
 TEST_CASE("onTrigger fires on a trigger input tick and sends an identical message in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto checkOnTrigger = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -3035,6 +3052,7 @@ end
 )";
 
 TEST_CASE("onTrigger receives the firing channel, in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto logChannels = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -3061,6 +3079,7 @@ TEST_CASE("onTrigger receives the firing channel, in both engines", "[MidiKit][C
 
 
 TEST_CASE("Script without onTrigger silently ignores trigger ticks, in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto checkNoOnTrigger = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -3101,6 +3120,7 @@ end
 )";
 
 TEST_CASE("trig.onTrigger is not called until trig.enableIn() is used, in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	// trig.onTrigger is unused until the channel is enabled with trig.enableIn().
 	auto checkNotEnabled = [](const std::string& script) {
 		MidiKitModule* m = createModule();
@@ -3144,6 +3164,7 @@ end
 )";
 
 TEST_CASE("trig.enableIn gates trig.onTrigger per channel, in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	// Only channel 1 is enabled: a rising edge on channel 1 fires the callback,
 	// a rising edge on channel 2 (never enabled) is not processed at all.
 	auto checkPerChannel = [](const std::string& script) {
@@ -4113,6 +4134,7 @@ end
 )";
 
 TEST_CASE("Defining midi.onMessage late (from onTrigger) never gets called, in both engines", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto checkLateDefine = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -4173,6 +4195,7 @@ midi = 42
 )";
 
 TEST_CASE("Clobbering midi with a number at top-level load time does not crash either engine", "[MidiKit][CrossEngine]") {
+	ModuleScaffold mods;
 	auto checkNumberClobber = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
@@ -4230,7 +4253,8 @@ midi = null;
 )";
 
 TEST_CASE("Clobbering midi with null during top-level load code does not leave a pending exception (QuickJS)", "[MidiKit][QuickJs]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	m->loadScript(JS_MIDI_NULL_AT_LOAD);
 	std::string loadLog = drainLog(m);
 	// midi is null by the time hooks are resolved (top-level code, including
@@ -4257,5 +4281,4 @@ TEST_CASE("Clobbering midi with null during top-level load code does not leave a
 	std::string reloadMidiLog = drainLog(m);
 	REQUIRE(reloadMidiLog.find("call 1") != std::string::npos);
 
-	Test::destroyModule(m);
 }
