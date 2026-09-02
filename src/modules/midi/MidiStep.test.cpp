@@ -25,7 +25,8 @@ static bool pollHigh(MidiStepModule* module, int out, int channel = 0, int frame
 
 
 TEST_CASE("Construction and reset", "[MidiStep]") {
-	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	Test::ModuleScaffold<MidiStepModule> mods;
+	auto module = mods.create("MidiStep");
 
 	SECTION("Default mapping after reset") {
 		REQUIRE(module->learningId == -1);
@@ -53,11 +54,11 @@ TEST_CASE("Construction and reset", "[MidiStep]") {
 		REQUIRE(module->learnedCcs[2] == 2);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Preset JSON null-guards", "[MidiStep][JSON]") {
-	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	Test::ModuleScaffold<MidiStepModule> mods;
+	auto module = mods.create("MidiStep");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -80,12 +81,12 @@ TEST_CASE("Preset JSON null-guards", "[MidiStep][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[MidiStep][JSON]") {
+	Test::ModuleScaffold<MidiStepModule> mods;
 	SECTION("Scalars and remapped channels") {
-		auto module = Test::createModule<MidiStepModule>("MidiStep");
+		auto module = mods.create("MidiStep");
 		module->mode = MODE::AKAI_MPD218;
 		module->polyphonicOutput = true;
 		module->panelTheme = 1;
@@ -98,7 +99,7 @@ TEST_CASE("JSON round-trip preserves state", "[MidiStep][JSON]") {
 		json_t* rootJ = module->dataToJson();
 		REQUIRE(rootJ != nullptr);
 
-		auto restored = Test::createModule<MidiStepModule>("MidiStep");
+		auto restored = mods.create("MidiStep");
 		restored->dataFromJson(rootJ);
 
 		REQUIRE(restored->mode == MODE::AKAI_MPD218);
@@ -110,12 +111,10 @@ TEST_CASE("JSON round-trip preserves state", "[MidiStep][JSON]") {
 		REQUIRE(restored->ccs[64] == 3);
 
 		json_decref(rootJ);
-		Test::destroyModule(module);
-		Test::destroyModule(restored);
 	}
 
 	SECTION("Entire ccs array including unmapped (-1) channels") {
-		auto module = Test::createModule<MidiStepModule>("MidiStep");
+		auto module = mods.create("MidiStep");
 		// Remap every channel to a distinct high CC number...
 		for (int i = 0; i < MidiStepModule::CHANNELS; i++) {
 			module->learningId = i;
@@ -128,7 +127,7 @@ TEST_CASE("JSON round-trip preserves state", "[MidiStep][JSON]") {
 		json_t* rootJ = module->dataToJson();
 		REQUIRE(rootJ != nullptr);
 
-		auto restored = Test::createModule<MidiStepModule>("MidiStep");
+		auto restored = mods.create("MidiStep");
 		restored->dataFromJson(rootJ);
 
 		// Every slot survives, including the unmapped entry.
@@ -151,34 +150,31 @@ TEST_CASE("JSON round-trip preserves state", "[MidiStep][JSON]") {
 		REQUIRE(restored->incPulseCount[5] == 6);
 
 		json_decref(rootJ);
-		Test::destroyModule(module);
-		Test::destroyModule(restored);
 	}
 
 	SECTION("Nested midi input object") {
-		auto module = Test::createModule<MidiStepModule>("MidiStep");
+		auto module = mods.create("MidiStep");
 		module->midiInput.channel = 7;
 
 		json_t* rootJ = module->dataToJson();
 		REQUIRE(rootJ != nullptr);
 
-		auto restored = Test::createModule<MidiStepModule>("MidiStep");
+		auto restored = mods.create("MidiStep");
 		restored->dataFromJson(rootJ);
 
 		REQUIRE(restored->midiInput.channel == 7);
 
 		json_decref(rootJ);
-		Test::destroyModule(module);
-		Test::destroyModule(restored);
 	}
 }
 
 
 TEST_CASE("dataFromJson drops out-of-range CC numbers in ccs array", "[MidiStep][JSON]") {
+	Test::ModuleScaffold<MidiStepModule> mods;
 	// ccs entries index the 128-element ccs[] vector, so values from a corrupt
 	// preset must be range-checked before use (REQUIRE_NOTHROW alone would not
 	// catch an out-of-bounds write: it is UB, not an exception).
-	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	auto module = mods.create("MidiStep");
 
 	json_t* rootJ = json_object();
 	json_t* ccsJ = json_array();
@@ -200,12 +196,12 @@ TEST_CASE("dataFromJson drops out-of-range CC numbers in ccs array", "[MidiStep]
 	REQUIRE(module->incPulseCount[2] == 6);
 
 	json_decref(rootJ);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Relative mode #1 (Beatstep R1 / X-Touch R2)", "[MidiStep]") {
-	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	Test::ModuleScaffold<MidiStepModule> mods;
+	auto module = mods.create("MidiStep");
 
 	auto modeVal = GENERATE(MODE::BEATSTEP_R1, MODE::XTOUCH_R2);
 	module->mode = modeVal;
@@ -236,12 +232,12 @@ TEST_CASE("Relative mode #1 (Beatstep R1 / X-Touch R2)", "[MidiStep]") {
 		REQUIRE(module->incPulseCount[0] == 0);
 	}
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Relative mode #2 (fixed 1..3 / 125..127)", "[MidiStep]") {
-	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	Test::ModuleScaffold<MidiStepModule> mods;
+	auto module = mods.create("MidiStep");
 
 	auto modeVal = GENERATE(MODE::BEATSTEP_R2, MODE::KK_REL, MODE::AKAI_MPD218,
 		MODE::HERCULES_DJCONTROL_STARLIGHT, MODE::XTOUCH_R1);
@@ -273,24 +269,24 @@ TEST_CASE("Relative mode #2 (fixed 1..3 / 125..127)", "[MidiStep]") {
 		REQUIRE(module->decPulseCount[0] == 0);
 	}
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Ignores non-CC messages", "[MidiStep]") {
-	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	Test::ModuleScaffold<MidiStepModule> mods;
+	auto module = mods.create("MidiStep");
 	// Note-on, status 0x9 — should be ignored entirely.
 	module->processMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
 	for (int i = 0; i < MidiStepModule::CHANNELS; i++) {
 		REQUIRE(module->incPulseCount[i] == 0);
 		REQUIRE(module->decPulseCount[i] == 0);
 	}
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Ignores unmapped CC numbers", "[MidiStep]") {
-	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	Test::ModuleScaffold<MidiStepModule> mods;
+	auto module = mods.create("MidiStep");
 	module->mode = MODE::BEATSTEP_R1;
 	// Only CCs 0..15 are mapped by default; CC 64 has no channel.
 	module->processMessage(cc(64, 70));
@@ -298,12 +294,12 @@ TEST_CASE("Ignores unmapped CC numbers", "[MidiStep]") {
 		REQUIRE(module->incPulseCount[i] == 0);
 		REQUIRE(module->decPulseCount[i] == 0);
 	}
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("CC learning", "[MidiStep]") {
-	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	Test::ModuleScaffold<MidiStepModule> mods;
+	auto module = mods.create("MidiStep");
 
 	SECTION("learnCC remaps a channel to a new CC") {
 		module->learningId = 0;
@@ -351,12 +347,12 @@ TEST_CASE("CC learning", "[MidiStep]") {
 		REQUIRE(module->ccs[30] == -1);
 	}
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Produces increment/decrement triggers", "[MidiStep]") {
-	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	Test::ModuleScaffold<MidiStepModule> mods;
+	auto module = mods.create("MidiStep");
 	module->mode = MODE::BEATSTEP_R1;
 
 	SECTION("Increment generates a high pulse on OUTPUT_INC") {
@@ -374,12 +370,12 @@ TEST_CASE("Produces increment/decrement triggers", "[MidiStep]") {
 		REQUIRE(module->decPulseCount[0] == 0);
 	}
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Output routing", "[MidiStep]") {
-	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	Test::ModuleScaffold<MidiStepModule> mods;
+	auto module = mods.create("MidiStep");
 	module->mode = MODE::BEATSTEP_R1;
 
 	SECTION("Monophonic: channel N drives its own port") {
@@ -398,23 +394,23 @@ TEST_CASE("Output routing", "[MidiStep]") {
 		REQUIRE(pollHigh(module, MidiStepModule::OUTPUT_INC + 0, 3));
 	}
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("MIDI queue is processed", "[MidiStep]") {
-	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	Test::ModuleScaffold<MidiStepModule> mods;
+	auto module = mods.create("MidiStep");
 	module->mode = MODE::BEATSTEP_R1;
 	// Push a CC into the input queue and let process() pop it.
 	module->midiInput.onMessage(cc(0, 70));
 	module->process(Test::makeProcessArgs(1));
 	REQUIRE(module->incPulseCount[0] > 0);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("processBypass drains the MIDI queue without producing triggers", "[MidiStep]") {
-	auto module = Test::createModule<MidiStepModule>("MidiStep");
+	Test::ModuleScaffold<MidiStepModule> mods;
+	auto module = mods.create("MidiStep");
 	module->mode = MODE::BEATSTEP_R1;
 
 	// Push a CC that would normally produce an increment pulse.
@@ -429,5 +425,4 @@ TEST_CASE("processBypass drains the MIDI queue without producing triggers", "[Mi
 	module->process(Test::makeProcessArgs(2));
 	REQUIRE(module->incPulseCount[0] == 0);
 
-	Test::destroyModule(module);
 }

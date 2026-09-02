@@ -7,7 +7,8 @@ SYNC_MODEL(modelSpin, "Spin");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Spin]") {
-	SpinModule* m = Test::createModule<SpinModule>("Spin");
+	Test::ModuleScaffold<SpinModule> mods;
+	SpinModule* m = mods.create("Spin");
 	SpinWidget* mw = Test::createWidget<SpinWidget>("Spin");
 
 	REQUIRE(m != nullptr);
@@ -15,11 +16,11 @@ TEST_CASE("Construction and initialization", "[Spin]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Spin][JSON]") {
-	auto module = Test::createModule<SpinModule>("Spin");
+	Test::ModuleScaffold<SpinModule> mods;
+	auto module = mods.create("Spin");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -42,12 +43,12 @@ TEST_CASE("Preset JSON null-guards", "[Spin][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[Spin][JSON]") {
-	SpinModule* m = Test::createModule<SpinModule>("Spin");
-	SpinModule* m2 = Test::createModule<SpinModule>("Spin");
+	Test::ModuleScaffold<SpinModule> mods;
+	SpinModule* m = mods.create("Spin");
+	SpinModule* m2 = mods.create("Spin");
 
 	// Distinct, non-default values for every scalar stored to JSON
 	m->panelTheme = 1;
@@ -64,6 +65,4 @@ TEST_CASE("JSON round-trip preserves state", "[Spin][JSON]") {
 	REQUIRE(m2->clickMode == CLICK_MODE::TRIGGER);
 	REQUIRE(m2->clickHigh == true);
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
 }

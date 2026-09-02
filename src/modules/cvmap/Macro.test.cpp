@@ -7,7 +7,8 @@ SYNC_MODEL(modelMacro, "Macro");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Macro]") {
-	MacroModule* m = Test::createModule<MacroModule>("Macro");
+	Test::ModuleScaffold<MacroModule> mods;
+	MacroModule* m = mods.create("Macro");
 	MacroWidget* mw = Test::createWidget<MacroWidget>("Macro");
 
 	REQUIRE(m != nullptr);
@@ -15,11 +16,11 @@ TEST_CASE("Construction and initialization", "[Macro]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Macro][JSON]") {
-	auto module = Test::createModule<MacroModule>("Macro");
+	Test::ModuleScaffold<MacroModule> mods;
+	auto module = mods.create("Macro");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -42,12 +43,13 @@ TEST_CASE("Preset JSON null-guards", "[Macro][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[Macro][JSON]") {
-	MacroModule* m = Test::createModule<MacroModule>("Macro");
-	MacroModule* m2 = Test::createModule<MacroModule>("Macro");
+	Test::ModuleScaffold<MacroModule> mods;
+	Test::ModuleScaffold<rack::Module> targetMods;
+	MacroModule* m = mods.create("Macro");
+	MacroModule* m2 = mods.create("Macro");
 
 	SECTION("Scalar settings round-trip") {
 		m->panelTheme = 1;
@@ -107,7 +109,7 @@ TEST_CASE("JSON round-trip preserves state", "[Macro][JSON]") {
 		// entries. The per-slot slew/min/max (stored in scaleParam via dataToJsonMap/
 		// dataFromJsonMap) round-trip independently of the engine lock that
 		// moduleId/paramId resolution needs — those don't round-trip in a unit test.
-		rack::Module* target = Test::createModule<rack::Module>("Glue");
+		rack::Module* target = targetMods.create("Glue");
 		Test::registerModule(target);
 
 		m->learnParam(0, target->id, 0);
@@ -138,9 +140,6 @@ TEST_CASE("JSON round-trip preserves state", "[Macro][JSON]") {
 		REQUIRE(m2->scaleParam[1].getMax() == Catch::Approx(0.8f));
 
 		Test::unregisterModule(target);
-		Test::destroyModule(target);
 	}
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
 }

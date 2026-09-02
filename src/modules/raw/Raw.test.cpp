@@ -8,15 +8,16 @@ SYNC_MODEL(modelRaw, "Raw");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Raw]") {
-	RawModule* module = Test::createModule<RawModule>("Raw");
+	Test::ModuleScaffold<RawModule> mods;
+	RawModule* module = mods.create("Raw");
 	RawWidget* mw = Test::createWidget<RawWidget>(module);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Raw][JSON]") {
-	auto module = Test::createModule<RawModule>("Raw");
+	Test::ModuleScaffold<RawModule> mods;
+	auto module = mods.create("Raw");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -39,28 +40,27 @@ TEST_CASE("Preset JSON null-guards", "[Raw][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[JSON][Raw]") {
-	auto module = Test::createModule<RawModule>("Raw");
+	Test::ModuleScaffold<RawModule> mods;
+	auto module = mods.create("Raw");
 	module->panelTheme = 1;
 
 	json_t* j = module->dataToJson();
 
-	auto module2 = Test::createModule<RawModule>("Raw");
+	auto module2 = mods.create("Raw");
 	module2->dataFromJson(j);
 	json_decref(j);
 
 	REQUIRE(module2->panelTheme == 1);
 
-	Test::destroyModule(module);
-	Test::destroyModule(module2);
 }
 
 
 TEST_CASE("Reset clears internal delay buffers", "[Raw]") {
-	auto module = Test::createModule<RawModule>("Raw");
+	Test::ModuleScaffold<RawModule> mods;
+	auto module = mods.create("Raw");
 
 	// Drive the module briefly
 	module->inputs[RawModule::INPUT].channels = 1;
@@ -97,11 +97,11 @@ TEST_CASE("Reset clears internal delay buffers", "[Raw]") {
 		}
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Zero input produces zero output", "[Raw]") {
-	auto module = Test::createModule<RawModule>("Raw");
+	Test::ModuleScaffold<RawModule> mods;
+	auto module = mods.create("Raw");
 
 	module->inputs[RawModule::INPUT].channels = 1;
 	module->inputs[RawModule::INPUT].setVoltage(0.f);
@@ -114,11 +114,11 @@ TEST_CASE("Zero input produces zero output", "[Raw]") {
 		REQUIRE(std::abs(module->outputs[RawModule::OUTPUT].getVoltage()) < 0.01f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Non-zero input produces non-zero output after settling", "[Raw]") {
-	auto module = Test::createModule<RawModule>("Raw");
+	Test::ModuleScaffold<RawModule> mods;
+	auto module = mods.create("Raw");
 
 	module->inputs[RawModule::INPUT].channels = 1;
 	module->inputs[RawModule::INPUT].setVoltage(1.f);
@@ -134,13 +134,13 @@ TEST_CASE("Non-zero input produces non-zero output after settling", "[Raw]") {
 		REQUIRE(maxAbs > 0.f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Output channel count tracks input channel count", "[Raw]") {
+	Test::ModuleScaffold<RawModule> mods;
 	// Output::setChannels() early-returns if output.channels == 0
 	// Pre-seeding output.channels > 0 simulates connected cable
-	auto module = Test::createModule<RawModule>("Raw");
+	auto module = mods.create("Raw");
 
 	SECTION("Single channel") {
 		module->inputs[RawModule::INPUT].channels = 1;
@@ -166,12 +166,12 @@ TEST_CASE("Output channel count tracks input channel count", "[Raw]") {
 		REQUIRE(module->outputs[RawModule::OUTPUT].getChannels() == 0);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Output gain parameter is computed correctly by prepareParameters", "[Raw]") {
+	Test::ModuleScaffold<RawModule> mods;
 	// out_gain = pow(10, dB/20) * 5  (normalises ±1 back to ±5V)
-	auto module = Test::createModule<RawModule>("Raw");
+	auto module = mods.create("Raw");
 
 	SECTION("-20 dB yields out_gain 0.5") {
 		module->params[RawModule::PARAM_GAIN_OUT].setValue(-20.f);
@@ -191,15 +191,15 @@ TEST_CASE("Output gain parameter is computed correctly by prepareParameters", "[
 		REQUIRE(module->out_gain == Catch::Approx(50.f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Output voltage scales linearly with out_gain", "[Raw]") {
+	Test::ModuleScaffold<RawModule> mods;
 	// Set up two modules with different out_gain values but identical resonator
 	// state, then verify the output voltages differ by the expected ratio.
 
-	auto modLow  = Test::createModule<RawModule>("Raw");
-	auto modHigh = Test::createModule<RawModule>("Raw");
+	auto modLow  = mods.create("Raw");
+	auto modHigh = mods.create("Raw");
 
 	modLow->params[RawModule::PARAM_GAIN_OUT].setValue(-20.f);
 	modHigh->params[RawModule::PARAM_GAIN_OUT].setValue(20.f);
@@ -240,6 +240,4 @@ TEST_CASE("Output voltage scales linearly with out_gain", "[Raw]") {
 		}
 	}
 
-	Test::destroyModule(modLow);
-	Test::destroyModule(modHigh);
 }

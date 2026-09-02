@@ -7,7 +7,8 @@ SYNC_MODEL(modelBolt, "Bolt");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Bolt]") {
-	BoltModule* m = Test::createModule<BoltModule>("Bolt");
+	Test::ModuleScaffold<BoltModule> mods;
+	BoltModule* m = mods.create("Bolt");
 	BoltWidget* mw = Test::createWidget<BoltWidget>("Bolt");
 
 	REQUIRE(m != nullptr);
@@ -15,11 +16,11 @@ TEST_CASE("Construction and initialization", "[Bolt]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Bolt][JSON]") {
-	auto module = Test::createModule<BoltModule>("Bolt");
+	Test::ModuleScaffold<BoltModule> mods;
+	auto module = mods.create("Bolt");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -42,11 +43,11 @@ TEST_CASE("Preset JSON null-guards", "[Bolt][JSON]") {
 		json_decref(rootJ);
 	}
 	
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves module state", "[Bolt]") {
-	auto module = Test::createModule<BoltModule>("Bolt");
+	Test::ModuleScaffold<BoltModule> mods;
+	auto module = mods.create("Bolt");
 
 	module->panelTheme = 1;
 	module->op = 2;
@@ -55,7 +56,7 @@ TEST_CASE("JSON round-trip preserves module state", "[Bolt]") {
 	
 	json_t* rootJ = module->dataToJson();
 	
-	auto moduleNew = Test::createModule<BoltModule>("Bolt");
+	auto moduleNew = mods.create("Bolt");
 	moduleNew->dataFromJson(rootJ);
 	
 	REQUIRE(moduleNew->panelTheme == 1);
@@ -64,13 +65,12 @@ TEST_CASE("JSON round-trip preserves module state", "[Bolt]") {
 	REQUIRE(moduleNew->outCvMode == BOLT_OUTCV_MODE_TRIG_HIGH);
 	
 	json_decref(rootJ);
-	Test::destroyModule(moduleNew);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Processing without connections", "[Bolt]") {
-	auto module = Test::createModule<BoltModule>("Bolt");
+	Test::ModuleScaffold<BoltModule> mods;
+	auto module = mods.create("Bolt");
 
 	SECTION("Module processes without crash when no outputs connected") {
 		module->op = BOLT_OP_AND;
@@ -79,5 +79,4 @@ TEST_CASE("Processing without connections", "[Bolt]") {
 		REQUIRE_NOTHROW(module->process(Test::makeProcessArgs(0)));
 	}
 
-	Test::destroyModule(module);
 }

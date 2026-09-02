@@ -11,17 +11,18 @@ Test::TestContext<> testContext;
 
 // Module instantiation leaves outputs at 0 V.
 TEST_CASE("Construction and initialization", "[Siren]") {
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 	REQUIRE(m != nullptr);
 	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == 0.f);
 	REQUIRE(m->outputs[SirenModule::OUTPUT_R].getVoltage() == 0.f);
-	Test::destroyModule(m);
 }
 
 // ─── JSON serialization ───────────────────────────────────────────────────────
 
 TEST_CASE("Preset JSON null-guards", "[Siren][JSON]") {
-	auto module = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto module = mods.create("Siren");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -43,13 +44,12 @@ TEST_CASE("Preset JSON null-guards", "[Siren][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
-	Test::destroyModule(module);
 }
 
 // JSON round-trip preserves lastFile, lastPlayheadPos, activeRootIdx and trim.
 TEST_CASE("JSON round-trip preserves module state", "[Siren][JSON]") {
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 
 	// Set state and serialise
 	m->lastFilePath = "/some/path/sample.wav";
@@ -83,7 +83,6 @@ TEST_CASE("JSON round-trip preserves module state", "[Siren][JSON]") {
 	REQUIRE(json_real_value(toJ) == Catch::Approx(0.85).margin(0.001));
 
 	json_decref(j);
-	Test::destroyModule(m);
 }
 
 // ─── SirenSettings: fromJson sort ──────────────────────────────────────────────
@@ -573,13 +572,12 @@ TEST_CASE("hashPath is deterministic", "[Siren][Utility]") {
 // ─── Audio output: silence without file ──────────────────────────────────────
 // process() outputs 0 V when no audio file is loaded.
 TEST_CASE("Audio output: silence without loaded file", "[Siren][Audio]") {
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 
 	m->process(Test::makeProcessArgs(1));
 	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == 0.f);
 	REQUIRE(m->outputs[SirenModule::OUTPUT_R].getVoltage() == 0.f);
-
-	Test::destroyModule(m);
 }
 
 // ─── Playhead clamping ────────────────────────────────────────────────────────
@@ -666,7 +664,8 @@ TEST_CASE("starterTags: returns 15-tag canonical list in tests", "[Siren][Metada
 // ─── Volume parameter ─────────────────────────────────────────────────────────
 // volume parameter defaults to 1.0 and accepts values in range [0, 2].
 TEST_CASE("PARAM_VOLUME: default value and range", "[Siren][Module]") {
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 	REQUIRE(m != nullptr);
 
 	// Default is unity gain (1.0)
@@ -677,19 +676,17 @@ TEST_CASE("PARAM_VOLUME: default value and range", "[Siren][Module]") {
 	REQUIRE(m->params[SirenModule::PARAM_VOLUME].getValue() == Catch::Approx(0.f));
 	m->params[SirenModule::PARAM_VOLUME].setValue(2.f);
 	REQUIRE(m->params[SirenModule::PARAM_VOLUME].getValue() == Catch::Approx(2.f));
-
-	Test::destroyModule(m);
 }
 
 // zero volume produces silence even when audio is available.
 TEST_CASE("PARAM_VOLUME: zero volume produces silence", "[Siren][Module]") {
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 	m->params[SirenModule::PARAM_VOLUME].setValue(0.f);
 	// previewPane is null so process() exits early but must not crash
 	m->process(Test::makeProcessArgs(1));
 	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == 0.f);
 	REQUIRE(m->outputs[SirenModule::OUTPUT_R].getVoltage() == 0.f);
-	Test::destroyModule(m);
 }
 
 // ─── SirenPreviewPane: inPoint / scrubPos / stream state ─────────────────────
@@ -900,7 +897,8 @@ static void pushFrame(SirenModule* m, float l, float r) {
 }
 
 TEST_CASE("process: reads samples from ring buffer and scales by volume", "[Siren][Audio]") {
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 
 	// Default volume = 1.0; DSP multiplies by vol * 5.f
 	pushFrame(m, 0.5f, -0.5f);
@@ -911,13 +909,12 @@ TEST_CASE("process: reads samples from ring buffer and scales by volume", "[Sire
 
 	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == Catch::Approx(2.5f));
 	REQUIRE(m->outputs[SirenModule::OUTPUT_R].getVoltage() == Catch::Approx(-2.5f));
-
-	Test::destroyModule(m);
 }
 
 // process() stops playing when ring is empty and EOF is reached.
 TEST_CASE("process: stops playing when ring drained after EOF", "[Siren][Audio]") {
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 
 	// Fill thread signals EOF; ring is empty → process() must stop
 	m->streamTotalFrames = 100;
@@ -928,13 +925,12 @@ TEST_CASE("process: stops playing when ring drained after EOF", "[Siren][Audio]"
 
 	REQUIRE(m->playing.load() == false);
 	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == 0.f);
-
-	Test::destroyModule(m);
 }
 
 // ring samples are consumed before EOF triggers stop.
 TEST_CASE("process: ring samples consumed before EOF stop", "[Siren][Audio]") {
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 
 	// One frame in ring + eofReached=true: first process() drains the frame;
 	// second process() sees empty ring + eofReached and stops.
@@ -948,12 +944,11 @@ TEST_CASE("process: ring samples consumed before EOF stop", "[Siren][Audio]") {
 
 	m->process(Test::makeProcessArgs(1));
 	REQUIRE(m->playing.load() == false);  // drained now
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("process: volume knob at zero produces silence even with ring data", "[Siren][Audio]") {
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 	m->params[SirenModule::PARAM_VOLUME].setValue(0.f);
 
 	pushFrame(m, 1.f, 1.f);
@@ -964,32 +959,28 @@ TEST_CASE("process: volume knob at zero produces silence even with ring data", "
 
 	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == 0.f);
 	REQUIRE(m->outputs[SirenModule::OUTPUT_R].getVoltage() == 0.f);
-
-	Test::destroyModule(m);
 }
 
 // startPlayback computes seekBaseFrame from position * total frames.
 TEST_CASE("startPlayback: seekBaseFrame computed from position and total frames", "[Siren][Audio]") {
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 	m->streamTotalFrames = 1000;
 
 	m->startPlayback(0.5f);
 
 	REQUIRE(m->seekBaseFrame == 500);
-
-	Test::destroyModule(m);
 }
 
 // startPlayback with position 0 seeks to frame 0.
 TEST_CASE("startPlayback: position 0 seeks to frame 0", "[Siren][Audio]") {
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 	m->streamTotalFrames = 1000;
 
 	m->startPlayback(0.f);
 
 	REQUIRE(m->seekBaseFrame == 0);
-
-	Test::destroyModule(m);
 }
 
 // rapid successive startPlayback calls — last position wins.
@@ -998,7 +989,8 @@ TEST_CASE("startPlayback: rapid successive calls — last position wins", "[Sire
 	// click position, then onDragMove fires it again for each moved position.
 	// pendingSeekFrame is a single atomic; rapid overwrites are safe — the fill
 	// thread always picks up the latest position.
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 	// Stop the fill thread so it can't consume pendingSeekFrame via
 	// exchange(-1) before the assertion runs. The destructor will not
 	// re-join because joinable() returns false after this.
@@ -1014,15 +1006,14 @@ TEST_CASE("startPlayback: rapid successive calls — last position wins", "[Sire
 
 	REQUIRE(m->seekBaseFrame == 700);
 	REQUIRE(m->pendingSeekFrame.load() == 700);
-
-	Test::destroyModule(m);
 }
 
 // startPlayback resets outputFrameCount on each call for correct playhead tracking.
 TEST_CASE("startPlayback: outputFrameCount reset on each call", "[Siren][Audio]") {
 	// Each scrub seek resets the output counter so the playhead position
 	// is computed relative to the new seek base, not the previous one.
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 	m->streamTotalFrames = 1000;
 
 	// Simulate some frames having been output
@@ -1031,13 +1022,12 @@ TEST_CASE("startPlayback: outputFrameCount reset on each call", "[Siren][Audio]"
 	m->startPlayback(0.5f);
 
 	REQUIRE(m->outputFrameCount.load() == 0);
-
-	Test::destroyModule(m);
 }
 
 // openStream with null source leaves pendingStream nullptr.
 TEST_CASE("openStream: null source leaves pendingStream nullptr", "[Siren][Audio]") {
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 
 	m->openStream("", nullptr);
 
@@ -1045,8 +1035,6 @@ TEST_CASE("openStream: null source leaves pendingStream nullptr", "[Siren][Audio
 	// (fill thread might race, but since stream is null either way it is safe to check)
 	AudioStream* ps = m->pendingStream.exchange(nullptr, std::memory_order_acq_rel);
 	REQUIRE(ps == nullptr);
-
-	Test::destroyModule(m);
 }
 
 // Fill thread plays back only the first two channels of a multi-channel file.
@@ -1057,7 +1045,8 @@ TEST_CASE("openStream: null source leaves pendingStream nullptr", "[Siren][Audio
 // buffers, corrupting memory and crashing during playback (though the
 // preview path, which sizes its buffers to the real channel count, was fine).
 TEST_CASE("Fill thread: multi-channel stream plays back first two channels only", "[Siren][Audio]") {
-	auto* m = Test::createModule<SirenModule>("Siren");
+	Test::ModuleScaffold<SirenModule> mods;
+	auto* m = mods.create("Siren");
 	m->engineSampleRate = 44100;
 
 	// 6-channel stream (5.1 surround). Channels 0/1 carry distinct constant
@@ -1089,8 +1078,6 @@ TEST_CASE("Fill thread: multi-channel stream plays back first two channels only"
 	// Output = sample * volume(1.0) * 5.f
 	REQUIRE(l == Catch::Approx(0.8f * 5.f).margin(0.05f));
 	REQUIRE(r == Catch::Approx(-0.4f * 5.f).margin(0.05f));
-
-	Test::destroyModule(m);
 }
 
 // ─── sampleMatchesFilter: tag filtering logic ─────────────────────────────────
@@ -1326,28 +1313,35 @@ struct SirenSettingsGuard {
 // Helper: build a (module, widget) pair the way the rack does — the widget is
 // what registers itself as a ModuleChangeListener for "Siren", so the pair is
 // the smallest faithful unit for testing the cross-instance sync.
+//
+// The module is owned by the caller's Test::ModuleScaffold<SirenModule> (passed
+// in), so it is still destroyed even if a REQUIRE fails before destroyWidgetPair()
+// runs. The widget has no scaffold equivalent, so destroyWidgetPair() must still
+// be called explicitly for orderly teardown in the non-failing path; declaring
+// the scaffold first in each test body means the scaffold outlives (and thus
+// destroys the module after) any widget torn down by an unwind.
 struct SirenWidgetPair {
 	SirenModule* module;
 	SirenWidget* widget;
 };
 
-static SirenWidgetPair makeWidgetPair() {
+static SirenWidgetPair makeWidgetPair(Test::ModuleScaffold<SirenModule>& mods) {
 	SirenWidgetPair p;
-	p.module = Test::createModule<SirenModule>("Siren");
+	p.module = mods.create("Siren");
 	p.widget = Test::createWidget<SirenWidget>(p.module);
 	return p;
 }
 
 static void destroyWidgetPair(SirenWidgetPair& p) {
 	Test::destroyWidget(p.widget);
-	Test::destroyModule(p.module);
 }
 
 TEST_CASE("Cross-instance settings sync: notifyModuleListeners reaches every SirenWidget", "[Siren][SettingsSync]") {
+	Test::ModuleScaffold<SirenModule> mods;
 	Mock mock;
 	SirenSettingsGuard guard;
-	auto a = makeWidgetPair();
-	auto b = makeWidgetPair();
+	auto a = makeWidgetPair(mods);
+	auto b = makeWidgetPair(mods);
 	REQUIRE(a.widget != nullptr);
 	REQUIRE(b.widget != nullptr);
 	REQUIRE(a.widget->moduleChangedFlag == false);
@@ -1369,10 +1363,11 @@ TEST_CASE("Cross-instance settings sync: originator clears its own flag after no
 	// Reproduce the originator-clears-self pattern used by the root/file
 	// mutation callbacks: notify, then immediately reset the local flag so
 	// step() does not redundantly refresh the UI we just updated inline.
+	Test::ModuleScaffold<SirenModule> mods;
 	Mock mock;
 	SirenSettingsGuard guard;
-	auto a = makeWidgetPair();
-	auto b = makeWidgetPair();
+	auto a = makeWidgetPair(mods);
+	auto b = makeWidgetPair(mods);
 
 	StoermelderPackOne::notifyModuleListeners("Siren");
 	// Originator (a) clears its own flag — mirroring the
@@ -1393,10 +1388,11 @@ TEST_CASE("Cross-instance settings sync: destroyed widget is removed from the li
 	// broadcasts must not touch the freed pointer. We exercise this by
 	// destroying widget a, then broadcasting, then verifying widget b's flag
 	// flips — without a crash or use-after-free.
+	Test::ModuleScaffold<SirenModule> mods;
 	Mock mock;
 	SirenSettingsGuard guard;
-	auto a = makeWidgetPair();
-	auto b = makeWidgetPair();
+	auto a = makeWidgetPair(mods);
+	auto b = makeWidgetPair(mods);
 
 	Test::destroyWidget(a.widget);
 	a.widget = nullptr;
@@ -1440,11 +1436,12 @@ TEST_CASE("Cross-instance settings sync: SirenWidget step() refreshes browser pa
 	// the module's own activeRootIdx as the active selection. We seed the
 	// global with one root entry, give the module its own active root, set
 	// the flag, run step(), and verify the browser pane picked up the change.
+	Test::ModuleScaffold<SirenModule> mods;
 	Mock mock;
 	SirenSettingsGuard guard;
 	sirenSettings.rootContainers.push_back(createRootContainer("/seeded/path", "fs"));
 
-	auto p = makeWidgetPair();
+	auto p = makeWidgetPair(mods);
 	REQUIRE(p.widget != nullptr);
 	REQUIRE(p.widget->browserPane != nullptr);
 	p.module->activeRootIdx = 0;
@@ -1525,13 +1522,14 @@ TEST_CASE("Settings persistence: module-browser widget destruction does not wipe
 // Constructing a widget reads module->activeRootIdx; changing it on one
 // instance must NOT change the other.
 TEST_CASE("Per-instance activeRootIdx: two Siren instances keep separate selections", "[Siren][PerInstance]") {
+	Test::ModuleScaffold<SirenModule> mods;
 	Mock mock;
 	SirenSettingsGuard guard;
 	sirenSettings.rootContainers.push_back(createRootContainer("/vfs/root-a", "fs"));
 	sirenSettings.rootContainers.push_back(createRootContainer("/vfs/root-b", "fs"));
 
-	auto a = makeWidgetPair();
-	auto b = makeWidgetPair();
+	auto a = makeWidgetPair(mods);
+	auto b = makeWidgetPair(mods);
 	a.module->activeRootIdx = 0;
 	b.module->activeRootIdx = 1;
 	a.widget->browserPane->setRoots(sirenSettings.rootContainers, a.module->activeRootIdx);
@@ -1563,14 +1561,15 @@ TEST_CASE("Per-instance activeRootIdx: two Siren instances keep separate selecti
 // changes; each instance's activeRootIdx is per-instance and must be
 // clamped by B's step() refresh.
 TEST_CASE("Per-instance activeRootIdx: removing a root before another instance's idx shifts it", "[Siren][PerInstance]") {
+	Test::ModuleScaffold<SirenModule> mods;
 	Mock mock;
 	SirenSettingsGuard guard;
 	sirenSettings.rootContainers.push_back(createRootContainer("/vfs/r0", "fs"));
 	sirenSettings.rootContainers.push_back(createRootContainer("/vfs/r1", "fs"));
 	sirenSettings.rootContainers.push_back(createRootContainer("/vfs/r2", "fs"));
 
-	auto a = makeWidgetPair();
-	auto b = makeWidgetPair();
+	auto a = makeWidgetPair(mods);
+	auto b = makeWidgetPair(mods);
 
 	// Both pick their own root. b's idx = 2 (third root).
 	a.module->activeRootIdx = 0;
@@ -1603,10 +1602,11 @@ TEST_CASE("Per-instance activeRootIdx: removing a root before another instance's
 // lastFilePath is per-instance: setting it on one module must not bleed into
 // another.
 TEST_CASE("Per-instance lastFilePath: two Siren instances keep separate files", "[Siren][PerInstance]") {
+	Test::ModuleScaffold<SirenModule> mods;
 	Mock mock;
 	SirenSettingsGuard guard;
-	auto a = makeWidgetPair();
-	auto b = makeWidgetPair();
+	auto a = makeWidgetPair(mods);
+	auto b = makeWidgetPair(mods);
 
 	a.module->lastFilePath = "/samples/a.wav";
 	b.module->lastFilePath = "/samples/b.wav";
@@ -1624,9 +1624,10 @@ TEST_CASE("Per-instance lastFilePath: two Siren instances keep separate files", 
 // range into the patch JSON — they must round-trip even though SirenSettings
 // no longer touches them.
 TEST_CASE("Per-instance state: JSON round-trips activeRootIdx, lastFilePath, lastPlayheadPos, trim", "[Siren][PerInstance][JSON]") {
+	Test::ModuleScaffold<SirenModule> mods;
 	Mock mock;
 	SirenSettingsGuard guard;
-	auto m = Test::createModule<SirenModule>("Siren");
+	auto m = mods.create("Siren");
 
 	m->activeRootIdx = 3;
 	m->lastFilePath = "/round/trip.wav";
@@ -1658,16 +1659,16 @@ TEST_CASE("Per-instance state: JSON round-trips activeRootIdx, lastFilePath, las
 	REQUIRE(m->trimOut.load() == Catch::Approx(0.79).margin(0.001));
 
 	json_decref(j);
-	Test::destroyModule(m);
 }
 
 // Out-of-range trim values in patch JSON must be clamped to [0,1] so a
 // malformed patch can never produce an out-of-range trim that breaks loop
 // wrapping at trimOut → trimIn.
 TEST_CASE("Per-instance state: out-of-range trim is clamped on dataFromJson", "[Siren][PerInstance][JSON]") {
+	Test::ModuleScaffold<SirenModule> mods;
 	Mock mock;
 	SirenSettingsGuard guard;
-	auto m = Test::createModule<SirenModule>("Siren");
+	auto m = mods.create("Siren");
 
 	json_t* j = json_object();
 	json_object_set_new(j, "trimIn", json_real(-0.5));
@@ -1677,8 +1678,6 @@ TEST_CASE("Per-instance state: out-of-range trim is clamped on dataFromJson", "[
 
 	REQUIRE(m->trimIn.load() == 0.f);
 	REQUIRE(m->trimOut.load() == 1.f);
-
-	Test::destroyModule(m);
 }
 
 // The module's trimIn/trimOut atomics are the single source of truth for
@@ -1722,8 +1721,9 @@ TEST_CASE("Canvas trim is driven by the module atomics when wired up", "[Siren][
 // constructor restore step is needed because the canvas reads from the
 // module atomics on every read.
 TEST_CASE("Restored trim is visible immediately without an explicit restore step", "[Siren][PerInstance]") {
+	Test::ModuleScaffold<SirenModule> mods;
 	SirenSettingsGuard guard;
-	auto m = Test::createModule<SirenModule>("Siren");
+	auto m = mods.create("Siren");
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
 	pane.init(nullptr, nullptr);
@@ -1742,6 +1742,4 @@ TEST_CASE("Restored trim is visible immediately without an explicit restore step
 	// The canvas sees the restored values without any explicit restore call.
 	REQUIRE(pane.canvas->getInPoint() == Catch::Approx(0.12f).margin(0.001));
 	REQUIRE(pane.canvas->getOutPoint() == Catch::Approx(0.88f).margin(0.001));
-
-	Test::destroyModule(m);
 }

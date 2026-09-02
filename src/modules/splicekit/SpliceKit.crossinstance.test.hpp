@@ -11,7 +11,8 @@
 // instance. collectCableEndCandidates() must therefore span every participating instance,
 // otherwise SpliceKitWidget::step() reports "no cable" and the cell renders as unconnected.
 TEST_CASE("collectAssignedPorts - collects only valid assignments, keyed by direction", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	m->portAssignments[0] = {42, engine::Port::OUTPUT, 3};
 	m->portAssignments[1] = {42, engine::Port::INPUT, 3};   // same port id, other direction
@@ -23,13 +24,12 @@ TEST_CASE("collectAssignedPorts - collects only valid assignments, keyed by dire
 	REQUIRE(ports.size() == 2);
 	REQUIRE(ports.count({42, 3 * 2 + (int)engine::Port::OUTPUT}) == 1);
 	REQUIRE(ports.count({42, 3 * 2 + (int)engine::Port::INPUT}) == 1);
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("collectCableEndCandidates - includes another instance's assignments", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = mods.create();
 
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
@@ -42,14 +42,12 @@ TEST_CASE("collectCableEndCandidates - includes another instance's assignments",
 	// Symmetric: b sees a's assignment too, so both cells light.
 	auto portsB = b->collectCableEndCandidates();
 	REQUIRE(portsB.count({42, 0 * 2 + (int)engine::Port::OUTPUT}) == 1);
-
-	Test::destroyModule(b);
-	Test::destroyModule(a);
 }
 
 TEST_CASE("collectCableEndCandidates - excludes instances that opted out of cross-instance patching", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = mods.create();
 
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
@@ -67,21 +65,17 @@ TEST_CASE("collectCableEndCandidates - excludes instances that opted out of cros
 	auto portsOptedOut = a->collectCableEndCandidates();
 	REQUIRE(portsOptedOut.size() == 1);
 	REQUIRE(portsOptedOut.count({42, 0 * 2 + (int)engine::Port::OUTPUT}) == 1);
-
-	Test::destroyModule(b);
-	Test::destroyModule(a);
 }
 
 TEST_CASE("collectCableEndCandidates - a lone instance yields exactly its own assignments", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	m->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	m->portAssignments[1] = {43, engine::Port::INPUT, 2};
 
 	auto ports = m->collectCableEndCandidates();
 	REQUIRE(ports.size() == 2);
-
-	Test::destroyModule(m);
 }
 
 // cross-instance connected highlight
@@ -100,7 +94,8 @@ TEST_CASE("collectCableEndCandidates - a lone instance yields exactly its own as
 // publishing `partners` directly the way the initiator would.
 
 TEST_CASE("peer connected - a flagged cell blinks in the connected state", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->portAssignments[5] = {77, engine::Port::INPUT, 1};
 
 	// Not flagged: ordinary assigned appearance.
@@ -110,25 +105,23 @@ TEST_CASE("peer connected - a flagged cell blinks in the connected state", "[Spl
 	// preset lights it without needing a new LED_STATE_*.
 	m->peerConnected[5] = true;
 	REQUIRE(m->resolveCellVisual(5, true, true).stateId == LED_STATE_CONNECTED_BY_SET[m->getCellColorSet(5)]);
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("peer connected - a local selection still wins", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->portAssignments[5] = {77, engine::Port::INPUT, 1};
 	m->peerConnected[5] = true;
 
 	// The cell the user armed here renders as PENDING, not as a peer highlight.
 	m->pendingCellId = 5;
 	REQUIRE(m->resolveCellVisual(5, true, true).stateId == LED_STATE_PENDING);
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("peer connected - no armed peer clears every flag", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = mods.create();
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
 	b->peerConnected[5] = true;   // left over from an earlier gesture
 
@@ -137,13 +130,12 @@ TEST_CASE("peer connected - no armed peer clears every flag", "[SpliceKit]") {
 	REQUIRE(b->peerConnected[5] == false);
 
 	SpliceKitModule::crossPending()[APP].clear();
-	Test::destroyModule(b);
-	Test::destroyModule(a);
 }
 
 TEST_CASE("peer connected - the initiator does not highlight its own cells", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = mods.create();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	a->peerConnected[0] = true;
 
@@ -156,13 +148,12 @@ TEST_CASE("peer connected - the initiator does not highlight its own cells", "[S
 	REQUIRE(a->peerConnected[0] == false);
 
 	SpliceKitModule::crossPending()[APP].clear();
-	Test::destroyModule(b);
-	Test::destroyModule(a);
 }
 
 TEST_CASE("peer connected - an opted-out instance shows no highlight", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = mods.create();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
 
@@ -177,8 +168,6 @@ TEST_CASE("peer connected - an opted-out instance shows no highlight", "[SpliceK
 	REQUIRE(b->peerConnected[5] == false);
 
 	SpliceKitModule::crossPending()[APP].clear();
-	Test::destroyModule(b);
-	Test::destroyModule(a);
 }
 
 // The published-partners matching itself. These set CrossPendingState::partners the way the
@@ -186,8 +175,9 @@ TEST_CASE("peer connected - an opted-out instance shows no highlight", "[SpliceK
 // CableWidget scaffolding.
 
 TEST_CASE("peer connected - a cell in the published partner list is flagged", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = mods.create();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};   // cabled to a's armed port
 	b->portAssignments[6] = {88, engine::Port::INPUT, 2};   // an input, but not cabled to it
@@ -206,13 +196,12 @@ TEST_CASE("peer connected - a cell in the published partner list is flagged", "[
 	REQUIRE(b->peerConnected[6] == false);
 
 	SpliceKitModule::crossPending()[APP].clear();
-	Test::destroyModule(b);
-	Test::destroyModule(a);
 }
 
 TEST_CASE("peer connected - a same-direction cell is never flagged", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = mods.create();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::OUTPUT, 1};  // same direction as the armed port
 
@@ -228,13 +217,12 @@ TEST_CASE("peer connected - a same-direction cell is never flagged", "[SpliceKit
 	REQUIRE(b->peerConnected[5] == false);
 
 	SpliceKitModule::crossPending()[APP].clear();
-	Test::destroyModule(b);
-	Test::destroyModule(a);
 }
 
 TEST_CASE("peer connected - clearing the pending entry drops the published partners", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = mods.create();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
 
@@ -254,13 +242,12 @@ TEST_CASE("peer connected - clearing the pending entry drops the published partn
 	REQUIRE(b->peerConnected[5] == false);
 
 	SpliceKitModule::crossPending()[APP].clear();
-	Test::destroyModule(b);
-	Test::destroyModule(a);
 }
 
 TEST_CASE("peer connected - unassigned cells are never flagged", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = mods.create();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	// b has no assignments at all.
 
@@ -274,12 +261,14 @@ TEST_CASE("peer connected - unassigned cells are never flagged", "[SpliceKit]") 
 	}
 
 	SpliceKitModule::crossPending()[APP].clear();
-	Test::destroyModule(b);
-	Test::destroyModule(a);
 }
 
 TEST_CASE("collectCableEndCandidates - a destroyed instance leaves no dangling entry", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
+	// b is deliberately destroyed mid-test (inner scope) to exercise registry cleanup while a
+	// is still alive — the exact scenario under test — so b is left on the bare
+	// createModule()/destroyModule() pattern rather than folded into a's ModuleScaffold.
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 
 	{
@@ -294,8 +283,6 @@ TEST_CASE("collectCableEndCandidates - a destroyed instance leaves no dangling e
 	auto ports = a->collectCableEndCandidates();
 	REQUIRE(ports.size() == 1);
 	REQUIRE(ports.count({77, 1 * 2 + (int)engine::Port::INPUT}) == 0);
-
-	Test::destroyModule(a);
 }
 
 // Cross-instance responder direction clash
@@ -305,8 +292,9 @@ TEST_CASE("collectCableEndCandidates - a destroyed instance leaves no dangling e
 // (The cable-making half of the responder needs real CableWidgets, which the harness does not
 // provide — same boundary as the collectCablePartners() note above.)
 TEST_CASE("cross-instance responder - same-direction pair reports the clash", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = mods.create();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::OUTPUT, 1};  // same direction as a's armed port
 
@@ -322,13 +310,12 @@ TEST_CASE("cross-instance responder - same-direction pair reports the clash", "[
 	REQUIRE(b->overlayMessage.title == "Both ports are outputs");
 
 	SpliceKitModule::crossPending()[APP].clear();
-	Test::destroyModule(b);
-	Test::destroyModule(a);
 }
 
 TEST_CASE("cross-instance responder - two inputs report the clash", "[SpliceKit]") {
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = mods.create();
 	a->portAssignments[0] = {42, engine::Port::INPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};  // same direction as a's armed port
 
@@ -342,6 +329,4 @@ TEST_CASE("cross-instance responder - two inputs report the clash", "[SpliceKit]
 	REQUIRE(b->overlayMessage.title == "Both ports are inputs");
 
 	SpliceKitModule::crossPending()[APP].clear();
-	Test::destroyModule(b);
-	Test::destroyModule(a);
 }

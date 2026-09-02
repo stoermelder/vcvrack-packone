@@ -7,7 +7,8 @@ SYNC_MODEL(modelCVMapCtx, "CVMapCtx");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[CVMapCtx]") {
-	CVMapCtxModule* m = Test::createModule<CVMapCtxModule>("CVMapCtx");
+	Test::ModuleScaffold<CVMapCtxModule> mods;
+	CVMapCtxModule* m = mods.create("CVMapCtx");
 	CVMapCtxWidget* mw = Test::createWidget<CVMapCtxWidget>("CVMapCtx");
 
 	REQUIRE(m != nullptr);
@@ -15,11 +16,11 @@ TEST_CASE("Construction and initialization", "[CVMapCtx]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[CVMapCtx][JSON]") {
-	auto module = Test::createModule<CVMapCtxModule>("CVMapCtx");
+	Test::ModuleScaffold<CVMapCtxModule> mods;
+	auto module = mods.create("CVMapCtx");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -42,12 +43,12 @@ TEST_CASE("Preset JSON null-guards", "[CVMapCtx][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[CVMapCtx][JSON]") {
-	CVMapCtxModule* m = Test::createModule<CVMapCtxModule>("CVMapCtx");
-	CVMapCtxModule* m2 = Test::createModule<CVMapCtxModule>("CVMapCtx");
+	Test::ModuleScaffold<CVMapCtxModule> mods;
+	CVMapCtxModule* m = mods.create("CVMapCtx");
+	CVMapCtxModule* m2 = mods.create("CVMapCtx");
 
 	m->panelTheme = 1;
 	m->cvMapId = "ABC123xy";
@@ -58,6 +59,4 @@ TEST_CASE("JSON round-trip preserves state", "[CVMapCtx][JSON]") {
 	REQUIRE(m2->panelTheme == 1);
 	REQUIRE(m2->cvMapId == "ABC123xy");
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
 }

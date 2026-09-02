@@ -8,7 +8,8 @@
 // sendFeedbackOff integration — state transitions in process()
 
 TEST_CASE("process - unassigned cell transitions cellLedState to OFF", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->lightDivider.setDivision(256);  // lightDivider defaults sample-rate-relative; pin for the loop below
 
 	// Pre-set to a non-OFF state to force a transition
@@ -19,11 +20,11 @@ TEST_CASE("process - unassigned cell transitions cellLedState to OFF", "[SpliceK
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->feedback.cellLedState[0] == LED_STATE_OFF);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("process - assigned cell without cable transitions to DIM state", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->lightDivider.setDivision(256);
 
 	m->portAssignments[0].moduleId = 42;
@@ -36,11 +37,11 @@ TEST_CASE("process - assigned cell without cable transitions to DIM state", "[Sp
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->feedback.cellLedState[0] == LED_STATE_COLOR0_DIM);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("process - cellLedState transitions from old state to OFF when cell unassigned", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->lightDivider.setDivision(256);
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
@@ -53,11 +54,11 @@ TEST_CASE("process - cellLedState transitions from old state to OFF when cell un
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->feedback.cellLedState[5] == LED_STATE_OFF);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("process - scene cellLedState transitions to SCENE_ACTIVE for currentScene", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->lightDivider.setDivision(256);
 
 	m->sceneStore.current = 2;
@@ -68,11 +69,11 @@ TEST_CASE("process - scene cellLedState transitions to SCENE_ACTIVE for currentS
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->feedback.sceneLedState[2] == LED_STATE_SCENE_ACTIVE);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("process - physical scene button press works normally when not linked", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->sceneStore.current = 0;  // sceneLinkMasterId stays -1 (default)
 
 	Test::SimpleEngine engine;
@@ -86,11 +87,11 @@ TEST_CASE("process - physical scene button press works normally when not linked"
 	m->taskProcessorUi.internalQueue.queue.shift()();
 	REQUIRE(m->sceneStore.current == 1);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("process - physical scene button press is ignored while following a scene link master", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->sceneLinkMasterId = 999;  // any id — process() only checks it's >= 0
 	m->sceneStore.current = 0;
 
@@ -104,7 +105,6 @@ TEST_CASE("process - physical scene button press is ignored while following a sc
 	REQUIRE(m->sceneStore.current == 0);   // unaffected — scene button press ignored while linked
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 0);
 
-	Test::destroyModule(m);
 }
 
 
@@ -113,7 +113,8 @@ TEST_CASE("process - physical scene button press is ignored while following a sc
 // SpliceKit.midi.test.hpp; this is the physical-button path.
 
 TEST_CASE("process - momentary mode: releasing a pressed cell clears the pending selection", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->buttonMode = SpliceKitModule::BUTTON_MOMENTARY;
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 
@@ -132,11 +133,11 @@ TEST_CASE("process - momentary mode: releasing a pressed cell clears the pending
 	for (int i = 0; i < 256; i++) engine.step();
 	REQUIRE(m->pendingCellId == -1);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("process - toggle mode: releasing a pressed cell keeps the pending selection", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	// buttonMode defaults to BUTTON_TOGGLE
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 
@@ -153,7 +154,6 @@ TEST_CASE("process - toggle mode: releasing a pressed cell keeps the pending sel
 	for (int i = 0; i < 256; i++) engine.step();
 	REQUIRE(m->pendingCellId == 0);
 
-	Test::destroyModule(m);
 }
 
 // two-press matrix-cell flow through process(): the physical-button path via
@@ -163,7 +163,8 @@ TEST_CASE("process - toggle mode: releasing a pressed cell keeps the pending sel
 
 TEST_CASE("process - first press arms the cell, second press creates the cable", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 
@@ -185,14 +186,14 @@ TEST_CASE("process - first press arms the cell, second press creates the cable",
 	m->taskProcessorUi.step();
 	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
 
-	Test::destroyModule(m);
 }
 
 // physical matrix button edge case: pressing the same cell again cancels the armed selection
 // (triggerCell's pendingCellId == id branch) — the physical counterpart of the MIDI test.
 
 TEST_CASE("process - pressing the same cell again cancels the selection", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 
 	Test::SimpleEngine engine;
@@ -212,12 +213,12 @@ TEST_CASE("process - pressing the same cell again cancels the selection", "[Spli
 	for (int i = 0; i < 256; i++) engine.step();
 	REQUIRE(m->pendingCellId == -1);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("process - scene state transitions from active to dim after scene switch", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->lightDivider.setDivision(256);
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
@@ -231,7 +232,6 @@ TEST_CASE("process - scene state transitions from active to dim after scene swit
 
 	REQUIRE(m->feedback.sceneLedState[0] == LED_STATE_SCENE_ACTIVE);
 	REQUIRE(m->feedback.sceneLedState[1] == LED_STATE_SCENE_DIM);
-	Test::destroyModule(m);
 }
 
 
@@ -239,7 +239,8 @@ TEST_CASE("process - scene state transitions from active to dim after scene swit
 // covered by resolveCellVisual's precedence test below, which also pins their resolution order.
 
 TEST_CASE("process - pending cell transitions cellLedState to PENDING", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->lightDivider.setDivision(256);
 
 	m->portAssignments[0].moduleId = 42;
@@ -255,11 +256,11 @@ TEST_CASE("process - pending cell transitions cellLedState to PENDING", "[Splice
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->feedback.cellLedState[0] == LED_STATE_PENDING);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("process - cell connected to pending cell transitions to CONNECTED1", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->lightDivider.setDivision(256);
 
 	// Cell 0 is pending and connected to cell 5 in scene 0.
@@ -281,11 +282,11 @@ TEST_CASE("process - cell connected to pending cell transitions to CONNECTED1", 
 	// color override, so it auto-resolves to color set 1 (blue) → CONNECTED1.
 	REQUIRE(m->feedback.cellLedState[0] == LED_STATE_PENDING);
 	REQUIRE(m->feedback.cellLedState[5] == LED_STATE_CONNECTED1);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("resolveCellVisual - precedence order pending > connected > port-learn > midi-learn > assigned > off", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	// Cell 5 is connected to cell 0 in the current scene, and every lower-precedence
 	// flag is also set on cell 5, so this only passes if resolveCellVisual checks
@@ -330,11 +331,11 @@ TEST_CASE("resolveCellVisual - precedence order pending > connected > port-learn
 	CellVisual off = m->resolveCellVisual(6, true, true);
 	REQUIRE(off.stateId == LED_STATE_OFF);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("resolveSceneVisual - precedence order midi-learn > active > has-connections > off", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	m->portAssignments[0].moduleId = 1;
 	m->portAssignments[0].portId = 0;
@@ -365,11 +366,11 @@ TEST_CASE("resolveSceneVisual - precedence order midi-learn > active > has-conne
 	SceneVisual off = m->resolveSceneVisual(3, true);
 	REQUIRE(off.stateId == LED_STATE_OFF);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("process - cell with port assignment and no cable transitions to COLOR0_DIM", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->lightDivider.setDivision(256);
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
@@ -384,7 +385,6 @@ TEST_CASE("process - cell with port assignment and no cable transitions to COLOR
 
 	// OUTPUT with default color set 0, no cable → COLOR0_DIM
 	REQUIRE(m->feedback.cellLedState[2] == LED_STATE_COLOR0_DIM);
-	Test::destroyModule(m);
 }
 
 
@@ -392,7 +392,8 @@ TEST_CASE("process - cell with port assignment and no cable transitions to COLOR
 // on the GUI thread rather than being queued.
 
 TEST_CASE("requestSceneChange - enqueues a switchScene lambda", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->sceneStore.current = 0;
 	m->sceneStore.setConnection(1, 0, 1, true);  // scene 1 has a stored connection
 
@@ -403,11 +404,11 @@ TEST_CASE("requestSceneChange - enqueues a switchScene lambda", "[SpliceKit]") {
 	// Running the lambda switches the scene.
 	m->taskProcessorUi.internalQueue.queue.shift()();
 	REQUIRE(m->sceneStore.current == 1);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("resetModuleState - clears all state", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	// Populate state that should be wiped by reset.
 	m->sceneStore.current = 4;
@@ -447,5 +448,4 @@ TEST_CASE("resetModuleState - clears all state", "[SpliceKit]") {
 	auto sceneMap = m->trackingProcessor.getMap(MATRIX_COUNT + 1);
 	REQUIRE(sceneMap.type == MidiTrackingType::NONE);
 
-	Test::destroyModule(m);
 }

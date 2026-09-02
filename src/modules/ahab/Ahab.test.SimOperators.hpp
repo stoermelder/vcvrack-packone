@@ -210,7 +210,8 @@ TEST_CASE("Successive E bang separation #426", "[AhabSim]") {
 // patterns below are one-shot: the first tick emits, later ticks emit nothing.
 
 TEST_CASE("End-to-end MIDI note from ORCA ':' operator", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
 	m->midiOutEnabled = true;
@@ -246,11 +247,11 @@ TEST_CASE("End-to-end MIDI note from ORCA ':' operator", "[MIDI][Ahab]") {
 
 	cleanupMockMidiOutput(m, mockDevice);
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("End-to-end MIDI CC from ORCA '!' operator", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
 	m->midiOutEnabled = true;
@@ -276,11 +277,11 @@ TEST_CASE("End-to-end MIDI CC from ORCA '!' operator", "[MIDI][Ahab]") {
 
 	cleanupMockMidiOutput(m, mockDevice);
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("End-to-end MIDI pitchbend from ORCA '?' operator", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
 	m->midiOutEnabled = true;
@@ -301,11 +302,11 @@ TEST_CASE("End-to-end MIDI pitchbend from ORCA '?' operator", "[MIDI][Ahab]") {
 
 	cleanupMockMidiOutput(m, mockDevice);
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("End-to-end MIDI note from monophonic ORCA '%' operator", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
 	m->midiOutEnabled = true;
@@ -333,7 +334,6 @@ TEST_CASE("End-to-end MIDI note from monophonic ORCA '%' operator", "[MIDI][Ahab
 
 	cleanupMockMidiOutput(m, mockDevice);
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 
@@ -343,7 +343,8 @@ TEST_CASE("End-to-end MIDI note from monophonic ORCA '%' operator", "[MIDI][Ahab
 // jack path), complementing the direct custom_vcvin/custom_vcvout tests above.
 
 TEST_CASE("End-to-end CV input via ORCA '<' operator", "[AhabSim][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	m->simRunning = false; // disable BPM auto-step; drive ticks explicitly
 
@@ -364,11 +365,11 @@ TEST_CASE("End-to-end CV input via ORCA '<' operator", "[AhabSim][Ahab]") {
 	REQUIRE(buf[1 * fw + 1] == 'z'); // result written directly below '<'
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("End-to-end CV input via ORCA '<' scales mid-range voltage", "[AhabSim][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	m->simRunning = false;
 
@@ -388,11 +389,11 @@ TEST_CASE("End-to-end CV input via ORCA '<' scales mid-range voltage", "[AhabSim
 	REQUIRE(buf[1 * fw + 1] == '9');
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("End-to-end CV output via ORCA '>' numeric port", "[AhabSim][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	m->simRunning = false;
 
@@ -410,11 +411,11 @@ TEST_CASE("End-to-end CV output via ORCA '>' numeric port", "[AhabSim][Ahab]") {
 	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(5.0f));
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("End-to-end CV gate via ORCA '>' letter port", "[AhabSim][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	m->simRunning = false;
 
@@ -437,7 +438,6 @@ TEST_CASE("End-to-end CV gate via ORCA '>' letter port", "[AhabSim][Ahab]") {
 	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 0].getVoltage() == 0.0f);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 
@@ -494,7 +494,8 @@ TEST_CASE("End-to-end UDP datagram from ORCA ';' operator", "[Ahab][UDP]") {
 	// passing the same object twice would double-free on destruction.
 	RecordingUdpOutput* fakeUdp = new RecordingUdpOutput();
 	RecordingUdpOutput* fakeOsc = new RecordingUdpOutput();
-	AhabModule* m = createModuleWithOutputs(fakeUdp, fakeOsc);
+	Test::ModuleScaffold<AhabModule> mods{[&]{ return createModuleWithOutputs(fakeUdp, fakeOsc); }};
+	AhabModule* m = mods.create();
 	Test::registerModule(m);
 	m->simRunning = false; // disable BPM auto-step; drive ticks explicitly
 
@@ -513,7 +514,6 @@ TEST_CASE("End-to-end UDP datagram from ORCA ';' operator", "[Ahab][UDP]") {
 	REQUIRE(fakeUdp->udpDatagrams.size() == 1);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m); // the module owns + deletes both fakes
 }
 
 TEST_CASE("End-to-end OSC message from ORCA '=' operator", "[Ahab][UDP]") {
@@ -521,7 +521,8 @@ TEST_CASE("End-to-end OSC message from ORCA '=' operator", "[Ahab][UDP]") {
 	// passing the same object twice would double-free on destruction.
 	RecordingUdpOutput* fakeUdp = new RecordingUdpOutput();
 	RecordingUdpOutput* fakeOsc = new RecordingUdpOutput();
-	AhabModule* m = createModuleWithOutputs(fakeUdp, fakeOsc);
+	Test::ModuleScaffold<AhabModule> mods{[&]{ return createModuleWithOutputs(fakeUdp, fakeOsc); }};
+	AhabModule* m = mods.create();
 	Test::registerModule(m);
 	m->simRunning = false;
 
@@ -541,13 +542,13 @@ TEST_CASE("End-to-end OSC message from ORCA '=' operator", "[Ahab][UDP]") {
 	REQUIRE(fakeOsc->oscInts[0].second[1] == 12);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("UDP/OSC output is safe with no destination configured", "[Ahab][UDP]") {
 	// No destination: the module's real output falls back to 127.0.0.1:49161.
 	// With nothing listening there the datagram is dropped without crashing.
-	AhabModule* m = Test::createModule<AhabModule>("Ahab"); // real output
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab"); // real output
 	Test::registerModule(m);
 	m->simRunning = false;
 
@@ -557,7 +558,6 @@ TEST_CASE("UDP/OSC output is safe with no destination configured", "[Ahab][UDP]"
 	REQUIRE_NOTHROW([&]{ stepSim(m); }());
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 

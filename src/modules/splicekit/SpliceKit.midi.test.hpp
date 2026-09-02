@@ -13,7 +13,8 @@
 
 TEST_CASE("MIDI end-to-end - mapped note arms the cell, second press creates the cable", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 	// As a preset would: cell 0 listens to note 36, cell 1 to note 37.
@@ -33,12 +34,11 @@ TEST_CASE("MIDI end-to-end - mapped note arms the cell, second press creates the
 	REQUIRE(m->pendingCellId == -1);
 	REQUIRE(m->overlayMessage.title == "Cable created");
 	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI end-to-end - mapped CC triggers the cell button", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->assignPort(3, 42, 0, engine::Port::OUTPUT);
 	m->trackingProcessor.setMap(MidiTrackingType::CC, 3, 74);
 
@@ -47,12 +47,11 @@ TEST_CASE("MIDI end-to-end - mapped CC triggers the cell button", "[SpliceKit]")
 	m->taskProcessorUi.step();
 
 	REQUIRE(m->pendingCellId == 3);
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI end-to-end - unmapped note is ignored", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	// Cell 0 is assigned but nothing is mapped to any note.
 
@@ -61,15 +60,14 @@ TEST_CASE("MIDI end-to-end - unmapped note is ignored", "[SpliceKit]") {
 	m->taskProcessorUi.step();
 
 	REQUIRE(m->pendingCellId == -1);
-
-	Test::destroyModule(m);
 }
 
 
 // 2.4b — MIDI learn actually stores a map.
 
 TEST_CASE("MIDI end-to-end - learn stores the received note as a map", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->enableLearn(0);
 	REQUIRE(m->trackingProcessor.getMapLearn() == true);
 
@@ -83,15 +81,14 @@ TEST_CASE("MIDI end-to-end - learn stores the received note as a map", "[SpliceK
 	// ...learn is now off, and the single-learn cursor was cleared.
 	REQUIRE(m->trackingProcessor.getMapLearn() == false);
 	REQUIRE(m->learningId == -1);
-
-	Test::destroyModule(m);
 }
 
 
 // Edge cases for the MIDI end-to-end flow.
 
 TEST_CASE("MIDI end-to-end - momentary mode: note-off clears the pending cell", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->buttonMode = SpliceKitModule::BUTTON_MOMENTARY;
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 0, 36);
@@ -107,13 +104,12 @@ TEST_CASE("MIDI end-to-end - momentary mode: note-off clears the pending cell", 
 	m->trackingProcessor.process(1);
 	m->taskProcessorUi.step();
 	REQUIRE(m->pendingCellId == -1);
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI end-to-end - pressing the same cell again cancels the selection", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 0, 36);
@@ -132,12 +128,11 @@ TEST_CASE("MIDI end-to-end - pressing the same cell again cancels the selection"
 	m->taskProcessorUi.step();
 	REQUIRE(m->pendingCellId == -1);
 	REQUIRE(cables.mock.hasCable(42, 0, 43, 0) == false);
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI end-to-end - learn stores a received CC as a map", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->enableLearn(0);
 	REQUIRE(m->trackingProcessor.getMapLearn() == true);
 
@@ -149,12 +144,11 @@ TEST_CASE("MIDI end-to-end - learn stores a received CC as a map", "[SpliceKit]"
 	REQUIRE(map.param == 74);
 	REQUIRE(m->trackingProcessor.getMapLearn() == false);
 	REQUIRE(m->learningId == -1);
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI end-to-end - a mapped note switches scenes", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	// Scene button 2 (mapId MATRIX_COUNT + 2) mapped to note 50.
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, MATRIX_COUNT + 2, 50);
 
@@ -164,6 +158,4 @@ TEST_CASE("MIDI end-to-end - a mapped note switches scenes", "[SpliceKit]") {
 
 	// requestSceneChange queued a switchTo(2); draining ran it.
 	REQUIRE(m->sceneStore.current == 2);
-
-	Test::destroyModule(m);
 }

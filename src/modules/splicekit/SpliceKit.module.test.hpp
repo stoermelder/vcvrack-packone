@@ -7,7 +7,8 @@
 
 
 TEST_CASE("Construction and initialization", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	SpliceKitWidget* mw = Test::createWidget<SpliceKitWidget>("SpliceKit");
 
 	REQUIRE(m != nullptr);
@@ -22,12 +23,12 @@ TEST_CASE("Construction and initialization", "[SpliceKit]") {
 	REQUIRE(m->feedback.sceneLedState.size() == (size_t)SCENE_COUNT);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("isConnected and setConnection bitmask", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	REQUIRE(m->sceneStore.isConnected(0, 0, 1) == false);
 
@@ -42,7 +43,6 @@ TEST_CASE("isConnected and setConnection bitmask", "[SpliceKit]") {
 	// Different scene is unaffected
 	REQUIRE(m->sceneStore.isConnected(1, 0, 1) == false);
 
-	Test::destroyModule(m);
 }
 
 
@@ -96,7 +96,8 @@ TEST_CASE("resolveDirection - either assignment invalid returns nullptr", "[Spli
 
 
 TEST_CASE("triggerCell - first press sets pending", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	// Assign cell 3 a port so triggerCell doesn't bail early
 	m->portAssignments[3].moduleId = 42;
@@ -107,12 +108,12 @@ TEST_CASE("triggerCell - first press sets pending", "[SpliceKit]") {
 	m->triggerCell(3);
 	REQUIRE(m->pendingCellId == 3);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("triggerCell - pressing same cell cancels pending", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	m->portAssignments[2].moduleId = 42;
 	m->portAssignments[2].portId = 0;
@@ -124,23 +125,23 @@ TEST_CASE("triggerCell - pressing same cell cancels pending", "[SpliceKit]") {
 	m->triggerCell(2);
 	REQUIRE(m->pendingCellId == -1);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("triggerCell - unassigned cell is ignored", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	// Cell 10 has no port assignment
 	m->triggerCell(10);
 	REQUIRE(m->pendingCellId == -1);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("processMapUpdate - MIDI note-on sets pending", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	m->portAssignments[5].moduleId = 1;
 	m->portAssignments[5].portId = 0;
@@ -150,12 +151,12 @@ TEST_CASE("processMapUpdate - MIDI note-on sets pending", "[SpliceKit]") {
 	REQUIRE(m->pendingCellId == 5);
 	REQUIRE(m->pendingCellIsPhysical == false);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("processMapUpdate - momentary MIDI note-off clears pending", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	m->buttonMode = SpliceKitModule::BUTTON_MOMENTARY;
 	m->portAssignments[7].moduleId = 1;
@@ -170,12 +171,12 @@ TEST_CASE("processMapUpdate - momentary MIDI note-off clears pending", "[SpliceK
 	m->processMapUpdate(MidiTrackingType::NOTE, 7, 0);
 	REQUIRE(m->pendingCellId == -1);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("processMapUpdate - toggle mode ignores note-off", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	m->buttonMode = SpliceKitModule::BUTTON_TOGGLE;
 	m->portAssignments[4].moduleId = 1;
@@ -189,19 +190,19 @@ TEST_CASE("processMapUpdate - toggle mode ignores note-off", "[SpliceKit]") {
 	m->processMapUpdate(MidiTrackingType::NOTE, 4, 0);
 	REQUIRE(m->pendingCellId == 4);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("randomizeCurrentScene - no connections when no ports are assigned", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->randomizeCurrentScene();
 	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->sceneStore.connections[m->sceneStore.current][i] == 0);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("randomizeCurrentScene - only pairs assigned outputs with assigned inputs", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	int outs[] = {0, 5};
 	int ins[] = {1, 2, 10};
 	for (int i : outs) {
@@ -232,11 +233,11 @@ TEST_CASE("randomizeCurrentScene - only pairs assigned outputs with assigned inp
 	}
 	REQUIRE(connectionCount == 2);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("randomizeCurrentScene - replaces the scene's previous topology", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->portAssignments[0].moduleId = 42; m->portAssignments[0].portId = 0; m->portAssignments[0].type = engine::Port::OUTPUT;
 	m->portAssignments[1].moduleId = 42; m->portAssignments[1].portId = 1; m->portAssignments[1].type = engine::Port::INPUT;
 	// Stale connection between cells with no valid port assignment — must disappear.
@@ -248,29 +249,29 @@ TEST_CASE("randomizeCurrentScene - replaces the scene's previous topology", "[Sp
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 5, 6) == false);
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == true);  // the only valid pair — deterministic
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("randomizeCurrentSceneFull - no connections when no ports are assigned", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->randomizeCurrentSceneFull();
 	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->sceneStore.connections[m->sceneStore.current][i] == 0);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("randomizeCurrentSceneFull - no connections when only outputs or only inputs are assigned", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->portAssignments[0].moduleId = 42; m->portAssignments[0].portId = 0; m->portAssignments[0].type = engine::Port::OUTPUT;
 	m->portAssignments[1].moduleId = 42; m->portAssignments[1].portId = 1; m->portAssignments[1].type = engine::Port::OUTPUT;
 
 	m->randomizeCurrentSceneFull();
 
 	for (int i = 0; i < MATRIX_COUNT; i++) REQUIRE(m->sceneStore.connections[m->sceneStore.current][i] == 0);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("randomizeCurrentSceneFull - every assigned port gets at least one connection", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	int outs[] = {0, 5};
 	int ins[] = {1, 2, 10};
 	for (int i : outs) {
@@ -301,11 +302,11 @@ TEST_CASE("randomizeCurrentSceneFull - every assigned port gets at least one con
 		}
 	}
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("randomizeCurrentSceneFull - replaces the scene's previous topology", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->portAssignments[0].moduleId = 42; m->portAssignments[0].portId = 0; m->portAssignments[0].type = engine::Port::OUTPUT;
 	m->portAssignments[1].moduleId = 42; m->portAssignments[1].portId = 1; m->portAssignments[1].type = engine::Port::INPUT;
 	// Stale connection between cells with no valid port assignment — must disappear.
@@ -317,11 +318,11 @@ TEST_CASE("randomizeCurrentSceneFull - replaces the scene's previous topology", 
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 5, 6) == false);
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == true);  // the only valid pair — deterministic
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("randomizePortAssignmentsFrom - clears every cell even when candidates is empty", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->portAssignments[0].moduleId = 42; m->portAssignments[0].portId = 0; m->portAssignments[0].type = engine::Port::OUTPUT;
 	m->cellLabels[0] = "stale label";
 
@@ -330,11 +331,11 @@ TEST_CASE("randomizePortAssignmentsFrom - clears every cell even when candidates
 	REQUIRE(m->portAssignments[0].isValid() == false);
 	REQUIRE(m->cellLabels[0].empty());
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("randomizePortAssignmentsFrom - a single candidate is assigned to exactly one cell", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	for (int i = 0; i < MATRIX_COUNT; i++) m->cellLabels[i] = "stale label";
 
 	std::vector<PortAssignment> candidates(1);
@@ -357,11 +358,11 @@ TEST_CASE("randomizePortAssignmentsFrom - a single candidate is assigned to exac
 	}
 	REQUIRE(matches == 1);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("randomizePortAssignmentsFrom - each candidate is used at most once, surplus cells cleared", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	std::vector<PortAssignment> candidates(3);
 	candidates[0] = {10, engine::Port::OUTPUT, 0};
@@ -390,11 +391,11 @@ TEST_CASE("randomizePortAssignmentsFrom - each candidate is used at most once, s
 	// All 3 candidates were placed (fewer candidates than cells), and the other 61 cells cleared.
 	REQUIRE(assignedCount == 3);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("randomizePortAssignmentsFrom - fills every cell without duplicates when there are more candidates than cells", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	std::vector<PortAssignment> candidates(MATRIX_COUNT + 20);
 	for (size_t i = 0; i < candidates.size(); i++) {
@@ -410,7 +411,6 @@ TEST_CASE("randomizePortAssignmentsFrom - fills every cell without duplicates wh
 		REQUIRE(inserted.second == true);  // moduleId (unique per candidate here) never repeats
 	}
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("randomizePortAssignmentsFrom - tears down scene connections and pending state like assignPort", "[SpliceKit]") {
@@ -419,7 +419,8 @@ TEST_CASE("randomizePortAssignmentsFrom - tears down scene connections and pendi
 	// port leaves an orphaned cable in the current scene, or recreates one to the wrong port on
 	// the next switchScene(). randomizePortAssignmentsFrom() rewrites every cell at once and must
 	// honor the same contract cell-by-cell.
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	m->portAssignments[1] = {42, engine::Port::INPUT, 1};
 	m->sceneStore.setConnection(m->sceneStore.current, 0, 1, true);
@@ -440,11 +441,11 @@ TEST_CASE("randomizePortAssignmentsFrom - tears down scene connections and pendi
 	// A pending selection made against the old assignment is stale and must be dropped.
 	REQUIRE(m->pendingCellId == -1);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("onRandomize - runs randomizePortAssignments directly without queueing", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	// Rack calls onRandomize() on the GUI thread, so it enumerates ports inline rather than
 	// enqueueing — which would make taskProcessorUi multi-producer against the engine thread.
@@ -453,7 +454,6 @@ TEST_CASE("onRandomize - runs randomizePortAssignments directly without queueing
 	REQUIRE_NOTHROW(m->onRandomize());
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 0);
 
-	Test::destroyModule(m);
 }
 
 
@@ -462,7 +462,8 @@ TEST_CASE("onRandomize - runs randomizePortAssignments directly without queueing
 // current MIDI mapping.
 
 TEST_CASE("SpliceKitCellQuantity - label falls back from custom label to port name to cell number", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	ParamQuantity* pq = m->paramQuantities[SpliceKitModule::PARAM_MATRIX + 3];
 	REQUIRE(pq != nullptr);
 
@@ -479,22 +480,22 @@ TEST_CASE("SpliceKitCellQuantity - label falls back from custom label to port na
 	m->assignPort(3, 42, 6, engine::Port::OUTPUT);
 	REQUIRE(pq->getLabel() == "(missing module, port 7)");
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("SpliceKitCellQuantity - the numeric button value is suppressed", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	ParamQuantity* pq = m->paramQuantities[SpliceKitModule::PARAM_MATRIX + 0];
 
 	// A momentary button's 0/1 is meaningless to the user, so the tooltip shows nothing.
 	pq->setValue(1.f);
 	REQUIRE(pq->getDisplayValueString() == "");
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("SpliceKitCellQuantity - description reports the cell's MIDI mapping", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	ParamQuantity* pq = m->paramQuantities[SpliceKitModule::PARAM_MATRIX + 2];
 
 	REQUIRE(pq->getDescription() == "MIDI: (unmapped)");
@@ -506,11 +507,11 @@ TEST_CASE("SpliceKitCellQuantity - description reports the cell's MIDI mapping",
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 2, 36);
 	REQUIRE(pq->getDescription() == "MIDI: Note 36");
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("SpliceKitSceneQuantity - label is the 1-based scene name and description its mapping", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	ParamQuantity* pq = m->paramQuantities[SpliceKitModule::PARAM_SCENE + 4];
 
 	REQUIRE(pq->getLabel() == "Scene 5");
@@ -520,7 +521,6 @@ TEST_CASE("SpliceKitSceneQuantity - label is the 1-based scene name and descript
 	m->trackingProcessor.setMap(MidiTrackingType::CC, MATRIX_COUNT + 4, 95);
 	REQUIRE(pq->getDescription() == "MIDI: CC 95");
 
-	Test::destroyModule(m);
 }
 
 
@@ -528,7 +528,8 @@ TEST_CASE("SpliceKitSceneQuantity - label is the 1-based scene name and descript
 // while bypassed do not pile up and fire late on un-bypass.
 
 TEST_CASE("processBypass - runs without triggering cells and leaves no pending selection", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 0, 36);
 
@@ -541,5 +542,4 @@ TEST_CASE("processBypass - runs without triggering cells and leaves no pending s
 	// The message was consumed by the bypass pump, not turned into a button press.
 	REQUIRE(m->pendingCellId == -1);
 
-	Test::destroyModule(m);
 }

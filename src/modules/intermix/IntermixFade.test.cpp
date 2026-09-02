@@ -96,7 +96,8 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 
 
 TEST_CASE("Construction and initialization", "[IntermixFade]") {
-	IntermixFadeModule<8>* m = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
+	IntermixFadeModule<8>* m = mods.create("IntermixFade");
 	IntermixFadeWidget* mw = Test::createWidget<IntermixFadeWidget>("IntermixFade");
 
 	REQUIRE(m != nullptr);
@@ -104,11 +105,11 @@ TEST_CASE("Construction and initialization", "[IntermixFade]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[IntermixFade][JSON]") {
-	auto module = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
+	auto module = mods.create("IntermixFade");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -131,12 +132,12 @@ TEST_CASE("Preset JSON null-guards", "[IntermixFade][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[JSON][IntermixFade]") {
-	IntermixFadeModule<8>* m = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
-	IntermixFadeModule<8>* m2 = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
+	IntermixFadeModule<8>* m = mods.create("IntermixFade");
+	IntermixFadeModule<8>* m2 = mods.create("IntermixFade");
 
 	m->panelTheme = 1;
 	m->input = 4;
@@ -158,13 +159,12 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][IntermixFade]") {
 	REQUIRE(m2->fade == FADE::OUT);
 	REQUIRE(m2->fadeLengthMode == FADE_LENGTH_60S);
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
 }
 
 
 TEST_CASE("Reset behavior", "[IntermixFade]") {
-	auto module = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
+	auto module = mods.create("IntermixFade");
 
 	SECTION("Reset clears settings") {
 		module->input = 5;
@@ -177,11 +177,11 @@ TEST_CASE("Reset behavior", "[IntermixFade]") {
 		REQUIRE(module->fade == FADE::INOUT);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Input selection", "[IntermixFade]") {
-	auto module = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
+	auto module = mods.create("IntermixFade");
 
 	SECTION("Input can be changed") {
 		module->input = 3;
@@ -191,11 +191,11 @@ TEST_CASE("Input selection", "[IntermixFade]") {
 		REQUIRE(module->input == 7);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Fade mode", "[IntermixFade]") {
-	auto module = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
+	auto module = mods.create("IntermixFade");
 
 	SECTION("Fade mode can be changed") {
 		module->fade = FADE::IN;
@@ -208,11 +208,11 @@ TEST_CASE("Fade mode", "[IntermixFade]") {
 		REQUIRE(module->fade == FADE::INOUT);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Fade parameters", "[IntermixFade]") {
-	auto module = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
+	auto module = mods.create("IntermixFade");
 
 	SECTION("Fade time parameters can be set") {
 		module->params[IntermixFadeModule<8>::PARAM_FADE + 0].setValue(2.5f);
@@ -230,23 +230,23 @@ TEST_CASE("Fade parameters", "[IntermixFade]") {
 		REQUIRE(module->params[IntermixFadeModule<8>::PARAM_FADE + 0].getValue() == 15.f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Expander connection", "[IntermixFade]") {
-	auto fadeModule = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
+	auto fadeModule = mods.create("IntermixFade");
 
 	SECTION("Module processes without expander") {
 		// Should not crash
 		fadeModule->process(Test::makeProcessArgs(1));
 	}
 
-	Test::destroyModule(fadeModule);
 }
 
 TEST_CASE("Fade control via expander", "[IntermixFade]") {
+	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
 	auto intermixModule = new IntermixModuleMock<8>();
-	auto fadeModule = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	auto fadeModule = mods.create("IntermixFade");
 
 	SECTION("Fade IN mode sends fade in times") {
 		intermixModule->rightExpander.module = fadeModule;
@@ -330,13 +330,13 @@ TEST_CASE("Fade control via expander", "[IntermixFade]") {
 		REQUIRE(intermixModule->fadeOutTs[0] > oldTsOut);
 	}
 
-	Test::destroyModule(fadeModule);
 	delete intermixModule;
 }
 
 TEST_CASE("Different inputs with fade", "[IntermixFade]") {
+	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
 	auto intermixModule = new IntermixModuleMock<8>();
-	auto fadeModule = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	auto fadeModule = mods.create("IntermixFade");
 
 	SECTION("Changing input affects different matrix row") {
 		intermixModule->rightExpander.module = fadeModule;
@@ -376,14 +376,14 @@ TEST_CASE("Different inputs with fade", "[IntermixFade]") {
 		REQUIRE(intermixModule->fadeInTs[1] > oldTs1);
 	}
 
-	Test::destroyModule(fadeModule);
 	delete intermixModule;
 }
 
 TEST_CASE("Expander chain", "[IntermixFade]") {
+	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
 	auto intermixModule = new IntermixModuleMock<8>();
-	auto fadeModule1 = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
-	auto fadeModule2 = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	auto fadeModule1 = mods.create("IntermixFade");
+	auto fadeModule2 = mods.create("IntermixFade");
 	Test::SimpleEngine engine;
 	engine.addModules(intermixModule, fadeModule1, fadeModule2);
 
@@ -415,14 +415,13 @@ TEST_CASE("Expander chain", "[IntermixFade]") {
 		REQUIRE(fade2InTs > 0);
 	}
 
-	Test::destroyModule(fadeModule2);
-	Test::destroyModule(fadeModule1);
 	delete intermixModule;
 }
 
 
 TEST_CASE("FadeParamQuantity max value follows fadeLengthMode", "[IntermixFade][fade-time]") {
-	auto module = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
+	auto module = mods.create("IntermixFade");
 
 	SECTION("FADE_LENGTH_4S gives max 4s") {
 		module->fadeLengthMode = FADE_LENGTH_4S;
@@ -442,18 +441,18 @@ TEST_CASE("FadeParamQuantity max value follows fadeLengthMode", "[IntermixFade][
 		REQUIRE(pq->getMaxValue() == Catch::Approx(60.0f).margin(0.001f));
 	}
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Expander fade time: param value sent to expSetFade as seconds", "[IntermixFade][fade-time]") {
+	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
 	// FadeParamQuantity::getMaxValue() dynamically scales the knob to [0, maxFade],
 	// so getValue() already returns seconds. The expander must NOT multiply by maxFade
 	// again: v[i] = getValue() * maxFade would make a 5s knob send 75s in 15s mode.
 
 	SECTION("15s mode (default): 5s knob position sends 5s") {
 		auto* mock = new CapturingIntermixMock<8>();
-		auto* fade = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+		auto* fade = mods.create("IntermixFade");
 
 		mock->rightExpander.module = fade;
 		fade->leftExpander.module = mock;
@@ -473,13 +472,12 @@ TEST_CASE("Expander fade time: param value sent to expSetFade as seconds", "[Int
 		// Bug: receives 5.0 * 15 = 75.0. Correct: receives 5.0.
 		REQUIRE(mock->lastFadeIn[0] == Catch::Approx(5.0f).margin(0.001f));
 
-		Test::destroyModule(fade);
 		delete mock;
 	}
 
 	SECTION("4s mode: 2s knob position sends 2s") {
 		auto* mock = new CapturingIntermixMock<8>();
-		auto* fade = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+		auto* fade = mods.create("IntermixFade");
 
 		mock->rightExpander.module = fade;
 		fade->leftExpander.module = mock;
@@ -498,13 +496,12 @@ TEST_CASE("Expander fade time: param value sent to expSetFade as seconds", "[Int
 		// Bug: receives 2.0 * 4 = 8.0. Correct: receives 2.0.
 		REQUIRE(mock->lastFadeIn[0] == Catch::Approx(2.0f).margin(0.001f));
 
-		Test::destroyModule(fade);
 		delete mock;
 	}
 
 	SECTION("60s mode: 10s knob position sends 10s") {
 		auto* mock = new CapturingIntermixMock<8>();
-		auto* fade = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+		auto* fade = mods.create("IntermixFade");
 
 		mock->rightExpander.module = fade;
 		fade->leftExpander.module = mock;
@@ -523,7 +520,6 @@ TEST_CASE("Expander fade time: param value sent to expSetFade as seconds", "[Int
 		// Bug: receives 10.0 * 60 = 600.0. Correct: receives 10.0.
 		REQUIRE(mock->lastFadeOut[0] == Catch::Approx(10.0f).margin(0.001f));
 
-		Test::destroyModule(fade);
 		delete mock;
 	}
 }

@@ -8,7 +8,8 @@ SYNC_MODEL(modelPile, "Pile");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Pile]") {
-	PileModule* m = Test::createModule<PileModule>("Pile");
+	Test::ModuleScaffold<PileModule> mods;
+	PileModule* m = mods.create("Pile");
 	PileWidget* mw = Test::createWidget<PileWidget>("Pile");
 
 	REQUIRE(m != nullptr);
@@ -16,11 +17,11 @@ TEST_CASE("Construction and initialization", "[Pile]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Pile][JSON]") {
-	auto module = Test::createModule<PileModule>("Pile");
+	Test::ModuleScaffold<PileModule> mods;
+	auto module = mods.create("Pile");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -43,11 +44,11 @@ TEST_CASE("Preset JSON null-guards", "[Pile][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[JSON][Pile]") {
-	auto module = Test::createModule<PileModule>("Pile");
+	Test::ModuleScaffold<PileModule> mods;
+	auto module = mods.create("Pile");
 	module->panelTheme = 1;
 	module->currentVoltage = 7.5f;
 	module->range = RANGE::BI_5V;
@@ -55,7 +56,7 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Pile]") {
 	json_t* rootJ = module->dataToJson();
 	REQUIRE(rootJ != nullptr);
 	
-	auto moduleNew = Test::createModule<PileModule>("Pile");
+	auto moduleNew = mods.create("Pile");
 	moduleNew->dataFromJson(rootJ);
 	
 	REQUIRE(moduleNew->panelTheme == 1);
@@ -63,13 +64,12 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Pile]") {
 	REQUIRE(moduleNew->range == RANGE::BI_5V);
 	
 	json_decref(rootJ);
-	Test::destroyModule(moduleNew);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Increment and decrement", "[Pile]") {
-	auto module = Test::createModule<PileModule>("Pile");
+	Test::ModuleScaffold<PileModule> mods;
+	auto module = mods.create("Pile");
 
 	SECTION("Increment increases voltage") {
 		module->params[PileModule::PARAM_STEP].setValue(1.0f);
@@ -146,11 +146,11 @@ TEST_CASE("Increment and decrement", "[Pile]") {
 		REQUIRE(module->getCurrentVoltage() == Catch::Approx(1.5f).margin(0.01f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Voltage range clamping", "[Pile]") {
-	auto module = Test::createModule<PileModule>("Pile");
+	Test::ModuleScaffold<PileModule> mods;
+	auto module = mods.create("Pile");
 
 	SECTION("UNI_10V range clamps to 0..10V") {
 		module->range = RANGE::UNI_10V;
@@ -267,11 +267,11 @@ TEST_CASE("Voltage range clamping", "[Pile]") {
 		REQUIRE(module->getCurrentVoltage() >= 10.0f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Reset input", "[Pile]") {
-	auto module = Test::createModule<PileModule>("Pile");
+	Test::ModuleScaffold<PileModule> mods;
+	auto module = mods.create("Pile");
 
 	SECTION("Reset input sets voltage") {
 		module->currentVoltage = 5.0f;
@@ -308,11 +308,11 @@ TEST_CASE("Reset input", "[Pile]") {
 		REQUIRE(module->getCurrentVoltage() == 7.0f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Slew limiting", "[Pile]") {
-	auto module = Test::createModule<PileModule>("Pile");
+	Test::ModuleScaffold<PileModule> mods;
+	auto module = mods.create("Pile");
 
 	SECTION("No slew produces instant changes") {
 		module->params[PileModule::PARAM_STEP].setValue(5.0f);
@@ -396,11 +396,11 @@ TEST_CASE("Slew limiting", "[Pile]") {
 		REQUIRE(output <= 5.0f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Step size parameter", "[Pile]") {
-	auto module = Test::createModule<PileModule>("Pile");
+	Test::ModuleScaffold<PileModule> mods;
+	auto module = mods.create("Pile");
 
 	SECTION("Different step sizes") {
 		module->params[PileModule::PARAM_SLEW].setValue(0.0f);
@@ -436,11 +436,11 @@ TEST_CASE("Step size parameter", "[Pile]") {
 		REQUIRE(module->getCurrentVoltage() == Catch::Approx(5.1f).margin(0.01f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Output voltage", "[Pile]") {
-	auto module = Test::createModule<PileModule>("Pile");
+	Test::ModuleScaffold<PileModule> mods;
+	auto module = mods.create("Pile");
 
 	SECTION("Output matches current voltage without slew") {
 		module->params[PileModule::PARAM_SLEW].setValue(0.0f);
@@ -464,7 +464,6 @@ TEST_CASE("Output voltage", "[Pile]") {
 		REQUIRE(output == Catch::Approx(internal).margin(0.1f));
 	}
 
-	Test::destroyModule(module);
 }
 
 // Regression test:
@@ -479,9 +478,10 @@ TEST_CASE("Output voltage", "[Pile]") {
 // inside dataFromJson() so that the slew limiter starts from the
 // correct value.
 TEST_CASE("No slew applied to output immediately after loading from preset", "[JSON][Pile]") {
+	Test::ModuleScaffold<PileModule> mods;
 	const float TARGET_VOLTAGE = 7.5f;
 
-	auto module = Test::createModule<PileModule>("Pile");
+	auto module = mods.create("Pile");
 
 	SECTION("Output equals restored voltage on first process after load, even with max slew") {
 		// Save state with a known voltage.
@@ -491,7 +491,7 @@ TEST_CASE("No slew applied to output immediately after loading from preset", "[J
 
 		// Create a new module and set the slew knob to maximum so that
 		// any slew limiter offset would be very visible.
-		auto moduleNew = Test::createModule<PileModule>("Pile");
+		auto moduleNew = mods.create("Pile");
 		moduleNew->params[PileModule::PARAM_SLEW].setValue(5.0f); // maximum slew
 
 		// Load the preset.  Before the fix, slewLimiter.out would stay at 0
@@ -508,8 +508,6 @@ TEST_CASE("No slew applied to output immediately after loading from preset", "[J
 		float output = moduleNew->outputs[PileModule::OUTPUT].getVoltage();
 		REQUIRE(output == Catch::Approx(TARGET_VOLTAGE).margin(0.01f));
 
-		Test::destroyModule(moduleNew);
 	}
 
-	Test::destroyModule(module);
 }

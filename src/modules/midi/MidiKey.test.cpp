@@ -21,16 +21,17 @@ Test::TestContext<SceneEx> testContext;
 
 
 TEST_CASE("Construction and initialization", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 	MidiKeyWidget* mw = Test::createWidget<MidiKeyWidget>(m);
 
 	Test::registerModule(m, mw);
 	Test::unregisterModule(m, mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[MidiKey][JSON]") {
-	auto module = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	auto module = mods.create("MidiKey");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -53,11 +54,11 @@ TEST_CASE("Preset JSON null-guards", "[MidiKey][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Preset loading", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 	Test::registerModule(m);
 
 	json_error_t jerr;
@@ -67,14 +68,14 @@ TEST_CASE("Preset loading", "[MidiKey]") {
 	json_decref(moduleJ);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Legacy preset migrates cc/note into the tracking processor", "[MidiKey][JSON]") {
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
 	// MidiKey.vcvm.test.h is in the pre-trackingProcessor format: the MIDI
 	// assignment lives in per-map "cc"/"note" fields instead of a
 	// "trackingProcessor" object. dataFromJson() must migrate it.
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	json_error_t jerr;
 	json_t* moduleJ = json_loads(MidiKey_vcvm, 0, &jerr);
@@ -102,11 +103,11 @@ TEST_CASE("Legacy preset migrates cc/note into the tracking processor", "[MidiKe
 	REQUIRE(m->slot[8].key == -1);
 
 	json_decref(moduleJ);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[MidiKey][JSON]") {
-	MidiKeyModule<>* src = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* src = mods.create("MidiKey");
 
 	// Build a state that spans both dimensions: a modifier row with a MIDI
 	// source, a channel row with MIDI + key + mods, and a bound module id.
@@ -120,7 +121,7 @@ TEST_CASE("JSON round-trip preserves state", "[MidiKey][JSON]") {
 	json_t* rootJ = src->dataToJson();
 	REQUIRE(rootJ != nullptr);
 
-	MidiKeyModule<>* dst = Test::createModule<MidiKeyModule<>>("MidiKey");
+	MidiKeyModule<>* dst = mods.create("MidiKey");
 	dst->dataFromJson(rootJ);
 
 	auto shiftMap = dst->trackingProcessor.getMap(dst->getMapId(ID_SHIFT));
@@ -137,14 +138,13 @@ TEST_CASE("JSON round-trip preserves state", "[MidiKey][JSON]") {
 	REQUIRE(dst->mapLen == src->mapLen);
 
 	json_decref(rootJ);
-	Test::destroyModule(dst);
-	Test::destroyModule(src);
 }
 
 TEST_CASE("dataFromJson tolerates an oversized maps array", "[MidiKey][JSON]") {
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
 	// A preset written by a build with more channels (or a hand-edited patch)
 	// must not write past the end of the slot vector.
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	json_t* rootJ = json_object();
 	json_t* mapsJ = json_array();
@@ -161,13 +161,13 @@ TEST_CASE("dataFromJson tolerates an oversized maps array", "[MidiKey][JSON]") {
 	REQUIRE_NOTHROW(m->dataFromJson(rootJ));
 
 	json_decref(rootJ);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Legacy dataFromJson rejects out-of-range cc/note numbers", "[MidiKey][JSON]") {
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
 	// cc/note from a corrupt preset index 128-element vectors in the tracking
 	// processor, so they must be range-checked before use.
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	json_t* rootJ = json_object();
 	json_t* mapsJ = json_array();
@@ -189,11 +189,11 @@ TEST_CASE("Legacy dataFromJson rejects out-of-range cc/note numbers", "[MidiKey]
 	REQUIRE(m->trackingProcessor.getMap(m->getMapId(ID_CTRL)).type == MidiTrackingType::NONE);
 
 	json_decref(rootJ);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Map ID inversion", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	// Check negative modifier IDs
 	int negIds[] = { ID_CTRL, ID_ALT, ID_SHIFT };
@@ -215,13 +215,13 @@ TEST_CASE("Map ID inversion", "[MidiKey]") {
 		REQUIRE(m->getMapIdRev(chanMapIds[i]) == i);
 	}
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Map IDs are unique across modifiers and channels", "[MidiKey]") {
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
 	// The existing "Map ID inversion" case checks round-tripping, which cannot
 	// detect two distinct ids folding onto the same map id.
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	std::set<uint16_t> seen;
 	int ids[] = { ID_CTRL, ID_ALT, ID_SHIFT, 0, 1, 2, 3, 15 };
@@ -234,11 +234,11 @@ TEST_CASE("Map IDs are unique across modifiers and channels", "[MidiKey]") {
 		REQUIRE(mapId < 16 + 3);
 	}
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Slot indexing does not alias distinct ids", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	// Writing channel 0 must not be observable through any modifier row, and
 	// the highest channel must stay inside the backing vector.
@@ -253,15 +253,15 @@ TEST_CASE("Slot indexing does not alias distinct ids", "[MidiKey]") {
 	// The last channel must map inside the vector, not one past the end.
 	REQUIRE(m->getMapId(15) < m->slot.v.size());
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("disableLearn() without an id disarms the tracking processor", "[MidiKey]") {
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
 	// Reachable from enableLearn(id) when id == mapLen, i.e. clicking the
 	// trailing "Mapping..." row while another row is already armed. If the
 	// processor stays armed, the next incoming CC/note is swallowed as a learn
 	// assignment instead of being dispatched as a key event.
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	m->enableLearn(3);
 	REQUIRE(m->learningId == 3);
@@ -272,11 +272,11 @@ TEST_CASE("disableLearn() without an id disarms the tracking processor", "[MidiK
 	REQUIRE(m->learningId == -1);
 	REQUIRE(m->trackingProcessor.getMapLearn() == false);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("learnKey() is a no-op when no learn session is active", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	REQUIRE(m->learningId == -1);
 	m->slot[0].key = GLFW_KEY_Q;
@@ -286,11 +286,11 @@ TEST_CASE("learnKey() is a no-op when no learn session is active", "[MidiKey]") 
 
 	REQUIRE(m->slot[0].key == GLFW_KEY_Q);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("learnKey() masks unsupported modifier bits", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	m->enableLearn(0);
 	m->trackingProcessor.disableMapLearn();
@@ -301,14 +301,14 @@ TEST_CASE("learnKey() masks unsupported modifier bits", "[MidiKey]") {
 	REQUIRE((m->slot[0].mods & RACK_MOD_CTRL) != 0);
 	REQUIRE((m->slot[0].mods & GLFW_MOD_SHIFT) != 0);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("onReset clears active state", "[MidiKey]") {
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
 	// A latched modifier ORs itself into every subsequent key event, so reset
 	// must clear it. Reachable when a note-off is lost (device unplugged,
 	// port switched, patch reloaded mid-hold).
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	m->processMapUpdate(MidiTrackingType::NOTE, m->getMapId(ID_CTRL), 127);
 	REQUIRE(m->slot[ID_CTRL].active == true);
@@ -318,15 +318,15 @@ TEST_CASE("onReset clears active state", "[MidiKey]") {
 
 	REQUIRE(m->slot[ID_CTRL].active == false);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("onReset clears tracked NRPN/14-bit CC state", "[MidiKey][reset]") {
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
 	// MidiKey itself only maps notes and plain CCs, so this state never reaches
 	// its handler -- but it lives in the shared MidiProcessor, and leaving it
 	// armed across a reset means the first CC 6 (or a 14-bit LSB) after the
 	// reset is decoded against a parameter selected before it.
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	MidiKeyModule<>* m = mods.create("MidiKey");
 	auto& mp = m->trackingProcessor.midiProcessor;
 
 	// Arm an NRPN parameter and store a 14-bit CC MSB on channel 0.
@@ -342,11 +342,11 @@ TEST_CASE("onReset clears tracked NRPN/14-bit CC state", "[MidiKey][reset]") {
 	REQUIRE(mp.ccNrpnParam[0] == -1);
 	REQUIRE(mp.cc14bitMsb[0][5] == -1);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("clearMaps clears active state", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	m->processMapUpdate(MidiTrackingType::NOTE, m->getMapId(ID_SHIFT), 127);
 	m->slot[0].key = GLFW_KEY_A;
@@ -359,11 +359,11 @@ TEST_CASE("clearMaps clears active state", "[MidiKey]") {
 	REQUIRE(m->slot[ID_SHIFT].active == false);
 	REQUIRE(m->slot[0].active == false);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("A latched modifier does not leak into later key events", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	// Modifier goes down and is then cleared by the user (unmap), simulating
 	// the note-off never arriving.
@@ -377,11 +377,11 @@ TEST_CASE("A latched modifier does not leak into later key events", "[MidiKey]")
 	auto e = std::get<0>(m->keyEventQueue.shift());
 	REQUIRE((e.mods & RACK_MOD_CTRL) == 0);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Modifier slots combine into emitted key events", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 	m->slot[1].key = GLFW_KEY_A;
 
 	SECTION("Live modifier rows are ORed in") {
@@ -406,11 +406,11 @@ TEST_CASE("Modifier slots combine into emitted key events", "[MidiKey]") {
 		REQUIRE((e.mods & RACK_MOD_CTRL) == 0);
 	}
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Note-off emits a release and repeats are filtered", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 	m->slot[1].key = GLFW_KEY_A;
 
 	// Press
@@ -431,11 +431,11 @@ TEST_CASE("Note-off emits a release and repeats are filtered", "[MidiKey]") {
 	m->processMapUpdate(MidiTrackingType::NOTE, m->getMapId(1), 0);
 	REQUIRE(m->keyEventQueue.size() == 0);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Unmapped slots emit nothing", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	// Slot has a MIDI source but no key assigned yet.
 	REQUIRE(m->slot[4].key == -1);
@@ -443,11 +443,11 @@ TEST_CASE("Unmapped slots emit nothing", "[MidiKey]") {
 
 	REQUIRE(m->keyEventQueue.size() == 0);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("updateMapLen tracks the last non-empty slot", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	// Fresh module: one empty "Mapping..." row.
 	REQUIRE(m->mapLen == 1);
@@ -470,11 +470,11 @@ TEST_CASE("updateMapLen tracks the last non-empty slot", "[MidiKey]") {
 		REQUIRE(m->mapLen == 16);
 	}
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("clearMap(midiOnly) keeps the key binding", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	m->trackingProcessor.setMap(MidiTrackingType::CC, m->getMapId(0), 11);
 	m->slot[0].key = GLFW_KEY_A;
@@ -492,11 +492,11 @@ TEST_CASE("clearMap(midiOnly) keeps the key binding", "[MidiKey]") {
 		REQUIRE(m->slot[0].mods == 0);
 	}
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Learn assigns the incoming MIDI source to the armed slot", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	SECTION("Note") {
 		m->enableLearn(0);
@@ -532,11 +532,11 @@ TEST_CASE("Learn assigns the incoming MIDI source to the armed slot", "[MidiKey]
 		REQUIRE(m->learningId == -1);
 	}
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Relearning a slot releases the previous MIDI source", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	m->enableLearn(0);
 	m->trackingProcessor.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
@@ -559,11 +559,11 @@ TEST_CASE("Relearning a slot releases the previous MIDI source", "[MidiKey]") {
 	m->process(Test::makeProcessArgs(3));
 	REQUIRE(m->keyEventQueue.size() == 0);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("processBypass drains queued MIDI without emitting key events", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 
 	// Learn note 60 -> slot 0, then bind it to a key, so a normal process()
 	// of note 60 would enqueue a key event.
@@ -583,11 +583,11 @@ TEST_CASE("processBypass drains queued MIDI without emitting key events", "[Midi
 	REQUIRE(m->trackingProcessor.getInput().size() == 0);
 	REQUIRE(m->keyEventQueue.size() == 0);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Enable/disable learn and learnKey behavior", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 	// Enable learn, then disable the tracking processor learn state and call learnKey
 	m->enableLearn(0);
 	REQUIRE(m->learningId == 0);
@@ -601,11 +601,11 @@ TEST_CASE("Enable/disable learn and learnKey behavior", "[MidiKey]") {
 	REQUIRE(m->learningId == -1);
 	// mapLen should have increased at least to cover slot 0
 	REQUIRE(m->mapLen >= 1);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("ProcessMapUpdate toggles modifier slots and emits key events", "[MidiKey]") {
-	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::ModuleScaffold<MidiKeyModule<>> mods;
+	MidiKeyModule<>* m = mods.create("MidiKey");
 	// Test modifier toggle: CTRL (-4 -> mapId 0)
 	m->processMapUpdate(MidiTrackingType::NOTE, m->getMapId(ID_CTRL), 1);
 	REQUIRE(m->slot[ID_CTRL].active == true);
@@ -646,5 +646,4 @@ TEST_CASE("ProcessMapUpdate toggles modifier slots and emits key events", "[Midi
 		Test::unregisterModule(m, mw);
 	}
 
-	Test::destroyModule(m);
 }

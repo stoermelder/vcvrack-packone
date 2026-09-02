@@ -7,7 +7,8 @@ SYNC_MODEL(modelGlue, "Glue");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Glue]") {
-	GlueModule* m = Test::createModule<GlueModule>("Glue");
+	Test::ModuleScaffold<GlueModule> mods;
+	GlueModule* m = mods.create("Glue");
 	GlueWidget* mw = Test::createWidget<GlueWidget>("Glue");
 
 	REQUIRE(m != nullptr);
@@ -15,11 +16,11 @@ TEST_CASE("Construction and initialization", "[Glue]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Glue][JSON]") {
-	auto module = Test::createModule<GlueModule>("Glue");
+	Test::ModuleScaffold<GlueModule> mods;
+	auto module = mods.create("Glue");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -42,12 +43,12 @@ TEST_CASE("Preset JSON null-guards", "[Glue][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[Glue][JSON]") {
-	GlueModule* m = Test::createModule<GlueModule>("Glue");
-	GlueModule* m2 = Test::createModule<GlueModule>("Glue");
+	Test::ModuleScaffold<GlueModule> mods;
+	GlueModule* m = mods.create("Glue");
+	GlueModule* m2 = mods.create("Glue");
 
 	SECTION("Default label settings round-trip") {
 		// Distinct, non-default values for every scalar stored to JSON
@@ -160,6 +161,4 @@ TEST_CASE("JSON round-trip preserves state", "[Glue][JSON]") {
 		}
 	}
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
 }

@@ -7,7 +7,8 @@ SYNC_MODEL(modelSail, "Sail");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Sail]") {
-	SailModule* m = Test::createModule<SailModule>("Sail");
+	Test::ModuleScaffold<SailModule> mods;
+	SailModule* m = mods.create("Sail");
 	SailWidget* mw = Test::createWidget<SailWidget>("Sail");
 
 	REQUIRE(m != nullptr);
@@ -15,11 +16,11 @@ TEST_CASE("Construction and initialization", "[Sail]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Sail][JSON]") {
-	auto module = Test::createModule<SailModule>("Sail");
+	Test::ModuleScaffold<SailModule> mods;
+	auto module = mods.create("Sail");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -42,5 +43,4 @@ TEST_CASE("Preset JSON null-guards", "[Sail][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }

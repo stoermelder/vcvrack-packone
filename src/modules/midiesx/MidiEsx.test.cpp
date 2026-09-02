@@ -54,7 +54,8 @@ static int countTransitions(const std::vector<float>& bits) {
 
 
 TEST_CASE("Construction and initialization", "[MidiEsx]") {
-	MidiEsxModule* m = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* m = mods.create("MidiEsx");
 	MidiEsxWidget* mw = Test::createWidget<MidiEsxWidget>("MidiEsx");
 
 	REQUIRE(m != nullptr);
@@ -62,11 +63,11 @@ TEST_CASE("Construction and initialization", "[MidiEsx]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[MidiEsx][JSON]") {
-	auto module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	auto module = mods.create("MidiEsx");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -89,12 +90,12 @@ TEST_CASE("Preset JSON null-guards", "[MidiEsx][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Encoding creates fractional samples correctly (approx)", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 
 	// bytes: 0x90 (10010000)=2, 60 (00111100)=4, 100 (01100100)=3 -> total 9
 	auto msg = Test::makeMidiMessage(0x9, 0, 60, 100);
@@ -110,12 +111,12 @@ TEST_CASE("Encoding creates fractional samples correctly (approx)", "[MidiEsx]")
 
 	REQUIRE(bitWeightReal == Catch::Approx(bitWeight).margin(0.1f));
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Note On message encoding", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Note On: status=0x90, note=60, velocity=100
 	auto msg = Test::makeMidiMessage(0x9, 0, 60, 100);
@@ -130,12 +131,12 @@ TEST_CASE("Note On message encoding", "[MidiEsx]") {
 	int transitions = countTransitions(samples);
 	REQUIRE(transitions > 5);  // Should have many transitions
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Control Change message encoding", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Control Change: status=0xB0, controller=7 (volume), value=127
 	auto msg = Test::makeMidiMessage(0xB, 0, 7, 127);
@@ -148,12 +149,12 @@ TEST_CASE("Control Change message encoding", "[MidiEsx]") {
 	int transitions = countTransitions(samples);
 	REQUIRE(transitions > 5);
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Program Change message encoding", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Program Change: status=0xC0, program=42 (second arg unused for PC)
 	// makeMidiMessage requires b1 and b2, so we pass 42 as b1 and 0 as b2
@@ -167,12 +168,12 @@ TEST_CASE("Program Change message encoding", "[MidiEsx]") {
 	// At least 2 bytes worth of data (32 bits)
 	REQUIRE(verifyBitStreamLength(samples, 2));
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("SysEx message encoding with correct F0 and F7 framing", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Create a SysEx message: F0 7E 00 09 01 F7 (identity request)
 	rack::midi::Message msg;
@@ -198,12 +199,12 @@ TEST_CASE("SysEx message encoding with correct F0 and F7 framing", "[MidiEsx]") 
 	REQUIRE(samples[0] > 0.5f);  // First bit should be 1 (start bit)
 	REQUIRE(samples[1] > 0.5f);  // Second start bit
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("SysEx manufacturer-specific message encoding", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Create a manufacturer-specific SysEx message
 	// F0 <manuf ID> <data> F7
@@ -229,12 +230,12 @@ TEST_CASE("SysEx manufacturer-specific message encoding", "[MidiEsx]") {
 	int transitions = countTransitions(samples);
 	REQUIRE(transitions > 15);
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Multiple messages queued and encoded sequentially", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Queue two Note On messages
 	auto msg1 = Test::makeMidiMessage(0x9, 0, 60, 100);
@@ -253,12 +254,12 @@ TEST_CASE("Multiple messages queued and encoded sequentially", "[MidiEsx]") {
 	int transitions = countTransitions(samples);
 	REQUIRE(transitions > 10);
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Buffer overflow protection", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Each message encodes to 3 bytes * 16 = 48 bits, so only ~42 fit in the
 	// 2048-slot buffer. Sending 50 must trigger the capacity guard in
@@ -283,12 +284,12 @@ TEST_CASE("Buffer overflow protection", "[MidiEsx]") {
 	auto samples = collectSamples(module, 4096);
 	REQUIRE(samples.size() > 0);
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Locked state prevents data loss during encoding", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	auto msg = Test::makeMidiMessage(0x9, 0, 60, 100);
 	module->onMessage(0, msg);
@@ -304,12 +305,12 @@ TEST_CASE("Locked state prevents data loss during encoding", "[MidiEsx]") {
 	int transitions = countTransitions(samples);
 	REQUIRE(transitions > 3);
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Multi-port independent encoding", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Send different messages to different ports
 	auto msg0 = Test::makeMidiMessage(0x9, 0, 60, 100);
@@ -335,12 +336,12 @@ TEST_CASE("Multi-port independent encoding", "[MidiEsx]") {
 	REQUIRE(trans0 > 5);
 	REQUIRE(trans1 > 5);
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Empty port returns zero samples", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Don't send any message, just collect samples
 	std::vector<float> samples;
@@ -353,12 +354,12 @@ TEST_CASE("Empty port returns zero samples", "[MidiEsx]") {
 		REQUIRE(s == 0.0f);
 	}
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("SysEx long message encoding and streaming", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Create a longer SysEx message (e.g., patch dump)
 	rack::midi::Message msg;
@@ -382,7 +383,6 @@ TEST_CASE("SysEx long message encoding and streaming", "[MidiEsx]") {
 	int trans = countTransitions(samples);
 	REQUIRE(trans > 50);
 	
-	Test::destroyModule(module);
 }
 
 
@@ -391,7 +391,8 @@ TEST_CASE("SysEx long message encoding and streaming", "[MidiEsx]") {
 // =====================================================
 
 TEST_CASE("Locked state returns zero from nextBit", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	auto msg = Test::makeMidiMessage(0x9, 0, 60, 100);
 	module->onMessage(0, msg);
@@ -409,12 +410,12 @@ TEST_CASE("Locked state returns zero from nextBit", "[MidiEsx]") {
 	bit = module->port[0].nextBit();
 	REQUIRE(bit == 1.f);  // First queued bit is a start bit (1)
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Sample rate check in process() rejects non-48kHz", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	auto msg = Test::makeMidiMessage(0x9, 0, 60, 100);
 	module->onMessage(0, msg);
@@ -429,12 +430,12 @@ TEST_CASE("Sample rate check in process() rejects non-48kHz", "[MidiEsx]") {
 	// Nothing should have been consumed
 	REQUIRE(module->port[0].bitQueue.size() == sizeBefore);
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Process outputs correct voltage levels", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	auto msg = Test::makeMidiMessage(0x9, 0, 60, 100);
 	module->onMessage(0, msg);
@@ -449,7 +450,6 @@ TEST_CASE("Process outputs correct voltage levels", "[MidiEsx]") {
 	// A port with no queued data outputs 0V.
 	REQUIRE(module->outputs[MidiEsxModule::OUTPUT_ENC + 1].getVoltage() == 0.f);
 
-	Test::destroyModule(module);
 }
 
 
@@ -458,7 +458,8 @@ TEST_CASE("Process outputs correct voltage levels", "[MidiEsx]") {
 // =====================================================
 
 TEST_CASE("Note Off message encoding (0x8n)", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Note Off: status=0x80, note=60, velocity=0
 	auto msg = Test::makeMidiMessage(0x8, 0, 60, 0);
@@ -474,12 +475,12 @@ TEST_CASE("Note Off message encoding (0x8n)", "[MidiEsx]") {
 	int trans = countTransitions(samples);
 	REQUIRE(trans > 5);
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Polyphonic Aftertouch encoding (0xAn)", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Poly Aftertouch: status=0xA0, note=60, pressure=100
 	auto msg = Test::makeMidiMessage(0xA, 0, 60, 100);
@@ -495,12 +496,12 @@ TEST_CASE("Polyphonic Aftertouch encoding (0xAn)", "[MidiEsx]") {
 	int trans = countTransitions(samples);
 	REQUIRE(trans > 5);
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Pitch Bend encoding (0xEn)", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Pitch Bend: status=0xE0, MSB=0x00, LSB=0x40 (center)
 	rack::midi::Message msg;
@@ -519,12 +520,12 @@ TEST_CASE("Pitch Bend encoding (0xEn)", "[MidiEsx]") {
 	int trans = countTransitions(samples);
 	REQUIRE(trans > 5);
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Channel Pressure encoding (0xDn)", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Channel Pressure: status=0xD0, pressure=100
 	auto msg = Test::makeMidiMessage(0xD, 0, 100, 0);
@@ -540,12 +541,12 @@ TEST_CASE("Channel Pressure encoding (0xDn)", "[MidiEsx]") {
 	int trans = countTransitions(samples);
 	REQUIRE(trans > 3);
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Real-time Clock message encoding (0xF8)", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Real-time messages are single-byte
 	rack::midi::Message msg;
@@ -561,12 +562,12 @@ TEST_CASE("Real-time Clock message encoding (0xF8)", "[MidiEsx]") {
 	REQUIRE(samples[0] > 0.5f);
 	REQUIRE(samples[1] > 0.5f);
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Real-time Active Sensing encoding (0xFE)", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	rack::midi::Message msg;
 	msg.setSize(1);
@@ -581,12 +582,12 @@ TEST_CASE("Real-time Active Sensing encoding (0xFE)", "[MidiEsx]") {
 	int trans = countTransitions(samples);
 	REQUIRE(trans >= 1);
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Single-byte message encoding", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	rack::midi::Message msg;
 	msg.setSize(1);
@@ -602,12 +603,12 @@ TEST_CASE("Single-byte message encoding", "[MidiEsx]") {
 	int trans = countTransitions(samples);
 	REQUIRE(trans >= 1);
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Two-byte message encoding", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// e.g., Song Position Pointer (F2) is 3 bytes total
 	// e.g., Tune Request (F6) is 1 byte
@@ -626,7 +627,6 @@ TEST_CASE("Two-byte message encoding", "[MidiEsx]") {
 	int trans = countTransitions(samples);
 	REQUIRE(trans > 3);
 	
-	Test::destroyModule(module);
 }
 
 
@@ -635,7 +635,8 @@ TEST_CASE("Two-byte message encoding", "[MidiEsx]") {
 // =====================================================
 
 TEST_CASE("Empty message (0 bytes)", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	rack::midi::Message msg;
 	msg.setSize(0);
@@ -648,12 +649,12 @@ TEST_CASE("Empty message (0 bytes)", "[MidiEsx]") {
 	// However, nextBit() may return 0 from empty queue which still gets pushed
 	REQUIRE(samples.size() <= 1);
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("onMessage delegates to correct port index", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	auto msg = Test::makeMidiMessage(0x9, 0, 60, 100);
 	
@@ -665,12 +666,12 @@ TEST_CASE("onMessage delegates to correct port index", "[MidiEsx]") {
 	// Port 0 should be empty
 	REQUIRE(module->port[0].bitQueue.size() == 0);
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Sequential messages on different ports are independent", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	auto msg0 = Test::makeMidiMessage(0x9, 0, 60, 100);
 	auto msg1 = Test::makeMidiMessage(0xB, 0, 7, 127);
@@ -695,12 +696,12 @@ TEST_CASE("Sequential messages on different ports are independent", "[MidiEsx]")
 	int trans7 = countTransitions(port7);
 	REQUIRE(trans0 != trans7);  // Different messages = different patterns
 	
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("onBypass clears queued data and blocks new messages", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 
 	auto msg = Test::makeMidiMessage(0x9, 0, 60, 100);
 	module->onMessage(0, msg);
@@ -718,12 +719,12 @@ TEST_CASE("onBypass clears queued data and blocks new messages", "[MidiEsx]") {
 	module->onMessage(0, msg);
 	REQUIRE(module->port[0].bitQueue.size() == 0);
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("onUnBypass restores normal message encoding", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 
 	Module::BypassEvent be;
 	module->onBypass(be);
@@ -737,12 +738,12 @@ TEST_CASE("onUnBypass restores normal message encoding", "[MidiEsx]") {
 	module->onMessage(0, msg);
 	REQUIRE(module->port[0].bitQueue.size() > 0);
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Module reset does not clear bit queues by default", "[MidiEsx]") {
-	MidiEsxModule* module = Test::createModule<MidiEsxModule>("MidiEsx");
+	Test::ModuleScaffold<MidiEsxModule> mods;
+	MidiEsxModule* module = mods.create("MidiEsx");
 	
 	// Queue a message
 	auto msg = Test::makeMidiMessage(0x9, 0, 60, 100);
@@ -759,5 +760,4 @@ TEST_CASE("Module reset does not clear bit queues by default", "[MidiEsx]") {
 	size_t sizeAfter = module->port[0].bitQueue.size();
 	REQUIRE(sizeAfter > 0);
 	
-	Test::destroyModule(module);
 }

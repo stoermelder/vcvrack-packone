@@ -26,7 +26,8 @@ static void clockEdge(MazeMod* module, int frame = 200) {
 }
 
 TEST_CASE("Construction and initialization", "[Maze]") {
-	MazeMod* m = Test::createModule<MazeMod>("Maze");
+	Test::ModuleScaffold<MazeMod> mods;
+	MazeMod* m = mods.create("Maze");
 	MazeWidget32* mw = Test::createWidget<MazeWidget32>("Maze");
 
 	REQUIRE(m != nullptr);
@@ -34,11 +35,11 @@ TEST_CASE("Construction and initialization", "[Maze]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Maze][JSON]") {
-	auto module = Test::createModule<MazeMod>("Maze");
+	Test::ModuleScaffold<MazeMod> mods;
+	auto module = mods.create("Maze");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -61,12 +62,12 @@ TEST_CASE("Preset JSON null-guards", "[Maze][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[JSON][Maze]") {
-	MazeMod* m = Test::createModule<MazeMod>("Maze");
-	MazeMod* m2 = Test::createModule<MazeMod>("Maze");
+	Test::ModuleScaffold<MazeMod> mods;
+	MazeMod* m = mods.create("Maze");
+	MazeMod* m2 = mods.create("Maze");
 
 	SECTION("Scalar settings round-trip") {
 		// Non-default values (defaults: panelTheme 0, usedSize 8, normalizePorts true)
@@ -170,13 +171,12 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Maze]") {
 		REQUIRE(m2->ratchetingProb[2] == Catch::Approx(0.2f));
 	}
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
 }
 
 
 TEST_CASE("Reset clears grid and restores cursor defaults", "[Maze]") {
-	auto module = Test::createModule<MazeMod>("Maze");
+	Test::ModuleScaffold<MazeMod> mods;
+	auto module = mods.create("Maze");
 
 	module->grid[2][3] = GRIDSTATE::ON;
 	module->xPos[0] = 5;
@@ -209,11 +209,11 @@ TEST_CASE("Reset clears grid and restores cursor defaults", "[Maze]") {
 		REQUIRE(module->turnMode[0] == TURNMODE::NINETY);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("gridClear sets all cells to OFF with zero CV", "[Maze]") {
-	auto module = Test::createModule<MazeMod>("Maze");
+	Test::ModuleScaffold<MazeMod> mods;
+	auto module = mods.create("Maze");
 
 	module->gridSetState(0, 0, GRIDSTATE::ON, 0.5f);
 	module->gridSetState(3, 4, GRIDSTATE::RANDOM, 0.8f);
@@ -237,11 +237,11 @@ TEST_CASE("gridClear sets all cells to OFF with zero CV", "[Maze]") {
 		REQUIRE(allZero);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("gridSetState writes cell state and CV", "[Maze]") {
-	auto module = Test::createModule<MazeMod>("Maze");
+	Test::ModuleScaffold<MazeMod> mods;
+	auto module = mods.create("Maze");
 
 	module->gridSetState(5, 3, GRIDSTATE::ON, 0.75f);
 	module->gridSetState(1, 6, GRIDSTATE::RANDOM, 0.25f);
@@ -256,11 +256,11 @@ TEST_CASE("gridSetState writes cell state and CV", "[Maze]") {
 		REQUIRE(module->gridCv[1][6] == Catch::Approx(0.25f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Clock input advances cursor position", "[Maze]") {
-	auto module = Test::createModule<MazeMod>("Maze");
+	Test::ModuleScaffold<MazeMod> mods;
+	auto module = mods.create("Maze");
 	// Initial: xPos[0]=0, yPos[0]=0, xDir[0]=1 → advances to (1, 0)
 
 	warmupTimer(module);
@@ -271,11 +271,11 @@ TEST_CASE("Clock input advances cursor position", "[Maze]") {
 		REQUIRE(module->yPos[0] == 0);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Cursor wraps at grid boundary", "[Maze]") {
-	auto module = Test::createModule<MazeMod>("Maze");
+	Test::ModuleScaffold<MazeMod> mods;
+	auto module = mods.create("Maze");
 	module->xPos[0] = module->usedSize - 1;  // rightmost column
 
 	warmupTimer(module);
@@ -285,11 +285,11 @@ TEST_CASE("Cursor wraps at grid boundary", "[Maze]") {
 		REQUIRE(module->xPos[0] == 0);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Cursor stepping onto ON cell fires trigger and CV outputs", "[Maze]") {
-	auto module = Test::createModule<MazeMod>("Maze");
+	Test::ModuleScaffold<MazeMod> mods;
+	auto module = mods.create("Maze");
 	// Cursor at (0,0) moving right → next cell is (1,0)
 	module->gridSetState(1, 0, GRIDSTATE::ON, 0.5f);  // UNI_3V: rescale(0.5, 0,1, 0,3) = 1.5V
 
@@ -304,11 +304,11 @@ TEST_CASE("Cursor stepping onto ON cell fires trigger and CV outputs", "[Maze]")
 		REQUIRE(module->outputs[MazeMod::CV_OUTPUT].getVoltage() == Catch::Approx(1.5f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Cursor stepping onto OFF cell produces no trigger", "[Maze]") {
-	auto module = Test::createModule<MazeMod>("Maze");
+	Test::ModuleScaffold<MazeMod> mods;
+	auto module = mods.create("Maze");
 	// All cells OFF by default
 
 	warmupTimer(module);
@@ -318,11 +318,11 @@ TEST_CASE("Cursor stepping onto OFF cell produces no trigger", "[Maze]") {
 		REQUIRE(module->outputs[MazeMod::TRIG_OUTPUT].getVoltage() == Catch::Approx(0.f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Turn trigger rotates cursor direction 90 degrees (NINETY mode)", "[Maze]") {
-	auto module = Test::createModule<MazeMod>("Maze");
+	Test::ModuleScaffold<MazeMod> mods;
+	auto module = mods.create("Maze");
 	// Initial: xDir=1, yDir=0 (right), turnMode=NINETY
 
 	REQUIRE(module->turnMode[0] == TURNMODE::NINETY);
@@ -338,11 +338,11 @@ TEST_CASE("Turn trigger rotates cursor direction 90 degrees (NINETY mode)", "[Ma
 		REQUIRE(module->yDir[0] == 1);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Turn trigger reverses direction in ONEEIGHTY mode", "[Maze]") {
-	auto module = Test::createModule<MazeMod>("Maze");
+	Test::ModuleScaffold<MazeMod> mods;
+	auto module = mods.create("Maze");
 	module->turnMode[0] = TURNMODE::ONEEIGHTY;
 
 	module->inputs[MazeMod::TURN_INPUT].channels = 1;
@@ -356,7 +356,6 @@ TEST_CASE("Turn trigger reverses direction in ONEEIGHTY mode", "[Maze]") {
 		REQUIRE(module->yDir[0] == 0);
 	}
 
-	Test::destroyModule(module);
 }
 
 // Fire a single rising edge on the given input
@@ -370,10 +369,11 @@ static void pulse(MazeMod* module, int input, int frame) {
 }
 
 TEST_CASE("Side-shift inputs nudge cursors perpendicular to travel", "[Maze]") {
+	Test::ModuleScaffold<MazeMod> mods;
 	// Heading East (xDir=1, yDir=0): SHIFT_R moves +y (down/right of travel),
 	// SHIFT_L moves -y (up/left of travel).
 	SECTION("SHIFT_R moves the cursor down (right of eastward travel)") {
-		auto module = Test::createModule<MazeMod>("Maze");
+		auto module = mods.create("Maze");
 		module->xPos[0] = 4; module->yPos[0] = 4;
 		module->xDir[0] = 1; module->yDir[0] = 0;
 
@@ -381,11 +381,10 @@ TEST_CASE("Side-shift inputs nudge cursors perpendicular to travel", "[Maze]") {
 
 		REQUIRE(module->xPos[0] == 4);
 		REQUIRE(module->yPos[0] == 5);
-		Test::destroyModule(module);
 	}
 
 	SECTION("SHIFT_L moves the cursor up (left of eastward travel)") {
-		auto module = Test::createModule<MazeMod>("Maze");
+		auto module = mods.create("Maze");
 		module->xPos[0] = 4; module->yPos[0] = 4;
 		module->xDir[0] = 1; module->yDir[0] = 0;
 
@@ -393,12 +392,12 @@ TEST_CASE("Side-shift inputs nudge cursors perpendicular to travel", "[Maze]") {
 
 		REQUIRE(module->xPos[0] == 4);
 		REQUIRE(module->yPos[0] == 3);
-		Test::destroyModule(module);
 	}
 }
 
 TEST_CASE("Reset input returns cursor to start position", "[Maze]") {
-	auto module = Test::createModule<MazeMod>("Maze");
+	Test::ModuleScaffold<MazeMod> mods;
+	auto module = mods.create("Maze");
 	module->inputs[MazeMod::RESET_INPUT].channels = 1;
 	module->inputs[MazeMod::RESET_INPUT].setVoltage(0.f);
 
@@ -416,11 +415,11 @@ TEST_CASE("Reset input returns cursor to start position", "[Maze]") {
 		REQUIRE(module->yPos[0] == module->yStartPos[0]);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("normalizePorts propagates clock from port 0 to port 1", "[Maze]") {
-	auto module = Test::createModule<MazeMod>("Maze");
+	Test::ModuleScaffold<MazeMod> mods;
+	auto module = mods.create("Maze");
 	REQUIRE(module->normalizePorts == true);
 	// CLK port 1 is not connected (channels=0)
 
@@ -437,5 +436,4 @@ TEST_CASE("normalizePorts propagates clock from port 0 to port 1", "[Maze]") {
 		REQUIRE(module->xPos[1] == xBefore1 + 1);
 	}
 
-	Test::destroyModule(module);
 }

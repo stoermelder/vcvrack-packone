@@ -6,7 +6,8 @@
 
 
 TEST_CASE("Preset JSON null-guards", "[SpliceKit][JSON]") {
-	auto module = createModule();
+	ModuleScaffold mods;
+	auto module = mods.create();
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -28,13 +29,12 @@ TEST_CASE("Preset JSON null-guards", "[SpliceKit][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("JSON roundtrip preserves scene and button mode", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	m->sceneStore.current = 3;
 	m->buttonMode = SpliceKitModule::BUTTON_MOMENTARY;
@@ -43,7 +43,7 @@ TEST_CASE("JSON roundtrip preserves scene and button mode", "[SpliceKit]") {
 
 	json_t* j = m->dataToJson();
 
-	SpliceKitModule* m2 = createModule();
+	SpliceKitModule* m2 = mods.create();
 	m2->dataFromJson(j);
 	json_decref(j);
 
@@ -54,20 +54,19 @@ TEST_CASE("JSON roundtrip preserves scene and button mode", "[SpliceKit]") {
 	REQUIRE(m2->sceneStore.isConnected(3, 5, 1) == true);  // symmetric
 	REQUIRE(m2->sceneStore.isConnected(0, 1, 5) == false);  // other scene untouched
 
-	Test::destroyModule(m2);
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("JSON roundtrip preserves MIDI maps", "[SpliceKit]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 0, 36);
 	m->trackingProcessor.setMap(MidiTrackingType::CC, 1, 74);
 
 	json_t* j = m->dataToJson();
 
-	SpliceKitModule* m2 = createModule();
+	SpliceKitModule* m2 = mods.create();
 	m2->dataFromJson(j);
 	json_decref(j);
 
@@ -79,54 +78,51 @@ TEST_CASE("JSON roundtrip preserves MIDI maps", "[SpliceKit]") {
 	REQUIRE(map1.type == MidiTrackingType::CC);
 	REQUIRE(map1.param == 74);
 
-	Test::destroyModule(m2);
-	Test::destroyModule(m);
 }
 
 
 // JSON roundtrip — additional stored properties
 
 TEST_CASE("JSON roundtrip preserves crossInstanceEnabled", "[SpliceKit][JSON]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->crossInstanceEnabled = false;
 	json_t* j = m->dataToJson();
-	SpliceKitModule* m2 = createModule();
+	SpliceKitModule* m2 = mods.create();
 	m2->dataFromJson(j);
 	json_decref(j);
 	REQUIRE(m2->crossInstanceEnabled == false);
-	Test::destroyModule(m2);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("JSON roundtrip preserves sceneLinkMasterId", "[SpliceKit][JSON]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->sceneLinkMasterId = 17;
 	json_t* j = m->dataToJson();
-	SpliceKitModule* m2 = createModule();
+	SpliceKitModule* m2 = mods.create();
 	m2->dataFromJson(j);
 	json_decref(j);
 	REQUIRE(m2->sceneLinkMasterId == 17);
-	Test::destroyModule(m2);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("JSON roundtrip: missing sceneLinkMasterId key defaults to -1", "[SpliceKit][JSON]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	json_t* j = json_object();  // no "sceneLinkMasterId" key at all
 	m->sceneLinkMasterId = 5;   // pre-existing value must be overwritten, not left stale
 	REQUIRE_NOTHROW(m->dataFromJson(j));
 	json_decref(j);
 	REQUIRE(m->sceneLinkMasterId == -1);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("JSON roundtrip preserves cellColorSet overrides", "[SpliceKit][JSON]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->cellColorSet[3] = 2;  // orange
 	m->cellColorSet[10] = 0;  // red (explicit, not auto)
 	m->cellColorSet[20] = -1; // auto (must not be written to JSON)
 	json_t* j = m->dataToJson();
-	SpliceKitModule* m2 = createModule();
+	SpliceKitModule* m2 = mods.create();
 	m2->dataFromJson(j);
 	json_decref(j);
 	REQUIRE(m2->cellColorSet[3] == 2);
@@ -134,38 +130,34 @@ TEST_CASE("JSON roundtrip preserves cellColorSet overrides", "[SpliceKit][JSON]"
 	REQUIRE(m2->cellColorSet[20] == -1);
 	// Untouched cells are still auto
 	REQUIRE(m2->cellColorSet[0] == -1);
-	Test::destroyModule(m2);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("JSON roundtrip preserves cellLabels", "[SpliceKit][JSON]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->cellLabels[5] = "VCO Out";
 	m->cellLabels[12] = "Filter In";
 	// Empty entries are not written, so the destination must remain empty
 	json_t* j = m->dataToJson();
-	SpliceKitModule* m2 = createModule();
+	SpliceKitModule* m2 = mods.create();
 	m2->dataFromJson(j);
 	json_decref(j);
 	REQUIRE(m2->cellLabels[5] == "VCO Out");
 	REQUIRE(m2->cellLabels[12] == "Filter In");
 	REQUIRE(m2->cellLabels[0].empty());
-	Test::destroyModule(m2);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("JSON roundtrip - panelTheme and currentScene survive a full save/load", "[SpliceKit][JSON]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->panelTheme = 1;  // dark
 	m->sceneStore.current = 5;
 	json_t* j = m->dataToJson();
-	SpliceKitModule* m2 = createModule();
+	SpliceKitModule* m2 = mods.create();
 	m2->dataFromJson(j);
 	json_decref(j);
 	REQUIRE(m2->panelTheme == 1);
 	REQUIRE(m2->sceneStore.current == 5);
-	Test::destroyModule(m2);
-	Test::destroyModule(m);
 }
 
 
@@ -175,22 +167,22 @@ TEST_CASE("dataFromJson - malformed activePreset JSON reverts to no preset", "[S
 	json_t* j = json_object();
 	json_object_set_new(j, "activePreset", json_string("this is { not valid json"));
 
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->dataFromJson(j);
 	json_decref(j);
 	REQUIRE(m->feedback.getActivePreset() == nullptr);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("dataFromJson - non-string activePreset value does not crash and reverts to no preset", "[SpliceKit][JSON]") {
 	json_t* j = json_object();
 	json_object_set_new(j, "activePreset", json_integer(42));  // not a string
 
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	REQUIRE_NOTHROW(m->dataFromJson(j));
 	json_decref(j);
 	REQUIRE(m->feedback.getActivePreset() == nullptr);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("dataFromJson - non-string cellLabels entry does not crash and is skipped", "[SpliceKit][JSON]") {
@@ -200,13 +192,13 @@ TEST_CASE("dataFromJson - non-string cellLabels entry does not crash and is skip
 	json_t* j = json_object();
 	json_object_set_new(j, "cellLabels", labelsJ);
 
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->cellLabels[3] = "stale";
 	REQUIRE_NOTHROW(m->dataFromJson(j));
 	json_decref(j);
 	REQUIRE(m->cellLabels[3] == "");
 	REQUIRE(m->cellLabels[5] == "kept");
-	Test::destroyModule(m);
 }
 
 
@@ -214,6 +206,10 @@ TEST_CASE("dataFromJson - out-of-range currentScene is clamped into bounds", "[S
 	// currentScene indexes sceneConnections[SCENE_COUNT][MATRIX_COUNT] directly in
 	// captureScene/switchScene/randomizeCurrentScene, so an unchecked value from a corrupted
 	// or hand-edited patch would read and write far outside the array.
+	// Left on bare createModule()/destroyModule(): the module is created and unconditionally
+	// destroyed inside this lambda, entirely before the REQUIRE that consumes its return value
+	// runs, so a failing REQUIRE here can never skip the destroy — RAII would add nothing and
+	// a ModuleScaffold would need per-invocation construction/destruction to match.
 	auto load = [](json_int_t v) {
 		SpliceKitModule* m = createModule();
 		json_t* j = json_object();
@@ -234,7 +230,8 @@ TEST_CASE("dataFromJson - out-of-range currentScene is clamped into bounds", "[S
 }
 
 TEST_CASE("dataFromJson - clamped currentScene leaves scene state safely addressable", "[SpliceKit][JSON]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	json_t* j = json_object();
 	json_object_set_new(j, "currentScene", json_integer(99));
 	m->dataFromJson(j);
@@ -247,7 +244,6 @@ TEST_CASE("dataFromJson - clamped currentScene leaves scene state safely address
 	REQUIRE_NOTHROW(m->sceneStore.removeCellConnections(0));
 	REQUIRE(m->sceneStore.connections[m->sceneStore.current][0] == 0);
 
-	Test::destroyModule(m);
 }
 
 
@@ -271,7 +267,8 @@ TEST_CASE("dataFromJson - out-of-range port indices are skipped", "[SpliceKit][J
 	json_t* j = json_object();
 	json_object_set_new(j, "ports", portsJ);
 
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	REQUIRE_NOTHROW(m->dataFromJson(j));
 	json_decref(j);
 
@@ -288,7 +285,6 @@ TEST_CASE("dataFromJson - out-of-range port indices are skipped", "[SpliceKit][J
 	// sceneConnections after the ports loop, erasing the clobber before it can be read.
 	// Detecting the stray write itself needs ASan, not an in-process assertion.
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("dataFromJson - out-of-range scene and connection indices are skipped", "[SpliceKit][JSON]") {
@@ -319,7 +315,8 @@ TEST_CASE("dataFromJson - out-of-range scene and connection indices are skipped"
 	json_t* j = json_object();
 	json_object_set_new(j, "scenes", scenesJ);
 
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	REQUIRE_NOTHROW(m->dataFromJson(j));
 	json_decref(j);
 
@@ -327,7 +324,6 @@ TEST_CASE("dataFromJson - out-of-range scene and connection indices are skipped"
 	REQUIRE(m->sceneStore.connections[1][0] == 0);
 	REQUIRE(m->sceneStore.connections[1][3] == 0);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("dataFromJson - a self-connection pair (a == b) is rejected", "[SpliceKit][JSON]") {
@@ -353,14 +349,14 @@ TEST_CASE("dataFromJson - a self-connection pair (a == b) is rejected", "[Splice
 	json_t* j = json_object();
 	json_object_set_new(j, "scenes", scenesJ);
 
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	REQUIRE_NOTHROW(m->dataFromJson(j));
 	json_decref(j);
 
 	REQUIRE(m->sceneStore.isConnected(1, 2, 4));
 	REQUIRE(m->sceneStore.connections[1][3] == 0);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("dataFromJson - stale port assignments absent from the JSON are cleared", "[SpliceKit][JSON]") {
@@ -377,7 +373,8 @@ TEST_CASE("dataFromJson - stale port assignments absent from the JSON are cleare
 	json_t* j = json_object();
 	json_object_set_new(j, "ports", portsJ);
 
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	// Cell 9 has a pre-existing assignment that is absent from the JSON being loaded.
 	m->portAssignments[9].moduleId = 42;
 	m->portAssignments[9].type = engine::Port::OUTPUT;
@@ -391,7 +388,6 @@ TEST_CASE("dataFromJson - stale port assignments absent from the JSON are cleare
 	REQUIRE(m->portAssignments[5].isValid());
 	REQUIRE(m->portAssignments[9].isValid() == false);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("dataFromJson - out-of-range MIDI map indices are skipped", "[SpliceKit][JSON]") {
@@ -411,7 +407,8 @@ TEST_CASE("dataFromJson - out-of-range MIDI map indices are skipped", "[SpliceKi
 	json_t* j = json_object();
 	json_object_set_new(j, "maps", mapsJ);
 
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	REQUIRE_NOTHROW(m->dataFromJson(j));
 	json_decref(j);
 
@@ -419,7 +416,6 @@ TEST_CASE("dataFromJson - out-of-range MIDI map indices are skipped", "[SpliceKi
 	REQUIRE(last.type == MidiTrackingType::CC);
 	REQUIRE(last.param == 7);
 
-	Test::destroyModule(m);
 }
 
 
@@ -537,7 +533,8 @@ TEST_CASE("MidiOutPreset roundtrip - block type comes from the first mapped slot
 // would be a silent, user-visible regression.
 
 TEST_CASE("JSON roundtrip preserves the midiInput and midiOutput sub-objects", "[SpliceKit][JSON]") {
-	SpliceKitModule* src = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* src = mods.create();
 	src->trackingProcessor.getInput().channel = 7;
 	src->feedback.midiOutput.channel = 3;
 
@@ -546,15 +543,13 @@ TEST_CASE("JSON roundtrip preserves the midiInput and midiOutput sub-objects", "
 	REQUIRE(json_object_get(rootJ, "midiInput") != nullptr);
 	REQUIRE(json_object_get(rootJ, "midiOutput") != nullptr);
 
-	SpliceKitModule* dst = createModule();
+	SpliceKitModule* dst = mods.create();
 	dst->dataFromJson(rootJ);
 	json_decref(rootJ);
 
 	REQUIRE(dst->trackingProcessor.getInput().channel == 7);
 	REQUIRE(dst->feedback.midiOutput.channel == 3);
 
-	Test::destroyModule(dst);
-	Test::destroyModule(src);
 }
 
 
@@ -563,7 +558,8 @@ TEST_CASE("JSON roundtrip preserves the midiInput and midiOutput sub-objects", "
 // replaces a rejected one.
 
 TEST_CASE("setActivePresetJson - malformed JSON turns feedback off rather than half-loading", "[SpliceKit][JSON]") {
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 
 	// Start from a valid, active preset.
 	m->feedback.setActivePreset(makeNoteOnPreset());
@@ -584,5 +580,4 @@ TEST_CASE("setActivePresetJson - malformed JSON turns feedback off rather than h
 	m->feedback.setActivePresetJson("");
 	REQUIRE(m->feedback.isActive() == false);
 
-	Test::destroyModule(m);
 }

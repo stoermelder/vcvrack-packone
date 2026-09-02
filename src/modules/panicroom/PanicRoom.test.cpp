@@ -82,7 +82,8 @@ static void destroyFakeCable(rack::app::CableWidget* cw) {
 
 
 TEST_CASE("Construction and initialization", "[PanicRoom]") {
-	PanicRoomModule* m = Test::createModule<PanicRoomModule>("PanicRoom");
+	Test::ModuleScaffold<PanicRoomModule> mods;
+	PanicRoomModule* m = mods.create("PanicRoom");
 	PanicRoomWidget* mw = Test::createWidget<PanicRoomWidget>("PanicRoom");
 
 	REQUIRE(m != nullptr);
@@ -90,11 +91,11 @@ TEST_CASE("Construction and initialization", "[PanicRoom]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[PanicRoom][JSON]") {
-	auto module = Test::createModule<PanicRoomModule>("PanicRoom");
+	Test::ModuleScaffold<PanicRoomModule> mods;
+	auto module = mods.create("PanicRoom");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -117,12 +118,12 @@ TEST_CASE("Preset JSON null-guards", "[PanicRoom][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("JSON round-trip preserves state", "[PanicRoom][JSON]") {
-	PanicRoomModule* m = Test::createModule<PanicRoomModule>("PanicRoom");
+	Test::ModuleScaffold<PanicRoomModule> mods;
+	PanicRoomModule* m = mods.create("PanicRoom");
 
 	m->outsideColor = nvgRGBf(0.2f, 0.4f, 0.6f);
 	m->outsideAlpha = 0.75f;
@@ -130,7 +131,7 @@ TEST_CASE("JSON round-trip preserves state", "[PanicRoom][JSON]") {
 
 	json_t* j = m->dataToJson();
 
-	PanicRoomModule* m2 = Test::createModule<PanicRoomModule>("PanicRoom");
+	PanicRoomModule* m2 = mods.create("PanicRoom");
 	m2->dataFromJson(j);
 	json_decref(j);
 
@@ -140,14 +141,13 @@ TEST_CASE("JSON round-trip preserves state", "[PanicRoom][JSON]") {
 	REQUIRE(m2->outsideAlpha == Catch::Approx(0.75f));
 	REQUIRE(m2->restrictionEnabled == true);
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
 }
 
 
 TEST_CASE("Module limit reads modules through the module access", "[PanicRoom][module]") {
+	Test::ModuleScaffold<PanicRoomModule> mods;
 	ModuleMock mock;
-	auto module = Test::createModule<PanicRoomModule>("PanicRoom");
+	auto module = mods.create("PanicRoom");
 	auto widget = Test::createWidget<PanicRoomWidget>(module);
 
 	SECTION("No removal when at the limit") {
@@ -172,12 +172,12 @@ TEST_CASE("Module limit reads modules through the module access", "[PanicRoom][m
 	}
 
 	Test::destroyWidget(widget);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Module limit removes excess modules through the module access", "[PanicRoom][module]") {
+	Test::ModuleScaffold<PanicRoomModule> mods;
 	ModuleMock mock;
-	auto module = Test::createModule<PanicRoomModule>("PanicRoom");
+	auto module = mods.create("PanicRoom");
 	auto widget = Test::createWidget<PanicRoomWidget>(module);
 
 	SECTION("Removes the most recently added modules down to the limit") {
@@ -203,12 +203,12 @@ TEST_CASE("Module limit removes excess modules through the module access", "[Pan
 	}
 
 	Test::destroyWidget(widget);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Cable limit removes excess cables through the cable access", "[PanicRoom][cable]") {
+	Test::ModuleScaffold<PanicRoomModule> mods;
 	CableMock mock;
-	auto module = Test::createModule<PanicRoomModule>("PanicRoom");
+	auto module = mods.create("PanicRoom");
 	auto widget = Test::createWidget<PanicRoomWidget>(module);
 
 	SECTION("Removes the most recently added cables down to the limit") {
@@ -234,5 +234,4 @@ TEST_CASE("Cable limit removes excess cables through the cable access", "[PanicR
 	}
 
 	Test::destroyWidget(widget);
-	Test::destroyModule(module);
 }

@@ -7,7 +7,8 @@ SYNC_MODEL(modelDirt, "Dirt");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Dirt]") {
-	DirtModule* m = Test::createModule<DirtModule>("Dirt");
+	Test::ModuleScaffold<DirtModule> mods;
+	DirtModule* m = mods.create("Dirt");
 	DirtWidget* mw = Test::createWidget<DirtWidget>("Dirt");
 
 	REQUIRE(m != nullptr);
@@ -15,11 +16,11 @@ TEST_CASE("Construction and initialization", "[Dirt]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Dirt][JSON]") {
-	auto module = Test::createModule<DirtModule>("Dirt");
+	Test::ModuleScaffold<DirtModule> mods;
+	auto module = mods.create("Dirt");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -42,12 +43,12 @@ TEST_CASE("Preset JSON null-guards", "[Dirt][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[Dirt][JSON]") {
-	DirtModule* m = Test::createModule<DirtModule>("Dirt");
-	DirtModule* m2 = Test::createModule<DirtModule>("Dirt");
+	Test::ModuleScaffold<DirtModule> mods;
+	DirtModule* m = mods.create("Dirt");
+	DirtModule* m2 = mods.create("Dirt");
 
 	SECTION("channels array round-trips (noiseRatio, crosstalkRatio, crackleRatio)") {
 		// Distinctive, non-uniform values per channel so an indexing or
@@ -98,6 +99,4 @@ TEST_CASE("JSON round-trip preserves state", "[Dirt][JSON]") {
 		REQUIRE(m2->dropoutDefect.dropoutMax == Catch::Approx(0.32f));
 	}
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
 }

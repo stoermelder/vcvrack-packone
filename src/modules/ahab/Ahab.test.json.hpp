@@ -9,8 +9,9 @@
 
 
 TEST_CASE("JSON round-trip preserves state", "[JSON][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
-	AhabModule* m2 = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	AhabModule* m2 = mods.create("Ahab");
 	Test::registerModule(m);
 	Test::registerModule(m2);
 
@@ -171,13 +172,12 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Ahab]") {
 	}
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 	Test::unregisterModule(m2);
-	Test::destroyModule(m2);
 }
 
 TEST_CASE("Missing or invalid sim JSON is ignored safely", "[JSON][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
 	// Set up sim state that must be preserved.
@@ -209,11 +209,11 @@ TEST_CASE("Missing or invalid sim JSON is ignored safely", "[JSON][Ahab]") {
 	json_decref(j2);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Ahab][JSON]") {
-	auto module = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	auto module = mods.create("Ahab");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -236,7 +236,6 @@ TEST_CASE("Preset JSON null-guards", "[Ahab][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Serialization to JSON", "[JSON][AhabSim]") {
@@ -366,8 +365,9 @@ TEST_CASE("fromJson rejects non-positive dimensions", "[JSON][AhabSim]") {
 }
 
 TEST_CASE("Module-level sim JSON clamps oversized fields", "[JSON][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
-	AhabModule* m2 = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	AhabModule* m2 = mods.create("Ahab");
 	Test::registerModule(m);
 	Test::registerModule(m2);
 
@@ -385,9 +385,7 @@ TEST_CASE("Module-level sim JSON clamps oversized fields", "[JSON][Ahab]") {
 	REQUIRE(m2->sim->getFieldWidth() == AhabSim::MAX_FIELD_WIDTH);
 
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 	Test::unregisterModule(m2);
-	Test::destroyModule(m2);
 }
 
 TEST_CASE("AhabOoscOutput JSON round-trip (UDP)", "[JSON][AhabUdp]") {

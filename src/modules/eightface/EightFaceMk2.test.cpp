@@ -9,7 +9,8 @@ SYNC_MODEL(modelEightFaceMk2Ex, "EightFaceMk2Ex");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[EightFaceMk2]") {
-	EightFaceMk2Module<8>* m = Test::createModule<EightFaceMk2Module<8>>("EightFaceMk2");
+	Test::ModuleScaffold<EightFaceMk2Module<8>> mods;
+	EightFaceMk2Module<8>* m = mods.create("EightFaceMk2");
 	EightFaceMk2Widget<8>* mw = Test::createWidget<EightFaceMk2Widget<8>>("EightFaceMk2");
 
 	REQUIRE(m != nullptr);
@@ -17,11 +18,11 @@ TEST_CASE("Construction and initialization", "[EightFaceMk2]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("EightFaceMk2Ex Construction and initialization", "[EightFaceMk2]") {
-	EightFaceMk2ExModule<8>* m = Test::createModule<EightFaceMk2ExModule<8>>("EightFaceMk2Ex");
+	Test::ModuleScaffold<EightFaceMk2ExModule<8>> mods;
+	EightFaceMk2ExModule<8>* m = mods.create("EightFaceMk2Ex");
 	EightFaceMk2ExWidget<8>* mw = Test::createWidget<EightFaceMk2ExWidget<8>>("EightFaceMk2Ex");
 
 	REQUIRE(m != nullptr);
@@ -29,11 +30,11 @@ TEST_CASE("EightFaceMk2Ex Construction and initialization", "[EightFaceMk2]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[EightFaceMk2][JSON]") {
-	auto module = Test::createModule<EightFaceMk2Module<8>>("EightFaceMk2");
+	Test::ModuleScaffold<EightFaceMk2Module<8>> mods;
+	auto module = mods.create("EightFaceMk2");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -56,11 +57,11 @@ TEST_CASE("Preset JSON null-guards", "[EightFaceMk2][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves presets", "[EightFaceMk2][JSON]") {
-	EightFaceMk2Module<8>* m = Test::createModule<EightFaceMk2Module<8>>("EightFaceMk2");
+	Test::ModuleScaffold<EightFaceMk2Module<8>> mods;
+	EightFaceMk2Module<8>* m = mods.create("EightFaceMk2");
 
 	// Distinctive label on EVERY slot
 	for (int i = 0; i < 8; i++) {
@@ -76,7 +77,7 @@ TEST_CASE("JSON round-trip preserves presets", "[EightFaceMk2][JSON]") {
 
 	json_t* j = m->dataToJson();
 
-	EightFaceMk2Module<8>* m2 = Test::createModule<EightFaceMk2Module<8>>("EightFaceMk2");
+	EightFaceMk2Module<8>* m2 = mods.create("EightFaceMk2");
 	m2->dataFromJson(j);
 	json_decref(j);
 
@@ -99,19 +100,18 @@ TEST_CASE("JSON round-trip preserves presets", "[EightFaceMk2][JSON]") {
 		REQUIRE(json_integer_value(json_object_get(m2->EightFaceMk2Base<8>::preset[5][1], "id")) == 789);
 	}
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
 }
 
 
 TEST_CASE("processGui does not decrement refcount of slot-owned json objects", "[EightFaceMk2]") {
+	Test::ModuleScaffold<EightFaceMk2Module<8>> mods;
 	// Regression test: commit 84866bc incorrectly added json_decref(vJ) inside processGui().
 	// vJ pointers in workerGuiQueue are owned by slot->preset — processGui must not
 	// touch the refcount or the preset slot's json_t* becomes a dangling pointer.
 
-	EightFaceMk2Module<8>* m = Test::createModule<EightFaceMk2Module<8>>("EightFaceMk2");
+	EightFaceMk2Module<8>* m = mods.create("EightFaceMk2");
 	// A second module instance acts as the "bound" module whose preset is being loaded.
-	EightFaceMk2Module<8>* boundM = Test::createModule<EightFaceMk2Module<8>>("EightFaceMk2");
+	EightFaceMk2Module<8>* boundM = mods.create("EightFaceMk2");
 	EightFaceMk2Widget<8>* boundMw = Test::createWidget<EightFaceMk2Widget<8>>(boundM);
 
 	// Use GUI mode: processGui calls boundMw->module->fromJson(vJ).
@@ -131,6 +131,4 @@ TEST_CASE("processGui does not decrement refcount of slot-owned json objects", "
 	json_decref(vJ);
 
 	Test::destroyWidget(boundMw);
-	Test::destroyModule(boundM);
-	Test::destroyModule(m);
 }

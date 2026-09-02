@@ -56,7 +56,8 @@ static void sendFineGate(MidiCatModule* midicat, int input, float voltage, int64
 // ─── Standalone tests ───────────────────────────────────────────────────────
 
 TEST_CASE("Construction and initialization", "[MidiCatFine]") {
-	MidiCatFineModule* m = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatFineModule> mods;
+	MidiCatFineModule* m = mods.create("MidiCatFine");
 
 	REQUIRE(m != nullptr);
 	REQUIRE(m->NUM_PARAMS == 0);
@@ -70,12 +71,11 @@ TEST_CASE("Construction and initialization", "[MidiCatFine]") {
 	// onReset() defaults
 	REQUIRE(m->highRange == Catch::Approx(0.01f));
 	REQUIRE(m->lowRange == Catch::Approx(0.1f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[MidiCatFine][JSON]") {
-	auto module = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatFineModule> mods;
+	auto module = mods.create("MidiCatFine");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -98,11 +98,11 @@ TEST_CASE("Preset JSON null-guards", "[MidiCatFine][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[MidiCatFine][JSON]") {
-	MidiCatFineModule* m = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatFineModule> mods;
+	MidiCatFineModule* m = mods.create("MidiCatFine");
 
 	m->panelTheme = 3;
 	m->highRange = 0.05f;
@@ -114,12 +114,11 @@ TEST_CASE("JSON round-trip preserves state", "[MidiCatFine][JSON]") {
 
 	REQUIRE(m->panelTheme == 3);
 	REQUIRE(m->highRange == Catch::Approx(0.05f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("dataFromJson ignores missing keys", "[MidiCatFine][JSON]") {
-	MidiCatFineModule* m = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatFineModule> mods;
+	MidiCatFineModule* m = mods.create("MidiCatFine");
 
 	json_error_t err;
 	json_t* emptyJ = json_loads("{}", 0, &err);
@@ -130,12 +129,11 @@ TEST_CASE("dataFromJson ignores missing keys", "[MidiCatFine][JSON]") {
 	// Defaults must be retained
 	REQUIRE(m->highRange == Catch::Approx(0.01f));
 	REQUIRE(m->panelTheme == StoermelderPackOne::pluginSettings.panelThemeDefault);
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("dataFromJson handles null values without crashing", "[MidiCatFine][JSON]") {
-	MidiCatFineModule* m = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatFineModule> mods;
+	MidiCatFineModule* m = mods.create("MidiCatFine");
 
 	json_error_t err;
 	json_t* nullJ = json_loads("{\"panelTheme\": null, \"highRange\": null}", 0, &err);
@@ -146,18 +144,17 @@ TEST_CASE("dataFromJson handles null values without crashing", "[MidiCatFine][JS
 	// not crash in either case.
 	REQUIRE_NOTHROW(m->dataFromJson(nullJ));
 	json_decref(nullJ);
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("process() does not crash without expander or parent", "[MidiCatFine]") {
-	MidiCatFineModule* m = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatFineModule> mods;
+	MidiCatFineModule* m = mods.create("MidiCatFine");
 	REQUIRE_NOTHROW(m->process(Test::makeProcessArgs(1)));
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Voltage getters return input voltages", "[MidiCatFine]") {
-	MidiCatFineModule* m = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatFineModule> mods;
+	MidiCatFineModule* m = mods.create("MidiCatFine");
 
 	REQUIRE(m->getLowRangeVoltage() == Catch::Approx(0.f));
 	REQUIRE(m->getHighRangeVoltage() == Catch::Approx(0.f));
@@ -173,16 +170,16 @@ TEST_CASE("Voltage getters return input voltages", "[MidiCatFine]") {
 	// Range getters are constant
 	REQUIRE(m->getLowRange() == Catch::Approx(0.1f));
 	REQUIRE(m->getHighRange() == Catch::Approx(0.01f));
-
-	Test::destroyModule(m);
 }
 
 
 // ─── Integration tests with MidiCat parent ──────────────────────────────────
 
 TEST_CASE("MidiCat detects expander", "[MidiCatFine][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatFineModule* fine = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatFineModule> fineMods;
+	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
 	// MidiCat.expanders.hpp detects fine via `exp->model == modelMidiCatFine` — a mismatch here
 	// (missing/wrong SYNC_MODEL) would make the REQUIRE below fail with no useful diagnosis.
 	Test::requireModelSync(modelMidiCatFine, "MidiCatFine");
@@ -199,14 +196,14 @@ TEST_CASE("MidiCat detects expander", "[MidiCatFine][MidiCat]") {
 	REQUIRE(midicat->expanders.fine() == fine);
 
 	Test::unregisterModule(fine);
-	Test::destroyModule(fine);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
 TEST_CASE("Disconnecting expander clears expFine and ccFineMode", "[MidiCatFine][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatFineModule* fine = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatFineModule> fineMods;
+	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
 
@@ -226,25 +223,25 @@ TEST_CASE("Disconnecting expander clears expFine and ccFineMode", "[MidiCatFine]
 	REQUIRE(midicat->ccFineMode == false);
 
 	Test::unregisterModule(fine);
-	Test::destroyModule(fine);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
 TEST_CASE("process() does not crash without parent connection", "[MidiCatFine]") {
-	MidiCatFineModule* m = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatFineModule> mods;
+	MidiCatFineModule* m = mods.create("MidiCatFine");
 	m->leftExpander.module = nullptr;
 	m->rightExpander.module = nullptr;
 	REQUIRE_NOTHROW(m->process(Test::makeProcessArgs(1)));
-	Test::destroyModule(m);
 }
 
 
 // ─── FineExpanderDriver interaction with parent ───────────────────────────────
 
 TEST_CASE("rising edge on LOWRANGE enables fine mode at low precision", "[MidiCatFine][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatFineModule* fine = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatFineModule> fineMods;
+	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
@@ -269,14 +266,14 @@ TEST_CASE("rising edge on LOWRANGE enables fine mode at low precision", "[MidiCa
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(fine);
-	Test::destroyModule(fine);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
 TEST_CASE("Falling edge on LOWRANGE disables fine mode when HIGHRANGE is low", "[MidiCatFine][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatFineModule* fine = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatFineModule> fineMods;
+	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
@@ -301,14 +298,14 @@ TEST_CASE("Falling edge on LOWRANGE disables fine mode when HIGHRANGE is low", "
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(fine);
-	Test::destroyModule(fine);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
 TEST_CASE("Rising edge on HIGHRANGE enables fine mode at high precision", "[MidiCatFine][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatFineModule* fine = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatFineModule> fineMods;
+	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
@@ -329,14 +326,14 @@ TEST_CASE("Rising edge on HIGHRANGE enables fine mode at high precision", "[Midi
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(fine);
-	Test::destroyModule(fine);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
 TEST_CASE("High precision follows user setting (2% / 5%)", "[MidiCatFine][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatFineModule* fine = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatFineModule> fineMods;
+	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
@@ -364,14 +361,14 @@ TEST_CASE("High precision follows user setting (2% / 5%)", "[MidiCatFine][MidiCa
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(fine);
-	Test::destroyModule(fine);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
 TEST_CASE("HIGHRANGE rising while LOWRANGE is high updates the ref-point from current CC", "[MidiCatFine][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatFineModule* fine = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatFineModule> fineMods;
+	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
@@ -405,14 +402,14 @@ TEST_CASE("HIGHRANGE rising while LOWRANGE is high updates the ref-point from cu
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(fine);
-	Test::destroyModule(fine);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
 TEST_CASE("HIGHRANGE falling while LOWRANGE is high restores low precision", "[MidiCatFine][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatFineModule* fine = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatFineModule> fineMods;
+	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
@@ -441,14 +438,14 @@ TEST_CASE("HIGHRANGE falling while LOWRANGE is high restores low precision", "[M
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(fine);
-	Test::destroyModule(fine);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
 TEST_CASE("HIGHRANGE falling when both are low disables fine mode", "[MidiCatFine][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatFineModule* fine = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatFineModule> fineMods;
+	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
@@ -473,14 +470,14 @@ TEST_CASE("HIGHRANGE falling when both are low disables fine mode", "[MidiCatFin
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(fine);
-	Test::destroyModule(fine);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
 TEST_CASE("LOWRANGE ignored while HIGHRANGE is high", "[MidiCatFine][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatFineModule* fine = Test::createModule<MidiCatFineModule>("MidiCatFine");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatFineModule> fineMods;
+	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
@@ -509,7 +506,5 @@ TEST_CASE("LOWRANGE ignored while HIGHRANGE is high", "[MidiCatFine][MidiCat]") 
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(fine);
-	Test::destroyModule(fine);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
