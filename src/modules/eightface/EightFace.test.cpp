@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "EightFace.cpp"
 
 using namespace StoermelderPackOne::EightFace;
@@ -9,7 +8,8 @@ SYNC_MODEL(modelEightFaceX2, "EightFaceX2");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[EightFace]") {
-	EightFaceModule<8>* m = Test::createModule<EightFaceModule<8>>("EightFace");
+	Test::ModuleScaffold<EightFaceModule<8>> mods;
+	EightFaceModule<8>* m = mods.create("EightFace");
 	EightFaceWidget* mw = Test::createWidget<EightFaceWidget>("EightFace");
 
 	REQUIRE(m != nullptr);
@@ -17,11 +17,11 @@ TEST_CASE("Construction and initialization", "[EightFace]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[EightFace][JSON]") {
-	auto module = Test::createModule<EightFaceModule<8>>("EightFace");
+	Test::ModuleScaffold<EightFaceModule<8>> mods;
+	auto module = mods.create("EightFace");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -44,11 +44,11 @@ TEST_CASE("Preset JSON null-guards", "[EightFace][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("EightFaceX2 Construction and initialization", "[EightFace]") {
-	EightFaceModule<16>* m = Test::createModule<EightFaceModule<16>>("EightFaceX2");
+	Test::ModuleScaffold<EightFaceModule<16>> mods;
+	EightFaceModule<16>* m = mods.create("EightFaceX2");
 	EightFaceX2Widget* mw = Test::createWidget<EightFaceX2Widget>("EightFaceX2");
 
 	REQUIRE(m != nullptr);
@@ -56,11 +56,11 @@ TEST_CASE("EightFaceX2 Construction and initialization", "[EightFace]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[EightFace][JSON]") {
-	EightFaceModule<8>* m = Test::createModule<EightFaceModule<8>>("EightFace");
+	Test::ModuleScaffold<EightFaceModule<8>> mods;
+	EightFaceModule<8>* m = mods.create("EightFace");
 
 	SECTION("Scalars") {
 		// Distinct, non-default values for every scalar stored to JSON
@@ -80,7 +80,7 @@ TEST_CASE("JSON round-trip preserves state", "[EightFace][JSON]") {
 		json_t* rootJ = m->dataToJson();
 		REQUIRE(rootJ != nullptr);
 
-		auto restored = Test::createModule<EightFaceModule<8>>("EightFace");
+		auto restored = mods.create("EightFace");
 		restored->dataFromJson(rootJ);
 
 		REQUIRE(restored->panelTheme == 1);
@@ -97,7 +97,6 @@ TEST_CASE("JSON round-trip preserves state", "[EightFace][JSON]") {
 		REQUIRE(restored->presetCountLongPress == false);
 
 		json_decref(rootJ);
-		Test::destroyModule(restored);
 	}
 
 	SECTION("Presets array with nested slot objects") {
@@ -126,7 +125,7 @@ TEST_CASE("JSON round-trip preserves state", "[EightFace][JSON]") {
 		REQUIRE(json_is_false(json_object_get(json_array_get(presetsJ, 1), "slotUsed")));
 		REQUIRE(json_object_get(json_array_get(presetsJ, 1), "slot") == nullptr);
 
-		auto restored = Test::createModule<EightFaceModule<8>>("EightFace");
+		auto restored = mods.create("EightFace");
 		restored->dataFromJson(rootJ);
 
 		// Every slot restores its used-flag; payloads come back as deep copies
@@ -144,17 +143,16 @@ TEST_CASE("JSON round-trip preserves state", "[EightFace][JSON]") {
 		}
 
 		json_decref(rootJ);
-		Test::destroyModule(restored);
 	}
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("dataFromJson tolerates an oversized presets array", "[EightFace][JSON]") {
+	Test::ModuleScaffold<EightFaceModule<8>> mods;
 	// A preset written by a build with more slots (or a hand-edited patch) must
 	// not write past the fixed-size presetSlotUsed[]/presetSlot[] arrays.
-	EightFaceModule<8>* m = Test::createModule<EightFaceModule<8>>("EightFace");
+	EightFaceModule<8>* m = mods.create("EightFace");
 
 	json_t* rootJ = json_object();
 	json_t* presetsJ = json_array();
@@ -185,5 +183,4 @@ TEST_CASE("dataFromJson tolerates an oversized presets array", "[EightFace][JSON
 	}
 
 	json_decref(rootJ);
-	Test::destroyModule(m);
 }

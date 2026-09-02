@@ -2,6 +2,20 @@
 
 ### Changes and Fixes
 
+- Module [DIRT](./docs/dirt/Dirt.md)
+    - Fixed broken "Initialize" on Crush defects
+- Modules [MAZE](./docs/maze/Maze.md) and [HIVE](./docs/maze/Hive.md)
+    - Improved rendering performance
+
+## 2.6.0
+
+### New modules
+
+- Module [SPLICE-KIT](./docs/splicekit/SpliceKit.md)
+    - 8x8 matrix patch-bay for creating and removing cables by pressing button pairs. Stores up to eight independent scenes per instance, with full MIDI control and feedback for playing your patch from a grid controller
+
+### Changes and Fixes
+
 - Module [AHAB](./docs/ahab/Ahab.md)
     - Added undo for "Clear"
     - Added toggle for Focus mode using Shift+Esc
@@ -18,7 +32,9 @@
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added sorting option "Newest" to *v2 mod* browser
     - Improved context menus for tags (#461)
+    - Fixed module placement when "Smart Rearrangement" is disabled
     - Fixed broken sorting option "Last used"
+    - Fixed module preview in *v1 mod* browser
 - Modules [MIDI-CAT](./docs/midicat/MidiCat.md), [MIDI-ESX](./docs/midiesx/MidiEsx.md), [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md), [MIDI-PLUG](./docs/midi/MidiPlug.md), [MIDI-STEP](./docs/midi/MidiStep.md)
     - Ignore incoming MIDI messages while module is bypassed
 - Module [MIDI-CAT](./docs/midicat/MidiCat.md)
@@ -36,6 +52,8 @@
     - Improved context menus for tags
     - Fixed crash when playing multi-channel files
     - Fixed occasionally lost settings
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Fixed "Bind parameters by selection" when spanning multiple modules
 
 ## 2.5.0
 

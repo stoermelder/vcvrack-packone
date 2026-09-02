@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "MidiCatClk.cpp"
 #include "MidiCat.cpp"
 #include "../midi/MidiTrackingProcessor.hpp"
@@ -54,7 +53,8 @@ static void setupBinding(MidiCatModule* midicat, TestParamModule* target, int id
 // ─── Standalone tests ───────────────────────────────────────────────────────
 
 TEST_CASE("Construction and initialization", "[MidiCatClk]") {
-	MidiCatClkModule* m = Test::createModule<MidiCatClkModule>("MidiCatClk");
+	Test::ModuleScaffold<MidiCatClkModule> mods;
+	MidiCatClkModule* m = mods.create("MidiCatClk");
 
 	REQUIRE(m != nullptr);
 	REQUIRE(m->NUM_PARAMS == 0);
@@ -65,12 +65,11 @@ TEST_CASE("Construction and initialization", "[MidiCatClk]") {
 	for (int i = 0; i < 4; i++) {
 		REQUIRE(m->inputs[MidiCatClkModule::INPUT_CLOCK + i].channels == 0);
 	}
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[MidiCatClk][JSON]") {
-	auto module = Test::createModule<MidiCatClkModule>("MidiCatClk");
+	Test::ModuleScaffold<MidiCatClkModule> mods;
+	auto module = mods.create("MidiCatClk");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -93,11 +92,11 @@ TEST_CASE("Preset JSON null-guards", "[MidiCatClk][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[MidiCatClk]") {
-	MidiCatClkModule* m = Test::createModule<MidiCatClkModule>("MidiCatClk");
+	Test::ModuleScaffold<MidiCatClkModule> mods;
+	MidiCatClkModule* m = mods.create("MidiCatClk");
 
 	m->panelTheme = 3;
 	json_t* j = m->dataToJson();
@@ -106,22 +105,25 @@ TEST_CASE("JSON round-trip preserves state", "[MidiCatClk]") {
 	json_decref(j);
 
 	REQUIRE(m->panelTheme == 3);
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("process() does not crash without expander", "[MidiCatClk]") {
-	MidiCatClkModule* m = Test::createModule<MidiCatClkModule>("MidiCatClk");
+	Test::ModuleScaffold<MidiCatClkModule> mods;
+	MidiCatClkModule* m = mods.create("MidiCatClk");
 	REQUIRE_NOTHROW(m->process(Test::makeProcessArgs(1)));
-	Test::destroyModule(m);
 }
 
 
 // ─── Integration tests ──────────────────────────────────────────────────────
 
 TEST_CASE("MidiCat detects expander", "[MidiCatClk][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatClkModule* clk = Test::createModule<MidiCatClkModule>("MidiCatClk");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatClkModule> clkMods;
+	MidiCatClkModule* clk = clkMods.create("MidiCatClk");
+	// MidiCat.expanders.hpp detects clk via `exp->model == modelMidiCatClk` — a mismatch here
+	// (missing/wrong SYNC_MODEL) would make the REQUIRE below fail with no useful diagnosis.
+	Test::requireModelSync(modelMidiCatClk, "MidiCatClk");
 	Test::registerModule(midicat);
 	Test::registerModule(clk);
 
@@ -135,14 +137,14 @@ TEST_CASE("MidiCat detects expander", "[MidiCatClk][MidiCat]") {
 	REQUIRE(midicat->expanders.clk() == clk);
 
 	Test::unregisterModule(clk);
-	Test::destroyModule(clk);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
 TEST_CASE("Disconnecting expander clears expClk and resets clockModes", "[MidiCatClk][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatClkModule* clk = Test::createModule<MidiCatClkModule>("MidiCatClk");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatClkModule> clkMods;
+	MidiCatClkModule* clk = clkMods.create("MidiCatClk");
 	Test::registerModule(midicat);
 	Test::registerModule(clk);
 
@@ -164,14 +166,14 @@ TEST_CASE("Disconnecting expander clears expClk and resets clockModes", "[MidiCa
 	REQUIRE(midicat->getClockMode(1) == MidiCatParam::CLOCKMODE::OFF);
 
 	Test::unregisterModule(clk);
-	Test::destroyModule(clk);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
 TEST_CASE("ARM mode defers param update until clock tick", "[MidiCatClk][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatClkModule* clk = Test::createModule<MidiCatClkModule>("MidiCatClk");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatClkModule> clkMods;
+	MidiCatClkModule* clk = clkMods.create("MidiCatClk");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(clk);
@@ -202,14 +204,14 @@ TEST_CASE("ARM mode defers param update until clock tick", "[MidiCatClk][MidiCat
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(clk);
-	Test::destroyModule(clk);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
 TEST_CASE("ARM mode ignores clock on wrong source", "[MidiCatClk][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatClkModule* clk = Test::createModule<MidiCatClkModule>("MidiCatClk");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatClkModule> clkMods;
+	MidiCatClkModule* clk = clkMods.create("MidiCatClk");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(clk);
@@ -242,14 +244,14 @@ TEST_CASE("ARM mode ignores clock on wrong source", "[MidiCatClk][MidiCat]") {
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(clk);
-	Test::destroyModule(clk);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
 TEST_CASE("ARM_DEFERRED_FEEDBACK withholds MIDI feedback until clock tick", "[MidiCatClk][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatClkModule* clk = Test::createModule<MidiCatClkModule>("MidiCatClk");
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatClkModule> clkMods;
+	MidiCatClkModule* clk = clkMods.create("MidiCatClk");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(clk);
@@ -281,17 +283,17 @@ TEST_CASE("ARM_DEFERRED_FEEDBACK withholds MIDI feedback until clock tick", "[Mi
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(clk);
-	Test::destroyModule(clk);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
 TEST_CASE("Each of the four clock inputs fires its trigger", "[MidiCatClk][MidiCat]") {
 	// Each SECTION reuses the same test setup but tests a different clock input.
 	// The single channel 0 binding has its clockSource changed per section.
 	for (int input = 0; input < 4; input++) {
-		MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-		MidiCatClkModule* clk = Test::createModule<MidiCatClkModule>("MidiCatClk");
+		Test::ModuleScaffold<MidiCatModule> midicatMods;
+		MidiCatModule* midicat = midicatMods.create("MidiCat");
+		Test::ModuleScaffold<MidiCatClkModule> clkMods;
+		MidiCatClkModule* clk = clkMods.create("MidiCatClk");
 		TestParamModule* target = new TestParamModule();
 		Test::registerModule(midicat);
 		Test::registerModule(clk);
@@ -322,8 +324,6 @@ TEST_CASE("Each of the four clock inputs fires its trigger", "[MidiCatClk][MidiC
 		Test::unregisterModule(target);
 		delete target;
 		Test::unregisterModule(clk);
-		Test::destroyModule(clk);
 		Test::unregisterModule(midicat);
-		Test::destroyModule(midicat);
 	}
 }

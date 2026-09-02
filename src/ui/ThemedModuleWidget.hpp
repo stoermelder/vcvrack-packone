@@ -21,16 +21,6 @@ struct ThemedModuleWidget : BASE {
 	// Set to true on a module to skip the base-class panel decoration (border + edge vignette).
 	bool disablePanelDecoration = false;
 
-	struct HalfPanel : SvgPanel {
-		ThemedModuleWidget<MODULE, BASE>* w;
-		void draw(const DrawArgs& args) override {
-			if (!w) return;
-			nvgScissor(args.vg, w->box.size.x / 2.f, 0, w->box.size.x, w->box.size.y);
-			SvgPanel::draw(args);
-			nvgResetScissor(args.vg);
-		}
-	};
-
 	ThemedModuleWidget(MODULE* module, std::string baseName, std::string manualName = "", bool disableDarkPanel = false) {
 		this->module = module;
 		this->baseName = baseName;

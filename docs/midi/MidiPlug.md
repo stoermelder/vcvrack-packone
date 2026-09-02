@@ -27,5 +27,5 @@ Note: System messages always pass through unaffected in all modes.
   - Initial release: MIDI-PLUG (virtual MIDI merger and splitter)
 - v2.0.0
   - Removed MIDI "Loopback" driver as a dedicated loopback driver is available in Rack 2.2.0
-- v2.x.x
+- v2.6.0
   - Ignore incoming MIDI messages while module is bypassed

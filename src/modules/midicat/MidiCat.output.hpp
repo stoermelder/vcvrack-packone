@@ -24,6 +24,7 @@ struct MidiCatOutput : midi::Output {
 	}
 
 	void setValue(int value, int cc, bool force = false) {
+		assert(cc >= 0 && cc < 128);
 		if (value == lastValues[cc] && !force)
 			return;
 		lastValues[cc] = value;
@@ -36,6 +37,7 @@ struct MidiCatOutput : midi::Output {
 	}
 
 	void setGate(int vel, int note, bool noteOffVelocityZero, bool force = false) {
+		assert(note >= 0 && note < 128);
 		if (vel > 0) {
 			// Note on
 			if (!lastGates[note] || force) {

@@ -46,6 +46,13 @@ struct CrushDefectProcessor {
 
 	void reset() {
 		for (size_t i = 0; i < PORT_MAX_CHANNELS; i++) {
+			g_params[i].bit_depth = 12.f;
+			g_params[i].crush_rate = 0.f;
+			g_params[i].levels = powf(2.0f, g_params[i].bit_depth) - 1.0f;
+			g_state[i].phase = 0.f;
+			for (size_t j = 0; j < 16; j++) {
+				g_state[i].last_sample[j] = 0.f;
+			}
 			defectCounters[i] = 0;
 			nextTriggerSamples[i] = 0;
 			slewLimiter[i].reset();

@@ -277,7 +277,7 @@ TEST_CASE("Clipping behavior for paste outside bounds", "[AhabSim]") {
 // I/O in the OS temp dir. Temp-dir lookup and fixture I/O still route through
 // the swappable vcv fs layer via the pass-through mock from test_mock.hpp.
 static std::string ahabTempPath(const char* name) {
-	auto mock = Test::makeMockVcv<Test::MockVcv::MockFileAccess>();
+	TEST_MOCK_FS(Test::mock::MockFileAccess);
 	std::string dir = vcv::fs::getTempDirectory();
 	REQUIRE(!dir.empty());
 	return dir + "/" + name;

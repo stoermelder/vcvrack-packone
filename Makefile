@@ -110,8 +110,9 @@ ifdef DEBUGPLUGIN
 	CFLAGS += -O0 -g -DDEBUGPLUGIN
 endif
 
-# Test build rules live in plugin-test.mk
+
 include plugin-test.mk
+include plugin-check.mk
 
 # Performance binaries (*.perf.cpp) live in their own makefile so they stay
 # out of the main build/test flow. See perf.mk for the `perf`/`perfrun` targets.

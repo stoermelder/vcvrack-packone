@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "Affix.cpp"
 
 using namespace StoermelderPackOne::Affix;
@@ -17,7 +16,8 @@ Test::TestContext<> testContext;
 
 
 TEST_CASE("Construction and initialization", "[Affix]") {
-	AffixModule<16>* m = Test::createModule<AffixModule<16>>("Affix");
+	Test::ModuleScaffold<AffixModule<16>> mods;
+	AffixModule<16>* m = mods.create("Affix");
 	AffixWidget* mw = Test::createWidget<AffixWidget>("Affix");
 
 	REQUIRE(m != nullptr);
@@ -25,11 +25,11 @@ TEST_CASE("Construction and initialization", "[Affix]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Affix][JSON]") {
-	auto module = Test::createModule<AffixModule<16>>("Affix");
+	Test::ModuleScaffold<AffixModule<16>> mods;
+	auto module = mods.create("Affix");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -52,12 +52,12 @@ TEST_CASE("Preset JSON null-guards", "[Affix][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves module state", "[Affix]") {
-	auto module = Test::createModule<AffixModule<16>>("Affix");
-	auto moduleNew = Test::createModule<AffixModule<16>>("Affix");
+	Test::ModuleScaffold<AffixModule<16>> mods;
+	auto module = mods.create("Affix");
+	auto moduleNew = mods.create("Affix");
 
 	SECTION("panelTheme and numberOfChannels round-trip") {
 		module->panelTheme = 1;
@@ -97,13 +97,12 @@ TEST_CASE("JSON round-trip preserves module state", "[Affix]") {
 		}
 	}
 
-	Test::destroyModule(moduleNew);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Voltage mode", "[Affix]") {
-	auto module = Test::createModule<AffixModule<16>>("Affix");
+	Test::ModuleScaffold<AffixModule<16>> mods;
+	auto module = mods.create("Affix");
 	
 	SECTION("Parameter values can be set and retrieved") {
 		module->paramMode = PARAM_MODE::VOLTAGE;
@@ -117,11 +116,11 @@ TEST_CASE("Voltage mode", "[Affix]") {
 		REQUIRE(module->params[AffixModule<16>::PARAM_MONO + 1].getValue() == Catch::Approx(-0.5f).margin(0.01f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Parameter reset", "[Affix]") {
-	auto module = Test::createModule<AffixModule<16>>("Affix");
+	Test::ModuleScaffold<AffixModule<16>> mods;
+	auto module = mods.create("Affix");
 	
 	SECTION("onReset restores default state") {
 		module->paramMode = PARAM_MODE::OCTAVE;
@@ -134,11 +133,11 @@ TEST_CASE("Parameter reset", "[Affix]") {
 		REQUIRE(module->numberOfChannels == 0);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Parameter quantity display", "[Affix]") {
-	auto module = Test::createModule<AffixModule<16>>("Affix");
+	Test::ModuleScaffold<AffixModule<16>> mods;
+	auto module = mods.create("Affix");
 	
 	SECTION("ParamQuantity displays correct format in voltage mode") {
 		module->paramMode = PARAM_MODE::VOLTAGE;
@@ -153,11 +152,11 @@ TEST_CASE("Parameter quantity display", "[Affix]") {
 		REQUIRE(!display.empty());
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Semitone mode", "[Affix]") {
-	auto module = Test::createModule<AffixModule<16>>("Affix");
+	Test::ModuleScaffold<AffixModule<16>> mods;
+	auto module = mods.create("Affix");
 	
 	SECTION("Semitone mode snaps to 12ths") {
 		module->setParamMode(PARAM_MODE::SEMITONE);
@@ -185,11 +184,11 @@ TEST_CASE("Semitone mode", "[Affix]") {
 		// Format should be "octaves, semitones"
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Octave mode", "[Affix]") {
-	auto module = Test::createModule<AffixModule<16>>("Affix");
+	Test::ModuleScaffold<AffixModule<16>> mods;
+	auto module = mods.create("Affix");
 	
 	SECTION("Octave mode snaps to integers") {
 		module->setParamMode(PARAM_MODE::OCTAVE);
@@ -215,7 +214,6 @@ TEST_CASE("Octave mode", "[Affix]") {
 		REQUIRE(!display.empty());
 	}
 
-	Test::destroyModule(module);
 }
 
 
@@ -225,7 +223,8 @@ TEST_CASE("Octave mode", "[Affix]") {
 // (e.g. read back from a patch file that was saved with a different mode)
 // are snapped to the nearest semitone/octave before processing begins.
 TEST_CASE("Output voltage snapped after loading unsnapped param in Semitone mode", "[Affix]") {
-	auto module = Test::createModule<AffixModule<16>>("Affix");
+	Test::ModuleScaffold<AffixModule<16>> mods;
+	auto module = mods.create("Affix");
 
 	SECTION("Unsnapped param value is snapped to nearest semitone on load") {
 		// Directly set raw param to an unsnapped value (1.1 V ≠ any exact semitone).
@@ -279,7 +278,6 @@ TEST_CASE("Output voltage snapped after loading unsnapped param in Semitone mode
 		REQUIRE(output != Catch::Approx(2.7f).margin(0.001f));
 	}
 
-	Test::destroyModule(module);
 }
 
 // Regression test for bug #387:
@@ -290,7 +288,8 @@ TEST_CASE("Output voltage snapped after loading unsnapped param in Semitone mode
 // value instead of the default (0 V), causing the knob to visually stay
 // at the wrong position and subsequent drags to start from the stale value.
 TEST_CASE("Param cached value reset in Semitone and Octave mode", "[Affix]") {
-	auto module = Test::createModule<AffixModule<16>>("Affix");
+	Test::ModuleScaffold<AffixModule<16>> mods;
+	auto module = mods.create("Affix");
 
 	SECTION("After reset() in Semitone mode, getValue() returns default value") {
 		module->setParamMode(PARAM_MODE::SEMITONE);
@@ -335,5 +334,4 @@ TEST_CASE("Param cached value reset in Semitone and Octave mode", "[Affix]") {
 			== Catch::Approx(0.0f).margin(0.001f));
 	}
 
-	Test::destroyModule(module);
 }

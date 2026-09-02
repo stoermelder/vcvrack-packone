@@ -36,6 +36,11 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	/** [Stored to Json] */
 	MidiCatOutput midiOutput;
 
+	// Reusable scratch MIDI message for the audio thread. `midi::Message`
+	// heap-allocates its internal byte vector on construction, so creating one
+	// per sample inside `process()` would be a per-sample malloc/free.
+	midi::Message scratchMidiMessage;
+
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
@@ -184,7 +189,9 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	}
 
 	void processBypass(const ProcessArgs &args) override {
-		midi::Message msg;
+		// Reuse the module-level scratch message to avoid per-sample heap
+		// allocations on the audio thread.
+		midi::Message& msg = scratchMidiMessage;
 		// Drain the queue while bypassed
 		while (midiInput.tryPop(&msg, args.frame)) {
 			(void)0;
@@ -195,8 +202,9 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	void process(const ProcessArgs &args) override {
 		midiInputState.tick();
 
-		// Aquire new MIDI messages from the queue
-		midi::Message msg;
+		// Aquire new MIDI messages from the queue. `msg` aliases the
+		// module-level scratch buffer so the audio thread never heap-allocates.
+		midi::Message& msg = scratchMidiMessage;
 		bool midiReceived = false;
 		while (midiInput.tryPop(&msg, args.frame)) {
 			bool r = midiProcessMessage(msg);
@@ -488,6 +496,7 @@ struct MidiCatModule : Module, StripIdFixModule, ModuleChangeListener {
 	}
 
 	void learnParam(int id, int64_t moduleId, int paramId, bool resetMidiSettings = true) {
+		assert(id >= 0 && id < MAX_CHANNELS);
 		APP->engine->updateParamHandle(&paramHandles[id], moduleId, paramId, true);
 		slots[id].param.reset(resetMidiSettings);
 		// Reset binding to light. Must use `id`, not `learningId`: moduleBind() and

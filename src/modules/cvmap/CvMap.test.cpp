@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "CVMap.cpp"
 
 using namespace StoermelderPackOne::CVMap;
@@ -8,7 +7,8 @@ SYNC_MODEL(modelCVMap, "CVMap");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[CVMap]") {
-	CVMapModule* m = Test::createModule<CVMapModule>("CVMap");
+	Test::ModuleScaffold<CVMapModule> mods;
+	CVMapModule* m = mods.create("CVMap");
 	CVMapWidget* mw = Test::createWidget<CVMapWidget>("CVMap");
 
 	REQUIRE(m != nullptr);
@@ -16,11 +16,11 @@ TEST_CASE("Construction and initialization", "[CVMap]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[CvMap][JSON]") {
-	auto module = Test::createModule<CVMapModule>("CVMap");
+	Test::ModuleScaffold<CVMapModule> mods;
+	auto module = mods.create("CVMap");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -43,12 +43,12 @@ TEST_CASE("Preset JSON null-guards", "[CvMap][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[CvMap][JSON]") {
-	CVMapModule* m = Test::createModule<CVMapModule>("CVMap");
-	CVMapModule* m2 = Test::createModule<CVMapModule>("CVMap");
+	Test::ModuleScaffold<CVMapModule> mods;
+	CVMapModule* m = mods.create("CVMap");
+	CVMapModule* m2 = mods.create("CVMap");
 
 	SECTION("Scalar settings round-trip") {
 		// Distinct, non-default values for every scalar stored to JSON
@@ -133,6 +133,4 @@ TEST_CASE("JSON round-trip preserves state", "[CvMap][JSON]") {
 		}
 	}
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
 }

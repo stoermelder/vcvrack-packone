@@ -1,6 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
-#include "../../test/test_mock.hpp"
+#include "../../test/framework.hpp"
 #include "Mb_autotag.hpp"
 #include "Mb_autotag_widgets.hpp"
 
@@ -925,7 +923,10 @@ struct MockNwAccess : vcv::NwAccess {
 };
 
 TEST_CASE("downloadMetamoduleYaml routes through the network layer", "[Mb][nw]") {
-	auto mock = Test::makeMockVcv<MockFileAccess, MockNwAccess>();
+	struct Mock {
+		TEST_MOCK_FS(MockFileAccess);
+		TEST_MOCK_NW(MockNwAccess);
+	} mock;
 
 	SECTION("Successful download returns the temp path") {
 		mock.fs.files["/tmp/metamodule-plugins.yml"] = "content";  // any content
@@ -951,7 +952,9 @@ TEST_CASE("downloadMetamoduleYaml routes through the network layer", "[Mb][nw]")
 }
 
 TEST_CASE("parseMetamoduleYaml routes through the fs layer", "[Mb][fs]") {
-	auto mock = Test::makeMockVcv<MockFileAccess>();
+	struct Mock {
+		TEST_MOCK_FS(MockFileAccess);
+	} mock;
 
 	SECTION("Reads YAML content via vcv::fs::read") {
 		mock.fs.files["/tmp/plugins.yml"] =
@@ -978,7 +981,9 @@ TEST_CASE("parseMetamoduleYaml routes through the fs layer", "[Mb][fs]") {
 }
 
 TEST_CASE("openAutoTagConfirmDialog routes through the UI message", "[Mb][ui]") {
-	auto mock = Test::makeMockVcv<MockUiAccess>();
+	struct Mock {
+		TEST_MOCK_UI(MockUiAccess);
+	} mock;
 
 	SECTION("Empty result shows the info dialog") {
 		openAutoTagConfirmDialog(std::make_shared<AutoTagResult>());

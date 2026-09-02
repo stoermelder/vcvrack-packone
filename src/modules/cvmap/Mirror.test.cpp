@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "Mirror.cpp"
 
 using namespace StoermelderPackOne::Mirror;
@@ -8,7 +7,8 @@ SYNC_MODEL(modelMirror, "Mirror");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Mirror]") {
-	MirrorModule* m = Test::createModule<MirrorModule>("Mirror");
+	Test::ModuleScaffold<MirrorModule> mods;
+	MirrorModule* m = mods.create("Mirror");
 	MirrorWidget* mw = Test::createWidget<MirrorWidget>("Mirror");
 
 	REQUIRE(m != nullptr);
@@ -16,11 +16,11 @@ TEST_CASE("Construction and initialization", "[Mirror]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Mirror][JSON]") {
-	auto module = Test::createModule<MirrorModule>("Mirror");
+	Test::ModuleScaffold<MirrorModule> mods;
+	auto module = mods.create("Mirror");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -43,11 +43,11 @@ TEST_CASE("Preset JSON null-guards", "[Mirror][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[Mirror][JSON]") {
-	MirrorModule* m = Test::createModule<MirrorModule>("Mirror");
+	Test::ModuleScaffold<MirrorModule> mods;
+	MirrorModule* m = mods.create("Mirror");
 
 	m->targetModuleIds = {11, 22, 33};
 	// Distinctive paramId on EVERY CV input
@@ -57,7 +57,7 @@ TEST_CASE("JSON round-trip preserves state", "[Mirror][JSON]") {
 
 	json_t* j = m->dataToJson();
 
-	MirrorModule* m2 = Test::createModule<MirrorModule>("Mirror");
+	MirrorModule* m2 = mods.create("Mirror");
 	m2->dataFromJson(j);
 	json_decref(j);
 
@@ -70,6 +70,4 @@ TEST_CASE("JSON round-trip preserves state", "[Mirror][JSON]") {
 		REQUIRE(m2->cvParamId[i] == 10 + i);
 	}
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
 }

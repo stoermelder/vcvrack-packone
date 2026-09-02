@@ -24,7 +24,7 @@ Each log entry is prefixed with a timing indicator in square brackets. By defaul
 - v2.5.0
     - Fixed SysEx message logging (trailing garbage bytes)
     - Fixed saving of SysEx data logging setting
-- v2.x.x
+- v2.6.0
     - Ignore incoming MIDI messages while module is bypassed
     - Splitted display option for 14bit CC and RPN/NRPN messages
     - Increased buffered message count from 512 to 4096

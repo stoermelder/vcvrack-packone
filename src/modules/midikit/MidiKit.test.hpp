@@ -1,6 +1,5 @@
 #pragma once
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "MidiKit.cpp"
 
 using namespace StoermelderPackOne::MidiKit;

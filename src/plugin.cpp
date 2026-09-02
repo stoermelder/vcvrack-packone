@@ -65,6 +65,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelMidiKit);
 	p->addModel(modelMidiEsx);
 	p->addModel(modelAhab);
+	p->addModel(modelSpliceKit);
 	p->addModel(modelAudioInterface64);
 	p->addModel(modelMb);
 	p->addModel(modelMe);
@@ -86,9 +87,11 @@ void init(rack::Plugin* p) {
 
 	StoermelderPackOne::pluginSettings.readFromJson();
 
+#ifndef METAMODULE
 	if (StoermelderPackOne::pluginSettings.midiEsxDriverEnabled) {
 		StoermelderPackOne::MidiEsx::init();
 	}
+#endif
 }
 
 

@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "Infix.cpp"
 
 using namespace StoermelderPackOne::Infix;
@@ -36,7 +35,8 @@ static void disconnectMonoInput(InfixModule<16>* m, int c) {
 
 
 TEST_CASE("Construction and initialization", "[Infix]") {
-	InfixModule<16>* m = Test::createModule<InfixModule<16>>("Infix");
+	Test::ModuleScaffold<InfixModule<16>> mods;
+	InfixModule<16>* m = mods.create("Infix");
 	InfixWidget* mw = Test::createWidget<InfixWidget>("Infix");
 
 	REQUIRE(m != nullptr);
@@ -44,11 +44,11 @@ TEST_CASE("Construction and initialization", "[Infix]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Infix][JSON]") {
-	auto module = Test::createModule<InfixModule<16>>("Infix");
+	Test::ModuleScaffold<InfixModule<16>> mods;
+	auto module = mods.create("Infix");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -71,12 +71,12 @@ TEST_CASE("Preset JSON null-guards", "[Infix][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[Infix][JSON]") {
-	InfixModule<16>* m = Test::createModule<InfixModule<16>>("Infix");
-	InfixModule<16>* m2 = Test::createModule<InfixModule<16>>("Infix");
+	Test::ModuleScaffold<InfixModule<16>> mods;
+	InfixModule<16>* m = mods.create("Infix");
+	InfixModule<16>* m2 = mods.create("Infix");
 
 	// Non-default value; Infix stores only panelTheme to JSON.
 	m->panelTheme = 1;
@@ -90,14 +90,13 @@ TEST_CASE("JSON round-trip preserves state", "[Infix][JSON]") {
 
 	REQUIRE(m2->panelTheme == 1);
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
 }
 
 
 // Pass-through: poly input passes verbatim when no mono inputs are connected
 TEST_CASE("Poly pass-through: all channels forwarded when no mono inputs connected", "[Infix]") {
-	auto* m = Test::createModule<InfixModule<16>>("Infix");
+	Test::ModuleScaffold<InfixModule<16>> mods;
+	auto* m = mods.create("Infix");
 
 	setPolyInput(m, {1.f, 2.f, 3.f, 4.f});
 	seedOutput(m);
@@ -109,13 +108,13 @@ TEST_CASE("Poly pass-through: all channels forwarded when no mono inputs connect
 	REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(2) == Catch::Approx(3.f));
 	REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(3) == Catch::Approx(4.f));
 
-	Test::destroyModule(m);
 }
 
 
 // Single-channel replacement
 TEST_CASE("Mono input replaces its corresponding poly channel", "[Infix]") {
-	auto* m = Test::createModule<InfixModule<16>>("Infix");
+	Test::ModuleScaffold<InfixModule<16>> mods;
+	auto* m = mods.create("Infix");
 
 	setPolyInput(m, {1.f, 2.f, 3.f, 4.f});
 	setMonoInput(m, 1, 9.f); // replace channel 1
@@ -136,5 +135,4 @@ TEST_CASE("Mono input replaces its corresponding poly channel", "[Infix]") {
 		REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getChannels() == 4);
 	}
 
-	Test::destroyModule(m);
 }

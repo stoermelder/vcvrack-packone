@@ -252,6 +252,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ModuleChangeListener {
 	inline SLOT* getSlot(int index) {
 		if (index >= presetTotal) return NULL;
 		int n = index / NUM_PRESETS;
+		assert(n < MAX_EXPANDERS + 1);
 		return &N[n]->slot[index % NUM_PRESETS];
 	}
 
@@ -1327,19 +1328,16 @@ struct TransitSelectionWidget : Widget {
 				selected.push_back(mw);
 			}
 		}
-		if (selected.size() != 1) {
-			return;
-		}
+		for (ModuleWidget* mw : selected) {
+			std::list<ParamWidget*> selectedParams;
+			math::Rect selectionBox1(selectionBox.pos.minus(mw->box.pos), selectionBox.size);
+			getAllDescendentsByTypeAndBox<ParamWidget*>(mw, selectionBox1, selectedParams);
 
-		ModuleWidget* mw = selected.front();
-		std::list<ParamWidget*> selectedParams;
-		math::Rect selectionBox1(selectionBox.pos.minus(mw->box.pos), selectionBox.size);
-		getAllDescendentsByTypeAndBox<ParamWidget*>(mw, selectionBox1, selectedParams);
-
-		selectedParams.reverse();
-		for (ParamWidget* pw : selectedParams) {
-			if (!pw->module) continue;
-			module->bindAddParameterRequest(pw->module->getId(), pw->paramId);
+			selectedParams.reverse();
+			for (ParamWidget* pw : selectedParams) {
+				if (!pw->module) continue;
+				module->bindAddParameterRequest(pw->module->getId(), pw->paramId);
+			}
 		}
 	}
 

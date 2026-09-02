@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "CVPam.cpp"
 
 using namespace StoermelderPackOne::CVPam;
@@ -8,7 +7,8 @@ SYNC_MODEL(modelCVPam, "CVPam");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[CVPam]") {
-	CVPamModule* m = Test::createModule<CVPamModule>("CVPam");
+	Test::ModuleScaffold<CVPamModule> mods;
+	CVPamModule* m = mods.create("CVPam");
 	CVPamWidget* mw = Test::createWidget<CVPamWidget>("CVPam");
 
 	REQUIRE(m != nullptr);
@@ -16,11 +16,11 @@ TEST_CASE("Construction and initialization", "[CVPam]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[CVPam][JSON]") {
-	auto module = Test::createModule<CVPamModule>("CVPam");
+	Test::ModuleScaffold<CVPamModule> mods;
+	auto module = mods.create("CVPam");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -43,12 +43,13 @@ TEST_CASE("Preset JSON null-guards", "[CVPam][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[CVPam][JSON]") {
-	CVPamModule* m = Test::createModule<CVPamModule>("CVPam");
-	CVPamModule* m2 = Test::createModule<CVPamModule>("CVPam");
+	Test::ModuleScaffold<CVPamModule> mods;
+	Test::ModuleScaffold<rack::Module> targetMods;
+	CVPamModule* m = mods.create("CVPam");
+	CVPamModule* m2 = mods.create("CVPam");
 
 	SECTION("Scalar settings round-trip") {
 		// Distinct, non-default values for every CVPam-specific scalar stored to JSON
@@ -71,7 +72,7 @@ TEST_CASE("JSON round-trip preserves state", "[CVPam][JSON]") {
 		// A registered target module is required for moduleId/paramId to persist through
 		// updateParamHandle(): the engine resolves the module by id, so an unregistered
 		// module would leave moduleId at -1 and the mapping could not round-trip.
-		rack::Module* target = Test::createModule<rack::Module>("Glue");
+		rack::Module* target = targetMods.create("Glue");
 		Test::registerModule(target);
 
 		// The target must be registered so the engine can resolve it by id
@@ -117,9 +118,6 @@ TEST_CASE("JSON round-trip preserves state", "[CVPam][JSON]") {
 		REQUIRE(m2->paramHandles[3].moduleId == -1);
 
 		Test::unregisterModule(target);
-		Test::destroyModule(target);
 	}
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
 }
