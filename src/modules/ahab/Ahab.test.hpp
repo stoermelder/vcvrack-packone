@@ -203,7 +203,7 @@ static AhabModule* createModuleWithOutputs(AhabOoscOutput* udpOutput, AhabOoscOu
 	AhabModule* m = new AhabModule(udpOutput, oscOutput);
 	m->id = Test::getModuleId();
 	Module::SampleRateChangeEvent e;
-	e.sampleRate = APP->engine->getSampleRate();
+	e.sampleRate = Test::sampleRate();
 	e.sampleTime = 1.0f / e.sampleRate;
 	m->onSampleRateChange(e);
 	return m;

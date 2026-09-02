@@ -41,7 +41,7 @@ static Module* createExModule(TransitBase<12>** baseOut = nullptr) {
 	m->id = Test::getModuleId();
 
 	Module::SampleRateChangeEvent e;
-	e.sampleRate = APP->engine->getSampleRate();
+	e.sampleRate = Test::sampleRate();
 	e.sampleTime = 1.0f / e.sampleRate;
 	m->onSampleRateChange(e);
 

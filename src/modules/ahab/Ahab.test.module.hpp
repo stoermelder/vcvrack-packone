@@ -95,7 +95,7 @@ TEST_CASE("BPM-based clock accuracy at different tempos", "[Ahab]") {
 	
 	// Test at different BPM values
 	std::vector<float> bpm_values = {60.0f, 120.0f, 180.0f, 240.0f};
-	float sampleRate = 44100.f;
+	float sampleRate = Test::sampleRate();
 	int64_t frame = 0;
 	
 	for (float bpm : bpm_values) {
@@ -655,7 +655,7 @@ TEST_CASE("Run/stop gates BPM stepping", "[Ahab]") {
 
 	// High BPM so a modest sample count produces several ticks (16 Hz at 240).
 	m->params[AhabModule::BPM_PARAM].setValue(240.0f);
-	float sampleRate = 44100.f;
+	float sampleRate = Test::sampleRate();
 	int64_t frame = 0;
 	int numSamples = (int)(sampleRate / 16.0f * 3); // ~3 ticks worth
 
@@ -715,7 +715,7 @@ TEST_CASE("External clock disables internal BPM", "[Ahab]") {
 	Test::registerModule(m);
 
 	m->params[AhabModule::BPM_PARAM].setValue(240.0f); // 16 Hz
-	float sampleRate = 44100.f;
+	float sampleRate = Test::sampleRate();
 	int64_t frame = 0;
 
 	// Connect the external clock (channels > 0 → isConnected()) and hold it at
@@ -760,7 +760,7 @@ TEST_CASE("Clock phase resets on run toggle and external clock", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
 
-	float sampleRate = 44100.f;
+	float sampleRate = Test::sampleRate();
 	int64_t frame = 0;
 	m->params[AhabModule::BPM_PARAM].setValue(240.0f);
 
@@ -804,7 +804,7 @@ TEST_CASE("Clock output pulse width", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
 
-	float sampleRate = 44100.f;
+	float sampleRate = Test::sampleRate();
 	int64_t frame = 0;
 	m->simRunning = false; // no BPM retriggers; pulse driven only by manual clock
 

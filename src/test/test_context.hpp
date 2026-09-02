@@ -160,6 +160,13 @@ inline int64_t getModuleId() {
 
 
 
+// Single source of truth for the sample rate a test runs at: the engine's own rate. Used by both
+// createModule() (to configure a module via onSampleRateChange) and makeProcessArgs() (to step
+// it), so the two can never disagree even if a test changes the engine's sample rate.
+inline float sampleRate() {
+	return APP->engine->getSampleRate();
+}
+
 template <typename T>
 inline T* createModule(std::string modelSlug) {
 	Model* model = pluginInstance->getModel(modelSlug);
@@ -167,7 +174,7 @@ inline T* createModule(std::string modelSlug) {
 	m->id = getModuleId();
 
 	Module::SampleRateChangeEvent e;
-	e.sampleRate = APP->engine->getSampleRate();
+	e.sampleRate = Test::sampleRate();
 	e.sampleTime = 1.0f / e.sampleRate;
 	m->onSampleRateChange(e);
 
@@ -284,7 +291,10 @@ inline void unregisterModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) 
 	}
 }
 
-inline const Module::ProcessArgs makeProcessArgs(int64_t frame, float sampleRate = 44100.f) {
+// Defaults to Test::sampleRate() (the same source Test::createModule() uses for its
+// onSampleRateChange event) rather than a hardcoded value, so a module is always stepped at the
+// rate it was configured for — even in tests that change the engine's sample rate.
+inline const Module::ProcessArgs makeProcessArgs(int64_t frame, float sampleRate = Test::sampleRate()) {
 	Module::ProcessArgs args;
 	args.sampleRate = sampleRate;
 	args.sampleTime = 1.0f / args.sampleRate;
