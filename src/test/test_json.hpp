@@ -9,7 +9,7 @@ namespace Test {
 // Renders a JSON path as a dotted string for CATCH_INFO annotations
 // (e.g. {"a", "b", "c"} -> "a.b.c"). Array indices are encoded as their
 // decimal representation.
-static std::string formatJsonPath(const std::vector<std::string>& path) {
+inline std::string formatJsonPath(const std::vector<std::string>& path) {
 	std::string s;
 	for (size_t i = 0; i < path.size(); i++) {
 		if (i > 0) s += ".";
@@ -22,7 +22,7 @@ static std::string formatJsonPath(const std::vector<std::string>& path) {
 // to its node within a JSON document. An empty path resolves to the root
 // itself. Returns NULL if any step is missing or passes through a scalar -
 // callers treat this as a no-op rather than an error.
-static json_t* resolveJsonPath(json_t* root, const std::vector<std::string>& path) {
+inline json_t* resolveJsonPath(json_t* root, const std::vector<std::string>& path) {
 	json_t* current = root;
 	for (const auto& step : path) {
 		if (json_is_array(current))
@@ -71,7 +71,7 @@ static json_t* resolveJsonPath(json_t* root, const std::vector<std::string>& pat
 //   json_decref(rootJ);
 //   Test::destroyModule(module);
 template <typename T>
-static void testPresetNullGuards(T* module, json_t* rootJ) {
+inline void testPresetNullGuards(T* module, json_t* rootJ) {
 	REQUIRE(module != nullptr);
 	REQUIRE(rootJ != nullptr);
 	REQUIRE(json_is_object(rootJ));
@@ -150,7 +150,7 @@ static void testPresetNullGuards(T* module, json_t* rootJ) {
 //
 // Usage: same as testPresetNullGuards().
 template <typename T>
-static void testPresetTypeConfusion(T* module, json_t* rootJ) {
+inline void testPresetTypeConfusion(T* module, json_t* rootJ) {
 	REQUIRE(module != nullptr);
 	REQUIRE(rootJ != nullptr);
 	REQUIRE(json_is_object(rootJ));
@@ -237,7 +237,7 @@ static void testPresetTypeConfusion(T* module, json_t* rootJ) {
 //
 // Usage: same as testPresetNullGuards().
 template <typename T>
-static void testPresetOversizedArrays(T* module, json_t* rootJ) {
+inline void testPresetOversizedArrays(T* module, json_t* rootJ) {
 	REQUIRE(module != nullptr);
 	REQUIRE(rootJ != nullptr);
 	REQUIRE(json_is_object(rootJ));

@@ -10,10 +10,17 @@
 
 namespace Test {
 
-static std::atomic<int> testContextCount{0};
+// Function-local static, not a header-scope `static` variable, so every TU that includes this
+// header shares one counter instead of getting its own private copy (see A6 in the framework
+// review — this is the same trap `#pragma once` does not protect against once a test binary
+// links more than one TU).
+inline std::atomic<int>& testContextCount() {
+	static std::atomic<int> count{0};
+	return count;
+}
 
 // Registry for model pointer sync (see registerModelSync below).
-static std::vector<std::pair<std::string, Model**>>& modelSyncRegistry() {
+inline std::vector<std::pair<std::string, Model**>>& modelSyncRegistry() {
 	static std::vector<std::pair<std::string, Model**>> reg;
 	return reg;
 }
@@ -27,7 +34,7 @@ static std::vector<std::pair<std::string, Model**>>& modelSyncRegistry() {
 // that global used by init()). After init() runs, the registered pointer lives
 // in the dylib; process() compiled inline uses this TU's pointer. Without this
 // sync, expander model checks always fail.
-static void registerModelSync(const std::string& slug, Model** ptr) {
+inline void registerModelSync(const std::string& slug, Model** ptr) {
 	modelSyncRegistry().push_back({slug, ptr});
 }
 
@@ -50,7 +57,7 @@ static void registerModelSync(const std::string& slug, Model** ptr) {
 // "wrong expander" behaviour reads as a logic bug rather than a missing test-harness call.
 //
 // Usage: SYNC_MODEL(modelMidiCatMem, "MidiCatMem"); ... Test::requireModelSync(modelMidiCatMem, "MidiCatMem");
-static void requireModelSync(Model* model, const std::string& slug) {
+inline void requireModelSync(Model* model, const std::string& slug) {
 	CATCH_INFO("Missing SYNC_MODEL(..., \"" << slug << "\") — model global for '" << slug
 		<< "' was never registered for sync with the plugin dylib, or TestContext hasn't run yet");
 	REQUIRE(model != nullptr);
@@ -83,7 +90,7 @@ struct TestContext {
 		StoermelderPackOne::thread::verifyEnabled = false;
 
 		// If this is the first TestContext, create and initialize the pluginInstance and context
-		if (testContextCount.fetch_add(1, std::memory_order_acq_rel) == 0) {
+		if (testContextCount().fetch_add(1, std::memory_order_acq_rel) == 0) {
 			pluginInstance = new Plugin();
 			init(pluginInstance);
 			{
@@ -130,7 +137,7 @@ struct TestContext {
 
 	~TestContext() {
 		// If this is the last TestContext, delete the pluginInstance
-		if (testContextCount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+		if (testContextCount().fetch_sub(1, std::memory_order_acq_rel) == 1) {
 			auto it = std::find(rack::plugin::plugins.begin(), rack::plugin::plugins.end(), pluginInstance);
 			rack::plugin::plugins.erase(it);
 			delete pluginInstance;
@@ -146,7 +153,7 @@ struct TestContext {
 };
 
 
-static int64_t getModuleId() {
+inline int64_t getModuleId() {
 	static std::atomic<int64_t> nextModuleId{1};
 	return nextModuleId.fetch_add(1, std::memory_order_acq_rel);
 }
@@ -154,7 +161,7 @@ static int64_t getModuleId() {
 
 
 template <typename T>
-static T* createModule(std::string modelSlug) {
+inline T* createModule(std::string modelSlug) {
 	Model* model = pluginInstance->getModel(modelSlug);
 	T* m = dynamic_cast<T*>(model->createModule());
 	m->id = getModuleId();
@@ -167,7 +174,7 @@ static T* createModule(std::string modelSlug) {
 	return m;
 }
 
-static void destroyModule(rack::Module* m) {
+inline void destroyModule(rack::Module* m) {
 	Module::RemoveEvent eRemove;
 	m->onRemove(eRemove);
 	delete m;
@@ -231,26 +238,26 @@ struct ModuleScaffold {
 
 // Creates a ModuleWidget and adds it to the engine
 template <typename T>
-static T* createWidget(Module* m) {
+inline T* createWidget(Module* m) {
 	T* mw = dynamic_cast<T*>(m->model->createModuleWidget(m));
 	return mw;
 }
 
 // Creates a ModuleWidget, without a module, the same way as the module browser
 template <typename T>
-static T* createWidget(std::string modelSlug) {
+inline T* createWidget(std::string modelSlug) {
 	Model* m = pluginInstance->getModel(modelSlug);
 	T* mw = dynamic_cast<T*>(m->createModuleWidget(NULL));
 	return mw;
 }
 
-static void destroyWidget(rack::ModuleWidget* mw) {
+inline void destroyWidget(rack::ModuleWidget* mw) {
 	APP->event->finalizeWidget(mw);
 	mw->module = NULL;
 	delete mw;
 }
 
-static void registerModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
+inline void registerModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
 	TEST_SUPPRESS_DEPRECATED_BEGIN
 	APP->engine->addModule_NoLock(m);
 	TEST_SUPPRESS_DEPRECATED_END
@@ -259,7 +266,7 @@ static void registerModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
 	}
 }
 
-static void unregisterModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
+inline void unregisterModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
 	if (mw) {
 		APP->scene->rack->removeModule(mw);
 		TEST_SUPPRESS_DEPRECATED_BEGIN
@@ -277,7 +284,7 @@ static void unregisterModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) 
 	}
 }
 
-static const Module::ProcessArgs makeProcessArgs(int64_t frame, float sampleRate = 44100.f) {
+inline const Module::ProcessArgs makeProcessArgs(int64_t frame, float sampleRate = 44100.f) {
 	Module::ProcessArgs args;
 	args.sampleRate = sampleRate;
 	args.sampleTime = 1.0f / args.sampleRate;
@@ -290,7 +297,7 @@ static const Module::ProcessArgs makeProcessArgs(int64_t frame, float sampleRate
 // - channel: low nibble (0-15)
 // - b1: first data byte (e.g., CC number)
 // - b2: second data byte (e.g., value)
-static const rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t channel, uint8_t b1, uint8_t b2, int64_t frame = 0) {
+inline const rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t channel, uint8_t b1, uint8_t b2, int64_t frame = 0) {
 	rack::midi::Message m;
 	m.frame = frame;
 	m.bytes = { static_cast<unsigned char>((statusNibble << 4) | (channel & 0x0f)), static_cast<unsigned char>(b1), static_cast<unsigned char>(b2) };
