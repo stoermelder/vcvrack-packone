@@ -93,3 +93,5 @@ There are additional settings on the context menu of each playhead:
   - Added new ratcheting modes ("Twos", "Threes", "Power of Two")
 - v2.0.0
   - Fixed broken reset‑behavior
+- v2.x.x
+  - Improved rendering performance

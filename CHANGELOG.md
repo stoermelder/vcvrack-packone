@@ -1,9 +1,11 @@
-## 2.6.1
+## 2.x.x
 
 ### Changes and Fixes
 
 - Module [DIRT](./docs/dirt/Dirt.md)
     - Fixed broken "Initialize" on Crush defects
+- Modules [MAZE](./docs/maze/Maze.md) and [HIVE](./docs/maze/Hive.md)
+    - Improved rendering performance
 
 ## 2.6.0
 
