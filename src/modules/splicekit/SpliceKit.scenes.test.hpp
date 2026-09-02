@@ -206,7 +206,7 @@ TEST_CASE("Scene link - follower adopts master's scene after a change", "[Splice
 	REQUIRE(follower->sceneStore.current == 0);  // not yet applied
 
 	Test::SimpleEngine engine;
-	engine.registerModule(follower);
+	engine.addModule(follower);
 	for (int i = 0; i < 256; i++) engine.step();  // let processDivider fire and drain moduleChangedFlag
 
 	REQUIRE(follower->taskProcessorUi.internalQueue.queue.size() == 1);
@@ -226,7 +226,7 @@ TEST_CASE("Scene link - no-op when sceneLinkMasterId is unset", "[SpliceKit]") {
 
 	m->moduleChangedFlag = true;
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 0);
@@ -246,7 +246,7 @@ TEST_CASE("Scene link - unrelated instance without a configured master ignores t
 	master->sceneStore.switchTo(2);  // notifies every registered SpliceKit instance, including bystander
 
 	Test::SimpleEngine engine;
-	engine.registerModule(bystander);
+	engine.addModule(bystander);
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(bystander->sceneStore.current == 0);
@@ -270,7 +270,7 @@ TEST_CASE("Scene link - stale master reference is cleared once the master no lon
 
 	follower->moduleChangedFlag = true;  // simulate a pending notification arriving late
 	Test::SimpleEngine engine;
-	engine.registerModule(follower);
+	engine.addModule(follower);
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(follower->sceneLinkMasterId == -1);

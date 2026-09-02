@@ -503,7 +503,7 @@ TEST_CASE("process - drains pending offs before emitting new on-messages", "[Spl
 	m->feedback.queueFeedbackOff(0, LED_STATE_COLOR2);
 
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();
 
 	// The queued off went out, and it did so before the light loop's on-messages: the

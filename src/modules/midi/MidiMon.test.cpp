@@ -462,7 +462,7 @@ struct MockUiAccess : vcv::UiAccess {
 // A FileAccess mock that records write() calls; failWrites forces the failure path.
 // Path helpers (getDirectory/getFilename) forward to rack::system so exportLogDialog
 // computes the real default filename ("MidiMon.log") for the save dialog.
-struct MockFileAccess : Test::MockVcv::MockFileAccess {
+struct MockFileAccess : Test::mock::MockFileAccess {
 	struct WriteCall { std::string path, data; };
 	std::vector<WriteCall> writes;
 	bool failWrites = false;

@@ -97,8 +97,7 @@ The unit tests use [Catch2](https://github.com/catchorg/Catch2). Tests live next
 make testrun                             # build and run all tests (parallel, JOBS=8 by default)
 make testrun JOBS=4                      # ...with a different fan-out
 make testrun SUCCESS=1                   # also print passing assertions
-make test-one NAME=<Module>              # rebuild and run a single test binary
-make testrun-one NAME=<Module>           # run a single test binary without rebuilding
+make testrun-one NAME=<Module>           # build (if needed) and run a single test binary
 make testrun-one NAME=<Module> FILTER='[tag]'  # ...only TEST_CASEs matching a Catch2 tag/name filter
 make test                                # build only, don't run
 make test SANITIZER=undefined            # build with UBSan instead of ASan (also: thread)

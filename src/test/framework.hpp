@@ -10,7 +10,7 @@
 //                         SimpleEngine, ModuleScaffold, SYNC_MODEL/requireModelSync
 //   test_json.hpp      — testPresetNullGuards/TypeConfusion/OversizedArrays; templates, so
 //                         harmless to include even in files that never call them
-//   test_mock.hpp      — Test::MockVcv::Guard<Base> and the pass-through MockFileAccess;
+//   test_mock.hpp      — Test::mock::Guard<Base> and the pass-through MockFileAccess;
 //                         pulls in vcv/api.hpp, but declaring a Guard<Base> costs nothing
 //                         in a file that never instantiates one
 #include "test_plugin.hpp"

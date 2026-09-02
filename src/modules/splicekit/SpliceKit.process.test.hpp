@@ -15,7 +15,7 @@ TEST_CASE("process - unassigned cell transitions cellLedState to OFF", "[SpliceK
 	m->feedback.cellLedState[0] = LED_STATE_COLOR0;
 
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->feedback.cellLedState[0] == LED_STATE_OFF);
@@ -32,7 +32,7 @@ TEST_CASE("process - assigned cell without cable transitions to DIM state", "[Sp
 	m->portHasCable[0] = false;
 
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->feedback.cellLedState[0] == LED_STATE_COLOR0_DIM);
@@ -49,7 +49,7 @@ TEST_CASE("process - cellLedState transitions from old state to OFF when cell un
 
 	// Cell 5 is unassigned; process() must send note-off for COLOR1 then note-on for OFF
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->feedback.cellLedState[5] == LED_STATE_OFF);
@@ -64,7 +64,7 @@ TEST_CASE("process - scene cellLedState transitions to SCENE_ACTIVE for currentS
 	m->feedback.sceneLedState[2] = -1;  // force a state send
 
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->feedback.sceneLedState[2] == LED_STATE_SCENE_ACTIVE);
@@ -76,7 +76,7 @@ TEST_CASE("process - physical scene button press works normally when not linked"
 	m->sceneStore.current = 0;  // sceneLinkMasterId stays -1 (default)
 
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();  // establish trigger baseline at low
 
 	m->params[SpliceKitModule::PARAM_SCENE + 1].setValue(1.f);
@@ -95,7 +95,7 @@ TEST_CASE("process - physical scene button press is ignored while following a sc
 	m->sceneStore.current = 0;
 
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();  // establish trigger baseline at low
 
 	m->params[SpliceKitModule::PARAM_SCENE + 1].setValue(1.f);
@@ -118,7 +118,7 @@ TEST_CASE("process - momentary mode: releasing a pressed cell clears the pending
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();  // initialize trigger at low
 
 	// Press cell 0 → rising edge arms it.
@@ -141,7 +141,7 @@ TEST_CASE("process - toggle mode: releasing a pressed cell keeps the pending sel
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();  // initialize trigger at low
 
 	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(1.f);
@@ -168,7 +168,7 @@ TEST_CASE("process - first press arms the cell, second press creates the cable",
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();  // initialize triggers at low
 
 	// First press: cell 0 → rising edge arms it.
@@ -196,7 +196,7 @@ TEST_CASE("process - pressing the same cell again cancels the selection", "[Spli
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();  // initialize trigger at low
 
 	// Press cell 0 → arms it.
@@ -226,7 +226,7 @@ TEST_CASE("process - scene state transitions from active to dim after scene swit
 	m->sceneStore.setConnection(1, 0, 1, true);
 
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->feedback.sceneLedState[0] == LED_STATE_SCENE_ACTIVE);
@@ -251,7 +251,7 @@ TEST_CASE("process - pending cell transitions cellLedState to PENDING", "[Splice
 	REQUIRE(m->pendingCellId == 0);
 
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();
 
 	REQUIRE(m->feedback.cellLedState[0] == LED_STATE_PENDING);
@@ -274,7 +274,7 @@ TEST_CASE("process - cell connected to pending cell transitions to CONNECTED1", 
 	m->triggerCell(0);  // pendingCellId = 0
 
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();
 
 	// Cell 5 is connected to pending cell 0. Cell 5 is an INPUT with no explicit
@@ -379,7 +379,7 @@ TEST_CASE("process - cell with port assignment and no cable transitions to COLOR
 	m->portHasCable[2] = false;  // explicit — no cable
 
 	Test::SimpleEngine engine;
-	engine.registerModule(m);
+	engine.addModule(m);
 	for (int i = 0; i < 256; i++) engine.step();
 
 	// OUTPUT with default color set 0, no cable → COLOR0_DIM

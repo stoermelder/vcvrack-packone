@@ -188,7 +188,7 @@ TEST_CASE("Expander chain", "[IntermixEnv]") {
 	auto envModule1 = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
 	auto envModule2 = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
 	Test::SimpleEngine engine;
-	engine.registerModules(intermixModule, envModule1, envModule2);
+	engine.addModules(intermixModule, envModule1, envModule2);
 
 	SECTION("Multiple expanders can chain") {
 		// Setup expander chain: Intermix -> Env1 -> Env2

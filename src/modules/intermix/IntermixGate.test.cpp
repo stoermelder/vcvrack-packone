@@ -250,7 +250,7 @@ TEST_CASE("Expander chain with gate module", "[IntermixGate]") {
 	auto gateModule1 = Test::createModule<IntermixGateModule<8>>("IntermixGate");
 	auto gateModule2 = Test::createModule<IntermixGateModule<8>>("IntermixGate");
 	Test::SimpleEngine engine;
-	engine.registerModules(intermixModule, gateModule1, gateModule2);
+	engine.addModules(intermixModule, gateModule1, gateModule2);
 
 	SECTION("Multiple gate expanders can chain") {
 		// Setup expander chain: Intermix -> Gate1 -> Gate2

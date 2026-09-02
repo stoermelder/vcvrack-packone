@@ -6,7 +6,7 @@ namespace Test {
 
 using namespace StoermelderPackOne;
 
-namespace MockVcv {
+namespace mock {
 
 // Installs one mock into one vcv access slot for the duration of the scope, restoring the
 // slot's previous value (nullptr if it wasn't already mocked) on destruction.
@@ -20,8 +20,8 @@ namespace MockVcv {
 //   struct Mock {
 //       MockUiAccess ui;
 //       MockFileAccess fs;
-//       Test::MockVcv::Guard<vcv::UiAccess> uiGuard{vcv::uiAccess, &ui};
-//       Test::MockVcv::Guard<vcv::FileAccess> fsGuard{vcv::fileAccess, &fs};
+//       Test::mock::Guard<vcv::UiAccess> uiGuard{vcv::uiAccess, &ui};
+//       Test::mock::Guard<vcv::FileAccess> fsGuard{vcv::fileAccess, &fs};
 //   };
 template <typename Base>
 struct Guard {
@@ -66,7 +66,7 @@ struct MockFileAccess : StoermelderPackOne::vcv::FileAccess {
 	void openDirectory(const std::string& path) override { rack::system::openDirectory(path); }
 };
 
-} // namespace MockVcv
+} // namespace mock
 
 // One macro per access slot: declares the mock member (named after the slot: modules, scene,
 // cables, ui, fs, history, nw) of the given type, plus a Guard that installs it into the
@@ -81,12 +81,12 @@ struct MockFileAccess : StoermelderPackOne::vcv::FileAccess {
 //       TEST_MOCK_FS(MockFileAccess);
 //       TEST_MOCK_HISTORY(MockHistoryAccess);
 //   } mock;   // mock.ui, mock.fs, mock.history
-#define TEST_MOCK_MODULES(Type) Type modules; Test::MockVcv::Guard<vcv::ModuleAccess> modulesGuard{vcv::moduleAccess, &modules}
-#define TEST_MOCK_SCENE(Type)   Type scene; Test::MockVcv::Guard<vcv::SceneAccess> sceneGuard{vcv::sceneAccess, &scene}
-#define TEST_MOCK_CABLES(Type)  Type cables; Test::MockVcv::Guard<vcv::CableAccess> cablesGuard{vcv::cableAccess, &cables}
-#define TEST_MOCK_UI(Type)      Type ui; Test::MockVcv::Guard<vcv::UiAccess> uiGuard{vcv::uiAccess, &ui}
-#define TEST_MOCK_FS(Type)      Type fs; Test::MockVcv::Guard<vcv::FileAccess> fsGuard{vcv::fileAccess, &fs}
-#define TEST_MOCK_HISTORY(Type) Type history; Test::MockVcv::Guard<vcv::HistoryAccess> historyGuard{vcv::historyAccess, &history}
-#define TEST_MOCK_NW(Type)      Type nw; Test::MockVcv::Guard<vcv::NwAccess> nwGuard{vcv::nwAccess, &nw}
+#define TEST_MOCK_MODULES(Type) Type modules; Test::mock::Guard<vcv::ModuleAccess> modulesGuard{vcv::moduleAccess, &modules}
+#define TEST_MOCK_SCENE(Type)   Type scene; Test::mock::Guard<vcv::SceneAccess> sceneGuard{vcv::sceneAccess, &scene}
+#define TEST_MOCK_CABLES(Type)  Type cables; Test::mock::Guard<vcv::CableAccess> cablesGuard{vcv::cableAccess, &cables}
+#define TEST_MOCK_UI(Type)      Type ui; Test::mock::Guard<vcv::UiAccess> uiGuard{vcv::uiAccess, &ui}
+#define TEST_MOCK_FS(Type)      Type fs; Test::mock::Guard<vcv::FileAccess> fsGuard{vcv::fileAccess, &fs}
+#define TEST_MOCK_HISTORY(Type) Type history; Test::mock::Guard<vcv::HistoryAccess> historyGuard{vcv::historyAccess, &history}
+#define TEST_MOCK_NW(Type)      Type nw; Test::mock::Guard<vcv::NwAccess> nwGuard{vcv::nwAccess, &nw}
 
 } // namespace Test

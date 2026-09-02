@@ -385,7 +385,7 @@ TEST_CASE("Expander chain", "[IntermixFade]") {
 	auto fadeModule1 = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
 	auto fadeModule2 = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
 	Test::SimpleEngine engine;
-	engine.registerModules(intermixModule, fadeModule1, fadeModule2);
+	engine.addModules(intermixModule, fadeModule1, fadeModule2);
 
 	SECTION("Multiple expanders can chain") {
 		// Setup expander chain: Intermix -> Fade1 -> Fade2
@@ -466,7 +466,7 @@ TEST_CASE("Expander fade time: param value sent to expSetFade as seconds", "[Int
 
 		// The expander's sceneDivider fires every 64 calls; 100 steps guarantees it.
 		Test::SimpleEngine engine;
-		engine.registerModules(mock, fade);
+		engine.addModules(mock, fade);
 		for (int i = 0; i < 100; i++) engine.step();
 
 		REQUIRE(mock->fadeInReceived);
@@ -491,7 +491,7 @@ TEST_CASE("Expander fade time: param value sent to expSetFade as seconds", "[Int
 			fade->params[IntermixFadeModule<8>::PARAM_FADE + j].setValue(2.0f);
 
 		Test::SimpleEngine engine;
-		engine.registerModules(mock, fade);
+		engine.addModules(mock, fade);
 		for (int i = 0; i < 100; i++) engine.step();
 
 		REQUIRE(mock->fadeInReceived);
@@ -516,7 +516,7 @@ TEST_CASE("Expander fade time: param value sent to expSetFade as seconds", "[Int
 			fade->params[IntermixFadeModule<8>::PARAM_FADE + j].setValue(10.0f);
 
 		Test::SimpleEngine engine;
-		engine.registerModules(mock, fade);
+		engine.addModules(mock, fade);
 		for (int i = 0; i < 100; i++) engine.step();
 
 		REQUIRE(mock->fadeOutReceived);

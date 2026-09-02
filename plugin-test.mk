@@ -2,9 +2,8 @@
 # Use "make test" to build tests
 # Use "make testrun" to build and run tests (parallel; set JOBS=N to control fan-out, default 8)
 # Use "make testrun SUCCESS=1" to print test success messages
-# Use "make testrun-one NAME=<Module>" to run a single test binary (builds it if needed)
+# Use "make testrun-one NAME=<Module>" to build (if needed) and run a single test binary
 # Use "make testrun-one NAME=<Module> FILTER='[tag]'" to run only matching TEST_CASEs
-# Use "make test-one NAME=<Module>" to rebuild (if out of date) and run a single test binary
 # Use "make test SANITIZER=thread" (or =undefined, =address) to switch sanitizers; default address.
 # TSan is required for any concurrent (ThreadedHarness-style) test.
 
@@ -61,18 +60,15 @@ testrun: test
 	@printf '%s\n' $(TEST_BINARIES) | xargs -P $(JOBS) -I{} sh -c \
 		'out=$$(TESTING=1 DYLD_LIBRARY_PATH=$(RACK_DIR) ./{} $(TEST_SUCCESS_FLAG) 2>&1); status=$$?; echo "=== {} ==="; echo "$$out"; exit $$status'
 
-# Run a single test binary (builds it if needed), e.g. make testrun-one NAME=Mb
+# Build (if out of date) and run a single test binary, e.g. make testrun-one NAME=Mb
 # Add FILTER='[tag]' (or a Catch2 test-name pattern) to run only matching TEST_CASEs instead of
 # the whole binary — much faster during development than a full-binary run.
-# The binary is build/test/<NAME>.test.
+# The binary is build/test/<NAME>.test. Its own build/test/%: %.cpp $(TEST_HEADERS) $(TARGET)
+# prerequisites (above) already relink it whenever the plugin dylib or any project header is
+# stale, so this one target covers both "just run it" and "rebuild everything, then run it" —
+# there used to be a separate test-one target for the latter, but once $(TARGET) became a
+# prerequisite of the binary itself the two were identical, just reached via a different number
+# of `make` invocations. Removed rather than kept as a confusing alias.
 .PHONY: testrun-one
 testrun-one: build/test/$(NAME).test
 	TESTING=1 DYLD_LIBRARY_PATH=$(RACK_DIR) ./$< $(TEST_SUCCESS_FLAG) $(TEST_FILTER_ARG)
-
-# Rebuild (if out of date) and run a single test binary, e.g. make test-one NAME=Mb
-# Rebuilds the plugin dylib first, then runs it via `testrun-one` — make's own
-# build/test/%: %.cpp $(TEST_HEADERS) $(TARGET) prerequisites already relink the binary if it's
-# stale, so no explicit `rm` is needed here.
-.PHONY: test-one
-test-one: $(TARGET)
-	$(MAKE) testrun-one NAME=$(NAME)

@@ -322,11 +322,16 @@ inline const rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t c
 //
 // Usage:
 // Test::SimpleEngine testEngine;
-// testEngine.registerModules(moduleA, moduleB);
+// testEngine.addModules(moduleA, moduleB);
 // A -> B chain
 //
 // testEngine.step();  // Process both modules with message flipping
 // testEngine.step();  // Continue processing...
+//
+// Named addModule(s), not registerModule(s), to stay distinct from Test::registerModule() —
+// that one registers a module with Rack's real engine (APP->engine->addModule_NoLock); this one
+// only appends to SimpleEngine's own std::list. Same word, unrelated operations (see B2 in the
+// framework review).
 struct SimpleEngine {
 	std::list<Module*> modules;
 	int frame = 0;
@@ -347,20 +352,13 @@ struct SimpleEngine {
 		frame++;
  	}
 
-	void registerModule(Module* m) {
+	void addModule(Module* m) {
 		modules.push_back(m);
 	}
 
-	/// Register multiple modules at once.
-	void registerModule(std::initializer_list<Module*> modules) {
-		for (Module* m : modules) {
-			this->modules.push_back(m);
-		}
-	}
-
-	/// Register multiple modules with variadic template.
+	/// Add multiple modules at once.
 	template <typename... T>
-	void registerModules(T*... _m) {
+	void addModules(T*... _m) {
 		Module* arr[] = {_m...};
 		for (Module* m : arr) {
 			this->modules.push_back(m);
