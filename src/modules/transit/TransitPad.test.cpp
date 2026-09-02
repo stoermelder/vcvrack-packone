@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "TransitBase.hpp"
 #include "Transit.cpp"
 #include "TransitPad.cpp"
@@ -33,7 +32,8 @@ static void fireTrigger(TransitPadModule<>* m, int inputId, int64_t frame) {
 
 
 TEST_CASE("Construction and initialization", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 	TransitPadWidget* mw = Test::createWidget<TransitPadWidget>("TransitPad");
 
 	REQUIRE(m != nullptr);
@@ -45,12 +45,12 @@ TEST_CASE("Construction and initialization", "[TransitPad]") {
 	REQUIRE(m->setCvMode == SETCVMODE::TRIG_FWD);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("Preset JSON null-guards", "[TransitPad][JSON]") {
-	auto module = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	auto module = mods.create("TransitPad");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -73,7 +73,6 @@ TEST_CASE("Preset JSON null-guards", "[TransitPad][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 // XyScreenNodes::dataToJson()/dataFromJson() write "radius"/"amount"
@@ -84,7 +83,8 @@ TEST_CASE("Preset JSON null-guards", "[TransitPad][JSON]") {
 // those keys fails loudly.
 
 TEST_CASE("Golden JSON: snapshot (node) radius/amount round-trip byte-identically", "[TransitPad][JSON]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 
 	m->nodes.setRadiusImmediate(0, 0.125f);
 	m->nodes.setRadius(0, 0.125f);
@@ -101,11 +101,11 @@ TEST_CASE("Golden JSON: snapshot (node) radius/amount round-trip byte-identicall
 
 	REQUIRE(actual == "{\"amount\":0.875,\"radius\":0.125}");
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Golden JSON: full module dataToJson is byte-identical for a distinctive snapshot state", "[TransitPad][JSON]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 
 	m->snapshots[0][0].id = 3;
 	m->nodes.setRadiusImmediate(0, 0.25f);
@@ -132,15 +132,15 @@ TEST_CASE("Golden JSON: full module dataToJson is byte-identical for a distincti
 	REQUIRE(json_object_get(outputJ, "amount") == nullptr);
 
 	json_decref(rootJ);
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("Regression: 'sets' array longer than SETS is bounded", "[TransitPad][JSON]") {
+	Test::ModuleScaffold<TransitPadModule<>> mods;
 	// BUG-1: dataFromJson() iterated the full length of "sets", writing past
 	// the fixed-size snapshots[SETS]/setColor[SETS]/setLabel[SETS] members.
 	// Loading a hand-edited patch with >8 entries crashed (ASan: SEGV).
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	TransitPadModule<>* m = mods.create("TransitPad");
 
 	json_t* rootJ = m->dataToJson();
 	REQUIRE(rootJ != nullptr);
@@ -167,14 +167,14 @@ TEST_CASE("Regression: 'sets' array longer than SETS is bounded", "[TransitPad][
 	}
 
 	json_decref(rootJ);
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("Regression: non-string 'color'/'label' values are ignored", "[TransitPad][JSON]") {
+	Test::ModuleScaffold<TransitPadModule<>> mods;
 	// BUG-2: json_string_value() returns NULL for non-string values; assigning
 	// it to std::string was UB (ASan: SEGV in _platform_strlen).
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	TransitPadModule<>* m = mods.create("TransitPad");
 
 	// Distinctive state that must survive loading malformed color/label keys
 	NVGcolor color0 = m->setColor[0];
@@ -202,12 +202,12 @@ TEST_CASE("Regression: non-string 'color'/'label' values are ignored", "[Transit
 	REQUIRE(m->setLabel[1] == "keep");
 
 	json_decref(rootJ);
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("SET_PARAM buttons change currentSet", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 
 	SECTION("Pressing set button 3 changes currentSet to 3") {
 		m->params[TransitPadModule<>::SET_PARAM + 3].setValue(1.f);
@@ -232,12 +232,12 @@ TEST_CASE("SET_PARAM buttons change currentSet", "[TransitPad]") {
 		REQUIRE(m->currentSet == 2);
 	}
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("SET_CV_INPUT TRIG_FWD advances currentSet on each trigger", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 	m->setCvMode = SETCVMODE::TRIG_FWD;
 	// Keep buttons unpressed so they don't interfere
 	m->inputs[TransitPadModule<>::SET_CV_INPUT].channels = 1;
@@ -269,12 +269,12 @@ TEST_CASE("SET_CV_INPUT TRIG_FWD advances currentSet on each trigger", "[Transit
 		REQUIRE(m->currentSet == 0);
 	}
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("SET_CV_INPUT VOLT mode maps 0-10V to set index", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 	m->setCvMode = SETCVMODE::VOLT;
 	m->inputs[TransitPadModule<>::SET_CV_INPUT].channels = 1;
 
@@ -309,12 +309,12 @@ TEST_CASE("SET_CV_INPUT VOLT mode maps 0-10V to set index", "[TransitPad]") {
 		REQUIRE(m->currentSet == 4);
 	}
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("SET_CV_INPUT C4 mode maps V/oct to set index", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 	m->setCvMode = SETCVMODE::C4;
 	m->inputs[TransitPadModule<>::SET_CV_INPUT].channels = 1;
 
@@ -348,12 +348,12 @@ TEST_CASE("SET_CV_INPUT C4 mode maps V/oct to set index", "[TransitPad]") {
 		REQUIRE(m->currentSet == 7);
 	}
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("SET_CV_INPUT OFF mode: input has no effect", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 	m->setCvMode = SETCVMODE::OFF;
 	m->inputs[TransitPadModule<>::SET_CV_INPUT].channels = 1;
 
@@ -376,12 +376,12 @@ TEST_CASE("SET_CV_INPUT OFF mode: input has no effect", "[TransitPad]") {
 		REQUIRE(m->currentSet == 6);
 	}
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("CV input sets currentSet when connected", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 	m->setCvMode = SETCVMODE::VOLT;
 	m->inputs[TransitPadModule<>::SET_CV_INPUT].channels = 1;
 
@@ -391,12 +391,12 @@ TEST_CASE("CV input sets currentSet when connected", "[TransitPad]") {
 
 	REQUIRE(m->currentSet == 2);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("Buttons work when CV is disconnected", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 	m->setCvMode = SETCVMODE::VOLT;
 	m->inputs[TransitPadModule<>::SET_CV_INPUT].channels = 0; // disconnected
 
@@ -405,12 +405,12 @@ TEST_CASE("Buttons work when CV is disconnected", "[TransitPad]") {
 
 	REQUIRE(m->currentSet == 4);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("JSON round-trip preserves setCvMode", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 
 	SECTION("VOLT mode survives save/load") {
 		m->setCvMode = SETCVMODE::VOLT;
@@ -448,12 +448,12 @@ TEST_CASE("JSON round-trip preserves setCvMode", "[TransitPad]") {
 		REQUIRE(m->setCvMode == SETCVMODE::TRIG_FWD);
 	}
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("JSON round-trip preserves snapshotsUsed", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 
 	m->snapshotsUsed = 6;
 	json_t* j = m->dataToJson();
@@ -463,69 +463,65 @@ TEST_CASE("JSON round-trip preserves snapshotsUsed", "[TransitPad]") {
 
 	REQUIRE(m->snapshotsUsed == 6);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("JSON round-trip preserves currentSet", "[TransitPad]") {
+	Test::ModuleScaffold<TransitPadModule<>> mods;
 	SECTION("Non-zero currentSet survives save/load") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		m->currentSet = 5;
 		json_t* j = m->dataToJson();
 		m->currentSet = 0;
 		m->dataFromJson(j);
 		json_decref(j);
 		REQUIRE(m->currentSet == 5);
-		Test::destroyModule(m);
 	}
 
 	SECTION("Out-of-range currentSet is clamped to valid range on load") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		m->currentSet = 0;
 		// Hand-craft a JSON document with a bogus currentSet value to exercise the clamp
 		json_t* j = json_pack("{s:i}", "currentSet", 999);
 		m->dataFromJson(j);
 		json_decref(j);
 		REQUIRE(m->currentSet == (int)m->getSetCount() - 1);
-		Test::destroyModule(m);
 	}
 
 	SECTION("Negative currentSet is clamped to 0 on load") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		m->currentSet = 4;
 		json_t* j = json_pack("{s:i}", "currentSet", -1);
 		m->dataFromJson(j);
 		json_decref(j);
 		REQUIRE(m->currentSet == 0);
-		Test::destroyModule(m);
 	}
 
 	SECTION("Missing currentSet key leaves currentSet unchanged (back-compat with old patches)") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		m->currentSet = 3;
 		json_t* j = json_object();
 		m->dataFromJson(j);
 		json_decref(j);
 		REQUIRE(m->currentSet == 3);
-		Test::destroyModule(m);
 	}
 }
 
 
 TEST_CASE("JSON round-trip preserves setLabel", "[TransitPad]") {
+	Test::ModuleScaffold<TransitPadModule<>> mods;
 	SECTION("Non-empty label survives save/load") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		m->setLabel[2] = "Verse";
 		json_t* j = m->dataToJson();
 		m->setLabel[2] = "";
 		m->dataFromJson(j);
 		json_decref(j);
 		REQUIRE(m->setLabel[2] == "Verse");
-		Test::destroyModule(m);
 	}
 
 	SECTION("Empty label is not written; missing key on load leaves label unchanged") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		m->setLabel[0] = "Intro";
 		// setLabel[1] is left as default ("")
 		json_t* j = m->dataToJson();
@@ -538,25 +534,22 @@ TEST_CASE("JSON round-trip preserves setLabel", "[TransitPad]") {
 		REQUIRE(m->setLabel[0] == "Intro");
 		// Set 1 had no label, so the key was absent in JSON — existing value is preserved
 		REQUIRE(m->setLabel[1] == "garbage");
-		Test::destroyModule(m);
 	}
 
 	SECTION("getSetLabel returns custom label when set") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		m->setLabel[3] = "Chorus";
 		REQUIRE(m->getSetLabel(3) == "Chorus");
-		Test::destroyModule(m);
 	}
 
 	SECTION("getSetLabel falls back to 'Set #N' when empty") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		REQUIRE(m->getSetLabel(0) == "Set #1");
 		REQUIRE(m->getSetLabel(4) == "Set #5");
-		Test::destroyModule(m);
 	}
 
 	SECTION("'label' key is omitted from JSON when no label is set") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		// Default state: no labels
 		json_t* j = m->dataToJson();
 		json_t* setsJ = json_object_get(j, "sets");
@@ -564,11 +557,10 @@ TEST_CASE("JSON round-trip preserves setLabel", "[TransitPad]") {
 		json_t* set0J = json_array_get(setsJ, 0);
 		REQUIRE(json_object_get(set0J, "label") == NULL);
 		json_decref(j);
-		Test::destroyModule(m);
 	}
 
 	SECTION("'label' key is present in JSON only for sets that have one") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		m->setLabel[2] = "Verse";
 		json_t* j = m->dataToJson();
 		json_t* setsJ = json_object_get(j, "sets");
@@ -579,25 +571,25 @@ TEST_CASE("JSON round-trip preserves setLabel", "[TransitPad]") {
 		REQUIRE(labelJ != NULL);
 		REQUIRE(std::string(json_string_value(labelJ)) == "Verse");
 		json_decref(j);
-		Test::destroyModule(m);
 	}
 }
 
 
 TEST_CASE("onReset clears setLabel", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 	m->setLabel[0] = "Intro";
 	m->setLabel[3] = "Bridge";
 	m->onReset();
 	REQUIRE(m->setLabel[0] == "");
 	REQUIRE(m->setLabel[3] == "");
 	REQUIRE(m->getSetLabel(0) == "Set #1");
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("onReset restores defaults", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 
 	m->currentSet = 6;
 	m->snapshotsUsed = 8;
@@ -607,65 +599,61 @@ TEST_CASE("onReset restores defaults", "[TransitPad]") {
 	REQUIRE(m->snapshotsUsed == 4);
 	REQUIRE(m->isLocked() == false);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("Locked state", "[TransitPad]") {
+	Test::ModuleScaffold<TransitPadModule<>> mods;
 	SECTION("Default state is unlocked") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		REQUIRE(m->isLocked() == false);
-		Test::destroyModule(m);
 	}
 
 	SECTION("onReset clears lock") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		m->locked = true;
 		m->onReset();
 		REQUIRE(m->isLocked() == false);
-		Test::destroyModule(m);
 	}
 
 	SECTION("Lock survives save/load") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		m->locked = true;
 		json_t* j = m->dataToJson();
 		m->locked = false;
 		m->dataFromJson(j);
 		json_decref(j);
 		REQUIRE(m->isLocked() == true);
-		Test::destroyModule(m);
 	}
 
 	SECTION("Unlock survives save/load") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		m->locked = false;
 		json_t* j = m->dataToJson();
 		m->locked = true;
 		m->dataFromJson(j);
 		json_decref(j);
 		REQUIRE(m->isLocked() == false);
-		Test::destroyModule(m);
 	}
 
 	SECTION("Missing 'locked' key on load leaves lock state unchanged (back-compat)") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 		m->locked = true;
 		json_t* j = json_object();
 		m->dataFromJson(j);
 		json_decref(j);
 		REQUIRE(m->isLocked() == true);
-		Test::destroyModule(m);
 	}
 }
 
 
 TEST_CASE("getCursorXFinal/getCursorYFinal track CV-driven Out position, not the UI shadow", "[TransitPad]") {
+	Test::ModuleScaffold<TransitPadModule<>> mods;
 	// Regression: the cursor drag widget must draw from the param-backed
 	// "final" position (what process() writes from CV/sequencer/ParamHandle
 	// inputs), not from outUiX/outUiY, which is only ever written by a mouse
 	// drag or setCursorXyImmediate/Filtered and does not move with CV.
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	TransitPadModule<>* m = mods.create("TransitPad");
 
 	m->inputs[TransitPadModule<>::OUT_X_INPUT].channels = 1;
 	m->inputs[TransitPadModule<>::OUT_X_INPUT].setVoltage(3.f); // → x = 3/10 + 0.5 = 0.8
@@ -683,12 +671,12 @@ TEST_CASE("getCursorXFinal/getCursorYFinal track CV-driven Out position, not the
 	REQUIRE(m->outUiX == Catch::Approx(outUiXBefore));
 	REQUIRE(m->outUiY == Catch::Approx(outUiYBefore));
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("Snapshot weights: point inside radius gets nonzero weight", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 	m->snapshotsUsed = 1;
 
 	// Default positions: snapshot 0 at (0.1, 0.1), mix point at (0.5, 0.5)
@@ -697,12 +685,12 @@ TEST_CASE("Snapshot weights: point inside radius gets nonzero weight", "[Transit
 
 	REQUIRE(m->snapshots[0][0].weight > 0.f);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("Snapshot weights: point outside radius gets zero weight", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 	m->snapshotsUsed = 1;
 
 	// Move mix point to (0.9, 0.9) via the filter state so process() respects it.
@@ -713,12 +701,12 @@ TEST_CASE("Snapshot weights: point outside radius gets zero weight", "[TransitPa
 
 	REQUIRE(m->snapshots[0][0].weight == 0.f);
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("Snapshot weights are written to the active set", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 	m->snapshotsUsed = 1;
 
 	// Default positions: snapshot 0 at (0.1,0.1), mix at (0.5,0.5) → nonzero weight
@@ -733,7 +721,6 @@ TEST_CASE("Snapshot weights are written to the active set", "[TransitPad]") {
 	runFrames(m, 5);
 	REQUIRE(m->snapshots[3][0].weight > 0.f);
 
-	Test::destroyModule(m);
 }
 
 
@@ -833,8 +820,10 @@ static void setMixVoltage(TransitPadModule<>* pad, float xVolt, float yVolt) {
 
 
 TEST_CASE("Transit detects TransitPad as right expander", "[TransitPad][Transit]") {
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitPadModule<>* pad = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	Test::ModuleScaffold<TransitPadModule<>> mods2;
+	TransitModule<12>* transit = mods.create("Transit");
+	TransitPadModule<>* pad = mods2.create("TransitPad");
 	Test::registerModule(transit);
 	Test::registerModule(pad);
 
@@ -849,15 +838,15 @@ TEST_CASE("Transit detects TransitPad as right expander", "[TransitPad][Transit]
 	REQUIRE(pad->masterModule == transit);
 
 	Test::unregisterModule(pad);
-	Test::destroyModule(pad);
 	Test::unregisterModule(transit);
-	Test::destroyModule(transit);
 }
 
 
 TEST_CASE("Transit sets slotCvMode to OFF when TransitPad is connected", "[TransitPad][Transit]") {
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitPadModule<>* pad = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	Test::ModuleScaffold<TransitPadModule<>> mods2;
+	TransitModule<12>* transit = mods.create("Transit");
+	TransitPadModule<>* pad = mods2.create("TransitPad");
 	Test::registerModule(transit);
 	Test::registerModule(pad);
 
@@ -867,15 +856,15 @@ TEST_CASE("Transit sets slotCvMode to OFF when TransitPad is connected", "[Trans
 	REQUIRE(transit->slotCvMode == SLOTCVMODE::OFF);
 
 	Test::unregisterModule(pad);
-	Test::destroyModule(pad);
 	Test::unregisterModule(transit);
-	Test::destroyModule(transit);
 }
 
 
 TEST_CASE("Transit disconnects from TransitPad when expander is removed", "[TransitPad][Transit]") {
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitPadModule<>* pad = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	Test::ModuleScaffold<TransitPadModule<>> mods2;
+	TransitModule<12>* transit = mods.create("Transit");
+	TransitPadModule<>* pad = mods2.create("TransitPad");
 	Test::registerModule(transit);
 	Test::registerModule(pad);
 
@@ -891,15 +880,15 @@ TEST_CASE("Transit disconnects from TransitPad when expander is removed", "[Tran
 	REQUIRE_FALSE(transit->isXyPadActive());
 
 	Test::unregisterModule(pad);
-	Test::destroyModule(pad);
 	Test::unregisterModule(transit);
-	Test::destroyModule(transit);
 }
 
 
 TEST_CASE("presetProcessXyPad: single snapshot with full weight applies preset exactly", "[TransitPad][Transit]") {
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitPadModule<>* pad = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	Test::ModuleScaffold<TransitPadModule<>> mods2;
+	TransitModule<12>* transit = mods.create("Transit");
+	TransitPadModule<>* pad = mods2.create("TransitPad");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(transit);
 	Test::registerModule(pad);
@@ -924,15 +913,15 @@ TEST_CASE("presetProcessXyPad: single snapshot with full weight applies preset e
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(pad);
-	Test::destroyModule(pad);
 	Test::unregisterModule(transit);
-	Test::destroyModule(transit);
 }
 
 
 TEST_CASE("presetProcessXyPad: two equal-weight snapshots produce the midpoint", "[TransitPad][Transit]") {
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitPadModule<>* pad = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	Test::ModuleScaffold<TransitPadModule<>> mods2;
+	TransitModule<12>* transit = mods.create("Transit");
+	TransitPadModule<>* pad = mods2.create("TransitPad");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(transit);
 	Test::registerModule(pad);
@@ -959,15 +948,15 @@ TEST_CASE("presetProcessXyPad: two equal-weight snapshots produce the midpoint",
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(pad);
-	Test::destroyModule(pad);
 	Test::unregisterModule(transit);
-	Test::destroyModule(transit);
 }
 
 
 TEST_CASE("presetProcessXyPad: unequal weights produce correctly weighted average", "[TransitPad][Transit]") {
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitPadModule<>* pad = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	Test::ModuleScaffold<TransitPadModule<>> mods2;
+	TransitModule<12>* transit = mods.create("Transit");
+	TransitPadModule<>* pad = mods2.create("TransitPad");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(transit);
 	Test::registerModule(pad);
@@ -994,15 +983,15 @@ TEST_CASE("presetProcessXyPad: unequal weights produce correctly weighted averag
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(pad);
-	Test::destroyModule(pad);
 	Test::unregisterModule(transit);
-	Test::destroyModule(transit);
 }
 
 
 TEST_CASE("presetProcessXyPad: snapshot with id=-1 is skipped", "[TransitPad][Transit]") {
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitPadModule<>* pad = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	Test::ModuleScaffold<TransitPadModule<>> mods2;
+	TransitModule<12>* transit = mods.create("Transit");
+	TransitPadModule<>* pad = mods2.create("TransitPad");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(transit);
 	Test::registerModule(pad);
@@ -1027,15 +1016,15 @@ TEST_CASE("presetProcessXyPad: snapshot with id=-1 is skipped", "[TransitPad][Tr
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(pad);
-	Test::destroyModule(pad);
 	Test::unregisterModule(transit);
-	Test::destroyModule(transit);
 }
 
 
 TEST_CASE("presetProcessXyPad: snapshot pointing to unused slot is skipped", "[TransitPad][Transit]") {
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitPadModule<>* pad = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	Test::ModuleScaffold<TransitPadModule<>> mods2;
+	TransitModule<12>* transit = mods.create("Transit");
+	TransitPadModule<>* pad = mods2.create("TransitPad");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(transit);
 	Test::registerModule(pad);
@@ -1063,15 +1052,15 @@ TEST_CASE("presetProcessXyPad: snapshot pointing to unused slot is skipped", "[T
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(pad);
-	Test::destroyModule(pad);
 	Test::unregisterModule(transit);
-	Test::destroyModule(transit);
 }
 
 
 TEST_CASE("presetProcessXyPad: all zero weights leave parameters unchanged", "[TransitPad][Transit]") {
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitPadModule<>* pad = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	Test::ModuleScaffold<TransitPadModule<>> mods2;
+	TransitModule<12>* transit = mods.create("Transit");
+	TransitPadModule<>* pad = mods2.create("TransitPad");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(transit);
 	Test::registerModule(pad);
@@ -1095,15 +1084,15 @@ TEST_CASE("presetProcessXyPad: all zero weights leave parameters unchanged", "[T
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(pad);
-	Test::destroyModule(pad);
 	Test::unregisterModule(transit);
-	Test::destroyModule(transit);
 }
 
 
 TEST_CASE("presetProcessXyPad: switching TransitPad sets changes interpolation output", "[TransitPad][Transit]") {
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitPadModule<>* pad = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	Test::ModuleScaffold<TransitPadModule<>> mods2;
+	TransitModule<12>* transit = mods.create("Transit");
+	TransitPadModule<>* pad = mods2.create("TransitPad");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(transit);
 	Test::registerModule(pad);
@@ -1137,15 +1126,15 @@ TEST_CASE("presetProcessXyPad: switching TransitPad sets changes interpolation o
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(pad);
-	Test::destroyModule(pad);
 	Test::unregisterModule(transit);
-	Test::destroyModule(transit);
 }
 
 
 TEST_CASE("presetProcessXyPad: interpolates two bound parameters independently", "[TransitPad][Transit]") {
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitPadModule<>* pad = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	Test::ModuleScaffold<TransitPadModule<>> mods2;
+	TransitModule<12>* transit = mods.create("Transit");
+	TransitPadModule<>* pad = mods2.create("TransitPad");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(transit);
 	Test::registerModule(pad);
@@ -1176,9 +1165,7 @@ TEST_CASE("presetProcessXyPad: interpolates two bound parameters independently",
 	Test::unregisterModule(target);
 	delete target;
 	Test::unregisterModule(pad);
-	Test::destroyModule(pad);
 	Test::unregisterModule(transit);
-	Test::destroyModule(transit);
 }
 
 
@@ -1421,8 +1408,9 @@ TEST_CASE("XY-pad chain: snapshotsUsed bounds which snapshots contribute weight"
 
 
 TEST_CASE("bindSnapshot binds and unbinds pad points to Transit slots", "[TransitPad]") {
+	Test::ModuleScaffold<TransitPadModule<>> mods;
 	SECTION("Binding semantics") {
-		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		TransitPadModule<>* m = mods.create("TransitPad");
 
 		// Defaults: snapshots A–D bound to slot indexes 0–3, E–H unbound
 		REQUIRE(m->snapshots[0][0].id == 0);
@@ -1442,7 +1430,6 @@ TEST_CASE("bindSnapshot binds and unbinds pad points to Transit slots", "[Transi
 		REQUIRE(m->snapshots[2][0].id == 6);
 		REQUIRE(m->snapshots[0][0].id == 0);
 
-		Test::destroyModule(m);
 	}
 
 	SECTION("Bound snapshot drives the Transit output; unbinding stops it") {
@@ -1479,7 +1466,8 @@ TEST_CASE("bindSnapshot binds and unbinds pad points to Transit slots", "[Transi
 // (a stray id of 7 reaching storage where only id 0 is meaningful).
 
 TEST_CASE("setCursorXyImmediate with an out-of-range id is a silent no-op", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 
 	m->setCursorXyImmediate(0, 0.2f, 0.3f);
 	float xBefore = m->params[TransitPadModule<>::OUT_X_POS].getValue();
@@ -1490,11 +1478,11 @@ TEST_CASE("setCursorXyImmediate with an out-of-range id is a silent no-op", "[Tr
 	REQUIRE(m->params[TransitPadModule<>::OUT_X_POS].getValue() == Catch::Approx(xBefore));
 	REQUIRE(m->params[TransitPadModule<>::OUT_Y_POS].getValue() == Catch::Approx(yBefore));
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("setCursorXyFiltered with an out-of-range id is a silent no-op", "[TransitPad]") {
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	Test::ModuleScaffold<TransitPadModule<>> mods;
+	TransitPadModule<>* m = mods.create("TransitPad");
 
 	m->setCursorXyImmediate(0, 0.2f, 0.3f);
 	float xBefore = m->outUiX;
@@ -1505,14 +1493,14 @@ TEST_CASE("setCursorXyFiltered with an out-of-range id is a silent no-op", "[Tra
 	REQUIRE(m->outUiX == Catch::Approx(xBefore));
 	REQUIRE(m->outUiY == Catch::Approx(yBefore));
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("XyScreenNodes setters with an out-of-range id are a silent no-op", "[TransitPad]") {
+	Test::ModuleScaffold<TransitPadModule<>> mods;
 	// The node side of the same bound (COUNT, i.e. SNAPSHOTS here) predates
 	// this stage — XyScreenNodes has always guarded on its own COUNT — but
 	// had no direct test. Cover it alongside the cursor-side fix above.
-	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	TransitPadModule<>* m = mods.create("TransitPad");
 
 	m->nodes.setRadiusImmediate(0, 0.4f);
 	m->nodes.setAmountImmediate(0, 0.6f);
@@ -1529,5 +1517,4 @@ TEST_CASE("XyScreenNodes setters with an out-of-range id are a silent no-op", "[
 	REQUIRE(m->nodes.radiusUi[0] == Catch::Approx(radius0Before));
 	REQUIRE(m->nodes.amountUi[0] == Catch::Approx(amount0Before));
 
-	Test::destroyModule(m);
 }
