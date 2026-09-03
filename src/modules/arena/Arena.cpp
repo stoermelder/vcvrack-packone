@@ -359,7 +359,9 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XyScreenCursor, XySeqModu
 				float v = inputs[IN + j].getVoltage();
 				switch (outputMode[j]) {
 					case OUTPUTMODE::SCALE: {
-						v *= outNorm[j] / MIX_PORTS;
+						// Divided by the *active* mix count, not MIX_PORTS: each active
+						// MIX-port contributes at most 1/n so the sum reaches 100% at most.
+						v *= outNorm[j] / std::max<uint8_t>(1, mixportsUsed);
 						v = clamp(v, -10.f, 10.f);
 						break;
 					}
