@@ -13,7 +13,10 @@
 //   test_mock.hpp      — Test::mock::Guard<Base> and the pass-through MockFileAccess;
 //                         pulls in vcv/api.hpp, but declaring a Guard<Base> costs nothing
 //                         in a file that never instantiates one
+//   test_harness.hpp   — Test::Harness: the deterministic DSP/UI scheduler, scene layout,
+//                         and module/widget lifetime. Supersedes SimpleEngine for new tests
 #include "test_plugin.hpp"
 #include "test_context.hpp"
 #include "test_json.hpp"
 #include "test_mock.hpp"
+#include "test_harness.hpp"

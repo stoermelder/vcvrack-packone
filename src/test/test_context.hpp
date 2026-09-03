@@ -315,6 +315,14 @@ inline const rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t c
 }
 
 
+// SUPERSEDED by Test::Harness (test_harness.hpp) — prefer it for new tests.
+//
+// Harness does everything this does (same stepping order, same messageFlipRequested-gated
+// expander flip) and adds the UI half: widget step(), scene layout, the DSP:UI rate ratio, and
+// module/widget lifetime. SimpleEngine is kept because 6 test files use it and a mechanical
+// rewrite of working tests buys nothing on its own; it should be retired as those files are
+// touched for other reasons, not in a dedicated migration pass. Do not add call sites.
+//
 // SimpleEngine simulates a VCV Rack engine step for module testing.
 // This class manages anlist of modules and processes them in sequence,
 // automatically flipping expander producer/consumer messages between each step.
