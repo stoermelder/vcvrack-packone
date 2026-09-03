@@ -145,3 +145,5 @@ The colored circles on the center screen representing inputs and mix outputs can
     - Fixed coarse parameter updates on screen interaction because of display refresh rate (#210)
 - v2.2.0
     - Fixed broken loading of presets and loading from saved patches
+- v2.x.x
+    - Fixed wrong values for mix-ports on preset load

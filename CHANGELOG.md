@@ -2,6 +2,8 @@
 
 ### Changes and Fixes
 
+- Module [ARENA](./docs/arena/Arena.md)
+    - Fixed wrong values for mix-ports on preset load
 - Module [DIRT](./docs/dirt/Dirt.md)
     - Fixed broken "Initialize" on Crush defects
 - Modules [MAZE](./docs/maze/Maze.md) and [HIVE](./docs/maze/Hive.md)

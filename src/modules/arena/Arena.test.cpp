@@ -175,6 +175,30 @@ TEST_CASE("JSON round-trip preserves module state", "[Arena]") {
 		}
 	}
 
+	SECTION("First process() after dataFromJson does not overwrite restored MIX params") {
+		// MIX_X_POS/MIX_Y_POS are plain params, not part of the "data" JSON payload:
+		// in the real app they are restored by Module::fromJson()'s paramsFromJson()
+		// call, which runs *before* dataFromJson(). Emulate that restoration
+		// directly on m3 with distinctive (non-default) values, exactly as a
+		// patch load would leave them just before dataFromJson() runs, then
+		// assert the first process() tick doesn't clobber them.
+		json_t* j3 = m->dataToJson();
+		auto* m3 = mods.create("Arena");
+		for (int i = 0; i < MIX_PORTS; i++) {
+			m3->params[MODULE::MIX_X_POS + i].setValue(0.4f + 0.01f * i);
+			m3->params[MODULE::MIX_Y_POS + i].setValue(0.6f - 0.01f * i);
+		}
+		m3->dataFromJson(j3);
+		json_decref(j3);
+
+		for (int i = 0; i < MIX_PORTS; i++) {
+			float xBefore = m3->params[MODULE::MIX_X_POS + i].getValue();
+			float yBefore = m3->params[MODULE::MIX_Y_POS + i].getValue();
+			m3->process(Test::makeProcessArgs(1));
+			REQUIRE(m3->params[MODULE::MIX_X_POS + i].getValue() == Catch::Approx(xBefore));
+			REQUIRE(m3->params[MODULE::MIX_Y_POS + i].getValue() == Catch::Approx(yBefore));
+		}
+	}
 }
 
 

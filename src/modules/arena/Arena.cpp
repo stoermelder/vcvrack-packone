@@ -562,6 +562,15 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XyScreenCursor, XySeqModu
 		if (inportsUsedJ) inportsUsed = json_integer_value(inportsUsedJ);
 		json_t* mixportsUsedJ = json_object_get(rootJ, "mixportsUsed");
 		if (mixportsUsedJ) mixportsUsed = json_integer_value(mixportsUsedJ);
+
+		// Rack's own Module::fromJson() already restored MIX_X_POS/MIX_Y_POS via
+		// paramsFromJson() (which runs before dataFromJson()). Without this, the
+		// UI shadow (mixUiX/mixUiY) and filter (mixXfilter/mixYfilter) stay at
+		// whatever the constructor left them at, and the first process() call
+		// would overwrite the just-restored params with that stale shadow.
+		for (uint8_t i = 0; i < MIX_PORTS; i++) {
+			setCursorXyImmediate(i, paramQuantities[MIX_X_POS + i]->getValue(), paramQuantities[MIX_Y_POS + i]->getValue());
+		}
 	}
 };
 
