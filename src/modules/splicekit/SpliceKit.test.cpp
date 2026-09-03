@@ -30,3 +30,6 @@ namespace __scenes {
 namespace __midi {
 	#include "SpliceKit.test.midi.hpp"
 }
+namespace __threading {
+	#include "SpliceKit.test.threading.hpp"
+}
