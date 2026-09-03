@@ -419,7 +419,8 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XyScreenCursor, XySeqModu
 		return v;
 	}
 
-	/** XySeqModule: MIX-0 is reserved for the master sequence, never a per-port one. */
+	/** XySeqModule: a MIX port beyond the active count has no sequence UI: its
+	 * led display is blank, its context menu is empty, and clicking it is a no-op. */
 	bool seqPortUsed(int port) override {
 		return port + 1 > mixportsUsed;
 	}
@@ -629,7 +630,7 @@ struct ArenaOutputModeMenuItem : MenuItem {
 		{ OUTPUTMODE::CLIP_UNI, "Clip 0..10V" },
 		{ OUTPUTMODE::CLIP_BI, "Clip -5..5V" },
 		{ OUTPUTMODE::FOLD_UNI, "Fold 0..10V" },
-		{ OUTPUTMODE::FOLD_BI, "Fold 0..10V" }
+		{ OUTPUTMODE::FOLD_BI, "Fold -5..5V" }
 	};
 
 	ArenaOutputModeMenuItem(MODULE* module, int id) {
