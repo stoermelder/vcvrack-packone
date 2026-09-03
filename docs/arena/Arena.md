@@ -147,3 +147,4 @@ The colored circles on the center screen representing inputs and mix outputs can
     - Fixed broken loading of presets and loading from saved patches
 - v2.x.x
     - Fixed wrong values for mix-ports on preset load
+    - Fixed missing voltage-mode options in the context menu of the mix-ports

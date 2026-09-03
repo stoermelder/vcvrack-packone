@@ -1101,6 +1101,7 @@ struct XySeqLedDisplay : StoermelderLedDisplay {
 		menu->addChild(new XySeqSlotMenuItem<MODULE>(module, id));
 		menu->addChild(new XySeqInterpolateMenuItem<MODULE>(module, id));
 		menu->addChild(new XySeqTriggerMenuItem<MODULE>(module, id));
+		appendContextMenu(menu);
 	}
 
 	virtual std::string getPortName() { return string::f("Port %i", id + 1); }
