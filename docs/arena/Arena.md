@@ -148,3 +148,4 @@ The colored circles on the center screen representing inputs and mix outputs can
 - v2.x.x
     - Fixed wrong values for mix-ports on preset load
     - Fixed missing voltage-mode options in the context menu of the mix-ports
+    - Fixed out-of-range sequence selection for _SEQ_-mode "0..10V"

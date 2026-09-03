@@ -134,7 +134,9 @@ struct XySeqModule {
 				break;
 			}
 			case XYSEQ_MODE::VOLT: {
-				int s = std::floor(rescale(input.getVoltage(), 0.f, 10.f, 0, XYSEQ_COUNT - 1));
+				// Clamped like the C4 mode: out-of-range voltages would otherwise
+				// index seqData[port][] out of bounds.
+				int s = std::floor(rescale(clamp(input.getVoltage(), 0.f, 10.f), 0.f, 10.f, 0, XYSEQ_COUNT - 1));
 				seqSelected[port] = s;
 				break;
 			}
