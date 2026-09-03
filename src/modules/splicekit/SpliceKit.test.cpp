@@ -1,32 +1,32 @@
 #include "SpliceKit.test.hpp"
 
 namespace __module {
-	#include "SpliceKit.module.test.hpp"
+	#include "SpliceKit.test.module.hpp"
 }
 namespace __process {
-	#include "SpliceKit.process.test.hpp"
+	#include "SpliceKit.test.process.hpp"
 }
 namespace __json {
-	#include "SpliceKit.json.test.hpp"
+	#include "SpliceKit.test.json.hpp"
 }
 namespace __crossinstance {
-	#include "SpliceKit.crossinstance.test.hpp"
+	#include "SpliceKit.test.crossinstance.hpp"
 }
 namespace __feedback {
-	#include "SpliceKit.feedback.test.hpp"
+	#include "SpliceKit.test.feedback.hpp"
 }
 namespace __learn {
-	#include "SpliceKit.learn.test.hpp"
+	#include "SpliceKit.test.learn.hpp"
 }
 namespace __mapping {
-	#include "SpliceKit.mapping.test.hpp"
+	#include "SpliceKit.test.mapping.hpp"
 }
 namespace __cables {
-	#include "SpliceKit.cables.test.hpp"
+	#include "SpliceKit.test.cables.hpp"
 }
 namespace __scenes {
-	#include "SpliceKit.scenes.test.hpp"
+	#include "SpliceKit.test.scenes.hpp"
 }
 namespace __midi {
-	#include "SpliceKit.midi.test.hpp"
+	#include "SpliceKit.test.midi.hpp"
 }
