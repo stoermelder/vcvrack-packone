@@ -27,10 +27,7 @@ bool RealFileAccess::write(const std::string& path, const std::string& data) {
 }
 
 bool RealFileAccess::exists(const std::string& path) const {
-	FILE* file = std::fopen(path.c_str(), "r");
-	if (!file) return false;
-	std::fclose(file);
-	return true;
+	return rack::system::exists(path);
 }
 
 std::string RealFileAccess::join(const std::string& path1, const std::string& path2) {
@@ -55,10 +52,6 @@ std::string RealFileAccess::getExtension(const std::string& path) {
 
 std::vector<std::string> RealFileAccess::getEntries(const std::string& dirPath, int depth) {
 	return rack::system::getEntries(dirPath, depth);
-}
-
-bool RealFileAccess::exists(const std::string& path) {
-	return rack::system::exists(path);
 }
 
 bool RealFileAccess::isFile(const std::string& path) {
@@ -99,6 +92,10 @@ int RealFileAccess::removeRecursively(const std::string& path) {
 
 std::string RealFileAccess::getTempDirectory() {
 	return rack::system::getTempDirectory();
+}
+
+std::string RealFileAccess::getUserDirectory(const std::string& path) {
+	return rack::asset::user(path);
 }
 
 double RealFileAccess::getTime() {

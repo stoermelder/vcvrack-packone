@@ -2,13 +2,6 @@
 
 namespace StoermelderPackOne {
 
-#ifdef NDEBUG
-#  define isTesting() false
-#else
-#  include <cstdlib>
-#  define isTesting() (getenv("TESTING") != nullptr)
-#endif
-
 struct Settings {
 	int panelThemeDefault = -1;
 
