@@ -7,7 +7,7 @@
 //   cables.hpp   — cables between those modules (CableAccess)
 //   scene.hpp    — the rack scene: selection (SceneAccess)
 //   ui.hpp       — the user: dialogs, clipboard, browser (UiAccess)
-//   fs.hpp       — the filesystem + pure parseJson (FileAccess)
+//   fs.hpp       — the filesystem (FileAccess); pulls in selection.hpp for parseJson
 //   history.hpp  - HistoryAccess
 //   nw.hpp       — the network: HTTP requests, downloads, URL helpers (NwAccess)
 //

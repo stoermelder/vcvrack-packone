@@ -51,7 +51,7 @@ struct MockFileAccess : StoermelderPackOne::vcv::FileAccess {
 	std::string getStem(const std::string& path) override { return rack::system::getStem(path); }
 	std::string getExtension(const std::string& path) override { return rack::system::getExtension(path); }
 	std::vector<std::string> getEntries(const std::string& dirPath, int depth) override { return rack::system::getEntries(dirPath, depth); }
-	bool exists(const std::string& path) override { return rack::system::exists(path); }
+	bool exists(const std::string& path) const override { return rack::system::exists(path); }
 	bool isFile(const std::string& path) override { return rack::system::isFile(path); }
 	bool isDirectory(const std::string& path) override { return rack::system::isDirectory(path); }
 	uint64_t getFileSize(const std::string& path) override { return rack::system::getFileSize(path); }

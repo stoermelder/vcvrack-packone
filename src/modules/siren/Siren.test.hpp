@@ -191,10 +191,6 @@ struct MockFileAccess : Test::mock::MockFileAccess {
 		return true;
 	}
 	bool exists(const std::string& path) const override {
-		return files.count(path) > 0;
-	}
-
-	bool exists(const std::string& path) override {
 		return files.count(path) > 0 || dirs.count(path) > 0;
 	}
 	bool isFile(const std::string& path) override {
