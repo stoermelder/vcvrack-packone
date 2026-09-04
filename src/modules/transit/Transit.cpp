@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../utils/cursor.hpp"
 #include "../../utils/digital.hpp"
 #include "../../utils/ShapedSlewLimiter.hpp"
 #include "../../utils/TaskProcessor.hpp"
@@ -1351,8 +1352,7 @@ struct TransitSelectionWidget : Widget {
 
 	void enableLearn() {
 		learn = !learn;
-		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setLearnCursor(learn);
 	}
 
 	void onHover(const HoverEvent& e) override {
@@ -1382,7 +1382,7 @@ struct TransitSelectionWidget : Widget {
 			mapParamsFromRect();
 			selecting = false;
 			learn = false;
-			if (APP->window) glfwSetCursor(APP->window->win, NULL);
+			cursor::resetCursor();
 			e.consume(this);
 		}
 		Widget::onDragEnd(e);
@@ -1500,7 +1500,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 	~TransitWidget() {
 		if (learn != 0 && APP->window) {
-			if (APP->window) glfwSetCursor(APP->window->win, NULL);
+			cursor::resetCursor();
 		}
 
 		if (selectionWidget) {
@@ -1585,16 +1585,12 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		learn = learn != mode ? mode : 0;
 		APP->scene->rack->setTouchedParam(NULL);
 		APP->event->setSelectedWidget(this);
-		GLFWcursor* cursor = NULL;
-		if (learn != 0) {
-			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		}
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setLearnCursor(learn != 0);
 	}
 
 	void disableLearn() {
 		learn = 0;
-		if (APP->window) glfwSetCursor(APP->window->win, NULL);
+		cursor::resetCursor();
 	}
 
 	void appendContextMenu(Menu* menu) override {

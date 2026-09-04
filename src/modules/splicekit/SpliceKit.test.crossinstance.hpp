@@ -120,7 +120,6 @@ TEST_CASE("peer connected - a local selection still wins", "[SpliceKit]") {
 
 TEST_CASE("peer connected - no armed peer clears every flag", "[SpliceKit]") {
 	ModuleScaffold mods;
-	SpliceKitModule* a = mods.create();
 	SpliceKitModule* b = mods.create();
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
 	b->peerConnected[5] = true;   // left over from an earlier gesture
@@ -135,7 +134,6 @@ TEST_CASE("peer connected - no armed peer clears every flag", "[SpliceKit]") {
 TEST_CASE("peer connected - the initiator does not highlight its own cells", "[SpliceKit]") {
 	ModuleScaffold mods;
 	SpliceKitModule* a = mods.create();
-	SpliceKitModule* b = mods.create();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	a->peerConnected[0] = true;
 

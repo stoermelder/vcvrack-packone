@@ -1,5 +1,6 @@
 #pragma once
 #include "TaskProcessor.hpp"
+#include "../vcv/ui.hpp"
 #include <context.hpp>
 #include <functional>
 #include <thread>
@@ -35,14 +36,13 @@ namespace StoermelderPackOne {
 // closed, and headless/CLI Rack has no window at all. Both conditions can appear and
 // disappear repeatedly during a module's lifetime, so absence is checked on every call
 // rather than once at construction: process() (called once per engine-thread divider
-// tick) takes the current window pointer — APP->window in production, defaulted so
-// call sites don't need to pass it — and starts a worker the instant it is null. This
-// is the same signal EightFace uses (see EightFaceMk2.cpp's settings::isPlugin &&
-// !APP->window branch) for "nobody is going to call step() on this widget", just
-// without the settings::isPlugin gate, since the caller decides what counts as absent
-// by passing whatever pointer is appropriate — a real GuiTaskProcessor::process() call
-// site should pass APP->window; unit tests can pass a dummy non-null pointer to
-// exercise the "UI present" path without a real rack::window::Window. Once started,
+// tick) asks vcv::ui::hasWindow() — APP->window != nullptr in production — and starts a
+// worker the instant the answer is no. This is the same signal EightFace uses (see
+// EightFaceMk2.cpp's settings::isPlugin && !APP->window branch) for "nobody is going to
+// call step() on this widget", just without the settings::isPlugin gate. The read goes
+// through the swappable UiAccess seam rather than APP->window directly so that tests can
+// reach the "UI present" path, which no test could otherwise exercise: APP->window cannot
+// be made non-null headless (see vcv::UiAccess::hasWindow()). Once started,
 // the worker is not repeatedly created and destroyed — it parks on a counting
 // semaphore (see TaskSignal, same mechanism and lost-wakeup rationale as
 // MpmcTaskWorker) between drains instead of polling on a timer, so it does zero work
@@ -188,9 +188,7 @@ struct GuiTaskProcessor {
 
 	// Engine thread — called once per divider tick from the module's process(). Starts
 	// the worker the instant no window is present; idempotent and cheap to call every
-	// tick regardless of whether a worker is already running. `window` defaults to
-	// APP->window so real call sites need not pass anything; tests pass a dummy non-null
-	// pointer to exercise the window-present path without a real rack::window::Window.
+	// tick regardless of whether a worker is already running.
 	//
 	// When a window comes back (the plugin editor being reopened), the worker is asked to
 	// retire rather than being joined here: join() would block the engine thread until a
@@ -199,9 +197,9 @@ struct GuiTaskProcessor {
 	// thread object it leaves behind is reaped by the next startWorker() or by
 	// stopWorker() at destruction. Until it exits it stays a legal second drainer, since
 	// drain() tolerates two of them.
-	void process(rack::window::Window* window = APP->window) {
+	void process() {
 		if (syncMode) return;
-		if (!window) {
+		if (!vcv::ui::hasWindow()) {
 			startWorker();
 		}
 		else {

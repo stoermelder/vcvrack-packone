@@ -1,5 +1,6 @@
 #pragma once
 #include "../plugin.hpp"
+#include "../utils/cursor.hpp"
 #include <functional>
 
 namespace StoermelderPackOne {
@@ -35,11 +36,7 @@ struct SelectProcessor {
 		this->abortCallback = abortCallback;
 		learnMode = mode;
 		APP->event->setSelectedWidget(owner);
-		GLFWcursor* cursor = NULL;
-		if (learnMode != LEARN_MODE::OFF) {
-			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		}
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setLearnCursor(learnMode != LEARN_MODE::OFF);
 	}
 
 	void disableLearn() {
@@ -48,7 +45,7 @@ struct SelectProcessor {
 		if (abortCallback) abortCallback();
 		abortCallback = {};
 		learnMode = LEARN_MODE::OFF;
-		if (APP->window) glfwSetCursor(APP->window->win, NULL);
+		cursor::resetCursor();
 	}
 
 	bool isLearning() {

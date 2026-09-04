@@ -1,6 +1,6 @@
 #pragma once
 #include "../plugin.hpp"
-#include "modules.hpp"   // for ModuleRef (lives in modules.hpp, not layer 1 — plan §4.1)
+#include "modules.hpp"   // for ModuleRef
 #include <functional>
 #include <algorithm>
 #include <limits>
@@ -13,14 +13,22 @@
 namespace StoermelderPackOne {
 namespace vcv {
 
-// ---- Layer 1: pure JSON + geometry ----
+// ---- pure JSON + geometry ----
 // Every function here takes JSON or PODs and returns JSON or PODs. No `APP`, no
 // `osdialog`, no `plugin::getModel` — the only Rack-world lookup (model existence /
 // module width) arrives via an injected callback, so this whole header is directly
 // testable in a `TestContext`-free binary.
-//
-// NB: the plan sketched std::optional return types; this plugin builds with -std=c++11,
-// so the two "maybe" readers return bool + out-param instead.
+
+// Pure JSON parsing (jansson only — no APP, no osdialog, no disk). Returns nullptr and
+// fills `errorOut` on failure; caller owns the returned json_t* (json_decref it).
+inline json_t* parseJson(const std::string& data, std::string& errorOut) {
+	json_error_t error;
+	json_t* j = json_loads(data.c_str(), 0, &error);
+	if (!j) {
+		errorOut = string::f("JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+	}
+	return j;
+}
 
 // --- value types -----------------------------------------------------------
 
@@ -35,8 +43,7 @@ struct ModulePlacement {
 	ModulePlacement(json_t* mj, int64_t id, Vec p) : moduleJ(mj), oldId(id), pos(p) {}
 };
 
-// Identity of a module in a patch file. Defined in modules.hpp; layer 1 includes it
-// from there rather than redefining it (plan §4.1).
+// Identity of a module in a patch file. Defined in modules.hpp.
 // struct ModuleRef { std::string pluginSlug, modelSlug; };   // see modules.hpp
 
 // Module width in pixels, 0 if the model is unknown. In production this is backed by
@@ -279,12 +286,11 @@ inline void jsonStripIds(json_t* moduleJ) {
 
 // --- missing-module scan ------------------------------------------------------
 
-// Was the scanning half of vcvsCheckUnavailable; the prompt/dialog stays in layer 3.
-// `modelExists` is injected so this stays pure (production: plugin::getModel-backed).
-inline std::set<std::string> findUnavailableModules(json_t* rootJ, const ModelLookup& modelExists) {
-	std::set<std::string> pluginModuleSlugs;
-	json_t* modulesJ = json_object_get(rootJ, "modules");
-	if (!modulesJ) return pluginModuleSlugs;
+// Scans one array of module JSON objects, adding "plugin/model" for every entry whose model
+// is not installed. Accumulates into `out` so a caller with several arrays (a .vcvss has
+// leftModules and rightModules) gets one combined set.
+inline void findUnavailableModulesIn(json_t* modulesJ, const ModelLookup& modelExists, std::set<std::string>& out) {
+	if (!modulesJ || !json_is_array(modulesJ)) return;
 
 	size_t moduleIndex;
 	json_t* moduleJ;
@@ -292,9 +298,25 @@ inline std::set<std::string> findUnavailableModules(json_t* rootJ, const ModelLo
 		ModuleRef ref;
 		if (!readModuleRef(moduleJ, ref)) continue;
 		if (!modelExists(ref)) {
-			pluginModuleSlugs.insert(ref.pluginSlug + "/" + ref.modelSlug);
+			out.insert(ref.pluginSlug + "/" + ref.modelSlug);
 		}
 	}
+}
+
+// Was the scanning half of vcvsCheckUnavailable; the prompt/dialog stays in layer 3.
+// `modelExists` is injected so this stays pure (production: plugin::getModel-backed).
+inline std::set<std::string> findUnavailableModules(json_t* rootJ, const ModelLookup& modelExists) {
+	std::set<std::string> pluginModuleSlugs;
+	findUnavailableModulesIn(json_object_get(rootJ, "modules"), modelExists, pluginModuleSlugs);
+	return pluginModuleSlugs;
+}
+
+// The .vcvss (STRIP group) form of the scan: the modules live in "leftModules" and
+// "rightModules" instead of a single "modules" array. Was Strip's groupCheckUnavailable.
+inline std::set<std::string> findUnavailableStripModules(json_t* rootJ, const ModelLookup& modelExists) {
+	std::set<std::string> pluginModuleSlugs;
+	findUnavailableModulesIn(json_object_get(rootJ, "rightModules"), modelExists, pluginModuleSlugs);
+	findUnavailableModulesIn(json_object_get(rootJ, "leftModules"), modelExists, pluginModuleSlugs);
 	return pluginModuleSlugs;
 }
 

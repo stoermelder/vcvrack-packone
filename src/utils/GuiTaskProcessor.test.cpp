@@ -13,17 +13,40 @@ static std::future<void> makePromise(std::shared_ptr<std::promise<void>>& out) {
 	return out->get_future();
 }
 
-// A window pointer is only ever compared against null inside GuiTaskProcessor —
-// never dereferenced — so a fake non-null value safely stands in for "a real
-// rack::window::Window exists" without constructing one.
-static rack::window::Window* const FAKE_WINDOW = reinterpret_cast<rack::window::Window*>(1);
+// GuiTaskProcessor::process() takes no argument: it asks the swappable vcv::UiAccess seam
+// (vcv::ui::hasWindow()), which answers APP->window != nullptr in production and whatever a
+// test installs otherwise. So "is a window present?" is scripted here by installing a UiAccess
+// mock — the same way every other vcv access is mocked.
+//
+// The seam answers a bool rather than handing out a Window*, so nothing here has to fabricate a
+// window pointer: rack::window::Window cannot be constructed headless (its constructor calls
+// glfwCreateWindow(), it is marked PRIVATE, and it has no virtuals).
+struct MockWindow : vcv::UiAccess {
+	bool present = false;
+	bool hasWindow() const override { return present; }
+};
 
-// Calls process(nullptr) — the window-absent path — enough times to start the
-// worker. Unlike the old threshold-based design, one call is already enough;
-// looping just proves repeated calls with no window stay idempotent.
+// Installs a UiAccess for the scope, restoring the previous access on destruction. Declare one
+// in a test body and call setPresent() before touching process().
+//
+// No constructor taking the initial state: every test says which state it wants with an
+// explicit setPresent(), so the window-present and window-absent cases read the same way at the
+// point of use and mid-test transitions are not a different-looking operation from the initial
+// setup. The mock defaults to absent, matching a bare UiAccess.
+struct ScopedWindow {
+	TEST_MOCK_UI(MockWindow);
+
+	// Also models the plugin editor being closed or reopened mid-test.
+	void setPresent(bool present) {
+		ui.present = present;
+	}
+};
+
+// Calls process() under a window-absent access — enough times to start the worker. One call is
+// already enough; looping just proves repeated calls with no window stay idempotent.
 template <size_t SIZE>
 static void starveUiThread(GuiTaskProcessor<SIZE>& gtp, int calls = 3) {
-	for (int i = 0; i < calls; i++) gtp.process(nullptr);
+	for (int i = 0; i < calls; i++) gtp.process();
 }
 
 // ---- tests --------------------------------------------------------------------
@@ -43,24 +66,30 @@ TEST_CASE("step() drains tasks when called regularly", "[GuiTaskProcessor]") {
 
 TEST_CASE("process() with a window present never starts a worker", "[GuiTaskProcessor]") {
 	Test::TestContext<> ctx;
+	ScopedWindow window;
+	window.setPresent(true);
 	GuiTaskProcessor<8> gtp;
 
-	// Interleave process(window-present) with step(), the way the module's process()
-	// and the widget's step() run together in the normal (UI present) case.
+	// Interleave process() with step() under a window-present access, the way the module's
+	// process() and the widget's step() run together in the normal (UI present) case.
 	for (int i = 0; i < 50; i++) {
-		gtp.process(FAKE_WINDOW);
+		gtp.process();
 		gtp.step();
 	}
 
 	REQUIRE(gtp.workerState.load() == GuiTaskProcessor<8>::WorkerState::Absent);
 }
 
-TEST_CASE("process() defaults to APP->window, which is null in the test context", "[GuiTaskProcessor]") {
+TEST_CASE("process() reads window presence through the vcv::ui seam", "[GuiTaskProcessor]") {
 	Test::TestContext<> ctx;
+	// With no UiAccess mock installed, the seam resolves to RealUiAccess::hasWindow(),
+	// i.e. APP->window != nullptr — null in a test binary, so the worker branch is taken. This
+	// is the production wiring, verified rather than assumed.
 	REQUIRE(APP->window == nullptr);
+	REQUIRE(vcv::ui::hasWindow() == false);
 
 	GuiTaskProcessor<8> gtp;
-	gtp.process();  // no argument — must fall back to APP->window, i.e. absent here
+	gtp.process();
 
 	auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
 	while (gtp.workerState.load() != GuiTaskProcessor<8>::WorkerState::Running
@@ -211,11 +240,14 @@ TEST_CASE("A window reappearing retires the worker without blocking", "[GuiTaskP
 	using State = GuiTaskProcessor<8>::WorkerState;
 	GuiTaskProcessor<8> gtp;
 
+	ScopedWindow window;
+	window.setPresent(false);
 	starveUiThread(gtp);
 	REQUIRE(waitForState(gtp, State::Running));
 
 	// Window is back: process() must ask the worker to exit rather than join it here.
-	gtp.process(FAKE_WINDOW);
+	window.setPresent(true);
+	gtp.process();
 	REQUIRE(gtp.workerState.load() == State::Retiring);
 
 	// The worker exits on its own; the thread object is left for a later reap. step()
@@ -231,12 +263,16 @@ TEST_CASE("The window going away again reclaims a retired worker", "[GuiTaskProc
 	using State = GuiTaskProcessor<8>::WorkerState;
 	GuiTaskProcessor<8> gtp;
 
+	ScopedWindow window;
+	window.setPresent(false);
 	starveUiThread(gtp);
 	REQUIRE(waitForState(gtp, State::Running));
-	gtp.process(FAKE_WINDOW);            // editor reopened -> retire
+	window.setPresent(true);
+	gtp.process();                       // editor reopened -> retire
 	REQUIRE(gtp.workerState.load() == State::Retiring);
 
-	gtp.process(nullptr);                // editor closed again -> reclaim and restart
+	window.setPresent(false);
+	gtp.process();                       // editor closed again -> reclaim and restart
 	REQUIRE(waitForState(gtp, State::Running));
 
 	// The restarted worker must actually drain again.
@@ -250,10 +286,13 @@ TEST_CASE("Destruction joins a worker that was retired but never reaped", "[GuiT
 	Test::TestContext<> ctx;
 	using State = GuiTaskProcessor<8>::WorkerState;
 	{
+		ScopedWindow window;
+		window.setPresent(false);
 		GuiTaskProcessor<8> gtp;
 		starveUiThread(gtp);
 		REQUIRE(waitForState(gtp, State::Running));
-		gtp.process(FAKE_WINDOW);
+		window.setPresent(true);
+		gtp.process();
 		REQUIRE(gtp.workerState.load() == State::Retiring);
 		// Destructor must join the retiring thread rather than returning early on a
 		// state it does not recognise, which would leak/detach a running thread.
@@ -266,11 +305,15 @@ TEST_CASE("Repeated window transitions stay stable", "[GuiTaskProcessor]") {
 	using State = GuiTaskProcessor<8>::WorkerState;
 	GuiTaskProcessor<8> gtp;
 
+	ScopedWindow window;
+	window.setPresent(false);
 	std::atomic<int> execCount{0};
 	constexpr int CYCLES = 20;
 	for (int i = 0; i < CYCLES; i++) {
-		gtp.process(nullptr);
-		gtp.process(FAKE_WINDOW);
+		window.setPresent(false);
+		gtp.process();
+		window.setPresent(true);
+		gtp.process();
 		gtp.enqueue([&execCount]() { execCount.fetch_add(1); });
 		gtp.step();
 	}
@@ -329,6 +372,8 @@ TEST_CASE("onWorkerDrained runs on the worker after a drain", "[GuiTaskProcessor
 
 TEST_CASE("onWorkerDrained does not run on the step() drain path", "[GuiTaskProcessor]") {
 	Test::TestContext<> ctx;
+	ScopedWindow window;
+	window.setPresent(true);
 	GuiTaskProcessor<8> gtp;
 
 	std::atomic<int> hookCount{0};
@@ -338,7 +383,7 @@ TEST_CASE("onWorkerDrained does not run on the step() drain path", "[GuiTaskProc
 	// the hook must stay silent.
 	int execCount = 0;
 	for (int i = 0; i < 10; i++) {
-		gtp.process(FAKE_WINDOW);
+		gtp.process();
 		gtp.enqueue([&execCount]() { execCount++; });
 		gtp.step();
 	}
@@ -400,7 +445,7 @@ TEST_CASE("process() does not wake an idle worker — the hook is task-driven, n
 	// nothing queued must leave it parked rather than spinning the hook every tick.
 	std::this_thread::sleep_for(std::chrono::milliseconds(20));
 	int afterStart = hookCount.load();
-	for (int i = 0; i < 100; i++) gtp.process(nullptr);
+	for (int i = 0; i < 100; i++) gtp.process();
 	std::this_thread::sleep_for(std::chrono::milliseconds(20));
 	REQUIRE(hookCount.load() == afterStart);
 

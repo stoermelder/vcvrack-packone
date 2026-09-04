@@ -1,5 +1,6 @@
 #pragma once
 #include "../plugin.hpp"
+#include "selection.hpp" // parseJson (layer 1) — kept visible here so existing vcv::parseJson callers need not change their includes
 
 // Expands to the compiler's unused-attribute, or nothing where it isn't available.
 #if defined(__GNUC__) || defined(__clang__)
@@ -17,9 +18,9 @@ namespace vcv {
 // pluginSettings); the unit-test harness installs a mock (a std::map<std::string,std::string>)
 // via `fileAccess` to script file contents without touching disk.
 //
-// Deliberately bytes, not JSON. Parsing is the separate pure function parseJson() below,
-// so the parse-error path — currently reachable only by handing Rack a corrupt file —
-// becomes a plain string-in test.
+// Deliberately bytes, not JSON. Parsing is the separate pure function vcv::parseJson()
+// (selection.hpp, layer 1), so the parse-error path — currently reachable only by handing
+// Rack a corrupt file — becomes a plain string-in test.
 //
 // `read` returns false when the file cannot be opened — distinct from an empty file, which
 // reads successfully with empty `data`. (The plan sketched std::optional here; this plugin
@@ -40,7 +41,6 @@ struct FileAccess {
 
 	// Filesystem queries.
 	virtual std::vector<std::string> getEntries(const std::string& dirPath, int depth) { return {}; }
-	virtual bool exists(const std::string& path) { return false; }
 	virtual bool isFile(const std::string& path) { return false; }
 	virtual bool isDirectory(const std::string& path) { return false; }
 	virtual uint64_t getFileSize(const std::string& path) { return 0; }
@@ -55,6 +55,7 @@ struct FileAccess {
 
 	// Environment / applications.
 	virtual std::string getTempDirectory() { return ""; }
+	virtual std::string getUserDirectory(const std::string& path) { return ""; }
 	virtual double getTime() { return 0.0; }
 	virtual void openDirectory(const std::string& path) {}
 };
@@ -72,7 +73,6 @@ struct RealFileAccess final : FileAccess {
 	std::string getStem(const std::string& path) override;
 	std::string getExtension(const std::string& path) override;
 	std::vector<std::string> getEntries(const std::string& dirPath, int depth) override;
-	bool exists(const std::string& path) override;
 	bool isFile(const std::string& path) override;
 	bool isDirectory(const std::string& path) override;
 	uint64_t getFileSize(const std::string& path) override;
@@ -83,6 +83,7 @@ struct RealFileAccess final : FileAccess {
 	bool remove(const std::string& path) override;
 	int removeRecursively(const std::string& path) override;
 	std::string getTempDirectory() override;
+	std::string getUserDirectory(const std::string& path) override;
 	double getTime() override;
 	void openDirectory(const std::string& path) override;
 };
@@ -199,6 +200,11 @@ static std::string getTempDirectory() {
 }
 
 P1_UNUSED
+static std::string getUserDirectory(const std::string& path) {
+	return fileAccessFor().getUserDirectory(path);
+}
+
+P1_UNUSED
 static double getTime() {
 	return fileAccessFor().getTime();
 }
@@ -209,20 +215,6 @@ static void openDirectory(const std::string& path) {
 }
 
 } // namespace fs
-
-
-// Pure JSON parsing (jansson only — no APP, no osdialog, no disk). Returns nullptr and
-// fills `errorOut` on failure; caller owns the returned json_t* (json_decref it).
-// NB: this belongs to layer 1 (vcv_selection.hpp) eventually; it lives here for now
-// because it is what splits "obtain bytes" (FileAccess/UiAccess) from "parse".
-inline json_t* parseJson(const std::string& data, std::string& errorOut) {
-	json_error_t error;
-	json_t* j = json_loads(data.c_str(), 0, &error);
-	if (!j) {
-		errorOut = string::f("JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
-	}
-	return j;
-}
 
 } // namespace vcv
 } // namespace StoermelderPackOne
