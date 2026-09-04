@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../utils/cursor.hpp"
 #include "../../vcv/api.hpp"
 #include "../../utils/StripIdFixModule.hpp"
 #include "../../utils/TaskProcessor.hpp"
@@ -839,8 +840,7 @@ struct MidiCatSelectionWidget : Widget {
 	void enableLearn(LEARN_MODE mode, bool bindLights = false) {
 		learnMode = learnMode == LEARN_MODE::OFF ? mode : LEARN_MODE::OFF;
 		this->bindLights = bindLights;
-		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setLearnCursor(learnMode != LEARN_MODE::OFF);
 	}
 
 	void onHover(const HoverEvent& e) override {
@@ -870,7 +870,7 @@ struct MidiCatSelectionWidget : Widget {
 			mapParamsFromRect();
 			selecting = false;
 			learnMode = LEARN_MODE::OFF;
-			if (APP->window) glfwSetCursor(APP->window->win, NULL);
+			cursor::resetCursor();
 			e.consume(this);
 		}
 		Widget::onDragEnd(e);
@@ -1037,14 +1037,13 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		module->learningLightId = id;
 		module->enableLearn(id);
 		APP->event->setSelectedWidget(this);
-		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setCrosshairCursor();
 	}
 
 	void disableLearnLight() {
 		module->learningLightId = -1;
 		module->disableLearn();
-		if (APP->window) glfwSetCursor(APP->window->win, NULL);
+		cursor::resetCursor();
 	}
 
 	std::string getSlotPrefix() override {
@@ -1416,7 +1415,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 
 	~MidiCatBaseWidget() {
 		if (learnMode != LEARN_MODE::OFF && APP->window) {
-			if (APP->window) glfwSetCursor(APP->window->win, NULL);
+			cursor::resetCursor();
 		}
 
 		if (selectionWidget) {
@@ -1880,16 +1879,12 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 	void enableLearn(LEARN_MODE mode) {
 		learnMode = learnMode == LEARN_MODE::OFF ? mode : LEARN_MODE::OFF;
 		APP->event->setSelectedWidget(this);
-		GLFWcursor* cursor = NULL;
-		if (learnMode != LEARN_MODE::OFF) {
-			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		}
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setLearnCursor(learnMode != LEARN_MODE::OFF);
 	}
 
 	void disableLearn() {
 		learnMode = LEARN_MODE::OFF;
-		if (APP->window) glfwSetCursor(APP->window->win, NULL);
+		cursor::resetCursor();
 	}
 
 	void appendContextMenu(Menu* menu) override {

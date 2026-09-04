@@ -23,7 +23,14 @@ SANITIZER ?= address
 JOBS ?= 8
 
 TEST_SOURCES += $(wildcard src/**/*.test.cpp src/**/**/*.test.cpp)
-TEST_ADD_SOURCES := $(CURDIR)/src/test/catch_amalgamated.cpp
+
+# Catch2's amalgamated source is 12k lines and takes ~10s to compile — two thirds of the
+# cost of a test binary — and it is byte-identical for all of them. Compile it once into a
+# shared object and link that instead of recompiling it per binary. Kept per-sanitizer so
+# an ASan Catch2 is never linked into a TSan binary. Note that switching SANITIZER does not
+# by itself rebuild the test binaries (their paths don't encode it) — as before this change,
+# `rm -rf build/test` when changing sanitizer.
+TEST_CATCH_OBJ := build/test/.shared/$(SANITIZER)/catch_amalgamated.o
 
 # Every project header. Test/perf binaries #include module sources and utility
 # headers directly, so without these as prerequisites a header edit leaves the
@@ -38,14 +45,25 @@ TEST_BINARIES := $(patsubst %,build/test/%,$(TEST_NAMES))
 # Allow pattern rule to locate test source files by searching these directories
 VPATH := $(sort $(dir $(TEST_SOURCES)))
 
-# Pattern rule to build an individual test executable
-build/test/%: %.cpp $(TEST_HEADERS) $(TARGET)
+# The compile flags shared by the Catch2 object and every test TU. Keep them identical:
+# the shared object is linked into all of them, so a flag that changes ABI or sanitizer
+# behaviour must not differ between the two.
+TEST_CXXFLAGS := -std=c++14 -I$(CURDIR)/src/test $(FLAGS) -O0 -UNDEBUG -DDEBUGPLUGIN \
+	-fsanitize=$(SANITIZER) -fno-omit-frame-pointer
+
+# Catch2, compiled once and linked into every test binary.
+$(TEST_CATCH_OBJ): src/test/catch_amalgamated.cpp src/test/catch_amalgamated.hpp
 	@mkdir -p $(dir $@)
 	@echo "Building $@..."
-	@$(CXX) -std=c++14 \
-		-I$(CURDIR)/src/test $(FLAGS) -O0 -UNDEBUG -DDEBUGPLUGIN -fsanitize=$(SANITIZER) -fno-omit-frame-pointer \
+	@$(CXX) $(TEST_CXXFLAGS) -c -o $@ $<
+
+# Pattern rule to build an individual test executable
+build/test/%: %.cpp $(TEST_HEADERS) $(TARGET) $(TEST_CATCH_OBJ)
+	@mkdir -p $(dir $@)
+	@echo "Building $@..."
+	@$(CXX) $(TEST_CXXFLAGS) \
 		-L$(RACK_DIR) -lRack \
-		-o $@ $(TEST_ADD_SOURCES) $(CURDIR)/$(TARGET) $<
+		-o $@ $(TEST_CATCH_OBJ) $(CURDIR)/$(TARGET) $<
 
 # Build all test binaries
 test: $(TEST_BINARIES) $(TARGET)

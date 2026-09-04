@@ -1,5 +1,6 @@
 #pragma once
 #include "test_plugin.hpp"
+#include "test_mock.hpp"
 #include <rack.hpp>
 #include <patch.hpp>
 #include <atomic>
@@ -69,6 +70,50 @@ inline void requireModelSync(Model* model, const std::string& slug) {
 	REQUIRE(model == dylibModel);
 }
 
+// The one-time plugin bootstrap: create the Plugin, run the dylib's init(), adopt the slug
+// from plugin.json, register it, and sync the TU-local model globals (see registerModelSync).
+//
+// Extracted from TestContext's constructor so the harness — not static-initialization order —
+// controls what is installed while init() runs. That matters because init() calls
+// pluginSettings.readFromJson(), and ~60 test files declare `Test::TestContext<> testContext;`
+// at file scope, so this whole path executes during static init, before main() and before any
+// TEST_CASE-scoped Test::mock::Guard could exist. A guard written around the *call site* would
+// therefore be impossible to place; a guard written in here is not.
+//
+// The NullFileAccess below is what makes that concrete: vcv::fileAccess defaults to nullptr and
+// fileAccessFor() then falls through to realFileAccess (real disk), so without it a settings
+// read here would hit the developer's own plugin.json — and readFromJson()'s "neither file
+// existed" branch would write defaults over it. Denying I/O for the window keeps the settings
+// path inert here while leaving it fully mockable in tests that install their own FileAccess
+// and call readFromJson()/saveToJson() deliberately.
+inline void initPluginOnce() {
+	pluginInstance = new Plugin();
+	{
+#ifdef DEBUGPLUGIN
+		// Only DEBUGPLUGIN builds have the swappable slot; a release test build resolves
+		// fileAccessFor() statically to realFileAccess and cannot be guarded (nor does it
+		// need to be — such a build is not what the suites run against).
+		static mock::NullFileAccess nullFs;
+		mock::Guard<StoermelderPackOne::vcv::FileAccess> fsGuard{StoermelderPackOne::vcv::fileAccess, &nullFs};
+#endif
+		init(pluginInstance);
+	}
+	{
+		json_error_t err;
+		json_t* pJ = json_load_file("plugin.json", 0, &err);
+		if (pJ) {
+			json_t* slugJ = json_object_get(pJ, "slug");
+			if (slugJ) pluginInstance->slug = json_string_value(slugJ);
+			json_decref(pJ);
+		}
+	}
+	rack::plugin::plugins.push_back(pluginInstance);
+
+	for (auto& entry : modelSyncRegistry()) {
+		if (auto* m = pluginInstance->getModel(entry.first)) *entry.second = m;
+	}
+}
+
 // Test-only context initializer to prevent APP (rack::contextGet()) from being null
 // Included by test harness only.
 // Allows specifying a custom Scene type for event testing.
@@ -91,22 +136,7 @@ struct TestContext {
 
 		// If this is the first TestContext, create and initialize the pluginInstance and context
 		if (testContextCount().fetch_add(1, std::memory_order_acq_rel) == 0) {
-			pluginInstance = new Plugin();
-			init(pluginInstance);
-			{
-				json_error_t err;
-				json_t* pJ = json_load_file("plugin.json", 0, &err);
-				if (pJ) {
-					json_t* slugJ = json_object_get(pJ, "slug");
-					if (slugJ) pluginInstance->slug = json_string_value(slugJ);
-					json_decref(pJ);
-				}
-			}
-			rack::plugin::plugins.push_back(pluginInstance);
-
-			for (auto& entry : modelSyncRegistry()) {
-				if (auto* m = pluginInstance->getModel(entry.first)) *entry.second = m;
-			}
+			initPluginOnce();
 
 			ctx = new rack::Context();
 			rack::contextSet(ctx);
@@ -315,6 +345,14 @@ inline const rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t c
 }
 
 
+// SUPERSEDED by Test::Harness (test_harness.hpp) — prefer it for new tests.
+//
+// Harness does everything this does (same stepping order, same messageFlipRequested-gated
+// expander flip) and adds the UI half: widget step(), scene layout, the DSP:UI rate ratio, and
+// module/widget lifetime. SimpleEngine is kept because 6 test files use it and a mechanical
+// rewrite of working tests buys nothing on its own; it should be retired as those files are
+// touched for other reasons, not in a dedicated migration pass. Do not add call sites.
+//
 // SimpleEngine simulates a VCV Rack engine step for module testing.
 // This class manages anlist of modules and processes them in sequence,
 // automatically flipping expander producer/consumer messages between each step.

@@ -1,12 +1,13 @@
 #pragma once
 #include <rack.hpp>
+#include "../../vcv/api.hpp"
 
 namespace StoermelderPackOne {
 namespace Siren {
 
 // helper: settings dir / file paths
 inline std::string settingsDirPath() {
-	return rack::asset::user("Stoermelder-P1");
+	return vcv::fs::getUserDirectory("Stoermelder-P1");
 }
 
 inline std::string sirenFilePath() {

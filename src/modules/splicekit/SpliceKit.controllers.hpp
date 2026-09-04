@@ -255,11 +255,13 @@ struct MidiOutPreset {
 //
 // ---------------------------------------------------------------------------
 
-// Directory of built-in *.ctrl.json presets, relative to the plugin install dir. Under the
-// test harness (TESTING=1) the plugin path is empty and the repo root is the working dir, so
-// a plain relative path resolves correctly there too.
+// Directory of built-in *.ctrl.json presets, relative to the plugin install dir. Falling back
+// to a plain relative path when there is no install path covers the test harness too: it never
+// assigns pluginInstance->path (see Test::initPluginOnce), so the path stays empty and the repo
+// root is the working directory. That is why this needs no test-specific branch — the state it
+// would check for is already the state being handled.
 static std::string controllerPresetsDir() {
-	if (isTesting() || !pluginInstance || pluginInstance->path.empty()) {
+	if (!pluginInstance || pluginInstance->path.empty()) {
 		return "presets/SpliceKit";
 	}
 	return pluginInstance->path + "/presets/SpliceKit";

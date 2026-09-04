@@ -41,8 +41,12 @@ struct MockCableAccess : CableAccess {
 	struct Added { int64_t outModuleId, inModuleId; int outPortId, inPortId; NVGcolor color; };
 	std::vector<Added> added;
 
-	void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory, NVGcolor color) override {
+	// Records the request and reports "no cable created" (nullptr), which is also what the
+	// real access returns when a module id is unknown — so callers folding the returned
+	// CableAdd into a ComplexAction simply add nothing here.
+	::rack::history::CableAdd* addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory, NVGcolor color) override {
 		added.push_back({outModuleId, inModuleId, outPortId, inPortId, color});
+		return nullptr;
 	}
 };
 

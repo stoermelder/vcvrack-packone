@@ -1,5 +1,6 @@
 #pragma once
 #include <rack.hpp>
+#include "../utils/cursor.hpp"
 
 namespace StoermelderPackOne {
 
@@ -104,8 +105,7 @@ struct MapButton : LEDBezel {
 		APP->scene->rack->setTouchedParam(NULL);
 		module->enableLearn(id);
 
-		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setCrosshairCursor();
 	}
 
 	void onDeselect(const event::Deselect& e) override {
@@ -121,13 +121,13 @@ struct MapButton : LEDBezel {
 					int64_t moduleId = pq->module->id;
 					int paramId = pq->paramId;
 					module->learnParam(id, moduleId, paramId);
-					if (APP->window) glfwSetCursor(APP->window->win, NULL);
+					cursor::resetCursor();
 					return;
 				}
 			}
 		}
 		module->disableLearn(id);
-		if (APP->window) glfwSetCursor(APP->window->win, NULL);
+		cursor::resetCursor();
 	}
 
 	std::string getParamName() {

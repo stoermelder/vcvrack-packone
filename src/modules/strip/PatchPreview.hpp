@@ -1,4 +1,6 @@
+#pragma once
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 
 namespace StoermelderPackOne {
 namespace SppPreview {
@@ -86,15 +88,14 @@ struct ModelBox : widget::OpaqueWidget {
 
 struct SelectionPreview : OpaqueWidget {
 	bool loadSelectionFile(std::string path) {
-		FILE* file = std::fopen(path.c_str(), "r");
-		if (!file) return false;
-		DEFER({std::fclose(file);});
+		std::string data;
+		if (!vcv::fs::read(path, data)) return false;
 		INFO("Loading selection %s", path.c_str());
 
-		json_error_t error;
-		json_t* rootJ = json_loadf(file, 0, &error);
+		std::string error;
+		json_t* rootJ = vcv::parseJson(data, error);
 		if (!rootJ) {
-			throw Exception("File is not a valid selection file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+			throw Exception("File is not a valid selection file. %s", error.c_str());
 		}
 		DEFER({json_decref(rootJ);});
 		return (createPreview(rootJ) > 0);
@@ -147,6 +148,55 @@ struct SelectionPreview : OpaqueWidget {
 	void onHide(const HideEvent& e) override {
 		OpaqueWidget::onHide(e);
 		clearChildren();
+	}
+};
+
+template<typename T>
+struct PatchPreviewContainer : Widget {
+	math::Vec dragPos;
+	StoermelderPackOne::SppPreview::SelectionPreview* sp;
+	std::function<void()> callback;
+
+	PatchPreviewContainer() {
+		sp = new StoermelderPackOne::SppPreview::SelectionPreview;
+		sp->hide();
+		addChild(sp);
+	}
+
+	void draw(const DrawArgs& args) override {
+		sp->box.pos = APP->scene->rack->getMousePos();
+		Widget::draw(args);
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		if (e.action == GLFW_PRESS && sp->isVisible()) {
+			if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
+				callback();
+				sp->hide();
+				e.consume(this);
+			}
+			if (e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+				sp->hide();
+				e.consume(this);
+			}
+		}
+		Widget::onButton(e);
+	}
+
+	void showPatchPreview(std::string path, std::function<void()> action) {
+		if (sp->loadSelectionFile(path)) {
+			callback = action;
+			sp->show();
+		}
+		else {
+			action();
+		}
+	}
+
+	void showPatchPreview(json_t* rootJ, std::function<void()> action) {
+		sp->createPreview(rootJ);
+		callback = action;
+		sp->show();
 	}
 };
 

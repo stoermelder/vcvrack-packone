@@ -1467,13 +1467,20 @@ TEST_CASE("Cross-instance settings sync: SirenWidget step() refreshes browser pa
 // configured root before any real instance had a chance to read them. The fix
 // makes save() a no-op until the settings have actually been load()ed.
 //
-// save()/load() short-circuit under isTesting() only while no mock is installed;
-// SirenMock redirects the vcv I/O layer, so isTesting() reports false and the
-// real save/load path runs against the virtual filesystem — no real disk is
-// touched and no backup/restore of a real file is needed.
+// save()/load() carry no test-specific branch — save() guards on `loaded` (the
+// bug above) and load() on the same flag. Isolation comes from the mock instead:
+// Mock redirects the vcv I/O layer, so the real save/load path runs against the
+// virtual filesystem — no real disk is touched and no backup/restore of a real
+// file is needed.
 TEST_CASE("Settings persistence: module-browser widget destruction does not wipe siren.json", "[Siren][SettingsPersistence][vcv]") {
 	Mock mock;
 	const std::string path = sirenFilePath();
+
+	// sirenFilePath()/settingsDirPath() route through vcv::fs::getUserDirectory, so with
+	// the mock installed they must resolve under /vfs rather than a real rack::asset::user
+	// path — otherwise this whole test would be silently asserting against a path string
+	// that happens to match, not a redirect that actually works.
+	REQUIRE(path == "/vfs/user/Stoermelder-P1/siren.json");
 
 	// Preserve and restore the global singleton we mutate below.
 	const std::vector<RootContainer> savedRoots = sirenSettings.rootContainers;

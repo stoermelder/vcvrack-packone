@@ -41,6 +41,16 @@ struct Guard {
 	Guard& operator=(Guard&&) = delete;
 };
 
+// A FileAccess that does nothing and reports failure for everything — i.e. the base
+// interface's own safe defaults (read/write return false, queries return empty), made
+// nameable so it can be installed into the `fileAccess` slot.
+//
+// Unlike MockFileAccess below it deliberately does NOT forward to rack::system: this is
+// the "deny all I/O" access, used to make a window of code provably unable to touch the
+// developer's real files. Test::initPluginOnce() installs it around init() — see
+// test_context.hpp for why that window needs it.
+struct NullFileAccess : StoermelderPackOne::vcv::FileAccess {};
+
 // Default FileAccess mock: forwards every call to the real rack::system, so a test that only
 // cares about a few filesystem calls can inherit from this and override just those methods
 // (e.g. to record or veto them) instead of re-implementing the whole interface.
@@ -51,7 +61,7 @@ struct MockFileAccess : StoermelderPackOne::vcv::FileAccess {
 	std::string getStem(const std::string& path) override { return rack::system::getStem(path); }
 	std::string getExtension(const std::string& path) override { return rack::system::getExtension(path); }
 	std::vector<std::string> getEntries(const std::string& dirPath, int depth) override { return rack::system::getEntries(dirPath, depth); }
-	bool exists(const std::string& path) override { return rack::system::exists(path); }
+	bool exists(const std::string& path) const override { return rack::system::exists(path); }
 	bool isFile(const std::string& path) override { return rack::system::isFile(path); }
 	bool isDirectory(const std::string& path) override { return rack::system::isDirectory(path); }
 	uint64_t getFileSize(const std::string& path) override { return rack::system::getFileSize(path); }
@@ -62,6 +72,7 @@ struct MockFileAccess : StoermelderPackOne::vcv::FileAccess {
 	bool remove(const std::string& path) override { return rack::system::remove(path); }
 	int removeRecursively(const std::string& path) override { return rack::system::removeRecursively(path); }
 	std::string getTempDirectory() override { return rack::system::getTempDirectory(); }
+	std::string getUserDirectory(const std::string& path) override { return rack::asset::user(path); }
 	double getTime() override { return rack::system::getTime(); }
 	void openDirectory(const std::string& path) override { rack::system::openDirectory(path); }
 };
