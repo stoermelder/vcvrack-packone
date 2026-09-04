@@ -1,6 +1,5 @@
+#pragma once
 #include "../../plugin.hpp"
-#include "../../vcv/fs.hpp"
-#include "../../vcv/selection.hpp"
 
 namespace StoermelderPackOne {
 namespace SppPreview {
@@ -88,36 +87,58 @@ struct ModelBox : widget::OpaqueWidget {
 
 struct SelectionPreview : OpaqueWidget {
 	bool loadSelectionFile(std::string path) {
-		std::string data;
-		if (!vcv::fs::read(path, data)) return false;
+		FILE* file = std::fopen(path.c_str(), "r");
+		if (!file) return false;
+		DEFER({std::fclose(file);});
 		INFO("Loading selection %s", path.c_str());
 
-		std::string error;
-		json_t* rootJ = vcv::parseJson(data, error);
+		json_error_t error;
+		json_t* rootJ = json_loadf(file, 0, &error);
 		if (!rootJ) {
-			throw Exception("File is not a valid selection file. %s", error.c_str());
+			throw Exception("File is not a valid selection file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
 		}
 		DEFER({json_decref(rootJ);});
 		return (createPreview(rootJ) > 0);
 	}
 
 	int createPreview(json_t* rootJ) {
-		// The same layout the loader itself uses, so the preview lands exactly where the
-		// modules will (origin (0,0): the container positions itself at the mouse).
-		auto placements = vcv::layoutSelection(json_object_get(rootJ, "modules"), Vec(0.f, 0.f));
+		json_t* modulesJ = json_object_get(rootJ, "modules");
+		if (!modulesJ) return 0;
+
+		json_t* moduleJ;
+		size_t moduleIndex;
+
+		double minX = std::numeric_limits<float>::infinity();
+		double minY = std::numeric_limits<float>::infinity();
+		json_array_foreach(modulesJ, moduleIndex, moduleJ) {
+			json_t* posJ = json_object_get(moduleJ, "pos");
+			double x = 0.0, y = 0.0;
+			json_unpack(posJ, "[F, F]", &x, &y);
+			minX = std::min(minX, x);
+			minY = std::min(minY, y);
+		}
 
 		int i = 0;
-		for (const vcv::ModulePlacement& p : placements) {
-			vcv::ModuleRef ref;
-			if (!vcv::readModuleRef(p.moduleJ, ref)) continue;
+		json_array_foreach(modulesJ, moduleIndex, moduleJ) {
+			json_t* posJ = json_object_get(moduleJ, "pos");
+			double x = 0.0, y = 0.0;
+			json_unpack(posJ, "[F, F]", &x, &y);
+
+			// Get slugs
+			json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
+			if (!pluginSlugJ) continue;
+			json_t* modelSlugJ = json_object_get(moduleJ, "model");
+			if (!modelSlugJ) continue;
+			std::string pluginSlug = json_string_value(pluginSlugJ);
+			std::string modelSlug = json_string_value(modelSlugJ);
 
 			// Get Model
-			plugin::Model* model = plugin::getModel(ref.pluginSlug, ref.modelSlug);
+			plugin::Model* model = plugin::getModel(pluginSlug, modelSlug);
 			if (!model) continue;
 
 			ModelBox* modelBox = new ModelBox;
 			modelBox->setModel(model);
-			modelBox->box.pos = p.pos;
+			modelBox->box.pos = Vec(x - minX, y - minY).mult(RACK_GRID_SIZE);
 			addChild(modelBox);
 			i++;
 		}
@@ -127,6 +148,55 @@ struct SelectionPreview : OpaqueWidget {
 	void onHide(const HideEvent& e) override {
 		OpaqueWidget::onHide(e);
 		clearChildren();
+	}
+};
+
+template<typename T>
+struct PatchPreviewContainer : Widget {
+	math::Vec dragPos;
+	StoermelderPackOne::SppPreview::SelectionPreview* sp;
+	std::function<void()> callback;
+
+	PatchPreviewContainer() {
+		sp = new StoermelderPackOne::SppPreview::SelectionPreview;
+		sp->hide();
+		addChild(sp);
+	}
+
+	void draw(const DrawArgs& args) override {
+		sp->box.pos = APP->scene->rack->getMousePos();
+		Widget::draw(args);
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		if (e.action == GLFW_PRESS && sp->isVisible()) {
+			if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
+				callback();
+				sp->hide();
+				e.consume(this);
+			}
+			if (e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+				sp->hide();
+				e.consume(this);
+			}
+		}
+		Widget::onButton(e);
+	}
+
+	void showPatchPreview(std::string path, std::function<void()> action) {
+		if (sp->loadSelectionFile(path)) {
+			callback = action;
+			sp->show();
+		}
+		else {
+			action();
+		}
+	}
+
+	void showPatchPreview(json_t* rootJ, std::function<void()> action) {
+		sp->createPreview(rootJ);
+		callback = action;
+		sp->show();
 	}
 };
 

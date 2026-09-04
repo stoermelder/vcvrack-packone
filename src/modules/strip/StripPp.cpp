@@ -1,6 +1,6 @@
 #include "../../plugin.hpp"
 #include "Strip.hpp"
-#include "SelectionPreview.cpp"
+#include "PatchPreview.hpp"
 #include "../../components/MenuLabelEx.hpp"
 
 namespace StoermelderPackOne {
