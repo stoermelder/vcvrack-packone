@@ -41,6 +41,16 @@ struct Guard {
 	Guard& operator=(Guard&&) = delete;
 };
 
+// A FileAccess that does nothing and reports failure for everything — i.e. the base
+// interface's own safe defaults (read/write return false, queries return empty), made
+// nameable so it can be installed into the `fileAccess` slot.
+//
+// Unlike MockFileAccess below it deliberately does NOT forward to rack::system: this is
+// the "deny all I/O" access, used to make a window of code provably unable to touch the
+// developer's real files. Test::initPluginOnce() installs it around init() — see
+// test_context.hpp for why that window needs it.
+struct NullFileAccess : StoermelderPackOne::vcv::FileAccess {};
+
 // Default FileAccess mock: forwards every call to the real rack::system, so a test that only
 // cares about a few filesystem calls can inherit from this and override just those methods
 // (e.g. to record or veto them) instead of re-implementing the whole interface.
