@@ -1,6 +1,7 @@
 #include "Mb_patch.hpp"
 #include "Mb_patch_preview.hpp"
 #include "Mb_patch_source.hpp"
+#include "../../vcv/api.hpp"
 #include <helpers.hpp>
 #include <tag.hpp>
 
@@ -324,7 +325,7 @@ struct SourceButton : ui::ChoiceButton {
 			}
 		}));
 		menu->addChild(createMenuItem("Add .vcv folder...", "", [this] {
-			PatchSource* newSrc = filesystem::vcv::createSource();
+			PatchSource* newSrc = filesystem::vcvpatch::createSource();
 			if (newSrc) {
 				browser->addSource(newSrc);
 			}
@@ -390,7 +391,7 @@ struct MissingModelsWidget : widget::OpaqueWidget {
 		void onButton(const event::Button& e) override {
 			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 				std::string url = "https://library.vcvrack.com/?modules=" + fullSlug;
-				system::openBrowser(url);
+				vcv::ui::openBrowser(url);
 				e.consume(this);
 			}
 		}

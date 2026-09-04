@@ -5,6 +5,7 @@
 #include <rack.hpp>
 #include "Mb_patch_source.hpp"
 #include "Mb_patch_sourceindex.hpp"
+#include "../../vcv/api.hpp"
 
 // Include curl for header access
 #define CURL_STATICLIB
@@ -167,13 +168,12 @@ struct PatchStorageSource : PatchSource {
 
 	void setCacheDir(const std::string& dir) override {
 		helper->cacheDir = dir;
-		system::createDirectories(helper->cacheDir);
+		vcv::fs::createDirectories(helper->cacheDir);
 	}
 
-	/** Fetch JSON from a URL using the Rack network API. */
+	/** Fetch JSON from a URL through the swappable network layer. */
 	json_t* fetchJson(const std::string& url) const {
-		json_t* result = rack::network::requestJson(rack::network::METHOD_GET, url);
-		return result;
+		return vcv::nw::requestJson(vcv::Method::GET, url);
 	}
 
 	/** Result of a JSON fetch with header info. */
@@ -773,16 +773,16 @@ struct PatchStorageSource : PatchSource {
 
 		// Generate cache path
 		std::string cacheName = generateCacheName();
-		std::string cachePath = system::join(getCacheDir(), cacheName);
-		system::createDirectories(cachePath);
-		std::string archivePath = system::join(cachePath, info.filename.empty() ? "patch.vcv" : info.filename);
+		std::string cachePath = vcv::fs::join(getCacheDir(), cacheName);
+		vcv::fs::createDirectories(cachePath);
+		std::string archivePath = vcv::fs::join(cachePath, info.filename.empty() ? "patch.vcv" : info.filename);
 
 		DEBUG("PatchStorageSource: archivePath=%s", archivePath.c_str());
 
 		// Download the file
-		if (!rack::network::requestDownload(info.downloadUrl, archivePath)) {
+		if (!vcv::nw::requestDownload(info.downloadUrl, archivePath)) {
 			DEBUG("PatchStorageSource: download FAILED for %s", info.downloadUrl.c_str());
-			system::removeRecursively(cachePath);
+			vcv::fs::removeRecursively(cachePath);
 			setStatus("Download failed", 3);
 			return "";
 		}
@@ -806,12 +806,10 @@ struct PatchStorageSource : PatchSource {
 		DEBUG("PatchStorageSource: getFileJson isLegacyV1 check for %s", archivePath.c_str());
 		if (isVcvLegacyV1(archivePath)) {
 			// Legacy v1 format: plain JSON file
-			FILE* f = fopen(archivePath.c_str(), "rb");
-			if (!f) return nullptr;
-			json_error_t error;
-			json_t* rootJ = json_loadf(f, 0, &error);
-			fclose(f);
-			return rootJ;
+			std::string data;
+			if (!vcv::fs::read(archivePath, data)) return nullptr;
+			std::string err;
+			return vcv::parseJson(data, err);
 		}
 		else {
 			// v2+ format: extract from archive
@@ -825,31 +823,30 @@ struct PatchStorageSource : PatchSource {
 	json_t* extractPatchJson(const std::string& archivePath) const {
 		// Extract to temp directory
 		std::string cacheName = generateCacheName();
-		std::string extractDir = system::join(getCacheDir(), cacheName + "_extract");
-		system::createDirectories(extractDir);
+		std::string extractDir = vcv::fs::join(getCacheDir(), cacheName + "_extract");
+		vcv::fs::createDirectories(extractDir);
 
 		try {
 			system::unarchiveToDirectory(archivePath, extractDir);
 		}
 		catch (...) {
-			system::removeRecursively(extractDir);
+			vcv::fs::removeRecursively(extractDir);
 			setStatus("Failed to extract archive", 3);
 			return nullptr;
 		}
 
 		setStatus("Loading patch...");
-		std::string patchJsonPath = system::join(extractDir, "patch.json");
-		FILE* f = fopen(patchJsonPath.c_str(), "rb");
-		if (!f) {
-			system::removeRecursively(extractDir);
+		std::string patchJsonPath = vcv::fs::join(extractDir, "patch.json");
+		std::string data;
+		if (!vcv::fs::read(patchJsonPath, data)) {
+			vcv::fs::removeRecursively(extractDir);
 			setStatus("Failed to read patch file", 3);
 			return nullptr;
 		}
 
-		json_error_t error;
-		json_t* rootJ = json_loadf(f, 0, &error);
-		fclose(f);
-		system::removeRecursively(extractDir);
+		std::string err;
+		json_t* rootJ = vcv::parseJson(data, err);
+		vcv::fs::removeRecursively(extractDir);
 
 		if (!rootJ) {
 			setStatus("Failed to parse patch JSON", 3);
@@ -994,8 +991,8 @@ struct PatchStorageSource : PatchSource {
 
 	// Clear only runtime caches (downloaded files), not the persistent API caches
 	void clearCache() {
-		if (!helper->cacheDir.empty() && system::exists(helper->cacheDir)) {
-			system::removeRecursively(helper->cacheDir);
+		if (!helper->cacheDir.empty() && vcv::fs::exists(helper->cacheDir)) {
+			vcv::fs::removeRecursively(helper->cacheDir);
 		}
 		patches->clear();
 	}
@@ -1041,40 +1038,29 @@ struct PatchStorageSource : PatchSource {
 		menu->addChild(createMenuLabel(info.title));
 		menu->addChild(createMenuItem("Open in web browser", "", [info]() {
 			std::string url = string::f("https://patchstorage.com/patch/%s", info.slug.c_str());
-			system::openBrowser(url);
+			vcv::ui::openBrowser(url);
 		}));
 		menu->addChild(createMenuItem("Save to disk", "", [this, info, fileId]() {
-			// Ensure file is downloaded first
-			std::string archivePath = getTempFilePath(fileId);
-			if (archivePath.empty()) return;
-
-			// Show save dialog using osdialog_file
-			char* path = osdialog_file(OSDIALOG_SAVE, "", info.filename.empty() ? (info.slug + ".vcv").c_str() : info.filename.c_str(), NULL);
-			if (!path) return;
-
-			// Copy file to destination
-			FILE* srcFile = fopen(archivePath.c_str(), "rb");
-			if (!srcFile) {
-				free(path);
-				return;
-			}
-			FILE* dstFile = fopen(path, "wb");
-			if (!dstFile) {
-				fclose(srcFile);
-				free(path);
-				return;
-			}
-			char buf[8192];
-			size_t n;
-			bool writeOk = true;
-			while (writeOk && (n = fread(buf, 1, sizeof(buf), srcFile)) > 0) {
-				writeOk = fwrite(buf, 1, n, dstFile) == n;
-			}
-			fclose(srcFile);
-			fclose(dstFile);
-			if (!writeOk) system::remove(path);
-			free(path);
+			saveToDisk(fileId, info);
 		}));
+	}
+
+	/** Copy a downloaded archive to a user-chosen path. Split out so tests can drive
+	 * the save-dialog + fs routing with scripted answers and an in-memory fs. */
+	void saveToDisk(const std::string& fileId, const PatchInfo& info) {
+		// Ensure file is downloaded first
+		std::string archivePath = getTempFilePath(fileId);
+		if (archivePath.empty()) return;
+
+		std::string path = vcv::ui::saveDialog("", "", info.filename.empty() ? (info.slug + ".vcv") : info.filename);
+		if (path.empty()) return;
+
+		// Copy file to destination through the swappable fs layer
+		std::string data;
+		if (!vcv::fs::read(archivePath, data)) return;
+		if (!vcv::fs::write(path, data)) {
+			vcv::fs::remove(path);
+		}
 	}
 };
 

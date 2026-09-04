@@ -4,6 +4,7 @@
 #include <rack.hpp>
 #include "Mb_patch_helper.hpp"
 #include "Mb_patch_sourceindex.hpp"
+#include "../../vcv/api.hpp"
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -68,13 +69,11 @@ struct PatchSource {
 
 	/** Returns true if `path` is a legacy v1 .vcv patch (plain JSON, not zstd-compressed). */
 	static bool isVcvLegacyV1(const std::string& path) {
-		FILE* f = std::fopen(path.c_str(), "rb");
-		if (!f) return false;
-		DEFER({std::fclose(f);});
-		char zstdMagic[] = "\x28\xb5\x2f\xfd";
-		char buf[4] = {};
-		std::fread(buf, 1, sizeof(buf), f);
-		return std::memcmp(buf, zstdMagic, sizeof(buf)) != 0;
+		std::string data;
+		if (!vcv::fs::read(path, data)) return false;
+		if (data.size() < 4) return true;
+		static const char zstdMagic[] = "\x28\xb5\x2f\xfd";
+		return std::memcmp(data.data(), zstdMagic, 4) != 0;
 	}
 
 	// -- navigation ----------------------------------------------------------
@@ -179,7 +178,7 @@ namespace filesystem {
 		extern std::string getSlug();
 		extern PatchSource* initSource();
 	}
-	namespace vcv {
+	namespace vcvpatch {
 		extern std::string getSlug();
 		extern PatchSource* initSource();
 	}
@@ -198,7 +197,7 @@ namespace patchstorage {
 inline PatchSource* createSourceFromJson(json_t* sourceJ) {
 	static std::map<std::string, std::function<PatchSource*()>> sourceSlugs {
 		{ filesystem::vcvs::getSlug(), filesystem::vcvs::initSource },
-		{ filesystem::vcv::getSlug(), filesystem::vcv::initSource },
+		{ filesystem::vcvpatch::getSlug(), filesystem::vcvpatch::initSource },
 		{ patchstorage::getSlug(), patchstorage::initSource }
 	};
 
