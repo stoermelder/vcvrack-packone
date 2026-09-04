@@ -62,6 +62,7 @@ struct MockFileAccess : StoermelderPackOne::vcv::FileAccess {
 	bool remove(const std::string& path) override { return rack::system::remove(path); }
 	int removeRecursively(const std::string& path) override { return rack::system::removeRecursively(path); }
 	std::string getTempDirectory() override { return rack::system::getTempDirectory(); }
+	std::string getUserDirectory(const std::string& path) override { return rack::asset::user(path); }
 	double getTime() override { return rack::system::getTime(); }
 	void openDirectory(const std::string& path) override { rack::system::openDirectory(path); }
 };

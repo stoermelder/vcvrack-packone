@@ -272,6 +272,9 @@ struct MockFileAccess : Test::mock::MockFileAccess {
 	std::string getTempDirectory() override {
 		return "/vfs";
 	}
+	std::string getUserDirectory(const std::string& path) override {
+		return "/vfs/user/" + path;
+	}
 };
 
 // A UiAccess mock that records openDirectoryDialog calls and returns scripted

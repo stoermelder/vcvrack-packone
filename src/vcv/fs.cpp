@@ -94,6 +94,10 @@ std::string RealFileAccess::getTempDirectory() {
 	return rack::system::getTempDirectory();
 }
 
+std::string RealFileAccess::getUserDirectory(const std::string& path) {
+	return rack::asset::user(path);
+}
+
 double RealFileAccess::getTime() {
 	return rack::system::getTime();
 }

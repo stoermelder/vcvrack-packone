@@ -55,6 +55,7 @@ struct FileAccess {
 
 	// Environment / applications.
 	virtual std::string getTempDirectory() { return ""; }
+	virtual std::string getUserDirectory(const std::string& path) { return ""; }
 	virtual double getTime() { return 0.0; }
 	virtual void openDirectory(const std::string& path) {}
 };
@@ -82,6 +83,7 @@ struct RealFileAccess final : FileAccess {
 	bool remove(const std::string& path) override;
 	int removeRecursively(const std::string& path) override;
 	std::string getTempDirectory() override;
+	std::string getUserDirectory(const std::string& path) override;
 	double getTime() override;
 	void openDirectory(const std::string& path) override;
 };
@@ -195,6 +197,11 @@ static int removeRecursively(const std::string& path) {
 P1_UNUSED
 static std::string getTempDirectory() {
 	return fileAccessFor().getTempDirectory();
+}
+
+P1_UNUSED
+static std::string getUserDirectory(const std::string& path) {
+	return fileAccessFor().getUserDirectory(path);
 }
 
 P1_UNUSED

@@ -1475,6 +1475,12 @@ TEST_CASE("Settings persistence: module-browser widget destruction does not wipe
 	Mock mock;
 	const std::string path = sirenFilePath();
 
+	// sirenFilePath()/settingsDirPath() route through vcv::fs::getUserDirectory, so with
+	// the mock installed they must resolve under /vfs rather than a real rack::asset::user
+	// path — otherwise this whole test would be silently asserting against a path string
+	// that happens to match, not a redirect that actually works.
+	REQUIRE(path == "/vfs/user/Stoermelder-P1/siren.json");
+
 	// Preserve and restore the global singleton we mutate below.
 	const std::vector<RootContainer> savedRoots = sirenSettings.rootContainers;
 	const bool savedLoaded = sirenSettings.loaded;
