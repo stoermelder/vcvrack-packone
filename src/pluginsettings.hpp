@@ -12,7 +12,7 @@ namespace StoermelderPackOne {
 struct Settings {
 	int panelThemeDefault = -1;
 
-	json_t* mbModelsJ;
+	json_t* mbModelsJ = NULL;
 	float mbZoom = 0.85f;
 	int mbSort = 0;
 	int mbSortV2 = 0;

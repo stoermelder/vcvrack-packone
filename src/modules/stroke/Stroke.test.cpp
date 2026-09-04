@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "Stroke.cpp"
 
 using namespace StoermelderPackOne;
@@ -16,7 +15,8 @@ static constexpr int STROKE_PORTS = 10;
 // Construction / initialization
 
 TEST_CASE("Construction and initialization", "[Stroke]") {
-	StrokeModule<STROKE_PORTS>* m = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	StrokeModule<STROKE_PORTS>* m = mods.create("Stroke");
 	StrokeWidget* mw = Test::createWidget<StrokeWidget>("Stroke");
 
 	REQUIRE(m != nullptr);
@@ -24,11 +24,11 @@ TEST_CASE("Construction and initialization", "[Stroke]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Stroke][JSON]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -37,11 +37,25 @@ TEST_CASE("Preset JSON null-guards", "[Stroke][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 }
 
 TEST_CASE("onReset clears key configuration", "[Stroke][init]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	// Dirty key state. Note: panelTheme is intentionally NOT touched because
 	// the StrokeModule's onReset() does not reset panelTheme — only the
@@ -67,92 +81,116 @@ TEST_CASE("onReset clears key configuration", "[Stroke][init]") {
 		REQUIRE(module->keys[i].data == "");
 	}
 
-	Test::destroyModule(module);
 }
 
 
 // JSON serialization
 
-TEST_CASE("dataToJson writes panelTheme and a keys array", "[Stroke][JSON]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+TEST_CASE("JSON round-trip preserves state", "[Stroke][JSON]") {
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto src = mods.create("Stroke");
+	auto dst = mods.create("Stroke");
 
-	module->panelTheme = 3;
-	module->keys[0].button = 2;
-	module->keys[0].key = GLFW_KEY_A;
-	module->keys[0].mods = GLFW_MOD_SHIFT;
-	module->keys[0].mode = KEY_MODE::CV_GATE;
-	module->keys[0].high = true;
-	module->keys[0].data = "hello";
+	SECTION("Serialized JSON structure") {
+		src->panelTheme = 3;
+		src->keys[0].button = 2;
+		src->keys[0].key = GLFW_KEY_A;
+		src->keys[0].mods = GLFW_MOD_SHIFT;
+		src->keys[0].mode = KEY_MODE::CV_GATE;
+		src->keys[0].high = true;
+		src->keys[0].data = "hello";
 
-	json_t* rootJ = module->dataToJson();
-	REQUIRE(rootJ != nullptr);
-	REQUIRE(json_is_object(rootJ));
+		json_t* rootJ = src->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		REQUIRE(json_is_object(rootJ));
 
-	json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
-	REQUIRE(panelThemeJ != nullptr);
-	REQUIRE(json_integer_value(panelThemeJ) == 3);
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		REQUIRE(panelThemeJ != nullptr);
+		REQUIRE(json_integer_value(panelThemeJ) == 3);
 
-	json_t* keysJ = json_object_get(rootJ, "keys");
-	REQUIRE(keysJ != nullptr);
-	REQUIRE(json_array_size(keysJ) == STROKE_PORTS);
+		// The keys array must be serialized with one entry per port
+		json_t* keysJ = json_object_get(rootJ, "keys");
+		REQUIRE(keysJ != nullptr);
+		REQUIRE(json_array_size(keysJ) == STROKE_PORTS);
 
-	json_t* key0J = json_array_get(keysJ, 0);
-	REQUIRE(key0J != nullptr);
-	REQUIRE(json_integer_value(json_object_get(key0J, "button")) == 2);
-	REQUIRE(json_integer_value(json_object_get(key0J, "key")) == GLFW_KEY_A);
-	REQUIRE(json_integer_value(json_object_get(key0J, "mods")) == GLFW_MOD_SHIFT);
-	REQUIRE(json_integer_value(json_object_get(key0J, "mode")) == (int)KEY_MODE::CV_GATE);
-	REQUIRE(json_boolean_value(json_object_get(key0J, "high")) == true);
-	REQUIRE(std::string(json_string_value(json_object_get(key0J, "data"))) == "hello");
+		json_t* key0J = json_array_get(keysJ, 0);
+		REQUIRE(key0J != nullptr);
+		REQUIRE(json_integer_value(json_object_get(key0J, "button")) == 2);
+		REQUIRE(json_integer_value(json_object_get(key0J, "key")) == GLFW_KEY_A);
+		REQUIRE(json_integer_value(json_object_get(key0J, "mods")) == GLFW_MOD_SHIFT);
+		REQUIRE(json_integer_value(json_object_get(key0J, "mode")) == (int)KEY_MODE::CV_GATE);
+		REQUIRE(json_boolean_value(json_object_get(key0J, "high")) == true);
+		REQUIRE(std::string(json_string_value(json_object_get(key0J, "data"))) == "hello");
 
-	json_decref(rootJ);
-	Test::destroyModule(module);
-}
+		json_decref(rootJ);
+	}
 
-TEST_CASE("dataFromJson round-trip preserves key configuration", "[Stroke][JSON]") {
-	auto src = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
-	auto dst = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	SECTION("panelTheme round-trips") {
+		src->panelTheme = 5;
+		dst->panelTheme = 0;
+		json_t* j = src->dataToJson();
+		dst->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(dst->panelTheme == 5);
+	}
 
-	src->panelTheme = 5;
-	src->keys[0].button = -1;
-	src->keys[0].key = GLFW_KEY_KP_5; // a numpad key to verify keyFix runs on load
-	src->keys[0].mods = GLFW_MOD_ALT | GLFW_MOD_SHIFT;
-	src->keys[0].mode = KEY_MODE::S_ZOOM_OUT;
-	src->keys[0].high = true;
-	src->keys[0].data = "abc";
+	SECTION("Key slots (keys array) round-trip") {
+		src->panelTheme = 5;
+		src->keys[0].button = -1;
+		src->keys[0].key = GLFW_KEY_KP_5; // a numpad key to verify keyFix runs on load
+		src->keys[0].mods = GLFW_MOD_ALT | GLFW_MOD_SHIFT;
+		src->keys[0].mode = KEY_MODE::S_ZOOM_OUT;
+		src->keys[0].high = true;
+		src->keys[0].data = "abc";
 
-	src->keys[3].button = 1;
-	src->keys[3].key = -1;
-	src->keys[3].mods = RACK_MOD_CTRL;
-	src->keys[3].mode = KEY_MODE::CV_GATE;
-	src->keys[3].high = false;
-	src->keys[3].data = "";
+		src->keys[3].button = 1;
+		src->keys[3].key = -1;
+		src->keys[3].mods = RACK_MOD_CTRL;
+		src->keys[3].mode = KEY_MODE::CV_GATE;
+		src->keys[3].high = false;
+		src->keys[3].data = "";
 
-	json_t* rootJ = src->dataToJson();
-	REQUIRE_NOTHROW(dst->dataFromJson(rootJ));
+		// A third slot exercises the full array, not just [0]/[3]
+		src->keys[7].button = 0;
+		src->keys[7].key = GLFW_KEY_B;
+		src->keys[7].mods = GLFW_MOD_SHIFT;
+		src->keys[7].mode = KEY_MODE::CV_TRIGGER;
+		src->keys[7].high = true;
+		src->keys[7].data = "slot7";
 
-	REQUIRE(dst->panelTheme == 5);
-	REQUIRE(dst->keys[0].button == -1);
-	// keyFix converts numpad keys to their non-numpad equivalents
-	REQUIRE(dst->keys[0].key == GLFW_KEY_5);
-	REQUIRE(dst->keys[0].mods == (GLFW_MOD_ALT | GLFW_MOD_SHIFT));
-	REQUIRE(dst->keys[0].mode == KEY_MODE::S_ZOOM_OUT);
-	REQUIRE(dst->keys[0].high == true);
-	REQUIRE(dst->keys[0].data == "abc");
+		json_t* rootJ = src->dataToJson();
+		REQUIRE_NOTHROW(dst->dataFromJson(rootJ));
 
-	REQUIRE(dst->keys[3].button == 1);
-	REQUIRE(dst->keys[3].key == -1);
-	REQUIRE(dst->keys[3].mods == RACK_MOD_CTRL);
-	REQUIRE(dst->keys[3].mode == KEY_MODE::CV_GATE);
-	REQUIRE(dst->keys[3].high == false);
+		REQUIRE(dst->panelTheme == 5);
+		REQUIRE(dst->keys[0].button == -1);
+		// keyFix converts numpad keys to their non-numpad equivalents
+		REQUIRE(dst->keys[0].key == GLFW_KEY_5);
+		REQUIRE(dst->keys[0].mods == (GLFW_MOD_ALT | GLFW_MOD_SHIFT));
+		REQUIRE(dst->keys[0].mode == KEY_MODE::S_ZOOM_OUT);
+		REQUIRE(dst->keys[0].high == true);
+		REQUIRE(dst->keys[0].data == "abc");
 
-	json_decref(rootJ);
-	Test::destroyModule(src);
-	Test::destroyModule(dst);
+		REQUIRE(dst->keys[3].button == 1);
+		REQUIRE(dst->keys[3].key == -1);
+		REQUIRE(dst->keys[3].mods == RACK_MOD_CTRL);
+		REQUIRE(dst->keys[3].mode == KEY_MODE::CV_GATE);
+		REQUIRE(dst->keys[3].high == false);
+
+		REQUIRE(dst->keys[7].button == 0);
+		REQUIRE(dst->keys[7].key == GLFW_KEY_B);
+		REQUIRE(dst->keys[7].mods == GLFW_MOD_SHIFT);
+		REQUIRE(dst->keys[7].mode == KEY_MODE::CV_TRIGGER);
+		REQUIRE(dst->keys[7].high == true);
+		REQUIRE(dst->keys[7].data == "slot7");
+
+		json_decref(rootJ);
+	}
+
 }
 
 TEST_CASE("dataFromJson masks mods to ALT|CTRL|SHIFT only", "[Stroke][JSON]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	json_t* rootJ = json_object();
 	json_object_set_new(rootJ, "panelTheme", json_integer(0));
@@ -175,11 +213,11 @@ TEST_CASE("dataFromJson masks mods to ALT|CTRL|SHIFT only", "[Stroke][JSON]") {
 	REQUIRE((module->keys[0].mods & ~maskedMods) == 0);
 
 	json_decref(rootJ);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("dataFromJson handles empty JSON object", "[Stroke][JSON]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	// Dirty the state first so we can detect accidental clobbering on missing keys.
 	module->panelTheme = 9;
@@ -199,14 +237,78 @@ TEST_CASE("dataFromJson handles empty JSON object", "[Stroke][JSON]") {
 	}
 
 	json_decref(emptyJ);
-	Test::destroyModule(module);
+}
+
+TEST_CASE("dataFromJson tolerates a keys array shorter than PORTS", "[Stroke][JSON][bug]") {
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	// Review §2. keysJ is never null-checked and json_array_get returns NULL
+	// past the end; jansson's null-tolerant accessors keep this from crashing.
+	// Slots beyond the array must retain their prior values.
+	auto module = mods.create("Stroke");
+
+	for (int i = 0; i < STROKE_PORTS; i++) {
+		module->keys[i].mode = KEY_MODE::CV_TOGGLE;
+		module->keys[i].data = "prior";
+	}
+
+	json_t* rootJ = json_object();
+	json_t* keysJ = json_array();
+	// Only two entries for a ten-slot module.
+	for (int i = 0; i < 2; i++) {
+		json_t* keyJ = json_object();
+		json_object_set_new(keyJ, "key", json_integer(GLFW_KEY_A + i));
+		json_object_set_new(keyJ, "mode", json_integer((int)KEY_MODE::CV_GATE));
+		json_object_set_new(keyJ, "data", json_string("loaded"));
+		json_array_append_new(keysJ, keyJ);
+	}
+	json_object_set_new(rootJ, "keys", keysJ);
+
+	REQUIRE_NOTHROW(module->dataFromJson(rootJ));
+
+	for (int i = 0; i < 2; i++) {
+		REQUIRE(module->keys[i].key == GLFW_KEY_A + i);
+		REQUIRE(module->keys[i].mode == KEY_MODE::CV_GATE);
+		REQUIRE(module->keys[i].data == "loaded");
+	}
+	for (int i = 2; i < STROKE_PORTS; i++) {
+		REQUIRE(module->keys[i].mode == KEY_MODE::CV_TOGGLE);
+		REQUIRE(module->keys[i].data == "prior");
+	}
+
+	json_decref(rootJ);
+}
+
+TEST_CASE("dataFromJson accepts an out-of-range mode without validation", "[Stroke][JSON][bug]") {
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	// Review §8. The mode integer is cast straight to KEY_MODE (Stroke.cpp:218),
+	// so a retired or corrupt value survives load and lands in a state with no
+	// menu entry. A fix should map unknown modes to KEY_MODE::OFF.
+	auto module = mods.create("Stroke");
+
+	json_t* rootJ = json_object();
+	json_t* keysJ = json_array();
+	json_t* keyJ = json_object();
+	json_object_set_new(keyJ, "key", json_integer(GLFW_KEY_A));
+	json_object_set_new(keyJ, "mode", json_integer(9999));
+	json_array_append_new(keysJ, keyJ);
+	json_object_set_new(rootJ, "keys", keysJ);
+
+	REQUIRE_NOTHROW(module->dataFromJson(rootJ));
+	REQUIRE((int)module->keys[0].mode == 9999);
+
+	// process() falls through its switch, so the output stays silent.
+	module->process(Test::makeProcessArgs(1));
+	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 0].getVoltage() == 0.f);
+
+	json_decref(rootJ);
 }
 
 
 // keyEnable / keyDisable / keyHeld
 
 TEST_CASE("Key::isMapped returns true only when button or key is set", "[Stroke][key]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	// Defaults from onReset
 	REQUIRE_FALSE(module->keys[0].isMapped());
@@ -221,21 +323,21 @@ TEST_CASE("Key::isMapped returns true only when button or key is set", "[Stroke]
 	module->keys[0].key = -1;
 	REQUIRE_FALSE(module->keys[0].isMapped());
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("All slots start unmapped after construction", "[Stroke][key]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	for (int i = 0; i < STROKE_PORTS; i++) {
 		REQUIRE_FALSE(module->keys[i].isMapped());
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("keyEnable on unmapped slot is a no-op for CV outputs", "[Stroke][enable]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	// Default state: button == -1 && key == -1
 	REQUIRE_FALSE(module->keys[0].isMapped());
@@ -245,11 +347,11 @@ TEST_CASE("keyEnable on unmapped slot is a no-op for CV outputs", "[Stroke][enab
 
 	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 0].getVoltage() == 0.f);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("CV_TRIGGER mode fires a one-shot pulse on keyEnable", "[Stroke][enable]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	module->keys[0].button = 0;
 	module->keys[0].key = -1;
@@ -267,11 +369,11 @@ TEST_CASE("CV_TRIGGER mode fires a one-shot pulse on keyEnable", "[Stroke][enabl
 	}
 	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 0].getVoltage() == Catch::Approx(0.f).margin(1e-3f));
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("CV_GATE mode latches high on keyEnable and clears on keyDisable", "[Stroke][enable][disable]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	module->keys[0].button = 0;
 	module->keys[0].mode = KEY_MODE::CV_GATE;
@@ -294,11 +396,11 @@ TEST_CASE("CV_GATE mode latches high on keyEnable and clears on keyDisable", "[S
 	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 0].getVoltage() == 0.f);
 	REQUIRE(module->keys[0].high == false);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("CV_TOGGLE mode flips state on successive keyEnable calls", "[Stroke][enable]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	module->keys[0].button = 0;
 	module->keys[0].mode = KEY_MODE::CV_TOGGLE;
@@ -315,11 +417,11 @@ TEST_CASE("CV_TOGGLE mode flips state on successive keyEnable calls", "[Stroke][
 	module->process(Test::makeProcessArgs(2));
 	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 0].getVoltage() == 0.f);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("KEY_MODE::OFF does not emit CV", "[Stroke][enable]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	module->keys[0].button = 0;
 	module->keys[0].mode = KEY_MODE::OFF;
@@ -328,11 +430,11 @@ TEST_CASE("KEY_MODE::OFF does not emit CV", "[Stroke][enable]") {
 	module->process(Test::makeProcessArgs(1));
 	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 0].getVoltage() == 0.f);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("keyEnable on command-style modes sets keyTemp", "[Stroke][enable]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	module->keys[0].button = 0;
 	module->keys[0].mode = KEY_MODE::S_ZOOM_OUT;
@@ -342,22 +444,22 @@ TEST_CASE("keyEnable on command-style modes sets keyTemp", "[Stroke][enable]") {
 	// Command modes route through the keyTemp pointer for the KeyContainer to dispatch.
 	REQUIRE(module->keyTemp == &module->keys[0]);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("keyHeld sets keyTempHeld", "[Stroke][held]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	module->keys[0].button = 0;
 	module->keyHeld(0);
 
 	REQUIRE(module->keyTempHeld == &module->keys[0]);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("keyDisable on command-style modes sets keyTempDisable", "[Stroke][disable]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	module->keys[0].button = 0;
 	module->keys[0].mode = KEY_MODE::S_ZOOM_OUT;
@@ -367,11 +469,11 @@ TEST_CASE("keyDisable on command-style modes sets keyTempDisable", "[Stroke][dis
 	// Command modes route through the keyTempDisable pointer for the KeyContainer to dispatch.
 	REQUIRE(module->keyTempDisable == &module->keys[0]);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("keyDisable only clears gate state for CV_GATE", "[Stroke][disable]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	// CV_TOGGLE: keyDisable does NOT clear `high`; it falls into the default branch.
 	module->keys[0].button = 0;
@@ -386,15 +488,14 @@ TEST_CASE("keyDisable only clears gate state for CV_GATE", "[Stroke][disable]") 
 	module->keys[1].high = true;
 	module->keyDisable(1);
 	REQUIRE(module->keys[1].high == false);
-
-	Test::destroyModule(module);
 }
 
 
 // process() — CV output matrix
 
 TEST_CASE("Process emits 0V for unmapped slots even with mode set", "[Stroke][process]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	// Set mode but leave both button and key unmapped (matches fresh state)
 	module->keys[0].mode = KEY_MODE::CV_TRIGGER;
@@ -407,11 +508,11 @@ TEST_CASE("Process emits 0V for unmapped slots even with mode set", "[Stroke][pr
 		REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + i].getVoltage() == 0.f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Process emits 0V for command-style modes", "[Stroke][process]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	module->keys[0].button = 0;
 	module->keys[0].mode = KEY_MODE::S_ZOOM_OUT;
@@ -424,11 +525,11 @@ TEST_CASE("Process emits 0V for command-style modes", "[Stroke][process]") {
 		REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + i].getVoltage() == 0.f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Process emits 0V for KEY_MODE::OFF even when mapped", "[Stroke][process]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	module->keys[0].button = 0;
 	module->keys[0].mode = KEY_MODE::OFF;
@@ -436,11 +537,11 @@ TEST_CASE("Process emits 0V for KEY_MODE::OFF even when mapped", "[Stroke][proce
 	module->process(Test::makeProcessArgs(1));
 	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 0].getVoltage() == 0.f);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Multiple slots operate independently", "[Stroke][process]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	// Slot 0: CV_TRIGGER (with pulse already triggered)
 	module->keys[0].button = 0;
@@ -467,7 +568,6 @@ TEST_CASE("Multiple slots operate independently", "[Stroke][process]") {
 	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 2].getVoltage() == 0.f);
 	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 3].getVoltage() == 0.f);
 
-	Test::destroyModule(module);
 }
 
 
@@ -579,7 +679,8 @@ TEST_CASE("CmdCableOpacity initial cmd with non-zero opacity still saves", "[Str
 }
 
 TEST_CASE("CmdRackMove translates rackScroll offset on initialCmd", "[Stroke][cmd][scroll]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	// The KeyContainer adds itself to APP->scene->rack but its destructor removes it.
 	// CmdRackMove touches APP->scene->rackScroll directly.
 	KeyContainer<STROKE_PORTS>* kc = new KeyContainer<STROKE_PORTS>();
@@ -620,7 +721,6 @@ TEST_CASE("CmdRackMove translates rackScroll offset on initialCmd", "[Stroke][cm
 	APP->scene->rackScroll->offset = origin;
 	APP->scene->rack->removeChild(kc);
 	delete kc;
-	Test::destroyModule(module);
 }
 
 TEST_CASE("CmdRackMove::followUpCmd applies move only for same KEY_MODE", "[Stroke][cmd][scroll]") {
@@ -717,7 +817,8 @@ TEST_CASE("CmdZoomOutSmooth is a safe no-op on an empty rack", "[Stroke][cmd][zo
 // production code that cannot be unit-tested without a full app scene.
 
 TEST_CASE("CmdCableVisibility toggles cable container visibility", "[Stroke][cmd][cable]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS>* kc = new KeyContainer<STROKE_PORTS>();
 	kc->module = module;
 	APP->scene->rack->addChild(kc);
@@ -738,7 +839,6 @@ TEST_CASE("CmdCableVisibility toggles cable container visibility", "[Stroke][cmd
 
 	APP->scene->rack->removeChild(kc);
 	delete kc;
-	Test::destroyModule(module);
 }
 
 TEST_CASE("CmdModuleAdd is a safe no-op with empty data", "[Stroke][cmd][module]") {
@@ -859,7 +959,8 @@ TEST_CASE("CmdParamRand is a no-op with no hovered widget", "[Stroke][cmd][param
 // and processCmdDisable only invoke followUpCmd on the previously stored cmd.
 
 TEST_CASE("KeyContainer::enableLearn toggles the learn index", "[Stroke][keycontainer]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -878,11 +979,11 @@ TEST_CASE("KeyContainer::enableLearn toggles the learn index", "[Stroke][keycont
 	kc.enableLearn(7);
 	REQUIRE(kc.learnIdx == 7);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("KeyContainer::enableLearn with callback stores the callback", "[Stroke][keycontainer]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -895,11 +996,11 @@ TEST_CASE("KeyContainer::enableLearn with callback stores the callback", "[Strok
 	kc.learnCallback(GLFW_KEY_A, 0, 0);
 	REQUIRE(called);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("KeyContainer::processCmd constructs cmd, calls initialCmd, then clears keyTemp", "[Stroke][keycontainer]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	module->keyTemp = &module->keys[0];
 	module->keys[0].mode = KEY_MODE::S_MODULE_LOCK;
 
@@ -919,11 +1020,11 @@ TEST_CASE("KeyContainer::processCmd constructs cmd, calls initialCmd, then clear
 
 	// Destructor must delete previousCmd cleanly.
 	settings::lockModules = saved;
-	Test::destroyModule(module);
 }
 
 TEST_CASE("KeyContainer::processCmd replaces previous cmd when followUpCmd returns true", "[Stroke][keycontainer]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	module->keyTemp = &module->keys[0];
 	module->keys[0].mode = KEY_MODE::S_MODULE_LOCK;
 
@@ -953,11 +1054,11 @@ TEST_CASE("KeyContainer::processCmd replaces previous cmd when followUpCmd retur
 	REQUIRE(settings::lockModules == true);
 
 	settings::lockModules = saved;
-	Test::destroyModule(module);
 }
 
 TEST_CASE("KeyContainer::processCmd keeps previous cmd when followUpCmd returns false", "[Stroke][keycontainer]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	module->keyTemp = &module->keys[0];
 	module->keys[0].mode = KEY_MODE::S_PARAM_PASTE;
 
@@ -987,11 +1088,11 @@ TEST_CASE("KeyContainer::processCmd keeps previous cmd when followUpCmd returns 
 	// double-delete.
 	delete sticky;
 	kc.previousCmd = nullptr;
-	Test::destroyModule(module);
 }
 
 TEST_CASE("KeyContainer::processCmdHeld runs followUpCmd and clears when true", "[Stroke][keycontainer]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	module->keyTempHeld = &module->keys[0];
 	module->keys[0].mode = KEY_MODE::S_SCROLL_RIGHT;
 
@@ -1021,11 +1122,11 @@ TEST_CASE("KeyContainer::processCmdHeld runs followUpCmd and clears when true", 
 	kc.processCmdHeld();
 	REQUIRE(followUpCount == 1);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("KeyContainer::processCmdHeld keeps cmd alive when followUpCmd returns false", "[Stroke][keycontainer]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	module->keyTempHeld = &module->keys[0];
 	module->keys[0].mode = KEY_MODE::S_SCROLL_RIGHT;
 
@@ -1054,11 +1155,11 @@ TEST_CASE("KeyContainer::processCmdHeld keeps cmd alive when followUpCmd returns
 
 	delete sc;
 	kc.previousCmd = nullptr; // prevent ~KeyContainer from double-deleting
-	Test::destroyModule(module);
 }
 
 TEST_CASE("KeyContainer::processCmdDisable is a no-op with no previous cmd", "[Stroke][keycontainer]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	module->keyTempDisable = &module->keys[0];
 
 	KeyContainer<STROKE_PORTS> kc;
@@ -1067,11 +1168,11 @@ TEST_CASE("KeyContainer::processCmdDisable is a no-op with no previous cmd", "[S
 	REQUIRE_NOTHROW(kc.processCmdDisable());
 	REQUIRE(kc.previousCmd == nullptr);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("KeyContainer draws step() on previousCmd every call", "[Stroke][keycontainer]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1096,11 +1197,11 @@ TEST_CASE("KeyContainer draws step() on previousCmd every call", "[Stroke][keyco
 	REQUIRE(cc->stepCount == 3);
 
 	// Cleanup: destructor of KeyContainer deletes previousCmd.
-	Test::destroyModule(module);
 }
 
 TEST_CASE("KeyContainer::draw routes S_ZOOM_OUT through CmdZoomOut", "[Stroke][keycontainer][draw]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	module->keyTemp = &module->keys[0];
 	module->keys[0].mode = KEY_MODE::S_ZOOM_OUT;
 
@@ -1120,11 +1221,11 @@ TEST_CASE("KeyContainer::draw routes S_ZOOM_OUT through CmdZoomOut", "[Stroke][k
 	REQUIRE(module->keyTemp == nullptr);
 
 	APP->scene->rack->removeChild(&kc);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("KeyContainer::draw routes S_MODULE_LOCK through CmdModuleLock", "[Stroke][keycontainer][draw]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	module->keyTemp = &module->keys[0];
 	module->keys[0].mode = KEY_MODE::S_MODULE_LOCK;
 
@@ -1145,11 +1246,11 @@ TEST_CASE("KeyContainer::draw routes S_MODULE_LOCK through CmdModuleLock", "[Str
 
 	settings::lockModules = saved;
 	APP->scene->rack->removeChild(&kc);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("KeyContainer::draw dispatches scroll commands via press-then-held sequence", "[Stroke][keycontainer][draw]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 	APP->scene->rack->addChild(&kc);
@@ -1184,11 +1285,11 @@ TEST_CASE("KeyContainer::draw dispatches scroll commands via press-then-held seq
 
 	APP->scene->rackScroll->offset = origin;
 	APP->scene->rack->removeChild(&kc);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("KeyContainer::draw ignores non-scroll keyHeld modes", "[Stroke][keycontainer][draw]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	module->keyTempHeld = &module->keys[0];
 	module->keys[0].mode = KEY_MODE::S_MODULE_LOCK;
 
@@ -1207,11 +1308,11 @@ TEST_CASE("KeyContainer::draw ignores non-scroll keyHeld modes", "[Stroke][keyco
 	REQUIRE(module->keyTempHeld == nullptr);
 
 	APP->scene->rack->removeChild(&kc);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("KeyContainer::draw handles keyDisable for disabled modes", "[Stroke][keycontainer][draw]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	module->keyTempDisable = &module->keys[0];
 	module->keys[0].mode = KEY_MODE::S_CABLE_MULTIDRAG;
 
@@ -1228,7 +1329,6 @@ TEST_CASE("KeyContainer::draw handles keyDisable for disabled modes", "[Stroke][
 	REQUIRE(module->keyTempDisable == nullptr);
 
 	APP->scene->rack->removeChild(&kc);
-	Test::destroyModule(module);
 }
 
 
@@ -1265,7 +1365,8 @@ static event::Button makeButton(EventContext* c, int button, int mods, int actio
 }
 
 TEST_CASE("onHoverKey fires keyEnable for a matching key and modifiers", "[Stroke][event][key]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1280,11 +1381,11 @@ TEST_CASE("onHoverKey fires keyEnable for a matching key and modifiers", "[Strok
 	REQUIRE(module->keys[0].high == true);
 	REQUIRE(e.isConsumed());
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("onHoverKey ignores a matching key with the wrong modifiers", "[Stroke][event][key]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1300,11 +1401,11 @@ TEST_CASE("onHoverKey ignores a matching key with the wrong modifiers", "[Stroke
 	REQUIRE(module->keys[0].high == false);
 	REQUIRE_FALSE(e.isConsumed());
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("onHoverKey strips non-ALT/CTRL/SHIFT modifier bits before matching", "[Stroke][event][key]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1320,11 +1421,11 @@ TEST_CASE("onHoverKey strips non-ALT/CTRL/SHIFT modifier bits before matching", 
 
 	REQUIRE(module->keys[0].high == true);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("onHoverKey applies keyFix so numpad keys match their plain binding", "[Stroke][event][key]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1339,11 +1440,11 @@ TEST_CASE("onHoverKey applies keyFix so numpad keys match their plain binding", 
 
 	REQUIRE(module->keys[0].high == true);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("onHoverKey release clears a gate", "[Stroke][event][key]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1361,15 +1462,15 @@ TEST_CASE("onHoverKey release clears a gate", "[Stroke][event][key]") {
 	kc.onHoverKey(release);
 	REQUIRE(module->keys[0].high == false);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("onHoverKey release ignores modifiers, so a modified binding is cleared by a bare release", "[Stroke][event][key]") {
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
 	// Documents the press/release asymmetry: press matches key AND mods
 	// (Stroke.cpp:1130) but release matches key only (Stroke.cpp:1147).
 	// Consequence: two slots on the same key with different modifiers
 	// interfere — releasing either clears both gates.
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1395,11 +1496,11 @@ TEST_CASE("onHoverKey release ignores modifiers, so a modified binding is cleare
 	kc.onHoverKey(release);
 	REQUIRE(module->keys[0].high == false);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("onHoverKey held routes to keyHeld", "[Stroke][event][key]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1413,11 +1514,11 @@ TEST_CASE("onHoverKey held routes to keyHeld", "[Stroke][event][key]") {
 
 	REQUIRE(module->keyTempHeld == &module->keys[0]);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("onHoverKey does nothing while the module is bypassed", "[Stroke][event][key]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	Test::registerModule(module);
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
@@ -1437,7 +1538,6 @@ TEST_CASE("onHoverKey does nothing while the module is bypassed", "[Stroke][even
 
 	APP->engine->bypassModule(module, false);
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 // NOTE on key choice in the learn tests below.
@@ -1451,7 +1551,8 @@ TEST_CASE("onHoverKey does nothing while the module is bypassed", "[Stroke][even
 // SPACE, arrows, …), which resolve identically headless and windowed.
 
 TEST_CASE("onHoverKey in learn mode captures key and modifiers instead of firing", "[Stroke][event][learn]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1476,15 +1577,15 @@ TEST_CASE("onHoverKey in learn mode captures key and modifiers instead of firing
 	REQUIRE(module->keys[2].high == false);
 	REQUIRE(e.isConsumed());
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("onHoverKey learn ignores keys with no display name", "[Stroke][event][learn]") {
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
 	// keyName() doubles as the bindability predicate (Stroke.cpp:1119): a key
 	// it cannot name is silently unbindable and learn mode stays armed.
 	// GLFW_KEY_MENU is absent from both GLFW's names and the fallback switch,
 	// so it is unnamed in a real Rack too — not just headless.
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1499,13 +1600,13 @@ TEST_CASE("onHoverKey learn ignores keys with no display name", "[Stroke][event]
 	REQUIRE(kc.learnIdx == 0); // still armed
 	REQUIRE_FALSE(e.isConsumed());
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("onHoverKey learn callback takes precedence over slot learning", "[Stroke][event][learn]") {
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
 	// The two-argument enableLearn arms a callback used by "Learn hotkey" in
 	// the Send-hotkey-to-module submenu; it must not overwrite keys[idx].
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1524,11 +1625,11 @@ TEST_CASE("onHoverKey learn callback takes precedence over slot learning", "[Str
 	REQUIRE_FALSE(static_cast<bool>(kc.learnCallback));
 	REQUIRE(kc.learnIdx == -1);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("onButton fires for a mapped extra mouse button", "[Stroke][event][button]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1546,11 +1647,11 @@ TEST_CASE("onButton fires for a mapped extra mouse button", "[Stroke][event][but
 	// Buttons >2 are consumed so Rack does not also act on them.
 	REQUIRE(e.isConsumed());
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("onButton requires a modifier for buttons 0/1/2 and never consumes them", "[Stroke][event][button]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1574,11 +1675,11 @@ TEST_CASE("onButton requires a modifier for buttons 0/1/2 and never consumes the
 	REQUIRE(module->keys[0].high == true);
 	REQUIRE_FALSE(modified.isConsumed());
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("onButton in learn mode captures the button and clears any key binding", "[Stroke][event][learn]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1594,14 +1695,14 @@ TEST_CASE("onButton in learn mode captures the button and clears any key binding
 	REQUIRE(module->keys[1].key == -1);
 	REQUIRE(kc.learnIdx == -1);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Two slots bound to the same key both fire on one press", "[Stroke][event][key]") {
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
 	// The press loop has no early exit (Stroke.cpp:1129-1134), so duplicate
 	// bindings all fire. The manual states "only one of them will work",
 	// which is not what the code does.
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 
@@ -1618,7 +1719,6 @@ TEST_CASE("Two slots bound to the same key both fire on one press", "[Stroke][ev
 	REQUIRE(module->keys[0].high == true);
 	REQUIRE(module->keys[1].high == true);
 
-	Test::destroyModule(module);
 }
 
 
@@ -1647,75 +1747,12 @@ TEST_CASE("CmdCableOpacity is stuck when the saved value is zero", "[Stroke][cmd
 	settings::cableOpacity = saved;
 }
 
-TEST_CASE("dataFromJson tolerates a keys array shorter than PORTS", "[Stroke][JSON][bug]") {
-	// Review §2. keysJ is never null-checked and json_array_get returns NULL
-	// past the end; jansson's null-tolerant accessors keep this from crashing.
-	// Slots beyond the array must retain their prior values.
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
-
-	for (int i = 0; i < STROKE_PORTS; i++) {
-		module->keys[i].mode = KEY_MODE::CV_TOGGLE;
-		module->keys[i].data = "prior";
-	}
-
-	json_t* rootJ = json_object();
-	json_t* keysJ = json_array();
-	// Only two entries for a ten-slot module.
-	for (int i = 0; i < 2; i++) {
-		json_t* keyJ = json_object();
-		json_object_set_new(keyJ, "key", json_integer(GLFW_KEY_A + i));
-		json_object_set_new(keyJ, "mode", json_integer((int)KEY_MODE::CV_GATE));
-		json_object_set_new(keyJ, "data", json_string("loaded"));
-		json_array_append_new(keysJ, keyJ);
-	}
-	json_object_set_new(rootJ, "keys", keysJ);
-
-	REQUIRE_NOTHROW(module->dataFromJson(rootJ));
-
-	for (int i = 0; i < 2; i++) {
-		REQUIRE(module->keys[i].key == GLFW_KEY_A + i);
-		REQUIRE(module->keys[i].mode == KEY_MODE::CV_GATE);
-		REQUIRE(module->keys[i].data == "loaded");
-	}
-	for (int i = 2; i < STROKE_PORTS; i++) {
-		REQUIRE(module->keys[i].mode == KEY_MODE::CV_TOGGLE);
-		REQUIRE(module->keys[i].data == "prior");
-	}
-
-	json_decref(rootJ);
-	Test::destroyModule(module);
-}
-
-TEST_CASE("dataFromJson accepts an out-of-range mode without validation", "[Stroke][JSON][bug]") {
-	// Review §8. The mode integer is cast straight to KEY_MODE (Stroke.cpp:218),
-	// so a retired or corrupt value survives load and lands in a state with no
-	// menu entry. A fix should map unknown modes to KEY_MODE::OFF.
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
-
-	json_t* rootJ = json_object();
-	json_t* keysJ = json_array();
-	json_t* keyJ = json_object();
-	json_object_set_new(keyJ, "key", json_integer(GLFW_KEY_A));
-	json_object_set_new(keyJ, "mode", json_integer(9999));
-	json_array_append_new(keysJ, keyJ);
-	json_object_set_new(rootJ, "keys", keysJ);
-
-	REQUIRE_NOTHROW(module->dataFromJson(rootJ));
-	REQUIRE((int)module->keys[0].mode == 9999);
-
-	// process() falls through its switch, so the output stays silent.
-	module->process(Test::makeProcessArgs(1));
-	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 0].getVoltage() == 0.f);
-
-	json_decref(rootJ);
-	Test::destroyModule(module);
-}
-
 TEST_CASE("A retired KEY_MODE loaded from a v1 preset dispatches to nothing", "[Stroke][JSON][bug]") {
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
 	// Review §8. S_FRAMERATE/S_BUSBOARD/S_ENGINE_PAUSE are unsupported in v2:
 	// their processCmd calls are commented out, so draw() clears keyTemp and
 	// constructs no command — the hotkey is silently inert.
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	auto module = mods.create("Stroke");
 	KeyContainer<STROKE_PORTS> kc;
 	kc.module = module;
 	APP->scene->rack->addChild(&kc);
@@ -1734,7 +1771,6 @@ TEST_CASE("A retired KEY_MODE loaded from a v1 preset dispatches to nothing", "[
 	REQUIRE(kc.previousCmd == nullptr);
 
 	APP->scene->rack->removeChild(&kc);
-	Test::destroyModule(module);
 }
 
 TEST_CASE("CmdParamCopyPaste clipboard persists across command instances", "[Stroke][cmd][param][bug]") {
@@ -1757,7 +1793,8 @@ TEST_CASE("CmdParamCopyPaste clipboard persists across command instances", "[Str
 // Light state
 
 TEST_CASE("process drives the trigger light through the clock divider", "[Stroke][light]") {
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
+	auto module = mods.create("Stroke");
 
 	module->keys[0].key = GLFW_KEY_A;
 	module->keys[0].mode = KEY_MODE::CV_TRIGGER;
@@ -1777,13 +1814,13 @@ TEST_CASE("process drives the trigger light through the clock divider", "[Stroke
 	}
 	REQUIRE(module->lights[StrokeModule<STROKE_PORTS>::LIGHT_TRIG + 0].getBrightness() == 0.f);
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Trigger light fires even for command modes that emit no CV", "[Stroke][light]") {
+	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
 	// keyEnable triggers lightPulse unconditionally (Stroke.cpp:166), so a
 	// command-mode hotkey still gives visual feedback on the panel.
-	auto module = Test::createModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	auto module = mods.create("Stroke");
 
 	module->keys[0].key = GLFW_KEY_A;
 	module->keys[0].mode = KEY_MODE::S_ZOOM_OUT;
@@ -1795,6 +1832,4 @@ TEST_CASE("Trigger light fires even for command modes that emit no CV", "[Stroke
 
 	REQUIRE(module->lights[StrokeModule<STROKE_PORTS>::LIGHT_TRIG + 0].getBrightness() > 0.f);
 	REQUIRE(module->outputs[StrokeModule<STROKE_PORTS>::OUTPUT + 0].getVoltage() == 0.f);
-
-	Test::destroyModule(module);
 }

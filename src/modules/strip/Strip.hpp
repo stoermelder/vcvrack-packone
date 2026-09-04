@@ -1,8 +1,9 @@
 #pragma once
 #include "../../plugin.hpp"
 #include "../../utils/StripIdFixModule.hpp"
-#include "../../utils/vcv_files.hpp"
-#include <osdialog.h>
+#include "../../vcv/api.hpp"       // modules, cables, scene, ui, fs, history accesses
+#include "../../vcv/files.hpp"     // layer-3 orchestration + production lookups
+#include "../../vcv/selection.hpp" // layer-1 pure JSON/geometry
 #include <plugin.hpp>
 
 namespace StoermelderPackOne {
@@ -46,72 +47,22 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	typedef ThemedModuleWidget<MODULE> BASE;
 
 	MODULE* module;
+	/** Collects per-module load failures; shown to the user once at the end of a load. */
 	std::string warningLog;
 
 	StripWidgetBase(MODULE* module, std::string baseName)
 	: ThemedModuleWidget<MODULE>(module, baseName) { }
 
+	/** Asks the user about modules in a .vcvss group file that are not installed. */
 	void groupCheckUnavailable(json_t* rootJ) {
-		std::set<std::string> pluginModuleSlugs;
-
-		size_t moduleIndex;
-		json_t* moduleJ;
-
-		json_t* rightModulesJ = json_object_get(rootJ, "rightModules");
-		if (rightModulesJ) {
-			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
-				try {
-					// Get model
-					plugin::modelFromJson(moduleJ);
-				}
-				catch (Exception& e) {
-					// Get plugin and module slugs
-					json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
-					if (!pluginSlugJ) continue;
-
-					std::string pluginSlug = json_string_value(pluginSlugJ);
-
-					json_t* modelSlugJ = json_object_get(moduleJ, "model");
-					if (!modelSlugJ) continue;
-
-					std::string modelSlug = json_string_value(modelSlugJ);
-					pluginModuleSlugs.insert(pluginSlug + "/" + modelSlug);
-				}
-			}
-		}
-
-		json_t* leftModulesJ = json_object_get(rootJ, "leftModules");
-		if (leftModulesJ) {
-			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
-				try {
-					// Get model
-					plugin::modelFromJson(moduleJ);
-				}
-				catch (Exception& e) {
-					// Get plugin and module slugs
-					json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
-					if (!pluginSlugJ) continue;
-
-					std::string pluginSlug = json_string_value(pluginSlugJ);
-
-					json_t* modelSlugJ = json_object_get(moduleJ, "model");
-					if (!modelSlugJ) continue;
-
-					std::string modelSlug = json_string_value(modelSlugJ);
-					pluginModuleSlugs.insert(pluginSlug + "/" + modelSlug);
-				}
-			}
-		}
-
-		if (!pluginModuleSlugs.empty()) {
-			std::string msg = "This selection/strip includes modules that are not installed. Show missing modules on the VCV Library?";
-			if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
-				std::string url = "https://library.vcvrack.com/?modules=";
-				url += string::join(pluginModuleSlugs, ",");
-				system::openBrowser(url);
-			}
-		}
+		vcv::promptUnavailableModules(vcv::findUnavailableStripModules(rootJ, vcv::productionModelLookup()));
 	}
+
+	/** Asks the user about modules in a .vcvs selection file that are not installed. */
+	void groupSelectionCheckUnavailable(json_t* rootJ) {
+		vcv::promptUnavailableModules(vcv::findUnavailableModules(rootJ, vcv::productionModelLookup()));
+	}
+
 
 	/**
 	 * Removes all modules in the group. Used for "cut" in cut & paste.
@@ -140,42 +91,9 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			history::ComplexAction* complexAction = new history::ComplexAction;
 			complexAction->name = "stoermelder STRIP remove";
 
-			/*
 			for (int64_t id : toBeRemoved) {
-				ModuleWidget* mw = APP->scene->rack->getModule(id);
-
-				for (PortWidget* output : mw->getOutputs()) {
-					for (CableWidget* cw : APP->scene->rack->getCablesOnPort(output)) {
-						if (!cw->isComplete())
-							continue;
-
-						// history::CableRemove
-						history::CableRemove* h = new history::CableRemove;
-						h->setCable(cw);
-						complexAction->push(h);
-
-						APP->scene->rack->removeCable(cw);
-					}
-				}
-
-				for (PortWidget* input : mw->getInputs()) {
-					for (CableWidget* cw : APP->scene->rack->getCablesOnPort(input)) {
-						if (!cw->isComplete())
-							continue;
-
-						// history::CableRemove
-						history::CableRemove* h = new history::CableRemove;
-						h->setCable(cw);
-						complexAction->push(h);
-
-						APP->scene->rack->removeCable(cw);
-					}
-				}
-			}
-			*/
-		
-			for (int64_t id : toBeRemoved) {
-				ModuleWidget* mw = APP->scene->rack->getModule(id);
+				ModuleWidget* mw = vcv::getModuleWidget(id);
+				if (!mw) continue;
 
 				mw->appendDisconnectActions(complexAction);
 
@@ -184,32 +102,31 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				h->setModule(mw);
 				complexAction->push(h);
 
-				APP->scene->rack->removeModule(mw);
-				delete mw;
+				// Removes the widget from the rack and deletes it; the ModuleRemove action
+				// above holds the JSON needed to restore it.
+				vcv::removeModule(id);
 			}
 
-			APP->history->push(complexAction);
+			vcv::history::push(complexAction);
 		}
 	}
 
 	/**
 	 *  Make enough space directly next to this instance of STRIP for the new modules.
 	 */
-	std::vector<history::Action*>* groupClearSpace(json_t* rootJ) {
-		// To make sure there is enough space for the modules shove the existing modules to the 
+	std::vector<history::Action*> groupClearSpace(json_t* rootJ) {
+		// To make sure there is enough space for the modules shove the existing modules to the
 		// left and to the right. This is done by moving this instance of STRIP stepwise 1HP until enough
 		// space is cleared on both sides. Why this stupid and not just use setModulePosForce?
 		// Because setModulePosForce will clear the space, but is not certain in which direction the
-		// existing modules will be moved because a new big module will push a small module to its closer 
+		// existing modules will be moved because a new big module will push a small module to its closer
 		// side. This would result to foreign modules within the loaded strip.
 
-		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
-		std::map<int, math::Vec> moduleMovePositions;
+		std::vector<history::Action*> undoActions;
+		std::map<int64_t, math::Vec> moduleMovePositions;
 
-		// NB: unstable API
-		for (widget::Widget* w : APP->scene->rack->getModuleContainer()->children) {
-			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
-			assert(mw);
+		for (ModuleWidget* mw : vcv::getModuleWidgets()) {
+			if (!mw->module) continue;
 			moduleMovePositions[mw->module->id] = mw->box.pos;
 		}
 
@@ -236,10 +153,8 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			}
 		}
 
-		// NB: unstable API
-		for (widget::Widget* w : APP->scene->rack->getModuleContainer()->children) {
-			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
-			assert(mw);
+		for (ModuleWidget* mw : vcv::getModuleWidgets()) {
+			if (!mw->module) continue;
 			// It is possible to add modules to the rack while dragging, so ignore modules that don't exist.
 			auto it = moduleMovePositions.find(mw->module->id);
 			if (it == moduleMovePositions.end())
@@ -251,7 +166,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				mmh->moduleId = mw->module->id;
 				mmh->oldPos = pos;
 				mmh->newPos = mw->box.pos;
-				undoActions->push_back(mmh);
+				undoActions.push_back(mmh);
 			}
 		}
 
@@ -267,6 +182,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
 				m = m->rightExpander.module;
+				assert(m);
 				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo.push_back(sc);
 				moduleIds.insert(m->id);
@@ -277,6 +193,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
 				m = m->leftExpander.module;
+				assert(m);
 				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo.push_back(sc);
 				moduleIds.insert(m->id);
@@ -284,7 +201,8 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		}
 
 		for (StripBayBase* sc : toDo) {
-			ModuleWidget* mw = APP->scene->rack->getModule(sc->id);
+			ModuleWidget* mw = vcv::getModuleWidget(sc->id);
+			if (!mw) continue;
 			for (PortWidget* in : mw->getInputs()) {
 				std::vector<CableWidget*> cs = APP->scene->rack->getCablesOnPort(in);
 				for (CableWidget* c : cs) {
@@ -308,15 +226,15 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		}
 	}
 
-	std::vector<history::Action*>* groupConnectionsRestore(std::list<std::tuple<std::string, int, PortWidget*, NVGcolor>>& conn) {
-		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
+	std::vector<history::Action*> groupConnectionsRestore(std::list<std::tuple<std::string, int, PortWidget*, NVGcolor>>& conn) {
+		std::vector<history::Action*> undoActions;
 		std::map<std::string, StripBayBase*> toDo;
 
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
-				ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
+				ModuleWidget* mw = vcv::getModuleWidget(m->rightExpander.moduleId);
 				assert(mw);
 				m = mw->getModule();
 				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
@@ -328,7 +246,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			Module* m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
-				ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
+				ModuleWidget* mw = vcv::getModuleWidget(m->leftExpander.moduleId);
 				assert(mw);
 				m = mw->getModule();
 				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
@@ -346,38 +264,17 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			auto it = toDo.find(connId);
 			if (it == toDo.end()) continue;
 
-			ModuleWidget* mw = APP->scene->rack->getModule((*it).second->id);
+			ModuleWidget* mw = vcv::getModuleWidget((*it).second->id);
+			if (!mw) continue;
 			PortWidget* pw2 = pw1->type == engine::Port::INPUT ? mw->getOutput(portId) : mw->getInput(portId);
 			assert(pw2);
 
-			engine::Cable* c = new engine::Cable;
-			if (pw1->type == engine::Port::INPUT) {
-				c->inputModule = pw1->module;
-				c->inputId = pw1->portId;
-				//cw->setInput(pw1);
-				c->outputModule = pw2->module;
-				c->outputId = pw2->portId;
-				//cw->setOutput(pw2);
-			}
-			else {
-				c->outputModule = pw1->module;
-				c->outputId = pw1->portId;
-				//cw->setOutput(pw1);
-				c->inputModule = pw2->module;
-				c->inputId = pw2->portId;
-				//cw->setInput(pw2);
-			}
-			APP->engine->addCable(c);
-
-			CableWidget* cw = new CableWidget;
-			cw->setCable(c);
-			cw->color = color;
-			APP->scene->rack->addCable(cw);
-
-			// history::CableAdd
-			history::CableAdd* h = new history::CableAdd;
-			h->setCable(cw);
-			undoActions->push_back(h);
+			// addToHistory=false: the CableAdd is folded into the enclosing load's single
+			// ComplexAction by the caller, not pushed as its own undo entry.
+			history::CableAdd* h = (pw1->type == engine::Port::INPUT)
+				? vcv::addCableToPort(pw2->module->id, pw2->portId, pw1->module->id, pw1->portId, false, color)
+				: vcv::addCableToPort(pw1->module->id, pw1->portId, pw2->module->id, pw2->portId, false, color);
+			if (h) undoActions.push_back(h);
 		}
 
 		return undoActions;
@@ -386,143 +283,219 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	/**
 	 * Adds modules next to this module according to the supplied json-representation.
 	 * @rootJ json-representation of the STRIP-file
-	 * @modules maps old module ids the new modules
+	 * @idMap maps old module ids to the new module ids
 	 */
-	std::vector<history::Action*>* groupFromJson_modules(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
-		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
+	std::vector<history::Action*> groupFromJson_modules(json_t* rootJ, std::map<int64_t, int64_t>& idMap) {
+		std::vector<history::Action*> undoActions;
+		vcv::WidthLookup widthLookup = vcv::productionWidthLookup();
+
+		auto place = [&](vcv::StripSide side) {
+			Rect anchor = this->box;
+			for (const vcv::ModulePlacement& p : vcv::layoutStrip(rootJ, anchor, side, widthLookup)) {
+				vcv::ModuleRef ref;
+				if (!vcv::readModuleRef(p.moduleJ, ref)) {
+					warningLog += "Could not read a module entry of the strip\n";
+					continue;
+				}
+
+				int64_t newId = vcv::addModule(ref, p.pos);
+				if (newId < 0) {
+					warningLog += string::f("Could not find module \"%s\" of plugin \"%s\"\n",
+					                        ref.modelSlug.c_str(), ref.pluginSlug.c_str());
+					continue;
+				}
+				idMap[p.oldId] = newId;
+
+				// ModuleAdd history action
+				if (ModuleWidget* mw = vcv::getModuleWidget(newId)) {
+					history::ModuleAdd* h = new history::ModuleAdd;
+					h->name = "create module";
+					h->setModule(mw);
+					undoActions.push_back(h);
+				}
+			}
+		};
 
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
-			Rect box = this->box;
-			json_t* rightModulesJ = json_object_get(rootJ, "rightModules");
-			if (rightModulesJ) {
-				json_t* moduleJ;
-				size_t moduleIndex;
-				json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
-					int64_t oldId = -1;
-					box.pos = box.pos.plus(Vec(box.size.x, 0));
-					ModuleWidget* mw = vcv::moduleToRack(moduleJ, vcv::moduleToRackPos::RIGHT, box, oldId);
-					// mw could be NULL, just move on
-					modules[oldId] = mw;
-
-					if (mw) {
-						// ModuleAdd history action
-						history::ModuleAdd* h = new history::ModuleAdd;
-						h->name = "create module";
-						h->setModule(mw);
-						undoActions->push_back(h);
-					}
-				}
-			}
+			place(vcv::StripSide::RIGHT);
 		}
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
-			Rect box = this->box;
-			json_t* leftModulesJ = json_object_get(rootJ, "leftModules");
-			if (leftModulesJ) {
-				json_t* moduleJ;
-				size_t moduleIndex;
-				json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
-					int64_t oldId = -1;
-					ModuleWidget* mw = moduleToRack(moduleJ, vcv::moduleToRackPos::LEFT, box, oldId);
-					modules[oldId] = mw;
-
-					if (mw) {
-						// ModuleAdd history action
-						history::ModuleAdd* h = new history::ModuleAdd;
-						h->name = "create module";
-						h->setModule(mw);
-						undoActions->push_back(h);
-					}
-				}
-			}
+			place(vcv::StripSide::LEFT);
 		}
 
 		return undoActions;
 	}
 
 	/**
+	 * Adds the modules of a .vcvs selection to the rack, positioned relative to the mouse.
+	 * @rootJ json-representation of the selection file
+	 * @idMap maps old module ids to the new module ids
+	 */
+	std::vector<history::Action*> groupSelectionFromJson_modules(json_t* rootJ, std::map<int64_t, int64_t>& idMap) {
+		std::vector<history::Action*> undoActions;
+
+		// Transient pointer input, deliberately not behind an access (plan §4.3): read here
+		// and passed into the pure layout function as the origin.
+		Vec origin = APP->scene->rack->getMousePos();
+		for (const vcv::ModulePlacement& p : vcv::layoutSelection(json_object_get(rootJ, "modules"), origin)) {
+			vcv::ModuleRef ref;
+			if (!vcv::readModuleRef(p.moduleJ, ref)) {
+				warningLog += "Could not read a module entry of the selection\n";
+				continue;
+			}
+
+			int64_t newId = vcv::addModule(ref, p.pos);
+			if (newId < 0) {
+				warningLog += string::f("Could not find module \"%s\" of plugin \"%s\"\n",
+				                        ref.modelSlug.c_str(), ref.pluginSlug.c_str());
+				continue;
+			}
+			idMap[p.oldId] = newId;
+
+			// ModuleAdd history action
+			if (ModuleWidget* mw = vcv::getModuleWidget(newId)) {
+				history::ModuleAdd* h = new history::ModuleAdd;
+				h->name = "create module";
+				h->setModule(mw);
+				undoActions.push_back(h);
+			}
+
+			vcv::scene::select(newId);
+		}
+
+		return undoActions;
+	}
+
+	/**
+	 * Applies one module's preset from a loaded json-representation, fixing parameter mappings
+	 * and old module ids on the way. Appends the resulting undo action to @undoActions.
+	 * @moduleJ json-representation of the module (modified in place)
+	 * @idMap maps old module ids to the new module ids
+	 */
+	void groupFromJson_preset(json_t* moduleJ, std::map<int64_t, int64_t>& idMap, std::vector<history::Action*>& undoActions) {
+		vcv::fixParamMappings(moduleJ, idMap);
+
+		int64_t oldId = vcv::readModuleId(moduleJ);
+		auto it = idMap.find(oldId);
+		if (it == idMap.end()) return;
+		int64_t newId = it->second;
+
+		ModuleWidget* mw = vcv::getModuleWidget(newId);
+
+		// history::ModuleChange
+		history::ModuleChange* h = new history::ModuleChange;
+		h->name = "load module preset";
+		h->moduleId = newId;
+		h->oldModuleJ = vcv::toJson(newId);
+
+		// Hand the old→new id map to modules that store module ids themselves (mappings,
+		// module restrictions, ...) so their dataFromJson can rewrite them.
+		StripIdFixModule* m = mw ? dynamic_cast<StripIdFixModule*>(mw->module) : nullptr;
+		if (m) m->idFixDataFromJson(idMap);
+
+		// Drop engine-runtime binding fields, like Rack's own preset loader.
+		vcv::jsonStripIds(moduleJ);
+
+		vcv::applyPreset(newId, moduleJ);
+
+		h->newModuleJ = vcv::toJson(newId);
+		undoActions.push_back(h);
+	}
+
+	/**
 	 * Loads all the presets from a json-representation generated by STRIP. Assumes the modules are there.
 	 * Presets of non-existing modules will be skipped.
-	 * @json json-representation of the STRIP-file
-	 * @modules maps old module ids the new modules
+	 * @rootJ json-representation of the STRIP-file
+	 * @idMap maps old module ids to the new module ids
 	 */
-	std::vector<history::Action*>* groupFromJson_presets(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
-		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
+	std::vector<history::Action*> groupFromJson_presets(json_t* rootJ, std::map<int64_t, int64_t>& idMap) {
+		std::vector<history::Action*> undoActions;
 
-		json_t* rightModulesJ = json_object_get(rootJ, "rightModules");
-		if (rightModulesJ) {
+		auto applyAll = [&](const char* key) {
+			json_t* modulesJ = json_object_get(rootJ, key);
+			if (!modulesJ) return;
 			json_t* moduleJ;
 			size_t moduleIndex;
-			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
-				if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
-					vcv::vcvsFromJson_presets_fixMapping(moduleJ, modules);
-					int64_t oldId = json_integer_value(json_object_get(moduleJ, "id"));
-					ModuleWidget* mw = modules[oldId];
-					if (mw != NULL) {
-						// history::ModuleChange
-						history::ModuleChange* h = new history::ModuleChange;
-						h->name = "load module preset";
-						h->moduleId = mw->module->id;
-						h->oldModuleJ = mw->toJson();
-
-						StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
-						if (m) m->idFixDataFromJson(modules);
-
-						// Drop engine-runtime binding fields, like Rack's own preset loader.
-						vcv::jsonStripIds(moduleJ);
-
-						mw->fromJson(moduleJ);
-
-						h->newModuleJ = mw->toJson();
-						undoActions->push_back(h);
-					}
-				}
+			json_array_foreach(modulesJ, moduleIndex, moduleJ) {
+				groupFromJson_preset(moduleJ, idMap, undoActions);
 			}
+		};
+
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
+			applyAll("rightModules");
 		}
-		json_t* leftModulesJ = json_object_get(rootJ, "leftModules");
-		if (leftModulesJ) {
-			json_t* moduleJ;
-			size_t moduleIndex;
-			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
-				if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
-					vcv::vcvsFromJson_presets_fixMapping(moduleJ, modules);
-					int64_t oldId = json_integer_value(json_object_get(moduleJ, "id"));
-					ModuleWidget* mw = modules[oldId];
-					if (mw != NULL) {
-						// history::ModuleChange
-						history::ModuleChange* h = new history::ModuleChange;
-						h->name = "load module preset";
-						h->moduleId = mw->module->id;
-						h->oldModuleJ = mw->toJson();
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
+			applyAll("leftModules");
+		}
 
-						StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
-						if (m) m->idFixDataFromJson(modules);
+		return undoActions;
+	}
 
-						// Drop engine-runtime binding fields, like Rack's own preset loader.
-						vcv::jsonStripIds(moduleJ);
+	std::vector<history::Action*> groupSelectionFromJson_presets(json_t* rootJ, std::map<int64_t, int64_t>& idMap) {
+		std::vector<history::Action*> undoActions;
 
-						mw->fromJson(moduleJ);
+		json_t* modulesJ = json_object_get(rootJ, "modules");
+		json_t* moduleJ;
+		size_t moduleIndex;
+		json_array_foreach(modulesJ, moduleIndex, moduleJ) {
+			groupFromJson_preset(moduleJ, idMap, undoActions);
+		}
 
-						h->newModuleJ = mw->toJson();
-						undoActions->push_back(h);
-					}
-				}
+		return undoActions;
+	}
+
+	/**
+	 * Adds cables loaded from a json-representation generated by STRIP.
+	 * If a module is missing the cable will be obviously skipped.
+	 * @rootJ json-representation of the STRIP-file
+	 * @idMap maps old module ids to the new module ids
+	 */
+	std::vector<history::Action*> groupFromJson_cables(json_t* rootJ, std::map<int64_t, int64_t>& idMap) {
+		std::vector<history::Action*> undoActions;
+
+		json_t* cablesJ = json_object_get(rootJ, "cables");
+		if (!cablesJ) return undoActions;
+
+		json_t* cableJ;
+		size_t cableIndex;
+		json_array_foreach(cablesJ, cableIndex, cableJ) {
+			int64_t outputModuleId = json_integer_value(json_object_get(cableJ, "outputModuleId"));
+			int outputId = json_integer_value(json_object_get(cableJ, "outputId"));
+			int64_t inputModuleId = json_integer_value(json_object_get(cableJ, "inputModuleId"));
+			int inputId = json_integer_value(json_object_get(cableJ, "inputId"));
+			const char* colorStr = json_string_value(json_object_get(cableJ, "color"));
+
+			// In case one of the modules could not be loaded
+			auto outIt = idMap.find(outputModuleId);
+			auto inIt = idMap.find(inputModuleId);
+			if (outIt == idMap.end() || inIt == idMap.end()) continue;
+
+			NVGcolor color = color::BLACK_TRANSPARENT;
+			if (colorStr) color = color::fromHexString(colorStr);
+
+			// addToHistory=false: the CableAdd is handed back unowned and folded into the
+			// load's single ComplexAction, rather than becoming its own undo entry.
+			if (history::CableAdd* h = vcv::addCableToPort(outIt->second, outputId, inIt->second, inputId, false, color)) {
+				undoActions.push_back(h);
 			}
 		}
 
 		return undoActions;
 	}
 
+
 	void groupToJson(json_t* rootJ) {
 		// Add modules
 		std::set<ModuleWidget*> modules;
-		
+
 		float rightWidth = 0.f;
 		json_t* rightModulesJ = json_array();
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
-				ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
+				ModuleWidget* mw = vcv::getModuleWidget(m->rightExpander.moduleId);
+				if (!mw) break;
 				json_t* moduleJ = mw->toJson();
 				assert(moduleJ);
 				json_array_append_new(rightModulesJ, moduleJ);
@@ -538,7 +511,8 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			Module* m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
-				ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
+				ModuleWidget* mw = vcv::getModuleWidget(m->leftExpander.moduleId);
+				if (!mw) break;
 				json_t* moduleJ = mw->toJson();
 				assert(moduleJ);
 				json_array_append_new(leftModulesJ, moduleJ);
@@ -559,7 +533,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 						continue;
 
 					PortWidget* input = cw->inputPort;
-					ModuleWidget* inputModule = APP->scene->rack->getModule(input->module->id);
+					ModuleWidget* inputModule = vcv::getModuleWidget(input->module->id);
 					if (modules.find(inputModule) == modules.end())
 						continue;
 
@@ -587,118 +561,119 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		json_object_set_new(rootJ, "version", versionJ);
 	}
 
-	void groupCopyClipboard() {
+	/** Serializes the current group and returns it as a JSON string. */
+	std::string groupToJsonString() {
 		json_t* rootJ = json_object();
 		groupToJson(rootJ);
-
 		DEFER({
 			json_decref(rootJ);
 		});
+
 		char* moduleJson = json_dumps(rootJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+		if (!moduleJson) return "";
 		DEFER({
 			free(moduleJson);
 		});
-		glfwSetClipboardString(APP->window->win, moduleJson);
+		return std::string(moduleJson);
+	}
+
+	void groupCopyClipboard() {
+		vcv::ui::setClipboard(groupToJsonString());
 	}
 
 	void groupCutClipboard() {
-		json_t* rootJ = json_object();
-		groupToJson(rootJ);
-
-		DEFER({
-			json_decref(rootJ);
-		});
-		char* moduleJson = json_dumps(rootJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
-		DEFER({
-			free(moduleJson);
-		});
-		glfwSetClipboardString(APP->window->win, moduleJson);
+		vcv::ui::setClipboard(groupToJsonString());
 		groupRemove();
 	}
 
 	void groupSaveFile(std::string filename) {
 		INFO("Saving preset %s", filename.c_str());
 
-		json_t* rootJ = json_object();
-		groupToJson(rootJ);
-
-		DEFER({
-			json_decref(rootJ);
-		});
-
-		FILE* file = fopen(filename.c_str(), "w");
-		if (!file) {
+		std::string data = groupToJsonString();
+		if (!vcv::fs::write(filename, data)) {
 			std::string message = string::f("Could not write to patch file %s", filename.c_str());
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, message);
 		}
-		DEFER({
-			fclose(file);
-		});
-
-		json_dumpf(rootJ, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
 	}
 
 	void groupSaveFileDialog() {
-		osdialog_filters* filters = osdialog_filters_parse(PRESET_FILTERS);
-		DEFER({
-			osdialog_filters_free(filters);
-		});
-
-		std::string dir = asset::user("patches");
-		char* path = osdialog_file(OSDIALOG_SAVE, pluginSettings.stripDirVcvss.c_str(), "Untitled.vcvss", filters);
-		if (!path) {
+		std::string path = vcv::ui::saveDialog(PRESET_FILTERS, pluginSettings.stripDirVcvss, "Untitled.vcvss");
+		if (path.empty()) {
 			// No path selected
 			return;
 		}
-		DEFER({
-			pluginSettings.stripDirVcvss = system::getDirectory(std::string(path));
-			pluginSettings.saveToJson();
-			free(path);
-		});
+		pluginSettings.stripDirVcvss = vcv::fs::getDirectory(path);
+		pluginSettings.saveToJson();
 
-		std::string pathStr = path;
-		std::string extension = system::getExtension(system::getFilename(pathStr));
+		std::string extension = vcv::fs::getExtension(vcv::fs::getFilename(path));
 		if (extension.empty()) {
-			pathStr += ".vcvss";
+			path += ".vcvss";
 		}
 
-		groupSaveFile(pathStr);
+		groupSaveFile(path);
+	}
+
+	/** Shows the accumulated per-module load failures, if any, and clears the log. */
+	void groupWarningLogFlush() {
+		if (warningLog.empty()) return;
+		vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, warningLog);
+		warningLog = "";
 	}
 
 	void groupFromJson(json_t* rootJ) {
 		warningLog = "";
 
 		// Clear modules next to STRIP
-		std::vector<history::Action*>* h1 = groupClearSpace(rootJ);
+		std::vector<history::Action*> h1 = groupClearSpace(rootJ);
 
-		// Maps old moduleId to the newly created modules (with new id)
-		std::map<int64_t, ModuleWidget*> modules;
+		// Maps old moduleId to the id of the newly created module
+		std::map<int64_t, int64_t> idMap;
 		// Add modules
-		std::vector<history::Action*>* h2 = groupFromJson_modules(rootJ, modules);
+		std::vector<history::Action*> h2 = groupFromJson_modules(rootJ, idMap);
 		// Load presets for modules, also fixes parameter mappings
-		std::vector<history::Action*>* h3 = groupFromJson_presets(rootJ, modules);
+		std::vector<history::Action*> h3 = groupFromJson_presets(rootJ, idMap);
 
 		// Add cables
-		std::vector<history::Action*>* h4 = vcv::vcvsFromJson_cables(rootJ, modules);
+		std::vector<history::Action*> h4 = groupFromJson_cables(rootJ, idMap);
 
 		// Does nothing, but fixes https://github.com/VCVRack/Rack/issues/1444 for Rack <= 1.1.1
 		APP->scene->rack->requestModulePos(this, this->box.pos);
 
-		if (!warningLog.empty()) {
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, warningLog.c_str());
-		}
+		groupWarningLogFlush();
 
 		history::ComplexAction* complexAction = new history::ComplexAction;
 		complexAction->name = "stoermelder STRIP load";
-		for (history::Action* h : *h1) complexAction->push(h);
-		delete h1;
-		for (history::Action* h : *h2) complexAction->push(h);
-		delete h2;
-		for (history::Action* h : *h3) complexAction->push(h);
-		delete h3;
-		for (history::Action* h : *h4) complexAction->push(h);
-		delete h4;
-		APP->history->push(complexAction);
+		for (history::Action* h : h1) complexAction->push(h);
+		for (history::Action* h : h2) complexAction->push(h);
+		for (history::Action* h : h3) complexAction->push(h);
+		for (history::Action* h : h4) complexAction->push(h);
+		vcv::history::push(complexAction);
+	}
+
+	void groupSelectionFromJson(json_t* rootJ) {
+		warningLog = "";
+
+		// Maps old moduleId to the id of the newly created module
+		std::map<int64_t, int64_t> idMap;
+		// Add modules
+		std::vector<history::Action*> h2 = groupSelectionFromJson_modules(rootJ, idMap);
+		// Load presets for modules, also fixes parameter mappings
+		std::vector<history::Action*> h3 = groupSelectionFromJson_presets(rootJ, idMap);
+
+		// Add cables
+		std::vector<history::Action*> h4 = groupFromJson_cables(rootJ, idMap);
+
+		// Does nothing, but fixes https://github.com/VCVRack/Rack/issues/1444 for Rack <= 1.1.1
+		APP->scene->rack->requestModulePos(this, this->box.pos);
+
+		groupWarningLogFlush();
+
+		history::ComplexAction* complexAction = new history::ComplexAction;
+		complexAction->name = "stoermelder STRIP selection load";
+		for (history::Action* h : h2) complexAction->push(h);
+		for (history::Action* h : h3) complexAction->push(h);
+		for (history::Action* h : h4) complexAction->push(h);
+		vcv::history::push(complexAction);
 	}
 
 	void groupReplaceFromJson(json_t* rootJ) {
@@ -713,55 +688,47 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		groupRemove();
 
 		// Clear modules next to STRIP
-		std::vector<history::Action*>* h1 = groupClearSpace(rootJ);
+		std::vector<history::Action*> h1 = groupClearSpace(rootJ);
 
-		// Maps old moduleId to the newly created module (with new id)
-		std::map<int64_t, ModuleWidget*> modules;
+		// Maps old moduleId to the id of the newly created module
+		std::map<int64_t, int64_t> idMap;
 		// Add modules
-		std::vector<history::Action*>* h2 = groupFromJson_modules(rootJ, modules);
+		std::vector<history::Action*> h2 = groupFromJson_modules(rootJ, idMap);
 		// Load presets for modules, also fixes parameter mappings
-		std::vector<history::Action*>* h3 = groupFromJson_presets(rootJ, modules);
+		std::vector<history::Action*> h3 = groupFromJson_presets(rootJ, idMap);
 
 		// Add cables
-		std::vector<history::Action*>* h4 = vcv::vcvsFromJson_cables(rootJ, modules);
+		std::vector<history::Action*> h4 = groupFromJson_cables(rootJ, idMap);
 
 		// Does nothing, but fixes https://github.com/VCVRack/Rack/issues/1444 for Rack <= 1.1.1
 		APP->scene->rack->requestModulePos(this, this->box.pos);
 
 		// Restore cables from StripCon-modules
-		std::vector<history::Action*>* h5 = groupConnectionsRestore(conn);
+		std::vector<history::Action*> h5 = groupConnectionsRestore(conn);
 
-		if (!warningLog.empty()) {
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, warningLog.c_str());
-		}
+		groupWarningLogFlush();
 
 		history::ComplexAction* complexAction = new history::ComplexAction;
 		complexAction->name = "stoermelder STRIP load";
-		for (history::Action* h : *h1) complexAction->push(h);
-		delete h1;
-		for (history::Action* h : *h2) complexAction->push(h);
-		delete h2;
-		for (history::Action* h : *h3) complexAction->push(h);
-		delete h3;
-		for (history::Action* h : *h4) complexAction->push(h);
-		delete h4;
-		for (history::Action* h : *h5) complexAction->push(h);
-		delete h5;
-		APP->history->push(complexAction);
+		for (history::Action* h : h1) complexAction->push(h);
+		for (history::Action* h : h2) complexAction->push(h);
+		for (history::Action* h : h3) complexAction->push(h);
+		for (history::Action* h : h4) complexAction->push(h);
+		for (history::Action* h : h5) complexAction->push(h);
+		vcv::history::push(complexAction);
 	}
 
 	void groupPasteClipboard() {
-		const char* moduleJson = glfwGetClipboardString(APP->window->win);
-		if (!moduleJson) {
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, "Could not get text from clipboard.");
+		std::string moduleJson = vcv::ui::getClipboard();
+		if (moduleJson.empty()) {
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, "Could not get text from clipboard.");
 			return;
 		}
 
-		json_error_t error;
-		json_t* rootJ = json_loads(moduleJson, 0, &error);
+		std::string error;
+		json_t* rootJ = vcv::parseJson(moduleJson, error);
 		if (!rootJ) {
-			std::string message = string::f("JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, error);
 			return;
 		}
 		DEFER({
@@ -771,24 +738,43 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		groupFromJson(rootJ);
 	}
 
-	void groupLoadFile(std::string filename, bool replace) {
-		INFO("Loading preset %s", filename.c_str());
+	void groupSelectionPasteClipboard() {
+		vcv::scene::deselectAll();
 
-		FILE* file = fopen(filename.c_str(), "r");
-		if (!file) {
-			std::string message = string::f("Could not load file %s", filename.c_str());
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+		std::string moduleJson = vcv::ui::getClipboard();
+		if (moduleJson.empty()) {
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, "Could not get text from clipboard.");
+			return;
+		}
+
+		std::string error;
+		json_t* rootJ = vcv::parseJson(moduleJson, error);
+		if (!rootJ) {
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, error);
 			return;
 		}
 		DEFER({
-			fclose(file);
+			json_decref(rootJ);
 		});
 
-		json_error_t error;
-		json_t* rootJ = json_loadf(file, 0, &error);
+		groupSelectionFromJson(rootJ);
+	}
+
+	void groupLoadFile(std::string filename, bool replace) {
+		INFO("Loading preset %s", filename.c_str());
+
+		std::string data;
+		if (!vcv::fs::read(filename, data)) {
+			std::string message = string::f("Could not load file %s", filename.c_str());
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, message);
+			return;
+		}
+
+		std::string error;
+		json_t* rootJ = vcv::parseJson(data, error);
 		if (!rootJ) {
-			std::string message = string::f("File is not a valid file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			std::string message = string::f("File is not a valid file. %s", error.c_str());
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, message);
 			return;
 		}
 		DEFER({
@@ -801,24 +787,52 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	}
 
 	void groupLoadFileDialog(bool replace) {
-		osdialog_filters* filters = osdialog_filters_parse(PRESET_FILTERS);
-		DEFER({
-			osdialog_filters_free(filters);
-		});
-
-		char* path = osdialog_file(OSDIALOG_OPEN, pluginSettings.stripDirVcvss.c_str(), NULL, filters);
-		if (!path) {
+		std::string path = vcv::ui::openDialog(PRESET_FILTERS, pluginSettings.stripDirVcvss);
+		if (path.empty()) {
 			// No path selected
 			return;
 		}
-		DEFER({
-			pluginSettings.stripDirVcvss = system::getDirectory(std::string(path));
-			pluginSettings.saveToJson();
-			free(path);
-		});
+		pluginSettings.stripDirVcvss = vcv::fs::getDirectory(path);
+		pluginSettings.saveToJson();
 
 		groupLoadFile(path, replace);
 	}
+
+	void groupSelectionLoadFile(std::string path) {
+		std::string data;
+		if (!vcv::fs::read(path, data)) return;
+		INFO("Loading selection %s", path.c_str());
+
+		std::string error;
+		json_t* rootJ = vcv::parseJson(data, error);
+		if (!rootJ) {
+			throw Exception("File is not a valid selection file. %s", error.c_str());
+		}
+		DEFER({json_decref(rootJ);});
+
+		groupSelectionCheckUnavailable(rootJ);
+		groupSelectionFromJson(rootJ);
+	}
+
+	std::string groupSelectionLoadFileDialog(bool load) {
+		std::string path = vcv::ui::openDialog(vcv::SELECTION_FILTERS, pluginSettings.stripDirVcvs);
+		if (path.empty()) {
+			// No path selected
+			return "";
+		}
+		pluginSettings.stripDirVcvs = vcv::fs::getDirectory(path);
+		pluginSettings.saveToJson();
+
+		try {
+			if (load) groupSelectionLoadFile(path);
+		}
+		catch (Exception& e) {
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, e.what());
+		}
+
+		return path;
+	}
+
 
 	void onHoverKey(const event::HoverKey& e) override {
 		ModuleWidget::onHoverKey(e);
@@ -894,19 +908,19 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			};
 
 			std::vector<std::string> presetPaths;
-			for (const std::string& presetPath : system::getEntries(dir)) {
+			for (const std::string& presetPath : vcv::fs::getEntries(dir)) {
 				presetPaths.push_back(presetPath);
 			}
 
 			for (const std::string& presetPath : presetPaths) {
-				if (system::isDirectory(presetPath)) {
-					menu->addChild(construct<PresetSubItem>(&MenuItem::text, system::getFilename(presetPath), &PresetSubItem::dir, presetPath, &PresetSubItem::module, module, &PresetSubItem::mw, mw));
+				if (vcv::fs::isDirectory(presetPath)) {
+					menu->addChild(construct<PresetSubItem>(&MenuItem::text, vcv::fs::getFilename(presetPath), &PresetSubItem::dir, presetPath, &PresetSubItem::module, module, &PresetSubItem::mw, mw));
 				}
 			}
 			for (const std::string& presetPath : presetPaths) {
-				if (system::isFile(presetPath)) {
+				if (vcv::fs::isFile(presetPath)) {
 					if (!endsWith(presetPath, ".vcvss")) continue;
-					std::string presetName = system::getStem(system::getFilename(presetPath));
+					std::string presetName = vcv::fs::getStem(vcv::fs::getFilename(presetPath));
 					menu->addChild(construct<PresetItem>(&MenuItem::text, presetName, &PresetItem::presetPath, presetPath, &PresetItem::module, module, &PresetItem::mw, mw));
 				}
 			}
@@ -917,7 +931,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		struct PresetFolderItem : MenuItem {
 			std::string path;
 			void onAction(const event::Action& e) override {
-				system::openDirectory(path);
+				vcv::fs::openDirectory(path);
 			}
 		};
 

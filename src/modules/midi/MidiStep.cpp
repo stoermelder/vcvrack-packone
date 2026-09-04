@@ -58,6 +58,11 @@ struct MidiStepModule : Module {
 	int decPulseCount[CHANNELS];
 	dsp::PulseGenerator decPulse[CHANNELS];
 
+	// Reusable scratch MIDI message for the audio thread. `midi::Message`
+	// heap-allocates its internal byte vector on construction, so creating one
+	// per sample inside `process()` would be a per-sample malloc/free.
+	midi::Message scratchMidiMessage;
+
 #ifdef METAMODULE
 	CircularBuffer<midi::Message, 8> msg_history;
 #endif
@@ -93,7 +98,9 @@ struct MidiStepModule : Module {
 	}
 
 	void processBypass(const ProcessArgs& args) override {
-		midi::Message msg;
+		// Reuse the module-level scratch message so bypass doesn't perform
+		// a per-sample heap allocation on the audio thread.
+		midi::Message& msg = scratchMidiMessage;
 		// Drain the queue while bypassed
 		while (midiInput.tryPop(&msg, args.frame)) {
 			(void)0;
@@ -102,7 +109,7 @@ struct MidiStepModule : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
-		midi::Message msg;
+		midi::Message& msg = scratchMidiMessage;
 		while (midiInput.tryPop(&msg, args.frame)) {
 #ifdef METAMODULE
 			if (msg.getStatus() == 0xb) {
@@ -168,6 +175,10 @@ struct MidiStepModule : Module {
 			learnCC(cc);
 			return;
 		}
+
+		// Unmapped CC numbers must be ignored: indexing the pulse counters
+		// with ccs[cc] == -1 would corrupt adjacent memory.
+		if (ccs[cc] < 0) return;
 
 		switch (mode) {
 			case MODE::BEATSTEP_R1:
@@ -249,9 +260,16 @@ struct MidiStepModule : Module {
 		if (ccsJ) {
 			for (int i = 0; i < CHANNELS; i++) {
 				json_t* ccJ = json_array_get(ccsJ, i);
-				if (ccJ) {
-					learnedCcs[i] = json_integer_value(ccJ);
-					ccs[learnedCcs[i]] = i;
+				if (!ccJ) continue;
+				int cc = json_integer_value(ccJ);
+				// -1 is a stored unmapped channel; out-of-range values from a
+				// corrupt preset would index past ccs[] and must be dropped.
+				if (0 <= cc && cc < 128) {
+					learnedCcs[i] = cc;
+					ccs[cc] = i;
+				}
+				else {
+					learnedCcs[i] = -1;
 				}
 			}
 		}

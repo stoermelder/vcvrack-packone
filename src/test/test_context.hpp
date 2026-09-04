@@ -10,10 +10,17 @@
 
 namespace Test {
 
-static std::atomic<int> testContextCount{0};
+// Function-local static, not a header-scope `static` variable, so every TU that includes this
+// header shares one counter instead of getting its own private copy (see A6 in the framework
+// review — this is the same trap `#pragma once` does not protect against once a test binary
+// links more than one TU).
+inline std::atomic<int>& testContextCount() {
+	static std::atomic<int> count{0};
+	return count;
+}
 
 // Registry for model pointer sync (see registerModelSync below).
-static std::vector<std::pair<std::string, Model**>>& modelSyncRegistry() {
+inline std::vector<std::pair<std::string, Model**>>& modelSyncRegistry() {
 	static std::vector<std::pair<std::string, Model**>> reg;
 	return reg;
 }
@@ -27,7 +34,7 @@ static std::vector<std::pair<std::string, Model**>>& modelSyncRegistry() {
 // that global used by init()). After init() runs, the registered pointer lives
 // in the dylib; process() compiled inline uses this TU's pointer. Without this
 // sync, expander model checks always fail.
-static void registerModelSync(const std::string& slug, Model** ptr) {
+inline void registerModelSync(const std::string& slug, Model** ptr) {
 	modelSyncRegistry().push_back({slug, ptr});
 }
 
@@ -35,6 +42,32 @@ static void registerModelSync(const std::string& slug, Model** ptr) {
 // Usage: SYNC_MODEL(modelFoo, "Foo");
 #define SYNC_MODEL(ptr, slug) \
 	static bool _syncModel_##ptr = (Test::registerModelSync(slug, &ptr), true)
+
+// Asserts that `model` (a TU-local model global, e.g. modelFoo) was actually synced to the
+// slug's model in the plugin dylib — i.e. that a matching SYNC_MODEL(model, slug) ran before
+// this call. Call it once, right after constructing the peer(s) whose `->model` you are about
+// to compare against `model` (an expander check like `exp->model == modelMidiCatMem`).
+//
+// SYNC_MODEL itself cannot enforce this: registerModelSync() only records an *intent* to sync,
+// and the sync loop in TestContext's constructor runs unconditionally for every registered
+// entry, so a present SYNC_MODEL can't fail quietly. The bug this catches is the opposite one —
+// a module whose expander code compares against a global for which SYNC_MODEL was never called
+// at all. Without this, `exp->model == modelMidiCatMem` silently compares the test TU's own
+// stale copy of the model pointer against the dylib's, which never matches, and the resulting
+// "wrong expander" behaviour reads as a logic bug rather than a missing test-harness call.
+//
+// Usage: SYNC_MODEL(modelMidiCatMem, "MidiCatMem"); ... Test::requireModelSync(modelMidiCatMem, "MidiCatMem");
+inline void requireModelSync(Model* model, const std::string& slug) {
+	CATCH_INFO("Missing SYNC_MODEL(..., \"" << slug << "\") — model global for '" << slug
+		<< "' was never registered for sync with the plugin dylib, or TestContext hasn't run yet");
+	REQUIRE(model != nullptr);
+	REQUIRE(pluginInstance != nullptr);
+	Model* dylibModel = pluginInstance->getModel(slug);
+	CATCH_INFO("Model global for '" << slug << "' does not match the plugin dylib's model for that "
+		"slug — check that SYNC_MODEL(..., \"" << slug << "\") passes the same global that gets "
+		"compared elsewhere (e.g. in expander peer checks)");
+	REQUIRE(model == dylibModel);
+}
 
 // Test-only context initializer to prevent APP (rack::contextGet()) from being null
 // Included by test harness only.
@@ -57,7 +90,7 @@ struct TestContext {
 		StoermelderPackOne::thread::verifyEnabled = false;
 
 		// If this is the first TestContext, create and initialize the pluginInstance and context
-		if (testContextCount.fetch_add(1, std::memory_order_acq_rel) == 0) {
+		if (testContextCount().fetch_add(1, std::memory_order_acq_rel) == 0) {
 			pluginInstance = new Plugin();
 			init(pluginInstance);
 			{
@@ -77,10 +110,18 @@ struct TestContext {
 
 			ctx = new rack::Context();
 			rack::contextSet(ctx);
-			// Create a minimal EventState so code that dereferences APP->event won't segfault
+			// Create a minimal EventState so code that dereferences APP->event won't segfault.
+			// Ownership: rack::Context::~Context() (src/context.cpp) deletes window, patch,
+			// scene, event, history and engine unconditionally ("Deleting NULL is safe in
+			// C++"), so `delete ctx` below is sufficient to free all three of these — they
+			// must NOT also be deleted here, or ~TestContext() would double-free them.
+			TEST_SUPPRESS_DEPRECATED_BEGIN
 			ctx->engine = new rack::engine::Engine;
+			TEST_SUPPRESS_DEPRECATED_END
 			ctx->event = new rack::widget::EventState();
+			TEST_SUPPRESS_DEPRECATED_BEGIN
 			scene = new TScene();
+			TEST_SUPPRESS_DEPRECATED_END
 			ctx->scene = scene;
 			ctx->event->rootWidget = ctx->scene;
 		}
@@ -88,48 +129,59 @@ struct TestContext {
 			// Context already exists; reuse it
 			ctx = rack::contextGet();
 			scene = dynamic_cast<TScene*>(ctx->scene);
+			// A second TestContext<CustomScene> after a first TestContext<> (or with a
+			// different CustomScene) would otherwise silently leave `scene` null.
+			REQUIRE(scene != nullptr);
 		}
 	}
 
 	~TestContext() {
 		// If this is the last TestContext, delete the pluginInstance
-		if (testContextCount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+		if (testContextCount().fetch_sub(1, std::memory_order_acq_rel) == 1) {
 			auto it = std::find(rack::plugin::plugins.begin(), rack::plugin::plugins.end(), pluginInstance);
 			rack::plugin::plugins.erase(it);
 			delete pluginInstance;
 			pluginInstance = nullptr;
 
-			// Context destructor handled by Rack; free our allocation
-			if (ctx) {
-				delete ctx;
-			}
+			// Frees ctx->engine, ctx->event and ctx->scene too — see the ownership note
+			// in the constructor above.
+			delete ctx;
+			ctx = nullptr;
+			rack::contextSet(nullptr);
 		}
 	}
 };
 
 
-static int64_t getModuleId() {
+inline int64_t getModuleId() {
 	static std::atomic<int64_t> nextModuleId{1};
 	return nextModuleId.fetch_add(1, std::memory_order_acq_rel);
 }
 
 
 
+// Single source of truth for the sample rate a test runs at: the engine's own rate. Used by both
+// createModule() (to configure a module via onSampleRateChange) and makeProcessArgs() (to step
+// it), so the two can never disagree even if a test changes the engine's sample rate.
+inline float sampleRate() {
+	return APP->engine->getSampleRate();
+}
+
 template <typename T>
-static T* createModule(std::string modelSlug) {
+inline T* createModule(std::string modelSlug) {
 	Model* model = pluginInstance->getModel(modelSlug);
 	T* m = dynamic_cast<T*>(model->createModule());
 	m->id = getModuleId();
 
 	Module::SampleRateChangeEvent e;
-	e.sampleRate = APP->engine->getSampleRate();
+	e.sampleRate = Test::sampleRate();
 	e.sampleTime = 1.0f / e.sampleRate;
 	m->onSampleRateChange(e);
 
 	return m;
 }
 
-static void destroyModule(rack::Module* m) {
+inline void destroyModule(rack::Module* m) {
 	Module::RemoveEvent eRemove;
 	m->onRemove(eRemove);
 	delete m;
@@ -193,45 +245,56 @@ struct ModuleScaffold {
 
 // Creates a ModuleWidget and adds it to the engine
 template <typename T>
-static T* createWidget(Module* m) {
+inline T* createWidget(Module* m) {
 	T* mw = dynamic_cast<T*>(m->model->createModuleWidget(m));
 	return mw;
 }
 
 // Creates a ModuleWidget, without a module, the same way as the module browser
 template <typename T>
-static T* createWidget(std::string modelSlug) {
+inline T* createWidget(std::string modelSlug) {
 	Model* m = pluginInstance->getModel(modelSlug);
 	T* mw = dynamic_cast<T*>(m->createModuleWidget(NULL));
 	return mw;
 }
 
-static void destroyWidget(rack::ModuleWidget* mw) {
+inline void destroyWidget(rack::ModuleWidget* mw) {
 	APP->event->finalizeWidget(mw);
 	mw->module = NULL;
 	delete mw;
 }
 
-static void registerModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
+inline void registerModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
+	TEST_SUPPRESS_DEPRECATED_BEGIN
 	APP->engine->addModule_NoLock(m);
+	TEST_SUPPRESS_DEPRECATED_END
 	if (mw) {
 		APP->scene->rack->addModule(mw);
 	}
 }
 
-static void unregisterModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
+inline void unregisterModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
 	if (mw) {
 		APP->scene->rack->removeModule(mw);
-		mw->module = NULL;
+		TEST_SUPPRESS_DEPRECATED_BEGIN
 		APP->engine->removeModule_NoLock(m);
-		delete mw;
+		TEST_SUPPRESS_DEPRECATED_END
+		// Delegates to destroyWidget() for teardown so this path also calls
+		// APP->event->finalizeWidget(mw) — otherwise a widget that was hovered, dragged or
+		// selected leaves a dangling pointer behind in EventState.
+		destroyWidget(mw);
 	}
 	else {
+		TEST_SUPPRESS_DEPRECATED_BEGIN
 		APP->engine->removeModule_NoLock(m);
+		TEST_SUPPRESS_DEPRECATED_END
 	}
 }
 
-static const Module::ProcessArgs makeProcessArgs(int64_t frame, float sampleRate = 44100.f) {
+// Defaults to Test::sampleRate() (the same source Test::createModule() uses for its
+// onSampleRateChange event) rather than a hardcoded value, so a module is always stepped at the
+// rate it was configured for — even in tests that change the engine's sample rate.
+inline const Module::ProcessArgs makeProcessArgs(int64_t frame, float sampleRate = Test::sampleRate()) {
 	Module::ProcessArgs args;
 	args.sampleRate = sampleRate;
 	args.sampleTime = 1.0f / args.sampleRate;
@@ -244,7 +307,7 @@ static const Module::ProcessArgs makeProcessArgs(int64_t frame, float sampleRate
 // - channel: low nibble (0-15)
 // - b1: first data byte (e.g., CC number)
 // - b2: second data byte (e.g., value)
-static const rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t channel, uint8_t b1, uint8_t b2, int64_t frame = 0) {
+inline const rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t channel, uint8_t b1, uint8_t b2, int64_t frame = 0) {
 	rack::midi::Message m;
 	m.frame = frame;
 	m.bytes = { static_cast<unsigned char>((statusNibble << 4) | (channel & 0x0f)), static_cast<unsigned char>(b1), static_cast<unsigned char>(b2) };
@@ -252,6 +315,14 @@ static const rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t c
 }
 
 
+// SUPERSEDED by Test::Harness (test_harness.hpp) — prefer it for new tests.
+//
+// Harness does everything this does (same stepping order, same messageFlipRequested-gated
+// expander flip) and adds the UI half: widget step(), scene layout, the DSP:UI rate ratio, and
+// module/widget lifetime. SimpleEngine is kept because 6 test files use it and a mechanical
+// rewrite of working tests buys nothing on its own; it should be retired as those files are
+// touched for other reasons, not in a dedicated migration pass. Do not add call sites.
+//
 // SimpleEngine simulates a VCV Rack engine step for module testing.
 // This class manages anlist of modules and processes them in sequence,
 // automatically flipping expander producer/consumer messages between each step.
@@ -259,11 +330,16 @@ static const rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t c
 //
 // Usage:
 // Test::SimpleEngine testEngine;
-// testEngine.registerModules(moduleA, moduleB);
+// testEngine.addModules(moduleA, moduleB);
 // A -> B chain
 //
 // testEngine.step();  // Process both modules with message flipping
 // testEngine.step();  // Continue processing...
+//
+// Named addModule(s), not registerModule(s), to stay distinct from Test::registerModule() —
+// that one registers a module with Rack's real engine (APP->engine->addModule_NoLock); this one
+// only appends to SimpleEngine's own std::list. Same word, unrelated operations (see B2 in the
+// framework review).
 struct SimpleEngine {
 	std::list<Module*> modules;
 	int frame = 0;
@@ -272,138 +348,31 @@ struct SimpleEngine {
 		auto args = Test::makeProcessArgs(frame);
 		for (Module* module : modules) {
 			module->process(args);
-			std::swap(module->leftExpander.producerMessage, module->leftExpander.consumerMessage);
-			std::swap(module->rightExpander.producerMessage, module->rightExpander.consumerMessage);
+			if (module->leftExpander.messageFlipRequested) {
+				std::swap(module->leftExpander.producerMessage, module->leftExpander.consumerMessage);
+				module->leftExpander.messageFlipRequested = false;
+			}
+			if (module->rightExpander.messageFlipRequested) {
+				std::swap(module->rightExpander.producerMessage, module->rightExpander.consumerMessage);
+				module->rightExpander.messageFlipRequested = false;
+			}
 		}
 		frame++;
  	}
 
-	void registerModule(Module* m) {
+	void addModule(Module* m) {
 		modules.push_back(m);
 	}
 
-	/// Register multiple modules at once.
-	void registerModule(std::initializer_list<Module*> modules) {
-		for (Module* m : modules) {
-			this->modules.push_back(m);
-		}
-	}
-
-	/// Register multiple modules with variadic template.
+	/// Add multiple modules at once.
 	template <typename... T>
-	void registerModules(T*... _m) {
+	void addModules(T*... _m) {
 		Module* arr[] = {_m...};
 		for (Module* m : arr) {
 			this->modules.push_back(m);
 		}
 	}
 };
-
-
-
-// Verifies that every property (at any nesting depth) in a preset JSON
-// is properly null-guarded in the module's dataFromJson() implementation.
-//
-// For every path in the JSON object tree:
-//   1. A deep copy of the JSON is created.
-//   2. The value at that path is replaced with `json_null()`.
-//   3. The copy is loaded via the module's dataFromJson().
-//
-// The helper also verifies that an empty JSON object (no keys) can be
-// loaded without crashing.
-//
-// If dataFromJson() does not properly null-guard a property, this test
-// will crash (e.g. on `json_array_foreach(json_null(), ...)`) or throw.
-// Common bugs caught by this helper include:
-//   - Dereferencing a value without checking that the key exists:
-//         json_t* fooJ = json_object_get(rootJ, "foo");
-//         foo = json_integer_value(fooJ);  // UB if "foo" is missing/null
-//   - Iterating over a value that is not an array:
-//         json_t* dataJ = json_object_get(rootJ, "data");
-//         if (dataJ) {  // true even if dataJ is json_null
-//             json_array_foreach(dataJ, ...)  // UB
-//         }
-//   - Reading a nested object property without checking the parent:
-//         json_t* settingsJ = json_object_get(rootJ, "settings");
-//         json_t* colorJ = json_object_get(settingsJ, "color");
-//         color = json_string_value(colorJ);  // CRASH if settingsJ is null
-//
-// Usage:
-//   auto module = Test::createModule<MyModule>("MySlug");
-//   json_t* rootJ = module->dataToJson();
-//   REQUIRE(rootJ != nullptr);
-//   Test::testPresetNullGuards(module, rootJ);
-//   json_decref(rootJ);
-//   Test::destroyModule(module);
-template <typename T>
-static void testPresetNullGuards(T* module, json_t* rootJ) {
-	REQUIRE(module != nullptr);
-	REQUIRE(rootJ != nullptr);
-	REQUIRE(json_is_object(rootJ));
-
-	// Recursive path collector. std::function is required because the
-	// lambda captures itself for recursion (C++11 has no generic
-	// lambdas with `auto` parameters). Arrays are not descended into -
-	// we only test the array as a whole.
-	std::vector<std::vector<std::string>> paths;
-	std::vector<std::string> currentPath;
-	std::function<void(json_t*)> collectPaths = [&](json_t* node) {
-		if (!json_is_object(node)) return;
-		const char* key;
-		json_t* value;
-		json_object_foreach(node, key, value) {
-			currentPath.push_back(key);
-			paths.push_back(currentPath);
-			collectPaths(value);
-			currentPath.pop_back();
-		}
-	};
-	collectPaths(rootJ);
-
-	// Render a path as a dotted string for the CATCH_INFO annotation
-	// (e.g. {"a", "b", "c"} -> "a.b.c").
-	auto formatPath = [](const std::vector<std::string>& path) -> std::string {
-		std::string s;
-		for (size_t i = 0; i < path.size(); i++) {
-			if (i > 0) s += ".";
-			s += path[i];
-		}
-		return s;
-	};
-
-	// Walk the path in a (deep-copied) JSON object and replace the
-	// leaf value with json_null(). Intermediate objects that are not
-	// themselves objects (e.g. null due to a previous iteration) are
-	// left untouched - this is a no-op rather than an error, because
-	// the helper should not change behaviour between iterations.
-	auto setPathToNull = [](json_t* obj, const std::vector<std::string>& path) {
-		json_t* current = obj;
-		for (size_t i = 0; i + 1 < path.size(); i++) {
-			json_t* next = json_object_get(current, path[i].c_str());
-			if (!json_is_object(next)) return;
-			current = next;
-		}
-		json_object_set_new(current, path.back().c_str(), json_null());
-	};
-
-	// For each path, set the value to null and test the loader.
-	for (const auto& path : paths) {
-		CATCH_INFO("Property '" << formatPath(path) << "' should be null-guarded in dataFromJson()");
-
-		json_t* copyJ = json_deep_copy(rootJ);
-		REQUIRE(copyJ != nullptr);
-		setPathToNull(copyJ, path);
-
-		REQUIRE_NOTHROW(module->dataFromJson(copyJ));
-		json_decref(copyJ);
-	}
-
-	// An empty JSON object should also be safe to load.
-	CATCH_INFO("Empty JSON object should load without crashing");
-	json_t* emptyJ = json_object();
-	REQUIRE_NOTHROW(module->dataFromJson(emptyJ));
-	json_decref(emptyJ);
-}
 
 
 } // namespace Test

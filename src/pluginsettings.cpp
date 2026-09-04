@@ -252,7 +252,7 @@ void Settings::readFromJson() {
 			json_decref(j);
 		}
 		saveToJson();
-		std::remove(legacy.c_str());
+		rack::system::remove(legacy.c_str());
 		return;
 	}
 

@@ -48,6 +48,19 @@ struct UiAccess {
 	virtual void setClipboard(const std::string& text) {}
 
 	virtual void openBrowser(const std::string& url) {}
+
+	// Is a UI present at all? False in headless/CLI Rack and while the plugin editor is closed.
+	// Production is APP->window != nullptr. Routing it through this seam is what makes the
+	// window-present branch reachable under test (GuiTaskProcessor starts a private worker when
+	// the answer is no): APP->window is permanently null in a test binary, and cannot be made
+	// otherwise — Window's constructor calls glfwCreateWindow(), it is marked PRIVATE (a
+	// compile-time error from a plugin), and it has no virtuals, so it can be neither
+	// constructed nor subclassed headless.
+	//
+	// A bool, not the Window* it wraps: the pointer would only invite use as a drawing handle,
+	// which for the same reasons cannot work. Real window *state* (modifiers, pixel ratio, frame
+	// timing, the cursor) wants its own seam — see var/TestFramework_review.md.
+	virtual bool hasWindow() const { return false; }
 };
 
 
@@ -61,6 +74,7 @@ struct RealUiAccess final : UiAccess {
 	std::string getClipboard() const override;
 	void setClipboard(const std::string& text) override;
 	void openBrowser(const std::string& url) override;
+	bool hasWindow() const override;
 };
 // The shared production instance, defined in the .cpp.
 extern RealUiAccess realUiAccess;
@@ -112,6 +126,11 @@ static void setClipboard(const std::string& text) {
 P1_UNUSED
 static void openBrowser(const std::string& url) {
 	uiAccessFor().openBrowser(url);
+}
+
+P1_UNUSED
+static bool hasWindow() {
+	return uiAccessFor().hasWindow();
 }
 
 } // namespace ui

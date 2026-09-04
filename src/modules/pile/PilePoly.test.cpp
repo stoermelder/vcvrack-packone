@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 
 #include "PilePoly.cpp"
 
@@ -9,7 +8,8 @@ SYNC_MODEL(modelPilePoly, "PilePoly");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[PilePoly]") {
-	PilePolyModule* m = Test::createModule<PilePolyModule>("PilePoly");
+	Test::ModuleScaffold<PilePolyModule> mods;
+	PilePolyModule* m = mods.create("PilePoly");
 	PilePolyWidget* mw = Test::createWidget<PilePolyWidget>("PilePoly");
 
 	REQUIRE(m != nullptr);
@@ -17,11 +17,11 @@ TEST_CASE("Construction and initialization", "[PilePoly]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[PilePoly][JSON]") {
-	auto module = Test::createModule<PilePolyModule>("PilePoly");
+	Test::ModuleScaffold<PilePolyModule> mods;
+	auto module = mods.create("PilePoly");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -30,11 +30,54 @@ TEST_CASE("Preset JSON null-guards", "[PilePoly][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 }
 
+TEST_CASE("JSON round-trip preserves state", "[JSON][PilePoly]") {
+	Test::ModuleScaffold<PilePolyModule> mods;
+	auto module = mods.create("PilePoly");
+	module->panelTheme = 1;
+	module->range = RANGE::BI_5V;
+	
+	// Set various channel voltages
+	for (int i = 0; i < 16; i++) {
+		module->currentVoltage[i / 4][i % 4] = (float)i;
+	}
+	
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	
+	auto moduleNew = mods.create("PilePoly");
+	moduleNew->dataFromJson(rootJ);
+	
+	REQUIRE(moduleNew->panelTheme == 1);
+	REQUIRE(moduleNew->range == RANGE::BI_5V);
+	
+	// Verify all voltages restored
+	for (int i = 0; i < 16; i++) {
+		REQUIRE(moduleNew->currentVoltage[i / 4][i % 4] == Catch::Approx((float)i).margin(0.01f));
+	}
+	
+	json_decref(rootJ);
+}
+
+
 TEST_CASE("Polyphonic increment and decrement", "[PilePoly]") {
-	auto module = Test::createModule<PilePolyModule>("PilePoly");
+	Test::ModuleScaffold<PilePolyModule> mods;
+	auto module = mods.create("PilePoly");
 
 	SECTION("Single channel increment") {
 		module->params[PilePolyModule::PARAM_STEP].setValue(1.0f);
@@ -130,11 +173,11 @@ TEST_CASE("Polyphonic increment and decrement", "[PilePoly]") {
 		}
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Polyphonic range clamping", "[PilePoly]") {
-	auto module = Test::createModule<PilePolyModule>("PilePoly");
+	Test::ModuleScaffold<PilePolyModule> mods;
+	auto module = mods.create("PilePoly");
 
 	SECTION("UNI_10V clamps all channels to 0..10V") {
 		module->range = RANGE::UNI_10V;
@@ -201,11 +244,11 @@ TEST_CASE("Polyphonic range clamping", "[PilePoly]") {
 		}
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Polyphonic reset", "[PilePoly]") {
-	auto module = Test::createModule<PilePolyModule>("PilePoly");
+	Test::ModuleScaffold<PilePolyModule> mods;
+	auto module = mods.create("PilePoly");
 
 	SECTION("Reset trigger affects all channels") {
 		int channels = 4;
@@ -370,11 +413,11 @@ TEST_CASE("Polyphonic reset", "[PilePoly]") {
 		}
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Polyphonic slew limiting", "[PilePoly]") {
-	auto module = Test::createModule<PilePolyModule>("PilePoly");
+	Test::ModuleScaffold<PilePolyModule> mods;
+	auto module = mods.create("PilePoly");
 
 	SECTION("Slew affects all channels") {
 		int channels = 4;
@@ -441,11 +484,11 @@ TEST_CASE("Polyphonic slew limiting", "[PilePoly]") {
 		}
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("High channel count SIMD processing", "[PilePoly]") {
-	auto module = Test::createModule<PilePolyModule>("PilePoly");
+	Test::ModuleScaffold<PilePolyModule> mods;
+	auto module = mods.create("PilePoly");
 
 	SECTION("All 16 channels process correctly") {
 		int channels = 16;
@@ -478,38 +521,4 @@ TEST_CASE("High channel count SIMD processing", "[PilePoly]") {
 		}
 	}
 
-	Test::destroyModule(module);
-}
-
-TEST_CASE("JSON serialization", "[JSON][PilePoly]") {
-	auto module = Test::createModule<PilePolyModule>("PilePoly");
-
-	SECTION("Module state is serialized and deserialized") {
-		module->panelTheme = 1;
-		module->range = RANGE::BI_5V;
-		
-		// Set various channel voltages
-		for (int i = 0; i < 16; i++) {
-			module->currentVoltage[i / 4][i % 4] = (float)i;
-		}
-		
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		
-		auto moduleNew = Test::createModule<PilePolyModule>("PilePoly");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->panelTheme == 1);
-		REQUIRE(moduleNew->range == RANGE::BI_5V);
-		
-		// Verify all voltages restored
-		for (int i = 0; i < 16; i++) {
-			REQUIRE(moduleNew->currentVoltage[i / 4][i % 4] == Catch::Approx((float)i).margin(0.01f));
-		}
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
-	}
-
-	Test::destroyModule(module);
 }

@@ -33,6 +33,9 @@ struct TaskWorker {
 		this->name = std::move(name);
 	}
 
+	TaskWorker(const TaskWorker&) = delete;
+	TaskWorker& operator=(const TaskWorker&) = delete;
+
 	~TaskWorker() {
 		cancel.store(true, std::memory_order_relaxed);
 		{

@@ -148,6 +148,7 @@ struct EightFaceModule : Module {
 			configSwitch(PRESET_PARAM + i, 0.f, 1.f, 0.f, string::f("Preset slot %d", i + 1));
 			typeButtons[i].param = &params[PRESET_PARAM + i];
 			presetSlotUsed[i] = false;
+			presetSlot[i] = NULL;
 		}
 
 		buttonDivider.setDivision(4);
@@ -181,8 +182,8 @@ struct EightFaceModule : Module {
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (presetSlotUsed[i]) {
 				json_decref(presetSlot[i]);
-				presetSlot[i] = NULL;
 			}
+			presetSlot[i] = NULL;
 			presetSlotUsed[i] = false;
 		}
 
@@ -596,21 +597,21 @@ struct EightFaceModule : Module {
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (presetSlotUsed[i]) {
 				json_decref(presetSlot[i]);
-				presetSlot[i] = NULL;
 			}
+			presetSlot[i] = NULL;
 			presetSlotUsed[i] = false;
 		}
 
 		json_t* presetsJ = json_object_get(rootJ, "presets");
-		if (presetsJ) {
-			json_t* presetItemJ;
-			size_t presetIndex;
-			json_array_foreach(presetsJ, presetIndex, presetItemJ) {
-				json_t* slotUsedJ = json_object_get(presetItemJ, "slotUsed");
-				if (slotUsedJ) presetSlotUsed[presetIndex] = json_boolean_value(slotUsedJ);
-				json_t* slotJ = json_object_get(presetItemJ, "slot");
-				if (slotJ) presetSlot[presetIndex] = json_deep_copy(slotJ);
-			}
+		// Bounded to the fixed-size destinations: hand-edited or corrupted
+		// patches may contain more presets than the [NUM_PRESETS] members hold.
+		size_t maxPresets = std::min((size_t)NUM_PRESETS, json_array_size(presetsJ));
+		for (size_t presetIndex = 0; presetIndex < maxPresets; presetIndex++) {
+			json_t* presetItemJ = json_array_get(presetsJ, presetIndex);
+			json_t* slotUsedJ = json_object_get(presetItemJ, "slotUsed");
+			if (slotUsedJ) presetSlotUsed[presetIndex] = json_boolean_value(slotUsedJ);
+			json_t* slotJ = json_object_get(presetItemJ, "slot");
+			if (slotJ) presetSlot[presetIndex] = json_deep_copy(slotJ);
 		}
 
 		presetPrev = -1;
@@ -721,13 +722,17 @@ struct EightFaceWidgetTemplate : ThemedModuleWidget<MODULE> {
 	};
 
 	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 		assert(module);
 
 		menu->addChild(new MenuSeparator());
 		if (module->moduleName != "") {
-			menu->addChild(createMenuLabel("Configured for..."));
+			menu->addChild(createMenuLabel("Bound for..."));
 			menu->addChild(createMenuLabel(module->moduleName));
+		}
+		else {
+			menu->addChild(createMenuLabel("No bound module"));
 		}
 
 		menu->addChild(new MenuSeparator());

@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "MidiCatMem.cpp"
 #include "MidiCat.cpp"
 #include "../midi/MidiTrackingProcessor.hpp"
@@ -26,7 +25,7 @@ static void setupBinding(MidiCatModule* midicat, Module* target, int channel, in
 	midicat->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, cc, 64));
 	midicat->learnParam(channel, target->id, paramId);
 	midicat->process(Test::makeProcessArgs(1));
-	midicat->ccs[channel].ccMode = CCMODE::DIRECT;
+	midicat->slots[channel].cc.ccMode = CCMODE::DIRECT;
 }
 
 // Helper: build and insert a MemModule entry for `target` in mem->midiMap.
@@ -45,10 +44,9 @@ static void insertMemEntry(MidiCatMemModule* mem, Module* target, int pid, int c
 }
 
 
-// ─── Standalone tests ───────────────────────────────────────────────────────
-
-TEST_CASE("MidiCatMem: construction and initialization", "[MidiCatMem]") {
-	MidiCatMemModule* m = Test::createModule<MidiCatMemModule>("MidiCatEx");
+TEST_CASE("Construction and initialization", "[MidiCatMem]") {
+	Test::ModuleScaffold<MidiCatMemModule> mods;
+	MidiCatMemModule* m = mods.create("MidiCatEx");
 
 	REQUIRE(m != nullptr);
 	REQUIRE(m->NUM_PARAMS == 3);
@@ -57,49 +55,38 @@ TEST_CASE("MidiCatMem: construction and initialization", "[MidiCatMem]") {
 	REQUIRE(m->NUM_LIGHTS == 1);
 	REQUIRE(m->midiMap.empty());
 	REQUIRE(m->moduleRestriction.empty());
-
-	Test::destroyModule(m);
 }
 
-TEST_CASE("MidiCatMem: process() publishes midiMap via leftExpander", "[MidiCatMem]") {
-	MidiCatMemModule* m = Test::createModule<MidiCatMemModule>("MidiCatEx");
+TEST_CASE("Preset JSON null-guards", "[MidiCatMem][JSON]") {
+	Test::ModuleScaffold<MidiCatMemModule> mods;
+	auto module = mods.create("MidiCatEx");
 
-	m->process(Test::makeProcessArgs(1));
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
 
-	REQUIRE(m->leftExpander.producerMessage == &m->midiMap);
-	REQUIRE(m->leftExpander.messageFlipRequested == true);
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
 
-	Test::destroyModule(m);
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 }
 
-TEST_CASE("MidiCatMem: process() does not crash without left expander", "[MidiCatMem]") {
-	MidiCatMemModule* m = Test::createModule<MidiCatMemModule>("MidiCatEx");
-	REQUIRE_NOTHROW(m->process(Test::makeProcessArgs(1)));
-	Test::destroyModule(m);
-}
-
-TEST_CASE("MidiCatMem: onReset clears midiMap and moduleRestriction", "[MidiCatMem]") {
-	MidiCatMemModule* m = Test::createModule<MidiCatMemModule>("MidiCatEx");
-
-	// Insert a fake entry and a restriction
-	auto* mod = new MemModule;
-	m->midiMap[{"slug", "mod"}] = mod;
-	m->moduleRestriction.insert(42);
-
-	REQUIRE(!m->midiMap.empty());
-	REQUIRE(!m->moduleRestriction.empty());
-
-	Module::ResetEvent re;
-	m->onReset(re);
-
-	REQUIRE(m->midiMap.empty());
-	REQUIRE(m->moduleRestriction.empty());
-
-	Test::destroyModule(m);
-}
-
-TEST_CASE("MidiCatMem: JSON round-trip preserves panelTheme, midiMap, and moduleRestriction", "[MidiCatMem]") {
-	MidiCatMemModule* m = Test::createModule<MidiCatMemModule>("MidiCatEx");
+TEST_CASE("JSON round-trip preserves state", "[MidiCatMem]") {
+	Test::ModuleScaffold<MidiCatMemModule> mods;
+	MidiCatMemModule* m = mods.create("MidiCatEx");
 
 	m->panelTheme = 2;
 	m->moduleRestriction.insert(99);
@@ -138,81 +125,120 @@ TEST_CASE("MidiCatMem: JSON round-trip preserves panelTheme, midiMap, and module
 	++pit;
 	REQUIRE((*pit)->paramId == 1);
 	REQUIRE((*pit)->cc == 10);
-
-	Test::destroyModule(m);
 }
 
 
+// ─── Standalone tests ───────────────────────────────────────────────────────
+
+TEST_CASE("process() publishes midiMap via leftExpander", "[MidiCatMem]") {
+	Test::ModuleScaffold<MidiCatMemModule> mods;
+	MidiCatMemModule* m = mods.create("MidiCatEx");
+
+	m->process(Test::makeProcessArgs(1));
+
+	REQUIRE(m->leftExpander.producerMessage == &m->midiMap);
+	REQUIRE(m->leftExpander.messageFlipRequested == true);
+}
+
+TEST_CASE("process() does not crash without left expander", "[MidiCatMem]") {
+	Test::ModuleScaffold<MidiCatMemModule> mods;
+	MidiCatMemModule* m = mods.create("MidiCatEx");
+	REQUIRE_NOTHROW(m->process(Test::makeProcessArgs(1)));
+}
+
+TEST_CASE("onReset clears midiMap and moduleRestriction", "[MidiCatMem]") {
+	Test::ModuleScaffold<MidiCatMemModule> mods;
+	MidiCatMemModule* m = mods.create("MidiCatEx");
+
+	// Insert a fake entry and a restriction
+	auto* mod = new MemModule;
+	m->midiMap[{"slug", "mod"}] = mod;
+	m->moduleRestriction.insert(42);
+
+	REQUIRE(!m->midiMap.empty());
+	REQUIRE(!m->moduleRestriction.empty());
+
+	Module::ResetEvent re;
+	m->onReset(re);
+
+	REQUIRE(m->midiMap.empty());
+	REQUIRE(m->moduleRestriction.empty());
+}
+
 // ─── Integration tests ──────────────────────────────────────────────────────
 
-TEST_CASE("MidiCatMem: MidiCat detects expander", "[MidiCatMem][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatMemModule* mem   = Test::createModule<MidiCatMemModule>("MidiCatEx");
+TEST_CASE("MidiCat detects expander", "[MidiCatMem][MidiCat]") {
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatMemModule> memMods;
+	MidiCatMemModule* mem   = memMods.create("MidiCatEx");
+	// MidiCat.expanders.hpp detects mem via `exp->model == modelMidiCatMem` — a mismatch here
+	// (missing/wrong SYNC_MODEL) would make the REQUIRE below fail with no useful diagnosis.
+	Test::requireModelSync(modelMidiCatMem, "MidiCatEx");
 	Test::registerModule(midicat);
 	Test::registerModule(mem);
 
 	// Flush initial expandersChanged so expMem is properly null before connecting
 	midicat->process(Test::makeProcessArgs(0));
-	REQUIRE(midicat->expMem.load() == nullptr);
+	REQUIRE(midicat->expanders.mem() == nullptr);
 
 	connectMem(midicat, mem);
 
-	REQUIRE(midicat->expMem.load() != nullptr);
-	REQUIRE(midicat->expMem.load() == dynamic_cast<MidiCatMemBase*>(mem));
+	REQUIRE(midicat->expanders.mem() != nullptr);
+	REQUIRE(midicat->expanders.mem() == dynamic_cast<MidiCatMemBase*>(mem));
 
 	Test::unregisterModule(mem);
-	Test::destroyModule(mem);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
-TEST_CASE("MidiCatMem: disconnecting expander clears expMem", "[MidiCatMem][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatMemModule* mem   = Test::createModule<MidiCatMemModule>("MidiCatEx");
+TEST_CASE("Disconnecting expander clears expMem", "[MidiCatMem][MidiCat]") {
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatMemModule> memMods;
+	MidiCatMemModule* mem   = memMods.create("MidiCatEx");
 	Test::registerModule(midicat);
 	Test::registerModule(mem);
 
 	connectMem(midicat, mem);
-	REQUIRE(midicat->expMem.load() != nullptr);
+	REQUIRE(midicat->expanders.mem() != nullptr);
 
 	midicat->rightExpander.module = nullptr;
 	mem->leftExpander.module = nullptr;
 	midicat->moduleChangedFlag = true;
 	midicat->process(Test::makeProcessArgs(10));
 
-	REQUIRE(midicat->expMem.load() == nullptr);
+	REQUIRE(midicat->expanders.mem() == nullptr);
 
 	Test::unregisterModule(mem);
-	Test::destroyModule(mem);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
-TEST_CASE("MidiCatMem: expMemTest returns false for unknown module", "[MidiCatMem][MidiCat]") {
-	MidiCatModule* midicat    = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatMemModule* mem     = Test::createModule<MidiCatMemModule>("MidiCatEx");
-	MidiCatMemModule* unknown = Test::createModule<MidiCatMemModule>("MidiCatEx");
+TEST_CASE("MemStore::test returns false for unknown module", "[MidiCatMem][MidiCat]") {
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat    = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatMemModule> memMods;
+	MidiCatMemModule* mem     = memMods.create("MidiCatEx");
+	MidiCatMemModule* unknown = memMods.create("MidiCatEx");
 	Test::registerModule(midicat);
 	Test::registerModule(mem);
 	Test::registerModule(unknown);
 
 	connectMem(midicat, mem);
 	// midiMap is empty, so no slug matches
-	REQUIRE_FALSE(midicat->expMemTest(unknown));
+	REQUIRE_FALSE(midicat->expanders.memStore().test(unknown));
 
 	Test::unregisterModule(unknown);
-	Test::destroyModule(unknown);
 	Test::unregisterModule(mem);
-	Test::destroyModule(mem);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
-TEST_CASE("MidiCatMem: expMemSave stores current MidiCat CC mapping", "[MidiCatMem][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatMemModule* mem  = Test::createModule<MidiCatMemModule>("MidiCatEx");
+TEST_CASE("MemStore::save stores current MidiCat CC mapping", "[MidiCatMem][MidiCat]") {
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatMemModule> memMods;
+	MidiCatMemModule* mem  = memMods.create("MidiCatEx");
 	// Use a second MidiCatMemModule as target (it has parameters and a proper model)
-	MidiCatMemModule* target = Test::createModule<MidiCatMemModule>("MidiCatEx");
+	MidiCatMemModule* target = memMods.create("MidiCatEx");
 	Test::registerModule(midicat);
 	Test::registerModule(mem);
 	Test::registerModule(target);
@@ -222,13 +248,13 @@ TEST_CASE("MidiCatMem: expMemSave stores current MidiCat CC mapping", "[MidiCatM
 
 	connectMem(midicat, mem);
 
-	REQUIRE_FALSE(midicat->expMemTest(target));
+	REQUIRE_FALSE(midicat->expanders.memStore().test(target));
 
 	// Save current mapping for this target module type
-	midicat->expMemSave(target->model->plugin->slug, target->model->slug);
+	midicat->expanders.memStore().save(MemStore::Key(target->model->plugin->slug, target->model->slug), midicat->slots, midicat->paramHandles, MAX_CHANNELS);
 
 	// The midiMap should now contain one entry for the target's slugs
-	REQUIRE(midicat->expMemTest(target));
+	REQUIRE(midicat->expanders.memStore().test(target));
 	REQUIRE(mem->midiMap.size() == 1);
 
 	auto it = mem->midiMap.find({target->model->plugin->slug, target->model->slug});
@@ -238,17 +264,45 @@ TEST_CASE("MidiCatMem: expMemSave stores current MidiCat CC mapping", "[MidiCatM
 	REQUIRE(it->second->paramMap.front()->paramId == MidiCatMemModule::PARAM_APPLY);
 
 	Test::unregisterModule(target);
-	Test::destroyModule(target);
 	Test::unregisterModule(mem);
-	Test::destroyModule(mem);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
-TEST_CASE("MidiCatMem: expMemApply restores CC and param binding into MidiCat", "[MidiCatMem][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatMemModule* mem  = Test::createModule<MidiCatMemModule>("MidiCatEx");
-	MidiCatMemModule* target = Test::createModule<MidiCatMemModule>("MidiCatEx");
+// The "Store mapping" menu is built from currently bound slots, but the mapping can be
+// cleared or the target module removed in the window between opening the menu and
+// clicking the item -- so save() must tolerate a key that no longer matches any slot,
+// rather than dereferencing the never-assigned `module` pointer.
+TEST_CASE("MemStore::save does not crash and does not store when no slot matches the key", "[MidiCatMem][MidiCat]") {
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatMemModule> memMods;
+	MidiCatMemModule* mem  = memMods.create("MidiCatEx");
+	MidiCatMemModule* target = memMods.create("MidiCatEx");
+	Test::registerModule(midicat);
+	Test::registerModule(mem);
+	Test::registerModule(target);
+
+	connectMem(midicat, mem);
+
+	// No slot is bound to `target` at all -- every slot has moduleId < 0.
+	REQUIRE_NOTHROW(midicat->expanders.memStore().save(
+		MemStore::Key(target->model->plugin->slug, target->model->slug), midicat->slots, midicat->paramHandles, MAX_CHANNELS));
+
+	// Nothing was stored: there was no matching module to save.
+	REQUIRE_FALSE(midicat->expanders.memStore().test(target));
+	REQUIRE(mem->midiMap.empty());
+
+	Test::unregisterModule(target);
+	Test::unregisterModule(mem);
+	Test::unregisterModule(midicat);
+}
+
+TEST_CASE("moduleBindMem restores CC and param binding into MidiCat", "[MidiCatMem][MidiCat]") {
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatMemModule> memMods;
+	MidiCatMemModule* mem  = memMods.create("MidiCatEx");
+	MidiCatMemModule* target = memMods.create("MidiCatEx");
 	Test::registerModule(midicat);
 	Test::registerModule(mem);
 	Test::registerModule(target);
@@ -259,24 +313,23 @@ TEST_CASE("MidiCatMem: expMemApply restores CC and param binding into MidiCat", 
 	insertMemEntry(mem, target, MidiCatMemModule::PARAM_NEXT, 15);
 
 	// Apply: clears current maps and restores saved ones
-	midicat->expMemApply(target);
+	midicat->moduleBindMem(target);
 
-	REQUIRE(midicat->ccs[0].getCc() == 15);
+	REQUIRE(midicat->slots[0].cc.getCc() == 15);
 	REQUIRE(midicat->paramHandles[0].paramId == MidiCatMemModule::PARAM_NEXT);
 	REQUIRE(midicat->paramHandles[0].module == target);
 
 	Test::unregisterModule(target);
-	Test::destroyModule(target);
 	Test::unregisterModule(mem);
-	Test::destroyModule(mem);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
-TEST_CASE("MidiCatMem: expMemDelete removes mapping from storage", "[MidiCatMem][MidiCat]") {
-	MidiCatModule* midicat = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatMemModule* mem  = Test::createModule<MidiCatMemModule>("MidiCatEx");
-	MidiCatMemModule* target = Test::createModule<MidiCatMemModule>("MidiCatEx");
+TEST_CASE("MemStore::erase removes mapping from storage", "[MidiCatMem][MidiCat]") {
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatMemModule> memMods;
+	MidiCatMemModule* mem  = memMods.create("MidiCatEx");
+	MidiCatMemModule* target = memMods.create("MidiCatEx");
 	Test::registerModule(midicat);
 	Test::registerModule(mem);
 	Test::registerModule(target);
@@ -284,26 +337,25 @@ TEST_CASE("MidiCatMem: expMemDelete removes mapping from storage", "[MidiCatMem]
 	connectMem(midicat, mem);
 	insertMemEntry(mem, target, 0, 7);
 
-	REQUIRE(midicat->expMemTest(target));
+	REQUIRE(midicat->expanders.memStore().test(target));
 
-	midicat->expMemDelete(target->model->plugin->slug, target->model->slug);
+	midicat->expanders.memStore().erase(MemStore::Key(target->model->plugin->slug, target->model->slug));
 
-	REQUIRE_FALSE(midicat->expMemTest(target));
+	REQUIRE_FALSE(midicat->expanders.memStore().test(target));
 	REQUIRE(mem->midiMap.empty());
 
 	Test::unregisterModule(target);
-	Test::destroyModule(target);
 	Test::unregisterModule(mem);
-	Test::destroyModule(mem);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
 }
 
-TEST_CASE("MidiCatMem: moduleRestriction filters expMemTest by module ID", "[MidiCatMem][MidiCat]") {
-	MidiCatModule* midicat  = Test::createModule<MidiCatModule>("MidiCat");
-	MidiCatMemModule* mem   = Test::createModule<MidiCatMemModule>("MidiCatEx");
-	MidiCatMemModule* targetA = Test::createModule<MidiCatMemModule>("MidiCatEx");
-	MidiCatMemModule* targetB = Test::createModule<MidiCatMemModule>("MidiCatEx");
+TEST_CASE("moduleRestriction filters MemStore::test by module ID", "[MidiCatMem][MidiCat]") {
+	Test::ModuleScaffold<MidiCatModule> midicatMods;
+	MidiCatModule* midicat  = midicatMods.create("MidiCat");
+	Test::ModuleScaffold<MidiCatMemModule> memMods;
+	MidiCatMemModule* mem   = memMods.create("MidiCatEx");
+	MidiCatMemModule* targetA = memMods.create("MidiCatEx");
+	MidiCatMemModule* targetB = memMods.create("MidiCatEx");
 	Test::registerModule(midicat);
 	Test::registerModule(mem);
 	Test::registerModule(targetA);
@@ -315,34 +367,17 @@ TEST_CASE("MidiCatMem: moduleRestriction filters expMemTest by module ID", "[Mid
 	insertMemEntry(mem, targetA, 0, 7);
 
 	// Without restriction both modules match
-	REQUIRE(midicat->expMemTest(targetA));
-	REQUIRE(midicat->expMemTest(targetB));
+	REQUIRE(midicat->expanders.memStore().test(targetA));
+	REQUIRE(midicat->expanders.memStore().test(targetB));
 
 	// Restrict to targetA's ID only
 	mem->moduleRestriction.insert(targetA->getId());
 
-	REQUIRE(midicat->expMemTest(targetA));       // allowed
-	REQUIRE_FALSE(midicat->expMemTest(targetB)); // blocked by restriction
+	REQUIRE(midicat->expanders.memStore().test(targetA));       // allowed
+	REQUIRE_FALSE(midicat->expanders.memStore().test(targetB)); // blocked by restriction
 
 	Test::unregisterModule(targetB);
-	Test::destroyModule(targetB);
 	Test::unregisterModule(targetA);
-	Test::destroyModule(targetA);
 	Test::unregisterModule(mem);
-	Test::destroyModule(mem);
 	Test::unregisterModule(midicat);
-	Test::destroyModule(midicat);
-}
-
-TEST_CASE("Preset JSON null-guards", "[MidiCatMem][JSON]") {
-	auto module = Test::createModule<MidiCatMemModule>("MidiCatEx");
-
-	SECTION("All top-level properties are null-guarded in dataFromJson()") {
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		Test::testPresetNullGuards(module, rootJ);
-		json_decref(rootJ);
-	}
-
-	Test::destroyModule(module);
 }

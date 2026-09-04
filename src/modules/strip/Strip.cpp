@@ -1,4 +1,5 @@
 #include "Strip.hpp"
+#include "../../utils/cursor.hpp"
 #include "../../utils/digital.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../../utils/TaskProcessor.hpp"
@@ -671,13 +672,7 @@ struct ExcludeButton : TL1105 {
 
 	void toggleParamLearn() {
 		learn ^= true;
-		if (learn) {
-			GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-			if (APP->window) glfwSetCursor(APP->window->win, cursor);
-		}
-		else {
-			if (APP->window) glfwSetCursor(APP->window->win, NULL);
-		}
+		cursor::setLearnCursor(learn);
 		APP->scene->rack->setTouchedParam(NULL);
 	}
 

@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "TransitBase.hpp"
 #include "Transit.cpp"
 
@@ -9,7 +8,8 @@ SYNC_MODEL(modelTransit, "Transit");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Transit]") {
-	TransitModule<12>* m = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* m = mods.create("Transit");
 	TransitWidget<12>* mw = Test::createWidget<TransitWidget<12>>("Transit");
 
 	REQUIRE(m != nullptr);
@@ -17,11 +17,11 @@ TEST_CASE("Construction and initialization", "[Transit]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Transit][JSON]") {
-	auto module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	auto module = mods.create("Transit");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -30,8 +30,109 @@ TEST_CASE("Preset JSON null-guards", "[Transit][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
 }
+
+TEST_CASE("JSON round-trip preserves state", "[Transit][JSON]") {
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* m = mods.create("Transit");
+
+	// Distinctive label on EVERY slot
+	for (int i = 0; i < 12; i++) {
+		m->textLabel[i] = "Slot" + std::to_string(i);
+	}
+	// Slot 0: fully configured; slot 1: label only, no color, not used
+	m->presetSlotUsed[0] = true;
+	m->fadeTime[0] = 0.35f;
+	m->slotColorSet[0] = true;
+	m->slotColor[0] = nvgRGBf(1.f, 0.5f, 0.f);
+	// qualified: TransitModule declares `int preset` (active slot), shadowing the base array
+	m->TransitBase<12>::preset[0] = {0.25f, 0.75f};
+	// Slot 5: used with a longer preset vector and a second color
+	m->presetSlotUsed[5] = true;
+	m->fadeTime[5] = 1.5f;
+	m->slotColorSet[5] = true;
+	m->slotColor[5] = nvgRGBf(0.f, 1.f, 0.f);
+	m->TransitBase<12>::preset[5] = {0.f, 0.5f, 1.f};
+
+	json_t* j = m->dataToJson();
+
+	TransitModule<12>* m2 = mods.create("Transit");
+	m2->dataFromJson(j);
+	json_decref(j);
+
+	SECTION("All slot labels") {
+		for (int i = 0; i < 12; i++) {
+			REQUIRE(m2->textLabel[i] == "Slot" + std::to_string(i));
+		}
+	}
+
+	SECTION("Fully configured slot 0") {
+		REQUIRE(m2->presetSlotUsed[0] == true);
+		REQUIRE(m2->fadeTime[0] == Catch::Approx(0.35f));
+		REQUIRE(m2->slotColorSet[0] == true);
+		REQUIRE(m2->slotColor[0].r == Catch::Approx(1.f).margin(0.01));
+		REQUIRE(m2->slotColor[0].g == Catch::Approx(0.5f).margin(0.01));
+		REQUIRE(m2->slotColor[0].b == Catch::Approx(0.f).margin(0.01));
+		REQUIRE(m2->TransitBase<12>::preset[0].size() == 2);
+		REQUIRE(m2->TransitBase<12>::preset[0][0] == Catch::Approx(0.25f));
+		REQUIRE(m2->TransitBase<12>::preset[0][1] == Catch::Approx(0.75f));
+	}
+
+	SECTION("Second configured slot 5") {
+		REQUIRE(m2->presetSlotUsed[5] == true);
+		REQUIRE(m2->fadeTime[5] == Catch::Approx(1.5f));
+		REQUIRE(m2->slotColorSet[5] == true);
+		REQUIRE(m2->slotColor[5].r == Catch::Approx(0.f).margin(0.01));
+		REQUIRE(m2->slotColor[5].g == Catch::Approx(1.f).margin(0.01));
+		REQUIRE(m2->TransitBase<12>::preset[5].size() == 3);
+		REQUIRE(m2->TransitBase<12>::preset[5][2] == Catch::Approx(1.f));
+	}
+
+	SECTION("Unused slot has no color") {
+		REQUIRE(m2->textLabel[1] == "Slot1");
+		REQUIRE(m2->slotColorSet[1] == false);
+	}
+}
+
+TEST_CASE("JSON serialization preserves boundaries", "[JSON][Transit]") {
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module1 = mods.create("Transit");	Test::registerModule(module1);
+	// Set custom boundaries
+	module1->presetSetFirst(2);
+	module1->presetSetLast(9);
+	module1->preset = 5;
+
+	// Serialize
+	json_t* rootJ = module1->dataToJson();
+
+	// Create new module and deserialize
+	TransitModule<12>* module2 = mods.create("Transit");
+	Test::registerModule(module2);
+	module2->dataFromJson(rootJ);
+
+	// Check values preserved
+	REQUIRE(module2->presetFirst == 2);
+	REQUIRE(module2->presetLast == 9);
+	REQUIRE(module2->preset == 5);
+
+	json_decref(rootJ);
+	Test::unregisterModule(module1);
+	Test::unregisterModule(module2);
+}
+
 
 // Helper module with test parameters
 struct TestModule : rack::Module {
@@ -52,8 +153,9 @@ struct TestModule : rack::Module {
 
 
 TEST_CASE("Setting presetFirst and presetLast boundaries", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
-	
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
+
 	SECTION("presetSetFirst updates boundary correctly") {
 		module->presetSetFirst(3);
 		REQUIRE(module->presetFirst == 3);
@@ -90,13 +192,12 @@ TEST_CASE("Setting presetFirst and presetLast boundaries", "[Transit]") {
 		module->presetSetLast(8);
 		REQUIRE(module->preset == 7); // Moved down to new maximum - 1
 	}
-
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Comprehensive boundary edge cases", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	
 	SECTION("presetFirst == presetLast - 1 (single slot)") {
@@ -141,12 +242,12 @@ TEST_CASE("Comprehensive boundary edge cases", "[Transit]") {
 	}
 
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("presetLoad respects boundaries", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -192,12 +293,12 @@ TEST_CASE("presetLoad respects boundaries", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Multiple bound parameters save and load correctly", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -261,12 +362,12 @@ TEST_CASE("Multiple bound parameters save and load correctly", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("presetClear resets active preset selection", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -301,12 +402,12 @@ TEST_CASE("presetClear resets active preset selection", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("presetCopyPaste copies values correctly", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -361,12 +462,12 @@ TEST_CASE("presetCopyPaste copies values correctly", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("presetShiftFront respects boundaries", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -404,12 +505,12 @@ TEST_CASE("presetShiftFront respects boundaries", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("presetShiftBack shifts presets correctly", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -448,12 +549,12 @@ TEST_CASE("presetShiftBack shifts presets correctly", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("AUTO mode captures current values into previous preset", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -499,12 +600,12 @@ TEST_CASE("AUTO mode captures current values into previous preset", "[Transit]")
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Per-slot fade time overrides global fade parameter", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -594,12 +695,12 @@ TEST_CASE("Per-slot fade time overrides global fade parameter", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Fade CV input is additive to PARAM_FADE and ignored by per-slot override", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -656,12 +757,12 @@ TEST_CASE("Fade CV input is additive to PARAM_FADE and ignored by per-slot overr
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("CV VOLT mode respects boundaries", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -709,12 +810,12 @@ TEST_CASE("CV VOLT mode respects boundaries", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("CV C4 mode respects boundaries", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -762,12 +863,12 @@ TEST_CASE("CV C4 mode respects boundaries", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("TRIG_FWD mode respects boundaries", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -839,12 +940,12 @@ TEST_CASE("TRIG_FWD mode respects boundaries", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("TRIG_REV mode respects boundaries", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -916,12 +1017,12 @@ TEST_CASE("TRIG_REV mode respects boundaries", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("TRIG_PINGPONG mode respects boundaries and direction", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -997,12 +1098,12 @@ TEST_CASE("TRIG_PINGPONG mode respects boundaries and direction", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("TRIG_ALT mode alternates between presetFirst and an advancing secondary", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -1071,12 +1172,12 @@ TEST_CASE("TRIG_ALT mode alternates between presetFirst and an advancing seconda
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("TRIG_RANDOM_WALK mode respects boundaries", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -1145,12 +1246,12 @@ TEST_CASE("TRIG_RANDOM_WALK mode respects boundaries", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("TRIG_RANDOM mode respects boundaries", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -1214,12 +1315,12 @@ TEST_CASE("TRIG_RANDOM mode respects boundaries", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("TRIG_RANDOM_WO_REPEAT never selects the same preset twice in a row", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -1276,12 +1377,12 @@ TEST_CASE("TRIG_RANDOM_WO_REPEAT never selects the same preset twice in a row", 
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("TRIG_SHUFFLE visits all presets in range before repeating", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -1349,12 +1450,12 @@ TEST_CASE("TRIG_SHUFFLE visits all presets in range before repeating", "[Transit
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("ARM mode queues preset and loads on trigger", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -1413,12 +1514,12 @@ TEST_CASE("ARM mode queues preset and loads on trigger", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Phase mode respects boundaries", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::ModuleScaffold<TransitModule<12>> mods;
+	TransitModule<12>* module = mods.create("Transit");
 	Test::registerModule(module);
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
@@ -1474,33 +1575,4 @@ TEST_CASE("Phase mode respects boundaries", "[Transit]") {
 	Test::unregisterModule(testModule);
 	delete testModule;
 	Test::unregisterModule(module);
-	Test::destroyModule(module);
-}
-
-
-TEST_CASE("JSON serialization preserves boundaries", "[JSON][Transit]") {
-	TransitModule<12>* module1 = Test::createModule<TransitModule<12>>("Transit");	Test::registerModule(module1);	
-	// Set custom boundaries
-	module1->presetSetFirst(2);
-	module1->presetSetLast(9);
-	module1->preset = 5;
-	
-	// Serialize
-	json_t* rootJ = module1->dataToJson();
-	
-	// Create new module and deserialize
-	TransitModule<12>* module2 = Test::createModule<TransitModule<12>>("Transit");
-	Test::registerModule(module2);
-	module2->dataFromJson(rootJ);
-	
-	// Check values preserved
-	REQUIRE(module2->presetFirst == 2);
-	REQUIRE(module2->presetLast == 9);
-	REQUIRE(module2->preset == 5);
-	
-	json_decref(rootJ);
-	Test::unregisterModule(module1);
-	Test::unregisterModule(module2);
-	Test::destroyModule(module1);
-	Test::destroyModule(module2);
 }

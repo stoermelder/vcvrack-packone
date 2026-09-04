@@ -29,7 +29,7 @@ enum OUTPUTMODE {
 
 
 template <uint8_t IN_PORTS, uint8_t MIX_PORTS>
-struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
+struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XyScreenCursor, XySeqModule<MIX_PORTS> {
 	enum ParamIds {
 		ENUMS(IN_X_POS, IN_PORTS),
 		ENUMS(IN_Y_POS, IN_PORTS),
@@ -167,7 +167,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 	}
 
 	void onReset(const ResetEvent& e) override {
-		Sc::scResetSelection();
+		Sc::selection = XyScreenSelection();
 		init();
 		for (size_t i = 0; i < IN_PORTS; i++) {
 			modMode[i] = MODMODE::RADIUS;
@@ -179,22 +179,22 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 			mixportXBipolar[i] = false;
 			mixportYBipolar[i] = false;
 		}
-		Sc::scReset();
+		Sc::resetNodes();
 		Seq::seqReset();
 		Module::onReset(e);
 	}
 
 	void onRandomize(const RandomizeEvent& e) override {
-		Sc::scRandomizeAmountAll();
-		Sc::scRandomizeRadiusAll();
-		Sc::scRandomizeXAll();
-		Sc::scRandomizeYAll();
+		Sc::nodes.randomizeAmountAll();
+		Sc::nodes.randomizeRadiusAll();
+		Sc::nodes.randomizeXAll();
+		Sc::nodes.randomizeYAll();
 		Module::onRandomize(e);
 	}
 
 	void init() {
-		scInitItems();
-		Sc::scInit();
+		initExtra();
+		Sc::initNodes();
 		Seq::seqInit();
 	}
 
@@ -203,38 +203,38 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 
 		for (uint8_t j = 0; j < inportsUsed; j++) {
 			XyScreenParamQuantity* px = reinterpret_cast<XyScreenParamQuantity*>(paramQuantities[IN_X_POS + j]);
-			inputInX[j] = px->hasHandle ? px->getParam()->getValue() : Sc::scGetXFiltered(j, args.sampleTime);
+			inputInX[j] = px->hasHandle ? px->getParam()->getValue() : Sc::nodes.getXFiltered(j, args.sampleTime);
 			XyScreenParamQuantity* py = reinterpret_cast<XyScreenParamQuantity*>(paramQuantities[IN_Y_POS + j]);
-			inputInY[j] = py->hasHandle ? py->getParam()->getValue() : Sc::scGetYFiltered(j, args.sampleTime);
+			inputInY[j] = py->hasHandle ? py->getParam()->getValue() : Sc::nodes.getYFiltered(j, args.sampleTime);
 
 			offsetX[j] = 0.f;
 			offsetY[j] = 0.f;
 			switch (modMode[j]) {
 				case MODMODE::RADIUS: {
-					Sc::scSetRadiusFinal(j, inputs[MOD_INPUT + j].isConnected() ? getModInput(j, 0.f, 1.f) : Sc::scGetRadiusFiltered(j, args.sampleTime));
-					Sc::scSetAmountFinal(j, Sc::scGetAmountFiltered(j, args.sampleTime));
+					Sc::nodes.setRadius(j, inputs[MOD_INPUT + j].isConnected() ? getModInput(j, 0.f, 1.f) : Sc::nodes.getRadiusFiltered(j, args.sampleTime));
+					Sc::nodes.setAmount(j, Sc::nodes.getAmountFiltered(j, args.sampleTime));
 					break;
 				}
 				case MODMODE::AMOUNT: {
-					Sc::scSetRadiusFinal(j, Sc::scGetRadiusFiltered(j, args.sampleTime));
-					Sc::scSetAmountFinal(j, inputs[MOD_INPUT + j].isConnected() ? getModInput(j, 0.f, 1.f) : Sc::scGetAmountFiltered(j, args.sampleTime));
+					Sc::nodes.setRadius(j, Sc::nodes.getRadiusFiltered(j, args.sampleTime));
+					Sc::nodes.setAmount(j, inputs[MOD_INPUT + j].isConnected() ? getModInput(j, 0.f, 1.f) : Sc::nodes.getAmountFiltered(j, args.sampleTime));
 					break;
 				}
 				case MODMODE::OFFSET_X: {
-					Sc::scSetRadiusFinal(j, Sc::scGetRadiusFiltered(j, args.sampleTime));
-					Sc::scSetAmountFinal(j, Sc::scGetAmountFiltered(j, args.sampleTime));
+					Sc::nodes.setRadius(j, Sc::nodes.getRadiusFiltered(j, args.sampleTime));
+					Sc::nodes.setAmount(j, Sc::nodes.getAmountFiltered(j, args.sampleTime));
 					offsetX[j] = getModInput(j);
 					break;
 				}
 				case MODMODE::OFFSET_Y: {
-					Sc::scSetRadiusFinal(j, Sc::scGetRadiusFiltered(j, args.sampleTime));
-					Sc::scSetAmountFinal(j, Sc::scGetAmountFiltered(j, args.sampleTime));
+					Sc::nodes.setRadius(j, Sc::nodes.getRadiusFiltered(j, args.sampleTime));
+					Sc::nodes.setAmount(j, Sc::nodes.getAmountFiltered(j, args.sampleTime));
 					offsetY[j] = getModInput(j);
 					break;
 				}
 				case MODMODE::WALK: {
-					Sc::scSetRadiusFinal(j, Sc::scGetRadiusFiltered(j, args.sampleTime));
-					Sc::scSetAmountFinal(j, Sc::scGetAmountFiltered(j, args.sampleTime));
+					Sc::nodes.setRadius(j, Sc::nodes.getRadiusFiltered(j, args.sampleTime));
+					Sc::nodes.setAmount(j, Sc::nodes.getAmountFiltered(j, args.sampleTime));
 					float v = getModInput(j);
 					offsetX[j] = random::normal() / 2000.f * v;
 					offsetY[j] = random::normal() / 2000.f * v;
@@ -267,7 +267,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 			if (inputs[IN + j].isConnected()) {
 				float sd = inputs[IN + j].getVoltage();
 				sd = clamp(sd, -10.f, 10.f);
-				sd *= Sc::scGetAmountFinal(j);
+				sd *= Sc::getNodeAmountFinal(j);
 				inNorm[j] = sd;
 			}
 		}
@@ -341,7 +341,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 				Vec inVec = Vec(inX, inY);
 				dist[i][j] = inVec.minus(mixVec).norm();
 
-				float r = Sc::scGetRadiusFinal(j);
+				float r = Sc::getNodeRadiusFinal(j);
 				if (inputs[IN + j].isConnected() && dist[i][j] < r) {
 					float s = std::min(1.0f, (r - dist[i][j]) / r * 1.1f);
 					outNorm[j] += s;
@@ -359,7 +359,9 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 				float v = inputs[IN + j].getVoltage();
 				switch (outputMode[j]) {
 					case OUTPUTMODE::SCALE: {
-						v *= outNorm[j] / MIX_PORTS;
+						// Divided by the *active* mix count, not MIX_PORTS: each active
+						// MIX-port contributes at most 1/n so the sum reaches 100% at most.
+						v *= outNorm[j] / std::max<uint8_t>(1, mixportsUsed);
 						v = clamp(v, -10.f, 10.f);
 						break;
 					}
@@ -402,10 +404,10 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		// Set lights infrequently
 		if (lightDivider.process()) {
 			for (int i = 0; i < IN_PORTS; i++) {
-				lights[IN_SEL_LIGHT + i].setBrightness(Sc::selectedType == 0 && Sc::selectedId == i);
+				lights[IN_SEL_LIGHT + i].setBrightness(Sc::selection.isNode(i));
 			}
 			for (int i = 0; i < MIX_PORTS; i++) {
-				lights[MIX_SEL_LIGHT + i].setBrightness(Sc::selectedType == 1 && Sc::selectedId == i);
+				lights[MIX_SEL_LIGHT + i].setBrightness(Sc::selection.isCursor(i));
 			}
 		}
 	}
@@ -417,58 +419,77 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		return v;
 	}
 
+	/** XySeqModule: a MIX port beyond the active count has no sequence UI: its
+	 * led display is blank, its context menu is empty, and clicking it is a no-op. */
 	bool seqPortUsed(int port) override {
 		return port + 1 > mixportsUsed;
 	}
 
-	void scInitItems() override {
+	/** XyScreenModule: one-time setup for the MIX (cursor) ports, called from initNodes(). */
+	void initExtra() override {
 		for (size_t i = 0; i < MIX_PORTS; i++) {
-			scSetItemImmediate(1, i, paramQuantities[MIX_X_POS + i]->getDefaultValue(), paramQuantities[MIX_Y_POS + i]->getDefaultValue());
+			setCursorXyImmediate(i, paramQuantities[MIX_X_POS + i]->getDefaultValue(), paramQuantities[MIX_Y_POS + i]->getDefaultValue());
 			mixXfilter[i].setTau(0.05f);
 			mixYfilter[i].setTau(0.05f);
 		}
 	}
 
-	inline uint8_t scGetItemCount(uint8_t type) override {
-		return type == 0 ? IN_PORTS : MIX_PORTS;
+	/** XyScreenModule: how many of the IN_PORTS nodes are currently active. */
+	inline uint8_t nodeCountActive() override {
+		return inportsUsed;
 	}
 
-	inline uint8_t scGetItemCountActive(uint8_t type) override {
-		return type == 0 ? inportsUsed : mixportsUsed;
+	/** XyScreenModule: the node (IN port) x-position param. */
+	engine::ParamQuantity* getNodePqX(uint8_t id) override {
+		return paramQuantities[IN_X_POS + id];
 	}
 
-	engine::ParamQuantity* scGetPqX(uint8_t type, uint8_t id) override {
-		if (type == 0)
-			return paramQuantities[IN_X_POS + id];
-		else
-			return paramQuantities[MIX_X_POS + id];
+	/** XyScreenModule: the node (IN port) y-position param. */
+	engine::ParamQuantity* getNodePqY(uint8_t id) override {
+		return paramQuantities[IN_Y_POS + id];
 	}
 
-	engine::ParamQuantity* scGetPqY(uint8_t type, uint8_t id) override {
-		if (type == 0)
-			return paramQuantities[IN_Y_POS + id];
-		else
-			return paramQuantities[MIX_Y_POS + id];
+	/** XyScreenCursor: the MIX ports. */
+	uint8_t cursorCount() const override {
+		return MIX_PORTS;
 	}
 
-	inline void scSetItemFiltered(uint8_t type, uint8_t id, float x, float y) override {
-		if (type == 1) {
-			mixUiX[id] = x;
-			mixUiY[id] = y;
-		}
+	/** XyScreenCursor: how many of the MIX_PORTS cursors are currently active. */
+	uint8_t cursorCountActive() const override {
+		return mixportsUsed;
 	}
 
-	inline void scSetItemImmediate(uint8_t type, uint8_t id, float x, float y) override {
-		if (type == 1) {
-			paramQuantities[MIX_X_POS + id]->getParam()->setValue(x);
-			mixXfilter[id].out = mixUiX[id] = x;
-			paramQuantities[MIX_Y_POS + id]->getParam()->setValue(y);
-			mixYfilter[id].out = mixUiY[id] = y;
-		}
+	/** XyScreenCursor: the param-backed x-position a MIX cursor widget draws. */
+	float getCursorXFinal(uint8_t id) const override {
+		return paramQuantities[MIX_X_POS + id]->getParam()->getValue();
 	}
 
-	inline float scGetDistance(uint8_t typeSource, uint8_t idSource, uint8_t typeDest, uint8_t idDest) override {
-		return dist[idSource][idDest];
+	/** XyScreenCursor: the param-backed y-position a MIX cursor widget draws. */
+	float getCursorYFinal(uint8_t id) const override {
+		return paramQuantities[MIX_Y_POS + id]->getParam()->getValue();
+	}
+
+	/** XyScreenCursor: write a MIX port's position immediately (drag end, undo/redo).
+	 * Out-of-range id is a silent no-op, matching XyScreenNodes's bounds
+	 * checks and the rest of the codebase's convention for bad indices. */
+	void setCursorXyImmediate(uint8_t id, float x, float y) override {
+		if (id >= MIX_PORTS) return;
+		paramQuantities[MIX_X_POS + id]->getParam()->setValue(x);
+		mixXfilter[id].out = mixUiX[id] = x;
+		paramQuantities[MIX_Y_POS + id]->getParam()->setValue(y);
+		mixYfilter[id].out = mixUiY[id] = y;
+	}
+
+	/** XyScreenCursor: write a MIX port's position through the UI filter (live drag). */
+	void setCursorXyFiltered(uint8_t id, float x, float y) override {
+		if (id >= MIX_PORTS) return;
+		mixUiX[id] = x;
+		mixUiY[id] = y;
+	}
+
+	/** XyScreenModule: distance from a MIX cursor to an IN node, for the connector-line draw. */
+	inline float getCursorToNodeDistance(uint8_t cursorId, uint8_t nodeId) override {
+		return dist[cursorId][nodeId];
 	}
 
 	json_t* dataToJson() override {
@@ -482,7 +503,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 			json_object_set_new(inportJ, "inputXBipolar", json_boolean(inputXBipolar[i]));
 			json_object_set_new(inportJ, "inputYBipolar", json_boolean(inputYBipolar[i]));
 			json_object_set_new(inportJ, "outputMode", json_integer(outputMode[i]));
-			Sc::dataToJson(inportJ, 0, i);
+			Sc::nodes.dataToJson(inportJ, i);
 			json_array_append_new(inportsJ, inportJ);
 		}
 		json_object_set_new(rootJ, "inports", inportsJ);
@@ -492,7 +513,6 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 			json_t* mixportJ = json_object();
 			json_object_set_new(mixportJ, "mixportXBipolar", json_boolean(mixportXBipolar[i]));
 			json_object_set_new(mixportJ, "mixportYBipolar", json_boolean(mixportYBipolar[i]));
-			Sc::dataToJson(mixportJ, 1, i);
 			Seq::dataToJson(mixportJ, i);
 			json_array_append_new(mixportsJ, mixportJ);
 		}
@@ -510,9 +530,12 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 
 		json_t* inportsJ = json_object_get(rootJ, "inports");
 		if (inportsJ) {
-			json_t* inportJ;
-			uint8_t inputIndex;
-			json_array_foreach(inportsJ, inputIndex, inportJ) {	
+			// Bounded to the fixed-size destinations: hand-edited or corrupted
+			// patches may contain more ports than the [IN_PORTS]/[MIX_PORTS]
+			// members hold.
+			size_t maxInports = std::min((size_t)IN_PORTS, json_array_size(inportsJ));
+			for (size_t inputIndex = 0; inputIndex < maxInports; inputIndex++) {
+				json_t* inportJ = json_array_get(inportsJ, inputIndex);
 				json_t* modModeJ = json_object_get(inportJ, "modMode");
 				if (modModeJ) modMode[inputIndex] = (MODMODE)json_integer_value(modModeJ);
 				json_t* inputXBipolarJ = json_object_get(inportJ, "inputXBipolar");
@@ -521,20 +544,19 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 				if (inputYBipolarJ) inputYBipolar[inputIndex] = json_boolean_value(inputYBipolarJ);
 				json_t* outputModeJ = json_object_get(inportJ, "outputMode");
 				if (outputModeJ) outputMode[inputIndex] = (OUTPUTMODE)json_integer_value(outputModeJ);
-				Sc::dataFromJson(inportJ, 0, inputIndex);
+				Sc::nodes.dataFromJson(inportJ, inputIndex);
 			}
 		}
 
 		json_t* mixportsJ = json_object_get(rootJ, "mixports");
 		if (mixportsJ) {
-			json_t* mixportJ;
-			uint8_t mixputIndex;
-			json_array_foreach(mixportsJ, mixputIndex, mixportJ) {
+			size_t maxMixports = std::min((size_t)MIX_PORTS, json_array_size(mixportsJ));
+			for (size_t mixputIndex = 0; mixputIndex < maxMixports; mixputIndex++) {
+				json_t* mixportJ = json_array_get(mixportsJ, mixputIndex);
 				json_t* mixportXBipolarJ = json_object_get(mixportJ, "mixportXBipolar");
 				if (mixportXBipolarJ) mixportXBipolar[mixputIndex] = json_boolean_value(mixportXBipolarJ);
 				json_t* mixportYBipolarJ = json_object_get(mixportJ, "mixportYBipolar");
 				if (mixportYBipolarJ) mixportYBipolar[mixputIndex] = json_boolean_value(mixportYBipolarJ);
-				Sc::dataFromJson(mixportJ, 1, mixputIndex);
 				Seq::dataFromJson(mixportJ, mixputIndex);
 			}
 		}
@@ -543,6 +565,15 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		if (inportsUsedJ) inportsUsed = json_integer_value(inportsUsedJ);
 		json_t* mixportsUsedJ = json_object_get(rootJ, "mixportsUsed");
 		if (mixportsUsedJ) mixportsUsed = json_integer_value(mixportsUsedJ);
+
+		// Rack's own Module::fromJson() already restored MIX_X_POS/MIX_Y_POS via
+		// paramsFromJson() (which runs before dataFromJson()). Without this, the
+		// UI shadow (mixUiX/mixUiY) and filter (mixXfilter/mixYfilter) stay at
+		// whatever the constructor left them at, and the first process() call
+		// would overwrite the just-restored params with that stale shadow.
+		for (uint8_t i = 0; i < MIX_PORTS; i++) {
+			setCursorXyImmediate(i, paramQuantities[MIX_X_POS + i]->getValue(), paramQuantities[MIX_Y_POS + i]->getValue());
+		}
 	}
 };
 
@@ -599,7 +630,7 @@ struct ArenaOutputModeMenuItem : MenuItem {
 		{ OUTPUTMODE::CLIP_UNI, "Clip 0..10V" },
 		{ OUTPUTMODE::CLIP_BI, "Clip -5..5V" },
 		{ OUTPUTMODE::FOLD_UNI, "Fold 0..10V" },
-		{ OUTPUTMODE::FOLD_BI, "Fold 0..10V" }
+		{ OUTPUTMODE::FOLD_BI, "Fold -5..5V" }
 	};
 
 	ArenaOutputModeMenuItem(MODULE* module, int id) {
@@ -623,13 +654,15 @@ struct ArenaOutputModeMenuItem : MenuItem {
 // Screen widgets
 
 template <typename MODULE>
-struct ArenaInportDragWidget : XyScreenDragWidget<MODULE> {
-	typedef XyScreenDragWidget<MODULE> B;
+struct ArenaInportDragWidget : XyScreenNodeDragWidget<MODULE> {
+	typedef XyScreenNodeDragWidget<MODULE> B;
 
+	/** XyScreenDragWidgetBase: label shown in this node's context menu and tooltip. */
  	std::string getItemName() override {
 		return string::f("Channel IN-%i", B::id + 1);
 	}
 
+	/** XyScreenDragWidgetBase: extra items appended to this node's context menu. */
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(ArenaVoltageSubMenuItem("X-port", &B::module->inputXBipolar[B::id]));
 		menu->addChild(ArenaVoltageSubMenuItem("Y-port", &B::module->inputYBipolar[B::id]));
@@ -639,13 +672,15 @@ struct ArenaInportDragWidget : XyScreenDragWidget<MODULE> {
 };
 
 template <typename MODULE>
-struct ArenaMixportDragWidget : XyScreenDragWidget<MODULE> {
-	typedef XyScreenDragWidget<MODULE> B;
+struct ArenaMixportDragWidget : XyScreenCursorDragWidget<MODULE> {
+	typedef XyScreenCursorDragWidget<MODULE> B;
 
+	/** XyScreenDragWidgetBase: label shown in this cursor's context menu and tooltip. */
  	std::string getItemName() override {
 		return string::f("Channel MIX-%i", B::id + 1);
 	}
 
+	/** XyScreenDragWidgetBase: extra items appended to this cursor's context menu. */
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(ArenaVoltageSubMenuItem("X-port", &B::module->mixportXBipolar[B::id]));
 		menu->addChild(ArenaVoltageSubMenuItem("Y-port", &B::module->mixportYBipolar[B::id]));
@@ -660,37 +695,38 @@ struct ArenaMixportDragWidget : XyScreenDragWidget<MODULE> {
 template <typename MODULE>
 struct ArenaXyScreenWidget : XyScreenWidget<MODULE> {
 	ArenaXyScreenWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) : XyScreenWidget<MODULE>(module) {
-		uint8_t t0 = module ? module->scGetItemCount(0) : 8;
-		this->template createDragWidgets<ArenaInportDragWidget<MODULE>>(module, 0, t0, color::WHITE);
-		uint8_t t1 = module ? module->scGetItemCount(1) : 4;
-		this->template createDragWidgets<ArenaMixportDragWidget<MODULE>>(module, 1, t1, color::YELLOW);
+		uint8_t t0 = module ? module->nodeCount() : 8;
+		this->template createNodeWidgets<ArenaInportDragWidget<MODULE>>(module, t0);
+		uint8_t t1 = module ? module->cursorCount() : 4;
+		this->template createCursorWidgets<ArenaMixportDragWidget<MODULE>>(module, t1);
 	}
 
 	void step() override {
 		if (this->module) {
 			// Preview interpolated automation line if mixport is selected
 			this->module->seqPreview = -1;
-			for (uint8_t i = 0; i < this->module->scGetItemCountActive(1); i++) {
-				if (this->module->scIsSelected(1, i))
+			for (uint8_t i = 0; i < this->module->cursorCountActive(); i++) {
+				if (this->module->selection.isCursor(i))
 					this->module->seqPreview = i;
 			}
 		}
 		XyScreenWidget<MODULE>::step();
 	}
 
+	/** XyScreenWidget: extra items appended to the whole screen's context menu. */
 	void appendContextMenu(Menu* menu) override {
 		using StoermelderPackOne::Rack::createValuePtrMenuItem;
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Number of IN-ports", string::f("%i", this->module->inportsUsed),
 			[=](Menu* menu) {
-				for (int i = 0; i < this->module->scGetItemCount(0); i++) {
+				for (int i = 0; i < this->module->nodeCount(); i++) {
 					menu->addChild(createValuePtrMenuItem(string::f("%i", i + 1), &this->module->inportsUsed, i + 1));
 				}
 			}
 		));
 		menu->addChild(createSubmenuItem("Number of MIX-ports", string::f("%i", this->module->mixportsUsed),
 			[=](Menu* menu) {
-				for (int i = 0; i < this->module->scGetItemCount(1); i++) {
+				for (int i = 0; i < this->module->cursorCount(); i++) {
 					menu->addChild(createValuePtrMenuItem(string::f("%i", i + 1), &this->module->mixportsUsed, i + 1));
 				}
 			}
@@ -701,11 +737,13 @@ struct ArenaXyScreenWidget : XyScreenWidget<MODULE> {
 
 struct ArenaXySeqLedDisplay : XySeqLedDisplay<ArenaModule<8, 4>> {
 	typedef XySeqLedDisplay<ArenaModule<8, 4>> B;
-	
+
+	/** XySeqLedDisplay: label shown for this port's motion-sequence editor. */
 	std::string getPortName() override {
 		return string::f("Channel MIX-%i", id + 1);
 	}
 
+	/** XySeqLedDisplay: extra items appended to this port's context menu. */
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(ArenaVoltageSubMenuItem("X-port", &B::module->mixportXBipolar[B::id]));
@@ -771,15 +809,16 @@ struct ArenaOpLedDisplay : StoermelderLedDisplay {
 template <typename MODULE, typename LIGHT>
 struct ClickableLight : MediumLight<LIGHT> {
 	uint8_t id;
-	uint8_t type;
+	XyScreenSelection::Kind kind;
 
 	void onButton(const event::Button& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			MODULE* m = dynamic_cast<MODULE*>(MediumLight<LIGHT>::module);
-			if (m->scIsSelected(type, id))
-				m->scResetSelection();
+			bool alreadySelected = kind == XyScreenSelection::Kind::NODE ? m->selection.isNode(id) : m->selection.isCursor(id);
+			if (alreadySelected)
+				m->selection = XyScreenSelection();
 			else
-				m->scSetSelection(type, id);
+				m->selection = { kind, id };
 		}
 		MediumLight<LIGHT>::onButton(e);
 	}
@@ -811,7 +850,7 @@ struct ArenaWidget : ThemedModuleWidget<ArenaModule<8, 4>> {
 			addParam(createParamCentered<XyScreenDummyMapButton>(Vec(x, 115.3f), module, MODULE::IN_X_POS + i));
 			ClickableLight<MODULE, WhiteLight>* l = createLightCentered<ClickableLight<MODULE, WhiteLight>>(Vec(x, 147.6f), module, MODULE::IN_SEL_LIGHT + i);
 			l->id = i;
-			l->type = 0;
+			l->kind = XyScreenSelection::Kind::NODE;
 			addChild(l);
 			addParam(createParamCentered<XyScreenDummyMapButton>(Vec(x, 179.8f), module, MODULE::IN_Y_POS + i));
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 164.4f), module, MODULE::IN_Y_PARAM + i));
@@ -848,7 +887,7 @@ struct ArenaWidget : ThemedModuleWidget<ArenaModule<8, 4>> {
 			addParam(createParamCentered<XyScreenDummyMapButton>(Vec(x, 115.3f), module, MODULE::MIX_X_POS + i));
 			ClickableLight<MODULE, YellowLight>* l1 = createLightCentered<ClickableLight<MODULE, YellowLight>>(Vec(x, 147.6f), module, MODULE::MIX_SEL_LIGHT + i);
 			l1->id = i;
-			l1->type = 1;
+			l1->kind = XyScreenSelection::Kind::CURSOR;
 			addChild(l1);
 			addParam(createParamCentered<XyScreenDummyMapButton>(Vec(x, 179.8f), module, MODULE::MIX_Y_POS + i));
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 164.4f), module, MODULE::MIX_Y_PARAM + i));

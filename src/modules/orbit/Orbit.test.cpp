@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 
 #include "Orbit.cpp"
 
@@ -9,7 +8,8 @@ SYNC_MODEL(modelOrbit, "Orbit");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Orbit]") {
-	OrbitModule* m = Test::createModule<OrbitModule>("Orbit");
+	Test::ModuleScaffold<OrbitModule> mods;
+	OrbitModule* m = mods.create("Orbit");
 	OrbitWidget* mw = Test::createWidget<OrbitWidget>("Orbit");
 
 	REQUIRE(m != nullptr);
@@ -17,11 +17,11 @@ TEST_CASE("Construction and initialization", "[Orbit]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Orbit][JSON]") {
-	auto module = Test::createModule<OrbitModule>("Orbit");
+	Test::ModuleScaffold<OrbitModule> mods;
+	auto module = mods.create("Orbit");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -30,11 +30,46 @@ TEST_CASE("Preset JSON null-guards", "[Orbit][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
 }
 
+TEST_CASE("JSON round-trip preserves state", "[JSON][Orbit]") {
+	Test::ModuleScaffold<OrbitModule> mods;
+	auto module = mods.create("Orbit");
+	module->panelTheme = 1;
+	module->polyOut = true;
+	module->dist = DISTRIBUTION::UNIFORM;
+	
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	
+	auto moduleNew = mods.create("Orbit");
+	moduleNew->dataFromJson(rootJ);
+	
+	REQUIRE(moduleNew->panelTheme == 1);
+	REQUIRE(moduleNew->polyOut == true);
+	REQUIRE(moduleNew->dist == DISTRIBUTION::UNIFORM);
+	
+	json_decref(rootJ);
+}
+
+
 TEST_CASE("Stereo panning basic", "[Orbit]") {
-	auto module = Test::createModule<OrbitModule>("Orbit");
+	Test::ModuleScaffold<OrbitModule> mods;
+	auto module = mods.create("Orbit");
 
 	SECTION("Mono input produces stereo output") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 1;
@@ -99,11 +134,11 @@ TEST_CASE("Stereo panning basic", "[Orbit]") {
 		REQUIRE(vL == Catch::Approx(vR).margin(0.2f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Spread control", "[Orbit]") {
-	auto module = Test::createModule<OrbitModule>("Orbit");
+	Test::ModuleScaffold<OrbitModule> mods;
+	auto module = mods.create("Orbit");
 
 	SECTION("Spread parameter affects distribution") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 1;
@@ -161,11 +196,11 @@ TEST_CASE("Spread control", "[Orbit]") {
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getVoltage() >= 0.0f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Drift control", "[Orbit]") {
-	auto module = Test::createModule<OrbitModule>("Orbit");
+	Test::ModuleScaffold<OrbitModule> mods;
+	auto module = mods.create("Orbit");
 
 	SECTION("Positive drift moves toward center") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 1;
@@ -221,11 +256,11 @@ TEST_CASE("Drift control", "[Orbit]") {
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getVoltage() >= 0.0f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Distribution modes", "[Orbit]") {
-	auto module = Test::createModule<OrbitModule>("Orbit");
+	Test::ModuleScaffold<OrbitModule> mods;
+	auto module = mods.create("Orbit");
 
 	SECTION("Uniform distribution") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 1;
@@ -273,11 +308,11 @@ TEST_CASE("Distribution modes", "[Orbit]") {
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getVoltage() >= 0.0f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Polyphonic processing", "[Orbit]") {
-	auto module = Test::createModule<OrbitModule>("Orbit");
+	Test::ModuleScaffold<OrbitModule> mods;
+	auto module = mods.create("Orbit");
 
 	SECTION("Multiple channels processed independently") {
 		int channels = 4;
@@ -356,11 +391,11 @@ TEST_CASE("Polyphonic processing", "[Orbit]") {
 		}
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Level control", "[Orbit]") {
-	auto module = Test::createModule<OrbitModule>("Orbit");
+	Test::ModuleScaffold<OrbitModule> mods;
+	auto module = mods.create("Orbit");
 
 	SECTION("Level affects output amplitude") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 1;
@@ -386,11 +421,11 @@ TEST_CASE("Level control", "[Orbit]") {
 		REQUIRE((vL + vR) < 10.0f); // Should be attenuated
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Trigger behavior", "[Orbit]") {
-	auto module = Test::createModule<OrbitModule>("Orbit");
+	Test::ModuleScaffold<OrbitModule> mods;
+	auto module = mods.create("Orbit");
 
 	SECTION("Trigger updates pan position") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 1;
@@ -448,30 +483,4 @@ TEST_CASE("Trigger behavior", "[Orbit]") {
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getVoltage() >= 0.0f);
 	}
 
-	Test::destroyModule(module);
-}
-
-TEST_CASE("JSON serialization", "[JSON][Orbit]") {
-	auto module = Test::createModule<OrbitModule>("Orbit");
-
-	SECTION("Module state is serialized and deserialized") {
-		module->panelTheme = 1;
-		module->polyOut = true;
-		module->dist = DISTRIBUTION::UNIFORM;
-		
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		
-		auto moduleNew = Test::createModule<OrbitModule>("Orbit");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->panelTheme == 1);
-		REQUIRE(moduleNew->polyOut == true);
-		REQUIRE(moduleNew->dist == DISTRIBUTION::UNIFORM);
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
-	}
-
-	Test::destroyModule(module);
 }

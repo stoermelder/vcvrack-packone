@@ -561,9 +561,11 @@ struct HiveModule : Module {
 		}
 
 		json_t* mirrorsJ = json_object_get(rootJ, "mirrorCenters");
-		json_t* mirrorJ;
-		size_t mirrorIndex;
-		json_array_foreach(mirrorsJ, mirrorIndex, mirrorJ) {
+		// Bounded to the fixed-size destinations: hand-edited or corrupted
+		// patches may contain more entries than mirrorCenters[]/cursor[] hold.
+		size_t maxMirrors = std::min((size_t)6, json_array_size(mirrorsJ));
+		for (size_t mirrorIndex = 0; mirrorIndex < maxMirrors; mirrorIndex++) {
+			json_t* mirrorJ = json_array_get(mirrorsJ, mirrorIndex);
 			json_t* xJ = json_object_get(mirrorJ, "x");
 			if (xJ) grid.mirrorCenters[mirrorIndex].x = json_integer_value(xJ);
 			json_t* yJ = json_object_get(mirrorJ, "y");
@@ -573,9 +575,9 @@ struct HiveModule : Module {
 		}
 
 		json_t* portsJ = json_object_get(rootJ, "ports");
-		json_t* portJ;
-		size_t portIndex;
-		json_array_foreach(portsJ, portIndex, portJ) {
+		size_t maxPorts = std::min((size_t)NUM_PORTS, json_array_size(portsJ));
+		for (size_t portIndex = 0; portIndex < maxPorts; portIndex++) {
+			json_t* portJ = json_array_get(portsJ, portIndex);
 			json_t* qStartPosJ = json_object_get(portJ, "qStartPos");
 			if (qStartPosJ) grid.cursor[portIndex].startPos.q = json_integer_value(qStartPosJ);
 			json_t* rStartPosJ = json_object_get(portJ, "rStartPos");
@@ -771,80 +773,85 @@ struct HiveGridWidget : FramebufferWidget {
 			this->module = module;
 		}
 
-		void drawLayer(const Widget::DrawArgs& args, int layer) override {
-			if (layer == 1) {
-				float sizeFactor = 16.2142849f;
-				int usedRadius = 4;
-				if (module) {
-					sizeFactor = module->sizeFactor;
-					usedRadius = module->grid.usedRadius;
-				}
+		// Content lives in draw() (layer 0), not drawLayer(1): FramebufferWidget
+		// only caches a child's draw() output (see FramebufferWidget::drawFramebuffer(),
+		// which calls Widget::draw() directly), so content left in drawLayer(1) is
+		// never actually cached -- it silently redraws every frame regardless, while
+		// the wrapping FramebufferWidget renders and blits an empty framebuffer for
+		// nothing. HiveGridWidget below paints the cached image during the layer-1
+		// pass instead, so this still lands in the same z-order slot as before.
+		void draw(const Widget::DrawArgs& args) override {
+			float sizeFactor = 16.2142849f;
+			int usedRadius = 4;
+			if (module) {
+				sizeFactor = module->sizeFactor;
+				usedRadius = module->grid.usedRadius;
+			}
 
-				Vec hex;
+			Vec hex;
 
-				// Draw background
-				nvgBeginPath(args.vg);
-				drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
-				nvgFillColor(args.vg, nvgRGB(0, 16, 90));
-				nvgFill(args.vg);
+			// Draw background
+			nvgBeginPath(args.vg);
+			drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
+			nvgFillColor(args.vg, nvgRGB(0, 16, 90));
+			nvgFill(args.vg);
 
-				// Draw gradient
-				nvgBeginPath(args.vg);
-				drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
-				NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
-				NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
-				nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
-				nvgFill(args.vg);
+			// Draw gradient
+			nvgBeginPath(args.vg);
+			drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
+			NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
+			NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
+			nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
+			nvgFill(args.vg);
 
-				// Draw grid
-				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-				nvgStrokeWidth(args.vg, 0.6f);
-				nvgBeginPath(args.vg);
-				MODULE::HIVEGRID::drawGrid(usedRadius, sizeFactor, ORIGIN, args.vg);
-				nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.075f));
-				nvgStroke(args.vg);
+			// Draw grid
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+			nvgStrokeWidth(args.vg, 0.6f);
+			nvgBeginPath(args.vg);
+			MODULE::HIVEGRID::drawGrid(usedRadius, sizeFactor, ORIGIN, args.vg);
+			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.075f));
+			nvgStroke(args.vg);
 
-				// Draw outer edge
-				nvgBeginPath(args.vg);
-				MODULE::HIVEGRID::drawGridOutline(usedRadius, sizeFactor, ORIGIN, args.vg);
-				nvgStrokeWidth(args.vg, 0.7f);
-				nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.125f));
-				nvgStroke(args.vg);
+			// Draw outer edge
+			nvgBeginPath(args.vg);
+			MODULE::HIVEGRID::drawGridOutline(usedRadius, sizeFactor, ORIGIN, args.vg);
+			nvgStrokeWidth(args.vg, 0.7f);
+			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.125f));
+			nvgStroke(args.vg);
 
-				// Draw grid cells
-				float stroke = 0.7f;
-				float onCellSizeFactor = sizeFactor - stroke / 2.f;
-				float randCellSizeFactor = sizeFactor - stroke;
-				float sCellSizeFactor = sizeFactor / 2.f;
+			// Draw grid cells
+			float stroke = 0.7f;
+			float onCellSizeFactor = sizeFactor - stroke / 2.f;
+			float randCellSizeFactor = sizeFactor - stroke;
+			float sCellSizeFactor = sizeFactor / 2.f;
 
-				for (int q = -usedRadius; q <= usedRadius; q++) {
-					for (int r = -usedRadius; r <= usedRadius; r++) {
-						if (cellVisible(q, r, usedRadius)) {
-							GRIDSTATE state = module ? module->grid.getCell(q, r).state : (GRIDSTATE)int(std::round(random::normal() * 2.f));
-							switch (state) {
-								case GRIDSTATE::ON:
-									hex = hexToPixel(RoundAxialVec(q, r), sizeFactor, POINTY, ORIGIN);
-									nvgBeginPath(args.vg);
-									drawHex(hex, onCellSizeFactor, POINTY, args.vg);
-									nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
-									nvgFill(args.vg);
-									break;
-								case GRIDSTATE::RANDOM:
-									hex = hexToPixel(RoundAxialVec(q, r), sizeFactor, POINTY, ORIGIN);
-									nvgBeginPath(args.vg);
-									drawHex(hex, randCellSizeFactor, POINTY, args.vg);
-									nvgStrokeWidth(args.vg, stroke);
-									nvgStrokeColor(args.vg, color::mult(gridColor, 0.6f));
-									nvgStroke(args.vg);
+			for (int q = -usedRadius; q <= usedRadius; q++) {
+				for (int r = -usedRadius; r <= usedRadius; r++) {
+					if (cellVisible(q, r, usedRadius)) {
+						GRIDSTATE state = module ? module->grid.getCell(q, r).state : (GRIDSTATE)int(std::round(random::normal() * 2.f));
+						switch (state) {
+							case GRIDSTATE::ON:
+								hex = hexToPixel(RoundAxialVec(q, r), sizeFactor, POINTY, ORIGIN);
+								nvgBeginPath(args.vg);
+								drawHex(hex, onCellSizeFactor, POINTY, args.vg);
+								nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
+								nvgFill(args.vg);
+								break;
+							case GRIDSTATE::RANDOM:
+								hex = hexToPixel(RoundAxialVec(q, r), sizeFactor, POINTY, ORIGIN);
+								nvgBeginPath(args.vg);
+								drawHex(hex, randCellSizeFactor, POINTY, args.vg);
+								nvgStrokeWidth(args.vg, stroke);
+								nvgStrokeColor(args.vg, color::mult(gridColor, 0.6f));
+								nvgStroke(args.vg);
 
-									nvgBeginPath(args.vg);
-									drawHex(hex, sCellSizeFactor, POINTY, args.vg);
-									nvgFillColor(args.vg, color::mult(gridColor, 0.4f));
-									nvgFill(args.vg);
-									break;
-								case GRIDSTATE::OFF:
-									break;
-							}
+								nvgBeginPath(args.vg);
+								drawHex(hex, sCellSizeFactor, POINTY, args.vg);
+								nvgFillColor(args.vg, color::mult(gridColor, 0.4f));
+								nvgFill(args.vg);
+								break;
+							case GRIDSTATE::OFF:
+								break;
 						}
 					}
 				}
@@ -872,14 +879,18 @@ struct HiveGridWidget : FramebufferWidget {
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
+		// FramebufferWidget only caches draw() (layer 0) content -- its own
+		// drawLayer() is the plain Widget:: default, which does not paint the
+		// cached image at all. Call FramebufferWidget::draw() here instead so
+		// the cached grid still lands in the same z-order slot (layer 1,
+		// alongside every other module's lights) it always has.
+		if (layer != 1) return;
 #ifndef METAMODULE
-		if (layer == 1) {
-			// Dim the display but don't darken it completely
-			float b = std::max(0.2f, settings::rackBrightness);
-			nvgGlobalAlpha(args.vg, b);
-		}
+		// Dim the display but don't darken it completely
+		float b = std::max(0.2f, settings::rackBrightness);
+		nvgGlobalAlpha(args.vg, b);
 #endif
-		FramebufferWidget::drawLayer(args, layer);
+		FramebufferWidget::draw(args);
 	}
 };
 

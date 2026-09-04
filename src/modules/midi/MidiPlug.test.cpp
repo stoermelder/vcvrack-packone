@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "MidiPlug.cpp"
 
 using namespace StoermelderPackOne;
@@ -34,7 +33,8 @@ static void feed(Module2* module, int i, const rack::midi::Message& msg, int64_t
 
 
 TEST_CASE("Construction and reset", "[MidiPlug]") {
-	auto module = Test::createModule<Module2>("MidiPlug");
+	Test::ModuleScaffold<Module2> mods;
+	auto module = mods.create("MidiPlug");
 
 	SECTION("Outputs default to Thru / Replace") {
 		for (int j = 0; j < 2; j++) {
@@ -58,12 +58,12 @@ TEST_CASE("Construction and reset", "[MidiPlug]") {
 		REQUIRE(ch.front() == -1);
 	}
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Preset JSON null-guards", "[MidiPlug][JSON]") {
-	auto module = Test::createModule<Module2>("MidiPlug");
+	Test::ModuleScaffold<Module2> mods;
+	auto module = mods.create("MidiPlug");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -72,12 +72,84 @@ TEST_CASE("Preset JSON null-guards", "[MidiPlug][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
+}
+
+TEST_CASE("JSON round-trip preserves state", "[MidiPlug][JSON]") {
+	Test::ModuleScaffold<Module2> mods;
+	Module2* m = mods.create("MidiPlug");
+	Module2* m2 = mods.create("MidiPlug");
+
+	SECTION("Scalar settings round-trip") {
+		// Non-default value (default is pluginSettings.panelThemeDefault, usually 0)
+		m->panelTheme = 1;
+
+		json_t* j = m->dataToJson();
+		// Start m2 at a different value so dataFromJson() is genuinely exercised
+		m2->panelTheme = 0;
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m2->panelTheme == 1);
+	}
+
+	SECTION("MIDI outputs (midiOutput array) round-trip") {
+		// Distinctive per-output channel and plug mode
+		m->midiOutput[0].channel = 7;
+		m->midiOutput[0].plugMode = MODE::FILTER;
+		m->midiOutput[1].channel = 2;
+		m->midiOutput[1].plugMode = MODE::BLOCK;
+
+		json_t* j = m->dataToJson();
+		// The midiOutput array must be serialized with one entry per output
+		json_t* midiOutputJ = json_object_get(j, "midiOutput");
+		REQUIRE(midiOutputJ != nullptr);
+		REQUIRE(json_array_size(midiOutputJ) == (size_t) 2);
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m2->midiOutput[0].channel == 7);
+		REQUIRE(m2->midiOutput[0].plugMode == MODE::FILTER);
+		REQUIRE(m2->midiOutput[1].channel == 2);
+		REQUIRE(m2->midiOutput[1].plugMode == MODE::BLOCK);
+	}
+
+	SECTION("MIDI inputs (midiInput array) round-trip") {
+		// Distinctive per-input channel (the midiInput array was previously untested)
+		m->midiInput[0].channel = 5;
+		m->midiInput[1].channel = 3;
+
+		json_t* j = m->dataToJson();
+		// The midiInput array must be serialized with one entry per input
+		json_t* midiInputJ = json_object_get(j, "midiInput");
+		REQUIRE(midiInputJ != nullptr);
+		REQUIRE(json_array_size(midiInputJ) == (size_t) 2);
+		m2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m2->midiInput[0].channel == 5);
+		REQUIRE(m2->midiInput[1].channel == 3);
+	}
+
 }
 
 
 TEST_CASE("Routes both inputs to both outputs", "[MidiPlug]") {
-	auto module = Test::createModule<Module2>("MidiPlug");
+	Test::ModuleScaffold<Module2> mods;
+	auto module = mods.create("MidiPlug");
 	CaptureDevice* out0 = attachCapture(module, 0);
 	CaptureDevice* out1 = attachCapture(module, 1);
 
@@ -93,12 +165,12 @@ TEST_CASE("Routes both inputs to both outputs", "[MidiPlug]") {
 
 	delete out0;
 	delete out1;
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Thru passes messages unchanged", "[MidiPlug]") {
-	auto module = Test::createModule<Module2>("MidiPlug");
+	Test::ModuleScaffold<Module2> mods;
+	auto module = mods.create("MidiPlug");
 	CaptureDevice* out = attachCapture(module, 0);
 	module->midiOutput[0].channel = -1;
 
@@ -107,12 +179,12 @@ TEST_CASE("Thru passes messages unchanged", "[MidiPlug]") {
 	REQUIRE(out->sent[0].getChannel() == 9);
 
 	delete out;
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("REPLACE rewrites channel", "[MidiPlug]") {
-	auto module = Test::createModule<Module2>("MidiPlug");
+	Test::ModuleScaffold<Module2> mods;
+	auto module = mods.create("MidiPlug");
 	CaptureDevice* out = attachCapture(module, 0);
 	module->midiOutput[0].channel = 5;
 	module->midiOutput[0].plugMode = MODE::REPLACE;
@@ -139,12 +211,12 @@ TEST_CASE("REPLACE rewrites channel", "[MidiPlug]") {
 	}
 
 	delete out;
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("FILTER keeps only the target channel", "[MidiPlug]") {
-	auto module = Test::createModule<Module2>("MidiPlug");
+	Test::ModuleScaffold<Module2> mods;
+	auto module = mods.create("MidiPlug");
 	CaptureDevice* out = attachCapture(module, 0);
 	module->midiOutput[0].channel = 3;
 	module->midiOutput[0].plugMode = MODE::FILTER;
@@ -158,12 +230,12 @@ TEST_CASE("FILTER keeps only the target channel", "[MidiPlug]") {
 	REQUIRE(out->sent[0].getChannel() == 3);
 
 	delete out;
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("BLOCK drops the target channel", "[MidiPlug]") {
-	auto module = Test::createModule<Module2>("MidiPlug");
+	Test::ModuleScaffold<Module2> mods;
+	auto module = mods.create("MidiPlug");
 	CaptureDevice* out = attachCapture(module, 0);
 	module->midiOutput[0].channel = 3;
 	module->midiOutput[0].plugMode = MODE::BLOCK;
@@ -177,12 +249,12 @@ TEST_CASE("BLOCK drops the target channel", "[MidiPlug]") {
 	REQUIRE(out->sent[0].getChannel() == 4);
 
 	delete out;
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("FILTER/BLOCK ignore system messages", "[MidiPlug]") {
-	auto module = Test::createModule<Module2>("MidiPlug");
+	Test::ModuleScaffold<Module2> mods;
+	auto module = mods.create("MidiPlug");
 	CaptureDevice* out = attachCapture(module, 0);
 	module->midiOutput[0].channel = 3;
 
@@ -198,12 +270,12 @@ TEST_CASE("FILTER/BLOCK ignore system messages", "[MidiPlug]") {
 	}
 
 	delete out;
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("processBypass drains both input queues without sending output", "[MidiPlug]") {
-	auto module = Test::createModule<Module2>("MidiPlug");
+	Test::ModuleScaffold<Module2> mods;
+	auto module = mods.create("MidiPlug");
 	CaptureDevice* out0 = attachCapture(module, 0);
 	CaptureDevice* out1 = attachCapture(module, 1);
 
@@ -223,31 +295,4 @@ TEST_CASE("processBypass drains both input queues without sending output", "[Mid
 
 	delete out0;
 	delete out1;
-	Test::destroyModule(module);
-}
-
-
-TEST_CASE("JSON round-trip", "[MidiPlug][JSON]") {
-	auto module = Test::createModule<Module2>("MidiPlug");
-	module->panelTheme = 1;
-	module->midiOutput[0].channel = 7;
-	module->midiOutput[0].plugMode = MODE::FILTER;
-	module->midiOutput[1].channel = 2;
-	module->midiOutput[1].plugMode = MODE::BLOCK;
-
-	json_t* rootJ = module->dataToJson();
-	REQUIRE(rootJ != nullptr);
-
-	auto restored = Test::createModule<Module2>("MidiPlug");
-	restored->dataFromJson(rootJ);
-
-	REQUIRE(restored->panelTheme == 1);
-	REQUIRE(restored->midiOutput[0].channel == 7);
-	REQUIRE(restored->midiOutput[0].plugMode == MODE::FILTER);
-	REQUIRE(restored->midiOutput[1].channel == 2);
-	REQUIRE(restored->midiOutput[1].plugMode == MODE::BLOCK);
-
-	json_decref(rootJ);
-	Test::destroyModule(module);
-	Test::destroyModule(restored);
 }
