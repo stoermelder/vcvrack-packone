@@ -279,12 +279,11 @@ inline void jsonStripIds(json_t* moduleJ) {
 
 // --- missing-module scan ------------------------------------------------------
 
-// Was the scanning half of vcvsCheckUnavailable; the prompt/dialog stays in layer 3.
-// `modelExists` is injected so this stays pure (production: plugin::getModel-backed).
-inline std::set<std::string> findUnavailableModules(json_t* rootJ, const ModelLookup& modelExists) {
-	std::set<std::string> pluginModuleSlugs;
-	json_t* modulesJ = json_object_get(rootJ, "modules");
-	if (!modulesJ) return pluginModuleSlugs;
+// Scans one array of module JSON objects, adding "plugin/model" for every entry whose model
+// is not installed. Accumulates into `out` so a caller with several arrays (a .vcvss has
+// leftModules and rightModules) gets one combined set.
+inline void findUnavailableModulesIn(json_t* modulesJ, const ModelLookup& modelExists, std::set<std::string>& out) {
+	if (!modulesJ || !json_is_array(modulesJ)) return;
 
 	size_t moduleIndex;
 	json_t* moduleJ;
@@ -292,9 +291,25 @@ inline std::set<std::string> findUnavailableModules(json_t* rootJ, const ModelLo
 		ModuleRef ref;
 		if (!readModuleRef(moduleJ, ref)) continue;
 		if (!modelExists(ref)) {
-			pluginModuleSlugs.insert(ref.pluginSlug + "/" + ref.modelSlug);
+			out.insert(ref.pluginSlug + "/" + ref.modelSlug);
 		}
 	}
+}
+
+// Was the scanning half of vcvsCheckUnavailable; the prompt/dialog stays in layer 3.
+// `modelExists` is injected so this stays pure (production: plugin::getModel-backed).
+inline std::set<std::string> findUnavailableModules(json_t* rootJ, const ModelLookup& modelExists) {
+	std::set<std::string> pluginModuleSlugs;
+	findUnavailableModulesIn(json_object_get(rootJ, "modules"), modelExists, pluginModuleSlugs);
+	return pluginModuleSlugs;
+}
+
+// The .vcvss (STRIP group) form of the scan: the modules live in "leftModules" and
+// "rightModules" instead of a single "modules" array. Was Strip's groupCheckUnavailable.
+inline std::set<std::string> findUnavailableStripModules(json_t* rootJ, const ModelLookup& modelExists) {
+	std::set<std::string> pluginModuleSlugs;
+	findUnavailableModulesIn(json_object_get(rootJ, "rightModules"), modelExists, pluginModuleSlugs);
+	findUnavailableModulesIn(json_object_get(rootJ, "leftModules"), modelExists, pluginModuleSlugs);
 	return pluginModuleSlugs;
 }
 

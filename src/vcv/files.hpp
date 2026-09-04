@@ -5,7 +5,9 @@
 #include "selection.hpp"  // layer-1 pure functions
 #include <set>
 #include <map>
+#include <memory>
 #include <string>
+#include <utility>
 
 namespace StoermelderPackOne {
 namespace vcv {
@@ -23,6 +25,31 @@ static const char SELECTION_FILTERS[] = "VCV Rack module selection (.vcvs):vcvs"
 inline ModelLookup productionModelLookup() {
 	return [](const ModuleRef& ref) {
 		return plugin::getModel(ref.pluginSlug, ref.modelSlug) != nullptr;
+	};
+}
+
+// The production module-width lookup, injected into layoutStrip / convertVcvssToVcvs (layer 1)
+// so those stay pure. Widths come from a throwaway ModuleWidget — the only way Rack exposes a
+// model's panel width — so the results are cached per model: a 60-module strip measured each
+// model once instead of constructing and destroying 60 widgets.
+inline WidthLookup productionWidthLookup() {
+	auto cache = std::make_shared<std::map<std::pair<std::string, std::string>, float>>();
+	return [cache](const ModuleRef& ref) -> float {
+		auto key = std::make_pair(ref.pluginSlug, ref.modelSlug);
+		auto it = cache->find(key);
+		if (it != cache->end()) return it->second;
+
+		float width = 0.f;
+		plugin::Model* model = plugin::getModel(ref.pluginSlug, ref.modelSlug);
+		if (model) {
+			ModuleWidget* mw = model->createModuleWidget(NULL);
+			if (mw) {
+				width = mw->box.size.x;
+				delete mw;
+			}
+		}
+		(*cache)[key] = width;
+		return width;
 	};
 }
 
@@ -114,7 +141,11 @@ inline void vcvsFromJson(json_t* rootJ, const std::string& undoActionName = "") 
 
 			NVGcolor color = color::BLACK_TRANSPARENT;
 			if (colorStr) color = color::fromHexString(colorStr);
-			addCableToPort(outIt->second, outputId, inIt->second, inputId, true, color);
+			// addToHistory=false: the CableAdd is handed back unowned and folded into the
+			// load's single ComplexAction, rather than becoming its own undo entry.
+			if (::rack::history::CableAdd* h = addCableToPort(outIt->second, outputId, inIt->second, inputId, false, color)) {
+				complexAction->push(h);
+			}
 		}
 	}
 

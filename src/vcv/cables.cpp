@@ -39,10 +39,10 @@ const std::vector<CableWidget*> RackCableAccess::getCompleteCables() const {
 	return APP->scene->rack->getCompleteCables();
 }
 
-void RackCableAccess::addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory, NVGcolor color) {
+::rack::history::CableAdd* RackCableAccess::addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory, NVGcolor color) {
 	::rack::app::ModuleWidget* outputMw = moduleAccessFor().getModuleWidget(outModuleId);
 	::rack::app::ModuleWidget* inputMw = moduleAccessFor().getModuleWidget(inModuleId);
-	if (!outputMw || !inputMw) return;
+	if (!outputMw || !inputMw) return nullptr;
 
 	::rack::engine::Cable* c = new ::rack::engine::Cable;
 	c->outputId = outPortId;
@@ -57,8 +57,10 @@ void RackCableAccess::addCableToPort(int64_t outModuleId, int outPortId, int64_t
 	APP->scene->rack->addCable(cw);
 	::rack::history::CableAdd* h = new ::rack::history::CableAdd;
 	h->setCable(cw);
+	// Pushed here only when the caller wants one undo entry per cable; otherwise ownership
+	// passes to the caller, who folds it into its own ComplexAction. See the declaration.
 	if (addToHistory) historyAccessFor().push(h);
-	else delete h;
+	return h;
 }
 
 // The shared production instance; namespace-scope so no __cxa_guard is tested on access.

@@ -1,4 +1,6 @@
 #include "../../plugin.hpp"
+#include "../../vcv/fs.hpp"
+#include "../../vcv/selection.hpp"
 
 namespace StoermelderPackOne {
 namespace SppPreview {
@@ -86,58 +88,36 @@ struct ModelBox : widget::OpaqueWidget {
 
 struct SelectionPreview : OpaqueWidget {
 	bool loadSelectionFile(std::string path) {
-		FILE* file = std::fopen(path.c_str(), "r");
-		if (!file) return false;
-		DEFER({std::fclose(file);});
+		std::string data;
+		if (!vcv::fs::read(path, data)) return false;
 		INFO("Loading selection %s", path.c_str());
 
-		json_error_t error;
-		json_t* rootJ = json_loadf(file, 0, &error);
+		std::string error;
+		json_t* rootJ = vcv::parseJson(data, error);
 		if (!rootJ) {
-			throw Exception("File is not a valid selection file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+			throw Exception("File is not a valid selection file. %s", error.c_str());
 		}
 		DEFER({json_decref(rootJ);});
 		return (createPreview(rootJ) > 0);
 	}
 
 	int createPreview(json_t* rootJ) {
-		json_t* modulesJ = json_object_get(rootJ, "modules");
-		if (!modulesJ) return 0;
-
-		json_t* moduleJ;
-		size_t moduleIndex;
-
-		double minX = std::numeric_limits<float>::infinity();
-		double minY = std::numeric_limits<float>::infinity();
-		json_array_foreach(modulesJ, moduleIndex, moduleJ) {
-			json_t* posJ = json_object_get(moduleJ, "pos");
-			double x = 0.0, y = 0.0;
-			json_unpack(posJ, "[F, F]", &x, &y);
-			minX = std::min(minX, x);
-			minY = std::min(minY, y);
-		}
+		// The same layout the loader itself uses, so the preview lands exactly where the
+		// modules will (origin (0,0): the container positions itself at the mouse).
+		auto placements = vcv::layoutSelection(json_object_get(rootJ, "modules"), Vec(0.f, 0.f));
 
 		int i = 0;
-		json_array_foreach(modulesJ, moduleIndex, moduleJ) {
-			json_t* posJ = json_object_get(moduleJ, "pos");
-			double x = 0.0, y = 0.0;
-			json_unpack(posJ, "[F, F]", &x, &y);
-
-			// Get slugs
-			json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
-			if (!pluginSlugJ) continue;
-			json_t* modelSlugJ = json_object_get(moduleJ, "model");
-			if (!modelSlugJ) continue;
-			std::string pluginSlug = json_string_value(pluginSlugJ);
-			std::string modelSlug = json_string_value(modelSlugJ);
+		for (const vcv::ModulePlacement& p : placements) {
+			vcv::ModuleRef ref;
+			if (!vcv::readModuleRef(p.moduleJ, ref)) continue;
 
 			// Get Model
-			plugin::Model* model = plugin::getModel(pluginSlug, modelSlug);
+			plugin::Model* model = plugin::getModel(ref.pluginSlug, ref.modelSlug);
 			if (!model) continue;
 
 			ModelBox* modelBox = new ModelBox;
 			modelBox->setModel(model);
-			modelBox->box.pos = Vec(x - minX, y - minY).mult(RACK_GRID_SIZE);
+			modelBox->box.pos = p.pos;
 			addChild(modelBox);
 			i++;
 		}
