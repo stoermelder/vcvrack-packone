@@ -13,7 +13,8 @@
 
 TEST_CASE("connectLive - creates a real cable in the patch and the bitmask", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 
@@ -21,13 +22,12 @@ TEST_CASE("connectLive - creates a real cable in the patch and the bitmask", "[S
 
 	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("disconnectLive - removes the cable from the patch and the bitmask", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 
@@ -37,8 +37,6 @@ TEST_CASE("disconnectLive - removes the cable from the patch and the bitmask", "
 	m->sceneStore.disconnectLive(0, 1);
 	REQUIRE(cables.mock.hasCable(42, 0, 43, 0) == false);
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
-
-	Test::destroyModule(m);
 }
 
 
@@ -47,7 +45,8 @@ TEST_CASE("disconnectLive - removes the cable from the patch and the bitmask", "
 
 TEST_CASE("toggleConnection - creates then removes a real cable with overlay feedback", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 
@@ -60,8 +59,6 @@ TEST_CASE("toggleConnection - creates then removes a real cable with overlay fee
 	REQUIRE(cables.mock.hasCable(42, 0, 43, 0) == false);
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
 	REQUIRE(m->overlayMessage.title == "Cable removed");
-
-	Test::destroyModule(m);
 }
 
 
@@ -70,7 +67,8 @@ TEST_CASE("toggleConnection - creates then removes a real cable with overlay fee
 
 TEST_CASE("capture - records the patch's current cables into the scene", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 
@@ -81,8 +79,6 @@ TEST_CASE("capture - records the patch's current cables into the scene", "[Splic
 	REQUIRE(m->sceneStore.isConnected(2, 0, 1));
 	// Scenes with no such cable stay empty.
 	REQUIRE(m->sceneStore.isConnected(0, 0, 1) == false);
-
-	Test::destroyModule(m);
 }
 
 
@@ -91,7 +87,8 @@ TEST_CASE("capture - records the patch's current cables into the scene", "[Splic
 
 TEST_CASE("switchTo - reconciles the patch: old cables removed, new cables created", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	m->portAssignments[1] = {43, engine::Port::INPUT, 0};
 	m->portAssignments[2] = {44, engine::Port::OUTPUT, 0};
@@ -112,8 +109,6 @@ TEST_CASE("switchTo - reconciles the patch: old cables removed, new cables creat
 	REQUIRE(m->sceneStore.isConnected(0, 0, 1));
 	REQUIRE(m->sceneStore.isConnected(3, 2, 3));
 	REQUIRE(m->sceneStore.current == 3);
-
-	Test::destroyModule(m);
 }
 
 
@@ -121,7 +116,8 @@ TEST_CASE("switchTo - reconciles the patch: old cables removed, new cables creat
 
 TEST_CASE("applyToCurrent - reconciles the patch and current scene to the new topology", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	m->portAssignments[1] = {43, engine::Port::INPUT, 0};
 	m->portAssignments[2] = {44, engine::Port::OUTPUT, 0};
@@ -140,8 +136,6 @@ TEST_CASE("applyToCurrent - reconciles the patch and current scene to the new to
 	REQUIRE(cables.mock.hasCable(44, 0, 45, 0));
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 2, 3));
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
-
-	Test::destroyModule(m);
 }
 
 
@@ -151,7 +145,8 @@ TEST_CASE("applyToCurrent - reconciles the patch and current scene to the new to
 
 TEST_CASE("reconcile - on the current scene captures the patch and applies the new topology", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	m->portAssignments[1] = {43, engine::Port::INPUT, 0};
 	m->portAssignments[2] = {44, engine::Port::OUTPUT, 0};
@@ -176,8 +171,6 @@ TEST_CASE("reconcile - on the current scene captures the patch and applies the n
 	REQUIRE(m->sceneStore.isConnected(0, 0, 1) == false);
 	REQUIRE(m->sceneStore.isConnected(0, 2, 3));
 	REQUIRE(m->sceneStore.current == 0);
-
-	Test::destroyModule(m);
 }
 
 
@@ -185,7 +178,8 @@ TEST_CASE("reconcile - on the current scene captures the patch and applies the n
 
 TEST_CASE("removeCellConnections - tears down the cell's cables in the patch", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	m->portAssignments[1] = {43, engine::Port::INPUT, 0};
 	m->portAssignments[3] = {45, engine::Port::INPUT, 0};
@@ -202,8 +196,6 @@ TEST_CASE("removeCellConnections - tears down the cell's cables in the patch", "
 	REQUIRE(cables.mock.hasCable(42, 0, 45, 0) == false);
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 3) == false);
-
-	Test::destroyModule(m);
 }
 
 
@@ -212,8 +204,9 @@ TEST_CASE("removeCellConnections - tears down the cell's cables in the patch", "
 
 TEST_CASE("cross-instance responder - creates and removes a real cable", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = mods.create();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
 
@@ -237,14 +230,13 @@ TEST_CASE("cross-instance responder - creates and removes a real cable", "[Splic
 	REQUIRE(b->overlayMessage.title == "Cable removed");
 
 	SpliceKitModule::crossPending()[APP].clear();
-	Test::destroyModule(b);
-	Test::destroyModule(a);
 }
 
 TEST_CASE("cross-instance responder - an opted-out responder creates no cable", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = mods.create();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
 
@@ -263,14 +255,13 @@ TEST_CASE("cross-instance responder - an opted-out responder creates no cable", 
 	REQUIRE(b->pendingCellId == 5);
 
 	SpliceKitModule::crossPending()[APP].clear();
-	Test::destroyModule(b);
-	Test::destroyModule(a);
 }
 
 TEST_CASE("cross-instance responder - an opted-out initiator never publishes, so no cable is made", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* a = createModule();
-	SpliceKitModule* b = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = mods.create();
 	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
 	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
 
@@ -291,8 +282,6 @@ TEST_CASE("cross-instance responder - an opted-out initiator never publishes, so
 	REQUIRE(b->pendingCellId == 5);
 
 	SpliceKitModule::crossPending()[APP].clear();
-	Test::destroyModule(b);
-	Test::destroyModule(a);
 }
 
 
@@ -302,7 +291,8 @@ TEST_CASE("cross-instance responder - an opted-out initiator never publishes, so
 
 TEST_CASE("switchTo - a cable stored in both scenes is left untouched", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 
@@ -315,8 +305,6 @@ TEST_CASE("switchTo - a cable stored in both scenes is left untouched", "[Splice
 	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
 	REQUIRE(m->sceneStore.isConnected(1, 0, 1));
 	REQUIRE(m->sceneStore.current == 1);
-
-	Test::destroyModule(m);
 }
 
 
@@ -326,7 +314,8 @@ TEST_CASE("switchTo - a cable stored in both scenes is left untouched", "[Splice
 
 TEST_CASE("capture - a cable removed by hand is dropped from the scene", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 
@@ -339,8 +328,6 @@ TEST_CASE("capture - a cable removed by hand is dropped from the scene", "[Splic
 	m->sceneStore.capture(0);
 
 	REQUIRE(m->sceneStore.isConnected(0, 0, 1) == false);
-
-	Test::destroyModule(m);
 }
 
 
@@ -350,7 +337,8 @@ TEST_CASE("capture - a cable removed by hand is dropped from the scene", "[Splic
 
 TEST_CASE("moveCell - source cables survive and the destination's own cables are removed", "[SpliceKit]") {
 	CableScaffold cables;
-	SpliceKitModule* m = createModule();
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 	m->assignPort(5, 99, 3, engine::Port::INPUT);   // destination has its own port and cable
@@ -370,8 +358,6 @@ TEST_CASE("moveCell - source cables survive and the destination's own cables are
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 5));
 	REQUIRE(m->portAssignments[5].moduleId == 43);
 	REQUIRE(m->portAssignments[1].isValid() == false);
-
-	Test::destroyModule(m);
 }
 
 

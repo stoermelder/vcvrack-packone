@@ -278,24 +278,21 @@ void PreviewWidget::createPreview() {
 	double minX = std::numeric_limits<double>::infinity();
 	double minY = std::numeric_limits<double>::infinity();
 	json_array_foreach(modulesJ, moduleIndex, moduleJ) {
-		json_t* posJ = json_object_get(moduleJ, "pos");
-		double x = 0.0, y = 0.0;
-		json_unpack(posJ, "[F, F]", &x, &y);
-		minX = std::min(minX, x);
-		minY = std::min(minY, y);
+		Vec pos;
+		vcv::readModulePos(moduleJ, pos);
+		minX = std::min(minX, (double)pos.x);
+		minY = std::min(minY, (double)pos.y);
 	}
 
 	json_array_foreach(modulesJ, moduleIndex, moduleJ) {
-		json_t* posJ = json_object_get(moduleJ, "pos");
-		double x = 0.0, y = 0.0;
-		json_unpack(posJ, "[F, F]", &x, &y);
+		Vec pos;
+		vcv::readModulePos(moduleJ, pos);
+		double x = pos.x, y = pos.y;
 
-		json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
-		if (!pluginSlugJ) continue;
-		json_t* modelSlugJ = json_object_get(moduleJ, "model");
-		if (!modelSlugJ) continue;
-		std::string pluginSlug = json_string_value(pluginSlugJ);
-		std::string modelSlug = json_string_value(modelSlugJ);
+		vcv::ModuleRef ref;
+		if (!vcv::readModuleRef(moduleJ, ref)) continue;
+		const std::string& pluginSlug = ref.pluginSlug;
+		const std::string& modelSlug = ref.modelSlug;
 
 		plugin::Model* model = plugin::getModel(pluginSlug, modelSlug);
 		if (!model) {
@@ -324,8 +321,7 @@ void PreviewWidget::createPreview() {
 		}
 
 		// Get module ID from JSON
-		json_t* idJ = json_object_get(moduleJ, "id");
-		int64_t moduleId = idJ ? json_integer_value(idJ) : -1;
+		int64_t moduleId = vcv::readModuleId(moduleJ);
 
 		ModelPreviewWidget* modelBox = new ModelPreviewWidget;
 		modelBox->setModel(model);

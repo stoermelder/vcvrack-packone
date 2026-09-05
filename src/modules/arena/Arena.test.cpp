@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 
 #include "Arena.cpp"
 
@@ -43,7 +42,8 @@ static void setRadius(MODULE* m, int j, float r) {
 
 
 TEST_CASE("Construction and initialization", "[Arena]") {
-	MODULE* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	MODULE* m = mods.create("Arena");
 	ArenaWidget* mw = Test::createWidget<ArenaWidget>("Arena");
 
 	REQUIRE(m != nullptr);
@@ -51,11 +51,11 @@ TEST_CASE("Construction and initialization", "[Arena]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Arena][JSON]") {
-	auto module = Test::createModule<ArenaModule<8, 4>>("Arena");
+	Test::ModuleScaffold<ArenaModule<8, 4>> mods;
+	auto module = mods.create("Arena");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -78,11 +78,48 @@ TEST_CASE("Preset JSON null-guards", "[Arena][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
+	SECTION("Out-of-range modMode/outputMode integers load without crashing and process() is well-behaved") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+
+		// Corrupt IN-0's modMode/outputMode to an out-of-range enum value, as a
+		// hand-edited or version-skewed patch might.
+		json_t* inportsJ = json_object_get(rootJ, "inports");
+		json_t* inport0J = json_array_get(inportsJ, 0);
+		json_object_set_new(inport0J, "modMode", json_integer(99));
+		json_object_set_new(inport0J, "outputMode", json_integer(99));
+
+		module->dataFromJson(rootJ);
+		json_decref(rootJ);
+		REQUIRE(module->modMode[0] == (MODMODE)99);
+		REQUIRE(module->outputMode[0] == (OUTPUTMODE)99);
+
+		// modMode's switch has no default: case, so an out-of-range value takes
+		// no branch at all. offsetX/offsetY are reset to 0 just before the switch,
+		// so the port's x/y position tracks the raw input (no radius/amount/offset
+		// modulation applied), rather than crashing or reading garbage.
+		setInPosition(module, 0, 0.5f, 0.5f);
+		module->inputs[MODULE::MOD_INPUT + 0].setVoltage(5.f);
+		module->process(Test::makeProcessArgs(1));
+		REQUIRE(module->params[MODULE::IN_X_POS + 0].getValue() == Catch::Approx(0.5f));
+		REQUIRE(module->params[MODULE::IN_Y_POS + 0].getValue() == Catch::Approx(0.5f));
+
+		// outputMode's switch also has no default: case, so v is never
+		// clamped/scaled by outNorm — the raw input voltage passes straight
+		// through to OUT_OUTPUT unmodified. Worth locking down explicitly since
+		// it's a different (and more surprising) silent failure mode than
+		// modMode's "do nothing".
+		module->inputs[MODULE::IN + 0].channels = 1;
+		module->inputs[MODULE::IN + 0].setVoltage(7.3f);
+		module->outputs[MODULE::OUT_OUTPUT + 0].channels = 1;
+		module->process(Test::makeProcessArgs(1));
+		REQUIRE(module->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(7.3f));
+	}
 }
 
 TEST_CASE("JSON round-trip preserves module state", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->panelTheme = 1;
 	m->inportsUsed = 5;
@@ -121,7 +158,7 @@ TEST_CASE("JSON round-trip preserves module state", "[Arena]") {
 
 	json_t* j = m->dataToJson();
 
-	auto* m2 = Test::createModule<MODULE>("Arena");
+	auto* m2 = mods.create("Arena");
 	m2->dataFromJson(j);
 	json_decref(j);
 
@@ -175,8 +212,30 @@ TEST_CASE("JSON round-trip preserves module state", "[Arena]") {
 		}
 	}
 
-	Test::destroyModule(m);
-	Test::destroyModule(m2);
+	SECTION("First process() after dataFromJson does not overwrite restored MIX params") {
+		// MIX_X_POS/MIX_Y_POS are plain params, not part of the "data" JSON payload:
+		// in the real app they are restored by Module::fromJson()'s paramsFromJson()
+		// call, which runs *before* dataFromJson(). Emulate that restoration
+		// directly on m3 with distinctive (non-default) values, exactly as a
+		// patch load would leave them just before dataFromJson() runs, then
+		// assert the first process() tick doesn't clobber them.
+		json_t* j3 = m->dataToJson();
+		auto* m3 = mods.create("Arena");
+		for (int i = 0; i < MIX_PORTS; i++) {
+			m3->params[MODULE::MIX_X_POS + i].setValue(0.4f + 0.01f * i);
+			m3->params[MODULE::MIX_Y_POS + i].setValue(0.6f - 0.01f * i);
+		}
+		m3->dataFromJson(j3);
+		json_decref(j3);
+
+		for (int i = 0; i < MIX_PORTS; i++) {
+			float xBefore = m3->params[MODULE::MIX_X_POS + i].getValue();
+			float yBefore = m3->params[MODULE::MIX_Y_POS + i].getValue();
+			m3->process(Test::makeProcessArgs(1));
+			REQUIRE(m3->params[MODULE::MIX_X_POS + i].getValue() == Catch::Approx(xBefore));
+			REQUIRE(m3->params[MODULE::MIX_Y_POS + i].getValue() == Catch::Approx(yBefore));
+		}
+	}
 }
 
 
@@ -187,7 +246,8 @@ TEST_CASE("JSON round-trip preserves module state", "[Arena]") {
 // TransitPad's single Out cursor never does.
 
 TEST_CASE("getCursorToNodeDistance returns the per-(mixport,inport) distance", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	setInPosition(m, 0, 0.f, 0.f);
 	setMixPosition(m, 0, 0.f, 0.f);
@@ -203,16 +263,45 @@ TEST_CASE("getCursorToNodeDistance returns the per-(mixport,inport) distance", "
 	REQUIRE(m->getCursorToNodeDistance(0, 0) == Catch::Approx(0.f).margin(0.001f));
 	// MIX-1 at (3,4) from IN-0 at (0,0): classic 3-4-5 triangle
 	REQUIRE(m->getCursorToNodeDistance(1, 0) == Catch::Approx(5.f).margin(0.001f));
+}
 
-	Test::destroyModule(m);
+TEST_CASE("getCursorToNodeDistance covers the full mixport x inport distance matrix with inportsUsed > 1", "[Arena]") {
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
+
+	// IN-0 at (0,0), IN-1 at (0.6,0), IN-2 at (0,0.8); MIX-0 at (0,0), MIX-1 at (0.6,0.8).
+	// A 0.6/0.8/1.0-scaled 3-4-5 triangle, kept inside [0,1] because IN_X_POS/IN_Y_POS
+	// are clamped to [0,1] on every process() tick (Arena.cpp:253,261) — raw (3,4)-style
+	// coordinates like the single-port test above uses would silently clamp to (1,1) here.
+	// Distinct, non-symmetric positions so an axis-swapped or misindexed dist[][]
+	// would not coincidentally produce the right numbers.
+	setInPosition(m, 0, 0.f, 0.f);
+	setInPosition(m, 1, 0.6f, 0.f);
+	setInPosition(m, 2, 0.f, 0.8f);
+	setMixPosition(m, 0, 0.f, 0.f);
+	setMixPosition(m, 1, 0.6f, 0.8f);
+	setRadius(m, 0, 100.f);
+	setRadius(m, 1, 100.f);
+	setRadius(m, 2, 100.f);
+	m->inportsUsed = 3;
+
+	m->process(Test::makeProcessArgs(1));
+
+	REQUIRE(m->getCursorToNodeDistance(0, 0) == Catch::Approx(0.f).margin(0.001f));
+	REQUIRE(m->getCursorToNodeDistance(0, 1) == Catch::Approx(0.6f).margin(0.001f));
+	REQUIRE(m->getCursorToNodeDistance(0, 2) == Catch::Approx(0.8f).margin(0.001f));
+	REQUIRE(m->getCursorToNodeDistance(1, 0) == Catch::Approx(1.0f).margin(0.001f));
+	REQUIRE(m->getCursorToNodeDistance(1, 1) == Catch::Approx(0.8f).margin(0.001f));
+	REQUIRE(m->getCursorToNodeDistance(1, 2) == Catch::Approx(0.6f).margin(0.001f));
 }
 
 TEST_CASE("MIX id >= 1 correctly indexes its own distance/weight, independent of MIX-0", "[Arena]") {
+	Test::ModuleScaffold<MODULE> mods;
 	// The refactor plan flags this as the concrete case where the current
 	// INPUTS-bound guard would silently misbehave for cursor ids >= 1 once
 	// cursor storage moves out of XyScreenModule (§1c). Lock down today's
 	// correct behaviour before that move.
-	auto* m = Test::createModule<MODULE>("Arena");
+	auto* m = mods.create("Arena");
 
 	setInPosition(m, 0, 0.5f, 0.5f);
 	setMixPosition(m, 0, 0.5f, 0.5f);   // co-located with IN-0: inside radius
@@ -227,8 +316,6 @@ TEST_CASE("MIX id >= 1 correctly indexes its own distance/weight, independent of
 
 	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 0].getVoltage() > 0.f);
 	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 1].getVoltage() == Catch::Approx(0.f).margin(0.001f));
-
-	Test::destroyModule(m);
 }
 
 // XyScreenNodes::dataToJson()/dataFromJson() write "radius"/"amount"
@@ -239,7 +326,8 @@ TEST_CASE("MIX id >= 1 correctly indexes its own distance/weight, independent of
 // those keys fails loudly.
 
 TEST_CASE("Golden JSON: node (IN port) radius/amount round-trip byte-identically", "[Arena][JSON]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->nodes.setRadiusImmediate(0, 0.125f);
 	m->nodes.setRadius(0, 0.125f);
@@ -255,12 +343,11 @@ TEST_CASE("Golden JSON: node (IN port) radius/amount round-trip byte-identically
 	json_decref(dataJ);
 
 	REQUIRE(actual == "{\"amount\":0.875,\"radius\":0.125}");
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Golden JSON: full module dataToJson is byte-identical for a distinctive state", "[Arena][JSON]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->panelTheme = 0;
 	m->inportsUsed = 1;
@@ -295,14 +382,14 @@ TEST_CASE("Golden JSON: full module dataToJson is byte-identical for a distincti
 	REQUIRE(json_object_get(mixport0J, "amount") == nullptr);
 
 	json_decref(rootJ);
-	Test::destroyModule(m);
 }
 
 
 // Proximity mixing: MIX output
 
 TEST_CASE("MIX output is non-zero when IN is within radius", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	// Place IN-0 and MIX-0 at the same point
 	setInPosition(m, 0, 0.5f, 0.5f);
@@ -316,12 +403,11 @@ TEST_CASE("MIX output is non-zero when IN is within radius", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 0].getVoltage() > 0.f);
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIX output is zero when IN is outside radius", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	// Place IN-0 at one corner and MIX-0 at the opposite – distance ≈ 1.41
 	setInPosition(m, 0, 0.f, 0.f);
@@ -334,12 +420,11 @@ TEST_CASE("MIX output is zero when IN is outside radius", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 0].getVoltage() == Catch::Approx(0.f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIX output sums contributions from multiple IN ports", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	// Both IN-0 and IN-1 overlap with MIX-0
 	setInPosition(m, 0, 0.5f, 0.5f);
@@ -357,15 +442,14 @@ TEST_CASE("MIX output sums contributions from multiple IN ports", "[Arena]") {
 
 	// Both at same point: s=1.0 each → mix = 1*3 + 1*3 = 6V
 	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 0].getVoltage() == Catch::Approx(6.0f).margin(0.1f));
-
-	Test::destroyModule(m);
 }
 
 
 // OUT_OUTPUT with SCALE mode
 
-TEST_CASE("OUT_OUTPUT SCALE mode scales by outNorm / MIX_PORTS", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+TEST_CASE("OUT_OUTPUT SCALE mode scales by outNorm / mixportsUsed", "[Arena]") {
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	// IN-0 and MIX-0 are co-located; MIX 1-3 are at (0,0), ~0.707 away.
 	// Radius 0.3 covers only MIX-0 (dist=0) and excludes the others (dist≈0.707).
@@ -383,22 +467,43 @@ TEST_CASE("OUT_OUTPUT SCALE mode scales by outNorm / MIX_PORTS", "[Arena]") {
 	// Enable OUT output (must be "connected" for the output branch to run)
 	m->outputs[MODULE::OUT_OUTPUT + 0].channels = 1;
 
-	m->process(Test::makeProcessArgs(1));
+	SECTION("All 4 MIX-ports active") {
+		m->process(Test::makeProcessArgs(1));
 
-	// IN-0 at (0.5,0.5), MIX-0 at (0.5,0.5): dist=0, r=0.3
-	// s = min(1, (0.3-0)/0.3 * 1.1) = 1.0 → outNorm[0] = 1.0
-	// SCALE: v * outNorm / MIX_PORTS = 8 * 1 / 4 = 2.0
-	float v = m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage();
-	REQUIRE(v == Catch::Approx(2.0f).margin(0.05f));
+		// IN-0 at (0.5,0.5), MIX-0 at (0.5,0.5): dist=0, r=0.3
+		// s = min(1, (0.3-0)/0.3 * 1.1) = 1.0 → outNorm[0] = 1.0
+		// SCALE: v * outNorm / mixportsUsed = 8 * 1 / 4 = 2.0
+		float v = m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage();
+		REQUIRE(v == Catch::Approx(2.0f).margin(0.05f));
+	}
 
-	Test::destroyModule(m);
+	SECTION("Denominator follows the active MIX-port count, not MIX_PORTS") {
+		// Only MIX-0 active: the single contributing port now carries the full
+		// signal, matching the documented "1/n if n MIX-ports are active".
+		m->mixportsUsed = 1;
+		m->process(Test::makeProcessArgs(1));
+
+		// SCALE: v * outNorm / mixportsUsed = 8 * 1 / 1 = 8.0
+		float v = m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage();
+		REQUIRE(v == Catch::Approx(8.0f).margin(0.05f));
+	}
+
+	SECTION("Two active MIX-ports halve the input") {
+		m->mixportsUsed = 2;
+		m->process(Test::makeProcessArgs(1));
+
+		// Only MIX-0 is within radius, so outNorm stays 1.0: 8 * 1 / 2 = 4.0
+		float v = m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage();
+		REQUIRE(v == Catch::Approx(4.0f).margin(0.05f));
+	}
 }
 
 
 // OUT_OUTPUT with LIMIT mode
 
 TEST_CASE("OUT_OUTPUT LIMIT mode caps scaling at 1x", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	setInPosition(m, 0, 0.5f, 0.5f);
 	setMixPosition(m, 0, 0.5f, 0.5f);
@@ -414,12 +519,11 @@ TEST_CASE("OUT_OUTPUT LIMIT mode caps scaling at 1x", "[Arena]") {
 
 	// outNorm[0] = 1.0; LIMIT: v * min(outNorm, 1) = 5 * 1 = 5
 	REQUIRE(m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(5.f).margin(0.05f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("OUT_OUTPUT LIMIT output is zero when IN is outside all MIX radii", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	// All MIX ports far away → outNorm = 0
 	setInPosition(m, 0, 0.5f, 0.5f);
@@ -437,15 +541,14 @@ TEST_CASE("OUT_OUTPUT LIMIT output is zero when IN is outside all MIX radii", "[
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(0.f).margin(0.001f));
-
-	Test::destroyModule(m);
 }
 
 
 // OUT_OUTPUT CLIP modes
 
 TEST_CASE("OUT_OUTPUT CLIP_UNI mode clamps output to 0..10V", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	setInPosition(m, 0, 0.5f, 0.5f);
 	setMixPosition(m, 0, 0.5f, 0.5f);
@@ -461,12 +564,11 @@ TEST_CASE("OUT_OUTPUT CLIP_UNI mode clamps output to 0..10V", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(0.f).margin(0.001f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("OUT_OUTPUT CLIP_BI mode clamps output to -5..5V", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	setInPosition(m, 0, 0.5f, 0.5f);
 	setMixPosition(m, 0, 0.5f, 0.5f);
@@ -483,15 +585,14 @@ TEST_CASE("OUT_OUTPUT CLIP_BI mode clamps output to -5..5V", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(5.f).margin(0.1f));
-
-	Test::destroyModule(m);
 }
 
 
 // OUT_OUTPUT FOLD modes
 
 TEST_CASE("OUT_OUTPUT FOLD_UNI mode folds signal instead of clipping", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	// MIX-0 and MIX-1 both at IN-0's position → outNorm = 2.0
 	// MIX-2 and MIX-3 at (0,0), dist≈0.707 > radius 0.3 → no contribution
@@ -505,20 +606,35 @@ TEST_CASE("OUT_OUTPUT FOLD_UNI mode folds signal instead of clipping", "[Arena]"
 	m->outputMode[0] = OUTPUTMODE::FOLD_UNI;
 
 	m->inputs[MODULE::IN + 0].channels = 1;
-	m->inputs[MODULE::IN + 0].setVoltage(7.5f);
 	m->outputs[MODULE::OUT_OUTPUT + 0].channels = 1;
 
-	m->process(Test::makeProcessArgs(1));
+	SECTION("v = 7.5") {
+		m->inputs[MODULE::IN + 0].setVoltage(7.5f);
+		m->process(Test::makeProcessArgs(1));
+		// v = clamp(7.5, 0, 10)/10 * 2.0 = 1.5 → fold: intf=1 (odd), frac=0.5 → (1-0.5)*10 = 5V
+		// CLIP_UNI would give clamp(7.5*2, 0, 10) = 10V — fold produces a different result
+		REQUIRE(m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(5.0f).margin(0.05f));
+	}
 
-	// v = clamp(7.5, 0, 10)/10 * 2.0 = 1.5 → fold: intf=1 (odd), frac=0.5 → (1-0.5)*10 = 5V
-	// CLIP_UNI would give clamp(7.5*2, 0, 10) = 10V — fold produces a different result
-	REQUIRE(m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(5.0f).margin(0.05f));
+	SECTION("v = 0 (lower input boundary)") {
+		m->inputs[MODULE::IN + 0].setVoltage(0.f);
+		m->process(Test::makeProcessArgs(1));
+		// v = clamp(0, 0, 10)/10 * 2.0 = 0 → fold: intf=0 (even), frac=0 → 0V
+		REQUIRE(m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(0.0f).margin(0.05f));
+	}
 
-	Test::destroyModule(m);
+	SECTION("v = 10 (upper input boundary, lands exactly on a fold point)") {
+		m->inputs[MODULE::IN + 0].setVoltage(10.f);
+		m->process(Test::makeProcessArgs(1));
+		// v = clamp(10, 0, 10)/10 * 2.0 = 2.0 → fold: intf=2 (even), frac=0 → 0V.
+		// Locks the parity check: a flipped `== 0` -> `!= 0` would instead give 10V here.
+		REQUIRE(m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(0.0f).margin(0.05f));
+	}
 }
 
 TEST_CASE("OUT_OUTPUT FOLD_BI mode folds signal instead of clipping", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	// Same outNorm=2.0 setup as FOLD_UNI test above
 	setInPosition(m, 0, 0.5f, 0.5f);
@@ -531,23 +647,40 @@ TEST_CASE("OUT_OUTPUT FOLD_BI mode folds signal instead of clipping", "[Arena]")
 	m->outputMode[0] = OUTPUTMODE::FOLD_BI;
 
 	m->inputs[MODULE::IN + 0].channels = 1;
-	m->inputs[MODULE::IN + 0].setVoltage(5.f);
 	m->outputs[MODULE::OUT_OUTPUT + 0].channels = 1;
 
-	m->process(Test::makeProcessArgs(1));
+	SECTION("v = 5") {
+		m->inputs[MODULE::IN + 0].setVoltage(5.f);
+		m->process(Test::makeProcessArgs(1));
+		// v = clamp(5, -5, 5)/5 * 2.0 = 2.0 → fold: intf=2 (even), frac=0 → 0 * 5 = 0V
+		// CLIP_BI would give clamp(5*2, -5, 5) = 5V — fold wraps back to 0
+		REQUIRE(m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(0.0f).margin(0.05f));
+	}
 
-	// v = clamp(5, -5, 5)/5 * 2.0 = 2.0 → fold: intf=2 (even), frac=0 → 0 * 5 = 0V
-	// CLIP_BI would give clamp(5*2, -5, 5) = 5V — fold wraps back to 0
-	REQUIRE(m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(0.0f).margin(0.05f));
+	SECTION("v = -5 (lower input boundary, mirrors v = 5)") {
+		m->inputs[MODULE::IN + 0].setVoltage(-5.f);
+		m->process(Test::makeProcessArgs(1));
+		// v = clamp(-5, -5, 5)/5 * 2.0 = -2.0 → fold: intf=-2 (even), frac=-0 → -0 * 5 = 0V.
+		// Locks the sign symmetry: a flipped parity/sign branch could instead give -5V here.
+		REQUIRE(m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(0.0f).margin(0.05f));
+	}
 
-	Test::destroyModule(m);
+	SECTION("v = -4.99 (just inside the lower boundary, exercises the odd/negative-frac branch)") {
+		m->inputs[MODULE::IN + 0].setVoltage(-4.99f);
+		m->process(Test::makeProcessArgs(1));
+		// v = clamp(-4.99, -5, 5)/5 * 2.0 = -1.996 → std::modf truncates toward zero:
+		// intf=-1 (odd), frac=-0.996 → since frac < 0: v = -1 - (-0.996) = -0.004 → *5 = -0.02V.
+		// This is the one branch ("frac >= 0.f ? ... : ...") no other FOLD_BI test reaches.
+		REQUIRE(m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(-0.02f).margin(0.01f));
+	}
 }
 
 
 // CV input controlling position
 
 TEST_CASE("IN_X_INPUT CV moves the IN port x-position", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	// Full-width attenuverter, unipolar 0-10V input → x mapped 0-1
 	m->params[MODULE::IN_X_PARAM + 0].setValue(1.f);
@@ -559,12 +692,11 @@ TEST_CASE("IN_X_INPUT CV moves the IN port x-position", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->params[MODULE::IN_X_POS + 0].getValue() == Catch::Approx(0.5f).margin(0.01f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("IN_Y_INPUT CV moves the IN port y-position", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->params[MODULE::IN_Y_PARAM + 0].setValue(1.f);
 	m->inputYBipolar[0] = false;
@@ -575,12 +707,11 @@ TEST_CASE("IN_Y_INPUT CV moves the IN port y-position", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->params[MODULE::IN_Y_POS + 0].getValue() == Catch::Approx(0.7f).margin(0.01f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("inputXBipolar adds 5V offset to X CV", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->params[MODULE::IN_X_PARAM + 0].setValue(1.f);
 	m->inputXBipolar[0] = true;
@@ -591,15 +722,14 @@ TEST_CASE("inputXBipolar adds 5V offset to X CV", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->params[MODULE::IN_X_POS + 0].getValue() == Catch::Approx(0.5f).margin(0.01f));
-
-	Test::destroyModule(m);
 }
 
 
 // inportsUsed / mixportsUsed
 
 TEST_CASE("inportsUsed limits which IN ports are processed", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	// Signal on IN-1 which is beyond the active count
 	m->inportsUsed = 1;
@@ -615,12 +745,11 @@ TEST_CASE("inportsUsed limits which IN ports are processed", "[Arena]") {
 
 	// IN-1 should be ignored; MIX-0 output should be 0
 	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 0].getVoltage() == Catch::Approx(0.f).margin(0.001f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("mixportsUsed limits which MIX ports produce output", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->mixportsUsed = 1;
 
@@ -635,15 +764,41 @@ TEST_CASE("mixportsUsed limits which MIX ports produce output", "[Arena]") {
 
 	// MIX-1 is outside the active count; should produce nothing
 	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 1].getVoltage() == Catch::Approx(0.f).margin(0.001f));
+}
 
-	Test::destroyModule(m);
+TEST_CASE("inportsUsed/mixportsUsed: an active port contributes while an inactive one is ignored, in the same run", "[Arena]") {
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
+
+	// IN-2 active, IN-7 inactive; both co-located with MIX-0 and both driven.
+	// Proves the active port isn't collaterally silenced by the presence of
+	// an out-of-range one, not just that the inactive one is ignored in isolation.
+	m->inportsUsed = 3;
+
+	setInPosition(m, 2, 0.5f, 0.5f);
+	setInPosition(m, 7, 0.5f, 0.5f);
+	setMixPosition(m, 0, 0.5f, 0.5f);
+	setRadius(m, 2, 1.0f);
+	setRadius(m, 7, 1.0f);
+
+	m->inputs[MODULE::IN + 2].channels = 1;
+	m->inputs[MODULE::IN + 2].setVoltage(5.f);
+	m->inputs[MODULE::IN + 7].channels = 1;
+	m->inputs[MODULE::IN + 7].setVoltage(5.f);
+
+	m->process(Test::makeProcessArgs(1));
+
+	// If IN-7 were mistakenly included, the MIX-0 output would be roughly
+	// double what a single co-located 5V input produces.
+	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 0].getVoltage() == Catch::Approx(5.f).margin(0.5f));
 }
 
 
 // Modulation modes
 
 TEST_CASE("MODMODE::RADIUS: MOD input controls effective radius", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->modMode[0] = MODMODE::RADIUS;
 
@@ -664,12 +819,11 @@ TEST_CASE("MODMODE::RADIUS: MOD input controls effective radius", "[Arena]") {
 	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 0].getVoltage() > 0.f);
 	// radius was set to 1.0 via mod input
 	REQUIRE(m->getNodeRadiusFinal(0) == Catch::Approx(1.0f).margin(0.01f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MODMODE::RADIUS: zero MOD input collapses radius to zero", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->modMode[0] = MODMODE::RADIUS;
 
@@ -687,12 +841,11 @@ TEST_CASE("MODMODE::RADIUS: zero MOD input collapses radius to zero", "[Arena]")
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 0].getVoltage() == Catch::Approx(0.f).margin(0.001f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MODMODE::AMOUNT: MOD input controls signal amount", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->modMode[0] = MODMODE::AMOUNT;
 
@@ -720,12 +873,11 @@ TEST_CASE("MODMODE::AMOUNT: MOD input controls signal amount", "[Arena]") {
 	REQUIRE(fullOutput > 0.f);
 	REQUIRE(halfOutput > 0.f);
 	REQUIRE(fullOutput > halfOutput);
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MODMODE::OFFSET_X: MOD input shifts IN-port x position", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->modMode[0] = MODMODE::OFFSET_X;
 
@@ -746,15 +898,14 @@ TEST_CASE("MODMODE::OFFSET_X: MOD input shifts IN-port x position", "[Arena]") {
 
 	REQUIRE(m->params[MODULE::IN_X_POS + 0].getValue() == Catch::Approx(0.8f).margin(0.01f));
 	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 0].getVoltage() > 0.f);
-
-	Test::destroyModule(m);
 }
 
 
 // MIX CV position control
 
 TEST_CASE("MODMODE::OFFSET_Y: MOD input shifts IN-port y position", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->modMode[0] = MODMODE::OFFSET_Y;
 
@@ -778,12 +929,11 @@ TEST_CASE("MODMODE::OFFSET_Y: MOD input shifts IN-port y position", "[Arena]") {
 
 	// Verify offset applied to y position
 	REQUIRE(m->params[MODULE::IN_Y_POS + 0].getValue() == Catch::Approx(0.8f).margin(0.01f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MODMODE::OFFSET_Y does not affect x position", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->modMode[0] = MODMODE::OFFSET_Y;
 
@@ -802,15 +952,14 @@ TEST_CASE("MODMODE::OFFSET_Y does not affect x position", "[Arena]") {
 
 	// X position should remain at 0.3 (offset only applies to Y)
 	REQUIRE(m->params[MODULE::IN_X_POS + 0].getValue() == Catch::Approx(0.3f).margin(0.01f));
-
-	Test::destroyModule(m);
 }
 
 
 // Edge cases
 
 TEST_CASE("Zero radius produces no MIX output even at same position", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	setInPosition(m, 0, 0.5f, 0.5f);
 	setMixPosition(m, 0, 0.5f, 0.5f);
@@ -822,12 +971,11 @@ TEST_CASE("Zero radius produces no MIX output even at same position", "[Arena]")
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 0].getVoltage() == Catch::Approx(0.f).margin(0.001f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Zero amount scales IN signal to zero", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	setInPosition(m, 0, 0.5f, 0.5f);
 	setMixPosition(m, 0, 0.5f, 0.5f);
@@ -841,12 +989,11 @@ TEST_CASE("Zero amount scales IN signal to zero", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 0].getVoltage() == Catch::Approx(0.f).margin(0.001f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("OUT_OUTPUT is zero when no IN cable is connected", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	setInPosition(m, 0, 0.5f, 0.5f);
 	setMixPosition(m, 0, 0.5f, 0.5f);
@@ -859,12 +1006,11 @@ TEST_CASE("OUT_OUTPUT is zero when no IN cable is connected", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(0.f).margin(0.001f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIX output is zero when no IN cable is connected", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	setInPosition(m, 0, 0.5f, 0.5f);
 	setMixPosition(m, 0, 0.5f, 0.5f);
@@ -878,8 +1024,6 @@ TEST_CASE("MIX output is zero when no IN cable is connected", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->outputs[MODULE::MIX_OUTPUT + 0].getVoltage() == Catch::Approx(0.f).margin(0.001f));
-
-	Test::destroyModule(m);
 }
 
 
@@ -887,7 +1031,8 @@ TEST_CASE("MIX output is zero when no IN cable is connected", "[Arena]") {
 
 
 TEST_CASE("MIX_X_INPUT CV moves the MIX port x-position", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	// Attenuverter at full, unipolar
 	m->params[MODULE::MIX_X_PARAM + 0].setValue(1.f);
@@ -899,16 +1044,15 @@ TEST_CASE("MIX_X_INPUT CV moves the MIX port x-position", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->params[MODULE::MIX_X_POS + 0].getValue() == Catch::Approx(0.5f).margin(0.01f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("getCursorXFinal/getCursorYFinal track CV-driven MIX position, not the UI shadow", "[Arena]") {
+	Test::ModuleScaffold<MODULE> mods;
 	// Regression: the cursor drag widget must draw from the param-backed
 	// "final" position (what process() writes from CV/sequencer/ParamHandle
 	// inputs), not from mixUiX/mixUiY, which is only ever written by a mouse
 	// drag or setCursorXyImmediate/Filtered and does not move with CV.
-	auto* m = Test::createModule<MODULE>("Arena");
+	auto* m = mods.create("Arena");
 
 	m->params[MODULE::MIX_X_PARAM + 0].setValue(1.f);
 	m->params[MODULE::MIX_Y_PARAM + 0].setValue(1.f);
@@ -931,12 +1075,11 @@ TEST_CASE("getCursorXFinal/getCursorYFinal track CV-driven MIX position, not the
 	// The UI shadow is untouched by CV — proves it would be the wrong read source.
 	REQUIRE(m->mixUiX[0] == Catch::Approx(mixUiXBefore));
 	REQUIRE(m->mixUiY[0] == Catch::Approx(mixUiYBefore));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIX_Y_INPUT CV moves the MIX port y-position", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->params[MODULE::MIX_Y_PARAM + 0].setValue(1.f);
 	m->mixportYBipolar[0] = false;
@@ -947,12 +1090,11 @@ TEST_CASE("MIX_Y_INPUT CV moves the MIX port y-position", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->params[MODULE::MIX_Y_POS + 0].getValue() == Catch::Approx(0.7f).margin(0.01f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("mixportXBipolar adds 0.5 offset to MIX position", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->params[MODULE::MIX_X_PARAM + 0].setValue(1.f);
 	m->mixportXBipolar[0] = true;
@@ -963,15 +1105,14 @@ TEST_CASE("mixportXBipolar adds 0.5 offset to MIX position", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->params[MODULE::MIX_X_POS + 0].getValue() == Catch::Approx(0.5f).margin(0.01f));
-
-	Test::destroyModule(m);
 }
 
 
 // Attenuverter scaling
 
 TEST_CASE("IN_X_PARAM attenuverter at 0.5 halves X CV effect", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->inputXBipolar[0] = false;
 
@@ -990,12 +1131,11 @@ TEST_CASE("IN_X_PARAM attenuverter at 0.5 halves X CV effect", "[Arena]") {
 
 	REQUIRE(fullX == Catch::Approx(1.0f).margin(0.01f));
 	REQUIRE(halfX == Catch::Approx(0.5f).margin(0.01f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Negative attenuverter inverts X CV", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->inputXBipolar[0] = false;
 
@@ -1007,12 +1147,11 @@ TEST_CASE("Negative attenuverter inverts X CV", "[Arena]") {
 	m->process(Test::makeProcessArgs(1));
 
 	REQUIRE(m->params[MODULE::IN_X_POS + 0].getValue() == Catch::Approx(0.f).margin(0.01f));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MOD attenuverter scales modulation depth", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	m->modMode[0] = MODMODE::RADIUS;
 
@@ -1036,8 +1175,6 @@ TEST_CASE("MOD attenuverter scales modulation depth", "[Arena]") {
 
 	REQUIRE(fullRadius == Catch::Approx(1.0f).margin(0.01f));
 	REQUIRE(halfRadius == Catch::Approx(0.5f).margin(0.01f));
-
-	Test::destroyModule(m);
 }
 
 
@@ -1049,7 +1186,8 @@ TEST_CASE("MOD attenuverter scales modulation depth", "[Arena]") {
 // bad indices — rather than a crash, and that it leaves in-range cursors alone.
 
 TEST_CASE("setCursorXyImmediate with an out-of-range id is a silent no-op", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	setMixPosition(m, 0, 0.2f, 0.3f);
 	float x0Before = m->params[MODULE::MIX_X_POS + 0].getValue();
@@ -1061,12 +1199,11 @@ TEST_CASE("setCursorXyImmediate with an out-of-range id is a silent no-op", "[Ar
 	// In-range cursor state is untouched.
 	REQUIRE(m->params[MODULE::MIX_X_POS + 0].getValue() == Catch::Approx(x0Before));
 	REQUIRE(m->params[MODULE::MIX_Y_POS + 0].getValue() == Catch::Approx(y0Before));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("setCursorXyFiltered with an out-of-range id is a silent no-op", "[Arena]") {
-	auto* m = Test::createModule<MODULE>("Arena");
+	Test::ModuleScaffold<MODULE> mods;
+	auto* m = mods.create("Arena");
 
 	setMixPosition(m, 0, 0.2f, 0.3f);
 	float x0Before = m->mixUiX[0];
@@ -1076,15 +1213,14 @@ TEST_CASE("setCursorXyFiltered with an out-of-range id is a silent no-op", "[Are
 
 	REQUIRE(m->mixUiX[0] == Catch::Approx(x0Before));
 	REQUIRE(m->mixUiY[0] == Catch::Approx(y0Before));
-
-	Test::destroyModule(m);
 }
 
 TEST_CASE("XyScreenNodes setters with an out-of-range id are a silent no-op", "[Arena]") {
+	Test::ModuleScaffold<MODULE> mods;
 	// The node side of the same bound (COUNT, i.e. IN_PORTS here) predates
 	// this stage — XyScreenNodes has always guarded on its own COUNT — but
 	// had no direct test. Cover it alongside the cursor-side fix above.
-	auto* m = Test::createModule<MODULE>("Arena");
+	auto* m = mods.create("Arena");
 
 	setInPosition(m, 0, 0.2f, 0.3f);
 	setRadius(m, 0, 0.4f);
@@ -1101,6 +1237,4 @@ TEST_CASE("XyScreenNodes setters with an out-of-range id are a silent no-op", "[
 	REQUIRE(m->nodes.uiX[0] == Catch::Approx(x0Before));
 	REQUIRE(m->nodes.radiusUi[0] == Catch::Approx(radius0Before));
 	REQUIRE(m->nodes.amountUi[0] == Catch::Approx(amount0Before));
-
-	Test::destroyModule(m);
 }

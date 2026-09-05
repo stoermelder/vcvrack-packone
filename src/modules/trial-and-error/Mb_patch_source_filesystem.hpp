@@ -1,13 +1,13 @@
 #pragma once
 #include <rack.hpp>
-#include <osdialog.h>
 #include <tag.hpp>
 #include <ghc/filesystem.hpp>
 #include "Mb.hpp"
 #include "Mb_patch_source.hpp"
 #include "Mb_patch_sourceindex.hpp"
 #include "Mb_patch_helper.hpp"
-#include "../../utils/vcv_files.hpp"
+#include "../../vcv/api.hpp"
+#include "../../vcv/files.hpp"
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -218,7 +218,7 @@ struct FileSystemPatchSourceIndex : PatchSourceIndex {
 		// (filename without path, so we can detect relocations)
 		std::map<std::string, std::string> filenameToFileId;
 		for (const std::string& fileId : currentFiles) {
-			std::string filename = system::getFilename(fileId);
+			std::string filename = vcv::fs::getFilename(fileId);
 			filenameToFileId[filename] = fileId;
 		}
 
@@ -235,7 +235,7 @@ struct FileSystemPatchSourceIndex : PatchSourceIndex {
 			}
 
 			// File is gone from its known location — check if it was moved
-			std::string existingFilename = system::getFilename(existingId);
+			std::string existingFilename = vcv::fs::getFilename(existingId);
 			auto it = filenameToFileId.find(existingFilename);
 			if (it != filenameToFileId.end()) {
 				// File was moved — transfer metadata to the new fileId
@@ -265,14 +265,14 @@ struct FileSystemPatchSourceIndex : PatchSourceIndex {
 	 * @param files    Output set of root-relative file paths, each starting with "/"
 	 */
 	void collectFilesRecursive(const std::string& baseDir, const std::string& prefix, std::set<std::string>& files, const std::string& ext) const {
-		auto entries = system::getEntries(baseDir);
+		auto entries = vcv::fs::getEntries(baseDir);
 		for (const auto& entry : entries) {
-			if (system::isDirectory(entry)) {
-				std::string subdirPrefix = prefix + "/" + system::getFilename(entry);
+			if (vcv::fs::isDirectory(entry)) {
+				std::string subdirPrefix = prefix + "/" + vcv::fs::getFilename(entry);
 				collectFilesRecursive(entry, subdirPrefix, files, ext);
-			} 
-			else if (system::isFile(entry) && PatchSource::endsWith(entry, ext)) {
-				files.insert(prefix + "/" + system::getFilename(entry));
+			}
+			else if (vcv::fs::isFile(entry) && PatchSource::endsWith(entry, ext)) {
+				files.insert(prefix + "/" + vcv::fs::getFilename(entry));
 			}
 		}
 	}
@@ -347,14 +347,14 @@ struct FileSystemSource : PatchSource {
 	 */
 	std::string extractToCache(const std::string& archivePath) const {
 		std::string cacheName = generateCacheName();
-		std::string extractDir = system::join(getCacheDir(), cacheName);
-		system::createDirectories(extractDir);
+		std::string extractDir = vcv::fs::join(getCacheDir(), cacheName);
+		vcv::fs::createDirectories(extractDir);
 
 		try {
 			system::unarchiveToDirectory(archivePath, extractDir);
 		}
 		catch (...) {
-			system::removeRecursively(extractDir);
+			vcv::fs::removeRecursively(extractDir);
 			setStatus("Failed to extract archive", 3);
 			return "";
 		}
@@ -373,7 +373,7 @@ struct FileSystemSource : PatchSource {
 		if (it != archiveCache->end()) {
 			auto fileTime = ghc::filesystem::last_write_time(fullPath);
 			if (fileTime != it->second.lastWriteTime) {
-				system::removeRecursively(it->second.cachePath);
+				vcv::fs::removeRecursively(it->second.cachePath);
 				archiveCache->erase(it);
 			}
 		}
@@ -384,11 +384,8 @@ struct FileSystemSource : PatchSource {
 	/** Show a folder picker dialog, returning the chosen path or empty on cancel. */
 	static std::string selectFolder() {
 		std::string dir = asset::user("selections");
-		char* path = osdialog_file(OSDIALOG_OPEN_DIR, dir.c_str(), NULL, NULL);
-		if (!path) return "";
-		std::string result(path);
-		free(path);
-		return result;
+		(void)dir;
+		return vcv::ui::openDirectoryDialog();
 	}
 
 
@@ -410,11 +407,11 @@ struct FileSystemSource : PatchSource {
 		setStatus("Loading folders...");
 		// Resolve container path to file system path (container is absolute-style like "/subfolder" or "/")
 		std::string folder = resolve(container);
-		auto entries = system::getEntries(folder);
+		auto entries = vcv::fs::getEntries(folder);
 		for (const std::string& entry : entries) {
-			if (system::isDirectory(entry)) {
+			if (vcv::fs::isDirectory(entry)) {
 				// Build relative path starting with "/"
-				std::string name = system::getFilename(entry);
+				std::string name = vcv::fs::getFilename(entry);
 				std::string relPath = container == "/" ? "/" + name : container + "/" + name;
 				containers.push_back({ relPath, name });
 			}
@@ -434,22 +431,22 @@ struct FileSystemSource : PatchSource {
 		setStatus("Loading files...");
 		// Resolve container path to file system path (container is absolute-style like "/subfolder" or "/")
 		std::string folder = resolve(container);
-		auto entries = system::getEntries(folder);
+		auto entries = vcv::fs::getEntries(folder);
 		for (const std::string& entry : entries) {
 			// In vcvs mode, include both .vcvs and .vcvss files (vcvss is converted to vcvs)
 			if (slug == SLUG_VCVS) {
-				if (system::isFile(entry) && (PatchSource::endsWith(entry, ".vcvs") || PatchSource::endsWith(entry, ".vcvss"))) {
+				if (vcv::fs::isFile(entry) && (PatchSource::endsWith(entry, ".vcvs") || PatchSource::endsWith(entry, ".vcvss"))) {
 					// Build relative path starting with "/"
-					std::string name = system::getFilename(entry);
+					std::string name = vcv::fs::getFilename(entry);
 					std::string relPath = container == "/" ? "/" + name : container + "/" + name;
 					files.push_back({ relPath, name });
 				}
 			}
 			else {
 				// vcv mode: only .vcv files
-				if (system::isFile(entry) && PatchSource::endsWith(entry, ".vcv")) {
+				if (vcv::fs::isFile(entry) && PatchSource::endsWith(entry, ".vcv")) {
 					// Build relative path starting with "/"
-					std::string name = system::getFilename(entry);
+					std::string name = vcv::fs::getFilename(entry);
 					std::string relPath = container == "/" ? "/" + name : container + "/" + name;
 					files.push_back({ relPath, name });
 				}
@@ -484,11 +481,11 @@ struct FileSystemSource : PatchSource {
 	}
 
 	bool isContainer(const std::string& path) const override {
-		return system::isDirectory(resolve(path));
+		return vcv::fs::isDirectory(resolve(path));
 	}
 
 	bool isFile(const std::string& path) const override {
-		return system::isFile(resolve(path));
+		return vcv::fs::isFile(resolve(path));
 	}
 
 	const std::string getParentContainer(const std::string& path) const override {
@@ -501,7 +498,7 @@ struct FileSystemSource : PatchSource {
 	}
 
 	const std::string getFilename(const std::string& path) const override {
-		return system::getFilename(resolve(path));
+		return vcv::fs::getFilename(resolve(path));
 	}
 
 	const std::string getTempFilePath(const std::string& fileId) const override {
@@ -521,11 +518,10 @@ struct FileSystemSource : PatchSource {
 		if (rootContainer.empty() || !index) return;
 		std::string ext = slug == SLUG_VCVS ? "vcvs" : "vcv";
 		std::string indexPath = rootContainer + "/mb-index." + ext + ".json";
-		FILE* f = fopen(indexPath.c_str(), "rb");
-		if (!f) return;
-		json_error_t error;
-		json_t* indexJ = json_loadf(f, 0, &error);
-		fclose(f);
+		std::string data;
+		if (!vcv::fs::read(indexPath, data)) return;
+		std::string err;
+		json_t* indexJ = vcv::parseJson(data, err);
 		if (!indexJ) {
 			setStatus("Failed to load index file", 3);
 			return;
@@ -540,15 +536,18 @@ struct FileSystemSource : PatchSource {
 		std::string ext = slug == SLUG_VCVS ? "vcvs" : "vcv";
 		std::string indexPath = rootContainer + "/mb-index." + ext + ".json";
 		json_t* indexJ = index->toJson();
-		FILE* f = fopen(indexPath.c_str(), "wb");
-		if (!f) {
-			json_decref(indexJ);
+		char* dumped = json_dumps(indexJ, JSON_INDENT(2));
+		json_decref(indexJ);
+		if (!dumped) {
 			setStatus("Failed to save the index file", 3);
 			return;
 		}
-		json_dumpf(indexJ, f, JSON_INDENT(2));
-		fclose(f);
-		json_decref(indexJ);
+		std::string data(dumped);
+		free(dumped);
+		if (!vcv::fs::write(indexPath, data)) {
+			setStatus("Failed to save the index file", 3);
+			return;
+		}
 	}
 
 	const std::string getSourceType() const override {
@@ -567,17 +566,20 @@ struct FileSystemSource : PatchSource {
 
 	json_t* getFileJson(const std::string& fileId) const override {
 		std::string fullPath = resolve(fileId);
-		
+
+		// Read the whole file through the swappable fs layer, then parse.
+		auto readJsonFile = [](const std::string& path) -> json_t* {
+			std::string data;
+			if (!vcv::fs::read(path, data)) return nullptr;
+			std::string err;
+			return vcv::parseJson(data, err);
+		};
+
 		if (slug == SLUG_VCV) {
 			// .vcv files: legacy (plain JSON) or v2+ (zstd-compressed tar)
 			if (isVcvLegacyV1(fullPath)) {
 				// Legacy v1 format: plain JSON file
-				FILE* f = fopen(fullPath.c_str(), "rb");
-				if (!f) return nullptr;
-				json_error_t error;
-				json_t* rootJ = json_loadf(f, 0, &error);
-				fclose(f);
-				return rootJ;
+				return readJsonFile(fullPath);
 			}
 			else {
 				// v2+ format: zstd-compressed tar archive
@@ -588,26 +590,17 @@ struct FileSystemSource : PatchSource {
 			// .vcvs mode: also supports .vcvss (STRIP) files which are converted to vcvs format
 			if (PatchSource::endsWith(fullPath, ".vcvss")) {
 				// Load vcvss file and convert to vcvs format
-				FILE* f = fopen(fullPath.c_str(), "rb");
-				if (!f) return nullptr;
-				json_error_t error;
-				json_t* vcvssJ = json_loadf(f, 0, &error);
-				fclose(f);
+				json_t* vcvssJ = readJsonFile(fullPath);
 				if (!vcvssJ) return nullptr;
-				
-				// Convert to vcvs format using the function from vcvs_helpers.hpp
-				json_t* vcvsJ = StoermelderPackOne::vcv::convertVcvssToVcvs(vcvssJ);
+
+				// Convert to vcvs format; widths come from the production lookup
+				json_t* vcvsJ = vcv::convertVcvssToVcvs(vcvssJ, vcv::productionWidthLookup());
 				json_decref(vcvssJ);
 				return vcvsJ;
 			}
-			
+
 			// .vcvs files are plain JSON
-			FILE* f = fopen(fullPath.c_str(), "rb");
-			if (!f) return nullptr;
-			json_error_t error;
-			json_t* rootJ = json_loadf(f, 0, &error);
-			fclose(f);
-			return rootJ;
+			return readJsonFile(fullPath);
 		}
 	}
 
@@ -622,20 +615,19 @@ struct FileSystemSource : PatchSource {
 		if (it != archiveCache->end()) {
 			auto fileTime = ghc::filesystem::last_write_time(archivePath);
 			if (fileTime == it->second.lastWriteTime) {
-				std::string patchJsonPath = system::join(it->second.cachePath, "patch.json");
-				if (system::exists(patchJsonPath)) {
-					FILE* f = fopen(patchJsonPath.c_str(), "rb");
-					if (f) {
-						json_error_t error;
-						json_t* rootJ = json_loadf(f, 0, &error);
-						fclose(f);
-						return rootJ;
+				std::string patchJsonPath = vcv::fs::join(it->second.cachePath, "patch.json");
+				if (vcv::fs::exists(patchJsonPath)) {
+					std::string data;
+					if (vcv::fs::read(patchJsonPath, data)) {
+						std::string err;
+						if (json_t* rootJ = vcv::parseJson(data, err))
+							return rootJ;
 					}
 				}
 			}
 			else {
 				// File has changed, invalidate cache entry
-				system::removeRecursively(it->second.cachePath);
+				vcv::fs::removeRecursively(it->second.cachePath);
 				archiveCache->erase(it);
 			}
 		}
@@ -647,19 +639,18 @@ struct FileSystemSource : PatchSource {
 
 		// Read the patch.json file from the extracted directory
 		setStatus("Loading patch...");
-		std::string patchJsonPath = system::join(extractDir, "patch.json");
-		FILE* f = fopen(patchJsonPath.c_str(), "rb");
-		if (!f) {
-			system::removeRecursively(extractDir);
+		std::string patchJsonPath = vcv::fs::join(extractDir, "patch.json");
+		std::string data;
+		if (!vcv::fs::read(patchJsonPath, data)) {
+			vcv::fs::removeRecursively(extractDir);
 			setStatus("Failed to read patch file", 3);
 			return nullptr;
 		}
-		json_error_t error;
-		json_t* rootJ = json_loadf(f, 0, &error);
-		fclose(f);
+		std::string err;
+		json_t* rootJ = vcv::parseJson(data, err);
 
 		if (!rootJ) {
-			system::removeRecursively(extractDir);
+			vcv::fs::removeRecursively(extractDir);
 			setStatus("Failed to parse patch JSON", 3);
 			return nullptr;
 		}
@@ -723,7 +714,7 @@ struct FileSystemSource : PatchSource {
 		}));
 		if (!rootContainer.empty()) {
 			menu->addChild(createMenuItem("Open in file explorer", "", [=]() {
-				system::openDirectory(rootContainer);
+				vcv::fs::openDirectory(rootContainer);
 			}));
 			menu->addChild(createMenuItem("Update index", "", [this]() {
 				std::string ext = slug == SLUG_VCVS ? ".vcvs" : ".vcv";
@@ -737,57 +728,63 @@ struct FileSystemSource : PatchSource {
 		menu->addChild(createMenuLabel(getTempFilePath(fileId)));
 		menu->addChild(createMenuItem("Open containing folder", "", [this, fileId]() {
 			std::string path = getTempFilePath(fileId);
-			std::string dir = system::getDirectory(path);
-			system::openDirectory(dir);
+			std::string dir = vcv::fs::getDirectory(path);
+			vcv::fs::openDirectory(dir);
 		}));
 
 		// Only show "Convert to .vcvs" for .vcvss files
-		if (PatchSource::endsWith(fileId, ".vcvss")) {	
+		if (PatchSource::endsWith(fileId, ".vcvss")) {
 			menu->addChild(createMenuItem("Convert to .vcvs", "", [this, fileId]() {
-				std::string fullPath = resolve(fileId);
-				std::string dir = system::getDirectory(fullPath);
-				
-				osdialog_filters* filters = osdialog_filters_parse(StoermelderPackOne::vcv::SELECTION_FILTERS);
-				char* newPath = osdialog_file(OSDIALOG_SAVE, dir.c_str(), NULL, filters);
-				if (!newPath) return;
-				DEFER({ free(newPath); });
-
-				setStatus("Converting to .vcvs...");
-				// Load vcvss file
-				FILE* f = fopen(fullPath.c_str(), "rb");
-				if (!f) {
-					setStatus("Failed to open file", 3);
-					return;
-				}
-				json_error_t error;
-				json_t* vcvssJ = json_loadf(f, 0, &error);
-				fclose(f);
-				if (!vcvssJ) {
-					setStatus("Failed to parse file", 3);
-					return;
-				}
-				
-				// Convert to vcvs format
-				json_t* vcvsJ = StoermelderPackOne::vcv::convertVcvssToVcvs(vcvssJ);
-				json_decref(vcvssJ);
-				if (!vcvsJ) {
-					setStatus("Failed to convert", 3);
-					return;
-				}
-				
-				// Save to new file
-				FILE* outF = fopen(newPath, "wb");
-				if (!outF) {
-					json_decref(vcvsJ);
-					setStatus("Failed to create file", 3);
-					return;
-				}
-				json_dumpf(vcvsJ, outF, JSON_INDENT(2));
-				fclose(outF);
-				json_decref(vcvsJ);
-				setStatus("Converted successfully");
+				convertVcvssFile(fileId);
 			}));
 		}
+	}
+
+	/** Convert a .vcvss (STRIP) file to .vcvs via the save dialog. Split out so tests
+	 * can drive the conversion logic with scripted dialogs and an in-memory fs. */
+	void convertVcvssFile(const std::string& fileId) {
+		std::string fullPath = resolve(fileId);
+		std::string dir = vcv::fs::getDirectory(fullPath);
+
+		std::string newPath = vcv::ui::saveDialog(vcv::SELECTION_FILTERS, dir, "");
+		if (newPath.empty()) return;
+
+		setStatus("Converting to .vcvs...");
+		// Load vcvss file
+		std::string data;
+		if (!vcv::fs::read(fullPath, data)) {
+			setStatus("Failed to open file", 3);
+			return;
+		}
+		std::string err;
+		json_t* vcvssJ = vcv::parseJson(data, err);
+		if (!vcvssJ) {
+			setStatus("Failed to parse file", 3);
+			return;
+		}
+
+		// Convert to vcvs format; widths come from the production lookup
+		json_t* vcvsJ = vcv::convertVcvssToVcvs(vcvssJ, vcv::productionWidthLookup());
+		json_decref(vcvssJ);
+		if (!vcvsJ) {
+			setStatus("Failed to convert", 3);
+			return;
+		}
+
+		// Save to new file
+		char* dumped = json_dumps(vcvsJ, JSON_INDENT(2));
+		json_decref(vcvsJ);
+		if (!dumped) {
+			setStatus("Failed to convert", 3);
+			return;
+		}
+		std::string out(dumped);
+		free(dumped);
+		if (!vcv::fs::write(newPath, out)) {
+			setStatus("Failed to create file", 3);
+			return;
+		}
+		setStatus("Converted successfully");
 	}
 };
 
@@ -824,7 +821,7 @@ inline PatchSource* createSource() {
 
 } // namespace vcvs
 
-namespace vcv {
+namespace vcvpatch {
 
 inline extern std::string getSlug() {
 	return FileSystemSource::SLUG_VCV;
@@ -854,7 +851,7 @@ inline PatchSource* createSource() {
 	return src;
 }
 
-} // namespace vcv
+} // namespace vcvpatch
 
 
 } // namespace filesystem

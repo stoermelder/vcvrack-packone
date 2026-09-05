@@ -4,7 +4,16 @@
 #include "catch_amalgamated.hpp"
 
 
-// Avoid redefinition issues: replace Catch2's function-like DEPRECATED with an object-like one
+// Avoid redefinition issues: replace Catch2's function-like DEPRECATED with an object-like one.
+//
+// Catch2 v3.12.0 (catch_amalgamated.hpp) defines `DEPRECATED(msg)` as a function-like macro
+// expanding to [[deprecated(msg)]]. Rack's common.hpp separately defines an object-like
+// `DEPRECATED` expanding to __attribute__((deprecated)) (no message). Both are unconditional
+// #defines with no #ifndef guard on either side, so whichever header is included second wins
+// outright — there is no warning, just silently wrong behaviour for the other's callers. This
+// block re-asserts Rack's object-like form after Catch2's has taken effect. Re-check this
+// comment (and whether it's still needed) on the next Catch2 upgrade — a future version may
+// namespace or guard its macro differently.
 #ifdef DEPRECATED
 #  undef DEPRECATED
 #endif
@@ -57,11 +66,25 @@ namespace {
 #endif
 
 
-// We will call several deprecated functions in the tests, thus disable warnings here
+// The test harness deliberately reaches into a handful of Rack APIs marked PRIVATE/DEPRECATED
+// (rack::engine::Engine's constructor, Scene's constructor, addModule_NoLock/removeModule_NoLock
+// — see test_context.hpp) because there is no public alternative for driving a module outside
+// the real engine. Wrap just those call sites in TEST_SUPPRESS_DEPRECATED_BEGIN/END rather than
+// suppressing -Wdeprecated-declarations for the rest of the translation unit: the module source
+// under test is #include'd into the same TU after this header, and a blanket, never-popped
+// `#pragma ... push` here would silently hide legitimate deprecation warnings in that module code
+// too — the exact failure mode this scoping avoids.
 #if defined(__clang__)
-	#pragma clang diagnostic push
-	#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+	#define TEST_SUPPRESS_DEPRECATED_BEGIN \
+		_Pragma("clang diagnostic push") \
+		_Pragma("clang diagnostic ignored \"-Wdeprecated-declarations\"")
+	#define TEST_SUPPRESS_DEPRECATED_END _Pragma("clang diagnostic pop")
 #elif defined(__GNUC__) || defined(__GNUG__)
-	#pragma GCC diagnostic push
-	#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+	#define TEST_SUPPRESS_DEPRECATED_BEGIN \
+		_Pragma("GCC diagnostic push") \
+		_Pragma("GCC diagnostic ignored \"-Wdeprecated-declarations\"")
+	#define TEST_SUPPRESS_DEPRECATED_END _Pragma("GCC diagnostic pop")
+#else
+	#define TEST_SUPPRESS_DEPRECATED_BEGIN
+	#define TEST_SUPPRESS_DEPRECATED_END
 #endif

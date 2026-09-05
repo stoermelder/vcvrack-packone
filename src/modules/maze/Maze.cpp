@@ -701,90 +701,95 @@ struct MazeGridWidget : FramebufferWidget {
 			this->module = module;
 		}
 
-		void drawLayer(const Widget::DrawArgs& args, int layer) override {
-			if (layer == 1) {
-				int usedSize = 8;
-				if (module) {
-					usedSize = module->usedSize;
-				}
+		// Content lives in draw() (layer 0), not drawLayer(1): FramebufferWidget
+		// only caches a child's draw() output (see FramebufferWidget::drawFramebuffer(),
+		// which calls Widget::draw() directly), so content left in drawLayer(1) is
+		// never actually cached -- it silently redraws every frame regardless, while
+		// the wrapping FramebufferWidget renders and blits an empty framebuffer for
+		// nothing. MazeGridWidget below paints the cached image during the layer-1
+		// pass instead, so this still lands in the same z-order slot as before.
+		void draw(const Widget::DrawArgs& args) override {
+			int usedSize = 8;
+			if (module) {
+				usedSize = module->usedSize;
+			}
 
-				float sizeX = box.size.x / float(usedSize);
-				float sizeY = box.size.y / float(usedSize);
+			float sizeX = box.size.x / float(usedSize);
+			float sizeY = box.size.y / float(usedSize);
 
-				// Draw background
+			// Draw background
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+			nvgFillColor(args.vg, nvgRGB(0, 16, 90));
+			nvgFill(args.vg);
+
+			// Draw gradient
+			math::Rect r = box.zeroPos();
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, RECT_ARGS(r));
+			NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
+			NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
+			nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
+			nvgFill(args.vg);
+
+			// Draw grid
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+			nvgStrokeWidth(args.vg, 0.6f);
+			for (int i = 1; i < usedSize; i++) {
+				float a = 0.075f;
+				if (usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
+				else if (usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
+				else if (usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
 				nvgBeginPath(args.vg);
-				nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-				nvgFillColor(args.vg, nvgRGB(0, 16, 90));
-				nvgFill(args.vg);
-
-				// Draw gradient
-				math::Rect r = box.zeroPos();
-				nvgBeginPath(args.vg);
-				nvgRect(args.vg, RECT_ARGS(r));
-				NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
-				NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
-				nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
-				nvgFill(args.vg);
-
-				// Draw grid
-				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-				nvgStrokeWidth(args.vg, 0.6f);
-				for (int i = 1; i < usedSize; i++) {
-					float a = 0.075f;
-					if (usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
-					else if (usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
-					else if (usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
-					nvgBeginPath(args.vg);
-					nvgMoveTo(args.vg, sizeX * float(i), 0.f);
-					nvgLineTo(args.vg, sizeX * float(i), box.size.y);
-					nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
-					nvgStroke(args.vg);
-				}
-				for (int i = 1; i < usedSize; i++) {
-					float a = 0.075f;
-					if (usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
-					else if (usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
-					else if (usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
-					nvgBeginPath(args.vg);
-					nvgMoveTo(args.vg, 0.f, sizeY * float(i));
-					nvgLineTo(args.vg, box.size.x, sizeY * float(i));
-					nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
-					nvgStroke(args.vg);
-				}
-
-				// Draw outer rectangle
-				nvgBeginPath(args.vg);
-				nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-				nvgStrokeWidth(args.vg, 0.7f);
-				nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.25f));
+				nvgMoveTo(args.vg, sizeX * float(i), 0.f);
+				nvgLineTo(args.vg, sizeX * float(i), box.size.y);
+				nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
 				nvgStroke(args.vg);
+			}
+			for (int i = 1; i < usedSize; i++) {
+				float a = 0.075f;
+				if (usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
+				else if (usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
+				else if (usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, 0.f, sizeY * float(i));
+				nvgLineTo(args.vg, box.size.x, sizeY * float(i));
+				nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
+				nvgStroke(args.vg);
+			}
 
-				// Draw grid cells
-				float stroke = 0.7f;
-				for (int i = 0; i < usedSize; i++) {
-					for (int j = 0; j < usedSize; j++) {
-						GRIDSTATE state = module ? module->grid[i][j] : (GRIDSTATE)int(std::round(random::normal() * 2.f));
-						switch (state) {
-							case GRIDSTATE::ON:
-								nvgBeginPath(args.vg);
-								nvgRect(args.vg, i * sizeX + stroke / 2.f, j * sizeY + stroke / 2.f, sizeX - stroke, sizeY - stroke);
-								nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
-								nvgFill(args.vg);
-								break;
-							case GRIDSTATE::RANDOM:
-								nvgBeginPath(args.vg);
-								nvgRect(args.vg, i * sizeX + stroke, j * sizeY + stroke, sizeX - stroke * 2.f, sizeY - stroke * 2.f);
-								nvgStrokeWidth(args.vg, stroke);
-								nvgStrokeColor(args.vg, color::mult(gridColor, 0.6f));
-								nvgStroke(args.vg);
-								nvgBeginPath(args.vg);
-								nvgRect(args.vg, i * sizeX + sizeX * 0.25f, j * sizeY + sizeY * 0.25f, sizeX * 0.5f, sizeY * 0.5f);
-								nvgFillColor(args.vg, color::mult(gridColor, 0.4f));
-								nvgFill(args.vg);
-								break;
-							case GRIDSTATE::OFF:
-								break;
-						}
+			// Draw outer rectangle
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+			nvgStrokeWidth(args.vg, 0.7f);
+			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.25f));
+			nvgStroke(args.vg);
+
+			// Draw grid cells
+			float stroke = 0.7f;
+			for (int i = 0; i < usedSize; i++) {
+				for (int j = 0; j < usedSize; j++) {
+					GRIDSTATE state = module ? module->grid[i][j] : (GRIDSTATE)int(std::round(random::normal() * 2.f));
+					switch (state) {
+						case GRIDSTATE::ON:
+							nvgBeginPath(args.vg);
+							nvgRect(args.vg, i * sizeX + stroke / 2.f, j * sizeY + stroke / 2.f, sizeX - stroke, sizeY - stroke);
+							nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
+							nvgFill(args.vg);
+							break;
+						case GRIDSTATE::RANDOM:
+							nvgBeginPath(args.vg);
+							nvgRect(args.vg, i * sizeX + stroke, j * sizeY + stroke, sizeX - stroke * 2.f, sizeY - stroke * 2.f);
+							nvgStrokeWidth(args.vg, stroke);
+							nvgStrokeColor(args.vg, color::mult(gridColor, 0.6f));
+							nvgStroke(args.vg);
+							nvgBeginPath(args.vg);
+							nvgRect(args.vg, i * sizeX + sizeX * 0.25f, j * sizeY + sizeY * 0.25f, sizeX * 0.5f, sizeY * 0.5f);
+							nvgFillColor(args.vg, color::mult(gridColor, 0.4f));
+							nvgFill(args.vg);
+							break;
+						case GRIDSTATE::OFF:
+							break;
 					}
 				}
 			}
@@ -811,14 +816,18 @@ struct MazeGridWidget : FramebufferWidget {
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
+		// FramebufferWidget only caches draw() (layer 0) content -- its own
+		// drawLayer() is the plain Widget:: default, which does not paint the
+		// cached image at all. Call FramebufferWidget::draw() here instead so
+		// the cached grid still lands in the same z-order slot (layer 1,
+		// alongside every other module's lights) it always has.
+		if (layer != 1) return;
 #ifndef METAMODULE
-		if (layer == 1) {
-			// Dim the display but don't darken it completely
-			float b = std::max(0.2f, settings::rackBrightness);
-			nvgGlobalAlpha(args.vg, b);
-		}
+		// Dim the display but don't darken it completely
+		float b = std::max(0.2f, settings::rackBrightness);
+		nvgGlobalAlpha(args.vg, b);
 #endif
-		FramebufferWidget::drawLayer(args, layer);
+		FramebufferWidget::draw(args);
 	}
 };
 

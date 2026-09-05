@@ -2,9 +2,9 @@
 #include <widget/Widget.hpp>
 #include <plugin.hpp>
 #include <helpers.hpp>
-#include <system.hpp>
 #include <map>
 #include <memory>
+#include "../../vcv/api.hpp"
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -64,8 +64,8 @@ struct PatchHelperWidget : widget::Widget {
 	}
 
 	PatchHelperWidget() {
-		cacheDir = system::join(system::getTempDirectory(), "mb_patch_cache");
-		system::createDirectories(cacheDir);
+		cacheDir = vcv::fs::join(vcv::fs::getTempDirectory(), "mb_patch_cache");
+		vcv::fs::createDirectories(cacheDir);
 	}
 
 	~PatchHelperWidget() {
@@ -74,8 +74,8 @@ struct PatchHelperWidget : widget::Widget {
 		auto& cacheMap = getGlobalCacheMap();
 		cacheMap.clear();
 
-		if (!cacheDir.empty() && system::exists(cacheDir)) {
-			system::removeRecursively(cacheDir);
+		if (!cacheDir.empty() && vcv::fs::exists(cacheDir)) {
+			vcv::fs::removeRecursively(cacheDir);
 		}
 	}
 
@@ -106,10 +106,9 @@ struct PatchHelperWidget : widget::Widget {
 	}
 
 	void checkAndAddMbModule() {
-		// Get all modules in the current rack via children
+		// Get all modules in the current rack via the swappable module layer
 		bool hasMbModule = false;
-		for (widget::Widget* w : APP->scene->rack->children) {
-			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+		for (ModuleWidget* mw : vcv::getModuleWidgets()) {
 			if (mw && mw->model && mw->model->slug == "Mb") {
 				hasMbModule = true;
 				break;
@@ -122,7 +121,7 @@ struct PatchHelperWidget : widget::Widget {
             float minX = std::numeric_limits<float>::max();
             float minY = std::numeric_limits<float>::max();
 
-            for (ModuleWidget* mw : APP->scene->rack->getModules()) {   
+            for (ModuleWidget* mw : vcv::getModuleWidgets()) {
                 minX = std::min(minX, mw->box.pos.x);
                 minY = std::min(minY, mw->box.pos.y);
             }

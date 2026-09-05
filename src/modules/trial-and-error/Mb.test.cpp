@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "Mb.cpp"
 #include "Mb.hpp"
 
@@ -45,7 +44,8 @@ void cleanupMockModels() {
 
 
 TEST_CASE("Construction and initialization", "[Mb]") {
-	MbModule* m = Test::createModule<MbModule>("Mb");
+	Test::ModuleScaffold<MbModule> mods;
+	MbModule* m = mods.create("Mb");
 	MbWidget* mw = Test::createWidget<MbWidget>("Mb");
 
 	REQUIRE(m != nullptr);
@@ -53,11 +53,11 @@ TEST_CASE("Construction and initialization", "[Mb]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Mb][JSON]") {
-	auto module = Test::createModule<MbModule>("Mb");
+	Test::ModuleScaffold<MbModule> mods;
+	auto module = mods.create("Mb");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -80,7 +80,6 @@ TEST_CASE("Preset JSON null-guards", "[Mb][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 

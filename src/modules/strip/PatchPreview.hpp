@@ -1,5 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 
 namespace StoermelderPackOne {
 namespace SppPreview {
@@ -87,15 +88,14 @@ struct ModelBox : widget::OpaqueWidget {
 
 struct SelectionPreview : OpaqueWidget {
 	bool loadSelectionFile(std::string path) {
-		FILE* file = std::fopen(path.c_str(), "r");
-		if (!file) return false;
-		DEFER({std::fclose(file);});
+		std::string data;
+		if (!vcv::fs::read(path, data)) return false;
 		INFO("Loading selection %s", path.c_str());
 
-		json_error_t error;
-		json_t* rootJ = json_loadf(file, 0, &error);
+		std::string error;
+		json_t* rootJ = vcv::parseJson(data, error);
 		if (!rootJ) {
-			throw Exception("File is not a valid selection file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+			throw Exception("File is not a valid selection file. %s", error.c_str());
 		}
 		DEFER({json_decref(rootJ);});
 		return (createPreview(rootJ) > 0);

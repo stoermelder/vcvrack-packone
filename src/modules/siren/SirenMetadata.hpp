@@ -151,7 +151,7 @@ struct MetadataStore {
 	// Virtual so subclasses (e.g. in tests) can redirect persistence elsewhere,
 	// such as a scratch folder, without touching the user's real settings folder.
 	virtual std::string filePath() const {
-		return rack::asset::user("Stoermelder-P1") + "/siren-" + hashPath(rootPath) + ".json";
+		return settingsDirPath() + "/siren-" + hashPath(rootPath) + ".json";
 	}
 
 	void load() {

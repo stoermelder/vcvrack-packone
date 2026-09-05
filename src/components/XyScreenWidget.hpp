@@ -661,12 +661,12 @@ struct XyScreenDragWidgetBase : OpaqueWidget {
 	const float radius = 10.f;
 	const float fontsize = 13.0f;
 
-	MODULE* module;
+	MODULE* module = NULL;
 	NVGcolor textColor = nvgRGB(0x66, 0x66, 0x0);
-	uint8_t id;
+	uint8_t id = 0;
 
 	float circleA = 1.f;
-	math::Vec dragPos;
+	math::Vec dragPos = Vec();
 
 	XyScreenDragWidgetBase() {
 		box.size = Vec(2 * radius, 2 * radius);

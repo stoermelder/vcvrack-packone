@@ -1,12 +1,13 @@
 #include <rack.hpp>
 #include "pluginsettings.hpp"
+#include "vcv/fs.hpp"
 
 namespace StoermelderPackOne {
 
 Settings pluginSettings;
 
 static std::string settingsDirPath() {
-	return rack::asset::user("Stoermelder-P1");
+	return vcv::fs::getUserDirectory("Stoermelder-P1");
 }
 
 static std::string mbFilePath() {
@@ -22,24 +23,23 @@ static std::string mbDataSourcesFilePath() {
 }
 
 static std::string legacyFilePath() {
-	return rack::asset::user("Stoermelder-P1.json");
+	return vcv::fs::getUserDirectory("Stoermelder-P1.json");
 }
 
 static json_t* loadJsonFile(const std::string& path) {
-	FILE* file = fopen(path.c_str(), "r");
-	if (!file) return nullptr;
-	json_error_t error;
-	json_t* j = json_loadf(file, 0, &error);
-	fclose(file);
-	return j;
+	std::string data;
+	if (!vcv::fs::read(path, data)) return nullptr;
+	// The error string is intentionally dropped: a missing or corrupt settings file falls back
+	// to the in-class defaults, which is the long-standing behaviour here.
+	std::string error;
+	return vcv::parseJson(data, error);
 }
 
 static bool saveJsonFile(const std::string& path, json_t* j) {
-	FILE* file = fopen(path.c_str(), "w");
-	if (!file) return false;
-	json_dumpf(j, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
-	fclose(file);
-	return true;
+	char* dumped = json_dumps(j, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+	if (!dumped) return false;
+	DEFER({ std::free(dumped); });
+	return vcv::fs::write(path, dumped);
 }
 
 // ── mb.json (models only) ─────────────────────────────────────────────────────
@@ -221,9 +221,7 @@ static void parseLegacyJson(json_t* j, Settings& s) {
 // ── public API ────────────────────────────────────────────────────────────────
 
 void Settings::saveToJson() {
-	if (isTesting()) return;
-
-	rack::system::createDirectory(settingsDirPath());
+	vcv::fs::createDirectory(settingsDirPath());
 
 	json_t* mbJ = buildMbJson(*this);
 	saveJsonFile(mbFilePath(), mbJ);
@@ -239,20 +237,18 @@ void Settings::saveToJson() {
 }
 
 void Settings::readFromJson() {
-	if (isTesting()) return;
-	// Migrate from legacy single-file format if it exists.
+	// Migrate from legacy single-file format if it exists. Keyed on exists() rather than on the
+	// parse result, so a legacy file that is present but corrupt is still consumed and removed
+	// (matching the previous fopen-based behaviour) instead of being retried every startup.
 	std::string legacy = legacyFilePath();
-	FILE* legacyFile = fopen(legacy.c_str(), "r");
-	if (legacyFile) {
-		json_error_t error;
-		json_t* j = json_loadf(legacyFile, 0, &error);
-		fclose(legacyFile);
+	if (vcv::fs::exists(legacy)) {
+		json_t* j = loadJsonFile(legacy);
 		if (j) {
 			parseLegacyJson(j, *this);
 			json_decref(j);
 		}
 		saveToJson();
-		std::remove(legacy.c_str());
+		vcv::fs::remove(legacy);
 		return;
 	}
 

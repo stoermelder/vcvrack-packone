@@ -1,3 +1,17 @@
+## 2.x.x
+
+### Changes and Fixes
+
+- Module [ARENA](./docs/arena/Arena.md)
+    - Fixed wrong values for mix-ports on preset load
+    - Fixed missing voltage-mode options in the context menu of the mix-ports
+    - Fixed out-of-range sequence selection for _SEQ_-mode "0..10V"
+    - Fixed "Scale" out-mode using the configured number of mix-ports
+- Module [DIRT](./docs/dirt/Dirt.md)
+    - Fixed broken "Initialize" on Crush defects
+- Modules [MAZE](./docs/maze/Maze.md) and [HIVE](./docs/maze/Hive.md)
+    - Improved rendering performance
+
 ## 2.6.0
 
 ### New modules
@@ -43,6 +57,8 @@
     - Improved context menus for tags
     - Fixed crash when playing multi-channel files
     - Fixed occasionally lost settings
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Fixed "Bind parameters by selection" when spanning multiple modules
 
 ## 2.5.0
 

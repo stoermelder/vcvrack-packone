@@ -714,6 +714,9 @@ inline ui::MenuItem* createStickySubmenuItem(const std::string& text, const std:
 	return item;
 }
 
+
+#ifndef METAMODULE
+
 /**
  * @brief Self-refreshing sticky MIDI menu for a midi::Port.
  *
@@ -839,6 +842,8 @@ inline ui::MenuItem* createStickyMidiMenuItem(const std::string& text, midi::Por
 	item->enableChannelMenu = enableChannelMenu;
 	return item;
 }
+
+#endif
 
 } // namespace Rack
 } // namespace StoermelderPackOne

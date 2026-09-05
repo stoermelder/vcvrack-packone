@@ -1,6 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
-#include "../../test/test_mock.hpp"
+#include "../../test/framework.hpp"
 
 #include "Goto.cpp"
 
@@ -21,7 +19,8 @@ struct MockModuleAccess : vcv::ModuleAccess {
 
 
 TEST_CASE("Construction and initialization", "[Goto]") {
-	GotoModule<10>* m = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	GotoModule<10>* m = mods.create("Goto");
 	GotoWidget* mw = Test::createWidget<GotoWidget>("Goto");
 
 	REQUIRE(m != nullptr);
@@ -29,11 +28,11 @@ TEST_CASE("Construction and initialization", "[Goto]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset JSON null-guards", "[Goto][JSON]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -56,12 +55,12 @@ TEST_CASE("Preset JSON null-guards", "[Goto][JSON]") {
 		json_decref(rootJ);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
-	auto module2 = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
+	auto module2 = mods.create("Goto");
 
 	SECTION("Scalar settings round-trip") {
 		// Distinct, non-default values for every scalar stored to JSON
@@ -109,13 +108,12 @@ TEST_CASE("JSON round-trip preserves state", "[Goto]") {
 		}
 	}
 
-	Test::destroyModule(module);
-	Test::destroyModule(module2);
 }
 
 
 TEST_CASE("POLYTRIGGER mode sets jumpTrigger on rising edge", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 	module->triggerMode = TRIGGERMODE::POLYTRIGGER;
 
 	// Simulate connected cable
@@ -136,11 +134,11 @@ TEST_CASE("POLYTRIGGER mode sets jumpTrigger on rising edge", "[Goto]") {
 		REQUIRE(module->jumpTrigger == 4);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("POLYTRIGGER: no trigger when voltage stays high (no new edge)", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 	module->triggerMode = TRIGGERMODE::POLYTRIGGER;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 10;
 
@@ -160,11 +158,11 @@ TEST_CASE("POLYTRIGGER: no trigger when voltage stays high (no new edge)", "[Got
 		REQUIRE(module->jumpTrigger == -1);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("C5 trigger mode maps voltage to slot", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 	module->triggerMode = TRIGGERMODE::C5;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 1;
 
@@ -178,11 +176,11 @@ TEST_CASE("C5 trigger mode maps voltage to slot", "[Goto]") {
 		REQUIRE(module->jumpTrigger == 0);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("C5 trigger mode: slot 3 at correct voltage", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 	module->triggerMode = TRIGGERMODE::C5;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 1;
 
@@ -195,11 +193,11 @@ TEST_CASE("C5 trigger mode: slot 3 at correct voltage", "[Goto]") {
 		REQUIRE(module->jumpTrigger == 3);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("C5 trigger mode: out-of-range voltage is ignored", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 	module->triggerMode = TRIGGERMODE::C5;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 1;
 
@@ -212,11 +210,11 @@ TEST_CASE("C5 trigger mode: out-of-range voltage is ignored", "[Goto]") {
 		REQUIRE(module->jumpTrigger == -1);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("C5 trigger: same voltage twice does not re-trigger", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 	module->triggerMode = TRIGGERMODE::C5;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 1;
 
@@ -234,11 +232,11 @@ TEST_CASE("C5 trigger: same voltage twice does not re-trigger", "[Goto]") {
 		REQUIRE(module->jumpTrigger == -1);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("jumpTriggerUsed reflects cable connection state", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 
 	SECTION("False when input disconnected") {
 		module->inputs[GotoModule<10>::INPUT_TRIG].channels = 0;
@@ -252,12 +250,12 @@ TEST_CASE("jumpTriggerUsed reflects cable connection state", "[Goto]") {
 		REQUIRE(module->jumpTriggerUsed == true);
 	}
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("JSON legacy single-moduleId field is loaded correctly", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 
 	// Build a JSON payload that uses the old "moduleId" key instead of "moduleIds"
 	json_t* rootJ = json_object();
@@ -294,12 +292,14 @@ TEST_CASE("JSON legacy single-moduleId field is loaded correctly", "[Goto]") {
 		REQUIRE(module->jumpPoints[9].moduleIds.empty());
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("executeJump routes through the module access layer", "[Goto][vcv]") {
-	auto mock = Test::makeMockVcv<MockModuleAccess>();
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	struct Mock {
+		TEST_MOCK_MODULES(MockModuleAccess);
+	} mock;
+	auto module = mods.create("Goto");
 
 	GotoContainer<10> container;
 	container.module = module;
@@ -312,5 +312,4 @@ TEST_CASE("executeJump routes through the module access layer", "[Goto][vcv]") {
 	CHECK(mock.modules.getModuleWidgetCalls[0] == 42);
 	CHECK(mock.modules.getModuleWidgetCalls[1] == 43);
 
-	Test::destroyModule(module);
 }

@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../utils/cursor.hpp"
 #include "../../vcv/api.hpp"
 #include <queue>
 
@@ -165,8 +166,7 @@ struct PanicRoomRestrictionWidget : Widget {
 
     void enableLearn() {
         learnMode = !learnMode;
-        GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-        if (APP->window) glfwSetCursor(APP->window->win, cursor);
+        cursor::setLearnCursor(learnMode);
     }
 
     void onHover(const HoverEvent& e) override {
@@ -203,7 +203,7 @@ struct PanicRoomRestrictionWidget : Widget {
 
             selecting = false;
             learnMode = false;
-            if (APP->window) glfwSetCursor(APP->window->win, NULL);
+            cursor::resetCursor();
             e.consume(this);
         }
         Widget::onDragEnd(e);

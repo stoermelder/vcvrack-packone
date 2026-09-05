@@ -1135,7 +1135,7 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 				if (newSrc) { selBrowser->addSource(newSrc); }
 			}));
 			menu->addChild(createMenuItem("Add .vcv folder source...", "", [=]() {
-				patch::PatchSource* newSrc = patch::filesystem::vcv::createSource();
+				patch::PatchSource* newSrc = patch::filesystem::vcvpatch::createSource();
 				if (newSrc) { selBrowser->addSource(newSrc); }
 			}));
 			menu->addChild(createMenuItem("Add PatchStorage source", "", [=]() {

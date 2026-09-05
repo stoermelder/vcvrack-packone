@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../utils/cursor.hpp"
 #include "../../utils/digital.hpp"
 #include "../../utils/ShapedSlewLimiter.hpp"
 #include "../../utils/TaskProcessor.hpp"
@@ -257,6 +258,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 	inline SLOT* getSlot(int index) {
 		if (index >= presetTotal) return NULL;
 		int n = index / NUM_PRESETS;
+		assert(n < MAX_EXPANDERS + 1);
 		return &N[n]->slot[index % NUM_PRESETS];
 	}
 
@@ -1393,8 +1395,7 @@ struct TransitSelectionWidget : Widget {
 
 	void enableLearn() {
 		learn = !learn;
-		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setLearnCursor(learn);
 	}
 
 	void onHover(const HoverEvent& e) override {
@@ -1424,7 +1425,7 @@ struct TransitSelectionWidget : Widget {
 			mapParamsFromRect();
 			selecting = false;
 			learn = false;
-			if (APP->window) glfwSetCursor(APP->window->win, NULL);
+			cursor::resetCursor();
 			e.consume(this);
 		}
 		Widget::onDragEnd(e);
@@ -1446,19 +1447,16 @@ struct TransitSelectionWidget : Widget {
 				selected.push_back(mw);
 			}
 		}
-		if (selected.size() != 1) {
-			return;
-		}
+		for (ModuleWidget* mw : selected) {
+			std::list<ParamWidget*> selectedParams;
+			math::Rect selectionBox1(selectionBox.pos.minus(mw->box.pos), selectionBox.size);
+			getAllDescendentsByTypeAndBox<ParamWidget*>(mw, selectionBox1, selectedParams);
 
-		ModuleWidget* mw = selected.front();
-		std::list<ParamWidget*> selectedParams;
-		math::Rect selectionBox1(selectionBox.pos.minus(mw->box.pos), selectionBox.size);
-		getAllDescendentsByTypeAndBox<ParamWidget*>(mw, selectionBox1, selectedParams);
-
-		selectedParams.reverse();
-		for (ParamWidget* pw : selectedParams) {
-			if (!pw->module) continue;
-			module->bindAddParameterRequest(pw->module->getId(), pw->paramId);
+			selectedParams.reverse();
+			for (ParamWidget* pw : selectedParams) {
+				if (!pw->module) continue;
+				module->bindAddParameterRequest(pw->module->getId(), pw->paramId);
+			}
 		}
 	}
 
@@ -1545,7 +1543,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 	~TransitWidget() {
 		if (learn != 0 && APP->window) {
-			if (APP->window) glfwSetCursor(APP->window->win, NULL);
+			cursor::resetCursor();
 		}
 
 		if (selectionWidget) {
@@ -1630,16 +1628,12 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		learn = learn != mode ? mode : 0;
 		APP->scene->rack->setTouchedParam(NULL);
 		APP->event->setSelectedWidget(this);
-		GLFWcursor* cursor = NULL;
-		if (learn != 0) {
-			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		}
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setLearnCursor(learn != 0);
 	}
 
 	void disableLearn() {
 		learn = 0;
-		if (APP->window) glfwSetCursor(APP->window->win, NULL);
+		cursor::resetCursor();
 	}
 
 	void appendContextMenu(Menu* menu) override {

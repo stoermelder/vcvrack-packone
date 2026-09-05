@@ -60,6 +60,10 @@ void RealUiAccess::openBrowser(const std::string& url) {
 	system::openBrowser(url);
 }
 
+bool RealUiAccess::hasWindow() const {
+	return APP->window != nullptr;
+}
+
 // The shared production instance; namespace-scope so no __cxa_guard is tested on access.
 // In a release build this is what the uiAccessFor() macro names directly.
 RealUiAccess realUiAccess;
