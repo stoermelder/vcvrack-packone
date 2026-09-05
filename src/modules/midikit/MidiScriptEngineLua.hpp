@@ -70,18 +70,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static const int interruptCountLimit = 10000;   // 10k counts * 10k instr = 100M
 	int interruptCount = 0;
 
-	// The hook gets a lua_State*, not the engine — reach it via a function-local
-	// static thread_local (header-only, C++14: no out-of-line definition).
-	static MidiScriptEngineLua*& currentEngine() {
-		static thread_local MidiScriptEngineLua* e = nullptr;
-		return e;
-	}
+	// Whether the count hook should budget the running code. False during
+	// registerAPI()'s trusted stubs and lua_close() finalizers; true only
+	// inside a user callback, set by beginScriptExecution(). Not thread_local:
+	// getEngine(L) resolves the engine from the Lua registry on any thread.
+	bool hookArmed = false;
 
 	static void countHook(lua_State* L, lua_Debug* ar) {
 		(void)ar;
-		MidiScriptEngineLua* e = currentEngine();
-		// Ignore foreign states (registerAPI stubs, teardown finalizers).
-		if (!e || e->L != L) return;
+		MidiScriptEngineLua* e = getEngine(L);
+		if (!e || !e->hookArmed) return;
 		if (++e->interruptCount >= interruptCountLimit) {
 			luaL_error(L, "script exceeded execution budget");
 		}
@@ -90,7 +88,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// Resets the budget; call before every user lua_pcall.
 	void beginScriptExecution() {
 		interruptCount = 0;
-		currentEngine() = this;
+		hookArmed = true;
 	}
 
 	// ── Memory watchdog ──────────────────────────────────────────────────────
@@ -302,9 +300,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		luaL_requiref(L, "table",    luaopen_table,  1); lua_pop(L, 1);
 
 		// ── Script execution budget ─────────────────────────────────────────
-		// Install the count hook. currentEngine stays null until the first
+		// Install the count hook. hookArmed stays false until the first
 		// beginScriptExecution(), so registerAPI()'s trusted stubs aren't budgeted.
-		currentEngine() = nullptr;
+		hookArmed = false;
 		interruptCount = 0;
 		lua_sethook(L, &countHook, LUA_MASKCOUNT, interruptInterval);
 
@@ -393,9 +391,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			onTipsyMessageRef = LUA_NOREF;
 			onLoadRef = LUA_NOREF;
 			onUnloadRef = LUA_NOREF;
-			// Null currentEngine first: lua_close runs finalizers with no pcall
+			// Disarm the hook first: lua_close runs finalizers with no pcall
 			// boundary, where a hook luaL_error would longjmp nowhere.
-			if (currentEngine() == this) currentEngine() = nullptr;
+			hookArmed = false;
 			lua_close(L);
 			L = nullptr;
 			// Keeps "no state ⇒ zero bytes" true unconditionally, rather than
