@@ -11,6 +11,9 @@
 #include "SirenTopBar.hpp"
 #include "SirenVuMeter.hpp"
 #include <osdialog.h>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
 
 
 namespace StoermelderPackOne {

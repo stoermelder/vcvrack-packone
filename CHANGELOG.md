@@ -2,7 +2,7 @@
 
 ### Changes and Fixes
 
-- Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md), [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+- Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
     - Fixed a background worker that could stall indefinitely
 - Module [ARENA](./docs/arena/Arena.md)
     - Fixed wrong values for mix-ports on preset load
