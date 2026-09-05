@@ -23,11 +23,14 @@ class SpscLatestValue {
 	std::atomic<uint8_t> back{2};
 
 	void consume() {
-		// acquire: pairs with the release in store(), guaranteeing that
-		// slots[new read_idx] (written before that release) is visible here.
+		// acq_rel, not acquire: exchange() is a read-modify-write, and acquire
+		// only orders its load half, leaving the handback of the old read_idx
+		// slot unsynchronized with the writer's next store() into it — a real
+		// data race on the slot (can tear a non-trivial T like shared_ptr),
+		// not just a theoretical one. acq_rel closes the reverse handoff too.
 		uint8_t prev = back.exchange(
 			static_cast<uint8_t>(read_idx),
-			std::memory_order_acquire);
+			std::memory_order_acq_rel);
 		read_idx = prev & 0x3;
 	}
 
@@ -38,11 +41,12 @@ public:
 	// Writer thread only.
 	void store(T value) {
 		slots[write_idx] = std::move(value);
-		// release: makes the slots[write_idx] write above visible to any
-		// reader that subsequently acquires from `back`.
+		// acq_rel, not release: symmetric with consume() above. Still makes
+		// slots[write_idx] visible to the reader's next acquire; the acquire
+		// half now also closes the reverse handback race consume() describes.
 		uint8_t prev = back.exchange(
 			static_cast<uint8_t>(write_idx | 0x4),
-			std::memory_order_release);
+			std::memory_order_acq_rel);
 		write_idx = prev & 0x3;
 	}
 

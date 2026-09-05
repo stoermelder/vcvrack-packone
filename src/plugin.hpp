@@ -80,8 +80,8 @@ extern Model* modelSpliceKit;
 extern Model* modelAudioInterface64;
 extern Model* modelMb;
 extern Model* modelMe;
-extern Model* modelReel;
 extern Model* modelSiren;
+extern Model* modelReel;
 #else
 extern Model* modelBolt;
 extern Model* modelFourRounds;
