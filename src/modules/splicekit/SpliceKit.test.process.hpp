@@ -86,7 +86,6 @@ TEST_CASE("process - physical scene button press works normally when not linked"
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 1);  // switchScene(1) queued
 	m->taskProcessorUi.internalQueue.queue.shift()();
 	REQUIRE(m->sceneStore.current == 1);
-
 }
 
 TEST_CASE("process - physical scene button press is ignored while following a scene link master", "[SpliceKit]") {
@@ -104,7 +103,6 @@ TEST_CASE("process - physical scene button press is ignored while following a sc
 
 	REQUIRE(m->sceneStore.current == 0);   // unaffected — scene button press ignored while linked
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 0);
-
 }
 
 
@@ -132,7 +130,6 @@ TEST_CASE("process - momentary mode: releasing a pressed cell clears the pending
 	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(0.f);
 	for (int i = 0; i < 256; i++) engine.step();
 	REQUIRE(m->pendingCellId == -1);
-
 }
 
 TEST_CASE("process - toggle mode: releasing a pressed cell keeps the pending selection", "[SpliceKit]") {
@@ -185,7 +182,6 @@ TEST_CASE("process - first press arms the cell, second press creates the cable",
 	// Draining the GUI queue runs the queued toggleConnection → a real cable appears.
 	m->taskProcessorUi.step();
 	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
-
 }
 
 // physical matrix button edge case: pressing the same cell again cancels the armed selection
@@ -212,7 +208,6 @@ TEST_CASE("process - pressing the same cell again cancels the selection", "[Spli
 	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(1.f);
 	for (int i = 0; i < 256; i++) engine.step();
 	REQUIRE(m->pendingCellId == -1);
-
 }
 
 
@@ -330,7 +325,6 @@ TEST_CASE("resolveCellVisual - precedence order pending > connected > port-learn
 	// off: cell 6 has no assignment and none of the above flags.
 	CellVisual off = m->resolveCellVisual(6, true, true);
 	REQUIRE(off.stateId == LED_STATE_OFF);
-
 }
 
 TEST_CASE("resolveSceneVisual - precedence order midi-learn > active > has-connections > off", "[SpliceKit]") {
@@ -447,5 +441,21 @@ TEST_CASE("resetModuleState - clears all state", "[SpliceKit]") {
 	// MIDI map for scene button 1 was cleared
 	auto sceneMap = m->trackingProcessor.getMap(MATRIX_COUNT + 1);
 	REQUIRE(sceneMap.type == MidiTrackingType::NONE);
+}
 
+TEST_CASE("resetModuleState - removes the current scene's live cables from the patch", "[SpliceKit]") {
+	CableScaffold cables;
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+
+	m->sceneStore.connectLive(0, 1);
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
+
+	// capture()+applyToCurrent(empty) is what actually reconciles the patch; the bitmask
+	// clears that follow are metadata-only and would leave a stale cable behind on their own.
+	m->resetModuleState();
+
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0) == false);
 }

@@ -1,4 +1,4 @@
-// SpliceKit.midi.test.hpp — MIDI end-to-end through MidiTrackingProcessor (test review 2.4).
+// SpliceKit.midi.test.hpp — MIDI end-to-end through MidiTrackingProcessor.
 // The suite previously invoked processMapUpdate/processMapLearn directly and pre-seeded maps
 // with setMap, so nothing proved a real midi::Message fed into trackingProcessor.process()
 // actually (a) triggers the mapped cell button, or (b) stores a learned map. These tests feed
@@ -9,7 +9,7 @@
 #include "SpliceKit.test.hpp"
 
 
-// 2.4a — a mapped note/CC actually triggers the cell button.
+// a mapped note/CC actually triggers the cell button.
 
 TEST_CASE("MIDI end-to-end - mapped note arms the cell, second press creates the cable", "[SpliceKit]") {
 	CableScaffold cables;
@@ -63,7 +63,7 @@ TEST_CASE("MIDI end-to-end - unmapped note is ignored", "[SpliceKit]") {
 }
 
 
-// 2.4b — MIDI learn actually stores a map.
+// MIDI learn actually stores a map.
 
 TEST_CASE("MIDI end-to-end - learn stores the received note as a map", "[SpliceKit]") {
 	ModuleScaffold mods;
@@ -81,6 +81,25 @@ TEST_CASE("MIDI end-to-end - learn stores the received note as a map", "[SpliceK
 	// ...learn is now off, and the single-learn cursor was cleared.
 	REQUIRE(m->trackingProcessor.getMapLearn() == false);
 	REQUIRE(m->learningId == -1);
+}
+
+TEST_CASE("MIDI end-to-end - sequential learn ends after the last cell", "[SpliceKit]") {
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
+	m->midiLearnMode = true;
+	m->learningId = MATRIX_COUNT - 1;  // last cell
+	m->trackingProcessor.enableMapLearn(MATRIX_COUNT - 1);
+
+	m->trackingProcessor.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
+	m->trackingProcessor.process(1);
+
+	// nextId = MATRIX_COUNT — out of range, so sequential learn stops rather than wrapping.
+	const auto& map = m->trackingProcessor.getMap(MATRIX_COUNT - 1);
+	REQUIRE(map.type == MidiTrackingType::NOTE);
+	REQUIRE(map.param == 60);
+	REQUIRE(m->learningId == -1);
+	REQUIRE(m->midiLearnMode == false);
+	REQUIRE(m->trackingProcessor.getMapLearn() == false);
 }
 
 
