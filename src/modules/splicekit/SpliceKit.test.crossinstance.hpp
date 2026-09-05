@@ -283,6 +283,51 @@ TEST_CASE("collectCableEndCandidates - a destroyed instance leaves no dangling e
 	REQUIRE(ports.count({77, 1 * 2 + (int)engine::Port::INPUT}) == 0);
 }
 
+// onRemove() — cross-pending cleanup on the real engine removal path (Test::destroyModule()
+// fires Module::onRemove(RemoveEvent), which calls the deprecated onRemove() override below,
+// exactly as Engine::removeModule() does). Without this, a removed initiator would leave a
+// dangling `initiator` pointer in the shared crossPending map for the next instance to read.
+
+TEST_CASE("onRemove - clears the shared pending entry when the removed instance is the initiator", "[SpliceKit]") {
+	// a is deliberately destroyed mid-test via the bare createModule()/destroyModule() pattern
+	// (same rationale as the dangling-entry test above): the removal itself, and its effect on
+	// static state, is what's under test, so it cannot be deferred to a ModuleScaffold destructor.
+	SpliceKitModule* a = createModule();
+	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
+
+	SpliceKitModule::crossPending()[APP].clear();
+	a->triggerCell(0);
+	a->taskProcessorUi.step();   // a becomes the initiator in crossPending
+	REQUIRE(SpliceKitModule::crossPending()[APP].initiator == a);
+
+	Test::destroyModule(a);
+
+	REQUIRE(SpliceKitModule::crossPending()[APP].isValid() == false);
+	REQUIRE(SpliceKitModule::crossPending()[APP].initiator == nullptr);
+}
+
+TEST_CASE("onRemove - leaves another instance's pending entry alone", "[SpliceKit]") {
+	// b is destroyed mid-test (bare pattern, see above); a stays on its ModuleScaffold since it
+	// survives to the end of the test.
+	ModuleScaffold mods;
+	SpliceKitModule* a = mods.create();
+	SpliceKitModule* b = createModule();
+	a->portAssignments[0] = {42, engine::Port::OUTPUT, 0};
+	b->portAssignments[5] = {77, engine::Port::INPUT, 1};
+
+	SpliceKitModule::crossPending()[APP].clear();
+	a->triggerCell(0);
+	a->taskProcessorUi.step();   // a is the initiator; b never armed anything
+
+	// Removing an uninvolved instance must not disturb a's still-pending gesture.
+	Test::destroyModule(b);
+
+	REQUIRE(SpliceKitModule::crossPending()[APP].initiator == a);
+	REQUIRE(SpliceKitModule::crossPending()[APP].isValid());
+
+	SpliceKitModule::crossPending()[APP].clear();
+}
+
 // Cross-instance responder direction clash
 // The responder resolves the initiator's armed port against its own; a same-direction pair
 // (two outputs, or two inputs) can never share a cable, so no cable is made and the user is
