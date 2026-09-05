@@ -1,20 +1,46 @@
 #pragma once
 #include <functional>
-#include <mutex>
-#include <condition_variable>
 #include <thread>
 #include <atomic>
 #include <pthread.h>
+#if defined ARCH_MAC
+	// POSIX unnamed semaphores (sem_init) are not implemented on macOS;
+	// dispatch semaphores are the supported lightweight equivalent.
+	#include <dispatch/dispatch.h>
+#else
+	#include <semaphore.h>
+#endif
 
 namespace StoermelderPackOne {
 
+// Minimal counting semaphore (C++14 -- std::counting_semaphore is C++20).
+// Unlike a condvar notified without its mutex held, a post can't land in a
+// window where the waiter is neither checking its predicate nor yet blocked
+// and get lost -- signals are counted, not edge-triggered.
+struct TaskSignal {
+#if defined ARCH_MAC
+	dispatch_semaphore_t sem;
+	TaskSignal() { sem = dispatch_semaphore_create(0); }
+	~TaskSignal() { dispatch_release(sem); }
+	void post() { dispatch_semaphore_signal(sem); }
+	void wait() { dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER); }
+#else
+	sem_t sem;
+	TaskSignal() { sem_init(&sem, 0, 0); }
+	~TaskSignal() { sem_destroy(&sem); }
+	void post() { sem_post(&sem); }
+	// sem_wait can be interrupted by a signal (EINTR); retry.
+	void wait() { while (sem_wait(&sem) != 0) {} }
+#endif
+};
+
 struct TaskWorker {
-	std::mutex workerMutex;
-	std::condition_variable workerCondVar;
+	// Single-producer, single-consumer only (dsp::RingBuffer supports no
+	// more). For multiple producer threads, use MpmcTaskWorker instead.
+	TaskSignal taskSignal;
 	std::thread* worker;
 	Context* workerContext;
-	bool workerIsRunning = true;
-	bool workerDoProcess = false;
+	std::atomic<bool> workerIsRunning{true};
 	std::string name;
 
 	// Set just before the worker thread is torn down. Long-running tasks
@@ -38,12 +64,10 @@ struct TaskWorker {
 
 	~TaskWorker() {
 		cancel.store(true, std::memory_order_relaxed);
-		{
-			std::unique_lock<std::mutex> lock(workerMutex);
-			workerIsRunning = false;
-			workerDoProcess = true;
-		}
-		workerCondVar.notify_one();
+		workerIsRunning.store(false, std::memory_order_release);
+		// Extra wakeup with no matching item: drains whatever's still queued,
+		// then finds the queue empty and workerIsRunning false, and exits.
+		taskSignal.post();
 		worker->join();
 		workerContext = NULL;
 		delete worker;
@@ -63,15 +87,15 @@ struct TaskWorker {
 #endif
 
 		while (true) {
-			std::unique_lock<std::mutex> lock(workerMutex);
-			workerCondVar.wait(lock, std::bind(&TaskWorker::workerDoProcess, this));
-			if (!workerIsRunning) return;
+			taskSignal.wait();
+			// True SPSC, so empty() is never transiently wrong (unlike
+			// MpmcTaskWorker's MPMCQueue) -- no pendingTasks counter needed.
 			while (!workQueue.empty()) {
 				auto item = workQueue.shift();
 				contextSet(item.context);
 				(*item.task)(cancel);
 			}
-			workerDoProcess = false;
+			if (!workerIsRunning.load(std::memory_order_acquire)) return;
 		}
 	}
 
@@ -91,8 +115,7 @@ struct TaskWorker {
 
 	void work(std::function<void(std::atomic<bool>&)> task, Context* context) {
 		workQueue.push(WorkItem{std::make_shared<std::function<void(std::atomic<bool>&)>>(std::move(task)), context});
-		workerDoProcess = true;
-		workerCondVar.notify_one();
+		taskSignal.post();
 	}
 }; // struct TaskWorker
 
