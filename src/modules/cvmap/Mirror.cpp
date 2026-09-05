@@ -322,21 +322,24 @@ struct MirrorModule : Module, StripIdFixModule {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
-		mappingIndicatorHidden = json_boolean_value(json_object_get(rootJ, "mappingIndicatorHidden"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* audioRateJ = json_object_get(rootJ, "audioRate");
+		if (audioRateJ) audioRate = json_boolean_value(audioRateJ);
+		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
+		if (mappingIndicatorHiddenJ) mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
 
 		json_t* parameterChangesDirectJ = json_object_get(rootJ, "parameterChangesDirect");
 		if (parameterChangesDirectJ) setParameterChangesDirect(json_boolean_value(parameterChangesDirectJ));
 
 		json_t* sourcePluginSlugJ = json_object_get(rootJ, "sourcePluginSlug");
-		if (sourcePluginSlugJ) sourcePluginSlug = json_string_value(sourcePluginSlugJ);
+		if (sourcePluginSlugJ && json_is_string(sourcePluginSlugJ)) sourcePluginSlug = json_string_value(sourcePluginSlugJ);
 		json_t* sourcePluginNameJ = json_object_get(rootJ, "sourcePluginName");
-		if (sourcePluginNameJ) sourcePluginName = json_string_value(sourcePluginNameJ);
+		if (sourcePluginNameJ && json_is_string(sourcePluginNameJ)) sourcePluginName = json_string_value(sourcePluginNameJ);
 		json_t* sourceModelSlugJ = json_object_get(rootJ, "sourceModelSlug");
-		if (sourceModelSlugJ) sourceModelSlug = json_string_value(sourceModelSlugJ);
+		if (sourceModelSlugJ && json_is_string(sourceModelSlugJ)) sourceModelSlug = json_string_value(sourceModelSlugJ);
 		json_t* sourceModelNameJ = json_object_get(rootJ, "sourceModelName");
-		if (sourceModelNameJ) sourceModelName = json_string_value(sourceModelNameJ);
+		if (sourceModelNameJ && json_is_string(sourceModelNameJ)) sourceModelName = json_string_value(sourceModelNameJ);
 		json_t* sourceModuleIdJ = json_object_get(rootJ, "sourceModuleId");
 
 		if (sourceModuleIdJ) {
@@ -399,9 +402,11 @@ struct MirrorModule : Module, StripIdFixModule {
 
 		json_t* cvInputsJ = json_object_get(rootJ, "cvInputs");
 		if (cvInputsJ) {
-			json_t* cvInputJ;
-			size_t cvInputIndex;
-			json_array_foreach(cvInputsJ, cvInputIndex, cvInputJ) {
+			// Bounded to the fixed-size destination: hand-edited or corrupted
+			// patches may contain more entries than cvParamId[] holds.
+			size_t maxCvInputs = std::min((size_t)8, json_array_size(cvInputsJ));
+			for (size_t cvInputIndex = 0; cvInputIndex < maxCvInputs; cvInputIndex++) {
+				json_t* cvInputJ = json_array_get(cvInputsJ, cvInputIndex);
 				json_t* paramIdJ = json_object_get(cvInputJ, "paramId");
 				cvParamId[cvInputIndex] = json_integer_value(paramIdJ);
 			}

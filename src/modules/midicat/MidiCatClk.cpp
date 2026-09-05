@@ -28,6 +28,7 @@ struct MidiCatClkModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < 4; i++) {
 			configInput(INPUT_CLOCK + i, string::f("Clock %i", i + 1));
+			inputInfos[INPUT_CLOCK + i]->description = "External clock/trigger forwarded to the connected MIDI-CAT module (right expander).";
 		}
 
 		ResetEvent re;
@@ -35,7 +36,7 @@ struct MidiCatClkModule : Module {
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		notifyExpanderListeners("MidiCat");
+		notifyModuleListeners("MidiCat");
 	}
 
 	json_t* dataToJson() override {
@@ -45,7 +46,8 @@ struct MidiCatClkModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 	}
 };
 

@@ -1,7 +1,7 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/Version-2.3.1-green.svg?style=flat-square)
+![Version](https://img.shields.io/badge/Version-2.6.0-green.svg?style=flat-square)
 ![Rack](https://img.shields.io/badge/VCV_Rack-v2-red.svg?style=flat-square)
 ![MetaModule](https://img.shields.io/badge/MetaModule-v2-orange.svg?style=flat-square)
 ![License](https://img.shields.io/badge/License-GPLv3+-blue.svg?style=flat-square)
@@ -10,6 +10,8 @@
 **The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com). Stable versions are released in the [VCV Library](https://library.vcvrack.com/?brand=stoermelder). [Selected modules](./MetaModule.md) are also available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990)!**
 
 A [Development build](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly) of the latest commit is also available for all platforms. Please review the [changelog](./CHANGELOG.md) for this plugin.
+
+There is also an [Experimental build](https://github.com/stoermelder/vcvrack-packone/releases/tag/Experimental), which is based on the development build, but also includes new modules and features from other branches in this repository. Please be aware, that this build is experimental and modules or features may have breaking changes or be removed without notice.
 
 If you like my modules consider donating to https://paypal.me/stoermelder, but don't feel obligated to do so. Thank you for your support!
 
@@ -58,8 +60,10 @@ If you like my modules consider donating to https://paypal.me/stoermelder, but d
 - [ReMOVE Lite](./docs/cvmap/ReMove.md): a recorder for knob/slider/switch-automation
 - [ROTOR Model A](./docs/rotor/RotorA.md): spread a carrier signal across 2-16 output channels using CV
 - [SAIL](./docs/sail/Sail.md): control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC
+- [SIREN](./docs/siren/Siren.md): Sample browser collaboration with Omri Cohen — browse, preview and drag WAV/FLAC/MP3 samples to other modules
 - [SIPO](./docs/sipo/Sipo.md): serial-in parallel-out shift register with polyphonic output and CV controls
 - [SPIN](./docs/spin/Spin.md): utility for converting mouse-wheel or middle mouse-button events into triggers
+- [SPLICE-KIT](./docs/splicekit/SpliceKit.md): 8x8 matrix patch-bay for creating and removing cables by pressing button pairs
 - [STROKE](./docs/stroke/Stroke.md): utility which converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
 - [STRIP](./docs/strip/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
 - [STRIP-BAY](./docs/strip/Strip.md#stoermelder-strip-bay): a companion module for STRIP for keeping input/output connections while replacing strips
@@ -84,6 +88,22 @@ Feel free to contact me or create a GitHub issue if you have any problems or que
 ## Building
 
 Follow the [build instructions](https://vcvrack.com/manual/Building#Building-Rack-plugins) for VCV Rack or the [build instructions](https://github.com/4ms/metamodule-plugin-sdk?tab=readme-ov-file#path-to-the-sdk) for MetaModule.
+
+## Testing
+
+The unit tests use [Catch2](https://github.com/catchorg/Catch2). Tests live next to the code they cover as `*.test.cpp`, with larger suites split into `*.test.hpp` fragments; each `*.test.cpp` is built into its own binary under `build/test/` and linked against the plugin, with AddressSanitizer enabled by default.
+
+```bash
+make testrun                             # build and run all tests (parallel, JOBS=8 by default)
+make testrun JOBS=4                      # ...with a different fan-out
+make testrun SUCCESS=1                   # also print passing assertions
+make testrun-one NAME=<Module>           # build (if needed) and run a single test binary
+make testrun-one NAME=<Module> FILTER='[tag]'  # ...only TEST_CASEs matching a Catch2 tag/name filter
+make test                                # build only, don't run
+make test SANITIZER=undefined            # build with UBSan instead of ASan (also: thread)
+```
+
+The test binaries are always compiled with `DEBUGPLUGIN`, and they link the plugin, so the plugin has to be built the same way: use `make DEBUGPLUGIN=1` for it. Modules reach the VCV Rack API through a swappable access layer (`src/vcv/`) that the tests replace with mocks, and that seam only exists in a debug build. Note that toggling the flag does not invalidate existing object files, so run `make clean` when switching between a release and a debug build.
 
 ## License
 

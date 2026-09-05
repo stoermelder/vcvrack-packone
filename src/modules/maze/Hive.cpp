@@ -29,6 +29,7 @@
 #include "HiveGrid.hpp"
 #include <random>
 #include <chrono>
+#include <atomic>
 
 namespace StoermelderPackOne {
 namespace Hive {
@@ -133,7 +134,13 @@ struct HiveModule : Module {
 	const int numPorts = NUM_PORTS;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
-	std::geometric_distribution<int>* geoDist[NUM_PORTS] = {};
+	std::geometric_distribution<int> geoDist[NUM_PORTS]{
+		std::geometric_distribution<int>(0.35f),
+		std::geometric_distribution<int>(0.35f),
+		std::geometric_distribution<int>(0.35f),
+		std::geometric_distribution<int>(0.35f)
+	};
+	std::atomic<float> ratchetingProbAtomic[NUM_PORTS];
 	
 	typedef HexGrid <HiveCell, HiveCursor, NUM_PORTS, RADIUS, POINTY> HIVEGRID;
 
@@ -178,6 +185,7 @@ struct HiveModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < NUM_PORTS; i++) {
+			ratchetingProbAtomic[i].store(0.35f, std::memory_order_relaxed);
 			configInput(CLK_INPUT + i, string::f("Clock %i", i + 1));
 			if (i > 0) inputInfos[CLK_INPUT + i]->description = "Normalized to \"Yellow\" if not disabled on the context menu.";
 			configInput(RESET_INPUT + i, string::f("Reset %i", i + 1));
@@ -200,11 +208,6 @@ struct HiveModule : Module {
 		onReset(re);
 	}
 
-	~HiveModule() {
-		for (int i = 0; i < NUM_PORTS; i++) {
-			delete geoDist[i];
-		}
-	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
@@ -238,7 +241,7 @@ struct HiveModule : Module {
 		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage()))
 			for (int i = 0; i < NUM_PORTS; i++)
 				grid.moveCursor(i, (grid.cursor[i].dir + 10) % 12);
-		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage()))
+		if (shiftL2Trigger.process(inputs[SHIFT_L2_INPUT].getVoltage()))
 			for (int i = 0; i < NUM_PORTS; i++)
 				grid.moveCursor(i, (grid.cursor[i].dir + 8) % 12);
 
@@ -268,16 +271,20 @@ struct HiveModule : Module {
 								doPulse = random::uniform() >= 0.5f;
 								break;
 							case RATCHETMODE::DEFAULT:
-								if (geoDist[i]) multiplier[i].trigger((*geoDist[i])(randGen));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(geoDist[i](randGen));
 								break;
 							case RATCHETMODE::MULT_TWO:
-								if (geoDist[i]) multiplier[i].trigger(2 * ((*geoDist[i])(randGen) + 1));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(2 * (geoDist[i](randGen) + 1));
 								break;
 							case RATCHETMODE::MULT_THREE:
-								if (geoDist[i]) multiplier[i].trigger(3 * ((*geoDist[i])(randGen) + 1));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(3 * (geoDist[i](randGen) + 1));
 								break;
 							case RATCHETMODE::POWER_TWO:
-								if (geoDist[i]) multiplier[i].trigger(std::pow(2, (*geoDist[i])(randGen)));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(std::pow(2, geoDist[i](randGen)));
 								break;
 						}
 						break;
@@ -467,10 +474,16 @@ struct HiveModule : Module {
 	}
 
 	void ratchetingSetProb(int id, float prob = 0.35f) {
-		auto geoDistOld = geoDist[id];
-		geoDist[id] = new std::geometric_distribution<int>(prob);
-		if (geoDistOld) delete geoDistOld;
 		grid.cursor[id].ratchetingProb = prob;
+		ratchetingProbAtomic[id].store(prob, std::memory_order_release);
+	}
+
+	inline void updateRatchetingDist(int id) {
+		float newProb = ratchetingProbAtomic[id].load(std::memory_order_acquire);
+		if (newProb != grid.cursor[id].ratchetingProb) {
+			grid.cursor[id].ratchetingProb = newProb;
+			geoDist[id] = std::geometric_distribution<int>(newProb);
+		}
 	}
 
 	json_t* dataToJson() override {
@@ -530,7 +543,8 @@ struct HiveModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* gridJ = json_object_get(rootJ, "grid");
 		for (int q = 0; q < grid.arraySize; q++) {
@@ -547,28 +561,43 @@ struct HiveModule : Module {
 		}
 
 		json_t* mirrorsJ = json_object_get(rootJ, "mirrorCenters");
-		json_t* mirrorJ;
-		size_t mirrorIndex;
-		json_array_foreach(mirrorsJ, mirrorIndex, mirrorJ) {
-			grid.mirrorCenters[mirrorIndex].x = json_integer_value(json_object_get(mirrorJ, "x"));
-			grid.mirrorCenters[mirrorIndex].y = json_integer_value(json_object_get(mirrorJ, "y"));
-			grid.mirrorCenters[mirrorIndex].z = json_integer_value(json_object_get(mirrorJ, "z"));
+		// Bounded to the fixed-size destinations: hand-edited or corrupted
+		// patches may contain more entries than mirrorCenters[]/cursor[] hold.
+		size_t maxMirrors = std::min((size_t)6, json_array_size(mirrorsJ));
+		for (size_t mirrorIndex = 0; mirrorIndex < maxMirrors; mirrorIndex++) {
+			json_t* mirrorJ = json_array_get(mirrorsJ, mirrorIndex);
+			json_t* xJ = json_object_get(mirrorJ, "x");
+			if (xJ) grid.mirrorCenters[mirrorIndex].x = json_integer_value(xJ);
+			json_t* yJ = json_object_get(mirrorJ, "y");
+			if (yJ) grid.mirrorCenters[mirrorIndex].y = json_integer_value(yJ);
+			json_t* zJ = json_object_get(mirrorJ, "z");
+			if (zJ) grid.mirrorCenters[mirrorIndex].z = json_integer_value(zJ);
 		}
 
 		json_t* portsJ = json_object_get(rootJ, "ports");
-		json_t* portJ;
-		size_t portIndex;
-		json_array_foreach(portsJ, portIndex, portJ) {
-			grid.cursor[portIndex].startPos.q = json_integer_value(json_object_get(portJ, "qStartPos"));
-			grid.cursor[portIndex].startPos.r = json_integer_value(json_object_get(portJ, "rStartPos"));	
-			grid.cursor[portIndex].startDir = (DIRECTION)json_integer_value(json_object_get(portJ, "startDir"));
-			grid.cursor[portIndex].pos.q = json_integer_value(json_object_get(portJ, "qPos"));
-			grid.cursor[portIndex].pos.r = json_integer_value(json_object_get(portJ, "rPos"));
-			grid.cursor[portIndex].dir = (DIRECTION)json_integer_value(json_object_get(portJ, "dir"));
-			grid.cursor[portIndex].turnMode = (TURNMODE)json_integer_value(json_object_get(portJ, "turnMode"));
-			grid.cursor[portIndex].ninetyState = (TURNMODE)json_integer_value(json_object_get(portJ, "ninetyState"));
-			grid.cursor[portIndex].outMode = (OUTMODE)json_integer_value(json_object_get(portJ, "outMode"));
-			grid.cursor[portIndex].ratchetingEnabled = (RATCHETMODE)json_integer_value(json_object_get(portJ, "ratchetingEnabled"));
+		size_t maxPorts = std::min((size_t)NUM_PORTS, json_array_size(portsJ));
+		for (size_t portIndex = 0; portIndex < maxPorts; portIndex++) {
+			json_t* portJ = json_array_get(portsJ, portIndex);
+			json_t* qStartPosJ = json_object_get(portJ, "qStartPos");
+			if (qStartPosJ) grid.cursor[portIndex].startPos.q = json_integer_value(qStartPosJ);
+			json_t* rStartPosJ = json_object_get(portJ, "rStartPos");
+			if (rStartPosJ) grid.cursor[portIndex].startPos.r = json_integer_value(rStartPosJ);
+			json_t* startDirJ = json_object_get(portJ, "startDir");
+			if (startDirJ) grid.cursor[portIndex].startDir = (DIRECTION)json_integer_value(startDirJ);
+			json_t* qPosJ = json_object_get(portJ, "qPos");
+			if (qPosJ) grid.cursor[portIndex].pos.q = json_integer_value(qPosJ);
+			json_t* rPosJ = json_object_get(portJ, "rPos");
+			if (rPosJ) grid.cursor[portIndex].pos.r = json_integer_value(rPosJ);
+			json_t* dirJ = json_object_get(portJ, "dir");
+			if (dirJ) grid.cursor[portIndex].dir = (DIRECTION)json_integer_value(dirJ);
+			json_t* turnModeJ = json_object_get(portJ, "turnMode");
+			if (turnModeJ) grid.cursor[portIndex].turnMode = (TURNMODE)json_integer_value(turnModeJ);
+			json_t* ninetyStateJ = json_object_get(portJ, "ninetyState");
+			if (ninetyStateJ) grid.cursor[portIndex].ninetyState = (TURNMODE)json_integer_value(ninetyStateJ);
+			json_t* outModeJ = json_object_get(portJ, "outMode");
+			if (outModeJ) grid.cursor[portIndex].outMode = (OUTMODE)json_integer_value(outModeJ);
+			json_t* ratchetingEnabledJ = json_object_get(portJ, "ratchetingEnabled");
+			if (ratchetingEnabledJ) grid.cursor[portIndex].ratchetingEnabled = (RATCHETMODE)json_integer_value(ratchetingEnabledJ);
 
 			json_t* ratchetingProbJ = json_object_get(portJ, "ratchetingProb");
 			if (ratchetingProbJ) {
@@ -576,8 +605,10 @@ struct HiveModule : Module {
 			}
 		}
 
-		grid.usedRadius = json_integer_value(json_object_get(rootJ, "usedRadius"));
-		sizeFactor = json_real_value(json_object_get(rootJ, "sizeFactor"));
+		json_t* usedRadiusJ = json_object_get(rootJ, "usedRadius");
+		if (usedRadiusJ) grid.usedRadius = json_integer_value(usedRadiusJ);
+		json_t* sizeFactorJ = json_object_get(rootJ, "sizeFactor");
+		if (sizeFactorJ) sizeFactor = json_real_value(sizeFactorJ);
 
 		json_t* normalizePortsJ = json_object_get(rootJ, "normalizePorts");
 		if (normalizePortsJ) normalizePorts = json_boolean_value(normalizePortsJ);
@@ -587,7 +618,7 @@ struct HiveModule : Module {
 		if (ratchetingEnabledJ) {
 			for (int i = 0; i < NUM_PORTS; i++) {
 				grid.cursor[i].ratchetingEnabled = (RATCHETMODE)json_integer_value(ratchetingEnabledJ);
-				ratchetingSetProb(i, json_real_value(ratchetingProbJ));
+				if (ratchetingProbJ) ratchetingSetProb(i, json_real_value(ratchetingProbJ));
 			}
 		}
 
@@ -742,80 +773,85 @@ struct HiveGridWidget : FramebufferWidget {
 			this->module = module;
 		}
 
-		void drawLayer(const Widget::DrawArgs& args, int layer) override {
-			if (layer == 1) {
-				float sizeFactor = 16.2142849f;
-				int usedRadius = 4;
-				if (module) {
-					sizeFactor = module->sizeFactor;
-					usedRadius = module->grid.usedRadius;
-				}
+		// Content lives in draw() (layer 0), not drawLayer(1): FramebufferWidget
+		// only caches a child's draw() output (see FramebufferWidget::drawFramebuffer(),
+		// which calls Widget::draw() directly), so content left in drawLayer(1) is
+		// never actually cached -- it silently redraws every frame regardless, while
+		// the wrapping FramebufferWidget renders and blits an empty framebuffer for
+		// nothing. HiveGridWidget below paints the cached image during the layer-1
+		// pass instead, so this still lands in the same z-order slot as before.
+		void draw(const Widget::DrawArgs& args) override {
+			float sizeFactor = 16.2142849f;
+			int usedRadius = 4;
+			if (module) {
+				sizeFactor = module->sizeFactor;
+				usedRadius = module->grid.usedRadius;
+			}
 
-				Vec hex;
+			Vec hex;
 
-				// Draw background
-				nvgBeginPath(args.vg);
-				drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
-				nvgFillColor(args.vg, nvgRGB(0, 16, 90));
-				nvgFill(args.vg);
+			// Draw background
+			nvgBeginPath(args.vg);
+			drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
+			nvgFillColor(args.vg, nvgRGB(0, 16, 90));
+			nvgFill(args.vg);
 
-				// Draw gradient
-				nvgBeginPath(args.vg);
-				drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
-				NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
-				NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
-				nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
-				nvgFill(args.vg);
+			// Draw gradient
+			nvgBeginPath(args.vg);
+			drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
+			NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
+			NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
+			nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
+			nvgFill(args.vg);
 
-				// Draw grid
-				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-				nvgStrokeWidth(args.vg, 0.6f);
-				nvgBeginPath(args.vg);
-				MODULE::HIVEGRID::drawGrid(usedRadius, sizeFactor, ORIGIN, args.vg);
-				nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.075f));
-				nvgStroke(args.vg);
+			// Draw grid
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+			nvgStrokeWidth(args.vg, 0.6f);
+			nvgBeginPath(args.vg);
+			MODULE::HIVEGRID::drawGrid(usedRadius, sizeFactor, ORIGIN, args.vg);
+			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.075f));
+			nvgStroke(args.vg);
 
-				// Draw outer edge
-				nvgBeginPath(args.vg);
-				MODULE::HIVEGRID::drawGridOutline(usedRadius, sizeFactor, ORIGIN, args.vg);
-				nvgStrokeWidth(args.vg, 0.7f);
-				nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.125f));
-				nvgStroke(args.vg);
+			// Draw outer edge
+			nvgBeginPath(args.vg);
+			MODULE::HIVEGRID::drawGridOutline(usedRadius, sizeFactor, ORIGIN, args.vg);
+			nvgStrokeWidth(args.vg, 0.7f);
+			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.125f));
+			nvgStroke(args.vg);
 
-				// Draw grid cells
-				float stroke = 0.7f;
-				float onCellSizeFactor = sizeFactor - stroke / 2.f;
-				float randCellSizeFactor = sizeFactor - stroke;
-				float sCellSizeFactor = sizeFactor / 2.f;
+			// Draw grid cells
+			float stroke = 0.7f;
+			float onCellSizeFactor = sizeFactor - stroke / 2.f;
+			float randCellSizeFactor = sizeFactor - stroke;
+			float sCellSizeFactor = sizeFactor / 2.f;
 
-				for (int q = -usedRadius; q <= usedRadius; q++) {
-					for (int r = -usedRadius; r <= usedRadius; r++) {
-						if (cellVisible(q, r, usedRadius)) {
-							GRIDSTATE state = module ? module->grid.getCell(q, r).state : (GRIDSTATE)int(std::round(random::normal() * 2.f));
-							switch (state) {
-								case GRIDSTATE::ON:
-									hex = hexToPixel(RoundAxialVec(q, r), sizeFactor, POINTY, ORIGIN);
-									nvgBeginPath(args.vg);
-									drawHex(hex, onCellSizeFactor, POINTY, args.vg);
-									nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
-									nvgFill(args.vg);
-									break;
-								case GRIDSTATE::RANDOM:
-									hex = hexToPixel(RoundAxialVec(q, r), sizeFactor, POINTY, ORIGIN);
-									nvgBeginPath(args.vg);
-									drawHex(hex, randCellSizeFactor, POINTY, args.vg);
-									nvgStrokeWidth(args.vg, stroke);
-									nvgStrokeColor(args.vg, color::mult(gridColor, 0.6f));
-									nvgStroke(args.vg);
+			for (int q = -usedRadius; q <= usedRadius; q++) {
+				for (int r = -usedRadius; r <= usedRadius; r++) {
+					if (cellVisible(q, r, usedRadius)) {
+						GRIDSTATE state = module ? module->grid.getCell(q, r).state : (GRIDSTATE)int(std::round(random::normal() * 2.f));
+						switch (state) {
+							case GRIDSTATE::ON:
+								hex = hexToPixel(RoundAxialVec(q, r), sizeFactor, POINTY, ORIGIN);
+								nvgBeginPath(args.vg);
+								drawHex(hex, onCellSizeFactor, POINTY, args.vg);
+								nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
+								nvgFill(args.vg);
+								break;
+							case GRIDSTATE::RANDOM:
+								hex = hexToPixel(RoundAxialVec(q, r), sizeFactor, POINTY, ORIGIN);
+								nvgBeginPath(args.vg);
+								drawHex(hex, randCellSizeFactor, POINTY, args.vg);
+								nvgStrokeWidth(args.vg, stroke);
+								nvgStrokeColor(args.vg, color::mult(gridColor, 0.6f));
+								nvgStroke(args.vg);
 
-									nvgBeginPath(args.vg);
-									drawHex(hex, sCellSizeFactor, POINTY, args.vg);
-									nvgFillColor(args.vg, color::mult(gridColor, 0.4f));
-									nvgFill(args.vg);
-									break;
-								case GRIDSTATE::OFF:
-									break;
-							}
+								nvgBeginPath(args.vg);
+								drawHex(hex, sCellSizeFactor, POINTY, args.vg);
+								nvgFillColor(args.vg, color::mult(gridColor, 0.4f));
+								nvgFill(args.vg);
+								break;
+							case GRIDSTATE::OFF:
+								break;
 						}
 					}
 				}
@@ -843,14 +879,18 @@ struct HiveGridWidget : FramebufferWidget {
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
+		// FramebufferWidget only caches draw() (layer 0) content -- its own
+		// drawLayer() is the plain Widget:: default, which does not paint the
+		// cached image at all. Call FramebufferWidget::draw() here instead so
+		// the cached grid still lands in the same z-order slot (layer 1,
+		// alongside every other module's lights) it always has.
+		if (layer != 1) return;
 #ifndef METAMODULE
-		if (layer == 1) {
-			// Dim the display but don't darken it completely
-			float b = std::max(0.2f, settings::rackBrightness);
-			nvgGlobalAlpha(args.vg, b);
-		}
+		// Dim the display but don't darken it completely
+		float b = std::max(0.2f, settings::rackBrightness);
+		nvgGlobalAlpha(args.vg, b);
 #endif
-		FramebufferWidget::drawLayer(args, layer);
+		FramebufferWidget::draw(args);
 	}
 };
 

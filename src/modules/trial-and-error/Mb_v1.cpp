@@ -23,6 +23,20 @@ bool hideBrands = false;
 // Static functions
 
 static bool isModelVisible(plugin::Model* model, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const std::set<std::string>& customTagFilter, const bool& hidden) {
+	// Filter if not whitelisted by library
+	if (pluginSettings.mbApplyLibraryWhitelist) {
+		if (!settings::isModuleWhitelisted(model->plugin->slug, model->slug)) {
+			return false;
+		}
+	}
+
+	// Filter deprecated modules
+	if (!pluginSettings.mbShowDeprecated) {
+		if (model->hidden) {
+			return false;
+		}
+	}
+
 	// Filter favorite
 	if (favourite) {
 		if (!isModelFavorite(model))
@@ -59,64 +73,13 @@ static bool isModelVisible(plugin::Model* model, const bool& favourite, const st
 	return true;
 }
 
-static void toggleModelFavorite(Model* model) {
-	setModelFavorite(model, !isModelFavorite(model));
-
-	ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-	if (browser->favorites) {
-		browser->refresh(false);
-	} 
-}
-
-static void toggleModelHidden(Model* model) {
-	auto it = hiddenModels.find(model);
-	if (it != hiddenModels.end()) 
-		hiddenModels.erase(model);
-	else 
-		hiddenModels.insert(model);
-
-	ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-	browser->refresh(false);
-}
-
-static bool isModelHidden(plugin::Model* model) {
-	return hiddenModels.find(model) != hiddenModels.end();
-}
-
-static ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser = true) {
-	// Create Module
-	engine::Module* addedModule = model->createModule();
-	APP->engine->addModule(addedModule);
-
-	// Create ModuleWidget
-	ModuleWidget* moduleWidget = model->createModuleWidget(addedModule);
-	assert(moduleWidget);
-	APP->scene->rack->addModuleAtMouse(moduleWidget);
-
-	// Load template preset
-	moduleWidget->loadTemplate();
-
-	// Push ModuleAdd history action
-	history::ModuleAdd* h = new history::ModuleAdd;
-	h->name = "create module";
-	h->setModule(moduleWidget);
-	APP->history->push(h);
-
-	// Hide Module Browser
-	if (hideBrowser) APP->scene->browser->hide();
-
-	// Update usage data
-	modelUsageTouch(model);
-
-	return moduleWidget;
-}
-
 
 // Tag toggle menu item that can be used with addGroupedToggleMenuItems
 struct TogglePredefinedTagItem : MenuItem {
 	plugin::Model* model = nullptr;
 	int tagId = 0;
 	bool hasEffectiveTag = false;
+	std::shared_ptr<std::string> filter;
 	void onAction(const event::Action& e) override {
 		if (hasEffectiveTag) {
 			predefinedTagRemove(model, tagId);
@@ -132,6 +95,7 @@ struct TogglePredefinedTagItem : MenuItem {
 		e.unconsume();
 	}
 	void step() override {
+		visible = Rack::menuFilterMatches(filter, text);
 		rightText = CHECKMARK(hasEffectiveTag);
 		MenuItem::step();
 	}
@@ -141,6 +105,13 @@ struct TogglePredefinedTagItem : MenuItem {
 // Widgets
 
 struct ModelBox : widget::OpaqueWidget {
+	struct ModuleWidgetContainer : widget::Widget {
+		void draw(const DrawArgs& args) override {
+			Widget::draw(args);
+			Widget::drawLayer(args, 1);
+		}
+	};
+
 	plugin::Model* model;
 	widget::Widget* previewWidget;
 	ui::Tooltip* tooltip = NULL;
@@ -187,9 +158,17 @@ struct ModelBox : widget::OpaqueWidget {
 		zoomWidget->addChild(previewFb);
 
 		ModuleWidget* moduleWidget = model->createModuleWidget(NULL);
-		previewFb->addChild(moduleWidget);
+		ModuleWidgetContainer* mwc = new ModuleWidgetContainer;
+		mwc->addChild(moduleWidget);
+		mwc->box.size = moduleWidget->box.size;
+		previewFb->addChild(mwc);
 		// Save the width, used for correct width of blank before rendered
 		modelBoxWidth = moduleWidget->box.size.x;
+
+		// Widgets such as lights only compute their initial visible state (color, layout, nested dirty
+		// framebuffers) inside step(). Without running it once here, the framebuffer bakes its first snapshot
+		// from an unstepped, just-constructed tree.
+		moduleWidget->step();
 
 		sizePreview();
 	}
@@ -269,9 +248,8 @@ struct ModelBox : widget::OpaqueWidget {
 		//	return;
 
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == 0) {
-			ModuleWidget* mw = chooseModel(model);
-			// Pretend the moduleWidget was clicked so it can be dragged in the RackWidget
-			e.consume(mw);
+			chooseModel(model);
+			e.consume(this);
 		}
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
 			chooseModel(model, false);
@@ -306,23 +284,42 @@ struct ModelBox : widget::OpaqueWidget {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createCheckMenuItem("Favorite", RACK_MOD_CTRL_NAME "+F",
 			[&]() { return isModelFavorite(model); },
-			[&]() { toggleModelFavorite(model); }
+			[&]() { 
+				toggleModelFavorite(model);
+				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+				if (browser->favorites) browser->refresh(false);
+			}
 		));
 		menu->addChild(createCheckMenuItem("Hidden", RACK_MOD_CTRL_NAME "+H",
 			[&]() { return modelHidden; },
-			[&]() { toggleModelHidden(model); }
+			[&]() { 
+				toggleModelHidden(model);
+				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+				browser->refresh(false);
+			}
 		));
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuLabel("Custom Tags"));
 
+		// Shared between the new-tag text field and the tag menu items below:
+		// the typed text doubles as a live case-insensitive filter on the
+		// existing tags while still creating a new tag on enter.
+		auto tagFilter = std::make_shared<std::string>();
+
 		struct NewCustomTagField : ui::TextField {
 			plugin::Model* model;
+			std::shared_ptr<std::string> filter;
+
+			void onChange(const event::Change& e) override {
+				ui::TextField::onChange(e);
+				*filter = string::trim(text);
+			}
 
 			void onSelectKey(const event::SelectKey& e) override {
 				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
 					std::string tag = string::trim(text);
-					if (!tag.empty()) {
+					if (isValidCustomTag(tag)) {
 						customTagAdd(model, tag);
 						ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
 						if (browser) {
@@ -343,6 +340,7 @@ struct ModelBox : widget::OpaqueWidget {
 		struct ToggleCustomTagItem : MenuItem {
 			plugin::Model* model;
 			std::string tagName;
+			std::shared_ptr<std::string> filter;
 
 			void onAction(const event::Action& e) override {
 				if (customTagHas(model, tagName)) {
@@ -360,6 +358,7 @@ struct ModelBox : widget::OpaqueWidget {
 			}
 
 			void step() override {
+				visible = Rack::menuFilterMatches(filter, text);
 				rightText = CHECKMARK(customTagHas(model, tagName));
 				MenuItem::step();
 			}
@@ -367,8 +366,9 @@ struct ModelBox : widget::OpaqueWidget {
 
 		NewCustomTagField* ntf = new NewCustomTagField;
 		ntf->box.size.x = 150.f;
-		ntf->placeholder = "New tag...";
+		ntf->placeholder = "Filter / new tag...";
 		ntf->model = model;
+		ntf->filter = tagFilter;
 		menu->addChild(ntf);
 		APP->event->setSelectedWidget(ntf);
 
@@ -379,13 +379,14 @@ struct ModelBox : widget::OpaqueWidget {
 		});
 
 		plugin::Model* m = model;
-		Rack::addGroupedMenuItems<std::string>(menu, tags, [m](const std::string& tag) -> ui::MenuItem* {
+		Rack::addGroupedMenuItems<std::string>(menu, tags, [m, tagFilter](const std::string& tag) -> ui::MenuItem* {
 			ToggleCustomTagItem* item = new ToggleCustomTagItem;
 			item->text = tag;
 			item->model = m;
 			item->tagName = tag;
+			item->filter = tagFilter;
 			return item;
-		}, 20);
+		}, 20, 16, tagFilter);
 
 		// Add section for modifying predefined tags
 		menu->addChild(new MenuSeparator);
@@ -402,29 +403,37 @@ struct ModelBox : widget::OpaqueWidget {
 			return string::lowercase(a.first) < string::lowercase(b.first);
 		});
 
-		Rack::addGroupedMenuItems<MenuItemType>(menu, allTags, 
-			[effectiveTagIds, m](MenuItemType item) {
+		Rack::addGroupedMenuItems<MenuItemType>(menu, allTags,
+			[effectiveTagIds, m, tagFilter](MenuItemType item) {
 				TogglePredefinedTagItem* t = new TogglePredefinedTagItem;
 				t->text = item.first;
 				t->model = m;
 				t->tagId = item.second;
 				t->hasEffectiveTag = effectiveTagIds.find(item.second) != effectiveTagIds.end();
+				t->filter = tagFilter;
 				return t;
-			}
+			},
+			24, 16, tagFilter
 		);
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
 			switch (e.key) {
-				case GLFW_KEY_F:
-					toggleModelFavorite(model);
+				case GLFW_KEY_F: {
+					toggleModelFavorite(model); 
+					ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+					if (browser->favorites) browser->refresh(false);
 					e.consume(this);
 					break;
-				case GLFW_KEY_H:
+				}
+				case GLFW_KEY_H: {
 					toggleModelHidden(model);
+					ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+					browser->refresh(false);
 					e.consume(this);
 					break;
+				}
 			}
 		}
 		OpaqueWidget::onHoverKey(e);
@@ -1029,7 +1038,8 @@ void ModuleBrowser::refresh(bool resetScroll) {
 				break;
 			case ModuleBrowserSort::RANDOM:
 				std::vector<std::reference_wrapper<Widget*>> vec(modelContainer->children.begin(), modelContainer->children.end());
-				std::random_shuffle(vec.begin(), vec.end());
+				std::mt19937 rng(random::u32());
+				std::shuffle(vec.begin(), vec.end(), rng);
 				std::list<Widget*> s(vec.begin(), vec.end());
 				modelContainer->children.swap(s);
 				break;

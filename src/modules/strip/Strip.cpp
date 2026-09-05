@@ -1,9 +1,10 @@
 #include "Strip.hpp"
+#include "../../utils/cursor.hpp"
 #include "../../utils/digital.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../../utils/TaskProcessor.hpp"
+#include "../../utils/SpscLatestValue.hpp"
 #include <atomic>
-#include <memory>
 
 namespace StoermelderPackOne {
 namespace Strip {
@@ -55,12 +56,12 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	std::atomic<bool> lastBypassState{false};
 
 	/** [Stored to JSON] */
-	/*	This is owned be the engine thread */
+	/*	This is owned by the engine thread */
 	std::set<std::tuple<int64_t, int>> excludedParams;
-	/*  Snapshot published for UI thread: shared_ptr to immutable set. Use std::atomic_load/store for atomic access. */
-	std::shared_ptr<const std::set<std::tuple<int64_t, int>>> excludedParamsPtr;
-	/* 	Snapshot published by UI Thread, only used for loading presets */
-	std::shared_ptr<const std::set<std::tuple<int64_t, int>>> excludedParamsPtrUi;
+	/*  Snapshot published for UI thread (engine writes, UI reads). */
+	SpscLatestValue<std::set<std::tuple<int64_t, int>>> excludedParamsPtr;
+	/*  Snapshot published by UI thread for engine to consume once (UI writes, engine reads). */
+	SpscLatestValue<std::set<std::tuple<int64_t, int>>> excludedParamsPtrUi;
 
 	/*  Indicates that learn mode is ready - only used for LED */
 	std::atomic<bool> excludeLearn{false};
@@ -87,13 +88,18 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configSwitch(MODE_PARAM, 0.f, 1.f, 0.f, "Toggle left/right mode");
+		paramQuantities[MODE_PARAM]->description = "Cycles through left/right/selected-strip modes for the strip buttons.";
 		configInput(ON_INPUT, "Strip on/toggle trigger");
+		inputInfos[ON_INPUT]->description = "Behavior depends on the ON-mode selected on the context menu (default/trigger/toggle/gate).";
 		configSwitch(ON_PARAM, 0.f, 1.f, 0.f, "Switch/toggle strip on");
 		configInput(OFF_INPUT, "Strip off trigger");
+		inputInfos[OFF_INPUT]->description = "Triggers a hard-off of the strip bypass.";
 		configSwitch(OFF_PARAM, 0.f, 1.f, 0.f, "Switch strip off");
 		configInput(RAND_INPUT, "Strip randomization trigger");
+		inputInfos[RAND_INPUT]->description = "Randomizes the strip's parameters according to the include/exclude list.";
 		configSwitch(RAND_PARAM, 0.f, 1.f, 0.f, "Randomize strip");
 		configSwitch(EXCLUDE_PARAM, 0.f, 1.f, 0.f, "Parameter randomization include/exclude");
+		paramQuantities[EXCLUDE_PARAM]->description = "Hold to enter parameter learn mode; clicked parameters are then either included in or excluded from randomization.";
 
 		ResetEvent re;
 		onReset(re);
@@ -106,9 +112,19 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	void onReset(const ResetEvent& e) override {
 		randomParamsOnly = false;
 		presetLoadReplace = false;
-		// Initialize snapshot to empty set so UI can read safely immediately
-		excludedParams.clear();
-		std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>());
+		// excludedParams and its engine->UI snapshot (excludedParamsPtr) are owned by
+		// the engine thread. onReset may run on the UI/main thread (e.g. "Initialize"
+		// from the context menu), so clearing them inline would make both the UI thread
+		// and the engine thread write the same SpscLatestValue, breaking its strict
+		// single-writer contract and corrupting the heap. Defer the clear to the engine
+		// thread via the same task mechanism used by every other exclude mutation.
+		// (SpscLatestValue default-constructs to an empty set, so UI reads stay safe
+		// until the task runs on the next process() tick.)
+		groupExcludeClearRequest();
+		// excludedParamsPtrUi is the UI->engine channel; its writer is the UI/main
+		// thread, so resetting it here is safe and prevents a stale snapshot from
+		// being reloaded later.
+		excludedParamsPtrUi.store({});
 		Module::onReset(e);
 	}
 
@@ -414,7 +430,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				excludedParams.erase(it);
 			}
 			// Publish updated snapshot for UI readers
-			std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
+			excludedParamsPtr.store(excludedParams);
 		}
 	}
 
@@ -432,7 +448,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 */
 	void groupExcludeClear() {
 		excludedParams.clear();
-		std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>());
+		excludedParamsPtr.store({});
 	}
 
 	/** 
@@ -458,7 +474,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				if (mNext->getId() == moduleId) {
 					excludedParams.insert(std::make_tuple(moduleId, paramId));
 					// Publish updated snapshot for UI readers
-					std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
+					excludedParamsPtr.store(excludedParams);
 					return;
 				}
 				m = mNext;
@@ -475,7 +491,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				if (mNext->getId() == moduleId) {
 					excludedParams.insert(std::make_tuple(moduleId, paramId));
 					// Publish updated snapshot for UI readers
-					std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
+					excludedParamsPtr.store(excludedParams);
 					return;
 				}
 				m = mNext;
@@ -497,7 +513,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 */
 	void groupExcludeRemove(int64_t moduleId, int paramId) {
 		excludedParams.erase(std::make_tuple(moduleId, paramId));
-		std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
+		excludedParamsPtr.store(excludedParams);
 	}
 
 	/** 
@@ -513,12 +529,9 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 * To be called from engine-thread only.
 	 */
 	void groupExcludeLoad() {
-		auto snapUi = std::atomic_load(&excludedParamsPtrUi);
-		if (snapUi) {
-			excludedParams = *snapUi;
-			// Publish updated snapshot for UI readers
-			std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
-			std::atomic_store(&excludedParamsPtrUi, std::shared_ptr<const std::set<std::tuple<int64_t, int>>>{});
+		if (excludedParamsPtrUi.load_if_new(excludedParams)) {
+			// Publish updated snapshot for UI reader
+			excludedParamsPtr.store(excludedParams);
 		}
 	}
 
@@ -532,16 +545,13 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 
 		json_object_set_new(rootJ, "onMode", json_integer((int)onMode));
 
-		// Use atomic snapshot published by the engine thread
-		auto snap = std::atomic_load(&excludedParamsPtr);
+		// Use snapshot published by the engine thread
 		json_t* excludedParamsJ = json_array();
-		if (snap) {
-			for (auto t : *snap) {
-				json_t* excludedParamJ = json_object();
-				json_object_set_new(excludedParamJ, "moduleId", json_integer(std::get<0>(t)));
-				json_object_set_new(excludedParamJ, "paramId", json_integer(std::get<1>(t)));
-				json_array_append_new(excludedParamsJ, excludedParamJ);
-			}
+		for (auto t : excludedParamsPtr.peek()) {
+			json_t* excludedParamJ = json_object();
+			json_object_set_new(excludedParamJ, "moduleId", json_integer(std::get<0>(t)));
+			json_object_set_new(excludedParamJ, "paramId", json_integer(std::get<1>(t)));
+			json_array_append_new(excludedParamsJ, excludedParamJ);
 		}
 		json_object_set_new(rootJ, "excludedParams", excludedParamsJ);
 
@@ -557,10 +567,11 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 */
 	void dataFromJson(json_t* rootJ) override {
 		StripModuleBase::dataFromJson(rootJ);
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* onModeJ = json_object_get(rootJ, "onMode");
-		onMode = (ONMODE)json_integer_value(onModeJ);
+		if (onModeJ) onMode = (ONMODE)json_integer_value(onModeJ);
 
 		json_t* excludedParamsJ = json_object_get(rootJ, "excludedParams");
 		if (excludedParamsJ) {
@@ -578,12 +589,12 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				snap.insert(std::make_tuple(moduleId, paramId));
 			}
 			// Publish snapshot for engine thread
-			std::atomic_store(&excludedParamsPtrUi, std::make_shared<const std::set<std::tuple<int64_t, int>>>(snap));
+			excludedParamsPtrUi.store(snap);
 			groupExcludeLoadRequest();
 		}
 	
 		json_t* randomExclJ = json_object_get(rootJ, "randomExcl");
-		randomExcl = (RANDOMEXCL)json_integer_value(randomExclJ);
+		if (randomExclJ) randomExcl = (RANDOMEXCL)json_integer_value(randomExclJ);
 		json_t* randomParamsOnlyJ = json_object_get(rootJ, "randomParamsOnly");
 		if (randomParamsOnlyJ) randomParamsOnly = json_boolean_value(randomParamsOnlyJ);
 		json_t* presetLoadReplaceJ = json_object_get(rootJ, "presetLoadReplace");
@@ -661,13 +672,7 @@ struct ExcludeButton : TL1105 {
 
 	void toggleParamLearn() {
 		learn ^= true;
-		if (learn) {
-			GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-			if (APP->window) glfwSetCursor(APP->window->win, cursor);
-		}
-		else {
-			if (APP->window) glfwSetCursor(APP->window->win, NULL);
-		}
+		cursor::setLearnCursor(learn);
 		APP->scene->rack->setTouchedParam(NULL);
 	}
 
@@ -690,14 +695,13 @@ struct ExcludeButton : TL1105 {
 			module->groupExcludeClearRequest();
 		}));
 
-		// Use atomic snapshot published by the engine thread to avoid racing with engine mutations
-		auto snap = std::atomic_load(&module->excludedParamsPtr);
+		const auto& snap = module->excludedParamsPtr.peek();
 
-		if (!snap || snap->size() == 0)
+		if (snap.empty())
 			return;
 
 		menu->addChild(new MenuSeparator());
-		for (auto it : *snap) {
+		for (auto it : snap) {
 			int64_t moduleId = std::get<0>(it);
 			int paramId = std::get<1>(it);
 			

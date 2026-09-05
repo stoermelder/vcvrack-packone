@@ -1,6 +1,7 @@
 #include "../../plugin.hpp"
 #include "AhabRenderer.hpp"
 #include "Ahab.hpp"
+#include "AhabEditorState.hpp"
 #include <cmath>
 #include <nanovg.h>
 
@@ -41,7 +42,7 @@ static AhabRenderer::GlyphClass glyph_class_of(char glyph) {
 }
 
 // Helper to map simple terminal colors (approximate)
-static NVGcolor color_from_name(int name, float alpha = 1.0f) {
+static NVGcolor __attribute__((unused)) color_from_name(int name, float alpha = 1.0f) {
 	switch (name) {
 	case 0: // natural
 		return nvgRGBAf(1, 1, 1, alpha);
@@ -100,99 +101,15 @@ bool AhabRenderer::pixelToCell(const math::Vec& pos, const math::Vec& areaSize, 
 	return true;
 }
 
-void AhabRenderer::setCursor(Usz y, Usz x) {
-	cursor_y = std::max(sel_y, std::min(y, sel_y + sel_h - 1));
-	cursor_x = std::max(sel_x, std::min(x, sel_x + sel_w - 1));
-}
-
-void AhabRenderer::getCursor(Usz& y, Usz& x) const {
-	y = cursor_y;
-	x = cursor_x;
-}
-
-void AhabRenderer::moveCursorRelative(int dy, int dx, Usz field_h, Usz field_w, bool extendSelection) {
-	// Clamp relative move to grid bounds
-	if (field_h == 0 || field_w == 0) return;
-	int ny = (int)cursor_y + dy;
-	int nx = (int)cursor_x + dx;
-	if (ny < 0) ny = 0;
-	if (nx < 0) nx = 0;
-	if ((Usz)ny >= field_h) ny = (int)field_h - 1;
-	if ((Usz)nx >= field_w) nx = (int)field_w - 1;
-	cursor_y = (Usz)ny;
-	cursor_x = (Usz)nx;
-	if (extendSelection) updateSelectionToCursor();
-}
-
-// Selection methods
-void AhabRenderer::toggleSelectionAtCursor() {
-	// Selection is always active — toggling starts a new 1x1 selection at cursor
-	sel_anchor_y = cursor_y;
-	sel_anchor_x = cursor_x;
-	sel_y = cursor_y; sel_x = cursor_x; sel_h = 1; sel_w = 1;
-}
-
-void AhabRenderer::clearSelection() {
-	// Selection cannot be disabled; collapse to a 1x1 selection at the cursor
-	sel_anchor_y = cursor_y;
-	sel_anchor_x = cursor_x;
-	sel_y = cursor_y; sel_x = cursor_x; sel_h = 1; sel_w = 1;
-}
-
-void AhabRenderer::updateSelectionToCursor() {
-	sel_y = std::min(sel_anchor_y, cursor_y);
-	sel_x = std::min(sel_anchor_x, cursor_x);
-	sel_h = std::max(sel_anchor_y, cursor_y) - sel_y + 1;
-	sel_w = std::max(sel_anchor_x, cursor_x) - sel_x + 1;
-}
-
-void AhabRenderer::setSelection(Usz y, Usz x, Usz h, Usz w, Usz field_h, Usz field_w) {
-	// Prevent zero-size selection
-	if (h == 0) h = 1;
-	if (w == 0) w = 1;
-	// If no bounds provided, behave as before
-	if (field_h == (Usz)std::numeric_limits<Usz>::max() || field_w == (Usz)std::numeric_limits<Usz>::max()) {
-		sel_y = y; sel_x = x; sel_h = h; sel_w = w;
-		sel_anchor_y = y; sel_anchor_x = x;
-		return;
-	}
-	// If field has zero dimension, clear selection
-	if (field_h == 0 || field_w == 0) {
-		clearSelection();
-		return;
-	}
-	// Clamp height/vertical start
-	if (h > field_h) {
-		y = 0;
-		h = field_h;
-	} else if (y > field_h - h) {
-		y = field_h - h;
-	}
-	// Clamp width/horizontal start
-	if (w > field_w) {
-		x = 0;
-		w = field_w;
-	} else if (x > field_w - w) {
-		x = field_w - w;
-	}
-	sel_y = y; sel_x = x; sel_h = h; sel_w = w;
-	sel_anchor_y = y; sel_anchor_x = x;
-	setCursor(cursor_y, cursor_x); // clamp cursor to new selection
-}
-
-void AhabRenderer::getSelectionRect(Usz& y, Usz& x, Usz& h, Usz& w) const {
-	y = sel_y; x = sel_x; h = sel_h; w = sel_w;
-}
-
-void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, const math::Vec& areaSize, bool isPlaying) {
+void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, const math::Vec& areaSize, const AhabEditorState& editorState, bool isPlaying) {
 	if (!vg || !field || !field->buffer)
 		return;
 	// Compute cell sizes based on areaSize and field
 	float cell_w, cell_h;
 	computeCellAndPadding(areaSize, field, cell_w, cell_h);
-	// Choose font size so glyphPaddingRatio == 1.0 fills a cell exactly (no extra border).
-	// For the chosen monospace font, a glyph's width is approximately fontSize * 0.5,
-	// so we pick fontSize = glyphPaddingRatio * min(cell_h * 2.0f, cell_w * 2.0f).
+	// Choose font size so glyphPaddingRatio == 1.0 fills a cell exactly (no extra
+	// border). For the chosen monospace font a glyph is ~fontSize*0.5 wide, so
+	// fontSize = glyphPaddingRatio * min(cell_h, cell_w) * 2.0f.
 	float chosenFontSize = this->glyphPaddingRatio * std::min(cell_h * 2.0f, cell_w * 2.0f);
 	setFontSize(chosenFontSize);
 	// Use renderer's pad as origin for drawing
@@ -209,8 +126,8 @@ void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, co
 
 	// Determine highlight target: if cursor is on a lowercase variable, highlight that char
 	char highlightChar = '\0';
-	if (cursor_x < w && cursor_y < h) {
-		char cur = field->buffer[cursor_y * w + cursor_x];
+	if (editorState.cursor_x < w && editorState.cursor_y < h) {
+		char cur = field->buffer[editorState.cursor_y * w + editorState.cursor_x];
 		if ((cur >= 'a' && cur <= 'z') || (cur >= '0' && cur <= '9')) highlightChar = cur;
 	}
 
@@ -310,9 +227,9 @@ void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, co
 			const char* textToDraw = tmpChar;
 			if (g == '.') {
 				// Draw cursor overlay (if within bounds)
-				if (rx == cursor_x && ry == cursor_y) {
+				if (rx == editorState.cursor_x && ry == editorState.cursor_y) {
 					// If insert mode is active, draw a white frame around the cursor cell
-					if (getInsertMode()) {
+					if (editorState.getInsertMode()) {
 						// Slight inset so the stroke doesn't cut off on edges
 						nvgBeginPath(vg);
 						nvgRect(vg, px - 0.3f, py - 0.3f, cell_w + 0.6f, cell_h + 0.6f);
@@ -356,7 +273,7 @@ void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, co
 
 	// Draw selection overlay (selection is always active)
 	// clamp selection to viewport
-	Usz sy = sel_y, sx = sel_x, sh = sel_h, sw = sel_w;
+	Usz sy = editorState.sel_y, sx = editorState.sel_x, sh = editorState.sel_h, sw = editorState.sel_w;
 	// Ensure selection within bounds
 	if (sy < h && sx < w) {
 		Usz vis_h = sh;

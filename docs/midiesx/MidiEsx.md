@@ -33,4 +33,7 @@ Please refer to the Expert Sleepers [documentation](https://www.expert-sleepers.
 
 ## Changelog
 
-- v2.4.0 — Initial release
+- v2.4.0
+    — Initial release
+- v2.6.0
+    - Ignore incoming MIDI messages while module is bypassed

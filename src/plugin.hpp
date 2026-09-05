@@ -2,6 +2,7 @@
 #include <rack.hpp>
 #include "components/components.hpp"
 #include "utils/digital.hpp"
+#include "utils/thread.hpp"
 #include "ui/ThemedModuleWidget.hpp"
 #include "pluginhelpers.hpp"
 #include "pluginsettings.hpp"
@@ -69,9 +70,11 @@ extern Model* modelMidiKey;
 extern Model* modelPanicRoom;
 extern Model* modelMidiEsx;
 extern Model* modelAhab;
+extern Model* modelSpliceKit;
 extern Model* modelAudioInterface64;
 extern Model* modelMb;
 extern Model* modelMe;
+extern Model* modelSiren;
 extern Model* modelReel;
 #else
 extern Model* modelBolt;
@@ -91,12 +94,12 @@ bool unregisterSingleton(std::string name, Widget* mw);
 Widget* getSingleton(std::string name);
 
 
-struct ExpanderChangeListener {
-    bool expandersChanged;
+struct ModuleChangeListener {
+    bool moduleChangedFlag;
 };
 
-void registerExpanderListener(std::string topic, ExpanderChangeListener* l);
-void unregisterExpanderListener(std::string topic, ExpanderChangeListener* l);
-void notifyExpanderListeners(std::string topic);
+void registerModuleListener(std::string topic, ModuleChangeListener* l);
+void unregisterModuleListener(std::string topic, ModuleChangeListener* l);
+void notifyModuleListeners(std::string topic);
 
 } // namespace StoermelderPackOne

@@ -134,7 +134,9 @@ struct XySeqModule {
 				break;
 			}
 			case XYSEQ_MODE::VOLT: {
-				int s = std::floor(rescale(input.getVoltage(), 0.f, 10.f, 0, XYSEQ_COUNT - 1));
+				// Clamped like the C4 mode: out-of-range voltages would otherwise
+				// index seqData[port][] out of bounds.
+				int s = std::floor(rescale(clamp(input.getVoltage(), 0.f, 10.f), 0.f, 10.f, 0, XYSEQ_COUNT - 1));
 				seqSelected[port] = s;
 				break;
 			}
@@ -379,22 +381,22 @@ struct XySeqModule {
 		seqInterpolate[port] = (XYSEQ_INTERPOLATE)json_integer_value(json_object_get(dataJ, "seqInterpolate"));
 
 		json_t* seqDataJ = json_object_get(dataJ, "seqData");
-		json_t* seqItemJ;
-		size_t seqItemIndex;
-		json_array_foreach(seqDataJ, seqItemIndex, seqItemJ) {
+		// Bounded to the fixed-size destinations: hand-edited or corrupted
+		// patches may contain more items/points than seqData[][] can hold.
+		size_t maxItems = std::min((size_t)XYSEQ_COUNT, json_array_size(seqDataJ));
+		for (size_t seqItemIndex = 0; seqItemIndex < maxItems; seqItemIndex++) {
+			json_t* seqItemJ = json_array_get(seqDataJ, seqItemIndex);
 			json_t* xsJ = json_object_get(seqItemJ, "x");
 			json_t* ysJ = json_object_get(seqItemJ, "y");
-			json_t* xJ;
-			size_t xIndex;
-			json_array_foreach(xsJ, xIndex, xJ) {
-				seqData[port][seqItemIndex].x[xIndex] = json_real_value(xJ);
+			size_t maxX = std::min((size_t)XYSEQ_LENGTH, json_array_size(xsJ));
+			for (size_t xIndex = 0; xIndex < maxX; xIndex++) {
+				seqData[port][seqItemIndex].x[xIndex] = json_real_value(json_array_get(xsJ, xIndex));
 			}
-			json_t* yJ;
-			size_t yIndex;
-			json_array_foreach(ysJ, yIndex, yJ) {
-				seqData[port][seqItemIndex].y[yIndex] = json_real_value(yJ);
+			size_t maxY = std::min((size_t)XYSEQ_LENGTH, json_array_size(ysJ));
+			for (size_t yIndex = 0; yIndex < maxY; yIndex++) {
+				seqData[port][seqItemIndex].y[yIndex] = json_real_value(json_array_get(ysJ, yIndex));
 			}
-			seqData[port][seqItemIndex].length = yIndex;
+			seqData[port][seqItemIndex].length = maxY;
 		}
 	}
 };
@@ -886,17 +888,19 @@ struct XySeqEditWidget : OpaqueWidget {
 		if (!module) return;
 
 		int seqId = module->seqEdit;
-		int seqSelected = module->seqSelected[module->seqEdit];
+		visible = seqId >= 0;
 
 		if (module->seqEdit >= 0) {
+			int seqSelected = module->seqSelected[module->seqEdit];
 			if (lastSeqId != seqId || lastSeqSelected != seqSelected)
 				recWidget->init(seqId, seqSelected);
+			lastSeqSelected = seqSelected;
 		}
 		else {
 			recWidget->init(-1, -1);
+			lastSeqSelected = -1;
 		}
 		lastSeqId = seqId;
-		lastSeqSelected = seqSelected;
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
@@ -989,7 +993,7 @@ struct XySeqEditWidget : OpaqueWidget {
 				recWidget->clear();
 				e.consume(this);
 			}
-			if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && !e.isConsumed()) {
+			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && !e.isConsumed()) {
 				createContextMenu();
 				e.consume(this);
 			}
@@ -1099,6 +1103,7 @@ struct XySeqLedDisplay : StoermelderLedDisplay {
 		menu->addChild(new XySeqSlotMenuItem<MODULE>(module, id));
 		menu->addChild(new XySeqInterpolateMenuItem<MODULE>(module, id));
 		menu->addChild(new XySeqTriggerMenuItem<MODULE>(module, id));
+		appendContextMenu(menu);
 	}
 
 	virtual std::string getPortName() { return string::f("Port %i", id + 1); }

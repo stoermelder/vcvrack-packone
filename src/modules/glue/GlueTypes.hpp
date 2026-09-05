@@ -1,8 +1,11 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "../../utils/string.hpp"
 
 namespace StoermelderPackOne {
 namespace Glue {
+
+using namespace strings;
 
 // Color constants
 const static NVGcolor LABEL_COLOR_YELLOW = nvgRGB(0xdc, 0xff, 0x46);
@@ -20,33 +23,15 @@ const static float LABEL_OPACITY_MAX = 1.0f;
 const static float LABEL_OPACITY_MIN = 0.2f;
 const static float LABEL_OPACITY_STEP = 0.05f;
 
-const static float LABEL_WIDTH_MAX = 180.f;
+const static float LABEL_WIDTH_MAX = 360.f;
 const static float LABEL_WIDTH_MIN = 20.f;
 const static float LABEL_WIDTH_DEFAULT = 80.f;
 
-const static float LABEL_SIZE_MAX = 24.f;
+const static float LABEL_SIZE_MAX = 48.f;
 const static float LABEL_SIZE_MIN = 8.f;
 const static float LABEL_SIZE_DEFAULT = 16.f;
 
 const static float LABEL_SKEW_MAX = 3.5f;
-
-
-// String utility functions
-const std::string WHITESPACE = " \n\r\t\f\v";
-
-inline std::string ltrim(const std::string& s) {
-	size_t start = s.find_first_not_of(WHITESPACE);
-	return (start == std::string::npos) ? "" : s.substr(start);
-}
-
-inline std::string rtrim(const std::string& s) {
-	size_t end = s.find_last_not_of(WHITESPACE);
-	return (end == std::string::npos) ? "" : s.substr(0, end + 1);
-}
-
-inline std::string trim(const std::string& s) {
-	return rtrim(ltrim(s));
-}
 
 
 // Label data structures

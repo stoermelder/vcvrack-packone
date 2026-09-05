@@ -78,6 +78,11 @@ struct MidiPlugModule : Module {
 	/** [Stored to Json] */
 	MidiPlugOutput midiOutput[OUTPUT];
 
+	// Reusable scratch MIDI message for the audio thread. `midi::Message`
+	// heap-allocates its internal byte vector on construction, so creating one
+	// per sample inside `process()` would be a per-sample malloc/free.
+	midi::Message scratchMidiMessage;
+
 	MidiPlugModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 
@@ -95,8 +100,23 @@ struct MidiPlugModule : Module {
 		Module::onReset(e);
 	}
 
+	void processBypass(const ProcessArgs& args) override {
+		// Reuse the module-level scratch message to avoid per-sample heap
+		// allocations on the audio thread.
+		midi::Message& msg = scratchMidiMessage;
+		for (int i = 0; i < INPUT; i++) {
+			// Drain the queue while bypassed
+			while (midiInput[i].tryPop(&msg, args.frame)) {
+				(void)0;
+			}
+		}
+		Module::processBypass(args);
+	}
+
 	void process(const ProcessArgs& args) override {
-		midi::Message msg;
+		// Reuse the module-level scratch message so the audio thread never
+		// heap-allocates a `midi::Message` per sample.
+		midi::Message& msg = scratchMidiMessage;
 		for (int i = 0; i < INPUT; i++) {
 			while (midiInput[i].tryPop(&msg, args.frame)) {
 				for (int j = 0; j < OUTPUT; j++) {
@@ -125,7 +145,8 @@ struct MidiPlugModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
 		for (int i = 0; i < INPUT; i++) {

@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 
 #include "IntermixGate.cpp"
 
@@ -16,7 +15,10 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 	
 	IntermixModuleMock() {
 		config(0, 0, 0, 0);
-		// Set model so expander check passes
+		// Set model so expander check passes (isIntermixModel(), IntermixBase.hpp) — relies on
+		// SYNC_MODEL(modelIntermix, "Intermix") above actually having landed; a missing/wrong
+		// sync would make that check silently fail instead of erroring here.
+		Test::requireModelSync(modelIntermix, "Intermix");
 		model = modelIntermix;
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
@@ -39,7 +41,8 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 };
 
 TEST_CASE("Construction and initialization", "[IntermixGate]") {
-	IntermixGateModule<8>* m = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+	Test::ModuleScaffold<IntermixGateModule<8>> mods;
+	IntermixGateModule<8>* m = mods.create("IntermixGate");
 	IntermixGateWidget* mw = Test::createWidget<IntermixGateWidget>("IntermixGate");
 
 	REQUIRE(m != nullptr);
@@ -47,27 +50,72 @@ TEST_CASE("Construction and initialization", "[IntermixGate]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
-TEST_CASE("Expander connection", "[IntermixGate]") {
-	auto gateModule = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+TEST_CASE("Preset JSON null-guards", "[IntermixGate][JSON]") {
+	Test::ModuleScaffold<IntermixGateModule<8>> mods;
+	auto module = mods.create("IntermixGate");
 
-	SECTION("Module processes without expander") {
-		// Should not crash
-		gateModule->process(Test::makeProcessArgs(1));
-		
-		for (int i = 0; i < 8; i++) {
-			REQUIRE(gateModule->outputs[IntermixGateModule<8>::OUTPUT + i].getVoltage() == 0.f);
-		}
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
 	}
 
-	Test::destroyModule(gateModule);
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
+}
+
+TEST_CASE("JSON round-trip preserves state", "[IntermixGate]") {
+	Test::ModuleScaffold<IntermixGateModule<8>> mods;
+	IntermixGateModule<8>* m = mods.create("IntermixGate");
+	IntermixGateModule<8>* m2 = mods.create("IntermixGate");
+
+	// Non-default value (default is pluginSettings.panelThemeDefault, usually 0)
+	m->panelTheme = 1;
+
+	json_t* j = m->dataToJson();
+	// Start m2 at a different value so dataFromJson() is genuinely exercised
+	// (otherwise a fresh module's default could mask a broken restore).
+	m2->panelTheme = 0;
+	m2->dataFromJson(j);
+	json_decref(j);
+
+	REQUIRE(m2->panelTheme == 1);
+
+}
+
+
+TEST_CASE("Expander connection", "[IntermixGate]") {
+	Test::ModuleScaffold<IntermixGateModule<8>> mods;
+	auto gateModule = mods.create("IntermixGate");
+
+	// Should not crash
+	gateModule->process(Test::makeProcessArgs(1));
+	
+	for (int i = 0; i < 8; i++) {
+		REQUIRE(gateModule->outputs[IntermixGateModule<8>::OUTPUT + i].getVoltage() == 0.f);
+	}
+
 }
 
 TEST_CASE("Gate output generation", "[IntermixGate]") {
+	Test::ModuleScaffold<IntermixGateModule<8>> mods;
 	auto intermixModule = new IntermixModuleMock<8>();
-	auto gateModule = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+	auto gateModule = mods.create("IntermixGate");
 
 	SECTION("Row with active connections outputs high gate") {
 		// Setup mock expander connection
@@ -141,13 +189,13 @@ TEST_CASE("Gate output generation", "[IntermixGate]") {
 		REQUIRE(gateModule->outputs[IntermixGateModule<8>::OUTPUT + 1].getVoltage() == 0.f);
 	}
 
-	Test::destroyModule(gateModule);
 	delete intermixModule;
 }
 
 TEST_CASE("Gate logic with varying matrix values", "[IntermixGate]") {
+	Test::ModuleScaffold<IntermixGateModule<8>> mods;
 	auto intermixModule = new IntermixModuleMock<8>();
-	auto gateModule = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+	auto gateModule = mods.create("IntermixGate");
 
 	SECTION("Small positive values trigger gate") {
 		intermixModule->rightExpander.module = gateModule;
@@ -193,37 +241,16 @@ TEST_CASE("Gate logic with varying matrix values", "[IntermixGate]") {
 		REQUIRE(gateModule->outputs[IntermixGateModule<8>::OUTPUT + 7].getVoltage() == 10.f);
 	}
 
-	Test::destroyModule(gateModule);
 	delete intermixModule;
 }
 
-TEST_CASE("JSON serialization", "[IntermixGate]") {
-	auto module = Test::createModule<IntermixGateModule<8>>("IntermixGate");
-
-	SECTION("Module state is serialized and deserialized") {
-		module->panelTheme = 1;
-		
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		
-		auto moduleNew = Test::createModule<IntermixGateModule<8>>("IntermixGate");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->panelTheme == 1);
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
-	}
-
-	Test::destroyModule(module);
-}
-
 TEST_CASE("Expander chain with gate module", "[IntermixGate]") {
+	Test::ModuleScaffold<IntermixGateModule<8>> mods;
 	auto intermixModule = new IntermixModuleMock<8>();
-	auto gateModule1 = Test::createModule<IntermixGateModule<8>>("IntermixGate");
-	auto gateModule2 = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+	auto gateModule1 = mods.create("IntermixGate");
+	auto gateModule2 = mods.create("IntermixGate");
 	Test::SimpleEngine engine;
-	engine.registerModules(intermixModule, gateModule1, gateModule2);
+	engine.addModules(intermixModule, gateModule1, gateModule2);
 
 	SECTION("Multiple gate expanders can chain") {
 		// Setup expander chain: Intermix -> Gate1 -> Gate2
@@ -248,14 +275,13 @@ TEST_CASE("Expander chain with gate module", "[IntermixGate]") {
 		REQUIRE(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 2].getVoltage() == 0.f);
 	}
 
-	Test::destroyModule(gateModule2);
-	Test::destroyModule(gateModule1);
 	delete intermixModule;
 }
 
 TEST_CASE("Gate with dynamic matrix changes", "[IntermixGate]") {
+	Test::ModuleScaffold<IntermixGateModule<8>> mods;
 	auto intermixModule = new IntermixModuleMock<8>();
-	auto gateModule = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+	auto gateModule = mods.create("IntermixGate");
 
 	SECTION("Gate updates when matrix changes") {
 		intermixModule->rightExpander.module = gateModule;
@@ -290,13 +316,13 @@ TEST_CASE("Gate with dynamic matrix changes", "[IntermixGate]") {
 		REQUIRE(gateModule->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 10.f);
 	}
 
-	Test::destroyModule(gateModule);
 	delete intermixModule;
 }
 
 TEST_CASE("All outputs independent", "[IntermixGate]") {
+	Test::ModuleScaffold<IntermixGateModule<8>> mods;
 	auto intermixModule = new IntermixModuleMock<8>();
-	auto gateModule = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+	auto gateModule = mods.create("IntermixGate");
 
 	SECTION("Each output reflects its own row") {
 		intermixModule->rightExpander.module = gateModule;
@@ -327,6 +353,113 @@ TEST_CASE("All outputs independent", "[IntermixGate]") {
 		REQUIRE(gateModule->outputs[IntermixGateModule<8>::OUTPUT + 7].getVoltage() == 0.f);
 	}
 
-	Test::destroyModule(gateModule);
+	delete intermixModule;
+}
+
+TEST_CASE("Chain member removal invalidates forwarded expander messages", "[IntermixGate]") {
+	Test::ModuleScaffold<IntermixGateModule<8>> mods;
+	auto intermixModule = new IntermixModuleMock<8>();
+	auto gateModule1 = mods.create("IntermixGate");
+	auto gateModule2 = mods.create("IntermixGate");
+
+	// Chain: MockHead -> Gate1 -> Gate2; both gates forward the head pointer
+	intermixModule->rightExpander.module = gateModule1;
+	gateModule1->leftExpander.module = intermixModule;
+	gateModule1->rightExpander.module = gateModule2;
+	gateModule2->leftExpander.module = gateModule1;
+
+	intermixModule->currentMatrix[0][0] = 0.5f;
+	intermixModule->process(Test::makeProcessArgs(1));
+	intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
+	gateModule1->process(Test::makeProcessArgs(1));
+	gateModule1->rightExpander.consumerMessage = gateModule1->rightExpander.producerMessage;
+	gateModule2->process(Test::makeProcessArgs(1));
+	gateModule2->rightExpander.consumerMessage = gateModule2->rightExpander.producerMessage;
+
+	// Both gates now publish a forwarded head pointer to their right neighbor
+	REQUIRE(gateModule1->rightExpander.producerMessage != nullptr);
+	REQUIRE(gateModule2->rightExpander.producerMessage != nullptr);
+	// Row 0 of the matrix is active, so both gates drove their output high
+	REQUIRE(gateModule1->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 10.f);
+	REQUIRE(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 10.f);
+
+	SECTION("Removal notification makes survivors drop forwarded messages") {
+		// IntermixChainModule::onRemove() notifies the surviving members.
+		StoermelderPackOne::notifyModuleListeners("Intermix");
+
+		// Both gates consume the notification: they unpublish, reset their
+		// outputs and skip the sample instead of dereferencing a possibly
+		// dangling pointer.
+		gateModule1->process(Test::makeProcessArgs(2));
+		gateModule2->process(Test::makeProcessArgs(2));
+
+		CHECK(gateModule1->rightExpander.producerMessage == nullptr);
+		CHECK(gateModule1->rightExpander.consumerMessage == nullptr);
+		CHECK(gateModule2->rightExpander.producerMessage == nullptr);
+		CHECK(gateModule2->rightExpander.consumerMessage == nullptr);
+		CHECK(gateModule1->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 0.f);
+		CHECK(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 0.f);
+	}
+
+	SECTION("onRemove() of a middle member unpublishes and notifies survivors") {
+		Module::RemoveEvent e;
+		gateModule1->onRemove(e);
+
+		CHECK(gateModule1->rightExpander.producerMessage == nullptr);
+		CHECK(gateModule1->rightExpander.consumerMessage == nullptr);
+
+		// gateModule2 received the notification: drops its forwarded copy
+		// and resets its outputs.
+		gateModule2->process(Test::makeProcessArgs(2));
+		CHECK(gateModule2->rightExpander.producerMessage == nullptr);
+		CHECK(gateModule2->rightExpander.consumerMessage == nullptr);
+		CHECK(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 0.f);
+	}
+
+	SECTION("Disconnected expander resets outputs down the chain") {
+		// The engine clears the adjacency of the survivor and dispatches
+		// ExpanderChangeEvent when the head is removed or moved away.
+		gateModule1->leftExpander.module = NULL;
+		Module::ExpanderChangeEvent e;
+		e.side = 0; // left
+		gateModule1->onExpanderChange(e);
+
+		gateModule1->process(Test::makeProcessArgs(2));
+		gateModule2->process(Test::makeProcessArgs(2));
+
+		// Both gates went low; gate2 dropped the no-longer-refreshed message
+		CHECK(gateModule1->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 0.f);
+		CHECK(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 0.f);
+	}
+
+	delete intermixModule;
+}
+
+TEST_CASE("ExpanderChangeEvent invalidates forwarded messages", "[IntermixGate]") {
+	Test::ModuleScaffold<IntermixGateModule<8>> mods;
+	auto intermixModule = new IntermixModuleMock<8>();
+	auto gateModule = mods.create("IntermixGate");
+
+	intermixModule->rightExpander.module = gateModule;
+	gateModule->leftExpander.module = intermixModule;
+
+	intermixModule->currentMatrix[0][0] = 0.5f;
+	intermixModule->process(Test::makeProcessArgs(1));
+	intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
+	gateModule->process(Test::makeProcessArgs(1));
+
+	REQUIRE(gateModule->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 10.f);
+
+	// The engine dispatches this when the left neighbor is removed, replaced
+	// or the rack is rearranged.
+	Module::ExpanderChangeEvent e;
+	e.side = 0; // left
+	gateModule->onExpanderChange(e);
+
+	// Forwarded message dropped and outputs reset immediately at event time
+	CHECK(gateModule->rightExpander.producerMessage == nullptr);
+	CHECK(gateModule->rightExpander.consumerMessage == nullptr);
+	CHECK(gateModule->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 0.f);
+
 	delete intermixModule;
 }

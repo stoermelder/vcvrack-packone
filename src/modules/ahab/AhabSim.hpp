@@ -14,7 +14,6 @@ extern "C" {
 	#include <orca-c/gbuffer.h>
 	#include <orca-c/vmio.h>
 	#include <orca-c/sim.h>
-	#include <orca-c/osc_out.h>
 }
 
 namespace StoermelderPackOne {
@@ -36,6 +35,12 @@ public:
 	AhabSim();
 	~AhabSim();
 
+	// Maximum field dimensions. The field is capped at this size so the fixed
+	// DSP-thread scratch buffer (scratch_) is always large enough, and no heap
+	// buffer is ever shipped across the UI->DSP command queue.
+	static constexpr Usz MAX_FIELD_HEIGHT = 100;
+	static constexpr Usz MAX_FIELD_WIDTH = 100;
+
 	// Non-copyable
 	AhabSim(const AhabSim&) = delete;
 	AhabSim& operator=(const AhabSim&) = delete;
@@ -44,6 +49,9 @@ public:
 	using UiTickCallback = std::function<void(Field const*)>;
 	// Reset callback: used to notify when the sim has been reset
 	using UiResetCallback = std::function<void()>;
+	// Reset callback: used to notify DSP-side consumers (e.g. the module) when the
+	// sim has been reset or its field replaced, so they can drop pending state.
+	using DspResetCallback = std::function<void()>;
 	// Callback type for tick notifications to the DSP object
 	using TickDspCallback = std::function<void(Oevent_list const*)>;
 	// Input reader callback: used to query the module inputs (e.g. for vcvin)
@@ -64,18 +72,21 @@ public:
 	// Replace the current field with provided cells of given dimensions.
 	void replaceField(Glyph* cells, Usz new_h, Usz new_w);
 
-	// Serialize a rectangular region of the displayed field to ORCA plain text.
-	// Each row will be written as a line terminated by '\n'.
-	std::string convertRectToOrca(Usz y, Usz x, Usz h, Usz w) const;
+	// Serialize a rectangular region of a field to ORCA plain text. Each row is
+	// a line terminated by '\n'. Static so UI-thread callers can serialize their
+	// own consistent snapshot (e.g. the widget's `display_field`) instead of
+	// reading the sim's live field buffer, which the DSP thread may be writing
+	// to from step().
+	static std::string convertRectToOrca(const Field& field, Usz y, Usz x, Usz h, Usz w);
 
 	// Single-step the VM (one tick). Increments internal tick counter and
 	// invokes the tick callback if set. Called from DSP thread - must be lock-free.
 	void step();
 	void stepRequest();
 
-	// Process any pending UI requests (to be called from DSP thread before stepping).
-	// If notifyTick() was called from the UI, `process()` will publish the current
-	// write buffer for display (without advancing the simulation) and invoke the
+	// Process any pending UI requests (call from the DSP thread before stepping).
+	// If notifyTick() was called from the UI, `process()` publishes the current
+	// write buffer for display (without advancing the simulation) and invokes the
 	// tick callback with step_happened == false.
 	void process();
 
@@ -84,38 +95,27 @@ public:
 	Usz getRandomSeed() const { return random_seed_; }
 
 	void setUiTickCallback(UiTickCallback cb) {
-		if (cb)
-			std::atomic_store(&ui_tick_callback_ptr_, std::make_shared<UiTickCallback>(std::move(cb)));
-		else
-			std::atomic_store(&ui_tick_callback_ptr_, std::shared_ptr<UiTickCallback>());
+		ui_tick_callback_ptr = cb ? std::move(cb) : 0;
 	}
 
 	void setDspTickCallback(TickDspCallback cb) {
-		if (cb)
-			std::atomic_store(&dsp_tick_callback_ptr_, std::make_shared<TickDspCallback>(std::move(cb)));
-		else
-			std::atomic_store(&dsp_tick_callback_ptr_, std::shared_ptr<TickDspCallback>());
+		dsp_tick_callback_ptr = cb ? std::move(cb) : 0;
 	}
 
 	void setDspInputReader(DspInputReader cb) {
-		if (cb)
-			std::atomic_store(&dsp_input_reader_ptr_, std::make_shared<DspInputReader>(std::move(cb)));
-		else
-			std::atomic_store(&dsp_input_reader_ptr_, std::shared_ptr<DspInputReader>());
+		dsp_input_reader_ptr = cb ? std::move(cb) : 0;
 	}
 
 	void setDspOutputWriter(DspOutputWriter cb) {
-		if (cb)
-			std::atomic_store(&dsp_output_writer_ptr_, std::make_shared<DspOutputWriter>(std::move(cb)));
-		else
-			std::atomic_store(&dsp_output_writer_ptr_, std::shared_ptr<DspOutputWriter>());
+		dsp_output_writer_ptr = cb ? std::move(cb) : 0;
 	}
 
 	void setUiResetCallback(UiResetCallback cb) {
-		if (cb)
-			std::atomic_store(&ui_reset_callback_ptr_, std::make_shared<UiResetCallback>(std::move(cb)));
-		else
-			std::atomic_store(&ui_reset_callback_ptr_, std::shared_ptr<UiResetCallback>());
+		ui_reset_callback_ptr = cb ? std::move(cb) : 0;
+	}
+
+	void setDspResetCallback(DspResetCallback cb) {
+		dsp_reset_callback_ptr = cb ? std::move(cb) : 0;
 	}
 
 	// Write output via the registered DspOutputWriter (safe to call from C callbacks)
@@ -159,11 +159,11 @@ public:
 	bool pushUndo(); // push current field/tick onto undo stack
 	bool canUndo() const;
 	Usz getUndoCount() const;
-	void undo(Glyph* redoBuf);
+	void undo();
 	// Redo support
 	bool canRedo() const { return !redo_history_.empty(); }
 	Usz getRedoCount() const { return (Usz)redo_history_.size(); }
-	void redo(Glyph* undoBuf);
+	void redo();
 	void resetUndo();
 
 	bool cutRect(Usz y, Usz x, Usz h, Usz w);
@@ -189,16 +189,6 @@ public:
 	void redoRequest();
 	void resetRequest();
 
-	// UDP destination persisted in sim
-	void setUdpDestination(const std::string& address, const std::string& port);
-	std::string getUdpAddress() const { return udpAddress_; }
-	std::string getUdpPort() const { return udpPort_; }
-
-	// OSC destination persisted in sim
-	void setOscDestination(const std::string& address, const std::string& port);
-	std::string getOscAddress() const { return oscAddress_; }
-	std::string getOscPort() const { return oscPort_; }
-
 private:
 	Field field_;
 	Mbuf_reusable mbuf_;
@@ -210,21 +200,30 @@ private:
 	// Tick callback stored as a shared_ptr. We use the free functions
 	// std::atomic_load / std::atomic_store for atomic access without needing
 	// an std::atomic wrapper (these overloads are provided for shared_ptr).
-	std::shared_ptr<UiTickCallback> ui_tick_callback_ptr_;
+	UiTickCallback ui_tick_callback_ptr;
 	// Reset callback (stored atomically as shared_ptr)
-	std::shared_ptr<UiResetCallback> ui_reset_callback_ptr_;
+	UiResetCallback ui_reset_callback_ptr;
+	// Reset callback for DSP-side consumers (e.g. the module)
+	DspResetCallback dsp_reset_callback_ptr;
 	// Callback for into DSP class
-	std::shared_ptr<TickDspCallback> dsp_tick_callback_ptr_;
+	TickDspCallback dsp_tick_callback_ptr;
 	// Input reader callback (stored atomically as shared_ptr)
-	std::shared_ptr<DspInputReader> dsp_input_reader_ptr_;
+	DspInputReader dsp_input_reader_ptr;
 	// Output writer callback (stored atomically as shared_ptr)
-	std::shared_ptr<DspOutputWriter> dsp_output_writer_ptr_;
+	DspOutputWriter dsp_output_writer_ptr;
 
 	// Undo / Redo history
 	struct UndoNode { Field f; Usz tick; };
 	std::deque<UndoNode> undo_history_;
 	std::deque<UndoNode> redo_history_;
 	Usz undo_limit_ = 30;
+
+	// Fixed scratch buffer owned by the DSP thread, sized for the maximum field
+	// (MAX_FIELD_HEIGHT x MAX_FIELD_WIDTH). Staging area for moveRect/setFieldSize
+	// (no stack alloca) and undo/redo snapshots, so no heap buffer crosses the
+	// UI->DSP command
+	// queue and the stack bound is explicit.
+	Glyph scratch_[MAX_FIELD_HEIGHT * MAX_FIELD_WIDTH];
 
 
 	// Command types for operations requested by the UI thread
@@ -261,24 +260,6 @@ private:
 	// Request made by UI to force a display publish before the next step.
 	// Set by `notifyTick()` on UI thread, processed by `process()` on DSP thread.
 	std::atomic<bool> pending_ui_update_{false};
-
-	// UDP device and destination
-	Oosc_dev* udp_dev_ = nullptr;
-	// Ensure UDP device exists (tries to create with given address/port if missing).
-	bool ensureUdpDev(const char* addr, const char* port);
-	// Send a list/array of 32-bit integers in OSC format to the configured destination.
-	// Destroy UDP device if present.
-	void destroyUdpDev();
-
-	std::string udpAddress_ = "127.0.0.1";
-	std::string udpPort_ = "49161";
-	// Send a raw UDP datagram (no-op if device creation fails).
-	void sendUdpDatagram(const char* data, Usz size);
-
-	std::string oscAddress_ = "127.0.0.1";
-	std::string oscPort_ = "49162";
-	// OSC path prefix used as base when building addresses from glyphs (e.g. "/OSC_MIDI_0/MIDI").
-	void sendOscInts(const char* osc_path, I32 const* vals, Usz count);
 
 	// Concurrency model:
 	// - DSP thread (process): calls step() lock-free, writes to double buffers

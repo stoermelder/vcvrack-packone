@@ -8,27 +8,12 @@
 #include "../../ui/ViewportHelper.hpp"
 #include "EightFace.hpp"
 #include "EightFaceMk2Base.hpp"
+#include "../../utils/string.hpp"
 #include <random>
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
 namespace EightFaceMk2 {
-
-const std::string WHITESPACE = " \n\r\t\f\v";
-
-std::string ltrim(const std::string& s) {
-	size_t start = s.find_first_not_of(WHITESPACE);
-	return (start == std::string::npos) ? "" : s.substr(start);
-}
-
-std::string rtrim(const std::string& s) {
-	size_t end = s.find_last_not_of(WHITESPACE);
-	return (end == std::string::npos) ? "" : s.substr(0, end + 1);
-}
-
-std::string trim(const std::string& s) {
-	return rtrim(ltrim(s));
-}
 
 const int MAX_EXPANDERS = 15;
 
@@ -55,7 +40,7 @@ enum class GUISAFEMODE {
 
 
 template <int NUM_PRESETS>
-struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListener {
+struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener {
 	typedef EightFaceMk2Base<NUM_PRESETS> BASE;
 
 	enum ParamIds {
@@ -146,12 +131,14 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 
 	EightFaceMk2Module() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
-		registerExpanderListener("8FaceMk2", this);
+		registerModuleListener("8FaceMk2", this);
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configSwitch(PARAM_RW, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
+		Module::paramQuantities[PARAM_RW]->description = "Read: load a slot manually.\nAuto: auto-save on snapshot-change.\nWrite: snapshot the currently mapped parameters into a slot.";
 		Module::configInput(INPUT_CV, "Slot-selection");
-		Module::inputInfos[INPUT_CV]->description = "Channel 2 can retrigger the current slot in C4 mode";
+		Module::inputInfos[INPUT_CV]->description = "Trigger/gate that selects the next slot, depending on the slot-CV mode selected on the context menu.\nChannel 2 can retrigger the current slot in C4 mode.";
 		Module::configInput(INPUT_RESET, "Sequencer-mode reset");
+		Module::inputInfos[INPUT_RESET]->description = "Resets the slot sequence to the first slot (depending on the selected CV mode).";
 
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			EightFaceMk2ParamQuantity<NUM_PRESETS>* pq = Module::configParam<EightFaceMk2ParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
@@ -175,7 +162,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	}
 
 	~EightFaceMk2Module() {
-		unregisterExpanderListener("8FaceMk2", this);
+		unregisterModuleListener("8FaceMk2", this);
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (BASE::presetSlotUsed[i]) {
 				for (json_t* vJ : BASE::preset[i]) {
@@ -189,12 +176,12 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		notifyExpanderListeners("8FaceMk2");
+		notifyModuleListeners("8FaceMk2");
 	}
 
 	void onReset(const Module::ResetEvent& e) override {
 		inChange = true;
-		expandersChanged = true;
+		moduleChangedFlag = true;
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (BASE::presetSlotUsed[i]) {
 				for (json_t* vJ : BASE::preset[i]) {
@@ -236,12 +223,14 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	inline EightFaceMk2Slot* expSlot(int index) {
 		if (index >= presetTotal) return NULL;
 		int n = index / NUM_PRESETS;
+		assert(n < MAX_EXPANDERS + 1);
 		return N[n]->faceSlot(index % NUM_PRESETS);
 	}
 
 	inline std::string* expSlotLabel(int index) {
 		if (index >= presetTotal) return NULL;
 		int n = index / NUM_PRESETS;
+		assert(n < MAX_EXPANDERS + 1);
 		return &N[n]->textLabel[index % NUM_PRESETS];
 	}
 
@@ -250,7 +239,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 
 		CTRLMODE ctrlMode = (CTRLMODE)Module::params[PARAM_RW].getValue();
 
-		if (expandersChanged || ctrlMode != BASE::ctrlMode) {
+		if (moduleChangedFlag || ctrlMode != BASE::ctrlMode) {
 			expandersConnected.clear();
 			presetTotal = NUM_PRESETS;
 			Module* m = this;
@@ -275,7 +264,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 				t->ctrlMode = BASE::ctrlMode;
 				presetTotal += NUM_PRESETS;
 			}
-			expandersChanged = false;
+			moduleChangedFlag = false;
 		}
 		int presetCount = std::min(this->presetCount, presetTotal);
 
@@ -394,7 +383,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 								for (int i = 0; i < presetCount; i++) {
 									slotCvModeShuffle.push_back(i);
 								}
-								std::random_shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle));
+								std::mt19937 rng(random::u32());
+								std::shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle), rng);
 							}
 							int p = std::min(std::max(0, slotCvModeShuffle.back()), presetCount - 1);
 							slotCvModeShuffle.pop_back();
@@ -787,17 +777,22 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		BASE::panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) BASE::panelTheme = json_integer_value(panelThemeJ);
 
-		slotCvMode = (SLOTCVMODE)json_integer_value(json_object_get(rootJ, "slotCvMode"));
-		preset = json_integer_value(json_object_get(rootJ, "preset"));
-		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
+		json_t* slotCvModeJ = json_object_get(rootJ, "slotCvMode");
+		if (slotCvModeJ) slotCvMode = (SLOTCVMODE)json_integer_value(slotCvModeJ);
+		json_t* presetJ = json_object_get(rootJ, "preset");
+		if (presetJ) preset = json_integer_value(presetJ);
+		json_t* presetCountJ = json_object_get(rootJ, "presetCount");
+		if (presetCountJ) presetCount = json_integer_value(presetCountJ);
 		json_t* presetCountLongPressJ = json_object_get(rootJ, "presetCountLongPress");
 		if (presetCountLongPressJ) presetCountLongPress = json_boolean_value(presetCountLongPressJ);
 
-		boxDraw = json_integer_value(json_object_get(rootJ, "boxDraw"));
+		json_t* boxDrawJ = json_object_get(rootJ, "boxDraw");
+		if (boxDrawJ) boxDraw = json_integer_value(boxDrawJ);
 		json_t* boxColorJ = json_object_get(rootJ, "boxColor");
-		if (boxColorJ) boxColor = color::fromHexString(json_string_value(boxColorJ));
+		if (boxColorJ && json_is_string(boxColorJ)) boxColor = color::fromHexString(json_string_value(boxColorJ));
 		json_t* boxOpacityJ = json_object_get(rootJ, "boxOpacity");
 		if (boxOpacityJ) boxOpacity = json_real_value(boxOpacityJ);
 

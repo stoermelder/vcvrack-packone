@@ -5,7 +5,7 @@ namespace StoermelderPackOne {
 namespace Intermix {
 
 template<int PORTS>
-struct IntermixEnvModule : Module {
+struct IntermixEnvModule : IntermixChainModule {
 	enum ParamIds {
 		NUM_PARAMS
 	};
@@ -30,6 +30,7 @@ struct IntermixEnvModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < PORTS; i++) {
 			configOutput(OUTPUT + i, string::f("Envelope %i", i + 1));
+			outputInfos[OUTPUT + i]->description = "Scaled 0..10V envelope of the selected input row's mix levels into the matching output column.";
 		}
 
 		ResetEvent re;
@@ -41,10 +42,26 @@ struct IntermixEnvModule : Module {
 		Module::onReset(e);
 	}
 
+	void resetOutputs() override {
+		for (int i = 0; i < PORTS; i++) {
+			outputs[OUTPUT + i].setVoltage(0.f);
+		}
+	}
+
 	void process(const ProcessArgs& args) override {
+		// A chain sibling was removed: drop forwarded messages, outputs go low
+		if (consumeSiblingRemoved()) {
+			resetOutputs();
+			return;
+		}
+
 		// Expander
 		Module* exp = leftExpander.module;
-		if (!exp || (exp->model != modelIntermix && exp->model != modelIntermixGate && exp->model != modelIntermixEnv && exp->model != modelIntermixFade) || !exp->rightExpander.consumerMessage) return;
+		if (!exp || !isIntermixModel(exp->model) || !exp->rightExpander.consumerMessage) {
+			// Disconnected from the chain: outputs go low
+			resetOutputs();
+			return;
+		}
 		IntermixBase<PORTS>* module = reinterpret_cast<IntermixBase<PORTS>*>(exp->rightExpander.consumerMessage);
 		rightExpander.producerMessage = module;
 		rightExpander.messageFlipRequested = true;
@@ -65,8 +82,10 @@ struct IntermixEnvModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		input = json_integer_value(json_object_get(rootJ, "input"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* inputJ = json_object_get(rootJ, "input");
+		if (inputJ) input = json_integer_value(inputJ);
 	}
 };
 

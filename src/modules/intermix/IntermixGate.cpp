@@ -5,7 +5,7 @@ namespace StoermelderPackOne {
 namespace Intermix {
 
 template<int PORTS>
-struct IntermixGateModule : Module {
+struct IntermixGateModule : IntermixChainModule {
 	enum ParamIds {
 		NUM_PARAMS
 	};
@@ -28,16 +28,33 @@ struct IntermixGateModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < PORTS; i++) {
 			configOutput(OUTPUT + i, string::f("Row %i active gate", i + 1));
+			outputInfos[OUTPUT + i]->description = string::f("High when any signal is currently routed into output %i.", i + 1);
 		}
 
 		ResetEvent re;
 		onReset(re);
 	}
 
+	void resetOutputs() override {
+		for (int i = 0; i < PORTS; i++) {
+			outputs[OUTPUT + i].setVoltage(0.f);
+		}
+	}
+
 	void process(const ProcessArgs& args) override {
+		// A chain sibling was removed: drop forwarded messages, outputs go low
+		if (consumeSiblingRemoved()) {
+			resetOutputs();
+			return;
+		}
+
 		// Expander
 		Module* exp = leftExpander.module;
-		if (!exp || (exp->model != modelIntermix && exp->model != modelIntermixGate && exp->model != modelIntermixEnv && exp->model != modelIntermixFade) || !exp->rightExpander.consumerMessage) return;
+		if (!exp || !isIntermixModel(exp->model) || !exp->rightExpander.consumerMessage) {
+			// Disconnected from the chain: outputs go low
+			resetOutputs();
+			return;
+		}
 		IntermixBase<PORTS>* module = reinterpret_cast<IntermixBase<PORTS>*>(exp->rightExpander.consumerMessage);
 		rightExpander.producerMessage = module;
 		rightExpander.messageFlipRequested = true;
@@ -64,7 +81,8 @@ struct IntermixGateModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 	}
 };
 

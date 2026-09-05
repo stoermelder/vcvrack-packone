@@ -77,7 +77,7 @@ struct PilePolyModule : Module {
 		float slew = inputs[INPUT_SLEW].isConnected() ? clamp(inputs[INPUT_SLEW].getVoltage(), 0.f, 5.f) : params[PARAM_SLEW].getValue();
 		if (slew > 0.f) slew = (1.f / slew) * 10.f;
 
-		simd::float_4 rangeMin, rangeMax;
+		simd::float_4 rangeMin = 0.f, rangeMax = 0.f;
 		switch (range) {
 			case RANGE::UNI_5V:
 				rangeMin = 0.f; rangeMax = 5.f;
@@ -143,7 +143,8 @@ struct PilePolyModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 		range = (RANGE)json_integer_value(json_object_get(rootJ, "range"));
 
 		json_t* currentVoltageJ = json_object_get(rootJ, "currentVoltage");

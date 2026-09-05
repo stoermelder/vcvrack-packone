@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "IntermixEnv.cpp"
 
 using namespace StoermelderPackOne::Intermix;
@@ -15,7 +14,10 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 	
 	IntermixModuleMock() {
 		config(0, 0, 0, 0);
-		// Set model so expander check passes
+		// Set model so expander check passes (isIntermixModel(), IntermixBase.hpp) — relies on
+		// SYNC_MODEL(modelIntermix, "Intermix") above actually having landed; a missing/wrong
+		// sync would make that check silently fail instead of erroring here.
+		Test::requireModelSync(modelIntermix, "Intermix");
 		model = modelIntermix;
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
@@ -39,7 +41,8 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 
 
 TEST_CASE("Construction and initialization", "[IntermixEnv]") {
-	IntermixEnvModule<8>* m = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
+	Test::ModuleScaffold<IntermixEnvModule<8>> mods;
+	IntermixEnvModule<8>* m = mods.create("IntermixEnv");
 	IntermixEnvWidget* mw = Test::createWidget<IntermixEnvWidget>("IntermixEnv");
 
 	REQUIRE(m != nullptr);
@@ -47,11 +50,59 @@ TEST_CASE("Construction and initialization", "[IntermixEnv]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[IntermixEnv][JSON]") {
+	Test::ModuleScaffold<IntermixEnvModule<8>> mods;
+	auto module = mods.create("IntermixEnv");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
+}
+
+TEST_CASE("JSON round-trip preserves state", "[JSON][IntermixEnv]") {
+	Test::ModuleScaffold<IntermixEnvModule<8>> mods;
+	IntermixEnvModule<8>* m = mods.create("IntermixEnv");
+	IntermixEnvModule<8>* m2 = mods.create("IntermixEnv");
+
+	m->panelTheme = 1;
+	m->input = 5;
+
+	json_t* j = m->dataToJson();
+	// Start m2 at a different value so dataFromJson() is genuinely exercised
+	m2->panelTheme = 0;
+	m2->input = 0;
+	m2->dataFromJson(j);
+	json_decref(j);
+
+	REQUIRE(m2->panelTheme == 1);
+	REQUIRE(m2->input == 5);
+
+}
+
+
 TEST_CASE("Input selection", "[IntermixEnv]") {
-	auto module = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
+	Test::ModuleScaffold<IntermixEnvModule<8>> mods;
+	auto module = mods.create("IntermixEnv");
 
 	SECTION("Input can be changed") {
 		module->input = 3;
@@ -61,11 +112,11 @@ TEST_CASE("Input selection", "[IntermixEnv]") {
 		REQUIRE(module->input == 7);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Expander connection", "[IntermixEnv]") {
-	auto envModule = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
+	Test::ModuleScaffold<IntermixEnvModule<8>> mods;
+	auto envModule = mods.create("IntermixEnv");
 
 	SECTION("Module processes without expander") {
 		// Should not crash
@@ -76,12 +127,12 @@ TEST_CASE("Expander connection", "[IntermixEnv]") {
 		}
 	}
 
-	Test::destroyModule(envModule);
 }
 
 TEST_CASE("Envelope output", "[IntermixEnv]") {
+	Test::ModuleScaffold<IntermixEnvModule<8>> mods;
 	auto intermixModule = new IntermixModuleMock<8>();
-	auto envModule = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
+	auto envModule = mods.create("IntermixEnv");
 
 	SECTION("Outputs envelope for selected input") {
 		// Setup mock expander connection
@@ -128,37 +179,16 @@ TEST_CASE("Envelope output", "[IntermixEnv]") {
 		REQUIRE(envModule->outputs[IntermixEnvModule<8>::OUTPUT + 1].getVoltage() == Catch::Approx(6.0f).margin(0.01f));
 	}
 
-	Test::destroyModule(envModule);
 	delete intermixModule;
 }
 
-TEST_CASE("JSON serialization", "[JSON][IntermixEnv]") {
-	auto module = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
-
-	SECTION("Module state is serialized and deserialized") {
-		module->input = 5;
-		
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		
-		auto moduleNew = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->input == 5);
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
-	}
-
-	Test::destroyModule(module);
-}
-
 TEST_CASE("Expander chain", "[IntermixEnv]") {
+	Test::ModuleScaffold<IntermixEnvModule<8>> mods;
 	auto intermixModule = new IntermixModuleMock<8>();
-	auto envModule1 = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
-	auto envModule2 = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
+	auto envModule1 = mods.create("IntermixEnv");
+	auto envModule2 = mods.create("IntermixEnv");
 	Test::SimpleEngine engine;
-	engine.registerModules(intermixModule, envModule1, envModule2);
+	engine.addModules(intermixModule, envModule1, envModule2);
 
 	SECTION("Multiple expanders can chain") {
 		// Setup expander chain: Intermix -> Env1 -> Env2
@@ -186,7 +216,5 @@ TEST_CASE("Expander chain", "[IntermixEnv]") {
 		REQUIRE(envModule2->outputs[IntermixEnvModule<8>::OUTPUT + 3].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
 	}
 
-	Test::destroyModule(envModule2);
-	Test::destroyModule(envModule1);
 	delete intermixModule;
 }

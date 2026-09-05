@@ -12,7 +12,7 @@ enum class FADE {
 };
 
 template<int PORTS>
-struct IntermixFadeModule : Module {
+struct IntermixFadeModule : IntermixChainModule {
 	enum ParamIds {
 		ENUMS(PARAM_FADE, PORTS),
 		NUM_PARAMS
@@ -47,6 +47,7 @@ struct IntermixFadeModule : Module {
 		for (int i = 0; i < PORTS; i++) {
 			auto pq = configParam<FadeLengthParamQuantity<IntermixFadeModule<PORTS>>>(PARAM_FADE + i, 0.f, 15.f, 1.f, "Fade", "s");
 			pq->module = this;
+			pq->description = string::f("Crossfade time applied to the signal on output %i when scenes change.", i + 1);
 		}
 
 		ResetEvent re;
@@ -66,9 +67,12 @@ struct IntermixFadeModule : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
+		// A chain sibling was removed: drop forwarded messages, skip this sample
+		if (consumeSiblingRemoved()) return;
+
 		// Expander
 		Module* exp = leftExpander.module;
-		if (!exp || (exp->model != modelIntermix && exp->model != modelIntermixGate && exp->model != modelIntermixEnv && exp->model != modelIntermixFade) || !exp->rightExpander.consumerMessage) return;
+		if (!exp || !isIntermixModel(exp->model) || !exp->rightExpander.consumerMessage) return;
 		IntermixBase<PORTS>* module = reinterpret_cast<IntermixBase<PORTS>*>(exp->rightExpander.consumerMessage);
 		rightExpander.producerMessage = module;
 		rightExpander.messageFlipRequested = true;
@@ -99,13 +103,13 @@ struct IntermixFadeModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		input = json_integer_value(json_object_get(rootJ, "input"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* inputJ = json_object_get(rootJ, "input");
+		if (inputJ) input = json_integer_value(inputJ);
 		fade = (FADE)json_integer_value(json_object_get(rootJ, "fade"));
 		json_t* fadeLengthModeJ = json_object_get(rootJ, "fadeLengthMode");
-		if (fadeLengthModeJ) {
-			fadeLengthMode = (FADE_LENGTH)json_integer_value(fadeLengthModeJ);
-		}
+		if (fadeLengthModeJ) fadeLengthMode = (FADE_LENGTH)json_integer_value(fadeLengthModeJ);
 	}
 };
 

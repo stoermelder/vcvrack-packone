@@ -3,6 +3,7 @@
 #include "Mb_v1.hpp"
 #include "Mb_v2.hpp"
 #include "Mb_v06.hpp"
+#include "Mb_manifests.hpp"
 #include "Mb_autotag.hpp"
 #include "Mb_autotag_widgets.hpp"
 #include <osdialog.h>
@@ -13,10 +14,11 @@
 namespace StoermelderPackOne {
 namespace Mb {
 
+// Model DB
+
 fuzzysearch::Database<plugin::Model*> modelDb;
 bool searchDescriptions = false;
 bool sortBySearchScore = true;
-bool favoriteHighlight = true;
 
 void modelDbInit() {
 	modelDb = fuzzysearch::Database<plugin::Model*>();
@@ -43,14 +45,171 @@ void modelDbInit() {
 	}
 }
 
-std::set<Model*> favoriteModels;
-std::set<Model*> hiddenModels;
-std::map<Model*, ModelUsage*> modelUsage;
-std::map<std::string, std::set<Model*>> customTagModels;
-std::map<Model*, std::set<int>> predefinedTagsAdded;
-std::map<Model*, std::set<int>> predefinedTagsRemoved;
+ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser) {
+	// Create Module
+	engine::Module* addedModule = model->createModule();
+	APP->engine->addModule(addedModule);
 
+	// Create ModuleWidget
+	ModuleWidget* moduleWidget = model->createModuleWidget(addedModule);
+	assert(moduleWidget);
+
+	// Place the module at the rack position that was captured when the browser
+	// was opened (typically the right-click position). This matches the VCV
+	// built-in browser behavior. We use the stored position rather than the
+	// current mouse position because the mouse is now inside the browser UI.
+	BrowserOverlay* overlay = dynamic_cast<BrowserOverlay*>(APP->scene->browser);
+	if (overlay && overlay->rackMousePosAtOpen.isFinite()) {
+		if (hideBrowser) {
+			// Single-click: center on the stored right-click position, snapped to grid.
+			math::Vec pos = overlay->rackMousePosAtOpen - moduleWidget->box.size.div(2);
+			pos.x = std::round(pos.x / RACK_GRID_WIDTH) * RACK_GRID_WIDTH;
+			pos.y = std::round(pos.y / RACK_GRID_HEIGHT) * RACK_GRID_HEIGHT;
+			moduleWidget->box.pos = pos;
+			APP->scene->rack->addModule(moduleWidget);
+		}
+		else {
+			// Shift-click (browser stays open): use setModulePosForce so each new
+			// module lands near the right-click position and pushes others aside.
+			APP->scene->rack->addModule(moduleWidget);
+		}
+	}
+	else {
+		APP->scene->rack->addModuleAtMouse(moduleWidget);
+	}
+
+	Vec pos = overlay->rackMousePosAtOpen - moduleWidget->box.size.div(2);
+	if (settings::squeezeModules) {
+		APP->scene->rack->setModulePosForce(moduleWidget, pos);
+	}
+	else {
+		APP->scene->rack->setModulePosNearest(moduleWidget, pos);
+	}
+
+	// Load template preset
+	moduleWidget->loadTemplate();
+
+	// Push ModuleAdd history action
+	history::ModuleAdd* h = new history::ModuleAdd;
+	h->name = "create module";
+	h->setModule(moduleWidget);
+	APP->history->push(h);
+
+	// Hide Module Browser
+	if (hideBrowser) APP->scene->browser->hide();
+
+	// Arm a pending drag so the user can immediately reposition the module by
+	// holding and dragging — cleared in BrowserOverlay::step() once the mouse
+	// moves far enough (drag transfers) or the button is released (stays put).
+	if (overlay && hideBrowser) {
+		overlay->pendingDragModule = moduleWidget;
+		overlay->pendingDragSceneAnchor = APP->scene->getMousePos();
+	}
+
+	// Update usage data
+	modelUsageTouch(model);
+
+	return moduleWidget;
+}
+
+
+// Model Widths
+
+std::map<Model*, int> modelWidths;
+
+void modelWidthSet(Model* model, int hp) {
+	modelWidths[model] = hp;
+}
+
+int modelWidthGet(Model* model) {
+	auto it = modelWidths.find(model);
+	return (it != modelWidths.end()) ? it->second : -1;
+}
+
+void modelWidthScanAll() {
+	for (plugin::Plugin* p : rack::plugin::plugins) {
+		for (plugin::Model* model : p->models) {
+			ModuleWidget* mw = model->createModuleWidget(NULL);
+			if (mw) {
+				int hp = (int)std::round(mw->box.size.x / RACK_GRID_WIDTH);
+				modelWidthSet(model, hp);
+				delete mw;
+			}
+		}
+	}
+	modelWidthsToJson();
+}
+
+static std::string mbWidthFilePath() {
+	return rack::asset::user("Stoermelder-P1/mb-widths.json");
+}
+
+void modelWidthsFromJson() {
+	FILE* file = fopen(mbWidthFilePath().c_str(), "r");
+	if (!file) return;
+	json_error_t error;
+	json_t* j = json_loadf(file, 0, &error);
+	fclose(file);
+	if (!j) return;
+	DEFER({ json_decref(j); });
+
+	modelWidths.clear();
+	json_t* widthsJ = json_object_get(j, "widths");
+	if (!widthsJ) return;
+	const char* hpKey;
+	json_t* modelsJ;
+	json_object_foreach(widthsJ, hpKey, modelsJ) {
+		int hp = std::atoi(hpKey);
+		if (hp <= 0) continue;
+		size_t i;
+		json_t* entryJ;
+		json_array_foreach(modelsJ, i, entryJ) {
+			if (!json_is_array(entryJ) || json_array_size(entryJ) < 2) continue;
+			json_t* pluginJ = json_array_get(entryJ, 0);
+			json_t* modelJ  = json_array_get(entryJ, 1);
+			if (!pluginJ || !modelJ) continue;
+			Model* model = plugin::getModel(json_string_value(pluginJ), json_string_value(modelJ));
+			if (!model) continue;
+			modelWidths[model] = hp;
+		}
+	}
+}
+
+void modelWidthsToJson() {
+	// Group models by HP
+	std::map<int, std::vector<Model*>> byHp;
+	for (auto& pair : modelWidths)
+		byHp[pair.second].push_back(pair.first);
+
+	json_t* widthsJ = json_object();
+	for (auto& hpPair : byHp) {
+		json_t* modelsJ = json_array();
+		for (Model* model : hpPair.second) {
+			json_t* entryJ = json_array();
+			json_array_append_new(entryJ, json_string(model->plugin->slug.c_str()));
+			json_array_append_new(entryJ, json_string(model->slug.c_str()));
+			json_array_append_new(modelsJ, entryJ);
+		}
+		json_object_set_new(widthsJ, std::to_string(hpPair.first).c_str(), modelsJ);
+	}
+	json_t* j = json_object();
+	json_object_set_new(j, "widths", widthsJ);
+
+	rack::system::createDirectory(rack::asset::user("Stoermelder-P1"));
+	FILE* file = fopen(mbWidthFilePath().c_str(), "w");
+	if (file) {
+		json_dumpf(j, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+		fclose(file);
+	}
+	json_decref(j);
+}
+
+
+// Favorites
+
+std::set<Model*> favoriteModels;
 FavoriteMode favoriteMode = FavoriteMode::VCVRACK;
+bool favoriteHighlight = true;
 
 bool isModelFavorite(Model* model) {
 	switch (favoriteMode) {
@@ -61,6 +220,7 @@ bool isModelFavorite(Model* model) {
 		case FavoriteMode::BOTH:
 			return model->isFavorite() || favoriteModels.find(model) != favoriteModels.end();
 	}
+	return false;
 }
 
 void setModelFavorite(Model* model, bool favorite) {
@@ -79,8 +239,34 @@ void setModelFavorite(Model* model, bool favorite) {
 	}
 }
 
+
+// Hidden
+
+std::set<Model*> hiddenModels;
+
+void toggleModelHidden(Model* model) {
+	auto it = hiddenModels.find(model);
+	if (it != hiddenModels.end()) 
+		hiddenModels.erase(model);
+	else 
+		hiddenModels.insert(model);
+}
+
+void hiddenModelsReset() {
+	hiddenModels.clear();
+}
+
+bool isModelHidden(plugin::Model* model) {
+	return hiddenModels.find(model) != hiddenModels.end();
+}
+
+
+// Custom Tags
+
+std::map<std::string, std::set<Model*>> customTagModels;
+
 // Returns the existing map key that matches tag case-insensitively, or tag itself.
-static std::string customTagResolveKey(const std::string& tag) {
+std::string customTagResolveKey(const std::string& tag) {
 	std::string lower = string::lowercase(tag);
 	for (auto& pair : customTagModels) {
 		if (string::lowercase(pair.first) == lower)
@@ -90,6 +276,8 @@ static std::string customTagResolveKey(const std::string& tag) {
 }
 
 void customTagAdd(Model* model, const std::string& tag) {
+	if (!isValidCustomTag(tag))
+		return;
 	customTagModels[customTagResolveKey(tag)].insert(model);
 }
 
@@ -101,6 +289,17 @@ void customTagRemove(Model* model, const std::string& tag) {
 		customTagModels.erase(it);
 }
 
+bool isValidCustomTag(const std::string& tag) {
+	std::string trimmed = rack::string::trim(tag);
+	// Check for empty or whitespace-only tags
+	if (trimmed.empty())
+		return false;
+	// Maximum tag length to prevent UI overflow and JSON issues
+	if (trimmed.length() > 64)
+		return false;
+	return true;
+}
+
 bool customTagHas(Model* model, const std::string& tag, bool resolveKey) {
 	const std::string _tag = resolveKey ? customTagResolveKey(tag) : tag;
 	auto it = customTagModels.find(_tag);
@@ -110,6 +309,10 @@ bool customTagHas(Model* model, const std::string& tag, bool resolveKey) {
 
 void customTagDelete(const std::string& tag) {
 	customTagModels.erase(customTagResolveKey(tag));
+}
+
+void customTagReset() {
+	customTagModels.clear();
 }
 
 std::set<std::string> customTagsForModel(Model* model) {
@@ -131,12 +334,16 @@ std::set<std::string> customTagsAll() {
 
 // Predefined tag modifications
 
+std::map<Model*, std::set<int>> predefinedTagsAdded;
+std::map<Model*, std::set<int>> predefinedTagsRemoved;
+
 void predefinedTagAdd(Model* model, int tagId) {
 	predefinedTagsAdded[model].insert(tagId);
 	// Remove from removed list if it was there
 	predefinedTagsRemoved[model].erase(tagId);
 	if (predefinedTagsRemoved[model].empty())
 		predefinedTagsRemoved.erase(model);
+	effectiveTagIdsCacheInvalidate(model);
 }
 
 void predefinedTagRemove(Model* model, int tagId) {
@@ -145,6 +352,7 @@ void predefinedTagRemove(Model* model, int tagId) {
 	predefinedTagsAdded[model].erase(tagId);
 	if (predefinedTagsAdded[model].empty())
 		predefinedTagsAdded.erase(model);
+	effectiveTagIdsCacheInvalidate(model);
 }
 
 bool predefinedTagHasAdded(Model* model, int tagId) {
@@ -161,16 +369,51 @@ bool predefinedTagHasRemoved(Model* model, int tagId) {
 
 void predefinedTagDelete(int tagId) {
 	// Remove from all models' added lists
-	for (auto& pair : predefinedTagsAdded) {
-		pair.second.erase(tagId);
+	for (auto it = predefinedTagsAdded.begin(); it != predefinedTagsAdded.end(); ) {
+		it->second.erase(tagId);
+		if (it->second.empty())
+			it = predefinedTagsAdded.erase(it);
+		else
+			++it;
 	}
 	// Remove from all models' removed lists
-	for (auto& pair : predefinedTagsRemoved) {
-		pair.second.erase(tagId);
+	for (auto it = predefinedTagsRemoved.begin(); it != predefinedTagsRemoved.end(); ) {
+		it->second.erase(tagId);
+		if (it->second.empty())
+			it = predefinedTagsRemoved.erase(it);
+		else
+			++it;
 	}
+	// Invalidate cache for all models since any could be affected
+	effectiveTagIdsCacheInvalidateAll();
+}
+
+void predefinedTagsReset() {
+	predefinedTagsAdded.clear();
+	predefinedTagsRemoved.clear();
+	effectiveTagIdsCacheInvalidateAll();
+}
+
+// Cache for effective tag IDs
+std::map<Model*, TagIdCache> effectiveTagIdsCache;
+uint64_t effectiveTagIdsVersion = 0;
+
+void effectiveTagIdsCacheInvalidate(Model* model) {
+	effectiveTagIdsCache.erase(model);
+}
+
+void effectiveTagIdsCacheInvalidateAll() {
+	effectiveTagIdsCache.clear();
+	effectiveTagIdsVersion++;
 }
 
 std::set<int> getEffectiveTagIds(Model* model) {
+	// Check cache first
+	auto itCached = effectiveTagIdsCache.find(model);
+	if (itCached != effectiveTagIdsCache.end() && itCached->second.version == effectiveTagIdsVersion) {
+		return itCached->second.tagIds;
+	}
+
 	std::set<int> result;
 	
 	// Add original tags
@@ -187,6 +430,12 @@ std::set<int> getEffectiveTagIds(Model* model) {
 			result.insert(tagId);
 		}
 	}
+	
+	// Store in cache
+	TagIdCache cache;
+	cache.tagIds = result;
+	cache.version = effectiveTagIdsVersion;
+	effectiveTagIdsCache[model] = cache;
 	
 	return result;
 }
@@ -220,6 +469,8 @@ static int findTagIdByName(const std::string& name) {
 
 json_t* moduleBrowserToJson(bool includeUsageData) {
 	json_t* rootJ = json_object();
+
+	json_object_set_new(rootJ, "version", json_integer(1));
 
 	json_t* favoritesJ = json_array();
 	for (Model* model : favoriteModels) {
@@ -381,6 +632,11 @@ void moduleBrowserFromJson(json_t* rootJ) {
 	predefinedTagsAdded.clear();
 	predefinedTagsRemoved.clear();
 	
+	// Version check for migration
+	json_t* versionJ = json_object_get(rootJ, "version");
+	int version = versionJ ? json_integer_value(versionJ) : 0;
+	(void)version; // Reserved for future migrations
+	
 	// New format: "predefinedTags" with "added" and "removed" arrays
 	json_t* predefinedTagsJ = json_object_get(rootJ, "predefinedTags");
 	if (predefinedTagsJ) {
@@ -427,12 +683,14 @@ void moduleBrowserFromJson(json_t* rootJ) {
 		}
 	}
 
+	// Cleanup existing modelUsage entries before loading new data
+	for (auto t : modelUsage) {
+		delete t.second;
+	}
+	modelUsage.clear();
+
 	json_t* usageJ = json_object_get(rootJ, "usage");
 	if (usageJ) {
-		for (auto t : modelUsage) {
-			delete t.second;
-		}
-		modelUsage.clear();
 		size_t i;
 		json_t* slugJ;
 		json_array_foreach(usageJ, i, slugJ) {
@@ -457,6 +715,8 @@ void moduleBrowserFromJson(json_t* rootJ) {
 
 // Usage data
 
+std::map<Model*, ModelUsage*> modelUsage;
+
 void modelUsageTouch(Model* model) {
 	ModelUsage* mu = modelUsage[model];
 	if (!mu) {
@@ -474,6 +734,16 @@ void modelUsageReset() {
 	modelUsage.clear();
 }
 
+int64_t modelUsageTimestamp(Model* model) {
+	auto u = modelUsage.find(model);
+	return (u != modelUsage.end()) ? u->second->usedTimestamp : 0;
+}
+
+int modelUsageCount(Model* model) {
+	auto u = modelUsage.find(model);
+	return (u != modelUsage.end()) ? u->second->usedCount : 0;
+}
+
 
 // Browser overlay
 
@@ -481,10 +751,15 @@ BrowserOverlay::BrowserOverlay() {
 	v1::modelBoxZoom = pluginSettings.mbZoom;
 	v1::modelBoxSort = pluginSettings.mbSort;
 	v1::hideBrands = pluginSettings.mbHideBrands;
+	if (pluginSettings.mbSortV2 >= 0 && pluginSettings.mbSortV2 <= (int)v2::BrowserSort::NEWEST) {
+		v2::browserSort = (v2::BrowserSort)pluginSettings.mbSortV2;
+	}
 	searchDescriptions = pluginSettings.mbSearchDescriptions;
 	sortBySearchScore = pluginSettings.mbSortBySearchScore;
 	favoriteHighlight = pluginSettings.mbFavoriteHighlight;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
+	modelWidthsFromJson();
+	manifestsCacheInit();
 	modelDbInit();
 
 	mbWidgetBackup = APP->scene->browser;
@@ -534,14 +809,21 @@ BrowserOverlay::~BrowserOverlay() {
 
 	pluginSettings.mbZoom = v1::modelBoxZoom;
 	pluginSettings.mbSort = v1::modelBoxSort;
+	pluginSettings.mbSortV2 = (int)v2::browserSort;
 	pluginSettings.mbHideBrands = v1::hideBrands;
 	pluginSettings.mbSearchDescriptions = searchDescriptions;
 	pluginSettings.mbSortBySearchScore = sortBySearchScore;
 	pluginSettings.mbFavoriteHighlight = favoriteHighlight;
 	json_decref(pluginSettings.mbModelsJ);
 	pluginSettings.mbModelsJ = moduleBrowserToJson();
-	
+	modelWidthsToJson();
+
 	pluginSettings.saveToJson();
+}
+
+void BrowserOverlay::onShow(const event::Show& e) {
+	rackMousePosAtOpen = APP->scene->rack->getMousePos();
+	OpaqueWidget::onShow(e);
 }
 
 void BrowserOverlay::step() {
@@ -564,6 +846,28 @@ void BrowserOverlay::step() {
 	}
 
 	box = parent->box.zeroPos();
+
+	// Pending drag: transfer the drag from the card widget to the module widget
+	// once the mouse has moved past a small threshold.  This distinguishes a
+	// quick click (module stays at rackMousePosAtOpen) from a click-and-drag
+	// (module follows the cursor).  step() fires in the same frame as the
+	// button press, so we cannot simply check "button still held" — we need
+	// actual movement to gate the transfer.
+	if (pendingDragModule) {
+		if (!APP->event->getDraggedWidget()) {
+			// Button was released without enough movement — module stays put.
+			pendingDragModule = nullptr;
+		}
+		else {
+			math::Vec currentPos = APP->scene->getMousePos();
+			if (currentPos.minus(pendingDragSceneAnchor).square() >= 4.f * 4.f) {
+				ModuleWidget* mw = pendingDragModule;
+				pendingDragModule = nullptr;
+				APP->event->setDraggedWidget(mw, GLFW_MOUSE_BUTTON_LEFT);
+			}
+		}
+	}
+
 	// Only step if visible, since there are potentially thousands of descendants that don't need to be stepped.
 	if (visible) OpaqueWidget::step();
 }
@@ -605,6 +909,8 @@ struct MbModule : Module {
 		NUM_LIGHTS
 	};
 
+	int panelTheme = 0;
+
 	MbModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
@@ -624,7 +930,6 @@ struct MbModule : Module {
 		mode = (MODE)json_integer_value(json_object_get(rootJ, "mode"));
 	}
 };
-
 
 struct MbMenuButton : ui::Button {
 	ModuleWidget* mw;
@@ -652,14 +957,14 @@ struct MbMenuButton : ui::Button {
 	}
 };
 
-struct MbWidget : ModuleWidget {
+struct MbWidget : ThemedModuleWidget<MbModule> {
 	BrowserOverlay* browserOverlay;
 	MbMenuButton* menubarButton;
 	bool active = false;
 
-	MbWidget(MbModule* module) {
+	MbWidget(MbModule* module)
+		: ThemedModuleWidget<MbModule>(module, "Mb", "", true) {
 		setModule(module);
-		setPanel(Svg::load(asset::plugin(pluginInstance, "res/Mb.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(0, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -719,7 +1024,7 @@ struct MbWidget : ModuleWidget {
 		if (module) {
 			module->lights[MbModule::LIGHT_ACTIVE].setBrightness(active);
 		}
-		ModuleWidget::step();
+		ThemedModuleWidget<MbModule>::step();
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -789,20 +1094,14 @@ struct MbWidget : ModuleWidget {
 			[]() { return pluginSettings.mbMagnifierEnabled; },
 			[]() { pluginSettings.mbMagnifierEnabled ^= true; }
 		));
+		menu->addChild(createBoolPtrMenuItem("Apply VCV Libray Whitelist", "", &pluginSettings.mbApplyLibraryWhitelist));
+		menu->addChild(createBoolPtrMenuItem("Show deprecated models", "", &pluginSettings.mbShowDeprecated));
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Custom tags"));
 		menu->addChild(createMenuItem("Auto-generate custom tags", "", []() {
 			auto result = std::make_shared<AutoTagResult>(customTagAuto());
-			if (result->total == 0) {
-				osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
-				return;
-			}
-			ui::MenuOverlay* overlay = new ui::MenuOverlay;
-			overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
-			AutoTagConfirmWidget* w = new AutoTagConfirmWidget(result);
-			overlay->addChild(w);
-			APP->scene->addChild(overlay);
+			openAutoTagConfirmDialog(result);
 		}));
 		menu->addChild(createMenuItem("Auto-generate 'MetaModule' tag", "", []() {
 			if (!osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, "This will connect to https://metamodule.info and download the module list. Continue?"))
@@ -813,13 +1112,13 @@ struct MbWidget : ModuleWidget {
 			loadingOverlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
 			APP->scene->addChild(loadingOverlay);
 
-			AsyncTagResultWidget* asyncWidget = new AsyncTagResultWidget(loadingOverlay);
+			AsyncTagResultWidget* asyncWidget = makeAsyncAutoTagWidget(loadingOverlay);
 			APP->scene->addChild(asyncWidget);
 
 			// Run on background thread to avoid blocking UI
 			std::thread([asyncWidget]() {
 				auto result = std::make_shared<AutoTagResult>(customTagMetamodule());
-				asyncWidget->result = result;
+				setAutoTagResult(asyncWidget, result);
 			}).detach();
 		}));
 
@@ -835,12 +1134,7 @@ struct MbWidget : ModuleWidget {
 								string::f("No untagged modules found for \"%s\"", query.c_str()).c_str());
 						}
 						else {
-							auto resultWrap = std::make_shared<AutoTagResult>(preview);
-							ui::MenuOverlay* overlay = new ui::MenuOverlay;
-							overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
-							AutoTagConfirmWidget* w = new AutoTagConfirmWidget(resultWrap);
-							overlay->addChild(w);
-							APP->scene->addChild(overlay);
+							openAutoTagConfirmDialog(std::make_shared<AutoTagResult>(preview));
 						}
 					}
 					e.consume(this);
@@ -865,13 +1159,30 @@ struct MbWidget : ModuleWidget {
 		if (!tags.empty()) {
 			menu->addChild(createSubmenuItem("Delete custom tag", "",
 				[tags](Menu* menu) {
-					Rack::addGroupedMenuItems<std::string>(menu, tags, [](const std::string& tag) -> ui::MenuItem* {
+					Rack::addGroupedMenuItems<std::string>(menu, tags, [](const std::string& tag) {
 						MenuItem* item = createMenuItem(tag, "", [tag]() { customTagDelete(tag); });
 						return item;
-					});
+					}, 20);
 				}
 			));
 		}
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuItem("Determine width for all modules", "", []() {
+			modelWidthScanAll();
+		}));
+		menu->addChild(createBoolMenuItem("Auto-download data for 'Newest' sort", "",
+			[]() { return pluginSettings.mbNewestAutoUpdate; },
+			[](bool state) {
+				if (state && !osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, "This will connect to https://raw.githubusercontent.com and download plugin metadata whenever new or updated plugins are detected. Continue?")) {
+					return;
+				}
+				pluginSettings.mbNewestAutoUpdate = state;
+				if (state) {
+					manifestsCacheInit();
+				}
+			}
+		));
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Browser settings", "",
@@ -880,6 +1191,9 @@ struct MbWidget : ModuleWidget {
 				menu->addChild(createMenuItem("Import", "", [&]() { this->importSettingsDialog(); }));
 				menu->addChild(new MenuSeparator());
 				menu->addChild(createMenuItem("Reset usage data", "", []() { modelUsageReset(); }));
+				menu->addChild(createMenuItem("Reset hidden modules", "", []() { hiddenModelsReset(); }));
+				menu->addChild(createMenuItem("Reset custom tags", "", []() { customTagReset(); }));
+				menu->addChild(createMenuItem("Reset predefined tags", "", []() { predefinedTagsReset(); }));
 			}
 		));
 
@@ -899,8 +1213,9 @@ struct MbWidget : ModuleWidget {
 
 		FILE* file = fopen(filename.c_str(), "w");
 		if (!file) {
-			std::string message = string::f("Could not write to patch file %s", filename.c_str());
+			std::string message = string::f("Could not write to file %s", filename.c_str());
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			return;
 		}
 		DEFER({
 			fclose(file);

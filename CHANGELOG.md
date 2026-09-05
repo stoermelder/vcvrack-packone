@@ -1,3 +1,98 @@
+## 2.x.x
+
+### Changes and Fixes
+
+- Module [ARENA](./docs/arena/Arena.md)
+    - Fixed wrong values for mix-ports on preset load
+    - Fixed missing voltage-mode options in the context menu of the mix-ports
+    - Fixed out-of-range sequence selection for _SEQ_-mode "0..10V"
+    - Fixed "Scale" out-mode using the configured number of mix-ports
+- Module [DIRT](./docs/dirt/Dirt.md)
+    - Fixed broken "Initialize" on Crush defects
+- Modules [MAZE](./docs/maze/Maze.md) and [HIVE](./docs/maze/Hive.md)
+    - Improved rendering performance
+
+## 2.6.0
+
+### New modules
+
+- Module [SPLICE-KIT](./docs/splicekit/SpliceKit.md)
+    - 8x8 matrix patch-bay for creating and removing cables by pressing button pairs. Stores up to eight independent scenes per instance, with full MIDI control and feedback for playing your patch from a grid controller
+
+### Changes and Fixes
+
+- Module [AHAB](./docs/ahab/Ahab.md)
+    - Added undo for "Clear"
+    - Added toggle for Focus mode using Shift+Esc
+    - Added clock divider/multiplier for clock input
+    - Added MIDI Panic option
+    - Added context menu options for selections
+    - Major enhacements for [Random generator](./docs/ahab/AhabRandomizer.md)
+    - Fixed reset behavior on loading files or examples
+    - Fixed broken MIDI channel on MIDI operators
+    - Fixed concurrent usage of UDP and OSC output
+    - Fixed various minor issues
+- Module [DIRT](./docs/dirt/Dirt.md)
+    - Fixed broken preset loading
+- Module [MB](./docs/trial-and-error/Mb.md)
+    - Added sorting option "Newest" to *v2 mod* browser
+    - Improved context menus for tags (#461)
+    - Fixed module placement when "Smart Rearrangement" is disabled
+    - Fixed broken sorting option "Last used"
+    - Fixed module preview in *v1 mod* browser
+- Modules [MIDI-CAT](./docs/midicat/MidiCat.md), [MIDI-ESX](./docs/midiesx/MidiEsx.md), [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md), [MIDI-PLUG](./docs/midi/MidiPlug.md), [MIDI-STEP](./docs/midi/MidiStep.md)
+    - Ignore incoming MIDI messages while module is bypassed
+- Module [MIDI-CAT](./docs/midicat/MidiCat.md)
+    - Fixed incorrect 14-bit handling of CC32
+- Modules [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md):
+    - Fixed incorrect reset behavior
+- Module [MIDI-MON](./docs/midi/MidiMon.md)
+    - Splitted display option for 14bit CC and RPN/NRPN messages
+    - Increased buffered message count from 512 to 4096
+- Module [PANIC ROOM](./docs/panicroom/PanicRoom.md)
+    - Fixed potential crash on cable and module limit
+- Module [SIREN](./docs/siren/Siren.md)
+    - Added support for multi-channel files on Re-pitch and Crossfade-loop
+    - Ignore files starting with "." (#460)
+    - Improved context menus for tags
+    - Fixed crash when playing multi-channel files
+    - Fixed occasionally lost settings
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Fixed "Bind parameters by selection" when spanning multiple modules
+
+## 2.5.0
+
+### New modules
+
+- Module [SIREN](./docs/siren/Siren.md)
+    - Sample browser collaboration with Omri Cohen — browse, preview and drag WAV/FLAC/MP3 samples to other modules
+
+### Changes and Fixes
+
+- Module [HIVE](./docs/maze/Hive.md)
+    - Fixed broken SHIFT/R- input
+- Module [MB](./docs/trial-and-error/Mb.md)
+    - Added width (HP) filter and sorting to *v2 mod* browser
+    - Fixed *v2 mod* scroll position when reopening the browser overlay
+    - Fixed module placement to trace back to the right click mouse position
+- Module [MIDI-MON](./docs/midi/MidiMon.md)
+    - Fixed SysEx message logging (trailing garbage bytes)
+    - Fixed saving of SysEx data logging setting
+- Module [PANIC ROOM](./docs/panicroom/PanicRoom.md)
+    - Added options to limit the number of allowed modules and cables
+- Module [STRIP](./docs/strip/Strip.md)
+    - Fixed crash when removing modules added by STRIP in plugin-version of Rack
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Fade CV input is now additive to per-slot fade time (previously CV was only additive to the global _FADE_ knob)
+    - Added Output-mode "Tipsy" for sending the snapshot text label (for modules with Tipsy-support like [TTY](https://library.vcvrack.com/StochasticTelegraph/TTY))
+
+## 2.4.1
+
+### Changes and Fixes
+
+- [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+    - Fixed crash on patch autosave and on preset-loading 
+
 ## 2.4.0
 
 ### New modules
@@ -20,7 +115,7 @@
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
 - Modules [INTERMIX](./docs/intermix/Intermix.md)
     - Added reset input for resetting scene selection and direction (#433)
-    - Added extended scene CV modes: Ping-pong, Alternate, Random, Random (no repeat), Random walk, Shuffle
+    - Added scene CV modes: Ping-pong, Alternate, Random, Random (no repeat), Random walk, Shuffle
 - Modules [INTERMIX](./docs/intermix/Intermix.md), [INTERMIX-FADE](./docs/intermix/Intermix.md#intermix-fade-expander)
     - Added fade length setting (4s, 15s, 60s) (#432)
 - Module [MB](./docs/trial-and-error/Mb.md)
@@ -40,10 +135,14 @@
     - Added model magnifier loupe option
     - Added integration into Rack's menu bar
     - Added `Shift`+*Click* to add a module without closing the browser
+    - Added option to apply VCV Library whitelisting
+    - Added option to show deprecated module models (now hidden by default) (#440)
     - Changed hotkey to toggle hidden modules to `Shift`+`Space` (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
 - Module [ME](./docs/trial-and-error/Me.md)
     - Added screen magnifier loupe
+- Module [MIDI-MON](./docs/midi/MidiMon.md)
+    - Added option to display engine frame instead of timestamp
 - Module [POLY-PILE](./docs/pile/Pile.md)
     - Added support for polyphonic reset triggers (#431)
 

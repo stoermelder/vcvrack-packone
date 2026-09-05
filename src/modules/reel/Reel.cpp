@@ -1502,7 +1502,7 @@ struct ReelWidget : ThemedModuleWidget<ReelModule> {
 					}
 
 					StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
-					if (m) m->idFixDataFromJson(modules);
+					if (m) m->idFixDataFromJson(oldToNewIds);
 
 					mw->fromJson(moduleJ);
 					idx++;

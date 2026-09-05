@@ -7,9 +7,11 @@ namespace MidiEsx {
 
 struct MidiEsxProcessor {
 	dsp::DoubleRingBuffer<float, 2048> bitQueue;
+	bool isBypassed = false;
 	bool locked = false;
 
 	void bitEnqueue(const uint8_t* cmd, int len) {
+		if (isBypassed) return;
 		locked = true;
 		if (int(bitQueue.capacity()) < len * 16) {
 			return;
@@ -69,7 +71,6 @@ struct MidiEsxModule : Module, MidiEsxMessageHandler {
 	int portGroupId = 0;
 
 	MidiEsxProcessor port[8];
-	bool portActive[8] = {false};
 
 	MidiEsxModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -84,11 +85,41 @@ struct MidiEsxModule : Module, MidiEsxMessageHandler {
 		unsubscribe(portGroupId, this);
 	}
 	
+	void resetPort(int portIndex) {
+		if (portIndex >= 0 && portIndex < 8) {
+			// Clear the bit queue for this port
+			while (port[portIndex].bitQueue.size() > 0) {
+				port[portIndex].bitQueue.shift();
+			}
+			port[portIndex].locked = false;
+		}
+	}
+	
+	void resetAllPorts() {
+		for (int i = 0; i < 8; i++) {
+			resetPort(i);
+		}
+	}
+	
+	void onBypass(const BypassEvent& e) override {
+		for (int i = 0; i < 8; i++) {
+			port[i].isBypassed = true;
+			resetPort(i);
+		}
+		Module::onBypass(e);
+	}
+
+	void onUnBypass(const UnBypassEvent& e) override {
+		for (int i = 0; i < 8; i++) {
+			port[i].isBypassed = false;
+		}
+		Module::onUnBypass(e);
+	}
+
 	void process(const ProcessArgs& args) override {
 		if (args.sampleRate != 48000.f) return;
 
 		for (int i = 0; i < 8; i++) {
-			portActive[i] = outputs[OUTPUT_ENC + i].isConnected();
 			outputs[OUTPUT_ENC + i].setVoltage(port[i].nextBit());
 		}
 	}
@@ -106,7 +137,8 @@ struct MidiEsxModule : Module, MidiEsxMessageHandler {
 
 	void dataFromJson(json_t* rootJ) override {
 		unsubscribe(portGroupId, this);
-		portGroupId = json_integer_value(json_object_get(rootJ, "portGroupId"));
+		json_t* portGroupIdJ = json_object_get(rootJ, "portGroupId");
+		if (portGroupIdJ) portGroupId = json_integer_value(portGroupIdJ);
 		subscribe(portGroupId, this);
 	}
 
@@ -137,6 +169,23 @@ struct MidiEsxWidget : ThemedModuleWidget<MidiEsxModule> {
 
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MidiEsxModule>::appendContextMenu(menu);
+
+		menu->addChild(new MenuSeparator());	
+		menu->addChild(createSubmenuItem("MIDI Reset", "", [=](Menu* menu) {
+			for (int i = 0; i < 8; ++i) {
+				menu->addChild(createBoolMenuItem(
+					string::f("Port %i", i + 1), "",
+					[=]() { return false; },
+					[=](bool) { module->resetPort(i); }
+				));
+			}	
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createBoolMenuItem(
+				"Reset all ports", "",
+				[=]() { return false; },
+				[=](bool) { module->resetAllPorts(); }
+			));
+		}));
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createBoolMenuItem("Driver active", "",

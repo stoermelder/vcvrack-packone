@@ -60,7 +60,7 @@ enum OUT_MODE {
 };
 
 template < int PORTS >
-struct IntermixModule : Module, IntermixBase<PORTS> {
+struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 	enum ParamIds {
 		ENUMS(PARAM_MATRIX, PORTS * PORTS),
 		ENUMS(PARAM_OUTPUT, PORTS),
@@ -136,8 +136,8 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 	FADE_LENGTH fadeLengthMode = FADE_LENGTH_4S;
 
 	LinearFade fader[PORTS][PORTS][PORT_MAX_CHANNELS];
-	uint32_t fadeInTs[PORTS];
-	uint32_t fadeOutTs[PORTS];
+	uint32_t fadeInTs[PORTS] = {};
+	uint32_t fadeOutTs[PORTS] = {};
 	//dsp::TSlewLimiter<simd::float_4> outputAtSlew[PORTS / 4];
 
 	uint32_t ts = 0;
@@ -153,13 +153,16 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_SCENE, "Scene selection");
+		inputInfos[INPUT_SCENE]->description = "Triggers scenes depending on the operating mode selected on the context menu.";
 		configInput(INPUT_RESET, "Scene reset");
+		inputInfos[INPUT_RESET]->description = "Resets the current scene according to the selected scene-mode.";
 		for (int i = 0; i < SCENE_MAX; i++) {
 			configSwitch(PARAM_SCENE + i, 0.f, 1.f, 0.f, string::f("Scene %i", i + 1));
 		}
 		for (int i = 0; i < PORTS; i++) {
 			configInput(INPUT + i, string::f("Signal %i", i + 1));
 			configOutput(OUTPUT + i, string::f("Mix %i", i + 1));
+			outputInfos[OUTPUT + i]->description = "Polyphonic mix bus.";
 			for (int j = 0; j < PORTS; j++) {
 				configParam<MatrixButtonParamQuantity>(PARAM_MATRIX + i * PORTS + j, 0.f, 1.f, 0.f, string::f("Input %i to Output %i", j + 1, i + 1));
 			}
@@ -170,8 +173,10 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		}
 		auto pqFadeIn = configParam<FadeLengthParamQuantity<IntermixModule<PORTS>>>(PARAM_FADEIN, 0.f, 4.f, 0.f, "Fade in", "s");
 		pqFadeIn->module = this;
+		pqFadeIn->description = "Fade-in time applied to a signal when a matrix button is engaged.";
 		auto pqFadeOut = configParam<FadeLengthParamQuantity<IntermixModule<PORTS>>>(PARAM_FADEOUT, 0.f, 4.f, 0.f, "Fade out", "s");
 		pqFadeOut->module = this;
+		pqFadeOut->description = "Fade-out time applied to a signal when a matrix button is disengaged.";
 		sceneDivider.setDivision(64);
 
 		ResetEvent re;
@@ -186,8 +191,10 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		padBrightness = 0.75f;
 		inputVisualize = false;
 		outputClamp = true;
-		for (int i = 0; i < SCENE_MAX; i++) {
+		for (int i = 0; i < PORTS; i++) {
 			inputMode[i] = IM_DIRECT;
+		}
+		for (int i = 0; i < SCENE_MAX; i++) {
 			for (int j = 0; j < PORTS; j++) {
 				scenes[i].input[j] = IM_DIRECT;
 				scenes[i].output[j] = OM_OUT;
@@ -206,20 +213,6 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		Module::onReset(e);
 	}
 
-#ifndef METAMODULE
-	void onRemove(const Module::RemoveEvent& e) override {
-		// hack for clearing the module-pointers on the expander-chain
-		Module* m = this;
-		while (m) {
-			if (m->model != modelIntermix && m->model != modelIntermixEnv && m->model != modelIntermixFade && m->model != modelIntermixGate) break;
-			m->rightExpander.producerMessage = NULL;
-			m->rightExpander.consumerMessage = NULL;
-			m = m->rightExpander.module;
-		}
-		Module::onRemove(e);
-	}
-#endif
-
 	void process(const ProcessArgs& args) override {
 		ts++;
 
@@ -228,10 +221,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 			if (resetTrigger.process(inputs[INPUT_RESET].getVoltage())) {
 				resetTimer.reset();
 				switch (sceneMode) {
-					case SCENE_CV_MODE::TRIG_FWD:
-					case SCENE_CV_MODE::TRIG_RANDOM:
-					case SCENE_CV_MODE::TRIG_RANDOM_WALK:
-					case SCENE_CV_MODE::TRIG_RANDOM_WO_REPEAT: {
+					case SCENE_CV_MODE::TRIG_FWD: {
 						sceneSet(0);
 						break;
 					}
@@ -255,12 +245,16 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 						for (int i = 0; i < sceneCount; i++) {
 							sceneCvModeShuffle.push_back(i);
 						}
-						std::random_shuffle(std::begin(sceneCvModeShuffle), std::end(sceneCvModeShuffle));
+						std::mt19937 rng(random::u32());
+						std::shuffle(std::begin(sceneCvModeShuffle), std::end(sceneCvModeShuffle), rng);
 						int s = std::min(std::max(0, sceneCvModeShuffle.back()), sceneCount - 1);
 						sceneCvModeShuffle.pop_back();
 						sceneSet(s);
 						break;
 					}
+					case SCENE_CV_MODE::TRIG_RANDOM:
+					case SCENE_CV_MODE::TRIG_RANDOM_WALK:
+					case SCENE_CV_MODE::TRIG_RANDOM_WO_REPEAT:
 					default: {
 						break;
 					}
@@ -299,11 +293,23 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 					if (sceneTrigger.process(inputs[INPUT_SCENE].getVoltage())) {
 						if (!inputs[INPUT_RESET].isConnected() || resetTimer.getTime() >= 1e-3f) {
 							int s = sceneSelected + sceneCvModeDir;
-							if (s >= sceneCount - 1)
+							if (s >= sceneCount - 1) {
 								sceneCvModeDir = -1;
-							if (s <= 0)
+								s = sceneCount - 1;
+							}
+							else if (s <= 0) {
 								sceneCvModeDir = 1;
-							sceneSet(s);
+								s = 0;
+							}
+							// On a bounce `s` coincides with the already-selected endpoint, so
+							// sceneSet() would early-return and skip re-applying the endpoint's
+							// routing. Re-apply explicitly so both endpoints behave identically.
+							if (s == sceneSelected) {
+								sceneApply(sceneSelected);
+							}
+							else {
+								sceneSet(s);
+							}
 						}
 					}
 					break;
@@ -314,13 +320,25 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 							int s = 0;
 							if (sceneSelected == 0) {
 								s = sceneCvModeAlt + sceneCvModeDir;
-								if (s >= sceneCount - 1)
+								if (s >= sceneCount - 1) {
 									sceneCvModeDir = -1;
-								if (s <= 0)
+									s = sceneCount - 1;
+								}
+								else if (s <= 0) {
 									sceneCvModeDir = 1;
+									s = 0;
+								}
 								sceneCvModeAlt = std::max(0, std::min(s, sceneCount - 1));
 							}
-							sceneSet(s);
+							// On a bounce `s` coincides with the already-selected endpoint, so
+							// sceneSet() would early-return and skip re-applying the endpoint's
+							// routing. Re-apply explicitly so both endpoints behave identically.
+							if (s == sceneSelected) {
+								sceneApply(sceneSelected);
+							}
+							else {
+								sceneSet(s);
+							}
 						}
 					}
 					break;
@@ -353,7 +371,8 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 							for (int i = 0; i < sceneCount; i++) {
 								sceneCvModeShuffle.push_back(i);
 							}
-							std::random_shuffle(std::begin(sceneCvModeShuffle), std::end(sceneCvModeShuffle));
+							std::mt19937 rng(random::u32());
+							std::shuffle(std::begin(sceneCvModeShuffle), std::end(sceneCvModeShuffle), rng);
 						}
 						int s = std::min(std::max(0, sceneCvModeShuffle.back()), sceneCount - 1);
 						sceneCvModeShuffle.pop_back();
@@ -543,17 +562,18 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		}
 
 		// Expander
+		// Up-cast to IntermixBase<PORTS>* before storing: consumers
+		// reinterpret_cast the void* back to IntermixBase<PORTS>* and make
+		// virtual calls, so the stored pointer must already carry the correct
+		// multiple-inheritance offset.
 		rightExpander.producerMessage = (IntermixBase<PORTS>*)this;
 		rightExpander.messageFlipRequested = true;
 	}
 
-	inline void sceneSet(int scene) {
-		if (sceneSelected == scene) return;
-		if (scene < 0) return;
-		int scenePrevious = sceneSelected;
-		sceneSelected = std::min(scene, sceneCount - 1);
-		sceneNext = -1;
-
+	// Re-applies the currently selected scene's routing (matrix, outputs, fades)
+	// to the module parameters. `scenePrevious` is the scene that was active
+	// before; it is only used to retrigger fades on cells whose value changed.
+	inline void sceneApply(int scenePrevious) {
 		for (int i = 0; i < SCENE_MAX; i++) {
 			params[PARAM_SCENE + i].setValue(i == sceneSelected);
 		}
@@ -589,6 +609,15 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 			outputAtSlew[i].setRiseFall(at[i] / f1, at[i] / f2);
 		}
 		*/
+	}
+
+	inline void sceneSet(int scene) {
+		if (sceneSelected == scene) return;
+		if (scene < 0) return;
+		int scenePrevious = sceneSelected;
+		sceneSelected = std::min(scene, sceneCount - 1);
+		sceneNext = -1;
+		sceneApply(scenePrevious);
 	}
 
 	void sceneCopy(int scene) {
@@ -704,47 +733,71 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
-		padBrightness = json_real_value(json_object_get(rootJ, "padBrightness"));
-		inputVisualize = json_boolean_value(json_object_get(rootJ, "inputVisualize"));
-		outputClamp = json_boolean_value(json_object_get(rootJ, "outputClamp"));
-		channelCount = json_integer_value(json_object_get(rootJ, "channelCount"));
+		json_t* padBrightnessJ = json_object_get(rootJ, "padBrightness");
+		if (padBrightnessJ) padBrightness = json_real_value(padBrightnessJ);
+		json_t* inputVisualizeJ = json_object_get(rootJ, "inputVisualize");
+		if (inputVisualizeJ) inputVisualize = json_boolean_value(inputVisualizeJ);
+		json_t* outputClampJ = json_object_get(rootJ, "outputClamp");
+		if (outputClampJ) outputClamp = json_boolean_value(outputClampJ);
+		json_t* channelCountJ = json_object_get(rootJ, "channelCount");
+		if (channelCountJ) channelCount = json_integer_value(channelCountJ);
 
 		json_t* inputsJ = json_object_get(rootJ, "inputMode");
-		json_t* inputJ;
-		size_t inputIndex;
-		json_array_foreach(inputsJ, inputIndex, inputJ) {
-			inputMode[inputIndex] = (IN_MODE)json_integer_value(inputJ);
+		if (inputsJ) {
+			// Bounded to the fixed-size destinations: hand-edited or corrupted
+			// patches may contain more entries than these members hold.
+			size_t maxInputs = std::min((size_t)PORTS, json_array_size(inputsJ));
+			for (size_t inputIndex = 0; inputIndex < maxInputs; inputIndex++) {
+				inputMode[inputIndex] = (IN_MODE)json_integer_value(json_array_get(inputsJ, inputIndex));
+			}
 		}
 
 		json_t* scenesJ = json_object_get(rootJ, "scenes");
-		json_t* sceneJ;
-		size_t sceneIndex;
-		json_array_foreach(scenesJ, sceneIndex, sceneJ) {
-			json_t* inputJ = json_object_get(sceneJ, "input");
-			json_t* outputJ = json_object_get(sceneJ, "output");
-			json_t* outputAtJ = json_object_get(sceneJ, "outputAt");
-			json_t* matrixJ = json_object_get(sceneJ, "matrix");
-			json_t* valueJ;
-			size_t index;
-			json_array_foreach(inputJ, index, valueJ) {
-				scenes[sceneIndex].input[index] = (IN_MODE)json_integer_value(valueJ);
-			}
-			json_array_foreach(outputJ, index, valueJ) {
-				scenes[sceneIndex].output[index] = (OUT_MODE)json_integer_value(valueJ);
-			}
-			json_array_foreach(outputAtJ, index, valueJ) {
-				scenes[sceneIndex].outputAt[index] = json_real_value(valueJ);
-			}
-			json_array_foreach(matrixJ, index, valueJ) {
-				scenes[sceneIndex].matrix[index / PORTS][index % PORTS] = json_real_value(valueJ);
+		if (scenesJ) {
+			size_t maxScenes = std::min((size_t)SCENE_MAX, json_array_size(scenesJ));
+			for (size_t sceneIndex = 0; sceneIndex < maxScenes; sceneIndex++) {
+				json_t* sceneJ = json_array_get(scenesJ, sceneIndex);
+				json_t* inputJ = json_object_get(sceneJ, "input");
+				json_t* outputJ = json_object_get(sceneJ, "output");
+				json_t* outputAtJ = json_object_get(sceneJ, "outputAt");
+				json_t* matrixJ = json_object_get(sceneJ, "matrix");
+				if (inputJ) {
+					size_t maxIn = std::min((size_t)PORTS, json_array_size(inputJ));
+					for (size_t index = 0; index < maxIn; index++) {
+						scenes[sceneIndex].input[index] = (IN_MODE)json_integer_value(json_array_get(inputJ, index));
+					}
+				}
+				if (outputJ) {
+					size_t maxOut = std::min((size_t)PORTS, json_array_size(outputJ));
+					for (size_t index = 0; index < maxOut; index++) {
+						scenes[sceneIndex].output[index] = (OUT_MODE)json_integer_value(json_array_get(outputJ, index));
+					}
+				}
+				if (outputAtJ) {
+					size_t maxAt = std::min((size_t)PORTS, json_array_size(outputAtJ));
+					for (size_t index = 0; index < maxAt; index++) {
+						scenes[sceneIndex].outputAt[index] = json_real_value(json_array_get(outputAtJ, index));
+					}
+				}
+				if (matrixJ) {
+					// matrix is [PORTS][PORTS]; a longer array is truncated row-wise
+					size_t maxMatrix = std::min((size_t)(PORTS * PORTS), json_array_size(matrixJ));
+					for (size_t index = 0; index < maxMatrix; index++) {
+						scenes[sceneIndex].matrix[index / PORTS][index % PORTS] = json_real_value(json_array_get(matrixJ, index));
+					}
+				}
 			}
 		}
 
-		sceneSelected = json_integer_value(json_object_get(rootJ, "sceneSelected"));
-		sceneMode = (SCENE_CV_MODE)json_integer_value(json_object_get(rootJ, "sceneMode"));
-		sceneInputMode = json_boolean_value(json_object_get(rootJ, "sceneInputMode"));
+		json_t* sceneSelectedJ = json_object_get(rootJ, "sceneSelected");
+		if (sceneSelectedJ) sceneSelected = json_integer_value(sceneSelectedJ);
+		json_t* sceneModeJ = json_object_get(rootJ, "sceneMode");
+		if (sceneModeJ) sceneMode = (SCENE_CV_MODE)json_integer_value(sceneModeJ);
+		json_t* sceneInputModeJ = json_object_get(rootJ, "sceneInputMode");
+		if (sceneInputModeJ) sceneInputMode = json_boolean_value(sceneInputModeJ);
 		json_t* sceneAtModeJ = json_object_get(rootJ, "sceneAtMode");
 		if (sceneAtModeJ) sceneAtMode = json_boolean_value(sceneAtModeJ);
 		json_t* sceneCountJ = json_object_get(rootJ, "sceneCount");

@@ -79,7 +79,19 @@ struct SipoModule : Module {
 	}
 
 	void process(const ProcessArgs &args) override {
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#elif defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warray-bounds"
+#endif
 		outputs[POLY_OUTPUT].setChannels(PORT_MAX_CHANNELS);
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#elif defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 		if (clockTrigger.process(inputs[TRIG_INPUT].getVoltage())) {
 			dataPtr = (dataPtr + 1) % MAX_DATA;
@@ -122,7 +134,8 @@ struct SipoModule : Module {
 	}
 
 	void dataFromJson(json_t *rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* dataJ = json_object_get(rootJ, "data");
 		if (dataJ) {
@@ -134,7 +147,8 @@ struct SipoModule : Module {
 			dataUsed = dataIndex;
 		}
 
-		dataPtr = json_integer_value(json_object_get(rootJ, "dataPtr"));
+		json_t* dataPtrJ = json_object_get(rootJ, "dataPtr");
+		if (dataPtrJ) dataPtr = json_integer_value(dataPtrJ);
 	}
 };
 

@@ -50,13 +50,21 @@ struct DirtModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configSwitch(PARAM_NOISE, 0.f, 1.f, 1.f, "White noise", {"Off", "On"});
+		paramQuantities[PARAM_NOISE]->description = "Adds low-level white noise to the signal.";
 		configSwitch(PARAM_CROSSTALK, 0.f, 1.f, 1.f, "Crosstalk between channels of a polyphonic cable", {"Off", "On"});
+		paramQuantities[PARAM_CROSSTALK]->description = "Mixes a small amount of each channel into its neighbors, emulating crosstalk in analog cables.";
 		configSwitch(PARAM_CRACKE, 0.f, 1.f, 1.f, "Crackle", {"Off", "On"});
+		paramQuantities[PARAM_CRACKE]->description = "Adds random pops and crackles to the signal.";
 		configSwitch(PARAM_PITCH, 0.f, 1.f, 1.f, "Pitch defects", {"Off", "On"});
+		paramQuantities[PARAM_PITCH]->description = "Introduces occasional pitch wobble.";
 		configSwitch(PARAM_CRUSH, 0.f, 1.f, 1.f, "Crush defects", {"Off", "On"});
+		paramQuantities[PARAM_CRUSH]->description = "Introduces occasional bit-depth / sample-rate reduction artifacts.";
 		configSwitch(PARAM_DROPOUT, 0.f, 1.f, 1.f, "Dropout defects", {"Off", "On"});
+		paramQuantities[PARAM_DROPOUT]->description = "Introduces occasional dropouts (silenced samples).";
 		configInput(INPUT, "Polyphonic");
+		inputInfos[INPUT]->description = "Polyphonic audio to which the lo-fi defects are applied.";
 		configOutput(OUTPUT, "Polyphonic");
+		outputInfos[OUTPUT]->description = "Polyphonic audio with the selected defects applied, same number of channels as the input.";
 		for (size_t i = 0; i < PORT_MAX_CHANNELS; i++) {
 			noise[i].reset();
  		}
@@ -138,15 +146,19 @@ struct DirtModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
-		json_t* channelsJ = json_object_get(rootJ, "presets");
+		json_t* channelsJ = json_object_get(rootJ, "channels");
 		json_t* channelJ;
 		size_t i;
 		json_array_foreach(channelsJ, i, channelJ) {
-			noise[i].ratio = json_real_value(json_object_get(channelJ, "noiseRatio"));
-			crosstalk.ratio[i] = json_real_value(json_object_get(channelJ, "crosstalkRatio"));
-			crackle.ratio[i] = json_real_value(json_object_get(channelJ, "crackleRatio"));
+			json_t* noiseRatioJ = json_object_get(channelJ, "noiseRatio");
+			if (noiseRatioJ) noise[i].ratio = json_real_value(noiseRatioJ);
+			json_t* crosstalkRatioJ = json_object_get(channelJ, "crosstalkRatio");
+			if (crosstalkRatioJ) crosstalk.ratio[i] = json_real_value(crosstalkRatioJ);
+			json_t* crackleRatioJ = json_object_get(channelJ, "crackleRatio");
+			if (crackleRatioJ) crackle.ratio[i] = json_real_value(crackleRatioJ);
 		}
 
 		json_t* pitchDefectJ = json_object_get(rootJ, "pitchDefect");

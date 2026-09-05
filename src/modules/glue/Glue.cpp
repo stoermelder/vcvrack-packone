@@ -14,7 +14,7 @@ GlueModule::GlueModule() {
 	configSwitch(PARAM_HIDE, 0.f, 1.f, 0.f, "Hide labels");
 
 	ResetEvent re;
-	onReset(re);
+	GlueModule::onReset(re);
 }
 
 GlueModule::~GlueModule() {
@@ -153,24 +153,31 @@ json_t* GlueModule::cableLabelToJson() {
 }
 
 void GlueModule::dataFromJson(json_t* rootJ) {
-	panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+	json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+	if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
-	defaultSize = json_real_value(json_object_get(rootJ, "defaultSize"));
-	defaultWidth = json_real_value(json_object_get(rootJ, "defaultWidth"));
-	defaultAngle = json_real_value(json_object_get(rootJ, "defaultAngle"));
-	defaultOpacity = json_real_value(json_object_get(rootJ, "defaultOpacity"));
+	json_t* defaultSizeJ = json_object_get(rootJ, "defaultSize");
+	if (defaultSizeJ) defaultSize = json_real_value(defaultSizeJ);
+	json_t* defaultWidthJ = json_object_get(rootJ, "defaultWidth");
+	if (defaultWidthJ) defaultWidth = json_real_value(defaultWidthJ);
+	json_t* defaultAngleJ = json_object_get(rootJ, "defaultAngle");
+	if (defaultAngleJ) defaultAngle = json_real_value(defaultAngleJ);
+	json_t* defaultOpacityJ = json_object_get(rootJ, "defaultOpacity");
+	if (defaultOpacityJ) defaultOpacity = json_real_value(defaultOpacityJ);
 	json_t* defaultColorJ = json_object_get(rootJ, "defaultColor");
-	if (defaultColorJ) defaultColor = color::fromHexString(json_string_value(defaultColorJ));
-	defaultFont = json_integer_value(json_object_get(rootJ, "defaultFont"));
+	if (defaultColorJ && json_is_string(defaultColorJ)) defaultColor = color::fromHexString(json_string_value(defaultColorJ));
+	json_t* defaultFontJ = json_object_get(rootJ, "defaultFont");
+	if (defaultFontJ) defaultFont = json_integer_value(defaultFontJ);
 	json_t* defaultFontColorJ = json_object_get(rootJ, "defaultFontColor");
-	if (defaultFontColorJ) defaultFontColor = color::fromHexString(json_string_value(defaultFontColorJ));
-	skewLabels = json_boolean_value(json_object_get(rootJ, "skewLabels"));
+	if (defaultFontColorJ && json_is_string(defaultFontColorJ)) defaultFontColor = color::fromHexString(json_string_value(defaultFontColorJ));
+	json_t* skewLabelsJ = json_object_get(rootJ, "skewLabels");
+	if (skewLabelsJ) skewLabels = json_boolean_value(skewLabelsJ);
 
 	json_t* labelsJ = json_object_get(rootJ, "labels");
-	moduleLabelFromJson(labelsJ);
+	if (labelsJ && json_is_array(labelsJ)) moduleLabelFromJson(labelsJ);
 
 	json_t* cableLabelsJ = json_object_get(rootJ, "cableLabels");
-	cableLabelFromJson(cableLabelsJ);
+	if (cableLabelsJ) cableLabelFromJson(cableLabelsJ);
 
 	idFixClearMap();
 	params[PARAM_UNLOCK].setValue(0.f);
@@ -182,23 +189,34 @@ void GlueModule::moduleLabelFromJson(json_t* labelsJ) {
 		size_t labelIdx;
 		json_t* labelJ;
 		json_array_foreach(labelsJ, labelIdx, labelJ) {
-			int64_t moduleId = json_integer_value(json_object_get(labelJ, "moduleId"));
+			json_t* moduleIdJ = json_object_get(labelJ, "moduleId");
+			if (!moduleIdJ) continue;
+			int64_t moduleId = json_integer_value(moduleIdJ);
 			moduleId = idFix(moduleId);
 			if (moduleId < 0) continue;
 			
 			ModuleLabel* l = addModuleLabel();
 			l->moduleId = moduleId;
-			l->x = json_real_value(json_object_get(labelJ, "x"));
-			l->y = json_real_value(json_object_get(labelJ, "y"));
-			l->angle = json_real_value(json_object_get(labelJ, "angle"));
-			l->skew = json_real_value(json_object_get(labelJ, "skew"));
-			l->opacity = json_real_value(json_object_get(labelJ, "opacity"));
-			l->width = json_real_value(json_object_get(labelJ, "width"));
-			l->size = json_real_value(json_object_get(labelJ, "size"));
+			json_t* xJ = json_object_get(labelJ, "x");
+			if (xJ) l->x = json_real_value(xJ);
+			json_t* yJ = json_object_get(labelJ, "y");
+			if (yJ) l->y = json_real_value(yJ);
+			json_t* angleJ = json_object_get(labelJ, "angle");
+			if (angleJ) l->angle = json_real_value(angleJ);
+			json_t* skewJ = json_object_get(labelJ, "skew");
+			if (skewJ) l->skew = json_real_value(skewJ);
+			json_t* opacityJ = json_object_get(labelJ, "opacity");
+			if (opacityJ) l->opacity = json_real_value(opacityJ);
+			json_t* widthJ = json_object_get(labelJ, "width");
+			if (widthJ) l->width = json_real_value(widthJ);
+			json_t* sizeJ = json_object_get(labelJ, "size");
+			if (sizeJ) l->size = json_real_value(sizeJ);
 			json_t* textJ = json_object_get(labelJ, "text");
 			if (textJ) l->text = json_string_value(textJ);
-			l->color = color::fromHexString(json_string_value(json_object_get(labelJ, "color")));
-			l->font = json_integer_value(json_object_get(labelJ, "font"));
+			json_t* colorJ = json_object_get(labelJ, "color");
+			if (colorJ) l->color = color::fromHexString(json_string_value(colorJ));
+			json_t* fontJ = json_object_get(labelJ, "font");
+			if (fontJ) l->font = json_integer_value(fontJ);
 			json_t* fontColorJ = json_object_get(labelJ, "fontColor");
 			if (fontColorJ) l->fontColor = color::fromHexString(json_string_value(fontColorJ));
 		}
@@ -211,19 +229,25 @@ void GlueModule::cableLabelFromJson(json_t* cableLabelsJ) {
 		size_t labelIdx;
 		json_t* cableLabelJ;
 		json_array_foreach(cableLabelsJ, labelIdx, cableLabelJ) {
-			int64_t cableId = json_integer_value(json_object_get(cableLabelJ, "cableId"));
+			json_t* cableIdJ = json_object_get(cableLabelJ, "cableId");
+			if (!cableIdJ) continue;
+			int64_t cableId = json_integer_value(cableIdJ);
 			if (cableId < 0) continue;
 			
 			CableLabel* cl = addCableLabel();
 			cl->cableId = cableId;
-			cl->atInput = json_boolean_value(json_object_get(cableLabelJ, "atInput"));
-			cl->width = json_real_value(json_object_get(cableLabelJ, "width"));
-			cl->size = json_real_value(json_object_get(cableLabelJ, "size"));
+			json_t* atInputJ = json_object_get(cableLabelJ, "atInput");
+			if (atInputJ) cl->atInput = json_boolean_value(atInputJ);
+			json_t* widthJ = json_object_get(cableLabelJ, "width");
+			if (widthJ) cl->width = json_real_value(widthJ);
+			json_t* sizeJ = json_object_get(cableLabelJ, "size");
+			if (sizeJ) cl->size = json_real_value(sizeJ);
 			json_t* distanceJ = json_object_get(cableLabelJ, "distance");
 			if (distanceJ) cl->distance = json_real_value(distanceJ);
 			json_t* textJ = json_object_get(cableLabelJ, "text");
 			if (textJ) cl->text = json_string_value(textJ);
-			cl->font = json_integer_value(json_object_get(cableLabelJ, "font"));
+			json_t* fontJ = json_object_get(cableLabelJ, "font");
+			if (fontJ) cl->font = json_integer_value(fontJ);
 		}
 	}
 }

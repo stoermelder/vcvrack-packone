@@ -1,15 +1,26 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 
 #include "Goto.cpp"
 
+using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::Goto;
 
 SYNC_MODEL(modelGoto, "Goto");
 Test::TestContext<> testContext;
 
+// A ModuleAccess mock that records getModuleWidget lookups (returns nullptr).
+struct MockModuleAccess : vcv::ModuleAccess {
+	mutable std::vector<int64_t> getModuleWidgetCalls;
+	ModuleWidget* getModuleWidget(int64_t moduleId) const override {
+		getModuleWidgetCalls.push_back(moduleId);
+		return nullptr;
+	}
+};
+
+
 TEST_CASE("Construction and initialization", "[Goto]") {
-	GotoModule<10>* m = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	GotoModule<10>* m = mods.create("Goto");
 	GotoWidget* mw = Test::createWidget<GotoWidget>("Goto");
 
 	REQUIRE(m != nullptr);
@@ -17,11 +28,92 @@ TEST_CASE("Construction and initialization", "[Goto]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[Goto][JSON]") {
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
+}
+
+TEST_CASE("JSON round-trip preserves state", "[Goto]") {
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
+	auto module2 = mods.create("Goto");
+
+	SECTION("Scalar settings round-trip") {
+		// Distinct, non-default values for every scalar stored to JSON
+		module->panelTheme = 1;
+		module->triggerMode = TRIGGERMODE::C5;
+		module->smoothTransition = true;
+		module->jumpPos = JUMPPOS::MODULE_TOPLEFT;
+		module->ignoreZoom = true;
+
+		json_t* j = module->dataToJson();
+		module2->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(module2->panelTheme == 1);
+		REQUIRE(module2->triggerMode == TRIGGERMODE::C5);
+		REQUIRE(module2->smoothTransition == true);
+		REQUIRE(module2->jumpPos == JUMPPOS::MODULE_TOPLEFT);
+		REQUIRE(module2->ignoreZoom == true);
+	}
+
+	SECTION("jumpPoints array round-trips (variable moduleIds count + zoom)") {
+		// Use a non-uniform shape: vary the number of moduleIds per slot
+		// (0, 1, 2, 3, ...) and non-linear zoom values, so an indexing or
+		// scaling bug would be caught.
+		for (int i = 0; i < 10; i++) {
+			module->jumpPoints[i].moduleIds.clear();
+			size_t count = i % 4;
+			for (size_t k = 0; k < count; k++) {
+				module->jumpPoints[i].moduleIds.push_back(i * 1000 + (int)k);
+			}
+			module->jumpPoints[i].zoom = 0.25f + 0.1f * i;
+		}
+
+		json_t* j = module->dataToJson();
+		module2->dataFromJson(j);
+		json_decref(j);
+
+		for (int i = 0; i < 10; i++) {
+			size_t count = i % 4;
+			REQUIRE(module2->jumpPoints[i].moduleIds.size() == count);
+			for (size_t k = 0; k < count; k++) {
+				REQUIRE(module2->jumpPoints[i].moduleIds[k] == i * 1000 + (int)k);
+			}
+			REQUIRE(module2->jumpPoints[i].zoom == Catch::Approx(0.25f + 0.1f * i).margin(0.01f));
+		}
+	}
+
+}
+
+
 TEST_CASE("POLYTRIGGER mode sets jumpTrigger on rising edge", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 	module->triggerMode = TRIGGERMODE::POLYTRIGGER;
 
 	// Simulate connected cable
@@ -42,11 +134,11 @@ TEST_CASE("POLYTRIGGER mode sets jumpTrigger on rising edge", "[Goto]") {
 		REQUIRE(module->jumpTrigger == 4);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("POLYTRIGGER: no trigger when voltage stays high (no new edge)", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 	module->triggerMode = TRIGGERMODE::POLYTRIGGER;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 10;
 
@@ -66,11 +158,11 @@ TEST_CASE("POLYTRIGGER: no trigger when voltage stays high (no new edge)", "[Got
 		REQUIRE(module->jumpTrigger == -1);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("C5 trigger mode maps voltage to slot", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 	module->triggerMode = TRIGGERMODE::C5;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 1;
 
@@ -84,11 +176,11 @@ TEST_CASE("C5 trigger mode maps voltage to slot", "[Goto]") {
 		REQUIRE(module->jumpTrigger == 0);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("C5 trigger mode: slot 3 at correct voltage", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 	module->triggerMode = TRIGGERMODE::C5;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 1;
 
@@ -101,11 +193,11 @@ TEST_CASE("C5 trigger mode: slot 3 at correct voltage", "[Goto]") {
 		REQUIRE(module->jumpTrigger == 3);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("C5 trigger mode: out-of-range voltage is ignored", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 	module->triggerMode = TRIGGERMODE::C5;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 1;
 
@@ -118,11 +210,11 @@ TEST_CASE("C5 trigger mode: out-of-range voltage is ignored", "[Goto]") {
 		REQUIRE(module->jumpTrigger == -1);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("C5 trigger: same voltage twice does not re-trigger", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 	module->triggerMode = TRIGGERMODE::C5;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 1;
 
@@ -140,11 +232,11 @@ TEST_CASE("C5 trigger: same voltage twice does not re-trigger", "[Goto]") {
 		REQUIRE(module->jumpTrigger == -1);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("jumpTriggerUsed reflects cable connection state", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 
 	SECTION("False when input disconnected") {
 		module->inputs[GotoModule<10>::INPUT_TRIG].channels = 0;
@@ -158,70 +250,12 @@ TEST_CASE("jumpTriggerUsed reflects cable connection state", "[Goto]") {
 		REQUIRE(module->jumpTriggerUsed == true);
 	}
 
-	Test::destroyModule(module);
 }
 
-TEST_CASE("JSON round-trip preserves all settings", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
-
-	module->triggerMode = TRIGGERMODE::C5;
-	module->smoothTransition = true;
-	module->jumpPos = JUMPPOS::MODULE_TOPLEFT;
-	module->ignoreZoom = true;
-
-	module->jumpPoints[0].moduleIds = {111, 222};
-	module->jumpPoints[0].zoom = 0.5f;
-	module->jumpPoints[5].moduleIds = {999};
-	module->jumpPoints[5].zoom = 1.0f;
-
-	json_t* j = module->dataToJson();
-
-	auto module2 = Test::createModule<GotoModule<10>>("Goto");
-	module2->dataFromJson(j);
-	json_decref(j);
-
-	SECTION("triggerMode preserved") {
-		REQUIRE(module2->triggerMode == TRIGGERMODE::C5);
-	}
-
-	SECTION("smoothTransition preserved") {
-		REQUIRE(module2->smoothTransition == true);
-	}
-
-	SECTION("jumpPos preserved") {
-		REQUIRE(module2->jumpPos == JUMPPOS::MODULE_TOPLEFT);
-	}
-
-	SECTION("ignoreZoom preserved") {
-		REQUIRE(module2->ignoreZoom == true);
-	}
-
-	SECTION("Jump point 0 module IDs preserved") {
-		REQUIRE(module2->jumpPoints[0].moduleIds.size() == 2);
-		REQUIRE(module2->jumpPoints[0].moduleIds[0] == 111);
-		REQUIRE(module2->jumpPoints[0].moduleIds[1] == 222);
-	}
-
-	SECTION("Jump point 0 zoom preserved") {
-		REQUIRE(module2->jumpPoints[0].zoom == Catch::Approx(0.5f));
-	}
-
-	SECTION("Jump point 5 module IDs preserved") {
-		REQUIRE(module2->jumpPoints[5].moduleIds.size() == 1);
-		REQUIRE(module2->jumpPoints[5].moduleIds[0] == 999);
-	}
-
-	SECTION("Empty jump points remain empty") {
-		REQUIRE(module2->jumpPoints[1].moduleIds.empty());
-		REQUIRE(module2->jumpPoints[9].moduleIds.empty());
-	}
-
-	Test::destroyModule(module);
-	Test::destroyModule(module2);
-}
 
 TEST_CASE("JSON legacy single-moduleId field is loaded correctly", "[Goto]") {
-	auto module = Test::createModule<GotoModule<10>>("Goto");
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	auto module = mods.create("Goto");
 
 	// Build a JSON payload that uses the old "moduleId" key instead of "moduleIds"
 	json_t* rootJ = json_object();
@@ -258,5 +292,24 @@ TEST_CASE("JSON legacy single-moduleId field is loaded correctly", "[Goto]") {
 		REQUIRE(module->jumpPoints[9].moduleIds.empty());
 	}
 
-	Test::destroyModule(module);
+}
+
+TEST_CASE("executeJump routes through the module access layer", "[Goto][vcv]") {
+	Test::ModuleScaffold<GotoModule<10>> mods;
+	struct Mock {
+		TEST_MOCK_MODULES(MockModuleAccess);
+	} mock;
+	auto module = mods.create("Goto");
+
+	GotoContainer<10> container;
+	container.module = module;
+	container.mw = nullptr;
+
+	module->jumpPoints[0].moduleIds = {42, 43};
+	container.executeJump(0);
+
+	REQUIRE(mock.modules.getModuleWidgetCalls.size() == 2);
+	CHECK(mock.modules.getModuleWidgetCalls[0] == 42);
+	CHECK(mock.modules.getModuleWidgetCalls[1] == 43);
+
 }

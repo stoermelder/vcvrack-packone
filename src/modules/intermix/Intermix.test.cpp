@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "Intermix.cpp"
 
 using namespace StoermelderPackOne::Intermix;
@@ -9,7 +8,8 @@ Test::TestContext<> testContext;
 
 
 TEST_CASE("Construction and initialization", "[Intermix]") {
-	IntermixModule<8>* m = Test::createModule<IntermixModule<8>>("Intermix");
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	IntermixModule<8>* m = mods.create("Intermix");
 	IntermixWidget* mw = Test::createWidget<IntermixWidget>("Intermix");
 
 	REQUIRE(m != nullptr);
@@ -17,12 +17,79 @@ TEST_CASE("Construction and initialization", "[Intermix]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
+}
+
+TEST_CASE("Preset JSON null-guards", "[Intermix][JSON]") {
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
+}
+
+TEST_CASE("JSON round-trip preserves state", "[Intermix][JSON]") {
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	IntermixModule<8>* m = mods.create("Intermix");
+
+	// Distinctive values across all 8 input modes
+	for (int i = 0; i < 8; i++) {
+		m->inputMode[i] = (i % 2 == 0) ? IM_DIRECT : IM_FADE;
+	}
+	
+	// Distinctive values across all 8 scenes
+	for (int s = 0; s < 8; s++) {
+		for (int i = 0; i < 8; i++) {
+			m->scenes[s].input[i] = (i % 2 == 0) ? IM_DIRECT : IM_FADE;
+			m->scenes[s].output[i] = (i % 3 == 0) ? OM_OFF : OM_OUT;
+			m->scenes[s].outputAt[i] = 0.1f * s + 0.01f * i;
+			m->scenes[s].matrix[i][i] = 0.1f * s + 0.01f * i;
+		}
+	}
+
+	json_t* j = m->dataToJson();
+
+	IntermixModule<8>* m2 = mods.create("Intermix");
+	m2->dataFromJson(j);
+	json_decref(j);
+
+	for (int i = 0; i < 8; i++) {
+		REQUIRE(m2->inputMode[i] == ((i % 2 == 0) ? IM_DIRECT : IM_FADE));
+	}
+
+	for (int s = 0; s < 8; s++) {
+		for (int i = 0; i < 8; i++) {
+			REQUIRE(m2->scenes[s].input[i] == ((i % 2 == 0) ? IM_DIRECT : IM_FADE));
+			REQUIRE(m2->scenes[s].output[i] == ((i % 3 == 0) ? OM_OFF : OM_OUT));
+			REQUIRE(m2->scenes[s].outputAt[i] == Catch::Approx(0.1f * s + 0.01f * i).margin(0.01f));
+			REQUIRE(m2->scenes[s].matrix[i][i] == Catch::Approx(0.1f * s + 0.01f * i).margin(0.01f));
+		}
+	}
+
 }
 
 
 TEST_CASE("Scene selection", "[Intermix]") {
-	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
 
 	SECTION("sceneSet changes scene correctly") {
 		module->sceneSet(3);
@@ -51,11 +118,11 @@ TEST_CASE("Scene selection", "[Intermix]") {
 		REQUIRE(module->sceneSelected == 2);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Scene copy", "[Intermix]") {
-	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
 
 	SECTION("sceneCopy duplicates all scene data") {
 		// Setup source scene
@@ -82,11 +149,11 @@ TEST_CASE("Scene copy", "[Intermix]") {
 		REQUIRE(module->scenes[0].matrix[0][0] == 1.f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Scene reset", "[Intermix]") {
-	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
 
 	SECTION("sceneReset clears current scene") {
 		module->sceneSet(2);
@@ -104,11 +171,11 @@ TEST_CASE("Scene reset", "[Intermix]") {
 		REQUIRE(module->currentMatrix[0][0] == 0.f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Scene count", "[Intermix]") {
-	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
 
 	SECTION("sceneSetCount limits scene selection") {
 		module->sceneSet(7);
@@ -125,11 +192,11 @@ TEST_CASE("Scene count", "[Intermix]") {
 		REQUIRE(module->sceneSelected == 3); // Unchanged
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Matrix processing", "[Intermix]") {
-	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
 
 	SECTION("Matrix button changes matrix value") {
 		module->params[IntermixModule<8>::PARAM_MATRIX + 0].setValue(1.f);
@@ -143,11 +210,11 @@ TEST_CASE("Matrix processing", "[Intermix]") {
 		REQUIRE(module->scenes[0].matrix[0][0] == 1.f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Output processing", "[Intermix]") {
-	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
 
 	SECTION("Direct mode passes input through matrix") {
 		// Set up scene data
@@ -222,11 +289,11 @@ TEST_CASE("Output processing", "[Intermix]") {
 		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(2.f).margin(0.01f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Input modes", "[Intermix]") {
-	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
 
 	SECTION("Off mode produces no output") {
 		module->inputMode[0] = IM_OFF;
@@ -258,11 +325,11 @@ TEST_CASE("Input modes", "[Intermix]") {
 		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(expected).margin(0.001f));
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Scene CV modes basic", "[Intermix]") {
-	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
 
 	SECTION("Trigger forward mode") {
 		module->sceneMode = SCENE_CV_MODE::TRIG_FWD;
@@ -311,11 +378,11 @@ TEST_CASE("Scene CV modes basic", "[Intermix]") {
 		REQUIRE(module->sceneSelected == 2);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Expander interface", "[Intermix]") {
-	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
 
 	SECTION("expGetCurrentMatrix returns current matrix") {
 		module->currentMatrix[0][0] = 0.5f;
@@ -348,11 +415,11 @@ TEST_CASE("Expander interface", "[Intermix]") {
 		REQUIRE(module->fadeOutTs[0] == tsBase);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("JSON serialization", "[Intermix]") {
-	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
 
 	SECTION("Module state is serialized and deserialized") {
 		module->panelTheme = 1;
@@ -375,7 +442,7 @@ TEST_CASE("JSON serialization", "[Intermix]") {
 		json_t* rootJ = module->dataToJson();
 		REQUIRE(rootJ != nullptr);
 		
-		auto moduleNew = Test::createModule<IntermixModule<8>>("Intermix");
+		auto moduleNew = mods.create("Intermix");
 		moduleNew->dataFromJson(rootJ);
 		
 		REQUIRE(moduleNew->panelTheme == 1);
@@ -396,10 +463,8 @@ TEST_CASE("JSON serialization", "[Intermix]") {
 		REQUIRE(moduleNew->scenes[0].input[0] == IM_OFF);
 		
 		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
 	}
 
-	Test::destroyModule(module);
 }
 
 // Helper: process enough ticks for the guard (ts - fadeInTs[i] > division*2 = 128)
@@ -412,11 +477,12 @@ static void runPastGuard(IntermixModule<8>* m, int ticks = 250) {
 
 
 TEST_CASE("Fade time: PARAM_FADEIN sets fader rise to param seconds", "[Intermix]") {
+	Test::ModuleScaffold<IntermixModule<8>> mods;
 	// FadeLengthParamQuantity::getMaxValue() overrides the knob range to [0, maxFade],
 	// so getValue() already returns seconds. Multiplying by getFadeLengthMax() again
 	// gives param_seconds * maxFade (e.g. a 2s setting in 4s-mode becomes 8s).
 
-	auto m = Test::createModule<IntermixModule<8>>("Intermix");
+	auto m = mods.create("Intermix");
 	m->channelCount = 1;
 
 	SECTION("4s mode: PARAM_FADEIN of 2s gives fader rise of 2s") {
@@ -451,11 +517,11 @@ TEST_CASE("Fade time: PARAM_FADEIN sets fader rise to param seconds", "[Intermix
 		REQUIRE(m->fader[0][0][0].fall == Catch::Approx(3.0f).margin(0.001f));
 	}
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("Data race: expSetFade and process() share fader state without synchronization", "[Intermix]") {
+	Test::ModuleScaffold<IntermixModule<8>> mods;
 	// Both expSetFade() (called by the IntermixFade expander) and the main
 	// process() sceneDivider block write to fader[i][j][c].rise and read/write
 	// fadeInTs[i]. These are plain non-atomic types. In VCV Rack's multi-threaded
@@ -467,7 +533,7 @@ TEST_CASE("Data race: expSetFade and process() share fader state without synchro
 	// skips setRise for the next ~128 ticks. But the guard itself is read and written
 	// without atomics, so in concurrent execution the read and write can interleave.
 
-	auto m = Test::createModule<IntermixModule<8>>("Intermix");
+	auto m = mods.create("Intermix");
 	m->channelCount = 1;
 	m->fadeLengthMode = FADE_LENGTH_4S;
 	m->params[IntermixModule<8>::PARAM_FADEIN].setValue(0.0f); // main wants 0s fade
@@ -552,12 +618,12 @@ TEST_CASE("Data race: expSetFade and process() share fader state without synchro
 		REQUIRE(m->fader[0][0][0].rise == Catch::Approx(6.0f).margin(0.001f));
 	}
 
-	Test::destroyModule(m);
 }
 
 
 TEST_CASE("Polyphonic processing", "[Intermix]") {
-	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
 
 	SECTION("Multiple channels processed correctly") {
 		module->channelCount = 4;
@@ -582,12 +648,12 @@ TEST_CASE("Polyphonic processing", "[Intermix]") {
 		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage(3) == Catch::Approx(4.f).margin(0.01f));
 	}
 
-	Test::destroyModule(module);
 }
 
 
 TEST_CASE("Scene CV modes with reset", "[Intermix]") {
-	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
 
 	// Initialize inputs and accumulate resetTimer > 1ms (similar to Transit pattern)
 	auto initializeInputs = [&]() {
@@ -742,13 +808,13 @@ TEST_CASE("Scene CV modes with reset", "[Intermix]") {
 		REQUIRE(module->sceneSelected == 0);
 	}
 
-	SECTION("TRIG_RANDOM reset goes to scene 0") {
+	SECTION("TRIG_RANDOM reset has no effect") {
 		module->sceneMode = SCENE_CV_MODE::TRIG_RANDOM;
 		module->sceneCount = 4;
 		module->sceneSet(3);
 		initializeInputs();
 		triggerReset(200);
-		REQUIRE(module->sceneSelected == 0);
+		REQUIRE(module->sceneSelected == 3);
 	}
 
 	SECTION("TRIG_RANDOM selection stays within boundaries") {
@@ -764,13 +830,13 @@ TEST_CASE("Scene CV modes with reset", "[Intermix]") {
 		}
 	}
 
-	SECTION("TRIG_RANDOM_WO_REPEAT reset goes to scene 0") {
+	SECTION("TRIG_RANDOM_WO_REPEAT reset has no effect") {
 		module->sceneMode = SCENE_CV_MODE::TRIG_RANDOM_WO_REPEAT;
 		module->sceneCount = 4;
 		module->sceneSet(3);
 		initializeInputs();
 		triggerReset(200);
-		REQUIRE(module->sceneSelected == 0);
+		REQUIRE(module->sceneSelected == 3);
 	}
 
 	SECTION("TRIG_RANDOM_WO_REPEAT never selects same scene twice") {
@@ -789,13 +855,13 @@ TEST_CASE("Scene CV modes with reset", "[Intermix]") {
 		}
 	}
 
-	SECTION("TRIG_RANDOM_WALK reset goes to scene 0") {
+	SECTION("TRIG_RANDOM_WALK reset has no effect") {
 		module->sceneMode = SCENE_CV_MODE::TRIG_RANDOM_WALK;
 		module->sceneCount = 4;
 		module->sceneSet(3);
 		initializeInputs();
 		triggerReset(200);
-		REQUIRE(module->sceneSelected == 0);
+		REQUIRE(module->sceneSelected == 3);
 	}
 
 	SECTION("TRIG_RANDOM_WALK steps up or down by 1") {
@@ -865,11 +931,58 @@ TEST_CASE("Scene CV modes with reset", "[Intermix]") {
 		REQUIRE(module->sceneSelected == 2);
 	}
 
-	Test::destroyModule(module);
+	SECTION("TRIG_PINGPONG walks the full 0..7..0 sequence") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_PINGPONG;
+		module->sceneCount = 8;
+		module->sceneCvModeDir = 1;
+		module->sceneSet(0);
+		initializeInputs();
+
+		// Expected ping-pong walk: 0,1,2,3,4,5,6,7,6,5,4,3,2,1,0,1,2,...
+		// Both endpoints are visited exactly once per traversal (reflect), and
+		// the walk reverses symmetrically at 7 and at 0.
+		std::vector<int> expected = {1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2};
+		for (size_t i = 0; i < expected.size(); i++) {
+			triggerCv(200 + (int)(i * 100));
+			REQUIRE(module->sceneSelected == expected[i]);
+		}
+	}
+
+	SECTION("TRIG_PINGPONG bounces symmetrically at both endpoints") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_PINGPONG;
+		module->sceneCount = 8;
+		// Distinct matrices so we can observe whether the endpoint's routing is
+		// re-applied when the walk bounces off an endpoint.
+		for (int s = 0; s < 8; s++)
+			for (int i = 0; i < 8; i++)
+				for (int j = 0; j < 8; j++)
+					module->scenes[s].matrix[i][j] = (float)(s * 100 + i * 10 + j);
+		initializeInputs();
+
+		// Top bounce: start at last (7), dir = 1 -> stay at 7, reverse direction.
+		module->sceneCvModeDir = 1;
+		module->sceneSet(7);
+		module->params[IntermixModule<8>::PARAM_MATRIX + 0].setValue(999.f); // corrupt
+		triggerCv(200);
+		REQUIRE(module->sceneSelected == 7);
+		REQUIRE(module->sceneCvModeDir == -1);
+		REQUIRE(module->params[IntermixModule<8>::PARAM_MATRIX + 0].getValue() == Catch::Approx(700.f));
+
+		// Bottom bounce: start at first (0), dir = -1 -> stay at 0, reverse direction.
+		module->sceneCvModeDir = -1;
+		module->sceneSet(0);
+		module->params[IntermixModule<8>::PARAM_MATRIX + 0].setValue(999.f); // corrupt
+		triggerCv(300);
+		REQUIRE(module->sceneSelected == 0);
+		REQUIRE(module->sceneCvModeDir == 1);
+		REQUIRE(module->params[IntermixModule<8>::PARAM_MATRIX + 0].getValue() == Catch::Approx(0.f));
+	}
+
 }
 
 TEST_CASE("Scene CV modes voltage-based", "[Intermix]") {
-	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
 
 	SECTION("VOLT mode maps voltage to scene") {
 		module->sceneMode = SCENE_CV_MODE::VOLT;
@@ -906,5 +1019,4 @@ TEST_CASE("Scene CV modes voltage-based", "[Intermix]") {
 		REQUIRE(module->sceneSelected == 7);
 	}
 
-	Test::destroyModule(module);
 }

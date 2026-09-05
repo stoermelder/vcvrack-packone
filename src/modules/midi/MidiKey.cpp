@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 #include "../../components/MidiWidget.hpp"
 #include "../../utils/keyboard.hpp"
 #include "../../ui/ModuleSelectProcessor.hpp"
@@ -80,11 +81,19 @@ struct MidiKeyModule : Module, MidiTrackingProcessorHandler {
 		for (size_t i = 0; i < slot.v.size(); i++) {
 			slot.v[i].key = -1;
 			slot.v[i].mods = 0;
+			slot.v[i].active = false;
 		}
 		trackingProcessor.disableMapLearn();
 		trackingProcessor.clearMaps();
 		trackingProcessor.getInput().reset();
+		trackingProcessor.reset();
 		Module::onReset(e);
+	}
+
+	void processBypass(const ProcessArgs &args) override {
+		// Drain the queue while bypassed
+		trackingProcessor.processBypass(args.frame);
+		Module::processBypass(args);
 	}
 
 	void process(const ProcessArgs &args) override {
@@ -135,7 +144,14 @@ struct MidiKeyModule : Module, MidiTrackingProcessorHandler {
 	}
 
 	void disableLearn(int id = -1) {
-		if (id == -1 || learningId == id) {
+		if (id == -1) {
+			// Disable whatever learn session is currently active.
+			// getMapId(-1) would collide with channel 0's map id, so use the
+			// unconditional overload instead of the selective one.
+			learningId = -1;
+			trackingProcessor.disableMapLearn();
+		}
+		else if (learningId == id) {
 			learningId = -1;
 			trackingProcessor.disableMapLearn(getMapId(id));
 		}
@@ -156,6 +172,9 @@ struct MidiKeyModule : Module, MidiTrackingProcessorHandler {
 	void clearMap(int id, bool midiOnly = false) {
 		learningId = -1;
 		trackingProcessor.clearMap(getMapId(id));
+		// Clear the held state so a latched modifier (or a stale active flag on
+		// a channel) does not leak into subsequent key events.
+		slot[id].active = false;
 		if (!midiOnly) {
 			slot[id].key = -1;
 			slot[id].mods = 0;
@@ -165,9 +184,11 @@ struct MidiKeyModule : Module, MidiTrackingProcessorHandler {
 
 	void clearMaps() {
 		learningId = -1;
-		for (int id = 0; id < MAX_CHANNELS; id++) {
-			slot[id].key = -1;
-			slot[id].mods = 0;
+		// Clear all slots, including the three modifier rows (v[0..2]).
+		for (size_t i = 0; i < slot.v.size(); i++) {
+			slot.v[i].key = -1;
+			slot.v[i].mods = 0;
+			slot.v[i].active = false;
 		}
 		mapLen = 1;
 		trackingProcessor.clearMaps();
@@ -189,6 +210,9 @@ struct MidiKeyModule : Module, MidiTrackingProcessorHandler {
 	}
 
 	void learnKey(int key, int mods) {
+		// No learn session: slot[-1] would alias slot[0] via the addressing
+		// scheme, silently overwriting channel 0's binding.
+		if (learningId < 0) return;
 		slot[learningId].key = key;
 		slot[learningId].mods = mods & (RACK_MOD_CTRL | GLFW_MOD_ALT | GLFW_MOD_SHIFT);
 		learnedKey = true;
@@ -256,15 +280,21 @@ struct MidiKeyModule : Module, MidiTrackingProcessorHandler {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		clearMaps();
 		json_t* mapsJ = json_object_get(rootJ, "maps");
 		json_t* mapJ;
 		size_t i;
 		json_array_foreach(mapsJ, i, mapJ) {
-			slot.v[i].key = json_integer_value(json_object_get(mapJ, "key"));
-			slot.v[i].mods = json_integer_value(json_object_get(mapJ, "mods"));
+			// A preset written by a build with more channels must not write past
+			// the end of the slot vector.
+			if (i >= slot.v.size()) break;
+			json_t* keyJ = json_object_get(mapJ, "key");
+			if (keyJ) slot.v[i].key = json_integer_value(keyJ);
+			json_t* modsJ = json_object_get(mapJ, "mods");
+			if (modsJ) slot.v[i].mods = json_integer_value(modsJ);
 			json_t* moduleIdJ = json_object_get(mapJ, "moduleId");
 			if (moduleIdJ) slot.v[i].moduleId = json_integer_value(moduleIdJ);
 		}
@@ -283,14 +313,17 @@ struct MidiKeyModule : Module, MidiTrackingProcessorHandler {
 			json_t* mapJ;
 			size_t j;
 			json_array_foreach(mapsJ, j, mapJ) {
+				if (j >= MAX_CHANNELS + 3) break;
 				json_t* ccJ = json_object_get(mapJ, "cc");
 				int cc = json_integer_value(ccJ);
-				if (cc >= 0) {
+				// cc/note index 128-element vectors in the tracking processor,
+				// so out-of-range values from a corrupt preset must be dropped.
+				if (cc >= 0 && cc < 128) {
 					trackingProcessor.setMap(MidiTrackingType::CC, j, cc);
 				}
 				json_t* noteJ = json_object_get(mapJ, "note");
 				int note = json_integer_value(noteJ);
-				if (note >= 0) {
+				if (note >= 0 && note < 128) {
 					trackingProcessor.setMap(MidiTrackingType::NOTE, j, note);
 				}
 			}
@@ -450,14 +483,14 @@ struct MidiKeyChoice : LedDisplayChoice {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuLabel("Module"));
 		if (module->slot[id].moduleId != -1) {
-			ModuleWidget* mw = APP->scene->rack->getModule(module->slot[id].moduleId);
+			ModuleWidget* mw = vcv::getModuleWidget(module->slot[id].moduleId);
 			std::string name = mw ? string::f("%s %s", mw->model->plugin->brand.c_str(), mw->module->model->name.c_str()) : "<ERROR>";
 			menu->addChild(createMenuLabel(name));
 			if (mw) menu->addChild(createMenuItem("Show", "", [=]() { Rack::ViewportCenter{mw}; }));
 			menu->addChild(createMenuItem("Clear", "", [=]() { module->slot[id].moduleId = -1; }));
 		}
 		menu->addChild(createMenuItem("Learn", "", [=]() {
-			module->moduleSelectProcessor.setOwner(APP->scene->rack->getModule(module->id));
+			module->moduleSelectProcessor.setOwner(vcv::getModuleWidget(module->id));
 			module->moduleSelectProcessor.startLearn([=](ModuleWidget* mw, Vec pos) {
 				int64_t moduleId = -1;
 				if (mw) moduleId = mw->module->getId();
@@ -609,7 +642,7 @@ struct MidiKeyWidget : ThemedModuleWidget<MidiKeyModule<>> {
 			int64_t moduleId = std::get<1>(t);
 			
 			if (moduleId != -1) {
-				ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+				ModuleWidget* mw = vcv::getModuleWidget(moduleId);
 				if (mw) mw->onHoverKey(e);
 			}
 			else {

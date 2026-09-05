@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 
 #include "RotorA.cpp"
 
@@ -9,7 +8,8 @@ SYNC_MODEL(modelRotorA, "RotorA");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[RotorA]") {
-	RotorAModule* m = Test::createModule<RotorAModule>("RotorA");
+	Test::ModuleScaffold<RotorAModule> mods;
+	RotorAModule* m = mods.create("RotorA");
 	RotorAWidget* mw = Test::createWidget<RotorAWidget>("RotorA");
 
 	REQUIRE(m != nullptr);
@@ -17,11 +17,55 @@ TEST_CASE("Construction and initialization", "[RotorA]") {
 	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[RotorA][JSON]") {
+	Test::ModuleScaffold<RotorAModule> mods;
+	auto module = mods.create("RotorA");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
+}
+
+TEST_CASE("JSON round-trip preserves state", "[RotorA][JSON]") {
+	Test::ModuleScaffold<RotorAModule> mods;
+	RotorAModule* m = mods.create("RotorA");
+	RotorAModule* m2 = mods.create("RotorA");
+
+	// The only scalar stored to JSON is panelTheme
+	m->panelTheme = 1;
+
+	json_t* j = m->dataToJson();
+	m2->dataFromJson(j);
+	json_decref(j);
+
+	REQUIRE(m2->panelTheme == 1);
+
+}
+
+
 TEST_CASE("Basic modulation", "[RotorA]") {
-	auto module = Test::createModule<RotorAModule>("RotorA");
+	Test::ModuleScaffold<RotorAModule> mods;
+	auto module = mods.create("RotorA");
 
 	SECTION("Modulator at 0V outputs to first channel") {
 		module->inputs[RotorAModule::MOD_INPUT].channels = 1;
@@ -94,11 +138,11 @@ TEST_CASE("Basic modulation", "[RotorA]") {
 		REQUIRE((v14 + v15) > 0.0f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Carrier signal", "[RotorA]") {
-	auto module = Test::createModule<RotorAModule>("RotorA");
+	Test::ModuleScaffold<RotorAModule> mods;
+	auto module = mods.create("RotorA");
 
 	SECTION("Carrier affects output amplitude") {
 		module->inputs[RotorAModule::MOD_INPUT].channels = 1;
@@ -146,11 +190,11 @@ TEST_CASE("Carrier signal", "[RotorA]") {
 		REQUIRE(v > 0.0f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Base signal modulation", "[RotorA]") {
-	auto module = Test::createModule<RotorAModule>("RotorA");
+	Test::ModuleScaffold<RotorAModule> mods;
+	auto module = mods.create("RotorA");
 
 	SECTION("Base signal affects corresponding channel") {
 		module->inputs[RotorAModule::MOD_INPUT].channels = 1;
@@ -203,11 +247,11 @@ TEST_CASE("Base signal modulation", "[RotorA]") {
 		REQUIRE(v0 > 0.0f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Channel count control", "[RotorA]") {
-	auto module = Test::createModule<RotorAModule>("RotorA");
+	Test::ModuleScaffold<RotorAModule> mods;
+	auto module = mods.create("RotorA");
 
 	SECTION("Changing channel count affects output") {
 		module->inputs[RotorAModule::MOD_INPUT].channels = 1;
@@ -252,11 +296,11 @@ TEST_CASE("Channel count control", "[RotorA]") {
 		REQUIRE(module->outputs[RotorAModule::POLY_OUTPUT].getChannels() == 2);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Channel offset", "[RotorA]") {
-	auto module = Test::createModule<RotorAModule>("RotorA");
+	Test::ModuleScaffold<RotorAModule> mods;
+	auto module = mods.create("RotorA");
 
 	SECTION("Offset shifts output channels") {
 		module->inputs[RotorAModule::MOD_INPUT].channels = 1;
@@ -324,11 +368,11 @@ TEST_CASE("Channel offset", "[RotorA]") {
 		REQUIRE(module->outputs[RotorAModule::POLY_OUTPUT].getVoltage(14) > 0.0f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Modulator clamping", "[RotorA]") {
-	auto module = Test::createModule<RotorAModule>("RotorA");
+	Test::ModuleScaffold<RotorAModule> mods;
+	auto module = mods.create("RotorA");
 
 	SECTION("Modulator clamped to 0..10V range") {
 		module->inputs[RotorAModule::MOD_INPUT].channels = 1;
@@ -358,11 +402,11 @@ TEST_CASE("Modulator clamping", "[RotorA]") {
 		REQUIRE(v15 >= 0.0f);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Distribution between channels", "[RotorA]") {
-	auto module = Test::createModule<RotorAModule>("RotorA");
+	Test::ModuleScaffold<RotorAModule> mods;
+	auto module = mods.create("RotorA");
 
 	SECTION("Modulator between values distributes to adjacent channels") {
 		module->inputs[RotorAModule::MOD_INPUT].channels = 1;
@@ -393,11 +437,11 @@ TEST_CASE("Distribution between channels", "[RotorA]") {
 		REQUIRE(activeChannels > 0);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Output without inputs", "[RotorA]") {
-	auto module = Test::createModule<RotorAModule>("RotorA");
+	Test::ModuleScaffold<RotorAModule> mods;
+	auto module = mods.create("RotorA");
 
 	SECTION("Module processes without crashing when no inputs connected") {
 		module->params[RotorAModule::CHANNELS_PARAM].setValue(8.f);
@@ -414,11 +458,11 @@ TEST_CASE("Output without inputs", "[RotorA]") {
 		REQUIRE(module->outputs[RotorAModule::POLY_OUTPUT].getChannels() == 8);
 	}
 
-	Test::destroyModule(module);
 }
 
 TEST_CASE("Clock divider updates", "[RotorA]") {
-	auto module = Test::createModule<RotorAModule>("RotorA");
+	Test::ModuleScaffold<RotorAModule> mods;
+	auto module = mods.create("RotorA");
 
 	SECTION("Channel parameters update after processing divider samples") {
 		module->params[RotorAModule::CHANNELS_PARAM].setValue(4.f);
@@ -442,26 +486,4 @@ TEST_CASE("Clock divider updates", "[RotorA]") {
 		REQUIRE(module->channelsOffset == 2);
 	}
 
-	Test::destroyModule(module);
-}
-
-TEST_CASE("JSON serialization", "[JSON][RotorA]") {
-	auto module = Test::createModule<RotorAModule>("RotorA");
-
-	SECTION("Module state is serialized and deserialized") {
-		module->panelTheme = 1;
-		
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		
-		auto moduleNew = Test::createModule<RotorAModule>("RotorA");
-		moduleNew->dataFromJson(rootJ);
-		
-		REQUIRE(moduleNew->panelTheme == 1);
-		
-		json_decref(rootJ);
-		Test::destroyModule(moduleNew);
-	}
-
-	Test::destroyModule(module);
 }

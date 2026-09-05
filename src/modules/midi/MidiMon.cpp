@@ -1,9 +1,9 @@
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 #include "../../components/LedTextDisplay.hpp"
 #include "../../components/MidiWidget.hpp"
-#include "../../components/LogDisplay.hpp"
-#include <osdialog.h>
 #include <list>
+#include <sstream>
 #include <iomanip>
 #include <chrono>
 #include "MidiProcessor.hpp"
@@ -12,6 +12,15 @@ namespace StoermelderPackOne {
 namespace MidiMon {
 
 const int BUFFERSIZE = 800;
+
+enum class LOG_FORMAT {
+	RESET,
+	TIMESTAMP,
+	INDENTED,
+	TEXT
+};
+
+using LogEntry = std::tuple<LOG_FORMAT, float, int64_t, std::string>;
 
 struct MidiMonModule : Module, MidiProcessorHandler {
 	enum ParamIds {
@@ -39,6 +48,8 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 	/** [Stored to JSON] */
 	bool showCcExMsg;
 	/** [Stored to JSON] */
+	bool showRpnNrpnMsg;
+	/** [Stored to JSON] */
 	bool showProgChangeMsg;
 	/** [Stored to JSON] */
 	bool showChannelPressurelMsg;
@@ -55,10 +66,13 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 	bool showSystemMsg;
 
 	/** [Stored to JSON] */
+	bool showFrame;
+
+	/** [Stored to JSON] */
 	MidiProcessor midiProcessor;
 
 	ClockDividerEx processDivider;
-	dsp::RingBuffer<std::tuple<LOG_FORMAT, float, std::string>, 512> midiLogMessages;
+	dsp::RingBuffer<LogEntry, 4096> midiLogMessages;
 	bool isProcessing = false;
 
 	MidiMonModule() {
@@ -76,6 +90,7 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		showKeyPressure = true;
 		showCcMsg = true;
 		showCcExMsg = true;
+		showRpnNrpnMsg = false;
 		showProgChangeMsg = true;
 		showChannelPressurelMsg = true;
 		showPitchWheelMsg = true;
@@ -84,6 +99,9 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		showSysExData = false;
 		showClockMsg = false;
 		showSystemMsg = true;
+		showFrame = false;
+
+		midiProcessor.reset();
 
 		logTimestampReset();
 		Module::onReset(e);
@@ -95,6 +113,12 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		}
 	}
 
+	void processBypass(const ProcessArgs& args) override {
+		// Drain the queue while bypassed
+		midiProcessor.processBypass(args.frame);
+		Module::processBypass(args);
+	}
+
 	void process(const ProcessArgs& args) override {
 		isProcessing = true;
 		if (processDivider.process()) {
@@ -102,9 +126,9 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		}
 	}
 
-	void logMessage(bool showMessage, LOG_FORMAT logFormat, float timestamp, std::string s) {
+	void logMessage(bool showMessage, LOG_FORMAT logFormat, float timestamp, int64_t frame, std::string s) {
 		if (!midiLogMessages.full() && showMessage) {
-			midiLogMessages.push(std::make_tuple(logFormat, timestamp, s));
+			midiLogMessages.push(std::make_tuple(logFormat, timestamp, frame, s));
 		}
 	}
 
@@ -112,40 +136,41 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 		char buf[100] = {0};
 		std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
-		logMessage(true, LOG_FORMAT::TIMESTAMP, 0.f, std::string(buf));
-		logMessage(true, LOG_FORMAT::TIMESTAMP, 0.f, string::f("sample rate %i", int(APP->engine->getSampleRate())));
+		logMessage(true, LOG_FORMAT::TIMESTAMP, 0.f, 0LL, std::string(buf));
+		logMessage(true, LOG_FORMAT::TIMESTAMP, 0.f, 0LL, string::f("sample rate %i", int(APP->engine->getSampleRate())));
 	}
 
 	// MidiProcessorHandler
 	bool processMidi(const MessageEx& m) override {
 		std::string s;
 		float timestamp = float(m.frame) / APP->engine->getSampleRate();
+		int64_t frame = m.frame;
 		switch (m.type) {
 			case MessageEx::Type::NOTE_ON:
 				s = string::f("ch%02d note on  %i vel %i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showNoteMsg, LOG_FORMAT::TIMESTAMP, timestamp, s);
+				logMessage(showNoteMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
 				break;
 			case MessageEx::Type::NOTE_OFF:
 				s = string::f("ch%02d note off %i vel %i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showNoteMsg, LOG_FORMAT::TIMESTAMP, timestamp, s);
+				logMessage(showNoteMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
 				break;
 			case MessageEx::Type::KEY_PRESSURE:
 				s = string::f("ch%02d key-pressure %i vel %i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showKeyPressure, LOG_FORMAT::TIMESTAMP, timestamp, s);
+				logMessage(showKeyPressure, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
 				break;
 			case MessageEx::Type::CC:
 				s = string::f("ch%02d cc%i=%i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showCcMsg, LOG_FORMAT::TIMESTAMP, timestamp, s);
+				logMessage(showCcMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
 				break;
 			case MessageEx::Type::CC_14BIT:
 				s = string::f("ch%02d 14-bit cc%i=%i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showCcExMsg, LOG_FORMAT::INDENTED, 0.f, s);
+				logMessage(showCcExMsg, LOG_FORMAT::INDENTED, 0.f, 0LL, s);
 				break;
 			case MessageEx::Type::RPN:
 				if (m.getParamNumber() < 0) {
 					s = string::f("ch%02d rpn/nrpn reset", m.getChannel() + 1);
 				}
-				else if (m.getValue() >= 0) {
+				else if (m.hasValue()) {
 					s = string::f("ch%02d rpn param=%i value=%i", m.getChannel() + 1, m.getParamNumber(), m.getValue());
 				}
 				else if (m.getParamNumber() == 0) {
@@ -163,60 +188,60 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 				else if (m.getParamNumber() == 4) {
 					s = string::f("ch%02d rpn param=4 (Tuning Bank Select)", m.getChannel() + 1);
 				}
-				logMessage(showCcExMsg, LOG_FORMAT::INDENTED, 0.f, s);
+				logMessage(showRpnNrpnMsg, LOG_FORMAT::INDENTED, 0.f, 0LL, s);
 				break;
 			case MessageEx::Type::NRPN:
-				if (m.getValue() >= 0) {
+				if (m.hasValue()) {
 					s = string::f("ch%02d nrpn param=%i value=%i", m.getChannel() + 1, m.getParamNumber(), m.getValue());
-				} 
+				}
 				else {
 					s = string::f("ch%02d nrpn param=%i selected", m.getChannel() + 1, m.getParamNumber());
 				}
-				logMessage(showCcExMsg, LOG_FORMAT::INDENTED, 0.f, s);
+				logMessage(showRpnNrpnMsg, LOG_FORMAT::INDENTED, 0.f, 0LL, s);
 				break;
 			case MessageEx::Type::PROGRAM_CHANGE:
 				s = string::f("ch%02d program=%i", m.getChannel() + 1, m.getNote());
-				logMessage(showProgChangeMsg, LOG_FORMAT::TIMESTAMP, timestamp, s);
+				logMessage(showProgChangeMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
 				break;
 			case MessageEx::Type::CHANNEL_PRESSURE:
 				s = string::f("ch%02d channel-pressure=%i", m.getChannel() + 1, m.getNote());
-				logMessage(showChannelPressurelMsg, LOG_FORMAT::TIMESTAMP, timestamp, s);
+				logMessage(showChannelPressurelMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
 				break;
 			case MessageEx::Type::PITCH_BEND:
 				s = string::f("ch%02d pitchbend=%i", m.getChannel() + 1, m.getValue());
-				logMessage(showPitchWheelMsg, LOG_FORMAT::TIMESTAMP, timestamp, s);
+				logMessage(showPitchWheelMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
 				break;
 			case MessageEx::Type::SYSEX:
-				logMessage(showSysExMsg, LOG_FORMAT::TIMESTAMP, timestamp, string::f("sysex (%i data bytes)", m.getSysExSize() - 2));
+				logMessage(showSysExMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, string::f("sysex (%i data bytes)", m.getSysExSize() - 2));
 				if (showSysExData) {
 					std::ostringstream ss;
 					ss << std::hex;
 					for (int i = 0; i < m.getSysExSize(); i++) {
 						ss << std::setw(2) << std::setfill('0') << static_cast<int>(m.getSysExByte(i)) << " ";
 					}
-					logMessage(true, LOG_FORMAT::TEXT, 0.f, ss.str());
+					logMessage(true, LOG_FORMAT::TEXT, 0.f, 0LL, ss.str());
 				}
 				break;
 			case MessageEx::Type::SONG_POINTER:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, string::f("song pointer=%i", m.getValue()));
+				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, string::f("song pointer=%i", m.getValue()));
 				break;
 			case MessageEx::Type::SONG_SELECT:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, string::f("song select=%i", m.getNote()));
+				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, string::f("song select=%i", m.getNote()));
 				break;
 			case MessageEx::Type::CLOCK:
-				logMessage(showClockMsg, LOG_FORMAT::TIMESTAMP, timestamp, "clock tick");
+				logMessage(showClockMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "clock tick");
 				break;
 			case MessageEx::Type::START:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, "start");
+				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "start");
 				break;
 			case MessageEx::Type::CONTINUE:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, "continue");
+				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "continue");
 				break;
 			case MessageEx::Type::STOP:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, "stop");
+				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "stop");
 				break;
 			case MessageEx::Type::RESET:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, "reset");
+				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "reset");
 				break;
 			default:
 				break;
@@ -232,35 +257,51 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		json_object_set_new(rootJ, "showKeyPressure", json_boolean(showKeyPressure));
 		json_object_set_new(rootJ, "showCcMsg", json_boolean(showCcMsg));
 		json_object_set_new(rootJ, "showCcExMsg", json_boolean(showCcExMsg));
+		json_object_set_new(rootJ, "showRpnNrpnMsg", json_boolean(showRpnNrpnMsg));
 		json_object_set_new(rootJ, "showProgChangeMsg", json_boolean(showProgChangeMsg));
 		json_object_set_new(rootJ, "showChannelPressurelMsg", json_boolean(showChannelPressurelMsg));
 		json_object_set_new(rootJ, "showPitchWheelMsg", json_boolean(showPitchWheelMsg));
 
 		json_object_set_new(rootJ, "showSysExMsg", json_boolean(showSysExMsg));
-		json_object_set_new(rootJ, "showSysExData", json_boolean(showSysExMsg));
+		json_object_set_new(rootJ, "showSysExData", json_boolean(showSysExData));
 		json_object_set_new(rootJ, "showClockMsg", json_boolean(showClockMsg));
 		json_object_set_new(rootJ, "showSystemMsg", json_boolean(showSystemMsg));
+		json_object_set_new(rootJ, "showFrame", json_boolean(showFrame));
 
 		json_object_set_new(rootJ, "midiInput", midiProcessor.getInput().toJson());
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
-		showNoteMsg = json_boolean_value(json_object_get(rootJ, "showNoteMsg"));
-		showKeyPressure = json_boolean_value(json_object_get(rootJ, "showKeyPressure"));
-		showCcMsg = json_boolean_value(json_object_get(rootJ, "showCcMsg"));
+		json_t* showNoteMsgJ = json_object_get(rootJ, "showNoteMsg");
+		if (showNoteMsgJ) showNoteMsg = json_boolean_value(showNoteMsgJ);
+		json_t* showKeyPressureJ = json_object_get(rootJ, "showKeyPressure");
+		if (showKeyPressureJ) showKeyPressure = json_boolean_value(showKeyPressureJ);
+		json_t* showCcMsgJ = json_object_get(rootJ, "showCcMsg");
+		if (showCcMsgJ) showCcMsg = json_boolean_value(showCcMsgJ);
 		json_t* showCcExMsgJ = json_object_get(rootJ, "showCcExMsg");
 		showCcExMsg = showCcExMsgJ ? json_boolean_value(showCcExMsgJ) : showCcMsg;
-		showProgChangeMsg = json_boolean_value(json_object_get(rootJ, "showProgChangeMsg"));
-		showChannelPressurelMsg = json_boolean_value(json_object_get(rootJ, "showChannelPressurelMsg"));
-		showPitchWheelMsg = json_boolean_value(json_object_get(rootJ, "showPitchWheelMsg"));
-
-		showSysExMsg = json_boolean_value(json_object_get(rootJ, "showSysExMsg"));
-		showSysExData = json_boolean_value(json_object_get(rootJ, "showSysExData"));
-		showClockMsg = json_boolean_value(json_object_get(rootJ, "showClockMsg"));
-		showSystemMsg = json_boolean_value(json_object_get(rootJ, "showSystemMsg"));
+		json_t* showRpnNrpnMsgJ = json_object_get(rootJ, "showRpnNrpnMsg");
+		if (showRpnNrpnMsgJ) showRpnNrpnMsg = json_boolean_value(showRpnNrpnMsgJ);
+		json_t* showProgChangeMsgJ = json_object_get(rootJ, "showProgChangeMsg");
+		if (showProgChangeMsgJ) showProgChangeMsg = json_boolean_value(showProgChangeMsgJ);
+		json_t* showChannelPressurelMsgJ = json_object_get(rootJ, "showChannelPressurelMsg");
+		if (showChannelPressurelMsgJ) showChannelPressurelMsg = json_boolean_value(showChannelPressurelMsgJ);
+		json_t* showPitchWheelMsgJ = json_object_get(rootJ, "showPitchWheelMsg");
+		if (showPitchWheelMsgJ) showPitchWheelMsg = json_boolean_value(showPitchWheelMsgJ);
+		json_t* showSysExMsgJ = json_object_get(rootJ, "showSysExMsg");
+		if (showSysExMsgJ) showSysExMsg = json_boolean_value(showSysExMsgJ);
+		json_t* showSysExDataJ = json_object_get(rootJ, "showSysExData");
+		if (showSysExDataJ) showSysExData = json_boolean_value(showSysExDataJ);
+		json_t* showClockMsgJ = json_object_get(rootJ, "showClockMsg");
+		if (showClockMsgJ) showClockMsg = json_boolean_value(showClockMsgJ);
+		json_t* showSystemMsgJ = json_object_get(rootJ, "showSystemMsg");
+		if (showSystemMsgJ) showSystemMsg = json_boolean_value(showSystemMsgJ);
+		json_t* showFrameJ = json_object_get(rootJ, "showFrame");
+		if (showFrameJ) showFrame = json_boolean_value(showFrameJ);
 
 		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
 		if (midiInputJ) midiProcessor.getInput().fromJson(midiInputJ);
@@ -268,10 +309,60 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 };
 
 
+struct LogDisplay : LedTextDisplay {
+	std::list<LogEntry>* buffer;
+	bool* showFrame = nullptr;
+	bool dirty = true;
+
+	LogDisplay() {
+		color = nvgRGB(0xf0, 0xf0, 0xf0);
+		bgColor.a = 0.f;
+		fontSize = 9.2f;
+		textOffset.y += 2.f;
+	}
+
+	void step() override {
+		LedTextDisplay::step();
+		if (dirty) {
+			text = "";
+			size_t size = std::min(buffer->size(), (size_t)(box.size.x / fontSize) + 1);
+			size_t i = 0;
+			bool frameMode = showFrame && *showFrame;
+			for (LogEntry s : *buffer) {
+				if (i >= size) break;
+				LOG_FORMAT f = std::get<0>(s);
+				float timestamp = std::get<1>(s);
+				int64_t frame = std::get<2>(s);
+				switch (f) {
+					case LOG_FORMAT::TIMESTAMP:
+						if (frameMode)
+							text += string::f("[%9" PRId64 "] %s\n", frame, std::get<3>(s).c_str());
+						else
+							text += string::f("[%9.4f] %s\n", timestamp, std::get<3>(s).c_str());
+						break;
+					case LOG_FORMAT::TEXT:
+						text += string::f("%s\n", std::get<3>(s).c_str());
+						break;
+					case LOG_FORMAT::INDENTED:
+						text += string::f("     %s\n", std::get<3>(s).c_str());
+						break;
+					default:
+						break;
+				};
+			}
+		}
+	}
+
+	void reset() {
+		buffer->clear();
+		dirty = true;
+	}
+};
+
 struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 	MidiMonModule* module;
 	LogDisplay* logDisplay;
-	std::list<std::tuple<LOG_FORMAT, float, std::string>> buffer;
+	std::list<LogEntry> buffer;
 	
 	MidiMonWidget(MidiMonModule* module)
 		: ThemedModuleWidget<MidiMonModule>(module, "MidiMon") {
@@ -302,22 +393,23 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 			std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 			char buf[100] = {0};
 			std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
-			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, std::string(buf)));
-			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, string::f("sample rate %i", int(APP->engine->getSampleRate()))));
-			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, string::f("ch%i cc%i=%i", 5, 33, 101)));
-			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, string::f("ch%i note on  %i vel %i", 6, 41, 66)));
-			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, string::f("ch%i note off %i vel %i", 3, 66, 83)));
-			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, string::f("ch%i cc%i=%i", 3, 20, 4)));
-			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, string::f("ch%i cc%i=%i", 3, 63, 52)));
+			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, (int64_t)0, std::string(buf)));
+			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, (int64_t)0, string::f("sample rate %i", int(APP->engine->getSampleRate()))));
+			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, (int64_t)0, string::f("ch%i cc%i=%i", 5, 33, 101)));
+			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, (int64_t)0, string::f("ch%i note on  %i vel %i", 6, 41, 66)));
+			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, (int64_t)0, string::f("ch%i note off %i vel %i", 3, 66, 83)));
+			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, (int64_t)0, string::f("ch%i cc%i=%i", 3, 20, 4)));
+			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, (int64_t)0, string::f("ch%i cc%i=%i", 3, 63, 52)));
 		}
 	}
 
 	void step() override {
 		ThemedModuleWidget<MidiMonModule>::step();
 		if (!module) return;
+		logDisplay->showFrame = &module->showFrame;
 		while (!module->midiLogMessages.empty()) {
 			if (buffer.size() == BUFFERSIZE) buffer.pop_back();
-			std::tuple<LOG_FORMAT, float, std::string> s = module->midiLogMessages.shift();
+			auto s = module->midiLogMessages.shift();
 			buffer.push_front(s);
 		}
 		logDisplay->dirty = true;
@@ -333,7 +425,8 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 			menu->addChild(createBoolPtrMenuItem("Note on/off", "", &module->showNoteMsg));
 			menu->addChild(createBoolPtrMenuItem("Key pressure", "", &module->showKeyPressure));
 			menu->addChild(createBoolPtrMenuItem("CC", "", &module->showCcMsg));
-			menu->addChild(createBoolPtrMenuItem("CC (14-bit/RPN/NRPN)", "", &module->showCcExMsg));
+			menu->addChild(createBoolPtrMenuItem("CC (14-bit)", "", &module->showCcExMsg));
+			menu->addChild(createBoolPtrMenuItem("CC (RPN/NRPN)", "", &module->showRpnNrpnMsg));
 			menu->addChild(createBoolPtrMenuItem("Program change", "", &module->showProgChangeMsg));
 			menu->addChild(createBoolPtrMenuItem("Channel pressure", "", &module->showChannelPressurelMsg));
 			menu->addChild(createBoolPtrMenuItem("Pitch wheel", "", &module->showPitchWheelMsg));
@@ -346,6 +439,8 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 			menu->addChild(createBoolPtrMenuItem("SysEx Data", "", &module->showSysExData));
 		}));
 #endif
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createBoolPtrMenuItem("Show engine frame", "", &module->showFrame));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Clear log", "", [this]() { resetLog(); }));
 #ifndef METAMODULE
@@ -363,58 +458,61 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 	void exportLog(std::string filename) {
 		INFO("Saving file %s", filename.c_str());
 
-		FILE* file = fopen(filename.c_str(), "w");
-		if (!file) {
-			std::string message = string::f("Could not write to file %s", filename.c_str());
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
-		}
-		DEFER({
-			fclose(file);
-		});
+		// Build the whole log in memory, then write it in one call.
+		std::ostringstream ss;
+		ss << rack::APP_NAME << " v" << rack::APP_VERSION << "\n";
+		ss << system::getOperatingSystemInfo() << "\n";
+		// MIDI may be unconfigured (no driver/device/channel); mirror the MidiWidget's
+		// display fallbacks so export never dereferences a NULL driver.
+		auto& input = module->midiProcessor.getInput();
+		auto* driver = input.getDriver();
+		ss << "MIDI driver: " << (driver ? driver->getName() : "(No driver)") << "\n";
+		ss << "MIDI device: " << (input.deviceId >= 0 ? input.getDeviceName(input.deviceId) : "(No device)") << "\n";
+		ss << "MIDI channel: " << (input.channel >= 0 ? input.getChannelName(input.channel) : "(All channels)") << "\n";
+		ss << "--------------------------------------------------------------------\n";
 
-		fputs(string::f("%s v%s\n", rack::APP_NAME.c_str(), rack::APP_VERSION.c_str()).c_str(), file);
-		fputs(string::f("%s\n", system::getOperatingSystemInfo().c_str()).c_str(), file);
-		fputs(string::f("MIDI driver: %s\n", module->midiProcessor.getInput().getDriver()->getName().c_str()).c_str(), file);
-		fputs(string::f("MIDI device: %s\n", module->midiProcessor.getInput().getDeviceName(module->midiProcessor.getInput().deviceId).c_str()).c_str(), file);
-		fputs(string::f("MIDI channel: %s\n", module->midiProcessor.getInput().getChannelName(module->midiProcessor.getInput().channel).c_str()).c_str(), file);
-		fputs("--------------------------------------------------------------------\n", file);
-
-		for (std::list<std::tuple<LOG_FORMAT, float, std::string>>::reverse_iterator rit = buffer.rbegin(); rit != buffer.rend(); rit++) {
-			std::tuple<LOG_FORMAT, float, std::string> s = *rit;
+		bool frameMode = module->showFrame;
+		for (auto rit = buffer.rbegin(); rit != buffer.rend(); rit++) {
+			auto s = *rit;
 			LOG_FORMAT f = std::get<0>(s);
 			float timestamp = std::get<1>(s);
+			int64_t frame = std::get<2>(s);
 			switch (f) {
 				case LOG_FORMAT::TIMESTAMP:
-					fputs(string::f("[%11.4f] %s\n", timestamp, std::get<2>(s).c_str()).c_str(), file);
+					if (frameMode)
+						ss << "[" << std::setw(15) << frame << "] " << std::get<3>(s) << "\n";
+					else
+						ss << "[" << std::fixed << std::setprecision(4) << std::setw(11) << timestamp << "] " << std::get<3>(s) << "\n";
 					break;
 				case LOG_FORMAT::TEXT:
-					fputs(string::f("%s\n", std::get<2>(s).c_str()).c_str(), file);
+					ss << std::get<3>(s) << "\n";
 					break;
 				case LOG_FORMAT::INDENTED:
-					fputs(string::f("                       %s\n", std::get<2>(s).c_str()).c_str(), file);
+					ss << "                       " << std::get<3>(s) << "\n";
 					break;
 				default:
 					break;
 			}
 		}
+
+		if (!vcv::fs::write(filename, ss.str())) {
+			std::string message = string::f("Could not write to file %s", filename.c_str());
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, message.c_str());
+		}
 	}
 
 	void exportLogDialog() {
 		std::string log = asset::user("MidiMon.log");
-		std::string dir = system::getDirectory(log);
-		std::string filename = system::getFilename(log);
+		std::string dir = vcv::fs::getDirectory(log);
+		std::string filename = vcv::fs::getFilename(log);
 
-		char* path = osdialog_file(OSDIALOG_SAVE, dir.c_str(), filename.c_str(), NULL);
-		if (!path) {
+		std::string path = vcv::ui::saveDialog("Log file (.log):log;Text file (.txt):txt", dir, filename);
+		if (path.empty()) {
 			// No path selected
 			return;
 		}
-		DEFER({
-			free(path);
-		});
 
-		std::string pathStr = path;
-		exportLog(pathStr);
+		exportLog(path);
 	}
 #endif
 };
