@@ -106,6 +106,11 @@ struct ITaskWorker {
 	virtual bool work(std::function<void()> task) = 0;
 	virtual bool work(std::function<void()> task, Context* context) = 0;
 
+	// Cancel-aware: the task receives the worker's cancel flag and should
+	// poll it periodically, returning early once it becomes true.
+	virtual bool work(std::function<void(std::atomic<bool>&)> task) = 0;
+	virtual bool work(std::function<void(std::atomic<bool>&)> task, Context* context) = 0;
+
 	// True when the calling thread is the one this worker runs tasks on, so
 	// callers can assert that state only touched from inside work() really is
 	// being touched from there.
@@ -115,6 +120,11 @@ struct ITaskWorker {
 // Runs tasks synchronously on the calling thread — no background thread.
 // Used in tests to make engine.process() calls deterministic.
 struct SyncTaskWorker : ITaskWorker {
+	// Never set. A member (not a per-call local) so a task that stashes the
+	// reference (as the cancel-aware overload's contract allows) does not
+	// end up holding a dangling reference once work() returns.
+	std::atomic<bool> cancel{false};
+
 	bool work(std::function<void()> task) override { task(); return true; }
 	bool work(std::function<void()> task, Context* context) override {
 		Context* prev = contextGet();
@@ -123,21 +133,20 @@ struct SyncTaskWorker : ITaskWorker {
 		contextSet(prev);
 		return true;
 	}
+	bool work(std::function<void(std::atomic<bool>&)> task) override {
+		task(cancel);
+		return true;
+	}
+	bool work(std::function<void(std::atomic<bool>&)> task, Context* context) override {
+		Context* prev = contextGet();
+		contextSet(context);
+		task(cancel);
+		contextSet(prev);
+		return true;
+	}
 	// Every thread is "the worker thread": tasks run inline on the caller.
 	bool isWorkerThread() const override { return true; }
 }; // struct SyncTaskWorker
-
-
-// Adapts a TaskWorker to the ITaskWorker interface without modifying TaskWorker.
-struct TaskWorkerAdapter : ITaskWorker {
-	std::shared_ptr<TaskWorker> inner;
-	explicit TaskWorkerAdapter(std::shared_ptr<TaskWorker> tw) : inner(std::move(tw)) {}
-	bool work(std::function<void()> task) override { inner->work(std::move(task)); return true; }
-	bool work(std::function<void()> task, Context* context) override { inner->work(std::move(task), context); return true; }
-	bool isWorkerThread() const override {
-		return inner->worker && std::this_thread::get_id() == inner->worker->get_id();
-	}
-}; // struct TaskWorkerAdapter
 
 
 

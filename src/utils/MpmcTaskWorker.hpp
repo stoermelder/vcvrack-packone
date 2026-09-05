@@ -167,11 +167,11 @@ struct MpmcTaskWorker : ITaskWorker {
 	// Cancel-aware variant: the task receives the worker's cancel flag and
 	// should poll it periodically, returning early once it is set.
 	// Returns false (task dropped) if the queue was full.
-	bool work(std::function<void(std::atomic<bool>&)> task) {
+	bool work(std::function<void(std::atomic<bool>&)> task) override {
 		return work(std::move(task), workerContext);
 	}
 
-	bool work(std::function<void(std::atomic<bool>&)> task, Context* context) {
+	bool work(std::function<void(std::atomic<bool>&)> task, Context* context) override {
 		bool ok = workQueue.try_push(WorkItem{std::make_shared<std::function<void(std::atomic<bool>&)>>(std::move(task)), context});
 		if (ok) {
 			// Lock-free by design: work() may be called from the audio thread,

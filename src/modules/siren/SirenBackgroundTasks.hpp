@@ -4,7 +4,7 @@
 #include "SirenMetadata.hpp"
 #include "SirenTagClassifierApi.hpp"
 #include "SirenBpmDetector.hpp"
-#include "../../utils/TaskWorker.hpp"
+#include "../../utils/MpmcTaskWorker.hpp"
 #include "../../ui/AutoTagDialog.hpp"
 #include <atomic>
 #include <functional>
@@ -57,7 +57,7 @@ struct SirenIndexTask {
 		return false;
 	}
 
-	void start(TaskWorker* worker, std::shared_ptr<DataSource> ds, std::shared_ptr<std::atomic<bool>> dsCancel) {
+	void start(ITaskWorker* worker, std::shared_ptr<DataSource> ds, std::shared_ptr<std::atomic<bool>> dsCancel) {
 		if (running()) return;
 		MetadataStore* meta = ds->getMetadata();
 		if (!meta) return;
@@ -183,7 +183,7 @@ struct SirenClassifyTask {
 		return false;
 	}
 
-	void start(TaskWorker* worker, std::shared_ptr<DataSource> ds, MetadataStore* meta,
+	void start(ITaskWorker* worker, std::shared_ptr<DataSource> ds, MetadataStore* meta,
 			const std::string& rel, bool isDir, const std::string& name, SelectCallback onSelect) {
 		if (running()) return;
 
@@ -195,11 +195,13 @@ struct SirenClassifyTask {
 		auto p = std::make_shared<Progress>();
 		progress = p;
 
-		worker->work([p, rel, isDir, ds, meta]() {
+		worker->work([p, rel, isDir, ds, meta](std::atomic<bool>& cancel) {
 			std::vector<std::string> files;
 			if (isDir) {
 				std::function<void(const std::string&)> collect = [&](const std::string& id) {
+					if (cancel.load(std::memory_order_relaxed)) return;
 					for (const auto& child : ds->loadChildrenSync(id)) {
+						if (cancel.load(std::memory_order_relaxed)) return;
 						if (child.isContainer) {
 							collect(child.relativePath);
 						}
@@ -216,6 +218,11 @@ struct SirenClassifyTask {
 
 			p->total = (int)files.size();
 			for (const auto& f : files) {
+				// Polled per-file so teardown (SirenWidget's destructor sets
+				// cancel just before joining the worker thread) doesn't run
+				// the entire remaining file list to completion.
+				if (cancel.load(std::memory_order_relaxed)) break;
+
 				// Skip suggestion emission for tags already applied to this sample.
 				// Matching is case-insensitive on the trimmed name, mirroring addTag().
 				std::set<std::string> existing;

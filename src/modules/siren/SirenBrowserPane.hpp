@@ -9,7 +9,7 @@
 #include "SirenBpmDetector.hpp"
 #include "SirenBackgroundTasks.hpp"
 #include "SirenDummyPreview.hpp"
-#include "../../utils/TaskWorker.hpp"
+#include "../../utils/MpmcTaskWorker.hpp"
 #include "../../ui/AutoTagDialog.hpp"
 #include "../../ui/HoverScrollLock.hpp"
 
@@ -242,7 +242,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	std::function<void()> onActiveSourceChanging;
 
 	SirenDropHandler* dropHandler = nullptr;
-	TaskWorker* worker = nullptr;
+	ITaskWorker* worker = nullptr;
 
 	std::vector<RootContainer> rootContainers;
 	int activeRootIdx = -1;
@@ -350,7 +350,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	SirenClassifyTask classifyTask;
 
 	// Defined after SirenTagBar
-	void init(TaskWorker* tw);
+	void init(ITaskWorker* tw);
 	void setSize(Vec size);
 
 	// Status message for the preview pane's generic background-task overlay,
@@ -997,7 +997,7 @@ struct SirenTagBar : widget::OpaqueWidget {
 
 // SirenBrowserPane deferred method implementations
 
-inline void SirenBrowserPane::init(TaskWorker* tw) {
+inline void SirenBrowserPane::init(ITaskWorker* tw) {
 	worker = tw;
 
 	scrollWidget = new SirenScrollWidget;

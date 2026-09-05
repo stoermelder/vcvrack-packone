@@ -1,7 +1,7 @@
 #pragma once
 #include <rack.hpp>
 #include <sstream>
-#include "../../utils/TaskWorker.hpp"
+#include "../../utils/MpmcTaskWorker.hpp"
 #include "../../vcv/api.hpp"
 #include "SirenPaths.hpp"
 #include "SirenMetadata.hpp"
@@ -174,9 +174,9 @@ struct DataSource {
 	virtual std::string rootId() const = 0;
 	virtual bool isSupportedFile(const std::string& path) const = 0;
 
-	// Load the top-level children of an item id asynchronously via TaskWorker.
+	// Load the top-level children of an item id asynchronously via a worker.
 	// Use rootId() to load the root level. Calls onDone on the main thread.
-	virtual void loadChildrenAsync(const std::string& id, TaskWorker& worker,
+	virtual void loadChildrenAsync(const std::string& id, ITaskWorker& worker,
 		std::function<void(std::vector<DataSourceNode>)> onDone) = 0;
 
 	// Sync version for testing. withAudioInfo controls whether each file's audio
