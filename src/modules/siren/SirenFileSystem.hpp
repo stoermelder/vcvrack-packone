@@ -263,7 +263,7 @@ struct FileSystemDataSource : DataSource {
 		return result;
 	}
 
-	void loadChildrenAsync(const std::string& id, TaskWorker& worker,
+	void loadChildrenAsync(const std::string& id, ITaskWorker& worker,
 			std::function<void(std::vector<DataSourceNode>)> onDone) override {
 		std::string scanPath = root + id;
 		std::string rootCopy = root;

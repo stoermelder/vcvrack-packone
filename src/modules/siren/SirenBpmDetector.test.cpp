@@ -368,7 +368,7 @@ TEST_CASE("BpmDetector::detectFromDsp: spectral path via DataSource", "[Siren][B
 			: samples(std::move(s)), sr(sr), ch(ch) {}
 		std::string rootId() const override { return ""; }
 		bool isSupportedFile(const std::string&) const override { return true; }
-		void loadChildrenAsync(const std::string&, StoermelderPackOne::TaskWorker&,
+		void loadChildrenAsync(const std::string&, StoermelderPackOne::ITaskWorker&,
 			std::function<void(std::vector<DataSourceNode>)>) override {}
 		std::vector<DataSourceNode> loadChildrenSync(const std::string&, bool withAudioInfo = true) override { return {}; }
 		std::unique_ptr<AudioStream> openAudioStream(const std::string&) const override {

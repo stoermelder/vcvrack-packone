@@ -115,3 +115,5 @@ With the option _Autoload first preset_ on the context menu you can autoload the
     - Fixed broken function on some modules (only 8FACEx2)
 - v2.4.0
     - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)
+- v2.x.x
+    - Fixed a background worker that could stall indefinitely

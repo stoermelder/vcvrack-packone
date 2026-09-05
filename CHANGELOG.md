@@ -2,6 +2,8 @@
 
 ### Changes and Fixes
 
+- Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md), [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+    - Fixed a background worker that could stall indefinitely
 - Module [ARENA](./docs/arena/Arena.md)
     - Fixed wrong values for mix-ports on preset load
     - Fixed missing voltage-mode options in the context menu of the mix-ports
@@ -11,6 +13,11 @@
     - Fixed broken "Initialize" on Crush defects
 - Modules [MAZE](./docs/maze/Maze.md) and [HIVE](./docs/maze/Hive.md)
     - Improved rendering performance
+- Module [SIREN](./docs/siren/Siren.md)
+    - Fixed a background worker that could stall indefinitely
+    - Fixed broken "Cancel tag classification"
+- Module [STRIP](./docs/strip/Strip.md)
+    - Fixed a background worker that could stall indefinitely
 
 ## 2.6.0
 

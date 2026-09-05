@@ -93,6 +93,28 @@ TEST_CASE("multiple tasks execute serially in submission order", "[TaskWorker]")
 	REQUIRE(order == expected);
 }
 
+TEST_CASE("a task pushed as the worker parks is never lost", "[TaskWorker]") {
+	// Regression test for the lost-wakeup TaskSignal exists to prevent (see
+	// its comment). Each iteration waits for the worker to go fully idle,
+	// then pushes exactly one task, so the push races the worker's park. A
+	// single lost signal stalls the iteration and trips the timeout.
+	Test::TestContext<> ctx;
+	TaskWorker worker;
+
+	for (int i = 0; i < 2000; i++) {
+		std::shared_ptr<std::promise<void>> prom;
+		auto fut = makePromise(prom);
+
+		worker.work([prom]() { prom->set_value(); });
+		REQUIRE(fut.wait_for(std::chrono::seconds(5)) == std::future_status::ready);
+
+		// The future is satisfied from inside the task, so the worker may not
+		// have looped back to wait() yet. Give it that chance, so the NEXT
+		// push races the park rather than arriving at a busy worker.
+		std::this_thread::yield();
+	}
+}
+
 TEST_CASE("queuing from the task itself does not deadlock", "[TaskWorker]") {
 	Test::TestContext<> ctx;
 	TaskWorker worker;
