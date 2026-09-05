@@ -166,7 +166,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// not re-looked-up per dispatch — so defining/reassigning a hook later has
 	// no effect; only what was present at load runs. LUA_NOREF = "not defined".
 	// Asymmetry: Lua calls hooks as bare functions; QuickJS as methods (rackObj
-	// as thisVal). onLoad/onUnload/onSave live on the rack table; onMessage on
+	// as thisVal). onLoad/onUnload live on the rack table; onMessage on
 	// the midi table; onTrigger/onTipsyMessage on the trig table (onTrigger so
 	// trig.enableIn() can gate it). Predates caching, unused by any preset.
 	int onMessageRef = LUA_NOREF;
@@ -180,7 +180,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	int onTipsyMessageRef = LUA_NOREF;
 	int onLoadRef = LUA_NOREF;
 	int onUnloadRef = LUA_NOREF;
-	int onSaveRef = LUA_NOREF;
 
 	// Script-registered context menus. The callback lives in the registry as an
 	// integer ref (luaL_ref), not the spec, since the UI thread only reads
@@ -218,10 +217,18 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 
-	void loadScriptOnWorker(const char* script, const std::string& persistedConfigJson) override {
+	void loadScriptOnWorker(const char* script, const std::string& initialConfigJson) override {
 		assert(onWorkerThread());
 		closeStateOnWorker();
 		handler->sendTipsyOutReset();
+
+		// Install the initial config as part of THIS queued task, before any
+		// script code runs — loadScript() is fire-and-forget, so a separate
+		// call could race top-level code that already called rack.getConfig().
+		// Empty means "fresh, empty config" (script switch), not "leave
+		// whatever was there" — config belongs to the script that wrote it.
+		json_t* initial = initialConfigJson.empty() ? nullptr : json_loads(initialConfigJson.c_str(), 0, NULL);
+		installConfig(initial);
 
 		if (script[0] == '\0') {
 			return;
@@ -320,13 +327,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		handler->writeLog("Script loaded", false);
 
-		// Cache the lifecycle hooks once (see declarations): onLoad/onUnload/
-		// onSave from rack; onMessage from midi; onTrigger/onTipsyMessage from trig.
+		// Cache the lifecycle hooks once (see declarations): onLoad/onUnload
+		// from rack; onMessage from midi; onTrigger/onTipsyMessage from trig.
+		// rack.getConfig/setConfig are NOT hooks — they are live calls, bound
+		// once in registerAPI() above like every other rack.* function.
 		lua_getglobal(L, "rack");
 		if (lua_istable(L, -1)) {
 			onLoadRef = cacheHookRef("onLoad");
 			onUnloadRef = cacheHookRef("onUnload");
-			onSaveRef = cacheHookRef("onSave");
 		}
 		lua_pop(L, 1); // pop rack table (or whatever "rack" turned out to be)
 
@@ -346,13 +354,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 		lua_pop(L, 1); // pop trig table (or whatever "trig" turned out to be)
 
-		hasOnSave.store(onSaveRef != LUA_NOREF, std::memory_order_release);
-
 		if (onMessageRef == LUA_NOREF) {
 			handler->writeLog("No midi.onMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
 		}
 
-		callOnLoad(persistedConfigJson);
+		callOnLoad();
 		// Top-level code and onLoad() may have grown the heap past the limit;
 		// stop the engine (freeing the memory) if so.
 		checkMemoryLimit();
@@ -368,32 +374,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			return LUA_NOREF;
 		}
 		return luaL_ref(L, LUA_REGISTRYINDEX); // pops the function, returns its ref
-	}
-
-	// See MidiScriptEngine::captureConfig() for the contract. Lua state is only
-	// safe to touch from the worker thread, hence runSync().
-	bool captureConfig(std::string& out) override {
-		// Answered from the atomic, without a worker round-trip: L/onSaveRef are
-		// worker-owned and must not be read from here. No script, or a script
-		// without onSave(), both mean "nothing to persist" — a definite answer,
-		// so true with an empty `out`, and the caller clears its stored config.
-		if (!hasOnSave.load(std::memory_order_acquire)) {
-			out.clear();
-			return true;
-		}
-		return runSync([this]() -> std::string {
-			if (!L) return "";
-			int nRet = callOnSave();
-			// callOnSave() may tear the state down if the script exceeded the
-			// memory limit; nothing to persist in that case.
-			if (!L) return "";
-			std::string configJson;
-			if (nRet > 0) {
-				configJson = luaTableToJson(L, -1);
-				lua_pop(L, 1);
-			}
-			return configJson;
-		}, out);
 	}
 
 	// Tears down the Lua state. See MidiScriptEngine::closeStateOnWorker().
@@ -413,8 +393,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			onTipsyMessageRef = LUA_NOREF;
 			onLoadRef = LUA_NOREF;
 			onUnloadRef = LUA_NOREF;
-			onSaveRef = LUA_NOREF;
-			hasOnSave.store(false, std::memory_order_release);
 			// Null currentEngine first: lua_close runs finalizers with no pcall
 			// boundary, where a hook luaL_error would longjmp nowhere.
 			if (currentEngine() == this) currentEngine() = nullptr;
@@ -426,19 +404,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 	}
 
-	// Runs the script's onLoad() hook, passing the persisted config (decoded
-	// from JSON) as its argument, or no argument if none. Uses onLoadRef.
-	void callOnLoad(const std::string& persistedConfigJson) {
+	// Runs the script's onLoad() hook. No argument: config is restored via
+	// rack.getConfig() (installed into workingConfig before load), not passed
+	// as a hook parameter. Uses onLoadRef.
+	void callOnLoad() {
 		if (onLoadRef == LUA_NOREF) return;
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onLoadRef);
-		int nargs = 0;
-		if (!persistedConfigJson.empty() && jsonToLuaTable(L, persistedConfigJson)) {
-			nargs = 1;
-		}
 		msgCount = 0;
 		inCallback = true;
 		beginScriptExecution();
-		int status = lua_pcall(L, nargs, 0, 0);
+		int status = lua_pcall(L, 0, 0, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
@@ -449,8 +424,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	// Runs onUnload(). Its return value is discarded — teardown-only; config
-	// comes from onSave(). Messages are NOT flushed here: closeState() flushes
-	// them for teardown.
+	// comes from rack.setConfig(), not from teardown. Messages are NOT flushed
+	// here: closeState() flushes them for teardown.
 	void callOnUnload() {
 		if (onUnloadRef == LUA_NOREF) return;
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onUnloadRef);
@@ -469,56 +444,22 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_pop(L, 1); // pop (and discard) the return value
 	}
 
-	// Runs onSave(). Returns 1 with its return value on top of the stack (kept
-	// only if a table — the only persistable shape), else 0. Messages are NOT
-	// flushed here: captureConfig() discards them, so a save is silent.
-	int callOnSave() {
-		if (onSaveRef == LUA_NOREF) return 0;
-		lua_rawgeti(L, LUA_REGISTRYINDEX, onSaveRef);
-		msgCount = 0;
-		inCallback = true;
-		beginScriptExecution();
-		int status = lua_pcall(L, 0, 1, 0);
-		inCallback = false;
-		int nRet = 0;
-		if (status != LUA_OK) {
-			const char* err = lua_tostring(L, -1);
-			handler->writeLog(string::f("onSave error: %s", err ? err : "(unknown)"));
-			lua_pop(L, 1); // pop error message
-		}
-		// Stack is now [result].
-		else if (lua_istable(L, -1)) {
-			nRet = 1;
-		}
-		else {
-			lua_pop(L, 1); // pop non-table result
-		}
-		// May tear the state down if the script exceeded the memory limit; the
-		// caller guards on L afterwards.
-		checkMemoryLimit();
-		return nRet;
-	}
-
-	// ── Config persistence JSON helpers ──────────────────────────────────────
-	// MiniLua has no JSON library, so config tables convert to/from JSON via
-	// jansson. Lua tables serialize as arrays when keys are exactly 1..n,
-	// otherwise as objects.
-
-	// Converts the Lua value at the given index into a JSON string. Returns ""
-	// if the value is not a table or contains an unsupported value type.
-	static std::string luaTableToJson(lua_State* L, int idx) {
-		json_t* j = luaValueToJson(L, idx);
-		if (!j) return "";
-		char* s = json_dumps(j, JSON_COMPACT);
-		json_decref(j);
-		std::string result = s ? s : "";
-		if (s) free(s);
-		return result;
-	}
+	// ── Config JSON helpers ──────────────────────────────────────────────────
+	// MiniLua has no JSON library, so rack.getConfig()/setConfig() values
+	// convert to/from JSON via jansson. Lua tables serialize as arrays when
+	// keys are exactly 1..n, otherwise as objects.
 
 	// Recursively converts a Lua value at idx into a jansson json_t*. Returns
-	// NULL for unsupported types. Leaves the Lua stack untouched.
-	static json_t* luaValueToJson(lua_State* L, int idx) {
+	// NULL for unsupported types (including a value past configMaxDepth) or a
+	// depth-first walk that overflowed the JSON size cap once serialized.
+	// Leaves the Lua stack untouched.
+	//
+	// depth counts from 1 (the value passed to setConfig() itself); the depth
+	// guard is what makes a self-referencing table terminate instead of
+	// recursing until the C stack is exhausted — previously reachable from
+	// script code via this exact path.
+	static json_t* luaValueToJson(lua_State* L, int idx, int depth = 1) {
+		if (depth > MidiScriptEngine::configMaxDepth) return NULL;
 		switch (lua_type(L, idx)) {
 			case LUA_TNIL: return json_null();
 			case LUA_TBOOLEAN: return json_boolean(lua_toboolean(L, idx) != 0);
@@ -533,14 +474,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 				const char* s = lua_tolstring(L, idx, &len);
 				return json_stringn(s, len);
 			}
-			case LUA_TTABLE: return luaTableToJsonValue(L, idx);
+			case LUA_TTABLE: return luaTableToJsonValue(L, idx, depth);
 			default: return NULL;
 		}
 	}
 
 	// Converts a Lua table into a jansson value, detecting whether it is an
-	// array (integer keys exactly 1..n) or an object.
-	static json_t* luaTableToJsonValue(lua_State* L, int idx) {
+	// array (integer keys exactly 1..n) or an object. `depth` is the depth of
+	// THIS table (matching the value depth luaValueToJson was called with);
+	// elements one level deeper are converted at depth + 1.
+	static json_t* luaTableToJsonValue(lua_State* L, int idx, int depth) {
 		int absIdx = lua_absindex(L, idx);
 
 		// Classify the table: an array when every key is a positive integer
@@ -574,7 +517,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			json_t* arr = json_array();
 			for (size_t i = 1; i <= highest; i++) {
 				lua_rawgeti(L, absIdx, static_cast<lua_Integer>(i));
-				json_t* val = luaValueToJson(L, -1);
+				json_t* val = luaValueToJson(L, -1, depth + 1);
 				lua_pop(L, 1);
 				if (!val) {
 					json_decref(arr);
@@ -590,11 +533,23 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			while (lua_next(L, absIdx) != 0) {
 				// key at -2, value at -1
 				std::string key = luaKeyToString(L, -2);
-				json_t* val = luaValueToJson(L, -1);
-				if (!key.empty() && val) {
+				json_t* val = luaValueToJson(L, -1, depth + 1);
+				if (!val) {
+					// An unsupported/too-deep/cyclic nested value rejects the
+					// WHOLE table, not just this key — silently dropping the
+					// key would let a cyclic table sail through setConfig()
+					// with a hole where the cycle was, which is not what
+					// "rejected" means. lua_next() needs the key on the stack
+					// to keep iterating, but this table is being abandoned,
+					// so pop both key and value and stop.
+					lua_pop(L, 2);
+					json_decref(obj);
+					return NULL;
+				}
+				if (!key.empty()) {
 					json_object_set_new(obj, key.c_str(), val);
 				}
-				else if (val) {
+				else {
 					json_decref(val);
 				}
 				lua_pop(L, 1); // pop value, keep key for the next lua_next
@@ -886,9 +841,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		msgStore[0].send = false;
 		msgStore[0].tick = 0;
 		// Slot 0 is reused for the incoming message, but it can have been a
-		// chain leader (NRPN/14-bit CC) in an onLoad/onUnload/onSave callback
-		// whose store started at 0 — clear both leader flags so a stale one
-		// can't make the flush emit a chain from the incoming message.
+		// chain leader (NRPN/14-bit CC) in an onLoad/onUnload callback whose
+		// store started at 0 — clear both leader flags so a stale one can't
+		// make the flush emit a chain from the incoming message.
 		msgStore[0].isNrpn = false;
 		msgStore[0].isCc14bit = false;
 		msgCount = 1;
@@ -1062,6 +1017,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("getFrame", lua_rack_getFrame);
 		setTableFunc("random",   lua_rack_random);
 		setTableFunc("registerContextMenu", lua_rack_registerContextMenu);
+		setTableFunc("getConfig", lua_rack_getConfig);
+		setTableFunc("setConfig", lua_rack_setConfig);
 		lua_setglobal(L, "rack");
 
 		// ── number table ─────────────────────────────────────────────────────
@@ -1313,6 +1270,81 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		lua_pushboolean(L, 1);
 		return 1;
+	}
+
+	// rack.getConfig(key [, default]) — reads a value previously written with
+	// rack.setConfig(), or `default` (nil if omitted) when unset. A malformed
+	// key is rejected the same way as setConfig(): logged, and treated as
+	// unset rather than silently returning the default forever.
+	//
+	// Live call, not a hook: reads workingConfig directly, never
+	// publishedConfig — see MidiScriptEngine::getConfigValue().
+	static int lua_rack_getConfig(lua_State* L) {
+		auto* e = getEngine(L);
+		assert(e->onWorkerThread());
+		const char* key = (lua_type(L, 1) == LUA_TSTRING) ? lua_tostring(L, 1) : nullptr;
+		if (!MidiScriptEngine::isValidConfigKey(key)) {
+			e->handler->writeLog(string::f("getConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
+			lua_pushnil(L);
+			return 1;
+		}
+		json_t* val = e->getConfigValue(key);
+		if (!val) {
+			// Unset: return the default (arg 2), or nil if none was given.
+			if (lua_gettop(L) >= 2) {
+				lua_pushvalue(L, 2);
+			}
+			else {
+				lua_pushnil(L);
+			}
+			return 1;
+		}
+		if (!pushJsonAsLua(L, val)) lua_pushnil(L);
+		return 1;
+	}
+
+	// rack.setConfig(key, value) — persists `value` under `key`, or removes
+	// the key if `value` is nil. A malformed key, an unsupported value
+	// (function/userdata), one nesting past configMaxDepth, or one that would
+	// push the whole config past configMaxBytes once serialized are all
+	// rejected the same way: the key/config is left unchanged, one line is
+	// logged, and the script keeps running.
+	static int lua_rack_setConfig(lua_State* L) {
+		auto* e = getEngine(L);
+		assert(e->onWorkerThread());
+		const char* key = (lua_type(L, 1) == LUA_TSTRING) ? lua_tostring(L, 1) : nullptr;
+		if (!MidiScriptEngine::isValidConfigKey(key)) {
+			e->handler->writeLog(string::f("setConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
+			return 0;
+		}
+		// nil deletes the key — luaValueToJson(nil) would otherwise yield
+		// json_null(), which is a value ("stored null"), not a deletion.
+		if (lua_isnoneornil(L, 2)) {
+			e->setConfigValue(key, nullptr);
+			return 0;
+		}
+		json_t* val = luaValueToJson(L, 2);
+		if (!val) {
+			e->handler->writeLog(string::f("setConfig: value for \"%s\" is not JSON-serializable, too deeply nested, or cyclic (ignored)", key));
+			return 0;
+		}
+		// Enforce the total-size cap by trial: build what the config WOULD be,
+		// measure it, and only commit (via setConfigValue, which republishes)
+		// if it fits. json_object_set (not _new) so the trial copy doesn't
+		// steal `val` before we know whether we're keeping it.
+		json_t* trial = json_copy(e->workingConfig.get());
+		json_object_set(trial, key, val);
+		char* dump = json_dumps(trial, JSON_COMPACT);
+		size_t size = dump ? strlen(dump) : 0;
+		if (dump) free(dump);
+		json_decref(trial);
+		if (size > MidiScriptEngine::configMaxBytes) {
+			e->handler->writeLog(string::f("setConfig: \"%s\" would push the config past the %d KB limit (ignored)", key, (int)(MidiScriptEngine::configMaxBytes / 1024)));
+			json_decref(val);
+			return 0;
+		}
+		e->setConfigValue(key, val); // takes ownership of val
+		return 0;
 	}
 
 	// ── number.* ──────────────────────────────────────────────────────────────

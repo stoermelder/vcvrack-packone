@@ -247,8 +247,17 @@ static auto presetPaths(const char* name) {
 static void checkPreset(const PresetInfo& p, const char* engine) {
 	std::string relPath = presetPath(p, engine);
 	CATCH_INFO("preset: " << relPath);
+	std::string source = readFile(repoRoot() + "/" + relPath);
+
+	// rack.onSave()/rack.onLoad(persisted) no longer exist — hard API break,
+	// no migration shim. Assigning an unknown property on rack is silent in
+	// both engines (it's a plain object), so a leftover rack.onSave = ...
+	// would load without ever logging an error and this grep is the only
+	// thing that would catch it.
+	REQUIRE(source.find("onSave") == std::string::npos);
+
 	MidiKitModule* m = createModule();
-	m->loadScript(readFile(repoRoot() + "/" + relPath));
+	m->loadScript(source);
 
 	std::string loadLog = drainLog(m);
 	CATCH_INFO("load log:\n" << loadLog);
@@ -1484,10 +1493,13 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	m->host.getActiveEngine()->invokeContextMenuCallback(specs[2].callbackId, 1);
 	drainLog(m);
 
-	// Save: dataToJson() itself refreshes the config (via rack.onSave(), which
-	// is side-effect-free and safe to call here), so the user's context-menu
-	// changes are what get persisted as "scriptConfig" — whether or not
-	// Module::onSave() ran first.
+	// Save: the context-menu onChange handlers call rack.setConfig()
+	// themselves, so the published config already reflects the user's changes
+	// before any save happens — dataToJson() is a plain read of the last
+	// published value, unlike the old rack.onSave() design where the save
+	// itself had to refresh the config by re-entering the script.
+	// Module::onSave() is exercised too, to confirm it does not need to run
+	// first for the read to be current.
 	rack::engine::Module::SaveEvent saveEvent;
 	m->onSave(saveEvent);
 	json_t* rootJ = m->dataToJson();
@@ -1504,7 +1516,7 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	json_decref(rootJ);
 
 	// The reloaded module's config must match what the user changed.
-	std::string restored = captureConfig(m2->host.getActiveEngine());
+	std::string restored = publishedConfigJson(m2->host.getActiveEngine());
 	REQUIRE(configInt(restored, "channel") == 1);
 	REQUIRE(configBool(restored, "preferUpward") == true);
 

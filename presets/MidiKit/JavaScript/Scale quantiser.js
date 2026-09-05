@@ -43,16 +43,36 @@ let scales = {
     wholeTone:  [0, 2, 4, 6, 8, 10]
 };
 
-// Configuration - change these values as needed
+// Configuration - defaults used when nothing has been persisted yet (or a
+// setting was never touched). Each is read from the persisted config via
+// rack.getConfig(key, default) below, and each context-menu handler pushes
+// its change back with rack.setConfig() as soon as the user makes it -
+// there's no separate "save" step to remember.
+let SCALE_NAMES = ["chromatic", "major", "minor", "harmonic", "dorian", "phrygian", "lydian", "mixolydian", "pentatonic", "minorPenta", "blues", "wholeTone"];
+let SCALE_LABELS = ["Chromatic", "Major", "Minor", "Harmonic", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Pentatonic", "Minor pentatonic", "Blues", "Whole tone"];
+let CHANNEL_LABELS = ["All"];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
+// Persist the scale by NAME, not as the semitone-offset array itself. The
+// array form used to require re-matching a persisted array back to one of
+// the named scales by comparing elements (arraysEqual), purely so the
+// context menu's reference-equality check (scaleIndex(), below) still
+// recognized it as selected - a workaround for persisting a value whose
+// *identity* mattered. A name has no identity problem: it round-trips
+// through JSON as itself, and looking it up in `scales` is one dictionary
+// read instead of a linear scan of every scale's contents.
+let scaleName = rack.getConfig("scale", "minor");
+if (!scales[scaleName]) scaleName = "minor"; // unknown name -> default
+
 let config = {
     // Which scale to snap to - pick any list from `scales` above
-    scale: scales.minor,
+    scale: scales[scaleName],
 
     // Only quantise this channel; 0 = every channel
-    channel: 0,
+    channel: rack.getConfig("channel", 0),
 
     // When a note sits exactly between two scale degrees, round up instead of down
-    preferUpward: false
+    preferUpward: rack.getConfig("preferUpward", false)
 };
 
 // The root note is taken live from CV input 1: 0V = C, +1V = one octave up
@@ -71,27 +91,10 @@ let state = {
     playedAs: []
 };
 
-function arraysEqual(a, b) {
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-    return true;
-}
-
-// onLoad optionally receives the config that onUnload returned at the last
-// save. It is merged over the defaults, so a setting changed via the
-// right-click context menu survives a patch save/reload.
-rack.onLoad = function(persisted) {
-    if (persisted) {
-        config = Object.assign({}, config, persisted);
-        // A persisted scale arrives as a plain array; point it back at the
-        // matching named scale so the context-menu selection stays valid.
-        for (let i = 0; i < SCALE_NAMES.length; i++) {
-            if (arraysEqual(config.scale, scales[SCALE_NAMES[i]])) {
-                config.scale = scales[SCALE_NAMES[i]];
-                break;
-            }
-        }
-    }
+// config is already restored by the time onLoad() runs (rack.getConfig()
+// reads were made at top level, above) - onLoad() only needs to initialize
+// the per-note release-tracking state.
+rack.onLoad = function() {
     for (let n = 0; n < 128; n++) {
         state.playedAs[n] = -1;
     }
@@ -117,11 +120,6 @@ rack.onUnload = function() {
             midiOut.send(off);
         }
     }
-};
-
-// Return the current config so the engine can persist it on save.
-rack.onSave = function() {
-    return config;
 };
 
 function matchesChannel(ch) {
@@ -197,11 +195,9 @@ function quantise(note) {
 };
 
 // Context menu - right-click the module to change these settings live.
-// Each menu mirrors a `config` value above; onChange applies the choice.
-let SCALE_NAMES = ["chromatic", "major", "minor", "harmonic", "dorian", "phrygian", "lydian", "mixolydian", "pentatonic", "minorPenta", "blues", "wholeTone"];
-let SCALE_LABELS = ["Chromatic", "Major", "Minor", "Harmonic", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Pentatonic", "Minor pentatonic", "Blues", "Whole tone"];
-let CHANNEL_LABELS = ["All"];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+// Each menu mirrors a `config` value above; onChange applies the choice and
+// persists it with rack.setConfig() (SCALE_NAMES/SCALE_LABELS/CHANNEL_LABELS
+// are declared with `config` near the top of the script).
 
 function scaleIndex() {
     for (let i = 0; i < SCALE_NAMES.length; i++) {
@@ -219,6 +215,7 @@ rack.registerContextMenu({
     },
     onChange: function(idx) {
         config.scale = scales[SCALE_NAMES[idx]];
+        rack.setConfig("scale", SCALE_NAMES[idx]);
         rack.log("Scale: ", SCALE_LABELS[idx]);
     }
 });
@@ -232,6 +229,7 @@ rack.registerContextMenu({
     },
     onChange: function(idx) {
         config.channel = idx;
+        rack.setConfig("channel", idx);
         rack.log("Channel: ", CHANNEL_LABELS[idx]);
     }
 });
@@ -244,6 +242,7 @@ rack.registerContextMenu({
     },
     onChange: function(checked) {
         config.preferUpward = checked;
+        rack.setConfig("preferUpward", checked);
     }
 });
 

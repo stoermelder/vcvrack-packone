@@ -43,16 +43,36 @@ local scales = {
     wholeTone  = { 0, 2, 4, 6, 8, 10 }
 }
 
--- Configuration - change these values as needed
+-- Configuration - defaults used when nothing has been persisted yet (or a
+-- setting was never touched). Each is read from the persisted config via
+-- rack.getConfig(key, default) below, and each context-menu handler pushes
+-- its change back with rack.setConfig() as soon as the user makes it -
+-- there's no separate "save" step to remember.
+local SCALE_NAMES = { "chromatic", "major", "minor", "harmonic", "dorian", "phrygian", "lydian", "mixolydian", "pentatonic", "minorPenta", "blues", "wholeTone" }
+local SCALE_LABELS = { "Chromatic", "Major", "Minor", "Harmonic", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Pentatonic", "Minor pentatonic", "Blues", "Whole tone" }
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+
+-- Persist the scale by NAME, not as the semitone-offset table itself. The
+-- table form used to require re-matching a persisted table back to one of
+-- the named scales by comparing elements (arraysEqual), purely so the
+-- context menu's reference-equality check (scaleIndex(), below) still
+-- recognized it as selected - a workaround for persisting a value whose
+-- *identity* mattered. A name has no identity problem: it round-trips
+-- through JSON as itself, and looking it up in `scales` is one table read
+-- instead of a linear scan of every scale's contents.
+local scaleName = rack.getConfig("scale", "minor")
+if not scales[scaleName] then scaleName = "minor" end -- unknown name -> default
+
 local config = {
     -- Which scale to snap to - pick any list from `scales` above
-    scale = scales.minor,
+    scale = scales[scaleName],
 
     -- Only quantise this channel; 0 = every channel
-    channel = 0,
+    channel = rack.getConfig("channel", 0),
 
     -- When a note sits exactly between two scale degrees, round up instead of down
-    preferUpward = false
+    preferUpward = rack.getConfig("preferUpward", false)
 }
 
 -- The root note is taken live from CV input 1: 0V = C, +1V = one octave up
@@ -71,33 +91,10 @@ local state = {
     playedAs = {}
 }
 
-local function arraysEqual(a, b)
-    if #a ~= #b then return false end
-    for i = 1, #a do
-        if a[i] ~= b[i] then return false end
-    end
-    return true
-end
-
--- onLoad optionally receives the config that onUnload returned at the last
--- save. It is merged over the defaults, so a setting changed via the
--- right-click context menu survives a patch save/reload.
-rack.onLoad = function(persisted)
-    if persisted then
-        if persisted.channel ~= nil then config.channel = persisted.channel end
-        if persisted.preferUpward ~= nil then config.preferUpward = persisted.preferUpward end
-        if persisted.scale ~= nil then
-            config.scale = persisted.scale
-            -- A persisted scale is a plain table; point it back at the
-            -- matching named scale so the context-menu selection stays valid.
-            for name, scl in pairs(scales) do
-                if arraysEqual(config.scale, scl) then
-                    config.scale = scl
-                    break
-                end
-            end
-        end
-    end
+-- config is already restored by the time onLoad() runs (rack.getConfig()
+-- reads were made at top level, above) - onLoad() only needs to initialize
+-- the per-note release-tracking state.
+rack.onLoad = function()
     for n = 0, 127 do
         state.playedAs[n] = -1
     end
@@ -123,11 +120,6 @@ rack.onUnload = function()
             midiOut.send(off)
         end
     end
-end
-
--- Return the current config so the engine can persist it on save.
-rack.onSave = function()
-    return config
 end
 
 local function matchesChannel(ch)
@@ -194,11 +186,9 @@ local function quantise(note)
 end
 
 -- Context menu - right-click the module to change these settings live.
--- Each menu mirrors a `config` value above; onChange applies the choice.
-local SCALE_NAMES = { "chromatic", "major", "minor", "harmonic", "dorian", "phrygian", "lydian", "mixolydian", "pentatonic", "minorPenta", "blues", "wholeTone" }
-local SCALE_LABELS = { "Chromatic", "Major", "Minor", "Harmonic", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Pentatonic", "Minor pentatonic", "Blues", "Whole tone" }
-local CHANNEL_LABELS = { "All" }
-for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+-- Each menu mirrors a `config` value above; onChange applies the choice and
+-- persists it with rack.setConfig() (SCALE_NAMES/SCALE_LABELS/CHANNEL_LABELS
+-- are declared with `config` near the top of the script).
 
 local function scaleIndex()
     for i = 1, #SCALE_NAMES do
@@ -216,6 +206,7 @@ rack.registerContextMenu({
     end,
     onChange = function(idx)
         config.scale = scales[SCALE_NAMES[idx + 1]]
+        rack.setConfig("scale", SCALE_NAMES[idx + 1])
         rack.log("Scale: ", SCALE_LABELS[idx + 1])
     end
 })
@@ -229,6 +220,7 @@ rack.registerContextMenu({
     end,
     onChange = function(idx)
         config.channel = idx
+        rack.setConfig("channel", idx)
         rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
     end
 })
@@ -241,6 +233,7 @@ rack.registerContextMenu({
     end,
     onChange = function(checked)
         config.preferUpward = checked
+        rack.setConfig("preferUpward", checked)
     end
 })
 

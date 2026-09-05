@@ -448,10 +448,9 @@ struct RecordingEngine : MidiScriptEngine {
 	}
 
 	// Unused by these tests — stubbed only to satisfy the interface.
-	void loadScriptOnWorker(const char* script, const std::string& persistedConfigJson) override { }
+	void loadScriptOnWorker(const char* script, const std::string& initialConfigJson) override { }
 	bool testScript(const std::string& script) override { return false; }
 	void closeStateOnWorker() override { }
-	bool captureConfig(std::string& out) override { return false; }
 	// Everything the module handed over, in order, so tests can assert on the
 	// decode result the audio thread produced.
 	std::vector<StoermelderPackOne::MidiScript::QueuedMessage> received;
@@ -647,7 +646,7 @@ TEST_CASE("process() sends frame-scheduled messages on divider ticks only", "[Mi
 	// Divider ticks land on call indices 7 and 15, and processFrame() is only
 	// reached inside that branch. The frame-9 message is therefore still queued
 	// at frame 14, four samples after it came due — this is the one-divider-
-	// period latency the review notes under #3.
+	// period latency.
 	for (int64_t f = 0; f <= 14; f++) {
 		step(m, 0.f, f);
 	}

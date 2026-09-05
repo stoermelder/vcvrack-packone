@@ -186,8 +186,8 @@ struct ExtendedCcEnables {
 	// withheld from midi.onMessage — true only if the script enabled the kind of
 	// assembly this CC feeds. Audio thread.
 	//
-	// The controller ranges overlap and that is deliberate (see the plan's §4.1):
-	// CC 0-31 are 14-bit MSBs, and CC 6/38 are simultaneously Data Entry for an
+	// The controller ranges overlap and that is deliberate: CC 0-31 are 14-bit
+	// MSBs, and CC 6/38 are simultaneously Data Entry for an
 	// armed RPN/NRPN parameter. Both readings are honoured, so a script enabling
 	// either kind stops seeing the CCs that feed it; a script enabling blanket
 	// 14-bit therefore also consumes CC 6/38, which is why registration is
@@ -525,8 +525,6 @@ struct ScriptHost {
 
 	/** [Stored to JSON] */
 	std::string script = "";
-	/** [Stored to JSON] */
-	std::string scriptConfigJson = "";
 
 	ScriptHost(MidiScript::MidiScriptEngineHandler* handler)
 		: seLua(handler, inputCount, inputTrigCount, outputTrigCount, paramCount, midiInputCount, midiOutputCount),
@@ -559,9 +557,11 @@ struct ScriptHost {
 
 	// Selects the engine for `src`, closes the previously active one (blocking,
 	// so only one engine ever has outstanding worker tasks), and starts loading
-	// the new script into it. Returns the newly selected engine (null if the
-	// script matched neither engine). The port/param `se` pointers are the
-	// module's to re-bind after this returns.
+	// the new script into it, installing `configJson` as its initial config —
+	// empty means a fresh, empty config (script switch), not "carry over the
+	// previous script's config". Returns the newly selected
+	// engine (null if the script matched neither engine). The port/param `se`
+	// pointers are the module's to re-bind after this returns.
 	MidiScript::MidiScriptEngine* load(const std::string& src, const std::string& configJson) {
 		script = src;
 		MidiScript::MidiScriptEngine* prevEngine = activeEngine;
@@ -577,8 +577,7 @@ struct ScriptHost {
 		// what needs tearing down.
 		if (prevEngine && prevEngine != activeEngine) prevEngine->closeState();
 
-		scriptConfigJson = configJson;
-		if (activeEngine) activeEngine->loadScript(script.c_str(), scriptConfigJson);
+		if (activeEngine) activeEngine->loadScript(script.c_str(), configJson);
 		return activeEngine;
 	}
 
@@ -604,17 +603,17 @@ struct ScriptHost {
 		if (activeEngine) activeEngine->process();
 	}
 
-	// Refreshes scriptConfigJson from the active engine's onSave(), only
-	// overwriting on success (false means the config couldn't be determined —
-	// keep the last known value). Returns the current config.
-	std::string captureConfig() {
-		if (activeEngine) {
-			std::string captured;
-			if (activeEngine->captureConfig(captured)) {
-				scriptConfigJson = captured;
-			}
-		}
-		return scriptConfigJson;
+	// UI thread: the active engine's last-published config, or null if
+	// nothing is loaded. A plain read (by reference — see
+	// MidiScriptEngine::peekConfig()) — no interpreter round-trip, nothing to
+	// time out. See MidiKit.cpp's dataToJson().
+	//
+	// A static empty fallback (rather than returning by value) so this can
+	// still return a reference when there's no active engine to peek into;
+	// the caller only ever reads through it for the duration of one embed.
+	const std::shared_ptr<json_t>& peekConfig() const {
+		static const std::shared_ptr<json_t> none;
+		return activeEngine ? activeEngine->peekConfig() : none;
 	}
 };
 
@@ -1281,22 +1280,20 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
 		json_object_set_new(rootJ, "script", json_string(host.script.c_str()));
 
-		// Refresh here rather than in onSave(): Rack's periodic autosave calls
-		// saveAutosave() without dispatching onSave() first, so an onSave()-only
-		// refresh would leave autosaves writing stale config. rack.onSave() is
-		// side-effect-free by contract, so running it on every save is harmless.
+		// The script publishes its config as it changes (rack.setConfig), so this is a
+		// plain read of the last published value — no interpreter round-trip, nothing
+		// to time out, and no failure mode to defend against. Contrast the previous
+		// rack.onSave() design, which fetched the config synchronously here and had to
+		// distinguish "no config" from "the fetch failed" to avoid erasing the user's
+		// settings on a slow save.
 		//
-		// Only overwrite on success: false means the config couldn't be
-		// determined (dispatch dropped or timed out), so keeping the last known
-		// value writes slightly stale config instead of erasing the user's
-		// settings. A script with no onSave() returns true with an empty string
-		// and correctly clears any stale value.
-		std::string configJson = host.captureConfig();
-		if (!configJson.empty()) {
-			json_t* configJ = json_loads(configJson.c_str(), 0, NULL);
-			if (configJ) {
-				json_object_set_new(rootJ, "scriptConfig", configJ);
-			}
+		// By reference: peekConfig() returns a bare reference into the
+		// SpscLatestValue slot (no shared_ptr copy), stable until the next
+		// load()/peek()/load_if_new() call on this (the UI/reader) thread —
+		// i.e. for the duration of json_object_set()'s incref below.
+		const std::shared_ptr<json_t>& cfg = host.peekConfig();
+		if (cfg && json_object_size(cfg.get()) > 0) {
+			json_object_set(rootJ, "scriptConfig", cfg.get());   // set, not set_new: shared
 		}
 		return rootJ;
 	}
