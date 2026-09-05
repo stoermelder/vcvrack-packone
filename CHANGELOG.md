@@ -11,6 +11,8 @@
     - Fixed broken "Initialize" on Crush defects
 - Modules [MAZE](./docs/maze/Maze.md) and [HIVE](./docs/maze/Hive.md)
     - Improved rendering performance
+- Module [SIREN](./docs/siren/Siren.md)
+    - Fixed broken "Cancel tag classification"
 
 ## 2.6.0
 

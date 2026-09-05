@@ -141,8 +141,9 @@ TEST_CASE("SirenClassifyTask: scans every file and reports progress totals", "[S
 	StoermelderPackOne::SyncTaskWorker worker;
 	SirenClassifyTask task;
 	REQUIRE_FALSE(task.running());
+	auto dsCancel = std::make_shared<std::atomic<bool>>(false);
 
-	task.start(&worker, src, src->getMetadata(), "/a.wav", false, "a.wav", nullptr);
+	task.start(&worker, src, src->getMetadata(), "/a.wav", false, "a.wav", nullptr, dsCancel);
 	REQUIRE(task.running());
 	REQUIRE(task.progress != nullptr);
 	REQUIRE(task.progress->done.load(std::memory_order_acquire));  // already done, no polling
@@ -168,13 +169,36 @@ TEST_CASE("SirenClassifyTask: directory mode recurses into subdirectories", "[Si
 
 	StoermelderPackOne::SyncTaskWorker worker;
 	SirenClassifyTask task;
-	task.start(&worker, src, src->getMetadata(), "/sub", true, "sub", nullptr);
+	auto dsCancel = std::make_shared<std::atomic<bool>>(false);
+	task.start(&worker, src, src->getMetadata(), "/sub", true, "sub", nullptr, dsCancel);
 
 	REQUIRE(task.running());
 	REQUIRE(task.progress->done.load(std::memory_order_acquire));
 
 	REQUIRE(task.progress->total.load() == 2);
 	REQUIRE(task.progress->processed.load() == 2);
+}
+
+// start() must honor dsCancel (the pane's per-source cancel flag bumped by
+// "Cancel tag classification"/switching the active source), not just the
+// worker's own teardown cancel flag — otherwise cancelling from the UI has no
+// effect on a running scan. Pre-set dsCancel before start() so SyncTaskWorker's
+// inline execution observes it as "already cancelled" from the first check.
+TEST_CASE("SirenClassifyTask: start() honors a pre-set dsCancel", "[Siren][Classify]") {
+	auto src = std::make_shared<SyntheticDataSource>("/");
+	src->children["/sub"] = {
+		SyntheticDataSource::Node{"a.wav", false},
+		SyntheticDataSource::Node{"b.wav", false},
+	};
+
+	StoermelderPackOne::SyncTaskWorker worker;
+	SirenClassifyTask task;
+	auto dsCancel = std::make_shared<std::atomic<bool>>(true);
+	task.start(&worker, src, src->getMetadata(), "/sub", true, "sub", nullptr, dsCancel);
+
+	REQUIRE(task.progress->done.load(std::memory_order_acquire));
+	// Cancelled before any file was processed.
+	REQUIRE(task.progress->processed.load() == 0);
 }
 
 // start() is a no-op while a scan is already in progress. See the equivalent
@@ -192,8 +216,9 @@ TEST_CASE("SirenClassifyTask: re-entrant call while running is ignored", "[Siren
 	writeClassifyTestWav(tmp.filePath("a.wav"));
 	auto src = std::make_shared<FileSystemDataSource>(tmp.str(), scratchMetadataStore());
 	StoermelderPackOne::SyncTaskWorker worker;
+	auto dsCancel = std::make_shared<std::atomic<bool>>(false);
 
-	task.start(&worker, src, src->getMetadata(), "/a.wav", false, "a.wav", nullptr);
+	task.start(&worker, src, src->getMetadata(), "/a.wav", false, "a.wav", nullptr, dsCancel);
 	REQUIRE(task.progress == p);
 }
 
@@ -213,7 +238,8 @@ TEST_CASE("SirenClassifyTask: existing tags are filtered out of suggestions", "[
 	{
 		StoermelderPackOne::SyncTaskWorker worker;
 		SirenClassifyTask task;
-		task.start(&worker, src, meta, "/a.wav", false, "a.wav", nullptr);
+		auto dsCancel = std::make_shared<std::atomic<bool>>(false);
+		task.start(&worker, src, meta, "/a.wav", false, "a.wav", nullptr, dsCancel);
 		for (const auto& pair : task.progress->tagToRels) {
 			if (pair.second.count("/a.wav") > 0) {
 				observedTag = pair.first;
@@ -236,7 +262,8 @@ TEST_CASE("SirenClassifyTask: existing tags are filtered out of suggestions", "[
 	{
 		StoermelderPackOne::SyncTaskWorker worker;
 		SirenClassifyTask task;
-		task.start(&worker, src, meta, "/a.wav", false, "a.wav", nullptr);
+		auto dsCancel = std::make_shared<std::atomic<bool>>(false);
+		task.start(&worker, src, meta, "/a.wav", false, "a.wav", nullptr, dsCancel);
 		REQUIRE(task.progress->tagToRels.count(observedTag) == 0);
 	}
 }
@@ -255,7 +282,8 @@ TEST_CASE("SirenClassifyTask: statusMessage is empty when idle, non-empty while 
 
 	REQUIRE(task.statusMessage() == "");
 
-	task.start(&worker, src, src->getMetadata(), "/a.wav", false, "a.wav", nullptr);
+	auto dsCancel = std::make_shared<std::atomic<bool>>(false);
+	task.start(&worker, src, src->getMetadata(), "/a.wav", false, "a.wav", nullptr, dsCancel);
 	REQUIRE(task.statusMessage().find("Analysing") != std::string::npos);
 	REQUIRE(task.progress->done.load(std::memory_order_acquire));
 	REQUIRE(task.statusMessage().find("Analysing") != std::string::npos);

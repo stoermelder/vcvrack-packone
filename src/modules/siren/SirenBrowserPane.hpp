@@ -657,7 +657,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		};
 
 		classifyTask.start(worker, ds, meta, node.relativePath, node.isContainer, node.name,
-			[this](const DataSourceNode& n, bool play) { selectPath(n, play); });
+			[this](const DataSourceNode& n, bool play) { selectPath(n, play); }, activeDsCancel);
 	}
 
 	bool navigateKey(int key) {
