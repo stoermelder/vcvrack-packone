@@ -88,10 +88,10 @@ TEST_CASE("DSP stepping") {
 
 
 TEST_CASE("Expander message flipping matches the real engine") {
-	// Carried over from SimpleEngine (Phase 1's A2 fix), and re-asserted here because Harness
-	// is meant to replace it: a module that forgets requestMessageFlip() must stay broken under
-	// the harness exactly as it is in Rack. Flipping unconditionally is the one failure mode
-	// that makes a test *more* permissive than production.
+	// Carried over from SimpleEngine: a
+	// module that forgets requestMessageFlip() must stay broken under the harness exactly as
+	// it is in Rack. Flipping unconditionally is the one failure mode that makes a test *more*
+	// permissive than production.
 	struct ExpanderProbe : rack::Module {
 		bool requestFlip = false;
 		ExpanderProbe() {
@@ -371,6 +371,12 @@ TEST_CASE("UiPresent exercises GuiTaskProcessor's step() drain path") {
 
 TEST_CASE("Scene layout is installed and restored") {
 	math::Rect sceneBoxBefore = APP->scene->box;
+	std::vector<math::Rect> childBoxesBefore;
+	std::vector<bool> childVisibleBefore;
+	for (widget::Widget* child : APP->scene->children) {
+		childBoxesBefore.push_back(child->box);
+		childVisibleBefore.push_back(child->visible);
+	}
 
 	{
 		Test::Harness h;
@@ -378,17 +384,61 @@ TEST_CASE("Scene layout is installed and restored") {
 		REQUIRE_FALSE(std::isinf(APP->scene->box.size.x));
 		REQUIRE(APP->scene->box.size.x == Catch::Approx(1024.f));
 
-		// The scene's own full-size children are out of the way.
+		// The scene's own children are out of the way — hidden AND zero-sized. Both matter:
+		// hiding alone is not enough, because Rack shows some of them again on its own
+		// (Scene::onHover() calls menuBar->show()), and a re-shown child with an infinite box
+		// would consume every position event from then on.
 		for (widget::Widget* child : APP->scene->children) {
-			if (std::isinf(child->box.size.x)) {
-				REQUIRE_FALSE(child->visible);
-			}
+			REQUIRE_FALSE(child->visible);
+			REQUIRE(child->box.size.x == Catch::Approx(0.f));
+			REQUIRE(child->box.size.y == Catch::Approx(0.f));
 		}
 	}
 
-	// Restored, so TEST_CASEs stay independent.
+	// Restored, so TEST_CASEs stay independent — boxes and visibility both.
 	REQUIRE(APP->scene->box.size.x == Catch::Approx(sceneBoxBefore.size.x));
 	REQUIRE(std::isinf(APP->scene->box.size.x));
+	size_t i = 0;
+	for (widget::Widget* child : APP->scene->children) {
+		REQUIRE(child->visible == childVisibleBefore[i]);
+		REQUIRE(child->box.size.x == Catch::Approx(childBoxesBefore[i].size.x));
+		i++;
+	}
+}
+
+
+TEST_CASE("exposeRackWidgets makes rack-parented helpers reachable") {
+	// SceneLayout neutralises rackScroll, and APP->scene->rack is its descendant — so a widget
+	// that production code parents to the rack is invisible to dispatch by default. Stroke's
+	// KeyContainer is the plugin's example of that pattern.
+	widget::Widget* rackWidget = APP->scene->rack;
+	// Other TEST_CASEs in this binary may have left widgets in the rack (Catch2 runs them in
+	// one process), so assert on the delta, not on absolute counts.
+	size_t rackChildrenBefore = rackWidget->children.size();
+	size_t sceneChildrenBefore = APP->scene->children.size();
+	widget::Widget* container = nullptr;
+
+	{
+		Test::Harness h;
+		auto* m = h.addModule<StrokeModule<STROKE_PORTS>>("Stroke");
+		h.addWidget<StrokeWidget>(m);
+
+		// The widget's constructor put its KeyContainer in the rack.
+		REQUIRE(rackWidget->children.size() == rackChildrenBefore + 1);
+		container = rackWidget->children.back();
+
+		h.exposeRackWidgets();
+
+		// Moved up to the scene, where dispatch can reach it.
+		REQUIRE(container->parent == APP->scene);
+		auto& moved = h.exposedFromRack;
+		REQUIRE(std::find(moved.begin(), moved.end(), container) != moved.end());
+	}
+
+	// Put back before teardown, so ~StrokeWidget found its container where it left it — and
+	// nothing leaked into the scene.
+	REQUIRE(rackWidget->children.size() == rackChildrenBefore);
+	REQUIRE(APP->scene->children.size() == sceneChildrenBefore);
 }
 
 

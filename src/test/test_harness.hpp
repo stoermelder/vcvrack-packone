@@ -2,6 +2,7 @@
 #include "test_plugin.hpp"
 #include "test_context.hpp"
 #include "test_mock.hpp"
+#include "test_events.hpp"
 #include "../vcv/ui.hpp"
 #include <rack.hpp>
 #include <app/Scene.hpp>
@@ -9,6 +10,7 @@
 #include <widget/Widget.hpp>
 #include <cmath>
 #include <vector>
+#include <utility>
 #include <functional>
 
 // Test::Harness — a deterministic scheduler for both of a module's threads.
@@ -95,14 +97,43 @@ enum class UiMode {
 // have infinite boxes and `box.contains(pos)` is true at every position. Hit-testing is then
 // meaningless in both directions: a widget added last is hit at any position, and one added
 // earlier is unreachable at every position because a full-size overlay in front of it consumes
-// first. Two lines fix it — give the scene a finite box, hide the scene's own full-size
-// children (recursePositionEvent skips invisible children).
+// first. Give the scene a finite box, hide the scene's own full-size children
+// (recursePositionEvent skips invisible children), and collapse those children's boxes to zero.
+//
+// The box collapse is not redundant with hiding them, and the reason is a trap worth stating:
+// Rack can un-hide them behind the harness's back. Scene::onHover()'s first act is
+//
+//     if (mousePos.y < menuBar->box.size.y) menuBar->show();
+//
+// and with an infinite menuBar box that test is true at every position — so the first hover
+// that reaches the scene reveals a full-size menu bar, which then consumes every subsequent
+// position event and silently un-does the precondition mid-test. Zeroing the boxes makes a
+// re-shown child harmless: it is visible, but contains no point, so hit-testing skips it
+// anyway. Found by EventDriver's own hover tests, not by the Step 1 spike, which never
+// dispatched a Hover through the scene.
+//
+// rackScroll gets neutralised along with the rest, and that has a consequence worth stating
+// because it is not obvious: APP->scene->rack is rackScroll's *descendant*, so anything
+// production code parents to the rack — StrokeWidget's global-hotkey KeyContainer, for one — is
+// unreachable by dispatch while the harness is alive.
+//
+// It is neutralised anyway, deliberately. RackScrollWidget is not an inert container: its
+// onHoverScroll() dereferences APP->window unconditionally (RackScrollWidget.cpp:157), so a
+// live rack viewport segfaults on the first scroll, and a live one also consumes the position
+// events that tests use to assert a *miss*. Making it live costs more than it buys.
+//
+// Where a test does need the rack subtree reachable, `reparentRackWidgets` moves those widgets
+// up to the scene for the harness's lifetime and puts them back afterwards — opt-in, so only
+// the tests that need it pay for it. See Harness::exposeRackWidgets().
 //
 // Restores what it changed on destruction, so a harness leaves the shared scene as it found it
 // and TEST_CASEs in one binary stay independent of each other.
 struct SceneLayout {
 	rack::math::Rect previousBox;
 	std::vector<rack::widget::Widget*> hidden;
+	// Every child's original box, restored on teardown — including children that were already
+	// hidden, since their boxes are collapsed too (the scene may show them at any time).
+	std::vector<std::pair<rack::widget::Widget*, rack::math::Rect>> previousChildBoxes;
 
 	explicit SceneLayout(rack::math::Vec size = rack::math::Vec(1024, 720)) {
 		previousBox = APP->scene->box;
@@ -110,7 +141,13 @@ struct SceneLayout {
 		APP->scene->box.size = size;
 
 		for (rack::widget::Widget* child : APP->scene->children) {
-			// Only hide what was visible, so show() on teardown cannot reveal something
+			previousChildBoxes.push_back(std::make_pair(child, child->box));
+
+			// Zero size, so `box.contains(pos)` is false everywhere even if something shows
+			// this child again while the harness is alive.
+			child->box.size = rack::math::Vec(0, 0);
+
+			// Only record what was visible, so show() on teardown cannot reveal something
 			// (BrowserOverlay, ResizeHandle) that the scene deliberately keeps hidden.
 			if (!child->visible) continue;
 			child->hide();
@@ -121,6 +158,9 @@ struct SceneLayout {
 	~SceneLayout() {
 		for (rack::widget::Widget* child : hidden) {
 			child->show();
+		}
+		for (const auto& entry : previousChildBoxes) {
+			entry.first->box = entry.second;
 		}
 		APP->scene->box = previousBox;
 	}
@@ -225,11 +265,66 @@ struct Harness {
 	// full-size scene overlay. See SceneLayout's comment for the mechanism.
 	SceneLayout layout;
 
+	// Synthetic input, dispatched through Rack's own event machinery. Declared after `layout`
+	// so the scene is laid out before the driver can be used — hit-testing against an
+	// un-laid-out scene silently matches everything, which is the Step 1 spike's central
+	// finding and the reason this is reached through the harness rather than constructed
+	// standalone. See test_events.hpp.
+	EventDriver eventDriver{APP->scene};
+
+	EventDriver& events() { return eventDriver; }
+
+	// Makes widgets that production code parented to APP->scene->rack reachable by dispatch,
+	// by moving them up to the scene for the rest of the harness's life.
+	//
+	// Needed because SceneLayout neutralises rackScroll, and the rack is its descendant (see
+	// SceneLayout's comment for why it must be neutralised). A module widget that adds a
+	// top-level helper to the rack — StrokeWidget's KeyContainer is the plugin's example, and
+	// Glue's LabelContainer the other — is otherwise invisible to every event, which would let
+	// a dispatch test pass while asserting nothing.
+	//
+	// Call it AFTER adding the widget whose constructor parents the helper. Only widgets
+	// present at the time of the call are moved; the original parent and child order are
+	// restored on teardown, so the widget's own destructor still finds what it expects.
+	void exposeRackWidgets() {
+		rack::widget::Widget* rackWidget = APP->scene->rack;
+		if (!rackWidget) return;
+
+		// Copy first: the loop reparents, which mutates rackWidget->children.
+		std::vector<rack::widget::Widget*> toMove(rackWidget->children.begin(),
+		                                          rackWidget->children.end());
+		for (rack::widget::Widget* w : toMove) {
+			// Skip anything the harness itself put in the scene, and any ModuleWidget — a
+			// ModuleWidget in the rack is a real patch module positioned in rack coordinates,
+			// and moving it would change what it overlaps.
+			if (dynamic_cast<rack::app::ModuleWidget*>(w)) continue;
+			rackWidget->removeChild(w);
+			APP->scene->addChild(w);
+			exposedFromRack.push_back(w);
+		}
+	}
+
 	// Non-copyable: two harnesses owning the same modules would double-free them.
 	Harness(const Harness&) = delete;
 	Harness& operator=(const Harness&) = delete;
 
 	~Harness() {
+		// Drop every reference to a widget that is about to be deleted, before deleting it.
+		// destroyWidget() runs finalizeWidget() and so clears EventState per widget, but the
+		// driver's own lastTarget is not EventState's to clear — and a subsequent TEST_CASE
+		// reading consumedBy() would otherwise see a freed pointer.
+		eventDriver.reset();
+
+		// Put anything exposeRackWidgets() borrowed back where its owner expects it, BEFORE
+		// destroying widgets: a ModuleWidget destructor that created a rack helper removes it
+		// from APP->scene->rack (StrokeWidget does exactly this), and would silently fail to
+		// find it — leaking the helper and leaving a freed pointer in the scene.
+		for (auto it = exposedFromRack.rbegin(); it != exposedFromRack.rend(); ++it) {
+			APP->scene->removeChild(*it);
+			APP->scene->rack->addChild(*it);
+		}
+		exposedFromRack.clear();
+
 		// Widgets first: a ModuleWidget points at its module, and destroyWidget() runs
 		// APP->event->finalizeWidget() which may still dispatch into the widget. Reverse
 		// order within each kind, matching ModuleScaffold.
@@ -397,6 +492,9 @@ struct Harness {
 
 	std::vector<rack::Module*> modules;
 	std::vector<rack::app::ModuleWidget*> widgets;
+
+	// Widgets moved out of APP->scene->rack by exposeRackWidgets(), put back on teardown.
+	std::vector<rack::widget::Widget*> exposedFromRack;
 
 private:
 	// Points the UiAccess mock at whatever the current mode implies.
