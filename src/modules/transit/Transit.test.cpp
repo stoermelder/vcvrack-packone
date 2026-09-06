@@ -109,7 +109,7 @@ TEST_CASE("JSON round-trip preserves state", "[Transit][JSON]") {
 
 TEST_CASE("JSON serialization preserves boundaries", "[JSON][Transit]") {
 	Test::Harness h;
-	TransitModule<12>* module1 = h.addModule<TransitModule<12>>("Transit");	Test::registerModule(module1);
+	TransitModule<12>* module1 = h.addModule<TransitModule<12>>("Transit");
 	// Set custom boundaries
 	module1->presetSetFirst(2);
 	module1->presetSetLast(9);
@@ -120,7 +120,6 @@ TEST_CASE("JSON serialization preserves boundaries", "[JSON][Transit]") {
 
 	// Create new module and deserialize
 	TransitModule<12>* module2 = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module2);
 	module2->dataFromJson(rootJ);
 
 	// Check values preserved
@@ -129,8 +128,6 @@ TEST_CASE("JSON serialization preserves boundaries", "[JSON][Transit]") {
 	REQUIRE(module2->preset == 5);
 
 	json_decref(rootJ);
-	Test::unregisterModule(module1);
-	Test::unregisterModule(module2);
 }
 
 
@@ -150,23 +147,6 @@ struct TestModule : rack::Module {
 		configParam(TEST_PARAM_3, -5.f, 5.f, 0.f, "Test Parameter 3");
 	}
 };
-
-// Cleanup must be exception-safe: a REQUIRE failure skips any trailing cleanup, and a leaked
-// registered module stays in the engine. In this headless test the RNG is unseeded, so
-// random::u64() returns 0 and every `new TestModule()` (id -1) is assigned id 0 by
-// addModule_NoLock; a leaked id-0 module then makes the next registration spin forever in
-// addModule_NoLock's id-collision loop. ScopedModules below unregisters+destroys even on
-// throw, and the TestModules get explicit ids so they never take the random-id path.
-struct ScopedModules {
-	std::vector<rack::Module*> mods;
-	~ScopedModules() {
-		for (auto it = mods.rbegin(); it != mods.rend(); ++it) {
-			Test::unregisterModule(*it);
-			Test::destroyModule(*it);
-		}
-	}
-};
-
 
 TEST_CASE("Setting presetFirst and presetLast boundaries", "[Transit]") {
 	Test::Harness h;
@@ -214,7 +194,6 @@ TEST_CASE("Setting presetFirst and presetLast boundaries", "[Transit]") {
 TEST_CASE("Comprehensive boundary edge cases", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
 	
 	SECTION("presetFirst == presetLast - 1 (single slot)") {
 		module->presetSetFirst(5);
@@ -256,20 +235,13 @@ TEST_CASE("Comprehensive boundary edge cases", "[Transit]") {
 		REQUIRE(module->presetFirst == 0);
 		REQUIRE(module->presetLast == 12);
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("presetLoad respects boundaries", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	// Set up a mapped parameter
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
@@ -308,20 +280,13 @@ TEST_CASE("presetLoad respects boundaries", "[Transit]") {
 		module->presetLoad(5);
 		REQUIRE(module->preset == 5); // Loaded successfully
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("Multiple bound parameters save and load correctly", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	// Bind all three parameters
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
@@ -372,20 +337,13 @@ TEST_CASE("Multiple bound parameters save and load correctly", "[Transit]") {
 		REQUIRE(slot0->isUsed());
 		REQUIRE(slot0->getPreset()->size() == 3);
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("presetClear resets active preset selection", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -413,20 +371,13 @@ TEST_CASE("presetClear resets active preset selection", "[Transit]") {
 		REQUIRE(!module->getSlot(5)->isUsed());
 		REQUIRE(module->getSlot(5)->getPreset()->empty());
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("presetCopyPaste copies values correctly", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_2);
@@ -474,20 +425,13 @@ TEST_CASE("presetCopyPaste copies values correctly", "[Transit]") {
 		// Nothing should happen - target stays as-is
 		REQUIRE(!module->getSlot(3)->isUsed());
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("presetShiftFront respects boundaries", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -518,20 +462,13 @@ TEST_CASE("presetShiftFront respects boundaries", "[Transit]") {
 		float newValue4 = slot4->isUsed() ? (*slot4->getPreset())[0] : -1.0f;
 		REQUIRE(newValue4 == Catch::Approx(0.5f).margin(0.01f));
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("presetShiftBack shifts presets correctly", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -563,20 +500,13 @@ TEST_CASE("presetShiftBack shifts presets correctly", "[Transit]") {
 		REQUIRE(module->getSlot(3)->isUsed());
 		REQUIRE((*module->getSlot(3)->getPreset())[0] == Catch::Approx(0.3f).margin(0.001f));
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("AUTO mode captures current values into previous preset", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -613,20 +543,13 @@ TEST_CASE("AUTO mode captures current values into previous preset", "[Transit]")
 		REQUIRE(slot0->isUsed());
 		REQUIRE((*slot0->getPreset())[0] == Catch::Approx(0.6f).margin(0.01f));
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("Per-slot fade time overrides global fade parameter", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -697,20 +620,13 @@ TEST_CASE("Per-slot fade time overrides global fade parameter", "[Transit]") {
 		// Param value should still be well below 1.0 (transition partway through)
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.9f);
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("Fade CV input is additive to PARAM_FADE and ignored by per-slot override", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -754,20 +670,13 @@ TEST_CASE("Fade CV input is additive to PARAM_FADE and ignored by per-slot overr
 		h.dspSteps(1000);
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.9f);
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("CV VOLT mode respects boundaries", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -808,20 +717,13 @@ TEST_CASE("CV VOLT mode respects boundaries", "[Transit]") {
 		// Should map to middle of range: 2 + floor((8-2) * 0.5) = 2 + 3 = 5
 		REQUIRE(module->preset == 5);
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("CV C4 mode respects boundaries", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -862,20 +764,13 @@ TEST_CASE("CV C4 mode respects boundaries", "[Transit]") {
 		h.dspStep();
 		REQUIRE(module->preset == 4); // Clamped to presetLast - 1
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_FWD mode respects boundaries", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -936,20 +831,13 @@ TEST_CASE("TRIG_FWD mode respects boundaries", "[Transit]") {
 		h.dspStep();
 		REQUIRE(module->preset == 3); // Wrapped to presetFirst
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_REV mode respects boundaries", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -1010,20 +898,13 @@ TEST_CASE("TRIG_REV mode respects boundaries", "[Transit]") {
 		h.dspStep();
 		REQUIRE(module->preset == 7); // Wrapped to presetLast - 1
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_PINGPONG mode respects boundaries and direction", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -1090,20 +971,13 @@ TEST_CASE("TRIG_PINGPONG mode respects boundaries and direction", "[Transit]") {
 		REQUIRE(module->preset == 2);  // presetFirst
 		REQUIRE(module->slotCvModeDir == 1); // direction reset to forward
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_ALT mode alternates between presetFirst and an advancing secondary", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -1163,20 +1037,13 @@ TEST_CASE("TRIG_ALT mode alternates between presetFirst and an advancing seconda
 		trigger();
 		REQUIRE(module->preset == 2); // Back to first
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_RANDOM_WALK mode respects boundaries", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -1236,20 +1103,13 @@ TEST_CASE("TRIG_RANDOM_WALK mode respects boundaries", "[Transit]") {
 			prevPreset = module->preset;
 		}
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_RANDOM mode respects boundaries", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -1304,20 +1164,13 @@ TEST_CASE("TRIG_RANDOM mode respects boundaries", "[Transit]") {
 		// With 50 iterations on 5 slots, should see multiple different values
 		REQUIRE(selected.size() >= 2);
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_RANDOM_WO_REPEAT never selects the same preset twice in a row", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -1365,20 +1218,13 @@ TEST_CASE("TRIG_RANDOM_WO_REPEAT never selects the same preset twice in a row", 
 			prevPreset = module->preset;
 		}
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_SHUFFLE visits all presets in range before repeating", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -1439,20 +1285,13 @@ TEST_CASE("TRIG_SHUFFLE visits all presets in range before repeating", "[Transit
 			REQUIRE(p < 7);
 		}
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("ARM mode queues preset and loads on trigger", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -1504,20 +1343,13 @@ TEST_CASE("ARM mode queues preset and loads on trigger", "[Transit]") {
 		module->presetLoad(11, true);
 		REQUIRE(module->presetNext == -1); // Ignored since slot not used
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("Phase mode respects boundaries", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(module);
-	ScopedModules cleanup;
-	TestModule* testModule = new TestModule();
-	testModule->id = Test::getModuleId();
-	Test::registerModule(testModule);
-	cleanup.mods.push_back(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
@@ -1562,6 +1394,4 @@ TEST_CASE("Phase mode respects boundaries", "[Transit]") {
 			REQUIRE(module->presetPhaseLast <= 8.0f);
 		}
 	}
-
-	Test::unregisterModule(module);
 }
