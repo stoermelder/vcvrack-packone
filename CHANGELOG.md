@@ -3,6 +3,7 @@
 ### Changes and Fixes
 
 - Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+    - Fixed inefficient implementation of _Safe mode_/_Unsafe mode_/_Unsafe fast mode_
     - Fixed a background worker that could stall indefinitely
 - Module [ARENA](./docs/arena/Arena.md)
     - Fixed wrong values for mix-ports on preset load

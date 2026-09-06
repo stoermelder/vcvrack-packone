@@ -30,6 +30,8 @@
 
 - _Unsafe fast mode_ is similar to _Unsafe mode_ but uses an additional worker thread to apply presets. It is faster but may increase instability on some modules. Use this mode only if you require the fastest possible preset loading. This was the operating mode of 8FACE mk2 before v2.2.0. 
 
+A small set of known-incompatible modules always load on the UI thread regardless of the selected mode, since loading their presets on a worker thread is known to cause crashes.
+
 ### Binding modules
 
 At least one module must be bound to 8FACE mk2 before the module can be used. It provides two ways for binding modules which need to be enabled on the contextual menu:
@@ -150,4 +152,5 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
 - v2.4.1
     - Fixed crash on patch autosave and on preset-loading
 - v2.x.x
+    - Fixed inefficient implementation of _Safe mode_/_Unsafe mode_/_Unsafe fast mode_
     - Fixed a background worker that could stall indefinitely

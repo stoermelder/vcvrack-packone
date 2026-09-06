@@ -1,6 +1,8 @@
 #include "../../plugin.hpp"
 #include "../../utils/digital.hpp"
 #include "../../utils/TaskWorker.hpp"
+#include "../../utils/MpmcTaskWorker.hpp"
+#include "../../utils/GuiTaskProcessor.hpp"
 #include "../../components/MenuColorLabel.hpp"
 #include "../../components/MenuColorField.hpp"
 #include "../../components/MenuColorPicker.hpp"
@@ -96,6 +98,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 
 	ClockDividerEx buttonDivider;
 	ClockDividerEx boundModulesDivider;
+	ClockDividerEx guiTaskDivider;
 	ClockDividerEx lightDivider;
 	dsp::Timer lightTimer;
 	bool lightBlink = false;
@@ -124,12 +127,20 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 	/** [Stored to JSON] Opacity of the module outline (0.0 - 1.0), default 0.5 (50%) */
 	float boxOpacity = 0.5f;
 
-	dsp::RingBuffer<std::tuple<ModuleWidget*, json_t*>, 32> workerGuiQueue;
-	TaskWorker taskWorker;
+	GuiTaskProcessor<32> guiTasks;
+	std::shared_ptr<ITaskWorker> taskWorker;
 	/** [Stored to JSON] */
 	GUISAFEMODE guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 
-	EightFaceMk2Module() {
+	// One worker per instance, not shared: preset application is exactly the long, blocking
+	// work that must not head-of-line-block another 8FACE mk2 (unlike Strip's short tasks).
+	static std::shared_ptr<ITaskWorker> defaultWorker() {
+		return std::make_shared<MpmcTaskWorker>("8FACEmk2 worker");
+	}
+
+	EightFaceMk2Module() : EightFaceMk2Module(defaultWorker()) {}
+	explicit EightFaceMk2Module(std::shared_ptr<ITaskWorker> worker) {
+		taskWorker = std::move(worker);
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
 		registerModuleListener("8FaceMk2", this);
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -155,6 +166,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 
 		buttonDivider.setDivision(128);
 		boundModulesDivider.setDivision(APP->engine->getSampleRate());
+		guiTaskDivider.setDivision(128);
 		lightDivider.setDivision(512);
 
 		Module::ResetEvent re;
@@ -236,6 +248,10 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 
 	void process(const Module::ProcessArgs& args) override {
 		if (inChange) return;
+
+		if (guiTaskDivider.process()) {
+			guiTasks.process();
+		}
 
 		CTRLMODE ctrlMode = (CTRLMODE)Module::params[PARAM_RW].getValue();
 
@@ -525,10 +541,43 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		delete b;
 	}
 
-	void processWorker(int workerPreset) {
-		if (workerPreset < 0) return;
+	// Which bound modules of a preset a given applyPreset() pass should touch. In every mode
+	// but Unsafe fast the whole preset goes to one destination (All); Unsafe fast splits it,
+	// because the allowlist (EightFace::guiModuleSlugs) is a per-module property: the modules
+	// on it must load on the UI thread while the rest still get the worker.
+	enum class PRESETPART { All, GuiOnly, WorkerOnly };
 
-		EightFaceMk2Slot* slot = expSlot(workerPreset);
+	// Reports which halves Unsafe fast needs a task for, so presetLoad() never dispatches to a
+	// destination with nothing to do. Runs on the engine thread, before either task goes out —
+	// that ordering is what lets both tasks be leaves.
+	//
+	// Deliberately scans only boundModules, not the preset: needsGuiThread is fixed at bind
+	// time, so the answer does not depend on which preset is loading. That makes this O(bound
+	// modules) — a handful — rather than the O(preset x bound) nested match applyPreset() does,
+	// and it needs no cached count kept in sync across the five sites that mutate boundModules.
+	//
+	// The cost of ignoring the preset is over-reporting a half: a bound module absent from this
+	// particular preset still counts. That is harmless — the extra task simply matches no entry
+	// and does nothing — and it only misfires for a partial preset, whereas the common cases
+	// (no allowlisted module bound at all; every bound module in the preset) stay exact.
+	void presetParts(bool& hasGui, bool& hasWorker) {
+		hasGui = hasWorker = false;
+		for (BoundModule* b : boundModules) {
+			(b->needsGuiThread ? hasGui : hasWorker) = true;
+			if (hasGui && hasWorker) return;
+		}
+	}
+
+	// Applies `part` of a preset to the bound modules it selects. Runs on the UI thread
+	// (Safe/Unsafe, and the GuiOnly part of Unsafe fast) or the worker thread (the WorkerOnly
+	// part of Unsafe fast) — and it never hands work onward. presetLoad() dispatches one task
+	// per destination up front, so this is always a leaf. Enqueueing from here would re-chain
+	// the two hops this design exists to remove, and would break GuiTaskProcessor's
+	// single-producer contract as well, since the worker thread is not the producer.
+	void applyPreset(int p, PRESETPART part = PRESETPART::All) {
+		if (p < 0) return;
+
+		EightFaceMk2Slot* slot = expSlot(p);
 		EightFaceMk2Slot* slotPrev = NULL;
 		if (presetPrev >= 0) {
 			slotPrev = expSlot(presetPrev);
@@ -544,44 +593,35 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 			for (BoundModule* b : boundModules) {
 				if (b->moduleId != moduleId) continue;
 				if (b->pluginSlug != plugin || b->modelSlug != model) break;
+				// Not this pass's half of a split preset — the other task handles it.
+				if (part == PRESETPART::GuiOnly && !b->needsGuiThread) break;
+				if (part == PRESETPART::WorkerOnly && b->needsGuiThread) break;
 				ModuleWidget* mw = b->getModuleWidget();
 				if (!mw) continue;
 
+				// Safe to do from either half of a split preset concurrently: `i` indexes one
+				// preset entry, which resolves to one bound module, which belongs to exactly
+				// one part — so the two tasks write disjoint elements and never resize.
 				if (BASE::ctrlMode == CTRLMODE::AUTO && slotPrev && *slotPrev->presetSlotUsed) {
 					json_decref((*slotPrev->preset)[i]);
 					(*slotPrev->preset)[i] = mw->toJson();
 				}
-				// There is no stepping of the UI if the plugin window is closed,
-				// in this case we must use the worker thread
-				if (settings::isPlugin && !APP->window) {
-					mw->fromJson(vJ);
+
+				// All that is left for the mode to select here is the fromJson target — the
+				// execution context was already decided in presetLoad(). Unsafe fast uses the
+				// widget path for both of its parts, GuiOnly included.
+				if (guiSafeMode == GUISAFEMODE::GUI) {
+					// This is an unlocked operation, it is not perfectly thread-safe, as the
+					// Engine thread would lock on preset loading.
+					mw->module->fromJson(vJ);
 				}
-				// Hand it off to the UI thread
-				else if (b->needsGuiThread || guiSafeMode != GUISAFEMODE::WORKER) {
-					workerGuiQueue.push(std::make_tuple(mw, vJ));
-				}
-				// Explicitly configured to use the worker thread
 				else {
+					// Safe, and Unsafe fast: full widget path.
 					mw->fromJson(vJ);
 				}
 				break;
 			}
 			i++;
-		}
-	}
-
-	void processGui() {
-		while (!workerGuiQueue.empty()) {
-			auto t = workerGuiQueue.shift();
-			ModuleWidget* mw = std::get<0>(t);
-			json_t* vJ = std::get<1>(t);
-			if (guiSafeMode == GUISAFEMODE::GUI) {
-				// This is an unlocked operation, it is not perfectly thread-safe, as the Engine
-				// thread would lock on preset loading
-				mw->module->fromJson(vJ);
-			} else {
-				mw->fromJson(vJ);
-			}
 		}
 	}
 
@@ -596,7 +636,32 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 				preset = p;
 				presetNext = -1;
 				if (!*(slot->presetSlotUsed)) return;
-				taskWorker.work([=]() { processWorker(p); });
+				// The destination is decided here, on the engine thread, and every task
+				// dispatched is a leaf — no task ever hands work to another.
+				//
+				// Unsafe fast normally dispatches exactly one task, to the worker. It splits
+				// into two only when allowlisted and ordinary modules are bound together —
+				// rare, since the allowlist is a handful of models — and then sends one task
+				// per half, side by side rather than chained. The two run concurrently over
+				// disjoint modules. When every bound module is allowlisted the UI task goes
+				// out alone and the worker is never woken.
+				if (guiSafeMode == GUISAFEMODE::WORKER) {
+					bool hasGui, hasWorker;
+					presetParts(hasGui, hasWorker);
+					if (!hasGui) {
+						taskWorker->work([=]() { applyPreset(p, PRESETPART::All); });
+					}
+					else if (!hasWorker) {
+						guiTasks.enqueue([=]() { applyPreset(p, PRESETPART::All); });
+					}
+					else {
+						guiTasks.enqueue([=]() { applyPreset(p, PRESETPART::GuiOnly); });
+						taskWorker->work([=]() { applyPreset(p, PRESETPART::WorkerOnly); });
+					}
+				}
+				else {
+					guiTasks.enqueue([=]() { applyPreset(p); });
+				}
 			}
 		}
 		else {
@@ -1024,7 +1089,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			moduleSelectProcessor.step();
 			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(moduleSelectProcessor.isLearning());
 			if (boxDrawer) boxDrawer->bindingActive = moduleSelectProcessor.isLearning();
-			module->processGui();
+			module->guiTasks.step();
 		}
 		BASE::step();
 	}
