@@ -149,7 +149,7 @@ struct DirtModule : Module {
 		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
 		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
-		json_t* channelsJ = json_object_get(rootJ, "presets");
+		json_t* channelsJ = json_object_get(rootJ, "channels");
 		json_t* channelJ;
 		size_t i;
 		json_array_foreach(channelsJ, i, channelJ) {

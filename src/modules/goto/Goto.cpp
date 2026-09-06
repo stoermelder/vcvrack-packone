@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 #include "../../ui/ViewportHelper.hpp"
 #include "../../ui/ModuleSelectProcessor.hpp"
 
@@ -223,7 +224,7 @@ struct GotoContainer : widget::Widget {
 		if (divider.process()) {
 			for (int i = 0; i < SLOTS; i++) {
 				for (auto it = module->jumpPoints[i].moduleIds.begin(); it != module->jumpPoints[i].moduleIds.end();) {
-					ModuleWidget* mw = APP->scene->rack->getModule(*it);
+					ModuleWidget* mw = vcv::getModuleWidget(*it);
 					if (!mw) it = module->jumpPoints[i].moduleIds.erase(it);
 					else it++;
 				}
@@ -283,7 +284,7 @@ struct GotoContainer : widget::Widget {
 			math::Vec min = math::Vec(INFINITY, INFINITY);
 			math::Vec max = math::Vec(-INFINITY, -INFINITY);
 			for (int64_t moduleId : module->jumpPoints[i].moduleIds) {
-				ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+				ModuleWidget* mw = vcv::getModuleWidget(moduleId);
 				if (mw) {
 					min = min.min(mw->getBox().getTopLeft());
 					max = max.max(mw->getBox().getBottomRight());
@@ -394,12 +395,9 @@ struct GotoButton : VCVButton {
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(createMenuItem("Clear", "", [=]() { gotoContainer->clearJump(id); }, !gotoContainer->hasJump(id)));
 		menu->addChild(createMenuItem("Learn current selection", "", [=]() {
-			std::vector<int64_t> moduleIds;
-			for (ModuleWidget* mw : APP->scene->rack->getSelected()) {
-				moduleIds.push_back(mw->module->getId());
-			}
+			std::vector<int64_t> moduleIds = vcv::scene::getSelectedModuleIds();
 			gotoContainer->learnJump(id, moduleIds);
-		}, APP->scene->rack->getSelected().size() == 0));
+		}, vcv::scene::getSelectedModuleIds().empty()));
 	}
 };
 

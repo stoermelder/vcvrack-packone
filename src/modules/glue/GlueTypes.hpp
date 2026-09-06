@@ -23,11 +23,11 @@ const static float LABEL_OPACITY_MAX = 1.0f;
 const static float LABEL_OPACITY_MIN = 0.2f;
 const static float LABEL_OPACITY_STEP = 0.05f;
 
-const static float LABEL_WIDTH_MAX = 180.f;
+const static float LABEL_WIDTH_MAX = 360.f;
 const static float LABEL_WIDTH_MIN = 20.f;
 const static float LABEL_WIDTH_DEFAULT = 80.f;
 
-const static float LABEL_SIZE_MAX = 24.f;
+const static float LABEL_SIZE_MAX = 48.f;
 const static float LABEL_SIZE_MIN = 8.f;
 const static float LABEL_SIZE_DEFAULT = 16.f;
 

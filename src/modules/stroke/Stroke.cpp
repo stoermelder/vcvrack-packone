@@ -219,7 +219,7 @@ struct StrokeModule : Module {
 			json_t* highJ = json_object_get(keyJ, "high");
 			if (highJ) keys[i].high = json_boolean_value(highJ);
 			json_t* dataJ = json_object_get(keyJ, "data");
-			if (dataJ) keys[i].data = json_string_value(dataJ);
+			if (const char* data = json_string_value(dataJ)) keys[i].data = data;
 		}
 	}
 };

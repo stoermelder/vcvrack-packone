@@ -40,7 +40,7 @@ struct MidiCatCtxModule : MidiCatCtxBase {
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		notifyExpanderListeners("MidiCat");
+		notifyModuleListeners("MidiCat");
 	}
 
 	void onReset(const ResetEvent& e) override {

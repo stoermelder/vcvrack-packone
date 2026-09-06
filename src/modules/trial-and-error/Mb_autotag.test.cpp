@@ -1,7 +1,8 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "Mb_autotag.hpp"
+#include "Mb_autotag_widgets.hpp"
 
+using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::Mb;
 
 SYNC_MODEL(modelMb, "Mb");
@@ -875,5 +876,128 @@ TEST_CASE("customTagMetamodule edge cases", "[Mb]") {
 
 		testPlugin.models.clear();
 		plugins.clear();
+	}
+}
+
+
+// parseMetamoduleYaml reads the YAML through vcv::fs::read, and
+// openAutoTagConfirmDialog surfaces the "no assignments" case through
+// vcv::ui::message. These tests install recording mocks to prove the migrated
+// calls route through the swappable layer rather than raw stdio/osdialog.
+struct MockFileAccess : vcv::FileAccess {
+	struct ReadCall { std::string path; };
+	mutable std::vector<ReadCall> reads;
+	std::map<std::string, std::string> files;  // path → contents; missing = cannot open
+
+	bool read(const std::string& path, std::string& data) const override {
+		reads.push_back({path});
+		auto it = files.find(path);
+		if (it == files.end()) return false;
+		data = it->second;
+		return true;
+	}
+};
+
+// A UiAccess mock that records message() calls.
+struct MockUiAccess : vcv::UiAccess {
+	struct Message { vcv::MessageType type; vcv::MessageButtons buttons; std::string msg; };
+	std::vector<Message> messages;
+
+	bool message(vcv::MessageType type, vcv::MessageButtons buttons, const std::string& msg) override {
+		messages.push_back({type, buttons, msg});
+		return true;
+	}
+};
+
+// A NwAccess mock that records requestDownload() calls and returns scripted answers.
+struct MockNwAccess : vcv::NwAccess {
+	struct DownloadCall { std::string url, filename; };
+	std::vector<DownloadCall> downloads;
+	bool downloadResult = true;  // default: success
+
+	bool requestDownload(const std::string& url, const std::string& filename, float* progress,
+	                     const std::map<std::string, std::string>& cookies) override {
+		downloads.push_back({url, filename});
+		return downloadResult;
+	}
+};
+
+TEST_CASE("downloadMetamoduleYaml routes through the network layer", "[Mb][nw]") {
+	struct Mock {
+		TEST_MOCK_FS(MockFileAccess);
+		TEST_MOCK_NW(MockNwAccess);
+	} mock;
+
+	SECTION("Successful download returns the temp path") {
+		mock.fs.files["/tmp/metamodule-plugins.yml"] = "content";  // any content
+		mock.nw.downloadResult = true;
+
+		auto path = downloadMetamoduleYaml();
+
+		REQUIRE(mock.nw.downloads.size() == 1);
+		CHECK(mock.nw.downloads[0].url == "https://metamodule.info/dl/plugins.yml");
+		CHECK(mock.nw.downloads[0].filename.find("metamodule-plugins.yml") != std::string::npos);
+		CHECK(path.find("metamodule-plugins.yml") != std::string::npos);
+	}
+
+	SECTION("Failed download returns empty string") {
+		mock.nw.downloadResult = false;
+
+		auto path = downloadMetamoduleYaml();
+
+		REQUIRE(mock.nw.downloads.size() == 1);
+		CHECK(mock.nw.downloads[0].url == "https://metamodule.info/dl/plugins.yml");
+		CHECK(path == "");
+	}
+}
+
+TEST_CASE("parseMetamoduleYaml routes through the fs layer", "[Mb][fs]") {
+	struct Mock {
+		TEST_MOCK_FS(MockFileAccess);
+	} mock;
+
+	SECTION("Reads YAML content via vcv::fs::read") {
+		mock.fs.files["/tmp/plugins.yml"] =
+			"        VCVSlug: test-plugin\n"
+			"                VCVSlug: matrix-mixer\n"
+			"                VCVSlug: oscillator-1\n";
+
+		auto parsed = parseMetamoduleYaml("/tmp/plugins.yml");
+
+		REQUIRE(mock.fs.reads.size() == 1);
+		CHECK(mock.fs.reads[0].path == "/tmp/plugins.yml");
+		REQUIRE(parsed.size() == 2);
+		REQUIRE(parsed.count({"test-plugin", "matrix-mixer"}) == 1);
+		REQUIRE(parsed.count({"test-plugin", "oscillator-1"}) == 1);
+	}
+
+	SECTION("Returns empty when the file cannot be read") {
+		// No entry in mock.fs.files → read() returns false.
+		auto parsed = parseMetamoduleYaml("/tmp/missing.yml");
+
+		REQUIRE(mock.fs.reads.size() == 1);
+		REQUIRE(parsed.empty());
+	}
+}
+
+TEST_CASE("openAutoTagConfirmDialog routes through the UI message", "[Mb][ui]") {
+	struct Mock {
+		TEST_MOCK_UI(MockUiAccess);
+	} mock;
+
+	SECTION("Empty result shows the info dialog") {
+		openAutoTagConfirmDialog(std::make_shared<AutoTagResult>());
+
+		REQUIRE(mock.ui.messages.size() == 1);
+		CHECK(mock.ui.messages[0].type == vcv::MessageType::INFO);
+		CHECK(mock.ui.messages[0].buttons == vcv::MessageButtons::OK);
+		CHECK(mock.ui.messages[0].msg == "No new tag assignments found.");
+	}
+
+	SECTION("Null result shows the info dialog") {
+		openAutoTagConfirmDialog(nullptr);
+
+		REQUIRE(mock.ui.messages.size() == 1);
+		CHECK(mock.ui.messages[0].msg == "No new tag assignments found.");
 	}
 }

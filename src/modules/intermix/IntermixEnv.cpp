@@ -5,7 +5,7 @@ namespace StoermelderPackOne {
 namespace Intermix {
 
 template<int PORTS>
-struct IntermixEnvModule : Module {
+struct IntermixEnvModule : IntermixChainModule {
 	enum ParamIds {
 		NUM_PARAMS
 	};
@@ -42,10 +42,26 @@ struct IntermixEnvModule : Module {
 		Module::onReset(e);
 	}
 
+	void resetOutputs() override {
+		for (int i = 0; i < PORTS; i++) {
+			outputs[OUTPUT + i].setVoltage(0.f);
+		}
+	}
+
 	void process(const ProcessArgs& args) override {
+		// A chain sibling was removed: drop forwarded messages, outputs go low
+		if (consumeSiblingRemoved()) {
+			resetOutputs();
+			return;
+		}
+
 		// Expander
 		Module* exp = leftExpander.module;
-		if (!exp || (exp->model != modelIntermix && exp->model != modelIntermixGate && exp->model != modelIntermixEnv && exp->model != modelIntermixFade) || !exp->rightExpander.consumerMessage) return;
+		if (!exp || !isIntermixModel(exp->model) || !exp->rightExpander.consumerMessage) {
+			// Disconnected from the chain: outputs go low
+			resetOutputs();
+			return;
+		}
 		IntermixBase<PORTS>* module = reinterpret_cast<IntermixBase<PORTS>*>(exp->rightExpander.consumerMessage);
 		rightExpander.producerMessage = module;
 		rightExpander.messageFlipRequested = true;

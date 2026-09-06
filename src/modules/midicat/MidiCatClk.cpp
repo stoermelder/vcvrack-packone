@@ -36,7 +36,7 @@ struct MidiCatClkModule : Module {
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		notifyExpanderListeners("MidiCat");
+		notifyModuleListeners("MidiCat");
 	}
 
 	json_t* dataToJson() override {

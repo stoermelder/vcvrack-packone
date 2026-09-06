@@ -16,7 +16,7 @@ int numPorts();
 
 // Reset virtual ports by sending All Notes Off / All Sound Off / Reset Controllers
 // to all channels so connected inputs are put into a known state.
-void reset(int deviceId);
+void resetMidi(int deviceId);
 
 // Inject a MIDI message into the virtual port with id `deviceId` (0-based)
 void sendToPort(int deviceId, const rack::midi::Message& m);

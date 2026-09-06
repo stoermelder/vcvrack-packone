@@ -402,9 +402,11 @@ struct MirrorModule : Module, StripIdFixModule {
 
 		json_t* cvInputsJ = json_object_get(rootJ, "cvInputs");
 		if (cvInputsJ) {
-			json_t* cvInputJ;
-			size_t cvInputIndex;
-			json_array_foreach(cvInputsJ, cvInputIndex, cvInputJ) {
+			// Bounded to the fixed-size destination: hand-edited or corrupted
+			// patches may contain more entries than cvParamId[] holds.
+			size_t maxCvInputs = std::min((size_t)8, json_array_size(cvInputsJ));
+			for (size_t cvInputIndex = 0; cvInputIndex < maxCvInputs; cvInputIndex++) {
+				json_t* cvInputJ = json_array_get(cvInputsJ, cvInputIndex);
 				json_t* paramIdJ = json_object_get(cvInputJ, "paramId");
 				cvParamId[cvInputIndex] = json_integer_value(paramIdJ);
 			}

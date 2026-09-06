@@ -81,7 +81,7 @@ int numPorts() {
 
 // Reset virtual ports by sending All Notes Off / All Sound Off / Reset Controllers
 // to all channels so connected inputs are put into a known state.
-void reset(int deviceId) {
+void resetMidi(int deviceId) {
 	if (!midiDriver) return;
 	if (deviceId < 0 || deviceId >= AHAB_PORT_NUM) return;
 	for (int ch = 0; ch < 16; ++ch) {
@@ -89,6 +89,7 @@ void reset(int deviceId) {
 			// Note off
 			midi::Message m;
 			m.setStatus(0x8);
+			m.setChannel(ch);
 			m.setNote(note);
 			m.setValue(0);
 			m.setFrame(APP->engine->getFrame());

@@ -1,5 +1,6 @@
 #include "LabelContainer.hpp"
 #include "GlueWidget.hpp"
+#include "../../utils/cursor.hpp"
 #include "../../plugin.hpp"
 
 namespace StoermelderPackOne {
@@ -450,16 +451,12 @@ void LabelContainer::addLabelAtMousePos(Widget* w) {
 	// Enable edit mode
 	editMode = true;
 	learnMode = false;
-	if (APP->window) glfwSetCursor(APP->window->win, NULL);
+	cursor::resetCursor();
 }
 
 void LabelContainer::toggleLearnMode() {
 	if (!hideMode) learnMode ^= true;
-	GLFWcursor* cursor = NULL;
-	if (learnMode) {
-		cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-	}
-	if (APP->window) glfwSetCursor(APP->window->win, cursor);
+	cursor::setLearnCursor(learnMode);
 }
 
 void LabelContainer::toggleEditMode() {

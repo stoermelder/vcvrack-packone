@@ -14,7 +14,7 @@ GlueModule::GlueModule() {
 	configSwitch(PARAM_HIDE, 0.f, 1.f, 0.f, "Hide labels");
 
 	ResetEvent re;
-	onReset(re);
+	GlueModule::onReset(re);
 }
 
 GlueModule::~GlueModule() {

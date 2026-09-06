@@ -1,0 +1,5 @@
+.venv/
+__pycache__/
+*.pyc
+build/SirenTagClassifier.generated.cpp
+data/

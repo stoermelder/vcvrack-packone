@@ -1,12 +1,13 @@
 #include <rack.hpp>
 #include "pluginsettings.hpp"
+#include "vcv/fs.hpp"
 
 namespace StoermelderPackOne {
 
 Settings pluginSettings;
 
 static std::string settingsDirPath() {
-	return rack::asset::user("Stoermelder-P1");
+	return vcv::fs::getUserDirectory("Stoermelder-P1");
 }
 
 static std::string mbFilePath() {
@@ -18,28 +19,23 @@ static std::string pluginFilePath() {
 }
 
 static std::string legacyFilePath() {
-	return rack::asset::user("Stoermelder-P1.json");
+	return vcv::fs::getUserDirectory("Stoermelder-P1.json");
 }
 
 static json_t* loadJsonFile(const std::string& path) {
-	FILE* file = fopen(path.c_str(), "r");
-	if (!file) return nullptr;
-	json_error_t error;
-	json_t* j = json_loadf(file, 0, &error);
-	fclose(file);
-	return j;
+	std::string data;
+	if (!vcv::fs::read(path, data)) return nullptr;
+	// The error string is intentionally dropped: a missing or corrupt settings file falls back
+	// to the in-class defaults, which is the long-standing behaviour here.
+	std::string error;
+	return vcv::parseJson(data, error);
 }
 
 static bool saveJsonFile(const std::string& path, json_t* j) {
-	FILE* file = fopen(path.c_str(), "w");
-	if (!file) return false;
-	json_dumpf(j, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
-	fclose(file);
-	return true;
-}
-
-static bool isTesting() {
-	return getenv("TESTING") != nullptr;
+	char* dumped = json_dumps(j, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+	if (!dumped) return false;
+	DEFER({ std::free(dumped); });
+	return vcv::fs::write(path, dumped);
 }
 
 // ── mb.json (models only) ─────────────────────────────────────────────────────
@@ -65,6 +61,7 @@ static json_t* buildPluginJson(const Settings& s) {
 	json_t* mbJ = json_object();
 	json_object_set_new(mbJ, "zoom", json_real(s.mbZoom));
 	json_object_set_new(mbJ, "sort", json_integer(s.mbSort));
+	json_object_set_new(mbJ, "sortV2", json_integer(s.mbSortV2));
 	json_object_set_new(mbJ, "hideBrands", json_boolean(s.mbHideBrands));
 	json_object_set_new(mbJ, "searchDescriptions", json_boolean(s.mbSearchDescriptions));
 	json_object_set_new(mbJ, "sortBySearchScore", json_boolean(s.mbSortBySearchScore));
@@ -73,6 +70,7 @@ static json_t* buildPluginJson(const Settings& s) {
 	json_object_set_new(mbJ, "magnifierEnabled", json_boolean(s.mbMagnifierEnabled));
 	json_object_set_new(mbJ, "applyLibraryWhitelist", json_boolean(s.mbApplyLibraryWhitelist));
 	json_object_set_new(mbJ, "showDeprecated", json_boolean(s.mbShowDeprecated));
+	json_object_set_new(mbJ, "newestAutoUpdate", json_boolean(s.mbNewestAutoUpdate));
 	json_object_set_new(j, "mb", mbJ);
 
 	json_t* overlayJ = json_object();
@@ -116,6 +114,7 @@ static void parsePluginJson(json_t* j, Settings& s) {
 	if (mbJ) {
 		v = json_object_get(mbJ, "zoom");              if (v) s.mbZoom = json_real_value(v);
 		v = json_object_get(mbJ, "sort");              if (v) s.mbSort = json_integer_value(v);
+		v = json_object_get(mbJ, "sortV2");             if (v) s.mbSortV2 = json_integer_value(v);
 		v = json_object_get(mbJ, "hideBrands");        if (v) s.mbHideBrands = json_boolean_value(v);
 		v = json_object_get(mbJ, "searchDescriptions");if (v) s.mbSearchDescriptions = json_boolean_value(v);
 		v = json_object_get(mbJ, "sortBySearchScore");   if (v) s.mbSortBySearchScore = json_boolean_value(v);
@@ -124,6 +123,7 @@ static void parsePluginJson(json_t* j, Settings& s) {
 		v = json_object_get(mbJ, "magnifierEnabled");    if (v) s.mbMagnifierEnabled = json_boolean_value(v);
 		v = json_object_get(mbJ, "applyLibraryWhitelist"); if (v) s.mbApplyLibraryWhitelist = json_boolean_value(v);
 		v = json_object_get(mbJ, "showDeprecated");     if (v) s.mbShowDeprecated = json_boolean_value(v);
+		v = json_object_get(mbJ, "newestAutoUpdate");   if (v) s.mbNewestAutoUpdate = json_boolean_value(v);
 	}
 
 	json_t* overlayJ = json_object_get(j, "overlay");
@@ -201,9 +201,7 @@ static void parseLegacyJson(json_t* j, Settings& s) {
 // ── public API ────────────────────────────────────────────────────────────────
 
 void Settings::saveToJson() {
-	if (isTesting()) return;
-
-	rack::system::createDirectory(settingsDirPath());
+	vcv::fs::createDirectory(settingsDirPath());
 
 	json_t* mbJ = buildMbJson(*this);
 	saveJsonFile(mbFilePath(), mbJ);
@@ -215,20 +213,18 @@ void Settings::saveToJson() {
 }
 
 void Settings::readFromJson() {
-	if (isTesting()) return;
-	// Migrate from legacy single-file format if it exists.
+	// Migrate from legacy single-file format if it exists. Keyed on exists() rather than on the
+	// parse result, so a legacy file that is present but corrupt is still consumed and removed
+	// (matching the previous fopen-based behaviour) instead of being retried every startup.
 	std::string legacy = legacyFilePath();
-	FILE* legacyFile = fopen(legacy.c_str(), "r");
-	if (legacyFile) {
-		json_error_t error;
-		json_t* j = json_loadf(legacyFile, 0, &error);
-		fclose(legacyFile);
+	if (vcv::fs::exists(legacy)) {
+		json_t* j = loadJsonFile(legacy);
 		if (j) {
 			parseLegacyJson(j, *this);
 			json_decref(j);
 		}
 		saveToJson();
-		std::remove(legacy.c_str());
+		vcv::fs::remove(legacy);
 		return;
 	}
 

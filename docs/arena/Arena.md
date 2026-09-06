@@ -45,7 +45,7 @@ The position in 2D space of each input (and mix-output) can be changed by mouse 
 
 ### _MOD_ ports
 
-For further modulation of the input signals, each channel has a _MOD_ input that can be used for different modulation targets shown in the channel's text display:
+For further modulation of the input signals, each channel has a _MOD_ input that can be used for different modulation targets shown in the channel's text display. The attenuverter next to the input scales the incoming voltage and must be opened for the modulation to have any effect. Note that the _RAD_ and _AMT_ targets only take over the parameter while a cable is patched into _MOD_, whereas _O-X_, _O-Y_ and _WLK_ fall back to a constant 10V when nothing is patched, so their attenuverter alone is enough to drive them.
 
 - **RAD / radius (Default)** - The radius of an input determines the range within 2D space in which the signal is sent to its _OUT_ port and to the _MIX_ ports.
 
@@ -53,7 +53,7 @@ For further modulation of the input signals, each channel has a _MOD_ input that
 
 - **O-X, O-Y / offset x-pos, offset y-pos** - The offsets for x/y coordinates can be used in addition to the _X_/_Y_ ports to offset one of the CV signals.
 
-- **WLK / Random walk** - The position of the input in 2D space is randomly modified.
+- **WLK / Random walk** - The position of the input in 2D space is randomly modified. On every sample a normally-distributed offset scaled by $\frac{1}{2000}$ of the modulation value is added to both coordinates, so the attenuverter sets the speed of the walk: at fully closed (center) the position stands still, at fully open the walk drifts by roughly half the screen per second. Negative attenuverter settings walk just as fast, only mirrored.
 
 ![ARENA modulation targets](./Arena-mod.png)
 
@@ -65,9 +65,9 @@ Each mix channel has the following controls:
 
 - **Volume** - Adjusts the volume level of the mix channel from 0 to 200%. The output will be scaled according to this setting.
 
-- **X/Y position** - Position the mix output in the 2D space on the center screen. This determines which input channels will be mixed based on their distance and radius. You can move the mix position by clicking and dragging the yellow circle on the screen, or adjust the small white circles next to the CV inputs for fine control.
+- **X/Y position** - Position the mix output in the 2D space on the center screen. This determines which input channels will be mixed based on their distance and radius. You can move the mix position by clicking and dragging the yellow circle on the screen, or drive it from a mapping module through the small circles next to the CV inputs (see [X/Y-mapping](#xy-mapping)).
 
-- **X/Y CV inputs** - Modulate the X and Y position of the mix output with control voltages. The attenuverter knobs next to these inputs control how much the incoming CV affects the position. Set the attenuverter fully left to disable CV control or fully right to enable it.
+- **X/Y CV inputs** - Modulate the X and Y position of the mix output with control voltages. The attenuverter knobs next to these inputs control how much the incoming CV affects the position and must be opened for the CV to have any effect: in center position no CV passes through, fully right applies it unchanged and fully left applies it inverted. Note that while a cable is patched the CV takes over the position completely — the mix output can no longer be dragged on the screen.
 
 The mix output combines the signals from all input channels that fall within their radius at the current mix position. The combined signal is sent to the corresponding _MIX_ output port. You can then process or record these mixed signals elsewhere in your patch.
 
@@ -93,13 +93,13 @@ The _SEQ_ input allows you to select a sequence by CV. There are several modes a
 
 - **Trigger random 1-16, 1-8, or 1-4** - When a trigger is received, the module chooses a random sequence slot within the selected range.
 
-- **0..10V** - The range is split evenly by 16. 0-0.625V selects sequence slot 1, 0.625-1.25V selects sequence slot 2, and so on.
+- **0..10V** - The range is split evenly into 15 steps of $\frac{10}{15}$V. 0-0.667V selects sequence slot 1, 0.667-1.333V selects sequence slot 2, and so on, with slot 16 reached at 10V.
 
 - **C4-D#5** - Keyboard mode: C4 triggers sequence slot 1, D#5 triggers sequence slot 16.
 
 ![ARENA motion sequences](./Arena-seq1.png)
 
-Each input labeled _PHASE_ can be set to accept -5..5V or 0..10V and allows you to control the position of the mix output on the currently selected motion path. The input voltage is mapped to the length of the motion sequence. Using an LFO's unipolar saw output or a clock with phase output like [ZZC's Clock module](https://zzc-cv.github.io/en/clock-manipulation/clock), the motion can be synced to sequencers, giving you looping behavior. An LFO with triangle output gives you a ping-pong motion.
+Each input labeled _PHASE_ accepts 0..10V and allows you to control the position of the mix output on the currently selected motion path. The input voltage is mapped to the length of the motion sequence, with 0V at the start and 10V at the end of the path. Using an LFO's unipolar saw output or a clock with phase output like [ZZC's Clock module](https://zzc-cv.github.io/en/clock-manipulation/clock), the motion can be synced to sequencers, giving you looping behavior. An LFO with triangle output gives you a ping-pong motion.
 
 ### Channel Settings
 
@@ -113,6 +113,7 @@ For IN-channels:
 - **Output mode** - Choose how the input signal is processed: Scale, Limit, Clip, or Fold (see IN-ports section for details).
 
 For MIX-channels:
+- **Motion-Sequence** - Select the sequence slot, the interpolation between the recorded points, and the trigger mode of the _SEQ_ input (see the [SEQ-ports and PHASE-ports](#seq-ports-and-phase-ports) section).
 - **X/Y Voltage mode** - Switch between -5..5V (bipolar) and 0..10V (unipolar) for the X and Y CV inputs of this mix channel.
 
 ### Module Configuration
@@ -145,3 +146,8 @@ The colored circles on the center screen representing inputs and mix outputs can
     - Fixed coarse parameter updates on screen interaction because of display refresh rate (#210)
 - v2.2.0
     - Fixed broken loading of presets and loading from saved patches
+- v2.x.x
+    - Fixed wrong values for mix-ports on preset load
+    - Fixed missing voltage-mode options in the context menu of the mix-ports
+    - Fixed out-of-range sequence selection for _SEQ_-mode "0..10V"
+    - Fixed "Scale" out-mode using the configured number of mix-ports
