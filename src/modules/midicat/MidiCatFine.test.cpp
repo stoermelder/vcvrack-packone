@@ -80,7 +80,6 @@ TEST_CASE("Preset JSON null-guards", "[MidiCatFine][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 TEST_CASE("JSON round-trip preserves state", "[MidiCatFine][JSON]") {
@@ -159,8 +158,6 @@ TEST_CASE("MidiCat detects expander", "[MidiCatFine][MidiCat]") {
 	// MidiCat.expanders.hpp detects fine via `exp->model == modelMidiCatFine` — a mismatch here
 	// (missing/wrong SYNC_MODEL) would make the REQUIRE below fail with no useful diagnosis.
 	Test::requireModelSync(modelMidiCatFine, "MidiCatFine");
-	Test::registerModule(midicat);
-	Test::registerModule(fine);
 
 	// Flush initial expandersChanged so expFine is properly null before connecting
 	h.dspStep();
@@ -171,17 +168,12 @@ TEST_CASE("MidiCat detects expander", "[MidiCatFine][MidiCat]") {
 
 	REQUIRE(midicat->expanders.fine() != nullptr);
 	REQUIRE(midicat->expanders.fine() == fine);
-
-	Test::unregisterModule(fine);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("Disconnecting expander clears expFine and ccFineMode", "[MidiCatFine][MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
-	Test::registerModule(midicat);
-	Test::registerModule(fine);
 
 	h.connectExpander(midicat, fine);
 	h.dspStep();
@@ -196,9 +188,6 @@ TEST_CASE("Disconnecting expander clears expFine and ccFineMode", "[MidiCatFine]
 
 	REQUIRE(midicat->expanders.fine() == nullptr);
 	REQUIRE(midicat->ccFineMode == false);
-
-	Test::unregisterModule(fine);
-	Test::unregisterModule(midicat);
 }
 
 // ─── FineExpanderDriver interaction with parent ───────────────────────────────
@@ -207,10 +196,7 @@ TEST_CASE("rising edge on LOWRANGE enables fine mode at low precision", "[MidiCa
 	Test::Harness h;
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
-	TestParamModule* target = new TestParamModule();
-	Test::registerModule(midicat);
-	Test::registerModule(fine);
-	Test::registerModule(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	setupBinding(h, midicat, target, 0, 7);
 	h.connectExpander(midicat, fine);
@@ -229,20 +215,13 @@ TEST_CASE("rising edge on LOWRANGE enables fine mode at low precision", "[MidiCa
 	// the precision on channel 0 is the low range.
 	REQUIRE(midicat->slots[0].param.precProcessor.precision == Catch::Approx(0.1f));	// init(0, 127) sets the ref point to (127-0)/2 = 63.
 	REQUIRE(midicat->slots[0].param.precProcessor.midiRefPoint == 63);
-	Test::unregisterModule(target);
-	delete target;
-	Test::unregisterModule(fine);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("Falling edge on LOWRANGE disables fine mode when HIGHRANGE is low", "[MidiCatFine][MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
-	TestParamModule* target = new TestParamModule();
-	Test::registerModule(midicat);
-	Test::registerModule(fine);
-	Test::registerModule(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	setupBinding(h, midicat, target, 0, 7);
 	h.connectExpander(midicat, fine);
@@ -260,21 +239,13 @@ TEST_CASE("Falling edge on LOWRANGE disables fine mode when HIGHRANGE is low", "
 	h.dspStep();
 
 	REQUIRE(midicat->ccFineMode == false);
-
-	Test::unregisterModule(target);
-	delete target;
-	Test::unregisterModule(fine);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("Rising edge on HIGHRANGE enables fine mode at high precision", "[MidiCatFine][MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
-	TestParamModule* target = new TestParamModule();
-	Test::registerModule(midicat);
-	Test::registerModule(fine);
-	Test::registerModule(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	setupBinding(h, midicat, target, 0, 7);
 	h.connectExpander(midicat, fine);
@@ -288,21 +259,13 @@ TEST_CASE("Rising edge on HIGHRANGE enables fine mode at high precision", "[Midi
 
 	REQUIRE(midicat->ccFineMode == true);
 	REQUIRE(midicat->slots[0].param.precProcessor.precision == Catch::Approx(0.01f));
-
-	Test::unregisterModule(target);
-	delete target;
-	Test::unregisterModule(fine);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("High precision follows user setting (2% / 5%)", "[MidiCatFine][MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
-	TestParamModule* target = new TestParamModule();
-	Test::registerModule(midicat);
-	Test::registerModule(fine);
-	Test::registerModule(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	setupBinding(h, midicat, target, 0, 7);
 	h.connectExpander(midicat, fine);
@@ -323,21 +286,13 @@ TEST_CASE("High precision follows user setting (2% / 5%)", "[MidiCatFine][MidiCa
 		h.dspStep();
 		REQUIRE(midicat->slots[0].param.precProcessor.precision == Catch::Approx(0.05f));
 	}
-
-	Test::unregisterModule(target);
-	delete target;
-	Test::unregisterModule(fine);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("HIGHRANGE rising while LOWRANGE is high updates the ref-point from current CC", "[MidiCatFine][MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
-	TestParamModule* target = new TestParamModule();
-	Test::registerModule(midicat);
-	Test::registerModule(fine);
-	Test::registerModule(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	setupBinding(h, midicat, target, 0, 7);
 	h.connectExpander(midicat, fine);
@@ -364,21 +319,13 @@ TEST_CASE("HIGHRANGE rising while LOWRANGE is high updates the ref-point from cu
 	REQUIRE(midicat->ccFineMode == true);
 	REQUIRE(midicat->slots[0].param.precProcessor.precision == Catch::Approx(0.01f));
 	REQUIRE(midicat->slots[0].param.precProcessor.midiRefPoint == 64);
-
-	Test::unregisterModule(target);
-	delete target;
-	Test::unregisterModule(fine);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("HIGHRANGE falling while LOWRANGE is high restores low precision", "[MidiCatFine][MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
-	TestParamModule* target = new TestParamModule();
-	Test::registerModule(midicat);
-	Test::registerModule(fine);
-	Test::registerModule(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	setupBinding(h, midicat, target, 0, 7);
 	h.connectExpander(midicat, fine);
@@ -400,21 +347,13 @@ TEST_CASE("HIGHRANGE falling while LOWRANGE is high restores low precision", "[M
 
 	REQUIRE(midicat->ccFineMode == true);
 	REQUIRE(midicat->slots[0].param.precProcessor.precision == Catch::Approx(0.1f));
-
-	Test::unregisterModule(target);
-	delete target;
-	Test::unregisterModule(fine);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("HIGHRANGE falling when both are low disables fine mode", "[MidiCatFine][MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
-	TestParamModule* target = new TestParamModule();
-	Test::registerModule(midicat);
-	Test::registerModule(fine);
-	Test::registerModule(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	setupBinding(h, midicat, target, 0, 7);
 	h.connectExpander(midicat, fine);
@@ -433,20 +372,13 @@ TEST_CASE("HIGHRANGE falling when both are low disables fine mode", "[MidiCatFin
 
 	REQUIRE(midicat->ccFineMode == false);
 
-	Test::unregisterModule(target);
-	delete target;
-	Test::unregisterModule(fine);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("LOWRANGE ignored while HIGHRANGE is high", "[MidiCatFine][MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
-	TestParamModule* target = new TestParamModule();
-	Test::registerModule(midicat);
-	Test::registerModule(fine);
-	Test::registerModule(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	setupBinding(h, midicat, target, 0, 7);
 	h.connectExpander(midicat, fine);
@@ -468,9 +400,4 @@ TEST_CASE("LOWRANGE ignored while HIGHRANGE is high", "[MidiCatFine][MidiCat]") 
 	h.dspStep();
 
 	REQUIRE(midicat->slots[0].param.precProcessor.precision == Catch::Approx(0.01f));
-
-	Test::unregisterModule(target);
-	delete target;
-	Test::unregisterModule(fine);
-	Test::unregisterModule(midicat);
 }

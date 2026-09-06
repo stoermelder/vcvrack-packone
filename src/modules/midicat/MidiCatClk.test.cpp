@@ -106,8 +106,6 @@ TEST_CASE("MidiCat detects expander", "[MidiCatClk][MidiCat]") {
 	// MidiCat.expanders.hpp detects clk via `exp->model == modelMidiCatClk` — a mismatch here
 	// (missing/wrong SYNC_MODEL) would make the REQUIRE below fail with no useful diagnosis.
 	Test::requireModelSync(modelMidiCatClk, "MidiCatClk");
-	Test::registerModule(midicat);
-	Test::registerModule(clk);
 
 	// Flush initial moduleChangedFlag so expClk is properly null before connecting
 	h.dspStep();
@@ -118,17 +116,12 @@ TEST_CASE("MidiCat detects expander", "[MidiCatClk][MidiCat]") {
 
 	REQUIRE(midicat->expanders.clk() != nullptr);
 	REQUIRE(midicat->expanders.clk() == clk);
-
-	Test::unregisterModule(clk);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("Disconnecting expander clears expClk and resets clockModes", "[MidiCatClk][MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatClkModule* clk = h.addModule<MidiCatClkModule>("MidiCatClk");
-	Test::registerModule(midicat);
-	Test::registerModule(clk);
 
 	h.connectExpander(midicat, clk);
 	h.dspStep();
@@ -145,19 +138,13 @@ TEST_CASE("Disconnecting expander clears expClk and resets clockModes", "[MidiCa
 	REQUIRE(midicat->expanders.clk() == nullptr);
 	REQUIRE(midicat->getClockMode(0) == MidiCatParam::CLOCKMODE::OFF);
 	REQUIRE(midicat->getClockMode(1) == MidiCatParam::CLOCKMODE::OFF);
-
-	Test::unregisterModule(clk);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("ARM mode defers param update until clock tick", "[MidiCatClk][MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatClkModule* clk = h.addModule<MidiCatClkModule>("MidiCatClk");
-	TestParamModule* target = new TestParamModule();
-	Test::registerModule(midicat);
-	Test::registerModule(clk);
-	Test::registerModule(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	setupBinding(h, midicat, target, 0, 7);
 	// Set initial param value via CC 7 = 64 → ~0.504
@@ -181,21 +168,13 @@ TEST_CASE("ARM mode defers param update until clock tick", "[MidiCatClk][MidiCat
 	sendClockPulse(h, midicat, clk, 0);
 	float updatedParamValue = target->getParamQuantity(TestParamModule::PARAM_A)->getValue();
 	REQUIRE(updatedParamValue == Catch::Approx(100.f / 127.f).margin(0.01f));
-
-	Test::unregisterModule(target);
-	delete target;
-	Test::unregisterModule(clk);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("ARM mode ignores clock on wrong source", "[MidiCatClk][MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatClkModule* clk = h.addModule<MidiCatClkModule>("MidiCatClk");
-	TestParamModule* target = new TestParamModule();
-	Test::registerModule(midicat);
-	Test::registerModule(clk);
-	Test::registerModule(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	setupBinding(h, midicat, target, 0, 7);
 	// Establish baseline param value via CC 7 = 64
@@ -221,21 +200,13 @@ TEST_CASE("ARM mode ignores clock on wrong source", "[MidiCatClk][MidiCat]") {
 	// Tick clock 2 (correct source)
 	sendClockPulse(h, midicat, clk, 2);
 	REQUIRE(target->getParamQuantity(TestParamModule::PARAM_A)->getValue() == Catch::Approx(100.f / 127.f).margin(0.01f));
-
-	Test::unregisterModule(target);
-	delete target;
-	Test::unregisterModule(clk);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("ARM_DEFERRED_FEEDBACK withholds MIDI feedback until clock tick", "[MidiCatClk][MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatClkModule* clk = h.addModule<MidiCatClkModule>("MidiCatClk");
-	TestParamModule* target = new TestParamModule();
-	Test::registerModule(midicat);
-	Test::registerModule(clk);
-	Test::registerModule(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	setupBinding(h, midicat, target, 0, 7);
 	midicat->setClockMode(0, MidiCatParam::CLOCKMODE::ARM_DEFERRED_FEEDBACK);
@@ -260,11 +231,6 @@ TEST_CASE("ARM_DEFERRED_FEEDBACK withholds MIDI feedback until clock tick", "[Mi
 	// Tick clock 0 — applies deferred value, getValueLast advances to 100
 	sendClockPulse(h, midicat, clk, 0);
 	REQUIRE(midicat->slots[0].param.getValue() == 100);
-
-	Test::unregisterModule(target);
-	delete target;
-	Test::unregisterModule(clk);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("Each of the four clock inputs fires its trigger", "[MidiCatClk][MidiCat]") {
@@ -274,10 +240,7 @@ TEST_CASE("Each of the four clock inputs fires its trigger", "[MidiCatClk][MidiC
 		Test::Harness h;
 		MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 		MidiCatClkModule* clk = h.addModule<MidiCatClkModule>("MidiCatClk");
-		TestParamModule* target = new TestParamModule();
-		Test::registerModule(midicat);
-		Test::registerModule(clk);
-		Test::registerModule(target);
+		TestParamModule* target = h.adoptModule(new TestParamModule);
 
 		// Bind CC 7 to PARAM_A with ARM quantization on clock input `input`
 		setupBinding(h, midicat, target, 0, 7);
@@ -301,10 +264,5 @@ TEST_CASE("Each of the four clock inputs fires its trigger", "[MidiCatClk][MidiC
 		// Tick the correct clock input — param must now update to 100/127
 		sendClockPulse(h, midicat, clk, input);
 		REQUIRE(target->getParamQuantity(TestParamModule::PARAM_A)->getValue() == Catch::Approx(100.f / 127.f).margin(0.01f));
-
-		Test::unregisterModule(target);
-		delete target;
-		Test::unregisterModule(clk);
-		Test::unregisterModule(midicat);
 	}
 }
