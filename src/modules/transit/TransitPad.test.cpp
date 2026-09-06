@@ -703,20 +703,6 @@ TEST_CASE("Snapshot weights are written to the active set", "[TransitPad]") {
 // Transit + TransitPad integration: process() interpolation
 // ============================================================
 
-// Cleanup must be exception-safe: a REQUIRE failure skips trailing cleanup, and a
-// leaked registered module stays in the engine. ScopedModules unregisters+destroys
-// even on throw (same pattern as Transit.test.cpp).
-struct ScopedModules {
-	std::vector<rack::Module*> mods;
-	~ScopedModules() {
-		for (auto it = mods.rbegin(); it != mods.rend(); ++it) {
-			Test::unregisterModule(*it);
-			Test::destroyModule(*it);
-		}
-	}
-};
-
-
 // Helper module with parameters that Transit can bind and control
 struct TestParamModule : rack::Module {
 	enum ParamIds { PARAM_A, PARAM_B, NUM_PARAMS };
@@ -762,15 +748,13 @@ static void bindParam(Test::Harness& h, TransitModule<12>* transit, int moduleId
 // rig cannot own it); transit + pad are added pad-first so the harness ticks
 // the pad before Transit (it steps in registration order), matching the old
 // manual sequence where the pad computed snapshot weights before Transit read
-// them. The target
-// is a plain rack::Module that Transit binds by id, so it only needs real-engine
-// registration plus ScopedModules-style teardown, not harness ownership.
+// them. The target is adopted by the harness too, so all three share its
+// exception-safe teardown.
 struct PadRig {
 	Test::Harness& h;
 	TransitPadModule<>* pad = nullptr;
 	TransitModule<12>* transit = nullptr;
 	TestParamModule* target = nullptr;
-	std::vector<rack::Module*> cleanup;
 
 	explicit PadRig(Test::Harness& h) : h(h) {}
 
@@ -778,10 +762,7 @@ struct PadRig {
 		PadRig r(h);
 		r.pad = r.h.addModule<TransitPadModule<>>("TransitPad");
 		r.transit = r.h.addModule<TransitModule<12>>("Transit");
-		r.target = new TestParamModule();
-		r.target->id = Test::getModuleId();
-		Test::registerModule(r.target);
-		r.cleanup.push_back(r.target);
+		r.target = r.h.adoptModule(new TestParamModule);
 		return r;
 	}
 	void bind() {
@@ -796,13 +777,6 @@ struct PadRig {
 	}
 	void run(int n) {
 		h.dspSteps(n);
-	}
-	void destroy() {
-		for (auto it = cleanup.rbegin(); it != cleanup.rend(); ++it) {
-			Test::unregisterModule(*it);
-			Test::destroyModule(*it);
-		}
-		cleanup.clear();
 	}
 };
 
@@ -823,8 +797,6 @@ TEST_CASE("Transit detects TransitPad as right expander", "[TransitPad][Transit]
 	Test::Harness h;
 	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(transit);
-	Test::registerModule(pad);
 
 	// Flush initial expandersChanged so transitPad is properly initialised to nullptr
 	h.dspStep();
@@ -836,10 +808,6 @@ TEST_CASE("Transit detects TransitPad as right expander", "[TransitPad][Transit]
 	REQUIRE(transit->isXyPadActive());
 	// TransitPad sets masterModule back-pointer
 	REQUIRE(pad->masterModule == transit);
-
-	// Harness destroys the modules; engine registration is manual.
-	Test::unregisterModule(pad);
-	Test::unregisterModule(transit);
 }
 
 
@@ -847,18 +815,12 @@ TEST_CASE("Transit sets slotCvMode to OFF when TransitPad is connected", "[Trans
 	Test::Harness h;
 	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(transit);
-	Test::registerModule(pad);
 
 	transit->slotCvMode = SLOTCVMODE::TRIG_FWD;
 	connectPad(h, transit, pad);
 	h.dspStep();
 
 	REQUIRE(transit->slotCvMode == SLOTCVMODE::OFF);
-
-	// Harness destroys the modules; engine registration is manual.
-	Test::unregisterModule(pad);
-	Test::unregisterModule(transit);
 }
 
 
@@ -866,8 +828,6 @@ TEST_CASE("Transit disconnects from TransitPad when expander is removed", "[Tran
 	Test::Harness h;
 	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(transit);
-	Test::registerModule(pad);
 
 	connectPad(h, transit, pad);
 	h.dspStep();
@@ -878,10 +838,6 @@ TEST_CASE("Transit disconnects from TransitPad when expander is removed", "[Tran
 	h.dspStep();
 
 	REQUIRE_FALSE(transit->isXyPadActive());
-
-	// Harness destroys the modules; engine registration is manual.
-	Test::unregisterModule(pad);
-	Test::unregisterModule(transit);
 }
 
 
@@ -890,11 +846,7 @@ TEST_CASE("presetProcessXyPad: single snapshot with full weight applies preset e
 	Test::ModuleScaffold<TransitPadModule<>> padMods;
 	TransitPadModule<>* pad = padMods.create("TransitPad");
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	ScopedModules cleanup;
-	TestParamModule* target = new TestParamModule();
-	target->id = Test::getModuleId();
-	Test::registerModule(target);
-	cleanup.mods.push_back(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	// Bind target parameter and save preset 0 with value 0.25
 	bindParam(h, transit, target->id, TestParamModule::PARAM_A);
@@ -919,11 +871,7 @@ TEST_CASE("presetProcessXyPad: two equal-weight snapshots produce the midpoint",
 	Test::ModuleScaffold<TransitPadModule<>> padMods;
 	TransitPadModule<>* pad = padMods.create("TransitPad");
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	ScopedModules cleanup;
-	TestParamModule* target = new TestParamModule();
-	target->id = Test::getModuleId();
-	Test::registerModule(target);
-	cleanup.mods.push_back(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	bindParam(h, transit, target->id, TestParamModule::PARAM_A);
 
@@ -950,11 +898,7 @@ TEST_CASE("presetProcessXyPad: unequal weights produce correctly weighted averag
 	Test::ModuleScaffold<TransitPadModule<>> padMods;
 	TransitPadModule<>* pad = padMods.create("TransitPad");
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	ScopedModules cleanup;
-	TestParamModule* target = new TestParamModule();
-	target->id = Test::getModuleId();
-	Test::registerModule(target);
-	cleanup.mods.push_back(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	bindParam(h, transit, target->id, TestParamModule::PARAM_A);
 
@@ -981,11 +925,7 @@ TEST_CASE("presetProcessXyPad: snapshot with id=-1 is skipped", "[TransitPad][Tr
 	Test::ModuleScaffold<TransitPadModule<>> padMods;
 	TransitPadModule<>* pad = padMods.create("TransitPad");
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	ScopedModules cleanup;
-	TestParamModule* target = new TestParamModule();
-	target->id = Test::getModuleId();
-	Test::registerModule(target);
-	cleanup.mods.push_back(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	bindParam(h, transit, target->id, TestParamModule::PARAM_A);
 
@@ -1010,11 +950,7 @@ TEST_CASE("presetProcessXyPad: snapshot pointing to unused slot is skipped", "[T
 	Test::ModuleScaffold<TransitPadModule<>> padMods;
 	TransitPadModule<>* pad = padMods.create("TransitPad");
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	ScopedModules cleanup;
-	TestParamModule* target = new TestParamModule();
-	target->id = Test::getModuleId();
-	Test::registerModule(target);
-	cleanup.mods.push_back(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	bindParam(h, transit, target->id, TestParamModule::PARAM_A);
 
@@ -1042,11 +978,7 @@ TEST_CASE("presetProcessXyPad: all zero weights leave parameters unchanged", "[T
 	Test::ModuleScaffold<TransitPadModule<>> padMods;
 	TransitPadModule<>* pad = padMods.create("TransitPad");
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	ScopedModules cleanup;
-	TestParamModule* target = new TestParamModule();
-	target->id = Test::getModuleId();
-	Test::registerModule(target);
-	cleanup.mods.push_back(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	bindParam(h, transit, target->id, TestParamModule::PARAM_A);
 
@@ -1070,11 +1002,7 @@ TEST_CASE("presetProcessXyPad: switching TransitPad sets changes interpolation o
 	Test::ModuleScaffold<TransitPadModule<>> padMods;
 	TransitPadModule<>* pad = padMods.create("TransitPad");
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	ScopedModules cleanup;
-	TestParamModule* target = new TestParamModule();
-	target->id = Test::getModuleId();
-	Test::registerModule(target);
-	cleanup.mods.push_back(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	bindParam(h, transit, target->id, TestParamModule::PARAM_A);
 
@@ -1108,11 +1036,7 @@ TEST_CASE("presetProcessXyPad: interpolates two bound parameters independently",
 	Test::ModuleScaffold<TransitPadModule<>> padMods;
 	TransitPadModule<>* pad = padMods.create("TransitPad");
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	ScopedModules cleanup;
-	TestParamModule* target = new TestParamModule();
-	target->id = Test::getModuleId();
-	Test::registerModule(target);
-	cleanup.mods.push_back(target);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
 
 	bindParam(h, transit, target->id, TestParamModule::PARAM_A);
 	bindParam(h, transit, target->id, TestParamModule::PARAM_B);
@@ -1171,8 +1095,6 @@ TEST_CASE("XY-pad chain: mix position CV drives the target parameter between pre
 	setMixVoltage(r.pad, 0.f, -5.f);
 	r.run(5);
 	REQUIRE(r.paramValue() == Catch::Approx(0.5f).margin(0.001f));
-
-	r.destroy();
 }
 
 
@@ -1201,8 +1123,6 @@ TEST_CASE("XY-pad chain: amount scales snapshot weight and shifts the blend", "[
 	r.run(5);
 	REQUIRE(r.pad->snapshots[0][1].weight == Catch::Approx(0.275f).margin(0.001f));
 	REQUIRE(r.paramValue() == Catch::Approx(1.f / 3.f).margin(0.001f));
-
-	r.destroy();
 }
 
 
@@ -1240,8 +1160,6 @@ TEST_CASE("XY-pad chain: radius cuts off snapshot contribution at the boundary",
 	setMixVoltage(r.pad, 0.f, -5.f);
 	r.run(5);
 	REQUIRE(r.paramValue() == Catch::Approx(0.25f).margin(0.001f));
-
-	r.destroy();
 }
 
 
@@ -1290,8 +1208,6 @@ TEST_CASE("XY-pad chain: switching sets via button and CV changes the Transit ou
 	r.run(5);
 	REQUIRE(r.pad->currentSet == 0);
 	REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
-
-	r.destroy();
 }
 
 
@@ -1349,8 +1265,6 @@ TEST_CASE("XY-pad chain: motion sequence drives the mix position", "[TransitPad]
 		REQUIRE(r.pad->params[TransitPadModule<>::OUT_X_POS].getValue() == Catch::Approx(1.f).margin(0.001f));
 		REQUIRE(r.pad->params[TransitPadModule<>::OUT_Y_POS].getValue() == Catch::Approx(0.f).margin(0.001f));
 	}
-
-	r.destroy();
 }
 
 
@@ -1377,8 +1291,6 @@ TEST_CASE("XY-pad chain: snapshotsUsed bounds which snapshots contribute weight"
 	r.pad->snapshotsUsed = 4;
 	r.run(5);
 	REQUIRE(r.paramValue() == Catch::Approx(0.5f).margin(0.001f));
-
-	r.destroy();
 }
 
 
@@ -1404,7 +1316,6 @@ TEST_CASE("bindSnapshot binds and unbinds pad points to Transit slots", "[Transi
 		m->bindSnapshot(0, 6);
 		REQUIRE(m->snapshots[2][0].id == 6);
 		REQUIRE(m->snapshots[0][0].id == 0);
-
 	}
 
 	SECTION("Bound snapshot drives the Transit output; unbinding stops it") {
@@ -1428,8 +1339,6 @@ TEST_CASE("bindSnapshot binds and unbinds pad points to Transit slots", "[Transi
 		r.pad->bindSnapshot(0, -1);
 		r.run(5);
 		REQUIRE(r.paramValue() == Catch::Approx(0.42f).margin(0.001f));
-
-		r.destroy();
 	}
 }
 
