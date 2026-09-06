@@ -1,5 +1,4 @@
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "TransitBase.hpp"
 #include "Transit.cpp"
 #include "TransitCtrl.cpp"
@@ -51,71 +50,58 @@ struct CtrlTestModule : rack::Module {
 	}
 };
 
-// ---------------------------------------------------------------------------
-// Integration helpers — trigger onExpanderChange so the listener mechanism
-// sets expandersChanged on Transit, then step once for discovery/cleanup.
-// ---------------------------------------------------------------------------
-template<typename T>
-static void connectCtrl(T& engine, TransitModule<12>* transit, TransitCtrlModule<16>* ctrl) {
-	transit->rightExpander.module = ctrl;
-	transit->rightExpander.moduleId = ctrl->getId();
-	ctrl->leftExpander.module = transit;
-	ctrl->leftExpander.moduleId = transit->getId();
-	Module::ExpanderChangeEvent e;
-	ctrl->onExpanderChange(e);     			// clears old transitCtrl; notifies Transit (expandersChanged=true)
-	transit->onExpanderChange(e);  			// notifies Transit again (idempotent)
-	engine.stepBlock(1);                	// Transit re-scans and calls ctrl->setTransitCtrl(transit)
-}
-
-template<typename T>
-static void disconnectCtrl(T& engine, TransitModule<12>* transit, TransitCtrlModule<16>* ctrl) {
-	transit->rightExpander.module = nullptr;
-	transit->rightExpander.moduleId = -1;
-	if (ctrl) {
-		ctrl->leftExpander.module = nullptr;
-		ctrl->leftExpander.moduleId = -1;
+// Cleanup must be exception-safe: a REQUIRE failure skips trailing cleanup, and a
+// leaked registered module stays in the engine. ScopedModules unregisters+destroys
+// even on throw (same pattern as Transit.test.cpp). The CtrlTestModule target gets
+// an explicit id so it never takes the random-id path.
+struct ScopedModules {
+	std::vector<rack::Module*> mods;
+	~ScopedModules() {
+		for (auto it = mods.rbegin(); it != mods.rend(); ++it) {
+			Test::unregisterModule(*it);
+			Test::destroyModule(*it);
+		}
 	}
-	Module::ExpanderChangeEvent e;
-	if (ctrl) ctrl->onExpanderChange(e); 	// clears transitCtrl on ctrl; notifies Transit
-	transit->onExpanderChange(e);          	// notifies Transit (expandersChanged=true)
-	engine.stepBlock(1);                         	// Transit re-scans (finds nothing)
-}
-
+};
 
 // ===========================================================================
 // Construction
 // ===========================================================================
 
 TEST_CASE("Construction and initialization", "[TransitCtrl]") {
-	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
+	Test::Harness h;
+	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
 	REQUIRE(ctrl != nullptr);
 
 	SECTION("All mappings are -1 (unmapped) after construction") {
-		for (int i = 0; i < NUM_CTRL; i++)
+		for (int i = 0; i < NUM_CTRL; i++) {
 			REQUIRE(ctrl->mapping[i] == -1);
+		}
 	}
 
 	SECTION("All reverseMap entries are -1 after construction") {
-		for (int i = 0; i < NUM_CTRL; i++)
+		for (int i = 0; i < NUM_CTRL; i++) {
 			REQUIRE(ctrl->reverseMap[i] == -1);
+		}
 	}
 
 	SECTION("All ppqs are non-null") {
-		for (int i = 0; i < NUM_CTRL; i++)
+		for (int i = 0; i < NUM_CTRL; i++) {
 			REQUIRE(ctrl->ppqs[i] != nullptr);
+		}
 	}
 
 	SECTION("No transitCtrl set") {
-		for (int i = 0; i < NUM_CTRL; i++)
+		for (int i = 0; i < NUM_CTRL; i++) {
 			REQUIRE(ctrl->ppqs[i]->transitCtrl == nullptr);
+		}
 	}
-
-	Test::destroyModule(ctrl);
 }
 
 
 TEST_CASE("Preset JSON null-guards", "[TransitCtrl][JSON]") {
-	auto module = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
+	Test::Harness h;
+	auto module = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -123,8 +109,6 @@ TEST_CASE("Preset JSON null-guards", "[TransitCtrl][JSON]") {
 		Test::testPresetNullGuards(module, rootJ);
 		json_decref(rootJ);
 	}
-
-	Test::destroyModule(module);
 }
 
 
@@ -133,8 +117,9 @@ TEST_CASE("Preset JSON null-guards", "[TransitCtrl][JSON]") {
 // ===========================================================================
 
 TEST_CASE("setMapping updates mapping, reverseMap, and handleIndex", "[TransitCtrl]") {
-	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
-	MockSenderModule* sender = new MockSenderModule();
+	Test::Harness h;
+	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+	MockSenderModule* sender = h.adoptModule(new MockSenderModule());
 	ctrl->setTransitCtrl(sender);
 
 	SECTION("setMapping(3, 7) records forward and reverse entries") {
@@ -175,8 +160,6 @@ TEST_CASE("setMapping updates mapping, reverseMap, and handleIndex", "[TransitCt
 	}
 
 	ctrl->setTransitCtrl(nullptr);
-	delete sender;
-	Test::destroyModule(ctrl);
 }
 
 
@@ -185,8 +168,9 @@ TEST_CASE("setMapping updates mapping, reverseMap, and handleIndex", "[TransitCt
 // ===========================================================================
 
 TEST_CASE("setCtrlParamValue uses reverseMap for O(1) lookup", "[TransitCtrl]") {
-	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
-	MockSenderModule* sender = new MockSenderModule();
+	Test::Harness h;
+	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+	MockSenderModule* sender = h.adoptModule(new MockSenderModule());
 	ctrl->setTransitCtrl(sender);
 	ctrl->setMapping(3, 7);
 
@@ -210,8 +194,6 @@ TEST_CASE("setCtrlParamValue uses reverseMap for O(1) lookup", "[TransitCtrl]") 
 	}
 
 	ctrl->setTransitCtrl(nullptr);
-	delete sender;
-	Test::destroyModule(ctrl);
 }
 
 
@@ -220,37 +202,34 @@ TEST_CASE("setCtrlParamValue uses reverseMap for O(1) lookup", "[TransitCtrl]") 
 // ===========================================================================
 
 TEST_CASE("process() forwards knob changes to Transit using handleIndex", "[TransitCtrl]") {
-	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
-	MockSenderModule* sender = new MockSenderModule();
+	Test::Harness h;
+	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+	MockSenderModule* sender = h.adoptModule(new MockSenderModule());
 	ctrl->setTransitCtrl(sender);
 	// After setMapping(3, 7): lastParamValues[3] = 0.5f (synced from sender's param 7)
 	ctrl->setMapping(3, 7);
 
 	SECTION("Changing knob 3 pushes Transit-side index 7") {
 		ctrl->params[TransitCtrlModule<16>::PARAM + 3].setValue(0.9f);
-		for (int i = 0; i < 500; i++) {
-			ctrl->process(Test::makeProcessArgs(i));
-		}
+		h.dspSteps(500);
 		REQUIRE(sender->changes.size() == 1);
 		REQUIRE(sender->changes[0].index == 7);
 		REQUIRE(sender->changes[0].value == Catch::Approx(0.9f));
 	}
 
 	SECTION("Unchanged knob does not push") {
-		ctrl->process(Test::makeProcessArgs(2));
+		h.dspStep();
 		REQUIRE(sender->changes.empty());
 	}
 
 	SECTION("Unmapped knob does not push even when changed") {
 		// knob 0: mapping[0] == -1, handleIndex == -1
 		ctrl->params[TransitCtrlModule<16>::PARAM + 0].setValue(0.9f);
-		ctrl->process(Test::makeProcessArgs(3));
+		h.dspStep();
 		REQUIRE(sender->changes.empty());
 	}
 
 	ctrl->setTransitCtrl(nullptr);
-	delete sender;
-	Test::destroyModule(ctrl);
 }
 
 
@@ -259,8 +238,9 @@ TEST_CASE("process() forwards knob changes to Transit using handleIndex", "[Tran
 // ===========================================================================
 
 TEST_CASE("No oscillation: Transit write does not trigger re-push", "[TransitCtrl]") {
-	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
-	MockSenderModule* sender = new MockSenderModule();
+	Test::Harness h;
+	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+	MockSenderModule* sender = h.adoptModule(new MockSenderModule());
 	ctrl->setTransitCtrl(sender);
 	ctrl->setMapping(3, 7);
 
@@ -268,12 +248,10 @@ TEST_CASE("No oscillation: Transit write does not trigger re-push", "[TransitCtr
 	ctrl->setCtrlParamValue(7, 0.8f);
 
 	// process() sees no delta so must not push anything back
-	ctrl->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	REQUIRE(sender->changes.empty());
 
 	ctrl->setTransitCtrl(nullptr);
-	delete sender;
-	Test::destroyModule(ctrl);
 }
 
 
@@ -282,8 +260,9 @@ TEST_CASE("No oscillation: Transit write does not trigger re-push", "[TransitCtr
 // ===========================================================================
 
 TEST_CASE("Target sync polling detects external target changes", "[TransitCtrl]") {
-	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
-	MockSenderModule* sender = new MockSenderModule();
+	Test::Harness h;
+	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+	MockSenderModule* sender = h.adoptModule(new MockSenderModule());
 	ctrl->setTransitCtrl(sender);
 	ctrl->setMapping(3, 7);
 	// After setMapping: lastParamValues[3] = sender->params[7].value = 0.5f
@@ -293,7 +272,7 @@ TEST_CASE("Target sync polling detects external target changes", "[TransitCtrl]"
 
 	// Prime the divider so it fires on the very next process() call
 	ctrl->targetSyncDivider.clock = ctrl->targetSyncDivider.division - 1;
-	ctrl->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	SECTION("Knob value is synced to the new target value") {
 		REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 3].getValue() == Catch::Approx(0.2f));
@@ -308,26 +287,23 @@ TEST_CASE("Target sync polling detects external target changes", "[TransitCtrl]"
 	}
 
 	ctrl->setTransitCtrl(nullptr);
-	delete sender;
-	Test::destroyModule(ctrl);
 }
 
 TEST_CASE("Target sync polling is silent when target has not changed", "[TransitCtrl]") {
-	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
-	MockSenderModule* sender = new MockSenderModule();
+	Test::Harness h;
+	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+	MockSenderModule* sender = h.adoptModule(new MockSenderModule());
 	ctrl->setTransitCtrl(sender);
 	ctrl->setMapping(3, 7);
 	// target and baseline are both 0.5f — no delta
 
 	ctrl->targetSyncDivider.clock = ctrl->targetSyncDivider.division - 1;
-	ctrl->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	REQUIRE(sender->changes.empty());
 	REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 3].getValue() == Catch::Approx(0.5f));
 
 	ctrl->setTransitCtrl(nullptr);
-	delete sender;
-	Test::destroyModule(ctrl);
 }
 
 
@@ -336,43 +312,42 @@ TEST_CASE("Target sync polling is silent when target has not changed", "[Transit
 // ===========================================================================
 
 TEST_CASE("setTransitCtrl wires ppqs and syncs initial values", "[TransitCtrl]") {
-	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
+	Test::Harness h;
+	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
 
 	SECTION("Before any connection, all ppqs have null transitCtrl") {
-		for (int i = 0; i < NUM_CTRL; i++)
+		for (int i = 0; i < NUM_CTRL; i++) {
 			REQUIRE(ctrl->ppqs[i]->transitCtrl == nullptr);
+		}
 	}
 
 	SECTION("After setTransitCtrl, all ppqs reference the sender") {
-		MockSenderModule* sender = new MockSenderModule();
+		MockSenderModule* sender = h.adoptModule(new MockSenderModule());
 		ctrl->setTransitCtrl(sender);
-		for (int i = 0; i < NUM_CTRL; i++)
+		for (int i = 0; i < NUM_CTRL; i++) {
 			REQUIRE(ctrl->ppqs[i]->transitCtrl == sender);
+		}
 		ctrl->setTransitCtrl(nullptr);
-		delete sender;
 	}
 
 	SECTION("setTransitCtrl syncs mapped knob values from targets") {
-		MockSenderModule* sender = new MockSenderModule();
+		MockSenderModule* sender = h.adoptModule(new MockSenderModule());
 		ctrl->setMapping(5, 2);  // knob 5 → Transit param 2
 		sender->params[2].setValue(0.7f);
 		ctrl->setTransitCtrl(sender);
 		REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 5].getValue() == Catch::Approx(0.7f));
 		REQUIRE(ctrl->lastParamValues[5] == Catch::Approx(0.7f));
 		ctrl->setTransitCtrl(nullptr);
-		delete sender;
 	}
 
 	SECTION("setTransitCtrl(nullptr) clears all transitCtrl pointers") {
-		MockSenderModule* sender = new MockSenderModule();
+		MockSenderModule* sender = h.adoptModule(new MockSenderModule());
 		ctrl->setTransitCtrl(sender);
 		ctrl->setTransitCtrl(nullptr);
-		for (int i = 0; i < NUM_CTRL; i++)
+		for (int i = 0; i < NUM_CTRL; i++) {
 			REQUIRE(ctrl->ppqs[i]->transitCtrl == nullptr);
-		delete sender;
+		}
 	}
-
-	Test::destroyModule(ctrl);
 }
 
 
@@ -381,19 +356,19 @@ TEST_CASE("setTransitCtrl wires ppqs and syncs initial values", "[TransitCtrl]")
 // ===========================================================================
 
 TEST_CASE("JSON serialization round-trip preserves mapping", "[TransitCtrl][JSON]") {
-	TransitCtrlModule<16>* ctrl1 = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
-	MockSenderModule* sender = new MockSenderModule();
+	Test::Harness h;
+	TransitCtrlModule<16>* ctrl1 = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+	MockSenderModule* sender = h.adoptModule(new MockSenderModule());
 	ctrl1->setTransitCtrl(sender);
 	ctrl1->setMapping(0, 15);
 	ctrl1->setMapping(3, 7);
 	ctrl1->setMapping(5, 2);
 	ctrl1->setTransitCtrl(nullptr);
-	delete sender;
 
 	json_t* rootJ = ctrl1->dataToJson();
 	REQUIRE(rootJ != nullptr);
 
-	TransitCtrlModule<16>* ctrl2 = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
+	TransitCtrlModule<16>* ctrl2 = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
 	ctrl2->dataFromJson(rootJ);
 
 	SECTION("Forward mappings are preserved") {
@@ -422,8 +397,6 @@ TEST_CASE("JSON serialization round-trip preserves mapping", "[TransitCtrl][JSON
 	}
 
 	json_decref(rootJ);
-	Test::destroyModule(ctrl1);
-	Test::destroyModule(ctrl2);
 }
 
 
@@ -432,28 +405,27 @@ TEST_CASE("JSON serialization round-trip preserves mapping", "[TransitCtrl][JSON
 // ===========================================================================
 
 TEST_CASE("Integration - Transit discovers TransitCtrl as immediate right expander", "[TransitCtrl]") {
-	Test::SimpleEngine engine;
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
-	engine.registerModules(transit, ctrl);
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
 
 	SECTION("Before connection, ctrl has no transitCtrl") {
 		REQUIRE(ctrl->ppqs[0]->transitCtrl == nullptr);
 	}
 
 	SECTION("After connection, Transit injects its own pointer into ctrl") {
-		connectCtrl(engine, transit, ctrl);
+		h.connectExpander(transit, ctrl);
+		h.dspStep(); // Transit re-scans and calls ctrl->setTransitCtrl(transit)
 		REQUIRE(ctrl->ppqs[0]->transitCtrl == transit);
 	}
 
 	SECTION("After disconnection, transitCtrl is cleared") {
-		connectCtrl(engine, transit, ctrl);
-		disconnectCtrl(engine, transit, ctrl);
+		h.connectExpander(transit, ctrl);
+		h.dspStep(); // Transit re-scans and calls ctrl->setTransitCtrl(transit)
+		h.disconnectExpander(transit, Test::Harness::SIDE_RIGHT);
+		h.dspStep(); // Transit re-scans (finds nothing)
 		REQUIRE(ctrl->ppqs[0]->transitCtrl == nullptr);
 	}
-
-	Test::destroyModule(ctrl);
-	Test::destroyModule(transit);
 }
 
 
@@ -469,7 +441,7 @@ static Module* createExModule(TransitBase<12>** baseOut = nullptr) {
 	m->id = Test::getModuleId();
 
 	Module::SampleRateChangeEvent e;
-	e.sampleRate = APP->engine->getSampleRate();
+	e.sampleRate = Test::sampleRate();
 	e.sampleTime = 1.0f / e.sampleRate;
 	m->onSampleRateChange(e);
 
@@ -482,141 +454,105 @@ static Module* createExModule(TransitBase<12>** baseOut = nullptr) {
 
 // Helper: wire the chain [Transit] [TransitEx] [TransitCtrl] and trigger
 // the listener callbacks so Transit re-scans and picks up the ctrl.
-template<typename T>
-static void connectExThenCtrl(T& engine, TransitModule<12>* transit, Module* exModule, TransitCtrlModule<16>* ctrl) {
-	transit->rightExpander.module = exModule;
-	transit->rightExpander.moduleId = exModule->id;
-	exModule->leftExpander.module = transit;
-	exModule->leftExpander.moduleId = transit->id;
-	exModule->rightExpander.module = ctrl;
-	exModule->rightExpander.moduleId = ctrl->id;
-	ctrl->leftExpander.module = exModule;
-	ctrl->leftExpander.moduleId = exModule->id;
-	Module::ExpanderChangeEvent e;
-	ctrl->onExpanderChange(e);     // clears old transitCtrl; notifies Transit (expandersChanged=true)
-	exModule->onExpanderChange(e); // notifies Transit again (idempotent)
-	transit->onExpanderChange(e);  // notifies Transit (idempotent)
-	engine.stepBlock(1);           // Transit re-scans: walks TransitEx, then discovers TransitCtrl
+static void connectExThenCtrl(Test::Harness& h, TransitModule<12>* transit, Module* exModule, TransitCtrlModule<16>* ctrl) {
+	h.connectChain(transit, exModule, ctrl);
+	h.dspStep();           // Transit re-scans: walks TransitEx, then discovers TransitCtrl
 }
 
 
 TEST_CASE("Integration - Transit discovers TransitCtrl placed after TransitEx", "[TransitCtrl]") {
-	Test::SimpleEngine engine;
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
 	TransitBase<12>* exBase = nullptr;
-	Module* exModule = createExModule(&exBase);
-	engine.registerModules(transit, exModule, ctrl);
+	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
 
 	SECTION("Before connection, ctrl has no transitCtrl") {
 		REQUIRE(ctrl->ppqs[0]->transitCtrl == nullptr);
 	}
 
 	SECTION("After connecting [Transit] [TransitEx] [TransitCtrl], Transit discovers the ctrl") {
-		connectExThenCtrl(engine, transit, exModule, ctrl);
+		connectExThenCtrl(h, transit, exModule, ctrl);
 		REQUIRE(ctrl->ppqs[0]->transitCtrl == transit);
 	}
 
 	SECTION("TransitEx is still discovered and counted in presetTotal") {
-		connectExThenCtrl(engine, transit, exModule, ctrl);
+		connectExThenCtrl(h, transit, exModule, ctrl);
 		REQUIRE(transit->presetTotal == 24);
 		REQUIRE(exBase->ctrlOffset == 1);
 	}
 
 	SECTION("Removing TransitEx but keeping TransitCtrl re-binds ctrl to Transit directly") {
-		connectExThenCtrl(engine, transit, exModule, ctrl);
+		connectExThenCtrl(h, transit, exModule, ctrl);
 		REQUIRE(ctrl->ppqs[0]->transitCtrl == transit);
 
 		// Disconnect TransitEx: re-wire transit.rightExpander -> ctrl directly
-		transit->rightExpander.module = ctrl;
-		transit->rightExpander.moduleId = ctrl->id;
-		exModule->leftExpander.module = nullptr;
-		exModule->leftExpander.moduleId = -1;
-		exModule->rightExpander.module = nullptr;
-		exModule->rightExpander.moduleId = -1;
-		ctrl->leftExpander.module = transit;
-		ctrl->leftExpander.moduleId = transit->id;
-		Module::ExpanderChangeEvent e;
-		ctrl->onExpanderChange(e);
-		transit->onExpanderChange(e);
-		engine.stepBlock(1);
+		h.disconnectExpander(exModule, Test::Harness::SIDE_LEFT);
+		h.disconnectExpander(exModule, Test::Harness::SIDE_RIGHT);
+		h.connectExpander(transit, ctrl);
+		h.dspStep();
 
 		REQUIRE(transit->presetTotal == 12);
 		REQUIRE(ctrl->ppqs[0]->transitCtrl == transit);
 	}
 
 	SECTION("Removing TransitCtrl from the [Transit][TransitEx][TransitCtrl] chain clears transitCtrl") {
-		connectExThenCtrl(engine, transit, exModule, ctrl);
+		connectExThenCtrl(h, transit, exModule, ctrl);
 		REQUIRE(ctrl->ppqs[0]->transitCtrl == transit);
 
 		// Disconnect TransitCtrl only
-		exModule->rightExpander.module = nullptr;
-		exModule->rightExpander.moduleId = -1;
-		ctrl->leftExpander.module = nullptr;
-		ctrl->leftExpander.moduleId = -1;
-		Module::ExpanderChangeEvent e;
-		ctrl->onExpanderChange(e);    // clears transitCtrl; notifies Transit
-		exModule->onExpanderChange(e);
-		transit->onExpanderChange(e);
-		engine.stepBlock(1);
+		h.disconnectExpander(exModule, Test::Harness::SIDE_RIGHT);
+		h.dspStep();
 
 		REQUIRE(ctrl->ppqs[0]->transitCtrl == nullptr);
 		REQUIRE(transit->presetTotal == 24);
 	}
-
-	delete exModule;
-	Test::destroyModule(ctrl);
-	Test::destroyModule(transit);
 }
 
 
 TEST_CASE("Integration - knob change propagates to mapped target parameter", "[TransitCtrl]") {
-	Test::SimpleEngine engine;
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+	ScopedModules cleanup;
 	CtrlTestModule* testMod = new CtrlTestModule();
+	testMod->id = Test::getModuleId();
 	Test::registerModule(testMod);
-	Test::registerModule(transit);
-	Test::registerModule(ctrl);
-	//engine.registerModules(testMod, transit, ctrl);
+	cleanup.mods.push_back(testMod);
 
 	transit->bindAddParameterRequest(testMod->id, CtrlTestModule::PARAM_A);
 	transit->taskProcessorDsp.process();
 
-	connectCtrl(*APP->engine, transit, ctrl);
+	h.connectExpander(transit, ctrl);
+	h.dspStep(); // Transit re-scans and calls ctrl->setTransitCtrl(transit)
 	ctrl->setMapping(0, 0);
 
 	transit->params[TransitModule<12>::PARAM_FADE].setValue(0.f);
-	APP->engine->stepBlock(512);
+	h.dspSteps(512);
 
 	// Move knob 0 to 0.8
 	ctrl->params[TransitCtrlModule<16>::PARAM + 0].setValue(0.8f);
-	APP->engine->stepBlock(512);	  // ctrl pushes change; transit drains queue and applies to target
+	h.dspSteps(512);	  // ctrl pushes change; transit drains queue and applies to target
 
 	REQUIRE(testMod->params[CtrlTestModule::PARAM_A].getValue() == Catch::Approx(0.8f).margin(0.01f));
-
-	Test::unregisterModule(ctrl);
-	Test::unregisterModule(transit);
-	Test::unregisterModule(testMod);
-	delete testMod;
-	Test::destroyModule(ctrl);
-	Test::destroyModule(transit);
 }
 
 
 TEST_CASE("Integration - Transit fade mirrors value into TransitCtrl knob", "[TransitCtrl]") {
-	Test::SimpleEngine engine;
-	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+	ScopedModules cleanup;
 	CtrlTestModule* testMod = new CtrlTestModule();
+	testMod->id = Test::getModuleId();
 	Test::registerModule(testMod);
-	Test::registerModule(transit);
-	Test::registerModule(ctrl);
+	cleanup.mods.push_back(testMod);
 
 	transit->bindAddParameterRequest(testMod->id, CtrlTestModule::PARAM_A);
 	transit->taskProcessorDsp.process();
 
-	connectCtrl(*APP->engine, transit, ctrl);
+	h.connectExpander(transit, ctrl);
+	h.dspStep(); // Transit re-scans and calls ctrl->setTransitCtrl(transit)
 	ctrl->setMapping(0, 0);
 
 	testMod->params[CtrlTestModule::PARAM_A].setValue(1.0f);
@@ -625,7 +561,7 @@ TEST_CASE("Integration - Transit fade mirrors value into TransitCtrl knob", "[Tr
 	transit->presetSave(1);
 	// Large fade value ensures the transition completes within the first divider fire
 	transit->slot[1].setFadeTime(1000.f);
-	APP->engine->stepBlock(512);
+	h.dspSteps(512);
 
 	// Reset current value to 0 so fade goes from 0 → 1 (non-trivial crossfade)
 	testMod->params[CtrlTestModule::PARAM_A].setValue(0.0f);
@@ -633,18 +569,11 @@ TEST_CASE("Integration - Transit fade mirrors value into TransitCtrl knob", "[Tr
 
 	// 100 steps covers the first presetProcessDivider fire (division=64),
 	// at which point the fade completes and calls setCtrlParamValue(0, 1.0f)
-	APP->engine->stepBlock(APP->engine->getSampleRate());
+	h.dspSteps(Test::sampleRate());
 
 	// Transit writes the fade result to PARAM_A and mirrors it to ctrl via setCtrlParamValue
 	REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 0].getValue() == Catch::Approx(1.0f).margin(0.01f));
 
 	// The mirror write must not have re-queued a change back to Transit
 	REQUIRE(transit->ctrlChangeQueue.empty());
-
-	Test::unregisterModule(ctrl);
-	Test::unregisterModule(transit);
-	Test::unregisterModule(testMod);
-	delete testMod;
-	Test::destroyModule(ctrl);
-	Test::destroyModule(transit);
 }
