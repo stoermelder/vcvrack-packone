@@ -172,5 +172,20 @@ struct SyncTaskWorker : ITaskWorker {
 }; // struct SyncTaskWorker
 
 
+// Discards every task without running it and spins up no thread. For tests that inject a worker
+// only to keep a module's real async worker (and its thread) from ever being constructed, and
+// that neither call the task body directly (see var/TaskWorker_existing_modules.md) nor otherwise
+// care what work() was asked to do. Never use this where a test needs the task to have run —
+// use SyncTaskWorker for that, or call the task method directly.
+struct NullTaskWorker : ITaskWorker {
+	bool work(std::function<void()> task) override { return false; }
+	bool work(std::function<void()> task, Context* context) override { return false; }
+	bool work(std::function<void(std::atomic<bool>&)> task) override { return false; }
+	bool work(std::function<void(std::atomic<bool>&)> task, Context* context) override { return false; }
+	// No thread exists, so no thread is ever "the worker thread".
+	bool isWorkerThread() const override { return false; }
+}; // struct NullTaskWorker
+
+
 
 } // namespace StoermelderPackOne

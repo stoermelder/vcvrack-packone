@@ -17,6 +17,7 @@
     - Fixed a background worker that could stall indefinitely
     - Fixed broken "Cancel tag classification"
 - Module [STRIP](./docs/strip/Strip.md)
+    - Reduced resource consumption (one shared worker for all STRIP modules)
     - Fixed a background worker that could stall indefinitely
 
 ## 2.6.0
