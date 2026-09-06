@@ -50,20 +50,6 @@ struct CtrlTestModule : rack::Module {
 	}
 };
 
-// Cleanup must be exception-safe: a REQUIRE failure skips trailing cleanup, and a
-// leaked registered module stays in the engine. ScopedModules unregisters+destroys
-// even on throw (same pattern as Transit.test.cpp). The CtrlTestModule target gets
-// an explicit id so it never takes the random-id path.
-struct ScopedModules {
-	std::vector<rack::Module*> mods;
-	~ScopedModules() {
-		for (auto it = mods.rbegin(); it != mods.rend(); ++it) {
-			Test::unregisterModule(*it);
-			Test::destroyModule(*it);
-		}
-	}
-};
-
 // ===========================================================================
 // Construction
 // ===========================================================================
@@ -514,11 +500,7 @@ TEST_CASE("Integration - knob change propagates to mapped target parameter", "[T
 	Test::Harness h;
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
 	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
-	ScopedModules cleanup;
-	CtrlTestModule* testMod = new CtrlTestModule();
-	testMod->id = Test::getModuleId();
-	Test::registerModule(testMod);
-	cleanup.mods.push_back(testMod);
+	CtrlTestModule* testMod = h.adoptModule(new CtrlTestModule);
 
 	transit->bindAddParameterRequest(testMod->id, CtrlTestModule::PARAM_A);
 	transit->taskProcessorDsp.process();
@@ -542,11 +524,7 @@ TEST_CASE("Integration - Transit fade mirrors value into TransitCtrl knob", "[Tr
 	Test::Harness h;
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
 	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
-	ScopedModules cleanup;
-	CtrlTestModule* testMod = new CtrlTestModule();
-	testMod->id = Test::getModuleId();
-	Test::registerModule(testMod);
-	cleanup.mods.push_back(testMod);
+	CtrlTestModule* testMod = h.adoptModule(new CtrlTestModule);
 
 	transit->bindAddParameterRequest(testMod->id, CtrlTestModule::PARAM_A);
 	transit->taskProcessorDsp.process();
