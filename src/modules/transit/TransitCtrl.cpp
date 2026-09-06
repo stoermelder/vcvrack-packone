@@ -202,7 +202,7 @@ struct TransitCtrlModule : Module, TransitCtrlReceiver {
 		// Clear proxy targets on any expander change; Transit re-injects its pointer
 		// via setTransitCtrl() in the next process() tick if still connected.
 		setTransitCtrl(nullptr);
-		notifyExpanderListeners("Transit");
+		notifyModuleListeners("Transit");
 	}
 
 	void process(const Module::ProcessArgs& args) override {
