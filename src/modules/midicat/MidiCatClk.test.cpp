@@ -17,16 +17,6 @@ struct TestParamModule : Module {
 	}
 };
 
-// Helper: connect MidiCatClk to MidiCat as right expander and let MidiCat discover it.
-// After connectClk(), expClk is non-null and all ClkExpanderDriver triggers are in LOW state (primed
-// by the process() call inside which reads 0V from all unconnected inputs).
-static void connectClk(Test::Harness& h, MidiCatModule* midicat, MidiCatClkModule* clk) {
-	midicat->rightExpander.module = clk;
-	clk->leftExpander.module = midicat;
-	midicat->moduleChangedFlag = true;
-	h.dspStep();
-}
-
 // Helper: send a low-then-high-then-low clock pulse on clock input `input`.
 // Assumes the SchmittTrigger for that input is already primed to LOW (guaranteed
 // after connectClk()).
@@ -123,7 +113,8 @@ TEST_CASE("MidiCat detects expander", "[MidiCatClk][MidiCat]") {
 	h.dspStep();
 	REQUIRE(midicat->expanders.clk() == nullptr);
 
-	connectClk(h, midicat, clk);
+	h.connectExpander(midicat, clk);
+	h.dspStep();
 
 	REQUIRE(midicat->expanders.clk() != nullptr);
 	REQUIRE(midicat->expanders.clk() == clk);
@@ -139,7 +130,8 @@ TEST_CASE("Disconnecting expander clears expClk and resets clockModes", "[MidiCa
 	Test::registerModule(midicat);
 	Test::registerModule(clk);
 
-	connectClk(h, midicat, clk);
+	h.connectExpander(midicat, clk);
+	h.dspStep();
 	REQUIRE(midicat->expanders.clk() != nullptr);
 
 	// Set some clock modes to non-OFF
@@ -147,9 +139,7 @@ TEST_CASE("Disconnecting expander clears expClk and resets clockModes", "[MidiCa
 	midicat->setClockMode(1, MidiCatParam::CLOCKMODE::ARM_DEFERRED_FEEDBACK);
 
 	// Disconnect
-	midicat->rightExpander.module = nullptr;
-	clk->leftExpander.module = nullptr;
-	midicat->moduleChangedFlag = true;
+	h.disconnectExpander(midicat, Test::Harness::SIDE_RIGHT);
 	h.dspStep();
 
 	REQUIRE(midicat->expanders.clk() == nullptr);
@@ -179,7 +169,8 @@ TEST_CASE("ARM mode defers param update until clock tick", "[MidiCatClk][MidiCat
 	midicat->setClockMode(0, MidiCatParam::CLOCKMODE::ARM);
 	midicat->slots[0].param.clockSource = 0;
 
-	connectClk(h, midicat, clk);
+	h.connectExpander(midicat, clk);
+	h.dspStep();
 
 	// Send new CC value 100 — param should NOT change yet (ARM holds it)
 	midicat->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 7, 100));
@@ -215,7 +206,8 @@ TEST_CASE("ARM mode ignores clock on wrong source", "[MidiCatClk][MidiCat]") {
 	midicat->setClockMode(0, MidiCatParam::CLOCKMODE::ARM);
 	midicat->slots[0].param.clockSource = 2;  // param listens to clock 2
 
-	connectClk(h, midicat, clk);
+	h.connectExpander(midicat, clk);
+	h.dspStep();
 
 	// Send new MIDI value (will be deferred)
 	midicat->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 7, 100));
@@ -249,7 +241,8 @@ TEST_CASE("ARM_DEFERRED_FEEDBACK withholds MIDI feedback until clock tick", "[Mi
 	midicat->setClockMode(0, MidiCatParam::CLOCKMODE::ARM_DEFERRED_FEEDBACK);
 	midicat->slots[0].param.clockSource = 0;
 
-	connectClk(h, midicat, clk);
+	h.connectExpander(midicat, clk);
+	h.dspStep();
 
 	// Send CC 7 = 40 → stored as deferred (ARM_DEFERRED_FEEDBACK doesn't apply yet)
 	midicat->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 7, 40));
@@ -291,7 +284,8 @@ TEST_CASE("Each of the four clock inputs fires its trigger", "[MidiCatClk][MidiC
 		midicat->setClockMode(0, MidiCatParam::CLOCKMODE::ARM);
 		midicat->slots[0].param.clockSource = input;
 
-		connectClk(h, midicat, clk);
+		h.connectExpander(midicat, clk);
+		h.dspStep();
 
 		// Establish baseline: send CC 64, tick clock `input` to settle param
 		midicat->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 7, 64));

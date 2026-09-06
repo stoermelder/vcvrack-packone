@@ -302,7 +302,6 @@ TEST_CASE("onReset clears playback state and sequence data", "[ReMove][init]") {
 	for (int i = 0; i < REMOVE_MAX_SEQ; i++) {
 		REQUIRE(module->seqLength[i] == 0);
 	}
-
 }
 
 
@@ -330,7 +329,6 @@ TEST_CASE("seqResize sets count, resets playback, zeros lengths", "[ReMove][seq]
 	for (int i = 0; i < REMOVE_MAX_SEQ; i++) {
 		REQUIRE(module->seqLength[i] == 0);
 	}
-
 }
 
 TEST_CASE("seqResize is a no-op while recording", "[ReMove][seq]") {
@@ -344,7 +342,6 @@ TEST_CASE("seqResize is a no-op while recording", "[ReMove][seq]") {
 
 	// isRecording guard short-circuits; seqCount unchanged.
 	REQUIRE(module->seqCount == 4);
-
 }
 
 TEST_CASE("seqUpdate sets seqLow/seqHigh based on seq and seqCount", "[ReMove][seq]") {
@@ -369,7 +366,6 @@ TEST_CASE("seqUpdate sets seqLow/seqHigh based on seq and seqCount", "[ReMove][s
 	module->seqUpdate();
 	REQUIRE(module->seqLow == 7 * s);
 	REQUIRE(module->seqHigh == 8 * s);
-
 }
 
 TEST_CASE("seqNext cycles and wraps around", "[ReMove][seq]") {
@@ -386,7 +382,6 @@ TEST_CASE("seqNext cycles and wraps around", "[ReMove][seq]") {
 	REQUIRE(module->seq == 3);
 	module->seqNext(); // wrap
 	REQUIRE(module->seq == 0);
-
 }
 
 TEST_CASE("seqPrev cycles backwards and wraps", "[ReMove][seq]") {
@@ -404,7 +399,6 @@ TEST_CASE("seqPrev cycles backwards and wraps", "[ReMove][seq]") {
 	REQUIRE(module->seq == 1);
 	module->seqPrev();
 	REQUIRE(module->seq == 0);
-
 }
 
 TEST_CASE("seqNext with skipEmpty advances past empty sequences", "[ReMove][seq]") {
@@ -421,7 +415,6 @@ TEST_CASE("seqNext with skipEmpty advances past empty sequences", "[ReMove][seq]
 
 	module->seqNext(true); // should skip seq 0 (empty) and land on seq 1
 	REQUIRE(module->seq == 1);
-
 }
 
 TEST_CASE("seqSet ignores same-value calls", "[ReMove][seq]") {
@@ -432,7 +425,6 @@ TEST_CASE("seqSet ignores same-value calls", "[ReMove][seq]") {
 
 	module->seqSet(2);
 	REQUIRE(module->seq == 2); // unchanged
-
 }
 
 TEST_CASE("seqSet clamps to valid range", "[ReMove][seq]") {
@@ -445,7 +437,6 @@ TEST_CASE("seqSet clamps to valid range", "[ReMove][seq]") {
 
 	module->seqSet(-5); // negative
 	REQUIRE(module->seq == 0); // clamped to 0
-
 }
 
 TEST_CASE("seqRand always lands within seqCount", "[ReMove][seq]") {
@@ -458,11 +449,11 @@ TEST_CASE("seqRand always lands within seqCount", "[ReMove][seq]") {
 		REQUIRE(module->seq >= 0);
 		REQUIRE(module->seq < 4);
 	}
-
 }
 
 TEST_CASE("SEQCHANGEMODE_RESTART resets dataPtr and playDir on seqUpdate", "[ReMove][seq]") {
-	auto module = Test::createModule<ReMoveModule>("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->seqResize(4);
 	module->seqChangeMode = SEQCHANGEMODE_RESTART;
 	module->seq = 1;
@@ -491,64 +482,60 @@ TEST_CASE("SEQCHANGEMODE_OFFSET preserves relative position when switching seque
 	// OFFSET mode maps the prior index modulo the new seq length, offset by seqLow.
 	int s = REMOVE_MAX_DATA / 4;
 	REQUIRE(module->dataPtr == s + (25 % s) % 50);
-
 }
 
 
 // Process / output behaviour
 
 TEST_CASE("REC output is 0V by default (no recording)", "[ReMove][process]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->recOutCvMode = RECOUTCVMODE_GATE;
 
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	REQUIRE(module->outputs[ReMoveModule::REC_OUTPUT].getVoltage() == 0.f);
-
 }
 
 TEST_CASE("process() is safe with no mapped parameter", "[ReMove][process]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	// Without any param mapping, the module has no paramQuantity for index 0.
 	// Pressing REC must not start recording.
 	module->params[ReMoveModule::REC_PARAM].setValue(1.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	REQUIRE(module->isRecording == false);
-
 }
 
 TEST_CASE("RUN_PARAM button toggles isPlaying", "[ReMove][process]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 
 	REQUIRE(module->isPlaying == false);
 
 	// Initialize the BooleanTrigger state by processing a low value first.
 	module->params[ReMoveModule::RUN_PARAM].setValue(0.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	// Press the RUN button (BooleanTrigger fires on rising edge).
 	module->params[ReMoveModule::RUN_PARAM].setValue(1.f);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 	REQUIRE(module->isPlaying == true);
 
 	// Release (no edge -> no toggle).
 	module->params[ReMoveModule::RUN_PARAM].setValue(0.f);
-	module->process(Test::makeProcessArgs(3));
+	h.dspStep();
 	REQUIRE(module->isPlaying == true);
 
 	// Press again -> toggle off.
 	module->params[ReMoveModule::RUN_PARAM].setValue(1.f);
-	module->process(Test::makeProcessArgs(4));
+	h.dspStep();
 	REQUIRE(module->isPlaying == false);
-
 }
 
 TEST_CASE("RESET_PARAM button resets dataPtr to seqLow and playDir to FWD", "[ReMove][process]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->seqResize(4);
 	module->seq = 1;
 	module->dataPtr = 5000;
@@ -556,87 +543,83 @@ TEST_CASE("RESET_PARAM button resets dataPtr to seqLow and playDir to FWD", "[Re
 
 	// Initialize SchmittTrigger state for resetCvTrigger.
 	module->params[ReMoveModule::RESET_PARAM].setValue(0.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	module->params[ReMoveModule::RESET_PARAM].setValue(1.f);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 
 	REQUIRE(module->dataPtr == module->seqLow);
 	REQUIRE(module->playDir == REMOVE_PLAYDIR_FWD);
-
 }
 
 TEST_CASE("SEQ_PARAM buttons cycle through sequences", "[ReMove][process]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->seqResize(4);
 	module->seq = 0;
 
 	// Initialize SchmittTrigger state (UNINITIALIZED → LOW) before pressing.
 	module->params[ReMoveModule::SEQN_PARAM].setValue(0.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	module->params[ReMoveModule::SEQN_PARAM].setValue(1.f);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 	REQUIRE(module->seq == 1);
 
 	// Re-initialize SEQP trigger.
 	module->params[ReMoveModule::SEQP_PARAM].setValue(0.f);
-	module->process(Test::makeProcessArgs(3));
+	h.dspStep();
 
 	module->params[ReMoveModule::SEQP_PARAM].setValue(1.f);
-	module->process(Test::makeProcessArgs(4));
+	h.dspStep();
 	REQUIRE(module->seq == 0);
-
 }
 
 TEST_CASE("RUN_INPUT gate mode drives isPlaying from voltage", "[ReMove][process]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->runCvMode = RUNCVMODE_GATE;
 	module->inputs[ReMoveModule::RUN_INPUT].channels = 1;
 
 	module->inputs[ReMoveModule::RUN_INPUT].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	REQUIRE(module->isPlaying == false);
 
 	module->inputs[ReMoveModule::RUN_INPUT].setVoltage(5.f);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 	REQUIRE(module->isPlaying == true);
 
 	module->inputs[ReMoveModule::RUN_INPUT].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(3));
+	h.dspStep();
 	REQUIRE(module->isPlaying == false);
-
 }
 
 TEST_CASE("RUN_INPUT trigger mode toggles isPlaying on edges", "[ReMove][process]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->runCvMode = RUNCVMODE_TRIG;
 	module->inputs[ReMoveModule::RUN_INPUT].channels = 1;
 
 	module->inputs[ReMoveModule::RUN_INPUT].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	REQUIRE(module->isPlaying == false);
 
 	module->inputs[ReMoveModule::RUN_INPUT].setVoltage(5.f); // rising edge
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 	REQUIRE(module->isPlaying == true);
 
 	module->inputs[ReMoveModule::RUN_INPUT].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(3));
+	h.dspStep();
 	REQUIRE(module->isPlaying == true); // no toggle, just gate-off
 
 	module->inputs[ReMoveModule::RUN_INPUT].setVoltage(5.f); // rising edge again
-	module->process(Test::makeProcessArgs(4));
+	h.dspStep();
 	REQUIRE(module->isPlaying == false);
-
 }
 
 TEST_CASE("SEQ_INPUT in 0..10V mode selects sequence", "[ReMove][process]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->seqResize(4);
 	module->seqCvMode = SEQCVMODE_10V;
 	module->inputs[ReMoveModule::SEQ_INPUT].channels = 1;
@@ -647,45 +630,39 @@ TEST_CASE("SEQ_INPUT in 0..10V mode selects sequence", "[ReMove][process]") {
 	// starts counting, so SEQ_INPUT is ignored. We exercise the path by pressing
 	// RESET first, then driving SEQ_INPUT.
 	module->params[ReMoveModule::RESET_PARAM].setValue(1.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	module->params[ReMoveModule::RESET_PARAM].setValue(0.f);
 
 	// Drive enough samples for resetCvTimer to elapse (>= 1e-3f) — at 44100Hz, ~45 samples.
-	for (int i = 0; i < 100; i++) {
-		module->inputs[ReMoveModule::SEQ_INPUT].setVoltage(7.5f); // 7.5/10 * 4 = 3.0 → seq 3
-		module->process(Test::makeProcessArgs(2 + i));
-	}
+	module->inputs[ReMoveModule::SEQ_INPUT].setVoltage(7.5f); // 7.5/10 * 4 = 3.0 → seq 3
+	h.dspSteps(100);
 
 	// 7.5V / 10V * 4 = 3.0 (floor) → seq 3.
 	REQUIRE(module->seq == 3);
-
 }
 
 TEST_CASE("SEQ_INPUT in C4-G4 mode selects sequence from voltage", "[ReMove][process]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->seqResize(4);
 	module->seqCvMode = SEQCVMODE_C4;
 	module->inputs[ReMoveModule::SEQ_INPUT].channels = 1;
 	module->seq = 0;
 
 	module->params[ReMoveModule::RESET_PARAM].setValue(1.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	module->params[ReMoveModule::RESET_PARAM].setValue(0.f);
 
 	// Voltage * 12 = seq index. 0.5V → 6 → clamp(seqCount-1).
-	for (int i = 0; i < 100; i++) {
-		module->inputs[ReMoveModule::SEQ_INPUT].setVoltage(0.5f);
-		module->process(Test::makeProcessArgs(2 + i));
-	}
+	module->inputs[ReMoveModule::SEQ_INPUT].setVoltage(0.5f);
+	h.dspSteps(100);
 
 	REQUIRE(module->seq == 3); // clamped to seqCount-1
-
 }
 
 TEST_CASE("PHASE_INPUT connection forces isPlaying to false", "[ReMove][process]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->seqResize(4);
 
 	// isPlaying becomes false as soon as PHASE_INPUT is connected during process().
@@ -693,44 +670,39 @@ TEST_CASE("PHASE_INPUT connection forces isPlaying to false", "[ReMove][process]
 	module->inputs[ReMoveModule::PHASE_INPUT].channels = 1;
 	module->inputs[ReMoveModule::PHASE_INPUT].setVoltage(5.f);
 
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	REQUIRE(module->isPlaying == false);
-
 }
 
 TEST_CASE("REC_OUTPUT gate mode is high while recording", "[ReMove][process]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->recOutCvMode = RECOUTCVMODE_GATE;
 	module->recMode = RECMODE_MANUAL; // bypasses recTouched gates
 	module->isRecording = true;
 
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	REQUIRE(module->outputs[ReMoveModule::REC_OUTPUT].getVoltage() == 10.f);
 
 	module->isRecording = false;
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 	REQUIRE(module->outputs[ReMoveModule::REC_OUTPUT].getVoltage() == 0.f);
-
 }
 
 TEST_CASE("REC_OUTPUT trigger mode produces a one-shot pulse", "[ReMove][process]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->recOutCvMode = RECOUTCVMODE_TRIG;
 	module->recOutCvPulse.trigger(0.001f); // 1ms pulse
 	module->isRecording = true;
 
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	REQUIRE(module->outputs[ReMoveModule::REC_OUTPUT].getVoltage() == Catch::Approx(10.f));
 
 	// Wait long enough for the pulse to decay.
-	for (int i = 0; i < 10000; i++) {
-		module->process(Test::makeProcessArgs(2 + i));
-	}
+	h.dspSteps(10000);
 	REQUIRE(module->outputs[ReMoveModule::REC_OUTPUT].getVoltage() == Catch::Approx(0.f).margin(1e-3f));
-
 }
 
 
@@ -752,7 +724,6 @@ TEST_CASE("OUTCVMODE_CV_UNI rescales 0..1 to 0..10V", "[ReMove][out]") {
 	module->setValue(0.5f, nullptr);
 
 	REQUIRE(module->outputs[ReMoveModule::CV_OUTPUT].getVoltage() == Catch::Approx(5.f));
-
 }
 
 TEST_CASE("OUTCVMODE_CV_BI rescales 0..1 to -5..5V", "[ReMove][out]") {
@@ -768,12 +739,11 @@ TEST_CASE("OUTCVMODE_CV_BI rescales 0..1 to -5..5V", "[ReMove][out]") {
 	module->setValue(0.5f, nullptr);
 
 	REQUIRE(module->outputs[ReMoveModule::CV_OUTPUT].getVoltage() == Catch::Approx(0.f));
-
 }
 
 TEST_CASE("Empty sequence passes through CV_INPUT when not playing", "[ReMove][out]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->outCvMode = OUTCVMODE_CV_UNI;
 	module->inCvMode = INCVMODE_UNI;
 	module->seqResize(4);
@@ -783,15 +753,14 @@ TEST_CASE("Empty sequence passes through CV_INPUT when not playing", "[ReMove][o
 	module->inputs[ReMoveModule::CV_INPUT].channels = 1;
 	module->inputs[ReMoveModule::CV_INPUT].setVoltage(5.f); // → 0.5 normalized
 
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	REQUIRE(module->outputs[ReMoveModule::CV_OUTPUT].getVoltage() == Catch::Approx(5.f));
-
 }
 
 TEST_CASE("INCVMODE_BI rescales -5..5V to 0..1 from CV_INPUT", "[ReMove][out]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->outCvMode = OUTCVMODE_CV_UNI;
 	module->inCvMode = INCVMODE_BI;
 	module->seqResize(4);
@@ -802,9 +771,8 @@ TEST_CASE("INCVMODE_BI rescales -5..5V to 0..1 from CV_INPUT", "[ReMove][out]") 
 
 	// 0V in BI mode → midpoint (0.5 normalized) → 5V CV.
 	module->inputs[ReMoveModule::CV_INPUT].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	REQUIRE(module->outputs[ReMoveModule::CV_OUTPUT].getVoltage() == Catch::Approx(5.f));
-
 }
 
 // Recording lifecycle
@@ -819,7 +787,6 @@ TEST_CASE("setParameterChangesDirect toggles the parameterChangesDirect flag", "
 
 	module->setParameterChangesDirect(false);
 	REQUIRE(module->parameterChangesDirect == false);
-
 }
 
 TEST_CASE("startRecording zeros seqLength and resets dataPtr (without a mapped param it is unreachable)", "[ReMove][rec]") {
@@ -841,7 +808,6 @@ TEST_CASE("startRecording zeros seqLength and resets dataPtr (without a mapped p
 	REQUIRE(module->isRecording == true);
 	REQUIRE(module->seqLength[1] == 0);
 	REQUIRE(module->dataPtr == module->seqLow);
-
 }
 
 TEST_CASE("stopRecording sets isRecording=false and resets dataPtr", "[ReMove][rec]") {
@@ -856,7 +822,6 @@ TEST_CASE("stopRecording sets isRecording=false and resets dataPtr", "[ReMove][r
 
 	REQUIRE(module->isRecording == false);
 	REQUIRE(module->dataPtr == module->seqLow);
-
 }
 
 TEST_CASE("enableLearn is suppressed during recording", "[ReMove][learn]") {
@@ -870,7 +835,6 @@ TEST_CASE("enableLearn is suppressed during recording", "[ReMove][learn]") {
 	// enableLearn in MapModuleBase sets learningId = id when not recording.
 	// Recording should suppress this.
 	REQUIRE(module->learningId == -1);
-
 }
 
 TEST_CASE("enableLearn works when not recording", "[ReMove][learn]") {
@@ -882,24 +846,19 @@ TEST_CASE("enableLearn works when not recording", "[ReMove][learn]") {
 	module->enableLearn(0);
 
 	REQUIRE(module->learningId == 0);
-
 }
 
 
 // Lights
 
 TEST_CASE("SEQ lights reflect active sequence and total count", "[ReMove][lights]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->seqResize(4);
 	module->seq = 2;
 
 	// Drive enough samples for lightDivider to fire (sampleRate / 100).
-	auto args = Test::makeProcessArgs(1);
-	for (int i = 0; i < 1000; i++) {
-		args.frame = i;
-		module->process(args);
-	}
+	h.dspSteps(1000);
 
 	// Active seq light should be brighter than inactive ones.
 	float activeBrightness = module->lights[ReMoveModule::SEQ_LIGHT + 2].getBrightness();
@@ -910,33 +869,24 @@ TEST_CASE("SEQ lights reflect active sequence and total count", "[ReMove][lights
 	// Sequences beyond seqCount should have zero brightness.
 	float beyondSeqCount = module->lights[ReMoveModule::SEQ_LIGHT + 7].getBrightness();
 	REQUIRE(beyondSeqCount <= 0.3f); // could be 0.3 from `seqCount >= i + 1` but seqCount=4 → 0
-
 }
 
 TEST_CASE("REC light reflects isRecording", "[ReMove][lights]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->isRecording = false;
 
-	auto args = Test::makeProcessArgs(1);
-	for (int i = 0; i < 500; i++) {
-		args.frame = i;
-		module->process(args);
-	}
+	h.dspSteps(500);
 	REQUIRE(module->lights[ReMoveModule::REC_LIGHT].getBrightness() < 0.1f);
 
 	module->isRecording = true;
-	for (int i = 500; i < 1500; i++) {
-		args.frame = i;
-		module->process(args);
-	}
+	h.dspSteps(1000);
 	REQUIRE(module->lights[ReMoveModule::REC_LIGHT].getBrightness() > 0.5f);
-
 }
 
 TEST_CASE("RUN lights reflect isPlaying when PHASE is disconnected", "[ReMove][lights]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->isPlaying = true;
 	module->seqResize(4);
 	module->seq = 0;
@@ -950,41 +900,30 @@ TEST_CASE("RUN lights reflect isPlaying when PHASE is disconnected", "[ReMove][l
 	// Force the lightDivider to fire on every call.
 	module->lightDivider.setDivision(1.f);
 
-	auto args = Test::makeProcessArgs(1);
-	args.sampleTime = 1.f / 100.f; // 100 Hz light update
-	// Run a first process call to initialize internal trigger state.
-	module->process(args);
+	// Run a first step to initialize internal trigger state.
+	h.dspStep();
 	// Re-assert isPlaying (in case process() touched it for an unrelated
 	// reason; in the empty-sequence / disconnected-PHASE path it should
 	// remain true).
 	module->isPlaying = true;
 	module->sampleTimer.reset();
-	for (int i = 1; i < 5; i++) {
-		args.frame = i;
-		module->process(args);
-	}
+	h.dspSteps(4);
 
 	REQUIRE(module->isPlaying == true);
 	REQUIRE(module->lights[ReMoveModule::RUN_LIGHT + 0].getBrightness() > 0.5f);
 	REQUIRE(module->lights[ReMoveModule::RUN_LIGHT + 1].getBrightness() < 0.1f);
-
 }
 
 TEST_CASE("RUN lights reflect PHASE connection when PHASE is connected", "[ReMove][lights]") {
-	Test::ModuleScaffold<ReMoveModule> mods;
-	auto module = mods.create("ReMoveLite");
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
 	module->isPlaying = false;
 	module->inputs[ReMoveModule::PHASE_INPUT].channels = 1;
 
-	auto args = Test::makeProcessArgs(1);
-	for (int i = 0; i < 1000; i++) {
-		args.frame = i;
-		module->process(args);
-	}
+	h.dspSteps(1000);
 
 	// PHASE connected → RUN light 1 (alt indicator) is on, light 0 off.
 	REQUIRE(module->lights[ReMoveModule::RUN_LIGHT + 1].getBrightness() > 0.5f);
-
 }
 
 
@@ -1011,5 +950,4 @@ TEST_CASE("onRandomize generates non-empty seqLength for all sequences", "[ReMov
 			REQUIRE(module->seqData[i * s + j] <= 1.f);
 		}
 	}
-
 }

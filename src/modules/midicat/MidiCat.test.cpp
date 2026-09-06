@@ -1833,6 +1833,7 @@ TEST_CASE("moduleBind binds a module's parameters to the mapping slots", "[MidiC
 
 TEST_CASE("moduleBindExpander binds the left expander's module", "[MidiCat]") {
 	ScopedModules cleanup;
+	Test::Harness h;
 	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
 	TestModule* testModule = new TestModule();
 	testModule->id = Test::getModuleId();
@@ -1842,8 +1843,7 @@ TEST_CASE("moduleBindExpander binds the left expander's module", "[MidiCat]") {
 	cleanup.mods.push_back(testModule);
 
 	SECTION("Binds the left expander module (BIND_CLEAR)") {
-		module->leftExpander.module = testModule;
-		module->leftExpander.moduleId = testModule->id;
+		h.connectExpander(testModule, module);
 
 		module->moduleBindExpander(false);
 
@@ -1855,8 +1855,7 @@ TEST_CASE("moduleBindExpander binds the left expander's module", "[MidiCat]") {
 	}
 
 	SECTION("Binds the left expander module (BIND_KEEP)") {
-		module->leftExpander.module = testModule;
-		module->leftExpander.moduleId = testModule->id;
+		h.connectExpander(testModule, module);
 
 		module->moduleBindExpander(true);
 

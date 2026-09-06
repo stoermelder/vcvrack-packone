@@ -76,7 +76,6 @@ TEST_CASE("Preset JSON null-guards", "[IntermixEnv][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 TEST_CASE("JSON round-trip preserves state", "[JSON][IntermixEnv]") {
@@ -96,7 +95,6 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][IntermixEnv]") {
 
 	REQUIRE(m2->panelTheme == 1);
 	REQUIRE(m2->input == 5);
-
 }
 
 
@@ -111,51 +109,40 @@ TEST_CASE("Input selection", "[IntermixEnv]") {
 		module->input = 7;
 		REQUIRE(module->input == 7);
 	}
-
 }
 
 TEST_CASE("Expander connection", "[IntermixEnv]") {
-	Test::ModuleScaffold<IntermixEnvModule<8>> mods;
-	auto envModule = mods.create("IntermixEnv");
+	Test::Harness h;
+	auto envModule = h.addModule<IntermixEnvModule<8>>("IntermixEnv");
 
 	SECTION("Module processes without expander") {
 		// Should not crash
-		envModule->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		
 		for (int i = 0; i < 8; i++) {
 			REQUIRE(envModule->outputs[IntermixEnvModule<8>::OUTPUT + i].getVoltage() == 0.f);
 		}
 	}
-
 }
 
 TEST_CASE("Envelope output", "[IntermixEnv]") {
-	Test::ModuleScaffold<IntermixEnvModule<8>> mods;
-	auto intermixModule = new IntermixModuleMock<8>();
-	auto envModule = mods.create("IntermixEnv");
+	Test::Harness h;
+	auto intermixModule = h.adoptModule(new IntermixModuleMock<8>());
+	auto envModule = h.addModule<IntermixEnvModule<8>>("IntermixEnv");
 
 	SECTION("Outputs envelope for selected input") {
-		// Setup mock expander connection
-		intermixModule->rightExpander.module = envModule;
-		envModule->leftExpander.module = intermixModule;
-		
+		h.connectExpander(intermixModule, envModule);
+
 		// Set matrix values in Intermix
 		intermixModule->currentMatrix[0][0] = 0.5f;
 		intermixModule->currentMatrix[0][1] = 0.75f;
 		intermixModule->currentMatrix[0][2] = 1.0f;
-		
+
 		// Select input 0
 		envModule->input = 0;
-		
-		// Process intermix to set producer message
-		intermixModule->process(Test::makeProcessArgs(1));
-		
-		// Manually flip messages: EnvModule reads from leftExpander.module->rightExpander.consumerMessage
-		intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-		
-		// Now process env module
-		envModule->process(Test::makeProcessArgs(1));
-		
+
+		h.dspSteps(2);
+
 		// Outputs should be matrix values * 10V
 		REQUIRE(envModule->outputs[IntermixEnvModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(5.0f).margin(0.01f));
 		REQUIRE(envModule->outputs[IntermixEnvModule<8>::OUTPUT + 1].getVoltage() == Catch::Approx(7.5f).margin(0.01f));
@@ -163,23 +150,18 @@ TEST_CASE("Envelope output", "[IntermixEnv]") {
 	}
 
 	SECTION("Different input selection changes output") {
-		intermixModule->rightExpander.module = envModule;
-		envModule->leftExpander.module = intermixModule;
-		
+		h.connectExpander(intermixModule, envModule);
+
 		intermixModule->currentMatrix[1][0] = 0.3f;
 		intermixModule->currentMatrix[1][1] = 0.6f;
-		
+
 		envModule->input = 1;
-		
-		intermixModule->process(Test::makeProcessArgs(1));
-		intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-		envModule->process(Test::makeProcessArgs(1));
-		
+
+		h.dspSteps(2);
+
 		REQUIRE(envModule->outputs[IntermixEnvModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(3.0f).margin(0.01f));
 		REQUIRE(envModule->outputs[IntermixEnvModule<8>::OUTPUT + 1].getVoltage() == Catch::Approx(6.0f).margin(0.01f));
 	}
-
-	delete intermixModule;
 }
 
 TEST_CASE("Expander chain", "[IntermixEnv]") {
@@ -189,11 +171,11 @@ TEST_CASE("Expander chain", "[IntermixEnv]") {
 	auto envModule2 = h.addModule<IntermixEnvModule<8>>("IntermixEnv");
 
 	SECTION("Multiple expanders can chain") {
-		// Setup expander chain: Intermix -> Env1 -> Env2
-		intermixModule->rightExpander.module = envModule1;
-		envModule1->leftExpander.module = intermixModule;
-		envModule1->rightExpander.module = envModule2;
-		envModule2->leftExpander.module = envModule1;
+		// Setup expander chain: Intermix -> Env1 -> Env2.
+		// Goes through the harness so Rack's onExpanderChange fires — IntermixBase overrides it
+		// (IntermixBase.hpp:62) and unpublishes/resets on a left-side change, which hand-wiring
+		// the pointers skips entirely.
+		h.connectChain(intermixModule, envModule1, envModule2);
 
 		intermixModule->currentMatrix[0][0] = 0.8f;
 		intermixModule->currentMatrix[1][0] = 0.4f;

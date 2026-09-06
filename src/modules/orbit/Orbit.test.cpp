@@ -43,7 +43,6 @@ TEST_CASE("Preset JSON null-guards", "[Orbit][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 TEST_CASE("JSON round-trip preserves state", "[JSON][Orbit]") {
@@ -68,25 +67,23 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Orbit]") {
 
 
 TEST_CASE("Stereo panning basic", "[Orbit]") {
-	Test::ModuleScaffold<OrbitModule> mods;
-	auto module = mods.create("Orbit");
+	Test::Harness h;
+	auto module = h.addModule<OrbitModule>("Orbit");
 
 	SECTION("Mono input produces stereo output") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 1;
 		module->inputs[OrbitModule::INPUT_IN].setVoltage(5.0f, 0);
-		
+
 		module->inputs[OrbitModule::INPUT_TRIG].channels = 1;
 		module->params[OrbitModule::PARAM_SPREAD].setValue(1.0f);
 		module->params[OrbitModule::PARAM_LEVEL].setValue(1.0f);
-		
+
 		// Trigger LOW-to-HIGH transition
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, 0);
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(10.0f, 0);
-		for (int i = 0; i < 20; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(20);
+
 		// Outputs should be active
 		float vL = module->outputs[OrbitModule::OUTPUT_L].getVoltage();
 		float vR = module->outputs[OrbitModule::OUTPUT_R].getVoltage();
@@ -115,16 +112,14 @@ TEST_CASE("Stereo panning basic", "[Orbit]") {
 		module->outputs[OrbitModule::OUTPUT_R].channels = 1;
 		
 		// Process once to initialize trigger state
-		module->process(Test::makeProcessArgs(1));
-		
+		h.dspStep();
+
 		// Now explicitly set pan to center position after trigger is initialized
 		module->pan[0] = 0.5f;
-		
+
 		// Process many cycles to let clickFilter fully settle to center (tau = 0.005s)
-		for (int i = 0; i < 1000; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(1000);
+
 		// With center pan (0.5), both channels should be equal
 		
 		// With center pan (0.5), both channels should be equal
@@ -133,41 +128,34 @@ TEST_CASE("Stereo panning basic", "[Orbit]") {
 		
 		REQUIRE(vL == Catch::Approx(vR).margin(0.2f));
 	}
-
 }
 
 TEST_CASE("Spread control", "[Orbit]") {
-	Test::ModuleScaffold<OrbitModule> mods;
-	auto module = mods.create("Orbit");
+	Test::Harness h;
+	auto module = h.addModule<OrbitModule>("Orbit");
 
 	SECTION("Spread parameter affects distribution") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 1;
 		module->inputs[OrbitModule::INPUT_IN].setVoltage(10.0f, 0);
-		
+
 		module->inputs[OrbitModule::INPUT_TRIG].channels = 1;
-		
+
 		// Test with minimal spread
 		module->params[OrbitModule::PARAM_SPREAD].setValue(0.1f);
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, 0);
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(10.0f, 0);
-		for (int i = 0; i < 20; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(20);
+
 		// Reset trigger
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, 0);
-		for (int i = 0; i < 10; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(10);
+
 		// Test with maximum spread
 		module->params[OrbitModule::PARAM_SPREAD].setValue(1.0f);
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(10.0f, 0);
-		for (int i = 0; i < 20; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(20);
+
 		// With higher spread, distribution can be wider (test passes if no crash)
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_L].getVoltage() >= 0.0f);
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getVoltage() >= 0.0f);
@@ -185,45 +173,40 @@ TEST_CASE("Spread control", "[Orbit]") {
 		
 		// Trigger LOW-to-HIGH
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, 0);
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(10.0f, 0);
-		for (int i = 0; i < 20; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(20);
+
 		// CV should modulate spread
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_L].getVoltage() >= 0.0f);
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getVoltage() >= 0.0f);
 	}
-
 }
 
 TEST_CASE("Drift control", "[Orbit]") {
-	Test::ModuleScaffold<OrbitModule> mods;
-	auto module = mods.create("Orbit");
+	Test::Harness h;
+	auto module = h.addModule<OrbitModule>("Orbit");
 
 	SECTION("Positive drift moves toward center") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 1;
 		module->inputs[OrbitModule::INPUT_IN].setVoltage(5.0f, 0);
-		
+
 		module->inputs[OrbitModule::INPUT_TRIG].channels = 1;
 		module->params[OrbitModule::PARAM_SPREAD].setValue(1.0f);
 		module->params[OrbitModule::PARAM_DRIFT].setValue(1.0f); // Drift toward center
-		
+
 		// Initial trigger LOW-to-HIGH
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, 0);
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(10.0f, 0);
-		module->process(Test::makeProcessArgs(1));
-		
+		h.dspStep();
+
 		// Reset trigger
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, 0);
-		
+
 		// Process multiple times to let drift work
-		for (int i = 0; i < 100; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(100);
+
 		// Outputs should still be valid
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_L].getVoltage() >= 0.0f);
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getVoltage() >= 0.0f);
@@ -232,53 +215,48 @@ TEST_CASE("Drift control", "[Orbit]") {
 	SECTION("Negative drift moves away from center") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 1;
 		module->inputs[OrbitModule::INPUT_IN].setVoltage(5.0f, 0);
-		
+
 		module->inputs[OrbitModule::INPUT_TRIG].channels = 1;
 		module->params[OrbitModule::PARAM_SPREAD].setValue(1.0f);
 		module->params[OrbitModule::PARAM_DRIFT].setValue(-1.0f); // Drift away from center
-		
+
 		// Trigger LOW-to-HIGH
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, 0);
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(10.0f, 0);
-		module->process(Test::makeProcessArgs(1));
-		
+		h.dspStep();
+
 		// Reset trigger
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, 0);
-		
+
 		// Process multiple times
-		for (int i = 0; i < 100; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(100);
+
 		// Outputs should still be valid
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_L].getVoltage() >= 0.0f);
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getVoltage() >= 0.0f);
 	}
-
 }
 
 TEST_CASE("Distribution modes", "[Orbit]") {
-	Test::ModuleScaffold<OrbitModule> mods;
-	auto module = mods.create("Orbit");
+	Test::Harness h;
+	auto module = h.addModule<OrbitModule>("Orbit");
 
 	SECTION("Uniform distribution") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 1;
 		module->inputs[OrbitModule::INPUT_IN].setVoltage(5.0f, 0);
-		
+
 		module->inputs[OrbitModule::INPUT_TRIG].channels = 1;
 		module->params[OrbitModule::PARAM_SPREAD].setValue(1.0f);
 		module->dist = DISTRIBUTION::UNIFORM;
-		
+
 		// Trigger multiple times and check outputs are valid
 		for (int i = 0; i < 10; i++) {
 			module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, 0);
-			module->process(Test::makeProcessArgs(1));
+			h.dspStep();
 			module->inputs[OrbitModule::INPUT_TRIG].setVoltage(10.0f, 0);
-			for (int j = 0; j < 10; j++) {
-				module->process(Test::makeProcessArgs(1));
-			}
-			
+			h.dspSteps(10);
+
 			REQUIRE(module->outputs[OrbitModule::OUTPUT_L].getVoltage() >= 0.0f);
 			REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getVoltage() >= 0.0f);
 		}
@@ -287,66 +265,61 @@ TEST_CASE("Distribution modes", "[Orbit]") {
 	SECTION("External distribution") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 1;
 		module->inputs[OrbitModule::INPUT_IN].setVoltage(5.0f, 0);
-		
+
 		module->inputs[OrbitModule::INPUT_DIST].channels = 1;
 		module->inputs[OrbitModule::INPUT_DIST].setVoltage(5.0f, 0); // Center position
-		
+
 		module->inputs[OrbitModule::INPUT_TRIG].channels = 1;
 		module->params[OrbitModule::PARAM_SPREAD].setValue(1.0f);
 		module->dist = DISTRIBUTION::EXTERNAL;
-		
+
 		// Trigger LOW-to-HIGH
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, 0);
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(10.0f, 0);
-		for (int i = 0; i < 20; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(20);
+
 		// External distribution should use INPUT_DIST
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_L].getVoltage() >= 0.0f);
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getVoltage() >= 0.0f);
 	}
-
 }
 
 TEST_CASE("Polyphonic processing", "[Orbit]") {
-	Test::ModuleScaffold<OrbitModule> mods;
-	auto module = mods.create("Orbit");
+	Test::Harness h;
+	auto module = h.addModule<OrbitModule>("Orbit");
 
 	SECTION("Multiple channels processed independently") {
 		int channels = 4;
 		module->inputs[OrbitModule::INPUT_IN].channels = channels;
 		module->inputs[OrbitModule::INPUT_TRIG].channels = channels;
-		
+
 		for (int c = 0; c < channels; c++) {
 			module->inputs[OrbitModule::INPUT_IN].setVoltage(5.0f + c, c);
 		}
-		
+
 		module->params[OrbitModule::PARAM_SPREAD].setValue(1.0f);
 		module->params[OrbitModule::PARAM_LEVEL].setValue(1.0f);
 		module->polyOut = false; // Downmix mode
-		
+
 		// Simulate connected outputs
 		module->outputs[OrbitModule::OUTPUT_L].channels = 1;
 		module->outputs[OrbitModule::OUTPUT_R].channels = 1;
-		
+
 		// Trigger all channels LOW-to-HIGH
 		for (int c = 0; c < channels; c++) {
 			module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, c);
 		}
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		for (int c = 0; c < channels; c++) {
 			module->inputs[OrbitModule::INPUT_TRIG].setVoltage(10.0f, c);
 		}
-		for (int i = 0; i < 20; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(20);
+
 		// In downmix mode, outputs are mono
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_L].getChannels() == 1);
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getChannels() == 1);
-		
+
 		// Check outputs are valid
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_L].getVoltage() != 0.0f);
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getVoltage() != 0.0f);
@@ -356,105 +329,93 @@ TEST_CASE("Polyphonic processing", "[Orbit]") {
 		int channels = 4;
 		module->inputs[OrbitModule::INPUT_IN].channels = channels;
 		module->inputs[OrbitModule::INPUT_TRIG].channels = channels;
-		
+
 		for (int c = 0; c < channels; c++) {
 			module->inputs[OrbitModule::INPUT_IN].setVoltage(5.0f + c, c);
 		}
-		
+
 		module->params[OrbitModule::PARAM_SPREAD].setValue(1.0f);
 		module->polyOut = true; // Polyphonic mode
-		
+
 		// Simulate connected outputs
 		module->outputs[OrbitModule::OUTPUT_L].channels = 1;
 		module->outputs[OrbitModule::OUTPUT_R].channels = 1;
-		
+
 		// Trigger all channels LOW-to-HIGH
 		for (int c = 0; c < channels; c++) {
 			module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, c);
 		}
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		for (int c = 0; c < channels; c++) {
 			module->inputs[OrbitModule::INPUT_TRIG].setVoltage(10.0f, c);
 		}
-		for (int i = 0; i < 20; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(20);
+
 		// In poly mode, outputs match input channels
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_L].getChannels() == channels);
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getChannels() == channels);
-		
+
 		// Check each channel
 		for (int c = 0; c < channels; c++) {
 			REQUIRE(module->outputs[OrbitModule::OUTPUT_L].getVoltage(c) >= 0.0f);
 			REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getVoltage(c) >= 0.0f);
 		}
 	}
-
 }
 
 TEST_CASE("Level control", "[Orbit]") {
-	Test::ModuleScaffold<OrbitModule> mods;
-	auto module = mods.create("Orbit");
+	Test::Harness h;
+	auto module = h.addModule<OrbitModule>("Orbit");
 
 	SECTION("Level affects output amplitude") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 1;
 		module->inputs[OrbitModule::INPUT_IN].setVoltage(10.0f, 0);
-		
+
 		module->inputs[OrbitModule::INPUT_TRIG].channels = 1;
 		module->params[OrbitModule::PARAM_SPREAD].setValue(0.0f); // Center pan
 		module->params[OrbitModule::PARAM_LEVEL].setValue(0.5f); // Half level
-		
+
 		// Trigger LOW-to-HIGH
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, 0);
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(10.0f, 0);
-		for (int i = 0; i < 20; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(20);
+
 		float vL = module->outputs[OrbitModule::OUTPUT_L].getVoltage();
 		float vR = module->outputs[OrbitModule::OUTPUT_R].getVoltage();
-		
+
 		// At center pan with 0.5 level, each output should be approximately 2.5V
 		// (10V * 0.5^2 * 0.5 pan position)
 		REQUIRE((vL + vR) < 10.0f); // Should be attenuated
 	}
-
 }
 
 TEST_CASE("Trigger behavior", "[Orbit]") {
-	Test::ModuleScaffold<OrbitModule> mods;
-	auto module = mods.create("Orbit");
+	Test::Harness h;
+	auto module = h.addModule<OrbitModule>("Orbit");
 
 	SECTION("Trigger updates pan position") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 1;
 		module->inputs[OrbitModule::INPUT_IN].setVoltage(5.0f, 0);
-		
+
 		module->inputs[OrbitModule::INPUT_TRIG].channels = 1;
 		module->params[OrbitModule::PARAM_SPREAD].setValue(1.0f);
 		module->params[OrbitModule::PARAM_DRIFT].setValue(0.0f); // No drift
-		
+
 		// First trigger LOW-to-HIGH
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, 0);
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(10.0f, 0);
-		for (int i = 0; i < 10; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(10);
+
 		// Reset trigger LOW
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, 0);
-		for (int i = 0; i < 10; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(10);
+
 		// Second trigger (should generate new random position)
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(10.0f, 0);
-		for (int i = 0; i < 10; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(10);
+
 		// Pan position may have changed (can't guarantee due to randomness)
 		// Just verify outputs are still valid
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_L].getVoltage() >= 0.0f);
@@ -465,22 +426,19 @@ TEST_CASE("Trigger behavior", "[Orbit]") {
 		module->inputs[OrbitModule::INPUT_IN].channels = 2;
 		module->inputs[OrbitModule::INPUT_IN].setVoltage(5.0f, 0);
 		module->inputs[OrbitModule::INPUT_IN].setVoltage(5.0f, 1);
-		
+
 		// Only trigger first channel
 		module->inputs[OrbitModule::INPUT_TRIG].channels = 1;
 		module->params[OrbitModule::PARAM_SPREAD].setValue(1.0f);
-		
+
 		// Trigger LOW-to-HIGH
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(0.0f, 0);
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		module->inputs[OrbitModule::INPUT_TRIG].setVoltage(10.0f, 0);
-		for (int i = 0; i < 20; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(20);
+
 		// Both channels should be processed (trigger normalized to all channels)
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_L].getVoltage() >= 0.0f);
 		REQUIRE(module->outputs[OrbitModule::OUTPUT_R].getVoltage() >= 0.0f);
 	}
-
 }

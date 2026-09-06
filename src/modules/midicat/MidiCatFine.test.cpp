@@ -17,16 +17,6 @@ struct TestParamModule : Module {
 	}
 };
 
-// Helper: connect MidiCatFine to MidiCat as right expander and let MidiCat discover it.
-// After connectFine(), expFine is non-null. The Fine expander does not itself need
-// any priming before its voltage getters are queried.
-static void connectFine(Test::Harness& h, MidiCatModule* midicat, MidiCatFineModule* fine) {
-	midicat->rightExpander.module = fine;
-	fine->leftExpander.module = midicat;
-	midicat->moduleChangedFlag = true;
-	h.dspStep();
-}
-
 // Helper: set up a full CC-to-param binding.
 static void setupBinding(Test::Harness& h, MidiCatModule* midicat, TestParamModule* target, int id, int cc) {
 	midicat->processDivider.setDivision(1);
@@ -176,7 +166,8 @@ TEST_CASE("MidiCat detects expander", "[MidiCatFine][MidiCat]") {
 	h.dspStep();
 	REQUIRE(midicat->expanders.fine() == nullptr);
 
-	connectFine(h, midicat, fine);
+	h.connectExpander(midicat, fine);
+	h.dspStep();
 
 	REQUIRE(midicat->expanders.fine() != nullptr);
 	REQUIRE(midicat->expanders.fine() == fine);
@@ -192,16 +183,15 @@ TEST_CASE("Disconnecting expander clears expFine and ccFineMode", "[MidiCatFine]
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
 
-	connectFine(h, midicat, fine);
+	h.connectExpander(midicat, fine);
+	h.dspStep();
 	REQUIRE(midicat->expanders.fine() != nullptr);
 
 	// Force ccFineMode true (it should be cleared on disconnect)
 	midicat->ccFineMode = true;
 
 	// Disconnect
-	midicat->rightExpander.module = nullptr;
-	fine->leftExpander.module = nullptr;
-	midicat->moduleChangedFlag = true;
+	h.disconnectExpander(midicat, Test::Harness::SIDE_RIGHT);
 	h.dspStep();
 
 	REQUIRE(midicat->expanders.fine() == nullptr);
@@ -223,7 +213,8 @@ TEST_CASE("rising edge on LOWRANGE enables fine mode at low precision", "[MidiCa
 	Test::registerModule(target);
 
 	setupBinding(h, midicat, target, 0, 7);
-	connectFine(h, midicat, fine);
+	h.connectExpander(midicat, fine);
+	h.dspStep();
 	primeFineTriggers(h, fine);
 
 	REQUIRE(midicat->ccFineMode == false);
@@ -254,7 +245,8 @@ TEST_CASE("Falling edge on LOWRANGE disables fine mode when HIGHRANGE is low", "
 	Test::registerModule(target);
 
 	setupBinding(h, midicat, target, 0, 7);
-	connectFine(h, midicat, fine);
+	h.connectExpander(midicat, fine);
+	h.dspStep();
 	primeFineTriggers(h, fine);
 
 	// Enable fine mode by raising LOWRANGE.
@@ -285,7 +277,8 @@ TEST_CASE("Rising edge on HIGHRANGE enables fine mode at high precision", "[Midi
 	Test::registerModule(target);
 
 	setupBinding(h, midicat, target, 0, 7);
-	connectFine(h, midicat, fine);
+	h.connectExpander(midicat, fine);
+	h.dspStep();
 	primeFineTriggers(h, fine);
 
 	// Drive HIGHRANGE high — fine mode should enable at high precision (0.01).
@@ -312,7 +305,8 @@ TEST_CASE("High precision follows user setting (2% / 5%)", "[MidiCatFine][MidiCa
 	Test::registerModule(target);
 
 	setupBinding(h, midicat, target, 0, 7);
-	connectFine(h, midicat, fine);
+	h.connectExpander(midicat, fine);
+	h.dspStep();
 	primeFineTriggers(h, fine);
 
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].channels = 1;
@@ -346,7 +340,8 @@ TEST_CASE("HIGHRANGE rising while LOWRANGE is high updates the ref-point from cu
 	Test::registerModule(target);
 
 	setupBinding(h, midicat, target, 0, 7);
-	connectFine(h, midicat, fine);
+	h.connectExpander(midicat, fine);
+	h.dspStep();
 	primeFineTriggers(h, fine);
 
 	// First, drive LOWRANGE high. setFineMode() initialises the ref
@@ -386,7 +381,8 @@ TEST_CASE("HIGHRANGE falling while LOWRANGE is high restores low precision", "[M
 	Test::registerModule(target);
 
 	setupBinding(h, midicat, target, 0, 7);
-	connectFine(h, midicat, fine);
+	h.connectExpander(midicat, fine);
+	h.dspStep();
 	primeFineTriggers(h, fine);
 
 	fine->inputs[MidiCatFineModule::INPUT_LOWRANGE].channels = 1;
@@ -421,7 +417,8 @@ TEST_CASE("HIGHRANGE falling when both are low disables fine mode", "[MidiCatFin
 	Test::registerModule(target);
 
 	setupBinding(h, midicat, target, 0, 7);
-	connectFine(h, midicat, fine);
+	h.connectExpander(midicat, fine);
+	h.dspStep();
 	primeFineTriggers(h, fine);
 
 	// Enable via HIGHRANGE
@@ -452,7 +449,8 @@ TEST_CASE("LOWRANGE ignored while HIGHRANGE is high", "[MidiCatFine][MidiCat]") 
 	Test::registerModule(target);
 
 	setupBinding(h, midicat, target, 0, 7);
-	connectFine(h, midicat, fine);
+	h.connectExpander(midicat, fine);
+	h.dspStep();
 	primeFineTriggers(h, fine);
 
 	// Drive HIGHRANGE high first.

@@ -8,8 +8,8 @@ SYNC_MODEL(modelFourRounds, "FourRounds");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[FourRounds]") {
-	Test::ModuleScaffold<FourRoundsModule> mods;
-	FourRoundsModule* m = mods.create("FourRounds");
+	Test::Harness h;
+	FourRoundsModule* m = h.addModule<FourRoundsModule>("FourRounds");
 	FourRoundsWidget* mw = Test::createWidget<FourRoundsWidget>("FourRounds");
 
 	REQUIRE(m != nullptr);
@@ -20,8 +20,8 @@ TEST_CASE("Construction and initialization", "[FourRounds]") {
 }
 
 TEST_CASE("Preset JSON null-guards", "[FourRounds][JSON]") {
-	Test::ModuleScaffold<FourRoundsModule> mods;
-	auto module = mods.create("FourRounds");
+	Test::Harness h;
+	auto module = h.addModule<FourRoundsModule>("FourRounds");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -43,12 +43,11 @@ TEST_CASE("Preset JSON null-guards", "[FourRounds][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 TEST_CASE("JSON round-trip preserves state", "[JSON][FourRounds]") {
-	Test::ModuleScaffold<FourRoundsModule> mods;
-	auto module = mods.create("FourRounds");
+	Test::Harness h;
+	auto module = h.addModule<FourRoundsModule>("FourRounds");
 
 	// Set known state
 	module->mode = MODE::SH;
@@ -63,7 +62,7 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][FourRounds]") {
 	json_t* j = module->dataToJson();
 
 	// Restore into fresh module
-	auto module2 = mods.create("FourRounds");
+	auto module2 = h.addModule<FourRoundsModule>("FourRounds");
 	module2->dataFromJson(j);
 	json_decref(j);
 
@@ -75,13 +74,12 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][FourRounds]") {
 	for (int i = 0; i < 16; i++) {
 		REQUIRE(module2->lastValue[i] == Catch::Approx(float(i) * 0.5f));
 	}
-
 }
 
 
 TEST_CASE("DIRECT mode routes winner through the bracket", "[FourRounds]") {
-	Test::ModuleScaffold<FourRoundsModule> mods;
-	auto module = mods.create("FourRounds");
+	Test::Harness h;
+	auto module = h.addModule<FourRoundsModule>("FourRounds");
 	module->mode = MODE::DIRECT;
 
 	// state==0 makes even-indexed inputs win
@@ -94,7 +92,7 @@ TEST_CASE("DIRECT mode routes winner through the bracket", "[FourRounds]") {
 		module->inputs[FourRoundsModule::ROUND1_INPUT + i].setVoltage((i % 2 == 0) ? 5.f : 1.f);
 	}
 
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	SECTION("Round-2 outputs carry the winning voltage") {
 		for (int i = 0; i < 8; i++) {
@@ -105,12 +103,11 @@ TEST_CASE("DIRECT mode routes winner through the bracket", "[FourRounds]") {
 	SECTION("Winner output carries the winning voltage") {
 		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(5.f));
 	}
-
 }
 
 TEST_CASE("DIRECT mode state=1 selects right input", "[FourRounds]") {
-	Test::ModuleScaffold<FourRoundsModule> mods;
-	auto module = mods.create("FourRounds");
+	Test::Harness h;
+	auto module = h.addModule<FourRoundsModule>("FourRounds");
 	module->mode = MODE::DIRECT;
 
 	// state==1 makes odd-indexed inputs win
@@ -123,7 +120,7 @@ TEST_CASE("DIRECT mode state=1 selects right input", "[FourRounds]") {
 		module->inputs[FourRoundsModule::ROUND1_INPUT + i].setVoltage((i % 2 == 0) ? 1.f : 7.f);
 	}
 
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	SECTION("Round-2 outputs carry the odd-input voltage") {
 		for (int i = 0; i < 8; i++) {
@@ -134,12 +131,11 @@ TEST_CASE("DIRECT mode state=1 selects right input", "[FourRounds]") {
 	SECTION("Winner output carries the odd-input voltage") {
 		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(7.f));
 	}
-
 }
 
 TEST_CASE("Inverted flag swaps winner selection", "[FourRounds]") {
-	Test::ModuleScaffold<FourRoundsModule> mods;
-	auto module = mods.create("FourRounds");
+	Test::Harness h;
+	auto module = h.addModule<FourRoundsModule>("FourRounds");
 	module->mode = MODE::DIRECT;
 
 	// state=0 normally selects even inputs; with inverted it should select odd inputs
@@ -153,41 +149,39 @@ TEST_CASE("Inverted flag swaps winner selection", "[FourRounds]") {
 	}
 
 	module->inverted = true;
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	SECTION("Winner is the odd-side input when inverted") {
 		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(9.f));
 	}
-
 }
 
 TEST_CASE("INV trigger toggles inverted flag", "[FourRounds]") {
-	Test::ModuleScaffold<FourRoundsModule> mods;
-	auto module = mods.create("FourRounds");
+	Test::Harness h;
+	auto module = h.addModule<FourRoundsModule>("FourRounds");
 	REQUIRE(module->inverted == false);
 
 	module->inputs[FourRoundsModule::INV_INPUT].channels = 1;
 
 	// Rising edge toggles the flag
 	module->inputs[FourRoundsModule::INV_INPUT].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	module->inputs[FourRoundsModule::INV_INPUT].setVoltage(10.f);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 	REQUIRE(module->inverted == true);
 
 	// Second edge toggles back
 	module->inputs[FourRoundsModule::INV_INPUT].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(3));
+	h.dspStep();
 	module->inputs[FourRoundsModule::INV_INPUT].setVoltage(10.f);
-	module->process(Test::makeProcessArgs(4));
+	h.dspStep();
 	REQUIRE(module->inverted == false);
-
 }
 
 TEST_CASE("TRIG input captures lastValue in SH mode", "[FourRounds]") {
-	Test::ModuleScaffold<FourRoundsModule> mods;
-	auto module = mods.create("FourRounds");
+	Test::Harness h;
+	auto module = h.addModule<FourRoundsModule>("FourRounds");
 	module->mode = MODE::SH;
 
 	for (int i = 0; i < 16; i++) {
@@ -199,23 +193,22 @@ TEST_CASE("TRIG input captures lastValue in SH mode", "[FourRounds]") {
 
 	// Low before trigger
 	module->inputs[FourRoundsModule::TRIG_INPUT].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	// Rising edge captures input voltages
 	module->inputs[FourRoundsModule::TRIG_INPUT].setVoltage(10.f);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 
 	SECTION("lastValue[] stores the sampled input voltages") {
 		for (int i = 0; i < 16; i++) {
 			REQUIRE(module->lastValue[i] == Catch::Approx(float(i + 1)));
 		}
 	}
-
 }
 
 TEST_CASE("SH mode holds sampled voltages after input changes", "[FourRounds]") {
-	Test::ModuleScaffold<FourRoundsModule> mods;
-	auto module = mods.create("FourRounds");
+	Test::Harness h;
+	auto module = h.addModule<FourRoundsModule>("FourRounds");
 	module->mode = MODE::SH;
 
 	// Set initial voltages
@@ -227,11 +220,11 @@ TEST_CASE("SH mode holds sampled voltages after input changes", "[FourRounds]") 
 	// Trigger capture with low-high-low cycle
 	module->inputs[FourRoundsModule::TRIG_INPUT].channels = 1;
 	module->inputs[FourRoundsModule::TRIG_INPUT].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	module->inputs[FourRoundsModule::TRIG_INPUT].setVoltage(10.f);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 	module->inputs[FourRoundsModule::TRIG_INPUT].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(3));
+	h.dspStep();
 
 	// Verify trigger captured the values into lastValue
 	REQUIRE(module->lastValue[0] == 4.f);
@@ -244,23 +237,22 @@ TEST_CASE("SH mode holds sampled voltages after input changes", "[FourRounds]") 
 	}
 
 	// Process once more with state locked to left-branch
-	module->process(Test::makeProcessArgs(4));
+	h.dspStep();
 
 	// Change live inputs — SH output should be unchanged
 	for (int i = 0; i < 16; i++) {
 		module->inputs[FourRoundsModule::ROUND1_INPUT + i].setVoltage(0.f);
 	}
-	module->process(Test::makeProcessArgs(5));
+	h.dspStep();
 
 	SECTION("Winner reflects sampled voltage, not current input") {
 		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(4.f));
 	}
-
 }
 
 TEST_CASE("QUANTUM mode blends inputs by state weight", "[FourRounds]") {
-	Test::ModuleScaffold<FourRoundsModule> mods;
-	auto module = mods.create("FourRounds");
+	Test::Harness h;
+	auto module = h.addModule<FourRoundsModule>("FourRounds");
 	module->mode = MODE::QUANTUM;
 
 	// state=0.5 means equal blend of both inputs
@@ -274,7 +266,7 @@ TEST_CASE("QUANTUM mode blends inputs by state weight", "[FourRounds]") {
 		module->inputs[FourRoundsModule::ROUND1_INPUT + i].setVoltage((i % 2 == 0) ? 4.f : 8.f);
 	}
 
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	SECTION("Round-2 outputs are the blended voltage") {
 		for (int i = 0; i < 8; i++) {
@@ -285,12 +277,11 @@ TEST_CASE("QUANTUM mode blends inputs by state weight", "[FourRounds]") {
 	SECTION("Winner output is the blended voltage") {
 		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(6.f));
 	}
-
 }
 
 TEST_CASE("QUANTUM mode state=0 passes first input unchanged", "[FourRounds]") {
-	Test::ModuleScaffold<FourRoundsModule> mods;
-	auto module = mods.create("FourRounds");
+	Test::Harness h;
+	auto module = h.addModule<FourRoundsModule>("FourRounds");
 	module->mode = MODE::QUANTUM;
 
 	for (int i = 0; i < FourRoundsModule::SIZE; i++) {
@@ -302,10 +293,9 @@ TEST_CASE("QUANTUM mode state=0 passes first input unchanged", "[FourRounds]") {
 		module->inputs[FourRoundsModule::ROUND1_INPUT + i].setVoltage((i % 2 == 0) ? 3.f : 7.f);
 	}
 
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	SECTION("Winner equals first-input voltage") {
 		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(3.f));
 	}
-
 }

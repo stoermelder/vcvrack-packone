@@ -51,7 +51,6 @@ TEST_CASE("Preset JSON null-guards", "[Affix][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 TEST_CASE("JSON round-trip preserves module state", "[Affix]") {
@@ -96,7 +95,6 @@ TEST_CASE("JSON round-trip preserves module state", "[Affix]") {
 			REQUIRE(moduleNew->paramMode == mode);
 		}
 	}
-
 }
 
 
@@ -115,7 +113,6 @@ TEST_CASE("Voltage mode", "[Affix]") {
 		REQUIRE(module->params[AffixModule<16>::PARAM_MONO + 0].getValue() == Catch::Approx(1.5f).margin(0.01f));
 		REQUIRE(module->params[AffixModule<16>::PARAM_MONO + 1].getValue() == Catch::Approx(-0.5f).margin(0.01f));
 	}
-
 }
 
 TEST_CASE("Parameter reset", "[Affix]") {
@@ -132,7 +129,6 @@ TEST_CASE("Parameter reset", "[Affix]") {
 		REQUIRE(module->paramMode == PARAM_MODE::VOLTAGE);
 		REQUIRE(module->numberOfChannels == 0);
 	}
-
 }
 
 TEST_CASE("Parameter quantity display", "[Affix]") {
@@ -151,7 +147,6 @@ TEST_CASE("Parameter quantity display", "[Affix]") {
 		std::string display = pq->getDisplayValueString();
 		REQUIRE(!display.empty());
 	}
-
 }
 
 TEST_CASE("Semitone mode", "[Affix]") {
@@ -183,7 +178,6 @@ TEST_CASE("Semitone mode", "[Affix]") {
 		REQUIRE(!display.empty());
 		// Format should be "octaves, semitones"
 	}
-
 }
 
 TEST_CASE("Octave mode", "[Affix]") {
@@ -213,7 +207,6 @@ TEST_CASE("Octave mode", "[Affix]") {
 		std::string display = pq->getDisplayValueString();
 		REQUIRE(!display.empty());
 	}
-
 }
 
 
@@ -223,8 +216,8 @@ TEST_CASE("Octave mode", "[Affix]") {
 // (e.g. read back from a patch file that was saved with a different mode)
 // are snapped to the nearest semitone/octave before processing begins.
 TEST_CASE("Output voltage snapped after loading unsnapped param in Semitone mode", "[Affix]") {
-	Test::ModuleScaffold<AffixModule<16>> mods;
-	auto module = mods.create("Affix");
+	Test::Harness h;
+	auto module = h.addModule<AffixModule<16>>("Affix");
 
 	SECTION("Unsnapped param value is snapped to nearest semitone on load") {
 		// Directly set raw param to an unsnapped value (1.1 V ≠ any exact semitone).
@@ -246,7 +239,7 @@ TEST_CASE("Output voltage snapped after loading unsnapped param in Semitone mode
 		// Process one sample with no input voltage.
 		module->inputs[AffixModule<16>::INPUT_POLY].setVoltage(0.f, 0);
 		module->inputs[AffixModule<16>::INPUT_POLY].channels = 1;
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 
 		// Output must equal the snapped value, not the raw 1.1 V.
 		float output = module->outputs[AffixModule<16>::OUTPUT_POLY].getVoltage(0);
@@ -270,14 +263,13 @@ TEST_CASE("Output voltage snapped after loading unsnapped param in Semitone mode
 
 		module->inputs[AffixModule<16>::INPUT_POLY].setVoltage(0.f, 0);
 		module->inputs[AffixModule<16>::INPUT_POLY].channels = 1;
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 
 		float output = module->outputs[AffixModule<16>::OUTPUT_POLY].getVoltage(0);
 		float expected = std::round(2.7f); // 3.0
 		REQUIRE(output == Catch::Approx(expected).margin(0.001f));
 		REQUIRE(output != Catch::Approx(2.7f).margin(0.001f));
 	}
-
 }
 
 // Regression test for bug #387:
@@ -333,5 +325,4 @@ TEST_CASE("Param cached value reset in Semitone and Octave mode", "[Affix]") {
 		REQUIRE(module->params[AffixModule<16>::PARAM_MONO + 0].getValue()
 			== Catch::Approx(0.0f).margin(0.001f));
 	}
-
 }

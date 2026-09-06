@@ -10,18 +10,16 @@ SYNC_MODEL(modelHive, "Hive");
 Test::TestContext<> testContext;
 
 // Warm up the reset timer so the clock trigger guard (>= 1ms) is satisfied
-static void warmupTimer(HiveMod* module, int samples = 100) {
+static void warmupTimer(Test::Harness& h, HiveMod* module, int samples = 100) {
 	module->inputs[HiveMod::CLK_INPUT].channels = 1;
 	module->inputs[HiveMod::CLK_INPUT].setVoltage(0.f);
-	for (int i = 0; i < samples; i++) {
-		module->process(Test::makeProcessArgs(i));
-	}
+	h.dspSteps(samples);
 }
 
 // Fire a single clock rising edge on port 0
-static void clockEdge(HiveMod* module, int frame = 200) {
+static void clockEdge(Test::Harness& h, HiveMod* module) {
 	module->inputs[HiveMod::CLK_INPUT].setVoltage(10.f);
-	module->process(Test::makeProcessArgs(frame));
+	h.dspStep();
 	module->inputs[HiveMod::CLK_INPUT].setVoltage(0.f);
 }
 
@@ -61,7 +59,6 @@ TEST_CASE("Preset JSON null-guards", "[Hive][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 TEST_CASE("JSON round-trip preserves state", "[JSON][Hive]") {
@@ -202,7 +199,6 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Hive]") {
 		REQUIRE(m2->grid.cursor[2].ratchetingEnabled == RATCHETMODE::POWER_TWO);
 		REQUIRE(m2->grid.cursor[2].ratchetingProb == Catch::Approx(0.2f));
 	}
-
 }
 
 
@@ -242,7 +238,6 @@ TEST_CASE("Reset clears grid and restores cursor defaults", "[Hive]") {
 	SECTION("Cell at (0,0) cleared to OFF") {
 		REQUIRE(module->grid.getCell(RoundAxialVec(0, 0)).state == GRIDSTATE::OFF);
 	}
-
 }
 
 TEST_CASE("gridClear sets all visible cells to OFF with zero CV", "[Hive]") {
@@ -267,31 +262,29 @@ TEST_CASE("gridClear sets all visible cells to OFF with zero CV", "[Hive]") {
 	SECTION("Center cell (0,0) is OFF after clear") {
 		REQUIRE(module->grid.getCell(RoundAxialVec(0, 0)).state == GRIDSTATE::OFF);
 	}
-
 }
 
 TEST_CASE("Clock input advances cursor position (NE direction)", "[Hive]") {
-	Test::ModuleScaffold<HiveMod> mods;
-	auto module = mods.create("Hive");
+	Test::Harness h;
+	auto module = h.addModule<HiveMod>("Hive");
 	// Initial: cursor[0] at (-4, 0), dir=NE
 	// After one NE move (POINTY): q += 1, r -= 1 → (-3, -1)
 
 	REQUIRE(module->grid.cursor[0].pos.q == -4);
 	REQUIRE(module->grid.cursor[0].pos.r == 0);
 
-	warmupTimer(module);
-	clockEdge(module);
+	warmupTimer(h, module);
+	clockEdge(h, module);
 
 	SECTION("Cursor moves NE: q+1, r-1") {
 		REQUIRE(module->grid.cursor[0].pos.q == -3);
 		REQUIRE(module->grid.cursor[0].pos.r == -1);
 	}
-
 }
 
 TEST_CASE("Cursor stepping onto ON cell fires trigger and CV outputs", "[Hive]") {
-	Test::ModuleScaffold<HiveMod> mods;
-	auto module = mods.create("Hive");
+	Test::Harness h;
+	auto module = h.addModule<HiveMod>("Hive");
 	// Cursor starts at (-4, 0), NE → will step to (-3, -1)
 	HiveCell cell;
 	cell.pos = RoundAxialVec(-3, -1);
@@ -299,8 +292,8 @@ TEST_CASE("Cursor stepping onto ON cell fires trigger and CV outputs", "[Hive]")
 	cell.cv = 0.5f;  // UNI_3V: rescale(0.5, 0,1, 0,3) = 1.5V
 	module->grid.setCell(cell);
 
-	warmupTimer(module);
-	clockEdge(module);
+	warmupTimer(h, module);
+	clockEdge(h, module);
 
 	SECTION("Trigger output fires (10V) on ON cell") {
 		REQUIRE(module->outputs[HiveMod::TRIG_OUTPUT].getVoltage() == Catch::Approx(10.f));
@@ -309,26 +302,24 @@ TEST_CASE("Cursor stepping onto ON cell fires trigger and CV outputs", "[Hive]")
 	SECTION("CV output reflects cell CV in UNI_3V mode") {
 		REQUIRE(module->outputs[HiveMod::CV_OUTPUT].getVoltage() == Catch::Approx(1.5f));
 	}
-
 }
 
 TEST_CASE("Cursor stepping onto OFF cell produces no trigger", "[Hive]") {
-	Test::ModuleScaffold<HiveMod> mods;
-	auto module = mods.create("Hive");
+	Test::Harness h;
+	auto module = h.addModule<HiveMod>("Hive");
 	// All cells OFF by default
 
-	warmupTimer(module);
-	clockEdge(module);
+	warmupTimer(h, module);
+	clockEdge(h, module);
 
 	SECTION("Trigger output stays at zero for OFF cell") {
 		REQUIRE(module->outputs[HiveMod::TRIG_OUTPUT].getVoltage() == Catch::Approx(0.f));
 	}
-
 }
 
 TEST_CASE("Turn trigger rotates cursor direction in SIXTY mode", "[Hive]") {
-	Test::ModuleScaffold<HiveMod> mods;
-	auto module = mods.create("Hive");
+	Test::Harness h;
+	auto module = h.addModule<HiveMod>("Hive");
 	// Initial: dir = NE = 1, turnMode = SIXTY
 	// SIXTY turn: dir = (1 + 2) % 12 = 3 = E
 
@@ -337,27 +328,26 @@ TEST_CASE("Turn trigger rotates cursor direction in SIXTY mode", "[Hive]") {
 
 	module->inputs[HiveMod::TURN_INPUT].channels = 1;
 	module->inputs[HiveMod::TURN_INPUT].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	module->inputs[HiveMod::TURN_INPUT].setVoltage(10.f);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 
 	SECTION("Direction rotated: NE(1) becomes E(3)") {
 		REQUIRE(module->grid.cursor[0].dir == DIRECTION::E);
 	}
-
 }
 
 TEST_CASE("Turn trigger rotates direction in ONETWENTY mode", "[Hive]") {
-	Test::ModuleScaffold<HiveMod> mods;
-	auto module = mods.create("Hive");
+	Test::Harness h;
+	auto module = h.addModule<HiveMod>("Hive");
 	module->grid.cursor[0].turnMode = TURNMODE::ONETWENTY;
 	// ONETWENTY: dir = (NE=1 + 4) % 12 = 5 = SE
 
 	module->inputs[HiveMod::TURN_INPUT].channels = 1;
 	module->inputs[HiveMod::TURN_INPUT].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	module->inputs[HiveMod::TURN_INPUT].setVoltage(10.f);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 
 	SECTION("Direction rotated: NE(1) becomes SE(5)") {
 		REQUIRE(module->grid.cursor[0].dir == DIRECTION::SE);
@@ -366,23 +356,22 @@ TEST_CASE("Turn trigger rotates direction in ONETWENTY mode", "[Hive]") {
 }
 
 // Fire a single rising edge on the given input
-static void pulse(HiveMod* module, int input, int frame) {
+static void pulse(Test::Harness& h, HiveMod* module, int input) {
 	module->inputs[input].channels = 1;
 	module->inputs[input].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(frame));
+	h.dspStep();
 	module->inputs[input].setVoltage(10.f);
-	module->process(Test::makeProcessArgs(frame + 1));
+	h.dspStep();
 	module->inputs[input].setVoltage(0.f);
 }
 
 // Shift a fresh module from the centre cell via the given input, return resulting pos
 static RoundAxialVec shiftFromCentre(int input) {
-	auto module = Test::createModule<HiveMod>("Hive");
+	Test::Harness h;
+	HiveMod* module = h.addModule<HiveMod>("Hive");
 	module->grid.cursor[0].pos = RoundAxialVec(0, 0);
-	pulse(module, input, 10);
-	RoundAxialVec p = module->grid.cursor[0].pos;
-	Test::destroyModule(module);
-	return p;
+	pulse(h, module, input);
+	return module->grid.cursor[0].pos;
 }
 
 TEST_CASE("All four side-shift inputs move the cursor", "[Hive]") {
@@ -417,37 +406,36 @@ TEST_CASE("All four side-shift inputs move the cursor", "[Hive]") {
 }
 
 TEST_CASE("Reset input returns cursor to start position", "[Hive]") {
-	Test::ModuleScaffold<HiveMod> mods;
-	auto module = mods.create("Hive");
+	Test::Harness h;
+	auto module = h.addModule<HiveMod>("Hive");
 	module->inputs[HiveMod::RESET_INPUT].channels = 1;
 	module->inputs[HiveMod::RESET_INPUT].setVoltage(0.f);
 
-	warmupTimer(module);
-	clockEdge(module);
+	warmupTimer(h, module);
+	clockEdge(h, module);
 	REQUIRE(module->grid.cursor[0].pos.q == -3);
 
 	// Rising edge on reset
 	module->inputs[HiveMod::RESET_INPUT].setVoltage(10.f);
-	module->process(Test::makeProcessArgs(201));
+	h.dspStep();
 	module->inputs[HiveMod::RESET_INPUT].setVoltage(0.f);
 
 	SECTION("Cursor position returns to startPos") {
 		REQUIRE(module->grid.cursor[0].pos.q == module->grid.cursor[0].startPos.q);
 		REQUIRE(module->grid.cursor[0].pos.r == module->grid.cursor[0].startPos.r);
 	}
-
 }
 
 TEST_CASE("normalizePorts propagates clock from port 0 to port 1", "[Hive]") {
-	Test::ModuleScaffold<HiveMod> mods;
-	auto module = mods.create("Hive");
+	Test::Harness h;
+	auto module = h.addModule<HiveMod>("Hive");
 	REQUIRE(module->normalizePorts == true);
 	// CLK port 1 not connected (channels=0)
 
 	int qBefore1 = module->grid.cursor[1].pos.q;
 
-	warmupTimer(module);
-	clockEdge(module);
+	warmupTimer(h, module);
+	clockEdge(h, module);
 
 	SECTION("Port 0 cursor advances") {
 		REQUIRE(module->grid.cursor[0].pos.q == -3);
@@ -456,5 +444,4 @@ TEST_CASE("normalizePorts propagates clock from port 0 to port 1", "[Hive]") {
 	SECTION("Port 1 cursor also advances via clock normalization") {
 		REQUIRE(module->grid.cursor[1].pos.q != qBefore1);
 	}
-
 }
