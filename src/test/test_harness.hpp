@@ -400,6 +400,77 @@ struct Harness {
 		APP->scene->addChild(mw);
 	}
 
+	// ---- Expanders -------------------------------------------------------------------------
+	//
+	// Wiring expanders by hand — `a->rightExpander.module = b; b->leftExpander.module = a;` — is
+	// what every expander test in this suite used to do, and it silently skips two things Rack
+	// does:
+	//
+	//   1. **Module::onExpanderChange() is never dispatched.** Rack assigns the neighbour via
+	//      Module::setExpanderModule() (Module.cpp), which fires the event when the pointer
+	//      actually changes. 11 modules in this plugin override onExpanderChange, and several do
+	//      real work in it — MidiCat and Transit call notifyModuleListeners() (which is what sets
+	//      moduleChangedFlag), and IntermixBase unpublishes its expander message and resets its
+	//      outputs on a left-side change. A hand-wired test runs none of that, so it tests the
+	//      steady state a module reaches *after* a change, never the change itself.
+	//   2. **Expander::moduleId is left at -1.** Rack maintains it alongside `module`, and
+	//      setExpanderModule does NOT touch it — the engine assigns it separately (see
+	//      Engine::removeModule_NoLock). Strip walks chains by moduleId, so a test that only sets
+	//      `module` presents as a connected-but-unidentifiable neighbour.
+	//
+	// These methods do both, in Rack's order. What they deliberately do NOT do is touch
+	// `moduleChangedFlag`: that is this plugin's own ModuleChangeListener signal, and a module
+	// that reaches it does so *through* onExpanderChange -> notifyModuleListeners(). Setting it
+	// from the harness would paper over a module that forgot to notify, which is exactly the bug
+	// worth catching. A test that needs the flag set without a real notification should set it
+	// itself, and say why.
+
+	// Connects `right` as the right-hand neighbour of `left` (and `left` as the left-hand
+	// neighbour of `right`), dispatching onExpanderChange on both, as Rack does.
+	//
+	// Does not step. Modules that react to a neighbour change during process() need a dspStep()
+	// afterwards; whether one is required — and how many — is the module's business, not the
+	// harness's, so it stays at the call site where it can be asserted.
+	void connectExpander(rack::Module* left, rack::Module* right) {
+		REQUIRE(left != nullptr);
+		REQUIRE(right != nullptr);
+		REQUIRE(left != right);
+		setExpander(left, SIDE_RIGHT, right);
+		setExpander(right, SIDE_LEFT, left);
+	}
+
+	// Connects a chain left-to-right: chain[0] -> chain[1] -> ... Each link is made with
+	// connectExpander, so events fire per link and in order — the same way Rack dispatches them
+	// as a rack is rearranged, rather than as one batched update at the end.
+	void connectChain(const std::vector<rack::Module*>& chain) {
+		for (size_t i = 0; i + 1 < chain.size(); i++) {
+			connectExpander(chain[i], chain[i + 1]);
+		}
+	}
+
+	// Variadic form: h.connectChain(transit, ex1, ex2).
+	template <typename... T>
+	void connectChain(rack::Module* first, rack::Module* second, T*... rest) {
+		connectChain(std::vector<rack::Module*>{first, second, rest...});
+	}
+
+	// Removes the neighbour on one side of `m`, and clears the matching back-reference on that
+	// neighbour, dispatching onExpanderChange on both — the "module removed from the rack" case.
+	void disconnectExpander(rack::Module* m, uint8_t side) {
+		REQUIRE(m != nullptr);
+		rack::Module* neighbour = m->getExpander(side).module;
+		setExpander(m, side, nullptr);
+		if (neighbour) {
+			// The neighbour's view of m is on its opposite side.
+			setExpander(neighbour, side == SIDE_RIGHT ? SIDE_LEFT : SIDE_RIGHT, nullptr);
+		}
+	}
+
+	// Rack's side convention (Module::getExpander): 0 = left, 1 = right. Named because a bare
+	// 0/1 at a call site reads as a module index.
+	static const uint8_t SIDE_LEFT = 0;
+	static const uint8_t SIDE_RIGHT = 1;
+
 	// ---- Stepping ------------------------------------------------------------------------
 
 	// Runs one DSP step: process() on every registered module, in registration order, with
@@ -497,6 +568,23 @@ struct Harness {
 	std::vector<rack::widget::Widget*> exposedFromRack;
 
 private:
+	// Sets one side's neighbour on one module, the way Rack's engine does: assign moduleId
+	// directly, then route the pointer through setExpanderModule() so onExpanderChange fires.
+	//
+	// The split is Rack's, not ours — setExpanderModule() only touches `module` and the event,
+	// and the engine assigns `moduleId` around it (Engine::removeModule_NoLock). moduleId is set
+	// first so a handler reacting to the event already sees a consistent pair.
+	// setExpanderModule is PRIVATE (which expands to a deprecation attribute, rack.hpp:16), like
+	// the engine and scene calls elsewhere in this framework: there is no public way to dispatch
+	// an ExpanderChangeEvent, and re-implementing the dispatch here would be the hand-wiring this
+	// method exists to replace.
+	static void setExpander(rack::Module* m, uint8_t side, rack::Module* neighbour) {
+		m->getExpander(side).moduleId = neighbour ? neighbour->id : -1;
+		TEST_SUPPRESS_DEPRECATED_BEGIN
+		m->setExpanderModule(neighbour, side);
+		TEST_SUPPRESS_DEPRECATED_END
+	}
+
 	// Points the UiAccess mock at whatever the current mode implies.
 	void installUiAccess() {
 		uiAccessMock.present = hasWindowForMode();

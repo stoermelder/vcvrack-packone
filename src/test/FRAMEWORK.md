@@ -269,6 +269,47 @@ pointer never won. Routing the question through the existing `vcv::UiAccess` sea
 parameter has since been deleted. General lesson, recorded because it recurs: **for test injection,
 extend a `vcv::*Access` seam rather than adding a test-only field or parameter.**
 
+### Expanders
+
+```cpp
+h.connectExpander(transit, ex);              // transit ← → ex, both sides
+h.connectChain(transit, ex1, ex2);           // left-to-right, one link at a time
+h.disconnectExpander(transit, Test::Harness::SIDE_RIGHT);
+```
+
+Use these rather than assigning `rightExpander.module` / `leftExpander.module` by hand. Hand-wiring
+silently skips two things Rack does:
+
+- **`onExpanderChange` is never dispatched.** Rack assigns the neighbour through
+  `Module::setExpanderModule()`, which fires the event when the pointer actually changes. **11
+  modules in this plugin override it**, and several do real work there — MidiCat and Transit call
+  `notifyModuleListeners()` (which is what sets `moduleChangedFlag`); `IntermixBase` unpublishes its
+  expander message and resets its outputs on a left-side change. A hand-wired test reaches the
+  steady state a module settles into *after* a change, but never exercises the change itself.
+- **`Expander::moduleId` is left at `-1`.** Rack maintains it alongside `module`, and
+  `setExpanderModule` does *not* touch it — the engine assigns it separately. Strip walks chains by
+  `moduleId`, so a hand-wired neighbour reads as connected-but-unidentifiable.
+
+Connections do not step. Whether a module needs a `dspStep()` afterwards — and how many — is the
+module's business, so it stays at the call site where it can be asserted.
+
+> **The harness never touches `moduleChangedFlag`.** That is the plugin's own
+> `ModuleChangeListener` signal, and a module reaches it *through*
+> `onExpanderChange → notifyModuleListeners()`. Setting it from the harness would mask a module
+> that forgot to notify. A test that needs the flag without a real notification should set it
+> itself, and say why. There is a `TEST_CASE` in `test_harness.test.cpp` pinning this.
+
+Two things worth knowing before reading a green expander test as proof of anything, both measured
+on Transit rather than reasoned about:
+
+- **Notification is often redundant.** Transit *and* TransitEx both call
+  `notifyModuleListeners("Transit")` from their own `onExpanderChange`, and the harness notifies
+  both sides — so deleting either call alone keeps the suite green. Only removing both fails it.
+- **A first-step rescan can hide the flag entirely.** Transit's gate is
+  `moduleChangedFlag || ctrlMode != BASE::ctrlMode`; on a fresh module the second term is already
+  true, so a test that connects before its first `dspStep()` would pass with no notification at
+  all. Step to a settled state first if the flag is what you mean to test.
+
 ### Lifetime and hooks
 
 Modules and widgets added through the harness are destroyed in reverse order when it goes out of

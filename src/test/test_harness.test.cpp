@@ -127,6 +127,117 @@ TEST_CASE("Expander message flipping matches the real engine") {
 }
 
 
+// A module that records the expander-change events Rack dispatches to it. The whole point of
+// routing connections through the harness is that these fire at all: 11 modules in the plugin
+// override onExpanderChange, and before this API no test ever triggered one.
+struct ExpanderChangeProbe : rack::Module {
+	std::vector<uint8_t> changedSides;
+	// Stands in for a module's own reaction to the event (MidiCat/Transit call
+	// notifyModuleListeners here, IntermixBase unpublishes and resets).
+	int reactions = 0;
+
+	ExpanderChangeProbe() { config(0, 0, 0, 0); }
+
+	void onExpanderChange(const ExpanderChangeEvent& e) override {
+		changedSides.push_back(e.side);
+		reactions++;
+	}
+};
+
+
+TEST_CASE("Expander connections dispatch Rack's onExpanderChange") {
+	Test::Harness h;
+	auto* a = h.adoptModule(new ExpanderChangeProbe);
+	auto* b = h.adoptModule(new ExpanderChangeProbe);
+
+	SECTION("connectExpander wires both sides and notifies both modules") {
+		h.connectExpander(a, b);
+
+		REQUIRE(a->rightExpander.module == b);
+		REQUIRE(b->leftExpander.module == a);
+
+		// The event fired once on each, naming the side that changed.
+		REQUIRE(a->changedSides == std::vector<uint8_t>{Test::Harness::SIDE_RIGHT});
+		REQUIRE(b->changedSides == std::vector<uint8_t>{Test::Harness::SIDE_LEFT});
+	}
+
+	SECTION("moduleId is kept in sync with the pointer") {
+		// setExpanderModule does NOT do this — Rack's engine assigns moduleId separately, and
+		// Strip walks expander chains by moduleId, so a connection that set only `module` would
+		// read as a connected-but-unidentifiable neighbour.
+		REQUIRE(a->rightExpander.moduleId == -1);
+
+		h.connectExpander(a, b);
+		REQUIRE(a->rightExpander.moduleId == b->id);
+		REQUIRE(b->leftExpander.moduleId == a->id);
+
+		h.disconnectExpander(a, Test::Harness::SIDE_RIGHT);
+		REQUIRE(a->rightExpander.moduleId == -1);
+		REQUIRE(b->leftExpander.moduleId == -1);
+	}
+
+	SECTION("disconnectExpander clears both sides and notifies both") {
+		h.connectExpander(a, b);
+		h.disconnectExpander(a, Test::Harness::SIDE_RIGHT);
+
+		REQUIRE(a->rightExpander.module == nullptr);
+		REQUIRE(b->leftExpander.module == nullptr);
+		REQUIRE(a->reactions == 2);   // connect + disconnect
+		REQUIRE(b->reactions == 2);
+	}
+
+	SECTION("re-connecting the same neighbour does not re-fire") {
+		// Rack's setExpanderModule only dispatches when the pointer actually changes, and the
+		// harness must not paper over that — a module relying on the event being edge-triggered
+		// would behave differently under test than in Rack.
+		h.connectExpander(a, b);
+		REQUIRE(a->reactions == 1);
+
+		h.connectExpander(a, b);
+		REQUIRE(a->reactions == 1);
+	}
+
+	SECTION("connectChain links left-to-right, firing per link in order") {
+		auto* c = h.adoptModule(new ExpanderChangeProbe);
+		h.connectChain(a, b, c);
+
+		REQUIRE(a->rightExpander.module == b);
+		REQUIRE(b->leftExpander.module == a);
+		REQUIRE(b->rightExpander.module == c);
+		REQUIRE(c->leftExpander.module == b);
+
+		// b sits mid-chain, so it saw two changes — left first (a→b), then right (b→c),
+		// matching the order Rack dispatches them as a rack is assembled rather than one
+		// batched update.
+		REQUIRE(b->changedSides
+			== std::vector<uint8_t>{Test::Harness::SIDE_LEFT, Test::Harness::SIDE_RIGHT});
+	}
+}
+
+
+TEST_CASE("The harness never touches moduleChangedFlag") {
+	// A deliberate boundary, not an oversight. moduleChangedFlag is this plugin's own
+	// ModuleChangeListener signal; a module reaches it through onExpanderChange ->
+	// notifyModuleListeners(). If the harness set it, a module that FORGOT to notify would still
+	// look correct under test — which is exactly the regression worth catching.
+	struct SilentProbe : rack::Module, StoermelderPackOne::ModuleChangeListener {
+		SilentProbe() { config(0, 0, 0, 0); moduleChangedFlag = false; }
+		// Overrides onExpanderChange but deliberately does NOT notify — the "forgot to notify"
+		// case.
+		void onExpanderChange(const ExpanderChangeEvent& e) override {}
+	};
+
+	Test::Harness h;
+	auto* a = h.adoptModule(new SilentProbe);
+	auto* b = h.adoptModule(new SilentProbe);
+
+	h.connectExpander(a, b);
+
+	REQUIRE_FALSE(a->moduleChangedFlag);
+	REQUIRE_FALSE(b->moduleChangedFlag);
+}
+
+
 TEST_CASE("UI frames") {
 	Test::Harness h;
 
