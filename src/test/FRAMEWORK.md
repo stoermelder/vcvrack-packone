@@ -300,22 +300,84 @@ Same principle as §7.1, and the same failure mode: get this right while *writin
 concrete `TaskWorker` member cannot be substituted later, and the mistake is invisible — the code
 compiles, runs correctly in Rack, and its test silently exercises a real background thread.
 
-**Declare the worker as an `ITaskWorker*`, not a `TaskWorker`.**
+**Take the worker as a constructor parameter, and default it to one worker per `Context`.**
 
 ```cpp
+// One worker per Rack Context (one per plugin instance, and one per test binary),
+// shared by all MyModule instances within it. The weak_ptr lets it be destroyed
+// when the last module in that Context is removed.
+//
+// Only ever reached from the DEFAULT constructor — a module built with an
+// injected worker never calls this, so a test constructs no thread at all.
+//
+// Function-local static, not a class static: the test build both links the dylib
+// and #includes this .cpp, so a class static would exist twice and writes through
+// one copy would be invisible through the other. Same rationale as SpliceKit's
+// getInstances() (SpliceKit.cpp:682).
+static std::shared_ptr<ITaskWorker> defaultWorker() {
+    static std::mutex m;
+    static std::map<Context*, std::weak_ptr<ITaskWorker>> workers;
+    std::lock_guard<std::mutex> lock(m);
+    auto& slot = workers[APP];
+    if (auto w = slot.lock()) return w;     // lock() once — no expired()/lock() gap
+    auto worker = std::make_shared<MpmcTaskWorker>("MyModule worker");
+    slot = worker;
+    return worker;
+}
+
 struct MyModule : Module {
-    TaskWorker ownedWorker;                       // the real one, for production
-    ITaskWorker* worker = &ownedWorker;           // what the module actually calls
-    // ...
+    MyModule() : MyModule(defaultWorker()) {}
+    explicit MyModule(std::shared_ptr<ITaskWorker> worker) {
+        // ... config() etc ...
+        this->worker = std::move(worker);          // before anything can queue
+    }
+    std::shared_ptr<ITaskWorker> worker;
+
     void process(const ProcessArgs& args) override {
         if (somethingHappened) worker->work([=]() { doTheWork(); });
     }
 };
 ```
 
-One extra line, and it is the whole difference between a module a test can drive deterministically
-and one it cannot. A test then repoints `worker` — after construction, before the first
-`dspStep()` — and the harness will do the same when it gains support, with no change to the module.
+Five properties, each of which a simpler version loses:
+
+- **No thread exists unless one is needed.** Because `defaultWorker()` is reached only from the
+  default constructor, a test passing its own worker never reaches the map and no
+  `MpmcTaskWorker` is ever constructed. An owned-member worker (`TaskWorker w;`) starts its thread
+  in the constructor regardless, leaving every test carrying a parked thread per module.
+- **The worker cannot be injected too late.** It is a constructor parameter, so there is no window
+  between construction and injection in which a task could go to the wrong worker. Assign it before
+  anything in the constructor can queue.
+- **Thread count is bounded by Rack instances, not module instances.** Sixteen modules in one patch
+  share one worker.
+- **Contexts stay isolated.** Two plugin instances — or, for tests, two `TestContext`s — never
+  share a worker, so one cannot serialise behind or observe the other's tasks.
+- **The worker dies with the last module in its Context.** `weak_ptr` rather than a leaked
+  singleton, so clearing the patch tears the thread down.
+
+Three details in that function that are easy to get wrong:
+
+- **`lock()` once, not `expired()` then `lock()`.** Testing `expired()` and then calling `lock()`
+  separately leaves a window in which the last owner releases between the two calls, so `lock()`
+  returns null after the code has already committed to the "still alive" branch.
+- **The mutex is not optional here.** Rack constructs modules on the UI thread, so a bare pointer
+  swap would *usually* be safe — but this mutates a `std::map`, and module construction is rare
+  enough that the lock costs nothing measurable. Enforced beats assumed.
+- **Empty map entries are never erased.** `workers[APP]` inserts a slot for a `Context` that may
+  later be destroyed. That is a bounded leak — one empty `weak_ptr` per Rack instance — and
+  deliberately not worth fixing; SpliceKit makes the same call for the same reason
+  (`SpliceKit.cpp:665`).
+
+**The variant to pick.** Per-`Context` is the default. Two others are occasionally right:
+
+| Variant | One worker per | Use when |
+|---|---|---|
+| Per-instance — `return std::make_shared<MpmcTaskWorker>(...)`, no static at all | module | Tasks are long enough that one instance must not delay another's |
+| **Per-`Context`** (above) | **Rack instance** | **Default** |
+| Process-global — a single `static weak_ptr` | process | Effectively never: strictly worse isolation than per-`Context`, with no advantage |
+
+Per-instance is the simplest and has no shared state to guard, so prefer it whenever the extra
+threads are affordable and head-of-line blocking would be a real risk.
 
 Three rules for the task body itself, each of which has a counterexample in the tree:
 
@@ -331,15 +393,34 @@ Three rules for the task body itself, each of which has a counterexample in the 
    `GuiTaskProcessor::enqueue()` returns `false` when full (`GuiTaskProcessor.hpp:117`). If dropping
    it would corrupt state, the queue is the wrong mechanism.
 
-**Where the worker lives changes the shape.** A worker reached from `process()` needs the owned
-worker plus pointer above. A worker used only by widget-side components can be simpler — Siren
-holds one on the *widget* (`Siren.cpp:785`) and hands components a bare `ITaskWorker*`
-(`SirenBrowserPane.hpp:245`), which works because they are constructed after the widget owns it and
-none of them is reached from `process()`.
+**Constructor injection is the part to adopt everywhere; the sharing is a separate decision.** The
+table above is about how many threads exist, and changing it never affects testability — a test
+injects its own worker either way.
+
+**A widget-side worker can be simpler.** Siren holds one on the *widget* (`Siren.cpp:785`) and
+hands components a bare `ITaskWorker*` (`SirenBrowserPane.hpp:245`). That works because they are
+constructed after the widget owns it and none is reached from `process()` — so there is no
+construction-ordering hole for the constructor parameter to close.
 
 #### Testing a module written this way
 
-Pass `SyncTaskWorker` and the task runs inline, to completion, before `work()` returns:
+Pass a `SyncTaskWorker` and every task runs inline, to completion, before `work()` returns:
+
+```cpp
+// Construct directly, not through the dylib factory — see the note below.
+auto* m = new MyModule(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+```
+
+Wrap that in a suite-local `createModule()` and bind `ModuleScaffold` to it, so every scaffolded
+module gets the injected worker. MidiKit does exactly this (`MidiKit.test.hpp:64-79` — MidiKit
+lives on the `midi-kit` branch, so its file references resolve there, not on `v2-dev`), and the
+reason is worth stating: **`Test::createModule` / `Harness::addModule` go through the dylib's model
+factory, which only knows the default constructor** — so a module created through them gets the
+real async worker no matter what the test wants. Until the harness can construct with arguments
+(planned for Step 6b), a worker-injecting suite needs its own factory shadow.
+
+For a component the test calls directly, no shadow is needed — construct the `SyncTaskWorker` and
+pass it in:
 
 ```cpp
 StoermelderPackOne::SyncTaskWorker worker;   // runs inline
@@ -348,15 +429,33 @@ task.start(&worker, src, cancel);
 REQUIRE(task.progress->done.load(std::memory_order_acquire));   // already done, no polling
 ```
 
-This is right when **the test itself is the caller** — a component invoked directly from the test
-thread. See `SirenBackgroundTasks.test.cpp` for ten worked examples.
+See `SirenBackgroundTasks.test.cpp` for ten worked examples.
 
-It is *not* right when the module's own `process()` does the queuing: inline means the task runs on
-the engine thread it was queued to escape — see *The trap in `SyncTaskWorker`* below.
+**When inline is the wrong answer.** `SyncTaskWorker` makes a fire-and-forget call and a blocking
+one behave identically, which erases exactly the property some tests exist to check — MidiKit's
+case is `loadScript()` (async) versus `closeState()` (blocks until `onUnload()` has run); under an
+inline worker a test asserting teardown ordering passes against code that never waits. Those tests
+need a real worker plus a barrier:
 
-> **Working on a module that predates this rule?** Strip and EightFaceMk2 still own a concrete
-> `TaskWorker`. Testing those needs a different approach, with its own caveats —
-> `var/TaskWorker_existing_modules.md` covers it, and lists what to migrate.
+```cpp
+// A real background worker, for tests that must distinguish async from blocking dispatch.
+static std::shared_ptr<ITaskWorker> asyncWorker() {
+    return std::make_shared<MpmcTaskWorker>("MyModule test worker");
+}
+
+// Push a sentinel and wait for it. The queue is FIFO, so once the sentinel runs,
+// every earlier task has finished — the only way to know an async call has landed.
+// Bounded: an unbounded spin turns a stalled worker into a silent 100%-CPU hang.
+barrier(worker);            // see MidiKit.test.hpp:107 for a complete implementation
+```
+
+Two details that implementation gets right and a naive barrier does not: `work()` returns `false`
+when the queue is momentarily full, so the sentinel push must retry; and the sentinel flag must be
+a `shared_ptr`, not a stack reference, or a timeout leaves the worker writing into a dead frame.
+
+> **Working on a module that predates this pattern?** Strip and EightFaceMk2 still own a concrete
+> `TaskWorker` and cannot inject at all. `var/TaskWorker_existing_modules.md` covers testing them
+> today, and what migrating them involves.
 
 #### Writing the test so it survives the harness gaining support
 
