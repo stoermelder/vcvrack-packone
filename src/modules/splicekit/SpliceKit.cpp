@@ -539,7 +539,7 @@ struct FeedbackSender {
 		assert(verifier.isEngine());
 		midi::Message msg;
 		if (!buildFeedbackOff(cellId, oldStateId, msg)) return;
-		msg.frame = APP->engine->getFrame() + 1;
+		msg.frame = vcv::engine::getFrame() + 1;
 		midiOutput.sendMessage(msg);
 	}
 
@@ -560,7 +560,7 @@ struct FeedbackSender {
 		assert(verifier.isEngine());
 		while (!pendingOffs.empty()) {
 			midi::Message msg = pendingOffs.shift();
-			msg.frame = APP->engine->getFrame() + 1;
+			msg.frame = vcv::engine::getFrame() + 1;
 			midiOutput.sendMessage(msg);
 		}
 	}
@@ -598,7 +598,7 @@ struct FeedbackSender {
 		msg.bytes[0] = status | (uint8_t)(spec.channel & 0x0F);
 		msg.bytes[1] = (uint8_t)(noteNum  & 0x7F);
 		msg.bytes[2] = (uint8_t)(spec.value & 0x7F);
-		msg.frame = APP->engine->getFrame() + 2;
+		msg.frame = vcv::engine::getFrame() + 2;
 		midiOutput.sendMessage(msg);
 	}
 

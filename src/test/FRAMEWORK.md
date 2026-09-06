@@ -269,6 +269,122 @@ pointer never won. Routing the question through the existing `vcv::UiAccess` sea
 parameter has since been deleted. General lesson, recorded because it recurs: **for test injection,
 extend a `vcv::*Access` seam rather than adding a test-only field or parameter.**
 
+### Background workers — `TaskWorker` and `ITaskWorker`
+
+> **The harness does not schedule worker threads yet.** So how a module *declares* its worker
+> decides whether it can be tested deterministically at all — that is what this section is about.
+> The planned harness support is `var/TestFramework_review.md` §2.2a–f and Step 6b; the two modules
+> that predate the rule below are covered by `var/TaskWorker_existing_modules.md`.
+
+Two separate mechanisms, often confused because both run tasks off the engine thread:
+
+| | `TaskWorker` (`utils/TaskWorker.hpp`) | `GuiTaskProcessor` (`utils/GuiTaskProcessor.hpp`) |
+|---|---|---|
+| Thread | One, permanent, started in the constructor | Conditional — only when `hasWindow()` is false |
+| Selected by | Nothing; it always runs | `UiMode` (see above) |
+| Drained by | The worker only | The widget's `step()`, **or** the worker |
+| Test seam | `ITaskWorker` | `UiMode`, and a legacy `syncMode` flag |
+
+`GuiTaskProcessor` is already covered: set `UiMode::UiPresent` and its tasks drain from
+`h.uiFrame()`, deterministically, on the production path. Nothing further is needed, and **new
+tests should not set `syncMode`** — it suppresses *both* branches, so a test using it exercises
+neither real path. It survives only in SpliceKit's scaffold and is scheduled for deletion.
+
+`TaskWorker` is the gap. It has no `UiMode` equivalent, so a module that queues work through it
+runs that work on a real background thread with no defined moment at which it has landed. Do not
+sleep or spin waiting for it.
+
+#### How to write a module so its worker is testable
+
+Same principle as §7.1, and the same failure mode: get this right while *writing* the module. A
+concrete `TaskWorker` member cannot be substituted later, and the mistake is invisible — the code
+compiles, runs correctly in Rack, and its test silently exercises a real background thread.
+
+**Declare the worker as an `ITaskWorker*`, not a `TaskWorker`.**
+
+```cpp
+struct MyModule : Module {
+    TaskWorker ownedWorker;                       // the real one, for production
+    ITaskWorker* worker = &ownedWorker;           // what the module actually calls
+    // ...
+    void process(const ProcessArgs& args) override {
+        if (somethingHappened) worker->work([=]() { doTheWork(); });
+    }
+};
+```
+
+One extra line, and it is the whole difference between a module a test can drive deterministically
+and one it cannot. A test then repoints `worker` — after construction, before the first
+`dspStep()` — and the harness will do the same when it gains support, with no change to the module.
+
+Three rules for the task body itself, each of which has a counterexample in the tree:
+
+1. **Keep the task body a named method, not a lambda body.** Write
+   `worker->work([=]() { groupBypassWorker(val); })`, not fifteen lines inline. The named method is
+   callable from a test directly, which is the fallback when there is no seam — and it stays
+   readable at the enqueue site. Strip gets this right (`Strip.cpp:223`).
+2. **The task must not assume it runs on the engine thread.** It does not, in production. If it
+   needs engine state, capture it by value at enqueue time rather than reading it from `this` when
+   the task runs. Anything it touches concurrently with `process()` needs to be atomic or queued.
+3. **The task must be safe to run *late*, or not at all.** A queued task may run several DSP blocks
+   after the event that queued it, and a fixed-size queue may drop it entirely —
+   `GuiTaskProcessor::enqueue()` returns `false` when full (`GuiTaskProcessor.hpp:117`). If dropping
+   it would corrupt state, the queue is the wrong mechanism.
+
+**Where the worker lives changes the shape.** A worker reached from `process()` needs the owned
+worker plus pointer above. A worker used only by widget-side components can be simpler — Siren
+holds one on the *widget* (`Siren.cpp:785`) and hands components a bare `ITaskWorker*`
+(`SirenBrowserPane.hpp:245`), which works because they are constructed after the widget owns it and
+none of them is reached from `process()`.
+
+#### Testing a module written this way
+
+Pass `SyncTaskWorker` and the task runs inline, to completion, before `work()` returns:
+
+```cpp
+StoermelderPackOne::SyncTaskWorker worker;   // runs inline
+SirenIndexTask task;
+task.start(&worker, src, cancel);
+REQUIRE(task.progress->done.load(std::memory_order_acquire));   // already done, no polling
+```
+
+This is right when **the test itself is the caller** — a component invoked directly from the test
+thread. See `SirenBackgroundTasks.test.cpp` for ten worked examples.
+
+It is *not* right when the module's own `process()` does the queuing: inline means the task runs on
+the engine thread it was queued to escape — see *The trap in `SyncTaskWorker`* below.
+
+> **Working on a module that predates this rule?** Strip and EightFaceMk2 still own a concrete
+> `TaskWorker`. Testing those needs a different approach, with its own caveats —
+> `var/TaskWorker_existing_modules.md` covers it, and lists what to migrate.
+
+#### Writing the test so it survives the harness gaining support
+
+- **Never let a worker body run from inside `process()` in a test.** The planned harness runs
+  worker tasks in a third phase (`workerDrain()`), never inline on the engine thread — that is the
+  whole point, since a task like Strip's calls `APP->engine->bypassModule()`, which exclusively
+  locks the engine. A test that reaches the body through `dspStep()` today is asserting a sequence
+  the harness will deliberately stop producing.
+- **Keep the queue-side and the task-side assertions separate.** Assert what `process()` *queued*
+  in one place and what the task *did* in another, rather than one assertion spanning both. When
+  `workerDrain()` and `pendingWorkerTasks()` arrive, the split is already where it needs to be.
+- **Do not assert on wall-clock ordering between the engine thread and a worker.** There is no
+  guaranteed ordering now, and the harness will define one — deterministically, and probably not
+  the one a sleep happens to produce today.
+
+#### The trap in `SyncTaskWorker`
+
+It runs the task **on the calling thread, inside `work()`**. For a component test that is the point.
+For a module whose `process()` queues the task it is wrong twice over: the task runs on the engine
+thread it was queued to escape, and the queued-but-not-yet-run window — where torn reads and lost
+edges live — never exists for the test to observe. `SirenBackgroundTasks.test.cpp:54` records the
+same limitation from the other side ("a real worker can't [be observed mid-flight]").
+
+`isWorkerThread()` has the matching sharp edge: `SyncTaskWorker` returns `true` unconditionally
+(`TaskWorker.hpp:171`), because every thread is "the worker thread" when tasks run inline. A module
+asserting "this only runs on the worker" therefore always passes under it. That assertion is not
+meaningfully tested until the harness supplies a worker that can answer `false`.
+
 ### Expanders
 
 ```cpp
@@ -448,6 +564,62 @@ Production code routes filesystem, dialog, module, scene, cable, history and net
 through `StoermelderPackOne::vcv`. Each is a virtual interface behind a global pointer, swappable in
 a `DEBUGPLUGIN` build.
 
+### 7.1 What a new module must route through the layer
+
+This is the part to get right while *writing* the module, not while writing its test: a call that
+goes straight to `APP->` cannot be observed or faked later, and the mistake is invisible — the code
+compiles, runs correctly in Rack, and its test silently exercises the real thing.
+
+**Route these. Always.** A test cannot obtain them otherwise:
+
+| In a new module, write | Not | Because a test has no |
+|---|---|---|
+| `vcv::fs::` — `read`/`write`/`exists`, `isFile`/`isDirectory`/`getEntries`/`getFileSize`, `rename`/`copy`/`remove`/`removeRecursively`, `createDirectory`/`createDirectories`, `getTempDirectory`/`getUserDirectory`/`openDirectory` | `fopen`/`fread`/`fwrite`, `rack::system::*` | filesystem it may touch |
+| `vcv::fs::getTime()` | `system::getTime()` | clock it can control |
+| `vcv::ui::message/openDialog/saveDialog/openDirectoryDialog` | `osdialog_*` | user to answer a dialog |
+| `vcv::ui::getClipboard/setClipboard/openBrowser` | `glfwGetClipboardString`, `system::openBrowser` | clipboard or browser |
+| `vcv::nw::requestJson/requestDownload` | `rack::network::*` | network |
+| `vcv::history::push` | `APP->history->push` | undo stack it can inspect |
+| `vcv::getModuleWidget/getModule/addModule/removeModule/applyPreset/toJson` | `APP->scene->rack->addModule(...)` etc. | patch to add modules to |
+| `vcv::findCable/addCableToPort/removeCable/getCompleteCables/hasCable` | `APP->scene->rack->addCable(...)` etc. | cables |
+| `vcv::scene::select/deselect/deselectAll/isSelected/getSelectedModuleIds` | `APP->scene->rack` selection | selection state |
+| `vcv::ui::hasWindow()` | `APP->window != nullptr` | window (it is always null) |
+| `vcv::engine::getFrame()` | `APP->engine->getFrame()` | way to advance the engine's own counter |
+
+**Leave these raw.** A test already has the real thing, so a mock would only be a second
+definition free to drift from Rack:
+
+- **The rest of `APP->engine->`** — `getSampleRate()`, `getSampleTime()`, `getModule()`,
+  `bypassModule()`, and every `ParamHandle` call. `Test::Harness` drives the *real* engine, so
+  these already answer correctly; §5 and `Harness`'s mapping helpers cover them.
+- **The widget tree** — `APP->scene->rack->...` beyond the module/cable operations above,
+  `APP->scene->rackScroll->...`, `APP->event->...`. `Harness` gives a live laid-out scene and
+  `EventDriver` dispatches through it (§6).
+- **Drawing** — `APP->window->loadFont()`, `->uiFont`, `->vg`, `->pixelRatio`. Not testable at all
+  (§6, *What is not testable*); `Window`/`NVGcontext` cannot be constructed headless.
+- Logging macros (`INFO`/`WARN`), `rack::APP_NAME`/`APP_VERSION`, `asset::user(...)`.
+
+Note `vcv::fs::` also wraps the pure path helpers — `join`, `getDirectory`, `getFilename`,
+`getStem`, `getExtension` — even though they are just string manipulation. They are in the layer
+so a mock can redirect a whole path root (`fs.hpp:34`), so prefer them over `system::` for
+consistency within a module that already uses the layer.
+
+**The rule, if the table does not cover your case:**
+
+> Route it when a test **cannot otherwise obtain what the call returns**. Where a test can already
+> have the real thing, use the real thing.
+
+Wrapping the widget tree in a proxy is *possible* — it was prototyped, and a mock returning real
+widgets satisfies even `dynamic_cast` plus follow-on calls — but it buys no testability and
+creates a Rack type definition that can drift. See `var/TestFramework_review.md` §10e-ter.
+
+Two practical notes:
+
+- `#include "../../vcv/api.hpp"` pulls in the whole layer in one line.
+- **`EngineAccess` has no `TEST_MOCK_*` macro**, and should not be mocked by hand: `Test::Harness`
+  installs its own for its lifetime, pointing `getFrame()` at the harness's DSP clock. Just use
+  `vcv::engine::getFrame()` in the module and step the harness.
+
 ```cpp
 struct MockUi : vcv::UiAccess {
     std::string lastSaveName;
@@ -465,7 +637,8 @@ TEST_CASE("export uses the right filename") {
 }
 ```
 
-Seven macros, one per slot. Each hardcodes its own member name, `Base` type and global — there is no
+Seven macros, one per test-mockable slot (`EngineAccess` is the eighth interface but has no macro —
+`Test::Harness` owns it). Each hardcodes its own member name, `Base` type and global — there is no
 regular naming convention to infer them from (the `FileAccess` global is `fileAccess`, not
 `fsAccess`), and a wrong Type/slot pairing fails to compile:
 
@@ -564,7 +737,9 @@ anything process-wide (scene children, registries) — an earlier case may have 
 **A known pre-existing flake.** `Siren`'s background-task suite occasionally fails or aborts under
 parallel load and passes in isolation. It is a real `TaskWorker`/teardown race, documented since
 Phase 1, and not a regression from whatever you just changed. Confirm with
-`make testrun-one NAME=<the failing binary>` before investigating.
+`make testrun-one NAME=<the failing binary>` before investigating. It is also the reason §5's
+worker guidance says not to let a real worker thread run against test state: this is what it looks
+like when one does.
 
 **Rack code that cannot run headless.** These dereference `APP->window` where no seam reaches:
 
@@ -642,14 +817,21 @@ Checklist before committing:
 | `framework.hpp` | 33 | Umbrella — the only header a test should include |
 | `test_plugin.hpp` | 89 | Catch2 config, macro collisions, build sentinels |
 | `test_mock.hpp` | 103 | `vcv` access mocking |
-| `test_context.hpp` | 347 | Context, module/widget lifetime |
+| `test_context.hpp` | 357 | Context, module/widget lifetime |
 | `test_json.hpp` | 299 | Preset fuzzers |
-| `test_traversal.hpp` | 151 | Shared widget-tree walk |
+| `test_traversal.hpp` | 150 | Shared widget-tree walk |
 | `test_events.hpp` | 442 | `EventDriver` |
-| `test_harness.hpp` | 515 | `Harness`, `SceneLayout`, `UiMode` |
-| `test_harness.test.cpp` | 520 | The harness's own tests |
+| `test_harness.hpp` | 867 | `Harness`, `SceneLayout`, `UiMode` |
+| `test_harness.test.cpp` | 912 | The harness's own tests |
 | `test_events.test.cpp` | 704 | The driver's own tests |
 | `catch_amalgamated.{hpp,cpp}` | 30k | Catch2 v3.12.0, compiled once and shared |
+
+Not part of the framework, but needed when testing a module with background work (§5, workers):
+
+| File | Role |
+|---|---|
+| `utils/TaskWorker.hpp` | `TaskWorker`, the `ITaskWorker` seam, and `SyncTaskWorker` |
+| `utils/GuiTaskProcessor.hpp` | The GUI task queue `UiMode` selects the drain path of |
 
 Framework changes belong with a test in `test_harness.test.cpp` or `test_events.test.cpp`. Both
 exist because the framework is what every other test rests on, and a silent regression there is
