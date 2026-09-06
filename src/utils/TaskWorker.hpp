@@ -1,20 +1,46 @@
 #pragma once
 #include <functional>
-#include <mutex>
-#include <condition_variable>
 #include <thread>
 #include <atomic>
 #include <pthread.h>
+#if defined ARCH_MAC
+	// POSIX unnamed semaphores (sem_init) are not implemented on macOS;
+	// dispatch semaphores are the supported lightweight equivalent.
+	#include <dispatch/dispatch.h>
+#else
+	#include <semaphore.h>
+#endif
 
 namespace StoermelderPackOne {
 
+// Minimal counting semaphore (C++14 -- std::counting_semaphore is C++20).
+// Unlike a condvar notified without its mutex held, a post can't land in a
+// window where the waiter is neither checking its predicate nor yet blocked
+// and get lost -- signals are counted, not edge-triggered.
+struct TaskSignal {
+#if defined ARCH_MAC
+	dispatch_semaphore_t sem;
+	TaskSignal() { sem = dispatch_semaphore_create(0); }
+	~TaskSignal() { dispatch_release(sem); }
+	void post() { dispatch_semaphore_signal(sem); }
+	void wait() { dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER); }
+#else
+	sem_t sem;
+	TaskSignal() { sem_init(&sem, 0, 0); }
+	~TaskSignal() { sem_destroy(&sem); }
+	void post() { sem_post(&sem); }
+	// sem_wait can be interrupted by a signal (EINTR); retry.
+	void wait() { while (sem_wait(&sem) != 0) {} }
+#endif
+};
+
 struct TaskWorker {
-	std::mutex workerMutex;
-	std::condition_variable workerCondVar;
+	// Single-producer, single-consumer only (dsp::RingBuffer supports no
+	// more). For multiple producer threads, use MpmcTaskWorker instead.
+	TaskSignal taskSignal;
 	std::thread* worker;
 	Context* workerContext;
-	bool workerIsRunning = true;
-	bool workerDoProcess = false;
+	std::atomic<bool> workerIsRunning{true};
 	std::string name;
 
 	// Set just before the worker thread is torn down. Long-running tasks
@@ -38,12 +64,10 @@ struct TaskWorker {
 
 	~TaskWorker() {
 		cancel.store(true, std::memory_order_relaxed);
-		{
-			std::unique_lock<std::mutex> lock(workerMutex);
-			workerIsRunning = false;
-			workerDoProcess = true;
-		}
-		workerCondVar.notify_one();
+		workerIsRunning.store(false, std::memory_order_release);
+		// Extra wakeup with no matching item: drains whatever's still queued,
+		// then finds the queue empty and workerIsRunning false, and exits.
+		taskSignal.post();
 		worker->join();
 		workerContext = NULL;
 		delete worker;
@@ -63,15 +87,15 @@ struct TaskWorker {
 #endif
 
 		while (true) {
-			std::unique_lock<std::mutex> lock(workerMutex);
-			workerCondVar.wait(lock, std::bind(&TaskWorker::workerDoProcess, this));
-			if (!workerIsRunning) return;
+			taskSignal.wait();
+			// True SPSC, so empty() is never transiently wrong (unlike
+			// MpmcTaskWorker's MPMCQueue) -- no pendingTasks counter needed.
 			while (!workQueue.empty()) {
 				auto item = workQueue.shift();
 				contextSet(item.context);
 				(*item.task)(cancel);
 			}
-			workerDoProcess = false;
+			if (!workerIsRunning.load(std::memory_order_acquire)) return;
 		}
 	}
 
@@ -91,8 +115,7 @@ struct TaskWorker {
 
 	void work(std::function<void(std::atomic<bool>&)> task, Context* context) {
 		workQueue.push(WorkItem{std::make_shared<std::function<void(std::atomic<bool>&)>>(std::move(task)), context});
-		workerDoProcess = true;
-		workerCondVar.notify_one();
+		taskSignal.post();
 	}
 }; // struct TaskWorker
 
@@ -106,6 +129,11 @@ struct ITaskWorker {
 	virtual bool work(std::function<void()> task) = 0;
 	virtual bool work(std::function<void()> task, Context* context) = 0;
 
+	// Cancel-aware: the task receives the worker's cancel flag and should
+	// poll it periodically, returning early once it becomes true.
+	virtual bool work(std::function<void(std::atomic<bool>&)> task) = 0;
+	virtual bool work(std::function<void(std::atomic<bool>&)> task, Context* context) = 0;
+
 	// True when the calling thread is the one this worker runs tasks on, so
 	// callers can assert that state only touched from inside work() really is
 	// being touched from there.
@@ -115,6 +143,11 @@ struct ITaskWorker {
 // Runs tasks synchronously on the calling thread — no background thread.
 // Used in tests to make engine.process() calls deterministic.
 struct SyncTaskWorker : ITaskWorker {
+	// Never set. A member (not a per-call local) so a task that stashes the
+	// reference (as the cancel-aware overload's contract allows) does not
+	// end up holding a dangling reference once work() returns.
+	std::atomic<bool> cancel{false};
+
 	bool work(std::function<void()> task) override { task(); return true; }
 	bool work(std::function<void()> task, Context* context) override {
 		Context* prev = contextGet();
@@ -123,21 +156,20 @@ struct SyncTaskWorker : ITaskWorker {
 		contextSet(prev);
 		return true;
 	}
+	bool work(std::function<void(std::atomic<bool>&)> task) override {
+		task(cancel);
+		return true;
+	}
+	bool work(std::function<void(std::atomic<bool>&)> task, Context* context) override {
+		Context* prev = contextGet();
+		contextSet(context);
+		task(cancel);
+		contextSet(prev);
+		return true;
+	}
 	// Every thread is "the worker thread": tasks run inline on the caller.
 	bool isWorkerThread() const override { return true; }
 }; // struct SyncTaskWorker
-
-
-// Adapts a TaskWorker to the ITaskWorker interface without modifying TaskWorker.
-struct TaskWorkerAdapter : ITaskWorker {
-	std::shared_ptr<TaskWorker> inner;
-	explicit TaskWorkerAdapter(std::shared_ptr<TaskWorker> tw) : inner(std::move(tw)) {}
-	bool work(std::function<void()> task) override { inner->work(std::move(task)); return true; }
-	bool work(std::function<void()> task, Context* context) override { inner->work(std::move(task), context); return true; }
-	bool isWorkerThread() const override {
-		return inner->worker && std::this_thread::get_id() == inner->worker->get_id();
-	}
-}; // struct TaskWorkerAdapter
 
 
 

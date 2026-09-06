@@ -56,7 +56,6 @@ TEST_CASE("Construction and reset", "[MidiMon]") {
 		REQUIRE(formatOf(entries[0]) == LOG_FORMAT::TIMESTAMP);
 		REQUIRE(textOf(entries[1]).find("sample rate") != std::string::npos);
 	}
-
 }
 
 TEST_CASE("Preset JSON null-guards", "[MidiMon][JSON]") {
@@ -83,7 +82,6 @@ TEST_CASE("Preset JSON null-guards", "[MidiMon][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 TEST_CASE("JSON round-trip preserves state", "[MidiMon][JSON]") {
@@ -164,7 +162,6 @@ TEST_CASE("Logs and formats channel messages", "[MidiMon]") {
 		REQUIRE(formatOf(entries[0]) == LOG_FORMAT::INDENTED);
 		REQUIRE(textOf(entries[0]) == "ch01 14-bit cc7=1234");
 	}
-
 }
 
 
@@ -195,7 +192,6 @@ TEST_CASE("Respects visibility flags", "[MidiMon]") {
 		REQUIRE(entries.size() == 1);
 		REQUIRE(textOf(entries[0]) == "clock tick");
 	}
-
 }
 
 
@@ -221,7 +217,6 @@ TEST_CASE("Logs system real-time messages", "[MidiMon]") {
 	module->showSystemMsg = false;
 	module->processMidi(makeEx(c.type, Test::makeMidiMessage(0xf, 0, 0, 0)));
 	REQUIRE(drain(module).empty());
-
 }
 
 
@@ -260,13 +255,12 @@ TEST_CASE("SysEx logging", "[MidiMon]") {
 		module->processMidi(makeEx(MType::SYSEX, sysex));
 		REQUIRE(drain(module).empty());
 	}
-
 }
 
 
 TEST_CASE("processBypass drains the MIDI queue without logging", "[MidiMon]") {
-	Test::ModuleScaffold<MidiMonModule> mods;
-	auto module = mods.create("MidiMon");
+	Test::Harness h;
+	auto module = h.addModule<MidiMonModule>("MidiMon");
 	drain(module); // discard header lines
 
 	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
@@ -276,28 +270,26 @@ TEST_CASE("processBypass drains the MIDI queue without logging", "[MidiMon]") {
 
 	REQUIRE(module->midiProcessor.getInput().size() == 0);
 	REQUIRE(drain(module).empty());
-
 }
 
 // Pumps the module until its process divider has certainly fired, so queued
 // MIDI is actually decoded. The divider is seeded randomly by setDivision(),
 // so one extra full division guarantees at least one tick.
-static void pump(MidiMonModule* module, int64_t& frame) {
+static void pump(MidiMonModule* module, Test::Harness& h) {
 	for (uint32_t i = 0; i < module->processDivider.getDivision() + 1; i++) {
-		module->process(Test::makeProcessArgs(frame++));
+		h.dspStep();
 	}
 }
 
 TEST_CASE("onReset clears NRPN state so data entry cannot resume", "[MidiMon][reset]") {
-	Test::ModuleScaffold<MidiMonModule> mods;
-	auto module = mods.create("MidiMon");
+	Test::Harness h;
+	auto module = h.addModule<MidiMonModule>("MidiMon");
 	module->showRpnNrpnMsg = true;
-	int64_t frame = 1;
 
 	// Arm an NRPN parameter (CC 99 then CC 98) and let it decode.
 	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 99, 4));
 	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 98, 5));
-	pump(module, frame);
+	pump(module, h);
 	drain(module);
 
 	Module::ResetEvent re;
@@ -308,24 +300,22 @@ TEST_CASE("onReset clears NRPN state so data entry cannot resume", "[MidiMon][re
 	module->showRpnNrpnMsg = true;
 	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 6, 20));
 	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 38, 2));
-	pump(module, frame);
+	pump(module, h);
 
 	for (auto& e : drain(module)) {
 		CATCH_INFO("logged: " << textOf(e));
 		REQUIRE(textOf(e).find("nrpn") == std::string::npos);
 	}
-
 }
 
 TEST_CASE("onReset clears 14-bit CC state so an orphan LSB is not paired", "[MidiMon][reset]") {
-	Test::ModuleScaffold<MidiMonModule> mods;
-	auto module = mods.create("MidiMon");
+	Test::Harness h;
+	auto module = h.addModule<MidiMonModule>("MidiMon");
 	module->showCcExMsg = true;
-	int64_t frame = 1;
 
 	// Store a 14-bit MSB, then reset before the matching LSB arrives.
 	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 5, 3));
-	pump(module, frame);
+	pump(module, h);
 	drain(module);
 
 	Module::ResetEvent re;
@@ -334,7 +324,7 @@ TEST_CASE("onReset clears 14-bit CC state so an orphan LSB is not paired", "[Mid
 
 	module->showCcExMsg = true;
 	module->midiProcessor.getInput().onMessage(Test::makeMidiMessage(0xb, 0, 32 + 5, 10));
-	pump(module, frame);
+	pump(module, h);
 
 	for (auto& e : drain(module)) {
 		CATCH_INFO("logged: " << textOf(e));
@@ -409,7 +399,6 @@ TEST_CASE("RPN/NRPN select and data entry render differently", "[MidiMon]") {
 		REQUIRE(entries.size() == 1);
 		REQUIRE(textOf(entries[0]) == "ch01 rpn/nrpn reset");
 	}
-
 }
 
 TEST_CASE("processMidi never consumes the message", "[MidiMon]") {

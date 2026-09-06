@@ -79,10 +79,17 @@ struct MockUiAccess : vcv::UiAccess {
 
 // path → contents; a missing key means "cannot open". Path helpers stay on the real
 // rack::system (via Test::mock::MockFileAccess) so getDirectory/getExtension behave.
+//
+// getUserDirectory/createDirectory are overridden to stay inside the virtual filesystem
+// (base class forwards both to the real disk) — Strip's dialog paths call
+// pluginSettings.saveToJson(), which resolves its directory through getUserDirectory(), so
+// without this override that save silently created a "Stoermelder-P1" folder on real disk
+// (relative, since rack::asset::user() is never initialized in tests) every time this suite ran.
 struct MockFileAccess : Test::mock::MockFileAccess {
 	std::map<std::string, std::string> files;
 	std::vector<std::string> reads;
 	std::map<std::string, std::string> writes;
+	std::set<std::string> dirs;
 
 	bool read(const std::string& path, std::string& data) const override {
 		const_cast<MockFileAccess*>(this)->reads.push_back(path);
@@ -93,6 +100,13 @@ struct MockFileAccess : Test::mock::MockFileAccess {
 	}
 	bool write(const std::string& path, const std::string& data) override {
 		writes[path] = data;
+		return true;
+	}
+	std::string getUserDirectory(const std::string& path) override {
+		return "/vfs/user/" + path;
+	}
+	bool createDirectory(const std::string& path) override {
+		dirs.insert(path);
 		return true;
 	}
 };
