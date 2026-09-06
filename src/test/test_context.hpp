@@ -295,6 +295,16 @@ inline void destroyWidget(rack::ModuleWidget* mw) {
 }
 
 inline void registerModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
+	// Idempotent. Harness::adoptModule() registers every module it owns, so the ~103 existing
+	// `h.addModule(...)` + `Test::registerModule(...)` pairs across the suite would otherwise
+	// trip addModule_NoLock's double-add assert. Registering twice is a no-op, not an error.
+	// getModule_NoLock, not getModule: the latter takes the engine's SharedLock, and this sits
+	// alongside addModule_NoLock in code that may already hold the write lock — a
+	// non-recursive rwlock, so re-acquiring it on the same thread deadlocks.
+	if (m->id >= 0 && APP->engine->getModule_NoLock(m->id) == m) {
+		if (mw) APP->scene->rack->addModule(mw);
+		return;
+	}
 	TEST_SUPPRESS_DEPRECATED_BEGIN
 	APP->engine->addModule_NoLock(m);
 	TEST_SUPPRESS_DEPRECATED_END
