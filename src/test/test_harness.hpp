@@ -333,6 +333,14 @@ struct Harness {
 			Test::destroyWidget(*it);
 		}
 		for (auto it = modules.rbegin(); it != modules.rend(); ++it) {
+			// Unregister before destroying. Engine::removeModule_NoLock also nulls
+			// every paramHandle->module pointing at this module (Engine.cpp:805-808), so a
+			// mapper's handle cannot be left holding a dangling pointer to a freed target.
+			// Idempotent, mirroring adoptModule: a test may have unregistered it already
+			// (removeModule_NoLock asserts the module is present).
+			// `modules` holds rack::Module*, so `->id` is already the base member here (no
+			// shadowing risk, unlike adoptModule's templated T*).
+			if (APP->engine->getModule_NoLock((*it)->id) == *it) Test::unregisterModule(*it);
 			Test::destroyModule(*it);
 		}
 	}
@@ -355,9 +363,29 @@ struct Harness {
 	}
 
 	// Hands an already-constructed module to the harness.
+	//
+	// Also registers the module with the engine, so APP->engine->getModule(id) resolves it.
+	// Required for param mapping: updateParamHandle() resolves a target by id
+	// (Engine.cpp:1247), so a mapping onto an unregistered module silently leaves
+	// handle->module == nullptr with moduleId still set. See the mapping section below.
 	template <typename T>
 	T* adoptModule(T* m) {
 		modules.push_back(m);
+		// A hand-constructed module (adoptModule(new Probe)) has rack::Module's default
+		// id == -1. addModule_NoLock would then take its random-id path, and the test RNG is
+		// unseeded, so random::u64() returns 0 every time: the first such module gets id 0
+		// and the second spins forever in the collision loop. Give it a unique id first.
+		//
+		// Qualified as rack::engine::Module::id, NOT m->id: a test probe may declare its own
+		// `id` member (test_harness.test.cpp's OrderProbe does), which shadows the base's and
+		// would make the guard read the wrong field — leaving Module::id at -1 and hanging in
+		// exactly the loop this guard exists to avoid.
+		rack::engine::Module* base = m;
+		if (base->id < 0) base->id = Test::getModuleId();
+		// Idempotent: many tests already call Test::registerModule() themselves, and
+		// addModule_NoLock asserts on a double-add.
+		// _NoLock: getModule() takes the engine's SharedLock (see Test::registerModule).
+		if (!APP->engine->getModule_NoLock(base->id)) Test::registerModule(m);
 		return m;
 	}
 
@@ -470,6 +498,144 @@ struct Harness {
 	// 0/1 at a call site reads as a module index.
 	static const uint8_t SIDE_LEFT = 0;
 	static const uint8_t SIDE_RIGHT = 1;
+
+	// ---- Parameter mapping -------------------------------------------------------------
+	//
+	// Several modules in this plugin exist to map a parameter on another module: CVMap, CVPam,
+	// Mirror, Grip, Macro, MidiCat and Transit all hold rack::ParamHandles and drive someone
+	// else's Param through them. Rack's rules for those handles are unobvious enough that
+	// every mapping test used to re-derive them by hand, and the awkwardness shows in the
+	// coverage: Mirror is the plugin's most ParamHandle-dense module and had no mapping test
+	// at all.
+	//
+	// Three rules the engine enforces, all of which have bitten a test in this suite:
+	//
+	//   1. **A mapping only resolves if the target is registered with the engine.**
+	//      updateParamHandle() looks the target up by id (Engine.cpp:1247), so mapping onto an
+	//      unregistered module silently leaves handle->module == nullptr with moduleId still
+	//      set — a half-mapped handle that reads as "mapped" on the field most tests assert.
+	//      Harness::adoptModule() registers every module it owns, so this is handled; the
+	//      helpers below REQUIRE it rather than trusting it, because a module built outside
+	//      the harness still won't be.
+	//   2. **One handle per (moduleId, paramId).** With overwrite=false, updateParamHandle()
+	//      resets the *new* handle when another still claims that param (Engine.cpp:1230-1232)
+	//      — so a preset round-trip has to release the old module's claims first, or the
+	//      reload silently maps nothing. That is what clearMapsFor() is for.
+	//   3. **The engine write lock is not recursive.** updateParamHandle() takes it, so
+	//      calling any of this from inside process() — or while already holding it —
+	//      deadlocks the test thread against itself. These helpers are for the test thread.
+	//
+	// The helpers work on rack::ParamHandle directly rather than on a mapper interface: the
+	// modules do not share one (MapModuleBase::learnParam takes 3 arguments, MidiCat's takes a
+	// 4th), and the handle is what Rack actually arbitrates over.
+
+	// Maps `handle` onto `target`'s parameter `paramId`, the way a completed learn does.
+	//
+	// `overwrite` is Rack's own flag, and the default matches learnParam(): steal the param
+	// from whatever held it. Pass false to model a preset load, where an existing claim wins
+	// and the new handle is reset instead.
+	void mapParam(rack::ParamHandle* handle, rack::Module* target, int paramId,
+	              bool overwrite = true) {
+		REQUIRE(handle != nullptr);
+		REQUIRE(target != nullptr);
+		REQUIRE(paramId >= 0);
+		REQUIRE(paramId < int(target->params.size()));
+		// Rule 1: an unregistered target cannot resolve, and the failure is silent. Say so
+		// here rather than let the caller assert on a half-mapped handle later.
+		REQUIRE(APP->engine->getModule_NoLock(target->id) == target);
+		APP->engine->updateParamHandle(handle, target->id, paramId, overwrite);
+	}
+
+	// Releases a mapping, as clearMap() does. The handle stays registered with the engine and
+	// can be re-mapped; only its claim on the param is dropped.
+	void unmapParam(rack::ParamHandle* handle) {
+		REQUIRE(handle != nullptr);
+		APP->engine->updateParamHandle(handle, -1, 0, true);
+	}
+
+	// Releases every claim `handles` holds. The preset-round-trip helper: rule 2 means a
+	// second module cannot load a preset naming params the first still claims, so a test that
+	// serializes from one module and loads into another must release the first's claims in
+	// between. In Rack this happens for free, because the old module is destroyed first.
+	void clearMapsFor(const std::vector<rack::ParamHandle*>& handles) {
+		for (rack::ParamHandle* handle : handles) {
+			if (handle && handle->moduleId >= 0) unmapParam(handle);
+		}
+	}
+
+	// True when the handle resolved to a live target — both the ids and the module pointer.
+	// The pointer is the half that a missing registration silently loses, and the half most
+	// hand-written assertions forget to check.
+	bool isMapped(const rack::ParamHandle* handle) const {
+		return handle && handle->moduleId >= 0 && handle->module != nullptr;
+	}
+
+	// Asserts the handle points at exactly this param, pointer included.
+	void requireMapped(const rack::ParamHandle* handle, const rack::Module* target,
+	                   int paramId) const {
+		REQUIRE(handle != nullptr);
+		REQUIRE(target != nullptr);
+		REQUIRE(handle->moduleId == target->id);
+		REQUIRE(handle->paramId == paramId);
+		// The pointer, not just the ids: a handle with the right moduleId and a null module
+		// is the exact shape of a mapping onto an unregistered target.
+		REQUIRE(handle->module == target);
+	}
+
+	// Asserts the handle holds no claim. Checks moduleId, since that is what the engine
+	// resets; `module` follows from it.
+	void requireUnmapped(const rack::ParamHandle* handle) const {
+		REQUIRE(handle != nullptr);
+		REQUIRE(handle->moduleId < 0);
+		REQUIRE(handle->module == nullptr);
+	}
+
+	// The ParamQuantity a handle resolves to, or nullptr if it is unmapped. This is the object
+	// a mapper actually drives, so it is what a test asserts a mapped value against.
+	rack::ParamQuantity* mappedQuantity(const rack::ParamHandle* handle) const {
+		if (!isMapped(handle)) return nullptr;
+		return handle->module->getParamQuantity(handle->paramId);
+	}
+
+	// The current value of a mapped param. Uses getImmediateValue(): getValue() reads through
+	// the engine's smoothing, which would make an assertion depend on how many steps have run.
+	float mappedValue(const rack::ParamHandle* handle) const {
+		rack::ParamQuantity* pq = mappedQuantity(handle);
+		REQUIRE(pq != nullptr);
+		return pq->getImmediateValue();
+	}
+
+	// Sets a mapped param directly, bypassing smoothing — the "user turned the target knob"
+	// case, for asserting that a mapper reads a change it did not make itself.
+	//
+	// REQUIREs the value to be in the param's range rather than letting it clamp. A clamped
+	// write is the worst kind of test bug: the assertion that follows compares against the
+	// bound, so it reads as a propagation failure in the module under test. (Observed while
+	// writing Mirror's first mapping test — Macro's params are 0..1 and a 5.f write silently
+	// became 1.f.)
+	void setMappedValue(const rack::ParamHandle* handle, float value) {
+		rack::ParamQuantity* pq = mappedQuantity(handle);
+		REQUIRE(pq != nullptr);
+		REQUIRE(value >= pq->getMinValue());
+		REQUIRE(value <= pq->getMaxValue());
+		pq->setImmediateValue(value);
+	}
+
+	// A value inside the mapped param's range, distinct from what it currently holds — what a
+	// propagation test needs and would otherwise hand-pick per module, getting it wrong when
+	// the range is not the assumed 0..10 (see setMappedValue).
+	float distinctValueFor(const rack::ParamHandle* handle) {
+		rack::ParamQuantity* pq = mappedQuantity(handle);
+		REQUIRE(pq != nullptr);
+		const float lo = pq->getMinValue();
+		const float hi = pq->getMaxValue();
+		REQUIRE(hi > lo);
+		const float mid = (lo + hi) / 2.f;
+		// If the param already sits at the midpoint, a test asserting "it changed" would pass
+		// without anything happening. Step to the quarter point instead.
+		if (pq->getImmediateValue() == mid) return (lo + mid) / 2.f;
+		return mid;
+	}
 
 	// ---- Stepping ------------------------------------------------------------------------
 

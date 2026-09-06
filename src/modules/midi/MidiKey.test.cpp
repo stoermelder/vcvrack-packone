@@ -24,9 +24,7 @@ TEST_CASE("Construction and initialization", "[MidiKey]") {
 	Test::Harness h;
 	MidiKeyModule<>* m = h.addModule<MidiKeyModule<>>("MidiKey");
 	MidiKeyWidget* mw = Test::createWidget<MidiKeyWidget>(m);
-
-	Test::registerModule(m, mw);
-	Test::unregisterModule(m, mw);
+	REQUIRE(mw != nullptr);
 }
 
 TEST_CASE("Preset JSON null-guards", "[MidiKey][JSON]") {
@@ -58,15 +56,12 @@ TEST_CASE("Preset JSON null-guards", "[MidiKey][JSON]") {
 TEST_CASE("Preset loading", "[MidiKey]") {
 	Test::Harness h;
 	MidiKeyModule<>* m = h.addModule<MidiKeyModule<>>("MidiKey");
-	Test::registerModule(m);
 
 	json_error_t jerr;
 	json_t* moduleJ = json_loads(MidiKey_vcvm, 0, &jerr);
 	m->dataFromJson(moduleJ);
 
 	json_decref(moduleJ);
-
-	Test::unregisterModule(m);
 }
 
 TEST_CASE("Legacy preset migrates cc/note into the tracking processor", "[MidiKey][JSON]") {
@@ -615,7 +610,6 @@ TEST_CASE("ProcessMapUpdate toggles modifier slots and emits key events", "[Midi
 
 	SECTION("Key event window propagate") {
 		MidiKeyWidget* mw = Test::createWidget<MidiKeyWidget>(m);
-		Test::registerModule(m, mw);
 
 		// Process the press event
 		mw->step();
@@ -625,6 +619,5 @@ TEST_CASE("ProcessMapUpdate toggles modifier slots and emits key events", "[Midi
 		REQUIRE(testContext.scene->receivedKeys[0].action == GLFW_PRESS);
 		// Clean up
 		testContext.scene->receivedKeys.clear();
-		Test::unregisterModule(m, mw);
 	}
 }
