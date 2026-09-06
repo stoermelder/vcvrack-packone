@@ -131,7 +131,6 @@ TEST_CASE("Preset JSON null-guards", "[IntermixFade][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 TEST_CASE("JSON round-trip preserves state", "[JSON][IntermixFade]") {
@@ -158,7 +157,6 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][IntermixFade]") {
 	REQUIRE(m2->input == 4);
 	REQUIRE(m2->fade == FADE::OUT);
 	REQUIRE(m2->fadeLengthMode == FADE_LENGTH_60S);
-
 }
 
 
@@ -176,7 +174,6 @@ TEST_CASE("Reset behavior", "[IntermixFade]") {
 		REQUIRE(module->input == 0);
 		REQUIRE(module->fade == FADE::INOUT);
 	}
-
 }
 
 TEST_CASE("Input selection", "[IntermixFade]") {
@@ -190,7 +187,6 @@ TEST_CASE("Input selection", "[IntermixFade]") {
 		module->input = 7;
 		REQUIRE(module->input == 7);
 	}
-
 }
 
 TEST_CASE("Fade mode", "[IntermixFade]") {
@@ -207,7 +203,6 @@ TEST_CASE("Fade mode", "[IntermixFade]") {
 		module->fade = FADE::INOUT;
 		REQUIRE(module->fade == FADE::INOUT);
 	}
-
 }
 
 TEST_CASE("Fade parameters", "[IntermixFade]") {
@@ -229,29 +224,26 @@ TEST_CASE("Fade parameters", "[IntermixFade]") {
 		module->params[IntermixFadeModule<8>::PARAM_FADE + 0].setValue(15.f);
 		REQUIRE(module->params[IntermixFadeModule<8>::PARAM_FADE + 0].getValue() == 15.f);
 	}
-
 }
 
 TEST_CASE("Expander connection", "[IntermixFade]") {
-	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
-	auto fadeModule = mods.create("IntermixFade");
+	Test::Harness h;
+	h.addModule<IntermixFadeModule<8>>("IntermixFade");
 
 	SECTION("Module processes without expander") {
 		// Should not crash
-		fadeModule->process(Test::makeProcessArgs(1));
+		h.dspStep();
 	}
-
 }
 
 TEST_CASE("Fade control via expander", "[IntermixFade]") {
-	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
-	auto intermixModule = new IntermixModuleMock<8>();
-	auto fadeModule = mods.create("IntermixFade");
+	Test::Harness h;
+	auto intermixModule = h.adoptModule(new IntermixModuleMock<8>());
+	auto fadeModule = h.addModule<IntermixFadeModule<8>>("IntermixFade");
 
 	SECTION("Fade IN mode sends fade in times") {
-		intermixModule->rightExpander.module = fadeModule;
-		fadeModule->leftExpander.module = intermixModule;
-		
+		h.connectExpander(intermixModule, fadeModule);
+
 		fadeModule->fade = FADE::IN;
 		fadeModule->input = 0;
 		fadeModule->params[IntermixFadeModule<8>::PARAM_FADE + 0].setValue(2.0f);
@@ -260,27 +252,17 @@ TEST_CASE("Fade control via expander", "[IntermixFade]") {
 		intermixModule->channelCount = 1;
 		
 		uint32_t oldTs = intermixModule->fadeInTs[0];
-		
-		// Initial process to set up producer message
-		intermixModule->process(Test::makeProcessArgs(1));
-		intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-		
+
 		// Process several times to trigger divider
-		for (int i = 0; i < 100; i++) {
-			intermixModule->process(Test::makeProcessArgs(1));
-			// Manually flip producer to consumer message (simulates engine behavior)
-			intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-			fadeModule->process(Test::makeProcessArgs(1));
-		}
-		
+		h.dspSteps(101);
+
 		// Check that fade in timestamp was updated
 		REQUIRE(intermixModule->fadeInTs[0] > oldTs);
 	}
 
 	SECTION("Fade OUT mode sends fade out times") {
-		intermixModule->rightExpander.module = fadeModule;
-		fadeModule->leftExpander.module = intermixModule;
-		
+		h.connectExpander(intermixModule, fadeModule);
+
 		fadeModule->fade = FADE::OUT;
 		fadeModule->input = 0;
 		fadeModule->params[IntermixFadeModule<8>::PARAM_FADE + 0].setValue(1.5f);
@@ -288,25 +270,15 @@ TEST_CASE("Fade control via expander", "[IntermixFade]") {
 		intermixModule->channelCount = 1;
 		
 		uint32_t oldTs = intermixModule->fadeOutTs[0];
-		
-		// Initial process to set up producer message
-		intermixModule->process(Test::makeProcessArgs(1));
-		intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-		
-		for (int i = 0; i < 100; i++) {
-			intermixModule->process(Test::makeProcessArgs(1));
-			// Manually flip producer to consumer message (simulates engine behavior)
-			intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-			fadeModule->process(Test::makeProcessArgs(1));
-		}
-		
+
+		h.dspSteps(101);
+
 		REQUIRE(intermixModule->fadeOutTs[0] > oldTs);
 	}
 
 	SECTION("Fade INOUT mode sends both times") {
-		intermixModule->rightExpander.module = fadeModule;
-		fadeModule->leftExpander.module = intermixModule;
-		
+		h.connectExpander(intermixModule, fadeModule);
+
 		fadeModule->fade = FADE::INOUT;
 		fadeModule->input = 0;
 		
@@ -314,85 +286,54 @@ TEST_CASE("Fade control via expander", "[IntermixFade]") {
 		
 		uint32_t oldTsIn = intermixModule->fadeInTs[0];
 		uint32_t oldTsOut = intermixModule->fadeOutTs[0];
-		
-		// Initial process to set up producer message
-		intermixModule->process(Test::makeProcessArgs(1));
-		intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-		
-		for (int i = 0; i < 100; i++) {
-			intermixModule->process(Test::makeProcessArgs(1));
-			// Manually flip producer to consumer message (simulates engine behavior)
-			intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-			fadeModule->process(Test::makeProcessArgs(1));
-		}
-		
+
+		h.dspSteps(101);
+
 		REQUIRE(intermixModule->fadeInTs[0] > oldTsIn);
 		REQUIRE(intermixModule->fadeOutTs[0] > oldTsOut);
 	}
-
-	delete intermixModule;
 }
 
 TEST_CASE("Different inputs with fade", "[IntermixFade]") {
-	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
-	auto intermixModule = new IntermixModuleMock<8>();
-	auto fadeModule = mods.create("IntermixFade");
+	Test::Harness h;
+	auto intermixModule = h.adoptModule(new IntermixModuleMock<8>());
+	auto fadeModule = h.addModule<IntermixFadeModule<8>>("IntermixFade");
 
 	SECTION("Changing input affects different matrix row") {
-		intermixModule->rightExpander.module = fadeModule;
-		fadeModule->leftExpander.module = intermixModule;
-		
+		h.connectExpander(intermixModule, fadeModule);
+
 		intermixModule->channelCount = 1;
-		
-		// Initial process to set up producer message
-		intermixModule->process(Test::makeProcessArgs(1));
-		intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-		
+
+		h.dspStep();
+
 		// Test input 0
 		fadeModule->input = 0;
 		fadeModule->fade = FADE::INOUT;
 		uint32_t oldTs0 = intermixModule->fadeInTs[0];
-		
-		for (int i = 0; i < 100; i++) {
-			intermixModule->process(Test::makeProcessArgs(1));
-			// Manually flip producer to consumer message (simulates engine behavior)
-			intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-			fadeModule->process(Test::makeProcessArgs(1));
-		}
-		
+
+		h.dspSteps(100);
+
 		REQUIRE(intermixModule->fadeInTs[0] > oldTs0);
-		
+
 		// Test input 1
 		fadeModule->input = 1;
 		uint32_t oldTs1 = intermixModule->fadeInTs[1];
-		
-		for (int i = 0; i < 100; i++) {
-			intermixModule->process(Test::makeProcessArgs(1));
-			// Manually flip producer to consumer message (simulates engine behavior)
-			intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-			fadeModule->process(Test::makeProcessArgs(1));
-		}
-		
+
+		h.dspSteps(100);
+
 		REQUIRE(intermixModule->fadeInTs[1] > oldTs1);
 	}
-
-	delete intermixModule;
 }
 
 TEST_CASE("Expander chain", "[IntermixFade]") {
-	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
-	auto intermixModule = new IntermixModuleMock<8>();
-	auto fadeModule1 = mods.create("IntermixFade");
-	auto fadeModule2 = mods.create("IntermixFade");
-	Test::SimpleEngine engine;
-	engine.addModules(intermixModule, fadeModule1, fadeModule2);
+	Test::Harness h;
+	auto intermixModule = h.adoptModule(new IntermixModuleMock<8>());
+	auto fadeModule1 = h.addModule<IntermixFadeModule<8>>("IntermixFade");
+	auto fadeModule2 = h.addModule<IntermixFadeModule<8>>("IntermixFade");
 
 	SECTION("Multiple expanders can chain") {
 		// Setup expander chain: Intermix -> Fade1 -> Fade2
-		intermixModule->rightExpander.module = fadeModule1;
-		fadeModule1->leftExpander.module = intermixModule;
-		fadeModule1->rightExpander.module = fadeModule2;
-		fadeModule2->leftExpander.module = fadeModule1;
+		h.connectChain(intermixModule, fadeModule1, fadeModule2);
 
 		intermixModule->channelCount = 1;
 
@@ -402,9 +343,7 @@ TEST_CASE("Expander chain", "[IntermixFade]") {
 		fadeModule2->fade = FADE::IN;
 
 		// Process many times to trigger divider (64 samples division)
-		for (int i = 0; i < 130; i++) {
-			engine.step();
-		}
+		h.dspSteps(130);
 
 		// Verify fade1 sent fade in times to intermix
 		uint32_t fade1InTs = intermixModule->fadeInTs[0];
@@ -414,8 +353,6 @@ TEST_CASE("Expander chain", "[IntermixFade]") {
 		uint32_t fade2InTs = intermixModule->fadeInTs[1];
 		REQUIRE(fade2InTs > 0);
 	}
-
-	delete intermixModule;
 }
 
 
@@ -440,71 +377,59 @@ TEST_CASE("FadeParamQuantity max value follows fadeLengthMode", "[IntermixFade][
 		auto* pq = module->paramQuantities[IntermixFadeModule<8>::PARAM_FADE + 0];
 		REQUIRE(pq->getMaxValue() == Catch::Approx(60.0f).margin(0.001f));
 	}
-
 }
 
 
 TEST_CASE("Expander fade time: param value sent to expSetFade as seconds", "[IntermixFade][fade-time]") {
-	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
+	Test::Harness h;
 	// FadeParamQuantity::getMaxValue() dynamically scales the knob to [0, maxFade],
 	// so getValue() already returns seconds. The expander must NOT multiply by maxFade
 	// again: v[i] = getValue() * maxFade would make a 5s knob send 75s in 15s mode.
 
 	SECTION("15s mode (default): 5s knob position sends 5s") {
-		auto* mock = new CapturingIntermixMock<8>();
-		auto* fade = mods.create("IntermixFade");
+		auto* mock = h.adoptModule(new CapturingIntermixMock<8>());
+		auto* fade = h.addModule<IntermixFadeModule<8>>("IntermixFade");
 
-		mock->rightExpander.module = fade;
-		fade->leftExpander.module = mock;
+		h.connectExpander(mock, fade);
 
 		fade->fadeLengthMode = FADE_LENGTH_15S;
 		fade->fade = FADE::IN;
 		fade->input = 0;
-		for (int j = 0; j < 8; j++)
+		for (int j = 0; j < 8; j++) {
 			fade->params[IntermixFadeModule<8>::PARAM_FADE + j].setValue(5.0f);
-
+		}
 		// The expander's sceneDivider fires every 64 calls; 100 steps guarantees it.
-		Test::SimpleEngine engine;
-		engine.addModules(mock, fade);
-		for (int i = 0; i < 100; i++) engine.step();
+		h.dspSteps(100);
 
 		REQUIRE(mock->fadeInReceived);
 		// Bug: receives 5.0 * 15 = 75.0. Correct: receives 5.0.
 		REQUIRE(mock->lastFadeIn[0] == Catch::Approx(5.0f).margin(0.001f));
-
-		delete mock;
 	}
 
 	SECTION("4s mode: 2s knob position sends 2s") {
-		auto* mock = new CapturingIntermixMock<8>();
-		auto* fade = mods.create("IntermixFade");
+		auto* mock = h.adoptModule(new CapturingIntermixMock<8>());
+		auto* fade = h.addModule<IntermixFadeModule<8>>("IntermixFade");
 
-		mock->rightExpander.module = fade;
-		fade->leftExpander.module = mock;
+		h.connectExpander(mock, fade);
 
 		fade->fadeLengthMode = FADE_LENGTH_4S;
 		fade->fade = FADE::IN;
 		fade->input = 0;
-		for (int j = 0; j < 8; j++)
+		for (int j = 0; j < 8; j++) {
 			fade->params[IntermixFadeModule<8>::PARAM_FADE + j].setValue(2.0f);
-
-		Test::SimpleEngine engine;
-		engine.addModules(mock, fade);
-		for (int i = 0; i < 100; i++) engine.step();
+		}
+		h.dspSteps(100);
 
 		REQUIRE(mock->fadeInReceived);
 		// Bug: receives 2.0 * 4 = 8.0. Correct: receives 2.0.
 		REQUIRE(mock->lastFadeIn[0] == Catch::Approx(2.0f).margin(0.001f));
-
-		delete mock;
 	}
 
 	SECTION("60s mode: 10s knob position sends 10s") {
-		auto* mock = new CapturingIntermixMock<8>();
-		auto* fade = mods.create("IntermixFade");
+		auto* mock = h.adoptModule(new CapturingIntermixMock<8>());
+		auto* fade = h.addModule<IntermixFadeModule<8>>("IntermixFade");
 
-		mock->rightExpander.module = fade;
-		fade->leftExpander.module = mock;
+		h.connectExpander(mock, fade);
 
 		fade->fadeLengthMode = FADE_LENGTH_60S;
 		fade->fade = FADE::OUT;
@@ -512,14 +437,10 @@ TEST_CASE("Expander fade time: param value sent to expSetFade as seconds", "[Int
 		for (int j = 0; j < 8; j++)
 			fade->params[IntermixFadeModule<8>::PARAM_FADE + j].setValue(10.0f);
 
-		Test::SimpleEngine engine;
-		engine.addModules(mock, fade);
-		for (int i = 0; i < 100; i++) engine.step();
+		h.dspSteps(100);
 
 		REQUIRE(mock->fadeOutReceived);
 		// Bug: receives 10.0 * 60 = 600.0. Correct: receives 10.0.
 		REQUIRE(mock->lastFadeOut[0] == Catch::Approx(10.0f).margin(0.001f));
-
-		delete mock;
 	}
 }

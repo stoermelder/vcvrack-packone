@@ -42,7 +42,6 @@ TEST_CASE("Preset JSON null-guards", "[Bolt][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-	
 }
 
 TEST_CASE("JSON round-trip preserves module state", "[Bolt]") {
@@ -69,14 +68,13 @@ TEST_CASE("JSON round-trip preserves module state", "[Bolt]") {
 
 
 TEST_CASE("Processing without connections", "[Bolt]") {
-	Test::ModuleScaffold<BoltModule> mods;
-	auto module = mods.create("Bolt");
+	Test::Harness h;
+	auto module = h.addModule<BoltModule>("Bolt");
 
 	SECTION("Module processes without crash when no outputs connected") {
 		module->op = BOLT_OP_AND;
-		
-		// Process should not crash
-		REQUIRE_NOTHROW(module->process(Test::makeProcessArgs(0)));
-	}
 
+		// Process should not crash
+		REQUIRE_NOTHROW(h.dspStep());
+	}
 }

@@ -572,10 +572,10 @@ TEST_CASE("hashPath is deterministic", "[Siren][Utility]") {
 // ─── Audio output: silence without file ──────────────────────────────────────
 // process() outputs 0 V when no audio file is loaded.
 TEST_CASE("Audio output: silence without loaded file", "[Siren][Audio]") {
-	Test::ModuleScaffold<SirenModule> mods;
-	auto* m = mods.create("Siren");
+	Test::Harness h;
+	auto* m = h.addModule<SirenModule>("Siren");
 
-	m->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == 0.f);
 	REQUIRE(m->outputs[SirenModule::OUTPUT_R].getVoltage() == 0.f);
 }
@@ -680,11 +680,11 @@ TEST_CASE("PARAM_VOLUME: default value and range", "[Siren][Module]") {
 
 // zero volume produces silence even when audio is available.
 TEST_CASE("PARAM_VOLUME: zero volume produces silence", "[Siren][Module]") {
-	Test::ModuleScaffold<SirenModule> mods;
-	auto* m = mods.create("Siren");
+	Test::Harness h;
+	auto* m = h.addModule<SirenModule>("Siren");
 	m->params[SirenModule::PARAM_VOLUME].setValue(0.f);
 	// previewPane is null so process() exits early but must not crash
-	m->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == 0.f);
 	REQUIRE(m->outputs[SirenModule::OUTPUT_R].getVoltage() == 0.f);
 }
@@ -897,15 +897,15 @@ static void pushFrame(SirenModule* m, float l, float r) {
 }
 
 TEST_CASE("process: reads samples from ring buffer and scales by volume", "[Siren][Audio]") {
-	Test::ModuleScaffold<SirenModule> mods;
-	auto* m = mods.create("Siren");
+	Test::Harness h;
+	auto* m = h.addModule<SirenModule>("Siren");
 
 	// Default volume = 1.0; DSP multiplies by vol * 5.f
 	pushFrame(m, 0.5f, -0.5f);
 	m->streamTotalFrames = 100;
 	m->playing.store(true, std::memory_order_release);
 
-	m->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == Catch::Approx(2.5f));
 	REQUIRE(m->outputs[SirenModule::OUTPUT_R].getVoltage() == Catch::Approx(-2.5f));
@@ -913,15 +913,15 @@ TEST_CASE("process: reads samples from ring buffer and scales by volume", "[Sire
 
 // process() stops playing when ring is empty and EOF is reached.
 TEST_CASE("process: stops playing when ring drained after EOF", "[Siren][Audio]") {
-	Test::ModuleScaffold<SirenModule> mods;
-	auto* m = mods.create("Siren");
+	Test::Harness h;
+	auto* m = h.addModule<SirenModule>("Siren");
 
 	// Fill thread signals EOF; ring is empty → process() must stop
 	m->streamTotalFrames = 100;
 	m->playing.store(true, std::memory_order_release);
 	m->eofReached.store(true, std::memory_order_release);
 
-	m->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	REQUIRE(m->playing.load() == false);
 	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == 0.f);
@@ -929,8 +929,8 @@ TEST_CASE("process: stops playing when ring drained after EOF", "[Siren][Audio]"
 
 // ring samples are consumed before EOF triggers stop.
 TEST_CASE("process: ring samples consumed before EOF stop", "[Siren][Audio]") {
-	Test::ModuleScaffold<SirenModule> mods;
-	auto* m = mods.create("Siren");
+	Test::Harness h;
+	auto* m = h.addModule<SirenModule>("Siren");
 
 	// One frame in ring + eofReached=true: first process() drains the frame;
 	// second process() sees empty ring + eofReached and stops.
@@ -939,23 +939,23 @@ TEST_CASE("process: ring samples consumed before EOF stop", "[Siren][Audio]") {
 	m->playing.store(true, std::memory_order_release);
 	m->eofReached.store(true, std::memory_order_release);
 
-	m->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	REQUIRE(m->playing.load() == true);   // still playing — ring had data
 
-	m->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	REQUIRE(m->playing.load() == false);  // drained now
 }
 
 TEST_CASE("process: volume knob at zero produces silence even with ring data", "[Siren][Audio]") {
-	Test::ModuleScaffold<SirenModule> mods;
-	auto* m = mods.create("Siren");
+	Test::Harness h;
+	auto* m = h.addModule<SirenModule>("Siren");
 	m->params[SirenModule::PARAM_VOLUME].setValue(0.f);
 
 	pushFrame(m, 1.f, 1.f);
 	m->streamTotalFrames = 100;
 	m->playing.store(true, std::memory_order_release);
 
-	m->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == 0.f);
 	REQUIRE(m->outputs[SirenModule::OUTPUT_R].getVoltage() == 0.f);
@@ -963,8 +963,8 @@ TEST_CASE("process: volume knob at zero produces silence even with ring data", "
 
 // startPlayback computes seekBaseFrame from position * total frames.
 TEST_CASE("startPlayback: seekBaseFrame computed from position and total frames", "[Siren][Audio]") {
-	Test::ModuleScaffold<SirenModule> mods;
-	auto* m = mods.create("Siren");
+	Test::Harness h;
+	auto* m = h.addModule<SirenModule>("Siren");
 	m->streamTotalFrames = 1000;
 
 	m->startPlayback(0.5f);
@@ -974,8 +974,8 @@ TEST_CASE("startPlayback: seekBaseFrame computed from position and total frames"
 
 // startPlayback with position 0 seeks to frame 0.
 TEST_CASE("startPlayback: position 0 seeks to frame 0", "[Siren][Audio]") {
-	Test::ModuleScaffold<SirenModule> mods;
-	auto* m = mods.create("Siren");
+	Test::Harness h;
+	auto* m = h.addModule<SirenModule>("Siren");
 	m->streamTotalFrames = 1000;
 
 	m->startPlayback(0.f);
@@ -989,8 +989,8 @@ TEST_CASE("startPlayback: rapid successive calls — last position wins", "[Sire
 	// click position, then onDragMove fires it again for each moved position.
 	// pendingSeekFrame is a single atomic; rapid overwrites are safe — the fill
 	// thread always picks up the latest position.
-	Test::ModuleScaffold<SirenModule> mods;
-	auto* m = mods.create("Siren");
+	Test::Harness h;
+	auto* m = h.addModule<SirenModule>("Siren");
 	// Stop the fill thread so it can't consume pendingSeekFrame via
 	// exchange(-1) before the assertion runs. The destructor will not
 	// re-join because joinable() returns false after this.
@@ -1012,8 +1012,8 @@ TEST_CASE("startPlayback: rapid successive calls — last position wins", "[Sire
 TEST_CASE("startPlayback: outputFrameCount reset on each call", "[Siren][Audio]") {
 	// Each scrub seek resets the output counter so the playhead position
 	// is computed relative to the new seek base, not the previous one.
-	Test::ModuleScaffold<SirenModule> mods;
-	auto* m = mods.create("Siren");
+	Test::Harness h;
+	auto* m = h.addModule<SirenModule>("Siren");
 	m->streamTotalFrames = 1000;
 
 	// Simulate some frames having been output
@@ -1026,8 +1026,8 @@ TEST_CASE("startPlayback: outputFrameCount reset on each call", "[Siren][Audio]"
 
 // openStream with null source leaves pendingStream nullptr.
 TEST_CASE("openStream: null source leaves pendingStream nullptr", "[Siren][Audio]") {
-	Test::ModuleScaffold<SirenModule> mods;
-	auto* m = mods.create("Siren");
+	Test::Harness h;
+	auto* m = h.addModule<SirenModule>("Siren");
 
 	m->openStream("", nullptr);
 
@@ -1045,8 +1045,8 @@ TEST_CASE("openStream: null source leaves pendingStream nullptr", "[Siren][Audio
 // buffers, corrupting memory and crashing during playback (though the
 // preview path, which sizes its buffers to the real channel count, was fine).
 TEST_CASE("Fill thread: multi-channel stream plays back first two channels only", "[Siren][Audio]") {
-	Test::ModuleScaffold<SirenModule> mods;
-	auto* m = mods.create("Siren");
+	Test::Harness h;
+	auto* m = h.addModule<SirenModule>("Siren");
 	m->engineSampleRate = 44100;
 
 	// 6-channel stream (5.1 surround). Channels 0/1 carry distinct constant
@@ -1069,7 +1069,7 @@ TEST_CASE("Fill thread: multi-channel stream plays back first two channels only"
 	// the background fill thread actually gets scheduled.
 	float l = 0.f, r = 0.f;
 	for (int i = 0; i < 3000; i++) {
-		m->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		l = m->outputs[SirenModule::OUTPUT_L].getVoltage();
 		r = m->outputs[SirenModule::OUTPUT_R].getVoltage();
 		if (i % 20 == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));

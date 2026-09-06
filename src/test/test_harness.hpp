@@ -2,6 +2,7 @@
 #include "test_plugin.hpp"
 #include "test_context.hpp"
 #include "test_mock.hpp"
+#include "test_events.hpp"
 #include "../vcv/ui.hpp"
 #include <rack.hpp>
 #include <app/Scene.hpp>
@@ -9,6 +10,7 @@
 #include <widget/Widget.hpp>
 #include <cmath>
 #include <vector>
+#include <utility>
 #include <functional>
 
 // Test::Harness — a deterministic scheduler for both of a module's threads.
@@ -95,14 +97,43 @@ enum class UiMode {
 // have infinite boxes and `box.contains(pos)` is true at every position. Hit-testing is then
 // meaningless in both directions: a widget added last is hit at any position, and one added
 // earlier is unreachable at every position because a full-size overlay in front of it consumes
-// first. Two lines fix it — give the scene a finite box, hide the scene's own full-size
-// children (recursePositionEvent skips invisible children).
+// first. Give the scene a finite box, hide the scene's own full-size children
+// (recursePositionEvent skips invisible children), and collapse those children's boxes to zero.
+//
+// The box collapse is not redundant with hiding them, and the reason is a trap worth stating:
+// Rack can un-hide them behind the harness's back. Scene::onHover()'s first act is
+//
+//     if (mousePos.y < menuBar->box.size.y) menuBar->show();
+//
+// and with an infinite menuBar box that test is true at every position — so the first hover
+// that reaches the scene reveals a full-size menu bar, which then consumes every subsequent
+// position event and silently un-does the precondition mid-test. Zeroing the boxes makes a
+// re-shown child harmless: it is visible, but contains no point, so hit-testing skips it
+// anyway. Found by EventDriver's own hover tests, not by the Step 1 spike, which never
+// dispatched a Hover through the scene.
+//
+// rackScroll gets neutralised along with the rest, and that has a consequence worth stating
+// because it is not obvious: APP->scene->rack is rackScroll's *descendant*, so anything
+// production code parents to the rack — StrokeWidget's global-hotkey KeyContainer, for one — is
+// unreachable by dispatch while the harness is alive.
+//
+// It is neutralised anyway, deliberately. RackScrollWidget is not an inert container: its
+// onHoverScroll() dereferences APP->window unconditionally (RackScrollWidget.cpp:157), so a
+// live rack viewport segfaults on the first scroll, and a live one also consumes the position
+// events that tests use to assert a *miss*. Making it live costs more than it buys.
+//
+// Where a test does need the rack subtree reachable, `reparentRackWidgets` moves those widgets
+// up to the scene for the harness's lifetime and puts them back afterwards — opt-in, so only
+// the tests that need it pay for it. See Harness::exposeRackWidgets().
 //
 // Restores what it changed on destruction, so a harness leaves the shared scene as it found it
 // and TEST_CASEs in one binary stay independent of each other.
 struct SceneLayout {
 	rack::math::Rect previousBox;
 	std::vector<rack::widget::Widget*> hidden;
+	// Every child's original box, restored on teardown — including children that were already
+	// hidden, since their boxes are collapsed too (the scene may show them at any time).
+	std::vector<std::pair<rack::widget::Widget*, rack::math::Rect>> previousChildBoxes;
 
 	explicit SceneLayout(rack::math::Vec size = rack::math::Vec(1024, 720)) {
 		previousBox = APP->scene->box;
@@ -110,7 +141,13 @@ struct SceneLayout {
 		APP->scene->box.size = size;
 
 		for (rack::widget::Widget* child : APP->scene->children) {
-			// Only hide what was visible, so show() on teardown cannot reveal something
+			previousChildBoxes.push_back(std::make_pair(child, child->box));
+
+			// Zero size, so `box.contains(pos)` is false everywhere even if something shows
+			// this child again while the harness is alive.
+			child->box.size = rack::math::Vec(0, 0);
+
+			// Only record what was visible, so show() on teardown cannot reveal something
 			// (BrowserOverlay, ResizeHandle) that the scene deliberately keeps hidden.
 			if (!child->visible) continue;
 			child->hide();
@@ -121,6 +158,9 @@ struct SceneLayout {
 	~SceneLayout() {
 		for (rack::widget::Widget* child : hidden) {
 			child->show();
+		}
+		for (const auto& entry : previousChildBoxes) {
+			entry.first->box = entry.second;
 		}
 		APP->scene->box = previousBox;
 	}
@@ -225,11 +265,66 @@ struct Harness {
 	// full-size scene overlay. See SceneLayout's comment for the mechanism.
 	SceneLayout layout;
 
+	// Synthetic input, dispatched through Rack's own event machinery. Declared after `layout`
+	// so the scene is laid out before the driver can be used — hit-testing against an
+	// un-laid-out scene silently matches everything, which is the Step 1 spike's central
+	// finding and the reason this is reached through the harness rather than constructed
+	// standalone. See test_events.hpp.
+	EventDriver eventDriver{APP->scene};
+
+	EventDriver& events() { return eventDriver; }
+
+	// Makes widgets that production code parented to APP->scene->rack reachable by dispatch,
+	// by moving them up to the scene for the rest of the harness's life.
+	//
+	// Needed because SceneLayout neutralises rackScroll, and the rack is its descendant (see
+	// SceneLayout's comment for why it must be neutralised). A module widget that adds a
+	// top-level helper to the rack — StrokeWidget's KeyContainer is the plugin's example, and
+	// Glue's LabelContainer the other — is otherwise invisible to every event, which would let
+	// a dispatch test pass while asserting nothing.
+	//
+	// Call it AFTER adding the widget whose constructor parents the helper. Only widgets
+	// present at the time of the call are moved; the original parent and child order are
+	// restored on teardown, so the widget's own destructor still finds what it expects.
+	void exposeRackWidgets() {
+		rack::widget::Widget* rackWidget = APP->scene->rack;
+		if (!rackWidget) return;
+
+		// Copy first: the loop reparents, which mutates rackWidget->children.
+		std::vector<rack::widget::Widget*> toMove(rackWidget->children.begin(),
+		                                          rackWidget->children.end());
+		for (rack::widget::Widget* w : toMove) {
+			// Skip anything the harness itself put in the scene, and any ModuleWidget — a
+			// ModuleWidget in the rack is a real patch module positioned in rack coordinates,
+			// and moving it would change what it overlaps.
+			if (dynamic_cast<rack::app::ModuleWidget*>(w)) continue;
+			rackWidget->removeChild(w);
+			APP->scene->addChild(w);
+			exposedFromRack.push_back(w);
+		}
+	}
+
 	// Non-copyable: two harnesses owning the same modules would double-free them.
 	Harness(const Harness&) = delete;
 	Harness& operator=(const Harness&) = delete;
 
 	~Harness() {
+		// Drop every reference to a widget that is about to be deleted, before deleting it.
+		// destroyWidget() runs finalizeWidget() and so clears EventState per widget, but the
+		// driver's own lastTarget is not EventState's to clear — and a subsequent TEST_CASE
+		// reading consumedBy() would otherwise see a freed pointer.
+		eventDriver.reset();
+
+		// Put anything exposeRackWidgets() borrowed back where its owner expects it, BEFORE
+		// destroying widgets: a ModuleWidget destructor that created a rack helper removes it
+		// from APP->scene->rack (StrokeWidget does exactly this), and would silently fail to
+		// find it — leaking the helper and leaving a freed pointer in the scene.
+		for (auto it = exposedFromRack.rbegin(); it != exposedFromRack.rend(); ++it) {
+			APP->scene->removeChild(*it);
+			APP->scene->rack->addChild(*it);
+		}
+		exposedFromRack.clear();
+
 		// Widgets first: a ModuleWidget points at its module, and destroyWidget() runs
 		// APP->event->finalizeWidget() which may still dispatch into the widget. Reverse
 		// order within each kind, matching ModuleScaffold.
@@ -238,6 +333,14 @@ struct Harness {
 			Test::destroyWidget(*it);
 		}
 		for (auto it = modules.rbegin(); it != modules.rend(); ++it) {
+			// Unregister before destroying. Engine::removeModule_NoLock also nulls
+			// every paramHandle->module pointing at this module (Engine.cpp:805-808), so a
+			// mapper's handle cannot be left holding a dangling pointer to a freed target.
+			// Idempotent, mirroring adoptModule: a test may have unregistered it already
+			// (removeModule_NoLock asserts the module is present).
+			// `modules` holds rack::Module*, so `->id` is already the base member here (no
+			// shadowing risk, unlike adoptModule's templated T*).
+			if (APP->engine->getModule_NoLock((*it)->id) == *it) Test::unregisterModule(*it);
 			Test::destroyModule(*it);
 		}
 	}
@@ -260,9 +363,29 @@ struct Harness {
 	}
 
 	// Hands an already-constructed module to the harness.
+	//
+	// Also registers the module with the engine, so APP->engine->getModule(id) resolves it.
+	// Required for param mapping: updateParamHandle() resolves a target by id
+	// (Engine.cpp:1247), so a mapping onto an unregistered module silently leaves
+	// handle->module == nullptr with moduleId still set. See the mapping section below.
 	template <typename T>
 	T* adoptModule(T* m) {
 		modules.push_back(m);
+		// A hand-constructed module (adoptModule(new Probe)) has rack::Module's default
+		// id == -1. addModule_NoLock would then take its random-id path, and the test RNG is
+		// unseeded, so random::u64() returns 0 every time: the first such module gets id 0
+		// and the second spins forever in the collision loop. Give it a unique id first.
+		//
+		// Qualified as rack::engine::Module::id, NOT m->id: a test probe may declare its own
+		// `id` member (test_harness.test.cpp's OrderProbe does), which shadows the base's and
+		// would make the guard read the wrong field — leaving Module::id at -1 and hanging in
+		// exactly the loop this guard exists to avoid.
+		rack::engine::Module* base = m;
+		if (base->id < 0) base->id = Test::getModuleId();
+		// Idempotent: many tests already call Test::registerModule() themselves, and
+		// addModule_NoLock asserts on a double-add.
+		// _NoLock: getModule() takes the engine's SharedLock (see Test::registerModule).
+		if (!APP->engine->getModule_NoLock(base->id)) Test::registerModule(m);
 		return m;
 	}
 
@@ -303,6 +426,215 @@ struct Harness {
 		mw->box.pos = rack::math::Vec(nextWidgetX, widgetY);
 		nextWidgetX += mw->box.size.x;
 		APP->scene->addChild(mw);
+	}
+
+	// ---- Expanders -------------------------------------------------------------------------
+	//
+	// Wiring expanders by hand — `a->rightExpander.module = b; b->leftExpander.module = a;` — is
+	// what every expander test in this suite used to do, and it silently skips two things Rack
+	// does:
+	//
+	//   1. **Module::onExpanderChange() is never dispatched.** Rack assigns the neighbour via
+	//      Module::setExpanderModule() (Module.cpp), which fires the event when the pointer
+	//      actually changes. 11 modules in this plugin override onExpanderChange, and several do
+	//      real work in it — MidiCat and Transit call notifyModuleListeners() (which is what sets
+	//      moduleChangedFlag), and IntermixBase unpublishes its expander message and resets its
+	//      outputs on a left-side change. A hand-wired test runs none of that, so it tests the
+	//      steady state a module reaches *after* a change, never the change itself.
+	//   2. **Expander::moduleId is left at -1.** Rack maintains it alongside `module`, and
+	//      setExpanderModule does NOT touch it — the engine assigns it separately (see
+	//      Engine::removeModule_NoLock). Strip walks chains by moduleId, so a test that only sets
+	//      `module` presents as a connected-but-unidentifiable neighbour.
+	//
+	// These methods do both, in Rack's order. What they deliberately do NOT do is touch
+	// `moduleChangedFlag`: that is this plugin's own ModuleChangeListener signal, and a module
+	// that reaches it does so *through* onExpanderChange -> notifyModuleListeners(). Setting it
+	// from the harness would paper over a module that forgot to notify, which is exactly the bug
+	// worth catching. A test that needs the flag set without a real notification should set it
+	// itself, and say why.
+
+	// Connects `right` as the right-hand neighbour of `left` (and `left` as the left-hand
+	// neighbour of `right`), dispatching onExpanderChange on both, as Rack does.
+	//
+	// Does not step. Modules that react to a neighbour change during process() need a dspStep()
+	// afterwards; whether one is required — and how many — is the module's business, not the
+	// harness's, so it stays at the call site where it can be asserted.
+	void connectExpander(rack::Module* left, rack::Module* right) {
+		REQUIRE(left != nullptr);
+		REQUIRE(right != nullptr);
+		REQUIRE(left != right);
+		setExpander(left, SIDE_RIGHT, right);
+		setExpander(right, SIDE_LEFT, left);
+	}
+
+	// Connects a chain left-to-right: chain[0] -> chain[1] -> ... Each link is made with
+	// connectExpander, so events fire per link and in order — the same way Rack dispatches them
+	// as a rack is rearranged, rather than as one batched update at the end.
+	void connectChain(const std::vector<rack::Module*>& chain) {
+		for (size_t i = 0; i + 1 < chain.size(); i++) {
+			connectExpander(chain[i], chain[i + 1]);
+		}
+	}
+
+	// Variadic form: h.connectChain(transit, ex1, ex2).
+	template <typename... T>
+	void connectChain(rack::Module* first, rack::Module* second, T*... rest) {
+		connectChain(std::vector<rack::Module*>{first, second, rest...});
+	}
+
+	// Removes the neighbour on one side of `m`, and clears the matching back-reference on that
+	// neighbour, dispatching onExpanderChange on both — the "module removed from the rack" case.
+	void disconnectExpander(rack::Module* m, uint8_t side) {
+		REQUIRE(m != nullptr);
+		rack::Module* neighbour = m->getExpander(side).module;
+		setExpander(m, side, nullptr);
+		if (neighbour) {
+			// The neighbour's view of m is on its opposite side.
+			setExpander(neighbour, side == SIDE_RIGHT ? SIDE_LEFT : SIDE_RIGHT, nullptr);
+		}
+	}
+
+	// Rack's side convention (Module::getExpander): 0 = left, 1 = right. Named because a bare
+	// 0/1 at a call site reads as a module index.
+	static const uint8_t SIDE_LEFT = 0;
+	static const uint8_t SIDE_RIGHT = 1;
+
+	// ---- Parameter mapping -------------------------------------------------------------
+	//
+	// Several modules in this plugin exist to map a parameter on another module: CVMap, CVPam,
+	// Mirror, Grip, Macro, MidiCat and Transit all hold rack::ParamHandles and drive someone
+	// else's Param through them. Rack's rules for those handles are unobvious enough that
+	// every mapping test used to re-derive them by hand, and the awkwardness shows in the
+	// coverage: Mirror is the plugin's most ParamHandle-dense module and had no mapping test
+	// at all.
+	//
+	// Three rules the engine enforces, all of which have bitten a test in this suite:
+	//
+	//   1. **A mapping only resolves if the target is registered with the engine.**
+	//      updateParamHandle() looks the target up by id (Engine.cpp:1247), so mapping onto an
+	//      unregistered module silently leaves handle->module == nullptr with moduleId still
+	//      set — a half-mapped handle that reads as "mapped" on the field most tests assert.
+	//      Harness::adoptModule() registers every module it owns, so this is handled; the
+	//      helpers below REQUIRE it rather than trusting it, because a module built outside
+	//      the harness still won't be.
+	//   2. **One handle per (moduleId, paramId).** With overwrite=false, updateParamHandle()
+	//      resets the *new* handle when another still claims that param (Engine.cpp:1230-1232)
+	//      — so a preset round-trip has to release the old module's claims first, or the
+	//      reload silently maps nothing. That is what clearMapsFor() is for.
+	//   3. **The engine write lock is not recursive.** updateParamHandle() takes it, so
+	//      calling any of this from inside process() — or while already holding it —
+	//      deadlocks the test thread against itself. These helpers are for the test thread.
+	//
+	// The helpers work on rack::ParamHandle directly rather than on a mapper interface: the
+	// modules do not share one (MapModuleBase::learnParam takes 3 arguments, MidiCat's takes a
+	// 4th), and the handle is what Rack actually arbitrates over.
+
+	// Maps `handle` onto `target`'s parameter `paramId`, the way a completed learn does.
+	//
+	// `overwrite` is Rack's own flag, and the default matches learnParam(): steal the param
+	// from whatever held it. Pass false to model a preset load, where an existing claim wins
+	// and the new handle is reset instead.
+	void mapParam(rack::ParamHandle* handle, rack::Module* target, int paramId,
+	              bool overwrite = true) {
+		REQUIRE(handle != nullptr);
+		REQUIRE(target != nullptr);
+		REQUIRE(paramId >= 0);
+		REQUIRE(paramId < int(target->params.size()));
+		// Rule 1: an unregistered target cannot resolve, and the failure is silent. Say so
+		// here rather than let the caller assert on a half-mapped handle later.
+		REQUIRE(APP->engine->getModule_NoLock(target->id) == target);
+		APP->engine->updateParamHandle(handle, target->id, paramId, overwrite);
+	}
+
+	// Releases a mapping, as clearMap() does. The handle stays registered with the engine and
+	// can be re-mapped; only its claim on the param is dropped.
+	void unmapParam(rack::ParamHandle* handle) {
+		REQUIRE(handle != nullptr);
+		APP->engine->updateParamHandle(handle, -1, 0, true);
+	}
+
+	// Releases every claim `handles` holds. The preset-round-trip helper: rule 2 means a
+	// second module cannot load a preset naming params the first still claims, so a test that
+	// serializes from one module and loads into another must release the first's claims in
+	// between. In Rack this happens for free, because the old module is destroyed first.
+	void clearMapsFor(const std::vector<rack::ParamHandle*>& handles) {
+		for (rack::ParamHandle* handle : handles) {
+			if (handle && handle->moduleId >= 0) unmapParam(handle);
+		}
+	}
+
+	// True when the handle resolved to a live target — both the ids and the module pointer.
+	// The pointer is the half that a missing registration silently loses, and the half most
+	// hand-written assertions forget to check.
+	bool isMapped(const rack::ParamHandle* handle) const {
+		return handle && handle->moduleId >= 0 && handle->module != nullptr;
+	}
+
+	// Asserts the handle points at exactly this param, pointer included.
+	void requireMapped(const rack::ParamHandle* handle, const rack::Module* target,
+	                   int paramId) const {
+		REQUIRE(handle != nullptr);
+		REQUIRE(target != nullptr);
+		REQUIRE(handle->moduleId == target->id);
+		REQUIRE(handle->paramId == paramId);
+		// The pointer, not just the ids: a handle with the right moduleId and a null module
+		// is the exact shape of a mapping onto an unregistered target.
+		REQUIRE(handle->module == target);
+	}
+
+	// Asserts the handle holds no claim. Checks moduleId, since that is what the engine
+	// resets; `module` follows from it.
+	void requireUnmapped(const rack::ParamHandle* handle) const {
+		REQUIRE(handle != nullptr);
+		REQUIRE(handle->moduleId < 0);
+		REQUIRE(handle->module == nullptr);
+	}
+
+	// The ParamQuantity a handle resolves to, or nullptr if it is unmapped. This is the object
+	// a mapper actually drives, so it is what a test asserts a mapped value against.
+	rack::ParamQuantity* mappedQuantity(const rack::ParamHandle* handle) const {
+		if (!isMapped(handle)) return nullptr;
+		return handle->module->getParamQuantity(handle->paramId);
+	}
+
+	// The current value of a mapped param. Uses getImmediateValue(): getValue() reads through
+	// the engine's smoothing, which would make an assertion depend on how many steps have run.
+	float mappedValue(const rack::ParamHandle* handle) const {
+		rack::ParamQuantity* pq = mappedQuantity(handle);
+		REQUIRE(pq != nullptr);
+		return pq->getImmediateValue();
+	}
+
+	// Sets a mapped param directly, bypassing smoothing — the "user turned the target knob"
+	// case, for asserting that a mapper reads a change it did not make itself.
+	//
+	// REQUIREs the value to be in the param's range rather than letting it clamp. A clamped
+	// write is the worst kind of test bug: the assertion that follows compares against the
+	// bound, so it reads as a propagation failure in the module under test. (Observed while
+	// writing Mirror's first mapping test — Macro's params are 0..1 and a 5.f write silently
+	// became 1.f.)
+	void setMappedValue(const rack::ParamHandle* handle, float value) {
+		rack::ParamQuantity* pq = mappedQuantity(handle);
+		REQUIRE(pq != nullptr);
+		REQUIRE(value >= pq->getMinValue());
+		REQUIRE(value <= pq->getMaxValue());
+		pq->setImmediateValue(value);
+	}
+
+	// A value inside the mapped param's range, distinct from what it currently holds — what a
+	// propagation test needs and would otherwise hand-pick per module, getting it wrong when
+	// the range is not the assumed 0..10 (see setMappedValue).
+	float distinctValueFor(const rack::ParamHandle* handle) {
+		rack::ParamQuantity* pq = mappedQuantity(handle);
+		REQUIRE(pq != nullptr);
+		const float lo = pq->getMinValue();
+		const float hi = pq->getMaxValue();
+		REQUIRE(hi > lo);
+		const float mid = (lo + hi) / 2.f;
+		// If the param already sits at the midpoint, a test asserting "it changed" would pass
+		// without anything happening. Step to the quarter point instead.
+		if (pq->getImmediateValue() == mid) return (lo + mid) / 2.f;
+		return mid;
 	}
 
 	// ---- Stepping ------------------------------------------------------------------------
@@ -398,7 +730,27 @@ struct Harness {
 	std::vector<rack::Module*> modules;
 	std::vector<rack::app::ModuleWidget*> widgets;
 
+	// Widgets moved out of APP->scene->rack by exposeRackWidgets(), put back on teardown.
+	std::vector<rack::widget::Widget*> exposedFromRack;
+
 private:
+	// Sets one side's neighbour on one module, the way Rack's engine does: assign moduleId
+	// directly, then route the pointer through setExpanderModule() so onExpanderChange fires.
+	//
+	// The split is Rack's, not ours — setExpanderModule() only touches `module` and the event,
+	// and the engine assigns `moduleId` around it (Engine::removeModule_NoLock). moduleId is set
+	// first so a handler reacting to the event already sees a consistent pair.
+	// setExpanderModule is PRIVATE (which expands to a deprecation attribute, rack.hpp:16), like
+	// the engine and scene calls elsewhere in this framework: there is no public way to dispatch
+	// an ExpanderChangeEvent, and re-implementing the dispatch here would be the hand-wiring this
+	// method exists to replace.
+	static void setExpander(rack::Module* m, uint8_t side, rack::Module* neighbour) {
+		m->getExpander(side).moduleId = neighbour ? neighbour->id : -1;
+		TEST_SUPPRESS_DEPRECATED_BEGIN
+		m->setExpanderModule(neighbour, side);
+		TEST_SUPPRESS_DEPRECATED_END
+	}
+
 	// Points the UiAccess mock at whatever the current mode implies.
 	void installUiAccess() {
 		uiAccessMock.present = hasWindowForMode();

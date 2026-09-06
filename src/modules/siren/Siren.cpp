@@ -1,6 +1,7 @@
 #include "../../plugin.hpp"
 #include "../../pluginsettings.hpp"
 #include "../../components/Knobs.hpp"
+#include "../../utils/MpmcTaskWorker.hpp"
 #include "SirenSettings.hpp"
 #include "SirenDataSource.hpp"
 #include "SirenFileSystem.hpp"
@@ -10,6 +11,9 @@
 #include "SirenTopBar.hpp"
 #include "SirenVuMeter.hpp"
 #include <osdialog.h>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
 
 
 namespace StoermelderPackOne {
@@ -686,7 +690,7 @@ struct SirenDisplayWidget : OpaqueWidget {
 struct SirenDragOverlay : widget::TransparentWidget {
 	SirenDropHandler* dropHandler = nullptr;
 	SirenPreviewPane* previewPane = nullptr;
-	TaskWorker* worker = nullptr;
+	ITaskWorker* worker = nullptr;
 	bool initiated = false;
 
 	void drawLayer(const DrawArgs& args, int layer) override {
@@ -778,7 +782,7 @@ struct SirenOcWidget : OpaqueWidget {
 };
 
 struct SirenWidget : ThemedModuleWidget<SirenModule>, ModuleChangeListener {
-	TaskWorker taskWorker{"Siren"};
+	MpmcTaskWorker taskWorker{"Siren"};
 	SirenDropHandler dropHandler;
 
 	SirenBrowserPane* browserPane = nullptr;
@@ -1052,6 +1056,9 @@ struct SirenWidget : ThemedModuleWidget<SirenModule>, ModuleChangeListener {
 	}
 
 	~SirenWidget() override {
+		// Discard queued-but-unstarted tasks before anything below is torn down
+		taskWorker.drain();
+
 		if (module) {
 			unregisterModuleListener("Siren", this);
 		}

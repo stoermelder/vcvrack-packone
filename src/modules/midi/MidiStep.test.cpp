@@ -14,10 +14,10 @@ static rack::midi::Message cc(uint8_t ccNum, uint8_t value) {
 
 // Drive process() until OUTPUT_INC/OUTPUT_DEC voltage on the given output/channel
 // reads high, or give up. Returns true if a high (10V) sample was observed.
-static bool pollHigh(MidiStepModule* module, int out, int channel = 0, int frames = 4096) {
+static bool pollHigh(Test::Harness& h, MidiStepModule* module, int out, int channel = 0, int frames = 4096) {
 	bool high = false;
 	for (int i = 0; i < frames; i++) {
-		module->process(Test::makeProcessArgs(i + 1));
+		h.dspStep();
 		if (module->outputs[out].getVoltage(channel) > 5.f) high = true;
 	}
 	return high;
@@ -231,7 +231,6 @@ TEST_CASE("Relative mode #1 (Beatstep R1 / X-Touch R2)", "[MidiStep]") {
 		REQUIRE(module->decPulseCount[0] == 2 + 4 + 6);
 		REQUIRE(module->incPulseCount[0] == 0);
 	}
-
 }
 
 
@@ -268,7 +267,6 @@ TEST_CASE("Relative mode #2 (fixed 1..3 / 125..127)", "[MidiStep]") {
 		REQUIRE(module->incPulseCount[0] == 0);
 		REQUIRE(module->decPulseCount[0] == 0);
 	}
-
 }
 
 
@@ -346,19 +344,18 @@ TEST_CASE("CC learning", "[MidiStep]") {
 		module->learnCC(30);
 		REQUIRE(module->ccs[30] == -1);
 	}
-
 }
 
 
 TEST_CASE("Produces increment/decrement triggers", "[MidiStep]") {
-	Test::ModuleScaffold<MidiStepModule> mods;
-	auto module = mods.create("MidiStep");
+	Test::Harness h;
+	auto module = h.addModule<MidiStepModule>("MidiStep");
 	module->mode = MODE::BEATSTEP_R1;
 
 	SECTION("Increment generates a high pulse on OUTPUT_INC") {
 		module->processMessage(cc(0, 70)); // inc += 6
 		REQUIRE(module->incPulseCount[0] == 6);
-		REQUIRE(pollHigh(module, MidiStepModule::OUTPUT_INC + 0));
+		REQUIRE(pollHigh(h, module, MidiStepModule::OUTPUT_INC + 0));
 		// All queued pulses are consumed.
 		REQUIRE(module->incPulseCount[0] == 0);
 	}
@@ -366,7 +363,7 @@ TEST_CASE("Produces increment/decrement triggers", "[MidiStep]") {
 	SECTION("Decrement generates a high pulse on OUTPUT_DEC") {
 		module->processMessage(cc(0, 58)); // dec += 6
 		REQUIRE(module->decPulseCount[0] == 6);
-		REQUIRE(pollHigh(module, MidiStepModule::OUTPUT_DEC + 0));
+		REQUIRE(pollHigh(h, module, MidiStepModule::OUTPUT_DEC + 0));
 		REQUIRE(module->decPulseCount[0] == 0);
 	}
 
@@ -374,15 +371,15 @@ TEST_CASE("Produces increment/decrement triggers", "[MidiStep]") {
 
 
 TEST_CASE("Output routing", "[MidiStep]") {
-	Test::ModuleScaffold<MidiStepModule> mods;
-	auto module = mods.create("MidiStep");
+	Test::Harness h;
+	auto module = h.addModule<MidiStepModule>("MidiStep");
 	module->mode = MODE::BEATSTEP_R1;
 
 	SECTION("Monophonic: channel N drives its own port") {
 		module->polyphonicOutput = false;
 		// CC 3 maps to channel 3 -> OUTPUT_INC + 3 (separate port).
 		module->processMessage(cc(3, 70));
-		REQUIRE(pollHigh(module, MidiStepModule::OUTPUT_INC + 3, 0));
+		REQUIRE(pollHigh(h, module, MidiStepModule::OUTPUT_INC + 3, 0));
 		// Port 0 stays low.
 		REQUIRE(module->outputs[MidiStepModule::OUTPUT_INC + 0].getVoltage(0) == 0.f);
 	}
@@ -391,38 +388,38 @@ TEST_CASE("Output routing", "[MidiStep]") {
 		module->polyphonicOutput = true;
 		// CC 3 maps to channel 3 -> OUTPUT_INC port 0, poly channel 3.
 		module->processMessage(cc(3, 70));
-		REQUIRE(pollHigh(module, MidiStepModule::OUTPUT_INC + 0, 3));
+		REQUIRE(pollHigh(h, module, MidiStepModule::OUTPUT_INC + 0, 3));
 	}
-
 }
 
 
 TEST_CASE("MIDI queue is processed", "[MidiStep]") {
-	Test::ModuleScaffold<MidiStepModule> mods;
-	auto module = mods.create("MidiStep");
+	Test::Harness h;
+	auto module = h.addModule<MidiStepModule>("MidiStep");
 	module->mode = MODE::BEATSTEP_R1;
 	// Push a CC into the input queue and let process() pop it.
 	module->midiInput.onMessage(cc(0, 70));
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	REQUIRE(module->incPulseCount[0] > 0);
 }
 
 
 TEST_CASE("processBypass drains the MIDI queue without producing triggers", "[MidiStep]") {
-	Test::ModuleScaffold<MidiStepModule> mods;
-	auto module = mods.create("MidiStep");
+	Test::Harness h;
+	auto module = h.addModule<MidiStepModule>("MidiStep");
 	module->mode = MODE::BEATSTEP_R1;
 
 	// Push a CC that would normally produce an increment pulse.
 	module->midiInput.onMessage(cc(0, 70));
 
+	// processBypass() isn't part of Harness::dspStep()'s per-step loop (Rack's engine only
+	// calls it for bypassed modules, which Harness has no notion of), so it's driven directly.
 	module->processBypass(Test::makeProcessArgs(1));
 
 	REQUIRE(module->incPulseCount[0] == 0);
 	REQUIRE(module->outputs[MidiStepModule::OUTPUT_INC].getVoltage() == 0.f);
 
 	// The queue was drained by processBypass, so a following process() sees nothing.
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 	REQUIRE(module->incPulseCount[0] == 0);
-
 }

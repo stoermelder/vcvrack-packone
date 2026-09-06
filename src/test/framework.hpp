@@ -13,14 +13,21 @@
 //                         NullFileAccess, so TestContext depends on this header (it includes
 //                         it directly too — this order is documentation, not the mechanism)
 //   test_context.hpp   — TestContext, initPluginOnce, createModule/destroyModule,
-//                         createWidget/destroyWidget, SimpleEngine, ModuleScaffold,
+//                         createWidget/destroyWidget, ModuleScaffold,
 //                         SYNC_MODEL/requireModelSync
 //   test_json.hpp      — testPresetNullGuards/TypeConfusion/OversizedArrays; templates, so
 //                         harmless to include even in files that never call them
+//   test_traversal.hpp — Test::traversal: the shared spatial walk of a widget tree (visit
+//                         order, visibility, transforms). Used by EventDriver, and kept
+//                         separate so a future DrawDriver reuses it rather than reimplementing
+//   test_events.hpp    — Test::EventDriver: synthetic input through Rack's own dispatch
+//                         (hit-testing, z-order, consumption, EventState bookkeeping).
+//                         Pulled in by test_harness.hpp, which exposes it as h.events()
 //   test_harness.hpp   — Test::Harness: the deterministic DSP/UI scheduler, scene layout,
-//                         and module/widget lifetime. Supersedes SimpleEngine for new tests
+//                         and module/widget lifetime.
 #include "test_plugin.hpp"
 #include "test_mock.hpp"
 #include "test_context.hpp"
 #include "test_json.hpp"
+#include "test_traversal.hpp"
 #include "test_harness.hpp"

@@ -54,7 +54,6 @@ TEST_CASE("Preset JSON null-guards", "[Goto][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 TEST_CASE("JSON round-trip preserves state", "[Goto]") {
@@ -107,13 +106,12 @@ TEST_CASE("JSON round-trip preserves state", "[Goto]") {
 			REQUIRE(module2->jumpPoints[i].zoom == Catch::Approx(0.25f + 0.1f * i).margin(0.01f));
 		}
 	}
-
 }
 
 
 TEST_CASE("POLYTRIGGER mode sets jumpTrigger on rising edge", "[Goto]") {
-	Test::ModuleScaffold<GotoModule<10>> mods;
-	auto module = mods.create("Goto");
+	Test::Harness h;
+	auto module = h.addModule<GotoModule<10>>("Goto");
 	module->triggerMode = TRIGGERMODE::POLYTRIGGER;
 
 	// Simulate connected cable
@@ -123,22 +121,21 @@ TEST_CASE("POLYTRIGGER mode sets jumpTrigger on rising edge", "[Goto]") {
 	for (int i = 0; i < 10; i++) {
 		module->inputs[GotoModule<10>::INPUT_TRIG].setVoltage(0.f, i);
 	}
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	REQUIRE(module->jumpTrigger == -1);
 
 	// Rising edge on channel 4 (slot 4)
 	module->inputs[GotoModule<10>::INPUT_TRIG].setVoltage(10.f, 4);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 
 	SECTION("jumpTrigger is set to slot 4") {
 		REQUIRE(module->jumpTrigger == 4);
 	}
-
 }
 
 TEST_CASE("POLYTRIGGER: no trigger when voltage stays high (no new edge)", "[Goto]") {
-	Test::ModuleScaffold<GotoModule<10>> mods;
-	auto module = mods.create("Goto");
+	Test::Harness h;
+	auto module = h.addModule<GotoModule<10>>("Goto");
 	module->triggerMode = TRIGGERMODE::POLYTRIGGER;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 10;
 
@@ -146,23 +143,22 @@ TEST_CASE("POLYTRIGGER: no trigger when voltage stays high (no new edge)", "[Got
 	for (int i = 0; i < 10; i++) {
 		module->inputs[GotoModule<10>::INPUT_TRIG].setVoltage(0.f, i);
 	}
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	module->inputs[GotoModule<10>::INPUT_TRIG].setVoltage(10.f, 2);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 	module->jumpTrigger = -1; // simulate widget consuming the trigger
 
 	// Process again with voltage still high — Schmitt trigger should NOT re-fire
-	module->process(Test::makeProcessArgs(3));
+	h.dspStep();
 
 	SECTION("jumpTrigger remains -1 (no retriggering on sustained high)") {
 		REQUIRE(module->jumpTrigger == -1);
 	}
-
 }
 
 TEST_CASE("C5 trigger mode maps voltage to slot", "[Goto]") {
-	Test::ModuleScaffold<GotoModule<10>> mods;
-	auto module = mods.create("Goto");
+	Test::Harness h;
+	auto module = h.addModule<GotoModule<10>>("Goto");
 	module->triggerMode = TRIGGERMODE::C5;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 1;
 
@@ -170,86 +166,81 @@ TEST_CASE("C5 trigger mode maps voltage to slot", "[Goto]") {
 	module->triggerVoltage = 0.f; // reset last seen voltage
 
 	module->inputs[GotoModule<10>::INPUT_TRIG].setVoltage(1.0f); // slot 0
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	SECTION("Slot 0 triggered at 1.0 V") {
 		REQUIRE(module->jumpTrigger == 0);
 	}
-
 }
 
 TEST_CASE("C5 trigger mode: slot 3 at correct voltage", "[Goto]") {
-	Test::ModuleScaffold<GotoModule<10>> mods;
-	auto module = mods.create("Goto");
+	Test::Harness h;
+	auto module = h.addModule<GotoModule<10>>("Goto");
 	module->triggerMode = TRIGGERMODE::C5;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 1;
 
 	// slot 3: voltage = 1 + 3/12 = 1.25
 	module->triggerVoltage = 0.f;
 	module->inputs[GotoModule<10>::INPUT_TRIG].setVoltage(1.25f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	SECTION("Slot 3 triggered at 1.25 V") {
 		REQUIRE(module->jumpTrigger == 3);
 	}
-
 }
 
 TEST_CASE("C5 trigger mode: out-of-range voltage is ignored", "[Goto]") {
-	Test::ModuleScaffold<GotoModule<10>> mods;
-	auto module = mods.create("Goto");
+	Test::Harness h;
+	auto module = h.addModule<GotoModule<10>>("Goto");
 	module->triggerMode = TRIGGERMODE::C5;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 1;
 
 	// slot = (2.5 - 1) * 12 = 18 — beyond SLOTS-1=9
 	module->triggerVoltage = 0.f;
 	module->inputs[GotoModule<10>::INPUT_TRIG].setVoltage(2.5f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	SECTION("No jump triggered for out-of-range voltage") {
 		REQUIRE(module->jumpTrigger == -1);
 	}
-
 }
 
 TEST_CASE("C5 trigger: same voltage twice does not re-trigger", "[Goto]") {
-	Test::ModuleScaffold<GotoModule<10>> mods;
-	auto module = mods.create("Goto");
+	Test::Harness h;
+	auto module = h.addModule<GotoModule<10>>("Goto");
 	module->triggerMode = TRIGGERMODE::C5;
 	module->inputs[GotoModule<10>::INPUT_TRIG].channels = 1;
 
 	module->triggerVoltage = 0.f;
 	module->inputs[GotoModule<10>::INPUT_TRIG].setVoltage(1.0f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	// Simulate widget consuming the trigger
 	module->jumpTrigger = -1;
 
 	// Same voltage again — should NOT trigger because triggerVoltage == current v
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 
 	SECTION("jumpTrigger stays -1 on repeated same voltage") {
 		REQUIRE(module->jumpTrigger == -1);
 	}
-
 }
 
 TEST_CASE("jumpTriggerUsed reflects cable connection state", "[Goto]") {
-	Test::ModuleScaffold<GotoModule<10>> mods;
-	auto module = mods.create("Goto");
+	Test::Harness h;
+	auto module = h.addModule<GotoModule<10>>("Goto");
 
 	SECTION("False when input disconnected") {
 		module->inputs[GotoModule<10>::INPUT_TRIG].channels = 0;
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		REQUIRE(module->jumpTriggerUsed == false);
 	}
 
 	SECTION("True when input connected") {
 		module->inputs[GotoModule<10>::INPUT_TRIG].channels = 1;
-		module->process(Test::makeProcessArgs(1));
+		h.dspStep();
 		REQUIRE(module->jumpTriggerUsed == true);
 	}
-
 }
 
 
@@ -291,7 +282,6 @@ TEST_CASE("JSON legacy single-moduleId field is loaded correctly", "[Goto]") {
 		REQUIRE(module->jumpPoints[0].moduleIds.empty());
 		REQUIRE(module->jumpPoints[9].moduleIds.empty());
 	}
-
 }
 
 TEST_CASE("executeJump routes through the module access layer", "[Goto][vcv]") {
@@ -311,5 +301,4 @@ TEST_CASE("executeJump routes through the module access layer", "[Goto][vcv]") {
 	REQUIRE(mock.modules.getModuleWidgetCalls.size() == 2);
 	CHECK(mock.modules.getModuleWidgetCalls[0] == 42);
 	CHECK(mock.modules.getModuleWidgetCalls[1] == 43);
-
 }
