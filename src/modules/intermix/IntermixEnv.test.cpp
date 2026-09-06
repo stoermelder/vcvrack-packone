@@ -183,12 +183,10 @@ TEST_CASE("Envelope output", "[IntermixEnv]") {
 }
 
 TEST_CASE("Expander chain", "[IntermixEnv]") {
-	Test::ModuleScaffold<IntermixEnvModule<8>> mods;
-	auto intermixModule = new IntermixModuleMock<8>();
-	auto envModule1 = mods.create("IntermixEnv");
-	auto envModule2 = mods.create("IntermixEnv");
-	Test::SimpleEngine engine;
-	engine.addModules(intermixModule, envModule1, envModule2);
+	Test::Harness h;
+	auto intermixModule = h.adoptModule(new IntermixModuleMock<8>());
+	auto envModule1 = h.addModule<IntermixEnvModule<8>>("IntermixEnv");
+	auto envModule2 = h.addModule<IntermixEnvModule<8>>("IntermixEnv");
 
 	SECTION("Multiple expanders can chain") {
 		// Setup expander chain: Intermix -> Env1 -> Env2
@@ -196,18 +194,18 @@ TEST_CASE("Expander chain", "[IntermixEnv]") {
 		envModule1->leftExpander.module = intermixModule;
 		envModule1->rightExpander.module = envModule2;
 		envModule2->leftExpander.module = envModule1;
-		
+
 		intermixModule->currentMatrix[0][0] = 0.8f;
 		intermixModule->currentMatrix[1][0] = 0.4f;
-		
+
 		envModule1->input = 0;
 		envModule2->input = 1;
-		
-		engine.step();
-		engine.step();
+
+		h.dspStep();
+		h.dspStep();
 		// Process env2 - it will read from env1's producerMessage
-		engine.step();
-		
+		h.dspStep();
+
 		REQUIRE(envModule1->outputs[IntermixEnvModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(8.0f).margin(0.01f));
 		REQUIRE(envModule1->outputs[IntermixEnvModule<8>::OUTPUT + 1].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
 		REQUIRE(envModule1->outputs[IntermixEnvModule<8>::OUTPUT + 2].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
@@ -215,6 +213,4 @@ TEST_CASE("Expander chain", "[IntermixEnv]") {
 		REQUIRE(envModule2->outputs[IntermixEnvModule<8>::OUTPUT + 1].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
 		REQUIRE(envModule2->outputs[IntermixEnvModule<8>::OUTPUT + 3].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
 	}
-
-	delete intermixModule;
 }

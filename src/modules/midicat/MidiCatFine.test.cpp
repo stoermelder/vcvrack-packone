@@ -20,44 +20,37 @@ struct TestParamModule : Module {
 // Helper: connect MidiCatFine to MidiCat as right expander and let MidiCat discover it.
 // After connectFine(), expFine is non-null. The Fine expander does not itself need
 // any priming before its voltage getters are queried.
-static void connectFine(MidiCatModule* midicat, MidiCatFineModule* fine) {
+static void connectFine(Test::Harness& h, MidiCatModule* midicat, MidiCatFineModule* fine) {
 	midicat->rightExpander.module = fine;
 	fine->leftExpander.module = midicat;
 	midicat->moduleChangedFlag = true;
-	midicat->process(Test::makeProcessArgs(1));
+	h.dspStep();
 }
 
 // Helper: set up a full CC-to-param binding.
-static void setupBinding(MidiCatModule* midicat, TestParamModule* target, int id, int cc) {
+static void setupBinding(Test::Harness& h, MidiCatModule* midicat, TestParamModule* target, int id, int cc) {
 	midicat->processDivider.setDivision(1);
 	midicat->enableLearn(id, true);
 	midicat->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, cc, 64));
 	midicat->learnParam(id, target->id, TestParamModule::PARAM_A);
-	midicat->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	midicat->slots[id].cc.ccMode = CCMODE::DIRECT;
 }
 
-// Send a low→high→low transition on a fine expander input and return the startFrame+2
-// that the second process() call uses (so the test framework can continue from there).
 // SchmittTriggers in the parent MidiCat start UNINITIALIZED, so we prime them first by
-// calling process() with the input at 0V before driving them high.
-static void primeFineTriggers(MidiCatModule* midicat, MidiCatFineModule* fine) {
+// stepping with the input at 0V before driving them high.
+static void primeFineTriggers(Test::Harness& h, MidiCatFineModule* fine) {
 	fine->inputs[MidiCatFineModule::INPUT_LOWRANGE].setVoltage(0.f);
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].setVoltage(0.f);
-	midicat->process(Test::makeProcessArgs(1));
-}
-
-static void sendFineGate(MidiCatModule* midicat, int input, float voltage, int64_t startFrame) {
-	midicat->process(Test::makeProcessArgs(startFrame));
-	midicat->process(Test::makeProcessArgs(startFrame + 1));
+	h.dspStep();
 }
 
 
 // ─── Standalone tests ───────────────────────────────────────────────────────
 
 TEST_CASE("Construction and initialization", "[MidiCatFine]") {
-	Test::ModuleScaffold<MidiCatFineModule> mods;
-	MidiCatFineModule* m = mods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatFineModule* m = h.addModule<MidiCatFineModule>("MidiCatFine");
 
 	REQUIRE(m != nullptr);
 	REQUIRE(m->NUM_PARAMS == 0);
@@ -74,8 +67,8 @@ TEST_CASE("Construction and initialization", "[MidiCatFine]") {
 }
 
 TEST_CASE("Preset JSON null-guards", "[MidiCatFine][JSON]") {
-	Test::ModuleScaffold<MidiCatFineModule> mods;
-	auto module = mods.create("MidiCatFine");
+	Test::Harness h;
+	auto module = h.addModule<MidiCatFineModule>("MidiCatFine");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -101,8 +94,8 @@ TEST_CASE("Preset JSON null-guards", "[MidiCatFine][JSON]") {
 }
 
 TEST_CASE("JSON round-trip preserves state", "[MidiCatFine][JSON]") {
-	Test::ModuleScaffold<MidiCatFineModule> mods;
-	MidiCatFineModule* m = mods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatFineModule* m = h.addModule<MidiCatFineModule>("MidiCatFine");
 
 	m->panelTheme = 3;
 	m->highRange = 0.05f;
@@ -117,8 +110,8 @@ TEST_CASE("JSON round-trip preserves state", "[MidiCatFine][JSON]") {
 }
 
 TEST_CASE("dataFromJson ignores missing keys", "[MidiCatFine][JSON]") {
-	Test::ModuleScaffold<MidiCatFineModule> mods;
-	MidiCatFineModule* m = mods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatFineModule* m = h.addModule<MidiCatFineModule>("MidiCatFine");
 
 	json_error_t err;
 	json_t* emptyJ = json_loads("{}", 0, &err);
@@ -132,8 +125,8 @@ TEST_CASE("dataFromJson ignores missing keys", "[MidiCatFine][JSON]") {
 }
 
 TEST_CASE("dataFromJson handles null values without crashing", "[MidiCatFine][JSON]") {
-	Test::ModuleScaffold<MidiCatFineModule> mods;
-	MidiCatFineModule* m = mods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatFineModule* m = h.addModule<MidiCatFineModule>("MidiCatFine");
 
 	json_error_t err;
 	json_t* nullJ = json_loads("{\"panelTheme\": null, \"highRange\": null}", 0, &err);
@@ -146,15 +139,9 @@ TEST_CASE("dataFromJson handles null values without crashing", "[MidiCatFine][JS
 	json_decref(nullJ);
 }
 
-TEST_CASE("process() does not crash without expander or parent", "[MidiCatFine]") {
-	Test::ModuleScaffold<MidiCatFineModule> mods;
-	MidiCatFineModule* m = mods.create("MidiCatFine");
-	REQUIRE_NOTHROW(m->process(Test::makeProcessArgs(1)));
-}
-
 TEST_CASE("Voltage getters return input voltages", "[MidiCatFine]") {
-	Test::ModuleScaffold<MidiCatFineModule> mods;
-	MidiCatFineModule* m = mods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatFineModule* m = h.addModule<MidiCatFineModule>("MidiCatFine");
 
 	REQUIRE(m->getLowRangeVoltage() == Catch::Approx(0.f));
 	REQUIRE(m->getHighRangeVoltage() == Catch::Approx(0.f));
@@ -176,10 +163,9 @@ TEST_CASE("Voltage getters return input voltages", "[MidiCatFine]") {
 // ─── Integration tests with MidiCat parent ──────────────────────────────────
 
 TEST_CASE("MidiCat detects expander", "[MidiCatFine][MidiCat]") {
-	Test::ModuleScaffold<MidiCatModule> midicatMods;
-	MidiCatModule* midicat = midicatMods.create("MidiCat");
-	Test::ModuleScaffold<MidiCatFineModule> fineMods;
-	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
+	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
 	// MidiCat.expanders.hpp detects fine via `exp->model == modelMidiCatFine` — a mismatch here
 	// (missing/wrong SYNC_MODEL) would make the REQUIRE below fail with no useful diagnosis.
 	Test::requireModelSync(modelMidiCatFine, "MidiCatFine");
@@ -187,10 +173,10 @@ TEST_CASE("MidiCat detects expander", "[MidiCatFine][MidiCat]") {
 	Test::registerModule(fine);
 
 	// Flush initial expandersChanged so expFine is properly null before connecting
-	midicat->process(Test::makeProcessArgs(0));
+	h.dspStep();
 	REQUIRE(midicat->expanders.fine() == nullptr);
 
-	connectFine(midicat, fine);
+	connectFine(h, midicat, fine);
 
 	REQUIRE(midicat->expanders.fine() != nullptr);
 	REQUIRE(midicat->expanders.fine() == fine);
@@ -200,14 +186,13 @@ TEST_CASE("MidiCat detects expander", "[MidiCatFine][MidiCat]") {
 }
 
 TEST_CASE("Disconnecting expander clears expFine and ccFineMode", "[MidiCatFine][MidiCat]") {
-	Test::ModuleScaffold<MidiCatModule> midicatMods;
-	MidiCatModule* midicat = midicatMods.create("MidiCat");
-	Test::ModuleScaffold<MidiCatFineModule> fineMods;
-	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
+	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
 
-	connectFine(midicat, fine);
+	connectFine(h, midicat, fine);
 	REQUIRE(midicat->expanders.fine() != nullptr);
 
 	// Force ccFineMode true (it should be cleared on disconnect)
@@ -217,7 +202,7 @@ TEST_CASE("Disconnecting expander clears expFine and ccFineMode", "[MidiCatFine]
 	midicat->rightExpander.module = nullptr;
 	fine->leftExpander.module = nullptr;
 	midicat->moduleChangedFlag = true;
-	midicat->process(Test::makeProcessArgs(10));
+	h.dspStep();
 
 	REQUIRE(midicat->expanders.fine() == nullptr);
 	REQUIRE(midicat->ccFineMode == false);
@@ -226,37 +211,27 @@ TEST_CASE("Disconnecting expander clears expFine and ccFineMode", "[MidiCatFine]
 	Test::unregisterModule(midicat);
 }
 
-TEST_CASE("process() does not crash without parent connection", "[MidiCatFine]") {
-	Test::ModuleScaffold<MidiCatFineModule> mods;
-	MidiCatFineModule* m = mods.create("MidiCatFine");
-	m->leftExpander.module = nullptr;
-	m->rightExpander.module = nullptr;
-	REQUIRE_NOTHROW(m->process(Test::makeProcessArgs(1)));
-}
-
-
 // ─── FineExpanderDriver interaction with parent ───────────────────────────────
 
 TEST_CASE("rising edge on LOWRANGE enables fine mode at low precision", "[MidiCatFine][MidiCat]") {
-	Test::ModuleScaffold<MidiCatModule> midicatMods;
-	MidiCatModule* midicat = midicatMods.create("MidiCat");
-	Test::ModuleScaffold<MidiCatFineModule> fineMods;
-	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
+	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
 	Test::registerModule(target);
 
-	setupBinding(midicat, target, 0, 7);
-	connectFine(midicat, fine);
-	primeFineTriggers(midicat, fine);
+	setupBinding(h, midicat, target, 0, 7);
+	connectFine(h, midicat, fine);
+	primeFineTriggers(h, fine);
 
 	REQUIRE(midicat->ccFineMode == false);
 
 	// Drive LOWRANGE high — should enable fine mode at low precision (0.1)
 	fine->inputs[MidiCatFineModule::INPUT_LOWRANGE].channels = 1;
 	fine->inputs[MidiCatFineModule::INPUT_LOWRANGE].setVoltage(10.f);
-	midicat->process(Test::makeProcessArgs(10));
+	h.dspStep();
 
 	REQUIRE(midicat->ccFineMode == true);
 	// After enabling, all channels' precProcessor is initialized; verify
@@ -270,28 +245,27 @@ TEST_CASE("rising edge on LOWRANGE enables fine mode at low precision", "[MidiCa
 }
 
 TEST_CASE("Falling edge on LOWRANGE disables fine mode when HIGHRANGE is low", "[MidiCatFine][MidiCat]") {
-	Test::ModuleScaffold<MidiCatModule> midicatMods;
-	MidiCatModule* midicat = midicatMods.create("MidiCat");
-	Test::ModuleScaffold<MidiCatFineModule> fineMods;
-	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
+	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
 	Test::registerModule(target);
 
-	setupBinding(midicat, target, 0, 7);
-	connectFine(midicat, fine);
-	primeFineTriggers(midicat, fine);
+	setupBinding(h, midicat, target, 0, 7);
+	connectFine(h, midicat, fine);
+	primeFineTriggers(h, fine);
 
 	// Enable fine mode by raising LOWRANGE.
 	fine->inputs[MidiCatFineModule::INPUT_LOWRANGE].channels = 1;
 	fine->inputs[MidiCatFineModule::INPUT_LOWRANGE].setVoltage(10.f);
-	midicat->process(Test::makeProcessArgs(10));
+	h.dspStep();
 	REQUIRE(midicat->ccFineMode == true);
 
 	// Lower LOWRANGE — fine mode should disable.
 	fine->inputs[MidiCatFineModule::INPUT_LOWRANGE].setVoltage(0.f);
-	midicat->process(Test::makeProcessArgs(11));
+	h.dspStep();
 
 	REQUIRE(midicat->ccFineMode == false);
 
@@ -302,23 +276,22 @@ TEST_CASE("Falling edge on LOWRANGE disables fine mode when HIGHRANGE is low", "
 }
 
 TEST_CASE("Rising edge on HIGHRANGE enables fine mode at high precision", "[MidiCatFine][MidiCat]") {
-	Test::ModuleScaffold<MidiCatModule> midicatMods;
-	MidiCatModule* midicat = midicatMods.create("MidiCat");
-	Test::ModuleScaffold<MidiCatFineModule> fineMods;
-	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
+	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
 	Test::registerModule(target);
 
-	setupBinding(midicat, target, 0, 7);
-	connectFine(midicat, fine);
-	primeFineTriggers(midicat, fine);
+	setupBinding(h, midicat, target, 0, 7);
+	connectFine(h, midicat, fine);
+	primeFineTriggers(h, fine);
 
 	// Drive HIGHRANGE high — fine mode should enable at high precision (0.01).
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].channels = 1;
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].setVoltage(10.f);
-	midicat->process(Test::makeProcessArgs(10));
+	h.dspStep();
 
 	REQUIRE(midicat->ccFineMode == true);
 	REQUIRE(midicat->slots[0].param.precProcessor.precision == Catch::Approx(0.01f));
@@ -330,31 +303,30 @@ TEST_CASE("Rising edge on HIGHRANGE enables fine mode at high precision", "[Midi
 }
 
 TEST_CASE("High precision follows user setting (2% / 5%)", "[MidiCatFine][MidiCat]") {
-	Test::ModuleScaffold<MidiCatModule> midicatMods;
-	MidiCatModule* midicat = midicatMods.create("MidiCat");
-	Test::ModuleScaffold<MidiCatFineModule> fineMods;
-	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
+	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
 	Test::registerModule(target);
 
-	setupBinding(midicat, target, 0, 7);
-	connectFine(midicat, fine);
-	primeFineTriggers(midicat, fine);
+	setupBinding(h, midicat, target, 0, 7);
+	connectFine(h, midicat, fine);
+	primeFineTriggers(h, fine);
 
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].channels = 1;
 
 	SECTION("2% precision") {
 		fine->highRange = 0.02f;
 		fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].setVoltage(10.f);
-		midicat->process(Test::makeProcessArgs(10));
+		h.dspStep();
 		REQUIRE(midicat->slots[0].param.precProcessor.precision == Catch::Approx(0.02f));
 	}
 	SECTION("5% precision") {
 		fine->highRange = 0.05f;
 		fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].setVoltage(10.f);
-		midicat->process(Test::makeProcessArgs(10));
+		h.dspStep();
 		REQUIRE(midicat->slots[0].param.precProcessor.precision == Catch::Approx(0.05f));
 	}
 
@@ -365,25 +337,24 @@ TEST_CASE("High precision follows user setting (2% / 5%)", "[MidiCatFine][MidiCa
 }
 
 TEST_CASE("HIGHRANGE rising while LOWRANGE is high updates the ref-point from current CC", "[MidiCatFine][MidiCat]") {
-	Test::ModuleScaffold<MidiCatModule> midicatMods;
-	MidiCatModule* midicat = midicatMods.create("MidiCat");
-	Test::ModuleScaffold<MidiCatFineModule> fineMods;
-	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
+	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
 	Test::registerModule(target);
 
-	setupBinding(midicat, target, 0, 7);
-	connectFine(midicat, fine);
-	primeFineTriggers(midicat, fine);
+	setupBinding(h, midicat, target, 0, 7);
+	connectFine(h, midicat, fine);
+	primeFineTriggers(h, fine);
 
 	// First, drive LOWRANGE high. setFineMode() initialises the ref
 	// point via init(getLimitMin(), getLimitMax()) = init(0, 127), so
 	// the initial ref is (127-0)/2 = 63.
 	fine->inputs[MidiCatFineModule::INPUT_LOWRANGE].channels = 1;
 	fine->inputs[MidiCatFineModule::INPUT_LOWRANGE].setVoltage(10.f);
-	midicat->process(Test::makeProcessArgs(10));
+	h.dspStep();
 	REQUIRE(midicat->ccFineMode == true);
 	REQUIRE(midicat->slots[0].param.precProcessor.midiRefPoint == 63);
 
@@ -393,7 +364,7 @@ TEST_CASE("HIGHRANGE rising while LOWRANGE is high updates the ref-point from cu
 	// The CC value last received in setupBinding is 64.
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].channels = 1;
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].setVoltage(10.f);
-	midicat->process(Test::makeProcessArgs(11));
+	h.dspStep();
 
 	REQUIRE(midicat->ccFineMode == true);
 	REQUIRE(midicat->slots[0].param.precProcessor.precision == Catch::Approx(0.01f));
@@ -406,18 +377,17 @@ TEST_CASE("HIGHRANGE rising while LOWRANGE is high updates the ref-point from cu
 }
 
 TEST_CASE("HIGHRANGE falling while LOWRANGE is high restores low precision", "[MidiCatFine][MidiCat]") {
-	Test::ModuleScaffold<MidiCatModule> midicatMods;
-	MidiCatModule* midicat = midicatMods.create("MidiCat");
-	Test::ModuleScaffold<MidiCatFineModule> fineMods;
-	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
+	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
 	Test::registerModule(target);
 
-	setupBinding(midicat, target, 0, 7);
-	connectFine(midicat, fine);
-	primeFineTriggers(midicat, fine);
+	setupBinding(h, midicat, target, 0, 7);
+	connectFine(h, midicat, fine);
+	primeFineTriggers(h, fine);
 
 	fine->inputs[MidiCatFineModule::INPUT_LOWRANGE].channels = 1;
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].channels = 1;
@@ -425,12 +395,12 @@ TEST_CASE("HIGHRANGE falling while LOWRANGE is high restores low precision", "[M
 	// Both high
 	fine->inputs[MidiCatFineModule::INPUT_LOWRANGE].setVoltage(10.f);
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].setVoltage(10.f);
-	midicat->process(Test::makeProcessArgs(10));
+	h.dspStep();
 	REQUIRE(midicat->slots[0].param.precProcessor.precision == Catch::Approx(0.01f));
 
 	// Drop HIGHRANGE while keeping LOWRANGE — should fall back to low precision.
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].setVoltage(0.f);
-	midicat->process(Test::makeProcessArgs(11));
+	h.dspStep();
 
 	REQUIRE(midicat->ccFineMode == true);
 	REQUIRE(midicat->slots[0].param.precProcessor.precision == Catch::Approx(0.1f));
@@ -442,28 +412,27 @@ TEST_CASE("HIGHRANGE falling while LOWRANGE is high restores low precision", "[M
 }
 
 TEST_CASE("HIGHRANGE falling when both are low disables fine mode", "[MidiCatFine][MidiCat]") {
-	Test::ModuleScaffold<MidiCatModule> midicatMods;
-	MidiCatModule* midicat = midicatMods.create("MidiCat");
-	Test::ModuleScaffold<MidiCatFineModule> fineMods;
-	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
+	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
 	Test::registerModule(target);
 
-	setupBinding(midicat, target, 0, 7);
-	connectFine(midicat, fine);
-	primeFineTriggers(midicat, fine);
+	setupBinding(h, midicat, target, 0, 7);
+	connectFine(h, midicat, fine);
+	primeFineTriggers(h, fine);
 
 	// Enable via HIGHRANGE
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].channels = 1;
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].setVoltage(10.f);
-	midicat->process(Test::makeProcessArgs(10));
+	h.dspStep();
 	REQUIRE(midicat->ccFineMode == true);
 
 	// Drop HIGHRANGE — fine mode should disable (LOWRANGE is not high).
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].setVoltage(0.f);
-	midicat->process(Test::makeProcessArgs(11));
+	h.dspStep();
 
 	REQUIRE(midicat->ccFineMode == false);
 
@@ -474,23 +443,22 @@ TEST_CASE("HIGHRANGE falling when both are low disables fine mode", "[MidiCatFin
 }
 
 TEST_CASE("LOWRANGE ignored while HIGHRANGE is high", "[MidiCatFine][MidiCat]") {
-	Test::ModuleScaffold<MidiCatModule> midicatMods;
-	MidiCatModule* midicat = midicatMods.create("MidiCat");
-	Test::ModuleScaffold<MidiCatFineModule> fineMods;
-	MidiCatFineModule* fine = fineMods.create("MidiCatFine");
+	Test::Harness h;
+	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
+	MidiCatFineModule* fine = h.addModule<MidiCatFineModule>("MidiCatFine");
 	TestParamModule* target = new TestParamModule();
 	Test::registerModule(midicat);
 	Test::registerModule(fine);
 	Test::registerModule(target);
 
-	setupBinding(midicat, target, 0, 7);
-	connectFine(midicat, fine);
-	primeFineTriggers(midicat, fine);
+	setupBinding(h, midicat, target, 0, 7);
+	connectFine(h, midicat, fine);
+	primeFineTriggers(h, fine);
 
 	// Drive HIGHRANGE high first.
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].channels = 1;
 	fine->inputs[MidiCatFineModule::INPUT_HIGHRANGE].setVoltage(10.f);
-	midicat->process(Test::makeProcessArgs(10));
+	h.dspStep();
 	REQUIRE(midicat->ccFineMode == true);
 	REQUIRE(midicat->slots[0].param.precProcessor.precision == Catch::Approx(0.01f));
 
@@ -499,7 +467,7 @@ TEST_CASE("LOWRANGE ignored while HIGHRANGE is high", "[MidiCatFine][MidiCat]") 
 	// precision back to 0.1.
 	fine->inputs[MidiCatFineModule::INPUT_LOWRANGE].channels = 1;
 	fine->inputs[MidiCatFineModule::INPUT_LOWRANGE].setVoltage(10.f);
-	midicat->process(Test::makeProcessArgs(11));
+	h.dspStep();
 
 	REQUIRE(midicat->slots[0].param.precProcessor.precision == Catch::Approx(0.01f));
 

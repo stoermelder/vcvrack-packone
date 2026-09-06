@@ -1334,11 +1334,27 @@ TEST_CASE("KeyContainer::draw handles keyDisable for disabled modes", "[Stroke][
 
 // Event handling — onHoverKey / onButton
 //
-// These drive KeyContainer's real event entry points rather than poking
-// keyTemp* directly. Events are built by hand (Rack's EventState is not
-// usable headless for synthetic dispatch), so each test constructs the
-// event, sets a context, and calls the handler directly — which is exactly
-// what Rack's dispatcher does after hit-testing.
+// These drive KeyContainer's real event entry points rather than poking keyTemp*
+// directly. Each test constructs the event, sets a context, and calls the handler
+// directly.
+//
+// This file used to say that events were built by hand because "Rack's EventState is
+// not usable headless for synthetic dispatch". That was an assumption, and Phase 2's
+// Step 1 spike measured it as wrong: dispatch works headless once the scene has a
+// finite box and its full-size overlays are neutralised, which Test::Harness now does
+// (src/test/test_events.hpp, src/test/test_harness.hpp). What actually blocks a fully
+// dispatched test *here* is narrower and specific to KeyContainer: it is created by
+// StrokeWidget and parented to APP->scene->rack, so reaching it through
+// APP->event->handleKey() means constructing the whole widget, which most of these
+// cases do not need — they are about the key-matching logic, and a direct call is the
+// clearer way to state that.
+//
+// So the direct-call style below stays, deliberately. What it cannot check is that the
+// container is *reachable* by real dispatch at all — hit-testing, the scene's own
+// first-refusal on key commands, and the SelectKey-before-HoverKey ordering. The
+// "dispatched through Rack's EventState" TEST_CASE at the end of this section covers
+// exactly that, through Test::Harness, and is the part the hand-built events never
+// could.
 
 // Builds a HoverKey event with an owned context. The context must outlive the
 // call, so callers keep it on the stack.
@@ -1719,6 +1735,68 @@ TEST_CASE("Two slots bound to the same key both fire on one press", "[Stroke][ev
 	REQUIRE(module->keys[0].high == true);
 	REQUIRE(module->keys[1].high == true);
 
+}
+
+
+TEST_CASE("Key events dispatched through Rack's EventState reach the KeyContainer",
+          "[Stroke][event][key][dispatch]") {
+	// What every hand-built event above cannot check: that the container StrokeWidget
+	// creates is actually *reachable* by Rack's real dispatch. The hand-built tests call
+	// kc.onHoverKey() on a container they constructed themselves and never parented, so
+	// they would keep passing even if StrokeWidget stopped adding it to the scene, or
+	// added it somewhere unreachable — the plugin would be dead in Rack with a green suite.
+	//
+	// Uses the real StrokeWidget rather than a bare KeyContainer, precisely because the
+	// parenting is the thing under test (Stroke.cpp:1843-1846 adds it to APP->scene->rack).
+	Test::Harness h;
+	auto* module = h.addModule<StrokeModule<STROKE_PORTS>>("Stroke");
+	h.addWidget<StrokeWidget>(module);
+	// StrokeWidget's constructor parents the KeyContainer to APP->scene->rack, which the
+	// harness neutralises along with the rest of rackScroll (see SceneLayout). Without this
+	// the container is unreachable and every dispatch below would silently reach nothing —
+	// which is how this test first failed.
+	h.exposeRackWidgets();
+
+	module->keys[0].key = GLFW_KEY_A;
+	module->keys[0].mods = GLFW_MOD_SHIFT;
+	module->keys[0].mode = KEY_MODE::CV_GATE;
+
+	SECTION("a dispatched key press fires the bound slot") {
+		// Position is irrelevant to a KeyContainer — it has the default infinite box, which
+		// is what makes it a global hotkey sink rather than a hit-tested widget. Dispatching
+		// at a real position proves that holds through Rack's own recursion.
+		REQUIRE(h.events().keyAt(Vec(200, 200), GLFW_KEY_A, GLFW_PRESS, GLFW_MOD_SHIFT));
+		REQUIRE(module->keys[0].high == true);
+
+		h.events().keyAt(Vec(200, 200), GLFW_KEY_A, GLFW_RELEASE, GLFW_MOD_SHIFT);
+		REQUIRE(module->keys[0].high == false);
+	}
+
+	SECTION("the wrong modifiers do not fire it, and nothing else consumes the key") {
+		REQUIRE_FALSE(h.events().keyAt(Vec(200, 200), GLFW_KEY_A, GLFW_PRESS, 0));
+		REQUIRE(module->keys[0].high == false);
+	}
+
+	SECTION("a selected widget's SelectKey pre-empts the container's HoverKey") {
+		// Rack routes a key to the selected widget first and only falls through to position
+		// dispatch if unconsumed. A global hotkey handler therefore does NOT fire while a
+		// text field has focus — correct behaviour, and untestable without real dispatch.
+		struct Consumer : widget::Widget {
+			void onSelectKey(const SelectKeyEvent& e) override { e.consume(this); }
+		};
+		auto* consumer = new Consumer;
+		consumer->box = math::Rect(Vec(500, 400), Vec(20, 20));
+		APP->scene->addChild(consumer);
+		h.events().select(consumer);
+
+		h.events().keyAt(Vec(200, 200), GLFW_KEY_A, GLFW_PRESS, GLFW_MOD_SHIFT);
+		REQUIRE(module->keys[0].high == false);
+
+		h.events().reset();
+		APP->event->finalizeWidget(consumer);
+		APP->scene->removeChild(consumer);
+		delete consumer;
+	}
 }
 
 

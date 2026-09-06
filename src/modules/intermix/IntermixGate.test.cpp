@@ -245,12 +245,10 @@ TEST_CASE("Gate logic with varying matrix values", "[IntermixGate]") {
 }
 
 TEST_CASE("Expander chain with gate module", "[IntermixGate]") {
-	Test::ModuleScaffold<IntermixGateModule<8>> mods;
-	auto intermixModule = new IntermixModuleMock<8>();
-	auto gateModule1 = mods.create("IntermixGate");
-	auto gateModule2 = mods.create("IntermixGate");
-	Test::SimpleEngine engine;
-	engine.addModules(intermixModule, gateModule1, gateModule2);
+	Test::Harness h;
+	auto intermixModule = h.adoptModule(new IntermixModuleMock<8>());
+	auto gateModule1 = h.addModule<IntermixGateModule<8>>("IntermixGate");
+	auto gateModule2 = h.addModule<IntermixGateModule<8>>("IntermixGate");
 
 	SECTION("Multiple gate expanders can chain") {
 		// Setup expander chain: Intermix -> Gate1 -> Gate2
@@ -258,14 +256,14 @@ TEST_CASE("Expander chain with gate module", "[IntermixGate]") {
 		gateModule1->leftExpander.module = intermixModule;
 		gateModule1->rightExpander.module = gateModule2;
 		gateModule2->leftExpander.module = gateModule1;
-		
+
 		intermixModule->currentMatrix[0][0] = 0.5f;
 		intermixModule->currentMatrix[1][1] = 0.5f;
-	
-		engine.step();
-		engine.step();
-		engine.step();
-		
+
+		h.dspStep();
+		h.dspStep();
+		h.dspStep();
+
 		// Both should detect active connections
 		REQUIRE(gateModule1->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 10.f);
 		REQUIRE(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 10.f);
@@ -274,8 +272,6 @@ TEST_CASE("Expander chain with gate module", "[IntermixGate]") {
 		REQUIRE(gateModule1->outputs[IntermixGateModule<8>::OUTPUT + 2].getVoltage() == 0.f);
 		REQUIRE(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 2].getVoltage() == 0.f);
 	}
-
-	delete intermixModule;
 }
 
 TEST_CASE("Gate with dynamic matrix changes", "[IntermixGate]") {
