@@ -491,8 +491,8 @@ TEST_CASE("drainPendingOffs - preserves queue order (FIFO)", "[SpliceKit]") {
 }
 
 TEST_CASE("process - drains pending offs before emitting new on-messages", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	m->lightDivider.setDivision(256);
 	MidiOutPreset preset;
 	for (int s = 0; s < LED_STATE_COUNT; s++) {
@@ -503,9 +503,7 @@ TEST_CASE("process - drains pending offs before emitting new on-messages", "[Spl
 	m->feedback.setActivePreset(preset);
 	m->feedback.queueFeedbackOff(0, LED_STATE_COLOR2);
 
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 
 	// The queued off went out, and it did so before the light loop's on-messages: the
 	// very first message of the tick is the off for COLOR2.

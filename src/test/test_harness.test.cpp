@@ -88,10 +88,10 @@ TEST_CASE("DSP stepping") {
 
 
 TEST_CASE("Expander message flipping matches the real engine") {
-	// Carried over from SimpleEngine (Phase 1's A2 fix), and re-asserted here because Harness
-	// is meant to replace it: a module that forgets requestMessageFlip() must stay broken under
-	// the harness exactly as it is in Rack. Flipping unconditionally is the one failure mode
-	// that makes a test *more* permissive than production.
+	// Carried over from SimpleEngine: a
+	// module that forgets requestMessageFlip() must stay broken under the harness exactly as
+	// it is in Rack. Flipping unconditionally is the one failure mode that makes a test *more*
+	// permissive than production.
 	struct ExpanderProbe : rack::Module {
 		bool requestFlip = false;
 		ExpanderProbe() {
@@ -124,6 +124,117 @@ TEST_CASE("Expander message flipping matches the real engine") {
 		h.dspStep();
 		REQUIRE(m->leftExpander.producerMessage == originalProducer);
 	}
+}
+
+
+// A module that records the expander-change events Rack dispatches to it. The whole point of
+// routing connections through the harness is that these fire at all: 11 modules in the plugin
+// override onExpanderChange, and before this API no test ever triggered one.
+struct ExpanderChangeProbe : rack::Module {
+	std::vector<uint8_t> changedSides;
+	// Stands in for a module's own reaction to the event (MidiCat/Transit call
+	// notifyModuleListeners here, IntermixBase unpublishes and resets).
+	int reactions = 0;
+
+	ExpanderChangeProbe() { config(0, 0, 0, 0); }
+
+	void onExpanderChange(const ExpanderChangeEvent& e) override {
+		changedSides.push_back(e.side);
+		reactions++;
+	}
+};
+
+
+TEST_CASE("Expander connections dispatch Rack's onExpanderChange") {
+	Test::Harness h;
+	auto* a = h.adoptModule(new ExpanderChangeProbe);
+	auto* b = h.adoptModule(new ExpanderChangeProbe);
+
+	SECTION("connectExpander wires both sides and notifies both modules") {
+		h.connectExpander(a, b);
+
+		REQUIRE(a->rightExpander.module == b);
+		REQUIRE(b->leftExpander.module == a);
+
+		// The event fired once on each, naming the side that changed.
+		REQUIRE(a->changedSides == std::vector<uint8_t>{Test::Harness::SIDE_RIGHT});
+		REQUIRE(b->changedSides == std::vector<uint8_t>{Test::Harness::SIDE_LEFT});
+	}
+
+	SECTION("moduleId is kept in sync with the pointer") {
+		// setExpanderModule does NOT do this — Rack's engine assigns moduleId separately, and
+		// Strip walks expander chains by moduleId, so a connection that set only `module` would
+		// read as a connected-but-unidentifiable neighbour.
+		REQUIRE(a->rightExpander.moduleId == -1);
+
+		h.connectExpander(a, b);
+		REQUIRE(a->rightExpander.moduleId == b->id);
+		REQUIRE(b->leftExpander.moduleId == a->id);
+
+		h.disconnectExpander(a, Test::Harness::SIDE_RIGHT);
+		REQUIRE(a->rightExpander.moduleId == -1);
+		REQUIRE(b->leftExpander.moduleId == -1);
+	}
+
+	SECTION("disconnectExpander clears both sides and notifies both") {
+		h.connectExpander(a, b);
+		h.disconnectExpander(a, Test::Harness::SIDE_RIGHT);
+
+		REQUIRE(a->rightExpander.module == nullptr);
+		REQUIRE(b->leftExpander.module == nullptr);
+		REQUIRE(a->reactions == 2);   // connect + disconnect
+		REQUIRE(b->reactions == 2);
+	}
+
+	SECTION("re-connecting the same neighbour does not re-fire") {
+		// Rack's setExpanderModule only dispatches when the pointer actually changes, and the
+		// harness must not paper over that — a module relying on the event being edge-triggered
+		// would behave differently under test than in Rack.
+		h.connectExpander(a, b);
+		REQUIRE(a->reactions == 1);
+
+		h.connectExpander(a, b);
+		REQUIRE(a->reactions == 1);
+	}
+
+	SECTION("connectChain links left-to-right, firing per link in order") {
+		auto* c = h.adoptModule(new ExpanderChangeProbe);
+		h.connectChain(a, b, c);
+
+		REQUIRE(a->rightExpander.module == b);
+		REQUIRE(b->leftExpander.module == a);
+		REQUIRE(b->rightExpander.module == c);
+		REQUIRE(c->leftExpander.module == b);
+
+		// b sits mid-chain, so it saw two changes — left first (a→b), then right (b→c),
+		// matching the order Rack dispatches them as a rack is assembled rather than one
+		// batched update.
+		REQUIRE(b->changedSides
+			== std::vector<uint8_t>{Test::Harness::SIDE_LEFT, Test::Harness::SIDE_RIGHT});
+	}
+}
+
+
+TEST_CASE("The harness never touches moduleChangedFlag") {
+	// A deliberate boundary, not an oversight. moduleChangedFlag is this plugin's own
+	// ModuleChangeListener signal; a module reaches it through onExpanderChange ->
+	// notifyModuleListeners(). If the harness set it, a module that FORGOT to notify would still
+	// look correct under test — which is exactly the regression worth catching.
+	struct SilentProbe : rack::Module, StoermelderPackOne::ModuleChangeListener {
+		SilentProbe() { config(0, 0, 0, 0); moduleChangedFlag = false; }
+		// Overrides onExpanderChange but deliberately does NOT notify — the "forgot to notify"
+		// case.
+		void onExpanderChange(const ExpanderChangeEvent& e) override {}
+	};
+
+	Test::Harness h;
+	auto* a = h.adoptModule(new SilentProbe);
+	auto* b = h.adoptModule(new SilentProbe);
+
+	h.connectExpander(a, b);
+
+	REQUIRE_FALSE(a->moduleChangedFlag);
+	REQUIRE_FALSE(b->moduleChangedFlag);
 }
 
 
@@ -371,6 +482,12 @@ TEST_CASE("UiPresent exercises GuiTaskProcessor's step() drain path") {
 
 TEST_CASE("Scene layout is installed and restored") {
 	math::Rect sceneBoxBefore = APP->scene->box;
+	std::vector<math::Rect> childBoxesBefore;
+	std::vector<bool> childVisibleBefore;
+	for (widget::Widget* child : APP->scene->children) {
+		childBoxesBefore.push_back(child->box);
+		childVisibleBefore.push_back(child->visible);
+	}
 
 	{
 		Test::Harness h;
@@ -378,17 +495,61 @@ TEST_CASE("Scene layout is installed and restored") {
 		REQUIRE_FALSE(std::isinf(APP->scene->box.size.x));
 		REQUIRE(APP->scene->box.size.x == Catch::Approx(1024.f));
 
-		// The scene's own full-size children are out of the way.
+		// The scene's own children are out of the way — hidden AND zero-sized. Both matter:
+		// hiding alone is not enough, because Rack shows some of them again on its own
+		// (Scene::onHover() calls menuBar->show()), and a re-shown child with an infinite box
+		// would consume every position event from then on.
 		for (widget::Widget* child : APP->scene->children) {
-			if (std::isinf(child->box.size.x)) {
-				REQUIRE_FALSE(child->visible);
-			}
+			REQUIRE_FALSE(child->visible);
+			REQUIRE(child->box.size.x == Catch::Approx(0.f));
+			REQUIRE(child->box.size.y == Catch::Approx(0.f));
 		}
 	}
 
-	// Restored, so TEST_CASEs stay independent.
+	// Restored, so TEST_CASEs stay independent — boxes and visibility both.
 	REQUIRE(APP->scene->box.size.x == Catch::Approx(sceneBoxBefore.size.x));
 	REQUIRE(std::isinf(APP->scene->box.size.x));
+	size_t i = 0;
+	for (widget::Widget* child : APP->scene->children) {
+		REQUIRE(child->visible == childVisibleBefore[i]);
+		REQUIRE(child->box.size.x == Catch::Approx(childBoxesBefore[i].size.x));
+		i++;
+	}
+}
+
+
+TEST_CASE("exposeRackWidgets makes rack-parented helpers reachable") {
+	// SceneLayout neutralises rackScroll, and APP->scene->rack is its descendant — so a widget
+	// that production code parents to the rack is invisible to dispatch by default. Stroke's
+	// KeyContainer is the plugin's example of that pattern.
+	widget::Widget* rackWidget = APP->scene->rack;
+	// Other TEST_CASEs in this binary may have left widgets in the rack (Catch2 runs them in
+	// one process), so assert on the delta, not on absolute counts.
+	size_t rackChildrenBefore = rackWidget->children.size();
+	size_t sceneChildrenBefore = APP->scene->children.size();
+	widget::Widget* container = nullptr;
+
+	{
+		Test::Harness h;
+		auto* m = h.addModule<StrokeModule<STROKE_PORTS>>("Stroke");
+		h.addWidget<StrokeWidget>(m);
+
+		// The widget's constructor put its KeyContainer in the rack.
+		REQUIRE(rackWidget->children.size() == rackChildrenBefore + 1);
+		container = rackWidget->children.back();
+
+		h.exposeRackWidgets();
+
+		// Moved up to the scene, where dispatch can reach it.
+		REQUIRE(container->parent == APP->scene);
+		auto& moved = h.exposedFromRack;
+		REQUIRE(std::find(moved.begin(), moved.end(), container) != moved.end());
+	}
+
+	// Put back before teardown, so ~StrokeWidget found its container where it left it — and
+	// nothing leaked into the scene.
+	REQUIRE(rackWidget->children.size() == rackChildrenBefore);
+	REQUIRE(APP->scene->children.size() == sceneChildrenBefore);
 }
 
 

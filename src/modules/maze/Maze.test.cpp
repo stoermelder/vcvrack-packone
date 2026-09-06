@@ -10,18 +10,16 @@ SYNC_MODEL(modelMaze, "Maze");
 Test::TestContext<> testContext;
 
 // Warm up the reset timer so the clock trigger guard (>= 1ms) is satisfied
-static void warmupTimer(MazeMod* module, int samples = 100) {
+static void warmupTimer(Test::Harness& h, MazeMod* module, int samples = 100) {
 	module->inputs[MazeMod::CLK_INPUT].channels = 1;
 	module->inputs[MazeMod::CLK_INPUT].setVoltage(0.f);
-	for (int i = 0; i < samples; i++) {
-		module->process(Test::makeProcessArgs(i));
-	}
+	h.dspSteps(samples);
 }
 
 // Fire a single clock rising edge on port 0
-static void clockEdge(MazeMod* module, int frame = 200) {
+static void clockEdge(Test::Harness& h, MazeMod* module) {
 	module->inputs[MazeMod::CLK_INPUT].setVoltage(10.f);
-	module->process(Test::makeProcessArgs(frame));
+	h.dspStep();
 	module->inputs[MazeMod::CLK_INPUT].setVoltage(0.f);
 }
 
@@ -61,7 +59,6 @@ TEST_CASE("Preset JSON null-guards", "[Maze][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 TEST_CASE("JSON round-trip preserves state", "[JSON][Maze]") {
@@ -170,7 +167,6 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][Maze]") {
 		REQUIRE(m2->ratchetingEnabled[2] == RATCHETMODE::POWER_TWO);
 		REQUIRE(m2->ratchetingProb[2] == Catch::Approx(0.2f));
 	}
-
 }
 
 
@@ -208,7 +204,6 @@ TEST_CASE("Reset clears grid and restores cursor defaults", "[Maze]") {
 	SECTION("turnMode reset to NINETY") {
 		REQUIRE(module->turnMode[0] == TURNMODE::NINETY);
 	}
-
 }
 
 TEST_CASE("gridClear sets all cells to OFF with zero CV", "[Maze]") {
@@ -236,7 +231,6 @@ TEST_CASE("gridClear sets all cells to OFF with zero CV", "[Maze]") {
 				if (module->gridCv[i][j] != 0.f) allZero = false;
 		REQUIRE(allZero);
 	}
-
 }
 
 TEST_CASE("gridSetState writes cell state and CV", "[Maze]") {
@@ -255,46 +249,43 @@ TEST_CASE("gridSetState writes cell state and CV", "[Maze]") {
 		REQUIRE(module->grid[1][6] == GRIDSTATE::RANDOM);
 		REQUIRE(module->gridCv[1][6] == Catch::Approx(0.25f));
 	}
-
 }
 
 TEST_CASE("Clock input advances cursor position", "[Maze]") {
-	Test::ModuleScaffold<MazeMod> mods;
-	auto module = mods.create("Maze");
+	Test::Harness h;
+	auto module = h.addModule<MazeMod>("Maze");
 	// Initial: xPos[0]=0, yPos[0]=0, xDir[0]=1 → advances to (1, 0)
 
-	warmupTimer(module);
-	clockEdge(module);
+	warmupTimer(h, module);
+	clockEdge(h, module);
 
 	SECTION("xPos advanced by one step rightward") {
 		REQUIRE(module->xPos[0] == 1);
 		REQUIRE(module->yPos[0] == 0);
 	}
-
 }
 
 TEST_CASE("Cursor wraps at grid boundary", "[Maze]") {
-	Test::ModuleScaffold<MazeMod> mods;
-	auto module = mods.create("Maze");
+	Test::Harness h;
+	auto module = h.addModule<MazeMod>("Maze");
 	module->xPos[0] = module->usedSize - 1;  // rightmost column
 
-	warmupTimer(module);
-	clockEdge(module);
+	warmupTimer(h, module);
+	clockEdge(h, module);
 
 	SECTION("xPos wraps to 0") {
 		REQUIRE(module->xPos[0] == 0);
 	}
-
 }
 
 TEST_CASE("Cursor stepping onto ON cell fires trigger and CV outputs", "[Maze]") {
-	Test::ModuleScaffold<MazeMod> mods;
-	auto module = mods.create("Maze");
+	Test::Harness h;
+	auto module = h.addModule<MazeMod>("Maze");
 	// Cursor at (0,0) moving right → next cell is (1,0)
 	module->gridSetState(1, 0, GRIDSTATE::ON, 0.5f);  // UNI_3V: rescale(0.5, 0,1, 0,3) = 1.5V
 
-	warmupTimer(module);
-	clockEdge(module);
+	warmupTimer(h, module);
+	clockEdge(h, module);
 
 	SECTION("Trigger output fires (10V) when stepping onto ON cell") {
 		REQUIRE(module->outputs[MazeMod::TRIG_OUTPUT].getVoltage() == Catch::Approx(10.f));
@@ -303,92 +294,88 @@ TEST_CASE("Cursor stepping onto ON cell fires trigger and CV outputs", "[Maze]")
 	SECTION("CV output reflects cell CV in UNI_3V mode") {
 		REQUIRE(module->outputs[MazeMod::CV_OUTPUT].getVoltage() == Catch::Approx(1.5f));
 	}
-
 }
 
 TEST_CASE("Cursor stepping onto OFF cell produces no trigger", "[Maze]") {
-	Test::ModuleScaffold<MazeMod> mods;
-	auto module = mods.create("Maze");
+	Test::Harness h;
+	auto module = h.addModule<MazeMod>("Maze");
 	// All cells OFF by default
 
-	warmupTimer(module);
-	clockEdge(module);
+	warmupTimer(h, module);
+	clockEdge(h, module);
 
 	SECTION("Trigger output stays at zero for OFF cell") {
 		REQUIRE(module->outputs[MazeMod::TRIG_OUTPUT].getVoltage() == Catch::Approx(0.f));
 	}
-
 }
 
 TEST_CASE("Turn trigger rotates cursor direction 90 degrees (NINETY mode)", "[Maze]") {
-	Test::ModuleScaffold<MazeMod> mods;
-	auto module = mods.create("Maze");
+	Test::Harness h;
+	auto module = h.addModule<MazeMod>("Maze");
 	// Initial: xDir=1, yDir=0 (right), turnMode=NINETY
 
 	REQUIRE(module->turnMode[0] == TURNMODE::NINETY);
 
 	module->inputs[MazeMod::TURN_INPUT].channels = 1;
 	module->inputs[MazeMod::TURN_INPUT].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	module->inputs[MazeMod::TURN_INPUT].setVoltage(10.f);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 
 	SECTION("Direction changes from right (1,0) to down (0,1)") {
 		REQUIRE(module->xDir[0] == 0);
 		REQUIRE(module->yDir[0] == 1);
 	}
-
 }
 
 TEST_CASE("Turn trigger reverses direction in ONEEIGHTY mode", "[Maze]") {
-	Test::ModuleScaffold<MazeMod> mods;
-	auto module = mods.create("Maze");
+	Test::Harness h;
+	auto module = h.addModule<MazeMod>("Maze");
 	module->turnMode[0] = TURNMODE::ONEEIGHTY;
 
 	module->inputs[MazeMod::TURN_INPUT].channels = 1;
 	module->inputs[MazeMod::TURN_INPUT].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	module->inputs[MazeMod::TURN_INPUT].setVoltage(10.f);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 
 	SECTION("Direction reversed: right (1,0) becomes left (-1,0)") {
 		REQUIRE(module->xDir[0] == -1);
 		REQUIRE(module->yDir[0] == 0);
 	}
-
 }
 
 // Fire a single rising edge on the given input
-static void pulse(MazeMod* module, int input, int frame) {
+static void pulse(Test::Harness& h, MazeMod* module, int input) {
 	module->inputs[input].channels = 1;
 	module->inputs[input].setVoltage(0.f);
-	module->process(Test::makeProcessArgs(frame));
+	h.dspStep();
 	module->inputs[input].setVoltage(10.f);
-	module->process(Test::makeProcessArgs(frame + 1));
+	h.dspStep();
 	module->inputs[input].setVoltage(0.f);
 }
 
 TEST_CASE("Side-shift inputs nudge cursors perpendicular to travel", "[Maze]") {
-	Test::ModuleScaffold<MazeMod> mods;
+	Test::Harness h;
 	// Heading East (xDir=1, yDir=0): SHIFT_R moves +y (down/right of travel),
 	// SHIFT_L moves -y (up/left of travel).
 	SECTION("SHIFT_R moves the cursor down (right of eastward travel)") {
-		auto module = mods.create("Maze");
+		auto module = h.addModule<MazeMod>("Maze");
 		module->xPos[0] = 4; module->yPos[0] = 4;
 		module->xDir[0] = 1; module->yDir[0] = 0;
 
-		pulse(module, MazeMod::SHIFT_R_INPUT, 10);
+		pulse(h, module, MazeMod::SHIFT_R_INPUT);
 
 		REQUIRE(module->xPos[0] == 4);
 		REQUIRE(module->yPos[0] == 5);
 	}
 
 	SECTION("SHIFT_L moves the cursor up (left of eastward travel)") {
-		auto module = mods.create("Maze");
+		auto module = h.addModule<MazeMod>("Maze");
 		module->xPos[0] = 4; module->yPos[0] = 4;
 		module->xDir[0] = 1; module->yDir[0] = 0;
 
-		pulse(module, MazeMod::SHIFT_L_INPUT, 10);
+		pulse(h, module, MazeMod::SHIFT_L_INPUT);
 
 		REQUIRE(module->xPos[0] == 4);
 		REQUIRE(module->yPos[0] == 3);
@@ -396,37 +383,36 @@ TEST_CASE("Side-shift inputs nudge cursors perpendicular to travel", "[Maze]") {
 }
 
 TEST_CASE("Reset input returns cursor to start position", "[Maze]") {
-	Test::ModuleScaffold<MazeMod> mods;
-	auto module = mods.create("Maze");
+	Test::Harness h;
+	auto module = h.addModule<MazeMod>("Maze");
 	module->inputs[MazeMod::RESET_INPUT].channels = 1;
 	module->inputs[MazeMod::RESET_INPUT].setVoltage(0.f);
 
-	warmupTimer(module);
-	clockEdge(module);
+	warmupTimer(h, module);
+	clockEdge(h, module);
 	REQUIRE(module->xPos[0] == 1);
 
 	// Rising edge on reset
 	module->inputs[MazeMod::RESET_INPUT].setVoltage(10.f);
-	module->process(Test::makeProcessArgs(201));
+	h.dspStep();
 	module->inputs[MazeMod::RESET_INPUT].setVoltage(0.f);
 
 	SECTION("Cursor position returns to xStartPos / yStartPos") {
 		REQUIRE(module->xPos[0] == module->xStartPos[0]);
 		REQUIRE(module->yPos[0] == module->yStartPos[0]);
 	}
-
 }
 
 TEST_CASE("normalizePorts propagates clock from port 0 to port 1", "[Maze]") {
-	Test::ModuleScaffold<MazeMod> mods;
-	auto module = mods.create("Maze");
+	Test::Harness h;
+	auto module = h.addModule<MazeMod>("Maze");
 	REQUIRE(module->normalizePorts == true);
 	// CLK port 1 is not connected (channels=0)
 
 	int xBefore1 = module->xPos[1];
 
-	warmupTimer(module);
-	clockEdge(module);
+	warmupTimer(h, module);
+	clockEdge(h, module);
 
 	SECTION("Port 0 cursor advances") {
 		REQUIRE(module->xPos[0] == 1);
@@ -435,5 +421,4 @@ TEST_CASE("normalizePorts propagates clock from port 0 to port 1", "[Maze]") {
 	SECTION("Port 1 cursor advances via clock normalization") {
 		REQUIRE(module->xPos[1] == xBefore1 + 1);
 	}
-
 }

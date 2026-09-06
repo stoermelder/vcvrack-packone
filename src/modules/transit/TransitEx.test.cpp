@@ -52,37 +52,27 @@ static Module* createExModule(TransitBase<12>** baseOut = nullptr) {
 	return m;
 }
 
-// Helper: wire transitModule -> exModule as right/left expanders and
-// trigger a single process() so Transit discovers the expander.
-static void connectExpander(TransitModule<12>* transit, Module* exModule) {
-	transit->rightExpander.module = exModule;
-	exModule->leftExpander.module = transit;
-	transit->moduleChangedFlag = true;
-	transit->process(Test::makeProcessArgs(0));
-}
-
-// Helper: wire two expanders in a chain: transit -> ex1 -> ex2
-static void connectTwoExpanders(TransitModule<12>* transit, Module* ex1, Module* ex2) {
-	transit->rightExpander.module = ex1;
-	ex1->leftExpander.module = transit;
-	ex1->rightExpander.module = ex2;
-	ex2->leftExpander.module = ex1;
-	transit->moduleChangedFlag = true;
-	transit->process(Test::makeProcessArgs(0));
-}
-
-// Helper: disconnect the expander and re-process so Transit re-scans.
-static void disconnectExpander(TransitModule<12>* transit) {
-	transit->rightExpander.module = nullptr;
-	transit->moduleChangedFlag = true;
-	transit->process(Test::makeProcessArgs(1));
-}
-
+// h.connectExpander()/h.connectChain() dispatch Rack's real onExpanderChange, and Transit's
+// override (Transit.cpp:207) calls notifyModuleListeners("Transit"), which sets
+// moduleChangedFlag -- no hand-written `transit->moduleChangedFlag = true;` needed.
+//
+// Two things worth knowing before trusting a failure after connecting/disconnecting an expander
+// here to mean what it looks like:
+//
+//  - **The notification is redundant on purpose.** BOTH sides notify: Transit.cpp:207 and
+//    TransitEx.cpp:48 each call notifyModuleListeners("Transit"), and the harness dispatches
+//    onExpanderChange to both modules. Deleting either one alone keeps this suite green;
+//    deleting both crashes it. So a single-sided regression is NOT caught here.
+//  - **The first step would rescan anyway.** The gate is
+//    `moduleChangedFlag || ctrlMode != BASE::ctrlMode` (Transit.cpp:265), and on a freshly built
+//    module the ctrlMode comparison is already true. Every SECTION that connects an expander
+//    before stepping would therefore pass even with no notification at all -- see the
+//    "connected after Transit has settled" case for one that removes that second term.
 
 
 TEST_CASE("Construction and initialization", "[TransitEx]") {
-	Test::ModuleScaffold<TransitExModule<12>> mods;
-	TransitExModule<12>* m = mods.create("TransitEx");
+	Test::Harness h;
+	TransitExModule<12>* m = h.addModule<TransitExModule<12>>("TransitEx");
 	TransitExWidget<12>* mw = Test::createWidget<TransitExWidget<12>>("TransitEx");
 
 	REQUIRE(m != nullptr);
@@ -93,8 +83,8 @@ TEST_CASE("Construction and initialization", "[TransitEx]") {
 }
 
 TEST_CASE("Preset JSON null-guards", "[TransitEx][JSON]") {
-	Test::ModuleScaffold<TransitExModule<12>> mods;
-	auto module = mods.create("TransitEx");
+	Test::Harness h;
+	auto module = h.addModule<TransitExModule<12>>("TransitEx");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -119,8 +109,8 @@ TEST_CASE("Preset JSON null-guards", "[TransitEx][JSON]") {
 }
 
 TEST_CASE("JSON round-trip preserves state", "[TransitEx][JSON]") {
-	Test::ModuleScaffold<Module> mods{[]{ return createExModule(); }};
-	Module* exModule = mods.create();
+	Test::Harness h;
+	Module* exModule = h.addModule<Module>(std::function<Module*()>([]{ return createExModule(); }));
 	TransitBase<12>* exBase = dynamic_cast<TransitBase<12>*>(exModule);
 	REQUIRE(exBase != nullptr);
 
@@ -139,7 +129,7 @@ TEST_CASE("JSON round-trip preserves state", "[TransitEx][JSON]") {
 	REQUIRE(rootJ != nullptr);
 
 	// Create a new expander and deserialize
-	Module* exModule2 = mods.create();
+	Module* exModule2 = h.addModule<Module>(std::function<Module*()>([]{ return createExModule(); }));
 	TransitBase<12>* exBase2 = dynamic_cast<TransitBase<12>*>(exModule2);
 	REQUIRE(exBase2 != nullptr);
 	exModule2->dataFromJson(rootJ);
@@ -164,44 +154,70 @@ TEST_CASE("JSON round-trip preserves state", "[TransitEx][JSON]") {
 
 
 TEST_CASE("Transit discovers a connected TransitEx and updates presetTotal", "[TransitEx]") {
-	Test::ModuleScaffold<TransitModule<12>> transitMods;
-	TransitModule<12>* transit = transitMods.create("Transit");
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
 	Test::registerModule(transit);
 	TransitBase<12>* exBase = nullptr;
-	Test::ModuleScaffold<Module> exMods{[&]{ return createExModule(&exBase); }};
-	Module* exModule = exMods.create();
+	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
 	Test::registerModule(exModule);
 
 	SECTION("presetTotal is 12 with no expander") {
-		transit->process(Test::makeProcessArgs(0));
+		h.dspStep();
 		REQUIRE(transit->presetTotal == 12);
 	}
 
 	SECTION("presetTotal becomes 24 after connecting one expander") {
-		connectExpander(transit, exModule);
+		h.connectExpander(transit, exModule);
+		h.dspStep();
 		REQUIRE(transit->presetTotal == 24);
 	}
 
 	SECTION("Expander ctrlOffset is set to 1") {
-		connectExpander(transit, exModule);
+		h.connectExpander(transit, exModule);
+		h.dspStep();
 		REQUIRE(exBase->ctrlOffset == 1);
 	}
 
 	SECTION("Expander ctrlModuleId is set to Transit's id") {
-		connectExpander(transit, exModule);
+		h.connectExpander(transit, exModule);
+		h.dspStep();
 		REQUIRE(exBase->ctrlModuleId == transit->id);
 	}
 
 	SECTION("Expander ctrlUniqueId is synchronized with Transit") {
-		connectExpander(transit, exModule);
+		h.connectExpander(transit, exModule);
+		h.dspStep();
 		REQUIRE(exBase->ctrlUniqueId == transit->ctrlUniqueId);
 	}
 
 	SECTION("presetTotal drops back to 12 after disconnecting expander") {
-		connectExpander(transit, exModule);
+		h.connectExpander(transit, exModule);
+		h.dspStep();
 		REQUIRE(transit->presetTotal == 24);
-		disconnectExpander(transit);
+		h.disconnectExpander(transit, Test::Harness::SIDE_RIGHT);
+		h.dspStep();
 		REQUIRE(transit->presetTotal == 12);
+	}
+
+	SECTION("an expander connected after Transit has settled is still discovered") {
+		// The case the rescan gate's second term cannot cover. Transit rescans when
+		// `moduleChangedFlag || ctrlMode != BASE::ctrlMode` (Transit.cpp:265); on the first step
+		// the ctrlMode comparison is true for a fresh module, so every SECTION above would pass
+		// even if the flag were never set. Stepping to a settled state first removes that second
+		// term, leaving onExpanderChange -> notifyModuleListeners -> moduleChangedFlag as the
+		// only thing that can trigger the rescan.
+		//
+		// This is what the harness's connectExpander buys over hand-wiring the pointers: the
+		// notification is real, so this exercises Transit's actual discovery path rather than a
+		// flag the test set on its behalf. (It still does not isolate *which* side notified —
+		// see the header comment; both do.)
+		h.dspSteps(4);
+		REQUIRE(transit->presetTotal == 12);
+		REQUIRE_FALSE(transit->moduleChangedFlag);   // settled: the gate is now flag-only
+
+		h.connectExpander(transit, exModule);
+		h.dspStep();
+		REQUIRE(transit->presetTotal == 24);
 	}
 
 	Test::unregisterModule(exModule);
@@ -210,19 +226,18 @@ TEST_CASE("Transit discovers a connected TransitEx and updates presetTotal", "[T
 
 
 TEST_CASE("Transit discovers two chained TransitEx expanders", "[TransitEx]") {
-	Test::ModuleScaffold<TransitModule<12>> transitMods;
-	TransitModule<12>* transit = transitMods.create("Transit");
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
 	Test::registerModule(transit);
 	TransitBase<12>* ex1Base = nullptr;
-	Test::ModuleScaffold<Module> exMods{[&]{ return createExModule(&ex1Base); }};
-	Module* ex1 = exMods.create();
+	Module* ex1 = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&ex1Base); }));
 	Test::registerModule(ex1);
 	TransitBase<12>* ex2Base = nullptr;
-	Module* ex2 = createExModule(&ex2Base);
-	exMods.adopt(ex2);
+	Module* ex2 = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&ex2Base); }));
 	Test::registerModule(ex2);
 
-	connectTwoExpanders(transit, ex1, ex2);
+	h.connectChain(transit, ex1, ex2);
+	h.dspStep();
 
 	SECTION("presetTotal is 36 with two expanders") {
 		REQUIRE(transit->presetTotal == 36);
@@ -248,15 +263,15 @@ TEST_CASE("Transit discovers two chained TransitEx expanders", "[TransitEx]") {
 
 
 TEST_CASE("getSlot returns expander slots for indices >= 12", "[TransitEx]") {
-	Test::ModuleScaffold<TransitModule<12>> transitMods;
-	TransitModule<12>* transit = transitMods.create("Transit");
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
 	Test::registerModule(transit);
 	TransitBase<12>* exBase = nullptr;
-	Test::ModuleScaffold<Module> exMods{[&]{ return createExModule(&exBase); }};
-	Module* exModule = exMods.create();
+	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
 	Test::registerModule(exModule);
 
-	connectExpander(transit, exModule);
+	h.connectExpander(transit, exModule);
+	h.dspStep();
 
 	SECTION("getSlot(11) returns the last slot of Transit itself") {
 		auto* slot = transit->getSlot(11);
@@ -289,22 +304,22 @@ TEST_CASE("getSlot returns expander slots for indices >= 12", "[TransitEx]") {
 
 
 TEST_CASE("Saving a preset to an expander slot stores data in the expander", "[TransitEx]") {
-	Test::ModuleScaffold<TransitModule<12>> transitMods;
-	TransitModule<12>* transit = transitMods.create("Transit");
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
 	Test::registerModule(transit);
 	TransitBase<12>* exBase = nullptr;
-	Test::ModuleScaffold<Module> exMods{[&]{ return createExModule(&exBase); }};
-	Module* exModule = exMods.create();
+	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
 	Test::registerModule(exModule);
 
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
 
-	transit->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	transit->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	transit->taskProcessorDsp.process();
 
-	connectExpander(transit, exModule);
+	h.connectExpander(transit, exModule);
+	h.dspStep();
 
 	testModule->params[TestModule::TEST_PARAM_1].setValue(0.75f);
 
@@ -344,22 +359,22 @@ TEST_CASE("Saving a preset to an expander slot stores data in the expander", "[T
 
 
 TEST_CASE("Loading a preset from an expander slot transitions parameters correctly", "[TransitEx]") {
-	Test::ModuleScaffold<TransitModule<12>> transitMods;
-	TransitModule<12>* transit = transitMods.create("Transit");
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
 	Test::registerModule(transit);
 	TransitBase<12>* exBase = nullptr;
-	Test::ModuleScaffold<Module> exMods{[&]{ return createExModule(&exBase); }};
-	Module* exModule = exMods.create();
+	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
 	Test::registerModule(exModule);
 
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
 
-	transit->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	transit->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	transit->taskProcessorDsp.process();
 
-	connectExpander(transit, exModule);
+	h.connectExpander(transit, exModule);
+	h.dspStep();
 
 	// Save a preset in Transit slot 0 (value 0.0)
 	testModule->params[TestModule::TEST_PARAM_1].setValue(0.0f);
@@ -374,13 +389,13 @@ TEST_CASE("Loading a preset from an expander slot transitions parameters correct
 	SECTION("Loading expander slot transitions parameter to its stored value") {
 		transit->presetLoad(0);
 		for (int i = 0; i < 1000; i++) {
-			transit->process(Test::makeProcessArgs(i + 100));
+			h.dspStep();
 		}
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(0.0f).margin(0.01f));
 
 		transit->presetLoad(12);
 		for (int i = 0; i < 1000; i++) {
-			transit->process(Test::makeProcessArgs(i + 1200));
+			h.dspStep();
 		}
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(1.0f).margin(0.01f));
 	}
@@ -392,11 +407,11 @@ TEST_CASE("Loading a preset from an expander slot transitions parameters correct
 	SECTION("Alternating between Transit and expander presets converges correctly") {
 		transit->presetSetLast(24);
 		transit->presetLoad(12);
-		for (int i = 0; i < 1000; i++) transit->process(Test::makeProcessArgs(i + 100));
+		for (int i = 0; i < 1000; i++) h.dspStep();
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(1.0f).margin(0.01f));
 
 		transit->presetLoad(0);
-		for (int i = 0; i < 1000; i++) transit->process(Test::makeProcessArgs(i + 1200));
+		for (int i = 0; i < 1000; i++) h.dspStep();
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(0.0f).margin(0.01f));
 	}
 
@@ -408,21 +423,21 @@ TEST_CASE("Loading a preset from an expander slot transitions parameters correct
 
 
 TEST_CASE("Clearing an expander preset removes it from the expander", "[TransitEx]") {
-	Test::ModuleScaffold<TransitModule<12>> transitMods;
-	TransitModule<12>* transit = transitMods.create("Transit");
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
 	Test::registerModule(transit);
 	TransitBase<12>* exBase = nullptr;
-	Test::ModuleScaffold<Module> exMods{[&]{ return createExModule(&exBase); }};
-	Module* exModule = exMods.create();
+	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
 	Test::registerModule(exModule);
 
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
 
-	transit->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	transit->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	transit->taskProcessorDsp.process();
-	connectExpander(transit, exModule);
+	h.connectExpander(transit, exModule);
+	h.dspStep();
 
 	testModule->params[TestModule::TEST_PARAM_1].setValue(0.5f);
 	transit->presetSave(12);
@@ -457,15 +472,15 @@ TEST_CASE("Clearing an expander preset removes it from the expander", "[TransitE
 
 
 TEST_CASE("Boundary settings can span into expander range", "[TransitEx]") {
-	Test::ModuleScaffold<TransitModule<12>> transitMods;
-	TransitModule<12>* transit = transitMods.create("Transit");
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
 	Test::registerModule(transit);
 	TransitBase<12>* exBase = nullptr;
-	Test::ModuleScaffold<Module> exMods{[&]{ return createExModule(&exBase); }};
-	Module* exModule = exMods.create();
+	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
 	Test::registerModule(exModule);
 
-	connectExpander(transit, exModule);
+	h.connectExpander(transit, exModule);
+	h.dspStep();
 
 	SECTION("presetSetLast can extend into expander range") {
 		transit->presetSetLast(20);
@@ -493,22 +508,22 @@ TEST_CASE("Boundary settings can span into expander range", "[TransitEx]") {
 
 
 TEST_CASE("TRIG_FWD wraps correctly when presetLast is in expander range", "[TransitEx]") {
-	Test::ModuleScaffold<TransitModule<12>> transitMods;
-	TransitModule<12>* transit = transitMods.create("Transit");
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
 	Test::registerModule(transit);
 	TransitBase<12>* exBase = nullptr;
-	Test::ModuleScaffold<Module> exMods{[&]{ return createExModule(&exBase); }};
-	Module* exModule = exMods.create();
+	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
 	Test::registerModule(exModule);
 
 	TestModule* testModule = new TestModule();
 	Test::registerModule(testModule);
 
-	transit->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	transit->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	transit->taskProcessorDsp.process();
 
-	connectExpander(transit, exModule);
+	h.connectExpander(transit, exModule);
+	h.dspStep();
 
 	// Save presets across the boundary
 	for (int i = 0; i < 24; i++) {
@@ -527,34 +542,34 @@ TEST_CASE("TRIG_FWD wraps correctly when presetLast is in expander range", "[Tra
 	transit->inputs[TransitModule<12>::INPUT_CV].channels = 1;
 	transit->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
 	for (int i = 0; i < 100; i++) {
-		transit->process(Test::makeProcessArgs(i + 10));
+		h.dspStep();
 	}
 
-	auto trigger = [&](int frame) {
+	auto trigger = [&]() {
 		transit->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
-		transit->process(Test::makeProcessArgs(frame));
+		h.dspStep();
 		transit->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-		transit->process(Test::makeProcessArgs(frame + 1));
+		h.dspStep();
 	};
 
 	SECTION("Reset goes to presetFirst (within Transit)") {
 		transit->preset = 13;
 		transit->inputs[TransitModule<12>::INPUT_RESET].setVoltage(10.0f);
-		transit->process(Test::makeProcessArgs(200));
+		h.dspStep();
 		transit->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
-		transit->process(Test::makeProcessArgs(201));
+		h.dspStep();
 		REQUIRE(transit->preset == 10); // presetFirst
 	}
 
 	SECTION("Trigger advances from Transit slot into expander slot") {
 		transit->preset = 11; // last Transit slot in range
-		trigger(300);
+		trigger();
 		REQUIRE(transit->preset == 12); // first expander slot in range
 	}
 
 	SECTION("Trigger wraps from last expander slot back to presetFirst") {
 		transit->preset = 14; // presetLast - 1 = 14
-		trigger(300);
+		trigger();
 		REQUIRE(transit->preset == 10); // wraps to presetFirst
 	}
 
@@ -565,8 +580,8 @@ TEST_CASE("TRIG_FWD wraps correctly when presetLast is in expander range", "[Tra
 }
 
 TEST_CASE("ctrlUniqueId is preserved in TransitEx JSON round-trip", "[TransitEx][JSON]") {
-	Test::ModuleScaffold<Module> mods{[]{ return createExModule(); }};
-	Module* exModule = mods.create();
+	Test::Harness h;
+	Module* exModule = h.addModule<Module>(std::function<Module*()>([]{ return createExModule(); }));
 	TransitBase<12>* exBase = dynamic_cast<TransitBase<12>*>(exModule);
 	REQUIRE(exBase != nullptr);
 
@@ -575,7 +590,7 @@ TEST_CASE("ctrlUniqueId is preserved in TransitEx JSON round-trip", "[TransitEx]
 
 	json_t* rootJ = exModule->dataToJson();
 
-	Module* exModule2 = mods.create();
+	Module* exModule2 = h.addModule<Module>(std::function<Module*()>([]{ return createExModule(); }));
 	TransitBase<12>* exBase2 = dynamic_cast<TransitBase<12>*>(exModule2);
 	exModule2->dataFromJson(rootJ);
 

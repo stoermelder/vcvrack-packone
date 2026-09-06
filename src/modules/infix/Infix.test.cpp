@@ -70,7 +70,6 @@ TEST_CASE("Preset JSON null-guards", "[Infix][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 TEST_CASE("JSON round-trip preserves state", "[Infix][JSON]") {
@@ -89,37 +88,35 @@ TEST_CASE("JSON round-trip preserves state", "[Infix][JSON]") {
 	json_decref(j);
 
 	REQUIRE(m2->panelTheme == 1);
-
 }
 
 
 // Pass-through: poly input passes verbatim when no mono inputs are connected
 TEST_CASE("Poly pass-through: all channels forwarded when no mono inputs connected", "[Infix]") {
-	Test::ModuleScaffold<InfixModule<16>> mods;
-	auto* m = mods.create("Infix");
+	Test::Harness h;
+	auto* m = h.addModule<InfixModule<16>>("Infix");
 
 	setPolyInput(m, {1.f, 2.f, 3.f, 4.f});
 	seedOutput(m);
-	m->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getChannels() == 4);
 	REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(0) == Catch::Approx(1.f));
 	REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(1) == Catch::Approx(2.f));
 	REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(2) == Catch::Approx(3.f));
 	REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(3) == Catch::Approx(4.f));
-
 }
 
 
 // Single-channel replacement
 TEST_CASE("Mono input replaces its corresponding poly channel", "[Infix]") {
-	Test::ModuleScaffold<InfixModule<16>> mods;
-	auto* m = mods.create("Infix");
+	Test::Harness h;
+	auto* m = h.addModule<InfixModule<16>>("Infix");
 
 	setPolyInput(m, {1.f, 2.f, 3.f, 4.f});
 	setMonoInput(m, 1, 9.f); // replace channel 1
 	seedOutput(m);
-	m->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	SECTION("Replaced channel carries mono voltage") {
 		REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(1) == Catch::Approx(9.f));
@@ -134,5 +131,4 @@ TEST_CASE("Mono input replaces its corresponding poly channel", "[Infix]") {
 	SECTION("Output channel count unchanged") {
 		REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getChannels() == 4);
 	}
-
 }
