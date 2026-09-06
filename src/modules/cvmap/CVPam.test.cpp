@@ -47,7 +47,6 @@ TEST_CASE("Preset JSON null-guards", "[CVPam][JSON]") {
 
 TEST_CASE("JSON round-trip preserves state", "[CVPam][JSON]") {
 	Test::ModuleScaffold<CVPamModule> mods;
-	Test::ModuleScaffold<rack::Module> targetMods;
 	CVPamModule* m = mods.create("CVPam");
 	CVPamModule* m2 = mods.create("CVPam");
 
@@ -69,23 +68,22 @@ TEST_CASE("JSON round-trip preserves state", "[CVPam][JSON]") {
 	}
 
 	SECTION("Mapping slots (maps array) round-trip") {
-		// A registered target module is required for moduleId/paramId to persist through
-		// updateParamHandle(): the engine resolves the module by id, so an unregistered
-		// module would leave moduleId at -1 and the mapping could not round-trip.
-		rack::Module* target = targetMods.create("Glue");
-		Test::registerModule(target);
-
-		// The target must be registered so the engine can resolve it by id
-		REQUIRE(APP->engine->getModule(target->id) == target);
+		// Harness::addModule registers the target with the engine, which a mapping needs:
+		// updateParamHandle() resolves the target by id, so an unregistered module would
+		// leave moduleId at -1 and the mapping could not round-trip. See the mapping section
+		// in test_harness.hpp.
+		Test::Harness h;
+		rack::Module* target = h.addModule<rack::Module>("Glue");
 
 		// Map three slots to distinctive paramIds on the target module
 		m->learnParam(0, target->id, 0);
 		m->learnParam(1, target->id, 2);
 		m->learnParam(2, target->id, 4);
 
-		// learnParam must persist the mapping on m before serialization
-		REQUIRE(m->paramHandles[0].moduleId == target->id);
-		REQUIRE(m->paramHandles[0].paramId == 0);
+		// learnParam must persist the mapping on m before serialization. requireMapped also
+		// checks handle->module, which a mapping onto an unregistered target silently leaves
+		// null while moduleId still looks right.
+		h.requireMapped(&m->paramHandles[0], target, 0);
 
 		json_t* j = m->dataToJson();
 		// The maps array must be serialized with one entry per map slot
@@ -104,20 +102,16 @@ TEST_CASE("JSON round-trip preserves state", "[CVPam][JSON]") {
 		m2->dataFromJson(j);
 		json_decref(j);
 
-		// Mapped slots must round-trip moduleId and paramId exactly
-		REQUIRE(m2->paramHandles[0].moduleId == target->id);
-		REQUIRE(m2->paramHandles[0].paramId == 0);
-		REQUIRE(m2->paramHandles[1].moduleId == target->id);
-		REQUIRE(m2->paramHandles[1].paramId == 2);
-		REQUIRE(m2->paramHandles[2].moduleId == target->id);
-		REQUIRE(m2->paramHandles[2].paramId == 4);
+		// Mapped slots must round-trip moduleId and paramId exactly — and resolve to the live
+		// target, which is what makes the reloaded mapping actually drive anything.
+		h.requireMapped(&m2->paramHandles[0], target, 0);
+		h.requireMapped(&m2->paramHandles[1], target, 2);
+		h.requireMapped(&m2->paramHandles[2], target, 4);
 
 		// mapLen (derived from the last mapped slot) must round-trip
 		REQUIRE(m2->mapLen == mapLen);
 		// Unmapped slots stay unmapped
-		REQUIRE(m2->paramHandles[3].moduleId == -1);
-
-		Test::unregisterModule(target);
+		h.requireUnmapped(&m2->paramHandles[3]);
 	}
 
 }

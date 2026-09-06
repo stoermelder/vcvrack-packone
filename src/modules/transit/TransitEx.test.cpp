@@ -156,10 +156,8 @@ TEST_CASE("JSON round-trip preserves state", "[TransitEx][JSON]") {
 TEST_CASE("Transit discovers a connected TransitEx and updates presetTotal", "[TransitEx]") {
 	Test::Harness h;
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(transit);
 	TransitBase<12>* exBase = nullptr;
 	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
-	Test::registerModule(exModule);
 
 	SECTION("presetTotal is 12 with no expander") {
 		h.dspStep();
@@ -219,22 +217,16 @@ TEST_CASE("Transit discovers a connected TransitEx and updates presetTotal", "[T
 		h.dspStep();
 		REQUIRE(transit->presetTotal == 24);
 	}
-
-	Test::unregisterModule(exModule);
-	Test::unregisterModule(transit);
 }
 
 
 TEST_CASE("Transit discovers two chained TransitEx expanders", "[TransitEx]") {
 	Test::Harness h;
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(transit);
 	TransitBase<12>* ex1Base = nullptr;
 	Module* ex1 = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&ex1Base); }));
-	Test::registerModule(ex1);
 	TransitBase<12>* ex2Base = nullptr;
 	Module* ex2 = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&ex2Base); }));
-	Test::registerModule(ex2);
 
 	h.connectChain(transit, ex1, ex2);
 	h.dspStep();
@@ -255,20 +247,14 @@ TEST_CASE("Transit discovers two chained TransitEx expanders", "[TransitEx]") {
 		REQUIRE(ex1Base->ctrlModuleId == transit->id);
 		REQUIRE(ex2Base->ctrlModuleId == transit->id);
 	}
-
-	Test::unregisterModule(ex2);
-	Test::unregisterModule(ex1);
-	Test::unregisterModule(transit);
 }
 
 
 TEST_CASE("getSlot returns expander slots for indices >= 12", "[TransitEx]") {
 	Test::Harness h;
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(transit);
 	TransitBase<12>* exBase = nullptr;
 	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
-	Test::registerModule(exModule);
 
 	h.connectExpander(transit, exModule);
 	h.dspStep();
@@ -297,22 +283,16 @@ TEST_CASE("getSlot returns expander slots for indices >= 12", "[TransitEx]") {
 	SECTION("getSlot(24) returns null (out of range)") {
 		REQUIRE(transit->getSlot(24) == nullptr);
 	}
-
-	Test::unregisterModule(exModule);
-	Test::unregisterModule(transit);
 }
 
 
 TEST_CASE("Saving a preset to an expander slot stores data in the expander", "[TransitEx]") {
 	Test::Harness h;
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(transit);
 	TransitBase<12>* exBase = nullptr;
 	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
-	Test::registerModule(exModule);
 
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	h.dspStep();
 	transit->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
@@ -350,24 +330,16 @@ TEST_CASE("Saving a preset to an expander slot stores data in the expander", "[T
 		REQUIRE(exBase->presetSlotUsed[0] == true);
 		REQUIRE(exBase->preset[0][0] == Catch::Approx(0.75f).margin(0.001f));
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(exModule);
-	Test::unregisterModule(transit);
 }
 
 
 TEST_CASE("Loading a preset from an expander slot transitions parameters correctly", "[TransitEx]") {
 	Test::Harness h;
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(transit);
 	TransitBase<12>* exBase = nullptr;
 	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
-	Test::registerModule(exModule);
 
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	h.dspStep();
 	transit->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
@@ -414,24 +386,16 @@ TEST_CASE("Loading a preset from an expander slot transitions parameters correct
 		for (int i = 0; i < 1000; i++) h.dspStep();
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(0.0f).margin(0.01f));
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(exModule);
-	Test::unregisterModule(transit);
 }
 
 
 TEST_CASE("Clearing an expander preset removes it from the expander", "[TransitEx]") {
 	Test::Harness h;
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(transit);
 	TransitBase<12>* exBase = nullptr;
 	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
-	Test::registerModule(exModule);
 
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	h.dspStep();
 	transit->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
@@ -463,21 +427,14 @@ TEST_CASE("Clearing an expander preset removes it from the expander", "[TransitE
 		transit->presetClear(12);
 		REQUIRE(exBase->presetSlotUsed[1] == true);
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(exModule);
-	Test::unregisterModule(transit);
 }
 
 
 TEST_CASE("Boundary settings can span into expander range", "[TransitEx]") {
 	Test::Harness h;
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(transit);
 	TransitBase<12>* exBase = nullptr;
 	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
-	Test::registerModule(exModule);
 
 	h.connectExpander(transit, exModule);
 	h.dspStep();
@@ -501,22 +458,16 @@ TEST_CASE("Boundary settings can span into expander range", "[TransitEx]") {
 		transit->presetLoad(20); // at boundary = presetLast (exclusive → rejected)
 		REQUIRE(transit->preset == presetBefore);
 	}
-
-	Test::unregisterModule(exModule);
-	Test::unregisterModule(transit);
 }
 
 
 TEST_CASE("TRIG_FWD wraps correctly when presetLast is in expander range", "[TransitEx]") {
 	Test::Harness h;
 	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
-	Test::registerModule(transit);
 	TransitBase<12>* exBase = nullptr;
 	Module* exModule = h.addModule<Module>(std::function<Module*()>([&]{ return createExModule(&exBase); }));
-	Test::registerModule(exModule);
 
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	h.dspStep();
 	transit->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
@@ -572,11 +523,6 @@ TEST_CASE("TRIG_FWD wraps correctly when presetLast is in expander range", "[Tra
 		trigger();
 		REQUIRE(transit->preset == 10); // wraps to presetFirst
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(exModule);
-	Test::unregisterModule(transit);
 }
 
 TEST_CASE("ctrlUniqueId is preserved in TransitEx JSON round-trip", "[TransitEx][JSON]") {

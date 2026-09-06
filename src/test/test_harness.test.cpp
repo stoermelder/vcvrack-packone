@@ -629,3 +629,153 @@ TEST_CASE("Lifetime") {
 		REQUIRE_NOTHROW(h.uiFrames(3));
 	}
 }
+
+
+// ---- Parameter mapping ---------------------------------------------------------------------
+//
+// These pin the three engine rules Harness's mapping helpers exist to encode. Each was
+// previously re-derived by hand in individual mapping suites (see the comments in
+// CVPam.test.cpp and MidiCat.test.cpp), and each has a silent failure mode.
+
+// A stand-in for a mapping target: any module with params will do, and a local probe keeps
+// these tests independent of any real module's param layout.
+struct MapTargetProbe : rack::Module {
+	enum ParamIds { P0, P1, P2, NUM_PARAMS };
+	MapTargetProbe() {
+		config(NUM_PARAMS, 0, 0, 0);
+		for (int i = 0; i < NUM_PARAMS; i++) configParam(i, 0.f, 10.f, 1.f);
+	}
+};
+
+// A stand-in for a mapper: owns handles and registers them the way MapModuleBase does.
+struct MapperProbe : rack::Module {
+	static const int SLOTS = 4;
+	rack::ParamHandle handles[SLOTS];
+
+	MapperProbe() {
+		config(0, 0, 0, 0);
+		for (int i = 0; i < SLOTS; i++) APP->engine->addParamHandle(&handles[i]);
+	}
+	~MapperProbe() {
+		for (int i = 0; i < SLOTS; i++) APP->engine->removeParamHandle(&handles[i]);
+	}
+};
+
+
+TEST_CASE("Parameter mapping resolves through the engine") {
+	Test::Harness h;
+	auto* mapper = h.adoptModule(new MapperProbe);
+	auto* target = h.adoptModule(new MapTargetProbe);
+
+	SECTION("a mapped handle resolves ids and the module pointer") {
+		h.mapParam(&mapper->handles[0], target, MapTargetProbe::P1);
+		// The pointer is the half a missing registration silently loses.
+		h.requireMapped(&mapper->handles[0], target, MapTargetProbe::P1);
+		REQUIRE(h.isMapped(&mapper->handles[0]));
+	}
+
+	SECTION("adoptModule registers the target, so no manual registration is needed") {
+		// Rule 1. This is the boilerplate the mapping suites repeat ~103 times; if
+		// adoptModule ever stops registering, this fails rather than every mapping test
+		// failing on a null module pointer.
+		REQUIRE(APP->engine->getModule(target->id) == target);
+	}
+
+	SECTION("handles start unmapped") {
+		h.requireUnmapped(&mapper->handles[0]);
+		REQUIRE_FALSE(h.isMapped(&mapper->handles[0]));
+	}
+
+	SECTION("unmapParam releases the claim but keeps the handle usable") {
+		h.mapParam(&mapper->handles[0], target, MapTargetProbe::P0);
+		h.unmapParam(&mapper->handles[0]);
+		h.requireUnmapped(&mapper->handles[0]);
+
+		// Still registered with the engine, so it can be re-mapped.
+		h.mapParam(&mapper->handles[0], target, MapTargetProbe::P2);
+		h.requireMapped(&mapper->handles[0], target, MapTargetProbe::P2);
+	}
+
+	SECTION("mappedQuantity/mappedValue read the target's param") {
+		h.mapParam(&mapper->handles[0], target, MapTargetProbe::P1);
+		REQUIRE(h.mappedQuantity(&mapper->handles[0]) ==
+		        target->getParamQuantity(MapTargetProbe::P1));
+
+		h.setMappedValue(&mapper->handles[0], 7.f);
+		// setImmediateValue/getImmediateValue bypass the engine's smoothing, so the value is
+		// readable without stepping.
+		REQUIRE(h.mappedValue(&mapper->handles[0]) == Catch::Approx(7.f));
+		REQUIRE(target->params[MapTargetProbe::P1].getValue() == Catch::Approx(7.f));
+	}
+
+	SECTION("mappedQuantity is null for an unmapped handle") {
+		REQUIRE(h.mappedQuantity(&mapper->handles[0]) == nullptr);
+	}
+}
+
+
+TEST_CASE("Only one ParamHandle may claim a param") {
+	// Rule 2 — the rule behind the clearMaps() dance every preset round-trip test performs.
+	Test::Harness h;
+	auto* first = h.adoptModule(new MapperProbe);
+	auto* second = h.adoptModule(new MapperProbe);
+	auto* target = h.adoptModule(new MapTargetProbe);
+
+	SECTION("overwrite=true steals the param from the previous holder") {
+		h.mapParam(&first->handles[0], target, MapTargetProbe::P0);
+		h.mapParam(&second->handles[0], target, MapTargetProbe::P0, true);
+
+		h.requireMapped(&second->handles[0], target, MapTargetProbe::P0);
+		// The loser is reset, not left pointing at a param it no longer drives.
+		h.requireUnmapped(&first->handles[0]);
+	}
+
+	SECTION("overwrite=false resets the NEW handle, not the old one") {
+		// The counter-intuitive half, and the reason a preset load silently maps nothing
+		// when the previous module's claims were not released first.
+		h.mapParam(&first->handles[0], target, MapTargetProbe::P0);
+		h.mapParam(&second->handles[0], target, MapTargetProbe::P0, false);
+
+		h.requireMapped(&first->handles[0], target, MapTargetProbe::P0);
+		h.requireUnmapped(&second->handles[0]);
+	}
+
+	SECTION("clearMapsFor releases claims so another module can take them") {
+		h.mapParam(&first->handles[0], target, MapTargetProbe::P0);
+		h.mapParam(&first->handles[1], target, MapTargetProbe::P1);
+
+		h.clearMapsFor({&first->handles[0], &first->handles[1]});
+		h.requireUnmapped(&first->handles[0]);
+		h.requireUnmapped(&first->handles[1]);
+
+		// The preset-load case now succeeds even with overwrite=false.
+		h.mapParam(&second->handles[0], target, MapTargetProbe::P0, false);
+		h.requireMapped(&second->handles[0], target, MapTargetProbe::P0);
+	}
+}
+
+
+TEST_CASE("Destroying a mapped target does not leave a dangling handle") {
+	// The teardown half of engine registration: removeModule_NoLock nulls every handle
+	// pointing at the module being removed (Engine.cpp:805-808). Without the harness
+	// unregistering on teardown, mapper->handles[0].module would outlive the target and point
+	// at freed memory — which ASan would only catch if something dereferenced it.
+	Test::Harness h;
+	auto* mapper = h.adoptModule(new MapperProbe);
+
+	int64_t targetId = -1;
+	{
+		Test::Harness inner;
+		auto* target = inner.adoptModule(new MapTargetProbe);
+		targetId = target->id;
+		h.mapParam(&mapper->handles[0], target, MapTargetProbe::P0);
+		REQUIRE(mapper->handles[0].module == target);
+	}
+
+	// The module pointer is cleared; the id remains, which is how Rack models "mapped to a
+	// module that is not currently in the patch".
+	REQUIRE(mapper->handles[0].module == nullptr);
+	REQUIRE(mapper->handles[0].moduleId == targetId);
+	REQUIRE_FALSE(h.isMapped(&mapper->handles[0]));
+	REQUIRE(APP->engine->getModule(targetId) == nullptr);
+}

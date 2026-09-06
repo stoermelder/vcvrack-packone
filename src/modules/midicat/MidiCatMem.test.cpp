@@ -169,8 +169,6 @@ TEST_CASE("MidiCat detects expander", "[MidiCatMem][MidiCat]") {
 	// MidiCat.expanders.hpp detects mem via `exp->model == modelMidiCatMem` — a mismatch here
 	// (missing/wrong SYNC_MODEL) would make the REQUIRE below fail with no useful diagnosis.
 	Test::requireModelSync(modelMidiCatMem, "MidiCatEx");
-	Test::registerModule(midicat);
-	Test::registerModule(mem);
 
 	// Flush initial expandersChanged so expMem is properly null before connecting
 	h.dspStep();
@@ -181,17 +179,12 @@ TEST_CASE("MidiCat detects expander", "[MidiCatMem][MidiCat]") {
 
 	REQUIRE(midicat->expanders.mem() != nullptr);
 	REQUIRE(midicat->expanders.mem() == dynamic_cast<MidiCatMemBase*>(mem));
-
-	Test::unregisterModule(mem);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("Disconnecting expander clears expMem", "[MidiCatMem][MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatMemModule* mem = h.addModule<MidiCatMemModule>("MidiCatEx");
-	Test::registerModule(midicat);
-	Test::registerModule(mem);
 
 	h.connectExpander(midicat, mem);
 	h.dspStep();
@@ -201,9 +194,6 @@ TEST_CASE("Disconnecting expander clears expMem", "[MidiCatMem][MidiCat]") {
 	h.dspStep();
 
 	REQUIRE(midicat->expanders.mem() == nullptr);
-
-	Test::unregisterModule(mem);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("MemStore::test returns false for unknown module", "[MidiCatMem][MidiCat]") {
@@ -211,18 +201,11 @@ TEST_CASE("MemStore::test returns false for unknown module", "[MidiCatMem][MidiC
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatMemModule* mem = h.addModule<MidiCatMemModule>("MidiCatEx");
 	MidiCatMemModule* unknown = h.addModule<MidiCatMemModule>("MidiCatEx");
-	Test::registerModule(midicat);
-	Test::registerModule(mem);
-	Test::registerModule(unknown);
 
 	h.connectExpander(midicat, mem);
 	h.dspStep();
 	// midiMap is empty, so no slug matches
 	REQUIRE_FALSE(midicat->expanders.memStore().test(unknown));
-
-	Test::unregisterModule(unknown);
-	Test::unregisterModule(mem);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("MemStore::save stores current MidiCat CC mapping", "[MidiCatMem][MidiCat]") {
@@ -231,9 +214,6 @@ TEST_CASE("MemStore::save stores current MidiCat CC mapping", "[MidiCatMem][Midi
 	MidiCatMemModule* mem = h.addModule<MidiCatMemModule>("MidiCatEx");
 	// Use a second MidiCatMemModule as target (it has parameters and a proper model)
 	MidiCatMemModule* target = h.addModule<MidiCatMemModule>("MidiCatEx");
-	Test::registerModule(midicat);
-	Test::registerModule(mem);
-	Test::registerModule(target);
 
 	// Bind CC 7 → target PARAM_APPLY (id=0)
 	setupBinding(h, midicat, target, 0, 7, MidiCatMemModule::PARAM_APPLY);
@@ -255,10 +235,6 @@ TEST_CASE("MemStore::save stores current MidiCat CC mapping", "[MidiCatMem][Midi
 	REQUIRE(it->second->paramMap.size() == 1);
 	REQUIRE(it->second->paramMap.front()->cc == 7);
 	REQUIRE(it->second->paramMap.front()->paramId == MidiCatMemModule::PARAM_APPLY);
-
-	Test::unregisterModule(target);
-	Test::unregisterModule(mem);
-	Test::unregisterModule(midicat);
 }
 
 // The "Store mapping" menu is built from currently bound slots, but the mapping can be
@@ -270,9 +246,6 @@ TEST_CASE("MemStore::save does not crash and does not store when no slot matches
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatMemModule* mem = h.addModule<MidiCatMemModule>("MidiCatEx");
 	MidiCatMemModule* target = h.addModule<MidiCatMemModule>("MidiCatEx");
-	Test::registerModule(midicat);
-	Test::registerModule(mem);
-	Test::registerModule(target);
 
 	h.connectExpander(midicat, mem);
 	h.dspStep();
@@ -284,10 +257,6 @@ TEST_CASE("MemStore::save does not crash and does not store when no slot matches
 	// Nothing was stored: there was no matching module to save.
 	REQUIRE_FALSE(midicat->expanders.memStore().test(target));
 	REQUIRE(mem->midiMap.empty());
-
-	Test::unregisterModule(target);
-	Test::unregisterModule(mem);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("moduleBindMem restores CC and param binding into MidiCat", "[MidiCatMem][MidiCat]") {
@@ -295,9 +264,6 @@ TEST_CASE("moduleBindMem restores CC and param binding into MidiCat", "[MidiCatM
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatMemModule* mem = h.addModule<MidiCatMemModule>("MidiCatEx");
 	MidiCatMemModule* target = h.addModule<MidiCatMemModule>("MidiCatEx");
-	Test::registerModule(midicat);
-	Test::registerModule(mem);
-	Test::registerModule(target);
 
 	h.connectExpander(midicat, mem);
 	h.dspStep();
@@ -311,10 +277,6 @@ TEST_CASE("moduleBindMem restores CC and param binding into MidiCat", "[MidiCatM
 	REQUIRE(midicat->slots[0].cc.getCc() == 15);
 	REQUIRE(midicat->paramHandles[0].paramId == MidiCatMemModule::PARAM_NEXT);
 	REQUIRE(midicat->paramHandles[0].module == target);
-
-	Test::unregisterModule(target);
-	Test::unregisterModule(mem);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("MemStore::erase removes mapping from storage", "[MidiCatMem][MidiCat]") {
@@ -322,9 +284,6 @@ TEST_CASE("MemStore::erase removes mapping from storage", "[MidiCatMem][MidiCat]
 	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
 	MidiCatMemModule* mem = h.addModule<MidiCatMemModule>("MidiCatEx");
 	MidiCatMemModule* target = h.addModule<MidiCatMemModule>("MidiCatEx");
-	Test::registerModule(midicat);
-	Test::registerModule(mem);
-	Test::registerModule(target);
 
 	h.connectExpander(midicat, mem);
 	h.dspStep();
@@ -336,10 +295,6 @@ TEST_CASE("MemStore::erase removes mapping from storage", "[MidiCatMem][MidiCat]
 
 	REQUIRE_FALSE(midicat->expanders.memStore().test(target));
 	REQUIRE(mem->midiMap.empty());
-
-	Test::unregisterModule(target);
-	Test::unregisterModule(mem);
-	Test::unregisterModule(midicat);
 }
 
 TEST_CASE("moduleRestriction filters MemStore::test by module ID", "[MidiCatMem][MidiCat]") {
@@ -348,10 +303,6 @@ TEST_CASE("moduleRestriction filters MemStore::test by module ID", "[MidiCatMem]
 	MidiCatMemModule* mem = h.addModule<MidiCatMemModule>("MidiCatEx");
 	MidiCatMemModule* targetA = h.addModule<MidiCatMemModule>("MidiCatEx");
 	MidiCatMemModule* targetB = h.addModule<MidiCatMemModule>("MidiCatEx");
-	Test::registerModule(midicat);
-	Test::registerModule(mem);
-	Test::registerModule(targetA);
-	Test::registerModule(targetB);
 
 	h.connectExpander(midicat, mem);
 	h.dspStep();
@@ -368,9 +319,4 @@ TEST_CASE("moduleRestriction filters MemStore::test by module ID", "[MidiCatMem]
 
 	REQUIRE(midicat->expanders.memStore().test(targetA));       // allowed
 	REQUIRE_FALSE(midicat->expanders.memStore().test(targetB)); // blocked by restriction
-
-	Test::unregisterModule(targetB);
-	Test::unregisterModule(targetA);
-	Test::unregisterModule(mem);
-	Test::unregisterModule(midicat);
 }
