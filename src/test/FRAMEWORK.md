@@ -273,8 +273,7 @@ extend a `vcv::*Access` seam rather than adding a test-only field or parameter.*
 
 > **The harness does not schedule worker threads yet.** So how a module *declares* its worker
 > decides whether it can be tested deterministically at all — that is what this section is about.
-> The planned harness support is `var/TestFramework_review.md` §2.2a–f and Step 6b; the two modules
-> that predate the rule below are covered by `var/TaskWorker_existing_modules.md`.
+> Every module in the plugin now follows the rule below.
 
 Two separate mechanisms, often confused because both run tasks off the engine thread:
 
@@ -416,8 +415,8 @@ module gets the injected worker. MidiKit does exactly this (`MidiKit.test.hpp:64
 lives on the `midi-kit` branch, so its file references resolve there, not on `v2-dev`), and the
 reason is worth stating: **`Test::createModule` / `Harness::addModule` go through the dylib's model
 factory, which only knows the default constructor** — so a module created through them gets the
-real async worker no matter what the test wants. Until the harness can construct with arguments
-(planned for Step 6b), a worker-injecting suite needs its own factory shadow.
+real async worker no matter what the test wants. Until the harness can construct with arguments, a
+worker-injecting suite needs its own factory shadow.
 
 For a component the test calls directly, no shadow is needed — construct the `SyncTaskWorker` and
 pass it in:
@@ -452,10 +451,6 @@ barrier(worker);            // see MidiKit.test.hpp:107 for a complete implement
 Two details that implementation gets right and a naive barrier does not: `work()` returns `false`
 when the queue is momentarily full, so the sentinel push must retry; and the sentinel flag must be
 a `shared_ptr`, not a stack reference, or a timeout leaves the worker writing into a dead frame.
-
-> **Working on a module that predates this pattern?** Strip and EightFaceMk2 still own a concrete
-> `TaskWorker` and cannot inject at all. `var/TaskWorker_existing_modules.md` covers testing them
-> today, and what migrating them involves.
 
 #### Writing the test so it survives the harness gaining support
 
@@ -710,7 +705,7 @@ consistency within a module that already uses the layer.
 
 Wrapping the widget tree in a proxy is *possible* — it was prototyped, and a mock returning real
 widgets satisfies even `dynamic_cast` plus follow-on calls — but it buys no testability and
-creates a Rack type definition that can drift. See `var/TestFramework_review.md` §10e-ter.
+creates a Rack type definition that can drift.
 
 Two practical notes:
 
