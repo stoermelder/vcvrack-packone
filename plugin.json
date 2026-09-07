@@ -208,9 +208,10 @@
 		{
 			"slug": "TransitPad",
 			"name": "TRANSIT-PAD",
-			"description": "Expander for TRANSIT",
+			"description": "XY-pad expander for TRANSIT for morphing between snapshots in two dimensions.\nSnapshots are placed freely on a 2D pad and a movable mix point blends them by distance, with eight switchable snapshot-sets and recordable motion-sequences.",
 			"tags": [
-				"Utility"
+				"Utility",
+				"Controller"
 			],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/transit/Transit.md"
 		},

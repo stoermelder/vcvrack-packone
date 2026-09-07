@@ -1,5 +1,10 @@
 ## 2.x.x
 
+### New modules
+
+- Module [TRANSIT-PAD](./docs/transit/Transit.md#transit-pad-expander)
+    - XY-pad expander for TRANSIT: place snapshots freely on a 2D pad and blend them with a movable mix point. Eight snapshot-sets with colors and labels, CV/MIDI-mappable mix position, and recordable motion-sequences
+
 ### Changes and Fixes
 
 - Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
