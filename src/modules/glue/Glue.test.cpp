@@ -1,10 +1,20 @@
 #include "../../test/framework.hpp"
 #include "Glue.cpp"
 
+using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::Glue;
 
 SYNC_MODEL(modelGlue, "Glue");
 Test::TestContext<> testContext;
+
+// Records pushed actions and owns them (push takes ownership). Same shape as
+// Strip.test.cpp's MockHistoryAccess.
+struct MockHistoryAccess : vcv::HistoryAccess {
+	std::vector<::rack::history::Action*> pushed;
+	void push(::rack::history::Action* a) override { pushed.push_back(a); }
+	~MockHistoryAccess() { for (auto* a : pushed) delete a; }
+};
+
 
 TEST_CASE("Construction and initialization", "[Glue]") {
 	Test::ModuleScaffold<GlueModule> mods;
@@ -160,5 +170,51 @@ TEST_CASE("JSON round-trip preserves state", "[Glue][JSON]") {
 			i++;
 		}
 	}
+}
 
+
+TEST_CASE("consolidate() merges labels from other GLUE instances", "[Glue]") {
+	MockHistoryAccess mockHistory;
+	Test::mock::Guard<vcv::HistoryAccess> historyGuard{vcv::historyAccess, &mockHistory};
+
+	GlueModule* survivorM = Test::createModule<GlueModule>("Glue");
+	GlueWidget* survivorMw = Test::createWidget<GlueWidget>(survivorM);
+	Test::registerModule(survivorM, survivorMw);
+
+	GlueModule* victimM = Test::createModule<GlueModule>("Glue");
+	GlueWidget* victimMw = Test::createWidget<GlueWidget>(victimM);
+	Test::registerModule(victimM, victimMw);
+
+	// Populate the victim with one module label and one cable label.
+	ModuleLabel* ml = victimM->addModuleLabel();
+	ml->moduleId = 42;
+	ml->text = "victim-module-label";
+
+	CableLabel* cl = victimM->addCableLabel();
+	cl->cableId = 99;
+	cl->text = "victim-cable-label";
+
+	REQUIRE(survivorM->moduleLabels.size() == 0);
+	REQUIRE(survivorM->cableLabels.size() == 0);
+	REQUIRE(victimM->moduleLabels.size() == 1);
+	REQUIRE(victimM->cableLabels.size() == 1);
+
+	survivorMw->consolidate();
+
+	// The victim widget is removed from the rack and deleted by consolidate() itself.
+	SECTION("Module labels are moved to the surviving instance") {
+		REQUIRE(survivorM->moduleLabels.size() == 1);
+		REQUIRE(survivorM->moduleLabels.front()->text == "victim-module-label");
+	}
+
+	SECTION("Cable labels are moved to the surviving instance, not destroyed") {
+		// Bug #4: consolidate() only moves moduleLabels; cableLabels are neither moved nor
+		// cleared before the victim module is deleted, silently destroying them.
+		REQUIRE(survivorM->cableLabels.size() == 1);
+		if (survivorM->cableLabels.size() == 1) {
+			REQUIRE(survivorM->cableLabels.front()->text == "victim-cable-label");
+		}
+	}
+
+	Test::unregisterModule(survivorM, survivorMw);
 }

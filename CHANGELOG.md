@@ -16,6 +16,8 @@
     - Fixed "Scale" out-mode using the configured number of mix-ports
 - Module [DIRT](./docs/dirt/Dirt.md)
     - Fixed broken "Initialize" on Crush defects
+- Module [GLUE](./docs/glue/Glue.md)
+    - Fixed lost cable labels on "Consolidate GLUE"
 - Modules [MAZE](./docs/maze/Maze.md) and [HIVE](./docs/maze/Hive.md)
     - Improved rendering performance
 - Module [SIREN](./docs/siren/Siren.md)

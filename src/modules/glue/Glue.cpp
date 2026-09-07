@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 #include "GlueWidget.hpp"
 
 namespace StoermelderPackOne {
@@ -383,15 +384,20 @@ void GlueWidget::consolidate() {
 		for (ModuleLabel* l : gw->module->moduleLabels) {
 			module->moduleLabels.push_back(l);
 		}
-
 		gw->module->moduleLabels.clear();
+
+		for (CableLabel* cl : gw->module->cableLabels) {
+			module->cableLabels.push_back(cl);
+		}
+		gw->module->cableLabels.clear();
+
 		APP->scene->rack->removeModule(w);
 		delete w;
 	}
 
 	mc->newLabelJ = module->moduleLabelToJson();
 
-	APP->history->push(complexAction);
+	vcv::history::push(complexAction);
 	module->resetRequested = true;
 }
 
@@ -466,9 +472,12 @@ void GlueWidget::appendContextMenu(Menu* menu) {
 	menu->addChild(construct<DefaultAppearanceMenuItem>(&MenuItem::text, "Label appearance", &DefaultAppearanceMenuItem::module, module));
 	menu->addChild(createBoolPtrMenuItem("Skew labels", "", &module->skewLabels));
 
-	if (module->moduleLabels.size() > 0) {
+	if (module->moduleLabels.size() > 0 || module->cableLabels.size() > 0) {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Consolidate GLUE", "", [=]() { consolidate(); }));
+	}
+
+	if (module->moduleLabels.size() > 0) {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Module Labels"));
 
