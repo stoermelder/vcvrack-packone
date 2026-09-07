@@ -264,7 +264,7 @@ struct EightFaceModule : Module {
 					if (inputs[SLOT_INPUT].isConnected()) {
 						switch (slotCvMode) {
 							case SLOTCVMODE::VOLT:
-								presetLoad(t, std::floor(rescale(inputs[SLOT_INPUT].getVoltage(), 0.f, 10.f, 0, presetCount)));
+								presetLoad(t, std::floor(rescale(clamp(inputs[SLOT_INPUT].getVoltage(), 0.f, 10.f - 1e-6f), 0.f, 10.f, 0, presetCount)));
 								break;
 							case SLOTCVMODE::C4:
 								presetLoad(t, std::round(clamp(inputs[SLOT_INPUT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)));
