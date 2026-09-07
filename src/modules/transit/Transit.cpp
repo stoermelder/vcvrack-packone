@@ -788,31 +788,36 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 		if (presetProcessDivider.process()) {
 			const auto& snapshots = transitPad->getPadFactors();
 
-			float weight = 0.f;
 			std::vector<float> v(sourceHandles.size(), 0.f);
+			// Per-parameter, not global: a parameter bound after the last save
+			// (bindAddParameterRequest(..., presetLoading = true)) has no entry
+			// in an older slot's preset, so it must not receive a share of that
+			// slot's weight even though other, longer-lived parameters do.
+			std::vector<float> weight(sourceHandles.size(), 0.f);
 			for (auto snapshot : snapshots) {
 				if (snapshot.id < 0) continue;
 				SLOT* slot1 = getSlot(snapshot.id);
 				if (!slot1 || !slot1->isUsed()) continue;
-				weight += snapshot.weight;
 
+				const std::vector<float>& preset1 = *slot1->getPreset();
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					if (!pq) continue;
-					float v1 = (*slot1->getPreset())[i];
+					if (preset1.size() <= i) break;
+					float v1 = preset1[i];
 					v[i] += v1 * snapshot.weight;
+					weight[i] += snapshot.weight;
 				}
 			}
 
-			if (weight > 0.f) {
-				for (size_t i = 0; i < sourceHandles.size(); i++) {
-					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
-					if (!pq) continue;
-					if (settings::isPlugin && parameterChangesDirect)
-						pq->setValue(v[i] / weight);
-					else
-						pq->getParam()->setValue(v[i] / weight);
-				}
+			for (size_t i = 0; i < sourceHandles.size(); i++) {
+				if (weight[i] <= 0.f) continue;
+				ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+				if (!pq) continue;
+				if (settings::isPlugin && parameterChangesDirect)
+					pq->setValue(v[i] / weight[i]);
+				else
+					pq->getParam()->setValue(v[i] / weight[i]);
 			}
 
 			BASE::outputs[OUTPUT].setVoltage(0.f);

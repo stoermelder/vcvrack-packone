@@ -33,9 +33,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		int id = -1;
 
 		std::string getLabel() override {
-			if (tpModule && id >= 0 && !tpModule->setLabel[id].empty()) {
-				return tpModule->setLabel[id];
-			}
+			if (tpModule && id >= 0) return tpModule->getSetLabel(id);
 			return name;
 		}
 	};
@@ -325,7 +323,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	}
 
 	/** XySeqModule: the only motion-sequence port is the Out cursor's (index 0). */
-	bool seqPortUsed(int port) override {
+	bool seqPortHidden(int port) override {
 		return port != 0;
 	}
 
@@ -417,7 +415,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	}
 
 	std::string getSetLabel(uint8_t s) {
-		if (setLabel[s].empty()) return string::f("Set #%i", s + 1);
+		if (setLabel[s].empty()) return string::f("Snapshot-set #%i", s + 1);
 		return setLabel[s];
 	}
 
@@ -493,7 +491,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		if (lockedJ) locked = json_is_true(lockedJ);
 
 		int su = json_integer_value(json_object_get(rootJ, "snapshotsUsed"));
-		snapshotsUsed = std::max(0, std::min(su, (int)SNAPSHOTS));
+		snapshotsUsed = std::max(1, std::min(su, (int)SNAPSHOTS));
 
 		json_t* setsJ = json_object_get(rootJ, "sets");
 		size_t maxs = std::min((size_t)SETS, json_array_size(setsJ));
@@ -611,7 +609,7 @@ struct TransitPadSnapshotDragWidget : XyScreenNodeDragWidget<MODULE> {
 		TransitSnapshotButton* src = dynamic_cast<TransitSnapshotButton*>(e.origin);
 		if (src && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			int slot = src->getSlotIndex();
-			if (slot >= 0) {
+			if (slot >= 0 && !this->module->isLocked()) {
 				this->module->bindSnapshot(this->id, slot);
 			}
 			dropArmed = false;
@@ -843,6 +841,9 @@ struct TransitPadVizOverlay : TransparentWidget {
 	TransitPadModule<>* module = nullptr;
 	// Non-owning pointer to the host widget (for absolute position).
 	Widget* hostWidget = nullptr;
+	// Non-owning pointer to the pad's screen widget, so the drawn geometry always
+	// matches its actual box instead of an independent copy of the same literals.
+	Widget* screenWidget = nullptr;
 
 	void step() override {
 		// Track parent size so NVG scissor doesn't clip our drawings.
@@ -898,18 +899,19 @@ struct TransitPadVizOverlay : TransparentWidget {
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
-		if (layer != 1 || !visible || !module || !hostWidget) return;
+		if (layer != 1 || !visible || !module || !hostWidget || !screenWidget) return;
 		NVGcontext* vg = args.vg;
 
 		Vec origin = hostWidget->box.pos;
 		uint8_t currentSet = module->currentSet;
 		bool anyHover = (module->vizHoveredId >= 0);
 
-		// The screen widget is at (3, 66.3) with size 219x219 inside the host widget.
-		// Each pad point is a 20x20 square centered in that area.
-		const float screenX = 3.f;
-		const float screenY = 66.3f;
-		const float screenSize = 225.f - 6.f;
+		// Derived from the actual screen widget so moving it can't silently
+		// misalign the visualisation splines. Each pad point is a 20x20 square
+		// centered in that area.
+		const float screenX = screenWidget->box.pos.x;
+		const float screenY = screenWidget->box.pos.y;
+		const float screenSize = screenWidget->box.size.x;
 		const float pointSize = 20.f;
 
 		// Two passes when hovering: dim unrelated connectors first, then draw the
@@ -1028,6 +1030,7 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 			vizOverlay = new TransitPadVizOverlay;
 			vizOverlay->module = module;
 			vizOverlay->hostWidget = this;
+			vizOverlay->screenWidget = screenWidget;
 			vizOverlay->visible = false;
 			APP->scene->rack->addChild(vizOverlay);
 		}

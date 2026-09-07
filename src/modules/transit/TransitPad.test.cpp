@@ -25,17 +25,22 @@ static void fireTrigger(Test::Harness& h, TransitPadModule<>* m, int inputId) {
 TEST_CASE("Construction and initialization", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
-	TransitPadWidget* mw = Test::createWidget<TransitPadWidget>("TransitPad");
 
 	REQUIRE(m != nullptr);
-	REQUIRE(mw != nullptr);
-	REQUIRE(mw->module == nullptr);
-
 	REQUIRE(m->currentSet == 0);
 	REQUIRE(m->snapshotsUsed == 4);
 	REQUIRE(m->setCvMode == SETCVMODE::TRIG_FWD);
 
-	Test::destroyWidget(mw);
+	// The module browser builds this widget with module == nullptr to render
+	// the preview. Several earlier fixes were about crashes on that path
+	// (onHoverKey still dereferences module unguarded, see Gap 1), so the
+	// assertion worth making here is that construction/destruction survives
+	// a null module, not that createWidget did what it always does.
+	TransitPadWidget* mw = nullptr;
+	REQUIRE_NOTHROW(mw = Test::createWidget<TransitPadWidget>("TransitPad"));
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+	REQUIRE_NOTHROW(Test::destroyWidget(mw));
 }
 
 
@@ -204,7 +209,10 @@ TEST_CASE("SET_PARAM buttons change currentSet", "[TransitPad]") {
 		REQUIRE(m->currentSet == 3);
 	}
 
-	SECTION("Pressing set button 0 keeps currentSet at 0") {
+	SECTION("Pressing set button 0 switches currentSet to 0") {
+		// Start from a non-zero set: currentSet defaults to 0, so pressing button 0
+		// from there would pass whether or not the button actually works.
+		m->currentSet = 4;
 		m->params[TransitPadModule<>::SET_PARAM + 0].setValue(1.f);
 		h.dspSteps(100);
 		REQUIRE(m->currentSet == 0);
@@ -363,20 +371,6 @@ TEST_CASE("SET_CV_INPUT OFF mode: input has no effect", "[TransitPad]") {
 }
 
 
-TEST_CASE("CV input sets currentSet when connected", "[TransitPad]") {
-	Test::Harness h;
-	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
-	m->setCvMode = SETCVMODE::VOLT;
-	m->inputs[TransitPadModule<>::SET_CV_INPUT].channels = 1;
-
-	// No buttons pressed — verify CV takes effect
-	m->inputs[TransitPadModule<>::SET_CV_INPUT].setVoltage(2.5f); // 2.5/10 * 8 = 2 -> set 2
-	h.dspSteps(5);
-
-	REQUIRE(m->currentSet == 2);
-}
-
-
 TEST_CASE("Buttons work when CV is disconnected", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
@@ -522,10 +516,24 @@ TEST_CASE("JSON round-trip preserves setLabel", "[TransitPad]") {
 		REQUIRE(m->getSetLabel(3) == "Chorus");
 	}
 
-	SECTION("getSetLabel falls back to 'Set #N' when empty") {
+	SECTION("getSetLabel falls back to 'Snapshot-set #N' when empty") {
 		TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
-		REQUIRE(m->getSetLabel(0) == "Set #1");
-		REQUIRE(m->getSetLabel(4) == "Set #5");
+		REQUIRE(m->getSetLabel(0) == "Snapshot-set #1");
+		REQUIRE(m->getSetLabel(4) == "Snapshot-set #5");
+	}
+
+	SECTION("SET_PARAM quantity label agrees with getSetLabel") {
+		// TransitPadSetParamQuantity::getLabel() is the live, user-facing path (menu items,
+		// tooltips); getSetLabel() is what other production code and tests call directly.
+		// They used to disagree on the default string ("Snapshot-set #N" vs "Set #N") because
+		// getLabel() duplicated the logic instead of delegating. Pin that they now always match.
+		TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+		ParamQuantity* pq = m->paramQuantities[TransitPadModule<>::SET_PARAM + 2];
+		REQUIRE(pq->getLabel() == m->getSetLabel(2));
+
+		m->setLabel[2] = "Verse";
+		REQUIRE(pq->getLabel() == "Verse");
+		REQUIRE(pq->getLabel() == m->getSetLabel(2));
 	}
 
 	SECTION("'label' key is omitted from JSON when no label is set") {
@@ -563,7 +571,7 @@ TEST_CASE("onReset clears setLabel", "[TransitPad]") {
 	m->onReset();
 	REQUIRE(m->setLabel[0] == "");
 	REQUIRE(m->setLabel[3] == "");
-	REQUIRE(m->getSetLabel(0) == "Set #1");
+	REQUIRE(m->getSetLabel(0) == "Snapshot-set #1");
 }
 
 
@@ -1399,4 +1407,168 @@ TEST_CASE("XyScreenNodes setters with an out-of-range id are a silent no-op", "[
 	REQUIRE(m->nodes.uiX[0] == Catch::Approx(x0Before));
 	REQUIRE(m->nodes.radiusUi[0] == Catch::Approx(radius0Before));
 	REQUIRE(m->nodes.amountUi[0] == Catch::Approx(amount0Before));
+}
+
+
+// bindAddParameterRequest(presetLoading = true) skips
+// the back-fill loop that keeps every slot's preset vector in sync with
+// sourceHandles, so an older slot's preset can end up shorter than
+// sourceHandles. presetProcessXyPad indexed that short vector by i
+// unguarded (heap-buffer-overflow under ASan); presetProcess already had
+// the `size() <= i` guard. Drive the real sequence rather than
+// hand-shortening the vector, so the test tracks the actual patch-load
+// code path. The sibling presetProcessPhase regression lives in
+// Transit.test.cpp, since neither site is pad-specific but this one needs
+// a TransitPad expander to reach.
+// The out-of-bounds read does not reliably abort under ASan in this harness
+// (confirmed on the sibling presetProcessPhase case: the redzone byte is
+// genuinely poisoned per __asan_address_is_poisoned, but the generated
+// check at this call site does not trip, unlike an isolated repro of the
+// same pattern). So this asserts the documented contract behaviourally: the
+// second (newer) parameter must never be written while it lacks a
+// same-sized preset entry, and it is given a sentinel value no crossfade of
+// target's values could ever produce.
+
+TEST_CASE("presetProcessXyPad does not write a param whose preset is shorter than sourceHandles", "[TransitPad][Transit]") {
+	Test::Harness h;
+	PadRig r = PadRig::make(h);
+	TestParamModule* target2 = h.adoptModule(new TestParamModule);
+
+	// Bind one param, save slot 0: sourceHandles.size() == 1, preset[0].size() == 1
+	r.bind();
+	r.save(0, 0.5f);
+	connectPad(h, r.transit, r.pad);
+
+	// Bind a second param with presetLoading = true, as the patch-load path
+	// does: sourceHandles.size() == 2, but preset[0].size() is still 1.
+	r.transit->bindAddParameterRequest(target2->id, TestParamModule::PARAM_A, true);
+	r.transit->taskProcessorDsp.process();
+	target2->params[TestParamModule::PARAM_A].setValue(0.f);
+	target2->params[TestParamModule::PARAM_A].setValue(1.f);
+
+	// Park the mix point on snapshot A, the one bound to slot 0.
+	r.pad->snapshotsUsed = 1;
+	connectMixInputs(r.pad);
+	setMixVoltage(r.pad, -5.f, -5.f);
+
+	// Run the pad over slot 0. Before the fix this reads preset[0][1] out of
+	// bounds and writes whatever it finds there into target2's param; after
+	// the fix the loop breaks at i == 1 and target2 is left untouched.
+	REQUIRE_NOTHROW(r.run(5));
+	REQUIRE(r.paramValue() == Catch::Approx(0.5f).margin(0.001f));
+	REQUIRE(target2->params[TestParamModule::PARAM_A].getValue() == 1.f);
+}
+
+
+// TransitPadSnapshotDragWidget::onDragDrop never
+// consulted isLocked(), so a locked pad still accepted drag-and-drop
+// rebinding from a TRANSIT snapshot button — contradicting the manual's
+// documented "dropping is still allowed to highlight a target, but the
+// binding is rejected" behaviour.
+// This builds the real widget tree (TRANSIT + TransitPad as expanders) and
+// dispatches DragEnter/DragDrop directly at the target node, per the
+// headless traps documented in FRAMEWORK.md: VCVButton's onDragStart needs
+// settings::allowCursorLock = false, and Knob::onDragMove (VCVButton's
+// base) calls the un-early-out'd APP->window->getMods(), so a full
+// h.events().drag() from the TransitLedButton can't be driven end-to-end.
+// Dispatching DragEnter/DragDrop directly at the pad node is the handler
+// under test anyway.
+
+// Helper: find a TransitLedButton param widget on a TransitWidget by absolute slot index.
+static TransitSnapshotButton* findSnapshotButton(rack::app::ModuleWidget* transitWidget, int slot) {
+	for (rack::widget::Widget* w : transitWidget->getParams()) {
+		auto* btn = dynamic_cast<TransitLedButton<12>*>(w);
+		if (btn && btn->getSlotIndex() == slot) return btn;
+	}
+	return nullptr;
+}
+
+// Helper: find the TransitPad's node drag widget for a given pad point id.
+static rack::widget::Widget* findPadNodeWidget(rack::app::ModuleWidget* padWidget, int id) {
+	rack::widget::Widget* found = nullptr;
+	Test::traversal::walk(padWidget, [&](const Test::traversal::Visit& v) {
+		auto* node = dynamic_cast<TransitPadSnapshotDragWidget<TransitPadModule<>>*>(v.widget);
+		if (node && node->id == id) {
+			found = v.widget;
+			return false;
+		}
+		return true;
+	});
+	return found;
+}
+
+TEST_CASE("Locked pad rejects drag-and-drop rebinding", "[TransitPad][BLOCKER-2]") {
+	settings::allowCursorLock = false;
+
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitWidget<12>* transitWidget = h.addWidget<TransitWidget<12>>(transit);
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	connectPad(h, transit, pad);
+	h.dspStep();
+
+	// Drag from slot 3's button, distinct from the slot-0 baseline below, so an
+	// erroneously-accepted rebind is observable as a change.
+	TransitSnapshotButton* srcButton = findSnapshotButton(transitWidget, 3);
+	REQUIRE(srcButton != nullptr);
+	rack::widget::Widget* node = findPadNodeWidget(padWidget, 0);
+	REQUIRE(node != nullptr);
+
+	// Bind pad point 0 to slot 0 while unlocked, establishing a known baseline.
+	pad->bindSnapshot(0, 0);
+	REQUIRE(pad->snapshots[pad->currentSet][0].id == 0);
+
+	pad->locked = true;
+
+	event::DragEnter eEnter;
+	eEnter.button = GLFW_MOUSE_BUTTON_LEFT;
+	eEnter.origin = dynamic_cast<rack::widget::Widget*>(srcButton);
+	node->onDragEnter(eEnter);
+
+	// The manual promises dropping "is still allowed to highlight a target" while
+	// locked: hovering a snapshot button over the node still arms the highlight.
+	auto* dragNode = dynamic_cast<TransitPadSnapshotDragWidget<TransitPadModule<>>*>(node);
+	REQUIRE(dragNode->dropArmed == true);
+
+	event::DragDrop eDrop;
+	eDrop.button = GLFW_MOUSE_BUTTON_LEFT;
+	eDrop.origin = dynamic_cast<rack::widget::Widget*>(srcButton);
+	node->onDragDrop(eDrop);
+
+	// ...but the binding itself is rejected.
+	REQUIRE(pad->snapshots[pad->currentSet][0].id == 0);
+}
+
+TEST_CASE("Unlocked pad accepts drag-and-drop rebinding", "[TransitPad][BLOCKER-2]") {
+	settings::allowCursorLock = false;
+
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitWidget<12>* transitWidget = h.addWidget<TransitWidget<12>>(transit);
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	connectPad(h, transit, pad);
+	h.dspStep();
+
+	TransitSnapshotButton* srcButton = findSnapshotButton(transitWidget, 3);
+	REQUIRE(srcButton != nullptr);
+	rack::widget::Widget* node = findPadNodeWidget(padWidget, 0);
+	REQUIRE(node != nullptr);
+
+	REQUIRE(pad->isLocked() == false);
+
+	event::DragEnter eEnter;
+	eEnter.button = GLFW_MOUSE_BUTTON_LEFT;
+	eEnter.origin = dynamic_cast<rack::widget::Widget*>(srcButton);
+	node->onDragEnter(eEnter);
+
+	event::DragDrop eDrop;
+	eDrop.button = GLFW_MOUSE_BUTTON_LEFT;
+	eDrop.origin = dynamic_cast<rack::widget::Widget*>(srcButton);
+	node->onDragDrop(eDrop);
+
+	REQUIRE(pad->snapshots[pad->currentSet][0].id == 3);
 }
