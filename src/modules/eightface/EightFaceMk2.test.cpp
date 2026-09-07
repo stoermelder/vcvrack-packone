@@ -205,7 +205,7 @@ TEST_CASE("applyPreset does not decrement refcount of slot-owned json objects", 
 	m->boundModules[0]->moduleId = boundM->id;
 
 	m->presetPrev = -1;
-	m->applyPreset(m->dispatch.allLoader(), 0);
+	m->applyPreset(m->dispatch.allLoader(), -1, 0);
 	m->dispatch.drain();
 
 	REQUIRE(json_typeof(vJ) == JSON_OBJECT);
@@ -514,12 +514,12 @@ TEST_CASE("GUI vs GUI_WITH_LOCK apply through different objects", "[EightFaceMk2
 
 	SECTION("GUI_WITH_LOCK calls mw->fromJson (widget path)") {
 		m->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
-		m->applyPreset(m->dispatch.allLoader(), 0);
+		m->applyPreset(m->dispatch.allLoader(), -1, 0);
 	}
 
 	SECTION("GUI calls mw->module->fromJson (module-only path)") {
 		m->dispatch.guiSafeMode = GUISAFEMODE::GUI;
-		m->applyPreset(m->dispatch.allLoader(), 0);
+		m->applyPreset(m->dispatch.allLoader(), -1, 0);
 	}
 
 	// Both paths reach Module::fromJson() in the end, so the applied effect is the same either

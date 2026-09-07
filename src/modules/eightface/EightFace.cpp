@@ -413,14 +413,16 @@ struct EightFaceModule : Module {
 	}
 
 	// Leaf; never enqueues. Allowlist/no-window/fromJson-target rules live behind loader.
-	void applyPreset(int64_t moduleId, const PresetDispatch::Loader& loader, int p) {
+	// pPrev is the previous slot's index at dispatch() time, not presetPrev -- the engine thread
+	// may have moved presetPrev on before this task runs.
+	void applyPreset(const PresetDispatch::Loader& loader, int64_t moduleId, int pPrev, int p) {
 		if (p < 0 || !presetSlotUsed[p]) return;
 		if (!loader.shouldLoad(needsGuiThread)) return;
 		ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
 		if (!mw) return;
-		if (ctrlMode == CTRLMODE::AUTO && presetPrev >= 0 && presetSlotUsed[presetPrev]) {
-			json_decref(presetSlot[presetPrev]);
-			presetSlot[presetPrev] = mw->toJson();
+		if (ctrlMode == CTRLMODE::AUTO && pPrev >= 0 && presetSlotUsed[pPrev]) {
+			json_decref(presetSlot[pPrev]);
+			presetSlot[pPrev] = mw->toJson();
 		}
 		loader.load(needsGuiThread, mw, presetSlot[p]);
 	}
@@ -438,9 +440,10 @@ struct EightFaceModule : Module {
 				// Captured here, not read from a member later, so a second presetLoad() can't
 				// clobber this task's target before it runs.
 				int64_t moduleId = m->id;
+				int pPrev = presetPrev;
 				dispatch.dispatch(p, needsGuiThread, !needsGuiThread,
-					[this, moduleId](const PresetDispatch::Loader& loader, int p) {
-						applyPreset(moduleId, loader, p);
+					[this, moduleId, pPrev](const PresetDispatch::Loader& loader, int p) {
+						applyPreset(loader, moduleId, pPrev, p);
 					});
 			}
 		}

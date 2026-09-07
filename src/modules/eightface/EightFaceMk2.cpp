@@ -564,14 +564,15 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 
 	// Applies this pass's share of a preset via `loader`. Leaf -- must never enqueue further work.
 	// The part/no-window/fromJson-target rules live behind loader; this only matches preset
-	// entries to bound modules and does the auto-mode save.
-	void applyPreset(const EightFace::PresetDispatch::Loader& loader, int p) {
+	// entries to bound modules and does the auto-mode save. pPrev is presetPrev's value captured
+	// at dispatch() time -- the engine thread may have moved presetPrev on before this task runs.
+	void applyPreset(const EightFace::PresetDispatch::Loader& loader, int pPrev, int p) {
 		if (p < 0) return;
 
 		EightFaceMk2Slot* slot = expSlot(p);
 		EightFaceMk2Slot* slotPrev = NULL;
-		if (presetPrev >= 0) {
-			slotPrev = expSlot(presetPrev);
+		if (pPrev >= 0) {
+			slotPrev = expSlot(pPrev);
 		}
 
 		int i = 0;
@@ -614,11 +615,14 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 				preset = p;
 				presetNext = -1;
 				if (!*(slot->presetSlotUsed)) return;
+				// Resolved here, not read from presetPrev later, so a second presetLoad() can't
+				// clobber this task's target before it runs.
+				int pPrev = presetPrev;
 				bool hasGui, hasWorker;
 				presetParts(hasGui, hasWorker);
 				dispatch.dispatch(p, hasGui, hasWorker,
-					[this](const EightFace::PresetDispatch::Loader& loader, int p) {
-						applyPreset(loader, p);
+					[this, pPrev](const EightFace::PresetDispatch::Loader& loader, int p) {
+						applyPreset(loader, pPrev, p);
 					});
 			}
 		}
