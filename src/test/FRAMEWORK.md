@@ -57,7 +57,7 @@ stylistic (§7).
 | `Test::createWidget` | 47 | Mostly construction smoke tests |
 | `TEST_MOCK_*` | 9 | Grows with `vcv` layer migration |
 | `Test::Harness` | 7 | The default setup path for module tests (Intermix ×3 migrated) |
-| `EventDriver` | 2 | New in Phase 2 Step 5 |
+| `EventDriver` | 3 | New in Phase 2 Step 5; Tilt is the worked widget-test example |
 
 ---
 
@@ -573,6 +573,23 @@ h.events().type("abc");
 REQUIRE(h.events().consumedBy() == expectedChild);
 ```
 
+**Find the inner widget by type, don't reconstruct its position.** A `ModuleWidget`'s interesting
+children are constructor locals with no accessor, so the tempting alternative is to re-derive where
+the panel put them from its layout constants — a second copy of the layout, free to drift until the
+click lands on the wrong widget and the test asserts a no-op:
+
+```cpp
+auto* lane = h.events().find<TiltEdgeWidget<MODULE, EDGE::TOP>>(mw);   // REQUIREs a match
+h.events().dragBy(lane, Vec(0, 50), 10);
+auto lanes = h.events().findAll<InnerWidget>(mw);      // several of a kind, topmost first
+```
+
+`find<T>()` fails the test when nothing matches, rather than returning a nullptr that segfaults
+three lines later. Where a widget maps a position to a logical index itself (a grid's `cellAt()`, a
+lane's `slotAt()`), derive the click point and then *assert it against that function* — the position
+is then correct by construction and a layout change moves the click with the widget. `Tilt.test.hpp`'s
+`tiltCellCenter()`/`tiltSlotCenter()` are the worked example.
+
 `handleButton()`/`handleHover()` are reproduced line for line from `Rack/src/widget/event.cpp`
 except for two `APP->window` reads: `isCursorLocked()` (always false in a test) and `getMods()`
 (replaced by an explicit `heldKeyMods`). Everything else — the whole recursion — is Rack's real
@@ -591,6 +608,26 @@ mock.fs.now = 100.0;  h.events().click(probe);
 mock.fs.now = 100.1;  h.events().click(probe);
 REQUIRE(probe->doubleClickCount == 1);
 ```
+
+### `getMousePos()` tracks synthetic input automatically
+
+16 widgets across 11 modules in this plugin (Tilt's grid and edge lanes, Maze, Hive, Glue's label,
+Siren's waveform canvas, XySeq/XyScreen, Strip, MidiCat, Mb) drive their drags off
+`APP->scene->rack->getMousePos()` rather than `e.mouseDelta`, because that is the only way to get a
+position in a stable coordinate space across a drag. Rack maintains that field in
+`RackWidget::onHover()/onDragHover()` as an event descends through the rack — but the rack is a
+descendant of `rackScroll`, which `SceneLayout` neutralises, so it is never written under a harness.
+
+`EventDriver::syncRackMousePos()` closes that, on every `button()` and `hover()`. It matters because
+the gap was silent in the direction that *passes*: a drag over such a widget dispatched perfectly,
+fired every `DragMove`, and moved nothing — so a test could assert dispatch happened while the
+widget's own state never changed. Both handlers are public and only record `e.pos` before recursing,
+so calling one directly reproduces the recursion without making `rackScroll` live.
+
+Positions are converted into the rack's own space, so a widget comparing `getMousePos()` against a
+`ModuleWidget` box (`SirenDropHandler`, Glue's `ModuleLabelWidget`, Maze and Hive) sees both in one
+space. The press syncs *before* dispatch, since a handler capturing a drag origin reads the field
+during `onButton`. Opt out with `trackRackMousePos = false`; inspect it with `rackMousePos()`.
 
 ### Four gotchas that will bite
 
