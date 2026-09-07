@@ -784,7 +784,7 @@ struct ArenaOpLedDisplay : StoermelderLedDisplay {
 
 	void onButton(const event::Button& e) override {
 		if (id + 1 > module->inportsUsed) return;
-		if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 			createContextMenu();
 			e.consume(this);
 		}
