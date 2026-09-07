@@ -541,6 +541,100 @@ TEST_CASE("No window: presets still load in every mode", "[EightFaceMk2][dispatc
 	}
 }
 
+TEST_CASE("No window, Unsafe fast: the GUI half is not dispatched at all", "[EightFaceMk2][dispatch]") {
+	// The counterpart to the case above, and the reason the split needs a window check. guiTasks
+	// guarantees only "off the engine thread": once hasWindow() is false it drains from its own
+	// private worker (GuiTaskProcessor.hpp), so enqueueing the GUI half there would load those
+	// modules off the UI thread anyway -- the crash EightFace::guiModuleSlugs exists to prevent.
+	// So the half is not queued, and its modules stay unloaded; the worker half still applies
+	// the rest of the preset.
+	auto worker = std::make_shared<CountingSyncTaskWorker>();
+	DispatchFixture f([&]() { return createEightFaceMk2ModuleWithWorker(worker); });
+	f.h.setUiMode(Test::UiMode::UiAbsent);
+
+	// A second bound target, allowlisted; f.boundM (bound by the fixture) stays off the list.
+	EightFaceMk2Module<8>* guiM = f.h.addModule<EightFaceMk2Module<8>>(createEightFaceMk2Module);
+	EightFaceMk2Widget<8>* guiMw = Test::createWidget<EightFaceMk2Widget<8>>(guiM);
+	Test::registerModule(guiM, guiMw);
+	auto* gb = new EightFaceMk2Module<8>::BoundModule;
+	gb->moduleId = guiM->id;
+	gb->pluginSlug = guiM->model->plugin->slug;
+	gb->modelSlug = guiM->model->slug;
+	gb->moduleName = "GuiTarget";
+	gb->needsGuiThread = true;
+	f.m->boundModules.push_back(gb);
+
+	// A preset covering both bound modules, each with its own distinctive colour.
+	EightFaceMk2Slot* slot = f.m->faceSlot(0);
+	for (json_t* vJ : *slot->preset) json_decref(vJ);
+	slot->preset->clear();
+	NVGcolor prevOk = f.boundM->boxColor;
+	NVGcolor prevGui = guiM->boxColor;
+	f.boundM->boxColor = color::fromHexString("#0a0a0a");
+	guiM->boxColor = color::fromHexString("#0b0b0b");
+	slot->preset->push_back(f.boundM->toJson());
+	slot->preset->push_back(guiM->toJson());
+	f.boundM->boxColor = prevOk;
+	guiM->boxColor = prevGui;
+	*(slot->presetSlotUsed) = true;
+
+	auto labelOf = [](EightFaceMk2Module<8>* mod) {
+		json_t* rootJ = mod->dataToJson();
+		json_t* colorJ = json_object_get(rootJ, "boxColor");
+		std::string s = colorJ ? json_string_value(colorJ) : "";
+		json_decref(rootJ);
+		return s;
+	};
+
+	f.m->guiSafeMode = GUISAFEMODE::WORKER;
+	f.m->presetLoad(0, false, true);
+
+	// The split still goes out as usual -- the window check is not in the dispatch.
+	REQUIRE(worker->count == 1);
+
+	// The ordinary module loaded; the allowlisted one was skipped by applyPreset() rather than
+	// applied with no UI thread to apply it on. Draining guiTasks is what runs the GUI half, so
+	// this asserts the skip happened inside it, not that it was never queued.
+	f.m->guiTasks.drain();
+	REQUIRE(labelOf(f.boundM) == "#0a0a0a");
+	REQUIRE(labelOf(guiM) != "#0b0b0b");
+
+	Test::unregisterModule(guiM, guiMw);
+}
+
+TEST_CASE("No window: an allowlisted module is skipped in every mode", "[EightFaceMk2][dispatch]") {
+	// The skip lives in applyPreset(), so it holds for every mode and every dispatch shape --
+	// including Safe/Unsafe, which route the whole preset through guiTasks with no split to hang
+	// a check on. That was the crashing path: with no window guiTasks drains from its own
+	// private worker (GuiTaskProcessor.hpp), so an allowlisted module was being loaded off the
+	// UI thread, exactly what EightFace::guiModuleSlugs exists to prevent.
+	//
+	// Here the module under test has ONE bound module and it is allowlisted, so there is no
+	// ordinary half to mask a mistake: nothing may be applied, in any mode. The preset not
+	// loading is the deliberate trade -- it contradicts "presets must still load in every mode"
+	// from var/EightFaceMk2_threading_fix.md's verification list for this configuration, and is
+	// preferred over applying the module with no UI thread to apply it on.
+	auto worker = std::make_shared<CountingSyncTaskWorker>();
+	DispatchFixture f([&]() { return createEightFaceMk2ModuleWithWorker(worker); });
+	f.h.setUiMode(Test::UiMode::UiAbsent);
+	f.m->boundModules[0]->needsGuiThread = true;
+	f.savePreset("#0c0c0c");
+
+	SECTION("Unsafe fast") {
+		f.m->guiSafeMode = GUISAFEMODE::WORKER;
+	}
+	SECTION("Safe -- the path that crashed before the skip existed") {
+		f.m->guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+	}
+	SECTION("Unsafe") {
+		f.m->guiSafeMode = GUISAFEMODE::GUI;
+	}
+
+	f.m->presetLoad(0, false, true);
+	f.m->guiTasks.drain();
+	REQUIRE(f.appliedLabel() != "#0c0c0c");
+}
+
 
 TEST_CASE("Queue capacity: more than 8 bound modules load without drops", "[EightFaceMk2][dispatch]") {
 	// GuiTaskProcessor<SIZE> defaults to 8; the module uses GuiTaskProcessor<32>, matching the

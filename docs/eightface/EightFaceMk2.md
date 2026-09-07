@@ -30,7 +30,17 @@
 
 - _Unsafe fast mode_ is similar to _Unsafe mode_ but uses an additional worker thread to apply presets. It is faster but may increase instability on some modules. Use this mode only if you require the fastest possible preset loading. This was the operating mode of 8FACE mk2 before v2.2.0. 
 
-A small set of known-incompatible modules always load on the UI thread regardless of the selected mode, since loading their presets on a worker thread is known to cause crashes.
+Some modules do their preset loading in a way that requires Rack's user interface to be running. For these 8FACE mk2 always uses _Safe mode_'s loading path, whichever mode is selected:
+
+- Entrian Free: _Player-Timeline_, _Player-Melody_, _Player-Drummer_
+- Entrian Sequencers: _Timeline_, _Melody_, _Drummer_, _CV_
+- Entrian Acoustic Drums: _Acoustic Drums_, _Drummer_
+- VCV Host: _Host_, _Host-FX_, _Host-XL_
+- stoermelder [MIDI-CAT](../midicat/MidiCat.md)
+
+This applies per module, so in _Unsafe fast mode_ the other bound modules keep using the worker thread: binding one of the modules above does not slow down the rest of the snapshot.
+
+It also means their presets can only be loaded while Rack's user interface is on screen. In VCV Rack's plugin version with the plugin window closed, and in headless Rack, these modules keep their current settings and the other bound modules of the snapshot are loaded as usual. Opening the plugin window afterwards does not apply what was left out — load the snapshot again.
 
 ### Binding modules
 
@@ -153,4 +163,5 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Fixed crash on patch autosave and on preset-loading
 - v2.x.x
     - Fixed inefficient implementation of _Safe mode_/_Unsafe mode_/_Unsafe fast mode_
+    - Fixed crash in Rack plugin for certain modules if no plugin-window is open
     - Fixed a background worker that could stall indefinitely

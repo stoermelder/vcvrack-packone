@@ -596,6 +596,14 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 				// Not this pass's half of a split preset — the other task handles it.
 				if (part == PRESETPART::GuiOnly && !b->needsGuiThread) break;
 				if (part == PRESETPART::WorkerOnly && b->needsGuiThread) break;
+				// An allowlisted module cannot be loaded off the UI thread at all, and with no
+				// window there is no UI thread to load it on — not even via guiTasks, which
+				// guarantees only "off the engine thread": once hasWindow() is false it drains
+				// from its own private worker (GuiTaskProcessor.hpp). Applying it anyway is the
+				// crash the allowlist exists to prevent. Checked here, for every mode and every
+				// part, so this is the single place the rule lives; skip just this module and
+				// leave it as it is — the rest of the preset still applies.
+				if (b->needsGuiThread && !vcv::ui::hasWindow()) break;
 				ModuleWidget* mw = b->getModuleWidget();
 				if (!mw) continue;
 
@@ -645,6 +653,11 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 				// per half, side by side rather than chained. The two run concurrently over
 				// disjoint modules. When every bound module is allowlisted the UI task goes
 				// out alone and the worker is never woken.
+				//
+				// The split routes to a UI thread; whether one actually exists is not checked
+				// here but in applyPreset(), which skips allowlisted modules when hasWindow()
+				// is false. That keeps the rule in one place and covers every mode — including
+				// the Safe/Unsafe branch below, which has no split to hang a check on.
 				if (guiSafeMode == GUISAFEMODE::WORKER) {
 					bool hasGui, hasWorker;
 					presetParts(hasGui, hasWorker);
