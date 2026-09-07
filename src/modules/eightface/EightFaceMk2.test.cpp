@@ -12,3 +12,6 @@ namespace __binding {
 namespace __sequencing {
 	#include "EightFaceMk2.test.sequencing.hpp"
 }
+namespace __expander {
+	#include "EightFaceMk2.test.expander.hpp"
+}

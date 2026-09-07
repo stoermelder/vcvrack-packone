@@ -420,3 +420,114 @@ TEST_CASE("RESET behavior matches the manual's Reset column, per mode", "[EightF
 		REQUIRE(f.m->preset == 0);
 	}
 }
+
+
+// ---- Write / auto mode -- mk2 parity with EightFace.test.sequencing.hpp -------------------------
+//
+// mk2's manual documents the same write-mode contract as mk1 ("Saving snapshots in write-mode":
+// short-press saves, long-press clears; "In write-mode any input on the CV-port is ignored") and
+// the same long-press-sets-count behavior ("Sequencing and selecting snapshots": "adjust the
+// number of active slots... by long-pressing a snapshot-button while in read-mode"). So this is a
+// genuine test gap, not a feature gap -- ported from EightFace.test.sequencing.hpp using
+// SequencingFixture (already built for Q1-Q14), with two mechanical differences: mk2 selects the
+// operating mode through the single PARAM_RW switch (Read=0/Auto=1/Write=2) rather than mk1's
+// separate CTRLMODE_PARAM, and process() re-derives BASE::ctrlMode from PARAM_RW on every call
+// (EightFaceMk2.cpp:251, "CTRLMODE ctrlMode = (CTRLMODE)Module::params[PARAM_RW].getValue()") --
+// see EightFaceMk2.test.dispatch.hpp:520's comment for why setting the member directly would be
+// silently clobbered.
+
+TEST_CASE("Write-mode short-press saves; long-press clears", "[EightFaceMk2][write]") {
+	SequencingFixture f;
+	f.m->params[EightFaceMk2Module<8>::PARAM_RW].setValue((float)CTRLMODE::WRITE);
+	// Empty slot 0 so a save is observable -- SequencingFixture marks every slot used by default.
+	f.m->presetSlotUsed[0] = false;
+
+	// Short press: param up then down within one buttonDivider tick's sample time.
+	f.m->params[EightFaceMk2Module<8>::PARAM_PRESET + 0].setValue(1.f);
+	// Step a full division so ClockDividerEx's randomized starting phase cannot skip the button
+	// processing block entirely (ClockDividerEx randomizes its starting phase).
+	for (uint32_t i = 0; i < f.m->buttonDivider.division + 1; i++) f.h.dspStep();
+	f.m->params[EightFaceMk2Module<8>::PARAM_PRESET + 0].setValue(0.f);
+	for (uint32_t i = 0; i < f.m->buttonDivider.division + 1; i++) f.h.dspStep();
+
+	REQUIRE(f.m->presetSlotUsed[0] == true);
+
+	// Long press: hold for >= 1 second. LongPressButton::process() only runs once per
+	// buttonDivider tick, with sampleTime pre-scaled by the division, so a real 1s hold needs
+	// sampleRate raw dspStep() calls, not sampleRate/division divider firings.
+	f.m->params[EightFaceMk2Module<8>::PARAM_PRESET + 0].setValue(1.f);
+	int stepsFor1s = (int)std::ceil(Test::sampleRate()) + (int)f.m->buttonDivider.division * 2;
+	for (int i = 0; i < stepsFor1s; i++) f.h.dspStep();
+	f.m->params[EightFaceMk2Module<8>::PARAM_PRESET + 0].setValue(0.f);
+	for (uint32_t i = 0; i < f.m->buttonDivider.division + 1; i++) f.h.dspStep();
+
+	REQUIRE(f.m->presetSlotUsed[0] == false);
+}
+
+TEST_CASE("Write-mode ignores the CV input entirely", "[EightFaceMk2][write]") {
+	SequencingFixture f;
+	f.m->params[EightFaceMk2Module<8>::PARAM_RW].setValue((float)CTRLMODE::WRITE);
+	f.m->slotCvMode = SLOTCVMODE::TRIG_FWD;
+	f.m->preset = 0;
+
+	f.pulseCv();
+	f.pulseReset();
+	REQUIRE(f.m->preset == 0);
+}
+
+TEST_CASE("Long-press in read-mode sets presetCount; suppressed when presetCountLongPress is false", "[EightFaceMk2][write]") {
+	SequencingFixture f;
+	f.m->params[EightFaceMk2Module<8>::PARAM_RW].setValue((float)CTRLMODE::READ);
+	f.m->presetCount = 8;
+
+	SECTION("presetCountLongPress true: long-press on slot i sets presetCount to i+1") {
+		f.m->presetCountLongPress = true;
+		f.m->params[EightFaceMk2Module<8>::PARAM_PRESET + 2].setValue(1.f);
+		int stepsFor1s = (int)std::ceil(Test::sampleRate()) + (int)f.m->buttonDivider.division * 2;
+		for (int i = 0; i < stepsFor1s; i++) f.h.dspStep();
+		f.m->params[EightFaceMk2Module<8>::PARAM_PRESET + 2].setValue(0.f);
+		for (uint32_t i = 0; i < f.m->buttonDivider.division + 1; i++) f.h.dspStep();
+
+		REQUIRE(f.m->presetCount == 3);
+	}
+
+	SECTION("presetCountLongPress false: long-press does nothing to presetCount") {
+		f.m->presetCountLongPress = false;
+		f.m->params[EightFaceMk2Module<8>::PARAM_PRESET + 2].setValue(1.f);
+		int stepsFor1s = (int)std::ceil(Test::sampleRate()) + (int)f.m->buttonDivider.division * 2;
+		for (int i = 0; i < stepsFor1s; i++) f.h.dspStep();
+		f.m->params[EightFaceMk2Module<8>::PARAM_PRESET + 2].setValue(0.f);
+		for (uint32_t i = 0; i < f.m->buttonDivider.division + 1; i++) f.h.dspStep();
+
+		REQUIRE(f.m->presetCount == 8);
+	}
+}
+
+TEST_CASE("presetSetCount() resets preset when it falls outside the new count", "[EightFaceMk2][write]") {
+	// EightFaceMk2.cpp:672-677 -- identical guard shape to mk1's presetSetCount (EightFace.cpp:
+	// "if (preset >= p) preset = 0;"), ported from EightFace.test.json.hpp's equivalent test.
+	Test::ModuleScaffold<EightFaceMk2Module<8>> mods{createEightFaceMk2Module};
+	EightFaceMk2Module<8>* m = mods.create("EightFaceMk2");
+
+	SECTION("preset within the new count is untouched -- presetSetCount only guards >=") {
+		m->preset = 2;
+		m->presetSetCount(5);
+		REQUIRE(m->preset == 2);
+		REQUIRE(m->presetCount == 5);
+	}
+
+	SECTION("preset outside (or equal to) the new count resets to 0") {
+		m->preset = 5;
+		m->presetSetCount(3);
+		REQUIRE(m->preset == 0);
+		REQUIRE(m->presetCount == 3);
+	}
+
+	SECTION("presetPrev and presetNext are cleared") {
+		m->presetPrev = 2;
+		m->presetNext = 4;
+		m->presetSetCount(6);
+		REQUIRE(m->presetPrev == -1);
+		REQUIRE(m->presetNext == -1);
+	}
+}

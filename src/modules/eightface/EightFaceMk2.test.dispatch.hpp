@@ -564,6 +564,44 @@ TEST_CASE("Auto mode saves the outgoing slot's live state before applying the in
 	REQUIRE(json_string_value(colorJ) == std::string("#202020"));
 }
 
+TEST_CASE("Auto mode leaves an empty outgoing slot empty", "[EightFaceMk2][auto]") {
+	// applyPreset()'s save-before-advance is itself gated on "slotPrev && *slotPrev->presetSlotUsed"
+	// (EightFaceMk2.cpp:595) -- advancing away from a slot that was never populated must not leave
+	// behind a save. Distinct from the test above (W3), which only exercises the populated case.
+	DispatchFixture f(createEightFaceMk2Module);
+	f.m->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+	f.m->params[EightFaceMk2Module<8>::PARAM_RW].setValue((float)CTRLMODE::AUTO);
+
+	// Slot 0 is left empty on purpose -- the outgoing slot this test advances away from.
+	f.m->process(Test::makeProcessArgs(0));
+	REQUIRE(*(f.m->faceSlot(0)->presetSlotUsed) == false);
+
+	// Slot 1: the incoming preset.
+	EightFaceMk2Slot* slot1 = f.m->faceSlot(1);
+	NVGcolor prevColor = f.boundM->boxColor;
+	f.boundM->boxColor = color::fromHexString("#303030");
+	json_t* vJ = f.boundM->toJson();
+	f.boundM->boxColor = prevColor;
+	slot1->preset->push_back(vJ);
+	*(slot1->presetSlotUsed) = true;
+
+	// preset must already be sitting on 0 (with 0 never populated) before advancing to 1 --
+	// presetLoad(0, ..., force=true) with an empty slot 0 sets preset = 0 then returns early
+	// (EightFaceMk2.cpp:617: "if (!*(slot->presetSlotUsed)) return;"), exactly the state a real
+	// empty-slot advance leaves behind.
+	f.m->presetLoad(0, false, true);
+	REQUIRE(f.m->preset == 0);
+
+	f.m->presetLoad(1);
+	f.h.uiFrame();
+
+	// The incoming preset (slot 1) applied.
+	REQUIRE(f.appliedLabel() == "#303030");
+	// The outgoing slot (0) is still empty -- no save was made into it.
+	REQUIRE(*(f.m->faceSlot(0)->presetSlotUsed) == false);
+	REQUIRE(f.m->faceSlot(0)->preset->empty());
+}
+
 
 // ---- Threading regressions -----------------------------------------------------------------
 
@@ -664,6 +702,69 @@ TEST_CASE("Closing then reopening the editor retires and restarts the dispatch w
 	REQUIRE(f.m->dispatch.guiTasks.workerState.load() == WorkerState::Running);
 
 	f.h.setUiMode(Test::UiMode::UiPresent);
+}
+
+TEST_CASE("A load queued before a CTRLMODE switch still applies after switching modes", "[EightFaceMk2][dispatch]") {
+	// A mode-transition-specific case for "no preset load is lost," distinct from the
+	// back-to-back-calls test above: here the engine-thread presetLoad() call and the mode switch
+	// are separated by the switch itself, not by another presetLoad(). process()'s dispatch/drain
+	// path (guiTaskDivider -> dispatch.process(), and the widget's step() -> dispatch.step()) runs
+	// unconditionally every call regardless of CTRLMODE (EightFaceMk2.cpp:247-249), so a load
+	// already enqueued under Read must still drain and apply even once PARAM_RW has since moved to
+	// Write -- the Read/Auto/Write branch only gates the CV/button *input* handling, never the
+	// dispatch/apply machinery itself.
+	DispatchFixture f(createEightFaceMk2Module);
+	f.m->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+	f.m->params[EightFaceMk2Module<8>::PARAM_RW].setValue((float)CTRLMODE::READ);
+	f.savePreset("#c10000");
+
+	f.m->process(Test::makeProcessArgs(0));
+	f.m->presetLoad(0, false, true);
+	REQUIRE(f.m->dispatch.pendingGuiTasks() == 1);
+
+	// Switch to Write before the queued load has been drained -- process() must still carry the
+	// already-queued task through, since dispatch.process()/guiTasks.step() do not gate on ctrlMode.
+	f.m->params[EightFaceMk2Module<8>::PARAM_RW].setValue((float)CTRLMODE::WRITE);
+	f.m->process(Test::makeProcessArgs(0));
+
+	f.h.uiFrame();
+	REQUIRE(f.appliedLabel() == "#c10000");
+	REQUIRE(f.m->dispatch.pendingGuiTasks() == 0);
+}
+
+TEST_CASE("Auto-mode does not touch an uninitialized widget pointer", "[EightFaceMk2][dispatch]") {
+	// mk1's counterpart to this test (EightFace.test.dispatch.hpp: "Auto-mode with the default
+	// GUI_WITH_LOCK safe mode does not dereference an uninitialized widget pointer") is a direct,
+	// explicitly-named regression test for the pre-migration workerModuleWidget defect (never
+	// initialized in mk1's constructor, dereferenced on auto-mode's very first preset change,
+	// §2.2). mk2 never had that specific defect -- applyPreset() always resolves its target fresh
+	// via BoundModule::getModuleWidget() (APP->scene->rack->getModule(moduleId)) rather than
+	// through any cached/stale widget pointer, so there is nothing analogous to leave
+	// uninitialized. This test exists to name that guarantee explicitly (rather than leaving it
+	// covered only implicitly, by the general auto-mode tests above never having crashed) and to
+	// catch a regression if a future change reintroduces a cached widget pointer into the mk2
+	// auto-mode path.
+	DispatchFixture f(createEightFaceMk2Module);
+	REQUIRE(f.m->dispatch.guiSafeMode == GUISAFEMODE::GUI_WITH_LOCK);
+	f.m->params[EightFaceMk2Module<8>::PARAM_RW].setValue((float)CTRLMODE::AUTO);
+
+	f.savePreset("#c20000");
+	EightFaceMk2Slot* slot1 = f.m->faceSlot(1);
+	NVGcolor prevColor = f.boundM->boxColor;
+	f.boundM->boxColor = color::fromHexString("#c30000");
+	json_t* vJ = f.boundM->toJson();
+	f.boundM->boxColor = prevColor;
+	slot1->preset->push_back(vJ);
+	*(slot1->presetSlotUsed) = true;
+
+	f.m->process(Test::makeProcessArgs(0));
+	f.m->presetLoad(0, false, true);
+	f.h.uiFrame();
+	REQUIRE(f.appliedLabel() == "#c20000");
+
+	f.m->presetLoad(1);
+	f.h.uiFrame();
+	REQUIRE(f.appliedLabel() == "#c30000");
 }
 
 TEST_CASE("Destroying a module with a real worker task in flight neither leaks nor crashes", "[EightFaceMk2][dispatch]") {

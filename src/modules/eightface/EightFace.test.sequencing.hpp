@@ -196,9 +196,8 @@ TEST_CASE("TRIG_SHUFFLE visits every slot once per permutation", "[EightFace][se
 }
 
 TEST_CASE("VOLT maps 0-10V across presetCount, including exactly 10V", "[EightFace][sequencing]") {
-	// Regression for #377 (crash above 10V). mk1 does NOT clamp its input
-	// (EightFace.cpp:244's rescale has no clamp, unlike mk2's equivalent) -- this is expected to
-	// misbehave above 10V and is a real bug, not a test to soften.
+	// Regression for #377 (crash above 10V). EightFace.cpp now clamps the input to [0, 10-1e-6]
+	// before rescaling, matching mk2's equivalent (fixed here to bring mk1 to parity).
 	SequencingFixture f;
 	f.m->slotCvMode = SLOTCVMODE::VOLT;
 	f.m->presetCount = 8;
@@ -210,17 +209,14 @@ TEST_CASE("VOLT maps 0-10V across presetCount, including exactly 10V", "[EightFa
 	f.setSlotVoltage(5.f);
 	REQUIRE(f.m->preset == 4);
 
-	// Exactly 10V must not crash and must land on a valid slot -- rescale(10,0,10,0,8) == 8,
-	// floor(8) == 8, which is out of range for an 8-slot module (presetLoad's own bound check,
-	// EightFace.cpp:431, then silently no-ops rather than crashing).
-	int before = f.m->preset;
+	// Exactly 10V must not crash and must land on the last slot (clamped just under 10, then
+	// floor'd), not presetCount itself.
 	REQUIRE_NOTHROW(f.setSlotVoltage(10.f));
-	// Either it stayed on the last valid preset (out-of-range load rejected) or landed in range;
-	// what must NOT happen is an out-of-bounds write, which REQUIRE_NOTHROW above already covers
-	// for the arithmetic path. Assert the observable state is still sane either way.
-	REQUIRE(f.m->preset >= 0);
-	REQUIRE(f.m->preset < 8);
-	(void)before;
+	REQUIRE(f.m->preset == 7);
+
+	// Above 10V (a misbehaving CV source) must be equally safe.
+	REQUIRE_NOTHROW(f.setSlotVoltage(15.f));
+	REQUIRE(f.m->preset == 7);
 }
 
 TEST_CASE("C4 follows V/Oct; channel 2 retriggers the current slot", "[EightFace][sequencing]") {
@@ -317,11 +313,6 @@ TEST_CASE("A trigger within 1ms after RESET is ignored", "[EightFace][sequencing
 }
 
 TEST_CASE("RESET behavior per SLOTCVMODE", "[EightFace][sequencing]") {
-	// mk1 handles only FWD/REV/PINGPONG/ALT/SHUFFLE
-	// (EightFace.cpp:213-234) explicitly. mk1's manual promises "Resets to first slot" for the
-	// three random modes too -- the SECTIONs below assert the manual's claim, and the random-mode
-	// ones are EXPECTED TO FAIL until mk1 gains the same reset handling mk2 has. Treat as a real
-	// bug (per the plan), not a test to weaken.
 	SequencingFixture f;
 	f.m->presetCount = 4;
 
@@ -367,7 +358,7 @@ TEST_CASE("RESET behavior per SLOTCVMODE", "[EightFace][sequencing]") {
 		REQUIRE(f.m->slotCvModeShuffle.empty());
 	}
 
-	SECTION("TRIG_RANDOM resets to slot 0 -- EXPECTED TO FAIL: mk1 has no reset case for it") {
+	SECTION("TRIG_RANDOM resets to slot 0") {
 		f.m->slotCvMode = SLOTCVMODE::TRIG_RANDOM;
 		f.m->preset = 3;
 		for (int i = 0; i < 100; i++) f.h.dspStep();
@@ -375,7 +366,7 @@ TEST_CASE("RESET behavior per SLOTCVMODE", "[EightFace][sequencing]") {
 		REQUIRE(f.m->preset == 0);
 	}
 
-	SECTION("TRIG_RANDOM_WO_REPEAT resets to slot 0 -- EXPECTED TO FAIL: mk1 has no reset case for it") {
+	SECTION("TRIG_RANDOM_WO_REPEAT resets to slot 0") {
 		f.m->slotCvMode = SLOTCVMODE::TRIG_RANDOM_WO_REPEAT;
 		f.m->preset = 3;
 		for (int i = 0; i < 100; i++) f.h.dspStep();
@@ -383,7 +374,7 @@ TEST_CASE("RESET behavior per SLOTCVMODE", "[EightFace][sequencing]") {
 		REQUIRE(f.m->preset == 0);
 	}
 
-	SECTION("TRIG_RANDOM_WALK resets to slot 0 -- EXPECTED TO FAIL: mk1 has no reset case for it") {
+	SECTION("TRIG_RANDOM_WALK resets to slot 0") {
 		f.m->slotCvMode = SLOTCVMODE::TRIG_RANDOM_WALK;
 		f.m->preset = 3;
 		for (int i = 0; i < 100; i++) f.h.dspStep();

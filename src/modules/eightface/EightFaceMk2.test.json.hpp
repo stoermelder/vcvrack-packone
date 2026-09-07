@@ -191,6 +191,42 @@ TEST_CASE("boundModules round-trips id/slugs/name, and needsGuiThread is recompu
 	REQUIRE(b1->needsGuiThread == true);
 }
 
+TEST_CASE("A boundModules entry missing pluginSlug/modelSlug/moduleName does not crash", "[EightFaceMk2][JSON]") {
+	// FIXED (review #17). json_string_value() returns NULL for a missing/non-string key, and
+	// dataFromJson() used to hand that straight to std::string's constructor -- UB, not merely a
+	// wrong value. Hand-built JSON here (not a round-trip) since dataToJson() always writes all
+	// three keys; a hand-edited or corrupted patch is the only way this shape reaches dataFromJson.
+	Test::ModuleScaffold<EightFaceMk2Module<8>> mods{createEightFaceMk2Module};
+	EightFaceMk2Module<8>* m = mods.create("EightFaceMk2");
+
+	json_t* rootJ = json_object();
+	json_t* boundModulesJ = json_array();
+
+	json_t* missingAllJ = json_object();
+	json_object_set_new(missingAllJ, "moduleId", json_integer(111));
+	json_array_append_new(boundModulesJ, missingAllJ);
+
+	json_t* wrongTypeJ = json_object();
+	json_object_set_new(wrongTypeJ, "moduleId", json_integer(222));
+	json_object_set_new(wrongTypeJ, "pluginSlug", json_integer(42));
+	json_object_set_new(wrongTypeJ, "modelSlug", json_null());
+	json_array_append_new(boundModulesJ, wrongTypeJ);
+
+	json_object_set_new(rootJ, "boundModules", boundModulesJ);
+
+	m->dataFromJson(rootJ);
+	json_decref(rootJ);
+
+	// No crash reaching here is the primary assertion. Both entries fall back to an empty string
+	// rather than propagating NULL.
+	REQUIRE(m->boundModules.size() == 2);
+	REQUIRE(m->boundModules[0]->pluginSlug == "");
+	REQUIRE(m->boundModules[0]->modelSlug == "");
+	REQUIRE(m->boundModules[0]->moduleName == "");
+	REQUIRE(m->boundModules[1]->pluginSlug == "");
+	REQUIRE(m->boundModules[1]->modelSlug == "");
+}
+
 TEST_CASE("ctrlUniqueId: absent in JSON becomes -2, then is rewritten to this module's id on load", "[EightFaceMk2][JSON]") {
 	// EightFaceMk2Base::dataFromJson (EightFaceMk2Base.hpp:90-91) reads ctrlUniqueId or defaults to
 	// -2 when the key is missing -- the legacy-patch case, predating ctrlUniqueId's introduction.

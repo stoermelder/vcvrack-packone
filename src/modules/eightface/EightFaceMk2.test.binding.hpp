@@ -246,33 +246,187 @@ TEST_CASE("Copy then paste duplicates a slot with a deep copy, not an aliased po
 	Test::unregisterModule(boundM, boundMw);
 }
 
-TEST_CASE("Paste with nothing copied (presetCopy == -1) is a safe no-op", "[EightFaceMk2][binding][.known-crash]") {
-	// KNOWN CRASHING -- confirmed live, not yet fixed (review #7).
-	// Tagged [.known-crash] (leading dot) rather than [!shouldfail]: this reproduces a genuine
-	// SIGSEGV (confirmed under ASan), not a REQUIRE failure, and a crash aborts the whole test
-	// binary -- it cannot be left in the default [EightFaceMk2] run without taking every other
-	// test down with it. The leading dot hides it from a plain `testrun`/`testrun-one` pass; run it
-	// deliberately with `--exclude-tag ""`-style explicit selection (or by name) once the fix
-	// lands, then drop the tag so it rejoins the default run as a normal regression test.
-	//
-	// presetCopyPaste(-1, i) calls expSlot(-1). expSlot()'s only guard is "index >= presetTotal"
-	// (EightFaceMk2.cpp:231), which a negative index passes; integer division/modulo then compute
-	// n=0, index%NUM_PRESETS=-1, landing on faceSlot(-1) -> &BASE::slot[-1] -- an out-of-bounds
-	// read on the fixed-size slot[] array. presetCopy defaults to -1 (EightFaceMk2.cpp:74) and
-	// PASTE_PREVIEW/COPY never advance it past -1 unless a slot with content was actually copied,
-	// so a paste with nothing copied is directly reachable from the slot's own context menu
-	// (EightFaceMk2Base.hpp's PasteItem, disabled only via a `step()` check, not prevented at the
-	// call site).
+TEST_CASE("Paste with nothing copied (presetCopy == -1) is a safe no-op", "[EightFaceMk2][binding]") {
+	// FIXED (review #7). presetCopyPaste(-1, i) used to call expSlot(-1) unguarded, reading
+	// &BASE::slot[-1] out of bounds. Fixed by rejecting source < 0 up front.
 	Test::ModuleScaffold<EightFaceMk2Module<8>> mods{createEightFaceMk2Module};
 	EightFaceMk2Module<8>* m = mods.create("EightFaceMk2");
 	m->process(Test::makeProcessArgs(0));
 
 	REQUIRE(m->presetCopy == -1);
-	// This line crashes today (SIGSEGV in presetCopyPaste(-1, 2) via expSlot(-1)). No crash
-	// reaching the assertions below is the fix's proof.
 	m->faceSlotCmd(SLOT_CMD::PASTE, 2);
 
 	// Nothing was pasted -- slot 2 stays exactly as a fresh module leaves it.
 	REQUIRE(m->presetSlotUsed[2] == false);
 	REQUIRE(m->EightFaceMk2Base<8>::preset[2].empty());
+}
+
+// Fixture for SHIFT_BACK/SHIFT_FRONT: one bound module, plus a helper to snapshot a slot with a
+// distinctive label so a shift's source/destination is identifiable by more than just
+// presetSlotUsed. Labels are asserted alongside preset content because presetShiftBack/Front move
+// *expSlotLabel(...) by hand (EightFaceMk2.cpp:714/728), a separate line from presetCopyPaste()'s
+// own json copy -- a label left behind would be silently wrong without a mismatch anywhere else.
+struct ShiftFixture {
+	Test::ModuleScaffold<EightFaceMk2Module<8>> mods{createEightFaceMk2Module};
+	EightFaceMk2Module<8>* m;
+	EightFaceMk2Module<8>* boundM;
+	EightFaceMk2Widget<8>* boundMw;
+
+	ShiftFixture() {
+		m = mods.create("EightFaceMk2");
+		boundM = mods.create("EightFaceMk2");
+		boundMw = Test::createWidget<EightFaceMk2Widget<8>>(boundM);
+		Test::registerModule(boundM, boundMw);
+		m->bindModule(boundM);
+		m->process(Test::makeProcessArgs(0));
+	}
+
+	~ShiftFixture() {
+		Test::unregisterModule(boundM, boundMw);
+	}
+
+	// presetSave() always captures every bound module's current toJson() -- boxColor is a real
+	// field EightFaceMk2Module's own dataToJson()/dataFromJson() round-trips, so a distinct color
+	// per save makes each slot's captured payload itself distinguishable, on top of the label.
+	void save(int slot, const std::string& label, const std::string& colorHex) {
+		NVGcolor prevColor = boundM->boxColor;
+		boundM->boxColor = color::fromHexString(colorHex);
+		m->presetSave(slot);
+		boundM->boxColor = prevColor;
+		m->textLabel[slot] = label;
+	}
+
+	std::string colorOf(int slot) {
+		REQUIRE(m->EightFaceMk2Base<8>::preset[slot].size() == 1);
+		// presetSave() stores mw->toJson()'s output, which wraps Module::dataToJson() under a
+		// "data" key (Rack/src/engine/Module.cpp's Module::toJson()) -- boxColor lives there, not
+		// at the top level.
+		json_t* dataJ = json_object_get(m->EightFaceMk2Base<8>::preset[slot][0], "data");
+		json_t* colorJ = dataJ ? json_object_get(dataJ, "boxColor") : nullptr;
+		return colorJ ? json_string_value(colorJ) : "";
+	}
+};
+
+TEST_CASE("SHIFT_BACK moves slots down from the initiating slot; the last slot is dropped", "[EightFaceMk2][binding]") {
+	// Manual: "Shift back... Moves all snapshots one slot backward, beginning from the initiating
+	// slot. If the last slot is used it gets deleted, also the number of currently active slots is
+	// unaffected." presetShiftBack(p) (EightFaceMk2.cpp:709-721) walks from presetTotal-2 down to p,
+	// copying each slot i's content to i+1, so the highest slot (presetTotal-1) is overwritten
+	// first and its original content is what's actually dropped; p itself is cleared last, once
+	// nothing else reads it.
+	ShiftFixture f;
+	f.save(1, "B", "#0000b0");
+	f.save(2, "C", "#00c000");
+	// Slot 7 (presetTotal-1) holds content that SHIFT_BACK from slot 1 must drop.
+	f.save(7, "Z", "#f0f0f0");
+	REQUIRE(f.m->presetCount == 8);
+
+	f.m->faceSlotCmd(SLOT_CMD::SHIFT_BACK, 1);
+
+	// Slot 0 is below p -- untouched (never populated here, stays empty).
+	REQUIRE(f.m->presetSlotUsed[0] == false);
+	// The initiating slot is cleared once everything has shifted away from it.
+	REQUIRE(f.m->presetSlotUsed[1] == false);
+	REQUIRE(f.m->textLabel[1] == "");
+	// Old slot 1's content ("B") is now in slot 2.
+	REQUIRE(f.m->presetSlotUsed[2] == true);
+	REQUIRE(f.m->textLabel[2] == "B");
+	REQUIRE(f.colorOf(2) == "#0000b0");
+	// Old slot 2's content ("C") is now in slot 3.
+	REQUIRE(f.m->presetSlotUsed[3] == true);
+	REQUIRE(f.m->textLabel[3] == "C");
+	REQUIRE(f.colorOf(3) == "#00c000");
+	// Slots 4-6 were empty and stay empty.
+	for (int i = 4; i <= 6; i++) REQUIRE(f.m->presetSlotUsed[i] == false);
+	// Slot 7's original content ("Z") is gone -- overwritten by slot 6 (empty) shifting into it,
+	// per the manual's "last slot... gets deleted".
+	REQUIRE(f.m->presetSlotUsed[7] == false);
+	REQUIRE(f.m->textLabel[7] == "");
+	// "the number of currently active slots is unaffected"
+	REQUIRE(f.m->presetCount == 8);
+}
+
+TEST_CASE("SHIFT_FRONT moves slots up; the first slot is dropped", "[EightFaceMk2][binding]") {
+	// Manual: "Shift front... Moves all snapshots one slot forward, beginning from the initiating
+	// slot. If the first slot is used it gets deleted." presetShiftFront(p) (EightFaceMk2.cpp:
+	// 723-735) walks from 1 up to p, copying each slot i's content to i-1 -- so slot 0's original
+	// content is overwritten first (and is what's dropped); p itself is cleared last.
+	ShiftFixture f;
+	// Slot 0 holds content that SHIFT_FRONT ending at slot 2 must drop.
+	f.save(0, "A", "#a00000");
+	f.save(1, "B", "#0000b0");
+	f.save(2, "C", "#00c000");
+
+	f.m->faceSlotCmd(SLOT_CMD::SHIFT_FRONT, 2);
+
+	// Old slot 1's content ("B") is now in slot 0, overwriting "A".
+	REQUIRE(f.m->presetSlotUsed[0] == true);
+	REQUIRE(f.m->textLabel[0] == "B");
+	REQUIRE(f.colorOf(0) == "#0000b0");
+	// Old slot 2's content ("C") is now in slot 1.
+	REQUIRE(f.m->presetSlotUsed[1] == true);
+	REQUIRE(f.m->textLabel[1] == "C");
+	REQUIRE(f.colorOf(1) == "#00c000");
+	// The initiating slot is cleared once everything has shifted away from it.
+	REQUIRE(f.m->presetSlotUsed[2] == false);
+	REQUIRE(f.m->textLabel[2] == "");
+	// Slot 0's original content ("A") is gone.
+	for (int i = 3; i < 8; i++) REQUIRE(f.m->presetSlotUsed[i] == false);
+}
+
+TEST_CASE("SHIFT_BACK/SHIFT_FRONT at the edge (p == 0 / p == presetTotal-1) touch only one slot", "[EightFaceMk2][binding]") {
+	// The loop bounds (i from presetTotal-2 down to p for BACK; i from 1 up to p for FRONT) admit
+	// an empty range at the extremes -- SHIFT_BACK from the last slot and SHIFT_FRONT from the
+	// first slot degenerate to "clear just this slot", which must not crash and must not disturb
+	// any other slot.
+	ShiftFixture f;
+	f.save(0, "A", "#a00000");
+	f.save(7, "Z", "#f0f0f0");
+
+	SECTION("SHIFT_BACK from the last slot only clears it") {
+		f.m->faceSlotCmd(SLOT_CMD::SHIFT_BACK, 7);
+		REQUIRE(f.m->presetSlotUsed[7] == false);
+		REQUIRE(f.m->presetSlotUsed[0] == true);
+		REQUIRE(f.m->textLabel[0] == "A");
+	}
+
+	SECTION("SHIFT_FRONT from the first slot only clears it") {
+		f.m->faceSlotCmd(SLOT_CMD::SHIFT_FRONT, 0);
+		REQUIRE(f.m->presetSlotUsed[0] == false);
+		REQUIRE(f.m->presetSlotUsed[7] == true);
+		REQUIRE(f.m->textLabel[7] == "Z");
+	}
+}
+
+TEST_CASE("bindModule() returns a warning string above the ~400 kB threshold", "[EightFaceMk2][binding]") {
+	// EightFaceMk2.cpp:505: "if (size > 400000)". bindModule()'s own toJson()/json_dumps() measures
+	// the bound module's *own* serialized size at bind time, not any particular preset slot -- so
+	// inflating the bound module's own textLabel[] (part of EightFaceMk2Base::dataToJson(), which
+	// ModuleWidget::toJson() includes) is enough to cross the threshold without a dedicated mock
+	// module.
+	//
+	// FIXED (review): EightFaceMk2.cpp:506 used to pass b->moduleName (a std::string, by value) as
+	// the vararg matched against string::f's "%s" -- UB, since string::f(const char*, ...) is a
+	// real C varargs function and a non-POD class cannot be passed through "...". Fixed by passing
+	// .c_str(). Note the old code happened to still assert correctly here too (this exact UB
+	// silently "worked" on this ABI/opt level) -- the fix is required by the standard regardless of
+	// whether this test can observe the old behavior breaking.
+	Test::ModuleScaffold<EightFaceMk2Module<8>> mods{createEightFaceMk2Module};
+	EightFaceMk2Module<8>* m = mods.create("EightFaceMk2");
+	EightFaceMk2Module<8>* boundM = mods.create("EightFaceMk2");
+	EightFaceMk2Widget<8>* boundMw = Test::createWidget<EightFaceMk2Widget<8>>(boundM);
+	Test::registerModule(boundM, boundMw);
+
+	// Comfortably over 400,000 bytes of dumped JSON on its own -- one label already pushes the
+	// whole dump (8 slots x label + surrounding JSON structure) past the threshold.
+	boundM->textLabel[0] = std::string(500000, 'x');
+
+	std::string warn = m->bindModule(boundM);
+	std::string moduleName = m->boundModules[0]->moduleName;
+	// Not re-computing the exact kb figure (that would just re-run json_dumps()) -- assert the
+	// message names the bound module correctly and is otherwise well-formed text, not garbage.
+	REQUIRE(warn.find("The preset size of " + moduleName + " is about ") == 0);
+	REQUIRE(warn.find("kb, which might cause performance issues.") != std::string::npos);
+
+	Test::unregisterModule(boundM, boundMw);
 }

@@ -160,6 +160,58 @@ TEST_CASE("GUI vs GUI_WITH_LOCK apply through different objects", "[EightFace][d
 	Test::unregisterModule(boundM, boundMw);
 }
 
+TEST_CASE("A bound module deleted from the rack is skipped, not dereferenced", "[EightFace][dispatch]") {
+	// applyPreset() (EightFace.cpp:441-451) resolves the bound widget fresh via
+	// APP->scene->rack->getModule(moduleId) every dispatch, so a bound module removed from the rack
+	// without 8Face being told leaves that lookup returning NULL -- "if (!mw) return;" must skip it,
+	// not dereference it. Simulated by unregistering the widget while leaving the module (and its
+	// id) alive, exactly what "deleted from the rack, 8Face never notified" looks like from 8Face's
+	// side. Built by hand rather than via DispatchFixture: the fixture's destructor unconditionally
+	// unregisters its bound widget, which would double-unregister the one this test intentionally
+	// removes early -- Test::unregisterModule() is not idempotent (mirrors
+	// EightFaceMk2.test.binding.hpp's equivalent test).
+	Test::Harness h{Test::UiMode::UiPresent};
+	EightFaceModule<8>* m = h.addModule<EightFaceModule<8>>(createEightFaceModule);
+	h.addWidget<EightFaceWidget>(m);
+	m->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+
+	EightFaceModule<8>* boundM = h.addModule<EightFaceModule<8>>(createEightFaceModule);
+	EightFaceWidget* boundMw = Test::createWidget<EightFaceWidget>(boundM);
+	connectForTest(m, boundM, boundMw);
+
+	int themeBefore = boundM->panelTheme;
+	saveForTest(m, 0, boundM, boundMw, themeBefore + 1);
+	saveForTest(m, 1, boundM, boundMw, themeBefore + 2);
+	REQUIRE(m->presetSlotUsed[0] == true);
+	REQUIRE(m->presetSlotUsed[1] == true);
+
+	SECTION("Read mode") {
+		m->ctrlMode = CTRLMODE::READ;
+	}
+	SECTION("Auto mode -- also exercises the save-before-advance branch that reads mw->toJson()") {
+		// Auto-mode's save-before-advance (EightFace.cpp:446-449) reads mw->toJson() for the
+		// OUTGOING slot before the null-check on the (separate) incoming mw -- both paths resolve
+		// through the same now-missing widget, so this section is the one that would actually
+		// dereference a null pointer if applyPreset()'s guard were ever removed.
+		m->ctrlMode = CTRLMODE::AUTO;
+		m->preset = 0;
+		m->presetPrev = -1;
+	}
+
+	// The bound widget is gone: APP->scene->rack->getModule(boundM->id) now resolves to NULL.
+	// Unregistered here, once, for the rest of the test -- boundM stays alive (owned by the
+	// harness) so its id still matches, but the rack no longer has a widget for it.
+	Test::unregisterModule(boundM, boundMw);
+
+	m->presetLoad(boundM, 1, false, true);
+	h.uiFrame();
+	// No crash reaching here is the primary assertion. dispatch.pendingGuiTasks() == 0 confirms the
+	// task actually ran (and returned) rather than the test merely not having reached the drain.
+	REQUIRE(m->dispatch.pendingGuiTasks() == 0);
+	// Nothing was applied -- still its pre-existing panelTheme, not either saved marker.
+	REQUIRE(appliedTheme(boundM) == themeBefore);
+}
+
 TEST_CASE("No window: presets still load in every mode", "[EightFace][dispatch]") {
 	SECTION("Safe mode") {
 		DispatchFixture f(createEightFaceModule);
@@ -255,6 +307,37 @@ TEST_CASE("Auto mode saves the outgoing slot's live state before applying the in
 	json_t* themeJ = json_object_get(json_object_get(savedJ, "data"), "panelTheme");
 	REQUIRE(themeJ != nullptr);
 	REQUIRE((int)json_integer_value(themeJ) == 20);
+}
+
+TEST_CASE("Auto mode leaves an empty outgoing slot empty", "[EightFace][auto]") {
+	// applyPreset()'s save-before-advance is itself gated on "presetSlotUsed[pPrev]"
+	// (EightFace.cpp:422) -- advancing away from a slot that was never populated must not leave
+	// behind a save, i.e. presetSlotUsed[pPrev] must stay false and presetSlot[pPrev] untouched.
+	// Distinct from W3 (EightFace.test.dispatch.hpp:219), which only exercises the populated case.
+	DispatchFixture f(createEightFaceModule);
+	f.m->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+	f.m->ctrlMode = CTRLMODE::AUTO;
+
+	// Slot 0 is left empty on purpose -- the outgoing slot this test advances away from.
+	REQUIRE(f.m->presetSlotUsed[0] == false);
+	// Slot 1: the incoming preset.
+	f.savePreset(1, 30);
+
+	// preset must already be sitting on 0 (with 0 never populated) before advancing to 1, so
+	// pPrev == 0 is the empty slot under test -- presetLoad(..., 0, ..., force=true) with an empty
+	// slot 0 returns early (EightFace.cpp:438: "if (!presetSlotUsed[p]) return;") right after
+	// setting preset = 0, which is exactly the state a real empty-slot advance leaves behind.
+	f.m->presetLoad(f.boundM, 0, false, true);
+	REQUIRE(f.m->preset == 0);
+
+	f.m->presetLoad(f.boundM, 1);
+	f.h.uiFrame();
+
+	// The incoming preset (slot 1) applied.
+	REQUIRE(f.appliedLabel() == 30);
+	// The outgoing slot (0) is still empty -- no save was made into it.
+	REQUIRE(f.m->presetSlotUsed[0] == false);
+	REQUIRE(f.m->presetSlot[0] == nullptr);
 }
 
 
