@@ -956,9 +956,7 @@ TEST_CASE("Clear field is undoable", "[Ahab]") {
 //
 // AhabSimWidget's file dialogs (simLoad / simInjectFile / simSave /
 // simSaveSelection) and its clipboard / browser calls route through the
-// swappable StoermelderPackOne::vcv layer. These tests install recording mocks
-// and drive the widget's handlers directly, asserting the migrated calls go
-// through the layer instead of raw osdialog / glfw / fopen.
+// swappable StoermelderPackOne::vcv layer.
 //
 // The clipboard copy/cut/paste key handlers (Ctrl+C/X/V) are NOT exercised
 // here: they gate on glfwGetKeyName(), which returns NULL for every printable

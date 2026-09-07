@@ -407,7 +407,7 @@ struct AhabModule : Module {
 					m.setChannel(ch);
 					m.setNote(note);
 					m.setValue(0);
-					m.setFrame(APP->engine->getFrame());
+					m.setFrame(vcv::engine::getFrame());
 					midiOutPort.sendMessage(m);
 				}
 			}

@@ -1,6 +1,8 @@
 #include "../../plugin.hpp"
+#include "../../vcv/ui.hpp"
 #include "../../utils/digital.hpp"
 #include "../../utils/TaskWorker.hpp"
+#include "../../utils/MpmcTaskWorker.hpp"
 #include "../../components/MenuColorLabel.hpp"
 #include "../../components/MenuColorField.hpp"
 #include "../../components/MenuColorPicker.hpp"
@@ -8,12 +10,14 @@
 #include "../../ui/ViewportHelper.hpp"
 #include "EightFace.hpp"
 #include "EightFaceMk2Base.hpp"
+#include "PresetDispatch.hpp"
 #include "../../utils/string.hpp"
 #include <random>
-#include <osdialog.h>
+#include <atomic>
 
 namespace StoermelderPackOne {
-namespace EightFaceMk2 {
+namespace EightFace {
+namespace mk2 {
 
 const int MAX_EXPANDERS = 15;
 
@@ -31,13 +35,6 @@ enum class SLOTCVMODE {
 	C4 = 1,
 	ARM = 3
 };
-
-enum class GUISAFEMODE {
-	WORKER,
-	GUI,
-	GUI_WITH_LOCK
-};
-
 
 template <int NUM_PRESETS>
 struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener {
@@ -76,6 +73,10 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 	int presetNext;
 	int presetCopy = -1;
 
+	// GUI-thread load request; process() performs it on the engine thread. A direct presetLoad()
+	// call would mutate state off the engine thread and enqueue from a second producer.
+	std::atomic<int> presetLoadRequestId{-1};
+
 	std::set<int64_t> expandersConnected;
 
 	/** [Stored to JSON] mode for SEQ CV input */
@@ -96,6 +97,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 
 	ClockDividerEx buttonDivider;
 	ClockDividerEx boundModulesDivider;
+	ClockDividerEx guiTaskDivider;
 	ClockDividerEx lightDivider;
 	dsp::Timer lightTimer;
 	bool lightBlink = false;
@@ -124,12 +126,16 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 	/** [Stored to JSON] Opacity of the module outline (0.0 - 1.0), default 0.5 (50%) */
 	float boxOpacity = 0.5f;
 
-	dsp::RingBuffer<std::tuple<ModuleWidget*, json_t*>, 32> workerGuiQueue;
-	TaskWorker taskWorker;
-	/** [Stored to JSON] */
-	GUISAFEMODE guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+	EightFace::PresetDispatch dispatch;
+	
+	// One worker per instance, not shared: preset application is exactly the long, blocking
+	// work that must not head-of-line-block another 8FACE mk2 (unlike Strip's short tasks).
+	static std::shared_ptr<ITaskWorker> defaultWorker() {
+		return std::make_shared<MpmcTaskWorker>("8FACEmk2 worker");
+	}
 
-	EightFaceMk2Module() {
+	EightFaceMk2Module() : EightFaceMk2Module(defaultWorker()) {}
+	explicit EightFaceMk2Module(std::shared_ptr<ITaskWorker> worker) : dispatch(std::move(worker)) {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
 		registerModuleListener("8FaceMk2", this);
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -155,6 +161,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 
 		buttonDivider.setDivision(128);
 		boundModulesDivider.setDivision(APP->engine->getSampleRate());
+		guiTaskDivider.setDivision(128);
 		lightDivider.setDivision(512);
 
 		Module::ResetEvent re;
@@ -197,7 +204,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		}
 		boundModules.clear();
 		inChange = false;
-		guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+		dispatch.guiSafeMode = EightFace::GUISAFEMODE::GUI_WITH_LOCK;
 
 		BASE::ctrlUniqueId = (int64_t)(rack::random::uniform() * (float)INT64_MAX);
 		preset = -1;
@@ -237,6 +244,10 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 	void process(const Module::ProcessArgs& args) override {
 		if (inChange) return;
 
+		if (guiTaskDivider.process()) {
+			dispatch.process();
+		}
+
 		CTRLMODE ctrlMode = (CTRLMODE)Module::params[PARAM_RW].getValue();
 
 		if (moduleChangedFlag || ctrlMode != BASE::ctrlMode) {
@@ -267,6 +278,11 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 			moduleChangedFlag = false;
 		}
 		int presetCount = std::min(this->presetCount, presetTotal);
+
+		// Picks up a GUI-thread load request; force = true so a deliberate Shift+click/menu Load
+		// re-applies even when p == preset.
+		int loadReq = presetLoadRequestId.exchange(-1, std::memory_order_acquire);
+		if (loadReq >= 0) presetLoad(loadReq, false, true);
 
 		// Read & Auto modes
 		if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
@@ -487,7 +503,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		char* moduleJson = json_dumps(vJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
 		size_t size = strlen(moduleJson);
 		if (size > 400000) {
-			ret = string::f("The preset size of %s is about %ikb, which might cause performance issues.", b->moduleName, size / 1024);
+			ret = string::f("The preset size of %s is about %ikb, which might cause performance issues.", b->moduleName.c_str(), size / 1024);
 		}
 		free(moduleJson);
 		json_decref(vJ);
@@ -525,13 +541,38 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		delete b;
 	}
 
-	void processWorker(int workerPreset) {
-		if (workerPreset < 0) return;
+	// Reports which halves Unsafe fast needs a task for, so presetLoad() never dispatches to a
+	// destination with nothing to do. Runs on the engine thread, before either task goes out —
+	// that ordering is what lets both tasks be leaves.
+	//
+	// Deliberately scans only boundModules, not the preset: needsGuiThread is fixed at bind
+	// time, so the answer does not depend on which preset is loading. That makes this O(bound
+	// modules) — a handful — rather than the O(preset x bound) nested match applyPreset() does,
+	// and it needs no cached count kept in sync across the five sites that mutate boundModules.
+	//
+	// The cost of ignoring the preset is over-reporting a half: a bound module absent from this
+	// particular preset still counts. That is harmless — the extra task simply matches no entry
+	// and does nothing — and it only misfires for a partial preset, whereas the common cases
+	// (no allowlisted module bound at all; every bound module in the preset) stay exact.
+	void presetParts(bool& hasGui, bool& hasWorker) {
+		hasGui = hasWorker = false;
+		for (BoundModule* b : boundModules) {
+			(b->needsGuiThread ? hasGui : hasWorker) = true;
+			if (hasGui && hasWorker) return;
+		}
+	}
 
-		EightFaceMk2Slot* slot = expSlot(workerPreset);
+	// Applies this pass's share of a preset via `loader`. Leaf -- must never enqueue further work.
+	// The part/no-window/fromJson-target rules live behind loader; this only matches preset
+	// entries to bound modules and does the auto-mode save. pPrev is presetPrev's value captured
+	// at dispatch() time -- the engine thread may have moved presetPrev on before this task runs.
+	void applyPreset(const EightFace::PresetDispatch::Loader& loader, int pPrev, int p) {
+		if (p < 0) return;
+
+		EightFaceMk2Slot* slot = expSlot(p);
 		EightFaceMk2Slot* slotPrev = NULL;
-		if (presetPrev >= 0) {
-			slotPrev = expSlot(presetPrev);
+		if (pPrev >= 0) {
+			slotPrev = expSlot(pPrev);
 		}
 
 		int i = 0;
@@ -544,44 +585,22 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 			for (BoundModule* b : boundModules) {
 				if (b->moduleId != moduleId) continue;
 				if (b->pluginSlug != plugin || b->modelSlug != model) break;
+				if (!loader.shouldLoad(b->needsGuiThread)) break;
 				ModuleWidget* mw = b->getModuleWidget();
 				if (!mw) continue;
 
+				// Safe to do from either half of a split preset concurrently: `i` indexes one
+				// preset entry, which resolves to one bound module, which belongs to exactly
+				// one part — so the two tasks write disjoint elements and never resize.
 				if (BASE::ctrlMode == CTRLMODE::AUTO && slotPrev && *slotPrev->presetSlotUsed) {
 					json_decref((*slotPrev->preset)[i]);
 					(*slotPrev->preset)[i] = mw->toJson();
 				}
-				// There is no stepping of the UI if the plugin window is closed,
-				// in this case we must use the worker thread
-				if (settings::isPlugin && !APP->window) {
-					mw->fromJson(vJ);
-				}
-				// Hand it off to the UI thread
-				else if (b->needsGuiThread || guiSafeMode != GUISAFEMODE::WORKER) {
-					workerGuiQueue.push(std::make_tuple(mw, vJ));
-				}
-				// Explicitly configured to use the worker thread
-				else {
-					mw->fromJson(vJ);
-				}
+
+				loader.load(b->needsGuiThread, mw, vJ);
 				break;
 			}
 			i++;
-		}
-	}
-
-	void processGui() {
-		while (!workerGuiQueue.empty()) {
-			auto t = workerGuiQueue.shift();
-			ModuleWidget* mw = std::get<0>(t);
-			json_t* vJ = std::get<1>(t);
-			if (guiSafeMode == GUISAFEMODE::GUI) {
-				// This is an unlocked operation, it is not perfectly thread-safe, as the Engine
-				// thread would lock on preset loading
-				mw->module->fromJson(vJ);
-			} else {
-				mw->fromJson(vJ);
-			}
 		}
 	}
 
@@ -589,20 +608,36 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		if (p < 0 || p >= presetCount)
 			return;
 
+		// presetCount can be stale above presetTotal right after an expander disconnects,
+		// so expSlot() can still return NULL here.
 		EightFaceMk2Slot* slot = expSlot(p);
+		if (!slot) return;
 		if (!isNext) {
 			if (p != preset || force) {
 				presetPrev = preset;
 				preset = p;
 				presetNext = -1;
 				if (!*(slot->presetSlotUsed)) return;
-				taskWorker.work([=]() { processWorker(p); });
+				// Resolved here, not read from presetPrev later, so a second presetLoad() can't
+				// clobber this task's target before it runs.
+				int pPrev = presetPrev;
+				bool hasGui, hasWorker;
+				presetParts(hasGui, hasWorker);
+				dispatch.dispatch(p, hasGui, hasWorker,
+					[this, pPrev](const EightFace::PresetDispatch::Loader& loader, int p) {
+						applyPreset(loader, pPrev, p);
+					});
 			}
 		}
 		else {
 			if (!*(slot->presetSlotUsed)) return;
 			presetNext = p;
 		}
+	}
+
+	// GUI thread. Records a load request; process() performs it on the engine thread.
+	void presetLoadRequest(int p) {
+		presetLoadRequestId.store(p, std::memory_order_release);
 	}
 
 	void presetSave(int p) {
@@ -654,6 +689,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 	}
 
 	void presetCopyPaste(int source, int target) {
+		// source == -1 means "nothing copied yet" -- expSlot() doesn't guard negative
+		// indices, so reject it here before calling expSlot().
+		if (source < 0) return;
 		EightFaceMk2Slot* sourceSlot = expSlot(source);
 		if (!*(sourceSlot->presetSlotUsed)) return;
 
@@ -718,7 +756,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 	int faceSlotCmd(SLOT_CMD cmd, int i) override {
 		switch (cmd) {
 			case SLOT_CMD::LOAD:
-				presetLoad(i); 
+				presetLoadRequest(i);
 				return -1;
 			case SLOT_CMD::CLEAR:
 				presetClear(i);
@@ -760,7 +798,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		json_object_set_new(rootJ, "boxColor", json_string(color::toHexString(boxColor).c_str()));
 		json_object_set_new(rootJ, "boxOpacity", json_real(boxOpacity));
 
-		json_object_set_new(rootJ, "guiSafeMode", json_integer((int)guiSafeMode));
+		json_object_set_new(rootJ, "guiSafeMode", json_integer((int)dispatch.guiSafeMode));
 
 		json_t* boundModulesJ = json_array();
 		for (BoundModule* b : boundModules) {
@@ -797,7 +835,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		if (boxOpacityJ) boxOpacity = json_real_value(boxOpacityJ);
 
 		json_t* guiSafeModeJ = json_object_get(rootJ, "guiSafeMode");
-		guiSafeMode = guiSafeModeJ ? (GUISAFEMODE)json_integer_value(guiSafeModeJ) : GUISAFEMODE::WORKER;
+		dispatch.guiSafeMode = guiSafeModeJ ? (EightFace::GUISAFEMODE)json_integer_value(guiSafeModeJ) : EightFace::GUISAFEMODE::WORKER;
 	
 		if (preset >= presetCount) {
 			preset = -1;
@@ -817,11 +855,11 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 				json_t* moduleIdJ = json_object_get(boundModuleJ, "moduleId");
 				int64_t moduleId = json_integer_value(moduleIdJ);
 				json_t* pluginSlugJ = json_object_get(boundModuleJ, "pluginSlug");
-				std::string pluginSlug = json_string_value(pluginSlugJ);
+				std::string pluginSlug = (pluginSlugJ && json_is_string(pluginSlugJ)) ? json_string_value(pluginSlugJ) : "";
 				json_t* modelSlugJ = json_object_get(boundModuleJ, "modelSlug");
-				std::string modelSlug = json_string_value(modelSlugJ);
+				std::string modelSlug = (modelSlugJ && json_is_string(modelSlugJ)) ? json_string_value(modelSlugJ) : "";
 				json_t* moduleNameJ = json_object_get(boundModuleJ, "moduleName");
-				std::string moduleName = json_string_value(moduleNameJ);
+				std::string moduleName = (moduleNameJ && json_is_string(moduleNameJ)) ? json_string_value(moduleNameJ) : "";
 
 				moduleId = BASE::idFix(moduleId);
 				BoundModule* b = new BoundModule;
@@ -1024,7 +1062,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			moduleSelectProcessor.step();
 			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(moduleSelectProcessor.isLearning());
 			if (boxDrawer) boxDrawer->bindingActive = moduleSelectProcessor.isLearning();
-			module->processGui();
+			module->dispatch.step();
 		}
 		BASE::step();
 	}
@@ -1094,27 +1132,35 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Stability & performance mode"));
 		menu->addChild(createBoolMenuItem("Safe", "",
-			[=]() { return module->guiSafeMode == GUISAFEMODE::GUI_WITH_LOCK; },
+			[=]() {
+				return module->dispatch.guiSafeMode == EightFace::GUISAFEMODE::GUI_WITH_LOCK;
+			},
 			[=](bool v) {
 				std::string msg = "Using \"Safe\" will load presets perfectly safe without risking any crashes, but may lead to performance issues (e.g. stuttering). Proceed?";
-				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
-					module->guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+				if (vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::YES_NO, msg))
+					module->dispatch.guiSafeMode = EightFace::GUISAFEMODE::GUI_WITH_LOCK;
 			}
 		));
 		menu->addChild(createBoolMenuItem("Unsafe", "",
-			[=]() { return module->guiSafeMode == GUISAFEMODE::GUI; },
+			[=]() {
+				return module->dispatch.guiSafeMode == EightFace::GUISAFEMODE::GUI;
+			},
 			[=](bool v) {
 				std::string msg = "Using \"Unsafe-mode\" will load presets quickly but may lead to crashing VCV Rack or other issues. Proceed?";
-				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
-					module->guiSafeMode = GUISAFEMODE::GUI;
+				if (vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::YES_NO, msg)) {
+					module->dispatch.guiSafeMode = EightFace::GUISAFEMODE::GUI;
+				}
 			}
 		));
 		menu->addChild(createBoolMenuItem("Unsafe fast", "",
-			[=]() { return module->guiSafeMode == GUISAFEMODE::WORKER; },
+			[=]() {
+				return module->dispatch.guiSafeMode == EightFace::GUISAFEMODE::WORKER;
+			},
 			[=](bool v) {
 				std::string msg = "Using \"Unsafe fast-mode\" will load presets most quickly but may lead to crashing VCV Rack or other issues. Proceed?";
-				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
-					module->guiSafeMode = GUISAFEMODE::WORKER;
+				if (vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::YES_NO, msg)) {
+					module->dispatch.guiSafeMode = EightFace::GUISAFEMODE::WORKER;
+				}
 			}
 		));
 
@@ -1185,7 +1231,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			moduleSelectProcessor.disableLearn();
 			std::string s = module->bindModuleExpander();
 			if (!s.empty()) {
-				osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, s.c_str());
+				vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, s);
 			}
 		}));
 		menu->addChild(createMenuItem("Bind module (select one)", "", [=]() {
@@ -1193,7 +1239,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			moduleSelectProcessor.startLearn([module](ModuleWidget* mw, Vec pos) {
 				std::string s = module->bindModule(mw->module);
 				if (!s.empty()) {
-					osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, s.c_str());
+					vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, s);
 				}
 			});
 		}));
@@ -1207,7 +1253,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 				}, ModuleSelectProcessor::LEARN_MODE::MULTI,
 				[this]() {
 					if (!moduleSelectProcessorStr.empty()) {
-						osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, moduleSelectProcessorStr.c_str());
+						vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, moduleSelectProcessorStr);
 					}
 				}
 			);
@@ -1219,7 +1265,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 				if (!_s.empty()) s += _s + "\n";
 			}
 			if (!s.empty()) {
-				osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, s.c_str());
+				vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, s);
 			}
 			APP->scene->rack->deselectAll();
 		}));
@@ -1261,7 +1307,8 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 	}
 };
 
-} // namespace EightFaceMk2
+} // namespace mk2
+} // namespace EightFace
 } // namespace StoermelderPackOne
 
-Model* modelEightFaceMk2 = createModel<StoermelderPackOne::EightFaceMk2::EightFaceMk2Module<8>, StoermelderPackOne::EightFaceMk2::EightFaceMk2Widget<8>>("EightFaceMk2");
+Model* modelEightFaceMk2 = createModel<StoermelderPackOne::EightFace::mk2::EightFaceMk2Module<8>, StoermelderPackOne::EightFace::mk2::EightFaceMk2Widget<8>>("EightFaceMk2");

@@ -87,6 +87,137 @@ TEST_CASE("DSP stepping") {
 }
 
 
+TEST_CASE("dspStep dispatches process/processBypass exactly as Module::doProcess does") {
+	// Without this branch, a bypassed module was still stepped through process() — more
+	// permissive than production, which is exactly the wrong direction for a test double.
+	struct BypassProbe : rack::Module {
+		int processCalls = 0;
+		int processBypassCalls = 0;
+		BypassProbe() { config(0, 0, 0, 0); }
+		void process(const ProcessArgs&) override { processCalls++; }
+		void processBypass(const ProcessArgs&) override { processBypassCalls++; }
+	};
+
+	Test::Harness h;
+	auto* probe = h.adoptModule(new BypassProbe);
+
+	SECTION("a non-bypassed module is stepped through process()") {
+		h.dspStep();
+		REQUIRE(probe->processCalls == 1);
+		REQUIRE(probe->processBypassCalls == 0);
+	}
+
+	SECTION("setBypassed routes through the engine and dspStep then calls processBypass") {
+		h.setBypassed(probe, true);
+		REQUIRE(probe->isBypassed());
+
+		h.dspStep();
+		REQUIRE(probe->processCalls == 0);
+		REQUIRE(probe->processBypassCalls == 1);
+	}
+
+	SECTION("un-bypassing resumes dispatch to process()") {
+		h.setBypassed(probe, true);
+		h.dspStep();
+		h.setBypassed(probe, false);
+		REQUIRE_FALSE(probe->isBypassed());
+
+		h.dspStep();
+		REQUIRE(probe->processCalls == 1);
+		REQUIRE(probe->processBypassCalls == 1);
+	}
+
+	SECTION("setBypassed is a no-op when already in the requested state") {
+		// Matches Engine::bypassModule() itself, which returns early rather than clearing
+		// outputs a second time.
+		h.setBypassed(probe, false);
+		REQUIRE_FALSE(probe->isBypassed());
+	}
+}
+
+
+TEST_CASE("vcv::engine::getFrame() tracks the harness's DSP clock") {
+	// APP->engine->getFrame() itself is frozen at 0 under a Harness (nothing drives
+	// Engine::stepBlock()), so a module reading it directly rather than through
+	// ProcessArgs::frame — SpliceKit and Ahab's MIDI timestamp code do this — would see a stale
+	// value at every step. The seam is what makes that consumer see a real, advancing number.
+	Test::Harness h;
+	REQUIRE(vcv::engine::getFrame() == 0);
+
+	h.dspStep();
+	REQUIRE(vcv::engine::getFrame() == 1);
+
+	h.dspSteps(99);
+	REQUIRE(vcv::engine::getFrame() == 100);
+	// The engine's own counter is untouched — the seam, not the engine, is what advanced.
+	REQUIRE(APP->engine->getFrame() == 0);
+}
+
+
+TEST_CASE("Port connection helpers make isConnected() agree with a set voltage") {
+	// Port::setVoltage() never touches channels, and Port::setChannels() itself refuses to leave
+	// channels==0 — so a bare setVoltage() on a fresh port is a silent no-op for anything gating
+	// on isConnected(). These helpers are the only way to get there.
+	struct PortProbe : rack::Module {
+		enum InputIds { IN, NUM_INPUTS };
+		enum OutputIds { OUT, NUM_OUTPUTS };
+		PortProbe() { config(0, NUM_INPUTS, NUM_OUTPUTS, 0); }
+	};
+
+	Test::Harness h;
+	auto* m = h.adoptModule(new PortProbe);
+
+	SECTION("a fresh input is disconnected") {
+		REQUIRE_FALSE(m->inputs[PortProbe::IN].isConnected());
+	}
+
+	SECTION("bare setVoltage on a fresh port is the documented trap: no-op for isConnected()") {
+		m->inputs[PortProbe::IN].setVoltage(5.f);
+		REQUIRE(m->inputs[PortProbe::IN].getVoltage() == Catch::Approx(5.f));
+		REQUIRE_FALSE(m->inputs[PortProbe::IN].isConnected());
+	}
+
+	SECTION("connectInput makes the port connected and carries the voltage") {
+		h.connectInput(m, PortProbe::IN, 5.f);
+		REQUIRE(m->inputs[PortProbe::IN].isConnected());
+		REQUIRE(m->inputs[PortProbe::IN].getVoltage() == Catch::Approx(5.f));
+		REQUIRE(m->inputs[PortProbe::IN].getNormalVoltage(0.f) == Catch::Approx(5.f));
+	}
+
+	SECTION("connectInputPoly sets channel count and per-channel voltage") {
+		h.connectInputPoly(m, PortProbe::IN, 4, 3.f);
+		REQUIRE(m->inputs[PortProbe::IN].getChannels() == 4);
+		REQUIRE(m->inputs[PortProbe::IN].isPolyphonic());
+		for (int c = 0; c < 4; c++) {
+			REQUIRE(m->inputs[PortProbe::IN].getVoltage(c) == Catch::Approx(3.f));
+		}
+	}
+
+	SECTION("connectOutput marks the output connected") {
+		REQUIRE_FALSE(m->outputs[PortProbe::OUT].isConnected());
+		h.connectOutput(m, PortProbe::OUT);
+		REQUIRE(m->outputs[PortProbe::OUT].isConnected());
+		REQUIRE(m->outputs[PortProbe::OUT].getChannels() == 1);
+	}
+
+	SECTION("disconnectPort undoes a connection, clearing voltages") {
+		h.connectInput(m, PortProbe::IN, 5.f);
+		REQUIRE(m->inputs[PortProbe::IN].isConnected());
+
+		h.disconnectPort(m->inputs[PortProbe::IN]);
+		REQUIRE_FALSE(m->inputs[PortProbe::IN].isConnected());
+		REQUIRE(m->inputs[PortProbe::IN].getVoltage() == Catch::Approx(0.f));
+	}
+
+	SECTION("setChannels alone cannot recover from disconnected -- the trap this exists for") {
+		// Documents why connectInput sets `channels` directly rather than calling setChannels():
+		// Port::setChannels() early-returns when channels==0, so this call is itself a no-op.
+		m->inputs[PortProbe::IN].setChannels(4);
+		REQUIRE_FALSE(m->inputs[PortProbe::IN].isConnected());
+	}
+}
+
+
 TEST_CASE("Expander message flipping matches the real engine") {
 	// Carried over from SimpleEngine: a
 	// module that forgets requestMessageFlip() must stay broken under the harness exactly as

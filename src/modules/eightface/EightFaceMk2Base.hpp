@@ -4,7 +4,8 @@
 #include "../../utils/StripIdFixModule.hpp"
 
 namespace StoermelderPackOne {
-namespace EightFaceMk2 {
+namespace EightFace {
+namespace mk2 {
 
 enum class SLOT_CMD {
 	LOAD,
@@ -258,5 +259,6 @@ struct EightFaceMk2LedButton : VCVButton {
 	}
 };
 
-} // namespace EightFaceMk2
+} // namespace mk2
+} // namespace EightFace
 } // namespace StoermelderPackOne

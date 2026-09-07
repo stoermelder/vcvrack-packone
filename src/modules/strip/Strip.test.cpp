@@ -8,6 +8,39 @@ SYNC_MODEL(modelStrip, "Strip");
 Test::TestContext<> testContext;
 
 
+// Test::createModule<StripModule>() would go through modelStrip's factory, i.e. the default
+// constructor, which reaches StripModule::defaultWorker() and spins up a real MpmcTaskWorker
+// and its thread -- wasted for every test here, since none of them route through the queued
+// worker path (see var/TaskWorker_existing_modules.md). This shadow constructs with an injected
+// worker instead, so no thread is ever created. Mirrors Test::createModule<T>()'s
+// post-construction setup (id, sample rate) since it bypasses the model factory that normally
+// does this.
+//
+// Worker type is a template parameter rather than a fixed NullTaskWorker because one test
+// (groupBypass runs groupBypassWorker through the injected worker) needs a real handoff through
+// taskWorker->work() -- SyncTaskWorker there, NullTaskWorker everywhere else. See
+// createStripModuleWithSyncWorker below for why SyncTaskWorker is safe only in that one case.
+template <typename W>
+static StripModule* createStripModuleWith() {
+	auto* m = new StripModule(std::make_shared<W>());
+	m->model = modelStrip;
+	m->id = Test::getModuleId();
+
+	Module::SampleRateChangeEvent e;
+	e.sampleRate = Test::sampleRate();
+	e.sampleTime = 1.0f / e.sampleRate;
+	m->onSampleRateChange(e);
+
+	return m;
+}
+
+static StripModule* createStripModule() {
+	return createStripModuleWith<NullTaskWorker>();
+}
+static StripModule* createStripModuleWithSyncWorker() {
+	return createStripModuleWith<SyncTaskWorker>();
+}
+
 // ---- mock accesses ----------------------------------------------------------
 // Strip's load/save paths run entirely on the swappable vcv accesses, so these mocks make the
 // decisions observable without a live Rack GUI: which modules were created and where, which
@@ -152,12 +185,12 @@ static const char STRIP_JSON[] = R"({
 
 // Creates a Strip widget bound to a module, ready to drive the group/selection entry points.
 struct StripFixture {
-	Test::ModuleScaffold<StripModule> mods;
+	Test::ModuleScaffold<StripModule> mods{createStripModule};
 	StripModule* module;
 	StripWidget* widget;
 
 	StripFixture(MODE mode = MODE::LEFTRIGHT) {
-		module = mods.create("Strip");
+		module = mods.create();
 		module->mode = mode;
 		widget = Test::createWidget<StripWidget>(module);
 	}
@@ -165,8 +198,8 @@ struct StripFixture {
 };
 
 TEST_CASE("Construction and initialization", "[Strip]") {
-	Test::ModuleScaffold<StripModule> mods;
-	StripModule* m = mods.create("Strip");
+	Test::ModuleScaffold<StripModule> mods{createStripModule};
+	StripModule* m = mods.create();
 	StripWidget* mw = Test::createWidget<StripWidget>("Strip");
 
 	REQUIRE(m != nullptr);
@@ -177,8 +210,8 @@ TEST_CASE("Construction and initialization", "[Strip]") {
 }
 
 TEST_CASE("Preset JSON null-guards", "[Strip][JSON]") {
-	Test::ModuleScaffold<StripModule> mods;
-	auto module = mods.create("Strip");
+	Test::ModuleScaffold<StripModule> mods{createStripModule};
+	auto module = mods.create();
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -200,7 +233,6 @@ TEST_CASE("Preset JSON null-guards", "[Strip][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 
@@ -607,4 +639,163 @@ TEST_CASE("groupPasteClipboard reports an empty clipboard", "[Strip][save]") {
 	CHECK(mock.ui.messages[0].msg.find("clipboard") != std::string::npos);
 	CHECK(mock.modules.added.empty());
 	CHECK(mock.history.pushed.empty());
+}
+
+
+// ---- bypass -----------------------------------------------------------------
+// groupBypassRequest() (UI thread) enqueues groupBypass() onto taskProcessor; process() drains
+// that queue and hands the actual work to taskWorker->work(groupBypassWorker). Since the test
+// worker is a NullTaskWorker (see createStripModule()), work() is never run here -- these tests
+// call groupBypassWorker() directly, per var/TaskWorker_existing_modules.md, keeping the queue
+// side (did process() decide to enqueue?) and the task side (what does the task do when it runs?)
+// separately assertable rather than blended into one sequence.
+
+// A minimal expander neighbour whose isBypassed() state is directly observable -- Strip's bypass
+// walk only needs a real Module registered with the engine, nothing module-specific.
+struct BypassNeighbour : rack::Module {
+	BypassNeighbour() { config(0, 0, 0, 0); }
+};
+
+TEST_CASE("groupBypassRequest enqueues a task without running it inline", "[Strip][bypass]") {
+	Mock mock;
+	Test::Harness h;
+	StripModule* m = h.addModule<StripModule>(createStripModule);
+	auto* right = h.addModule<BypassNeighbour>([]{ return new BypassNeighbour; });
+	h.connectExpander(m, right);
+	h.dspStep();
+
+	m->groupBypassRequest(true);
+
+	// Queue side: process() has not run yet, so the neighbour is untouched.
+	CHECK_FALSE(right->isBypassed());
+	REQUIRE(mock.history.pushed.size() == 1);
+	auto* ca = dynamic_cast<::rack::history::ComplexAction*>(mock.history.pushed[0]);
+	REQUIRE(ca != nullptr);
+	CHECK(ca->name == "stoermelder STRIP bypass");
+
+	h.dspStep();
+
+	// process() drained taskProcessor and handed the work to taskWorker->work(), which is a
+	// NullTaskWorker here and drops it -- so the neighbour is still untouched. This confirms
+	// process() reached groupBypass() (nothing else drains taskProcessor) without depending on
+	// the real worker; groupBypassWorker()'s own effect is covered separately below.
+	CHECK_FALSE(right->isBypassed());
+}
+
+// The one test in this file that goes through taskWorker->work() itself, rather than calling
+// groupBypassWorker() directly or confirming NullTaskWorker dropped it. Closes the remaining gap:
+// every other test either stops at "process() decided to enqueue" or calls the task body directly,
+// so nothing here previously exercised groupBypass()'s handoff to the worker -- e.g. a typo'd
+// closure (wrong flag, or capturing nothing) would pass every other test unnoticed. Calling
+// groupBypass() directly from the test thread, with SyncTaskWorker injected, is safe specifically
+// because the test thread is standing in for the caller -- this must never be done from inside a
+// dspStep(), where process() is the real caller and the task would run on the engine thread it was
+// queued to escape.
+TEST_CASE("groupBypass runs groupBypassWorker through the injected worker", "[Strip][bypass]") {
+	Test::Harness h;
+	StripModule* m = h.addModule<StripModule>(createStripModuleWithSyncWorker);
+	m->mode = MODE::RIGHT;
+	auto* right = h.addModule<BypassNeighbour>([]{ return new BypassNeighbour; });
+	h.connectExpander(m, right);
+	h.dspStep();
+
+	m->groupBypass(true);
+
+	// SyncTaskWorker ran the task inline, so the effect is visible immediately -- no dspStep()
+	// needed, and none would help since dspStep() only drains taskProcessor, not taskWorker.
+	CHECK(right->isBypassed());
+	CHECK(m->lastBypassState.load());
+
+	// A dspStep() in between confirms the bypass state isn't reset or reasserted by process()
+	// itself -- it should only ever be touched by the handoff, not by ordinary stepping.
+	h.dspStep();
+	CHECK(right->isBypassed());
+
+	// And back the other way, through the same handoff, to confirm it isn't a one-shot latch.
+	m->groupBypass(false);
+
+	CHECK_FALSE(right->isBypassed());
+	CHECK_FALSE(m->lastBypassState.load());
+
+	h.dspStep();
+	CHECK_FALSE(right->isBypassed());
+}
+
+TEST_CASE("groupBypassWorker bypasses the right neighbour chain", "[Strip][bypass]") {
+	Test::Harness h;
+	StripModule* m = h.addModule<StripModule>(createStripModule);
+	m->mode = MODE::RIGHT;
+	auto* right1 = h.addModule<BypassNeighbour>([]{ return new BypassNeighbour; });
+	auto* right2 = h.addModule<BypassNeighbour>([]{ return new BypassNeighbour; });
+	h.connectChain(m, right1, right2);
+	h.dspStep();
+
+	m->groupBypassWorker(true);
+
+	CHECK(right1->isBypassed());
+	CHECK(right2->isBypassed());
+	CHECK(m->lastBypassState.load());
+}
+
+TEST_CASE("groupBypassWorker bypasses the left neighbour chain", "[Strip][bypass]") {
+	Test::Harness h;
+	StripModule* m = h.addModule<StripModule>(createStripModule);
+	m->mode = MODE::LEFT;
+	auto* left1 = h.addModule<BypassNeighbour>([]{ return new BypassNeighbour; });
+	auto* left2 = h.addModule<BypassNeighbour>([]{ return new BypassNeighbour; });
+	// connectChain wires left-to-right; the strip sits at the right end of the chain here.
+	h.connectChain(left2, left1, m);
+	h.dspStep();
+
+	m->groupBypassWorker(true);
+
+	CHECK(left1->isBypassed());
+	CHECK(left2->isBypassed());
+}
+
+TEST_CASE("groupBypassWorker in LEFTRIGHT mode bypasses both sides", "[Strip][bypass]") {
+	Test::Harness h;
+	StripModule* m = h.addModule<StripModule>(createStripModule);
+	m->mode = MODE::LEFTRIGHT;
+	auto* left = h.addModule<BypassNeighbour>([]{ return new BypassNeighbour; });
+	auto* right = h.addModule<BypassNeighbour>([]{ return new BypassNeighbour; });
+	h.connectChain(left, m, right);
+	h.dspStep();
+
+	m->groupBypassWorker(true);
+
+	CHECK(left->isBypassed());
+	CHECK(right->isBypassed());
+}
+
+TEST_CASE("groupBypassWorker in RIGHT mode leaves the left neighbour untouched", "[Strip][bypass]") {
+	Test::Harness h;
+	StripModule* m = h.addModule<StripModule>(createStripModule);
+	m->mode = MODE::RIGHT;
+	auto* left = h.addModule<BypassNeighbour>([]{ return new BypassNeighbour; });
+	auto* right = h.addModule<BypassNeighbour>([]{ return new BypassNeighbour; });
+	h.connectChain(left, m, right);
+	h.dspStep();
+
+	m->groupBypassWorker(true);
+
+	CHECK(right->isBypassed());
+	CHECK_FALSE(left->isBypassed());
+}
+
+TEST_CASE("groupBypassWorker un-bypasses on a second call with false", "[Strip][bypass]") {
+	Test::Harness h;
+	StripModule* m = h.addModule<StripModule>(createStripModule);
+	m->mode = MODE::RIGHT;
+	auto* right = h.addModule<BypassNeighbour>([]{ return new BypassNeighbour; });
+	h.connectExpander(m, right);
+	h.dspStep();
+
+	m->groupBypassWorker(true);
+	REQUIRE(right->isBypassed());
+
+	m->groupBypassWorker(false);
+
+	CHECK_FALSE(right->isBypassed());
+	CHECK_FALSE(m->lastBypassState.load());
 }
