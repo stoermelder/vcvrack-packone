@@ -178,7 +178,7 @@ void GlueModule::dataFromJson(json_t* rootJ) {
 	if (labelsJ && json_is_array(labelsJ)) moduleLabelFromJson(labelsJ);
 
 	json_t* cableLabelsJ = json_object_get(rootJ, "cableLabels");
-	if (cableLabelsJ) cableLabelFromJson(cableLabelsJ);
+	if (cableLabelsJ && json_is_array(cableLabelsJ)) cableLabelFromJson(cableLabelsJ);
 
 	idFixClearMap();
 	params[PARAM_UNLOCK].setValue(0.f);

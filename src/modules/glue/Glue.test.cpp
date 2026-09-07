@@ -170,6 +170,45 @@ TEST_CASE("JSON round-trip preserves state", "[Glue][JSON]") {
 			i++;
 		}
 	}
+
+	SECTION("Wrong-typed cableLabels is ignored, not treated as an empty array") {
+		// addModuleLabel() also touches the "labels" key, whose loader already guards with
+		// json_is_array() (Glue.cpp:178) - mirror that here for "cableLabels" (Glue.cpp:181,
+		// currently missing the guard). A wrong-typed value should leave existing state
+		// untouched, exactly like the other type-guarded scalars in dataFromJson()
+		// (e.g. defaultColorJ), not silently wipe it.
+		CableLabel* cl = m->addCableLabel();
+		cl->cableId = 300;
+		cl->text = "should-survive";
+
+		json_t* j = m->dataToJson();
+		json_object_set_new(j, "cableLabels", json_string("wrong-type"));
+
+		m->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m->cableLabels.size() == 1);
+		REQUIRE(m->cableLabels.front()->cableId == 300);
+		REQUIRE(m->cableLabels.front()->text == "should-survive");
+	}
+}
+
+
+TEST_CASE("setCableLabelAtInput invalidates the placement cache", "[Glue]") {
+	// Bug #3: the "At Input/Output Port" menu items used to write cableLabel->atInput
+	// directly (Rack::createValuePtrMenuItem), leaving cacheValid untouched. The cache key
+	// is only the two endpoint positions, so the label stayed at the old tFinal/angle/
+	// offset until the cable itself moved. setCableLabelAtInput() is the fixed call site's
+	// helper (GlueTypes.hpp) - both menu items now go through it.
+	CableLabel cl;
+	cl.atInput = true;
+	cl.cacheValid = true;
+	cl.cachedBoxPos = Vec(10.f, 20.f);
+
+	setCableLabelAtInput(&cl, false);
+
+	REQUIRE(cl.atInput == false);
+	REQUIRE(cl.cacheValid == false);
 }
 
 
