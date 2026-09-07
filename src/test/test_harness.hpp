@@ -4,6 +4,7 @@
 #include "test_mock.hpp"
 #include "test_events.hpp"
 #include "../vcv/ui.hpp"
+#include "../vcv/engine.hpp"
 #include <rack.hpp>
 #include <app/Scene.hpp>
 #include <app/ModuleWidget.hpp>
@@ -188,6 +189,16 @@ struct Harness {
 		bool hasWindow() const override { return present; }
 	};
 
+	// Answers APP->engine->getFrame() with the harness's own DSP clock instead of the engine's,
+	// which stays frozen at 0 under a Harness (nothing drives Engine::stepBlock()). Points at
+	// `frame` below rather than copying it, so it always reads the current value with no
+	// per-step sync to remember.
+	struct HarnessEngineAccess : StoermelderPackOne::vcv::EngineAccess {
+		const int64_t* framePtr;
+		explicit HarnessEngineAccess(const int64_t* framePtr) : framePtr(framePtr) {}
+		int64_t getFrame() const override { return *framePtr; }
+	};
+
 	// Whether a UI is present in the current mode. This is what the mock answers; nothing
 	// passes it anywhere, since production code asks the seam. Exposed only so a test can
 	// assert on it.
@@ -258,6 +269,14 @@ struct Harness {
 	HarnessUiAccess uiAccessMock;
 	Test::mock::Guard<StoermelderPackOne::vcv::UiAccess> uiAccessGuard{
 		StoermelderPackOne::vcv::uiAccess, &uiAccessMock};
+
+	// The EngineAccess mock, installed into vcv::engineAccess for the harness's lifetime and
+	// restored on destruction. Declared after `frame` (in the Clocks section above) so framePtr
+	// can point at it directly: no per-step sync to remember, just a pointer to the counter
+	// dspStep() already advances.
+	HarnessEngineAccess engineAccessMock{&frame};
+	Test::mock::Guard<StoermelderPackOne::vcv::EngineAccess> engineAccessGuard{
+		StoermelderPackOne::vcv::engineAccess, &engineAccessMock};
 
 	// The scene layout that makes hit-testing meaningful, installed for the harness's lifetime
 	// and restored on destruction. Owned rather than left to the caller because it is a
@@ -499,6 +518,69 @@ struct Harness {
 	static const uint8_t SIDE_LEFT = 0;
 	static const uint8_t SIDE_RIGHT = 1;
 
+	// ---- Ports -----------------------------------------------------------------------------
+	//
+	// `Port::channels == 0` means disconnected (Rack/include/engine/Port.hpp:26), and
+	// `setVoltage()` never touches `channels` — it only ever writes into the `voltages` array.
+	// So `port.setVoltage(5.f)` on a fresh (disconnected) port is a silent no-op for any module
+	// gating on `isConnected()`: 74 such sites across this plugin's modules, concentrated in
+	// Arena, Intermix, Maze, Hive and ReMove.
+	//
+	// The trap compounds: `Port::setChannels()` ITSELF early-returns when `channels == 0`
+	// ("if disconnected, keep the number of channels at 0", Port.hpp:157-160) — so there is no
+	// sequence of public Port calls that connects a disconnected port. The suite already knew
+	// this the hard way: 19 test files set `.channels` directly, bypassing setChannels()
+	// entirely, with two carrying a comment explaining why (Infix.test.cpp:20, Raw.test.cpp:132).
+	// These helpers encode that rule once instead of leaving each suite to rediscover it, and
+	// make the two cases (a deliberately unconnected port vs. one that forgot to connect) look
+	// different at the call site instead of identical.
+
+	// Connects `m`'s input `id` as if a cable delivered `voltage` on channel 0, monophonic.
+	// Sets `channels` directly (setChannels() cannot do this from disconnected) then routes the
+	// actual voltage write through the real Port::setVoltage().
+	void connectInput(rack::Module* m, int id, float voltage, uint8_t channel = 0) {
+		REQUIRE(m != nullptr);
+		REQUIRE(id >= 0);
+		REQUIRE(id < int(m->inputs.size()));
+		rack::engine::Input& in = m->inputs[id];
+		if (in.channels == 0) in.channels = 1;
+		in.setVoltage(voltage, channel);
+	}
+
+	// Polyphonic form: connects `m`'s input `id` with `channelCount` channels, voltage `voltage`
+	// on every channel unless overridden per-channel by the caller afterwards.
+	void connectInputPoly(rack::Module* m, int id, uint8_t channelCount, float voltage = 0.f) {
+		REQUIRE(m != nullptr);
+		REQUIRE(id >= 0);
+		REQUIRE(id < int(m->inputs.size()));
+		REQUIRE(channelCount >= 1);
+		REQUIRE(channelCount <= rack::engine::PORT_MAX_CHANNELS);
+		rack::engine::Input& in = m->inputs[id];
+		in.channels = channelCount;
+		for (uint8_t c = 0; c < channelCount; c++) in.setVoltage(voltage, c);
+	}
+
+	// Connects `m`'s output `id` as a live (monophonic) port, so isConnected() reads true and a
+	// module driving it actually stores somewhere observable. Most tests read the output's
+	// voltage directly and never need this — it exists for the inverse case, a module that
+	// gates its own output logic on isConnected() (a few of this plugin's utility modules do).
+	void connectOutput(rack::Module* m, int id, uint8_t channelCount = 1) {
+		REQUIRE(m != nullptr);
+		REQUIRE(id >= 0);
+		REQUIRE(id < int(m->outputs.size()));
+		REQUIRE(channelCount >= 1);
+		REQUIRE(channelCount <= rack::engine::PORT_MAX_CHANNELS);
+		m->outputs[id].channels = channelCount;
+	}
+
+	// Disconnects an input or output: channels back to 0, voltages cleared — the "cable
+	// unplugged" case, and the only way to get there since setChannels(0) refuses to (Port.hpp
+	// forces at least 1 channel once connected). Works on either vector via the same Port base.
+	void disconnectPort(rack::engine::Port& port) {
+		port.clearVoltages();
+		port.channels = 0;
+	}
+
 	// ---- Parameter mapping -------------------------------------------------------------
 	//
 	// Several modules in this plugin exist to map a parameter on another module: CVMap, CVPam,
@@ -641,14 +723,19 @@ struct Harness {
 
 	// Runs one DSP step: process() on every registered module, in registration order, with
 	// expander messages flipped exactly as Rack's engine does.
+	//
+	// Branches on isBypassed() exactly as Module::doProcess() does (Rack/src/engine/Module.cpp).
+	// Without this, a bypassed module is still stepped through process(), which is more
+	// permissive than production — a test double must never be more permissive than the thing
+	// it stands in for. Use setBypassed() to flip the state through the engine, so the
+	// process<->bypass transition itself dispatches whatever Rack dispatches.
 	void dspStep() {
 		const rack::Module::ProcessArgs args = Test::makeProcessArgs(frame);
 		for (rack::Module* m : modules) {
-			m->process(args);
-			// Only flip when the module asked for it, matching
-			// Rack/src/engine/Engine.cpp — a module that forgets requestMessageFlip() must
-			// fail here just as it would in Rack. (This is Phase 1's A2 fix, carried over
-			// from SimpleEngine.)
+			if (!m->isBypassed()) m->process(args);
+			else m->processBypass(args);
+			// Only flip when the module asked for it, matching Rack/src/engine/Engine.cpp — a
+			// module that forgets requestMessageFlip() must fail here just as it would in Rack.
 			if (m->leftExpander.messageFlipRequested) {
 				std::swap(m->leftExpander.producerMessage, m->leftExpander.consumerMessage);
 				m->leftExpander.messageFlipRequested = false;
@@ -663,6 +750,17 @@ struct Harness {
 
 	void dspSteps(int64_t count) {
 		for (int64_t i = 0; i < count; i++) dspStep();
+	}
+
+	// Flips a module's bypass state through the engine, as toggling bypass in the rack does.
+	//
+	// Routes through APP->engine->bypassModule() (which the plugin itself calls in 6 places)
+	// rather than Module::setBypassed(), so the transition dispatches whatever Rack dispatches
+	// — clearing outputs to 1 channel and firing onBypass — not just the flag dspStep() reads.
+	// A no-op if the module is already in the requested state, matching bypassModule() itself.
+	void setBypassed(rack::Module* m, bool bypassed) {
+		REQUIRE(m != nullptr);
+		APP->engine->bypassModule(m, bypassed);
 	}
 
 	// Runs one UI frame: step() on every registered widget, in registration order.

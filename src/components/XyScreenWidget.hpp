@@ -1137,7 +1137,7 @@ struct XyScreenWidget : OpaqueWidget {
 				module->selection = XyScreenSelection();
 			}
 			OpaqueWidget::onButton(e);
-			if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && !e.isConsumed()) {
+			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && !e.isConsumed()) {
 				createContextMenu();
 				e.consume(this);
 			}
