@@ -148,6 +148,20 @@ struct TestModule : rack::Module {
 	}
 };
 
+struct TestSwitchModule : rack::Module {
+	enum ParamIds {
+		TEST_SWITCH,
+		NUM_PARAMS
+	};
+
+	TestSwitchModule() {
+		config(NUM_PARAMS, 0, 0, 0);
+		// isSwitch additionally requires getMaxValue() != 1.f, so this needs three
+		// or more positions.
+		configSwitch(TEST_SWITCH, 0.f, 2.f, 0.f, "Test Switch", {"A", "B", "C"});
+	}
+};
+
 TEST_CASE("Setting presetFirst and presetLast boundaries", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
@@ -564,19 +578,20 @@ TEST_CASE("Per-slot fade time overrides global fade parameter", "[Transit]") {
 	module->params[TransitModule<12>::PARAM_FADE].setValue(1.0f);
 
 	SECTION("Slot with fade time of 0 transitions instantly") {
-		// Override slot 1's fade time to 0 (immediate)
+		// Global fade stays at maximum (slow, set above); only the slot override is 0.
+		// If the global (slow) fade were used instead, the transition would still be
+		// well below 1.0 after 100 frames (see the sibling section below).
 		module->getSlot(1)->setFadeTime(0.0f);
 
-		// First, fully settle at preset 0 (value 0.0)
-		module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
+		// First, fully settle at preset 0 (value 0.0) using the fast per-slot override
+		module->getSlot(0)->setFadeTime(0.0f);
 		module->presetLoad(0);
-		h.dspSteps(1000);
+		h.dspSteps(512);
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(0.0f).margin(0.01f));
 
-		// Now load preset 1 with slot fade=0 (but global fade stays 0 here too)
+		// Now load preset 1: slot fade=0 must win over the slow global fade
 		module->presetLoad(1);
-		// Process enough frames to complete a zero-fade transition
-		h.dspSteps(500);
+		h.dspSteps(512);
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(1.0f).margin(0.02f));
 	}
 
@@ -597,8 +612,8 @@ TEST_CASE("Per-slot fade time overrides global fade parameter", "[Transit]") {
 		module->presetLoad(1);
 		h.dspSteps(1000);
 		// If global (fast) fade had been used the value would already be 1.0;
-		// the slow slot fade keeps it well below that.
-		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.9f);
+		// the slow slot fade keeps it near its starting point (observed ~0.0021).
+		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.05f);
 	}
 
 	SECTION("Slot with default fade time (-1) uses global PARAM_FADE") {
@@ -617,8 +632,8 @@ TEST_CASE("Per-slot fade time overrides global fade parameter", "[Transit]") {
 		// With global fade = 1.0 (maximum), after only 100 frames the transition
 		// should not be complete yet (fade time ≈ 10s at 44100Hz)
 		h.dspSteps(100);
-		// Param value should still be well below 1.0 (transition partway through)
-		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.9f);
+		// Param value should still be near its starting point (observed ~0.00014)
+		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.05f);
 	}
 }
 
@@ -655,7 +670,8 @@ TEST_CASE("Fade CV input is additive to PARAM_FADE and ignored by per-slot overr
 		module->inputs[TransitModule<12>::INPUT_FADE].setVoltage(10.0f);
 		module->presetLoad(1);
 		h.dspSteps(1000);
-		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.9f);
+		// Observed ~0.0021 at 1000 frames; a tight bound catches a much-faster regression.
+		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.05f);
 	}
 
 	SECTION("Fade CV is additive to a per-slot fade time") {
@@ -668,7 +684,95 @@ TEST_CASE("Fade CV input is additive to PARAM_FADE and ignored by per-slot overr
 		module->inputs[TransitModule<12>::INPUT_FADE].setVoltage(10.0f);
 		module->presetLoad(1);
 		h.dspSteps(1000);
-		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.9f);
+		// Observed ~0.0021 at 1000 frames; a tight bound catches a much-faster regression.
+		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.05f);
+	}
+}
+
+
+TEST_CASE("OUTPUT reflects the selected OUTMODE", "[Transit]") {
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
+
+	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
+	module->taskProcessorDsp.process();
+	h.dspStep();
+
+	testModule->params[TestModule::TEST_PARAM_1].setValue(0.0f);
+	module->presetSave(0);
+	testModule->params[TestModule::TEST_PARAM_1].setValue(1.0f);
+	module->presetSave(1);
+
+	// Fast (~instant) global fade so a transition completes in a handful of frames.
+	module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
+	h.connectOutput(module, TransitModule<12>::OUTPUT, 5);
+
+	SECTION("ENV ramps up during the fade and returns to 0 on completion") {
+		module->setOutMode(OUTMODE::ENV);
+		module->presetLoad(0);
+		h.dspSteps(512);
+		module->presetLoad(1);
+		h.dspSteps(64);
+		// One divider tick into the fade the envelope should be rising, away from 0.
+		REQUIRE(module->outputs[TransitModule<12>::OUTPUT].getVoltage() > 0.0f);
+		h.dspSteps(512);
+		// Transition complete: envelope returns to 0.
+		REQUIRE(module->outputs[TransitModule<12>::OUTPUT].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
+	}
+
+	SECTION("GATE is high during the fade and low once it completes") {
+		module->setOutMode(OUTMODE::GATE);
+		module->presetLoad(0);
+		h.dspSteps(512);
+		module->presetLoad(1);
+		h.dspSteps(64);
+		REQUIRE(module->outputs[TransitModule<12>::OUTPUT].getVoltage() == Catch::Approx(10.0f).margin(0.01f));
+		h.dspSteps(512);
+		REQUIRE(module->outputs[TransitModule<12>::OUTPUT].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
+	}
+
+	SECTION("TRIG_SNAPSHOT fires a pulse whenever a preset is loaded") {
+		module->setOutMode(OUTMODE::TRIG_SNAPSHOT);
+		module->presetLoad(0);
+		h.dspSteps(64);
+		REQUIRE(module->outputs[TransitModule<12>::OUTPUT].getVoltage() == Catch::Approx(10.0f).margin(0.01f));
+		h.dspSteps(64);
+		REQUIRE(module->outputs[TransitModule<12>::OUTPUT].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
+		module->presetLoad(1);
+		h.dspSteps(64);
+		REQUIRE(module->outputs[TransitModule<12>::OUTPUT].getVoltage() == Catch::Approx(10.0f).margin(0.01f));
+	}
+
+	SECTION("TRIG_SOC fires a pulse when a fade starts, then falls silent") {
+		module->setOutMode(OUTMODE::TRIG_SOC);
+		module->presetLoad(0);
+		h.dspSteps(512);
+		module->presetLoad(1);
+		h.dspSteps(64);
+		REQUIRE(module->outputs[TransitModule<12>::OUTPUT].getVoltage() == Catch::Approx(10.0f).margin(0.01f));
+		h.dspSteps(64);
+		REQUIRE(module->outputs[TransitModule<12>::OUTPUT].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
+	}
+
+	SECTION("TRIG_EOC is silent during the fade and fires once it completes") {
+		module->setOutMode(OUTMODE::TRIG_EOC);
+		module->presetLoad(0);
+		h.dspSteps(512);
+		module->presetLoad(1);
+		h.dspSteps(64);
+		REQUIRE(module->outputs[TransitModule<12>::OUTPUT].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
+		h.dspSteps(512);
+		REQUIRE(module->outputs[TransitModule<12>::OUTPUT].getVoltage() == Catch::Approx(10.0f).margin(0.01f));
+	}
+
+	SECTION("POLY sets 5 channels") {
+		module->setOutMode(OUTMODE::POLY);
+		module->presetLoad(0);
+		h.dspSteps(512);
+		module->presetLoad(1);
+		h.dspSteps(64);
+		REQUIRE(module->outputs[TransitModule<12>::OUTPUT].getChannels() == 5);
 	}
 }
 
@@ -1028,14 +1132,15 @@ TEST_CASE("TRIG_ALT mode alternates between presetFirst and an advancing seconda
 
 		// First trigger: preset == presetFirst → advance secondary and load it
 		trigger();
-		int secondary = module->preset;
-		REQUIRE(secondary != 2); // Should not stay at first
-		REQUIRE(secondary >= 2);
-		REQUIRE(secondary < 6);
+		REQUIRE(module->preset == 3); // presetFirst + slotCvModeDir
 
 		// Second trigger: preset != presetFirst → return to presetFirst
 		trigger();
 		REQUIRE(module->preset == 2); // Back to first
+
+		// Third trigger: secondary advances again, pinning the step size
+		trigger();
+		REQUIRE(module->preset == 4);
 	}
 }
 
@@ -1346,6 +1451,209 @@ TEST_CASE("ARM mode queues preset and loads on trigger", "[Transit]") {
 }
 
 
+TEST_CASE("WRITE mode saves and clears preset slots via front-panel buttons", "[Transit]") {
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
+
+	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
+	module->taskProcessorDsp.process();
+	h.dspStep();
+
+	// buttonDivider fires every 128 samples; LongPressButton needs pressedTime >= 1.0f
+	// (real seconds) to register LONG_PRESS, so held/released presses are driven in
+	// sample counts derived from the harness sample rate, not fixed constants.
+	auto shortPress = [&](int slot) {
+		module->params[TransitModule<12>::PARAM_PRESET + slot].setValue(10.f);
+		h.dspSteps(128); // one buttonDivider tick while held
+		module->params[TransitModule<12>::PARAM_PRESET + slot].setValue(0.f);
+		h.dspSteps(128); // one tick to detect the release
+	};
+	auto longPress = [&](int slot) {
+		module->params[TransitModule<12>::PARAM_PRESET + slot].setValue(10.f);
+		h.dspSteps((int)h.sampleRate() + 256); // hold past the 1s long-press threshold
+		module->params[TransitModule<12>::PARAM_PRESET + slot].setValue(0.f);
+		h.dspSteps(128);
+	};
+
+	SECTION("Short press in WRITE mode saves the current parameter value into the slot") {
+		testModule->params[TestModule::TEST_PARAM_1].setValue(0.75f);
+		module->params[TransitModule<12>::PARAM_CTRLMODE].setValue((float)CTRLMODE::WRITE);
+		h.dspStep();
+
+		REQUIRE(module->getSlot(3)->isUsed() == false);
+		shortPress(3);
+
+		REQUIRE(module->getSlot(3)->isUsed() == true);
+		REQUIRE(module->getSlot(3)->getPreset()->size() == 1);
+		REQUIRE(module->getSlot(3)->getPreset()->at(0) == Catch::Approx(0.75f));
+		REQUIRE(module->preset == 3);
+	}
+
+	SECTION("Short press in WRITE mode overwrites a previously saved slot") {
+		testModule->params[TestModule::TEST_PARAM_1].setValue(0.1f);
+		module->presetSave(3);
+		REQUIRE(module->getSlot(3)->getPreset()->at(0) == Catch::Approx(0.1f));
+
+		testModule->params[TestModule::TEST_PARAM_1].setValue(0.9f);
+		module->params[TransitModule<12>::PARAM_CTRLMODE].setValue((float)CTRLMODE::WRITE);
+		h.dspStep();
+		shortPress(3);
+
+		REQUIRE(module->getSlot(3)->getPreset()->at(0) == Catch::Approx(0.9f));
+	}
+
+	SECTION("Long press in WRITE mode clears the slot") {
+		testModule->params[TestModule::TEST_PARAM_1].setValue(0.4f);
+		module->presetSave(6);
+		module->getSlot(6)->setLabel("Saved");
+		module->getSlot(6)->setFadeTime(0.5f);
+		REQUIRE(module->getSlot(6)->isUsed() == true);
+
+		module->params[TransitModule<12>::PARAM_CTRLMODE].setValue((float)CTRLMODE::WRITE);
+		h.dspStep();
+		longPress(6);
+
+		REQUIRE(module->getSlot(6)->isUsed() == false);
+		REQUIRE(module->getSlot(6)->getPreset()->empty());
+		REQUIRE(module->getSlot(6)->getLabel() == "");
+		REQUIRE(module->getSlot(6)->getFadeTime() == Catch::Approx(-1.f));
+	}
+
+	SECTION("Long press in WRITE mode on the active preset resets preset to -1") {
+		testModule->params[TestModule::TEST_PARAM_1].setValue(0.4f);
+		module->presetSave(6);
+		module->presetLoad(6);
+		REQUIRE(module->preset == 6);
+
+		module->params[TransitModule<12>::PARAM_CTRLMODE].setValue((float)CTRLMODE::WRITE);
+		h.dspStep();
+		longPress(6);
+
+		REQUIRE(module->preset == -1);
+	}
+
+	SECTION("Short press in WRITE mode does not fall through to READ-mode preset loading") {
+		testModule->params[TestModule::TEST_PARAM_1].setValue(0.3f);
+		module->presetSave(2);
+
+		testModule->params[TestModule::TEST_PARAM_1].setValue(0.6f);
+		module->params[TransitModule<12>::PARAM_CTRLMODE].setValue((float)CTRLMODE::WRITE);
+		h.dspStep();
+		shortPress(5);
+
+		// Slot 2 must be untouched by the write to slot 5, and preset must reflect
+		// the saved slot rather than any READ-mode CV-arm/advance logic.
+		REQUIRE(module->getSlot(2)->getPreset()->at(0) == Catch::Approx(0.3f));
+		REQUIRE(module->preset == 5);
+	}
+
+	SECTION("WRITE mode ignores CV input") {
+		testModule->params[TestModule::TEST_PARAM_1].setValue(0.2f);
+		module->presetSave(2);
+		testModule->params[TestModule::TEST_PARAM_1].setValue(0.7f);
+		module->presetSave(5);
+
+		module->params[TransitModule<12>::PARAM_CTRLMODE].setValue((float)CTRLMODE::WRITE);
+		module->inputs[TransitModule<12>::INPUT_CV].channels = 1;
+		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
+		module->presetLoad(2);
+		h.dspStep();
+		REQUIRE(module->preset == 2);
+
+		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
+		h.dspSteps(500);
+		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
+		h.dspSteps(500);
+
+		REQUIRE(module->preset == 2); // unaffected by CV while in WRITE mode
+	}
+}
+
+
+TEST_CASE("Switch parameters snap at the fade midpoint instead of crossfading", "[Transit]") {
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestSwitchModule* testModule = h.adoptModule(new TestSwitchModule);
+
+	module->bindAddParameterRequest(testModule->id, TestSwitchModule::TEST_SWITCH);
+	module->taskProcessorDsp.process();
+	h.dspStep();
+
+	SECTION("isSwitch is set for a bound SwitchQuantity with more than two positions") {
+		REQUIRE(module->sourceHandles.size() == 1);
+		REQUIRE(module->sourceHandles[0]->isSwitch == true);
+	}
+
+	testModule->params[TestSwitchModule::TEST_SWITCH].setValue(0.0f);
+	module->presetSave(0);
+	testModule->params[TestSwitchModule::TEST_SWITCH].setValue(2.0f);
+	module->presetSave(1);
+
+	// Fast-settle at preset 0, then switch to a slow (~1s) linear fade and load
+	// preset 1. Verified by probe: the transition crosses the snap threshold
+	// (s10 == 0.5) between roughly step 14100 and 14200 of the slow fade, and
+	// the switch param is never seen at any value other than the old (0.0) or
+	// new (2.0) position throughout.
+	module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
+	module->presetLoad(0);
+	h.dspSteps(512);
+	REQUIRE(testModule->params[TestSwitchModule::TEST_SWITCH].getValue() == Catch::Approx(0.0f));
+
+	module->params[TransitModule<12>::PARAM_FADE].setValue(0.6f);
+	module->presetLoad(1);
+
+	SECTION("A switch holds its old value for the first half of a slow fade") {
+		h.dspSteps(14000);
+		REQUIRE(testModule->params[TestSwitchModule::TEST_SWITCH].getValue() == Catch::Approx(0.0f));
+	}
+
+	SECTION("A switch jumps directly to the new value without passing through intermediate positions") {
+		h.dspSteps(14000);
+		for (int i = 0; i < 20; i++) {
+			h.dspSteps(64);
+			float v = testModule->params[TestSwitchModule::TEST_SWITCH].getValue();
+			REQUIRE((v == Catch::Approx(0.0f) || v == Catch::Approx(2.0f)));
+		}
+	}
+
+	SECTION("A switch reaches the new value once the fade completes") {
+		h.dspSteps(30000);
+		REQUIRE(testModule->params[TestSwitchModule::TEST_SWITCH].getValue() == Catch::Approx(2.0f));
+	}
+}
+
+TEST_CASE("A non-switch parameter crossfades smoothly through the same transition", "[Transit]") {
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
+
+	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
+	module->taskProcessorDsp.process();
+	h.dspStep();
+
+	testModule->params[TestModule::TEST_PARAM_1].setValue(0.0f);
+	module->presetSave(0);
+	testModule->params[TestModule::TEST_PARAM_1].setValue(1.0f);
+	module->presetSave(1);
+
+	module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
+	module->presetLoad(0);
+	h.dspSteps(512);
+
+	module->params[TransitModule<12>::PARAM_FADE].setValue(0.6f);
+	module->presetLoad(1);
+
+	// At the same point in the fade where the switch in the sibling test case
+	// has already snapped straight to its new value, a plain (non-switch)
+	// parameter is still mid-crossfade, i.e. strictly between old and new.
+	h.dspSteps(14150);
+	float v = testModule->params[TestModule::TEST_PARAM_1].getValue();
+	REQUIRE(v > 0.05f);
+	REQUIRE(v < 0.95f);
+}
+
+
 TEST_CASE("Phase mode respects boundaries", "[Transit]") {
 	Test::Harness h;
 	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
@@ -1375,11 +1683,9 @@ TEST_CASE("Phase mode respects boundaries", "[Transit]") {
 		module->slewLimiter.reset(0.0f);
 		// Process enough frames for phase mode divider
 		h.dspSteps(300);
-		// presetPhaseLast should converge near presetFirst (2.0)
-		if (module->presetPhaseLast > 0) {
-			REQUIRE(module->presetPhaseLast >= 2.0f);
-			REQUIRE(module->presetPhaseLast < 8.0f);
-		}
+		// 0V lands exactly on presetFirst (slot 2)
+		REQUIRE(module->presetPhaseLast == Catch::Approx(2.0f).margin(0.01f));
+		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(2 / 11.0f).margin(0.001f));
 	}
 
 	SECTION("10V processes within boundaries") {
@@ -1388,11 +1694,22 @@ TEST_CASE("Phase mode respects boundaries", "[Transit]") {
 		module->slewLimiter.reset(5.0f);
 		// Process enough frames for phase mode divider
 		h.dspSteps(300);
-		// presetPhaseLast should converge near presetFirst + 5 = 7.0
-		if (module->presetPhaseLast > 0) {
-			REQUIRE(module->presetPhaseLast >= 2.0f);
-			REQUIRE(module->presetPhaseLast <= 8.0f);
-		}
+		// 10V lands exactly on presetFirst + 5 (slot 7)
+		REQUIRE(module->presetPhaseLast == Catch::Approx(7.0f).margin(0.01f));
+		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(7 / 11.0f).margin(0.001f));
+	}
+
+	SECTION("Midpoint between two slots crossfades") {
+		// p = (presetLast - presetFirst - 1) * v / 10 + presetFirst = 5*v/10 + 2
+		// 1V -> p = 2.5, exactly between slot 2 and slot 3
+		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(1.0f);
+		module->slewLimiter.reset(0.5f);
+		h.dspSteps(300);
+		REQUIRE(module->presetPhaseLast == Catch::Approx(2.5f).margin(0.01f));
+		float slot2 = 2 / 11.0f;
+		float slot3 = 3 / 11.0f;
+		float midpoint = (slot2 + slot3) / 2.0f;
+		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(midpoint).margin(0.001f));
 	}
 }
 
