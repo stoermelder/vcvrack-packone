@@ -2,7 +2,6 @@
 #include "../../utils/digital.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
-#include "../../utils/GuiTaskProcessor.hpp"
 #include "../../components/MenuColorLabel.hpp"
 #include "../../components/MenuColorField.hpp"
 #include "../../components/MenuColorPicker.hpp"
@@ -10,6 +9,7 @@
 #include "../../ui/ViewportHelper.hpp"
 #include "EightFace.hpp"
 #include "EightFaceMk2Base.hpp"
+#include "PresetDispatch.hpp"
 #include "../../utils/string.hpp"
 #include <random>
 #include <osdialog.h>
@@ -33,13 +33,6 @@ enum class SLOTCVMODE {
 	C4 = 1,
 	ARM = 3
 };
-
-enum class GUISAFEMODE {
-	WORKER,
-	GUI,
-	GUI_WITH_LOCK
-};
-
 
 template <int NUM_PRESETS>
 struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener {
@@ -127,11 +120,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 	/** [Stored to JSON] Opacity of the module outline (0.0 - 1.0), default 0.5 (50%) */
 	float boxOpacity = 0.5f;
 
-	GuiTaskProcessor<32> guiTasks;
-	std::shared_ptr<ITaskWorker> taskWorker;
-	/** [Stored to JSON] */
-	GUISAFEMODE guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
-
+	EightFace::PresetDispatch dispatch;
+	
 	// One worker per instance, not shared: preset application is exactly the long, blocking
 	// work that must not head-of-line-block another 8FACE mk2 (unlike Strip's short tasks).
 	static std::shared_ptr<ITaskWorker> defaultWorker() {
@@ -139,8 +129,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 	}
 
 	EightFaceMk2Module() : EightFaceMk2Module(defaultWorker()) {}
-	explicit EightFaceMk2Module(std::shared_ptr<ITaskWorker> worker) {
-		taskWorker = std::move(worker);
+	explicit EightFaceMk2Module(std::shared_ptr<ITaskWorker> worker) : dispatch(std::move(worker)) {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
 		registerModuleListener("8FaceMk2", this);
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -209,7 +198,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		}
 		boundModules.clear();
 		inChange = false;
-		guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+		dispatch.guiSafeMode = EightFace::GUISAFEMODE::GUI_WITH_LOCK;
 
 		BASE::ctrlUniqueId = (int64_t)(rack::random::uniform() * (float)INT64_MAX);
 		preset = -1;
@@ -250,7 +239,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		if (inChange) return;
 
 		if (guiTaskDivider.process()) {
-			guiTasks.process();
+			dispatch.process();
 		}
 
 		CTRLMODE ctrlMode = (CTRLMODE)Module::params[PARAM_RW].getValue();
@@ -541,12 +530,6 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		delete b;
 	}
 
-	// Which bound modules of a preset a given applyPreset() pass should touch. In every mode
-	// but Unsafe fast the whole preset goes to one destination (All); Unsafe fast splits it,
-	// because the allowlist (EightFace::guiModuleSlugs) is a per-module property: the modules
-	// on it must load on the UI thread while the rest still get the worker.
-	enum class PRESETPART { All, GuiOnly, WorkerOnly };
-
 	// Reports which halves Unsafe fast needs a task for, so presetLoad() never dispatches to a
 	// destination with nothing to do. Runs on the engine thread, before either task goes out —
 	// that ordering is what lets both tasks be leaves.
@@ -568,13 +551,17 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		}
 	}
 
-	// Applies `part` of a preset to the bound modules it selects. Runs on the UI thread
-	// (Safe/Unsafe, and the GuiOnly part of Unsafe fast) or the worker thread (the WorkerOnly
-	// part of Unsafe fast) — and it never hands work onward. presetLoad() dispatches one task
-	// per destination up front, so this is always a leaf. Enqueueing from here would re-chain
-	// the two hops this design exists to remove, and would break GuiTaskProcessor's
-	// single-producer contract as well, since the worker thread is not the producer.
-	void applyPreset(int p, PRESETPART part = PRESETPART::All) {
+	// Applies this pass's share of a preset to the bound modules it selects, via `loader`. Runs
+	// on the UI thread (Safe/Unsafe, and the GuiOnly part of Unsafe fast) or the worker thread
+	// (the WorkerOnly part of Unsafe fast) — and it never hands work onward. presetLoad()
+	// dispatches one task per destination up front, so this is always a leaf. Enqueueing from
+	// here would re-chain the two hops this design exists to remove, and would break
+	// GuiTaskProcessor's single-producer contract as well, since the worker thread is not the
+	// producer.
+	//
+	// The part/no-window/fromJson-target rules all live behind loader -- this only matches
+	// preset entries to bound modules and does the auto-mode save.
+	void applyPreset(const EightFace::PresetDispatch::Loader& loader, int p) {
 		if (p < 0) return;
 
 		EightFaceMk2Slot* slot = expSlot(p);
@@ -593,17 +580,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 			for (BoundModule* b : boundModules) {
 				if (b->moduleId != moduleId) continue;
 				if (b->pluginSlug != plugin || b->modelSlug != model) break;
-				// Not this pass's half of a split preset — the other task handles it.
-				if (part == PRESETPART::GuiOnly && !b->needsGuiThread) break;
-				if (part == PRESETPART::WorkerOnly && b->needsGuiThread) break;
-				// An allowlisted module cannot be loaded off the UI thread at all, and with no
-				// window there is no UI thread to load it on — not even via guiTasks, which
-				// guarantees only "off the engine thread": once hasWindow() is false it drains
-				// from its own private worker (GuiTaskProcessor.hpp). Applying it anyway is the
-				// crash the allowlist exists to prevent. Checked here, for every mode and every
-				// part, so this is the single place the rule lives; skip just this module and
-				// leave it as it is — the rest of the preset still applies.
-				if (b->needsGuiThread && !vcv::ui::hasWindow()) break;
+				if (!loader.shouldLoad(b->needsGuiThread)) break;
 				ModuleWidget* mw = b->getModuleWidget();
 				if (!mw) continue;
 
@@ -615,18 +592,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 					(*slotPrev->preset)[i] = mw->toJson();
 				}
 
-				// All that is left for the mode to select here is the fromJson target — the
-				// execution context was already decided in presetLoad(). Unsafe fast uses the
-				// widget path for both of its parts, GuiOnly included.
-				if (guiSafeMode == GUISAFEMODE::GUI) {
-					// This is an unlocked operation, it is not perfectly thread-safe, as the
-					// Engine thread would lock on preset loading.
-					mw->module->fromJson(vJ);
-				}
-				else {
-					// Safe, and Unsafe fast: full widget path.
-					mw->fromJson(vJ);
-				}
+				loader.load(b->needsGuiThread, mw, vJ);
 				break;
 			}
 			i++;
@@ -644,37 +610,12 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 				preset = p;
 				presetNext = -1;
 				if (!*(slot->presetSlotUsed)) return;
-				// The destination is decided here, on the engine thread, and every task
-				// dispatched is a leaf — no task ever hands work to another.
-				//
-				// Unsafe fast normally dispatches exactly one task, to the worker. It splits
-				// into two only when allowlisted and ordinary modules are bound together —
-				// rare, since the allowlist is a handful of models — and then sends one task
-				// per half, side by side rather than chained. The two run concurrently over
-				// disjoint modules. When every bound module is allowlisted the UI task goes
-				// out alone and the worker is never woken.
-				//
-				// The split routes to a UI thread; whether one actually exists is not checked
-				// here but in applyPreset(), which skips allowlisted modules when hasWindow()
-				// is false. That keeps the rule in one place and covers every mode — including
-				// the Safe/Unsafe branch below, which has no split to hang a check on.
-				if (guiSafeMode == GUISAFEMODE::WORKER) {
-					bool hasGui, hasWorker;
-					presetParts(hasGui, hasWorker);
-					if (!hasGui) {
-						taskWorker->work([=]() { applyPreset(p, PRESETPART::All); });
-					}
-					else if (!hasWorker) {
-						guiTasks.enqueue([=]() { applyPreset(p, PRESETPART::All); });
-					}
-					else {
-						guiTasks.enqueue([=]() { applyPreset(p, PRESETPART::GuiOnly); });
-						taskWorker->work([=]() { applyPreset(p, PRESETPART::WorkerOnly); });
-					}
-				}
-				else {
-					guiTasks.enqueue([=]() { applyPreset(p); });
-				}
+				bool hasGui, hasWorker;
+				presetParts(hasGui, hasWorker);
+				dispatch.dispatch(p, hasGui, hasWorker,
+					[this](const EightFace::PresetDispatch::Loader& loader, int p) {
+						applyPreset(loader, p);
+					});
 			}
 		}
 		else {
@@ -838,7 +779,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		json_object_set_new(rootJ, "boxColor", json_string(color::toHexString(boxColor).c_str()));
 		json_object_set_new(rootJ, "boxOpacity", json_real(boxOpacity));
 
-		json_object_set_new(rootJ, "guiSafeMode", json_integer((int)guiSafeMode));
+		json_object_set_new(rootJ, "guiSafeMode", json_integer((int)dispatch.guiSafeMode));
 
 		json_t* boundModulesJ = json_array();
 		for (BoundModule* b : boundModules) {
@@ -875,7 +816,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		if (boxOpacityJ) boxOpacity = json_real_value(boxOpacityJ);
 
 		json_t* guiSafeModeJ = json_object_get(rootJ, "guiSafeMode");
-		guiSafeMode = guiSafeModeJ ? (GUISAFEMODE)json_integer_value(guiSafeModeJ) : GUISAFEMODE::WORKER;
+		dispatch.guiSafeMode = guiSafeModeJ ? (EightFace::GUISAFEMODE)json_integer_value(guiSafeModeJ) : EightFace::GUISAFEMODE::WORKER;
 	
 		if (preset >= presetCount) {
 			preset = -1;
@@ -1102,7 +1043,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			moduleSelectProcessor.step();
 			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(moduleSelectProcessor.isLearning());
 			if (boxDrawer) boxDrawer->bindingActive = moduleSelectProcessor.isLearning();
-			module->guiTasks.step();
+			module->dispatch.step();
 		}
 		BASE::step();
 	}
@@ -1172,27 +1113,35 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Stability & performance mode"));
 		menu->addChild(createBoolMenuItem("Safe", "",
-			[=]() { return module->guiSafeMode == GUISAFEMODE::GUI_WITH_LOCK; },
+			[=]() {
+				return module->dispatch.guiSafeMode == EightFace::GUISAFEMODE::GUI_WITH_LOCK;
+			},
 			[=](bool v) {
 				std::string msg = "Using \"Safe\" will load presets perfectly safe without risking any crashes, but may lead to performance issues (e.g. stuttering). Proceed?";
 				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
-					module->guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+					module->dispatch.guiSafeMode = EightFace::GUISAFEMODE::GUI_WITH_LOCK;
 			}
 		));
 		menu->addChild(createBoolMenuItem("Unsafe", "",
-			[=]() { return module->guiSafeMode == GUISAFEMODE::GUI; },
+			[=]() {
+				return module->dispatch.guiSafeMode == EightFace::GUISAFEMODE::GUI;
+			},
 			[=](bool v) {
 				std::string msg = "Using \"Unsafe-mode\" will load presets quickly but may lead to crashing VCV Rack or other issues. Proceed?";
-				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
-					module->guiSafeMode = GUISAFEMODE::GUI;
+				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+					module->dispatch.guiSafeMode = EightFace::GUISAFEMODE::GUI;
+				}
 			}
 		));
 		menu->addChild(createBoolMenuItem("Unsafe fast", "",
-			[=]() { return module->guiSafeMode == GUISAFEMODE::WORKER; },
+			[=]() {
+				return module->dispatch.guiSafeMode == EightFace::GUISAFEMODE::WORKER;
+			},
 			[=](bool v) {
 				std::string msg = "Using \"Unsafe fast-mode\" will load presets most quickly but may lead to crashing VCV Rack or other issues. Proceed?";
-				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
-					module->guiSafeMode = GUISAFEMODE::WORKER;
+				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+					module->dispatch.guiSafeMode = EightFace::GUISAFEMODE::WORKER;
+				}
 			}
 		));
 

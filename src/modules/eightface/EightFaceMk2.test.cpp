@@ -6,6 +6,8 @@ using namespace StoermelderPackOne::EightFaceMk2;
 using StoermelderPackOne::ITaskWorker;
 using StoermelderPackOne::SyncTaskWorker;
 
+using StoermelderPackOne::EightFace::GUISAFEMODE;
+
 SYNC_MODEL(modelEightFaceMk2, "EightFaceMk2");
 SYNC_MODEL(modelEightFaceMk2Ex, "EightFaceMk2Ex");
 Test::TestContext<> testContext;
@@ -190,9 +192,9 @@ TEST_CASE("applyPreset does not decrement refcount of slot-owned json objects", 
 
 	// Use Unsafe mode: applyPreset() calls boundMw->module->fromJson(vJ), and the dispatch runs
 	// inline here because taskWorker is a NullTaskWorker and guiSafeMode != WORKER routes through
-	// guiTasks.enqueue(), not the worker -- draining it directly with drain() keeps this test
+	// guiTasks.enqueue(), notcl the worker -- draining it directly with drain() keeps this test
 	// about the refcount, not about which thread drains the queue.
-	m->guiSafeMode = GUISAFEMODE::GUI;
+	m->dispatch.guiSafeMode = GUISAFEMODE::GUI;
 
 	json_t* vJ = m->toJson();
 	size_t refcount = vJ->refcount;
@@ -203,8 +205,8 @@ TEST_CASE("applyPreset does not decrement refcount of slot-owned json objects", 
 	m->boundModules[0]->moduleId = boundM->id;
 
 	m->presetPrev = -1;
-	m->applyPreset(0);
-	m->guiTasks.drain();
+	m->applyPreset(m->dispatch.allLoader(), 0);
+	m->dispatch.drain();
 
 	REQUIRE(json_typeof(vJ) == JSON_OBJECT);
 	REQUIRE(vJ->refcount == refcount);
@@ -299,7 +301,7 @@ struct DispatchFixture {
 
 TEST_CASE("Safe mode applies from the UI thread (uiFrame), not immediately", "[EightFaceMk2][dispatch]") {
 	DispatchFixture f(createEightFaceMk2Module);
-	f.m->guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+	f.m->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 	f.savePreset("#010101");
 
 	f.m->presetLoad(0, false, true);
@@ -316,7 +318,7 @@ TEST_CASE("Safe mode applies from the UI thread (uiFrame), not immediately", "[E
 
 TEST_CASE("Unsafe mode also applies from the UI thread (uiFrame)", "[EightFaceMk2][dispatch]") {
 	DispatchFixture f(createEightFaceMk2Module);
-	f.m->guiSafeMode = GUISAFEMODE::GUI;
+	f.m->dispatch.guiSafeMode = GUISAFEMODE::GUI;
 	f.savePreset("#020202");
 
 	f.m->presetLoad(0, false, true);
@@ -329,7 +331,7 @@ TEST_CASE("Unsafe mode also applies from the UI thread (uiFrame)", "[EightFaceMk
 
 TEST_CASE("Unsafe fast mode applies through the injected worker, not the UI queue", "[EightFaceMk2][dispatch]") {
 	DispatchFixture f(createEightFaceMk2ModuleWithSyncWorker);
-	f.m->guiSafeMode = GUISAFEMODE::WORKER;
+	f.m->dispatch.guiSafeMode = GUISAFEMODE::WORKER;
 	f.savePreset("#030303");
 
 	// SyncTaskWorker::work() runs the task inline, on the calling thread -- standing in for a
@@ -347,7 +349,7 @@ TEST_CASE("Unsafe fast mode applies through the injected worker, not the UI queu
 
 TEST_CASE("needsGuiThread overrides Unsafe fast: allowlisted modules still apply via the UI queue", "[EightFaceMk2][dispatch]") {
 	DispatchFixture f(createEightFaceMk2ModuleWithSyncWorker);
-	f.m->guiSafeMode = GUISAFEMODE::WORKER;
+	f.m->dispatch.guiSafeMode = GUISAFEMODE::WORKER;
 	f.m->boundModules[0]->needsGuiThread = true;
 	f.savePreset("#040404");
 
@@ -371,7 +373,7 @@ TEST_CASE("needsGuiThread override takes the UI hop directly, without going thro
 	// .hpp: "Only the engine thread may call enqueue()").
 	auto worker = std::make_shared<CountingSyncTaskWorker>();
 	DispatchFixture f([&]() { return createEightFaceMk2ModuleWithWorker(worker); });
-	f.m->guiSafeMode = GUISAFEMODE::WORKER;
+	f.m->dispatch.guiSafeMode = GUISAFEMODE::WORKER;
 	f.m->boundModules[0]->needsGuiThread = true;
 	f.savePreset("#060606");
 
@@ -384,12 +386,42 @@ TEST_CASE("needsGuiThread override takes the UI hop directly, without going thro
 	REQUIRE(worker->count == 0);
 }
 
+TEST_CASE("GUI-thread entry points apply directly instead of enqueueing", "[EightFaceMk2][dispatch][!shouldfail]") {
+	// KNOWN FAILING -- pinned, not yet fixed. See var/EightFace_test_plan.md T5.
+	//
+	// GuiTaskProcessor is single-producer (GuiTaskProcessor.hpp: "Only the engine thread may call
+	// enqueue()") -- but faceSlotCmd(SLOT_CMD::LOAD, ...) is exactly the call
+	// EightFaceMk2LedButton::onButton (Shift+click) and the slot's context-menu "Load" item make,
+	// both from the GUI thread, and it goes straight to presetLoad(), which enqueues onto guiTasks
+	// with no thread check. If a GUI-thread caller and the engine thread (process()'s CV/auto-mode
+	// advances) ever raced a push, the ring buffer's non-atomic assignment would interleave --
+	// "lost tasks at best, UB at worst" per the class comment. This test does not (and cannot,
+	// single-threaded) reproduce that race; it pins the weaker, checkable half: that a GUI-thread
+	// call does not go through enqueue() at all, so there is nothing left to race. It currently
+	// fails: faceSlotCmd(SLOT_CMD::LOAD, ...) calls presetLoad(), which enqueues like any other
+	// caller. Fix: route this call site through applyPreset() directly instead.
+	DispatchFixture f(createEightFaceMk2Module);
+	f.m->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+	f.savePreset("#050505");
+
+	// The production call site (EightFaceMk2LedButton::onButton / the slot's "Load" menu item)
+	// calls this exact method, on the GUI thread, standing in for the widget/menu callback.
+	f.m->faceSlotCmd(SLOT_CMD::LOAD, 0);
+
+	// Applied synchronously, with no uiFrame()/dspStep() in between -- the enqueue-then-drain
+	// contract the other dispatch tests pin (see "Safe mode applies from the UI thread (uiFrame),
+	// not immediately") would leave this unapplied at this point.
+	REQUIRE(f.appliedLabel() == "#050505");
+	// And the queue itself never received anything to drain.
+	REQUIRE(f.m->dispatch.pendingGuiTasks() == 0);
+}
+
 TEST_CASE("Unsafe fast without the allowlist still takes the worker hop", "[EightFaceMk2][dispatch]") {
 	// The counterpart to the case above: the allowlist check must not route *every* load to the
 	// UI thread -- with no allowlisted module bound, WORKER mode still reaches the worker.
 	auto worker = std::make_shared<CountingSyncTaskWorker>();
 	DispatchFixture f([&]() { return createEightFaceMk2ModuleWithWorker(worker); });
-	f.m->guiSafeMode = GUISAFEMODE::WORKER;
+	f.m->dispatch.guiSafeMode = GUISAFEMODE::WORKER;
 	f.m->boundModules[0]->needsGuiThread = false;
 	f.savePreset("#070707");
 
@@ -409,7 +441,7 @@ TEST_CASE("Unsafe fast splits a mixed preset: allowlisted module to the UI, the 
 	// see the two tests above for the single-task paths, which are the common ones.
 	auto worker = std::make_shared<CountingSyncTaskWorker>();
 	DispatchFixture f([&]() { return createEightFaceMk2ModuleWithWorker(worker); });
-	f.m->guiSafeMode = GUISAFEMODE::WORKER;
+	f.m->dispatch.guiSafeMode = GUISAFEMODE::WORKER;
 
 	// A second bound target, allowlisted; f.boundM (bound by the fixture) stays off the list.
 	EightFaceMk2Module<8>* guiM = f.h.addModule<EightFaceMk2Module<8>>(createEightFaceMk2Module);
@@ -485,13 +517,13 @@ TEST_CASE("GUI vs GUI_WITH_LOCK apply through different objects", "[EightFaceMk2
 	m->presetPrev = -1;
 
 	SECTION("GUI_WITH_LOCK calls mw->fromJson (widget path)") {
-		m->guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
-		m->applyPreset(0);
+		m->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+		m->applyPreset(m->dispatch.allLoader(), 0);
 	}
 
 	SECTION("GUI calls mw->module->fromJson (module-only path)") {
-		m->guiSafeMode = GUISAFEMODE::GUI;
-		m->applyPreset(0);
+		m->dispatch.guiSafeMode = GUISAFEMODE::GUI;
+		m->applyPreset(m->dispatch.allLoader(), 0);
 	}
 
 	// Both paths reach Module::fromJson() in the end, so the applied effect is the same either
@@ -518,7 +550,7 @@ TEST_CASE("No window: presets still load in every mode", "[EightFaceMk2][dispatc
 	SECTION("Safe mode") {
 		DispatchFixture f(createEightFaceMk2Module);
 		f.h.setUiMode(Test::UiMode::UiAbsent);
-		f.m->guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+		f.m->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 		f.savePreset("#060606");
 
 		f.m->presetLoad(0, false, true);
@@ -533,7 +565,7 @@ TEST_CASE("No window: presets still load in every mode", "[EightFaceMk2][dispatc
 	SECTION("Unsafe fast mode") {
 		DispatchFixture f(createEightFaceMk2ModuleWithSyncWorker);
 		f.h.setUiMode(Test::UiMode::UiAbsent);
-		f.m->guiSafeMode = GUISAFEMODE::WORKER;
+		f.m->dispatch.guiSafeMode = GUISAFEMODE::WORKER;
 		f.savePreset("#070707");
 
 		f.m->presetLoad(0, false, true);
@@ -586,7 +618,7 @@ TEST_CASE("No window, Unsafe fast: the GUI half is not dispatched at all", "[Eig
 		return s;
 	};
 
-	f.m->guiSafeMode = GUISAFEMODE::WORKER;
+	f.m->dispatch.guiSafeMode = GUISAFEMODE::WORKER;
 	f.m->presetLoad(0, false, true);
 
 	// The split still goes out as usual -- the window check is not in the dispatch.
@@ -595,7 +627,7 @@ TEST_CASE("No window, Unsafe fast: the GUI half is not dispatched at all", "[Eig
 	// The ordinary module loaded; the allowlisted one was skipped by applyPreset() rather than
 	// applied with no UI thread to apply it on. Draining guiTasks is what runs the GUI half, so
 	// this asserts the skip happened inside it, not that it was never queued.
-	f.m->guiTasks.drain();
+	f.m->dispatch.drain();
 	REQUIRE(labelOf(f.boundM) == "#0a0a0a");
 	REQUIRE(labelOf(guiM) != "#0b0b0b");
 
@@ -621,17 +653,17 @@ TEST_CASE("No window: an allowlisted module is skipped in every mode", "[EightFa
 	f.savePreset("#0c0c0c");
 
 	SECTION("Unsafe fast") {
-		f.m->guiSafeMode = GUISAFEMODE::WORKER;
+		f.m->dispatch.guiSafeMode = GUISAFEMODE::WORKER;
 	}
 	SECTION("Safe -- the path that crashed before the skip existed") {
-		f.m->guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+		f.m->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 	}
 	SECTION("Unsafe") {
-		f.m->guiSafeMode = GUISAFEMODE::GUI;
+		f.m->dispatch.guiSafeMode = GUISAFEMODE::GUI;
 	}
 
 	f.m->presetLoad(0, false, true);
-	f.m->guiTasks.drain();
+	f.m->dispatch.drain();
 	REQUIRE(f.appliedLabel() != "#0c0c0c");
 }
 
@@ -646,7 +678,7 @@ TEST_CASE("Queue capacity: more than 8 bound modules load without drops", "[Eigh
 	// h.uiFrame() only steps widgets added through the harness -- guiTasks.step() is reached
 	// from m's own widget's step(), so a widget for m is needed, not just for the bound targets.
 	h.addWidget<EightFaceMk2Widget<8>>(m);
-	m->guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+	m->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 
 	const int N = 12;
 	std::vector<EightFaceMk2Module<8>*> boundMs;
@@ -700,4 +732,62 @@ TEST_CASE("Queue capacity: more than 8 bound modules load without drops", "[Eigh
 	for (int i = 0; i < N; i++) {
 		Test::unregisterModule(boundMs[i], boundMws[i]);
 	}
+}
+
+
+// ---- Auto mode --------------------------------------------------------------------------------
+
+TEST_CASE("Auto mode saves the outgoing slot's live state before applying the incoming preset", "[EightFaceMk2][auto]") {
+	// applyPreset() (EightFaceMk2.cpp:613): "if (BASE::ctrlMode == CTRLMODE::AUTO && slotPrev &&
+	// *slotPrev->presetSlotUsed) { ... (*slotPrev->preset)[i] = mw->toJson(); }" -- captures the
+	// bound module's CURRENT state into the slot being left, before fromJson() overwrites that
+	// state with the incoming preset. This is the whole point of auto mode (manual: presets
+	// update automatically as you tweak the bound modules) and had no test before this one.
+	DispatchFixture f(createEightFaceMk2Module);
+	f.m->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+	// ctrlMode is not a free-standing field: process() re-derives it from PARAM_RW every call
+	// (EightFaceMk2.cpp:256, "CTRLMODE ctrlMode = (CTRLMODE)Module::params[PARAM_RW].getValue()")
+	// and overwrites BASE::ctrlMode with it. Setting the member directly is silently clobbered
+	// back to Read on the next process(); the switch position is the actual source of truth.
+	f.m->params[EightFaceMk2Module<8>::PARAM_RW].setValue((float)CTRLMODE::AUTO);
+
+	// Slot 0: the outgoing slot. Saved with one color, then the bound module is moved to a second,
+	// different color -- the live state a save-before-advance must pick up, distinct from both what
+	// slot 0 was saved with and what slot 1 will apply.
+	f.savePreset("#101010");
+	f.boundM->boxColor = color::fromHexString("#202020");
+
+	// Slot 1: the incoming preset, prepared independently (savePreset() always targets slot 0).
+	EightFaceMk2Slot* slot1 = f.m->faceSlot(1);
+	NVGcolor prevColor = f.boundM->boxColor;
+	f.boundM->boxColor = color::fromHexString("#303030");
+	json_t* vJ = f.boundM->toJson();
+	f.boundM->boxColor = prevColor;
+	slot1->preset->push_back(vJ);
+	*(slot1->presetSlotUsed) = true;
+
+	// process() establishes presetTotal/N[] (and applies the PARAM_RW switch above to
+	// BASE::ctrlMode), and presetLoad(0, ..., force) is what sets preset/presetPrev the way the
+	// constructor leaves them (-1) would not otherwise reach slot 0 -> 1.
+	f.m->process(Test::makeProcessArgs(0));
+	f.m->presetLoad(0, false, true);
+	f.h.uiFrame();
+	REQUIRE(f.appliedLabel() == "#101010");
+	// Back to the live value the save-before-advance must still capture correctly on the next hop.
+	f.boundM->boxColor = color::fromHexString("#202020");
+
+	f.m->presetLoad(1);
+	f.h.uiFrame();
+
+	// The incoming preset (slot 1) applied to the bound module.
+	REQUIRE(f.appliedLabel() == "#303030");
+
+	// The outgoing slot (0) now holds the live state from just before this load -- not its
+	// original "#101010", and not the incoming "#303030". Slots store the widget-level toJson()
+	// (id/plugin/model/params/data, same shape as savePreset()/appliedLabel() unwrap via "data"),
+	// not the module-level dataToJson() appliedLabel() reads -- boxColor lives under "data".
+	json_t* savedJ = f.m->faceSlot(0)->preset->at(0);
+	json_t* colorJ = json_object_get(json_object_get(savedJ, "data"), "boxColor");
+	REQUIRE(colorJ != nullptr);
+	REQUIRE(json_string_value(colorJ) == std::string("#202020"));
 }
