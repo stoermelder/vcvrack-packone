@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/ui.hpp"
 #include "../../utils/digital.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
@@ -13,7 +14,6 @@
 #include "../../utils/string.hpp"
 #include <random>
 #include <atomic>
-#include <osdialog.h>
 
 namespace StoermelderPackOne {
 namespace EightFace {
@@ -1131,7 +1131,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			},
 			[=](bool v) {
 				std::string msg = "Using \"Safe\" will load presets perfectly safe without risking any crashes, but may lead to performance issues (e.g. stuttering). Proceed?";
-				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
+				if (vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::YES_NO, msg))
 					module->dispatch.guiSafeMode = EightFace::GUISAFEMODE::GUI_WITH_LOCK;
 			}
 		));
@@ -1141,7 +1141,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			},
 			[=](bool v) {
 				std::string msg = "Using \"Unsafe-mode\" will load presets quickly but may lead to crashing VCV Rack or other issues. Proceed?";
-				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+				if (vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::YES_NO, msg)) {
 					module->dispatch.guiSafeMode = EightFace::GUISAFEMODE::GUI;
 				}
 			}
@@ -1152,7 +1152,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			},
 			[=](bool v) {
 				std::string msg = "Using \"Unsafe fast-mode\" will load presets most quickly but may lead to crashing VCV Rack or other issues. Proceed?";
-				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+				if (vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::YES_NO, msg)) {
 					module->dispatch.guiSafeMode = EightFace::GUISAFEMODE::WORKER;
 				}
 			}
@@ -1225,7 +1225,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			moduleSelectProcessor.disableLearn();
 			std::string s = module->bindModuleExpander();
 			if (!s.empty()) {
-				osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, s.c_str());
+				vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, s);
 			}
 		}));
 		menu->addChild(createMenuItem("Bind module (select one)", "", [=]() {
@@ -1233,7 +1233,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			moduleSelectProcessor.startLearn([module](ModuleWidget* mw, Vec pos) {
 				std::string s = module->bindModule(mw->module);
 				if (!s.empty()) {
-					osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, s.c_str());
+					vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, s);
 				}
 			});
 		}));
@@ -1247,7 +1247,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 				}, ModuleSelectProcessor::LEARN_MODE::MULTI,
 				[this]() {
 					if (!moduleSelectProcessorStr.empty()) {
-						osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, moduleSelectProcessorStr.c_str());
+						vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, moduleSelectProcessorStr);
 					}
 				}
 			);
@@ -1259,7 +1259,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 				if (!_s.empty()) s += _s + "\n";
 			}
 			if (!s.empty()) {
-				osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, s.c_str());
+				vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, s);
 			}
 			APP->scene->rack->deselectAll();
 		}));

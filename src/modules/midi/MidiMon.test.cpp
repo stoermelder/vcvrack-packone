@@ -477,8 +477,7 @@ TEST_CASE("exportLogDialog routes through the UI save dialog", "[MidiMon][ui]") 
 
 		REQUIRE(mock.ui.saveCalls.size() == 1);
 		CHECK(mock.ui.saveCalls[0].filename == "MidiMon.log");
-		// filters must be a valid osdialog filter string ("name:ext...") — passing ""
-		// makes osdialog_filters_parse assert and abort in the real UI layer.
+		// filters must be a valid filter string ("name:ext...") — passing ""
 		CHECK_FALSE(mock.ui.saveCalls[0].filters.empty());
 		CHECK(mock.ui.saveCalls[0].filters.find(':') != std::string::npos);
 		CHECK(mock.fs.writes.empty());

@@ -6,6 +6,7 @@
 #include "SirenBpmDetector.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
 #include "../../ui/AutoTagDialog.hpp"
+#include "../../vcv/ui.hpp"
 #include <atomic>
 #include <functional>
 #include <map>
@@ -258,7 +259,9 @@ struct SirenClassifyTask {
 
 	void showResult(const TagToRels& tagToRels) {
 		if (tagToRels.empty()) {
-			osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
+			StoermelderPackOne::vcv::ui::message(
+				StoermelderPackOne::vcv::MessageType::INFO, StoermelderPackOne::vcv::MessageButtons::OK,
+			    "No new tag assignments found.");
 			return;
 		}
 

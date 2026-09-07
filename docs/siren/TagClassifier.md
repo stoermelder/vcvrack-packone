@@ -236,7 +236,7 @@ Both paths converge on `SirenClassifyTask` (`SirenBackgroundTasks.hpp`), which o
 
 The scan collects tags in a `std::map<std::string, std::set<std::string>>` (tag → relative paths). While a scan is running, the status line shows `Analysing… N/M`. When the worker signals `done`, the main thread:
 
-- Shows `osdialog_message` "No new tag assignments found." if the result map is empty.
+- Shows message "No new tag assignments found." if the result map is empty.
 - Otherwise opens a `ui::TagConfirmDialog<std::string>` (the payload type is the relative path string) via `openTagConfirmDialog`. Header is `"Suggest tags"` for a single file or `"Suggest tags — <dirName>"` for a folder. Tags already present on a file are filtered out by lowercase-trimmed name before the worker emits them, so the dialog never suggests a tag the file already has.
 - The `onApply` callback in the pane writes the accepted tags via `MetadataStore::addTag` and saves metadata. Tags are applied directly; no intermediate suggestion state.
 - Filename labels in the confirm dialog are clickable — clicking one calls `selectPath(resolveNode(fileId), true)` which loads and plays the file in the preview pane. Right-click on a label offers **Remove from group**.

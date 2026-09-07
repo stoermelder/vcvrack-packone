@@ -1,6 +1,7 @@
 #pragma once
 #include <rack.hpp>
 #include "SirenBrowserPane.hpp"
+#include "../../vcv/ui.hpp"
 
 namespace StoermelderPackOne {
 namespace Siren {
@@ -37,11 +38,10 @@ inline void appendConversionMenuItems(ui::Menu* menu, bool patchStorageAvailable
 			sirenSettings.customConvertDir.empty() ? "Custom folder..." : sirenSettings.customConvertDir, "",
 			[=]() { return sirenSettings.convertTarget == SirenSettings::CT_CUSTOM; },
 			[]() {
-				char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
-				if (!path) return;
+				std::string path = StoermelderPackOne::vcv::ui::openDirectoryDialog();
+				if (path.empty()) return;
 				sirenSettings.customConvertDir = path;
 				sirenSettings.convertTarget = SirenSettings::CT_CUSTOM;
-				free(path);
 			}
 		));
 		// Patch storage: only available when there is a real module instance.

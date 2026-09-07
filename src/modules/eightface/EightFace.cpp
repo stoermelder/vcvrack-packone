@@ -6,7 +6,6 @@
 #include "PresetDispatch.hpp"
 #include <functional>
 #include <random>
-#include <osdialog.h>
 
 namespace StoermelderPackOne {
 namespace EightFace {
@@ -702,7 +701,7 @@ struct EightFaceWidgetTemplate : ThemedModuleWidget<MODULE> {
 			},
 			[=](bool v) {
 				std::string msg = "Using \"Safe\" will load presets perfectly safe without risking any crashes, but may lead to performance issues (e.g. stuttering). Proceed?";
-				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+				if (vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::YES_NO, msg)) {
 					module->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 				}
 			}
@@ -713,7 +712,7 @@ struct EightFaceWidgetTemplate : ThemedModuleWidget<MODULE> {
 			},
 			[=](bool v) {
 				std::string msg = "Using \"Unsafe-mode\" will load presets quickly but may lead to crashing VCV Rack or other issues. Proceed?";
-				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+				if (vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::YES_NO, msg)) {
 					module->dispatch.guiSafeMode = GUISAFEMODE::GUI;
 				}
 			}
@@ -724,7 +723,7 @@ struct EightFaceWidgetTemplate : ThemedModuleWidget<MODULE> {
 			},
 			[=](bool v) {
 				std::string msg = "Using \"Unsafe fast-mode\" will load presets most quickly but may lead to crashing VCV Rack or other issues. Proceed?";
-				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+				if (vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::YES_NO, msg)) {
 					module->dispatch.guiSafeMode = GUISAFEMODE::WORKER;
 				}
 			}

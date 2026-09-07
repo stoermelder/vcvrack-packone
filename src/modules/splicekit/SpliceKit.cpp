@@ -1,5 +1,6 @@
 #include "../../plugin.hpp"
 #include "../../vcv/api.hpp"
+#include "../../vcv/ui.hpp"
 #include "../../components/MatrixButton.hpp"
 #include "../../components/MidiWidget.hpp"
 #include "../../ui/InfoWindow.hpp"
@@ -9,7 +10,6 @@
 #include "../../utils/GuiTaskProcessor.hpp"
 #include "../midi/MidiTrackingProcessor.hpp"
 #include "SpliceKit.controllers.hpp"
-#include <osdialog.h>
 #include <array>
 
 namespace StoermelderPackOne {
@@ -2534,12 +2534,8 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			menu->addChild(new MenuSeparator);
 			menu->addChild(createMenuItem("Load preset from file...", "",
 				[=]() {
-					osdialog_filters* filters = osdialog_filters_parse("SpliceKit Preset:ctrl.json;JSON:json");
-					char* pathC = osdialog_file(OSDIALOG_OPEN, NULL, NULL, filters);
-					osdialog_filters_free(filters);
-					if (!pathC) return;
-					std::string path = pathC;
-					free(pathC);
+					std::string path = StoermelderPackOne::vcv::ui::openDialog("SpliceKit Preset:ctrl.json;JSON:json", "");
+					if (path.empty()) return;
 					std::vector<uint8_t> bytes = system::readFile(path);
 					if (bytes.empty()) return;
 					std::string text(bytes.begin(), bytes.end());
@@ -2551,15 +2547,11 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			bool canSave = module->feedback.isActive();
 			menu->addChild(createMenuItem("Save preset to file...", "",
 				[=]() {
-					osdialog_filters* filters = osdialog_filters_parse("SpliceKit Preset:ctrl.json");
 					std::string defName = module->feedback.activePresetName("");
 					if (!defName.empty()) defName += ".ctrl.json";
-					char* pathC = osdialog_file(OSDIALOG_SAVE, NULL,
-						defName.empty() ? "preset.ctrl.json" : defName.c_str(), filters);
-					osdialog_filters_free(filters);
-					if (!pathC) return;
-					std::string path = pathC;
-					free(pathC);
+					std::string path = StoermelderPackOne::vcv::ui::saveDialog("SpliceKit Preset:ctrl.json", "",
+						defName.empty() ? "preset.ctrl.json" : defName);
+					if (path.empty()) return;
 					const std::string& text = module->feedback.activePresetJsonText();
 					system::writeFile(path, std::vector<uint8_t>(text.begin(), text.end()));
 				},
