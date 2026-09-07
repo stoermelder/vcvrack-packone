@@ -295,6 +295,16 @@ inline void destroyWidget(rack::ModuleWidget* mw) {
 }
 
 inline void registerModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
+	// Idempotent. Harness::adoptModule() registers every module it owns, so the ~103 existing
+	// `h.addModule(...)` + `Test::registerModule(...)` pairs across the suite would otherwise
+	// trip addModule_NoLock's double-add assert. Registering twice is a no-op, not an error.
+	// getModule_NoLock, not getModule: the latter takes the engine's SharedLock, and this sits
+	// alongside addModule_NoLock in code that may already hold the write lock — a
+	// non-recursive rwlock, so re-acquiring it on the same thread deadlocks.
+	if (m->id >= 0 && APP->engine->getModule_NoLock(m->id) == m) {
+		if (mw) APP->scene->rack->addModule(mw);
+		return;
+	}
 	TEST_SUPPRESS_DEPRECATED_BEGIN
 	APP->engine->addModule_NoLock(m);
 	TEST_SUPPRESS_DEPRECATED_END
@@ -343,66 +353,6 @@ inline const rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t c
 	m.bytes = { static_cast<unsigned char>((statusNibble << 4) | (channel & 0x0f)), static_cast<unsigned char>(b1), static_cast<unsigned char>(b2) };
 	return m;
 }
-
-
-// SUPERSEDED by Test::Harness (test_harness.hpp) — prefer it for new tests.
-//
-// Harness does everything this does (same stepping order, same messageFlipRequested-gated
-// expander flip) and adds the UI half: widget step(), scene layout, the DSP:UI rate ratio, and
-// module/widget lifetime. SimpleEngine is kept because 6 test files use it and a mechanical
-// rewrite of working tests buys nothing on its own; it should be retired as those files are
-// touched for other reasons, not in a dedicated migration pass. Do not add call sites.
-//
-// SimpleEngine simulates a VCV Rack engine step for module testing.
-// This class manages anlist of modules and processes them in sequence,
-// automatically flipping expander producer/consumer messages between each step.
-// This mimics how the VCV Rack engine processes modules and flips expanders.
-//
-// Usage:
-// Test::SimpleEngine testEngine;
-// testEngine.addModules(moduleA, moduleB);
-// A -> B chain
-//
-// testEngine.step();  // Process both modules with message flipping
-// testEngine.step();  // Continue processing...
-//
-// Named addModule(s), not registerModule(s), to stay distinct from Test::registerModule() —
-// that one registers a module with Rack's real engine (APP->engine->addModule_NoLock); this one
-// only appends to SimpleEngine's own std::list. Same word, unrelated operations (see B2 in the
-// framework review).
-struct SimpleEngine {
-	std::list<Module*> modules;
-	int frame = 0;
-
-	void step() {
-		auto args = Test::makeProcessArgs(frame);
-		for (Module* module : modules) {
-			module->process(args);
-			if (module->leftExpander.messageFlipRequested) {
-				std::swap(module->leftExpander.producerMessage, module->leftExpander.consumerMessage);
-				module->leftExpander.messageFlipRequested = false;
-			}
-			if (module->rightExpander.messageFlipRequested) {
-				std::swap(module->rightExpander.producerMessage, module->rightExpander.consumerMessage);
-				module->rightExpander.messageFlipRequested = false;
-			}
-		}
-		frame++;
- 	}
-
-	void addModule(Module* m) {
-		modules.push_back(m);
-	}
-
-	/// Add multiple modules at once.
-	template <typename... T>
-	void addModules(T*... _m) {
-		Module* arr[] = {_m...};
-		for (Module* m : arr) {
-			this->modules.push_back(m);
-		}
-	}
-};
 
 
 } // namespace Test

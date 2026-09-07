@@ -43,7 +43,6 @@ TEST_CASE("Preset JSON null-guards", "[RotorA][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 TEST_CASE("JSON round-trip preserves state", "[RotorA][JSON]") {
@@ -59,13 +58,12 @@ TEST_CASE("JSON round-trip preserves state", "[RotorA][JSON]") {
 	json_decref(j);
 
 	REQUIRE(m2->panelTheme == 1);
-
 }
 
 
 TEST_CASE("Basic modulation", "[RotorA]") {
-	Test::ModuleScaffold<RotorAModule> mods;
-	auto module = mods.create("RotorA");
+	Test::Harness h;
+	auto module = h.addModule<RotorAModule>("RotorA");
 
 	SECTION("Modulator at 0V outputs to first channel") {
 		module->inputs[RotorAModule::MOD_INPUT].channels = 1;
@@ -81,9 +79,7 @@ TEST_CASE("Basic modulation", "[RotorA]") {
 		module->outputs[RotorAModule::POLY_OUTPUT].channels = 1;
 		
 		// Process enough samples for divider
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		
 		REQUIRE(module->outputs[RotorAModule::POLY_OUTPUT].getChannels() == 16);
 		
@@ -105,9 +101,7 @@ TEST_CASE("Basic modulation", "[RotorA]") {
 		module->outputs[RotorAModule::POLY_OUTPUT].channels = 1;
 		
 		// Process enough samples
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		
 		// Middle channels should have voltage
 		float v7 = module->outputs[RotorAModule::POLY_OUTPUT].getVoltage(7);
@@ -128,21 +122,18 @@ TEST_CASE("Basic modulation", "[RotorA]") {
 		module->outputs[RotorAModule::POLY_OUTPUT].channels = 1;
 		
 		// Process enough samples
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		
 		// Last channels should have voltage		
 		float v14 = module->outputs[RotorAModule::POLY_OUTPUT].getVoltage(14);
 		float v15 = module->outputs[RotorAModule::POLY_OUTPUT].getVoltage(15);
 		REQUIRE((v14 + v15) > 0.0f);
 	}
-
 }
 
 TEST_CASE("Carrier signal", "[RotorA]") {
-	Test::ModuleScaffold<RotorAModule> mods;
-	auto module = mods.create("RotorA");
+	Test::Harness h;
+	auto module = h.addModule<RotorAModule>("RotorA");
 
 	SECTION("Carrier affects output amplitude") {
 		module->inputs[RotorAModule::MOD_INPUT].channels = 1;
@@ -156,16 +147,12 @@ TEST_CASE("Carrier signal", "[RotorA]") {
 		
 		// Test with low carrier
 		module->inputs[RotorAModule::CAR_INPUT].setVoltage(2.0f);
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		float v1 = module->outputs[RotorAModule::POLY_OUTPUT].getVoltage(0);
 		
 		// Test with high carrier
 		module->inputs[RotorAModule::CAR_INPUT].setVoltage(10.0f);
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		float v2 = module->outputs[RotorAModule::POLY_OUTPUT].getVoltage(0);
 		
 		// Higher carrier should produce higher output
@@ -182,19 +169,16 @@ TEST_CASE("Carrier signal", "[RotorA]") {
 		// Simulate connected output
 		module->outputs[RotorAModule::POLY_OUTPUT].channels = 1;
 		
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		
 		float v = module->outputs[RotorAModule::POLY_OUTPUT].getVoltage(0);
 		REQUIRE(v > 0.0f);
 	}
-
 }
 
 TEST_CASE("Base signal modulation", "[RotorA]") {
-	Test::ModuleScaffold<RotorAModule> mods;
-	auto module = mods.create("RotorA");
+	Test::Harness h;
+	auto module = h.addModule<RotorAModule>("RotorA");
 
 	SECTION("Base signal affects corresponding channel") {
 		module->inputs[RotorAModule::MOD_INPUT].channels = 1;
@@ -211,9 +195,7 @@ TEST_CASE("Base signal modulation", "[RotorA]") {
 		// Simulate connected output
 		module->outputs[RotorAModule::POLY_OUTPUT].channels = 1;
 		
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		
 		// Channel 0 should be modulated by base signal
 		float v0 = module->outputs[RotorAModule::POLY_OUTPUT].getVoltage(0);
@@ -238,20 +220,17 @@ TEST_CASE("Base signal modulation", "[RotorA]") {
 		// Simulate connected output
 		module->outputs[RotorAModule::POLY_OUTPUT].channels = 1;
 		
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		
 		// First channel affected by base signals
 		float v0 = module->outputs[RotorAModule::POLY_OUTPUT].getVoltage(0);
 		REQUIRE(v0 > 0.0f);
 	}
-
 }
 
 TEST_CASE("Channel count control", "[RotorA]") {
-	Test::ModuleScaffold<RotorAModule> mods;
-	auto module = mods.create("RotorA");
+	Test::Harness h;
+	auto module = h.addModule<RotorAModule>("RotorA");
 
 	SECTION("Changing channel count affects output") {
 		module->inputs[RotorAModule::MOD_INPUT].channels = 1;
@@ -269,9 +248,7 @@ TEST_CASE("Channel count control", "[RotorA]") {
 			module->params[RotorAModule::CHANNELS_OFFSET_PARAM].setValue(0.f);
 			
 			// Process enough samples for divider to update
-			for (int i = 0; i < 600; i++) {
-				module->process(Test::makeProcessArgs(1));
-			}
+			h.dspSteps(600);
 			
 			REQUIRE(module->outputs[RotorAModule::POLY_OUTPUT].getChannels() == (int)channels);
 		}
@@ -289,18 +266,15 @@ TEST_CASE("Channel count control", "[RotorA]") {
 		// Simulate connected output
 		module->outputs[RotorAModule::POLY_OUTPUT].channels = 1;
 		
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		
 		REQUIRE(module->outputs[RotorAModule::POLY_OUTPUT].getChannels() == 2);
 	}
-
 }
 
 TEST_CASE("Channel offset", "[RotorA]") {
-	Test::ModuleScaffold<RotorAModule> mods;
-	auto module = mods.create("RotorA");
+	Test::Harness h;
+	auto module = h.addModule<RotorAModule>("RotorA");
 
 	SECTION("Offset shifts output channels") {
 		module->inputs[RotorAModule::MOD_INPUT].channels = 1;
@@ -316,9 +290,7 @@ TEST_CASE("Channel offset", "[RotorA]") {
 		module->outputs[RotorAModule::POLY_OUTPUT].channels = 1;
 		
 		// No offset - first 4 channels should be used
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		
 		REQUIRE(module->outputs[RotorAModule::POLY_OUTPUT].getChannels() == 4);
 		float v0_no_offset = module->outputs[RotorAModule::POLY_OUTPUT].getVoltage(0);
@@ -327,9 +299,7 @@ TEST_CASE("Channel offset", "[RotorA]") {
 		// With offset of 4 - channels 4-7 should be used
 		module->params[RotorAModule::CHANNELS_OFFSET_PARAM].setValue(4.f);
 		
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		
 		REQUIRE(module->outputs[RotorAModule::POLY_OUTPUT].getChannels() == 8);
 		
@@ -359,20 +329,17 @@ TEST_CASE("Channel offset", "[RotorA]") {
 		// Simulate connected output
 		module->outputs[RotorAModule::POLY_OUTPUT].channels = 1;
 		
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		
 		// Channels 14 and 15
 		REQUIRE(module->outputs[RotorAModule::POLY_OUTPUT].getChannels() == 16);
 		REQUIRE(module->outputs[RotorAModule::POLY_OUTPUT].getVoltage(14) > 0.0f);
 	}
-
 }
 
 TEST_CASE("Modulator clamping", "[RotorA]") {
-	Test::ModuleScaffold<RotorAModule> mods;
-	auto module = mods.create("RotorA");
+	Test::Harness h;
+	auto module = h.addModule<RotorAModule>("RotorA");
 
 	SECTION("Modulator clamped to 0..10V range") {
 		module->inputs[RotorAModule::MOD_INPUT].channels = 1;
@@ -386,27 +353,22 @@ TEST_CASE("Modulator clamping", "[RotorA]") {
 		
 		// Test negative voltage (should clamp to 0)
 		module->inputs[RotorAModule::MOD_INPUT].setVoltage(-5.0f);
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		float v0 = module->outputs[RotorAModule::POLY_OUTPUT].getVoltage(0);
 		REQUIRE(v0 > 0.0f); // Should output to first channel
 		
 		// Test over-voltage (should clamp to 10V)
 		module->inputs[RotorAModule::MOD_INPUT].setVoltage(15.0f);
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		// Should output to last channels
 		float v15 = module->outputs[RotorAModule::POLY_OUTPUT].getVoltage(15);
 		REQUIRE(v15 >= 0.0f);
 	}
-
 }
 
 TEST_CASE("Distribution between channels", "[RotorA]") {
-	Test::ModuleScaffold<RotorAModule> mods;
-	auto module = mods.create("RotorA");
+	Test::Harness h;
+	auto module = h.addModule<RotorAModule>("RotorA");
 
 	SECTION("Modulator between values distributes to adjacent channels") {
 		module->inputs[RotorAModule::MOD_INPUT].channels = 1;
@@ -421,9 +383,7 @@ TEST_CASE("Distribution between channels", "[RotorA]") {
 		// Set modulator to 2.5V (between channels)
 		module->inputs[RotorAModule::MOD_INPUT].setVoltage(2.5f);
 		
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		
 		// Should distribute across multiple channels
 		int activeChannels = 0;
@@ -436,12 +396,11 @@ TEST_CASE("Distribution between channels", "[RotorA]") {
 		// At least one channel should be active
 		REQUIRE(activeChannels > 0);
 	}
-
 }
 
 TEST_CASE("Output without inputs", "[RotorA]") {
-	Test::ModuleScaffold<RotorAModule> mods;
-	auto module = mods.create("RotorA");
+	Test::Harness h;
+	auto module = h.addModule<RotorAModule>("RotorA");
 
 	SECTION("Module processes without crashing when no inputs connected") {
 		module->params[RotorAModule::CHANNELS_PARAM].setValue(8.f);
@@ -450,19 +409,16 @@ TEST_CASE("Output without inputs", "[RotorA]") {
 		module->outputs[RotorAModule::POLY_OUTPUT].channels = 1;
 		
 		// Process without any inputs connected
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		
 		// Should not crash and produce valid (likely zero) outputs
 		REQUIRE(module->outputs[RotorAModule::POLY_OUTPUT].getChannels() == 8);
 	}
-
 }
 
 TEST_CASE("Clock divider updates", "[RotorA]") {
-	Test::ModuleScaffold<RotorAModule> mods;
-	auto module = mods.create("RotorA");
+	Test::Harness h;
+	auto module = h.addModule<RotorAModule>("RotorA");
 
 	SECTION("Channel parameters update after processing divider samples") {
 		module->params[RotorAModule::CHANNELS_PARAM].setValue(4.f);
@@ -478,12 +434,9 @@ TEST_CASE("Clock divider updates", "[RotorA]") {
 		module->outputs[RotorAModule::POLY_OUTPUT].channels = 1;
 		
 		// Process more than divider period (512 samples)
-		for (int i = 0; i < 600; i++) {
-			module->process(Test::makeProcessArgs(1));
-		}
+		h.dspSteps(600);
 		
 		REQUIRE(module->channels == 4);
 		REQUIRE(module->channelsOffset == 2);
 	}
-
 }

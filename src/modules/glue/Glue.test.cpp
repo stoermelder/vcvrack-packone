@@ -1,10 +1,20 @@
 #include "../../test/framework.hpp"
 #include "Glue.cpp"
 
+using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::Glue;
 
 SYNC_MODEL(modelGlue, "Glue");
 Test::TestContext<> testContext;
+
+// Records pushed actions and owns them (push takes ownership). Same shape as
+// Strip.test.cpp's MockHistoryAccess.
+struct MockHistoryAccess : vcv::HistoryAccess {
+	std::vector<::rack::history::Action*> pushed;
+	void push(::rack::history::Action* a) override { pushed.push_back(a); }
+	~MockHistoryAccess() { for (auto* a : pushed) delete a; }
+};
+
 
 TEST_CASE("Construction and initialization", "[Glue]") {
 	Test::ModuleScaffold<GlueModule> mods;
@@ -161,4 +171,89 @@ TEST_CASE("JSON round-trip preserves state", "[Glue][JSON]") {
 		}
 	}
 
+	SECTION("Wrong-typed cableLabels is ignored, not treated as an empty array") {
+		// addModuleLabel() also touches the "labels" key, whose loader already guards with
+		// json_is_array() (Glue.cpp:178) - mirror that here for "cableLabels" (Glue.cpp:181,
+		// currently missing the guard). A wrong-typed value should leave existing state
+		// untouched, exactly like the other type-guarded scalars in dataFromJson()
+		// (e.g. defaultColorJ), not silently wipe it.
+		CableLabel* cl = m->addCableLabel();
+		cl->cableId = 300;
+		cl->text = "should-survive";
+
+		json_t* j = m->dataToJson();
+		json_object_set_new(j, "cableLabels", json_string("wrong-type"));
+
+		m->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m->cableLabels.size() == 1);
+		REQUIRE(m->cableLabels.front()->cableId == 300);
+		REQUIRE(m->cableLabels.front()->text == "should-survive");
+	}
+}
+
+
+TEST_CASE("setCableLabelAtInput invalidates the placement cache", "[Glue]") {
+	// Bug #3: the "At Input/Output Port" menu items used to write cableLabel->atInput
+	// directly (Rack::createValuePtrMenuItem), leaving cacheValid untouched. The cache key
+	// is only the two endpoint positions, so the label stayed at the old tFinal/angle/
+	// offset until the cable itself moved. setCableLabelAtInput() is the fixed call site's
+	// helper (GlueTypes.hpp) - both menu items now go through it.
+	CableLabel cl;
+	cl.atInput = true;
+	cl.cacheValid = true;
+	cl.cachedBoxPos = Vec(10.f, 20.f);
+
+	setCableLabelAtInput(&cl, false);
+
+	REQUIRE(cl.atInput == false);
+	REQUIRE(cl.cacheValid == false);
+}
+
+
+TEST_CASE("consolidate() merges labels from other GLUE instances", "[Glue]") {
+	MockHistoryAccess mockHistory;
+	Test::mock::Guard<vcv::HistoryAccess> historyGuard{vcv::historyAccess, &mockHistory};
+
+	GlueModule* survivorM = Test::createModule<GlueModule>("Glue");
+	GlueWidget* survivorMw = Test::createWidget<GlueWidget>(survivorM);
+	Test::registerModule(survivorM, survivorMw);
+
+	GlueModule* victimM = Test::createModule<GlueModule>("Glue");
+	GlueWidget* victimMw = Test::createWidget<GlueWidget>(victimM);
+	Test::registerModule(victimM, victimMw);
+
+	// Populate the victim with one module label and one cable label.
+	ModuleLabel* ml = victimM->addModuleLabel();
+	ml->moduleId = 42;
+	ml->text = "victim-module-label";
+
+	CableLabel* cl = victimM->addCableLabel();
+	cl->cableId = 99;
+	cl->text = "victim-cable-label";
+
+	REQUIRE(survivorM->moduleLabels.size() == 0);
+	REQUIRE(survivorM->cableLabels.size() == 0);
+	REQUIRE(victimM->moduleLabels.size() == 1);
+	REQUIRE(victimM->cableLabels.size() == 1);
+
+	survivorMw->consolidate();
+
+	// The victim widget is removed from the rack and deleted by consolidate() itself.
+	SECTION("Module labels are moved to the surviving instance") {
+		REQUIRE(survivorM->moduleLabels.size() == 1);
+		REQUIRE(survivorM->moduleLabels.front()->text == "victim-module-label");
+	}
+
+	SECTION("Cable labels are moved to the surviving instance, not destroyed") {
+		// Bug #4: consolidate() only moves moduleLabels; cableLabels are neither moved nor
+		// cleared before the victim module is deleted, silently destroying them.
+		REQUIRE(survivorM->cableLabels.size() == 1);
+		if (survivorM->cableLabels.size() == 1) {
+			REQUIRE(survivorM->cableLabels.front()->text == "victim-cable-label");
+		}
+	}
+
+	Test::unregisterModule(survivorM, survivorMw);
 }

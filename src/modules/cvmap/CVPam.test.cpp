@@ -42,12 +42,10 @@ TEST_CASE("Preset JSON null-guards", "[CVPam][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 TEST_CASE("JSON round-trip preserves state", "[CVPam][JSON]") {
 	Test::ModuleScaffold<CVPamModule> mods;
-	Test::ModuleScaffold<rack::Module> targetMods;
 	CVPamModule* m = mods.create("CVPam");
 	CVPamModule* m2 = mods.create("CVPam");
 
@@ -69,23 +67,22 @@ TEST_CASE("JSON round-trip preserves state", "[CVPam][JSON]") {
 	}
 
 	SECTION("Mapping slots (maps array) round-trip") {
-		// A registered target module is required for moduleId/paramId to persist through
-		// updateParamHandle(): the engine resolves the module by id, so an unregistered
-		// module would leave moduleId at -1 and the mapping could not round-trip.
-		rack::Module* target = targetMods.create("Glue");
-		Test::registerModule(target);
-
-		// The target must be registered so the engine can resolve it by id
-		REQUIRE(APP->engine->getModule(target->id) == target);
+		// Harness::addModule registers the target with the engine, which a mapping needs:
+		// updateParamHandle() resolves the target by id, so an unregistered module would
+		// leave moduleId at -1 and the mapping could not round-trip. See the mapping section
+		// in test_harness.hpp.
+		Test::Harness h;
+		rack::Module* target = h.addModule<rack::Module>("Glue");
 
 		// Map three slots to distinctive paramIds on the target module
 		m->learnParam(0, target->id, 0);
 		m->learnParam(1, target->id, 2);
 		m->learnParam(2, target->id, 4);
 
-		// learnParam must persist the mapping on m before serialization
-		REQUIRE(m->paramHandles[0].moduleId == target->id);
-		REQUIRE(m->paramHandles[0].paramId == 0);
+		// learnParam must persist the mapping on m before serialization. requireMapped also
+		// checks handle->module, which a mapping onto an unregistered target silently leaves
+		// null while moduleId still looks right.
+		h.requireMapped(&m->paramHandles[0], target, 0);
 
 		json_t* j = m->dataToJson();
 		// The maps array must be serialized with one entry per map slot
@@ -104,20 +101,136 @@ TEST_CASE("JSON round-trip preserves state", "[CVPam][JSON]") {
 		m2->dataFromJson(j);
 		json_decref(j);
 
-		// Mapped slots must round-trip moduleId and paramId exactly
-		REQUIRE(m2->paramHandles[0].moduleId == target->id);
-		REQUIRE(m2->paramHandles[0].paramId == 0);
-		REQUIRE(m2->paramHandles[1].moduleId == target->id);
-		REQUIRE(m2->paramHandles[1].paramId == 2);
-		REQUIRE(m2->paramHandles[2].moduleId == target->id);
-		REQUIRE(m2->paramHandles[2].paramId == 4);
+		// Mapped slots must round-trip moduleId and paramId exactly — and resolve to the live
+		// target, which is what makes the reloaded mapping actually drive anything.
+		h.requireMapped(&m2->paramHandles[0], target, 0);
+		h.requireMapped(&m2->paramHandles[1], target, 2);
+		h.requireMapped(&m2->paramHandles[2], target, 4);
 
 		// mapLen (derived from the last mapped slot) must round-trip
 		REQUIRE(m2->mapLen == mapLen);
 		// Unmapped slots stay unmapped
-		REQUIRE(m2->paramHandles[3].moduleId == -1);
+		h.requireUnmapped(&m2->paramHandles[3]);
+	}
+}
 
-		Test::unregisterModule(target);
+TEST_CASE("Reset restores defaults", "[CVPam]") {
+	Test::ModuleScaffold<CVPamModule> mods;
+	CVPamModule* m = mods.create("CVPam");
+
+	m->bipolarOutput = true;
+	m->audioRate = false;
+	m->locked = true;
+
+	Module::ResetEvent re;
+	m->onReset(re);
+
+	REQUIRE(m->bipolarOutput == false);
+	REQUIRE(m->audioRate == true);
+	REQUIRE(m->locked == false);
+	REQUIRE(m->mapLen == 0);
+}
+
+TEST_CASE("process() drives POLY_OUTPUT1/2 from mapped targets", "[CVPam]") {
+	Test::Harness h;
+	CVPamModule* m = h.addModule<CVPamModule>("CVPam");
+	rack::Module* target = h.addModule<rack::Module>("Glue");
+	// setChannels() is a no-op on a disconnected port (Port::setChannels), so the channel
+	// counts below only become observable once a cable is modeled as present.
+	h.connectOutput(m, CVPamModule::POLY_OUTPUT1);
+	h.connectOutput(m, CVPamModule::POLY_OUTPUT2);
+
+	SECTION("Mapped slot value 0..1 is scaled to 0..10V unipolar output on bank 1") {
+		h.mapParam(&m->paramHandles[0], target, 0);
+		m->updateMapLen();
+		h.setMappedValue(&m->paramHandles[0], 1.f);
+
+		h.dspStep();
+
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT1].getVoltage(0) == Catch::Approx(10.f));
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT1].getChannels() == 1);
+		// Bank 2 has nothing mapped: Port::setChannels(0) still forces at least 1 channel
+		// once connected, so an idle bank reads as connected-but-silent, not disconnected.
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT2].getChannels() == 1);
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT2].getVoltage(0) == Catch::Approx(0.f));
 	}
 
+	SECTION("Bipolar output shifts scaled value by -5V") {
+		m->bipolarOutput = true;
+		h.mapParam(&m->paramHandles[0], target, 0);
+		m->updateMapLen();
+		h.setMappedValue(&m->paramHandles[0], 1.f);
+
+		h.dspStep();
+
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT1].getVoltage(0) == Catch::Approx(5.f));
+	}
+
+	SECTION("A slot mapped at index 16 or above drives POLY_OUTPUT2, not POLY_OUTPUT1") {
+		h.mapParam(&m->paramHandles[16], target, 0);
+		m->updateMapLen();
+		h.setMappedValue(&m->paramHandles[16], 1.f);
+
+		h.dspStep();
+
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT2].getVoltage(0) == Catch::Approx(10.f));
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT2].getChannels() == 1);
+		// Channel count only reflects the highest mapped index within the bank, not slot 0
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT1].getChannels() == 1);
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT1].getVoltage(0) == Catch::Approx(0.f));
+	}
+
+	SECTION("Channel count on each bank tracks the highest mapped slot within that bank") {
+		h.mapParam(&m->paramHandles[0], target, 0);
+		h.mapParam(&m->paramHandles[3], target, 1);
+		h.mapParam(&m->paramHandles[17], target, 2);
+		m->updateMapLen();
+
+		h.dspStep();
+
+		// Highest mapped index in bank 1 is 3 -> 4 channels
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT1].getChannels() == 4);
+		// Highest mapped index in bank 2 is 17 (local index 1) -> 2 channels
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT2].getChannels() == 2);
+	}
+
+	SECTION("Unmapped slots are skipped and do not affect other channels' voltages") {
+		h.mapParam(&m->paramHandles[0], target, 0);
+		h.mapParam(&m->paramHandles[2], target, 1);
+		m->updateMapLen();
+		h.setMappedValue(&m->paramHandles[0], 1.f);
+		h.setMappedValue(&m->paramHandles[2], 0.f);
+		// Slot 1 stays unmapped, sitting between two mapped slots
+
+		h.dspStep();
+
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT1].getVoltage(0) == Catch::Approx(10.f));
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT1].getVoltage(2) == Catch::Approx(0.f));
+	}
+}
+
+TEST_CASE("process() respects audioRate", "[CVPam]") {
+	Test::Harness h;
+	CVPamModule* m = h.addModule<CVPamModule>("CVPam");
+	rack::Module* target = h.addModule<rack::Module>("Glue");
+
+	h.mapParam(&m->paramHandles[0], target, 0);
+	m->updateMapLen();
+	h.setMappedValue(&m->paramHandles[0], 1.f);
+
+	SECTION("With audioRate disabled, output only updates once the process divider fires") {
+		m->audioRate = false;
+
+		h.dspStep();
+		// The divider (division 32) has not fired yet: output is still at its initial 0V
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT1].getVoltage(0) == Catch::Approx(0.f));
+
+		h.dspSteps(32);
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT1].getVoltage(0) == Catch::Approx(10.f));
+	}
+
+	SECTION("With audioRate enabled (default), output updates on every step") {
+		h.dspStep();
+		REQUIRE(m->outputs[CVPamModule::POLY_OUTPUT1].getVoltage(0) == Catch::Approx(10.f));
+	}
 }

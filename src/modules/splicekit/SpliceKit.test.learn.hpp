@@ -55,29 +55,17 @@ TEST_CASE("startGlobalLearn advances through cells via processMapLearn", "[Splic
 }
 
 
-// processMapLearn — completion paths beyond sequential
-
-TEST_CASE("processMapLearn - single-learn mode clears learningId but leaves learnActive alone", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
-
-	m->midiLearnMode = false;       // single-learn mode
-	m->learningId = 7;
-	m->trackingProcessor.enableMapLearn(7);
-	REQUIRE(m->trackingProcessor.getMapLearn() == true);
-
-	m->processMapLearn(MidiTrackingType::NOTE, 7);
-	// processMapLearn only resets learningId; the caller is expected to follow up
-	// with disableLearn() (which clears learnActive) for single-learn. The mismatch
-	// is a property of the production code that this test pins down.
-	REQUIRE(m->learningId == -1);
-	REQUIRE(m->midiLearnMode == false);
-	REQUIRE(m->trackingProcessor.getMapLearn() == true);
-
-	// Cleanup: the test must leave learnActive false so destruction is clean.
-	m->disableLearn();
-	REQUIRE(m->trackingProcessor.getMapLearn() == false);
-}
+// processMapLearn — completion paths beyond sequential.
+//
+// processMapLearn() is only ever invoked by MidiTrackingProcessor::process() itself, which
+// calls disableMapLearn() unconditionally right before invoking the handler (see
+// MidiTrackingProcessor.hpp processNoteOn/processCc). So in production getMapLearn() is
+// already false by the time this method runs — driving it directly, as these tests used to,
+// let a stale enableMapLearn() call linger and made it look like production leaves learn
+// half-torn-down. It doesn't; see "MIDI end-to-end - learn stores the received note as a map"
+// and "MIDI end-to-end - sequential learn ends after the last cell" in
+// SpliceKit.test.midi.hpp, which drive real MIDI through process() and assert
+// getMapLearn() == false afterwards.
 
 TEST_CASE("processMapLearn - sequential learn ends after the last cell", "[SpliceKit]") {
 	ModuleScaffold mods;
@@ -85,18 +73,12 @@ TEST_CASE("processMapLearn - sequential learn ends after the last cell", "[Splic
 
 	m->midiLearnMode = true;
 	m->learningId = MATRIX_COUNT - 1;  // last cell
-	m->trackingProcessor.enableMapLearn(MATRIX_COUNT - 1);
 
 	m->processMapLearn(MidiTrackingType::NOTE, MATRIX_COUNT - 1);
 	// nextId = MATRIX_COUNT — out of range, so learningId stays -1 and
 	// midiLearnMode is reset to false.
 	REQUIRE(m->learningId == -1);
 	REQUIRE(m->midiLearnMode == false);
-	// learnActive is NOT cleared by processMapLearn (same as single-learn path) —
-	// the caller has to follow up with disableLearn() to fully tear down.
-	REQUIRE(m->trackingProcessor.getMapLearn() == true);
-
-	m->disableLearn();
 }
 
 // MidiTrackingProcessor — clearMap on a cell with no prior mapping is a no-op
@@ -187,6 +169,85 @@ TEST_CASE("enableLearn - starting MIDI learn cancels an active port learn", "[Sp
 	REQUIRE(m->portLearningId == -1);
 	REQUIRE(m->portLearnMode == false);
 
+	Test::destroyWidget(w);
+}
+
+
+// startGlobalPortLearn — sequential port-assignment learn. The advancing logic lives entirely
+// in the callback startLearn() installs on portSelectProcessor, which real port-widget clicks
+// invoke via processDeselect(); no widget tree is needed to exercise it directly, since the
+// callback is a plain std::function reachable through the module's own portSelectProcessor.
+
+TEST_CASE("startGlobalPortLearn - each click assigns the current cell and advances to the next", "[SpliceKit]") {
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
+	SpliceKitWidget* w = Test::createWidget<SpliceKitWidget>("SpliceKit");
+	ModuleScaffold peerMods;
+	SpliceKitModule* peer = peerMods.create();  // stands in for "some other module" owning ports
+
+	m->lastClickedCell = 4;
+	m->startGlobalPortLearn(w);
+	REQUIRE(m->portLearnMode == true);
+	REQUIRE(m->portLearningId == 4);
+
+	rack::app::PortWidget pw1;
+	pw1.module = peer;
+	pw1.portId = 2;
+	pw1.type = engine::Port::OUTPUT;
+	m->portSelectProcessor.learnCallback(&pw1, Vec());
+
+	// Cell 4 got the port; learn is still active and has advanced to cell 5.
+	REQUIRE(m->portAssignments[4].moduleId == peer->getId());
+	REQUIRE(m->portAssignments[4].portId == 2);
+	REQUIRE(m->portAssignments[4].type == engine::Port::OUTPUT);
+	REQUIRE(m->portLearnMode == true);
+	REQUIRE(m->portLearningId == 5);
+	REQUIRE(m->portSelectProcessor.isLearning());
+
+	rack::app::PortWidget pw2;
+	pw2.module = peer;
+	pw2.portId = 3;
+	pw2.type = engine::Port::INPUT;
+	m->portSelectProcessor.learnCallback(&pw2, Vec());
+
+	REQUIRE(m->portAssignments[5].moduleId == peer->getId());
+	REQUIRE(m->portAssignments[5].portId == 3);
+	REQUIRE(m->portLearningId == 6);
+	REQUIRE(m->portSelectProcessor.isLearning());
+
+	// Detach before the ad-hoc PortWidgets go out of scope: their destructor tears down any
+	// cables it thinks it owns via APP->scene->rack, which is unrelated to this test.
+	pw1.module = nullptr;
+	pw2.module = nullptr;
+	m->disablePortLearn();
+	Test::destroyWidget(w);
+}
+
+TEST_CASE("startGlobalPortLearn - assigning the last cell ends sequential learn", "[SpliceKit]") {
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
+	SpliceKitWidget* w = Test::createWidget<SpliceKitWidget>("SpliceKit");
+	ModuleScaffold peerMods;
+	SpliceKitModule* peer = peerMods.create();
+
+	m->lastClickedCell = MATRIX_COUNT - 1;
+	m->startGlobalPortLearn(w);
+	REQUIRE(m->portLearningId == MATRIX_COUNT - 1);
+
+	rack::app::PortWidget pw;
+	pw.module = peer;
+	pw.portId = 0;
+	pw.type = engine::Port::OUTPUT;
+	m->portSelectProcessor.learnCallback(&pw, Vec());
+
+	// nextId = MATRIX_COUNT — out of range, so sequential learn stops rather than wrapping,
+	// and portSelectProcessor itself is torn down (unlike the mid-sequence case above).
+	REQUIRE(m->portAssignments[MATRIX_COUNT - 1].moduleId == peer->getId());
+	REQUIRE(m->portLearnMode == false);
+	REQUIRE(m->portLearningId == -1);
+	REQUIRE(m->portSelectProcessor.isLearning() == false);
+
+	pw.module = nullptr;
 	Test::destroyWidget(w);
 }
 

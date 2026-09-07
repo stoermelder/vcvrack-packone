@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/ui.hpp"
 #include "Mb.hpp"
 #include "Mb_v1.hpp"
 #include "Mb_v2.hpp"
@@ -1214,7 +1215,9 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 			openAutoTagConfirmDialog(result);
 		}));
 		menu->addChild(createMenuItem("Auto-generate 'MetaModule' tag", "", []() {
-			if (!osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, "This will connect to https://metamodule.info and download the module list. Continue?"))
+			if (!StoermelderPackOne::vcv::ui::message(
+					StoermelderPackOne::vcv::MessageType::INFO, StoermelderPackOne::vcv::MessageButtons::YES_NO,
+			    	"This will connect to https://metamodule.info and download the module list. Continue?"))
 				return;
 
 			// Create loading overlay
@@ -1240,8 +1243,9 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 					if (!query.empty()) {
 						AutoTagResult preview = customTagSearch(query);
 						if (preview.total == 0) {
-							osdialog_message(OSDIALOG_INFO, OSDIALOG_OK,
-								string::f("No untagged modules found for \"%s\"", query.c_str()).c_str());
+							StoermelderPackOne::vcv::ui::message(
+								StoermelderPackOne::vcv::MessageType::INFO, StoermelderPackOne::vcv::MessageButtons::OK,
+							    string::f("No untagged modules found for \"%s\"", query.c_str()));
 						}
 						else {
 							openAutoTagConfirmDialog(std::make_shared<AutoTagResult>(preview));
@@ -1284,7 +1288,9 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 		menu->addChild(createBoolMenuItem("Auto-download data for 'Newest' sort", "",
 			[]() { return pluginSettings.mbNewestAutoUpdate; },
 			[](bool state) {
-				if (state && !osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, "This will connect to https://raw.githubusercontent.com and download plugin metadata whenever new or updated plugins are detected. Continue?")) {
+				if (state && !StoermelderPackOne::vcv::ui::message(
+						StoermelderPackOne::vcv::MessageType::INFO, StoermelderPackOne::vcv::MessageButtons::YES_NO,
+						"This will connect to https://raw.githubusercontent.com and download plugin metadata whenever new or updated plugins are detected. Continue?")) {
 					return;
 				}
 				pluginSettings.mbNewestAutoUpdate = state;
@@ -1324,7 +1330,8 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 		FILE* file = fopen(filename.c_str(), "w");
 		if (!file) {
 			std::string message = string::f("Could not write to file %s", filename.c_str());
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			StoermelderPackOne::vcv::ui::message(
+				StoermelderPackOne::vcv::MessageType::WARNING, StoermelderPackOne::vcv::MessageButtons::OK, message);
 			return;
 		}
 		DEFER({
@@ -1335,21 +1342,12 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 	}
 
 	void exportSettingsDialog() {
-		osdialog_filters* filters = osdialog_filters_parse(":json");
-		DEFER({
-			osdialog_filters_free(filters);
-		});
-
-		char* path = osdialog_file(OSDIALOG_SAVE, "", "stoermelder-mb.json", filters);
-		if (!path) {
+		std::string pathStr = StoermelderPackOne::vcv::ui::saveDialog(":json", "", "stoermelder-mb.json");
+		if (pathStr.empty()) {
 			// No path selected
 			return;
 		}
-		DEFER({
-			free(path);
-		});
 
-		std::string pathStr = path;
 		std::string extension = system::getExtension(system::getFilename(pathStr));
 		if (extension.empty()) {
 			pathStr += ".json";
@@ -1364,7 +1362,8 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 		FILE* file = fopen(filename.c_str(), "r");
 		if (!file) {
 			std::string message = string::f("Could not load file %s", filename.c_str());
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			StoermelderPackOne::vcv::ui::message(
+				StoermelderPackOne::vcv::MessageType::WARNING, StoermelderPackOne::vcv::MessageButtons::OK, message);
 			return;
 		}
 		DEFER({
@@ -1375,7 +1374,8 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 		json_t* rootJ = json_loadf(file, 0, &error);
 		if (!rootJ) {
 			std::string message = string::f("File is not a valid file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			StoermelderPackOne::vcv::ui::message(
+				StoermelderPackOne::vcv::MessageType::WARNING, StoermelderPackOne::vcv::MessageButtons::OK, message);
 			return;
 		}
 		DEFER({
@@ -1386,19 +1386,11 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 	}
 
 	void importSettingsDialog() {
-		osdialog_filters* filters = osdialog_filters_parse(":json");
-		DEFER({
-			osdialog_filters_free(filters);
-		});
-
-		char* path = osdialog_file(OSDIALOG_OPEN, "", NULL, filters);
-		if (!path) {
+		std::string path = StoermelderPackOne::vcv::ui::openDialog(":json", "");
+		if (path.empty()) {
 			// No path selected
 			return;
 		}
-		DEFER({
-			free(path);
-		});
 
 		importSettings(path);
 	}

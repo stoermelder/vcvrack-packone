@@ -882,8 +882,7 @@ TEST_CASE("customTagMetamodule edge cases", "[Mb]") {
 
 // parseMetamoduleYaml reads the YAML through vcv::fs::read, and
 // openAutoTagConfirmDialog surfaces the "no assignments" case through
-// vcv::ui::message. These tests install recording mocks to prove the migrated
-// calls route through the swappable layer rather than raw stdio/osdialog.
+// vcv::ui::message.
 struct MockFileAccess : vcv::FileAccess {
 	struct ReadCall { std::string path; };
 	mutable std::vector<ReadCall> reads;

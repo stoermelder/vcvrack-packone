@@ -8,8 +8,8 @@ SYNC_MODEL(modelTransit, "Transit");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* m = mods.create("Transit");
+	Test::Harness h;
+	TransitModule<12>* m = h.addModule<TransitModule<12>>("Transit");
 	TransitWidget<12>* mw = Test::createWidget<TransitWidget<12>>("Transit");
 
 	REQUIRE(m != nullptr);
@@ -20,8 +20,8 @@ TEST_CASE("Construction and initialization", "[Transit]") {
 }
 
 TEST_CASE("Preset JSON null-guards", "[Transit][JSON]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	auto module = mods.create("Transit");
+	Test::Harness h;
+	auto module = h.addModule<TransitModule<12>>("Transit");
 
 	SECTION("All top-level properties are null-guarded in dataFromJson()") {
 		json_t* rootJ = module->dataToJson();
@@ -46,8 +46,8 @@ TEST_CASE("Preset JSON null-guards", "[Transit][JSON]") {
 }
 
 TEST_CASE("JSON round-trip preserves state", "[Transit][JSON]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* m = mods.create("Transit");
+	Test::Harness h;
+	TransitModule<12>* m = h.addModule<TransitModule<12>>("Transit");
 
 	// Distinctive label on EVERY slot
 	for (int i = 0; i < 12; i++) {
@@ -69,7 +69,7 @@ TEST_CASE("JSON round-trip preserves state", "[Transit][JSON]") {
 
 	json_t* j = m->dataToJson();
 
-	TransitModule<12>* m2 = mods.create("Transit");
+	TransitModule<12>* m2 = h.addModule<TransitModule<12>>("Transit");
 	m2->dataFromJson(j);
 	json_decref(j);
 
@@ -108,8 +108,8 @@ TEST_CASE("JSON round-trip preserves state", "[Transit][JSON]") {
 }
 
 TEST_CASE("JSON serialization preserves boundaries", "[JSON][Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module1 = mods.create("Transit");	Test::registerModule(module1);
+	Test::Harness h;
+	TransitModule<12>* module1 = h.addModule<TransitModule<12>>("Transit");
 	// Set custom boundaries
 	module1->presetSetFirst(2);
 	module1->presetSetLast(9);
@@ -119,8 +119,7 @@ TEST_CASE("JSON serialization preserves boundaries", "[JSON][Transit]") {
 	json_t* rootJ = module1->dataToJson();
 
 	// Create new module and deserialize
-	TransitModule<12>* module2 = mods.create("Transit");
-	Test::registerModule(module2);
+	TransitModule<12>* module2 = h.addModule<TransitModule<12>>("Transit");
 	module2->dataFromJson(rootJ);
 
 	// Check values preserved
@@ -129,8 +128,6 @@ TEST_CASE("JSON serialization preserves boundaries", "[JSON][Transit]") {
 	REQUIRE(module2->preset == 5);
 
 	json_decref(rootJ);
-	Test::unregisterModule(module1);
-	Test::unregisterModule(module2);
 }
 
 
@@ -151,10 +148,9 @@ struct TestModule : rack::Module {
 	}
 };
 
-
 TEST_CASE("Setting presetFirst and presetLast boundaries", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
 
 	SECTION("presetSetFirst updates boundary correctly") {
 		module->presetSetFirst(3);
@@ -196,9 +192,8 @@ TEST_CASE("Setting presetFirst and presetLast boundaries", "[Transit]") {
 
 
 TEST_CASE("Comprehensive boundary edge cases", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
 	
 	SECTION("presetFirst == presetLast - 1 (single slot)") {
 		module->presetSetFirst(5);
@@ -240,22 +235,18 @@ TEST_CASE("Comprehensive boundary edge cases", "[Transit]") {
 		REQUIRE(module->presetFirst == 0);
 		REQUIRE(module->presetLast == 12);
 	}
-
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("presetLoad respects boundaries", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	// Set up a mapped parameter
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	
 	// Save some presets
 	testModule->params[TestModule::TEST_PARAM_1].setValue(0.0f);
@@ -289,26 +280,20 @@ TEST_CASE("presetLoad respects boundaries", "[Transit]") {
 		module->presetLoad(5);
 		REQUIRE(module->preset == 5); // Loaded successfully
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("Multiple bound parameters save and load correctly", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	// Bind all three parameters
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_2);
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_3);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	// Save distinct multi-parameter snapshots
 	testModule->params[TestModule::TEST_PARAM_1].setValue(0.1f);
@@ -326,9 +311,7 @@ TEST_CASE("Multiple bound parameters save and load correctly", "[Transit]") {
 		module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
 
 		module->presetLoad(0);
-		for (int i = 0; i < 1000; i++) {
-			module->process(Test::makeProcessArgs(i + 100));
-		}
+		h.dspSteps(1000);
 
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(0.1f).margin(0.01f));
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_2].getValue() == Catch::Approx(3.0f).margin(0.05f));
@@ -339,14 +322,10 @@ TEST_CASE("Multiple bound parameters save and load correctly", "[Transit]") {
 		module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
 
 		module->presetLoad(0);
-		for (int i = 0; i < 1000; i++) {
-			module->process(Test::makeProcessArgs(i + 100));
-		}
+		h.dspSteps(1000);
 
 		module->presetLoad(1);
-		for (int i = 0; i < 1000; i++) {
-			module->process(Test::makeProcessArgs(i + 1200));
-		}
+		h.dspSteps(1000);
 
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(0.9f).margin(0.01f));
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_2].getValue() == Catch::Approx(9.0f).margin(0.05f));
@@ -358,23 +337,17 @@ TEST_CASE("Multiple bound parameters save and load correctly", "[Transit]") {
 		REQUIRE(slot0->isUsed());
 		REQUIRE(slot0->getPreset()->size() == 3);
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("presetClear resets active preset selection", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	testModule->params[TestModule::TEST_PARAM_1].setValue(0.5f);
 	module->presetSave(3);
@@ -398,24 +371,18 @@ TEST_CASE("presetClear resets active preset selection", "[Transit]") {
 		REQUIRE(!module->getSlot(5)->isUsed());
 		REQUIRE(module->getSlot(5)->getPreset()->empty());
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("presetCopyPaste copies values correctly", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_2);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	testModule->params[TestModule::TEST_PARAM_1].setValue(0.3f);
 	testModule->params[TestModule::TEST_PARAM_2].setValue(7.0f);
@@ -458,23 +425,17 @@ TEST_CASE("presetCopyPaste copies values correctly", "[Transit]") {
 		// Nothing should happen - target stays as-is
 		REQUIRE(!module->getSlot(3)->isUsed());
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("presetShiftFront respects boundaries", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	
 	// Create presets with distinct values
 	for (int i = 0; i < 12; i++) {
@@ -494,30 +455,24 @@ TEST_CASE("presetShiftFront respects boundaries", "[Transit]") {
 		// Shift front from slot 5
 		module->presetShiftFrontRequest(5);
 		module->taskProcessorDsp.process();
-		module->process(Test::makeProcessArgs(2));
+		h.dspStep();
 		
 		// Preset 4 should now have the value that was in 5
 		auto slot4 = module->getSlot(4);
 		float newValue4 = slot4->isUsed() ? (*slot4->getPreset())[0] : -1.0f;
 		REQUIRE(newValue4 == Catch::Approx(0.5f).margin(0.01f));
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("presetShiftBack shifts presets correctly", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	// Save distinct presets at slots 3, 4, 5
 	testModule->params[TestModule::TEST_PARAM_1].setValue(0.3f);
@@ -545,23 +500,17 @@ TEST_CASE("presetShiftBack shifts presets correctly", "[Transit]") {
 		REQUIRE(module->getSlot(3)->isUsed());
 		REQUIRE((*module->getSlot(3)->getPreset())[0] == Catch::Approx(0.3f).margin(0.001f));
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("AUTO mode captures current values into previous preset", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	// Save initial presets
 	testModule->params[TestModule::TEST_PARAM_1].setValue(0.2f);
@@ -572,15 +521,13 @@ TEST_CASE("AUTO mode captures current values into previous preset", "[Transit]")
 	// Switch to AUTO mode and load preset 0
 	module->params[TransitModule<12>::PARAM_CTRLMODE].setValue((float)CTRLMODE::AUTO);
 	module->presetLoad(0);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 
 	SECTION("Switching presets auto-saves current param value into previous preset") {
 		// Param is now being transitioned towards 0.2. Let it settle fully.
 		// With a short fade: set fade=0 (minimum) to get instant application
 		module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
-		for (int i = 0; i < 1000; i++) {
-			module->process(Test::makeProcessArgs(i + 100));
-		}
+		h.dspSteps(1000);
 		// Param value should now be 0.2 (from preset 0)
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(0.2f).margin(0.01f));
 
@@ -589,30 +536,24 @@ TEST_CASE("AUTO mode captures current values into previous preset", "[Transit]")
 
 		// Load preset 1 - AUTO mode should save 0.6 into preset 0 first
 		module->presetLoad(1);
-		module->process(Test::makeProcessArgs(1200));
+		h.dspStep();
 
 		// Preset 0 should now store 0.6
 		auto slot0 = module->getSlot(0);
 		REQUIRE(slot0->isUsed());
 		REQUIRE((*slot0->getPreset())[0] == Catch::Approx(0.6f).margin(0.01f));
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("Per-slot fade time overrides global fade parameter", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	testModule->params[TestModule::TEST_PARAM_1].setValue(0.0f);
 	module->presetSave(0);
@@ -629,17 +570,13 @@ TEST_CASE("Per-slot fade time overrides global fade parameter", "[Transit]") {
 		// First, fully settle at preset 0 (value 0.0)
 		module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
 		module->presetLoad(0);
-		for (int i = 0; i < 1000; i++) {
-			module->process(Test::makeProcessArgs(i + 100));
-		}
+		h.dspSteps(1000);
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(0.0f).margin(0.01f));
 
 		// Now load preset 1 with slot fade=0 (but global fade stays 0 here too)
 		module->presetLoad(1);
 		// Process enough frames to complete a zero-fade transition
-		for (int i = 0; i < 500; i++) {
-			module->process(Test::makeProcessArgs(i + 1200));
-		}
+		h.dspSteps(500);
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(1.0f).margin(0.02f));
 	}
 
@@ -652,17 +589,13 @@ TEST_CASE("Per-slot fade time overrides global fade parameter", "[Transit]") {
 
 		// Settle fully at preset 0 (value 0.0) with the fast global fade
 		module->presetLoad(0);
-		for (int i = 0; i < 1000; i++) {
-			module->process(Test::makeProcessArgs(i + 100));
-		}
+		h.dspSteps(1000);
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(0.0f).margin(0.01f));
 
 		// Override slot 1 to use the slow fade (1.0), then load it
 		module->getSlot(1)->setFadeTime(1.0f);
 		module->presetLoad(1);
-		for (int i = 0; i < 1000; i++) {
-			module->process(Test::makeProcessArgs(i + 1200));
-		}
+		h.dspSteps(1000);
 		// If global (fast) fade had been used the value would already be 1.0;
 		// the slow slot fade keeps it well below that.
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.9f);
@@ -675,9 +608,7 @@ TEST_CASE("Per-slot fade time overrides global fade parameter", "[Transit]") {
 		// First, fully settle at preset 0 (value 0.0) using zero fade
 		module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
 		module->presetLoad(0);
-		for (int i = 0; i < 1000; i++) {
-			module->process(Test::makeProcessArgs(i + 100));
-		}
+		h.dspSteps(1000);
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(0.0f).margin(0.01f));
 
 		// Now switch to slow fade and load preset 1 (value 1.0)
@@ -685,29 +616,21 @@ TEST_CASE("Per-slot fade time overrides global fade parameter", "[Transit]") {
 		module->presetLoad(1);
 		// With global fade = 1.0 (maximum), after only 100 frames the transition
 		// should not be complete yet (fade time ≈ 10s at 44100Hz)
-		for (int i = 0; i < 100; i++) {
-			module->process(Test::makeProcessArgs(i + 1200));
-		}
+		h.dspSteps(100);
 		// Param value should still be well below 1.0 (transition partway through)
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.9f);
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("Fade CV input is additive to PARAM_FADE and ignored by per-slot override", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	testModule->params[TestModule::TEST_PARAM_1].setValue(0.0f);
 	module->presetSave(0);
@@ -720,9 +643,7 @@ TEST_CASE("Fade CV input is additive to PARAM_FADE and ignored by per-slot overr
 		module->inputs[TransitModule<12>::INPUT_FADE].channels = 1;
 		module->inputs[TransitModule<12>::INPUT_FADE].setVoltage(0.0f);
 		module->presetLoad(0);
-		for (int i = 0; i < 1000; i++) {
-			module->process(Test::makeProcessArgs(i + 10));
-		}
+		h.dspSteps(1000);
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(0.0f).margin(0.01f));
 	};
 
@@ -733,9 +654,7 @@ TEST_CASE("Fade CV input is additive to PARAM_FADE and ignored by per-slot overr
 		module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
 		module->inputs[TransitModule<12>::INPUT_FADE].setVoltage(10.0f);
 		module->presetLoad(1);
-		for (int i = 0; i < 1000; i++) {
-			module->process(Test::makeProcessArgs(i + 1100));
-		}
+		h.dspSteps(1000);
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.9f);
 	}
 
@@ -748,28 +667,20 @@ TEST_CASE("Fade CV input is additive to PARAM_FADE and ignored by per-slot overr
 		module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
 		module->inputs[TransitModule<12>::INPUT_FADE].setVoltage(10.0f);
 		module->presetLoad(1);
-		for (int i = 0; i < 1000; i++) {
-			module->process(Test::makeProcessArgs(i + 1100));
-		}
+		h.dspSteps(1000);
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.9f);
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("CV VOLT mode respects boundaries", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	
 	// Create presets at various slots
 	for (int i = 0; i < 12; i++) {
@@ -784,17 +695,17 @@ TEST_CASE("CV VOLT mode respects boundaries", "[Transit]") {
 	// Initialize CV input
 	module->inputs[TransitModule<12>::INPUT_CV].channels = 1;
 	module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	SECTION("0V selects presetFirst") {
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(100));
+		h.dspStep();
 		REQUIRE(module->preset == 3); // First usable
 	}
 
 	SECTION("10V selects presetLast - 1") {
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(100));
+		h.dspStep();
 		REQUIRE(module->preset == 8); // Last usable (exclusive)
 	}
 
@@ -802,27 +713,21 @@ TEST_CASE("CV VOLT mode respects boundaries", "[Transit]") {
 		module->presetSetFirst(2);
 		module->presetSetLast(8); // Range 2-7 (6 slots)
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(5.0f); // Middle
-		module->process(Test::makeProcessArgs(100));
+		h.dspStep();
 		// Should map to middle of range: 2 + floor((8-2) * 0.5) = 2 + 3 = 5
 		REQUIRE(module->preset == 5);
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("CV C4 mode respects boundaries", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	
 	for (int i = 0; i < 12; i++) {
 		testModule->params[TestModule::TEST_PARAM_1].setValue(i / 11.0f);
@@ -836,11 +741,11 @@ TEST_CASE("CV C4 mode respects boundaries", "[Transit]") {
 	// Process first to initialize state
 	module->inputs[TransitModule<12>::INPUT_CV].channels = 1;
 	module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	SECTION("C4 (0V) selects presetFirst") {
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f); // C4 = 0 semitones
-		module->process(Test::makeProcessArgs(100));
+		h.dspStep();
 		REQUIRE(module->preset == 4);
 	}
 
@@ -848,7 +753,7 @@ TEST_CASE("CV C4 mode respects boundaries", "[Transit]") {
 		module->presetSetFirst(2);
 		module->presetSetLast(8);
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(4.0f / 12.0f); // 4 semitones
-		module->process(Test::makeProcessArgs(100));
+		h.dspStep();
 		REQUIRE(module->preset == 4); // Semitone 4 maps to preset 4
 	}
 
@@ -856,26 +761,20 @@ TEST_CASE("CV C4 mode respects boundaries", "[Transit]") {
 		module->presetSetFirst(1);
 		module->presetSetLast(5);
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f); // Very high note
-		module->process(Test::makeProcessArgs(100));
+		h.dspStep();
 		REQUIRE(module->preset == 4); // Clamped to presetLast - 1
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_FWD mode respects boundaries", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	
 	for (int i = 0; i < 12; i++) {
 		testModule->params[TestModule::TEST_PARAM_1].setValue(i / 11.0f);
@@ -891,9 +790,9 @@ TEST_CASE("TRIG_FWD mode respects boundaries", "[Transit]") {
 		module->preset = 5;
 		module->inputs[TransitModule<12>::INPUT_RESET].channels = 1;
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(2));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(3));
+		h.dspStep();
 		REQUIRE(module->preset == 3); // presetFirst
 	}
 
@@ -904,16 +803,14 @@ TEST_CASE("TRIG_FWD mode respects boundaries", "[Transit]") {
 		module->inputs[TransitModule<12>::INPUT_CV].channels = 1;
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
 		// Process enough frames to accumulate resetTimer > 1ms (~44 frames needed)
-		for (int i = 0; i < 100; i++) {
-			module->process(Test::makeProcessArgs(i + 10));
-		}
+		h.dspSteps(100);
 		// Set preset manually
 		module->preset = 3; // At first
 		// Now trigger
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(200));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(300));
+		h.dspStep();
 		REQUIRE(module->preset == 4); // Advanced by 1
 	}
 
@@ -924,35 +821,27 @@ TEST_CASE("TRIG_FWD mode respects boundaries", "[Transit]") {
 		module->inputs[TransitModule<12>::INPUT_CV].channels = 1;
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
 		// Process enough frames to accumulate resetTimer > 1ms
-		for (int i = 0; i < 100; i++) {
-			module->process(Test::makeProcessArgs(i + 10));
-		}
+		h.dspSteps(100);
 		// Set preset manually
 		module->preset = 7; // At presetLast - 1
 		// Now trigger
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(200));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(300));
+		h.dspStep();
 		REQUIRE(module->preset == 3); // Wrapped to presetFirst
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_REV mode respects boundaries", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	
 	for (int i = 0; i < 12; i++) {
 		testModule->params[TestModule::TEST_PARAM_1].setValue(i / 11.0f);
@@ -968,9 +857,9 @@ TEST_CASE("TRIG_REV mode respects boundaries", "[Transit]") {
 		module->preset = 5;
 		module->inputs[TransitModule<12>::INPUT_RESET].channels = 1;
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(2));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(3));
+		h.dspStep();
 		REQUIRE(module->preset == 7); // presetLast - 1
 	}
 
@@ -981,16 +870,14 @@ TEST_CASE("TRIG_REV mode respects boundaries", "[Transit]") {
 		module->inputs[TransitModule<12>::INPUT_CV].channels = 1;
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
 		// Process to clear any reset state
-		for (int i = 0; i < 100; i++) {
-			module->process(Test::makeProcessArgs(i + 10));
-		}
+		h.dspSteps(100);
 		// Set preset manually
 		module->preset = 7; // At last
 		// Now trigger
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(200));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(300));
+		h.dspStep();
 		REQUIRE(module->preset == 6); // Reversed by 1
 	}
 
@@ -1001,35 +888,27 @@ TEST_CASE("TRIG_REV mode respects boundaries", "[Transit]") {
 		module->inputs[TransitModule<12>::INPUT_CV].channels = 1;
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
 		// Process to clear any reset state
-		for (int i = 0; i < 100; i++) {
-			module->process(Test::makeProcessArgs(i + 10));
-		}
+		h.dspSteps(100);
 		// Set preset manually
 		module->preset = 3; // At presetFirst
 		// Now trigger
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(200));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(300));
+		h.dspStep();
 		REQUIRE(module->preset == 7); // Wrapped to presetLast - 1
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_PINGPONG mode respects boundaries and direction", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	for (int i = 0; i < 12; i++) {
 		testModule->params[TestModule::TEST_PARAM_1].setValue(i / 11.0f);
@@ -1046,41 +925,39 @@ TEST_CASE("TRIG_PINGPONG mode respects boundaries and direction", "[Transit]") {
 	module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
 	module->inputs[TransitModule<12>::INPUT_CV].channels = 1;
 	module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-	for (int i = 0; i < 100; i++) {
-		module->process(Test::makeProcessArgs(i + 10));
-	}
+	h.dspSteps(100);
 
-	auto trigger = [&](int frame) {
+	auto trigger = [&]() {
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(frame));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(frame + 1));
+		h.dspStep();
 	};
 
 	SECTION("Advances forward from presetFirst") {
 		module->preset = 2;
 		module->slotCvModeDir = 1;
-		trigger(200);
+		trigger();
 		REQUIRE(module->preset == 3);
-		trigger(300);
+		trigger();
 		REQUIRE(module->preset == 4);
 	}
 
 	SECTION("Bounces at presetLast - 1 and reverses direction") {
 		module->preset = 4; // one below presetLast-1 = 5
 		module->slotCvModeDir = 1;
-		trigger(200); // n = 5 >= presetLast-1=5 → dir=-1, load 5
+		trigger(); // n = 5 >= presetLast-1=5 → dir=-1, load 5
 		REQUIRE(module->preset == 5);
-		trigger(300); // n = 5+(-1) = 4
+		trigger(); // n = 5+(-1) = 4
 		REQUIRE(module->preset == 4);
 	}
 
 	SECTION("Bounces at presetFirst and reverses direction") {
 		module->preset = 3;
 		module->slotCvModeDir = -1;
-		trigger(200); // n = 2, n <= presetFirst=2 → dir=1, load 2
+		trigger(); // n = 2, n <= presetFirst=2 → dir=1, load 2
 		REQUIRE(module->preset == 2);
-		trigger(300); // n = 3
+		trigger(); // n = 3
 		REQUIRE(module->preset == 3);
 	}
 
@@ -1088,29 +965,23 @@ TEST_CASE("TRIG_PINGPONG mode respects boundaries and direction", "[Transit]") {
 		module->preset = 5;
 		module->slotCvModeDir = -1;
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(400));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(401));
+		h.dspStep();
 		REQUIRE(module->preset == 2);  // presetFirst
 		REQUIRE(module->slotCvModeDir == 1); // direction reset to forward
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_ALT mode alternates between presetFirst and an advancing secondary", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	for (int i = 0; i < 12; i++) {
 		testModule->params[TestModule::TEST_PARAM_1].setValue(i / 11.0f);
@@ -1127,15 +998,13 @@ TEST_CASE("TRIG_ALT mode alternates between presetFirst and an advancing seconda
 	module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
 	module->inputs[TransitModule<12>::INPUT_CV].channels = 1;
 	module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-	for (int i = 0; i < 100; i++) {
-		module->process(Test::makeProcessArgs(i + 10));
-	}
+	h.dspSteps(100);
 
-	auto trigger = [&](int frame) {
+	auto trigger = [&]() {
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(frame));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(frame + 1));
+		h.dspStep();
 	};
 
 	SECTION("Reset goes to presetFirst and resets direction and alt to 0") {
@@ -1143,9 +1012,9 @@ TEST_CASE("TRIG_ALT mode alternates between presetFirst and an advancing seconda
 		module->slotCvModeDir = -1;
 		module->slotCvModeAlt = 3;
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(200));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(201));
+		h.dspStep();
 		REQUIRE(module->preset == 2);           // presetFirst
 		REQUIRE(module->slotCvModeDir == 1);    // direction reset
 		REQUIRE(module->slotCvModeAlt == 0);    // alt counter reset
@@ -1158,33 +1027,27 @@ TEST_CASE("TRIG_ALT mode alternates between presetFirst and an advancing seconda
 		module->slotCvModeDir = 1;
 
 		// First trigger: preset == presetFirst → advance secondary and load it
-		trigger(300);
+		trigger();
 		int secondary = module->preset;
 		REQUIRE(secondary != 2); // Should not stay at first
 		REQUIRE(secondary >= 2);
 		REQUIRE(secondary < 6);
 
 		// Second trigger: preset != presetFirst → return to presetFirst
-		trigger(400);
+		trigger();
 		REQUIRE(module->preset == 2); // Back to first
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_RANDOM_WALK mode respects boundaries", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	for (int i = 0; i < 12; i++) {
 		testModule->params[TestModule::TEST_PARAM_1].setValue(i / 11.0f);
@@ -1200,16 +1063,14 @@ TEST_CASE("TRIG_RANDOM_WALK mode respects boundaries", "[Transit]") {
 	module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
 	module->inputs[TransitModule<12>::INPUT_CV].channels = 1;
 	module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-	for (int i = 0; i < 100; i++) {
-		module->process(Test::makeProcessArgs(i + 10));
-	}
+	h.dspSteps(100);
 
 	SECTION("Reset goes to presetFirst") {
 		module->preset = 6;
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(200));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(201));
+		h.dspStep();
 		REQUIRE(module->preset == 3); // presetFirst
 	}
 
@@ -1218,9 +1079,9 @@ TEST_CASE("TRIG_RANDOM_WALK mode respects boundaries", "[Transit]") {
 
 		for (int i = 0; i < 100; i++) {
 			module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
-			module->process(Test::makeProcessArgs(i * 200 + 300));
+			h.dspStep();
 			module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-			module->process(Test::makeProcessArgs(i * 200 + 400));
+			h.dspStep();
 
 			REQUIRE(module->preset >= 3);
 			REQUIRE(module->preset <= 7); // presetLast - 1
@@ -1233,32 +1094,26 @@ TEST_CASE("TRIG_RANDOM_WALK mode respects boundaries", "[Transit]") {
 
 		for (int i = 0; i < 50; i++) {
 			module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
-			module->process(Test::makeProcessArgs(i * 200 + 300));
+			h.dspStep();
 			module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-			module->process(Test::makeProcessArgs(i * 200 + 400));
+			h.dspStep();
 
 			int diff = std::abs(module->preset - prevPreset);
 			REQUIRE(diff <= 1);
 			prevPreset = module->preset;
 		}
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_RANDOM mode respects boundaries", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	
 	for (int i = 0; i < 12; i++) {
 		testModule->params[TestModule::TEST_PARAM_1].setValue(i / 11.0f);
@@ -1274,9 +1129,9 @@ TEST_CASE("TRIG_RANDOM mode respects boundaries", "[Transit]") {
 		module->preset = 7;
 		module->inputs[TransitModule<12>::INPUT_RESET].channels = 1;
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(2));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(3));
+		h.dspStep();
 		REQUIRE(module->preset == 4); // presetFirst
 	}
 
@@ -1288,18 +1143,16 @@ TEST_CASE("TRIG_RANDOM mode respects boundaries", "[Transit]") {
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
 		module->inputs[TransitModule<12>::INPUT_CV].channels = 1;
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-		for (int i = 0; i < 100; i++) {
-			module->process(Test::makeProcessArgs(i + 10));
-		}
+		h.dspSteps(100);
 		// Set initial preset within range
 		module->preset = 4;
 		
 		// Now trigger multiple random selections
 		for (int i = 0; i < 50; i++) {
 			module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
-			module->process(Test::makeProcessArgs(i * 1000 + 400));
+			h.dspStep();
 			module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-			module->process(Test::makeProcessArgs(i * 1000 + 600));
+			h.dspStep();
 			selected.insert(module->preset);
 		}
 		
@@ -1311,23 +1164,17 @@ TEST_CASE("TRIG_RANDOM mode respects boundaries", "[Transit]") {
 		// With 50 iterations on 5 slots, should see multiple different values
 		REQUIRE(selected.size() >= 2);
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_RANDOM_WO_REPEAT never selects the same preset twice in a row", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	for (int i = 0; i < 12; i++) {
 		testModule->params[TestModule::TEST_PARAM_1].setValue(i / 11.0f);
@@ -1344,18 +1191,16 @@ TEST_CASE("TRIG_RANDOM_WO_REPEAT never selects the same preset twice in a row", 
 	module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
 	module->inputs[TransitModule<12>::INPUT_CV].channels = 1;
 	module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-	for (int i = 0; i < 100; i++) {
-		module->process(Test::makeProcessArgs(i + 10));
-	}
+	h.dspSteps(100);
 	module->preset = 5; // start with a known preset
 
 	SECTION("Reset goes to presetFirst") {
 		module->preset = 7;
 		module->inputs[TransitModule<12>::INPUT_RESET].channels = 1;
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(200));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(201));
+		h.dspStep();
 		REQUIRE(module->preset == 3); // presetFirst
 	}
 
@@ -1363,9 +1208,9 @@ TEST_CASE("TRIG_RANDOM_WO_REPEAT never selects the same preset twice in a row", 
 		int prevPreset = module->preset;
 		for (int i = 0; i < 60; i++) {
 			module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
-			module->process(Test::makeProcessArgs(i * 500 + 200));
+			h.dspStep();
 			module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-			module->process(Test::makeProcessArgs(i * 500 + 300));
+			h.dspStep();
 
 			REQUIRE(module->preset != prevPreset);
 			REQUIRE(module->preset >= 3);
@@ -1373,23 +1218,17 @@ TEST_CASE("TRIG_RANDOM_WO_REPEAT never selects the same preset twice in a row", 
 			prevPreset = module->preset;
 		}
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("TRIG_SHUFFLE visits all presets in range before repeating", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	for (int i = 0; i < 12; i++) {
 		testModule->params[TestModule::TEST_PARAM_1].setValue(i / 11.0f);
@@ -1408,9 +1247,9 @@ TEST_CASE("TRIG_SHUFFLE visits all presets in range before repeating", "[Transit
 
 	// Reset to initialize the shuffle
 	module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(10.0f);
-	module->process(Test::makeProcessArgs(5));
+	h.dspStep();
 	module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
-	module->process(Test::makeProcessArgs(6));
+	h.dspStep();
 
 	SECTION("Reset re-shuffles the deck and selects within range") {
 		// After the reset above, preset must be in range
@@ -1419,9 +1258,9 @@ TEST_CASE("TRIG_SHUFFLE visits all presets in range before repeating", "[Transit
 
 		// Trigger a second reset - should re-shuffle and pick from range again
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(100));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(101));
+		h.dspStep();
 		REQUIRE(module->preset >= 2);
 		REQUIRE(module->preset < 7);
 	}
@@ -1433,9 +1272,9 @@ TEST_CASE("TRIG_SHUFFLE visits all presets in range before repeating", "[Transit
 		// Trigger remaining 4 times to complete a full cycle of 5 slots
 		for (int i = 0; i < 4; i++) {
 			module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
-			module->process(Test::makeProcessArgs(i * 500 + 100));
+			h.dspStep();
 			module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-			module->process(Test::makeProcessArgs(i * 500 + 200));
+			h.dspStep();
 			visited.insert(module->preset);
 		}
 
@@ -1446,23 +1285,17 @@ TEST_CASE("TRIG_SHUFFLE visits all presets in range before repeating", "[Transit
 			REQUIRE(p < 7);
 		}
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("ARM mode queues preset and loads on trigger", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 
 	testModule->params[TestModule::TEST_PARAM_1].setValue(0.2f);
 	module->presetSave(2);
@@ -1478,12 +1311,12 @@ TEST_CASE("ARM mode queues preset and loads on trigger", "[Transit]") {
 
 	// Load initial preset
 	module->presetLoad(2);
-	module->process(Test::makeProcessArgs(2));
+	h.dspStep();
 
 	SECTION("presetLoad with isNext=true queues next preset without loading it immediately") {
 		int presetBefore = module->preset;
 		module->presetLoad(5, true); // Queue preset 5
-		module->process(Test::makeProcessArgs(3));
+		h.dspStep();
 
 		// Preset should not have changed yet
 		REQUIRE(module->preset == presetBefore);
@@ -1492,14 +1325,14 @@ TEST_CASE("ARM mode queues preset and loads on trigger", "[Transit]") {
 
 	SECTION("Trigger in ARM mode loads the queued preset") {
 		module->presetLoad(5, true); // Queue preset 5
-		module->process(Test::makeProcessArgs(3));
+		h.dspStep();
 		REQUIRE(module->presetNext == 5);
 
 		// Trigger the ARM CV
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(10.0f);
-		module->process(Test::makeProcessArgs(4));
+		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_CV].setVoltage(0.0f);
-		module->process(Test::makeProcessArgs(5));
+		h.dspStep();
 
 		REQUIRE(module->preset == 5);
 		REQUIRE(module->presetNext == -1); // Queue cleared
@@ -1510,23 +1343,17 @@ TEST_CASE("ARM mode queues preset and loads on trigger", "[Transit]") {
 		module->presetLoad(11, true);
 		REQUIRE(module->presetNext == -1); // Ignored since slot not used
 	}
-
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
 }
 
 
 TEST_CASE("Phase mode respects boundaries", "[Transit]") {
-	Test::ModuleScaffold<TransitModule<12>> mods;
-	TransitModule<12>* module = mods.create("Transit");
-	Test::registerModule(module);
-	TestModule* testModule = new TestModule();
-	Test::registerModule(testModule);
+	Test::Harness h;
+	TransitModule<12>* module = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule = h.adoptModule(new TestModule);
 
 	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
 	module->taskProcessorDsp.process();
-	module->process(Test::makeProcessArgs(1));
+	h.dspStep();
 	
 	for (int i = 0; i < 12; i++) {
 		testModule->params[TestModule::TEST_PARAM_1].setValue(i / 11.0f);
@@ -1547,9 +1374,7 @@ TEST_CASE("Phase mode respects boundaries", "[Transit]") {
 		// Reset slewLimiter to target value for 0V: target = 0
 		module->slewLimiter.reset(0.0f);
 		// Process enough frames for phase mode divider
-		for (int frame = 0; frame < 300; frame++) {
-			module->process(Test::makeProcessArgs(frame + 100));
-		}
+		h.dspSteps(300);
 		// presetPhaseLast should converge near presetFirst (2.0)
 		if (module->presetPhaseLast > 0) {
 			REQUIRE(module->presetPhaseLast >= 2.0f);
@@ -1562,17 +1387,69 @@ TEST_CASE("Phase mode respects boundaries", "[Transit]") {
 		// Reset slewLimiter to target value for 10V: target = (8-2-1)*10/10 = 5
 		module->slewLimiter.reset(5.0f);
 		// Process enough frames for phase mode divider
-		for (int frame = 0; frame < 300; frame++) {
-			module->process(Test::makeProcessArgs(frame + 100));
-		}
+		h.dspSteps(300);
 		// presetPhaseLast should converge near presetFirst + 5 = 7.0
 		if (module->presetPhaseLast > 0) {
 			REQUIRE(module->presetPhaseLast >= 2.0f);
 			REQUIRE(module->presetPhaseLast <= 8.0f);
 		}
 	}
+}
 
-	Test::unregisterModule(testModule);
-	delete testModule;
-	Test::unregisterModule(module);
+
+// bindAddParameterRequest(presetLoading = true) skips
+// the back-fill loop that keeps every slot's preset vector in sync with
+// sourceHandles, so an older slot's preset can be shorter than sourceHandles.
+// presetProcessPhase indexed that short vector by i unguarded
+// (heap-buffer-overflow under ASan); presetProcess already had the
+// `size() <= i` guard. Drive the real sequence rather than hand-shortening
+// the vector, so the test tracks the actual patch-load code path.
+// This does NOT reliably abort under ASan here (the 1-past-end read lands in
+// a redzone that ASan's shadow marks poisoned, confirmed with
+// __asan_address_is_poisoned, but the generated check at this particular
+// call site does not trip — a discrepancy from an isolated repro of the same
+// vector-overread pattern, which does abort). So this asserts the documented
+// contract behaviourally instead: the second (newer) parameter must never be
+// written by presetProcessPhase while it lacks a same-sized preset entry.
+// Before the fix, a garbage read could crossfade/assign an arbitrary value
+// into it; after the fix, the loop breaks at i == 1 and testParam2 is
+// untouched for every CV position.
+
+TEST_CASE("presetProcessPhase does not write a param whose preset is shorter than sourceHandles", "[Transit]") {
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule1 = h.adoptModule(new TestModule);
+	TestModule* testModule2 = h.adoptModule(new TestModule);
+
+	// Bind one param, save two adjacent slots: sourceHandles.size() == 1
+	transit->bindAddParameterRequest(testModule1->id, TestModule::TEST_PARAM_1);
+	transit->taskProcessorDsp.process();
+	transit->process(Test::makeProcessArgs(0));
+	transit->presetSave(0);
+	transit->presetSave(1);
+
+	// Bind a second param with presetLoading = true: sourceHandles.size() == 2,
+	// but preset[0].size() and preset[1].size() are still 1. Give it a
+	// distinctive sentinel value that no crossfade of testModule1's values
+	// (0..1 range) could ever produce, so any corruption is detectable.
+	transit->bindAddParameterRequest(testModule2->id, TestModule::TEST_PARAM_2, true);
+	transit->taskProcessorDsp.process();
+	testModule2->params[TestModule::TEST_PARAM_2].setValue(7.5f);
+
+	transit->slotCvMode = SLOTCVMODE::PHASE;
+	transit->params[TransitModule<12>::PARAM_CTRLMODE].setValue((float)CTRLMODE::READ);
+	transit->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
+	transit->presetSetFirst(0);
+	transit->presetSetLast(2);
+	transit->inputs[TransitModule<12>::INPUT_CV].channels = 1;
+
+	// Sweep the CV input across the whole phase range, hitting both the
+	// crossfade branch (p1 != p2) and the single-slot branch (p1 == p2).
+	// Before the fix either branch reads preset[i] out of bounds for i == 1
+	// and writes whatever it finds there into testModule2's param.
+	for (float v = 0.f; v <= 10.f; v += 1.f) {
+		transit->inputs[TransitModule<12>::INPUT_CV].setVoltage(v);
+		h.dspSteps(50);
+		REQUIRE(testModule2->params[TestModule::TEST_PARAM_2].getValue() == 7.5f);
+	}
 }

@@ -2,6 +2,13 @@
 
 ### Changes and Fixes
 
+- Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)
+    - Fixed crash in Rack plugin for certain modules if no plugin-window is open
+    - Fixed "Autoload" setting not saved and not reliable working
+- Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+    - Fixed inefficient implementation of _Safe mode_/_Unsafe mode_/_Unsafe fast mode_
+    - Fixed crash in Rack plugin for certain modules if no plugin-window is open
+    - Fixed a background worker that could stall indefinitely
 - Module [ARENA](./docs/arena/Arena.md)
     - Fixed wrong values for mix-ports on preset load
     - Fixed missing voltage-mode options in the context menu of the mix-ports
@@ -9,8 +16,16 @@
     - Fixed "Scale" out-mode using the configured number of mix-ports
 - Module [DIRT](./docs/dirt/Dirt.md)
     - Fixed broken "Initialize" on Crush defects
+- Module [GLUE](./docs/glue/Glue.md)
+    - Fixed lost cable labels on "Consolidate GLUE"
 - Modules [MAZE](./docs/maze/Maze.md) and [HIVE](./docs/maze/Hive.md)
     - Improved rendering performance
+- Module [SIREN](./docs/siren/Siren.md)
+    - Fixed a background worker that could stall indefinitely
+    - Fixed broken "Cancel tag classification"
+- Module [STRIP](./docs/strip/Strip.md)
+    - Reduced resource consumption (one shared worker for all STRIP modules)
+    - Fixed a background worker that could stall indefinitely
 
 ## 2.6.0
 
@@ -27,7 +42,7 @@
     - Added clock divider/multiplier for clock input
     - Added MIDI Panic option
     - Added context menu options for selections
-    - Major enhacements for [Random generator](./docs/ahab/AhabRandomizer.md)
+    - Major enhacements for [Random generator](./docs/ahab/AhabGenerator.md)
     - Fixed reset behavior on loading files or examples
     - Fixed broken MIDI channel on MIDI operators
     - Fixed concurrent usage of UDP and OSC output

@@ -26,7 +26,6 @@ TEST_CASE("moveCell - no-op when source equals target", "[SpliceKit]") {
 	auto map = m->trackingProcessor.getMap(4);
 	REQUIRE(map.type == MidiTrackingType::NOTE);
 	REQUIRE(map.param == 36);
-
 }
 
 
@@ -48,7 +47,6 @@ TEST_CASE("moveCell - port assignment is transferred and source is cleared", "[S
 	REQUIRE(m->portAssignments[7].portId == 1);
 	REQUIRE(m->portAssignments[7].type == engine::Port::OUTPUT);
 	REQUIRE(m->portAssignments[3].isValid() == false);
-
 }
 
 
@@ -73,7 +71,6 @@ TEST_CASE("moveCell - MIDI mappings stay on their original cells", "[SpliceKit]"
 	auto dst = m->trackingProcessor.getMap(9);
 	REQUIRE(dst.type == MidiTrackingType::CC);
 	REQUIRE(dst.param == 74);
-
 }
 
 
@@ -93,7 +90,6 @@ TEST_CASE("moveCell - label and color are transferred and source is reset", "[Sp
 	REQUIRE(m->cellColorSet[9] == 2);
 	REQUIRE(m->cellLabels[2].empty());
 	REQUIRE(m->cellColorSet[2] == -1);
-
 }
 
 
@@ -126,7 +122,6 @@ TEST_CASE("moveCell - scene connections are redirected in current scene", "[Spli
 	// In production this means the physical cables remain in the patch untouched.
 	REQUIRE(m->sceneStore.isConnected(0, 5, 2) == true);
 	REQUIRE(m->sceneStore.isConnected(0, 5, 4) == true);
-
 }
 
 
@@ -151,7 +146,6 @@ TEST_CASE("moveCell - toId's existing connections are discarded", "[SpliceKit]")
 	// Discarded neighbours no longer reference toId.
 	REQUIRE(m->sceneStore.isConnected(0, 8, 5) == false);
 	REQUIRE(m->sceneStore.isConnected(0, 9, 5) == false);
-
 }
 
 
@@ -172,7 +166,6 @@ TEST_CASE("moveCell - fromId-toId connection is dropped and not a self-connectio
 	REQUIRE(m->sceneStore.isConnected(0, 3, 7) == true);   // other connection transferred
 	REQUIRE(m->sceneStore.isConnected(0, 0, 7) == false);  // fromId cleared
 	REQUIRE(m->sceneStore.isConnected(0, 0, 3) == false);
-
 }
 
 
@@ -197,7 +190,6 @@ TEST_CASE("moveCell - connections transferred across all scenes independently", 
 	REQUIRE(m->sceneStore.isConnected(1, 10, 20) == false);
 	REQUIRE(m->sceneStore.isConnected(2, 10, 30) == false);
 	REQUIRE(m->sceneStore.isConnected(3, 10, 40) == false);
-
 }
 
 
@@ -214,7 +206,28 @@ TEST_CASE("moveCell - overlay message is posted", "[SpliceKit]") {
 	m->moveCell(1, 6);
 
 	REQUIRE(m->overlayMessageId == 0);
+}
 
+TEST_CASE("moveCell - fromId's cable survives the move and toId's own cable is removed from the patch", "[SpliceKit]") {
+	CableScaffold cables;
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(2, 43, 0, engine::Port::INPUT);
+	m->assignPort(5, 99, 3, engine::Port::INPUT);  // toId's own port, with its own cable
+
+	m->sceneStore.connectLive(0, 2);
+	m->sceneStore.connectLive(0, 5);
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
+	REQUIRE(cables.mock.hasCable(42, 0, 99, 3));
+
+	m->moveCell(0, 5);
+
+	// fromId's port (42:0) moved to toId — the same physical cable is still there.
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
+	// toId's discarded port (99:3) took its cable out of the patch with it.
+	REQUIRE(cables.mock.hasCable(42, 0, 99, 3) == false);
+	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 5, 2));
 }
 
 
@@ -289,7 +302,6 @@ TEST_CASE("applyPresetLayout - applies cell and scene mappings from custom prese
 	// Unmapped cells remain unmapped.
 	auto c2 = m->trackingProcessor.getMap(2);
 	REQUIRE(c2.type == MidiTrackingType::NONE);
-
 }
 
 TEST_CASE("applyPresetLayout - maps every valid MIDI note/CC number 0..127, including 0", "[SpliceKit]") {
@@ -370,7 +382,6 @@ TEST_CASE("assignPort - assigns port to an empty cell", "[SpliceKit]") {
 	REQUIRE(m->portAssignments[4].moduleId == 42);
 	REQUIRE(m->portAssignments[4].portId == 3);
 	REQUIRE(m->portAssignments[4].type == engine::Port::OUTPUT);
-
 }
 
 TEST_CASE("assignPort - rebinding clears connections in every scene, not just the current one", "[SpliceKit]") {
@@ -400,7 +411,23 @@ TEST_CASE("assignPort - rebinding clears connections in every scene, not just th
 	REQUIRE(m->sceneStore.connections[3][2] == 0);
 	REQUIRE(m->sceneStore.connections[0][0] == 0);
 	REQUIRE(m->sceneStore.connections[3][0] == 0);
+}
 
+TEST_CASE("assignPort - rebinding removes the current scene's live cable from the patch", "[SpliceKit]") {
+	CableScaffold cables;
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+
+	m->sceneStore.connectLive(0, 1);
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
+
+	// Rebind cell 0 to a different port — the old port's cable must be torn down, not just
+	// the bitmask bit, or the patch keeps a cable to a port cell 0 no longer describes.
+	m->assignPort(0, 99, 7, engine::Port::OUTPUT);
+
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0) == false);
 }
 
 TEST_CASE("assignPort - rebinding drops the label describing the old port", "[SpliceKit]") {
@@ -412,7 +439,6 @@ TEST_CASE("assignPort - rebinding drops the label describing the old port", "[Sp
 	m->assignPort(5, 77, 1, engine::Port::INPUT);
 
 	REQUIRE(m->cellLabels[5].empty());
-
 }
 
 TEST_CASE("assignPort - assigning to an empty cell preserves a pre-set label", "[SpliceKit]") {
@@ -424,7 +450,6 @@ TEST_CASE("assignPort - assigning to an empty cell preserves a pre-set label", "
 	m->assignPort(6, 42, 0, engine::Port::OUTPUT);
 
 	REQUIRE(m->cellLabels[6] == "Reverb send");
-
 }
 
 TEST_CASE("assignPort - invalidates LED states so a changed color set is re-sent", "[SpliceKit]") {
@@ -439,7 +464,6 @@ TEST_CASE("assignPort - invalidates LED states so a changed color set is re-sent
 
 	REQUIRE(m->getCellColorSet(0) == 1);
 	REQUIRE(m->feedback.cellLedState[0] == -1);
-
 }
 
 TEST_CASE("assignPort - out-of-range cell ids are ignored", "[SpliceKit]") {
@@ -448,7 +472,6 @@ TEST_CASE("assignPort - out-of-range cell ids are ignored", "[SpliceKit]") {
 
 	REQUIRE_NOTHROW(m->assignPort(-1, 42, 0, engine::Port::OUTPUT));
 	REQUIRE_NOTHROW(m->assignPort(MATRIX_COUNT, 42, 0, engine::Port::OUTPUT));
-
 }
 
 TEST_CASE("assignPort - explicit color set override survives a rebind", "[SpliceKit]") {
@@ -463,7 +486,6 @@ TEST_CASE("assignPort - explicit color set override survives a rebind", "[Splice
 	// it stays put across a rebind.
 	REQUIRE(m->cellColorSet[2] == 3);
 	REQUIRE(m->getCellColorSet(2) == 3);
-
 }
 
 
@@ -477,7 +499,6 @@ TEST_CASE("clearPort - discards the port assignment", "[SpliceKit]") {
 	m->clearPort(4);
 
 	REQUIRE(m->portAssignments[4].isValid() == false);
-
 }
 
 TEST_CASE("clearPort - clears connections in every scene, not just the current one", "[SpliceKit]") {
@@ -504,7 +525,21 @@ TEST_CASE("clearPort - clears connections in every scene, not just the current o
 	REQUIRE(m->sceneStore.connections[3][2] == 0);
 	REQUIRE(m->sceneStore.connections[0][0] == 0);
 	REQUIRE(m->sceneStore.connections[3][0] == 0);
+}
 
+TEST_CASE("clearPort - removes the current scene's live cable from the patch", "[SpliceKit]") {
+	CableScaffold cables;
+	ModuleScaffold mods;
+	SpliceKitModule* m = mods.create();
+	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
+	m->assignPort(1, 43, 0, engine::Port::INPUT);
+
+	m->sceneStore.connectLive(0, 1);
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
+
+	m->clearPort(0);
+
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0) == false);
 }
 
 TEST_CASE("clearPort - drops the label describing the old port", "[SpliceKit]") {
@@ -516,7 +551,6 @@ TEST_CASE("clearPort - drops the label describing the old port", "[SpliceKit]") 
 	m->clearPort(5);
 
 	REQUIRE(m->cellLabels[5].empty());
-
 }
 
 TEST_CASE("clearPort - invalidates LED state so the cleared cell is re-sent as off", "[SpliceKit]") {
@@ -528,7 +562,6 @@ TEST_CASE("clearPort - invalidates LED state so the cleared cell is re-sent as o
 	m->clearPort(0);
 
 	REQUIRE(m->feedback.cellLedState[0] == -1);
-
 }
 
 TEST_CASE("clearPort - no-op on an already-empty cell", "[SpliceKit]") {
@@ -537,7 +570,6 @@ TEST_CASE("clearPort - no-op on an already-empty cell", "[SpliceKit]") {
 
 	REQUIRE_NOTHROW(m->clearPort(4));
 	REQUIRE(m->portAssignments[4].isValid() == false);
-
 }
 
 TEST_CASE("clearPort - out-of-range cell ids are ignored", "[SpliceKit]") {
@@ -546,7 +578,6 @@ TEST_CASE("clearPort - out-of-range cell ids are ignored", "[SpliceKit]") {
 
 	REQUIRE_NOTHROW(m->clearPort(-1));
 	REQUIRE_NOTHROW(m->clearPort(MATRIX_COUNT));
-
 }
 
 TEST_CASE("clearPort - regression: bypassing this cleanup let a stale bit resurrect a "
@@ -568,7 +599,6 @@ TEST_CASE("clearPort - regression: bypassing this cleanup let a stale bit resurr
 	// Without clearPort's cleanup, the stale bit in scene 3 would still connect 5<->9,
 	// recreating a cable to a port the user never chose once scene 3 becomes active.
 	REQUIRE(m->sceneStore.isConnected(3, 5, 9) == false);
-
 }
 
 
@@ -590,7 +620,6 @@ TEST_CASE("moveCell - leaves a stale pending selection on the source cell", "[Sp
 	// (SpliceKitCellButton::onDragDrop, shiftDrag branch).
 	REQUIRE(m->portAssignments[0].isValid() == false);
 	REQUIRE(m->pendingCellId == 0);
-
 }
 
 TEST_CASE("moveCell - a pending selection on the moved-away cell cannot be cancelled by pressing it", "[SpliceKit]") {
@@ -611,7 +640,6 @@ TEST_CASE("moveCell - a pending selection on the moved-away cell cannot be cance
 	// clearPendingLocal() — what the fixed drag-drop path calls — does clear it.
 	m->clearPendingLocal();
 	REQUIRE(m->pendingCellId == -1);
-
 }
 
 TEST_CASE("moveCell - a pending selection on the destination cell silently changes meaning", "[SpliceKit]") {
@@ -631,7 +659,6 @@ TEST_CASE("moveCell - a pending selection on the destination cell silently chang
 	REQUIRE(m->pendingCellId == 5);
 	REQUIRE(m->portAssignments[5].moduleId == 42);
 	REQUIRE(m->portAssignments[5].portId == 0);
-
 }
 
 
@@ -655,7 +682,6 @@ TEST_CASE("clearPort - drops a pending selection on the cleared cell", "[SpliceK
 	// triggerCell() returns on the !isValid() guard first.
 	REQUIRE(m->portAssignments[3].isValid() == false);
 	REQUIRE(m->pendingCellId == -1);
-
 }
 
 TEST_CASE("clearPort - leaves a pending selection on an unrelated cell alone", "[SpliceKit]") {
@@ -670,7 +696,6 @@ TEST_CASE("clearPort - leaves a pending selection on an unrelated cell alone", "
 	// Clearing a different cell must not cancel the user's in-progress selection.
 	m->clearPort(3);
 	REQUIRE(m->pendingCellId == 7);
-
 }
 
 TEST_CASE("assignPort - rebinding drops a pending selection on the rebound cell", "[SpliceKit]") {
@@ -688,7 +713,6 @@ TEST_CASE("assignPort - rebinding drops a pending selection on the rebound cell"
 
 	REQUIRE(m->pendingCellId == -1);
 	REQUIRE(m->portAssignments[4].moduleId == 77);
-
 }
 
 TEST_CASE("assignPort - assigning an empty cell drops a pending selection on it", "[SpliceKit]") {
@@ -705,7 +729,6 @@ TEST_CASE("assignPort - assigning an empty cell drops a pending selection on it"
 	m->pendingCellId = 2;
 	m->assignPort(2, 99, 4, engine::Port::INPUT);
 	REQUIRE(m->pendingCellId == -1);
-
 }
 
 TEST_CASE("assignPort - leaves a pending selection on an unrelated cell alone", "[SpliceKit]") {
@@ -719,7 +742,6 @@ TEST_CASE("assignPort - leaves a pending selection on an unrelated cell alone", 
 
 	m->assignPort(3, 77, 2, engine::Port::OUTPUT);
 	REQUIRE(m->pendingCellId == 7);
-
 }
 
 
@@ -738,11 +760,12 @@ TEST_CASE("toggleConnection - output to input creates the connection", "[SpliceK
 
 	m->toggleConnection(0, 1);
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1));
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
 
 	// Toggling again removes it.
 	m->toggleConnection(0, 1);
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
-
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0) == false);
 }
 
 TEST_CASE("toggleConnection - argument order does not matter", "[SpliceKit]") {
@@ -755,7 +778,7 @@ TEST_CASE("toggleConnection - argument order does not matter", "[SpliceKit]") {
 	// input-first must resolve the same pair as output-first.
 	m->toggleConnection(1, 0);
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1));
-
+	REQUIRE(cables.mock.hasCable(42, 0, 43, 0));
 }
 
 TEST_CASE("toggleConnection - two outputs are rejected and reported", "[SpliceKit]") {
@@ -768,7 +791,6 @@ TEST_CASE("toggleConnection - two outputs are rejected and reported", "[SpliceKi
 
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
 	REQUIRE(m->overlayMessage.title == "Both ports are outputs");
-
 }
 
 TEST_CASE("toggleConnection - two inputs are rejected and reported", "[SpliceKit]") {
@@ -781,7 +803,6 @@ TEST_CASE("toggleConnection - two inputs are rejected and reported", "[SpliceKit
 
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
 	REQUIRE(m->overlayMessage.title == "Both ports are inputs");
-
 }
 
 TEST_CASE("toggleConnection - unassigned cell is ignored without an overlay message", "[SpliceKit]") {
@@ -796,7 +817,6 @@ TEST_CASE("toggleConnection - unassigned cell is ignored without an overlay mess
 	REQUIRE(m->sceneStore.isConnected(m->sceneStore.current, 0, 1) == false);
 	// The !isValid() branch returns before any setOverlayMessage call.
 	REQUIRE(m->overlayMessage.title == "sentinel");
-
 }
 
 TEST_CASE("toggleConnection - only the current scene is affected", "[SpliceKit]") {
@@ -813,7 +833,6 @@ TEST_CASE("toggleConnection - only the current scene is affected", "[SpliceKit]"
 	for (int s = 0; s < SCENE_COUNT; s++) {
 		if (s != 3) REQUIRE(m->sceneStore.isConnected(s, 0, 1) == false);
 	}
-
 }
 
 
@@ -837,7 +856,6 @@ TEST_CASE("onReset - clears labels, color overrides and cancels learn", "[Splice
 	REQUIRE(m->portLearningId == -1);
 	REQUIRE(m->portLearnMode == false);
 	REQUIRE(m->pendingCellId == -1);
-
 }
 
 TEST_CASE("onReset - clears state directly without queueing", "[SpliceKit]") {
@@ -853,5 +871,4 @@ TEST_CASE("onReset - clears state directly without queueing", "[SpliceKit]") {
 
 	REQUIRE(m->sceneStore.current == 0);
 	REQUIRE(m->sceneStore.connections[5][0] == 0);
-
 }

@@ -2,6 +2,7 @@
 #include "../../utils/cursor.hpp"
 #include "../../utils/digital.hpp"
 #include "../../utils/TaskWorker.hpp"
+#include "../../utils/MpmcTaskWorker.hpp"
 #include "../../utils/TaskProcessor.hpp"
 #include "../../utils/SpscLatestValue.hpp"
 #include <atomic>
@@ -81,10 +82,29 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 
 	ClockDividerEx lightDivider;
 
-	TaskWorker taskWorker;
+	std::shared_ptr<ITaskWorker> taskWorker;
 	TaskProcessor<16> taskProcessor;
 
-	StripModule() {
+	// One worker per Rack Context (one per plugin instance / test binary), shared by all
+	// MyModule instances within it. The weak_ptr lets it be destroyed when the last module
+	// in that Context is removed.
+	// Called from module constructors, which Rack runs on the UI thread — but the mutex is
+	// cheap at construction rate and makes that an enforced property rather than an assumed one.
+	static std::shared_ptr<ITaskWorker> defaultWorker() {
+		static std::mutex m;
+		static std::map<Context*, std::weak_ptr<ITaskWorker>> workers;
+		std::lock_guard<std::mutex> lock(m);
+		auto& slot = workers[APP];                       // keyed on the current Context
+		if (auto w = slot.lock()) return w;              // lock() once — no expired()/lock() gap
+		auto worker = std::make_shared<MpmcTaskWorker>("STRIP worker");
+		slot = worker;
+		return worker;
+	}
+
+	StripModule() : StripModule(defaultWorker()) {}
+	explicit StripModule(std::shared_ptr<ITaskWorker> worker) {
+		taskWorker = std::move(worker);
+
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configSwitch(MODE_PARAM, 0.f, 1.f, 0.f, "Toggle left/right mode");
@@ -178,7 +198,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		history::ComplexAction* complexAction;	
 		complexAction = new history::ComplexAction;
 		complexAction->name = "stoermelder STRIP bypass";
-		APP->history->push(complexAction);
+		vcv::history::push(complexAction);
 
 		if (mode == MODE::LEFTRIGHT || mode == MODE::RIGHT) {
 			Module* m = this;
@@ -220,7 +240,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 * To be called from the engine thread only.
 	 */
 	void groupBypass(bool val) {
-		taskWorker.work([=]() { groupBypassWorker(val); });
+		taskWorker->work([=]() { groupBypassWorker(val); });
 	}
 
 	/** 
@@ -265,7 +285,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		history::ComplexAction* complexAction = nullptr;	
 		complexAction = new history::ComplexAction;
 		complexAction->name = "stoermelder STRIP randomize";
-		APP->history->push(complexAction);
+		vcv::history::push(complexAction);
 
 		if (mode == MODE::LEFTRIGHT || mode == MODE::RIGHT) {
 			Module* m = this;

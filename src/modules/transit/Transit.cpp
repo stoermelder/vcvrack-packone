@@ -251,7 +251,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ModuleChangeListener {
 	}
 
 	inline SLOT* getSlot(int index) {
-		if (index >= presetTotal) return NULL;
+		if (index < 0 || index >= presetTotal) return NULL;
 		int n = index / NUM_PRESETS;
 		assert(n < MAX_EXPANDERS + 1);
 		return &N[n]->slot[index % NUM_PRESETS];
@@ -786,11 +786,14 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ModuleChangeListener {
 			
 			if (p1 != p2) {
 				p = (p - float(p1)) / (float(p2) - float(p1));
+				const std::vector<float>& preset1 = *slot1->getPreset();
+				const std::vector<float>& preset2 = *slot2->getPreset();
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					if (!pq) continue;
-					float v1 = (*slot1->getPreset())[i];
-					float v2 = (*slot2->getPreset())[i];
+					if (preset1.size() <= i || preset2.size() <= i) break;
+					float v1 = preset1[i];
+					float v2 = preset2[i];
 					float v = crossfade(v1, v2, p);
 					if (settings::isPlugin && parameterChangesDirect)
 						pq->setValue(v);
@@ -799,15 +802,19 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ModuleChangeListener {
 				}
 			}
 			else {
+				const std::vector<float>& preset1 = *slot1->getPreset();
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					if (!pq) continue;
-					float v = (*slot1->getPreset())[i];
+					if (preset1.size() <= i) break;
+					float v = preset1[i];
 
-					if (settings::isPlugin && parameterChangesDirect)
+					if (settings::isPlugin && parameterChangesDirect) {
 						pq->setValue(v);
-					else
+					}
+					else {
 						pq->getParam()->setValue(v);
+					}
 				}
 			}
 

@@ -1,7 +1,6 @@
 #include "../../plugin.hpp"
 #include "../../components/MidiWidget.hpp"
 #include "../../components/LedDisplayCenterChoiceEx.hpp"
-#include <osdialog.h>
 
 namespace StoermelderPackOne {
 namespace MidiPlug {
