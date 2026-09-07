@@ -10,31 +10,31 @@ using namespace StoermelderPackOne::MidiScript;
 
 namespace __tipsy {
 	namespace Catch = ::Catch;
-	#include "MidiKit.module.test.hpp"
+	#include "MidiKit.test.module.hpp"
 }
 namespace __engine {
 	namespace Catch = ::Catch;
-	#include "MidiKit.engine.test.hpp"
+	#include "MidiKit.test.engine.hpp"
 }
 namespace __minilua {
 	namespace Catch = ::Catch;
-	#include "MidiKit.minilua.test.hpp"
+	#include "MidiKit.test.minilua.hpp"
 }
 namespace __quickjs {
 	namespace Catch = ::Catch;
-	#include "MidiKit.quickjs.test.hpp"
+	#include "MidiKit.test.quickjs.hpp"
 }
 namespace __cc {
 	namespace Catch = ::Catch;
-	#include "MidiKit.cc.test.hpp"
+	#include "MidiKit.test.cc.hpp"
 }
 namespace __examples {
 	namespace Catch = ::Catch;
-	#include "MidiKit.examples.test.hpp"
+	#include "MidiKit.test.examples.hpp"
 }
 namespace __tipsy {
 	namespace Catch = ::Catch;
-	#include "MidiKit.tipsy.test.hpp"
+	#include "MidiKit.test.tipsy.hpp"
 }
 
 // The examples header's OutEvent StringMaker specialization has to live at
