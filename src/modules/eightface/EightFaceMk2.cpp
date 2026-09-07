@@ -503,7 +503,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		char* moduleJson = json_dumps(vJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
 		size_t size = strlen(moduleJson);
 		if (size > 400000) {
-			ret = string::f("The preset size of %s is about %ikb, which might cause performance issues.", b->moduleName, size / 1024);
+			ret = string::f("The preset size of %s is about %ikb, which might cause performance issues.", b->moduleName.c_str(), size / 1024);
 		}
 		free(moduleJson);
 		json_decref(vJ);
@@ -608,7 +608,10 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		if (p < 0 || p >= presetCount)
 			return;
 
+		// presetCount can be stale above presetTotal right after an expander disconnects,
+		// so expSlot() can still return NULL here.
 		EightFaceMk2Slot* slot = expSlot(p);
+		if (!slot) return;
 		if (!isNext) {
 			if (p != preset || force) {
 				presetPrev = preset;
@@ -686,6 +689,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 	}
 
 	void presetCopyPaste(int source, int target) {
+		// source == -1 means "nothing copied yet" -- expSlot() doesn't guard negative
+		// indices, so reject it here before calling expSlot().
+		if (source < 0) return;
 		EightFaceMk2Slot* sourceSlot = expSlot(source);
 		if (!*(sourceSlot->presetSlotUsed)) return;
 
@@ -849,11 +855,11 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 				json_t* moduleIdJ = json_object_get(boundModuleJ, "moduleId");
 				int64_t moduleId = json_integer_value(moduleIdJ);
 				json_t* pluginSlugJ = json_object_get(boundModuleJ, "pluginSlug");
-				std::string pluginSlug = json_string_value(pluginSlugJ);
+				std::string pluginSlug = (pluginSlugJ && json_is_string(pluginSlugJ)) ? json_string_value(pluginSlugJ) : "";
 				json_t* modelSlugJ = json_object_get(boundModuleJ, "modelSlug");
-				std::string modelSlug = json_string_value(modelSlugJ);
+				std::string modelSlug = (modelSlugJ && json_is_string(modelSlugJ)) ? json_string_value(modelSlugJ) : "";
 				json_t* moduleNameJ = json_object_get(boundModuleJ, "moduleName");
-				std::string moduleName = json_string_value(moduleNameJ);
+				std::string moduleName = (moduleNameJ && json_is_string(moduleNameJ)) ? json_string_value(moduleNameJ) : "";
 
 				moduleId = BASE::idFix(moduleId);
 				BoundModule* b = new BoundModule;
