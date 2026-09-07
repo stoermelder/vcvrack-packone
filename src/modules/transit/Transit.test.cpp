@@ -1395,3 +1395,61 @@ TEST_CASE("Phase mode respects boundaries", "[Transit]") {
 		}
 	}
 }
+
+
+// bindAddParameterRequest(presetLoading = true) skips
+// the back-fill loop that keeps every slot's preset vector in sync with
+// sourceHandles, so an older slot's preset can be shorter than sourceHandles.
+// presetProcessPhase indexed that short vector by i unguarded
+// (heap-buffer-overflow under ASan); presetProcess already had the
+// `size() <= i` guard. Drive the real sequence rather than hand-shortening
+// the vector, so the test tracks the actual patch-load code path.
+// This does NOT reliably abort under ASan here (the 1-past-end read lands in
+// a redzone that ASan's shadow marks poisoned, confirmed with
+// __asan_address_is_poisoned, but the generated check at this particular
+// call site does not trip — a discrepancy from an isolated repro of the same
+// vector-overread pattern, which does abort). So this asserts the documented
+// contract behaviourally instead: the second (newer) parameter must never be
+// written by presetProcessPhase while it lacks a same-sized preset entry.
+// Before the fix, a garbage read could crossfade/assign an arbitrary value
+// into it; after the fix, the loop breaks at i == 1 and testParam2 is
+// untouched for every CV position.
+
+TEST_CASE("presetProcessPhase does not write a param whose preset is shorter than sourceHandles", "[Transit]") {
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TestModule* testModule1 = h.adoptModule(new TestModule);
+	TestModule* testModule2 = h.adoptModule(new TestModule);
+
+	// Bind one param, save two adjacent slots: sourceHandles.size() == 1
+	transit->bindAddParameterRequest(testModule1->id, TestModule::TEST_PARAM_1);
+	transit->taskProcessorDsp.process();
+	transit->process(Test::makeProcessArgs(0));
+	transit->presetSave(0);
+	transit->presetSave(1);
+
+	// Bind a second param with presetLoading = true: sourceHandles.size() == 2,
+	// but preset[0].size() and preset[1].size() are still 1. Give it a
+	// distinctive sentinel value that no crossfade of testModule1's values
+	// (0..1 range) could ever produce, so any corruption is detectable.
+	transit->bindAddParameterRequest(testModule2->id, TestModule::TEST_PARAM_2, true);
+	transit->taskProcessorDsp.process();
+	testModule2->params[TestModule::TEST_PARAM_2].setValue(7.5f);
+
+	transit->slotCvMode = SLOTCVMODE::PHASE;
+	transit->params[TransitModule<12>::PARAM_CTRLMODE].setValue((float)CTRLMODE::READ);
+	transit->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
+	transit->presetSetFirst(0);
+	transit->presetSetLast(2);
+	transit->inputs[TransitModule<12>::INPUT_CV].channels = 1;
+
+	// Sweep the CV input across the whole phase range, hitting both the
+	// crossfade branch (p1 != p2) and the single-slot branch (p1 == p2).
+	// Before the fix either branch reads preset[i] out of bounds for i == 1
+	// and writes whatever it finds there into testModule2's param.
+	for (float v = 0.f; v <= 10.f; v += 1.f) {
+		transit->inputs[TransitModule<12>::INPUT_CV].setVoltage(v);
+		h.dspSteps(50);
+		REQUIRE(testModule2->params[TestModule::TEST_PARAM_2].getValue() == 7.5f);
+	}
+}
