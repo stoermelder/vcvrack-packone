@@ -2,7 +2,7 @@
 #include "EightFaceMk2.cpp"
 #include "EightFaceMk2Ex.cpp"
 
-using namespace StoermelderPackOne::EightFaceMk2;
+using namespace StoermelderPackOne::EightFace::mk2;
 using StoermelderPackOne::ITaskWorker;
 using StoermelderPackOne::SyncTaskWorker;
 

@@ -16,7 +16,8 @@
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
-namespace EightFaceMk2 {
+namespace EightFace {
+namespace mk2 {
 
 const int MAX_EXPANDERS = 15;
 
@@ -1296,7 +1297,8 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 	}
 };
 
-} // namespace EightFaceMk2
+} // namespace mk2
+} // namespace EightFace
 } // namespace StoermelderPackOne
 
-Model* modelEightFaceMk2 = createModel<StoermelderPackOne::EightFaceMk2::EightFaceMk2Module<8>, StoermelderPackOne::EightFaceMk2::EightFaceMk2Widget<8>>("EightFaceMk2");
+Model* modelEightFaceMk2 = createModel<StoermelderPackOne::EightFace::mk2::EightFaceMk2Module<8>, StoermelderPackOne::EightFace::mk2::EightFaceMk2Widget<8>>("EightFaceMk2");
