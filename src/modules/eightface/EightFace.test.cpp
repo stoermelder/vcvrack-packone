@@ -65,7 +65,7 @@ TEST_CASE("JSON round-trip preserves state", "[EightFace][JSON]") {
 	SECTION("Scalars") {
 		// Distinct, non-default values for every scalar stored to JSON
 		m->panelTheme = 1;
-		m->guiSafeMode = GUISAFEMODE::GUI;
+		m->dispatch.guiSafeMode = GUISAFEMODE::GUI;
 		m->side = SIDE::RIGHT;
 		m->pluginSlug = "Stoermelder-P1";
 		m->modelSlug = "Glue";
@@ -84,7 +84,7 @@ TEST_CASE("JSON round-trip preserves state", "[EightFace][JSON]") {
 		restored->dataFromJson(rootJ);
 
 		REQUIRE(restored->panelTheme == 1);
-		REQUIRE(restored->guiSafeMode == GUISAFEMODE::GUI);
+		REQUIRE(restored->dispatch.guiSafeMode == GUISAFEMODE::GUI);
 		REQUIRE(restored->side == SIDE::RIGHT);
 		REQUIRE(restored->pluginSlug == "Stoermelder-P1");
 		REQUIRE(restored->modelSlug == "Glue");

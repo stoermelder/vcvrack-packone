@@ -1,11 +1,11 @@
 #include "../../plugin.hpp"
 #include "../../vcv/ui.hpp"
+#include "../../utils/TaskWorker.hpp"
+#include "../../utils/MpmcTaskWorker.hpp"
 #include "EightFace.hpp"
+#include "PresetDispatch.hpp"
 #include <functional>
-#include <mutex>
-#include <condition_variable>
 #include <random>
-#include <thread>
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
@@ -35,12 +35,6 @@ enum class CTRLMODE {
 	READ,
 	AUTO,
 	WRITE
-};
-
-enum class GUISAFEMODE {
-	WORKER,
-	GUI,
-	GUI_WITH_LOCK
 };
 
 template<int NUM_PRESETS>
@@ -115,17 +109,7 @@ struct EightFaceModule : Module {
 	int presetNext = -1;
 	float modeLight = 0;
 
-	std::mutex workerMutex;
-	std::condition_variable workerCondVar;
-	std::thread* worker;
-	Context* workerContext;
-	bool workerIsRunning = true;
-	bool workerDoProcess = false;
-	int workerPreset = -1;
-	ModuleWidget* workerModuleWidget;
-	bool workerGui = false;
-	std::atomic<ModuleWidget*> workerGuiModuleWidget{nullptr};
-	GUISAFEMODE guiSafeMode;
+	bool needsGuiThread = false;
 
 	LongPressButton typeButtons[NUM_PRESETS];
 	dsp::SchmittTrigger slotTrigger;
@@ -135,8 +119,20 @@ struct EightFaceModule : Module {
 
 	ClockDividerEx lightDivider;
 	ClockDividerEx buttonDivider;
+	ClockDividerEx guiTaskDivider;
 
-	EightFaceModule() {
+	PresetDispatch dispatch;
+
+	// One worker per instance, not shared: preset application is exactly the long, blocking
+	// work that must not head-of-line-block another 8FACE (see EightFaceMk2.cpp's identical
+	// reasoning).
+	static std::shared_ptr<ITaskWorker> defaultWorker() {
+		return std::make_shared<MpmcTaskWorker>("8FACE worker");
+	}
+
+	EightFaceModule() : EightFaceModule(defaultWorker()) {}
+	explicit EightFaceModule(std::shared_ptr<ITaskWorker> worker) :
+		dispatch(std::move(worker)) {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(SLOT_INPUT, "Slot selection");
@@ -153,12 +149,10 @@ struct EightFaceModule : Module {
 		}
 
 		buttonDivider.setDivision(4);
+		guiTaskDivider.setDivision(1024);
 
 		ResetEvent re;
 		onReset(re);
-
-		workerContext = contextGet();
-		worker = new std::thread(&EightFaceModule::processWorker, this);
 	}
 
 	~EightFaceModule() {
@@ -166,13 +160,6 @@ struct EightFaceModule : Module {
 			if (presetSlotUsed[i])
 				json_decref(presetSlot[i]);
 		}
-
-		workerIsRunning = false;
-		workerDoProcess = true;
-		workerCondVar.notify_one();
-		worker->join();
-		workerContext = NULL;
-		delete worker;
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
@@ -188,7 +175,7 @@ struct EightFaceModule : Module {
 			presetSlotUsed[i] = false;
 		}
 
-		guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+		dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 		preset = -1;
 		presetCount = NUM_PRESETS;
 		presetPrev = -1;
@@ -205,6 +192,10 @@ struct EightFaceModule : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
+		if (guiTaskDivider.process()) {
+			dispatch.process();
+		}
+
 		Expander* exp = side == SIDE::LEFT ? &leftExpander : &rightExpander;
 		if (exp->moduleId >= 0 && exp->module) {
 			Module* t = exp->module;
@@ -421,39 +412,17 @@ struct EightFaceModule : Module {
 		}
 	}
 
-	void processWorker() {
-		contextSet(workerContext);
-		while (true) {
-			std::unique_lock<std::mutex> lock(workerMutex);
-			workerCondVar.wait(lock, std::bind(&EightFaceModule::workerDoProcess, this));
-			if (!workerIsRunning || workerPreset < 0) return;
-			if (ctrlMode == CTRLMODE::AUTO && presetPrev >= 0 && presetSlotUsed[presetPrev]) {
-				json_decref(presetSlot[presetPrev]);
-				presetSlot[presetPrev] = workerModuleWidget->toJson();
-			}
-			// This locks the engine
-			workerModuleWidget->fromJson(presetSlot[workerPreset]);
-			workerDoProcess = false;
+	// Leaf; never enqueues. Allowlist/no-window/fromJson-target rules live behind loader.
+	void applyPreset(int64_t moduleId, const PresetDispatch::Loader& loader, int p) {
+		if (p < 0 || !presetSlotUsed[p]) return;
+		if (!loader.shouldLoad(needsGuiThread)) return;
+		ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		if (!mw) return;
+		if (ctrlMode == CTRLMODE::AUTO && presetPrev >= 0 && presetSlotUsed[presetPrev]) {
+			json_decref(presetSlot[presetPrev]);
+			presetSlot[presetPrev] = mw->toJson();
 		}
-	}
-
-	void processGui() {
-		ModuleWidget* mw = workerGuiModuleWidget.load();
-		if (mw) {
-			if (ctrlMode == CTRLMODE::AUTO && presetPrev >= 0 && presetSlotUsed[presetPrev]) {
-				json_decref(presetSlot[presetPrev]);
-				presetSlot[presetPrev] = workerModuleWidget->toJson();
-			}
-
-			if (guiSafeMode == GUISAFEMODE::GUI) {
-				// This is an unlocked operation, it is not perfectly thread-safe, as the Engine
-				// thread would lock on preset loading
-				mw->module->fromJson(presetSlot[workerPreset]);
-			} else {
-				mw->fromJson(presetSlot[workerPreset]);
-			}
-			workerGuiModuleWidget.store(nullptr);
-		}
+		loader.load(needsGuiThread, mw, presetSlot[p]);
 	}
 
 	void presetLoad(Module* m, int p, bool isNext = false, bool force = false) {
@@ -466,35 +435,13 @@ struct EightFaceModule : Module {
 				preset = p;
 				presetNext = -1;
 				if (!presetSlotUsed[p]) return;
-				ModuleWidget* mw = APP->scene->rack->getModule(m->id);
-				if (mw) {
-					workerPreset = p;
-					// The bound module is on the GUI-thread list (guiModuleSlugs), so its
-					// preset cannot be applied on the worker thread at all — but with no
-					// window there is no UI stepping to apply it on either. Skip the load
-					// rather than fall through to the worker below, which is the crash the
-					// list exists to prevent. The module keeps its current settings.
-					if (workerGui && !vcv::ui::hasWindow()) return;
-					// There is no stepping of the UI without a window (Rack's plugin version
-					// with the plugin window closed, or headless Rack), in this case we must
-					// use the worker thread. Routed through the UiAccess seam rather than
-					// APP->window so the window-present branch is reachable under test.
-					if (!vcv::ui::hasWindow()) {
-						workerModuleWidget = mw;
-						workerDoProcess = true;
-						workerCondVar.notify_one();
-					}
-					// Hand it off to the UI thread
-					else if (workerGui || guiSafeMode != GUISAFEMODE::WORKER) {
-						workerGuiModuleWidget.store(mw);
-					}
-					// Explicitly configured to use the worker thread
-					else {
-						workerModuleWidget = mw;
-						workerDoProcess = true;
-						workerCondVar.notify_one();
-					}
-				}
+				// Captured here, not read from a member later, so a second presetLoad() can't
+				// clobber this task's target before it runs.
+				int64_t moduleId = m->id;
+				dispatch.dispatch(p, needsGuiThread, !needsGuiThread,
+					[this, moduleId](const PresetDispatch::Loader& loader, int p) {
+						applyPreset(moduleId, loader, p);
+					});
 			}
 		}
 		else {
@@ -510,7 +457,7 @@ struct EightFaceModule : Module {
 		realPluginSlug = m->model->plugin->slug;
 		realModelSlug = m->model->slug;
 		auto it = guiModuleSlugs.find(std::make_tuple(realPluginSlug, realModelSlug));
-		workerGui = it != guiModuleSlugs.end();
+		needsGuiThread = it != guiModuleSlugs.end();
 
 		ModuleWidget* mw = APP->scene->rack->getModule(m->id);
 		if (presetSlotUsed[p]) json_decref(presetSlot[p]);
@@ -545,7 +492,7 @@ struct EightFaceModule : Module {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
-		json_object_set_new(rootJ, "guiSafeMode", json_integer((int)guiSafeMode));
+		json_object_set_new(rootJ, "guiSafeMode", json_integer((int)dispatch.guiSafeMode));
 
 		json_object_set_new(rootJ, "mode", json_integer((int)side));
 		json_object_set_new(rootJ, "pluginSlug", json_string(pluginSlug.c_str()));
@@ -576,7 +523,7 @@ struct EightFaceModule : Module {
 		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* guiSafeModeJ = json_object_get(rootJ, "guiSafeMode");
-		guiSafeMode = guiSafeModeJ ? (GUISAFEMODE)json_integer_value(guiSafeModeJ) : GUISAFEMODE::WORKER;
+		dispatch.guiSafeMode = guiSafeModeJ ? (GUISAFEMODE)json_integer_value(guiSafeModeJ) : GUISAFEMODE::WORKER;
 	
 		json_t* sideJ = json_object_get(rootJ, "mode");
 		if (sideJ) side = (SIDE)json_integer_value(sideJ);
@@ -590,7 +537,7 @@ struct EightFaceModule : Module {
 		json_t* realModelSlugJ = json_object_get(rootJ, "realModelSlug");
 		if (realModelSlugJ && json_is_string(realModelSlugJ)) realModelSlug = json_string_value(realModelSlugJ);
 		auto it = guiModuleSlugs.find(std::make_tuple(realPluginSlug, realModelSlug));
-		workerGui = it != guiModuleSlugs.end();
+		needsGuiThread = it != guiModuleSlugs.end();
 
 		json_t* moduleNameJ = json_object_get(rootJ, "moduleName");
 		if (moduleNameJ && json_is_string(moduleNameJ)) moduleName = json_string_value(moduleNameJ);
@@ -747,27 +694,36 @@ struct EightFaceWidgetTemplate : ThemedModuleWidget<MODULE> {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Stability & performance mode"));
 		menu->addChild(createBoolMenuItem("Safe", "",
-			[=]() { return module->guiSafeMode == GUISAFEMODE::GUI_WITH_LOCK; },
+			[=]() {
+				return module->dispatch.guiSafeMode == GUISAFEMODE::GUI_WITH_LOCK;
+			},
 			[=](bool v) {
 				std::string msg = "Using \"Safe\" will load presets perfectly safe without risking any crashes, but may lead to performance issues (e.g. stuttering). Proceed?";
-				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
-					module->guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+					module->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+				}
 			}
 		));
 		menu->addChild(createBoolMenuItem("Unsafe", "",
-			[=]() { return module->guiSafeMode == GUISAFEMODE::GUI; },
+			[=]() {
+				return module->dispatch.guiSafeMode == GUISAFEMODE::GUI;
+			},
 			[=](bool v) {
 				std::string msg = "Using \"Unsafe-mode\" will load presets quickly but may lead to crashing VCV Rack or other issues. Proceed?";
-				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
-					module->guiSafeMode = GUISAFEMODE::GUI;
+				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+					module->dispatch.guiSafeMode = GUISAFEMODE::GUI;
+				}
 			}
 		));
 		menu->addChild(createBoolMenuItem("Unsafe fast", "",
-			[=]() { return module->guiSafeMode == GUISAFEMODE::WORKER; },
+			[=]() {
+				return module->dispatch.guiSafeMode == GUISAFEMODE::WORKER;
+			},
 			[=](bool v) {
 				std::string msg = "Using \"Unsafe fast-mode\" will load presets most quickly but may lead to crashing VCV Rack or other issues. Proceed?";
-				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
-					module->guiSafeMode = GUISAFEMODE::WORKER;
+				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+					module->dispatch.guiSafeMode = GUISAFEMODE::WORKER;
+				}
 			}
 		));
 
@@ -852,7 +808,7 @@ struct EightFaceWidgetTemplate : ThemedModuleWidget<MODULE> {
 
 	void step() override {
 		if (module) {
-			module->processGui();
+			module->dispatch.step();
 		}
 		ThemedModuleWidget<MODULE>::step();
 	}
