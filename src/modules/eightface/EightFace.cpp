@@ -211,6 +211,9 @@ struct EightFaceModule : Module {
 						resetTimer.reset();
 						switch (slotCvMode) {
 							case SLOTCVMODE::TRIG_FWD:
+							case SLOTCVMODE::TRIG_RANDOM:
+							case SLOTCVMODE::TRIG_RANDOM_WALK:
+							case SLOTCVMODE::TRIG_RANDOM_WO_REPEAT:
 								presetLoad(t, 0);
 								break;
 							case SLOTCVMODE::TRIG_REV:
