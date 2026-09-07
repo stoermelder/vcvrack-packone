@@ -1,4 +1,6 @@
 #include "../../plugin.hpp"
+#include "../../utils/cursor.hpp"
+#include "../../vcv/api.hpp"
 #include "MapModuleBase.hpp"
 #include "CVMap.hpp"
 #include "../../components/MenuColorLabel.hpp"
@@ -201,7 +203,8 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 
 	void dataFromJson(json_t* rootJ) override {
 		CVMapModuleBase<MAX_CHANNELS>::dataFromJson(rootJ);
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* audioRateJ = json_object_get(rootJ, "audioRate");
 		if (audioRateJ) audioRate = json_boolean_value(audioRateJ);
@@ -213,15 +216,20 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 
 		json_t* inputConfigsJ = json_object_get(rootJ, "inputConfig");
 		if (inputConfigsJ) {
-			size_t i;
-			json_t* inputConfigJ;
-			json_array_foreach(inputConfigsJ, i, inputConfigJ) {
-				inputConfig[i].hideUnused = json_boolean_value(json_object_get(inputConfigJ, "hideUnused"));
+			// Bounded to the fixed-size destinations: hand-edited or corrupted
+			// patches may contain more entries than inputConfig[]/label[] hold.
+			size_t maxConfigs = std::min((size_t)2, json_array_size(inputConfigsJ));
+			for (size_t i = 0; i < maxConfigs; i++) {
+				json_t* inputConfigJ = json_array_get(inputConfigsJ, i);
+				json_t* hideUnusedJ = json_object_get(inputConfigJ, "hideUnused");
+				if (hideUnusedJ) inputConfig[i].hideUnused = json_boolean_value(hideUnusedJ);
 				json_t* labelJ = json_object_get(inputConfigJ, "label");
-				size_t j;
-				json_t* lJ;
-				json_array_foreach(labelJ, j, lJ) {
-					inputConfig[i].label[j] = json_string_value(lJ);
+				if (labelJ) {
+					size_t maxLabels = std::min((size_t)16, json_array_size(labelJ));
+					for (size_t j = 0; j < maxLabels; j++) {
+						json_t* lJ = json_array_get(labelJ, j);
+						if (lJ && json_is_string(lJ)) inputConfig[i].label[j] = json_string_value(lJ);
+					}
 				}
 			}
 		}
@@ -325,13 +333,7 @@ struct CVMapPort : StoermelderPort {
 			void onAction(const event::Action& e) override {
 				CableWidget* cw = APP->scene->rack->getTopCable(pw);
 				if (cw) {
-					// history::CableRemove
-					history::CableRemove* h = new history::CableRemove;
-					h->setCable(cw);
-					APP->history->push(h);
-
-					APP->scene->rack->removeCable(cw);
-					delete cw;
+					vcv::removeCable(cw);
 				}
 			}
 		}; // struct DisconnectItem
@@ -503,16 +505,12 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 	void enableLearn(LEARN_MODE mode) {
 		learnMode = learnMode == LEARN_MODE::OFF ? mode : LEARN_MODE::OFF;
 		APP->event->setSelectedWidget(this);
-		GLFWcursor* cursor = NULL;
-		if (learnMode != LEARN_MODE::OFF) {
-			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		}
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setLearnCursor(learnMode != LEARN_MODE::OFF);
 	}
 
 	void disableLearn() {
 		learnMode = LEARN_MODE::OFF;
-		if (APP->window) glfwSetCursor(APP->window->win, NULL);
+		cursor::resetCursor();
 	}
 
 	void appendContextMenu(Menu* menu) override {

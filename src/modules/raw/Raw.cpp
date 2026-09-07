@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/api.hpp"
 #include "../../components/Knobs.hpp"
 #include <thread>
 
@@ -178,7 +179,8 @@ struct RawModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 	}
 };
 
@@ -206,8 +208,7 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 #ifndef METAMODULE
 		struct PublicationItem : MenuItem {
 			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://dafx2020.mdw.ac.at/proceedings/papers/DAFx2020_paper_6.pdf");
-				t.detach();
+				vcv::ui::openBrowser("https://dafx2020.mdw.ac.at/proceedings/papers/DAFx2020_paper_6.pdf");
 			}
 		};
 

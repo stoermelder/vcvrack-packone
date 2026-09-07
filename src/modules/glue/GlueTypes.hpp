@@ -23,11 +23,11 @@ const static float LABEL_OPACITY_MAX = 1.0f;
 const static float LABEL_OPACITY_MIN = 0.2f;
 const static float LABEL_OPACITY_STEP = 0.05f;
 
-const static float LABEL_WIDTH_MAX = 180.f;
+const static float LABEL_WIDTH_MAX = 360.f;
 const static float LABEL_WIDTH_MIN = 20.f;
 const static float LABEL_WIDTH_DEFAULT = 80.f;
 
-const static float LABEL_SIZE_MAX = 24.f;
+const static float LABEL_SIZE_MAX = 48.f;
 const static float LABEL_SIZE_MIN = 8.f;
 const static float LABEL_SIZE_DEFAULT = 16.f;
 
@@ -75,6 +75,14 @@ struct CableLabel {
 	Vec cachedRotatedSize;
 	bool cacheValid = false;
 };
+
+// The cache key (cachedOutputPos/cachedInputPos) only tracks the cable's endpoints, not
+// which end the label is anchored to - so toggling atInput must invalidate the cache
+// itself, or the label stays stuck at the old tFinal/angle/offset until the cable moves.
+inline void setCableLabelAtInput(CableLabel* cl, bool atInput) {
+	cl->atInput = atInput;
+	cl->cacheValid = false;
+}
 
 } // namespace Glue
 } // namespace StoermelderPackOne

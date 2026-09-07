@@ -1,5 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "../../utils/cursor.hpp"
 #include "../../pluginsettings.hpp"
 #include "../../utils/StripIdFixModule.hpp"
 #include "../../utils/ScaledMapParam.hpp"
@@ -191,11 +192,11 @@ struct MapModuleBase : Module, StripIdFixModule {
 		clearMaps_NoLock();
 
 		json_t* textScrollingJ = json_object_get(rootJ, "textScrolling");
-		textScrolling = json_boolean_value(textScrollingJ);
+		if (textScrollingJ) textScrolling = json_boolean_value(textScrollingJ);
 		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
-		mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
+		if (mappingIndicatorHiddenJ) mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
 		json_t* mappingIndicatorColorJ = json_object_get(rootJ, "mappingIndicatorColor");
-		if (mappingIndicatorColorJ) mappingIndicatorColor = color::fromHexString(json_string_value(mappingIndicatorColorJ));
+		if (mappingIndicatorColorJ && json_is_string(mappingIndicatorColorJ)) mappingIndicatorColor = color::fromHexString(json_string_value(mappingIndicatorColorJ));
 
 		json_t* mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
@@ -211,7 +212,9 @@ struct MapModuleBase : Module, StripIdFixModule {
 				int64_t moduleId = json_integer_value(moduleIdJ);
 				int paramId = json_integer_value(paramIdJ);
 				moduleId = idFix(moduleId);
-				APP->engine->updateParamHandle_NoLock(&paramHandles[mapIndex], moduleId, paramId, false);
+				if (moduleId >= 0) {
+					APP->engine->updateParamHandle_NoLock(&paramHandles[mapIndex], moduleId, paramId, false);
+				}
 				dataFromJsonMap(mapJ, mapIndex);
 			}
 		}
@@ -287,7 +290,7 @@ struct MapModuleChoice : LedDisplayChoice {
 
 	~MapModuleChoice() {
 		if (module && module->learningId == id) {
-			if (APP->window) glfwSetCursor(APP->window->win, NULL);
+			cursor::resetCursor();
 		}
 	}
 
@@ -343,8 +346,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		APP->scene->rack->setTouchedParam(NULL);
 		module->enableLearn(id);
 
-		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setCrosshairCursor();
 	}
 
 	void onDeselect(const event::Deselect& e) override {
@@ -366,13 +368,13 @@ struct MapModuleChoice : LedDisplayChoice {
 					int paramId = pq->paramId;
 					module->learnParam(id, moduleId, paramId);
 					hscrollCharOffset = 0;
-					if (APP->window) glfwSetCursor(APP->window->win, NULL);
+					cursor::resetCursor();
 					return;
 				}
 			}
 		}
 		module->disableLearn(id);
-		if (APP->window) glfwSetCursor(APP->window->win, NULL);
+		cursor::resetCursor();
 	}
 
 	void step() override {

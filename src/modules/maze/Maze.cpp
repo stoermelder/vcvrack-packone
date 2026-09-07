@@ -2,6 +2,7 @@
 #include "../../utils/digital.hpp"
 #include <random>
 #include <chrono>
+#include <atomic>
 
 namespace StoermelderPackOne {
 namespace Maze {
@@ -68,7 +69,13 @@ struct MazeModule : Module {
 	const int numPorts = NUM_PORTS;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
-	std::geometric_distribution<int>* geoDist[NUM_PORTS] = {};
+	std::geometric_distribution<int> geoDist[NUM_PORTS]{
+		std::geometric_distribution<int>(0.35f),
+		std::geometric_distribution<int>(0.35f),
+		std::geometric_distribution<int>(0.35f),
+		std::geometric_distribution<int>(0.35f)
+	};
+	std::atomic<float> ratchetingProbAtomic[NUM_PORTS];
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
@@ -133,6 +140,7 @@ struct MazeModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < NUM_PORTS; i++) {
+			ratchetingProbAtomic[i].store(0.35f, std::memory_order_relaxed);
 			configInput(CLK_INPUT + i, string::f("Clock %i", i + 1));
 			if (i > 0) inputInfos[CLK_INPUT + i]->description = "Normalized to \"Yellow\" if not disabled on the context menu.";
 			configInput(RESET_INPUT + i, string::f("Reset %i", i + 1));
@@ -151,11 +159,6 @@ struct MazeModule : Module {
 		onReset(re);
 	}
 
-	~MazeModule() {
-		for (int i = 0; i < NUM_PORTS; i++) {
-			delete geoDist[i];
-		}
-	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
@@ -223,16 +226,20 @@ struct MazeModule : Module {
 								doPulse = random::uniform() >= 0.5f;
 								break;
 							case RATCHETMODE::DEFAULT:
-								if (geoDist[i]) multiplier[i].trigger((*geoDist[i])(randGen));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(geoDist[i](randGen));
 								break;
 							case RATCHETMODE::MULT_TWO:
-								if (geoDist[i]) multiplier[i].trigger(2 * ((*geoDist[i])(randGen) + 1));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(2 * (geoDist[i](randGen) + 1));
 								break;
 							case RATCHETMODE::MULT_THREE:
-								if (geoDist[i]) multiplier[i].trigger(3 * ((*geoDist[i])(randGen) + 1));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(3 * (geoDist[i](randGen) + 1));
 								break;
 							case RATCHETMODE::POWER_TWO:
-								if (geoDist[i]) multiplier[i].trigger(std::pow(2, (*geoDist[i])(randGen)));
+								updateRatchetingDist(i);
+								multiplier[i].trigger(std::pow(2, geoDist[i](randGen)));
 								break;
 						}
 						break;
@@ -412,10 +419,16 @@ struct MazeModule : Module {
 	}
 
 	void ratchetingSetProb(int id, float prob = 0.35f) {
-		auto geoDistOld = geoDist[id];
-		geoDist[id] = new std::geometric_distribution<int>(prob);
-		if (geoDistOld) delete geoDistOld;
 		ratchetingProb[id] = prob;
+		ratchetingProbAtomic[id].store(prob, std::memory_order_release);
+	}
+
+	inline void updateRatchetingDist(int id) {
+		float newProb = ratchetingProbAtomic[id].load(std::memory_order_acquire);
+		if (newProb != ratchetingProb[id]) {
+			ratchetingProb[id] = newProb;
+			geoDist[id] = std::geometric_distribution<int>(newProb);
+		}
 	}
 
 	json_t* dataToJson() override {
@@ -464,45 +477,66 @@ struct MazeModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* gridJ = json_object_get(rootJ, "grid");
-		for (int i = 0; i < SIZE; i++) {
-			for (int j = 0; j < SIZE; j++) {
-				grid[i][j] = (GRIDSTATE)json_integer_value(json_array_get(gridJ, i * SIZE + j));
+		if (gridJ) {
+			for (int i = 0; i < SIZE; i++) {
+				for (int j = 0; j < SIZE; j++) {
+					grid[i][j] = (GRIDSTATE)json_integer_value(json_array_get(gridJ, i * SIZE + j));
+				}
 			}
 		}
 		
 		json_t* gridCvJ = json_object_get(rootJ, "gridCv");
-		for (int i = 0; i < SIZE; i++) {
-			for (int j = 0; j < SIZE; j++) {
-				gridCv[i][j] = json_real_value(json_array_get(gridCvJ, i * SIZE + j));
+		if (gridCvJ) {
+			for (int i = 0; i < SIZE; i++) {
+				for (int j = 0; j < SIZE; j++) {
+					gridCv[i][j] = json_real_value(json_array_get(gridCvJ, i * SIZE + j));
+				}
 			}
 		}
 
 		json_t* portsJ = json_object_get(rootJ, "ports");
-		json_t* portJ;
-		size_t portIndex;
-		json_array_foreach(portsJ, portIndex, portJ) {
-			xStartPos[portIndex] = json_integer_value(json_object_get(portJ, "xStartPos"));
-			yStartPos[portIndex] = json_integer_value(json_object_get(portJ, "yStartPos"));
-			xStartDir[portIndex] = json_integer_value(json_object_get(portJ, "xStartDir"));
-			yStartDir[portIndex] = json_integer_value(json_object_get(portJ, "yStartDir"));
-			xPos[portIndex] = json_integer_value(json_object_get(portJ, "xPos"));
-			yPos[portIndex] = json_integer_value(json_object_get(portJ, "yPos"));
-			xDir[portIndex] = json_integer_value(json_object_get(portJ, "xDir"));
-			yDir[portIndex] = json_integer_value(json_object_get(portJ, "yDir"));
-			turnMode[portIndex] = (TURNMODE)json_integer_value(json_object_get(portJ, "turnMode"));
-			outMode[portIndex] = (OUTMODE)json_integer_value(json_object_get(portJ, "outMode"));
-			ratchetingEnabled[portIndex] = (RATCHETMODE)json_integer_value(json_object_get(portJ, "ratchetingEnabled"));
+		if (portsJ) {
+			// Bounded to the fixed-size destinations: hand-edited or corrupted
+			// patches may contain more ports than the [NUM_PORTS] members hold.
+			size_t maxPorts = std::min((size_t)NUM_PORTS, json_array_size(portsJ));
+			for (size_t portIndex = 0; portIndex < maxPorts; portIndex++) {
+				json_t* portJ = json_array_get(portsJ, portIndex);
+				json_t* xStartPosJ = json_object_get(portJ, "xStartPos");
+				if (xStartPosJ) xStartPos[portIndex] = json_integer_value(xStartPosJ);
+				json_t* yStartPosJ = json_object_get(portJ, "yStartPos");
+				if (yStartPosJ) yStartPos[portIndex] = json_integer_value(yStartPosJ);
+				json_t* xStartDirJ = json_object_get(portJ, "xStartDir");
+				if (xStartDirJ) xStartDir[portIndex] = json_integer_value(xStartDirJ);
+				json_t* yStartDirJ = json_object_get(portJ, "yStartDir");
+				if (yStartDirJ) yStartDir[portIndex] = json_integer_value(yStartDirJ);
+				json_t* xPosJ = json_object_get(portJ, "xPos");
+				if (xPosJ) xPos[portIndex] = json_integer_value(xPosJ);
+				json_t* yPosJ = json_object_get(portJ, "yPos");
+				if (yPosJ) yPos[portIndex] = json_integer_value(yPosJ);
+				json_t* xDirJ = json_object_get(portJ, "xDir");
+				if (xDirJ) xDir[portIndex] = json_integer_value(xDirJ);
+				json_t* yDirJ = json_object_get(portJ, "yDir");
+				if (yDirJ) yDir[portIndex] = json_integer_value(yDirJ);
+				json_t* turnModeJ = json_object_get(portJ, "turnMode");
+				if (turnModeJ) turnMode[portIndex] = (TURNMODE)json_integer_value(turnModeJ);
+				json_t* outModeJ = json_object_get(portJ, "outMode");
+				if (outModeJ) outMode[portIndex] = (OUTMODE)json_integer_value(outModeJ);
+				json_t* ratchetingEnabledJ = json_object_get(portJ, "ratchetingEnabled");
+				if (ratchetingEnabledJ) ratchetingEnabled[portIndex] = (RATCHETMODE)json_integer_value(ratchetingEnabledJ);
 
-			json_t* ratchetingProbJ = json_object_get(portJ, "ratchetingProb");
-			if (ratchetingProbJ) {
-				ratchetingSetProb(portIndex, json_real_value(ratchetingProbJ));
+				json_t* ratchetingProbJ = json_object_get(portJ, "ratchetingProb");
+				if (ratchetingProbJ) {
+					ratchetingSetProb(portIndex, json_real_value(ratchetingProbJ));
+				}
 			}
 		}
 
-		usedSize = json_integer_value(json_object_get(rootJ, "usedSize"));
+		json_t* usedSizeJ = json_object_get(rootJ, "usedSize");
+		if (usedSizeJ) usedSize = json_integer_value(usedSizeJ);
 		json_t* normalizePortsJ = json_object_get(rootJ, "normalizePorts");
 		if (normalizePortsJ) normalizePorts = json_boolean_value(normalizePortsJ);
 
@@ -511,7 +545,7 @@ struct MazeModule : Module {
 		if (ratchetingEnabledJ) {
 			for (int i = 0; i < NUM_PORTS; i++) {
 				ratchetingEnabled[i] = (RATCHETMODE)json_integer_value(ratchetingEnabledJ);
-				ratchetingSetProb(i, json_real_value(ratchetingProbJ));
+				if (ratchetingProbJ) ratchetingSetProb(i, json_real_value(ratchetingProbJ));
 			}
 		}
 
@@ -667,90 +701,95 @@ struct MazeGridWidget : FramebufferWidget {
 			this->module = module;
 		}
 
-		void drawLayer(const Widget::DrawArgs& args, int layer) override {
-			if (layer == 1) {
-				int usedSize = 8;
-				if (module) {
-					usedSize = module->usedSize;
-				}
+		// Content lives in draw() (layer 0), not drawLayer(1): FramebufferWidget
+		// only caches a child's draw() output (see FramebufferWidget::drawFramebuffer(),
+		// which calls Widget::draw() directly), so content left in drawLayer(1) is
+		// never actually cached -- it silently redraws every frame regardless, while
+		// the wrapping FramebufferWidget renders and blits an empty framebuffer for
+		// nothing. MazeGridWidget below paints the cached image during the layer-1
+		// pass instead, so this still lands in the same z-order slot as before.
+		void draw(const Widget::DrawArgs& args) override {
+			int usedSize = 8;
+			if (module) {
+				usedSize = module->usedSize;
+			}
 
-				float sizeX = box.size.x / float(usedSize);
-				float sizeY = box.size.y / float(usedSize);
+			float sizeX = box.size.x / float(usedSize);
+			float sizeY = box.size.y / float(usedSize);
 
-				// Draw background
+			// Draw background
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+			nvgFillColor(args.vg, nvgRGB(0, 16, 90));
+			nvgFill(args.vg);
+
+			// Draw gradient
+			math::Rect r = box.zeroPos();
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, RECT_ARGS(r));
+			NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
+			NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
+			nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
+			nvgFill(args.vg);
+
+			// Draw grid
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+			nvgStrokeWidth(args.vg, 0.6f);
+			for (int i = 1; i < usedSize; i++) {
+				float a = 0.075f;
+				if (usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
+				else if (usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
+				else if (usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
 				nvgBeginPath(args.vg);
-				nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-				nvgFillColor(args.vg, nvgRGB(0, 16, 90));
-				nvgFill(args.vg);
-
-				// Draw gradient
-				math::Rect r = box.zeroPos();
-				nvgBeginPath(args.vg);
-				nvgRect(args.vg, RECT_ARGS(r));
-				NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
-				NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
-				nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
-				nvgFill(args.vg);
-
-				// Draw grid
-				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-				nvgStrokeWidth(args.vg, 0.6f);
-				for (int i = 1; i < usedSize; i++) {
-					float a = 0.075f;
-					if (usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
-					else if (usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
-					else if (usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
-					nvgBeginPath(args.vg);
-					nvgMoveTo(args.vg, sizeX * float(i), 0.f);
-					nvgLineTo(args.vg, sizeX * float(i), box.size.y);
-					nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
-					nvgStroke(args.vg);
-				}
-				for (int i = 1; i < usedSize; i++) {
-					float a = 0.075f;
-					if (usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
-					else if (usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
-					else if (usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
-					nvgBeginPath(args.vg);
-					nvgMoveTo(args.vg, 0.f, sizeY * float(i));
-					nvgLineTo(args.vg, box.size.x, sizeY * float(i));
-					nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
-					nvgStroke(args.vg);
-				}
-
-				// Draw outer rectangle
-				nvgBeginPath(args.vg);
-				nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-				nvgStrokeWidth(args.vg, 0.7f);
-				nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.25f));
+				nvgMoveTo(args.vg, sizeX * float(i), 0.f);
+				nvgLineTo(args.vg, sizeX * float(i), box.size.y);
+				nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
 				nvgStroke(args.vg);
+			}
+			for (int i = 1; i < usedSize; i++) {
+				float a = 0.075f;
+				if (usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
+				else if (usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
+				else if (usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, 0.f, sizeY * float(i));
+				nvgLineTo(args.vg, box.size.x, sizeY * float(i));
+				nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
+				nvgStroke(args.vg);
+			}
 
-				// Draw grid cells
-				float stroke = 0.7f;
-				for (int i = 0; i < usedSize; i++) {
-					for (int j = 0; j < usedSize; j++) {
-						GRIDSTATE state = module ? module->grid[i][j] : (GRIDSTATE)int(std::round(random::normal() * 2.f));
-						switch (state) {
-							case GRIDSTATE::ON:
-								nvgBeginPath(args.vg);
-								nvgRect(args.vg, i * sizeX + stroke / 2.f, j * sizeY + stroke / 2.f, sizeX - stroke, sizeY - stroke);
-								nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
-								nvgFill(args.vg);
-								break;
-							case GRIDSTATE::RANDOM:
-								nvgBeginPath(args.vg);
-								nvgRect(args.vg, i * sizeX + stroke, j * sizeY + stroke, sizeX - stroke * 2.f, sizeY - stroke * 2.f);
-								nvgStrokeWidth(args.vg, stroke);
-								nvgStrokeColor(args.vg, color::mult(gridColor, 0.6f));
-								nvgStroke(args.vg);
-								nvgBeginPath(args.vg);
-								nvgRect(args.vg, i * sizeX + sizeX * 0.25f, j * sizeY + sizeY * 0.25f, sizeX * 0.5f, sizeY * 0.5f);
-								nvgFillColor(args.vg, color::mult(gridColor, 0.4f));
-								nvgFill(args.vg);
-								break;
-							case GRIDSTATE::OFF:
-								break;
-						}
+			// Draw outer rectangle
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+			nvgStrokeWidth(args.vg, 0.7f);
+			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.25f));
+			nvgStroke(args.vg);
+
+			// Draw grid cells
+			float stroke = 0.7f;
+			for (int i = 0; i < usedSize; i++) {
+				for (int j = 0; j < usedSize; j++) {
+					GRIDSTATE state = module ? module->grid[i][j] : (GRIDSTATE)int(std::round(random::normal() * 2.f));
+					switch (state) {
+						case GRIDSTATE::ON:
+							nvgBeginPath(args.vg);
+							nvgRect(args.vg, i * sizeX + stroke / 2.f, j * sizeY + stroke / 2.f, sizeX - stroke, sizeY - stroke);
+							nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
+							nvgFill(args.vg);
+							break;
+						case GRIDSTATE::RANDOM:
+							nvgBeginPath(args.vg);
+							nvgRect(args.vg, i * sizeX + stroke, j * sizeY + stroke, sizeX - stroke * 2.f, sizeY - stroke * 2.f);
+							nvgStrokeWidth(args.vg, stroke);
+							nvgStrokeColor(args.vg, color::mult(gridColor, 0.6f));
+							nvgStroke(args.vg);
+							nvgBeginPath(args.vg);
+							nvgRect(args.vg, i * sizeX + sizeX * 0.25f, j * sizeY + sizeY * 0.25f, sizeX * 0.5f, sizeY * 0.5f);
+							nvgFillColor(args.vg, color::mult(gridColor, 0.4f));
+							nvgFill(args.vg);
+							break;
+						case GRIDSTATE::OFF:
+							break;
 					}
 				}
 			}
@@ -777,14 +816,18 @@ struct MazeGridWidget : FramebufferWidget {
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
+		// FramebufferWidget only caches draw() (layer 0) content -- its own
+		// drawLayer() is the plain Widget:: default, which does not paint the
+		// cached image at all. Call FramebufferWidget::draw() here instead so
+		// the cached grid still lands in the same z-order slot (layer 1,
+		// alongside every other module's lights) it always has.
+		if (layer != 1) return;
 #ifndef METAMODULE
-		if (layer == 1) {
-			// Dim the display but don't darken it completely
-			float b = std::max(0.2f, settings::rackBrightness);
-			nvgGlobalAlpha(args.vg, b);
-		}
+		// Dim the display but don't darken it completely
+		float b = std::max(0.2f, settings::rackBrightness);
+		nvgGlobalAlpha(args.vg, b);
 #endif
-		FramebufferWidget::drawLayer(args, layer);
+		FramebufferWidget::draw(args);
 	}
 };
 

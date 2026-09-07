@@ -134,7 +134,8 @@ struct SipoModule : Module {
 	}
 
 	void dataFromJson(json_t *rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* dataJ = json_object_get(rootJ, "data");
 		if (dataJ) {
@@ -146,7 +147,8 @@ struct SipoModule : Module {
 			dataUsed = dataIndex;
 		}
 
-		dataPtr = json_integer_value(json_object_get(rootJ, "dataPtr"));
+		json_t* dataPtrJ = json_object_get(rootJ, "dataPtr");
+		if (dataPtrJ) dataPtr = json_integer_value(dataPtrJ);
 	}
 };
 

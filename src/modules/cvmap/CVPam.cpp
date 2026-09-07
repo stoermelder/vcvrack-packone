@@ -123,7 +123,8 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 
 	void dataFromJson(json_t* rootJ) override {
 		MapModuleBase::dataFromJson(rootJ);
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* bipolarOutputJ = json_object_get(rootJ, "bipolarOutput");
 		bipolarOutput = json_boolean_value(bipolarOutputJ);

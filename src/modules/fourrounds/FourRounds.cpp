@@ -237,26 +237,31 @@ struct FourRoundsModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
+		// Bounded to the fixed-size destinations: hand-edited or corrupted
+		// patches may contain more entries than state[]/lastValue[] hold.
 		json_t* statesJ = json_object_get(rootJ, "state");
-		json_t* stateJ;
-		size_t stateIndex;
-		json_array_foreach(statesJ, stateIndex, stateJ) {
-			state[stateIndex] = json_real_value(json_object_get(stateJ, "value"));
+		size_t maxStates = std::min((size_t)SIZE, json_array_size(statesJ));
+		for (size_t stateIndex = 0; stateIndex < maxStates; stateIndex++) {
+			json_t* stateJ = json_array_get(statesJ, stateIndex);
+			json_t* valueJ = json_object_get(stateJ, "value");
+			if (valueJ) state[stateIndex] = json_real_value(valueJ);
 		}
 
 		json_t* lastValuesJ = json_object_get(rootJ, "lastValue");
-		json_t* lastValueJ;
-		size_t lastValueIndex;
-		json_array_foreach(lastValuesJ, lastValueIndex, lastValueJ) {
-			lastValue[lastValueIndex] = json_real_value(json_object_get(lastValueJ, "value"));
+		size_t maxLastValues = std::min((size_t)16, json_array_size(lastValuesJ));
+		for (size_t lastValueIndex = 0; lastValueIndex < maxLastValues; lastValueIndex++) {
+			json_t* lastValueJ = json_array_get(lastValuesJ, lastValueIndex);
+			json_t* valueJ = json_object_get(lastValueJ, "value");
+			if (valueJ) lastValue[lastValueIndex] = json_real_value(valueJ);
 		}
 
 		json_t* modeJ = json_object_get(rootJ, "mode");
-		mode = (MODE)json_integer_value(modeJ);
+		if (modeJ) mode = (MODE)json_integer_value(modeJ);
 		json_t* invertedJ = json_object_get(rootJ, "inverted");
-		inverted = json_boolean_value(invertedJ);
+		if (invertedJ) inverted = json_boolean_value(invertedJ);
 	}
 };
 

@@ -1,6 +1,8 @@
 #include "Strip.hpp"
+#include "../../utils/cursor.hpp"
 #include "../../utils/digital.hpp"
 #include "../../utils/TaskWorker.hpp"
+#include "../../utils/MpmcTaskWorker.hpp"
 #include "../../utils/TaskProcessor.hpp"
 #include "../../utils/SpscLatestValue.hpp"
 #include <atomic>
@@ -80,10 +82,29 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 
 	ClockDividerEx lightDivider;
 
-	TaskWorker taskWorker;
+	std::shared_ptr<ITaskWorker> taskWorker;
 	TaskProcessor<16> taskProcessor;
 
-	StripModule() {
+	// One worker per Rack Context (one per plugin instance / test binary), shared by all
+	// MyModule instances within it. The weak_ptr lets it be destroyed when the last module
+	// in that Context is removed.
+	// Called from module constructors, which Rack runs on the UI thread — but the mutex is
+	// cheap at construction rate and makes that an enforced property rather than an assumed one.
+	static std::shared_ptr<ITaskWorker> defaultWorker() {
+		static std::mutex m;
+		static std::map<Context*, std::weak_ptr<ITaskWorker>> workers;
+		std::lock_guard<std::mutex> lock(m);
+		auto& slot = workers[APP];                       // keyed on the current Context
+		if (auto w = slot.lock()) return w;              // lock() once — no expired()/lock() gap
+		auto worker = std::make_shared<MpmcTaskWorker>("STRIP worker");
+		slot = worker;
+		return worker;
+	}
+
+	StripModule() : StripModule(defaultWorker()) {}
+	explicit StripModule(std::shared_ptr<ITaskWorker> worker) {
+		taskWorker = std::move(worker);
+
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configSwitch(MODE_PARAM, 0.f, 1.f, 0.f, "Toggle left/right mode");
@@ -111,9 +132,18 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	void onReset(const ResetEvent& e) override {
 		randomParamsOnly = false;
 		presetLoadReplace = false;
-		// Initialize snapshot to empty set so UI can read safely immediately
-		excludedParams.clear();
-		excludedParamsPtr.store({});
+		// excludedParams and its engine->UI snapshot (excludedParamsPtr) are owned by
+		// the engine thread. onReset may run on the UI/main thread (e.g. "Initialize"
+		// from the context menu), so clearing them inline would make both the UI thread
+		// and the engine thread write the same SpscLatestValue, breaking its strict
+		// single-writer contract and corrupting the heap. Defer the clear to the engine
+		// thread via the same task mechanism used by every other exclude mutation.
+		// (SpscLatestValue default-constructs to an empty set, so UI reads stay safe
+		// until the task runs on the next process() tick.)
+		groupExcludeClearRequest();
+		// excludedParamsPtrUi is the UI->engine channel; its writer is the UI/main
+		// thread, so resetting it here is safe and prevents a stale snapshot from
+		// being reloaded later.
 		excludedParamsPtrUi.store({});
 		Module::onReset(e);
 	}
@@ -168,7 +198,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		history::ComplexAction* complexAction;	
 		complexAction = new history::ComplexAction;
 		complexAction->name = "stoermelder STRIP bypass";
-		APP->history->push(complexAction);
+		vcv::history::push(complexAction);
 
 		if (mode == MODE::LEFTRIGHT || mode == MODE::RIGHT) {
 			Module* m = this;
@@ -210,7 +240,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 * To be called from the engine thread only.
 	 */
 	void groupBypass(bool val) {
-		taskWorker.work([=]() { groupBypassWorker(val); });
+		taskWorker->work([=]() { groupBypassWorker(val); });
 	}
 
 	/** 
@@ -255,7 +285,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		history::ComplexAction* complexAction = nullptr;	
 		complexAction = new history::ComplexAction;
 		complexAction->name = "stoermelder STRIP randomize";
-		APP->history->push(complexAction);
+		vcv::history::push(complexAction);
 
 		if (mode == MODE::LEFTRIGHT || mode == MODE::RIGHT) {
 			Module* m = this;
@@ -557,10 +587,11 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 */
 	void dataFromJson(json_t* rootJ) override {
 		StripModuleBase::dataFromJson(rootJ);
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* onModeJ = json_object_get(rootJ, "onMode");
-		onMode = (ONMODE)json_integer_value(onModeJ);
+		if (onModeJ) onMode = (ONMODE)json_integer_value(onModeJ);
 
 		json_t* excludedParamsJ = json_object_get(rootJ, "excludedParams");
 		if (excludedParamsJ) {
@@ -583,7 +614,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		}
 	
 		json_t* randomExclJ = json_object_get(rootJ, "randomExcl");
-		randomExcl = (RANDOMEXCL)json_integer_value(randomExclJ);
+		if (randomExclJ) randomExcl = (RANDOMEXCL)json_integer_value(randomExclJ);
 		json_t* randomParamsOnlyJ = json_object_get(rootJ, "randomParamsOnly");
 		if (randomParamsOnlyJ) randomParamsOnly = json_boolean_value(randomParamsOnlyJ);
 		json_t* presetLoadReplaceJ = json_object_get(rootJ, "presetLoadReplace");
@@ -661,13 +692,7 @@ struct ExcludeButton : TL1105 {
 
 	void toggleParamLearn() {
 		learn ^= true;
-		if (learn) {
-			GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-			if (APP->window) glfwSetCursor(APP->window->win, cursor);
-		}
-		else {
-			if (APP->window) glfwSetCursor(APP->window->win, NULL);
-		}
+		cursor::setLearnCursor(learn);
 		APP->scene->rack->setTouchedParam(NULL);
 	}
 

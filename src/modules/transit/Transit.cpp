@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../utils/cursor.hpp"
 #include "../../utils/digital.hpp"
 #include "../../utils/ShapedSlewLimiter.hpp"
 #include "../../utils/TaskProcessor.hpp"
@@ -47,7 +48,7 @@ struct ParamHandleEx : ParamHandleIndicator {
 
 
 template <int NUM_PRESETS>
-struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
+struct TransitModule : TransitBase<NUM_PRESETS>, ModuleChangeListener {
 	typedef TransitBase<NUM_PRESETS> BASE;
 	typedef typename TransitBase<NUM_PRESETS>::Slot SLOT;
 
@@ -156,7 +157,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 
 	TransitModule() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
-		registerExpanderListener("Transit", this);
+		registerModuleListener("Transit", this);
 		sourceHandlesPtr.store({});
 
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -192,7 +193,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	}
 
 	~TransitModule() {
-		unregisterExpanderListener("Transit", this);
+		unregisterModuleListener("Transit", this);
 		for (ParamHandle* sourceHandle : sourceHandles) {
 			APP->engine->removeParamHandle(sourceHandle);
 			delete sourceHandle;
@@ -204,7 +205,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		notifyExpanderListeners("Transit");
+		notifyModuleListeners("Transit");
 	}
 
 	void onReset(const Module::ResetEvent& e) override {
@@ -213,7 +214,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	}
 
 	void reset(bool stateOnly, bool createUiTask = false) {
-		expandersChanged = true;
+		moduleChangedFlag = true;
 
 		if (!stateOnly) {
 			taskProcessorUi.enqueue([=]() { bindClearParameterRequest(); });
@@ -250,8 +251,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	}
 
 	inline SLOT* getSlot(int index) {
-		if (index >= presetTotal) return NULL;
+		if (index < 0 || index >= presetTotal) return NULL;
 		int n = index / NUM_PRESETS;
+		assert(n < MAX_EXPANDERS + 1);
 		return &N[n]->slot[index % NUM_PRESETS];
 	}
 
@@ -260,7 +262,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 
 		CTRLMODE ctrlMode = (CTRLMODE)Module::params[PARAM_CTRLMODE].getValue();
 
-		if (expandersChanged || ctrlMode != BASE::ctrlMode) {
+		if (moduleChangedFlag || ctrlMode != BASE::ctrlMode) {
 			presetTotal = NUM_PRESETS;
 			Module* m = this;
 			TransitBase<NUM_PRESETS>* t = this;
@@ -283,7 +285,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				t->ctrlMode = BASE::ctrlMode;
 				presetTotal += NUM_PRESETS;
 			}
-			expandersChanged = false;
+			moduleChangedFlag = false;
 		}
 		int presetFirst = std::min(this->presetFirst, presetTotal);
 		int presetLast = std::min(this->presetLast, presetTotal);
@@ -784,11 +786,14 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			
 			if (p1 != p2) {
 				p = (p - float(p1)) / (float(p2) - float(p1));
+				const std::vector<float>& preset1 = *slot1->getPreset();
+				const std::vector<float>& preset2 = *slot2->getPreset();
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					if (!pq) continue;
-					float v1 = (*slot1->getPreset())[i];
-					float v2 = (*slot2->getPreset())[i];
+					if (preset1.size() <= i || preset2.size() <= i) break;
+					float v1 = preset1[i];
+					float v2 = preset2[i];
 					float v = crossfade(v1, v2, p);
 					if (settings::isPlugin && parameterChangesDirect)
 						pq->setValue(v);
@@ -797,15 +802,19 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				}
 			}
 			else {
+				const std::vector<float>& preset1 = *slot1->getPreset();
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					if (!pq) continue;
-					float v = (*slot1->getPreset())[i];
+					if (preset1.size() <= i) break;
+					float v = preset1[i];
 
-					if (settings::isPlugin && parameterChangesDirect)
+					if (settings::isPlugin && parameterChangesDirect) {
 						pq->setValue(v);
-					else
+					}
+					else {
 						pq->getParam()->setValue(v);
+					}
 				}
 			}
 
@@ -1197,15 +1206,21 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 
 	void dataFromJson(json_t* rootJ) override {
 		BASE::panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		mappingIndicatorHidden = json_boolean_value(json_object_get(rootJ, "mappingIndicatorHidden"));
-		setProcessDivision(json_integer_value(json_object_get(rootJ, "presetProcessDivision")));
+		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
+		if (mappingIndicatorHiddenJ) mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
+		json_t* presetProcessDivisionJ = json_object_get(rootJ, "presetProcessDivision");
+		if (presetProcessDivisionJ) setProcessDivision(json_integer_value(presetProcessDivisionJ));
 
-		slotCvMode = (SLOTCVMODE)json_integer_value(json_object_get(rootJ, "slotCvMode"));
-		outMode = (OUTMODE)json_integer_value(json_object_get(rootJ, "outMode"));
-		preset = json_integer_value(json_object_get(rootJ, "preset"));
+		json_t* slotCvModeJ = json_object_get(rootJ, "slotCvMode");
+		if (slotCvModeJ) slotCvMode = (SLOTCVMODE)json_integer_value(slotCvModeJ);
+		json_t* outModeJ = json_object_get(rootJ, "outMode");
+		if (outModeJ) outMode = (OUTMODE)json_integer_value(outModeJ);
+		json_t* presetJ = json_object_get(rootJ, "preset");
+		if (presetJ) preset = json_integer_value(presetJ);
 		json_t* presetFirstJ = json_object_get(rootJ, "presetFirst");
 		if (presetFirstJ) presetFirst = json_integer_value(presetFirstJ);
-		presetLast = json_integer_value(json_object_get(rootJ, "presetCount"));
+		json_t* presetLastJ = json_object_get(rootJ, "presetCount");
+		if (presetLastJ) presetLast = json_integer_value(presetLastJ);
 		json_t* presetCountLongPressJ = json_object_get(rootJ, "presetCountLongPress");
 		if (presetCountLongPressJ) presetCountLongPress = json_boolean_value(presetCountLongPressJ);
 		json_t* clampFadeCvJ = json_object_get(rootJ, "clampFadeCv");
@@ -1268,8 +1283,7 @@ struct TransitSelectionWidget : Widget {
 
 	void enableLearn() {
 		learn = !learn;
-		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setLearnCursor(learn);
 	}
 
 	void onHover(const HoverEvent& e) override {
@@ -1299,7 +1313,7 @@ struct TransitSelectionWidget : Widget {
 			mapParamsFromRect();
 			selecting = false;
 			learn = false;
-			if (APP->window) glfwSetCursor(APP->window->win, NULL);
+			cursor::resetCursor();
 			e.consume(this);
 		}
 		Widget::onDragEnd(e);
@@ -1321,19 +1335,16 @@ struct TransitSelectionWidget : Widget {
 				selected.push_back(mw);
 			}
 		}
-		if (selected.size() != 1) {
-			return;
-		}
+		for (ModuleWidget* mw : selected) {
+			std::list<ParamWidget*> selectedParams;
+			math::Rect selectionBox1(selectionBox.pos.minus(mw->box.pos), selectionBox.size);
+			getAllDescendentsByTypeAndBox<ParamWidget*>(mw, selectionBox1, selectedParams);
 
-		ModuleWidget* mw = selected.front();
-		std::list<ParamWidget*> selectedParams;
-		math::Rect selectionBox1(selectionBox.pos.minus(mw->box.pos), selectionBox.size);
-		getAllDescendentsByTypeAndBox<ParamWidget*>(mw, selectionBox1, selectedParams);
-
-		selectedParams.reverse();
-		for (ParamWidget* pw : selectedParams) {
-			if (!pw->module) continue;
-			module->bindAddParameterRequest(pw->module->getId(), pw->paramId);
+			selectedParams.reverse();
+			for (ParamWidget* pw : selectedParams) {
+				if (!pw->module) continue;
+				module->bindAddParameterRequest(pw->module->getId(), pw->paramId);
+			}
 		}
 	}
 
@@ -1420,7 +1431,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 	~TransitWidget() {
 		if (learn != 0 && APP->window) {
-			if (APP->window) glfwSetCursor(APP->window->win, NULL);
+			cursor::resetCursor();
 		}
 
 		if (selectionWidget) {
@@ -1505,16 +1516,12 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		learn = learn != mode ? mode : 0;
 		APP->scene->rack->setTouchedParam(NULL);
 		APP->event->setSelectedWidget(this);
-		GLFWcursor* cursor = NULL;
-		if (learn != 0) {
-			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		}
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setLearnCursor(learn != 0);
 	}
 
 	void disableLearn() {
 		learn = 0;
-		if (APP->window) glfwSetCursor(APP->window->win, NULL);
+		cursor::resetCursor();
 	}
 
 	void appendContextMenu(Menu* menu) override {

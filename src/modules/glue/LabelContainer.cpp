@@ -1,5 +1,6 @@
 #include "LabelContainer.hpp"
 #include "GlueWidget.hpp"
+#include "../../utils/cursor.hpp"
 #include "../../plugin.hpp"
 
 namespace StoermelderPackOne {
@@ -156,14 +157,19 @@ void PortWidgetContextExtender::extendPortWidgetContextMenu(PortWidget* pw, Menu
 					}
 					
 					// Only allow switching to input if no label exists there (or this is already at input)
-					MenuItem* inputItem = Rack::createValuePtrMenuItem("At Input Port", &cableLabel->atInput, true);
+					CableLabel* cl = cableLabel;
+					MenuItem* inputItem = createMenuItem("At Input Port", CHECKMARK(cl->atInput == true), [cl]() {
+						setCableLabelAtInput(cl, true);
+					});
 					if (inputLabelExists && !cableLabel->atInput) {
 						inputItem->disabled = true;
 					}
 					menu->addChild(inputItem);
 					
 					// Only allow switching to output if no label exists there (or this is already at output)
-					MenuItem* outputItem = Rack::createValuePtrMenuItem("At Output Port", &cableLabel->atInput, false);
+					MenuItem* outputItem = createMenuItem("At Output Port", CHECKMARK(cl->atInput == false), [cl]() {
+						setCableLabelAtInput(cl, false);
+					});
 					if (outputLabelExists && cableLabel->atInput) {
 						outputItem->disabled = true;
 					}
@@ -450,16 +456,12 @@ void LabelContainer::addLabelAtMousePos(Widget* w) {
 	// Enable edit mode
 	editMode = true;
 	learnMode = false;
-	if (APP->window) glfwSetCursor(APP->window->win, NULL);
+	cursor::resetCursor();
 }
 
 void LabelContainer::toggleLearnMode() {
 	if (!hideMode) learnMode ^= true;
-	GLFWcursor* cursor = NULL;
-	if (learnMode) {
-		cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-	}
-	if (APP->window) glfwSetCursor(APP->window->win, cursor);
+	cursor::setLearnCursor(learnMode);
 }
 
 void LabelContainer::toggleEditMode() {

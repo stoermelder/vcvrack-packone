@@ -205,9 +205,12 @@ struct AffixModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		setParamMode((PARAM_MODE)json_integer_value(json_object_get(rootJ, "paramMode")));
-		numberOfChannels = json_integer_value(json_object_get(rootJ, "numberOfChannels"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* paramModeJ = json_object_get(rootJ, "paramMode");
+		if (paramModeJ) setParamMode((PARAM_MODE)json_integer_value(paramModeJ));
+		json_t* numberOfChannelsJ = json_object_get(rootJ, "numberOfChannels");
+		if (numberOfChannelsJ) numberOfChannels = json_integer_value(numberOfChannelsJ);
 	}
 };
 

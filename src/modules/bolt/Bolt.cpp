@@ -84,7 +84,10 @@ struct BoltModule : Module {
 		for (int c = 0; c < 16; c++) {
 			out[c] = false;
 			outPulseGenerator[c].reset();
+			trigTrigger[c].reset();
 		}
+		opButtonTrigger.reset();
+		opCvTrigger.reset();
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -214,13 +217,14 @@ struct BoltModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 		json_t* opJ = json_object_get(rootJ, "op");
-		op = json_integer_value(opJ);
+		if (opJ) op = json_integer_value(opJ);
 		json_t* opCvModeJ = json_object_get(rootJ, "opCvMode");
-		opCvMode = json_integer_value(opCvModeJ);
+		if (opCvModeJ) opCvMode = json_integer_value(opCvModeJ);
 		json_t* outCvModeJ = json_object_get(rootJ, "outCvMode");
-		outCvMode = json_integer_value(outCvModeJ);
+		if (outCvModeJ) outCvMode = json_integer_value(outCvModeJ);
 	}
 };
 

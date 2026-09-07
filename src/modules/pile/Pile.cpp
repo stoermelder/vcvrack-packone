@@ -131,10 +131,15 @@ struct PileModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		range = (RANGE)json_integer_value(json_object_get(rootJ, "range"));
-		currentVoltage = lastResetVoltage = json_real_value(json_object_get(rootJ, "currentVoltage"));
-		slewLimiter.out = currentVoltage;
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* rangeJ = json_object_get(rootJ, "range");
+		if (rangeJ) range = (RANGE)json_integer_value(rangeJ);
+		json_t* currentVoltageJ = json_object_get(rootJ, "currentVoltage");
+		if (currentVoltageJ) {
+			currentVoltage = lastResetVoltage = json_real_value(currentVoltageJ);
+			slewLimiter.out = currentVoltage;
+		}
 	}
 };
 
