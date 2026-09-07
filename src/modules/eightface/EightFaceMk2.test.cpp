@@ -386,34 +386,30 @@ TEST_CASE("needsGuiThread override takes the UI hop directly, without going thro
 	REQUIRE(worker->count == 0);
 }
 
-TEST_CASE("GUI-thread entry points apply directly instead of enqueueing", "[EightFaceMk2][dispatch][!shouldfail]") {
-	// KNOWN FAILING -- pinned, not yet fixed. See var/EightFace_test_plan.md T5.
-	//
-	// GuiTaskProcessor is single-producer (GuiTaskProcessor.hpp: "Only the engine thread may call
-	// enqueue()") -- but faceSlotCmd(SLOT_CMD::LOAD, ...) is exactly the call
-	// EightFaceMk2LedButton::onButton (Shift+click) and the slot's context-menu "Load" item make,
-	// both from the GUI thread, and it goes straight to presetLoad(), which enqueues onto guiTasks
-	// with no thread check. If a GUI-thread caller and the engine thread (process()'s CV/auto-mode
-	// advances) ever raced a push, the ring buffer's non-atomic assignment would interleave --
-	// "lost tasks at best, UB at worst" per the class comment. This test does not (and cannot,
-	// single-threaded) reproduce that race; it pins the weaker, checkable half: that a GUI-thread
-	// call does not go through enqueue() at all, so there is nothing left to race. It currently
-	// fails: faceSlotCmd(SLOT_CMD::LOAD, ...) calls presetLoad(), which enqueues like any other
-	// caller. Fix: route this call site through applyPreset() directly instead.
+TEST_CASE("GUI-thread entry points defer through a request instead of enqueueing directly", "[EightFaceMk2][dispatch]") {
+	// FIXED -- see var/EightFace_test_plan.md T5. GuiTaskProcessor is single-producer, but
+	// faceSlotCmd(SLOT_CMD::LOAD, ...) is called from the GUI thread (Shift+click, slot menu
+	// "Load"). It now calls presetLoadRequest(), which only records the request; process()
+	// performs presetLoad()/dispatch() on the engine thread.
 	DispatchFixture f(createEightFaceMk2Module);
 	f.m->dispatch.guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 	f.savePreset("#050505");
 
-	// The production call site (EightFaceMk2LedButton::onButton / the slot's "Load" menu item)
-	// calls this exact method, on the GUI thread, standing in for the widget/menu callback.
+	// Standing in for the widget/menu callback, on the GUI thread.
 	f.m->faceSlotCmd(SLOT_CMD::LOAD, 0);
 
-	// Applied synchronously, with no uiFrame()/dspStep() in between -- the enqueue-then-drain
-	// contract the other dispatch tests pin (see "Safe mode applies from the UI thread (uiFrame),
-	// not immediately") would leave this unapplied at this point.
-	REQUIRE(f.appliedLabel() == "#050505");
-	// And the queue itself never received anything to drain.
+	// Nothing has happened yet -- the GUI-thread call recorded a request but never touched
+	// guiTasks.
+	REQUIRE(f.appliedLabel() != "#050505");
 	REQUIRE(f.m->dispatch.pendingGuiTasks() == 0);
+
+	// The engine thread picks up the request and dispatches; not applied until the UI drains it.
+	f.h.dspStep();
+	REQUIRE(f.appliedLabel() != "#050505");
+
+	// The widget's step() drains guiTasks under UiPresent -- now it applies.
+	f.h.uiFrame();
+	REQUIRE(f.appliedLabel() == "#050505");
 }
 
 TEST_CASE("Unsafe fast without the allowlist still takes the worker hop", "[EightFaceMk2][dispatch]") {

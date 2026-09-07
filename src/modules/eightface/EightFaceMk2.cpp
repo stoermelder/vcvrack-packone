@@ -12,6 +12,7 @@
 #include "PresetDispatch.hpp"
 #include "../../utils/string.hpp"
 #include <random>
+#include <atomic>
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
@@ -70,6 +71,10 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 	int presetPrev = -1;
 	int presetNext;
 	int presetCopy = -1;
+
+	// GUI-thread load request; process() performs it on the engine thread. A direct presetLoad()
+	// call would mutate state off the engine thread and enqueue from a second producer.
+	std::atomic<int> presetLoadRequestId{-1};
 
 	std::set<int64_t> expandersConnected;
 
@@ -272,6 +277,11 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 			moduleChangedFlag = false;
 		}
 		int presetCount = std::min(this->presetCount, presetTotal);
+
+		// Picks up a GUI-thread load request; force = true so a deliberate Shift+click/menu Load
+		// re-applies even when p == preset.
+		int loadReq = presetLoadRequestId.exchange(-1, std::memory_order_acquire);
+		if (loadReq >= 0) presetLoad(loadReq, false, true);
 
 		// Read & Auto modes
 		if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
@@ -551,16 +561,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 		}
 	}
 
-	// Applies this pass's share of a preset to the bound modules it selects, via `loader`. Runs
-	// on the UI thread (Safe/Unsafe, and the GuiOnly part of Unsafe fast) or the worker thread
-	// (the WorkerOnly part of Unsafe fast) — and it never hands work onward. presetLoad()
-	// dispatches one task per destination up front, so this is always a leaf. Enqueueing from
-	// here would re-chain the two hops this design exists to remove, and would break
-	// GuiTaskProcessor's single-producer contract as well, since the worker thread is not the
-	// producer.
-	//
-	// The part/no-window/fromJson-target rules all live behind loader -- this only matches
-	// preset entries to bound modules and does the auto-mode save.
+	// Applies this pass's share of a preset via `loader`. Leaf -- must never enqueue further work.
+	// The part/no-window/fromJson-target rules live behind loader; this only matches preset
+	// entries to bound modules and does the auto-mode save.
 	void applyPreset(const EightFace::PresetDispatch::Loader& loader, int p) {
 		if (p < 0) return;
 
@@ -622,6 +625,11 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 			if (!*(slot->presetSlotUsed)) return;
 			presetNext = p;
 		}
+	}
+
+	// GUI thread. Records a load request; process() performs it on the engine thread.
+	void presetLoadRequest(int p) {
+		presetLoadRequestId.store(p, std::memory_order_release);
 	}
 
 	void presetSave(int p) {
@@ -737,7 +745,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 	int faceSlotCmd(SLOT_CMD cmd, int i) override {
 		switch (cmd) {
 			case SLOT_CMD::LOAD:
-				presetLoad(i); 
+				presetLoadRequest(i);
 				return -1;
 			case SLOT_CMD::CLEAR:
 				presetClear(i);
