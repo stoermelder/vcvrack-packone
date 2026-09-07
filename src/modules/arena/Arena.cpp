@@ -421,7 +421,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XyScreenCursor, XySeqModu
 
 	/** XySeqModule: a MIX port beyond the active count has no sequence UI: its
 	 * led display is blank, its context menu is empty, and clicking it is a no-op. */
-	bool seqPortUsed(int port) override {
+	bool seqPortHidden(int port) override {
 		return port + 1 > mixportsUsed;
 	}
 

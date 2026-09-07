@@ -61,8 +61,8 @@ struct XySeqModule {
 
 	dsp::SchmittTrigger seqTrigger[PORTS];
 
-	virtual bool seqPortUsed(int i) { 
-		return true; 
+	virtual bool seqPortHidden(int i) {
+		return true;
 	}
 
 	void seqInit() {
@@ -1043,7 +1043,7 @@ struct XySeqLedDisplay : StoermelderLedDisplay {
 
 	void step() override {
 		if (module) {
-			text = module->seqPortUsed(id) ? "" : string::f("%02d", module->seqSelected[id] + 1);
+			text = module->seqPortHidden(id) ? "" : string::f("%02d", module->seqSelected[id] + 1);
 			color = module->seqEdit == id ? color::RED : nvgRGB(0xf0, 0xf0, 0xf0);
 		}
 		else {
@@ -1053,7 +1053,7 @@ struct XySeqLedDisplay : StoermelderLedDisplay {
 	}
 
 	void onButton(const event::Button& e) override {
-		if (module->seqPortUsed(id)) return;
+		if (module->seqPortHidden(id)) return;
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 			createContextMenu();
 			e.consume(this);
