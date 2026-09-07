@@ -2,6 +2,8 @@
 
 ### Changes and Fixes
 
+- Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)
+    - Fixed crash in Rack plugin for certain modules if no plugin-window is open
 - Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
     - Fixed inefficient implementation of _Safe mode_/_Unsafe mode_/_Unsafe fast mode_
     - Fixed crash in Rack plugin for certain modules if no plugin-window is open

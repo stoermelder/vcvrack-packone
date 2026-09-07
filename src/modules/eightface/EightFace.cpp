@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/ui.hpp"
 #include "EightFace.hpp"
 #include <functional>
 #include <mutex>
@@ -468,9 +469,17 @@ struct EightFaceModule : Module {
 				ModuleWidget* mw = APP->scene->rack->getModule(m->id);
 				if (mw) {
 					workerPreset = p;
-					// There is no stepping of the UI if the plugin window is closed,
-					// in this case we must use the worker thread
-					if (settings::isPlugin && !APP->window) {
+					// The bound module is on the GUI-thread list (guiModuleSlugs), so its
+					// preset cannot be applied on the worker thread at all — but with no
+					// window there is no UI stepping to apply it on either. Skip the load
+					// rather than fall through to the worker below, which is the crash the
+					// list exists to prevent. The module keeps its current settings.
+					if (workerGui && !vcv::ui::hasWindow()) return;
+					// There is no stepping of the UI without a window (Rack's plugin version
+					// with the plugin window closed, or headless Rack), in this case we must
+					// use the worker thread. Routed through the UiAccess seam rather than
+					// APP->window so the window-present branch is reachable under test.
+					if (!vcv::ui::hasWindow()) {
 						workerModuleWidget = mw;
 						workerDoProcess = true;
 						workerCondVar.notify_one();
