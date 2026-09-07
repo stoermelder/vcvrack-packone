@@ -92,6 +92,12 @@ struct EightFaceModule : Module {
 
 	/** [Stored to JSON] */
 	AUTOLOAD autoload = AUTOLOAD::OFF;
+	// Set by dataFromJson() when autoload != OFF; consumed by process() once the expander pointer
+	// is actually resolved. Module::Expander::module is only populated once per engine step
+	// (Rack's Engine::stepBlock(), "Update expander pointers"), strictly after every module's
+	// dataFromJson() has already run during patch deserialization -- so the load can never be
+	// dispatched from dataFromJson() itself, only deferred to here.
+	bool pendingAutoload = false;
 
 	/** [Stored to JSON] mode for SEQ CV input */
 	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
@@ -186,6 +192,7 @@ struct EightFaceModule : Module {
 		moduleName = "";
 		connected = 0;
 		autoload = AUTOLOAD::OFF;
+		pendingAutoload = false;
 
 		Module::onReset(e);
 	}
@@ -202,6 +209,20 @@ struct EightFaceModule : Module {
 			connected = c ? 2 : 1;
 
 			if (connected == 2) {
+				if (pendingAutoload) {
+					pendingAutoload = false;
+					switch (autoload) {
+						case AUTOLOAD::FIRST:
+							presetLoad(t, 0, false, true);
+							break;
+						case AUTOLOAD::LASTACTIVE:
+							presetLoad(t, preset, false, true);
+							break;
+						default:
+							break;
+					}
+				}
+
 				ctrlMode = (CTRLMODE)params[CTRLMODE_PARAM].getValue();
 
 				// Read & Auto modes
@@ -506,6 +527,7 @@ struct EightFaceModule : Module {
 		json_object_set_new(rootJ, "realModelSlug", json_string(realModelSlug.c_str()));
 		json_object_set_new(rootJ, "moduleName", json_string(moduleName.c_str()));
 		json_object_set_new(rootJ, "slotCvMode", json_integer((int)slotCvMode));
+		json_object_set_new(rootJ, "autoload", json_integer((int)autoload));
 		json_object_set_new(rootJ, "preset", json_integer(preset));
 		json_object_set_new(rootJ, "presetCount", json_integer(presetCount));
 		json_object_set_new(rootJ, "presetCountLongPress", json_boolean(presetCountLongPress));
@@ -548,6 +570,8 @@ struct EightFaceModule : Module {
 		if (moduleNameJ && json_is_string(moduleNameJ)) moduleName = json_string_value(moduleNameJ);
 		json_t* slotCvModeJ = json_object_get(rootJ, "slotCvMode");
 		if (slotCvModeJ) slotCvMode = (SLOTCVMODE)json_integer_value(slotCvModeJ);
+		json_t* autoloadJ = json_object_get(rootJ, "autoload");
+		if (autoloadJ) autoload = (AUTOLOAD)json_integer_value(autoloadJ);
 		json_t* presetJ = json_object_get(rootJ, "preset");
 		if (presetJ) preset = json_integer_value(presetJ);
 		json_t* presetCountJ = json_object_get(rootJ, "presetCount");
@@ -579,28 +603,10 @@ struct EightFaceModule : Module {
 		if (preset >= presetCount)
 			preset = 0;
 
-		// TODO: This needs to be reviewed as presetLoad might fail on patch-load if this module
-		// is loaded before the expanded module
-		switch (autoload) {
-			case AUTOLOAD::FIRST: {
-				Expander* exp = side == SIDE::LEFT ? &leftExpander : &rightExpander;
-				if (exp->moduleId >= 0 && exp->module) {
-					Module* t = exp->module;
-					presetLoad(t, 0, false, true);
-				}
-				break;
-			}
-			case AUTOLOAD::LASTACTIVE: {
-				Expander* exp = side == SIDE::LEFT ? &leftExpander : &rightExpander;
-				if (exp->moduleId >= 0 && exp->module) {
-					Module* t = exp->module;
-					presetLoad(t, preset, false, true);
-				}
-				break;
-			}
-			default:
-				break;
-		}
+		// Deferred to process(): Module::Expander::module is never populated at this point during
+		// patch load (it's resolved from moduleId once per engine step, after every module's
+		// dataFromJson() has already run), so presetLoad() would always find a null target here.
+		pendingAutoload = autoload != AUTOLOAD::OFF;
 
 		params[CTRLMODE_PARAM].setValue(0.f);
 	}

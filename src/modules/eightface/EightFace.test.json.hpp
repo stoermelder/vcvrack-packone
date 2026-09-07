@@ -189,13 +189,76 @@ TEST_CASE("dataFromJson tolerates an oversized presets array", "[EightFace][JSON
 
 // ---- Serialization gaps: autoload, preset clamp, PARAM_RW, onReset, guiSafeMode default -------
 
+TEST_CASE("autoload defers past patch load and fires once the expander pointer resolves", "[EightFace][JSON]") {
+	// FIXED. The TODO formerly at EightFace.cpp:582-583 ("presetLoad might fail on patch-load if
+	// this module is loaded before the expanded module") misdiagnosed the mechanism as load order;
+	// the real cause is timing, not order. Module::Expander::module is only populated once per
+	// engine step (Rack/src/engine/Engine.cpp's "Update expander pointers"), strictly after every
+	// module's Module::fromJson() -- and therefore dataFromJson() -- has already run during patch
+	// deserialization (Rack/src/engine/Module.cpp sets only .moduleId from JSON, never .module).
+	// So dispatching the load directly from dataFromJson() could never work, regardless of which
+	// module a patch lists first. Fixed by deferring: dataFromJson() only records
+	// `pendingAutoload`, and process() consumes it once `connected == 2` (the same "expander
+	// resolved AND verified as the right model" gate presetLoad()'s other paths already use).
+	Test::Harness h{Test::UiMode::UiPresent};
+	EightFaceModule<8>* boundM = h.addModule<EightFaceModule<8>>(createEightFaceModule);
+	EightFaceWidget* boundMw = Test::createWidget<EightFaceWidget>(boundM);
+	Test::registerModule(boundM, boundMw);
+
+	EightFaceModule<8>* restored = h.addModule<EightFaceModule<8>>(createEightFaceModule);
+	h.addWidget<EightFaceWidget>(restored);
+
+	// Slot 0 holds a real, distinctive preset so a successful autoload is observable.
+	boundM->panelTheme = 77;
+	restored->presetSlotUsed[0] = true;
+	restored->presetSlot[0] = boundMw->toJson();
+	boundM->panelTheme = 0;
+
+	json_t* rootJ = restored->dataToJson();
+	json_object_set_new(rootJ, "autoload", json_integer((int)AUTOLOAD::FIRST));
+
+	// The expander id is known (as it would be from a real patch's "leftModuleId" key) but its
+	// pointer is unresolved -- exactly Module::fromJson()'s state right after patch
+	// deserialization, before the engine has stepped even once.
+	restored->side = SIDE::LEFT;
+	restored->leftExpander.moduleId = boundM->id;
+	restored->leftExpander.module = nullptr;
+
+	restored->dataFromJson(rootJ);
+	json_decref(rootJ);
+	REQUIRE(restored->pendingAutoload == true);
+
+	// One process() call with the pointer still unresolved must not crash and must leave the
+	// autoload still pending -- this is the exact moment the old code would have silently no-op'd
+	// (or, before that, dereferenced a null exp->module if the guard were ever weakened).
+	h.dspStep();
+	REQUIRE(restored->pendingAutoload == true);
+	REQUIRE(restored->preset == -1);
+
+	// Now simulate Engine::stepBlock()'s "Update expander pointers" resolving the id into a real
+	// pointer -- the harness's dspStep() doesn't do this itself (there's no second EightFace module
+	// occupying the physical expander slot), so it's set directly here, matching what the engine
+	// would do on the next real step.
+	restored->leftExpander.module = boundM;
+	restored->realPluginSlug = boundM->model->plugin->slug;
+	restored->realModelSlug = boundM->model->slug;
+
+	h.dspStep();
+
+	// The deferred autoload fired exactly once: pendingAutoload consumed, slot 0 applied.
+	REQUIRE(restored->pendingAutoload == false);
+	h.uiFrame();
+	REQUIRE(boundM->panelTheme == 77);
+
+	Test::unregisterModule(boundM, boundMw);
+}
+
 TEST_CASE("autoload survives a JSON round-trip", "[EightFace][JSON]") {
-	// `autoload` is documented "[Stored to JSON]"
-	// (EightFace.cpp:94-95) and exposed on the context menu, but dataToJson() never writes it and
-	// dataFromJson() never reads it back -- the branch at EightFace.cpp:582 that applies FIRST/
-	// LASTACTIVE on load is dead code, since `autoload` is always AUTOLOAD::OFF at that point
-	// (reset by the constructor). This is expected to FAIL until dataToJson()/dataFromJson() are
-	// fixed to actually carry the field -- write the test first, then fix the module.
+	// FIXED. `autoload` is documented "[Stored to JSON]" (EightFace.cpp) and exposed on the context
+	// menu, but dataToJson()/dataFromJson() never carried it -- present since the feature was
+	// introduced (confirmed via git history: no commit ever touched the "autoload" JSON key before
+	// this fix). The autoload-on-load switch further down dataFromJson() was dead code as a result,
+	// since `autoload` was always AUTOLOAD::OFF at that point (reset by the constructor).
 	Test::ModuleScaffold<EightFaceModule<8>> mods{createEightFaceModule};
 	EightFaceModule<8>* m = mods.create("EightFace");
 	m->autoload = AUTOLOAD::LASTACTIVE;
