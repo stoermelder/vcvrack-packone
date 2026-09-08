@@ -133,6 +133,114 @@ TEST_CASE("Expander buffers", "[Flower]") {
 	}
 }
 
+// SeqStepParamQuantity, SeqStepButtonParamQuantity, SeqStepModeParamQuantity and
+// SeqFlowerKnobParamQuantity (Flower.hpp's Trig* counterparts are the same shape) are templated
+// on the engine (FlowerSeq<MODULE, STEPS>) rather than the host MODULE, and each configParam<PQ>()
+// call site sets `pq->engine = &seq` explicitly rather than relying on a dynamic_cast. These tests
+// drive the quantities the same way the widget layer would (through the module's own
+// paramQuantities[], reading whatever engine state each getter dispatches on) so a future change
+// that forgets to wire `engine` — or points it at the wrong module's engine — fails here instead
+// of only manifesting as a wrong tooltip in the UI.
+TEST_CASE("Param quantities read their engine's state", "[Flower]") {
+	Test::ModuleScaffold<MasterModule> mods;
+	MasterModule* m = mods.create("FlowerSeq");
+
+	SECTION("SeqStepParamQuantity::getDisplayValue() dispatches on engine->outCvMode") {
+		auto pq = m->paramQuantities[MasterModule::PARAM_STEP];
+		m->params[MasterModule::PARAM_STEP].setValue(1.f);
+
+		m->seq.outCvMode = OUT_CV_MODE::UNI_10V;
+		CHECK(pq->getDisplayValue() == Catch::Approx(10.f));
+
+		m->seq.outCvMode = OUT_CV_MODE::BI_10V;
+		CHECK(pq->getDisplayValue() == Catch::Approx(10.f));
+
+		m->seq.outCvMode = OUT_CV_MODE::UNI_5V;
+		CHECK(pq->getDisplayValue() == Catch::Approx(5.f));
+	}
+
+	SECTION("SeqStepParamQuantity::getUnit() dispatches on engine->stepCvMode and the step's own input") {
+		auto pq = m->paramQuantities[MasterModule::PARAM_STEP];
+
+		m->seq.stepCvMode = SEQ_CV_MODE::SUM;
+		CHECK(pq->getUnit() == "V");
+
+		m->seq.stepCvMode = SEQ_CV_MODE::ATTENUATE;
+		m->inputs[MasterModule::INPUT_STEP].channels = 1;
+		m->inputs[MasterModule::INPUT_STEP].setVoltage(1.f);
+		CHECK(pq->getUnit() == "x attenuate");
+
+		m->inputs[MasterModule::INPUT_STEP].channels = 0;
+		CHECK(pq->getUnit() == "V");
+	}
+
+	SECTION("SeqStepButtonParamQuantity::getDisplayValueString() dispatches on engine->stepState and engine->stepGet(i)") {
+		auto pq = m->paramQuantities[MasterModule::PARAM_STEP_BUTTON + 2];
+		m->seq.stepGet(2)->ratchets = 5;
+
+		m->seq.stepState = SEQ_UI_STATE::DEFAULT;
+		CHECK(pq->getDisplayValueString().find("Step 3:") != std::string::npos);
+
+		m->seq.stepState = SEQ_UI_STATE::RATCHETS;
+		CHECK(pq->getDisplayValueString().find("Step 3 ratchets: 5") != std::string::npos);
+	}
+
+	SECTION("SeqStepModeParamQuantity::getDisplayValueString() dispatches on engine->stepState") {
+		auto pq = m->paramQuantities[MasterModule::PARAM_STEPMODE];
+
+		m->seq.stepState = SEQ_UI_STATE::DEFAULT;
+		CHECK(pq->getDisplayValueString() == "Edit step on/off");
+
+		m->seq.stepState = SEQ_UI_STATE::SLEW;
+		CHECK(pq->getDisplayValueString() == "Edit step slew");
+	}
+
+	SECTION("SeqFlowerKnobParamQuantity reads engine->stepEditSelected and engine->stepGet(i)") {
+		auto pq = m->paramQuantities[MasterModule::PARAM_STEP_CENTER];
+		m->seq.stepEditSelected = 4;
+		m->seq.stepGet(4)->auxiliary = 3.25f;
+
+		m->seq.stepState = SEQ_UI_STATE::AUXILIARY;
+		CHECK(pq->getDisplayValueString() == "3.250V");
+		CHECK(pq->getLabel() == "Step 5 auxiliary voltage");
+	}
+}
+
+// The same param-quantity idiom, on FlowerTrigModule (SEEDS): TrigStepButtonParamQuantity,
+// TrigStepModeParamQuantity and TrigFlowerKnobParamQuantity are templated on FlowerTrig<...>
+// rather than the host module, mirroring the FlowerSeq/OFFSPRING case above but exercised
+// against the independent SEEDS module and pattern-quantity instance to catch a copy-paste
+// mistake that wires a Trig* quantity to the wrong engine instance.
+TEST_CASE("Param quantities read their engine's state (SEEDS)", "[Flower]") {
+	Test::ModuleScaffold<SeedsModule> mods;
+	SeedsModule* m = mods.create("FlowerSeqTrig");
+
+	SECTION("TrigStepButtonParamQuantity::getDisplayValueString() dispatches on engine->stepState") {
+		auto pq = m->paramQuantities[SeedsModule::PARAM_STEP_BUTTON + 1];
+		m->seq.stepGet(1)->attack = 0.4f;
+
+		m->seq.stepState = TRIG_UI_STATE::ATTACK;
+		CHECK(pq->getDisplayValueString().find("Step 2 attack: 0.400") != std::string::npos);
+	}
+
+	SECTION("TrigStepModeParamQuantity::getDisplayValueString() dispatches on engine->stepState") {
+		auto pq = m->paramQuantities[SeedsModule::PARAM_STEPMODE];
+
+		m->seq.stepState = TRIG_UI_STATE::DECAY;
+		CHECK(pq->getDisplayValueString() == "Edit step decay");
+	}
+
+	SECTION("TrigFlowerKnobParamQuantity reads engine->stepEditSelected and engine->stepGet(i)") {
+		auto pq = m->paramQuantities[SeedsModule::PARAM_STEP_CENTER];
+		m->seq.stepEditSelected = 3;
+		m->seq.stepGet(3)->ratchets = 6;
+
+		m->seq.stepState = TRIG_UI_STATE::RATCHETS;
+		CHECK(pq->getDisplayValueString() == "6");
+		CHECK(pq->getLabel() == "Step 4 ratchets");
+	}
+}
+
 // PatternList::next()/prev() must both wrap modulo `last` (the number of currently-active
 // patterns), not modulo the list's fixed capacity SIZE. next() has always done this correctly;
 // prev() is covered here in matching depth since it is the one that historically got this wrong

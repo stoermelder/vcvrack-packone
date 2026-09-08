@@ -186,23 +186,19 @@ struct FlowerSeqModule : FlowerChainModule {
 		configParam(PARAM_STEPLENGTH, 1.f, STEPS, STEPS, "Sequence length");
 		configParam(PARAM_START, 0.f, STEPS - 1, 0.f, "Sequence start", "", 0.f, 1.f, 1.f);
 
-		configParam<SeqStepModeParamQuantity<MODULE>>(PARAM_STEPMODE, 0.f, 1.f, 0.f, "Mode");
-		auto pq1 = dynamic_cast<SeqStepModeParamQuantity<MODULE>*>(paramQuantities[PARAM_STEPMODE]);
-		pq1->module = this;
+		auto pq1 = configParam<SeqStepModeParamQuantity<SEQ>>(PARAM_STEPMODE, 0.f, 1.f, 0.f, "Mode");
+		pq1->engine = &seq;
 
-		configParam<SeqFlowerKnobParamQuantity<MODULE>>(PARAM_STEP_CENTER, -std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(), 0.f);
-		auto pq2 = dynamic_cast<SeqFlowerKnobParamQuantity<MODULE>*>(paramQuantities[PARAM_STEP_CENTER]);
-		pq2->module = this;
+		auto pq2 = configParam<SeqFlowerKnobParamQuantity<SEQ>>(PARAM_STEP_CENTER, -std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(), 0.f);
+		pq2->engine = &seq;
 
 		for (int i = 0; i < STEPS; i++) {
-			configParam<SeqStepParamQuantity<MODULE>>(PARAM_STEP + i, 0.f, 1.f, 0.5f, string::f("Step %i", i + 1), "V");
-			auto pq1 = dynamic_cast<SeqStepParamQuantity<MODULE>*>(paramQuantities[PARAM_STEP + i]);
-			pq1->module = this;
+			auto pq1 = configParam<SeqStepParamQuantity<SEQ>>(PARAM_STEP + i, 0.f, 1.f, 0.5f, string::f("Step %i", i + 1), "V");
+			pq1->engine = &seq;
 			pq1->i = i;
 
-			configParam<SeqStepButtonParamQuantity<MODULE, STEPS>>(PARAM_STEP_BUTTON + i, 0.f, 1.f, 0.f);
-			auto pq2 = dynamic_cast<SeqStepButtonParamQuantity<MODULE, STEPS>*>(paramQuantities[PARAM_STEP_BUTTON + i]);
-			pq2->module = this;
+			auto pq2 = configParam<SeqStepButtonParamQuantity<SEQ>>(PARAM_STEP_BUTTON + i, 0.f, 1.f, 0.f);
+			pq2->engine = &seq;
 			pq2->i = i;
 		}
 

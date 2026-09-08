@@ -16,13 +16,13 @@ enum class SEQ_UI_STATE {
 };
 
 
-template< typename MODULE >
+template< typename ENGINE >
 struct SeqStepParamQuantity : ParamQuantity {
-	MODULE* module;
+	ENGINE* engine;
 	int i;
 	float getDisplayValue() override {
-		if (module->seq.stepCvMode == SEQ_CV_MODE::ATTENUATE && module->inputs[module->INPUT_STEP + i].isConnected()) {
-			switch (module->seq.outCvMode) {
+		if (engine->stepCvMode == SEQ_CV_MODE::ATTENUATE && engine->m->inputs[engine->m->INPUT_STEP + i].isConnected()) {
+			switch (engine->outCvMode) {
 				case OUT_CV_MODE::BI_10V:
 				case OUT_CV_MODE::BI_5V:
 				case OUT_CV_MODE::BI_1V: return getValue() * 2.f - 1.f;
@@ -35,7 +35,7 @@ struct SeqStepParamQuantity : ParamQuantity {
 			}
 		}
 		else {
-			switch (module->seq.outCvMode) {
+			switch (engine->outCvMode) {
 				case OUT_CV_MODE::BI_10V: return getValue() * 20.f - 10.f;
 				case OUT_CV_MODE::BI_5V: return getValue() * 10.f - 5.f;
 				case OUT_CV_MODE::BI_1V: return getValue() * 2.f - 1.f;
@@ -43,13 +43,13 @@ struct SeqStepParamQuantity : ParamQuantity {
 				case OUT_CV_MODE::UNI_5V: return getValue() * 5.f;
 				case OUT_CV_MODE::UNI_3V: return getValue() * 3.f;
 				case OUT_CV_MODE::UNI_2V: return getValue() * 2.f;
-				case OUT_CV_MODE::UNI_1V: 
+				case OUT_CV_MODE::UNI_1V:
 				default: return getValue();
 			}
 		}
 	}
 	void setDisplayValue(float displayValue) override {
-		switch (module->seq.outCvMode) {
+		switch (engine->outCvMode) {
 			case OUT_CV_MODE::BI_10V: setValue((displayValue + 10.f) / 20.f); break;
 			case OUT_CV_MODE::BI_5V: setValue((displayValue + 5.f) / 10.f); break;
 			case OUT_CV_MODE::BI_1V: setValue((displayValue + 1.f) / 2.f); break;
@@ -61,34 +61,34 @@ struct SeqStepParamQuantity : ParamQuantity {
 		}
 	}
 	std::string getUnit() override {
-		return module->inputs[module->INPUT_STEP + i].isConnected() && module->seq.stepCvMode == SEQ_CV_MODE::ATTENUATE ? "x attenuate" : "V";
+		return engine->m->inputs[engine->m->INPUT_STEP + i].isConnected() && engine->stepCvMode == SEQ_CV_MODE::ATTENUATE ? "x attenuate" : "V";
 	}
 }; // SeqStepParamQuantity
 
-template< typename MODULE, int STEPS >
+template< typename ENGINE >
 struct SeqStepButtonParamQuantity : ParamQuantity {
-	MODULE* module;
+	ENGINE* engine;
 	int i;
 	std::string getDisplayValueString() override {
 		std::string s;
-		switch (module->seq.stepState) {
+		switch (engine->stepState) {
 			default:
 			case SEQ_UI_STATE::DEFAULT:
 				return string::f("Step %i: %s\nAuxiliary voltage: %4.3fV\nProbability: %4.3f\nRatchets: %i\nSlew: %4.3f",
-					i + 1, module->seq.stepGet(i)->disabled ? "Off" : "On", module->seq.stepGet(i)->auxiliary, module->seq.stepGet(i)->probability, module->seq.stepGet(i)->ratchets, module->seq.stepGet(i)->slew);
+					i + 1, engine->stepGet(i)->disabled ? "Off" : "On", engine->stepGet(i)->auxiliary, engine->stepGet(i)->probability, engine->stepGet(i)->ratchets, engine->stepGet(i)->slew);
 			case SEQ_UI_STATE::AUXILIARY:
 				return string::f("Step %i auxiliary voltage: %4.3fV\nShort press: select step %i\nLong press: set auxiliary voltage %4.3fV",
-					i + 1, module->seq.stepGet(i)->auxiliary, i + 1, float(i) / (STEPS - 1));
+					i + 1, engine->stepGet(i)->auxiliary, i + 1, float(i) / (ENGINE::NUM_STEPS - 1));
 			case SEQ_UI_STATE::PROBABILITY:
 				return string::f("Step %i probability: %4.3f\nShort press: select step %i\nLong press: set probability value %4.3f",
-					i + 1, module->seq.stepGet(i)->probability, i + 1, float(i) / (STEPS - 1));
+					i + 1, engine->stepGet(i)->probability, i + 1, float(i) / (ENGINE::NUM_STEPS - 1));
 			case SEQ_UI_STATE::RATCHETS:
 				s = string::f("\nLong press: set ratchets %i", i + 1);
 				return string::f("Step %i ratchets: %i\nShort press: select step %i",
-					i + 1, module->seq.stepGet(i)->ratchets, i + 1) + (i < 8 ? s : "");
+					i + 1, engine->stepGet(i)->ratchets, i + 1) + (i < 8 ? s : "");
 			case SEQ_UI_STATE::SLEW:
 				return string::f("Step %i slew: %4.3f\nShort press: select step %i\nLong press: set slew value %4.3f",
-					i + 1, module->seq.stepGet(i)->slew, i + 1, float(i) / (STEPS - 1));
+					i + 1, engine->stepGet(i)->slew, i + 1, float(i) / (ENGINE::NUM_STEPS - 1));
 		}
 		return "";
 	}
@@ -97,11 +97,11 @@ struct SeqStepButtonParamQuantity : ParamQuantity {
 	}
 }; // SeqStepButtonParamQuantity
 
-template< typename MODULE >
+template< typename ENGINE >
 struct SeqStepModeParamQuantity : ParamQuantity {
-	MODULE* module;
+	ENGINE* engine;
 	std::string getDisplayValueString() override {
-		switch (module->seq.stepState) {
+		switch (engine->stepState) {
 			default:
 			case SEQ_UI_STATE::DEFAULT: return "Edit step on/off";
 			case SEQ_UI_STATE::AUXILIARY: return "Edit step auxiliary sequence";
@@ -113,29 +113,29 @@ struct SeqStepModeParamQuantity : ParamQuantity {
 	}
 }; // SeqStepModeParamQuantity
 
-template< typename MODULE >
+template< typename ENGINE >
 struct SeqFlowerKnobParamQuantity : ParamQuantity {
-	MODULE* module;
+	ENGINE* engine;
 	std::string getDisplayValueString() override {
-		int i = module->seq.stepEditSelected;
-		switch (module->seq.stepState) {
+		int i = engine->stepEditSelected;
+		switch (engine->stepState) {
 			default:
 			case SEQ_UI_STATE::DEFAULT:
 				return "FLOWER control (use EDIT-button)";
 			case SEQ_UI_STATE::AUXILIARY:
-				return string::f("%4.3fV", module->seq.stepGet(i)->auxiliary);
+				return string::f("%4.3fV", engine->stepGet(i)->auxiliary);
 			case SEQ_UI_STATE::PROBABILITY:
-				return string::f("%4.3f", module->seq.stepGet(i)->probability);
+				return string::f("%4.3f", engine->stepGet(i)->probability);
 			case SEQ_UI_STATE::RATCHETS:
-				return string::f("%i", module->seq.stepGet(i)->ratchets);
+				return string::f("%i", engine->stepGet(i)->ratchets);
 			case SEQ_UI_STATE::SLEW:
-				return string::f("%4.3f", module->seq.stepGet(i)->slew);
+				return string::f("%4.3f", engine->stepGet(i)->slew);
 		}
 		return "";
 	}
 	std::string getLabel() override {
-		int i = module->seq.stepEditSelected;
-		switch (module->seq.stepState) {
+		int i = engine->stepEditSelected;
+		switch (engine->stepState) {
 			default:
 			case SEQ_UI_STATE::DEFAULT:
 				return "";
@@ -154,6 +154,7 @@ struct SeqFlowerKnobParamQuantity : ParamQuantity {
 
 template < typename MODULE, int STEPS >
 struct FlowerSeq {
+	static const int NUM_STEPS = STEPS;
 	MODULE* m;
 
     struct FlowerSeqStep {

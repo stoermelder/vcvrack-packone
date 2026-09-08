@@ -16,30 +16,30 @@ enum class TRIG_UI_STATE {
 };
 
 
-template< typename MODULE, int STEPS >
+template< typename ENGINE >
 struct TrigStepButtonParamQuantity : ParamQuantity {
-	MODULE* module;
+	ENGINE* engine;
 	int i;
 	std::string getDisplayValueString() override {
 		std::string s;
-		switch (module->seq.stepState) {
+		switch (engine->stepState) {
 			default:
 			case TRIG_UI_STATE::DEFAULT:
 				return string::f("Step %i: %s\nProbability: %4.3f\nRatchets: %i\nAttack: %4.3f\nDecay: %4.3f",
-					i + 1, module->seq.stepGet(i)->disabled ? "Off" : "On", module->seq.stepGet(i)->probability, module->seq.stepGet(i)->ratchets, module->seq.stepGet(i)->attack, module->seq.stepGet(i)->decay);
+					i + 1, engine->stepGet(i)->disabled ? "Off" : "On", engine->stepGet(i)->probability, engine->stepGet(i)->ratchets, engine->stepGet(i)->attack, engine->stepGet(i)->decay);
 			case TRIG_UI_STATE::PROBABILITY:
 				return string::f("Step %i probability: %4.3f\nShort press: select step %i\nLong press: set probability value %4.3f",
-					i + 1, module->seq.stepGet(i)->probability, i + 1, float(i) / (STEPS - 1));
+					i + 1, engine->stepGet(i)->probability, i + 1, float(i) / (ENGINE::NUM_STEPS - 1));
 			case TRIG_UI_STATE::RATCHETS:
 				s = string::f("\nLong press: set ratchets %i", i + 1);
 				return string::f("Step %i ratchets: %i\nShort press: select step %i",
-					i + 1, module->seq.stepGet(i)->ratchets, i + 1) + (i < 8 ? s : "");
+					i + 1, engine->stepGet(i)->ratchets, i + 1) + (i < 8 ? s : "");
 			case TRIG_UI_STATE::ATTACK:
 				return string::f("Step %i attack: %4.3f\nShort press: select step %i\nLong press: set attack value %4.3f",
-					i + 1, module->seq.stepGet(i)->attack, i + 1, float(i) / (STEPS - 1));
+					i + 1, engine->stepGet(i)->attack, i + 1, float(i) / (ENGINE::NUM_STEPS - 1));
 			case TRIG_UI_STATE::DECAY:
 				return string::f("Step %i decay: %4.3f\nShort press: select step %i\nLong press: set decay value %4.3f",
-					i + 1, module->seq.stepGet(i)->decay, i + 1, float(i) / (STEPS - 1));
+					i + 1, engine->stepGet(i)->decay, i + 1, float(i) / (ENGINE::NUM_STEPS - 1));
 		}
 		return "";
 	}
@@ -49,11 +49,11 @@ struct TrigStepButtonParamQuantity : ParamQuantity {
 }; // SeqStepButtonParamQuantity
 
 
-template< typename MODULE >
+template< typename ENGINE >
 struct TrigStepModeParamQuantity : ParamQuantity {
-	MODULE* module;
+	ENGINE* engine;
 	std::string getDisplayValueString() override {
-		switch (module->seq.stepState) {
+		switch (engine->stepState) {
 			default:
 			case TRIG_UI_STATE::DEFAULT: return "Edit step on/off";
 			case TRIG_UI_STATE::PROBABILITY: return "Edit step probability value";
@@ -66,29 +66,29 @@ struct TrigStepModeParamQuantity : ParamQuantity {
 }; // SeqStepModeParamQuantity
 
 
-template< typename MODULE >
+template< typename ENGINE >
 struct TrigFlowerKnobParamQuantity : ParamQuantity {
-	MODULE* module;
+	ENGINE* engine;
 	std::string getDisplayValueString() override {
-		int i = module->seq.stepEditSelected;
-		switch (module->seq.stepState) {
+		int i = engine->stepEditSelected;
+		switch (engine->stepState) {
 			default:
 			case TRIG_UI_STATE::DEFAULT:
 				return "SEEDS control (use EDIT-button)";
 			case TRIG_UI_STATE::PROBABILITY:
-				return string::f("%4.3f", module->seq.stepGet(i)->probability);
+				return string::f("%4.3f", engine->stepGet(i)->probability);
 			case TRIG_UI_STATE::RATCHETS:
-				return string::f("%i", module->seq.stepGet(i)->ratchets);
+				return string::f("%i", engine->stepGet(i)->ratchets);
 			case TRIG_UI_STATE::ATTACK:
-				return string::f("%4.3f", module->seq.stepGet(i)->attack);
+				return string::f("%4.3f", engine->stepGet(i)->attack);
 			case TRIG_UI_STATE::DECAY:
-				return string::f("%4.3f", module->seq.stepGet(i)->decay);
+				return string::f("%4.3f", engine->stepGet(i)->decay);
 		}
 		return "";
 	}
 	std::string getLabel() override {
-		int i = module->seq.stepEditSelected;
-		switch (module->seq.stepState) {
+		int i = engine->stepEditSelected;
+		switch (engine->stepState) {
 			default:
 			case TRIG_UI_STATE::DEFAULT:
 				return "";
@@ -107,6 +107,7 @@ struct TrigFlowerKnobParamQuantity : ParamQuantity {
 
 template < typename MODULE, int STEPS >
 struct FlowerTrig {
+	static const int NUM_STEPS = STEPS;
 	MODULE* m;
 
 	struct FlowerTrigStep {

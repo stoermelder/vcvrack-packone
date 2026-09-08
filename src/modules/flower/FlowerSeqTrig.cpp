@@ -58,20 +58,17 @@ struct FlowerTrigModule : FlowerChainModule {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam<TriggerParamQuantity>(PARAM_RAND, 0.f, 1.f, 0.f, "Randomize sequence");
 
-		configParam<TrigStepModeParamQuantity<MODULE>>(PARAM_STEPMODE, 0.f, 1.f, 0.f, "Mode");
-		auto pq1 = dynamic_cast<TrigStepModeParamQuantity<MODULE>*>(paramQuantities[PARAM_STEPMODE]);
-		pq1->module = this;
+		auto pq1 = configParam<TrigStepModeParamQuantity<SEQ>>(PARAM_STEPMODE, 0.f, 1.f, 0.f, "Mode");
+		pq1->engine = &seq;
 
-		configParam<TrigFlowerKnobParamQuantity<MODULE>>(PARAM_STEP_CENTER, -std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(), 0.f);
-		auto pq2 = dynamic_cast<TrigFlowerKnobParamQuantity<MODULE>*>(paramQuantities[PARAM_STEP_CENTER]);
-		pq2->module = this;
+		auto pq2 = configParam<TrigFlowerKnobParamQuantity<SEQ>>(PARAM_STEP_CENTER, -std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(), 0.f);
+		pq2->engine = &seq;
 
 		for (int i = 0; i < STEPS; i++) {
 			configParam(PARAM_STEP + i, 0.f, 1.f, 0.1f, string::f("Step %i length", i + 1), "", 0.f);
 
-			configParam<TrigStepButtonParamQuantity<MODULE, STEPS>>(PARAM_STEP_BUTTON + i, 0.f, 1.f, 0.f);
-			auto pq2 = dynamic_cast<TrigStepButtonParamQuantity<MODULE, STEPS>*>(paramQuantities[PARAM_STEP_BUTTON + i]);
-			pq2->module = this;
+			auto pq2 = configParam<TrigStepButtonParamQuantity<SEQ>>(PARAM_STEP_BUTTON + i, 0.f, 1.f, 0.f);
+			pq2->engine = &seq;
 			pq2->i = i;
 		}
 
