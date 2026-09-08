@@ -15,6 +15,64 @@ inline bool isFlowerTrigModel(Model* model) {
 	return model == modelFlowerSeqTrig;
 }
 
+/** Common base for all modules of the Flower expander-chain (FlowerSeq,
+ * FlowerSeqEx, FlowerSeqTrig).
+ *
+ * Unlike some other expander-chain bundles in this repo, no Flower module
+ * forwards a *pointer* into another module's storage: each module publishes
+ * its own fixed FlowerProcessArgs buffers (set once in its constructor) on
+ * its own leftExpander/rightExpander, and OFFSPRING/SEEDS forward a *copy* of
+ * the tick they read, not the pointer itself. Rack always re-reads
+ * `{left,right}Expander.module` fresh every sample and clears it the instant
+ * a neighbor is removed, so there is no dangling-pointer read to guard
+ * against here.
+ *
+ * What *is* missing without this base: nothing currently notices a chain
+ * break and clears the module's outputs, so a disconnected OFFSPRING/SEEDS
+ * keeps outputting its last value forever instead of falling silent. Each
+ * chain member registers a module-listener: on removal it notifies the
+ * surviving members so each can reset its own outputs, and a changed
+ * neighbor on either side (ExpanderChangeEvent) resets this module's outputs
+ * immediately as well.
+ */
+struct FlowerChainModule : Module, ModuleChangeListener {
+	FlowerChainModule() {
+		moduleChangedFlag = false;
+		registerModuleListener("Flower", this);
+	}
+
+	~FlowerChainModule() {
+		unregisterModuleListener("Flower", this);
+	}
+
+	void onRemove(const Module::RemoveEvent& e) override {
+		// Have the surviving chain members reset the outputs they drove from
+		// the message we published.
+		notifyModuleListeners("Flower");
+		Module::onRemove(e);
+	}
+
+	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
+		// Dispatched when the neighbor on the given side is removed, replaced or
+		// the rack is rearranged; runs under the engine lock, on the audio thread
+		// (block start) or the UI thread (module removal).
+		resetOutputs();
+		Module::onExpanderChange(e);
+	}
+
+	/** Consumes a sibling-removal notification. Returns true if the caller must
+	 * reset its outputs because a chain member elsewhere was just removed. */
+	bool consumeSiblingRemoved() {
+		if (!moduleChangedFlag) return false;
+		moduleChangedFlag = false;
+		return true;
+	}
+
+	/** Subclasses with outputs reset them here when the chain disconnects. */
+	virtual void resetOutputs() { }
+};
+
+
 enum class OUT_CV_MODE {
 	BI_1V = 0,
 	BI_5V = 1,

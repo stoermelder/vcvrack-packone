@@ -4,7 +4,7 @@ namespace StoermelderPackOne {
 namespace Flower {
 
 template < int STEPS, int PATTERNS, int PHRASES >
-struct FlowerSeqExModule : Module {
+struct FlowerSeqExModule : FlowerChainModule {
 	enum ParamIds {
 		PARAM_RAND,
 		PARAM_STEPMODE,
@@ -90,9 +90,24 @@ struct FlowerSeqExModule : Module {
 		seq.reset();
 	}
 
+	void resetOutputs() override {
+		outputs[OUTPUT_CV].setVoltage(0.f);
+		outputs[OUTPUT_AUX].setVoltage(0.f);
+	}
+
 	void process(const ProcessArgs& args) override {
+		// A sibling removal elsewhere in the chain means our own left neighbor
+		// may have changed too; resetOutputs() here, onExpanderChange() also
+		// covers a change to our own immediate neighbor.
+		if (consumeSiblingRemoved()) {
+			resetOutputs();
+		}
+
 		Module* mr = leftExpander.module;
-		if (!mr || !isFlowerSeqModel(mr->model)) return;
+		if (!mr || !isFlowerSeqModel(mr->model)) {
+			resetOutputs();
+			return;
+		}
 
 		auto seqArgs = reinterpret_cast<FlowerProcessArgs*>(mr->rightExpander.consumerMessage);
 

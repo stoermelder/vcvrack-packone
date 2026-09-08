@@ -21,7 +21,7 @@ enum class MUTATE_DISTRIBUTION {
 
 
 template < int STEPS, int PATTERNS, int PHRASES >
-struct FlowerSeqModule : Module {
+struct FlowerSeqModule : FlowerChainModule {
 	enum ParamIds {
 		PARAM_RUN,
 		PARAM_RESET,
