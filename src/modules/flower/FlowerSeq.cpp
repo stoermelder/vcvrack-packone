@@ -167,14 +167,16 @@ struct FlowerSeqModule : Module {
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
 
-	FlowerProcessArgs argsProducer;
-	FlowerProcessArgs argsConsumer;
+	FlowerProcessArgs argsProducerL;
+	FlowerProcessArgs argsConsumerL;
+	FlowerProcessArgs argsProducerR;
+	FlowerProcessArgs argsConsumerR;
 
 	FlowerSeqModule() {
-		leftExpander.consumerMessage = &argsConsumer;
-		leftExpander.producerMessage = &argsProducer;
-		rightExpander.consumerMessage = &argsConsumer;
-		rightExpander.producerMessage = &argsProducer;
+		leftExpander.consumerMessage = &argsConsumerL;
+		leftExpander.producerMessage = &argsProducerL;
+		rightExpander.consumerMessage = &argsConsumerR;
+		rightExpander.producerMessage = &argsProducerR;
 
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -338,8 +340,8 @@ struct FlowerSeqModule : Module {
 			patternMutate();
 		}
 
-		auto seqArgs = reinterpret_cast<FlowerProcessArgs*>(rightExpander.producerMessage);
-		seqArgs->reset();
+		FlowerProcessArgs seqArgs;
+		seqArgs.reset();
 
 		// RUN-input / RUN-button
 		if (runningTrigger.process(inputs[INPUT_RUN].getVoltage() + params[PARAM_RUN].getValue())) {
@@ -349,39 +351,45 @@ struct FlowerSeqModule : Module {
 		// RESET-input / RESET-button
 		if (resetTrigger.process(inputs[INPUT_RESET].getVoltage() + params[PARAM_RESET].getValue())) {
 			patternIndex = 0;
-			seqArgs->patternTick = stepSetIndex(0);
-			seqArgs->stepTick = true;
+			seqArgs.patternTick = stepSetIndex(0);
+			seqArgs.stepTick = true;
 			resetTimer.reset();
 		}
 
 		// CLOCK-input
 		if (running) {
-			seqArgs->clock = inputs[INPUT_CLOCK].getVoltage();
-			if (resetTimer.process(args.sampleTime) >= 1e-3f && clockTrigger.process(seqArgs->clock)) {
-				seqArgs->patternTick = stepSetIndex(stepIndex + 1);
-				seqArgs->stepTick = true;
-				seqArgs->clockTick = true;
+			seqArgs.clock = inputs[INPUT_CLOCK].getVoltage();
+			if (resetTimer.process(args.sampleTime) >= 1e-3f && clockTrigger.process(seqArgs.clock)) {
+				seqArgs.patternTick = stepSetIndex(stepIndex + 1);
+				seqArgs.stepTick = true;
+				seqArgs.clockTick = true;
 			}
 		}
 
 		// SEQ_RAND-input / SEQ_RAND-button
 		if (seqRandTrigger.process(inputs[INPUT_RAND].getVoltage() + params[PARAM_RAND].getValue())) {
 			doRandomize();
-			seqArgs->randTick = true;
+			seqArgs.randTick = true;
 		}
 
-		seqArgs->randomizeFlagsMaster = randomizeFlags;
-		seqArgs->sampleTime = args.sampleTime;
-		seqArgs->sampleRate = args.sampleRate;
+		seqArgs.randomizeFlagsMaster = randomizeFlags;
+		seqArgs.sampleTime = args.sampleTime;
+		seqArgs.sampleRate = args.sampleRate;
 
-		seqArgs->stepIndex = stepIndex;
-		seqArgs->stepStart = stepGetSeqStart();
-		seqArgs->stepLength = stepGetSeqLength();
-		seqArgs->running = running;
-		seqArgs->patternType = phrases[phraseIndex].patterns[patternIndex].type;
-		seqArgs->patternMult = phrases[phraseIndex].patterns[patternIndex].mult;
+		seqArgs.stepIndex = stepIndex;
+		seqArgs.stepStart = stepGetSeqStart();
+		seqArgs.stepLength = stepGetSeqLength();
+		seqArgs.running = running;
+		seqArgs.patternType = phrases[phraseIndex].patterns[patternIndex].type;
+		seqArgs.patternMult = phrases[phraseIndex].patterns[patternIndex].mult;
 
-		seq.process(*seqArgs);
+		// Broadcast the same tick to both expander sides. Each side owns a distinct
+		// producer/consumer pair (see B1 in var/Flower_review.md), so the data must be
+		// published to both explicitly rather than relying on a single aliased buffer.
+		*reinterpret_cast<FlowerProcessArgs*>(leftExpander.producerMessage) = seqArgs;
+		*reinterpret_cast<FlowerProcessArgs*>(rightExpander.producerMessage) = seqArgs;
+
+		seq.process(seqArgs);
 		if (lightDivider.process()) processLights(args);
 
 		leftExpander.messageFlipRequested = true;

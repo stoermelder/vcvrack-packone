@@ -1,3 +1,4 @@
+#pragma once
 #include "Flower.hpp"
 #include <bitset>
 #include <random>
