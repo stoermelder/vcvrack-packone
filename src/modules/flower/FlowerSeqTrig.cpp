@@ -239,53 +239,18 @@ struct FlowerTrigWidget : ThemedModuleWidget<FlowerTrigModule<16, 8, 8>> {
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 		assert(module);
 
-		struct StepRandomizeMenuItem : MenuItem {
-			MODULE* module;
-			StepRandomizeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct InheritRandomizeItem : MenuItem {
-					MODULE* module;
-					void onAction(const event::Action& e) override {
-						module->randomizeInherit ^= true;
-					}
-					void step() override {
-						rightText = module->randomizeInherit ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				struct StepRandomizeItem : MenuItem {
-					MODULE* module;
-					int idx;
-					void onAction(const event::Action& e) override {
-						module->randomizeFlags.flip(idx);
-					}
-					void step() override {
-						rightText = module->randomizeFlags.test(idx) ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<InheritRandomizeItem>(&MenuItem::text, "Trigger from master", &InheritRandomizeItem::module, module));
-				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Steps"));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Value", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_VALUE));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Disabled", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_DISABLED));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Probability", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_PROB));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Ratchets", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_RATCHETS));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Attack", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_ATTACK));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Decay", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_DECAY));
-				return menu;
-			}
-		}; // StepRandomizeMenuItem
-
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<StepRandomizeMenuItem>(&MenuItem::text, "RAND-port targets", &StepRandomizeMenuItem::module, module));
+		menu->addChild(createSubmenuItem("RAND-port targets", "", [=](Menu* menu) {
+			menu->addChild(createBoolPtrMenuItem("Trigger from master", "", &module->randomizeInherit));
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createMenuLabel("Steps"));
+			menu->addChild(createRandomizeFlagMenuItem("Value", &module->randomizeFlags, FlowerProcessArgs::STEP_VALUE));
+			menu->addChild(createRandomizeFlagMenuItem("Disabled", &module->randomizeFlags, FlowerProcessArgs::STEP_DISABLED));
+			menu->addChild(createRandomizeFlagMenuItem("Probability", &module->randomizeFlags, FlowerProcessArgs::STEP_PROB));
+			menu->addChild(createRandomizeFlagMenuItem("Ratchets", &module->randomizeFlags, FlowerProcessArgs::STEP_RATCHETS));
+			menu->addChild(createRandomizeFlagMenuItem("Attack", &module->randomizeFlags, FlowerProcessArgs::STEP_ATTACK));
+			menu->addChild(createRandomizeFlagMenuItem("Decay", &module->randomizeFlags, FlowerProcessArgs::STEP_DECAY));
+		}));
 	}
 };
 

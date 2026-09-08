@@ -26,6 +26,8 @@ enum class OUT_CV_MODE {
 	UNI_1V = 7
 };
 
+// Values are intentionally out of declaration order: they are persisted in patches,
+// so existing patches would silently change meaning if the numbering were "fixed".
 enum class OUT_AUX_MODE {
 	TRIG = 0,
 	TRIG_SLEW = 3,
@@ -221,6 +223,50 @@ struct PatternList {
 
 
 // Widgets
+
+// Menu item toggling a single bit of a FlowerProcessArgs::RandomizeFlags bitset.
+inline ui::MenuItem* createRandomizeFlagMenuItem(std::string text, FlowerProcessArgs::RandomizeFlags* flags, int idx) {
+	return createBoolMenuItem(text, "",
+		[=]() { return flags->test(idx); },
+		[=](bool b) { flags->set(idx, b); }
+	);
+}
+
+// Shared context-menu items for FLOWER and OFFSPRING: both host a FlowerSeq<MODULE, STEPS>
+// engine at `module->seq` with the same OUT_CV_MODE / OUT_AUX_MODE / SEQ_CV_MODE options.
+template <typename MODULE>
+void appendFlowerSeqMenu(Menu* menu, MODULE* module) {
+	menu->addChild(new MenuSeparator());
+	menu->addChild(createSubmenuItem("Step CV knob mode", "", [=](Menu* menu) {
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Attenuate", &module->seq.stepCvMode, SEQ_CV_MODE::ATTENUATE));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Sum", &module->seq.stepCvMode, SEQ_CV_MODE::SUM));
+	}));
+
+	menu->addChild(new MenuSeparator());
+	menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<OUT_CV_MODE>("CV-port range",
+		{
+			{ OUT_CV_MODE::BI_10V, "-10..10V" },
+			{ OUT_CV_MODE::BI_5V, "-5..5V" },
+			{ OUT_CV_MODE::BI_1V, "-1..1V" },
+			{ OUT_CV_MODE::UNI_10V, "0..10V" },
+			{ OUT_CV_MODE::UNI_5V, "0..5V" },
+			{ OUT_CV_MODE::UNI_3V, "0..3V" },
+			{ OUT_CV_MODE::UNI_2V, "0..2V" },
+			{ OUT_CV_MODE::UNI_1V, "0..1V" }
+		},
+		&module->seq.outCvMode
+	));
+	menu->addChild(createBoolPtrMenuItem("Clamp output", "", &module->seq.outCvClamp));
+	menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<OUT_AUX_MODE>("OUT-port mode",
+		{
+			{ OUT_AUX_MODE::TRIG, "Trigger" },
+			{ OUT_AUX_MODE::TRIG_SLEW, "Slewed trigger" },
+			{ OUT_AUX_MODE::CLOCK, "Clock" },
+			{ OUT_AUX_MODE::AUXILIARY, "Auxiliary sequence" }
+		},
+		&module->seq.outAuxMode
+	));
+}
 
 struct FlowerLight : RedGreenBlueLight {
 	FlowerLight() {

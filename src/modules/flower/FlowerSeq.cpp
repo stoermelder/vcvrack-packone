@@ -797,387 +797,97 @@ struct FlowerSeqWidget : ThemedModuleWidget<FlowerSeqModule<16, 8, 8>> {
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 		assert(module);
 
-		struct PortableSequenceMenuItem : MenuItem {
-			FlowerSeqWidget* mw;
-			PortableSequenceMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct CopyItem : MenuItem {
-					FlowerSeqWidget* mw;
-					void onAction(const event::Action& e) override {
-						mw->copyPortableSequence();
-					}
-				};
-				struct PasteItem : MenuItem {
-					FlowerSeqWidget* mw;
-					void onAction(const event::Action& e) override {
-						mw->pastePortableSequence();
-					}
-				};
-
-				menu->addChild(construct<CopyItem>(&MenuItem::text, "Copy sequence", &CopyItem::mw, mw));
-				menu->addChild(construct<PasteItem>(&MenuItem::text, "Paste sequence", &PasteItem::mw, mw));
-				return menu;
-			}
-		}; // PortableSequenceMenuItem
-
-		struct PhraseCvModeMenuItem : MenuItem {
-			PhraseCvModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			struct PhraseCvModeItem : MenuItem {
-				MODULE* module;
-				PHRASE_CV_MODE phraseCvMode;
-				void onAction(const event::Action& e) override {
-					module->phraseCvMode = phraseCvMode;
-				}
-				void step() override {
-					rightText = module->phraseCvMode == phraseCvMode ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
+		// A pattern's own submenu (reorder) only exists while the pattern is active, so this
+		// can't use createSubmenuItem(), which always shows the arrow and a non-null submenu.
+		struct PatternModeItem : MenuItem {
 			MODULE* module;
+			PATTERN_TYPE pm;
+			void onAction(const event::Action& e) override {
+				module->patternList.toggle(pm);
+				if (!module->patternList.active(pm)) module->patternCheck();
+			}
+			void step() override {
+				rightText = module->patternList.active(pm) ? "✔" : "";
+				MenuItem::step();
+			}
 			Menu* createChildMenu() override {
+				if (!module->patternList.active(pm)) return NULL;
 				Menu* menu = new Menu;
-				menu->addChild(construct<PhraseCvModeItem>(&MenuItem::text, "Off", &PhraseCvModeItem::module, module, &PhraseCvModeItem::phraseCvMode, PHRASE_CV_MODE::OFF));
-				menu->addChild(construct<PhraseCvModeItem>(&MenuItem::text, "Trigger", &PhraseCvModeItem::module, module, &PhraseCvModeItem::phraseCvMode, PHRASE_CV_MODE::TRIG_FWD));
-				menu->addChild(construct<PhraseCvModeItem>(&MenuItem::text, "0..10V", &PhraseCvModeItem::module, module, &PhraseCvModeItem::phraseCvMode, PHRASE_CV_MODE::VOLT));
-				menu->addChild(construct<PhraseCvModeItem>(&MenuItem::text, "C4-G4", &PhraseCvModeItem::module, module, &PhraseCvModeItem::phraseCvMode, PHRASE_CV_MODE::C4));
-				menu->addChild(construct<PhraseCvModeItem>(&MenuItem::text, "Arm", &PhraseCvModeItem::module, module, &PhraseCvModeItem::phraseCvMode, PHRASE_CV_MODE::ARM));
+				PatternList* pl = &module->patternList;
+				if (!pl->isFirst(pm))
+					menu->addChild(createMenuItem("Move up", "", [=]() { pl->moveFwd(pm); }));
+				if (!pl->isLast(pm))
+					menu->addChild(createMenuItem("Move down", "", [=]() { pl->moveBwd(pm); }));
 				return menu;
 			}
-		}; // PhraseCvModeMenuItem
-
-		struct PhraseCountMenuItem : MenuItem {
-			MODULE* module;
-			PhraseCountMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct PhraseCountItem : MenuItem {
-					MODULE* module;
-					int count;
-					void onAction(const event::Action& e) override {
-						module->phraseSetCount(count);
-					}
-					void step() override {
-						rightText = module->phraseCount == count ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				for (int i = 0; i < 8; i++) {
-					menu->addChild(construct<PhraseCountItem>(&MenuItem::text, string::f("%2u", i + 1), &PhraseCountItem::module, module, &PhraseCountItem::count, i + 1));
-				}
-
-				return menu;
-			}
-		}; // PhraseCountMenuItem
-
-		struct PatternCountMenuItem : MenuItem {
-			MODULE* module;
-			PatternCountMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct PatternCountItem : MenuItem {
-					MODULE* module;
-					int count;
-					void onAction(const event::Action& e) override {
-						module->patternSetCount(count);
-					}
-					void step() override {
-						rightText = module->patternCount == count ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				for (int i = 0; i < 8; i++) {
-					menu->addChild(construct<PatternCountItem>(&MenuItem::text, string::f("%2u", i + 1), &PatternCountItem::module, module, &PatternCountItem::count, i + 1));
-				}
-
-				return menu;
-			}
-		}; // PatternCountMenuItem
-
-		struct PatternModeMenuItem : MenuItem {
-			MODULE* module;
-			PatternModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct PatternModeItem : MenuItem {
-					MODULE* module;
-					PATTERN_TYPE pm;
-					void onAction(const event::Action& e) override {
-						module->patternList.toggle(pm);
-						if (!module->patternList.active(pm)) module->patternCheck();
-					}
-					void step() override {
-						//rightText = module->patternTypeSet.find(pm) != module->patternTypeSet.end() ? "✔" : "";
-						rightText = module->patternList.active(pm) ? "✔" : "";
-						MenuItem::step();
-					}
-					Menu* createChildMenu() override {
-						if (!module->patternList.active(pm)) return NULL;
-						Menu* menu = new Menu;
-
-						struct UpItem : MenuItem {
-							MODULE* module;
-							PATTERN_TYPE pm;
-							void onAction(const event::Action& e) override {
-								module->patternList.moveFwd(pm);
-							}
-						};
-						struct DownItem : MenuItem {
-							MODULE* module;
-							PATTERN_TYPE pm;
-							void onAction(const event::Action& e) override {
-								module->patternList.moveBwd(pm);
-							}
-						};
-
-						if (!module->patternList.isFirst(pm)) 
-							menu->addChild(construct<UpItem>(&MenuItem::text, "Move up", &UpItem::module, module, &UpItem::pm, pm));
-						if (!module->patternList.isLast(pm))
-							menu->addChild(construct<DownItem>(&MenuItem::text, "Move down", &DownItem::module, module, &DownItem::pm, pm));
-						return menu;
-					}
-				};
-
-				struct PatternResetItem : MenuItem {
-					MODULE* module;
-					void onAction(const event::Action& e) override {
-						module->patternList.reset();
-					}
-				};
-
-				for (int i = 0; i < (int)PATTERN_TYPE::NUM; i++) {
-					menu->addChild(construct<PatternModeItem>(&MenuItem::text, module->patternList.getNameAt(i), &PatternModeItem::module, module, &PatternModeItem::pm, module->patternList.at(i)));
-				}
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<PatternResetItem>(&MenuItem::text, "Reset patterns", &PatternResetItem::module, module));
-
-				/*
-				menu->addChild(construct<PatternModeItem>(&MenuItem::text, "[oxxx] Forward", &PatternModeItem::module, module, &PatternModeItem::pm, PATTERN_TYPE::SEQ_FWD));
-				menu->addChild(construct<PatternModeItem>(&MenuItem::text, "[xoxx] Reverse", &PatternModeItem::module, module, &PatternModeItem::pm, PATTERN_TYPE::SEQ_REV));
-				menu->addChild(construct<PatternModeItem>(&MenuItem::text, "[ooxx] Add 1V", &PatternModeItem::module, module, &PatternModeItem::pm, PATTERN_TYPE::SEQ_ADD_1V));
-				menu->addChild(construct<PatternModeItem>(&MenuItem::text, "[xxox] Inverse", &PatternModeItem::module, module, &PatternModeItem::pm, PATTERN_TYPE::SEQ_INV));
-				menu->addChild(construct<PatternModeItem>(&MenuItem::text, "[oxox] Add 2 steps", &PatternModeItem::module, module, &PatternModeItem::pm, PATTERN_TYPE::ADD_2STEPS));
-				menu->addChild(construct<PatternModeItem>(&MenuItem::text, "[xoox] Add auxiliary sequence", &PatternModeItem::module, module, &PatternModeItem::pm, PATTERN_TYPE::AUX_ADD));
-				menu->addChild(construct<PatternModeItem>(&MenuItem::text, "[ooox] Step probability 0.5", &PatternModeItem::module, module, &PatternModeItem::pm, PATTERN_TYPE::SEQ_PROB_05));
-				menu->addChild(construct<PatternModeItem>(&MenuItem::text, "[xxxo] Subtract auxiliary sequence", &PatternModeItem::module, module, &PatternModeItem::pm, PATTERN_TYPE::AUX_SUB));
-				menu->addChild(construct<PatternModeItem>(&MenuItem::text, "[oxxo] Random", &PatternModeItem::module, module, &PatternModeItem::pm, PATTERN_TYPE::SEQ_RAND));
-				menu->addChild(construct<PatternModeItem>(&MenuItem::text, "[xoxo] Odd steps only", &PatternModeItem::module, module, &PatternModeItem::pm, PATTERN_TYPE::SEQ_OOD));
-				menu->addChild(construct<PatternModeItem>(&MenuItem::text, "[ooxo] Even steps only", &PatternModeItem::module, module, &PatternModeItem::pm, PATTERN_TYPE::SEQ_EVEN));
-				menu->addChild(construct<PatternModeItem>(&MenuItem::text, "[xxoo] Transpose", &PatternModeItem::module, module, &PatternModeItem::pm, PATTERN_TYPE::SEQ_TRANSPOSE));
-				menu->addChild(construct<PatternModeItem>(&MenuItem::text, "[oxoo] Random auxiliary sequence", &PatternModeItem::module, module, &PatternModeItem::pm, PATTERN_TYPE::AUX_RAND));
-				*/
-				return menu;
-			}
-		}; // PatternModeMenuItem
-
-		struct PatternMutateMenuItem : MenuItem {
-			MODULE* module;
-			PatternMutateMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct PatternMutateItem : MenuItem {
-					MODULE* module;
-					MUTATE_DISTRIBUTION d;
-					void onAction(const event::Action& e) override {
-						module->patternMutateDist = d;
-					}
-					void step() override {
-						rightText = d == module->patternMutateDist ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<PatternMutateItem>(&MenuItem::text, "Uniform distribution (fixed pattern 1)", &PatternMutateItem::module, module, &PatternMutateItem::d, MUTATE_DISTRIBUTION::UNIFORM_FIXED_0));
-				menu->addChild(construct<PatternMutateItem>(&MenuItem::text, "Uniform distribution", &PatternMutateItem::module, module, &PatternMutateItem::d, MUTATE_DISTRIBUTION::UNIFORM));
-				menu->addChild(construct<PatternMutateItem>(&MenuItem::text, "Binomial distribution (fixed pattern 1)", &PatternMutateItem::module, module, &PatternMutateItem::d, MUTATE_DISTRIBUTION::BINOMIAL_FIXED_0));
-				menu->addChild(construct<PatternMutateItem>(&MenuItem::text, "Binomial distribution", &PatternMutateItem::module, module, &PatternMutateItem::d, MUTATE_DISTRIBUTION::BINOMIAL));
-				return menu;
-			}
-		}; // PatternMutateMenuItem
-
-		struct StepCvModeMenuItem : MenuItem {
-			MODULE* module;
-			StepCvModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct StepCvModeItem : MenuItem {
-					MODULE* module;
-					SEQ_CV_MODE stepCvMode;
-					void onAction(const event::Action& e) override {
-						module->seq.stepCvMode = stepCvMode;
-					}
-					void step() override {
-						rightText = module->seq.stepCvMode == stepCvMode ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<StepCvModeItem>(&MenuItem::text, "Attenuate", &StepCvModeItem::module, module, &StepCvModeItem::stepCvMode, SEQ_CV_MODE::ATTENUATE));
-				menu->addChild(construct<StepCvModeItem>(&MenuItem::text, "Sum", &StepCvModeItem::module, module, &StepCvModeItem::stepCvMode, SEQ_CV_MODE::SUM));
-				return menu;
-			}
-		}; // StepCvModeMenuItem
-
-		struct StepRandomizeMenuItem : MenuItem {
-			MODULE* module;
-			StepRandomizeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct StepRandomizeItem : MenuItem {
-					MODULE* module;
-					int idx;
-					void onAction(const event::Action& e) override {
-						module->randomizeFlags.flip(idx);
-					}
-					void step() override {
-						rightText = module->randomizeFlags.test(idx) ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Steps"));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Value", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_VALUE));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Disabled", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_DISABLED));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Auxiliary value", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_AUX));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Probability", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_PROB));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Ratchets", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_RATCHETS));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Slew", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_SLEW));
-				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Sequence"));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Start", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::SEQ_START));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Length", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::SEQ_LENGTH));
-				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Pattern"));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Count", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::PATTERN_CNT));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Repeats", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::PATTERN_RPT));
-				return menu;
-			}
-		}; // StepRandomizeMenuItem
-
-		struct OutCvModeMenuItem : MenuItem {
-			MODULE* module;
-			OutCvModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct OutCvModeItem : MenuItem {
-					MODULE* module;
-					OUT_CV_MODE outCvMode;
-					void onAction(const event::Action& e) override {
-						module->seq.outCvMode = outCvMode;
-					}
-					void step() override {
-						rightText = module->seq.outCvMode == outCvMode ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				struct OutCvClampItem : MenuItem {
-					MODULE* module;
-					void onAction(const event::Action& e) override {
-						module->seq.outCvClamp ^= true;
-					}
-					void step() override {
-						rightText = module->seq.outCvClamp ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "-10..10V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::BI_10V));
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "-5..5V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::BI_5V));
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "-1..1V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::BI_1V));
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "0..10V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::UNI_10V));
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "0..5V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::UNI_5V));
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "0..3V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::UNI_3V));
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "0..2V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::UNI_2V));
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "0..1V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::UNI_1V));
-				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<OutCvClampItem>(&MenuItem::text, "Clamp output", &OutCvClampItem::module, module));
-				return menu;
-			}
-		}; // OutCvModeMenuItem
-
-		struct OutAuxModeMenuItem : MenuItem {
-			MODULE* module;
-			OutAuxModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct OutAuxModeItem : MenuItem {
-					MODULE* module;
-					OUT_AUX_MODE outAuxMode;
-					void onAction(const event::Action& e) override {
-						module->seq.outAuxMode = outAuxMode;
-					}
-					void step() override {
-						rightText = module->seq.outAuxMode == outAuxMode ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<OutAuxModeItem>(&MenuItem::text, "Trigger", &OutAuxModeItem::module, module, &OutAuxModeItem::outAuxMode, OUT_AUX_MODE::TRIG));
-				menu->addChild(construct<OutAuxModeItem>(&MenuItem::text, "Slewed trigger", &OutAuxModeItem::module, module, &OutAuxModeItem::outAuxMode, OUT_AUX_MODE::TRIG_SLEW));
-				menu->addChild(construct<OutAuxModeItem>(&MenuItem::text, "Clock", &OutAuxModeItem::module, module, &OutAuxModeItem::outAuxMode, OUT_AUX_MODE::CLOCK));
-				menu->addChild(construct<OutAuxModeItem>(&MenuItem::text, "Auxiliary sequence", &OutAuxModeItem::module, module, &OutAuxModeItem::outAuxMode, OUT_AUX_MODE::AUXILIARY));
-				return menu;
-			}
-		}; // OutAuxModeMenuItem
+		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<PortableSequenceMenuItem>(&MenuItem::text, "Portable sequence", &PortableSequenceMenuItem::mw, this));
+		menu->addChild(createSubmenuItem("Portable sequence", "", [=](Menu* menu) {
+			menu->addChild(createMenuItem("Copy sequence", "", [=]() { copyPortableSequence(); }));
+			menu->addChild(createMenuItem("Paste sequence", "", [=]() { pastePortableSequence(); }));
+		}));
+
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<PhraseCvModeMenuItem>(&MenuItem::text, "Phrase CV mode", &PhraseCvModeMenuItem::module, module));
-		menu->addChild(construct<PhraseCountMenuItem>(&MenuItem::text, "Phrase count", &PhraseCountMenuItem::module, module));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<PHRASE_CV_MODE>("Phrase CV mode",
+			{
+				{ PHRASE_CV_MODE::OFF, "Off" },
+				{ PHRASE_CV_MODE::TRIG_FWD, "Trigger" },
+				{ PHRASE_CV_MODE::VOLT, "0..10V" },
+				{ PHRASE_CV_MODE::C4, "C4-G4" },
+				{ PHRASE_CV_MODE::ARM, "Arm" }
+			},
+			&module->phraseCvMode
+		));
+		menu->addChild(createSubmenuItem("Phrase count", string::f("%2u", module->phraseCount), [=](Menu* menu) {
+			for (int i = 0; i < 8; i++) {
+				menu->addChild(createMenuItem(string::f("%2u", i + 1), CHECKMARK(module->phraseCount == i + 1), [=]() { module->phraseSetCount(i + 1); }));
+			}
+		}));
+
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<PatternModeMenuItem>(&MenuItem::text, "Patterns", &PatternModeMenuItem::module, module));
-		menu->addChild(construct<PatternCountMenuItem>(&MenuItem::text, "Pattern count", &PatternCountMenuItem::module, module));
-		menu->addChild(construct<PatternMutateMenuItem>(&MenuItem::text, "Pattern mutate", &PatternMutateMenuItem::module, module));
+		menu->addChild(createSubmenuItem("Patterns", "", [=](Menu* menu) {
+			for (int i = 0; i < (int)PATTERN_TYPE::NUM; i++) {
+				menu->addChild(construct<PatternModeItem>(&MenuItem::text, module->patternList.getNameAt(i), &PatternModeItem::module, module, &PatternModeItem::pm, module->patternList.at(i)));
+			}
+			menu->addChild(new MenuSeparator);
+			menu->addChild(createMenuItem("Reset patterns", "", [=]() { module->patternList.reset(); }));
+		}));
+		menu->addChild(createSubmenuItem("Pattern count", string::f("%2u", module->patternCount), [=](Menu* menu) {
+			for (int i = 0; i < 8; i++) {
+				menu->addChild(createMenuItem(string::f("%2u", i + 1), CHECKMARK(module->patternCount == i + 1), [=]() { module->patternSetCount(i + 1); }));
+			}
+		}));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<MUTATE_DISTRIBUTION>("Pattern mutate",
+			{
+				{ MUTATE_DISTRIBUTION::UNIFORM_FIXED_0, "Uniform distribution (fixed pattern 1)" },
+				{ MUTATE_DISTRIBUTION::UNIFORM, "Uniform distribution" },
+				{ MUTATE_DISTRIBUTION::BINOMIAL_FIXED_0, "Binomial distribution (fixed pattern 1)" },
+				{ MUTATE_DISTRIBUTION::BINOMIAL, "Binomial distribution" }
+			},
+			&module->patternMutateDist
+		));
+
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<StepCvModeMenuItem>(&MenuItem::text, "Step CV knob mode", &StepCvModeMenuItem::module, module));
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<StepRandomizeMenuItem>(&MenuItem::text, "RAND-port targets", &StepRandomizeMenuItem::module, module));
-		menu->addChild(construct<OutCvModeMenuItem>(&MenuItem::text, "CV-port range", &OutCvModeMenuItem::module, module));
-		menu->addChild(construct<OutAuxModeMenuItem>(&MenuItem::text, "OUT-port mode", &OutAuxModeMenuItem::module, module));
+		menu->addChild(createSubmenuItem("RAND-port targets", "", [=](Menu* menu) {
+			menu->addChild(createMenuLabel("Steps"));
+			menu->addChild(createRandomizeFlagMenuItem("Value", &module->randomizeFlags, FlowerProcessArgs::STEP_VALUE));
+			menu->addChild(createRandomizeFlagMenuItem("Disabled", &module->randomizeFlags, FlowerProcessArgs::STEP_DISABLED));
+			menu->addChild(createRandomizeFlagMenuItem("Auxiliary value", &module->randomizeFlags, FlowerProcessArgs::STEP_AUX));
+			menu->addChild(createRandomizeFlagMenuItem("Probability", &module->randomizeFlags, FlowerProcessArgs::STEP_PROB));
+			menu->addChild(createRandomizeFlagMenuItem("Ratchets", &module->randomizeFlags, FlowerProcessArgs::STEP_RATCHETS));
+			menu->addChild(createRandomizeFlagMenuItem("Slew", &module->randomizeFlags, FlowerProcessArgs::STEP_SLEW));
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createMenuLabel("Sequence"));
+			menu->addChild(createRandomizeFlagMenuItem("Start", &module->randomizeFlags, FlowerProcessArgs::SEQ_START));
+			menu->addChild(createRandomizeFlagMenuItem("Length", &module->randomizeFlags, FlowerProcessArgs::SEQ_LENGTH));
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createMenuLabel("Pattern"));
+			menu->addChild(createRandomizeFlagMenuItem("Count", &module->randomizeFlags, FlowerProcessArgs::PATTERN_CNT));
+			menu->addChild(createRandomizeFlagMenuItem("Repeats", &module->randomizeFlags, FlowerProcessArgs::PATTERN_RPT));
+		}));
+
+		appendFlowerSeqMenu(menu, module);
 	}
 
 	void copyPortableSequence() {

@@ -243,159 +243,20 @@ struct FlowerSeqExWidget : ThemedModuleWidget<FlowerSeqExModule<16, 8, 8>> {
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 		assert(module);
 
-		struct StepCvModeMenuItem : MenuItem {
-			MODULE* module;
-			StepCvModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct StepCvModeItem : MenuItem {
-					MODULE* module;
-					SEQ_CV_MODE stepCvMode;
-					void onAction(const event::Action& e) override {
-						module->seq.stepCvMode = stepCvMode;
-					}
-					void step() override {
-						rightText = module->seq.stepCvMode == stepCvMode ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<StepCvModeItem>(&MenuItem::text, "Attenuate", &StepCvModeItem::module, module, &StepCvModeItem::stepCvMode, SEQ_CV_MODE::ATTENUATE));
-				menu->addChild(construct<StepCvModeItem>(&MenuItem::text, "Sum", &StepCvModeItem::module, module, &StepCvModeItem::stepCvMode, SEQ_CV_MODE::SUM));
-				return menu;
-			}
-		}; // StepCvModeMenuItem
-
-		struct StepRandomizeMenuItem : MenuItem {
-			MODULE* module;
-			StepRandomizeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct InheritRandomizeItem : MenuItem {
-					MODULE* module;
-					void onAction(const event::Action& e) override {
-						module->randomizeInherit ^= true;
-					}
-					void step() override {
-						rightText = module->randomizeInherit ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				struct StepRandomizeItem : MenuItem {
-					MODULE* module;
-					int idx;
-					void onAction(const event::Action& e) override {
-						module->randomizeFlags.flip(idx);
-					}
-					void step() override {
-						rightText = module->randomizeFlags.test(idx) ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<InheritRandomizeItem>(&MenuItem::text, "Trigger from master", &InheritRandomizeItem::module, module));
-				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Steps"));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Value", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_VALUE));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Disabled", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_DISABLED));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Auxiliary value", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_AUX));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Probability", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_PROB));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Ratchets", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_RATCHETS));
-				menu->addChild(construct<StepRandomizeItem>(&MenuItem::text, "Slew", &StepRandomizeItem::module, module, &StepRandomizeItem::idx, FlowerProcessArgs::STEP_SLEW));
-				return menu;
-			}
-		}; // StepRandomizeMenuItem
-
-		struct OutCvModeMenuItem : MenuItem {
-			MODULE* module;
-			OutCvModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct OutCvModeItem : MenuItem {
-					MODULE* module;
-					OUT_CV_MODE outCvMode;
-					void onAction(const event::Action& e) override {
-						module->seq.outCvMode = outCvMode;
-					}
-					void step() override {
-						rightText = module->seq.outCvMode == outCvMode ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				struct OutCvClampItem : MenuItem {
-					MODULE* module;
-					void onAction(const event::Action& e) override {
-						module->seq.outCvClamp ^= true;
-					}
-					void step() override {
-						rightText = module->seq.outCvClamp ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "-10..10V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::BI_10V));
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "-5..5V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::BI_5V));
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "-1..1V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::BI_1V));
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "0..10V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::UNI_10V));
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "0..5V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::UNI_5V));
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "0..3V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::UNI_3V));
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "0..2V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::UNI_2V));
-				menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "0..1V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUT_CV_MODE::UNI_1V));
-				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<OutCvClampItem>(&MenuItem::text, "Clamp output", &OutCvClampItem::module, module));
-				return menu;
-			}
-		}; // OutCvModeMenuItem
-
-		struct OutAuxModeMenuItem : MenuItem {
-			MODULE* module;
-			OutAuxModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct OutAuxModeItem : MenuItem {
-					MODULE* module;
-					OUT_AUX_MODE outAuxMode;
-					void onAction(const event::Action& e) override {
-						module->seq.outAuxMode = outAuxMode;
-					}
-					void step() override {
-						rightText = module->seq.outAuxMode == outAuxMode ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<OutAuxModeItem>(&MenuItem::text, "Trigger", &OutAuxModeItem::module, module, &OutAuxModeItem::outAuxMode, OUT_AUX_MODE::TRIG));
-				menu->addChild(construct<OutAuxModeItem>(&MenuItem::text, "Slewed trigger", &OutAuxModeItem::module, module, &OutAuxModeItem::outAuxMode, OUT_AUX_MODE::TRIG_SLEW));
-				menu->addChild(construct<OutAuxModeItem>(&MenuItem::text, "Clock", &OutAuxModeItem::module, module, &OutAuxModeItem::outAuxMode, OUT_AUX_MODE::CLOCK));
-				menu->addChild(construct<OutAuxModeItem>(&MenuItem::text, "Auxiliary sequence", &OutAuxModeItem::module, module, &OutAuxModeItem::outAuxMode, OUT_AUX_MODE::AUXILIARY));
-				return menu;
-			}
-		}; // OutAuxModeMenuItem
-
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<StepCvModeMenuItem>(&MenuItem::text, "Step CV knob mode", &StepCvModeMenuItem::module, module));
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<StepRandomizeMenuItem>(&MenuItem::text, "RAND-port targets", &StepRandomizeMenuItem::module, module));
-		menu->addChild(construct<OutCvModeMenuItem>(&MenuItem::text, "CV-port range", &OutCvModeMenuItem::module, module));
-		menu->addChild(construct<OutAuxModeMenuItem>(&MenuItem::text, "OUT-port mode", &OutAuxModeMenuItem::module, module));
+		menu->addChild(createSubmenuItem("RAND-port targets", "", [=](Menu* menu) {
+			menu->addChild(createBoolPtrMenuItem("Trigger from master", "", &module->randomizeInherit));
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createMenuLabel("Steps"));
+			menu->addChild(createRandomizeFlagMenuItem("Value", &module->randomizeFlags, FlowerProcessArgs::STEP_VALUE));
+			menu->addChild(createRandomizeFlagMenuItem("Disabled", &module->randomizeFlags, FlowerProcessArgs::STEP_DISABLED));
+			menu->addChild(createRandomizeFlagMenuItem("Auxiliary value", &module->randomizeFlags, FlowerProcessArgs::STEP_AUX));
+			menu->addChild(createRandomizeFlagMenuItem("Probability", &module->randomizeFlags, FlowerProcessArgs::STEP_PROB));
+			menu->addChild(createRandomizeFlagMenuItem("Ratchets", &module->randomizeFlags, FlowerProcessArgs::STEP_RATCHETS));
+			menu->addChild(createRandomizeFlagMenuItem("Slew", &module->randomizeFlags, FlowerProcessArgs::STEP_SLEW));
+		}));
+
+		appendFlowerSeqMenu(menu, module);
 	}
 };
 
