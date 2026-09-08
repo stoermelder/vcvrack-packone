@@ -384,8 +384,8 @@ struct FlowerSeqModule : Module {
 		seqArgs.patternMult = phrases[phraseIndex].patterns[patternIndex].mult;
 
 		// Broadcast the same tick to both expander sides. Each side owns a distinct
-		// producer/consumer pair (see B1 in var/Flower_review.md), so the data must be
-		// published to both explicitly rather than relying on a single aliased buffer.
+		// producer/consumer pair, so the data must be published to both explicitly rather
+		// than relying on a single shared buffer.
 		*reinterpret_cast<FlowerProcessArgs*>(leftExpander.producerMessage) = seqArgs;
 		*reinterpret_cast<FlowerProcessArgs*>(rightExpander.producerMessage) = seqArgs;
 

@@ -177,7 +177,7 @@ struct PatternList {
 		pos = (pos + 1) % last;
 	}
 	void prev() {
-		pos = (pos - 1 + SIZE) % last;
+		pos = (pos - 1 + last) % last;
 	}
 	PATTERN_TYPE current() {
 		return slot[pos];
