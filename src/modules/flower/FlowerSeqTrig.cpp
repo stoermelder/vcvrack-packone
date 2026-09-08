@@ -89,7 +89,7 @@ struct FlowerTrigModule : Module {
 
 	void process(const ProcessArgs& args) override {
 		Module* mr = rightExpander.module;
-		if (!mr || !(mr->model->plugin->slug == "Stoermelder-P1") || !(mr->model->slug == "FlowerSeq" || mr->model->slug == "FlowerTrig")) return;
+		if (!mr || !(isFlowerSeqModel(mr->model) || isFlowerTrigModel(mr->model))) return;
 
 		auto seqArgs = reinterpret_cast<FlowerProcessArgs*>(mr->leftExpander.consumerMessage);
 

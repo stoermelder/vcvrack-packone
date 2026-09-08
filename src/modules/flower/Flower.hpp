@@ -8,6 +8,13 @@
 namespace StoermelderPackOne {
 namespace Flower {
 
+inline bool isFlowerSeqModel(Model* model) {
+	return model == modelFlowerSeq || model == modelFlowerSeqEx;
+}
+inline bool isFlowerTrigModel(Model* model) {
+	return model == modelFlowerSeqTrig;
+}
+
 enum class OUT_CV_MODE {
 	BI_1V = 0,
 	BI_5V = 1,
