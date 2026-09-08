@@ -4,6 +4,14 @@
 
 using namespace StoermelderPackOne::Flower;
 
+// Only the Model* globals are needed here (isFlowerSeqModel()/isFlowerTrigModel() compare
+// pointers), not the module classes themselves — this file never constructs a FlowerSeqModule/
+// FlowerSeqExModule/FlowerTrigModule, so it never includes their .cpp files. The globals'
+// definitions come from the linked plugin.dylib; SYNC_MODEL reconciles this TU's copy of each
+// pointer with the dylib's after init() runs.
+SYNC_MODEL(modelFlowerSeq, "FlowerSeq");
+SYNC_MODEL(modelFlowerSeqEx, "FlowerSeqEx");
+SYNC_MODEL(modelFlowerSeqTrig, "FlowerSeqTrig");
 Test::TestContext<> testContext;
 
 // Asserts the invariant every PatternList mutator must preserve: slot[] is a permutation of
@@ -22,6 +30,175 @@ static void checkPermutationInvariant(PatternList& list) {
 		CHECK(list.map[(int)t] == i);
 	}
 }
+
+
+TEST_CASE("Model predicates isFlowerSeqModel()/isFlowerTrigModel()", "[Flower]") {
+	SECTION("isFlowerSeqModel() is true for FlowerSeq and FlowerSeqEx, false for FlowerSeqTrig") {
+		CHECK(isFlowerSeqModel(modelFlowerSeq));
+		CHECK(isFlowerSeqModel(modelFlowerSeqEx));
+		CHECK_FALSE(isFlowerSeqModel(modelFlowerSeqTrig));
+	}
+
+	SECTION("isFlowerTrigModel() is true only for FlowerSeqTrig") {
+		CHECK(isFlowerTrigModel(modelFlowerSeqTrig));
+		CHECK_FALSE(isFlowerTrigModel(modelFlowerSeq));
+		CHECK_FALSE(isFlowerTrigModel(modelFlowerSeqEx));
+	}
+
+	SECTION("both predicates are false for nullptr") {
+		CHECK_FALSE(isFlowerSeqModel(nullptr));
+		CHECK_FALSE(isFlowerTrigModel(nullptr));
+	}
+
+	SECTION("both predicates are false for a foreign model") {
+		Model foreign;
+		CHECK_FALSE(isFlowerSeqModel(&foreign));
+		CHECK_FALSE(isFlowerTrigModel(&foreign));
+	}
+
+	// Registration guard: the cheap regression for the class of bug B2 was (a hand-written
+	// "FlowerTrig" slug string matching no registered model) even though the fix itself moved
+	// to pointer comparison and no longer touches slugs at all.
+	SECTION("registered slugs match plugin.json") {
+		REQUIRE(modelFlowerSeq != nullptr);
+		REQUIRE(modelFlowerSeqEx != nullptr);
+		REQUIRE(modelFlowerSeqTrig != nullptr);
+		CHECK(modelFlowerSeq->slug == "FlowerSeq");
+		CHECK(modelFlowerSeqEx->slug == "FlowerSeqEx");
+		CHECK(modelFlowerSeqTrig->slug == "FlowerSeqTrig");
+	}
+}
+
+
+TEST_CASE("FlowerProcessArgs defaults and reset()", "[Flower][FlowerProcessArgs]") {
+	SECTION("default-constructed tick flags are false") {
+		FlowerProcessArgs args;
+		CHECK_FALSE(args.clockTick);
+		CHECK_FALSE(args.stepTick);
+		CHECK_FALSE(args.randTick);
+		CHECK_FALSE(args.patternTick);
+	}
+
+	SECTION("default-constructed stepLength is a safe, non-zero value") {
+		// See B9 in var/Flower_review.md: an expander that never receives a real tick is left
+		// holding a default-constructed FlowerProcessArgs, and ADD_2STEPS does
+		// `% args.stepLength` — 0 there is integer division by zero.
+		FlowerProcessArgs args;
+		CHECK(args.stepLength == 1);
+	}
+
+	SECTION("reset() clears exactly the four tick flags and leaves position/config alone") {
+		FlowerProcessArgs args;
+		args.clockTick = true;
+		args.stepTick = true;
+		args.randTick = true;
+		args.patternTick = true;
+		args.stepIndex = 7;
+		args.stepStart = 3;
+		args.stepLength = 9;
+		args.running = true;
+		args.sampleTime = 1.f / 48000.f;
+		args.sampleRate = 48000.f;
+		args.patternType = PATTERN_TYPE::SEQ_TRANSPOSE;
+		args.patternMult = 4;
+		args.clock = 7.5f;
+
+		args.reset();
+
+		CHECK_FALSE(args.clockTick);
+		CHECK_FALSE(args.stepTick);
+		CHECK_FALSE(args.randTick);
+		CHECK_FALSE(args.patternTick);
+		// Everything else is untouched — an expander's forwarded copy relies on this: it calls
+		// reset() to clear the tick flags on its own outgoing struct without disturbing the
+		// position/config fields it just copied from upstream.
+		CHECK(args.stepIndex == 7);
+		CHECK(args.stepStart == 3);
+		CHECK(args.stepLength == 9);
+		CHECK(args.running == true);
+		CHECK(args.sampleTime == 1.f / 48000.f);
+		CHECK(args.sampleRate == 48000.f);
+		CHECK(args.patternType == PATTERN_TYPE::SEQ_TRANSPOSE);
+		CHECK(args.patternMult == 4);
+		CHECK(args.clock == 7.5f);
+	}
+
+	SECTION("copy assignment is a full value copy") {
+		// The master's publication path (*producer = seqArgs) and both expanders' forwarding
+		// (*seqArgs1 = *seqArgs) are plain assignments through this struct — a future member
+		// that isn't a plain value (a pointer, a non-copyable type) would break the tick bus
+		// silently, by either aliasing state across modules or failing to compile in a way
+		// that's easy to work around incorrectly (e.g. a hand-written partial copy).
+		FlowerProcessArgs src;
+		src.randomizeFlagsMaster.set(FlowerProcessArgs::STEP_AUX);
+		src.randomizeFlagsSlave.set(FlowerProcessArgs::PATTERN_RPT);
+		src.sampleTime = 1.f / 44100.f;
+		src.sampleRate = 44100.f;
+		src.running = true;
+		src.clockTick = true;
+		src.clock = 3.3f;
+		src.stepTick = true;
+		src.randTick = true;
+		src.stepIndex = 5;
+		src.stepStart = 2;
+		src.stepLength = 8;
+		src.patternTick = true;
+		src.patternType = PATTERN_TYPE::AUX_RAND;
+		src.patternMult = 3;
+
+		FlowerProcessArgs dst;
+		dst = src;
+
+		CHECK(dst.randomizeFlagsMaster == src.randomizeFlagsMaster);
+		CHECK(dst.randomizeFlagsSlave == src.randomizeFlagsSlave);
+		CHECK(dst.sampleTime == src.sampleTime);
+		CHECK(dst.sampleRate == src.sampleRate);
+		CHECK(dst.running == src.running);
+		CHECK(dst.clockTick == src.clockTick);
+		CHECK(dst.clock == src.clock);
+		CHECK(dst.stepTick == src.stepTick);
+		CHECK(dst.randTick == src.randTick);
+		CHECK(dst.stepIndex == src.stepIndex);
+		CHECK(dst.stepStart == src.stepStart);
+		CHECK(dst.stepLength == src.stepLength);
+		CHECK(dst.patternTick == src.patternTick);
+		CHECK(dst.patternType == src.patternType);
+		CHECK(dst.patternMult == src.patternMult);
+	}
+
+	SECTION("RandomizeFlags named indices are distinct and within the 24-bit range") {
+		int indices[] = {
+			FlowerProcessArgs::STEP_VALUE, FlowerProcessArgs::STEP_DISABLED,
+			FlowerProcessArgs::STEP_AUX, FlowerProcessArgs::STEP_PROB,
+			FlowerProcessArgs::STEP_RATCHETS, FlowerProcessArgs::STEP_SLEW,
+			FlowerProcessArgs::STEP_ATTACK, FlowerProcessArgs::STEP_DECAY,
+			FlowerProcessArgs::SEQ_START, FlowerProcessArgs::SEQ_LENGTH,
+			FlowerProcessArgs::PATTERN_CNT, FlowerProcessArgs::PATTERN_RPT,
+		};
+		const int count = sizeof(indices) / sizeof(indices[0]);
+
+		for (int i = 0; i < count; i++) {
+			CATCH_INFO("index " << i << " = " << indices[i]);
+			CHECK(indices[i] >= 0);
+			CHECK(indices[i] < 24);
+		}
+		for (int i = 0; i < count; i++) {
+			for (int j = i + 1; j < count; j++) {
+				CATCH_INFO("indices[" << i << "]=" << indices[i] << " vs indices[" << j << "]=" << indices[j]);
+				CHECK(indices[i] != indices[j]);
+			}
+		}
+
+		// Setting every named bit and nothing else must round-trip through the bitset cleanly —
+		// this is what the gaps at 8-11 and 14-15 would silently corrupt if a future index
+		// collided with one of them.
+		FlowerProcessArgs::RandomizeFlags flags;
+		for (int i = 0; i < count; i++) flags.set(indices[i]);
+		CHECK(flags.count() == (size_t)count);
+		for (int i = 0; i < count; i++) CHECK(flags.test(indices[i]));
+	}
+}
+
 
 TEST_CASE("PatternList construction and invariants", "[Flower][PatternList]") {
 	PatternList list;

@@ -116,7 +116,8 @@ struct FlowerTrigModule : Module {
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		seq.dataFromJson(rootJ);
-		randomizeFlags = FlowerProcessArgs::RandomizeFlags(json_string_value(json_object_get(rootJ, "randomizeFlags")));
+		const char* randomizeFlagsJ = json_string_value(json_object_get(rootJ, "randomizeFlags"));
+		if (randomizeFlagsJ) randomizeFlags = FlowerProcessArgs::RandomizeFlags(randomizeFlagsJ);
 		randomizeInherit = json_is_true(json_object_get(rootJ, "randomizeInherit"));
 	}
 };

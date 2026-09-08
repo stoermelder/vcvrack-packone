@@ -15,13 +15,93 @@ typedef FlowerSeqModule<16, 8, 8> MasterModule;
 typedef FlowerSeqExModule<16, 8, 8> OffspringModule;
 typedef FlowerTrigModule<16, 8, 8> SeedsModule;
 
+
+TEST_CASE("FlowerSeqModule preset JSON fuzzing", "[Flower][JSON]") {
+	Test::ModuleScaffold<MasterModule> mods;
+	auto module = mods.create("FlowerSeq");
+
+	SECTION("Every property is null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("Every property tolerates a wrong-typed value") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("Every array tolerates being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+}
+
+TEST_CASE("FlowerSeqExModule (OFFSPRING) preset JSON fuzzing", "[Flower][JSON]") {
+	Test::ModuleScaffold<OffspringModule> mods;
+	auto module = mods.create("FlowerSeqEx");
+
+	SECTION("Every property is null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("Every property tolerates a wrong-typed value") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("Every array tolerates being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+}
+
+TEST_CASE("FlowerTrigModule (SEEDS) preset JSON fuzzing", "[Flower][JSON]") {
+	Test::ModuleScaffold<SeedsModule> mods;
+	auto module = mods.create("FlowerSeqTrig");
+
+	SECTION("Every property is null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("Every property tolerates a wrong-typed value") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("Every array tolerates being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+}
+
+
 // FlowerSeqModule must give leftExpander and rightExpander independent FlowerProcessArgs
 // buffer pairs. Rack's Expander contract (and Engine.cpp, which flips each side
 // independently) assumes every module hands out one distinct producer/consumer pair per side.
 // Aliasing them together would mean the two sides are never actually double-buffered from each
 // other: swapping the master's messageFlipRequested for one side would silently swap the roles
 // of the exact same two objects the other side is also holding pointers into.
-TEST_CASE("Expander buffers", "[Flower][B1]") {
+TEST_CASE("Expander buffers", "[Flower]") {
 	Test::ModuleScaffold<MasterModule> mods;
 	MasterModule* m = mods.create("FlowerSeq");
 
@@ -59,7 +139,7 @@ TEST_CASE("Expander buffers", "[Flower][B1]") {
 // (using `+ SIZE` before the modulus instead of `+ last`), which only gave the right answer when
 // last == SIZE and otherwise jumped to an arbitrary slot or failed to move at all for any
 // smaller, partially-enabled pattern set.
-TEST_CASE("PatternList::next() and prev()", "[Flower][B3]") {
+TEST_CASE("PatternList::next() and prev()", "[Flower]") {
 	PatternList list;
 
 	SECTION("prev() and next() are inverses at every list size") {
@@ -219,7 +299,7 @@ TEST_CASE("PatternList::next() and prev()", "[Flower][B3]") {
 // active entry (disable() refuses to go below that) — an unbounded search that just increments
 // past NUM walks off the end of PatternList::map into undefined memory instead of wrapping back
 // to the low-numbered types.
-TEST_CASE("FlowerSeqModule::patternCheck()", "[Flower][B4]") {
+TEST_CASE("FlowerSeqModule::patternCheck()", "[Flower]") {
 	Test::ModuleScaffold<MasterModule> mods;
 	MasterModule* m = mods.create("FlowerSeq");
 
@@ -299,7 +379,7 @@ TEST_CASE("FlowerSeqModule::patternCheck()", "[Flower][B4]") {
 // operand's bit width (undefined behaviour) and, since it's driven by the low bits of a full
 // 32-bit random value rather than being confined to [16, 31], loses the intended "pick bit
 // (stepRandomIndex % 16) + 16 of stepRandomSeqAuxiliary" semantics entirely.
-TEST_CASE("AUX_RAND sign bit selection", "[Flower][B5]") {
+TEST_CASE("AUX_RAND sign bit selection", "[Flower]") {
 	Test::ModuleScaffold<MasterModule> mods;
 	MasterModule* m = mods.create("FlowerSeq");
 
@@ -368,7 +448,7 @@ TEST_CASE("AUX_RAND sign bit selection", "[Flower][B5]") {
 	CHECK(settledVoltage() == Catch::Approx(1.5f));
 }
 
-TEST_CASE("Chain delivers current tick to both SEEDS and OFFSPRING", "[Flower][B1]") {
+TEST_CASE("Chain delivers current tick to both SEEDS and OFFSPRING", "[Flower]") {
 	// End-to-end regression: a full SEEDS - FLOWER - OFFSPRING chain, driven by clock pulses,
 	// must have both expanders reading the master's current-tick step position off of
 	// consistent, non-aliased state.
