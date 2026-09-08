@@ -84,7 +84,7 @@ struct FlowerProcessArgs {
 
 	int stepIndex;
 	int stepStart;
-	int stepLength;
+	int stepLength = 1;
 
 	bool patternTick = false;
 	PATTERN_TYPE patternType;
@@ -189,9 +189,33 @@ struct PatternList {
 		json_object_set_new(rootJ, "data", json_string(s.c_str()));
 	}
 	void fromJson(json_t* rootJ) {
-		last = json_integer_value(json_object_get(rootJ, "last"));
-		std::string s = json_string_value(json_object_get(rootJ, "data"));
-		for (int i = 0; i < SIZE; i++) { slot[i] = (PATTERN_TYPE)(s[i] - 97); map[(int)slot[i]] = i; }
+		json_t* lastJ = json_object_get(rootJ, "last");
+		last = lastJ ? clamp((int)json_integer_value(lastJ), 1, SIZE) : SIZE;
+
+		const char* dataJ = json_string_value(json_object_get(rootJ, "data"));
+		if (!dataJ) {
+			reset(last);
+			return;
+		}
+		std::string s = dataJ;
+		if ((int)s.size() < SIZE) {
+			reset(last);
+			return;
+		}
+		bool seen[SIZE] = {};
+		for (int i = 0; i < SIZE; i++) {
+			int t = s[i] - 97;
+			if (t < 0 || t >= SIZE || seen[t]) {
+				// Malformed data (out-of-range byte, or a type repeated so another is missing)
+				// would otherwise leave slot[]/map[] as something other than a permutation of
+				// every PATTERN_TYPE — fall back to a known-good state instead.
+				reset(last);
+				return;
+			}
+			seen[t] = true;
+			slot[i] = (PATTERN_TYPE)t;
+			map[t] = i;
+		}
 	}
 };
 

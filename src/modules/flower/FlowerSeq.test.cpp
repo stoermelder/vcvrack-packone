@@ -21,7 +21,7 @@ typedef FlowerTrigModule<16, 8, 8> SeedsModule;
 // Aliasing them together would mean the two sides are never actually double-buffered from each
 // other: swapping the master's messageFlipRequested for one side would silently swap the roles
 // of the exact same two objects the other side is also holding pointers into.
-TEST_CASE("FlowerSeqModule expander buffers", "[Flower][B1]") {
+TEST_CASE("Expander buffers", "[Flower][B1]") {
 	Test::ModuleScaffold<MasterModule> mods;
 	MasterModule* m = mods.create("FlowerSeq");
 
@@ -179,6 +179,38 @@ TEST_CASE("PatternList::next() and prev()", "[Flower][B3]") {
 		list.next();
 		CHECK(list.pos == 0);
 	}
+
+	SECTION("current() equals slot[pos] after each cursor move") {
+		list.reset(6);
+		list.setPos(2);
+		CHECK(list.current() == list.at(list.pos));
+
+		list.next();
+		CHECK(list.current() == list.at(list.pos));
+
+		list.prev();
+		list.prev();
+		CHECK(list.current() == list.at(list.pos));
+	}
+
+	SECTION("KNOWN BUG: disable() never touches pos, so shrinking last past it leaves current() "
+			"reading an inactive type") {
+		// This is a live path: the pattern-toggle menu disables a type, then a MUTATE trigger
+		// (or another "next pattern" press) calls next()/prev()/current() without anything
+		// having range-checked pos in between. Pinned here as current (buggy) behaviour, not
+		// as a requirement — fixing it is a decision for whoever picks up PatternList next.
+		list.reset(PatternList::SIZE);
+		list.setPos(7);
+		REQUIRE(list.active(list.current()));
+
+		while (list.last > 1) {
+			list.disable(list.at(list.last - 1));
+		}
+
+		REQUIRE(list.last == 1);
+		REQUIRE(list.pos == 7);
+		CHECK_FALSE(list.active(list.current()));
+	}
 }
 
 // FlowerSeqModule::patternCheck() reassigns any phrase pattern whose type has become inactive
@@ -267,7 +299,7 @@ TEST_CASE("FlowerSeqModule::patternCheck()", "[Flower][B4]") {
 // operand's bit width (undefined behaviour) and, since it's driven by the low bits of a full
 // 32-bit random value rather than being confined to [16, 31], loses the intended "pick bit
 // (stepRandomIndex % 16) + 16 of stepRandomSeqAuxiliary" semantics entirely.
-TEST_CASE("FlowerSeqModule AUX_RAND sign bit selection", "[Flower][B5]") {
+TEST_CASE("AUX_RAND sign bit selection", "[Flower][B5]") {
 	Test::ModuleScaffold<MasterModule> mods;
 	MasterModule* m = mods.create("FlowerSeq");
 
@@ -336,7 +368,7 @@ TEST_CASE("FlowerSeqModule AUX_RAND sign bit selection", "[Flower][B5]") {
 	CHECK(settledVoltage() == Catch::Approx(1.5f));
 }
 
-TEST_CASE("FlowerSeqModule chain delivers current tick to both SEEDS and OFFSPRING", "[Flower][B1]") {
+TEST_CASE("Chain delivers current tick to both SEEDS and OFFSPRING", "[Flower][B1]") {
 	// End-to-end regression: a full SEEDS - FLOWER - OFFSPRING chain, driven by clock pulses,
 	// must have both expanders reading the master's current-tick step position off of
 	// consistent, non-aliased state.
