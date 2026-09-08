@@ -181,6 +181,86 @@ TEST_CASE("PatternList::next() and prev()", "[Flower][B3]") {
 	}
 }
 
+// FlowerSeqModule::patternCheck() reassigns any phrase pattern whose type has become inactive
+// (disabled in patternList) to the next active type. The search must wrap at PATTERN_TYPE::NUM
+// and be bounded by the number of pattern types, since patternList always has at least one
+// active entry (disable() refuses to go below that) — an unbounded search that just increments
+// past NUM walks off the end of PatternList::map into undefined memory instead of wrapping back
+// to the low-numbered types.
+TEST_CASE("FlowerSeqModule::patternCheck()", "[Flower][B4]") {
+	Test::ModuleScaffold<MasterModule> mods;
+	MasterModule* m = mods.create("FlowerSeq");
+
+	SECTION("reassigns a disabled type to the next active one") {
+		m->patternList.reset();
+		m->patternList.disable(PATTERN_TYPE::SEQ_INV);
+		m->phrases[0].patterns[0].type = PATTERN_TYPE::SEQ_INV;
+
+		m->patternCheck();
+
+		CHECK(m->patternList.active(m->phrases[0].patterns[0].type));
+		CHECK(m->phrases[0].patterns[0].type != PATTERN_TYPE::SEQ_INV);
+	}
+
+	SECTION("leaves an already-active type untouched") {
+		m->patternList.reset();
+		m->phrases[0].patterns[0].type = PATTERN_TYPE::SEQ_FWD;
+
+		m->patternCheck();
+
+		CHECK(m->phrases[0].patterns[0].type == PATTERN_TYPE::SEQ_FWD);
+	}
+
+	SECTION("wraps past the highest type instead of walking off the end of the map") {
+		// AUX_RAND (12) is the highest PATTERN_TYPE. Disabling it and leaving a phrase pointed
+		// at it is exactly the case that used to read PatternList::map[13], map[14], ... — this
+		// asserts the search wraps back to a low-numbered active type instead.
+		m->patternList.reset();
+		m->patternList.disable(PATTERN_TYPE::AUX_RAND);
+		m->phrases[0].patterns[0].type = PATTERN_TYPE::AUX_RAND;
+
+		m->patternCheck();
+
+		CHECK(m->patternList.active(m->phrases[0].patterns[0].type));
+		CHECK((int)m->phrases[0].patterns[0].type < (int)PATTERN_TYPE::NUM);
+	}
+
+	SECTION("checks every phrase and every pattern slot") {
+		// MasterModule == FlowerSeqModule<16, 8, 8>: 8 phrases, 8 pattern slots per phrase.
+		const int kPhrases = 8;
+		const int kPatterns = 8;
+		m->patternList.reset();
+		m->patternList.disable(PATTERN_TYPE::AUX_RAND);
+		for (int i = 0; i < kPhrases; i++) {
+			for (int j = 0; j < kPatterns; j++) {
+				m->phrases[i].patterns[j].type = PATTERN_TYPE::AUX_RAND;
+			}
+		}
+
+		m->patternCheck();
+
+		for (int i = 0; i < kPhrases; i++) {
+			for (int j = 0; j < kPatterns; j++) {
+				CHECK(m->patternList.active(m->phrases[i].patterns[j].type));
+			}
+		}
+	}
+
+	SECTION("reducing to a single active type still terminates and lands on it") {
+		m->patternList.reset();
+		while (m->patternList.last > 1) {
+			m->patternList.disable(m->patternList.at(m->patternList.last - 1));
+		}
+		REQUIRE(m->patternList.last == 1);
+		PATTERN_TYPE onlyActive = m->patternList.at(0);
+		m->phrases[0].patterns[0].type = (PATTERN_TYPE)(((int)onlyActive + 1) % (int)PATTERN_TYPE::NUM);
+
+		m->patternCheck();
+
+		CHECK(m->phrases[0].patterns[0].type == onlyActive);
+	}
+}
+
 TEST_CASE("FlowerSeqModule chain delivers current tick to both SEEDS and OFFSPRING", "[Flower][B1]") {
 	// End-to-end regression: a full SEEDS - FLOWER - OFFSPRING chain, driven by clock pulses,
 	// must have both expanders reading the master's current-tick step position off of

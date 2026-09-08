@@ -487,8 +487,12 @@ struct FlowerSeqModule : Module {
 	void patternCheck() {
 		for (int i = 0; i < PHRASES; i++) {
 			for (int j = 0; j < PATTERNS; j++) {
-				while (!patternList.active(phrases[i].patterns[j].type))
-					phrases[i].patterns[j].type = (PATTERN_TYPE)((int)phrases[i].patterns[j].type + 1);
+				// disable() guarantees patternList.last >= 1, so a valid, active type always
+				// exists within one full lap; wrap at NUM instead of incrementing past it.
+				int t = (int)phrases[i].patterns[j].type;
+				for (int k = 0; k < (int)PATTERN_TYPE::NUM && !patternList.active((PATTERN_TYPE)t); k++)
+					t = (t + 1) % (int)PATTERN_TYPE::NUM;
+				phrases[i].patterns[j].type = (PATTERN_TYPE)t;
 			}
 		}
 	}
