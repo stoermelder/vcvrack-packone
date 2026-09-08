@@ -261,6 +261,81 @@ TEST_CASE("FlowerSeqModule::patternCheck()", "[Flower][B4]") {
 	}
 }
 
+// AUX_RAND's sign term picks a second random bit from stepRandomSeqAuxiliary using a shift
+// amount derived from stepRandomIndex, an unreduced random::u32(). The shift amount must be
+// bounded to a valid bit position before shifting; an unbounded amount both exceeds the
+// operand's bit width (undefined behaviour) and, since it's driven by the low bits of a full
+// 32-bit random value rather than being confined to [16, 31], loses the intended "pick bit
+// (stepRandomIndex % 16) + 16 of stepRandomSeqAuxiliary" semantics entirely.
+TEST_CASE("FlowerSeqModule AUX_RAND sign bit selection", "[Flower][B5]") {
+	Test::ModuleScaffold<MasterModule> mods;
+	MasterModule* m = mods.create("FlowerSeq");
+
+	// Isolate processOutput()'s AUX_RAND arithmetic from every other moving part: no CV input,
+	// no step disable/probability/clamp, zero slew (so the output settles in one call), and a
+	// known auxiliary voltage so the sign term is the only thing that can move the result.
+	m->seq.reset();
+	m->seq.outCvMode = OUT_CV_MODE::UNI_3V;
+	m->seq.outCvClamp = false;
+	m->seq.stepGet(0)->disabled = false;
+	m->seq.stepGet(0)->probability = 1.f;
+	m->seq.stepGet(0)->slew = 0.f;
+	m->seq.stepGet(0)->auxiliary = 1.f;
+	m->params[MasterModule::PARAM_STEP + 0].setValue(0.5f);
+
+	FlowerProcessArgs args;
+	args.reset();
+	args.running = true;
+	args.sampleTime = 1.f / 44100.f;
+	args.sampleRate = 44100.f;
+	args.stepStart = 0;
+	args.stepIndex = 0;
+	args.stepLength = 16;
+	args.patternType = PATTERN_TYPE::AUX_RAND;
+
+	auto settledVoltage = [&]() {
+		// stepSlew's shape (0.975, set by seq.reset()) makes it approach the target
+		// exponentially rather than linearly, so it needs many samples — not many calls — to
+		// fully settle; 4096 comfortably reaches the target to float precision at 44.1kHz.
+		float v = 0.f;
+		for (int i = 0; i < 4096; i++) {
+			m->seq.processOutput(args, false);
+			v = m->outputs[MasterModule::OUTPUT_CV].getVoltage();
+		}
+		return v;
+	};
+
+	// stepOutIndex is 0 here, so the first term ((1u << 0) & stepRandomSeqAuxiliary) selects
+	// bit 0. Setting stepRandomSeqAuxiliary's bit 0 alone (and no bit in [16, 31]) isolates the
+	// "+1" branch: sign == 1, so the output should land on base + auxiliary == 1.5 + 1.0 == 2.5.
+	m->seq.stepRandomSeqAuxiliary = 1u << 0;
+	m->seq.stepRandomIndex = 0;
+	CHECK(settledVoltage() == Catch::Approx(2.5f));
+
+	// Now select a high bit only, with a stepRandomIndex whose low-16 residue points at it:
+	// stepRandomIndex % 16 == 5 picks bit (5 + 16) == 21. With bit 0 clear and bit 21 set, only
+	// the "-1" branch should fire: sign == -1, output == base - auxiliary == 1.5 - 1.0 == 0.5.
+	m->seq.stepRandomSeqAuxiliary = 1u << 21;
+	m->seq.stepRandomIndex = 5;
+	CHECK(settledVoltage() == Catch::Approx(0.5f));
+
+	// The bug this guards against: stepRandomIndex is an unreduced random::u32(), so a caller
+	// can hand in a value whose low-16 residue (16 % 16 == 0, picking bit 16) does not match
+	// what a naive "just add 16 and shift" would do on hardware that masks an oversized shift
+	// count modulo the operand width — (16 + 16) % 32 == 0, i.e. bit 0, a different bit
+	// entirely. Setting only bit 16 isolates that divergence: the fixed code must select bit
+	// 16 (sign == -1, output == 0.5), not bit 0 (which would read as sign == +1, output == 2.5,
+	// matching the currently-set stepRandomSeqAuxiliary from the previous check).
+	m->seq.stepRandomSeqAuxiliary = 1u << 16;
+	m->seq.stepRandomIndex = 16;
+	CHECK(settledVoltage() == Catch::Approx(0.5f));
+
+	// Neither bit set: both terms are zero, sign == 0, output stays at the unmodified base value.
+	m->seq.stepRandomSeqAuxiliary = 0;
+	m->seq.stepRandomIndex = 5;
+	CHECK(settledVoltage() == Catch::Approx(1.5f));
+}
+
 TEST_CASE("FlowerSeqModule chain delivers current tick to both SEEDS and OFFSPRING", "[Flower][B1]") {
 	// End-to-end regression: a full SEEDS - FLOWER - OFFSPRING chain, driven by clock pulses,
 	// must have both expanders reading the master's current-tick step position off of

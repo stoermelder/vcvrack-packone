@@ -457,7 +457,10 @@ struct FlowerSeq {
 			}
 			case PATTERN_TYPE::AUX_RAND: {
 				stepOutIndex = (args.stepStart + args.stepIndex) % STEPS;
-				int sign = ((stepRandomSeqAuxiliary & (1 << stepOutIndex)) > 0) * 1 + ((stepRandomSeqAuxiliary & (1 << (stepRandomIndex + 16))) > 0) * -1;
+				// stepRandomIndex is an unreduced random::u32(), so its shift amount must be
+				// bounded to a valid bit position (here [16, 31]) before shifting — otherwise
+				// the shift exceeds the operand's bit width, which is undefined behaviour.
+				int sign = ((stepRandomSeqAuxiliary & (1u << stepOutIndex)) > 0) * 1 + ((stepRandomSeqAuxiliary & (1u << ((stepRandomIndex % 16) + 16))) > 0) * -1;
 				v = stepGetValueScaled(stepOutIndex);
 				v += sign * stepGet(stepOutIndex)->auxiliary;
 				break;
