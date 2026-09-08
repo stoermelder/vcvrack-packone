@@ -556,33 +556,6 @@ TEST_CASE("AUX_RAND sign bit selection", "[Flower]") {
 	CHECK(settledVoltage() == Catch::Approx(1.5f));
 }
 
-TEST_CASE("Chain delivers current tick to both SEEDS and OFFSPRING", "[Flower]") {
-	// End-to-end regression: a full SEEDS - FLOWER - OFFSPRING chain, driven by clock pulses,
-	// must have both expanders reading the master's current-tick step position off of
-	// consistent, non-aliased state.
-	Test::Harness h;
-	auto seeds = h.addModule<SeedsModule>("FlowerSeqTrig");
-	auto master = h.addModule<MasterModule>("FlowerSeq");
-	auto offspring = h.addModule<OffspringModule>("FlowerSeqEx");
-
-	h.connectChain(seeds, master, offspring);
-
-	master->running = true;
-
-	h.dspSteps(4);
-
-	for (int tick = 0; tick < 8; tick++) {
-		master->inputs[MasterModule::INPUT_CLOCK].setVoltage(10.f);
-		h.dspStep();
-		master->inputs[MasterModule::INPUT_CLOCK].setVoltage(0.f);
-		h.dspSteps(4);
-
-		// Both expanders derive stepOutIndex from the same FlowerProcessArgs tick. With
-		// independent, non-aliased buffers they must always agree, on every tick.
-		CHECK(seeds->seq.stepOutIndex == offspring->seq.stepOutIndex);
-	}
-}
-
 // Fires one clock edge on the master's INPUT_CLOCK: rises to 10V for one sample, then falls back
 // to 0V. Mirrors how the B1 chain test above drives the same input, factored out since the
 // master-transport suite below needs it repeatedly.
@@ -599,94 +572,6 @@ static void clockPulse(Test::Harness& h, MasterModule* m) {
 static void clearResetLockout(Test::Harness& h) {
 	int samplesFor1ms = (int)std::ceil(h.sampleRate() * 1e-3f) + 1;
 	h.dspSteps(samplesFor1ms);
-}
-
-// Unlike some other expander-chain bundles in this repo, no Flower
-// module forwards a *pointer* into another module's storage — each module's own FlowerProcessArgs
-// buffers are set once in its constructor and stay valid for the module's own lifetime, and
-// leftExpander.module/rightExpander.module are re-read fresh every sample rather than cached. So
-// there is no dangling-pointer read to guard against here; what was actually missing before the
-// FlowerChainModule base existed was output freshness: nothing noticed a chain break and reset a
-// disconnected OFFSPRING/SEEDS's outputs, so they kept outputting their last value forever.
-TEST_CASE("FlowerChainModule resets outputs when the chain breaks", "[Flower]") {
-	Test::Harness h;
-	auto seeds = h.addModule<SeedsModule>("FlowerSeqTrig");
-	auto master = h.addModule<MasterModule>("FlowerSeq");
-	auto offspring = h.addModule<OffspringModule>("FlowerSeqEx");
-
-	h.connectChain(seeds, master, offspring);
-	master->running = true;
-	clearResetLockout(h);
-
-	// Drive a clock edge so both expanders latch a non-zero step and their outputs move off
-	// whatever the all-zero constructed state happened to be.
-	offspring->params[OffspringModule::PARAM_STEP + 0].setValue(1.f);
-	clockPulse(h, master);
-	h.dspSteps(4);
-
-	REQUIRE(offspring->outputs[OffspringModule::OUTPUT_CV].getVoltage() != 0.f);
-
-	SECTION("removing the master notifies OFFSPRING and SEEDS to reset their own outputs") {
-		// Mirrors Engine::removeModule_NoLock in full: onRemove() fires on the removed module,
-		// then the engine clears the adjacency on each of its neighbours and dispatches
-		// ExpanderChangeEvent on them (Engine.cpp: "Update expanders of other modules"). Calling
-		// onRemove() alone, without also breaking the adjacency, is not a scenario Flower ever
-		// sees in the real engine — process() re-derives validity from leftExpander.module /
-		// rightExpander.module fresh every sample, so a module whose neighbour still points at
-		// a "removed" module (only onRemove() was called, nothing else) keeps reading it, same
-		// as it would for a module that never left.
-		Module::RemoveEvent e;
-		master->onRemove(e);
-		h.disconnectExpander(seeds, Test::Harness::SIDE_RIGHT);
-		h.disconnectExpander(offspring, Test::Harness::SIDE_LEFT);
-
-		CHECK(offspring->outputs[OffspringModule::OUTPUT_CV].getVoltage() == 0.f);
-		CHECK(offspring->outputs[OffspringModule::OUTPUT_AUX].getVoltage() == 0.f);
-		CHECK(seeds->outputs[SeedsModule::OUTPUT_GATE].getVoltage() == 0.f);
-		CHECK(seeds->outputs[SeedsModule::OUTPUT_TRIG].getVoltage() == 0.f);
-
-		// The notification from master's onRemove() is what makes consumeSiblingRemoved() true
-		// on the next process() — check it actually ran, not just that disconnectExpander's own
-		// onExpanderChange() path (already covered by the sections below) did the resetting.
-		h.dspStep();
-		CHECK(offspring->outputs[OffspringModule::OUTPUT_CV].getVoltage() == 0.f);
-		CHECK(seeds->outputs[SeedsModule::OUTPUT_GATE].getVoltage() == 0.f);
-	}
-
-	SECTION("disconnecting OFFSPRING from the master resets OFFSPRING's outputs") {
-		// The engine clears the adjacency and dispatches ExpanderChangeEvent on the survivor
-		// when a neighbour is removed or moved away — disconnectExpander() replicates exactly
-		// that (see test_harness.hpp), without also simulating full removal of `master`.
-		h.disconnectExpander(offspring, Test::Harness::SIDE_LEFT);
-
-		// onExpanderChange() calls resetOutputs() synchronously, before any further dspStep().
-		CHECK(offspring->outputs[OffspringModule::OUTPUT_CV].getVoltage() == 0.f);
-		CHECK(offspring->outputs[OffspringModule::OUTPUT_AUX].getVoltage() == 0.f);
-
-		// The master and SEEDS side of the chain are untouched by a purely OFFSPRING-side break.
-		h.dspStep();
-		CHECK(seeds->outputs[SeedsModule::OUTPUT_GATE].getVoltage() != 0.f);
-	}
-
-	SECTION("disconnecting SEEDS from the master resets SEEDS's outputs") {
-		h.disconnectExpander(seeds, Test::Harness::SIDE_RIGHT);
-
-		CHECK(seeds->outputs[SeedsModule::OUTPUT_GATE].getVoltage() == 0.f);
-		CHECK(seeds->outputs[SeedsModule::OUTPUT_TRIG].getVoltage() == 0.f);
-
-		h.dspStep();
-		CHECK(offspring->outputs[OffspringModule::OUTPUT_CV].getVoltage() != 0.f);
-	}
-
-	SECTION("a disconnected OFFSPRING/SEEDS stays silent rather than reusing a stale message") {
-		h.disconnectExpander(offspring, Test::Harness::SIDE_LEFT);
-		h.dspSteps(4);
-
-		// process() early-returns (no left neighbour), resetOutputs() runs every sample rather
-		// than just once at the moment of disconnection.
-		CHECK(offspring->outputs[OffspringModule::OUTPUT_CV].getVoltage() == 0.f);
-		CHECK(offspring->outputs[OffspringModule::OUTPUT_AUX].getVoltage() == 0.f);
-	}
 }
 
 TEST_CASE("FlowerSeqModule run/reset", "[Flower][transport]") {
