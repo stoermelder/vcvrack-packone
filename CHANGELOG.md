@@ -20,6 +20,8 @@
     - Fixed lost cable labels on "Consolidate GLUE"
 - Modules [MAZE](./docs/maze/Maze.md) and [HIVE](./docs/maze/Hive.md)
     - Improved rendering performance
+- Module [MB](./docs/trial-and-error/Mb.md)
+    - Fixed "Newest" module manifest download if Rack user folder is on different disk
 - Module [SIREN](./docs/siren/Siren.md)
     - Fixed a background worker that could stall indefinitely
     - Fixed broken "Cancel tag classification"
