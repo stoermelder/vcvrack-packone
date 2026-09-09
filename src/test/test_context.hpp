@@ -9,6 +9,20 @@
 #include <utility>
 #include <functional>
 
+// Deliberately *not* named `init()`: Rack only resolves that name via dlsym when it loads a
+// real plugin dylib, never in a test binary, so reusing it bought nothing and collided with
+// plugin.cpp's own `init`/`pluginInstance`, which a test binary links in from the plugin
+// archive. A distinct name lets plugin.cpp link untouched — its `init()` goes unreferenced
+// rather than colliding, so its ~70 addModel() calls can never run during static
+// initialization against model globals in other TUs that are still null (Q3j/Q3k in
+// var/TestFramework_review.md).
+//
+// Declared, never defined here: a suite that forgets gets a link error naming it. There used
+// to be a default definition forwarding to the plugin's real `init()`, guarded by
+// TEST_PLUGIN_INIT_CUSTOM, so migrated and unmigrated suites could coexist; both are gone now
+// that every suite supplies its own.
+void testPluginInit(rack::plugin::Plugin* p);
+
 namespace Test {
 
 // Function-local static, not a header-scope `static` variable, so every TU that includes this
@@ -20,58 +34,8 @@ inline std::atomic<int>& testContextCount() {
 	return count;
 }
 
-// Registry for model pointer sync (see registerModelSync below).
-inline std::vector<std::pair<std::string, Model**>>& modelSyncRegistry() {
-	static std::vector<std::pair<std::string, Model**>> reg;
-	return reg;
-}
-
-// Call this before TestContext is created (typically as a file-scope static
-// initializer) to ensure a module's model global in this TU is updated to the
-// pointer registered by init() in the plugin dylib.
-//
-// Background: test binaries both #include a module's .cpp (defining a model
-// global in the test TU) and link the plugin dylib (which has its own copy of
-// that global used by init()). After init() runs, the registered pointer lives
-// in the dylib; process() compiled inline uses this TU's pointer. Without this
-// sync, expander model checks always fail.
-inline void registerModelSync(const std::string& slug, Model** ptr) {
-	modelSyncRegistry().push_back({slug, ptr});
-}
-
-// Declare before TestContext to schedule a model pointer sync.
-// Usage: SYNC_MODEL(modelFoo, "Foo");
-#define SYNC_MODEL(ptr, slug) \
-	static bool _syncModel_##ptr = (Test::registerModelSync(slug, &ptr), true)
-
-// Asserts that `model` (a TU-local model global, e.g. modelFoo) was actually synced to the
-// slug's model in the plugin dylib — i.e. that a matching SYNC_MODEL(model, slug) ran before
-// this call. Call it once, right after constructing the peer(s) whose `->model` you are about
-// to compare against `model` (an expander check like `exp->model == modelMidiCatMem`).
-//
-// SYNC_MODEL itself cannot enforce this: registerModelSync() only records an *intent* to sync,
-// and the sync loop in TestContext's constructor runs unconditionally for every registered
-// entry, so a present SYNC_MODEL can't fail quietly. The bug this catches is the opposite one —
-// a module whose expander code compares against a global for which SYNC_MODEL was never called
-// at all. Without this, `exp->model == modelMidiCatMem` silently compares the test TU's own
-// stale copy of the model pointer against the dylib's, which never matches, and the resulting
-// "wrong expander" behaviour reads as a logic bug rather than a missing test-harness call.
-//
-// Usage: SYNC_MODEL(modelMidiCatMem, "MidiCatMem"); ... Test::requireModelSync(modelMidiCatMem, "MidiCatMem");
-inline void requireModelSync(Model* model, const std::string& slug) {
-	CATCH_INFO("Missing SYNC_MODEL(..., \"" << slug << "\") — model global for '" << slug
-		<< "' was never registered for sync with the plugin dylib, or TestContext hasn't run yet");
-	REQUIRE(model != nullptr);
-	REQUIRE(pluginInstance != nullptr);
-	Model* dylibModel = pluginInstance->getModel(slug);
-	CATCH_INFO("Model global for '" << slug << "' does not match the plugin dylib's model for that "
-		"slug — check that SYNC_MODEL(..., \"" << slug << "\") passes the same global that gets "
-		"compared elsewhere (e.g. in expander peer checks)");
-	REQUIRE(model == dylibModel);
-}
-
-// The one-time plugin bootstrap: create the Plugin, run the dylib's init(), adopt the slug
-// from plugin.json, register it, and sync the TU-local model globals (see registerModelSync).
+// The one-time plugin bootstrap: create the Plugin, run the suite's testPluginInit(), adopt the
+// slug from plugin.json, and register it.
 //
 // Extracted from TestContext's constructor so the harness — not static-initialization order —
 // controls what is installed while init() runs. That matters because init() calls
@@ -96,7 +60,7 @@ inline void initPluginOnce() {
 		static mock::NullFileAccess nullFs;
 		mock::Guard<StoermelderPackOne::vcv::FileAccess> fsGuard{StoermelderPackOne::vcv::fileAccess, &nullFs};
 #endif
-		init(pluginInstance);
+		::testPluginInit(pluginInstance);
 	}
 	{
 		json_error_t err;
@@ -108,10 +72,6 @@ inline void initPluginOnce() {
 		}
 	}
 	rack::plugin::plugins.push_back(pluginInstance);
-
-	for (auto& entry : modelSyncRegistry()) {
-		if (auto* m = pluginInstance->getModel(entry.first)) *entry.second = m;
-	}
 }
 
 // Test-only context initializer to prevent APP (rack::contextGet()) from being null

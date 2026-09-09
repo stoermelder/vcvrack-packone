@@ -411,32 +411,53 @@ struct EventDriver {
 
 	bool hover(rack::widget::Widget* w) { return hover(centerOf(w)); }
 
+	// A complete drag along an arbitrary path: press at points.front(), hover through every
+	// remaining point in order, release at points.back(). All coordinates scene-space.
+	//
+	// This is the general form `drag()` is built on: the caller owns the path's shape (a straight
+	// line, an arc, anything), and EventDriver owns the button/hover/delta protocol. Before this,
+	// any test wanting a curved gesture (a knob's rotary drag, sweeping around a circular widget)
+	// had to hand-roll the press/hover/release loop itself, including the `hover(next,
+	// next.minus(pos))` explicit-delta convention below — easy to get wrong, since omitting the
+	// delta measures mouseDelta from the wrong origin.
+	void dragPath(const std::vector<rack::math::Vec>& points,
+	              int btn = GLFW_MOUSE_BUTTON_LEFT, int mods = 0) {
+		REQUIRE(points.size() >= 2);
+		// button() sets lastMousePos itself, so the first hover()'s implicit delta is measured
+		// from points.front() rather than from wherever a previous event left the mouse.
+		button(points.front(), btn, GLFW_PRESS, mods);
+
+		rack::math::Vec pos = points.front();
+		for (size_t i = 1; i < points.size(); i++) {
+			rack::math::Vec next = points[i];
+			hover(next, next.minus(pos));
+			pos = next;
+		}
+
+		button(points.back(), btn, GLFW_RELEASE, mods);
+	}
+
 	// A complete drag: press at `from`, move through the given number of intermediate steps, and
 	// release at `to`. All coordinates scene-space.
 	//
 	// Stepping matters — a widget accumulating mouseDelta behaves differently under one big jump
 	// than under the many small ones a real mouse produces, and that difference is a real bug
 	// class (a drag handler that clamps per-move rather than in total). Default 1 step keeps the
-	// simple case simple.
+	// simple case simple. A thin wrapper over dragPath() with a linearly-sampled straight-line
+	// path — for anything curved, build a point list and call dragPath() directly.
 	void drag(rack::math::Vec from, rack::math::Vec to, int steps = 1,
 	          int btn = GLFW_MOUSE_BUTTON_LEFT, int mods = 0) {
 		REQUIRE(steps >= 1);
-		// button() sets lastMousePos itself, so the first hover()'s implicit delta is measured
-		// from `from` rather than from wherever a previous event left the mouse.
-		button(from, btn, GLFW_PRESS, mods);
-
+		std::vector<rack::math::Vec> points;
+		points.reserve(steps + 1);
+		points.push_back(from);
 		rack::math::Vec delta = to.minus(from).div(float(steps));
-		rack::math::Vec pos = from;
 		for (int i = 0; i < steps; i++) {
 			// The last step lands exactly on `to`, so accumulated float division cannot leave
-			// the drag short of where the test said it ended. Its delta is measured from where
-			// the mouse actually is, before hover() moves it.
-			rack::math::Vec next = (i == steps - 1) ? to : pos.plus(delta);
-			hover(next, next.minus(pos));
-			pos = next;
+			// the drag short of where the test said it ended.
+			points.push_back((i == steps - 1) ? to : from.plus(delta.mult(float(i + 1))));
 		}
-
-		button(to, btn, GLFW_RELEASE, mods);
+		dragPath(points, btn, mods);
 	}
 
 	// A drag starting at a widget's centre and moving by a delta — the form most drag tests
