@@ -10,6 +10,11 @@
 #include "../utils/GuiTaskProcessor.hpp"
 #include "../modules/stroke/Stroke.cpp"
 
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+	p->addModel(modelStroke);
+}
+
 using namespace rack;
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::Stroke;
@@ -17,9 +22,7 @@ using namespace StoermelderPackOne::Stroke;
 // Stroke is registered with PORTS=10 (see Stroke.cpp's createModel call).
 static constexpr int STROKE_PORTS = 10;
 
-SYNC_MODEL(modelStroke, "Stroke");
 Test::TestContext<> testContext;
-
 
 // A module that records the schedule it was driven with, so the interleaving is observable
 // without depending on any real module's behaviour.
@@ -40,7 +43,6 @@ struct ScheduleProbe : rack::Module {
 		lastSampleRate = args.sampleRate;
 	}
 };
-
 
 TEST_CASE("DSP stepping") {
 	Test::Harness h;
@@ -85,7 +87,6 @@ TEST_CASE("DSP stepping") {
 		REQUIRE(order == std::vector<int>{1, 2, 3});
 	}
 }
-
 
 TEST_CASE("dspStep dispatches process/processBypass exactly as Module::doProcess does") {
 	// Without this branch, a bypassed module was still stepped through process() — more
@@ -135,7 +136,6 @@ TEST_CASE("dspStep dispatches process/processBypass exactly as Module::doProcess
 	}
 }
 
-
 TEST_CASE("vcv::engine::getFrame() tracks the harness's DSP clock") {
 	// APP->engine->getFrame() itself is frozen at 0 under a Harness (nothing drives
 	// Engine::stepBlock()), so a module reading it directly rather than through
@@ -152,7 +152,6 @@ TEST_CASE("vcv::engine::getFrame() tracks the harness's DSP clock") {
 	// The engine's own counter is untouched — the seam, not the engine, is what advanced.
 	REQUIRE(APP->engine->getFrame() == 0);
 }
-
 
 TEST_CASE("Port connection helpers make isConnected() agree with a set voltage") {
 	// Port::setVoltage() never touches channels, and Port::setChannels() itself refuses to leave
@@ -217,7 +216,6 @@ TEST_CASE("Port connection helpers make isConnected() agree with a set voltage")
 	}
 }
 
-
 TEST_CASE("Expander message flipping matches the real engine") {
 	// Carried over from SimpleEngine: a
 	// module that forgets requestMessageFlip() must stay broken under the harness exactly as
@@ -257,7 +255,6 @@ TEST_CASE("Expander message flipping matches the real engine") {
 	}
 }
 
-
 // A module that records the expander-change events Rack dispatches to it. The whole point of
 // routing connections through the harness is that these fire at all: 11 modules in the plugin
 // override onExpanderChange, and before this API no test ever triggered one.
@@ -274,7 +271,6 @@ struct ExpanderChangeProbe : rack::Module {
 		reactions++;
 	}
 };
-
 
 TEST_CASE("Expander connections dispatch Rack's onExpanderChange") {
 	Test::Harness h;
@@ -345,7 +341,6 @@ TEST_CASE("Expander connections dispatch Rack's onExpanderChange") {
 	}
 }
 
-
 TEST_CASE("The harness never touches moduleChangedFlag") {
 	// A deliberate boundary, not an oversight. moduleChangedFlag is this plugin's own
 	// ModuleChangeListener signal; a module reaches it through onExpanderChange ->
@@ -367,7 +362,6 @@ TEST_CASE("The harness never touches moduleChangedFlag") {
 	REQUIRE_FALSE(a->moduleChangedFlag);
 	REQUIRE_FALSE(b->moduleChangedFlag);
 }
-
 
 TEST_CASE("UI frames") {
 	Test::Harness h;
@@ -405,7 +399,6 @@ TEST_CASE("UI frames") {
 		REQUIRE(hookCalls == 0);
 	}
 }
-
 
 TEST_CASE("The DSP:UI rate ratio") {
 	Test::Harness h;
@@ -473,7 +466,6 @@ TEST_CASE("The DSP:UI rate ratio") {
 	}
 }
 
-
 TEST_CASE("Sample rate changes keep construction and stepping in agreement") {
 	// A4 again, now at harness level: setSampleRate() sets it on the engine, so a module added
 	// afterwards is *configured* for that rate and stepped at it.
@@ -489,7 +481,6 @@ TEST_CASE("Sample rate changes keep construction and stepping in agreement") {
 	// Restore, so this TEST_CASE does not leak a rate change into the rest of the binary.
 	h.setSampleRate(44100.f);
 }
-
 
 TEST_CASE("UiPresent mode answers the window-present question") {
 	SECTION("UiPresent reports a window; UiAbsent does not") {
@@ -545,7 +536,6 @@ TEST_CASE("UiPresent mode answers the window-present question") {
 		REQUIRE(vcv::ui::hasWindow() == true);
 	}
 }
-
 
 TEST_CASE("UiPresent exercises GuiTaskProcessor's step() drain path") {
 	// The payoff Step 2 was sequenced for. GuiTaskProcessor::process() asks
@@ -610,7 +600,6 @@ TEST_CASE("UiPresent exercises GuiTaskProcessor's step() drain path") {
 	}
 }
 
-
 TEST_CASE("Scene layout is installed and restored") {
 	math::Rect sceneBoxBefore = APP->scene->box;
 	std::vector<math::Rect> childBoxesBefore;
@@ -648,7 +637,6 @@ TEST_CASE("Scene layout is installed and restored") {
 	}
 }
 
-
 TEST_CASE("exposeRackWidgets makes rack-parented helpers reachable") {
 	// SceneLayout neutralises rackScroll, and APP->scene->rack is its descendant — so a widget
 	// that production code parents to the rack is invisible to dispatch by default. Stroke's
@@ -682,7 +670,6 @@ TEST_CASE("exposeRackWidgets makes rack-parented helpers reachable") {
 	REQUIRE(rackWidget->children.size() == rackChildrenBefore);
 	REQUIRE(APP->scene->children.size() == sceneChildrenBefore);
 }
-
 
 TEST_CASE("Widgets are positioned so hit-testing can tell them apart") {
 	Test::Harness h;
@@ -723,7 +710,6 @@ TEST_CASE("Widgets are positioned so hit-testing can tell them apart") {
 	}
 }
 
-
 TEST_CASE("Lifetime") {
 	SECTION("modules and widgets are destroyed with the harness") {
 		// The ModuleScaffold guarantee, now at harness level: no explicit teardown, and the
@@ -761,7 +747,6 @@ TEST_CASE("Lifetime") {
 	}
 }
 
-
 // ---- Parameter mapping ---------------------------------------------------------------------
 //
 // These pin the three engine rules Harness's mapping helpers exist to encode. Each was
@@ -791,7 +776,6 @@ struct MapperProbe : rack::Module {
 		for (int i = 0; i < SLOTS; i++) APP->engine->removeParamHandle(&handles[i]);
 	}
 };
-
 
 TEST_CASE("Parameter mapping resolves through the engine") {
 	Test::Harness h;
@@ -844,7 +828,6 @@ TEST_CASE("Parameter mapping resolves through the engine") {
 	}
 }
 
-
 TEST_CASE("Only one ParamHandle may claim a param") {
 	// Rule 2 — the rule behind the clearMaps() dance every preset round-trip test performs.
 	Test::Harness h;
@@ -884,7 +867,6 @@ TEST_CASE("Only one ParamHandle may claim a param") {
 		h.requireMapped(&second->handles[0], target, MapTargetProbe::P0);
 	}
 }
-
 
 TEST_CASE("Destroying a mapped target does not leave a dangling handle") {
 	// The teardown half of engine registration: removeModule_NoLock nulls every handle

@@ -36,7 +36,7 @@ Include `framework.hpp` and you get all of it, in the one order that works:
 |---|---|---|
 | `test_plugin.hpp` | Catch2 config, `DEPRECATED` collision fix, `DEBUGPLUGIN` sentinel, `TEST_SUPPRESS_DEPRECATED_*` | **Must be first.** No include guard — see §7 |
 | `test_mock.hpp` | `mock::Guard<Base>`, `TEST_MOCK_*` macros, `NullFileAccess`, `MockFileAccess` | |
-| `test_context.hpp` | `TestContext`, `SYNC_MODEL`, `createModule`/`destroyModule`, `createWidget`/`destroyWidget`, `ModuleScaffold`, `makeProcessArgs`, `sampleRate` | |
+| `test_context.hpp` | `TestContext`, `createModule`/`destroyModule`, `createWidget`/`destroyWidget`, `ModuleScaffold`, `makeProcessArgs`, `sampleRate` | |
 | `test_json.hpp` | The three preset fuzzers | |
 | `test_traversal.hpp` | `Test::traversal` — shared widget-tree walk | |
 | `test_harness.hpp` | `Test::Harness`, `SceneLayout`, `UiMode`; pulls in `test_events.hpp` | |
@@ -51,13 +51,12 @@ stylistic (§7).
 
 | Facility | Files | Read as |
 |---|---|---|
-| `SYNC_MODEL` | 57 | Near-universal; omit only if nothing compares model pointers |
 | `ModuleScaffold` | 53 | The default lifetime pattern |
 | Preset fuzzers | 51 | Standard for any module with `dataFromJson` |
 | `Test::createWidget` | 47 | Mostly construction smoke tests |
 | `TEST_MOCK_*` | 9 | Grows with `vcv` layer migration |
 | `Test::Harness` | 7 | The default setup path for module tests (Intermix ×3 migrated) |
-| `EventDriver` | 2 | New in Phase 2 Step 5 |
+| `EventDriver` | 3 | New in Phase 2 Step 5; Tilt is the worked widget-test example |
 
 ---
 
@@ -114,12 +113,11 @@ TSan is the prerequisite for concurrency testing (Phase 2 Step 7, not yet built)
 Every test file declares exactly one, at file scope:
 
 ```cpp
-SYNC_MODEL(modelStroke, "Stroke");
 Test::TestContext<> testContext;
 ```
 
 It builds a minimal `rack::Context` — engine, `EventState`, `Scene` — sets `settings::headless`,
-disables `ThreadVerifier`, and on first construction runs the plugin's `init()`.
+disables `ThreadVerifier`, and on first construction runs the suite's `testPluginInit()`.
 
 Three things worth knowing:
 
@@ -127,38 +125,33 @@ Three things worth knowing:
 and `engine` unconditionally. So `delete ctx` frees all of them; do not free them separately or you
 get a double-free. This was ambiguous for a long time and is now pinned by reading Rack's source.
 
-**`init()` runs during static initialization**, before `main()`, because ~60 test files declare
-their `TestContext` at file scope. That is why `initPluginOnce()` installs a `NullFileAccess` around
-the `init()` call itself rather than at a call site: no `TEST_CASE`-scoped guard could possibly
-exist that early. Without it, `pluginSettings.readFromJson()` would read — and then overwrite with
+**`testPluginInit()` runs during static initialization**, before `main()`, because every test file
+declares its `TestContext` at file scope. That is why `initPluginOnce()` installs a `NullFileAccess`
+around the call itself rather than at a call site: no `TEST_CASE`-scoped guard could possibly exist
+that early. Without it, `pluginSettings.readFromJson()` would read — and then overwrite with
 defaults — the developer's real `plugin.json`.
+
+It is also why a suite registers only models whose `.cpp` it `#include`s: a model global from
+another translation unit is not constructed yet at that point. See `src/test/CONVERTING.md`.
 
 **`ThreadVerifier` is disabled** (`thread::verifyEnabled = false`), so every `assert(verifier->...)`
 in the plugin is inert under test. This is a known gap, not a design choice; re-enabling it with
 harness-supplied phase identities is Phase 2 Step 3.
 
-### `SYNC_MODEL` — the two-copies problem
+### The two-copies problem — solved by the build, not by a sync
 
-A test binary has **two copies** of each module's model global: one in the dylib (used by `init()`),
-one in the test TU (from `#include`ing the module's `.cpp`). Without a sync, any expander check like
-`exp->model == modelMidiCatMem` compares the TU's stale copy against the dylib's and never matches —
-presenting as a module logic bug rather than a harness problem.
+Historically a test binary held **two copies** of each module's model global: one in
+`plugin.dylib` (used by its `init()`), one in the test TU (from `#include`ing the module's
+`.cpp`). Any expander check like `exp->model == modelMidiCatMem` compared the TU's copy against
+the dylib's and never matched — presenting as a module logic bug rather than a harness problem.
+A `SYNC_MODEL(modelFoo, "Foo")` macro papered over it by overwriting the TU's pointer after
+`init()` ran, and `Test::requireModelSync()` existed to catch a *missing* `SYNC_MODEL`.
 
-```cpp
-SYNC_MODEL(modelStroke, "Stroke");   // file scope, BEFORE the TestContext declaration
-```
-
-`SYNC_MODEL` only records an *intent*; the sync loop in `TestContext`'s constructor runs
-unconditionally, so a present `SYNC_MODEL` cannot fail quietly. The bug it cannot catch is a
-**missing** one — a module whose expander code compares against a global nobody registered. For
-that, call `Test::requireModelSync(model, slug)` right where the peer being compared is constructed
-(6 files do):
-
-```cpp
-auto* exp = /* ... construct expander peer ... */;
-Test::requireModelSync(modelMidiCatMem, "MidiCatMem");
-REQUIRE(exp->model == modelMidiCatMem);
-```
+Test binaries now link the plugin's objects as a static archive rather than the dylib, so there
+is exactly one copy of every module symbol and nothing to reconcile. **Both `SYNC_MODEL` and
+`requireModelSync` are gone** (removed 2026-09-10); each suite's `testPluginInit()` registers the
+models it needs directly. See `src/test/CONVERTING.md` for the layout and
+`var/TestFramework_review.md` Q3–Q3o for why the archive works where the dylib could not.
 
 ---
 
@@ -573,6 +566,23 @@ h.events().type("abc");
 REQUIRE(h.events().consumedBy() == expectedChild);
 ```
 
+**Find the inner widget by type, don't reconstruct its position.** A `ModuleWidget`'s interesting
+children are constructor locals with no accessor, so the tempting alternative is to re-derive where
+the panel put them from its layout constants — a second copy of the layout, free to drift until the
+click lands on the wrong widget and the test asserts a no-op:
+
+```cpp
+auto* lane = h.events().find<TiltEdgeWidget<MODULE, EDGE::TOP>>(mw);   // REQUIREs a match
+h.events().dragBy(lane, Vec(0, 50), 10);
+auto lanes = h.events().findAll<InnerWidget>(mw);      // several of a kind, topmost first
+```
+
+`find<T>()` fails the test when nothing matches, rather than returning a nullptr that segfaults
+three lines later. Where a widget maps a position to a logical index itself (a grid's `cellAt()`, a
+lane's `slotAt()`), derive the click point and then *assert it against that function* — the position
+is then correct by construction and a layout change moves the click with the widget. `Tilt.test.hpp`'s
+`tiltCellCenter()`/`tiltSlotCenter()` are the worked example.
+
 `handleButton()`/`handleHover()` are reproduced line for line from `Rack/src/widget/event.cpp`
 except for two `APP->window` reads: `isCursorLocked()` (always false in a test) and `getMods()`
 (replaced by an explicit `heldKeyMods`). Everything else — the whole recursion — is Rack's real
@@ -591,6 +601,26 @@ mock.fs.now = 100.0;  h.events().click(probe);
 mock.fs.now = 100.1;  h.events().click(probe);
 REQUIRE(probe->doubleClickCount == 1);
 ```
+
+### `getMousePos()` tracks synthetic input automatically
+
+16 widgets across 11 modules in this plugin (Tilt's grid and edge lanes, Maze, Hive, Glue's label,
+Siren's waveform canvas, XySeq/XyScreen, Strip, MidiCat, Mb) drive their drags off
+`APP->scene->rack->getMousePos()` rather than `e.mouseDelta`, because that is the only way to get a
+position in a stable coordinate space across a drag. Rack maintains that field in
+`RackWidget::onHover()/onDragHover()` as an event descends through the rack — but the rack is a
+descendant of `rackScroll`, which `SceneLayout` neutralises, so it is never written under a harness.
+
+`EventDriver::syncRackMousePos()` closes that, on every `button()` and `hover()`. It matters because
+the gap was silent in the direction that *passes*: a drag over such a widget dispatched perfectly,
+fired every `DragMove`, and moved nothing — so a test could assert dispatch happened while the
+widget's own state never changed. Both handlers are public and only record `e.pos` before recursing,
+so calling one directly reproduces the recursion without making `rackScroll` live.
+
+Positions are converted into the rack's own space, so a widget comparing `getMousePos()` against a
+`ModuleWidget` box (`SirenDropHandler`, Glue's `ModuleLabelWidget`, Maze and Hive) sees both in one
+space. The press syncs *before* dispatch, since a handler capturing a drag origin reads the field
+during `onButton`. Opt out with `trackRackMousePos = false`; inspect it with `rackMousePos()`.
 
 ### Four gotchas that will bite
 
@@ -859,7 +889,6 @@ plugin's.
 using namespace rack;
 using namespace StoermelderPackOne;
 
-SYNC_MODEL(modelMyModule, "MyModule");
 Test::TestContext<> testContext;
 
 
@@ -895,7 +924,7 @@ TEST_CASE("The UI observes what the DSP thread produced", "[MyModule][ui]") {
 
 Checklist before committing:
 
-- [ ] `SYNC_MODEL` at file scope if anything compares model pointers
+- [ ] A `testPluginInit()` registering the models the suite needs (see `CONVERTING.md`)
 - [ ] `ModuleScaffold` or `Harness` owns every module — no bare `destroyModule` without a comment
 - [ ] The three preset fuzzers, if the module has `dataFromJson`
 - [ ] Built and run with `DEBUGPLUGIN=1`

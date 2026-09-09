@@ -12,3 +12,9 @@ namespace __dispatch {
 namespace __sequencing {
 	#include "EightFace.test.sequencing.hpp"
 }
+
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+	p->addModel(modelEightFace);
+	p->addModel(modelEightFaceX2);
+}

@@ -21,12 +21,15 @@
 #include <widget/OpaqueWidget.hpp>
 #include "../modules/stroke/Stroke.cpp"
 
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+	p->addModel(modelStroke);
+}
+
 using namespace rack;
 using namespace StoermelderPackOne;
 
-SYNC_MODEL(modelStroke, "Stroke");
 Test::TestContext<> testContext;
-
 
 // Records every event it receives, and consumes position events (as OpaqueWidget does) so
 // consumption and propagation ordering are observable.
@@ -108,7 +111,6 @@ struct ProbeWidget : widget::OpaqueWidget {
 	void onDragEnd(const DragEndEvent& e) override { dragEndCount++; }
 };
 
-
 // Adds a probe to the scene at an absolute scene-space box, removing it — and clearing any
 // EventState reference to it — on destruction. A probe left dangling in EventState would
 // corrupt every later TEST_CASE in this binary.
@@ -133,6 +135,40 @@ struct ScopedProbe {
 	ScopedProbe& operator=(const ScopedProbe&) = delete;
 };
 
+// A probe that drives its drag off the *rack's* tracked mouse position rather than
+// e.mouseDelta, which is what 16 widgets across 11 modules in this plugin actually do (Tilt's
+// grid and edge lanes, Maze, Hive, Glue's label, Siren's waveform canvas, XySeq/XyScreen,
+// Strip, MidiCat, Mb). Rack maintains that field as an event descends through RackWidget, which
+// SceneLayout makes unreachable — so without EventDriver::syncRackMousePos() this whole widget
+// shape dispatches perfectly and moves nothing. See test_events.hpp.
+struct RackMouseProbe : widget::OpaqueWidget {
+	float dragStartMouse = 0.f;
+	float totalDelta = 0.f;
+	int dragMoveCount = 0;
+	// Every position getMousePos() reported during the drag, so a test can assert the motion was
+	// stepped rather than delivered as one jump.
+	std::vector<float> samples;
+
+	void onButton(const ButtonEvent& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			dragStartMouse = APP->scene->rack->getMousePos().y;
+			e.consume(this);
+		}
+		OpaqueWidget::onButton(e);
+	}
+	void onDragMove(const DragMoveEvent& e) override {
+		dragMoveCount++;
+		float mouse = APP->scene->rack->getMousePos().y;
+		samples.push_back(mouse);
+		totalDelta = mouse - dragStartMouse;
+		OpaqueWidget::onDragMove(e);
+	}
+};
+
+// Two distinguishable widget types nested under a container, for the type-lookup tests. Stands
+// in for the constructor-local children a real ModuleWidget never exposes an accessor for.
+struct InnerA : widget::OpaqueWidget {};
+struct InnerB : widget::OpaqueWidget {};
 
 // A FileAccess whose clock the test drives, so double-click timing is decided by the test
 // rather than by how fast the machine ran two calls. This is the seam the driver reads for
@@ -141,7 +177,6 @@ struct ScriptedClock : Test::mock::MockFileAccess {
 	double now = 1000.0;
 	double getTime() override { return now; }
 };
-
 
 TEST_CASE("Position helpers translate widget-local to scene space") {
 	Test::Harness h;
@@ -173,7 +208,6 @@ TEST_CASE("Position helpers translate widget-local to scene space") {
 		REQUIRE(h.events().consumedBy() == inner);
 	}
 }
-
 
 TEST_CASE("Clicking dispatches through Rack's recursion") {
 	Test::Harness h;
@@ -218,7 +252,6 @@ TEST_CASE("Clicking dispatches through Rack's recursion") {
 	}
 }
 
-
 TEST_CASE("Z-order and consumption") {
 	// The property hand-built events can never test. Children are walked in reverse insertion
 	// order, so the last-added widget is topmost.
@@ -247,7 +280,6 @@ TEST_CASE("Z-order and consumption") {
 		REQUIRE(above->buttonCount == 0);
 	}
 }
-
 
 TEST_CASE("Button state machine: selection, drag pairing and DragDrop") {
 	Test::Harness h;
@@ -330,7 +362,6 @@ TEST_CASE("Button state machine: selection, drag pairing and DragDrop") {
 	}
 }
 
-
 TEST_CASE("Double-click detection is driven by the vcv clock seam") {
 	// Rack decides a double-click by comparing system::getTime() against the last click. The
 	// driver reads that through vcv::getTime() instead, so a test can script it — otherwise
@@ -385,7 +416,6 @@ TEST_CASE("Double-click detection is driven by the vcv clock seam") {
 	}
 }
 
-
 TEST_CASE("Hover, Enter and Leave") {
 	Test::Harness h;
 	ScopedProbe a(math::Rect(math::Vec(200, 150), math::Vec(60, 40)));
@@ -438,7 +468,6 @@ TEST_CASE("Hover, Enter and Leave") {
 	}
 }
 
-
 TEST_CASE("Dragging") {
 	Test::Harness h;
 	ScopedProbe probe(math::Rect(math::Vec(200, 150), math::Vec(60, 40)));
@@ -487,6 +516,123 @@ TEST_CASE("Dragging") {
 	}
 }
 
+TEST_CASE("The rack's tracked mouse position follows synthetic input") {
+	// The gap this closes is silent in the direction that passes: before the sync, a drag over a
+	// getMousePos()-reading widget fired every DragMove and moved nothing, so a test could assert
+	// dispatch happened while the widget's own state never changed.
+	Test::Harness h;
+
+	auto* probe = new RackMouseProbe;
+	probe->box = math::Rect(math::Vec(200, 150), math::Vec(60, 40));
+	APP->scene->addChild(probe);
+	struct Cleanup {
+		widget::Widget* w;
+		~Cleanup() { APP->event->finalizeWidget(w); APP->scene->removeChild(w); delete w; }
+	} cleanup{probe};
+
+	SECTION("a plain hover moves it") {
+		h.events().hover(math::Vec(300, 220));
+		// Rack coordinates, not scene: the rack sits at some offset under rackScroll, and a
+		// widget comparing getMousePos() against a ModuleWidget box needs both in one space.
+		math::Vec expected = math::Vec(300, 220).minus(
+			Test::EventDriver::sceneOrigin(APP->scene->rack));
+		REQUIRE(h.events().rackMousePos().x == Catch::Approx(expected.x));
+		REQUIRE(h.events().rackMousePos().y == Catch::Approx(expected.y));
+	}
+
+	SECTION("a stepped drag advances it by the full distance, in steps") {
+		h.events().dragBy(probe, math::Vec(0, 120), 12);
+
+		REQUIRE(probe->dragMoveCount == 12);
+		// The drag actually moved the widget's own notion of the mouse — the assertion that
+		// failed to hold before the sync existed.
+		REQUIRE(probe->totalDelta == Catch::Approx(120.f));
+
+		// And it arrived stepped, not as one jump: each sample strictly greater than the last.
+		REQUIRE(probe->samples.size() == 12);
+		for (size_t i = 1; i < probe->samples.size(); i++) {
+			REQUIRE(probe->samples[i] > probe->samples[i - 1]);
+		}
+	}
+
+	SECTION("the press captures the origin before the handler reads it") {
+		// onButton reads getMousePos() *during* dispatch, so syncing after the press would
+		// leave the origin one step stale and offset the whole drag.
+		math::Vec centre = Test::EventDriver::centerOf(probe);
+		float expected = centre.minus(Test::EventDriver::sceneOrigin(APP->scene->rack)).y;
+
+		h.events().button(centre, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS);
+		REQUIRE(probe->dragStartMouse == Catch::Approx(expected));
+
+		// A zero-distance drag must therefore report zero movement, not a one-step offset.
+		h.events().hover(centre);
+		REQUIRE(probe->totalDelta == Catch::Approx(0.f));
+		h.events().button(centre, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE);
+	}
+
+	SECTION("trackRackMousePos = false leaves it alone") {
+		// The opt-out, for a test whose subject is a stale position.
+		math::Vec before = h.events().rackMousePos();
+		h.events().trackRackMousePos = false;
+		h.events().hover(math::Vec(500, 400));
+		REQUIRE(h.events().rackMousePos().x == Catch::Approx(before.x));
+		REQUIRE(h.events().rackMousePos().y == Catch::Approx(before.y));
+		h.events().trackRackMousePos = true;
+	}
+}
+
+TEST_CASE("Finding an inner widget by type") {
+	// The alternative to re-deriving a panel's layout arithmetic at the call site, which is a
+	// second copy of the layout free to drift until the click silently lands on the wrong widget.
+	Test::Harness h;
+
+	auto* container = new widget::OpaqueWidget;
+	container->box = math::Rect(math::Vec(300, 200), math::Vec(100, 100));
+	auto* a1 = new InnerA;
+	a1->box = math::Rect(math::Vec(10, 10), math::Vec(30, 30));
+	auto* b1 = new InnerB;
+	b1->box = math::Rect(math::Vec(50, 10), math::Vec(30, 30));
+	auto* a2 = new InnerA;
+	a2->box = math::Rect(math::Vec(10, 50), math::Vec(30, 30));
+	container->addChild(a1);
+	container->addChild(b1);
+	container->addChild(a2);
+	APP->scene->addChild(container);
+	struct Cleanup {
+		widget::Widget* w;
+		~Cleanup() { APP->event->finalizeWidget(w); APP->scene->removeChild(w); delete w; }
+	} cleanup{container};
+
+	SECTION("find() returns the matching descendant") {
+		REQUIRE(h.events().find<InnerB>(container) == b1);
+	}
+
+	SECTION("findAll() returns every match, topmost first") {
+		std::vector<InnerA*> found = h.events().findAll<InnerA>(container);
+		REQUIRE(found.size() == 2);
+		// Reverse insertion order, matching the traversal spine and so matching which one a
+		// position event would reach first.
+		REQUIRE(found[0] == a2);
+		REQUIRE(found[1] == a1);
+		// findAll's first is find's answer, so the two never disagree.
+		REQUIRE(h.events().find<InnerA>(container) == found[0]);
+	}
+
+	SECTION("the found widget is where dispatch actually lands") {
+		// The point of the lookup: a click at the found widget's centre reaches it, with no
+		// coordinate arithmetic at the call site.
+		REQUIRE(h.events().click(h.events().find<InnerB>(container)));
+		REQUIRE(h.events().consumedBy() == b1);
+	}
+
+	SECTION("a hidden widget is still findable") {
+		// Deliberate: a widget hidden at rest is a legitimate target for a test that shows it
+		// first, even though walk() would skip it.
+		b1->hide();
+		REQUIRE(Test::traversal::findDescendant<InnerB>(container) == b1);
+		b1->show();
+	}
+}
 
 TEST_CASE("Keyboard, text and scroll") {
 	Test::Harness h;
@@ -555,7 +701,6 @@ TEST_CASE("Keyboard, text and scroll") {
 	}
 }
 
-
 TEST_CASE("reset() clears every EventState reference") {
 	Test::Harness h;
 	ScopedProbe probe(math::Rect(math::Vec(200, 150), math::Vec(60, 40)));
@@ -578,7 +723,6 @@ TEST_CASE("reset() clears every EventState reference") {
 	REQUIRE(probe->dragEndCount == 1);
 	REQUIRE(probe->leaveCount == 1);
 }
-
 
 TEST_CASE("The traversal spine agrees with Rack's own recursion") {
 	// test_traversal.hpp is the piece a future DrawDriver will share (§2.8). If it disagreed
@@ -647,7 +791,6 @@ TEST_CASE("The traversal spine agrees with Rack's own recursion") {
 		REQUIRE(visited == 2);
 	}
 }
-
 
 TEST_CASE("A real ModuleWidget is driveable through the harness") {
 	// Everything above uses a synthetic probe. This confirms the same holds for a real plugin

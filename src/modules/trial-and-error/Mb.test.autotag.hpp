@@ -1,13 +1,5 @@
-#include "../../test/framework.hpp"
-#include "Mb_autotag.hpp"
-#include "Mb_autotag_widgets.hpp"
-
-using namespace StoermelderPackOne;
-using namespace StoermelderPackOne::Mb;
-
-SYNC_MODEL(modelMb, "Mb");
-Test::TestContext<> testContext;
-
+// MB autotag test cases. Included by Mb.test.cpp inside namespace __autotag.
+// Not a standalone header: Mb.test.hpp supplies everything these cases use.
 
 TEST_CASE("customTagAuto", "[Mb]") {
     // Create a test plugin with our models
@@ -879,47 +871,6 @@ TEST_CASE("customTagMetamodule edge cases", "[Mb]") {
 	}
 }
 
-
-// parseMetamoduleYaml reads the YAML through vcv::fs::read, and
-// openAutoTagConfirmDialog surfaces the "no assignments" case through
-// vcv::ui::message.
-struct MockFileAccess : vcv::FileAccess {
-	struct ReadCall { std::string path; };
-	mutable std::vector<ReadCall> reads;
-	std::map<std::string, std::string> files;  // path → contents; missing = cannot open
-
-	bool read(const std::string& path, std::string& data) const override {
-		reads.push_back({path});
-		auto it = files.find(path);
-		if (it == files.end()) return false;
-		data = it->second;
-		return true;
-	}
-};
-
-// A UiAccess mock that records message() calls.
-struct MockUiAccess : vcv::UiAccess {
-	struct Message { vcv::MessageType type; vcv::MessageButtons buttons; std::string msg; };
-	std::vector<Message> messages;
-
-	bool message(vcv::MessageType type, vcv::MessageButtons buttons, const std::string& msg) override {
-		messages.push_back({type, buttons, msg});
-		return true;
-	}
-};
-
-// A NwAccess mock that records requestDownload() calls and returns scripted answers.
-struct MockNwAccess : vcv::NwAccess {
-	struct DownloadCall { std::string url, filename; };
-	std::vector<DownloadCall> downloads;
-	bool downloadResult = true;  // default: success
-
-	bool requestDownload(const std::string& url, const std::string& filename, float* progress,
-	                     const std::map<std::string, std::string>& cookies) override {
-		downloads.push_back({url, filename});
-		return downloadResult;
-	}
-};
 
 TEST_CASE("downloadMetamoduleYaml routes through the network layer", "[Mb][nw]") {
 	struct Mock {

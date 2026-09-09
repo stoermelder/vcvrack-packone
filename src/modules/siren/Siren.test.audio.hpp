@@ -1,13 +1,8 @@
-#include "../../test/framework.hpp"
-#include "SirenDataSource.hpp"
-#include <cmath>
-#include <vector>
-
-using namespace StoermelderPackOne::Siren;
-
-Test::TestContext<> testContext;
+// SIREN audio-helper test cases. Included by Siren.test.cpp inside namespace __audio.
+// Not a standalone header: Siren.test.cpp's preamble supplies everything these cases use.
 
 // ─── applyDeclick ─────────────────────────────────────────────────────────────
+
 
 TEST_CASE("applyDeclick: first and last frames are zeroed", "[Siren][Audio][Declick]") {
 	const int channels = 2;

@@ -1,11 +1,5 @@
-#include "../../test/framework.hpp"
-#include "Mb_manifests.cpp"
-#include <chrono>
-
-using namespace StoermelderPackOne::Mb;
-
-SYNC_MODEL(modelMb, "Mb");
-Test::TestContext<> testContext;
+// MB manifests test cases. Included by Mb.test.cpp inside namespace __manifests.
+// Not a standalone header: Mb.test.hpp supplies everything these cases use.
 
 
 // Helper to build a mock plugin with the given models (slug-only, sufficient for lookup).
@@ -25,7 +19,6 @@ static plugin::Plugin* createMockPlugin(const std::string& pluginSlug, const std
 	}
 	return p;
 }
-
 
 TEST_CASE("findModel", "[Mb][manifests]") {
 	plugin::Plugin* p1 = createMockPlugin("plugin-a", {"model-1", "model-2"});

@@ -146,5 +146,41 @@ inline rack::widget::Widget* hitTest(rack::widget::Widget* root, rack::math::Vec
 	return path.empty() ? nullptr : path.back().widget;
 }
 
+// The first widget of type T under `root`, in traversal order — the inner widget a test actually
+// wants to click, found by what it *is* rather than by where the panel happens to put it.
+//
+// This is the alternative to re-deriving a module's own layout arithmetic at the call site. A
+// ModuleWidget's interesting children (a grid, an edge lane, a screen) are private locals of its
+// constructor, so a test that wants one either reaches it by type or reconstructs its position
+// from the panel's layout constants — and the reconstruction is a second copy of the layout, free
+// to drift silently until the click lands on the wrong widget and the test asserts nothing. Type
+// lookup follows a layout change for free.
+//
+// Ignores visibility deliberately: `walk` skips invisible subtrees, and a widget hidden at rest
+// (a tooltip, a mode-dependent overlay) is still a legitimate lookup target for a test that means
+// to show it first.
+template <typename T>
+inline T* findDescendant(rack::widget::Widget* root) {
+	if (!root) return nullptr;
+	if (T* hit = dynamic_cast<T*>(root)) return hit;
+	for (auto it = root->children.rbegin(); it != root->children.rend(); it++) {
+		if (T* hit = findDescendant<T>(*it)) return hit;
+	}
+	return nullptr;
+}
+
+// Every widget of type T under `root`, for a panel with several of a kind — Tilt's four edge
+// lanes, a mixer's channel strips. Order matches findDescendant's (reverse insertion, topmost
+// first), so index 0 is the same widget findDescendant returns.
+template <typename T>
+inline std::vector<T*> findDescendants(rack::widget::Widget* root) {
+	std::vector<T*> found;
+	walk(root, [&](const Visit& v) {
+		if (T* hit = dynamic_cast<T*>(v.widget)) found.push_back(hit);
+		return true;
+	});
+	return found;
+}
+
 } // namespace traversal
 } // namespace Test
