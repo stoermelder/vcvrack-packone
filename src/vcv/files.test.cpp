@@ -1,6 +1,10 @@
 #include "../test/framework.hpp"
 #include "files.hpp"
 
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+}
+
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::vcv;
 using Catch::Approx;
@@ -8,8 +12,6 @@ using Catch::Approx;
 // Shared test context: registers the plugin's real models and a real Scene (so
 // vcvsFromJson's direct getMousePos() call works). One context, reused by all tests.
 static Test::TestContext<> testContext;
-
-// ---- mock accesses ----------------------------------------------------------
 
 // A ModuleAccess that records what it is asked to do and hands out fake ids.
 // getModuleWidget stays at the base default (nullptr), so no history children are built
@@ -91,7 +93,6 @@ struct MockHistoryAccess : HistoryAccess {
 	~MockHistoryAccess() { for (auto* a : pushed) delete a; }
 };
 
-
 // Installs all six recording mocks for the duration of the scope, restoring whatever was
 // installed before (nullptr, since nothing else mocks these in this binary) on destruction.
 struct Mock {
@@ -106,7 +107,6 @@ struct Mock {
 static json_t* loadJson(const char* s) {
 	return json_loads(s, 0, nullptr);
 }
-
 
 // promptUnavailableModules
 

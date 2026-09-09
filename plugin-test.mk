@@ -6,6 +6,25 @@
 # Use "make testrun-one NAME=<Module> FILTER='[tag]'" to run only matching TEST_CASEs
 # Use "make test SANITIZER=thread" (or =undefined, =address) to switch sanitizers; default address.
 # TSan is required for any concurrent (ThreadedHarness-style) test.
+#
+# Every test binary links a static archive of the plugin's own objects
+# ($(TEST_PLUGIN_ARCHIVE)) rather than plugin.dylib.
+#
+# Why an archive and not the dylib: linking a *dylib* demotes every implicitly-inline class
+# member to image-local ("was a private external"), so the dylib's copies are unreachable and
+# the test TU's #include of the module .cpp is the only definition — the module's code then
+# exists twice in one process. The same objects in a *.a* keep `weak external` linkage and
+# coalesce with the test TU's copies into one definition.
+#
+# Each suite defines its own testPluginInit() registering just the models it needs.
+# It is deliberately not called init(): that lets the plugin's own
+# plugin.cpp link in from the archive untouched, its init() going unreferenced rather than
+# colliding, so init()'s ~70 addModel() calls can never run during static initialization
+# against model globals in other TUs that are still null.
+#
+# Caveat: the plugin's objects are built without -fsanitize (the plugin build adds none), so a
+# test binary instruments only its own TUs. That still covers the module under test, whose .cpp
+# is #included, but not prebuilt code from other modules.
 
 ifdef SUCCESS
 	TEST_SUCCESS_FLAG = --success
@@ -16,6 +35,31 @@ ifdef FILTER
 endif
 
 SANITIZER ?= address
+
+# A static archive of every object the plugin build produces — the plugin's own sources plus the
+# vendored dep/ ones (omitting dep/ yields undefined soundtouch::SoundTouch::*). Built from the
+# same objects $(TARGET) links, so it needs no separate compile: one `ar` over what already
+# exists, shared by every test binary.
+TEST_PLUGIN_ARCHIVE := build/test/.shared/libplugin.a
+TEST_PLUGIN_OBJECTS := $(filter-out build/test/%,$(OBJECTS))
+
+# GL, which plugin.dylib used to resolve internally; an archive defers those symbols
+# (_glGetIntegerv, _glReadPixels, …) to the final link.
+ifdef ARCH_MAC
+	TEST_GL_LDFLAGS := -framework OpenGL
+endif
+ifdef ARCH_LIN
+	TEST_GL_LDFLAGS := -lGL
+endif
+ifdef ARCH_WIN
+	TEST_GL_LDFLAGS := -lopengl32
+endif
+
+$(TEST_PLUGIN_ARCHIVE): $(TEST_PLUGIN_OBJECTS)
+	@mkdir -p $(dir $@)
+	@echo "Building $@..."
+	@rm -f $@
+	@$(AR) rcs $@ $^
 
 # Number of test binaries to run concurrently in `testrun`. ASan/TSan/UBSan runtimes are
 # independent per-process, so running binaries in parallel is safe; only the binaries
@@ -35,7 +79,7 @@ TEST_CATCH_OBJ := build/test/.shared/$(SANITIZER)/catch_amalgamated.o
 # Every project header. Test/perf binaries #include module sources and utility
 # headers directly, so without these as prerequisites a header edit leaves the
 # binary stale and `make testrun`/`make perfrun` silently re-runs old code.
-# $(TARGET) is a prerequisite for the same reason: the binaries link it in.
+# $(TEST_PLUGIN_ARCHIVE) covers the same risk for module .cpp edits.
 TEST_HEADERS := $(wildcard src/*.hpp src/*.h src/**/*.hpp src/**/*.h src/**/**/*.hpp src/**/**/*.h)
 
 # Build each test source into its own executable under build/test/ using basenames
@@ -57,16 +101,18 @@ $(TEST_CATCH_OBJ): src/test/catch_amalgamated.cpp src/test/catch_amalgamated.hpp
 	@echo "Building $@..."
 	@$(CXX) $(TEST_CXXFLAGS) -c -o $@ $<
 
-# Pattern rule to build an individual test executable
-build/test/%: %.cpp $(TEST_HEADERS) $(TARGET) $(TEST_CATCH_OBJ)
+# Pattern rule to build an individual test executable. No $(TARGET) prerequisite: test binaries
+# link the archive, not the dylib, so they don't serialise behind a full plugin *link* — they
+# still depend on the same objects, via $(TEST_PLUGIN_ARCHIVE).
+build/test/%: %.cpp $(TEST_HEADERS) $(TEST_CATCH_OBJ) $(TEST_PLUGIN_ARCHIVE)
 	@mkdir -p $(dir $@)
 	@echo "Building $@..."
 	@$(CXX) $(TEST_CXXFLAGS) \
-		-L$(RACK_DIR) -lRack \
-		-o $@ $(TEST_CATCH_OBJ) $(CURDIR)/$(TARGET) $<
+		-L$(RACK_DIR) -lRack $(TEST_GL_LDFLAGS) \
+		-o $@ $(TEST_CATCH_OBJ) $< $(TEST_PLUGIN_ARCHIVE)
 
 # Build all test binaries
-test: $(TEST_BINARIES) $(TARGET)
+test: $(TEST_BINARIES)
 
 # Run all test binaries in parallel (JOBS concurrent processes; default 8). Each binary's own
 # output is captured and printed as one block once it finishes (prefixed with its name), so
@@ -81,12 +127,12 @@ testrun: test
 # Build (if out of date) and run a single test binary, e.g. make testrun-one NAME=Mb
 # Add FILTER='[tag]' (or a Catch2 test-name pattern) to run only matching TEST_CASEs instead of
 # the whole binary — much faster during development than a full-binary run.
-# The binary is build/test/<NAME>.test. Its own build/test/%: %.cpp $(TEST_HEADERS) $(TARGET)
-# prerequisites (above) already relink it whenever the plugin dylib or any project header is
-# stale, so this one target covers both "just run it" and "rebuild everything, then run it" —
-# there used to be a separate test-one target for the latter, but once $(TARGET) became a
-# prerequisite of the binary itself the two were identical, just reached via a different number
-# of `make` invocations. Removed rather than kept as a confusing alias.
+# The binary is build/test/<NAME>.test. Its own prerequisites (above) already relink it whenever
+# any project header or the plugin archive is stale, so this one target covers both "just run it"
+# and "rebuild everything, then run it" — there used to be a separate test-one target for the
+# latter, but once the plugin's own output became a prerequisite of the binary itself the two were
+# identical, just reached via a different number of `make` invocations. Removed rather than kept
+# as a confusing alias.
 .PHONY: testrun-one
 testrun-one: build/test/$(NAME).test
 	TESTING=1 DYLD_LIBRARY_PATH=$(RACK_DIR) ./$< $(TEST_SUCCESS_FLAG) $(TEST_FILTER_ARG)

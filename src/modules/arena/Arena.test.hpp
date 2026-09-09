@@ -13,9 +13,7 @@ typedef ArenaModule<8, 4> MODULE;
 static const int IN_PORTS = 8;
 static const int MIX_PORTS = 4;
 
-SYNC_MODEL(modelArena, "Arena");
 Test::TestContext<> testContext;
-
 
 // Helpers
 

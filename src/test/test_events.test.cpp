@@ -21,12 +21,15 @@
 #include <widget/OpaqueWidget.hpp>
 #include "../modules/stroke/Stroke.cpp"
 
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+	p->addModel(modelStroke);
+}
+
 using namespace rack;
 using namespace StoermelderPackOne;
 
-SYNC_MODEL(modelStroke, "Stroke");
 Test::TestContext<> testContext;
-
 
 // Records every event it receives, and consumes position events (as OpaqueWidget does) so
 // consumption and propagation ordering are observable.
@@ -108,7 +111,6 @@ struct ProbeWidget : widget::OpaqueWidget {
 	void onDragEnd(const DragEndEvent& e) override { dragEndCount++; }
 };
 
-
 // Adds a probe to the scene at an absolute scene-space box, removing it — and clearing any
 // EventState reference to it — on destruction. A probe left dangling in EventState would
 // corrupt every later TEST_CASE in this binary.
@@ -132,7 +134,6 @@ struct ScopedProbe {
 	ScopedProbe(const ScopedProbe&) = delete;
 	ScopedProbe& operator=(const ScopedProbe&) = delete;
 };
-
 
 // A probe that drives its drag off the *rack's* tracked mouse position rather than
 // e.mouseDelta, which is what 16 widgets across 11 modules in this plugin actually do (Tilt's
@@ -164,12 +165,10 @@ struct RackMouseProbe : widget::OpaqueWidget {
 	}
 };
 
-
 // Two distinguishable widget types nested under a container, for the type-lookup tests. Stands
 // in for the constructor-local children a real ModuleWidget never exposes an accessor for.
 struct InnerA : widget::OpaqueWidget {};
 struct InnerB : widget::OpaqueWidget {};
-
 
 // A FileAccess whose clock the test drives, so double-click timing is decided by the test
 // rather than by how fast the machine ran two calls. This is the seam the driver reads for
@@ -178,7 +177,6 @@ struct ScriptedClock : Test::mock::MockFileAccess {
 	double now = 1000.0;
 	double getTime() override { return now; }
 };
-
 
 TEST_CASE("Position helpers translate widget-local to scene space") {
 	Test::Harness h;
@@ -210,7 +208,6 @@ TEST_CASE("Position helpers translate widget-local to scene space") {
 		REQUIRE(h.events().consumedBy() == inner);
 	}
 }
-
 
 TEST_CASE("Clicking dispatches through Rack's recursion") {
 	Test::Harness h;
@@ -255,7 +252,6 @@ TEST_CASE("Clicking dispatches through Rack's recursion") {
 	}
 }
 
-
 TEST_CASE("Z-order and consumption") {
 	// The property hand-built events can never test. Children are walked in reverse insertion
 	// order, so the last-added widget is topmost.
@@ -284,7 +280,6 @@ TEST_CASE("Z-order and consumption") {
 		REQUIRE(above->buttonCount == 0);
 	}
 }
-
 
 TEST_CASE("Button state machine: selection, drag pairing and DragDrop") {
 	Test::Harness h;
@@ -367,7 +362,6 @@ TEST_CASE("Button state machine: selection, drag pairing and DragDrop") {
 	}
 }
 
-
 TEST_CASE("Double-click detection is driven by the vcv clock seam") {
 	// Rack decides a double-click by comparing system::getTime() against the last click. The
 	// driver reads that through vcv::getTime() instead, so a test can script it — otherwise
@@ -422,7 +416,6 @@ TEST_CASE("Double-click detection is driven by the vcv clock seam") {
 	}
 }
 
-
 TEST_CASE("Hover, Enter and Leave") {
 	Test::Harness h;
 	ScopedProbe a(math::Rect(math::Vec(200, 150), math::Vec(60, 40)));
@@ -475,7 +468,6 @@ TEST_CASE("Hover, Enter and Leave") {
 	}
 }
 
-
 TEST_CASE("Dragging") {
 	Test::Harness h;
 	ScopedProbe probe(math::Rect(math::Vec(200, 150), math::Vec(60, 40)));
@@ -523,7 +515,6 @@ TEST_CASE("Dragging") {
 		h.events().button(Test::EventDriver::centerOf(target), GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE);
 	}
 }
-
 
 TEST_CASE("The rack's tracked mouse position follows synthetic input") {
 	// The gap this closes is silent in the direction that passes: before the sync, a drag over a
@@ -590,7 +581,6 @@ TEST_CASE("The rack's tracked mouse position follows synthetic input") {
 	}
 }
 
-
 TEST_CASE("Finding an inner widget by type") {
 	// The alternative to re-deriving a panel's layout arithmetic at the call site, which is a
 	// second copy of the layout free to drift until the click silently lands on the wrong widget.
@@ -643,7 +633,6 @@ TEST_CASE("Finding an inner widget by type") {
 		b1->show();
 	}
 }
-
 
 TEST_CASE("Keyboard, text and scroll") {
 	Test::Harness h;
@@ -712,7 +701,6 @@ TEST_CASE("Keyboard, text and scroll") {
 	}
 }
 
-
 TEST_CASE("reset() clears every EventState reference") {
 	Test::Harness h;
 	ScopedProbe probe(math::Rect(math::Vec(200, 150), math::Vec(60, 40)));
@@ -735,7 +723,6 @@ TEST_CASE("reset() clears every EventState reference") {
 	REQUIRE(probe->dragEndCount == 1);
 	REQUIRE(probe->leaveCount == 1);
 }
-
 
 TEST_CASE("The traversal spine agrees with Rack's own recursion") {
 	// test_traversal.hpp is the piece a future DrawDriver will share (§2.8). If it disagreed
@@ -804,7 +791,6 @@ TEST_CASE("The traversal spine agrees with Rack's own recursion") {
 		REQUIRE(visited == 2);
 	}
 }
-
 
 TEST_CASE("A real ModuleWidget is driveable through the harness") {
 	// Everything above uses a synthetic probe. This confirms the same holds for a real plugin
