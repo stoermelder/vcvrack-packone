@@ -24,44 +24,16 @@ endif
 
 SANITIZER ?= address
 
-# Archive of the plugin's own sources plus the vendored dep/ ones (omit dep/ and soundtouch
-# symbols come up undefined).
+# Archive of exactly the objects the plugin dylib is built from — one `ar` over $(OBJECTS), so
+# the sources are compiled once, by the plugin's own rules, with the plugin's own flags
+# (including the scoped ones, e.g. QuickJS's -I and CONFIG_VERSION).
 #
-# Compiled into its own tree with -DDEBUGPLUGIN instead of reusing build/*.o: the vcv::*Access
-# seam is only a linkable function under that flag (release builds #define it to the real
-# instance), so archiving objects built without it leaves every vcv::*AccessFor() undefined.
-# Owning the flag here keeps `make test` correct however the dylib was last built.
+# Needs DEBUGPLUGIN, which Makefile implies for test targets: the vcv::*Access seam only exists
+# as a linkable function under that flag. Note it does not invalidate objects compiled without
+# it, so a tree last built by a plain `make` still holds release objects and the link fails on
+# the missing seam functions — `make clean` is the fix.
 TEST_PLUGIN_ARCHIVE := build/test/.shared/libplugin.a
-TEST_PLUGIN_OBJ_DIR := build/test/.shared/plugin
-TEST_PLUGIN_SOURCES := $(filter-out %.test.cpp,$(filter-out src/test/%,$(SOURCES)))
-TEST_PLUGIN_OBJECTS := $(patsubst %,$(TEST_PLUGIN_OBJ_DIR)/%.o,$(TEST_PLUGIN_SOURCES))
-
-# GL: the dylib resolved these internally, an archive defers them to the final link.
-ifdef ARCH_MAC
-	TEST_GL_LDFLAGS := -framework OpenGL
-endif
-ifdef ARCH_LIN
-	TEST_GL_LDFLAGS := -lGL
-endif
-ifdef ARCH_WIN
-	TEST_GL_LDFLAGS := -lopengl32
-endif
-
-# Plugin flags with DEBUGPLUGIN forced on, mirroring Makefile's own ifdef.
-TEST_PLUGIN_CXXFLAGS := $(filter-out -O3,$(filter-out -funsafe-math-optimizations,$(CXXFLAGS))) \
-	-O0 -g -DDEBUGPLUGIN
-TEST_PLUGIN_CFLAGS := $(filter-out -O3,$(CFLAGS)) -O0 -g -DDEBUGPLUGIN
-
-$(TEST_PLUGIN_OBJ_DIR)/%.cpp.o: %.cpp
-	@mkdir -p $(@D)
-	@$(CXX) $(TEST_PLUGIN_CXXFLAGS) -c -o $@ $<
-
-$(TEST_PLUGIN_OBJ_DIR)/%.c.o: %.c
-	@mkdir -p $(@D)
-	@$(CC) $(TEST_PLUGIN_CFLAGS) -c -o $@ $<
-
-# -MMD dep files from the rules above, so a header edit rebuilds the affected object.
--include $(TEST_PLUGIN_OBJECTS:.o=.d)
+TEST_PLUGIN_OBJECTS := $(filter-out build/test/%,$(OBJECTS))
 
 $(TEST_PLUGIN_ARCHIVE): $(TEST_PLUGIN_OBJECTS)
 	@mkdir -p $(dir $@)
@@ -95,6 +67,11 @@ VPATH := $(sort $(dir $(TEST_SOURCES)))
 TEST_CXXFLAGS := -std=c++14 -I$(CURDIR)/src/test $(FLAGS) -O0 -UNDEBUG -DDEBUGPLUGIN \
 	-fsanitize=$(SANITIZER) -fno-omit-frame-pointer
 
+# The plugin's own link flags, minus -shared (these are executables). That carries -lRack and,
+# on macOS, the `-undefined dynamic_lookup` the dylib is built with — which is what leaves the
+# archive's ~47 GL references unresolved and harmless, since nothing in a test binary draws.
+TEST_LDFLAGS := $(filter-out -shared,$(LDFLAGS))
+
 $(TEST_CATCH_OBJ): src/test/catch_amalgamated.cpp src/test/catch_amalgamated.hpp
 	@mkdir -p $(dir $@)
 	@echo "Building $@..."
@@ -105,8 +82,7 @@ $(TEST_CATCH_OBJ): src/test/catch_amalgamated.cpp src/test/catch_amalgamated.hpp
 build/test/%: %.cpp $(TEST_HEADERS) $(TEST_CATCH_OBJ) $(TEST_PLUGIN_ARCHIVE)
 	@mkdir -p $(dir $@)
 	@echo "Building $@..."
-	@$(CXX) $(TEST_CXXFLAGS) \
-		-L$(RACK_DIR) -lRack $(TEST_GL_LDFLAGS) \
+	@$(CXX) $(TEST_CXXFLAGS) $(TEST_LDFLAGS) \
 		-o $@ $(TEST_CATCH_OBJ) $< $(TEST_PLUGIN_ARCHIVE)
 
 # Build all test binaries

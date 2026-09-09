@@ -71,6 +71,14 @@ DEP_LOCAL := build/.dep
 
 include $(RACK_DIR)/plugin.mk
 
+# The test build requires DEBUGPLUGIN: the vcv::*Access seam only exists as a linkable function
+# in a debug build, and the test TUs are always compiled with the flag. Imply it for test targets
+# so `make test` cannot silently produce objects the test binaries can't link against. Must come
+# before the ifdef below, which is what actually applies it to the flags.
+ifneq ($(filter test testrun testrun-one perf perfrun,$(MAKECMDGOALS)),)
+	DEBUGPLUGIN := 1
+endif
+
 ifdef DEBUGPLUGIN
 	CXXFLAGS := $(filter-out -fno-omit-frame-pointer,$(CXXFLAGS))
 	CXXFLAGS := $(filter-out -funsafe-math-optimizations,$(CXXFLAGS))
