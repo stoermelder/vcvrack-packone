@@ -1,12 +1,15 @@
 #include "../../test/framework.hpp"
 #include "Ahab.test.hpp"
 
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+	p->addModel(modelAhab);
+}
+
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::Ahab;
 
-SYNC_MODEL(modelAhab, "Ahab");
 static Test::TestContext<> testContext;
-
 
 // Test cases are split by target into the headers included below.
 // - AhabModule.test.hpp: AhabModule core (clock, run/stop, reset, CV I/O, preset)

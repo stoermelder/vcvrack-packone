@@ -165,3 +165,5 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
     - Fixed module placement when "Smart Rearrangement" is disabled
     - Fixed broken sorting option "Last used"
     - Fixed module preview in *v1 mod* browser
+- v2.x.x
+    - Fixed "Newest" module manifest download if Rack user folder is on different disk
