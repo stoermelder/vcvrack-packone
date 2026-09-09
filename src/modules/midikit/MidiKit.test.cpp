@@ -54,3 +54,8 @@ namespace Catch {
 		}
 	};
 }
+
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+	p->addModel(modelMidiKit);
+}

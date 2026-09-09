@@ -5,7 +5,6 @@
 using namespace StoermelderPackOne::MidiKit;
 using StoermelderPackOne::MidiScript::MidiScriptEngine;
 
-SYNC_MODEL(modelMidiKit, "MidiKit");
 Test::TestContext<> testContext;
 
 // ── Shared helpers ───────────────────────────────────────────────────────
