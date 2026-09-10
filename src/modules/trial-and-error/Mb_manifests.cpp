@@ -128,9 +128,14 @@ static bool manifestsCacheDownload() {
 
 	rack::system::createDirectory(rack::asset::user("Stoermelder-P1"));
 	rack::system::remove(mbManifestsCacheFilePath());
+	// rename() can fail with EXDEV if the user folder is a symlink/junction to a different
+	// drive/filesystem than the OS temp directory, so fall back to copy+remove.
 	if (!rack::system::rename(tmpFile, mbManifestsCacheFilePath())) {
-		WARN("MB: could not store manifests cache at %s", mbManifestsCacheFilePath().c_str());
-		return false;
+		if (!rack::system::copy(tmpFile, mbManifestsCacheFilePath())) {
+			WARN("MB: could not store manifests cache at %s", mbManifestsCacheFilePath().c_str());
+			return false;
+		}
+		rack::system::remove(tmpFile);
 	}
 
 	return true;

@@ -16,8 +16,6 @@ using StoermelderPackOne::SyncTaskWorker;
 
 using StoermelderPackOne::EightFace::GUISAFEMODE;
 
-SYNC_MODEL(modelEightFaceMk2, "EightFaceMk2");
-SYNC_MODEL(modelEightFaceMk2Ex, "EightFaceMk2Ex");
 Test::TestContext<> testContext;
 
 // Test::createModule<EightFaceMk2Module<8>>() would go through modelEightFaceMk2's factory, i.e.

@@ -13,8 +13,7 @@
 //                         NullFileAccess, so TestContext depends on this header (it includes
 //                         it directly too — this order is documentation, not the mechanism)
 //   test_context.hpp   — TestContext, initPluginOnce, createModule/destroyModule,
-//                         createWidget/destroyWidget, ModuleScaffold,
-//                         SYNC_MODEL/requireModelSync
+//                         createWidget/destroyWidget, ModuleScaffold
 //   test_json.hpp      — testPresetNullGuards/TypeConfusion/OversizedArrays; templates, so
 //                         harmless to include even in files that never call them
 //   test_traversal.hpp — Test::traversal: the shared spatial walk of a widget tree (visit

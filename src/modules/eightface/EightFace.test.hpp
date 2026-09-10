@@ -13,8 +13,6 @@ using namespace StoermelderPackOne::EightFace;
 using StoermelderPackOne::ITaskWorker;
 using StoermelderPackOne::SyncTaskWorker;
 
-SYNC_MODEL(modelEightFace, "EightFace");
-SYNC_MODEL(modelEightFaceX2, "EightFaceX2");
 Test::TestContext<> testContext;
 
 // Test::createModule<EightFaceModule<8>>() would go through modelEightFace's factory, i.e. the

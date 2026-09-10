@@ -15,3 +15,9 @@ namespace __sequencing {
 namespace __expander {
 	#include "EightFaceMk2.test.expander.hpp"
 }
+
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+	p->addModel(modelEightFaceMk2);
+	p->addModel(modelEightFaceMk2Ex);
+}

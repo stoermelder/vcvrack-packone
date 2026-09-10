@@ -1,12 +1,5 @@
-#include "../../test/framework.hpp"
-#include "SirenFileSystem.hpp"
-#include "SirenBackgroundTasks.hpp"
-#include "Siren.test.hpp"
-
-using namespace StoermelderPackOne::Siren;
-using namespace StoermelderPackOne::Siren::filesystem;
-
-Test::TestContext<> testContext;
+// SIREN background-tasks test cases. Included by Siren.test.cpp inside namespace __tasks.
+// Not a standalone header: Siren.test.cpp's preamble supplies everything these cases use.
 
 
 // SirenIndexTask
@@ -14,6 +7,7 @@ Test::TestContext<> testContext;
 // start() scans every file below the root, fills in audio info (duration,
 // sample rate, bit depth, channels) and detects BPM from filenames — without
 // overwriting BPM values that were already set.
+
 TEST_CASE("SirenIndexTask: fills audio info and filename-based BPM, preserves existing BPM", "[Siren][Indexing]") {
 	TempDir tmp;
 	writeTestWav(tmp.filePath("loop_120bpm.wav"), 4410, 44100, 2);
