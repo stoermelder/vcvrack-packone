@@ -5,6 +5,10 @@
 #include <chrono>
 #include <mutex>
 
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+}
+
 using namespace StoermelderPackOne;
 
 static std::future<void> makePromise(std::shared_ptr<std::promise<void>>& out) {

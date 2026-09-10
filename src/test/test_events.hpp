@@ -7,6 +7,7 @@
 #include <widget/event.hpp>
 #include <app/Scene.hpp>
 #include <app/ModuleWidget.hpp>
+#include <app/RackWidget.hpp>
 #include <vector>
 #include <string>
 
@@ -128,6 +129,25 @@ struct EventDriver {
 		return traversal::hitPath(rootWidget, pos);
 	}
 
+	// The inner widget to click, found by type rather than by reconstructing where the panel put
+	// it. See traversal::findDescendant — this is the form most widget tests want, because a
+	// ModuleWidget's interesting children are constructor locals with no accessor.
+	//
+	// REQUIREs a match: "the widget I meant to click does not exist" is a test bug worth failing
+	// at the lookup, not a nullptr that turns into a segfault or a silently-skipped assertion
+	// three lines later.
+	template <typename T>
+	T* find(rack::widget::Widget* root) const {
+		T* found = traversal::findDescendant<T>(root);
+		REQUIRE(found != nullptr);
+		return found;
+	}
+
+	template <typename T>
+	std::vector<T*> findAll(rack::widget::Widget* root) const {
+		return traversal::findDescendants<T>(root);
+	}
+
 	// ---- Position helpers ------------------------------------------------------------------
 
 	// The centre of a widget in scene space. Almost every "click this widget" wants this, and
@@ -152,6 +172,60 @@ struct EventDriver {
 		return origin;
 	}
 
+	// ---- Rack mouse position -----------------------------------------------------------------
+
+	// Keeps APP->scene->rack->getMousePos() tracking synthetic input, which it otherwise cannot.
+	//
+	// This is not a convenience — without it a whole class of widget is untestable. 16 widgets
+	// across 11 modules in this plugin (Tilt's grid and edge lanes, Maze, Hive, Glue's label,
+	// Siren's waveform canvas, XySeq/XyScreen, Strip, MidiCat, Mb) read the *rack's* tracked
+	// mouse position inside onDragStart/onDragMove rather than e.mouseDelta, because that is the
+	// only way to get a position in a stable coordinate space across a drag. Rack maintains that
+	// field in RackWidget::onHover()/onDragHover() as an event descends through the rack — but
+	// APP->scene->rack is a descendant of rackScroll, which SceneLayout deliberately neutralises
+	// (its onHoverScroll() dereferences the null APP->window; see SceneLayout's comment). So a
+	// real drag() over such a widget dispatches perfectly and moves nothing: onDragMove fires
+	// every step and reads the same pre-harness value every time, and the drag silently does
+	// nothing while every assertion about dispatch still passes.
+	//
+	// Both handlers are public and do nothing but record e.pos into the field getMousePos()
+	// reads before recursing (RackWidget.cpp:188-192, 226-230), so calling one directly
+	// reproduces exactly what the recursion would have done — without making rackScroll live.
+	//
+	// The position is converted into the rack's own coordinate space, so a widget that compares
+	// getMousePos() against a ModuleWidget's box (SirenDropHandler, Glue's ModuleLabelWidget,
+	// Maze and Hive's drag handlers all do) sees the two in the same space rather than a scene
+	// coordinate that happens to work only while the rack sits at the origin.
+	void syncRackMousePos(rack::math::Vec scenePos) {
+		if (!trackRackMousePos) return;
+		rack::app::RackWidget* rackWidget = APP->scene->rack;
+		if (!rackWidget) return;
+
+		rack::math::Vec rackPos = scenePos.minus(sceneOrigin(rackWidget));
+		if (APP->event->draggedWidget) {
+			rack::widget::Widget::DragHoverEvent e;
+			e.pos = rackPos;
+			e.button = APP->event->dragButton;
+			e.origin = APP->event->draggedWidget;
+			rackWidget->onDragHover(e);
+		}
+		else {
+			rack::widget::Widget::HoverEvent e;
+			e.pos = rackPos;
+			rackWidget->onHover(e);
+		}
+	}
+
+	// Set false to leave getMousePos() alone — for a test whose subject is what a widget does with
+	// a stale rack position, or one asserting that the rack subtree is unreachable by dispatch.
+	bool trackRackMousePos = true;
+
+	// The rack's currently tracked mouse position, in rack coordinates. Exposed so a test can
+	// assert the sync happened rather than infer it from the widget's reaction.
+	rack::math::Vec rackMousePos() const {
+		return APP->scene->rack ? APP->scene->rack->getMousePos() : rack::math::Vec();
+	}
+
 	// ---- Buttons ---------------------------------------------------------------------------
 
 	// Fails the test with an explanation rather than letting Rack segfault on a null
@@ -173,6 +247,13 @@ struct EventDriver {
 	// Returns whether a widget consumed it. Reproduces handleButton()'s full state machine:
 	// drag start/end, DragDrop on release, selection on left-press, and double-click detection.
 	bool button(rack::math::Vec pos, int button, int action, int mods = 0) {
+		// Before dispatch, not after: a press handler that captures a drag origin reads
+		// getMousePos() *during* onButton (TiltEdgeWidget's dragStartMouse, Maze's and Hive's
+		// dragPos, XySeqWidget's), so syncing afterwards would leave the origin at the previous
+		// position and offset the whole drag by one step.
+		lastMousePos = pos;
+		syncRackMousePos(pos);
+
 		rack::widget::EventContext c;
 		rack::widget::Widget::ButtonEvent e;
 		e.context = &c;
@@ -278,6 +359,7 @@ struct EventDriver {
 	bool hover(rack::math::Vec pos, rack::math::Vec mouseDelta) {
 		rack::widget::EventState* ev = APP->event;
 		lastMousePos = pos;
+		syncRackMousePos(pos);
 
 		// Synthesised RACK_HELD repeats, one per held key — handleHover()'s first block. Mods
 		// come from heldKeyMods instead of APP->window->getMods().
@@ -329,31 +411,53 @@ struct EventDriver {
 
 	bool hover(rack::widget::Widget* w) { return hover(centerOf(w)); }
 
+	// A complete drag along an arbitrary path: press at points.front(), hover through every
+	// remaining point in order, release at points.back(). All coordinates scene-space.
+	//
+	// This is the general form `drag()` is built on: the caller owns the path's shape (a straight
+	// line, an arc, anything), and EventDriver owns the button/hover/delta protocol. Before this,
+	// any test wanting a curved gesture (a knob's rotary drag, sweeping around a circular widget)
+	// had to hand-roll the press/hover/release loop itself, including the `hover(next,
+	// next.minus(pos))` explicit-delta convention below — easy to get wrong, since omitting the
+	// delta measures mouseDelta from the wrong origin.
+	void dragPath(const std::vector<rack::math::Vec>& points,
+	              int btn = GLFW_MOUSE_BUTTON_LEFT, int mods = 0) {
+		REQUIRE(points.size() >= 2);
+		// button() sets lastMousePos itself, so the first hover()'s implicit delta is measured
+		// from points.front() rather than from wherever a previous event left the mouse.
+		button(points.front(), btn, GLFW_PRESS, mods);
+
+		rack::math::Vec pos = points.front();
+		for (size_t i = 1; i < points.size(); i++) {
+			rack::math::Vec next = points[i];
+			hover(next, next.minus(pos));
+			pos = next;
+		}
+
+		button(points.back(), btn, GLFW_RELEASE, mods);
+	}
+
 	// A complete drag: press at `from`, move through the given number of intermediate steps, and
 	// release at `to`. All coordinates scene-space.
 	//
 	// Stepping matters — a widget accumulating mouseDelta behaves differently under one big jump
 	// than under the many small ones a real mouse produces, and that difference is a real bug
 	// class (a drag handler that clamps per-move rather than in total). Default 1 step keeps the
-	// simple case simple.
+	// simple case simple. A thin wrapper over dragPath() with a linearly-sampled straight-line
+	// path — for anything curved, build a point list and call dragPath() directly.
 	void drag(rack::math::Vec from, rack::math::Vec to, int steps = 1,
 	          int btn = GLFW_MOUSE_BUTTON_LEFT, int mods = 0) {
 		REQUIRE(steps >= 1);
-		lastMousePos = from;
-		button(from, btn, GLFW_PRESS, mods);
-
+		std::vector<rack::math::Vec> points;
+		points.reserve(steps + 1);
+		points.push_back(from);
 		rack::math::Vec delta = to.minus(from).div(float(steps));
-		rack::math::Vec pos = from;
 		for (int i = 0; i < steps; i++) {
 			// The last step lands exactly on `to`, so accumulated float division cannot leave
-			// the drag short of where the test said it ended. Its delta is measured from where
-			// the mouse actually is, before hover() moves it.
-			rack::math::Vec next = (i == steps - 1) ? to : pos.plus(delta);
-			hover(next, next.minus(pos));
-			pos = next;
+			// the drag short of where the test said it ended.
+			points.push_back((i == steps - 1) ? to : from.plus(delta.mult(float(i + 1))));
 		}
-
-		button(to, btn, GLFW_RELEASE, mods);
+		dragPath(points, btn, mods);
 	}
 
 	// A drag starting at a widget's centre and moving by a delta — the form most drag tests
@@ -436,6 +540,11 @@ struct EventDriver {
 		ev->lastClickedWidget = nullptr;
 		lastTarget = nullptr;
 		lastMousePos = rack::math::Vec();
+		// The rack's tracked position is process-wide state like EventState's, so a drag left
+		// mid-flight by one phase would otherwise offset the next phase's first drag by the
+		// distance between them. Cleared after setDraggedWidget(nullptr) above, so the sync
+		// takes the Hover path rather than dispatching a DragHover with no drag in progress.
+		syncRackMousePos(rack::math::Vec());
 	}
 };
 

@@ -36,7 +36,7 @@ Include `framework.hpp` and you get all of it, in the one order that works:
 |---|---|---|
 | `test_plugin.hpp` | Catch2 config, `DEPRECATED` collision fix, `DEBUGPLUGIN` sentinel, `TEST_SUPPRESS_DEPRECATED_*` | **Must be first.** No include guard — see §7 |
 | `test_mock.hpp` | `mock::Guard<Base>`, `TEST_MOCK_*` macros, `NullFileAccess`, `MockFileAccess` | |
-| `test_context.hpp` | `TestContext`, `SYNC_MODEL`, `createModule`/`destroyModule`, `createWidget`/`destroyWidget`, `ModuleScaffold`, `makeProcessArgs`, `sampleRate` | |
+| `test_context.hpp` | `TestContext`, `createModule`/`destroyModule`, `createWidget`/`destroyWidget`, `ModuleScaffold`, `makeProcessArgs`, `sampleRate` | |
 | `test_json.hpp` | The three preset fuzzers | |
 | `test_traversal.hpp` | `Test::traversal` — shared widget-tree walk | |
 | `test_harness.hpp` | `Test::Harness`, `SceneLayout`, `UiMode`; pulls in `test_events.hpp` | |
@@ -51,13 +51,12 @@ stylistic (§7).
 
 | Facility | Files | Read as |
 |---|---|---|
-| `SYNC_MODEL` | 57 | Near-universal; omit only if nothing compares model pointers |
 | `ModuleScaffold` | 53 | The default lifetime pattern |
 | Preset fuzzers | 51 | Standard for any module with `dataFromJson` |
 | `Test::createWidget` | 47 | Mostly construction smoke tests |
 | `TEST_MOCK_*` | 9 | Grows with `vcv` layer migration |
 | `Test::Harness` | 7 | The default setup path for module tests (Intermix ×3 migrated) |
-| `EventDriver` | 2 | New in Phase 2 Step 5 |
+| `EventDriver` | 3 | New in Phase 2 Step 5; Tilt is the worked widget-test example |
 
 ---
 
@@ -114,12 +113,11 @@ TSan is the prerequisite for concurrency testing (Phase 2 Step 7, not yet built)
 Every test file declares exactly one, at file scope:
 
 ```cpp
-SYNC_MODEL(modelStroke, "Stroke");
 Test::TestContext<> testContext;
 ```
 
 It builds a minimal `rack::Context` — engine, `EventState`, `Scene` — sets `settings::headless`,
-disables `ThreadVerifier`, and on first construction runs the plugin's `init()`.
+disables `ThreadVerifier`, and on first construction runs the suite's `testPluginInit()`.
 
 Three things worth knowing:
 
@@ -127,38 +125,33 @@ Three things worth knowing:
 and `engine` unconditionally. So `delete ctx` frees all of them; do not free them separately or you
 get a double-free. This was ambiguous for a long time and is now pinned by reading Rack's source.
 
-**`init()` runs during static initialization**, before `main()`, because ~60 test files declare
-their `TestContext` at file scope. That is why `initPluginOnce()` installs a `NullFileAccess` around
-the `init()` call itself rather than at a call site: no `TEST_CASE`-scoped guard could possibly
-exist that early. Without it, `pluginSettings.readFromJson()` would read — and then overwrite with
+**`testPluginInit()` runs during static initialization**, before `main()`, because every test file
+declares its `TestContext` at file scope. That is why `initPluginOnce()` installs a `NullFileAccess`
+around the call itself rather than at a call site: no `TEST_CASE`-scoped guard could possibly exist
+that early. Without it, `pluginSettings.readFromJson()` would read — and then overwrite with
 defaults — the developer's real `plugin.json`.
+
+It is also why a suite registers only models whose `.cpp` it `#include`s: a model global from
+another translation unit is not constructed yet at that point. See `src/test/CONVERTING.md`.
 
 **`ThreadVerifier` is disabled** (`thread::verifyEnabled = false`), so every `assert(verifier->...)`
 in the plugin is inert under test. This is a known gap, not a design choice; re-enabling it with
 harness-supplied phase identities is Phase 2 Step 3.
 
-### `SYNC_MODEL` — the two-copies problem
+### The two-copies problem — solved by the build, not by a sync
 
-A test binary has **two copies** of each module's model global: one in the dylib (used by `init()`),
-one in the test TU (from `#include`ing the module's `.cpp`). Without a sync, any expander check like
-`exp->model == modelMidiCatMem` compares the TU's stale copy against the dylib's and never matches —
-presenting as a module logic bug rather than a harness problem.
+Historically a test binary held **two copies** of each module's model global: one in
+`plugin.dylib` (used by its `init()`), one in the test TU (from `#include`ing the module's
+`.cpp`). Any expander check like `exp->model == modelMidiCatMem` compared the TU's copy against
+the dylib's and never matched — presenting as a module logic bug rather than a harness problem.
+A `SYNC_MODEL(modelFoo, "Foo")` macro papered over it by overwriting the TU's pointer after
+`init()` ran, and `Test::requireModelSync()` existed to catch a *missing* `SYNC_MODEL`.
 
-```cpp
-SYNC_MODEL(modelStroke, "Stroke");   // file scope, BEFORE the TestContext declaration
-```
-
-`SYNC_MODEL` only records an *intent*; the sync loop in `TestContext`'s constructor runs
-unconditionally, so a present `SYNC_MODEL` cannot fail quietly. The bug it cannot catch is a
-**missing** one — a module whose expander code compares against a global nobody registered. For
-that, call `Test::requireModelSync(model, slug)` right where the peer being compared is constructed
-(6 files do):
-
-```cpp
-auto* exp = /* ... construct expander peer ... */;
-Test::requireModelSync(modelMidiCatMem, "MidiCatMem");
-REQUIRE(exp->model == modelMidiCatMem);
-```
+Test binaries now link the plugin's objects as a static archive rather than the dylib, so there
+is exactly one copy of every module symbol and nothing to reconcile. **Both `SYNC_MODEL` and
+`requireModelSync` are gone** (removed 2026-09-10); each suite's `testPluginInit()` registers the
+models it needs directly. See `src/test/CONVERTING.md` for the layout and
+`var/TestFramework_review.md` Q3–Q3o for why the archive works where the dylib could not.
 
 ---
 
@@ -269,6 +262,216 @@ pointer never won. Routing the question through the existing `vcv::UiAccess` sea
 parameter has since been deleted. General lesson, recorded because it recurs: **for test injection,
 extend a `vcv::*Access` seam rather than adding a test-only field or parameter.**
 
+### Background workers — `TaskWorker` and `ITaskWorker`
+
+> **The harness does not schedule worker threads yet.** So how a module *declares* its worker
+> decides whether it can be tested deterministically at all — that is what this section is about.
+> Every module in the plugin now follows the rule below.
+
+Two separate mechanisms, often confused because both run tasks off the engine thread:
+
+| | `TaskWorker` (`utils/TaskWorker.hpp`) | `GuiTaskProcessor` (`utils/GuiTaskProcessor.hpp`) |
+|---|---|---|
+| Thread | One, permanent, started in the constructor | Conditional — only when `hasWindow()` is false |
+| Selected by | Nothing; it always runs | `UiMode` (see above) |
+| Drained by | The worker only | The widget's `step()`, **or** the worker |
+| Test seam | `ITaskWorker` | `UiMode`, and a legacy `syncMode` flag |
+
+`GuiTaskProcessor` is already covered: set `UiMode::UiPresent` and its tasks drain from
+`h.uiFrame()`, deterministically, on the production path. Nothing further is needed, and **new
+tests should not set `syncMode`** — it suppresses *both* branches, so a test using it exercises
+neither real path. It survives only in SpliceKit's scaffold and is scheduled for deletion.
+
+`TaskWorker` is the gap. It has no `UiMode` equivalent, so a module that queues work through it
+runs that work on a real background thread with no defined moment at which it has landed. Do not
+sleep or spin waiting for it.
+
+#### How to write a module so its worker is testable
+
+Same principle as §7.1, and the same failure mode: get this right while *writing* the module. A
+concrete `TaskWorker` member cannot be substituted later, and the mistake is invisible — the code
+compiles, runs correctly in Rack, and its test silently exercises a real background thread.
+
+**Take the worker as a constructor parameter, and default it to one worker per `Context`.**
+
+```cpp
+// One worker per Rack Context (one per plugin instance, and one per test binary),
+// shared by all MyModule instances within it. The weak_ptr lets it be destroyed
+// when the last module in that Context is removed.
+//
+// Only ever reached from the DEFAULT constructor — a module built with an
+// injected worker never calls this, so a test constructs no thread at all.
+//
+// Function-local static, not a class static: the test build both links the dylib
+// and #includes this .cpp, so a class static would exist twice and writes through
+// one copy would be invisible through the other. Same rationale as SpliceKit's
+// getInstances() (SpliceKit.cpp:682).
+static std::shared_ptr<ITaskWorker> defaultWorker() {
+    static std::mutex m;
+    static std::map<Context*, std::weak_ptr<ITaskWorker>> workers;
+    std::lock_guard<std::mutex> lock(m);
+    auto& slot = workers[APP];
+    if (auto w = slot.lock()) return w;     // lock() once — no expired()/lock() gap
+    auto worker = std::make_shared<MpmcTaskWorker>("MyModule worker");
+    slot = worker;
+    return worker;
+}
+
+struct MyModule : Module {
+    MyModule() : MyModule(defaultWorker()) {}
+    explicit MyModule(std::shared_ptr<ITaskWorker> worker) {
+        // ... config() etc ...
+        this->worker = std::move(worker);          // before anything can queue
+    }
+    std::shared_ptr<ITaskWorker> worker;
+
+    void process(const ProcessArgs& args) override {
+        if (somethingHappened) worker->work([=]() { doTheWork(); });
+    }
+};
+```
+
+Five properties, each of which a simpler version loses:
+
+- **No thread exists unless one is needed.** Because `defaultWorker()` is reached only from the
+  default constructor, a test passing its own worker never reaches the map and no
+  `MpmcTaskWorker` is ever constructed. An owned-member worker (`TaskWorker w;`) starts its thread
+  in the constructor regardless, leaving every test carrying a parked thread per module.
+- **The worker cannot be injected too late.** It is a constructor parameter, so there is no window
+  between construction and injection in which a task could go to the wrong worker. Assign it before
+  anything in the constructor can queue.
+- **Thread count is bounded by Rack instances, not module instances.** Sixteen modules in one patch
+  share one worker.
+- **Contexts stay isolated.** Two plugin instances — or, for tests, two `TestContext`s — never
+  share a worker, so one cannot serialise behind or observe the other's tasks.
+- **The worker dies with the last module in its Context.** `weak_ptr` rather than a leaked
+  singleton, so clearing the patch tears the thread down.
+
+Three details in that function that are easy to get wrong:
+
+- **`lock()` once, not `expired()` then `lock()`.** Testing `expired()` and then calling `lock()`
+  separately leaves a window in which the last owner releases between the two calls, so `lock()`
+  returns null after the code has already committed to the "still alive" branch.
+- **The mutex is not optional here.** Rack constructs modules on the UI thread, so a bare pointer
+  swap would *usually* be safe — but this mutates a `std::map`, and module construction is rare
+  enough that the lock costs nothing measurable. Enforced beats assumed.
+- **Empty map entries are never erased.** `workers[APP]` inserts a slot for a `Context` that may
+  later be destroyed. That is a bounded leak — one empty `weak_ptr` per Rack instance — and
+  deliberately not worth fixing; SpliceKit makes the same call for the same reason
+  (`SpliceKit.cpp:665`).
+
+**The variant to pick.** Per-`Context` is the default. Two others are occasionally right:
+
+| Variant | One worker per | Use when |
+|---|---|---|
+| Per-instance — `return std::make_shared<MpmcTaskWorker>(...)`, no static at all | module | Tasks are long enough that one instance must not delay another's |
+| **Per-`Context`** (above) | **Rack instance** | **Default** |
+| Process-global — a single `static weak_ptr` | process | Effectively never: strictly worse isolation than per-`Context`, with no advantage |
+
+Per-instance is the simplest and has no shared state to guard, so prefer it whenever the extra
+threads are affordable and head-of-line blocking would be a real risk.
+
+Three rules for the task body itself, each of which has a counterexample in the tree:
+
+1. **Keep the task body a named method, not a lambda body.** Write
+   `worker->work([=]() { groupBypassWorker(val); })`, not fifteen lines inline. The named method is
+   callable from a test directly, which is the fallback when there is no seam — and it stays
+   readable at the enqueue site. Strip gets this right (`Strip.cpp:223`).
+2. **The task must not assume it runs on the engine thread.** It does not, in production. If it
+   needs engine state, capture it by value at enqueue time rather than reading it from `this` when
+   the task runs. Anything it touches concurrently with `process()` needs to be atomic or queued.
+3. **The task must be safe to run *late*, or not at all.** A queued task may run several DSP blocks
+   after the event that queued it, and a fixed-size queue may drop it entirely —
+   `GuiTaskProcessor::enqueue()` returns `false` when full (`GuiTaskProcessor.hpp:117`). If dropping
+   it would corrupt state, the queue is the wrong mechanism.
+
+**Constructor injection is the part to adopt everywhere; the sharing is a separate decision.** The
+table above is about how many threads exist, and changing it never affects testability — a test
+injects its own worker either way.
+
+**A widget-side worker can be simpler.** Siren holds one on the *widget* (`Siren.cpp:785`) and
+hands components a bare `ITaskWorker*` (`SirenBrowserPane.hpp:245`). That works because they are
+constructed after the widget owns it and none is reached from `process()` — so there is no
+construction-ordering hole for the constructor parameter to close.
+
+#### Testing a module written this way
+
+Pass a `SyncTaskWorker` and every task runs inline, to completion, before `work()` returns:
+
+```cpp
+// Construct directly, not through the dylib factory — see the note below.
+auto* m = new MyModule(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+```
+
+Wrap that in a suite-local `createModule()` and bind `ModuleScaffold` to it, so every scaffolded
+module gets the injected worker. MidiKit does exactly this (`MidiKit.test.hpp:64-79` — MidiKit
+lives on the `midi-kit` branch, so its file references resolve there, not on `v2-dev`), and the
+reason is worth stating: **`Test::createModule` / `Harness::addModule` go through the dylib's model
+factory, which only knows the default constructor** — so a module created through them gets the
+real async worker no matter what the test wants. Until the harness can construct with arguments, a
+worker-injecting suite needs its own factory shadow.
+
+For a component the test calls directly, no shadow is needed — construct the `SyncTaskWorker` and
+pass it in:
+
+```cpp
+StoermelderPackOne::SyncTaskWorker worker;   // runs inline
+SirenIndexTask task;
+task.start(&worker, src, cancel);
+REQUIRE(task.progress->done.load(std::memory_order_acquire));   // already done, no polling
+```
+
+See `SirenBackgroundTasks.test.cpp` for ten worked examples.
+
+**When inline is the wrong answer.** `SyncTaskWorker` makes a fire-and-forget call and a blocking
+one behave identically, which erases exactly the property some tests exist to check — MidiKit's
+case is `loadScript()` (async) versus `closeState()` (blocks until `onUnload()` has run); under an
+inline worker a test asserting teardown ordering passes against code that never waits. Those tests
+need a real worker plus a barrier:
+
+```cpp
+// A real background worker, for tests that must distinguish async from blocking dispatch.
+static std::shared_ptr<ITaskWorker> asyncWorker() {
+    return std::make_shared<MpmcTaskWorker>("MyModule test worker");
+}
+
+// Push a sentinel and wait for it. The queue is FIFO, so once the sentinel runs,
+// every earlier task has finished — the only way to know an async call has landed.
+// Bounded: an unbounded spin turns a stalled worker into a silent 100%-CPU hang.
+barrier(worker);            // see MidiKit.test.hpp:107 for a complete implementation
+```
+
+Two details that implementation gets right and a naive barrier does not: `work()` returns `false`
+when the queue is momentarily full, so the sentinel push must retry; and the sentinel flag must be
+a `shared_ptr`, not a stack reference, or a timeout leaves the worker writing into a dead frame.
+
+#### Writing the test so it survives the harness gaining support
+
+- **Never let a worker body run from inside `process()` in a test.** The planned harness runs
+  worker tasks in a third phase (`workerDrain()`), never inline on the engine thread — that is the
+  whole point, since a task like Strip's calls `APP->engine->bypassModule()`, which exclusively
+  locks the engine. A test that reaches the body through `dspStep()` today is asserting a sequence
+  the harness will deliberately stop producing.
+- **Keep the queue-side and the task-side assertions separate.** Assert what `process()` *queued*
+  in one place and what the task *did* in another, rather than one assertion spanning both. When
+  `workerDrain()` and `pendingWorkerTasks()` arrive, the split is already where it needs to be.
+- **Do not assert on wall-clock ordering between the engine thread and a worker.** There is no
+  guaranteed ordering now, and the harness will define one — deterministically, and probably not
+  the one a sleep happens to produce today.
+
+#### The trap in `SyncTaskWorker`
+
+It runs the task **on the calling thread, inside `work()`**. For a component test that is the point.
+For a module whose `process()` queues the task it is wrong twice over: the task runs on the engine
+thread it was queued to escape, and the queued-but-not-yet-run window — where torn reads and lost
+edges live — never exists for the test to observe. `SirenBackgroundTasks.test.cpp:54` records the
+same limitation from the other side ("a real worker can't [be observed mid-flight]").
+
+`isWorkerThread()` has the matching sharp edge: `SyncTaskWorker` returns `true` unconditionally
+(`TaskWorker.hpp:171`), because every thread is "the worker thread" when tasks run inline. A module
+asserting "this only runs on the worker" therefore always passes under it. That assertion is not
+meaningfully tested until the harness supplies a worker that can answer `false`.
+
 ### Expanders
 
 ```cpp
@@ -363,6 +566,23 @@ h.events().type("abc");
 REQUIRE(h.events().consumedBy() == expectedChild);
 ```
 
+**Find the inner widget by type, don't reconstruct its position.** A `ModuleWidget`'s interesting
+children are constructor locals with no accessor, so the tempting alternative is to re-derive where
+the panel put them from its layout constants — a second copy of the layout, free to drift until the
+click lands on the wrong widget and the test asserts a no-op:
+
+```cpp
+auto* lane = h.events().find<TiltEdgeWidget<MODULE, EDGE::TOP>>(mw);   // REQUIREs a match
+h.events().dragBy(lane, Vec(0, 50), 10);
+auto lanes = h.events().findAll<InnerWidget>(mw);      // several of a kind, topmost first
+```
+
+`find<T>()` fails the test when nothing matches, rather than returning a nullptr that segfaults
+three lines later. Where a widget maps a position to a logical index itself (a grid's `cellAt()`, a
+lane's `slotAt()`), derive the click point and then *assert it against that function* — the position
+is then correct by construction and a layout change moves the click with the widget. `Tilt.test.hpp`'s
+`tiltCellCenter()`/`tiltSlotCenter()` are the worked example.
+
 `handleButton()`/`handleHover()` are reproduced line for line from `Rack/src/widget/event.cpp`
 except for two `APP->window` reads: `isCursorLocked()` (always false in a test) and `getMods()`
 (replaced by an explicit `heldKeyMods`). Everything else — the whole recursion — is Rack's real
@@ -381,6 +601,26 @@ mock.fs.now = 100.0;  h.events().click(probe);
 mock.fs.now = 100.1;  h.events().click(probe);
 REQUIRE(probe->doubleClickCount == 1);
 ```
+
+### `getMousePos()` tracks synthetic input automatically
+
+16 widgets across 11 modules in this plugin (Tilt's grid and edge lanes, Maze, Hive, Glue's label,
+Siren's waveform canvas, XySeq/XyScreen, Strip, MidiCat, Mb) drive their drags off
+`APP->scene->rack->getMousePos()` rather than `e.mouseDelta`, because that is the only way to get a
+position in a stable coordinate space across a drag. Rack maintains that field in
+`RackWidget::onHover()/onDragHover()` as an event descends through the rack — but the rack is a
+descendant of `rackScroll`, which `SceneLayout` neutralises, so it is never written under a harness.
+
+`EventDriver::syncRackMousePos()` closes that, on every `button()` and `hover()`. It matters because
+the gap was silent in the direction that *passes*: a drag over such a widget dispatched perfectly,
+fired every `DragMove`, and moved nothing — so a test could assert dispatch happened while the
+widget's own state never changed. Both handlers are public and only record `e.pos` before recursing,
+so calling one directly reproduces the recursion without making `rackScroll` live.
+
+Positions are converted into the rack's own space, so a widget comparing `getMousePos()` against a
+`ModuleWidget` box (`SirenDropHandler`, Glue's `ModuleLabelWidget`, Maze and Hive) sees both in one
+space. The press syncs *before* dispatch, since a handler capturing a drag origin reads the field
+during `onButton`. Opt out with `trackRackMousePos = false`; inspect it with `rackMousePos()`.
 
 ### Four gotchas that will bite
 
@@ -448,6 +688,62 @@ Production code routes filesystem, dialog, module, scene, cable, history and net
 through `StoermelderPackOne::vcv`. Each is a virtual interface behind a global pointer, swappable in
 a `DEBUGPLUGIN` build.
 
+### 7.1 What a new module must route through the layer
+
+This is the part to get right while *writing* the module, not while writing its test: a call that
+goes straight to `APP->` cannot be observed or faked later, and the mistake is invisible — the code
+compiles, runs correctly in Rack, and its test silently exercises the real thing.
+
+**Route these. Always.** A test cannot obtain them otherwise:
+
+| In a new module, write | Not | Because a test has no |
+|---|---|---|
+| `vcv::fs::` — `read`/`write`/`exists`, `isFile`/`isDirectory`/`getEntries`/`getFileSize`, `rename`/`copy`/`remove`/`removeRecursively`, `createDirectory`/`createDirectories`, `getTempDirectory`/`getUserDirectory`/`openDirectory` | `fopen`/`fread`/`fwrite`, `rack::system::*` | filesystem it may touch |
+| `vcv::fs::getTime()` | `system::getTime()` | clock it can control |
+| `vcv::ui::message/openDialog/saveDialog/openDirectoryDialog` | `osdialog_*` | user to answer a dialog |
+| `vcv::ui::getClipboard/setClipboard/openBrowser` | `glfwGetClipboardString`, `system::openBrowser` | clipboard or browser |
+| `vcv::nw::requestJson/requestDownload` | `rack::network::*` | network |
+| `vcv::history::push` | `APP->history->push` | undo stack it can inspect |
+| `vcv::getModuleWidget/getModule/addModule/removeModule/applyPreset/toJson` | `APP->scene->rack->addModule(...)` etc. | patch to add modules to |
+| `vcv::findCable/addCableToPort/removeCable/getCompleteCables/hasCable` | `APP->scene->rack->addCable(...)` etc. | cables |
+| `vcv::scene::select/deselect/deselectAll/isSelected/getSelectedModuleIds` | `APP->scene->rack` selection | selection state |
+| `vcv::ui::hasWindow()` | `APP->window != nullptr` | window (it is always null) |
+| `vcv::engine::getFrame()` | `APP->engine->getFrame()` | way to advance the engine's own counter |
+
+**Leave these raw.** A test already has the real thing, so a mock would only be a second
+definition free to drift from Rack:
+
+- **The rest of `APP->engine->`** — `getSampleRate()`, `getSampleTime()`, `getModule()`,
+  `bypassModule()`, and every `ParamHandle` call. `Test::Harness` drives the *real* engine, so
+  these already answer correctly; §5 and `Harness`'s mapping helpers cover them.
+- **The widget tree** — `APP->scene->rack->...` beyond the module/cable operations above,
+  `APP->scene->rackScroll->...`, `APP->event->...`. `Harness` gives a live laid-out scene and
+  `EventDriver` dispatches through it (§6).
+- **Drawing** — `APP->window->loadFont()`, `->uiFont`, `->vg`, `->pixelRatio`. Not testable at all
+  (§6, *What is not testable*); `Window`/`NVGcontext` cannot be constructed headless.
+- Logging macros (`INFO`/`WARN`), `rack::APP_NAME`/`APP_VERSION`, `asset::user(...)`.
+
+Note `vcv::fs::` also wraps the pure path helpers — `join`, `getDirectory`, `getFilename`,
+`getStem`, `getExtension` — even though they are just string manipulation. They are in the layer
+so a mock can redirect a whole path root (`fs.hpp:34`), so prefer them over `system::` for
+consistency within a module that already uses the layer.
+
+**The rule, if the table does not cover your case:**
+
+> Route it when a test **cannot otherwise obtain what the call returns**. Where a test can already
+> have the real thing, use the real thing.
+
+Wrapping the widget tree in a proxy is *possible* — it was prototyped, and a mock returning real
+widgets satisfies even `dynamic_cast` plus follow-on calls — but it buys no testability and
+creates a Rack type definition that can drift.
+
+Two practical notes:
+
+- `#include "../../vcv/api.hpp"` pulls in the whole layer in one line.
+- **`EngineAccess` has no `TEST_MOCK_*` macro**, and should not be mocked by hand: `Test::Harness`
+  installs its own for its lifetime, pointing `getFrame()` at the harness's DSP clock. Just use
+  `vcv::engine::getFrame()` in the module and step the harness.
+
 ```cpp
 struct MockUi : vcv::UiAccess {
     std::string lastSaveName;
@@ -465,7 +761,8 @@ TEST_CASE("export uses the right filename") {
 }
 ```
 
-Seven macros, one per slot. Each hardcodes its own member name, `Base` type and global — there is no
+Seven macros, one per test-mockable slot (`EngineAccess` is the eighth interface but has no macro —
+`Test::Harness` owns it). Each hardcodes its own member name, `Base` type and global — there is no
 regular naming convention to infer them from (the `FileAccess` global is `fileAccess`, not
 `fsAccess`), and a wrong Type/slot pairing fails to compile:
 
@@ -564,7 +861,9 @@ anything process-wide (scene children, registries) — an earlier case may have 
 **A known pre-existing flake.** `Siren`'s background-task suite occasionally fails or aborts under
 parallel load and passes in isolation. It is a real `TaskWorker`/teardown race, documented since
 Phase 1, and not a regression from whatever you just changed. Confirm with
-`make testrun-one NAME=<the failing binary>` before investigating.
+`make testrun-one NAME=<the failing binary>` before investigating. It is also the reason §5's
+worker guidance says not to let a real worker thread run against test state: this is what it looks
+like when one does.
 
 **Rack code that cannot run headless.** These dereference `APP->window` where no seam reaches:
 
@@ -590,7 +889,6 @@ plugin's.
 using namespace rack;
 using namespace StoermelderPackOne;
 
-SYNC_MODEL(modelMyModule, "MyModule");
 Test::TestContext<> testContext;
 
 
@@ -626,7 +924,7 @@ TEST_CASE("The UI observes what the DSP thread produced", "[MyModule][ui]") {
 
 Checklist before committing:
 
-- [ ] `SYNC_MODEL` at file scope if anything compares model pointers
+- [ ] A `testPluginInit()` registering the models the suite needs (see `CONVERTING.md`)
 - [ ] `ModuleScaffold` or `Harness` owns every module — no bare `destroyModule` without a comment
 - [ ] The three preset fuzzers, if the module has `dataFromJson`
 - [ ] Built and run with `DEBUGPLUGIN=1`
@@ -642,14 +940,21 @@ Checklist before committing:
 | `framework.hpp` | 33 | Umbrella — the only header a test should include |
 | `test_plugin.hpp` | 89 | Catch2 config, macro collisions, build sentinels |
 | `test_mock.hpp` | 103 | `vcv` access mocking |
-| `test_context.hpp` | 347 | Context, module/widget lifetime |
+| `test_context.hpp` | 357 | Context, module/widget lifetime |
 | `test_json.hpp` | 299 | Preset fuzzers |
-| `test_traversal.hpp` | 151 | Shared widget-tree walk |
+| `test_traversal.hpp` | 150 | Shared widget-tree walk |
 | `test_events.hpp` | 442 | `EventDriver` |
-| `test_harness.hpp` | 515 | `Harness`, `SceneLayout`, `UiMode` |
-| `test_harness.test.cpp` | 520 | The harness's own tests |
+| `test_harness.hpp` | 867 | `Harness`, `SceneLayout`, `UiMode` |
+| `test_harness.test.cpp` | 912 | The harness's own tests |
 | `test_events.test.cpp` | 704 | The driver's own tests |
 | `catch_amalgamated.{hpp,cpp}` | 30k | Catch2 v3.12.0, compiled once and shared |
+
+Not part of the framework, but needed when testing a module with background work (§5, workers):
+
+| File | Role |
+|---|---|
+| `utils/TaskWorker.hpp` | `TaskWorker`, the `ITaskWorker` seam, and `SyncTaskWorker` |
+| `utils/GuiTaskProcessor.hpp` | The GUI task queue `UiMode` selects the drain path of |
 
 Framework changes belong with a test in `test_harness.test.cpp` or `test_events.test.cpp`. Both
 exist because the framework is what every other test rests on, and a silent regression there is

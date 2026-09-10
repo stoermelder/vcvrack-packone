@@ -109,4 +109,5 @@ STRIP-BAY is a companion module for STRIP: It is used to name some "patching-poi
 - v2.5.0
     - Fixed crash when removing modules added by STRIP in plugin-version of Rack
 - v2.x.x
+    - Reduced resource consumption (one shared worker for all STRIP modules)
     - Fixed a background worker that could stall indefinitely

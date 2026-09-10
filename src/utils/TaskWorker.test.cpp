@@ -5,9 +5,11 @@
 #include <chrono>
 #include <mutex>
 
-using namespace StoermelderPackOne;
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+}
 
-// ---- helpers ----------------------------------------------------------------
+using namespace StoermelderPackOne;
 
 // Synchronises on a shared_ptr<promise> so std::function (which requires
 // CopyConstructible captures) can own the synchronisation primitive.
@@ -26,8 +28,6 @@ struct CopyCounter {
 	CopyCounter& operator=(const CopyCounter&) = delete;
 	CopyCounter& operator=(CopyCounter&&) = delete;
 };
-
-// ---- tests ------------------------------------------------------------------
 
 TEST_CASE("task executes exactly once", "[TaskWorker]") {
 	Test::TestContext<> ctx;

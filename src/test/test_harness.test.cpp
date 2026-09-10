@@ -10,6 +10,11 @@
 #include "../utils/GuiTaskProcessor.hpp"
 #include "../modules/stroke/Stroke.cpp"
 
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+	p->addModel(modelStroke);
+}
+
 using namespace rack;
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::Stroke;
@@ -17,9 +22,7 @@ using namespace StoermelderPackOne::Stroke;
 // Stroke is registered with PORTS=10 (see Stroke.cpp's createModel call).
 static constexpr int STROKE_PORTS = 10;
 
-SYNC_MODEL(modelStroke, "Stroke");
 Test::TestContext<> testContext;
-
 
 // A module that records the schedule it was driven with, so the interleaving is observable
 // without depending on any real module's behaviour.
@@ -40,7 +43,6 @@ struct ScheduleProbe : rack::Module {
 		lastSampleRate = args.sampleRate;
 	}
 };
-
 
 TEST_CASE("DSP stepping") {
 	Test::Harness h;
@@ -86,6 +88,133 @@ TEST_CASE("DSP stepping") {
 	}
 }
 
+TEST_CASE("dspStep dispatches process/processBypass exactly as Module::doProcess does") {
+	// Without this branch, a bypassed module was still stepped through process() — more
+	// permissive than production, which is exactly the wrong direction for a test double.
+	struct BypassProbe : rack::Module {
+		int processCalls = 0;
+		int processBypassCalls = 0;
+		BypassProbe() { config(0, 0, 0, 0); }
+		void process(const ProcessArgs&) override { processCalls++; }
+		void processBypass(const ProcessArgs&) override { processBypassCalls++; }
+	};
+
+	Test::Harness h;
+	auto* probe = h.adoptModule(new BypassProbe);
+
+	SECTION("a non-bypassed module is stepped through process()") {
+		h.dspStep();
+		REQUIRE(probe->processCalls == 1);
+		REQUIRE(probe->processBypassCalls == 0);
+	}
+
+	SECTION("setBypassed routes through the engine and dspStep then calls processBypass") {
+		h.setBypassed(probe, true);
+		REQUIRE(probe->isBypassed());
+
+		h.dspStep();
+		REQUIRE(probe->processCalls == 0);
+		REQUIRE(probe->processBypassCalls == 1);
+	}
+
+	SECTION("un-bypassing resumes dispatch to process()") {
+		h.setBypassed(probe, true);
+		h.dspStep();
+		h.setBypassed(probe, false);
+		REQUIRE_FALSE(probe->isBypassed());
+
+		h.dspStep();
+		REQUIRE(probe->processCalls == 1);
+		REQUIRE(probe->processBypassCalls == 1);
+	}
+
+	SECTION("setBypassed is a no-op when already in the requested state") {
+		// Matches Engine::bypassModule() itself, which returns early rather than clearing
+		// outputs a second time.
+		h.setBypassed(probe, false);
+		REQUIRE_FALSE(probe->isBypassed());
+	}
+}
+
+TEST_CASE("vcv::engine::getFrame() tracks the harness's DSP clock") {
+	// APP->engine->getFrame() itself is frozen at 0 under a Harness (nothing drives
+	// Engine::stepBlock()), so a module reading it directly rather than through
+	// ProcessArgs::frame — SpliceKit and Ahab's MIDI timestamp code do this — would see a stale
+	// value at every step. The seam is what makes that consumer see a real, advancing number.
+	Test::Harness h;
+	REQUIRE(vcv::engine::getFrame() == 0);
+
+	h.dspStep();
+	REQUIRE(vcv::engine::getFrame() == 1);
+
+	h.dspSteps(99);
+	REQUIRE(vcv::engine::getFrame() == 100);
+	// The engine's own counter is untouched — the seam, not the engine, is what advanced.
+	REQUIRE(APP->engine->getFrame() == 0);
+}
+
+TEST_CASE("Port connection helpers make isConnected() agree with a set voltage") {
+	// Port::setVoltage() never touches channels, and Port::setChannels() itself refuses to leave
+	// channels==0 — so a bare setVoltage() on a fresh port is a silent no-op for anything gating
+	// on isConnected(). These helpers are the only way to get there.
+	struct PortProbe : rack::Module {
+		enum InputIds { IN, NUM_INPUTS };
+		enum OutputIds { OUT, NUM_OUTPUTS };
+		PortProbe() { config(0, NUM_INPUTS, NUM_OUTPUTS, 0); }
+	};
+
+	Test::Harness h;
+	auto* m = h.adoptModule(new PortProbe);
+
+	SECTION("a fresh input is disconnected") {
+		REQUIRE_FALSE(m->inputs[PortProbe::IN].isConnected());
+	}
+
+	SECTION("bare setVoltage on a fresh port is the documented trap: no-op for isConnected()") {
+		m->inputs[PortProbe::IN].setVoltage(5.f);
+		REQUIRE(m->inputs[PortProbe::IN].getVoltage() == Catch::Approx(5.f));
+		REQUIRE_FALSE(m->inputs[PortProbe::IN].isConnected());
+	}
+
+	SECTION("connectInput makes the port connected and carries the voltage") {
+		h.connectInput(m, PortProbe::IN, 5.f);
+		REQUIRE(m->inputs[PortProbe::IN].isConnected());
+		REQUIRE(m->inputs[PortProbe::IN].getVoltage() == Catch::Approx(5.f));
+		REQUIRE(m->inputs[PortProbe::IN].getNormalVoltage(0.f) == Catch::Approx(5.f));
+	}
+
+	SECTION("connectInputPoly sets channel count and per-channel voltage") {
+		h.connectInputPoly(m, PortProbe::IN, 4, 3.f);
+		REQUIRE(m->inputs[PortProbe::IN].getChannels() == 4);
+		REQUIRE(m->inputs[PortProbe::IN].isPolyphonic());
+		for (int c = 0; c < 4; c++) {
+			REQUIRE(m->inputs[PortProbe::IN].getVoltage(c) == Catch::Approx(3.f));
+		}
+	}
+
+	SECTION("connectOutput marks the output connected") {
+		REQUIRE_FALSE(m->outputs[PortProbe::OUT].isConnected());
+		h.connectOutput(m, PortProbe::OUT);
+		REQUIRE(m->outputs[PortProbe::OUT].isConnected());
+		REQUIRE(m->outputs[PortProbe::OUT].getChannels() == 1);
+	}
+
+	SECTION("disconnectPort undoes a connection, clearing voltages") {
+		h.connectInput(m, PortProbe::IN, 5.f);
+		REQUIRE(m->inputs[PortProbe::IN].isConnected());
+
+		h.disconnectPort(m->inputs[PortProbe::IN]);
+		REQUIRE_FALSE(m->inputs[PortProbe::IN].isConnected());
+		REQUIRE(m->inputs[PortProbe::IN].getVoltage() == Catch::Approx(0.f));
+	}
+
+	SECTION("setChannels alone cannot recover from disconnected -- the trap this exists for") {
+		// Documents why connectInput sets `channels` directly rather than calling setChannels():
+		// Port::setChannels() early-returns when channels==0, so this call is itself a no-op.
+		m->inputs[PortProbe::IN].setChannels(4);
+		REQUIRE_FALSE(m->inputs[PortProbe::IN].isConnected());
+	}
+}
 
 TEST_CASE("Expander message flipping matches the real engine") {
 	// Carried over from SimpleEngine: a
@@ -126,7 +255,6 @@ TEST_CASE("Expander message flipping matches the real engine") {
 	}
 }
 
-
 // A module that records the expander-change events Rack dispatches to it. The whole point of
 // routing connections through the harness is that these fire at all: 11 modules in the plugin
 // override onExpanderChange, and before this API no test ever triggered one.
@@ -143,7 +271,6 @@ struct ExpanderChangeProbe : rack::Module {
 		reactions++;
 	}
 };
-
 
 TEST_CASE("Expander connections dispatch Rack's onExpanderChange") {
 	Test::Harness h;
@@ -214,7 +341,6 @@ TEST_CASE("Expander connections dispatch Rack's onExpanderChange") {
 	}
 }
 
-
 TEST_CASE("The harness never touches moduleChangedFlag") {
 	// A deliberate boundary, not an oversight. moduleChangedFlag is this plugin's own
 	// ModuleChangeListener signal; a module reaches it through onExpanderChange ->
@@ -236,7 +362,6 @@ TEST_CASE("The harness never touches moduleChangedFlag") {
 	REQUIRE_FALSE(a->moduleChangedFlag);
 	REQUIRE_FALSE(b->moduleChangedFlag);
 }
-
 
 TEST_CASE("UI frames") {
 	Test::Harness h;
@@ -274,7 +399,6 @@ TEST_CASE("UI frames") {
 		REQUIRE(hookCalls == 0);
 	}
 }
-
 
 TEST_CASE("The DSP:UI rate ratio") {
 	Test::Harness h;
@@ -342,7 +466,6 @@ TEST_CASE("The DSP:UI rate ratio") {
 	}
 }
 
-
 TEST_CASE("Sample rate changes keep construction and stepping in agreement") {
 	// A4 again, now at harness level: setSampleRate() sets it on the engine, so a module added
 	// afterwards is *configured* for that rate and stepped at it.
@@ -358,7 +481,6 @@ TEST_CASE("Sample rate changes keep construction and stepping in agreement") {
 	// Restore, so this TEST_CASE does not leak a rate change into the rest of the binary.
 	h.setSampleRate(44100.f);
 }
-
 
 TEST_CASE("UiPresent mode answers the window-present question") {
 	SECTION("UiPresent reports a window; UiAbsent does not") {
@@ -414,7 +536,6 @@ TEST_CASE("UiPresent mode answers the window-present question") {
 		REQUIRE(vcv::ui::hasWindow() == true);
 	}
 }
-
 
 TEST_CASE("UiPresent exercises GuiTaskProcessor's step() drain path") {
 	// The payoff Step 2 was sequenced for. GuiTaskProcessor::process() asks
@@ -479,7 +600,6 @@ TEST_CASE("UiPresent exercises GuiTaskProcessor's step() drain path") {
 	}
 }
 
-
 TEST_CASE("Scene layout is installed and restored") {
 	math::Rect sceneBoxBefore = APP->scene->box;
 	std::vector<math::Rect> childBoxesBefore;
@@ -517,7 +637,6 @@ TEST_CASE("Scene layout is installed and restored") {
 	}
 }
 
-
 TEST_CASE("exposeRackWidgets makes rack-parented helpers reachable") {
 	// SceneLayout neutralises rackScroll, and APP->scene->rack is its descendant — so a widget
 	// that production code parents to the rack is invisible to dispatch by default. Stroke's
@@ -551,7 +670,6 @@ TEST_CASE("exposeRackWidgets makes rack-parented helpers reachable") {
 	REQUIRE(rackWidget->children.size() == rackChildrenBefore);
 	REQUIRE(APP->scene->children.size() == sceneChildrenBefore);
 }
-
 
 TEST_CASE("Widgets are positioned so hit-testing can tell them apart") {
 	Test::Harness h;
@@ -592,7 +710,6 @@ TEST_CASE("Widgets are positioned so hit-testing can tell them apart") {
 	}
 }
 
-
 TEST_CASE("Lifetime") {
 	SECTION("modules and widgets are destroyed with the harness") {
 		// The ModuleScaffold guarantee, now at harness level: no explicit teardown, and the
@@ -630,7 +747,6 @@ TEST_CASE("Lifetime") {
 	}
 }
 
-
 // ---- Parameter mapping ---------------------------------------------------------------------
 //
 // These pin the three engine rules Harness's mapping helpers exist to encode. Each was
@@ -660,7 +776,6 @@ struct MapperProbe : rack::Module {
 		for (int i = 0; i < SLOTS; i++) APP->engine->removeParamHandle(&handles[i]);
 	}
 };
-
 
 TEST_CASE("Parameter mapping resolves through the engine") {
 	Test::Harness h;
@@ -713,7 +828,6 @@ TEST_CASE("Parameter mapping resolves through the engine") {
 	}
 }
 
-
 TEST_CASE("Only one ParamHandle may claim a param") {
 	// Rule 2 — the rule behind the clearMaps() dance every preset round-trip test performs.
 	Test::Harness h;
@@ -753,7 +867,6 @@ TEST_CASE("Only one ParamHandle may claim a param") {
 		h.requireMapped(&second->handles[0], target, MapTargetProbe::P0);
 	}
 }
-
 
 TEST_CASE("Destroying a mapped target does not leave a dangling handle") {
 	// The teardown half of engine registration: removeModule_NoLock nulls every handle

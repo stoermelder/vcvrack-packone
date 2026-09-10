@@ -421,7 +421,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XyScreenCursor, XySeqModu
 
 	/** XySeqModule: a MIX port beyond the active count has no sequence UI: its
 	 * led display is blank, its context menu is empty, and clicking it is a no-op. */
-	bool seqPortUsed(int port) override {
+	bool seqPortHidden(int port) override {
 		return port + 1 > mixportsUsed;
 	}
 
@@ -784,7 +784,7 @@ struct ArenaOpLedDisplay : StoermelderLedDisplay {
 
 	void onButton(const event::Button& e) override {
 		if (id + 1 > module->inportsUsed) return;
-		if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 			createContextMenu();
 			e.consume(this);
 		}
