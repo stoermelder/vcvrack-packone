@@ -585,8 +585,30 @@ is then correct by construction and a layout change moves the click with the wid
 
 `handleButton()`/`handleHover()` are reproduced line for line from `Rack/src/widget/event.cpp`
 except for two `APP->window` reads: `isCursorLocked()` (always false in a test) and `getMods()`
-(replaced by an explicit `heldKeyMods`). Everything else — the whole recursion — is Rack's real
-code, so geometry, ordering and bookkeeping are genuinely under test.
+(routed through the `vcv::ui::getWindowMods()` seam). Everything else — the whole recursion — is
+Rack's real code, so geometry, ordering and bookkeeping are genuinely under test.
+
+### Modifier keys
+
+A widget that gates behaviour on held modifiers reads `vcv::ui::getWindowMods()`, and a test sets
+it with `setMods()`:
+
+```cpp
+h.events().setMods(RACK_MOD_CTRL);
+h.events().scroll(mw, Vec(0, 1));     // ctrl+scroll, as the widget sees it
+h.events().clearMods();
+```
+
+This matters because Rack's `HoverScrollEvent` carries **no** `mods` field, which is exactly why
+Rack itself polls the window for scroll modifiers — so for an `onHoverScroll()` handler there is no
+way to pass mods through the event, and before the seam carried them those branches (Spin's
+mods-gated scroll, Mb's ctrl+zoom) were unreachable under test.
+
+The value lives in the installed `vcv::UiAccess` (`UiAccess::testMods`), not on the driver, so the
+mods a widget sees and the mods the synthesised `RACK_HELD` key repeats carry are one value and
+cannot disagree. It is on the base interface rather than a mock so that a suite installing its own
+`UiAccess` over the harness's — Strip, MidiMon and MidiCat all do — still honours it. Mods persist
+until changed, like a real held key; `reset()` deliberately leaves them alone.
 
 Double-click timing reads `vcv::fs::getTime()`, so it is deterministic under a `FileAccess` mock:
 

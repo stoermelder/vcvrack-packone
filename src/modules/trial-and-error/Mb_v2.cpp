@@ -1,6 +1,7 @@
 #include "Mb_v2.hpp"
 #include "Mb.hpp"
 #include "Mb_manifests.hpp"
+#include "../../vcv/ui.hpp"
 #include <tag.hpp>
 #include <settings.hpp>
 #include <componentlibrary.hpp>
@@ -1480,7 +1481,7 @@ void ModuleBrowser::onShow(const event::Show& e) {
 }
 
 void ModuleBrowser::onHoverScroll(const event::HoverScroll& e) {
-	if ((APP->window->getMods() & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+	if ((vcv::ui::getWindowMods() & RACK_MOD_MASK) == RACK_MOD_CTRL) {
 		float zoomDelta = e.scrollDelta.y / 50.f / 12.f;
 		float newZoom = math::clamp(settings::browserZoom + zoomDelta, -2.f, 1.f);
 		if (newZoom != settings::browserZoom) {

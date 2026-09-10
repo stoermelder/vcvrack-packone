@@ -1,4 +1,5 @@
 #include "Mb_v1.hpp"
+#include "../../vcv/ui.hpp"
 #include <tag.hpp>
 #include <componentlibrary.hpp>
 #include <thread>
@@ -723,7 +724,7 @@ struct BrowserSearchField : ui::TextField {
 struct ClearButton : ui::Button {
 	void onAction(const event::Action& e) override {
 		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
-		browser->clear((APP->window->getMods() & RACK_MOD_MASK) == RACK_MOD_CTRL);
+		browser->clear((vcv::ui::getWindowMods() & RACK_MOD_MASK) == RACK_MOD_CTRL);
 	}
 };
 
@@ -1131,7 +1132,7 @@ void ModuleBrowser::onShow(const event::Show& e) {
 }
 
 void ModuleBrowser::onHoverScroll(const event::HoverScroll& e) {
-	if ((APP->window->getMods() & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+	if ((vcv::ui::getWindowMods() & RACK_MOD_MASK) == RACK_MOD_CTRL) {
 		// Increase zoom
 		float zoomDelta = e.scrollDelta.y / 50.f / 12.f;
 		v1::modelBoxZoom = math::clamp(v1::modelBoxZoom + zoomDelta, PREVIEW_MIN, PREVIEW_MAX);

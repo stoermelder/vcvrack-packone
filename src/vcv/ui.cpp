@@ -64,6 +64,12 @@ bool RealUiAccess::hasWindow() const {
 	return APP->window != nullptr;
 }
 
+int RealUiAccess::getWindowMods() const {
+	// Null-guarded, which the four call sites this replaces were not: they dereferenced
+	// APP->window directly from widget event handlers. Reachable in headless/CLI Rack.
+	return APP->window ? APP->window->getMods() : 0;
+}
+
 // The shared production instance; namespace-scope so no __cxa_guard is tested on access.
 // In a release build this is what the uiAccessFor() macro names directly.
 RealUiAccess realUiAccess;

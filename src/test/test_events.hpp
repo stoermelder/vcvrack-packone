@@ -2,6 +2,7 @@
 #include "test_plugin.hpp"
 #include "test_traversal.hpp"
 #include "../vcv/fs.hpp"
+#include "../vcv/ui.hpp"
 #include <rack.hpp>
 #include <widget/Widget.hpp>
 #include <widget/event.hpp>
@@ -37,12 +38,12 @@
 //
 //   - isCursorLocked() — always false in a test, and its only effect is to suppress dispatch
 //     entirely, so a test that wanted it would be testing nothing.
-//   - getMods() — polled to synthesise RACK_HELD repeats for held keys. A test supplies mods
-//     explicitly (see heldKeyMods), which is strictly more controllable than polling a window
-//     that does not exist.
+//   - getMods() — polled to synthesise RACK_HELD repeats for held keys. Routed through the
+//     vcv::ui::getWindowMods() seam, which is the same value the module under test reads, so a
+//     test sets mods once (see setMods) and the widget and the key repeats cannot disagree.
 //
 // So the recursion, the geometry, the ordering, the consumption rules and the EventState state
-// machine are all genuinely under test; only two things a headless test cannot have are absent.
+// machine are all genuinely under test; only one thing a headless test cannot have is absent.
 //
 // Usage:
 //   Test::Harness h;
@@ -85,15 +86,37 @@ struct EventDriver {
 	// consumed *by the scene* and reported as the target. Use missed() for that question.
 	rack::widget::Widget* lastTarget = nullptr;
 
-	// Mods reported to synthesised RACK_HELD key repeats during hover(). Stands in for
-	// APP->window->getMods(), which handleHover() polls and which does not exist headless.
-	int heldKeyMods = 0;
-
 	// The last position hover() was called at, so drag() can compute mouseDelta the way a real
 	// mouse would rather than making the caller track it.
 	rack::math::Vec lastMousePos;
 
 	explicit EventDriver(rack::widget::Widget* root) : rootWidget(root) {}
+
+	// ---- Modifiers -------------------------------------------------------------------------
+
+	// The held modifiers every part of a test agrees on: what a widget reading
+	// vcv::ui::getWindowMods() sees, and what the synthesised RACK_HELD key repeats in hover()
+	// carry. Not a field on the driver — the value lives in the installed vcv::UiAccess, which
+	// is the only place both the driver and the module under test can read it from, so the two
+	// cannot be set to different things.
+	//
+	// A widget that gates on modifiers is the reason this exists: Rack's HoverScrollEvent has
+	// no mods field, so Spin's and Mb's onHoverScroll() poll the window instead, and until the
+	// seam carried mods those branches were unreachable under test.
+	//
+	//   h.events().setMods(RACK_MOD_CTRL);
+	//   h.events().scroll(widget, Vec(0, 1));   // ctrl+scroll, as the widget sees it
+	//
+	// Takes a GLFW_MOD_* bitmask. Persists until changed, like a real held key; clearMods()
+	// releases them, and reset() does not touch them (a suite that sets mods once for a whole
+	// TEST_CASE should not have them silently dropped by an unrelated reset).
+	void setMods(int mods) {
+		StoermelderPackOne::vcv::uiAccessFor().testMods = mods;
+	}
+
+	void clearMods() { setMods(0); }
+
+	int mods() const { return StoermelderPackOne::vcv::ui::getWindowMods(); }
 
 	// ---- Queries ---------------------------------------------------------------------------
 
@@ -362,10 +385,10 @@ struct EventDriver {
 		syncRackMousePos(pos);
 
 		// Synthesised RACK_HELD repeats, one per held key — handleHover()'s first block. Mods
-		// come from heldKeyMods instead of APP->window->getMods().
+		// come from the vcv::ui seam, which is where Rack's getMods() now routes.
 		for (int key : ev->heldKeys) {
 			int scancode = glfwGetKeyScancode(key);
-			ev->handleKey(pos, key, scancode, RACK_HELD, heldKeyMods);
+			ev->handleKey(pos, key, scancode, RACK_HELD, mods());
 		}
 
 		if (ev->draggedWidget) {
