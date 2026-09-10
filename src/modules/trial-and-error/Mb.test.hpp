@@ -50,6 +50,11 @@ void cleanupMockModels() {
 // parseMetamoduleYaml reads the YAML through vcv::fs::read, and
 // openAutoTagConfirmDialog surfaces the "no assignments" case through
 // vcv::ui::message.
+//
+// createDirectory/remove/rename/copy default to true (unlike the base class's false), since
+// most callers only care that the sequence runs, not that any one step is scripted to fail —
+// matching manifestsCacheDownload's own "succeed unless told otherwise" happy path. Set the
+// corresponding *Result field to false to exercise a specific failure branch.
 struct MockFileAccess : vcv::FileAccess {
 	struct ReadCall { std::string path; };
 	mutable std::vector<ReadCall> reads;
@@ -61,6 +66,36 @@ struct MockFileAccess : vcv::FileAccess {
 		if (it == files.end()) return false;
 		data = it->second;
 		return true;
+	}
+
+	std::vector<std::string> createDirectoryCalls;
+	bool createDirectoryResult = true;
+	bool createDirectory(const std::string& path) override {
+		createDirectoryCalls.push_back(path);
+		return createDirectoryResult;
+	}
+
+	std::vector<std::string> removeCalls;
+	bool removeResult = true;
+	bool remove(const std::string& path) override {
+		removeCalls.push_back(path);
+		return removeResult;
+	}
+
+	struct RenameCall { std::string srcPath, destPath; };
+	std::vector<RenameCall> renameCalls;
+	bool renameResult = true;
+	bool rename(const std::string& srcPath, const std::string& destPath) override {
+		renameCalls.push_back({srcPath, destPath});
+		return renameResult;
+	}
+
+	struct CopyCall { std::string srcPath, destPath; };
+	std::vector<CopyCall> copyCalls;
+	bool copyResult = true;
+	bool copy(const std::string& srcPath, const std::string& destPath) override {
+		copyCalls.push_back({srcPath, destPath});
+		return copyResult;
 	}
 };
 

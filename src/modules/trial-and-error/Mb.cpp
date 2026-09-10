@@ -1,6 +1,7 @@
 #include "../../plugin.hpp"
 #include "../../vcv/ui.hpp"
 #include "../../vcv/history.hpp"
+#include "../../vcv/fs.hpp"
 #include "Mb.hpp"
 #include "Mb_v1.hpp"
 #include "Mb_v2.hpp"
@@ -142,15 +143,14 @@ void modelWidthScanAll() {
 }
 
 static std::string mbWidthFilePath() {
-	return rack::asset::user("Stoermelder-P1/mb-widths.json");
+	return vcv::fs::getUserDirectory("Stoermelder-P1/mb-widths.json");
 }
 
 void modelWidthsFromJson() {
-	FILE* file = fopen(mbWidthFilePath().c_str(), "r");
-	if (!file) return;
+	std::string data;
+	if (!vcv::fs::read(mbWidthFilePath(), data)) return;
 	json_error_t error;
-	json_t* j = json_loadf(file, 0, &error);
-	fclose(file);
+	json_t* j = json_loads(data.c_str(), 0, &error);
 	if (!j) return;
 	DEFER({ json_decref(j); });
 
@@ -196,11 +196,11 @@ void modelWidthsToJson() {
 	json_t* j = json_object();
 	json_object_set_new(j, "widths", widthsJ);
 
-	rack::system::createDirectory(rack::asset::user("Stoermelder-P1"));
-	FILE* file = fopen(mbWidthFilePath().c_str(), "w");
-	if (file) {
-		json_dumpf(j, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
-		fclose(file);
+	vcv::fs::createDirectory(vcv::fs::getUserDirectory("Stoermelder-P1"));
+	char* dump = json_dumps(j, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+	if (dump) {
+		vcv::fs::write(mbWidthFilePath(), dump);
+		free(dump);
 	}
 	json_decref(j);
 }
@@ -1217,18 +1217,16 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 			json_decref(rootJ);
 		});
 
-		FILE* file = fopen(filename.c_str(), "w");
-		if (!file) {
+		char* dump = json_dumps(rootJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+		DEFER({
+			free(dump);
+		});
+		if (!dump || !vcv::fs::write(filename, dump)) {
 			std::string message = string::f("Could not write to file %s", filename.c_str());
 			StoermelderPackOne::vcv::ui::message(
 				StoermelderPackOne::vcv::MessageType::WARNING, StoermelderPackOne::vcv::MessageButtons::OK, message);
 			return;
 		}
-		DEFER({
-			fclose(file);
-		});
-
-		json_dumpf(rootJ, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
 	}
 
 	void exportSettingsDialog() {
@@ -1238,7 +1236,7 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 			return;
 		}
 
-		std::string extension = system::getExtension(system::getFilename(pathStr));
+		std::string extension = vcv::fs::getExtension(vcv::fs::getFilename(pathStr));
 		if (extension.empty()) {
 			pathStr += ".json";
 		}
@@ -1249,19 +1247,16 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 	void importSettings(std::string filename) {
 		INFO("Loading settings %s", filename.c_str());
 
-		FILE* file = fopen(filename.c_str(), "r");
-		if (!file) {
+		std::string data;
+		if (!vcv::fs::read(filename, data)) {
 			std::string message = string::f("Could not load file %s", filename.c_str());
 			StoermelderPackOne::vcv::ui::message(
 				StoermelderPackOne::vcv::MessageType::WARNING, StoermelderPackOne::vcv::MessageButtons::OK, message);
 			return;
 		}
-		DEFER({
-			fclose(file);
-		});
 
 		json_error_t error;
-		json_t* rootJ = json_loadf(file, 0, &error);
+		json_t* rootJ = json_loads(data.c_str(), 0, &error);
 		if (!rootJ) {
 			std::string message = string::f("File is not a valid file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
 			StoermelderPackOne::vcv::ui::message(
