@@ -1,20 +1,3 @@
-#include "../../test/framework.hpp"
-
-#include <set>
-
-#include "FlowerSeq.cpp"
-#include "FlowerSeqEx.cpp"
-#include "FlowerSeqTrig.cpp"
-
-using namespace StoermelderPackOne::Flower;
-
-SYNC_MODEL(modelFlowerSeq, "FlowerSeq");
-SYNC_MODEL(modelFlowerSeqEx, "FlowerSeqEx");
-SYNC_MODEL(modelFlowerSeqTrig, "FlowerSeqTrig");
-Test::TestContext<> testContext;
-
-typedef FlowerSeqModule<16, 8, 8> MasterModule;
-typedef FlowerTrigModule<16, 8, 8> SeedsModule;
 
 // Every case in this file drives seq.process(args)/trig.process(args) directly with a
 // hand-built FlowerProcessArgs — no clock, no master module, no chain. The engines still reach

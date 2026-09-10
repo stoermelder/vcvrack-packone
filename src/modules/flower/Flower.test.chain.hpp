@@ -1,19 +1,3 @@
-#include "../../test/framework.hpp"
-
-#include "FlowerSeq.cpp"
-#include "FlowerSeqEx.cpp"
-#include "FlowerSeqTrig.cpp"
-
-using namespace StoermelderPackOne::Flower;
-
-SYNC_MODEL(modelFlowerSeq, "FlowerSeq");
-SYNC_MODEL(modelFlowerSeqEx, "FlowerSeqEx");
-SYNC_MODEL(modelFlowerSeqTrig, "FlowerSeqTrig");
-Test::TestContext<> testContext;
-
-typedef FlowerSeqModule<16, 8, 8> MasterModule;
-typedef FlowerSeqExModule<16, 8, 8> OffspringModule;
-typedef FlowerTrigModule<16, 8, 8> SeedsModule;
 
 // A module with no relation to the Flower bundle at all: model == nullptr, so
 // isFlowerSeqModel()/isFlowerTrigModel() are false for it the same way they are for a real,
