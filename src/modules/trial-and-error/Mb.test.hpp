@@ -75,6 +75,23 @@ struct MockUiAccess : vcv::UiAccess {
 	}
 };
 
+// A HistoryAccess mock that records pushed actions instead of calling APP->history->push(),
+// which TestContext never initializes (ctx->history stays null). Needed for chooseModel()
+// (Mb.cpp), migrated to the vcv::history seam so a real click-to-add module doesn't segfault
+// headless. Takes ownership like the real Rack history::State does, so a test that installs
+// this and never inspects `pushed` still doesn't leak.
+struct MockHistoryAccess : vcv::HistoryAccess {
+	std::vector<rack::history::Action*> pushed;
+
+	void push(rack::history::Action* a) override {
+		pushed.push_back(a);
+	}
+
+	~MockHistoryAccess() {
+		for (auto* a : pushed) delete a;
+	}
+};
+
 // A NwAccess mock that records requestDownload() calls and returns scripted answers.
 struct MockNwAccess : vcv::NwAccess {
 	struct DownloadCall { std::string url, filename; };

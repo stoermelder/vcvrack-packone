@@ -1,5 +1,6 @@
 #include "../../plugin.hpp"
 #include "../../vcv/ui.hpp"
+#include "../../vcv/history.hpp"
 #include "Mb.hpp"
 #include "Mb_v1.hpp"
 #include "Mb_v2.hpp"
@@ -93,7 +94,7 @@ ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser) {
 	history::ModuleAdd* h = new history::ModuleAdd;
 	h->name = "create module";
 	h->setModule(moduleWidget);
-	APP->history->push(h);
+	vcv::history::push(h);
 
 	// Hide Module Browser
 	if (hideBrowser) APP->scene->browser->hide();
