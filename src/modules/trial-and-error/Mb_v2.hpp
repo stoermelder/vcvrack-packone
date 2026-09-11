@@ -1,5 +1,6 @@
 #pragma once
 #include "Mb.hpp"
+#include "Mb_preview.hpp"
 #include "../../plugin.hpp"
 
 namespace StoermelderPackOne {
@@ -50,6 +51,8 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	std::map<plugin::Model*, int> modelOrders;
 
 	plugin::Model* selectedModel = nullptr;
+
+	PreviewPrewarmer prewarmer;
 
 	ModuleBrowser();
 	void step() override;

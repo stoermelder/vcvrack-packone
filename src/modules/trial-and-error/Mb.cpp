@@ -1125,6 +1125,10 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 			[]() { return pluginSettings.mbMagnifierEnabled; },
 			[]() { pluginSettings.mbMagnifierEnabled ^= true; }
 		));
+		menu->addChild(createCheckMenuItem("Pre-render previews when idle", "",
+			[]() { return pluginSettings.mbPrewarmEnabled; },
+			[]() { pluginSettings.mbPrewarmEnabled ^= true; }
+		));
 		menu->addChild(createBoolPtrMenuItem("Apply VCV Libray Whitelist", "", &pluginSettings.mbApplyLibraryWhitelist));
 		menu->addChild(createBoolPtrMenuItem("Show deprecated models", "", &pluginSettings.mbShowDeprecated));
 

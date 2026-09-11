@@ -1,5 +1,6 @@
 #include "Mb_v2.hpp"
 #include "Mb.hpp"
+#include "Mb_preview.hpp"
 #include "Mb_manifests.hpp"
 #include "../../vcv/ui.hpp"
 #include <tag.hpp>
@@ -44,36 +45,24 @@ struct TogglePredefinedTagItem : MenuItem {
 
 // Widgets
 
-struct ModuleWidgetContainer : widget::Widget {
-	void draw(const DrawArgs& args) override {
-		Widget::draw(args);
-		Widget::drawLayer(args, 1);
-	}
-};
-
-
 struct ModelBox : widget::OpaqueWidget {
 	plugin::Model* model = NULL;
 	ui::Tooltip* tooltip = NULL;
 	MagnifierOverlay* magnifier = NULL;
-	widget::Widget* previewWidget = NULL;
-	widget::ZoomWidget* zoomWidget = NULL;
-	widget::FramebufferWidget* fb = NULL;
-	ModuleWidgetContainer* mwc = NULL;
-	ModuleWidget* moduleWidget = NULL;
+	ModelPreview preview;
 	bool modelHidden = false;
 
 	void setModel(plugin::Model* m) {
 		model = m;
+		preview.attach(this);
 		updateZoom();
 	}
 
 	void updateZoom() {
 		float zoom = std::pow(2.f, settings::browserZoom);
-		if (previewWidget) {
-			fb->setDirty();
-			zoomWidget->setZoom(zoom);
-			box.size.x = moduleWidget->box.size.x * zoom;
+		if (preview.created()) {
+			preview.setZoom(zoom);
+			box.size.x = preview.width * zoom;
 		}
 		else {
 			box.size.x = 12 * RACK_GRID_WIDTH * zoom;
@@ -82,33 +71,12 @@ struct ModelBox : widget::OpaqueWidget {
 		box.size = box.size.ceil();
 	}
 
-	void createPreview() {
-		if (previewWidget) return;
-
-		previewWidget = new widget::TransparentWidget;
-		addChild(previewWidget);
-
-		zoomWidget = new widget::ZoomWidget;
-		previewWidget->addChild(zoomWidget);
-
-		fb = new widget::FramebufferWidget;
-		if (math::isNear(APP->window->pixelRatio, 1.0)) {
-			fb->oversample = 2.0;
-		}
-		zoomWidget->addChild(fb);
-
-		mwc = new ModuleWidgetContainer;
-		fb->addChild(mwc);
-
-		moduleWidget = model->createModuleWidget(NULL);
-		mwc->addChild(moduleWidget);
-		mwc->box.size = moduleWidget->box.size;
-
-		int hp = (int)std::round(moduleWidget->box.size.x / RACK_GRID_WIDTH);
-		modelWidthSet(model, hp);
-
-		moduleWidget->step();
+	/** Returns true if the preview was created by this call. */
+	bool createPreview() {
+		if (!preview.create(model)) return false;
+		modelWidthSet(model, preview.hp());
 		updateZoom();
+		return true;
 	}
 
 	void draw(const DrawArgs& args) override {
@@ -175,7 +143,7 @@ struct ModelBox : widget::OpaqueWidget {
 			magnifier->initialized = true;
 			magnifier->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
 			magnifier->sourceSize = box.size;
-			magnifier->magnification = 3.f / zoomWidget->getZoom();
+			magnifier->magnification = 3.f / preview.zoomWidget->getZoom();
 		}
 		OpaqueWidget::onHover(e);
 	}
@@ -253,9 +221,9 @@ struct ModelBox : widget::OpaqueWidget {
 		tt->text = text;
 		setTooltip(tt);
 
-		if (fb) {
+		if (preview.created()) {
 			MagnifierOverlay* mg = new MagnifierOverlay;
-			mg->fb = fb;
+			mg->fb = preview.fb;
 			mg->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
 			mg->sourceSize = box.size;
 			mg->mousePos = getAbsoluteOffset(box.size.div(2));
@@ -1165,6 +1133,14 @@ void ModuleBrowser::step() {
 	modelMargin->box.size.y = modelContainer->box.size.y + margin;
 	modelContainer->box.size.x = modelMargin->box.size.x - margin;
 
+	prewarmer.run(modelContainer->children, modelScroll->offset, settings::browserZoom,
+		[](widget::Widget* w) {
+			ModelBox* mb = static_cast<ModelBox*>(w);
+			// Skip boxes filtered out of the current result set.
+			if (!mb->visible) return false;
+			return mb->createPreview();
+		});
+
 	OpaqueWidget::step();
 }
 
@@ -1237,6 +1213,7 @@ bool ModuleBrowser::hasVisibleModel(const std::string& brand, const std::set<int
 }
 
 void ModuleBrowser::updateZoom() {
+	prewarmer.reset();
 	modelScroll->offset = math::Vec();
 	for (Widget* w : modelContainer->children) {
 		ModelBox* mb = reinterpret_cast<ModelBox*>(w);
@@ -1247,6 +1224,8 @@ void ModuleBrowser::updateZoom() {
 void ModuleBrowser::refresh(bool scrollTop) {
 	if (scrollTop) modelScroll->offset = math::Vec();
 	prefilteredModelScores.clear();
+	// Visibility and order both change below, so restart the prewarm sweep.
+	prewarmer.reset();
 
 	for (Widget* w : modelContainer->children) {
 		ModelBox* m = reinterpret_cast<ModelBox*>(w);

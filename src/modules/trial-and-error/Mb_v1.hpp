@@ -1,5 +1,6 @@
 #pragma once
 #include "Mb.hpp"
+#include "Mb_preview.hpp"
 #include "../../plugin.hpp"
 
 namespace StoermelderPackOne {
@@ -48,6 +49,8 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	std::set<std::string> customTagFilter;
 	bool hidden;
 	std::set<int> emptyTagId;
+
+	PreviewPrewarmer prewarmer;
 
 	ModuleBrowser();
 	void step() override;

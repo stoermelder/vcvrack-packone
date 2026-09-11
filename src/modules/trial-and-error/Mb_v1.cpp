@@ -1,4 +1,5 @@
 #include "Mb_v1.hpp"
+#include "Mb_preview.hpp"
 #include "../../vcv/ui.hpp"
 #include <tag.hpp>
 #include <componentlibrary.hpp>
@@ -106,93 +107,51 @@ struct TogglePredefinedTagItem : MenuItem {
 // Widgets
 
 struct ModelBox : widget::OpaqueWidget {
-	struct ModuleWidgetContainer : widget::Widget {
-		void draw(const DrawArgs& args) override {
-			Widget::draw(args);
-			Widget::drawLayer(args, 1);
-		}
-	};
-
 	plugin::Model* model;
-	widget::Widget* previewWidget;
 	ui::Tooltip* tooltip = NULL;
 	/** Lazily created */
-	widget::FramebufferWidget* previewFb = NULL;
-	widget::ZoomWidget* zoomWidget = NULL;
+	ModelPreview preview;
 	MagnifierOverlay* magnifier = NULL;
 	float modelBoxZoom = -1.f;
-	float modelBoxWidth = -1.f;
 	bool modelHidden = false;
 
 	void setModel(plugin::Model* model) {
 		this->model = model;
-		previewWidget = new widget::TransparentWidget;
-		addChild(previewWidget);
+		preview.attach(this);
 	}
 
 	void step() override {
 		if (modelBoxZoom != v1::modelBoxZoom) {
-			//deletePreview();
 			modelBoxZoom = v1::modelBoxZoom;
 			// Approximate size as 10HP before we know the actual size.
 			// We need a nonzero size, otherwise the parent widget will consider it not in the draw bounds, so its preview will not be lazily created.
-			box.size.x = (modelBoxWidth < 0 ? 10 * RACK_GRID_WIDTH : modelBoxWidth) * modelBoxZoom;
+			box.size.x = (preview.width < 0 ? 10 * RACK_GRID_WIDTH : preview.width) * modelBoxZoom;
 			box.size.y = RACK_GRID_HEIGHT * modelBoxZoom;
 			box.size = box.size.ceil();
 
-			previewWidget->box.size.y = std::ceil(RACK_GRID_HEIGHT * modelBoxZoom);
+			preview.previewWidget->box.size.y = std::ceil(RACK_GRID_HEIGHT * modelBoxZoom);
 
-			if (previewFb) sizePreview();
+			if (preview.created()) sizePreview();
 		}
 		widget::OpaqueWidget::step();
 	}
 
-	void createPreview() {
-		zoomWidget = new widget::ZoomWidget;
-		previewWidget->addChild(zoomWidget);
-
-		previewFb = new widget::FramebufferWidget;
-		if (math::isNear(APP->window->pixelRatio, 1.0)) {
-			// Small details draw poorly at low DPI, so oversample when drawing to the framebuffer
-			previewFb->oversample = 2.0;
-		}
-		zoomWidget->addChild(previewFb);
-
-		ModuleWidget* moduleWidget = model->createModuleWidget(NULL);
-		ModuleWidgetContainer* mwc = new ModuleWidgetContainer;
-		mwc->addChild(moduleWidget);
-		mwc->box.size = moduleWidget->box.size;
-		previewFb->addChild(mwc);
-		// Save the width, used for correct width of blank before rendered
-		modelBoxWidth = moduleWidget->box.size.x;
-
-		// Widgets such as lights only compute their initial visible state (color, layout, nested dirty
-		// framebuffers) inside step(). Without running it once here, the framebuffer bakes its first snapshot
-		// from an unstepped, just-constructed tree.
-		moduleWidget->step();
-
+	/** Returns true if the preview was created by this call. */
+	bool createPreview() {
+		if (!preview.create(model)) return false;
 		sizePreview();
+		return true;
 	}
 
 	void sizePreview() {
-		zoomWidget->setZoom(modelBoxZoom);
-		previewFb->setDirty();
-		box.size.x = modelBoxWidth * modelBoxZoom;
+		preview.setZoom(modelBoxZoom);
+		box.size.x = preview.width * modelBoxZoom;
 		box.size.y = RACK_GRID_HEIGHT * modelBoxZoom;
-	}
-
-	void deletePreview() {
-		if (!previewFb) return;
-		previewWidget->removeChild(previewFb);
-		delete previewFb;
-		previewFb = NULL;
 	}
 
 	void draw(const DrawArgs& args) override {
 		// Lazily create preview when drawn
-		if (!previewFb) {
-			createPreview();
-		}
+		createPreview();
 
 		// Draw shadow
 		nvgBeginPath(args.vg);
@@ -473,9 +432,9 @@ struct ModelBox : widget::OpaqueWidget {
 		tooltip->text = text;
 		setTooltip(tooltip);
 
-		if (previewFb) {
+		if (preview.created()) {
 			MagnifierOverlay* mg = new MagnifierOverlay;
-			mg->fb = previewFb;
+			mg->fb = preview.fb;
 			mg->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
 			mg->sourceSize = box.size;
 			mg->mousePos = getAbsoluteOffset(box.size.div(2));
@@ -935,6 +894,14 @@ void ModuleBrowser::step() {
 	modelMargin->box.size.y = modelContainer->getChildrenBoundingBox().size.y + 2 * margin;
 	modelContainer->box.size.x = modelMargin->box.size.x - margin;
 
+	prewarmer.run(modelContainer->children, modelScroll->offset, v1::modelBoxZoom,
+		[](widget::Widget* w) {
+			ModelBox* mb = static_cast<ModelBox*>(w);
+			// Skip boxes filtered out of the current result set.
+			if (!mb->visible) return false;
+			return mb->createPreview();
+		});
+
 	OpaqueWidget::step();
 }
 
@@ -944,6 +911,8 @@ void ModuleBrowser::draw(const DrawArgs& args) {
 }
 
 void ModuleBrowser::refresh(bool resetScroll) {
+	// Visibility and order both change below, so restart the prewarm sweep.
+	prewarmer.reset();
 	if (resetScroll) {
 		// Reset scroll position
 		modelScroll->offset = math::Vec();

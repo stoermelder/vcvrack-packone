@@ -133,6 +133,14 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
 
 - **Magnifier overlay** — When enabled, hovering over a module preview in the browser shows a zoomed magnification loupe following the cursor. 
 
+- **Pre-render previews when idle** — Module previews are normally created the moment they first
+scroll into view, which can make scrolling feel sluggish on slower systems or with a large module
+library. When this option is enabled, MB instead prepares previews in the background while the
+browser sits idle, so they are already available once you scroll to them. Previews look exactly
+the same either way; only the moment they are prepared changes. Preparation pauses as soon as you
+scroll, search or zoom, and uses only leftover time within a frame, so it never delays the browser
+itself. Disabled by default.
+
 ## Changelog
 
 - v1.8
@@ -178,4 +186,5 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
     - Fixed module preview in *v1 mod* browser
 - v2.x.x
     - Added option to import "recently used"/"most used" statistics from Rack's own module browser
+    - Added option to pre-warm module preview
     - Fixed "Newest" module manifest download if Rack user folder is on different disk
