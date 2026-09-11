@@ -1,6 +1,8 @@
 #include "Mb_v2.hpp"
 #include "Mb.hpp"
+#include "Mb_preview.hpp"
 #include "Mb_manifests.hpp"
+#include "../../vcv/ui.hpp"
 #include <tag.hpp>
 #include <settings.hpp>
 #include <componentlibrary.hpp>
@@ -30,7 +32,7 @@ struct TogglePredefinedTagItem : MenuItem {
 		}
 		hasEffectiveTag = !hasEffectiveTag;
 		ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-		if (browser) browser->refresh();
+		if (browser) browser->refresh(false);
 		e.unconsume();
 	}
 	void step() override {
@@ -43,36 +45,24 @@ struct TogglePredefinedTagItem : MenuItem {
 
 // Widgets
 
-struct ModuleWidgetContainer : widget::Widget {
-	void draw(const DrawArgs& args) override {
-		Widget::draw(args);
-		Widget::drawLayer(args, 1);
-	}
-};
-
-
 struct ModelBox : widget::OpaqueWidget {
 	plugin::Model* model = NULL;
 	ui::Tooltip* tooltip = NULL;
 	MagnifierOverlay* magnifier = NULL;
-	widget::Widget* previewWidget = NULL;
-	widget::ZoomWidget* zoomWidget = NULL;
-	widget::FramebufferWidget* fb = NULL;
-	ModuleWidgetContainer* mwc = NULL;
-	ModuleWidget* moduleWidget = NULL;
+	ModelPreview preview;
 	bool modelHidden = false;
 
 	void setModel(plugin::Model* m) {
 		model = m;
+		preview.attach(this);
 		updateZoom();
 	}
 
 	void updateZoom() {
 		float zoom = std::pow(2.f, settings::browserZoom);
-		if (previewWidget) {
-			fb->setDirty();
-			zoomWidget->setZoom(zoom);
-			box.size.x = moduleWidget->box.size.x * zoom;
+		if (preview.created()) {
+			preview.setZoom(zoom);
+			box.size.x = preview.width * zoom;
 		}
 		else {
 			box.size.x = 12 * RACK_GRID_WIDTH * zoom;
@@ -81,33 +71,30 @@ struct ModelBox : widget::OpaqueWidget {
 		box.size = box.size.ceil();
 	}
 
-	void createPreview() {
-		if (previewWidget) return;
+	/** Skips stepping the preview subtree while off screen.
 
-		previewWidget = new widget::TransparentWidget;
-		addChild(previewWidget);
+	Widget::step() has no clip test, so without this every prepared preview steps its
+	whole ModuleWidget tree every frame — and the cost grows as pre-warming succeeds.
+	Off-screen boxes are not drawn and nothing in a preview animates, so there is
+	nothing to keep up to date. */
+	void step() override;
 
-		zoomWidget = new widget::ZoomWidget;
-		previewWidget->addChild(zoomWidget);
-
-		fb = new widget::FramebufferWidget;
-		if (math::isNear(APP->window->pixelRatio, 1.0)) {
-			fb->oversample = 2.0;
-		}
-		zoomWidget->addChild(fb);
-
-		mwc = new ModuleWidgetContainer;
-		fb->addChild(mwc);
-
-		moduleWidget = model->createModuleWidget(NULL);
-		mwc->addChild(moduleWidget);
-		mwc->box.size = moduleWidget->box.size;
-
-		int hp = (int)std::round(moduleWidget->box.size.x / RACK_GRID_WIDTH);
-		modelWidthSet(model, hp);
-
-		moduleWidget->step();
+	/** Returns true if the preview was created by this call. */
+	bool createPreview() {
+		if (!preview.create(model)) return false;
+		modelWidthSet(model, preview.hp());
 		updateZoom();
+		return true;
+	}
+
+	/** Creates and rasterizes the preview ahead of it being scrolled into view.
+	Returns true if this call did any work. */
+	bool preparePreview() {
+		bool did = createPreview();
+		// render() reports whether it actually produced a framebuffer; a no-op must not
+		// consume the frame's warming budget, or boxes it skipped are never retried.
+		if (preview.render()) did = true;
+		return did;
 	}
 
 	void draw(const DrawArgs& args) override {
@@ -174,7 +161,7 @@ struct ModelBox : widget::OpaqueWidget {
 			magnifier->initialized = true;
 			magnifier->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
 			magnifier->sourceSize = box.size;
-			magnifier->magnification = 3.f / zoomWidget->getZoom();
+			magnifier->magnification = 3.f / preview.zoomWidget->getZoom();
 		}
 		OpaqueWidget::onHover(e);
 	}
@@ -252,9 +239,9 @@ struct ModelBox : widget::OpaqueWidget {
 		tt->text = text;
 		setTooltip(tt);
 
-		if (fb) {
+		if (preview.created()) {
 			MagnifierOverlay* mg = new MagnifierOverlay;
-			mg->fb = fb;
+			mg->fb = preview.fb;
 			mg->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
 			mg->sourceSize = box.size;
 			mg->mousePos = getAbsoluteOffset(box.size.div(2));
@@ -348,7 +335,7 @@ struct ModelBox : widget::OpaqueWidget {
 					if (isValidCustomTag(tag)) {
 						customTagAdd(model, tag);
 						ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-						if (browser) browser->refresh();
+						if (browser) browser->refresh(false);
 					}
 					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
 					if (overlay) overlay->requestDelete();
@@ -371,7 +358,7 @@ struct ModelBox : widget::OpaqueWidget {
 				else
 					customTagAdd(model, tagName);
 				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				if (browser) browser->refresh();
+				if (browser) browser->refresh(false);
 				e.unconsume();
 			}
 			void step() override {
@@ -494,12 +481,19 @@ struct BrowserSearchField : ui::TextField {
 		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 			switch (e.key) {
 				case GLFW_KEY_DOWN:
-				case GLFW_KEY_UP:
-				case GLFW_KEY_LEFT:
-				case GLFW_KEY_RIGHT: {
+				case GLFW_KEY_UP: {
 					browser->navigateSelection(e.key);
 					e.consume(this);
 					return;
+				}
+				case GLFW_KEY_LEFT:
+				case GLFW_KEY_RIGHT: {
+					if (pluginSettings.mbArrowKeyNavigation) {
+						browser->navigateSelection(e.key);
+						e.consume(this);
+						return;
+					}
+					break;
 				}
 				case GLFW_KEY_ESCAPE: {
 					Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
@@ -1127,6 +1121,16 @@ ModuleBrowser::ModuleBrowser() {
 	headerLayout->addChild(zoomBtn);
 	zoomButton = zoomBtn;
 
+	// Last in the row: it hides itself once warming is done, and trailing position means
+	// its appearance and disappearance never shift the other controls. Its height must
+	// match the other header widgets (BND_WIDGET_HEIGHT): SequentialLayout sizes the row
+	// from its tallest visible child, so a taller widget would make the whole header
+	// grow while visible and snap back when it hides.
+	prewarmProgress = new PrewarmProgressWidget;
+	prewarmProgress->prewarmer = &prewarmer;
+	prewarmProgress->box.size = math::Vec(60, BND_WIDGET_HEIGHT);
+	headerLayout->addChild(prewarmProgress);
+
 	modelScroll = new ui::ScrollWidget;
 	addChild(modelScroll);
 
@@ -1151,6 +1155,20 @@ ModuleBrowser::ModuleBrowser() {
 	clear();
 }
 
+void ModelBox::step() {
+	// Filtered-out boxes are parked at the origin by SequentialLayout and never drawn,
+	// so there is nothing in their subtree to keep up to date.
+	if (!visible) return;
+
+	// Skip the preview subtree while off screen. Widget::step() has no clip test, so
+	// otherwise every prepared preview steps its whole ModuleWidget tree every frame.
+	// Pre-warming is unaffected: it calls preparePreview() directly, not via step().
+	ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+	if (browser && !browser->stepBand.contains(box)) return;
+
+	widget::OpaqueWidget::step();
+}
+
 void ModuleBrowser::step() {
 	if (!visible) return;
 	box = parent->box.zeroPos().grow(math::Vec(-40, -40));
@@ -1164,12 +1182,23 @@ void ModuleBrowser::step() {
 	modelMargin->box.size.y = modelContainer->box.size.y + margin;
 	modelContainer->box.size.x = modelMargin->box.size.x - margin;
 
+	// One screen of slack either side, so boxes about to scroll in are already stepped.
+	stepBand = ViewportBand::around(modelScroll->offset.y, modelScroll->box.size.y,
+		modelMargin->box.pos.y + modelContainer->box.pos.y, modelScroll->box.size.y);
+
 	OpaqueWidget::step();
 }
 
 void ModuleBrowser::draw(const DrawArgs& args) {
 	bndMenuBackground(args.vg, 0.0, 0.0, box.size.x, box.size.y, 0);
 	Widget::draw(args);
+
+	// After the visible boxes have drawn (and taken their share of the frame), spend
+	// what's left preparing previews that haven't been scrolled to yet. This runs from
+	// draw() rather than step() because rasterizing needs a current GL context.
+	prewarmer.run(modelContainer->children, modelScroll->offset, settings::browserZoom,
+		[](widget::Widget* w) { return static_cast<ModelBox*>(w)->preview.rendered(); },
+		[](widget::Widget* w) { return static_cast<ModelBox*>(w)->preparePreview(); });
 }
 
 bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode) {
@@ -1246,6 +1275,8 @@ void ModuleBrowser::updateZoom() {
 void ModuleBrowser::refresh(bool scrollTop) {
 	if (scrollTop) modelScroll->offset = math::Vec();
 	prefilteredModelScores.clear();
+	// Filtering/sorting is user interaction; back off warming for a few frames.
+	prewarmer.reset();
 
 	for (Widget* w : modelContainer->children) {
 		ModelBox* m = reinterpret_cast<ModelBox*>(w);
@@ -1480,7 +1511,7 @@ void ModuleBrowser::onShow(const event::Show& e) {
 }
 
 void ModuleBrowser::onHoverScroll(const event::HoverScroll& e) {
-	if ((APP->window->getMods() & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+	if ((vcv::ui::getWindowMods() & RACK_MOD_MASK) == RACK_MOD_CTRL) {
 		float zoomDelta = e.scrollDelta.y / 50.f / 12.f;
 		float newZoom = math::clamp(settings::browserZoom + zoomDelta, -2.f, 1.f);
 		if (newZoom != settings::browserZoom) {

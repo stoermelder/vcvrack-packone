@@ -2,6 +2,7 @@
 #include "test_plugin.hpp"
 #include "test_traversal.hpp"
 #include "../vcv/fs.hpp"
+#include "../vcv/ui.hpp"
 #include <rack.hpp>
 #include <widget/Widget.hpp>
 #include <widget/event.hpp>
@@ -37,12 +38,12 @@
 //
 //   - isCursorLocked() — always false in a test, and its only effect is to suppress dispatch
 //     entirely, so a test that wanted it would be testing nothing.
-//   - getMods() — polled to synthesise RACK_HELD repeats for held keys. A test supplies mods
-//     explicitly (see heldKeyMods), which is strictly more controllable than polling a window
-//     that does not exist.
+//   - getMods() — polled to synthesise RACK_HELD repeats for held keys. Routed through the
+//     vcv::ui::getWindowMods() seam, which is the same value the module under test reads, so a
+//     test sets mods once (see setMods) and the widget and the key repeats cannot disagree.
 //
 // So the recursion, the geometry, the ordering, the consumption rules and the EventState state
-// machine are all genuinely under test; only two things a headless test cannot have are absent.
+// machine are all genuinely under test; only one thing a headless test cannot have is absent.
 //
 // Usage:
 //   Test::Harness h;
@@ -85,15 +86,37 @@ struct EventDriver {
 	// consumed *by the scene* and reported as the target. Use missed() for that question.
 	rack::widget::Widget* lastTarget = nullptr;
 
-	// Mods reported to synthesised RACK_HELD key repeats during hover(). Stands in for
-	// APP->window->getMods(), which handleHover() polls and which does not exist headless.
-	int heldKeyMods = 0;
-
 	// The last position hover() was called at, so drag() can compute mouseDelta the way a real
 	// mouse would rather than making the caller track it.
 	rack::math::Vec lastMousePos;
 
 	explicit EventDriver(rack::widget::Widget* root) : rootWidget(root) {}
+
+	// ---- Modifiers -------------------------------------------------------------------------
+
+	// The held modifiers every part of a test agrees on: what a widget reading
+	// vcv::ui::getWindowMods() sees, and what the synthesised RACK_HELD key repeats in hover()
+	// carry. Not a field on the driver — the value lives in the installed vcv::UiAccess, which
+	// is the only place both the driver and the module under test can read it from, so the two
+	// cannot be set to different things.
+	//
+	// A widget that gates on modifiers is the reason this exists: Rack's HoverScrollEvent has
+	// no mods field, so Spin's and Mb's onHoverScroll() poll the window instead, and until the
+	// seam carried mods those branches were unreachable under test.
+	//
+	//   h.events().setMods(RACK_MOD_CTRL);
+	//   h.events().scroll(widget, Vec(0, 1));   // ctrl+scroll, as the widget sees it
+	//
+	// Takes a GLFW_MOD_* bitmask. Persists until changed, like a real held key; clearMods()
+	// releases them, and reset() does not touch them (a suite that sets mods once for a whole
+	// TEST_CASE should not have them silently dropped by an unrelated reset).
+	void setMods(int mods) {
+		StoermelderPackOne::vcv::uiAccessFor().testMods = mods;
+	}
+
+	void clearMods() { setMods(0); }
+
+	int mods() const { return StoermelderPackOne::vcv::ui::getWindowMods(); }
 
 	// ---- Queries ---------------------------------------------------------------------------
 
@@ -362,10 +385,10 @@ struct EventDriver {
 		syncRackMousePos(pos);
 
 		// Synthesised RACK_HELD repeats, one per held key — handleHover()'s first block. Mods
-		// come from heldKeyMods instead of APP->window->getMods().
+		// come from the vcv::ui seam, which is where Rack's getMods() now routes.
 		for (int key : ev->heldKeys) {
 			int scancode = glfwGetKeyScancode(key);
-			ev->handleKey(pos, key, scancode, RACK_HELD, heldKeyMods);
+			ev->handleKey(pos, key, scancode, RACK_HELD, mods());
 		}
 
 		if (ev->draggedWidget) {
@@ -411,32 +434,53 @@ struct EventDriver {
 
 	bool hover(rack::widget::Widget* w) { return hover(centerOf(w)); }
 
+	// A complete drag along an arbitrary path: press at points.front(), hover through every
+	// remaining point in order, release at points.back(). All coordinates scene-space.
+	//
+	// This is the general form `drag()` is built on: the caller owns the path's shape (a straight
+	// line, an arc, anything), and EventDriver owns the button/hover/delta protocol. Before this,
+	// any test wanting a curved gesture (a knob's rotary drag, sweeping around a circular widget)
+	// had to hand-roll the press/hover/release loop itself, including the `hover(next,
+	// next.minus(pos))` explicit-delta convention below — easy to get wrong, since omitting the
+	// delta measures mouseDelta from the wrong origin.
+	void dragPath(const std::vector<rack::math::Vec>& points,
+	              int btn = GLFW_MOUSE_BUTTON_LEFT, int mods = 0) {
+		REQUIRE(points.size() >= 2);
+		// button() sets lastMousePos itself, so the first hover()'s implicit delta is measured
+		// from points.front() rather than from wherever a previous event left the mouse.
+		button(points.front(), btn, GLFW_PRESS, mods);
+
+		rack::math::Vec pos = points.front();
+		for (size_t i = 1; i < points.size(); i++) {
+			rack::math::Vec next = points[i];
+			hover(next, next.minus(pos));
+			pos = next;
+		}
+
+		button(points.back(), btn, GLFW_RELEASE, mods);
+	}
+
 	// A complete drag: press at `from`, move through the given number of intermediate steps, and
 	// release at `to`. All coordinates scene-space.
 	//
 	// Stepping matters — a widget accumulating mouseDelta behaves differently under one big jump
 	// than under the many small ones a real mouse produces, and that difference is a real bug
 	// class (a drag handler that clamps per-move rather than in total). Default 1 step keeps the
-	// simple case simple.
+	// simple case simple. A thin wrapper over dragPath() with a linearly-sampled straight-line
+	// path — for anything curved, build a point list and call dragPath() directly.
 	void drag(rack::math::Vec from, rack::math::Vec to, int steps = 1,
 	          int btn = GLFW_MOUSE_BUTTON_LEFT, int mods = 0) {
 		REQUIRE(steps >= 1);
-		// button() sets lastMousePos itself, so the first hover()'s implicit delta is measured
-		// from `from` rather than from wherever a previous event left the mouse.
-		button(from, btn, GLFW_PRESS, mods);
-
+		std::vector<rack::math::Vec> points;
+		points.reserve(steps + 1);
+		points.push_back(from);
 		rack::math::Vec delta = to.minus(from).div(float(steps));
-		rack::math::Vec pos = from;
 		for (int i = 0; i < steps; i++) {
 			// The last step lands exactly on `to`, so accumulated float division cannot leave
-			// the drag short of where the test said it ended. Its delta is measured from where
-			// the mouse actually is, before hover() moves it.
-			rack::math::Vec next = (i == steps - 1) ? to : pos.plus(delta);
-			hover(next, next.minus(pos));
-			pos = next;
+			// the drag short of where the test said it ended.
+			points.push_back((i == steps - 1) ? to : from.plus(delta.mult(float(i + 1))));
 		}
-
-		button(to, btn, GLFW_RELEASE, mods);
+		dragPath(points, btn, mods);
 	}
 
 	// A drag starting at a widget's centre and moving by a delta — the form most drag tests

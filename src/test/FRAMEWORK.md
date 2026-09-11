@@ -36,7 +36,7 @@ Include `framework.hpp` and you get all of it, in the one order that works:
 |---|---|---|
 | `test_plugin.hpp` | Catch2 config, `DEPRECATED` collision fix, `DEBUGPLUGIN` sentinel, `TEST_SUPPRESS_DEPRECATED_*` | **Must be first.** No include guard — see §7 |
 | `test_mock.hpp` | `mock::Guard<Base>`, `TEST_MOCK_*` macros, `NullFileAccess`, `MockFileAccess` | |
-| `test_context.hpp` | `TestContext`, `SYNC_MODEL`, `createModule`/`destroyModule`, `createWidget`/`destroyWidget`, `ModuleScaffold`, `makeProcessArgs`, `sampleRate` | |
+| `test_context.hpp` | `TestContext`, `createModule`/`destroyModule`, `createWidget`/`destroyWidget`, `ModuleScaffold`, `makeProcessArgs`, `sampleRate` | |
 | `test_json.hpp` | The three preset fuzzers | |
 | `test_traversal.hpp` | `Test::traversal` — shared widget-tree walk | |
 | `test_harness.hpp` | `Test::Harness`, `SceneLayout`, `UiMode`; pulls in `test_events.hpp` | |
@@ -51,7 +51,6 @@ stylistic (§7).
 
 | Facility | Files | Read as |
 |---|---|---|
-| `SYNC_MODEL` | 57 | Near-universal; omit only if nothing compares model pointers |
 | `ModuleScaffold` | 53 | The default lifetime pattern |
 | Preset fuzzers | 51 | Standard for any module with `dataFromJson` |
 | `Test::createWidget` | 47 | Mostly construction smoke tests |
@@ -114,12 +113,11 @@ TSan is the prerequisite for concurrency testing (Phase 2 Step 7, not yet built)
 Every test file declares exactly one, at file scope:
 
 ```cpp
-SYNC_MODEL(modelStroke, "Stroke");
 Test::TestContext<> testContext;
 ```
 
 It builds a minimal `rack::Context` — engine, `EventState`, `Scene` — sets `settings::headless`,
-disables `ThreadVerifier`, and on first construction runs the plugin's `init()`.
+disables `ThreadVerifier`, and on first construction runs the suite's `testPluginInit()`.
 
 Three things worth knowing:
 
@@ -127,38 +125,33 @@ Three things worth knowing:
 and `engine` unconditionally. So `delete ctx` frees all of them; do not free them separately or you
 get a double-free. This was ambiguous for a long time and is now pinned by reading Rack's source.
 
-**`init()` runs during static initialization**, before `main()`, because ~60 test files declare
-their `TestContext` at file scope. That is why `initPluginOnce()` installs a `NullFileAccess` around
-the `init()` call itself rather than at a call site: no `TEST_CASE`-scoped guard could possibly
-exist that early. Without it, `pluginSettings.readFromJson()` would read — and then overwrite with
+**`testPluginInit()` runs during static initialization**, before `main()`, because every test file
+declares its `TestContext` at file scope. That is why `initPluginOnce()` installs a `NullFileAccess`
+around the call itself rather than at a call site: no `TEST_CASE`-scoped guard could possibly exist
+that early. Without it, `pluginSettings.readFromJson()` would read — and then overwrite with
 defaults — the developer's real `plugin.json`.
+
+It is also why a suite registers only models whose `.cpp` it `#include`s: a model global from
+another translation unit is not constructed yet at that point. See `src/test/CONVERTING.md`.
 
 **`ThreadVerifier` is disabled** (`thread::verifyEnabled = false`), so every `assert(verifier->...)`
 in the plugin is inert under test. This is a known gap, not a design choice; re-enabling it with
 harness-supplied phase identities is Phase 2 Step 3.
 
-### `SYNC_MODEL` — the two-copies problem
+### The two-copies problem — solved by the build, not by a sync
 
-A test binary has **two copies** of each module's model global: one in the dylib (used by `init()`),
-one in the test TU (from `#include`ing the module's `.cpp`). Without a sync, any expander check like
-`exp->model == modelMidiCatMem` compares the TU's stale copy against the dylib's and never matches —
-presenting as a module logic bug rather than a harness problem.
+Historically a test binary held **two copies** of each module's model global: one in
+`plugin.dylib` (used by its `init()`), one in the test TU (from `#include`ing the module's
+`.cpp`). Any expander check like `exp->model == modelMidiCatMem` compared the TU's copy against
+the dylib's and never matched — presenting as a module logic bug rather than a harness problem.
+A `SYNC_MODEL(modelFoo, "Foo")` macro papered over it by overwriting the TU's pointer after
+`init()` ran, and `Test::requireModelSync()` existed to catch a *missing* `SYNC_MODEL`.
 
-```cpp
-SYNC_MODEL(modelStroke, "Stroke");   // file scope, BEFORE the TestContext declaration
-```
-
-`SYNC_MODEL` only records an *intent*; the sync loop in `TestContext`'s constructor runs
-unconditionally, so a present `SYNC_MODEL` cannot fail quietly. The bug it cannot catch is a
-**missing** one — a module whose expander code compares against a global nobody registered. For
-that, call `Test::requireModelSync(model, slug)` right where the peer being compared is constructed
-(6 files do):
-
-```cpp
-auto* exp = /* ... construct expander peer ... */;
-Test::requireModelSync(modelMidiCatMem, "MidiCatMem");
-REQUIRE(exp->model == modelMidiCatMem);
-```
+Test binaries now link the plugin's objects as a static archive rather than the dylib, so there
+is exactly one copy of every module symbol and nothing to reconcile. **Both `SYNC_MODEL` and
+`requireModelSync` are gone** (removed 2026-09-10); each suite's `testPluginInit()` registers the
+models it needs directly. See `src/test/CONVERTING.md` for the layout and
+`var/TestFramework_review.md` Q3–Q3o for why the archive works where the dylib could not.
 
 ---
 
@@ -592,8 +585,30 @@ is then correct by construction and a layout change moves the click with the wid
 
 `handleButton()`/`handleHover()` are reproduced line for line from `Rack/src/widget/event.cpp`
 except for two `APP->window` reads: `isCursorLocked()` (always false in a test) and `getMods()`
-(replaced by an explicit `heldKeyMods`). Everything else — the whole recursion — is Rack's real
-code, so geometry, ordering and bookkeeping are genuinely under test.
+(routed through the `vcv::ui::getWindowMods()` seam). Everything else — the whole recursion — is
+Rack's real code, so geometry, ordering and bookkeeping are genuinely under test.
+
+### Modifier keys
+
+A widget that gates behaviour on held modifiers reads `vcv::ui::getWindowMods()`, and a test sets
+it with `setMods()`:
+
+```cpp
+h.events().setMods(RACK_MOD_CTRL);
+h.events().scroll(mw, Vec(0, 1));     // ctrl+scroll, as the widget sees it
+h.events().clearMods();
+```
+
+This matters because Rack's `HoverScrollEvent` carries **no** `mods` field, which is exactly why
+Rack itself polls the window for scroll modifiers — so for an `onHoverScroll()` handler there is no
+way to pass mods through the event, and before the seam carried them those branches (Spin's
+mods-gated scroll, Mb's ctrl+zoom) were unreachable under test.
+
+The value lives in the installed `vcv::UiAccess` (`UiAccess::testMods`), not on the driver, so the
+mods a widget sees and the mods the synthesised `RACK_HELD` key repeats carry are one value and
+cannot disagree. It is on the base interface rather than a mock so that a suite installing its own
+`UiAccess` over the harness's — Strip, MidiMon and MidiCat all do — still honours it. Mods persist
+until changed, like a real held key; `reset()` deliberately leaves them alone.
 
 Double-click timing reads `vcv::fs::getTime()`, so it is deterministic under a `FileAccess` mock:
 
@@ -896,7 +911,6 @@ plugin's.
 using namespace rack;
 using namespace StoermelderPackOne;
 
-SYNC_MODEL(modelMyModule, "MyModule");
 Test::TestContext<> testContext;
 
 
@@ -932,7 +946,7 @@ TEST_CASE("The UI observes what the DSP thread produced", "[MyModule][ui]") {
 
 Checklist before committing:
 
-- [ ] `SYNC_MODEL` at file scope if anything compares model pointers
+- [ ] A `testPluginInit()` registering the models the suite needs (see `CONVERTING.md`)
 - [ ] `ModuleScaffold` or `Harness` owns every module — no bare `destroyModule` without a comment
 - [ ] The three preset fuzzers, if the module has `dataFromJson`
 - [ ] Built and run with `DEBUGPLUGIN=1`

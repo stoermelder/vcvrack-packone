@@ -1,16 +1,7 @@
-#include "../../test/framework.hpp"
-#include "SirenBpmDetector.hpp"
-#include "SirenDataSource.hpp"
-#include <cmath>
-#include <cstdio>
-#include <cstring>
-#include <random>
-#include <vector>
+// SIREN BPM-detector test cases. Included by Siren.test.cpp inside namespace __bpm.
+// Not a standalone header: Siren.test.cpp's preamble supplies everything these cases use.
 
-using namespace StoermelderPackOne::Siren;
 namespace BpmDetail = StoermelderPackOne::Siren::detail;
-
-Test::TestContext<> testContext;
 
 // ─── Mock AudioStream ────────────────────────────────────────────────────────
 // A trivial in-memory AudioStream used to drive detectBpm in tests. Holds

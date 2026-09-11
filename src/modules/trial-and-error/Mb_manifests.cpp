@@ -1,4 +1,6 @@
 #include "Mb_manifests.hpp"
+#include "../../vcv/fs.hpp"
+#include "../../vcv/nw.hpp"
 #include <ghc/filesystem.hpp>
 #include <mutex>
 #include <thread>
@@ -11,7 +13,7 @@ static std::map<Model*, int64_t> manifestCreationTimestamps;
 static std::atomic<bool> manifestsCacheLoaded{false};
 
 static std::string mbManifestsCacheFilePath() {
-	return rack::asset::user("Stoermelder-P1/mb-manifests-cache.json");
+	return vcv::fs::getUserDirectory("Stoermelder-P1/mb-manifests-cache.json");
 }
 
 bool manifestsCacheExists() {
@@ -61,14 +63,13 @@ static std::map<Model*, int64_t> manifestsCacheParseJson(json_t* rootJ, const st
 
 // Parses the local manifests cache file into memory. Runs on the worker thread.
 static void manifestsCacheFromJson() {
-	FILE* file = fopen(mbManifestsCacheFilePath().c_str(), "r");
-	if (!file) {
+	std::string data;
+	if (!vcv::fs::read(mbManifestsCacheFilePath(), data)) {
 		manifestsCacheLoaded.store(false, std::memory_order_relaxed);
 		return;
 	}
 	json_error_t error;
-	json_t* rootJ = json_loadf(file, 0, &error);
-	fclose(file);
+	json_t* rootJ = json_loads(data.c_str(), 0, &error);
 	if (!rootJ) {
 		manifestsCacheLoaded.store(false, std::memory_order_relaxed);
 		return;
@@ -119,18 +120,23 @@ static bool manifestsCacheIsStale(const std::string& cacheFilePath, const std::v
 // Downloads the manifests cache from the VCV Rack Library. Runs on the worker thread.
 static bool manifestsCacheDownload() {
 	std::string url = "https://raw.githubusercontent.com/VCVRack/library/v2/manifests-cache.json";
-	std::string tmpFile = rack::system::getTempDirectory() + "/mb-manifests-cache.json";
+	std::string tmpFile = vcv::fs::getTempDirectory() + "/mb-manifests-cache.json";
 
-	if (!rack::network::requestDownload(url, tmpFile)) {
+	if (!vcv::nw::requestDownload(url, tmpFile)) {
 		WARN("MB: could not download manifests cache from %s", url.c_str());
 		return false;
 	}
 
-	rack::system::createDirectory(rack::asset::user("Stoermelder-P1"));
-	rack::system::remove(mbManifestsCacheFilePath());
-	if (!rack::system::rename(tmpFile, mbManifestsCacheFilePath())) {
-		WARN("MB: could not store manifests cache at %s", mbManifestsCacheFilePath().c_str());
-		return false;
+	vcv::fs::createDirectory(vcv::fs::getUserDirectory("Stoermelder-P1"));
+	vcv::fs::remove(mbManifestsCacheFilePath());
+	// rename() can fail with EXDEV if the user folder is a symlink/junction to a different
+	// drive/filesystem than the OS temp directory, so fall back to copy+remove.
+	if (!vcv::fs::rename(tmpFile, mbManifestsCacheFilePath())) {
+		if (!vcv::fs::copy(tmpFile, mbManifestsCacheFilePath())) {
+			WARN("MB: could not store manifests cache at %s", mbManifestsCacheFilePath().c_str());
+			return false;
+		}
+		vcv::fs::remove(tmpFile);
 	}
 
 	return true;

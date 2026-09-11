@@ -1,5 +1,6 @@
 #pragma once
 #include "Mb.hpp"
+#include "Mb_preview.hpp"
 #include "../../plugin.hpp"
 
 namespace StoermelderPackOne {
@@ -29,6 +30,7 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	ui::Button* favoriteButton;
 	ui::Button* clearButton;
 	ui::Label* countLabel;
+	PrewarmProgressWidget* prewarmProgress;
 	ui::ChoiceButton* sortButton;
 	ui::ChoiceButton* zoomButton;
 
@@ -50,6 +52,10 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	std::map<plugin::Model*, int> modelOrders;
 
 	plugin::Model* selectedModel = nullptr;
+
+	PreviewPrewarmer prewarmer;
+	/** Recomputed each step(); ModelBox::step() uses it to skip off-screen subtrees. */
+	ViewportBand stepBand;
 
 	ModuleBrowser();
 	void step() override;

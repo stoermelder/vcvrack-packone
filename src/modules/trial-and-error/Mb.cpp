@@ -1,5 +1,7 @@
 #include "../../plugin.hpp"
 #include "../../vcv/ui.hpp"
+#include "../../vcv/history.hpp"
+#include "../../vcv/fs.hpp"
 #include "Mb.hpp"
 #include "Mb_v1.hpp"
 #include "Mb_v2.hpp"
@@ -95,7 +97,7 @@ ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser) {
 	history::ModuleAdd* h = new history::ModuleAdd;
 	h->name = "create module";
 	h->setModule(moduleWidget);
-	APP->history->push(h);
+	vcv::history::push(h);
 
 	// Hide Module Browser
 	if (hideBrowser) APP->scene->browser->hide();
@@ -143,15 +145,14 @@ void modelWidthScanAll() {
 }
 
 static std::string mbWidthFilePath() {
-	return rack::asset::user("Stoermelder-P1/mb-widths.json");
+	return vcv::fs::getUserDirectory("Stoermelder-P1/mb-widths.json");
 }
 
 void modelWidthsFromJson() {
-	FILE* file = fopen(mbWidthFilePath().c_str(), "r");
-	if (!file) return;
+	std::string data;
+	if (!vcv::fs::read(mbWidthFilePath(), data)) return;
 	json_error_t error;
-	json_t* j = json_loadf(file, 0, &error);
-	fclose(file);
+	json_t* j = json_loads(data.c_str(), 0, &error);
 	if (!j) return;
 	DEFER({ json_decref(j); });
 
@@ -197,11 +198,11 @@ void modelWidthsToJson() {
 	json_t* j = json_object();
 	json_object_set_new(j, "widths", widthsJ);
 
-	rack::system::createDirectory(rack::asset::user("Stoermelder-P1"));
-	FILE* file = fopen(mbWidthFilePath().c_str(), "w");
-	if (file) {
-		json_dumpf(j, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
-		fclose(file);
+	vcv::fs::createDirectory(vcv::fs::getUserDirectory("Stoermelder-P1"));
+	char* dump = json_dumps(j, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+	if (dump) {
+		vcv::fs::write(mbWidthFilePath(), dump);
+		free(dump);
 	}
 	json_decref(j);
 }
@@ -729,6 +730,36 @@ void modelUsageReset() {
 	modelUsage.clear();
 }
 
+void modelUsageImportFromRack(bool overwrite) {
+	// Rack core keeps its own usage stats (settings::moduleInfos, pluginSlug -> modelSlug -> ModuleInfo)
+	// with "added" (use count) and "lastAdded" (Unix seconds). Merge them into MB's own usage data:
+	// timestamps always take the latest. Counts are additive when adding to existing data (both
+	// track actual usage of the module) or replaced outright when overwriting -- callers must offer
+	// "overwrite" explicitly, since running the additive merge more than once would keep stacking
+	// Rack's counts on top of what a previous import already added.
+	for (auto& pluginPair : settings::moduleInfos) {
+		for (auto& modelPair : pluginPair.second) {
+			settings::ModuleInfo& mi = modelPair.second;
+			if (mi.added <= 0 && std::isnan(mi.lastAdded))
+				continue;
+
+			Model* model = plugin::getModel(pluginPair.first, modelPair.first);
+			if (!model) {
+				continue;
+			}
+			ModelUsage* mu = modelUsage[model];
+			if (!mu) {
+				mu = new ModelUsage;
+				modelUsage[model] = mu;
+			}
+
+			int64_t lastAddedUs = std::isnan(mi.lastAdded) ? 0 : (int64_t) (mi.lastAdded * 1e6);
+			mu->usedCount = overwrite ? mi.added : mu->usedCount + mi.added;
+			mu->usedTimestamp = std::max(mu->usedTimestamp, lastAddedUs);
+		}
+	}
+}
+
 int64_t modelUsageTimestamp(Model* model) {
 	auto u = modelUsage.find(model);
 	return (u != modelUsage.end()) ? u->second->usedTimestamp : 0;
@@ -1205,6 +1236,14 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 			[]() { return pluginSettings.mbMagnifierEnabled; },
 			[]() { pluginSettings.mbMagnifierEnabled ^= true; }
 		));
+		menu->addChild(createCheckMenuItem("Arrow keys select modules (v2)", "",
+			[]() { return pluginSettings.mbArrowKeyNavigation; },
+			[]() { pluginSettings.mbArrowKeyNavigation ^= true; }
+		));
+		menu->addChild(createCheckMenuItem("Pre-render previews when idle", "",
+			[]() { return pluginSettings.mbPrewarmEnabled; },
+			[]() { pluginSettings.mbPrewarmEnabled ^= true; }
+		));
 		menu->addChild(createBoolPtrMenuItem("Apply VCV Libray Whitelist", "", &pluginSettings.mbApplyLibraryWhitelist));
 		menu->addChild(createBoolPtrMenuItem("Show deprecated models", "", &pluginSettings.mbShowDeprecated));
 
@@ -1305,7 +1344,27 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 			[&](Menu* menu) {
 				menu->addChild(createMenuItem("Export", "", [&]() { this->exportSettingsDialog(); }));
 				menu->addChild(createMenuItem("Import", "", [&]() { this->importSettingsDialog(); }));
-				menu->addChild(new MenuSeparator());
+				menu->addChild(new MenuSeparator);
+				menu->addChild(createMenuLabel("Import usage data from Rack's browser"));
+				menu->addChild(createMenuItem("Add to existing usage data", "", []() {
+					if (!StoermelderPackOne::vcv::ui::message(
+							StoermelderPackOne::vcv::MessageType::INFO, StoermelderPackOne::vcv::MessageButtons::YES_NO,
+							"This will add Rack's \"recently used\" and \"most used\" module statistics on top of MB's own usage data. "
+							"Only do this once, as running it again will keep adding the same numbers. Continue?")) {
+						return;
+					}
+					modelUsageImportFromRack(false);
+				}));
+				menu->addChild(createMenuItem("Overwrite existing usage data", "", []() {
+					if (!StoermelderPackOne::vcv::ui::message(
+							StoermelderPackOne::vcv::MessageType::WARNING, StoermelderPackOne::vcv::MessageButtons::YES_NO,
+							"This will replace MB's usage data for every module also known to Rack's browser with Rack's "
+							"\"most used\" count, keeping the most recent \"last used\" timestamp of either. This cannot be undone. Continue?")) {
+						return;
+					}
+					modelUsageImportFromRack(true);
+				}));
+				menu->addChild(new MenuSeparator);
 				menu->addChild(createMenuItem("Reset usage data", "", []() { modelUsageReset(); }));
 				menu->addChild(createMenuItem("Reset hidden modules", "", []() { hiddenModelsReset(); }));
 				menu->addChild(createMenuItem("Reset custom tags", "", []() { customTagReset(); }));
@@ -1327,18 +1386,16 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 			json_decref(rootJ);
 		});
 
-		FILE* file = fopen(filename.c_str(), "w");
-		if (!file) {
+		char* dump = json_dumps(rootJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+		DEFER({
+			free(dump);
+		});
+		if (!dump || !vcv::fs::write(filename, dump)) {
 			std::string message = string::f("Could not write to file %s", filename.c_str());
 			StoermelderPackOne::vcv::ui::message(
 				StoermelderPackOne::vcv::MessageType::WARNING, StoermelderPackOne::vcv::MessageButtons::OK, message);
 			return;
 		}
-		DEFER({
-			fclose(file);
-		});
-
-		json_dumpf(rootJ, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
 	}
 
 	void exportSettingsDialog() {
@@ -1348,7 +1405,7 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 			return;
 		}
 
-		std::string extension = system::getExtension(system::getFilename(pathStr));
+		std::string extension = vcv::fs::getExtension(vcv::fs::getFilename(pathStr));
 		if (extension.empty()) {
 			pathStr += ".json";
 		}
@@ -1359,19 +1416,16 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 	void importSettings(std::string filename) {
 		INFO("Loading settings %s", filename.c_str());
 
-		FILE* file = fopen(filename.c_str(), "r");
-		if (!file) {
+		std::string data;
+		if (!vcv::fs::read(filename, data)) {
 			std::string message = string::f("Could not load file %s", filename.c_str());
 			StoermelderPackOne::vcv::ui::message(
 				StoermelderPackOne::vcv::MessageType::WARNING, StoermelderPackOne::vcv::MessageButtons::OK, message);
 			return;
 		}
-		DEFER({
-			fclose(file);
-		});
 
 		json_error_t error;
-		json_t* rootJ = json_loadf(file, 0, &error);
+		json_t* rootJ = json_loads(data.c_str(), 0, &error);
 		if (!rootJ) {
 			std::string message = string::f("File is not a valid file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
 			StoermelderPackOne::vcv::ui::message(

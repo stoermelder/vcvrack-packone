@@ -20,6 +20,11 @@
     - Fixed lost cable labels on "Consolidate GLUE"
 - Modules [MAZE](./docs/maze/Maze.md) and [HIVE](./docs/maze/Hive.md)
     - Improved rendering performance
+- Module [MB](./docs/trial-and-error/Mb.md)
+    - Added option to import "recently used"/"most used" statistics from Rack's own module browser
+    - Added option to disable arrow keys selecting modules in *v2 mod* browser
+    - Added option to pre-warm module previews
+    - Fixed "Newest" module manifest download if Rack user folder is on different disk
 - Module [SIREN](./docs/siren/Siren.md)
     - Fixed a background worker that could stall indefinitely
     - Fixed broken "Cancel tag classification"

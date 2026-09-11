@@ -187,6 +187,10 @@ struct Harness {
 	struct HarnessUiAccess : StoermelderPackOne::vcv::UiAccess {
 		bool present = false;
 		bool hasWindow() const override { return present; }
+
+		// Held modifiers need no override here: UiAccess::getWindowMods() already reads the
+		// base's `testMods`, which EventDriver::setMods() writes into whichever access is
+		// installed. See the comment there for why that value lives on the base interface.
 	};
 
 	// Answers APP->engine->getFrame() with the harness's own DSP clock instead of the engine's,

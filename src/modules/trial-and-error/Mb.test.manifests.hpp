@@ -1,11 +1,5 @@
-#include "../../test/framework.hpp"
-#include "Mb_manifests.cpp"
-#include <chrono>
-
-using namespace StoermelderPackOne::Mb;
-
-SYNC_MODEL(modelMb, "Mb");
-Test::TestContext<> testContext;
+// MB manifests test cases. Included by Mb.test.cpp inside namespace __manifests.
+// Not a standalone header: Mb.test.hpp supplies everything these cases use.
 
 
 // Helper to build a mock plugin with the given models (slug-only, sufficient for lookup).
@@ -25,7 +19,6 @@ static plugin::Plugin* createMockPlugin(const std::string& pluginSlug, const std
 	}
 	return p;
 }
-
 
 TEST_CASE("findModel", "[Mb][manifests]") {
 	plugin::Plugin* p1 = createMockPlugin("plugin-a", {"model-1", "model-2"});
@@ -268,4 +261,142 @@ TEST_CASE("manifestsCacheIsStale", "[Mb][manifests]") {
 	std::remove(cacheFile.c_str());
 	std::remove(pluginManifest.c_str());
 	rack::system::remove(pluginDir);
+}
+
+
+// manifestsCacheFromJson() reads mbManifestsCacheFilePath() (vcv::fs::getUserDirectory(...))
+// through vcv::fs::read. FileAccess::getUserDirectory()'s base default ignores its argument
+// and always returns "" — so under MockFileAccess (which doesn't override it), that path is
+// exactly "", not a real filesystem location. Keying mock.fs.files on "" is what actually
+// exercises the read, matching the substring-tolerant approach used elsewhere in this suite
+// for the same reason (see downloadMetamoduleYaml's test, Mb.test.autotag.hpp).
+TEST_CASE("manifestsCacheFromJson", "[Mb][manifests]") {
+	struct Mock {
+		TEST_MOCK_FS(MockFileAccess);
+	} mock;
+
+	std::vector<plugin::Model*> pModels;
+	plugin::Plugin* p = createMockPlugin("test-plugin", {"known-model"}, &pModels);
+	std::vector<plugin::Plugin*>& plugins = rack::plugin::plugins;
+	plugins.push_back(p);
+
+	// Reset shared state before and after: manifestsCacheFromJson() writes the same globals
+	// manifestCreationTimestampGet's test above does, and this test's plugin is only valid for
+	// its own duration.
+	auto reset = [&]() {
+		std::lock_guard<std::mutex> lock(manifestsMutex);
+		manifestCreationTimestamps.clear();
+	};
+	reset();
+
+	SECTION("Loads and parses a valid cache file") {
+		mock.fs.files[""] = R"({
+			"test-plugin": {
+				"creationTimestamp": 1000.0,
+				"modules": {
+					"known-model": { "creationTimestamp": 5000.0 }
+				}
+			}
+		})";
+
+		manifestsCacheFromJson();
+
+		REQUIRE(manifestsCacheExists() == true);
+		REQUIRE(manifestCreationTimestampGet(pModels[0]) == 5000);
+	}
+
+	SECTION("Missing cache file leaves the cache unloaded") {
+		// No entry in mock.fs.files → read() returns false.
+		manifestsCacheFromJson();
+
+		REQUIRE(manifestsCacheExists() == false);
+		REQUIRE(manifestCreationTimestampGet(pModels[0]) == -1);
+	}
+
+	SECTION("Invalid JSON leaves the cache unloaded") {
+		mock.fs.files[""] = "{ not valid json";
+
+		manifestsCacheFromJson();
+
+		REQUIRE(manifestsCacheExists() == false);
+	}
+
+	reset();
+	plugins.pop_back();
+	delete p;
+}
+
+
+// manifestsCacheDownload() downloads via vcv::nw::requestDownload, then replaces the local
+// cache file with the download via vcv::fs (createDirectory/remove/rename, falling back to
+// copy+remove if rename() fails — e.g. EXDEV across filesystems).
+TEST_CASE("manifestsCacheDownload", "[Mb][manifests][nw]") {
+	struct Mock {
+		TEST_MOCK_FS(MockFileAccess);
+		TEST_MOCK_NW(MockNwAccess);
+	} mock;
+
+	SECTION("Download failure short-circuits before touching the filesystem") {
+		mock.nw.downloadResult = false;
+
+		bool result = manifestsCacheDownload();
+
+		REQUIRE(result == false);
+		REQUIRE(mock.nw.downloads.size() == 1);
+		CHECK(mock.nw.downloads[0].url == "https://raw.githubusercontent.com/VCVRack/library/v2/manifests-cache.json");
+		CHECK(mock.fs.createDirectoryCalls.empty());
+		CHECK(mock.fs.renameCalls.empty());
+	}
+
+	SECTION("Successful download and rename") {
+		bool result = manifestsCacheDownload();
+
+		REQUIRE(result == true);
+		CHECK(mock.fs.createDirectoryCalls.size() == 1);
+		CHECK(mock.fs.removeCalls.size() == 1);
+		REQUIRE(mock.fs.renameCalls.size() == 1);
+		CHECK(mock.fs.copyCalls.empty());
+	}
+
+	SECTION("rename() failing falls back to copy()") {
+		mock.fs.renameResult = false;
+
+		bool result = manifestsCacheDownload();
+
+		REQUIRE(result == true);
+		REQUIRE(mock.fs.renameCalls.size() == 1);
+		REQUIRE(mock.fs.copyCalls.size() == 1);
+		// The temp file is removed after a successful fallback copy.
+		CHECK(mock.fs.removeCalls.size() == 2);
+	}
+
+	SECTION("Both rename() and copy() failing reports failure") {
+		mock.fs.renameResult = false;
+		mock.fs.copyResult = false;
+
+		bool result = manifestsCacheDownload();
+
+		REQUIRE(result == false);
+		REQUIRE(mock.fs.renameCalls.size() == 1);
+		REQUIRE(mock.fs.copyCalls.size() == 1);
+		// No fallback removal of the temp file once copy() itself failed.
+		CHECK(mock.fs.removeCalls.size() == 1);
+	}
+}
+
+
+// manifestsCacheAutoUpdateCheck() is a thin wrapper: download only runs when the cache is
+// stale. Uses a nonexistent cache path so manifestsCacheIsStale() reports stale without
+// needing real files (see its own TEST_CASE above for that function's direct coverage).
+TEST_CASE("manifestsCacheAutoUpdateCheck", "[Mb][manifests][nw]") {
+	struct Mock {
+		TEST_MOCK_FS(MockFileAccess);
+		TEST_MOCK_NW(MockNwAccess);
+	} mock;
+
+	SECTION("Downloads when the cache is stale") {
+		manifestsCacheAutoUpdateCheck();
+
+		REQUIRE(mock.nw.downloads.size() == 1);
+	}
 }

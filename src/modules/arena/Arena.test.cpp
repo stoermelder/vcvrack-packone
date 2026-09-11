@@ -9,3 +9,9 @@ namespace __seq {
 namespace __seqinput {
 	#include "Arena.test.seqinput.hpp"
 }
+
+
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+	p->addModel(modelArena);
+}
