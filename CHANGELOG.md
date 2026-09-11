@@ -21,6 +21,7 @@
 - Modules [MAZE](./docs/maze/Maze.md) and [HIVE](./docs/maze/Hive.md)
     - Improved rendering performance
 - Module [MB](./docs/trial-and-error/Mb.md)
+    - Added option to import "recently used"/"most used" statistics from Rack's own module browser
     - Fixed "Newest" module manifest download if Rack user folder is on different disk
 - Module [SIREN](./docs/siren/Siren.md)
     - Fixed a background worker that could stall indefinitely

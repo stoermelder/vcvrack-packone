@@ -67,6 +67,17 @@ This information is not part of the plugin manifest and is not available locally
 
 The Sort menu also has two **Width** entries (*narrow → wide* / *wide → narrow*), which sort modules by their HP width instead of by the selected sort option above. Clicking an active width entry again disables it and returns to the previous sort option. Modules with unknown width (see [Width filter](#width-filter-v2-mod)) are sorted to the end. 
 
+### Usage data ("Last used" / "Most used")
+
+MB tracks its own "recently used" and "most used" statistics per module, separate from and in addition to the ones Rack's built-in module browser keeps. This is necessary because MB's own browser and Rack's browser are otherwise entirely separate — modules placed through Rack's browser (or through Rack's `Ctrl+Shift+drag` cloning, template presets, etc.) don't count towards MB's own stats and vice versa.
+
+If you already have usage history from Rack's built-in browser and want to carry it over, use **Import usage data from Rack's browser** in the *Browser settings* submenu of the context menu. It offers two modes:
+
+- **Add to existing usage data** — adds Rack's "most used" counts on top of MB's own, and keeps the more recent of the two "last used" timestamps per module. Only run this once per import, since running it again keeps adding the same numbers a second time.
+- **Overwrite existing usage data** — replaces MB's "most used" count for each module also known to Rack's browser, while still keeping the more recent "last used" timestamp of either. Safe to run repeatedly.
+
+This is a one-time import, not a live sync — MB does not read Rack's usage data afterwards.
+
 ## *v2_mod* keyboard shortcuts
 
 The *v2-mod* browser variant supports keyboard navigation and shortcuts:
@@ -166,4 +177,5 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
     - Fixed broken sorting option "Last used"
     - Fixed module preview in *v1 mod* browser
 - v2.x.x
+    - Added option to import "recently used"/"most used" statistics from Rack's own module browser
     - Fixed "Newest" module manifest download if Rack user folder is on different disk
