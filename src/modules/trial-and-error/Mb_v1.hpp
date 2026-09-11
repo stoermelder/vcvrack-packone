@@ -39,6 +39,7 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	ui::Label* modelLabel;
 	ui::ChoiceButton* modelSortChoice;
 	ui::Slider* modelZoomSlider;
+	PrewarmProgressWidget* prewarmProgress;
 	Widget* modelMargin;
 	ui::SequentialLayout* modelContainer;
 
@@ -51,6 +52,8 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	std::set<int> emptyTagId;
 
 	PreviewPrewarmer prewarmer;
+	/** Recomputed each step(); ModelBox::step() uses it to skip off-screen subtrees. */
+	ViewportBand stepBand;
 
 	ModuleBrowser();
 	void step() override;

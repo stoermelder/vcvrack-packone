@@ -120,21 +120,7 @@ struct ModelBox : widget::OpaqueWidget {
 		preview.attach(this);
 	}
 
-	void step() override {
-		if (modelBoxZoom != v1::modelBoxZoom) {
-			modelBoxZoom = v1::modelBoxZoom;
-			// Approximate size as 10HP before we know the actual size.
-			// We need a nonzero size, otherwise the parent widget will consider it not in the draw bounds, so its preview will not be lazily created.
-			box.size.x = (preview.width < 0 ? 10 * RACK_GRID_WIDTH : preview.width) * modelBoxZoom;
-			box.size.y = RACK_GRID_HEIGHT * modelBoxZoom;
-			box.size = box.size.ceil();
-
-			preview.previewWidget->box.size.y = std::ceil(RACK_GRID_HEIGHT * modelBoxZoom);
-
-			if (preview.created()) sizePreview();
-		}
-		widget::OpaqueWidget::step();
-	}
+	void step() override;
 
 	/** Returns true if the preview was created by this call. */
 	bool createPreview() {
@@ -865,6 +851,11 @@ ModuleBrowser::ModuleBrowser() {
 	modelZoomSlider = Rack::createPtrSlider(&v1::modelBoxZoom, PREVIEW_MIN, PREVIEW_MAX, 0.9f, "Preview", "", 100.f, 180.0f);
 	addChild(modelZoomSlider);
 
+	prewarmProgress = new PrewarmProgressWidget;
+	prewarmProgress->prewarmer = &prewarmer;
+	prewarmProgress->box.size = math::Vec(60, BND_WIDGET_HEIGHT);
+	addChild(prewarmProgress);
+
 	modelScroll = new ui::ScrollWidget;
 	addChild(modelScroll);
 
@@ -888,6 +879,30 @@ ModuleBrowser::ModuleBrowser() {
 	clear(false);
 }
 
+void ModelBox::step() {
+	// The zoom resize must run even off screen: the layout positions every box from its
+	// size, so a stale size would misplace the whole grid.
+	if (modelBoxZoom != v1::modelBoxZoom) {
+		modelBoxZoom = v1::modelBoxZoom;
+		// Approximate size as 10HP before we know the actual size.
+		// We need a nonzero size, otherwise the parent widget will consider it not in the draw bounds, so its preview will not be lazily created.
+		box.size.x = (preview.width < 0 ? 10 * RACK_GRID_WIDTH : preview.width) * modelBoxZoom;
+		box.size.y = RACK_GRID_HEIGHT * modelBoxZoom;
+		box.size = box.size.ceil();
+
+		preview.previewWidget->box.size.y = std::ceil(RACK_GRID_HEIGHT * modelBoxZoom);
+
+		if (preview.created()) sizePreview();
+	}
+
+	// Skip the preview subtree while off screen. Widget::step() has no clip test, so
+	// otherwise every prepared preview steps its whole ModuleWidget tree every frame.
+	ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+	if (browser && !browser->stepBand.contains(box)) return;
+
+	widget::OpaqueWidget::step();
+}
+
 void ModuleBrowser::step() {
 	const float margin = 10;
 	if (!visible) return;
@@ -895,6 +910,8 @@ void ModuleBrowser::step() {
 
 	sidebar->box.size.y = box.size.y;
 	modelLabel->box.pos = sidebar->box.getTopRight().plus(math::Vec(5, 5));
+	// Right of the "Modules (N)" label; hides itself once warming is done.
+	prewarmProgress->box.pos = modelLabel->box.pos.plus(math::Vec(110, 0));
 	modelZoomSlider->box.pos = Vec(box.size.x - modelZoomSlider->box.size.x - 5, 5);
 	modelSortChoice->box.pos =  Vec(modelZoomSlider->box.pos.x - modelSortChoice->box.size.x - 20, 5);
 
@@ -903,6 +920,10 @@ void ModuleBrowser::step() {
 	modelMargin->box.size.x = modelScroll->box.size.x;
 	modelMargin->box.size.y = modelContainer->getChildrenBoundingBox().size.y + 2 * margin;
 	modelContainer->box.size.x = modelMargin->box.size.x - margin;
+
+	// One screen of slack either side, so boxes about to scroll in are already stepped.
+	stepBand = ViewportBand::around(modelScroll->offset.y, modelScroll->box.size.y,
+		modelMargin->box.pos.y + modelContainer->box.pos.y, modelScroll->box.size.y);
 
 	OpaqueWidget::step();
 }
@@ -915,12 +936,10 @@ void ModuleBrowser::draw(const DrawArgs& args) {
 	// what's left preparing previews that haven't been scrolled to yet. This runs from
 	// draw() rather than step() because rasterizing needs a current GL context.
 	prewarmer.run(modelContainer->children, modelScroll->offset, v1::modelBoxZoom,
-		[](widget::Widget* w) {
-			ModelBox* mb = static_cast<ModelBox*>(w);
-			// Skip boxes filtered out of the current result set.
-			if (!mb->visible) return false;
-			return mb->preparePreview();
-		});
+		// Only boxes in the current result set are worth preparing.
+		[](widget::Widget* w) { return w->visible; },
+		[](widget::Widget* w) { return static_cast<ModelBox*>(w)->preview.rendered(); },
+		[](widget::Widget* w) { return static_cast<ModelBox*>(w)->preparePreview(); });
 }
 
 void ModuleBrowser::refresh(bool resetScroll) {
