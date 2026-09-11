@@ -51,6 +51,12 @@ include $(RACK_DIR)/arch.mk
 # Link libraries for Windows
 ifdef ARCH_WIN
 	LDFLAGS += -lws2_32 -lopengl32
+	# dep/rigtorp/MPMCQueue.h's aligned-allocator fallback allocates under `_WIN32`
+	# but only frees with _aligned_free under plain `WIN32`
+	# -- without this, deallocate() falls through to plain free()
+	# on an _aligned_malloc'd pointer, corrupting the heap on destruction of any
+	# MpmcTaskWorker (Siren, Strip, 8FACE, 8FACE mk2).
+	FLAGS += -DWIN32
 endif
 
 # Ensure headers from the orca-c tree (and its thirdparty) are found
