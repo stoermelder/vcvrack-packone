@@ -133,3 +133,48 @@ TEST_CASE("Adding a custom tag preserves the model list's scroll position", "[Mb
 	REQUIRE(browser->modelScroll->offset.x == Catch::Approx(scrolledOffset.x));
 	REQUIRE(browser->modelScroll->offset.y == Catch::Approx(scrolledOffset.y));
 }
+
+// Feature request: an option to stop Left/Right arrow keys from selecting modules in the v2
+// browser, so they move the search field's text cursor instead (v1 never intercepted arrow
+// keys at all). Gated on pluginSettings.mbArrowKeyNavigation (BrowserSearchField::onSelectKey,
+// Mb_v2.cpp), default true to preserve existing behavior. Up/Down are unaffected by the
+// setting since they don't conflict with single-line text editing.
+TEST_CASE("Disabling arrow-key navigation restores Left/Right as text cursor movement", "[Mb][Widget]") {
+	Test::Harness h;
+	APP->scene->box.size = math::Vec(1024, 300);
+
+	bool savedSetting = pluginSettings.mbArrowKeyNavigation;
+	DEFER({ pluginSettings.mbArrowKeyNavigation = savedSetting; });
+
+	auto* m = h.addModule<MbModule>("Mb");
+	auto* mw = h.addWidget<MbWidget>(m);
+	REQUIRE(mw->browserOverlay != nullptr);
+
+	BrowserOverlay* overlay = mw->browserOverlay;
+	auto* browser = dynamic_cast<v2::ModuleBrowser*>(overlay->mbV2);
+	REQUIRE(browser != nullptr);
+
+	overlay->show();
+	settleLayout(overlay);
+	REQUIRE(browser->visible);
+
+	rack::ui::TextField* searchField = browser->searchField;
+	h.events().select(searchField);
+	h.events().type("abc");
+	settleLayout(overlay);
+	REQUIRE(searchField->cursor == 3);
+
+	SECTION("Enabled (default): Left arrow selects a module, cursor stays put") {
+		pluginSettings.mbArrowKeyNavigation = true;
+		h.events().key(GLFW_KEY_LEFT);
+		settleLayout(overlay);
+		REQUIRE(searchField->cursor == 3);
+	}
+
+	SECTION("Disabled: Left arrow moves the text cursor instead") {
+		pluginSettings.mbArrowKeyNavigation = false;
+		h.events().key(GLFW_KEY_LEFT);
+		settleLayout(overlay);
+		REQUIRE(searchField->cursor == 2);
+	}
+}

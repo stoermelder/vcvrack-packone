@@ -473,12 +473,19 @@ struct BrowserSearchField : ui::TextField {
 		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 			switch (e.key) {
 				case GLFW_KEY_DOWN:
-				case GLFW_KEY_UP:
-				case GLFW_KEY_LEFT:
-				case GLFW_KEY_RIGHT: {
+				case GLFW_KEY_UP: {
 					browser->navigateSelection(e.key);
 					e.consume(this);
 					return;
+				}
+				case GLFW_KEY_LEFT:
+				case GLFW_KEY_RIGHT: {
+					if (pluginSettings.mbArrowKeyNavigation) {
+						browser->navigateSelection(e.key);
+						e.consume(this);
+						return;
+					}
+					break;
 				}
 				case GLFW_KEY_ESCAPE: {
 					Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();

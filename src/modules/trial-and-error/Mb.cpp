@@ -1125,6 +1125,10 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 			[]() { return pluginSettings.mbMagnifierEnabled; },
 			[]() { pluginSettings.mbMagnifierEnabled ^= true; }
 		));
+		menu->addChild(createCheckMenuItem("Arrow keys select modules (v2)", "",
+			[]() { return pluginSettings.mbArrowKeyNavigation; },
+			[]() { pluginSettings.mbArrowKeyNavigation ^= true; }
+		));
 		menu->addChild(createCheckMenuItem("Pre-render previews when idle", "",
 			[]() { return pluginSettings.mbPrewarmEnabled; },
 			[]() { pluginSettings.mbPrewarmEnabled ^= true; }

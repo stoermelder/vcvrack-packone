@@ -89,8 +89,8 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
 | `Shift`+*Click* | Add module, keep browser open |
 | `↓` | Move down in the module grid |
 | `↑` | Move up in the module grid |
-| `→` | Move to the next module in the row |
-| `←` | Move to the previous module in the row |
+| `→` | Move to the next module in the row (or move the text cursor right, see below) |
+| `←` | Move to the previous module in the row (or move the text cursor left, see below) |
 | `Enter` | Add the selected module to the rack |
 | `Escape` | Close the browser |
 | `Backspace` | Clear search and filters (when search is empty) |
@@ -132,6 +132,8 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
 - **Favorite modes** — MB supports two favorite modes (VCV Rack / MB) controlling how favorites are stored and displayed.
 
 - **Magnifier overlay** — When enabled, hovering over a module preview in the browser shows a zoomed magnification loupe following the cursor. 
+
+- **Arrow keys select modules (v2)** — Enabled by default, `←`/`→` move the selection to the previous/next module in the *v2 mod* browser's grid instead of moving the text cursor within the search field (`↓`/`↑` always navigate the grid regardless of this setting). Disable this option if you'd rather have `←`/`→` behave like a normal text field and move the cursor while typing a search term.
 
 - **Pre-render previews when idle** — Module previews are normally created the moment they first
 scroll into view, which can make scrolling feel sluggish on slower systems or with a large module
@@ -186,5 +188,6 @@ itself. Disabled by default.
     - Fixed module preview in *v1 mod* browser
 - v2.x.x
     - Added option to import "recently used"/"most used" statistics from Rack's own module browser
+    - Added option to disable arrow keys selecting modules in *v2 mod* browser
     - Added option to pre-warm module preview
     - Fixed "Newest" module manifest download if Rack user folder is on different disk
