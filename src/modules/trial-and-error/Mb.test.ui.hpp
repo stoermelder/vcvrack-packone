@@ -76,3 +76,60 @@ TEST_CASE("Reopening the v2 browser preserves the model list's scroll position",
 	REQUIRE(browser->modelScroll->offset.x == Catch::Approx(scrolledOffset.x));
 	REQUIRE(browser->modelScroll->offset.y == Catch::Approx(scrolledOffset.y));
 }
+
+// Regression under test: adding a custom tag reset the model list's scroll position to the
+// top, unlike toggling Favorite/Hidden. Root cause: the three tag-mutation call sites in
+// Mb_v2.cpp (TogglePredefinedTagItem::onAction, ToggleCustomTagItem::onAction,
+// NewCustomTagField::onSelectKey) called the bare `browser->refresh()`, defaulting `scrollTo`
+// to true, while Favorite/Hidden always passed `refresh(false)` explicitly. Reverting the fix
+// (dropping the explicit `false` from NewCustomTagField::onSelectKey's refresh() call) fails
+// this TEST_CASE.
+//
+// Driven through NewCustomTagField specifically (not a MenuItem click): MenuItem::onDragDrop
+// calls APP->window->getMods() directly, which segfaults under TestContext (APP->window is
+// never set). createContextMenu() pre-selects the field via APP->event->setSelectedWidget(),
+// so typing + Enter reaches NewCustomTagField::onSelectKey via EventDriver::type()/key(),
+// which dispatch to the selected widget directly and never touch APP->window.
+TEST_CASE("Adding a custom tag preserves the model list's scroll position", "[Mb][Widget]") {
+	Test::Harness h;
+
+	// A shrunk scene makes the one registered ModelBox taller than the viewport, so the list
+	// actually overflows and the scroll below isn't a no-op clamped back to 0.
+	APP->scene->box.size = math::Vec(1024, 300);
+
+	auto* m = h.addModule<MbModule>("Mb");
+	auto* mw = h.addWidget<MbWidget>(m);
+	REQUIRE(mw->active);
+	REQUIRE(mw->browserOverlay != nullptr);
+
+	BrowserOverlay* overlay = mw->browserOverlay;
+	auto* browser = dynamic_cast<v2::ModuleBrowser*>(overlay->mbV2);
+	REQUIRE(browser != nullptr);
+
+	overlay->show();
+	settleLayout(overlay);
+	REQUIRE(browser->visible);
+
+	v2::ModelBox* box = h.events().find<v2::ModelBox>(browser);
+
+	// Real scroll, against real overflow from the scene shrink above.
+	h.events().scroll(browser->modelScroll, math::Vec(0.f, -250.f));
+	settleLayout(overlay);
+	math::Vec scrolledOffset = browser->modelScroll->offset;
+	REQUIRE(scrolledOffset.y > 0.f);
+
+	// Real right-click: ModelBox::onButton() -> createContextMenu(), which builds the tag
+	// menu and pre-selects the NewCustomTagField for typing.
+	REQUIRE(h.events().rightClick(box));
+	settleLayout(overlay);
+
+	auto* tagField = h.events().find<rack::ui::TextField>(APP->scene);
+	h.events().select(tagField);
+	h.events().type("mytag");
+	h.events().key(GLFW_KEY_ENTER);
+	settleLayout(overlay);
+
+	REQUIRE(browser->visible);
+	REQUIRE(browser->modelScroll->offset.x == Catch::Approx(scrolledOffset.x));
+	REQUIRE(browser->modelScroll->offset.y == Catch::Approx(scrolledOffset.y));
+}

@@ -32,7 +32,7 @@ struct TogglePredefinedTagItem : MenuItem {
 		}
 		hasEffectiveTag = !hasEffectiveTag;
 		ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-		if (browser) browser->refresh();
+		if (browser) browser->refresh(false);
 		e.unconsume();
 	}
 	void step() override {
@@ -327,7 +327,7 @@ struct ModelBox : widget::OpaqueWidget {
 					if (isValidCustomTag(tag)) {
 						customTagAdd(model, tag);
 						ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-						if (browser) browser->refresh();
+						if (browser) browser->refresh(false);
 					}
 					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
 					if (overlay) overlay->requestDelete();
@@ -350,7 +350,7 @@ struct ModelBox : widget::OpaqueWidget {
 				else
 					customTagAdd(model, tagName);
 				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				if (browser) browser->refresh();
+				if (browser) browser->refresh(false);
 				e.unconsume();
 			}
 			void step() override {
