@@ -143,6 +143,16 @@ struct ModelBox : widget::OpaqueWidget {
 		return true;
 	}
 
+	/** Creates and rasterizes the preview ahead of it being scrolled into view.
+	Returns true if this call did any work. */
+	bool preparePreview() {
+		bool did = createPreview();
+		// render() reports whether it actually produced a framebuffer; a no-op must not
+		// consume the frame's warming budget, or boxes it skipped are never retried.
+		if (preview.render()) did = true;
+		return did;
+	}
+
 	void sizePreview() {
 		preview.setZoom(modelBoxZoom);
 		box.size.x = preview.width * modelBoxZoom;
@@ -894,24 +904,27 @@ void ModuleBrowser::step() {
 	modelMargin->box.size.y = modelContainer->getChildrenBoundingBox().size.y + 2 * margin;
 	modelContainer->box.size.x = modelMargin->box.size.x - margin;
 
-	prewarmer.run(modelContainer->children, modelScroll->offset, v1::modelBoxZoom,
-		[](widget::Widget* w) {
-			ModelBox* mb = static_cast<ModelBox*>(w);
-			// Skip boxes filtered out of the current result set.
-			if (!mb->visible) return false;
-			return mb->createPreview();
-		});
-
 	OpaqueWidget::step();
 }
 
 void ModuleBrowser::draw(const DrawArgs& args) {
 	bndMenuBackground(args.vg, 0.0, 0.0, box.size.x, box.size.y, 0);
 	Widget::draw(args);
+
+	// After the visible boxes have drawn (and taken their share of the frame), spend
+	// what's left preparing previews that haven't been scrolled to yet. This runs from
+	// draw() rather than step() because rasterizing needs a current GL context.
+	prewarmer.run(modelContainer->children, modelScroll->offset, v1::modelBoxZoom,
+		[](widget::Widget* w) {
+			ModelBox* mb = static_cast<ModelBox*>(w);
+			// Skip boxes filtered out of the current result set.
+			if (!mb->visible) return false;
+			return mb->preparePreview();
+		});
 }
 
 void ModuleBrowser::refresh(bool resetScroll) {
-	// Visibility and order both change below, so restart the prewarm sweep.
+	// Filtering/sorting is user interaction; back off warming for a few frames.
 	prewarmer.reset();
 	if (resetScroll) {
 		// Reset scroll position

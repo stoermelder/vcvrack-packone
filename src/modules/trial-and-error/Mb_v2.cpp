@@ -79,6 +79,16 @@ struct ModelBox : widget::OpaqueWidget {
 		return true;
 	}
 
+	/** Creates and rasterizes the preview ahead of it being scrolled into view.
+	Returns true if this call did any work. */
+	bool preparePreview() {
+		bool did = createPreview();
+		// render() reports whether it actually produced a framebuffer; a no-op must not
+		// consume the frame's warming budget, or boxes it skipped are never retried.
+		if (preview.render()) did = true;
+		return did;
+	}
+
 	void draw(const DrawArgs& args) override {
 		createPreview();
 
@@ -1133,20 +1143,23 @@ void ModuleBrowser::step() {
 	modelMargin->box.size.y = modelContainer->box.size.y + margin;
 	modelContainer->box.size.x = modelMargin->box.size.x - margin;
 
-	prewarmer.run(modelContainer->children, modelScroll->offset, settings::browserZoom,
-		[](widget::Widget* w) {
-			ModelBox* mb = static_cast<ModelBox*>(w);
-			// Skip boxes filtered out of the current result set.
-			if (!mb->visible) return false;
-			return mb->createPreview();
-		});
-
 	OpaqueWidget::step();
 }
 
 void ModuleBrowser::draw(const DrawArgs& args) {
 	bndMenuBackground(args.vg, 0.0, 0.0, box.size.x, box.size.y, 0);
 	Widget::draw(args);
+
+	// After the visible boxes have drawn (and taken their share of the frame), spend
+	// what's left preparing previews that haven't been scrolled to yet. This runs from
+	// draw() rather than step() because rasterizing needs a current GL context.
+	prewarmer.run(modelContainer->children, modelScroll->offset, settings::browserZoom,
+		[](widget::Widget* w) {
+			ModelBox* mb = static_cast<ModelBox*>(w);
+			// Skip boxes filtered out of the current result set.
+			if (!mb->visible) return false;
+			return mb->preparePreview();
+		});
 }
 
 bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode) {
@@ -1213,7 +1226,6 @@ bool ModuleBrowser::hasVisibleModel(const std::string& brand, const std::set<int
 }
 
 void ModuleBrowser::updateZoom() {
-	prewarmer.reset();
 	modelScroll->offset = math::Vec();
 	for (Widget* w : modelContainer->children) {
 		ModelBox* mb = reinterpret_cast<ModelBox*>(w);
@@ -1224,7 +1236,7 @@ void ModuleBrowser::updateZoom() {
 void ModuleBrowser::refresh(bool scrollTop) {
 	if (scrollTop) modelScroll->offset = math::Vec();
 	prefilteredModelScores.clear();
-	// Visibility and order both change below, so restart the prewarm sweep.
+	// Filtering/sorting is user interaction; back off warming for a few frames.
 	prewarmer.reset();
 
 	for (Widget* w : modelContainer->children) {
