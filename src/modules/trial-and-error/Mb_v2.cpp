@@ -1156,8 +1156,16 @@ ModuleBrowser::ModuleBrowser() {
 }
 
 void ModelBox::step() {
+	// Filtered-out boxes are parked at the origin by SequentialLayout and never drawn,
+	// so there is nothing in their subtree to keep up to date.
+	if (!visible) return;
+
+	// Skip the preview subtree while off screen. Widget::step() has no clip test, so
+	// otherwise every prepared preview steps its whole ModuleWidget tree every frame.
+	// Pre-warming is unaffected: it calls preparePreview() directly, not via step().
 	ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
 	if (browser && !browser->stepBand.contains(box)) return;
+
 	widget::OpaqueWidget::step();
 }
 
@@ -1189,8 +1197,6 @@ void ModuleBrowser::draw(const DrawArgs& args) {
 	// what's left preparing previews that haven't been scrolled to yet. This runs from
 	// draw() rather than step() because rasterizing needs a current GL context.
 	prewarmer.run(modelContainer->children, modelScroll->offset, settings::browserZoom,
-		// Only boxes in the current result set are worth preparing.
-		[](widget::Widget* w) { return w->visible; },
 		[](widget::Widget* w) { return static_cast<ModelBox*>(w)->preview.rendered(); },
 		[](widget::Widget* w) { return static_cast<ModelBox*>(w)->preparePreview(); });
 }

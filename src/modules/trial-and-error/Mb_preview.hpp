@@ -203,10 +203,14 @@ struct PreviewPrewarmer {
 
 	/** Prepares previews using whatever time is left in the frame.
 
-	`eligible` selects the candidates that should be prepared (typically: visible in the
-	current filter). `ready` reports whether a candidate is already fully prepared.
-	`warm` does the work and returns true if it actually did any, so boxes that are
-	already prepared don't consume the budget.
+	`ready` reports whether a candidate is already fully prepared. `warm` does the work
+	and returns true if it actually did any, so boxes that are already prepared don't
+	consume the budget.
+
+	Every model is warmed, not just the ones matching the current filter: filters are
+	transient, and a preview prepared now stays prepared, so restricting the sweep to
+	the visible set would just mean warming again from scratch after each search or
+	tag change — exactly when the user is about to scroll.
 
 	The sweep walks the container from the front each time rather than resuming from a
 	saved position: refresh() reorders the list, so a saved index would point at an
@@ -215,9 +219,9 @@ struct PreviewPrewarmer {
 	The sweep always walks the whole list so the progress tally is complete; once the
 	frame budget runs out the remainder of the pass only counts instead of preparing.
 	*/
-	template <typename E, typename R, typename F>
+	template <typename R, typename F>
 	void run(const std::list<widget::Widget*>& children, math::Vec offset, float zoom,
-		E eligible, R ready, F warm) {
+		R ready, F warm) {
 		if (!pluginSettings.mbPrewarmEnabled) {
 			readyCount = totalCount = 0;
 			return;
@@ -252,11 +256,10 @@ struct PreviewPrewarmer {
 		int nReady = 0, nTotal = 0;
 		bool budgetLeft = true;
 
-		// Always walk the whole list so the tally is complete: eligible() and ready()
-		// are pointer tests, and once the budget runs out the rest of the pass only
-		// counts rather than preparing.
+		// Always walk the whole list so the tally is complete: ready() is a pointer
+		// test, and once the budget runs out the rest of the pass only counts rather
+		// than preparing.
 		for (widget::Widget* w : children) {
-			if (!eligible(w)) continue;
 			nTotal++;
 			if (ready(w)) {
 				nReady++;
