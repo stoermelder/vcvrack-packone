@@ -911,7 +911,7 @@ void BrowserOverlay::step() {
 		doActivate = true;
 	}
 	// Show selection browser on held Ctrl key
-	if (doActivate && (vcv::ui::getWindowMods() & RACK_MOD_CTRL) == RACK_MOD_CTRL) {
+	if (doActivate && (APP->window->getMods() & RACK_MOD_CTRL) == RACK_MOD_CTRL) {
 		if (mbActive) mbActive->hide();
 		mbPatch->show();
 		mbActive = mbPatch;
