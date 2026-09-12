@@ -23,8 +23,12 @@ bool RealUiAccess::message(MessageType type, MessageButtons buttons, const std::
 }
 
 std::string RealUiAccess::openDialog(const std::string& filters, const std::string& dir) {
-	osdialog_filters* f = osdialog_filters_parse(filters.c_str());
-	DEFER({ osdialog_filters_free(f); });
+	// osdialog_filters_parse() asserts (crashes) on a string with no ':' — including "" — since
+	// its parser only ever sets up a pattern list once it sees the name/pattern separator. An
+	// empty filter list is a legitimate "no filter" request, so route it around the parser
+	// instead of trying to parse something it was never meant to accept.
+	osdialog_filters* f = filters.empty() ? NULL : osdialog_filters_parse(filters.c_str());
+	DEFER({ if (f) osdialog_filters_free(f); });
 	char* pathC = osdialog_file(OSDIALOG_OPEN, dir.empty() ? NULL : dir.c_str(), NULL, f);
 	if (!pathC) return "";
 	DEFER({ std::free(pathC); });
@@ -32,8 +36,10 @@ std::string RealUiAccess::openDialog(const std::string& filters, const std::stri
 }
 
 std::string RealUiAccess::saveDialog(const std::string& filters, const std::string& dir, const std::string& filename) {
-	osdialog_filters* f = osdialog_filters_parse(filters.c_str());
-	DEFER({ osdialog_filters_free(f); });
+	// See openDialog()'s comment: osdialog_filters_parse("") crashes rather than returning an
+	// empty filter list.
+	osdialog_filters* f = filters.empty() ? NULL : osdialog_filters_parse(filters.c_str());
+	DEFER({ if (f) osdialog_filters_free(f); });
 	char* pathC = osdialog_file(OSDIALOG_SAVE, dir.empty() ? NULL : dir.c_str(), filename.empty() ? NULL : filename.c_str(), f);
 	if (!pathC) return "";
 	DEFER({ std::free(pathC); });
