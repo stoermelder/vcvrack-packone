@@ -440,6 +440,11 @@ struct CachedPreviewWidget : widget::Widget {
 // browsers warm previews during idle frames instead of during a scroll.
 struct ModelPreview {
 	widget::Widget* previewWidget = NULL;
+	// Sits between previewWidget and zoomWidget on the live path only. Carries the browser's
+	// zoom while zoomWidget is pinned at 1.0 for the capture render, so the preview is drawn
+	// at the right size without changing the scale render() captures at. Reset to 1.0 once
+	// zoomWidget takes the zoom over itself.
+	widget::ZoomWidget* displayZoomWidget = NULL;
 	widget::ZoomWidget* zoomWidget = NULL;
 	widget::FramebufferWidget* fb = NULL;
 	ModuleWidgetContainer* mwc = NULL;
@@ -511,8 +516,11 @@ struct ModelPreview {
 			return true;
 		}
 
+		displayZoomWidget = new widget::ZoomWidget;
+		previewWidget->addChild(displayZoomWidget);
+
 		zoomWidget = new widget::ZoomWidget;
-		previewWidget->addChild(zoomWidget);
+		displayZoomWidget->addChild(zoomWidget);
 
 		fb = new widget::FramebufferWidget;
 		if (math::isNear(APP->window->pixelRatio, 1.0)) {
@@ -581,7 +589,13 @@ struct ModelPreview {
 		}
 		if (mwc->box.size.isZero() || !fb->isVisible()) return false;
 
-		float s = fb->getAbsoluteZoom() * APP->window->pixelRatio;
+		// getAbsoluteZoom() multiplies in every ZoomWidget above fb, displayZoomWidget
+		// included — so divide that one back out. It exists only to scale what is drawn while
+		// zoomWidget is pinned at 1.0 (see setZoom()); letting it reach the render would
+		// capture the panel at browser zoom, which at the default browserZoom of -2 is quarter
+		// scale, and every later zoom-in would magnify that undersized bitmap.
+		float displayZoom = displayZoomWidget ? displayZoomWidget->getZoom() : 1.f;
+		float s = (fb->getAbsoluteZoom() / displayZoom) * APP->window->pixelRatio;
 #ifdef MB_PREWARM_PROFILE
 		double tr = rack::system::getTime();
 #endif
@@ -597,6 +611,7 @@ struct ModelPreview {
 			fb->setDirty();
 			return false;
 		}
+
 		return true;
 	}
 
@@ -608,16 +623,27 @@ struct ModelPreview {
 	// mode there is no framebuffer to re-render — the baked image is simply drawn at the new
 	// scale by zoomWidget's transform, same as the live path.
 	//
-	// While prewarming and not yet rendered, the zoom is deliberately not applied to the render:
-	// the first render always happens at zoom 1.0 (see create()), so a rendered-then-captured
-	// preview never needs a second render at a different scale, which used to double render
-	// time across a whole library warm-up. The requested zoom is only remembered
-	// (pendingDisplayZoom); swapToCached() applies it once capture is done. Once actually
-	// rendered (including a reclaimed cache hit), zoom changes apply immediately as normal.
+	// While prewarming and not yet rendered, the zoom is deliberately not applied to the
+	// framebuffer's own ZoomWidget: the first render always happens at zoom 1.0 (see create()),
+	// so a rendered-then-captured preview never needs a second render at a different scale,
+	// which used to double render time across a whole library warm-up. The requested zoom is
+	// remembered (pendingDisplayZoom) for swapToCached() to apply once capture is done.
+	//
+	// The *display* scale is applied regardless, on displayZoomWidget, which sits above the
+	// framebuffer and so rescales what the user sees without touching getAbsoluteZoom() at
+	// render time. Without that the live subtree — which an asynchronous readback leaves on
+	// screen for the frames between render and swap — would draw at full size next to its
+	// correctly-scaled neighbours.
 	void setZoom(float zoom) {
 		if (!zoomWidget) return;
 		pendingDisplayZoom = zoom;
-		if (pluginSettings.mbPrewarmEnabled && fb && !rendered()) return;
+		bool pinned = pluginSettings.mbPrewarmEnabled && fb && !rendered();
+		if (displayZoomWidget) {
+			// Scale to apply outside the framebuffer: the whole zoom while the inner one is
+			// pinned at 1.0, and nothing once the inner one carries it itself.
+			displayZoomWidget->setZoom(pinned ? zoom : 1.f);
+		}
+		if (pinned) return;
 		zoomWidget->setZoom(zoom);
 		if (fb) fb->setDirty();
 	}
@@ -632,10 +658,14 @@ struct ModelPreview {
 	// rendered at a fixed 1.0. No-op if already cached or never went live.
 	void swapToCached(const PreviewPixelCache::Entry& entry, float displayZoom) {
 		if (!fb || cachedWidget) return;
-		// zoomWidget owns fb/mwc/moduleWidget, so deleting it tears down the whole live subtree
-		// at once; removeChild() first satisfies Widget::~Widget()'s assert(!parent).
-		previewWidget->removeChild(zoomWidget);
-		delete zoomWidget;
+		// displayZoomWidget owns zoomWidget owns fb/mwc/moduleWidget, so deleting the outermost
+		// tears down the whole live subtree at once; removeChild() first satisfies
+		// Widget::~Widget()'s assert(!parent).
+		widget::Widget* liveRoot = displayZoomWidget ? (widget::Widget*)displayZoomWidget
+			: (widget::Widget*)zoomWidget;
+		previewWidget->removeChild(liveRoot);
+		delete liveRoot;
+		displayZoomWidget = NULL;
 		zoomWidget = NULL;
 		fb = NULL;
 		mwc = NULL;
@@ -734,6 +764,12 @@ struct PreviewPrewarmer {
 			lastOffset = offset;
 			lastZoom = zoom;
 			stillFrames = 0;
+			// Warming backs off while the user scrolls, but readbacks issued just before the
+			// scroll began still have to be collected and swapped — otherwise scrolling, the
+			// one case where boxes are actively coming into view, is exactly when their live
+			// subtrees linger longest. Collecting is cheap and does no preview work.
+			PreviewPixelCache::collectPending();
+			for (widget::Widget* w : children) ready(w);
 			return;
 		}
 		if (++stillFrames < STILL_FRAMES_REQUIRED) return;
@@ -1009,6 +1045,12 @@ struct ModelBoxBase : widget::OpaqueWidget {
 		// capturing: a box whose entry has since arrived drops its live subtree here.
 		if (preview.fb && !preview.isCached() && PreviewPixelCache::has(model)) {
 			preview.swapToCached(PreviewPixelCache::map().at(model), preview.pendingDisplayZoom);
+			// The swap replaces the live subtree with the cached bitmap, which may report a
+			// different panel width than the live preview did (and, for a box swapped before
+			// it ever drew, replaces the placeholder width entirely). box.size is this
+			// widget's, not the preview's, so only updateZoom() can bring it back in sync —
+			// without this the box draws one frame at its pre-swap size.
+			updateZoom();
 			return;
 		}
 
@@ -1017,8 +1059,9 @@ struct ModelBoxBase : widget::OpaqueWidget {
 			&& !PreviewPixelCache::has(model) && !PreviewPixelCache::isPending(model)) {
 			// Already rendered at zoom 1.0 (setZoom() pins it there while unrendered), so no
 			// second capture-only render is needed. pendingDisplayZoom is the zoom to resume at.
-			// The swap happens on a later call, once the read has been collected — until then
-			// the live subtree stays up and keeps drawing.
+			// The swap happens on a later call, once the read has been collected. The live
+			// subtree is hidden in the meantime: it is pinned at zoom 1.0 for the capture,
+			// so leaving it visible draws it at full size until the bitmap arrives.
 			PreviewPixelCache::store(model, preview.fb, preview.width);
 		}
 	}
@@ -1069,6 +1112,24 @@ struct ModelBoxBase : widget::OpaqueWidget {
 		return r;
 	}
 
+	// Swaps this box over to its cached bitmap if the asynchronous readback has since landed,
+	// dropping the live ModuleWidget subtree. Cheap enough to call on every box every frame:
+	// for anything already cached, still live-rendering, or not yet warmed, it is a couple of
+	// pointer tests and a hash lookup.
+	//
+	// Needed because the swap otherwise only happens inside captureIfNewlyRendered(), which
+	// runs from preparePreview() or draw() — so an off-screen box the sweep has already
+	// finished with would hold its live subtree until it was next drawn. That is the expensive
+	// half of a preview (a full ModuleWidget tree plus its framebuffer) kept alive for no
+	// reason, across potentially the whole library.
+	void swapIfCaptureArrived() {
+		if (!pluginSettings.mbPrewarmEnabled) return;
+		if (!preview.fb || preview.isCached()) return;
+		if (!PreviewPixelCache::has(model)) return;
+		preview.swapToCached(PreviewPixelCache::map().at(model), preview.pendingDisplayZoom);
+		updateZoom();
+	}
+
 	// Reports whether this box needs no further pre-warming.
 	bool previewReady() const {
 		return preview.rendered();
@@ -1104,6 +1165,11 @@ struct ModelBoxBase : widget::OpaqueWidget {
 		// Lazily create preview when drawn
 		createPreview();
 
+		// EXPERIMENT: shadow disabled to measure its GPU cost. The box gradient is a
+		// per-fragment shader pass over an area larger than the box itself, redrawn every
+		// frame for every visible box even though it never changes. Restore by removing
+		// the #if 0 once the measurement is done.
+#if 0
 		// Draw shadow
 		nvgBeginPath(args.vg);
 		float r = shadowBlurRadius;
@@ -1113,6 +1179,7 @@ struct ModelBoxBase : widget::OpaqueWidget {
 		NVGcolor transparentColor = nvgRGBAf(0, 0, 0, 0);
 		nvgFillPaint(args.vg, nvgBoxGradient(args.vg, 0, 0, box.size.x, box.size.y, c, r, shadowColor, transparentColor));
 		nvgFill(args.vg);
+#endif
 
 		// To avoid blinding the user when rack brightness is low, draw framebuffer with the same brightness.
 		float b = math::clamp(settings::rackBrightness + 0.2f, 0.f, 1.f);
@@ -1454,7 +1521,14 @@ static void prewarmModelContainer(PreviewPrewarmer& prewarmer,
 	static_assert(std::is_base_of<ModelBoxBase, TModelBox>::value,
 		"TModelBox must derive from ModelBoxBase");
 	prewarmer.run(children, offset, zoom,
-		[](widget::Widget* w) { return static_cast<TModelBox*>(w)->previewReady(); },
+		[](widget::Widget* w) {
+			TModelBox* b = static_cast<TModelBox*>(w);
+			// Collect any readback that landed since the last pass before reporting
+			// readiness, so a box the sweep is done with still gets its live subtree
+			// released without waiting to be drawn.
+			b->swapIfCaptureArrived();
+			return b->previewReady();
+		},
 		[](widget::Widget* w) { return static_cast<TModelBox*>(w)->preparePreview(); });
 }
 
