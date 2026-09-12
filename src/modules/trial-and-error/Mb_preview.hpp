@@ -242,6 +242,20 @@ struct ModelPreview {
 		return fb && fb->getFramebuffer() != NULL && !fb->dirty;
 	}
 
+	// The NanoVG image the magnifier should sample, whichever mode this preview is in — a live
+	// rendered framebuffer's own image, or the cached bitmap's uploaded one. -1 if neither is
+	// ready yet (unwarmed box).
+	int magnifierImage(NVGcontext* vg) const {
+		if (cachedWidget && cachedWidget->entry && cachedWidget->entry->valid()) {
+			return cachedWidget->entry->image(vg);
+		}
+		if (fb) {
+			NVGLUframebuffer* nfb = fb->getFramebuffer();
+			if (nfb) return nfb->image;
+		}
+		return -1;
+	}
+
 	// Rasterizes the framebuffer now instead of waiting for FramebufferWidget::draw() to do
 	// it lazily, so a preview scrolled into view isn't a black box for a frame or two. The scale
 	// passed must match the world transform the widget draws with (absolute zoom * pixel ratio),
@@ -939,11 +953,11 @@ struct ModelBoxBase : widget::OpaqueWidget {
 		tt->text = tooltipText();
 		setTooltip(tt);
 
-		// The magnifier samples a live framebuffer, so an unwarmed box or a cached static
-		// image gets no magnifier.
-		if (preview.fb) {
+		// The magnifier samples a live or cached image alike; an unwarmed box has neither.
+		int img = (APP->window) ? preview.magnifierImage(APP->window->vg) : -1;
+		if (img >= 0) {
 			MagnifierOverlay* mg = new MagnifierOverlay;
-			mg->fb = preview.fb;
+			mg->nvgImage = img;
 			mg->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
 			mg->sourceSize = box.size;
 			mg->mousePos = getAbsoluteOffset(box.size.div(2));
@@ -954,13 +968,15 @@ struct ModelBoxBase : widget::OpaqueWidget {
 
 	void onHover(const event::Hover& e) override {
 		if (magnifier) {
-			// A mid-hover capture+swap deletes the FramebufferWidget magnifier->fb points at;
-			// close rather than re-point, since a cached static image has none to sample.
-			if (!preview.fb) {
+			// A mid-hover capture+swap replaces the live framebuffer with a cached image (or
+			// vice versa in principle); re-fetch every frame so the magnifier always samples
+			// whichever is actually current, rather than a pointer to one that's gone.
+			int img = (APP->window) ? preview.magnifierImage(APP->window->vg) : -1;
+			if (img < 0) {
 				setMagnifier(NULL);
 			}
 			else {
-				magnifier->fb = preview.fb;
+				magnifier->nvgImage = img;
 				magnifier->mousePos = getAbsoluteOffset(e.pos);
 				magnifier->initialized = true;
 				magnifier->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
