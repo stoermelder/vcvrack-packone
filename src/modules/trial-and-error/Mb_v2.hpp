@@ -54,7 +54,7 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	plugin::Model* selectedModel = nullptr;
 
 	PreviewPrewarmer prewarmer;
-	/** Recomputed each step(); ModelBox::step() uses it to skip off-screen subtrees. */
+	// Recomputed each step(); ModelBox::step() uses it to skip off-screen subtrees.
 	ViewportBand stepBand;
 
 	ModuleBrowser();

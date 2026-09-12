@@ -17,6 +17,9 @@ namespace __manifests {
 namespace __ui {
 	#include "Mb.test.ui.hpp"
 }
+namespace __modelbox {
+	#include "Mb.test.modelbox.hpp"
+}
 
 void testPluginInit(rack::Plugin* p) {
 	pluginInstance = p;
