@@ -109,6 +109,18 @@ struct PresetDispatch {
 		guiTasks.drain();
 	}
 
+	// Blocks until both of this dispatch's background workers have fully stopped: taskWorker
+	// (GUISAFEMODE::WORKER's applyPreset() dispatch) and guiTasks' own private worker (started
+	// whenever vcv::ui::hasWindow() was false, regardless of guiSafeMode). The owning module MUST
+	// call this at the very top of its destructor, before touching anything a dispatched task
+	// might still be reading (boundModules, preset data, etc.) -- an explicit destructor body runs
+	// entirely before any member (this one included) is destroyed, so declaration order relative
+	// to boundModules does NOT make touching that state safe on its own.
+	void stopWorkers() {
+		taskWorker.reset();
+		guiTasks.stopWorker();
+	}
+
 	// Test seam: observe queue depth without reaching through GuiTaskProcessor's internals.
 	size_t pendingGuiTasks() const {
 		return guiTasks.internalQueue.queue.size();

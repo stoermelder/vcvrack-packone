@@ -67,9 +67,16 @@ struct DispatchFixture {
 		*(slot->presetSlotUsed) = true;
 	}
 
+	// Reads boundM's state through APP->engine->moduleToJson() (a SharedLock, matching the
+	// exclusive lock_guard moduleFromJson() takes) rather than calling boundM->dataToJson()
+	// directly -- GUI_WITH_LOCK's dispatched apply writes to boundM through that locked path
+	// (PresetDispatch.hpp's mw->fromJson() -> Engine::moduleFromJson()) from a real worker
+	// thread, so an unlocked read here races it: harmless in practice for a NVGcolor field, but
+	// still undefined behavior, and TSan (correctly) flags it.
 	std::string appliedLabel() {
-		json_t* rootJ = boundM->dataToJson();
-		json_t* colorJ = json_object_get(rootJ, "boxColor");
+		json_t* rootJ = APP->engine->moduleToJson(boundM);
+		json_t* dataJ = json_object_get(rootJ, "data");
+		json_t* colorJ = dataJ ? json_object_get(dataJ, "boxColor") : nullptr;
 		std::string s = colorJ ? json_string_value(colorJ) : "";
 		json_decref(rootJ);
 		return s;
@@ -655,7 +662,12 @@ TEST_CASE("Closing then reopening the editor retires and restarts the dispatch w
 	f.h.setUiMode(Test::UiMode::UiAbsent);
 	f.savePreset("#b10000");
 	f.m->presetLoad(0, false, true);
-	for (int i = 0; i < 10 && f.m->dispatch.guiTasks.workerState.load() != WorkerState::Running; i++) {
+	// workerState flips to Running as soon as startWorker() constructs the thread object --
+	// on the engine thread, synchronously -- which says nothing about whether the worker has
+	// actually been scheduled and drained the queue yet. Poll the effect we actually care
+	// about (appliedLabel()) rather than the state flag, or this loop can exit after its
+	// first iteration while the real background thread is still waiting for CPU time.
+	for (int i = 0; i < 10 && f.appliedLabel() != "#b10000"; i++) {
 		f.h.dspSteps(256);
 	}
 	REQUIRE(f.m->dispatch.guiTasks.workerState.load() == WorkerState::Running);
@@ -768,40 +780,56 @@ TEST_CASE("Auto-mode does not touch an uninitialized widget pointer", "[EightFac
 }
 
 TEST_CASE("Destroying a module with a real worker task in flight neither leaks nor crashes", "[EightFaceMk2][dispatch]") {
-	// dispatch (EightFaceMk2.cpp) is declared AFTER boundModules, so it is destroyed FIRST --
-	// EightFaceMk2Module's destructor runs member dtors in reverse declaration order, and
-	// PresetDispatch::taskWorker is the last shared_ptr reference (one worker per instance, not
-	// shared across modules -- preset application is long, blocking work that must not
-	// head-of-line-block another 8FACE mk2), so dropping it joins the worker thread before
-	// boundModules is torn down. If that ordering were ever reversed, a task
-	// still running applyPreset() (which reads boundModules) would race the module's own
-	// destruction. This uses a REAL MpmcTaskWorker (not SyncTaskWorker/NullTaskWorker) specifically
-	// so there is an actual second thread to race against destruction; run under ASan/TSan for the
-	// assertion to mean anything.
-	Test::ModuleScaffold<EightFaceMk2Module<8>> mods{createEightFaceMk2ModuleWith<StoermelderPackOne::MpmcTaskWorker>};
-	EightFaceMk2Module<8>* m = mods.create("EightFaceMk2");
-	m->dispatch.guiSafeMode = GUISAFEMODE::WORKER;
-
-	EightFaceMk2Module<8>* boundM = mods.create("EightFaceMk2");
+	// ~EightFaceMk2Module()'s explicit body runs entirely before any member (dispatch included)
+	// is destroyed -- declaration order (dispatch after boundModules) only governs IMPLICIT
+	// member teardown, which starts only once that body has already returned. So the body itself
+	// must not touch boundModules while a WORKER-mode task could still be reading it; it now
+	// resets dispatch.taskWorker first (PresetDispatch::taskWorker is the last shared_ptr
+	// reference -- one worker per instance, not shared across modules -- so dropping it there
+	// blocks until the worker thread has actually joined) before the boundModules loop runs. This
+	// uses a REAL MpmcTaskWorker (not SyncTaskWorker/NullTaskWorker) specifically so there is an
+	// actual second thread to race against destruction; run under ASan/TSan for the assertion to
+	// mean anything -- this is what TSan caught before dispatch.taskWorker.reset() was added to
+	// the destructor.
+	// Only m is scaffolded (and thus destroyed) here. boundM is a completely separate object the
+	// worker thread is still writing into after presetLoad() below -- if it were destroyed on any
+	// fixed schedule (a poll on one field of its state, or the scaffold's own reverse-creation-
+	// order teardown, which would destroy boundM BEFORE m since boundM is created second), it
+	// would race applyPreset()'s in-flight write to boundM, which is a completely different bug
+	// than the one this test is about. So boundM is destroyed explicitly, deliberately AFTER m --
+	// m's own destruction is what forces the worker to finish (dispatch.taskWorker.reset() joins
+	// it), so once m is gone the dispatched task is guaranteed complete and boundM can be torn
+	// down safely regardless of what fields it touched or how long the apply took.
+	EightFaceMk2Module<8>* boundM = Test::createModule<EightFaceMk2Module<8>>("EightFaceMk2");
 	EightFaceMk2Widget<8>* boundMw = Test::createWidget<EightFaceMk2Widget<8>>(boundM);
-	bindForTest(m, boundM, boundMw);
 
-	EightFaceMk2Slot* slot = m->faceSlot(0);
-	json_t* vJ = boundM->toJson();
-	slot->preset->push_back(vJ);
-	*(slot->presetSlotUsed) = true;
-	m->presetPrev = -1;
+	{
+		Test::ModuleScaffold<EightFaceMk2Module<8>> mods{createEightFaceMk2ModuleWith<StoermelderPackOne::MpmcTaskWorker>};
+		EightFaceMk2Module<8>* m = mods.create("EightFaceMk2");
+		m->dispatch.guiSafeMode = GUISAFEMODE::WORKER;
+		bindForTest(m, boundM, boundMw);
 
-	m->process(Test::makeProcessArgs(0));
-	// Dispatches onto the real worker thread. No synchronization with it at all -- mods' teardown
-	// (via ModuleScaffold's destructor, invoked when this TEST_CASE returns) deletes m immediately
-	// after, so the task is racing the module's destruction exactly as advertised. A clean run
-	// (join completes, no leak, no UAF) is the assertion; Catch2 aborting from a sanitizer trap is
-	// the failure mode were the member order or the worker's join ever broken.
-	m->presetLoad(0, false, true);
+		EightFaceMk2Slot* slot = m->faceSlot(0);
+		json_t* vJ = boundM->toJson();
+		slot->preset->push_back(vJ);
+		*(slot->presetSlotUsed) = true;
+		m->presetPrev = -1;
 
+		m->process(Test::makeProcessArgs(0));
+		// Dispatches onto the real worker thread. No synchronization with it at all -- mods'
+		// teardown (via ModuleScaffold's destructor, at the end of THIS block, before boundM is
+		// touched below) deletes m immediately after, so the task is racing the module's
+		// destruction exactly as advertised. A clean run (join completes, no leak, no UAF) is the
+		// assertion; Catch2 aborting from a sanitizer trap is the failure mode were the member
+		// order or the worker's join ever broken.
+		m->presetLoad(0, false, true);
+		// mods' destructor runs at the end of this block: m is destroyed with no synchronization,
+		// which is the actual race under test. Its dispatch.taskWorker.reset() blocks until the
+		// worker has joined, so once this block exits the dispatched task is guaranteed complete.
+	}
+
+	// Only safe to touch boundM now that m (and its worker) are gone -- see block comment above.
 	Test::unregisterModule(boundM, boundMw);
-	// m is destroyed by mods' own destructor at end of scope, immediately after the dispatch above.
 }
 
 TEST_CASE("A load enqueued while guiTasks is full is dropped, not applied, and does not corrupt state", "[EightFaceMk2][dispatch]") {

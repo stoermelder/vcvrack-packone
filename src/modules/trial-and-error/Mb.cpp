@@ -1205,6 +1205,10 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("v1 & v2 settings"));
+		menu->addChild(createCheckMenuItem("Pre-render previews when idle", "",
+			[]() { return pluginSettings.mbPrewarmEnabled; },
+			[]() { pluginSettings.mbPrewarmEnabled ^= true; }
+		));
 		menu->addChild(Rack::createSlider(
 			[]() { return pluginSettings.mbSearchThreshold; },
 			[](float v) { pluginSettings.mbSearchThreshold = v; modelDb.setThreshold(v); },
@@ -1240,11 +1244,7 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 			[]() { return pluginSettings.mbArrowKeyNavigation; },
 			[]() { pluginSettings.mbArrowKeyNavigation ^= true; }
 		));
-		menu->addChild(createCheckMenuItem("Pre-render previews when idle", "",
-			[]() { return pluginSettings.mbPrewarmEnabled; },
-			[]() { pluginSettings.mbPrewarmEnabled ^= true; }
-		));
-		menu->addChild(createBoolPtrMenuItem("Apply VCV Libray Whitelist", "", &pluginSettings.mbApplyLibraryWhitelist));
+		menu->addChild(createBoolPtrMenuItem("Use VCV Libray Whitelist", "", &pluginSettings.mbApplyLibraryWhitelist));
 		menu->addChild(createBoolPtrMenuItem("Show deprecated models", "", &pluginSettings.mbShowDeprecated));
 
 		menu->addChild(new MenuSeparator());

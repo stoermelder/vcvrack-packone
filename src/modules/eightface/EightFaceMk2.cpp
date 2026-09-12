@@ -170,6 +170,12 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ModuleChangeListener 
 
 	~EightFaceMk2Module() {
 		unregisterModuleListener("8FaceMk2", this);
+		// dispatch's background workers can still be reading boundModules/preset state when the
+		// module is destroyed, and this explicit destructor body runs entirely BEFORE any member
+		// (dispatch included) is destroyed -- declaration order (dispatch after boundModules) only
+		// governs IMPLICIT member teardown, which starts only once this body has already returned.
+		// So both must be stopped before the loops below run; see PresetDispatch::stopWorkers().
+		dispatch.stopWorkers();
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (BASE::presetSlotUsed[i]) {
 				for (json_t* vJ : BASE::preset[i]) {

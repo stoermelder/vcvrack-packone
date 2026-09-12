@@ -63,9 +63,13 @@ TEST_CASE("Reopening the v2 browser preserves the model list's scroll position",
 	REQUIRE(scrolledOffset.y > 0.f);
 
 	// Real click: ModelBox::onButton() -> chooseModel() -> ... -> browser->hide().
+	// chooseModel() adds the module straight to APP->scene->rack; the harness sweeps it on
+	// teardown (Harness::sweepAddedModules()), so it cannot collide with a later TEST_CASE's
+	// own chooseModel() call.
 	REQUIRE(h.events().click(box));
 	REQUIRE_FALSE(overlay->visible);
 	REQUIRE(mockHistory.pushed.size() == 1);
+	REQUIRE(APP->scene->rack->getModules().size() == 1);
 
 	// Reopen: same hide()/show() cycle BrowserOverlay::step() drives on a second right-click.
 	overlay->show();
