@@ -7,7 +7,9 @@
 #include <unordered_map>
 #include <vector>
 #include <algorithm>
+#include <cstring>
 #include <nanovg_gl_utils.h>
+#include <system.hpp>
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -19,6 +21,166 @@ struct ModuleWidgetContainer : widget::Widget {
 		Widget::drawLayer(args, 1);
 	}
 };
+
+
+// ---------------------------------------------------------------------------
+// Prewarm instrumentation. Splits the per-model cost of the preview sweep into
+// its phases (build / render / readback / flip) so the bottleneck can be
+// measured rather than guessed at.
+//
+// Compiled out entirely unless MB_PREWARM_PROFILE is defined. With it off, every
+// accessor below is an empty inline that the optimizer removes, so no timer calls
+// or counters remain in a release build.
+//
+// To enable, uncomment the #define below and rebuild; comment it out again when done.
+// There is deliberately no build-flag route and no no-op stub: every use of
+// PrewarmStats is itself inside #ifdef MB_PREWARM_PROFILE, so a define that reached
+// only some translation units would fail to compile rather than link two different
+// layouts of one symbol together — which corrupts memory and surfaces as unrelated
+// failures elsewhere in the test suite instead of as a build error.
+//
+// #define MB_PREWARM_PROFILE
+// ---------------------------------------------------------------------------
+#ifdef MB_PREWARM_PROFILE
+
+struct PrewarmStats {
+	// Accumulated seconds per phase, over all models warmed this sweep.
+	double tBuild = 0.0;    // createModuleWidget() + step()
+	double tRender = 0.0;   // fb->render(): FBO alloc + draw + oversample downsample
+	double tReadback = 0.0; // glReadPixels stall
+	double tFlip = 0.0;     // in-place row flip
+	double tReclaim = 0.0;  // cache-hit path: whole preparePreview() span
+	// Reclaim broken into its parts, to locate the cost.
+	double tRcCreate = 0.0;  //   preview.create(): map lookup + buildCached() subtree
+	double tRcZoom = 0.0;    //   updateZoom(): setZoom + box.size write (may dirty layout)
+	double tRcHook = 0.0;    //   onPreviewCreated() hook
+	double tRcRest = 0.0;    //   render() + captureIfNewlyRendered() no-ops
+	int nRcCreate = 0;
+	// Cost of ModelBoxBase::draw() itself, summed over every box drawn. Tells us how much
+	// of the browser's frame time is the visible boxes rather than the sweep.
+	double tBoxDraw = 0.0;
+	int nBoxDraws = 0;
+	// .rest split: which of the two supposed no-ops is actually costing time.
+	double tRcRender = 0.0, tRcCapture = 0.0;
+	int nRcRenderCalls = 0, nRcCaptureCalls = 0;
+	// How often preparePreview() runs on an already-cached box (wasCached true on entry).
+	int nAlreadyCached = 0;
+	double tUpload = 0.0;   // nvgCreateImageRGBA on first draw of a cached entry
+	int nUploads = 0;
+	// Raw phase entry counts, incremented wherever the phase actually runs — including
+	// from draw()'s lazy createPreview()/FramebufferWidget render, which the sweep never
+	// classifies as LIVE. nBuilds > nLive means work is happening outside the sweep.
+	int nBuilds = 0, nRenders = 0, nReadbacks = 0;
+	int nLive = 0;          // models built+rendered live
+	int nCached = 0;        // PreviewPixelCache reclaims
+	size_t bytesRead = 0;   // total glReadPixels payload
+
+	// Sweep wall-clock, from the first warmed model to the last.
+	double sweepStart = 0.0;
+	bool started = false;
+	// Per-frame throughput.
+	int framesWithWork = 0;
+	int liveThisFrame = 0;
+	int maxLivePerFrame = 0;
+
+	static PrewarmStats& get() {
+		static PrewarmStats s;
+		return s;
+	}
+
+	void noteFrameStart() {
+		liveThisFrame = 0;
+	}
+
+	void noteFrameEnd() {
+		if (liveThisFrame > 0) {
+			framesWithWork++;
+			if (liveThisFrame > maxLivePerFrame) maxLivePerFrame = liveThisFrame;
+		}
+	}
+
+	// Zeroes every counter and starts this sweep's clock now, so wall-clock and the phase
+	// totals always describe the same sweep. (Previously the counters could carry over from
+	// an earlier cold sweep while sweepStart was reset, making "work vs wall-clock" compare
+	// two different runs.)
+	void reset() {
+		*this = PrewarmStats();
+		sweepStart = rack::system::getTime();
+		started = true;
+	}
+
+	// Dumped when a sweep reports itself complete.
+	void dump(int total) {
+		double wall = rack::system::getTime() - sweepStart;
+		double work = tBuild + tRender + tReadback + tFlip + tReclaim + tUpload;
+		auto pct = [&](double v) { return work > 0.0 ? 100.0 * v / work : 0.0; };
+		INFO("[Mb prewarm] === sweep complete: %d models (%d live, %d reclaimed) ===",
+			total, nLive, nCached);
+		INFO("[Mb prewarm] wall-clock %.2f s over %d working frames (max %d live/frame, avg %.2f)",
+			wall, framesWithWork, maxLivePerFrame,
+			framesWithWork > 0 ? (double)nLive / framesWithWork : 0.0);
+		// `work` counts every phase wherever it ran, including draw()'s lazy path before the
+		// sweep clock started, so it legitimately exceeds `wall`. Not a discrepancy to chase.
+		INFO("[Mb prewarm] measured work %.2f s (%.1f%% of sweep wall-clock; >100%% means draw() "
+			"did the work before the sweep started)", work, wall > 0.0 ? 100.0 * work / wall : 0.0);
+		if (nCached > 0) {
+			INFO("[Mb prewarm]   reclaim  %7.3f s  %5.1f%%   %6.2f ms/model  (%d cache hits)",
+				tReclaim, pct(tReclaim), 1000.0 * tReclaim / nCached, nCached);
+			INFO("[Mb prewarm]     .create   %7.3f s  %6.3f ms/model  (%d calls)",
+				tRcCreate, nRcCreate > 0 ? 1000.0 * tRcCreate / nRcCreate : 0.0, nRcCreate);
+			INFO("[Mb prewarm]     .zoom     %7.3f s  %6.3f ms/model",
+				tRcZoom, nCached > 0 ? 1000.0 * tRcZoom / nCached : 0.0);
+			INFO("[Mb prewarm]     .hook     %7.3f s  %6.3f ms/model",
+				tRcHook, nCached > 0 ? 1000.0 * tRcHook / nCached : 0.0);
+			INFO("[Mb prewarm]     .rest     %7.3f s  %6.3f ms/model  (render+capture)",
+				tRcRest, nCached > 0 ? 1000.0 * tRcRest / nCached : 0.0);
+			INFO("[Mb prewarm]       .render  %7.3f s  %6.3f ms/call  (%d calls)",
+				tRcRender, nRcRenderCalls > 0 ? 1000.0 * tRcRender / nRcRenderCalls : 0.0,
+				nRcRenderCalls);
+			INFO("[Mb prewarm]       .capture %7.3f s  %6.3f ms/call  (%d calls)",
+				tRcCapture, nRcCaptureCalls > 0 ? 1000.0 * tRcCapture / nRcCaptureCalls : 0.0,
+				nRcCaptureCalls);
+			INFO("[Mb prewarm]     preparePreview() on already-cached boxes: %d", nAlreadyCached);
+			double acct = tRcCreate + tRcZoom + tRcHook + tRcRest;
+			INFO("[Mb prewarm]     accounted %7.3f s of %7.3f s (%.1f%%); unaccounted %7.3f s",
+				acct, tReclaim, tReclaim > 0.0 ? 100.0 * acct / tReclaim : 0.0, tReclaim - acct);
+		}
+		if (nUploads > 0) {
+			INFO("[Mb prewarm]   upload   %7.3f s  %5.1f%%   %6.2f ms/image  (%d GL uploads)",
+				tUpload, pct(tUpload), 1000.0 * tUpload / nUploads, nUploads);
+		}
+		if (nBoxDraws > 0) {
+			INFO("[Mb prewarm]   box draw %7.3f s            %6.3f ms/draw  (%d ModelBox draws)",
+				tBoxDraw, 1000.0 * tBoxDraw / nBoxDraws, nBoxDraws);
+		}
+		INFO("[Mb prewarm] phase entries: %d builds, %d renders, %d readbacks, %d reclaims, %d uploads",
+			nBuilds, nRenders, nReadbacks, nCached, nUploads);
+		if (nBuilds > nLive) {
+			INFO("[Mb prewarm] NOTE: %d builds happened outside the sweep (draw()'s lazy path), "
+				"so phase totals cover more models than the sweep itself prepared.",
+				nBuilds - nLive);
+		}
+		if (nBuilds > 0) {
+			INFO("[Mb prewarm]   build    %7.3f s  %5.1f%%   %6.2f ms/model",
+				tBuild, pct(tBuild), nBuilds > 0 ? 1000.0 * tBuild / nBuilds : 0.0);
+			INFO("[Mb prewarm]   render   %7.3f s  %5.1f%%   %6.2f ms/model",
+				tRender, pct(tRender), nRenders > 0 ? 1000.0 * tRender / nRenders : 0.0);
+			INFO("[Mb prewarm]   readback %7.3f s  %5.1f%%   %6.2f ms/model   (%.1f MB total, %.1f MB/s)",
+				tReadback, pct(tReadback), nReadbacks > 0 ? 1000.0 * tReadback / nReadbacks : 0.0,
+				bytesRead / 1e6, tReadback > 0.0 ? (bytesRead / 1e6) / tReadback : 0.0);
+			INFO("[Mb prewarm]   flip     %7.3f s  %5.1f%%   %6.2f ms/model",
+				tFlip, pct(tFlip), nReadbacks > 0 ? 1000.0 * tFlip / nReadbacks : 0.0);
+			INFO("[Mb prewarm]   live subtotal %7.3f s      %6.2f ms/model",
+				tBuild + tRender + tReadback + tFlip,
+				nBuilds > 0 ? 1000.0 * (tBuild + tRender + tReadback + tFlip) / nBuilds : 0.0);
+		}
+		INFO("[Mb prewarm]   TOTAL    %7.3f s over %d prepared (%6.3f ms/model avg)",
+			work, nLive + nCached,
+			(nLive + nCached) > 0 ? 1000.0 * work / (nLive + nCached) : 0.0);
+	}
+};
+
+#endif // MB_PREWARM_PROFILE
 
 
 // Rendered previews survive the BrowserOverlay that built them (e.g. removing/re-adding the Mb
@@ -34,7 +196,10 @@ struct PreviewPixelCache {
 		// Panel width in px at zoom 1, oversample 1 — same quantity as ModelPreview::width,
 		// kept alongside the pixels so hp()/HP-filtering keep working without a live preview.
 		float panelWidth = 0.f;
-		// RGBA8, top-down row order, straight nvgCreateImageRGBA input.
+		// RGBA8 in the row order glReadPixels produced it: bottom-up, because
+		// nvgluCreateFramebuffer's texture is NVG_IMAGE_FLIPY. Kept as-is rather than flipped
+		// on the CPU — image() passes NVG_IMAGE_FLIPY so NanoVG samples it the right way up,
+		// which costs nothing and saves a full pass over every pixel per model.
 		std::vector<uint8_t> pixels;
 
 		// Uploaded GL image, owned by the entry itself rather than by whichever
@@ -61,8 +226,17 @@ struct PreviewPixelCache {
 		// Returns the uploaded GL image for `vg`, uploading it once on first call.
 		int image(NVGcontext* vg) const {
 			if (!nvgImage) {
-				// PREMULTIPLIED to match nvgluCreateFramebuffer's own flags.
-				nvgImage = nvgCreateImageRGBA(vg, width, height, NVG_IMAGE_PREMULTIPLIED, pixels.data());
+#ifdef MB_PREWARM_PROFILE
+				double tu = rack::system::getTime();
+#endif
+				// PREMULTIPLIED to match nvgluCreateFramebuffer's own flags; FLIPY because
+				// `pixels` is stored in glReadPixels' bottom-up order (see above).
+				nvgImage = nvgCreateImageRGBA(vg, width, height,
+					NVG_IMAGE_PREMULTIPLIED | NVG_IMAGE_FLIPY, pixels.data());
+#ifdef MB_PREWARM_PROFILE
+				PrewarmStats::get().tUpload += rack::system::getTime() - tu;
+				PrewarmStats::get().nUploads++;
+#endif
 			}
 			return nvgImage;
 		}
@@ -78,6 +252,103 @@ struct PreviewPixelCache {
 		return map().find(model) != map().end();
 	}
 
+	// Asynchronous readbacks in flight: each is a glReadPixels issued into a pixel-buffer
+	// object, whose result is collected several models later rather than waited for now.
+	//
+	// A plain glReadPixels into client memory blocks until the GPU has finished every command
+	// queued before it — including the render that just produced this very framebuffer — so the
+	// CPU sits idle for the whole transfer. Reading into a PBO instead makes the transfer a
+	// queued GPU-side command: it returns immediately and the next model's build+render
+	// proceeds while the DMA runs.
+	//
+	// Several buffers are kept in flight rather than one. With a single buffer, every read has
+	// to be collected before the next can be issued, so each transfer gets exactly one model's
+	// build+render (~4 ms) to complete in — enough for the common case, but any model whose
+	// transfer runs long stalls the map(). A ring of RING_SIZE gives each transfer
+	// RING_SIZE-1 models' worth of work to finish behind, so a slow one is absorbed by its
+	// neighbours instead of blocking.
+	struct PendingRead {
+		GLuint pbo = 0;
+		plugin::Model* model = NULL;
+		int width = 0, height = 0;
+		float panelWidth = 0.f;
+		bool valid() const { return pbo != 0 && model != NULL; }
+	};
+
+	// Deep enough to cover a slow transfer, shallow enough that the memory held is bounded:
+	// each slot owns a full-size RGBA buffer (~4 MB for a wide panel), so this caps the
+	// in-flight footprint at a few tens of MB.
+	static const int RING_SIZE = 4;
+
+	static PendingRead* ring() {
+		static PendingRead r[RING_SIZE];
+		return r;
+	}
+
+	// Next slot to issue into; the same index is the oldest outstanding read.
+	static int& ringHead() {
+		static int head = 0;
+		return head;
+	}
+
+	// Maps one slot's PBO, moves its pixels into the cache, and releases the buffer.
+	static void collectSlot(PendingRead& p) {
+		if (!p.valid()) return;
+
+		GLint prevPbo = 0;
+		glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &prevPbo);
+		glBindBuffer(GL_PIXEL_PACK_BUFFER, p.pbo);
+
+#ifdef MB_PREWARM_PROFILE
+		double t0 = rack::system::getTime();
+#endif
+		// By now the transfer has usually completed in the background, so this rarely blocks.
+		const void* src = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
+#ifdef MB_PREWARM_PROFILE
+		PrewarmStats::get().tReadback += rack::system::getTime() - t0;
+#endif
+
+		if (src) {
+			Entry e;
+			e.width = p.width;
+			e.height = p.height;
+			e.panelWidth = p.panelWidth;
+			e.pixels.resize((size_t)p.width * p.height * 4);
+			std::memcpy(e.pixels.data(), src, e.pixels.size());
+			glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+#ifdef MB_PREWARM_PROFILE
+			PrewarmStats::get().bytesRead += e.pixels.size();
+			PrewarmStats::get().nReadbacks++;
+#endif
+			map()[p.model] = std::move(e);
+		}
+
+		glBindBuffer(GL_PIXEL_PACK_BUFFER, prevPbo);
+		glDeleteBuffers(1, &p.pbo);
+		p = PendingRead();
+	}
+
+	// Collects every outstanding read, oldest first. Called when the sweep's frame ends:
+	// without it the last RING_SIZE-1 models would sit in flight forever, never reaching the
+	// cache, and their live subtrees would never be swapped out.
+	static void collectPending() {
+		PendingRead* r = ring();
+		int head = ringHead();
+		for (int i = 0; i < RING_SIZE; i++) {
+			collectSlot(r[(head + i) % RING_SIZE]);
+		}
+	}
+
+	// True while a readback for this model is queued but not yet collected — it is not in
+	// map() yet, so a second read must not be issued for it.
+	static bool isPending(plugin::Model* model) {
+		PendingRead* r = ring();
+		for (int i = 0; i < RING_SIZE; i++) {
+			if (r[i].valid() && r[i].model == model) return true;
+		}
+		return false;
+	}
+
 	// Reads back `fb`'s current contents (must already be rendered) and stores them under
 	// `model`, replacing any existing entry. No-op if the framebuffer isn't actually rendered.
 	static void store(plugin::Model* model, widget::FramebufferWidget* fb, float panelWidth) {
@@ -89,31 +360,54 @@ struct PreviewPixelCache {
 		int h = (int)sizeF.y;
 		if (w <= 0 || h <= 0) return;
 
+		// Reclaim the slot we're about to reuse. It holds the oldest outstanding read, which
+		// has had RING_SIZE-1 models' worth of build+render to finish behind, so mapping it
+		// here almost never blocks. Slots that are still young are left alone.
+		PendingRead& slot = ring()[ringHead()];
+		collectSlot(slot);
+
 		// Preserve whatever FBO NanoVG currently has bound.
 		GLint prevFbo = 0;
 		glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+		GLint prevPbo = 0;
+		glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &prevPbo);
 
-		Entry e;
-		e.width = w;
-		e.height = h;
-		e.panelWidth = panelWidth;
-		e.pixels.resize((size_t)w * h * 4);
-
-		glBindFramebuffer(GL_FRAMEBUFFER, nfb->fbo);
-		glPixelStorei(GL_PACK_ALIGNMENT, 1);
-		glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, e.pixels.data());
-		glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
-
-		// nvgluCreateFramebuffer uses NVG_IMAGE_FLIPY, so the texture is bottom-up relative to
-		// nvgCreateImageRGBA's plain top-down input — flip in place, row pairs swapped from
-		// both ends, so this never holds a second full-size copy alongside e.pixels.
-		size_t rowBytes = (size_t)w * 4;
-		for (int y = 0; y < h / 2; y++) {
-			std::swap_ranges(&e.pixels[(size_t)y * rowBytes], &e.pixels[(size_t)(y + 1) * rowBytes],
-				&e.pixels[(size_t)(h - 1 - y) * rowBytes]);
+		GLuint pbo = 0;
+		glGenBuffers(1, &pbo);
+		if (!pbo) {
+			glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+			return;
 		}
 
-		map()[model] = std::move(e);
+		size_t bytes = (size_t)w * h * 4;
+		glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo);
+		glBufferData(GL_PIXEL_PACK_BUFFER, bytes, NULL, GL_STREAM_READ);
+
+#ifdef MB_PREWARM_PROFILE
+		double t0 = rack::system::getTime();
+#endif
+		glBindFramebuffer(GL_FRAMEBUFFER, nfb->fbo);
+		glPixelStorei(GL_PACK_ALIGNMENT, 1);
+		// Reads into the bound PBO rather than client memory, so this returns without
+		// waiting for the transfer. The NULL is an offset into the buffer, not a pointer.
+		glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+		glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+#ifdef MB_PREWARM_PROFILE
+		// Just the cost of queueing the read; the transfer itself is charged at collect time.
+		PrewarmStats::get().tReadback += rack::system::getTime() - t0;
+#endif
+
+		glBindBuffer(GL_PIXEL_PACK_BUFFER, prevPbo);
+
+		// No CPU row flip: the pixels stay in glReadPixels' bottom-up order and image()
+		// creates the NanoVG image with NVG_IMAGE_FLIPY instead, which costs nothing.
+
+		slot.pbo = pbo;
+		slot.model = model;
+		slot.width = w;
+		slot.height = h;
+		slot.panelWidth = panelWidth;
+		ringHead() = (ringHead() + 1) % RING_SIZE;
 	}
 };
 
@@ -154,6 +448,12 @@ struct ModelPreview {
 	// Set instead of the above on a PreviewPixelCache hit: a static bitmap stands in for the
 	// live subtree, so createModuleWidget() and the render are both skipped.
 	CachedPreviewWidget* cachedWidget = NULL;
+
+	// True when create() built this preview straight from a PreviewPixelCache hit, as opposed
+	// to swapToCached() having replaced a live subtree after capturing it. Both end with
+	// cachedWidget set, so isCached() alone cannot tell a free reclaim from an 8 ms
+	// render-and-capture — and preparePreview() must not report the latter as CACHED.
+	bool reclaimedFromCache = false;
 
 	// Panel width in px, valid only once created.
 	float width = -1.f;
@@ -207,6 +507,7 @@ struct ModelPreview {
 			? PreviewPixelCache::map().find(model) : PreviewPixelCache::map().end();
 		if (it != PreviewPixelCache::map().end()) {
 			buildCached(it->second, 1.f);
+			reclaimedFromCache = true;
 			return true;
 		}
 
@@ -220,6 +521,9 @@ struct ModelPreview {
 		}
 		zoomWidget->addChild(fb);
 
+#ifdef MB_PREWARM_PROFILE
+		double tb = rack::system::getTime();
+#endif
 		moduleWidget = model->createModuleWidget(NULL);
 		mwc = new ModuleWidgetContainer;
 		mwc->addChild(moduleWidget);
@@ -232,6 +536,10 @@ struct ModelPreview {
 		// framebuffers) inside step(). Without running it once here, the framebuffer bakes its first snapshot
 		// from an unstepped, just-constructed tree.
 		moduleWidget->step();
+#ifdef MB_PREWARM_PROFILE
+		PrewarmStats::get().tBuild += rack::system::getTime() - tb;
+		PrewarmStats::get().nBuilds++;
+#endif
 		return true;
 	}
 
@@ -274,7 +582,14 @@ struct ModelPreview {
 		if (mwc->box.size.isZero() || !fb->isVisible()) return false;
 
 		float s = fb->getAbsoluteZoom() * APP->window->pixelRatio;
+#ifdef MB_PREWARM_PROFILE
+		double tr = rack::system::getTime();
+#endif
 		fb->render(math::Vec(s, s));
+#ifdef MB_PREWARM_PROFILE
+		PrewarmStats::get().tRender += rack::system::getTime() - tr;
+		PrewarmStats::get().nRenders++;
+#endif
 
 		// If nothing was actually allocated, the render did not take: leave it dirty so
 		// the normal lazy path still has a chance rather than baking a permanent blank.
@@ -371,9 +686,18 @@ struct PreviewPrewarmer {
 	// the point is to be ready *before* the next scroll, so waiting long defeats it.
 	static const int STILL_FRAMES_REQUIRED = 1;
 
+#ifdef MB_PREWARM_PROFILE
+	// True once the completion line has been logged, so it prints once per sweep.
+	bool dumped = false;
+#endif
+
 	void reset() {
 		stillFrames = 0;
 		readyCount = totalCount = 0;
+#ifdef MB_PREWARM_PROFILE
+		dumped = false;
+		PrewarmStats::get().reset();
+#endif
 	}
 
 	// Remaining frame budget, or 0 when frameRateLimit is unlimited (0) — warming against
@@ -428,6 +752,12 @@ struct PreviewPrewarmer {
 		// budget alone already stops the loop first, so the cap is a no-op then.
 		const bool unlimitedFrameRate = settings::frameRateLimit <= 0.f;
 		const int maxPerFrame = 8;
+#ifdef MB_PREWARM_PROFILE
+		PrewarmStats& st = PrewarmStats::get();
+		st.noteFrameStart();
+		// Budget left at the moment warming begins: how much of the frame draw() already ate.
+		double budgetAtStart = budgetRemaining();
+#endif
 		int prepared = 0;
 		int nReady = 0, nTotal = 0;
 		bool budgetLeft = true;
@@ -447,15 +777,49 @@ struct PreviewPrewarmer {
 			if (result == PrepareResult::LIVE) {
 				prepared++;
 				nReady++;
+#ifdef MB_PREWARM_PROFILE
+				st.nLive++;
+				st.liveThisFrame++;
+#endif
 				if (unlimitedFrameRate && prepared >= maxPerFrame) budgetLeft = false;
 			}
 			else if (result == PrepareResult::CACHED) {
 				nReady++;
+#ifdef MB_PREWARM_PROFILE
+				st.nCached++;
+#endif
 			}
+		}
+
+		// Outstanding reads normally stay in flight across frames — that depth is the whole
+		// point of the ring, and draining here every frame would map each read moments after
+		// issuing it, reintroducing the stall. Drain only when this frame prepared nothing:
+		// either the sweep is finished (the tail models must still reach the cache and get
+		// their live subtrees swapped out) or it ran out of budget, in which case the reads
+		// have had a full frame to complete and collecting them is free.
+		if (prepared == 0) {
+			PreviewPixelCache::collectPending();
 		}
 
 		readyCount = nReady;
 		totalCount = nTotal;
+#ifdef MB_PREWARM_PROFILE
+		st.noteFrameEnd();
+#endif
+
+		// Per-frame trace: how much budget draw() left us, and what we managed to spend it on.
+		// `reserve` is negative by design, so a negative "left" is expected and healthy.
+#ifdef MB_PREWARM_PROFILE
+		if (st.liveThisFrame > 0) {
+			INFO("[Mb prewarm] frame: %d live, budget at start %.2f ms -> left %.2f ms (reserve %.2f ms), %d/%d ready",
+				st.liveThisFrame, budgetAtStart * 1000.0, budgetRemaining() * 1000.0,
+				reserve * 1000.0, nReady, nTotal);
+		}
+		if (complete() && !dumped) {
+			dumped = true;
+			st.dump(nTotal);
+		}
+#endif
 	}
 };
 
@@ -601,10 +965,33 @@ struct ModelBoxBase : widget::OpaqueWidget {
 
 	// Returns true if the preview was created by this call.
 	bool createPreview() {
+#ifdef MB_PREWARM_PROFILE
+		double t0 = rack::system::getTime();
+		bool madeCached = false;
+		if (!preview.create(model)) {
+			PrewarmStats::get().tRcCreate += rack::system::getTime() - t0;
+			PrewarmStats::get().nRcCreate++;
+			return false;
+		}
+		madeCached = preview.reclaimedFromCache;
+		double t1 = rack::system::getTime();
+		PrewarmStats::get().tRcCreate += t1 - t0;
+		PrewarmStats::get().nRcCreate++;
+		onPreviewCreated();
+		double t2 = rack::system::getTime();
+		updateZoom();
+		double t3 = rack::system::getTime();
+		if (madeCached) {
+			PrewarmStats::get().tRcHook += t2 - t1;
+			PrewarmStats::get().tRcZoom += t3 - t2;
+		}
+		return true;
+#else
 		if (!preview.create(model)) return false;
 		onPreviewCreated();
 		updateZoom();
 		return true;
+#endif
 	}
 
 	// Captures the live framebuffer into PreviewPixelCache the first time it's seen rendered
@@ -616,26 +1003,70 @@ struct ModelBoxBase : widget::OpaqueWidget {
 	// for every model at once (removing the Mb module) once froze the UI for over a second.
 	void captureIfNewlyRendered() {
 		if (!pluginSettings.mbPrewarmEnabled) return;
-		if (preview.fb && !preview.isCached() && preview.rendered() && !PreviewPixelCache::has(model)) {
+
+		// The readback is asynchronous, so the pixels for a model captured on an earlier call
+		// may only have landed in the cache just now. Swapping is therefore split from
+		// capturing: a box whose entry has since arrived drops its live subtree here.
+		if (preview.fb && !preview.isCached() && PreviewPixelCache::has(model)) {
+			preview.swapToCached(PreviewPixelCache::map().at(model), preview.pendingDisplayZoom);
+			return;
+		}
+
+		// Don't queue a second read for a model whose first is still in flight.
+		if (preview.fb && !preview.isCached() && preview.rendered()
+			&& !PreviewPixelCache::has(model) && !PreviewPixelCache::isPending(model)) {
 			// Already rendered at zoom 1.0 (setZoom() pins it there while unrendered), so no
 			// second capture-only render is needed. pendingDisplayZoom is the zoom to resume at.
+			// The swap happens on a later call, once the read has been collected — until then
+			// the live subtree stays up and keeps drawing.
 			PreviewPixelCache::store(model, preview.fb, preview.width);
-			preview.swapToCached(PreviewPixelCache::map().at(model), preview.pendingDisplayZoom);
 		}
 	}
 
 	// Creates and rasterizes the preview ahead of it being scrolled into view.
 	PrepareResult preparePreview() {
+#ifdef MB_PREWARM_PROFILE
+		double tp = rack::system::getTime();
+#endif
 		bool wasCached = preview.isCached();
 		bool did = createPreview();
+#ifdef MB_PREWARM_PROFILE
+		double tRest0 = rack::system::getTime();
+		if (wasCached) PrewarmStats::get().nAlreadyCached++;
+		double tR0 = rack::system::getTime();
+		bool rr = preview.render();
+		double tR1 = rack::system::getTime();
+		if (rr) did = true;
+		captureIfNewlyRendered();
+		double tR2 = rack::system::getTime();
+		if (preview.reclaimedFromCache && !wasCached) {
+			PrewarmStats::get().tRcRest += rack::system::getTime() - tRest0;
+			PrewarmStats::get().tRcRender += tR1 - tR0;
+			PrewarmStats::get().nRcRenderCalls++;
+			PrewarmStats::get().tRcCapture += tR2 - tR1;
+			PrewarmStats::get().nRcCaptureCalls++;
+		}
+#else
 		// render() reports whether it actually produced a framebuffer; a no-op must not
 		// consume the frame's warming budget, or boxes it skipped are never retried.
 		if (preview.render()) did = true;
 		captureIfNewlyRendered();
+#endif
 		if (!did) return PrepareResult::NONE;
 		// isCached() only just became true if create() found a hit just now (wasCached catches
 		// the reclaim-happened-this-call case; the live path never sets it).
-		return (preview.isCached() && !wasCached) ? PrepareResult::CACHED : PrepareResult::LIVE;
+		// A box that rendered and then captured in this same call ends up cached too, but it
+		// cost a full build+render+readback — only a straight cache reclaim counts as CACHED.
+		PrepareResult r = (preview.reclaimedFromCache && !wasCached)
+			? PrepareResult::CACHED : PrepareResult::LIVE;
+#ifdef MB_PREWARM_PROFILE
+		// A CACHED outcome did no build/render/readback, so its whole cost is the reclaim:
+		// buildCached()'s subtree construction. Attribute the elapsed span to that bucket.
+		if (r == PrepareResult::CACHED) {
+			PrewarmStats::get().tReclaim += rack::system::getTime() - tp;
+		}
+#endif
+		return r;
 	}
 
 	// Reports whether this box needs no further pre-warming.
@@ -660,6 +1091,16 @@ struct ModelBoxBase : widget::OpaqueWidget {
 	// Draws shadow, preview and favorite highlight. Subclasses that add their own
 	// decoration call this first, then draw on top.
 	void draw(const DrawArgs& args) override {
+#ifdef MB_PREWARM_PROFILE
+		double td = rack::system::getTime();
+		struct DrawTimer {
+			double t;
+			~DrawTimer() {
+				PrewarmStats::get().tBoxDraw += rack::system::getTime() - t;
+				PrewarmStats::get().nBoxDraws++;
+			}
+		} drawTimer{td};
+#endif
 		// Lazily create preview when drawn
 		createPreview();
 
