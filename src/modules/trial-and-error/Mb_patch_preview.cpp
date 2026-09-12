@@ -5,106 +5,97 @@ namespace Mb {
 namespace patch {
 
 
+// Unscaled (zoom 1, box-relative) port center positions for one model, computed once by
+// building a throwaway ModuleWidget purely for its layout. Outputs and inputs are kept in
+// separate vectors, indexed directly by the same portIndex getPortPos() is called with, so a
+// lookup is just an index instead of a re-walk of getPorts() every time.
+struct PortLayout {
+	std::vector<math::Vec> outputs;
+	std::vector<math::Vec> inputs;
+
+	static const PortLayout& forModel(plugin::Model* model) {
+		static std::unordered_map<plugin::Model*, PortLayout> cache;
+		auto it = cache.find(model);
+		if (it != cache.end()) return it->second;
+
+		PortLayout layout;
+		ModuleWidget* mw = model->createModuleWidget(NULL);
+		for (PortWidget* port : mw->getPorts()) {
+			math::Vec center = port->box.pos + port->box.size.div(2);
+			if (port->type == engine::Port::OUTPUT) layout.outputs.push_back(center);
+			else layout.inputs.push_back(center);
+		}
+		delete mw;
+
+		return cache.emplace(model, std::move(layout)).first->second;
+	}
+};
+
+
 struct ModelPreviewWidget : widget::OpaqueWidget {
 	plugin::Model* model;
-	widget::Widget* previewWidget;
-	/** Lazily created */
-	widget::FramebufferWidget* previewFb = NULL;
-	widget::ZoomWidget* zoomWidget = NULL;
+	// Shared preview engine (Mb_preview.hpp): gives patch-preview module boxes the same
+	// lazy creation, pixel cache and zoom-1 capture as the module browser, instead of a
+	// second, simpler copy of the same ZoomWidget->FramebufferWidget->ModuleWidget plumbing.
+	ModelPreview preview;
 	float modelBoxZoom = -1.f;
 	float modelBoxZoomApplied = -1.f;
-	float modelBoxWidth = -1.f;
 	float modelOpacity = 1.f;
 	math::Vec originalPos; // Original position in RACK_GRID_SIZE units
 	int64_t moduleId = -1;
 
 	/** Get the position of a port center in the parent (PatchPreview) coordinate space */
 	math::Vec getPortPos(bool isOutput, int portIndex) {
-		if (!previewFb || previewFb->children.empty()) return math::Vec(0, 0);
-		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(*previewFb->children.begin());
-		if (!mw) return math::Vec(0, 0);
+		const PortLayout& layout = PortLayout::forModel(model);
+		const std::vector<math::Vec>& ports = isOutput ? layout.outputs : layout.inputs;
+		if (portIndex < 0 || (size_t)portIndex >= ports.size()) return math::Vec(0, 0);
 
-		auto ports = mw->getPorts();
-		int outputCount = 0;
-		int inputCount = 0;
-		for (PortWidget* port : ports) {
-			bool match = false;
-			if (port->type == engine::Port::OUTPUT) {
-				match = isOutput && outputCount == portIndex;
-				outputCount++;
-			} else {
-				match = !isOutput && inputCount == portIndex;
-				inputCount++;
-			}
-			if (match) {
-				// Port-local position is unscaled; multiply by zoom before adding the scaled box origin
-				math::Vec portCenter = (port->box.pos + port->box.size.div(2)).mult(modelBoxZoom);
-				return portCenter.plus(this->box.pos);
-			}
-		}
-		return math::Vec(0, 0);
+		// Port-local position is unscaled; multiply by zoom before adding the scaled box origin
+		math::Vec portCenter = ports[portIndex].mult(modelBoxZoom);
+		return portCenter.plus(this->box.pos);
 	}
 
 	void setModel(plugin::Model* model) {
 		this->model = model;
-		previewWidget = new widget::TransparentWidget;
-		addChild(previewWidget);
+		preview.attach(this);
 	}
 
 	void step() override {
 		if (modelBoxZoom != modelBoxZoomApplied) {
 			modelBoxZoomApplied = modelBoxZoom;
-			box.size.x = (modelBoxWidth < 0 ? 10 * RACK_GRID_WIDTH : modelBoxWidth) * modelBoxZoom;
+			float w = preview.width < 0 ? 10 * RACK_GRID_WIDTH : preview.width;
+			box.size.x = w * modelBoxZoom;
 			box.size.y = RACK_GRID_HEIGHT * modelBoxZoom;
 			box.size = box.size.ceil();
 
-			previewWidget->box.size.y = std::ceil(RACK_GRID_HEIGHT * modelBoxZoom);
 			// Use original position scaled by zoom
 			box.pos = originalPos.mult(modelBoxZoom);
-			if (previewFb) sizePreview();
+			if (preview.created()) sizePreview();
 		}
 		widget::OpaqueWidget::step();
 	}
 
-	void createPreview() {
-		zoomWidget = new widget::ZoomWidget;
-		previewWidget->addChild(zoomWidget);
-
-		previewFb = new widget::FramebufferWidget;
-		if (math::isNear(APP->window->pixelRatio, 1.0)) {
-			previewFb->oversample = 2.0;
-		}
-		zoomWidget->addChild(previewFb);
-
-		ModuleWidget* moduleWidget = model->createModuleWidget(NULL);
-		previewFb->addChild(moduleWidget);
-		modelBoxWidth = moduleWidget->box.size.x;
-		modelBoxZoom = 1.f;
-		modelBoxZoomApplied = -1.f; // Reset so step() will apply the zoom
-
-		sizePreview();
-	}
-
 	void sizePreview() {
-		if (!zoomWidget) return;
-		zoomWidget->setZoom(modelBoxZoom);
-		previewFb->setDirty();
-		box.size.x = modelBoxWidth * modelBoxZoom;
+		preview.setZoom(modelBoxZoom);
+		box.size.x = preview.width * modelBoxZoom;
 		box.size.y = RACK_GRID_HEIGHT * modelBoxZoom;
 		box.pos = originalPos.mult(modelBoxZoom);
 	}
 
-	void deletePreview() {
-		if (!previewFb) return;
-		previewWidget->removeChild(previewFb);
-		delete previewFb;
-		previewFb = NULL;
+	// Builds the preview if it doesn't exist yet, resetting the zoom bookkeeping so the
+	// subsequent step()/sizePreview() applies it to the newly-built subtree. Safe to call
+	// repeatedly; a no-op once the preview already exists.
+	void ensurePreviewCreated() {
+		if (preview.create(model)) {
+			modelBoxZoom = 1.f;
+			modelBoxZoomApplied = -1.f; // Reset so step() will apply the zoom
+		}
 	}
 
 	void draw(const DrawArgs& args) override {
-		if (!previewFb) {
-			createPreview();
-		}
+		ensurePreviewCreated();
+		// A freshly created preview hasn't been sized by step() yet this frame.
+		if (modelBoxZoomApplied < 0.f) sizePreview();
 
 		float b = math::clamp(settings::rackBrightness + 0.2f, 0.f, 1.f);
 		nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, modelOpacity));
@@ -209,9 +200,7 @@ void PreviewWidget::fitPreviewToBox() {
 	// Eagerly create previews so we know actual sizes
 	for (widget::Widget* child : children) {
 		ModelPreviewWidget* modelBox = dynamic_cast<ModelPreviewWidget*>(child);
-		if (modelBox && !modelBox->previewFb) {
-			modelBox->createPreview();
-		}
+		if (modelBox) modelBox->ensurePreviewCreated();
 	}
 
 	// Calculate content bounds from children (ModelBoxes)
@@ -226,7 +215,7 @@ void PreviewWidget::fitPreviewToBox() {
 			// Use original positions to calculate content bounds
 			contentMinX = std::min(contentMinX, modelBox->originalPos.x);
 			contentMinY = std::min(contentMinY, modelBox->originalPos.y);
-			contentMaxX = std::max(contentMaxX, modelBox->originalPos.x + modelBox->modelBoxWidth);
+			contentMaxX = std::max(contentMaxX, modelBox->originalPos.x + modelBox->preview.width);
 			contentMaxY = std::max(contentMaxY, modelBox->originalPos.y + RACK_GRID_HEIGHT);
 		}
 	}

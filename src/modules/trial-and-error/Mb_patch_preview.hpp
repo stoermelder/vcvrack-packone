@@ -2,6 +2,7 @@
 #include "../../plugin.hpp"
 #include "../../vcv/files.hpp"
 #include "Mb_patch.hpp"
+#include "Mb_preview.hpp"
 
 namespace StoermelderPackOne {
 namespace Mb {
