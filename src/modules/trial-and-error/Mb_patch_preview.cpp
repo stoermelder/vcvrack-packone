@@ -5,6 +5,41 @@ namespace Mb {
 namespace patch {
 
 
+// Unscaled (zoom 1, box-relative) layout for one model, computed once by building a throwaway
+// ModuleWidget purely for its geometry — never rendered, never added to any widget tree.
+// Outputs and inputs are kept in separate vectors, indexed directly by the same portIndex
+// getPortPos() is called with, so a lookup is just an index instead of a re-walk of getPorts()
+// every time. panelWidth doubles as the box-sizing input everywhere ModelPreviewWidget needs a
+// model's width (step(), sizePreview(), fitPreviewToBox()'s content bounds).
+struct PortLayout {
+	std::vector<math::Vec> outputs;
+	std::vector<math::Vec> inputs;
+	float panelWidth = -1.f;
+
+	static const PortLayout& forModel(plugin::Model* model) {
+		static std::unordered_map<plugin::Model*, PortLayout> cache;
+		auto it = cache.find(model);
+		if (it != cache.end()) return it->second;
+
+		PortLayout layout;
+		ModuleWidget* mw = model->createModuleWidget(NULL);
+		// Some panels only finalize port positions during their first step() (dynamically
+		// laid-out panels, SVG-driven port placement) — reading box.pos before that can cache
+		// a stale (often zero) position forever.
+		mw->step();
+		layout.panelWidth = mw->box.size.x;
+		for (PortWidget* port : mw->getPorts()) {
+			math::Vec center = port->box.pos + port->box.size.div(2);
+			if (port->type == engine::Port::OUTPUT) layout.outputs.push_back(center);
+			else layout.inputs.push_back(center);
+		}
+		delete mw;
+
+		return cache.emplace(model, std::move(layout)).first->second;
+	}
+};
+
+
 struct ModelPreviewWidget : widget::OpaqueWidget {
 	plugin::Model* model;
 	widget::Widget* previewWidget;
@@ -13,36 +48,35 @@ struct ModelPreviewWidget : widget::OpaqueWidget {
 	widget::ZoomWidget* zoomWidget = NULL;
 	float modelBoxZoom = -1.f;
 	float modelBoxZoomApplied = -1.f;
-	float modelBoxWidth = -1.f;
 	float modelOpacity = 1.f;
 	math::Vec originalPos; // Original position in RACK_GRID_SIZE units
+	// Centering offset from fitPreviewToBox(), in screen (post-scale) pixels. Must be re-applied
+	// by every later recomputation of box.pos from originalPos (step(), sizePreview()) — otherwise
+	// a box whose preview is lazily created after the fit (resetting modelBoxZoomApplied) snaps
+	// back to its unscaled, uncentered position on the very next step(), which can push it outside
+	// the preview bounds entirely.
+	math::Vec contentOffset;
 	int64_t moduleId = -1;
 
-	/** Get the position of a port center in the parent (PatchPreview) coordinate space */
-	math::Vec getPortPos(bool isOutput, int portIndex) {
-		if (!previewFb || previewFb->children.empty()) return math::Vec(0, 0);
-		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(*previewFb->children.begin());
-		if (!mw) return math::Vec(0, 0);
+	/** Get the position of a port center in the parent (PatchPreview) coordinate space.
+	Returns false (and leaves `out` untouched) if the model has no such port — e.g. the patch
+	references a port index the resolved model doesn't have, such as after a plugin update
+	changed its port count. Callers must skip drawing rather than fall back to (0, 0). */
+	bool getPortPos(bool isOutput, int portIndex, math::Vec& out) {
+		const PortLayout& layout = PortLayout::forModel(model);
+		const std::vector<math::Vec>& ports = isOutput ? layout.outputs : layout.inputs;
+		if (portIndex < 0 || (size_t)portIndex >= ports.size()) return false;
 
-		auto ports = mw->getPorts();
-		int outputCount = 0;
-		int inputCount = 0;
-		for (PortWidget* port : ports) {
-			bool match = false;
-			if (port->type == engine::Port::OUTPUT) {
-				match = isOutput && outputCount == portIndex;
-				outputCount++;
-			} else {
-				match = !isOutput && inputCount == portIndex;
-				inputCount++;
-			}
-			if (match) {
-				// Port-local position is unscaled; multiply by zoom before adding the scaled box origin
-				math::Vec portCenter = (port->box.pos + port->box.size.div(2)).mult(modelBoxZoom);
-				return portCenter.plus(this->box.pos);
-			}
-		}
-		return math::Vec(0, 0);
+		// Port-local position is unscaled; multiply by zoom before adding the scaled box origin
+		out = ports[portIndex].mult(modelBoxZoom).plus(this->box.pos);
+		return true;
+	}
+
+	// The model's panel width, from PortLayout: a cheap, cached, unrendered ModuleWidget's
+	// geometry, available immediately regardless of whether this box's own preview (a real
+	// FramebufferWidget render) has been built yet.
+	float panelWidth() const {
+		return PortLayout::forModel(model).panelWidth;
 	}
 
 	void setModel(plugin::Model* model) {
@@ -54,14 +88,17 @@ struct ModelPreviewWidget : widget::OpaqueWidget {
 	void step() override {
 		if (modelBoxZoom != modelBoxZoomApplied) {
 			modelBoxZoomApplied = modelBoxZoom;
-			box.size.x = (modelBoxWidth < 0 ? 10 * RACK_GRID_WIDTH : modelBoxWidth) * modelBoxZoom;
-			box.size.y = RACK_GRID_HEIGHT * modelBoxZoom;
-			box.size = box.size.ceil();
-
-			previewWidget->box.size.y = std::ceil(RACK_GRID_HEIGHT * modelBoxZoom);
-			// Use original position scaled by zoom
-			box.pos = originalPos.mult(modelBoxZoom);
-			if (previewFb) sizePreview();
+			// Mirrors sizePreview() exactly (no separate ceil()'d size here): a ceil() used to
+			// round this box's size up independently of the unrounded size fitPreviewToBox()
+			// accounted for when computing contentWidth/contentHeight, letting the rightmost or
+			// bottommost box's rounded-up edge exceed the fitted bound by up to ~1px.
+			previewWidget->box.size.y = RACK_GRID_HEIGHT * modelBoxZoom;
+			sizePreview();
+#ifdef MB_PATCH_PREVIEW_DEBUG
+			fprintf(stderr, "[MbPatchPreview] step() re-sized moduleId=%lld pos=(%.2f,%.2f) size=(%.2f,%.2f) offset=(%.2f,%.2f)\n",
+				(long long)moduleId, box.pos.x, box.pos.y, box.size.x, box.size.y,
+				contentOffset.x, contentOffset.y);
+#endif
 		}
 		widget::OpaqueWidget::step();
 	}
@@ -78,20 +115,32 @@ struct ModelPreviewWidget : widget::OpaqueWidget {
 
 		ModuleWidget* moduleWidget = model->createModuleWidget(NULL);
 		previewFb->addChild(moduleWidget);
-		modelBoxWidth = moduleWidget->box.size.x;
-		modelBoxZoom = 1.f;
-		modelBoxZoomApplied = -1.f; // Reset so step() will apply the zoom
+		// modelBoxZoom is deliberately left untouched: fitPreviewToBox() may already have set
+		// it to the real fitted scale before this preview existed (box sizing/layout no longer
+		// needs the preview built — see panelWidth()), so resetting it here would discard that
+		// the moment each box's preview is lazily built on first draw(). Only
+		// modelBoxZoomApplied resets, so step()/sizePreview() (below) re-applies it to the
+		// newly-built subtree.
+		modelBoxZoomApplied = -1.f;
 
 		sizePreview();
 	}
 
+	// Sizes and positions this box for the current modelBoxZoom. The box's own geometry
+	// (box.size, box.pos) is set unconditionally, since panelWidth() (via PortLayout) no
+	// longer needs a live preview to know the model's width — only the live subtree itself
+	// (zoomWidget's actual zoom, the framebuffer's dirty flag) is conditional on having been
+	// created. A version of this that skipped box.pos whenever zoomWidget was still null used
+	// to leave every not-yet-drawn box at its unscaled original position, which
+	// fitPreviewToBox()'s later centering-offset step then added to instead of replacing —
+	// placing correctly-*sized* but wrongly-*positioned* boxes far outside the preview.
 	void sizePreview() {
+		box.size.x = panelWidth() * modelBoxZoom;
+		box.size.y = RACK_GRID_HEIGHT * modelBoxZoom;
+		box.pos = originalPos.mult(modelBoxZoom).plus(contentOffset);
 		if (!zoomWidget) return;
 		zoomWidget->setZoom(modelBoxZoom);
 		previewFb->setDirty();
-		box.size.x = modelBoxWidth * modelBoxZoom;
-		box.size.y = RACK_GRID_HEIGHT * modelBoxZoom;
-		box.pos = originalPos.mult(modelBoxZoom);
 	}
 
 	void deletePreview() {
@@ -125,9 +174,12 @@ struct CablesPreviewWidget : widget::Widget {
 		if (!outputBox || !inputBox) return;
 		if (cableColor.a <= 0.0f) return;
 
-		// Recompute each frame so positions follow zoom changes
-		math::Vec outputPos = outputBox->getPortPos(true, outputId);
-		math::Vec inputPos = inputBox->getPortPos(false, inputId);
+		// Recompute each frame so positions follow zoom changes. Either side can fail to
+		// resolve (e.g. the patch references a port index the resolved model no longer has,
+		// after a plugin update) — skip the cable rather than draw a stub to (0, 0).
+		math::Vec outputPos, inputPos;
+		if (!outputBox->getPortPos(true, outputId, outputPos)) return;
+		if (!inputBox->getPortPos(false, inputId, inputPos)) return;
 
 		float thickness = 2.0f * modelBoxZoom;
 		math::Vec slump = getSlumpPos(outputPos, inputPos, modelBoxZoom);
@@ -206,15 +258,11 @@ void PreviewWidget::fitPreviewToBox() {
 	if (children.empty()) return;
 	if (box.size.x <= 0 || box.size.y <= 0) return;
 
-	// Eagerly create previews so we know actual sizes
-	for (widget::Widget* child : children) {
-		ModelPreviewWidget* modelBox = dynamic_cast<ModelPreviewWidget*>(child);
-		if (modelBox && !modelBox->previewFb) {
-			modelBox->createPreview();
-		}
-	}
-
-	// Calculate content bounds from children (ModelBoxes)
+	// Calculate content bounds from children (ModelBoxes). PortLayout (via panelWidth())
+	// supplies each model's width without needing its actual preview built — box sizing/layout
+	// no longer forces every model's preview into existence up front; each box still creates
+	// its own lazily, the first time it's actually drawn (sizePreview() below is a no-op until
+	// then, guarded on zoomWidget being non-null).
 	float contentMinX = std::numeric_limits<float>::infinity();
 	float contentMinY = std::numeric_limits<float>::infinity();
 	float contentMaxX = -std::numeric_limits<float>::infinity();
@@ -226,7 +274,7 @@ void PreviewWidget::fitPreviewToBox() {
 			// Use original positions to calculate content bounds
 			contentMinX = std::min(contentMinX, modelBox->originalPos.x);
 			contentMinY = std::min(contentMinY, modelBox->originalPos.y);
-			contentMaxX = std::max(contentMaxX, modelBox->originalPos.x + modelBox->modelBoxWidth);
+			contentMaxX = std::max(contentMaxX, modelBox->originalPos.x + modelBox->panelWidth());
 			contentMaxY = std::max(contentMaxY, modelBox->originalPos.y + RACK_GRID_HEIGHT);
 		}
 	}
@@ -235,6 +283,11 @@ void PreviewWidget::fitPreviewToBox() {
 	contentHeight = contentMaxY - contentMinY;
 	contentCached = true;
 	fitted = true;
+
+#ifdef MB_PATCH_PREVIEW_DEBUG
+	fprintf(stderr, "[MbPatchPreview] fitPreviewToBox: box.size=(%.2f,%.2f) content=(%.2f,%.2f) min=(%.2f,%.2f) max=(%.2f,%.2f)\n",
+		box.size.x, box.size.y, contentWidth, contentHeight, contentMinX, contentMinY, contentMaxX, contentMaxY);
+#endif
 
 	float scaleX = box.size.x / contentWidth;
 	float scaleY = box.size.y / contentHeight;
@@ -245,16 +298,42 @@ void PreviewWidget::fitPreviewToBox() {
 	scaledContentOffsetX = (box.size.x - contentWidth * scale) / 2.f;
 	scaledContentOffsetY = (box.size.y - contentHeight * scale) / 2.f;
 
+	// contentMinX/Y is the origin of the surviving children's bounding box, which is only ever
+	// (0,0) when every module in the patch resolved to a known model. createPreview() normalizes
+	// originalPos against the *full patch's* leftmost/topmost module (including ones later
+	// skipped as missing), so a patch with any missing module leaves a corresponding gap:
+	// originalPos.mult(scale) alone lands each surviving box at its scaled position *relative to
+	// the whole patch*, not relative to what's actually being fit into the box — every box ends
+	// up shifted by exactly that gap, scaled. Folding -contentMin*scale into the same per-box
+	// offset as the centering term corrects this without changing originalPos itself (still
+	// needed unscaled, as-is, for content-bounds math above).
+	math::Vec contentMin(contentMinX, contentMinY);
+
 	// Apply zoom to all ModelBox children
 	for (widget::Widget* child : children) {
 		ModelPreviewWidget* modelBox = dynamic_cast<ModelPreviewWidget*>(child);
 		if (modelBox) {
 			modelBox->modelBoxZoom = scale;
 			modelBox->modelBoxZoomApplied = scale; // Prevent step() from overwriting
+			// Stored on the box so later recomputations of box.pos from originalPos (step(),
+			// a lazily-created preview's sizePreview()) stay centered instead of snapping back
+			// to the unscaled, uncentered position.
+			modelBox->contentOffset = math::Vec(scaledContentOffsetX, scaledContentOffsetY)
+				.minus(contentMin.mult(scale));
 			modelBox->sizePreview();
-			// Apply centering offset in screen coordinates
-			modelBox->box.pos = modelBox->box.pos.plus(math::Vec(scaledContentOffsetX, scaledContentOffsetY));
 		}
+#ifdef MB_PATCH_PREVIEW_DEBUG
+		if (modelBox) {
+			float right = modelBox->box.pos.x + modelBox->box.size.x;
+			float bottom = modelBox->box.pos.y + modelBox->box.size.y;
+			bool outOfBounds = right > box.size.x + 0.5f || bottom > box.size.y + 0.5f
+				|| modelBox->box.pos.x < -0.5f || modelBox->box.pos.y < -0.5f;
+			fprintf(stderr, "[MbPatchPreview] box moduleId=%lld pos=(%.2f,%.2f) size=(%.2f,%.2f) right=%.2f bottom=%.2f%s\n",
+				(long long)modelBox->moduleId, modelBox->box.pos.x, modelBox->box.pos.y,
+				modelBox->box.size.x, modelBox->box.size.y, right, bottom,
+				outOfBounds ? "  <-- OUT OF BOUNDS" : "");
+		}
+#endif
 		CablesPreviewWidget* cableBox = dynamic_cast<CablesPreviewWidget*>(child);
 		if (cableBox) {
 			cableBox->box.size = box.size;
