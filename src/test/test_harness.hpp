@@ -13,6 +13,7 @@
 #include <vector>
 #include <utility>
 #include <functional>
+#include <set>
 
 // Test::Harness — a deterministic scheduler for both of a module's threads.
 //
@@ -265,8 +266,14 @@ struct Harness {
 
 	// ---- Construction --------------------------------------------------------------------
 
-	Harness() { installUiAccess(); }
-	explicit Harness(UiMode mode) : uiMode(mode) { installUiAccess(); }
+	Harness() {
+		installUiAccess();
+		snapshotRackModules();
+	}
+	explicit Harness(UiMode mode) : uiMode(mode) {
+		installUiAccess();
+		snapshotRackModules();
+	}
 
 	// The UiAccess mock, installed into vcv::uiAccess for the harness's lifetime and restored
 	// on destruction. Declared after uiMode so installUiAccess() can read the mode.
@@ -365,6 +372,45 @@ struct Harness {
 			// shadowing risk, unlike adoptModule's templated T*).
 			if (APP->engine->getModule_NoLock((*it)->id) == *it) Test::unregisterModule(*it);
 			Test::destroyModule(*it);
+		}
+
+		// Last: anything still in the rack that the harness neither owned nor found there.
+		sweepAddedModules();
+	}
+
+	// Records what is already in APP->scene->rack, so teardown can tell a module the code under
+	// test added from one that was there first. Called from every constructor.
+	void snapshotRackModules() {
+		if (!APP->scene || !APP->scene->rack) return;
+		for (rack::app::ModuleWidget* mw : APP->scene->rack->getModules()) {
+			preexistingRackModules.insert(mw);
+		}
+	}
+
+	// Removes ModuleWidgets that the code under test added directly to APP->scene->rack.
+	//
+	// The harness only owns what was added through it. Production code that adds a module the
+	// way a real click does — Mb's chooseModel() calls APP->scene->rack->addModule() — leaves
+	// that module behind when the harness driving the click goes out of scope, and the scene is
+	// process-wide, so it outlives the TEST_CASE. That is not merely a leak: a later TEST_CASE
+	// doing the same thing searches for a free grid position among modules nothing tore down,
+	// and Rack's eachNearestGridPos()/setModulePosNearest() (RackWidget.cpp) *hangs* rather
+	// than fails when it collides with a stale module at the same position.
+	//
+	// Only modules added during this harness's lifetime are swept — preexistingRackModules,
+	// captured in the constructor, is subtracted — so a harness never destroys a module set up
+	// by its caller or by an enclosing fixture. Harness-owned widgets are already gone by the
+	// time this runs, so they cannot be swept twice.
+	//
+	// Called automatically on teardown; public so a test that adds several modules in sequence
+	// can clear the rack between them rather than waiting for the harness to end.
+	void sweepAddedModules() {
+		if (!APP->scene || !APP->scene->rack) return;
+		// Copy first: unregisterModule() mutates the rack's children.
+		std::vector<rack::app::ModuleWidget*> inRack = APP->scene->rack->getModules();
+		for (rack::app::ModuleWidget* mw : inRack) {
+			if (preexistingRackModules.count(mw)) continue;
+			Test::unregisterModule(mw->module, mw);
 		}
 	}
 
@@ -834,6 +880,11 @@ struct Harness {
 
 	// Widgets moved out of APP->scene->rack by exposeRackWidgets(), put back on teardown.
 	std::vector<rack::widget::Widget*> exposedFromRack;
+
+	// ModuleWidgets already in APP->scene->rack when this harness was constructed. Anything in
+	// the rack beyond these on teardown was added by the code under test, and is swept — see
+	// sweepAddedModules().
+	std::set<rack::app::ModuleWidget*> preexistingRackModules;
 
 private:
 	// Sets one side's neighbour on one module, the way Rack's engine does: assign moduleId

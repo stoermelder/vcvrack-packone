@@ -877,6 +877,20 @@ changes how the next part dispatches — a selected widget sees `SelectKey` befo
 passed to `APP->event->finalizeWidget()` before deletion, or it dangles into every later
 `TEST_CASE`. `Test::destroyWidget()` and `unregisterModule()` both do this for you.
 
+**`APP->scene->rack` is process-wide too, and production code adds to it.** Any code path that
+adds a module the way a real click does — `Mb`'s `chooseModel()`, `Stroke`'s and `Mirror`'s
+add-module actions, `vcv::addModule()` — calls `APP->scene->rack->addModule()` directly, which the
+harness does not own. Left behind, it is worse than a leak: the next `TEST_CASE` doing the same
+thing searches for a free grid position among modules nothing tore down, and Rack's
+`eachNearestGridPos()`/`setModulePosNearest()` (`RackWidget.cpp`) **hangs** rather than fails when
+it collides with a stale module at the same position. `Harness::sweepAddedModules()` handles this
+automatically on teardown: it snapshots the rack's `ModuleWidget`s at construction and removes
+anything added since that the harness does not own, so a widget test can drive a real
+add-module click and simply not think about it. A fixture that parents a widget into the rack
+itself and cleans it up in its own destructor (`EightFaceMk2.test.dispatch.hpp`'s
+`DispatchFixture`) still works — its destructor runs before its `Harness` member's, so the sweep
+finds nothing left to do.
+
 **Catch2 runs all `TEST_CASE`s in one process.** Assert on *deltas*, not absolute counts, for
 anything process-wide (scene children, registries) — an earlier case may have left something behind.
 
