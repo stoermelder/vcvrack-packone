@@ -139,3 +139,16 @@ struct MockNwAccess : vcv::NwAccess {
 		return downloadResult;
 	}
 };
+
+// Suite-wide guard: BrowserOverlay's ctor/dtor (Mb.cpp) does real vcv::fs::* I/O
+// (mb-widths.json, manifests cache, pluginSettings.saveToJson()), and most TEST_CASEs never
+// install their own FileAccess mock. Installing MockFileAccess here for the whole binary
+// stops that from writing into the developer's real Rack user directory. A TEST_CASE that
+// needs specific file contents still installs its own TEST_MOCK_FS(MockFileAccess) —
+// Test::mock::Guard is LIFO, so it shadows this one for its scope.
+//
+// Doesn't cover manifestsCacheInit()'s detached thread, which reads vcv::fileAccess
+// unsynchronized — a separate, pre-existing race, harmless today only because
+// mbNewestAutoUpdate defaults to false.
+MockFileAccess suiteFileAccess;
+Test::mock::Guard<vcv::FileAccess> suiteFileAccessGuard{vcv::fileAccess, &suiteFileAccess};
