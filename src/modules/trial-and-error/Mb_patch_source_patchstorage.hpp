@@ -1052,7 +1052,7 @@ struct PatchStorageSource : PatchSource {
 		std::string archivePath = getTempFilePath(fileId);
 		if (archivePath.empty()) return;
 
-		std::string path = vcv::ui::saveDialog("", "", info.filename.empty() ? (info.slug + ".vcv") : info.filename);
+		std::string path = vcv::ui::saveDialog("VCV Rack patch (.vcv):vcv", "", info.filename.empty() ? (info.slug + ".vcv") : info.filename);
 		if (path.empty()) return;
 
 		// Copy file to destination through the swappable fs layer
