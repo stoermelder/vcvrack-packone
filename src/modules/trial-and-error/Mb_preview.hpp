@@ -4,6 +4,10 @@
 #include "../../vcv/ui.hpp"
 #include "../../pluginsettings.hpp"
 #include <tag.hpp>
+#include <unordered_map>
+#include <vector>
+#include <algorithm>
+#include <nanovg_gl_utils.h>
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -13,6 +17,125 @@ struct ModuleWidgetContainer : widget::Widget {
 	void draw(const DrawArgs& args) override {
 		Widget::draw(args);
 		Widget::drawLayer(args, 1);
+	}
+};
+
+
+// Rendered previews survive the BrowserOverlay that built them (e.g. removing/re-adding the Mb
+// module) as plain CPU-side pixels, keyed by model. Not a live widget subtree: FramebufferWidget's
+// GL resources aren't refcounted (its destructor frees them unconditionally), so keeping one
+// alive past its widget's lifetime is unsafe. Reads back via the public
+// getFramebuffer()/getFramebufferSize() API and NVGLUframebuffer's public GL handles, without
+// touching FramebufferWidget's private internals.
+struct PreviewPixelCache {
+	struct Entry {
+		int width = 0;
+		int height = 0;
+		// Panel width in px at zoom 1, oversample 1 — same quantity as ModelPreview::width,
+		// kept alongside the pixels so hp()/HP-filtering keep working without a live preview.
+		float panelWidth = 0.f;
+		// RGBA8, top-down row order, straight nvgCreateImageRGBA input.
+		std::vector<uint8_t> pixels;
+
+		// Uploaded GL image, owned by the entry itself rather than by whichever
+		// CachedPreviewWidget happens to draw it — every ModelBox reclaiming this model draws
+		// the same already-uploaded image instead of re-uploading, and it's only ever deleted
+		// once (when the entry itself goes away), not once per ModelBox instance across
+		// remove/re-add cycles. 0 until first drawn.
+		mutable int nvgImage = 0;
+
+		Entry() = default;
+		Entry(const Entry&) = delete;
+		Entry& operator=(const Entry&) = delete;
+		Entry(Entry&&) = default;
+		Entry& operator=(Entry&&) = default;
+
+		~Entry() {
+			if (nvgImage && APP && APP->window) {
+				nvgDeleteImage(APP->window->vg, nvgImage);
+			}
+		}
+
+		bool valid() const { return width > 0 && height > 0 && !pixels.empty(); }
+
+		// Returns the uploaded GL image for `vg`, uploading it once on first call.
+		int image(NVGcontext* vg) const {
+			if (!nvgImage) {
+				// PREMULTIPLIED to match nvgluCreateFramebuffer's own flags.
+				nvgImage = nvgCreateImageRGBA(vg, width, height, NVG_IMAGE_PREMULTIPLIED, pixels.data());
+			}
+			return nvgImage;
+		}
+	};
+
+	static std::unordered_map<plugin::Model*, Entry>& map() {
+		static std::unordered_map<plugin::Model*, Entry> m;
+		return m;
+	}
+
+	// Already cached for this model.
+	static bool has(plugin::Model* model) {
+		return map().find(model) != map().end();
+	}
+
+	// Reads back `fb`'s current contents (must already be rendered) and stores them under
+	// `model`, replacing any existing entry. No-op if the framebuffer isn't actually rendered.
+	static void store(plugin::Model* model, widget::FramebufferWidget* fb, float panelWidth) {
+		NVGLUframebuffer* nfb = fb->getFramebuffer();
+		if (!nfb) return;
+
+		math::Vec sizeF = fb->getFramebufferSize();
+		int w = (int)sizeF.x;
+		int h = (int)sizeF.y;
+		if (w <= 0 || h <= 0) return;
+
+		// Preserve whatever FBO NanoVG currently has bound.
+		GLint prevFbo = 0;
+		glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+
+		Entry e;
+		e.width = w;
+		e.height = h;
+		e.panelWidth = panelWidth;
+		e.pixels.resize((size_t)w * h * 4);
+
+		glBindFramebuffer(GL_FRAMEBUFFER, nfb->fbo);
+		glPixelStorei(GL_PACK_ALIGNMENT, 1);
+		glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, e.pixels.data());
+		glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+
+		// nvgluCreateFramebuffer uses NVG_IMAGE_FLIPY, so the texture is bottom-up relative to
+		// nvgCreateImageRGBA's plain top-down input — flip in place, row pairs swapped from
+		// both ends, so this never holds a second full-size copy alongside e.pixels.
+		size_t rowBytes = (size_t)w * 4;
+		for (int y = 0; y < h / 2; y++) {
+			std::swap_ranges(&e.pixels[(size_t)y * rowBytes], &e.pixels[(size_t)(y + 1) * rowBytes],
+				&e.pixels[(size_t)(h - 1 - y) * rowBytes]);
+		}
+
+		map()[model] = std::move(e);
+	}
+};
+
+
+// Displays a PreviewPixelCache::Entry as a static image, stretched to the widget's box. Never
+// re-renders; zooming just stretches the baked bitmap. The GL image belongs to the entry, not
+// to this widget (see PreviewPixelCache::Entry::image()) — many ModelBoxes across
+// remove/re-add cycles can share one upload, and none of them delete it on destruction.
+struct CachedPreviewWidget : widget::Widget {
+	const PreviewPixelCache::Entry* entry = NULL;
+
+	void draw(const DrawArgs& args) override {
+		if (!entry || !entry->valid()) return;
+		int nvgImage = entry->image(args.vg);
+		if (!nvgImage) return;
+
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
+		NVGpaint paint = nvgImagePattern(args.vg, 0, 0, box.size.x, box.size.y, 0.f, nvgImage, 1.f);
+		nvgFillPaint(args.vg, paint);
+		nvgFill(args.vg);
+		Widget::draw(args);
 	}
 };
 
@@ -28,11 +151,20 @@ struct ModelPreview {
 	ModuleWidgetContainer* mwc = NULL;
 	ModuleWidget* moduleWidget = NULL;
 
+	// Set instead of the above on a PreviewPixelCache hit: a static bitmap stands in for the
+	// live subtree, so createModuleWidget() and the render are both skipped.
+	CachedPreviewWidget* cachedWidget = NULL;
+
 	// Panel width in px, valid only once created.
 	float width = -1.f;
 
 	bool created() const {
-		return fb != NULL;
+		return fb != NULL || cachedWidget != NULL;
+	}
+
+	// True while showing a cache hit rather than a live subtree.
+	bool isCached() const {
+		return cachedWidget != NULL;
 	}
 
 	// Attaches the (empty) container to the owning widget. Call once from setModel().
@@ -41,10 +173,42 @@ struct ModelPreview {
 		parent->addChild(previewWidget);
 	}
 
+	// Builds the cached-image half of the subtree (zoomWidget -> cachedWidget) at `zoom`.
+	// Shared by create()'s cache-hit branch and swapToCached().
+	void buildCached(const PreviewPixelCache::Entry& entry, float zoom) {
+		// Same ZoomWidget wrapper as the live path, so setZoom() works identically either way.
+		zoomWidget = new widget::ZoomWidget;
+		zoomWidget->setZoom(zoom);
+		previewWidget->addChild(zoomWidget);
+
+		// Height derived from the entry's own captured aspect ratio rather than assumed to be
+		// exactly RACK_GRID_HEIGHT: render()'s framebuffer size comes from world-space
+		// coordinates run through floor()/ceil(), so the captured pixel aspect ratio can drift
+		// slightly from panelWidth/RACK_GRID_HEIGHT depending on zoom/oversample at capture
+		// time. Using the real ratio avoids a visible stretch/squash.
+		float aspect = (entry.width > 0) ? (float)entry.height / (float)entry.width : 1.f;
+		cachedWidget = new CachedPreviewWidget;
+		cachedWidget->entry = &entry;
+		cachedWidget->box.size = math::Vec(entry.panelWidth, entry.panelWidth * aspect);
+		zoomWidget->addChild(cachedWidget);
+		width = entry.panelWidth;
+	}
+
 	// Builds the preview subtree. Safe to call repeatedly; only the first call does work.
 	// Returns true if the preview was created by this call.
+	//
+	// A PreviewPixelCache hit short-circuits into a static image instead — but only while
+	// prewarming is enabled. With it off, a stale entry is simply never looked at (not
+	// cleared), and a live preview is built as if nothing had ever been cached.
 	bool create(plugin::Model* model) {
-		if (fb) return false;
+		if (fb || cachedWidget) return false;
+
+		auto it = pluginSettings.mbPrewarmEnabled
+			? PreviewPixelCache::map().find(model) : PreviewPixelCache::map().end();
+		if (it != PreviewPixelCache::map().end()) {
+			buildCached(it->second, 1.f);
+			return true;
+		}
 
 		zoomWidget = new widget::ZoomWidget;
 		previewWidget->addChild(zoomWidget);
@@ -71,8 +235,10 @@ struct ModelPreview {
 		return true;
 	}
 
-	// True once the framebuffer holds a rendered image (not merely constructed).
+	// True once the framebuffer holds a rendered image (not merely constructed), or a cached
+	// static image is showing — either way, there is nothing left to prepare.
 	bool rendered() const {
+		if (cachedWidget) return true;
 		return fb && fb->getFramebuffer() != NULL && !fb->dirty;
 	}
 
@@ -105,16 +271,58 @@ struct ModelPreview {
 		return true;
 	}
 
-	// Applies a zoom factor and marks the framebuffer for re-render.
+	// Last requested zoom, remembered while setZoom() is deferring it (see below) so
+	// swapToCached() can apply it once capture is done.
+	float pendingDisplayZoom = 1.f;
+
+	// Applies a zoom factor and, in live mode, marks the framebuffer for re-render. In cached
+	// mode there is no framebuffer to re-render — the baked image is simply drawn at the new
+	// scale by zoomWidget's transform, same as the live path.
+	//
+	// While prewarming and not yet rendered, the zoom is deliberately not applied to the render:
+	// the first render always happens at zoom 1.0 (see create()), so a rendered-then-captured
+	// preview never needs a second render at a different scale, which used to double render
+	// time across a whole library warm-up. The requested zoom is only remembered
+	// (pendingDisplayZoom); swapToCached() applies it once capture is done. Once actually
+	// rendered (including a reclaimed cache hit), zoom changes apply immediately as normal.
 	void setZoom(float zoom) {
-		if (!fb) return;
+		if (!zoomWidget) return;
+		pendingDisplayZoom = zoom;
+		if (pluginSettings.mbPrewarmEnabled && fb && !rendered()) return;
 		zoomWidget->setZoom(zoom);
-		fb->setDirty();
+		if (fb) fb->setDirty();
 	}
 
 	int hp() const {
 		return (int)std::round(width / RACK_GRID_WIDTH);
 	}
+
+	// Replaces a live, just-rendered subtree with the cached bitmap for `entry`, right after
+	// that render populated the cache (see ModelBoxBase::captureIfNewlyRendered()). `displayZoom`
+	// (typically pendingDisplayZoom) is the zoom to display at, since the capture itself always
+	// rendered at a fixed 1.0. No-op if already cached or never went live.
+	void swapToCached(const PreviewPixelCache::Entry& entry, float displayZoom) {
+		if (!fb || cachedWidget) return;
+		// zoomWidget owns fb/mwc/moduleWidget, so deleting it tears down the whole live subtree
+		// at once; removeChild() first satisfies Widget::~Widget()'s assert(!parent).
+		previewWidget->removeChild(zoomWidget);
+		delete zoomWidget;
+		zoomWidget = NULL;
+		fb = NULL;
+		mwc = NULL;
+		moduleWidget = NULL;
+
+		buildCached(entry, displayZoom);
+	}
+};
+
+
+// Outcome of ModelBoxBase::preparePreview(), so PreviewPrewarmer::run() can budget a near-free
+// PreviewPixelCache reclaim differently from an expensive live createModuleWidget()+render.
+enum class PrepareResult {
+	NONE,     // already ready, or nothing to do yet
+	CACHED,   // reclaimed a PreviewPixelCache hit — no createModuleWidget(), no render
+	LIVE,     // built and/or rendered the real ModuleWidget/FramebufferWidget subtree
 };
 
 
@@ -162,13 +370,18 @@ struct PreviewPrewarmer {
 	}
 
 	// Prepares previews using whatever time is left in the frame. `ready` reports whether a
-	// candidate is already prepared; `warm` does the work and returns whether it did any.
+	// candidate is already prepared; `warm` does the work and returns a PrepareResult.
 	//
 	// Every model is warmed, not just ones matching the current filter — filters are transient,
 	// and re-warming from scratch after every search/tag change would defeat the point. The
 	// sweep always walks the whole list from the front (refresh() reorders it, so a saved
 	// position would be meaningless) so the progress tally stays complete even once the frame
 	// budget runs out and the remainder only counts instead of preparing.
+	//
+	// CACHED reclaims are cheap enough (no module widget built, no render) to be paced by the
+	// time budget alone, never maxPerFrame — so re-adding the Mb module after warming once can
+	// reclaim its whole library in ~1 frame. LIVE work is normally paced by time alone too;
+	// maxPerFrame only kicks in for it when frameRateLimit is unlimited, see below.
 	template <typename R, typename F>
 	void run(const std::list<widget::Widget*>& children, math::Vec offset, float zoom,
 		R ready, F warm) {
@@ -193,6 +406,13 @@ struct PreviewPrewarmer {
 		// overshoot stays proportional across refresh rates.
 		const double frameDuration = 1.0 / settings::frameRateLimit;
 		const double reserve = -0.5 * frameDuration;
+
+		// budgetRemaining() is the real throttle for LIVE work; maxPerFrame only matters when
+		// frameRateLimit is unlimited, where budgetRemaining() always reports 0.0 (the time
+		// check above never trips) — without a count cap there, the sweep would build every
+		// remaining ModuleWidget in a single frame. With a real frame rate limit, the time
+		// budget alone already stops the loop first, so the cap is a no-op then.
+		const bool unlimitedFrameRate = settings::frameRateLimit <= 0.f;
 		const int maxPerFrame = 8;
 		int prepared = 0;
 		int nReady = 0, nTotal = 0;
@@ -205,12 +425,17 @@ struct PreviewPrewarmer {
 				continue;
 			}
 			if (!budgetLeft) continue;
-			if (prepared >= maxPerFrame || budgetRemaining() <= reserve) {
+			if (budgetRemaining() <= reserve) {
 				budgetLeft = false;
 				continue;
 			}
-			if (warm(w)) {
+			PrepareResult result = warm(w);
+			if (result == PrepareResult::LIVE) {
 				prepared++;
+				nReady++;
+				if (unlimitedFrameRate && prepared >= maxPerFrame) budgetLeft = false;
+			}
+			else if (result == PrepareResult::CACHED) {
 				nReady++;
 			}
 		}
@@ -368,14 +593,35 @@ struct ModelBoxBase : widget::OpaqueWidget {
 		return true;
 	}
 
+	// Captures the live framebuffer into PreviewPixelCache the first time it's seen rendered
+	// (via the prewarm sweep or a lazy scroll-triggered render), then immediately swaps this
+	// box over to the cached bitmap — a captured preview never keeps its live subtree around
+	// longer than it takes to capture it. Gated on pluginSettings.mbPrewarmEnabled: with
+	// prewarming off there's nothing to capture. PreviewPixelCache::has() makes this run once
+	// per model per process lifetime; not done at ModelBox destruction instead because doing it
+	// for every model at once (removing the Mb module) once froze the UI for over a second.
+	void captureIfNewlyRendered() {
+		if (!pluginSettings.mbPrewarmEnabled) return;
+		if (preview.fb && !preview.isCached() && preview.rendered() && !PreviewPixelCache::has(model)) {
+			// Already rendered at zoom 1.0 (setZoom() pins it there while unrendered), so no
+			// second capture-only render is needed. pendingDisplayZoom is the zoom to resume at.
+			PreviewPixelCache::store(model, preview.fb, preview.width);
+			preview.swapToCached(PreviewPixelCache::map().at(model), preview.pendingDisplayZoom);
+		}
+	}
+
 	// Creates and rasterizes the preview ahead of it being scrolled into view.
-	// Returns true if this call did any work.
-	bool preparePreview() {
+	PrepareResult preparePreview() {
+		bool wasCached = preview.isCached();
 		bool did = createPreview();
 		// render() reports whether it actually produced a framebuffer; a no-op must not
 		// consume the frame's warming budget, or boxes it skipped are never retried.
 		if (preview.render()) did = true;
-		return did;
+		captureIfNewlyRendered();
+		if (!did) return PrepareResult::NONE;
+		// isCached() only just became true if create() found a hit just now (wasCached catches
+		// the reclaim-happened-this-call case; the live path never sets it).
+		return (preview.isCached() && !wasCached) ? PrepareResult::CACHED : PrepareResult::LIVE;
 	}
 
 	// Reports whether this box needs no further pre-warming.
@@ -419,6 +665,10 @@ struct ModelBoxBase : widget::OpaqueWidget {
 		nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1));
 
 		OpaqueWidget::draw(args);
+
+		// Catches a lazy render (FramebufferWidget's own draw-triggered render, above) that
+		// happened before the prewarm sweep got to this box.
+		captureIfNewlyRendered();
 
 		if (favoriteHighlight && isModelFavorite(model)) {
 			nvgBeginPath(args.vg);
@@ -689,9 +939,9 @@ struct ModelBoxBase : widget::OpaqueWidget {
 		tt->text = tooltipText();
 		setTooltip(tt);
 
-		// The magnifier samples the preview's framebuffer, so it can only exist once the
-		// preview does; a box entered before it was warmed simply gets no magnifier.
-		if (preview.created()) {
+		// The magnifier samples a live framebuffer, so an unwarmed box or a cached static
+		// image gets no magnifier.
+		if (preview.fb) {
 			MagnifierOverlay* mg = new MagnifierOverlay;
 			mg->fb = preview.fb;
 			mg->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
@@ -704,15 +954,23 @@ struct ModelBoxBase : widget::OpaqueWidget {
 
 	void onHover(const event::Hover& e) override {
 		if (magnifier) {
-			magnifier->mousePos = getAbsoluteOffset(e.pos);
-			magnifier->initialized = true;
-			magnifier->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
-			magnifier->sourceSize = box.size;
-			// Keep the on-screen magnification constant regardless of browser zoom: the
-			// box is already scaled by the preview's zoom, so divide it back out.
-			if (preview.zoomWidget) {
-				float z = preview.zoomWidget->getZoom();
-				if (z > 0.f) magnifier->magnification = 3.f / z;
+			// A mid-hover capture+swap deletes the FramebufferWidget magnifier->fb points at;
+			// close rather than re-point, since a cached static image has none to sample.
+			if (!preview.fb) {
+				setMagnifier(NULL);
+			}
+			else {
+				magnifier->fb = preview.fb;
+				magnifier->mousePos = getAbsoluteOffset(e.pos);
+				magnifier->initialized = true;
+				magnifier->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
+				magnifier->sourceSize = box.size;
+				// Keep the on-screen magnification constant regardless of browser zoom: the
+				// box is already scaled by the preview's zoom, so divide it back out.
+				if (preview.zoomWidget) {
+					float z = preview.zoomWidget->getZoom();
+					if (z > 0.f) magnifier->magnification = 3.f / z;
+				}
 			}
 		}
 		OpaqueWidget::onHover(e);
