@@ -200,6 +200,30 @@ TEST_CASE("Ahab Widget: held arrow key repeats via GLFW_REPEAT", "[ahab][widget]
 	REQUIRE(es.cursor_x == 2);
 }
 
+TEST_CASE("Ahab Widget: a single tap does not also move on Rack's own RACK_HELD synthesis", "[ahab][widget]") {
+	// Regression test: EventState::handleHover fires a synthesised RACK_HELD event for every
+	// currently-held key on every hover pass, with no delay of its own - so a single quick tap
+	// can see RACK_HELD arrive on the very next hover before GLFW_RELEASE, well before anything
+	// a person would call "holding" the key. Before the fix this doubled every keystroke's
+	// effect ("pressing the cursor key is immediately handled as repeat").
+	Test::Harness h;
+	AhabModule* m = h.addModule<AhabModule>("Ahab");
+	AhabWidget* mw = addAhabWidget(h, m);
+	primeAhabWidget(h, mw);
+	auto& es = mw->simWidget->editorState;
+
+	REQUIRE(h.events().key(GLFW_KEY_RIGHT, GLFW_PRESS));
+	REQUIRE(es.cursor_x == 1);
+
+	// A hover pass while the key is still logically held (no release yet) - Rack fires
+	// RACK_HELD for it here, same as it would between two frames of a real, brief tap.
+	h.events().hover(math::Vec(1, 1));
+	REQUIRE(es.cursor_x == 1);   // must NOT have advanced a second time
+
+	REQUIRE(h.events().key(GLFW_KEY_RIGHT, GLFW_RELEASE));
+	REQUIRE(es.cursor_x == 1);
+}
+
 TEST_CASE("Ahab Widget: Escape collapses the selection to the cursor", "[ahab][widget]") {
 	Test::Harness h;
 	AhabModule* m = h.addModule<AhabModule>("Ahab");
@@ -432,4 +456,65 @@ TEST_CASE("Ahab Widget: Ctrl+V pastes the clipboard at the cursor", "[ahab][widg
 	REQUIRE(h.events().keyPress(GLFW_KEY_V, RACK_MOD_CTRL));
 	h.dspStep();
 	REQUIRE(m->sim->getFieldBuffer()[0] == 'A');
+}
+
+
+// ---- Context menu shortcut text reflects the live keymap binding, not a hardcoded string ----
+
+namespace {
+// Finds a direct MenuItem child by its label text. Menu items are added as plain children
+// (widget::Widget::children), not through any Ahab-specific API, so a linear scan + dynamic_cast
+// is the whole helper needed.
+ui::MenuItem* findMenuItemByText(ui::Menu* menu, const std::string& text) {
+	for (Widget* w : menu->children) {
+		auto* item = dynamic_cast<ui::MenuItem*>(w);
+		if (item && item->text == text) return item;
+	}
+	return nullptr;
+}
+}
+
+TEST_CASE("Ahab Widget: context menu shows the default Undo shortcut", "[ahab][widget]") {
+	Test::Harness h;
+	AhabModule* m = h.addModule<AhabModule>("Ahab");
+	AhabWidget* mw = addAhabWidget(h, m);
+	primeAhabWidget(h, mw);
+
+	ui::Menu menu;
+	mw->simWidget->appendContextMenu(&menu, true);
+
+	auto* undo = findMenuItemByText(&menu, "Undo");
+	REQUIRE(undo != nullptr);
+	// rightText is the platform-flavoured display form (KeyCombo::displayString(), "⌘" on
+	// macOS) - RACK_MOD_CTRL_NAME, not a hardcoded "Ctrl", is what a real menu would show here.
+	CHECK(undo->rightText.find(RACK_MOD_CTRL_NAME "+Z") != std::string::npos);
+}
+
+TEST_CASE("Ahab Widget: context menu reflects a rebound shortcut, not the old default", "[ahab][widget]") {
+	// Keymaps is a process-wide registry (Keymap.hpp): reset it so a rebind here doesn't leak
+	// into other TEST_CASEs sharing the "Ahab" slug within this binary.
+	Keymaps::resetForTest();
+	Test::Harness h;
+	AhabModule* m = h.addModule<AhabModule>("Ahab");
+	AhabWidget* mw = addAhabWidget(h, m);
+	primeAhabWidget(h, mw);
+
+	mw->simWidget->keymap->bind("edit.copy", KeyCombo("Ctrl+Q"));
+
+	ui::Menu menu;
+	mw->simWidget->appendContextMenu(&menu, true);
+
+	// Copy/Cut/Paste live inside the "Selection" submenu, built lazily by
+	// MenuItem::createChildMenu() when the submenu is actually opened - not eagerly as direct
+	// children of the top-level menu appendContextMenu() just populated.
+	auto* selection = findMenuItemByText(&menu, "Selection");
+	REQUIRE(selection != nullptr);
+	ui::Menu* submenu = selection->createChildMenu();
+	REQUIRE(submenu != nullptr);
+
+	auto* copy = findMenuItemByText(submenu, "Copy");
+	REQUIRE(copy != nullptr);
+	CHECK(copy->rightText == RACK_MOD_CTRL_NAME "+Q");
+
+	Keymaps::resetForTest();
 }

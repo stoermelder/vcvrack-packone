@@ -8,6 +8,7 @@
 #include "orca_examples.hpp"
 #include "AhabSim.hpp"
 #include "AhabUdpOutput.hpp"
+#include "AhabKeymap.hpp"
 #include "AhabMidiDriver.hpp"
 #include "AhabRenderer.hpp"
 #include "AhabEditorState.hpp"
@@ -517,6 +518,12 @@ struct AhabSimWidget : OpaqueWidget {
 	// Temporary variables for field size changes
 	Usz fh, fh_, fw, fw_;
 
+	// Shared, process-wide across every Ahab instance (Keymaps::open("Ahab") returns the same
+	// object); handlers are this widget's own and are destroyed with it. Populated in
+	// setModule() once module is known - see AhabKeymap.hpp / registerHandlers() below.
+	std::shared_ptr<Keymap> keymap;
+	KeymapHandlers handlers{nullptr};
+
 	AhabSimWidget() {
 		field_init(&display_field);
 		mbuf_reusable_init(&display_mbuf);
@@ -560,6 +567,10 @@ struct AhabSimWidget : OpaqueWidget {
 			module->sim->setUiResetCallback(std::bind(&AhabSimWidget::reset, this));
 			module->sim->notifyTick();
 			reset();
+
+			keymap = registerActions();
+			handlers = KeymapHandlers(keymap);
+			registerHandlers();
 		}
 		else {
 			// only for module browser preview
@@ -1059,207 +1070,117 @@ struct AhabSimWidget : OpaqueWidget {
 
 	void onSelectKey(const SelectKeyEvent& e) override {
 		if (!module || !module->sim) return;
-		std::string k = vcv::ui::getKeyName(e.key, 0);
+		if (handlers.dispatch(e.key, e.mods, e.action)) e.consume(this);
+	}
 
-		// Spacebar in insert mode -> advance cursor one cell to the right
-		if (editorState.getInsertMode() && (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) && e.key == GLFW_KEY_SPACE) {
+	// Registers this widget's own behaviour against the shared keymap's action ids - called
+	// once from setModule() once module is known. Bodies are unchanged from the dispatcher
+	// this replaced; only the condition (an if-chain of key/mod checks) is replaced by an
+	// action id. See AhabKeymap.hpp's header comment for why navigation is 32 separate actions
+	// instead of one per direction.
+	void registerHandlers() {
+		handlers.on("edit.clear.selection", [this]{ clearSelection(); });
+
+		// Space: insert mode (advance cursor) takes priority over the plain run/stop toggle -
+		// same precedence the dispatcher gave it (checked first, returns before the toggle
+		// branch is reached).
+		handlers.onTry("transport.toggle", [this]() -> bool {
+			if (!editorState.getInsertMode()) return false;
 			Usz fh = module->sim->getFieldHeight();
 			Usz fw = module->sim->getFieldWidth();
 			editorState.moveCursorRelative(0, 1, fh, fw, false);
 			Usz cy, cx; editorState.getCursor(cy, cx);
 			editorState.setSelection(cy, cx, 1, 1, fh, fw);
-			e.consume(this);
 			notifyUiChanged();
-			return;
-		}
-
-		// Spacebar -> Toggle run/stop
-		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_SPACE) {
+			return true;
+		});
+		handlers.on("transport.toggle", [this]{
 			module->simRunToggleRequest = true;
-			e.consume(this);
 			module->sim->notifyTick();
-			return;
-		}
+		});
 
-		// Ctrl/Cmd+Backspace -> Clear selection
-		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_BACKSPACE) {
-			clearSelection();
-			e.consume(this);
-			return;
-		}
-
-		// Ctrl/Cmd+A -> Select all
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "a") {
-			// Ctrl/Cmd+Y -> Redo
+		handlers.on("edit.select.all", [this]{
 			editorState.setSelection(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
-			e.consume(this);
-			return;
-		}
-
-		// Ctrl/Cmd+N -> Clear
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "n") {
-			simClear();
-			e.consume(this);
-			return;
-		}
-
-		// Ctrl/Cmd+O -> Load file
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "o") {
-			simLoad();
-			e.consume(this);
-			return;
-		}
-
-		// Ctrl/Cmd+B -> Inject file
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "b") {
-			simInjectFile();
-			e.consume(this);
-			return;
-		}
-
-		// Ctrl/Cmd+S -> Save file
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "s") {
-			simSave();
-			e.consume(this);
-			return;
-		}
-
-		// Ctrl/Cmd+Shift+S -> Save selection to file
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT) && k == "s") {
-			simSaveSelection();
-			e.consume(this);
-			return;
-		}
-
-		// Ctrl/Cmd+Z -> Undo
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "z") {
-			// Request undo on the DSP thread
-			module->sim->undoRequest();
-			e.consume(this);
-			return;
-		}
-
-		// Ctrl/Cmd+Y -> Redo
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT) && k == "z") {
-			// Request redo on the DSP thread
-			module->sim->redoRequest();
-			e.consume(this);
-			return;
-		}
-
-		// Ctrl/Cmd+I -> Toggle insert mode (cursor moves forward after each input char)
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "i") {
+		});
+		handlers.on("edit.clear.field", [this]{ simClear(); });
+		handlers.on("file.load", [this]{ simLoad(); });
+		handlers.on("file.inject", [this]{ simInjectFile(); });
+		handlers.on("file.save", [this]{ simSave(); });
+		handlers.on("file.save.selection", [this]{ simSaveSelection(); });
+		handlers.on("edit.undo", [this]{ module->sim->undoRequest(); });
+		handlers.on("edit.redo", [this]{ module->sim->redoRequest(); });
+		handlers.on("edit.insert.toggle", [this]{
 			editorState.toggleInsertMode();
-			e.consume(this);
 			notifyUiChanged();
-			return;
-		}
-
-		// Ctrl/Cmd+C -> Copy selection to clipboard (ORCA plain text)
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "c") {
-			copySelectionToClipboard();
-			e.consume(this);
-			return;
-		}
-
-		// Ctrl/Cmd+X -> Cut selection to clipboard (ORCA plain text)
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "x") {
-			cutSelection();
-			e.consume(this);
-			return;
-		}
-
-		// Ctrl/Cmd+V -> Paste selection from clipboard (accept ORCA plain text or JSON)
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "v") {
-			pasteSelection();
-			e.consume(this);
-			return;
-		}
-
-		// Ctrl/Cmd+F -> Step one tick
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_F) {
-			module->sim->stepRequest();
-			e.consume(this);
-		}
-
-		// Ctrl/Cmd+P -> Trigger operator on cursor
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_P) {
+		});
+		handlers.on("edit.copy", [this]{ copySelectionToClipboard(); });
+		handlers.on("edit.cut", [this]{ cutSelection(); });
+		handlers.on("edit.paste", [this]{ pasteSelection(); });
+		handlers.on("sim.step", [this]{ module->sim->stepRequest(); });
+		handlers.on("sim.trigger", [this]{
 			Usz cy, cx; editorState.getCursor(cy, cx);
 			// TODO: orca-c has no trigger-operator feature; unclear how to implement.
-			e.consume(this);
-			return;
-		}
-
-		// Shift+Escape -> Toggle focus mode
-		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE && (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
-			toggleFocusMode();
-			e.consume(this);
-			return;
-		}
-
-		// Escape -> Clear selection
-		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
+		});
+		handlers.on("view.focus", [this]{ toggleFocusMode(); });
+		handlers.on("cancel", [this]{
 			Usz cy, cx; editorState.getCursor(cy, cx);
 			editorState.setSelection(cy, cx, 1, 1);
-			e.consume(this);
 			notifyUiChanged();
-			return;
-		}
+		});
+		handlers.on("edit.comment.toggle", [this]{ toggleCommentBlock(); });
+		handlers.on("sim.tick.reset", [this]{ module->sim->resetTickNumber(); });
 
-		// Ctrl/Cmd+Shift+7 -> Toggle comment block
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT) && e.key == GLFW_KEY_7) {
-			toggleCommentBlock();
-			e.consume(this);
-			return;
-		}
-
-		// Ctrl/Cmd+Shift+R -> Reset tick number to zero
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT) && e.key == GLFW_KEY_R) {
-			module->sim->resetTickNumber();
-			e.consume(this);
-		}
-
-		// Navigation keys (handle press and repeat so holding arrows moves continuously)
-		if ((e.action == GLFW_PRESS || e.action == GLFW_REPEAT) && (e.key == GLFW_KEY_UP || e.key == GLFW_KEY_DOWN || e.key == GLFW_KEY_LEFT || e.key == GLFW_KEY_RIGHT)) {
-			// Compute deltas for navigation	
-			Isz ddy = (e.mods & RACK_MOD_CTRL) ? module->gridStepRow : 1;
-			Isz ddx = (e.mods & RACK_MOD_CTRL) ? module->gridStepCol : 1;
-			Isz dy = 0, dx = 0;
-			if (e.key == GLFW_KEY_UP) dy = -ddy;
-			else if (e.key == GLFW_KEY_DOWN) dy = ddy;
-			else if (e.key == GLFW_KEY_LEFT) dx = -ddx;
-			else if (e.key == GLFW_KEY_RIGHT) dx = ddx;
+		// Navigation: dy/dx/gridStep/extend/move are exactly the dispatcher's own locals,
+		// factored into one shared body so the 32 registrations below don't repeat it.
+		auto nav = [this](Isz dy, Isz dx, bool gridStep, bool extend, bool move) {
+			Isz ddy = gridStep ? module->gridStepRow : 1;
+			Isz ddx = gridStep ? module->gridStepCol : 1;
+			dy *= ddy; dx *= ddx;
 
 			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
-			Isz dest_y = (Isz)sy + dy;
-			Isz dest_x = (Isz)sx + dx;
-			
-			if (e.mods & RACK_MOD_ALT) {
+			Isz dest_y = (Isz) sy + dy;
+			Isz dest_x = (Isz) sx + dx;
+
+			if (move) {
 				// Schedule move; update editor state optimistically to reflect the intended move.
 				module->sim->moveRectRequest(sy, sx, sh, sw, dest_y, dest_x);
 			}
 
 			Usz fh = module->sim->getFieldHeight();
 			Usz fw = module->sim->getFieldWidth();
-			if (e.mods & RACK_MOD_SHIFT) {
-				// Extend selection by moving the cursor; the anchor will handle left-side extension
-				// Move cursor while requesting selection extension so anchor/cursor logic takes effect
+			if (extend) {
+				// Extend selection by moving the cursor; the anchor will handle left-side
+				// extension - move cursor while requesting selection extension so
+				// anchor/cursor logic takes effect.
 				editorState.moveCursorRelative(dy, dx, fh, fw, true);
 				editorState.updateSelectionToCursor();
-				e.consume(this);
-				notifyUiChanged();
-			} 
+			}
 			else {
-				// Move selection normally
-				// Provide a reasonable start (clip negatives to 0); setSelection clamps to field bounds.
-				Usz start_y = dest_y < 0 ? 0 : (Usz)dest_y;
-				Usz start_x = dest_x < 0 ? 0 : (Usz)dest_x;
-				// Move cursor by requested delta; moveCursorRelative will itself clamp to field bounds.
+				// Move selection normally. Provide a reasonable start (clip negatives to 0);
+				// setSelection clamps to field bounds.
+				Usz start_y = dest_y < 0 ? 0 : (Usz) dest_y;
+				Usz start_x = dest_x < 0 ? 0 : (Usz) dest_x;
+				// Move cursor by requested delta; moveCursorRelative will itself clamp to
+				// field bounds.
 				editorState.moveCursorRelative(dy, dx, fh, fw, false);
 				editorState.setSelection(start_y, start_x, sh, sw, fh, fw);
-				notifyUiChanged();
 			}
-			e.consume(this);
+			notifyUiChanged();
+		};
+
+		static const struct { const char* dir; Isz dy, dx; } kDirs[] = {
+			{"up", -1, 0}, {"down", 1, 0}, {"left", 0, -1}, {"right", 0, 1},
+		};
+		for (const auto& d : kDirs) {
+			std::string dir = d.dir;
+			handlers.on("nav." + dir,                          [nav, d]{ nav(d.dy, d.dx, false, false, false); });
+			handlers.on("nav." + dir + ".gridstep",             [nav, d]{ nav(d.dy, d.dx, true,  false, false); });
+			handlers.on("nav." + dir + ".extend",               [nav, d]{ nav(d.dy, d.dx, false, true,  false); });
+			handlers.on("nav." + dir + ".extend.gridstep",      [nav, d]{ nav(d.dy, d.dx, true,  true,  false); });
+			handlers.on("nav." + dir + ".move",                 [nav, d]{ nav(d.dy, d.dx, false, false, true); });
+			handlers.on("nav." + dir + ".move.gridstep",        [nav, d]{ nav(d.dy, d.dx, true,  false, true); });
+			handlers.on("nav." + dir + ".move.extend",          [nav, d]{ nav(d.dy, d.dx, false, true,  true); });
+			handlers.on("nav." + dir + ".move.extend.gridstep", [nav, d]{ nav(d.dy, d.dx, true,  true,  true); });
 		}
 	}
 
@@ -1406,12 +1327,12 @@ struct AhabSimWidget : OpaqueWidget {
 	void appendContextMenu(Menu* menu, bool isWidgetMenu) {
 		if (!module || !module->sim) return;
 		
-		menu->addChild(createMenuItem("Undo", string::f("[%i] " RACK_MOD_CTRL_NAME "+Z", module->sim->getUndoCount()), [this]() {
+		menu->addChild(createMenuItem("Undo", string::f("[%i] %s", module->sim->getUndoCount(), keymap->shortcutText("edit.undo").c_str()), [this]() {
 			module->sim->undoRequest();
 			APP->event->setSelectedWidget(this);
 		}, !module->sim->canUndo()));
 		if (module->sim->canRedo()) {
-			menu->addChild(createMenuItem("Redo", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+Z", [this]() {
+			menu->addChild(createMenuItem("Redo", keymap->shortcutText("edit.redo"), [this]() {
 				module->sim->redoRequest();
 				APP->event->setSelectedWidget(this);
 			}));
@@ -1420,7 +1341,7 @@ struct AhabSimWidget : OpaqueWidget {
 			APP->scene->rackScroll->zoomToBound(Rect(parent->parent->box.pos + parent->box.pos, box.size).shrink(Vec(24.f, 24.f)));
 			APP->event->setSelectedWidget(this);
 		}, focusMode.active));
-		menu->addChild(createMenuItem(focusMode.active ? "Exit focus mode" : "Focus mode", RACK_MOD_SHIFT_NAME "+Esc",
+		menu->addChild(createMenuItem(focusMode.active ? "Exit focus mode" : "Focus mode", keymap->shortcutText("view.focus"),
 			[this]() {
 				toggleFocusMode();
 				APP->event->setSelectedWidget(this);
@@ -1498,28 +1419,28 @@ struct AhabSimWidget : OpaqueWidget {
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Selection", "", [this](ui::Menu* menu) {
-			menu->addChild(createMenuItem("Select all", RACK_MOD_CTRL_NAME "+A", [this]() {
+			menu->addChild(createMenuItem("Select all", keymap->shortcutText("edit.select.all"), [this]() {
 				editorState.setSelection(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 				APP->event->setSelectedWidget(this);
 			}));
-			menu->addChild(createMenuItem("Clear", "Backspace", [this]() {
+			menu->addChild(createMenuItem("Clear", keymap->shortcutText("edit.clear.selection"), [this]() {
 				clearSelection();
 				APP->event->setSelectedWidget(this);
 			}));
-			menu->addChild(createMenuItem("Copy", RACK_MOD_CTRL_NAME "+C", [this]() {
+			menu->addChild(createMenuItem("Copy", keymap->shortcutText("edit.copy"), [this]() {
 				copySelectionToClipboard();
 				APP->event->setSelectedWidget(this);
 			}));
-			menu->addChild(createMenuItem("Cut", RACK_MOD_CTRL_NAME "+X", [this]() {
+			menu->addChild(createMenuItem("Cut", keymap->shortcutText("edit.cut"), [this]() {
 				cutSelection();
 				APP->event->setSelectedWidget(this);
 			}));
-			menu->addChild(createMenuItem("Paste", RACK_MOD_CTRL_NAME "+V", [this]() {
+			menu->addChild(createMenuItem("Paste", keymap->shortcutText("edit.paste"), [this]() {
 				pasteSelection();
 				APP->event->setSelectedWidget(this);
 			}));
 			menu->addChild(new MenuSeparator());
-			menu->addChild(createMenuItem("Toggle comment", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+7", [this]() {
+			menu->addChild(createMenuItem("Toggle comment", keymap->shortcutText("edit.comment.toggle"), [this]() {
 				toggleCommentBlock();
 				APP->event->setSelectedWidget(this);
 			}));
@@ -1565,23 +1486,23 @@ struct AhabSimWidget : OpaqueWidget {
 		}));
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuItem("Clear", isWidgetMenu ? RACK_MOD_CTRL_NAME "+N" : "", [this]() {
+		menu->addChild(createMenuItem("Clear", isWidgetMenu ? keymap->shortcutText("edit.clear.field") : "", [this]() {
 			simClear();
 			APP->event->setSelectedWidget(this);
 		}));
-		menu->addChild(createMenuItem("Load from file", isWidgetMenu ? RACK_MOD_CTRL_NAME "+O" : "", [this]() {
+		menu->addChild(createMenuItem("Load from file", isWidgetMenu ? keymap->shortcutText("file.load") : "", [this]() {
 			simLoad();
 			APP->event->setSelectedWidget(this);
 		}));
-		menu->addChild(createMenuItem("Inject file", isWidgetMenu ? RACK_MOD_CTRL_NAME "+B" : "", [this]() {
+		menu->addChild(createMenuItem("Inject file", isWidgetMenu ? keymap->shortcutText("file.inject") : "", [this]() {
 			simInjectFile();
 			APP->event->setSelectedWidget(this);
 		}));
-		menu->addChild(createMenuItem("Save to file", isWidgetMenu ? RACK_MOD_CTRL_NAME "+S" : "", [this]() {
+		menu->addChild(createMenuItem("Save to file", isWidgetMenu ? keymap->shortcutText("file.save") : "", [this]() {
 			simSave();
 			APP->event->setSelectedWidget(this);
 		}));
-		menu->addChild(createMenuItem("Save selection to file", isWidgetMenu ? RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+S" : "", [this]() {
+		menu->addChild(createMenuItem("Save selection to file", isWidgetMenu ? keymap->shortcutText("file.save.selection") : "", [this]() {
 			simSaveSelection();
 			APP->event->setSelectedWidget(this);
 		}));
