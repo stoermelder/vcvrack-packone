@@ -85,6 +85,25 @@ struct UiAccess {
 	// rather than assigned directly. Lives on the base interface, not on a mock, for the
 	// reason above.
 	int testMods = 0;
+
+	// glfwGetKeyName(key, scancode) / glfwGetKeyScancode(key). Both require glfwInit() to have
+	// run — gated on GLFW's own `_glfw.initialized`, per dep/glfw/src/input.c — which this
+	// plugin never calls in a test binary, so both return NULL/-1 there regardless of window
+	// state. That silently defeats event::HoverKeyEvent/SelectKeyEvent::keyName: Rack's own
+	// EventState::handleKey() (Rack/src/widget/event.cpp) calls glfwGetKeyName() directly, not
+	// through this seam, so this cannot make *that* call site work — see
+	// Test::EventDriver::keyAt() for the dispatch-side fix. What this seam does cover: any of
+	// this plugin's own code that calls glfwGetKeyName()/glfwGetKeyScancode() directly
+	// (keyboard.hpp's keyName(), MidiKey.cpp, Stroke.cpp) could route through here instead and
+	// get a correct, headless-safe answer under test — not done as part of this change, which
+	// only extends the framework.
+	//
+	// Test default mirrors rack::widget::getKeyName() (Rack/src/widget/event.cpp), the same
+	// name table Rack falls back to internally — no GLFW required, ignores `scancode`
+	// (rack::widget::getKeyName() takes only the key). RealUiAccess overrides both with the
+	// real glfw* calls. Default getKeyScancode() answers -1, GLFW's own "no scancode" value.
+	virtual std::string getKeyName(int key, int scancode) const { return rack::widget::getKeyName(key); }
+	virtual int getKeyScancode(int key) const { return -1; }
 };
 
 
@@ -100,6 +119,8 @@ struct RealUiAccess final : UiAccess {
 	void openBrowser(const std::string& url) override;
 	bool hasWindow() const override;
 	int getWindowMods() const override;
+	std::string getKeyName(int key, int scancode) const override;
+	int getKeyScancode(int key) const override;
 };
 // The shared production instance, defined in the .cpp.
 extern RealUiAccess realUiAccess;
@@ -161,6 +182,16 @@ static bool hasWindow() {
 P1_UNUSED
 static int getWindowMods() {
 	return uiAccessFor().getWindowMods();
+}
+
+P1_UNUSED
+static std::string getKeyName(int key, int scancode) {
+	return uiAccessFor().getKeyName(key, scancode);
+}
+
+P1_UNUSED
+static int getKeyScancode(int key) {
+	return uiAccessFor().getKeyScancode(key);
 }
 
 } // namespace ui

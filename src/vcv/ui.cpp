@@ -76,6 +76,15 @@ int RealUiAccess::getWindowMods() const {
 	return APP->window ? APP->window->getMods() : 0;
 }
 
+std::string RealUiAccess::getKeyName(int key, int scancode) const {
+	const char* name = glfwGetKeyName(key, scancode);
+	return name ? std::string(name) : "";
+}
+
+int RealUiAccess::getKeyScancode(int key) const {
+	return glfwGetKeyScancode(key);
+}
+
 // The shared production instance; namespace-scope so no __cxa_guard is tested on access.
 // In a release build this is what the uiAccessFor() macro names directly.
 RealUiAccess realUiAccess;

@@ -42,7 +42,8 @@ struct ProbeWidget : widget::OpaqueWidget {
 
 	math::Vec lastButtonPos, lastHoverPos, lastDragMouseDelta;
 	int lastButton = -1, lastAction = -1, lastMods = -1;
-	int lastKey = -1;
+	int lastKey = -1, lastScancode = -1;
+	std::string lastKeyName;
 	uint32_t lastCodepoint = 0;
 	widget::Widget* lastDragDropOrigin = nullptr;
 	// Accumulated drag movement, so a stepped drag can be distinguished from a single jump.
@@ -70,6 +71,8 @@ struct ProbeWidget : widget::OpaqueWidget {
 	void onHoverKey(const HoverKeyEvent& e) override {
 		hoverKeyCount++;
 		lastKey = e.key;
+		lastScancode = e.scancode;
+		lastKeyName = e.keyName;
 		if (consume) e.consume(this);
 	}
 	void onHoverScroll(const HoverScrollEvent& e) override {
@@ -84,6 +87,8 @@ struct ProbeWidget : widget::OpaqueWidget {
 	void onSelectKey(const SelectKeyEvent& e) override {
 		selectKeyCount++;
 		lastKey = e.key;
+		lastScancode = e.scancode;
+		lastKeyName = e.keyName;
 		if (consume) e.consume(this);
 	}
 	void onDragHover(const DragHoverEvent& e) override {
@@ -656,6 +661,39 @@ TEST_CASE("Keyboard, text and scroll") {
 		REQUIRE(h.events().keyAt(math::Vec(5, 5), GLFW_KEY_C));
 		REQUIRE(probe->selectKeyCount == 1);
 		REQUIRE(probe->hoverKeyCount == 0);
+	}
+
+	SECTION("keyName is populated on dispatch, not left empty") {
+		// Rack's own EventState::handleKey() calls glfwGetKeyName() directly, which is always
+		// NULL in a test binary (GLFW is never initialised) — so this only passes because
+		// EventDriver::keyAt() is a re-implementation routed through vcv::ui::getKeyName(),
+		// not a straight call into APP->event->handleKey(). See test_events.hpp's comment.
+		REQUIRE(h.events().keyAt(Test::EventDriver::centerOf(probe), GLFW_KEY_A));
+		// rack::widget::getKeyName() (the test-side seam default) returns GLFW_KEY_A verbatim
+		// as a one-character string — GLFW_KEY_A is ASCII 'A', not lowercased.
+		REQUIRE(probe->lastKeyName == "A");
+		REQUIRE(probe->lastScancode == StoermelderPackOne::vcv::ui::getKeyScancode(GLFW_KEY_A));
+	}
+
+	SECTION("keyName reaches SelectKey too") {
+		h.events().select(probe);
+		REQUIRE(h.events().keyAt(math::Vec(5, 5), GLFW_KEY_C));
+		REQUIRE(probe->lastKeyName == "C");
+	}
+
+	SECTION("Test::mock::MockUiAccess matches a real keyboard's case, unlike the plain default") {
+		// The base vcv::UiAccess default (exercised by the sections above, since Harness's own
+		// UiAccess mock doesn't override getKeyName()) answers "C" — Rack's own fallback table,
+		// which spells a GLFW key code as its uppercase ASCII value. A real, unshifted keypress
+		// reports lowercase ("c") instead — which is what production code like
+		// ThemedModuleWidget's `e.keyName == "c"` shortcut check actually compares against. A
+		// test wanting to exercise that check needs this mock installed, not the plain default.
+		struct Mock {
+			TEST_MOCK_UI(Test::mock::MockUiAccess);
+		} mock;
+
+		REQUIRE(h.events().keyAt(Test::EventDriver::centerOf(probe), GLFW_KEY_C));
+		REQUIRE(probe->lastKeyName == "c");
 	}
 
 	SECTION("keyPress presses and releases, clearing the held-key set") {

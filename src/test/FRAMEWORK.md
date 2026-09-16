@@ -583,10 +583,42 @@ lane's `slotAt()`), derive the click point and then *assert it against that func
 is then correct by construction and a layout change moves the click with the widget. `Tilt.test.hpp`'s
 `tiltCellCenter()`/`tiltSlotCenter()` are the worked example.
 
-`handleButton()`/`handleHover()` are reproduced line for line from `Rack/src/widget/event.cpp`
-except for two `APP->window` reads: `isCursorLocked()` (always false in a test) and `getMods()`
-(routed through the `vcv::ui::getWindowMods()` seam). Everything else — the whole recursion — is
-Rack's real code, so geometry, ordering and bookkeeping are genuinely under test.
+`handleButton()`/`handleHover()`/`handleKey()` are reproduced line for line from
+`Rack/src/widget/event.cpp`, each for a different reason `APP->window`/GLFW cannot be reached
+headless: `isCursorLocked()` (always false in a test) and `getMods()` (routed through the
+`vcv::ui::getWindowMods()` seam) for the first two; `glfwGetKeyName()`/`glfwGetKeyScancode()`
+(routed through `vcv::ui::getKeyName()`/`getKeyScancode()` — see "Key names" below) for the
+third. Everything else — the whole recursion — is Rack's real code, so geometry, ordering and
+bookkeeping are genuinely under test.
+
+### Key names
+
+`e.keyName`/`e.scancode` on `HoverKeyEvent`/`SelectKeyEvent` need `glfwGetKeyName()`/
+`glfwGetKeyScancode()`, which both require `glfwInit()` — gated on GLFW's own
+`_glfw.initialized` — to have run. This plugin's test binaries never call it, so both silently
+return NULL/-1 regardless of window state, and Rack's own `handleKey()` has a
+`if (keyName) e.keyName = keyName;` guard that swallows the NULL rather than erroring — a real
+event with `keyName == ""` is easy to mistake for "no name for this key" rather than "GLFW was
+never initialised". `key()`/`keyAt()` route through `vcv::ui::getKeyName()`/`getKeyScancode()`
+instead, so a real `keyName` reaches the event:
+
+```cpp
+h.events().keyAt(EventDriver::centerOf(probe), GLFW_KEY_C);
+REQUIRE(probe->lastKeyName == "C");    // the base vcv::UiAccess default
+```
+
+The base `vcv::UiAccess` default answers from `rack::widget::getKeyName()`, Rack's own internal
+fallback table — no GLFW needed, but it spells a printable key as its uppercase GLFW-code ASCII
+value ("C"). A real keyboard reports what the OS layout sends for the unshifted key, normally
+lowercase ("c") — which is what production checks like `ThemedModuleWidget`'s
+`e.keyName == "c"` actually compare against. A test that exercises such a check wants
+`Test::mock::MockUiAccess` (§7) installed instead of the plain default:
+
+```cpp
+struct { TEST_MOCK_UI(Test::mock::MockUiAccess); } mock;
+h.events().keyAt(EventDriver::centerOf(mw), GLFW_KEY_C);
+REQUIRE(probe->lastKeyName == "c");    // matches a real keypress
+```
 
 ### Modifier keys
 
@@ -798,9 +830,11 @@ regular naming convention to infer them from (the `FileAccess` global is `fileAc
 | `TEST_MOCK_HISTORY(T)` | `.history` | `vcv::HistoryAccess` |
 | `TEST_MOCK_NW(T)` | `.nw` | `vcv::NwAccess` |
 
-Two base mocks are provided: `mock::MockFileAccess` forwards everything to the real
-`rack::system` (inherit and override just what you care about), and `mock::NullFileAccess` denies
-all I/O (used internally to fence off `init()`).
+Three base mocks are provided: `mock::MockFileAccess` forwards everything to the real
+`rack::system` (inherit and override just what you care about), `mock::NullFileAccess` denies
+all I/O (used internally to fence off `init()`), and `mock::MockUiAccess` overrides `getKeyName()`
+to match a real keyboard's case rather than `vcv::UiAccess`'s own uppercase default — see "Key
+names" in §6.
 
 `mock::Guard<Base>` is the underlying single-slot RAII installer if you need one directly. It saves
 the slot's **previous** pointer and restores that — not `nullptr` — so nested mocks work and a slot
@@ -973,16 +1007,16 @@ Checklist before committing:
 
 | File | Lines | Role |
 |---|---|---|
-| `framework.hpp` | 33 | Umbrella — the only header a test should include |
+| `framework.hpp` | 32 | Umbrella — the only header a test should include |
 | `test_plugin.hpp` | 89 | Catch2 config, macro collisions, build sentinels |
-| `test_mock.hpp` | 103 | `vcv` access mocking |
-| `test_context.hpp` | 357 | Context, module/widget lifetime |
+| `test_mock.hpp` | 119 | `vcv` access mocking |
+| `test_context.hpp` | 317 | Context, module/widget lifetime |
 | `test_json.hpp` | 299 | Preset fuzzers |
-| `test_traversal.hpp` | 150 | Shared widget-tree walk |
-| `test_events.hpp` | 442 | `EventDriver` |
-| `test_harness.hpp` | 867 | `Harness`, `SceneLayout`, `UiMode` |
-| `test_harness.test.cpp` | 912 | The harness's own tests |
-| `test_events.test.cpp` | 704 | The driver's own tests |
+| `test_traversal.hpp` | 186 | Shared widget-tree walk |
+| `test_events.hpp` | 633 | `EventDriver` |
+| `test_harness.hpp` | 922 | `Harness`, `SceneLayout`, `UiMode` |
+| `test_harness.test.cpp` | 942 | The harness's own tests |
+| `test_events.test.cpp` | 964 | The driver's own tests |
 | `catch_amalgamated.{hpp,cpp}` | 30k | Catch2 v3.12.0, compiled once and shared |
 
 Not part of the framework, but needed when testing a module with background work (§5, workers):
