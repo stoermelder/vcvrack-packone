@@ -10,7 +10,7 @@
     - Fixed crash in Rack plugin for certain modules if no plugin-window is open
     - Fixed a background worker that could stall indefinitely
 - Module [AHAB](./docs/ahab/Ahab.md)
-    - Added fully customizable key-mapping (\<user-folder\>/keymaps/Ahab.json)
+    - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Ahab.json)
 - Module [ARENA](./docs/arena/Arena.md)
     - Fixed wrong values for mix-ports on preset load
     - Fixed missing voltage-mode options in the context menu of the mix-ports

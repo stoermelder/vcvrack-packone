@@ -130,4 +130,4 @@ Features missing in AHAB compared to ORCA:
     - Fixed concurrent usage of UDP and OSC output
     - Fixed various minor issues
 - v2.x.x
-    - Added fully customizable key-mapping (\<user-folder\>/keymaps/Ahab.json)
+    - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Ahab.json)
