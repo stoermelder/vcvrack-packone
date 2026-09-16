@@ -1059,7 +1059,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 	void onSelectKey(const SelectKeyEvent& e) override {
 		if (!module || !module->sim) return;
-		const char* k = glfwGetKeyName(e.key, 0);
+		std::string k = vcv::ui::getKeyName(e.key, 0);
 
 		// Spacebar in insert mode -> advance cursor one cell to the right
 		if (editorState.getInsertMode() && (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) && e.key == GLFW_KEY_SPACE) {
@@ -1089,7 +1089,7 @@ struct AhabSimWidget : OpaqueWidget {
 		}
 
 		// Ctrl/Cmd+A -> Select all
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'a') {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "a") {
 			// Ctrl/Cmd+Y -> Redo
 			editorState.setSelection(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
 			e.consume(this);
@@ -1097,42 +1097,42 @@ struct AhabSimWidget : OpaqueWidget {
 		}
 
 		// Ctrl/Cmd+N -> Clear
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'n') {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "n") {
 			simClear();
 			e.consume(this);
 			return;
 		}
 
 		// Ctrl/Cmd+O -> Load file
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'o') {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "o") {
 			simLoad();
 			e.consume(this);
 			return;
 		}
 
 		// Ctrl/Cmd+B -> Inject file
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'b') {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "b") {
 			simInjectFile();
 			e.consume(this);
 			return;
 		}
 
 		// Ctrl/Cmd+S -> Save file
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 's') {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "s") {
 			simSave();
 			e.consume(this);
 			return;
 		}
 
 		// Ctrl/Cmd+Shift+S -> Save selection to file
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT) && k && k[0] == 's') {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT) && k == "s") {
 			simSaveSelection();
 			e.consume(this);
 			return;
 		}
 
 		// Ctrl/Cmd+Z -> Undo
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'z') {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "z") {
 			// Request undo on the DSP thread
 			module->sim->undoRequest();
 			e.consume(this);
@@ -1140,7 +1140,7 @@ struct AhabSimWidget : OpaqueWidget {
 		}
 
 		// Ctrl/Cmd+Y -> Redo
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT) && k && k[0] == 'z') {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT) && k == "z") {
 			// Request redo on the DSP thread
 			module->sim->redoRequest();
 			e.consume(this);
@@ -1148,7 +1148,7 @@ struct AhabSimWidget : OpaqueWidget {
 		}
 
 		// Ctrl/Cmd+I -> Toggle insert mode (cursor moves forward after each input char)
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'i') {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "i") {
 			editorState.toggleInsertMode();
 			e.consume(this);
 			notifyUiChanged();
@@ -1156,21 +1156,21 @@ struct AhabSimWidget : OpaqueWidget {
 		}
 
 		// Ctrl/Cmd+C -> Copy selection to clipboard (ORCA plain text)
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'c') {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "c") {
 			copySelectionToClipboard();
 			e.consume(this);
 			return;
 		}
 
 		// Ctrl/Cmd+X -> Cut selection to clipboard (ORCA plain text)
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'x') {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "x") {
 			cutSelection();
 			e.consume(this);
 			return;
 		}
 
 		// Ctrl/Cmd+V -> Paste selection from clipboard (accept ORCA plain text or JSON)
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k && k[0] == 'v') {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && k == "v") {
 			pasteSelection();
 			e.consume(this);
 			return;
