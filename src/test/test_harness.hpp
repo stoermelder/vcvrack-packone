@@ -289,6 +289,19 @@ struct Harness {
 	Test::mock::Guard<StoermelderPackOne::vcv::EngineAccess> engineAccessGuard{
 		StoermelderPackOne::vcv::engineAccess, &engineAccessMock};
 
+	// The FileAccess mock, installed into vcv::fileAccess for the harness's lifetime and
+	// restored on destruction — deny-all by default (Test::mock::NullFileAccess), the same
+	// mock initPluginOnce() uses around init() for the same reason: without it, any code a
+	// widget construction reaches that touches disk (e.g. Keymap::save(), the first time a
+	// Keymap-adopting module's widget registers its action vocabulary) falls through to
+	// RealFileAccess and writes into the developer's own Rack user folder. A test that wants
+	// real file I/O (scripted, not real disk) installs its own mock after the harness, the
+	// same way AhabAccessMock's own comment documents for vcv::uiAccess - the harness's own
+	// guard, constructed first, loses to a later one for the rest of that guard's scope.
+	Test::mock::NullFileAccess fileAccessMock;
+	Test::mock::Guard<StoermelderPackOne::vcv::FileAccess> fileAccessGuard{
+		StoermelderPackOne::vcv::fileAccess, &fileAccessMock};
+
 	// The scene layout that makes hit-testing meaningful, installed for the harness's lifetime
 	// and restored on destruction. Owned rather than left to the caller because it is a
 	// precondition for event dispatch, not an option: without it every dispatch lands on a
