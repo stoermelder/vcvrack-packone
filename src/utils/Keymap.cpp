@@ -176,9 +176,12 @@ void Keymap::registerAction(const std::string& id, const std::string& label, con
                              KeyCombo defaultCombo, int trigger) {
 	Action* existing = find(id);
 	if (existing) {
+		bool sameDefault = defaultCombo.valid() ? (!existing->defaults.empty() && existing->defaults[0] == defaultCombo)
+		                                         : existing->defaults.empty();
 		assert(existing->label == label && existing->group == group && existing->trigger == trigger
-		       && !existing->defaults.empty() && existing->defaults[0] == defaultCombo
+		       && sameDefault
 		       && "Keymap::registerAction: two call sites disagree for the same action id");
+		(void) sameDefault;
 		return;
 	}
 
@@ -187,7 +190,10 @@ void Keymap::registerAction(const std::string& id, const std::string& label, con
 	a.label = label;
 	a.group = group;
 	a.trigger = trigger;
-	a.defaults.push_back(defaultCombo);
+	// An invalid combo (KeyCombo(), or the no-default overload) means "unmapped by default" -
+	// defaults stays empty rather than holding a placeholder, so resetAction()/resetToDefaults()
+	// and save() don't have to special-case an invalid entry.
+	if (defaultCombo.valid()) a.defaults.push_back(defaultCombo);
 
 	auto boundIt = parsedBound_.find(id);
 	auto nullIt = parsedNull_.find(id);
@@ -204,6 +210,11 @@ void Keymap::registerAction(const std::string& id, const std::string& label, con
 	}
 
 	actions_.push_back(std::move(a));
+}
+
+void Keymap::registerAction(const std::string& id, const std::string& label, const std::string& group,
+                             int trigger) {
+	registerAction(id, label, group, KeyCombo(), trigger);
 }
 
 void Keymap::registerAlias(const std::string& id, KeyCombo defaultCombo) {
@@ -459,8 +470,8 @@ void reload(const std::string& slug) {
 	// Re-run the existing vocabulary against the freshly parsed file, in original order, so
 	// a hand-edit is picked up without needing the module to reconstruct its registration.
 	for (const auto& a : existing->actions()) {
-		if (a.defaults.empty()) continue;
-		fresh->registerAction(a.id, a.label, a.group, a.defaults[0], a.trigger);
+		if (a.defaults.empty()) fresh->registerAction(a.id, a.label, a.group, a.trigger);
+		else fresh->registerAction(a.id, a.label, a.group, a.defaults[0], a.trigger);
 		for (size_t i = 1; i < a.defaults.size(); i++) fresh->registerAlias(a.id, a.defaults[i]);
 	}
 

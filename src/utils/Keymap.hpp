@@ -88,6 +88,12 @@ struct Keymap {
 	void registerAction(const std::string& id, const std::string& label, const std::string& group,
 	                     KeyCombo defaultCombo, int trigger = GLFW_PRESS);
 
+	// Same, for an action with no default binding at all (unmapped until the user binds it by
+	// hand). Equivalent to registerAction(..., KeyCombo(), trigger), but doesn't require callers
+	// to spell out an invalid KeyCombo just to say "no default".
+	void registerAction(const std::string& id, const std::string& label, const std::string& group,
+	                     int trigger = GLFW_PRESS);
+
 	// A second default combo for an already-registered action (genuine aliases only).
 	void registerAlias(const std::string& id, KeyCombo defaultCombo);
 

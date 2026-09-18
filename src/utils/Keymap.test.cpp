@@ -190,6 +190,95 @@ TEST_CASE("a pre-seeded file with a non-default binding is honoured and not rewr
 }
 
 
+// No-default registration
+
+TEST_CASE("the no-default overload leaves an action unmapped", "[Keymap]") {
+	Fixture f;
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.one", "One", "Group");
+	km->save();
+
+	CHECK(km->has("a.one"));
+	CHECK(km->shortcutText("a.one") == "");
+	CHECK(km->combosFor("a.one").empty());
+}
+
+TEST_CASE("a no-default action already recorded null in the file is not rewritten", "[Keymap]") {
+	Fixture f;
+	std::string path = Keymaps::pathFor(SLUG);
+	f.mock.fs.files[path] = R"({"slug":"TestModule","version":1,"bindings":{"a.none":null}})";
+
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.none", "None", "Group");
+	km->save();
+
+	CHECK(km->shortcutText("a.none") == "");
+	CHECK(f.mock.fs.writes.empty());
+}
+
+TEST_CASE("a no-default action is written as a null binding", "[Keymap]") {
+	Fixture f;
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.one", "One", "Group", "1");   // forces a rewrite so save() runs
+	km->registerAction("a.none", "None", "Group");
+	km->save();
+
+	std::string path = Keymaps::pathFor(SLUG);
+	std::string data;
+	REQUIRE(f.mock.fs.read(path, data));
+	std::string error;
+	json_t* root = vcv::parseJson(data, error);
+	REQUIRE(root != nullptr);
+	json_t* bindingsJ = json_object_get(root, "bindings");
+	json_t* noneJ = json_object_get(bindingsJ, "a.none");
+	REQUIRE(noneJ != nullptr);
+	CHECK(json_is_null(noneJ));
+	json_decref(root);
+}
+
+TEST_CASE("a no-default action can still be bound by the user and reset back to unmapped", "[Keymap]") {
+	Fixture f;
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.none", "None", "Group");
+
+	km->bind("a.none", KeyCombo("Q"));
+	CHECK(km->lookup(GLFW_KEY_Q, 0, GLFW_PRESS) == "a.none");
+
+	km->resetAction("a.none");
+	CHECK(km->lookup(GLFW_KEY_Q, 0, GLFW_PRESS) == "");
+	CHECK(km->shortcutText("a.none") == "");
+
+	km->bind("a.none", KeyCombo("Q"));
+	km->resetToDefaults();
+	CHECK(km->lookup(GLFW_KEY_Q, 0, GLFW_PRESS) == "");
+}
+
+TEST_CASE("re-registering a no-default action is idempotent and does not assert", "[Keymap]") {
+	Fixture f;
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.none", "None", "Group");
+	km->bind("a.none", KeyCombo("Q"));
+
+	// Second widget re-registers the same vocabulary; must not reset the user's binding or trip
+	// the disagreement assert in registerAction().
+	km->registerAction("a.none", "None", "Group");
+	CHECK(km->lookup(GLFW_KEY_Q, 0, GLFW_PRESS) == "a.none");
+}
+
+TEST_CASE("reload() preserves a no-default action instead of dropping it", "[Keymap]") {
+	Fixture f;
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.none", "None", "Group");
+	CHECK(km->has("a.none"));
+
+	Keymaps::reload(SLUG);
+
+	// Same shared_ptr; the no-default action must still be registered after the reload rebuild.
+	CHECK(km->has("a.none"));
+	CHECK(km->shortcutText("a.none") == "");
+}
+
+
 // Sharing / re-registration
 
 TEST_CASE("a second open() for the same slug returns the same instance", "[Keymap]") {
