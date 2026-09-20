@@ -115,38 +115,6 @@ struct IntermixFadeModule : IntermixChainModule {
 };
 
 
-template<int PORTS>
-struct InputLedDisplay : StoermelderPackOne::StoermelderLedDisplay {
-	IntermixFadeModule<PORTS>* module;
-
-	void step() override {
-		if (module) {
-			text = string::f("%02d", module->input + 1);
-		} 
-		else {
-			text = "";
-		}
-		StoermelderLedDisplay::step();
-	}
-
-	void onButton(const event::Button& e) override {
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			createContextMenu();
-			e.consume(this);
-		}
-		StoermelderLedDisplay::onButton(e);
-	}
-
-	void createContextMenu() {
-		ui::Menu* menu = createMenu();
-		menu->addChild(createMenuLabel("Input"));
-		for (int i = 0; i < PORTS; i++) {
-			menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(string::f("%02u", i + 1), &module->input, i));
-		}
-	}
-};
-
-
 struct IntermixFadeWidget : ThemedModuleWidget<IntermixFadeModule<8>> {
 	const static int PORTS = 8;
 
@@ -165,7 +133,7 @@ struct IntermixFadeWidget : ThemedModuleWidget<IntermixFadeModule<8>> {
 			addParam(createParamCentered<StoermelderTrimpot>(vo1, module, IntermixFadeModule<PORTS>::PARAM_FADE + i));
 		}
 
-		InputLedDisplay<PORTS>* ledDisplay = createWidgetCentered<InputLedDisplay<PORTS>>(Vec(29.1f, 294.1f));
+		auto* ledDisplay = createWidgetCentered<InputLedDisplay<IntermixFadeModule<PORTS>, PORTS>>(Vec(29.1f, 294.1f));
 		ledDisplay->module = module;
 		addChild(ledDisplay);
 

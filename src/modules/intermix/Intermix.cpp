@@ -798,7 +798,7 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 
 
 template < typename MODULE >
-struct InputLedDisplay : StoermelderLedDisplay {
+struct InputModeLedDisplay : StoermelderLedDisplay {
 	MODULE* module;
 	int id;
 
@@ -945,7 +945,7 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			addParam(createParamCentered<DummyMapButton>(vo3, module, IntermixModule<PORTS>::PARAM_Y_MAP + i));
 
 			Vec vi0 = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 302.3f);
-			InputLedDisplay<IntermixModule<PORTS>>* inputLedDisplay = createWidgetCentered<InputLedDisplay<IntermixModule<PORTS>>>(vi0);
+			InputModeLedDisplay<IntermixModule<PORTS>>* inputLedDisplay = createWidgetCentered<InputModeLedDisplay<IntermixModule<PORTS>>>(vi0);
 			inputLedDisplay->module = module;
 			inputLedDisplay->id = i;
 			addChild(inputLedDisplay);
