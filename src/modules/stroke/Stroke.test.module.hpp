@@ -40,6 +40,16 @@ TEST_CASE("Preset JSON null-guards", "[Stroke][JSON]") {
 
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[Stroke][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<StrokeModule<STROKE_PORTS>>("Stroke");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 TEST_CASE("onReset clears key configuration", "[Stroke][init]") {
 	Test::ModuleScaffold<StrokeModule<STROKE_PORTS>> mods;
 	auto module = mods.create("Stroke");

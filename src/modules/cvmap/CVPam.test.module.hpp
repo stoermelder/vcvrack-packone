@@ -39,6 +39,16 @@ TEST_CASE("Preset JSON null-guards", "[CVPam][JSON]") {
 	}
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[CVPam][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<CVPamModule>("CVPam");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 TEST_CASE("JSON round-trip preserves state", "[CVPam][JSON]") {
 	Test::ModuleScaffold<CVPamModule> mods;
 	CVPamModule* m = mods.create("CVPam");

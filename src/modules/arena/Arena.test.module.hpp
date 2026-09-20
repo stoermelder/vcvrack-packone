@@ -80,6 +80,13 @@ TEST_CASE("Preset JSON null-guards", "[Arena][JSON]") {
 		h.dspStep();
 		REQUIRE(module->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(7.3f));
 	}
+
+	SECTION("All integer scalars clamp out-of-range values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOutOfRangeScalars(h, module, rootJ);
+		json_decref(rootJ);
+	}
 }
 
 TEST_CASE("JSON round-trip preserves module state", "[Arena]") {

@@ -39,6 +39,16 @@ TEST_CASE("Preset JSON null-guards", "[ReMove][JSON]") {
 	}
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[ReMove][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<ReMoveModule>("ReMoveLite");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 TEST_CASE("dataToJson writes the recorder array and config fields", "[ReMove][JSON]") {
 	Test::ModuleScaffold<ReMoveModule> mods;
 	auto module = mods.create("ReMoveLite");

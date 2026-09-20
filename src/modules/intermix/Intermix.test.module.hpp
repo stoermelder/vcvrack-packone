@@ -39,6 +39,23 @@ TEST_CASE("Preset JSON null-guards", "[Intermix][JSON]") {
 	}
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[Intermix][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<IntermixModule<8>>("Intermix");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+
+	REQUIRE(module->sceneSelected >= 0);
+	REQUIRE(module->sceneSelected < SCENE_MAX);
+	REQUIRE(module->channelCount >= 1);
+	REQUIRE(module->channelCount <= PORT_MAX_CHANNELS);
+	REQUIRE(module->sceneCount >= 1);
+	REQUIRE(module->sceneCount <= SCENE_MAX);
+}
+
 TEST_CASE("JSON round-trip preserves state", "[Intermix][JSON]") {
 	Test::ModuleScaffold<IntermixModule<8>> mods;
 	IntermixModule<8>* m = mods.create("Intermix");

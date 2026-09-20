@@ -39,6 +39,16 @@ TEST_CASE("Preset JSON null-guards", "[Hive][JSON]") {
 	}
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[Hive][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<HiveMod>("Hive");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 TEST_CASE("JSON round-trip preserves state", "[JSON][Hive]") {
 	Test::ModuleScaffold<HiveMod> mods;
 	HiveMod* m = mods.create("Hive");

@@ -732,9 +732,9 @@ struct ReMoveModule : MapModuleBase<1> {
         json_t* rec0J = json_array_get(recJ, 0);
 
         json_t* seqCountJ = json_object_get(rec0J, "seqCount");
-        if (seqCountJ) seqCount = json_integer_value(seqCountJ);
+        if (seqCountJ) seqCount = clamp((int)json_integer_value(seqCountJ), 1, REMOVE_MAX_SEQ);
         json_t* seqJ = json_object_get(rec0J, "seq");
-        if (seqJ) seq = json_integer_value(seqJ);
+        if (seqJ) seq = clamp((int)json_integer_value(seqJ), 0, REMOVE_MAX_SEQ - 1);
         json_t* seqCvModeJ = json_object_get(rec0J, "seqCvMode");
         if (seqCvModeJ) seqCvMode = (SEQCVMODE)json_integer_value(seqCvModeJ);
         json_t* seqChangeModeJ = json_object_get(rec0J, "seqChangeMode");

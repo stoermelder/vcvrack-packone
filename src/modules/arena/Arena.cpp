@@ -562,9 +562,9 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XyScreenCursor, XySeqModu
 		}
 
 		json_t* inportsUsedJ = json_object_get(rootJ, "inportsUsed");
-		if (inportsUsedJ) inportsUsed = json_integer_value(inportsUsedJ);
+		if (inportsUsedJ) inportsUsed = clamp((int)json_integer_value(inportsUsedJ), 1, IN_PORTS);
 		json_t* mixportsUsedJ = json_object_get(rootJ, "mixportsUsed");
-		if (mixportsUsedJ) mixportsUsed = json_integer_value(mixportsUsedJ);
+		if (mixportsUsedJ) mixportsUsed = clamp((int)json_integer_value(mixportsUsedJ), 1, MIX_PORTS);
 
 		// Rack's own Module::fromJson() already restored MIX_X_POS/MIX_Y_POS via
 		// paramsFromJson() (which runs before dataFromJson()). Without this, the
