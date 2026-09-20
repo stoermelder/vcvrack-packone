@@ -370,12 +370,12 @@ TEST_CASE("RECMODE_SAMPLEHOLD does not overrun the sequence when it starts near 
 	}
 }
 
-TEST_CASE("Arming and stopping a recording pushes exactly one history action", "[ReMove][history]") {
-	// stopRecording() routes its history push through vcv::history::push() (ReMove.cpp:586)
-	// rather than calling APP->history->push() directly, which makes it mockable here — a
-	// direct APP->history->push() segfaults headless because there is no real APP->history.
-	// This drives the REC button end-to-end (arm, then stop) since stopRecording() no longer
-	// crashes on the way there.
+TEST_CASE("RecButton::onDragStart arms and finishes exactly one history action per recording", "[ReMove][history]") {
+	// The undo action for a recording is created and pushed by RecButton::onDragStart() (UI
+	// thread) rather than by ReMoveModule::process()/startRecording()/stopRecording() (the
+	// audio thread) — see ReMove.cpp's RecButton. A press is simulated by calling
+	// onDragStart() directly on a real RecButton wired to the module, then driving the
+	// resulting param value through process() the way the engine actually would.
 	struct Mock {
 		TEST_MOCK_HISTORY(MockHistoryAccess);
 	} mock;
@@ -387,21 +387,89 @@ TEST_CASE("Arming and stopping a recording pushes exactly one history action", "
 	m->updateMapLen();
 	m->recMode = RECMODE_MANUAL; // bypasses the touch/move detection gates
 
-	// Press REC: starts recording (rising edge on the BooleanTrigger).
-	m->params[ReMoveModule::REC_PARAM].setValue(0.f);
+	RecButton* button = createParamCentered<RecButton>(Vec(0.f, 0.f), m, ReMoveModule::REC_PARAM);
+	DEFER({ delete button; });
+	event::DragStart dragStart;
+	dragStart.button = GLFW_MOUSE_BUTTON_LEFT;
+
+	// Initialize recTrigger's BooleanTrigger state (UNINITIALIZED -> LOW) before pressing, or
+	// the first press is never seen as a rising edge (same pattern every other button test
+	// in this file uses).
 	h.dspStep();
-	m->params[ReMoveModule::REC_PARAM].setValue(1.f);
-	h.dspStep();
+
+	// Press REC: onDragStart() sees isRecording==false, allocates the pending action and
+	// captures oldModuleJ, then sets the param to 1 (SvgSwitch::onDragStart's own job).
+	button->onDragStart(dragStart);
+	REQUIRE(button->recChangeHistory != nullptr);
+	REQUIRE(mock.history.pushed.empty());
+
+	h.dspStep(); // process() sees the param at 1, starts recording (rising edge)
 	REQUIRE(m->isRecording == true);
-	REQUIRE(mock.history.pushed.empty()); // nothing pushed yet: only stopRecording() pushes
 
-	// Release and press REC again: stops recording, pushing the recorded change.
+	// Release and press again: onDragStart() sees isRecording==true, finishes and pushes the
+	// pending action, then sets the param to 1 again for process() to see the stop edge.
 	m->params[ReMoveModule::REC_PARAM].setValue(0.f);
 	h.dspStep();
-	m->params[ReMoveModule::REC_PARAM].setValue(1.f);
-	h.dspStep();
+	button->onDragStart(dragStart);
+	REQUIRE(button->recChangeHistory == nullptr);
+	REQUIRE(mock.history.pushed.size() == 1);
+	auto* change = dynamic_cast<rack::history::ModuleChange*>(mock.history.pushed[0]);
+	REQUIRE(change != nullptr);
+	REQUIRE(change->moduleId == m->id);
+	REQUIRE(change->oldModuleJ != nullptr);
+	REQUIRE(change->newModuleJ != nullptr);
 
+	h.dspStep(); // process() sees the param at 1 again, stops recording (rising edge)
 	REQUIRE(m->isRecording == false);
+}
+
+TEST_CASE("RecButton::step finishes and pushes the pending action when a recording auto-stops", "[ReMove][history]") {
+	// A recording armed via the REC button can still end without a second press: reaching
+	// the end of the sequence, RECMODE_TOUCH/MOVE's mouse-release detection, or Sample & Hold
+	// all stop it from inside process() (the audio thread) on their own. The button-driven
+	// origin should still get an undo action, so RecButton::step() (UI thread, polled every
+	// frame) watches for module->isRecording going true->false without onDragStart() having
+	// closed out the pending action, and finishes/pushes it there instead.
+	struct Mock {
+		TEST_MOCK_HISTORY(MockHistoryAccess);
+	} mock;
+
+	Test::Harness h;
+	ReMoveModule* m = h.addModule<ReMoveModule>("ReMoveLite");
+	rack::Module* target = h.addModule<ReMoveModule>("ReMoveLite");
+	h.mapParam(&m->paramHandles[0], target, ReMoveModule::SLEW_PARAM);
+	m->updateMapLen();
+	m->recMode = RECMODE_MANUAL;
+	m->seqResize(1);
+
+	RecButton* button = createParamCentered<RecButton>(Vec(0.f, 0.f), m, ReMoveModule::REC_PARAM);
+	DEFER({ delete button; });
+	event::DragStart dragStart;
+	dragStart.button = GLFW_MOUSE_BUTTON_LEFT;
+
+	h.dspStep(); // initialize recTrigger's BooleanTrigger state before pressing
+	button->onDragStart(dragStart);
+	h.dspStep(); // starts recording (rising edge); startRecording() resets dataPtr to seqLow
+	REQUIRE(m->isRecording == true);
+	REQUIRE(button->recChangeHistory != nullptr);
+	button->step(); // nothing to do yet: isRecording is still true
+	REQUIRE(button->recChangeHistory != nullptr);
+	REQUIRE(mock.history.pushed.empty());
+
+	// Force the very next recorded sample to land exactly on the end of the sequence, so
+	// process() auto-stops the recording on its own — no second button press involved.
+	m->dataPtr = m->seqHigh - 1;
+	m->sampleRate = 1e-9f; // fire on the very next dspStep()
+	h.dspStep();
+	REQUIRE(m->isRecording == false);
+
+	// The widget hasn't been stepped yet: the action is still pending, not yet pushed.
+	REQUIRE(button->recChangeHistory != nullptr);
+	REQUIRE(mock.history.pushed.empty());
+
+	button->step();
+
+	REQUIRE(button->recChangeHistory == nullptr);
 	REQUIRE(mock.history.pushed.size() == 1);
 	auto* change = dynamic_cast<rack::history::ModuleChange*>(mock.history.pushed[0]);
 	REQUIRE(change != nullptr);
@@ -410,13 +478,35 @@ TEST_CASE("Arming and stopping a recording pushes exactly one history action", "
 	REQUIRE(change->newModuleJ != nullptr);
 }
 
-TEST_CASE("Resetting mid-recording discards the pending history action instead of leaking it", "[ReMove][history]") {
-	// startRecording() allocates recChangeHistory and only stopRecording() frees/pushes it.
-	// onReset() (triggered by the module's own reset, and by clearMap(), which calls it) used
-	// to set isRecording=false directly without touching recChangeHistory, leaving a stale
-	// non-null pointer that the next startRecording() would silently overwrite — losing the
-	// allocation and the (potentially multi-MB) JSON snapshot it holds. The real, observable
-	// consequence: nothing should reach history for a recording that never really stopped.
+TEST_CASE("onDragStart does nothing when no parameter is mapped", "[ReMove][history]") {
+	// process() itself no-ops a REC press with nothing mapped (getParamQuantity(0) == NULL);
+	// onDragStart() must apply the same guard, or it would allocate an action that never
+	// gets finished (process() never flips isRecording, so the "stop" press never arrives).
+	struct Mock {
+		TEST_MOCK_HISTORY(MockHistoryAccess);
+	} mock;
+
+	Test::Harness h;
+	ReMoveModule* m = h.addModule<ReMoveModule>("ReMoveLite");
+
+	RecButton* button = createParamCentered<RecButton>(Vec(0.f, 0.f), m, ReMoveModule::REC_PARAM);
+	DEFER({ delete button; });
+	event::DragStart dragStart;
+	dragStart.button = GLFW_MOUSE_BUTTON_LEFT;
+
+	button->onDragStart(dragStart);
+
+	REQUIRE(button->recChangeHistory == nullptr);
+	REQUIRE(mock.history.pushed.empty());
+}
+
+TEST_CASE("Resetting mid-recording leaves a stale pending action that the next press discards", "[ReMove][history]") {
+	// recChangeHistory lives on RecButton (UI thread), not the module: the module has no
+	// hook to clear it, so a module reset (or clearMap()) while a recording is armed leaves
+	// the button holding a pointer for a recording that will never send it a matching "stop"
+	// press. The real, observable consequence: onDragStart() must notice that stale pointer
+	// the next time it's about to start a new recording, and discard it there rather than
+	// leaking it or letting it leak into the new recording's action.
 	struct Mock {
 		TEST_MOCK_HISTORY(MockHistoryAccess);
 	} mock;
@@ -428,37 +518,47 @@ TEST_CASE("Resetting mid-recording discards the pending history action instead o
 	m->updateMapLen();
 	m->recMode = RECMODE_MANUAL;
 
-	// Arm a recording for real (allocates recChangeHistory).
-	m->params[ReMoveModule::REC_PARAM].setValue(0.f);
+	RecButton* button = createParamCentered<RecButton>(Vec(0.f, 0.f), m, ReMoveModule::REC_PARAM);
+	DEFER({ delete button; });
+	event::DragStart dragStart;
+	dragStart.button = GLFW_MOUSE_BUTTON_LEFT;
+
+	// Initialize recTrigger's BooleanTrigger state before pressing (see the previous test).
 	h.dspStep();
-	m->params[ReMoveModule::REC_PARAM].setValue(1.f);
+
+	// Arm a recording for real (allocates recChangeHistory on the button).
+	button->onDragStart(dragStart);
 	h.dspStep();
 	REQUIRE(m->isRecording == true);
+	history::ModuleChange* stale = button->recChangeHistory;
+	REQUIRE(stale != nullptr);
 
-	// Reset while still recording, the way clearMap() or a module reset would.
+	// Reset while still recording, the way clearMap() or a module reset would. The module has
+	// no way to reach the button, so the stale pointer survives this on its own.
 	Module::ResetEvent re;
 	m->onReset(re);
-
 	REQUIRE(m->isRecording == false);
-	REQUIRE(m->recChangeHistory == nullptr);
-	// The abandoned recording must not surface as a completed action.
+	REQUIRE(button->recChangeHistory == stale);
 	REQUIRE(mock.history.pushed.empty());
 
-	// A fresh recording afterward must behave normally: exactly one push, for the new
-	// recording only — not a double-push carrying the discarded one along with it.
-	// onReset() also clears the param mapping (MapModuleBase::onReset() -> clearMaps_NoLock()),
-	// so it needs remapping first, same as a real user would after a reset.
+	// onReset() also clears the param mapping (MapModuleBase::onReset() ->
+	// clearMaps_NoLock()), so it needs remapping first, same as a real user would.
 	h.mapParam(&m->paramHandles[0], target, ReMoveModule::SLEW_PARAM);
 	m->updateMapLen();
 	m->recMode = RECMODE_MANUAL;
 	m->params[ReMoveModule::REC_PARAM].setValue(0.f);
-	h.dspStep();
-	m->params[ReMoveModule::REC_PARAM].setValue(1.f);
+	h.dspStep(); // let recTrigger see the release before the next press
+
+	// Starting a fresh recording discards the stale pointer instead of leaking it, and must
+	// not carry it into the new recording's action (no double-push).
+	button->onDragStart(dragStart);
+	REQUIRE(button->recChangeHistory != stale);
+	REQUIRE(button->recChangeHistory != nullptr);
 	h.dspStep();
 	REQUIRE(m->isRecording == true);
 	m->params[ReMoveModule::REC_PARAM].setValue(0.f);
 	h.dspStep();
-	m->params[ReMoveModule::REC_PARAM].setValue(1.f);
+	button->onDragStart(dragStart);
 	h.dspStep();
 
 	REQUIRE(m->isRecording == false);
@@ -579,7 +679,9 @@ TEST_CASE("setParameterChangesDirect toggles the parameterChangesDirect flag", "
 	REQUIRE(module->parameterChangesDirect == false);
 }
 
-TEST_CASE("startRecording zeros seqLength and resets dataPtr (without a mapped param it is unreachable)", "[ReMove][rec]") {
+TEST_CASE("startRecording zeros seqLength and resets dataPtr", "[ReMove][rec]") {
+	// startRecording() no longer touches history (RecButton::onDragStart() owns the undo
+	// action now — see ReMove.cpp's RecButton), so it can be called directly here.
 	Test::ModuleScaffold<ReMoveModule> mods;
 	auto module = mods.create("ReMoveLite");
 	module->seqResize(4);
@@ -587,15 +689,8 @@ TEST_CASE("startRecording zeros seqLength and resets dataPtr (without a mapped p
 	module->seqLength[1] = 50;
 	module->dataPtr = 999;
 
-	// startRecording allocates a history action and modifies APP->history. We
-	// skip calling it directly because there's no mapped parameter to record
-	// against. Instead, verify the visible side effects via direct state writes
-	// that mimic what startRecording does, then verify stopRecording cleans up.
-	module->isRecording = true;
-	module->seqLength[module->seq] = 0;
-	module->dataPtr = module->seqLow;
+	module->startRecording();
 
-	REQUIRE(module->isRecording == true);
 	REQUIRE(module->seqLength[1] == 0);
 	REQUIRE(module->dataPtr == module->seqLow);
 }
@@ -606,7 +701,6 @@ TEST_CASE("stopRecording sets isRecording=false and resets dataPtr", "[ReMove][r
 	module->seqResize(4);
 	module->isRecording = true;
 	module->dataPtr = 5000;
-	module->recChangeHistory = NULL;
 
 	module->stopRecording();
 

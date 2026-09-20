@@ -178,9 +178,6 @@ struct ReMoveModule : MapModuleBase<1> {
 	/** last touched parameter to avoid frequent dynamic casting */
 	Widget* lastParamWidget;
 
-	/** history-item when starting recording */
-	history::ModuleChange* recChangeHistory = NULL;
-
 	ReMoveModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS); 
@@ -226,7 +223,6 @@ struct ReMoveModule : MapModuleBase<1> {
 
 	~ReMoveModule() {
 		delete[] seqData;
-		delete recChangeHistory;
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
@@ -239,8 +235,6 @@ struct ReMoveModule : MapModuleBase<1> {
 		isPlaying = false;
 		playDir = REMOVE_PLAYDIR_FWD;
 		isRecording = false;
-		delete recChangeHistory;
-		recChangeHistory = NULL;
 		recTouched = false;
 		recAutoplay = false;
 		dataPtr = 0;
@@ -563,12 +557,6 @@ struct ReMoveModule : MapModuleBase<1> {
 	}
 
 	void startRecording() {
-		// history::ModuleChange
-		recChangeHistory = new history::ModuleChange;
-		recChangeHistory->name = "ReMOVE recording";
-		recChangeHistory->moduleId = this->id;
-		recChangeHistory->oldModuleJ = toJson();
-
 		seqLength[seq] = 0;
 		dataPtr = seqLow;
 		sampleTimer.reset();
@@ -584,12 +572,6 @@ struct ReMoveModule : MapModuleBase<1> {
 		sampleTimer.reset();
 		paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
 		valueFilters[0].reset();
-
-		if (recChangeHistory) {
-			recChangeHistory->newModuleJ = toJson();
-			vcv::history::push(recChangeHistory);
-			recChangeHistory = NULL;
-		}
 
 		if (recAutoplay) {
 			isPlaying = true;
@@ -981,10 +963,62 @@ struct SampleRateMenuItem : MenuItem {
 
 
 struct RecButton : SvgSwitch {
+	// UI-thread only; process() never touches these. A CV/REC_INPUT-triggered recording has
+	// no button press to anchor an undo action to and gets none.
+	history::ModuleChange* recChangeHistory = NULL;
+	/** For detecting an auto-stop (TOUCH/MOVE release, Sample & Hold, end-of-sequence) in step(). */
+	bool wasRecording = false;
+
 	RecButton() {
 		momentary = true;
 		box.size = Vec(34.f, 34.f);
 		addFrame(Svg::load(asset::plugin(pluginInstance, "res/RecButton.svg")));
+	}
+
+	~RecButton() {
+		delete recChangeHistory;
+	}
+
+	void finishRecording(ReMoveModule* module) {
+		history::ModuleChange* h = recChangeHistory;
+		h->newModuleJ = module->toJson();
+		vcv::history::push(h);
+		recChangeHistory = NULL;
+	}
+
+	void step() override {
+		ReMoveModule* module = dynamic_cast<ReMoveModule*>(this->module);
+		if (module) {
+			// Recording stopped itself since the last frame, without a second press.
+			if (wasRecording && !module->isRecording && recChangeHistory) {
+				finishRecording(module);
+			}
+			wasRecording = module->isRecording;
+		}
+		SvgSwitch::step();
+	}
+
+	// Creates (and, on a button-driven stop, pushes) the undo action here on the UI thread,
+	// since process() runs on the audio thread and this is the moment a press actually
+	// starts/stops a recording.
+	void onDragStart(const DragStartEvent& e) override {
+		ReMoveModule* module = dynamic_cast<ReMoveModule*>(this->module);
+		if (module && module->getParamQuantity(0) != NULL) {
+			if (!module->isRecording) {
+				// Stale pointer means a prior recording was reset/unmapped instead of
+				// finishing normally.
+				delete recChangeHistory;
+				history::ModuleChange* h = new history::ModuleChange;
+				h->name = "ReMOVE recording";
+				h->moduleId = module->id;
+				h->oldModuleJ = module->toJson();
+				recChangeHistory = h;
+			}
+			else if (recChangeHistory) {
+				finishRecording(module);
+			}
+		}
+		SvgSwitch::onDragStart(e);
 	}
 };
 
