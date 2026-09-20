@@ -106,7 +106,7 @@ struct IntermixFadeModule : IntermixChainModule {
 		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
 		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 		json_t* inputJ = json_object_get(rootJ, "input");
-		if (inputJ) input = json_integer_value(inputJ);
+		if (inputJ) input = clamp((int)json_integer_value(inputJ), 0, PORTS - 1);
 		fade = (FADE)json_integer_value(json_object_get(rootJ, "fade"));
 		json_t* fadeLengthModeJ = json_object_get(rootJ, "fadeLengthMode");
 		if (fadeLengthModeJ) fadeLengthMode = (FADE_LENGTH)json_integer_value(fadeLengthModeJ);

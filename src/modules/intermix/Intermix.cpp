@@ -664,6 +664,7 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 	}
 
 	void expSetFade(int i, float* fadeIn, float* fadeOut) override {
+		if (i < 0 || i >= PORTS) return;
 		if (fadeIn) {
 			fadeInTs[i] = ts;
 			for (int j = 0; j < PORTS; j++) {
@@ -743,7 +744,7 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 		json_t* outputClampJ = json_object_get(rootJ, "outputClamp");
 		if (outputClampJ) outputClamp = json_boolean_value(outputClampJ);
 		json_t* channelCountJ = json_object_get(rootJ, "channelCount");
-		if (channelCountJ) channelCount = json_integer_value(channelCountJ);
+		if (channelCountJ) channelCount = clamp((int)json_integer_value(channelCountJ), 1, PORT_MAX_CHANNELS);
 
 		json_t* inputsJ = json_object_get(rootJ, "inputMode");
 		if (inputsJ) {
@@ -793,7 +794,7 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 		}
 
 		json_t* sceneSelectedJ = json_object_get(rootJ, "sceneSelected");
-		if (sceneSelectedJ) sceneSelected = json_integer_value(sceneSelectedJ);
+		if (sceneSelectedJ) sceneSelected = clamp((int)json_integer_value(sceneSelectedJ), 0, SCENE_MAX - 1);
 		json_t* sceneModeJ = json_object_get(rootJ, "sceneMode");
 		if (sceneModeJ) sceneMode = (SCENE_CV_MODE)json_integer_value(sceneModeJ);
 		json_t* sceneInputModeJ = json_object_get(rootJ, "sceneInputMode");
@@ -801,7 +802,7 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 		json_t* sceneAtModeJ = json_object_get(rootJ, "sceneAtMode");
 		if (sceneAtModeJ) sceneAtMode = json_boolean_value(sceneAtModeJ);
 		json_t* sceneCountJ = json_object_get(rootJ, "sceneCount");
-		if (sceneCountJ) sceneCount = json_integer_value(sceneCountJ);
+		if (sceneCountJ) sceneCount = clamp((int)json_integer_value(sceneCountJ), 1, SCENE_MAX);
 		json_t* sceneLockJ = json_object_get(rootJ, "sceneLock");
 		if (sceneLockJ) sceneLock = json_boolean_value(sceneLockJ);
 
