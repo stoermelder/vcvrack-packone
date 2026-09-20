@@ -1,5 +1,6 @@
 #include "../../plugin.hpp"
 #include "../../components/Knobs.hpp"
+#include "../../vcv/history.hpp"
 #include "MapModuleBase.hpp"
 #include <thread>
 #include <random>
@@ -217,6 +218,7 @@ struct ReMoveModule : MapModuleBase<1> {
 		paramHandles[0].text = "ReMove Lite";
 
 		processDivider.setDivision(64);
+		lightDivider.setDivision(64);
 
 		ResetEvent re;
 		onReset(re);
@@ -224,6 +226,7 @@ struct ReMoveModule : MapModuleBase<1> {
 
 	~ReMoveModule() {
 		delete[] seqData;
+		delete recChangeHistory;
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
@@ -236,6 +239,8 @@ struct ReMoveModule : MapModuleBase<1> {
 		isPlaying = false;
 		playDir = REMOVE_PLAYDIR_FWD;
 		isRecording = false;
+		delete recChangeHistory;
+		recChangeHistory = NULL;
 		recTouched = false;
 		recAutoplay = false;
 		dataPtr = 0;
@@ -316,7 +321,7 @@ struct ReMoveModule : MapModuleBase<1> {
 							if (i > seqLow) {
 								float l = seqData[i];
 								while (i > seqLow && l == seqData[i - 1]) i--;
-								seqLength[seq] = i - seqLow;
+								seqLength[seq] = i - seqLow + 1;
 							}
 						} 
 					}
@@ -335,7 +340,7 @@ struct ReMoveModule : MapModuleBase<1> {
 						if (dataPtr == seqHigh) {
 							stopRecording();
 						}
-						if (recMode == RECMODE_SAMPLEHOLD) {
+						else if (recMode == RECMODE_SAMPLEHOLD) {
 							seqData[dataPtr] = seqData[dataPtr - 1];
 							seqLength[seq]++;
 							stopRecording();
@@ -409,7 +414,7 @@ struct ReMoveModule : MapModuleBase<1> {
 				isPlaying = false;
 				if (audioRate || processDivider.process()) {
 					ParamQuantity* paramQuantity = getParamQuantity(0);
-					if (paramQuantity != NULL) {
+					if (paramQuantity != NULL && seqLength[seq] > 0) {
 						float v = clamp(inputs[PHASE_INPUT].getVoltage(), 0.f, 10.f);
 						dataPtr = floor(rescale(v, 0.f, 10.f, seqLow, seqLow + seqLength[seq] - 1));
 						v = seqData[dataPtr];
@@ -582,7 +587,7 @@ struct ReMoveModule : MapModuleBase<1> {
 
 		if (recChangeHistory) {
 			recChangeHistory->newModuleJ = toJson();
-			APP->history->push(recChangeHistory);
+			vcv::history::push(recChangeHistory);
 			recChangeHistory = NULL;
 		}
 
@@ -675,11 +680,22 @@ struct ReMoveModule : MapModuleBase<1> {
 				if (last1 == last2) {
 					// 2 times same value -> compress!
 					int c = 0;
-					while (seqData[i * s + j] == last1 && j < seqLength[i]) { c++; j++; }
+					// Bounds check first: with && short-circuiting left-to-right, checking
+					// seqData[...] before j < seqLength[i] would read one past the sequence's
+					// valid data as soon as a run reaches its last sample.
+					while (j < seqLength[i] && seqData[i * s + j] == last1) { c++; j++; }
 					json_array_append_new(seqData1J, json_integer(c));
-					if (j < seqLength[i]) json_array_append_new(seqData1J, json_real(seqData[i * s + j]));
 					last2 = -100.f;
-					last1 = seqData[i * s + j];
+					// The run may have reached the last sample of the sequence, in which case
+					// there is nothing left to read at seqData[i * s + j]: the outer loop is
+					// about to exit (j == seqLength[i]) and last1 is never consulted again.
+					if (j < seqLength[i]) {
+						json_array_append_new(seqData1J, json_real(seqData[i * s + j]));
+						last1 = seqData[i * s + j];
+					}
+					else {
+						last1 = 100.f;
+					}
 				} 
 				else {
 					json_array_append_new(seqData1J, json_real(seqData[i * s + j]));
@@ -734,7 +750,7 @@ struct ReMoveModule : MapModuleBase<1> {
 		json_t* seqCountJ = json_object_get(rec0J, "seqCount");
         if (seqCountJ) seqCount = clamp((int)json_integer_value(seqCountJ), 1, REMOVE_MAX_SEQ);
 		json_t* seqJ = json_object_get(rec0J, "seq");
-        if (seqJ) seq = clamp((int)json_integer_value(seqJ), 0, REMOVE_MAX_SEQ - 1);
+        if (seqJ) seq = clamp((int)json_integer_value(seqJ), 0, seqCount - 1);
 		json_t* seqCvModeJ = json_object_get(rec0J, "seqCvMode");
 		if (seqCvModeJ) seqCvMode = (SEQCVMODE)json_integer_value(seqCvModeJ);
 		json_t* seqChangeModeJ = json_object_get(rec0J, "seqChangeMode");
@@ -810,8 +826,10 @@ struct ReMoveModule : MapModuleBase<1> {
 		filter.setLambda(sampleRate * 10.f);
 
 		int s = REMOVE_MAX_DATA / seqCount;
-		// Generate maximum of 4 seconds random data
-		int l = std::min((int)round(1.f / sampleRate * 8.f), s);
+		// Generate maximum of 4 seconds random data. Clamped to at least 8 so `l / 8` below
+		// can never be zero — sampleRate is user/preset-supplied and unvalidated, and an
+		// extreme value (very large seconds-per-sample) would otherwise round l down to 0.
+		int l = std::max(std::min((int)round(1.f / sampleRate * 8.f), s), 8);
 
 		for (int i = 0; i < seqCount; i++) {
 			// Set some start-value for the exponential filter
