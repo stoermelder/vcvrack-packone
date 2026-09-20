@@ -102,27 +102,27 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 	int panelTheme = 0;
 
 	/** [Stored to JSON] */
-	float padBrightness;
+	float padBrightness = 0.75f;
 	/** [Stored to JSON] */
-	bool inputVisualize;
+	bool inputVisualize = false;
 	/** [Stored to JSON] */
 	IN_MODE inputMode[PORTS];
 	/** [Stored to JSON] */
-	bool outputClamp;
+	bool outputClamp = true;
 	/** [Stored to JSON] */
 	SceneData scenes[SCENE_MAX];
 	/** [Stored to JSON] */
 	int sceneSelected = 0;
 	/** [Stored to JSON] */
-	SCENE_CV_MODE sceneMode;
+	SCENE_CV_MODE sceneMode = SCENE_CV_MODE::TRIG_FWD;
 	/** [Stored to JSON] */
-	bool sceneInputMode;
+	bool sceneInputMode = false;
 	/** [Stored to JSON] */
-	bool sceneAtMode;
+	bool sceneAtMode = true;
 	/** [Stored to JSON] */
 	int sceneCount = SCENE_MAX;
 	/** [Stored to JSON] */
-	bool sceneLock;
+	bool sceneLock = false;
 
 	int sceneNext = -1;
 	int sceneCvModeDir = 1;
@@ -138,7 +138,6 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 	LinearFade fader[PORTS][PORTS][PORT_MAX_CHANNELS];
 	uint32_t fadeInTs[PORTS] = {};
 	uint32_t fadeOutTs[PORTS] = {};
-	//dsp::TSlewLimiter<simd::float_4> outputAtSlew[PORTS / 4];
 
 	uint32_t ts = 0;
 
@@ -419,10 +418,14 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 				params[PARAM_SCENE + sceneSelected].setValue(1.f);
 			}
 
+			bool mapTriggered[PORTS];
+			for (int j = 0; j < PORTS; j++) {
+				mapTriggered[j] = mapTrigger[j].process(params[PARAM_Y_MAP + j].getValue());
+			}
 			for (int i = 0; i < PORTS; i++) {
 				if (params[PARAM_X_MAP + i].getValue() > 0.f) {
 					for (int j = 0; j < PORTS; j++) {
-						if (mapTrigger[j].process(params[PARAM_Y_MAP + j].getValue())) {
+						if (mapTriggered[j]) {
 							float v = params[PARAM_MATRIX + j * PORTS + i].getValue();
 							v = v == 1.f ? 0.f : 1.f;
 							params[PARAM_MATRIX + j * PORTS + i].setValue(v);
@@ -485,18 +488,6 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 				}
 			}
 
-
-			// -- Standard code --
-			/*
-			for (int i = 0; i < PORTS; i++) {
-				float v = scenes[sceneSelected].output[i] == OM_OUT ? out[i / 4][i % 4] : 0.f;
-				if (outputClamp) v = clamp(v, -10.f, 10.f);
-				outputs[OUTPUT + i].setVoltage(v);
-			}
-			*/
-			// -- Standard code --
-
-			// -- SIMD code --
 			simd::float_4 oc = outputClamp;
 			for (int j = 0; j < PORTS; j+=4) {
 				// Check for OUT_MODE
@@ -507,14 +498,12 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 				out[j / 4] = simd::ifelse(oc == 1.f, simd::clamp(out[j / 4], -10.f, 10.f), out[j / 4]);
 				// Attenuverters
 				simd::float_4 at = simd::float_4::load(&scenes[sceneSelected].outputAt[j]);
-				//at = outputAtSlew[j / 4].process(args.sampleTime, at);
 				out[j / 4] *= at;
 			}
 
 			for (int i = 0; i < PORTS; i++) {
 				outputs[OUTPUT + i].setVoltage(out[i / 4][i % 4], c);
 			}
-			// -- SIMD code --
 		}
 
 		for (int i = 0; i < PORTS; i++) {
@@ -578,19 +567,9 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 			params[PARAM_SCENE + i].setValue(i == sceneSelected);
 		}
 
-		/*
-		simd::float_4 at[PORTS / 4];
-		float f1 = params[PARAM_FADEIN].getValue();
-		float f2 = params[PARAM_FADEOUT].getValue();
-		*/
 		for (int i = 0; i < PORTS; i++) {
 			params[PARAM_OUTPUT + i].setValue(scenes[sceneSelected].output[i] != OM_OUT);
 
-			/*
-			float at0 = params[PARAM_AT + i].getValue();
-			float at1 = scenes[sceneSelected].outputAt[i];
-			at[i / 4][i % 4] = at0 > at1 ? (at0 - at1) : (at1 - at0);
-			*/
 			if (sceneAtMode) {
 				params[PARAM_AT + i].setValue(scenes[sceneSelected].outputAt[i]);
 			}
@@ -604,11 +583,6 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 				currentMatrix[i][j] = p;
 			}
 		}
-		/*
-		for (int i = 0; i < PORTS / 4; i++) {
-			outputAtSlew[i].setRiseFall(at[i] / f1, at[i] / f2);
-		}
-		*/
 	}
 
 	inline void sceneSet(int scene) {
@@ -905,20 +879,6 @@ struct InputLedDisplay : StoermelderLedDisplay {
 };
 
 
-
-/*
-struct IntermixKnob : app::SvgKnob {
-	IntermixKnob() {
-		minAngle = -0.75 * M_PI;
-		maxAngle = 0.75 * M_PI;
-		setSvg(Svg::load(asset::plugin(pluginInstance, "res/components/IntermixKnob.svg")));
-		sw->setSize(Vec(22.7f, 22.7f));
-		fb->removeChild(shadow);
-		delete shadow;
-	}
-};
-*/
-
 struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 	const static int PORTS = 8;
 
@@ -949,8 +909,9 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 
 		struct IntermixMatrixButton : MatrixButton {
 			void onDragStart(const event::DragStart& e) override {
-				IntermixModule<PORTS>* module = dynamic_cast<IntermixModule<PORTS>*>(getParamQuantity()->module);
-				if (module->sceneLock) {
+				auto* pq = getParamQuantity();
+				IntermixModule<PORTS>* module = pq ? dynamic_cast<IntermixModule<PORTS>*>(pq->module) : NULL;
+				if (module && module->sceneLock) {
 					e.consume(this);
 				}
 				else {

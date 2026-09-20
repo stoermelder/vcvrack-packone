@@ -14,7 +14,7 @@ enum FADE_LENGTH {
 template<int PORTS>
 struct IntermixBase {
 	typedef float (*IntermixMatrix)[PORTS];
-	virtual IntermixMatrix expGetCurrentMatrix() { return NULL; }
+	virtual IntermixMatrix expGetCurrentMatrix() = 0;
 	virtual int expGetChannelCount() { return 0; }
 	virtual void expSetFade(int i, float* fadeIn, float* fadeOut) { }
 };

@@ -23,7 +23,7 @@ struct IntermixEnvModule : IntermixChainModule {
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 	/** [Stored to JSON] */
-	int input;
+	int input = 0;
 
 	IntermixEnvModule() {
 		panelTheme = pluginSettings.panelThemeDefault;

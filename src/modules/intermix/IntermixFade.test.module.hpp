@@ -301,6 +301,34 @@ TEST_CASE("FadeParamQuantity max value follows fadeLengthMode", "[IntermixFade][
 }
 
 
+TEST_CASE("FadeParamQuantity setValue clamps and reaches the full range per mode", "[IntermixFade][fade-time]") {
+	// ParamQuantity::setValue()/setImmediateValue() clamp against the virtual
+	// getMaxValue(), not the [0, 15] passed to configParam(), so this is the
+	// path real UI interactions (knob drag, numeric entry) actually use.
+	Test::ModuleScaffold<IntermixFadeModule<8>> mods;
+	auto module = mods.create("IntermixFade");
+	auto* pq = module->paramQuantities[IntermixFadeModule<8>::PARAM_FADE + 0];
+
+	SECTION("FADE_LENGTH_4S reaches 4s and clamps above it") {
+		module->fadeLengthMode = FADE_LENGTH_4S;
+		pq->setValue(100.f);
+		REQUIRE(pq->getValue() == Catch::Approx(4.0f).margin(0.001f));
+	}
+
+	SECTION("FADE_LENGTH_15S reaches 15s and clamps above it") {
+		module->fadeLengthMode = FADE_LENGTH_15S;
+		pq->setValue(100.f);
+		REQUIRE(pq->getValue() == Catch::Approx(15.0f).margin(0.001f));
+	}
+
+	SECTION("FADE_LENGTH_60S reaches the full 60s, well above the configParam() literal of 15") {
+		module->fadeLengthMode = FADE_LENGTH_60S;
+		pq->setValue(50.f);
+		REQUIRE(pq->getValue() == Catch::Approx(50.0f).margin(0.001f));
+	}
+}
+
+
 TEST_CASE("Expander fade time: param value sent to expSetFade as seconds", "[IntermixFade][fade-time]") {
 	Test::Harness h;
 	// FadeParamQuantity::getMaxValue() dynamically scales the knob to [0, maxFade],
