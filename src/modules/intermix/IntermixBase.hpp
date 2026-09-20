@@ -23,8 +23,22 @@ inline bool isIntermixModel(Model* model) {
 	return model == modelIntermix
 		|| model == modelIntermixGate
 		|| model == modelIntermixEnv
-		|| model == modelIntermixFade;
+		|| model == modelIntermixFade
+		|| model == modelIntermixCv;
 }
+
+/** Read-only interface implemented by IntermixCvModule. IntermixModule pulls
+ * from this every sample instead of the CV module pushing into IntermixBase. */
+template<int PORTS>
+struct IntermixCvBase {
+	/** The 0-based row this CV module currently overrides. */
+	virtual int getInput() = 0;
+	/** True if a cable is patched to this row's column j. */
+	virtual bool isConnected(int j) = 0;
+	/** Pad value demanded for column j, in [0, 1], from 0..10V CV. Only
+	 * meaningful where isConnected(j) is true. */
+	virtual float getValue(int j) = 0;
+};
 
 /** Common base for all modules of the Intermix expander-chain (Intermix,
  * IntermixGate, IntermixEnv, IntermixFade).
@@ -68,6 +82,12 @@ struct IntermixChainModule : Module, ModuleChangeListener {
 			unpublishExpanderMessage();
 			resetOutputs();
 		}
+		// Also broadcast on connect, not just removal: a module inserted
+		// deeper in the chain only fires this on its own new neighbors, so
+		// IntermixModule's CV-expander cache needs this to learn about it.
+		// Costs the other chain members one skipped sample, same as any
+		// other spurious flag.
+		notifyModuleListeners("Intermix");
 		Module::onExpanderChange(e);
 	}
 

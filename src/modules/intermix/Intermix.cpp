@@ -168,6 +168,13 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 	ClockDividerEx sceneDivider;
 	ClockDividerEx lightDivider;
 
+	// CV module targeting each row, indexed by row for O(1) lookup. Rebuilt
+	// whenever moduleChangedFlag is set (chain topology change, or a CV
+	// module's own target row changing — see IntermixCvModule::process()).
+	// Two CV modules on the same row: first one found wins.
+	IntermixCvBase<PORTS>* cvExpanderByRow[PORTS] = {};
+	bool cvExpandersDirty = true;
+
 	IntermixModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -205,7 +212,7 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
-	
+
 	void onReset(const ResetEvent& e) override {
 		padBrightness = 0.75f;
 		inputVisualize = false;
@@ -234,6 +241,15 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 
 	void process(const ProcessArgs& args) override {
 		ts++;
+
+		// This module has no left neighbor's message to worry about, so
+		// moduleChangedFlag is otherwise unused here; repurpose it for the
+		// CV cache below.
+		if (moduleChangedFlag) {
+			moduleChangedFlag = false;
+			cvExpandersDirty = true;
+		}
+		if (cvExpandersDirty) rebuildCvExpanders();
 
 		// Reset input with cooldown
 		if (inputs[INPUT_RESET].isConnected()) {
@@ -501,6 +517,15 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 						break;
 				}
 
+				// CV expander for this row: overrides connected columns'
+				// pad values, after fade processing, regardless of input mode.
+				IntermixCvBase<PORTS>* cv = cvExpanderFor(i);
+				if (cv) {
+					for (int j = 0; j < PORTS; j++) {
+						if (cv->isConnected(j)) currentMatrix[i][j] = cv->getValue(j);
+					}
+				}
+
 				for (int j = 0; j < PORTS; j+=4) {
 					simd::float_4 v1 = simd::float_4::load(&currentMatrix[i][j]);
 					simd::float_4 v2 = v1 * simd::float_4(v);
@@ -675,6 +700,28 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 				}
 			}
 		}
+	}
+
+	// Walks the right-side expander chain, indexing every IntermixCvBase
+	// module found by its target row.
+	void rebuildCvExpanders() {
+		cvExpandersDirty = false;
+		for (int i = 0; i < PORTS; i++) cvExpanderByRow[i] = NULL;
+		Module* m = rightExpander.module;
+		while (m && isIntermixModel(m->model)) {
+			auto* cv = dynamic_cast<IntermixCvBase<PORTS>*>(m);
+			if (cv) {
+				int row = cv->getInput();
+				if (row >= 0 && row < PORTS && !cvExpanderByRow[row]) cvExpanderByRow[row] = cv;
+			}
+			m = m->rightExpander.module;
+		}
+	}
+
+	// Returns the cached CV module targeting row i, or NULL. O(1): see
+	// cvExpanderByRow.
+	IntermixCvBase<PORTS>* cvExpanderFor(int i) {
+		return cvExpanderByRow[i];
 	}
 
 	json_t* dataToJson() override {

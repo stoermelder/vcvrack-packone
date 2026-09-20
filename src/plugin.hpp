@@ -43,6 +43,7 @@ extern Model* modelIntermix;
 extern Model* modelIntermixGate;
 extern Model* modelIntermixEnv;
 extern Model* modelIntermixFade;
+extern Model* modelIntermixCv;
 extern Model* modelSail;
 extern Model* modelPile;
 extern Model* modelPilePoly;

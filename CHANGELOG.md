@@ -1,5 +1,10 @@
 ## 2.x.x
 
+### New modules
+
+- Module [INTERMIX-CV](./docs/intermix/Intermix.md#intermix-cv-expander)
+    - Expander for INTERMIX injecting CV into the matrix pads of a selected row
+
 ### Changes and Fixes
 
 - Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)

@@ -270,6 +270,13 @@ TEST_CASE("Chain member removal invalidates forwarded expander messages", "[Inte
 
 	// Chain: MockHead -> Gate1 -> Gate2; both gates forward the head pointer
 	h.connectChain(intermixModule, gateModule1, gateModule2);
+	// connectChain's own ExpanderChangeEvents set moduleChangedFlag on both
+	// gates (IntermixChainModule::onExpanderChange broadcasts on any change,
+	// not just removal, so the CV-expander cache elsewhere in this chain
+	// family stays correct); consumeSiblingRemoved() treats that exactly like
+	// a removal notification and skips one sample. Let that resolve before
+	// asserting on steady-state behavior below.
+	h.dspStep();
 
 	intermixModule->currentMatrix[0][0] = 0.5f;
 	h.dspStep();

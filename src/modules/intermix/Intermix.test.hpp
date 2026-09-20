@@ -6,6 +6,7 @@
 
 #include "../../test/framework.hpp"
 #include "Intermix.cpp"
+#include "IntermixCv.cpp"
 
 using namespace StoermelderPackOne::Intermix;
 
