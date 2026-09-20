@@ -40,6 +40,9 @@ enum IN_MODE {
 	IM_SUB_03C = 21,
 	IM_SUB_02C = 22,
 	IM_SUB_01C = 23,
+	/** Not a legal mode by itself (0 cents is IM_DIRECT); only serves as the
+	 * zero point that the IM_SUB_xxC/IM_ADD_xxC values are offset from. */
+	IM_CONST_ZERO = 24,
 	IM_ADD_01C = 25,
 	IM_ADD_02C = 26,
 	IM_ADD_03C = 27,
@@ -53,6 +56,23 @@ enum IN_MODE {
 	IM_ADD_11C = 35,
 	IM_ADD_12C = 36
 };
+
+/** True for every IN_MODE value that a valid preset can contain, i.e. every
+ * named enumerator except IM_CONST_ZERO (the constant-voltage zero point,
+ * which is deliberately unreachable so it can't collide with IM_DIRECT). */
+inline bool isValidInMode(int mode) {
+	return mode == IM_OFF || mode == IM_DIRECT || mode == IM_FADE
+		|| (mode >= IM_SUB_12C && mode <= IM_SUB_01C)
+		|| (mode >= IM_ADD_01C && mode <= IM_ADD_12C);
+}
+
+/** Cents represented by a constant-voltage IN_MODE (IM_SUB_xxC/IM_ADD_xxC).
+ * Centralises the "- IM_CONST_ZERO" arithmetic shared by the DSP, the LED
+ * display, and the context menu. Only meaningful when isValidInMode(mode) is
+ * true and mode is not IM_OFF/IM_DIRECT/IM_FADE. */
+inline int centsOf(IN_MODE mode) {
+	return (int)mode - IM_CONST_ZERO;
+}
 
 enum OUT_MODE {
 	OM_OFF = 0,
@@ -477,7 +497,7 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 						}
 						break;
 					default:
-						v = (mode - 24) / 12.f;
+						v = centsOf(mode) / 12.f;
 						break;
 				}
 
@@ -726,7 +746,8 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 			// patches may contain more entries than these members hold.
 			size_t maxInputs = std::min((size_t)PORTS, json_array_size(inputsJ));
 			for (size_t inputIndex = 0; inputIndex < maxInputs; inputIndex++) {
-				inputMode[inputIndex] = (IN_MODE)json_integer_value(json_array_get(inputsJ, inputIndex));
+				int m = json_integer_value(json_array_get(inputsJ, inputIndex));
+				inputMode[inputIndex] = isValidInMode(m) ? (IN_MODE)m : IM_DIRECT;
 			}
 		}
 
@@ -742,7 +763,8 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 				if (inputJ) {
 					size_t maxIn = std::min((size_t)PORTS, json_array_size(inputJ));
 					for (size_t index = 0; index < maxIn; index++) {
-						scenes[sceneIndex].input[index] = (IN_MODE)json_integer_value(json_array_get(inputJ, index));
+						int m = json_integer_value(json_array_get(inputJ, index));
+						scenes[sceneIndex].input[index] = isValidInMode(m) ? (IN_MODE)m : IM_DIRECT;
 					}
 				}
 				if (outputJ) {
@@ -813,7 +835,7 @@ struct InputModeLedDisplay : StoermelderLedDisplay {
 				case IN_MODE::IM_FADE:
 					text = "FAD"; break;
 				default:
-					text = (mode - 24 > 0 ? "+" : "-") + string::f("%02i", std::abs(mode - 24));
+					text = (centsOf(mode) >= 0 ? "+" : "-") + string::f("%02i", std::abs(centsOf(mode)));
 					break;
 			}
 		} 
@@ -864,14 +886,14 @@ struct InputModeLedDisplay : StoermelderLedDisplay {
 		menu->addChild(createSubmenuItem("Subtract", "",
 			[this](Menu* menu) {
 				for (int i = 12; i > 0; i--) {
-					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("-%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 - i)));
+					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("-%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(IM_CONST_ZERO - i)));
 				}
 			}
 		));
 		menu->addChild(createSubmenuItem("Add", "",
 			[this](Menu* menu) {
 				for (int i = 1; i <= 12; i++) {
-					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("+%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 + i)));
+					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("+%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(IM_CONST_ZERO + i)));
 				}
 			}
 		));

@@ -336,11 +336,87 @@ TEST_CASE("Input modes", "[Intermix]") {
 		module->params[IntermixModule<8>::PARAM_MATRIX + 0].setValue(1.f);
 		module->params[IntermixModule<8>::PARAM_OUTPUT + 0].setValue(0.f);
 		module->channelCount = 1;
-		
+
 		h.dspSteps(130);
-		
+
 		float expected = 1.f / 12.f;
 		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(expected).margin(0.001f));
+	}
+
+	SECTION("Constant voltage mode with subtract") {
+		module->inputMode[0] = IM_SUB_05C; // -5 cents = -5/12V
+		module->params[IntermixModule<8>::PARAM_MATRIX + 0].setValue(1.f);
+		module->params[IntermixModule<8>::PARAM_OUTPUT + 0].setValue(0.f);
+		module->channelCount = 1;
+
+		h.dspSteps(130);
+
+		float expected = -5.f / 12.f;
+		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(expected).margin(0.001f));
+	}
+}
+
+TEST_CASE("centsOf and isValidInMode", "[Intermix]") {
+	SECTION("centsOf decodes the full subtract/add range") {
+		REQUIRE(centsOf(IM_SUB_12C) == -12);
+		REQUIRE(centsOf(IM_SUB_01C) == -1);
+		REQUIRE(centsOf(IM_ADD_01C) == 1);
+		REQUIRE(centsOf(IM_ADD_12C) == 12);
+	}
+
+	SECTION("isValidInMode accepts every named enumerator") {
+		REQUIRE(isValidInMode(IM_OFF));
+		REQUIRE(isValidInMode(IM_DIRECT));
+		REQUIRE(isValidInMode(IM_FADE));
+		for (int m = IM_SUB_12C; m <= IM_SUB_01C; m++) {
+			REQUIRE(isValidInMode(m));
+		}
+		for (int m = IM_ADD_01C; m <= IM_ADD_12C; m++) {
+			REQUIRE(isValidInMode(m));
+		}
+	}
+
+	SECTION("isValidInMode rejects IM_CONST_ZERO and out-of-range values") {
+		REQUIRE_FALSE(isValidInMode(IM_CONST_ZERO));
+		REQUIRE_FALSE(isValidInMode(-1));
+		REQUIRE_FALSE(isValidInMode(3));
+		REQUIRE_FALSE(isValidInMode(11));
+		REQUIRE_FALSE(isValidInMode(37));
+		REQUIRE_FALSE(isValidInMode(4000));
+	}
+}
+
+TEST_CASE("Preset JSON rejects invalid IN_MODE values", "[Intermix][JSON]") {
+	// dataFromJson() casts JSON integers straight into IN_MODE; a corrupt or
+	// hand-edited preset must fall back to IM_DIRECT rather than hitting the
+	// DSP switch's default: branch with an arbitrary, unvalidated mode.
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
+
+	SECTION("inputMode falls back to IM_DIRECT") {
+		json_t* rootJ = module->dataToJson();
+		json_t* inputsJ = json_object_get(rootJ, "inputMode");
+		json_array_set_new(inputsJ, 0, json_integer(IM_CONST_ZERO));
+		json_array_set_new(inputsJ, 1, json_integer(4000));
+		module->dataFromJson(rootJ);
+		json_decref(rootJ);
+
+		REQUIRE(module->inputMode[0] == IM_DIRECT);
+		REQUIRE(module->inputMode[1] == IM_DIRECT);
+	}
+
+	SECTION("scenes[i].input falls back to IM_DIRECT") {
+		json_t* rootJ = module->dataToJson();
+		json_t* scenesJ = json_object_get(rootJ, "scenes");
+		json_t* sceneJ = json_array_get(scenesJ, 0);
+		json_t* inputJ = json_object_get(sceneJ, "input");
+		json_array_set_new(inputJ, 0, json_integer(IM_CONST_ZERO));
+		json_array_set_new(inputJ, 1, json_integer(-1));
+		module->dataFromJson(rootJ);
+		json_decref(rootJ);
+
+		REQUIRE(module->scenes[0].input[0] == IM_DIRECT);
+		REQUIRE(module->scenes[0].input[1] == IM_DIRECT);
 	}
 }
 
