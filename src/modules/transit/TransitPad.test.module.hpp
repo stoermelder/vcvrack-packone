@@ -429,6 +429,49 @@ TEST_CASE("JSON round-trip preserves snapshotsUsed", "[TransitPad]") {
 }
 
 
+// snapshotsUsed = 0 used to be accepted on load and was unrecoverable: process()
+// skips both snapshot loops, so the last weights persist forever, and the
+// "Number of snapshots" submenu only offers 1..8, leaving no way back. Reachable
+// from a hand-edited or corrupted patch, and from any future build whose
+// SNAPSHOTS differs.
+TEST_CASE("Corrupted snapshotsUsed is clamped into the usable range on load", "[TransitPad][JSON]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	auto loadWith = [&](json_int_t value) {
+		json_t* j = m->dataToJson();
+		json_object_set_new(j, "snapshotsUsed", json_integer(value));
+		m->dataFromJson(j);
+		json_decref(j);
+	};
+
+	SECTION("Zero is raised to 1, so the pad is never frozen with no active snapshot") {
+		loadWith(0);
+		REQUIRE(m->snapshotsUsed == 1);
+	}
+
+	SECTION("Negative is raised to 1") {
+		loadWith(-7);
+		REQUIRE(m->snapshotsUsed == 1);
+	}
+
+	SECTION("A count above SNAPSHOTS is capped, so process() cannot run off the arrays") {
+		loadWith(99);
+		REQUIRE(m->snapshotsUsed == 8);
+		// And the clamped module still runs.
+		REQUIRE_NOTHROW(h.dspSteps(5));
+	}
+
+	SECTION("A missing key falls back to the minimum rather than 0") {
+		json_t* j = m->dataToJson();
+		json_object_del(j, "snapshotsUsed");
+		m->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(m->snapshotsUsed >= 1);
+	}
+}
+
+
 TEST_CASE("JSON round-trip preserves currentSet", "[TransitPad]") {
 	Test::Harness h;
 	SECTION("Non-zero currentSet survives save/load") {
@@ -557,7 +600,8 @@ TEST_CASE("onReset clears setLabel", "[TransitPad]") {
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
 	m->setLabel[0] = "Intro";
 	m->setLabel[3] = "Bridge";
-	m->onReset();
+	Module::ResetEvent re;
+	m->onReset(re);
 	REQUIRE(m->setLabel[0] == "");
 	REQUIRE(m->setLabel[3] == "");
 	REQUIRE(m->getSetLabel(0) == "Snapshot-set #1");
@@ -570,11 +614,66 @@ TEST_CASE("onReset restores defaults", "[TransitPad]") {
 
 	m->currentSet = 6;
 	m->snapshotsUsed = 8;
-	m->onReset();
+	Module::ResetEvent re;
+	m->onReset(re);
 
 	REQUIRE(m->currentSet == 0);
 	REQUIRE(m->snapshotsUsed == 4);
 	REQUIRE(m->isLocked() == false);
+}
+
+
+// The module overrode the deprecated no-arg onReset()/onRandomize(), which
+// *hid* the base's event overloads: `m->onReset(e)` did not compile without an
+// explicit upcast, and the `Module::onReset()` call inside the override was a
+// no-op (Rack's deprecated bodies are empty). Rack itself always dispatches the
+// event form, so these pin that the event form is the one that works.
+TEST_CASE("Reset and randomize go through the event-form handlers", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	SECTION("ResetEvent restores defaults") {
+		m->currentSet = 5;
+		m->snapshotsUsed = 7;
+		m->locked = true;
+		m->setLabel[2] = "custom";
+
+		Module::ResetEvent e;
+		m->onReset(e);
+
+		REQUIRE(m->currentSet == 0);
+		REQUIRE(m->snapshotsUsed == 4);
+		REQUIRE(m->isLocked() == false);
+		REQUIRE(m->setLabel[2] == "");
+	}
+
+	SECTION("RandomizeEvent moves the snapshot node positions") {
+		// Park every node at a known spot so any randomization is visible.
+		for (uint8_t i = 0; i < 8; i++) m->nodes.setXyImmediate(i, 0.5f, 0.5f);
+
+		Module::RandomizeEvent e;
+		m->onRandomize(e);
+
+		bool anyMoved = false;
+		for (uint8_t i = 0; i < 8; i++) {
+			if (m->getNodeXFinal(i) != 0.5f || m->getNodeYFinal(i) != 0.5f) anyMoved = true;
+		}
+		REQUIRE(anyMoved);
+	}
+
+	SECTION("Randomize does not latch the momentary set buttons or change the set") {
+		// SET_PARAM switches are momentary; randomizing them would silently jump
+		// the active set on the next buttonDivider tick.
+		m->currentSet = 3;
+		Module::RandomizeEvent e;
+		m->onRandomize(e);
+		h.dspSteps(5);
+
+		for (uint8_t s = 0; s < 8; s++) {
+			REQUIRE(m->params[TransitPadModule<>::SET_PARAM + s].getValue() == 0.f);
+		}
+		REQUIRE(m->currentSet == 3);
+	}
 }
 
 
@@ -588,7 +687,8 @@ TEST_CASE("Locked state", "[TransitPad]") {
 	SECTION("onReset clears lock") {
 		TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
 		m->locked = true;
-		m->onReset();
+		Module::ResetEvent re;
+		m->onReset(re);
 		REQUIRE(m->isLocked() == false);
 	}
 
@@ -1277,9 +1377,7 @@ TEST_CASE("XY-pad chain: snapshotsUsed bounds which snapshots contribute weight"
 	r.save(3, 1.0f);
 	connectPad(h, r.transit, r.pad);
 
-	// Limit set BEFORE the first run: snapshots C/D keep their initial weight
-	// of 0 and never contribute. (Lowering the count only prevents NEW weight
-	// computation — already-computed weights are not reset.)
+	// Only A/B are active, so only they contribute: both hold 0.0
 	r.pad->snapshotsUsed = 2;
 	r.run(5);
 	REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
@@ -1288,6 +1386,62 @@ TEST_CASE("XY-pad chain: snapshotsUsed bounds which snapshots contribute weight"
 	r.pad->snapshotsUsed = 4;
 	r.run(5);
 	REQUIRE(r.paramValue() == Catch::Approx(0.5f).margin(0.001f));
+
+	// ...and lowering it again drops them back out. This is the direction that
+	// used to be broken: a snapshot that had already earned a weight kept it
+	// forever, so C/D went on blending after the user shrank the pad and they
+	// were no longer drawn or draggable.
+	r.pad->snapshotsUsed = 2;
+	r.run(5);
+	REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
+}
+
+
+// Regression: lowering "Number of snapshots" must stop the now-inactive pad
+// points from contributing. Before the fix, process() only ever wrote weights
+// for j < snapshotsUsed, so a snapshot that had earned a weight while the count
+// was high kept that weight indefinitely — presetProcessXyPad iterates all of
+// getPadFactors(), not just the active prefix, so TRANSIT kept blending a pad
+// point that had vanished from the screen.
+TEST_CASE("Lowering snapshotsUsed clears the weights of the now-inactive snapshots", "[TransitPad][Transit]") {
+	Test::Harness h;
+	PadRig r = PadRig::make(h);
+	r.bind();
+	r.save(0, 0.0f);
+	r.save(4, 1.0f);
+	connectPad(h, r.transit, r.pad);
+
+	// Pad point A (bound to slot 0, value 0.0) and pad point E (bound to slot 4,
+	// value 1.0) both sit exactly on the mix point, so both reach full weight
+	// and the blend lands halfway between the two presets.
+	r.pad->snapshotsUsed = 8;
+	r.pad->snapshots[r.pad->currentSet][4].id = 4;
+	r.pad->nodes.setXyImmediate(0, 0.5f, 0.5f);
+	r.pad->nodes.setXyImmediate(4, 0.5f, 0.5f);
+	r.run(20);
+	REQUIRE(r.pad->snapshots[r.pad->currentSet][4].weight == Catch::Approx(1.0f).margin(0.001f));
+	REQUIRE(r.paramValue() == Catch::Approx(0.5f).margin(0.001f));
+
+	// Shrink the pad to A/B only. E is no longer an active pad point, so its
+	// weight must be cleared and the blend must fall back to A alone.
+	r.pad->snapshotsUsed = 2;
+	r.run(20);
+	REQUIRE(r.pad->snapshots[r.pad->currentSet][4].weight == 0.f);
+	REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
+
+	// Same via the patch-load path: dataFromJson writes snapshotsUsed directly,
+	// so it has to be covered by the same clearing and not only by the menu.
+	r.pad->snapshotsUsed = 8;
+	r.run(20);
+	REQUIRE(r.paramValue() == Catch::Approx(0.5f).margin(0.001f));
+
+	json_t* rootJ = r.pad->dataToJson();
+	json_object_set_new(rootJ, "snapshotsUsed", json_integer(2));
+	r.pad->dataFromJson(rootJ);
+	json_decref(rootJ);
+	r.run(20);
+	REQUIRE(r.pad->snapshots[r.pad->currentSet][4].weight == 0.f);
+	REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
 }
 
 
@@ -1560,4 +1714,189 @@ TEST_CASE("Unlocked pad accepts drag-and-drop rebinding", "[TransitPad][BLOCKER-
 	node->onDragDrop(eDrop);
 
 	REQUIRE(pad->snapshots[pad->currentSet][0].id == 3);
+}
+
+
+// Helper: find the pad's XY screen widget.
+static TransitPadXyScreenWidget<TransitPadModule<>>* findPadScreenWidget(rack::app::ModuleWidget* padWidget) {
+	TransitPadXyScreenWidget<TransitPadModule<>>* found = nullptr;
+	Test::traversal::walk(padWidget, [&](const Test::traversal::Visit& v) {
+		auto* screen = dynamic_cast<TransitPadXyScreenWidget<TransitPadModule<>>*>(v.widget);
+		if (screen) {
+			found = screen;
+			return false;
+		}
+		return true;
+	});
+	return found;
+}
+
+// Helper: count the ui::MenuOverlay children currently on the scene.
+// Always compared as a delta — earlier test cases in the same process leave
+// overlays behind, so the absolute count is not meaningful.
+static int menuOverlayCount() {
+	int n = 0;
+	for (rack::widget::Widget* c : APP->scene->children) {
+		if (dynamic_cast<rack::ui::MenuOverlay*>(c)) n++;
+	}
+	return n;
+}
+
+// Regression for the `e.button == GLFW_PRESS` / `e.action == GLFW_PRESS` mixup:
+// because GLFW_PRESS == 1 == GLFW_MOUSE_BUTTON_RIGHT, the condition collapsed to
+// `e.button == 1` and fired on press *and* release, so one right-click on the
+// empty screen area built the context menu twice. Note this covers XyScreenWidget,
+// which ARENA uses as well.
+TEST_CASE("One right-click on the pad screen builds exactly one context menu", "[TransitPad]") {
+	settings::allowCursorLock = false;
+
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+	auto* screen = findPadScreenWidget(padWidget);
+	REQUIRE(screen != nullptr);
+
+	// Top-left corner of the screen: inside the widget but clear of every pad
+	// point, so the press reaches the screen's own handler rather than a node's.
+	const Vec emptySpot = Vec(5.f, 5.f);
+	const int base = menuOverlayCount();
+
+	event::Button ePress;
+	rack::widget::EventContext cPress;
+	ePress.context = &cPress;
+	ePress.button = GLFW_MOUSE_BUTTON_RIGHT;
+	ePress.action = GLFW_PRESS;
+	ePress.pos = emptySpot;
+	screen->onButton(ePress);
+	const int afterPress = menuOverlayCount();
+
+	event::Button eRelease;
+	rack::widget::EventContext cRelease;
+	eRelease.context = &cRelease;
+	eRelease.button = GLFW_MOUSE_BUTTON_RIGHT;
+	eRelease.action = GLFW_RELEASE;
+	eRelease.pos = emptySpot;
+	screen->onButton(eRelease);
+	const int afterRelease = menuOverlayCount();
+
+	// The press opens the menu...
+	REQUIRE(afterPress - base == 1);
+	// ...and the release must not open a second one.
+	REQUIRE(afterRelease - afterPress == 0);
+}
+
+
+// "Lock pad" is tested for persistence elsewhere; this covers what it is *for*.
+TEST_CASE("Locked pad refuses a left press on the screen", "[TransitPad]") {
+	settings::allowCursorLock = false;
+
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+	auto* screen = findPadScreenWidget(padWidget);
+	REQUIRE(screen != nullptr);
+
+	const Vec spot = Vec(5.f, 5.f);
+
+	SECTION("Unlocked: the press passes through to XyScreenWidget") {
+		REQUIRE(pad->isLocked() == false);
+		event::Button e;
+		rack::widget::EventContext c;
+		e.context = &c;
+		e.button = GLFW_MOUSE_BUTTON_LEFT;
+		e.action = GLFW_PRESS;
+		e.pos = spot;
+		screen->onButton(e);
+		// XyScreenWidget clears the selection on an empty-area left press; the
+		// lock short-circuit returns before that ever runs.
+		REQUIRE(c.target != screen);
+	}
+
+	SECTION("Locked: the screen consumes the press itself, so no node can be dragged") {
+		pad->locked = true;
+		event::Button e;
+		rack::widget::EventContext c;
+		e.context = &c;
+		e.button = GLFW_MOUSE_BUTTON_LEFT;
+		e.action = GLFW_PRESS;
+		e.pos = spot;
+		screen->onButton(e);
+		REQUIRE(c.target == screen);
+	}
+
+	SECTION("Locked: right-click still opens the screen context menu") {
+		pad->locked = true;
+		const int base = menuOverlayCount();
+		event::Button e;
+		rack::widget::EventContext c;
+		e.context = &c;
+		e.button = GLFW_MOUSE_BUTTON_RIGHT;
+		e.action = GLFW_PRESS;
+		e.pos = spot;
+		screen->onButton(e);
+		REQUIRE(menuOverlayCount() - base == 1);
+	}
+}
+
+
+// Space toggles visualize mode. The null-module case is the regression: the
+// module browser builds this widget with module == nullptr to render the
+// preview, and onHoverKey dereferenced it unconditionally, so a space press
+// while the browser preview was hovered segfaulted.
+TEST_CASE("Space toggles visualize mode", "[TransitPad]") {
+	settings::allowCursorLock = false;
+
+	SECTION("With a module, space flips vizMode and consumes the event") {
+		Test::Harness h;
+		TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+		TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+		REQUIRE(pad->vizMode == false);
+
+		event::HoverKey e;
+		rack::widget::EventContext c;
+		e.context = &c;
+		e.key = GLFW_KEY_SPACE;
+		e.action = GLFW_PRESS;
+		e.mods = 0;
+		padWidget->onHoverKey(e);
+		REQUIRE(pad->vizMode == true);
+		REQUIRE(c.target == padWidget);
+
+		// A second press toggles it back off.
+		rack::widget::EventContext c2;
+		e.context = &c2;
+		padWidget->onHoverKey(e);
+		REQUIRE(pad->vizMode == false);
+	}
+
+	SECTION("A modifier-held space is not the visualize shortcut") {
+		Test::Harness h;
+		TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+		TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+		event::HoverKey e;
+		rack::widget::EventContext c;
+		e.context = &c;
+		e.key = GLFW_KEY_SPACE;
+		e.action = GLFW_PRESS;
+		e.mods = RACK_MOD_CTRL;
+		padWidget->onHoverKey(e);
+		REQUIRE(pad->vizMode == false);
+	}
+
+	SECTION("The browser preview (module == nullptr) survives a space press") {
+		Test::Harness h;
+		TransitPadWidget* padWidget = Test::createWidget<TransitPadWidget>("TransitPad");
+		REQUIRE(padWidget->module == nullptr);
+
+		event::HoverKey e;
+		rack::widget::EventContext c;
+		e.context = &c;
+		e.key = GLFW_KEY_SPACE;
+		e.action = GLFW_PRESS;
+		e.mods = 0;
+		REQUIRE_NOTHROW(padWidget->onHoverKey(e));
+		Test::destroyWidget(padWidget);
+	}
 }

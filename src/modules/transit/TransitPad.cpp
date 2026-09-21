@@ -88,8 +88,14 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	float outUiY, outInY;
 	dsp::ExponentialFilter outYfilter;
 
-	/** [Stored to JSON] */
-	int currentSet = 0;
+	/** [Stored to JSON]
+	 *  Written by the engine thread (process(): set-CV and the button scan) and
+	 *  the UI thread (dataFromJson); read by the UI thread (context menus,
+	 *  drawLayer, getItemLabel) and by TRANSIT's engine-side presetProcessXyPad
+	 *  through getPadFactors(). The most actively written of the shared fields,
+	 *  so it is atomic like snapshotsUsed and setCvMode.
+	 */
+	std::atomic<int> currentSet{0};
 	/** [Stored to JSON]
 	 *  Written from the UI thread (context menu via createValuePtrMenuItem, dataFromJson)
 	 *  and read from the engine thread (process()).
@@ -150,7 +156,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		for (uint8_t s = 0; s < SETS; s++) {
 			snapshots[s].resize(SNAPSHOTS);
 		}
-		onReset();
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onSampleRateChange(const Module::SampleRateChangeEvent& e) override {
@@ -163,7 +170,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		notifyModuleListeners("Transit");
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		Sc::selection = XyScreenSelection();
 		init();
 		snapshotsUsed = 4;
@@ -176,15 +183,15 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 		Sc::resetNodes();
 		Seq::seqReset();
-		Module::onReset();
+		Module::onReset(e);
 	}
 
-	void onRandomize() override {
+	void onRandomize(const RandomizeEvent& e) override {
 		Sc::nodes.randomizeAmountAll();
 		Sc::nodes.randomizeRadiusAll();
 		Sc::nodes.randomizeXAll();
 		Sc::nodes.randomizeYAll();
-		Module::onRandomize();
+		Module::onRandomize(e);
 	}
 
 	void init() {
@@ -313,6 +320,16 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			else {
 				snapshots[currentSet][j].weight = 0.f;
 			}
+		}
+
+		// Snapshots above the active count are not drawn and not draggable, so they
+		// must not keep contributing either: without this, lowering "Number of
+		// snapshots" (or loading a patch with a lower count) leaves whatever weight
+		// they last earned in place, and TRANSIT keeps blending a pad point the user
+		// can no longer see or move.
+		for (int j = n; j < SNAPSHOTS; j++) {
+			dist[j] = std::numeric_limits<float>::infinity();
+			snapshots[currentSet][j].weight = 0.f;
 		}
 
 		if (lightDivider.process()) {
@@ -771,36 +788,46 @@ struct TransitPadSetButton : app::Switch {
 		if (layer == 1) {
 			bool lit = module && module->lights[MODULE::SET_LIGHT + setIndex].getBrightness() > 0.5f;
 			NVGcolor col = module ? module->setColor[setIndex] : color::WHITE;
+			Vec c = box.size.div(2.f);
 			const float rad = 3.5f;
-			const float inset = 1.5f;
-
-			// Recessed socket behind the cap.
-			nvgBeginPath(args.vg);
-			nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, rad + 1.f);
-			nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.35f));
-			nvgFill(args.vg);
-
-			// Cap: top-to-bottom gradient for a convex highlight.
+			const float inset = 1.f;
 			float x = inset, y = inset, w = box.size.x - 2.f * inset, h = box.size.y - 2.f * inset;
-			NVGcolor capTop = lit ? color::mult(col, 1.15f) : color::mult(col, 0.28f);
-			NVGcolor capBottom = lit ? color::mult(col, 0.85f) : color::mult(col, 0.16f);
-			nvgBeginPath(args.vg);
-			nvgRoundedRect(args.vg, x, y, w, h, rad);
-			nvgFillPaint(args.vg, nvgLinearGradient(args.vg, x, y, x, y + h, capTop, capBottom));
-			nvgFill(args.vg);
-			nvgStrokeColor(args.vg, lit ? color::mult(color::WHITE, 0.8f) : nvgRGBAf(1.f, 1.f, 1.f, 0.18f));
-			nvgStrokeWidth(args.vg, 1.f);
-			nvgStroke(args.vg);
+
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 
 			if (lit) {
+				// Selection-halo-style glow, matching isSelected() on a pad node.
+				float oradius = 1.4f * (box.size.x / 2.f);
+				NVGcolor icol = color::mult(col, 0.25f);
+				NVGcolor ocol = nvgRGB(0, 0, 0);
 				nvgBeginPath(args.vg);
-				nvgRoundedRect(args.vg, x, y, w, h, rad);
-				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-				nvgFillColor(args.vg, color::mult(col, 0.45f));
+				nvgCircle(args.vg, c.x, c.y, oradius);
+				nvgFillPaint(args.vg, nvgRadialGradient(args.vg, c.x, c.y, box.size.x / 2.f, oradius, icol, ocol));
 				nvgFill(args.vg);
 			}
+
+			// Border, matching a pad node's amount-circle stroke width; dimmed
+			// white while inactive so it reads as a faint outline rather than
+			// a dim copy of the set color or a harsh full-white ring.
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, x, y, w, h, rad);
+			nvgStrokeColor(args.vg, lit ? col : nvgRGBAf(1.f, 1.f, 1.f, 0.35f));
+			nvgStrokeWidth(args.vg, 0.8f);
+			nvgStroke(args.vg);
+
+			// Fill, inset from the border so it reads as a smaller, less
+			// prominent cap rather than filling all the way to the outline.
+			const float fillInset = 3.f;
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, x + fillInset, y + fillInset, w - 2.f * fillInset, h - 2.f * fillInset, std::max(0.f, rad - fillInset));
+			nvgFillColor(args.vg, color::mult(col, lit ? 0.5f : 0.3f));
+			nvgFill(args.vg);
+
+			nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+
+			ParamWidget::drawLayer(args, layer);
+			ParamWidget::draw(args);
 		}
-		Switch::drawLayer(args, layer);
 	}
 
 	struct LabelMenuItem : MenuItem {
@@ -1171,7 +1198,7 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
-		if (e.key == GLFW_KEY_SPACE && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == 0) {
+		if (module && e.key == GLFW_KEY_SPACE && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == 0) {
 			module->vizMode = !module->vizMode;
 			e.consume(this);
 			return;

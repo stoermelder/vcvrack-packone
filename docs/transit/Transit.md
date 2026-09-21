@@ -190,9 +190,9 @@ The mix point's value is smoothed internally to avoid clicks when the source jum
 
 #### Snapshot-sets
 
-TRANSIT-PAD provides 8 snapshot-sets, each containing its own positions and weights for the 8 pad points. This way you can store complete layouts (e.g. _Drums_, _Bass_, _Pad_) and switch between them at any time.
+TRANSIT-PAD provides 8 snapshot-sets, each holding its own assignment of the 8 pad points to TRANSIT's snapshot slots. This way you can keep several mappings (e.g. _Drums_, _Bass_, _Pad_) side by side and switch between them at any time. The positions, radius and amount of the pad points are shared by all sets: switching a set re-assigns which snapshots the points refer to, it does not move them.
 
-The 8 buttons at the top of the module select the active set. The active set is indicated by a white LED above the button. Every set is assigned a fixed default color (cycling through green, magenta, blue, yellow, cyan, white, red, grey) and all snapshot points of the current set are rendered in that color. The color of a single set can be changed via the context menu of the set-button or via the context menu of any snapshot point on the pad (sub-menu _Color_ under _Current set_).
+The 8 buttons below the pad select the active set. The button of the active set lights up in the set's own color; the others stay dimmed. Every set is assigned a fixed default color (cycling through green, magenta, blue, yellow, cyan, white, red, grey) and all snapshot points of the current set are rendered in that color. The color of a single set can be changed via the context menu of the set-button or via the context menu of any snapshot point on the pad (sub-menu _Color_ under _Current set_).
 
 Each snapshot-set can be given a custom text label (e.g. _Drums_, _Bass_, _Pad_) to make the 8 buttons easier to tell apart at a glance. Right-click a set-button and choose _Label_ to enter a label.
 
