@@ -56,6 +56,16 @@ TEST_CASE("Preset JSON null-guards", "[MidiMon][JSON]") {
 	}
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[MidiMon][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<MidiMonModule>("MidiMon");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 TEST_CASE("JSON round-trip preserves state", "[MidiMon][JSON]") {
 	Test::ModuleScaffold<MidiMonModule> mods;
 	auto module = mods.create("MidiMon");

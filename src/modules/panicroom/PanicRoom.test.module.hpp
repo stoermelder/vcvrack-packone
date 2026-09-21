@@ -40,6 +40,16 @@ TEST_CASE("Preset JSON null-guards", "[PanicRoom][JSON]") {
 
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[PanicRoom][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<PanicRoomModule>("PanicRoom");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 
 TEST_CASE("JSON round-trip preserves state", "[PanicRoom][JSON]") {
 	Test::ModuleScaffold<PanicRoomModule> mods;

@@ -51,6 +51,16 @@ TEST_CASE("Preset JSON null-guards", "[EightFaceMk2][JSON]") {
 
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[EightFaceMk2][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<EightFaceMk2Module<8>>(createEightFaceMk2Module);
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 TEST_CASE("JSON round-trip preserves presets", "[EightFaceMk2][JSON]") {
 	Test::ModuleScaffold<EightFaceMk2Module<8>> mods{createEightFaceMk2Module};
 	EightFaceMk2Module<8>* m = mods.create("EightFaceMk2");

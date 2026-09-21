@@ -57,6 +57,21 @@ TEST_CASE("Preset JSON null-guards against a populated module", "[EightFace][JSO
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
+
+	SECTION("All integer scalars clamp out-of-range values") {
+		Test::Harness h;
+		auto hModule = h.addModule<EightFaceModule<8>>(createEightFaceModule);
+		hModule->presetSlotUsed[0] = true;
+		hModule->presetSlot[0] = json_pack("{s:i, s:i, s:i}", "id", 1, "leftModuleId", -1, "rightModuleId", -1);
+		hModule->pluginSlug = "Stoermelder-P1";
+		hModule->modelSlug = "Glue";
+		hModule->moduleName = "Stoermelder Glue";
+
+		json_t* rootJ = hModule->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOutOfRangeScalars(h, hModule, rootJ);
+		json_decref(rootJ);
+	}
 }
 
 TEST_CASE("JSON round-trip preserves state", "[EightFace][JSON]") {

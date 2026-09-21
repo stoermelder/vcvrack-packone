@@ -39,3 +39,13 @@ TEST_CASE("Preset JSON null-guards", "[StripBay][JSON]") {
 	}
 
 }
+
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[StripBay][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<StripBayModule<4>>("StripBay4");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}

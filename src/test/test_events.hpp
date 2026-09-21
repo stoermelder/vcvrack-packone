@@ -2,6 +2,7 @@
 #include "test_plugin.hpp"
 #include "test_traversal.hpp"
 #include "../vcv/fs.hpp"
+#include "../vcv/ui.hpp"
 #include <rack.hpp>
 #include <widget/Widget.hpp>
 #include <widget/event.hpp>
@@ -29,20 +30,25 @@
 //   2. handleButton() and handleHover() cannot be called: their first line dereferences
 //      APP->window, which is null in every test binary and cannot be made non-null (Window's
 //      constructor calls glfwCreateWindow(), its Internal is opaque, it has no virtuals). Both
-//      are re-implemented below.
+//      are re-implemented below. handleKey() is re-implemented too, for a different reason —
+//      see keyAt()'s comment.
 //
 // Everything else routes through Rack's real code. The re-implementations reproduce
-// EventState::handleButton/handleHover (Rack/src/widget/event.cpp) line for line apart from the
-// window reads, which are:
+// EventState::handleButton/handleHover/handleKey (Rack/src/widget/event.cpp) line for line
+// apart from the window/GLFW reads, which are:
 //
 //   - isCursorLocked() — always false in a test, and its only effect is to suppress dispatch
 //     entirely, so a test that wanted it would be testing nothing.
-//   - getMods() — polled to synthesise RACK_HELD repeats for held keys. A test supplies mods
-//     explicitly (see heldKeyMods), which is strictly more controllable than polling a window
-//     that does not exist.
+//   - getMods() — polled to synthesise RACK_HELD repeats for held keys. Routed through the
+//     vcv::ui::getWindowMods() seam, which is the same value the module under test reads, so a
+//     test sets mods once (see setMods) and the widget and the key repeats cannot disagree.
+//   - glfwGetKeyName()/glfwGetKeyScancode() — both require glfwInit(), never called in a test
+//     binary, so both silently return NULL/-1 regardless of window state. Routed through the
+//     vcv::ui::getKeyName()/getKeyScancode() seam; see keyAt()'s comment for why this one
+//     needed a seam rather than a null guard.
 //
 // So the recursion, the geometry, the ordering, the consumption rules and the EventState state
-// machine are all genuinely under test; only two things a headless test cannot have are absent.
+// machine are all genuinely under test; only one thing a headless test cannot have is absent.
 //
 // Usage:
 //   Test::Harness h;
@@ -85,15 +91,37 @@ struct EventDriver {
 	// consumed *by the scene* and reported as the target. Use missed() for that question.
 	rack::widget::Widget* lastTarget = nullptr;
 
-	// Mods reported to synthesised RACK_HELD key repeats during hover(). Stands in for
-	// APP->window->getMods(), which handleHover() polls and which does not exist headless.
-	int heldKeyMods = 0;
-
 	// The last position hover() was called at, so drag() can compute mouseDelta the way a real
 	// mouse would rather than making the caller track it.
 	rack::math::Vec lastMousePos;
 
 	explicit EventDriver(rack::widget::Widget* root) : rootWidget(root) {}
+
+	// ---- Modifiers -------------------------------------------------------------------------
+
+	// The held modifiers every part of a test agrees on: what a widget reading
+	// vcv::ui::getWindowMods() sees, and what the synthesised RACK_HELD key repeats in hover()
+	// carry. Not a field on the driver — the value lives in the installed vcv::UiAccess, which
+	// is the only place both the driver and the module under test can read it from, so the two
+	// cannot be set to different things.
+	//
+	// A widget that gates on modifiers is the reason this exists: Rack's HoverScrollEvent has
+	// no mods field, so Spin's and Mb's onHoverScroll() poll the window instead, and until the
+	// seam carried mods those branches were unreachable under test.
+	//
+	//   h.events().setMods(RACK_MOD_CTRL);
+	//   h.events().scroll(widget, Vec(0, 1));   // ctrl+scroll, as the widget sees it
+	//
+	// Takes a GLFW_MOD_* bitmask. Persists until changed, like a real held key; clearMods()
+	// releases them, and reset() does not touch them (a suite that sets mods once for a whole
+	// TEST_CASE should not have them silently dropped by an unrelated reset).
+	void setMods(int mods) {
+		StoermelderPackOne::vcv::uiAccessFor().testMods = mods;
+	}
+
+	void clearMods() { setMods(0); }
+
+	int mods() const { return StoermelderPackOne::vcv::ui::getWindowMods(); }
 
 	// ---- Queries ---------------------------------------------------------------------------
 
@@ -362,10 +390,12 @@ struct EventDriver {
 		syncRackMousePos(pos);
 
 		// Synthesised RACK_HELD repeats, one per held key — handleHover()'s first block. Mods
-		// come from heldKeyMods instead of APP->window->getMods().
+		// come from the vcv::ui seam, which is where Rack's getMods() now routes. Routed
+		// through this driver's own keyAt() rather than ev->handleKey() directly, so the
+		// repeat's keyName is correct too (see keyAt()'s comment) — heldKeys bookkeeping is
+		// unaffected since RACK_HELD matches neither the insert nor the erase branch.
 		for (int key : ev->heldKeys) {
-			int scancode = glfwGetKeyScancode(key);
-			ev->handleKey(pos, key, scancode, RACK_HELD, heldKeyMods);
+			keyAt(pos, key, RACK_HELD, mods());
 		}
 
 		if (ev->draggedWidget) {
@@ -470,9 +500,17 @@ struct EventDriver {
 
 	// ---- Keyboard ----------------------------------------------------------------------------
 
-	// A key event, dispatched through EventState::handleKey — which needs no re-implementation:
-	// it touches no Window, and glfwGetKeyName()/glfwGetKeyScancode() are safe on an
-	// uninitialised GLFW (they return NULL/0).
+	// A key event. Reproduces EventState::handleKey (Rack/src/widget/event.cpp) line for line,
+	// re-implemented for the same reason button()/hover() are: glfwGetKeyName()/
+	// glfwGetKeyScancode() require glfwInit() to have run (gated on GLFW's own
+	// `_glfw.initialized`), which this plugin's test binaries never call, so both return
+	// NULL/-1 regardless of window state — silently, since handleKey()'s own
+	// `if (keyName) eKey.keyName = keyName;` guard swallows the NULL. Calling
+	// APP->event->handleKey() directly would dispatch correctly but leave keyName == "" on
+	// every synthesised event, which is a silent gap, not a safe one: three widgets
+	// (ThemedModuleWidget, MidiKey, Stroke) branch on e.keyName. Routed through
+	// vcv::ui::getKeyName()/getKeyScancode() instead, whose test-side default answers from
+	// Rack's own rack::widget::getKeyName() table rather than GLFW.
 	//
 	// Rack routes this to the *selected* widget first (SelectKey) and only then, if unconsumed,
 	// to whatever is under `pos` (HoverKey). So a test that wants HoverKey must either leave
@@ -482,7 +520,51 @@ struct EventDriver {
 	}
 
 	bool keyAt(rack::math::Vec pos, int key, int action = GLFW_PRESS, int mods = 0) {
-		return APP->event->handleKey(pos, key, glfwGetKeyScancode(key), action, mods);
+		rack::widget::EventState* ev = APP->event;
+
+		if (action == GLFW_PRESS) {
+			ev->heldKeys.insert(key);
+		}
+		else if (action == GLFW_RELEASE) {
+			auto it = ev->heldKeys.find(key);
+			if (it != ev->heldKeys.end()) {
+				ev->heldKeys.erase(it);
+			}
+		}
+
+		int scancode = StoermelderPackOne::vcv::ui::getKeyScancode(key);
+		std::string keyName = StoermelderPackOne::vcv::ui::getKeyName(key, scancode);
+
+		if (ev->selectedWidget) {
+			rack::widget::EventContext cSelectKey;
+			rack::widget::Widget::SelectKeyEvent eSelectKey;
+			eSelectKey.context = &cSelectKey;
+			eSelectKey.key = key;
+			eSelectKey.scancode = scancode;
+			if (!keyName.empty()) {
+				eSelectKey.keyName = keyName;
+			}
+			eSelectKey.action = action;
+			eSelectKey.mods = mods;
+			ev->selectedWidget->onSelectKey(eSelectKey);
+			if (cSelectKey.target) {
+				return true;
+			}
+		}
+
+		rack::widget::EventContext cHoverKey;
+		rack::widget::Widget::HoverKeyEvent eHoverKey;
+		eHoverKey.context = &cHoverKey;
+		eHoverKey.pos = pos;
+		eHoverKey.key = key;
+		eHoverKey.scancode = scancode;
+		if (!keyName.empty()) {
+			eHoverKey.keyName = keyName;
+		}
+		eHoverKey.action = action;
+		eHoverKey.mods = mods;
+		rootWidget->onHoverKey(eHoverKey);
+		return !!cHoverKey.target;
 	}
 
 	// Press and release, the pair a "keystroke" usually means. Returns whether the press was

@@ -60,6 +60,16 @@ TEST_CASE("Preset JSON null-guards", "[MidiStep][JSON]") {
 
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[MidiStep][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<MidiStepModule>("MidiStep");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 TEST_CASE("JSON round-trip preserves state", "[MidiStep][JSON]") {
 	Test::ModuleScaffold<MidiStepModule> mods;
 	SECTION("Scalars and remapped channels") {

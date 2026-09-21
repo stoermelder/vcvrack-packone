@@ -15,6 +15,8 @@ struct Settings {
 	bool mbFavoriteHighlight = true;
 	float mbSearchThreshold = 0.5f;
 	bool mbMagnifierEnabled = false;
+	bool mbArrowKeyNavigation = true;
+	bool mbPrewarmEnabled = false;
 	bool mbApplyLibraryWhitelist = false;
 	bool mbShowDeprecated = false;
 	bool mbNewestAutoUpdate = false;

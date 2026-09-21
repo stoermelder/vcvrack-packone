@@ -42,7 +42,8 @@ struct ProbeWidget : widget::OpaqueWidget {
 
 	math::Vec lastButtonPos, lastHoverPos, lastDragMouseDelta;
 	int lastButton = -1, lastAction = -1, lastMods = -1;
-	int lastKey = -1;
+	int lastKey = -1, lastScancode = -1;
+	std::string lastKeyName;
 	uint32_t lastCodepoint = 0;
 	widget::Widget* lastDragDropOrigin = nullptr;
 	// Accumulated drag movement, so a stepped drag can be distinguished from a single jump.
@@ -70,6 +71,8 @@ struct ProbeWidget : widget::OpaqueWidget {
 	void onHoverKey(const HoverKeyEvent& e) override {
 		hoverKeyCount++;
 		lastKey = e.key;
+		lastScancode = e.scancode;
+		lastKeyName = e.keyName;
 		if (consume) e.consume(this);
 	}
 	void onHoverScroll(const HoverScrollEvent& e) override {
@@ -84,6 +87,8 @@ struct ProbeWidget : widget::OpaqueWidget {
 	void onSelectKey(const SelectKeyEvent& e) override {
 		selectKeyCount++;
 		lastKey = e.key;
+		lastScancode = e.scancode;
+		lastKeyName = e.keyName;
 		if (consume) e.consume(this);
 	}
 	void onDragHover(const DragHoverEvent& e) override {
@@ -658,6 +663,39 @@ TEST_CASE("Keyboard, text and scroll") {
 		REQUIRE(probe->hoverKeyCount == 0);
 	}
 
+	SECTION("keyName is populated on dispatch, not left empty") {
+		// Rack's own EventState::handleKey() calls glfwGetKeyName() directly, which is always
+		// NULL in a test binary (GLFW is never initialised) — so this only passes because
+		// EventDriver::keyAt() is a re-implementation routed through vcv::ui::getKeyName(),
+		// not a straight call into APP->event->handleKey(). See test_events.hpp's comment.
+		REQUIRE(h.events().keyAt(Test::EventDriver::centerOf(probe), GLFW_KEY_A));
+		// rack::widget::getKeyName() (the test-side seam default) returns GLFW_KEY_A verbatim
+		// as a one-character string — GLFW_KEY_A is ASCII 'A', not lowercased.
+		REQUIRE(probe->lastKeyName == "A");
+		REQUIRE(probe->lastScancode == StoermelderPackOne::vcv::ui::getKeyScancode(GLFW_KEY_A));
+	}
+
+	SECTION("keyName reaches SelectKey too") {
+		h.events().select(probe);
+		REQUIRE(h.events().keyAt(math::Vec(5, 5), GLFW_KEY_C));
+		REQUIRE(probe->lastKeyName == "C");
+	}
+
+	SECTION("Test::mock::MockUiAccess matches a real keyboard's case, unlike the plain default") {
+		// The base vcv::UiAccess default (exercised by the sections above, since Harness's own
+		// UiAccess mock doesn't override getKeyName()) answers "C" — Rack's own fallback table,
+		// which spells a GLFW key code as its uppercase ASCII value. A real, unshifted keypress
+		// reports lowercase ("c") instead — which is what production code like
+		// ThemedModuleWidget's `e.keyName == "c"` shortcut check actually compares against. A
+		// test wanting to exercise that check needs this mock installed, not the plain default.
+		struct Mock {
+			TEST_MOCK_UI(Test::mock::MockUiAccess);
+		} mock;
+
+		REQUIRE(h.events().keyAt(Test::EventDriver::centerOf(probe), GLFW_KEY_C));
+		REQUIRE(probe->lastKeyName == "c");
+	}
+
 	SECTION("keyPress presses and releases, clearing the held-key set") {
 		h.events().hover(probe);
 		h.events().keyPress(GLFW_KEY_D);
@@ -666,8 +704,8 @@ TEST_CASE("Keyboard, text and scroll") {
 	}
 
 	SECTION("a held key is repeated as RACK_HELD on every hover") {
-		// handleHover() synthesises these from APP->window->getMods(); the driver supplies
-		// heldKeyMods instead, which is the one place it deliberately differs from Rack.
+		// handleHover() synthesises these from APP->window->getMods(); the driver reads the
+		// vcv::ui::getWindowMods() seam instead, which is the same value a widget sees.
 		h.events().hover(probe);
 		h.events().key(GLFW_KEY_E, GLFW_PRESS);
 		REQUIRE(APP->event->heldKeys.count(GLFW_KEY_E) == 1);
@@ -698,6 +736,86 @@ TEST_CASE("Keyboard, text and scroll") {
 
 		REQUIRE_FALSE(h.events().scroll(math::Vec(5, 5), math::Vec(0, -1)));
 		REQUIRE(probe->hoverScrollCount == 1);
+	}
+}
+
+// A widget that gates on held modifiers the way Spin's and Mb's onHoverScroll() do: by polling
+// the seam, because Rack's HoverScrollEvent carries no mods field of its own.
+struct ModProbeWidget : widget::OpaqueWidget {
+	int plainScrolls = 0, ctrlScrolls = 0;
+
+	void onHoverScroll(const HoverScrollEvent& e) override {
+		if ((vcv::ui::getWindowMods() & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+			ctrlScrolls++;
+			e.consume(this);
+			return;
+		}
+		plainScrolls++;
+		OpaqueWidget::onHoverScroll(e);
+	}
+};
+
+// Scene-space box the probe below occupies. Clear of the scene origin, like ScopedProbe's
+// callers, so a position outside it is still a valid scene coordinate.
+static const math::Rect MOD_PROBE_BOX = math::Rect(math::Vec(200, 200), math::Vec(100, 100));
+
+TEST_CASE("setMods() drives what a widget reads from the window") {
+	Test::Harness h;
+
+	ModProbeWidget* probe = new ModProbeWidget;
+	probe->box = MOD_PROBE_BOX;
+	APP->scene->addChild(probe);
+	DEFER({
+		APP->event->finalizeWidget(probe);
+		APP->scene->removeChild(probe);
+		delete probe;
+	});
+
+	SECTION("mods default to none, so a modifier-gated branch stays untaken") {
+		REQUIRE(h.events().mods() == 0);
+		h.events().scroll(probe, math::Vec(0, -1));
+		REQUIRE(probe->plainScrolls == 1);
+		REQUIRE(probe->ctrlScrolls == 0);
+	}
+
+	SECTION("with mods set, the widget takes its modifier branch") {
+		h.events().setMods(RACK_MOD_CTRL);
+		REQUIRE(h.events().mods() == RACK_MOD_CTRL);
+
+		h.events().scroll(probe, math::Vec(0, -1));
+		REQUIRE(probe->ctrlScrolls == 1);
+		REQUIRE(probe->plainScrolls == 0);
+	}
+
+	SECTION("mods persist across events until cleared, like a real held key") {
+		h.events().setMods(RACK_MOD_CTRL);
+		h.events().scroll(probe, math::Vec(0, -1));
+		h.events().scroll(probe, math::Vec(0, -1));
+		REQUIRE(probe->ctrlScrolls == 2);
+
+		h.events().clearMods();
+		h.events().scroll(probe, math::Vec(0, -1));
+		REQUIRE(probe->ctrlScrolls == 2);
+		REQUIRE(probe->plainScrolls == 1);
+	}
+
+	SECTION("reset() leaves mods alone") {
+		h.events().setMods(RACK_MOD_CTRL);
+		h.events().reset();
+		REQUIRE(h.events().mods() == RACK_MOD_CTRL);
+	}
+
+	SECTION("mods are restored when the harness goes out of scope") {
+		h.events().setMods(RACK_MOD_CTRL);
+		{
+			Test::Harness inner;
+			inner.events().setMods(RACK_MOD_SHIFT);
+			REQUIRE(inner.events().mods() == RACK_MOD_SHIFT);
+		}
+		// The inner harness restored its own UiAccess on destruction, so the outer harness's
+		// mods are the ones in force again — process-wide state that leaked between TEST_CASEs
+		// would be exactly the trap SceneLayout exists to avoid.
+		REQUIRE(h.events().mods() == RACK_MOD_CTRL);
 	}
 }
 

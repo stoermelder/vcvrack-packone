@@ -39,6 +39,16 @@ TEST_CASE("Preset JSON null-guards", "[Spin][JSON]") {
 	}
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[Spin][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<SpinModule>("Spin");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 TEST_CASE("JSON round-trip preserves state", "[Spin][JSON]") {
 	Test::ModuleScaffold<SpinModule> mods;
 	SpinModule* m = mods.create("Spin");
