@@ -60,13 +60,12 @@ TEST_CASE("Preset JSON null-guards", "[TransitPad][JSON]") {
 }
 
 // XyScreenNodes::dataToJson()/dataFromJson() write "radius"/"amount"
-// unconditionally — they are only ever called for nodes now (Stage 3/4 of
-// the refactor deleted the cursor persistence calls entirely, rather than
-// keeping an always-false branch). This pins the exact JSON produced for a
-// distinctive snapshot state so any future change that moves or renames
-// those keys fails loudly.
+// unconditionally — they are only ever called for the live pad-point layout
+// now (dataToJson()'s top-level "nodes" array), not per set. This pins the
+// exact JSON produced for a distinctive snapshot state so any future change
+// that moves or renames those keys fails loudly.
 
-TEST_CASE("Golden JSON: snapshot (node) radius/amount round-trip byte-identically", "[TransitPad][JSON]") {
+TEST_CASE("Golden JSON: node radius/amount round-trip byte-identically", "[TransitPad][JSON]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
 
@@ -91,30 +90,58 @@ TEST_CASE("Golden JSON: full module dataToJson is byte-identical for a distincti
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
 
 	m->snapshots[0][0].id = 3;
+	m->snapshots[0][0].x = 0.25f;
+	m->snapshots[0][0].y = 0.75f;
+	m->snapshots[0][0].radius = 0.25f;
+	m->snapshots[0][0].amount = 0.5f;
 	m->nodes.setRadiusImmediate(0, 0.25f);
 	m->nodes.setRadius(0, 0.25f);
 	m->nodes.setAmountImmediate(0, 0.5f);
 	m->nodes.setAmount(0, 0.5f);
 
+	// The live pad layout is stored once at the top level ("nodes"), not
+	// duplicated per set — true regardless of nodePosMode.
 	json_t* rootJ = m->dataToJson();
-	json_t* setsJ = json_object_get(rootJ, "sets");
-	json_t* set0J = json_array_get(setsJ, 0);
-	json_t* snapshotsJ = json_object_get(set0J, "snapshots");
-	json_t* snapshot0J = json_array_get(snapshotsJ, 0);
+	json_t* nodesJ = json_object_get(rootJ, "nodes");
+	json_t* node0J = json_array_get(nodesJ, 0);
 	json_t* outputJ = json_object_get(rootJ, "output");
 
-	char* snapshotDumped = json_dumps(snapshot0J, JSON_SORT_KEYS | JSON_COMPACT | JSON_REAL_PRECISION(9));
-	std::string snapshotActual(snapshotDumped);
-	free(snapshotDumped);
-
-	REQUIRE(snapshotActual == "{\"amount\":0.5,\"id\":3,\"radius\":0.25}");
+	char* nodeDumped = json_dumps(node0J, JSON_SORT_KEYS | JSON_COMPACT | JSON_REAL_PRECISION(9));
+	std::string nodeActual(nodeDumped);
+	free(nodeDumped);
+	REQUIRE(nodeActual == "{\"amount\":0.5,\"radius\":0.25}");
 
 	// "output" never carries "radius"/"amount" — the cursor has no
 	// persistence method at all; only Seq::dataToJson writes into it.
 	REQUIRE(json_object_get(outputJ, "radius") == nullptr);
 	REQUIRE(json_object_get(outputJ, "amount") == nullptr);
 
+	// Default (nodePosMode OFF): per-set x/y/radius/amount are omitted to
+	// keep the JSON slim, since that data isn't used in this mode.
+	{
+		json_t* setsJ = json_object_get(rootJ, "sets");
+		json_t* snapshotsJ = json_object_get(json_array_get(setsJ, 0), "snapshots");
+		json_t* snapshot0J = json_array_get(snapshotsJ, 0);
+		char* dumped = json_dumps(snapshot0J, JSON_SORT_KEYS | JSON_COMPACT | JSON_REAL_PRECISION(9));
+		std::string actual(dumped);
+		free(dumped);
+		REQUIRE(actual == "{\"id\":3}");
+	}
 	json_decref(rootJ);
+
+	// With nodePosMode enabled, the same fields are written per set.
+	m->nodePosMode = NODEPOSMODE::STORE;
+	json_t* rootJ2 = m->dataToJson();
+	json_t* setsJ2 = json_object_get(rootJ2, "sets");
+	json_t* snapshotsJ2 = json_object_get(json_array_get(setsJ2, 0), "snapshots");
+	json_t* snapshot0J2 = json_array_get(snapshotsJ2, 0);
+	char* snapshotDumped = json_dumps(snapshot0J2, JSON_SORT_KEYS | JSON_COMPACT | JSON_REAL_PRECISION(9));
+	std::string snapshotActual(snapshotDumped);
+	free(snapshotDumped);
+
+	REQUIRE(snapshotActual == "{\"amount\":0.5,\"id\":3,\"radius\":0.25,\"x\":0.25,\"y\":0.75}");
+
+	json_decref(rootJ2);
 }
 
 
@@ -216,6 +243,214 @@ TEST_CASE("SET_PARAM buttons change currentSet", "[TransitPad]") {
 		m->params[TransitPadModule<>::SET_PARAM + 2].setValue(1.f);
 		h.dspSteps(100);
 		REQUIRE(m->currentSet == 2);
+	}
+}
+
+
+TEST_CASE("Snapshot-set node positions", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	SECTION("Off (default): switching sets does not move pad points") {
+		m->nodes.setXyImmediate(0, 0.1f, 0.2f);
+		REQUIRE(m->nodePosMode == NODEPOSMODE::OFF);
+
+		m->params[TransitPadModule<>::SET_PARAM + 3].setValue(1.f);
+		h.dspSteps(100);
+
+		REQUIRE(m->currentSet == 3);
+		REQUIRE(m->nodes.getXFinal(0) == 0.1f);
+		REQUIRE(m->nodes.getYFinal(0) == 0.2f);
+	}
+
+	SECTION("storeNodePositions() captures the live layout into a set") {
+		m->nodes.setXyImmediate(0, 0.3f, 0.4f);
+		m->nodes.setRadiusImmediate(0, 0.6f);
+		m->nodes.setRadius(0, 0.6f);
+		m->nodes.setAmountImmediate(0, 0.7f);
+		m->nodes.setAmount(0, 0.7f);
+
+		m->storeNodePositions(2);
+
+		REQUIRE(m->snapshots[2][0].x == 0.3f);
+		REQUIRE(m->snapshots[2][0].y == 0.4f);
+		REQUIRE(m->snapshots[2][0].radius == 0.6f);
+		REQUIRE(m->snapshots[2][0].amount == 0.7f);
+		// Untouched sets are unaffected.
+		REQUIRE(m->snapshots[0][0].x != 0.3f);
+	}
+
+	SECTION("loadNodePositions() applies a set's stored layout to the live pad") {
+		m->snapshots[1][0].x = 0.15f;
+		m->snapshots[1][0].y = 0.85f;
+		m->snapshots[1][0].radius = 0.4f;
+		m->snapshots[1][0].amount = 0.9f;
+
+		m->loadNodePositions(1);
+		// radius[]/amount[] (getRadius/getAmount) only refresh from the UI
+		// shadow once per process() tick, same as any other UI-driven change.
+		h.dspStep();
+
+		REQUIRE(m->nodes.getXFinal(0) == 0.15f);
+		REQUIRE(m->nodes.getYFinal(0) == 0.85f);
+		REQUIRE(m->nodes.getRadius(0) == 0.4f);
+		REQUIRE(m->nodes.getAmount(0) == 0.9f);
+	}
+
+	SECTION("Store mode: switching sets alone does not move pad points") {
+		m->nodePosMode = NODEPOSMODE::STORE;
+		m->snapshots[3][0].x = 0.9f;
+		m->snapshots[3][0].y = 0.1f;
+		m->nodes.setXyImmediate(0, 0.1f, 0.2f);
+
+		m->params[TransitPadModule<>::SET_PARAM + 3].setValue(1.f);
+		h.dspSteps(100);
+
+		// changeSet() still applies the incoming set's stored layout in Store
+		// mode (only the *capture* path is manual-only), so switching to set 3
+		// loads its stored geometry.
+		REQUIRE(m->currentSet == 3);
+		REQUIRE(m->nodes.getXFinal(0) == 0.9f);
+		REQUIRE(m->nodes.getYFinal(0) == 0.1f);
+	}
+
+	SECTION("Auto mode: switching away from a set captures its current layout") {
+		m->nodePosMode = NODEPOSMODE::AUTO;
+		m->nodes.setXyImmediate(0, 0.33f, 0.44f);
+
+		m->params[TransitPadModule<>::SET_PARAM + 5].setValue(1.f);
+		h.dspSteps(100);
+
+		REQUIRE(m->currentSet == 5);
+		// Set 0 (the outgoing set) captured the layout that was live just before switching.
+		REQUIRE(m->snapshots[0][0].x == 0.33f);
+		REQUIRE(m->snapshots[0][0].y == 0.44f);
+	}
+
+	SECTION("Auto mode: switching back restores the earlier set's captured layout") {
+		m->nodePosMode = NODEPOSMODE::AUTO;
+		m->nodes.setXyImmediate(0, 0.11f, 0.22f);
+
+		m->params[TransitPadModule<>::SET_PARAM + 5].setValue(1.f);
+		h.dspSteps(100);
+		m->nodes.setXyImmediate(0, 0.77f, 0.88f);
+
+		m->params[TransitPadModule<>::SET_PARAM + 5].setValue(0.f);
+		m->params[TransitPadModule<>::SET_PARAM + 0].setValue(1.f);
+		h.dspSteps(100);
+
+		REQUIRE(m->currentSet == 0);
+		REQUIRE(m->nodes.getXFinal(0) == 0.11f);
+		REQUIRE(m->nodes.getYFinal(0) == 0.22f);
+	}
+
+	SECTION("clearNodePositions() resets every set's stored layout to defaults") {
+		m->snapshots[4][0].x = 0.9f;
+		m->snapshots[4][0].y = 0.9f;
+		m->snapshots[4][0].radius = 0.9f;
+		m->snapshots[4][0].amount = 0.9f;
+
+		m->clearNodePositions();
+
+		REQUIRE(m->snapshots[4][0].x == m->getNodePqX(0)->getDefaultValue());
+		REQUIRE(m->snapshots[4][0].y == m->getNodePqY(0)->getDefaultValue());
+		REQUIRE(m->snapshots[4][0].radius == m->getNodeRadiusDefault(0));
+		REQUIRE(m->snapshots[4][0].amount == m->Sc::getNodeAmountDefault(0));
+	}
+
+	SECTION("storeNodePositions()/loadNodePositions() also capture and apply the Mix cursor") {
+		m->setCursorXyImmediate(0, 0.2f, 0.8f);
+		m->storeNodePositions(2);
+
+		REQUIRE(m->mixX[2] == 0.2f);
+		REQUIRE(m->mixY[2] == 0.8f);
+
+		m->setCursorXyImmediate(0, 0.5f, 0.5f);
+		m->loadNodePositions(2);
+
+		REQUIRE(m->getCursorXFinal(0) == 0.2f);
+		REQUIRE(m->getCursorYFinal(0) == 0.8f);
+	}
+
+	SECTION("clearNodePositions() also resets the Mix cursor to defaults") {
+		m->mixX[4] = 0.9f;
+		m->mixY[4] = 0.9f;
+
+		m->clearNodePositions();
+
+		REQUIRE(m->mixX[4] == m->paramQuantities[TransitPadModule<>::OUT_X_POS]->getDefaultValue());
+		REQUIRE(m->mixY[4] == m->paramQuantities[TransitPadModule<>::OUT_Y_POS]->getDefaultValue());
+	}
+
+	SECTION("Auto mode: switching sets also carries the Mix cursor along") {
+		m->nodePosMode = NODEPOSMODE::AUTO;
+		m->setCursorXyImmediate(0, 0.15f, 0.95f);
+
+		m->params[TransitPadModule<>::SET_PARAM + 6].setValue(1.f);
+		h.dspSteps(100);
+
+		REQUIRE(m->currentSet == 6);
+		REQUIRE(m->mixX[0] == 0.15f);
+		REQUIRE(m->mixY[0] == 0.95f);
+	}
+
+	SECTION("Store mode: re-pressing the active set's button reloads its stored layout") {
+		m->nodePosMode = NODEPOSMODE::STORE;
+		m->snapshots[0][0].x = 0.6f;
+		m->snapshots[0][0].y = 0.7f;
+
+		// Move the pad away from set 0's stored layout without switching sets.
+		m->nodes.setXyImmediate(0, 0.05f, 0.05f);
+		REQUIRE(m->currentSet == 0);
+
+		m->params[TransitPadModule<>::SET_PARAM + 0].setValue(1.f);
+		h.dspSteps(100);
+		m->params[TransitPadModule<>::SET_PARAM + 0].setValue(0.f);
+		h.dspSteps(100);
+
+		REQUIRE(m->currentSet == 0);
+		REQUIRE(m->nodes.getXFinal(0) == 0.6f);
+		REQUIRE(m->nodes.getYFinal(0) == 0.7f);
+	}
+
+	SECTION("Auto mode: re-pressing the active set's button reloads without capturing the unsaved edit") {
+		m->nodePosMode = NODEPOSMODE::AUTO;
+		m->snapshots[0][0].x = 0.6f;
+		m->snapshots[0][0].y = 0.7f;
+
+		m->nodes.setXyImmediate(0, 0.05f, 0.05f);
+
+		m->params[TransitPadModule<>::SET_PARAM + 0].setValue(1.f);
+		h.dspSteps(100);
+
+		REQUIRE(m->currentSet == 0);
+		// The unsaved 0.05/0.05 edit must be discarded, not captured over
+		// set 0's stored layout by an unwanted self-store.
+		REQUIRE(m->nodes.getXFinal(0) == 0.6f);
+		REQUIRE(m->nodes.getYFinal(0) == 0.7f);
+		REQUIRE(m->snapshots[0][0].x == 0.6f);
+		REQUIRE(m->snapshots[0][0].y == 0.7f);
+	}
+
+	SECTION("VOLT CV mode does not repeatedly reload the same set while steady") {
+		m->nodePosMode = NODEPOSMODE::STORE;
+		m->setCvMode = SETCVMODE::VOLT;
+		m->inputs[TransitPadModule<>::SET_CV_INPUT].channels = 1;
+		m->snapshots[0][0].x = 0.6f;
+		m->snapshots[0][0].y = 0.7f;
+
+		m->inputs[TransitPadModule<>::SET_CV_INPUT].setVoltage(0.f);
+		h.dspStep();
+		REQUIRE(m->currentSet == 0);
+
+		// A live pad edit while CV holds steady at the same set's voltage must
+		// survive: changeSet() is only meant to reload on an actual transition.
+		m->nodes.setXyImmediate(0, 0.05f, 0.05f);
+		h.dspSteps(50);
+
+		REQUIRE(m->currentSet == 0);
+		REQUIRE(m->nodes.getXFinal(0) == 0.05f);
+		REQUIRE(m->nodes.getYFinal(0) == 0.05f);
 	}
 }
 

@@ -203,6 +203,8 @@ struct TransitPadInterface {
 		float weight;
 		/** [Stored to JSON] */
 		int id;
+		/** [Stored to JSON] per-set pad-point geometry; used only when node-position mode is on. */
+		float x = 0.f, y = 0.f, radius = 1.f, amount = 1.f;
 	};
 
 	virtual const std::vector<TransitPadSource>& getPadFactors() = 0;

@@ -190,7 +190,7 @@ The mix point's value is smoothed internally to avoid clicks when the source jum
 
 #### Snapshot-sets
 
-TRANSIT-PAD provides 8 snapshot-sets, each holding its own assignment of the 8 pad points to TRANSIT's snapshot slots. This way you can keep several mappings (e.g. _Drums_, _Bass_, _Pad_) side by side and switch between them at any time. The positions, radius and amount of the pad points are shared by all sets: switching a set re-assigns which snapshots the points refer to, it does not move them.
+TRANSIT-PAD provides 8 snapshot-sets, each holding its own assignment of the 8 pad points to TRANSIT's snapshot slots. This way you can keep several mappings (e.g. _Drums_, _Bass_, _Pad_) side by side and switch between them at any time. By default the positions, radius and amount of the pad points (and the position of the _Mix_ point) are shared by all sets: switching a set re-assigns which snapshots the points refer to, it does not move them. The _Snapshot-set node positions_ context-menu option (see [Context menu](#context-menu)) can be enabled to have each set remember its own pad-point layout, including the _Mix_ point, as well.
 
 The 8 buttons below the pad select the active set. The button of the active set lights up in the set's own color; the others stay dimmed. Every set is assigned a fixed default color (cycling through green, magenta, blue, yellow, cyan, white, red, grey) and all snapshot points of the current set are rendered in that color. The color of a single set can be changed via the context menu of the set-button or via the context menu of any snapshot point on the pad (sub-menu _Color_ under _Current set_).
 
@@ -262,11 +262,25 @@ The mode is toggled with the **Space** key (no modifier). Press Space while hove
 Right-clicking on the empty area of the XY-display opens the following menu:
 
 - **Initialize** — reset the entire module to factory defaults. All snapshot-set positions, motion-sequences, colors and bindings are cleared.
+
 - **Randomize x-pos & y-pos** / **Randomize x-pos** / **Randomize y-pos** — randomly distribute the active snapshot points on the pad. Useful as a starting point for generative patches.
+
 - **Randomize amount** — randomize the _Amount_ slider of each snapshot point.
+
 - **Randomize radius** — randomize the _Radius_ slider of each snapshot point.
+
 - **Number of snapshots** — select 1..8 active snapshot points.
+
 - **Snapshot-set CV mode** — select _Off_, _Trigger forward_, _0..10V_ or _C4_ for the snapshot-set CV input.
+
+- **Snapshot-set node positions** — select whether snapshot-sets also remember their own pad-point layout (position, radius, amount, and the _Mix_ point's position), on top of the snapshot bindings they always store. In both _Store_ and _Auto_ mode, clicking the already-active set's button reloads its stored layout, discarding any unsaved changes made to the pad since. If the _Mix_ point is currently driven by CV, a motion-sequence or a parameter mapping, the stored position is loaded but immediately overridden again by that source on the next audio block, matching how the _Mix_ point already behaves outside of this feature:
+
+  - **Off** (default) — layout is shared by all sets, matching the behaviour described in [Snapshot-sets](#snapshot-sets). Switching to _Off_ clears any layout previously stored per set.
+
+  - **Store (manual)** — each set can be given its own layout by right-clicking its set-button below the pad and choosing _Store positions_, which captures the pad's current layout into that set. Switching sets loads the stored layout but never captures one automatically.
+
+  - **Auto (on set change)** — like _Store_, but switching away from a set automatically captures its current layout first, so dragging pad points while a set is active is enough to keep that set's stored layout up to date. The _Store positions_ item on the set-button is disabled in this mode, since capturing already happens automatically.
+
 - **Lock pad** — toggle a lock that prevents accidental edits: while locked, snapshot points and the _Mix_ point cannot be dragged to a new position, and snapshot buttons dragged from TRANSIT (or a +T expander) onto the pad no longer rebind. Dropping is still allowed to highlight a target (so the user can see where a drop would have landed), but the binding is rejected. The right-click _Bind snapshot_ and _Unbind snapshot_ entries on snapshot points are also disabled.
 
 

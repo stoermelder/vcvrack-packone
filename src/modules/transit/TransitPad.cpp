@@ -26,6 +26,12 @@ enum class SETCVMODE {
 	C4 = 2
 };
 
+enum class NODEPOSMODE {
+	OFF = 0,
+	STORE = 1,
+	AUTO = 2
+};
+
 template <uint8_t SNAPSHOTS = 8, uint8_t SETS = 8>
 struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>, XyScreenCursor, XySeqModule<1> {
 	struct TransitPadSetParamQuantity : SwitchQuantity {
@@ -102,7 +108,12 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	 */
 	std::atomic<SETCVMODE> setCvMode{SETCVMODE::TRIG_FWD};
 	dsp::SchmittTrigger setCvTrigger;
+	/** [Stored to JSON] written from the UI thread (context menu, dataFromJson),
+	 *  read from the engine thread (process(), on set change) and the UI thread. */
+	std::atomic<NODEPOSMODE> nodePosMode{NODEPOSMODE::OFF};
 	std::vector<TransitPadSource> snapshots[SETS];
+	/** [Stored to JSON] per-set Mix-cursor position; used only when nodePosMode != OFF. */
+	float mixX[SETS], mixY[SETS];
 	NVGcolor setColor[SETS];
 	/** [Stored to JSON] per-set custom label; empty string means "use default" */
 	std::string setLabel[SETS];
@@ -112,6 +123,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 	ClockDividerEx buttonDivider;
 	ClockDividerEx lightDivider;
+	// Rising-edge detection per set-button, so a re-press of the already-active
+	// set is still detected (unlike a currentSet != s comparison).
+	dsp::BooleanTrigger setButtonTrigger[SETS];
 
 	// Index of the pad point the user is currently hovering over, or -1.
 	// Set by TransitPadSnapshotDragWidget::onEnter / onLeave.
@@ -121,6 +135,12 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	TransitPadModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+
+		// Seed LOW, not the trigger's default UNINITIALIZED, since SET_PARAM
+		// always starts at 0.f (see configSwitch below).
+		for (uint8_t s = 0; s < SETS; s++) {
+			setButtonTrigger[s].s = dsp::BooleanTrigger::LOW;
+		}
 
 		for (uint8_t s = 0; s < SETS; s++) {
 			TransitPadSetParamQuantity* q = configSwitch<TransitPadSetParamQuantity>(SET_PARAM + s, 0.0f, 1.0f, 0.0f, string::f("Snapshot-set #%i", s + 1));
@@ -205,6 +225,63 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		return snapshots[currentSet];
 	}
 
+	// Capture the live pad-point geometry and Mix cursor into set s.
+	void storeNodePositions(uint8_t s) {
+		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+			snapshots[s][i].x = Sc::nodes.getXFinal(i);
+			snapshots[s][i].y = Sc::nodes.getYFinal(i);
+			snapshots[s][i].radius = Sc::nodes.getRadius(i);
+			snapshots[s][i].amount = Sc::nodes.getAmount(i);
+		}
+		mixX[s] = getCursorXFinal(0);
+		mixY[s] = getCursorYFinal(0);
+	}
+
+	// Apply set s's stored layout to the live pad points and Mix cursor. If
+	// the Mix cursor is actively CV/param-handle/sequence-driven, process()
+	// overrides this write again on the next tick, same as any other source.
+	void loadNodePositions(uint8_t s) {
+		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+			Sc::nodes.setXyImmediate(i, snapshots[s][i].x, snapshots[s][i].y);
+			Sc::nodes.setRadiusImmediate(i, snapshots[s][i].radius);
+			Sc::nodes.setAmountImmediate(i, snapshots[s][i].amount);
+		}
+		setCursorXyImmediate(0, mixX[s], mixY[s]);
+	}
+
+	// Reset every set's stored layout to defaults, so switching mode to Off
+	// doesn't leave stale geometry a later Store/Auto could resurrect.
+	void clearNodePositions() {
+		for (uint8_t s = 0; s < SETS; s++) {
+			for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+				snapshots[s][i].x = getNodePqX(i)->getDefaultValue();
+				snapshots[s][i].y = getNodePqY(i)->getDefaultValue();
+				snapshots[s][i].radius = getNodeRadiusDefault(i);
+				snapshots[s][i].amount = Sc::getNodeAmountDefault(i);
+			}
+			mixX[s] = paramQuantities[OUT_X_POS]->getDefaultValue();
+			mixY[s] = paramQuantities[OUT_Y_POS]->getDefaultValue();
+		}
+	}
+
+	// Switches the active set. A no-op when newSet == currentSet — the
+	// VOLT/C4 CV paths call this every tick and rely on that to avoid
+	// reloading on every sample. Use reloadCurrentSet() to force a reload
+	// of the set that's already active.
+	void changeSet(int newSet) {
+		if (newSet == currentSet) return;
+		NODEPOSMODE m = nodePosMode.load(std::memory_order_relaxed);
+		if (m == NODEPOSMODE::AUTO) storeNodePositions(currentSet);
+		currentSet = newSet;
+		if (m != NODEPOSMODE::OFF) loadNodePositions(currentSet);
+	}
+
+	// Reloads the current set's stored layout without changing currentSet or
+	// capturing first, so unsaved pad edits are discarded on a re-press.
+	void reloadCurrentSet() {
+		if (nodePosMode.load(std::memory_order_relaxed) != NODEPOSMODE::OFF) loadNodePositions(currentSet);
+	}
+
 	void process(const ProcessArgs& args) override {
 		// Snapshot the UI-thread-written snapshotsUsed count and the set-CV-mode
 		// selector once at the top of process() so the entire audio block sees a
@@ -219,24 +296,25 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 					break;
 				case SETCVMODE::TRIG_FWD:
 					if (setCvTrigger.process(inputs[SET_CV_INPUT].getVoltage())) {
-						currentSet = (currentSet + 1) % SETS;
+						changeSet((currentSet + 1) % SETS);
 					}
 					break;
 				case SETCVMODE::VOLT: {
 					float v = clamp(inputs[SET_CV_INPUT].getVoltage(), 0.f, 10.f);
 					int s = int(v / 10.f * SETS);
-					currentSet = std::min(s, (int)SETS - 1);
+					changeSet(std::min(s, (int)SETS - 1));
 					break;
 				}
 				case SETCVMODE::C4:
-					currentSet = clamp((int)std::round(inputs[SET_CV_INPUT].getVoltage() * 12.f), 0, (int)SETS - 1);
+					changeSet(clamp((int)std::round(inputs[SET_CV_INPUT].getVoltage() * 12.f), 0, (int)SETS - 1));
 					break;
 			}
 		}
 		if (buttonDivider.process()) {
 			for (uint8_t s = 0; s < SETS; s++) {
-				if (params[SET_PARAM + s].getValue() > 0.5f && currentSet != s) {
-					currentSet = s;
+				if (setButtonTrigger[s].process(params[SET_PARAM + s].getValue() > 0.5f)) {
+					if (s == currentSet) reloadCurrentSet();
+					else changeSet(s);
 					break;
 				}
 			}
@@ -354,7 +432,14 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 				dist[i] = std::numeric_limits<float>::infinity();
 				snapshots[s][i].id = i < 4 ? i : -1;
 				snapshots[s][i].weight = 0.f;
+				// Sc::nodes isn't reset yet here, so seed from the defaults directly.
+				snapshots[s][i].x = getNodePqX(i)->getDefaultValue();
+				snapshots[s][i].y = getNodePqY(i)->getDefaultValue();
+				snapshots[s][i].radius = getNodeRadiusDefault(i);
+				snapshots[s][i].amount = Sc::getNodeAmountDefault(i);
 			}
+			mixX[s] = paramQuantities[OUT_X_POS]->getDefaultValue();
+			mixY[s] = paramQuantities[OUT_Y_POS]->getDefaultValue();
 			setColor[s] = colors[s % colors.size()].first;
 			setLabel[s] = "";
 		}
@@ -466,9 +551,20 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "snapshotsUsed", json_integer(snapshotsUsed));
 		json_object_set_new(rootJ, "setCvMode", json_integer((int)setCvMode.load(std::memory_order_relaxed)));
+		json_object_set_new(rootJ, "nodePosMode", json_integer((int)nodePosMode.load(std::memory_order_relaxed)));
 		json_object_set_new(rootJ, "currentSet", json_integer(currentSet));
 		json_object_set_new(rootJ, "locked", json_boolean(locked));
 
+		// Live pad-point layout, independent of any set.
+		json_t* nodesJ = json_array();
+		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+			json_t* nodeJ = json_object();
+			Sc::nodes.dataToJson(nodeJ, i);
+			json_array_append_new(nodesJ, nodeJ);
+		}
+		json_object_set_new(rootJ, "nodes", nodesJ);
+
+		bool storeNodePos = nodePosMode.load(std::memory_order_relaxed) != NODEPOSMODE::OFF;
 		json_t* setsJ = json_array();
 		for (uint8_t s = 0; s < SETS; s++) {
 			json_t* setJ = json_object();
@@ -476,10 +572,19 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			for (uint8_t i = 0; i < SNAPSHOTS; i++) {
 				json_t* snapshotJ = json_object();
 				json_object_set_new(snapshotJ, "id", json_integer(snapshots[s][i].id));
-				Sc::nodes.dataToJson(snapshotJ, i);
+				if (storeNodePos) {
+					json_object_set_new(snapshotJ, "x", json_real(snapshots[s][i].x));
+					json_object_set_new(snapshotJ, "y", json_real(snapshots[s][i].y));
+					json_object_set_new(snapshotJ, "radius", json_real(snapshots[s][i].radius));
+					json_object_set_new(snapshotJ, "amount", json_real(snapshots[s][i].amount));
+				}
 				json_array_append_new(snapshotsJ, snapshotJ);
 			}
 			json_object_set_new(setJ, "snapshots", snapshotsJ);
+			if (storeNodePos) {
+				json_object_set_new(setJ, "mixX", json_real(mixX[s]));
+				json_object_set_new(setJ, "mixY", json_real(mixY[s]));
+			}
 			json_object_set_new(setJ, "color", json_string(color::toHexString(setColor[s]).c_str()));
 			if (!setLabel[s].empty()) {
 				json_object_set_new(setJ, "label", json_string(setLabel[s].c_str()));
@@ -501,6 +606,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		json_t* setCvModeJ = json_object_get(rootJ, "setCvMode");
 		if (setCvModeJ) setCvMode.store((SETCVMODE)json_integer_value(setCvModeJ), std::memory_order_relaxed);
 
+		json_t* nodePosModeJ = json_object_get(rootJ, "nodePosMode");
+		if (nodePosModeJ) nodePosMode.store((NODEPOSMODE)json_integer_value(nodePosModeJ), std::memory_order_relaxed);
+
 		json_t* currentSetJ = json_object_get(rootJ, "currentSet");
 		if (currentSetJ) currentSet = std::max(0, std::min((int)json_integer_value(currentSetJ), (int)SETS - 1));
 
@@ -509,6 +617,12 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 		int su = json_integer_value(json_object_get(rootJ, "snapshotsUsed"));
 		snapshotsUsed = std::max(1, std::min(su, (int)SNAPSHOTS));
+
+		json_t* nodesJ = json_object_get(rootJ, "nodes");
+		size_t maxNodes = std::min((size_t)SNAPSHOTS, json_array_size(nodesJ));
+		for (size_t i = 0; i < maxNodes; ++i) {
+			Sc::nodes.dataFromJson(json_array_get(nodesJ, i), i);
+		}
 
 		json_t* setsJ = json_object_get(rootJ, "sets");
 		size_t maxs = std::min((size_t)SETS, json_array_size(setsJ));
@@ -521,9 +635,21 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 				for (size_t i = 0; i < maxn; ++i) {
 					json_t* snapshotJ = json_array_get(snapshotsJ, i);
 					snapshots[s][i].id = json_integer_value(json_object_get(snapshotJ, "id"));
-					Sc::nodes.dataFromJson(snapshotJ, i);
+					// Absent when node-position mode is off; keep the seeded defaults.
+					json_t* xJ = json_object_get(snapshotJ, "x");
+					if (xJ) snapshots[s][i].x = json_real_value(xJ);
+					json_t* yJ = json_object_get(snapshotJ, "y");
+					if (yJ) snapshots[s][i].y = json_real_value(yJ);
+					json_t* radiusJ = json_object_get(snapshotJ, "radius");
+					if (radiusJ) snapshots[s][i].radius = json_real_value(radiusJ);
+					json_t* amountJ = json_object_get(snapshotJ, "amount");
+					if (amountJ) snapshots[s][i].amount = json_real_value(amountJ);
 				}
 			}
+			json_t* mixXJ = json_object_get(setJ, "mixX");
+			if (mixXJ) mixX[s] = json_real_value(mixXJ);
+			json_t* mixYJ = json_object_get(setJ, "mixY");
+			if (mixYJ) mixY[s] = json_real_value(mixYJ);
 			json_t* colorJ = json_object_get(setJ, "color");
 			if (const char* color = json_string_value(colorJ)) setColor[s] = color::fromHexString(color);
 			json_t* labelJ = json_object_get(setJ, "label");
@@ -753,6 +879,19 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 				menu->addChild(createAtomicValuePtrMenuItem("C4", &this->module->setCvMode, SETCVMODE::C4));
 			}
 		));
+		menu->addChild(createSubmenuItem("Snapshot-set node positions", "",
+			[=](Menu* menu) {
+				MODULE* m = this->module;
+				bool isOff = m->nodePosMode.load(std::memory_order_relaxed) == NODEPOSMODE::OFF;
+				menu->addChild(createMenuItem("Off", CHECKMARK(isOff), [=]() {
+					m->nodePosMode.store(NODEPOSMODE::OFF, std::memory_order_relaxed);
+					m->clearNodePositions();
+				}));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(createAtomicValuePtrMenuItem("Store (manual)", &m->nodePosMode, NODEPOSMODE::STORE));
+				menu->addChild(createAtomicValuePtrMenuItem("Auto (on set change)", &m->nodePosMode, NODEPOSMODE::AUTO));
+			}
+		));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolPtrMenuItem("Lock pad", "", &this->module->locked));
 	}
@@ -900,6 +1039,13 @@ struct TransitPadSetButton : app::Switch {
 		labelItem->module = module;
 		labelItem->setIndex = setIndex;
 		menu->addChild(labelItem);
+		NODEPOSMODE nodePosMode = module->nodePosMode.load(std::memory_order_relaxed);
+		if (nodePosMode != NODEPOSMODE::OFF) {
+			MODULE* m = module;
+			size_t s = setIndex;
+			// Disabled outside manual Store mode: Auto already captures on switch.
+			menu->addChild(createMenuItem("Store positions", "", [=]() { m->storeNodePositions(s); }, nodePosMode != NODEPOSMODE::STORE));
+		}
 		menu->addChild(new MenuSeparator());
 		for (size_t i = 0; i < module->nodeCountActive(); i++) {
 			menu->addChild(createMenuLabel(module->getItemLabel(setIndex, i)));
