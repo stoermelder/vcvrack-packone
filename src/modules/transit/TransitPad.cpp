@@ -751,10 +751,57 @@ struct TransitPadXySeqLedDisplay : XySeqLedDisplay<MODULE> {
 };
 
 
+// Square snapshot-set button, custom-drawn with nanovg so it sits flush in
+// the screen panel's bottom edge instead of a separate round button above it.
 template <typename MODULE>
-struct TransitPadSetButton : VCVButton {
+struct TransitPadSetButton : app::Switch {
 	MODULE* module;
 	size_t setIndex;
+
+	TransitPadSetButton() {
+		momentary = true;
+		box.size = Vec(22.f, 22.f);
+	}
+
+	// Everything lives on layer 1 (nothing in draw()) so it paints after,
+	// and on top of, the parent row's layer-1 background — layer 0 and
+	// layer 1 are each a separate full pass, so a layer-0 fill here would
+	// end up hidden under the row's background instead of drawn over it.
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer == 1) {
+			bool lit = module && module->lights[MODULE::SET_LIGHT + setIndex].getBrightness() > 0.5f;
+			NVGcolor col = module ? module->setColor[setIndex] : color::WHITE;
+			const float rad = 3.5f;
+			const float inset = 1.5f;
+
+			// Recessed socket behind the cap.
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, rad + 1.f);
+			nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.35f));
+			nvgFill(args.vg);
+
+			// Cap: top-to-bottom gradient for a convex highlight.
+			float x = inset, y = inset, w = box.size.x - 2.f * inset, h = box.size.y - 2.f * inset;
+			NVGcolor capTop = lit ? color::mult(col, 1.15f) : color::mult(col, 0.28f);
+			NVGcolor capBottom = lit ? color::mult(col, 0.85f) : color::mult(col, 0.16f);
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, x, y, w, h, rad);
+			nvgFillPaint(args.vg, nvgLinearGradient(args.vg, x, y, x, y + h, capTop, capBottom));
+			nvgFill(args.vg);
+			nvgStrokeColor(args.vg, lit ? color::mult(color::WHITE, 0.8f) : nvgRGBAf(1.f, 1.f, 1.f, 0.18f));
+			nvgStrokeWidth(args.vg, 1.f);
+			nvgStroke(args.vg);
+
+			if (lit) {
+				nvgBeginPath(args.vg);
+				nvgRoundedRect(args.vg, x, y, w, h, rad);
+				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+				nvgFillColor(args.vg, color::mult(col, 0.45f));
+				nvgFill(args.vg);
+			}
+		}
+		Switch::drawLayer(args, layer);
+	}
 
 	struct LabelMenuItem : MenuItem {
 		MODULE* module;
@@ -830,6 +877,78 @@ struct TransitPadSetButton : VCVButton {
 		for (size_t i = 0; i < module->nodeCountActive(); i++) {
 			menu->addChild(createMenuLabel(module->getItemLabel(setIndex, i)));
 		}
+	}
+};
+
+
+// Bottom extension of the screen panel holding the 8 snapshot-set buttons.
+// Drawn in drawLayer(1), matching XyScreenWidget's own background (which
+// only ever draws on layer 1), so both panels read as one continuous tone.
+template <typename MODULE>
+struct TransitPadButtonRow : widget::Widget {
+	MODULE* module;
+
+	TransitPadButtonRow(MODULE* module) {
+		this->module = module;
+	}
+
+	// One grid cell per button, matching XyScreenWidget's 8-column grid above.
+	void createButtons() {
+		uint8_t count = module ? MODULE::getSetCount() : 8;
+		float cell = box.size.x / count;
+		float y = box.size.y / 2.f;
+
+		for (uint8_t s = 0; s < count; s++) {
+			float x = cell * (s + 0.5f);
+			TransitPadSetButton<MODULE>* button = createParamCentered<TransitPadSetButton<MODULE>>(Vec(x, y), module, MODULE::SET_PARAM + s);
+			button->module = module;
+			button->setIndex = s;
+			addChild(button);
+		}
+	}
+
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer == 1) {
+			float b = std::max(0.2f, settings::rackBrightness);
+			float b_inv = 1.f + std::max(b - settings::rackBrightness, 0.f) * 8.f;
+			nvgGlobalAlpha(args.vg, b);
+
+			// Same 3px bleed as XyScreenWidget's background, so both reach
+			// the same panel edges left/right.
+			math::Rect r = box.zeroPos().grow(Vec(3.f, 3.f));
+			NVGcolor bottomColor = color::mult(nvgRGB(0x12, 0x12, 0x12), b_inv);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, RECT_ARGS(r));
+			nvgFillColor(args.vg, bottomColor);
+			nvgFill(args.vg);
+
+			// Faint separator, matching XyScreenWidget's inner highlight stroke.
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, r.pos.x, r.pos.y + 2.5);
+			nvgLineTo(args.vg, r.size.x + r.pos.x, r.pos.y + 2.5);
+			nvgStrokeColor(args.vg, nvgRGBAf(1, 1, 1, 0.20));
+			nvgStrokeWidth(args.vg, 1.0);
+			nvgStroke(args.vg);
+
+			// Bottom bevel highlight, matching XyScreenWidget's own.
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, r.pos.x, r.size.y + 2 * r.pos.y + 0.5);
+			nvgLineTo(args.vg, r.size.x + r.pos.x, r.size.y + 2 * r.pos.y + 0.5);
+			nvgStrokeColor(args.vg, nvgRGBAf(1, 1, 1, 0.25));
+			nvgStrokeWidth(args.vg, 1.0);
+			nvgStroke(args.vg);
+
+			// Black border, matching XyScreenWidget's own.
+			math::Rect rBorder = r.shrink(math::Vec(1, 1));
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, RECT_ARGS(rBorder));
+			nvgStrokeColor(args.vg, bottomColor);
+			nvgStrokeWidth(args.vg, 2.0);
+			nvgStroke(args.vg);
+
+			nvgGlobalAlpha(args.vg, 1.f);
+		}
+		Widget::drawLayer(args, layer);
 	}
 };
 
@@ -988,14 +1107,6 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 	TransitPadWidget(MODULE* module) : ThemedModuleWidget<MODULE>(module, "TransitPad") {
 		setModule(module);
 
-		for (size_t s = 0; s < MODULE::getSetCount(); s++) {
-			TransitPadSetButton<MODULE>* button = createParamCentered<TransitPadSetButton<MODULE>>(Vec(17.6f + s * 27.1f, 46.4f), module, MODULE::SET_PARAM + s);
-			button->module = module;
-			button->setIndex = s;
-			addChild(button);
-			addChild(createLightCentered<MediumSimpleLight<WhiteLight>>(Vec(17.6f + s * 27.1f, 46.4f), module, MODULE::SET_LIGHT + s));
-		}
-
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -1010,8 +1121,11 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(77.6f, 309.8f), module, MODULE::OUT_X_POS));
 		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(147.4f, 309.8f), module, MODULE::OUT_Y_POS));
 
+		// +3 below the intended gap: XyScreenWidget's background bleeds 3px
+		// past its own box, so box.pos.y must compensate or it lands flush
+		// against the header.
 		TransitPadXyScreenWidget<MODULE>* screenWidget = new TransitPadXyScreenWidget<MODULE>(module, MODULE::SNAPSHOT_X_POS, MODULE::SNAPSHOT_Y_POS, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
-		screenWidget->box.pos = Vec(3.f, 63.3f + 3.f);
+		screenWidget->box.pos = Vec(3.f, 39.4f);
 		screenWidget->box.size = Vec(225.f - 6.f, 225.f - 6.f);
 		addChild(screenWidget);
 
@@ -1019,6 +1133,13 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		seqEditWidget->box.pos = screenWidget->box.pos;
 		seqEditWidget->box.size = screenWidget->box.size;
 		addChild(seqEditWidget);
+
+		// +3: lines up with the bottom bevel XyScreenWidget draws 3px below its box.
+		TransitPadButtonRow<MODULE>* buttonRow = new TransitPadButtonRow<MODULE>(module);
+		buttonRow->box.pos = Vec(screenWidget->box.pos.x, screenWidget->box.pos.y + screenWidget->box.size.y + 3.f);
+		buttonRow->box.size = Vec(screenWidget->box.size.x, 32.f);
+		buttonRow->createButtons();
+		addChild(buttonRow);
 
 		TransitPadXySeqLedDisplay<MODULE>* seqDisplay1 = createWidget<TransitPadXySeqLedDisplay<MODULE>>(Vec(41.5f, 329.8f));
 		seqDisplay1->box.size = Vec(20.4f, 13.2f);
