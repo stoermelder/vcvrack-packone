@@ -261,11 +261,11 @@ TEST_CASE("Snapshot-set node positions", "[TransitPad]") {
 	}
 
 	SECTION("storeNodePositions() captures the live layout into a set") {
+		// Only the *Immediate setters, i.e. exactly what a UI drag does. The
+		// store must read the same UI-side fields that loadNodePositions writes.
 		m->nodes.setXyImmediate(0, 0.3f, 0.4f);
 		m->nodes.setRadiusImmediate(0, 0.6f);
-		m->nodes.setRadius(0, 0.6f);
 		m->nodes.setAmountImmediate(0, 0.7f);
-		m->nodes.setAmount(0, 0.7f);
 
 		m->storeNodePositions(2);
 
@@ -275,6 +275,48 @@ TEST_CASE("Snapshot-set node positions", "[TransitPad]") {
 		REQUIRE(m->snapshots[2][0].amount == 0.7f);
 		// Untouched sets are unaffected.
 		REQUIRE(m->snapshots[0][0].x != 0.3f);
+	}
+
+	// Regression: storeNodePositions() used getRadius()/getAmount(), which read
+	// the radius[]/amount[] arrays that only process() populates — and only for
+	// i < snapshotsUsed. So a capture before the first tick, or of any node above
+	// the active count, stored uninitialized memory, and loading that set wrote
+	// the garbage straight back into the live pad geometry.
+	SECTION("Capturing before the first process() tick stores the real values") {
+		m->nodes.setRadiusImmediate(0, 0.25f);
+		m->nodes.setAmountImmediate(0, 0.75f);
+		// Deliberately no dspStep() here.
+		m->storeNodePositions(0);
+
+		REQUIRE(m->snapshots[0][0].radius == 0.25f);
+		REQUIRE(m->snapshots[0][0].amount == 0.75f);
+	}
+
+	SECTION("Capturing a node above snapshotsUsed stores the real values") {
+		// process() refreshes radius[]/amount[] only for j < snapshotsUsed, so
+		// node 6 is never refreshed no matter how long the module runs.
+		m->snapshotsUsed = 4;
+		m->nodes.setRadiusImmediate(6, 0.5f);
+		m->nodes.setAmountImmediate(6, 0.6f);
+		h.dspSteps(50);
+
+		m->storeNodePositions(0);
+
+		REQUIRE(m->snapshots[0][6].radius == 0.5f);
+		REQUIRE(m->snapshots[0][6].amount == 0.6f);
+	}
+
+	SECTION("Auto mode's first set change does not corrupt the pad geometry") {
+		// The worst case of the same bug: enabling Auto and switching sets before
+		// any tick captured garbage into the outgoing set, and switching back
+		// applied it, leaving radius/amount permanently wrong.
+		m->nodePosMode = NODEPOSMODE::AUTO;
+		m->changeSet(1);
+		m->changeSet(0);
+		h.dspSteps(20);
+
+		REQUIRE(m->nodes.getRadiusRaw(0, 1.f) == Catch::Approx(1.f));
+		REQUIRE(m->nodes.getAmountFiltered(0, 1.f) == Catch::Approx(1.f));
 	}
 
 	SECTION("loadNodePositions() applies a set's stored layout to the live pad") {
@@ -666,6 +708,47 @@ TEST_CASE("JSON round-trip preserves snapshotsUsed", "[TransitPad]") {
 // "Number of snapshots" submenu only offers 1..8, leaving no way back. Reachable
 // from a hand-edited or corrupted patch, and from any future build whose
 // SNAPSHOTS differs.
+// An out-of-range nodePosMode must not be stored verbatim: changeSet() tests
+// `!= OFF` and `== AUTO`, so an unknown value silently behaves as Store while
+// none of the three context-menu entries shows a checkmark — leaving the user
+// unable to see or change the active mode. Matches the isValidInMode() pattern
+// INTERMIX uses for the same class of problem.
+TEST_CASE("Corrupted nodePosMode falls back to Off on load", "[TransitPad][JSON]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	auto loadWith = [&](json_int_t value) {
+		json_t* j = m->dataToJson();
+		json_object_set_new(j, "nodePosMode", json_integer(value));
+		m->dataFromJson(j);
+		json_decref(j);
+	};
+
+	SECTION("An unknown positive value falls back to Off") {
+		m->nodePosMode = NODEPOSMODE::AUTO;
+		loadWith(9999);
+		REQUIRE(m->nodePosMode == NODEPOSMODE::OFF);
+	}
+
+	SECTION("A negative value falls back to Off") {
+		m->nodePosMode = NODEPOSMODE::AUTO;
+		loadWith(-3);
+		REQUIRE(m->nodePosMode == NODEPOSMODE::OFF);
+	}
+
+	SECTION("The three legal values survive the round trip") {
+		for (NODEPOSMODE mode : {NODEPOSMODE::OFF, NODEPOSMODE::STORE, NODEPOSMODE::AUTO}) {
+			m->nodePosMode = mode;
+			json_t* j = m->dataToJson();
+			m->nodePosMode = NODEPOSMODE::AUTO;
+			m->dataFromJson(j);
+			json_decref(j);
+			REQUIRE(m->nodePosMode == mode);
+		}
+	}
+}
+
+
 TEST_CASE("Corrupted snapshotsUsed is clamped into the usable range on load", "[TransitPad][JSON]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");

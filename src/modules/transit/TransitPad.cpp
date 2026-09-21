@@ -32,6 +32,16 @@ enum class NODEPOSMODE {
 	AUTO = 2
 };
 
+/** True for every NODEPOSMODE value a valid preset can contain. An unknown
+ * value must not be stored: changeSet() tests `!= OFF` and `== AUTO`, so it
+ * would silently behave as Store while no context-menu entry shows a
+ * checkmark, leaving the user no way to see or change the active mode. */
+inline bool isValidNodePosMode(int mode) {
+	return mode == (int)NODEPOSMODE::OFF
+		|| mode == (int)NODEPOSMODE::STORE
+		|| mode == (int)NODEPOSMODE::AUTO;
+}
+
 template <uint8_t SNAPSHOTS = 8, uint8_t SETS = 8>
 struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>, XyScreenCursor, XySeqModule<1> {
 	struct TransitPadSetParamQuantity : SwitchQuantity {
@@ -195,6 +205,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		init();
 		snapshotsUsed = 4;
 		currentSet = 0;
+		nodePosMode.store(NODEPOSMODE::OFF, std::memory_order_relaxed);
 		locked = false;
 
 		for (uint8_t s = 0; s < SETS; s++) {
@@ -230,8 +241,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
 			snapshots[s][i].x = Sc::nodes.getXFinal(i);
 			snapshots[s][i].y = Sc::nodes.getYFinal(i);
-			snapshots[s][i].radius = Sc::nodes.getRadius(i);
-			snapshots[s][i].amount = Sc::nodes.getAmount(i);
+			snapshots[s][i].radius = Sc::nodes.getRadiusRaw(i, 0.f);
+			snapshots[s][i].amount = Sc::nodes.getAmountFiltered(i, 0.f);
 		}
 		mixX[s] = getCursorXFinal(0);
 		mixY[s] = getCursorYFinal(0);
@@ -605,7 +616,10 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		if (setCvModeJ) setCvMode.store((SETCVMODE)json_integer_value(setCvModeJ), std::memory_order_relaxed);
 
 		json_t* nodePosModeJ = json_object_get(rootJ, "nodePosMode");
-		if (nodePosModeJ) nodePosMode.store((NODEPOSMODE)json_integer_value(nodePosModeJ), std::memory_order_relaxed);
+		if (nodePosModeJ) {
+			int m = json_integer_value(nodePosModeJ);
+			nodePosMode.store(isValidNodePosMode(m) ? (NODEPOSMODE)m : NODEPOSMODE::OFF, std::memory_order_relaxed);
+		}
 
 		json_t* currentSetJ = json_object_get(rootJ, "currentSet");
 		if (currentSetJ) currentSet = std::max(0, std::min((int)json_integer_value(currentSetJ), (int)SETS - 1));
