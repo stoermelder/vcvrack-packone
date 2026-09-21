@@ -928,7 +928,6 @@ struct TransitPadSetButton : app::Switch {
 
 	TransitPadSetButton() {
 		momentary = true;
-		box.size = Vec(22.f, 22.f);
 	}
 
 	// Everything lives on layer 1 so it paints on top of the parent row's
@@ -938,40 +937,47 @@ struct TransitPadSetButton : app::Switch {
 		if (layer == 1) {
 			bool lit = module && module->lights[MODULE::SET_LIGHT + setIndex].getBrightness() > 0.5f;
 			NVGcolor col = module ? module->setColor[setIndex] : color::WHITE;
-			Vec c = box.size.div(2.f);
-			const float rad = 3.5f;
-			const float inset = 1.f;
-			float x = inset, y = inset, w = box.size.x - 2.f * inset, h = box.size.y - 2.f * inset;
+			float w = box.size.x, h = box.size.y;
 
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 
+			// Flat fill tiling with neighboring buttons into one continuous
+			// bar. Inactive sets stay very faint.
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0.f, 0.f, w, h);
+			nvgFillColor(args.vg, color::mult(col, lit ? 0.6f : 0.08f));
+			nvgFill(args.vg);
+
+			// Off-center highlight, inset so the fade-out stays inside the cell.
+			NVGcolor icol = nvgRGBAf(col.r, col.g, col.b, lit ? 0.3f : 0.06f);
+			NVGcolor ocol = nvgRGBAf(col.r, col.g, col.b, 0.0f);
+			float inset = h * 0.35f;
+			float yOffset = h * 0.15f;
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0.f, 0.f, w, h);
+			nvgFillPaint(args.vg, nvgBoxGradient(args.vg, inset, inset + yOffset, w - 2.f * inset, h - 2.f * inset, 0.f, h * 0.6f, icol, ocol));
+			nvgFill(args.vg);
+
 			if (lit) {
-				// Selection-halo-style glow, matching isSelected() on a pad node.
-				float oradius = 1.4f * (box.size.x / 2.f);
-				NVGcolor icol = color::mult(col, 0.25f);
-				NVGcolor ocol = nvgRGB(0, 0, 0);
+				// LED-style glow, matching PulseLedButton::drawHalo.
+				Vec c = Vec(w / 2.f, h / 2.f);
+				float radius = std::min(w, h) / 2.f;
+				float oradius = 2.5f * radius;
+				NVGcolor hicol = color::mult(col, 0.07f);
+				NVGcolor hocol = nvgRGB(0, 0, 0);
 				nvgBeginPath(args.vg);
-				nvgCircle(args.vg, c.x, c.y, oradius);
-				nvgFillPaint(args.vg, nvgRadialGradient(args.vg, c.x, c.y, box.size.x / 2.f, oradius, icol, ocol));
+				nvgRect(args.vg, c.x - oradius, c.y - oradius, 2.f * oradius, 2.f * oradius);
+				nvgFillPaint(args.vg, nvgRadialGradient(args.vg, c.x, c.y, radius, oradius, hicol, hocol));
 				nvgFill(args.vg);
 			}
 
-			// Border, matching a pad node's amount-circle stroke width; dimmed
-			// white while inactive so it reads as a faint outline rather than
-			// a dim copy of the set color or a harsh full-white ring.
+			// Vertical separator only; the row draws the top/bottom edges.
 			nvgBeginPath(args.vg);
-			nvgRoundedRect(args.vg, x, y, w, h, rad);
-			nvgStrokeColor(args.vg, lit ? col : nvgRGBAf(1.f, 1.f, 1.f, 0.35f));
+			nvgMoveTo(args.vg, w, 0.f);
+			nvgLineTo(args.vg, w, h);
+			nvgStrokeColor(args.vg, lit ? col : nvgRGBAf(1.f, 1.f, 1.f, 0.08f));
 			nvgStrokeWidth(args.vg, 0.8f);
 			nvgStroke(args.vg);
-
-			// Fill, inset from the border so it reads as a smaller, less
-			// prominent cap rather than filling all the way to the outline.
-			const float fillInset = 3.f;
-			nvgBeginPath(args.vg);
-			nvgRoundedRect(args.vg, x + fillInset, y + fillInset, w - 2.f * fillInset, h - 2.f * fillInset, std::max(0.f, rad - fillInset));
-			nvgFillColor(args.vg, color::mult(col, lit ? 0.5f : 0.3f));
-			nvgFill(args.vg);
 
 			nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
 
@@ -1046,14 +1052,15 @@ struct TransitPadButtonRow : widget::Widget {
 	}
 
 	// One grid cell per button, matching XyScreenWidget's 8-column grid above.
+	// Buttons are sized to tile the row edge-to-edge, so the row reads as one
+	// continuous flat bar rather than a strip of spaced-out controls.
 	void createButtons() {
 		uint8_t count = module ? MODULE::getSetCount() : 8;
 		float cell = box.size.x / count;
-		float y = box.size.y / 2.f;
 
 		for (uint8_t s = 0; s < count; s++) {
-			float x = cell * (s + 0.5f);
-			TransitPadSetButton<MODULE>* button = createParamCentered<TransitPadSetButton<MODULE>>(Vec(x, y), module, MODULE::SET_PARAM + s);
+			TransitPadSetButton<MODULE>* button = createParam<TransitPadSetButton<MODULE>>(Vec(cell * s, 0.f), module, MODULE::SET_PARAM + s);
+			button->box.size = Vec(cell, box.size.y);
 			button->module = module;
 			button->setIndex = s;
 			addChild(button);
@@ -1075,15 +1082,10 @@ struct TransitPadButtonRow : widget::Widget {
 			nvgFillColor(args.vg, bottomColor);
 			nvgFill(args.vg);
 
-			// Faint separator, matching XyScreenWidget's inner highlight stroke.
-			nvgBeginPath(args.vg);
-			nvgMoveTo(args.vg, r.pos.x, r.pos.y + 2.5);
-			nvgLineTo(args.vg, r.size.x + r.pos.x, r.pos.y + 2.5);
-			nvgStrokeColor(args.vg, nvgRGBAf(1, 1, 1, 0.20));
-			nvgStrokeWidth(args.vg, 1.0);
-			nvgStroke(args.vg);
-
-			// Bottom bevel highlight, matching XyScreenWidget's own.
+			// Bottom bevel highlight, matching XyScreenWidget's own. No top
+			// highlight here — the row sits with a visible gap below the
+			// screen rather than flush against it, so pairing both lines
+			// would read as a second sunken screen.
 			nvgBeginPath(args.vg);
 			nvgMoveTo(args.vg, r.pos.x, r.size.y + 2 * r.pos.y + 0.5);
 			nvgLineTo(args.vg, r.size.x + r.pos.x, r.size.y + 2 * r.pos.y + 0.5);
@@ -1091,7 +1093,7 @@ struct TransitPadButtonRow : widget::Widget {
 			nvgStrokeWidth(args.vg, 1.0);
 			nvgStroke(args.vg);
 
-			// Black border, matching XyScreenWidget's own.
+			// Black border.
 			math::Rect rBorder = r.shrink(math::Vec(1, 1));
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, RECT_ARGS(rBorder));
@@ -1286,10 +1288,11 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		seqEditWidget->box.size = screenWidget->box.size;
 		addChild(seqEditWidget);
 
-		// +3: lines up with the bottom bevel XyScreenWidget draws 3px below its box.
+		// +3: lines up with the bottom bevel XyScreenWidget draws 3px below its
+		// box; +4 on top of that is a visible gap between the screen and the row.
 		TransitPadButtonRow<MODULE>* buttonRow = new TransitPadButtonRow<MODULE>(module);
-		buttonRow->box.pos = Vec(screenWidget->box.pos.x, screenWidget->box.pos.y + screenWidget->box.size.y + 3.f);
-		buttonRow->box.size = Vec(screenWidget->box.size.x, 32.f);
+		buttonRow->box.pos = Vec(screenWidget->box.pos.x, screenWidget->box.pos.y + screenWidget->box.size.y + 3.f + 4.f);
+		buttonRow->box.size = Vec(screenWidget->box.size.x, 32.f * (2.f / 3.f));
 		buttonRow->createButtons();
 		addChild(buttonRow);
 
