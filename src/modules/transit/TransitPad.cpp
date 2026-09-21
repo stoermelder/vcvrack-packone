@@ -969,80 +969,49 @@ struct TransitPadSetButton : app::Switch {
 		}
 	}
 
-	struct LabelMenuItem : MenuItem {
+	struct LabelField : ui::TextField {
 		MODULE* module;
 		size_t setIndex;
+		void onSelectKey(const event::SelectKey& e) override {
+			if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+				module->setLabel[setIndex] = text;
 
-		LabelMenuItem() {
-			rightText = RIGHT_ARROW;
+				ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+				overlay->requestDelete();
+				e.consume(this);
+			}
+
+			if (!e.getTarget()) {
+				ui::TextField::onSelectKey(e);
+			}
 		}
 
-		struct LabelField : ui::TextField {
-			MODULE* module;
-			size_t setIndex;
-			void onSelectKey(const event::SelectKey& e) override {
-				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-					module->setLabel[setIndex] = text;
-
-					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-					overlay->requestDelete();
-					e.consume(this);
-				}
-
-				if (!e.getTarget()) {
-					ui::TextField::onSelectKey(e);
-				}
-			}
-
-			void step() override {
-				// Keep selected
-				APP->event->setSelectedWidget(this);
-				TextField::step();
-			}
-		};
-
-		struct ResetItem : ui::MenuItem {
-			MODULE* module;
-			size_t setIndex;
-			void onAction(const event::Action& e) override {
-				module->setLabel[setIndex] = "";
-			}
-		};
-
-		Menu* createChildMenu() override {
-			Menu* menu = new Menu;
-
-			LabelField* labelField = new LabelField;
-			labelField->placeholder = "Set label";
-			labelField->text = module->setLabel[setIndex];
-			labelField->box.size.x = 180;
-			labelField->module = module;
-			labelField->setIndex = setIndex;
-			menu->addChild(labelField);
-
-			ResetItem* resetItem = new ResetItem;
-			resetItem->text = "Reset";
-			resetItem->module = module;
-			resetItem->setIndex = setIndex;
-			menu->addChild(resetItem);
-
-			return menu;
+		void step() override {
+			// Keep selected
+			APP->event->setSelectedWidget(this);
+			TextField::step();
 		}
-	}; // struct LabelMenuItem
+	};
 
 	virtual void appendContextMenu(ui::Menu* menu) override {
 		if (!module) return;
 		menu->addChild(new MenuSeparator());
 		menu->addChild(Rack::createColorSubmenuItem("Color", &module->setColor[setIndex], colors));
-		LabelMenuItem* labelItem = new LabelMenuItem;
-		labelItem->text = "Label";
-		labelItem->module = module;
-		labelItem->setIndex = setIndex;
-		menu->addChild(labelItem);
+		MODULE* m = module;
+		size_t s = setIndex;
+		menu->addChild(createSubmenuItem("Label", "", [=](Menu* menu) {
+			LabelField* labelField = new LabelField;
+			labelField->placeholder = "Set label";
+			labelField->text = m->setLabel[s];
+			labelField->box.size.x = 180;
+			labelField->module = m;
+			labelField->setIndex = s;
+			menu->addChild(labelField);
+
+			menu->addChild(createMenuItem("Reset", "", [=]() { m->setLabel[s] = ""; }));
+		}));
 		NODEPOSMODE nodePosMode = module->nodePosMode.load(std::memory_order_relaxed);
 		if (nodePosMode != NODEPOSMODE::OFF) {
-			MODULE* m = module;
-			size_t s = setIndex;
 			// Disabled outside manual Store mode: Auto already captures on switch.
 			menu->addChild(createMenuItem("Store positions", "", [=]() { m->storeNodePositions(s); }, nodePosMode != NODEPOSMODE::STORE));
 		}
