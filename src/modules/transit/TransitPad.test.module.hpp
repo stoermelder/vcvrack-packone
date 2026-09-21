@@ -21,10 +21,7 @@ TEST_CASE("Construction and initialization", "[TransitPad]") {
 	REQUIRE(m->setCvMode == SETCVMODE::TRIG_FWD);
 
 	// The module browser builds this widget with module == nullptr to render
-	// the preview. Several earlier fixes were about crashes on that path
-	// (onHoverKey still dereferences module unguarded, see Gap 1), so the
-	// assertion worth making here is that construction/destruction survives
-	// a null module, not that createWidget did what it always does.
+	// the preview, so construction/destruction must survive a null module.
 	TransitPadWidget* mw = nullptr;
 	REQUIRE_NOTHROW(mw = Test::createWidget<TransitPadWidget>("TransitPad"));
 	REQUIRE(mw != nullptr);
@@ -1729,12 +1726,9 @@ TEST_CASE("bindSnapshot binds and unbinds pad points to Transit slots", "[Transi
 }
 
 
-// Bounds correctness (refactor plan Stage 5, §1c): setCursorXyImmediate/
-// setCursorXyFiltered previously had no bound check on the cursor path at
-// all. TransitPad has exactly one cursor (the Out point), always at id 0;
-// confirm an out-of-range id is a silent no-op rather than silently acting
-// as if it addressed Out — the exact failure the plan's example describes
-// (a stray id of 7 reaching storage where only id 0 is meaningful).
+// TransitPad has exactly one cursor (the Out point), always at id 0; confirm
+// an out-of-range id is a silent no-op rather than acting as if it addressed
+// Out, since a stray id reaching storage would otherwise corrupt it.
 
 TEST_CASE("setCursorXyImmediate with an out-of-range id is a silent no-op", "[TransitPad]") {
 	Test::Harness h;

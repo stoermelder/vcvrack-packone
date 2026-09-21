@@ -283,10 +283,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	}
 
 	void process(const ProcessArgs& args) override {
-		// Snapshot the UI-thread-written snapshotsUsed count and the set-CV-mode
-		// selector once at the top of process() so the entire audio block sees a
-		// coherent value. The loads are relaxed: we only need atomicity + a single
-		// value for this process() tick, not synchronisation with other shared state.
+		// Snapshot once so the whole block sees a coherent value; relaxed
+		// since we only need atomicity, not synchronisation.
 		const int n = snapshotsUsed.load(std::memory_order_relaxed);
 		const SETCVMODE mode = setCvMode.load(std::memory_order_relaxed);
 
@@ -919,10 +917,9 @@ struct TransitPadSetButton : app::Switch {
 		box.size = Vec(22.f, 22.f);
 	}
 
-	// Everything lives on layer 1 (nothing in draw()) so it paints after,
-	// and on top of, the parent row's layer-1 background — layer 0 and
-	// layer 1 are each a separate full pass, so a layer-0 fill here would
-	// end up hidden under the row's background instead of drawn over it.
+	// Everything lives on layer 1 so it paints on top of the parent row's
+	// layer-1 background: layer 0 and 1 are separate full passes, so a
+	// layer-0 fill here would end up hidden under it instead.
 	void drawLayer(const DrawArgs& args, int layer) override {
 		if (layer == 1) {
 			bool lit = module && module->lights[MODULE::SET_LIGHT + setIndex].getBrightness() > 0.5f;
@@ -1263,9 +1260,8 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(77.6f, 309.8f), module, MODULE::OUT_X_POS));
 		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(147.4f, 309.8f), module, MODULE::OUT_Y_POS));
 
-		// +3 below the intended gap: XyScreenWidget's background bleeds 3px
-		// past its own box, so box.pos.y must compensate or it lands flush
-		// against the header.
+		// +3: compensates for XyScreenWidget's background bleeding 3px past its
+		// own box, or it lands flush against the header.
 		TransitPadXyScreenWidget<MODULE>* screenWidget = new TransitPadXyScreenWidget<MODULE>(module, MODULE::SNAPSHOT_X_POS, MODULE::SNAPSHOT_Y_POS, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
 		screenWidget->box.pos = Vec(3.f, 39.4f);
 		screenWidget->box.size = Vec(225.f - 6.f, 225.f - 6.f);
