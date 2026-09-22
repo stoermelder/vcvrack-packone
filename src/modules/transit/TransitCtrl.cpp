@@ -34,10 +34,12 @@ namespace Transit {
  *
  * Mapping
  * -------
- * mapping[k] stores which Transit ctrl param index knob k controls (-1 = unmapped).
- * The user selects this per-knob via the knob's context menu; it is serialized to JSON.
- * reverseMap[t] is the inverse: the knob index whose mapping equals t, or -1 if none.
- * Both tables are kept in sync by setMapping() and rebuilt from scratch in dataFromJson().
+ * mapping[k] stores which Transit ctrl param index knob k controls (-1 = unmapped), unbounded
+ * since Transit can bind arbitrarily many parameters. The user selects this per-knob via the
+ * knob's context menu; it is serialized to JSON.
+ * reverseMap[t] is an O(1) inverse lookup for t < NUM_CTRL only (the knob index whose mapping
+ * equals t, or -1 if none); it is kept in sync by setMapping() and rebuilt in dataFromJson().
+ * For t >= NUM_CTRL, setCtrlParamValue() falls back to scanning mapping[] directly.
  * ProxyParamQuantity::handleIndex mirrors mapping[k] and is what getTargetPQ() uses.
  *
  * TransitCtrl → Transit (user or CV input changes a knob)
@@ -55,9 +57,10 @@ namespace Transit {
  * ----------------------------------------------------------------------------
  * Whenever Transit writes a value to a mapped parameter it also calls
  * TransitCtrlReceiver::setCtrlParamValue(transitIndex, value).  That method looks up
- * the knob via reverseMap[transitIndex] and updates both params[PARAM+k].value and
- * lastParamValues[k] atomically, so process() sees no delta and does not re-queue the
- * change.  This keeps the knobs in sync with ongoing transitions without oscillation.
+ * the knob (via reverseMap[transitIndex], or a mapping[] scan if transitIndex >= NUM_CTRL)
+ * and updates both params[PARAM+k].value and lastParamValues[k] atomically, so process()
+ * sees no delta and does not re-queue the change.  This keeps the knobs in sync with
+ * ongoing transitions without oscillation.
  *
  * External target changes → TransitCtrl (periodic polling)
  * ---------------------------------------------------------
@@ -194,6 +197,7 @@ struct TransitCtrlModule : Module, TransitCtrlReceiver {
 			mapping[i] = -1;
 			reverseMap[i] = -1;
 			lastParamValues[i] = -1.f;
+			ppqs[i]->handleIndex = -1;
 		}
 		Module::onReset(e);
 	}
@@ -240,16 +244,19 @@ struct TransitCtrlModule : Module, TransitCtrlReceiver {
 		}
 	}
 
-	/** Called from the GUI thread to remap knob knobIndex to a different Transit ctrl param. */
+	/** Called from the GUI thread to remap knob knobIndex to a different Transit ctrl param.
+	    targetIndex >= NUM_CTRL is accepted: mapping[]/handleIndex are unbounded, and while
+	    reverseMap (sized NUM_CTRL) cannot represent such a target, setCtrlParamValue() falls
+	    back to scanning mapping[] for it, so both push and receive directions still work. */
 	void setMapping(int knobIndex, int targetIndex) {
 		int oldTarget = mapping[knobIndex];
-		if (oldTarget >= 0 && reverseMap[oldTarget] == knobIndex)
+		if (oldTarget >= 0 && oldTarget < NUM_CTRL && reverseMap[oldTarget] == knobIndex)
 			reverseMap[oldTarget] = -1;
 
 		mapping[knobIndex] = targetIndex;
 		ppqs[knobIndex]->handleIndex = targetIndex;
 
-		if (targetIndex >= 0)
+		if (targetIndex >= 0 && targetIndex < NUM_CTRL)
 			reverseMap[targetIndex] = knobIndex;
 
 		if (ppqs[knobIndex]->transitCtrl && targetIndex >= 0) {
@@ -258,10 +265,23 @@ struct TransitCtrlModule : Module, TransitCtrlReceiver {
 		}
 	}
 
-	/** Transit calls this with its own ctrl param index; O(1) via reverseMap. */
+	/** Transit calls this with its own ctrl param index. O(1) via reverseMap for the common
+	    case (transitIndex < NUM_CTRL); reverseMap cannot represent targets beyond that, so
+	    those fall back to an O(NUM_CTRL) scan over mapping[] instead of being dropped. */
 	void setCtrlParamValue(int transitIndex, float value) override {
-		if (transitIndex < 0 || transitIndex >= NUM_CTRL) return;
-		int k = reverseMap[transitIndex];
+		if (transitIndex < 0) return;
+		int k = -1;
+		if (transitIndex < NUM_CTRL) {
+			k = reverseMap[transitIndex];
+		}
+		else {
+			for (int i = 0; i < NUM_CTRL; i++) {
+				if (mapping[i] == transitIndex) {
+					k = i;
+					break;
+				}
+			}
+		}
 		if (k < 0) return;
 		params[PARAM + k].setValue(value);
 		lastParamValues[k] = value;
@@ -279,9 +299,18 @@ struct TransitCtrlModule : Module, TransitCtrlReceiver {
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+
+		// Rack reuses module instances across dataFromJson calls (preset load onto an
+		// existing module, undo of a preset change), so any entry not (re)written below
+		// must be reset here rather than left holding a stale prior mapping.
+		for (int i = 0; i < NUM_CTRL; i++) {
+			mapping[i] = -1;
+			ppqs[i]->handleIndex = -1;
+			reverseMap[i] = -1;
+		}
+
 		json_t* mappingJ = json_object_get(rootJ, "mapping");
 		if (mappingJ) {
-			for (int i = 0; i < NUM_CTRL; i++) reverseMap[i] = -1;
 			for (int i = 0; i < NUM_CTRL && i < (int)json_array_size(mappingJ); i++) {
 				mapping[i] = (int)json_integer_value(json_array_get(mappingJ, i));
 				ppqs[i]->handleIndex = mapping[i];

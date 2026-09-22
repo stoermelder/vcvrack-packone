@@ -1,11 +1,9 @@
 static const int NUM_CTRL = 16;
 
-// ---------------------------------------------------------------------------
 // MockSenderModule — a minimal Module that also implements TransitCtrlMaster.
 // Using a real Module gives ParamQuantity::getParam() a valid module+paramId
 // pair, which is required by the polling code in TransitCtrlModule::process().
 // No engine registration is needed: we pass the pointer directly.
-// ---------------------------------------------------------------------------
 struct MockSenderModule : rack::Module, TransitCtrlMaster {
 	struct Change { int index; float value; };
 	std::vector<Change> changes;
@@ -26,9 +24,32 @@ struct MockSenderModule : rack::Module, TransitCtrlMaster {
 	}
 };
 
-// ---------------------------------------------------------------------------
+// LargeMockSenderModule — like MockSenderModule but with more than NUM_CTRL
+// parameters, so setMapping() can be exercised at a Transit-side index the
+// reverseMap[] array (sized NUM_CTRL) cannot represent.
+static const int NUM_CTRL_LARGE = 40;
+
+struct LargeMockSenderModule : rack::Module, TransitCtrlMaster {
+	struct Change { int index; float value; };
+	std::vector<Change> changes;
+
+	LargeMockSenderModule() {
+		config(NUM_CTRL_LARGE, 0, 0, 0);
+		for (int i = 0; i < NUM_CTRL_LARGE; i++)
+			configParam(i, 0.f, 1.f, 0.5f, string::f("Mock %d", i + 1));
+	}
+	void process(const ProcessArgs&) override {}
+
+	int getCtrlParamCount() override { return NUM_CTRL_LARGE; }
+	ParamQuantity* getCtrlParamQuantity(int index) override {
+		return (index >= 0 && index < NUM_CTRL_LARGE) ? paramQuantities[index] : nullptr;
+	}
+	void pushCtrlChange(int index, float value) override {
+		changes.push_back({index, value});
+	}
+};
+
 // Helper module with bound test parameters for integration tests
-// ---------------------------------------------------------------------------
 struct CtrlTestModule : rack::Module {
 	enum ParamIds { PARAM_A, PARAM_B, NUM_PARAMS };
 	CtrlTestModule() {
@@ -38,9 +59,7 @@ struct CtrlTestModule : rack::Module {
 	}
 };
 
-// ===========================================================================
 // Construction
-// ===========================================================================
 
 TEST_CASE("Construction and initialization", "[TransitCtrl]") {
 	Test::Harness h;
@@ -83,12 +102,31 @@ TEST_CASE("Preset JSON null-guards", "[TransitCtrl][JSON]") {
 		Test::testPresetNullGuards(module, rootJ);
 		json_decref(rootJ);
 	}
+
+	SECTION("All properties tolerate wrong-typed values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetTypeConfusion(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All arrays tolerate being oversized") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOversizedArrays(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	SECTION("All integer scalars clamp out-of-range values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOutOfRangeScalars(h, module, rootJ);
+		json_decref(rootJ);
+	}
 }
 
 
-// ===========================================================================
 // setMapping — mapping[], reverseMap[], handleIndex consistency
-// ===========================================================================
 
 TEST_CASE("setMapping updates mapping, reverseMap, and handleIndex", "[TransitCtrl]") {
 	Test::Harness h;
@@ -137,9 +175,114 @@ TEST_CASE("setMapping updates mapping, reverseMap, and handleIndex", "[TransitCt
 }
 
 
-// ===========================================================================
+TEST_CASE("Mapping to a Transit index >= NUM_CTRL is safe and fully functional", "[TransitCtrl]") {
+	Test::Harness h;
+	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+	LargeMockSenderModule* sender = h.adoptModule(new LargeMockSenderModule());
+	ctrl->setTransitCtrl(sender);
+
+	SECTION("mapping/handleIndex still record the out-of-range target") {
+		ctrl->setMapping(0, 20);
+		REQUIRE(ctrl->mapping[0] == 20);
+		REQUIRE(ctrl->ppqs[0]->handleIndex == 20);
+	}
+
+	SECTION("all ppqs remain intact (no out-of-bounds reverseMap write)") {
+		ctrl->setMapping(0, 20);
+		for (int i = 0; i < NUM_CTRL; i++) {
+			REQUIRE(ctrl->ppqs[i] != nullptr);
+		}
+	}
+
+	SECTION("subsequent setTransitCtrl does not crash and other knobs are unaffected") {
+		ctrl->setMapping(0, 20);
+		ctrl->setMapping(1, 3);
+		ctrl->setTransitCtrl(sender);
+		REQUIRE(ctrl->ppqs[1]->handleIndex == 3);
+		REQUIRE(ctrl->reverseMap[3] == 1);
+	}
+
+	SECTION("push direction still forwards the out-of-range mapping") {
+		ctrl->setMapping(0, 20);
+		// Prime the divider and let the initial poll sync lastParamValues[0] to the
+		// target's current value first (defect-3 poll-first ordering is out of scope
+		// here — see the dedicated process() ordering tests), then edit the knob.
+		h.dspSteps(300);
+		ctrl->params[TransitCtrlModule<16>::PARAM + 0].setValue(0.42f);
+		h.dspSteps(300);
+		REQUIRE(sender->changes.size() == 1);
+		REQUIRE(sender->changes[0].index == 20);
+		REQUIRE(sender->changes[0].value == Catch::Approx(0.42f));
+	}
+
+	SECTION("receive direction also works for the out-of-range index via the mapping[] fallback scan") {
+		ctrl->setMapping(0, 20);
+		ctrl->setCtrlParamValue(20, 0.75f);
+		REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 0].getValue() == Catch::Approx(0.75f));
+		REQUIRE(ctrl->lastParamValues[0] == Catch::Approx(0.75f));
+	}
+
+	SECTION("receive direction for an out-of-range index only updates the mapped knob") {
+		ctrl->setMapping(0, 20);
+		ctrl->setMapping(1, 21);
+		ctrl->setCtrlParamValue(20, 0.75f);
+		REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 0].getValue() == Catch::Approx(0.75f));
+		REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 1].getValue() != Catch::Approx(0.75f));
+	}
+
+	ctrl->setTransitCtrl(nullptr);
+}
+
+
+// onReset — mapping[], reverseMap[], handleIndex, lastParamValues consistency
+
+TEST_CASE("onReset clears mapping, reverseMap, handleIndex, and lastParamValues", "[TransitCtrl]") {
+	Test::Harness h;
+	TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+	MockSenderModule* sender = h.adoptModule(new MockSenderModule());
+	ctrl->setTransitCtrl(sender);
+	ctrl->setMapping(3, 7);
+	ctrl->setMapping(5, 2);
+
+	Module::ResetEvent re;
+	ctrl->onReset(re);
+
+	SECTION("mapping is cleared") {
+		for (int i = 0; i < NUM_CTRL; i++) {
+			REQUIRE(ctrl->mapping[i] == -1);
+		}
+	}
+
+	SECTION("reverseMap is cleared") {
+		for (int i = 0; i < NUM_CTRL; i++) {
+			REQUIRE(ctrl->reverseMap[i] == -1);
+		}
+	}
+
+	SECTION("lastParamValues is cleared") {
+		for (int i = 0; i < NUM_CTRL; i++) {
+			REQUIRE(ctrl->lastParamValues[i] == -1.f);
+		}
+	}
+
+	SECTION("ppqs[i]->handleIndex is cleared, matching mapping[]") {
+		for (int i = 0; i < NUM_CTRL; i++) {
+			REQUIRE(ctrl->ppqs[i]->handleIndex == -1);
+		}
+	}
+
+	SECTION("A knob no longer proxies its pre-reset target") {
+		// Before the fix, ppqs[3]->handleIndex stayed at 7 after onReset, so the knob's
+		// tooltip/range and any push kept referencing the old Transit parameter.
+		ParamQuantity* tpq = ctrl->ppqs[3]->getTargetPQ();
+		REQUIRE(tpq == nullptr);
+	}
+
+	ctrl->setTransitCtrl(nullptr);
+}
+
+
 // setCtrlParamValue — O(1) reverseMap lookup
-// ===========================================================================
 
 TEST_CASE("setCtrlParamValue uses reverseMap for O(1) lookup", "[TransitCtrl]") {
 	Test::Harness h;
@@ -171,9 +314,7 @@ TEST_CASE("setCtrlParamValue uses reverseMap for O(1) lookup", "[TransitCtrl]") 
 }
 
 
-// ===========================================================================
 // process() — change detection and forwarding
-// ===========================================================================
 
 TEST_CASE("process() forwards knob changes to Transit using handleIndex", "[TransitCtrl]") {
 	Test::Harness h;
@@ -207,9 +348,7 @@ TEST_CASE("process() forwards knob changes to Transit using handleIndex", "[Tran
 }
 
 
-// ===========================================================================
 // Oscillation prevention
-// ===========================================================================
 
 TEST_CASE("No oscillation: Transit write does not trigger re-push", "[TransitCtrl]") {
 	Test::Harness h;
@@ -229,9 +368,7 @@ TEST_CASE("No oscillation: Transit write does not trigger re-push", "[TransitCtr
 }
 
 
-// ===========================================================================
 // Target sync polling
-// ===========================================================================
 
 TEST_CASE("Target sync polling detects external target changes", "[TransitCtrl]") {
 	Test::Harness h;
@@ -281,9 +418,7 @@ TEST_CASE("Target sync polling is silent when target has not changed", "[Transit
 }
 
 
-// ===========================================================================
 // setTransitCtrl
-// ===========================================================================
 
 TEST_CASE("setTransitCtrl wires ppqs and syncs initial values", "[TransitCtrl]") {
 	Test::Harness h;
@@ -325,9 +460,7 @@ TEST_CASE("setTransitCtrl wires ppqs and syncs initial values", "[TransitCtrl]")
 }
 
 
-// ===========================================================================
 // JSON serialization
-// ===========================================================================
 
 TEST_CASE("JSON serialization round-trip preserves mapping", "[TransitCtrl][JSON]") {
 	Test::Harness h;
@@ -374,9 +507,107 @@ TEST_CASE("JSON serialization round-trip preserves mapping", "[TransitCtrl][JSON
 }
 
 
-// ===========================================================================
+TEST_CASE("JSON round-trip preserves a mapping to a Transit index >= NUM_CTRL", "[TransitCtrl][JSON]") {
+	Test::Harness h;
+	TransitCtrlModule<16>* ctrl1 = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+	LargeMockSenderModule* sender = h.adoptModule(new LargeMockSenderModule());
+	ctrl1->setTransitCtrl(sender);
+	ctrl1->setMapping(0, 20);
+	ctrl1->setTransitCtrl(nullptr);
+
+	json_t* rootJ = ctrl1->dataToJson();
+	REQUIRE(rootJ != nullptr);
+
+	TransitCtrlModule<16>* ctrl2 = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+	ctrl2->dataFromJson(rootJ);
+	ctrl2->setTransitCtrl(sender);
+
+	SECTION("mapping/handleIndex are preserved") {
+		REQUIRE(ctrl2->mapping[0] == 20);
+		REQUIRE(ctrl2->ppqs[0]->handleIndex == 20);
+	}
+
+	SECTION("receive direction works via the mapping[] fallback after reload") {
+		ctrl2->setCtrlParamValue(20, 0.65f);
+		REQUIRE(ctrl2->params[TransitCtrlModule<16>::PARAM + 0].getValue() == Catch::Approx(0.65f));
+	}
+
+	ctrl2->setTransitCtrl(nullptr);
+	json_decref(rootJ);
+}
+
+
+TEST_CASE("dataFromJson clears stale mapping instead of leaving prior state", "[TransitCtrl][JSON]") {
+	Test::Harness h;
+	MockSenderModule* sender = h.adoptModule(new MockSenderModule());
+
+	SECTION("A short mapping array clears entries beyond its length") {
+		TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+		ctrl->setTransitCtrl(sender);
+		ctrl->setMapping(5, 9);
+		ctrl->setTransitCtrl(nullptr);
+
+		// A 2-entry array, as if loaded from a hand-edited patch or an older/smaller build.
+		json_t* rootJ = json_object();
+		json_t* mappingJ = json_array();
+		json_array_append_new(mappingJ, json_integer(-1));
+		json_array_append_new(mappingJ, json_integer(-1));
+		json_object_set_new(rootJ, "mapping", mappingJ);
+
+		ctrl->dataFromJson(rootJ);
+
+		REQUIRE(ctrl->mapping[5] == -1);
+		REQUIRE(ctrl->ppqs[5]->handleIndex == -1);
+		REQUIRE(ctrl->reverseMap[9] == -1);
+
+		json_decref(rootJ);
+	}
+
+	SECTION("An absent \"mapping\" key clears all prior mappings") {
+		TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+		ctrl->setTransitCtrl(sender);
+		ctrl->setMapping(3, 2);
+		ctrl->setMapping(5, 9);
+		ctrl->setTransitCtrl(nullptr);
+
+		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "panelTheme", json_integer(0));
+		// No "mapping" key at all.
+
+		ctrl->dataFromJson(rootJ);
+
+		for (int i = 0; i < 16; i++) {
+			REQUIRE(ctrl->mapping[i] == -1);
+			REQUIRE(ctrl->ppqs[i]->handleIndex == -1);
+			REQUIRE(ctrl->reverseMap[i] == -1);
+		}
+
+		json_decref(rootJ);
+	}
+
+	SECTION("mapping and reverseMap stay mutually consistent after a short-array reload") {
+		TransitCtrlModule<16>* ctrl = h.addModule<TransitCtrlModule<16>>("TransitCtrl");
+		ctrl->setTransitCtrl(sender);
+		ctrl->setMapping(5, 9);
+		ctrl->setTransitCtrl(nullptr);
+
+		json_t* rootJ = json_object();
+		json_t* mappingJ = json_array();
+		json_array_append_new(mappingJ, json_integer(-1));
+		json_object_set_new(rootJ, "mapping", mappingJ);
+
+		ctrl->dataFromJson(rootJ);
+
+		// Knob 5 must not push to Transit index 9 without a matching reverseMap entry.
+		REQUIRE(ctrl->mapping[5] == -1);
+		REQUIRE(ctrl->reverseMap[9] == -1);
+
+		json_decref(rootJ);
+	}
+}
+
+
 // Integration — Transit ↔ TransitCtrl via expander connection
-// ===========================================================================
 
 TEST_CASE("Integration - Transit discovers TransitCtrl as immediate right expander", "[TransitCtrl]") {
 	Test::Harness h;
@@ -403,11 +634,9 @@ TEST_CASE("Integration - Transit discovers TransitCtrl as immediate right expand
 }
 
 
-// ---------------------------------------------------------------------------
 // Helper: create a TransitEx module via the plugin factory (mirrors the helper
 // in TransitEx.test.cpp). Returns the raw Module* pointer alongside a
 // TransitBase<12>* view if requested.
-// ---------------------------------------------------------------------------
 static Module* createExModule(TransitBase<12>** baseOut = nullptr) {
 	Model* model = pluginInstance->getModel("TransitEx");
 	REQUIRE(model != nullptr);
