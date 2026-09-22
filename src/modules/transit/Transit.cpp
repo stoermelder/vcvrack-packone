@@ -546,6 +546,16 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 			}
 			float intpart;
 			float frac = std::modf(presetPhaseLast, &intpart);
+			bool xyPadActive = (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) && isXyPadActive();
+			std::vector<bool> padActiveSlot;
+			if (xyPadActive) {
+				padActiveSlot.resize(presetTotal, false);
+				for (auto& source : transitPad->getPadFactors()) {
+					if (source.id >= 0 && source.id < presetTotal && source.weight > 0.f) {
+						padActiveSlot[source.id] = true;
+					}
+				}
+			}
 			for (int i = 0; i < presetTotal; i++) {
 				SLOT* slot = getSlot(i);
 				bool u = slot->isUsed();
@@ -578,10 +588,27 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 						slot->getLights()[2].setBrightness(b1);
 					}
 				}
+				else if (xyPadActive) {
+					bool active = padActiveSlot[i];
+					bool b = active && lightBlink;
+					float b1 = active ? (b ? 1.0f : 0.f) : (presetFirst <= i && i < presetLast ? (u ? 0.4f : 0.05f) : 0.f);
+					if (slot->isColorSet()) {
+						NVGcolor c = slot->getColor();
+						float f = active ? (b ? 1.f : 0.f) : (presetFirst <= i && i < presetLast ? 1.f : 0.f);
+						slot->getLights()[0].setBrightnessSmooth(c.r * f, s);
+						slot->getLights()[1].setBrightnessSmooth(c.g * f, s);
+						slot->getLights()[2].setBrightnessSmooth(c.b * f, s);
+					}
+					else {
+						slot->getLights()[0].setBrightnessSmooth(b1, s);
+						slot->getLights()[1].setBrightnessSmooth(b1, s);
+						slot->getLights()[2].setBrightnessSmooth(b1, s);
+					}
+				}
 				else {
 					bool blink = BASE::ctrlMode == CTRLMODE::WRITE ? lightBlinkSlow : lightBlink;
 					if (slot->isColorSet()) {
-						bool active = preset == i;
+					bool active = preset == i;
 						float f = active ? (blink ? 1.f : 0.f) : (presetFirst <= i && i < presetLast ? 1.f : 0.f);
 						NVGcolor c = slot->getColor();
 						slot->getLights()[0].setBrightnessSmooth(c.r * f, s);
