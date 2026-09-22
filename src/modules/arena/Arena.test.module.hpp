@@ -1210,3 +1210,17 @@ TEST_CASE("XyScreenNodes setters with an out-of-range id are a silent no-op", "[
 	REQUIRE(m->nodes.radiusUi[0] == Catch::Approx(radius0Before));
 	REQUIRE(m->nodes.amountUi[0] == Catch::Approx(amount0Before));
 }
+
+// Regression: the node-menu sliders hardcoded 0.5 as their reset value, so a
+// double-click on Amount reset it to 50% although a fresh node starts at 100%.
+TEST_CASE("Amount/Radius slider reset values match the node defaults", "[Arena]") {
+	Test::Harness h;
+	auto* m = h.addModule<MODULE>("Arena");
+	for (uint8_t i = 0; i < 8; i++) {
+		StoermelderPackOne::XyScreenRadiusSlider<MODULE>::RadiusQuantity radius(m, i);
+		StoermelderPackOne::XyScreenAmountSlider<MODULE>::AmountQuantity amount(m, i);
+		REQUIRE(radius.getDefaultValue() == m->getNodeRadiusDefault(i));
+		REQUIRE(amount.getDefaultValue() == m->getNodeAmountDefault(i));
+	}
+	REQUIRE(StoermelderPackOne::XyScreenAmountSlider<MODULE>::AmountQuantity(m, 0).getDefaultValue() == 1.f);
+}
