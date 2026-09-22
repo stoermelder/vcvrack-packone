@@ -443,7 +443,9 @@ struct TransitLedButton : TransitSnapshotButton, VCVButton {
 				{ color::BLUE, "Blue" },
 				{ color::WHITE, "White" }
 			};
-			Rack::appendColorSubmenuItems(menu, &module->slotColor[id], presets, true, true);
+			Rack::appendColorSubmenuItems(menu, &module->slotColor[id], presets, true, true, nullptr,
+				[=]() { module->slotColorSet[id] = true; }
+			);
 		}));
 	}
 };

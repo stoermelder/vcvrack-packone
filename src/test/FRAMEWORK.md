@@ -944,9 +944,20 @@ like when one does.
 | `RackScrollWidget::onHoverScroll` | The rack viewport cannot be left live |
 | `EventState::handleButton`/`handleHover` | Re-implemented in `EventDriver` |
 | `Window`'s constructor | `APP->window` can never be made non-null |
+| `VCVButton::onDragStart` → `Window::cursorLock()` | Segfaults — set `settings::allowCursorLock = false`, which makes `cursorLock()` return early |
+| `Knob::onDragMove` (`VCVButton`'s base) → `Window::getMods()` | No early-out, so a drag *originating* on a `VCVButton` cannot be driven end-to-end |
 
 When a headless widget test segfaults on a null dereference, suspect Rack's handler before the
 plugin's.
+
+**Drag-and-drop between two module widgets.** Because of the `Knob::onDragMove` row above, a full
+`events().drag()` from a `VCVButton`-derived source (a TRANSIT snapshot button, say) cannot be
+driven headless. Dispatch the `DragEnter`/`DragDrop` pair directly at the target widget instead —
+that is the handler under test anyway. `TransitPad.test.module.hpp` ("Locked pad rejects
+drag-and-drop rebinding") is the worked example.
+
+**Counting menus.** `ui::MenuOverlay` children of `APP->scene` accumulate across test cases in the
+same process, so assert on a *delta* around the dispatch, never an absolute count.
 
 ---
 

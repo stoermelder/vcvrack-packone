@@ -148,6 +148,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 	ClockDividerEx lightDivider;
 	dsp::Timer lightTimer;
 	bool lightBlink = false;
+	/** Blinks at half the frequency of lightBlink, for the CV-port LED. */
+	bool lightBlinkSlow = false;
 
 	int sampleRate;
 
@@ -540,6 +542,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 			if (lightTimer.process(s) > 0.2f) {
 				lightTimer.reset();
 				lightBlink ^= true;
+				if (lightBlink) lightBlinkSlow ^= true;
 			}
 			float intpart;
 			float frac = std::modf(presetPhaseLast, &intpart);
@@ -548,13 +551,26 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 				bool u = slot->isUsed();
 
 				if ((BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) && isPhaseCvActive()) {
+					bool isPhaseSlot = intpart == i || intpart + 1 == i;
 					float f = (intpart == i) ? (1.f - frac) : (intpart + 1 == i) ? (frac) : 0.f;
+					// The two slots the phase is currently between blink, alternating
+					// between fully dark and their smooth crossfade value, so the blink
+					// layers on top of the phase transition rather than fighting it.
+					if (isPhaseSlot && !lightBlink) f = 0.f;
 					float b1 = std::max(f, presetFirst <= i && i < presetLast ? (u ? 1.f : 0.25f) : 0.f);
+					if (isPhaseSlot) b1 = f;
 					if (slot->isColorSet()) {
 						NVGcolor c = slot->getColor();
-						slot->getLights()[0].setBrightness(std::max(c.r, f));
-						slot->getLights()[1].setBrightness(std::max(c.g, f));
-						slot->getLights()[2].setBrightness(std::max(c.b, f));
+						if (isPhaseSlot) {
+							slot->getLights()[0].setBrightness(c.r * f);
+							slot->getLights()[1].setBrightness(c.g * f);
+							slot->getLights()[2].setBrightness(c.b * f);
+						}
+						else {
+							slot->getLights()[0].setBrightness(std::max(c.r, f));
+							slot->getLights()[1].setBrightness(std::max(c.g, f));
+							slot->getLights()[2].setBrightness(std::max(c.b, f));
+						}
 					}
 					else {
 						slot->getLights()[0].setBrightness(b1);
@@ -563,18 +579,19 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 					}
 				}
 				else {
+					bool blink = BASE::ctrlMode == CTRLMODE::WRITE ? lightBlinkSlow : lightBlink;
 					if (slot->isColorSet()) {
-						float f = presetFirst <= i && i < presetLast ? (preset != i || lightBlink ? 1.f : 0.1f) : 0.f;
+						bool active = preset == i;
+						float f = active ? (blink ? 1.f : 0.f) : (presetFirst <= i && i < presetLast ? 1.f : 0.f);
 						NVGcolor c = slot->getColor();
 						slot->getLights()[0].setBrightnessSmooth(c.r * f, s);
 						slot->getLights()[1].setBrightnessSmooth(c.g * f, s);
 						slot->getLights()[2].setBrightnessSmooth(c.b * f, s);
 					}
 					else {
-						bool b = preset == i && lightBlink;
-						//loat b0 = b ? 0.7f : (u ? 1.f : 0.f);
-						float b1 = b ? 1.0f : (presetFirst <= i && i < presetLast ? (u ? 0.4f : 0.05f) : 0.f);
-						//float b2 = b ? 0.7f : 0.f;
+						bool active = preset == i;
+						bool b = active && blink;
+						float b1 = active ? (b ? 1.0f : 0.f) : (presetFirst <= i && i < presetLast ? (u ? 0.4f : 0.05f) : 0.f);
 						slot->getLights()[0].setBrightnessSmooth(b1, s);
 						slot->getLights()[1].setBrightnessSmooth(b1, s);
 						slot->getLights()[2].setBrightnessSmooth(b1, s);
@@ -582,7 +599,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 				}
 			}
 
-			BASE::lights[LIGHT_CV].setBrightness((slotCvMode == SLOTCVMODE::OFF || (slotCvMode == SLOTCVMODE::PHASE && BASE::ctrlMode == CTRLMODE::WRITE)) && lightBlink);
+			BASE::lights[LIGHT_CV].setBrightness((slotCvMode == SLOTCVMODE::OFF || (slotCvMode == SLOTCVMODE::PHASE && BASE::ctrlMode == CTRLMODE::WRITE)) && lightBlinkSlow);
 		}
 
 		taskProcessorDsp.process();
