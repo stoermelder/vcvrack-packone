@@ -494,90 +494,79 @@ TEST_CASE("Snapshot-set node positions", "[TransitPad]") {
 }
 
 
-// Regression: dataFromJson() parsed "mixX"/"mixY" into the mixX[]/mixY[]
-// arrays but never pushed a value into the live cursor. That alone looked
-// harmless in node-position-mode Off, since Rack's own paramsFromJson()
-// (called by Module::fromJson() before dataFromJson()) already restores
-// params[OUT_X_POS]/[OUT_Y_POS] from the patch. But process() reads the
-// cursor from outXfilter/outUiX instead of the param directly whenever
-// nothing is CV/param-map-bound to it, and those UI-shadow fields are only
-// ever seeded at construction (to the configured default, center) or by
-// setCursorXyImmediate()/setCursorXyFiltered() (drag interactions) — never by
-// Rack's own param restore. So the cursor visually snapped back to center on
-// every patch load, in every nodePosMode, even though the correct value sat
-// right there in params[OUT_X_POS].
+// Regression: process() reads the Mix cursor from the UI-shadow state
+// (outUiX/outXfilter) rather than from params[OUT_X_POS] whenever nothing is
+// CV/param-map-bound to it, and Rack's own paramsFromJson() only restores the
+// param. dataFromJson() must therefore resync the shadow state, or the next
+// tick overwrites the restored param and the cursor snaps back to center.
+//
+// The resync must come from the restored param in every nodePosMode, never
+// from mixX[currentSet]: that is only the set's last capture (Store: the last
+// "Store positions"; Auto: the moment the set was last left), while the pad
+// points themselves restore their live positions from "nodes". Restoring the
+// cursor from the capture moved it on every save/load in which it had been
+// dragged since, silently changing what TRANSIT blends.
+//
+// All sections go through Module::toJson()/fromJson(), so the load runs in
+// Rack's real order: paramsFromJson() first, then dataFromJson().
 TEST_CASE("dataFromJson() applies the restored Mix cursor to the live UI-shadow state", "[TransitPad][JSON]") {
 	Test::Harness h;
+	typedef TransitPadModule<> M;
 
-	SECTION("Node-position mode enabled: live cursor is restored from the stored set") {
-		TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
-		m->nodePosMode = NODEPOSMODE::STORE;
-		m->setCursorXyImmediate(0, 0.2f, 0.8f);
-		m->storeNodePositions(0);
-		json_t* j = m->dataToJson();
-
-		// A second module simulates a fresh patch load: its params start at
-		// their configured defaults (0.5/0.5), not at the saved position.
-		TransitPadModule<>* m2 = h.addModule<TransitPadModule<>>("TransitPad");
-		m2->dataFromJson(j);
+	// Save m and load the patch into a fresh module, as Rack does on patch load.
+	auto reload = [&](M* m) {
+		json_t* j = m->toJson();
+		M* m2 = h.addModule<M>("TransitPad");
+		m2->fromJson(j);
 		json_decref(j);
+		return m2;
+	};
 
-		REQUIRE(m2->mixX[0] == 0.2f);
-		REQUIRE(m2->mixY[0] == 0.8f);
-		REQUIRE(m2->getCursorXFinal(0) == 0.2f);
-		REQUIRE(m2->getCursorYFinal(0) == 0.8f);
+	for (NODEPOSMODE mode : {NODEPOSMODE::OFF, NODEPOSMODE::STORE, NODEPOSMODE::AUTO}) {
+		DYNAMIC_SECTION("Cursor moved since the last capture survives save/load, nodePosMode " << (int)mode) {
+			M* m = h.addModule<M>("TransitPad");
+			m->nodePosMode = mode;
+			// A capture at another position first, so a restore from mixX[0]
+			// is distinguishable from the center default too.
+			m->setCursorXyImmediate(0, 0.7f, 0.3f);
+			m->storeNodePositions(0);
+			m->setCursorXyImmediate(0, 0.2f, 0.8f);
+			m->nodes.setXyImmediate(0, 0.35f, 0.45f);
+			h.dspSteps(200);
 
-		// The real bug only shows up once process() runs: without also
-		// resyncing outUiX/outXfilter, the next tick's outXfilter.process(...)
-		// call overwrites params[OUT_X_POS] right back to the pre-load default,
-		// even though getCursorXFinal() looked correct immediately after load.
-		h.dspSteps(5);
-		REQUIRE(m2->getCursorXFinal(0) == Catch::Approx(0.2f).margin(0.01f));
-		REQUIRE(m2->getCursorYFinal(0) == Catch::Approx(0.8f).margin(0.01f));
+			M* m2 = reload(m);
+			h.dspSteps(200);
+
+			REQUIRE(m2->getCursorXFinal(0) == Catch::Approx(0.2f).margin(0.01f));
+			REQUIRE(m2->getCursorYFinal(0) == Catch::Approx(0.8f).margin(0.01f));
+			// ...consistent with the pad points, which restore their live positions.
+			REQUIRE(m2->nodes.getXFinal(0) == Catch::Approx(0.35f).margin(0.01f));
+			REQUIRE(m2->nodes.getYFinal(0) == Catch::Approx(0.45f).margin(0.01f));
+		}
 	}
 
-	SECTION("Node-position mode Off: the live cursor is restored from Rack's own saved param") {
-		// mixX/mixY aren't in use in this mode (dataToJson() omits them), but
-		// the plain param value -- what Rack's own paramsFromJson() restores --
-		// must still reach the UI-shadow state that process() reads on every
-		// subsequent tick, or the very next dspStep() overwrites it again.
-		TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
-		REQUIRE(m->nodePosMode == NODEPOSMODE::OFF);
-		m->setCursorXyImmediate(0, 0.2f, 0.8f);
-		json_t* j = m->dataToJson();
-
-		TransitPadModule<>* m2 = h.addModule<TransitPadModule<>>("TransitPad");
-		// Simulate what Module::fromJson() really does: paramsFromJson() runs
-		// before dataFromJson() and lands the saved value straight in the param,
-		// bypassing setCursorXyImmediate() and its UI-shadow side effects.
-		m2->paramQuantities[TransitPadModule<>::OUT_X_POS]->getParam()->setValue(0.2f);
-		m2->paramQuantities[TransitPadModule<>::OUT_Y_POS]->getParam()->setValue(0.8f);
-		m2->dataFromJson(j);
-		json_decref(j);
-
-		h.dspSteps(5);
-		REQUIRE(m2->getCursorXFinal(0) == Catch::Approx(0.2f).margin(0.01f));
-		REQUIRE(m2->getCursorYFinal(0) == Catch::Approx(0.8f).margin(0.01f));
-	}
-
-	SECTION("Restores the currently active set's cursor, not set 0's") {
-		TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+	SECTION("The per-set captures still survive and apply on the next set change") {
+		M* m = h.addModule<M>("TransitPad");
 		m->nodePosMode = NODEPOSMODE::STORE;
 		m->setCursorXyImmediate(0, 0.1f, 0.1f);
 		m->storeNodePositions(0);
 		m->setCursorXyImmediate(0, 0.9f, 0.6f);
 		m->storeNodePositions(3);
 		m->currentSet = 3;
-		json_t* j = m->dataToJson();
+		h.dspSteps(200);
 
-		TransitPadModule<>* m2 = h.addModule<TransitPadModule<>>("TransitPad");
-		m2->dataFromJson(j);
-		json_decref(j);
-
+		M* m2 = reload(m);
 		REQUIRE(m2->currentSet == 3);
-		h.dspSteps(5);
+		REQUIRE(m2->mixX[0] == 0.1f);
+		REQUIRE(m2->mixY[0] == 0.1f);
+		h.dspSteps(200);
 		REQUIRE(m2->getCursorXFinal(0) == Catch::Approx(0.9f).margin(0.01f));
 		REQUIRE(m2->getCursorYFinal(0) == Catch::Approx(0.6f).margin(0.01f));
+
+		m2->changeSet(0);
+		h.dspSteps(200);
+		REQUIRE(m2->getCursorXFinal(0) == Catch::Approx(0.1f).margin(0.01f));
+		REQUIRE(m2->getCursorYFinal(0) == Catch::Approx(0.1f).margin(0.01f));
 	}
 }
 
