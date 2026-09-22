@@ -157,12 +157,14 @@ TRANSIT-PAD is a specialized expander for TRANSIT that provides a 2-dimensional 
 
 Place TRANSIT-PAD on the right side of TRANSIT, just like a +T expander. As soon as it is connected TRANSIT switches to a dedicated XY-pad mode:
 
-- The _SEL_-port and the _OUT_-port of TRANSIT become inactive. The _SEL_-mode is forced to _Off_ and _OUT_-mode is forced to _Off_ automatically.
-- The pad drives the bound parameters only while TRANSIT is in Read-mode. Write-mode still works as usual for saving snapshots, but the pad has no effect on the parameters in Write-mode or Auto-mode.
+- The _SEL_-port and the _OUT_-port of TRANSIT become inactive. The _SEL_-mode is forced to _Off_ and _OUT_-mode is forced to _Off_ automatically. While the pad is active, the _SEL_-port's LED also stops blinking, since it otherwise indicates the same "SEL-mode disabled" state that no longer applies once the pad is switched off.
+- While the pad is active, it drives the bound parameters regardless of TRANSIT's Read/Write/Auto switch: Write-mode's front-panel buttons no longer save or clear snapshots, and Auto-mode's re-recording of the previously active slot is suspended. The switch keeps its physical position and takes effect again as soon as the pad is switched off (see _Pad active_ below) — this is the only way to save or clear snapshots while the pad is connected and active.
 - While the pad is active, the LEDs of all snapshots currently contributing to the mix blink on TRANSIT (and on any +T expander).
 - Up to fourteen +T expanders can be chained between TRANSIT and TRANSIT-PAD (the pad is placed at the end of the chain, after all +T expanders). The snapshots stored on those +T expanders are reachable from the pad just like the snapshots on the host TRANSIT. Placing additional +T expanders or a second pad to the right of TRANSIT-PAD is not supported: the chain stops as soon as the pad is reached, and any expander placed after it is ignored.
 
-Setup of TRANSIT itself is unchanged: bind parameters and save snapshots in Write-mode as described above. The pad itself does not store snapshots — it only assigns a 2D-position to snapshots that already exist on the host TRANSIT.
+Setup of TRANSIT itself is unchanged: bind parameters and save snapshots in Write-mode as described above — just switch the pad off first if it is currently active. The pad itself does not store snapshots — it only assigns a 2D-position to snapshots that already exist on the host TRANSIT.
+
+The _Pad active_ switch left of the ports toggles whether the pad currently drives TRANSIT at all. Switching it off freezes the bound parameters at their last blended values, stops the snapshot LEDs on TRANSIT from blinking, and restores TRANSIT's Read/Write/Auto switch to its normal behavior (so snapshots can be saved or cleared again) — while the pad itself stays fully usable throughout: points can still be dragged, bound/unbound, and snapshot-sets edited or switched, none of which reaches TRANSIT until the switch is turned back on. This is useful for rearranging or fine-tuning snapshots without disturbing the currently playing sound; the alternative would be unplugging the expander, which also drops it out of the +T chain. The pad's screen dims and shows an _OFF_ label in the bottom-left corner while switched off.
 
 #### The XY-pad
 

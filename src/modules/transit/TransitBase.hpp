@@ -208,6 +208,7 @@ struct TransitPadInterface {
 	};
 
 	virtual const std::vector<TransitPadSource>& getPadFactors() = 0;
+	virtual bool isPadActive() = 0;
 };
 
 

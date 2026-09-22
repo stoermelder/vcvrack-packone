@@ -60,13 +60,14 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		OUT_X_POS,
 		OUT_Y_POS,
 		ENUMS(SET_PARAM, SETS),
+		ON_PARAM,
 		NUM_PARAMS
 	};
 	enum InputIds {
-		OUT_X_INPUT,
-		OUT_Y_INPUT,
-		OUT_SEQ_INPUT,
-		OUT_SEQ_PH_INPUT,
+		MIX_X_INPUT,
+		MIX_Y_INPUT,
+		SEQ_INPUT,
+		SEQ_PH_INPUT,
 		SET_CV_INPUT,
 		NUM_INPUTS
 	};
@@ -177,10 +178,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 7, 0.0f, 1.0f, 0.3f, "Snapshot H x-pos");
 		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 7, 0.0f, 1.0f, 0.7f, "Snapshot H y-pos");
 
-		configInput(OUT_X_INPUT, "Mix x-pos");
-		configInput(OUT_Y_INPUT, "Mix y-pos");
-		configInput(OUT_SEQ_INPUT, "Mix sequence select");
-		configInput(OUT_SEQ_PH_INPUT, "Mix sequence phase");
+		configSwitch(ON_PARAM, 0.f, 1.f, 1.f, "Pad active", {"Off", "On"});
+		configInput(MIX_X_INPUT, "Mix x-pos");
+		configInput(MIX_Y_INPUT, "Mix y-pos");
+		configInput(SEQ_INPUT, "Mix sequence select");
+		configInput(SEQ_PH_INPUT, "Mix sequence phase");
 		configInput(SET_CV_INPUT, "Snapshot-set select CV");
 		configParam<XyScreenParamQuantity>(OUT_X_POS, 0.0f, 1.0f, 0.5f, "Mix x-pos");
 		configParam<XyScreenParamQuantity>(OUT_Y_POS, 0.0f, 1.0f, 0.5f, "Mix y-pos");
@@ -237,6 +239,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	/** TransitPadInterface: the snapshot weights Transit reads to blend presets. */
 	const std::vector<TransitPadSource>& getPadFactors() override {
 		return snapshots[currentSet];
+	}
+
+	/** TransitPadInterface: the "Pad active" switch. */
+	bool isPadActive() override {
+		return params[ON_PARAM].getValue() > 0.5f;
 	}
 
 	// Capture the live pad-point geometry and Mix cursor into set s.
@@ -367,14 +374,14 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		XyScreenParamQuantity* py = reinterpret_cast<XyScreenParamQuantity*>(paramQuantities[OUT_Y_POS]);
 		outInY = py->hasHandle ? py->getParam()->getValue() : outYfilter.process(args.sampleTime, outUiY);
 
-		if (inputs[OUT_SEQ_INPUT].isConnected()) {
-			Seq::seqProcess(inputs[OUT_SEQ_INPUT], 0);
+		if (inputs[SEQ_INPUT].isConnected()) {
+			Seq::seqProcess(inputs[SEQ_INPUT], 0);
 		}
 
 		bool setX = false, setY = false;
 
-		if (inputs[OUT_SEQ_PH_INPUT].isConnected()) {
-			float v = clamp(inputs[OUT_SEQ_PH_INPUT].getVoltage() / 10.f, 0.f, 1.f);
+		if (inputs[SEQ_PH_INPUT].isConnected()) {
+			float v = clamp(inputs[SEQ_PH_INPUT].getVoltage() / 10.f, 0.f, 1.f);
 			Vec d = Seq::seqValue(0, v);
 			params[OUT_X_POS].setValue(d.x);
 			setX = true;
@@ -382,16 +389,16 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			setY = true;
 		}
 
-		if (!setX && inputs[OUT_X_INPUT].isConnected()) {
-			float x = inputs[OUT_X_INPUT].getVoltage() / 10.f;
+		if (!setX && inputs[MIX_X_INPUT].isConnected()) {
+			float x = inputs[MIX_X_INPUT].getVoltage() / 10.f;
 			x += 0.5f;
 			x = clamp(x, 0.f, 1.f);
 			params[OUT_X_POS].setValue(x);
 			setX = true;
 		} 
 
-		if (!setY && inputs[OUT_Y_INPUT].isConnected()) {
-			float y = inputs[OUT_Y_INPUT].getVoltage() / 10.f;
+		if (!setY && inputs[MIX_Y_INPUT].isConnected()) {
+			float y = inputs[MIX_Y_INPUT].getVoltage() / 10.f;
 			y += 0.5f;
 			y = clamp(y, 0.f, 1.f);
 			params[OUT_Y_POS].setValue(y);
@@ -875,25 +882,49 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 
 	void drawLayer(const Widget::DrawArgs& args, int layer) override {
 		XyScreenWidget<MODULE>::drawLayer(args, layer);
-		if (layer != 1 || !this->module || !this->module->isLocked()) return;
-		// Small padlock badge in the top-right corner of the screen so the
-		// user can see at a glance that dragging/binding is disabled.
-		NVGcontext* vg = args.vg;
-		float cx = this->box.size.x - 9.f;
-		float cy = 9.f;
+		if (layer != 1 || !this->module) return;
 
-		// Shackle (arc on top of the body)
-		nvgBeginPath(vg);
-		nvgStrokeColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.85f));
-		nvgStrokeWidth(vg, 1.4f);
-		nvgArc(vg, cx, cy - 1.5f, 2.5f, M_PI * 0.85f, M_PI * 0.15f, NVG_CW);
-		nvgStroke(vg);
+		if (this->module->isLocked()) {
+			// Small padlock badge in the top-right corner of the screen so the
+			// user can see at a glance that dragging/binding is disabled.
+			NVGcontext* vg = args.vg;
+			float cx = this->box.size.x - 9.f;
+			float cy = 9.f;
 
-		// Body (rounded rect)
-		nvgBeginPath(vg);
-		nvgFillColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.85f));
-		nvgRoundedRect(vg, cx - 3.5f, cy - 0.5f, 7.f, 6.f, 1.f);
-		nvgFill(vg);
+			// Shackle (arc on top of the body)
+			nvgBeginPath(vg);
+			nvgStrokeColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.85f));
+			nvgStrokeWidth(vg, 1.4f);
+			nvgArc(vg, cx, cy - 1.5f, 2.5f, M_PI * 0.85f, M_PI * 0.15f, NVG_CW);
+			nvgStroke(vg);
+
+			// Body (rounded rect)
+			nvgBeginPath(vg);
+			nvgFillColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.85f));
+			nvgRoundedRect(vg, cx - 3.5f, cy - 0.5f, 7.f, 6.f, 1.f);
+			nvgFill(vg);
+		}
+
+		if (!this->module->isPadActive()) {
+			// Dim the whole screen and show an "OFF" label in the same spot and
+			// font as XySeqWidget's "SEQ-EDIT" label, so it's clear at a glance
+			// that pad edits currently don't reach TRANSIT's param processing.
+			NVGcontext* vg = args.vg;
+
+			nvgBeginPath(vg);
+			nvgRect(vg, 0.f, 0.f, this->box.size.x, this->box.size.y);
+			nvgFillColor(vg, nvgRGBAf(0.f, 0.f, 0.f, 0.55f));
+			nvgFill(vg);
+
+			NVGcolor c = color::mult(color::WHITE, 0.7f);
+			std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+			nvgFontSize(vg, 22);
+			nvgFontFaceId(vg, font->handle);
+			nvgTextLetterSpacing(vg, -2.2);
+			nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+			nvgFillColor(vg, c);
+			nvgTextBox(vg, 8.f, this->box.size.y - 6.f, 120, "OFF", NULL);
+		}
 	}
 
 	/** XyScreenWidget: extra items appended to the whole screen's context menu. */
@@ -1295,11 +1326,13 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(21.0f, 327.0f), module, MODULE::OUT_SEQ_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(112.5f, 327.0f), module, MODULE::OUT_SEQ_PH_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(84.5f, 327.0f), module, MODULE::OUT_X_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(140.5f, 327.0f), module, MODULE::OUT_Y_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(204.3f, 327.0f), module, MODULE::SET_CV_INPUT));
+		addParam(createParamCentered<CKSS>(Vec(15.f, 326.2f), module, MODULE::ON_PARAM));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(44.9f, 327.0f), module, MODULE::SET_CV_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(180.1f, 327.0f), module, MODULE::SEQ_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(112.5f, 327.0f), module, MODULE::SEQ_PH_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(84.5f, 327.0f), module, MODULE::MIX_X_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(140.5f, 327.0f), module, MODULE::MIX_Y_INPUT));
 
 		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(77.6f, 309.8f), module, MODULE::OUT_X_POS));
 		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(147.4f, 309.8f), module, MODULE::OUT_Y_POS));
@@ -1324,7 +1357,7 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		buttonRow->createButtons();
 		addChild(buttonRow);
 
-		TransitPadXySeqLedDisplay<MODULE>* seqDisplay1 = createWidget<TransitPadXySeqLedDisplay<MODULE>>(Vec(41.5f, 329.8f));
+		TransitPadXySeqLedDisplay<MODULE>* seqDisplay1 = createWidget<TransitPadXySeqLedDisplay<MODULE>>(Vec(195.2f, 320.7f));
 		seqDisplay1->box.size = Vec(20.4f, 13.2f);
 		seqDisplay1->module = module;
 		seqDisplay1->id = 0;

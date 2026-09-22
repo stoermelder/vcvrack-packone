@@ -320,6 +320,15 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 		int presetFirst = std::min(this->presetFirst, presetTotal);
 		int presetLast = std::min(this->presetLast, presetTotal);
 
+		// While the pad is active it always drives the parameters, so Write-mode's
+		// button behavior (save/clear on press) is suppressed and every other
+		// mode-dependent branch behaves as if CTRLMODE::READ was selected. Only the
+		// pad's own "Pad active" switch can undo this -- the CTRLMODE switch itself
+		// keeps its physical position and takes effect again once the pad is
+		// switched off.
+		bool padOverride = isXyPadActive(true);
+		CTRLMODE effCtrlMode = padOverride ? CTRLMODE::READ : BASE::ctrlMode;
+
 		if (handleDivider.process()) {
 			float st = args.sampleTime * handleDivider.division;
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
@@ -330,7 +339,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 		}
 
 		// Read & Auto mode
-		if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
+		if (effCtrlMode == CTRLMODE::READ || effCtrlMode == CTRLMODE::AUTO) {
 			// RESET input
 			if (resetTrigger.process(Module::inputs[INPUT_RESET].getVoltage())) {
 				resetTimer.reset();
@@ -527,12 +536,12 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 			}
 		}
 
-		if (isXyPadActive() && BASE::ctrlMode == CTRLMODE::READ) {
+		if (padOverride) {
 			presetProcessXyPad(args.sampleTime);
 		}
-		if (isPhaseCvActive() && BASE::ctrlMode == CTRLMODE::READ) {
+		if (isPhaseCvActive() && effCtrlMode == CTRLMODE::READ) {
 			presetProcessPhase(args.sampleTime);
-		} 
+		}
 		else {
 			presetProcess(args.sampleTime);
 		}
@@ -546,7 +555,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 			}
 			float intpart;
 			float frac = std::modf(presetPhaseLast, &intpart);
-			bool xyPadActive = (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) && isXyPadActive();
+			bool xyPadActive = padOverride;
 			std::vector<bool> padActiveSlot;
 			if (xyPadActive) {
 				padActiveSlot.resize(presetTotal, false);
@@ -560,7 +569,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 				SLOT* slot = getSlot(i);
 				bool u = slot->isUsed();
 
-				if ((BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) && isPhaseCvActive()) {
+				if ((effCtrlMode == CTRLMODE::READ || effCtrlMode == CTRLMODE::AUTO) && isPhaseCvActive()) {
 					bool isPhaseSlot = intpart == i || intpart + 1 == i;
 					float f = (intpart == i) ? (1.f - frac) : (intpart + 1 == i) ? (frac) : 0.f;
 					// The two slots the phase is currently between blink, alternating
@@ -606,7 +615,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 					}
 				}
 				else {
-					bool blink = BASE::ctrlMode == CTRLMODE::WRITE ? lightBlinkSlow : lightBlink;
+					bool blink = effCtrlMode == CTRLMODE::WRITE ? lightBlinkSlow : lightBlink;
 					if (slot->isColorSet()) {
 					bool active = preset == i;
 						float f = active ? (blink ? 1.f : 0.f) : (presetFirst <= i && i < presetLast ? 1.f : 0.f);
@@ -626,14 +635,17 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 				}
 			}
 
-			BASE::lights[LIGHT_CV].setBrightness((slotCvMode == SLOTCVMODE::OFF || (slotCvMode == SLOTCVMODE::PHASE && BASE::ctrlMode == CTRLMODE::WRITE)) && lightBlinkSlow);
+			BASE::lights[LIGHT_CV].setBrightness(!padOverride && (slotCvMode == SLOTCVMODE::OFF || (slotCvMode == SLOTCVMODE::PHASE && effCtrlMode == CTRLMODE::WRITE)) && lightBlinkSlow);
 		}
 
 		taskProcessorDsp.process();
 	}
 
-	inline bool isXyPadActive() {
-		return transitPad != nullptr;
+	/** True whenever a TransitPad expander is connected. Pass checkActive=true
+	 *  to also require the pad's own "Pad active" switch, i.e. whether it is
+	 *  currently overriding the master's param processing. */
+	inline bool isXyPadActive(bool checkActive = false) {
+		return transitPad != nullptr && (!checkActive || transitPad->isPadActive());
 	}
 
 	inline bool isPhaseCvActive() {
@@ -983,7 +995,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 				outSlotPulseGenerator.trigger();
 				if (!slot->isUsed()) 
 					return;
-				if (BASE::ctrlMode == CTRLMODE::AUTO && presetPrev != -1) {
+				bool padOverride = isXyPadActive(true);
+				CTRLMODE effCtrlMode = padOverride ? CTRLMODE::READ : BASE::ctrlMode;
+				if (effCtrlMode == CTRLMODE::AUTO && presetPrev != -1) {
 					SLOT* slotPrev = getSlot(presetPrev);
 					if (slotPrev->isUsed()) {
 						slotPrev->getPreset()->clear();

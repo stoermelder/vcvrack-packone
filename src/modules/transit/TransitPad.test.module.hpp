@@ -1182,10 +1182,10 @@ TEST_CASE("getCursorXFinal/getCursorYFinal track CV-driven Out position, not the
 	// drag or setCursorXyImmediate/Filtered and does not move with CV.
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
 
-	m->inputs[TransitPadModule<>::OUT_X_INPUT].channels = 1;
-	m->inputs[TransitPadModule<>::OUT_X_INPUT].setVoltage(3.f); // → x = 3/10 + 0.5 = 0.8
-	m->inputs[TransitPadModule<>::OUT_Y_INPUT].channels = 1;
-	m->inputs[TransitPadModule<>::OUT_Y_INPUT].setVoltage(-2.f); // → y = -2/10 + 0.5 = 0.3
+	m->inputs[TransitPadModule<>::MIX_X_INPUT].channels = 1;
+	m->inputs[TransitPadModule<>::MIX_X_INPUT].setVoltage(3.f); // → x = 3/10 + 0.5 = 0.8
+	m->inputs[TransitPadModule<>::MIX_Y_INPUT].channels = 1;
+	m->inputs[TransitPadModule<>::MIX_Y_INPUT].setVoltage(-2.f); // → y = -2/10 + 0.5 = 0.3
 
 	float outUiXBefore = m->outUiX;
 	float outUiYBefore = m->outUiY;
@@ -1330,14 +1330,14 @@ struct PadRig {
 
 // Connect the mix-position CV inputs (simulates cables)
 static void connectMixInputs(TransitPadModule<>* pad) {
-	pad->inputs[TransitPadModule<>::OUT_X_INPUT].channels = 1;
-	pad->inputs[TransitPadModule<>::OUT_Y_INPUT].channels = 1;
+	pad->inputs[TransitPadModule<>::MIX_X_INPUT].channels = 1;
+	pad->inputs[TransitPadModule<>::MIX_Y_INPUT].channels = 1;
 }
 
 // Drive the mix point to ((x+5)/10, (y+5)/10) — ±5V maps to the pad corners
 static void setMixVoltage(TransitPadModule<>* pad, float xVolt, float yVolt) {
-	pad->inputs[TransitPadModule<>::OUT_X_INPUT].setVoltage(xVolt);
-	pad->inputs[TransitPadModule<>::OUT_Y_INPUT].setVoltage(yVolt);
+	pad->inputs[TransitPadModule<>::MIX_X_INPUT].setVoltage(xVolt);
+	pad->inputs[TransitPadModule<>::MIX_Y_INPUT].setVoltage(yVolt);
 }
 
 
@@ -1369,6 +1369,30 @@ TEST_CASE("Transit sets slotCvMode to OFF when TransitPad is connected", "[Trans
 	h.dspStep();
 
 	REQUIRE(transit->slotCvMode == SLOTCVMODE::OFF);
+}
+
+
+TEST_CASE("isXyPadActive(true) also requires the pad's own Pad-active switch", "[TransitPad][Transit]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+
+	// No pad connected yet: both forms agree.
+	h.dspStep();
+	REQUIRE_FALSE(transit->isXyPadActive());
+	REQUIRE_FALSE(transit->isXyPadActive(true));
+
+	// Pad connected and active (default): both forms agree again.
+	connectPad(h, transit, pad);
+	h.dspStep();
+	REQUIRE(transit->isXyPadActive());
+	REQUIRE(transit->isXyPadActive(true));
+
+	// Pad connected but switched off: only the plain form still reports true.
+	pad->params[TransitPadModule<>::ON_PARAM].setValue(0.f);
+	h.dspStep();
+	REQUIRE(transit->isXyPadActive());
+	REQUIRE_FALSE(transit->isXyPadActive(true));
 }
 
 
@@ -1411,6 +1435,148 @@ TEST_CASE("presetProcessXyPad: single snapshot with full weight applies preset e
 	h.dspSteps(5);
 
 	REQUIRE(target->params[TestParamModule::PARAM_A].getValue() == Catch::Approx(0.25f).margin(0.001f));
+}
+
+
+TEST_CASE("isPadActive: defaults to true and tracks ON_PARAM", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+
+	REQUIRE(pad->isPadActive());
+
+	pad->params[TransitPadModule<>::ON_PARAM].setValue(0.f);
+	REQUIRE_FALSE(pad->isPadActive());
+
+	pad->params[TransitPadModule<>::ON_PARAM].setValue(1.f);
+	REQUIRE(pad->isPadActive());
+}
+
+
+TEST_CASE("presetProcessXyPad: switching Pad active off freezes the last blend", "[TransitPad][Transit]") {
+	Test::Harness h;
+	Test::ModuleScaffold<TransitPadModule<>> padMods;
+	TransitPadModule<>* pad = padMods.create("TransitPad");
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TestParamModule* target = h.adoptModule(new TestParamModule);
+
+	bindParam(h, transit, target->id, TestParamModule::PARAM_A);
+	target->params[TestParamModule::PARAM_A].setValue(0.25f);
+	transit->presetSave(0);
+
+	connectPad(h, transit, pad);
+	pad->snapshots[0][0].id = 0;
+	pad->snapshots[0][0].weight = 1.f;
+
+	target->params[TestParamModule::PARAM_A].setValue(0.99f);
+	h.dspSteps(5);
+	REQUIRE(target->params[TestParamModule::PARAM_A].getValue() == Catch::Approx(0.25f).margin(0.001f));
+
+	// Switch the pad off, then rebind a different snapshot to a different
+	// preset and change its weight -- none of this should reach the target
+	// param while the pad is disengaged, so the user can freely rework the
+	// snapshots without disturbing the module's current sound.
+	pad->params[TransitPadModule<>::ON_PARAM].setValue(0.f);
+	h.dspStep();
+
+	target->params[TestParamModule::PARAM_A].setValue(0.6f);
+	transit->presetSave(1);
+	pad->snapshots[0][0].id = 1;
+	pad->snapshots[0][0].weight = 1.f;
+
+	// Drive the target away from both presets; it must stay put since Transit
+	// isn't reading the pad's weights at all right now.
+	target->params[TestParamModule::PARAM_A].setValue(0.5f);
+	h.dspSteps(5);
+	REQUIRE(target->params[TestParamModule::PARAM_A].getValue() == Catch::Approx(0.5f).margin(0.001f));
+
+	// Switching back on resumes blending from the pad's current (edited) state.
+	pad->params[TransitPadModule<>::ON_PARAM].setValue(1.f);
+	h.dspSteps(5);
+	REQUIRE(target->params[TestParamModule::PARAM_A].getValue() == Catch::Approx(0.6f).margin(0.001f));
+}
+
+
+TEST_CASE("Pad active overrides Write mode: buttons don't save/clear and the blend still applies", "[TransitPad][Transit]") {
+	Test::Harness h;
+	Test::ModuleScaffold<TransitPadModule<>> padMods;
+	TransitPadModule<>* pad = padMods.create("TransitPad");
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TestParamModule* target = h.adoptModule(new TestParamModule);
+
+	bindParam(h, transit, target->id, TestParamModule::PARAM_A);
+	target->params[TestParamModule::PARAM_A].setValue(0.25f);
+	transit->presetSave(0);
+	REQUIRE(transit->getSlot(3)->isUsed() == false);
+
+	connectPad(h, transit, pad);
+	pad->snapshots[0][0].id = 0;
+	pad->snapshots[0][0].weight = 1.f;
+	h.dspSteps(5);
+
+	// Switch TRANSIT's own front-panel mode to WRITE while the pad is active.
+	transit->params[TransitModule<12>::PARAM_CTRLMODE].setValue((float)CTRLMODE::WRITE);
+	h.dspStep();
+
+	// A short press on slot 3's button would normally save the current param
+	// value into that slot in WRITE mode -- while the pad is active this must
+	// not happen, since the pad is meant to fully override Write mode.
+	target->params[TestParamModule::PARAM_A].setValue(0.99f);
+	transit->params[TransitModule<12>::PARAM_PRESET + 3].setValue(10.f);
+	h.dspSteps(128);
+	transit->params[TransitModule<12>::PARAM_PRESET + 3].setValue(0.f);
+	h.dspSteps(128);
+	REQUIRE(transit->getSlot(3)->isUsed() == false);
+
+	// The pad's blend must still drive the target param despite CTRLMODE
+	// sitting on WRITE, since only the pad's own ON/OFF switch controls this.
+	h.dspSteps(5);
+	REQUIRE(target->params[TestParamModule::PARAM_A].getValue() == Catch::Approx(0.25f).margin(0.001f));
+
+	// Switching the pad off restores WRITE mode's normal button behavior.
+	pad->params[TransitPadModule<>::ON_PARAM].setValue(0.f);
+	h.dspStep();
+
+	target->params[TestParamModule::PARAM_A].setValue(0.4f);
+	transit->params[TransitModule<12>::PARAM_PRESET + 3].setValue(10.f);
+	h.dspSteps(128);
+	transit->params[TransitModule<12>::PARAM_PRESET + 3].setValue(0.f);
+	h.dspSteps(128);
+	REQUIRE(transit->getSlot(3)->isUsed() == true);
+	REQUIRE(transit->getSlot(3)->getPreset()->at(0) == Catch::Approx(0.4f));
+}
+
+
+TEST_CASE("LIGHT_CV stops blinking while the pad is active, resumes once it's switched off", "[TransitPad][Transit]") {
+	Test::Harness h;
+	Test::ModuleScaffold<TransitPadModule<>> padMods;
+	TransitPadModule<>* pad = padMods.create("TransitPad");
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+
+	// Connecting the pad forces slotCvMode to OFF, which would otherwise make
+	// LIGHT_CV blink continuously as a "SEL-mode disabled" indicator -- that's
+	// only a meaningful indication while the pad isn't actually overriding
+	// everything itself.
+	connectPad(h, transit, pad);
+	h.dspStep();
+	REQUIRE(transit->slotCvMode == SLOTCVMODE::OFF);
+
+	// Run well past several blink half-periods (lightBlinkSlow toggles every
+	// ~0.4s); brightness must stay at 0 throughout, not just off-phase.
+	for (int i = 0; i < 20; i++) {
+		h.dspSteps((int)(h.sampleRate() * 0.1f));
+		REQUIRE(transit->lights[TransitModule<12>::LIGHT_CV].getBrightness() == 0.f);
+	}
+
+	// Switching the pad off must let the blink resume.
+	pad->params[TransitPadModule<>::ON_PARAM].setValue(0.f);
+	h.dspStep();
+
+	bool sawLit = false;
+	for (int i = 0; i < 20 && !sawLit; i++) {
+		h.dspSteps((int)(h.sampleRate() * 0.1f));
+		if (transit->lights[TransitModule<12>::LIGHT_CV].getBrightness() > 0.f) sawLit = true;
+	}
+	REQUIRE(sawLit);
 }
 
 
@@ -1776,17 +1942,17 @@ TEST_CASE("XY-pad chain: motion sequence drives the mix position", "[TransitPad]
 		r.pad->seqData[0][0].x[0] = 0.f; r.pad->seqData[0][0].y[0] = 0.f;
 		r.pad->seqData[0][0].x[1] = 1.f; r.pad->seqData[0][0].y[1] = 1.f;
 
-		r.pad->inputs[TransitPadModule<>::OUT_SEQ_PH_INPUT].channels = 1;
+		r.pad->inputs[TransitPadModule<>::SEQ_PH_INPUT].channels = 1;
 
-		r.pad->inputs[TransitPadModule<>::OUT_SEQ_PH_INPUT].setVoltage(0.f);
+		r.pad->inputs[TransitPadModule<>::SEQ_PH_INPUT].setVoltage(0.f);
 		r.run(5);
 		REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
 
-		r.pad->inputs[TransitPadModule<>::OUT_SEQ_PH_INPUT].setVoltage(10.f);
+		r.pad->inputs[TransitPadModule<>::SEQ_PH_INPUT].setVoltage(10.f);
 		r.run(5);
 		REQUIRE(r.paramValue() == Catch::Approx(1.0f).margin(0.001f));
 
-		r.pad->inputs[TransitPadModule<>::OUT_SEQ_PH_INPUT].setVoltage(5.f);
+		r.pad->inputs[TransitPadModule<>::SEQ_PH_INPUT].setVoltage(5.f);
 		r.run(5);
 		REQUIRE(r.paramValue() == Catch::Approx(0.5f).margin(0.001f));
 	}
@@ -1800,13 +1966,13 @@ TEST_CASE("XY-pad chain: motion sequence drives the mix position", "[TransitPad]
 		r.pad->seqData[0][1].x[0] = 1.f; r.pad->seqData[0][1].y[0] = 0.f;
 		r.pad->seqData[0][1].x[1] = 1.f; r.pad->seqData[0][1].y[1] = 1.f;
 
-		r.pad->inputs[TransitPadModule<>::OUT_SEQ_PH_INPUT].channels = 1;
-		r.pad->inputs[TransitPadModule<>::OUT_SEQ_PH_INPUT].setVoltage(0.f);
+		r.pad->inputs[TransitPadModule<>::SEQ_PH_INPUT].channels = 1;
+		r.pad->inputs[TransitPadModule<>::SEQ_PH_INPUT].setVoltage(0.f);
 		r.h.dspSteps(5);
 		REQUIRE(r.pad->params[TransitPadModule<>::OUT_X_POS].getValue() == Catch::Approx(0.f).margin(0.001f));
 		REQUIRE(r.pad->params[TransitPadModule<>::OUT_Y_POS].getValue() == Catch::Approx(0.f).margin(0.001f));
 
-		fireTrigger(r.h, r.pad, TransitPadModule<>::OUT_SEQ_INPUT);
+		fireTrigger(r.h, r.pad, TransitPadModule<>::SEQ_INPUT);
 		REQUIRE(r.pad->seqSelected[0] == 1);
 
 		r.h.dspSteps(5);
