@@ -670,6 +670,13 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 		json_t* outputJ = json_object_get(rootJ, "output");
 		Seq::dataFromJson(outputJ, 0);
+
+		// Resync the UI-shadow cursor state (outUiX/outXfilter) that process()
+		// reads instead of the param; Rack's own param restore doesn't touch it.
+		bool nodePos = nodePosMode.load(std::memory_order_relaxed) != NODEPOSMODE::OFF;
+		float x = nodePos ? mixX[currentSet] : paramQuantities[OUT_X_POS]->getParam()->getValue();
+		float y = nodePos ? mixY[currentSet] : paramQuantities[OUT_Y_POS]->getParam()->getValue();
+		setCursorXyImmediate(0, x, y);
 	}
 };
 
