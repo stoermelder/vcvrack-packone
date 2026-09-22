@@ -123,6 +123,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 	/** [Stored to JSON] */
 	int presetProcessDivision;
 	ClockDividerEx presetProcessDivider;
+	ClockDividerEx padProcessDivider;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
 	std::uniform_int_distribution<int> randDist;
@@ -250,7 +251,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 		presetProcessDivision = settings::isPlugin ? 256 : 64;
 		presetProcessDivider.setDivision(presetProcessDivision);
 		presetProcessDivider.reset();
-		
+		padProcessDivider.setDivision(presetProcessDivision);
+		padProcessDivider.reset();
+
 		parameterChangesDirect = false;
 	}
 
@@ -500,7 +503,13 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 				float sampleTime = args.sampleTime * buttonDivider.division;
 				for (int i = 0; i < presetTotal; i++) {
 					SLOT* slot = getSlot(i);
-					switch (slot->getPresetButton()->process(sampleTime)) {
+					LongPressButton::Event e = slot->getPresetButton()->process(sampleTime);
+					// The button is still tracked every tick so its press/hold state
+					// stays in sync, but while the pad is active it already owns the
+					// blend -- loading a slot here would start a fade that fights (or,
+					// through padProcessDivider timing, outlasts) the pad's own output.
+					if (padOverride) continue;
+					switch (e) {
 						default:
 						case LongPressButton::NO_PRESS:
 							break;
@@ -841,7 +850,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 	}
 
 	void presetProcessXyPad(float sampleTime) {
-		if (presetProcessDivider.process()) {
+		if (padProcessDivider.process()) {
 			const auto& snapshots = transitPad->getPadFactors();
 
 			std::vector<float> v(sourceHandles.size(), 0.f);
@@ -1255,6 +1264,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 		presetProcessDivision = d;
 		presetProcessDivider.setDivision(presetProcessDivision);
 		presetProcessDivider.reset();
+		padProcessDivider.setDivision(presetProcessDivision);
+		padProcessDivider.reset();
 	}
 
 	int getProcessDivision() {

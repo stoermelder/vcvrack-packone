@@ -1546,6 +1546,57 @@ TEST_CASE("Pad active overrides Write mode: buttons don't save/clear and the ble
 }
 
 
+TEST_CASE("Pad active: slot button press doesn't start a fade or disturb the frozen blend", "[TransitPad][Transit]") {
+	// Regression test: while the pad is active, effCtrlMode is forced to READ
+	// regardless of the front-panel switch, so a slot-button press used to fall
+	// through to presetLoad() (the Read/Auto branch) and set processing=true,
+	// starting a fade that raced presetProcessXyPad on the shared divider --
+	// whichever process function won the race, the button press corrupted the
+	// pad's blend, and once the pad was switched off the leftover fade played
+	// out instead of leaving the parameter at its last blended value.
+	Test::Harness h;
+	Test::ModuleScaffold<TransitPadModule<>> padMods;
+	TransitPadModule<>* pad = padMods.create("TransitPad");
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TestParamModule* target = h.adoptModule(new TestParamModule);
+
+	bindParam(h, transit, target->id, TestParamModule::PARAM_A);
+	target->params[TestParamModule::PARAM_A].setValue(0.25f);
+	transit->presetSave(0);
+	target->params[TestParamModule::PARAM_A].setValue(0.75f);
+	transit->presetSave(3);
+	// presetSave(p) also sets preset = p as a side effect; reset it to -1 so the
+	// button press below is the only thing that could change it to 3.
+	transit->preset = -1;
+
+	connectPad(h, transit, pad);
+	pad->snapshots[0][0].id = 0;
+	pad->snapshots[0][0].weight = 1.f;
+	h.dspSteps(5);
+	REQUIRE(target->params[TestParamModule::PARAM_A].getValue() == Catch::Approx(0.25f).margin(0.001f));
+	REQUIRE_FALSE(transit->processing);
+
+	// Habit press: user presses slot 3's button expecting a normal Write- or
+	// Read-mode action (whatever the front-panel switch happens to say).
+	transit->params[TransitModule<12>::PARAM_PRESET + 3].setValue(10.f);
+	h.dspSteps(128);
+	transit->params[TransitModule<12>::PARAM_PRESET + 3].setValue(0.f);
+	h.dspSteps(128);
+
+	// No fade was started, and the pad's blend is undisturbed.
+	REQUIRE_FALSE(transit->processing);
+	REQUIRE(transit->preset != 3);
+	h.dspSteps(5);
+	REQUIRE(target->params[TestParamModule::PARAM_A].getValue() == Catch::Approx(0.25f).margin(0.001f));
+
+	// Switching the pad off must leave the parameter at the frozen blend, not
+	// resume/play out some leftover fade toward slot 3.
+	pad->params[TransitPadModule<>::ON_PARAM].setValue(0.f);
+	h.dspSteps(10);
+	REQUIRE(target->params[TestParamModule::PARAM_A].getValue() == Catch::Approx(0.25f).margin(0.001f));
+}
+
+
 TEST_CASE("LIGHT_CV stops blinking while the pad is active, resumes once it's switched off", "[TransitPad][Transit]") {
 	Test::Harness h;
 	Test::ModuleScaffold<TransitPadModule<>> padMods;
