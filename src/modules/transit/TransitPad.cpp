@@ -1265,6 +1265,7 @@ struct TransitPadVizOverlay : TransparentWidget {
 struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 	typedef TransitPadModule<> MODULE;
 	TransitPadVizOverlay* vizOverlay = nullptr;
+	TransitPadXyScreenWidget<MODULE>* screenWidget = nullptr;
 
 	TransitPadWidget(MODULE* module) : ThemedModuleWidget<MODULE>(module, "TransitPad") {
 		setModule(module);
@@ -1285,7 +1286,7 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 
 		// +3: compensates for XyScreenWidget's background bleeding 3px past its
 		// own box, or it lands flush against the header.
-		TransitPadXyScreenWidget<MODULE>* screenWidget = new TransitPadXyScreenWidget<MODULE>(module, MODULE::SNAPSHOT_X_POS, MODULE::SNAPSHOT_Y_POS, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
+		screenWidget = new TransitPadXyScreenWidget<MODULE>(module, MODULE::SNAPSHOT_X_POS, MODULE::SNAPSHOT_Y_POS, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
 		screenWidget->box.pos = Vec(3.f, 39.4f);
 		screenWidget->box.size = Vec(225.f - 6.f, 225.f - 6.f);
 		addChild(screenWidget);
@@ -1339,6 +1340,15 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 			return;
 		}
 		ThemedModuleWidget<MODULE>::onHoverKey(e);
+	}
+
+	// Snapshot-set options (number of snapshots, set CV mode, node-position
+	// mode, lock) live on the screen widget's own context menu, but a user
+	// right-clicking the module elsewhere shouldn't have to find the screen
+	// first -- so mirror them here too.
+	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
+		if (module && screenWidget) screenWidget->appendContextMenu(menu);
 	}
 };
 
