@@ -457,7 +457,7 @@ struct XyScreenRadiusSlider : ui::Slider {
 			return module->getNodeRadiusFinal(id);
 		}
 		float getDefaultValue() override {
-			return 0.5f;
+			return module->getNodeRadiusDefault(id);
 		}
 		float getDisplayValue() override {
 			return getValue() * 100.f;
@@ -548,7 +548,7 @@ struct XyScreenAmountSlider : ui::Slider {
 			return module->getNodeAmountFinal(id);
 		}
 		float getDefaultValue() override {
-			return 0.5;
+			return module->getNodeAmountDefault(id);
 		}
 		float getDisplayValue() override {
 			return getValue() * 100;
@@ -1187,16 +1187,16 @@ struct XyScreenWidget : OpaqueWidget {
 			APP->history->push(h);
 		}));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuItem("Radomize x-pos & y-pos", "", [=] {
+		menu->addChild(createMenuItem("Randomize x-pos & y-pos", "", [=] {
 			randomizeXy("randomize x-pos & y-pos", true, true);
 		}));
-		menu->addChild(createMenuItem("Radomize x-pos", "", [=] {
+		menu->addChild(createMenuItem("Randomize x-pos", "", [=] {
 			randomizeXy("randomize x-pos", true, false);
 		}));
-		menu->addChild(createMenuItem("Radomize y-pos", "", [=] {
+		menu->addChild(createMenuItem("Randomize y-pos", "", [=] {
 			randomizeXy("randomize IN y-pos", false, true);
 		}));
-		menu->addChild(createMenuItem("Radomize amount", "", [=] {
+		menu->addChild(createMenuItem("Randomize amount", "", [=] {
 			std::vector<XyScreenAmountChangeAction<MODULE>*> actions(module->nodeCount());
 			for (uint8_t i = 0; i < module->nodeCount(); i++) {
 				actions[i] = new XyScreenAmountChangeAction<MODULE>(module);
@@ -1214,7 +1214,7 @@ struct XyScreenWidget : OpaqueWidget {
 			complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize amount";
 			APP->history->push(complexAction);
 		}));
-		menu->addChild(createMenuItem("Radomize radius", "", [=] {
+		menu->addChild(createMenuItem("Randomize radius", "", [=] {
 			std::vector<XyScreenRadiusChangeAction<MODULE>*> actions(module->nodeCount());
 			for (uint8_t i = 0; i < module->nodeCount(); i++) {
 				actions[i] = new XyScreenRadiusChangeAction<MODULE>(module);
