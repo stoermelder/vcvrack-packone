@@ -646,6 +646,61 @@ TEST_CASE("SET_CV_INPUT VOLT mode maps 0-10V to set index", "[TransitPad]") {
 }
 
 
+// Regression: the VOLT/C4 paths called changeSet() with the CV's set on every
+// sample, so a set-button press was undone on the very next tick and the
+// buttons were dead while the CV was patched. The CV must only take over again
+// once the set it selects actually changes.
+TEST_CASE("Set buttons override a steady VOLT/C4 set CV until the CV changes", "[TransitPad]") {
+	Test::Harness h;
+	typedef TransitPadModule<> M;
+
+	struct Case { SETCVMODE mode; float setA; float setB; };
+	// Voltages selecting set 1 and set 6 in each mode.
+	for (Case c : {Case{SETCVMODE::VOLT, 1.5f, 7.6f}, Case{SETCVMODE::C4, 1.f / 12.f, 6.f / 12.f}}) {
+		DYNAMIC_SECTION("setCvMode " << (int)c.mode) {
+			M* m = h.addModule<M>("TransitPad");
+			m->setCvMode = c.mode;
+			Input& in = m->inputs[M::SET_CV_INPUT];
+			in.channels = 1;
+			in.setVoltage(c.setA);
+			h.dspSteps(100);
+			REQUIRE(m->currentSet == 1);
+
+			auto press = [&](int s) {
+				m->params[M::SET_PARAM + s].setValue(1.f);
+				h.dspSteps(200);
+				m->params[M::SET_PARAM + s].setValue(0.f);
+				h.dspSteps(200);
+			};
+
+			press(4);
+			REQUIRE(m->currentSet == 4);
+
+			// A new CV value takes over again...
+			in.setVoltage(c.setB);
+			h.dspSteps(100);
+			REQUIRE(m->currentSet == 6);
+
+			// ...and so does a CV returning to the set it selected before.
+			press(2);
+			REQUIRE(m->currentSet == 2);
+			in.setVoltage(c.setA);
+			h.dspSteps(100);
+			REQUIRE(m->currentSet == 1);
+
+			// Re-patching applies the CV even though its set didn't change.
+			press(3);
+			in.channels = 0;
+			h.dspSteps(100);
+			REQUIRE(m->currentSet == 3);
+			in.channels = 1;
+			h.dspSteps(100);
+			REQUIRE(m->currentSet == 1);
+		}
+	}
+}
+
+
 TEST_CASE("SET_CV_INPUT C4 mode maps V/oct to set index", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
@@ -1029,6 +1084,8 @@ TEST_CASE("Reset and randomize go through the event-form handlers", "[TransitPad
 		m->snapshotsUsed = 7;
 		m->locked = true;
 		m->setLabel[2] = "custom";
+		m->setCvMode = SETCVMODE::C4;
+		m->nodePosMode = NODEPOSMODE::AUTO;
 
 		Module::ResetEvent e;
 		m->onReset(e);
@@ -1037,6 +1094,8 @@ TEST_CASE("Reset and randomize go through the event-form handlers", "[TransitPad
 		REQUIRE(m->snapshotsUsed == 4);
 		REQUIRE(m->isLocked() == false);
 		REQUIRE(m->setLabel[2] == "");
+		REQUIRE(m->setCvMode == SETCVMODE::TRIG_FWD);
+		REQUIRE(m->nodePosMode == NODEPOSMODE::OFF);
 	}
 
 	SECTION("RandomizeEvent moves the snapshot node positions") {
@@ -2287,5 +2346,20 @@ TEST_CASE("Space toggles visualize mode", "[TransitPad]") {
 		e.mods = 0;
 		REQUIRE_NOTHROW(padWidget->onHoverKey(e));
 		Test::destroyWidget(padWidget);
+	}
+}
+
+// Regression: the node-menu sliders hardcoded 0.5 as their reset value, so a
+// double-click reset Amount and Radius to 50% although a fresh snapshot point
+// (and Initialize) uses 100% for both.
+TEST_CASE("Amount/Radius slider reset values match the node defaults", "[TransitPad]") {
+	Test::Harness h;
+	typedef TransitPadModule<> M;
+	M* m = h.addModule<M>("TransitPad");
+	for (uint8_t i = 0; i < 8; i++) {
+		StoermelderPackOne::XyScreenRadiusSlider<M>::RadiusQuantity radius(m, i);
+		StoermelderPackOne::XyScreenAmountSlider<M>::AmountQuantity amount(m, i);
+		REQUIRE(radius.getDefaultValue() == 1.f);
+		REQUIRE(amount.getDefaultValue() == 1.f);
 	}
 }

@@ -118,6 +118,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	 */
 	std::atomic<SETCVMODE> setCvMode{SETCVMODE::TRIG_FWD};
 	dsp::SchmittTrigger setCvTrigger;
+	/** Set last selected by the VOLT/C4 CV, or -1 to apply the CV on the next tick. */
+	int setCvLast = -1;
 	/** [Stored to JSON] written from the UI thread (context menu, dataFromJson),
 	 *  read from the engine thread (process(), on set change) and the UI thread. */
 	std::atomic<NODEPOSMODE> nodePosMode{NODEPOSMODE::OFF};
@@ -205,6 +207,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		init();
 		snapshotsUsed = 4;
 		currentSet = 0;
+		setCvMode.store(SETCVMODE::TRIG_FWD, std::memory_order_relaxed);
 		nodePosMode.store(NODEPOSMODE::OFF, std::memory_order_relaxed);
 		locked = false;
 
@@ -275,16 +278,24 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 	}
 
-	// Switches the active set. A no-op when newSet == currentSet — the
-	// VOLT/C4 CV paths call this every tick and rely on that to avoid
-	// reloading on every sample. Use reloadCurrentSet() to force a reload
-	// of the set that's already active.
+	// Switches the active set. A no-op when newSet == currentSet, so a
+	// repeated request never reloads the stored layout. Use reloadCurrentSet()
+	// to force a reload of the set that's already active.
 	void changeSet(int newSet) {
 		if (newSet == currentSet) return;
 		NODEPOSMODE m = nodePosMode.load(std::memory_order_relaxed);
 		if (m == NODEPOSMODE::AUTO) storeNodePositions(currentSet);
 		currentSet = newSet;
 		if (m != NODEPOSMODE::OFF) loadNodePositions(currentSet);
+	}
+
+	// VOLT/C4 CV paths: follow the CV only when the set it selects changes, so a
+	// set-button press sticks until the CV moves on to another set instead of
+	// being undone on the very next sample.
+	void changeSetByCv(int newSet) {
+		if (newSet == setCvLast) return;
+		setCvLast = newSet;
+		changeSet(newSet);
 	}
 
 	// Reloads the current set's stored layout without changing currentSet or
@@ -311,13 +322,19 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 				case SETCVMODE::VOLT: {
 					float v = clamp(inputs[SET_CV_INPUT].getVoltage(), 0.f, 10.f);
 					int s = int(v / 10.f * SETS);
-					changeSet(std::min(s, (int)SETS - 1));
+					changeSetByCv(std::min(s, (int)SETS - 1));
 					break;
 				}
 				case SETCVMODE::C4:
-					changeSet(clamp((int)std::round(inputs[SET_CV_INPUT].getVoltage() * 12.f), 0, (int)SETS - 1));
+					changeSetByCv(clamp((int)std::round(inputs[SET_CV_INPUT].getVoltage() * 12.f), 0, (int)SETS - 1));
 					break;
 			}
+		}
+		else {
+			setCvLast = -1;
+		}
+		if (mode != SETCVMODE::VOLT && mode != SETCVMODE::C4) {
+			setCvLast = -1;
 		}
 		if (buttonDivider.process()) {
 			for (uint8_t s = 0; s < SETS; s++) {
