@@ -39,6 +39,16 @@ TEST_CASE("Preset JSON null-guards", "[Mirror][JSON]") {
 	}
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[Mirror][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<MirrorModule>("Mirror");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 TEST_CASE("JSON round-trip preserves state", "[Mirror][JSON]") {
 	Test::ModuleScaffold<MirrorModule> mods;
 	MirrorModule* m = mods.create("Mirror");

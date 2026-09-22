@@ -465,27 +465,21 @@ TEST_CASE("customTagMetamodule", "[Mb]") {
 	}
 
 	SECTION("Parses YAML correctly when download succeeds") {
-		// Create a temporary file with mock YAML content
-		std::string tmpFile = rack::system::getTempDirectory() + "/metamodule-plugins-test.yml";
-		
-		FILE* file = fopen(tmpFile.c_str(), "w");
-		REQUIRE(file != nullptr);
-		
-		// Write mock YAML content (simplified version of MetaModule format)
-		// Indentation: 8 spaces = plugin level, 16 spaces = module level
-		fprintf(file, "        VCVSlug: test-plugin\n");
-		fprintf(file, "                VCVSlug: matrix-mixer\n");
-		fprintf(file, "                VCVSlug: oscillator-1\n");
-		fclose(file);
+		TEST_MOCK_FS(MockFileAccess);
+		std::string tmpFile = "/mock/metamodule-plugins-test.yml";
+		// Mock YAML content (simplified version of MetaModule format).
+		// Indentation: 8 spaces = plugin level, 16 spaces = module level.
+		fs.files[tmpFile] =
+			"        VCVSlug: test-plugin\n"
+			"                VCVSlug: matrix-mixer\n"
+			"                VCVSlug: oscillator-1\n";
 
 		// Use parseMetamoduleYaml to test parsing logic independently
 		auto parsedSlugs = parseMetamoduleYaml(tmpFile);
-		
+
 		REQUIRE(parsedSlugs.size() == 2);
 		REQUIRE(parsedSlugs.count(std::pair<std::string, std::string>("test-plugin", "matrix-mixer")) > 0);
 		REQUIRE(parsedSlugs.count(std::pair<std::string, std::string>("test-plugin", "oscillator-1")) > 0);
-
-		std::remove(tmpFile.c_str());
 	}
 
 	SECTION("Returns empty result when YAML file is missing") {
@@ -603,17 +597,13 @@ TEST_CASE("customTagMetamodule", "[Mb]") {
 	}
 
 	SECTION("Handles malformed YAML file") {
-		std::string tmpFile = rack::system::getTempDirectory() + "/malformed-yaml-test.yml";
-		
-		FILE* file = fopen(tmpFile.c_str(), "w");
-		REQUIRE(file != nullptr);
-		fclose(file);
+		TEST_MOCK_FS(MockFileAccess);
+		std::string tmpFile = "/mock/malformed-yaml-test.yml";
+		fs.files[tmpFile] = "";
 
 		auto parsedSlugs = parseMetamoduleYaml(tmpFile);
-		
-		REQUIRE(parsedSlugs.size() == 0);
 
-		std::remove(tmpFile.c_str());
+		REQUIRE(parsedSlugs.size() == 0);
 	}
 };
 
@@ -662,11 +652,9 @@ static const char* SAMPLE_METAMODULE_YAML = R"(        VCVSlug: stoermelder-pack
 
 TEST_CASE("parseMetamoduleYaml with real-world data", "[Mb]") {
 	SECTION("Parses real MetaModule plugin list format") {
-		std::string tmpFile = rack::system::getTempDirectory() + "/metamodule-real-test.yml";
-		FILE* file = fopen(tmpFile.c_str(), "w");
-		REQUIRE(file != nullptr);
-		fputs(SAMPLE_METAMODULE_YAML, file);
-		fclose(file);
+		TEST_MOCK_FS(MockFileAccess);
+		std::string tmpFile = "/mock/metamodule-real-test.yml";
+		fs.files[tmpFile] = SAMPLE_METAMODULE_YAML;
 
 		auto parsed = parseMetamoduleYaml(tmpFile);
 
@@ -698,20 +686,17 @@ TEST_CASE("parseMetamoduleYaml with real-world data", "[Mb]") {
 		REQUIRE(parsed.count({"stoermelder-packone", "P1-Mb"}) == 1);
 		REQUIRE(parsed.count({"VCV-AudibleInstruments", "AudibleInstruments-Plinky"}) == 1);
 		REQUIRE(parsed.count({"fundamental", "Fundamental-Mixer"}) == 1);
-
-		std::remove(tmpFile.c_str());
 	}
 
 	SECTION("Handles empty lines in YAML") {
-		std::string tmpFile = rack::system::getTempDirectory() + "/metamodule-empty-lines.yml";
-		FILE* file = fopen(tmpFile.c_str(), "w");
-		REQUIRE(file != nullptr);
-		fprintf(file, "        VCVSlug: test-plugin\n");
-		fprintf(file, "\n");  // empty line
-		fprintf(file, "                VCVSlug: module-1\n");
-		fprintf(file, "\n");  // empty line
-		fprintf(file, "                VCVSlug: module-2\n");
-		fclose(file);
+		TEST_MOCK_FS(MockFileAccess);
+		std::string tmpFile = "/mock/metamodule-empty-lines.yml";
+		fs.files[tmpFile] =
+			"        VCVSlug: test-plugin\n"
+			"\n"  // empty line
+			"                VCVSlug: module-1\n"
+			"\n"  // empty line
+			"                VCVSlug: module-2\n";
 
 		auto parsed = parseMetamoduleYaml(tmpFile);
 
@@ -719,26 +704,23 @@ TEST_CASE("parseMetamoduleYaml with real-world data", "[Mb]") {
 		REQUIRE(parsed.size() == 2);
 		REQUIRE(parsed.count({"test-plugin", "module-1"}) == 1);
 		REQUIRE(parsed.count({"test-plugin", "module-2"}) == 1);
-
-		std::remove(tmpFile.c_str());
 	}
 
 	SECTION("Handles irregular indentation") {
-		std::string tmpFile = rack::system::getTempDirectory() + "/metamodule-irregular.yml";
-		FILE* file = fopen(tmpFile.c_str(), "w");
-		REQUIRE(file != nullptr);
-		// Plugin at 8 spaces, modules at 16 spaces (correct)
-		fprintf(file, "        VCVSlug: my-plugin\n");
-		fprintf(file, "                VCVSlug: my-module\n");
-		// Plugin at 0 spaces (should be ignored - no leading spaces)
-		fprintf(file, "VCVSlug: bad-plugin\n");
-		fprintf(file, "                VCVSlug: bad-module\n");
-		// Module at 8 spaces - treated as plugin level, not under my-plugin
-		fprintf(file, "        VCVSlug: another-plugin\n");
-		fprintf(file, "                VCVSlug: good-module\n");
-		fprintf(file, "        VCVSlug: orphan-module\n");
-		fprintf(file, "                VCVSlug: nested-module\n");
-		fclose(file);
+		TEST_MOCK_FS(MockFileAccess);
+		std::string tmpFile = "/mock/metamodule-irregular.yml";
+		fs.files[tmpFile] =
+			// Plugin at 8 spaces, modules at 16 spaces (correct)
+			"        VCVSlug: my-plugin\n"
+			"                VCVSlug: my-module\n"
+			// Plugin at 0 spaces (should be ignored - no leading spaces)
+			"VCVSlug: bad-plugin\n"
+			"                VCVSlug: bad-module\n"
+			// Module at 8 spaces - treated as plugin level, not under my-plugin
+			"        VCVSlug: another-plugin\n"
+			"                VCVSlug: good-module\n"
+			"        VCVSlug: orphan-module\n"
+			"                VCVSlug: nested-module\n";
 
 		auto parsed = parseMetamoduleYaml(tmpFile);
 
@@ -752,26 +734,21 @@ TEST_CASE("parseMetamoduleYaml with real-world data", "[Mb]") {
 		REQUIRE(parsed.count({"another-plugin", "good-module"}) == 1);
 		REQUIRE(parsed.count({"bad-plugin", "bad-module"}) == 0); // ignored (0 spaces)
 		REQUIRE(parsed.count({"orphan-module", "nested-module"}) == 1); // orphan-module is a plugin
-
-		std::remove(tmpFile.c_str());
 	}
 
 	SECTION("Handles VCVSlug without trailing module entries") {
-		std::string tmpFile = rack::system::getTempDirectory() + "/metamodule-no-modules.yml";
-		FILE* file = fopen(tmpFile.c_str(), "w");
-		REQUIRE(file != nullptr);
-		fprintf(file, "        VCVSlug: plugin-without-modules\n");
-		fprintf(file, "                VCVSlug: only-one\n");
-		fprintf(file, "        VCVSlug: another-plugin\n");
-		// another-plugin has no modules
-		fclose(file);
+		TEST_MOCK_FS(MockFileAccess);
+		std::string tmpFile = "/mock/metamodule-no-modules.yml";
+		fs.files[tmpFile] =
+			"        VCVSlug: plugin-without-modules\n"
+			"                VCVSlug: only-one\n"
+			"        VCVSlug: another-plugin\n";
+			// another-plugin has no modules
 
 		auto parsed = parseMetamoduleYaml(tmpFile);
 
 		REQUIRE(parsed.count({"plugin-without-modules", "only-one"}) == 1);
 		REQUIRE(parsed.count({"another-plugin", ""}) == 0); // Should not create empty entry
-
-		std::remove(tmpFile.c_str());
 	}
 }
 

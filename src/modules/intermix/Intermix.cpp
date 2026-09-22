@@ -40,6 +40,9 @@ enum IN_MODE {
 	IM_SUB_03C = 21,
 	IM_SUB_02C = 22,
 	IM_SUB_01C = 23,
+	/** Not a legal mode by itself (0 cents is IM_DIRECT); only serves as the
+	 * zero point that the IM_SUB_xxC/IM_ADD_xxC values are offset from. */
+	IM_CONST_ZERO = 24,
 	IM_ADD_01C = 25,
 	IM_ADD_02C = 26,
 	IM_ADD_03C = 27,
@@ -53,6 +56,23 @@ enum IN_MODE {
 	IM_ADD_11C = 35,
 	IM_ADD_12C = 36
 };
+
+/** True for every IN_MODE value that a valid preset can contain, i.e. every
+ * named enumerator except IM_CONST_ZERO (the constant-voltage zero point,
+ * which is deliberately unreachable so it can't collide with IM_DIRECT). */
+inline bool isValidInMode(int mode) {
+	return mode == IM_OFF || mode == IM_DIRECT || mode == IM_FADE
+		|| (mode >= IM_SUB_12C && mode <= IM_SUB_01C)
+		|| (mode >= IM_ADD_01C && mode <= IM_ADD_12C);
+}
+
+/** Cents represented by a constant-voltage IN_MODE (IM_SUB_xxC/IM_ADD_xxC).
+ * Centralises the "- IM_CONST_ZERO" arithmetic shared by the DSP, the LED
+ * display, and the context menu. Only meaningful when isValidInMode(mode) is
+ * true and mode is not IM_OFF/IM_DIRECT/IM_FADE. */
+inline int centsOf(IN_MODE mode) {
+	return (int)mode - IM_CONST_ZERO;
+}
 
 enum OUT_MODE {
 	OM_OFF = 0,
@@ -102,27 +122,27 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 	int panelTheme = 0;
 
 	/** [Stored to JSON] */
-	float padBrightness;
+	float padBrightness = 0.75f;
 	/** [Stored to JSON] */
-	bool inputVisualize;
+	bool inputVisualize = false;
 	/** [Stored to JSON] */
 	IN_MODE inputMode[PORTS];
 	/** [Stored to JSON] */
-	bool outputClamp;
+	bool outputClamp = true;
 	/** [Stored to JSON] */
 	SceneData scenes[SCENE_MAX];
 	/** [Stored to JSON] */
 	int sceneSelected = 0;
 	/** [Stored to JSON] */
-	SCENE_CV_MODE sceneMode;
+	SCENE_CV_MODE sceneMode = SCENE_CV_MODE::TRIG_FWD;
 	/** [Stored to JSON] */
-	bool sceneInputMode;
+	bool sceneInputMode = false;
 	/** [Stored to JSON] */
-	bool sceneAtMode;
+	bool sceneAtMode = true;
 	/** [Stored to JSON] */
 	int sceneCount = SCENE_MAX;
 	/** [Stored to JSON] */
-	bool sceneLock;
+	bool sceneLock = false;
 
 	int sceneNext = -1;
 	int sceneCvModeDir = 1;
@@ -138,7 +158,6 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 	LinearFade fader[PORTS][PORTS][PORT_MAX_CHANNELS];
 	uint32_t fadeInTs[PORTS] = {};
 	uint32_t fadeOutTs[PORTS] = {};
-	//dsp::TSlewLimiter<simd::float_4> outputAtSlew[PORTS / 4];
 
 	uint32_t ts = 0;
 
@@ -419,10 +438,14 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 				params[PARAM_SCENE + sceneSelected].setValue(1.f);
 			}
 
+			bool mapTriggered[PORTS];
+			for (int j = 0; j < PORTS; j++) {
+				mapTriggered[j] = mapTrigger[j].process(params[PARAM_Y_MAP + j].getValue());
+			}
 			for (int i = 0; i < PORTS; i++) {
 				if (params[PARAM_X_MAP + i].getValue() > 0.f) {
 					for (int j = 0; j < PORTS; j++) {
-						if (mapTrigger[j].process(params[PARAM_Y_MAP + j].getValue())) {
+						if (mapTriggered[j]) {
 							float v = params[PARAM_MATRIX + j * PORTS + i].getValue();
 							v = v == 1.f ? 0.f : 1.f;
 							params[PARAM_MATRIX + j * PORTS + i].setValue(v);
@@ -474,7 +497,7 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 						}
 						break;
 					default:
-						v = (mode - 24) / 12.f;
+						v = centsOf(mode) / 12.f;
 						break;
 				}
 
@@ -485,18 +508,6 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 				}
 			}
 
-
-			// -- Standard code --
-			/*
-			for (int i = 0; i < PORTS; i++) {
-				float v = scenes[sceneSelected].output[i] == OM_OUT ? out[i / 4][i % 4] : 0.f;
-				if (outputClamp) v = clamp(v, -10.f, 10.f);
-				outputs[OUTPUT + i].setVoltage(v);
-			}
-			*/
-			// -- Standard code --
-
-			// -- SIMD code --
 			simd::float_4 oc = outputClamp;
 			for (int j = 0; j < PORTS; j+=4) {
 				// Check for OUT_MODE
@@ -507,14 +518,12 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 				out[j / 4] = simd::ifelse(oc == 1.f, simd::clamp(out[j / 4], -10.f, 10.f), out[j / 4]);
 				// Attenuverters
 				simd::float_4 at = simd::float_4::load(&scenes[sceneSelected].outputAt[j]);
-				//at = outputAtSlew[j / 4].process(args.sampleTime, at);
 				out[j / 4] *= at;
 			}
 
 			for (int i = 0; i < PORTS; i++) {
 				outputs[OUTPUT + i].setVoltage(out[i / 4][i % 4], c);
 			}
-			// -- SIMD code --
 		}
 
 		for (int i = 0; i < PORTS; i++) {
@@ -578,19 +587,9 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 			params[PARAM_SCENE + i].setValue(i == sceneSelected);
 		}
 
-		/*
-		simd::float_4 at[PORTS / 4];
-		float f1 = params[PARAM_FADEIN].getValue();
-		float f2 = params[PARAM_FADEOUT].getValue();
-		*/
 		for (int i = 0; i < PORTS; i++) {
 			params[PARAM_OUTPUT + i].setValue(scenes[sceneSelected].output[i] != OM_OUT);
 
-			/*
-			float at0 = params[PARAM_AT + i].getValue();
-			float at1 = scenes[sceneSelected].outputAt[i];
-			at[i / 4][i % 4] = at0 > at1 ? (at0 - at1) : (at1 - at0);
-			*/
 			if (sceneAtMode) {
 				params[PARAM_AT + i].setValue(scenes[sceneSelected].outputAt[i]);
 			}
@@ -604,11 +603,6 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 				currentMatrix[i][j] = p;
 			}
 		}
-		/*
-		for (int i = 0; i < PORTS / 4; i++) {
-			outputAtSlew[i].setRiseFall(at[i] / f1, at[i] / f2);
-		}
-		*/
 	}
 
 	inline void sceneSet(int scene) {
@@ -664,6 +658,7 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 	}
 
 	void expSetFade(int i, float* fadeIn, float* fadeOut) override {
+		if (i < 0 || i >= PORTS) return;
 		if (fadeIn) {
 			fadeInTs[i] = ts;
 			for (int j = 0; j < PORTS; j++) {
@@ -743,7 +738,7 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 		json_t* outputClampJ = json_object_get(rootJ, "outputClamp");
 		if (outputClampJ) outputClamp = json_boolean_value(outputClampJ);
 		json_t* channelCountJ = json_object_get(rootJ, "channelCount");
-		if (channelCountJ) channelCount = json_integer_value(channelCountJ);
+		if (channelCountJ) channelCount = clamp((int)json_integer_value(channelCountJ), 1, PORT_MAX_CHANNELS);
 
 		json_t* inputsJ = json_object_get(rootJ, "inputMode");
 		if (inputsJ) {
@@ -751,7 +746,8 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 			// patches may contain more entries than these members hold.
 			size_t maxInputs = std::min((size_t)PORTS, json_array_size(inputsJ));
 			for (size_t inputIndex = 0; inputIndex < maxInputs; inputIndex++) {
-				inputMode[inputIndex] = (IN_MODE)json_integer_value(json_array_get(inputsJ, inputIndex));
+				int m = json_integer_value(json_array_get(inputsJ, inputIndex));
+				inputMode[inputIndex] = isValidInMode(m) ? (IN_MODE)m : IM_DIRECT;
 			}
 		}
 
@@ -767,7 +763,8 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 				if (inputJ) {
 					size_t maxIn = std::min((size_t)PORTS, json_array_size(inputJ));
 					for (size_t index = 0; index < maxIn; index++) {
-						scenes[sceneIndex].input[index] = (IN_MODE)json_integer_value(json_array_get(inputJ, index));
+						int m = json_integer_value(json_array_get(inputJ, index));
+						scenes[sceneIndex].input[index] = isValidInMode(m) ? (IN_MODE)m : IM_DIRECT;
 					}
 				}
 				if (outputJ) {
@@ -793,7 +790,7 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 		}
 
 		json_t* sceneSelectedJ = json_object_get(rootJ, "sceneSelected");
-		if (sceneSelectedJ) sceneSelected = json_integer_value(sceneSelectedJ);
+		if (sceneSelectedJ) sceneSelected = clamp((int)json_integer_value(sceneSelectedJ), 0, SCENE_MAX - 1);
 		json_t* sceneModeJ = json_object_get(rootJ, "sceneMode");
 		if (sceneModeJ) sceneMode = (SCENE_CV_MODE)json_integer_value(sceneModeJ);
 		json_t* sceneInputModeJ = json_object_get(rootJ, "sceneInputMode");
@@ -801,7 +798,7 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 		json_t* sceneAtModeJ = json_object_get(rootJ, "sceneAtMode");
 		if (sceneAtModeJ) sceneAtMode = json_boolean_value(sceneAtModeJ);
 		json_t* sceneCountJ = json_object_get(rootJ, "sceneCount");
-		if (sceneCountJ) sceneCount = json_integer_value(sceneCountJ);
+		if (sceneCountJ) sceneCount = clamp((int)json_integer_value(sceneCountJ), 1, SCENE_MAX);
 		json_t* sceneLockJ = json_object_get(rootJ, "sceneLock");
 		if (sceneLockJ) sceneLock = json_boolean_value(sceneLockJ);
 
@@ -823,7 +820,7 @@ struct IntermixModule : IntermixChainModule, IntermixBase<PORTS> {
 
 
 template < typename MODULE >
-struct InputLedDisplay : StoermelderLedDisplay {
+struct InputModeLedDisplay : StoermelderLedDisplay {
 	MODULE* module;
 	int id;
 
@@ -838,7 +835,7 @@ struct InputLedDisplay : StoermelderLedDisplay {
 				case IN_MODE::IM_FADE:
 					text = "FAD"; break;
 				default:
-					text = (mode - 24 > 0 ? "+" : "-") + string::f("%02i", std::abs(mode - 24));
+					text = (centsOf(mode) >= 0 ? "+" : "-") + string::f("%02i", std::abs(centsOf(mode)));
 					break;
 			}
 		} 
@@ -889,34 +886,20 @@ struct InputLedDisplay : StoermelderLedDisplay {
 		menu->addChild(createSubmenuItem("Subtract", "",
 			[this](Menu* menu) {
 				for (int i = 12; i > 0; i--) {
-					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("-%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 - i)));
+					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("-%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(IM_CONST_ZERO - i)));
 				}
 			}
 		));
 		menu->addChild(createSubmenuItem("Add", "",
 			[this](Menu* menu) {
 				for (int i = 1; i <= 12; i++) {
-					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("+%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 + i)));
+					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("+%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(IM_CONST_ZERO + i)));
 				}
 			}
 		));
 	}
 };
 
-
-
-/*
-struct IntermixKnob : app::SvgKnob {
-	IntermixKnob() {
-		minAngle = -0.75 * M_PI;
-		maxAngle = 0.75 * M_PI;
-		setSvg(Svg::load(asset::plugin(pluginInstance, "res/components/IntermixKnob.svg")));
-		sw->setSize(Vec(22.7f, 22.7f));
-		fb->removeChild(shadow);
-		delete shadow;
-	}
-};
-*/
 
 struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 	const static int PORTS = 8;
@@ -948,8 +931,9 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 
 		struct IntermixMatrixButton : MatrixButton {
 			void onDragStart(const event::DragStart& e) override {
-				IntermixModule<PORTS>* module = dynamic_cast<IntermixModule<PORTS>*>(getParamQuantity()->module);
-				if (module->sceneLock) {
+				auto* pq = getParamQuantity();
+				IntermixModule<PORTS>* module = pq ? dynamic_cast<IntermixModule<PORTS>*>(pq->module) : NULL;
+				if (module && module->sceneLock) {
 					e.consume(this);
 				}
 				else {
@@ -983,7 +967,7 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			addParam(createParamCentered<DummyMapButton>(vo3, module, IntermixModule<PORTS>::PARAM_Y_MAP + i));
 
 			Vec vi0 = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 302.3f);
-			InputLedDisplay<IntermixModule<PORTS>>* inputLedDisplay = createWidgetCentered<InputLedDisplay<IntermixModule<PORTS>>>(vi0);
+			InputModeLedDisplay<IntermixModule<PORTS>>* inputLedDisplay = createWidgetCentered<InputModeLedDisplay<IntermixModule<PORTS>>>(vi0);
 			inputLedDisplay->module = module;
 			inputLedDisplay->id = i;
 			addChild(inputLedDisplay);

@@ -37,6 +37,16 @@ TEST_CASE("Preset JSON null-guards", "[Siren][JSON]") {
 	}
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[Siren][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<SirenModule>("Siren");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 // JSON round-trip preserves lastFile, lastPlayheadPos, activeRootIdx and trim.
 TEST_CASE("JSON round-trip preserves module state", "[Siren][JSON]") {
 	Test::ModuleScaffold<SirenModule> mods;

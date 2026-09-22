@@ -39,6 +39,21 @@ TEST_CASE("Preset JSON null-guards", "[IntermixEnv][JSON]") {
 	}
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[IntermixEnv][JSON]") {
+	Test::Harness h;
+	auto intermixModule = h.adoptModule(new IntermixModuleMock<8>());
+	auto module = h.addModule<IntermixEnvModule<8>>("IntermixEnv");
+	h.connectExpander(intermixModule, module);
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+
+	REQUIRE(module->input >= 0);
+	REQUIRE(module->input < 8);
+}
+
 TEST_CASE("JSON round-trip preserves state", "[JSON][IntermixEnv]") {
 	Test::ModuleScaffold<IntermixEnvModule<8>> mods;
 	IntermixEnvModule<8>* m = mods.create("IntermixEnv");

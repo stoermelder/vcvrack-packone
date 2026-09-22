@@ -58,9 +58,52 @@ struct UiAccess {
 	// constructed nor subclassed headless.
 	//
 	// A bool, not the Window* it wraps: the pointer would only invite use as a drawing handle,
-	// which for the same reasons cannot work. Real window *state* (modifiers, pixel ratio, frame
-	// timing, the cursor) wants its own seam — see var/TestFramework_review.md.
+	// which for the same reasons cannot work. The remaining window *state* (pixel ratio, frame
+	// timing, the cursor) still wants a seam of its own — see var/TestFramework_review.md, and
+	// note the namespace trap recorded there: it cannot be called `vcv::window`.
 	virtual bool hasWindow() const { return false; }
+
+	// Currently-held keyboard modifiers, as a GLFW_MOD_* bitmask. Production is
+	// APP->window->getMods().
+	//
+	// Here rather than in a window-state seam of its own because this is the one piece of that
+	// state with real consumers today: Spin's and Mb's onHoverScroll() and Sail's hover both
+	// gate their central behaviour on it. It cannot be threaded through the event instead —
+	// Rack's HoverScrollEvent carries no mods field (Widget.hpp:321), which is precisely why
+	// Rack itself polls the window there, so three of the four call sites have no other route.
+	//
+	// Returns 0 with no window, matching the "no modifiers held" reading that every call site
+	// already treats as the default case.
+	//
+	// Non-virtual in the base, backed by `testMods` below, so a test's mods survive whichever
+	// mock a suite installs: three suites (Strip, MidiMon, MidiCat) install their own UiAccess
+	// over the harness's, and a virtual here would leave them answering 0 no matter what the
+	// test set. RealUiAccess overrides it to read the actual window; nothing else needs to.
+	virtual int getWindowMods() const { return testMods; }
+
+	// The mods a test has asked every reader to see. Set through Test::EventDriver::setMods()
+	// rather than assigned directly. Lives on the base interface, not on a mock, for the
+	// reason above.
+	int testMods = 0;
+
+	// glfwGetKeyName(key, scancode) / glfwGetKeyScancode(key). Both require glfwInit() to have
+	// run — gated on GLFW's own `_glfw.initialized`, per dep/glfw/src/input.c — which this
+	// plugin never calls in a test binary, so both return NULL/-1 there regardless of window
+	// state. That silently defeats event::HoverKeyEvent/SelectKeyEvent::keyName: Rack's own
+	// EventState::handleKey() (Rack/src/widget/event.cpp) calls glfwGetKeyName() directly, not
+	// through this seam, so this cannot make *that* call site work — see
+	// Test::EventDriver::keyAt() for the dispatch-side fix. What this seam does cover: any of
+	// this plugin's own code that calls glfwGetKeyName()/glfwGetKeyScancode() directly
+	// (keyboard.hpp's keyName(), MidiKey.cpp, Stroke.cpp) could route through here instead and
+	// get a correct, headless-safe answer under test — not done as part of this change, which
+	// only extends the framework.
+	//
+	// Test default mirrors rack::widget::getKeyName() (Rack/src/widget/event.cpp), the same
+	// name table Rack falls back to internally — no GLFW required, ignores `scancode`
+	// (rack::widget::getKeyName() takes only the key). RealUiAccess overrides both with the
+	// real glfw* calls. Default getKeyScancode() answers -1, GLFW's own "no scancode" value.
+	virtual std::string getKeyName(int key, int scancode) const { return rack::widget::getKeyName(key); }
+	virtual int getKeyScancode(int key) const { return -1; }
 };
 
 
@@ -75,6 +118,9 @@ struct RealUiAccess final : UiAccess {
 	void setClipboard(const std::string& text) override;
 	void openBrowser(const std::string& url) override;
 	bool hasWindow() const override;
+	int getWindowMods() const override;
+	std::string getKeyName(int key, int scancode) const override;
+	int getKeyScancode(int key) const override;
 };
 // The shared production instance, defined in the .cpp.
 extern RealUiAccess realUiAccess;
@@ -131,6 +177,21 @@ static void openBrowser(const std::string& url) {
 P1_UNUSED
 static bool hasWindow() {
 	return uiAccessFor().hasWindow();
+}
+
+P1_UNUSED
+static int getWindowMods() {
+	return uiAccessFor().getWindowMods();
+}
+
+P1_UNUSED
+static std::string getKeyName(int key, int scancode) {
+	return uiAccessFor().getKeyName(key, scancode);
+}
+
+P1_UNUSED
+static int getKeyScancode(int key) {
+	return uiAccessFor().getKeyScancode(key);
 }
 
 } // namespace ui

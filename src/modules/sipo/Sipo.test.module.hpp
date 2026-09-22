@@ -40,6 +40,16 @@ TEST_CASE("Preset JSON null-guards", "[Sipo][JSON]") {
 
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[Sipo][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<SipoModule>("Sipo");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 TEST_CASE("JSON round-trip preserves state", "[Sipo]") {
 	Test::ModuleScaffold<SipoModule> mods;
 	auto module = mods.create("Sipo");
