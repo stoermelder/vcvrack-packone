@@ -650,6 +650,19 @@ struct XyScreenCursorChangeAction : history::ModuleAction {
 };
 
 
+/** Radius of a node/cursor drag-point, shared with XyScreenWidget so it can
+ * compute the same on-screen positions for the connector lines without going
+ * through a per-point child widget (see XyScreenWidget::drawLayer). */
+static constexpr float XY_SCREEN_DRAG_RADIUS = 10.f;
+
+/** Half the amount-circle's stroke width (0.8px), the widest stroke drawn on
+ * that circle's own outline. At getX()/getY() == 0 or 1 the point's center
+ * sits exactly RADIUS from the screen edge, so the stroke's outer half would
+ * otherwise render past the frame border; inset the point's travel range by
+ * this much so it never does. */
+static constexpr float XY_SCREEN_DRAG_EDGE_INSET = 0.4f;
+
+
 /** Shared geometry, dragging, and context-menu skeleton for one draggable
  * point on the XY screen. Subclasses (node vs. cursor) supply how to read/
  * write position and selection, and what extra drawing happens per-kind —
@@ -658,7 +671,7 @@ struct XyScreenCursorChangeAction : history::ModuleAction {
  * both bodies in one widget, rather than relocating them. */
 template <typename MODULE>
 struct XyScreenDragWidgetBase : OpaqueWidget {
-	const float radius = 10.f;
+	const float radius = XY_SCREEN_DRAG_RADIUS;
 	const float fontsize = 13.0f;
 
 	MODULE* module = NULL;
@@ -689,9 +702,9 @@ struct XyScreenDragWidgetBase : OpaqueWidget {
 	virtual void pushChangeAction(float oldX, float oldY, float newX, float newY) = 0;
 
 	void step() override {
-		float posX = getX() * (parent->box.size.x - box.size.x);
+		float posX = XY_SCREEN_DRAG_EDGE_INSET + getX() * (parent->box.size.x - box.size.x - 2.f * XY_SCREEN_DRAG_EDGE_INSET);
 		box.pos.x = posX;
-		float posY = getY() * (parent->box.size.y - box.size.y);
+		float posY = XY_SCREEN_DRAG_EDGE_INSET + getY() * (parent->box.size.y - box.size.y - 2.f * XY_SCREEN_DRAG_EDGE_INSET);
 		box.pos.y = posY;
 	}
 
@@ -748,11 +761,18 @@ struct XyScreenDragWidgetBase : OpaqueWidget {
 			nvgFillColor(args.vg, textColor);
 			char buf[2] = { getItemChar(), '\0' };
 			nvgTextBox(args.vg, c.x - 3.f, c.y + 4.f, 120, buf, NULL);
+
+			// Restore the default blend mode so later draws (sibling nodes, the
+			// screen's own overlays) aren't silently blended through NVG_ATOP.
+			nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
 		}
 		Widget::drawLayer(args, layer);
 	}
 
 	void onHover(const event::Hover& e) override {
+		if (!isActive())
+			return;
+
 		math::Vec c = box.size.div(2);
 		float dist = e.pos.minus(c).norm();
 		if (dist <= c.x) {
@@ -957,37 +977,54 @@ struct XyScreenCursorDragWidget : XyScreenDragWidgetBase<MODULE> {
 		h->newX = newX; h->newY = newY;
 		APP->history->push(h);
 	}
+};
 
-	void drawExtra(const Widget::DrawArgs& args, NVGcolor cc) override {
-		// Draw lines between this cursor and every node within its radius
-		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-		Vec c = Vec(B::box.size.x / 2.f, B::box.size.y / 2.f);
-		float sizeX = B::parent->box.size.x;
-		float sizeY = B::parent->box.size.y;
-		for (uint8_t i = 0; i < B::module->nodeCountActive(); i++) {
-			if (B::module->getCursorToNodeDistance(B::id, i) < B::module->getNodeRadiusFinal(i)) {
-				float x = B::module->getNodeXFinal(i) * (sizeX - 2.f * B::radius);
-				float y = B::module->getNodeYFinal(i) * (sizeY - 2.f * B::radius);
-				Vec p = B::box.pos.mult(-1).plus(Vec(x, y)).plus(c);
-				Vec p_rad = p.minus(c).normalize().mult(B::radius);
-				Vec s = c.plus(p_rad);
-				Vec t = p.minus(p_rad);
+
+/** Draws the connector lines between every active cursor and the nodes within
+ * its radius, in the screen's own local coordinates. Called from
+ * XyScreenWidget::drawLayer rather than from a cursor's own drawExtra() so
+ * that Rack's per-child clipBox culling (Widget::drawChild, which tests only
+ * the cursor's own tiny drag-point box) can't drop a connector that is still
+ * partly visible just because the cursor itself has scrolled off-screen. */
+template <typename SCREEN_MODULE>
+void drawXyScreenConnectors(const Widget::DrawArgs& args, SCREEN_MODULE* m, Vec size) {
+	nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+	float sizeX = size.x;
+	float sizeY = size.y;
+	for (uint8_t c = 0; c < m->cursorCountActive(); c++) {
+		if (!m->isCursorActive(c)) continue;
+		float cx = XY_SCREEN_DRAG_RADIUS + XY_SCREEN_DRAG_EDGE_INSET + m->getCursorXFinal(c) * (sizeX - 2.f * XY_SCREEN_DRAG_RADIUS - 2.f * XY_SCREEN_DRAG_EDGE_INSET);
+		float cy = XY_SCREEN_DRAG_RADIUS + XY_SCREEN_DRAG_EDGE_INSET + m->getCursorYFinal(c) * (sizeY - 2.f * XY_SCREEN_DRAG_RADIUS - 2.f * XY_SCREEN_DRAG_EDGE_INSET);
+		Vec cPos = Vec(cx, cy);
+		for (uint8_t i = 0; i < m->nodeCountActive(); i++) {
+			if (m->getCursorToNodeDistance(c, i) < m->getNodeRadiusFinal(i)) {
+				float nx = XY_SCREEN_DRAG_RADIUS + XY_SCREEN_DRAG_EDGE_INSET + m->getNodeXFinal(i) * (sizeX - 2.f * XY_SCREEN_DRAG_RADIUS - 2.f * XY_SCREEN_DRAG_EDGE_INSET);
+				float ny = XY_SCREEN_DRAG_RADIUS + XY_SCREEN_DRAG_EDGE_INSET + m->getNodeYFinal(i) * (sizeY - 2.f * XY_SCREEN_DRAG_RADIUS - 2.f * XY_SCREEN_DRAG_EDGE_INSET);
+				Vec nPos = Vec(nx, ny);
+				Vec dir = nPos.minus(cPos).normalize().mult(XY_SCREEN_DRAG_RADIUS);
+				Vec s = cPos.plus(dir);
+				Vec t = nPos.minus(dir);
 				nvgBeginPath(args.vg);
 				nvgMoveTo(args.vg, s.x, s.y);
 				nvgLineTo(args.vg, t.x, t.y);
-				nvgStrokeColor(args.vg, color::mult(nvgRGB(0x29, 0xb2, 0xef), B::module->getNodeAmountFinal(i)));
-				nvgStrokeWidth(args.vg, 1.0f);
+				nvgStrokeColor(args.vg, color::mult(nvgRGB(0xff, 0xff, 0xff), m->getNodeAmountFinal(i)));
+				nvgStrokeWidth(args.vg, 1.8f);
 				nvgStroke(args.vg);
 			}
 		}
 	}
-};
+	// Restore the default blend mode so later draws (the node/cursor widgets,
+	// the screen's own overlays) aren't silently blended through NVG_LIGHTER.
+	nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+}
 
 
 template <typename MODULE>
 struct XyScreenWidget : OpaqueWidget {
 	MODULE* module;
 	XyScreenDummyModule* dummyModule = NULL;
+	/** How far the background extends beyond the widget's box. */
+	float bleed = 3.f;
 
 	XyScreenWidget(MODULE* module) {
 		this->module = module;
@@ -1051,6 +1088,40 @@ struct XyScreenWidget : OpaqueWidget {
 		}
 	}
 
+	/** Draws the bevel strokes and border around the background rect \p r. */
+	virtual void drawFrame(const DrawArgs& args, math::Rect r, NVGcolor bottomColor) {
+		// Outer strokes
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, r.pos.x, r.pos.y - 0.5);
+		nvgLineTo(args.vg, r.size.x + r.pos.x, r.pos.y - 0.5);
+		nvgStrokeColor(args.vg, nvgRGBAf(0, 0, 0, 0.24));
+		nvgStrokeWidth(args.vg, 1.0);
+		nvgStroke(args.vg);
+
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, r.pos.x, r.size.y + 2 * r.pos.y + 0.5);
+		nvgLineTo(args.vg, r.size.x + r.pos.x, r.size.y + 2 * r.pos.y + 0.5);
+		nvgStrokeColor(args.vg, nvgRGBAf(1, 1, 1, 0.25));
+		nvgStrokeWidth(args.vg, 1.0);
+		nvgStroke(args.vg);
+
+		// Inner strokes
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, r.pos.x, r.pos.y + 2.5);
+		nvgLineTo(args.vg, r.size.x + r.pos.x, r.pos.y + 2.5);
+		nvgStrokeColor(args.vg, nvgRGBAf(1, 1, 1, 0.20));
+		nvgStrokeWidth(args.vg, 1.0);
+		nvgStroke(args.vg);
+
+		// Black border
+		math::Rect rBorder = r.shrink(math::Vec(1, 1));
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, RECT_ARGS(rBorder));
+		nvgStrokeColor(args.vg, bottomColor);
+		nvgStrokeWidth(args.vg, 2.0);
+		nvgStroke(args.vg);
+	}
+
 	void drawLayer(const DrawArgs& args, int layer) override {
 		if (layer == 1) {
 			// Dim the display but don't darken it completely
@@ -1061,7 +1132,7 @@ struct XyScreenWidget : OpaqueWidget {
 			float sizeX = box.size.x / 8.f;
 			float sizeY = box.size.y / 8.f;
 
-			math::Rect r = box.zeroPos().grow(Vec(3.f, 3.f));
+			math::Rect r = box.zeroPos().grow(Vec(bleed, bleed));
 
 			// Black background
 			nvgBeginPath(args.vg);
@@ -1094,36 +1165,14 @@ struct XyScreenWidget : OpaqueWidget {
 
 			nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
 
-			// Outer strokes
-			nvgBeginPath(args.vg);
-			nvgMoveTo(args.vg, r.pos.x, r.pos.y - 0.5);
-			nvgLineTo(args.vg, r.size.x + r.pos.x, r.pos.y - 0.5);
-			nvgStrokeColor(args.vg, nvgRGBAf(0, 0, 0, 0.24));
-			nvgStrokeWidth(args.vg, 1.0);
-			nvgStroke(args.vg);
+			drawFrame(args, r, bottomColor);
 
-			nvgBeginPath(args.vg);
-			nvgMoveTo(args.vg, r.pos.x, r.size.y + 2 * r.pos.y + 0.5);
-			nvgLineTo(args.vg, r.size.x + r.pos.x, r.size.y + 2 * r.pos.y + 0.5);
-			nvgStrokeColor(args.vg, nvgRGBAf(1, 1, 1, 0.25));
-			nvgStrokeWidth(args.vg, 1.0);
-			nvgStroke(args.vg);
-
-			// Inner strokes
-			nvgBeginPath(args.vg);
-			nvgMoveTo(args.vg, r.pos.x, r.pos.y + 2.5);
-			nvgLineTo(args.vg, r.size.x + r.pos.x, r.pos.y + 2.5);
-			nvgStrokeColor(args.vg, nvgRGBAf(1, 1, 1, 0.20));
-			nvgStrokeWidth(args.vg, 1.0);
-			nvgStroke(args.vg);
-
-			// Black border
-			math::Rect rBorder = r.shrink(math::Vec(1, 1));
-			nvgBeginPath(args.vg);
-			nvgRect(args.vg, RECT_ARGS(rBorder));
-			nvgStrokeColor(args.vg, bottomColor);
-			nvgStrokeWidth(args.vg, 2.0);
-			nvgStroke(args.vg);
+			if (module && module->seqEdit < 0) {
+				drawXyScreenConnectors(args, module, box.size);
+			}
+			else if (!module && dummyModule) {
+				drawXyScreenConnectors(args, dummyModule, box.size);
+			}
 		}
 
 		if (!module || module->seqEdit < 0) {
