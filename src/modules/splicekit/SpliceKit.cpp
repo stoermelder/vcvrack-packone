@@ -1,6 +1,7 @@
 #include "../../plugin.hpp"
 #include "../../vcv/api.hpp"
 #include "../../vcv/ui.hpp"
+#include "../../tutorial/Tutorial.hpp"
 #include "../../components/MatrixButton.hpp"
 #include "../../components/MidiWidget.hpp"
 #include "../../ui/InfoWindow.hpp"
@@ -2312,6 +2313,8 @@ struct SpliceKitCellButton : app::SvgSwitch {
 };
 
 
+inline Tutorial::Tutorial spliceKitTutorial();
+
 struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProvider {
 	SpliceKitVizOverlay* vizOverlay = nullptr;
 	bool vizMode = false;
@@ -2484,6 +2487,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 	void appendContextMenu(Menu* menu) override {
 		SpliceKitModule* module = this->module;
 		if (!module) return;
+		menu->addChild(Tutorial::createTutorialMenuItem(this, spliceKitTutorial));
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(StoermelderPackOne::Rack::createStickyMidiMenuItem("MIDI Input",  &module->trackingProcessor.getInput()));
@@ -2840,5 +2844,8 @@ void SpliceKitCellButton::createCellMenu() {
 
 } // namespace SpliceKit
 } // namespace StoermelderPackOne
+
+#include "SpliceKit.tutorial.hpp"
+
 
 Model* modelSpliceKit = createModel<StoermelderPackOne::SpliceKit::SpliceKitModule, StoermelderPackOne::SpliceKit::SpliceKitWidget>("SpliceKit");
