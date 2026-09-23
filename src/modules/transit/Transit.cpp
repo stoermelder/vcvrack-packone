@@ -1577,7 +1577,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(10.4f, 353.5f), module, MODULE::LIGHT_LEARN));
 
 		for (size_t i = 0; i < NUM_PRESETS; i++) {
-			float o = i * (259.0f / (NUM_PRESETS - 1));
+			float o = i * (287.5f / (NUM_PRESETS - 1));
 			TransitLedButton<NUM_PRESETS>* ledButton = createParamCentered<TransitLedButton<NUM_PRESETS>>(Vec(60.0f, 46.4f + o), module, MODULE::PARAM_PRESET + i);
 			ledButton->module = module;
 			ledButton->id = i;
