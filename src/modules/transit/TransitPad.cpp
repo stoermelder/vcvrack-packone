@@ -43,7 +43,7 @@ inline bool isValidNodePosMode(int mode) {
 }
 
 template <uint8_t SNAPSHOTS = 8, uint8_t SETS = 8>
-struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>, XyScreenCursor, XySeqModule<1> {
+struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>, XyScreenCursor, XySeqModule<1>, ModuleChangeListener {
 	struct TransitPadSetParamQuantity : SwitchQuantity {
 		TransitPadModule<SNAPSHOTS, SETS>* tpModule = NULL;
 		int id = -1;
@@ -149,6 +149,15 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
+		// Listen on the same "Transit" topic Transit/TransitEx already broadcast
+		// on every connect/disconnect anywhere in the patch (Transit.cpp,
+		// TransitEx.cpp), so masterModule can be re-verified by walking left
+		// through the chain in process() below -- not just from this pad's own
+		// direct-neighbour onExpanderChange, which never fires when a +T between
+		// this pad and its host Transit is what actually changed.
+		registerModuleListener("Transit", this);
+		moduleChangedFlag = true;
+
 		// Seed LOW, not the trigger's default UNINITIALIZED, since SET_PARAM
 		// always starts at 0.f (see configSwitch below).
 		for (uint8_t s = 0; s < SETS; s++) {
@@ -194,14 +203,44 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		onReset(re);
 	}
 
+	~TransitPadModule() {
+		unregisterModuleListener("Transit", this);
+	}
+
 	void onSampleRateChange(const Module::SampleRateChangeEvent& e) override {
 		buttonDivider.setDivision(e.sampleRate / 1000.f);
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
-		masterModule = nullptr;
+		// Sets moduleChangedFlag on this pad too, triggering updateMasterModule()
+		// on the next process() tick.
 		notifyModuleListeners("Transit");
+	}
+
+	// Walks left through any chain of +T (TransitEx) expanders looking for the
+	// host TRANSIT, mirroring Transit::process()'s own rightward walk. Needed
+	// because TransitModule's destructor never clears a pad's masterModule
+	// (TransitBase has no notion of which pad, if any, is downstream of it),
+	// and onExpanderChange only fires on this pad's own direct neighbour: in
+	// Transit -> +T -> Pad, removing Transit only changes the +T's neighbour,
+	// so the pad is never told directly and masterModule would otherwise keep
+	// pointing at freed memory. Run whenever this pad -- or anything else
+	// carrying a Transit/+T -- last changed anywhere in the patch.
+	void updateMasterModule() {
+		Module* m = leftExpander.module;
+		int c = 0;
+		while (m) {
+			if (m->model == modelTransit) {
+				masterModule = dynamic_cast<TransitPadMaster*>(m);
+				return;
+			}
+			if (m->model != modelTransitEx) break;
+			m = m->leftExpander.module;
+			c++;
+			if (c > 15) break;
+		}
+		masterModule = nullptr;
 	}
 
 	void onReset(const ResetEvent& e) override {
@@ -312,6 +351,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	}
 
 	void process(const ProcessArgs& args) override {
+		if (moduleChangedFlag) {
+			updateMasterModule();
+			moduleChangedFlag = false;
+		}
+
 		// Snapshot once so the whole block sees a coherent value; relaxed
 		// since we only need atomicity, not synchronisation.
 		const int n = snapshotsUsed.load(std::memory_order_relaxed);

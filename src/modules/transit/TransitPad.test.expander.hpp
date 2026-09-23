@@ -1187,3 +1187,54 @@ TEST_CASE("Transit+TransitEx+TransitPad: pad blends across a slot boundary spann
 
 	REQUIRE(target->params[TestParamModule::PARAM_A].getValue() == Catch::Approx(0.5f).margin(0.001f));
 }
+
+
+// Regression: in Transit -> +T -> Pad, deleting Transit only changes the +T's
+// neighbour -- Rack's Engine::removeModule_NoLock() calls setExpanderModule()
+// on Transit's other neighbour, not on every module further down the chain.
+// TransitPadModule::onExpanderChange only fires on the pad's own direct
+// neighbour, and TransitModule's destructor has no notion of which pad (if
+// any) is further downstream, so masterModule was left pointing at freed
+// memory: getItemLabel() (and the node menu, tooltip and viz overlay that all
+// read masterModule) would dereference it. Fixed by having the pad itself
+// re-walk left through any +T chain whenever the shared "Transit" topic fires
+// -- which TransitEx's own onExpanderChange still does when its neighbour
+// changes -- rather than relying on a notification that never reaches the pad
+// directly.
+//
+// transit is added through the harness like any other module (so it's
+// actually stepped -- only h.modules gets ticked by h.dspStep(), and a
+// module created via the bare Test::createModule()/registerModule() pattern
+// is invisible to that), then deliberately un-adopted before its real,
+// deliberate mid-test destruction: erased from h.modules so the harness's
+// own teardown doesn't try to destroy it a second time, engine-unregistered
+// via Test::unregisterModule() (the real removeModule_NoLock() path this
+// regression depends on -- not h.disconnectExpander(), which is harness-only
+// and wouldn't reproduce Rack's own neighbour-pointer update), then deleted
+// directly. ex/pad/target stay harness-owned and torn down as usual.
+TEST_CASE("Transit+TransitEx+TransitPad: deleting Transit clears the pad's masterModule, not just disconnects it", "[TransitPad][Transit][TransitEx]") {
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TransitExModule<12>* ex = h.addModule<TransitExModule<12>>("TransitEx");
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+
+	h.connectChain(transit, ex, pad);
+	transit->setProcessDivision(1);
+	h.dspStep();
+
+	REQUIRE(pad->masterModule == transit);
+	REQUIRE(pad->getItemLabel(pad->currentSet, 0) != "<No TRANSIT module>");
+
+	h.modules.erase(std::find(h.modules.begin(), h.modules.end(), transit));
+	Test::unregisterModule(transit);
+	delete transit;
+
+	// The pad's own onExpanderChange never fired (its neighbour is still ex,
+	// unchanged) -- masterModule is stale until the pad's next process() tick
+	// re-walks the chain on the "Transit" topic notification ex's own
+	// onExpanderChange already sent.
+	h.dspStep();
+
+	REQUIRE(pad->masterModule == nullptr);
+	REQUIRE(pad->getItemLabel(pad->currentSet, 0) == "<No TRANSIT module>");
+}
