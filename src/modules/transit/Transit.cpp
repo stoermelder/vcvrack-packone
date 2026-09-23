@@ -649,7 +649,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 					else {
 						bool active = preset == i;
 						bool b = active && blink;
-						float b1 = active ? (b ? 1.0f : 0.f) : (presetFirst <= i && i < presetLast ? (u ? 0.4f : 0.05f) : 0.f);
+						float b1 = active ? (b ? (u ? 1.0f : 0.05f) : 0.f) : (presetFirst <= i && i < presetLast ? (u ? 0.4f : 0.05f) : 0.f);
 						slot->getLights()[0].setBrightnessSmooth(b1, s);
 						slot->getLights()[1].setBrightnessSmooth(b1, s);
 						slot->getLights()[2].setBrightnessSmooth(b1, s);
