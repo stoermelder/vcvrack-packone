@@ -1,5 +1,6 @@
 #pragma once
 #include <rack.hpp>
+#include <type_traits>
 
 namespace StoermelderPackOne {
 
@@ -1289,19 +1290,30 @@ struct XyScreenWidget : OpaqueWidget {
 	virtual void appendContextMenu(Menu* menu) {}
 };
 
+template<class BASE = ParamWidget>
+struct XyScreenMapWidget : BASE {
+	static_assert(std::is_base_of<ParamWidget, BASE>::value, "XyScreenMapWidget's BASE must derive from ParamWidget");
 
-struct XyScreenDummyMapButton : ParamWidget {
-	XyScreenDummyMapButton() {
-		this->box.size = Vec(5.f, 5.f);
+	XyScreenMapWidget() {
+		// Only the bare dummy button (an invisible mapping-indicator hit
+		// target) shrinks to a tiny box. A real widget passed as BASE (e.g.
+		// StoermelderTrimpot) needs to keep the size its own constructor
+		// already set from its SVG, or it renders and hit-tests as a 5x5px
+		// sliver instead of the knob it actually is.
+		if (std::is_same<BASE, ParamWidget>::value) {
+			this->box.size = Vec(6.f, 6.f);
+		}
 	}
 
-	void draw(const DrawArgs& args) override {
-		if (module) {
-			ParamHandle* paramHandle = APP->engine->getParamHandle(module->getId(), paramId);
-			reinterpret_cast<XyScreenParamQuantity*>(getParamQuantity())->hasHandle = paramHandle != NULL;
+	void draw(const Widget::DrawArgs& args) override {
+		if (BASE::module) {
+			ParamHandle* paramHandle = APP->engine->getParamHandle(BASE::module->getId(), BASE::paramId);
+			reinterpret_cast<XyScreenParamQuantity*>(BASE::getParamQuantity())->hasHandle = paramHandle != NULL;
 		}
-		ParamWidget::draw(args);
+		BASE::draw(args);
 	}
 };
+
+typedef XyScreenMapWidget<> XyScreenDummyMapButton;
 
 } // namespace StoermelderPackOne
