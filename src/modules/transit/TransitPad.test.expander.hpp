@@ -1238,3 +1238,104 @@ TEST_CASE("Transit+TransitEx+TransitPad: deleting Transit clears the pad's maste
 	REQUIRE(pad->masterModule == nullptr);
 	REQUIRE(pad->getItemLabel(pad->currentSet, 0) == "<No TRANSIT module>");
 }
+
+
+// onRandomize() respects the chain and snapshot setup: only active pad points
+// (id < snapshotsUsed) are touched, and each is rebound to one of the host
+// TRANSIT's (or a chained +T's) actually-used slots -- not just repositioned
+// on screen with its old binding left untouched, and never left pointing at
+// an empty slot.
+
+TEST_CASE("onRandomize only touches active pad points", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	m->snapshotsUsed = 3;
+	for (uint8_t i = 0; i < 8; i++) m->nodes.setXyImmediate(i, 0.5f, 0.5f);
+
+	Module::RandomizeEvent e;
+	m->onRandomize(e);
+
+	// Nodes above the active count must be untouched.
+	for (uint8_t i = 3; i < 8; i++) {
+		REQUIRE(m->nodes.getXFinal(i) == 0.5f);
+		REQUIRE(m->nodes.getYFinal(i) == 0.5f);
+	}
+}
+
+TEST_CASE("onRandomize leaves bindings untouched with no Transit connected", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+	REQUIRE(m->masterModule == nullptr);
+
+	m->snapshotsUsed = 2;
+	m->bindSnapshot(0, 5);
+	m->bindSnapshot(1, -1);
+
+	Module::RandomizeEvent e;
+	m->onRandomize(e);
+
+	REQUIRE(m->snapshots[m->currentSet][0].id == 5);
+	REQUIRE(m->snapshots[m->currentSet][1].id == -1);
+}
+
+TEST_CASE("onRandomize leaves bindings untouched when the chain has no saved presets", "[TransitPad][Transit]") {
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	connectPad(h, transit, pad);
+	h.dspStep();
+	REQUIRE(pad->masterModule == transit);
+
+	// Fresh Transit: no slot has ever been saved to.
+	pad->snapshotsUsed = 2;
+	pad->bindSnapshot(0, 3);
+	pad->bindSnapshot(1, -1);
+
+	Module::RandomizeEvent e;
+	pad->onRandomize(e);
+
+	REQUIRE(pad->snapshots[pad->currentSet][0].id == 3);
+	REQUIRE(pad->snapshots[pad->currentSet][1].id == -1);
+}
+
+TEST_CASE("onRandomize rebinds active pad points to only the chain's used slots", "[TransitPad][Transit]") {
+	Test::Harness h;
+	random::init();
+
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	connectPad(h, transit, pad);
+	h.dspStep();
+
+	// Save exactly two slots, distinct from every default binding, so a
+	// rebind landing on either is unambiguous.
+	transit->presetSave(6);
+	transit->presetSave(9);
+	pad->snapshotsUsed = 4;
+
+	bool sawSlot6 = false, sawSlot9 = false;
+	for (int trial = 0; trial < 30; trial++) {
+		pad->bindSnapshot(0, -1);
+		pad->bindSnapshot(1, -1);
+		pad->bindSnapshot(2, -1);
+		pad->bindSnapshot(3, -1);
+
+		Module::RandomizeEvent e;
+		pad->onRandomize(e);
+
+		for (uint8_t i = 0; i < 4; i++) {
+			int id = pad->snapshots[pad->currentSet][i].id;
+			// Every active point must land on a used slot -- never unbound,
+			// never one of the other (unsaved) default slots 0-3.
+			REQUIRE((id == 6 || id == 9));
+			if (id == 6) sawSlot6 = true;
+			if (id == 9) sawSlot9 = true;
+		}
+	}
+	// Across enough trials, both saved slots should turn up at least once --
+	// otherwise a rebind that always picks the same slot would pass the
+	// "only used slots" check above without actually exercising the choice.
+	REQUIRE(sawSlot6);
+	REQUIRE(sawSlot9);
+}

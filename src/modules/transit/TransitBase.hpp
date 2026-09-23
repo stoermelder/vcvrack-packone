@@ -195,6 +195,12 @@ struct TransitPadMaster {
 	 *  so this lets the pad look up which expander module hosts a particular slot.
 	 */
 	virtual bool getSlotOwner(int slotIndex, Module*& module, int& localIndex) = 0;
+	/** Total number of slots reachable from this host, i.e. presetTotal: the
+	 *  host TRANSIT's own NUM_PRESETS plus every chained +T's. Global slot
+	 *  indices valid for getSlotOwner()/isSlotUsed() are [0, getSlotCount()). */
+	virtual int getSlotCount() = 0;
+	/** Whether the given global slot index holds a saved preset. */
+	virtual bool isSlotUsed(int i) = 0;
 };
 
 struct TransitPadInterface {

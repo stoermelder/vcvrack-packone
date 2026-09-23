@@ -282,6 +282,15 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 		return true;
 	}
 
+	int getSlotCount() override {
+		return presetTotal;
+	}
+
+	bool isSlotUsed(int i) override {
+		SLOT* slot = getSlot(i);
+		return slot && slot->isUsed();
+	}
+
 	void process(const Module::ProcessArgs& args) override {
 		sampleRate = args.sampleRate;
 

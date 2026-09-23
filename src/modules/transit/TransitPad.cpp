@@ -173,22 +173,26 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			q->randomizeEnabled = false;
 		}
 
-		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 0, 0.0f, 1.0f, 0.0f, "Snapshot A x-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 0, 0.0f, 1.0f, 0.0f, "Snapshot A y-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 1, 0.0f, 1.0f, 1.0f, "Snapshot B x-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 1, 0.0f, 1.0f, 0.0f, "Snapshot B y-pos");	
-		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 2, 0.0f, 1.0f, 1.0f, "Snapshot C x-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 2, 0.0f, 1.0f, 1.0f, "Snapshot C y-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 3, 0.0f, 1.0f, 0.0f, "Snapshot D x-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 3, 0.0f, 1.0f, 1.0f, "Snapshot D y-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 4, 0.0f, 1.0f, 0.3f, "Snapshot E x-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 4, 0.0f, 1.0f, 0.3f, "Snapshot E y-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 5, 0.0f, 1.0f, 0.7f, "Snapshot F x-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 5, 0.0f, 1.0f, 0.3f, "Snapshot F y-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 6, 0.0f, 1.0f, 0.7f, "Snapshot G x-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 6, 0.0f, 1.0f, 0.7f, "Snapshot G y-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 7, 0.0f, 1.0f, 0.3f, "Snapshot H x-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 7, 0.0f, 1.0f, 0.7f, "Snapshot H y-pos");
+		// randomizeEnabled = false throughout: onRandomize() below drives position
+		// itself, bounded to the active snapshotsUsed nodes -- Module::onRandomize()'s
+		// own per-param sweep has no notion of that bound and would otherwise
+		// also randomize every inactive node's position independently.
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 0, 0.0f, 1.0f, 0.0f, "Snapshot A x-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 0, 0.0f, 1.0f, 0.0f, "Snapshot A y-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 1, 0.0f, 1.0f, 1.0f, "Snapshot B x-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 1, 0.0f, 1.0f, 0.0f, "Snapshot B y-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 2, 0.0f, 1.0f, 1.0f, "Snapshot C x-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 2, 0.0f, 1.0f, 1.0f, "Snapshot C y-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 3, 0.0f, 1.0f, 0.0f, "Snapshot D x-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 3, 0.0f, 1.0f, 1.0f, "Snapshot D y-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 4, 0.0f, 1.0f, 0.3f, "Snapshot E x-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 4, 0.0f, 1.0f, 0.3f, "Snapshot E y-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 5, 0.0f, 1.0f, 0.7f, "Snapshot F x-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 5, 0.0f, 1.0f, 0.3f, "Snapshot F y-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 6, 0.0f, 1.0f, 0.7f, "Snapshot G x-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 6, 0.0f, 1.0f, 0.7f, "Snapshot G y-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 7, 0.0f, 1.0f, 0.3f, "Snapshot H x-pos")->randomizeEnabled = false;
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 7, 0.0f, 1.0f, 0.7f, "Snapshot H y-pos")->randomizeEnabled = false;
 
 		configSwitch(ON_PARAM, 0.f, 1.f, 1.f, "Pad active", {"Off", "On"})->randomizeEnabled = false;
 		configInput(MIX_X_INPUT, "Mix x-pos");
@@ -265,10 +269,36 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	}
 
 	void onRandomize(const RandomizeEvent& e) override {
-		Sc::nodes.randomizeAmountAll();
-		Sc::nodes.randomizeRadiusAll();
-		Sc::nodes.randomizeXAll();
-		Sc::nodes.randomizeYAll();
+		// Only the active pad points, matching the rest of the module's
+		// convention that anything at id >= snapshotsUsed is neither drawn nor
+		// draggable and must not be touched (see process()'s weight-reset loop).
+		const int n = snapshotsUsed.load(std::memory_order_relaxed);
+		for (int i = 0; i < n; i++) {
+			Sc::nodes.setXyImmediate(i, random::uniform(), random::uniform());
+			Sc::nodes.setRadiusImmediate(i, random::uniform());
+			Sc::nodes.setAmountImmediate(i, random::uniform());
+		}
+
+		// Also rebind each active point to one of the host TRANSIT's used slots
+		// (or a +T's), so a randomize actually reshuffles which presets the pad
+		// blends between -- not just where on the screen the same bindings sit.
+		// Without a connected master, or with nothing saved anywhere in the
+		// chain, there is nothing sensible to bind to, so bindings are left as
+		// they are.
+		if (masterModule) {
+			std::vector<int> usedSlots;
+			int slotCount = masterModule->getSlotCount();
+			for (int i = 0; i < slotCount; i++) {
+				if (masterModule->isSlotUsed(i)) usedSlots.push_back(i);
+			}
+			if (!usedSlots.empty()) {
+				for (int i = 0; i < n; i++) {
+					int pick = usedSlots[random::u32() % usedSlots.size()];
+					bindSnapshot(i, pick);
+				}
+			}
+		}
+
 		Module::onRandomize(e);
 	}
 
