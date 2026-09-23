@@ -622,7 +622,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 				else if (xyPadActive) {
 					bool active = padActiveSlot[i];
 					bool b = active && lightBlink;
-					float b1 = active ? (b ? 1.0f : 0.f) : (presetFirst <= i && i < presetLast ? (u ? 0.4f : 0.05f) : 0.f);
+					float b1 = active ? (b ? (u ? 1.0f : 0.05f) : 0.f) : (presetFirst <= i && i < presetLast ? (u ? 0.4f : 0.05f) : 0.f);
 					if (slot->isColorSet()) {
 						NVGcolor c = slot->getColor();
 						float f = active ? (b ? 1.f : 0.f) : (presetFirst <= i && i < presetLast ? 1.f : 0.f);
