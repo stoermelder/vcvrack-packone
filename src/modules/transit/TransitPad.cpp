@@ -1568,8 +1568,8 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 
 		//addParam(createParamCentered<XyScreenDummyMapButton>(Vec(77.6f, 309.8f), module, MODULE::OUT_X_POS));
 		//addParam(createParamCentered<XyScreenDummyMapButton>(Vec(147.4f, 309.8f), module, MODULE::OUT_Y_POS));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(60.5f, 327.0f), module, MODULE::OUT_X_POS));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(164.5f, 327.0f), module, MODULE::OUT_Y_POS));
+		addParam(createParamCentered<XyScreenMapWidget<StoermelderTrimpot>>(Vec(60.5f, 327.0f), module, MODULE::OUT_X_POS));
+		addParam(createParamCentered<XyScreenMapWidget<StoermelderTrimpot>>(Vec(164.5f, 327.0f), module, MODULE::OUT_Y_POS));
 
 		screenWidget = new TransitPadXyScreenWidget<MODULE>(module, MODULE::SNAPSHOT_X_POS, MODULE::SNAPSHOT_Y_POS, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
 		screenWidget->box.pos = Vec(8.8f, 40.0f);

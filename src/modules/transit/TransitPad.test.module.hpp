@@ -1319,6 +1319,60 @@ TEST_CASE("getCursorXFinal/getCursorYFinal track CV-driven Out position, not the
 }
 
 
+TEST_CASE("A mapped OUT_X_POS/OUT_Y_POS is not overwritten by the stale UI-drag shadow", "[TransitPad]") {
+	// Regression: OUT_X_POS/OUT_Y_POS's widget was swapped from
+	// XyScreenMapWidget<StoermelderTrimpot> to a plain StoermelderTrimpot,
+	// which never touches XyScreenParamQuantity::hasHandle (only
+	// XyScreenMapWidget::draw() does, via APP->engine->getParamHandle()).
+	// With hasHandle stuck false, process() always read outUiX/outUiY (the
+	// screen-drag shadow, last written by a mouse drag) instead of the
+	// mapped/modulated param value, and wrote that stale shadow straight
+	// back over the param every frame -- the mapped value and the last
+	// screen position fought every frame, visible as jumping.
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	// Drag the screen to a stale position first, exactly what a prior mouse
+	// drag would leave behind.
+	m->setCursorXyImmediate(0, 0.1f, 0.1f);
+	h.dspStep();
+	REQUIRE(m->outUiX == Catch::Approx(0.1f));
+	REQUIRE(m->outUiY == Catch::Approx(0.1f));
+
+	// Register a ParamHandle on OUT_X_POS/OUT_Y_POS, as a mapping expander
+	// (CV-MAP/MIDI-CAT) would, and drive the raw param the way modulation
+	// (or the mapping module writing back a learned value) would.
+	rack::ParamHandle handleX;
+	rack::ParamHandle handleY;
+	APP->engine->addParamHandle(&handleX);
+	APP->engine->addParamHandle(&handleY);
+	h.mapParam(&handleX, m, TransitPadModule<>::OUT_X_POS);
+	h.mapParam(&handleY, m, TransitPadModule<>::OUT_Y_POS);
+	m->params[TransitPadModule<>::OUT_X_POS].setValue(0.9f);
+	m->params[TransitPadModule<>::OUT_Y_POS].setValue(0.8f);
+
+	// XyScreenMapWidget::draw() is what actually flips hasHandle in
+	// production (a UI-thread, nanovg-driven side effect this module-only
+	// test cannot reach); set it directly here to isolate and verify the
+	// process()-side half of the fix, matching how the CV-shadow test above
+	// isolates outUiX/outUiY without needing the widget tree.
+	reinterpret_cast<StoermelderPackOne::XyScreenParamQuantity*>(m->paramQuantities[TransitPadModule<>::OUT_X_POS])->hasHandle = true;
+	reinterpret_cast<StoermelderPackOne::XyScreenParamQuantity*>(m->paramQuantities[TransitPadModule<>::OUT_Y_POS])->hasHandle = true;
+
+	h.dspSteps(5);
+
+	// The mapped value must win over the stale screen-drag shadow, and the
+	// param itself must not have been stomped back to that shadow.
+	REQUIRE(m->getCursorXFinal(0) == Catch::Approx(0.9f).margin(0.01f));
+	REQUIRE(m->getCursorYFinal(0) == Catch::Approx(0.8f).margin(0.01f));
+	REQUIRE(m->params[TransitPadModule<>::OUT_X_POS].getValue() == Catch::Approx(0.9f).margin(0.01f));
+	REQUIRE(m->params[TransitPadModule<>::OUT_Y_POS].getValue() == Catch::Approx(0.8f).margin(0.01f));
+
+	APP->engine->removeParamHandle(&handleX);
+	APP->engine->removeParamHandle(&handleY);
+}
+
+
 TEST_CASE("Snapshot weights: point inside radius gets nonzero weight", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
