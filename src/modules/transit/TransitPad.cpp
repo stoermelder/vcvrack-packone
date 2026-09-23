@@ -196,6 +196,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 7, 0.0f, 1.0f, 0.7f, "Snapshot H y-pos")->randomizeEnabled = false;
 
 		configSwitch(ON_PARAM, 0.f, 1.f, 1.f, "Pad active", {"Off", "On"})->randomizeEnabled = false;
+		paramQuantities[ON_PARAM]->description = "(Space)";
 		configInput(MIX_X_INPUT, "Mix x-pos");
 		configInput(MIX_Y_INPUT, "Mix y-pos");
 		configInput(SEQ_INPUT, "Mix sequence select");
@@ -792,6 +793,23 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 };
 
 
+// Fixed-position tooltip anchored to a node/cursor's bottom-right corner,
+// same as ParamWidget/PortWidget's tooltips (ParamTooltip/PortTooltip in
+// Rack's own app/ sources) -- unlike a plain ui::Tooltip, which re-centers
+// on the mouse every frame and so drifts while the cursor moves within the
+// widget's circular hit area. Shared by every drag widget on the pad screen
+// (snapshot nodes and the Mix cursor).
+struct TransitPadNodeTooltip : ui::Tooltip {
+	widget::Widget* anchor;
+	void step() override {
+		Tooltip::step();
+		box.pos = anchor->getAbsoluteOffset(anchor->box.size).round();
+		assert(parent);
+		box = box.nudge(parent->box.zeroPos());
+	}
+};
+
+
 template <typename MODULE>
 struct TransitPadSnapshotDragWidget : XyScreenNodeDragWidget<MODULE> {
 	typedef XyScreenNodeDragWidget<MODULE> AW;
@@ -857,9 +875,11 @@ struct TransitPadSnapshotDragWidget : XyScreenNodeDragWidget<MODULE> {
 		if (!AW::module->isNodeActive(AW::id)) return;
 		this->module->vizHoveredId = this->id;
 		if (settings::tooltips && !tooltip) {
-			tooltip = new ui::Tooltip;
-			tooltip->text = getItemName();
-			APP->scene->addChild(tooltip);
+			auto* t = new TransitPadNodeTooltip;
+			t->anchor = this;
+			t->text = getItemName();
+			APP->scene->addChild(t);
+			tooltip = t;
 		}
 		AW::onEnter(e);
 	}
@@ -929,6 +949,14 @@ struct TransitPadSnapshotDragWidget : XyScreenNodeDragWidget<MODULE> {
 template <typename MODULE>
 struct TransitPadOutDragWidget : XyScreenCursorDragWidget<MODULE> {
 	typedef XyScreenCursorDragWidget<MODULE> B;
+	ui::Tooltip* tooltip = NULL;
+
+	~TransitPadOutDragWidget() {
+		if (tooltip) {
+			APP->scene->removeChild(tooltip);
+			delete tooltip;
+		}
+	}
 
 	/** XyScreenDragWidgetBase: label shown in this cursor's context menu and tooltip. */
  	std::string getItemName() override {
@@ -947,6 +975,28 @@ struct TransitPadOutDragWidget : XyScreenCursorDragWidget<MODULE> {
 		menu->addChild(new XySeqSlotMenuItem<MODULE>(B::module, B::id));
 		menu->addChild(new XySeqInterpolateMenuItem<MODULE>(B::module, B::id));
 		menu->addChild(new XySeqTriggerMenuItem<MODULE>(B::module, B::id));
+		menu->addChild(createMenuItem("Seq-Edit", "", [=]() { B::module->seqEdit = B::id; }));
+	}
+
+	void onEnter(const event::Enter& e) override {
+		if (!B::isActive()) return;
+		if (settings::tooltips && !tooltip) {
+			auto* t = new TransitPadNodeTooltip;
+			t->anchor = this;
+			t->text = getItemName();
+			APP->scene->addChild(t);
+			tooltip = t;
+		}
+		B::onEnter(e);
+	}
+
+	void onLeave(const event::Leave& e) override {
+		if (tooltip) {
+			APP->scene->removeChild(tooltip);
+			delete tooltip;
+			tooltip = NULL;
+		}
+		B::onLeave(e);
 	}
 };
 
@@ -1042,7 +1092,7 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 	void appendContextMenu(Menu* menu) override {
 		using StoermelderPackOne::Rack::createAtomicValuePtrMenuItem;
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Visualize", "Space", &this->module->vizMode));
+		menu->addChild(createBoolPtrMenuItem("Visualize", "Shift+Space", &this->module->vizMode));
 		menu->addChild(createSubmenuItem("Number of snapshots", string::f("%i", this->module->snapshotsUsed.load(std::memory_order_relaxed)),
 			[=](Menu* menu) {
 				for (int i = 0; i < this->module->nodeCount(); i++) {
@@ -1113,9 +1163,54 @@ struct TransitPadScreenBevel : widget::TransparentWidget {
 
 template <typename MODULE>
 struct TransitPadXySeqLedDisplay : XySeqLedDisplay<MODULE> {
+	ui::Tooltip* tooltip = NULL;
+
+	~TransitPadXySeqLedDisplay() {
+		if (tooltip) {
+			APP->scene->removeChild(tooltip);
+			delete tooltip;
+		}
+	}
+
 	/** XySeqLedDisplay: label shown for this port's motion-sequence editor. */
 	std::string getPortName() override {
 		return "Mix";
+	}
+
+	// StoermelderLedDisplay derives from LightWidget/TransparentWidget, whose
+	// onHover() is a no-op that never consumes the event -- so onEnter/onLeave
+	// (and with them, the tooltip) are never dispatched here without this
+	// override consuming it, the same way OpaqueWidget::onHover() does.
+	void onHover(const event::Hover& e) override {
+		Widget::onHover(e);
+		e.stopPropagating();
+		if (!e.isConsumed()) e.consume(this);
+	}
+
+	void onEnter(const event::Enter& e) override {
+		if (settings::tooltips && !tooltip) {
+			auto* t = new TransitPadNodeTooltip;
+			t->anchor = this;
+			t->text = "Mix motion-sequence slot, click to edit";
+			APP->scene->addChild(t);
+			tooltip = t;
+		}
+		XySeqLedDisplay<MODULE>::onEnter(e);
+	}
+
+	void onLeave(const event::Leave& e) override {
+		if (tooltip) {
+			APP->scene->removeChild(tooltip);
+			delete tooltip;
+			tooltip = NULL;
+		}
+		XySeqLedDisplay<MODULE>::onLeave(e);
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		menu->addChild(createMenuItem("Seq-Edit", "", [=]() { 
+			XySeqLedDisplay<MODULE>::module->seqEdit = XySeqLedDisplay<MODULE>::id;
+		}));
 	}
 };
 
@@ -1533,10 +1628,17 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
-		if (module && e.key == GLFW_KEY_SPACE && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == 0) {
-			module->vizMode = !module->vizMode;
-			e.consume(this);
-			return;
+		if (module && e.key == GLFW_KEY_SPACE && e.action == GLFW_PRESS) {
+			if ((e.mods & RACK_MOD_MASK) == 0) {
+				module->params[MODULE::ON_PARAM].setValue(module->isPadActive() ? 0.f : 1.f);
+				e.consume(this);
+				return;
+			}
+			if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+				module->vizMode = !module->vizMode;
+				e.consume(this);
+				return;
+			}
 		}
 		ThemedModuleWidget<MODULE>::onHoverKey(e);
 	}

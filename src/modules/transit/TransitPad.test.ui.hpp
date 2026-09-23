@@ -340,14 +340,39 @@ TEST_CASE("Locked pad refuses a left press on the screen", "[TransitPad]") {
 }
 
 
-// Space toggles visualize mode. The null-module case is the regression: the
-// module browser builds this widget with module == nullptr to render the
-// preview, and onHoverKey dereferenced it unconditionally, so a space press
-// while the browser preview was hovered segfaulted.
-TEST_CASE("Space toggles visualize mode", "[TransitPad]") {
+// Space toggles pad active (ON_PARAM), Shift+Space toggles visualize mode.
+// The null-module case is the regression: the module browser builds this
+// widget with module == nullptr to render the preview, and onHoverKey
+// dereferenced it unconditionally, so a space press while the browser
+// preview was hovered segfaulted.
+TEST_CASE("Space toggles pad active, modifier+space toggles visualize mode", "[TransitPad]") {
 	settings::allowCursorLock = false;
 
-	SECTION("With a module, space flips vizMode and consumes the event") {
+	SECTION("With a module, space flips Pad active and consumes the event") {
+		Test::Harness h;
+		TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+		TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+		REQUIRE(pad->isPadActive() == true);
+
+		event::HoverKey e;
+		rack::widget::EventContext c;
+		e.context = &c;
+		e.key = GLFW_KEY_SPACE;
+		e.action = GLFW_PRESS;
+		e.mods = 0;
+		padWidget->onHoverKey(e);
+		REQUIRE(pad->isPadActive() == false);
+		REQUIRE(c.target == padWidget);
+
+		// A second press toggles it back on.
+		rack::widget::EventContext c2;
+		e.context = &c2;
+		padWidget->onHoverKey(e);
+		REQUIRE(pad->isPadActive() == true);
+	}
+
+	SECTION("Shift+space flips vizMode and consumes the event, leaving Pad active alone") {
 		Test::Harness h;
 		TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
 		TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
@@ -359,9 +384,10 @@ TEST_CASE("Space toggles visualize mode", "[TransitPad]") {
 		e.context = &c;
 		e.key = GLFW_KEY_SPACE;
 		e.action = GLFW_PRESS;
-		e.mods = 0;
+		e.mods = GLFW_MOD_SHIFT;
 		padWidget->onHoverKey(e);
 		REQUIRE(pad->vizMode == true);
+		REQUIRE(pad->isPadActive() == true);
 		REQUIRE(c.target == padWidget);
 
 		// A second press toggles it back off.
@@ -371,7 +397,7 @@ TEST_CASE("Space toggles visualize mode", "[TransitPad]") {
 		REQUIRE(pad->vizMode == false);
 	}
 
-	SECTION("A modifier-held space is not the visualize shortcut") {
+	SECTION("A different modifier held with space is neither shortcut") {
 		Test::Harness h;
 		TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
 		TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
@@ -384,6 +410,7 @@ TEST_CASE("Space toggles visualize mode", "[TransitPad]") {
 		e.mods = RACK_MOD_CTRL;
 		padWidget->onHoverKey(e);
 		REQUIRE(pad->vizMode == false);
+		REQUIRE(pad->isPadActive() == true);
 	}
 
 	SECTION("The browser preview (module == nullptr) survives a space press") {
@@ -400,6 +427,82 @@ TEST_CASE("Space toggles visualize mode", "[TransitPad]") {
 		REQUIRE_NOTHROW(padWidget->onHoverKey(e));
 		Test::destroyWidget(padWidget);
 	}
+}
+
+// Regression: StoermelderLedDisplay derives from LightWidget/TransparentWidget,
+// whose onHover() is a no-op that never consumes the event, so onEnter/onLeave
+// (and with them, ui::Tooltip) were never dispatched to the Mix motion-sequence
+// LED display -- hovering over it silently showed no tooltip.
+TEST_CASE("Hovering the Mix motion-sequence display shows a tooltip", "[TransitPad]") {
+	settings::allowCursorLock = false;
+	settings::tooltips = true;
+
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	TransitPadXySeqLedDisplay<TransitPadModule<>>* seqDisplay = nullptr;
+	Test::traversal::walk(padWidget, [&](const Test::traversal::Visit& v) {
+		auto* d = dynamic_cast<TransitPadXySeqLedDisplay<TransitPadModule<>>*>(v.widget);
+		if (d) {
+			seqDisplay = d;
+			return false;
+		}
+		return true;
+	});
+	REQUIRE(seqDisplay != nullptr);
+
+	auto tooltipCount = [&]() {
+		int n = 0;
+		for (rack::widget::Widget* c : APP->scene->children) {
+			if (dynamic_cast<rack::ui::Tooltip*>(c)) n++;
+		}
+		return n;
+	};
+	int base = tooltipCount();
+
+	event::Enter enterEvent;
+	rack::widget::EventContext ec;
+	enterEvent.context = &ec;
+	seqDisplay->onEnter(enterEvent);
+	REQUIRE(tooltipCount() - base == 1);
+
+	event::Leave leaveEvent;
+	rack::widget::EventContext lc;
+	leaveEvent.context = &lc;
+	seqDisplay->onLeave(leaveEvent);
+	REQUIRE(tooltipCount() - base == 0);
+}
+
+// Regression: XyScreenDragWidgetBase::onHover() checked only the circular
+// hit-radius, not isActive() -- unlike onButton(), which already did. An
+// inactive node (drawn nowhere, since drawLayer() early-outs on !isActive())
+// still consumed hover at its stacked-but-invisible position, blocking the
+// event from reaching anything beneath it and, on TransitPadSnapshotDragWidget,
+// setting vizHoveredId / creating a tooltip for a point the user can't see.
+TEST_CASE("An inactive node does not consume hover", "[TransitPad]") {
+	settings::allowCursorLock = false;
+	settings::tooltips = true;
+
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	// snapshotsUsed defaults to 4, so node id 5 is inactive.
+	REQUIRE(pad->snapshotsUsed == 4);
+	REQUIRE(pad->isNodeActive(5) == false);
+
+	auto* node = dynamic_cast<TransitPadSnapshotDragWidget<TransitPadModule<>>*>(findPadNodeWidget(padWidget, 5));
+	REQUIRE(node != nullptr);
+
+	event::Hover e;
+	rack::widget::EventContext c;
+	e.context = &c;
+	e.pos = node->box.size.div(2);
+	node->onHover(e);
+
+	REQUIRE(c.target == nullptr);
+	REQUIRE(pad->vizHoveredId != 5);
 }
 
 // Regression: the node-menu sliders hardcoded 0.5 as their reset value, so a

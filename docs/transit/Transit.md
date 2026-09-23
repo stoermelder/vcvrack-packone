@@ -164,7 +164,7 @@ Place TRANSIT-PAD on the right side of TRANSIT, just like a +T expander. As soon
 
 Setup of TRANSIT itself is unchanged: bind parameters and save snapshots in Write-mode as described above — just switch the pad off first if it is currently active. The pad itself does not store snapshots — it only assigns a 2D-position to snapshots that already exist on the host TRANSIT.
 
-The _Pad active_ switch left of the ports toggles whether the pad currently drives TRANSIT at all. Switching it off freezes the bound parameters at their last blended values, stops the snapshot LEDs on TRANSIT from blinking, and restores TRANSIT's Read/Write/Auto switch to its normal behavior (so snapshots can be saved or cleared again) — while the pad itself stays fully usable throughout: points can still be dragged, bound/unbound, and snapshot-sets edited or switched, none of which reaches TRANSIT until the switch is turned back on. This is useful for rearranging or fine-tuning snapshots without disturbing the currently playing sound; the alternative would be unplugging the expander, which also drops it out of the +T chain. The pad's screen dims and shows an _OFF_ label in the bottom-left corner while switched off.
+The _Pad active_ switch left of the ports toggles whether the pad currently drives TRANSIT at all. Switching it off freezes the bound parameters at their last blended values, stops the snapshot LEDs on TRANSIT from blinking, and restores TRANSIT's Read/Write/Auto switch to its normal behavior (so snapshots can be saved or cleared again) — while the pad itself stays fully usable throughout: points can still be dragged, bound/unbound, and snapshot-sets edited or switched, none of which reaches TRANSIT until the switch is turned back on. This is useful for rearranging or fine-tuning snapshots without disturbing the currently playing sound; the alternative would be unplugging the expander, which also drops it out of the +T chain. The pad's screen dims and shows an _OFF_ label in the bottom-left corner while switched off. The switch can also be toggled with the **Space** key while hovering over the module.
 
 #### The XY-pad
 
@@ -177,6 +177,7 @@ Right-clicking a snapshot point opens its context menu with the following option
 
 - **Bind snapshot** binds this pad-position to the snapshot currently active on the host TRANSIT.
 - **Unbind snapshot** clears the binding. An unbound snapshot point shows the label _No snapshot_ and does not contribute to the output.
+- **Load snapshot** loads the bound TRANSIT-snapshot into the bound parameters immediately, the same as selecting it directly on TRANSIT. Disabled if the point is unbound or bound to an empty slot. Since the pad continuously re-drives the bound parameters from its own blend while active, using this switches _Pad active_ to _Off_ first so the loaded values are not immediately overwritten again.
 - **Amount** slider — scales the snapshot's contribution. 0% silences the snapshot completely, 100% is the default.
 - **Radius** slider — controls the radius of the area of influence. At 0% the snapshot never contributes; at 100% (the default) the radius equals the width of the pad. The radius is visualized on the display as a filled circle around the point when the point is selected.
 
@@ -260,7 +261,7 @@ In addition to the context-menu binding, a snapshot can be assigned to a pad poi
 
 A "visualize" mode is available to make the pad's snapshot bindings easier to understand. While the mode is active, a colored spline is drawn from the outer ring of every snapshot point on the pad to the corresponding LED button on the host TRANSIT (or the +T expander hosting the snapshot). The splines use the color of the current snapshot-set, and the line for each snapshot ends in a small dot on the destination button.
 
-The mode is toggled with the **Space** key (no modifier). Press Space while hovering over the TRANSIT-PAD module and the splines appear. Press Space again to hide them. The mode is purely visual — it has no effect on the audio.
+The mode is toggled with **Shift + Space**. Press the shortcut while hovering over the TRANSIT-PAD module and the splines appear. Press it again to hide them. The mode is purely visual — it has no effect on the audio.
 
 #### Context menu
 
@@ -274,7 +275,7 @@ Right-clicking on the empty area of the XY-display opens the following menu. The
 
 - **Randomize radius** — randomize the _Radius_ slider of each snapshot point.
 
-- **Visualize** — toggle [Visualize mode](#visualize-mode), same as the `Space` key.
+- **Visualize** — toggle [Visualize mode](#visualize-mode), same as `Shift + Space`.
 
 - **Number of snapshots** — select 1..8 active snapshot points.
 
