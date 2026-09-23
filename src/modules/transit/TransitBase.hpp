@@ -189,18 +189,16 @@ struct TransitBase : Module, StripIdFixModule {
 struct TransitPadMaster {
 	virtual int getSelectedSlot() = 0;
 	virtual std::string getSlotLabel(int i) = 0;
-	/** Returns the Module* that owns the given global slot index (0 .. presetTotal-1)
-	 *  and the localIndex in respect of the owner, without knowing the preset count.
-	 *  For a host TRANSIT with chained +T expanders the index spans all of them,
-	 *  so this lets the pad look up which expander module hosts a particular slot.
-	 */
+	/** Owner module and local index of a global slot index, across chained +T's. */
 	virtual bool getSlotOwner(int slotIndex, Module*& module, int& localIndex) = 0;
-	/** Total number of slots reachable from this host, i.e. presetTotal: the
-	 *  host TRANSIT's own NUM_PRESETS plus every chained +T's. Global slot
-	 *  indices valid for getSlotOwner()/isSlotUsed() are [0, getSlotCount()). */
+	/** Total slots reachable from this host (presetTotal), across chained +T's. */
 	virtual int getSlotCount() = 0;
 	/** Whether the given global slot index holds a saved preset. */
 	virtual bool isSlotUsed(int i) = 0;
+	/** Applies the slot's saved values to every bound target parameter, as
+	 *  Shift+clicking that slot's button would. No effect while the pad is
+	 *  actively driving the same parameters -- switch it off first. */
+	virtual void loadSlot(int i) = 0;
 };
 
 struct TransitPadInterface {

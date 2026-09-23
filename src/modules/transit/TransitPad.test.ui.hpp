@@ -573,6 +573,98 @@ TEST_CASE("Node menu: Unbind snapshot clears the pad point's binding", "[Transit
 	REQUIRE(pad->snapshots[pad->currentSet][0].id == -1);
 }
 
+TEST_CASE("Node menu: Load snapshot is disabled with no Transit, no binding, or an unused slot", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	auto* node = dynamic_cast<TransitPadSnapshotDragWidget<TransitPadModule<>>*>(findPadNodeWidget(padWidget, 0));
+	REQUIRE(node != nullptr);
+
+	SECTION("No Transit connected") {
+		REQUIRE(pad->masterModule == nullptr);
+		// Node 0 defaults to bound slot 0, but there is nothing to load from.
+		ui::Menu menu;
+		node->prependContextMenu(&menu);
+		auto* load = findMenuItemByText(&menu, "Load snapshot");
+		REQUIRE(load != nullptr);
+		REQUIRE(load->disabled == true);
+	}
+
+	SECTION("Connected, but the node is unbound") {
+		connectPad(h, transit, pad);
+		h.dspStep();
+		pad->bindSnapshot(0, -1);
+
+		ui::Menu menu;
+		node->prependContextMenu(&menu);
+		auto* load = findMenuItemByText(&menu, "Load snapshot");
+		REQUIRE(load != nullptr);
+		REQUIRE(load->disabled == true);
+	}
+
+	SECTION("Connected and bound, but the slot was never saved") {
+		connectPad(h, transit, pad);
+		h.dspStep();
+		// Node 0's default binding (slot 0) is in range but nothing was ever
+		// saved to it.
+		REQUIRE(pad->snapshots[pad->currentSet][0].id == 0);
+		REQUIRE(transit->isSlotUsed(0) == false);
+
+		ui::Menu menu;
+		node->prependContextMenu(&menu);
+		auto* load = findMenuItemByText(&menu, "Load snapshot");
+		REQUIRE(load != nullptr);
+		REQUIRE(load->disabled == true);
+	}
+}
+
+TEST_CASE("Node menu: Load snapshot switches Pad active off, then applies the bound slot", "[TransitPad][widget][Transit]") {
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+	TestParamModule* target = h.adoptModule(new TestParamModule);
+
+	connectPad(h, transit, pad);
+	h.dspStep();
+	bindParam(h, transit, target->id, TestParamModule::PARAM_A);
+
+	// Slot 5 holds a value distinct from anything the pad's live blend would
+	// produce, and from the sentinel the target is driven to below.
+	target->params[TestParamModule::PARAM_A].setValue(0.75f);
+	transit->presetSave(5);
+	pad->bindSnapshot(0, 5);
+
+	REQUIRE(pad->isPadActive() == true);
+
+	auto* node = dynamic_cast<TransitPadSnapshotDragWidget<TransitPadModule<>>*>(findPadNodeWidget(padWidget, 0));
+	REQUIRE(node != nullptr);
+
+	ui::Menu menu;
+	node->prependContextMenu(&menu);
+	auto* load = findMenuItemByText(&menu, "Load snapshot");
+	REQUIRE(load != nullptr);
+	REQUIRE(load->disabled == false);
+
+	// Drive the target to a sentinel first: while the pad is active it keeps
+	// overwriting this every tick, so if Load snapshot failed to switch the
+	// pad off, the sentinel (not slot 5's 0.75) would still be there below.
+	target->params[TestParamModule::PARAM_A].setValue(0.1f);
+	h.dspSteps(20);
+
+	load->onAction(*(new event::Action));
+
+	REQUIRE(pad->isPadActive() == false);
+
+	// presetLoad()'s crossfade needs several ticks (and the pad genuinely off,
+	// not just switched off this instant) to actually reach the target.
+	h.dspSteps(200);
+
+	REQUIRE(target->params[TestParamModule::PARAM_A].getValue() == Catch::Approx(0.75f).margin(0.01f));
+}
+
 
 // ============================================================
 // Screen context menu: "Snapshot-set node positions" -> "Off"

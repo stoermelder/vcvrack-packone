@@ -291,6 +291,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 		return slot && slot->isUsed();
 	}
 
+	void loadSlot(int i) override {
+		sendSlotCmd(SLOT_CMD::LOAD, i);
+	}
+
 	void process(const Module::ProcessArgs& args) override {
 		sampleRate = args.sampleRate;
 

@@ -641,6 +641,12 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		snapshots[currentSet][snapshotId].id = slotId;
 	}
 
+	// The Transit snapshot slot the given pad point is bound to within the
+	// current set, or -1 if unbound.
+	int getBoundSlot(int snapshotId) {
+		return snapshots[currentSet][snapshotId].id;
+	}
+
 	std::string getItemLabel(uint8_t s, uint8_t id) {
 		if (masterModule == nullptr)
 			return "<No TRANSIT module>";
@@ -822,6 +828,21 @@ struct TransitPadSnapshotDragWidget : XyScreenNodeDragWidget<MODULE> {
 		menu->addChild(createMenuItem("Unbind snapshot", "", [=]() {
 			AW::module->bindSnapshot(AW::id, -1);
 		}, AW::module->isLocked()));
+
+		int boundSlot = AW::module->getBoundSlot(AW::id);
+		bool canLoad = AW::module->masterModule != nullptr && boundSlot >= 0 && AW::module->masterModule->isSlotUsed(boundSlot);
+		menu->addChild(createMenuItem("Load snapshot", "", [=]() {
+			// Re-check inside the lambda; the chain may have changed between
+			// menu construction and click.
+			if (!AW::module->masterModule) return;
+			int slot = AW::module->getBoundSlot(AW::id);
+			if (slot < 0 || !AW::module->masterModule->isSlotUsed(slot)) return;
+			// The pad continuously re-drives every bound parameter from its own
+			// blend while active, immediately overwriting whatever the load just
+			// wrote -- switch it off first so the loaded values actually stick.
+			AW::module->params[MODULE::ON_PARAM].setValue(0.f);
+			AW::module->masterModule->loadSlot(slot);
+		}, !canLoad));
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Current set"));
