@@ -1200,31 +1200,49 @@ TEST_CASE("Reset and randomize go through the event-form handlers", "[TransitPad
 	}
 
 	SECTION("RandomizeEvent moves the snapshot node positions") {
-		// Park every node at a known spot so any randomization is visible.
-		for (uint8_t i = 0; i < 8; i++) m->nodes.setXyImmediate(i, 0.5f, 0.5f);
+		// The test binary's RNG is never seeded outside this section, so
+		// random::uniform() would otherwise always return 0 -- every node
+		// landing on 0 happens to still differ from the 0.5 parked below, so a
+		// single unseeded draw can't tell "actually randomized" apart from
+		// "always resolves to the same fixed value". Seeding and looping many
+		// draws catches that: with a real RNG, some node lands away from 0 too.
+		random::init();
 
-		Module::RandomizeEvent e;
-		m->onRandomize(e);
+		bool anyAwayFromOrigin = false;
+		for (int trial = 0; trial < 20 && !anyAwayFromOrigin; trial++) {
+			for (uint8_t i = 0; i < 8; i++) m->nodes.setXyImmediate(i, 0.5f, 0.5f);
 
-		bool anyMoved = false;
-		for (uint8_t i = 0; i < 8; i++) {
-			if (m->getNodeXFinal(i) != 0.5f || m->getNodeYFinal(i) != 0.5f) anyMoved = true;
+			Module::RandomizeEvent e;
+			m->onRandomize(e);
+
+			for (uint8_t i = 0; i < 8; i++) {
+				if (m->getNodeXFinal(i) != 0.f || m->getNodeYFinal(i) != 0.f) anyAwayFromOrigin = true;
+			}
 		}
-		REQUIRE(anyMoved);
+		REQUIRE(anyAwayFromOrigin);
 	}
 
 	SECTION("Randomize does not latch the momentary set buttons or change the set") {
 		// SET_PARAM switches are momentary; randomizing them would silently jump
-		// the active set on the next buttonDivider tick.
-		m->currentSet = 3;
-		Module::RandomizeEvent e;
-		m->onRandomize(e);
-		h.dspSteps(5);
+		// the active set on the next buttonDivider tick. Unseeded, every switch
+		// always resolves to 0 regardless of whether randomizeEnabled is honoured
+		// at all, so this can't fail even if the guard were removed. Seed the RNG
+		// and repeat: with randomizeEnabled == false the switches must stay 0
+		// across every draw, not just by chance on one.
+		random::init();
 
-		for (uint8_t s = 0; s < 8; s++) {
-			REQUIRE(m->params[TransitPadModule<>::SET_PARAM + s].getValue() == 0.f);
+		for (int trial = 0; trial < 20; trial++) {
+			m->currentSet = 3;
+			Module::RandomizeEvent e;
+			m->onRandomize(e);
+			h.dspSteps(5);
+
+			for (uint8_t s = 0; s < 8; s++) {
+				REQUIRE(m->params[TransitPadModule<>::SET_PARAM + s].getValue() == 0.f);
+			}
+			REQUIRE(m->currentSet == 3);
+			REQUIRE(m->params[TransitPadModule<>::ON_PARAM].getValue() == 1.f);
 		}
-		REQUIRE(m->currentSet == 3);
 	}
 }
 

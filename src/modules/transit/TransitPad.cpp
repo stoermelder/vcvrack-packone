@@ -168,6 +168,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			TransitPadSetParamQuantity* q = configSwitch<TransitPadSetParamQuantity>(SET_PARAM + s, 0.0f, 1.0f, 0.0f, string::f("Snapshot-set #%i", s + 1));
 			q->tpModule = this;
 			q->id = s;
+			// Momentary: randomizing it would silently latch a set change on the
+			// next buttonDivider tick.
+			q->randomizeEnabled = false;
 		}
 
 		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 0, 0.0f, 1.0f, 0.0f, "Snapshot A x-pos");
@@ -187,7 +190,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 7, 0.0f, 1.0f, 0.3f, "Snapshot H x-pos");
 		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 7, 0.0f, 1.0f, 0.7f, "Snapshot H y-pos");
 
-		configSwitch(ON_PARAM, 0.f, 1.f, 1.f, "Pad active", {"Off", "On"});
+		configSwitch(ON_PARAM, 0.f, 1.f, 1.f, "Pad active", {"Off", "On"})->randomizeEnabled = false;
 		configInput(MIX_X_INPUT, "Mix x-pos");
 		configInput(MIX_Y_INPUT, "Mix y-pos");
 		configInput(SEQ_INPUT, "Mix sequence select");
