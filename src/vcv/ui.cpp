@@ -1,6 +1,7 @@
 #include "ui.hpp"
 #include <osdialog.h>
 #include <cstdlib>
+#include <cfloat>
 
 namespace StoermelderPackOne {
 namespace vcv {
@@ -66,6 +67,10 @@ void RealUiAccess::openBrowser(const std::string& url) {
 	system::openBrowser(url);
 }
 
+RackViewport RealUiAccess::getRackViewport() const {
+	return RackViewport{APP->scene->rackScroll->box, APP->scene->rackScroll->getZoom()};
+}
+
 bool RealUiAccess::hasWindow() const {
 	return APP->window != nullptr;
 }
@@ -83,6 +88,24 @@ std::string RealUiAccess::getKeyName(int key, int scancode) const {
 
 int RealUiAccess::getKeyScancode(int key) const {
 	return glfwGetKeyScancode(key);
+}
+
+math::Vec RealUiAccess::measureTextBox(const std::string& text, float fontSize, float width) const {
+	NVGcontext* vg = APP->window->vg;
+	nvgFontFaceId(vg, APP->window->uiFont->handle);
+	nvgFontSize(vg, fontSize);
+	nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+	// nvgTextBoxBounds() advances y by lineh * the CURRENT nvg state's line height per row —
+	// same as nvgTextBox() actually drawing it — so this must match whatever line height the
+	// caller draws with, or a multi-line measurement undershoots the real rendered height.
+	// Callers of this seam (TutorialBubble) draw at 1.2 (see TutorialOverlay.hpp's
+	// TutorialLabel::draw()); nanovg's own default is 1.0, so leaving this unset silently
+	// measured short for any text that actually wraps to more than one line.
+	nvgTextLineHeight(vg, 1.2f);
+	// breakRowWidth == 0 disables wrapping in nanovg the same way it does in the estimate above.
+	float bounds[4];
+	nvgTextBoxBounds(vg, 0.f, 0.f, width > 0.f ? width : FLT_MAX, text.c_str(), nullptr, bounds);
+	return math::Vec(bounds[2] - bounds[0], bounds[3] - bounds[1]);
 }
 
 // The shared production instance; namespace-scope so no __cxa_guard is tested on access.

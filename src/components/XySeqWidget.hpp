@@ -1013,6 +1013,8 @@ struct XySeqEditWidget : OpaqueWidget {
 		};
 
 		menu->addChild(createMenuLabel("Motion-Sequence"));
+		menu->addChild(createMenuItem("Exit Seq-Edit", "", [=] { module->seqEdit = -1; }));
+		menu->addChild(construct<MenuSeparator>());
 		menu->addChild(new XySeqSlotMenuItem<MODULE>(module, module->seqEdit));
 		menu->addChild(new XySeqInterpolateMenuItem<MODULE>(module, module->seqEdit));
 		menu->addChild(new XySeqTriggerMenuItem<MODULE>(module, module->seqEdit));
