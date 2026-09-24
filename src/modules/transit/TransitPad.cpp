@@ -196,14 +196,22 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 7, 0.0f, 1.0f, 0.7f, "Snapshot H y-pos")->randomizeEnabled = false;
 
 		configSwitch(ON_PARAM, 0.f, 1.f, 1.f, "Pad active", {"Off", "On"})->randomizeEnabled = false;
-		paramQuantities[ON_PARAM]->description = "(Space)";
-		configInput(MIX_X_INPUT, "Mix x-pos");
-		configInput(MIX_Y_INPUT, "Mix y-pos");
-		configInput(SEQ_INPUT, "Mix sequence select");
-		configInput(SEQ_PH_INPUT, "Mix sequence phase");
-		configInput(SET_CV_INPUT, "Snapshot-set select CV");
+		paramQuantities[ON_PARAM]->description = "Set it to Off for changing snapshots on TRANSIT (Space).";
+		PortInfo* pi;
+		pi = configInput(MIX_X_INPUT, "Mix x-pos");
+		pi->description = "Sets the x-position of the Mix node by CV (-5..+5V).";
+		pi = configInput(MIX_Y_INPUT, "Mix y-pos");
+		pi->description = "Sets the y-position of the Mix node by CV (-5..+5V).";
+		pi = configInput(SEQ_INPUT, "Mix sequence select");
+		pi->description = "Configure the behavior using the context menu.";
+		pi = configInput(SEQ_PH_INPUT, "Mix sequence phase");
+		pi->description = "Use this to scan a sequence from start the end using CV (0..10V).";
+		pi = configInput(SET_CV_INPUT, "Snapshot-set select CV");
+		pi->description = "Configure the behavior using the context menu.";
 		configParam<XyScreenParamQuantity>(OUT_X_POS, 0.0f, 1.0f, 0.5f, "Mix x-pos");
+		paramQuantities[OUT_X_POS]->description = "Intended for MIDI-mapping.";
 		configParam<XyScreenParamQuantity>(OUT_Y_POS, 0.0f, 1.0f, 0.5f, "Mix y-pos");
+		paramQuantities[OUT_Y_POS]->description = "Intended for MIDI-mapping.";
 
 		for (uint8_t s = 0; s < SETS; s++) {
 			snapshots[s].resize(SNAPSHOTS);
@@ -1191,7 +1199,7 @@ struct TransitPadXySeqLedDisplay : XySeqLedDisplay<MODULE> {
 		if (settings::tooltips && !tooltip) {
 			auto* t = new TransitPadNodeTooltip;
 			t->anchor = this;
-			t->text = "Mix motion-sequence slot, click to edit";
+			t->text = "Mix motion-sequence slot\nClick to enter Seq-Edit for sequence editing.";
 			APP->scene->addChild(t);
 			tooltip = t;
 		}
