@@ -1987,6 +1987,14 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 };
 
 
+// Opens cellId's right-click menu at the mouse position, same as a real right-click. Free
+// function so it's callable without a concrete button widget; defined further down.
+void openSpliceKitCellMenu(SpliceKitModule* module, app::ModuleWidget* mw, int cellId);
+
+// Toggles SPLICE-KIT's real port-map overlay, same as SPACE. No-op if mw isn't a SpliceKitWidget.
+void setSpliceKitVizMode(app::ModuleWidget* mw, bool active);
+
+
 // Overlay widget added directly to APP->scene->rack (rack coordinates). Activated by space; hides cables
 // and draws cell→port assignment splines.
 struct SpliceKitVizOverlay : TransparentWidget {
@@ -2241,20 +2249,8 @@ struct SpliceKitCellButton : app::SvgSwitch {
 
 	void onEnter(const event::Enter& e) override;
 	void onLeave(const event::Leave& e) override;
-
-	void onButton(const event::Button& e) override {
-		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-			shiftDrag = (e.mods & RACK_MOD_SHIFT) != 0;
-		}
-		if (e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			if (e.action == GLFW_PRESS && module) {
-				createCellMenu();
-				e.consume(this);
-			}
-			return;
-		}
-		SvgSwitch::onButton(e);
-	}
+	// Out-of-line like onEnter/onLeave: SpliceKitWidget is still incomplete here.
+	void onButton(const event::Button& e) override;
 
 	// Shift+left-drag: suppress cell activation so the drag gesture is a pure move.
 	void onDragStart(const event::DragStart& e) override {
@@ -2308,12 +2304,10 @@ struct SpliceKitCellButton : app::SvgSwitch {
 			else module->toggleConnection(a, b);
 		}
 	}
-
-	void createCellMenu();
 };
 
 
-inline Tutorial::Tutorial spliceKitTutorial();
+inline Tutorial::Tutorial spliceKitTutorial(app::ModuleWidget* mw);
 
 struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProvider {
 	SpliceKitVizOverlay* vizOverlay = nullptr;
@@ -2487,7 +2481,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 	void appendContextMenu(Menu* menu) override {
 		SpliceKitModule* module = this->module;
 		if (!module) return;
-		menu->addChild(Tutorial::createTutorialMenuItem(this, spliceKitTutorial));
+		menu->addChild(Tutorial::createTutorialMenuItem(this, [this]() { return spliceKitTutorial(this); }));
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(StoermelderPackOne::Rack::createStickyMidiMenuItem("MIDI Input",  &module->trackingProcessor.getInput()));
@@ -2662,6 +2656,12 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 };
 
 
+void setSpliceKitVizMode(app::ModuleWidget* mw, bool active) {
+	auto* w = dynamic_cast<SpliceKitWidget*>(mw);
+	if (w) w->setVizMode(active);
+}
+
+
 void SpliceKitCellButton::onEnter(const event::Enter& e) {
 	if (mw && mw->vizOverlay) mw->vizOverlay->hoveredCellId = cellId;
 	SvgSwitch::onEnter(e);
@@ -2671,6 +2671,20 @@ void SpliceKitCellButton::onEnter(const event::Enter& e) {
 void SpliceKitCellButton::onLeave(const event::Leave& e) {
 	if (mw && mw->vizOverlay && mw->vizOverlay->hoveredCellId == cellId) mw->vizOverlay->hoveredCellId = -1;
 	SvgSwitch::onLeave(e);
+}
+
+void SpliceKitCellButton::onButton(const event::Button& e) {
+	if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
+		shiftDrag = (e.mods & RACK_MOD_SHIFT) != 0;
+	}
+	if (e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+		if (e.action == GLFW_PRESS && module) {
+			openSpliceKitCellMenu(module, mw, cellId);
+			e.consume(this);
+		}
+		return;
+	}
+	SvgSwitch::onButton(e);
 }
 
 
@@ -2728,7 +2742,7 @@ void SpliceKitSceneButton::createSceneMenu() {
 	}
 }
 
-void SpliceKitCellButton::createCellMenu() {
+void openSpliceKitCellMenu(SpliceKitModule* module, app::ModuleWidget* mw, int cellId) {
 	// This makes the per-cell "Start sequential learn..." item begin at this cell rather than cell 0 — the
 	// module-level context menu has no click to anchor on (the actual bug; see startGlobalLearn/startGlobalPortLearn).
 	module->lastClickedCell = cellId;
