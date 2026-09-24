@@ -4,6 +4,8 @@
 
 - Module [TRANSIT-PAD](./docs/transit/Transit.md#transit-pad-expander)
     - XY-pad expander for TRANSIT: place snapshots freely on a 2D pad and blend them with a movable mix point. Eight snapshot-sets with colors and labels, CV/MIDI-mappable mix position, and recordable motion-sequences
+- Module [INTERMIX-CV](./docs/intermix/Intermix.md#intermix-cv-expander)
+    - Expander for INTERMIX injecting CV into the matrix pads of a selected row
 
 ### Changes and Fixes
 

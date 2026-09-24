@@ -423,6 +423,15 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/intermix/Intermix.md#gate-expander"
 		},
 		{
+			"slug": "IntermixCv",
+			"name": "INTERMIX-CV",
+			"description": "Expander for INTERMIX injecting CV into the pads of a selected row.\nA connected CV input overrides that pad's button value (0..10V maps to a pad value of 0..1) instead of the usual on/off toggle; unpatched columns keep using the button.",
+			"tags": [
+				"Expander"
+			],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/intermix/Intermix.md#cv-expander"
+		},
+		{
 			"slug": "Hive",
 			"name": "HIVE",
 			"description": "4 channel sequencer running on a 2-dimensional hexagonal grid.\nUp to four playheads wander a hexagonal map of cells, emitting triggers and ratchets as they enter active cells for generative, game-board-inspired sequences.",

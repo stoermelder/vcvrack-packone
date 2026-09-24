@@ -497,6 +497,156 @@ TEST_CASE("X/Y map buttons toggle every selected column", "[Intermix]") {
 	REQUIRE(after1 != before1);
 }
 
+TEST_CASE("IntermixCv expander overrides pad values on its selected row", "[Intermix][IntermixCv]") {
+	Test::Harness h;
+	auto module = h.addModule<IntermixModule<8>>("Intermix");
+	auto cv = h.addModule<IntermixCvModule<8>>("IntermixCv");
+	h.connectExpander(module, cv);
+
+	module->inputMode[0] = IM_DIRECT;
+	module->params[IntermixModule<8>::PARAM_OUTPUT + 0].setValue(0.f);
+	module->params[IntermixModule<8>::PARAM_OUTPUT + 1].setValue(0.f);
+	module->params[IntermixModule<8>::PARAM_AT + 0].setValue(1.f);
+	module->params[IntermixModule<8>::PARAM_AT + 1].setValue(1.f);
+	module->channelCount = 1;
+	module->inputs[IntermixModule<8>::INPUT + 0].channels = 1;
+	module->inputs[IntermixModule<8>::INPUT + 0].setVoltage(10.f);
+
+	cv->input = 0;
+
+	SECTION("Connected CV input overrides the pad button's 0/1 value") {
+		// Pad button is off (0), but a fully-patched CV input demands 1.
+		module->params[IntermixModule<8>::PARAM_MATRIX + 0 * 8 + 0].setValue(0.f);
+		cv->inputs[IntermixCvModule<8>::INPUT_CV + 0].channels = 1;
+		cv->inputs[IntermixCvModule<8>::INPUT_CV + 0].setVoltage(10.f);
+
+		h.dspSteps(130);
+
+		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(10.f).margin(0.01f));
+	}
+
+	SECTION("0..10V maps to a pad value of 0..1") {
+		module->params[IntermixModule<8>::PARAM_MATRIX + 0 * 8 + 0].setValue(0.f);
+		cv->inputs[IntermixCvModule<8>::INPUT_CV + 0].channels = 1;
+		cv->inputs[IntermixCvModule<8>::INPUT_CV + 0].setVoltage(5.f);
+
+		h.dspSteps(130);
+
+		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(5.f).margin(0.01f));
+	}
+
+	SECTION("CV voltage is clamped to 0..10V") {
+		module->params[IntermixModule<8>::PARAM_MATRIX + 0 * 8 + 0].setValue(0.f);
+		cv->inputs[IntermixCvModule<8>::INPUT_CV + 0].channels = 1;
+		cv->inputs[IntermixCvModule<8>::INPUT_CV + 0].setVoltage(-5.f);
+
+		h.dspSteps(130);
+
+		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(0.f).margin(0.01f));
+	}
+
+	SECTION("Disconnected CV input on the selected row leaves the pad button in control") {
+		// Row 0 (targeted by the CV expander), column 1: CV input 1 is left
+		// disconnected, so the button (on) still applies. PARAM_MATRIX indexes
+		// as [j * PORTS + i] for column j, row i (see Intermix.cpp process()).
+		module->params[IntermixModule<8>::PARAM_MATRIX + 1 * 8 + 0].setValue(1.f);
+
+		h.dspSteps(130);
+
+		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 1].getVoltage() == Catch::Approx(10.f).margin(0.01f));
+	}
+
+	SECTION("CV only affects the row it targets") {
+		// input=0 targets row 0. Feed row 1 into a different column (1) with
+		// its button off; if CV leaked into row 1 it would turn column 1 on
+		// too, even though only row 0's CV input is patched.
+		module->params[IntermixModule<8>::PARAM_MATRIX + 0 * 8 + 0].setValue(0.f);
+		module->inputMode[1] = IM_DIRECT;
+		module->inputs[IntermixModule<8>::INPUT + 1].channels = 1;
+		module->inputs[IntermixModule<8>::INPUT + 1].setVoltage(10.f);
+		module->params[IntermixModule<8>::PARAM_MATRIX + 1 * 8 + 1].setValue(0.f);
+		cv->inputs[IntermixCvModule<8>::INPUT_CV + 0].channels = 1;
+		cv->inputs[IntermixCvModule<8>::INPUT_CV + 0].setVoltage(10.f);
+
+		h.dspSteps(130);
+
+		// Row 0 -> column 0 is forced to 1 by CV, confirming CV took effect.
+		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(10.f).margin(0.01f));
+		// Row 1 -> column 1's button is off and CV does not target row 1, so
+		// column 1 must stay silent.
+		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 1].getVoltage() == Catch::Approx(0.f).margin(0.01f));
+	}
+}
+
+TEST_CASE("IntermixCv removal falls back to the pad button", "[Intermix][IntermixCv]") {
+	Test::Harness h;
+	auto module = h.addModule<IntermixModule<8>>("Intermix");
+	auto cv = h.addModule<IntermixCvModule<8>>("IntermixCv");
+	h.connectExpander(module, cv);
+
+	module->inputMode[0] = IM_DIRECT;
+	module->params[IntermixModule<8>::PARAM_MATRIX + 0].setValue(0.f);
+	module->params[IntermixModule<8>::PARAM_OUTPUT + 0].setValue(0.f);
+	module->params[IntermixModule<8>::PARAM_AT + 0].setValue(1.f);
+	module->channelCount = 1;
+	module->inputs[IntermixModule<8>::INPUT + 0].channels = 1;
+	module->inputs[IntermixModule<8>::INPUT + 0].setVoltage(10.f);
+
+	cv->input = 0;
+	cv->inputs[IntermixCvModule<8>::INPUT_CV + 0].channels = 1;
+	cv->inputs[IntermixCvModule<8>::INPUT_CV + 0].setVoltage(10.f);
+	h.dspSteps(130);
+	REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(10.f).margin(0.01f));
+
+	h.disconnectExpander(module, Test::Harness::SIDE_RIGHT);
+	h.dspSteps(130);
+
+	// The button (still 0) is back in control now that the CV expander is gone.
+	REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(0.f).margin(0.01f));
+}
+
+TEST_CASE("IntermixCv reassigned to a different row live takes effect without an expander topology change", "[Intermix][IntermixCv]") {
+	// PARAM_MATRIX indexes as [j * PORTS + i] for column j (-> output j), row
+	// i (<- input i). CV's column-0 input stays patched throughout; only the
+	// row it targets changes. Output 0 (fed by column 0) reflects whichever
+	// row currently owns that column's override — pure output-voltage
+	// behavior, no internal state involved.
+	Test::Harness h;
+	auto module = h.addModule<IntermixModule<8>>("Intermix");
+	auto cv = h.addModule<IntermixCvModule<8>>("IntermixCv");
+	h.connectExpander(module, cv);
+
+	module->inputMode[0] = IM_DIRECT;
+	module->inputMode[1] = IM_DIRECT;
+	module->params[IntermixModule<8>::PARAM_MATRIX + 0 * 8 + 0].setValue(0.f);
+	module->params[IntermixModule<8>::PARAM_MATRIX + 0 * 8 + 1].setValue(0.f);
+	module->params[IntermixModule<8>::PARAM_OUTPUT + 0].setValue(0.f);
+	module->params[IntermixModule<8>::PARAM_AT + 0].setValue(1.f);
+	module->channelCount = 1;
+	// Row 0 and row 1 carry different voltages so which one is currently
+	// reaching output 0 is unambiguous.
+	module->inputs[IntermixModule<8>::INPUT + 0].channels = 1;
+	module->inputs[IntermixModule<8>::INPUT + 0].setVoltage(10.f);
+	module->inputs[IntermixModule<8>::INPUT + 1].channels = 1;
+	module->inputs[IntermixModule<8>::INPUT + 1].setVoltage(6.f);
+
+	cv->input = 0;
+	cv->inputs[IntermixCvModule<8>::INPUT_CV + 0].channels = 1;
+	cv->inputs[IntermixCvModule<8>::INPUT_CV + 0].setVoltage(10.f);
+	h.dspSteps(130);
+	// CV overrides row 0's column-0 pad: output 0 sees row 0's 10V input.
+	REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(10.f).margin(0.01f));
+
+	// Retarget the same expander to row 1 without touching the chain topology.
+	cv->input = 1;
+	h.dspSteps(200);
+
+	// CV now overrides row 1's column-0 pad instead: row 0's button (off)
+	// takes row 0 back out of the mix, while row 1 is now forced on, so
+	// output 0 switches to row 1's 6V input.
+	REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(6.f).margin(0.01f));
+}
+
 TEST_CASE("Expander interface", "[Intermix]") {
 	Test::Harness h;
 	auto module = h.addModule<IntermixModule<8>>("Intermix");

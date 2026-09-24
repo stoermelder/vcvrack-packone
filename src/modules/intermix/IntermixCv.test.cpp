@@ -1,11 +1,10 @@
-#include "Intermix.test.hpp"
+#include "IntermixCv.test.hpp"
 
 namespace __module {
-	#include "Intermix.test.module.hpp"
+	#include "IntermixCv.test.module.hpp"
 }
 
 void testPluginInit(rack::Plugin* p) {
 	pluginInstance = p;
-	p->addModel(modelIntermix);
 	p->addModel(modelIntermixCv);
 }

@@ -113,7 +113,7 @@ The _Scene selection_ input port allows triggering scene changes via CV. The beh
 
 ## Expanders
 
-INTERMIX supports three expander modules that extend its functionality. Expanders must be placed on the right side of INTERMIX (or chained after other expanders).
+INTERMIX supports four expander modules that extend its functionality. Expanders must be placed on the right side of INTERMIX (or chained after other expanders).
 
 ### INTERMIX-GATE Expander
 
@@ -143,6 +143,18 @@ The INTERMIX-FADE expander provides individual fade-in and fade-out control for 
 The maximum fade time can be set in the context menu (4s, 15s, or 60s). The default is 15s.
 
 **Note:** When the INTERMIX-FADE expander is detached or reconfigured for a different input column, all fade settings return to the default values from the main module.
+
+### INTERMIX-CV Expander
+
+The INTERMIX-CV expander injects CV directly into the matrix pads of a selected row, one CV input per column, overriding the pad button's on/off value with a continuous voltage.
+
+1. Select which row the expander should control (shown on the expander display)
+2. Patch CV into any of that row's 8 column inputs to override the corresponding pad
+3. 0..10V maps to a pad value of 0..1, just as if the pad were partially engaged
+
+- **Per-column override** - While a cable is patched to a column's CV input, it overrides that pad's button value for as long as the cable stays connected
+- **Automatic fallback** - Columns with no cable patched keep using the pad button, so adding the expander does not change unpatched columns
+- **Works with any row** - Like INTERMIX-GATE, INTERMIX-ENV and INTERMIX-FADE, INTERMIX-CV can be placed anywhere in the expander chain and is not limited to the row it happens to sit next to
 
 ### Settings
 
