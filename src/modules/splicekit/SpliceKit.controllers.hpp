@@ -1,5 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "../../vcv/fs.hpp"
 #include "../midi/MidiTrackingProcessor.hpp"
 #include <algorithm>
 #include <string>
@@ -280,15 +281,15 @@ static std::vector<LoadedPreset>& getLoadedPresets() {
 	static std::vector<LoadedPreset> presets = []() {
 		std::vector<LoadedPreset> v;
 		std::string dir = controllerPresetsDir();
-		std::vector<std::string> files = rack::system::getEntries(dir);
+		std::vector<std::string> files = vcv::fs::getEntries(dir);
 		std::sort(files.begin(), files.end());
 		for (const std::string& path : files) {
 			if (path.size() < 10 || path.compare(path.size() - 10, 10, ".ctrl.json") != 0) continue;
-			std::vector<uint8_t> raw = rack::system::readFile(path);
-			if (raw.empty()) continue;
+			std::string json;
+			if (!vcv::fs::read(path, json) || json.empty()) continue;
 
 			LoadedPreset lp;
-			lp.json.assign(raw.begin(), raw.end());
+			lp.json = std::move(json);
 
 			json_error_t err;
 			json_t* root = json_loads(lp.json.c_str(), 0, &err);

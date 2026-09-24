@@ -39,6 +39,16 @@ TEST_CASE("Preset JSON null-guards", "[Infix][JSON]") {
 	}
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[Infix][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<InfixModule<16>>("Infix");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 TEST_CASE("JSON round-trip preserves state", "[Infix][JSON]") {
 	Test::ModuleScaffold<InfixModule<16>> mods;
 	InfixModule<16>* m = mods.create("Infix");

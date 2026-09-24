@@ -236,6 +236,9 @@ ui::MenuItem* createAtomicValuePtrMenuItem(std::string text, std::atomic<T>* ptr
  * @param includePicker Whether to include a color picker (default: true)
  * @param includeField Whether to include a hex field (default: false)
  * @param textSelected Optional pointer to track text field selection state (default: nullptr)
+ * @param onPresetSelected Optional callback fired when the user clicks one of the preset
+ *   swatches (not the picker or the hex field). Useful for e.g. auto-enabling a
+ *   "use this color" flag as soon as the user picks a preset color.
  *
  * Example:
  *   std::vector<std::pair<NVGcolor, std::string>> presets = {
@@ -245,12 +248,14 @@ ui::MenuItem* createAtomicValuePtrMenuItem(std::string text, std::atomic<T>* ptr
  *   };
  *   Rack::appendColorSubmenuItems(menu, &module->slotColor[id], presets, true, true);
  */
-inline void appendColorSubmenuItems(ui::Menu* menu, NVGcolor* colorPtr, const std::vector<std::pair<NVGcolor, std::string>>& presets = {}, bool includePicker = true, bool includeField = false, bool* textSelected = nullptr) {
+inline void appendColorSubmenuItems(ui::Menu* menu, NVGcolor* colorPtr, const std::vector<std::pair<NVGcolor, std::string>>& presets = {}, bool includePicker = true, bool includeField = false, bool* textSelected = nullptr, std::function<void()> onPresetSelected = nullptr) {
 	struct AppendColorItem : ui::MenuItem {
 		NVGcolor color;
 		NVGcolor* colorPtr;
+		std::function<void()> onPresetSelected;
 		void onAction(const event::Action& e) override {
 			*colorPtr = color;
+			if (onPresetSelected) onPresetSelected();
 			e.unconsume();
 		}
 		void step() override {
@@ -267,7 +272,7 @@ inline void appendColorSubmenuItems(ui::Menu* menu, NVGcolor* colorPtr, const st
 	if (!presets.empty()) {
 		menu->addChild(new MenuSeparator);
 		for (auto &p : presets) {
-			menu->addChild(construct<AppendColorItem>(&MenuItem::text, p.second.c_str(), &AppendColorItem::colorPtr, colorPtr, &AppendColorItem::color, p.first));
+			menu->addChild(construct<AppendColorItem>(&MenuItem::text, p.second.c_str(), &AppendColorItem::colorPtr, colorPtr, &AppendColorItem::color, p.first, &AppendColorItem::onPresetSelected, onPresetSelected));
 		}
 	}
 	if (includeField) {

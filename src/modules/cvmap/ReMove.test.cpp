@@ -1,7 +1,13 @@
 #include "ReMove.test.hpp"
 
-namespace __module {
-	#include "ReMove.test.module.hpp"
+namespace __json {
+	#include "ReMove.test.json.hpp"
+}
+namespace __process {
+	#include "ReMove.test.process.hpp"
+}
+namespace __playback {
+	#include "ReMove.test.playback.hpp"
 }
 
 void testPluginInit(rack::Plugin* p) {

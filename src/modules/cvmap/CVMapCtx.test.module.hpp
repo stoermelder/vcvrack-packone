@@ -40,6 +40,16 @@ TEST_CASE("Preset JSON null-guards", "[CVMapCtx][JSON]") {
 
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[CVMapCtx][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<CVMapCtxModule>("CVMapCtx");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 TEST_CASE("JSON round-trip preserves state", "[CVMapCtx][JSON]") {
 	Test::ModuleScaffold<CVMapCtxModule> mods;
 	CVMapCtxModule* m = mods.create("CVMapCtx");

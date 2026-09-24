@@ -1,13 +1,9 @@
 #include "Mb_v2.hpp"
 #include "Mb.hpp"
+#include "Mb_preview.hpp"
 #include "Mb_manifests.hpp"
+#include "../../vcv/ui.hpp"
 #include <tag.hpp>
-#include <settings.hpp>
-#include <componentlibrary.hpp>
-#include <thread>
-#include <algorithm>
-#include <numeric>
-#include <random>
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -16,63 +12,19 @@ namespace v2 {
 BrowserSort browserSort = BrowserSort::UPDATED;
 
 
-// Tag toggle menu item for predefined tags
-struct TogglePredefinedTagItem : MenuItem {
-	plugin::Model* model;
-	int tagId;
-	bool hasEffectiveTag = false;
-	std::shared_ptr<std::string> filter;
-	void onAction(const event::Action& e) override {
-		if (hasEffectiveTag) {
-			predefinedTagRemove(model, tagId);
-		} else {
-			predefinedTagAdd(model, tagId);
-		}
-		hasEffectiveTag = !hasEffectiveTag;
-		ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-		if (browser) browser->refresh();
-		e.unconsume();
-	}
-	void step() override {
-		visible = Rack::menuFilterMatches(filter, text);
-		rightText = CHECKMARK(hasEffectiveTag);
-		MenuItem::step();
-	}
-};
-
-
 // Widgets
 
-struct ModuleWidgetContainer : widget::Widget {
-	void draw(const DrawArgs& args) override {
-		Widget::draw(args);
-		Widget::drawLayer(args, 1);
-	}
-};
-
-
-struct ModelBox : widget::OpaqueWidget {
-	plugin::Model* model = NULL;
-	ui::Tooltip* tooltip = NULL;
-	MagnifierOverlay* magnifier = NULL;
-	widget::Widget* previewWidget = NULL;
-	widget::ZoomWidget* zoomWidget = NULL;
-	widget::FramebufferWidget* fb = NULL;
-	ModuleWidgetContainer* mwc = NULL;
-	ModuleWidget* moduleWidget = NULL;
-	bool modelHidden = false;
-
-	void setModel(plugin::Model* m) {
-		model = m;
-		updateZoom();
+struct ModelBox : ModelBoxBase {
+	ModelBox() {
+		// v2 uses a tighter corner than v1's shadow.
+		shadowCornerRadius = 5.f;
 	}
 
-	void updateZoom() {
+	void updateZoom() override {
 		float zoom = std::pow(2.f, settings::browserZoom);
-		if (previewWidget) {
-			fb->setDirty();
-			zoomWidget->setZoom(zoom);
-			box.size.x = moduleWidget->box.size.x * zoom;
+		if (preview.created()) {
+			preview.setZoom(zoom);
+			box.size.x = preview.width * zoom;
 		}
 		else {
 			box.size.x = 12 * RACK_GRID_WIDTH * zoom;
@@ -81,60 +33,53 @@ struct ModelBox : widget::OpaqueWidget {
 		box.size = box.size.ceil();
 	}
 
-	void createPreview() {
-		if (previewWidget) return;
+	const ViewportBand* getBrowserBand() override {
+		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+		return browser ? &browser->stepBand : NULL;
+	}
 
-		previewWidget = new widget::TransparentWidget;
-		addChild(previewWidget);
+	// Default argument stays on the base declaration only, so it can't drift from it.
+	void refreshBrowser(bool onlyIfFavoriteFilter) override {
+		ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+		if (!browser) return;
+		if (onlyIfFavoriteFilter && !browser->favorite) return;
+		browser->refresh(false);
+	}
 
-		zoomWidget = new widget::ZoomWidget;
-		previewWidget->addChild(zoomWidget);
+	// v2 shows tags in header dropdowns that rebuild themselves on open, so a plain refresh
+	// is enough.
+	void refreshBrowserTags() override {
+		refreshBrowser(false);
+	}
 
-		fb = new widget::FramebufferWidget;
-		if (math::isNear(APP->window->pixelRatio, 1.0)) {
-			fb->oversample = 2.0;
-		}
-		zoomWidget->addChild(fb);
+	void filterBrowserByBrand() override {
+		ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+		if (!browser) return;
+		browser->brand = model->plugin->brand;
+		browser->refresh();
+	}
 
-		mwc = new ModuleWidgetContainer;
-		fb->addChild(mwc);
+	// v2 can also filter by panel width, once the preview has told us the model's HP.
+	void appendFilterMenuItems(ui::Menu* menu) override {
+		int modelHp = modelWidthGet(model);
+		if (modelHp <= 0) return;
+		menu->addChild(createMenuItem(string::f("Filter by %d HP", modelHp), "", [modelHp]() {
+			ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+			if (!browser) return;
+			browser->widthFilterRef = modelHp;
+			browser->widthFilterMode = 1;
+			browser->refresh();
+		}));
+	}
 
-		moduleWidget = model->createModuleWidget(NULL);
-		mwc->addChild(moduleWidget);
-		mwc->box.size = moduleWidget->box.size;
-
-		int hp = (int)std::round(moduleWidget->box.size.x / RACK_GRID_WIDTH);
-		modelWidthSet(model, hp);
-
-		moduleWidget->step();
-		updateZoom();
+	// Records the panel width the first time the preview is built, so the HP filter and sort
+	// have a value to work with.
+	void onPreviewCreated() override {
+		modelWidthSet(model, preview.hp());
 	}
 
 	void draw(const DrawArgs& args) override {
-		createPreview();
-
-		nvgBeginPath(args.vg);
-		float r = 10;
-		float c = 5;
-		nvgRect(args.vg, -r, -r, box.size.x + 2 * r, box.size.y + 2 * r);
-		NVGcolor shadowColor = nvgRGBAf(0, 0, 0, 0.5);
-		NVGcolor transparentColor = nvgRGBAf(0, 0, 0, 0);
-		nvgFillPaint(args.vg, nvgBoxGradient(args.vg, 0, 0, box.size.x, box.size.y, c, r, shadowColor, transparentColor));
-		nvgFill(args.vg);
-
-		float b = math::clamp(settings::rackBrightness + 0.2f, 0.f, 1.f);
-		if (modelHidden) b *= 0.33f;
-		nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1));
-
-		OpaqueWidget::draw(args);
-
-		if (favoriteHighlight && isModelFavorite(model)) {
-			nvgBeginPath(args.vg);
-			nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
-			nvgStrokeWidth(args.vg, 2);
-			nvgStrokeColor(args.vg, componentlibrary::SCHEME_YELLOW);
-			nvgStroke(args.vg);
-		}
+		ModelBoxBase::draw(args);
 
 		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
 		if (browser && browser->selectedModel == model) {
@@ -144,296 +89,6 @@ struct ModelBox : widget::OpaqueWidget {
 			nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.7f));
 			nvgStroke(args.vg);
 		}
-	}
-
-	void setTooltip(ui::Tooltip* tt) {
-		if (tooltip) {
-			tooltip->requestDelete();
-			tooltip = NULL;
-		}
-		if (tt) {
-			APP->scene->addChild(tt);
-			tooltip = tt;
-		}
-	}
-
-	void setMagnifier(MagnifierOverlay* mg) {
-		if (magnifier) {
-			magnifier->requestDelete();
-			magnifier = NULL;
-		}
-		if (mg) {
-			APP->scene->addChild(mg);
-			magnifier = mg;
-		}
-	}
-
-	void onHover(const event::Hover& e) override {
-		if (magnifier) {
-			magnifier->mousePos = getAbsoluteOffset(e.pos);
-			magnifier->initialized = true;
-			magnifier->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
-			magnifier->sourceSize = box.size;
-			magnifier->magnification = 3.f / zoomWidget->getZoom();
-		}
-		OpaqueWidget::onHover(e);
-	}
-
-	void onButton(const event::Button& e) override {
-		OpaqueWidget::onButton(e);
-
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == 0) {
-			chooseModel(model);
-			e.consume(this);
-		}
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
-			chooseModel(model, false);
-			e.consume(this);
-		}
-
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
-			toggleModelFavorite(model);
-			ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-			if (browser && browser->favorite) browser->refresh();
-			e.consume(this);
-		}
-
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			createContextMenu();
-			e.consume(this);
-		}
-	}
-
-	void onHoverKey(const event::HoverKey& e) override {
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
-			switch (e.key) {
-				case GLFW_KEY_F: {
-					toggleModelFavorite(model);
-					ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-					if (browser && browser->favorite) browser->refresh(false);
-					e.consume(this);
-					break;
-				}
-				case GLFW_KEY_H: {
-					toggleModelHidden(model);
-					ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-					if (browser) browser->refresh(false);
-					e.consume(this);
-					break;
-				}
-			}
-		}
-		OpaqueWidget::onHoverKey(e);
-	}
-
-	void onEnter(const event::Enter& e) override {
-		std::string text = model->plugin->brand + " " + model->name;
-		text += "\nTags: ";
-		int i = 0;
-		std::set<int> effectiveTagIds = getEffectiveTagIds(model);
-		for (int tagId : effectiveTagIds) {
-			if (i++ > 0) text += ", ";
-			text += rack::tag::tagAliases[tagId][0];
-		}
-		// Custom tags
-		std::set<std::string> customTags = customTagsForModel(model);
-		if (!customTags.empty()) {
-			text += "\nCustom Tags: ";
-			i = 0;
-			for (const auto& tag : customTags) {
-				if (i > 0) text += ", ";
-				text += tag;
-				i++;
-			}
-		}
-		if (!model->description.empty())
-			text += "\n" + model->description;
-		ui::Tooltip* tt = new ui::Tooltip;
-		tt->text = text;
-		setTooltip(tt);
-
-		if (fb) {
-			MagnifierOverlay* mg = new MagnifierOverlay;
-			mg->fb = fb;
-			mg->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
-			mg->sourceSize = box.size;
-			mg->mousePos = getAbsoluteOffset(box.size.div(2));
-			mg->enabled = pluginSettings.mbMagnifierEnabled;
-			setMagnifier(mg);
-		}
-	}
-
-	void onLeave(const event::Leave& e) override {
-		setTooltip(NULL);
-		setMagnifier(NULL);
-	}
-
-	void onHide(const event::Hide& e) override {
-		setTooltip(NULL);
-		setMagnifier(NULL);
-		OpaqueWidget::onHide(e);
-	}
-
-	void createContextMenu() {
-		Menu* menu = createMenu();
-		menu->addChild(createMenuLabel(model->plugin->name.c_str()));
-		menu->addChild(createMenuLabel(model->name.c_str()));
-		menu->addChild(createSubmenuItem("Details", "", [this](Menu* menu) {
-			model->appendContextMenu(menu, true);
-			// Remove "Favorite" menu item - but only if items were added
-			if (!menu->children.empty()) {
-				auto f = menu->children.back();
-				menu->removeChild(f);
-				delete f;
-			}
-		}));
-		menu->addChild(createMenuItem(string::f("Filter by \"%s\"", model->plugin->brand.c_str()), "", [&]() {
-			ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-			if (browser) {
-				browser->brand = model->plugin->brand;
-				browser->refresh();
-			}
-		}));
-
-		int modelHp = modelWidthGet(model);
-		if (modelHp > 0) {
-			menu->addChild(createMenuItem(string::f("Filter by %d HP", modelHp), "", [modelHp]() {
-				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				if (browser) {
-					browser->widthFilterRef = modelHp;
-					browser->widthFilterMode = 1;
-					browser->refresh();
-				}
-			}));
-		}
-
-		menu->addChild(new MenuSeparator);
-		menu->addChild(createCheckMenuItem("Favorite", RACK_MOD_CTRL_NAME "+F",
-			[&]() { return isModelFavorite(model); },
-			[&]() { 
-				toggleModelFavorite(model);
-				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				if (browser && browser->favorite) browser->refresh(false);
-			}
-		));
-		menu->addChild(createCheckMenuItem("Hidden", RACK_MOD_CTRL_NAME "+H",
-			[&]() { return modelHidden; },
-			[&]() { 
-				toggleModelHidden(model);
-				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				if (browser) browser->refresh(false);
-			}
-		));
-
-		menu->addChild(new MenuSeparator);
-		menu->addChild(createMenuLabel("Custom Tags"));
-
-		// Shared between the new-tag text field and the tag menu items below:
-		// the typed text doubles as a live case-insensitive filter on the
-		// existing tags while still creating a new tag on enter.
-		auto tagFilter = std::make_shared<std::string>();
-
-		struct NewCustomTagField : ui::TextField {
-			plugin::Model* model;
-			std::shared_ptr<std::string> filter;
-
-			void onChange(const event::Change& e) override {
-				ui::TextField::onChange(e);
-				*filter = string::trim(text);
-			}
-
-			void onSelectKey(const event::SelectKey& e) override {
-				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-					std::string tag = rack::string::trim(text);
-					if (isValidCustomTag(tag)) {
-						customTagAdd(model, tag);
-						ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-						if (browser) browser->refresh();
-					}
-					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-					if (overlay) overlay->requestDelete();
-					e.consume(this);
-					return;
-				}
-				if (!e.getTarget()) {
-					ui::TextField::onSelectKey(e);
-				}
-			}
-		};
-
-		struct ToggleCustomTagItem : MenuItem {
-			plugin::Model* model;
-			std::string tagName;
-			std::shared_ptr<std::string> filter;
-			void onAction(const event::Action& e) override {
-				if (customTagHas(model, tagName))
-					customTagRemove(model, tagName);
-				else
-					customTagAdd(model, tagName);
-				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				if (browser) browser->refresh();
-				e.unconsume();
-			}
-			void step() override {
-				visible = Rack::menuFilterMatches(filter, text);
-				rightText = CHECKMARK(customTagHas(model, tagName));
-				MenuItem::step();
-			}
-		};
-
-		NewCustomTagField* ntf = new NewCustomTagField;
-		ntf->box.size.x = 150.f;
-		ntf->placeholder = "Filter / new tag...";
-		ntf->model = model;
-		ntf->filter = tagFilter;
-		menu->addChild(ntf);
-		APP->event->setSelectedWidget(ntf);
-
-		auto unsortedTags = customTagsAll();
-		std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
-		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
-			return string::lowercase(a) < string::lowercase(b);
-		});
-
-		plugin::Model* m = model;
-		Rack::addGroupedMenuItems<std::string>(menu, tags, [m, tagFilter](const std::string& tag) -> ui::MenuItem* {
-			ToggleCustomTagItem* item = new ToggleCustomTagItem;
-			item->text = tag;
-			item->model = m;
-			item->tagName = tag;
-			item->filter = tagFilter;
-			return item;
-		}, 20, 16, tagFilter);
-
-		// Add section for modifying predefined tags
-		menu->addChild(new MenuSeparator);
-		menu->addChild(createMenuLabel("Tags"));
-
-		// Get all effective tag IDs for this model
-		std::set<int> effectiveTagIds = getEffectiveTagIds(model);
-		
-		// Build list of all predefined tags with their status
-		using MenuItemType = std::pair<std::string, int>;
-		std::vector<MenuItemType> allTags;
-		for (int id = 0; id < (int)tag::tagAliases.size(); id++) {
-			allTags.push_back({tag::tagAliases[id][0], id});
-		}
-		std::sort(allTags.begin(), allTags.end(), [](const std::pair<std::string, int>& a, const std::pair<std::string, int>& b) {
-			return string::lowercase(a.first) < string::lowercase(b.first);
-		});
-
-		Rack::addGroupedMenuItems<MenuItemType>(menu, allTags,
-			[effectiveTagIds, m, tagFilter](const MenuItemType& item) {
-				TogglePredefinedTagItem* t = new TogglePredefinedTagItem;
-				t->text = item.first;
-				t->model = m;
-				t->tagId = item.second;
-				t->hasEffectiveTag = effectiveTagIds.find(item.second) != effectiveTagIds.end();
-				t->filter = tagFilter;
-				return t;
-			},
-			24, 16, tagFilter
-		);
 	}
 };
 
@@ -494,12 +149,19 @@ struct BrowserSearchField : ui::TextField {
 		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 			switch (e.key) {
 				case GLFW_KEY_DOWN:
-				case GLFW_KEY_UP:
-				case GLFW_KEY_LEFT:
-				case GLFW_KEY_RIGHT: {
+				case GLFW_KEY_UP: {
 					browser->navigateSelection(e.key);
 					e.consume(this);
 					return;
+				}
+				case GLFW_KEY_LEFT:
+				case GLFW_KEY_RIGHT: {
+					if (pluginSettings.mbArrowKeyNavigation) {
+						browser->navigateSelection(e.key);
+						e.consume(this);
+						return;
+					}
+					break;
 				}
 				case GLFW_KEY_ESCAPE: {
 					Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
@@ -1127,6 +789,16 @@ ModuleBrowser::ModuleBrowser() {
 	headerLayout->addChild(zoomBtn);
 	zoomButton = zoomBtn;
 
+	// Last in the row: it hides itself once warming is done, and trailing position means
+	// its appearance and disappearance never shift the other controls. Its height must
+	// match the other header widgets (BND_WIDGET_HEIGHT): SequentialLayout sizes the row
+	// from its tallest visible child, so a taller widget would make the whole header
+	// grow while visible and snap back when it hides.
+	prewarmProgress = new PrewarmProgressWidget;
+	prewarmProgress->prewarmer = &prewarmer;
+	prewarmProgress->box.size = math::Vec(60, BND_WIDGET_HEIGHT);
+	headerLayout->addChild(prewarmProgress);
+
 	modelScroll = new ui::ScrollWidget;
 	addChild(modelScroll);
 
@@ -1164,12 +836,22 @@ void ModuleBrowser::step() {
 	modelMargin->box.size.y = modelContainer->box.size.y + margin;
 	modelContainer->box.size.x = modelMargin->box.size.x - margin;
 
+	// One screen of slack either side, so boxes about to scroll in are already stepped.
+	stepBand = ViewportBand::around(modelScroll->offset.y, modelScroll->box.size.y,
+		modelMargin->box.pos.y + modelContainer->box.pos.y, modelScroll->box.size.y);
+
 	OpaqueWidget::step();
 }
 
 void ModuleBrowser::draw(const DrawArgs& args) {
 	bndMenuBackground(args.vg, 0.0, 0.0, box.size.x, box.size.y, 0);
 	Widget::draw(args);
+
+	// After the visible boxes have drawn (and taken their share of the frame), spend
+	// what's left preparing previews that haven't been scrolled to yet. This runs from
+	// draw() rather than step() because rasterizing needs a current GL context.
+	prewarmModelContainer<ModelBox>(prewarmer, modelContainer->children,
+		modelScroll->offset, settings::browserZoom);
 }
 
 bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode) {
@@ -1246,6 +928,8 @@ void ModuleBrowser::updateZoom() {
 void ModuleBrowser::refresh(bool scrollTop) {
 	if (scrollTop) modelScroll->offset = math::Vec();
 	prefilteredModelScores.clear();
+	// Filtering/sorting is user interaction; back off warming for a few frames.
+	prewarmer.reset();
 
 	for (Widget* w : modelContainer->children) {
 		ModelBox* m = reinterpret_cast<ModelBox*>(w);
@@ -1480,7 +1164,7 @@ void ModuleBrowser::onShow(const event::Show& e) {
 }
 
 void ModuleBrowser::onHoverScroll(const event::HoverScroll& e) {
-	if ((APP->window->getMods() & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+	if ((vcv::ui::getWindowMods() & RACK_MOD_MASK) == RACK_MOD_CTRL) {
 		float zoomDelta = e.scrollDelta.y / 50.f / 12.f;
 		float newZoom = math::clamp(settings::browserZoom + zoomDelta, -2.f, 1.f);
 		if (newZoom != settings::browserZoom) {

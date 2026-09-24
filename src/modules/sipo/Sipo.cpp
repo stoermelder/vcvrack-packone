@@ -148,7 +148,7 @@ struct SipoModule : Module {
 		}
 
 		json_t* dataPtrJ = json_object_get(rootJ, "dataPtr");
-		if (dataPtrJ) dataPtr = json_integer_value(dataPtrJ);
+		if (dataPtrJ) dataPtr = clamp((int)json_integer_value(dataPtrJ), 0, MAX_DATA - 1);
 	}
 };
 

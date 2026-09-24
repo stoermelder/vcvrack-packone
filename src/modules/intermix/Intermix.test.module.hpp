@@ -10,6 +10,17 @@ TEST_CASE("Construction and initialization", "[Intermix]") {
 	REQUIRE(mw != nullptr);
 	REQUIRE(mw->module == nullptr);
 
+	SECTION("Matrix pad drag start is safe on a module-less widget") {
+		// A module-less widget (e.g. the module browser preview) has no
+		// ParamQuantity behind its ParamWidgets. onDragStart() must not
+		// dereference it unconditionally.
+		ParamWidget* pad = mw->getParam(IntermixModule<8>::PARAM_MATRIX);
+		REQUIRE(pad != nullptr);
+
+		event::DragStart e;
+		CHECK_NOTHROW(pad->onDragStart(e));
+	}
+
 	Test::destroyWidget(mw);
 }
 
@@ -37,6 +48,23 @@ TEST_CASE("Preset JSON null-guards", "[Intermix][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
+}
+
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[Intermix][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<IntermixModule<8>>("Intermix");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+
+	REQUIRE(module->sceneSelected >= 0);
+	REQUIRE(module->sceneSelected < SCENE_MAX);
+	REQUIRE(module->channelCount >= 1);
+	REQUIRE(module->channelCount <= PORT_MAX_CHANNELS);
+	REQUIRE(module->sceneCount >= 1);
+	REQUIRE(module->sceneCount <= SCENE_MAX);
 }
 
 TEST_CASE("JSON round-trip preserves state", "[Intermix][JSON]") {
@@ -138,6 +166,24 @@ TEST_CASE("Scene copy", "[Intermix]") {
 		module->scenes[0].matrix[0][0] = 1.f;
 		module->sceneCopy(0);
 		REQUIRE(module->scenes[0].matrix[0][0] == 1.f);
+	}
+
+	SECTION("sceneCopy survives a corrupted sceneSelected recovered via JSON clamping") {
+		// sceneSelected only stays in [0, SCENE_MAX) because dataFromJson() clamps
+		// it on load; sceneCopy() itself trusts it unconditionally as a source
+		// index. Pin the interaction: a preset that once carried an out-of-range
+		// sceneSelected must not leave sceneCopy() reading out of bounds afterwards.
+		json_t* rootJ = module->dataToJson();
+		json_object_set_new(rootJ, "sceneSelected", json_integer(4000));
+		module->dataFromJson(rootJ);
+		json_decref(rootJ);
+
+		REQUIRE(module->sceneSelected >= 0);
+		REQUIRE(module->sceneSelected < SCENE_MAX);
+
+		module->scenes[module->sceneSelected].matrix[0][0] = 0.75f;
+		module->sceneCopy(1);
+		REQUIRE(module->scenes[1].matrix[0][0] == 0.75f);
 	}
 }
 
@@ -290,11 +336,87 @@ TEST_CASE("Input modes", "[Intermix]") {
 		module->params[IntermixModule<8>::PARAM_MATRIX + 0].setValue(1.f);
 		module->params[IntermixModule<8>::PARAM_OUTPUT + 0].setValue(0.f);
 		module->channelCount = 1;
-		
+
 		h.dspSteps(130);
-		
+
 		float expected = 1.f / 12.f;
 		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(expected).margin(0.001f));
+	}
+
+	SECTION("Constant voltage mode with subtract") {
+		module->inputMode[0] = IM_SUB_05C; // -5 cents = -5/12V
+		module->params[IntermixModule<8>::PARAM_MATRIX + 0].setValue(1.f);
+		module->params[IntermixModule<8>::PARAM_OUTPUT + 0].setValue(0.f);
+		module->channelCount = 1;
+
+		h.dspSteps(130);
+
+		float expected = -5.f / 12.f;
+		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(expected).margin(0.001f));
+	}
+}
+
+TEST_CASE("centsOf and isValidInMode", "[Intermix]") {
+	SECTION("centsOf decodes the full subtract/add range") {
+		REQUIRE(centsOf(IM_SUB_12C) == -12);
+		REQUIRE(centsOf(IM_SUB_01C) == -1);
+		REQUIRE(centsOf(IM_ADD_01C) == 1);
+		REQUIRE(centsOf(IM_ADD_12C) == 12);
+	}
+
+	SECTION("isValidInMode accepts every named enumerator") {
+		REQUIRE(isValidInMode(IM_OFF));
+		REQUIRE(isValidInMode(IM_DIRECT));
+		REQUIRE(isValidInMode(IM_FADE));
+		for (int m = IM_SUB_12C; m <= IM_SUB_01C; m++) {
+			REQUIRE(isValidInMode(m));
+		}
+		for (int m = IM_ADD_01C; m <= IM_ADD_12C; m++) {
+			REQUIRE(isValidInMode(m));
+		}
+	}
+
+	SECTION("isValidInMode rejects IM_CONST_ZERO and out-of-range values") {
+		REQUIRE_FALSE(isValidInMode(IM_CONST_ZERO));
+		REQUIRE_FALSE(isValidInMode(-1));
+		REQUIRE_FALSE(isValidInMode(3));
+		REQUIRE_FALSE(isValidInMode(11));
+		REQUIRE_FALSE(isValidInMode(37));
+		REQUIRE_FALSE(isValidInMode(4000));
+	}
+}
+
+TEST_CASE("Preset JSON rejects invalid IN_MODE values", "[Intermix][JSON]") {
+	// dataFromJson() casts JSON integers straight into IN_MODE; a corrupt or
+	// hand-edited preset must fall back to IM_DIRECT rather than hitting the
+	// DSP switch's default: branch with an arbitrary, unvalidated mode.
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto module = mods.create("Intermix");
+
+	SECTION("inputMode falls back to IM_DIRECT") {
+		json_t* rootJ = module->dataToJson();
+		json_t* inputsJ = json_object_get(rootJ, "inputMode");
+		json_array_set_new(inputsJ, 0, json_integer(IM_CONST_ZERO));
+		json_array_set_new(inputsJ, 1, json_integer(4000));
+		module->dataFromJson(rootJ);
+		json_decref(rootJ);
+
+		REQUIRE(module->inputMode[0] == IM_DIRECT);
+		REQUIRE(module->inputMode[1] == IM_DIRECT);
+	}
+
+	SECTION("scenes[i].input falls back to IM_DIRECT") {
+		json_t* rootJ = module->dataToJson();
+		json_t* scenesJ = json_object_get(rootJ, "scenes");
+		json_t* sceneJ = json_array_get(scenesJ, 0);
+		json_t* inputJ = json_object_get(sceneJ, "input");
+		json_array_set_new(inputJ, 0, json_integer(IM_CONST_ZERO));
+		json_array_set_new(inputJ, 1, json_integer(-1));
+		module->dataFromJson(rootJ);
+		json_decref(rootJ);
+
+		REQUIRE(module->scenes[0].input[0] == IM_DIRECT);
+		REQUIRE(module->scenes[0].input[1] == IM_DIRECT);
 	}
 }
 
@@ -348,6 +470,33 @@ TEST_CASE("Scene CV modes basic", "[Intermix]") {
 	}
 }
 
+TEST_CASE("X/Y map buttons toggle every selected column", "[Intermix]") {
+	// mapTrigger[j] must be evaluated once per row and applied to every selected
+	// X column, not re-evaluated per column: a SchmittTrigger only fires once per
+	// rising edge, so calling process() a second time for a second selected
+	// column would see an already-consumed edge and silently no-op.
+	Test::Harness h;
+	auto module = h.addModule<IntermixModule<8>>("Intermix");
+
+	module->params[IntermixModule<8>::PARAM_X_MAP + 0].setValue(1.f);
+	module->params[IntermixModule<8>::PARAM_X_MAP + 1].setValue(1.f);
+	module->params[IntermixModule<8>::PARAM_Y_MAP + 0].setValue(0.f);
+	// Clear the SchmittTrigger's initial UNINITIALIZED state before arming the edge.
+	h.dspSteps(100);
+
+	bool before0 = module->params[IntermixModule<8>::PARAM_MATRIX + 0 * 8 + 0].getValue() > 0.f;
+	bool before1 = module->params[IntermixModule<8>::PARAM_MATRIX + 0 * 8 + 1].getValue() > 0.f;
+
+	module->params[IntermixModule<8>::PARAM_Y_MAP + 0].setValue(1.f);
+	h.dspSteps(100);
+
+	bool after0 = module->params[IntermixModule<8>::PARAM_MATRIX + 0 * 8 + 0].getValue() > 0.f;
+	bool after1 = module->params[IntermixModule<8>::PARAM_MATRIX + 0 * 8 + 1].getValue() > 0.f;
+
+	REQUIRE(after0 != before0);
+	REQUIRE(after1 != before1);
+}
+
 TEST_CASE("Expander interface", "[Intermix]") {
 	Test::Harness h;
 	auto module = h.addModule<IntermixModule<8>>("Intermix");
@@ -381,6 +530,15 @@ TEST_CASE("Expander interface", "[Intermix]") {
 		// Check that timestamps are updated (they're set to current ts)
 		REQUIRE(module->fadeInTs[0] == tsBase);
 		REQUIRE(module->fadeOutTs[0] == tsBase);
+	}
+
+	SECTION("expSetFade ignores out-of-range rows") {
+		// expSetFade() is a public virtual any expander can call; the row index
+		// must be validated at the receiving end rather than trusted from callers.
+		float v[8] = {1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f};
+		CHECK_NOTHROW(module->expSetFade(-1, v, v));
+		CHECK_NOTHROW(module->expSetFade(8, v, v));
+		CHECK_NOTHROW(module->expSetFade(5000, v, v));
 	}
 }
 
@@ -473,6 +631,35 @@ TEST_CASE("Fade time: PARAM_FADEIN sets fader rise to param seconds", "[Intermix
 		h.dspSteps(250);
 		// Bug: fader.fall == 3.0 * 4 = 12.0. Correct: 3.0.
 		REQUIRE(m->fader[0][0][0].fall == Catch::Approx(3.0f).margin(0.001f));
+	}
+}
+
+
+TEST_CASE("FadeLengthParamQuantity setValue clamps and reaches the full range per mode", "[Intermix]") {
+	// PARAM_FADEIN/PARAM_FADEOUT are configured with configParam(..., 0.f, 4.f, ...),
+	// but ParamQuantity::setValue()/setImmediateValue() (the path real UI interactions
+	// use) clamp against the virtual getMaxValue() instead, which tracks fadeLengthMode.
+	// So the configParam() literal does not cap the reachable range.
+	Test::ModuleScaffold<IntermixModule<8>> mods;
+	auto m = mods.create("Intermix");
+	auto* pq = m->paramQuantities[IntermixModule<8>::PARAM_FADEIN];
+
+	SECTION("FADE_LENGTH_4S reaches 4s and clamps above it") {
+		m->fadeLengthMode = FADE_LENGTH_4S;
+		pq->setValue(100.f);
+		REQUIRE(pq->getValue() == Catch::Approx(4.0f).margin(0.001f));
+	}
+
+	SECTION("FADE_LENGTH_15S reaches 15s, above the configParam() literal of 4") {
+		m->fadeLengthMode = FADE_LENGTH_15S;
+		pq->setValue(100.f);
+		REQUIRE(pq->getValue() == Catch::Approx(15.0f).margin(0.001f));
+	}
+
+	SECTION("FADE_LENGTH_60S reaches the full 60s, above the configParam() literal of 4") {
+		m->fadeLengthMode = FADE_LENGTH_60S;
+		pq->setValue(50.f);
+		REQUIRE(pq->getValue() == Catch::Approx(50.0f).margin(0.001f));
 	}
 }
 

@@ -210,7 +210,7 @@ struct AffixModule : Module {
 		json_t* paramModeJ = json_object_get(rootJ, "paramMode");
 		if (paramModeJ) setParamMode((PARAM_MODE)json_integer_value(paramModeJ));
 		json_t* numberOfChannelsJ = json_object_get(rootJ, "numberOfChannels");
-		if (numberOfChannelsJ) numberOfChannels = json_integer_value(numberOfChannelsJ);
+		if (numberOfChannelsJ) numberOfChannels = clamp((int)json_integer_value(numberOfChannelsJ), 0, CHANNELS);
 	}
 };
 
