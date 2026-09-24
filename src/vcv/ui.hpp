@@ -131,8 +131,16 @@ struct UiAccess {
 	// name table Rack falls back to internally — no GLFW required, ignores `scancode`
 	// (rack::widget::getKeyName() takes only the key). RealUiAccess overrides both with the
 	// real glfw* calls. Default getKeyScancode() answers -1, GLFW's own "no scancode" value.
-	virtual std::string getKeyName(int key, int scancode) const { return rack::widget::getKeyName(key); }
-	virtual int getKeyScancode(int key) const { return -1; }
+	virtual std::string getKeyName(int key, int scancode) const {
+#ifndef METAMODULE
+		return rack::widget::getKeyName(key);
+#else
+		return "";
+#endif
+	}
+	virtual int getKeyScancode(int key) const {
+		return -1;
+	}
 
 	// Word-wraps `text` to `width` (0 = no wrap limit) and returns the resulting bounding box,
 	// both in the same px unit as `fontSize` and `width`. Used for tutorial bubble sizing
