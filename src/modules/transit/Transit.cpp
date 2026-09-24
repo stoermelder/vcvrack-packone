@@ -123,6 +123,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 	/** [Stored to JSON] */
 	int presetProcessDivision;
 	ClockDividerEx presetProcessDivider;
+	ClockDividerEx padProcessDivider;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
 	std::uniform_int_distribution<int> randDist;
@@ -253,7 +254,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 		presetProcessDivision = settings::isPlugin ? 256 : 64;
 		presetProcessDivider.setDivision(presetProcessDivision);
 		presetProcessDivider.reset();
-		
+		padProcessDivider.setDivision(presetProcessDivision);
+		padProcessDivider.reset();
+
 		parameterChangesDirect = false;
 	}
 
@@ -280,6 +283,19 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 		localIndex = slotIndex % NUM_PRESETS;
 		module = N[slotIndex / NUM_PRESETS];
 		return true;
+	}
+
+	int getSlotCount() override {
+		return presetTotal;
+	}
+
+	bool isSlotUsed(int i) override {
+		SLOT* slot = getSlot(i);
+		return slot && slot->isUsed();
+	}
+
+	void loadSlot(int i) override {
+		sendSlotCmd(SLOT_CMD::LOAD, i);
 	}
 
 	void process(const Module::ProcessArgs& args) override {
@@ -344,6 +360,15 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 		int presetFirst = std::min(this->presetFirst, presetTotal);
 		int presetLast = std::min(this->presetLast, presetTotal);
 
+		// While the pad is active it always drives the parameters, so Write-mode's
+		// button behavior (save/clear on press) is suppressed and every other
+		// mode-dependent branch behaves as if CTRLMODE::READ was selected. Only the
+		// pad's own "Pad active" switch can undo this -- the CTRLMODE switch itself
+		// keeps its physical position and takes effect again once the pad is
+		// switched off.
+		bool padOverride = isXyPadActive(true);
+		CTRLMODE effCtrlMode = padOverride ? CTRLMODE::READ : BASE::ctrlMode;
+
 		if (handleDivider.process()) {
 			float st = args.sampleTime * handleDivider.division;
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
@@ -354,7 +379,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 		}
 
 		// Read & Auto mode
-		if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
+		if (effCtrlMode == CTRLMODE::READ || effCtrlMode == CTRLMODE::AUTO) {
 			// RESET input
 			if (resetTrigger.process(Module::inputs[INPUT_RESET].getVoltage())) {
 				resetTimer.reset();
@@ -515,7 +540,13 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 				float sampleTime = args.sampleTime * buttonDivider.division;
 				for (int i = 0; i < presetTotal; i++) {
 					SLOT* slot = getSlot(i);
-					switch (slot->getPresetButton()->process(sampleTime)) {
+					LongPressButton::Event e = slot->getPresetButton()->process(sampleTime);
+					// The button is still tracked every tick so its press/hold state
+					// stays in sync, but while the pad is active it already owns the
+					// blend -- loading a slot here would start a fade that fights (or,
+					// through padProcessDivider timing, outlasts) the pad's own output.
+					if (padOverride) continue;
+					switch (e) {
 						default:
 						case LongPressButton::NO_PRESS:
 							break;
@@ -551,12 +582,12 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 			}
 		}
 
-		if (isXyPadActive() && BASE::ctrlMode == CTRLMODE::READ) {
+		if (padOverride) {
 			presetProcessXyPad(args.sampleTime);
 		}
-		if (isPhaseCvActive() && BASE::ctrlMode == CTRLMODE::READ) {
+		if (isPhaseCvActive() && effCtrlMode == CTRLMODE::READ) {
 			presetProcessPhase(args.sampleTime);
-		} 
+		}
 		else {
 			presetProcess(args.sampleTime);
 		}
@@ -570,11 +601,21 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 			}
 			float intpart;
 			float frac = std::modf(presetPhaseLast, &intpart);
+			bool xyPadActive = padOverride;
+			std::vector<bool> padActiveSlot;
+			if (xyPadActive) {
+				padActiveSlot.resize(presetTotal, false);
+				for (auto& source : transitPad->getPadFactors()) {
+					if (source.id >= 0 && source.id < presetTotal && source.weight > 0.f) {
+						padActiveSlot[source.id] = true;
+					}
+				}
+			}
 			for (int i = 0; i < presetTotal; i++) {
 				SLOT* slot = getSlot(i);
 				bool u = slot->isUsed();
 
-				if ((BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) && isPhaseCvActive()) {
+				if ((effCtrlMode == CTRLMODE::READ || effCtrlMode == CTRLMODE::AUTO) && isPhaseCvActive()) {
 					bool isPhaseSlot = intpart == i || intpart + 1 == i;
 					float f = (intpart == i) ? (1.f - frac) : (intpart + 1 == i) ? (frac) : 0.f;
 					// The two slots the phase is currently between blink, alternating
@@ -602,10 +643,27 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 						slot->getLights()[2].setBrightness(b1);
 					}
 				}
-				else {
-					bool blink = BASE::ctrlMode == CTRLMODE::WRITE ? lightBlinkSlow : lightBlink;
+				else if (xyPadActive) {
+					bool active = padActiveSlot[i];
+					bool b = active && lightBlink;
+					float b1 = active ? (b ? (u ? 1.0f : 0.05f) : 0.f) : (presetFirst <= i && i < presetLast ? (u ? 0.4f : 0.05f) : 0.f);
 					if (slot->isColorSet()) {
-						bool active = preset == i;
+						NVGcolor c = slot->getColor();
+						float f = active ? (b ? 1.f : 0.f) : (presetFirst <= i && i < presetLast ? 1.f : 0.f);
+						slot->getLights()[0].setBrightnessSmooth(c.r * f, s);
+						slot->getLights()[1].setBrightnessSmooth(c.g * f, s);
+						slot->getLights()[2].setBrightnessSmooth(c.b * f, s);
+					}
+					else {
+						slot->getLights()[0].setBrightnessSmooth(b1, s);
+						slot->getLights()[1].setBrightnessSmooth(b1, s);
+						slot->getLights()[2].setBrightnessSmooth(b1, s);
+					}
+				}
+				else {
+					bool blink = effCtrlMode == CTRLMODE::WRITE ? lightBlinkSlow : lightBlink;
+					if (slot->isColorSet()) {
+					bool active = preset == i;
 						float f = active ? (blink ? 1.f : 0.f) : (presetFirst <= i && i < presetLast ? 1.f : 0.f);
 						NVGcolor c = slot->getColor();
 						slot->getLights()[0].setBrightnessSmooth(c.r * f, s);
@@ -623,14 +681,17 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 				}
 			}
 
-			BASE::lights[LIGHT_CV].setBrightness((slotCvMode == SLOTCVMODE::OFF || (slotCvMode == SLOTCVMODE::PHASE && BASE::ctrlMode == CTRLMODE::WRITE)) && lightBlinkSlow);
+			BASE::lights[LIGHT_CV].setBrightness(!padOverride && (slotCvMode == SLOTCVMODE::OFF || (slotCvMode == SLOTCVMODE::PHASE && effCtrlMode == CTRLMODE::WRITE)) && lightBlinkSlow);
 		}
 
 		taskProcessorDsp.process();
 	}
 
-	inline bool isXyPadActive() {
-		return transitPad != nullptr;
+	/** True whenever a TransitPad expander is connected. Pass checkActive=true
+	 *  to also require the pad's own "Pad active" switch, i.e. whether it is
+	 *  currently overriding the master's param processing. */
+	inline bool isXyPadActive(bool checkActive = false) {
+		return transitPad != nullptr && (!checkActive || transitPad->isPadActive());
 	}
 
 	inline bool isPhaseCvActive() {
@@ -844,34 +905,39 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 	}
 
 	void presetProcessXyPad(float sampleTime) {
-		if (presetProcessDivider.process()) {
+		if (padProcessDivider.process()) {
 			const auto& snapshots = transitPad->getPadFactors();
 
-			float weight = 0.f;
 			std::vector<float> v(sourceHandles.size(), 0.f);
+			// Per-parameter, not global: a parameter bound after the last save
+			// (bindAddParameterRequest(..., presetLoading = true)) has no entry
+			// in an older slot's preset, so it must not receive a share of that
+			// slot's weight even though other, longer-lived parameters do.
+			std::vector<float> weight(sourceHandles.size(), 0.f);
 			for (auto snapshot : snapshots) {
 				if (snapshot.id < 0) continue;
 				SLOT* slot1 = getSlot(snapshot.id);
 				if (!slot1 || !slot1->isUsed()) continue;
-				weight += snapshot.weight;
 
+				const std::vector<float>& preset1 = *slot1->getPreset();
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					if (!pq) continue;
-					float v1 = (*slot1->getPreset())[i];
+					if (preset1.size() <= i) break;
+					float v1 = preset1[i];
 					v[i] += v1 * snapshot.weight;
+					weight[i] += snapshot.weight;
 				}
 			}
 
-			if (weight > 0.f) {
-				for (size_t i = 0; i < sourceHandles.size(); i++) {
-					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
-					if (!pq) continue;
-					if (settings::isPlugin && parameterChangesDirect)
-						pq->setValue(v[i] / weight);
-					else
-						pq->getParam()->setValue(v[i] / weight);
-				}
+			for (size_t i = 0; i < sourceHandles.size(); i++) {
+				if (weight[i] <= 0.f) continue;
+				ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+				if (!pq) continue;
+				if (settings::isPlugin && parameterChangesDirect)
+					pq->setValue(v[i] / weight[i]);
+				else
+					pq->getParam()->setValue(v[i] / weight[i]);
 			}
 
 			BASE::outputs[OUTPUT].setVoltage(0.f);
@@ -994,7 +1060,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 				outSlotPulseGenerator.trigger();
 				if (!slot->isUsed()) 
 					return;
-				if (BASE::ctrlMode == CTRLMODE::AUTO && presetPrev != -1) {
+				bool padOverride = isXyPadActive(true);
+				CTRLMODE effCtrlMode = padOverride ? CTRLMODE::READ : BASE::ctrlMode;
+				if (effCtrlMode == CTRLMODE::AUTO && presetPrev != -1) {
 					SLOT* slotPrev = getSlot(presetPrev);
 					if (slotPrev->isUsed()) {
 						slotPrev->getPreset()->clear();
@@ -1252,6 +1320,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 		presetProcessDivision = d;
 		presetProcessDivider.setDivision(presetProcessDivision);
 		presetProcessDivider.reset();
+		padProcessDivider.setDivision(presetProcessDivision);
+		padProcessDivider.reset();
 	}
 
 	int getProcessDivision() {
@@ -1550,7 +1620,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(10.4f, 353.5f), module, MODULE::LIGHT_LEARN));
 
 		for (size_t i = 0; i < NUM_PRESETS; i++) {
-			float o = i * (259.0f / (NUM_PRESETS - 1));
+			float o = i * (287.5f / (NUM_PRESETS - 1));
 			TransitLedButton<NUM_PRESETS>* ledButton = createParamCentered<TransitLedButton<NUM_PRESETS>>(Vec(60.0f, 46.4f + o), module, MODULE::PARAM_PRESET + i);
 			ledButton->module = module;
 			ledButton->id = i;

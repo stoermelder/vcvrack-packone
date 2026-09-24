@@ -157,55 +157,61 @@ TRANSIT-PAD is a specialized expander for TRANSIT that provides a 2-dimensional 
 
 Place TRANSIT-PAD on the right side of TRANSIT, just like a +T expander. As soon as it is connected TRANSIT switches to a dedicated XY-pad mode:
 
-- The _SEL_-port and the _OUT_-port of TRANSIT become inactive. The _SEL_-mode is forced to _Off_ and _OUT_-mode is forced to _Off_ automatically.
-- Only Read-mode of TRANSIT is supported. Auto-mode and Write-mode of the operating-mode switch are ignored while the pad is active.
-- Any number of +T expanders can be chained between TRANSIT and TRANSIT-PAD (the pad is placed at the end of the chain, after all +T expanders). The snapshots stored on those +T expanders are reachable from the pad just like the snapshots on the host TRANSIT. Placing additional +T expanders or a second pad to the right of TRANSIT-PAD is not supported: the chain stops as soon as the pad is reached, and any expander placed after it is ignored.
+- The _SEL_-port and the _OUT_-port of TRANSIT become inactive. The _SEL_-mode is forced to _Off_ and _OUT_-mode is forced to _Off_ automatically. While the pad is active, the _SEL_-port's LED also stops blinking, since it otherwise indicates the same "SEL-mode disabled" state that no longer applies once the pad is switched off.
+- While the pad is active, it drives the bound parameters regardless of TRANSIT's Read/Write/Auto switch: Write-mode's front-panel buttons no longer save or clear snapshots, and Auto-mode's re-recording of the previously active slot is suspended. The switch keeps its physical position and takes effect again as soon as the pad is switched off (see _Pad active_ below) — this is the only way to save or clear snapshots while the pad is connected and active.
+- While the pad is active, the LEDs of all snapshots currently contributing to the mix blink on TRANSIT (and on any +T expander).
+- Up to fourteen +T expanders can be chained between TRANSIT and TRANSIT-PAD (the pad is placed at the end of the chain, after all +T expanders). The snapshots stored on those +T expanders are reachable from the pad just like the snapshots on the host TRANSIT. Placing additional +T expanders or a second pad to the right of TRANSIT-PAD is not supported: the chain stops as soon as the pad is reached, and any expander placed after it is ignored.
 
-Setup of TRANSIT itself is unchanged: bind parameters and save snapshots in Write-mode as described above. The pad itself does not store snapshots — it only assigns a 2D-position to snapshots that already exist on the host TRANSIT.
+Setup of TRANSIT itself is unchanged: bind parameters and save snapshots in Write-mode as described above — just switch the pad off first if it is currently active. The pad itself does not store snapshots — it only assigns a 2D-position to snapshots that already exist on the host TRANSIT.
+
+The _Pad active_ switch left of the ports toggles whether the pad currently drives TRANSIT at all. Switching it off freezes the bound parameters at their last blended values, stops the snapshot LEDs on TRANSIT from blinking, and restores TRANSIT's Read/Write/Auto switch to its normal behavior (so snapshots can be saved or cleared again) — while the pad itself stays fully usable throughout: points can still be dragged, bound/unbound, and snapshot-sets edited or switched, none of which reaches TRANSIT until the switch is turned back on. This is useful for rearranging or fine-tuning snapshots without disturbing the currently playing sound; the alternative would be unplugging the expander, which also drops it out of the +T chain. The pad's screen dims and shows an _OFF_ label in the bottom-left corner while switched off. The switch can also be toggled with the **Space** key while hovering over the module.
 
 #### The XY-pad
 
 The main element of the expander is the large square XY-display. It always shows two kinds of items:
 
 - **Snapshot points** A–H. Each point is one snapshot of the host TRANSIT, placed at an arbitrary 2D position. The point is rendered with the color of the current snapshot-set and labeled with the snapshot's letter.
-- **The _Mix_ point** (rendered as a `+`). The mix point's position is the "play head" of the pad. For every snapshot its weight is calculated as the distance from the mix point to the snapshot position, scaled by the snapshot's individual **radius**: snapshots inside their radius contribute with a weight that approaches 1.0 the closer the mix point is to them. Multiple snapshots can be active at the same time, and the parameters of all bound modules are blended together as a weighted average of the contributing snapshots.
+- **The _Mix_ point** (rendered as a `+`). The mix point's position is the "play head" of the pad. For every snapshot its weight is calculated as the distance from the mix point to the snapshot position, scaled by the snapshot's individual **radius**: snapshots inside their radius contribute with a weight that approaches 1.0 the closer the mix point is to them. Multiple snapshots can be active at the same time, and the parameters of all bound modules are blended together as a weighted average of the contributing snapshots. If the mix point is outside the radius of every snapshot, the parameters keep their last values.
 
 Right-clicking a snapshot point opens its context menu with the following options:
 
 - **Bind snapshot** binds this pad-position to the snapshot currently active on the host TRANSIT.
 - **Unbind snapshot** clears the binding. An unbound snapshot point shows the label _No snapshot_ and does not contribute to the output.
+- **Load snapshot** loads the bound TRANSIT-snapshot into the bound parameters immediately, the same as selecting it directly on TRANSIT. Disabled if the point is unbound or bound to an empty slot. Since the pad continuously re-drives the bound parameters from its own blend while active, using this switches _Pad active_ to _Off_ first so the loaded values are not immediately overwritten again.
 - **Amount** slider — scales the snapshot's contribution. 0% silences the snapshot completely, 100% is the default.
-- **Radius** slider — controls the radius of the area of influence. At 0% only the exact pixel-position contributes, at 100% the snapshot is active across the whole pad. The radius is visualized on the display as a filled circle around the point when the point is selected.
+- **Radius** slider — controls the radius of the area of influence. At 0% the snapshot never contributes; at 100% (the default) the radius equals the width of the pad. The radius is visualized on the display as a filled circle around the point when the point is selected.
 
 The number of snapshot points on the pad is configurable through the context menu of the display (right-click on the empty area): _Number of snapshots_ selects how many of A–H are active. The default is 4; the maximum is 8. Inactive points are not displayed and do not contribute to the output.
 
 The mix point can be moved in several ways:
 
 - **Mouse** — click and drag the `+`-marker on the pad.
-- **CV inputs** _Mix x-pos_ and _Mix y-pos_ are bipolar 0..10V inputs: 0V places the mix at the center, +5V at the right/top edge, -5V at the left/bottom edge.
-- **MIDI/CV-mapping** the two dummy map-buttons next to the pad. They expose the x- and y-coordinates of the mix point to VCV Rack's mapping system. There is no visual feedback on the buttons themselves, but mapping them lets you drive the mix point from any source — e.g. MIDI-CC from a controller or a CV-MAP output.
+- **CV inputs** _Mix x-pos_ and _Mix y-pos_ are bipolar ±5V inputs: 0V places the mix at the center, +5V at the right/bottom edge, -5V at the left/top edge.
+- **MIDI/CV-mapping** the two dummy map-buttons above the _Mix x-pos_ and _Mix y-pos_ inputs. They expose the x- and y-coordinates of the mix point to VCV Rack's mapping system. There is no visual feedback on the buttons themselves, but mapping them lets you drive the mix point from any source — e.g. MIDI-CC from a controller or a CV-MAP output.
 - **Motion-Sequences** — a recorded or generated trajectory that moves the mix point automatically. See the next section.
 
-The mix point's value is smoothed internally to avoid clicks when the source jumps abruptly. After the source is disconnected the value slowly drifts back to the center of the pad.
+Mouse movements of the mix point are smoothed internally; CV inputs, mappings and motion-sequences are applied directly. Once the CV cable is unplugged or the mapping is removed, the mix point returns to the position it was last given with the mouse.
+
+Right-clicking the mix point opens a short menu with the _Slot_, _Interpolation_ and _Trigger mode_ settings of its motion-sequence (see the next section).
 
 #### Snapshot-sets
 
-TRANSIT-PAD provides 8 snapshot-sets, each containing its own positions and weights for the 8 pad points. This way you can store complete layouts (e.g. _Drums_, _Bass_, _Pad_) and switch between them at any time.
+TRANSIT-PAD provides 8 snapshot-sets, each holding its own assignment of the 8 pad points to TRANSIT's snapshot slots. This way you can keep several mappings (e.g. _Drums_, _Bass_, _Pad_) side by side and switch between them at any time. By default the positions, radius and amount of the pad points (and the position of the _Mix_ point) are shared by all sets: switching a set re-assigns which snapshots the points refer to, it does not move them. The _Snapshot-set node positions_ context-menu option (see [Context menu](#context-menu)) can be enabled to have each set remember its own pad-point layout, including the _Mix_ point, as well.
 
-The 8 buttons at the top of the module select the active set. The active set is indicated by a white LED above the button. Every set is assigned a fixed default color (cycling through green, magenta, blue, yellow, cyan, white, red, grey) and all snapshot points of the current set are rendered in that color. The color of a single set can be changed via the context menu of the set-button or via the context menu of any snapshot point on the pad (sub-menu _Color_ under _Current set_).
+The 8 buttons below the pad select the active set. The button of the active set lights up in the set's own color; the others are shown faintly in theirs. Every set is assigned a fixed default color (cycling through green, magenta, blue, yellow, cyan, white, red, grey) and all snapshot points of the current set are rendered in that color. The color of a single set can be changed via the context menu of the set-button or via the context menu of any snapshot point on the pad (sub-menu _Color_ under _Current set_).
 
-Each snapshot-set can be given a custom text label (e.g. _Drums_, _Bass_, _Pad_) to make the 8 buttons easier to tell apart at a glance. Right-click a set-button and choose _Label_ to enter a label.
+Each snapshot-set can be given a custom text label (e.g. _Drums_, _Bass_, _Pad_) to make the 8 buttons easier to tell apart. Right-click a set-button and choose _Label_ to enter a label; it is shown in the button's tooltip. The set-button's context menu also lists which snapshot each pad point of that set is bound to.
 
-A snapshot-set can also be selected by CV through the _Snapshot-set select CV_-input on the bottom-right of the module. The CV-mode is configured through the context menu of the display:
+A snapshot-set can also be selected by CV through the _Snapshot-set select CV_-input on the bottom-right of the module. The CV-mode is configured through the context menu of the display or of the module:
 
 | Mode | Description |
 |------|-------------|
 | **Off** | The CV input is ignored; sets are selected only via the buttons on the module. |
 | **Trigger forward** | A rising edge advances to the next snapshot-set, wrapping around after set 8. |
-| **0..10V** | 0V selects set 1, 10V selects set 8, linearly interpolated in between. |
+| **0..10V** | The 0..10V range is divided into 8 equal steps: 0V selects set 1, 10V selects set 8. |
 | **C4** | The set is selected by V/Oct: 0V = set 1, 1/12V per additional set. |
 
-When the CV input is connected the buttons can still be used to manually override the active set, but the CV input takes over as soon as it carries a new value.
+When the CV input is connected the buttons can still be used to select a set manually. In _Trigger forward_ mode the next trigger advances from the manually selected set; in _0..10V_ and _C4_ mode the CV takes over again as soon as it selects a different set.
 
 #### Motion-Sequences
 
@@ -213,15 +219,15 @@ The mix point can be animated by a _Motion-Sequence_: a path of up to 128 (x, y)
 
 Right-click on the LED-display to open the sequence's context menu:
 
-- **Slot** selects one of the 16 sequences. The first 4 are populated with reasonable default paths on initialization.
+- **Slot** selects one of the 16 sequences. All sequences start out empty; record one in SEQ-EDIT mode or use _Random motion_ or _Preset_ in the sequence-editor menu (see below).
 - **Interpolation** selects _Linear_ or _Cubic_ interpolation between the waypoints. Cubic provides smoother but less precise motion.
 - **Trigger mode** selects how the playback of the sequence is advanced. The mode is also reflected in the behaviour of the _Mix sequence select_ CV input:
-  - _Trigger forward_ / _Trigger reverse_ — triggers step through the sequences.
+  - _Trigger forward_ / _Trigger reverse_ — triggers step through the sequences, skipping empty ones.
   - _Trigger random 1-16_ / _1-8_ / _1-4_ — triggers select a random sequence from the available 16 / 8 / 4.
   - _0..10V_ — the sequence is selected by voltage (0V = sequence 1, 10V = sequence 16).
   - _C4-D#5_ — the sequence is selected by V/Oct across two octaves.
 
-Clicking on the LED-display with the left mouse-button enters _SEQ-EDIT_ mode for the currently selected sequence: the display dims slightly and a red record-cursor appears. Click anywhere on the empty area of the pad to start recording, then drag the mouse to draw a path. Released waypoints are stored at ~65ms intervals, producing a smooth, hand-drawn motion of the mix point. The recorded path is drawn as a light line on the display for reference. Click on the LED-display again to exit SEQ-EDIT mode and resume normal pad operation.
+Clicking on the LED-display with the left mouse-button enters _SEQ-EDIT_ mode for the currently selected sequence: the display dims slightly and a red record-cursor appears. Click anywhere on the empty area of the pad to start recording, then drag the mouse to draw a path. Waypoints are stored at ~65ms intervals, producing a smooth, hand-drawn motion of the mix point. The recorded path is drawn as a light line on the display for reference. Click on the LED-display again to exit SEQ-EDIT mode and resume normal pad operation.
 
 Right-click on the pad while in SEQ-EDIT mode opens the full sequence-editor menu:
 
@@ -232,7 +238,7 @@ Right-click on the pad while in SEQ-EDIT mode opens the full sequence-editor men
 - **Preset** — replace the sequence with one of six built-in shapes: _Circle_, _Spiral_, _Saw_, _Sine_, _Eight_ and _Rose_. The _Scale x_ / _Scale y_ sliders stretch the shape horizontally/vertically, the _Parameter_ slider changes the shape's character (e.g. number of spiral arms or petals of the rose).
 - **Copy** / **Paste** — copy the current sequence to/from any other sequence slot.
 
-The _Mix sequence phase_ CV input controls the playback position of the currently selected sequence: 0V holds the mix point at the start of the path, 10V plays back the entire path from beginning to end. Intermediate values interpolate along the path. When this input is not connected, the mix point simply rests at the center of the pad.
+The _Mix sequence phase_ CV input controls the playback position of the currently selected sequence: 0V holds the mix point at the start of the path, 10V plays back the entire path from beginning to end. Intermediate values interpolate along the path. While this input is connected it overrides the _Mix x-pos_ / _Mix y-pos_ inputs and the mouse; if the selected sequence is empty, the mix point is held at the center of the pad. When the input is not connected, the mix point stays wherever it was placed.
 
 The trigger mode and interpolation mode are global to all 16 sequences (TRANSIT-PAD has a single port, so the settings apply to the whole bank). The _Copy_ / _Paste_ actions in the sequence-editor menu only transfer the recorded waypoint data between sequences; they do not affect the modes.
 
@@ -245,9 +251,9 @@ To bind or rebind a pad point to a different snapshot:
 1. In Read-mode on TRANSIT, short-press a snapshot-button to load the snapshot you want to assign.
 2. On the pad, right-click the point (A–H) and choose _Bind snapshot_.
 
-The point is now linked to the chosen snapshot. The point only contributes to the output if the bound TRANSIT-snapshot is actually stored (i.e. its slot is _used_); binding an empty slot leaves the point dark. If the bound TRANSIT-snapshot has a custom label, that label is shown when hovering over the pad point.
+The point is now linked to the chosen snapshot. The point only contributes to the output if the bound TRANSIT-snapshot is actually stored (i.e. its slot is _used_); a point bound to an empty slot looks the same on the pad but has no effect. If the bound TRANSIT-snapshot has a custom label, that label is shown when hovering over the pad point.
 
-To unbind, right-click a point and choose _Unbind snapshot_ — the point returns to its _No snapshot_ state and does not contribute to the output. The same menu also has an _Unbind snapshot_ entry, and the snapshot's own TRANSIT-slot is not affected.
+To unbind, right-click a point and choose _Unbind snapshot_ — the point returns to its _No snapshot_ state and does not contribute to the output. The snapshot's own TRANSIT-slot is not affected. Binding and unbinding always apply to the currently active snapshot-set only.
 
 In addition to the context-menu binding, a snapshot can be assigned to a pad point by **dragging the LED button** of the snapshot on TRANSIT (or on a +T expander) and **dropping it onto the pad**. This works on any of the snapshot buttons in the chain.
 
@@ -255,19 +261,35 @@ In addition to the context-menu binding, a snapshot can be assigned to a pad poi
 
 A "visualize" mode is available to make the pad's snapshot bindings easier to understand. While the mode is active, a colored spline is drawn from the outer ring of every snapshot point on the pad to the corresponding LED button on the host TRANSIT (or the +T expander hosting the snapshot). The splines use the color of the current snapshot-set, and the line for each snapshot ends in a small dot on the destination button.
 
-The mode is toggled with the **Space** key (no modifier). Press Space while hovering over the TRANSIT-PAD module and the splines appear. Press Space again to hide them. The mode is purely visual — it has no effect on the audio.
+The mode is toggled with **Shift + Space**. Press the shortcut while hovering over the TRANSIT-PAD module and the splines appear. Press it again to hide them. The mode is purely visual — it has no effect on the audio.
 
 #### Context menu
 
-Right-clicking on the empty area of the XY-display opens the following menu:
+Right-clicking on the empty area of the XY-display opens the following menu. The settings from _Visualize_ onwards are also available in the module's own context menu.
 
-- **Initialize** — reset the entire module to factory defaults. All snapshot-set positions, motion-sequences, colors and bindings are cleared.
-- **Randomize x-pos & y-pos** / **Randomize x-pos** / **Randomize y-pos** — randomly distribute the active snapshot points on the pad. Useful as a starting point for generative patches.
+- **Initialize** — reset the pad: the snapshot points return to their default positions, radius and amount, the _Mix_ point returns to the center, the bindings are reset to A–D = snapshots 1–4, and the colors, labels and per-set layouts of all snapshot-sets are reset. Motion-sequences and the settings below are kept. Rack's own _Initialize_ in the module's context menu resets the whole module, including motion-sequences and settings.
+
+- **Randomize x-pos & y-pos** / **Randomize x-pos** / **Randomize y-pos** — randomly distribute the snapshot points on the pad. Useful as a starting point for generative patches.
+
 - **Randomize amount** — randomize the _Amount_ slider of each snapshot point.
+
 - **Randomize radius** — randomize the _Radius_ slider of each snapshot point.
+
+- **Visualize** — toggle [Visualize mode](#visualize-mode), same as `Shift + Space`.
+
 - **Number of snapshots** — select 1..8 active snapshot points.
-- **Snapshot-set CV mode** — select _Off_, _Trigger forward_, _0..10V_ or _C4_ for the snapshot-set CV input.
-- **Lock pad** — toggle a lock that prevents accidental edits: while locked, snapshot points and the _Mix_ point cannot be dragged to a new position, and snapshot buttons dragged from TRANSIT (or a +T expander) onto the pad no longer rebind. Dropping is still allowed to highlight a target (so the user can see where a drop would have landed), but the binding is rejected. The right-click _Bind snapshot_ and _Unbind snapshot_ entries on snapshot points are also disabled.
+
+- **Snapshot-set CV mode** — select _Off_, _Trigger forward_ (default), _0..10V_ or _C4_ for the snapshot-set CV input.
+
+- **Snapshot-set node positions** — select whether snapshot-sets also remember their own pad-point layout (position, radius, amount, and the _Mix_ point's position), on top of the snapshot bindings they always store. In both _Store_ and _Auto_ mode, clicking the already-active set's button reloads its stored layout, discarding any unsaved changes made to the pad since. If the _Mix_ point is currently driven by CV, a motion-sequence or a parameter mapping, the stored position is loaded but immediately overridden again by that source on the next audio block, matching how the _Mix_ point already behaves outside of this feature:
+
+  - **Off** (default) — layout is shared by all sets, matching the behaviour described in [Snapshot-sets](#snapshot-sets). Switching to _Off_ clears any layout previously stored per set.
+
+  - **Store (manual)** — each set can be given its own layout by right-clicking its set-button below the pad and choosing _Store positions_, which captures the pad's current layout into that set. Switching sets loads the stored layout but never captures one automatically.
+
+  - **Auto (on set change)** — like _Store_, but switching away from a set automatically captures its current layout first, so dragging pad points while a set is active is enough to keep that set's stored layout up to date. The _Store positions_ item on the set-button is disabled in this mode, since capturing already happens automatically.
+
+- **Lock pad** — toggle a lock that prevents accidental edits: while locked, snapshot points and the _Mix_ point cannot be dragged to a new position, and snapshot buttons dragged from TRANSIT (or a +T expander) onto the pad no longer rebind. Dropping is still allowed to highlight a target (so the user can see where a drop would have landed), but the binding is rejected. The right-click _Bind snapshot_ and _Unbind snapshot_ entries on snapshot points are also disabled. The lock only covers the pad itself: the set-buttons, the _Amount_ and _Radius_ sliders, and the _Initialize_ and _Randomize_ menu items keep working.
 
 
 ### Tips
@@ -327,5 +349,3 @@ Right-clicking on the empty area of the XY-display opens the following menu:
     - Added Output-mode "Tipsy" for sending the snapshot text label (for modules with Tipsy-support like [TTY](https://library.vcvrack.com/StochasticTelegraph/TTY))
 - v2.6.0
     - Fixed "Bind parameters by selection" when spanning multiple modules
-- v2.x.0
-    - Added new expander TRANSIT-PAD for 2-dimensional morphing between snapshots through an XY-pad with up to 8 snapshot-sets and 16 motion-sequences

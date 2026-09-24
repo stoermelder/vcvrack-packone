@@ -69,6 +69,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder, but d
 - [STRIP-BAY](./docs/strip/Strip.md#stoermelder-strip-bay): a companion module for STRIP for keeping input/output connections while replacing strips
 - [STRIP++](./docs/strip/StripPp.md): utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/glue/Glue.md) labels
 - [TRANSIT](./docs/transit/Transit.md): parameter-morpher and sequencer for up to 96 snapshots
+- [TRANSIT-PAD](./docs/transit/Transit.md#transit-pad-expander): an XY-pad expander for TRANSIT for morphing between snapshots in two dimensions
 - [X4](./docs/cvmap/X4.md): dual multiple for parameter-mapping
 
 ![Intro image](./docs/intro.png)
