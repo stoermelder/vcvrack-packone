@@ -29,6 +29,7 @@ target_sources(Stoermelder-P1
     PRIVATE
     ${SOURCE_DIR}/plugin.cpp
     ${SOURCE_DIR}/pluginsettings.cpp
+    ${SOURCE_DIR}/vcv/fs.cpp
     ${SOURCE_DIR}/modules/bolt/Bolt.cpp
     ${SOURCE_DIR}/modules/fourrounds/FourRounds.cpp
     ${SOURCE_DIR}/modules/maze/Hive.cpp

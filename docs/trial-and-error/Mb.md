@@ -57,6 +57,27 @@ A **Filter by N HP** shortcut is also available in the right-click context menu 
 Width data is determined lazily: it is captured automatically the first time a module preview is rendered in the browser. To populate widths for all installed modules at once (making the full HP range available in the dropdown without browsing through everything first), use **Determine width for all modules**. This re-scans every model and saves the result immediately.
 
 
+## Sorting (*v2 mod*)
+
+The *v2 mod* browser's **Sort** button offers several ordering options, one of which is **Newest** — sorting modules by the date each was first added to its plugin, rather than by the date the plugin itself was last updated (as "Recently updated" does).
+
+This information is not part of the plugin manifest and is not available locally, so MB downloads it separately from the [VCV Rack Library](https://github.com/VCVRack/library) and caches it in your local Rack directory. The **Newest** entry stays disabled (greyed out) in the Sort menu until this data has been downloaded at least once.
+
+**Auto-download data for 'Newest' sort** — a menu option (disabled by default) that automatically downloads this data in the background whenever a new or updated plugin is detected in your plugins folder. Enabling it shows a confirmation dialog, since it connects to an external service.
+
+The Sort menu also has two **Width** entries (*narrow → wide* / *wide → narrow*), which sort modules by their HP width instead of by the selected sort option above. Clicking an active width entry again disables it and returns to the previous sort option. Modules with unknown width (see [Width filter](#width-filter-v2-mod)) are sorted to the end. 
+
+### Usage data ("Last used" / "Most used")
+
+MB tracks its own "recently used" and "most used" statistics per module, separate from and in addition to the ones Rack's built-in module browser keeps. This is necessary because MB's own browser and Rack's browser are otherwise entirely separate — modules placed through Rack's browser (or through Rack's `Ctrl+Shift+drag` cloning, template presets, etc.) don't count towards MB's own stats and vice versa.
+
+If you already have usage history from Rack's built-in browser and want to carry it over, use **Import usage data from Rack's browser** in the *Browser settings* submenu of the context menu. It offers two modes:
+
+- **Add to existing usage data** — adds Rack's "most used" counts on top of MB's own, and keeps the more recent of the two "last used" timestamps per module. Only run this once per import, since running it again keeps adding the same numbers a second time.
+- **Overwrite existing usage data** — replaces MB's "most used" count for each module also known to Rack's browser, while still keeping the more recent "last used" timestamp of either. Safe to run repeatedly.
+
+This is a one-time import, not a live sync — MB does not read Rack's usage data afterwards.
+
 ## *v2_mod* keyboard shortcuts
 
 The *v2-mod* browser variant supports keyboard navigation and shortcuts:
@@ -68,8 +89,8 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
 | `Shift`+*Click* | Add module, keep browser open |
 | `↓` | Move down in the module grid |
 | `↑` | Move up in the module grid |
-| `→` | Move to the next module in the row |
-| `←` | Move to the previous module in the row |
+| `→` | Move to the next module in the row (or move the text cursor right, see below) |
+| `←` | Move to the previous module in the row (or move the text cursor left, see below) |
 | `Enter` | Add the selected module to the rack |
 | `Escape` | Close the browser |
 | `Backspace` | Clear search and filters (when search is empty) |
@@ -112,6 +133,16 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
 
 - **Magnifier overlay** — When enabled, hovering over a module preview in the browser shows a zoomed magnification loupe following the cursor. 
 
+- **Arrow keys select modules (v2)** — Enabled by default, `←`/`→` move the selection to the previous/next module in the *v2 mod* browser's grid instead of moving the text cursor within the search field (`↓`/`↑` always navigate the grid regardless of this setting). Disable this option if you'd rather have `←`/`→` behave like a normal text field and move the cursor while typing a search term.
+
+- **Pre-render previews when idle** — Module previews are normally created the moment they first
+scroll into view, which can make scrolling feel sluggish on slower systems or with a large module
+library. When this option is enabled, MB instead prepares previews in the background while the
+browser sits idle, so they are already available once you scroll to them. Previews look exactly
+the same either way; only the moment they are prepared changes. Preparation pauses as soon as you
+scroll, search or zoom, and uses only leftover time within a frame, so it never delays the browser
+itself. Disabled by default.
+
 ## Changelog
 
 - v1.8
@@ -149,3 +180,14 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
     - Added width (HP) filter and sorting to *v2 mod* browser
     - Fixed *v2 mod* scroll position when reopening the browser overlay
     - Fixed module placement to trace back to the right click mouse position
+- v2.6.0
+    - Added sorting option "Newest" to *v2 mod* browser
+    - Improved context menus for tags (#461)
+    - Fixed module placement when "Smart Rearrangement" is disabled
+    - Fixed broken sorting option "Last used"
+    - Fixed module preview in *v1 mod* browser
+- v2.x.x
+    - Added option to import "recently used"/"most used" statistics from Rack's own module browser
+    - Added option to disable arrow keys selecting modules in *v2 mod* browser
+    - Added option to pre-warm module preview
+    - Fixed "Newest" module manifest download if Rack user folder is on different disk

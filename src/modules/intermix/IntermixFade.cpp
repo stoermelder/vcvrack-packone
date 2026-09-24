@@ -12,7 +12,7 @@ enum class FADE {
 };
 
 template<int PORTS>
-struct IntermixFadeModule : Module {
+struct IntermixFadeModule : IntermixChainModule {
 	enum ParamIds {
 		ENUMS(PARAM_FADE, PORTS),
 		NUM_PARAMS
@@ -32,9 +32,9 @@ struct IntermixFadeModule : Module {
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 	/** [Stored to JSON] */
-	int input;
+	int input = 0;
 	/** [Stored to JSON] */
-	FADE fade;
+	FADE fade = FADE::INOUT;
 	/** [Stored to JSON] */
 	FADE_LENGTH fadeLengthMode = FADE_LENGTH_15S;
 
@@ -67,9 +67,12 @@ struct IntermixFadeModule : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
+		// A chain sibling was removed: drop forwarded messages, skip this sample
+		if (consumeSiblingRemoved()) return;
+
 		// Expander
 		Module* exp = leftExpander.module;
-		if (!exp || (exp->model != modelIntermix && exp->model != modelIntermixGate && exp->model != modelIntermixEnv && exp->model != modelIntermixFade) || !exp->rightExpander.consumerMessage) return;
+		if (!exp || !isIntermixModel(exp->model) || !exp->rightExpander.consumerMessage) return;
 		IntermixBase<PORTS>* module = reinterpret_cast<IntermixBase<PORTS>*>(exp->rightExpander.consumerMessage);
 		rightExpander.producerMessage = module;
 		rightExpander.messageFlipRequested = true;
@@ -103,42 +106,11 @@ struct IntermixFadeModule : Module {
 		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
 		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 		json_t* inputJ = json_object_get(rootJ, "input");
-		if (inputJ) input = json_integer_value(inputJ);
-		fade = (FADE)json_integer_value(json_object_get(rootJ, "fade"));
+		if (inputJ) input = clamp((int)json_integer_value(inputJ), 0, PORTS - 1);
+		json_t* fadeJ = json_object_get(rootJ, "fade");
+		if (fadeJ) fade = (FADE)json_integer_value(fadeJ);
 		json_t* fadeLengthModeJ = json_object_get(rootJ, "fadeLengthMode");
 		if (fadeLengthModeJ) fadeLengthMode = (FADE_LENGTH)json_integer_value(fadeLengthModeJ);
-	}
-};
-
-
-template<int PORTS>
-struct InputLedDisplay : StoermelderPackOne::StoermelderLedDisplay {
-	IntermixFadeModule<PORTS>* module;
-
-	void step() override {
-		if (module) {
-			text = string::f("%02d", module->input + 1);
-		} 
-		else {
-			text = "";
-		}
-		StoermelderLedDisplay::step();
-	}
-
-	void onButton(const event::Button& e) override {
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			createContextMenu();
-			e.consume(this);
-		}
-		StoermelderLedDisplay::onButton(e);
-	}
-
-	void createContextMenu() {
-		ui::Menu* menu = createMenu();
-		menu->addChild(createMenuLabel("Input"));
-		for (int i = 0; i < PORTS; i++) {
-			menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(string::f("%02u", i + 1), &module->input, i));
-		}
 	}
 };
 
@@ -161,7 +133,7 @@ struct IntermixFadeWidget : ThemedModuleWidget<IntermixFadeModule<8>> {
 			addParam(createParamCentered<StoermelderTrimpot>(vo1, module, IntermixFadeModule<PORTS>::PARAM_FADE + i));
 		}
 
-		InputLedDisplay<PORTS>* ledDisplay = createWidgetCentered<InputLedDisplay<PORTS>>(Vec(29.1f, 294.1f));
+		auto* ledDisplay = createWidgetCentered<InputLedDisplay<IntermixFadeModule<PORTS>, PORTS>>(Vec(29.1f, 294.1f));
 		ledDisplay->module = module;
 		addChild(ledDisplay);
 

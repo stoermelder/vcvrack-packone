@@ -1,10 +1,24 @@
 #pragma once
 #include "Mb.hpp"
+#include "Mb_preview.hpp"
 #include "../../plugin.hpp"
 
 namespace StoermelderPackOne {
 namespace Mb {
 namespace v2 {
+
+// MB's own persisted sort setting, decoupled from Rack core's settings::browserSort
+// so it can include modes (e.g. "Newest") that Rack core doesn't know about.
+enum class BrowserSort {
+	UPDATED = 0,
+	LAST_USED,
+	MOST_USED,
+	BRAND,
+	NAME,
+	RANDOM,
+	NEWEST,
+};
+extern BrowserSort browserSort;
 
 struct ModuleBrowser : widget::OpaqueWidget {
 	ui::SequentialLayout* headerLayout;
@@ -16,6 +30,7 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	ui::Button* favoriteButton;
 	ui::Button* clearButton;
 	ui::Label* countLabel;
+	PrewarmProgressWidget* prewarmProgress;
 	ui::ChoiceButton* sortButton;
 	ui::ChoiceButton* zoomButton;
 
@@ -38,10 +53,14 @@ struct ModuleBrowser : widget::OpaqueWidget {
 
 	plugin::Model* selectedModel = nullptr;
 
+	PreviewPrewarmer prewarmer;
+	// Recomputed each step(); ModelBox::step() uses it to skip off-screen subtrees.
+	ViewportBand stepBand;
+
 	ModuleBrowser();
 	void step() override;
 	void draw(const DrawArgs& args) override;
-	void refresh();
+	void refresh(bool scrollTo = true);
 	void clear();
 	void updateZoom();
 	void navigateSelection(int key);

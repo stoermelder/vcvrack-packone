@@ -1,0 +1,126 @@
+#include "ui.hpp"
+#include <osdialog.h>
+#include <cstdlib>
+#include <cfloat>
+
+namespace StoermelderPackOne {
+namespace vcv {
+
+// The production UI access, backed by osdialog/GLFW/system. Lives here (not in vcv_ui.hpp)
+// so that <osdialog.h> stays out of the header graph — see the comment in vcv_ui.hpp.
+bool RealUiAccess::message(MessageType type, MessageButtons buttons, const std::string& msg) {
+	osdialog_message_level level = OSDIALOG_INFO;
+	switch (type) {
+		case MessageType::INFO: level = OSDIALOG_INFO; break;
+		case MessageType::WARNING: level = OSDIALOG_WARNING; break;
+		case MessageType::ERROR: level = OSDIALOG_ERROR; break;
+	}
+	osdialog_message_buttons b = OSDIALOG_OK;
+	switch (buttons) {
+		case MessageButtons::OK: b = OSDIALOG_OK; break;
+		case MessageButtons::YES_NO: b = OSDIALOG_YES_NO; break;
+	}
+	return osdialog_message(level, b, msg.c_str()) != 0;
+}
+
+std::string RealUiAccess::openDialog(const std::string& filters, const std::string& dir) {
+	// osdialog_filters_parse() asserts (crashes) on a string with no ':' — including "" — since
+	// its parser only ever sets up a pattern list once it sees the name/pattern separator. An
+	// empty filter list is a legitimate "no filter" request, so route it around the parser
+	// instead of trying to parse something it was never meant to accept.
+	osdialog_filters* f = filters.empty() ? NULL : osdialog_filters_parse(filters.c_str());
+	DEFER({ if (f) osdialog_filters_free(f); });
+	char* pathC = osdialog_file(OSDIALOG_OPEN, dir.empty() ? NULL : dir.c_str(), NULL, f);
+	if (!pathC) return "";
+	DEFER({ std::free(pathC); });
+	return std::string(pathC);
+}
+
+std::string RealUiAccess::saveDialog(const std::string& filters, const std::string& dir, const std::string& filename) {
+	// See openDialog()'s comment: osdialog_filters_parse("") crashes rather than returning an
+	// empty filter list.
+	osdialog_filters* f = filters.empty() ? NULL : osdialog_filters_parse(filters.c_str());
+	DEFER({ if (f) osdialog_filters_free(f); });
+	char* pathC = osdialog_file(OSDIALOG_SAVE, dir.empty() ? NULL : dir.c_str(), filename.empty() ? NULL : filename.c_str(), f);
+	if (!pathC) return "";
+	DEFER({ std::free(pathC); });
+	return std::string(pathC);
+}
+
+std::string RealUiAccess::openDirDialog() {
+	char* pathC = osdialog_file(OSDIALOG_OPEN_DIR, NULL, NULL, NULL);
+	if (!pathC) return "";
+	DEFER({ std::free(pathC); });
+	return std::string(pathC);
+}
+
+std::string RealUiAccess::getClipboard() const {
+	const char* text = glfwGetClipboardString(APP->window->win);
+	return text ? std::string(text) : "";
+}
+
+void RealUiAccess::setClipboard(const std::string& text) {
+	glfwSetClipboardString(APP->window->win, text.c_str());
+}
+
+void RealUiAccess::openBrowser(const std::string& url) {
+	system::openBrowser(url);
+}
+
+RackViewport RealUiAccess::getRackViewport() const {
+	return RackViewport{APP->scene->rackScroll->box, APP->scene->rackScroll->getZoom()};
+}
+
+bool RealUiAccess::hasWindow() const {
+	return APP->window != nullptr;
+}
+
+int RealUiAccess::getWindowMods() const {
+	// Null-guarded, which the four call sites this replaces were not: they dereferenced
+	// APP->window directly from widget event handlers. Reachable in headless/CLI Rack.
+	return APP->window ? APP->window->getMods() : 0;
+}
+
+std::string RealUiAccess::getKeyName(int key, int scancode) const {
+	const char* name = glfwGetKeyName(key, scancode);
+	return name ? std::string(name) : "";
+}
+
+int RealUiAccess::getKeyScancode(int key) const {
+	return glfwGetKeyScancode(key);
+}
+
+math::Vec RealUiAccess::measureTextBox(const std::string& text, float fontSize, float width) const {
+	NVGcontext* vg = APP->window->vg;
+	nvgFontFaceId(vg, APP->window->uiFont->handle);
+	nvgFontSize(vg, fontSize);
+	nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+	// nvgTextBoxBounds() advances y by lineh * the CURRENT nvg state's line height per row —
+	// same as nvgTextBox() actually drawing it — so this must match whatever line height the
+	// caller draws with, or a multi-line measurement undershoots the real rendered height.
+	// Callers of this seam (TutorialBubble) draw at 1.2 (see TutorialOverlay.hpp's
+	// TutorialLabel::draw()); nanovg's own default is 1.0, so leaving this unset silently
+	// measured short for any text that actually wraps to more than one line.
+	nvgTextLineHeight(vg, 1.2f);
+	// breakRowWidth == 0 disables wrapping in nanovg the same way it does in the estimate above.
+	float bounds[4];
+	nvgTextBoxBounds(vg, 0.f, 0.f, width > 0.f ? width : FLT_MAX, text.c_str(), nullptr, bounds);
+	return math::Vec(bounds[2] - bounds[0], bounds[3] - bounds[1]);
+}
+
+// The shared production instance; namespace-scope so no __cxa_guard is tested on access.
+// In a release build this is what the uiAccessFor() macro names directly.
+RealUiAccess realUiAccess;
+
+
+#ifdef DEBUGPLUGIN
+// One definition, external linkage: a mock installed in a test TU must be seen by
+// code compiled into the dylib. See the declaration in the header.
+UiAccess* uiAccess = nullptr;
+UiAccess& uiAccessFor() {
+	return uiAccess ? *uiAccess : realUiAccess;
+}
+#endif
+
+} // namespace vcv
+} // namespace StoermelderPackOne

@@ -65,8 +65,8 @@ struct ClockMultiplier {
 struct LinearFade {
 	float rise = 1.f;
 	float fall = 1.f;
-	float currentRise;
-	float currentFall;
+	float currentRise = 1.f;
+	float currentFall = 0.f;
 	float last = 0.f;
 
 	void reset(float last) {

@@ -1,18 +1,20 @@
 #pragma once
 #include "../plugin.hpp"
+#include "../utils/cursor.hpp"
 #include <functional>
 
 namespace StoermelderPackOne {
 
-struct ModuleSelectProcessor {
+template<typename TWidget>
+struct SelectProcessor {
 	enum class LEARN_MODE {
 		OFF = 0,
 		SINGLE = 1,
 		MULTI = 2
 	};
 
-	Widget* owner;
-	std::function<void(ModuleWidget* mw, Vec pos)> learnCallback;
+	Widget* owner = nullptr;
+	std::function<void(TWidget* w, Vec pos)> learnCallback;
 	std::function<void()> abortCallback;
 	LEARN_MODE learnMode = LEARN_MODE::OFF;
 
@@ -20,7 +22,7 @@ struct ModuleSelectProcessor {
 		this->owner = owner;
 	}
 
-	void startLearn(std::function<void(ModuleWidget* mw, Vec pos)> learnCallback, LEARN_MODE mode = LEARN_MODE::SINGLE,
+	void startLearn(std::function<void(TWidget* w, Vec pos)> learnCallback, LEARN_MODE mode = LEARN_MODE::SINGLE,
 			std::function<void()> abortCallback = {}) {
 		if (owner == NULL) {
 			return;
@@ -34,11 +36,7 @@ struct ModuleSelectProcessor {
 		this->abortCallback = abortCallback;
 		learnMode = mode;
 		APP->event->setSelectedWidget(owner);
-		GLFWcursor* cursor = NULL;
-		if (learnMode != LEARN_MODE::OFF) {
-			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		}
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setLearnCursor(learnMode != LEARN_MODE::OFF);
 	}
 
 	void disableLearn() {
@@ -47,7 +45,7 @@ struct ModuleSelectProcessor {
 		if (abortCallback) abortCallback();
 		abortCallback = {};
 		learnMode = LEARN_MODE::OFF;
-		if (APP->window) glfwSetCursor(APP->window->win, NULL);
+		cursor::resetCursor();
 	}
 
 	bool isLearning() {
@@ -67,15 +65,14 @@ struct ModuleSelectProcessor {
 				commitLearn(!success);
 			});
 
-			// Learn module
 			Widget* w = APP->event->getDraggedWidget();
 			if (!w) return;
-			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
-			if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
-			if (!mw || mw == owner) return;
-			Vec pos = w->getRelativeOffset(Vec(1.f, 1.f), mw);
+			TWidget* tw = dynamic_cast<TWidget*>(w);
+			if (!tw) tw = w->getAncestorOfType<TWidget>();
+			if (!tw || tw == dynamic_cast<TWidget*>(owner)) return;
+			Vec pos = w->getRelativeOffset(Vec(1.f, 1.f), tw);
 			success = true;
-			if (learnCallback) learnCallback(mw, pos);
+			if (learnCallback) learnCallback(tw, pos);
 		}
 	}
 
@@ -86,5 +83,8 @@ struct ModuleSelectProcessor {
 		}
 	}
 };
+
+using ModuleSelectProcessor = SelectProcessor<ModuleWidget>;
+using PortSelectProcessor = SelectProcessor<PortWidget>;
 
 } // namespace StoermelderPackOne

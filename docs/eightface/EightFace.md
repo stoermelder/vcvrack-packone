@@ -30,6 +30,16 @@
 
 - _Unsafe fast mode_ is similar to _Unsafe mode_ but uses an additional worker thread to apply presets. It is faster but may increase instability on some modules. Use this mode only if you require the fastest possible preset loading. This was the operating mode of 8FACE before v2.2.0. 
 
+Some modules do their preset loading in a way that requires Rack's user interface to be running. For these 8FACE always uses _Safe mode_'s loading path, whichever mode is selected:
+
+- Entrian Free: _Player-Timeline_, _Player-Melody_, _Player-Drummer_
+- Entrian Sequencers: _Timeline_, _Melody_, _Drummer_, _CV_
+- Entrian Acoustic Drums: _Acoustic Drums_, _Drummer_
+- VCV Host: _Host_, _Host-FX_, _Host-XL_
+- stoermelder [MIDI-CAT](../midicat/MidiCat.md)
+
+This also means their presets can only be loaded while Rack's user interface is on screen. In VCV Rack's plugin version with the plugin window closed, and in headless Rack, one of the modules above keeps its current settings instead of loading the selected slot. Opening the plugin window afterwards does not apply what was left out — select the slot again.
+
 ### Usage
 
 Place 8FACE on the right side next to the module that you would like to manage. The triangle-shaped LED begins to flash if a connection is established successfully. You can detach 8FACE and re-attach it to another instance of the same module. When you place 8FACE next to a module and the LED turns red, it means it has been configured for another model. In this case you can either check the model in the context menu or initialize 8FACE to its initial state. Since v1.2.0, you can place 8FACE on the left side of a module after changing the appropriate setting in the context menu.
@@ -115,3 +125,6 @@ With the option _Autoload first preset_ on the context menu you can autoload the
     - Fixed broken function on some modules (only 8FACEx2)
 - v2.4.0
     - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)
+- v2.x.x
+    - Fixed crash in Rack plugin for certain modules if no plugin-window is open
+    - Fixed "Autoload" setting not saved and not reliable working

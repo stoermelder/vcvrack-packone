@@ -1,3 +1,87 @@
+## 2.x.x
+
+### Changes and Fixes
+
+- Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)
+    - Fixed crash in Rack plugin for certain modules if no plugin-window is open
+    - Fixed "Autoload" setting not saved and not reliable working
+- Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+    - Fixed inefficient implementation of _Safe mode_/_Unsafe mode_/_Unsafe fast mode_
+    - Fixed crash in Rack plugin for certain modules if no plugin-window is open
+    - Fixed a background worker that could stall indefinitely
+- Module [AHAB](./docs/ahab/Ahab.md)
+    - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Ahab.json)
+- Module [ARENA](./docs/arena/Arena.md)
+    - Fixed wrong values for mix-ports on preset load
+    - Fixed missing voltage-mode options in the context menu of the mix-ports
+    - Fixed out-of-range sequence selection for _SEQ_-mode "0..10V"
+    - Fixed "Scale" out-mode using the configured number of mix-ports
+- Module [DIRT](./docs/dirt/Dirt.md)
+    - Fixed broken "Initialize" on Crush defects
+- Module [GLUE](./docs/glue/Glue.md)
+    - Fixed lost cable labels on "Consolidate GLUE"
+- Modules [MAZE](./docs/maze/Maze.md) and [HIVE](./docs/maze/Hive.md)
+    - Improved rendering performance
+- Module [MB](./docs/trial-and-error/Mb.md)
+    - Added option to import "recently used"/"most used" statistics from Rack's own module browser
+    - Added option to disable arrow keys selecting modules in *v2 mod* browser
+    - Added option to pre-warm module previews
+    - Fixed "Newest" module manifest download if Rack user folder is on different disk
+- Module [SIREN](./docs/siren/Siren.md)
+    - Fixed a background worker that could stall indefinitely
+    - Fixed broken "Cancel tag classification"
+- Module [STRIP](./docs/strip/Strip.md)
+    - Reduced resource consumption (one shared worker for all STRIP modules)
+    - Fixed a background worker that could stall indefinitely
+
+## 2.6.0
+
+### New modules
+
+- Module [SPLICE-KIT](./docs/splicekit/SpliceKit.md)
+    - 8x8 matrix patch-bay for creating and removing cables by pressing button pairs. Stores up to eight independent scenes per instance, with full MIDI control and feedback for playing your patch from a grid controller
+
+### Changes and Fixes
+
+- Module [AHAB](./docs/ahab/Ahab.md)
+    - Added undo for "Clear"
+    - Added toggle for Focus mode using Shift+Esc
+    - Added clock divider/multiplier for clock input
+    - Added MIDI Panic option
+    - Added context menu options for selections
+    - Major enhacements for [Random generator](./docs/ahab/AhabGenerator.md)
+    - Fixed reset behavior on loading files or examples
+    - Fixed broken MIDI channel on MIDI operators
+    - Fixed concurrent usage of UDP and OSC output
+    - Fixed various minor issues
+- Module [DIRT](./docs/dirt/Dirt.md)
+    - Fixed broken preset loading
+- Module [MB](./docs/trial-and-error/Mb.md)
+    - Added sorting option "Newest" to *v2 mod* browser
+    - Improved context menus for tags (#461)
+    - Fixed module placement when "Smart Rearrangement" is disabled
+    - Fixed broken sorting option "Last used"
+    - Fixed module preview in *v1 mod* browser
+- Modules [MIDI-CAT](./docs/midicat/MidiCat.md), [MIDI-ESX](./docs/midiesx/MidiEsx.md), [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md), [MIDI-PLUG](./docs/midi/MidiPlug.md), [MIDI-STEP](./docs/midi/MidiStep.md)
+    - Ignore incoming MIDI messages while module is bypassed
+- Module [MIDI-CAT](./docs/midicat/MidiCat.md)
+    - Fixed incorrect 14-bit handling of CC32
+- Modules [MIDI-KEY](./docs/midi/MidiKey.md), [MIDI-MON](./docs/midi/MidiMon.md):
+    - Fixed incorrect reset behavior
+- Module [MIDI-MON](./docs/midi/MidiMon.md)
+    - Splitted display option for 14bit CC and RPN/NRPN messages
+    - Increased buffered message count from 512 to 4096
+- Module [PANIC ROOM](./docs/panicroom/PanicRoom.md)
+    - Fixed potential crash on cable and module limit
+- Module [SIREN](./docs/siren/Siren.md)
+    - Added support for multi-channel files on Re-pitch and Crossfade-loop
+    - Ignore files starting with "." (#460)
+    - Improved context menus for tags
+    - Fixed crash when playing multi-channel files
+    - Fixed occasionally lost settings
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Fixed "Bind parameters by selection" when spanning multiple modules
+
 ## 2.5.0
 
 ### New modules
@@ -18,6 +102,8 @@
     - Fixed saving of SysEx data logging setting
 - Module [PANIC ROOM](./docs/panicroom/PanicRoom.md)
     - Added options to limit the number of allowed modules and cables
+- Module [STRIP](./docs/strip/Strip.md)
+    - Fixed crash when removing modules added by STRIP in plugin-version of Rack
 - Module [TRANSIT](./docs/transit/Transit.md)
     - Fade CV input is now additive to per-slot fade time (previously CV was only additive to the global _FADE_ knob)
     - Added Output-mode "Tipsy" for sending the snapshot text label (for modules with Tipsy-support like [TTY](https://library.vcvrack.com/StochasticTelegraph/TTY))

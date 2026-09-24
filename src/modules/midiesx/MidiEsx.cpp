@@ -7,9 +7,11 @@ namespace MidiEsx {
 
 struct MidiEsxProcessor {
 	dsp::DoubleRingBuffer<float, 2048> bitQueue;
+	bool isBypassed = false;
 	bool locked = false;
 
 	void bitEnqueue(const uint8_t* cmd, int len) {
+		if (isBypassed) return;
 		locked = true;
 		if (int(bitQueue.capacity()) < len * 16) {
 			return;
@@ -69,7 +71,6 @@ struct MidiEsxModule : Module, MidiEsxMessageHandler {
 	int portGroupId = 0;
 
 	MidiEsxProcessor port[8];
-	bool portActive[8] = {false};
 
 	MidiEsxModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -100,11 +101,25 @@ struct MidiEsxModule : Module, MidiEsxMessageHandler {
 		}
 	}
 	
+	void onBypass(const BypassEvent& e) override {
+		for (int i = 0; i < 8; i++) {
+			port[i].isBypassed = true;
+			resetPort(i);
+		}
+		Module::onBypass(e);
+	}
+
+	void onUnBypass(const UnBypassEvent& e) override {
+		for (int i = 0; i < 8; i++) {
+			port[i].isBypassed = false;
+		}
+		Module::onUnBypass(e);
+	}
+
 	void process(const ProcessArgs& args) override {
 		if (args.sampleRate != 48000.f) return;
 
 		for (int i = 0; i < 8; i++) {
-			portActive[i] = outputs[OUTPUT_ENC + i].isConnected();
 			outputs[OUTPUT_ENC + i].setVoltage(port[i].nextBit());
 		}
 	}

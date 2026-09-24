@@ -1,5 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "Mb_manifests.hpp"
 #include <plugin.hpp>
 #include <FuzzySearchDatabase.hpp>
 
@@ -32,12 +33,19 @@ void modelWidthsToJson();
 
 struct ModelUsage {
 	int usedCount = 0;
-	int64_t usedTimestamp = -std::numeric_limits<int64_t>::infinity();
+	int64_t usedTimestamp = 0;
 };
 extern std::map<Model*, ModelUsage*> modelUsage;
 
 void modelUsageTouch(Model* model);
 void modelUsageReset();
+
+// Sort-key accessors for the browser's usage-based sorts. Both return 0 for a model
+// that has never been used. 0 is a safe sentinel: real timestamps/counts are always
+// positive, so unused models sort last, and negating the value (as the "last used" /
+// "most used" sorts do) can never overflow — unlike an INT64_MIN sentinel would.
+int64_t modelUsageTimestamp(Model* model);
+int modelUsageCount(Model* model);
 
 
 // Favorite
@@ -111,7 +119,9 @@ std::set<std::string> getEffectiveTagNames(Model* model);
 // Magnifier overlay for module preview zoom
 
 struct MagnifierOverlay : widget::TransparentWidget {
-	widget::FramebufferWidget* fb = NULL;
+	// The NanoVG image to sample — either a live FramebufferWidget's own image (fb->getFramebuffer()->image)
+	// or a PreviewPixelCache::Entry's uploaded image (entry->image(vg)); either way, just a plain handle.
+	int nvgImage = -1;
 	Vec sourceAbsPos;
 	Vec sourceSize;
 	Vec mousePos;
@@ -152,9 +162,7 @@ struct MagnifierOverlay : widget::TransparentWidget {
 	}
 
 	void draw(const DrawArgs& args) override {
-		if (!enabled || !initialized || !fb) return;
-		NVGLUframebuffer* framebuf = fb->getFramebuffer();
-		if (!framebuf || framebuf->image < 0) return;
+		if (!enabled || !initialized || nvgImage < 0) return;
 
 		// Circle center in overlay-local coords
 		Vec center = displayCenter() - box.pos;
@@ -169,7 +177,7 @@ struct MagnifierOverlay : widget::TransparentWidget {
 		float ex = sourceSize.x * magnification;
 		float ey = sourceSize.y * magnification;
 
-		NVGpaint imgPaint = nvgImagePattern(args.vg, ox, oy, ex, ey, 0.f, framebuf->image, 1.f);
+		NVGpaint imgPaint = nvgImagePattern(args.vg, ox, oy, ex, ey, 0.f, nvgImage, 1.f);
 
 		// Clip the circle fill to the zoomed texture rectangle [ox,oy,ex,ey].
 		// Outside that rect the image pattern would clamp to edge pixels (solid
