@@ -10,7 +10,6 @@
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::SpliceKit;
 
-SYNC_MODEL(modelSpliceKit, "SpliceKit");
 Test::TestContext<> testContext;
 
 // Shadows Test::createModule to put taskProcessorUi in sync mode right after construction.
@@ -35,7 +34,6 @@ static MidiOutPreset makeNoteOnPreset(int note = 36, int value = 127) {
 	}
 	return preset;
 }
-
 
 // ---- Mock cable registry ----
 // Production routes cables through vcv::hasCable/addCable/removeCable (vcv_cables.hpp), which

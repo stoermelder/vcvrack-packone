@@ -9,6 +9,20 @@
 #include <utility>
 #include <functional>
 
+// Deliberately *not* named `init()`: Rack only resolves that name via dlsym when it loads a
+// real plugin dylib, never in a test binary, so reusing it bought nothing and collided with
+// plugin.cpp's own `init`/`pluginInstance`, which a test binary links in from the plugin
+// archive. A distinct name lets plugin.cpp link untouched — its `init()` goes unreferenced
+// rather than colliding, so its ~70 addModel() calls can never run during static
+// initialization against model globals in other TUs that are still null (Q3j/Q3k in
+// var/TestFramework_review.md).
+//
+// Declared, never defined here: a suite that forgets gets a link error naming it. There used
+// to be a default definition forwarding to the plugin's real `init()`, guarded by
+// TEST_PLUGIN_INIT_CUSTOM, so migrated and unmigrated suites could coexist; both are gone now
+// that every suite supplies its own.
+void testPluginInit(rack::plugin::Plugin* p);
+
 namespace Test {
 
 // Function-local static, not a header-scope `static` variable, so every TU that includes this
@@ -20,58 +34,8 @@ inline std::atomic<int>& testContextCount() {
 	return count;
 }
 
-// Registry for model pointer sync (see registerModelSync below).
-inline std::vector<std::pair<std::string, Model**>>& modelSyncRegistry() {
-	static std::vector<std::pair<std::string, Model**>> reg;
-	return reg;
-}
-
-// Call this before TestContext is created (typically as a file-scope static
-// initializer) to ensure a module's model global in this TU is updated to the
-// pointer registered by init() in the plugin dylib.
-//
-// Background: test binaries both #include a module's .cpp (defining a model
-// global in the test TU) and link the plugin dylib (which has its own copy of
-// that global used by init()). After init() runs, the registered pointer lives
-// in the dylib; process() compiled inline uses this TU's pointer. Without this
-// sync, expander model checks always fail.
-inline void registerModelSync(const std::string& slug, Model** ptr) {
-	modelSyncRegistry().push_back({slug, ptr});
-}
-
-// Declare before TestContext to schedule a model pointer sync.
-// Usage: SYNC_MODEL(modelFoo, "Foo");
-#define SYNC_MODEL(ptr, slug) \
-	static bool _syncModel_##ptr = (Test::registerModelSync(slug, &ptr), true)
-
-// Asserts that `model` (a TU-local model global, e.g. modelFoo) was actually synced to the
-// slug's model in the plugin dylib — i.e. that a matching SYNC_MODEL(model, slug) ran before
-// this call. Call it once, right after constructing the peer(s) whose `->model` you are about
-// to compare against `model` (an expander check like `exp->model == modelMidiCatMem`).
-//
-// SYNC_MODEL itself cannot enforce this: registerModelSync() only records an *intent* to sync,
-// and the sync loop in TestContext's constructor runs unconditionally for every registered
-// entry, so a present SYNC_MODEL can't fail quietly. The bug this catches is the opposite one —
-// a module whose expander code compares against a global for which SYNC_MODEL was never called
-// at all. Without this, `exp->model == modelMidiCatMem` silently compares the test TU's own
-// stale copy of the model pointer against the dylib's, which never matches, and the resulting
-// "wrong expander" behaviour reads as a logic bug rather than a missing test-harness call.
-//
-// Usage: SYNC_MODEL(modelMidiCatMem, "MidiCatMem"); ... Test::requireModelSync(modelMidiCatMem, "MidiCatMem");
-inline void requireModelSync(Model* model, const std::string& slug) {
-	CATCH_INFO("Missing SYNC_MODEL(..., \"" << slug << "\") — model global for '" << slug
-		<< "' was never registered for sync with the plugin dylib, or TestContext hasn't run yet");
-	REQUIRE(model != nullptr);
-	REQUIRE(pluginInstance != nullptr);
-	Model* dylibModel = pluginInstance->getModel(slug);
-	CATCH_INFO("Model global for '" << slug << "' does not match the plugin dylib's model for that "
-		"slug — check that SYNC_MODEL(..., \"" << slug << "\") passes the same global that gets "
-		"compared elsewhere (e.g. in expander peer checks)");
-	REQUIRE(model == dylibModel);
-}
-
-// The one-time plugin bootstrap: create the Plugin, run the dylib's init(), adopt the slug
-// from plugin.json, register it, and sync the TU-local model globals (see registerModelSync).
+// The one-time plugin bootstrap: create the Plugin, run the suite's testPluginInit(), adopt the
+// slug from plugin.json, and register it.
 //
 // Extracted from TestContext's constructor so the harness — not static-initialization order —
 // controls what is installed while init() runs. That matters because init() calls
@@ -96,7 +60,7 @@ inline void initPluginOnce() {
 		static mock::NullFileAccess nullFs;
 		mock::Guard<StoermelderPackOne::vcv::FileAccess> fsGuard{StoermelderPackOne::vcv::fileAccess, &nullFs};
 #endif
-		init(pluginInstance);
+		::testPluginInit(pluginInstance);
 	}
 	{
 		json_error_t err;
@@ -108,10 +72,6 @@ inline void initPluginOnce() {
 		}
 	}
 	rack::plugin::plugins.push_back(pluginInstance);
-
-	for (auto& entry : modelSyncRegistry()) {
-		if (auto* m = pluginInstance->getModel(entry.first)) *entry.second = m;
-	}
 }
 
 // Test-only context initializer to prevent APP (rack::contextGet()) from being null
@@ -295,6 +255,16 @@ inline void destroyWidget(rack::ModuleWidget* mw) {
 }
 
 inline void registerModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
+	// Idempotent. Harness::adoptModule() registers every module it owns, so the ~103 existing
+	// `h.addModule(...)` + `Test::registerModule(...)` pairs across the suite would otherwise
+	// trip addModule_NoLock's double-add assert. Registering twice is a no-op, not an error.
+	// getModule_NoLock, not getModule: the latter takes the engine's SharedLock, and this sits
+	// alongside addModule_NoLock in code that may already hold the write lock — a
+	// non-recursive rwlock, so re-acquiring it on the same thread deadlocks.
+	if (m->id >= 0 && APP->engine->getModule_NoLock(m->id) == m) {
+		if (mw) APP->scene->rack->addModule(mw);
+		return;
+	}
 	TEST_SUPPRESS_DEPRECATED_BEGIN
 	APP->engine->addModule_NoLock(m);
 	TEST_SUPPRESS_DEPRECATED_END
@@ -343,77 +313,6 @@ inline const rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t c
 	m.bytes = { static_cast<unsigned char>((statusNibble << 4) | (channel & 0x0f)), static_cast<unsigned char>(b1), static_cast<unsigned char>(b2) };
 	return m;
 }
-
-
-// SUPERSEDED by Test::Harness (test_harness.hpp) — prefer it for new tests.
-//
-// Harness does everything this does (same stepping order, same messageFlipRequested-gated
-// expander flip) and adds the UI half: widget step(), scene layout, the DSP:UI rate ratio, and
-// module/widget lifetime. SimpleEngine is kept because 6 test files use it and a mechanical
-// rewrite of working tests buys nothing on its own; it should be retired as those files are
-// touched for other reasons, not in a dedicated migration pass. Do not add call sites.
-//
-// SimpleEngine simulates a VCV Rack engine step for module testing.
-// This class manages anlist of modules and processes them in sequence,
-// automatically flipping expander producer/consumer messages between each step.
-// This mimics how the VCV Rack engine processes modules and flips expanders.
-//
-// Usage:
-// Test::SimpleEngine testEngine;
-// testEngine.addModules(moduleA, moduleB);
-// A -> B chain
-//
-// testEngine.step();  // Process both modules with message flipping
-// testEngine.step();  // Continue processing...
-//
-// Named addModule(s), not registerModule(s), to stay distinct from Test::registerModule() —
-// that one registers a module with Rack's real engine (APP->engine->addModule_NoLock); this one
-// only appends to SimpleEngine's own std::list. Same word, unrelated operations (see B2 in the
-// framework review).
-struct SimpleEngine {
-	std::list<Module*> modules;
-	int frame = 0;
-
-	void step() {
-		auto args = Test::makeProcessArgs(frame);
-		for (Module* module : modules) {
-			module->process(args);
-			if (module->leftExpander.messageFlipRequested) {
-				std::swap(module->leftExpander.producerMessage, module->leftExpander.consumerMessage);
-				module->leftExpander.messageFlipRequested = false;
-			}
-			if (module->rightExpander.messageFlipRequested) {
-				std::swap(module->rightExpander.producerMessage, module->rightExpander.consumerMessage);
-				module->rightExpander.messageFlipRequested = false;
-			}
-		}
-		frame++;
-	}
-
-	void stepBlock(int n) {
-		for (int i = 0; i < n; i++) step();
-	}
-
-	void addModule(Module* m) {
-		modules.push_back(m);
-	}
-
-	/// Add multiple modules at once.
-	template <typename... T>
-	void addModules(T*... _m) {
-		Module* arr[] = {_m...};
-		for (Module* m : arr) {
-			auto it = std::find(this->modules.begin(), this->modules.end(), m);
-			assert(it == this->modules.end());
-			// Set ID if unset or collides with an existing ID
-			if (m->id < 0) {
-				// Randomly generate ID
-				m->id = random::u64() % (1ull << 53);
-			}
-			this->modules.push_back(m);
-		}
-	}
-};
 
 
 } // namespace Test

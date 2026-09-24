@@ -128,7 +128,9 @@ std::set<std::string> getEffectiveTagNames(Model* model);
 // Magnifier overlay for module preview zoom
 
 struct MagnifierOverlay : widget::TransparentWidget {
-	widget::FramebufferWidget* fb = NULL;
+	// The NanoVG image to sample — either a live FramebufferWidget's own image (fb->getFramebuffer()->image)
+	// or a PreviewPixelCache::Entry's uploaded image (entry->image(vg)); either way, just a plain handle.
+	int nvgImage = -1;
 	Vec sourceAbsPos;
 	Vec sourceSize;
 	Vec mousePos;
@@ -169,9 +171,7 @@ struct MagnifierOverlay : widget::TransparentWidget {
 	}
 
 	void draw(const DrawArgs& args) override {
-		if (!enabled || !initialized || !fb) return;
-		NVGLUframebuffer* framebuf = fb->getFramebuffer();
-		if (!framebuf || framebuf->image < 0) return;
+		if (!enabled || !initialized || nvgImage < 0) return;
 
 		// Circle center in overlay-local coords
 		Vec center = displayCenter() - box.pos;
@@ -186,7 +186,7 @@ struct MagnifierOverlay : widget::TransparentWidget {
 		float ex = sourceSize.x * magnification;
 		float ey = sourceSize.y * magnification;
 
-		NVGpaint imgPaint = nvgImagePattern(args.vg, ox, oy, ex, ey, 0.f, framebuf->image, 1.f);
+		NVGpaint imgPaint = nvgImagePattern(args.vg, ox, oy, ex, ey, 0.f, nvgImage, 1.f);
 
 		// Clip the circle fill to the zoomed texture rectangle [ox,oy,ex,ey].
 		// Outside that rect the image pattern would clamp to edge pixels (solid

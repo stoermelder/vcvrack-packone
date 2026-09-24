@@ -3,6 +3,11 @@
 #include <future>
 #include <thread>
 #include <chrono>
+#include <mutex>
+
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+}
 
 using namespace StoermelderPackOne;
 

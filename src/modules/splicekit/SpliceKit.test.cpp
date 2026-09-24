@@ -33,3 +33,8 @@ namespace __midi {
 namespace __threading {
 	#include "SpliceKit.test.threading.hpp"
 }
+
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+	p->addModel(modelSpliceKit);
+}

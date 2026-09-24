@@ -142,7 +142,6 @@ TEST_CASE("processMapUpdate - scene copy gesture is off by default: second activ
 	m->taskProcessorUi.internalQueue.queue.shift()();
 	m->taskProcessorUi.internalQueue.queue.shift()();
 	REQUIRE(m->sceneStore.current == 5);
-
 }
 
 TEST_CASE("processMapUpdate - two activations without release queues scene copy", "[SpliceKit]") {
@@ -159,7 +158,6 @@ TEST_CASE("processMapUpdate - two activations without release queues scene copy"
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 5, 100);
 	REQUIRE(m->pendingMidiSceneId == -1);
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 2);  // switchScene(1) + copyScene(1, 5)
-
 }
 
 TEST_CASE("processMapUpdate - same scene activated twice without release is not a copy", "[SpliceKit]") {
@@ -172,7 +170,6 @@ TEST_CASE("processMapUpdate - same scene activated twice without release is not 
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 4, 100);  // same scene again
 	REQUIRE(m->pendingMidiSceneId == 4);         // pending still set to same scene
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == queueSize + 1);  // another switchScene, not copyScene
-
 }
 
 TEST_CASE("processMapUpdate - after a copy, the next activation is treated normally", "[SpliceKit]") {
@@ -188,7 +185,6 @@ TEST_CASE("processMapUpdate - after a copy, the next activation is treated norma
 	// Next activation should behave as a normal scene change.
 	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 6, 100);
 	REQUIRE(m->pendingMidiSceneId == 6);
-
 }
 
 
@@ -196,9 +192,9 @@ TEST_CASE("processMapUpdate - after a copy, the next activation is treated norma
 // driven by notifyModuleListeners("SpliceKit-SceneLink") + process().
 
 TEST_CASE("Scene link - follower adopts master's scene after a change", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* master = mods.create();
-	SpliceKitModule* follower = mods.create();
+	Test::Harness h;
+	SpliceKitModule* master = h.addModule<SpliceKitModule>(createModule);
+	SpliceKitModule* follower = h.addModule<SpliceKitModule>(createModule);
 	Test::registerModule(master);
 	Test::registerModule(follower);
 
@@ -206,9 +202,7 @@ TEST_CASE("Scene link - follower adopts master's scene after a change", "[Splice
 	master->sceneStore.switchTo(3);  // fires onSwitch -> notifyModuleListeners("SpliceKit-SceneLink")
 	REQUIRE(follower->sceneStore.current == 0);  // not yet applied
 
-	Test::SimpleEngine engine;
-	engine.addModule(follower);
-	for (int i = 0; i < 256; i++) engine.step();  // let processDivider fire and drain moduleChangedFlag
+	h.dspSteps(256);  // let processDivider fire and drain moduleChangedFlag
 
 	REQUIRE(follower->taskProcessorUi.internalQueue.queue.size() == 1);
 	follower->taskProcessorUi.internalQueue.queue.shift()();
@@ -219,15 +213,13 @@ TEST_CASE("Scene link - follower adopts master's scene after a change", "[Splice
 }
 
 TEST_CASE("Scene link - no-op when sceneLinkMasterId is unset", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	Test::registerModule(m);
 	REQUIRE(m->sceneLinkMasterId == -1);
 
 	m->moduleChangedFlag = true;
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 0);
 	REQUIRE(m->sceneStore.current == 0);
@@ -236,18 +228,16 @@ TEST_CASE("Scene link - no-op when sceneLinkMasterId is unset", "[SpliceKit]") {
 }
 
 TEST_CASE("Scene link - unrelated instance without a configured master ignores the notification", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* master = mods.create();
-	SpliceKitModule* bystander = mods.create();
+	Test::Harness h;
+	SpliceKitModule* master = h.addModule<SpliceKitModule>(createModule);
+	SpliceKitModule* bystander = h.addModule<SpliceKitModule>(createModule);
 	Test::registerModule(master);
 	Test::registerModule(bystander);
 	// bystander->sceneLinkMasterId stays -1
 
 	master->sceneStore.switchTo(2);  // notifies every registered SpliceKit instance, including bystander
 
-	Test::SimpleEngine engine;
-	engine.addModule(bystander);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 
 	REQUIRE(bystander->sceneStore.current == 0);
 	REQUIRE(bystander->taskProcessorUi.internalQueue.queue.size() == 0);
@@ -259,11 +249,10 @@ TEST_CASE("Scene link - unrelated instance without a configured master ignores t
 TEST_CASE("Scene link - stale master reference is cleared once the master no longer exists", "[SpliceKit]") {
 	// master is deliberately destroyed mid-test (before follower) to exercise the
 	// stale-reference cleanup path — the exact scenario under test — so master is left on the
-	// bare createModule()/destroyModule() pattern rather than folded into follower's
-	// ModuleScaffold.
-	ModuleScaffold mods;
+	// bare createModule()/destroyModule() pattern rather than folded into follower's harness.
+	Test::Harness h;
 	SpliceKitModule* master = createModule();
-	SpliceKitModule* follower = mods.create();
+	SpliceKitModule* follower = h.addModule<SpliceKitModule>(createModule);
 	Test::registerModule(master);
 	Test::registerModule(follower);
 	follower->sceneLinkMasterId = master->id;
@@ -272,9 +261,7 @@ TEST_CASE("Scene link - stale master reference is cleared once the master no lon
 	Test::destroyModule(master);
 
 	follower->moduleChangedFlag = true;  // simulate a pending notification arriving late
-	Test::SimpleEngine engine;
-	engine.addModule(follower);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 
 	REQUIRE(follower->sceneLinkMasterId == -1);
 	REQUIRE(follower->taskProcessorUi.internalQueue.queue.size() == 0);

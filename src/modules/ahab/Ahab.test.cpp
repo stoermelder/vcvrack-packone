@@ -1,22 +1,28 @@
 #include "../../test/framework.hpp"
 #include "Ahab.test.hpp"
 
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+	p->addModel(modelAhab);
+}
+
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::Ahab;
 
-SYNC_MODEL(modelAhab, "Ahab");
 static Test::TestContext<> testContext;
-
 
 // Test cases are split by target into the headers included below.
 // - AhabModule.test.hpp: AhabModule core (clock, run/stop, reset, CV I/O, preset)
 // - Ahab.midi.test.hpp:  MIDI output (midiOutPort) + virtual MIDI driver (Ahab::Midi)
 // - Ahab.json.test.hpp:  JSON serialization/deserialization (module, sim, AhabOoscOutput)
 // - Ahab.state.test.hpp: headless cursor/selection clamping math (no widget)
+// - Ahab.test.widget.hpp: Test::Harness + Test::EventDriver tests - keyboard dispatch
+//   through AhabSimWidget::onSelectKey/onHoverKey.
 #include "Ahab.test.module.hpp"
 #include "Ahab.test.midi.hpp"
 #include "Ahab.test.json.hpp"
 #include "Ahab.test.state.hpp"
+#include "Ahab.test.widget.hpp"
 
 // Test cases are split by target into the headers included below.
 // - AhabSimOperators.test.hpp: vcvin/vcvout operators + E bang propagation + UDP/OSC output (incl. destination config)

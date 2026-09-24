@@ -421,7 +421,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XyScreenCursor, XySeqModu
 
 	/** XySeqModule: a MIX port beyond the active count has no sequence UI: its
 	 * led display is blank, its context menu is empty, and clicking it is a no-op. */
-	bool seqPortUsed(int port) override {
+	bool seqPortHidden(int port) override {
 		return port + 1 > mixportsUsed;
 	}
 
@@ -562,9 +562,9 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XyScreenCursor, XySeqModu
 		}
 
 		json_t* inportsUsedJ = json_object_get(rootJ, "inportsUsed");
-		if (inportsUsedJ) inportsUsed = json_integer_value(inportsUsedJ);
+		if (inportsUsedJ) inportsUsed = clamp((int)json_integer_value(inportsUsedJ), 1, IN_PORTS);
 		json_t* mixportsUsedJ = json_object_get(rootJ, "mixportsUsed");
-		if (mixportsUsedJ) mixportsUsed = json_integer_value(mixportsUsedJ);
+		if (mixportsUsedJ) mixportsUsed = clamp((int)json_integer_value(mixportsUsedJ), 1, MIX_PORTS);
 
 		// Rack's own Module::fromJson() already restored MIX_X_POS/MIX_Y_POS via
 		// paramsFromJson() (which runs before dataFromJson()). Without this, the
@@ -784,7 +784,7 @@ struct ArenaOpLedDisplay : StoermelderLedDisplay {
 
 	void onButton(const event::Button& e) override {
 		if (id + 1 > module->inportsUsed) return;
-		if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 			createContextMenu();
 			e.consume(this);
 		}

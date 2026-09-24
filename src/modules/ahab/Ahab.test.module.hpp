@@ -907,6 +907,13 @@ TEST_CASE("Integration test - preset loading and simulation", "[Ahab]") {
 }
 
 TEST_CASE("Clear field is undoable", "[Ahab]") {
+	// Deny-all FileAccess: attaching the widget below registers Ahab's Keymap vocabulary
+	// (AhabSimWidget::setModule -> registerActions() -> Keymap::save() on first use), which
+	// would otherwise fall through to RealFileAccess and write into the developer's own Rack
+	// user folder. No test in this file uses Test::Harness (which installs the same guard
+	// itself), so this needs its own.
+	struct { TEST_MOCK_FS(Test::mock::NullFileAccess); } fsMock;
+
 	Test::ModuleScaffold<AhabModule> mods;
 	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
@@ -956,9 +963,7 @@ TEST_CASE("Clear field is undoable", "[Ahab]") {
 //
 // AhabSimWidget's file dialogs (simLoad / simInjectFile / simSave /
 // simSaveSelection) and its clipboard / browser calls route through the
-// swappable StoermelderPackOne::vcv layer. These tests install recording mocks
-// and drive the widget's handlers directly, asserting the migrated calls go
-// through the layer instead of raw osdialog / glfw / fopen.
+// swappable StoermelderPackOne::vcv layer.
 //
 // The clipboard copy/cut/paste key handlers (Ctrl+C/X/V) are NOT exercised
 // here: they gate on glfwGetKeyName(), which returns NULL for every printable

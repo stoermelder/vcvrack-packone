@@ -1,5 +1,7 @@
 #include "../../plugin.hpp"
 #include "../../vcv/api.hpp"
+#include "../../vcv/ui.hpp"
+#include "../../tutorial/Tutorial.hpp"
 #include "../../components/MatrixButton.hpp"
 #include "../../components/MidiWidget.hpp"
 #include "../../ui/InfoWindow.hpp"
@@ -9,7 +11,6 @@
 #include "../../utils/GuiTaskProcessor.hpp"
 #include "../midi/MidiTrackingProcessor.hpp"
 #include "SpliceKit.controllers.hpp"
-#include <osdialog.h>
 #include <array>
 
 namespace StoermelderPackOne {
@@ -539,7 +540,7 @@ struct FeedbackSender {
 		assert(verifier.isEngine());
 		midi::Message msg;
 		if (!buildFeedbackOff(cellId, oldStateId, msg)) return;
-		msg.frame = APP->engine->getFrame() + 1;
+		msg.frame = vcv::engine::getFrame() + 1;
 		midiOutput.sendMessage(msg);
 	}
 
@@ -560,7 +561,7 @@ struct FeedbackSender {
 		assert(verifier.isEngine());
 		while (!pendingOffs.empty()) {
 			midi::Message msg = pendingOffs.shift();
-			msg.frame = APP->engine->getFrame() + 1;
+			msg.frame = vcv::engine::getFrame() + 1;
 			midiOutput.sendMessage(msg);
 		}
 	}
@@ -598,7 +599,7 @@ struct FeedbackSender {
 		msg.bytes[0] = status | (uint8_t)(spec.channel & 0x0F);
 		msg.bytes[1] = (uint8_t)(noteNum  & 0x7F);
 		msg.bytes[2] = (uint8_t)(spec.value & 0x7F);
-		msg.frame = APP->engine->getFrame() + 2;
+		msg.frame = vcv::engine::getFrame() + 2;
 		midiOutput.sendMessage(msg);
 	}
 
@@ -1986,6 +1987,14 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler, ModuleChangeListe
 };
 
 
+// Opens cellId's right-click menu at the mouse position, same as a real right-click. Free
+// function so it's callable without a concrete button widget; defined further down.
+void openSpliceKitCellMenu(SpliceKitModule* module, app::ModuleWidget* mw, int cellId);
+
+// Toggles SPLICE-KIT's real port-map overlay, same as SPACE. No-op if mw isn't a SpliceKitWidget.
+void setSpliceKitVizMode(app::ModuleWidget* mw, bool active);
+
+
 // Overlay widget added directly to APP->scene->rack (rack coordinates). Activated by space; hides cables
 // and draws cell→port assignment splines.
 struct SpliceKitVizOverlay : TransparentWidget {
@@ -2240,20 +2249,8 @@ struct SpliceKitCellButton : app::SvgSwitch {
 
 	void onEnter(const event::Enter& e) override;
 	void onLeave(const event::Leave& e) override;
-
-	void onButton(const event::Button& e) override {
-		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-			shiftDrag = (e.mods & RACK_MOD_SHIFT) != 0;
-		}
-		if (e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			if (e.action == GLFW_PRESS && module) {
-				createCellMenu();
-				e.consume(this);
-			}
-			return;
-		}
-		SvgSwitch::onButton(e);
-	}
+	// Out-of-line like onEnter/onLeave: SpliceKitWidget is still incomplete here.
+	void onButton(const event::Button& e) override;
 
 	// Shift+left-drag: suppress cell activation so the drag gesture is a pure move.
 	void onDragStart(const event::DragStart& e) override {
@@ -2307,10 +2304,10 @@ struct SpliceKitCellButton : app::SvgSwitch {
 			else module->toggleConnection(a, b);
 		}
 	}
-
-	void createCellMenu();
 };
 
+
+inline Tutorial::Tutorial spliceKitTutorial(app::ModuleWidget* mw);
 
 struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProvider {
 	SpliceKitVizOverlay* vizOverlay = nullptr;
@@ -2483,7 +2480,8 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 
 	void appendContextMenu(Menu* menu) override {
 		SpliceKitModule* module = this->module;
-		if (!module) return;
+		ThemedModuleWidget<SpliceKitModule>::appendContextMenu(menu);
+		menu->addChild(Tutorial::createTutorialMenuItem(this, [this]() { return spliceKitTutorial(this); }));
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(StoermelderPackOne::Rack::createStickyMidiMenuItem("MIDI Input",  &module->trackingProcessor.getInput()));
@@ -2534,12 +2532,8 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			menu->addChild(new MenuSeparator);
 			menu->addChild(createMenuItem("Load preset from file...", "",
 				[=]() {
-					osdialog_filters* filters = osdialog_filters_parse("SpliceKit Preset:ctrl.json;JSON:json");
-					char* pathC = osdialog_file(OSDIALOG_OPEN, NULL, NULL, filters);
-					osdialog_filters_free(filters);
-					if (!pathC) return;
-					std::string path = pathC;
-					free(pathC);
+					std::string path = StoermelderPackOne::vcv::ui::openDialog("SpliceKit Preset:ctrl.json;JSON:json", "");
+					if (path.empty()) return;
 					std::vector<uint8_t> bytes = system::readFile(path);
 					if (bytes.empty()) return;
 					std::string text(bytes.begin(), bytes.end());
@@ -2551,15 +2545,11 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			bool canSave = module->feedback.isActive();
 			menu->addChild(createMenuItem("Save preset to file...", "",
 				[=]() {
-					osdialog_filters* filters = osdialog_filters_parse("SpliceKit Preset:ctrl.json");
 					std::string defName = module->feedback.activePresetName("");
 					if (!defName.empty()) defName += ".ctrl.json";
-					char* pathC = osdialog_file(OSDIALOG_SAVE, NULL,
-						defName.empty() ? "preset.ctrl.json" : defName.c_str(), filters);
-					osdialog_filters_free(filters);
-					if (!pathC) return;
-					std::string path = pathC;
-					free(pathC);
+					std::string path = StoermelderPackOne::vcv::ui::saveDialog("SpliceKit Preset:ctrl.json", "",
+						defName.empty() ? "preset.ctrl.json" : defName);
+					if (path.empty()) return;
 					const std::string& text = module->feedback.activePresetJsonText();
 					system::writeFile(path, std::vector<uint8_t>(text.begin(), text.end()));
 				},
@@ -2666,6 +2656,12 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 };
 
 
+void setSpliceKitVizMode(app::ModuleWidget* mw, bool active) {
+	auto* w = dynamic_cast<SpliceKitWidget*>(mw);
+	if (w) w->setVizMode(active);
+}
+
+
 void SpliceKitCellButton::onEnter(const event::Enter& e) {
 	if (mw && mw->vizOverlay) mw->vizOverlay->hoveredCellId = cellId;
 	SvgSwitch::onEnter(e);
@@ -2675,6 +2671,20 @@ void SpliceKitCellButton::onEnter(const event::Enter& e) {
 void SpliceKitCellButton::onLeave(const event::Leave& e) {
 	if (mw && mw->vizOverlay && mw->vizOverlay->hoveredCellId == cellId) mw->vizOverlay->hoveredCellId = -1;
 	SvgSwitch::onLeave(e);
+}
+
+void SpliceKitCellButton::onButton(const event::Button& e) {
+	if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
+		shiftDrag = (e.mods & RACK_MOD_SHIFT) != 0;
+	}
+	if (e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+		if (e.action == GLFW_PRESS && module) {
+			openSpliceKitCellMenu(module, mw, cellId);
+			e.consume(this);
+		}
+		return;
+	}
+	SvgSwitch::onButton(e);
 }
 
 
@@ -2732,7 +2742,7 @@ void SpliceKitSceneButton::createSceneMenu() {
 	}
 }
 
-void SpliceKitCellButton::createCellMenu() {
+void openSpliceKitCellMenu(SpliceKitModule* module, app::ModuleWidget* mw, int cellId) {
 	// This makes the per-cell "Start sequential learn..." item begin at this cell rather than cell 0 — the
 	// module-level context menu has no click to anchor on (the actual bug; see startGlobalLearn/startGlobalPortLearn).
 	module->lastClickedCell = cellId;
@@ -2848,5 +2858,8 @@ void SpliceKitCellButton::createCellMenu() {
 
 } // namespace SpliceKit
 } // namespace StoermelderPackOne
+
+#include "SpliceKit.tutorial.hpp"
+
 
 Model* modelSpliceKit = createModel<StoermelderPackOne::SpliceKit::SpliceKitModule, StoermelderPackOne::SpliceKit::SpliceKitWidget>("SpliceKit");

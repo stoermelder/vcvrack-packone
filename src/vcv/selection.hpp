@@ -14,12 +14,9 @@ namespace StoermelderPackOne {
 namespace vcv {
 
 // ---- pure JSON + geometry ----
-// Every function here takes JSON or PODs and returns JSON or PODs. No `APP`, no
-// `osdialog`, no `plugin::getModel` — the only Rack-world lookup (model existence /
-// module width) arrives via an injected callback, so this whole header is directly
-// testable in a `TestContext`-free binary.
+// Every function here takes JSON or PODs and returns JSON or PODs.
 
-// Pure JSON parsing (jansson only — no APP, no osdialog, no disk). Returns nullptr and
+// Pure JSON parsing (jansson only — no APP, no disk). Returns nullptr and
 // fills `errorOut` on failure; caller owns the returned json_t* (json_decref it).
 inline json_t* parseJson(const std::string& data, std::string& errorOut) {
 	json_error_t error;

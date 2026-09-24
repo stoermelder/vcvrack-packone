@@ -8,23 +8,21 @@
 // sendFeedbackOff integration — state transitions in process()
 
 TEST_CASE("process - unassigned cell transitions cellLedState to OFF", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	m->lightDivider.setDivision(256);  // lightDivider defaults sample-rate-relative; pin for the loop below
 
 	// Pre-set to a non-OFF state to force a transition
 	m->feedback.cellLedState[0] = LED_STATE_COLOR0;
 
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 
 	REQUIRE(m->feedback.cellLedState[0] == LED_STATE_OFF);
 }
 
 TEST_CASE("process - assigned cell without cable transitions to DIM state", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	m->lightDivider.setDivision(256);
 
 	m->portAssignments[0].moduleId = 42;
@@ -32,16 +30,14 @@ TEST_CASE("process - assigned cell without cable transitions to DIM state", "[Sp
 	m->portAssignments[0].type = engine::Port::OUTPUT;
 	m->portHasCable[0] = false;
 
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 
 	REQUIRE(m->feedback.cellLedState[0] == LED_STATE_COLOR0_DIM);
 }
 
 TEST_CASE("process - cellLedState transitions from old state to OFF when cell unassigned", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	m->lightDivider.setDivision(256);
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
@@ -49,39 +45,33 @@ TEST_CASE("process - cellLedState transitions from old state to OFF when cell un
 	m->feedback.cellLedState[5] = LED_STATE_COLOR1;
 
 	// Cell 5 is unassigned; process() must send note-off for COLOR1 then note-on for OFF
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 
 	REQUIRE(m->feedback.cellLedState[5] == LED_STATE_OFF);
 }
 
 TEST_CASE("process - scene cellLedState transitions to SCENE_ACTIVE for currentScene", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	m->lightDivider.setDivision(256);
 
 	m->sceneStore.current = 2;
 	m->feedback.sceneLedState[2] = -1;  // force a state send
 
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 
 	REQUIRE(m->feedback.sceneLedState[2] == LED_STATE_SCENE_ACTIVE);
 }
 
 TEST_CASE("process - physical scene button press works normally when not linked", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	m->sceneStore.current = 0;  // sceneLinkMasterId stays -1 (default)
 
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();  // establish trigger baseline at low
+	h.dspSteps(256);  // establish trigger baseline at low
 
 	m->params[SpliceKitModule::PARAM_SCENE + 1].setValue(1.f);
-	for (int i = 0; i < 256; i++) engine.step();  // rising edge on the next divided tick
+	h.dspSteps(256);  // rising edge on the next divided tick
 
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 1);  // switchScene(1) queued
 	m->taskProcessorUi.internalQueue.queue.shift()();
@@ -89,17 +79,15 @@ TEST_CASE("process - physical scene button press works normally when not linked"
 }
 
 TEST_CASE("process - physical scene button press is ignored while following a scene link master", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	m->sceneLinkMasterId = 999;  // any id — process() only checks it's >= 0
 	m->sceneStore.current = 0;
 
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();  // establish trigger baseline at low
+	h.dspSteps(256);  // establish trigger baseline at low
 
 	m->params[SpliceKitModule::PARAM_SCENE + 1].setValue(1.f);
-	for (int i = 0; i < 256; i++) engine.step();  // rising edge on the next divided tick
+	h.dspSteps(256);  // rising edge on the next divided tick
 
 	REQUIRE(m->sceneStore.current == 0);   // unaffected — scene button press ignored while linked
 	REQUIRE(m->taskProcessorUi.internalQueue.queue.size() == 0);
@@ -111,44 +99,40 @@ TEST_CASE("process - physical scene button press is ignored while following a sc
 // SpliceKit.midi.test.hpp; this is the physical-button path.
 
 TEST_CASE("process - momentary mode: releasing a pressed cell clears the pending selection", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	m->buttonMode = SpliceKitModule::BUTTON_MOMENTARY;
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();  // initialize trigger at low
+	h.dspSteps(256);  // initialize trigger at low
 
 	// Press cell 0 → rising edge arms it.
 	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(1.f);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 	REQUIRE(m->pendingCellId == 0);
 	REQUIRE(m->pendingCellIsPhysical);
 
 	// Release cell 0 → momentary mode clears the pending selection.
 	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(0.f);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 	REQUIRE(m->pendingCellId == -1);
 }
 
 TEST_CASE("process - toggle mode: releasing a pressed cell keeps the pending selection", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	// buttonMode defaults to BUTTON_TOGGLE
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();  // initialize trigger at low
+	h.dspSteps(256);  // initialize trigger at low
 
 	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(1.f);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 	REQUIRE(m->pendingCellId == 0);
 
 	// Release — toggle mode does not clear.
 	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(0.f);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 	REQUIRE(m->pendingCellId == 0);
 
 }
@@ -160,23 +144,21 @@ TEST_CASE("process - toggle mode: releasing a pressed cell keeps the pending sel
 
 TEST_CASE("process - first press arms the cell, second press creates the cable", "[SpliceKit]") {
 	CableScaffold cables;
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 	m->assignPort(1, 43, 0, engine::Port::INPUT);
 
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();  // initialize triggers at low
+	h.dspSteps(256);  // initialize triggers at low
 
 	// First press: cell 0 → rising edge arms it.
 	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(1.f);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 	REQUIRE(m->pendingCellId == 0);
 
 	// Second press on a different cell → toggleConnection(0, 1) is queued and pending cleared.
 	m->params[SpliceKitModule::PARAM_MATRIX + 1].setValue(1.f);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 	REQUIRE(m->pendingCellId == -1);
 
 	// Draining the GUI queue runs the queued toggleConnection → a real cable appears.
@@ -188,32 +170,30 @@ TEST_CASE("process - first press arms the cell, second press creates the cable",
 // (triggerCell's pendingCellId == id branch) — the physical counterpart of the MIDI test.
 
 TEST_CASE("process - pressing the same cell again cancels the selection", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	m->assignPort(0, 42, 0, engine::Port::OUTPUT);
 
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();  // initialize trigger at low
+	h.dspSteps(256);  // initialize trigger at low
 
 	// Press cell 0 → arms it.
 	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(1.f);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 	REQUIRE(m->pendingCellId == 0);
 
 	// Release and press the same cell again → cancels the selection (toggle mode keeps the
 	// release from clearing, so the second rising edge sees pendingCellId == 0).
 	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(0.f);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 	m->params[SpliceKitModule::PARAM_MATRIX + 0].setValue(1.f);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 	REQUIRE(m->pendingCellId == -1);
 }
 
 
 TEST_CASE("process - scene state transitions from active to dim after scene switch", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	m->lightDivider.setDivision(256);
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
@@ -221,9 +201,7 @@ TEST_CASE("process - scene state transitions from active to dim after scene swit
 	// Give scene 1 a stored connection so it becomes DIM
 	m->sceneStore.setConnection(1, 0, 1, true);
 
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 
 	REQUIRE(m->feedback.sceneLedState[0] == LED_STATE_SCENE_ACTIVE);
 	REQUIRE(m->feedback.sceneLedState[1] == LED_STATE_SCENE_DIM);
@@ -234,8 +212,8 @@ TEST_CASE("process - scene state transitions from active to dim after scene swit
 // covered by resolveCellVisual's precedence test below, which also pins their resolution order.
 
 TEST_CASE("process - pending cell transitions cellLedState to PENDING", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	m->lightDivider.setDivision(256);
 
 	m->portAssignments[0].moduleId = 42;
@@ -246,16 +224,14 @@ TEST_CASE("process - pending cell transitions cellLedState to PENDING", "[Splice
 	m->triggerCell(0);
 	REQUIRE(m->pendingCellId == 0);
 
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 
 	REQUIRE(m->feedback.cellLedState[0] == LED_STATE_PENDING);
 }
 
 TEST_CASE("process - cell connected to pending cell transitions to CONNECTED1", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	m->lightDivider.setDivision(256);
 
 	// Cell 0 is pending and connected to cell 5 in scene 0.
@@ -269,9 +245,7 @@ TEST_CASE("process - cell connected to pending cell transitions to CONNECTED1", 
 
 	m->triggerCell(0);  // pendingCellId = 0
 
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 
 	// Cell 5 is connected to pending cell 0. Cell 5 is an INPUT with no explicit
 	// color override, so it auto-resolves to color set 1 (blue) → CONNECTED1.
@@ -359,12 +333,11 @@ TEST_CASE("resolveSceneVisual - precedence order midi-learn > active > has-conne
 	// off: scene 3 has no connections and is not current or midi-learning.
 	SceneVisual off = m->resolveSceneVisual(3, true);
 	REQUIRE(off.stateId == LED_STATE_OFF);
-
 }
 
 TEST_CASE("process - cell with port assignment and no cable transitions to COLOR0_DIM", "[SpliceKit]") {
-	ModuleScaffold mods;
-	SpliceKitModule* m = mods.create();
+	Test::Harness h;
+	SpliceKitModule* m = h.addModule<SpliceKitModule>(createModule);
 	m->lightDivider.setDivision(256);
 	m->feedback.setActivePreset(makeNoteOnPreset());
 
@@ -373,9 +346,7 @@ TEST_CASE("process - cell with port assignment and no cable transitions to COLOR
 	m->portAssignments[2].type = engine::Port::OUTPUT;
 	m->portHasCable[2] = false;  // explicit — no cable
 
-	Test::SimpleEngine engine;
-	engine.addModule(m);
-	for (int i = 0; i < 256; i++) engine.step();
+	h.dspSteps(256);
 
 	// OUTPUT with default color set 0, no cable → COLOR0_DIM
 	REQUIRE(m->feedback.cellLedState[2] == LED_STATE_COLOR0_DIM);

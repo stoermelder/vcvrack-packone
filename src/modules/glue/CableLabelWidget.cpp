@@ -75,38 +75,30 @@ void CableLabelWidget::step() {
 		}
 	}
 
-	// If cable not found, it might be incomplete - search by matching ports
+	// If cable not found, it might be incomplete - search by matching ports.
+	// Only count a port as matching when it's non-null on both sides: an incomplete cable
+	// always leaves one side NULL, so comparing NULL == NULL would let an unrelated drag
+	// (or a fan-out cable sharing the same output) steal this label.
 	if (!cw) {
 		for (Widget* w : APP->scene->rack->getCableContainer()->children) {
 			CableWidget* cwTest = dynamic_cast<CableWidget*>(w);
 			if (cwTest && !cwTest->cable) {
-				// Check if this incomplete cable matches our stored cable ID context
-				// by checking if it has the same ports as our labeled cable
-				if (cableLabel->lastOutputPort && cableLabel->lastInputPort) {
-					if (cwTest->outputPort == cableLabel->lastOutputPort || 
-						cwTest->inputPort == cableLabel->lastInputPort) {
-						cw = cwTest;
-						break;
-					}
+				bool outputMatches = cwTest->outputPort && cwTest->outputPort == cableLabel->lastOutputPort;
+				bool inputMatches = cwTest->inputPort && cwTest->inputPort == cableLabel->lastInputPort;
+				if (outputMatches || inputMatches) {
+					cw = cwTest;
+					break;
 				}
 			}
 		}
 	}
 
-	// Request deletion only if cable truly doesn't exist anymore
+	// Cable truly doesn't exist anymore (the scan above already covers both the complete
+	// and incomplete case, so there's nothing left to re-check here).
 	if (!cw) {
-		// Check if the cable still exists in engine
-		bool cableExistsInEngine = false;
-		for (Widget* w : APP->scene->rack->getCableContainer()->children) {
-			CableWidget* cwTest = dynamic_cast<CableWidget*>(w);
-			if (cwTest && cwTest->cable && cwTest->cable->id == cableLabel->cableId) {
-				cableExistsInEngine = true;
-				break;
-			}
-		}
-		if (!cableExistsInEngine) {
-			requestedDelete = true;
-		}
+		cableLabel->lastOutputPort = NULL;
+		cableLabel->lastInputPort = NULL;
+		requestedDelete = true;
 		visible = false;
 		return;
 	}

@@ -2,6 +2,7 @@
 #include "SirenMetadata.hpp"
 #include "SirenDataSource.hpp"
 #include "../../test/test_mock.hpp"
+#include <mutex>
 
 
 namespace StoermelderPackOne {
@@ -109,7 +110,7 @@ struct TestDataSource : DataSource {
 	std::string rootId() const override { return root; }
 	bool isSupportedFile(const std::string& path) const override { return true; }
 
-	void loadChildrenAsync(const std::string& id, TaskWorker& worker,
+	void loadChildrenAsync(const std::string& id, ITaskWorker& worker,
 			std::function<void(std::vector<DataSourceNode>)> onDone) override {
 		onDone(loadChildrenSync(id));
 	}
@@ -160,6 +161,14 @@ struct TempDir {
 // exists()/rename() through the system layer and writes/reads through the fs layer,
 // sees a single consistent filesystem.
 struct MockFileAccess : Test::mock::MockFileAccess {
+	// Guards every field below. Siren's background worker threads (one per
+	// SirenWidget) call through this mock concurrently — e.g. two instances'
+	// index scans both listing directories at once — so plain std::map/set/
+	// vector here would race exactly like real concurrent disk access
+	// wouldn't. mutable: read()/exists() are const overrides that still
+	// mutate nothing but must serialize against writers.
+	mutable std::mutex mutex;
+
 	// path → contents; a missing key means "no such file".
 	std::map<std::string, std::string> files;
 	// directories that exist (even if empty).
@@ -171,40 +180,49 @@ struct MockFileAccess : Test::mock::MockFileAccess {
 
 	// Create an empty file at `path`, recording its parent as a directory.
 	void touch(const std::string& path) {
+		std::lock_guard<std::mutex> lock(mutex);
 		files[path] = "";
 		dirs.insert(rack::system::getDirectory(path));
 	}
 
 	// Create a directory (and its parents).
 	void mkdir(const std::string& path) {
+		std::lock_guard<std::mutex> lock(mutex);
 		dirs.insert(path);
 	}
 
 	bool read(const std::string& path, std::string& data) const override {
+		std::lock_guard<std::mutex> lock(mutex);
 		auto it = files.find(path);
 		if (it == files.end()) return false;
 		data = it->second;
 		return true;
 	}
 	bool write(const std::string& path, const std::string& data) override {
+		std::lock_guard<std::mutex> lock(mutex);
 		files[path] = data;
 		return true;
 	}
 	bool exists(const std::string& path) const override {
+		std::lock_guard<std::mutex> lock(mutex);
 		return files.count(path) > 0 || dirs.count(path) > 0;
 	}
 	bool isFile(const std::string& path) override {
+		std::lock_guard<std::mutex> lock(mutex);
 		return files.count(path) > 0;
 	}
 	bool isDirectory(const std::string& path) override {
+		std::lock_guard<std::mutex> lock(mutex);
 		return dirs.count(path) > 0;
 	}
 	uint64_t getFileSize(const std::string& path) override {
+		std::lock_guard<std::mutex> lock(mutex);
 		auto it = files.find(path);
 		return it != files.end() ? it->second.size() : 0;
 	}
 	// Non-recursive listing only (the Siren code always passes depth 0).
 	std::vector<std::string> getEntries(const std::string& dirPath, int depth) override {
+		std::lock_guard<std::mutex> lock(mutex);
 		getEntriesCalls.push_back(dirPath);
 		std::vector<std::string> result;
 		std::string prefix = dirPath + "/";
@@ -223,14 +241,17 @@ struct MockFileAccess : Test::mock::MockFileAccess {
 		return result;
 	}
 	bool createDirectory(const std::string& path) override {
+		std::lock_guard<std::mutex> lock(mutex);
 		dirs.insert(path);
 		return true;
 	}
 	bool createDirectories(const std::string& path) override {
+		std::lock_guard<std::mutex> lock(mutex);
 		dirs.insert(path);
 		return true;
 	}
 	bool rename(const std::string& srcPath, const std::string& destPath) override {
+		std::lock_guard<std::mutex> lock(mutex);
 		auto it = files.find(srcPath);
 		if (it != files.end()) {
 			files[destPath] = it->second;
@@ -245,18 +266,21 @@ struct MockFileAccess : Test::mock::MockFileAccess {
 		return false;
 	}
 	bool copy(const std::string& srcPath, const std::string& destPath) override {
+		std::lock_guard<std::mutex> lock(mutex);
 		auto it = files.find(srcPath);
 		if (it == files.end()) return false;
 		files[destPath] = it->second;
 		return true;
 	}
 	bool remove(const std::string& path) override {
+		std::lock_guard<std::mutex> lock(mutex);
 		removed.push_back(path);
 		files.erase(path);
 		dirs.erase(path);
 		return true;
 	}
 	int removeRecursively(const std::string& path) override {
+		std::lock_guard<std::mutex> lock(mutex);
 		removed.push_back(path);
 		std::string prefix = path + "/";
 		for (auto it = files.begin(); it != files.end();) {

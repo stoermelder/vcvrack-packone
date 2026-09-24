@@ -1,16 +1,7 @@
-#include "../../test/framework.hpp"
-#include "SirenBpmDetector.hpp"
-#include "SirenDataSource.hpp"
-#include <cmath>
-#include <cstdio>
-#include <cstring>
-#include <random>
-#include <vector>
+// SIREN BPM-detector test cases. Included by Siren.test.cpp inside namespace __bpm.
+// Not a standalone header: Siren.test.cpp's preamble supplies everything these cases use.
 
-using namespace StoermelderPackOne::Siren;
 namespace BpmDetail = StoermelderPackOne::Siren::detail;
-
-Test::TestContext<> testContext;
 
 // ─── Mock AudioStream ────────────────────────────────────────────────────────
 // A trivial in-memory AudioStream used to drive detectBpm in tests. Holds
@@ -368,7 +359,7 @@ TEST_CASE("BpmDetector::detectFromDsp: spectral path via DataSource", "[Siren][B
 			: samples(std::move(s)), sr(sr), ch(ch) {}
 		std::string rootId() const override { return ""; }
 		bool isSupportedFile(const std::string&) const override { return true; }
-		void loadChildrenAsync(const std::string&, StoermelderPackOne::TaskWorker&,
+		void loadChildrenAsync(const std::string&, StoermelderPackOne::ITaskWorker&,
 			std::function<void(std::vector<DataSourceNode>)>) override {}
 		std::vector<DataSourceNode> loadChildrenSync(const std::string&, bool withAudioInfo = true) override { return {}; }
 		std::unique_ptr<AudioStream> openAudioStream(const std::string&) const override {

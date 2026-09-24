@@ -66,17 +66,10 @@ These constant voltages can be mixed and routed just like input signals, enablin
 
 INTERMIX provides 8 scenes for storing different matrix configurations, output settings, and input modes:
 
-1. Configure the matrix pads, input modes, and output settings as desired
-2. Short-press one of the 8 scene buttons on the left (numbered 1-8)
-3. The scene LED turns yellow, indicating that scene is now active
-4. All current settings are stored in that scene
-
-Loading scenes in read-mode:
-1. Short-press any scene button to load that scene
-2. The LED lights yellow for the active scene
+1. Press one of the 8 scene buttons on the left (numbered 1-8) to make it the active scene
+2. The scene LED lights yellow, indicating that scene is now active
 3. The scene may fade smoothly into place (if FADE is configured)
-
-Long-press a scene button to clear it and remove all stored settings.
+4. Editing the matrix pads, input modes, or output settings while a scene is active updates that scene's stored settings immediately
 
 The attenuverter knob can be included in scenes using the _Include attenuverters in scenes_ context menu option.
 

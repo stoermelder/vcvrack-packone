@@ -1,8 +1,10 @@
 #pragma once
 #include "test_plugin.hpp"
+#include "test_harness.hpp"
 #include <vector>
 #include <string>
 #include <functional>
+#include <climits>
 
 namespace Test {
 
@@ -293,6 +295,114 @@ inline void testPresetOversizedArrays(T* module, json_t* rootJ) {
 
 		REQUIRE_NOTHROW(module->dataFromJson(copyJ));
 		json_decref(copyJ);
+	}
+}
+
+
+// Verifies that every integer-valued scalar (at any nesting depth, including
+// inside arrays) tolerates being replaced with an out-of-range value without
+// crashing the module - neither in dataFromJson() itself nor a few process()
+// calls later.
+//
+// This targets a defect shape the other three helpers structurally cannot see:
+// an integer read straight from JSON into a member that is later used as an
+// array index, with no clamp. testPresetTypeConfusion() looks like it should
+// catch this, but jansson's json_integer_value() returns 0 for a wrong-typed
+// node, and 0 is in range for most such fields - the perturbation is silently
+// benign for exactly the fields at risk. testPresetOversizedArrays() only
+// touches arrays, not scalars.
+//
+// For every integer leaf in the tree:
+//   1. A deep copy of the JSON is created.
+//   2. The leaf is replaced with each of -1, INT_MAX, and a large positive
+//      value (4000), in turn.
+//   3. The copy is loaded via the module's dataFromJson().
+//   4. The harness steps the engine a few hundred samples.
+//
+// Step 4 is not decoration: an unclamped index used only inside process()
+// (not in dataFromJson() itself) will not fault until the engine actually
+// runs - a helper that stopped at dataFromJson() would silently miss it.
+//
+// Common bugs caught by this helper:
+//     json_t* selectedJ = json_object_get(rootJ, "selected");
+//     if (selectedJ) selected = json_integer_value(selectedJ);   // unclamped
+//     ...
+//     float v = scenes[selected].matrix[i][j];                  // OOB read/write
+//
+// Usage:
+//   Test::Harness h;
+//   auto module = h.addModule<MyModule>("MySlug");
+//   json_t* rootJ = module->dataToJson();
+//   REQUIRE(rootJ != nullptr);
+//   Test::testPresetOutOfRangeScalars(h, module, rootJ);
+//   json_decref(rootJ);
+template <typename T>
+inline void testPresetOutOfRangeScalars(Harness& h, T* module, json_t* rootJ) {
+	REQUIRE(module != nullptr);
+	REQUIRE(rootJ != nullptr);
+	REQUIRE(json_is_object(rootJ));
+
+	// Recursive collector for the path of every integer-valued leaf, descending
+	// into both objects and arrays. Booleans are excluded (JSON_TRUE/JSON_FALSE
+	// are a distinct json_type from JSON_INTEGER) since they are not used as
+	// indices.
+	std::vector<std::vector<std::string>> paths;
+	std::vector<std::string> currentPath;
+	std::function<void(json_t*)> collectIntegers = [&](json_t* node) {
+		if (json_is_object(node)) {
+			const char* key;
+			json_t* value;
+			json_object_foreach(node, key, value) {
+				currentPath.push_back(key);
+				if (json_is_integer(value)) paths.push_back(currentPath);
+				collectIntegers(value);
+				currentPath.pop_back();
+			}
+		}
+		else if (json_is_array(node)) {
+			for (size_t i = 0; i < json_array_size(node); i++) {
+				json_t* value = json_array_get(node, i);
+				currentPath.push_back(std::to_string(i));
+				if (json_is_integer(value)) paths.push_back(currentPath);
+				collectIntegers(value);
+				currentPath.pop_back();
+			}
+		}
+	};
+	collectIntegers(rootJ);
+
+	// Number of engine steps run after each load - enough to clear a
+	// clock-divider gate (the largest in this codebase divides by 64) plus
+	// its random initial phase.
+	const int64_t dspStepsAfterLoad = 256;
+	const json_int_t candidates[] = {-1, (json_int_t)INT_MAX, 4000};
+
+	for (const auto& path : paths) {
+		std::string pathStr = formatJsonPath(path);
+
+		for (json_int_t candidate : candidates) {
+			CATCH_INFO("Property '" << pathStr << "' should clamp an out-of-range value (" << candidate << ") in dataFromJson()");
+
+			json_t* copyJ = json_deep_copy(rootJ);
+			REQUIRE(copyJ != nullptr);
+
+			json_t* parent = resolveJsonPath(copyJ, std::vector<std::string>(path.begin(), path.end() - 1));
+			if (parent) {
+				const std::string& last = path.back();
+				json_t* replacement = json_integer(candidate);
+				if (json_is_array(parent))
+					json_array_set_new(parent, (size_t)std::stoul(last), replacement);
+				else
+					json_object_set_new(parent, last.c_str(), replacement);
+			}
+
+			REQUIRE_NOTHROW(module->dataFromJson(copyJ));
+			json_decref(copyJ);
+
+			// The fault is often in process(), not the loader - step the engine
+			// so an unclamped index used only there gets exercised too.
+			REQUIRE_NOTHROW(h.dspSteps(dspStepsAfterLoad));
+		}
 	}
 }
 

@@ -238,6 +238,16 @@ TEST_CASE("Preset JSON null-guards", "[Ahab][JSON]") {
 
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[Ahab][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<AhabModule>("Ahab");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 TEST_CASE("Serialization to JSON", "[JSON][AhabSim]") {
 	AhabSim sim;
 	

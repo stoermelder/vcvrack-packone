@@ -1,46 +1,10 @@
-#include "../../test/framework.hpp"
-#include "StripBay.cpp"
+#include "StripBay.test.hpp"
 
-using namespace StoermelderPackOne::StripBay;
-
-SYNC_MODEL(modelStripBay4, "StripBay4");
-Test::TestContext<> testContext;
-
-TEST_CASE("Construction and initialization", "[StripBay]") {
-	Test::ModuleScaffold<StripBayModule<4>> mods;
-	StripBayModule<4>* m = mods.create("StripBay4");
-	StripBay4Widget* mw = Test::createWidget<StripBay4Widget>("StripBay4");
-
-	REQUIRE(m != nullptr);
-	REQUIRE(mw != nullptr);
-	REQUIRE(mw->module == nullptr);
-
-	Test::destroyWidget(mw);
+namespace __module {
+	#include "StripBay.test.module.hpp"
 }
 
-TEST_CASE("Preset JSON null-guards", "[StripBay][JSON]") {
-	Test::ModuleScaffold<StripBayModule<4>> mods;
-	auto module = mods.create("StripBay4");
-
-	SECTION("All top-level properties are null-guarded in dataFromJson()") {
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		Test::testPresetNullGuards(module, rootJ);
-		json_decref(rootJ);
-	}
-
-	SECTION("All properties tolerate wrong-typed values") {
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		Test::testPresetTypeConfusion(module, rootJ);
-		json_decref(rootJ);
-	}
-
-	SECTION("All arrays tolerate being oversized") {
-		json_t* rootJ = module->dataToJson();
-		REQUIRE(rootJ != nullptr);
-		Test::testPresetOversizedArrays(module, rootJ);
-		json_decref(rootJ);
-	}
-
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+	p->addModel(modelStripBay4);
 }

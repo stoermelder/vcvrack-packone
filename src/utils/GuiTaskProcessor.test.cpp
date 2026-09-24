@@ -4,9 +4,11 @@
 #include <thread>
 #include <chrono>
 
-using namespace StoermelderPackOne;
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+}
 
-// ---- helpers ----------------------------------------------------------------
+using namespace StoermelderPackOne;
 
 static std::future<void> makePromise(std::shared_ptr<std::promise<void>>& out) {
 	out = std::make_shared<std::promise<void>>();
@@ -48,8 +50,6 @@ template <size_t SIZE>
 static void starveUiThread(GuiTaskProcessor<SIZE>& gtp, int calls = 3) {
 	for (int i = 0; i < calls; i++) gtp.process();
 }
-
-// ---- tests --------------------------------------------------------------------
 
 TEST_CASE("step() drains tasks when called regularly", "[GuiTaskProcessor]") {
 	Test::TestContext<> ctx;

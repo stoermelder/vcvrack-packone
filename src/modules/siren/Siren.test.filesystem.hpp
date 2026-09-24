@@ -1,15 +1,5 @@
-#include "../../test/framework.hpp"
-#include "SirenFileSystem.hpp"
-#include "Siren.test.hpp"
-#include <fstream>
-#include <algorithm>
-#include <sstream>
-
-using namespace StoermelderPackOne;
-using namespace StoermelderPackOne::Siren;
-using namespace StoermelderPackOne::Siren::filesystem;
-
-Test::TestContext<> testContext;
+// SIREN filesystem test cases. Included by Siren.test.cpp inside namespace __filesystem.
+// Not a standalone header: Siren.test.cpp's preamble supplies everything these cases use.
 
 // prepareForDrop() returns a task lambda; calling it executes the (possibly heavy)
 // work synchronously. In tests this is fine — no real conversion is attempted since
@@ -18,9 +8,6 @@ static std::string callPrepareForDrop(FileSystemDataSource& src, const std::stri
 	return src.prepareForDrop(id, convertToWav)();
 }
 
-
-// ─── isGeneratedFile ──────────────────────────────────────────────────────────
-// pattern: _siren_ + exactly 6 lowercase letters + .wav suffix, must be at position size-17.
 TEST_CASE("isGeneratedFile: recognises _siren_+6letters.wav pattern", "[Siren][FileSystem]") {
 	REQUIRE(isGeneratedFile("_siren_abcdef.wav") == true);
 	REQUIRE(isGeneratedFile("kick_siren_abcdef.wav") == true);

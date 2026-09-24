@@ -31,6 +31,16 @@ TEST_CASE("Preset JSON null-guards", "[SpliceKit][JSON]") {
 	}
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[SpliceKit][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<SpliceKitModule>(createModule);
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 
 TEST_CASE("JSON roundtrip preserves scene and button mode", "[SpliceKit]") {
 	ModuleScaffold mods;

@@ -48,18 +48,28 @@ struct InfoOverlayWidget : widget::OpaqueWidget {
 	UrlButton* linkButton;
 
 	InfoOverlayWidget() {
-		box.size = math::Vec(450.f, 250.f);
+		constexpr float zoom = 0.75f;
+		const float innerW = 450.f;
+		const float innerH = 250.f;
+		box.size = math::Vec(innerW * zoom, innerH * zoom);
+
+		widget::ZoomWidget* zw = new widget::ZoomWidget;
+		zw->box.pos = math::Vec(0.f, 0.f);
+		zw->box.size = math::Vec(innerW, innerH);
+		zw->setZoom(zoom);
+		addChild(zw);
+
 		const float margin = 10.f;
 		const float buttonWidth = 100.f;
 
 		layout = new ui::SequentialLayout;
 		layout->box.pos = math::Vec(0.f, 10.f);
-		layout->box.size = box.size;
+		layout->box.size = zw->box.size;
 		layout->orientation = ui::SequentialLayout::VERTICAL_ORIENTATION;
 		layout->margin = math::Vec(margin, margin);
 		layout->spacing = math::Vec(margin, 2.f * margin);
 		layout->wrap = false;
-		addChild(layout);
+		zw->addChild(layout);
 
 		header = new ui::Label;
 		// header->box.size.x = box.size.x - 2*margin;
@@ -69,7 +79,7 @@ struct InfoOverlayWidget : widget::OpaqueWidget {
 
 		label = new ui::Label;
 		label->box.size.y = 80.f;
-		label->box.size.x = box.size.x - 2.f * margin;
+		label->box.size.x = innerW - 2.f * margin;
 		layout->addChild(label);
 
 		// Container for link button so hiding it won't shift layout
@@ -77,12 +87,12 @@ struct InfoOverlayWidget : widget::OpaqueWidget {
 		layout->addChild(linkPlaceholder);
 
 		linkButton = new UrlButton;
-		linkButton->box.size.x = box.size.x - 2.f * margin;
+		linkButton->box.size.x = innerW - 2.f * margin;
 		linkPlaceholder->box.size = linkButton->box.size;
 		linkPlaceholder->addChild(linkButton);
 
 		buttonLayout = new ui::SequentialLayout;
-		buttonLayout->box.size.x = box.size.x - 2.f * margin;
+		buttonLayout->box.size.x = innerW - 2.f * margin;
 		buttonLayout->spacing = math::Vec(margin, margin);
 		layout->addChild(buttonLayout);
 
