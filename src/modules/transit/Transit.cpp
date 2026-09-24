@@ -1013,6 +1013,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 					else {
 						pq->getParam()->setValue(v);
 					}
+					if (ctrlReceiver) ctrlReceiver->setCtrlParamValue((int)i, v);
 				}
 			}
 
