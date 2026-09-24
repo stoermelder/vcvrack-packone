@@ -913,13 +913,15 @@ struct ModuleOuterBoundsDrawerWidget : Widget {
 					return;
 				case 1:
 					break;
-				case 2:
+				case 2: {
 					Widget* w = APP->event->getSelectedWidget();
 					if (!w) return;
 					ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+					if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
 					if (mw && mw->module == module) break;
-					if (mw && module->expandersConnected.find(mw->module->getId()) != module->expandersConnected.end()) break;
+					if (mw && mw->module && module->expandersConnected.find(mw->module->getId()) != module->expandersConnected.end()) break;
 					return;
+				}
 			}
 		}
 
