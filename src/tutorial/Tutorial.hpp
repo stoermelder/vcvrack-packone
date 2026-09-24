@@ -1,7 +1,9 @@
 #pragma once
 #include "../plugin.hpp"
 #include "TutorialPlacement.hpp"
+#include <cmath>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -44,6 +46,21 @@ inline math::Rect toModuleRect(widget::Widget* w, app::ModuleWidget* mw) {
 }
 
 } // namespace detail
+
+// Shared visual constants for every highlight ring drawn by the tutorial (module-panel ring,
+// menu-preview ring), so they all read as "part of the tutorial". Kept out of Style
+// (TutorialPlacement.hpp), which stays free of nanovg/color types on purpose.
+struct HighlightStyle {
+	static NVGcolor accentColor() { return nvgRGB(0xf2, 0xa5, 0x3a); }
+	static constexpr float ringWidth = 2.f;   // in module px; scale by the target's own zoom for screen-space drawing
+	static constexpr float pulseHz = 0.5f;
+	static constexpr float cornerRadius = 3.f; // matches Style::cornerRadius (TutorialPlacement.hpp)
+
+	// [0.5, 1] pulsing alpha multiplier, evaluated at the given time (vcv::fs::getTime()).
+	static float pulseAlpha(float t) {
+		return 0.5f + 0.5f * std::sin(2.f * (float) M_PI * pulseHz * t);
+	}
+};
 
 /** A resolver for a step's highlighted area, in module-local coordinates. */
 struct Target {
@@ -167,6 +184,10 @@ struct Step {
 	float width = 0.f;             // bubble width override (module px); 0 = Style default
 	std::function<void()> onEnter; // optional
 	std::function<void()> onLeave;
+	// Optional extra button (e.g. "Open manual") shown above Back/Next; both must be set to
+	// appear. Opens linkUrl in the system browser via vcv::ui::openBrowser() when clicked.
+	std::string linkText;
+	std::string linkUrl;
 
 	Step(std::string title, std::string text, Target target = Target::none())
 		: title(std::move(title)), text(std::move(text)), target(std::move(target)) {}
@@ -178,7 +199,63 @@ struct Step {
 struct Tutorial {
 	std::string title;          // caption above each step title ("SPLICE-KIT · 2 / 7")
 	std::vector<Step> steps;
+	// Fire exactly once each, bracketing the whole tutorial — unlike Step's onEnter/onLeave,
+	// these don't re-fire on Back/Next. Meant for state spanning every step, e.g. a module
+	// snapshot taken on open and restored on close.
+	std::function<void()> onOpen;
+	std::function<void()> onClose;
 };
+
+// Builds a Step and appends it to `t`. `configure`, if given, runs against the Step before it's
+// pushed — that's where onEnter/onLeave/prefer/withWidth go, e.g.:
+//   addStep(t, "Assign a port", "...", Target::param(PARAM_MATRIX), [mw](Step& s) {
+//       s.onEnter = [mw]() { ... };
+//   });
+inline void addStep(Tutorial& t, std::string title, std::string text, Target target = Target::none(),
+	std::function<void(Step&)> configure = nullptr) {
+	Step step(std::move(title), std::move(text), std::move(target));
+	if (configure) configure(step);
+	t.steps.push_back(std::move(step));
+}
+
+// Wires tutorial.onOpen/onClose to snapshot the module's JSON on open (via toJson()) and restore
+// it on close (fromJson()), so any module can opt in without a hand-written snapshot struct. Any
+// onOpen/onClose already set on `tutorial` run around the snapshot/restore: onOpen snapshots
+// first, then the given onOpen; onClose restores first, then the given onClose — so a fixup that
+// needs the just-restored state (e.g. reconciling live cables) sees it correctly.
+//
+// `resetOnOpen`, if true, also fires the module's onReset() right after snapshotting, so every
+// step starts from the same defined state.
+//
+// toJson()/fromJson() don't restore cables or other patch-level state — a tutorial that changes
+// live cables needs its own fixup in `tutorial.onClose`, set before calling this.
+inline void withModuleSnapshot(app::ModuleWidget* mw, Tutorial& tutorial, bool resetOnOpen = false) {
+	auto snapshot = std::make_shared<json_t*>(nullptr);
+	std::function<void()> innerOpen = tutorial.onOpen;
+	std::function<void()> innerClose = tutorial.onClose;
+
+	tutorial.onOpen = [mw, snapshot, innerOpen, resetOnOpen]() {
+		engine::Module* module = mw->module;
+		if (module) {
+			if (*snapshot) json_decref(*snapshot);
+			*snapshot = module->toJson();
+			if (resetOnOpen) {
+				engine::Module::ResetEvent e;
+				module->onReset(e);
+			}
+		}
+		if (innerOpen) innerOpen();
+	};
+	tutorial.onClose = [mw, snapshot, innerClose]() {
+		engine::Module* module = mw->module;
+		if (*snapshot) {
+			if (module) module->fromJson(*snapshot);
+			json_decref(*snapshot);
+			*snapshot = nullptr;
+		}
+		if (innerClose) innerClose();
+	};
+}
 
 // Returns the indices of steps whose target (if any) does not resolve on mw.
 inline std::vector<int> unresolvedSteps(app::ModuleWidget* mw, const Tutorial& tutorial) {
@@ -202,6 +279,8 @@ inline std::vector<int> unresolvedSteps(app::ModuleWidget* mw, const Tutorial& t
 // after them, rather than at the top, so this file is the one safe entry point regardless of
 // what a caller includes first (see TutorialOverlay.hpp's own comment).
 #include "TutorialOverlay.hpp"
+#include "TutorialMenuPreview.hpp"
+#include "TutorialCursorDemo.hpp"
 
 
 namespace StoermelderPackOne {
@@ -216,6 +295,9 @@ inline void start(app::ModuleWidget* mw, Tutorial tutorial) {
 
 	for (widget::Widget* child : mw->children) {
 		if (TutorialOverlay* existing = dynamic_cast<TutorialOverlay*>(child)) {
+			// mw is fully intact here, so it's safe to run the old tutorial's cleanup
+			// explicitly; the destructor itself deliberately doesn't (see its comment).
+			existing->forceClose();
 			mw->removeChild(existing);
 			delete existing;
 			break;

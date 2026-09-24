@@ -69,6 +69,12 @@ struct TutorialBubble : widget::OpaqueWidget {
 			if (host) host->close();
 		}
 	};
+	struct LinkButton : BubbleButton {
+		std::string url;
+		void onAction(const ActionEvent& e) override {
+			if (!url.empty()) vcv::ui::openBrowser(url);
+		}
+	};
 
 	// ui::Label doesn't word-wrap in a way that matches this bubble's own measureTextBox()
 	// sizing (bndIconLabelValue offsets and wraps differently), so a box laid out from that
@@ -107,6 +113,7 @@ struct TutorialBubble : widget::OpaqueWidget {
 	BackButton* backButton;
 	NextButton* nextButton;
 	CloseButton* closeButton;
+	LinkButton* linkButton;
 
 	// Pointer geometry, in this widget's OWN local coordinates (box-relative). Set by
 	// setPointer(); (0,0,0) / hasPointer == false draws no arrow, for a centered step.
@@ -154,6 +161,11 @@ struct TutorialBubble : widget::OpaqueWidget {
 		closeButton->text = "✖";
 		closeButton->fontSize = style.captionFontSize;
 		addChild(closeButton);
+
+		linkButton = new LinkButton;
+		linkButton->fontSize = style.bodyFontSize;
+		linkButton->visible = false;
+		addChild(linkButton);
 	}
 
 	void setHost(TutorialBubbleHost* h) {
@@ -168,11 +180,14 @@ struct TutorialBubble : widget::OpaqueWidget {
 	// (index, width): a re-layout with the same key is a no-op, so a caller can call this every
 	// step() without re-measuring text that hasn't changed.
 	void setContent(int index, const std::string& caption, const std::string& title,
-			const std::string& text, bool showBack, bool isLast, float width) {
+			const std::string& text, bool showBack, bool isLast, float width,
+			const std::string& linkText = "", const std::string& linkUrl = "") {
 
+		bool showLink = !linkText.empty() && !linkUrl.empty();
 		if (index == cachedIndex && math::isNear(width, cachedWidth, 1e-6f)
 				&& caption == captionLabel->text && title == titleLabel->text && text == bodyLabel->text
-				&& backButton->visible == showBack) {
+				&& backButton->visible == showBack && linkButton->visible == showLink
+				&& linkButton->text == linkText && linkButton->url == linkUrl) {
 			return;
 		}
 		cachedIndex = index;
@@ -183,6 +198,9 @@ struct TutorialBubble : widget::OpaqueWidget {
 		bodyLabel->text = text;
 		backButton->visible = showBack;
 		nextButton->text = isLast ? "Finish" : "Next";
+		linkButton->visible = showLink;
+		linkButton->text = linkText;
+		linkButton->url = linkUrl;
 
 		layout(width);
 	}
@@ -253,8 +271,9 @@ private:
 		// more robust than chasing exact agreement between the two nanovg code paths.
 		measuredBodyH = vcv::ui::measureTextBox(bodyLabel->text, style.bodyFontSize, innerWidth).y + 6.f;
 
+		float linkRowH = linkButton->visible ? (style.buttonHeight + pad * 0.5f) : 0.f;
 		float y = pad + measuredCaptionH + pad * 0.5f + measuredTitleH + pad * 0.5f + measuredBodyH + pad
-			+ style.buttonHeight + pad;
+			+ linkRowH + style.buttonHeight + pad;
 
 		bodySize = math::Vec(width, y);
 		bodyOffset = math::Vec();
@@ -287,6 +306,12 @@ private:
 		y += measuredBodyH + pad;
 
 		float buttonH = style.buttonHeight;
+		if (linkButton->visible) {
+			linkButton->box.pos = bodyOffset.plus(math::Vec(pad, y));
+			linkButton->box.size = math::Vec(innerWidth, buttonH);
+			y += buttonH + pad * 0.5f;
+		}
+
 		float buttonW = (innerWidth - pad) * 0.5f;
 		if (backButton->visible) {
 			backButton->box.pos = bodyOffset.plus(math::Vec(pad, y));
@@ -397,12 +422,10 @@ struct TutorialOverlay : widget::OpaqueWidget, TutorialBubbleHost {
 	int index = 0;
 	Side lastSide = Side::AUTO;
 	TutorialBubble* bubble = nullptr;
+	// Makes fireLeave()/fireClose() safe to call twice (e.g. close() then forceClose()).
+	bool leftFired = false;
+	bool closedFired = false;
 
-	// Accent colour and pulse rate for the highlight ring. Not in Style (Style is sizes/spacing
-	// only); tuned by eye like everything else in that struct.
-	static NVGcolor accentColor() { return nvgRGB(0xf2, 0xa5, 0x3a); }
-	static constexpr float RING_WIDTH = 2.f;
-	static constexpr float PULSE_HZ = 0.5f;
 	static constexpr float DIM_ALPHA = 0.55f;
 
 	app::ModuleWidget* moduleWidget() const {
@@ -447,7 +470,8 @@ struct TutorialOverlay : widget::OpaqueWidget, TutorialBubbleHost {
 			bubble->setHost(this);
 			APP->scene->rack->addChild(bubble);
 			APP->event->setSelectedWidget(this);
-			if (!tutorial.steps.empty() && tutorial.steps[0].onEnter) tutorial.steps[0].onEnter();
+			if (tutorial.onOpen) tutorial.onOpen();
+			fireEnter();
 		}
 
 		if (bubble && index >= 0 && index < (int) tutorial.steps.size()) {
@@ -464,7 +488,8 @@ struct TutorialOverlay : widget::OpaqueWidget, TutorialBubbleHost {
 			float width = current.width > 0.f ? current.width : bubble->style.bubbleWidth;
 			bool showBack = index > 0;
 			bool isLast = index == (int) tutorial.steps.size() - 1;
-			bubble->setContent(index, caption, current.title, current.text, showBack, isLast, width);
+			bubble->setContent(index, caption, current.title, current.text, showBack, isLast, width,
+				current.linkText, current.linkUrl);
 
 			PlacementInput in;
 			in.bounds = visibleRegion(mw);
@@ -534,13 +559,12 @@ struct TutorialOverlay : widget::OpaqueWidget, TutorialBubbleHost {
 		nvgFill(args.vg);
 
 		if (hasTargetRect) {
-			float t = (float) vcv::fs::getTime();
-			float alpha = 0.5f + 0.5f * std::sin(2.f * (float) M_PI * PULSE_HZ * t);
+			float alpha = HighlightStyle::pulseAlpha((float) vcv::fs::getTime());
 			nvgBeginPath(args.vg);
 			nvgRoundedRect(args.vg, RECT_ARGS(targetRectModule), bubble->style.cornerRadius);
-			NVGcolor c = accentColor();
+			NVGcolor c = HighlightStyle::accentColor();
 			nvgStrokeColor(args.vg, nvgRGBAf(c.r, c.g, c.b, 0.5f + 0.5f * alpha));
-			nvgStrokeWidth(args.vg, RING_WIDTH);
+			nvgStrokeWidth(args.vg, HighlightStyle::ringWidth);
 			nvgStroke(args.vg);
 		}
 
@@ -602,15 +626,26 @@ struct TutorialOverlay : widget::OpaqueWidget, TutorialBubbleHost {
 	// ---- TutorialBubbleHost -----------------------------------------------------------------
 
 	void fireLeave() {
+		if (leftFired) return;
+		leftFired = true;
 		if (index >= 0 && index < (int) tutorial.steps.size() && tutorial.steps[index].onLeave) {
 			tutorial.steps[index].onLeave();
 		}
 	}
 
 	void fireEnter() {
+		leftFired = false;
 		if (index >= 0 && index < (int) tutorial.steps.size() && tutorial.steps[index].onEnter) {
 			tutorial.steps[index].onEnter();
 		}
+	}
+
+	// Fires tutorial.onClose exactly once. Caller must call fireLeave() first, so whole-tutorial
+	// cleanup always runs after the current step's own cleanup.
+	void fireClose() {
+		if (closedFired) return;
+		closedFired = true;
+		if (tutorial.onClose) tutorial.onClose();
 	}
 
 	void next() override {
@@ -632,10 +667,26 @@ struct TutorialOverlay : widget::OpaqueWidget, TutorialBubbleHost {
 
 	void close() override {
 		fireLeave();
+		fireClose();
 		requestDelete();
 	}
 
+	// Fires the active step's onLeave and the tutorial's onClose (idempotent), for a teardown
+	// path that deletes this overlay directly rather than via close() — e.g. start() replacing an
+	// overlay that's already open. Callers must invoke this themselves whenever mw is still fully
+	// intact; the destructor deliberately doesn't (see below).
+	void forceClose() {
+		fireLeave();
+		fireClose();
+	}
+
 	~TutorialOverlay() {
+		// Deliberately does NOT call forceClose(): closing a patch / removing the module deletes
+		// mw via clearChildren(), which iterates and delete-in-places every child, this overlay
+		// included. If onLeave fired here, a step's own mw->removeChild(...) (e.g.
+		// removeStepWidget) would reentrantly mutate that same in-progress children list — a real
+		// observed crash. Since mw is being destroyed anyway, there's nothing to restore, so
+		// every other teardown path must call forceClose() explicitly instead.
 		if (bubble) {
 			APP->scene->rack->removeChild(bubble);
 			delete bubble;

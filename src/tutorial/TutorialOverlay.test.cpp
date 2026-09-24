@@ -602,3 +602,208 @@ TEST_CASE("onEnter/onLeave fire exactly once per step change, including on close
 	REQUIRE(log == std::vector<std::string>{"step2:leave"});
 }
 
+TEST_CASE("start() replacing an already-open overlay fires the old step's onLeave", "[TutorialOverlay]") {
+	// start() tears down a pre-existing overlay directly (mw->removeChild + delete), not via
+	// close()/requestDelete() — a side effect registered in onEnter (e.g. temporary module
+	// state a real tutorial step restores in onLeave) must still see onLeave exactly once, or
+	// it leaks past the tutorial being reopened. Covered by the destructor's fireLeave() call.
+	// log must outlive f: f's destructor deletes any still-open overlay, which now (per the
+	// destructor's fireLeave() call) invokes the current step's onLeave closure during teardown.
+	std::vector<std::string> log;
+	OverlayFixture f;
+
+	auto makeTutorial = [&log](const char* tag) {
+		Tutorial t;
+		t.title = "TEST";
+		Step s("Step", "Text");
+		s.onEnter = [&log, tag]() { log.push_back(std::string(tag) + ":enter"); };
+		s.onLeave = [&log, tag]() { log.push_back(std::string(tag) + ":leave"); };
+		t.steps.push_back(s);
+		return t;
+	};
+
+	start(f.mw, makeTutorial("first"));
+	f.mw->step(); // lazy setup fires "first" step 0's onEnter
+	REQUIRE(log == std::vector<std::string>{"first:enter"});
+
+	start(f.mw, makeTutorial("second")); // replaces the still-open "first" overlay
+	REQUIRE(log == std::vector<std::string>{"first:enter", "first:leave"});
+
+	f.mw->step(); // lazy setup fires "second" step 0's onEnter
+	REQUIRE(log == std::vector<std::string>{"first:enter", "first:leave", "second:enter"});
+}
+
+TEST_CASE("forceClose() fires the current step's onLeave exactly once, for a standalone delete", "[TutorialOverlay]") {
+	// A caller deleting an overlay directly (not via close()) — start()'s replace-path is the
+	// real example — must call forceClose() itself first; the destructor deliberately does NOT
+	// fire onLeave/onClose on its own (see ~TutorialOverlay()'s comment: doing so unconditionally
+	// is unsafe when the delete instead arrives via mw's own clearChildren(), since a step's
+	// onLeave that mutates mw->children would then reenter that same in-progress iteration).
+	OverlayFixture f;
+	std::vector<std::string> log;
+
+	Tutorial t;
+	t.title = "TEST";
+	Step s("Step", "Text");
+	s.onEnter = [&log]() { log.push_back("enter"); };
+	s.onLeave = [&log]() { log.push_back("leave"); };
+	t.steps.push_back(s);
+
+	start(f.mw, t);
+	f.mw->step();
+	REQUIRE(log == std::vector<std::string>{"enter"});
+
+	TutorialOverlay* overlay = nullptr;
+	for (widget::Widget* w : f.mw->children) {
+		if (auto* o = dynamic_cast<TutorialOverlay*>(w)) overlay = o;
+	}
+	REQUIRE(overlay != nullptr);
+
+	overlay->forceClose();
+	f.mw->removeChild(overlay);
+	delete overlay;
+	REQUIRE(log == std::vector<std::string>{"enter", "leave"});
+}
+
+TEST_CASE("deleting an overlay without forceClose() does not fire onLeave", "[TutorialOverlay]") {
+	// The flip side of the test above: this is exactly OverlayFixture's own teardown path (mw's
+	// children, including any open overlay, deleted directly with no forceClose() call) — the
+	// same shape as ModuleWidget::clearChildren() during real app/patch teardown. onLeave must
+	// NOT fire here, both because it would be unsafe in the real clearChildren() case and
+	// because there's nothing to usefully restore when the whole module is going away anyway.
+	OverlayFixture f;
+	std::vector<std::string> log;
+
+	Tutorial t;
+	t.title = "TEST";
+	Step s("Step", "Text");
+	s.onEnter = [&log]() { log.push_back("enter"); };
+	s.onLeave = [&log]() { log.push_back("leave"); };
+	t.steps.push_back(s);
+
+	start(f.mw, t);
+	f.mw->step();
+	REQUIRE(log == std::vector<std::string>{"enter"});
+
+	TutorialOverlay* overlay = nullptr;
+	for (widget::Widget* w : f.mw->children) {
+		if (auto* o = dynamic_cast<TutorialOverlay*>(w)) overlay = o;
+	}
+	REQUIRE(overlay != nullptr);
+
+	f.mw->removeChild(overlay);
+	delete overlay; // no forceClose() — mirrors clearChildren()'s own delete-in-place
+	REQUIRE(log == std::vector<std::string>{"enter"});
+}
+
+TEST_CASE("mw->clearChildren() survives a step whose onLeave mutates mw->children", "[TutorialOverlay]") {
+	// Regression test for a real crash: a step's onLeave that calls mw->removeChild(...) on
+	// some OTHER widget it added earlier (the exact shape of a tutorial's own per-step cleanup
+	// helper, e.g. removeStepWidget<W>(mw) in a module's tutorial file) used to run during
+	// ~TutorialOverlay() whenever the overlay was deleted — including when that delete came from
+	// Widget::clearChildren() itself (what ModuleWidget::~ModuleWidget() calls, i.e. real
+	// app/patch teardown), reentrantly mutating the very children list clearChildren()'s own
+	// loop was mid-iteration over. Now that the destructor never fires onLeave on its own (see
+	// ~TutorialOverlay()'s comment), this must be safe — onLeave simply doesn't run, and nothing
+	// touches mw->children during the teardown.
+	OverlayFixture f;
+	std::vector<std::string> log;
+
+	// A second, unrelated widget onLeave will try to remove — standing in for a step's own
+	// demo widget (SceneCycleWidget, the old PortMapDemoWidget, etc.).
+	auto* demoWidget = new widget::Widget;
+	f.mw->addChild(demoWidget);
+
+	Tutorial t;
+	t.title = "TEST";
+	Step s("Step", "Text");
+	s.onEnter = [&log]() { log.push_back("enter"); };
+	s.onLeave = [&log, mw = f.mw, demoWidget]() {
+		log.push_back("leave");
+		// The unsafe operation: removing a sibling from mw's children list, reentrant with
+		// clearChildren()'s own iteration over that same list when this runs from there.
+		for (widget::Widget* w : mw->children) {
+			if (w == demoWidget) {
+				mw->removeChild(w);
+				delete w;
+				break;
+			}
+		}
+	};
+	t.steps.push_back(s);
+
+	start(f.mw, t);
+	f.mw->step();
+	REQUIRE(log == std::vector<std::string>{"enter"});
+
+	// Exercises the real crash path directly: Widget::clearChildren() deletes every child of mw
+	// in place, TutorialOverlay (and demoWidget) among them, exactly as ModuleWidget's own
+	// destructor does. Must not crash, and onLeave must not have run (the destructor doesn't
+	// call it), so demoWidget is still one of mw's children going in — clearChildren() deletes
+	// it directly rather than via the step's own (now-unreached) cleanup.
+	f.mw->clearChildren();
+	REQUIRE(log == std::vector<std::string>{"enter"});
+	REQUIRE(f.mw->children.empty());
+
+	// OverlayFixture's own teardown expects to find (and clean up) an open TutorialOverlay;
+	// clearChildren() already removed it, so let the fixture's destructor no-op on mw safely —
+	// APP->scene->rack->removeChild(mw) + delete mw still need to happen, which its destructor
+	// does unconditionally regardless of what's left in mw->children.
+}
+
+TEST_CASE("Tutorial onOpen/onClose fire once each, bracketing every step's onEnter/onLeave", "[TutorialOverlay]") {
+	// log must outlive f, same hazard as the "replacing an already-open overlay" test above:
+	// f's destructor may run a pending onClose during teardown.
+	std::vector<std::string> log;
+	OverlayFixture f;
+
+	Tutorial t;
+	t.title = "TEST";
+	t.onOpen = [&log]() { log.push_back("open"); };
+	t.onClose = [&log]() { log.push_back("close"); };
+	for (int i = 0; i < 2; i++) {
+		Step s("Step", "Text");
+		std::string name = "step" + std::to_string(i);
+		s.onEnter = [&log, name]() { log.push_back(name + ":enter"); };
+		s.onLeave = [&log, name]() { log.push_back(name + ":leave"); };
+		t.steps.push_back(s);
+	}
+
+	start(f.mw, t);
+	f.mw->step(); // lazy setup: onOpen fires before step 0's onEnter
+	REQUIRE(log == std::vector<std::string>{"open", "step0:enter"});
+
+	f.rackEvents.keyPress(GLFW_KEY_RIGHT); // -> step 1
+	REQUIRE(log == std::vector<std::string>{"open", "step0:enter", "step0:leave", "step1:enter"});
+
+	f.rackEvents.keyPress(GLFW_KEY_RIGHT); // Next on the last step -> close()
+	// step1:leave (fireLeave, per-step) then close (fireClose, whole-tutorial) — close() calls
+	// them in that order so tutorial-scoped cleanup runs after the active step's own cleanup.
+	REQUIRE(log == std::vector<std::string>{
+		"open", "step0:enter", "step0:leave", "step1:enter", "step1:leave", "close"});
+}
+
+TEST_CASE("Tutorial onClose fires exactly once even when start() replaces an open overlay", "[TutorialOverlay]") {
+	std::vector<std::string> log;
+	OverlayFixture f;
+
+	auto makeTutorial = [&log](const char* tag) {
+		Tutorial t;
+		t.title = "TEST";
+		t.onOpen = [&log, tag]() { log.push_back(std::string(tag) + ":open"); };
+		t.onClose = [&log, tag]() { log.push_back(std::string(tag) + ":close"); };
+		t.steps.push_back(Step("Step", "Text"));
+		return t;
+	};
+
+	start(f.mw, makeTutorial("first"));
+	f.mw->step();
+	REQUIRE(log == std::vector<std::string>{"first:open"});
+
+	start(f.mw, makeTutorial("second")); // tears down "first" without calling close()
+	REQUIRE(log == std::vector<std::string>{"first:open", "first:close"});
+
+	f.mw->step();
+	REQUIRE(log == std::vector<std::string>{"first:open", "first:close", "second:open"});
+}
+
