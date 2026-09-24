@@ -48,6 +48,12 @@ void RackModuleAccess::setModuleWidgetPos(int64_t moduleId, Vec pos) {
 	APP->scene->rack->setModulePosForce(mw, pos);
 }
 
+void RackModuleAccess::setModuleWidgetPosNearest(int64_t moduleId, Vec pos) {
+	ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+	if (!mw) return;
+	APP->scene->rack->setModulePosNearest(mw, pos);
+}
+
 void RackModuleAccess::applyPreset(int64_t moduleId, json_t* moduleJ) {
 	ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
 	if (!mw) return;

@@ -30,6 +30,26 @@ namespace vcv {
 enum class MessageType { INFO, WARNING, ERROR };
 enum class MessageButtons { OK, YES_NO };
 
+
+// The rack viewport: RackScrollWidget's box, in scene coordinates, and its current zoom.
+// Used by anything that needs to know what part of the rack is on screen
+// without touching APP->scene->rackScroll directly.
+//
+// That indirection matters under test: Test::Harness's SceneLayout deliberately keeps
+// rackScroll zeroed-out AND hidden, because a live RackScrollWidget segfaults on
+// APP->window the instant a HoverScrollEvent reaches its onHoverScroll() — a dispatch
+// hazard, not just a "box happens to be empty" one. Routing the read through this seam lets
+// a test hand placement code a real, sane viewport without ever giving dispatch a path to
+// the actual RackScrollWidget.
+struct RackViewport {
+	math::Rect box;
+	float zoom = 1.f;
+
+	RackViewport() {}
+	RackViewport(math::Rect box, float zoom) : box(box), zoom(zoom) {}
+};
+
+
 struct UiAccess {
 	virtual ~UiAccess() {}
 
@@ -48,6 +68,15 @@ struct UiAccess {
 	virtual void setClipboard(const std::string& text) {}
 
 	virtual void openBrowser(const std::string& url) {}
+
+	// See RackViewport's comment. Production reads APP->scene->rackScroll's real box (scene
+	// coordinates) and zoom. Base/test default: a generously large box at zoom 1, so placement
+	// code gets sane, deterministic behaviour with no mock installed — a test that wants a
+	// specific viewport (module at the rack edge, zoomed in, ...) overrides this instead of
+	// touching the real, dispatch-hazardous rackScroll.
+	virtual RackViewport getRackViewport() const {
+		return RackViewport{math::Rect(math::Vec(-10000.f, -10000.f), math::Vec(20000.f, 20000.f)), 1.f};
+	}
 
 	// Is a UI present at all? False in headless/CLI Rack and while the plugin editor is closed.
 	// Production is APP->window != nullptr. Routing it through this seam is what makes the
@@ -104,6 +133,67 @@ struct UiAccess {
 	// real glfw* calls. Default getKeyScancode() answers -1, GLFW's own "no scancode" value.
 	virtual std::string getKeyName(int key, int scancode) const { return rack::widget::getKeyName(key); }
 	virtual int getKeyScancode(int key) const { return -1; }
+
+	// Word-wraps `text` to `width` (0 = no wrap limit) and returns the resulting bounding box,
+	// both in the same px unit as `fontSize` and `width`. Used for tutorial bubble sizing
+	// (Tutorial framework plan §4.4), which measures in module px and lays out before any
+	// drawing happens — so this cannot simply be a drawArgs-time nanovg call.
+	//
+	// Base default: a deterministic estimate with no nanovg/font dependency, so it works
+	// headless and gives every test-mocked UiAccess (MockUiAccess, HarnessUiAccess, ...) a
+	// working answer for free. 0.55 * fontSize per character approximates DejaVu Sans/Rack's
+	// uiFont closely enough for layout purposes; the real width only matters once real text is
+	// actually drawn, by RealUiAccess.
+	virtual math::Vec measureTextBox(const std::string& text, float fontSize, float width) const {
+		float charWidth = 0.55f * fontSize;
+		float lineHeight = 1.2f * fontSize;
+		float maxLineWidth = 0.f;
+		int lineCount = 0;
+
+		size_t pos = 0;
+		bool more = true;
+		while (more) {
+			size_t nl = text.find('\n', pos);
+			std::string paragraph = text.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+			more = (nl != std::string::npos);
+			pos = more ? nl + 1 : text.size();
+
+			// Greedy word wrap: pack words onto a line while it still fits `width` (word count in
+			// characters, including one separating space per word after the first).
+			size_t wordStart = 0;
+			float lineWidth = 0.f;
+			bool lineHasWord = false;
+			auto flushLine = [&]() {
+				maxLineWidth = std::fmax(maxLineWidth, lineWidth);
+				lineCount++;
+				lineWidth = 0.f;
+				lineHasWord = false;
+			};
+
+			size_t i = 0;
+			while (i <= paragraph.size()) {
+				if (i == paragraph.size() || paragraph[i] == ' ') {
+					size_t wordLen = i - wordStart;
+					if (wordLen > 0) {
+						float wordWidth = wordLen * charWidth;
+						float addWidth = lineHasWord ? charWidth + wordWidth : wordWidth;
+						if (width > 0.f && lineHasWord && lineWidth + addWidth > width) {
+							flushLine();
+							addWidth = wordWidth;
+						}
+						lineWidth += addWidth;
+						lineHasWord = true;
+					}
+					wordStart = i + 1;
+				}
+				i++;
+			}
+			// Every paragraph contributes at least one line, even if empty (a blank line).
+			flushLine();
+		}
+
+		return math::Vec(maxLineWidth, lineCount * lineHeight);
+	}
 };
 
 
@@ -117,10 +207,12 @@ struct RealUiAccess final : UiAccess {
 	std::string getClipboard() const override;
 	void setClipboard(const std::string& text) override;
 	void openBrowser(const std::string& url) override;
+	RackViewport getRackViewport() const override;
 	bool hasWindow() const override;
 	int getWindowMods() const override;
 	std::string getKeyName(int key, int scancode) const override;
 	int getKeyScancode(int key) const override;
+	math::Vec measureTextBox(const std::string& text, float fontSize, float width) const override;
 };
 // The shared production instance, defined in the .cpp.
 extern RealUiAccess realUiAccess;
@@ -175,6 +267,11 @@ static void openBrowser(const std::string& url) {
 }
 
 P1_UNUSED
+static RackViewport getRackViewport() {
+	return uiAccessFor().getRackViewport();
+}
+
+P1_UNUSED
 static bool hasWindow() {
 	return uiAccessFor().hasWindow();
 }
@@ -192,6 +289,11 @@ static std::string getKeyName(int key, int scancode) {
 P1_UNUSED
 static int getKeyScancode(int key) {
 	return uiAccessFor().getKeyScancode(key);
+}
+
+P1_UNUSED
+static math::Vec measureTextBox(const std::string& text, float fontSize, float width) {
+	return uiAccessFor().measureTextBox(text, fontSize, width);
 }
 
 } // namespace ui
