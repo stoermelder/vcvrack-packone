@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/ui.hpp"
 #include "../../components/Knobs.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
 
@@ -291,7 +292,7 @@ struct SailWidget : ThemedModuleWidget<SailModule>, OverlayMessageProvider {
 		Switch* sw = dynamic_cast<Switch*>(p);
 
 		module->pq.store(q);
-		module->fineMod = APP->window->getMods() & GLFW_MOD_SHIFT;
+		module->fineMod = vcv::ui::getWindowMods() & GLFW_MOD_SHIFT;
 		module->isSwitch = sw != NULL;
 	}
 

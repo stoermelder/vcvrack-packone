@@ -39,6 +39,16 @@ TEST_CASE("Preset JSON null-guards", "[Mb][JSON]") {
 	}
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[Mb][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<MbModule>("Mb");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 
 TEST_CASE("Favorite model operations", "[Mb]") {
 	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");

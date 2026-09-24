@@ -39,6 +39,16 @@ TEST_CASE("Preset JSON null-guards", "[Strip][JSON]") {
 	}
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[Strip][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<StripModule>(createStripModule);
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 
 // ---- selection load (.vcvs) -------------------------------------------------
 

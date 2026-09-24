@@ -80,6 +80,13 @@ TEST_CASE("Preset JSON null-guards", "[Arena][JSON]") {
 		h.dspStep();
 		REQUIRE(module->outputs[MODULE::OUT_OUTPUT + 0].getVoltage() == Catch::Approx(7.3f));
 	}
+
+	SECTION("All integer scalars clamp out-of-range values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOutOfRangeScalars(h, module, rootJ);
+		json_decref(rootJ);
+	}
 }
 
 TEST_CASE("JSON round-trip preserves module state", "[Arena]") {
@@ -1202,4 +1209,18 @@ TEST_CASE("XyScreenNodes setters with an out-of-range id are a silent no-op", "[
 	REQUIRE(m->nodes.uiX[0] == Catch::Approx(x0Before));
 	REQUIRE(m->nodes.radiusUi[0] == Catch::Approx(radius0Before));
 	REQUIRE(m->nodes.amountUi[0] == Catch::Approx(amount0Before));
+}
+
+// Regression: the node-menu sliders hardcoded 0.5 as their reset value, so a
+// double-click on Amount reset it to 50% although a fresh node starts at 100%.
+TEST_CASE("Amount/Radius slider reset values match the node defaults", "[Arena]") {
+	Test::Harness h;
+	auto* m = h.addModule<MODULE>("Arena");
+	for (uint8_t i = 0; i < 8; i++) {
+		StoermelderPackOne::XyScreenRadiusSlider<MODULE>::RadiusQuantity radius(m, i);
+		StoermelderPackOne::XyScreenAmountSlider<MODULE>::AmountQuantity amount(m, i);
+		REQUIRE(radius.getDefaultValue() == m->getNodeRadiusDefault(i));
+		REQUIRE(amount.getDefaultValue() == m->getNodeAmountDefault(i));
+	}
+	REQUIRE(StoermelderPackOne::XyScreenAmountSlider<MODULE>::AmountQuantity(m, 0).getDefaultValue() == 1.f);
 }

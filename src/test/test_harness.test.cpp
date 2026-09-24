@@ -892,3 +892,52 @@ TEST_CASE("Destroying a mapped target does not leave a dangling handle") {
 	REQUIRE_FALSE(h.isMapped(&mapper->handles[0]));
 	REQUIRE(APP->engine->getModule(targetId) == nullptr);
 }
+
+
+// Stands in for what chooseModel() does: build a real module + widget and parent the widget into
+// the live APP->scene->rack directly, bypassing the harness entirely. A real Model is required —
+// RackWidget::addModule() reaches model->getFullName().
+static rack::app::ModuleWidget* addModuleToRackDirectly() {
+	auto* m = Test::createModule<StrokeModule<STROKE_PORTS> >("Stroke");
+	Test::registerModule(m);
+	auto* mw = Test::createWidget<StrokeWidget>(m);
+	APP->scene->rack->addModule(mw);
+	return mw;
+}
+
+TEST_CASE("Teardown sweeps modules the code under test added to the rack") {
+	// The harness only owns what was added through it. Production code that adds a module the
+	// way a real click does (Mb's chooseModel(), Stroke's and Mirror's add-module actions,
+	// vcv::addModule()) calls APP->scene->rack->addModule() directly, so nothing tears it down
+	// when the harness driving the click goes out of scope — and the scene is process-wide, so
+	// it would outlive this TEST_CASE. See Harness::sweepAddedModules().
+	size_t before = APP->scene->rack->getModules().size();
+
+	{
+		Test::Harness h;
+		addModuleToRackDirectly();
+		REQUIRE(APP->scene->rack->getModules().size() == before + 1);
+	}
+
+	REQUIRE(APP->scene->rack->getModules().size() == before);
+}
+
+TEST_CASE("Teardown leaves rack modules that predate the harness alone") {
+	// The sweep subtracts what was already there at construction, so a harness never destroys a
+	// module set up by its caller or by an enclosing fixture — the EightFaceMk2 DispatchFixture
+	// pattern, where the fixture parents a widget into the rack and cleans it up itself.
+	rack::app::ModuleWidget* mw = addModuleToRackDirectly();
+	rack::Module* m = mw->module;
+	size_t before = APP->scene->rack->getModules().size();
+
+	{
+		Test::Harness h;
+		REQUIRE(APP->scene->rack->getModules().size() == before);
+	}
+
+	// Still there: the harness found it at construction, so it is not the harness's to remove.
+	REQUIRE(APP->scene->rack->getModules().size() == before);
+	Test::unregisterModule(m, mw);
+	Test::destroyModule(m);
+	REQUIRE(APP->scene->rack->getModules().size() == before - 1);
+}

@@ -51,6 +51,13 @@ TEST_CASE("Preset JSON null-guards", "[MidiCat][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
+
+	SECTION("All integer scalars clamp out-of-range values") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetOutOfRangeScalars(h, module, rootJ);
+		json_decref(rootJ);
+	}
 }
 
 TEST_CASE("JSON round-trip preserves state", "[MidiCat][JSON]") {

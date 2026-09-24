@@ -907,6 +907,13 @@ TEST_CASE("Integration test - preset loading and simulation", "[Ahab]") {
 }
 
 TEST_CASE("Clear field is undoable", "[Ahab]") {
+	// Deny-all FileAccess: attaching the widget below registers Ahab's Keymap vocabulary
+	// (AhabSimWidget::setModule -> registerActions() -> Keymap::save() on first use), which
+	// would otherwise fall through to RealFileAccess and write into the developer's own Rack
+	// user folder. No test in this file uses Test::Harness (which installs the same guard
+	// itself), so this needs its own.
+	struct { TEST_MOCK_FS(Test::mock::NullFileAccess); } fsMock;
+
 	Test::ModuleScaffold<AhabModule> mods;
 	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);

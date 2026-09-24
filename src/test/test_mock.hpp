@@ -77,6 +77,22 @@ struct MockFileAccess : StoermelderPackOne::vcv::FileAccess {
 	void openDirectory(const std::string& path) override { rack::system::openDirectory(path); }
 };
 
+// Default UiAccess mock: matches what a real keyboard actually sends for a printable key, not
+// vcv::UiAccess's own base default (rack::widget::getKeyName()'s table, which — same as Rack's
+// vendored fallback it mirrors — answers the GLFW key code's uppercase ASCII spelling, "C").
+// glfwGetKeyName() asks the OS layout for the unshifted character instead, which on every
+// layout this plugin has been tested against is lowercase, "c" — and that's what
+// ThemedModuleWidget.hpp's shortcut checks (e.keyName == "c"/"d") actually compare against. A
+// test exercising those shortcuts through real dispatch (Test::EventDriver) wants this mock,
+// not the base default, or the shortcut branch silently never triggers.
+struct MockUiAccess : StoermelderPackOne::vcv::UiAccess {
+	std::string getKeyName(int key, int scancode) const override {
+		if (key >= 32 && key < 128)
+			return std::string(1, (char) std::tolower(key));
+		return rack::widget::getKeyName(key);
+	}
+};
+
 } // namespace mock
 
 // One macro per access slot: declares the mock member (named after the slot: modules, scene,
@@ -88,8 +104,8 @@ struct MockFileAccess : StoermelderPackOne::vcv::FileAccess {
 //
 // Usage — replaces the 2-line member+Guard pair per slot:
 //   struct Mock {
-//       TEST_MOCK_UI(MockUiAccess);
-//       TEST_MOCK_FS(MockFileAccess);
+//       TEST_MOCK_UI(Test::mock::MockUiAccess);
+//       TEST_MOCK_FS(Test::mock::MockFileAccess);
 //       TEST_MOCK_HISTORY(MockHistoryAccess);
 //   } mock;   // mock.ui, mock.fs, mock.history
 #define TEST_MOCK_MODULES(Type) Type modules; Test::mock::Guard<vcv::ModuleAccess> modulesGuard{vcv::moduleAccess, &modules}

@@ -30,7 +30,7 @@
 			"tags": [
 				"MIDI", "Controller", "Utility"
 			],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/midi/SpliceKit.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/splicekit/SpliceKit.md"
 		},
 		{
 			"slug": "Siren",

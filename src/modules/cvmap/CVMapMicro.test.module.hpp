@@ -38,3 +38,13 @@ TEST_CASE("Preset JSON null-guards", "[CVMapMicro][JSON]") {
 		json_decref(rootJ);
 	}
 }
+
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[CVMapMicro][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<CVMapMicroModule>("CVMapMicro");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}

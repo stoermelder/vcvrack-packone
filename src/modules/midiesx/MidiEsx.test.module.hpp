@@ -40,6 +40,16 @@ TEST_CASE("Preset JSON null-guards", "[MidiEsx][JSON]") {
 
 }
 
+TEST_CASE("Preset JSON clamps out-of-range scalars", "[MidiEsx][JSON]") {
+	Test::Harness h;
+	auto module = h.addModule<MidiEsxModule>("MidiEsx");
+
+	json_t* rootJ = module->dataToJson();
+	REQUIRE(rootJ != nullptr);
+	Test::testPresetOutOfRangeScalars(h, module, rootJ);
+	json_decref(rootJ);
+}
+
 
 TEST_CASE("Encoding creates fractional samples correctly (approx)", "[MidiEsx]") {
 	Test::ModuleScaffold<MidiEsxModule> mods;
