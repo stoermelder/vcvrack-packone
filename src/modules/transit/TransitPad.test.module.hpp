@@ -1469,3 +1469,67 @@ TEST_CASE("Snapshot weights are written to the active set", "[TransitPad]") {
 	h.dspSteps(5);
 	REQUIRE(m->snapshots[3][0].weight > 0.f);
 }
+
+
+// setSnapshotsUsed() is what the "Number of snapshots" menu item calls
+// (TransitPad.cpp's appendContextMenu). Raising the count re-activates points
+// that were previously hidden/undraggable and could hold stale binding or
+// geometry from an earlier time they were active, in any set -- not just the
+// current one.
+TEST_CASE("Raising the snapshot count resets newly-activated points to defaults, in every set", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+	m->setSnapshotsUsed(4);
+
+	// Leave stale, non-default data on point 5 (index 4, inactive at count 4)
+	// across two different sets.
+	for (uint8_t s : {(uint8_t)1, (uint8_t)6}) {
+		m->snapshots[s][4].id = 3;
+		m->snapshots[s][4].weight = 0.42f;
+		m->snapshots[s][4].x = 0.9f;
+		m->snapshots[s][4].y = 0.9f;
+		m->snapshots[s][4].radius = 0.1f;
+		m->snapshots[s][4].amount = 0.1f;
+	}
+
+	m->setSnapshotsUsed(6);
+
+	for (uint8_t s : {(uint8_t)1, (uint8_t)6}) {
+		REQUIRE(m->snapshots[s][4].id == -1);
+		REQUIRE(m->snapshots[s][4].weight == 0.f);
+		REQUIRE(m->snapshots[s][4].x == m->getNodePqX(4)->getDefaultValue());
+		REQUIRE(m->snapshots[s][4].y == m->getNodePqY(4)->getDefaultValue());
+		REQUIRE(m->snapshots[s][4].radius == m->getNodeRadiusDefault(4));
+		REQUIRE(m->snapshots[s][4].amount == m->Sc::getNodeAmountDefault(4));
+	}
+	REQUIRE(m->snapshotsUsed == 6);
+}
+
+TEST_CASE("Raising the snapshot count doesn't touch points already active", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+	m->setSnapshotsUsed(4);
+
+	m->snapshots[2][0].x = 0.33f;
+	m->snapshots[2][0].y = 0.44f;
+
+	m->setSnapshotsUsed(6);
+
+	REQUIRE(m->snapshots[2][0].x == 0.33f);
+	REQUIRE(m->snapshots[2][0].y == 0.44f);
+}
+
+TEST_CASE("Lowering the snapshot count doesn't reset any point", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+	m->setSnapshotsUsed(6);
+
+	m->snapshots[0][5].x = 0.33f;
+	m->snapshots[0][5].y = 0.44f;
+
+	m->setSnapshotsUsed(4);
+
+	REQUIRE(m->snapshots[0][5].x == 0.33f);
+	REQUIRE(m->snapshots[0][5].y == 0.44f);
+	REQUIRE(m->snapshotsUsed == 4);
+}

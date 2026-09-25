@@ -381,6 +381,23 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 	}
 
+	// Changes the number of active snapshot points, resetting newly-activated
+	// ones (in every set) to defaults so stale leftover state can't resurface.
+	void setSnapshotsUsed(int n) {
+		int oldUsed = snapshotsUsed.load(std::memory_order_relaxed);
+		snapshotsUsed = n;
+		for (int i = oldUsed; i < n; i++) {
+			for (uint8_t s = 0; s < SETS; s++) {
+				snapshots[s][i].id = i < 4 ? i : -1;
+				snapshots[s][i].weight = 0.f;
+				snapshots[s][i].x = getNodePqX(i)->getDefaultValue();
+				snapshots[s][i].y = getNodePqY(i)->getDefaultValue();
+				snapshots[s][i].radius = getNodeRadiusDefault(i);
+				snapshots[s][i].amount = Sc::getNodeAmountDefault(i);
+			}
+		}
+	}
+
 	// Reset every set's stored layout to defaults, so switching mode to Off
 	// doesn't leave stale geometry a later Store/Auto could resurrect.
 	void clearNodePositions() {
@@ -1132,9 +1149,11 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 		menu->addChild(createBoolPtrMenuItem("Visualize", "Shift+Space", &this->module->vizMode));
 		menu->addChild(createSubmenuItem("Number of snapshots", string::f("%i", this->module->snapshotsUsed.load(std::memory_order_relaxed)),
 			[=](Menu* menu) {
-				for (int i = 0; i < this->module->nodeCount(); i++) {
+				MODULE* m = this->module;
+				for (int i = 0; i < m->nodeCount(); i++) {
 					const int target = i + 1;
-					menu->addChild(createAtomicValuePtrMenuItem(string::f("%i", target), &this->module->snapshotsUsed, target));
+					bool checked = m->snapshotsUsed.load(std::memory_order_relaxed) == target;
+					menu->addChild(createMenuItem(string::f("%i", target), CHECKMARK(checked), [=]() { m->setSnapshotsUsed(target); }));
 				}
 			}
 		));
