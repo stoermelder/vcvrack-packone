@@ -40,7 +40,7 @@ TEST_CASE("e2e: Transit+TransitPad chain survives a full patch save/restore", "[
 	r.save(0, 0.2f);
 	r.save(1, 0.8f);
 	connectPad(h, r.transit, r.pad);
-	r.pad->snapshotsUsed = 2;
+	r.pad->setSnapshotsUsed(2);
 	r.pad->nodes.setAmountImmediate(1, 3.f);
 	r.run(20);
 
@@ -105,7 +105,7 @@ TEST_CASE("e2e: bindSnapshot rebindings survive save/restore and keep driving Tr
 
 	// Rebind pad point A away from its default slot 0 onto slot 5, and park
 	// the mix point on it so it alone drives the blend.
-	r.pad->snapshotsUsed = 1;
+	r.pad->setSnapshotsUsed(1);
 	r.pad->bindSnapshot(0, 5);
 	connectMixInputs(r.pad);
 	setMixVoltage(r.pad, -5.f, -5.f);
@@ -176,7 +176,7 @@ TEST_CASE("e2e: multi-snapshot, multi-parameter, multi-set chain survives save/r
 	save(3, 1.0f, 0.0f);
 
 	connectPad(h, r.transit, r.pad);
-	r.pad->snapshotsUsed = 4;
+	r.pad->setSnapshotsUsed(4);
 
 	// Set 1: rebind the same four pad points to the reverse slot order, so the
 	// two sets disagree about which preset each snapshot reaches -- a save/
@@ -273,7 +273,7 @@ TEST_CASE("e2e: Transit+TransitEx+TransitPad chain survives a full patch save/re
 	target->params[TestParamModule::PARAM_A].setValue(0.9f);
 	transit->presetSave(12);
 
-	pad->snapshotsUsed = 1;
+	pad->setSnapshotsUsed(1);
 	pad->bindSnapshot(0, 12);
 	pad->inputs[TransitPadModule<>::MIX_X_INPUT].channels = 1;
 	pad->inputs[TransitPadModule<>::MIX_Y_INPUT].channels = 1;

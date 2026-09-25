@@ -300,7 +300,7 @@ TEST_CASE("Snapshot-set node positions", "[TransitPad]") {
 	SECTION("Capturing a node above snapshotsUsed stores the real values") {
 		// process() refreshes radius[]/amount[] only for j < snapshotsUsed, so
 		// node 6 is never refreshed no matter how long the module runs.
-		m->snapshotsUsed = 4;
+		m->setSnapshotsUsed(4);
 		m->nodes.setRadiusImmediate(6, 0.5f);
 		m->nodes.setAmountImmediate(6, 0.6f);
 		h.dspSteps(50);
@@ -830,9 +830,9 @@ TEST_CASE("JSON round-trip preserves snapshotsUsed", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
 
-	m->snapshotsUsed = 6;
+	m->setSnapshotsUsed(6);
 	json_t* j = m->dataToJson();
-	m->snapshotsUsed = 4;
+	m->setSnapshotsUsed(4);
 	m->dataFromJson(j);
 	json_decref(j);
 
@@ -1093,7 +1093,7 @@ TEST_CASE("JSON round-trip preserves per-set snapshot data at every snapshot ind
 	m->nodePosMode = NODEPOSMODE::STORE;
 	// All 8 points must be active, or dataToJson() only serializes up to
 	// snapshotsUsed (indices past it are unused and intentionally dropped).
-	m->snapshotsUsed = 8;
+	m->setSnapshotsUsed(8);
 
 	auto expectedX = [](uint8_t s, uint8_t i) { return 0.01f * s + 0.001f * i; };
 	auto expectedY = [](uint8_t s, uint8_t i) { return 0.02f * s + 0.001f * i; };
@@ -1142,7 +1142,7 @@ TEST_CASE("JSON round-trip preserves per-set snapshot data at every snapshot ind
 TEST_CASE("dataToJson only serializes nodes/snapshots up to snapshotsUsed", "[TransitPad][JSON]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
-	m->snapshotsUsed = 3;
+	m->setSnapshotsUsed(3);
 
 	json_t* rootJ = m->dataToJson();
 
@@ -1162,7 +1162,7 @@ TEST_CASE("dataToJson only serializes nodes/snapshots up to snapshotsUsed", "[Tr
 TEST_CASE("dataFromJson leaves points past a trimmed save at their defaults", "[TransitPad][JSON]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
-	m->snapshotsUsed = 3;
+	m->setSnapshotsUsed(3);
 	m->snapshots[0][0].id = 7;
 
 	json_t* rootJ = m->dataToJson();
@@ -1256,7 +1256,7 @@ TEST_CASE("onReset restores defaults", "[TransitPad]") {
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
 
 	m->currentSet = 6;
-	m->snapshotsUsed = 8;
+	m->setSnapshotsUsed(8);
 	Module::ResetEvent re;
 	m->onReset(re);
 
@@ -1277,7 +1277,7 @@ TEST_CASE("Reset and randomize go through the event-form handlers", "[TransitPad
 
 	SECTION("ResetEvent restores defaults") {
 		m->currentSet = 5;
-		m->snapshotsUsed = 7;
+		m->setSnapshotsUsed(7);
 		m->locked = true;
 		m->setLabel[2] = "custom";
 		m->setCvMode = SETCVMODE::C4;
@@ -1471,7 +1471,7 @@ TEST_CASE("A mapped OUT_X_POS/OUT_Y_POS is not overwritten by the stale UI-drag 
 TEST_CASE("Snapshot weights: point inside radius gets nonzero weight", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
-	m->snapshotsUsed = 1;
+	m->setSnapshotsUsed(1);
 
 	// Default positions: snapshot 0 at (0, 0), mix point at (0.5, 0.5)
 	// Distance = sqrt(0.5^2 + 0.5^2) ≈ 0.707, default radius = 1.0 → inside
@@ -1484,7 +1484,7 @@ TEST_CASE("Snapshot weights: point inside radius gets nonzero weight", "[Transit
 TEST_CASE("Snapshot weights: point outside radius gets zero weight", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
-	m->snapshotsUsed = 1;
+	m->setSnapshotsUsed(1);
 
 	// Move mix point to (0.9, 0.9) via the filter state so process() respects it.
 	// Snapshot 0 defaults to (0, 0).
@@ -1499,7 +1499,7 @@ TEST_CASE("Snapshot weights: point outside radius gets zero weight", "[TransitPa
 TEST_CASE("Snapshot weights are written to the active set", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
-	m->snapshotsUsed = 1;
+	m->setSnapshotsUsed(1);
 
 	// Default positions: snapshot 0 at (0, 0), mix at (0.5, 0.5) → nonzero weight
 	m->currentSet = 0;

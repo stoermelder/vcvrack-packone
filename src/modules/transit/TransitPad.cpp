@@ -33,10 +33,10 @@ enum class NODEPOSMODE {
 	AUTO = 2
 };
 
-/** True for every NODEPOSMODE value a valid preset can contain. An unknown
- * value must not be stored: changeSet() tests `!= OFF` and `== AUTO`, so it
- * would silently behave as Store while no context-menu entry shows a
- * checkmark, leaving the user no way to see or change the active mode. */
+// True for every NODEPOSMODE value a valid preset can contain. An unknown
+// value must not be stored: changeSet() tests `!= OFF` and `== AUTO`, so it
+// would silently behave as Store while no context-menu entry shows a
+// checkmark, leaving the user no way to see or change the active mode.
 inline bool isValidNodePosMode(int mode) {
 	return mode == (int)NODEPOSMODE::OFF
 		|| mode == (int)NODEPOSMODE::STORE
@@ -92,13 +92,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	typedef XyScreenModule<SNAPSHOTS> Sc;
 	typedef XySeqModule<1> Seq;
 
-	/** [Stored to JSON] */
+	// [Stored to JSON]
 	int panelTheme = 0;
 
-	/** [Stored to JSON]
-	 *  Written from the UI thread (context menu via createValuePtrMenuItem, dataFromJson)
-	 *  and read from the engine thread (process())
-	 */
+	// [Stored to JSON] Written from the UI thread (context menu via
+	// createValuePtrMenuItem, dataFromJson) and read from the engine thread (process())
 	std::atomic<int> snapshotsUsed{SNAPSHOTS};
 
 	float dist[SNAPSHOTS];
@@ -111,35 +109,31 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	float outUiY, outInY;
 	dsp::ExponentialFilter outYfilter;
 
-	/** [Stored to JSON]
-	 *  Written by the engine thread (process(): set-CV and the button scan) and
-	 *  the UI thread (dataFromJson); read by the UI thread (context menus,
-	 *  drawLayer, getItemLabel) and by TRANSIT's engine-side presetProcessXyPad
-	 *  through getPadFactors(). The most actively written of the shared fields,
-	 *  so it is atomic like snapshotsUsed and setCvMode.
-	 */
+	// [Stored to JSON] Written by the engine thread (process(): set-CV and
+	// the button scan) and the UI thread (dataFromJson); read by the UI thread
+	// (context menus, drawLayer, getItemLabel) and by TRANSIT's engine-side
+	// presetProcessXyPad through getPadFactors(). The most actively written of
+	// the shared fields, so it is atomic like snapshotsUsed and setCvMode.
 	std::atomic<int> currentSet{0};
-	/** [Stored to JSON]
-	 *  Written from the UI thread (context menu via createValuePtrMenuItem, dataFromJson)
-	 *  and read from the engine thread (process()).
-	 */
+	// [Stored to JSON] Written from the UI thread (context menu via 
+	// createValuePtrMenuItem, dataFromJson) and read from the engine thread (process()).
 	std::atomic<SETCVMODE> setCvMode{SETCVMODE::TRIG_FWD};
 	dsp::SchmittTrigger setCvTrigger;
-	/** Set last selected by the VOLT/C4 CV, or -1 to apply the CV on the next tick. */
+	// Set last selected by the VOLT/C4 CV, or -1 to apply the CV on the next tick.
 	int setCvLast = -1;
-	/** [Stored to JSON] written from the UI thread (context menu, dataFromJson),
-	 *  read from the engine thread (process(), on set change) and the UI thread. */
+	// [Stored to JSON] written from the UI thread (context menu, dataFromJson),
+	// read from the engine thread (process(), on set change) and the UI thread.
 	std::atomic<NODEPOSMODE> nodePosMode{NODEPOSMODE::OFF};
 	std::vector<TransitPadSource> snapshots[SETS];
-	/** [Stored to JSON] per-set Mix-cursor position; used only when nodePosMode != OFF. */
+	// [Stored to JSON] per-set Mix-cursor position; used only when nodePosMode != OFF.
 	float mixX[SETS], mixY[SETS];
 	NVGcolor setColor[SETS];
-	/** [Stored to JSON] per-set custom label; empty string means "use default" */
+	// [Stored to JSON] per-set custom label; empty string means "use default"
 	std::string setLabel[SETS];
-	/** Set last copied via the "Copy" context-menu item, or -1. Not persisted. */
+	// Set last copied via the "Copy" context-menu item, or -1. Not persisted.
 	int setCopy = -1;
 
-	/** [Stored to JSON] when true, pad drag and drop-binding are disabled */
+	// [Stored to JSON] when true, pad drag and drop-binding are disabled.
 	bool locked = false;
 
 	ClockDividerEx buttonDivider;
@@ -157,14 +151,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
-		// Listen on the "Transit" topic so updateMasterModule() re-verifies on
-		// any connect/disconnect in the patch, not just this pad's direct
-		// neighbour (see updateMasterModule()).
 		registerModuleListener("Transit", this);
 		moduleChangedFlag = true;
 
-		// Seed LOW, not the trigger's default UNINITIALIZED, since SET_PARAM
-		// always starts at 0.f (see configSwitch below).
 		for (uint8_t s = 0; s < SETS; s++) {
 			setButtonTrigger[s].s = dsp::BooleanTrigger::LOW;
 		}
@@ -173,15 +162,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			TransitPadSetParamQuantity* q = configSwitch<TransitPadSetParamQuantity>(SET_PARAM + s, 0.0f, 1.0f, 0.0f, string::f("Snapshot-set #%i", s + 1));
 			q->tpModule = this;
 			q->id = s;
-			// Momentary: randomizing it would silently latch a set change on the
-			// next buttonDivider tick.
 			q->randomizeEnabled = false;
 		}
 
-		// randomizeEnabled = false throughout: onRandomize() below drives position
-		// itself, bounded to the active snapshotsUsed nodes -- Module::onRandomize()'s
-		// own per-param sweep has no notion of that bound and would otherwise
-		// also randomize every inactive node's position independently.
 		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 0, 0.0f, 1.0f, 0.0f, "Snapshot A x-pos")->randomizeEnabled = false;
 		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 0, 0.0f, 1.0f, 0.0f, "Snapshot A y-pos")->randomizeEnabled = false;
 		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 1, 0.0f, 1.0f, 1.0f, "Snapshot B x-pos")->randomizeEnabled = false;
@@ -239,26 +222,6 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		notifyModuleListeners("Transit");
 	}
 
-	// Walks left through any chain of +T expanders to find the host TRANSIT.
-	// Needed because removing a Transit two or more hops away only notifies
-	// its direct +T neighbour via onExpanderChange, not this pad, so
-	// masterModule must be re-resolved rather than cleared by the destructor.
-	void updateMasterModule() {
-		Module* m = leftExpander.module;
-		int c = 0;
-		while (m) {
-			if (m->model == modelTransit) {
-				masterModule = dynamic_cast<TransitPadMaster*>(m);
-				return;
-			}
-			if (m->model != modelTransitEx) break;
-			m = m->leftExpander.module;
-			c++;
-			if (c > 15) break;
-		}
-		masterModule = nullptr;
-	}
-
 	void onReset(const ResetEvent& e) override {
 		Sc::selection = XyScreenSelection();
 		init();
@@ -280,7 +243,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	void onRandomize(const RandomizeEvent& e) override {
 		// Only the active pad points, matching the rest of the module's
 		// convention that anything at id >= snapshotsUsed is neither drawn nor
-		// draggable and must not be touched (see process()'s weight-reset loop).
+		// draggable and must not be touched (see setSnapshotsUsed()).
 		const int n = snapshotsUsed.load(std::memory_order_relaxed);
 		for (int i = 0; i < n; i++) {
 			Sc::nodes.setXyImmediate(i, random::uniform(), random::uniform());
@@ -309,6 +272,26 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 
 		Module::onRandomize(e);
+	}
+
+	// Walks left through any chain of +T expanders to find the host TRANSIT.
+	// Needed because removing a Transit two or more hops away only notifies
+	// its direct +T neighbour via onExpanderChange, not this pad, so
+	// masterModule must be re-resolved rather than cleared by the destructor.
+	void updateMasterModule() {
+		Module* m = leftExpander.module;
+		int c = 0;
+		while (m) {
+			if (m->model == modelTransit) {
+				masterModule = dynamic_cast<TransitPadMaster*>(m);
+				return;
+			}
+			if (m->model != modelTransitEx) break;
+			m = m->leftExpander.module;
+			c++;
+			if (c > 15) break;
+		}
+		masterModule = nullptr;
 	}
 
 	void init() {
@@ -412,14 +395,20 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 	}
 
-	// Changes the number of active snapshot points, resetting newly-activated
-	// ones (in every set) to defaults so stale leftover state can't resurface.
+	// Changes the number of active snapshot points. Newly-activated ones (in
+	// every set) reset to defaults; deactivated ones keep their geometry but
+	// have their weight cleared, since nothing else re-derives it.
 	void setSnapshotsUsed(int n) {
 		int oldUsed = snapshotsUsed.load(std::memory_order_relaxed);
 		snapshotsUsed = n;
 		for (int i = oldUsed; i < n; i++) {
 			for (uint8_t s = 0; s < SETS; s++) {
 				resetSnapshotDefaults(s, i);
+			}
+		}
+		for (int i = n; i < oldUsed; i++) {
+			for (uint8_t s = 0; s < SETS; s++) {
+				snapshots[s][i].weight = 0.f;
 			}
 		}
 	}
@@ -589,14 +578,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			}
 		}
 
-		// Snapshots above the active count are not drawn and not draggable, so they
-		// must not keep contributing either: without this, lowering "Number of
-		// snapshots" (or loading a patch with a lower count) leaves whatever weight
-		// they last earned in place, and TRANSIT keeps blending a pad point the user
-		// can no longer see or move.
+		// Snapshots above the active count are not drawn and not draggable, so
+		// their connector-line distance must not read as in-range either. Their
+		// weight is cleared once, when they're deactivated -- see setSnapshotsUsed().
 		for (int j = n; j < SNAPSHOTS; j++) {
 			dist[j] = std::numeric_limits<float>::infinity();
-			snapshots[currentSet][j].weight = 0.f;
 		}
 
 		if (lightDivider.process()) {
@@ -606,12 +592,12 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 	}
 
-	/** XySeqModule: the only motion-sequence port is the Out cursor's (index 0). */
+	// XySeqModule: the only motion-sequence port is the Out cursor's (index 0).
 	bool seqPortHidden(int port) override {
 		return port != 0;
 	}
 
-	/** XyScreenModule: one-time setup for the Out (cursor) point, called from initNodes(). */
+	// XyScreenModule: one-time setup for the Out (cursor) point, called from initNodes().
 	void initExtra() override {
 		setCursorXyImmediate(0, paramQuantities[OUT_X_POS]->getDefaultValue(), paramQuantities[OUT_Y_POS]->getDefaultValue());
 		outXfilter.setTau(0.05f);
@@ -629,42 +615,39 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 	}
 
-	/** XyScreenModule: how many of the SNAPSHOTS nodes are currently active. */
+	// XyScreenModule: how many of the SNAPSHOTS nodes are currently active. */
 	inline uint8_t nodeCountActive() override {
 		return (uint8_t)snapshotsUsed.load(std::memory_order_relaxed);
 	}
 
-	/** XyScreenModule: the node (snapshot) x-position param. */
+	// XyScreenModule: the node (snapshot) x-position param.
 	engine::ParamQuantity* getNodePqX(uint8_t id) override {
 		return paramQuantities[SNAPSHOT_X_POS + id];
 	}
 
-	/** XyScreenModule: the node (snapshot) y-position param. */
+	// XyScreenModule: the node (snapshot) y-position param.
 	engine::ParamQuantity* getNodePqY(uint8_t id) override {
 		return paramQuantities[SNAPSHOT_Y_POS + id];
 	}
 
-	/** XyScreenCursor: the single Out cursor. */
+	// XyScreenCursor: the single Out cursor.
 	uint8_t cursorCount() const override {
 		return 1;
 	}
 
-	/** XyScreenCursor: the param-backed x-position the Out cursor widget draws. */
+	// XyScreenCursor: the param-backed x-position the Out cursor widget draws.
 	float getCursorXFinal(uint8_t id) const override {
 		return paramQuantities[OUT_X_POS]->getParam()->getValue();
 	}
 
-	/** XyScreenCursor: the param-backed y-position the Out cursor widget draws. */
+	// XyScreenCursor: the param-backed y-position the Out cursor widget draws.
 	float getCursorYFinal(uint8_t id) const override {
 		return paramQuantities[OUT_Y_POS]->getParam()->getValue();
 	}
 
-	/** XyScreenCursor: write the Out cursor's position immediately (drag end, undo/redo).
-	 * Out-of-range id is a silent no-op, matching XyScreenNodes's bounds
-	 * checks and the rest of the codebase's convention for bad indices.
-	 * (There is only one cursor here, always at id 0, so the array-overrun
-	 * risk this guards against elsewhere doesn't apply — but an id != 0
-	 * still shouldn't silently act as if it addressed the Out cursor.) */
+	// XyScreenCursor: write the Out cursor's position immediately (drag end,
+	// undo/redo). Only id 0 (the one cursor) is valid; anything else is a
+	// silent no-op, matching the codebase's convention for bad indices.
 	void setCursorXyImmediate(uint8_t id, float x, float y) override {
 		if (id >= 1) return;
 		paramQuantities[OUT_X_POS]->getParam()->setValue(x);
@@ -673,24 +656,24 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		outYfilter.out = outUiY = y;
 	}
 
-	/** XyScreenCursor: write the Out cursor's position through the UI filter (live drag). */
+	// XyScreenCursor: write the Out cursor's position through the UI filter (live drag).
 	void setCursorXyFiltered(uint8_t id, float x, float y) override {
 		if (id >= 1) return;
 		outUiX = x;
 		outUiY = y;
 	}
 
-	/** XyScreenModule: distance from the Out cursor to a snapshot node, for the connector-line draw. */
+	// XyScreenModule: distance from the Out cursor to a snapshot node, for the connector-line draw.
 	inline float getCursorToNodeDistance(uint8_t cursorId, uint8_t nodeId) override {
 		return dist[nodeId];
 	}
 
-	/** XyScreenModule: default radius for a new snapshot node. */
+	// XyScreenModule: default radius for a new snapshot node.
 	inline float getNodeRadiusDefault(uint8_t id) override {
 		return 1.f;
 	}
 
-	/** XyScreenModule: color a snapshot node is drawn with — the active set's color. */
+	// XyScreenModule: color a snapshot node is drawn with — the active set's color.
 	virtual inline NVGcolor getNodeColor(uint8_t id) override {
 		return setColor[currentSet];
 	}
@@ -722,14 +705,17 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	}
 
 	std::string getItemLabel(uint8_t s, uint8_t id) {
-		if (masterModule == nullptr)
+		if (masterModule == nullptr) {
 			return "<No TRANSIT module>";
+		}
 		if (snapshots[s][id].id >= 0) {
 			std::string custom = masterModule->getSlotLabel(snapshots[s][id].id);
-			if (custom != "")
+			if (custom != "") {
 				return string::f("Snapshot #%i: %s", snapshots[s][id].id + 1, custom.c_str());
-			else
+			}
+			else {
 				return string::f("Snapshot #%i", snapshots[s][id].id + 1);
+			}
 		}
 		else {
 			return "No snapshot";
@@ -813,7 +799,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		if (lockedJ) locked = json_is_true(lockedJ);
 
 		int su = json_integer_value(json_object_get(rootJ, "snapshotsUsed"));
-		snapshotsUsed = std::max(1, std::min(su, (int)SNAPSHOTS));
+		setSnapshotsUsed(std::max(1, std::min(su, (int)SNAPSHOTS)));
 
 		json_t* nodesJ = json_object_get(rootJ, "nodes");
 		size_t maxNodes = std::min((size_t)SNAPSHOTS, json_array_size(nodesJ));
@@ -901,26 +887,26 @@ struct TransitPadSnapshotDragWidget : XyScreenNodeDragWidget<MODULE> {
 		}
 	}
 
-	/** XyScreenDragWidgetBase: single-character label drawn inside this node. */
+	// XyScreenDragWidgetBase: single-character label drawn inside this node.
 	char getItemChar() override {
 		return 'A' + AW::id;
 	}
 
-	/** XyScreenDragWidgetBase: the base class's default (a dark navy) reads
-	 *  poorly against the pad's own set colors; pick black or white by the
-	 *  node color's own luminance so it stays legible against all of them,
-	 *  including white/bright set colors where a fixed white would not. */
+	// XyScreenDragWidgetBase: the base class's default (a dark navy) reads
+	// poorly against the pad's own set colors; pick black or white by the
+	// node color's own luminance so it stays legible against all of them,
+	// including white/bright set colors where a fixed white would not.
 	NVGcolor getSelectedTextColor(NVGcolor cc) override {
 		float brightness = cc.r * 0.299f + cc.g * 0.587f + cc.b * 0.114f;
 		return brightness > 0.5f ? nvgRGB(0x08, 0x08, 0x08) : nvgRGB(0xf0, 0xf0, 0xf0);
 	}
 
-	/** XyScreenDragWidgetBase: label shown in this node's context menu and tooltip. */
+	// XyScreenDragWidgetBase: label shown in this node's context menu and tooltip.
  	std::string getItemName() override {
 		return AW::module->getItemLabel(AW::module->currentSet, AW::id);
 	}
 
-	/** XyScreenDragWidgetBase: items prepended to this node's context menu. */
+	// XyScreenDragWidgetBase: items prepended to this node's context menu.
 	void prependContextMenu(Menu* menu) override {
 		menu->addChild(createMenuItem("Bind snapshot", "", [=]() {
 			// Re-check masterModule inside the lambda; Transit may have been
@@ -1043,17 +1029,17 @@ struct TransitPadOutDragWidget : XyScreenCursorDragWidget<MODULE> {
 		}
 	}
 
-	/** XyScreenDragWidgetBase: label shown in this cursor's context menu and tooltip. */
+	// XyScreenDragWidgetBase: label shown in this cursor's context menu and tooltip.
  	std::string getItemName() override {
 		return "Mix";
 	}
 
-	/** XyScreenDragWidgetBase: single-character label drawn inside this cursor. */
+	// XyScreenDragWidgetBase: single-character label drawn inside this cursor.
 	char getItemChar() override {
 		return '+';
 	}
 
-	/** XyScreenDragWidgetBase: extra items appended to this cursor's context menu. */
+	// XyScreenDragWidgetBase: extra items appended to this cursor's context menu.
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Motion-Sequence"));
@@ -1192,7 +1178,7 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 		}
 	}
 
-	/** XyScreenWidget: extra items appended to the whole screen's context menu. */
+	// XyScreenWidget: extra items appended to the whole screen's context menu.
 	void appendContextMenu(Menu* menu) override {
 		using StoermelderPackOne::Rack::createAtomicValuePtrMenuItem;
 		menu->addChild(new MenuSeparator());
@@ -1295,7 +1281,7 @@ struct TransitPadXySeqLedDisplay : XySeqLedDisplay<MODULE> {
 		}
 	}
 
-	/** XySeqLedDisplay: label shown for this port's motion-sequence editor. */
+	// XySeqLedDisplay: label shown for this port's motion-sequence editor.
 	std::string getPortName() override {
 		return "Mix";
 	}
@@ -1707,8 +1693,6 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		addInput(createInputCentered<StoermelderPort>(Vec(84.5f, 327.0f), module, MODULE::MIX_X_INPUT));
 		addInput(createInputCentered<StoermelderPort>(Vec(140.5f, 327.0f), module, MODULE::MIX_Y_INPUT));
 
-		//addParam(createParamCentered<XyScreenDummyMapButton>(Vec(77.6f, 309.8f), module, MODULE::OUT_X_POS));
-		//addParam(createParamCentered<XyScreenDummyMapButton>(Vec(147.4f, 309.8f), module, MODULE::OUT_Y_POS));
 		addParam(createParamCentered<XyScreenMapWidget<StoermelderTrimpot>>(Vec(60.5f, 327.0f), module, MODULE::OUT_X_POS));
 		addParam(createParamCentered<XyScreenMapWidget<StoermelderTrimpot>>(Vec(164.5f, 327.0f), module, MODULE::OUT_Y_POS));
 
@@ -1796,10 +1780,6 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		ThemedModuleWidget<MODULE>::onHoverKey(e);
 	}
 
-	// Snapshot-set options (number of snapshots, set CV mode, node-position
-	// mode, lock) live on the screen widget's own context menu, but a user
-	// right-clicking the module elsewhere shouldn't have to find the screen
-	// first -- so mirror them here too.
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
 		if (module && screenWidget) screenWidget->appendContextMenu(menu);

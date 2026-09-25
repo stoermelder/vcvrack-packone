@@ -4,9 +4,7 @@
 // Split out of a single TransitPad.test.module.hpp; see TransitPad.test.cpp
 // for how this file is wired into the test binary.
 
-// ============================================================
 // Transit + TransitPad integration: process() interpolation
-// ============================================================
 
 // Helper module with parameters that Transit can bind and control
 struct TestParamModule : rack::Module {
@@ -588,12 +586,10 @@ TEST_CASE("presetProcessXyPad: interpolates two bound parameters independently",
 }
 
 
-// ============================================================
 // End-to-end signal chain:
 // mix position (CV/sequence) → dist[] → radius/amount → weight → Transit param
 // Unlike the tests above, the weights are never assigned directly — they are
 // computed by pad->process() from the mix-position inputs.
-// ============================================================
 
 TEST_CASE("XY-pad chain: mix position CV drives the target parameter between presets", "[TransitPad][Transit]") {
 	Test::Harness h;
@@ -604,7 +600,7 @@ TEST_CASE("XY-pad chain: mix position CV drives the target parameter between pre
 	connectPad(h, r.transit, r.pad);
 
 	// Default layout: snapshot A at (0,0) bound to slot 0, B at (1,0) bound to slot 1
-	r.pad->snapshotsUsed = 2;
+	r.pad->setSnapshotsUsed(2);
 	connectMixInputs(r.pad);
 
 	// Mix point on corner A → only preset 0 contributes
@@ -633,7 +629,7 @@ TEST_CASE("XY-pad chain: amount scales snapshot weight and shifts the blend", "[
 	connectPad(h, r.transit, r.pad);
 
 	// Both snapshots equidistant (0.5) from the mix point at (0.5, 0)
-	r.pad->snapshotsUsed = 2;
+	r.pad->setSnapshotsUsed(2);
 	connectMixInputs(r.pad);
 	setMixVoltage(r.pad, 0.f, -5.f);
 
@@ -661,7 +657,7 @@ TEST_CASE("XY-pad chain: radius cuts off snapshot contribution at the boundary",
 
 	// Snapshot A at (0,0); the mix point moves along the x-axis so dist == mix.x
 	// (X voltage → mix.x = v/10 + 0.5)
-	r.pad->snapshotsUsed = 1;
+	r.pad->setSnapshotsUsed(1);
 	connectMixInputs(r.pad);
 	setMixVoltage(r.pad, 0.f, -5.f);
 
@@ -699,7 +695,7 @@ TEST_CASE("XY-pad chain: switching sets via button and CV changes the Transit ou
 
 	// Snapshot A sits near the mix point with a nonzero weight in every set;
 	// which preset it reaches depends on the per-set binding
-	r.pad->snapshotsUsed = 1;
+	r.pad->setSnapshotsUsed(1);
 
 	// Set 0 keeps the default binding to slot 0
 	r.run(5);
@@ -747,7 +743,7 @@ TEST_CASE("XY-pad chain: motion sequence drives the mix position", "[TransitPad]
 		r.save(0, 0.0f);
 		r.save(2, 1.0f);
 		connectPad(h, r.transit, r.pad);
-		r.pad->snapshotsUsed = 3;
+		r.pad->setSnapshotsUsed(3);
 
 		// Two-point linear sequence along the A→C diagonal
 		r.pad->seqData[0][0].length = 2;
@@ -807,12 +803,12 @@ TEST_CASE("XY-pad chain: snapshotsUsed bounds which snapshots contribute weight"
 	connectPad(h, r.transit, r.pad);
 
 	// Only A/B are active, so only they contribute: both hold 0.0
-	r.pad->snapshotsUsed = 2;
+	r.pad->setSnapshotsUsed(2);
 	r.run(5);
 	REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
 
 	// Raising the count lets C/D join the blend
-	r.pad->snapshotsUsed = 4;
+	r.pad->setSnapshotsUsed(4);
 	r.run(5);
 	REQUIRE(r.paramValue() == Catch::Approx(0.5f).margin(0.001f));
 
@@ -820,18 +816,18 @@ TEST_CASE("XY-pad chain: snapshotsUsed bounds which snapshots contribute weight"
 	// used to be broken: a snapshot that had already earned a weight kept it
 	// forever, so C/D went on blending after the user shrank the pad and they
 	// were no longer drawn or draggable.
-	r.pad->snapshotsUsed = 2;
+	r.pad->setSnapshotsUsed(2);
 	r.run(5);
 	REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
 }
 
 
 // Regression: lowering "Number of snapshots" must stop the now-inactive pad
-// points from contributing. Before the fix, process() only ever wrote weights
-// for j < snapshotsUsed, so a snapshot that had earned a weight while the count
-// was high kept that weight indefinitely — presetProcessXyPad iterates all of
-// getPadFactors(), not just the active prefix, so TRANSIT kept blending a pad
-// point that had vanished from the screen.
+// points from contributing. setSnapshotsUsed() is what clears their weight,
+// in every set -- without it, a snapshot that had earned a weight while the
+// count was high would keep it indefinitely, since presetProcessXyPad
+// iterates all of getPadFactors(), not just the active prefix, so TRANSIT
+// would keep blending a pad point that had vanished from the screen.
 TEST_CASE("Lowering snapshotsUsed clears the weights of the now-inactive snapshots", "[TransitPad][Transit]") {
 	Test::Harness h;
 	PadRig r = PadRig::make(h);
@@ -843,7 +839,7 @@ TEST_CASE("Lowering snapshotsUsed clears the weights of the now-inactive snapsho
 	// Pad point A (bound to slot 0, value 0.0) and pad point E (bound to slot 4,
 	// value 1.0) both sit exactly on the mix point, so both reach full weight
 	// and the blend lands halfway between the two presets.
-	r.pad->snapshotsUsed = 8;
+	r.pad->setSnapshotsUsed(8);
 	r.pad->snapshots[r.pad->currentSet][4].id = 4;
 	r.pad->nodes.setXyImmediate(0, 0.5f, 0.5f);
 	r.pad->nodes.setXyImmediate(4, 0.5f, 0.5f);
@@ -853,14 +849,19 @@ TEST_CASE("Lowering snapshotsUsed clears the weights of the now-inactive snapsho
 
 	// Shrink the pad to A/B only. E is no longer an active pad point, so its
 	// weight must be cleared and the blend must fall back to A alone.
-	r.pad->snapshotsUsed = 2;
+	r.pad->setSnapshotsUsed(2);
 	r.run(20);
 	REQUIRE(r.pad->snapshots[r.pad->currentSet][4].weight == 0.f);
 	REQUIRE(r.paramValue() == Catch::Approx(0.0f).margin(0.001f));
 
-	// Same via the patch-load path: dataFromJson writes snapshotsUsed directly,
-	// so it has to be covered by the same clearing and not only by the menu.
-	r.pad->snapshotsUsed = 8;
+	// Same via the patch-load path: dataFromJson routes through
+	// setSnapshotsUsed(), so it has to be covered by the same clearing and
+	// not only by the menu. Raising the count through the real API resets
+	// point 4's binding along with its weight (see "Raising the snapshot
+	// count resets newly-activated points to defaults"), so it's rebound here.
+	r.pad->setSnapshotsUsed(8);
+	r.pad->snapshots[r.pad->currentSet][4].id = 4;
+	r.pad->nodes.setXyImmediate(4, 0.5f, 0.5f);
 	r.run(20);
 	REQUIRE(r.paramValue() == Catch::Approx(0.5f).margin(0.001f));
 
@@ -906,7 +907,7 @@ TEST_CASE("bindSnapshot binds and unbinds pad points to Transit slots", "[Transi
 		connectPad(h, r.transit, r.pad);
 
 		// Park the mix point on snapshot A (weight saturates at 1.0)
-		r.pad->snapshotsUsed = 1;
+		r.pad->setSnapshotsUsed(1);
 		connectMixInputs(r.pad);
 		setMixVoltage(r.pad, -5.f, -5.f);
 
@@ -1070,7 +1071,7 @@ TEST_CASE("presetProcessXyPad does not write a param whose preset is shorter tha
 	target2->params[TestParamModule::PARAM_A].setValue(1.f);
 
 	// Park the mix point on snapshot A, the one bound to slot 0.
-	r.pad->snapshotsUsed = 1;
+	r.pad->setSnapshotsUsed(1);
 	connectMixInputs(r.pad);
 	setMixVoltage(r.pad, -5.f, -5.f);
 
@@ -1083,7 +1084,6 @@ TEST_CASE("presetProcessXyPad does not write a param whose preset is shorter tha
 }
 
 
-// ============================================================
 // Transit + TransitEx ("+T") + TransitPad chain
 // Per the manual, up to 14 +T expanders can sit between TRANSIT and
 // TRANSIT-PAD, and their snapshots are reachable from the pad just like the
@@ -1091,7 +1091,6 @@ TEST_CASE("presetProcessXyPad does not write a param whose preset is shorter tha
 // chain, so the cross-expander slot addressing (Transit::getSlot() routing
 // index >= NUM_PRESETS to N[index / NUM_PRESETS], i.e. onto the +T) is
 // exercised here for the first time with a pad at the end of the chain.
-// ============================================================
 
 TEST_CASE("Transit+TransitEx+TransitPad: chain discovery reaches the pad through a +T expander", "[TransitPad][Transit][TransitEx]") {
 	Test::Harness h;
@@ -1133,7 +1132,7 @@ TEST_CASE("Transit+TransitEx+TransitPad: a snapshot bound to a slot on the +T dr
 	transit->presetSave(12);
 
 	// Bind pad point A to that +T-hosted slot and park the mix point on it.
-	pad->snapshotsUsed = 1;
+	pad->setSnapshotsUsed(1);
 	pad->bindSnapshot(0, 12);
 	pad->inputs[TransitPadModule<>::MIX_X_INPUT].channels = 1;
 	pad->inputs[TransitPadModule<>::MIX_Y_INPUT].channels = 1;
@@ -1171,7 +1170,7 @@ TEST_CASE("Transit+TransitEx+TransitPad: pad blends across a slot boundary spann
 	target->params[TestParamModule::PARAM_A].setValue(1.0f);
 	transit->presetSave(12);
 
-	pad->snapshotsUsed = 2;
+	pad->setSnapshotsUsed(2);
 	pad->bindSnapshot(0, 11);
 	pad->bindSnapshot(1, 12);
 	pad->inputs[TransitPadModule<>::MIX_X_INPUT].channels = 1;
@@ -1250,7 +1249,7 @@ TEST_CASE("onRandomize only touches active pad points", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
 
-	m->snapshotsUsed = 3;
+	m->setSnapshotsUsed(3);
 	for (uint8_t i = 0; i < 8; i++) m->nodes.setXyImmediate(i, 0.5f, 0.5f);
 
 	Module::RandomizeEvent e;
@@ -1268,7 +1267,7 @@ TEST_CASE("onRandomize leaves bindings untouched with no Transit connected", "[T
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
 	REQUIRE(m->masterModule == nullptr);
 
-	m->snapshotsUsed = 2;
+	m->setSnapshotsUsed(2);
 	m->bindSnapshot(0, 5);
 	m->bindSnapshot(1, -1);
 
@@ -1288,7 +1287,7 @@ TEST_CASE("onRandomize leaves bindings untouched when the chain has no saved pre
 	REQUIRE(pad->masterModule == transit);
 
 	// Fresh Transit: no slot has ever been saved to.
-	pad->snapshotsUsed = 2;
+	pad->setSnapshotsUsed(2);
 	pad->bindSnapshot(0, 3);
 	pad->bindSnapshot(1, -1);
 
@@ -1312,7 +1311,7 @@ TEST_CASE("onRandomize rebinds active pad points to only the chain's used slots"
 	// rebind landing on either is unambiguous.
 	transit->presetSave(6);
 	transit->presetSave(9);
-	pad->snapshotsUsed = 4;
+	pad->setSnapshotsUsed(4);
 
 	bool sawSlot6 = false, sawSlot9 = false;
 	for (int trial = 0; trial < 30; trial++) {
