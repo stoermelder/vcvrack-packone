@@ -200,7 +200,9 @@ TRANSIT-PAD provides 8 snapshot-sets, each holding its own assignment of the 8 p
 
 The 8 buttons below the pad select the active set. The button of the active set lights up in the set's own color; the others are shown faintly in theirs. Every set is assigned a fixed default color (cycling through green, magenta, blue, yellow, cyan, white, red, grey) and all snapshot points of the current set are rendered in that color. The color of a single set can be changed via the context menu of the set-button or via the context menu of any snapshot point on the pad (sub-menu _Color_ under _Current set_).
 
-Each snapshot-set can be given a custom text label (e.g. _Drums_, _Bass_, _Pad_) to make the 8 buttons easier to tell apart. Right-click a set-button and choose _Label_ to enter a label; it is shown in the button's tooltip. The set-button's context menu also lists which snapshot each pad point of that set is bound to.
+Each snapshot-set can be given a custom text label (e.g. _Drums_, _Bass_, _Pad_) to make the 8 buttons easier to tell apart. Right-click a set-button and choose _Label_ to enter a label; it is shown in the button's tooltip, which also shows _Active_ for the currently selected set. The set-button's context menu also lists which snapshot each pad point of that set is bound to.
+
+A set's snapshot bindings can be copied to another set: right-click the source set-button and choose _Copy_, then right-click the target set-button and choose _Paste_. If _Snapshot-set node positions_ (see [Context menu](#context-menu)) is set to _Store_ or _Auto_, the pad-point layout and _Mix_ point position are copied along with the bindings; the set's color and label are never affected by _Copy_/_Paste_.
 
 A snapshot-set can also be selected by CV through the _Snapshot-set select CV_-input on the bottom-right of the module. The CV-mode is configured through the context menu of the display or of the module:
 

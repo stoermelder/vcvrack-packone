@@ -53,6 +53,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			if (tpModule && id >= 0) return tpModule->getSetLabel(id);
 			return name;
 		}
+
+		std::string getDisplayValueString() override {
+			if (tpModule && id >= 0 && tpModule->currentSet == id) return "Active";
+			return "";
+		}
 	};
 
 	enum ParamIds {
@@ -131,6 +136,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	NVGcolor setColor[SETS];
 	/** [Stored to JSON] per-set custom label; empty string means "use default" */
 	std::string setLabel[SETS];
+	/** Set last copied via the "Copy" context-menu item, or -1. Not persisted. */
+	int setCopy = -1;
 
 	/** [Stored to JSON] when true, pad drag and drop-binding are disabled */
 	bool locked = false;
@@ -350,6 +357,28 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			Sc::nodes.setAmountImmediate(i, snapshots[s][i].amount);
 		}
 		setCursorXyImmediate(0, mixX[s], mixY[s]);
+	}
+
+	// Copies set s's snapshot bindings into set t -- not color or label, which
+	// stay per-set identity, not part of the "content" of a set. The pad-point
+	// geometry and Mix cursor (x/y/radius/amount, mixX/mixY) are only
+	// meaningful while node-position mode is on, so they're copied along with
+	// the bindings in that case and left untouched otherwise.
+	void copySet(uint8_t s, uint8_t t) {
+		bool copyPositions = nodePosMode.load(std::memory_order_relaxed) != NODEPOSMODE::OFF;
+		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+			snapshots[t][i].id = snapshots[s][i].id;
+			if (copyPositions) {
+				snapshots[t][i].x = snapshots[s][i].x;
+				snapshots[t][i].y = snapshots[s][i].y;
+				snapshots[t][i].radius = snapshots[s][i].radius;
+				snapshots[t][i].amount = snapshots[s][i].amount;
+			}
+		}
+		if (copyPositions) {
+			mixX[t] = mixX[s];
+			mixY[t] = mixY[s];
+		}
 	}
 
 	// Reset every set's stored layout to defaults, so switching mode to Off
@@ -1373,6 +1402,23 @@ struct TransitPadSetButton : app::Switch {
 			// Disabled outside manual Store mode: Auto already captures on switch.
 			menu->addChild(createMenuItem("Store positions", "", [=]() { m->storeNodePositions(s); }, nodePosMode != NODEPOSMODE::STORE));
 		}
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuItem("Copy", "", [=]() { m->setCopy = s; }));
+
+		struct PasteItem : MenuItem {
+			MODULE* module;
+			size_t setIndex;
+			void step() override {
+				int i = module->setCopy;
+				rightText = i >= 0 ? string::f("Set %d", i + 1) : "";
+				disabled = i < 0 || (size_t)i == setIndex;
+				MenuItem::step();
+			}
+			void onAction(const event::Action& e) override {
+				module->copySet(module->setCopy, setIndex);
+			}
+		};
+		menu->addChild(construct<PasteItem>(&MenuItem::text, "Paste", &PasteItem::module, m, &PasteItem::setIndex, s));
 		menu->addChild(new MenuSeparator());
 		for (size_t i = 0; i < module->nodeCountActive(); i++) {
 			menu->addChild(createMenuLabel(module->getItemLabel(setIndex, i)));

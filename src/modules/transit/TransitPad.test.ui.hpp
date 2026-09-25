@@ -520,13 +520,11 @@ TEST_CASE("Amount/Radius slider reset values match the node defaults", "[Transit
 	}
 }
 
-// ============================================================
 // Context menus: node ("Bind snapshot"/"Unbind snapshot"), screen
 // ("Snapshot-set node positions" -> "Off"), its module-level mirror, and
 // the set-button menu ("Store positions", the set-label field, "Reset").
 // Reuses connectPad() (TransitPad.test.expander.hpp) and
 // findPadNodeWidget()/findPadScreenWidget() (above) -- same file/namespace.
-// ============================================================
 
 // Finds a direct MenuItem child by its label text, matching Ahab's
 // findMenuItemByText(): menu items are added as plain widget::Widget
@@ -549,9 +547,7 @@ static TransitPadSetButton<TransitPadModule<>>* findSetButton(rack::app::ModuleW
 }
 
 
-// ============================================================
 // Node context menu: "Bind snapshot" / "Unbind snapshot"
-// ============================================================
 
 TEST_CASE("Node menu: Bind snapshot binds to getSelectedSlot()", "[TransitPad][widget]") {
 	Test::Harness h;
@@ -769,9 +765,7 @@ TEST_CASE("Node menu: Load snapshot switches Pad active off, then applies the bo
 }
 
 
-// ============================================================
 // Screen context menu: "Snapshot-set node positions" -> "Off"
-// ============================================================
 
 // Regression covered elsewhere by calling clearNodePositions() directly; this
 // drives the same action through the actual menu item a user clicks.
@@ -853,9 +847,7 @@ TEST_CASE("Module menu mirror is a no-op without a module (browser preview)", "[
 }
 
 
-// ============================================================
 // Set-button menu: "Store positions", label field, "Reset"
-// ============================================================
 
 TEST_CASE("Set-button menu: Store positions is enabled only in Store mode", "[TransitPad][widget]") {
 	Test::Harness h;
@@ -993,4 +985,129 @@ TEST_CASE("Set-button menu: Reset clears the set's label", "[TransitPad][widget]
 	reset->onAction(*(new event::Action));
 
 	REQUIRE(pad->setLabel[4] == "");
+}
+
+// Set-button menu: "Copy" / "Paste"
+// PasteItem's step() override chains into MenuItem::step(), which measures
+// text via APP->window->vg -- null in every test binary (see FRAMEWORK.md's
+// headless-window traps). So these tests drive the enable/disable + rightText
+// logic through onAction()'s effects rather than calling step() directly.
+
+TEST_CASE("Set-button menu: Copy records the set", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+	auto* button = findSetButton(padWidget, 0);
+	REQUIRE(button != nullptr);
+
+	REQUIRE(pad->setCopy == -1);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* copy = findMenuItemByText(&menu, "Copy");
+	REQUIRE(copy != nullptr);
+	copy->onAction(*(new event::Action));
+
+	REQUIRE(pad->setCopy == 0);
+}
+
+TEST_CASE("Set-button menu: Paste copies snapshot bindings but not color or label", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->snapshots[1][0].id = 5;
+	pad->setColor[1] = nvgRGBA(0x11, 0x22, 0x33, 0xff);
+	pad->setLabel[1] = "Verse";
+	pad->setCopy = 1;
+
+	NVGcolor origColor = pad->setColor[6];
+	pad->setLabel[6] = "Untouched";
+
+	auto* button = findSetButton(padWidget, 6);
+	REQUIRE(button != nullptr);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* paste = findMenuItemByText(&menu, "Paste");
+	REQUIRE(paste != nullptr);
+
+	paste->onAction(*(new event::Action));
+
+	REQUIRE(pad->snapshots[6][0].id == 5);
+	// Color and label are per-set identity, not "content" -- Paste must leave
+	// them alone.
+	REQUIRE(pad->setColor[6].r == Catch::Approx(origColor.r));
+	REQUIRE(pad->setColor[6].g == Catch::Approx(origColor.g));
+	REQUIRE(pad->setColor[6].b == Catch::Approx(origColor.b));
+	REQUIRE(pad->setLabel[6] == "Untouched");
+}
+
+TEST_CASE("Set-button menu: Paste copies pad-point geometry only in a position-store mode", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->snapshots[1][0].id = 5;
+	pad->snapshots[1][0].x = 0.11f;
+	pad->snapshots[1][0].y = 0.22f;
+	pad->snapshots[1][0].radius = 0.33f;
+	pad->snapshots[1][0].amount = 0.44f;
+	pad->mixX[1] = 0.55f;
+	pad->mixY[1] = 0.66f;
+	pad->setCopy = 1;
+
+	auto* button = findSetButton(padWidget, 6);
+	REQUIRE(button != nullptr);
+
+	SECTION("nodePosMode Off: bindings copy, geometry is left alone") {
+		pad->nodePosMode = NODEPOSMODE::OFF;
+		float origX = pad->snapshots[6][0].x;
+		float origMixX = pad->mixX[6];
+
+		ui::Menu menu;
+		button->appendContextMenu(&menu);
+		auto* paste = findMenuItemByText(&menu, "Paste");
+		REQUIRE(paste != nullptr);
+		paste->onAction(*(new event::Action));
+
+		REQUIRE(pad->snapshots[6][0].id == 5);
+		REQUIRE(pad->snapshots[6][0].x == origX);
+		REQUIRE(pad->mixX[6] == origMixX);
+	}
+
+	SECTION("nodePosMode Store: bindings and geometry both copy") {
+		pad->nodePosMode = NODEPOSMODE::STORE;
+
+		ui::Menu menu;
+		button->appendContextMenu(&menu);
+		auto* paste = findMenuItemByText(&menu, "Paste");
+		REQUIRE(paste != nullptr);
+		paste->onAction(*(new event::Action));
+
+		REQUIRE(pad->snapshots[6][0].id == 5);
+		REQUIRE(pad->snapshots[6][0].x == 0.11f);
+		REQUIRE(pad->snapshots[6][0].y == 0.22f);
+		REQUIRE(pad->snapshots[6][0].radius == 0.33f);
+		REQUIRE(pad->snapshots[6][0].amount == 0.44f);
+		REQUIRE(pad->mixX[6] == 0.55f);
+		REQUIRE(pad->mixY[6] == 0.66f);
+	}
+}
+
+// Set-button ParamQuantity: "Active" tooltip
+
+TEST_CASE("Set ParamQuantity reports Active only for the current set", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	h.addWidget<TransitPadWidget>(pad);
+
+	REQUIRE(pad->currentSet == 0);
+	REQUIRE(pad->paramQuantities[TransitPadModule<>::SET_PARAM + 0]->getDisplayValueString() == "Active");
+	REQUIRE(pad->paramQuantities[TransitPadModule<>::SET_PARAM + 1]->getDisplayValueString() == "");
+
+	pad->changeSet(1);
+
+	REQUIRE(pad->paramQuantities[TransitPadModule<>::SET_PARAM + 0]->getDisplayValueString() == "");
+	REQUIRE(pad->paramQuantities[TransitPadModule<>::SET_PARAM + 1]->getDisplayValueString() == "Active");
 }

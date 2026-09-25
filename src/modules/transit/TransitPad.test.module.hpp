@@ -1082,6 +1082,57 @@ TEST_CASE("JSON round-trip preserves per-set snapshot x/y/radius/amount in Store
 }
 
 
+// Every other JSON round-trip test in this file only ever reads/writes
+// snapshots[s][0] -- a bug affecting any other snapshot index (1..SNAPSHOTS-1),
+// in any set, would ship undetected. Cover every index, including the last
+// one, across multiple sets.
+TEST_CASE("JSON round-trip preserves per-set snapshot data at every snapshot index", "[TransitPad][JSON]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	m->nodePosMode = NODEPOSMODE::STORE;
+
+	auto expectedX = [](uint8_t s, uint8_t i) { return 0.01f * s + 0.001f * i; };
+	auto expectedY = [](uint8_t s, uint8_t i) { return 0.02f * s + 0.001f * i; };
+	auto expectedRadius = [](uint8_t s, uint8_t i) { return 0.03f * s + 0.001f * i; };
+	auto expectedAmount = [](uint8_t s, uint8_t i) { return 0.04f * s + 0.001f * i; };
+	auto expectedId = [](uint8_t s, uint8_t i) { return (int)(s * 10 + i); };
+
+	for (uint8_t s = 0; s < 8; s++) {
+		for (uint8_t i = 0; i < 8; i++) {
+			m->snapshots[s][i].id = expectedId(s, i);
+			m->snapshots[s][i].x = expectedX(s, i);
+			m->snapshots[s][i].y = expectedY(s, i);
+			m->snapshots[s][i].radius = expectedRadius(s, i);
+			m->snapshots[s][i].amount = expectedAmount(s, i);
+		}
+	}
+
+	json_t* j = m->dataToJson();
+	for (uint8_t s = 0; s < 8; s++) {
+		for (uint8_t i = 0; i < 8; i++) {
+			m->snapshots[s][i].id = 0;
+			m->snapshots[s][i].x = 0.f;
+			m->snapshots[s][i].y = 0.f;
+			m->snapshots[s][i].radius = 0.f;
+			m->snapshots[s][i].amount = 0.f;
+		}
+	}
+	m->dataFromJson(j);
+	json_decref(j);
+
+	for (uint8_t s = 0; s < 8; s++) {
+		for (uint8_t i = 0; i < 8; i++) {
+			REQUIRE(m->snapshots[s][i].id == expectedId(s, i));
+			REQUIRE(m->snapshots[s][i].x == Catch::Approx(expectedX(s, i)));
+			REQUIRE(m->snapshots[s][i].y == Catch::Approx(expectedY(s, i)));
+			REQUIRE(m->snapshots[s][i].radius == Catch::Approx(expectedRadius(s, i)));
+			REQUIRE(m->snapshots[s][i].amount == Catch::Approx(expectedAmount(s, i)));
+		}
+	}
+}
+
+
 TEST_CASE("JSON round-trip preserves a custom setColor", "[TransitPad][JSON]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
