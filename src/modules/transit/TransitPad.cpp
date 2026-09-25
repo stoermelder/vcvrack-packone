@@ -1395,7 +1395,7 @@ struct TransitPadSetButton : app::Switch {
 		if (layer == 1) {
 			// Inactive sets stay faintly visible in their own color.
 			float brightness = module ? module->lights[MODULE::SET_LIGHT + setIndex].getBrightness() : 1.f;
-			NVGcolor col = module ? module->setColor[setIndex] : color::WHITE;
+			NVGcolor col = module ? module->setColor[setIndex] : colors[setIndex % colors.size()].first;
 			col = color::mult(col, 0.12f + 0.88f * brightness);
 			col.a = 1.f;
 			math::Rect rl = getLedRect();
