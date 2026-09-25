@@ -2480,7 +2480,7 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 
 	void appendContextMenu(Menu* menu) override {
 		SpliceKitModule* module = this->module;
-		if (!module) return;
+		ThemedModuleWidget<SpliceKitModule>::appendContextMenu(menu);
 		menu->addChild(Tutorial::createTutorialMenuItem(this, [this]() { return spliceKitTutorial(this); }));
 
 		menu->addChild(new MenuSeparator);

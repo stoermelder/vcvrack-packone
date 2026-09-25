@@ -21,6 +21,7 @@
     - Fixed missing voltage-mode options in the context menu of the mix-ports
     - Fixed out-of-range sequence selection for _SEQ_-mode "0..10V"
     - Fixed "Scale" out-mode using the configured number of mix-ports
+    - Fixed broken "Clear" in SEQ-EDIT mode
 - Module [DIRT](./docs/dirt/Dirt.md)
     - Fixed broken "Initialize" on Crush defects
 - Module [GLUE](./docs/glue/Glue.md)

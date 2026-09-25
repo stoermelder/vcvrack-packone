@@ -822,6 +822,7 @@ struct XySeqEditDragWidget : OpaqueWidget {
 
 		dragPos = APP->scene->rack->getMousePos().minus(box.pos);
 		timerClear = true;
+		index = 0;
 		module->seqData[id][seq].length = 0;
 
 		// history
