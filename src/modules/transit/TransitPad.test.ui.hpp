@@ -503,6 +503,41 @@ TEST_CASE("L without Shift does not toggle Lock pad", "[TransitPad]") {
 	REQUIRE(pad->locked == false);
 }
 
+TEST_CASE("Number keys 1-8 select the matching snapshot-set", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	REQUIRE(pad->currentSet == 0);
+
+	for (int key = GLFW_KEY_1; key <= GLFW_KEY_8; key++) {
+		event::HoverKey e;
+		rack::widget::EventContext c;
+		e.context = &c;
+		e.key = key;
+		e.action = GLFW_PRESS;
+		e.mods = 0;
+		padWidget->onHoverKey(e);
+		REQUIRE(pad->currentSet == key - GLFW_KEY_1);
+		REQUIRE(c.target == padWidget);
+	}
+}
+
+TEST_CASE("A modifier held with a number key does not select a snapshot-set", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	event::HoverKey e;
+	rack::widget::EventContext c;
+	e.context = &c;
+	e.key = GLFW_KEY_3;
+	e.action = GLFW_PRESS;
+	e.mods = RACK_MOD_CTRL;
+	padWidget->onHoverKey(e);
+	REQUIRE(pad->currentSet == 0);
+}
+
 // Regression: StoermelderLedDisplay derives from LightWidget/TransparentWidget,
 // whose onHover() is a no-op that never consumes the event, so onEnter/onLeave
 // (and with them, ui::Tooltip) were never dispatched to the Mix motion-sequence

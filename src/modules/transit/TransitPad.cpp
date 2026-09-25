@@ -1749,6 +1749,11 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 			e.consume(this);
 			return;
 		}
+		if (module && e.key >= GLFW_KEY_1 && e.key <= GLFW_KEY_8 && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == 0) {
+			module->changeSet(e.key - GLFW_KEY_1);
+			e.consume(this);
+			return;
+		}
 		ThemedModuleWidget<MODULE>::onHoverKey(e);
 	}
 
