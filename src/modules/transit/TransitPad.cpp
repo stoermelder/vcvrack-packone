@@ -1677,7 +1677,9 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 	}
 
 	void step() override {
-		if (vizOverlay && module) vizOverlay->visible = module->vizMode;
+		// Hidden while seq-edit is active: the splines would otherwise clutter
+		// the pad while it shows the recorded motion-sequence path instead.
+		if (vizOverlay && module) vizOverlay->visible = module->vizMode && module->seqEdit < 0;
 		ThemedModuleWidget<TransitPadModule<>>::step();
 	}
 

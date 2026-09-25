@@ -397,6 +397,27 @@ TEST_CASE("Space toggles pad active, modifier+space toggles visualize mode", "[T
 		REQUIRE(pad->vizMode == false);
 	}
 
+	SECTION("Visualize overlay hides while seq-edit is active, even with vizMode on") {
+		Test::Harness h;
+		TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+		TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+		REQUIRE(padWidget->vizOverlay != nullptr);
+
+		pad->vizMode = true;
+		padWidget->step();
+		REQUIRE(padWidget->vizOverlay->visible == true);
+
+		// Splines would otherwise clutter the pad while it's showing the
+		// recorded motion-sequence path instead.
+		pad->seqEdit = 0;
+		padWidget->step();
+		REQUIRE(padWidget->vizOverlay->visible == false);
+
+		pad->seqEdit = -1;
+		padWidget->step();
+		REQUIRE(padWidget->vizOverlay->visible == true);
+	}
+
 	SECTION("A different modifier held with space is neither shortcut") {
 		Test::Harness h;
 		TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
