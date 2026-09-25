@@ -907,10 +907,12 @@ struct TransitPadSnapshotDragWidget : XyScreenNodeDragWidget<MODULE> {
 	}
 
 	/** XyScreenDragWidgetBase: the base class's default (a dark navy) reads
-	 *  poorly against the pad's own set colors; white stays legible against
-	 *  all of them. */
+	 *  poorly against the pad's own set colors; pick black or white by the
+	 *  node color's own luminance so it stays legible against all of them,
+	 *  including white/bright set colors where a fixed white would not. */
 	NVGcolor getSelectedTextColor(NVGcolor cc) override {
-		return color::WHITE;
+		float brightness = cc.r * 0.299f + cc.g * 0.587f + cc.b * 0.114f;
+		return brightness > 0.5f ? nvgRGB(0x08, 0x08, 0x08) : nvgRGB(0xf0, 0xf0, 0xf0);
 	}
 
 	/** XyScreenDragWidgetBase: label shown in this node's context menu and tooltip. */
