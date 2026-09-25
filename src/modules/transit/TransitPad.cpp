@@ -888,6 +888,13 @@ struct TransitPadSnapshotDragWidget : XyScreenNodeDragWidget<MODULE> {
 		return 'A' + AW::id;
 	}
 
+	/** XyScreenDragWidgetBase: the base class's default (a dark navy) reads
+	 *  poorly against the pad's own set colors; white stays legible against
+	 *  all of them. */
+	NVGcolor getSelectedTextColor(NVGcolor cc) override {
+		return color::WHITE;
+	}
+
 	/** XyScreenDragWidgetBase: label shown in this node's context menu and tooltip. */
  	std::string getItemName() override {
 		return AW::module->getItemLabel(AW::module->currentSet, AW::id);
@@ -1105,7 +1112,21 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 
 	void drawLayer(const Widget::DrawArgs& args, int layer) override {
 		XyScreenWidget<MODULE>::drawLayer(args, layer);
-		if (layer != 1 || !this->module) return;
+		if (layer != 1) return;
+
+		// Corner vignette
+		math::Rect r = this->box.zeroPos().grow(Vec(this->bleed, this->bleed));
+		NVGpaint vignette = nvgRadialGradient(args.vg,
+			r.size.x * 0.5f, r.size.y * 0.5f,
+			r.size.x * 0.35f, r.size.x * 0.75f,
+			nvgRGBAf(0.f, 0.f, 0.f, 0.0f),
+			nvgRGBAf(0.f, 0.f, 0.f, 0.15f));
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, RECT_ARGS(r));
+		nvgFillPaint(args.vg, vignette);
+		nvgFill(args.vg);
+
+		if (!this->module) return;
 
 		if (this->module->isLocked()) {
 			// Small padlock badge in the top-right corner of the screen so the
