@@ -232,6 +232,20 @@ static TransitPadXyScreenWidget<TransitPadModule<>>* findPadScreenWidget(rack::a
 	return found;
 }
 
+// Helper: find the pad's SEQ-EDIT drag/record widget (XySeqWidget.hpp).
+static StoermelderPackOne::XySeqEditDragWidget<TransitPadModule<>>* findSeqEditDragWidget(rack::app::ModuleWidget* padWidget) {
+	StoermelderPackOne::XySeqEditDragWidget<TransitPadModule<>>* found = nullptr;
+	Test::traversal::walk(padWidget, [&](const Test::traversal::Visit& v) {
+		auto* w = dynamic_cast<StoermelderPackOne::XySeqEditDragWidget<TransitPadModule<>>*>(v.widget);
+		if (w) {
+			found = w;
+			return false;
+		}
+		return true;
+	});
+	return found;
+}
+
 // Helper: count the ui::MenuOverlay children currently on the scene.
 // Always compared as a delta — earlier test cases in the same process leave
 // overlays behind, so the absolute count is not meaningful.
@@ -1131,4 +1145,71 @@ TEST_CASE("Set ParamQuantity reports Active only for the current set", "[Transit
 
 	REQUIRE(pad->paramQuantities[TransitPadModule<>::SET_PARAM + 0]->getDisplayValueString() == "");
 	REQUIRE(pad->paramQuantities[TransitPadModule<>::SET_PARAM + 1]->getDisplayValueString() == "Active");
+}
+
+// SEQ-EDIT: "Clear" followed by a fresh drag (XySeqWidget.hpp)
+// Bug: the module-level "Clear" menu item only zeroes seqData[...].length; it
+// never touches XySeqEditDragWidget::index, the widget's own write cursor
+// into seqData[...].x/y[]. A drag recorded before Clear could leave index at,
+// say, 40; onDragMove() then starts overwriting x[40]/y[40] onward instead of
+// x[0]/y[0], so length grows straight past the old, still-populated tail
+// waypoints, and the pre-Clear path reappears once the new drag is long
+// enough to reach them. onDragStart() already reset length to 0 for the same
+// reason -- it just forgot to reset index alongside it.
+
+TEST_CASE("SEQ-EDIT: a fresh drag after Clear doesn't resurrect the old path's tail", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	auto* rec = findSeqEditDragWidget(padWidget);
+	REQUIRE(rec != nullptr);
+	// ThemedModuleWidget::step() no-ops under settings::headless (true in every
+	// test binary), so XySeqEditWidget::step() -- which applies module->seqEdit
+	// to recWidget via init() -- never runs through padWidget->step(). Step the
+	// parent XySeqEditWidget directly instead.
+	pad->seqEdit = 0;
+	auto* parentSeqEditWidget = dynamic_cast<StoermelderPackOne::XySeqEditWidget<TransitPadModule<>>*>(rec->parent);
+	REQUIRE(parentSeqEditWidget != nullptr);
+	parentSeqEditWidget->step();
+	REQUIRE(rec->id == 0);
+
+	// Simulate a long recorded drag leaving a stale, non-zero index -- as a
+	// real drag of 40+ points (well under XYSEQ_LENGTH) would.
+	for (int i = 0; i < 40; i++) {
+		pad->seqData[0][0].x[i] = 0.9f;
+		pad->seqData[0][0].y[i] = 0.9f;
+	}
+	pad->seqData[0][0].length = 40;
+	rec->index = 40;
+
+	// Clear via the module call the context menu item uses directly
+	// (XySeqWidget.hpp's createContextMenu()), bypassing rec->clear().
+	pad->seqClear(0);
+	REQUIRE(pad->seqLength(0) == 0);
+
+	// A fresh drag: onDragStart() resets the recording state, then
+	// onDragMove() writes the first waypoint immediately (timerClear from
+	// onDragStart() lets it bypass the ~65ms recording-interval gate that
+	// throttles every subsequent move within a real drag).
+	Vec scenePos = rec->getAbsoluteOffset(Vec());
+	h.events().hover(scenePos);
+
+	event::DragStart eStart;
+	eStart.button = GLFW_MOUSE_BUTTON_LEFT;
+	rec->onDragStart(eStart);
+	REQUIRE(rec->index == 0);
+
+	h.events().hover(scenePos.plus(Vec(10.f, 10.f)));
+	event::DragMove eMove;
+	eMove.button = GLFW_MOUSE_BUTTON_LEFT;
+	rec->onDragMove(eMove);
+
+	// Only the recorded point from this drag -- none of the stale 0.9f/0.9f
+	// tail from before Clear.
+	REQUIRE(pad->seqLength(0) == 1);
+	REQUIRE(pad->seqData[0][0].x[0] != 0.9f);
+	REQUIRE(pad->seqData[0][0].y[0] != 0.9f);
+
+	rec->dragChange = nullptr;
 }
