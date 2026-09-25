@@ -414,5 +414,32 @@ struct TransitLedButton : VCVButton {
 	}
 };
 
+// RedGreenBlueLight blends its 3 base colors via color::screen(), which
+// desaturates an (r, g, b) triplet instead of reproducing it. Paints the
+// brightnesses as a plain RGB color instead, like TransitPad's LED.
+template <typename TBase = GrayModuleLightWidget>
+struct TTransitLedLightWidget : TBase {
+	void step() override {
+		float r = 0.f, g = 0.f, b = 0.f;
+		if (this->module) {
+			if (!this->module->isBypassed() && this->firstLightId >= 0 && this->firstLightId + 3 <= (int) this->module->lights.size()) {
+				auto gamma = [](float v) {
+					v = std::isfinite(v) ? math::clamp(v, 0.f, 1.f) : 0.f;
+					return std::sqrt(v);
+				};
+				r = gamma(this->module->lights[this->firstLightId + 0].getBrightness());
+				g = gamma(this->module->lights[this->firstLightId + 1].getBrightness());
+				b = gamma(this->module->lights[this->firstLightId + 2].getBrightness());
+			}
+		}
+		else {
+			r = g = b = 1.f;
+		}
+		this->color = nvgRGBAf(r, g, b, 1.f);
+		widget::Widget::step();
+	}
+};
+using TransitLedLightWidget = TTransitLedLightWidget<>;
+
 } // namespace Transit
 } // namespace StoermelderPackOne
