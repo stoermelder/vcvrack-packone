@@ -134,6 +134,12 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 	/*  Snapshot published for UI thread (engine writes, UI reads). */
 	SpscLatestValue<std::vector<ParamHandleEx*>> sourceHandlesPtr;
 
+	// Reused across presetProcessXyPad() calls to avoid heap allocation on the DSP thread.
+	// .first = accumulated value, .second = accumulated weight, one pair per sourceHandles entry.
+	std::vector<std::pair<float, float>> xyPadVWeight;
+	// Reused across process() light-update calls to avoid heap allocation on the DSP thread.
+	std::vector<bool> xyPadActiveSlot;
+
 	/** [Stored to JSON] */
 	bool parameterChangesDirect = false;
 
@@ -578,12 +584,11 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 			float intpart;
 			float frac = std::modf(presetPhaseLast, &intpart);
 			bool xyPadActive = padOverride;
-			std::vector<bool> padActiveSlot;
 			if (xyPadActive) {
-				padActiveSlot.resize(presetTotal, false);
+				xyPadActiveSlot.assign(presetTotal, false);
 				for (auto& source : transitPad->getPadFactors()) {
 					if (source.id >= 0 && source.id < presetTotal && source.weight > 0.f) {
-						padActiveSlot[source.id] = true;
+						xyPadActiveSlot[source.id] = true;
 					}
 				}
 			}
@@ -620,7 +625,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 					}
 				}
 				else if (xyPadActive) {
-					bool active = padActiveSlot[i];
+					bool active = xyPadActiveSlot[i];
 					bool b = active && lightBlink;
 					float b1 = active ? (b ? (u ? 1.0f : 0.05f) : 0.f) : (presetFirst <= i && i < presetLast ? (u ? 0.4f : 0.05f) : 0.f);
 					if (slot->isColorSet()) {
@@ -866,12 +871,11 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 		if (padProcessDivider.process()) {
 			const auto& snapshots = transitPad->getPadFactors();
 
-			std::vector<float> v(sourceHandles.size(), 0.f);
 			// Per-parameter, not global: a parameter bound after the last save
 			// (bindAddParameterRequest(..., presetLoading = true)) has no entry
 			// in an older slot's preset, so it must not receive a share of that
 			// slot's weight even though other, longer-lived parameters do.
-			std::vector<float> weight(sourceHandles.size(), 0.f);
+			xyPadVWeight.assign(sourceHandles.size(), std::pair<float, float>(0.f, 0.f));
 			for (auto snapshot : snapshots) {
 				if (snapshot.id < 0) continue;
 				SLOT* slot1 = getSlot(snapshot.id);
@@ -883,19 +887,23 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 					if (!pq) continue;
 					if (preset1.size() <= i) break;
 					float v1 = preset1[i];
-					v[i] += v1 * snapshot.weight;
-					weight[i] += snapshot.weight;
+					xyPadVWeight[i].first += v1 * snapshot.weight;
+					xyPadVWeight[i].second += snapshot.weight;
 				}
 			}
 
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
-				if (weight[i] <= 0.f) continue;
+				float v = xyPadVWeight[i].first;
+				float weight = xyPadVWeight[i].second;
+				if (weight <= 0.f) continue;
 				ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 				if (!pq) continue;
-				if (settings::isPlugin && parameterChangesDirect)
-					pq->setValue(v[i] / weight[i]);
-				else
-					pq->getParam()->setValue(v[i] / weight[i]);
+				if (settings::isPlugin && parameterChangesDirect) {
+					pq->setValue(v / weight);
+				}
+				else {
+					pq->getParam()->setValue(v / weight);
+				}
 			}
 
 			BASE::outputs[OUTPUT].setVoltage(0.f);
