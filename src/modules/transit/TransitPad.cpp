@@ -1066,12 +1066,16 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 		uint8_t t1 = module ? module->cursorCount() : 1;
 		this->template createCursorWidgets<TransitPadOutDragWidget<MODULE>>(module, t1);
 		// The surrounding TransitPadScreenBevel takes the space of the usual bleed.
-		this->bleed = 0.f;
+		this->bleed = 3.f;
 	}
 
-	// Thin border like the LED window of TransitPadSetButton, instead of the
-	// default bevel strokes.
+	// Thin border like the LED window of TransitPadSetButton, layered on top
+	// of the base class's usual bevel strokes (the same ones Arena's screen
+	// draws) -- the surrounding TransitPadScreenBevel is a separate, outer rim
+	// and doesn't replace this inner one.
 	void drawFrame(const Widget::DrawArgs& args, math::Rect r, NVGcolor bottomColor) override {
+		XyScreenWidget<MODULE>::drawFrame(args, r, bottomColor);
+
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, RECT_ARGS(r));
 		nvgStrokeWidth(args.vg, 0.5f);
@@ -1651,11 +1655,11 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		screenWidget = new TransitPadXyScreenWidget<MODULE>(module, MODULE::SNAPSHOT_X_POS, MODULE::SNAPSHOT_Y_POS, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
 		screenWidget->box.pos = Vec(8.8f, 40.0f);
 		screenWidget->box.size = Vec(207.4f, 207.4f);
-		screenWidget->box = screenWidget->box.shrink(1.f);
+		screenWidget->box = screenWidget->box.shrink(4.f);
 
 		// Button row on top, starting where the screen's bevel used to start,
 		// with the screen moved down below it.
-		const float bevel = 4.f;
+		const float bevel = 7.f;
 		const float gap = 7.f;
 		TransitPadButtonRow<MODULE>* buttonRow = new TransitPadButtonRow<MODULE>(module);
 		buttonRow->box.pos = Vec(screenWidget->box.pos.x, screenWidget->box.pos.y - bevel);
