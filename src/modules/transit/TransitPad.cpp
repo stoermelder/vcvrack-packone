@@ -1207,26 +1207,43 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 				}
 			}
 		));
-		menu->addChild(createSubmenuItem("Snapshot-set CV mode", "",
+		auto setCvModeLabel = [](SETCVMODE m) {
+			switch (m) {
+				case SETCVMODE::OFF: return "Off";
+				case SETCVMODE::TRIG_FWD: return "Trigger forward";
+				case SETCVMODE::VOLT: return "0..10V";
+				case SETCVMODE::C4: return "C4";
+				default: return "";
+			}
+		};
+		menu->addChild(createSubmenuItem("Snapshot-set CV mode", setCvModeLabel(this->module->setCvMode.load(std::memory_order_relaxed)),
 			[=](Menu* menu) {
-				menu->addChild(createAtomicValuePtrMenuItem("Off", &this->module->setCvMode, SETCVMODE::OFF));
+				menu->addChild(createAtomicValuePtrMenuItem(setCvModeLabel(SETCVMODE::OFF), &this->module->setCvMode, SETCVMODE::OFF));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(createAtomicValuePtrMenuItem("Trigger forward", &this->module->setCvMode, SETCVMODE::TRIG_FWD));
-				menu->addChild(createAtomicValuePtrMenuItem("0..10V", &this->module->setCvMode, SETCVMODE::VOLT));
-				menu->addChild(createAtomicValuePtrMenuItem("C4", &this->module->setCvMode, SETCVMODE::C4));
+				menu->addChild(createAtomicValuePtrMenuItem(setCvModeLabel(SETCVMODE::TRIG_FWD), &this->module->setCvMode, SETCVMODE::TRIG_FWD));
+				menu->addChild(createAtomicValuePtrMenuItem(setCvModeLabel(SETCVMODE::VOLT), &this->module->setCvMode, SETCVMODE::VOLT));
+				menu->addChild(createAtomicValuePtrMenuItem(setCvModeLabel(SETCVMODE::C4), &this->module->setCvMode, SETCVMODE::C4));
 			}
 		));
-		menu->addChild(createSubmenuItem("Snapshot-set node positions", "",
+		auto nodePosModeLabel = [](NODEPOSMODE m) {
+			switch (m) {
+				case NODEPOSMODE::OFF: return "Off";
+				case NODEPOSMODE::STORE: return "Store (manual)";
+				case NODEPOSMODE::AUTO: return "Auto (on set change)";
+				default: return "";
+			}
+		};
+		menu->addChild(createSubmenuItem("Snapshot-set node positions", nodePosModeLabel(this->module->nodePosMode.load(std::memory_order_relaxed)),
 			[=](Menu* menu) {
 				MODULE* m = this->module;
 				bool isOff = m->nodePosMode.load(std::memory_order_relaxed) == NODEPOSMODE::OFF;
-				menu->addChild(createMenuItem("Off", CHECKMARK(isOff), [=]() {
+				menu->addChild(createMenuItem(nodePosModeLabel(NODEPOSMODE::OFF), CHECKMARK(isOff), [=]() {
 					m->nodePosMode.store(NODEPOSMODE::OFF, std::memory_order_relaxed);
 					m->clearNodePositions();
 				}));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(createAtomicValuePtrMenuItem("Store (manual)", &m->nodePosMode, NODEPOSMODE::STORE));
-				menu->addChild(createAtomicValuePtrMenuItem("Auto (on set change)", &m->nodePosMode, NODEPOSMODE::AUTO));
+				menu->addChild(createAtomicValuePtrMenuItem(nodePosModeLabel(NODEPOSMODE::STORE), &m->nodePosMode, NODEPOSMODE::STORE));
+				menu->addChild(createAtomicValuePtrMenuItem(nodePosModeLabel(NODEPOSMODE::AUTO), &m->nodePosMode, NODEPOSMODE::AUTO));
 			}
 		));
 		menu->addChild(new MenuSeparator());
