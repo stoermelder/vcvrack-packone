@@ -1091,6 +1091,9 @@ TEST_CASE("JSON round-trip preserves per-set snapshot data at every snapshot ind
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
 
 	m->nodePosMode = NODEPOSMODE::STORE;
+	// All 8 points must be active, or dataToJson() only serializes up to
+	// snapshotsUsed (indices past it are unused and intentionally dropped).
+	m->snapshotsUsed = 8;
 
 	auto expectedX = [](uint8_t s, uint8_t i) { return 0.01f * s + 0.001f * i; };
 	auto expectedY = [](uint8_t s, uint8_t i) { return 0.02f * s + 0.001f * i; };
@@ -1132,6 +1135,47 @@ TEST_CASE("JSON round-trip preserves per-set snapshot data at every snapshot ind
 	}
 }
 
+
+// dataToJson() only serializes the snapshotsUsed-active points (both the
+// top-level "nodes" array and each set's "snapshots" array) so an unused
+// point never inflates the patch, in every set -- not just the current one.
+TEST_CASE("dataToJson only serializes nodes/snapshots up to snapshotsUsed", "[TransitPad][JSON]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+	m->snapshotsUsed = 3;
+
+	json_t* rootJ = m->dataToJson();
+
+	json_t* nodesJ = json_object_get(rootJ, "nodes");
+	REQUIRE(json_array_size(nodesJ) == 3);
+
+	json_t* setsJ = json_object_get(rootJ, "sets");
+	REQUIRE(json_array_size(setsJ) == 8);
+	for (size_t s = 0; s < json_array_size(setsJ); s++) {
+		json_t* snapshotsJ = json_object_get(json_array_get(setsJ, s), "snapshots");
+		REQUIRE(json_array_size(snapshotsJ) == 3);
+	}
+
+	json_decref(rootJ);
+}
+
+TEST_CASE("dataFromJson leaves points past a trimmed save at their defaults", "[TransitPad][JSON]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+	m->snapshotsUsed = 3;
+	m->snapshots[0][0].id = 7;
+
+	json_t* rootJ = m->dataToJson();
+	m->dataFromJson(rootJ);
+	json_decref(rootJ);
+
+	REQUIRE(m->snapshotsUsed == 3);
+	REQUIRE(m->snapshots[0][0].id == 7);
+	// Never serialized (index >= snapshotsUsed), so dataFromJson leaves the
+	// pre-load default (A-D pre-bound, everything else unbound) untouched.
+	REQUIRE(m->snapshots[0][4].id == -1);
+	REQUIRE(m->snapshots[7][4].id == -1);
+}
 
 TEST_CASE("JSON round-trip preserves a custom setColor", "[TransitPad][JSON]") {
 	Test::Harness h;

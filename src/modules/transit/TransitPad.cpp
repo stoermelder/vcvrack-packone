@@ -727,9 +727,13 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		json_object_set_new(rootJ, "currentSet", json_integer(currentSet));
 		json_object_set_new(rootJ, "locked", json_boolean(locked));
 
-		// Live pad-point layout, independent of any set.
+		// Live pad-point layout, independent of any set. Only the active points
+		// are meaningful -- anything at or beyond snapshotsUsed is neither drawn
+		// nor draggable, and setSnapshotsUsed() resets it to defaults whenever it
+		// becomes active again, so persisting it would only inflate the patch.
+		int used = snapshotsUsed.load(std::memory_order_relaxed);
 		json_t* nodesJ = json_array();
-		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+		for (uint8_t i = 0; i < used; i++) {
 			json_t* nodeJ = json_object();
 			Sc::nodes.dataToJson(nodeJ, i);
 			json_array_append_new(nodesJ, nodeJ);
@@ -741,7 +745,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		for (uint8_t s = 0; s < SETS; s++) {
 			json_t* setJ = json_object();
 			json_t* snapshotsJ = json_array();
-			for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+			for (uint8_t i = 0; i < used; i++) {
 				json_t* snapshotJ = json_object();
 				json_object_set_new(snapshotJ, "id", json_integer(snapshots[s][i].id));
 				if (storeNodePos) {
