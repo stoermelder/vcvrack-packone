@@ -157,12 +157,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
-		// Listen on the same "Transit" topic Transit/TransitEx already broadcast
-		// on every connect/disconnect anywhere in the patch (Transit.cpp,
-		// TransitEx.cpp), so masterModule can be re-verified by walking left
-		// through the chain in process() below -- not just from this pad's own
-		// direct-neighbour onExpanderChange, which never fires when a +T between
-		// this pad and its host Transit is what actually changed.
+		// Listen on the "Transit" topic so updateMasterModule() re-verifies on
+		// any connect/disconnect in the patch, not just this pad's direct
+		// neighbour (see updateMasterModule()).
 		registerModuleListener("Transit", this);
 		moduleChangedFlag = true;
 
@@ -242,15 +239,10 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		notifyModuleListeners("Transit");
 	}
 
-	// Walks left through any chain of +T (TransitEx) expanders looking for the
-	// host TRANSIT, mirroring Transit::process()'s own rightward walk. Needed
-	// because TransitModule's destructor never clears a pad's masterModule
-	// (TransitBase has no notion of which pad, if any, is downstream of it),
-	// and onExpanderChange only fires on this pad's own direct neighbour: in
-	// Transit -> +T -> Pad, removing Transit only changes the +T's neighbour,
-	// so the pad is never told directly and masterModule would otherwise keep
-	// pointing at freed memory. Run whenever this pad -- or anything else
-	// carrying a Transit/+T -- last changed anywhere in the patch.
+	// Walks left through any chain of +T expanders to find the host TRANSIT.
+	// Needed because removing a Transit two or more hops away only notifies
+	// its direct +T neighbour via onExpanderChange, not this pad, so
+	// masterModule must be re-resolved rather than cleared by the destructor.
 	void updateMasterModule() {
 		Module* m = leftExpander.module;
 		int c = 0;
@@ -359,6 +351,23 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		setCursorXyImmediate(0, mixX[s], mixY[s]);
 	}
 
+	// Resets snapshot i of set s to its factory pad-point geometry (x/y/radius/
+	// amount), the part shared by every "reset to defaults" call site below.
+	void resetSnapshotGeometry(uint8_t s, uint8_t i) {
+		snapshots[s][i].x = getNodePqX(i)->getDefaultValue();
+		snapshots[s][i].y = getNodePqY(i)->getDefaultValue();
+		snapshots[s][i].radius = getNodeRadiusDefault(i);
+		snapshots[s][i].amount = Sc::getNodeAmountDefault(i);
+	}
+
+	// Resets snapshot i of set s to full factory defaults: binding (A-D ->
+	// slots 0-3, the rest unbound), weight, and pad-point geometry.
+	void resetSnapshotDefaults(uint8_t s, uint8_t i) {
+		snapshots[s][i].id = i < 4 ? i : -1;
+		snapshots[s][i].weight = 0.f;
+		resetSnapshotGeometry(s, i);
+	}
+
 	// Copies set s's snapshot bindings into set t -- not color or label, which
 	// stay per-set identity, not part of the "content" of a set. The pad-point
 	// geometry and Mix cursor (x/y/radius/amount, mixX/mixY) are only
@@ -391,12 +400,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	// its default palette color, and its label.
 	void resetSet(uint8_t s) {
 		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
-			snapshots[s][i].id = i < 4 ? i : -1;
-			snapshots[s][i].weight = 0.f;
-			snapshots[s][i].x = getNodePqX(i)->getDefaultValue();
-			snapshots[s][i].y = getNodePqY(i)->getDefaultValue();
-			snapshots[s][i].radius = getNodeRadiusDefault(i);
-			snapshots[s][i].amount = Sc::getNodeAmountDefault(i);
+			resetSnapshotDefaults(s, i);
 		}
 		mixX[s] = paramQuantities[OUT_X_POS]->getDefaultValue();
 		mixY[s] = paramQuantities[OUT_Y_POS]->getDefaultValue();
@@ -415,12 +419,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		snapshotsUsed = n;
 		for (int i = oldUsed; i < n; i++) {
 			for (uint8_t s = 0; s < SETS; s++) {
-				snapshots[s][i].id = i < 4 ? i : -1;
-				snapshots[s][i].weight = 0.f;
-				snapshots[s][i].x = getNodePqX(i)->getDefaultValue();
-				snapshots[s][i].y = getNodePqY(i)->getDefaultValue();
-				snapshots[s][i].radius = getNodeRadiusDefault(i);
-				snapshots[s][i].amount = Sc::getNodeAmountDefault(i);
+				resetSnapshotDefaults(s, i);
 			}
 		}
 	}
@@ -430,10 +429,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	void clearNodePositions() {
 		for (uint8_t s = 0; s < SETS; s++) {
 			for (uint8_t i = 0; i < SNAPSHOTS; i++) {
-				snapshots[s][i].x = getNodePqX(i)->getDefaultValue();
-				snapshots[s][i].y = getNodePqY(i)->getDefaultValue();
-				snapshots[s][i].radius = getNodeRadiusDefault(i);
-				snapshots[s][i].amount = Sc::getNodeAmountDefault(i);
+				resetSnapshotGeometry(s, i);
 			}
 			mixX[s] = paramQuantities[OUT_X_POS]->getDefaultValue();
 			mixY[s] = paramQuantities[OUT_Y_POS]->getDefaultValue();
@@ -623,13 +619,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		for (uint8_t s = 0; s < SETS; s++) {
 			for (uint8_t i = 0; i < SNAPSHOTS; i++) {
 				dist[i] = std::numeric_limits<float>::infinity();
-				snapshots[s][i].id = i < 4 ? i : -1;
-				snapshots[s][i].weight = 0.f;
 				// Sc::nodes isn't reset yet here, so seed from the defaults directly.
-				snapshots[s][i].x = getNodePqX(i)->getDefaultValue();
-				snapshots[s][i].y = getNodePqY(i)->getDefaultValue();
-				snapshots[s][i].radius = getNodeRadiusDefault(i);
-				snapshots[s][i].amount = Sc::getNodeAmountDefault(i);
+				resetSnapshotDefaults(s, i);
 			}
 			mixX[s] = paramQuantities[OUT_X_POS]->getDefaultValue();
 			mixY[s] = paramQuantities[OUT_Y_POS]->getDefaultValue();
@@ -1122,8 +1113,9 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 			// Preview interpolated automation line if mixport is selected
 			this->module->seqPreview = -1;
 			for (uint8_t i = 0; i < this->module->cursorCountActive(); i++) {
-				if (this->module->selection.isCursor(i))
+				if (this->module->selection.isCursor(i)) {
 					this->module->seqPreview = i;
+				}
 			}
 		}
 		XyScreenWidget<MODULE>::step();
@@ -1419,7 +1411,7 @@ struct TransitPadSetButton : app::Switch {
 			// Halo, following LightWidget::drawHalo but shaped by the rectangle
 			const float halo = settings::haloBrightness;
 			if (!args.fb && halo > 0.f) {
-				float feather = std::min(rl.size.y * 2.f, 15.f);
+				float feather = std::min(rl.size.y * 2.5f, 30.f);
 				nvgBeginPath(args.vg);
 				nvgRect(args.vg, RECT_ARGS(rl.grow(Vec(feather, feather))));
 				nvgFillPaint(args.vg, nvgBoxGradient(args.vg, RECT_ARGS(rl), 1.5f, feather, color::mult(col, halo), nvgRGBA(0, 0, 0, 0)));
