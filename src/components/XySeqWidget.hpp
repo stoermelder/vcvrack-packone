@@ -719,11 +719,12 @@ ui::MenuItem* XySeqPresetMenuItem(MODULE* module) {
 
 template <typename MODULE>
 struct XySeqEditDragWidget : OpaqueWidget {
-	const float radius = 8.f;
-	const float fontsize = 13.0f;
+	const float radius = 5.f;
 
 	MODULE* module;
-	NVGcolor color = color::RED;
+	// Same amber as XySeqLedDisplay's active state -- both mark "recording
+	// this motion sequence" and should read as the same color.
+	NVGcolor color = nvgRGB(0xff, 0xa5, 0x28);
 	int id = -1;
 	int seq = -1;
 
@@ -773,23 +774,35 @@ struct XySeqEditDragWidget : OpaqueWidget {
 		if (layer == 1 && id >= 0) {
 			Vec c = Vec(box.size.x / 2.f, box.size.y / 2.f);
 
+			// Glow halo, drawn first so the opaque disc and circle below
+			// sit on top of it.
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+			float oradius = 2.2f * radius;
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, c.x - oradius, c.y - oradius, 2.f * oradius, 2.f * oradius);
+			NVGpaint paint = nvgRadialGradient(args.vg, c.x, c.y, radius * 0.5f, oradius, color::mult(color, 0.35f), nvgRGBA(0, 0, 0, 0));
+			nvgFillPaint(args.vg, paint);
+			nvgFill(args.vg);
+
+			// Opaque backing disc (normal blend) so the node covers the
+			// raw automation line's end instead of the additive fill
+			// below just tinting it, leaving the line visible through.
+			nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+			nvgBeginPath(args.vg);
+			nvgCircle(args.vg, c.x, c.y, radius);
+			nvgFillColor(args.vg, nvgRGB(0x12, 0x12, 0x12));
+			nvgFill(args.vg);
 
 			// Draw circle
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 			nvgBeginPath(args.vg);
 			nvgCircle(args.vg, c.x, c.y, radius);
 			nvgStrokeColor(args.vg, color);
 			nvgStrokeWidth(args.vg, 1.f);
 			nvgStroke(args.vg);
-			nvgFillColor(args.vg, color::mult(color, 0.5f));
+			nvgFillColor(args.vg, color::mult(color, 0.3f));
 			nvgFill(args.vg);
-
-			// Draw label
-			std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-			nvgFontSize(args.vg, fontsize);
-			nvgFontFaceId(args.vg, font->handle);
-			nvgFillColor(args.vg, color);
-			nvgTextBox(args.vg, c.x - 3.f, c.y + 4.f, 120, string::f("%i", id + 1).c_str(), NULL);
+			nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
 		}
 		OpaqueWidget::drawLayer(args, layer);
 	}
@@ -932,9 +945,10 @@ struct XySeqEditWidget : OpaqueWidget {
 				nvgFillColor(args.vg, c);
 				nvgTextBox(args.vg, box.size.x - 78.f, box.size.y - 6.f, 120, "SEQ-EDIT", NULL);
 
-				OpaqueWidget::drawLayer(args, layer);
-
-				// Draw raw automation line
+				// Draw raw automation line first so the recording node
+				// (drawn after, via OpaqueWidget::drawLayer below) sits on
+				// top and caps the line's end instead of the line cutting
+				// straight across it.
 				XySeqItem* s = &module->seqData[lastSeqId][lastSeqSelected];
 				if (s->length > 1) {
 					float sizeX = box.size.x - recWidget->box.size.x;
@@ -956,6 +970,8 @@ struct XySeqEditWidget : OpaqueWidget {
 					nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 					nvgStroke(args.vg);
 				}
+
+				OpaqueWidget::drawLayer(args, layer);
 			}
 
 			if (module->seqEdit < 0 && module->seqPreview >= 0) {
@@ -1047,7 +1063,9 @@ struct XySeqLedDisplay : StoermelderLedDisplay {
 	void step() override {
 		if (module) {
 			text = module->seqPortHidden(id) ? "" : string::f("%02d", module->seqSelected[id] + 1);
-			color = module->seqEdit == id ? color::RED : nvgRGB(0xf0, 0xf0, 0xf0);
+			// A warm amber instead of pure red keeps the halo below from
+			// reading as a harsh red-on-red glare.
+			color = module->seqEdit == id ? nvgRGB(0xff, 0xa5, 0x28) : nvgRGB(0xf0, 0xf0, 0xf0);
 		}
 		else {
 			text = "00";
@@ -1073,26 +1091,34 @@ struct XySeqLedDisplay : StoermelderLedDisplay {
 		StoermelderLedDisplay::onButton(e);
 	}
 
-	void draw(const DrawArgs& args) override {
-		StoermelderLedDisplay::draw(args);
-		if (module && module->seqEdit == id) {
-			drawRedHalo(args);
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer == 1 && module && module->seqEdit == id) {
+			drawAmberHalo(args);
 		}
+		StoermelderLedDisplay::drawLayer(args, layer);
 	}
 
-	void drawRedHalo(const DrawArgs& args) {
-		float radiusX = box.size.x / 2.f;
-		float radiusY = box.size.y / 2.f;
-		float oradiusX = 2.f * radiusX;
-		float oradiusY = 2.f * radiusY;
-		nvgBeginPath(args.vg);
-		nvgRect(args.vg, radiusX - oradiusX, radiusY - oradiusY, 2.f * oradiusX, 2.f * oradiusY);
+	void drawAmberHalo(const DrawArgs& args) {
+		// A box gradient (not a radial one) so the glow follows this
+		// display's own rectangular aspect ratio instead of a circle
+		// squeezed/off-center inside it. The gradient's own box is the
+		// display's bounds -- feather is how far it fades out beyond that,
+		// not an extra offset added to the fill rect.
+		float feather = box.size.y * 1.5f;
+		float pad = 2.f * feather;
+		float x = -pad;
+		float y = -pad;
+		float w = box.size.x + 2.f * pad;
+		float h = box.size.y + 2.f * pad;
 
 		NVGpaint paint;
-		NVGcolor icol = color::mult(color, 0.65f);
-		NVGcolor ocol = nvgRGB(0.f, 0.f, 0.f);
+		NVGcolor icol = color::mult(color, 0.3f);
+		NVGcolor ocol = nvgRGBA(0, 0, 0, 0);
 
-		paint = nvgRadialGradient(args.vg, radiusX, radiusY, 0.2f, oradiusY, icol, ocol);
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, x, y, w, h);
+
+		paint = nvgBoxGradient(args.vg, 0.f, 0.f, box.size.x, box.size.y, box.size.y / 2.f, feather, icol, ocol);
 		nvgFillPaint(args.vg, paint);
 		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 		nvgFill(args.vg);
