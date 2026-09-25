@@ -464,6 +464,45 @@ TEST_CASE("Space toggles pad active, modifier+space toggles visualize mode", "[T
 	}
 }
 
+TEST_CASE("Shift+L toggles Lock pad", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	REQUIRE(pad->locked == false);
+
+	event::HoverKey e;
+	rack::widget::EventContext c;
+	e.context = &c;
+	e.key = GLFW_KEY_L;
+	e.action = GLFW_PRESS;
+	e.mods = GLFW_MOD_SHIFT;
+	padWidget->onHoverKey(e);
+	REQUIRE(pad->locked == true);
+	REQUIRE(c.target == padWidget);
+
+	// A second press toggles it back off.
+	rack::widget::EventContext c2;
+	e.context = &c2;
+	padWidget->onHoverKey(e);
+	REQUIRE(pad->locked == false);
+}
+
+TEST_CASE("L without Shift does not toggle Lock pad", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	event::HoverKey e;
+	rack::widget::EventContext c;
+	e.context = &c;
+	e.key = GLFW_KEY_L;
+	e.action = GLFW_PRESS;
+	e.mods = 0;
+	padWidget->onHoverKey(e);
+	REQUIRE(pad->locked == false);
+}
+
 // Regression: StoermelderLedDisplay derives from LightWidget/TransparentWidget,
 // whose onHover() is a no-op that never consumes the event, so onEnter/onLeave
 // (and with them, ui::Tooltip) were never dispatched to the Mix motion-sequence

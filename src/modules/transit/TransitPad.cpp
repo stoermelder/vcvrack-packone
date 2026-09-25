@@ -1209,7 +1209,7 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 			}
 		));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Lock pad", "", &this->module->locked));
+		menu->addChild(createBoolPtrMenuItem("Lock pad", RACK_MOD_SHIFT_NAME "+L", &this->module->locked));
 	}
 };
 
@@ -1743,6 +1743,11 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 				e.consume(this);
 				return;
 			}
+		}
+		if (module && e.key == GLFW_KEY_L && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+			module->locked = !module->locked;
+			e.consume(this);
+			return;
 		}
 		ThemedModuleWidget<MODULE>::onHoverKey(e);
 	}

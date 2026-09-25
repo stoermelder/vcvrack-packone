@@ -291,7 +291,7 @@ Right-clicking on the empty area of the XY-display opens the following menu. The
 
   - **Auto (on set change)** — like _Store_, but switching away from a set automatically captures its current layout first, so dragging pad points while a set is active is enough to keep that set's stored layout up to date. The _Store positions_ item on the set-button is disabled in this mode, since capturing already happens automatically.
 
-- **Lock pad** — toggle a lock that prevents accidental edits: while locked, snapshot points and the _Mix_ point cannot be dragged to a new position, and snapshot buttons dragged from TRANSIT (or a +T expander) onto the pad no longer rebind. Dropping is still allowed to highlight a target (so the user can see where a drop would have landed), but the binding is rejected. The right-click _Bind snapshot_ and _Unbind snapshot_ entries on snapshot points are also disabled. The lock only covers the pad itself: the set-buttons, the _Amount_ and _Radius_ sliders, and the _Initialize_ and _Randomize_ menu items keep working.
+- **Lock pad** (`Shift + L`) — toggle a lock that prevents accidental edits: while locked, snapshot points and the _Mix_ point cannot be dragged to a new position, and snapshot buttons dragged from TRANSIT (or a +T expander) onto the pad no longer rebind. Dropping is still allowed to highlight a target (so the user can see where a drop would have landed), but the binding is rejected. The right-click _Bind snapshot_ and _Unbind snapshot_ entries on snapshot points are also disabled. The lock only covers the pad itself: the set-buttons, the _Amount_ and _Radius_ sliders, and the _Initialize_ and _Randomize_ menu items keep working.
 
 
 ### Tips
