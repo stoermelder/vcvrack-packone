@@ -1088,7 +1088,7 @@ TEST_CASE("Set-button menu: Reset clears the set's label", "[TransitPad][widget]
 	ui::Menu* submenu = label->createChildMenu();
 	REQUIRE(submenu != nullptr);
 
-	auto* reset = findMenuItemByText(submenu, "Reset");
+	auto* reset = findMenuItemByText(submenu, "Reset label");
 	REQUIRE(reset != nullptr);
 
 	reset->onAction(*(new event::Action));
@@ -1202,6 +1202,196 @@ TEST_CASE("Set-button menu: Paste copies pad-point geometry only in a position-s
 		REQUIRE(pad->mixX[6] == 0.55f);
 		REQUIRE(pad->mixY[6] == 0.66f);
 	}
+}
+
+// Regression: same issue as resetSet() above -- copySet() only touched the
+// stored snapshots[t]/mixX/mixY[t] data. Pasting onto the *currently active*
+// set while node-position mode is on left the live pad points showing the
+// stale pre-paste layout until the user switched sets and back.
+TEST_CASE("Set-button menu: Paste onto the active set reloads the live pad layout", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->nodePosMode = NODEPOSMODE::STORE;
+	pad->snapshots[1][0].x = 0.11f;
+	pad->snapshots[1][0].y = 0.22f;
+	pad->setCopy = 1;
+
+	pad->currentSet = 2;
+	pad->nodes.setXyImmediate(0, 0.9f, 0.9f);
+
+	auto* button = findSetButton(padWidget, 2);
+	REQUIRE(button != nullptr);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* paste = findMenuItemByText(&menu, "Paste");
+	REQUIRE(paste != nullptr);
+	paste->onAction(*(new event::Action));
+
+	REQUIRE(pad->nodes.getXFinal(0) == 0.11f);
+	REQUIRE(pad->nodes.getYFinal(0) == 0.22f);
+}
+
+TEST_CASE("Set-button menu: Paste onto an inactive set leaves the live pad layout alone", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->nodePosMode = NODEPOSMODE::STORE;
+	pad->snapshots[1][0].x = 0.11f;
+	pad->snapshots[1][0].y = 0.22f;
+	pad->setCopy = 1;
+
+	pad->currentSet = 2;
+	pad->nodes.setXyImmediate(0, 0.9f, 0.9f);
+
+	auto* button = findSetButton(padWidget, 5);
+	REQUIRE(button != nullptr);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* paste = findMenuItemByText(&menu, "Paste");
+	REQUIRE(paste != nullptr);
+	paste->onAction(*(new event::Action));
+
+	REQUIRE(pad->nodes.getXFinal(0) == 0.9f);
+}
+
+// Set-button menu: top-level "Reset" -- resets the whole set (bindings,
+// geometry, Mix cursor, color, label) back to factory defaults, distinct
+// from the "Reset" nested inside the "Label" submenu, which only clears the
+// label.
+TEST_CASE("Set-button menu: Reset restores the whole set to factory defaults", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+	auto* button = findSetButton(padWidget, 3);
+	REQUIRE(button != nullptr);
+
+	pad->snapshots[3][0].id = 7;
+	pad->snapshots[3][4].id = 2;
+	pad->snapshots[3][0].x = 0.9f;
+	pad->snapshots[3][0].y = 0.9f;
+	pad->snapshots[3][0].radius = 0.1f;
+	pad->snapshots[3][0].amount = 0.1f;
+	pad->mixX[3] = 0.9f;
+	pad->mixY[3] = 0.9f;
+	pad->setColor[3] = nvgRGBA(0x11, 0x22, 0x33, 0xff);
+	pad->setLabel[3] = "Bridge";
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* reset = findMenuItemByText(&menu, "Reset");
+	REQUIRE(reset != nullptr);
+
+	reset->onAction(*(new event::Action));
+
+	REQUIRE(pad->snapshots[3][0].id == 0);
+	REQUIRE(pad->snapshots[3][4].id == -1);
+	REQUIRE(pad->snapshots[3][0].x == pad->getNodePqX(0)->getDefaultValue());
+	REQUIRE(pad->snapshots[3][0].y == pad->getNodePqY(0)->getDefaultValue());
+	REQUIRE(pad->snapshots[3][0].radius == pad->getNodeRadiusDefault(0));
+	REQUIRE(pad->snapshots[3][0].amount == pad->Sc::getNodeAmountDefault(0));
+	REQUIRE(pad->mixX[3] == pad->paramQuantities[TransitPadModule<>::OUT_X_POS]->getDefaultValue());
+	REQUIRE(pad->mixY[3] == pad->paramQuantities[TransitPadModule<>::OUT_Y_POS]->getDefaultValue());
+	REQUIRE(pad->setLabel[3] == "");
+
+	NVGcolor expected = colors[3 % colors.size()].first;
+	REQUIRE(pad->setColor[3].r == Catch::Approx(expected.r));
+	REQUIRE(pad->setColor[3].g == Catch::Approx(expected.g));
+	REQUIRE(pad->setColor[3].b == Catch::Approx(expected.b));
+}
+
+TEST_CASE("Set-button menu: Reset only affects the targeted set", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+	auto* button = findSetButton(padWidget, 3);
+	REQUIRE(button != nullptr);
+
+	pad->snapshots[3][0].id = 7;
+	pad->snapshots[5][0].id = 6;
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* reset = findMenuItemByText(&menu, "Reset");
+	REQUIRE(reset != nullptr);
+	reset->onAction(*(new event::Action));
+
+	REQUIRE(pad->snapshots[3][0].id == 0);
+	REQUIRE(pad->snapshots[5][0].id == 6);
+}
+
+// Regression: resetSet() used to only touch the stored snapshots[s]/mixX/
+// mixY[s] data. Resetting the *currently active* set while node-position mode
+// is on left the live pad points showing the stale pre-reset layout until the
+// user switched sets and back -- the screen never reflected the reset.
+TEST_CASE("Set-button menu: Reset on the active set reloads the live pad layout", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->nodePosMode = NODEPOSMODE::STORE;
+	pad->currentSet = 2;
+	pad->nodes.setXyImmediate(0, 0.9f, 0.9f);
+	pad->storeNodePositions(2);
+	REQUIRE(pad->nodes.getXFinal(0) == 0.9f);
+
+	auto* button = findSetButton(padWidget, 2);
+	REQUIRE(button != nullptr);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* reset = findMenuItemByText(&menu, "Reset");
+	REQUIRE(reset != nullptr);
+	reset->onAction(*(new event::Action));
+
+	REQUIRE(pad->nodes.getXFinal(0) == pad->getNodePqX(0)->getDefaultValue());
+	REQUIRE(pad->nodes.getYFinal(0) == pad->getNodePqY(0)->getDefaultValue());
+}
+
+TEST_CASE("Set-button menu: Reset on an inactive set leaves the live pad layout alone", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->nodePosMode = NODEPOSMODE::STORE;
+	pad->currentSet = 2;
+	pad->nodes.setXyImmediate(0, 0.9f, 0.9f);
+
+	auto* button = findSetButton(padWidget, 5);
+	REQUIRE(button != nullptr);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* reset = findMenuItemByText(&menu, "Reset");
+	REQUIRE(reset != nullptr);
+	reset->onAction(*(new event::Action));
+
+	REQUIRE(pad->nodes.getXFinal(0) == 0.9f);
+}
+
+TEST_CASE("Set-button menu: Reset on the active set does not reload the pad layout when node-position mode is off", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->nodePosMode = NODEPOSMODE::OFF;
+	pad->currentSet = 2;
+	pad->nodes.setXyImmediate(0, 0.9f, 0.9f);
+
+	auto* button = findSetButton(padWidget, 2);
+	REQUIRE(button != nullptr);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* reset = findMenuItemByText(&menu, "Reset");
+	REQUIRE(reset != nullptr);
+	reset->onAction(*(new event::Action));
+
+	REQUIRE(pad->nodes.getXFinal(0) == 0.9f);
 }
 
 // Set-button ParamQuantity: "Active" tooltip

@@ -379,6 +379,33 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			mixX[t] = mixX[s];
 			mixY[t] = mixY[s];
 		}
+
+		if (t == currentSet && copyPositions) {
+			loadNodePositions(t);
+		}
+	}
+
+	// Resets set s back to the same factory defaults initExtra() seeds a
+	// freshly constructed module with: snapshot bindings (A-D -> slots 0-3,
+	// the rest unbound), pad-point geometry, the set's Mix cursor position,
+	// its default palette color, and its label.
+	void resetSet(uint8_t s) {
+		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+			snapshots[s][i].id = i < 4 ? i : -1;
+			snapshots[s][i].weight = 0.f;
+			snapshots[s][i].x = getNodePqX(i)->getDefaultValue();
+			snapshots[s][i].y = getNodePqY(i)->getDefaultValue();
+			snapshots[s][i].radius = getNodeRadiusDefault(i);
+			snapshots[s][i].amount = Sc::getNodeAmountDefault(i);
+		}
+		mixX[s] = paramQuantities[OUT_X_POS]->getDefaultValue();
+		mixY[s] = paramQuantities[OUT_Y_POS]->getDefaultValue();
+		setColor[s] = colors[s % colors.size()].first;
+		setLabel[s] = "";
+
+		if (s == currentSet && nodePosMode.load(std::memory_order_relaxed) != NODEPOSMODE::OFF) {
+			loadNodePositions(s);
+		}
 	}
 
 	// Changes the number of active snapshot points, resetting newly-activated
@@ -1443,7 +1470,7 @@ struct TransitPadSetButton : app::Switch {
 			labelField->setIndex = s;
 			menu->addChild(labelField);
 
-			menu->addChild(createMenuItem("Reset", "", [=]() { m->setLabel[s] = ""; }));
+			menu->addChild(createMenuItem("Reset label", "", [=]() { m->setLabel[s] = ""; }));
 		}));
 		NODEPOSMODE nodePosMode = module->nodePosMode.load(std::memory_order_relaxed);
 		if (nodePosMode != NODEPOSMODE::OFF) {
@@ -1467,6 +1494,7 @@ struct TransitPadSetButton : app::Switch {
 			}
 		};
 		menu->addChild(construct<PasteItem>(&MenuItem::text, "Paste", &PasteItem::module, m, &PasteItem::setIndex, s));
+		menu->addChild(createMenuItem("Reset", "", [=]() { m->resetSet(s); }));
 		menu->addChild(new MenuSeparator());
 		for (size_t i = 0; i < module->nodeCountActive(); i++) {
 			menu->addChild(createMenuLabel(module->getItemLabel(setIndex, i)));
