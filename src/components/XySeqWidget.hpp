@@ -1,6 +1,7 @@
 #pragma once
 #include <rack.hpp>
 #include "LedTextDisplay.hpp"
+#include "XySeqGenerator.hpp"
 #include <random>
 
 
@@ -23,24 +24,7 @@ enum class XYSEQ_INTERPOLATE {
 	CUBIC = 1
 };
 
-enum class XYSEQ_PRESET {
-	CIRCLE,
-	SPIRAL,
-	SAW,
-	SINE,
-	EIGHT,
-	ROSE
-};
-
-static const int XYSEQ_LENGTH = 128;
 static const int XYSEQ_COUNT = 16;
-
-
-struct XySeqItem {
-	float x[XYSEQ_LENGTH];
-	float y[XYSEQ_LENGTH];
-	int length = 0;
-};
 
 
 template <int PORTS>
@@ -231,87 +215,6 @@ struct XySeqModule {
 			seqData[port][seqSelected[port]].y[c] = pY;
 		}
 		seqData[port][seqSelected[port]].length = l;
-	}
-
-	void seqPreset(int port, XYSEQ_PRESET preset, float x, float y, int parameter) {
-		auto _x = [x](float v) { return (v - 0.5f) * x + 0.5f; };
-		auto _y = [y](float v) { return (v - 0.5f) * y + 0.5f; };
-		
- 		switch (preset) {
-			case XYSEQ_PRESET::CIRCLE: {
-				seqData[port][seqSelected[port]].length = 0;
-				int l = XYSEQ_LENGTH / 4;
-				float p = 2.f * M_PI / (l - 1);
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(sin(i * p) / 2.f + 0.5f);
-					seqData[port][seqSelected[port]].y[i] = _y(cos(i * p) / 2.f + 0.5f);
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-			case XYSEQ_PRESET::SPIRAL: {
-				auto _s = [](float v, float s) { return (v - 0.5f) * s + 0.5f; };
-				seqData[port][seqSelected[port]].length = 0;
-				int l = XYSEQ_LENGTH;
-				float p = parameter * 2.f * M_PI / (l - 1);
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(_s(sin(i * p) / 2.f + 0.5f, 1.f / l * i));
-					seqData[port][seqSelected[port]].y[i] = _y(_s(cos(i * p) / 2.f + 0.5f, 1.f / l * i));
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-			case XYSEQ_PRESET::SAW: {
-				seqData[port][seqSelected[port]].length = 0;
-				seqData[port][seqSelected[port]].x[0] = _x(0.f);
-				seqData[port][seqSelected[port]].y[0] = _y(1.f);
-				int c = parameter;
-				for (int i = 0; i < c; i++) {
-					seqData[port][seqSelected[port]].x[i + 1] = _x(1.f / (c + 1) * (i + 1));
-					seqData[port][seqSelected[port]].y[i + 1] = _y(i % 2);
-				}
-				seqData[port][seqSelected[port]].x[c + 1] = _x(1.f);
-				seqData[port][seqSelected[port]].y[c + 1] = _y(0.f);
-				seqData[port][seqSelected[port]].length = c + 2;
-				break;
-			}
-			case XYSEQ_PRESET::SINE: {
-				seqData[port][seqSelected[port]].length = 0;
-				int l = XYSEQ_LENGTH;
-				float p = parameter * 2.f * M_PI / (l - 1);
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(1.f / l * i);
-					seqData[port][seqSelected[port]].y[i] = _y(sin(i * p) / 2.f + 0.5f);
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-			case XYSEQ_PRESET::EIGHT: {
-				auto _s = [](float v, float s) { return v / s + 0.5f; };
-				seqData[port][seqSelected[port]].length = 0;
-				int l = XYSEQ_LENGTH / 2.f;
-				float p = 2.f * M_PI / (l - 1);
-				float o = - M_PI / 2.f;
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(_s(std::cos(i * p + o), 2.f));
-					seqData[port][seqSelected[port]].y[i] = _y(_s(std::cos(i * p + o) * std::sin(i * p + o), 1.f));
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-			case XYSEQ_PRESET::ROSE: {
-				auto _s = [](float v) { return v / 2.f + 0.5f; };
-				seqData[port][seqSelected[port]].length = 0;
-				int l = XYSEQ_LENGTH;
-				float p = (parameter % 2 == 1 ? 2.f : 1.f) * 2.f * M_PI / (l - 1);
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(_s(std::cos(parameter / 2.f * i * p) * std::cos(i * p)));
-					seqData[port][seqSelected[port]].y[i] = _y(_s(std::cos(parameter / 2.f * i * p) * std::sin(i * p)));
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-		}
 	}
 
 	void seqRotate(int port, float angle) {
@@ -530,192 +433,6 @@ struct XySeqTriggerMenuItem : MenuItem {
 		return menu;
 	}
 };
-
-template <typename MODULE>
-ui::MenuItem* XySeqPresetMenuItem(MODULE* module) {
-	struct XySeqPresetMenuItem_ : MenuItem {
-		MODULE* module;
-
-		float x = 1.0f;
-		float y = 1.0f;
-		int parameter = 6;
-
-		XySeqPresetMenuItem_(MODULE* module) {
-			this->module = module;
-			text = "Preset";
-			rightText = RIGHT_ARROW;
-		}
-
-		struct XSlider : ui::Slider {
-			struct XQuantity : Quantity {
-				XySeqPresetMenuItem_* item;
-
-				XQuantity(XySeqPresetMenuItem_* item) {
-					this->item = item;
-				}
-				void setValue(float value) override {
-					item->x = math::clamp(value, 0.f, 1.f);
-				}
-				float getValue() override {
-					return item->x;
-				}
-				float getDefaultValue() override {
-					return 0.5;
-				}
-				float getDisplayValue() override {
-					return getValue() * 100;
-				}
-				void setDisplayValue(float displayValue) override {
-					setValue(displayValue / 100);
-				}
-				std::string getLabel() override {
-					return "Scale x";
-				}
-				std::string getUnit() override {
-					return "%";
-				}
-			};
-
-			XSlider(XySeqPresetMenuItem_* item) {
-				quantity = new XQuantity(item);
-			}
-			~XSlider() {
-				delete quantity;
-			}
-		};
-
-		struct YSlider : ui::Slider {
-			struct YQuantity : Quantity {
-				XySeqPresetMenuItem_* item;
-
-				YQuantity(XySeqPresetMenuItem_* item) {
-					this->item = item;
-				}
-				void setValue(float value) override {
-					item->y = math::clamp(value, 0.f, 1.f);
-				}
-				float getValue() override {
-					return item->y;
-				}
-				float getDefaultValue() override {
-					return 0.5;
-				}
-				float getDisplayValue() override {
-					return getValue() * 100;
-				}
-				void setDisplayValue(float displayValue) override {
-					setValue(displayValue / 100);
-				}
-				std::string getLabel() override {
-					return "Scale y";
-				}
-				std::string getUnit() override {
-					return "%";
-				}
-			};
-
-			YSlider(XySeqPresetMenuItem_* item) {
-				quantity = new YQuantity(item);
-			}
-			~YSlider() {
-				delete quantity;
-			}
-		};
-
-		struct ParameterSlider : ui::Slider {
-			struct ParameterQuantity : Quantity {
-				XySeqPresetMenuItem_* item;
-				float v = -1.f;
-
-				ParameterQuantity(XySeqPresetMenuItem_* item) {
-					this->item = item;
-				}
-				void setValue(float value) override {
-					v = clamp(value, 2.f, 12.f);
-					item->parameter = int(v);
-				}
-				float getValue() override {
-					if (v < 0.f) v = item->parameter;
-					return v;
-				}
-				float getDefaultValue() override {
-					return 6.f;
-				}
-				float getMinValue() override {
-					return 2.f;
-				}
-				float getMaxValue() override {
-					return 12.f;
-				}
-				float getDisplayValue() override {
-					return getValue();
-				}
-				std::string getDisplayValueString() override {
-					int i = int(getValue());
-					return string::f("%i", i);
-				}
-				void setDisplayValue(float displayValue) override {
-					setValue(displayValue);
-				}
-				std::string getLabel() override {
-					return "Parameter";
-				}
-				std::string getUnit() override {
-					return "";
-				}
-			};
-
-			ParameterSlider(XySeqPresetMenuItem_* item) {
-				quantity = new ParameterQuantity(item);
-			}
-			~ParameterSlider() {
-				delete quantity;
-			}
-			void onDragMove(const event::DragMove& e) override {
-				if (quantity) {
-					quantity->moveScaledValue(0.002f * e.mouseDelta.x);
-				}
-			}
-		};
-
-		Menu* createChildMenu() override {
-			Menu* menu = new Menu;
-
-			auto h = [=](XYSEQ_PRESET preset) {
-				XySeqChangeAction<MODULE>* h = new XySeqChangeAction<MODULE>;
-				h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
-				h->name += " preset";
-				module->seqPreset(module->seqEdit, preset, this->x, this->y, this->parameter);
-				h->setNew(module);
-				APP->history->push(h);
-			};
-
-			menu->addChild(createMenuItem("Circle", "", [=] { h(XYSEQ_PRESET::CIRCLE); }));
-			menu->addChild(createMenuItem("Spiral", "", [=] { h(XYSEQ_PRESET::SPIRAL); }));
-			menu->addChild(createMenuItem("Saw", "", [=] { h(XYSEQ_PRESET::SAW); }));
-			menu->addChild(createMenuItem("Sine", "", [=] { h(XYSEQ_PRESET::SINE); }));
-			menu->addChild(createMenuItem("Eight", "", [=] { h(XYSEQ_PRESET::EIGHT); }));
-			menu->addChild(createMenuItem("Rose", "", [=] { h(XYSEQ_PRESET::ROSE); }));
-
-			XSlider* xSlider = new XSlider(this);
-			xSlider->box.size.x = 120.0f;
-			menu->addChild(xSlider);
-
-			YSlider* ySlider = new YSlider(this);
-			ySlider->box.size.x = 120.0f;
-			menu->addChild(ySlider);
-
-			ParameterSlider* parameterSlider = new ParameterSlider(this);
-			parameterSlider->box.size.x = 120.0f;
-			menu->addChild(parameterSlider);
-
-			return menu;
-		}
-	};
-
-	return new XySeqPresetMenuItem_(module);
-}
-
 
 template <typename MODULE>
 struct XySeqEditDragWidget : OpaqueWidget {
@@ -1020,7 +737,7 @@ struct XySeqEditWidget : OpaqueWidget {
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
 
-		auto h = [=](const char* suffix, std::function<void()> action) {
+		auto undoWrap = [=](const char* suffix, std::function<void()> action) {
 			XySeqChangeAction<MODULE>* h = new XySeqChangeAction<MODULE>;
 			h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
 			h->name += " " + std::string(suffix);
@@ -1036,17 +753,19 @@ struct XySeqEditWidget : OpaqueWidget {
 		menu->addChild(new XySeqInterpolateMenuItem<MODULE>(module, module->seqEdit));
 		menu->addChild(new XySeqTriggerMenuItem<MODULE>(module, module->seqEdit));
 		menu->addChild(construct<MenuSeparator>());
-		menu->addChild(createMenuItem("Clear", "", [=] { h("clear", [=] { module->seqClear(module->seqEdit); }); }));
-		menu->addChild(createMenuItem("Flip horizontally", "", [=] { h("flip horizontally", [=] { module->seqFlipHorizontally(module->seqEdit); }); }));
-		menu->addChild(createMenuItem("Flip vertically", "", [=] { h("flip vertically", [=] { module->seqFlipVertically(module->seqEdit); }); }));
-		menu->addChild(createMenuItem("Rotate 45 degrees", "", [=] { h("rotate", [=] { module->seqRotate(module->seqEdit, M_PI / 4.f); }); }));
-		menu->addChild(createMenuItem("Rotate 90 degrees", "", [=] { h("rotate", [=] { module->seqRotate(module->seqEdit, M_PI / 2.f); }); }));
+		menu->addChild(createMenuItem("Clear", "", [=] { undoWrap("clear", [=] { module->seqClear(module->seqEdit); }); }));
+		menu->addChild(createMenuItem("Flip horizontally", "", [=] { undoWrap("flip horizontally", [=] { module->seqFlipHorizontally(module->seqEdit); }); }));
+		menu->addChild(createMenuItem("Flip vertically", "", [=] { undoWrap("flip vertically", [=] { module->seqFlipVertically(module->seqEdit); }); }));
+		menu->addChild(createMenuItem("Rotate 45 degrees", "", [=] { undoWrap("rotate", [=] { module->seqRotate(module->seqEdit, M_PI / 4.f); }); }));
+		menu->addChild(createMenuItem("Rotate 90 degrees", "", [=] { undoWrap("rotate", [=] { module->seqRotate(module->seqEdit, M_PI / 2.f); }); }));
 		menu->addChild(construct<MenuSeparator>());
-		menu->addChild(createMenuItem("Random motion", "", [=] { h("randomize", [=] { module->seqRandomize(module->seqEdit); }); }));
-		menu->addChild(XySeqPresetMenuItem(module));
+		menu->addChild(createMenuItem("Random motion", "", [=] { undoWrap("randomize", [=] { module->seqRandomize(module->seqEdit); }); }));
+		menu->addChild(xySeqPresetMenuItem([=](const XySeqItem& seqItem) {
+			undoWrap("preset", [=] { module->seqData[module->seqEdit][module->seqSelected[module->seqEdit]] = seqItem; });
+		}));
 		menu->addChild(construct<MenuSeparator>());
 		menu->addChild(createMenuItem("Copy", "", [=] { XySeqEditWidget::module->seqCopy(module->seqEdit); }));
-		menu->addChild(createMenuItem("Paste", "", [=] { h("paste", [=] { module->seqPaste(module->seqEdit); }); }));
+		menu->addChild(createMenuItem("Paste", "", [=] { undoWrap("paste", [=] { module->seqPaste(module->seqEdit); }); }));
 	}
 };
 

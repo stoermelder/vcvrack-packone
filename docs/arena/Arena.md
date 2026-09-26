@@ -147,6 +147,7 @@ The colored circles on the center screen representing inputs and mix outputs can
 - v2.2.0
     - Fixed broken loading of presets and loading from saved patches
 - v2.x.x
+    - Added more preset generators for SEQ-EDIT
     - Fixed wrong values for mix-ports on preset load
     - Fixed missing voltage-mode options in the context menu of the mix-ports
     - Fixed out-of-range sequence selection for _SEQ_-mode "0..10V"
