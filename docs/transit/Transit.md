@@ -205,3 +205,5 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
     - Added Output-mode "Tipsy" for sending the snapshot text label (for modules with Tipsy-support like [TTY](https://library.vcvrack.com/StochasticTelegraph/TTY))
 - v2.6.0
     - Fixed "Bind parameters by selection" when spanning multiple modules
+- v2.x.x
+    - Added color setting for mapping indicators

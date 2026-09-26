@@ -6,6 +6,8 @@
 #include "../../utils/SpscLatestValue.hpp"
 #include "../../components/Knobs.hpp"
 #include "../../components/ParamHandleIndicator.hpp"
+#include "../../components/MenuColorLabel.hpp"
+#include "../../components/MenuColorPicker.hpp"
 #include "TransitBase.hpp"
 #include "tipsy-encoder/include/tipsy/tipsy.h"
 #include <random>
@@ -14,6 +16,8 @@ namespace StoermelderPackOne {
 namespace Transit {
 
 const int MAX_EXPANDERS = 15;
+
+static const NVGcolor MAPPING_INDICATOR_COLOR_DEFAULT = nvgRGB(0x40, 0xff, 0xff);
 
 enum class SLOTCVMODE {
 	OFF = -1,
@@ -119,6 +123,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ModuleChangeListener {
 
 	/** [Stored to JSON] */
 	bool mappingIndicatorHidden = false;
+	/** [Stored to JSON] */
+	NVGcolor mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
 	/** [Stored to JSON] */
 	int presetProcessDivision;
 	ClockDividerEx presetProcessDivider;
@@ -245,6 +251,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ModuleChangeListener {
 		outEocPulseGenerator.reset();
 
 		mappingIndicatorHidden = false;
+		mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
 		presetProcessDivision = settings::isPlugin ? 256 : 64;
 		presetProcessDivider.setDivision(presetProcessDivision);
 		presetProcessDivider.reset();
@@ -296,7 +303,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ModuleChangeListener {
 			float st = args.sampleTime * handleDivider.division;
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
 				ParamHandleEx* sourceHandle = sourceHandles[i];
-				sourceHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0x40, 0xff, 0xff);
+				sourceHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : mappingIndicatorColor;
 				sourceHandle->process(st);
 			}
 		}
@@ -1197,6 +1204,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ModuleChangeListener {
 	json_t* dataToJson() override {
 		json_t* rootJ = BASE::dataToJson();
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
+		json_object_set_new(rootJ, "mappingIndicatorColor", json_string(color::toHexString(mappingIndicatorColor).c_str()));
 		json_object_set_new(rootJ, "presetProcessDivision", json_integer(getProcessDivision()));
 
 		json_object_set_new(rootJ, "slotCvMode", json_integer((int)slotCvMode));
@@ -1225,6 +1233,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ModuleChangeListener {
 		BASE::panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
 		if (mappingIndicatorHiddenJ) mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
+		json_t* mappingIndicatorColorJ = json_object_get(rootJ, "mappingIndicatorColor");
+		if (mappingIndicatorColorJ && json_is_string(mappingIndicatorColorJ)) mappingIndicatorColor = color::fromHexString(json_string_value(mappingIndicatorColorJ));
 		json_t* presetProcessDivisionJ = json_object_get(rootJ, "presetProcessDivision");
 		if (presetProcessDivisionJ) setProcessDivision(json_integer_value(presetProcessDivisionJ));
 
@@ -1560,7 +1570,14 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
+		menu->addChild(createSubmenuItem("Mapping indicators", "", [=](Menu* menu) {
+			menu->addChild(createBoolPtrMenuItem("Hide", "", &module->mappingIndicatorHidden));
+			menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->mappingIndicatorColor));
+			menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->mappingIndicatorColor));
+			menu->addChild(createMenuItem("Reset color", "", [=]() {
+				module->mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
+			}));
+		}));
 		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<int>("Precision", {
 				{ 1, string::f("Audio rate (%i Hz)", sampleRate / 1) },
 				{ 8, string::f("Lower CPU (%i Hz)", sampleRate / 8) },

@@ -35,6 +35,8 @@
 - Module [STRIP](./docs/strip/Strip.md)
     - Reduced resource consumption (one shared worker for all STRIP modules)
     - Fixed a background worker that could stall indefinitely
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Added color setting for mapping indicators
 
 ## 2.6.0
 
