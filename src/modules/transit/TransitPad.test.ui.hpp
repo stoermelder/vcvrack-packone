@@ -895,7 +895,7 @@ TEST_CASE("Screen menu: 'Node positions' -> Off calls clearNodePositions() throu
 	ui::Menu menu;
 	screen->appendContextMenu(&menu);
 
-	auto* nodePositions = findMenuItemByText(&menu, "Snapshot-set node positions");
+	auto* nodePositions = findMenuItemByText(&menu, "Store node positions");
 	REQUIRE(nodePositions != nullptr);
 	ui::Menu* submenu = nodePositions->createChildMenu();
 	REQUIRE(submenu != nullptr);
@@ -926,7 +926,7 @@ TEST_CASE("Module menu mirrors the screen's node-positions submenu, including Of
 	ui::Menu menu;
 	padWidget->appendContextMenu(&menu);
 
-	auto* nodePositions = findMenuItemByText(&menu, "Snapshot-set node positions");
+	auto* nodePositions = findMenuItemByText(&menu, "Store node positions");
 	REQUIRE(nodePositions != nullptr);
 	ui::Menu* submenu = nodePositions->createChildMenu();
 	REQUIRE(submenu != nullptr);
@@ -941,7 +941,7 @@ TEST_CASE("Module menu mirrors the screen's node-positions submenu, including Of
 	// The rest of the mirrored menu is present too, not just this one item.
 	REQUIRE(findMenuItemByText(&menu, "Visualize") != nullptr);
 	REQUIRE(findMenuItemByText(&menu, "Lock pad") != nullptr);
-	REQUIRE(findMenuItemByText(&menu, "Snapshot-set CV mode") != nullptr);
+	REQUIRE(findMenuItemByText(&menu, "CV port mode") != nullptr);
 }
 
 TEST_CASE("Module menu mirror is a no-op without a module (browser preview)", "[TransitPad][widget]") {
@@ -950,7 +950,7 @@ TEST_CASE("Module menu mirror is a no-op without a module (browser preview)", "[
 
 	ui::Menu menu;
 	REQUIRE_NOTHROW(padWidget->appendContextMenu(&menu));
-	REQUIRE(findMenuItemByText(&menu, "Snapshot-set node positions") == nullptr);
+	REQUIRE(findMenuItemByText(&menu, "Store node positions") == nullptr);
 
 	Test::destroyWidget(padWidget);
 }
@@ -958,7 +958,7 @@ TEST_CASE("Module menu mirror is a no-op without a module (browser preview)", "[
 
 // Screen context menu: "Snapshot-set motion sequence" toggle
 
-TEST_CASE("Screen menu: 'Snapshot-set motion sequence' toggles seqSwitchMode", "[TransitPad][widget]") {
+TEST_CASE("Screen menu: 'Store motion sequence' toggles seqSwitchMode", "[TransitPad][widget]") {
 	Test::Harness h;
 	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
 	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
@@ -969,7 +969,7 @@ TEST_CASE("Screen menu: 'Snapshot-set motion sequence' toggles seqSwitchMode", "
 
 	ui::Menu menu;
 	screen->appendContextMenu(&menu);
-	auto* item = findMenuItemByText(&menu, "Snapshot-set motion sequence");
+	auto* item = findMenuItemByText(&menu, "Store motion-sequence");
 	REQUIRE(item != nullptr);
 
 	item->onAction(*(new event::Action));
@@ -977,7 +977,7 @@ TEST_CASE("Screen menu: 'Snapshot-set motion sequence' toggles seqSwitchMode", "
 
 	ui::Menu menu2;
 	screen->appendContextMenu(&menu2);
-	auto* item2 = findMenuItemByText(&menu2, "Snapshot-set motion sequence");
+	auto* item2 = findMenuItemByText(&menu2, "Store motion-sequence");
 	REQUIRE(item2 != nullptr);
 	item2->onAction(*(new event::Action));
 	REQUIRE(pad->seqSwitchMode == false);
@@ -986,7 +986,7 @@ TEST_CASE("Screen menu: 'Snapshot-set motion sequence' toggles seqSwitchMode", "
 // Regression-shaped: turning the mode on must seed every set from whichever
 // sequence is live right now, or every set the user hasn't visited yet would
 // silently jump to sequence 0 the moment it becomes active.
-TEST_CASE("Screen menu: enabling 'Snapshot-set motion sequence' seeds every set from the live selection", "[TransitPad][widget]") {
+TEST_CASE("Screen menu: enabling 'Store motion-sequence' seeds every set from the live selection", "[TransitPad][widget]") {
 	Test::Harness h;
 	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
 	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
@@ -997,7 +997,7 @@ TEST_CASE("Screen menu: enabling 'Snapshot-set motion sequence' seeds every set 
 
 	ui::Menu menu;
 	screen->appendContextMenu(&menu);
-	auto* item = findMenuItemByText(&menu, "Snapshot-set motion sequence");
+	auto* item = findMenuItemByText(&menu, "Store motion-sequence");
 	REQUIRE(item != nullptr);
 	item->onAction(*(new event::Action));
 
@@ -1010,14 +1010,14 @@ TEST_CASE("Screen menu: enabling 'Snapshot-set motion sequence' seeds every set 
 	}
 }
 
-TEST_CASE("Module menu mirrors the screen's 'Snapshot-set motion sequence' toggle", "[TransitPad][widget]") {
+TEST_CASE("Module menu mirrors the screen's 'Store motion-sequence' toggle", "[TransitPad][widget]") {
 	Test::Harness h;
 	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
 	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
 
 	ui::Menu menu;
 	padWidget->appendContextMenu(&menu);
-	auto* item = findMenuItemByText(&menu, "Snapshot-set motion sequence");
+	auto* item = findMenuItemByText(&menu, "Store motion-sequence");
 	REQUIRE(item != nullptr);
 
 	item->onAction(*(new event::Action));

@@ -1234,7 +1234,7 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 	void appendContextMenu(Menu* menu) override {
 		using StoermelderPackOne::Rack::createAtomicValuePtrMenuItem;
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Visualize", "Shift+Space", &this->module->vizMode));
+		menu->addChild(createMenuLabel("Snapshot-sets"));
 		menu->addChild(createSubmenuItem("Number of snapshots", string::f("%i", this->module->snapshotsUsed.load(std::memory_order_relaxed)),
 			[=](Menu* menu) {
 				MODULE* m = this->module;
@@ -1254,7 +1254,7 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 				default: return "";
 			}
 		};
-		menu->addChild(createSubmenuItem("Snapshot-set CV mode", setCvModeLabel(this->module->setCvMode.load(std::memory_order_relaxed)),
+		menu->addChild(createSubmenuItem("CV port mode", setCvModeLabel(this->module->setCvMode.load(std::memory_order_relaxed)),
 			[=](Menu* menu) {
 				menu->addChild(createAtomicValuePtrMenuItem(setCvModeLabel(SETCVMODE::OFF), &this->module->setCvMode, SETCVMODE::OFF));
 				menu->addChild(new MenuSeparator);
@@ -1271,7 +1271,7 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 				default: return "";
 			}
 		};
-		menu->addChild(createSubmenuItem("Snapshot-set node positions", nodePosModeLabel(this->module->nodePosMode.load(std::memory_order_relaxed)),
+		menu->addChild(createSubmenuItem("Store node positions", nodePosModeLabel(this->module->nodePosMode.load(std::memory_order_relaxed)),
 			[=](Menu* menu) {
 				MODULE* m = this->module;
 				bool isOff = m->nodePosMode.load(std::memory_order_relaxed) == NODEPOSMODE::OFF;
@@ -1284,11 +1284,12 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 				menu->addChild(createAtomicValuePtrMenuItem(nodePosModeLabel(NODEPOSMODE::AUTO), &m->nodePosMode, NODEPOSMODE::AUTO));
 			}
 		));
-		menu->addChild(createBoolMenuItem("Snapshot-set motion sequence", "",
+		menu->addChild(createBoolMenuItem("Store motion-sequence", "",
 			[=]() { return this->module->seqSwitchMode; },
 			[=](bool on) { this->module->setSeqSwitchMode(on); }
 		));
 		menu->addChild(new MenuSeparator());
+		menu->addChild(createBoolPtrMenuItem("Visualize", "Shift+Space", &this->module->vizMode));
 		menu->addChild(createBoolPtrMenuItem("Lock pad", RACK_MOD_SHIFT_NAME "+L", &this->module->locked));
 	}
 };
