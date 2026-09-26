@@ -136,6 +136,16 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	// [Stored to JSON] when true, pad drag and drop-binding are disabled.
 	bool locked = false;
 
+	// [Stored to JSON] written from the UI thread (context menu, dataFromJson),
+	// read from the engine thread (process(), on set change) and the UI thread.
+	// When true, the selected motion sequence (Seq::seqSelected[0]) is captured
+	// per set on changeSet(), same as nodePosMode's AUTO behaviour for pad
+	// geometry.
+	bool seqSwitchMode = false;
+	// [Stored to JSON] per-set selected motion sequence; used only when
+	// seqSwitchMode is true.
+	int setSeqSelected[SETS];
+
 	ClockDividerEx buttonDivider;
 	ClockDividerEx lightDivider;
 	// Rising-edge detection per set-button, so a re-press of the already-active
@@ -230,9 +240,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		setCvMode.store(SETCVMODE::TRIG_FWD, std::memory_order_relaxed);
 		nodePosMode.store(NODEPOSMODE::OFF, std::memory_order_relaxed);
 		locked = false;
+		seqSwitchMode = false;
 
 		for (uint8_t s = 0; s < SETS; s++) {
 			setLabel[s] = "";
+			setSeqSelected[s] = 0;
 		}
 
 		Sc::resetNodes();
@@ -355,7 +367,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	// stay per-set identity, not part of the "content" of a set. The pad-point
 	// geometry and Mix cursor (x/y/radius/amount, mixX/mixY) are only
 	// meaningful while node-position mode is on, so they're copied along with
-	// the bindings in that case and left untouched otherwise.
+	// the bindings in that case and left untouched otherwise. Same for the
+	// stored motion-sequence selection under seqSwitchMode.
 	void copySet(uint8_t s, uint8_t t) {
 		bool copyPositions = nodePosMode.load(std::memory_order_relaxed) != NODEPOSMODE::OFF;
 		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
@@ -371,16 +384,21 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			mixX[t] = mixX[s];
 			mixY[t] = mixY[s];
 		}
+		if (seqSwitchMode) {
+			setSeqSelected[t] = setSeqSelected[s];
+		}
 
-		if (t == currentSet && copyPositions) {
-			loadNodePositions(t);
+		if (t == currentSet) {
+			if (copyPositions) loadNodePositions(t);
+			if (seqSwitchMode) Seq::seqSelected[0] = setSeqSelected[t];
 		}
 	}
 
 	// Resets set s back to the same factory defaults initExtra() seeds a
 	// freshly constructed module with: snapshot bindings (A-D -> slots 0-3,
 	// the rest unbound), pad-point geometry, the set's Mix cursor position,
-	// its default palette color, and its label.
+	// its default palette color, its label, and its stored motion-sequence
+	// selection.
 	void resetSet(uint8_t s) {
 		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
 			resetSnapshotDefaults(s, i);
@@ -389,9 +407,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		mixY[s] = paramQuantities[OUT_Y_POS]->getDefaultValue();
 		setColor[s] = colors[s % colors.size()].first;
 		setLabel[s] = "";
+		setSeqSelected[s] = 0;
 
-		if (s == currentSet && nodePosMode.load(std::memory_order_relaxed) != NODEPOSMODE::OFF) {
-			loadNodePositions(s);
+		if (s == currentSet) {
+			if (nodePosMode.load(std::memory_order_relaxed) != NODEPOSMODE::OFF) loadNodePositions(s);
+			if (seqSwitchMode) Seq::seqSelected[0] = setSeqSelected[s];
 		}
 	}
 
@@ -425,6 +445,19 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 	}
 
+	// Toggles seqSwitchMode. Enabling it seeds every set's stored selection
+	// from whatever sequence is live right now, so switching this on doesn't
+	// yank unrelated (not-yet-visited) sets back to sequence 0 the moment the
+	// user first changes sets.
+	void setSeqSwitchMode(bool on) {
+		if (on) {
+			for (uint8_t s = 0; s < SETS; s++) {
+				setSeqSelected[s] = Seq::seqSelected[0];
+			}
+		}
+		seqSwitchMode = on;
+	}
+
 	// Switches the active set. A no-op when newSet == currentSet, so a
 	// repeated request never reloads the stored layout. Use reloadCurrentSet()
 	// to force a reload of the set that's already active.
@@ -432,8 +465,10 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		if (newSet == currentSet) return;
 		NODEPOSMODE m = nodePosMode.load(std::memory_order_relaxed);
 		if (m == NODEPOSMODE::AUTO) storeNodePositions(currentSet);
+		if (seqSwitchMode) setSeqSelected[currentSet] = Seq::seqSelected[0];
 		currentSet = newSet;
 		if (m != NODEPOSMODE::OFF) loadNodePositions(currentSet);
+		if (seqSwitchMode) Seq::seqSelected[0] = setSeqSelected[currentSet];
 	}
 
 	// VOLT/C4 CV paths: follow the CV only when the set it selects changes, so a
@@ -446,9 +481,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	}
 
 	// Reloads the current set's stored layout without changing currentSet or
-	// capturing first, so unsaved pad edits are discarded on a re-press.
+	// capturing first, so unsaved pad edits (and, under seqSwitchMode, an
+	// unsaved sequence-selection change) are discarded on a re-press.
 	void reloadCurrentSet() {
 		if (nodePosMode.load(std::memory_order_relaxed) != NODEPOSMODE::OFF) loadNodePositions(currentSet);
+		if (seqSwitchMode) Seq::seqSelected[0] = setSeqSelected[currentSet];
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -730,6 +767,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		json_object_set_new(rootJ, "nodePosMode", json_integer((int)nodePosMode.load(std::memory_order_relaxed)));
 		json_object_set_new(rootJ, "currentSet", json_integer(currentSet));
 		json_object_set_new(rootJ, "locked", json_boolean(locked));
+		json_object_set_new(rootJ, "seqSwitchMode", json_boolean(seqSwitchMode));
 
 		// Live pad-point layout, independent of any set. Only the active points
 		// are meaningful -- anything at or beyond snapshotsUsed is neither drawn
@@ -769,6 +807,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			if (!setLabel[s].empty()) {
 				json_object_set_new(setJ, "label", json_string(setLabel[s].c_str()));
 			}
+			if (seqSwitchMode) {
+				json_object_set_new(setJ, "seqSelected", json_integer(setSeqSelected[s]));
+			}
 			json_array_append_new(setsJ, setJ);
 		}
 		json_object_set_new(rootJ, "sets", setsJ);
@@ -797,6 +838,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 		json_t* lockedJ = json_object_get(rootJ, "locked");
 		if (lockedJ) locked = json_is_true(lockedJ);
+
+		json_t* seqSwitchModeJ = json_object_get(rootJ, "seqSwitchMode");
+		if (seqSwitchModeJ) seqSwitchMode = json_is_true(seqSwitchModeJ);
 
 		int su = json_integer_value(json_object_get(rootJ, "snapshotsUsed"));
 		setSnapshotsUsed(std::max(1, std::min(su, (int)SNAPSHOTS)));
@@ -837,10 +881,18 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			if (const char* color = json_string_value(colorJ)) setColor[s] = color::fromHexString(color);
 			json_t* labelJ = json_object_get(setJ, "label");
 			if (const char* label = json_string_value(labelJ)) setLabel[s] = label;
+			json_t* seqSelectedJ = json_object_get(setJ, "seqSelected");
+			if (seqSelectedJ) setSeqSelected[s] = json_integer_value(seqSelectedJ);
 		}
 
 		json_t* outputJ = json_object_get(rootJ, "output");
 		Seq::dataFromJson(outputJ, 0);
+
+		// Like the pad-point layout, Seq::seqSelected[0] as restored above is
+		// XySeqModule's own single global value; with seqSwitchMode on, the
+		// active set's stored selection must win, same as loadNodePositions()
+		// wins for the cursor/nodes.
+		if (seqSwitchMode) Seq::seqSelected[0] = setSeqSelected[currentSet];
 
 		// Resync the UI-shadow cursor state (outUiX/outXfilter) that process()
 		// reads instead of the param; Rack's own param restore doesn't touch it.
@@ -1231,6 +1283,10 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 				menu->addChild(createAtomicValuePtrMenuItem(nodePosModeLabel(NODEPOSMODE::STORE), &m->nodePosMode, NODEPOSMODE::STORE));
 				menu->addChild(createAtomicValuePtrMenuItem(nodePosModeLabel(NODEPOSMODE::AUTO), &m->nodePosMode, NODEPOSMODE::AUTO));
 			}
+		));
+		menu->addChild(createBoolMenuItem("Snapshot-set motion sequence", "",
+			[=]() { return this->module->seqSwitchMode; },
+			[=](bool on) { this->module->setSeqSwitchMode(on); }
 		));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolPtrMenuItem("Lock pad", RACK_MOD_SHIFT_NAME "+L", &this->module->locked));

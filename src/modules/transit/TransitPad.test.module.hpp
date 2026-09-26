@@ -499,6 +499,208 @@ TEST_CASE("Snapshot-set node positions", "[TransitPad]") {
 }
 
 
+// Most sections below flip the raw seqSwitchMode field directly rather than
+// through setSeqSwitchMode(), to isolate changeSet()/copySet()/resetSet()'s
+// own behavior from setSeqSwitchMode(true)'s one-time seeding side effect
+// (every set starts at sequence 0, matching a freshly constructed module).
+// setSeqSwitchMode() itself is covered separately, in the widget-level menu
+// tests and the JSON round-trip test below.
+TEST_CASE("Snapshot-set motion sequence", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	SECTION("Off (default): switching sets does not change the selected sequence") {
+		m->seqSelected[0] = 5;
+		REQUIRE(m->seqSwitchMode == false);
+
+		m->changeSet(3);
+
+		REQUIRE(m->currentSet == 3);
+		REQUIRE(m->seqSelected[0] == 5);
+	}
+
+	SECTION("changeSet() captures the outgoing set's selection and loads the incoming one") {
+		m->seqSwitchMode = true;
+		// Give set 3 its own selection by visiting it and picking a sequence
+		// there first, then coming back to set 0.
+		m->changeSet(3);
+		m->seqSelected[0] = 7;
+		m->changeSet(0);
+		m->seqSelected[0] = 2;
+
+		m->changeSet(3);
+
+		REQUIRE(m->currentSet == 3);
+		// Set 3's earlier selection is live again...
+		REQUIRE(m->seqSelected[0] == 7);
+
+		// ...and set 0's selection (2, picked just before leaving it) was
+		// captured, not discarded.
+		m->changeSet(0);
+		REQUIRE(m->seqSelected[0] == 2);
+	}
+
+	SECTION("changeSet() back and forth round-trips both sets' selections") {
+		m->seqSwitchMode = true;
+		m->seqSelected[0] = 1;
+
+		m->changeSet(5);
+		m->seqSelected[0] = 9;
+
+		m->changeSet(0);
+		REQUIRE(m->seqSelected[0] == 1);
+
+		m->changeSet(5);
+		REQUIRE(m->seqSelected[0] == 9);
+	}
+
+	SECTION("A no-op changeSet() (same set) does not touch the live selection") {
+		m->seqSwitchMode = true;
+		m->seqSelected[0] = 8;
+
+		m->changeSet(0);
+
+		REQUIRE(m->seqSelected[0] == 8);
+	}
+
+	SECTION("reloadCurrentSet() restores the set's selection, discarding an unsaved change") {
+		m->seqSwitchMode = true;
+		// Give set 0 a selection distinct from the one about to be discarded.
+		m->seqSelected[0] = 3;
+		m->changeSet(1);
+		m->changeSet(0);
+		// An unsaved change to the live sequence selection, as if the user had
+		// just picked a different slot without switching sets.
+		m->seqSelected[0] = 6;
+
+		m->reloadCurrentSet();
+
+		REQUIRE(m->seqSelected[0] == 3);
+	}
+
+	SECTION("reloadCurrentSet() is a no-op when the mode is off") {
+		m->seqSelected[0] = 6;
+
+		m->reloadCurrentSet();
+
+		REQUIRE(m->seqSelected[0] == 6);
+	}
+
+	SECTION("copySet() propagates the selection to another set only when the mode is on") {
+		m->seqSwitchMode = true;
+		m->changeSet(1);
+		m->seqSelected[0] = 4;
+		m->changeSet(0);
+
+		SECTION("Off: selection is left untouched") {
+			m->seqSwitchMode = false;
+			m->copySet(1, 6);
+			m->changeSet(6);
+			REQUIRE(m->seqSelected[0] != 4);
+		}
+
+		SECTION("On: selection is copied") {
+			m->copySet(1, 6);
+			m->changeSet(6);
+			REQUIRE(m->seqSelected[0] == 4);
+		}
+	}
+
+	SECTION("copySet() onto the active set applies the copied selection live") {
+		m->seqSwitchMode = true;
+		m->changeSet(1);
+		m->seqSelected[0] = 4;
+		m->changeSet(6);
+		m->seqSelected[0] = 2;
+
+		m->copySet(1, 6);
+
+		REQUIRE(m->seqSelected[0] == 4);
+	}
+
+	SECTION("copySet() onto an inactive set does not touch the live selection") {
+		m->seqSwitchMode = true;
+		m->changeSet(1);
+		m->seqSelected[0] = 4;
+		m->changeSet(2);
+		m->seqSelected[0] = 9;
+
+		m->copySet(1, 6);
+
+		REQUIRE(m->seqSelected[0] == 9);
+	}
+
+	SECTION("resetSet() resets a set's selection back to the first sequence") {
+		m->seqSwitchMode = true;
+		m->changeSet(3);
+		m->seqSelected[0] = 5;
+		m->changeSet(0);
+
+		m->resetSet(3);
+
+		m->changeSet(3);
+		REQUIRE(m->seqSelected[0] == 0);
+	}
+
+	SECTION("resetSet() on the active set applies the reset selection live, only when the mode is on") {
+		m->seqSwitchMode = true;
+		m->currentSet = 3;
+		m->seqSelected[0] = 5;
+
+		m->resetSet(3);
+
+		REQUIRE(m->seqSelected[0] == 0);
+	}
+
+	SECTION("resetSet() on the active set leaves the live selection alone when the mode is off") {
+		m->currentSet = 3;
+		m->seqSelected[0] = 5;
+
+		m->resetSet(3);
+
+		REQUIRE(m->seqSelected[0] == 5);
+	}
+}
+
+
+// setSeqSwitchMode() is the entry point the context menu calls (as opposed to
+// writing seqSwitchMode directly, which is only done above to isolate other
+// behavior). Enabling it must seed every set from whatever sequence is live
+// right now, or every not-yet-visited set would silently jump to sequence 0
+// the moment it becomes active.
+TEST_CASE("setSeqSwitchMode(true) seeds every set from the live selection", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	m->seqSelected[0] = 6;
+	m->setSeqSwitchMode(true);
+
+	REQUIRE(m->seqSwitchMode == true);
+	// Every set, not just the current one, now carries the live selection --
+	// observable by visiting each and checking nothing resets to 0.
+	for (uint8_t s = 0; s < m->getSetCount(); s++) {
+		m->changeSet(s);
+		REQUIRE(m->seqSelected[0] == 6);
+	}
+}
+
+TEST_CASE("setSeqSwitchMode(false) turns the mode off without touching the live selection", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	m->setSeqSwitchMode(true);
+	m->seqSelected[0] = 6;
+
+	m->setSeqSwitchMode(false);
+
+	REQUIRE(m->seqSwitchMode == false);
+	REQUIRE(m->seqSelected[0] == 6);
+	// With the mode off again, switching sets no longer changes the selection.
+	m->changeSet(4);
+	REQUIRE(m->seqSelected[0] == 6);
+}
+
+
 // Regression: process() reads the Mix cursor from the UI-shadow state
 // (outUiX/outXfilter) rather than from params[OUT_X_POS] whenever nothing is
 // CV/param-map-bound to it, and Rack's own paramsFromJson() only restores the
@@ -1238,6 +1440,86 @@ TEST_CASE("JSON round-trip preserves the motion sequence under 'output'", "[Tran
 }
 
 
+// seqSwitchMode gates a per-set "seqSelected" field the same way nodePosMode
+// gates the per-set x/y/radius/amount fields (see the Golden JSON test above):
+// omitted to keep the patch slim when the feature isn't used, present per set
+// once it is.
+TEST_CASE("JSON round-trip preserves seqSwitchMode and the per-set selected sequence", "[TransitPad][JSON]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	SECTION("seqSwitchMode itself survives save/load") {
+		m->seqSwitchMode = true;
+		json_t* j = m->dataToJson();
+		m->seqSwitchMode = false;
+		m->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(m->seqSwitchMode == true);
+	}
+
+	SECTION("Off (default): 'seqSelected' is omitted from every set's JSON") {
+		m->changeSet(2);
+		m->seqSelected[0] = 5;
+		m->changeSet(0);
+
+		json_t* rootJ = m->dataToJson();
+		json_t* setsJ = json_object_get(rootJ, "sets");
+		json_t* set2J = json_array_get(setsJ, 2);
+		REQUIRE(json_object_get(set2J, "seqSelected") == nullptr);
+		json_decref(rootJ);
+	}
+
+	SECTION("On: each set's selection is restored on load") {
+		m->setSeqSwitchMode(true);
+		m->changeSet(2);
+		m->seqSelected[0] = 5;
+		m->changeSet(6);
+		m->seqSelected[0] = 11;
+		m->changeSet(0);
+
+		json_t* rootJ = m->dataToJson();
+		// The wire format stores it under "seqSelected" per set.
+		json_t* setsJ = json_object_get(rootJ, "sets");
+		json_t* set2J = json_array_get(setsJ, 2);
+		REQUIRE(json_integer_value(json_object_get(set2J, "seqSelected")) == 5);
+
+		m->dataFromJson(rootJ);
+		json_decref(rootJ);
+
+		m->changeSet(2);
+		REQUIRE(m->seqSelected[0] == 5);
+		m->changeSet(6);
+		REQUIRE(m->seqSelected[0] == 11);
+	}
+
+	SECTION("On load, the current set's stored selection is applied to the live sequence") {
+		m->seqSwitchMode = true;
+		m->changeSet(4);
+		m->seqSelected[0] = 9;
+		// changeSet() only captures the *outgoing* set's live selection, same
+		// as nodePosMode's Auto capture -- leave and come back so set 4's
+		// edit is actually persisted before saving.
+		m->changeSet(0);
+		m->changeSet(4);
+
+		json_t* j = m->dataToJson();
+		m->seqSelected[0] = 0;
+		m->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m->seqSelected[0] == 9);
+	}
+
+	SECTION("Missing 'seqSwitchMode' key on load leaves the flag unchanged (back-compat)") {
+		m->seqSwitchMode = true;
+		json_t* j = json_object();
+		m->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(m->seqSwitchMode == true);
+	}
+}
+
+
 TEST_CASE("onReset clears setLabel", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
@@ -1282,6 +1564,9 @@ TEST_CASE("Reset and randomize go through the event-form handlers", "[TransitPad
 		m->setLabel[2] = "custom";
 		m->setCvMode = SETCVMODE::C4;
 		m->nodePosMode = NODEPOSMODE::AUTO;
+		m->seqSwitchMode = true;
+		m->changeSet(2);
+		m->seqSelected[0] = 5;
 
 		Module::ResetEvent e;
 		m->onReset(e);
@@ -1292,6 +1577,13 @@ TEST_CASE("Reset and randomize go through the event-form handlers", "[TransitPad
 		REQUIRE(m->setLabel[2] == "");
 		REQUIRE(m->setCvMode == SETCVMODE::TRIG_FWD);
 		REQUIRE(m->nodePosMode == NODEPOSMODE::OFF);
+		REQUIRE(m->seqSwitchMode == false);
+		// Set 2's stored selection was wiped back to the default too, though
+		// with seqSwitchMode now off it can only be observed by turning the
+		// mode on again and visiting the set.
+		m->seqSwitchMode = true;
+		m->changeSet(2);
+		REQUIRE(m->seqSelected[0] == 0);
 	}
 
 	SECTION("RandomizeEvent moves the snapshot node positions") {

@@ -956,6 +956,75 @@ TEST_CASE("Module menu mirror is a no-op without a module (browser preview)", "[
 }
 
 
+// Screen context menu: "Snapshot-set motion sequence" toggle
+
+TEST_CASE("Screen menu: 'Snapshot-set motion sequence' toggles seqSwitchMode", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+	auto* screen = findPadScreenWidget(padWidget);
+	REQUIRE(screen != nullptr);
+
+	REQUIRE(pad->seqSwitchMode == false);
+
+	ui::Menu menu;
+	screen->appendContextMenu(&menu);
+	auto* item = findMenuItemByText(&menu, "Snapshot-set motion sequence");
+	REQUIRE(item != nullptr);
+
+	item->onAction(*(new event::Action));
+	REQUIRE(pad->seqSwitchMode == true);
+
+	ui::Menu menu2;
+	screen->appendContextMenu(&menu2);
+	auto* item2 = findMenuItemByText(&menu2, "Snapshot-set motion sequence");
+	REQUIRE(item2 != nullptr);
+	item2->onAction(*(new event::Action));
+	REQUIRE(pad->seqSwitchMode == false);
+}
+
+// Regression-shaped: turning the mode on must seed every set from whichever
+// sequence is live right now, or every set the user hasn't visited yet would
+// silently jump to sequence 0 the moment it becomes active.
+TEST_CASE("Screen menu: enabling 'Snapshot-set motion sequence' seeds every set from the live selection", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+	auto* screen = findPadScreenWidget(padWidget);
+	REQUIRE(screen != nullptr);
+
+	pad->seqSelected[0] = 6;
+
+	ui::Menu menu;
+	screen->appendContextMenu(&menu);
+	auto* item = findMenuItemByText(&menu, "Snapshot-set motion sequence");
+	REQUIRE(item != nullptr);
+	item->onAction(*(new event::Action));
+
+	REQUIRE(pad->seqSwitchMode == true);
+	// Every set, not just the current one, now carries the live selection --
+	// switching to any of them must not jump back to sequence 0.
+	for (uint8_t s = 0; s < pad->getSetCount(); s++) {
+		pad->changeSet(s);
+		REQUIRE(pad->seqSelected[0] == 6);
+	}
+}
+
+TEST_CASE("Module menu mirrors the screen's 'Snapshot-set motion sequence' toggle", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	ui::Menu menu;
+	padWidget->appendContextMenu(&menu);
+	auto* item = findMenuItemByText(&menu, "Snapshot-set motion sequence");
+	REQUIRE(item != nullptr);
+
+	item->onAction(*(new event::Action));
+	REQUIRE(pad->seqSwitchMode == true);
+}
+
+
 // Set-button menu: "Store positions", label field, "Reset"
 
 TEST_CASE("Set-button menu: Store positions is enabled only in Store mode", "[TransitPad][widget]") {
@@ -1259,6 +1328,46 @@ TEST_CASE("Set-button menu: Paste onto an inactive set leaves the live pad layou
 	REQUIRE(pad->nodes.getXFinal(0) == 0.9f);
 }
 
+TEST_CASE("Set-button menu: Paste copies the selected motion sequence only when seqSwitchMode is on", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->seqSwitchMode = true;
+	pad->changeSet(1);
+	pad->seqSelected[0] = 4;
+	pad->changeSet(0);
+	pad->setCopy = 1;
+
+	auto* button = findSetButton(padWidget, 6);
+	REQUIRE(button != nullptr);
+
+	SECTION("seqSwitchMode off: selection is left alone") {
+		pad->seqSwitchMode = false;
+
+		ui::Menu menu;
+		button->appendContextMenu(&menu);
+		auto* paste = findMenuItemByText(&menu, "Paste");
+		REQUIRE(paste != nullptr);
+		paste->onAction(*(new event::Action));
+
+		pad->seqSwitchMode = true;
+		pad->changeSet(6);
+		REQUIRE(pad->seqSelected[0] != 4);
+	}
+
+	SECTION("seqSwitchMode on: selection is copied") {
+		ui::Menu menu;
+		button->appendContextMenu(&menu);
+		auto* paste = findMenuItemByText(&menu, "Paste");
+		REQUIRE(paste != nullptr);
+		paste->onAction(*(new event::Action));
+
+		pad->changeSet(6);
+		REQUIRE(pad->seqSelected[0] == 4);
+	}
+}
+
 // Set-button menu: top-level "Reset" -- resets the whole set (bindings,
 // geometry, Mix cursor, color, label) back to factory defaults, distinct
 // from the "Reset" nested inside the "Label" submenu, which only clears the
@@ -1280,6 +1389,10 @@ TEST_CASE("Set-button menu: Reset restores the whole set to factory defaults", "
 	pad->mixY[3] = 0.9f;
 	pad->setColor[3] = nvgRGBA(0x11, 0x22, 0x33, 0xff);
 	pad->setLabel[3] = "Bridge";
+	pad->seqSwitchMode = true;
+	pad->changeSet(3);
+	pad->seqSelected[0] = 6;
+	pad->changeSet(0);
 
 	ui::Menu menu;
 	button->appendContextMenu(&menu);
@@ -1297,6 +1410,8 @@ TEST_CASE("Set-button menu: Reset restores the whole set to factory defaults", "
 	REQUIRE(pad->mixX[3] == pad->paramQuantities[TransitPadModule<>::OUT_X_POS]->getDefaultValue());
 	REQUIRE(pad->mixY[3] == pad->paramQuantities[TransitPadModule<>::OUT_Y_POS]->getDefaultValue());
 	REQUIRE(pad->setLabel[3] == "");
+	pad->changeSet(3);
+	REQUIRE(pad->seqSelected[0] == 0);
 
 	NVGcolor expected = colors[3 % colors.size()].first;
 	REQUIRE(pad->setColor[3].r == Catch::Approx(expected.r));
