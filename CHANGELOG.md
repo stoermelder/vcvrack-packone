@@ -12,6 +12,7 @@
 - Module [AHAB](./docs/ahab/Ahab.md)
     - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Ahab.json)
 - Module [ARENA](./docs/arena/Arena.md)
+    - Added more preset generators for SEQ-EDIT
     - Fixed wrong values for mix-ports on preset load
     - Fixed missing voltage-mode options in the context menu of the mix-ports
     - Fixed out-of-range sequence selection for _SEQ_-mode "0..10V"
