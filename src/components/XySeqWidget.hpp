@@ -649,9 +649,9 @@ struct XySeqEditWidget : OpaqueWidget {
 				
 				// Draw outer border
 				nvgBeginPath(args.vg);
-				nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+				nvgRect(args.vg, 2.f, 2.f, box.size.x - 4.f, box.size.y - 4.f);
 				nvgStrokeWidth(args.vg, stroke);
-				nvgStrokeColor(args.vg, c);
+				nvgStrokeColor(args.vg, color::mult(c, 0.7f));
 				nvgStroke(args.vg);
 
 				// Draw "EDIT" text
