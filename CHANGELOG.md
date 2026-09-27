@@ -1,4 +1,4 @@
-## 2.x.x
+## 2.7.0
 
 ### New modules
 
@@ -37,6 +37,8 @@
 - Module [SIREN](./docs/siren/Siren.md)
     - Fixed a background worker that could stall indefinitely
     - Fixed broken "Cancel tag classification"
+- Module [SPLICE-KIT](./docs/splicekit/SpliceKit.md)
+    - Added built-in usage tutorial
 - Module [STRIP](./docs/strip/Strip.md)
     - Reduced resource consumption (one shared worker for all STRIP modules)
     - Fixed a background worker that could stall indefinitely
