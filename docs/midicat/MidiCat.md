@@ -44,6 +44,7 @@ Besides these new features the module brings the goodies known from stoermelder'
 | **Pickup (jump)** | Same as snap, unlocks on jumps | Template switching controllers |
 | **Toggle** | Min/max toggle on any CC | Buttons controlling switches |
 | **Toggle + Value** | Min/value toggle |  |
+| **Toggle Steps** | Cycle through a user-defined list of values | Buttons cycling through several presets/settings |
 | **Snapped** | Advance to next step | Snapped parameters with discrete values |
 | **Snapped (short/long)** | Next/previous with long press | Snapped parameters with discrete values |
 
@@ -55,6 +56,7 @@ Besides these new features the module brings the goodies known from stoermelder'
 | **Momentary + Velocity** | Velocity-mapped value | Velocity-sensitive pads |
 | **Toggle** | Min/max toggle | Switches |
 | **Toggle + Velocity** | Min/velocity toggle |  |
+| **Toggle Steps** | Cycle through a user-defined list of values | Notes/pads cycling through several presets/settings |
 | **Snapped** | Advance to next step | Snapped parameters with discrete values |
 | **Snapped (short/long)** | Next/previous with long press | Snapped parameters with discrete values |
 
@@ -107,6 +109,9 @@ MIDI-CAT supports a technique sometimes called "soft-takeover" or "pickup": If t
 
 - **Toggle + Value** (added in v1.9.0) - Every MIDI _continuous control_ message toggles the parameter between its minimum and the control's value.
 
+<a name="toggle-steps"></a>
+- **Toggle Steps** - Cycles through a user-defined list of up to 8 values (in the same 0-127 range as MIDI CC, or 0-16383 for 14-bit) every time a MIDI _continuous control_ message with value greater than 0 is received, wrapping back to the first value at the end of the list. The list of values is edited on the _Steps_ submenu of the context menu, which allows adding/removing steps and adjusting each step's value with a slider. This is useful for buttons that should step through more than two states, for example cycling through several fixed settings of a parameter.
+
 - **Snapped** (added in v2.2.0) - Only usable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A MIDI CC message with value greater than 0 advances the parameter to the next step and rolls over at the end of the range. This allows controlling a snapped parameter with a MIDI button.
 
 - **Snapped (short/long)** (added in v2.2.0) - Same as **Snapped**, but responds to MIDI CC value = 0 and long pressing will decrease the parameter to the previous step.
@@ -127,6 +132,8 @@ MIDI-CAT supports mapping of MIDI note-messages instead of MIDI CC. There are di
 - **Toggle + Velocity** (added in v1.8.0) - Every MIDI "note on" message toggles the parameter between its minimum and the note's velocity value.
 
 Some controllers with push-buttons don't handle "note off" messages the way the message is intended, hence a mapping-slot can be switched with the option _Send "note on, vel 0" on note off_ to send a "note on" message with "velocity 0" as MIDI feedback instead (since v1.7.0).
+
+- **Toggle Steps** - Same as [Toggle Steps for CCs](#toggle-steps), but advances to the next value on every MIDI "note on" message.
 
 - **Snapped** (added in v2.2.0) - Only usable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A "note on" message increases the parameter to the next step and rolls over at the end of the range.
 
@@ -214,7 +221,7 @@ Note: These hotkeys are active when the MIDI-CAT widget is hovered.
 
 - An active mapping slot can be skipped by hitting the SPACE-key while hovering the mouse over MIDI-CAT (since v1.8.0).
 
-- Settings of a mapping slot are copied from the previous slot: If you set up the first mapping slot and map further mapping slots afterwards, these settings are copied. Useful for settings like "Pickup" or "14-bit CC".
+- Settings of a mapping slot are copied from the previous slot: If you set up the first mapping slot and map further mapping slots afterwards, these settings are copied. Useful for settings like "Pickup", "14-bit CC" or the value-list of "Toggle Steps".
 
 <a name="target-context"></a>
 - After a parameter has been mapped the parameter's context menu is extended with some additional menu items allowing quick MIDI learning and centering its mapping MIDI-CAT module on the center of the screen (since v1.8.0). There are even further options with the [CTX-expander](MidiCat.md#ctx-expander).

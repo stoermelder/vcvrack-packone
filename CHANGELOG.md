@@ -2,6 +2,13 @@
 
 ### Changes and Fixes
 
+- Module [MIDI-CAT](./docs/midicat/MidiCat.md)
+    - Added CC-/note-mode "Toggle Steps" for cycling through a user-defined list of values, including support for the MEM-expander
+
+## 2.7.0
+
+### Changes and Fixes
+
 - Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)
     - Fixed crash in Rack plugin for certain modules if no plugin-window is open
     - Fixed "Autoload" setting not saved and not reliable working

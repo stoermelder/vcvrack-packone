@@ -53,6 +53,7 @@ struct MemParam {
 	float curve = 0.f;
 	int lightFirstId = -1;
 	int lightNumColors = 0;
+	std::vector<int> stepValues;
 };
 
 struct MemModule {

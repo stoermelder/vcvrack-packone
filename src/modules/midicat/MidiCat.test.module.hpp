@@ -118,6 +118,8 @@ TEST_CASE("JSON round-trip preserves state", "[MidiCat][JSON]") {
 		m->slots[0].param.clockSource = 2;
 		m->slots[0].param.lightFirstId = 3;
 		m->slots[0].param.lightNumColors = 4;
+		m->slots[0].param.stepValues = { 0, 42, 100, 127 };
+		m->slots[0].param.stepIndex = 2;
 
 		// Slot 3: a second active slot with different values
 		m->slots[3].cc.setCc(11);
@@ -174,6 +176,10 @@ TEST_CASE("JSON round-trip preserves state", "[MidiCat][JSON]") {
 		REQUIRE(m2->slots[0].param.clockSource == 2);
 		REQUIRE(m2->slots[0].param.lightFirstId == 3);
 		REQUIRE(m2->slots[0].param.lightNumColors == 4);
+		REQUIRE(m2->slots[0].param.stepValues == std::vector<int>({ 0, 42, 100, 127 }));
+		// stepIndex is deliberately not serialized -- a loaded preset always starts
+		// its step cycle from the beginning, regardless of where it was left.
+		REQUIRE(m2->slots[0].param.stepIndex == 0);
 
 		// Slot 3 — every serialized field
 		REQUIRE(m2->slots[3].cc.getCc() == 11);
@@ -580,6 +586,69 @@ TEST_CASE("CC Mode TOGGLE_VALUE", "[MidiCat]") {
 	REQUIRE(pq->getValue() == pq->getMinValue());
 }
 
+TEST_CASE("CC Mode TOGGLE_STEPS", "[MidiCat]") {
+	Test::Harness h;
+	MidiCatModule* module = h.addModule<MidiCatModule>("MidiCat");
+	module->processDivider.setDivision(1);
+	TestModule* testModule = h.adoptModule(new TestModule);
+	ParamQuantity* pq = testModule->getParamQuantity(TestModule::TEST_PARAM_2);
+	h.dspStep();
+
+	// Set up mapping
+	module->enableLearn(0, true);
+	module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 10, 0)); // Initialize CC state
+	module->learnParam(0, testModule->id, TestModule::TEST_PARAM_2);
+	h.dspStep();
+	module->slots[0].cc.ccMode = CCMODE::TOGGLE_STEPS;
+	module->slots[0].param.stepValues = { 0, 42, 84, 127 };
+	module->slots[0].param.stepIndex = 0;
+
+	SECTION("Each rising edge advances to the next step, wrapping at the end") {
+		module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 10, 64));
+		h.dspStep();
+		REQUIRE(pq->getValue() == 42.f);
+
+		module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 10, 0));
+		h.dspStep();
+		module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 10, 100));
+		h.dspStep();
+		REQUIRE(pq->getValue() == 84.f);
+
+		module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 10, 0));
+		h.dspStep();
+		module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 10, 127));
+		h.dspStep();
+		REQUIRE(pq->getValue() == 127.f);
+
+		// Wraps back to the first step
+		module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 10, 0));
+		h.dspStep();
+		module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 10, 5));
+		h.dspStep();
+		REQUIRE(pq->getValue() == 0.f);
+	}
+
+	SECTION("A repeated non-zero value without an intervening release does not advance") {
+		module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 10, 64));
+		h.dspStep();
+		REQUIRE(pq->getValue() == 42.f);
+
+		// Still non-zero: no rising edge, step must not advance
+		module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 10, 90));
+		h.dspStep();
+		REQUIRE(pq->getValue() == 42.f);
+	}
+
+	SECTION("Empty step list leaves the parameter untouched") {
+		module->slots[0].param.stepValues.clear();
+		float before = pq->getValue();
+
+		module->midiInput.onMessage(Test::makeMidiMessage(0xb, 0, 10, 64));
+		h.dspStep();
+		REQUIRE(pq->getValue() == before);
+	}
+}
+
 TEST_CASE("CC Mode PICKUP1", "[MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* module = h.addModule<MidiCatModule>("MidiCat");
@@ -859,6 +928,29 @@ TEST_CASE("commitLearn copies 14-bit to the next slot only when the learned CC a
 	}
 }
 
+TEST_CASE("commitLearn copies the step-toggle list from the previous slot", "[MidiCat]") {
+	Test::Harness h;
+	MidiCatModule* module = h.addModule<MidiCatModule>("MidiCat");
+	TestModule* testModule = h.adoptModule(new TestModule);
+
+	// Learn slot 0 as CC7 with a custom step-toggle list.
+	module->enableLearn(0, true);
+	module->learnParam(0, testModule->id, TestModule::TEST_PARAM_1);
+	module->midiCc(Test::makeMidiMessage(0xb, 0, 7, 64));
+	module->slots[0].cc.ccMode = CCMODE::TOGGLE_STEPS;
+	module->slots[0].param.stepValues = { 0, 30, 60, 90, 127 };
+	module->slots[0].param.stepIndex = 3;
+
+	// Learn slot 1 next -- commitLearn() should inherit slot 0's step list.
+	module->enableLearn(1, true);
+	module->learnParam(1, testModule->id, TestModule::TEST_PARAM_2);
+	module->midiCc(Test::makeMidiMessage(0xb, 0, 10, 64));
+
+	REQUIRE(module->slots[1].param.stepValues == std::vector<int>({ 0, 30, 60, 90, 127 }));
+	// The copy starts a fresh cycle rather than the source slot's current position.
+	REQUIRE(module->slots[1].param.stepIndex == 0);
+}
+
 TEST_CASE("Note basic processing", "[MidiCat]") {
 	Test::Harness h;
 	MidiCatModule* module = h.addModule<MidiCatModule>("MidiCat");
@@ -1034,6 +1126,62 @@ TEST_CASE("Note Mode TOGGLE_VEL", "[MidiCat]") {
 	h.dspStep();
 	REQUIRE(module->slots[0].tracker.toggle.state == ToggleValueLadder::STATE::IDLE);
 	REQUIRE(pq->getValue() == pq->getMinValue());
+}
+
+TEST_CASE("Note Mode TOGGLE_STEPS", "[MidiCat]") {
+	Test::Harness h;
+	MidiCatModule* module = h.addModule<MidiCatModule>("MidiCat");
+	module->processDivider.setDivision(1);
+	TestModule* testModule = h.adoptModule(new TestModule);
+	ParamQuantity* pq = testModule->getParamQuantity(TestModule::TEST_PARAM_2);
+	h.dspStep();
+
+	// Set up mapping (learn note 60 while pressed)
+	module->enableLearn(0, true);
+	module->midiInput.onMessage(Test::makeMidiMessage(0x9, 0, 60, 100)); // Learn note 60
+	module->learnParam(0, testModule->id, TestModule::TEST_PARAM_2);
+	h.dspStep();
+	module->slots[0].note.noteMode = NOTEMODE::TOGGLE_STEPS;
+	module->slots[0].param.stepValues = { 0, 42, 84, 127 };
+	module->slots[0].param.stepIndex = 0;
+	// Settle: release so the adapter tracks 0 before starting the step cycle
+	module->midiInput.onMessage(Test::makeMidiMessage(0x8, 0, 60, 0));
+	h.dspStep();
+
+	SECTION("Each note-on advances to the next step, wrapping at the end") {
+		module->midiInput.onMessage(Test::makeMidiMessage(0x9, 0, 60, 80));
+		h.dspStep();
+		REQUIRE(pq->getValue() == 42.f);
+
+		module->midiInput.onMessage(Test::makeMidiMessage(0x8, 0, 60, 0));
+		h.dspStep();
+		module->midiInput.onMessage(Test::makeMidiMessage(0x9, 0, 60, 80));
+		h.dspStep();
+		REQUIRE(pq->getValue() == 84.f);
+
+		module->midiInput.onMessage(Test::makeMidiMessage(0x8, 0, 60, 0));
+		h.dspStep();
+		module->midiInput.onMessage(Test::makeMidiMessage(0x9, 0, 60, 80));
+		h.dspStep();
+		REQUIRE(pq->getValue() == 127.f);
+
+		// Wraps back to the first step
+		module->midiInput.onMessage(Test::makeMidiMessage(0x8, 0, 60, 0));
+		h.dspStep();
+		module->midiInput.onMessage(Test::makeMidiMessage(0x9, 0, 60, 80));
+		h.dspStep();
+		REQUIRE(pq->getValue() == 0.f);
+	}
+
+	SECTION("Note-off does not advance the step") {
+		module->midiInput.onMessage(Test::makeMidiMessage(0x9, 0, 60, 80));
+		h.dspStep();
+		REQUIRE(pq->getValue() == 42.f);
+
+		module->midiInput.onMessage(Test::makeMidiMessage(0x8, 0, 60, 0));
+		h.dspStep();
+		REQUIRE(pq->getValue() == 42.f);
+	}
 }
 
 TEST_CASE("Note Mode SNAPPED", "[MidiCat]") {

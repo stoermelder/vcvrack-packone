@@ -456,6 +456,7 @@ struct MappingSlot {
 		p->curve = param.getCurve();
 		p->lightFirstId = param.lightFirstId;
 		p->lightNumColors = param.lightNumColors;
+		p->stepValues = param.stepValues;
 		return p;
 	}
 
@@ -474,6 +475,8 @@ struct MappingSlot {
 		param.setCurve(p.curve);
 		param.lightFirstId = p.lightFirstId;
 		param.lightNumColors = p.lightNumColors;
+		param.stepValues = p.stepValues;
+		param.stepIndex = 0;
 	}
 
 	/** Copy the MIDI-behaviour settings -- not the binding, not the label -- from another
@@ -490,6 +493,8 @@ struct MappingSlot {
 		param.setCurve(src.param.getCurve());
 		param.clockMode = src.param.clockMode;
 		param.clockSource = src.param.clockSource;
+		param.stepValues = src.param.stepValues;
+		param.stepIndex = 0;
 	}
 }; // struct MappingSlotBase
 

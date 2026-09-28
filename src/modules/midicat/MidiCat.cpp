@@ -848,13 +848,14 @@ struct StepEditorMenuItem : MenuItem {
 	MidiCatParam* p = NULL;
 	Menu* childMenu = NULL;
 
-	StepEditorMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
 	~StepEditorMenuItem() {
 		// childMenu is owned by the menu overlay; nulling here is enough.
 		childMenu = NULL;
+	}
+
+	void step() override {
+		rightText = string::f("%d/%d " RIGHT_ARROW, (int)p->stepValues.size(), TOGGLE_MULTI_STEPS);
+		MenuItem::step();
 	}
 
 	void onAction(const ActionEvent& e) override {
@@ -870,10 +871,6 @@ struct StepEditorMenuItem : MenuItem {
 		// Delete existing children. clearChildren() is provided by Widget.
 		childMenu->clearChildren();
 
-		// Read-only header showing count
-		childMenu->addChild(construct<MenuLabel>(&MenuLabel::text,
-			string::f("Steps (%d/%d)", (int)p->stepValues.size(), TOGGLE_MULTI_STEPS)));
-
 		// One slider per step (sliders don't fire ActionEvent, no sticky needed)
 		float rangeMin = p->getLimitMin();
 		float rangeMax = p->getLimitMax();
@@ -887,7 +884,7 @@ struct StepEditorMenuItem : MenuItem {
 					p->stepValues[idx] = (int)std::round(clamp(v, std::min(rangeMin, rangeMax), std::max(rangeMin, rangeMax)));
 				},
 				rangeMin, rangeMax, defaultVal,
-				string::f("Step %d", idx + 1).c_str(), "", 1.f, 220.0f
+				"Step", "", 1.f, 220.0f
 			));
 		}
 
@@ -1348,6 +1345,13 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			menu->addChild(construct<NoteVelZeroMenuItem>(&MenuItem::text, "Send \"note on, velocity 0\"", &NoteVelZeroMenuItem::module, module, &NoteVelZeroMenuItem::id, id));
 		}
 
+		if (module->slots[id].cc.ccMode == CCMODE::TOGGLE_STEPS || module->slots[id].note.noteMode == NOTEMODE::TOGGLE_STEPS) {
+			menu->addChild(construct<StepEditorMenuItem>(
+				&MenuItem::text, "Toggle Steps",
+				&StepEditorMenuItem::p, &module->slots[id].param
+			));
+		}
+
 		struct PresetMenuItem : MenuItem {
 			MidiCatModule* module;
 			int id;
@@ -1447,10 +1451,6 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			[this]() { return module->slots[id].param.getMax(); },
 			[this](float v) { module->slots[id].param.setMax(v); },
 			-1.f, 2.f, 1.f, "High", "%", 100.f, 220.0f
-		));
-		menu->addChild(construct<StepEditorMenuItem>(
-			&MenuItem::text, "Steps",
-			&StepEditorMenuItem::p, &module->slots[id].param
 		));
 		menu->addChild(construct<PresetMenuItem>(&MenuItem::text, "Presets", &PresetMenuItem::module, module, &PresetMenuItem::id, id));
 		menu->addChild(new MidiCatCurveMenuItem(&module->slots[id].param));

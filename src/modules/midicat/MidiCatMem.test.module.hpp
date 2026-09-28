@@ -204,6 +204,27 @@ TEST_CASE("MemStore::save stores current MidiCat CC mapping", "[MidiCatMem][Midi
 	REQUIRE(it->second->paramMap.front()->paramId == MidiCatMemModule::PARAM_APPLY);
 }
 
+TEST_CASE("MemStore::save captures the Toggle Steps value list", "[MidiCatMem][MidiCat]") {
+	Test::Harness h;
+	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
+	MidiCatMemModule* mem = h.addModule<MidiCatMemModule>("MidiCatEx");
+	MidiCatMemModule* target = h.addModule<MidiCatMemModule>("MidiCatEx");
+
+	setupBinding(h, midicat, target, 0, 7, MidiCatMemModule::PARAM_APPLY);
+	midicat->slots[0].cc.ccMode = CCMODE::TOGGLE_STEPS;
+	midicat->slots[0].param.stepValues = { 0, 42, 84, 127 };
+
+	h.connectExpander(midicat, mem);
+	h.dspStep();
+
+	midicat->expanders.memStore().save(MemStore::Key(target->model->plugin->slug, target->model->slug), midicat->slots, midicat->paramHandles, MAX_CHANNELS);
+
+	auto it = mem->midiMap.find({target->model->plugin->slug, target->model->slug});
+	REQUIRE(it != mem->midiMap.end());
+	REQUIRE(it->second->paramMap.front()->ccMode == CCMODE::TOGGLE_STEPS);
+	REQUIRE(it->second->paramMap.front()->stepValues == std::vector<int>({ 0, 42, 84, 127 }));
+}
+
 // The "Store mapping" menu is built from currently bound slots, but the mapping can be
 // cleared or the target module removed in the window between opening the menu and
 // clicking the item -- so save() must tolerate a key that no longer matches any slot,
@@ -244,6 +265,33 @@ TEST_CASE("moduleBindMem restores CC and param binding into MidiCat", "[MidiCatM
 	REQUIRE(midicat->slots[0].cc.getCc() == 15);
 	REQUIRE(midicat->paramHandles[0].paramId == MidiCatMemModule::PARAM_NEXT);
 	REQUIRE(midicat->paramHandles[0].module == target);
+}
+
+TEST_CASE("moduleBindMem restores the Toggle Steps value list", "[MidiCatMem][MidiCat]") {
+	Test::Harness h;
+	MidiCatModule* midicat = h.addModule<MidiCatModule>("MidiCat");
+	MidiCatMemModule* mem = h.addModule<MidiCatMemModule>("MidiCatEx");
+	MidiCatMemModule* target = h.addModule<MidiCatMemModule>("MidiCatEx");
+
+	h.connectExpander(midicat, mem);
+	h.dspStep();
+
+	auto* memMod = new MemModule;
+	memMod->pluginName = target->model->plugin->name;
+	memMod->moduleName = target->model->name;
+	MemParam* p = new MemParam;
+	p->paramId = MidiCatMemModule::PARAM_NEXT;
+	p->cc = 15;
+	p->ccMode = CCMODE::TOGGLE_STEPS;
+	p->stepValues = { 10, 20, 30 };
+	memMod->paramMap.push_back(p);
+	mem->midiMap[{target->model->plugin->slug, target->model->slug}] = memMod;
+
+	midicat->moduleBindMem(target);
+
+	REQUIRE(midicat->slots[0].cc.ccMode == CCMODE::TOGGLE_STEPS);
+	REQUIRE(midicat->slots[0].param.stepValues == std::vector<int>({ 10, 20, 30 }));
+	REQUIRE(midicat->slots[0].param.stepIndex == 0);
 }
 
 TEST_CASE("MemStore::erase removes mapping from storage", "[MidiCatMem][MidiCat]") {
