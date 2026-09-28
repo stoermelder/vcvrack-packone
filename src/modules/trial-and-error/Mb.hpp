@@ -14,8 +14,10 @@ extern fuzzysearch::Database<plugin::Model*> modelDb;
 extern bool searchDescriptions;
 extern bool sortBySearchScore;
 
-// POC: docks the browser as a fixed-width strip on the left instead of a full-screen modal.
+// POC: docks the browser as a strip on the left instead of a full-screen modal.
 extern bool sideView;
+// Width of the docked strip, resizable via a handle on its right edge.
+extern float sideViewWidth;
 
 void modelDbInit();
 ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser = true);
@@ -226,6 +228,7 @@ struct BrowserOverlay : widget::OpaqueWidget {
 	Widget* mbV06;
 	Widget* mbV1;
 	Widget* mbV2;
+	Widget* sideViewResizeHandle;
 
 	MODE* mode;
 

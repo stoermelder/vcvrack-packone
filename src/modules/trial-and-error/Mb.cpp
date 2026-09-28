@@ -2,6 +2,7 @@
 #include "../../vcv/ui.hpp"
 #include "../../vcv/history.hpp"
 #include "../../vcv/fs.hpp"
+#include "../../utils/cursor.hpp"
 #include "Mb.hpp"
 #include "Mb_v1.hpp"
 #include "Mb_v2.hpp"
@@ -22,8 +23,10 @@ fuzzysearch::Database<plugin::Model*> modelDb;
 bool searchDescriptions = false;
 bool sortBySearchScore = true;
 bool sideView = false;
+float sideViewWidth = 440.f;
 
-static const float SIDE_VIEW_WIDTH = 440.f;
+static const float SIDE_VIEW_WIDTH_MIN = 220.f;
+static const float SIDE_VIEW_WIDTH_MAX = 900.f;
 
 void modelDbInit() {
 	modelDb = fuzzysearch::Database<plugin::Model*>();
@@ -781,6 +784,29 @@ int modelUsageCount(Model* model) {
 
 // Browser overlay
 
+struct SideViewResizeHandle : widget::OpaqueWidget {
+	void draw(const DrawArgs& args) override {
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+		nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.15f));
+		nvgFill(args.vg);
+	}
+
+	void onDragMove(const event::DragMove& e) override {
+		sideViewWidth = math::clamp(sideViewWidth + e.mouseDelta.x, SIDE_VIEW_WIDTH_MIN, SIDE_VIEW_WIDTH_MAX);
+	}
+
+	void onEnter(const event::Enter& e) override {
+		OpaqueWidget::onEnter(e);
+		cursor::setResizeCursor(true);
+	}
+
+	void onLeave(const event::Leave& e) override {
+		OpaqueWidget::onLeave(e);
+		cursor::setResizeCursor(false);
+	}
+};
+
 BrowserOverlay::BrowserOverlay() {
 	v1::modelBoxZoom = pluginSettings.mbZoom;
 	v1::modelBoxSort = pluginSettings.mbSort;
@@ -827,6 +853,11 @@ BrowserOverlay::BrowserOverlay() {
 
 	mbV2 = new v2::ModuleBrowser;
 	addChild(mbV2);
+
+	SideViewResizeHandle* handle = new SideViewResizeHandle;
+	handle->box.size.x = 6.f;
+	addChild(handle);
+	sideViewResizeHandle = handle;
 
 	APP->scene->browser = this;
 	APP->scene->addChild(this);
@@ -885,7 +916,11 @@ void BrowserOverlay::step() {
 		// left edge over here to make room for the docked strip.
 		RackScrollWidget* rackScroll = APP->scene->rackScroll;
 		box.pos = math::Vec(0, rackScroll->box.pos.y);
-		box.size = math::Vec(SIDE_VIEW_WIDTH, parent->box.size.y - box.pos.y);
+		box.size = math::Vec(sideViewWidth, parent->box.size.y - box.pos.y);
+
+		sideViewResizeHandle->show();
+		sideViewResizeHandle->box.pos = math::Vec(box.size.x - sideViewResizeHandle->box.size.x * 0.5f, 0.f);
+		sideViewResizeHandle->box.size.y = box.size.y;
 
 		// Derive from parent->box (the true window width), not rackScroll->box.size.x:
 		// Scene::step() never resets rackScroll->box.pos.x back to 0, only .y, so reading
@@ -896,6 +931,7 @@ void BrowserOverlay::step() {
 	}
 	else {
 		box = parent->box.zeroPos();
+		sideViewResizeHandle->hide();
 	}
 
 	// Pending drag: transfer the drag from the card widget to the module widget
