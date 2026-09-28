@@ -20,6 +20,8 @@ struct Settings {
 	bool mbApplyLibraryWhitelist = false;
 	bool mbShowDeprecated = false;
 	bool mbNewestAutoUpdate = false;
+	bool mbSideView = false;
+	float mbSideViewWidth = 440.f;
 
 	NVGcolor overlayTextColor = bndGetTheme()->menuTheme.textColor;
 	int overlayHpos = 0;

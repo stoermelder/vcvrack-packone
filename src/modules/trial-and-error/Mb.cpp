@@ -817,6 +817,8 @@ BrowserOverlay::BrowserOverlay() {
 	searchDescriptions = pluginSettings.mbSearchDescriptions;
 	sortBySearchScore = pluginSettings.mbSortBySearchScore;
 	favoriteHighlight = pluginSettings.mbFavoriteHighlight;
+	sideView = pluginSettings.mbSideView;
+	sideViewWidth = pluginSettings.mbSideViewWidth;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
 	modelWidthsFromJson();
 	manifestsCacheInit();
@@ -879,6 +881,8 @@ BrowserOverlay::~BrowserOverlay() {
 	pluginSettings.mbSearchDescriptions = searchDescriptions;
 	pluginSettings.mbSortBySearchScore = sortBySearchScore;
 	pluginSettings.mbFavoriteHighlight = favoriteHighlight;
+	pluginSettings.mbSideView = sideView;
+	pluginSettings.mbSideViewWidth = sideViewWidth;
 	json_decref(pluginSettings.mbModelsJ);
 	pluginSettings.mbModelsJ = moduleBrowserToJson();
 	modelWidthsToJson();
