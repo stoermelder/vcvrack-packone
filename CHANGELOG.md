@@ -1,9 +1,4 @@
-## 2.7.0
-
-### New modules
-
-- Module [TRANSIT-PAD](./docs/transit/Transit.md#transit-pad-expander)
-    - XY-pad expander for TRANSIT: place snapshots freely on a 2D pad and blend them with a movable mix point. Eight snapshot-sets with colors and labels, CV/MIDI-mappable mix position, and recordable motion-sequences
+## 2.x.x
 
 ### Changes and Fixes
 
@@ -11,6 +6,11 @@
     - Added CC-/note-mode "Toggle Steps" for cycling through a user-defined list of values, including support for the MEM-expander
 
 ## 2.7.0
+
+### New modules
+
+- Module [TRANSIT-PAD](./docs/transit/Transit.md#transit-pad-expander)
+    - XY-pad expander for TRANSIT: place snapshots freely on a 2D pad and blend them with a movable mix point. Eight snapshot-sets with colors and labels, CV/MIDI-mappable mix position, and recordable motion-sequences
 
 ### Changes and Fixes
 

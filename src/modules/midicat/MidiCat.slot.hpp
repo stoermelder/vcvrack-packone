@@ -196,6 +196,20 @@ struct MappingSlot {
 		return r;
 	}
 
+	/** Advance to the next user-defined step value on a rising edge (0 -> nonzero).
+	 *  Unlike processToggle()'s four-step ladder, a repeated press without an
+	 *  intervening release/note-off must not advance -- so this tracks the raw
+	 *  edge directly rather than going through ToggleValueLadder. */
+	ModeResult processStepToggle(int inputValue) {
+		ModeResult r;
+		if (inputValue > 0 && tracker.lastValue <= 0) {
+			r.value = param.nextStepValue();
+			tracker.detached = true;
+		}
+		tracker.lastValue = inputValue;
+		return r;
+	}
+
 	/** Step to the next/previous snapped parameter value. `shortLong` selects the
 	 *  short-press/long-press variant, which steps backwards on a long press. */
 	ModeResult processSnapped(int inputValue, bool shortLong, uint64_t pressDuration,
@@ -259,12 +273,7 @@ struct MappingSlot {
 				return processToggle(in, { in, param.getValue(),
 				                            param.getLimitMin(), param.getLimitMin() });
 			case CCMODE::TOGGLE_STEPS:
-				if (in > 0 && tracker.lastValue <= 0) {
-					r.value = param.nextStepValue();
-					tracker.detached = true;
-				}
-				tracker.lastValue = in;
-				break;
+				return processStepToggle(in);
 			case CCMODE::SNAPPED:
 				return processSnapped(in, false, 0, longPressDuration);
 			case CCMODE::SNAPPED_SL:
@@ -297,12 +306,7 @@ struct MappingSlot {
 			case NOTEMODE::TOGGLE_VEL:
 				return processToggle(in, { in, param.getValue(), 0, 0 });
 			case NOTEMODE::TOGGLE_STEPS:
-				if (in > 0 && tracker.lastValue <= 0) {
-					r.value = param.nextStepValue();
-					tracker.detached = true;
-				}
-				tracker.lastValue = in;
-				break;
+				return processStepToggle(in);
 			case NOTEMODE::SNAPPED:
 				return processSnapped(in, false, 0, longPressDuration);
 			case NOTEMODE::SNAPPED_SL:
