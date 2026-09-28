@@ -244,21 +244,32 @@ struct BrowserOverlay : widget::OpaqueWidget {
 	ModuleWidget* pendingDragModule = nullptr;
 	math::Vec pendingDragSceneAnchor = math::Vec(NAN, NAN);
 
-	// True while the cursor is within this widget's own box, updated once per step(). Not
-	// event-driven (onHover/onLeave only fire on mouse movement, and onLeave in particular only
-	// targets whichever descendant last consumed hover — usually a child, not this widget — so
-	// neither reliably reports "cursor left" for a widget that itself rarely ends up as
-	// hoveredWidget). A plain geometric check each step is simple and always correct, including
-	// for a stationary cursor.
+	// True while the cursor is within this widget's own box; updated each step() rather than
+	// via onHover/onLeave, which don't reliably fire for this widget (see BrowserSearchField).
 	bool hovered = false;
+
+	// Full-window Scene child (not a descendant of this widget), alive only while side view is
+	// on. Lets Ctrl/Cmd+F, Escape and right-click-to-close work regardless of mouse position,
+	// since this widget's own box is just the narrow dock strip in side view.
+	Widget* globalKeyCatcher = nullptr;
 
 	BrowserOverlay();
 	~BrowserOverlay();
 
 	void onShow(const event::Show& e) override;
+	void onHide(const event::Hide& e) override;
 	void step() override;
 	void draw(const DrawArgs& args) override;
 	void onButton(const event::Button& e) override;
+
+	// Called when side view is switched on: installs globalKeyCatcher as a Scene child.
+	void sideViewSetup();
+	// Called when side view is switched off: removes and deletes globalKeyCatcher.
+	void sideViewTeardown();
+	// Moves rackScroll's left edge to rackScrollLeft, compensating offset so the visible rack
+	// content doesn't shift. Used on open/resize (from step()) and on close (0, from onHide()
+	// and sideViewTeardown()) — Scene::step() only ever resets rackScroll's .y, never .x.
+	void sideViewRackScrollWidth(float rackScrollLeft);
 };
 
 struct DropdownChoiceContainer : widget::OpaqueWidget {

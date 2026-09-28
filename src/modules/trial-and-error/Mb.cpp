@@ -784,6 +784,52 @@ int modelUsageCount(Model* model) {
 
 // Browser overlay
 
+// Full-window and non-opaque so it never affects mouse/drag/hover. Handles Ctrl/Cmd+F,
+// Escape, and right-click-to-close regardless of cursor position (HoverKeyEvent/ButtonEvent
+// are otherwise position-gated, and the dock's own box in side view is just the narrow strip).
+struct SideViewGlobalKeyCatcher : widget::Widget {
+	BrowserOverlay* overlay;
+	// True during a Ctrl/Cmd+F session
+	bool active = false;
+
+	void step() override {
+		box = parent->box.zeroPos();
+
+		if (active) {
+			widget::Widget* searchField = dynamic_cast<v2::ModuleBrowser*>(overlay->mbV2)->searchField;
+			widget::Widget* selected = APP->event->getSelectedWidget();
+			// NULL is ambiguous (may be the field's own hover-release, about to be undone below),
+			// so only something else entirely counts as an external override.
+			if (selected != searchField && selected != nullptr) {
+				active = false;
+			}
+			else {
+				APP->event->setSelectedWidget(searchField);
+			}
+		}
+
+		Widget::step();
+	}
+
+	void onHoverKey(const event::HoverKey& e) override {
+		Widget::onHoverKey(e);
+		if (e.isConsumed()) return;
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_F) {
+			v2::ModuleBrowser* browser = dynamic_cast<v2::ModuleBrowser*>(overlay->mbV2);
+			active = true;
+			APP->event->setSelectedWidget(browser->searchField);
+			e.consume(this);
+			return;
+		}
+		// Give focus back to the rack without closing the dock.
+		if (active && e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
+			active = false;
+			APP->event->setSelectedWidget(NULL);
+			e.consume(this);
+		}
+	}
+};
+
 struct SideViewResizeHandle : widget::OpaqueWidget {
 	void draw(const DrawArgs& args) override {
 		nvgBeginPath(args.vg);
@@ -806,6 +852,7 @@ struct SideViewResizeHandle : widget::OpaqueWidget {
 		cursor::setResizeCursor(false);
 	}
 };
+
 
 BrowserOverlay::BrowserOverlay() {
 	v1::modelBoxZoom = pluginSettings.mbZoom;
@@ -863,9 +910,14 @@ BrowserOverlay::BrowserOverlay() {
 
 	APP->scene->browser = this;
 	APP->scene->addChild(this);
+
+	// sideView may already be true here (loaded from pluginSettings above).
+	if (sideView) sideViewSetup();
 }
 
 BrowserOverlay::~BrowserOverlay() {
+	if (sideView) sideViewTeardown();
+
 	// Undo only when no other module messed with the browser
 	if (APP->scene->browser == this) {
 		APP->scene->browser = mbWidgetBackup;
@@ -893,6 +945,42 @@ BrowserOverlay::~BrowserOverlay() {
 void BrowserOverlay::onShow(const event::Show& e) {
 	rackMousePosAtOpen = APP->scene->rack->getMousePos();
 	OpaqueWidget::onShow(e);
+}
+
+void BrowserOverlay::onHide(const event::Hide& e) {
+	sideViewRackScrollWidth(0.f);
+	OpaqueWidget::onHide(e);
+}
+
+void BrowserOverlay::sideViewSetup() {
+	assert(!globalKeyCatcher);
+	SideViewGlobalKeyCatcher* catcher = new SideViewGlobalKeyCatcher;
+	catcher->overlay = this;
+	APP->scene->addChild(catcher);
+	globalKeyCatcher = catcher;
+}
+
+void BrowserOverlay::sideViewTeardown() {
+	assert(globalKeyCatcher);
+	APP->scene->removeChild(globalKeyCatcher);
+	delete globalKeyCatcher;
+	globalKeyCatcher = nullptr;
+	sideViewRackScrollWidth(0.f);
+}
+
+// Moves rackScroll's left edge to rackScrollLeft (0 to give the rack back its full width, or the
+// dock's right edge to make room for it), compensating offset by the same amount so the visible
+// rack content doesn't shift — used on open, close, and live resize via the drag handle.
+void BrowserOverlay::sideViewRackScrollWidth(float rackScrollLeft) {
+	RackScrollWidget* rackScroll = APP->scene->rackScroll;
+	if (rackScroll->box.pos.x == rackScrollLeft) return;
+	rackScroll->offset.x += rackScrollLeft - rackScroll->box.pos.x;
+	rackScroll->box.size.x = std::max(0.f, parent->box.size.x - rackScrollLeft);
+	rackScroll->box.pos.x = rackScrollLeft;
+	// RackScrollWidget::step() (an earlier Scene child) already turned the old offset into
+	// container->box.pos this frame — reapply with the corrected offset so the compensation
+	// above doesn't show up one frame late as a visible jump.
+	rackScroll->container->box.pos.x = -std::round(rackScroll->offset.x);
 }
 
 void BrowserOverlay::step() {
@@ -928,12 +1016,7 @@ void BrowserOverlay::step() {
 		sideViewResizeHandle->box.pos = math::Vec(box.size.x - sideViewResizeHandle->box.size.x * 0.5f, 0.f);
 		sideViewResizeHandle->box.size.y = box.size.y;
 
-		// Derive from parent->box (the true window width), not rackScroll->box.size.x:
-		// Scene::step() never resets rackScroll->box.pos.x back to 0, only .y, so reading
-		// back our own previous write here would compound the shrink every frame.
-		float rackScrollLeft = box.getRight();
-		rackScroll->box.pos.x = rackScrollLeft;
-		rackScroll->box.size.x = std::max(0.f, parent->box.size.x - rackScrollLeft);
+		sideViewRackScrollWidth(box.getRight());
 	}
 	else {
 		box = parent->box.zeroPos();
@@ -947,12 +1030,9 @@ void BrowserOverlay::step() {
 	// button press, so we cannot simply check "button still held" — we need
 	// actual movement to gate the transfer.
 	//
-	// In side view, the transfer is also held off until the cursor has left the dock: while
-	// APP->event->getDraggedWidget() is still the card (or anything other than a RackWidget/
-	// ModuleWidget/PortWidget), RackScrollWidget::step()'s edge-autoscroll — which polls
-	// getDraggedWidget()'s type directly, not through event dispatch — can never see it as a
-	// qualifying drag. So filtering the handoff at the source means the dock never has to
-	// fight or undo that autoscroll after the fact.
+	// In side view, also held off until the cursor leaves the dock: RackScrollWidget's own
+	// edge-autoscroll polls getDraggedWidget()'s type directly, so keeping it as the card (not
+	// yet a ModuleWidget) while still over the dock keeps that autoscroll from firing at all.
 	if (pendingDragModule) {
 		if (!APP->event->getDraggedWidget()) {
 			// Button was released without enough movement — module stays put.
@@ -1172,12 +1252,10 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 			[]() { return sideView; },
 			[]() {
 				sideView ^= true;
-				if (!sideView) {
-					// Scene::step() never resets rackScroll->box.pos.x on its own (only .y),
-					// so restore the left edge here instead of every frame in step().
-					RackScrollWidget* rackScroll = APP->scene->rackScroll;
-					rackScroll->box.size.x += rackScroll->box.pos.x;
-					rackScroll->box.pos.x = 0.f;
+				BrowserOverlay* overlay = dynamic_cast<BrowserOverlay*>(APP->scene->browser);
+				if (overlay) {
+					if (sideView) overlay->sideViewSetup();
+					else overlay->sideViewTeardown();
 				}
 			}
 		));
