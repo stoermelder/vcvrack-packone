@@ -164,6 +164,8 @@ struct BrowserSearchField : ui::TextField {
 					break;
 				}
 				case GLFW_KEY_ESCAPE: {
+					// Sticky side view stays open; only closable from its own context menu item.
+					if (sideView) break;
 					Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
 					overlay->hide();
 					e.consume(this);
@@ -825,7 +827,7 @@ ModuleBrowser::ModuleBrowser() {
 
 void ModuleBrowser::step() {
 	if (!visible) return;
-	box = parent->box.zeroPos().grow(math::Vec(-40, -40));
+	box = sideView ? parent->box.zeroPos() : parent->box.zeroPos().grow(math::Vec(-40, -40));
 
 	headerLayout->box.size.x = box.size.x;
 

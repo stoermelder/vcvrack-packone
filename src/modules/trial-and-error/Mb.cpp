@@ -21,6 +21,9 @@ namespace Mb {
 fuzzysearch::Database<plugin::Model*> modelDb;
 bool searchDescriptions = false;
 bool sortBySearchScore = true;
+bool sideView = false;
+
+static const float SIDE_VIEW_WIDTH = 440.f;
 
 void modelDbInit() {
 	modelDb = fuzzysearch::Database<plugin::Model*>();
@@ -97,8 +100,8 @@ ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser) {
 	h->setModule(moduleWidget);
 	vcv::history::push(h);
 
-	// Hide Module Browser
-	if (hideBrowser) APP->scene->browser->hide();
+	// Hide Module Browser (sticky side view stays open regardless of click type)
+	if (hideBrowser && !sideView) APP->scene->browser->hide();
 
 	// Arm a pending drag so the user can immediately reposition the module by
 	// holding and dragging — cleared in BrowserOverlay::step() once the mouse
@@ -876,7 +879,24 @@ void BrowserOverlay::step() {
 			break;
 	}
 
-	box = parent->box.zeroPos();
+	if (sideView && visible) {
+		// Scene::step() resets rackScroll to full width/below the menu bar every frame
+		// before stepping us (we're a later child), so read its top offset and push its
+		// left edge over here to make room for the docked strip.
+		RackScrollWidget* rackScroll = APP->scene->rackScroll;
+		box.pos = math::Vec(0, rackScroll->box.pos.y);
+		box.size = math::Vec(SIDE_VIEW_WIDTH, parent->box.size.y - box.pos.y);
+
+		// Derive from parent->box (the true window width), not rackScroll->box.size.x:
+		// Scene::step() never resets rackScroll->box.pos.x back to 0, only .y, so reading
+		// back our own previous write here would compound the shrink every frame.
+		float rackScrollLeft = box.getRight();
+		rackScroll->box.pos.x = rackScrollLeft;
+		rackScroll->box.size.x = std::max(0.f, parent->box.size.x - rackScrollLeft);
+	}
+	else {
+		box = parent->box.zeroPos();
+	}
 
 	// Pending drag: transfer the drag from the card widget to the module widget
 	// once the mouse has moved past a small threshold.  This distinguishes a
@@ -904,16 +924,22 @@ void BrowserOverlay::step() {
 }
 
 void BrowserOverlay::draw(const DrawArgs& args) {
-	nvgBeginPath(args.vg);
-	nvgRect(args.vg, RECT_ARGS(parent->box.zeroPos()));
-	nvgFillColor(args.vg, nvgRGBA(0x0, 0x0, 0x0, 0xB0));
-	nvgFill(args.vg);
+	if (!sideView) {
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, RECT_ARGS(parent->box.zeroPos()));
+		nvgFillColor(args.vg, nvgRGBA(0x0, 0x0, 0x0, 0xB0));
+		nvgFill(args.vg);
+	}
 	OpaqueWidget::draw(args);
 }
 
 void BrowserOverlay::onButton(const event::Button& e) {
 	OpaqueWidget::onButton(e);
 	if (e.getTarget() != this)
+		return;
+
+	// Sticky side view stays open until explicitly toggled off from the module's context menu.
+	if (sideView)
 		return;
 
 	if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
@@ -1091,6 +1117,19 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 		menu->addChild(createCheckMenuItem("v2 mod", "",
 			[module]() { return module->mode == MODE::V2; },
 			[module]() { module->mode = MODE::V2; }
+		));
+		menu->addChild(createCheckMenuItem("Sticky side view (POC)", "",
+			[]() { return sideView; },
+			[]() {
+				sideView ^= true;
+				if (!sideView) {
+					// Scene::step() never resets rackScroll->box.pos.x on its own (only .y),
+					// so restore the left edge here instead of every frame in step().
+					RackScrollWidget* rackScroll = APP->scene->rackScroll;
+					rackScroll->box.size.x += rackScroll->box.pos.x;
+					rackScroll->box.pos.x = 0.f;
+				}
+			}
 		));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("v1 & v2 settings"));
