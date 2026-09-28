@@ -34,5 +34,18 @@ inline void setLearnCursor(bool active) {
 	else resetCursor();
 }
 
+// Sets the horizontal-resize cursor, used while hovering/dragging a draggable-width panel edge.
+inline void setHResizeCursor() {
+	if (!APP->window) return;
+	static GLFWcursor* hresize = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
+	glfwSetCursor(APP->window->win, hresize);
+}
+
+// Sets the horizontal-resize cursor while `active`, the arrow otherwise.
+inline void setResizeCursor(bool active) {
+	if (active) setHResizeCursor();
+	else resetCursor();
+}
+
 } // namespace cursor
 } // namespace StoermelderPackOne
