@@ -244,6 +244,14 @@ struct BrowserOverlay : widget::OpaqueWidget {
 	ModuleWidget* pendingDragModule = nullptr;
 	math::Vec pendingDragSceneAnchor = math::Vec(NAN, NAN);
 
+	// True while the cursor is within this widget's own box, updated once per step(). Not
+	// event-driven (onHover/onLeave only fire on mouse movement, and onLeave in particular only
+	// targets whichever descendant last consumed hover — usually a child, not this widget — so
+	// neither reliably reports "cursor left" for a widget that itself rarely ends up as
+	// hoveredWidget). A plain geometric check each step is simple and always correct, including
+	// for a stationary cursor.
+	bool hovered = false;
+
 	BrowserOverlay();
 	~BrowserOverlay();
 

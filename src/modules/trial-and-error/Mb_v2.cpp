@@ -131,9 +131,20 @@ struct BrowserSearchField : ui::TextField {
 	DropdownChoiceContainer* dropDown = nullptr;
 
 	void step() override {
-		widget::Widget* selected = APP->event->getSelectedWidget();
-		if (!selected || !dynamic_cast<ui::TextField*>(selected)) {
-			APP->event->setSelectedWidget(this);
+		// In sticky side view the dock is visible the whole time, so it must not grab keyboard
+		// focus unconditionally (that would swallow arrow keys / Home / End meant for the rack
+		// even while the user is nowhere near the dock). Gated on hover there; the modal popup
+		// case keeps grabbing focus unconditionally since it visually covers everything anyway.
+		Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
+		bool eligibleToSelect = !sideView || (overlay && overlay->hovered);
+		if (eligibleToSelect) {
+			widget::Widget* selected = APP->event->getSelectedWidget();
+			if (!selected || !dynamic_cast<ui::TextField*>(selected)) {
+				APP->event->setSelectedWidget(this);
+			}
+		}
+		else if (APP->event->getSelectedWidget() == this) {
+			APP->event->setSelectedWidget(NULL);
 		}
 		TextField::step();
 	}

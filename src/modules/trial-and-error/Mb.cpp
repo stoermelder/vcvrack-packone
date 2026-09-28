@@ -892,6 +892,8 @@ void BrowserOverlay::onShow(const event::Show& e) {
 }
 
 void BrowserOverlay::step() {
+	hovered = box.contains(APP->scene->mousePos);
+
 	switch (*mode) {
 		case MODE::V06:
 			if (visible) mbV06->show(); else mbV06->hide();
@@ -940,6 +942,13 @@ void BrowserOverlay::step() {
 	// (module follows the cursor).  step() fires in the same frame as the
 	// button press, so we cannot simply check "button still held" — we need
 	// actual movement to gate the transfer.
+	//
+	// In side view, the transfer is also held off until the cursor has left the dock: while
+	// APP->event->getDraggedWidget() is still the card (or anything other than a RackWidget/
+	// ModuleWidget/PortWidget), RackScrollWidget::step()'s edge-autoscroll — which polls
+	// getDraggedWidget()'s type directly, not through event dispatch — can never see it as a
+	// qualifying drag. So filtering the handoff at the source means the dock never has to
+	// fight or undo that autoscroll after the fact.
 	if (pendingDragModule) {
 		if (!APP->event->getDraggedWidget()) {
 			// Button was released without enough movement — module stays put.
@@ -947,7 +956,8 @@ void BrowserOverlay::step() {
 		}
 		else {
 			math::Vec currentPos = APP->scene->getMousePos();
-			if (currentPos.minus(pendingDragSceneAnchor).square() >= 4.f * 4.f) {
+			bool overDock = sideView && currentPos.x < box.getRight();
+			if (!overDock && currentPos.minus(pendingDragSceneAnchor).square() >= 4.f * 4.f) {
 				ModuleWidget* mw = pendingDragModule;
 				pendingDragModule = nullptr;
 				APP->event->setDraggedWidget(mw, GLFW_MOUSE_BUTTON_LEFT);
