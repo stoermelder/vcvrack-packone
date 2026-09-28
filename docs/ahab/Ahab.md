@@ -131,3 +131,4 @@ Features missing in AHAB compared to ORCA:
     - Fixed various minor issues
 - v2.7.0
     - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Ahab.json)
+    - Added reusable tiny Snippets to the context menu
