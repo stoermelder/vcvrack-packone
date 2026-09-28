@@ -186,7 +186,7 @@ itself. Disabled by default.
     - Fixed module placement when "Smart Rearrangement" is disabled
     - Fixed broken sorting option "Last used"
     - Fixed module preview in *v1 mod* browser
-- v2.x.x
+- v2.7.0
     - Added option to import "recently used"/"most used" statistics from Rack's own module browser
     - Added option to disable arrow keys selecting modules in *v2 mod* browser
     - Added option to pre-warm module preview

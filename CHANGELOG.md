@@ -1,4 +1,9 @@
-## 2.x.x
+## 2.7.0
+
+### New modules
+
+- Module [TRANSIT-PAD](./docs/transit/Transit.md#transit-pad-expander)
+    - XY-pad expander for TRANSIT: place snapshots freely on a 2D pad and blend them with a movable mix point. Eight snapshot-sets with colors and labels, CV/MIDI-mappable mix position, and recordable motion-sequences
 
 ### Changes and Fixes
 
@@ -19,10 +24,12 @@
 - Module [AHAB](./docs/ahab/Ahab.md)
     - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Ahab.json)
 - Module [ARENA](./docs/arena/Arena.md)
+    - Added more preset generators for SEQ-EDIT
     - Fixed wrong values for mix-ports on preset load
     - Fixed missing voltage-mode options in the context menu of the mix-ports
     - Fixed out-of-range sequence selection for _SEQ_-mode "0..10V"
     - Fixed "Scale" out-mode using the configured number of mix-ports
+    - Fixed broken "Clear" in SEQ-EDIT mode
 - Module [DIRT](./docs/dirt/Dirt.md)
     - Fixed broken "Initialize" on Crush defects
 - Module [GLUE](./docs/glue/Glue.md)
@@ -37,9 +44,13 @@
 - Module [SIREN](./docs/siren/Siren.md)
     - Fixed a background worker that could stall indefinitely
     - Fixed broken "Cancel tag classification"
+- Module [SPLICE-KIT](./docs/splicekit/SpliceKit.md)
+    - Added built-in usage tutorial
 - Module [STRIP](./docs/strip/Strip.md)
     - Reduced resource consumption (one shared worker for all STRIP modules)
     - Fixed a background worker that could stall indefinitely
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Added color setting for mapping indicators
 
 ## 2.6.0
 

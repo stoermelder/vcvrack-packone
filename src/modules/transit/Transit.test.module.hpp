@@ -1771,3 +1771,41 @@ TEST_CASE("presetProcessPhase does not write a param whose preset is shorter tha
 		REQUIRE(testModule2->params[TestModule::TEST_PARAM_2].getValue() == 7.5f);
 	}
 }
+
+
+// getSlot() previously guarded only the upper bound, so a negative index
+// indexed N[negative] and took a negative slot[] subscript. The assert that
+// stood in for a check is compiled out in release. getSlotLabel/getSlotOwner
+// were already hardened for exactly this, so this pins the whole trio.
+TEST_CASE("Slot accessors reject out-of-range indices instead of indexing out of bounds", "[Transit]") {
+	Test::Harness h;
+	TransitModule<12>* transit = h.addModule<TransitModule<12>>("Transit");
+	h.dspStep();
+
+	SECTION("getSlot returns NULL rather than computing a negative subscript") {
+		REQUIRE(transit->getSlot(-1) == NULL);
+		REQUIRE(transit->getSlot(-12) == NULL);
+		REQUIRE(transit->getSlot(-99999) == NULL);
+		// The upper bound was already guarded; pinned here so the pair stays symmetric.
+		REQUIRE(transit->getSlot(transit->presetTotal) == NULL);
+		REQUIRE(transit->getSlot(99999) == NULL);
+		// A valid index still resolves.
+		REQUIRE(transit->getSlot(0) != NULL);
+	}
+
+	SECTION("getSlotLabel returns an empty label for an out-of-range slot") {
+		REQUIRE(transit->getSlotLabel(-1) == "");
+		REQUIRE(transit->getSlotLabel(99999) == "");
+	}
+
+	SECTION("getSlotOwner reports failure for an out-of-range slot") {
+		rack::engine::Module* owner = nullptr;
+		int localIndex = -1;
+		REQUIRE(transit->getSlotOwner(-1, owner, localIndex) == false);
+		REQUIRE(transit->getSlotOwner(99999, owner, localIndex) == false);
+		// ...and succeeds for a real one.
+		REQUIRE(transit->getSlotOwner(0, owner, localIndex) == true);
+		REQUIRE(owner == transit);
+		REQUIRE(localIndex == 0);
+	}
+}
