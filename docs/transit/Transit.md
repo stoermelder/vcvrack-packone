@@ -355,5 +355,5 @@ Right-clicking on the empty area of the XY-display opens the following menu. The
     - Added Output-mode "Tipsy" for sending the snapshot text label (for modules with Tipsy-support like [TTY](https://library.vcvrack.com/StochasticTelegraph/TTY))
 - v2.6.0
     - Fixed "Bind parameters by selection" when spanning multiple modules
-- v2.x.x
+- v2.7.0
     - Added color setting for mapping indicators

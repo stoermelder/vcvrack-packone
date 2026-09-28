@@ -95,5 +95,5 @@ Since v1.9.0, GLUE can consolidate multiple instances of itself in a patch. If y
     - Added HSL color picker
 - v2.3.0
     - Added option to add labels to cables (#247)
-- v2.x.x
+- v2.7.0
     - Fixed lost cable labels on "Consolidate GLUE"
