@@ -109,6 +109,31 @@ Features missing in AHAB compared to ORCA:
 | `{`, `}` | Decrease/increase grid step rows |
 | `[`, `]` | Decrease/increase grid step columns |
 
+#### Customizing shortcuts
+
+Most of the shortcuts above can be changed in `<Rack user folder>/Stoermelder-P1/keymaps/Ahab.jsonc`. The file is created the first time AHAB is used and can be edited with any text editor; Rack has to be restarted afterwards. It is a JSON file which additionally allows `//` comments, and every entry is preceded by a comment describing the action:
+
+```jsonc
+{
+  "slug": "Ahab",
+  "version": 1,
+  "bindings": {
+    // Undo (Edit)
+    "edit.undo": "Ctrl+Z",
+
+    // Toggle insert mode (Edit)
+    "edit.insert.toggle": "Ctrl+I"
+  }
+}
+```
+
+- A shortcut is written as modifiers and a key joined by `+`, e.g. `Ctrl+Shift+K`. Modifiers are `Ctrl`, `Shift` and `Alt`; on Mac `Ctrl` stands for the `Cmd` key. Use an array to assign several shortcuts to one action, and `null` to remove all shortcuts of an action.
+- The cursor movement is split into one action per direction and modifier combination, e.g. `nav.up`, `nav.up.gridstep`, `nav.up.extend` or `nav.up.move.extend.gridstep`.
+- The descriptive comments are rewritten whenever AHAB saves the file, comments of your own are not kept.
+- Shortcuts added by a new version of AHAB are added with their default to your existing file, the shortcuts you have changed are kept.
+- If the file cannot be read (e.g. a typo in the JSON), the default shortcuts are used and the file is not overwritten, so you can fix it.
+- Typing glyphs into the grid and the grid step keys (`{`, `}`, `[`, `]`) cannot be customized.
+
 ## Changelog
 
 - v2.3.0
