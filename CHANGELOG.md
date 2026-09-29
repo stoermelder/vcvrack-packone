@@ -34,6 +34,7 @@
     - Added option to import "recently used"/"most used" statistics from Rack's own module browser
     - Added option to disable arrow keys selecting modules in *v2 mod* browser
     - Added option to pre-warm module previews
+    - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Mb.jsonc)
     - Fixed "Newest" module manifest download if Rack user folder is on different disk
 - Module [SIREN](./docs/siren/Siren.md)
     - Fixed a background worker that could stall indefinitely
