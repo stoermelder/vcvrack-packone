@@ -26,7 +26,6 @@
 // status" spelling of a Note-Off, and lifting it off the floor would turn every
 // release into a stuck note.
 
-
 // Configuration - change these values as needed
 let config = {
     // Panel parameter driving the curve (1-based)
@@ -45,31 +44,9 @@ let config = {
     channel: 0
 };
 
-param.enable(config.curveParam);
-
-param.getName = function(port) {
-    if (port === config.curveParam) return "Velocity curve";
-    return "";
-};
-
-param.getValueFormat = function(port) {
-    if (port === config.curveParam) {
-        let v = param.getValue(config.curveParam);
-        // Report the curve as a signed shape amount rather than a raw 0..1,
-        // so the panel reads "-2.0 .. 0.0 .. +2.0" around linear (curveAmount=2).
-        // Same sign as shapeVelocity()'s curve, so the readout matches the
-        // curve actually applied.
-        let shaped = -(v - 0.5) * 2 * config.curveAmount;
-        return number.toString(shaped);
-    }
-    return "";
-};
-
-rack.onLoad = function() {
-    rack.log("Velocity curve initialized");
-    rack.log("Range: ", config.minVelocity, "-", config.maxVelocity);
-    rack.log("Knob ", config.curveParam, " sets the curve (centre = linear)");
-};
+// Context menu choices
+let CHANNEL_LABELS = ["All"];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
 
 function matchesChannel(ch) {
     return config.channel === 0 || ch === config.channel;
@@ -94,23 +71,48 @@ function shapeVelocity(vel) {
     return out;
 };
 
-// Context menu - right-click the module to change these settings live.
-// Each menu mirrors a `config` value above; onChange applies the choice.
-let CHANNEL_LABELS = ["All"];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+// Setup
+rack.onLoad = function() {
+    param.enable(config.curveParam);
 
-rack.registerContextMenu({
-    type: "options",
-    label: "Channel",
-    options: CHANNEL_LABELS,
-    onGetValue: function() {
-        return config.channel;
-    },
-    onChange: function(idx) {
-        config.channel = idx;
-        rack.log("Channel: ", CHANNEL_LABELS[idx]);
+    // Context menu - right-click the module to change these settings live.
+    // Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type: "options",
+        label: "Channel",
+        options: CHANNEL_LABELS,
+        onGetValue: function() {
+            return config.channel;
+        },
+        onChange: function(idx) {
+            config.channel = idx;
+            rack.log("Channel: ", CHANNEL_LABELS[idx]);
+        }
+    });
+
+    rack.log("Velocity curve initialized");
+    rack.log("Range: ", config.minVelocity, "-", config.maxVelocity);
+    rack.log("Knob ", config.curveParam, " sets the curve (centre = linear)");
+};
+
+// Callbacks
+param.getName = function(port) {
+    if (port === config.curveParam) return "Velocity curve";
+    return "";
+};
+
+param.getValueFormat = function(port) {
+    if (port === config.curveParam) {
+        let v = param.getValue(config.curveParam);
+        // Report the curve as a signed shape amount rather than a raw 0..1,
+        // so the panel reads "-2.0 .. 0.0 .. +2.0" around linear (curveAmount=2).
+        // Same sign as shapeVelocity()'s curve, so the readout matches the
+        // curve actually applied.
+        let shaped = -(v - 0.5) * 2 * config.curveAmount;
+        return number.toString(shaped);
     }
-});
+    return "";
+};
 
 midi.onMessage = function(midiPort, msg) {
     if (midi.isNoteOn(msg) && matchesChannel(midi.getChannel(msg))) {

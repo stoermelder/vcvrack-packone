@@ -93,6 +93,10 @@ local config = {
     channel = 0
 }
 
+-- Context menu choices
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+
 -- Internal state, indexed by 1-based output channel.
 -- noteOfChannel[c]     = incoming note currently sounding on output channel c (-1 = free).
 -- sentNoteOfChannel[c] = the note number actually sent there (may differ from the incoming one).
@@ -205,34 +209,6 @@ local function sendBend(ch, pw)
     state.bendOfChannel[ch] = pw
 end
 
-rack.onLoad = function()
-    scale = parseScl(config.scl)
-
-    for c = 1, 16 do
-        state.noteOfChannel[c] = -1
-        state.sentNoteOfChannel[c] = -1
-        state.bendOfChannel[c] = 8192
-    end
-    for n = 0, 127 do
-        state.queueOfNote[n] = {}
-    end
-    rack.log("Micro scale initialized")
-    rack.log("Scale degrees: ", #scale - 1, " per octave (parsed from config.scl)")
-    if #scale < 2 then rack.log("WARNING: no scale notes parsed - check the pasted .scl in config.scl") end
-    rack.log("Base: ", config.baseNote, " @ ", number.toString(config.baseFreq), " Hz")
-    rack.log("Bend depth: ", number.toString(config.bendDepth), " st")
-end
-
-rack.onUnload = function()
-    for c = 1, 16 do
-        if state.noteOfChannel[c] >= 0 then
-            local off = midi.create()
-            midi.setNoteOff(off, c, state.sentNoteOfChannel[c])
-            midiOut.send(off)
-        end
-    end
-end
-
 local function matchesChannel(ch)
     return config.channel == 0 or ch == config.channel
 end
@@ -265,34 +241,62 @@ local function removeFromQueue(note, ch)
     end
 end
 
--- Context menu - right-click the module to change these settings live.
--- Each menu mirrors a `config` value above; onChange applies the choice.
-local CHANNEL_LABELS = { "All" }
-for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+-- Setup
+rack.onLoad = function()
+    scale = parseScl(config.scl)
 
-rack.registerContextMenu({
-    type = "options",
-    label = "Input channel",
-    options = CHANNEL_LABELS,
-    onGetValue = function()
-        return config.channel
-    end,
-    onChange = function(idx)
-        config.channel = idx
-        rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
+    for c = 1, 16 do
+        state.noteOfChannel[c] = -1
+        state.sentNoteOfChannel[c] = -1
+        state.bendOfChannel[c] = 8192
     end
-})
+    for n = 0, 127 do
+        state.queueOfNote[n] = {}
+    end
 
-rack.registerContextMenu({
-    type = "boolean",
-    label = "Always send pitch bend",
-    onGetValue = function()
-        return config.alwaysSendBend
-    end,
-    onChange = function(checked)
-        config.alwaysSendBend = checked
+    -- Context menu - right-click the module to change these settings live.
+    -- Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type = "options",
+        label = "Input channel",
+        options = CHANNEL_LABELS,
+        onGetValue = function()
+            return config.channel
+        end,
+        onChange = function(idx)
+            config.channel = idx
+            rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
+        end
+    })
+
+    rack.registerContextMenu({
+        type = "boolean",
+        label = "Always send pitch bend",
+        onGetValue = function()
+            return config.alwaysSendBend
+        end,
+        onChange = function(checked)
+            config.alwaysSendBend = checked
+        end
+    })
+
+    rack.log("Micro scale initialized")
+    rack.log("Scale degrees: ", #scale - 1, " per octave (parsed from config.scl)")
+    if #scale < 2 then rack.log("WARNING: no scale notes parsed - check the pasted .scl in config.scl") end
+    rack.log("Base: ", config.baseNote, " @ ", number.toString(config.baseFreq), " Hz")
+    rack.log("Bend depth: ", number.toString(config.bendDepth), " st")
+end
+
+-- Callbacks
+rack.onUnload = function()
+    for c = 1, 16 do
+        if state.noteOfChannel[c] >= 0 then
+            local off = midi.create()
+            midi.setNoteOff(off, c, state.sentNoteOfChannel[c])
+            midiOut.send(off)
+        end
     end
-})
+end
 
 midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)

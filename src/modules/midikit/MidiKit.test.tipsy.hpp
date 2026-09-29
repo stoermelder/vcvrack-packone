@@ -363,8 +363,8 @@ TEST_CASE("bundled Tipsy output example scripts work", "[MidiKit][Tipsy]") {
 		Test::destroyModule(m);
 	};
 
-	runExample("presets/MidiKit/JavaScript/Tipsy.js");
-	runExample("presets/MidiKit/Lua/Tipsy.lua");
+	runExample("presets/MidiKit/JavaScript/basic/Tipsy.js");
+	runExample("presets/MidiKit/Lua/basic/Tipsy.lua");
 }
 
 
@@ -671,6 +671,6 @@ TEST_CASE("bundled Tipsy input example scripts work", "[MidiKit][Tipsy]") {
 		Test::destroyModule(m);
 	};
 
-	runExample("presets/MidiKit/JavaScript/TipsyIn.js", "{\"value\":42}", "application/json");
-	runExample("presets/MidiKit/Lua/TipsyIn.lua", "42", "text/plain");
+	runExample("presets/MidiKit/JavaScript/basic/TipsyIn.js", "{\"value\":42}", "application/json");
+	runExample("presets/MidiKit/Lua/basic/TipsyIn.lua", "42", "text/plain");
 }

@@ -48,17 +48,6 @@ let config = {
     maxEchoes: 12
 };
 
-param.enable(1);
-param.enable(2);
-param.enable(3);
-
-param.getName = function(i) {
-    if (i === 1) return "Gravity";
-    if (i === 2) return "Bounciness";
-    if (i === 3) return "Min velocity";
-    return "";
-};
-
 // Interval shrink per bounce: 0..0.4, so intervals stay at 100%..60%.
 function gravityParam() {
     let g = param.getValue(1) * 0.4;
@@ -77,18 +66,6 @@ function minVelocityParam() {
     if (m < 1) m = 1;
     if (m > 127) m = 127;
     return m;
-};
-
-param.getValueFormat = function(i) {
-    if (i === 1) return number.toString(gravityParam());
-    if (i === 2) return Math.round(bouncinessParam() * 100) + " %";
-    if (i === 3) return number.toString(minVelocityParam());
-    return number.toString(param.getValue(i));
-};
-
-rack.onLoad = function() {
-    rack.log("Bouncing ball delay initialized");
-    rack.log("Gravity: ", number.toString(gravityParam()), " | Bounciness: ", Math.round(bouncinessParam() * 100), "% | Min velocity: ", minVelocityParam());
 };
 
 // Schedules the echo train for one ball started by the given Note-On. The
@@ -119,6 +96,31 @@ function spawnBall(ch, note, vel) {
         t += interval;
         count++;
     }
+};
+
+// Setup
+rack.onLoad = function() {
+    param.enable(1);
+    param.enable(2);
+    param.enable(3);
+
+    rack.log("Bouncing ball delay initialized");
+    rack.log("Gravity: ", number.toString(gravityParam()), " | Bounciness: ", Math.round(bouncinessParam() * 100), "% | Min velocity: ", minVelocityParam());
+};
+
+// Callbacks
+param.getName = function(i) {
+    if (i === 1) return "Gravity";
+    if (i === 2) return "Bounciness";
+    if (i === 3) return "Min velocity";
+    return "";
+};
+
+param.getValueFormat = function(i) {
+    if (i === 1) return number.toString(gravityParam());
+    if (i === 2) return Math.round(bouncinessParam() * 100) + " %";
+    if (i === 3) return number.toString(minVelocityParam());
+    return number.toString(param.getValue(i));
 };
 
 midi.onMessage = function(midiPort, msg) {

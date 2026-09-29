@@ -31,7 +31,6 @@
 -- Everything arriving on MIDI IN is passed through unchanged - this script is
 -- a pure generator and does not want to swallow the rest of a MIDI chain.
 
-
 -- Configuration - change these values as needed
 local config = {
     -- Output channel for the generated notes (1-16)
@@ -50,24 +49,6 @@ local state = {
     soundingNote = -1,
     soundingChannel = 1
 }
-
-param.enable(1)
-param.enable(2)
-param.enable(3)
-param.enable(4)
-
--- Step the rhythm from trigger channel 1 only: trig.onTrigger fires per poly
--- channel, and trig.enableIn() gates it — enabling just channel 1 means the
--- other channels are ignored.
-trig.enableIn(1, 1)
-
-param.getName = function(i)
-    if i == 1 then return "Steps" end
-    if i == 2 then return "Fills" end
-    if i == 3 then return "Note" end
-    if i == 4 then return "Velocity" end
-    return ""
-end
 
 local function stepsParam()
     local s = math.floor(param.getValue(1) * 15 + 0.5) + 1
@@ -102,14 +83,6 @@ local NOTE_NAMES = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#",
 
 local function noteName(n)
     return NOTE_NAMES[n % 12 + 1] .. (math.floor(n / 12) - 1)
-end
-
-param.getValueFormat = function(i)
-    if i == 1 then return number.toString(stepsParam()) .. " steps" end
-    if i == 2 then return number.toString(fillsParam()) .. " / " .. number.toString(stepsParam()) .. " hits" end
-    if i == 3 then return number.toString(noteParam()) .. " (" .. noteName(noteParam()) .. ")" end
-    if i == 4 then return number.toString(velocityParam()) end
-    return number.toString(param.getValue(i))
 end
 
 -- Bjorklund's algorithm: distributes `hits` pulses as evenly as possible
@@ -175,30 +148,60 @@ local function releaseSounding()
     end
 end
 
+-- Context menu choices
+local CHANNEL_LABELS = {}
+for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
+
+-- Setup
 rack.onLoad = function()
+    param.enable(1)
+    param.enable(2)
+    param.enable(3)
+    param.enable(4)
+
+    -- Step the rhythm from trigger channel 1 only: trig.onTrigger fires per poly
+    -- channel, and trig.enableIn() gates it — enabling just channel 1 means the
+    -- other channels are ignored.
+    trig.enableIn(1, 1)
+
+    -- Context menu - right-click the module to change these settings live.
+    -- Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type = "options",
+        label = "Output channel",
+        options = CHANNEL_LABELS,
+        onGetValue = function()
+            return config.outChannel - 1
+        end,
+        onChange = function(idx)
+            config.outChannel = idx + 1
+            rack.log("Output channel: ", config.outChannel)
+        end
+    })
+
     rack.log("Euclidean rhythm generator initialized")
+end
+
+-- Callbacks
+param.getName = function(i)
+    if i == 1 then return "Steps" end
+    if i == 2 then return "Fills" end
+    if i == 3 then return "Note" end
+    if i == 4 then return "Velocity" end
+    return ""
+end
+
+param.getValueFormat = function(i)
+    if i == 1 then return number.toString(stepsParam()) .. " steps" end
+    if i == 2 then return number.toString(fillsParam()) .. " / " .. number.toString(stepsParam()) .. " hits" end
+    if i == 3 then return number.toString(noteParam()) .. " (" .. noteName(noteParam()) .. ")" end
+    if i == 4 then return number.toString(velocityParam()) end
+    return number.toString(param.getValue(i))
 end
 
 rack.onUnload = function()
     releaseSounding()
 end
-
--- Context menu - right-click the module to change these settings live.
-local CHANNEL_LABELS = {}
-for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
-
-rack.registerContextMenu({
-    type = "options",
-    label = "Output channel",
-    options = CHANNEL_LABELS,
-    onGetValue = function()
-        return config.outChannel - 1
-    end,
-    onChange = function(idx)
-        config.outChannel = idx + 1
-        rack.log("Output channel: ", config.outChannel)
-    end
-})
 
 midi.onMessage = function(midiPort, msg)
     -- Pure generator - pass everything from MIDI IN through unchanged so the

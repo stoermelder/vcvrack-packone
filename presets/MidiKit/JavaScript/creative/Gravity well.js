@@ -27,15 +27,6 @@
 // same trap as the Scale quantiser and Micro scale presets). Everything that
 // is not a Note-On/Note-Off passes through unchanged.
 
-param.enable(1);
-param.enable(2);
-
-param.getName = function(i) {
-    if (i === 1) return "Center";
-    if (i === 2) return "Strength";
-    return "";
-};
-
 // The gravitational center pitch, 0-127.
 function centerParam() {
     let c = Math.round(param.getValue(1) * 127);
@@ -59,37 +50,10 @@ function noteName(n) {
     return NOTE_NAMES[n % 12] + (Math.floor(n / 12) - 1);
 };
 
-param.getValueFormat = function(i) {
-    if (i === 1) return centerParam() + " (" + noteName(centerParam()) + ")";
-    if (i === 2) return number.toString(strengthParam());
-    return number.toString(param.getValue(i));
-};
-
 // Internal state: the note actually sent for each incoming (channel, note), so
 // the Note-Off can release the bent pitch. -1 = nothing mapped.
 let state = {
     sentNote: []
-};
-
-rack.onLoad = function() {
-    for (let c = 1; c <= 16; c++) {
-        state.sentNote[c] = [];
-        for (let n = 0; n < 128; n++) state.sentNote[c][n] = -1;
-    }
-    rack.log("Gravity well initialized");
-    rack.log("Center: ", centerParam(), " | Strength: ", number.toString(strengthParam()));
-};
-
-rack.onUnload = function() {
-    for (let c = 1; c <= 16; c++) {
-        for (let n = 0; n < 128; n++) {
-            if (state.sentNote[c][n] >= 0) {
-                let off = midi.create();
-                midi.setNoteOff(off, c, state.sentNote[c][n]);
-                midiOut.send(off);
-            }
-        }
-    }
 };
 
 // The bent pitch for a note: pulled toward the center by a fraction of the
@@ -102,6 +66,45 @@ function bendNote(note, vel) {
     if (outNote < 0) outNote = 0;
     if (outNote > 127) outNote = 127;
     return outNote;
+};
+
+// Setup
+rack.onLoad = function() {
+    param.enable(1);
+    param.enable(2);
+
+    for (let c = 1; c <= 16; c++) {
+        state.sentNote[c] = [];
+        for (let n = 0; n < 128; n++) state.sentNote[c][n] = -1;
+    }
+
+    rack.log("Gravity well initialized");
+    rack.log("Center: ", centerParam(), " | Strength: ", number.toString(strengthParam()));
+};
+
+// Callbacks
+param.getName = function(i) {
+    if (i === 1) return "Center";
+    if (i === 2) return "Strength";
+    return "";
+};
+
+param.getValueFormat = function(i) {
+    if (i === 1) return centerParam() + " (" + noteName(centerParam()) + ")";
+    if (i === 2) return number.toString(strengthParam());
+    return number.toString(param.getValue(i));
+};
+
+rack.onUnload = function() {
+    for (let c = 1; c <= 16; c++) {
+        for (let n = 0; n < 128; n++) {
+            if (state.sentNote[c][n] >= 0) {
+                let off = midi.create();
+                midi.setNoteOff(off, c, state.sentNote[c][n]);
+                midiOut.send(off);
+            }
+        }
+    }
 };
 
 midi.onMessage = function(midiPort, msg) {

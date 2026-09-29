@@ -32,7 +32,6 @@
 // at that moment would hang forever, since nothing else remembers those
 // note numbers are down once this script's state is gone.
 
-
 // Configuration - change these values as needed
 let config = {
     // Semitone offsets added for every played note. Include 0 to keep the
@@ -56,31 +55,7 @@ let state = {
     voicesOf: []
 };
 
-rack.onLoad = function() {
-    for (let n = 0; n < 128; n++) {
-        state.refCount[n] = 0;
-        state.voicesOf[n] = [];
-    }
-    rack.log("Chord harmonizer initialized");
-    rack.log("Voices per note: ", config.intervals.length);
-};
-
-rack.onUnload = function() {
-    for (let n = 0; n < 128; n++) {
-        if (state.refCount[n] > 0) {
-            let off = midi.create();
-            midi.setNoteOff(off, 1, n);
-            midiOut.send(off);
-        }
-    }
-};
-
-function matchesChannel(ch) {
-    return config.channel === 0 || ch === config.channel;
-};
-
-// Context menu - right-click the module to change these settings live.
-// Each menu mirrors a `config` value above; onChange applies the choice.
+// Context menu choices
 let CHORD_INTERVALS = [
     [0, 4, 7],      // Major triad
     [0, 3, 7],      // Minor triad
@@ -92,6 +67,10 @@ let CHORD_INTERVALS = [
 let CHORD_LABELS = ["Major triad", "Minor triad", "Minor seventh", "Power chord", "Octave doubling", "Three octaves"];
 let CHANNEL_LABELS = ["All"];
 for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
+function matchesChannel(ch) {
+    return config.channel === 0 || ch === config.channel;
+};
 
 function chordIndex() {
     for (let i = 0; i < CHORD_INTERVALS.length; i++) {
@@ -106,31 +85,55 @@ function chordIndex() {
     return 0;
 };
 
-rack.registerContextMenu({
-    type: "options",
-    label: "Chord",
-    options: CHORD_LABELS,
-    onGetValue: function() {
-        return chordIndex();
-    },
-    onChange: function(idx) {
-        config.intervals = CHORD_INTERVALS[idx];
-        rack.log("Chord: ", CHORD_LABELS[idx], " (", config.intervals.length, " voices)");
+// Setup
+rack.onLoad = function() {
+    for (let n = 0; n < 128; n++) {
+        state.refCount[n] = 0;
+        state.voicesOf[n] = [];
     }
-});
 
-rack.registerContextMenu({
-    type: "options",
-    label: "Channel",
-    options: CHANNEL_LABELS,
-    onGetValue: function() {
-        return config.channel;
-    },
-    onChange: function(idx) {
-        config.channel = idx;
-        rack.log("Channel: ", CHANNEL_LABELS[idx]);
+    // Context menu - right-click the module to change these settings live.
+    // Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type: "options",
+        label: "Chord",
+        options: CHORD_LABELS,
+        onGetValue: function() {
+            return chordIndex();
+        },
+        onChange: function(idx) {
+            config.intervals = CHORD_INTERVALS[idx];
+            rack.log("Chord: ", CHORD_LABELS[idx], " (", config.intervals.length, " voices)");
+        }
+    });
+
+    rack.registerContextMenu({
+        type: "options",
+        label: "Channel",
+        options: CHANNEL_LABELS,
+        onGetValue: function() {
+            return config.channel;
+        },
+        onChange: function(idx) {
+            config.channel = idx;
+            rack.log("Channel: ", CHANNEL_LABELS[idx]);
+        }
+    });
+
+    rack.log("Chord harmonizer initialized");
+    rack.log("Voices per note: ", config.intervals.length);
+};
+
+// Callbacks
+rack.onUnload = function() {
+    for (let n = 0; n < 128; n++) {
+        if (state.refCount[n] > 0) {
+            let off = midi.create();
+            midi.setNoteOff(off, 1, n);
+            midiOut.send(off);
+        }
     }
-});
+};
 
 midi.onMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);

@@ -51,15 +51,91 @@ local state = {
     sounding = {}
 }
 
--- The scheduled Note-Offs are counted in ticks of the trigger input's clock,
--- so that clock must be enabled — without trig.enableIn() the module does not
--- process the trigger input at all and the scheduled sends never fire.
-trig.enableIn(1, 1)
+-- Context menu choices
+local LENGTH_TICKS = { 6, 12, 24, 48 }
+local LENGTH_LABELS = { "6 (16th)", "12 (8th)", "24 (quarter)", "48 (half)" }
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
 
+local function lengthTicksIndex()
+    for i = 1, #LENGTH_TICKS do
+        if LENGTH_TICKS[i] == config.lengthTicks then return i - 1 end
+    end
+    return 0
+end
+
+local function matchesChannel(ch)
+    return config.channel == 0 or ch == config.channel
+end
+
+-- Builds and schedules the Note-Off that ends a quantised note.
+local function scheduleNoteOff(ch, note)
+    local off = midi.create()
+    midi.setNoteOff(off, ch, note)
+    midiOut.sendAfterTrigger(off, config.lengthTicks)
+end
+
+-- Setup
 rack.onLoad = function()
+    -- The scheduled Note-Offs are counted in ticks of the trigger input's clock,
+    -- so that clock must be enabled — without trig.enableIn() the module does not
+    -- process the trigger input at all and the scheduled sends never fire.
+    trig.enableIn(1, 1)
+
     for n = 0, 127 do
         state.sounding[n] = false
     end
+
+    -- Context menu - right-click the module to change these settings live.
+    -- Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type = "options",
+        label = "Note length",
+        options = LENGTH_LABELS,
+        onGetValue = function()
+            return lengthTicksIndex()
+        end,
+        onChange = function(idx)
+            config.lengthTicks = LENGTH_TICKS[idx + 1]
+            rack.log("Length: ", config.lengthTicks, " ticks")
+        end
+    })
+
+    rack.registerContextMenu({
+        type = "options",
+        label = "Channel",
+        options = CHANNEL_LABELS,
+        onGetValue = function()
+            return config.channel
+        end,
+        onChange = function(idx)
+            config.channel = idx
+            rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
+        end
+    })
+
+    rack.registerContextMenu({
+        type = "boolean",
+        label = "Pass through other messages",
+        onGetValue = function()
+            return config.passThroughOther
+        end,
+        onChange = function(checked)
+            config.passThroughOther = checked
+        end
+    })
+
+    rack.registerContextMenu({
+        type = "boolean",
+        label = "Log quantised notes",
+        onGetValue = function()
+            return config.verbose
+        end,
+        onChange = function(checked)
+            config.verbose = checked
+        end
+    })
+
     rack.log("Note length quantiser initialized")
     rack.log("Length: ", config.lengthTicks, " ticks")
     if config.channel == 0 then
@@ -68,6 +144,8 @@ rack.onLoad = function()
         rack.log("Channel: ", config.channel)
     end
 end
+
+-- Callbacks
 
 -- Releases every note with a still-pending scheduled Note-Off. Without this,
 -- a note whose release hasn't fired yet at the moment the script is replaced,
@@ -87,79 +165,6 @@ rack.onUnload = function()
         end
     end
 end
-
-local function matchesChannel(ch)
-    return config.channel == 0 or ch == config.channel
-end
-
--- Builds and schedules the Note-Off that ends a quantised note.
-local function scheduleNoteOff(ch, note)
-    local off = midi.create()
-    midi.setNoteOff(off, ch, note)
-    midiOut.sendAfterTrigger(off, config.lengthTicks)
-end
-
--- Context menu - right-click the module to change these settings live.
--- Each menu mirrors a `config` value above; onChange applies the choice.
-local LENGTH_TICKS = { 6, 12, 24, 48 }
-local LENGTH_LABELS = { "6 (16th)", "12 (8th)", "24 (quarter)", "48 (half)" }
-local CHANNEL_LABELS = { "All" }
-for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
-
-local function lengthTicksIndex()
-    for i = 1, #LENGTH_TICKS do
-        if LENGTH_TICKS[i] == config.lengthTicks then return i - 1 end
-    end
-    return 0
-end
-
-rack.registerContextMenu({
-    type = "options",
-    label = "Note length",
-    options = LENGTH_LABELS,
-    onGetValue = function()
-        return lengthTicksIndex()
-    end,
-    onChange = function(idx)
-        config.lengthTicks = LENGTH_TICKS[idx + 1]
-        rack.log("Length: ", config.lengthTicks, " ticks")
-    end
-})
-
-rack.registerContextMenu({
-    type = "options",
-    label = "Channel",
-    options = CHANNEL_LABELS,
-    onGetValue = function()
-        return config.channel
-    end,
-    onChange = function(idx)
-        config.channel = idx
-        rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
-    end
-})
-
-rack.registerContextMenu({
-    type = "boolean",
-    label = "Pass through other messages",
-    onGetValue = function()
-        return config.passThroughOther
-    end,
-    onChange = function(checked)
-        config.passThroughOther = checked
-    end
-})
-
-rack.registerContextMenu({
-    type = "boolean",
-    label = "Log quantised notes",
-    onGetValue = function()
-        return config.verbose
-    end,
-    onChange = function(checked)
-        config.verbose = checked
-    end
-})
 
 midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)

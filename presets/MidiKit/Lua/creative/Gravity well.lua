@@ -27,15 +27,6 @@
 -- same trap as the Scale quantiser and Micro scale presets). Everything that
 -- is not a Note-On/Note-Off passes through unchanged.
 
-param.enable(1)
-param.enable(2)
-
-param.getName = function(i)
-    if i == 1 then return "Center" end
-    if i == 2 then return "Strength" end
-    return ""
-end
-
 -- The gravitational center pitch, 0-127.
 local function centerParam()
     local c = math.floor(param.getValue(1) * 127 + 0.5)
@@ -59,25 +50,49 @@ local function noteName(n)
     return NOTE_NAMES[n % 12 + 1] .. (math.floor(n / 12) - 1)
 end
 
-param.getValueFormat = function(i)
-    if i == 1 then return number.toString(centerParam()) .. " (" .. noteName(centerParam()) .. ")" end
-    if i == 2 then return number.toString(strengthParam()) end
-    return number.toString(param.getValue(i))
-end
-
 -- Internal state: the note actually sent for each incoming (channel, note), so
 -- the Note-Off can release the bent pitch. -1 = nothing mapped.
 local state = {
     sentNote = {}
 }
 
+-- The bent pitch for a note: pulled toward the center by a fraction of the
+-- distance that shrinks as the velocity rises. Uses floor(x + 0.5) so both
+-- engines round identically even for negative (below-center) bends.
+local function bendNote(note, vel)
+    local distance = note - centerParam()
+    local fraction = strengthParam() * (1 - vel / 127)
+    local outNote = note - math.floor(distance * fraction + 0.5)
+    if outNote < 0 then outNote = 0 end
+    if outNote > 127 then outNote = 127 end
+    return outNote
+end
+
+-- Setup
 rack.onLoad = function()
+    param.enable(1)
+    param.enable(2)
+
     for c = 1, 16 do
         state.sentNote[c] = {}
         for n = 0, 127 do state.sentNote[c][n] = -1 end
     end
+
     rack.log("Gravity well initialized")
     rack.log("Center: ", centerParam(), " | Strength: ", number.toString(strengthParam()))
+end
+
+-- Callbacks
+param.getName = function(i)
+    if i == 1 then return "Center" end
+    if i == 2 then return "Strength" end
+    return ""
+end
+
+param.getValueFormat = function(i)
+    if i == 1 then return number.toString(centerParam()) .. " (" .. noteName(centerParam()) .. ")" end
+    if i == 2 then return number.toString(strengthParam()) end
+    return number.toString(param.getValue(i))
 end
 
 rack.onUnload = function()
@@ -90,18 +105,6 @@ rack.onUnload = function()
             end
         end
     end
-end
-
--- The bent pitch for a note: pulled toward the center by a fraction of the
--- distance that shrinks as the velocity rises. Uses floor(x + 0.5) so both
--- engines round identically even for negative (below-center) bends.
-local function bendNote(note, vel)
-    local distance = note - centerParam()
-    local fraction = strengthParam() * (1 - vel / 127)
-    local outNote = note - math.floor(distance * fraction + 0.5)
-    if outNote < 0 then outNote = 0 end
-    if outNote > 127 then outNote = 127 end
-    return outNote
 end
 
 midi.onMessage = function(midiPort, msg)

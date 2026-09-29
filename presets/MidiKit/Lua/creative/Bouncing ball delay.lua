@@ -48,17 +48,6 @@ local config = {
     maxEchoes = 12
 }
 
-param.enable(1)
-param.enable(2)
-param.enable(3)
-
-param.getName = function(i)
-    if i == 1 then return "Gravity" end
-    if i == 2 then return "Bounciness" end
-    if i == 3 then return "Min velocity" end
-    return ""
-end
-
 -- Interval shrink per bounce: 0..0.4, so intervals stay at 100%..60%.
 local function gravityParam()
     local g = param.getValue(1) * 0.4
@@ -77,18 +66,6 @@ local function minVelocityParam()
     if m < 1 then m = 1 end
     if m > 127 then m = 127 end
     return m
-end
-
-param.getValueFormat = function(i)
-    if i == 1 then return number.toString(gravityParam()) end
-    if i == 2 then return string.format("%.0f", bouncinessParam() * 100) .. " %" end
-    if i == 3 then return number.toString(minVelocityParam()) end
-    return number.toString(param.getValue(i))
-end
-
-rack.onLoad = function()
-    rack.log("Bouncing ball delay initialized")
-    rack.log("Gravity: ", number.toString(gravityParam()), " | Bounciness: ", string.format("%.0f", bouncinessParam() * 100), "% | Min velocity: ", minVelocityParam())
 end
 
 -- Schedules the echo train for one ball started by the given Note-On. The
@@ -121,6 +98,31 @@ local function spawnBall(ch, note, vel)
         t = t + interval
         count = count + 1
     end
+end
+
+-- Setup
+rack.onLoad = function()
+    param.enable(1)
+    param.enable(2)
+    param.enable(3)
+
+    rack.log("Bouncing ball delay initialized")
+    rack.log("Gravity: ", number.toString(gravityParam()), " | Bounciness: ", string.format("%.0f", bouncinessParam() * 100), "% | Min velocity: ", minVelocityParam())
+end
+
+-- Callbacks
+param.getName = function(i)
+    if i == 1 then return "Gravity" end
+    if i == 2 then return "Bounciness" end
+    if i == 3 then return "Min velocity" end
+    return ""
+end
+
+param.getValueFormat = function(i)
+    if i == 1 then return number.toString(gravityParam()) end
+    if i == 2 then return string.format("%.0f", bouncinessParam() * 100) .. " %" end
+    if i == 3 then return number.toString(minVelocityParam()) end
+    return number.toString(param.getValue(i))
 end
 
 midi.onMessage = function(midiPort, msg)

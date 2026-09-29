@@ -31,7 +31,6 @@
 // Silence (no keys held) simply stops stepping; the next Note-On restarts
 // the pattern from its first note on the next step boundary.
 
-
 // Configuration - change these values as needed
 let config = {
     // Only arpeggiate notes on this channel; 0 = every channel
@@ -63,23 +62,11 @@ let state = {
     soundingChannel: 1
 };
 
-param.enable(1);
-param.enable(2);
-param.enable(3);
-param.enable(4);
-
-// Clock the arp from trigger channel 1 only: trig.onTrigger fires per poly
-// channel, and trig.enableIn() gates it — enabling just channel 1 means the
-// other channels are ignored.
-trig.enableIn(1, 1);
-
-param.getName = function(i) {
-    if (i === 1) return "Clock division";
-    if (i === 2) return "Octave range";
-    if (i === 3) return "Note length";
-    if (i === 4) return "Playmode";
-    return "";
-};
+// Context menu choices
+let CHANNEL_LABELS = ["All"];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+let OUT_CHANNEL_LABELS = ["Same as input"];
+for (let c = 1; c <= 16; c++) OUT_CHANNEL_LABELS[OUT_CHANNEL_LABELS.length] = String(c);
 
 function divisionIndex() {
     let idx = Math.floor(param.getValue(1) * DIVISIONS.length);
@@ -97,14 +84,6 @@ function playmodeIndex() {
     let idx = Math.floor(param.getValue(4) * PLAYMODES.length);
     if (idx >= PLAYMODES.length) idx = PLAYMODES.length - 1;
     return idx;
-};
-
-param.getValueFormat = function(i) {
-    if (i === 1) return DIVISIONS[divisionIndex()] + " ticks/step";
-    if (i === 2) return octaveRange() + " oct";
-    if (i === 3) return (param.getValue(3) * 100).toFixed(0) + " %";
-    if (i === 4) return PLAYMODES[playmodeIndex()];
-    return number.toString(param.getValue(i));
 };
 
 function matchesChannel(ch) {
@@ -157,46 +136,69 @@ function releaseSounding() {
     }
 };
 
+// Setup
 rack.onLoad = function() {
+    param.enable(1);
+    param.enable(2);
+    param.enable(3);
+    param.enable(4);
+
+    // Clock the arp from trigger channel 1 only: trig.onTrigger fires per poly
+    // channel, and trig.enableIn() gates it — enabling just channel 1 means the
+    // other channels are ignored.
+    trig.enableIn(1, 1);
+
+    // Context menu - right-click the module to change these settings live.
+    // Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type: "options",
+        label: "Input channel",
+        options: CHANNEL_LABELS,
+        onGetValue: function() {
+            return config.channel;
+        },
+        onChange: function(idx) {
+            config.channel = idx;
+            rack.log("Input channel: ", CHANNEL_LABELS[idx]);
+        }
+    });
+
+    rack.registerContextMenu({
+        type: "options",
+        label: "Output channel",
+        options: OUT_CHANNEL_LABELS,
+        onGetValue: function() {
+            return config.outChannel;
+        },
+        onChange: function(idx) {
+            config.outChannel = idx;
+            rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx]);
+        }
+    });
+
     rack.log("Arpeggiator initialized");
+};
+
+// Callbacks
+param.getName = function(i) {
+    if (i === 1) return "Clock division";
+    if (i === 2) return "Octave range";
+    if (i === 3) return "Note length";
+    if (i === 4) return "Playmode";
+    return "";
+};
+
+param.getValueFormat = function(i) {
+    if (i === 1) return DIVISIONS[divisionIndex()] + " ticks/step";
+    if (i === 2) return octaveRange() + " oct";
+    if (i === 3) return (param.getValue(3) * 100).toFixed(0) + " %";
+    if (i === 4) return PLAYMODES[playmodeIndex()];
+    return number.toString(param.getValue(i));
 };
 
 rack.onUnload = function() {
     releaseSounding();
 };
-
-// Context menu - right-click the module to change these settings live.
-// Each menu mirrors a `config` value above; onChange applies the choice.
-let CHANNEL_LABELS = ["All"];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
-let OUT_CHANNEL_LABELS = ["Same as input"];
-for (let c = 1; c <= 16; c++) OUT_CHANNEL_LABELS[OUT_CHANNEL_LABELS.length] = String(c);
-
-rack.registerContextMenu({
-    type: "options",
-    label: "Input channel",
-    options: CHANNEL_LABELS,
-    onGetValue: function() {
-        return config.channel;
-    },
-    onChange: function(idx) {
-        config.channel = idx;
-        rack.log("Input channel: ", CHANNEL_LABELS[idx]);
-    }
-});
-
-rack.registerContextMenu({
-    type: "options",
-    label: "Output channel",
-    options: OUT_CHANNEL_LABELS,
-    onGetValue: function() {
-        return config.outChannel;
-    },
-    onChange: function(idx) {
-        config.outChannel = idx;
-        rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx]);
-    }
-});
 
 midi.onMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);

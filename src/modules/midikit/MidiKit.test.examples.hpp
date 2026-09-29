@@ -205,8 +205,8 @@ static const PresetInfo PRESETS[] = {
 	{"", "NRPN to CC", true},
 	{"", "NRPN to CC (assembled)", true},
 	{"", "NRPN Generator", true},
-	{"", "Copy Ch1 CC to Ch2", true},
-	{"", "Rewrite Ch1 to Ch2", true},
+	{"basic/", "Copy Ch1 CC to Ch2", true},
+	{"basic/", "Rewrite Ch1 to Ch2", true},
 	{"", "Micro scale", true},
 	{"", "Arpeggiator", false},   // trigger-clocked; emits nothing for MIDI traffic
 	{"", "Volca Sample", true},

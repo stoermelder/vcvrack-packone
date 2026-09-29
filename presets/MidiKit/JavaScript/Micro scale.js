@@ -91,6 +91,10 @@ let config = {
     channel: 0
 };
 
+// Context menu choices
+let CHANNEL_LABELS = ["All"];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
 // Internal state, indexed by 1-based output channel.
 // noteOfChannel[c]     = incoming note currently sounding on output channel c (-1 = free).
 // sentNoteOfChannel[c] = the note number actually sent there (may differ from the incoming one).
@@ -192,34 +196,6 @@ function sendBend(ch, pw) {
     state.bendOfChannel[ch] = pw;
 };
 
-rack.onLoad = function() {
-    scale = parseScl(config.scl);
-
-    for (let c = 1; c <= 16; c++) {
-        state.noteOfChannel[c] = -1;
-        state.sentNoteOfChannel[c] = -1;
-        state.bendOfChannel[c] = 8192;
-    }
-    for (let n = 0; n < 128; n++) {
-        state.queueOfNote[n] = [];
-    }
-    rack.log("Micro scale initialized");
-    rack.log("Scale degrees: ", scale.length - 1, " per octave (parsed from config.scl)");
-    if (scale.length < 2) rack.log("WARNING: no scale notes parsed - check the pasted .scl in config.scl");
-    rack.log("Base: ", config.baseNote, " @ ", number.toString(config.baseFreq), " Hz");
-    rack.log("Bend depth: ", number.toString(config.bendDepth), " st");
-};
-
-rack.onUnload = function() {
-    for (let c = 1; c <= 16; c++) {
-        if (state.noteOfChannel[c] >= 0) {
-            let off = midi.create();
-            midi.setNoteOff(off, c, state.sentNoteOfChannel[c]);
-            midiOut.send(off);
-        }
-    }
-};
-
 function matchesChannel(ch) {
     return config.channel === 0 || ch === config.channel;
 };
@@ -252,34 +228,62 @@ function removeFromQueue(note, ch) {
     }
 };
 
-// Context menu - right-click the module to change these settings live.
-// Each menu mirrors a `config` value above; onChange applies the choice.
-let CHANNEL_LABELS = ["All"];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+// Setup
+rack.onLoad = function() {
+    scale = parseScl(config.scl);
 
-rack.registerContextMenu({
-    type: "options",
-    label: "Input channel",
-    options: CHANNEL_LABELS,
-    onGetValue: function() {
-        return config.channel;
-    },
-    onChange: function(idx) {
-        config.channel = idx;
-        rack.log("Input channel: ", CHANNEL_LABELS[idx]);
+    for (let c = 1; c <= 16; c++) {
+        state.noteOfChannel[c] = -1;
+        state.sentNoteOfChannel[c] = -1;
+        state.bendOfChannel[c] = 8192;
     }
-});
+    for (let n = 0; n < 128; n++) {
+        state.queueOfNote[n] = [];
+    }
 
-rack.registerContextMenu({
-    type: "boolean",
-    label: "Always send pitch bend",
-    onGetValue: function() {
-        return config.alwaysSendBend;
-    },
-    onChange: function(checked) {
-        config.alwaysSendBend = checked;
+    // Context menu - right-click the module to change these settings live.
+    // Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type: "options",
+        label: "Input channel",
+        options: CHANNEL_LABELS,
+        onGetValue: function() {
+            return config.channel;
+        },
+        onChange: function(idx) {
+            config.channel = idx;
+            rack.log("Input channel: ", CHANNEL_LABELS[idx]);
+        }
+    });
+
+    rack.registerContextMenu({
+        type: "boolean",
+        label: "Always send pitch bend",
+        onGetValue: function() {
+            return config.alwaysSendBend;
+        },
+        onChange: function(checked) {
+            config.alwaysSendBend = checked;
+        }
+    });
+
+    rack.log("Micro scale initialized");
+    rack.log("Scale degrees: ", scale.length - 1, " per octave (parsed from config.scl)");
+    if (scale.length < 2) rack.log("WARNING: no scale notes parsed - check the pasted .scl in config.scl");
+    rack.log("Base: ", config.baseNote, " @ ", number.toString(config.baseFreq), " Hz");
+    rack.log("Bend depth: ", number.toString(config.bendDepth), " st");
+};
+
+// Callbacks
+rack.onUnload = function() {
+    for (let c = 1; c <= 16; c++) {
+        if (state.noteOfChannel[c] >= 0) {
+            let off = midi.create();
+            midi.setNoteOff(off, c, state.sentNoteOfChannel[c]);
+            midiOut.send(off);
+        }
     }
-});
+};
 
 midi.onMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);

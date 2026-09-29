@@ -15,7 +15,7 @@
 // Configuration - change these values as needed
 const config = {
     // MIDI channel (1-16) the Program Change messages are sent on
-    channel: 1,
+    channel: rack.getConfig("channel", 1),
 
     // Show each sent program in the on-panel overlay
     showOverlay: true
@@ -23,17 +23,40 @@ const config = {
 
 // Note name of a program number under the same mapping (0 = C0)
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const CHANNEL_LABELS = [];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
 function noteName(program) {
     return NOTE_NAMES[program % 12] + Math.floor(program / 12);
 }
 
-input.enable(1);
+// Setup
+rack.onLoad = function() {
+    input.enable(1);
+    trig.enableIn(1, 1);
+
+    // Context menu - right-click the module to change the MIDI channel live.
+    rack.registerContextMenu({
+        type: "options",
+        label: "Channel",
+        options: CHANNEL_LABELS,
+        onGetValue: function() {
+            return config.channel - 1;
+        },
+        onChange: function(idx) {
+            config.channel = idx + 1;
+            rack.setConfig("channel", config.channel);
+            rack.log("Channel: ", config.channel);
+        }
+    });
+};
+
+// Callbacks
 input.getName = function(port) {
     if (port === 1) return "Program (V/Oct)";
     return "";
 };
 
-trig.enableIn(1, 1);
 trig.onTrigger = function(trigPort, channel) {
     let program = Math.floor(input.getVoltage(1) * 12 + 0.5);
     if (program < 0) program = 0;

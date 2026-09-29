@@ -31,7 +31,6 @@
 // Everything arriving on MIDI IN is passed through unchanged - this script is
 // a pure generator and does not want to swallow the rest of a MIDI chain.
 
-
 // Configuration - change these values as needed
 let config = {
     // Output channel for the generated notes (1-16)
@@ -48,24 +47,6 @@ let state = {
     pattern: [],
     soundingNote: -1,
     soundingChannel: 1
-};
-
-param.enable(1);
-param.enable(2);
-param.enable(3);
-param.enable(4);
-
-// Step the rhythm from trigger channel 1 only: trig.onTrigger fires per poly
-// channel, and trig.enableIn() gates it — enabling just channel 1 means the
-// other channels are ignored.
-trig.enableIn(1, 1);
-
-param.getName = function(i) {
-    if (i === 1) return "Steps";
-    if (i === 2) return "Fills";
-    if (i === 3) return "Note";
-    if (i === 4) return "Velocity";
-    return "";
 };
 
 function stepsParam() {
@@ -101,14 +82,6 @@ let NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B
 
 function noteName(n) {
     return NOTE_NAMES[n % 12] + (Math.floor(n / 12) - 1);
-};
-
-param.getValueFormat = function(i) {
-    if (i === 1) return stepsParam() + " steps";
-    if (i === 2) return fillsParam() + " / " + stepsParam() + " hits";
-    if (i === 3) return noteParam() + " (" + noteName(noteParam()) + ")";
-    if (i === 4) return number.toString(velocityParam());
-    return number.toString(param.getValue(i));
 };
 
 // Bjorklund's algorithm: distributes `hits` pulses as evenly as possible
@@ -174,30 +147,60 @@ function releaseSounding() {
     }
 };
 
+// Context menu choices
+let CHANNEL_LABELS = [];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
+// Setup
 rack.onLoad = function() {
+    param.enable(1);
+    param.enable(2);
+    param.enable(3);
+    param.enable(4);
+
+    // Step the rhythm from trigger channel 1 only: trig.onTrigger fires per poly
+    // channel, and trig.enableIn() gates it — enabling just channel 1 means the
+    // other channels are ignored.
+    trig.enableIn(1, 1);
+
+    // Context menu - right-click the module to change these settings live.
+    // Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type: "options",
+        label: "Output channel",
+        options: CHANNEL_LABELS,
+        onGetValue: function() {
+            return config.outChannel - 1;
+        },
+        onChange: function(idx) {
+            config.outChannel = idx + 1;
+            rack.log("Output channel: ", config.outChannel);
+        }
+    });
+
     rack.log("Euclidean rhythm generator initialized");
+};
+
+// Callbacks
+param.getName = function(i) {
+    if (i === 1) return "Steps";
+    if (i === 2) return "Fills";
+    if (i === 3) return "Note";
+    if (i === 4) return "Velocity";
+    return "";
+};
+
+param.getValueFormat = function(i) {
+    if (i === 1) return stepsParam() + " steps";
+    if (i === 2) return fillsParam() + " / " + stepsParam() + " hits";
+    if (i === 3) return noteParam() + " (" + noteName(noteParam()) + ")";
+    if (i === 4) return number.toString(velocityParam());
+    return number.toString(param.getValue(i));
 };
 
 rack.onUnload = function() {
     releaseSounding();
 };
-
-// Context menu - right-click the module to change these settings live.
-let CHANNEL_LABELS = [];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
-
-rack.registerContextMenu({
-    type: "options",
-    label: "Output channel",
-    options: CHANNEL_LABELS,
-    onGetValue: function() {
-        return config.outChannel - 1;
-    },
-    onChange: function(idx) {
-        config.outChannel = idx + 1;
-        rack.log("Output channel: ", config.outChannel);
-    }
-});
 
 midi.onMessage = function(midiPort, msg) {
     // Pure generator - pass everything from MIDI IN through unchanged so the

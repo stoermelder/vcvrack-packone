@@ -32,7 +32,7 @@
 // Configuration - change these values as needed
 const config = {
     // MIDI channel (1-16) the device listens on
-    channel: 1,
+    channel: rack.getConfig("channel", 1),
 
     // Number of banks of 128 presets (the Microfreak has 4)
     banks: 4,
@@ -42,6 +42,11 @@ const config = {
 };
 
 const PRESETS_PER_BANK = 128;
+const CHANNEL_LABELS = [];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
+// Absolute index (bank * 128 + program) of the preset sent last, -1 if none
+let current = -1;
 
 function bankIndex() {
     return Math.min(config.banks - 1, Math.floor(param.getValue(1) * config.banks));
@@ -50,24 +55,6 @@ function bankIndex() {
 function programNumber() {
     return Math.min(PRESETS_PER_BANK - 1, Math.floor(param.getValue(2) * PRESETS_PER_BANK));
 }
-
-param.enable(1);
-param.enable(2);
-
-param.getName = function(i) {
-    if (i === 1) return "Bank";
-    if (i === 2) return "Program in bank";
-    return "";
-};
-
-param.getValueFormat = function(i) {
-    if (i === 1) return number.toString(bankIndex());
-    if (i === 2) return number.toString(programNumber());
-    return number.toString(param.getValue(i));
-};
-
-// Absolute index (bank * 128 + program) of the preset sent last, -1 if none
-let current = -1;
 
 function totalPresets() {
     return config.banks * PRESETS_PER_BANK;
@@ -97,8 +84,41 @@ function sendPreset(index) {
     }
 }
 
-trig.enableIn(1, 1);
-trig.enableIn(2, 1);
+// Setup
+rack.onLoad = function() {
+    param.enable(1);
+    param.enable(2);
+    trig.enableIn(1, 1);
+    trig.enableIn(2, 1);
+
+    // Context menu - right-click the module to change the MIDI channel live.
+    rack.registerContextMenu({
+        type: "options",
+        label: "Channel",
+        options: CHANNEL_LABELS,
+        onGetValue: function() {
+            return config.channel - 1;
+        },
+        onChange: function(idx) {
+            config.channel = idx + 1;
+            rack.setConfig("channel", config.channel);
+            rack.log("Channel: ", config.channel);
+        }
+    });
+};
+
+// Callbacks
+param.getName = function(i) {
+    if (i === 1) return "Bank";
+    if (i === 2) return "Program in bank";
+    return "";
+};
+
+param.getValueFormat = function(i) {
+    if (i === 1) return number.toString(bankIndex());
+    if (i === 2) return number.toString(programNumber());
+    return number.toString(param.getValue(i));
+};
 
 trig.onTrigger = function(trigPort, channel) {
     if (trigPort === 2) {

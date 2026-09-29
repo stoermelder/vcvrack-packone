@@ -33,6 +33,10 @@ let config = {
     ccChannel: 1
 };
 
+// Context menu choices
+let CHANNEL_LABELS = [];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+
 // Returns the CC number mapped to nrpnNumber, or -1 if not mapped
 function findCcNumber(nrpnNumber) {
     let ccNumber = -1;
@@ -45,32 +49,32 @@ function findCcNumber(nrpnNumber) {
     return ccNumber;
 }
 
-// Context menu - right-click the module to change the output channel live.
-// Each menu mirrors a `config` value above; onChange applies the choice.
-let CHANNEL_LABELS = [];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
-
-rack.registerContextMenu({
-    type: "options",
-    label: "CC channel",
-    options: CHANNEL_LABELS,
-    onGetValue: function() {
-        return config.ccChannel - 1;
-    },
-    onChange: function(idx) {
-        config.ccChannel = idx + 1;
-        rack.log("CC channel: ", config.ccChannel);
-    }
-});
-
+// Setup
 rack.onLoad = function() {
+    // Context menu - right-click the module to change the output channel live.
+    // The menu mirrors the `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type: "options",
+        label: "CC channel",
+        options: CHANNEL_LABELS,
+        onGetValue: function() {
+            return config.ccChannel - 1;
+        },
+        onChange: function(idx) {
+            config.ccChannel = idx + 1;
+            rack.log("CC channel: ", config.ccChannel);
+        }
+    });
+
+    // Assemble NRPN parameter changes on MIDI input port 1 into midi.onNrpn.
+    midi.enableNrpnIn(1);
+
     rack.log("NRPN to CC converter initialized");
     rack.log("Mapped NRPN numbers: ", config.map.length);
     rack.log("Channel: ", config.ccChannel);
 };
 
-// Assemble NRPN parameter changes on MIDI input port 1 into midi.onNrpn.
-midi.enableNrpnIn(1);
+// Callbacks
 
 // No-op: NRPN parameter changes arrive in midi.onNrpn, not here. This only
 // suppresses the "no midi.onMessage" load warning. Non-NRPN messages are

@@ -32,7 +32,7 @@
 -- Configuration - change these values as needed
 local config = {
     -- MIDI channel (1-16) the device listens on
-    channel = 1,
+    channel = rack.getConfig("channel", 1),
 
     -- Number of banks of 128 presets (the Microfreak has 4)
     banks = 4,
@@ -42,6 +42,11 @@ local config = {
 }
 
 local PRESETS_PER_BANK = 128
+local CHANNEL_LABELS = {}
+for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
+
+-- Absolute index (bank * 128 + program) of the preset sent last, -1 if none
+local current = -1
 
 -- 0-based bank number from knob 1
 local function bankIndex()
@@ -52,24 +57,6 @@ end
 local function programNumber()
     return math.min(PRESETS_PER_BANK - 1, math.floor(param.getValue(2) * PRESETS_PER_BANK))
 end
-
-param.enable(1)
-param.enable(2)
-
-param.getName = function(i)
-    if i == 1 then return "Bank" end
-    if i == 2 then return "Program in bank" end
-    return ""
-end
-
-param.getValueFormat = function(i)
-    if i == 1 then return number.toString(bankIndex()) end
-    if i == 2 then return number.toString(programNumber()) end
-    return number.toString(param.getValue(i))
-end
-
--- Absolute index (bank * 128 + program) of the preset sent last, -1 if none
-local current = -1
 
 local function totalPresets()
     return config.banks * PRESETS_PER_BANK
@@ -99,8 +86,41 @@ local function sendPreset(index)
     end
 end
 
-trig.enableIn(1, 1)
-trig.enableIn(2, 1)
+-- Setup
+rack.onLoad = function()
+    param.enable(1)
+    param.enable(2)
+    trig.enableIn(1, 1)
+    trig.enableIn(2, 1)
+
+    -- Context menu - right-click the module to change the MIDI channel live.
+    rack.registerContextMenu({
+        type = "options",
+        label = "Channel",
+        options = CHANNEL_LABELS,
+        onGetValue = function()
+            return config.channel - 1
+        end,
+        onChange = function(idx)
+            config.channel = idx + 1
+            rack.setConfig("channel", config.channel)
+            rack.log("Channel: ", config.channel)
+        end
+    })
+end
+
+-- Callbacks
+param.getName = function(i)
+    if i == 1 then return "Bank" end
+    if i == 2 then return "Program in bank" end
+    return ""
+end
+
+param.getValueFormat = function(i)
+    if i == 1 then return number.toString(bankIndex()) end
+    if i == 2 then return number.toString(programNumber()) end
+    return number.toString(param.getValue(i))
+end
 
 trig.onTrigger = function(trigPort, channel)
     if trigPort == 2 then

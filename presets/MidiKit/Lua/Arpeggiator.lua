@@ -31,7 +31,6 @@
 -- Silence (no keys held) simply stops stepping; the next Note-On restarts
 -- the pattern from its first note on the next step boundary.
 
-
 -- Configuration - change these values as needed
 local config = {
     -- Only arpeggiate notes on this channel; 0 = every channel
@@ -63,23 +62,11 @@ local state = {
     soundingChannel = 1
 }
 
-param.enable(1)
-param.enable(2)
-param.enable(3)
-param.enable(4)
-
--- Clock the arp from trigger channel 1 only: trig.onTrigger fires per poly
--- channel, and trig.enableIn() gates it — enabling just channel 1 means the
--- other channels are ignored.
-trig.enableIn(1, 1)
-
-param.getName = function(i)
-    if i == 1 then return "Clock division" end
-    if i == 2 then return "Octave range" end
-    if i == 3 then return "Note length" end
-    if i == 4 then return "Playmode" end
-    return ""
-end
+-- Context menu choices
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+local OUT_CHANNEL_LABELS = { "Same as input" }
+for c = 1, 16 do OUT_CHANNEL_LABELS[c + 1] = tostring(c) end
 
 local function divisionIndex()
     local idx = math.floor(param.getValue(1) * #DIVISIONS) + 1
@@ -97,14 +84,6 @@ local function playmodeIndex()
     local idx = math.floor(param.getValue(4) * #PLAYMODES) + 1
     if idx > #PLAYMODES then idx = #PLAYMODES end
     return idx
-end
-
-param.getValueFormat = function(i)
-    if i == 1 then return number.toString(DIVISIONS[divisionIndex()]) .. " ticks/step" end
-    if i == 2 then return number.toString(octaveRange()) .. " oct" end
-    if i == 3 then return string.format("%.0f", param.getValue(3) * 100) .. " %" end
-    if i == 4 then return PLAYMODES[playmodeIndex()] end
-    return number.toString(param.getValue(i))
 end
 
 local function matchesChannel(ch)
@@ -155,46 +134,69 @@ local function releaseSounding()
     end
 end
 
+-- Setup
 rack.onLoad = function()
+    param.enable(1)
+    param.enable(2)
+    param.enable(3)
+    param.enable(4)
+
+    -- Clock the arp from trigger channel 1 only: trig.onTrigger fires per poly
+    -- channel, and trig.enableIn() gates it — enabling just channel 1 means the
+    -- other channels are ignored.
+    trig.enableIn(1, 1)
+
+    -- Context menu - right-click the module to change these settings live.
+    -- Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type = "options",
+        label = "Input channel",
+        options = CHANNEL_LABELS,
+        onGetValue = function()
+            return config.channel
+        end,
+        onChange = function(idx)
+            config.channel = idx
+            rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
+        end
+    })
+
+    rack.registerContextMenu({
+        type = "options",
+        label = "Output channel",
+        options = OUT_CHANNEL_LABELS,
+        onGetValue = function()
+            return config.outChannel
+        end,
+        onChange = function(idx)
+            config.outChannel = idx
+            rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx + 1])
+        end
+    })
+
     rack.log("Arpeggiator initialized")
+end
+
+-- Callbacks
+param.getName = function(i)
+    if i == 1 then return "Clock division" end
+    if i == 2 then return "Octave range" end
+    if i == 3 then return "Note length" end
+    if i == 4 then return "Playmode" end
+    return ""
+end
+
+param.getValueFormat = function(i)
+    if i == 1 then return number.toString(DIVISIONS[divisionIndex()]) .. " ticks/step" end
+    if i == 2 then return number.toString(octaveRange()) .. " oct" end
+    if i == 3 then return string.format("%.0f", param.getValue(3) * 100) .. " %" end
+    if i == 4 then return PLAYMODES[playmodeIndex()] end
+    return number.toString(param.getValue(i))
 end
 
 rack.onUnload = function()
     releaseSounding()
 end
-
--- Context menu - right-click the module to change these settings live.
--- Each menu mirrors a `config` value above; onChange applies the choice.
-local CHANNEL_LABELS = { "All" }
-for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
-local OUT_CHANNEL_LABELS = { "Same as input" }
-for c = 1, 16 do OUT_CHANNEL_LABELS[c + 1] = tostring(c) end
-
-rack.registerContextMenu({
-    type = "options",
-    label = "Input channel",
-    options = CHANNEL_LABELS,
-    onGetValue = function() 
-        return config.channel
-    end,
-    onChange = function(idx)
-        config.channel = idx
-        rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
-    end
-})
-
-rack.registerContextMenu({
-    type = "options",
-    label = "Output channel",
-    options = OUT_CHANNEL_LABELS,
-    onGetValue = function()
-        return config.outChannel
-    end,
-    onChange = function(idx)
-        config.outChannel = idx
-        rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx + 1])
-    end
-})
 
 midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
@@ -235,7 +237,7 @@ midi.onMessage = function(midiPort, msg)
     midiOut.send(msg)
 end
 
-function trig.onTrigger(trigPort, channel)
+trig.onTrigger = function(trigPort, channel)
     local division = DIVISIONS[divisionIndex()]
     state.tickCount = state.tickCount + 1
     if state.tickCount < division then return end
