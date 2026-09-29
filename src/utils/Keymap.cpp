@@ -81,7 +81,46 @@ static std::string toUpper(const std::string& s) {
 	return r;
 }
 
+// A JSON string literal, quotes and escapes included.
+static std::string jsonString(const std::string& s) {
+	json_t* j = json_string(s.c_str());
+	char* d = json_dumps(j, JSON_ENCODE_ANY);
+	std::string r = d ? d : "\"\"";
+	std::free(d);
+	json_decref(j);
+	return r;
+}
+
 } // namespace
+
+// Removes `// ...` comments up to the end of the line, leaving the newline (so parse errors keep
+// their line numbers). Slashes inside a string literal are left alone. The keymap files are
+// JSON-with-comments: jansson parses none, so this runs before it does.
+std::string stripLineComments(const std::string& in) {
+	std::string out;
+	out.reserve(in.size());
+	bool inString = false;
+	for (size_t i = 0; i < in.size(); i++) {
+		char c = in[i];
+		if (inString) {
+			out += c;
+			if (c == '\\' && i + 1 < in.size()) out += in[++i];
+			else if (c == '"') inString = false;
+		}
+		else if (c == '"') {
+			inString = true;
+			out += c;
+		}
+		else if (c == '/' && i + 1 < in.size() && in[i + 1] == '/') {
+			while (i < in.size() && in[i] != '\n') i++;
+			if (i < in.size()) out += '\n';
+		}
+		else {
+			out += c;
+		}
+	}
+	return out;
+}
 
 std::string comboKeyName(int key) {
 	for (const auto& e : kKeyNames) {
@@ -365,24 +404,42 @@ void Keymap::save() {
 	if (frozen_) return;
 	if (!dirty_) return;
 
-	json_t* root = json_object();
-	json_object_set_new(root, "slug", json_string(slug_.c_str()));
-	json_object_set_new(root, "version", json_integer(1));
+	// Written by hand rather than with json_dumps(): jansson can't emit comments, and every
+	// binding gets a `// label (group)` line above it. The file is read back with
+	// stripLineComments(), so comments are regenerated on each save and are not the user's.
+	std::string out;
+	out += "{\n";
+	out += "  \"slug\": " + jsonString(slug_) + ",\n";
+	out += "  \"version\": 1,\n";
+	out += "  \"bindings\": {";
 
-	json_t* bindingsJ = json_object();
+	bool first = true;
+	auto beginEntry = [&](const std::string& comment) {
+		out += first ? "\n" : ",\n\n";
+		first = false;
+		std::string c = comment;
+		std::replace(c.begin(), c.end(), '\n', ' ');
+		out += "    // " + c + "\n";
+	};
+
 	std::map<std::string, bool> registeredIds;
 	for (const auto& a : actions_) {
 		registeredIds[a.id] = true;
+		beginEntry(a.label + " (" + a.group + ")");
+		out += "    " + jsonString(a.id) + ": ";
 		if (a.combos.empty()) {
-			json_object_set_new(bindingsJ, a.id.c_str(), json_null());
+			out += "null";
 		}
 		else if (a.combos.size() == 1) {
-			json_object_set_new(bindingsJ, a.id.c_str(), json_string(a.combos[0].toString().c_str()));
+			out += jsonString(a.combos[0].toString());
 		}
 		else {
-			json_t* arr = json_array();
-			for (const auto& c : a.combos) json_array_append_new(arr, json_string(c.toString().c_str()));
-			json_object_set_new(bindingsJ, a.id.c_str(), arr);
+			out += "[";
+			for (size_t i = 0; i < a.combos.size(); i++) {
+				if (i > 0) out += ", ";
+				out += jsonString(a.combos[i].toString());
+			}
+			out += "]";
 		}
 	}
 
@@ -392,20 +449,20 @@ void Keymap::save() {
 		json_t* value;
 		json_object_foreach(parsedUnknownJ_, key, value) {
 			if (registeredIds.count(key)) continue;
-			json_object_set(bindingsJ, key, value);   // borrowed value; json_object_set copies the ref
+			char* dumped = json_dumps(value, JSON_ENCODE_ANY | JSON_COMPACT);
+			if (!dumped) continue;
+			beginEntry("not used by this version");
+			out += "    " + jsonString(key) + ": " + dumped;
+			std::free(dumped);
 		}
 	}
 
-	json_object_set_new(root, "bindings", bindingsJ);
+	out += first ? "}\n" : "\n  }\n";
+	out += "}\n";
 
-	char* dumped = json_dumps(root, JSON_INDENT(2) | JSON_PRESERVE_ORDER);
-	json_decref(root);
-	if (dumped) {
-		DEFER({ std::free(dumped); });
-		vcv::fs::createDirectories(Keymaps::directory());
-		if (vcv::fs::write(Keymaps::pathFor(slug_), dumped)) {
-			dirty_ = false;
-		}
+	vcv::fs::createDirectories(Keymaps::directory());
+	if (vcv::fs::write(Keymaps::pathFor(slug_), out)) {
+		dirty_ = false;
 	}
 }
 
@@ -425,7 +482,7 @@ std::shared_ptr<Keymap> loadFromDisk(const std::string& slug) {
 		std::string data;
 		if (vcv::fs::read(path, data)) {
 			std::string error;
-			json_t* root = vcv::parseJson(data, error);
+			json_t* root = vcv::parseJson(stripLineComments(data), error);
 			if (root) {
 				km->loadParsed(root);
 				json_decref(root);
@@ -484,7 +541,7 @@ std::string directory() {
 }
 
 std::string pathFor(const std::string& slug) {
-	return vcv::fs::join(directory(), slug + ".json");
+	return vcv::fs::join(directory(), slug + ".jsonc");
 }
 
 void resetForTest() {

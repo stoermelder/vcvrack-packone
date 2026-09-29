@@ -1546,6 +1546,39 @@ struct AhabSimWidget : OpaqueWidget {
 			}
 		}));
 
+		// Small ORCA idiom snippets, inserted at the cursor (not replacing the field),
+		// mirroring pasteSelection()'s non-destructive placement.
+		menu->addChild(createSubmenuItem("Snippets", "", [this](ui::Menu* m) {
+			auto insertSnippet = [this](const std::string& content) {
+				Usz cy, cx; editorState.getCursor(cy, cx);
+				Usz out_h = 0, out_w = 0;
+				if (module->sim->loadRectFromOrcaRequest(content, cy, cx, out_h, out_w)) {
+					if (out_h > 0 && out_w > 0) editorState.setSelection(cy, cx, out_h, out_w, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+					APP->event->setSelectedWidget(this);
+				}
+				else {
+					vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, "Failed to insert snippet");
+				}
+			};
+
+			struct Snippet { std::string name; std::string content; std::string desc; };
+			static const std::vector<Snippet> snippets = {
+				{"Modulo", "1X..\n6I4.", "Will output the modulo of 6 % 4."},
+				{"LEQ", ".AxLy\n.xFx.", "Bangs if x is less than or equal to y"},
+				{"Uppercase", "cA1.\n.dAZ", "Will output uppercase C."},
+				{"Lowercase", "H...\nCM1.", "Will output lowercase C."},
+				{"OR", "0A1.\n.1L1\n..1.", "Or logic gate with numeric input"},
+				{"XOR", "0B1.\n.1..", "Xor logic gate with numeric input"},
+				{"XNOR", "0B1.\n.1B1\n..0.", "Xnor logic gate with numeric input"},
+				{"AND", "0M1.\n.0..", "And logic gate with numeric input"},
+				{"NAND", "0M1.\n.0B1\n..1.", "Nand logic gate with numeric input"},
+			};
+			for (auto& s : snippets) {
+				std::string content = s.content;
+				m->addChild(createMenuItem(s.name, s.desc, [=]() { insertSnippet(content); }));
+			}
+		}));
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("MIDI", "", [this](ui::Menu* menu) {
 			menu->addChild(createBoolPtrMenuItem("Driver enabled", "", &module->midiOutEnabled));

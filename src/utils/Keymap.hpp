@@ -12,7 +12,9 @@
 //   - A module registers its actions (id, label, group, default KeyCombo) into a process-wide
 //     Keymap, shared across every instance of that module via the Keymaps registry.
 //   - The Keymap persists bindings as human-editable JSON under
-//     <user dir>/Stoermelder-P1/keymaps/<slug>.json, created on first use.
+//     <user dir>/Stoermelder-P1/keymaps/<slug>.jsonc, created on first use.
+//     The file is JSON with `//` line comments (a description above each binding, regenerated
+//     on every write).
 //   - A module's per-widget behaviour lives in a separate KeymapHandlers, so nothing capturing
 //     a widget is ever stored in the shared, process-wide Keymap.
 //
@@ -51,6 +53,11 @@ struct KeyCombo {
 	// elsewhere). Never fed back into the parser or the file.
 	std::string displayString() const;
 };
+
+// Removes `// ...` comments up to the end of the line (the newline is kept, so parse errors keep
+// their line numbers); slashes inside a string literal are left alone. Keymap files are
+// JSON-with-comments and jansson parses none, so this runs before it does.
+std::string stripLineComments(const std::string& in);
 
 // Key-name table used by the combo grammar, covering the full GLFW range with title-case,
 // file-friendly names ("Space", "Escape", "Backspace", "Up") distinct from keyboard.hpp's

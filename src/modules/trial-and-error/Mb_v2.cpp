@@ -2,6 +2,7 @@
 #include "Mb.hpp"
 #include "Mb_preview.hpp"
 #include "Mb_manifests.hpp"
+#include "MbKeymap.hpp"
 #include "../../vcv/ui.hpp"
 #include <tag.hpp>
 
@@ -94,41 +95,90 @@ struct ModelBox : ModelBoxBase {
 
 
 
-bool handleLayoutMenuKeyEvent(const Widget::SelectKeyEvent& e, Widget* currentContainer = nullptr) {
-	if (!e.isConsumed() && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
-		switch (e.key) {
-			case GLFW_KEY_1: {
-				if (currentContainer) currentContainer->parent->requestDelete();
-				event::Action a;
-				auto browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				browser->brandButton->onAction(a);
-				e.consume(browser);
-				return true;
-			}
-			case GLFW_KEY_2: {
-				if (currentContainer) currentContainer->parent->requestDelete();
-				event::Action a;
-				auto browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				browser->tagButton->onAction(a);
-				e.consume(browser);
-				return true;
-			}
-			case GLFW_KEY_3: {
-				if (currentContainer) currentContainer->parent->requestDelete();
-				event::Action a;
-				auto browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				browser->customTagButton->onAction(a);
-				e.consume(browser);
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
 struct BrowserSearchField : ui::TextField {
 	ModuleBrowser* browser;
 	DropdownChoiceContainer* dropDown = nullptr;
+
+	std::shared_ptr<Keymap> keymap = registerActions();
+	KeymapHandlers handlers{keymap};
+
+	DropdownChoiceContainer* openDropdown() {
+		return APP->scene->getFirstDescendantOfType<DropdownChoiceContainer>();
+	}
+
+	BrowserSearchField() {
+		// While a header dropdown is open, every key but the layout shortcuts belongs to it.
+		auto browse = handlers.scope([this]{ return openDropdown() == nullptr; });
+		browse.on("browser.v2.nav.up",   [this]{ browser->navigateSelection(GLFW_KEY_UP); });
+		browse.on("browser.v2.nav.down", [this]{ browser->navigateSelection(GLFW_KEY_DOWN); });
+		browse.onTry("browser.v2.nav.left", [this]() -> bool {
+			if (!pluginSettings.mbArrowKeyNavigation) return false;
+			browser->navigateSelection(GLFW_KEY_LEFT);
+			return true;
+		});
+		browse.onTry("browser.v2.nav.right", [this]() -> bool {
+			if (!pluginSettings.mbArrowKeyNavigation) return false;
+			browser->navigateSelection(GLFW_KEY_RIGHT);
+			return true;
+		});
+		browse.onTry("browser.close", [this]() -> bool {
+			// Sticky side view stays open; only closable from its own context menu item.
+			if (sideView) return false;
+			Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
+			overlay->hide();
+			return true;
+		});
+		browse.onTry("browser.clear", [this]() -> bool {
+			if (text != "") return false;
+			browser->clear();
+			return true;
+		});
+		browse.on("browser.clear.always", [this]{
+			browser->clear();
+		});
+		browse.onTry("browser.favorite.toggle", [this]() -> bool {
+			if (string::trim(text) != "") return false;
+			browser->favorite ^= true;
+			browser->refresh();
+			setText("");
+			return true;
+		});
+		browse.on("browser.favorite.toggle.always", [this]{
+			browser->favorite ^= true;
+			browser->refresh();
+		});
+		browse.on("browser.hidden.toggle", [this]{
+			browser->hidden ^= true;
+			browser->refresh();
+			setText(string::trim(text));
+		});
+
+		// Ctrl+1/2/3 open the matching dropdown; with any dropdown open they close it, and switch
+		// to the matching one unless it is the one already open.
+		auto dropdownOpen = handlers.scope([this]{ return openDropdown() != nullptr; });
+		struct Layout { const char* id; ui::ChoiceButton* ModuleBrowser::* button; };
+		static const Layout kLayouts[] = {
+			{"browser.v2.layout.brand",     &ModuleBrowser::brandButton},
+			{"browser.v2.layout.tag",       &ModuleBrowser::tagButton},
+			{"browser.v2.layout.customtag", &ModuleBrowser::customTagButton},
+		};
+		for (const Layout& l : kLayouts) {
+			ui::ChoiceButton* ModuleBrowser::* button = l.button;
+			handlers.on(l.id, [this, button]{
+				event::Action a;
+				(browser->*button)->onAction(a);
+			});
+			dropdownOpen.on(l.id, [this, button]{
+				DropdownChoiceContainer* open = openDropdown();
+				bool same = open->opener == browser->*button;
+				open->parent->requestDelete();
+				if (!same) {
+					event::Action a;
+					(browser->*button)->onAction(a);
+				}
+			});
+		}
+	}
 
 	void step() override {
 		// Sticky side view is visible the whole time, so grabbing focus is gated on hover (else
@@ -149,70 +199,20 @@ struct BrowserSearchField : ui::TextField {
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
-		// Handle special key events
-		dropDown = APP->scene->getFirstDescendantOfType<DropdownChoiceContainer>();
+		dropDown = openDropdown();
+
+		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+			if (handlers.dispatch(e.key, e.mods, e.action)) {
+				e.consume(this);
+				return;
+			}
+		}
+
 		if (dropDown) {
 			dropDown->onSelectKey(e);
 			return;
 		}
-
-		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-			switch (e.key) {
-				case GLFW_KEY_DOWN:
-				case GLFW_KEY_UP: {
-					browser->navigateSelection(e.key);
-					e.consume(this);
-					return;
-				}
-				case GLFW_KEY_LEFT:
-				case GLFW_KEY_RIGHT: {
-					if (pluginSettings.mbArrowKeyNavigation) {
-						browser->navigateSelection(e.key);
-						e.consume(this);
-						return;
-					}
-					break;
-				}
-				case GLFW_KEY_ESCAPE: {
-					// Sticky side view stays open; only closable from its own context menu item.
-					if (sideView) break;
-					Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
-					overlay->hide();
-					e.consume(this);
-					return;
-				}
-				case GLFW_KEY_BACKSPACE: {
-					if (text == "") {
-						browser->clear();
-						e.consume(this);
-						return;
-					}
-					break;
-				}
-				case GLFW_KEY_SPACE: {
-					if (string::trim(text) == "" && (e.mods & RACK_MOD_MASK) == 0) {
-						browser->favorite ^= true;
-						browser->refresh();
-						setText("");
-						e.consume(this);
-						return;
-					}
-					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL || (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
-						browser->hidden ^= true;
-						browser->refresh();
-						setText(string::trim(text));
-						e.consume(this);
-						return;
-					}
-					break;
-				}
-			}
-			if (handleLayoutMenuKeyEvent(e)) {
-				return;
-			}
-		}
-	
-  		ui::TextField::onSelectKey(e);
+		ui::TextField::onSelectKey(e);
 	}
 
 	void onSelectText(const SelectTextEvent& e) override {
@@ -288,21 +288,7 @@ struct BrandButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		struct Container : DropdownChoiceContainer {
-			void onSelectKey(const SelectKeyEvent& e) override {
-				if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_1) {
-					e.consume(this);
-					parent->requestDelete();
-					return;
-				}
-				else if (handleLayoutMenuKeyEvent(e, this)) {
-					return;
-				}
-				DropdownChoiceContainer::onSelectKey(e);
-			}
-		};
-
-		openLayoutMenu<ModuleBrowser, Container>(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items);
 	}
 
 	void step() override {
@@ -358,21 +344,7 @@ struct TagButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		struct Container : DropdownChoiceContainer {
-			void onSelectKey(const SelectKeyEvent& e) override {
-				if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_2) {
-					e.consume(this);
-					parent->requestDelete();
-					return;
-				}
-				else if (handleLayoutMenuKeyEvent(e, this)) {
-					return;
-				}
-				DropdownChoiceContainer::onSelectKey(e);
-			}
-		};
-
-		openLayoutMenu<ModuleBrowser, Container>(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items);
 	}
 
 	void step() override {
@@ -440,21 +412,7 @@ struct CustomTagButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		struct Container : DropdownChoiceContainer {
-			void onSelectKey(const SelectKeyEvent& e) override {
-				if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_3) {
-					e.consume(this);
-					parent->requestDelete();
-					return;
-				}
-				else if (handleLayoutMenuKeyEvent(e, this)) {
-					return;
-				}
-				DropdownChoiceContainer::onSelectKey(e);
-			}
-		};
-
-		openLayoutMenu<ModuleBrowser, Container>(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items);
 	}
 
 	void step() override {
