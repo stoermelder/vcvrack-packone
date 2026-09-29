@@ -158,6 +158,7 @@ struct BrowserSearchField : ui::TextField {
 			{"browser.v2.layout.brand",     &ModuleBrowser::brandButton},
 			{"browser.v2.layout.tag",       &ModuleBrowser::tagButton},
 			{"browser.v2.layout.customtag", &ModuleBrowser::customTagButton},
+			{"browser.v2.layout.width",     &ModuleBrowser::widthButton},
 		};
 		for (const Layout& l : kLayouts) {
 			ui::ChoiceButton* ModuleBrowser::* button = l.button;

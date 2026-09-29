@@ -6,7 +6,7 @@
 // keymaps/Mb.jsonc (see Keymaps::open()). No in-app rebinding menu yet; hand-editing that file
 // is the only way to change a shortcut.
 //
-// v1 has no arrow-key result navigation and no Ctrl+1/2/3 layout shortcuts (no header dropdowns
+// v1 has no arrow-key result navigation and no Ctrl+1/2/3/4 layout shortcuts (no header dropdowns
 // to jump to); it simply never hooks those action ids. Both UI generations share one keymap
 // since they belong to the same module and mostly overlap.
 
@@ -45,6 +45,7 @@ inline std::shared_ptr<Keymap> registerActions() {
 	km->registerAction("browser.v2.layout.brand",     "Open Brand dropdown",      "Browser", "Ctrl+1");
 	km->registerAction("browser.v2.layout.tag",       "Open Tag dropdown",        "Browser", "Ctrl+2");
 	km->registerAction("browser.v2.layout.customtag", "Open Custom Tag dropdown", "Browser", "Ctrl+3");
+	km->registerAction("browser.v2.layout.width",     "Open Width dropdown",      "Browser", "Ctrl+4");
 
 	km->save();
 	return km;

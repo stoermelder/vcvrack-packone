@@ -184,19 +184,22 @@ struct StubChoiceButton : rack::ui::ChoiceButton {
 };
 
 struct LayoutFixture : KeymapFixture {
-	StubChoiceButton brandStub, tagStub, customTagStub;
+	StubChoiceButton brandStub, tagStub, customTagStub, widthStub;
 	rack::ui::ChoiceButton* savedBrand;
 	rack::ui::ChoiceButton* savedTag;
 	rack::ui::ChoiceButton* savedCustomTag;
+	rack::ui::ChoiceButton* savedWidth;
 	std::vector<rack::ui::MenuOverlay*> overlays;
 
 	LayoutFixture() {
 		savedBrand = browser->brandButton;
 		savedTag = browser->tagButton;
 		savedCustomTag = browser->customTagButton;
+		savedWidth = browser->widthButton;
 		browser->brandButton = &brandStub;
 		browser->tagButton = &tagStub;
 		browser->customTagButton = &customTagStub;
+		browser->widthButton = &widthStub;
 	}
 
 	~LayoutFixture() {
@@ -209,6 +212,7 @@ struct LayoutFixture : KeymapFixture {
 		browser->brandButton = savedBrand;
 		browser->tagButton = savedTag;
 		browser->customTagButton = savedCustomTag;
+		browser->widthButton = savedWidth;
 	}
 
 	// A dropdown already open, as a shortcut press would have left it.
@@ -226,13 +230,15 @@ struct LayoutFixture : KeymapFixture {
 TEST_CASE("MB keymap: layout dropdown shortcuts", "[Mb][Widget][Keymap]") {
 	LayoutFixture fx;
 
-	SECTION("Ctrl+1/2/3 open the Brand/Tag/Custom Tag dropdown") {
+	SECTION("Ctrl+1/2/3/4 open the Brand/Tag/Custom Tag/Width dropdown") {
 		REQUIRE(fx.press(GLFW_KEY_1, RACK_MOD_CTRL));
 		REQUIRE(fx.brandStub.opened == 1);
 		REQUIRE(fx.press(GLFW_KEY_2, RACK_MOD_CTRL));
 		REQUIRE(fx.tagStub.opened == 1);
 		REQUIRE(fx.press(GLFW_KEY_3, RACK_MOD_CTRL));
 		REQUIRE(fx.customTagStub.opened == 1);
+		REQUIRE(fx.press(GLFW_KEY_4, RACK_MOD_CTRL));
+		REQUIRE(fx.widthStub.opened == 1);
 		REQUIRE(fx.brandStub.opened == 1);
 	}
 
@@ -251,6 +257,20 @@ TEST_CASE("MB keymap: layout dropdown shortcuts", "[Mb][Widget][Keymap]") {
 		REQUIRE(open->parent->requestedDelete);
 		REQUIRE(fx.tagStub.opened == 1);
 		REQUIRE(fx.brandStub.opened == 0);
+	}
+
+	SECTION("The Width shortcut closes an open Width dropdown without reopening it") {
+		auto* open = fx.openDropdownFor(&fx.widthStub);
+		REQUIRE(fx.press(GLFW_KEY_4, RACK_MOD_CTRL));
+		REQUIRE(open->parent->requestedDelete);
+		REQUIRE(fx.widthStub.opened == 0);
+	}
+
+	SECTION("The Width shortcut switches from another open dropdown") {
+		auto* open = fx.openDropdownFor(&fx.brandStub);
+		REQUIRE(fx.press(GLFW_KEY_4, RACK_MOD_CTRL));
+		REQUIRE(open->parent->requestedDelete);
+		REQUIRE(fx.widthStub.opened == 1);
 	}
 
 	SECTION("Browse shortcuts are suspended while a dropdown is open") {
