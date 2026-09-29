@@ -385,7 +385,7 @@ struct MacroWidget : ThemedModuleWidget<MacroModule>, ParamWidgetContextExtender
 	}
 
 	void step() override {
-		ParamWidgetContextExtender::step();
+		if (module) ParamWidgetContextExtender::step();
 		ThemedModuleWidget<MacroModule>::step();
 	}
 

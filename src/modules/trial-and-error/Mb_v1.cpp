@@ -1,5 +1,6 @@
 #include "Mb_v1.hpp"
 #include "Mb_preview.hpp"
+#include "MbKeymap.hpp"
 #include "../../vcv/ui.hpp"
 #include <tag.hpp>
 
@@ -255,6 +256,43 @@ struct CustomTagItem : ui::MenuItem {
 
 
 struct BrowserSearchField : ui::TextField {
+	std::shared_ptr<Keymap> keymap = registerActions();
+	KeymapHandlers handlers{keymap, {"Browser", "Navigation"}};
+
+	BrowserSearchField() {
+		handlers.on("browser.close", [this]{
+			Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
+			overlay->hide();
+		});
+		handlers.onTry("browser.clear", [this]() -> bool {
+			if (text != "") return false;
+			ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+			browser->clear(false);
+			return true;
+		});
+		handlers.on("browser.clear.always", [this]{
+			ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+			browser->clear(false);
+		});
+		handlers.onTry("browser.favorite.toggle", [this]() -> bool {
+			if (string::trim(text) != "") return false;
+			ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+			browser->favorites ^= true;
+			setText("");
+			return true;
+		});
+		handlers.on("browser.favorite.toggle.always", [this]{
+			ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+			browser->favorites ^= true;
+			browser->refresh(true);
+		});
+		handlers.on("browser.hidden.toggle", [this]{
+			ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+			browser->hidden ^= true;
+			setText(string::trim(text));
+		});
+	}
+
 	void step() override {
 		// Steal focus, but yield to any other TextField that has it
 		widget::Widget* selected = APP->event->getSelectedWidget();
@@ -267,50 +305,14 @@ struct BrowserSearchField : ui::TextField {
 	void onSelectKey(const event::SelectKey& e) override {
 		bool propagate = !e.getTarget();
 
-		switch (e.key) {
-			case GLFW_KEY_ESCAPE: {
-				if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-					Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
-					overlay->hide();
-				}
-				e.consume(this);
-				break;
-			} 
-			case GLFW_KEY_BACKSPACE: {
-				if (text == "") {
-					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-						ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
-						browser->clear(false);
-					}
-					e.consume(this);
-				}
-				break;
-			} 
-			case GLFW_KEY_SPACE: {
-				if (string::trim(text) == "" && (e.mods & RACK_MOD_MASK) == 0) {
-					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-						ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
-						browser->favorites ^= true;
-					}
-					setText("");
-					propagate = false;
-					e.consume(this);
-				}
-				if ((e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
-					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-						ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
-						browser->hidden ^= true;
-					}
-					setText(string::trim(text));
-					propagate = false;
-					e.consume(this);
-				}
-				break;
-			}
+		if (handlers.dispatch(e.key, e.mods, e.action)) {
+			propagate = false;
+			e.consume(this);
 		}
 
-		propagate = propagate && !((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_F);
-		propagate = propagate && !((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_H);
+		// Keep the hovered-module toggles out of the text field.
+		const std::string& id = keymap->lookup(e.key, e.mods, e.action, {"ModelBox"});
+		propagate = propagate && id != "modelbox.favorite.toggle" && id != "modelbox.hidden.toggle";
 
 		if (propagate) {
 			ui::TextField::onSelectKey(e);

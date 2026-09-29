@@ -2,6 +2,7 @@
 #include "Mb.hpp"
 #include "Mb_preview.hpp"
 #include "Mb_manifests.hpp"
+#include "MbKeymap.hpp"
 #include "../../vcv/ui.hpp"
 #include <tag.hpp>
 
@@ -94,41 +95,109 @@ struct ModelBox : ModelBoxBase {
 
 
 
-bool handleLayoutMenuKeyEvent(const Widget::SelectKeyEvent& e, Widget* currentContainer = nullptr) {
-	if (!e.isConsumed() && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
-		switch (e.key) {
-			case GLFW_KEY_1: {
-				if (currentContainer) currentContainer->parent->requestDelete();
-				event::Action a;
-				auto browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				browser->brandButton->onAction(a);
-				e.consume(browser);
-				return true;
-			}
-			case GLFW_KEY_2: {
-				if (currentContainer) currentContainer->parent->requestDelete();
-				event::Action a;
-				auto browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				browser->tagButton->onAction(a);
-				e.consume(browser);
-				return true;
-			}
-			case GLFW_KEY_3: {
-				if (currentContainer) currentContainer->parent->requestDelete();
-				event::Action a;
-				auto browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				browser->customTagButton->onAction(a);
-				e.consume(browser);
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
 struct BrowserSearchField : ui::TextField {
 	ModuleBrowser* browser;
 	DropdownChoiceContainer* dropDown = nullptr;
+
+	std::shared_ptr<Keymap> keymap = registerActions();
+	KeymapHandlers handlers{keymap, {"Browser", "Navigation"}};
+	// The hovered-module shortcuts, applied to the keyboard-selected module. Separate from
+	// `handlers` so its "ModelBox" actions can't shadow the field's own on a shared key. Declines
+	// without a selection, leaving the key to the hovered module box.
+	KeymapHandlers selectedModelHandlers{keymap, {"ModelBox"}};
+
+	DropdownChoiceContainer* openDropdown() {
+		return APP->scene->getFirstDescendantOfType<DropdownChoiceContainer>();
+	}
+
+	BrowserSearchField() {
+		// While a header dropdown is open, every key but the layout shortcuts belongs to it.
+		auto browse = handlers.scope([this]{ return openDropdown() == nullptr; });
+		browse.on("browser.v2.nav.up",   [this]{ browser->navigateSelection(GLFW_KEY_UP); });
+		browse.on("browser.v2.nav.down", [this]{ browser->navigateSelection(GLFW_KEY_DOWN); });
+		browse.onTry("browser.v2.nav.left", [this]() -> bool {
+			if (!pluginSettings.mbArrowKeyNavigation) return false;
+			browser->navigateSelection(GLFW_KEY_LEFT);
+			return true;
+		});
+		browse.onTry("browser.v2.nav.right", [this]() -> bool {
+			if (!pluginSettings.mbArrowKeyNavigation) return false;
+			browser->navigateSelection(GLFW_KEY_RIGHT);
+			return true;
+		});
+		browse.on("browser.close", [this]{
+			Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
+			overlay->hide();
+		});
+		browse.onTry("browser.clear", [this]() -> bool {
+			if (text != "") return false;
+			browser->clear();
+			return true;
+		});
+		browse.on("browser.clear.always", [this]{
+			browser->clear();
+		});
+		browse.onTry("browser.favorite.toggle", [this]() -> bool {
+			if (string::trim(text) != "") return false;
+			browser->favorite ^= true;
+			browser->refresh();
+			setText("");
+			return true;
+		});
+		browse.on("browser.favorite.toggle.always", [this]{
+			browser->favorite ^= true;
+			browser->refresh();
+		});
+		browse.on("browser.hidden.toggle", [this]{
+			browser->hidden ^= true;
+			browser->refresh();
+			setText(string::trim(text));
+		});
+
+		// Ctrl+1/2/3 open the matching dropdown; with any dropdown open they close it, and switch
+		// to the matching one unless it is the one already open.
+		auto dropdownOpen = handlers.scope([this]{ return openDropdown() != nullptr; });
+		struct Layout { const char* id; ui::ChoiceButton* ModuleBrowser::* button; };
+		static const Layout kLayouts[] = {
+			{"browser.v2.layout.brand",     &ModuleBrowser::brandButton},
+			{"browser.v2.layout.tag",       &ModuleBrowser::tagButton},
+			{"browser.v2.layout.customtag", &ModuleBrowser::customTagButton},
+			{"browser.v2.layout.width",     &ModuleBrowser::widthButton},
+		};
+		for (const Layout& l : kLayouts) {
+			ui::ChoiceButton* ModuleBrowser::* button = l.button;
+			handlers.on(l.id, [this, button]{
+				event::Action a;
+				(browser->*button)->onAction(a);
+			});
+			dropdownOpen.on(l.id, [this, button]{
+				DropdownChoiceContainer* open = openDropdown();
+				bool same = open->opener == browser->*button;
+				open->parent->requestDelete();
+				if (!same) {
+					event::Action a;
+					(browser->*button)->onAction(a);
+				}
+			});
+		}
+
+		selectedModelHandlers.onTry("modelbox.favorite.toggle", [this]() -> bool {
+			if (!browser->selectedModel) return false;
+			toggleModelFavorite(browser->selectedModel);
+			if (browser->favorite) {
+				browser->refresh(false);
+				browser->dropHiddenSelection();
+			}
+			return true;
+		});
+		selectedModelHandlers.onTry("modelbox.hidden.toggle", [this]() -> bool {
+			if (!browser->selectedModel) return false;
+			toggleModelHidden(browser->selectedModel);
+			browser->refresh(false);
+			browser->dropHiddenSelection();
+			return true;
+		});
+	}
 
 	void step() override {
 		widget::Widget* selected = APP->event->getSelectedWidget();
@@ -139,68 +208,24 @@ struct BrowserSearchField : ui::TextField {
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
-		// Handle special key events
-		dropDown = APP->scene->getFirstDescendantOfType<DropdownChoiceContainer>();
+		dropDown = openDropdown();
+
+		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+			if (handlers.dispatch(e.key, e.mods, e.action)) {
+				e.consume(this);
+				return;
+			}
+			if (!dropDown && selectedModelHandlers.dispatch(e.key, e.mods, e.action)) {
+				e.consume(this);
+				return;
+			}
+		}
+
 		if (dropDown) {
 			dropDown->onSelectKey(e);
 			return;
 		}
-
-		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-			switch (e.key) {
-				case GLFW_KEY_DOWN:
-				case GLFW_KEY_UP: {
-					browser->navigateSelection(e.key);
-					e.consume(this);
-					return;
-				}
-				case GLFW_KEY_LEFT:
-				case GLFW_KEY_RIGHT: {
-					if (pluginSettings.mbArrowKeyNavigation) {
-						browser->navigateSelection(e.key);
-						e.consume(this);
-						return;
-					}
-					break;
-				}
-				case GLFW_KEY_ESCAPE: {
-					Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
-					overlay->hide();
-					e.consume(this);
-					return;
-				}
-				case GLFW_KEY_BACKSPACE: {
-					if (text == "") {
-						browser->clear();
-						e.consume(this);
-						return;
-					}
-					break;
-				}
-				case GLFW_KEY_SPACE: {
-					if (string::trim(text) == "" && (e.mods & RACK_MOD_MASK) == 0) {
-						browser->favorite ^= true;
-						browser->refresh();
-						setText("");
-						e.consume(this);
-						return;
-					}
-					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL || (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
-						browser->hidden ^= true;
-						browser->refresh();
-						setText(string::trim(text));
-						e.consume(this);
-						return;
-					}
-					break;
-				}
-			}
-			if (handleLayoutMenuKeyEvent(e)) {
-				return;
-			}
-		}
-	
-  		ui::TextField::onSelectKey(e);
+		ui::TextField::onSelectKey(e);
 	}
 
 	void onSelectText(const SelectTextEvent& e) override {
@@ -276,21 +301,7 @@ struct BrandButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		struct Container : DropdownChoiceContainer {
-			void onSelectKey(const SelectKeyEvent& e) override {
-				if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_1) {
-					e.consume(this);
-					parent->requestDelete();
-					return;
-				}
-				else if (handleLayoutMenuKeyEvent(e, this)) {
-					return;
-				}
-				DropdownChoiceContainer::onSelectKey(e);
-			}
-		};
-
-		openLayoutMenu<ModuleBrowser, Container>(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items);
 	}
 
 	void step() override {
@@ -346,21 +357,7 @@ struct TagButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		struct Container : DropdownChoiceContainer {
-			void onSelectKey(const SelectKeyEvent& e) override {
-				if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_2) {
-					e.consume(this);
-					parent->requestDelete();
-					return;
-				}
-				else if (handleLayoutMenuKeyEvent(e, this)) {
-					return;
-				}
-				DropdownChoiceContainer::onSelectKey(e);
-			}
-		};
-
-		openLayoutMenu<ModuleBrowser, Container>(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items);
 	}
 
 	void step() override {
@@ -428,21 +425,7 @@ struct CustomTagButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		struct Container : DropdownChoiceContainer {
-			void onSelectKey(const SelectKeyEvent& e) override {
-				if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_3) {
-					e.consume(this);
-					parent->requestDelete();
-					return;
-				}
-				else if (handleLayoutMenuKeyEvent(e, this)) {
-					return;
-				}
-				DropdownChoiceContainer::onSelectKey(e);
-			}
-		};
-
-		openLayoutMenu<ModuleBrowser, Container>(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items);
 	}
 
 	void step() override {
@@ -1141,6 +1124,23 @@ void ModuleBrowser::navigateSelection(int key) {
 	Rect r = next->box;
 	r.pos = r.pos.plus(modelContainer->box.pos).plus(modelMargin->box.pos);
 	modelScroll->scrollTo(r);
+}
+
+// A selected module that a filter change has just hidden must not stay the target of Enter and
+// of the hotkeys.
+void ModuleBrowser::dropHiddenSelection() {
+	if (!selectedModel) return;
+	for (Widget* w : modelContainer->children) {
+		ModelBox* mb = reinterpret_cast<ModelBox*>(w);
+		if (mb->visible && mb->model == selectedModel) return;
+	}
+	selectedModel = nullptr;
+}
+
+// Moving the mouse hands the module hotkeys and Enter back to the hovered module.
+void ModuleBrowser::onHover(const event::Hover& e) {
+	if (e.mouseDelta.x != 0.f || e.mouseDelta.y != 0.f) selectedModel = nullptr;
+	OpaqueWidget::onHover(e);
 }
 
 void ModuleBrowser::clear() {

@@ -254,6 +254,8 @@ struct DropdownChoiceContainer : widget::OpaqueWidget {
 	std::string filterTextActive;
 	std::map<widget::Widget*, std::string> itemTexts;
 	widget::Widget* selectedItem = nullptr;
+	// The button that opened this dropdown.
+	widget::Widget* opener = nullptr;
 
 	DropdownChoiceContainer() {
 		scroll = new ui::ScrollWidget;
@@ -483,6 +485,7 @@ static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> 
 
 	// Create menu container
 	TContainer* container = new TContainer;
+	container->opener = button;
 	float menuX = browserPos.x + browser->box.size.x * 0.15f;
 	float menuY = button->getAbsoluteOffset(Vec(0, button->box.size.y)).y + 2.f;
 	container->box.pos = Vec(menuX, menuY);

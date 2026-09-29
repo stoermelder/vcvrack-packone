@@ -39,7 +39,7 @@ The *v2 mod* browser includes a **Width** filter button in the header bar. Modul
 
 ### Filtering by width
 
-Click the **Width** button to open a dropdown listing all HP values known for installed modules. Clicking an entry cycles through three filter modes:
+Click the **Width** button (or press `Ctrl/Cmd`+`4`) to open a dropdown listing all HP values known for installed modules. Clicking an entry cycles through three filter modes:
 
 | Click | Mode | Effect |
 |-------|------|--------|
@@ -80,7 +80,7 @@ This is a one-time import, not a live sync — MB does not read Rack's usage dat
 
 ## *v2_mod* keyboard shortcuts
 
-The *v2-mod* browser variant supports keyboard navigation and shortcuts:
+The *v2-mod* browser variant supports keyboard navigation and shortcuts. Most of them can be changed, see [Customizing shortcuts](#customizing-shortcuts) below.
 
 **Navigation** (when search field is focused or in the module grid):
 | Key | Action |
@@ -99,6 +99,7 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
 | `Ctrl/Cmd`+`1` | Open Brand filter dropdown |
 | `Ctrl/Cmd`+`2` | Open Tag filter dropdown |
 | `Ctrl/Cmd`+`3` | Open Custom Tag filter dropdown |
+| `Ctrl/Cmd`+`4` | Open Width filter dropdown |
 
 **Module hover shortcuts** (hover over a module):
 | Key | Action |
@@ -114,6 +115,49 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
 | *Any key* | Filter items by typing (incremental filter) |
 | `Backspace` | Clear filter text (show all items) |
 | `Enter` | Toggle selection of the highlighted item |
+
+The keys inside the dropdown menus are fixed and cannot be customized.
+
+The *v1-mod* browser uses the same shortcuts for `Escape`, `Backspace`, `Space`, `Shift`+`Space` and the module hover shortcuts.
+
+## Customizing shortcuts
+
+The keyboard shortcuts of the browser are stored in `<Rack user folder>/Stoermelder-P1/keymaps/Mb.jsonc`. The file is created the first time MB is used and can be edited with any text editor; Rack has to be restarted afterwards. It is a JSON file which additionally allows `//` comments (many editors treat `.jsonc` files this way), and every entry is preceded by a comment with a description of the action:
+
+```jsonc
+{
+  "slug": "Mb",
+  "version": 1,
+  "bindings": {
+    // Close browser (Browser)
+    "browser.close": "Escape",
+
+    // Toggle hidden (empty search) (Browser)
+    "browser.hidden.toggle": ["Shift+Space", "Ctrl+Space"],
+
+    // Clear filters (any search) (Browser)
+    "browser.clear.always": null
+  }
+}
+```
+
+- A shortcut is written as modifiers and a key joined by `+`, e.g. `Ctrl+Shift+K`. Modifiers are `Ctrl`, `Shift` and `Alt`; on Mac `Ctrl` stands for the `Cmd` key. Use an array to assign several shortcuts to one action, and `null` to remove all shortcuts of an action.
+- The descriptive comments are rewritten whenever MB saves the file, comments of your own are not kept.
+- If a new version of MB adds shortcuts, they are added with their default to your existing file, the shortcuts you have changed are kept.
+- If the file cannot be read (e.g. a typo in the JSON), MB uses the default shortcuts and does not overwrite the file, so you can fix it.
+
+| Action | Default | Effect |
+|--------|---------|--------|
+| `browser.close` | `Escape` | Close the browser |
+| `browser.clear` | `Backspace` | Clear search and filters, only when the search is empty |
+| `browser.clear.always` | *(none)* | Clear search and filters, also when the search field contains text |
+| `browser.favorite.toggle` | `Space` | Toggle Favorites filter, only when the search is empty |
+| `browser.favorite.toggle.always` | *(none)* | Toggle Favorites filter, also when the search field contains text |
+| `browser.hidden.toggle` | `Shift+Space`, `Ctrl+Space` | Toggle listing of hidden modules |
+| `modelbox.favorite.toggle` | `Ctrl+F` | Toggle favorite status of the hovered module |
+| `modelbox.hidden.toggle` | `Ctrl+H` | Toggle hidden status of the hovered module |
+| `browser.v2.nav.up`, `.down`, `.left`, `.right` | `Up`, `Down`, `Left`, `Right` | Move the selection in the module grid (*v2 mod* only; `left`/`right` are subject to the option *Arrow keys select modules*) |
+| `browser.v2.layout.brand`, `.tag`, `.customtag`, `.width` | `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4` | Open the Brand, Tag, Custom Tag or Width dropdown (*v2 mod* only) |
 
 ## Tips
 
@@ -186,8 +230,9 @@ itself. Disabled by default.
     - Fixed module placement when "Smart Rearrangement" is disabled
     - Fixed broken sorting option "Last used"
     - Fixed module preview in *v1 mod* browser
-- v2.x.x
+- v2.7.0
     - Added option to import "recently used"/"most used" statistics from Rack's own module browser
     - Added option to disable arrow keys selecting modules in *v2 mod* browser
     - Added option to pre-warm module preview
+    - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Mb.jsonc)
     - Fixed "Newest" module manifest download if Rack user folder is on different disk

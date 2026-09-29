@@ -81,7 +81,46 @@ static std::string toUpper(const std::string& s) {
 	return r;
 }
 
+// A JSON string literal, quotes and escapes included.
+static std::string jsonString(const std::string& s) {
+	json_t* j = json_string(s.c_str());
+	char* d = json_dumps(j, JSON_ENCODE_ANY);
+	std::string r = d ? d : "\"\"";
+	std::free(d);
+	json_decref(j);
+	return r;
+}
+
 } // namespace
+
+// Removes `// ...` comments up to the end of the line, leaving the newline (so parse errors keep
+// their line numbers). Slashes inside a string literal are left alone. The keymap files are
+// JSON-with-comments: jansson parses none, so this runs before it does.
+std::string stripLineComments(const std::string& in) {
+	std::string out;
+	out.reserve(in.size());
+	bool inString = false;
+	for (size_t i = 0; i < in.size(); i++) {
+		char c = in[i];
+		if (inString) {
+			out += c;
+			if (c == '\\' && i + 1 < in.size()) out += in[++i];
+			else if (c == '"') inString = false;
+		}
+		else if (c == '"') {
+			inString = true;
+			out += c;
+		}
+		else if (c == '/' && i + 1 < in.size() && in[i + 1] == '/') {
+			while (i < in.size() && in[i] != '\n') i++;
+			if (i < in.size()) out += '\n';
+		}
+		else {
+			out += c;
+		}
+	}
+	return out;
+}
 
 std::string comboKeyName(int key) {
 	for (const auto& e : kKeyNames) {
@@ -172,13 +211,13 @@ bool Keymap::has(const std::string& id) const {
 	return find(id) != nullptr;
 }
 
-void Keymap::registerAction(const std::string& id, const std::string& label, const std::string& group,
+void Keymap::registerAction(const std::string& id, const std::string& label, const std::string& context,
                              KeyCombo defaultCombo, int trigger) {
 	Action* existing = find(id);
 	if (existing) {
 		bool sameDefault = defaultCombo.valid() ? (!existing->defaults.empty() && existing->defaults[0] == defaultCombo)
 		                                         : existing->defaults.empty();
-		assert(existing->label == label && existing->group == group && existing->trigger == trigger
+		assert(existing->label == label && existing->context == context && existing->trigger == trigger
 		       && sameDefault
 		       && "Keymap::registerAction: two call sites disagree for the same action id");
 		(void) sameDefault;
@@ -188,7 +227,7 @@ void Keymap::registerAction(const std::string& id, const std::string& label, con
 	Action a;
 	a.id = id;
 	a.label = label;
-	a.group = group;
+	a.context = context;
 	a.trigger = trigger;
 	// An invalid combo (KeyCombo(), or the no-default overload) means "unmapped by default" -
 	// defaults stays empty rather than holding a placeholder, so resetAction()/resetToDefaults()
@@ -212,9 +251,9 @@ void Keymap::registerAction(const std::string& id, const std::string& label, con
 	actions_.push_back(std::move(a));
 }
 
-void Keymap::registerAction(const std::string& id, const std::string& label, const std::string& group,
+void Keymap::registerAction(const std::string& id, const std::string& label, const std::string& context,
                              int trigger) {
-	registerAction(id, label, group, KeyCombo(), trigger);
+	registerAction(id, label, context, KeyCombo(), trigger);
 }
 
 void Keymap::registerAlias(const std::string& id, KeyCombo defaultCombo) {
@@ -229,7 +268,7 @@ void Keymap::registerAlias(const std::string& id, KeyCombo defaultCombo) {
 	}
 }
 
-const std::string& Keymap::lookup(int key, int mods, int action) const {
+const std::string& Keymap::lookup(int key, int mods, int action, const Contexts& contexts) const {
 	int fixedKey = StoermelderPackOne::keyFix(key);
 	int maskedMods = mods & RACK_MOD_MASK;
 	for (const auto& a : actions_) {
@@ -237,6 +276,7 @@ const std::string& Keymap::lookup(int key, int mods, int action) const {
 		// its own) — distinct from GLFW_REPEAT and never a valid trigger here.
 		if (action == GLFW_RELEASE || action == RACK_HELD) continue;
 		if (action == GLFW_REPEAT && a.trigger != GLFW_REPEAT) continue;
+		if (!contexts.empty() && std::find(contexts.begin(), contexts.end(), a.context) == contexts.end()) continue;
 		for (const auto& c : a.combos) {
 			if (c.valid() && c.key == fixedKey && c.mods == maskedMods) return a.id;
 		}
@@ -365,24 +405,42 @@ void Keymap::save() {
 	if (frozen_) return;
 	if (!dirty_) return;
 
-	json_t* root = json_object();
-	json_object_set_new(root, "slug", json_string(slug_.c_str()));
-	json_object_set_new(root, "version", json_integer(1));
+	// Written by hand rather than with json_dumps(): jansson can't emit comments, and every
+	// binding gets a `// label (context)` line above it. The file is read back with
+	// stripLineComments(), so comments are regenerated on each save and are not the user's.
+	std::string out;
+	out += "{\n";
+	out += "  \"slug\": " + jsonString(slug_) + ",\n";
+	out += "  \"version\": 1,\n";
+	out += "  \"bindings\": {";
 
-	json_t* bindingsJ = json_object();
+	bool first = true;
+	auto beginEntry = [&](const std::string& comment) {
+		out += first ? "\n" : ",\n\n";
+		first = false;
+		std::string c = comment;
+		std::replace(c.begin(), c.end(), '\n', ' ');
+		out += "    // " + c + "\n";
+	};
+
 	std::map<std::string, bool> registeredIds;
 	for (const auto& a : actions_) {
 		registeredIds[a.id] = true;
+		beginEntry(a.label + " (" + a.context + ")");
+		out += "    " + jsonString(a.id) + ": ";
 		if (a.combos.empty()) {
-			json_object_set_new(bindingsJ, a.id.c_str(), json_null());
+			out += "null";
 		}
 		else if (a.combos.size() == 1) {
-			json_object_set_new(bindingsJ, a.id.c_str(), json_string(a.combos[0].toString().c_str()));
+			out += jsonString(a.combos[0].toString());
 		}
 		else {
-			json_t* arr = json_array();
-			for (const auto& c : a.combos) json_array_append_new(arr, json_string(c.toString().c_str()));
-			json_object_set_new(bindingsJ, a.id.c_str(), arr);
+			out += "[";
+			for (size_t i = 0; i < a.combos.size(); i++) {
+				if (i > 0) out += ", ";
+				out += jsonString(a.combos[i].toString());
+			}
+			out += "]";
 		}
 	}
 
@@ -392,20 +450,20 @@ void Keymap::save() {
 		json_t* value;
 		json_object_foreach(parsedUnknownJ_, key, value) {
 			if (registeredIds.count(key)) continue;
-			json_object_set(bindingsJ, key, value);   // borrowed value; json_object_set copies the ref
+			char* dumped = json_dumps(value, JSON_ENCODE_ANY | JSON_COMPACT);
+			if (!dumped) continue;
+			beginEntry("not used by this version");
+			out += "    " + jsonString(key) + ": " + dumped;
+			std::free(dumped);
 		}
 	}
 
-	json_object_set_new(root, "bindings", bindingsJ);
+	out += first ? "}\n" : "\n  }\n";
+	out += "}\n";
 
-	char* dumped = json_dumps(root, JSON_INDENT(2) | JSON_PRESERVE_ORDER);
-	json_decref(root);
-	if (dumped) {
-		DEFER({ std::free(dumped); });
-		vcv::fs::createDirectories(Keymaps::directory());
-		if (vcv::fs::write(Keymaps::pathFor(slug_), dumped)) {
-			dirty_ = false;
-		}
+	vcv::fs::createDirectories(Keymaps::directory());
+	if (vcv::fs::write(Keymaps::pathFor(slug_), out)) {
+		dirty_ = false;
 	}
 }
 
@@ -425,7 +483,7 @@ std::shared_ptr<Keymap> loadFromDisk(const std::string& slug) {
 		std::string data;
 		if (vcv::fs::read(path, data)) {
 			std::string error;
-			json_t* root = vcv::parseJson(data, error);
+			json_t* root = vcv::parseJson(stripLineComments(data), error);
 			if (root) {
 				km->loadParsed(root);
 				json_decref(root);
@@ -470,8 +528,8 @@ void reload(const std::string& slug) {
 	// Re-run the existing vocabulary against the freshly parsed file, in original order, so
 	// a hand-edit is picked up without needing the module to reconstruct its registration.
 	for (const auto& a : existing->actions()) {
-		if (a.defaults.empty()) fresh->registerAction(a.id, a.label, a.group, a.trigger);
-		else fresh->registerAction(a.id, a.label, a.group, a.defaults[0], a.trigger);
+		if (a.defaults.empty()) fresh->registerAction(a.id, a.label, a.context, a.trigger);
+		else fresh->registerAction(a.id, a.label, a.context, a.defaults[0], a.trigger);
 		for (size_t i = 1; i < a.defaults.size(); i++) fresh->registerAlias(a.id, a.defaults[i]);
 	}
 
@@ -484,7 +542,7 @@ std::string directory() {
 }
 
 std::string pathFor(const std::string& slug) {
-	return vcv::fs::join(directory(), slug + ".json");
+	return vcv::fs::join(directory(), slug + ".jsonc");
 }
 
 void resetForTest() {
@@ -529,7 +587,7 @@ bool KeymapHandlers::dispatch(int key, int mods, int action) const {
 		if (gate()) { exclusiveActive = true; break; }
 	}
 
-	const std::string& id = keymap->lookup(key, mods, action);
+	const std::string& id = keymap->lookup(key, mods, action, contexts);
 	if (id.empty()) return exclusiveActive;   // even an unbound key is swallowed by a picker
 
 	// Pass 1: predicated entries, in registration order.
