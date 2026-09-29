@@ -101,6 +101,10 @@ struct BrowserSearchField : ui::TextField {
 
 	std::shared_ptr<Keymap> keymap = registerActions();
 	KeymapHandlers handlers{keymap, {"Browser", "Navigation"}};
+	// The hovered-module shortcuts, applied to the keyboard-selected module. Separate from
+	// `handlers` so its "ModelBox" actions can't shadow the field's own on a shared key. Declines
+	// without a selection, leaving the key to the hovered module box.
+	KeymapHandlers selectedModelHandlers{keymap, {"ModelBox"}};
 
 	DropdownChoiceContainer* openDropdown() {
 		return APP->scene->getFirstDescendantOfType<DropdownChoiceContainer>();
@@ -176,6 +180,23 @@ struct BrowserSearchField : ui::TextField {
 				}
 			});
 		}
+
+		selectedModelHandlers.onTry("modelbox.favorite.toggle", [this]() -> bool {
+			if (!browser->selectedModel) return false;
+			toggleModelFavorite(browser->selectedModel);
+			if (browser->favorite) {
+				browser->refresh(false);
+				browser->dropHiddenSelection();
+			}
+			return true;
+		});
+		selectedModelHandlers.onTry("modelbox.hidden.toggle", [this]() -> bool {
+			if (!browser->selectedModel) return false;
+			toggleModelHidden(browser->selectedModel);
+			browser->refresh(false);
+			browser->dropHiddenSelection();
+			return true;
+		});
 	}
 
 	void step() override {
@@ -191,6 +212,10 @@ struct BrowserSearchField : ui::TextField {
 
 		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 			if (handlers.dispatch(e.key, e.mods, e.action)) {
+				e.consume(this);
+				return;
+			}
+			if (!dropDown && selectedModelHandlers.dispatch(e.key, e.mods, e.action)) {
 				e.consume(this);
 				return;
 			}
@@ -1099,6 +1124,23 @@ void ModuleBrowser::navigateSelection(int key) {
 	Rect r = next->box;
 	r.pos = r.pos.plus(modelContainer->box.pos).plus(modelMargin->box.pos);
 	modelScroll->scrollTo(r);
+}
+
+// A selected module that a filter change has just hidden must not stay the target of Enter and
+// of the hotkeys.
+void ModuleBrowser::dropHiddenSelection() {
+	if (!selectedModel) return;
+	for (Widget* w : modelContainer->children) {
+		ModelBox* mb = reinterpret_cast<ModelBox*>(w);
+		if (mb->visible && mb->model == selectedModel) return;
+	}
+	selectedModel = nullptr;
+}
+
+// Moving the mouse hands the module hotkeys and Enter back to the hovered module.
+void ModuleBrowser::onHover(const event::Hover& e) {
+	if (e.mouseDelta.x != 0.f || e.mouseDelta.y != 0.f) selectedModel = nullptr;
+	OpaqueWidget::onHover(e);
 }
 
 void ModuleBrowser::clear() {

@@ -334,3 +334,73 @@ TEST_CASE("MB keymap: hovered module shortcuts follow the keymap", "[Mb][Widget]
 
 	cleanupMockModels();
 }
+
+TEST_CASE("MB keymap: favorite and hidden hotkeys target the keyboard-selected module", "[Mb][Widget][Keymap][ModelBox]") {
+	cleanupMockModels();
+	KeymapFixture fx;
+	// Nothing hovered: a toggle can only have come from the selection.
+	APP->event->setHoveredWidget(nullptr);
+
+	auto* box = fx.h.events().find<v2::ModelBox>(fx.browser);
+	REQUIRE(box != nullptr);
+
+	SECTION("Without a keyboard selection the search field leaves the key alone") {
+		REQUIRE(fx.browser->selectedModel == nullptr);
+		REQUIRE_FALSE(fx.press(GLFW_KEY_F, RACK_MOD_CTRL));
+		REQUIRE_FALSE(isModelFavorite(box->model));
+	}
+
+	SECTION("Ctrl+F toggles the selected module's favorite") {
+		fx.press(GLFW_KEY_DOWN);
+		REQUIRE(fx.browser->selectedModel == box->model);
+
+		REQUIRE(fx.press(GLFW_KEY_F, RACK_MOD_CTRL));
+		REQUIRE(isModelFavorite(box->model));
+		REQUIRE(fx.press(GLFW_KEY_F, RACK_MOD_CTRL));
+		REQUIRE_FALSE(isModelFavorite(box->model));
+	}
+
+	SECTION("Ctrl+H hides the selected module and drops the selection") {
+		fx.press(GLFW_KEY_DOWN);
+		REQUIRE(fx.browser->selectedModel == box->model);
+
+		REQUIRE(fx.press(GLFW_KEY_H, RACK_MOD_CTRL));
+		REQUIRE(isModelHidden(box->model));
+		REQUIRE_FALSE(box->visible);
+		REQUIRE(fx.browser->selectedModel == nullptr);
+		hiddenModelsReset();
+	}
+
+	SECTION("Unfavoriting the selection under the Favorites filter drops the selection") {
+		toggleModelFavorite(box->model);
+		fx.press(GLFW_KEY_SPACE);   // Favorites filter on
+		REQUIRE(fx.browser->favorite);
+		fx.press(GLFW_KEY_DOWN);
+		REQUIRE(fx.browser->selectedModel == box->model);
+
+		REQUIRE(fx.press(GLFW_KEY_F, RACK_MOD_CTRL));
+		REQUIRE_FALSE(isModelFavorite(box->model));
+		REQUIRE(fx.browser->selectedModel == nullptr);
+	}
+
+	SECTION("Rebinding follows the keymap") {
+		fx.km->bind("modelbox.favorite.toggle", KeyCombo("Ctrl+G"));
+		fx.press(GLFW_KEY_DOWN);
+
+		REQUIRE_FALSE(fx.press(GLFW_KEY_F, RACK_MOD_CTRL));
+		REQUIRE_FALSE(isModelFavorite(box->model));
+		REQUIRE(fx.press(GLFW_KEY_G, RACK_MOD_CTRL));
+		REQUIRE(isModelFavorite(box->model));
+	}
+
+	SECTION("Moving the mouse clears the keyboard selection") {
+		fx.press(GLFW_KEY_DOWN);
+		REQUIRE(fx.browser->selectedModel == box->model);
+
+		fx.h.events().hover(rack::math::Vec(30.f, 40.f));
+		fx.h.events().hover(rack::math::Vec(60.f, 80.f));
+		REQUIRE(fx.browser->selectedModel == nullptr);
+	}
+
+	cleanupMockModels();
+}
