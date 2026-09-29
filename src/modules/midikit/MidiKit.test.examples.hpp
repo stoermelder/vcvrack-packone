@@ -2882,7 +2882,7 @@ TEST_CASE("'Volca Sample.js/.lua' releases active notes on unload", "[MidiKit][V
 	Test::destroyModule(m);
 }
 
-// Program Change Trigger: poly trigger channel N (1-4) sends the Program
+// Program Change Trigger: poly trigger channel N (1-16) sends the Program
 // Change configured for N. The trigger is dispatched to the engine per
 // channel, exactly as the module does for a rising edge on a poly channel.
 static std::vector<OutEvent> feedTrigChannel(MidiKitModule* m, int trigChannel) {
@@ -2891,14 +2891,14 @@ static std::vector<OutEvent> feedTrigChannel(MidiKitModule* m, int trigChannel) 
 	return drainOut(m);
 }
 
-TEST_CASE("'Program Change Trigger.js/.lua' each trigger channel sends its own program", "[MidiKit][TriggerProgramChange]") {
+TEST_CASE("'Program Change Trigger.js/.lua' each of the 16 trigger channels sends its own program", "[MidiKit][TriggerProgramChange]") {
 	std::string path = GENERATE(presetPaths("Program Change Trigger"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
 
-	// Default config: channels 1..4 -> programs 0..3 on MIDI channel 1.
-	for (int ch = 1; ch <= 4; ch++) {
+	// Default config: channels 1..16 -> programs 0..15 on MIDI channel 1.
+	for (int ch = 1; ch <= 16; ch++) {
 		auto ev = feedTrigChannel(m, ch);
 		REQUIRE(ev.size() == 1);
 		REQUIRE(ev[0].status == 0xc);
@@ -2908,19 +2908,6 @@ TEST_CASE("'Program Change Trigger.js/.lua' each trigger channel sends its own p
 	}
 
 	REQUIRE(drainLog(m).find("rror") == std::string::npos);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("'Program Change Trigger.js/.lua' ignores trigger channels beyond the fourth", "[MidiKit][TriggerProgramChange]") {
-	std::string path = GENERATE(presetPaths("Program Change Trigger"));
-	CATCH_INFO("preset: " << path);
-
-	MidiKitModule* m = loadPreset(path);
-
-	// Channels 5+ were never enabled, so they produce nothing.
-	REQUIRE(feedTrigChannel(m, 5).empty());
-	REQUIRE(feedTrigChannel(m, 8).empty());
-
 	Test::destroyModule(m);
 }
 

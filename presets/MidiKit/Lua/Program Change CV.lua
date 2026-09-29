@@ -15,8 +15,17 @@
 -- Configuration - change these values as needed
 local config = {
     -- MIDI channel (1-16) the Program Change messages are sent on
-    channel = 1
+    channel = 1,
+
+    -- Show each sent program in the on-panel overlay
+    showOverlay = true
 }
+
+-- Note name of a program number under the same mapping (0 = C0)
+local NOTE_NAMES = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }
+local function noteName(program)
+    return NOTE_NAMES[program % 12 + 1] .. math.floor(program / 12)
+end
 
 input.enable(1)
 input.getName = function(port)
@@ -33,6 +42,13 @@ trig.onTrigger = function(trigPort, channel)
     local msg = midi.create()
     midi.setProgramChange(msg, config.channel, program)
     midiOut.send(msg)
+
+    if config.showOverlay then
+        rack.overlay(
+            "Program Change " .. program,
+            string.format("%.2f V = %s", input.getVoltage(1), noteName(program)),
+            "MIDI ch " .. config.channel)
+    end
 end
 
 -- Pass all incoming MIDI through unchanged

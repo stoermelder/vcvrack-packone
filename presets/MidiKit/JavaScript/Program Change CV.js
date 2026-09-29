@@ -15,8 +15,17 @@
 // Configuration - change these values as needed
 const config = {
     // MIDI channel (1-16) the Program Change messages are sent on
-    channel: 1
+    channel: 1,
+
+    // Show each sent program in the on-panel overlay
+    showOverlay: true
 };
+
+// Note name of a program number under the same mapping (0 = C0)
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+function noteName(program) {
+    return NOTE_NAMES[program % 12] + Math.floor(program / 12);
+}
 
 input.enable(1);
 input.getName = function(port) {
@@ -33,6 +42,13 @@ trig.onTrigger = function(trigPort, channel) {
     const msg = midi.create();
     midi.setProgramChange(msg, config.channel, program);
     midiOut.send(msg);
+
+    if (config.showOverlay) {
+        rack.overlay(
+            "Program Change " + program,
+            input.getVoltage(1).toFixed(2) + " V = " + noteName(program),
+            "MIDI ch " + config.channel);
+    }
 };
 
 // Pass all incoming MIDI through unchanged
