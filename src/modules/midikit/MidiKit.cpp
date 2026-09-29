@@ -1991,16 +1991,16 @@ struct MidiKitWidget : MidiKitWidgetBase<MidiKitConfig> {
 
 		static const float x[] = { 56.7f, 83.9f, 111.0f, 138.2f };
 		for (int i = 0; i < MidiKitConfig::params; i++) {
-			addParam(createParamCentered<StoermelderTrimpot>(Vec(x[i], 295.9f), module, MidiKitModule::PARAM + i));
+			addParam(createParamCentered<StoermelderTrimpot>(Vec(x[i], 296.9f), module, MidiKitModule::PARAM + i));
 		}
 		for (int i = 0; i < MidiKitConfig::cvInputs; i++) {
-			addInput(createInputCentered<StoermelderPort>(Vec(x[i], 326.1f), module, MidiKitModule::INPUT + i));
+			addInput(createInputCentered<StoermelderPort>(Vec(x[i], 327.5f), module, MidiKitModule::INPUT + i));
 		}
 		
-		addInput(createInputCentered<StoermelderPort>(Vec(21.4f, 295.9f), module, MidiKitModule::INPUT_TRIG + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(21.4f, 326.1f), module, MidiKitModule::INPUT_TRIG + 1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(173.6, 295.9f), module, MidiKitModule::OUTPUT_TRIG + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(173.6f, 326.1f), module, MidiKitModule::OUTPUT_TRIG + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(21.4f, 296.9f), module, MidiKitModule::INPUT_TRIG + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(21.4f, 327.5f), module, MidiKitModule::INPUT_TRIG + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(173.6, 296.9f), module, MidiKitModule::OUTPUT_TRIG + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(173.6f, 327.5f), module, MidiKitModule::OUTPUT_TRIG + 1));
 	}
 };
 
@@ -2018,7 +2018,7 @@ struct MidiKitMicroWidget : MidiKitWidgetBase<MidiKitMicroConfig> {
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 242.7f), module, MidiKitMicroModule::INPUT + 1));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 284.3f), module, MidiKitMicroModule::INPUT_TRIG));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 328.4f), module, MidiKitMicroModule::OUTPUT_TRIG));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.5f), module, MidiKitMicroModule::OUTPUT_TRIG));
 	}
 
 	void appendStatusMenuItems(Menu* menu) override {
