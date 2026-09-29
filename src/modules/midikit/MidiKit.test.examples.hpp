@@ -212,6 +212,7 @@ static const PresetInfo PRESETS[] = {
 	{"", "Volca Sample", true},
 	{"", "Program Change Trigger", true},
 	{"", "Program Change CV", true},
+	{"", "Bank Select", true},
 	{"creative/", "Euclidean rhythm generator", true},
 	{"creative/", "Keyboard split", true},
 	{"creative/", "Bouncing ball delay", true},
@@ -2974,6 +2975,178 @@ TEST_CASE("'Program Change CV.js/.lua' clamps out-of-range voltages", "[MidiKit]
 	auto over = feedCvTrigger(m, 20.f);
 	REQUIRE(over.size() == 1);
 	REQUIRE(over[0].note == 127);
+
+	Test::destroyModule(m);
+}
+
+// Bank Select (e.g. Arturia Microfreak): knob 1 = bank, knob 2 = preset in the bank (0-127). A
+// trigger on channel 1 sends Bank Select (CC 0 = MSB, CC 32 = LSB) followed
+// by the Program Change.
+static std::vector<OutEvent> feedMicrofreak(MidiKitModule* m, float bankKnob, float presetKnob) {
+	m->params[MidiKitModule::PARAM + 0].setValue(bankKnob);
+	m->params[MidiKitModule::PARAM + 1].setValue(presetKnob);
+	return feedTrigChannel(m, 1);
+}
+
+// Trigger input 2 (channel 1): "next preset".
+static std::vector<OutEvent> feedNextPreset(MidiKitModule* m) {
+	m->host.getActiveEngine()->processInTick(1, 0);
+	m->host.getActiveEngine()->process();
+	return drainOut(m);
+}
+
+static void requireMicrofreakMessages(const std::vector<OutEvent>& ev, int bank, int program) {
+	REQUIRE(ev.size() == 3);
+	REQUIRE(ev[0].status == 0xb);
+	REQUIRE(ev[0].channel == 0);
+	REQUIRE(ev[0].note == 0);           // Bank Select MSB
+	REQUIRE(ev[0].value == bank);
+	REQUIRE(ev[1].status == 0xb);
+	REQUIRE(ev[1].channel == 0);
+	REQUIRE(ev[1].note == 32);          // Bank Select LSB
+	REQUIRE(ev[1].value == 0);
+	REQUIRE(ev[2].status == 0xc);
+	REQUIRE(ev[2].channel == 0);
+	REQUIRE(ev[2].note == program);
+}
+
+TEST_CASE("'Bank Select.js/.lua' trigger sends Bank Select CC 0/32 then Program Change", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Default config: 4 banks. Knob quarters map to banks 0-3; the preset
+	// knob spans 0-127.
+	struct Case { float bankKnob; int bank; float presetKnob; int program; };
+	const Case cases[] = {
+		{0.f,   0, 0.f,   0},
+		{0.3f,  1, 0.5f,  64},
+		{0.6f,  2, 0.25f, 32},
+		{1.f,   3, 1.f,   127},
+	};
+	for (const Case& c : cases)
+		requireMicrofreakMessages(feedMicrofreak(m, c.bankKnob, c.presetKnob), c.bank, c.program);
+
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Bank Select.js/.lua' bank boundaries and preset extremes", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Just below / above each quarter boundary of the bank knob.
+	const std::pair<float, int> banks[] = {
+		{0.24f, 0}, {0.26f, 1}, {0.49f, 1}, {0.51f, 2}, {0.74f, 2}, {0.76f, 3}
+	};
+	for (const auto& b : banks)
+		requireMicrofreakMessages(feedMicrofreak(m, b.first, 0.f), b.second, 0);
+
+	// The full preset sweep is 0..127 and never exceeds a 7-bit program.
+	requireMicrofreakMessages(feedMicrofreak(m, 0.f, 0.f), 0, 0);
+	requireMicrofreakMessages(feedMicrofreak(m, 0.f, 1.f), 0, 127);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Bank Select.js/.lua' number of banks comes from the config", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select"));
+	CATCH_INFO("preset: " << path);
+
+	// JS "banks: 4," / Lua "banks = 4,"
+	std::string script = readFile(repoRoot() + "/" + path);
+	size_t pos = script.find("banks: 4,");
+	size_t len = 9;
+	std::string repl = "banks: 8,";
+	if (pos == std::string::npos) {
+		pos = script.find("banks = 4,");
+		len = 10;
+		repl = "banks = 8,";
+	}
+	REQUIRE(pos != std::string::npos);
+	script.replace(pos, len, repl);
+
+	MidiKitModule* m = createModule();
+	m->loadScript(script);
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+
+	// 8 banks: each eighth of the knob is one bank.
+	requireMicrofreakMessages(feedMicrofreak(m, 0.f, 0.f), 0, 0);
+	requireMicrofreakMessages(feedMicrofreak(m, 0.3f, 0.f), 2, 0);
+	requireMicrofreakMessages(feedMicrofreak(m, 0.6f, 0.f), 4, 0);
+	requireMicrofreakMessages(feedMicrofreak(m, 1.f, 0.f), 7, 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Bank Select.js/.lua' trigger 1 logs the preset change", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Bank 1 (knob 0.3), program 64 => preset 192
+	feedMicrofreak(m, 0.3f, 0.5f);
+	REQUIRE(drainLog(m).find("Preset 192 (bank 1, program 64") != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Bank Select.js/.lua' trigger 2 steps to the next preset", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Before anything was sent, "next" continues from the knobs (bank 0,
+	// program 5) and does not send anything for the knobs themselves.
+	m->params[MidiKitModule::PARAM + 0].setValue(0.f);
+	m->params[MidiKitModule::PARAM + 1].setValue(5.f / 128.f);
+	requireMicrofreakMessages(feedNextPreset(m), 0, 6);
+	REQUIRE(drainLog(m).find("Preset 6 (bank 0, program 6") != std::string::npos);
+
+	requireMicrofreakMessages(feedNextPreset(m), 0, 7);
+
+	// Trigger 1 re-syncs from the knobs: last program of bank 0 ...
+	requireMicrofreakMessages(feedMicrofreak(m, 0.f, 1.f), 0, 127);
+	// ... next rolls over into bank 1, program 0
+	requireMicrofreakMessages(feedNextPreset(m), 1, 0);
+	REQUIRE(drainLog(m).find("Preset 128 (bank 1, program 0") != std::string::npos);
+
+	// Last preset of the last bank wraps around to bank 0, program 0
+	requireMicrofreakMessages(feedMicrofreak(m, 1.f, 1.f), 3, 127);
+	requireMicrofreakMessages(feedNextPreset(m), 0, 0);
+
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Bank Select.js/.lua' turning the knobs alone sends nothing", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	m->params[MidiKitModule::PARAM + 0].setValue(0.8f);
+	m->params[MidiKitModule::PARAM + 1].setValue(0.4f);
+	m->host.getActiveEngine()->process();
+	REQUIRE(drainOut(m).empty());
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Bank Select.js/.lua' passes MIDI in through unchanged", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	auto ev = feedCollect(m, noteOn(3, 60, 100));
+	REQUIRE(ev.size() == 1);
+	REQUIRE(ev[0] == (OutEvent{0x9, 3, 60, 100, 0}));
 
 	Test::destroyModule(m);
 }
