@@ -257,7 +257,7 @@ struct CustomTagItem : ui::MenuItem {
 
 struct BrowserSearchField : ui::TextField {
 	std::shared_ptr<Keymap> keymap = registerActions();
-	KeymapHandlers handlers{keymap};
+	KeymapHandlers handlers{keymap, {"Browser", "Navigation"}};
 
 	BrowserSearchField() {
 		handlers.on("browser.close", [this]{
@@ -311,7 +311,7 @@ struct BrowserSearchField : ui::TextField {
 		}
 
 		// Keep the hovered-module toggles out of the text field.
-		const std::string& id = keymap->lookup(e.key, e.mods, e.action);
+		const std::string& id = keymap->lookup(e.key, e.mods, e.action, {"ModelBox"});
 		propagate = propagate && id != "modelbox.favorite.toggle" && id != "modelbox.hidden.toggle";
 
 		if (propagate) {

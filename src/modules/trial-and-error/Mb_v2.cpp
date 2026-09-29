@@ -100,7 +100,7 @@ struct BrowserSearchField : ui::TextField {
 	DropdownChoiceContainer* dropDown = nullptr;
 
 	std::shared_ptr<Keymap> keymap = registerActions();
-	KeymapHandlers handlers{keymap};
+	KeymapHandlers handlers{keymap, {"Browser", "Navigation"}};
 
 	DropdownChoiceContainer* openDropdown() {
 		return APP->scene->getFirstDescendantOfType<DropdownChoiceContainer>();
