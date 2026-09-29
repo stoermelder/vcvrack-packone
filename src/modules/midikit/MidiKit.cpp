@@ -1565,6 +1565,37 @@ struct LogDisplay : LedTextDisplay {
 		buffer->clear();
 		dirty = true;
 	}
+
+	// The whole buffer as text, oldest line first (the display itself shows the
+	// newest first, capped to what fits).
+	std::string toText() const {
+		std::string out;
+		for (auto it = buffer->rbegin(); it != buffer->rend(); ++it) {
+			if (std::get<0>(*it) == LOG_FORMAT::RESET) continue;
+			out += formatLogEntry(*it) + "\n";
+		}
+		return out;
+	}
+
+	void appendContextMenu(Menu* menu) {
+		bool empty = buffer->empty();
+		menu->addChild(createMenuLabel("Log"));
+		menu->addChild(createMenuItem("Copy to clipboard", "", [=]() {
+			StoermelderPackOne::vcv::ui::setClipboard(toText());
+		}, empty));
+		menu->addChild(createMenuItem("Clear", "", [=]() {
+			reset();
+		}, empty));
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+			appendContextMenu(createMenu());
+			e.consume(this);
+			return;
+		}
+		LedTextDisplay::onButton(e);
+	}
 };
 
 // Placeholder menu entry that builds the script-registered items

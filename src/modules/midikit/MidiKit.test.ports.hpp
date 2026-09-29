@@ -1061,6 +1061,72 @@ TEST_CASE("Variant: context menu lists every MIDI port", "[MidiKit][Variant][Con
 	Test::destroyWidget(mw);
 }
 
+// ── Log display context menu ────────────────────────────────────────────────
+
+struct ClipboardSpy : StoermelderPackOne::vcv::UiAccess {
+	std::string text;
+	int sets = 0;
+	void setClipboard(const std::string& t) override { text = t; sets++; }
+};
+
+static rack::ui::MenuItem* findMenuItem(rack::ui::Menu* menu, const std::string& text) {
+	for (rack::Widget* child : menu->children) {
+		auto* mi = dynamic_cast<rack::ui::MenuItem*>(child);
+		if (mi && mi->text == text) return mi;
+	}
+	return nullptr;
+}
+
+TEST_CASE("Log display context menu copies the whole log to the clipboard and clears it", "[MidiKit][LogMenu]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+	m->model = modelMidiKit;
+	MidiKitWidget* mw = Test::createWidget<MidiKitWidget>(m);
+	REQUIRE(mw->logDisplay != nullptr);
+
+	ClipboardSpy spy;
+	StoermelderPackOne::vcv::uiAccess = &spy;
+
+	// Empty log: both entries are there but disabled.
+	rack::ui::Menu* menu = new rack::ui::Menu;
+	mw->logDisplay->appendContextMenu(menu);
+	REQUIRE(findMenuItem(menu, "Copy") != nullptr);
+	REQUIRE(findMenuItem(menu, "Clear") != nullptr);
+	REQUIRE(findMenuItem(menu, "Copy")->disabled);
+	REQUIRE(findMenuItem(menu, "Clear")->disabled);
+	delete menu;
+
+	// More lines than the display can show: the copy still has all of them, oldest first.
+	m->loadScript(QUICKJS_EMPTY);   // pushes a RESET, clearing older entries
+	for (int i = 0; i < 40; i++) m->writeLog("line" + std::to_string(i), false);
+	mw->step();
+	menu = new rack::ui::Menu;
+	mw->logDisplay->appendContextMenu(menu);
+	REQUIRE_FALSE(findMenuItem(menu, "Copy")->disabled);
+	findMenuItem(menu, "Copy")->doAction(false);
+	REQUIRE(spy.sets == 1);
+	REQUIRE(spy.text.find("line0\n") != std::string::npos);
+	REQUIRE(spy.text.find("line39\n") != std::string::npos);
+	REQUIRE(spy.text.find("line0\n") < spy.text.find("line39\n"));
+	REQUIRE(mw->buffer.size() >= 40);   // Copy leaves the log alone
+
+	findMenuItem(menu, "Clear")->doAction(false);
+	REQUIRE(mw->buffer.empty());
+	mw->logDisplay->step();
+	REQUIRE(mw->logDisplay->text.empty());
+	delete menu;
+
+	// Nothing left: the entries are disabled again.
+	menu = new rack::ui::Menu;
+	mw->logDisplay->appendContextMenu(menu);
+	REQUIRE(findMenuItem(menu, "Copy")->disabled);
+	REQUIRE(findMenuItem(menu, "Clear")->disabled);
+	delete menu;
+
+	StoermelderPackOne::vcv::uiAccess = nullptr;
+	Test::destroyWidget(mw);
+}
+
 TEST_CASE("Variant: single-port MidiKit context menu has unnumbered MIDI items", "[MidiKit][Variant][ContextMenu]") {
 	ModuleScaffold mods;
 	MidiKitModule* m = mods.create();
