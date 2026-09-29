@@ -211,6 +211,7 @@ static const PresetInfo PRESETS[] = {
 	{"", "Arpeggiator", false},   // trigger-clocked; emits nothing for MIDI traffic
 	{"", "Volca Sample", true},
 	{"", "Program Change Trigger", true},
+	{"", "Program Change CV", true},
 	{"creative/", "Euclidean rhythm generator", true},
 	{"creative/", "Keyboard split", true},
 	{"creative/", "Bouncing ball delay", true},
@@ -2932,6 +2933,60 @@ TEST_CASE("'Program Change Trigger.js/.lua' passes MIDI in through unchanged", "
 	auto ev = feedCollect(m, noteOn(3, 60, 100));
 	REQUIRE(ev.size() == 1);
 	REQUIRE(ev[0] == (OutEvent{0x9, 3, 60, 100, 0}));
+
+	Test::destroyModule(m);
+}
+
+// Program Change CV: CV input 1 read as V/Oct (semitone = 1/12 V) picks the
+// program, sampled on each trigger-channel-1 tick.
+static std::vector<OutEvent> feedCvTrigger(MidiKitModule* m, float volts) {
+	m->inputs[MidiKitModule::INPUT].setVoltage(volts, 0);
+	return feedTrigChannel(m, 1);
+}
+
+TEST_CASE("'Program Change CV.js/.lua' V/Oct on input 1 selects the program", "[MidiKit][ProgramChangeCv]") {
+	std::string path = GENERATE(presetPaths("Program Change CV"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	struct Case { float volts; int program; };
+	const Case cases[] = {
+		{0.f, 0},            // C0
+		{1.f / 12.f, 1},     // C#0
+		{1.f, 12},           // C1
+		{5.f, 60},
+		{127.f / 12.f, 127},
+	};
+	for (const Case& c : cases) {
+		auto ev = feedCvTrigger(m, c.volts);
+		REQUIRE(ev.size() == 1);
+		REQUIRE(ev[0].status == 0xc);
+		REQUIRE(ev[0].channel == 0);
+		REQUIRE(ev[0].note == c.program);
+	}
+
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Program Change CV.js/.lua' clamps out-of-range voltages", "[MidiKit][ProgramChangeCv]") {
+	std::string path = GENERATE(presetPaths("Program Change CV"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	auto low = feedCvTrigger(m, -3.f);
+	REQUIRE(low.size() == 1);
+	REQUIRE(low[0].note == 0);
+
+	auto high = feedCvTrigger(m, 10.f);
+	REQUIRE(high.size() == 1);
+	REQUIRE(high[0].note == 120);
+
+	auto over = feedCvTrigger(m, 20.f);
+	REQUIRE(over.size() == 1);
+	REQUIRE(over[0].note == 127);
 
 	Test::destroyModule(m);
 }
