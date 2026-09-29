@@ -1596,6 +1596,11 @@ static std::string formatLogEntry(const std::tuple<LOG_FORMAT, float, std::strin
 struct LogDisplay : LedTextDisplay {
 	std::list<std::tuple<LOG_FORMAT, float, std::string>>* buffer;
 	bool dirty = true;
+	// Set by the widget: adds the running script's section (engine, RAM usage,
+	// rack.registerContextMenu items, ...) to the top of this menu and returns
+	// whether it added anything. Kept as a hook because that needs the module,
+	// which the display knows nothing about.
+	std::function<bool(Menu*)> appendScriptItems;
 
 	LogDisplay() {
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
@@ -1639,6 +1644,7 @@ struct LogDisplay : LedTextDisplay {
 
 	void appendContextMenu(Menu* menu) {
 		bool empty = buffer->empty();
+		if (appendScriptItems && appendScriptItems(menu)) menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Log"));
 		menu->addChild(createMenuItem("Copy to clipboard", "", [=]() {
 			StoermelderPackOne::vcv::ui::setClipboard(toText());
@@ -1673,6 +1679,7 @@ struct ScriptContextMenuItems : ui::MenuEntry {
 	bool built = false;
 
 	ScriptContextMenuItems(MODULE* module) : module(module) {
+		box.size.y = 0.f;
 		ctx = std::make_shared<Context>();
 		// Capture a local copy: Apple's Clang rejects capturing the data
 		// member `ctx` by name in a capture list.
@@ -1786,6 +1793,9 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		logDisplay->buffer = &buffer;
 		logDisplay->box.size = textDisplay->box.size.minus(Vec(0.f, 6.f));
 		logDisplay->fontSize = 7.2f;
+		logDisplay->appendScriptItems = [this](Menu* menu) {
+			return appendRunningScriptItems(menu);
+		};
 		textDisplay->addChild(logDisplay);
 	}
 
@@ -1831,25 +1841,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 
 		if (module->host.getActiveEngine()) {
 			menu->addChild(new MenuSeparator());
-			if (module->host.isLuaEngine()) {
-				menu->addChild(createMenuLabel("Running Script (Lua)"));
-				size_t used, total;
-				if (module->host.seLua.getMemoryUsage(used, total)) {
-					float pct = total > 0 ? 100.f * used / total : 0.f;
-					menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
-				}
-			}
-			if (module->host.isQuickJsEngine()) {
-				menu->addChild(createMenuLabel("Running Script (QuickJs)"));
-				size_t used, total;
-				if (module->host.seQuickJs.getMemoryUsage(used, total)) {
-					float pct = total > 0 ? 100.f * used / total : 0.f;
-					menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
-				}
-			}
-
-			menu->addChild(new ScriptContextMenuItems(module));
-			appendStatusMenuItems(menu);
+			appendRunningScriptItems(menu);
 		}
 
 		menu->addChild(new MenuSeparator());
@@ -1866,6 +1858,33 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		menu->addChild(createMenuItem("Load", RACK_MOD_ALT_NAME "+L", [=]() { loadJsDialog(); }));
 		menu->addChild(createMenuItem("Reload", RACK_MOD_ALT_NAME "+Y", [=]() { loadJs(filename); }, filename.empty()));
 		menu->addChild(createMenuItem("Save as", "", [=]() { saveScriptDialog(); }));
+	}
+
+	// The running engine's section: engine name, RAM usage, the script's own
+	// context-menu items and the variant's status entries. Nothing (and false)
+	// without a running script. Shared by the module's menu and the log display's.
+	bool appendRunningScriptItems(Menu* menu) {
+		if (!module || !module->host.getActiveEngine()) return false;
+		if (module->host.isLuaEngine()) {
+			menu->addChild(createMenuLabel("Running Script (Lua)"));
+			size_t used, total;
+			if (module->host.seLua.getMemoryUsage(used, total)) {
+				float pct = total > 0 ? 100.f * used / total : 0.f;
+				menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
+			}
+		}
+		if (module->host.isQuickJsEngine()) {
+			menu->addChild(createMenuLabel("Running Script (QuickJs)"));
+			size_t used, total;
+			if (module->host.seQuickJs.getMemoryUsage(used, total)) {
+				float pct = total > 0 ? 100.f * used / total : 0.f;
+				menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
+			}
+		}
+
+		menu->addChild(new ScriptContextMenuItems(module));
+		appendStatusMenuItems(menu);
+		return true;
 	}
 
 	// Hook for variants: extra entries at the end of the "Script" section.

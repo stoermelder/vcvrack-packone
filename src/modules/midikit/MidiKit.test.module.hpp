@@ -1020,6 +1020,58 @@ TEST_CASE("Context menu: boolean item is built and click fires the callback", "[
 	}
 }
 
+TEST_CASE("Context menu: the log display's menu starts with the running script's section", "[MidiKit][ContextMenu]") {
+	ModuleScaffold mods;
+	for (const char* script : {QJS_BOOL, LUA_BOOL}) {
+		MidiKitModule* m = mods.create();
+		m->model = modelMidiKit;
+		MidiKitWidget* mw = Test::createWidget<MidiKitWidget>(m);
+		REQUIRE(mw->logDisplay != nullptr);
+
+		auto findItem = [](rack::ui::Menu* menu) {
+			for (rack::Widget* child : menu->children) {
+				if (auto* mi = dynamic_cast<rack::ui::MenuItem*>(child)) {
+					if (mi->text == "Velocity to CC") return mi;
+				}
+			}
+			return (rack::ui::MenuItem*)nullptr;
+		};
+
+		// No script, no script items (and no placeholder to build them).
+		rack::ui::Menu* menu = new rack::ui::Menu;
+		mw->logDisplay->appendContextMenu(menu);
+		size_t plain = menu->children.size();
+		REQUIRE(findItem(menu) == nullptr);
+		delete menu;
+
+		m->loadScript(script);
+		menu = new rack::ui::Menu;
+		mw->logDisplay->appendContextMenu(menu);
+		REQUIRE(menu->children.size() > plain);   // engine section + separator
+		m->host.getActiveEngine()->process();     // the menu query is low priority
+		buildScriptMenuItems(menu);
+
+		// The running-script section comes first, then the log's own entries.
+		auto* first = dynamic_cast<rack::ui::MenuLabel*>(menu->children.front());
+		REQUIRE(first != nullptr);
+		REQUIRE(first->text.find("Running Script") == 0);
+		rack::ui::MenuItem* item = findItem(menu);
+		REQUIRE(item != nullptr);
+		size_t itemPos = 0, logPos = 0, i = 0;
+		for (rack::Widget* child : menu->children) {
+			if (child == item) itemPos = i;
+			if (auto* l = dynamic_cast<rack::ui::MenuLabel*>(child)) if (l->text == "Log") logPos = i;
+			i++;
+		}
+		REQUIRE(itemPos < logPos);
+		item->doAction(true);
+		REQUIRE(drainLog(m).find("onChange: true") != std::string::npos);
+
+		delete menu;
+		Test::destroyWidget(mw);
+	}
+}
+
 TEST_CASE("Context menu: options submenu is built and click fires the callback", "[MidiKit][ContextMenu]") {
 	ModuleScaffold mods;
 	for (const char* script : {QJS_OPTIONS, LUA_OPTIONS}) {
