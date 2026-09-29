@@ -211,13 +211,13 @@ bool Keymap::has(const std::string& id) const {
 	return find(id) != nullptr;
 }
 
-void Keymap::registerAction(const std::string& id, const std::string& label, const std::string& group,
+void Keymap::registerAction(const std::string& id, const std::string& label, const std::string& context,
                              KeyCombo defaultCombo, int trigger) {
 	Action* existing = find(id);
 	if (existing) {
 		bool sameDefault = defaultCombo.valid() ? (!existing->defaults.empty() && existing->defaults[0] == defaultCombo)
 		                                         : existing->defaults.empty();
-		assert(existing->label == label && existing->group == group && existing->trigger == trigger
+		assert(existing->label == label && existing->context == context && existing->trigger == trigger
 		       && sameDefault
 		       && "Keymap::registerAction: two call sites disagree for the same action id");
 		(void) sameDefault;
@@ -227,7 +227,7 @@ void Keymap::registerAction(const std::string& id, const std::string& label, con
 	Action a;
 	a.id = id;
 	a.label = label;
-	a.group = group;
+	a.context = context;
 	a.trigger = trigger;
 	// An invalid combo (KeyCombo(), or the no-default overload) means "unmapped by default" -
 	// defaults stays empty rather than holding a placeholder, so resetAction()/resetToDefaults()
@@ -251,9 +251,9 @@ void Keymap::registerAction(const std::string& id, const std::string& label, con
 	actions_.push_back(std::move(a));
 }
 
-void Keymap::registerAction(const std::string& id, const std::string& label, const std::string& group,
+void Keymap::registerAction(const std::string& id, const std::string& label, const std::string& context,
                              int trigger) {
-	registerAction(id, label, group, KeyCombo(), trigger);
+	registerAction(id, label, context, KeyCombo(), trigger);
 }
 
 void Keymap::registerAlias(const std::string& id, KeyCombo defaultCombo) {
@@ -268,7 +268,7 @@ void Keymap::registerAlias(const std::string& id, KeyCombo defaultCombo) {
 	}
 }
 
-const std::string& Keymap::lookup(int key, int mods, int action) const {
+const std::string& Keymap::lookup(int key, int mods, int action, const Contexts& contexts) const {
 	int fixedKey = StoermelderPackOne::keyFix(key);
 	int maskedMods = mods & RACK_MOD_MASK;
 	for (const auto& a : actions_) {
@@ -276,6 +276,7 @@ const std::string& Keymap::lookup(int key, int mods, int action) const {
 		// its own) — distinct from GLFW_REPEAT and never a valid trigger here.
 		if (action == GLFW_RELEASE || action == RACK_HELD) continue;
 		if (action == GLFW_REPEAT && a.trigger != GLFW_REPEAT) continue;
+		if (!contexts.empty() && std::find(contexts.begin(), contexts.end(), a.context) == contexts.end()) continue;
 		for (const auto& c : a.combos) {
 			if (c.valid() && c.key == fixedKey && c.mods == maskedMods) return a.id;
 		}
@@ -405,7 +406,7 @@ void Keymap::save() {
 	if (!dirty_) return;
 
 	// Written by hand rather than with json_dumps(): jansson can't emit comments, and every
-	// binding gets a `// label (group)` line above it. The file is read back with
+	// binding gets a `// label (context)` line above it. The file is read back with
 	// stripLineComments(), so comments are regenerated on each save and are not the user's.
 	std::string out;
 	out += "{\n";
@@ -425,7 +426,7 @@ void Keymap::save() {
 	std::map<std::string, bool> registeredIds;
 	for (const auto& a : actions_) {
 		registeredIds[a.id] = true;
-		beginEntry(a.label + " (" + a.group + ")");
+		beginEntry(a.label + " (" + a.context + ")");
 		out += "    " + jsonString(a.id) + ": ";
 		if (a.combos.empty()) {
 			out += "null";
@@ -527,8 +528,8 @@ void reload(const std::string& slug) {
 	// Re-run the existing vocabulary against the freshly parsed file, in original order, so
 	// a hand-edit is picked up without needing the module to reconstruct its registration.
 	for (const auto& a : existing->actions()) {
-		if (a.defaults.empty()) fresh->registerAction(a.id, a.label, a.group, a.trigger);
-		else fresh->registerAction(a.id, a.label, a.group, a.defaults[0], a.trigger);
+		if (a.defaults.empty()) fresh->registerAction(a.id, a.label, a.context, a.trigger);
+		else fresh->registerAction(a.id, a.label, a.context, a.defaults[0], a.trigger);
 		for (size_t i = 1; i < a.defaults.size(); i++) fresh->registerAlias(a.id, a.defaults[i]);
 	}
 
@@ -586,7 +587,7 @@ bool KeymapHandlers::dispatch(int key, int mods, int action) const {
 		if (gate()) { exclusiveActive = true; break; }
 	}
 
-	const std::string& id = keymap->lookup(key, mods, action);
+	const std::string& id = keymap->lookup(key, mods, action, contexts);
 	if (id.empty()) return exclusiveActive;   // even an unbound key is swallowed by a picker
 
 	// Pass 1: predicated entries, in registration order.

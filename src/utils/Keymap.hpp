@@ -9,7 +9,7 @@
 
 // A reusable, per-module-slug keyboard mapping layer.
 //
-//   - A module registers its actions (id, label, group, default KeyCombo) into a process-wide
+//   - A module registers its actions (id, label, context, default KeyCombo) into a process-wide
 //     Keymap, shared across every instance of that module via the Keymaps registry.
 //   - The Keymap persists bindings as human-editable JSON under
 //     <user dir>/Stoermelder-P1/keymaps/<slug>.jsonc, created on first use.
@@ -79,10 +79,13 @@ struct Keymap {
 	Keymap(const Keymap&) = delete;
 	Keymap& operator=(const Keymap&) = delete;
 
+	// A set of Action::context names to restrict a lookup to; empty means every context.
+	typedef std::vector<std::string> Contexts;
+
 	struct Action {
 		std::string id;
 		std::string label;
-		std::string group;
+		std::string context;
 		int trigger = GLFW_PRESS;             // GLFW_PRESS or GLFW_REPEAT
 		std::vector<KeyCombo> defaults;
 		std::vector<KeyCombo> combos;         // current bindings; empty = unbound
@@ -90,15 +93,15 @@ struct Keymap {
 
 	// ---- registration (GUI thread) ----
 	// Idempotent: re-registering an already-known id is a no-op that leaves the current
-	// binding alone. In debug, asserts if label/group/trigger/default disagree with
+	// binding alone. In debug, asserts if label/context/trigger/default disagree with
 	// the first registration.
-	void registerAction(const std::string& id, const std::string& label, const std::string& group,
+	void registerAction(const std::string& id, const std::string& label, const std::string& context,
 	                     KeyCombo defaultCombo, int trigger = GLFW_PRESS);
 
 	// Same, for an action with no default binding at all (unmapped until the user binds it by
 	// hand). Equivalent to registerAction(..., KeyCombo(), trigger), but doesn't require callers
 	// to spell out an invalid KeyCombo just to say "no default".
-	void registerAction(const std::string& id, const std::string& label, const std::string& group,
+	void registerAction(const std::string& id, const std::string& label, const std::string& context,
 	                     int trigger = GLFW_PRESS);
 
 	// A second default combo for an already-registered action (genuine aliases only).
@@ -109,8 +112,10 @@ struct Keymap {
 	// ---- lookup, called from KeymapHandlers::dispatch ----
 	// Returns the bound action's id, or "" if the key press is unbound. `action` is the
 	// GLFW_PRESS / GLFW_REPEAT of the event; a repeat for an action not registered with
-	// GLFW_REPEAT returns "". First-match-wins in registration order.
-	const std::string& lookup(int key, int mods, int action) const;
+	// GLFW_REPEAT returns "". First-match-wins in registration order. With `contexts` non-empty
+	// only actions in one of those contexts are considered, so two actions in different contexts
+	// can share a key without one shadowing the other.
+	const std::string& lookup(int key, int mods, int action, const Contexts& contexts = Contexts()) const;
 
 	// ---- reverse lookup, for menus and on-screen help ----
 	std::vector<KeyCombo> combosFor(const std::string& id) const;
@@ -194,7 +199,10 @@ struct KeymapHandlers {
 	typedef std::function<bool()> Predicate;
 	typedef std::function<bool()> TryHandler;   // the escape hatch: return false to decline and let the next handler try
 
-	explicit KeymapHandlers(std::shared_ptr<Keymap> km) : keymap(km) {}
+	// `contexts` restricts which of the keymap's actions this set of handlers can be reached
+	// through (see Keymap::lookup()); empty means all.
+	explicit KeymapHandlers(std::shared_ptr<Keymap> km, Keymap::Contexts contexts = Keymap::Contexts())
+		: keymap(km), contexts(std::move(contexts)) {}
 
 	void on(const std::string& id, Handler h) { on(id, Predicate(), std::move(h)); }
 	void on(const std::string& id, Predicate when, Handler h);
@@ -222,6 +230,7 @@ struct KeymapHandlers {
 	}
 
 	std::shared_ptr<Keymap> keymap;
+	Keymap::Contexts contexts;
 
 private:
 	struct Entry {
