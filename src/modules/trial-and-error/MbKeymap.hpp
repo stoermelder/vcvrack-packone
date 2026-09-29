@@ -33,6 +33,14 @@ inline std::shared_ptr<Keymap> registerActions() {
 	km->registerAction("modelbox.favorite.toggle", "Toggle favorite (hovered module)", "ModelBox", "Ctrl+F");
 	km->registerAction("modelbox.hidden.toggle",   "Toggle hidden (hovered module)",   "ModelBox", "Ctrl+H");
 
+	// v2 side view only: focus the search field from anywhere in the rack, and hand focus back
+	// to the rack afterwards. Both share a key with another action (Ctrl+F on a hovered module,
+	// Escape to close the browser), which is fine: each widget looks keys up only within its own
+	// groups ("Side view" here, "Module" for a module box, "Browser"/"Navigation" for the
+	// search fields).
+	km->registerAction("browser.v2.sideview.focus",   "Focus search field (side view)",   "SideView", "Ctrl+F");
+	km->registerAction("browser.v2.sideview.release", "Release search field (side view)", "SideView", "Escape");
+
 	// v2 only (hence the "v2" in the ids, as the JSON file shows nothing else): arrow-key result navigation. Up/Down are always active; Left/Right are gated
 	// behind pluginSettings.mbArrowKeyNavigation at the call site.
 	km->registerAction("browser.v2.nav.up",    "Select module above",  "Navigation", "Up", GLFW_REPEAT);

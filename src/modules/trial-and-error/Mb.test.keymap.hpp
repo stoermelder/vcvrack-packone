@@ -13,7 +13,20 @@ static void settleKeymapLayout(rack::widget::Widget* w) {
 	w->step();
 }
 
+// Declared before the harness so it is destroyed after it: ~BrowserOverlay writes the side view
+// state back into pluginSettings while the harness tears down, and that must not leak into the
+// next TEST_CASE (where a click on a module box no longer hides the browser).
+struct SideViewStateGuard {
+	bool savedSetting = pluginSettings.mbSideView;
+	bool savedGlobal = sideView;
+	~SideViewStateGuard() {
+		pluginSettings.mbSideView = savedSetting;
+		sideView = savedGlobal;
+	}
+};
+
 struct KeymapFixture {
+	SideViewStateGuard sideViewGuard;
 	Test::Harness h;
 	MbModule* m;
 	MbWidget* mw;
@@ -21,8 +34,10 @@ struct KeymapFixture {
 	v2::ModuleBrowser* browser;
 	std::shared_ptr<Keymap> km;
 
-	KeymapFixture() {
+	explicit KeymapFixture(bool sideViewOn = false) {
 		Keymaps::resetForTest();
+		// BrowserOverlay reads side view from the settings when it is constructed.
+		pluginSettings.mbSideView = sideViewOn;
 		APP->scene->box.size = rack::math::Vec(1024, 300);
 
 		m = h.addModule<MbModule>("Mb");
@@ -310,6 +325,113 @@ TEST_CASE("MB keymap: hovered module shortcuts follow the keymap", "[Mb][Widget]
 
 		fx.h.events().keyAt(pos, GLFW_KEY_J, GLFW_PRESS, RACK_MOD_CTRL);
 		REQUIRE(isModelHidden(box->model));
+	}
+
+	cleanupMockModels();
+}
+
+TEST_CASE("MB keymap: side view focus and release shortcuts", "[Mb][Widget][Keymap]") {
+	KeymapFixture fx(true);
+	REQUIRE(sideView);
+	auto* catcher = static_cast<SideViewGlobalKeyCatcher*>(fx.overlay->globalKeyCatcher);
+	REQUIRE(catcher != nullptr);
+	fx.h.events().deselect();
+
+	// The catcher is driven directly: a key nothing consumes would otherwise fall through to
+	// Rack's Scene::onHoverKey, which dereferences APP->window (null headless).
+	auto hoverKey = [&](int key, int mods = 0) {
+		rack::widget::EventContext context;
+		rack::widget::Widget::HoverKeyEvent e;
+		e.context = &context;
+		e.key = key;
+		e.action = GLFW_PRESS;
+		e.mods = mods;
+		catcher->onHoverKey(e);
+		return context.target != nullptr;
+	};
+
+	SECTION("Ctrl+F focuses the search field, Escape releases it") {
+		REQUIRE(hoverKey(GLFW_KEY_F, RACK_MOD_CTRL));
+		REQUIRE(catcher->active);
+		REQUIRE(APP->event->getSelectedWidget() == fx.browser->searchField);
+
+		REQUIRE(hoverKey(GLFW_KEY_ESCAPE));
+		REQUIRE_FALSE(catcher->active);
+		REQUIRE(APP->event->getSelectedWidget() == nullptr);
+	}
+
+	SECTION("Escape does nothing while the search field is not focused") {
+		REQUIRE_FALSE(hoverKey(GLFW_KEY_ESCAPE));
+	}
+
+	SECTION("Rebound focus shortcut replaces Ctrl+F") {
+		fx.km->bind("browser.v2.sideview.focus", KeyCombo("Ctrl+G"));
+
+		REQUIRE_FALSE(hoverKey(GLFW_KEY_F, RACK_MOD_CTRL));
+		REQUIRE_FALSE(catcher->active);
+
+		REQUIRE(hoverKey(GLFW_KEY_G, RACK_MOD_CTRL));
+		REQUIRE(catcher->active);
+	}
+
+	SECTION("Rebound release shortcut replaces Escape") {
+		fx.km->bind("browser.v2.sideview.release", KeyCombo("Ctrl+R"));
+		hoverKey(GLFW_KEY_F, RACK_MOD_CTRL);
+		REQUIRE(catcher->active);
+
+		REQUIRE_FALSE(hoverKey(GLFW_KEY_ESCAPE));
+		REQUIRE(catcher->active);
+
+		REQUIRE(hoverKey(GLFW_KEY_R, RACK_MOD_CTRL));
+		REQUIRE_FALSE(catcher->active);
+	}
+
+	SECTION("With nothing hovered, Ctrl+F still focuses even though the module toggle shares it") {
+		// lookup() reports one action per key: the module toggle, registered first.
+		REQUIRE(fx.km->lookup(GLFW_KEY_F, RACK_MOD_CTRL, GLFW_PRESS) == "modelbox.favorite.toggle");
+		REQUIRE(hoverKey(GLFW_KEY_F, RACK_MOD_CTRL));
+		REQUIRE(catcher->active);
+	}
+}
+
+// The side view's key catcher sits on top of the whole scene and would otherwise see every key
+// before the module box under the cursor, swallowing the shared Ctrl+F.
+TEST_CASE("MB keymap: in side view a hovered module's shortcut wins over the focus shortcut", "[Mb][Widget][Keymap][ModelBox]") {
+	cleanupMockModels();
+	KeymapFixture fx(true);
+	fx.h.events().deselect();
+	auto* catcher = static_cast<SideViewGlobalKeyCatcher*>(fx.overlay->globalKeyCatcher);
+	REQUIRE(catcher != nullptr);
+
+	auto* box = fx.h.events().find<v2::ModelBox>(fx.browser);
+	REQUIRE(box != nullptr);
+	fx.h.events().hover(box);
+	rack::math::Vec pos = Test::EventDriver::centerOf(box);
+
+	SECTION("Ctrl+F over a module toggles its favorite and does not focus the search") {
+		REQUIRE_FALSE(isModelFavorite(box->model));
+		fx.h.events().keyAt(pos, GLFW_KEY_F, GLFW_PRESS, RACK_MOD_CTRL);
+		REQUIRE(isModelFavorite(box->model));
+		REQUIRE_FALSE(catcher->active);
+	}
+
+	SECTION("The focus shortcut is unavailable over a module, even with the module toggle rebound") {
+		fx.km->bind("modelbox.favorite.toggle", KeyCombo("Ctrl+G"));
+		fx.h.events().keyAt(pos, GLFW_KEY_F, GLFW_PRESS, RACK_MOD_CTRL);
+		REQUIRE_FALSE(isModelFavorite(box->model));
+		REQUIRE_FALSE(catcher->active);
+	}
+
+	SECTION("Away from any module Ctrl+F focuses the search") {
+		APP->event->setHoveredWidget(nullptr);
+		rack::widget::EventContext context;
+		rack::widget::Widget::HoverKeyEvent e;
+		e.context = &context;
+		e.key = GLFW_KEY_F;
+		e.action = GLFW_PRESS;
+		e.mods = RACK_MOD_CTRL;
+		catcher->onHoverKey(e);
+		REQUIRE(catcher->active);
 	}
 
 	cleanupMockModels();

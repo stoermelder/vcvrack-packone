@@ -4,6 +4,7 @@
 #include "../../vcv/fs.hpp"
 #include "../../utils/cursor.hpp"
 #include "Mb.hpp"
+#include "MbKeymap.hpp"
 #include "Mb_v1.hpp"
 #include "Mb_v2.hpp"
 #include "Mb_v06.hpp"
@@ -784,9 +785,10 @@ int modelUsageCount(Model* model) {
 
 // Browser overlay
 
-// Full-window and non-opaque so it never affects mouse/drag/hover. Handles Ctrl/Cmd+F,
-// Escape, and right-click-to-close regardless of cursor position (HoverKeyEvent/ButtonEvent
-// are otherwise position-gated, and the dock's own box in side view is just the narrow strip).
+// Full-window and non-opaque so it never affects mouse/drag/hover. Handles the side view's
+// focus/release shortcuts (Ctrl/Cmd+F and Escape by default) and right-click-to-close regardless
+// of cursor position (HoverKeyEvent/ButtonEvent are otherwise position-gated, and the dock's own
+// box in side view is just the narrow strip).
 struct SideViewGlobalKeyCatcher : widget::Widget {
 	BrowserOverlay* overlay;
 	// True during a Ctrl/Cmd+F session
@@ -811,24 +813,41 @@ struct SideViewGlobalKeyCatcher : widget::Widget {
 		Widget::step();
 	}
 
-	void onHoverKey(const event::HoverKey& e) override {
-		Widget::onHoverKey(e);
-		if (e.isConsumed()) return;
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_F) {
+	KeymapHandlers handlers{registerActions(), {"SideView"}};
+
+	// The catcher is the topmost scene child, so it sees a key before the module box under the
+	// cursor does. Over a module box the box's own shortcuts take priority, so the focus
+	// shortcut is not available there.
+	static bool overModelBox() {
+		for (widget::Widget* w = APP->event->getHoveredWidget(); w; w = w->parent) {
+			if (dynamic_cast<ModelBoxBase*>(w)) return true;
+		}
+		return false;
+	}
+
+	SideViewGlobalKeyCatcher() {
+		auto elsewhere = handlers.scope([]{ return !overModelBox(); });
+		elsewhere.on("browser.v2.sideview.focus", [this]{
 			v2::ModuleBrowser* browser = dynamic_cast<v2::ModuleBrowser*>(overlay->mbV2);
 			active = true;
 			APP->event->setSelectedWidget(browser->searchField);
-			e.consume(this);
-			return;
-		}
+		});
+
 		// Give focus back to the rack without closing the dock.
-		if (active && e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
+		auto focused = handlers.scope([this]{ return active; });
+		focused.on("browser.v2.sideview.release", [this]{
 			active = false;
 			APP->event->setSelectedWidget(NULL);
-			e.consume(this);
-		}
+		});
+	}
+
+	void onHoverKey(const event::HoverKey& e) override {
+		Widget::onHoverKey(e);
+		if (e.isConsumed()) return;
+		if (handlers.dispatch(e.key, e.mods, e.action)) e.consume(this);
 	}
 };
+
 
 struct SideViewResizeHandle : widget::OpaqueWidget {
 	void draw(const DrawArgs& args) override {
