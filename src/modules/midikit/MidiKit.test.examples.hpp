@@ -210,6 +210,8 @@ static const PresetInfo PRESETS[] = {
 	{"", "Micro scale", true},
 	{"", "Arpeggiator", false},   // trigger-clocked; emits nothing for MIDI traffic
 	{"", "Volca Sample", true},
+	{"", "Program Change Trigger", true},
+	{"", "Program Change CV", true},
 	{"creative/", "Euclidean rhythm generator", true},
 	{"creative/", "Keyboard split", true},
 	{"creative/", "Bouncing ball delay", true},
@@ -247,8 +249,17 @@ static auto presetPaths(const char* name) {
 static void checkPreset(const PresetInfo& p, const char* engine) {
 	std::string relPath = presetPath(p, engine);
 	CATCH_INFO("preset: " << relPath);
+	std::string source = readFile(repoRoot() + "/" + relPath);
+
+	// rack.onSave()/rack.onLoad(persisted) no longer exist — hard API break,
+	// no migration shim. Assigning an unknown property on rack is silent in
+	// both engines (it's a plain object), so a leftover rack.onSave = ...
+	// would load without ever logging an error and this grep is the only
+	// thing that would catch it.
+	REQUIRE(source.find("onSave") == std::string::npos);
+
 	MidiKitModule* m = createModule();
-	m->loadScript(readFile(repoRoot() + "/" + relPath));
+	m->loadScript(source);
 
 	std::string loadLog = drainLog(m);
 	CATCH_INFO("load log:\n" << loadLog);
@@ -1464,6 +1475,7 @@ TEST_CASE("'Scale quantiser.js/.lua' reads the root from CV input 1", "[MidiKit]
 
 
 TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", "[MidiKit][ScaleQuantiser][JSON]") {
+	ModuleScaffold mods;
 	std::string path = GENERATE(presetPaths("Scale quantiser"));
 	CATCH_INFO("preset: " << path);
 
@@ -1483,14 +1495,16 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	m->host.getActiveEngine()->invokeContextMenuCallback(specs[2].callbackId, 1);
 	drainLog(m);
 
-	// Save: dataToJson() itself refreshes the config (via rack.onSave(), which
-	// is side-effect-free and safe to call here), so the user's context-menu
-	// changes are what get persisted as "scriptConfig" — whether or not
-	// Module::onSave() ran first.
+	// Save: the context-menu onChange handlers call rack.setConfig()
+	// themselves, so the published config already reflects the user's changes
+	// before any save happens — dataToJson() is a plain read of the last
+	// published value, unlike the old rack.onSave() design where the save
+	// itself had to refresh the config by re-entering the script.
+	// Module::onSave() is exercised too, to confirm it does not need to run
+	// first for the read to be current.
 	rack::engine::Module::SaveEvent saveEvent;
 	m->onSave(saveEvent);
 	json_t* rootJ = m->dataToJson();
-	Test::destroyModule(m);
 
 	json_t* configJ = json_object_get(rootJ, "scriptConfig");
 	REQUIRE(configJ != NULL);
@@ -1499,12 +1513,12 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	REQUIRE(json_is_true(json_object_get(configJ, "preferUpward")));
 
 	// Second module: reload the patch and confirm the config came back.
-	MidiKitModule* m2 = createModule();
+	MidiKitModule* m2 = mods.create();
 	m2->dataFromJson(rootJ);
 	json_decref(rootJ);
 
 	// The reloaded module's config must match what the user changed.
-	std::string restored = captureConfig(m2->host.getActiveEngine());
+	std::string restored = publishedConfigJson(m2->host.getActiveEngine());
 	REQUIRE(configInt(restored, "channel") == 1);
 	REQUIRE(configBool(restored, "preferUpward") == true);
 
@@ -1520,7 +1534,6 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	REQUIRE(restoredSpecs[1].selected == 1);
 	REQUIRE(restoredSpecs[2].checked == true);
 
-	Test::destroyModule(m2);
 }
 
 
@@ -2865,6 +2878,102 @@ TEST_CASE("'Volca Sample.js/.lua' releases active notes on unload", "[MidiKit][V
 	bool hasCh6 = (ev[0].channel == 6 && ev[0].note == 60) || (ev[1].channel == 6 && ev[1].note == 60);
 	REQUIRE(hasCh0);
 	REQUIRE(hasCh6);
+
+	Test::destroyModule(m);
+}
+
+// Program Change Trigger: poly trigger channel N (1-16) sends the Program
+// Change configured for N. The trigger is dispatched to the engine per
+// channel, exactly as the module does for a rising edge on a poly channel.
+static std::vector<OutEvent> feedTrigChannel(MidiKitModule* m, int trigChannel) {
+	m->host.getActiveEngine()->processInTick(0, static_cast<uint8_t>(trigChannel - 1));
+	m->host.getActiveEngine()->process();
+	return drainOut(m);
+}
+
+TEST_CASE("'Program Change Trigger.js/.lua' each of the 16 trigger channels sends its own program", "[MidiKit][TriggerProgramChange]") {
+	std::string path = GENERATE(presetPaths("Program Change Trigger"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Default config: channels 1..16 -> programs 0..15 on MIDI channel 1.
+	for (int ch = 1; ch <= 16; ch++) {
+		auto ev = feedTrigChannel(m, ch);
+		REQUIRE(ev.size() == 1);
+		REQUIRE(ev[0].status == 0xc);
+		REQUIRE(ev[0].channel == 0);
+		REQUIRE(ev[0].note == ch - 1);
+		REQUIRE(ev[0].ticks == 0);
+	}
+
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Program Change Trigger.js/.lua' passes MIDI in through unchanged", "[MidiKit][TriggerProgramChange]") {
+	std::string path = GENERATE(presetPaths("Program Change Trigger"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	auto ev = feedCollect(m, noteOn(3, 60, 100));
+	REQUIRE(ev.size() == 1);
+	REQUIRE(ev[0] == (OutEvent{0x9, 3, 60, 100, 0}));
+
+	Test::destroyModule(m);
+}
+
+// Program Change CV: CV input 1 read as V/Oct (semitone = 1/12 V) picks the
+// program, sampled on each trigger-channel-1 tick.
+static std::vector<OutEvent> feedCvTrigger(MidiKitModule* m, float volts) {
+	m->inputs[MidiKitModule::INPUT].setVoltage(volts, 0);
+	return feedTrigChannel(m, 1);
+}
+
+TEST_CASE("'Program Change CV.js/.lua' V/Oct on input 1 selects the program", "[MidiKit][ProgramChangeCv]") {
+	std::string path = GENERATE(presetPaths("Program Change CV"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	struct Case { float volts; int program; };
+	const Case cases[] = {
+		{0.f, 0},            // C0
+		{1.f / 12.f, 1},     // C#0
+		{1.f, 12},           // C1
+		{5.f, 60},
+		{127.f / 12.f, 127},
+	};
+	for (const Case& c : cases) {
+		auto ev = feedCvTrigger(m, c.volts);
+		REQUIRE(ev.size() == 1);
+		REQUIRE(ev[0].status == 0xc);
+		REQUIRE(ev[0].channel == 0);
+		REQUIRE(ev[0].note == c.program);
+	}
+
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Program Change CV.js/.lua' clamps out-of-range voltages", "[MidiKit][ProgramChangeCv]") {
+	std::string path = GENERATE(presetPaths("Program Change CV"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	auto low = feedCvTrigger(m, -3.f);
+	REQUIRE(low.size() == 1);
+	REQUIRE(low[0].note == 0);
+
+	auto high = feedCvTrigger(m, 10.f);
+	REQUIRE(high.size() == 1);
+	REQUIRE(high[0].note == 120);
+
+	auto over = feedCvTrigger(m, 20.f);
+	REQUIRE(over.size() == 1);
+	REQUIRE(over[0].note == 127);
 
 	Test::destroyModule(m);
 }

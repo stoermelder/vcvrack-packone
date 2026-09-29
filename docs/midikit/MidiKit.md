@@ -36,9 +36,9 @@ MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the select
 
 The module also exposes four CV inputs and four panel parameters that can be read from scripts to add modulation or dynamic configuration.
 
-Scripts can persist their configuration across patch saves and reloads via `rack.onLoad()` and `rack.onSave()` (see [Persistence](SCRIPTING.md#persistence)).
+Scripts can persist their configuration across patch saves and reloads via `rack.getConfig()`/`rack.setConfig()` (see [Persistence](SCRIPTING.md#persistence)).
 
-`midi.onMessage` (on the `midi` object), `rack.onLoad`/`rack.onUnload`/`rack.onSave`, and `trig.onTrigger`/`trig.onTipsyMessage` (on the `trig` object) are only ever read once, right after the script loads — assign each exactly once, at the top level. Reassigning one later, or defining it late, has no effect (see [Hooks and predefined objects are resolved once, at load time](SCRIPTING.md#hooks-and-predefined-objects-are-resolved-once-at-load-time)). `trig.enableIn()`, by contrast, is a live API call — the trigger input does nothing until it is called.
+`midi.onMessage` (on the `midi` object), `rack.onLoad`/`rack.onUnload`, and `trig.onTrigger`/`trig.onTipsyMessage` (on the `trig` object) are only ever read once, right after the script loads — assign each exactly once, at the top level. Reassigning one later, or defining it late, has no effect (see [Hooks and predefined objects are resolved once, at load time](SCRIPTING.md#hooks-and-predefined-objects-are-resolved-once-at-load-time)). `trig.enableIn()`, by contrast, is a live API call — the trigger input does nothing until it is called. `rack.getConfig()`/`rack.setConfig()` are likewise live calls, not hooks.
 
 You can use MIDI-KIT as an insert effect via VCV Rack's built-in MIDI Loopback driver. This lets you process incoming messages before they reach other MIDI modules (for example, MIDI‑CC, MIDI‑CV, MIDI‑MAP, or MIDI‑CAT), and likewise process outgoing messages.
 
@@ -143,7 +143,7 @@ The module's panel and right-click context menu are laid out as follows.
 - Any context-menu items the loaded script registers via
   `rack.registerContextMenu()`.
 
-The script and the config it persists via `rack.onSave()` are stored with the
+The script and the config it persists via `rack.setConfig()` are stored with the
 patch — they are saved and restored with the module's JSON data.
 
 ## API surface
@@ -160,7 +160,7 @@ and the worked examples are in [SCRIPTING.md](SCRIPTING.md).
 | `trig.*` | the dedicated trigger/gate ports: `enableIn`, `onTrigger`, `onTipsyMessage`, `getTicks`, `isHigh`, `isLow`, `setGate`/`setHigh`/`setLow`/`setTrigger`, `sendTipsy`, `enableTipsyIn` | [trig.*](SCRIPTING.md#trig-dedicated-triggergate-ports) |
 | `param.*` | read the module's panel parameters: `enable`, `getValue`, `getName`, `getValueFormat` | [param.*](SCRIPTING.md#param-panel-knobs) |
 | `number.*` | numeric helpers: `rescale`, `crossfade`, `toString` | [number.*](SCRIPTING.md#number) |
-| `rack.*` | module services: `log`, `overlay`, `getFrame`, `random`, `registerContextMenu`, and the `onLoad`/`onUnload`/`onSave` hooks | [rack.*](SCRIPTING.md#rack) · [Persistence](SCRIPTING.md#persistence) |
+| `rack.*` | module services: `log`, `overlay`, `getFrame`, `random`, `registerContextMenu`, `getConfig`/`setConfig` (persistence), and the `onLoad`/`onUnload` hooks | [rack.*](SCRIPTING.md#rack) · [Persistence](SCRIPTING.md#persistence) |
 
 Full documentation of every function and the scripting examples are in
 [SCRIPTING.md](SCRIPTING.md).

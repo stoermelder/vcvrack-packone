@@ -24,6 +24,15 @@
 			"manualUrl": ""
 		},
 		{
+			"slug": "MidiKitMicro",
+			"name": "µMIDI-KIT",
+			"description": "",
+			"tags": [
+				"MIDI", "Utility"
+			],
+			"manualUrl": ""
+		},
+		{
 			"slug": "FlowerSeq",
 			"name": "FLOWER",
 			"description": "",

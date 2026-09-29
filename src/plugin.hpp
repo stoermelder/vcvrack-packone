@@ -75,6 +75,7 @@ extern Model* modelFlowerSeqEx;
 extern Model* modelFlowerSeqTrig;
 extern Model* modelPanicRoom;
 extern Model* modelMidiKit;
+extern Model* modelMidiKitMicro;
 extern Model* modelMidiEsx;
 extern Model* modelAhab;
 extern Model* modelSpliceKit;

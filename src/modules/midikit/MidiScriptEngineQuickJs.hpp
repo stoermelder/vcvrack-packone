@@ -1,6 +1,7 @@
 #include "MidiScriptEngine.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../../../dep/quickjs/quickjs.h"
+#include <jansson.h>
 #include <algorithm>
 #include <iomanip>
 #include <mutex>
@@ -110,7 +111,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// effect; only what was present at load runs. Matched in Lua so both
 	// engines behave the same. Asymmetry: QuickJS calls hooks as methods
 	// (rackObj/trigObj as thisVal, so `this` works); Lua calls them as bare
-	// functions. onLoad/onUnload/onSave live on the rack object; onMessage on
+	// functions. onLoad/onUnload live on the rack object; onMessage on
 	// the midi object; onTrigger/onTipsyMessage on the trig object (onTrigger
 	// so trig.enableIn() can gate it). Predates caching, unused by any preset.
 	JSValue rackObj = JS_UNDEFINED;
@@ -127,7 +128,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	JSValue onTipsyMessageFn = JS_UNDEFINED;
 	JSValue onLoadFn = JS_UNDEFINED;
 	JSValue onUnloadFn = JS_UNDEFINED;
-	JSValue onSaveFn = JS_UNDEFINED;
 
 
 	std::string jsToStdString(JSValueConst v) {
@@ -159,10 +159,18 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 
-	void loadScriptOnWorker(const char* script, const std::string& persistedConfigJson) override {
+	void loadScriptOnWorker(const char* script, const std::string& initialConfigJson) override {
 		assert(onWorkerThread());
 		closeStateOnWorker();
 		handler->sendTipsyOutReset();
+
+		// Install the initial config as part of THIS queued task, before any
+		// script code runs — loadScript() is fire-and-forget, so a separate
+		// call could race top-level code that already called rack.getConfig().
+		// Empty means "fresh, empty config" (script switch), not "leave
+		// whatever was there" — config belongs to the script that wrote it.
+		json_t* initial = initialConfigJson.empty() ? nullptr : json_loads(initialConfigJson.c_str(), 0, NULL);
+		installConfig(initial);
 
 		if (script[0] == '\0') {
 			return;
@@ -246,10 +254,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			handler->writeLog("Script loaded", false);
 
 			// Callbacks live on the predefined objects, not the global scope.
-			// rack holds onLoad/onUnload/onSave; the midi object holds onMessage
-			// (the incoming-MIDI entry point); the trig object holds
+			// rack holds onLoad/onUnload; the midi object holds onMessage (the
+			// incoming-MIDI entry point); the trig object holds
 			// onTrigger/onTipsyMessage. All are cached once here (see
-			// declarations).
+			// declarations). rack.getConfig/setConfig are NOT hooks — they are
+			// live calls, bound once in registerApi() below like every other
+			// rack.* function.
 			JSValue glob = JS_GetGlobalObject(ctx);
 			rackObj = JS_GetPropertyStr(ctx, glob, "rack");
 			midiObj = JS_GetPropertyStr(ctx, glob, "midi");
@@ -261,7 +271,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (JS_IsObject(rackObj)) {
 				onLoadFn = cacheCallableProp(rackObj, "onLoad");
 				onUnloadFn = cacheCallableProp(rackObj, "onUnload");
-				onSaveFn = cacheCallableProp(rackObj, "onSave");
 			}
 			else {
 				JS_FreeValue(ctx, rackObj);
@@ -290,18 +299,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				trigObj = JS_UNDEFINED;
 			}
 
-			hasOnSave.store(!JS_IsUndefined(onSaveFn), std::memory_order_release);
-
 			if (JS_IsUndefined(onMessageFn)) {
 				handler->writeLog("No midi.onMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
 			}
-			// Pass any persisted config to onLoad(); parsePersistedConfig()
-			// returns JS_UNDEFINED when there is none or invalid JSON, so the
-			// script falls back to its defaults.
-			JSValue config = parsePersistedConfig(persistedConfigJson);
-			callOnLoad(config);
-			// JS_UNDEFINED is a shared atom; JS_FreeValue is a no-op for it.
-			JS_FreeValue(ctx, config);
+			// No argument: config is restored via rack.getConfig() (installed
+			// into workingConfig before load, above), not passed as a hook
+			// parameter.
+			callOnLoad();
 		}
 	}
 
@@ -312,36 +316,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (JS_IsFunction(ctx, v)) return v;
 		JS_FreeValue(ctx, v);
 		return JS_UNDEFINED;
-	}
-
-	// See MidiScriptEngine::captureConfig() for the contract. The QuickJS
-	// context is only safe to touch from the worker thread, hence
-	// runSync().
-	bool captureConfig(std::string& out) override {
-		// Answered from the atomic, without a worker round-trip: ctx/onSaveFn are
-		// worker-owned and must not be read from here. No script, or a script
-		// without onSave(), both mean "nothing to persist" — a definite answer,
-		// so true with an empty `out`, and the caller clears its stored config.
-		if (!hasOnSave.load(std::memory_order_acquire)) {
-			out.clear();
-			return true;
-		}
-		return runSync([this]() -> std::string {
-			if (!ctx) return "";
-			JSValue ret = callOnSave();
-			std::string configJson;
-			if (!JS_IsUndefined(ret) && !JS_IsNull(ret) && !JS_IsException(ret)) {
-				// JSONStringify can run user toJSON() methods — budget it too.
-				beginScriptExecution();
-				JSValue jsonVal = JS_JSONStringify(ctx, ret, JS_UNDEFINED, JS_UNDEFINED);
-				if (!JS_IsException(jsonVal)) {
-					configJson = jsToStdString(jsonVal);
-				}
-				JS_FreeValue(ctx, jsonVal);
-			}
-			JS_FreeValue(ctx, ret);
-			return configJson;
-		}, out);
 	}
 
 	// Frees the QuickJS runtime/context. See
@@ -367,7 +341,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JS_FreeValue(ctx, onTipsyMessageFn);
 			JS_FreeValue(ctx, onLoadFn);
 			JS_FreeValue(ctx, onUnloadFn);
-			JS_FreeValue(ctx, onSaveFn);
 			rackObj = JS_UNDEFINED;
 			midiObj = JS_UNDEFINED;
 			trigObj = JS_UNDEFINED;
@@ -379,8 +352,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			onTipsyMessageFn = JS_UNDEFINED;
 			onLoadFn = JS_UNDEFINED;
 			onUnloadFn = JS_UNDEFINED;
-			onSaveFn = JS_UNDEFINED;
-			hasOnSave.store(false, std::memory_order_release);
+			// publishedConfig/workingConfig are deliberately left untouched
+			// here: a save racing this teardown must still persist the last
+			// known config, not an empty one.
 			JS_FreeContext(ctx);
 			JS_FreeRuntime(rt);
 			ctx = NULL;
@@ -388,22 +362,16 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 	}
 
-	// Runs the script's onLoad() hook, passing the parsed persisted config as
-	// its single argument (or no argument if none). Uses the cached onLoadFn.
-	void callOnLoad(JSValue persistedConfig) {
+	// Runs the script's onLoad() hook. No argument: config is restored via
+	// rack.getConfig() (installed into workingConfig before load), not passed
+	// as a hook parameter. Uses the cached onLoadFn.
+	void callOnLoad() {
 		if (!JS_IsFunction(ctx, onLoadFn)) return;
 
 		msgCount = 0;
 		inCallback = true;
 		beginScriptExecution();
-		JSValue r;
-		if (JS_IsUndefined(persistedConfig)) {
-			r = JS_Call(ctx, onLoadFn, rackObj, 0, NULL);
-		}
-		else {
-			JSValue args[1] = { persistedConfig };
-			r = JS_Call(ctx, onLoadFn, rackObj, 1, args);
-		}
+		JSValue r = JS_Call(ctx, onLoadFn, rackObj, 0, NULL);
 		inCallback = false;
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
@@ -418,8 +386,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// Runs onUnload(). Its return value is discarded by the caller — teardown-
-	// only; config comes from onSave(). Messages are NOT flushed here:
-	// closeState() flushes them for teardown.
+	// only; config comes from rack.setConfig(), not from teardown. Messages are
+	// NOT flushed here: closeState() flushes them for teardown.
 	JSValue callOnUnload() {
 		if (!JS_IsFunction(ctx, onUnloadFn)) return JS_UNDEFINED;
 
@@ -437,43 +405,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return JS_UNDEFINED;
 		}
 		return r;
-	}
-
-	// Runs onSave(), returning its return value (the config to persist) or
-	// JS_UNDEFINED if missing/errored. Messages are NOT flushed here:
-	// captureConfig() discards them, so a save is silent.
-	JSValue callOnSave() {
-		if (!JS_IsFunction(ctx, onSaveFn)) return JS_UNDEFINED;
-
-		msgCount = 0;
-		inCallback = true;
-		beginScriptExecution();
-		JSValue r = JS_Call(ctx, onSaveFn, rackObj, 0, NULL);
-		inCallback = false;
-		if (JS_IsException(r)) {
-			JS_FreeValue(ctx, r);
-			JSValue exc = JS_GetException(ctx);
-			handler->writeLog(string::f("onSave error: %s", jsToStdString(exc).c_str()));
-			JS_FreeValue(ctx, exc);
-			return JS_UNDEFINED;
-		}
-		return r;
-	}
-
-	// Parses a persisted-config JSON string into a JSValue for rack.onLoad(),
-	// or JS_UNDEFINED when empty/invalid. Caller must JS_FreeValue the result
-	// (a no-op for JS_UNDEFINED).
-	JSValue parsePersistedConfig(const std::string& json) {
-		if (json.empty()) return JS_UNDEFINED;
-		JSValue parsed = JS_ParseJSON(ctx, json.c_str(), json.size(), "<config>");
-		if (JS_IsException(parsed)) {
-			JS_FreeValue(ctx, parsed);
-			JSValue exc = JS_GetException(ctx);
-			handler->writeLog(string::f("Ignoring invalid persisted script config: %s", jsToStdString(exc).c_str()), false);
-			JS_FreeValue(ctx, exc);
-			return JS_UNDEFINED;
-		}
-		return parsed;
 	}
 
 	void processInMessage(int midiPort, const MidiScript::QueuedMessage& msg) override {
@@ -497,9 +428,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			msgStore[0].send = false;
 			msgStore[0].tick = 0;
 			// Slot 0 is reused for the incoming message, but it can have been a
-			// chain leader (NRPN/14-bit CC) in an onLoad/onUnload/onSave callback
-			// whose store started at 0 — clear both leader flags so a stale one
-			// can't make the flush emit a chain from the incoming message.
+			// chain leader (NRPN/14-bit CC) in an onLoad/onUnload callback whose
+			// store started at 0 — clear both leader flags so a stale one can't
+			// make the flush emit a chain from the incoming message.
 			msgStore[0].isNrpn = false;
 			msgStore[0].isCc14bit = false;
 			msgCount = 1;
@@ -873,6 +804,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _rack, "getFrame", JS_NewCFunction(ctx, js_rack_getFrame, "getFrame", 0));
 		JS_SetPropertyStr(ctx, _rack, "random", JS_NewCFunction(ctx, js_rack_random, "random", 0));
 		JS_SetPropertyStr(ctx, _rack, "registerContextMenu", JS_NewCFunction(ctx, js_rack_registerContextMenu, "registerContextMenu", 1));
+		JS_SetPropertyStr(ctx, _rack, "getConfig", JS_NewCFunction(ctx, js_rack_getConfig, "getConfig", 2));
+		JS_SetPropertyStr(ctx, _rack, "setConfig", JS_NewCFunction(ctx, js_rack_setConfig, "setConfig", 2));
 
 		// number
 		JSValue _number = JS_NewObject(ctx);
@@ -1156,6 +1089,210 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		e->contextMenus[spec.callbackId] = entry;
 
 		return JS_NewBool(ctx, true);
+	}
+
+	// ── rack.getConfig()/setConfig() JSON conversion ─────────────────────────
+	// QuickJS has no jansson-facing JSON API that also gives per-node depth
+	// control, so getConfig()/setConfig() convert JSValue <-> json_t by hand,
+	// mirroring the Lua engine's converters exactly (same depth cap, same
+	// "NULL/JS_UNDEFINED means unsupported" signal) so the two engines reject
+	// identical inputs.
+
+	// Recursively converts a JSValue into a jansson json_t*. Returns NULL for
+	// an unsupported type (function, symbol, etc.), a value past
+	// configMaxDepth, or a cyclic object (caught by the depth cap, the only
+	// defence available without tracking visited nodes — same reasoning as
+	// the Lua converter). depth counts from 1 (the value passed to
+	// setConfig() itself).
+	static json_t* jsValueToJson(JSContext* ctx, JSValueConst v, int depth = 1) {
+		if (depth > MidiScriptEngine::configMaxDepth) return NULL;
+		if (JS_IsNull(v)) return json_null();
+		if (JS_IsBool(v)) return json_boolean(JS_ToBool(ctx, v) != 0);
+		if (JS_IsNumber(v)) {
+			double d = 0;
+			JS_ToFloat64(ctx, &d, v);
+			// Round-trip as an integer when the value has no fractional part,
+			// matching the Lua converter (lua_Number -> json_integer) so an
+			// integer written by one engine reads back as one in the other.
+			json_int_t i = static_cast<json_int_t>(d);
+			if (d == static_cast<double>(i)) return json_integer(i);
+			return json_real(d);
+		}
+		if (JS_IsString(v)) {
+			size_t len = 0;
+			const char* s = JS_ToCStringLen(ctx, &len, v);
+			json_t* j = json_stringn(s ? s : "", len);
+			if (s) JS_FreeCString(ctx, s);
+			return j;
+		}
+		if (JS_IsArray(ctx, v)) {
+			JSValue lengthV = JS_GetPropertyStr(ctx, v, "length");
+			uint32_t len = 0;
+			bool lenOk = (JS_ToUint32(ctx, &len, lengthV) >= 0);
+			JS_FreeValue(ctx, lengthV);
+			if (!lenOk) return NULL;
+			json_t* arr = json_array();
+			for (uint32_t i = 0; i < len; i++) {
+				JSValue elem = JS_GetPropertyUint32(ctx, v, i);
+				json_t* val = jsValueToJson(ctx, elem, depth + 1);
+				JS_FreeValue(ctx, elem);
+				if (!val) {
+					json_decref(arr);
+					return NULL;
+				}
+				json_array_append_new(arr, val);
+			}
+			return arr;
+		}
+		if (JS_IsObject(v)) {
+			// Functions (and other non-plain objects) are unsupported;
+			// JS_IsFunction is checked explicitly since a function is also an
+			// object and would otherwise serialize as {} (its own properties).
+			if (JS_IsFunction(ctx, v)) return NULL;
+			JSPropertyEnum* tab = NULL;
+			uint32_t tabLen = 0;
+			if (JS_GetOwnPropertyNames(ctx, &tab, &tabLen, v, JS_GPN_STRING_MASK | JS_GPN_ENUM_ONLY) < 0) {
+				return NULL;
+			}
+			json_t* obj = json_object();
+			bool rejected = false;
+			for (uint32_t i = 0; i < tabLen; i++) {
+				const char* key = JS_AtomToCString(ctx, tab[i].atom);
+				JSValue propV = JS_GetProperty(ctx, v, tab[i].atom);
+				json_t* val = jsValueToJson(ctx, propV, depth + 1);
+				JS_FreeValue(ctx, propV);
+				if (!val) {
+					// An unsupported/too-deep/cyclic nested value rejects the
+					// WHOLE object, not just this key — silently dropping the
+					// key would let a cyclic object sail through setConfig()
+					// with a hole where the cycle was, which is not what
+					// "rejected" means.
+					rejected = true;
+				}
+				else if (key) {
+					json_object_set_new(obj, key, val);
+				}
+				else {
+					json_decref(val);
+				}
+				if (key) JS_FreeCString(ctx, key);
+			}
+			JS_FreePropertyEnum(ctx, tab, tabLen);
+			if (rejected) {
+				json_decref(obj);
+				return NULL;
+			}
+			return obj;
+		}
+		// undefined, symbol, bigint, and anything else: unsupported.
+		return NULL;
+	}
+
+	// Recursively converts a jansson value into a JSValue. Mirrors the Lua
+	// engine's pushJsonAsLua().
+	static JSValue jsonToJsValue(JSContext* ctx, json_t* j) {
+		if (json_is_object(j)) {
+			JSValue obj = JS_NewObject(ctx);
+			const char* key;
+			json_t* val;
+			json_object_foreach(j, key, val) {
+				JS_SetPropertyStr(ctx, obj, key, jsonToJsValue(ctx, val));
+			}
+			return obj;
+		}
+		if (json_is_array(j)) {
+			JSValue arr = JS_NewArray(ctx);
+			size_t index;
+			json_t* val;
+			json_array_foreach(j, index, val) {
+				JS_SetPropertyUint32(ctx, arr, static_cast<uint32_t>(index), jsonToJsValue(ctx, val));
+			}
+			return arr;
+		}
+		if (json_is_integer(j)) return JS_NewInt64(ctx, static_cast<int64_t>(json_integer_value(j)));
+		if (json_is_real(j)) return JS_NewFloat64(ctx, json_real_value(j));
+		if (json_is_string(j)) return JS_NewString(ctx, json_string_value(j));
+		if (json_is_boolean(j)) return JS_NewBool(ctx, json_is_true(j) != 0);
+		// json_is_null(j), or anything unrecognized: JS null (matches Lua's nil).
+		return JS_NULL;
+	}
+
+	// rack.getConfig(key [, default]) — reads a value previously written with
+	// rack.setConfig(), or `default` (undefined if omitted) when unset. A
+	// malformed key is rejected the same way as setConfig(): logged, and
+	// treated as unset rather than silently returning the default forever.
+	//
+	// Live call, not a hook: reads workingConfig directly, never
+	// publishedConfig — see MidiScriptEngine::getConfigValue().
+	static JSValue js_rack_getConfig(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		MidiScriptEngineQuickJs* e = getEngine(ctx);
+		assert(e->onWorkerThread());
+		std::string keyStr;
+		const char* key = nullptr;
+		if (argc >= 1 && JS_IsString(argv[0])) {
+			keyStr = e->jsToStdString(argv[0]);
+			key = keyStr.c_str();
+		}
+		if (!MidiScriptEngine::isValidConfigKey(key)) {
+			e->handler->writeLog(string::f("getConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
+			return JS_UNDEFINED;
+		}
+		json_t* val = e->getConfigValue(key);
+		if (!val) {
+			// Unset: return the default (arg 2), or undefined if none was given.
+			return argc >= 2 ? JS_DupValue(ctx, argv[1]) : JS_UNDEFINED;
+		}
+		return jsonToJsValue(ctx, val);
+	}
+
+	// rack.setConfig(key, value) — persists `value` under `key`, or removes
+	// the key if `value` is undefined. A malformed key, an unsupported value
+	// (function, symbol, etc.), one nesting past configMaxDepth, or one that
+	// would push the whole config past configMaxBytes once serialized are all
+	// rejected the same way: the key/config is left unchanged, one line is
+	// logged, and the script keeps running.
+	static JSValue js_rack_setConfig(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		MidiScriptEngineQuickJs* e = getEngine(ctx);
+		assert(e->onWorkerThread());
+		std::string keyStr;
+		const char* key = nullptr;
+		if (argc >= 1 && JS_IsString(argv[0])) {
+			keyStr = e->jsToStdString(argv[0]);
+			key = keyStr.c_str();
+		}
+		if (!MidiScriptEngine::isValidConfigKey(key)) {
+			e->handler->writeLog(string::f("setConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
+			return JS_UNDEFINED;
+		}
+		// undefined deletes the key — jsValueToJson(undefined) would otherwise
+		// be NULL too, but only via the "unsupported" path, which logs;
+		// deletion must not.
+		if (argc < 2 || JS_IsUndefined(argv[1])) {
+			e->setConfigValue(key, nullptr);
+			return JS_UNDEFINED;
+		}
+		json_t* val = jsValueToJson(ctx, argv[1]);
+		if (!val) {
+			e->handler->writeLog(string::f("setConfig: value for \"%s\" is not JSON-serializable, too deeply nested, or cyclic (ignored)", key));
+			return JS_UNDEFINED;
+		}
+		// Enforce the total-size cap by trial: build what the config WOULD be,
+		// measure it, and only commit (via setConfigValue, which republishes)
+		// if it fits. json_object_set (not _new) so the trial copy doesn't
+		// steal `val` before we know whether we're keeping it.
+		json_t* trial = json_copy(e->workingConfig.get());
+		json_object_set(trial, key, val);
+		char* dump = json_dumps(trial, JSON_COMPACT);
+		size_t size = dump ? strlen(dump) : 0;
+		if (dump) free(dump);
+		json_decref(trial);
+		if (size > MidiScriptEngine::configMaxBytes) {
+			e->handler->writeLog(string::f("setConfig: \"%s\" would push the config past the %d KB limit (ignored)", key, (int)(MidiScriptEngine::configMaxBytes / 1024)));
+			json_decref(val);
+			return JS_UNDEFINED;
+		}
+		e->setConfigValue(key, val); // takes ownership of val
+		return JS_UNDEFINED;
 	}
 
 	static JSValue js_number_rescale(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {

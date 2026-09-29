@@ -7,14 +7,14 @@ static const char* LUA_EMPTY = R"(--[[
 )";
 
 TEST_CASE("Lua-tagged script loads and creates Lua state", "[MidiKit][Lua]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	m->loadScript(LUA_EMPTY);
 
 	REQUIRE(m->host.seLua.L != nullptr);
 	REQUIRE(m->host.isLuaEngine());
 
-	Test::destroyModule(m);
 }
 
 
@@ -25,7 +25,8 @@ input.getName = function(i) return 'CV-' .. i end
 )";
 
 TEST_CASE("Script can override input.getName", "[MidiKit][Lua]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	m->loadScript(LUA_INPUT_NAME);
 	REQUIRE(m->host.seLua.L != nullptr);
@@ -33,7 +34,6 @@ TEST_CASE("Script can override input.getName", "[MidiKit][Lua]") {
 	REQUIRE(m->host.seLua.getInputName(0) == "CV-1");
 	REQUIRE(m->host.seLua.getInputName(3) == "CV-4");
 
-	Test::destroyModule(m);
 }
 
 
@@ -43,13 +43,13 @@ static const char* QUICKJS_HEADER = R"(/**
 )";
 
 TEST_CASE("QuickJs-tagged script is rejected by Lua engine", "[MidiKit][Lua]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	m->host.seLua.loadScript(QUICKJS_HEADER);
 
 	REQUIRE(m->host.seLua.L == nullptr);
 
-	Test::destroyModule(m);
 }
 
 
@@ -60,13 +60,13 @@ local x = ?
 )";
 
 TEST_CASE("Syntax error is handled gracefully", "[MidiKit][Lua]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	m->host.seLua.loadScript(LUA_BAD_SYNTAX);
 
 	REQUIRE(m->host.seLua.L == nullptr);
 
-	Test::destroyModule(m);
 }
 
 
@@ -89,7 +89,8 @@ local c = 3
 )";
 
 TEST_CASE("Load error reports a clean chunk name and line", "[MidiKit][Lua]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	m->loadScript(LUA_BAD_ON_LINE_7);
 	REQUIRE(m->host.seLua.L == nullptr);
@@ -99,7 +100,6 @@ TEST_CASE("Load error reports a clean chunk name and line", "[MidiKit][Lua]") {
 	// The old chunk name dumped the script into the message
 	REQUIRE(log.find("[string \"") == std::string::npos);
 
-	Test::destroyModule(m);
 }
 
 
@@ -116,7 +116,8 @@ end
 )";
 
 TEST_CASE("Runtime error reports a clean chunk name and line", "[MidiKit][Lua]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	m->loadScript(LUA_RUNTIME_ERROR);
 	REQUIRE(m->host.seLua.L != nullptr);
@@ -133,13 +134,13 @@ TEST_CASE("Runtime error reports a clean chunk name and line", "[MidiKit][Lua]")
 	REQUIRE(log.find("script:7:") != std::string::npos);
 	REQUIRE(log.find("[string \"") == std::string::npos);
 
-	Test::destroyModule(m);
 }
 
 
 // A script that loads cleanly must still load cleanly through luaL_loadbuffer.
 TEST_CASE("Successful load reports no error position", "[MidiKit][Lua]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	m->loadScript(LUA_EMPTY);
 	REQUIRE(m->host.seLua.L != nullptr);
@@ -148,7 +149,6 @@ TEST_CASE("Successful load reports no error position", "[MidiKit][Lua]") {
 	REQUIRE(log.find("script:") == std::string::npos);
 	REQUIRE(log.find("Script loaded") != std::string::npos);
 
-	Test::destroyModule(m);
 }
 
 
@@ -168,17 +168,17 @@ end
 
 
 TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua]") {
+	ModuleScaffold mods;
 	// See the matching QuickJs test for why this can only assert "doesn't crash":
 	// MidiKitModule's destructor calls closeState() (which runs onUnload())
 	// while the module — the engines' handler — is still fully alive, so that
 	// callbacks like writeLog/trig.*/input.*/param.* resolve through the
 	// handler. Calling them from ~MidiScriptEngineLua() itself, after the
 	// module (and its handler) is already gone, would be undefined behaviour.
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	m->loadScript(LUA_ON_UNLOAD_CRASH);
 	REQUIRE(m->host.seLua.L != nullptr);
 
-	Test::destroyModule(m);
 }
 
 
@@ -206,7 +206,8 @@ end
 )";
 
 TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Lua][GC]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	m->loadScript(LUA_GC_SCRATCH);
 	REQUIRE(m->host.seLua.L != nullptr);
 
@@ -247,7 +248,6 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Lua][
 	// per-callback leak would grow the heap by tens of kilobytes over this run.
 	REQUIRE(used1 <= used0 + 16384);
 
-	Test::destroyModule(m);
 }
 
 // Sensitivity control for the test above: a script that DOES retain its
@@ -267,7 +267,8 @@ end
 )";
 
 TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][Lua][GC]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	m->loadScript(LUA_GC_RETAIN);
 	REQUIRE(m->host.seLua.L != nullptr);
 
@@ -305,7 +306,6 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][Lua][GC]") {
 	// growth vs ~5KB of noise).
 	REQUIRE(used1 > used0 + 16384);
 
-	Test::destroyModule(m);
 }
 
 
@@ -332,7 +332,8 @@ end
 )";
 
 TEST_CASE("Infinite loop in onMessage is interrupted, not a hang", "[MidiKit][Lua]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	m->loadScript(LUA_WHILE_TRUE_ONMESSAGE);
 	drainLog(m);
 
@@ -351,7 +352,6 @@ TEST_CASE("Infinite loop in onMessage is interrupted, not a hang", "[MidiKit][Lu
 	std::string log2 = drainLog(m);
 	REQUIRE(log2.find("exceeded execution budget") != std::string::npos);
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Infinite loop in onMessage does not wedge the shared worker", "[MidiKit][Lua][Async]") {
@@ -389,7 +389,8 @@ while true do end
 )";
 
 TEST_CASE("Infinite loop at script top level fails the load, and the module recovers", "[MidiKit][Lua]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	// Load runs inline; the count hook aborts the top-level lua_pcall.
 	m->loadScript(LUA_WHILE_TRUE_TOPLEVEL);
 	std::string log = drainLog(m);
@@ -406,7 +407,6 @@ TEST_CASE("Infinite loop at script top level fails the load, and the module reco
 	std::string reloadLog = drainLog(m);
 	REQUIRE(reloadLog.find("recovered") != std::string::npos);
 
-	Test::destroyModule(m);
 }
 
 // ── Memory limit ────────────────────────────────────────────────────────────
@@ -424,7 +424,8 @@ big = string.rep("x", 2 * 1024 * 1024)
 )";
 
 TEST_CASE("Script that exceeds the memory limit at load is stopped", "[MidiKit][Lua][MemoryLimit]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	m->loadScript(LUA_MEMORY_BLOWUP_LOAD);
 
 	// The top-level allocation passed the limit; the engine stopped itself.
@@ -441,7 +442,6 @@ TEST_CASE("Script that exceeds the memory limit at load is stopped", "[MidiKit][
 	m->host.seLua.process();
 	REQUIRE(drainLog(m).find("recovered") != std::string::npos);
 
-	Test::destroyModule(m);
 }
 
 // Retains 4 KiB per onMessage in a global table, so the heap crosses the limit
@@ -458,7 +458,8 @@ end
 )";
 
 TEST_CASE("Retaining script is stopped when it exceeds the memory limit", "[MidiKit][Lua][MemoryLimit]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	m->loadScript(LUA_MEMORY_BLOWUP_RETAIN);
 	REQUIRE(m->host.seLua.L != nullptr);
 	drainLog(m);
@@ -475,12 +476,12 @@ TEST_CASE("Retaining script is stopped when it exceeds the memory limit", "[Midi
 	std::string log = drainLog(m);
 	REQUIRE(log.find("memory limit and was stopped") != std::string::npos);
 
-	Test::destroyModule(m);
 }
 
 // A script that stays within the limit must NOT be stopped.
 TEST_CASE("Script within the memory limit keeps running", "[MidiKit][Lua][MemoryLimit]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	m->loadScript(LUA_RECOVERY);
 	REQUIRE(m->host.seLua.L != nullptr);
 	drainLog(m);
@@ -494,5 +495,4 @@ TEST_CASE("Script within the memory limit keeps running", "[MidiKit][Lua][Memory
 	REQUIRE(m->host.seLua.L != nullptr);
 	REQUIRE(drainLog(m).find("memory limit and was stopped") == std::string::npos);
 
-	Test::destroyModule(m);
 }

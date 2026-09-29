@@ -218,29 +218,29 @@ TEST_CASE("enableNrpnIn and enableCc14bitIn reject a channel outside 1-16", "[Mi
 }
 
 TEST_CASE("enableNrpnIn accepts channel 16 and arms bit 15", "[MidiKit][MidiProcessor]") {
+	ModuleScaffold mods;
 	// Channel 16 (1-based) is the last valid channel and must arm bit 15
 	// (0-based) of the mask — a `ch >= 16` off-by-one would reject it, and a
 	// missing upper bound would let it shift past the mask entirely. Both
 	// engines.
 	EngineVariant v = GENERATE(engineVariants("midi.enableNrpnIn(1, 16)"));
 	CATCH_INFO("engine: " << v.engine);
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	m->loadScript(v.script);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 	REQUIRE(m->isNrpnEnabled(15, false));
 	REQUIRE(!m->isNrpnEnabled(0, false));
-	Test::destroyModule(m);
 }
 
 TEST_CASE("enableCc14bitIn accepts channel 16 and arms bit 15", "[MidiKit][MidiProcessor]") {
+	ModuleScaffold mods;
 	EngineVariant v = GENERATE(engineVariants("midi.enableCc14bitIn(1, 7, 16)"));
 	CATCH_INFO("engine: " << v.engine);
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	m->loadScript(v.script);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 	REQUIRE(m->isCc14bitEnabled(15, 7));
 	REQUIRE(!m->isCc14bitEnabled(0, 7));
-	Test::destroyModule(m);
 }
 
 
@@ -753,7 +753,8 @@ midi.onNrpn = function(midiPort, msg) {
 )";
 
 TEST_CASE("Script reload clears enables and decoder state", "[MidiKit][MidiProcessor]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	m->loadScript(JS_RELOAD_A);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 	drainLog(m);   // discard load chatter
@@ -778,11 +779,11 @@ TEST_CASE("Script reload clears enables and decoder state", "[MidiKit][MidiProce
 	auto probes = extractProbes(drainLog(m));
 	REQUIRE(probes == std::vector<std::string>({"onMessage:6", "onMessage:38"}));
 
-	Test::destroyModule(m);
 }
 
 TEST_CASE("onReset clears decoder state and enables", "[MidiKit][MidiProcessor]") {
-	MidiKitModule* m = createModule();
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	m->loadScript(JS_RELOAD_A);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -808,7 +809,6 @@ TEST_CASE("onReset clears decoder state and enables", "[MidiKit][MidiProcessor]"
 	auto probes = extractProbes(drainLog(m));
 	REQUIRE(probes == std::vector<std::string>({"onMessage:6", "onMessage:38"}));
 
-	Test::destroyModule(m);
 }
 
 
@@ -827,9 +827,10 @@ midi.enableCc14bitIn(1)
 )";
 
 TEST_CASE("enableCc14bitIn without cc enables all 32 MSBs on every channel", "[MidiKit][MidiProcessor]") {
+	ModuleScaffold mods;
 	EngineVariant v = GENERATE(engineVariants(JS_ENABLE_CC14_ALL, LUA_ENABLE_CC14_ALL));
 	CATCH_INFO("engine: " << v.engine);
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	m->loadScript(v.script);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -841,7 +842,6 @@ TEST_CASE("enableCc14bitIn without cc enables all 32 MSBs on every channel", "[M
 	// Out of the valid 0-31 MSB range there is nothing to enable.
 	REQUIRE(!m->isCc14bitEnabled(0, 32));
 
-	Test::destroyModule(m);
 }
 
 
@@ -871,30 +871,30 @@ midi.enableNrpnIn(1, 3)
 )";
 
 TEST_CASE("enableCc14bitIn honours a per-channel argument", "[MidiKit][MidiProcessor]") {
+	ModuleScaffold mods;
 	// midi.enableCc14bitIn(1, 7, 3) → channel 3 (0-based 2), MSB 7 only. The
 	// 1-based → 0-based channel conversion is duplicated in each engine's
 	// enableCc14bitIn binding, so a Lua-side slip must not pass unnoticed.
 	EngineVariant v = GENERATE(engineVariants(JS_ENABLE_CC14_ONE, LUA_ENABLE_CC14_ONE));
 	CATCH_INFO("engine: " << v.engine);
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	m->loadScript(v.script);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 	REQUIRE(m->isCc14bitEnabled(2, 7));
 	REQUIRE(!m->isCc14bitEnabled(0, 7));
 	REQUIRE(!m->isCc14bitEnabled(2, 8));
-	Test::destroyModule(m);
 }
 
 TEST_CASE("enableNrpnIn honours a per-channel argument", "[MidiKit][MidiProcessor]") {
+	ModuleScaffold mods;
 	// midi.enableNrpnIn(1, 3) → channel 3 (0-based 2) only.
 	EngineVariant v = GENERATE(engineVariants(JS_ENABLE_NRPN_CH, LUA_ENABLE_NRPN_CH));
 	CATCH_INFO("engine: " << v.engine);
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	m->loadScript(v.script);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 	REQUIRE(m->isNrpnEnabled(2, false));
 	REQUIRE(!m->isNrpnEnabled(0, false));
-	Test::destroyModule(m);
 }
 
 
@@ -916,13 +916,14 @@ midi.enableRpnIn(1, 3)
 )";
 
 TEST_CASE("enableRpnIn honours a per-channel argument and arms the RPN mask", "[MidiKit][MidiProcessor]") {
+	ModuleScaffold mods;
 	// The one assertion that pins the `kind` wiring: RPN must arm
 	// rpnEnabledMask (isNrpnEnabled(ch, true)) and NOT nrpnEnabledMask
 	// (isNrpnEnabled(ch, false)). Both engines — each has its own binding
 	// passing the kind argument.
 	EngineVariant v = GENERATE(engineVariants(JS_ENABLE_RPN_CH, LUA_ENABLE_RPN_CH));
 	CATCH_INFO("engine: " << v.engine);
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	m->loadScript(v.script);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -931,7 +932,6 @@ TEST_CASE("enableRpnIn honours a per-channel argument and arms the RPN mask", "[
 	REQUIRE(!m->isNrpnEnabled(2, false));  // NRPN mask bit NOT set
 	REQUIRE(!m->isNrpnEnabled(0, true));   // other channels untouched
 
-	Test::destroyModule(m);
 }
 
 

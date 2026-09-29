@@ -93,7 +93,7 @@ The callbacks a script can define, and when each runs:
 | `midi.onMessage(midiPort, msg)` | on every incoming MIDI message | — |
 | `trig.onTrigger(trigPort, channel)` | on every rising edge of an *enabled* trigger channel | `trig.enableIn()` |
 | `trig.onTipsyMessage(data, mimeType)` | on every complete [Tipsy](#tipsy) message decoded from the trigger input | `trig.enableTipsyIn()` |
-| `rack.onLoad(persistedConfig)` / `rack.onUnload()` / `rack.onSave()` | script [lifecycle](#persistence) — load, teardown, patch save | — |
+| `rack.onLoad()` / `rack.onUnload()` | script [lifecycle](#persistence) — load, teardown | — |
 | `input.getName(i)` / `param.getName(i)` / `param.getValueFormat(i)` | when a panel tooltip is shown | — |
 
 All hooks are assigned as plain fields on their object (`midi.onMessage =
@@ -362,7 +362,7 @@ end
 
 ### Send an all-notes-off when the script unloads
 
-`rack.onUnload()` runs right before the script's state is torn down — the script is being replaced, the module is reset, or the module is removed from the patch. It's the only reliable place to clean up notes a script left sounding, since nothing runs afterward to release them. It never runs on a plain patch save (see [Persistence](#persistence) for the hook that does: `rack.onSave()`). Note the JavaScript version assigns it to the `rack` object — `rack.onUnload = function() {...}` — like the other hooks (see [Hooks and predefined objects are resolved once, at load time](#hooks-and-predefined-objects-are-resolved-once-at-load-time)).
+`rack.onUnload()` runs right before the script's state is torn down — the script is being replaced, the module is reset, or the module is removed from the patch. It's the only reliable place to clean up notes a script left sounding, since nothing runs afterward to release them. It never runs on a plain patch save — a save is not a lifecycle event at all (see [Persistence](#persistence): a save just writes out whatever `rack.setConfig()` last published). Note the JavaScript version assigns it to the `rack` object — `rack.onUnload = function() {...}` — like the other hooks (see [Hooks and predefined objects are resolved once, at load time](#hooks-and-predefined-objects-are-resolved-once-at-load-time)).
 
 JavaScript:
 ```js
@@ -500,7 +500,7 @@ end
 
 ### Add items to the module's context menu
 
-`rack.registerContextMenu()` adds items to the module's right-click context menu — a boolean toggle (a menu line with a checkmark) or an options submenu (one entry per option, checkmark on the current selection). Items appear in registration order and can be used to change `config` values live instead of editing the script.
+`rack.registerContextMenu()` adds items to the module's right-click context menu — a boolean toggle (a menu line with a checkmark) or an options submenu (one entry per option, checkmark on the current selection). Items appear in registration order and can be used to change `config` values live instead of editing the script. To persist a change (so it survives a patch save/reload), call `rack.setConfig()` in the item's `onChange` — see [Persistence](#persistence).
 
 The checkmark/selection state is read **lazily** — each time the menu is opened, the engine calls the item's `onGetValue` callback (if provided) to determine the current value. This means the menu always reflects the live state of the script, even if it was changed programmatically. If `onGetValue` is omitted, the item defaults to `false` (boolean) or `0` (options, i.e. the first option).
 
@@ -646,7 +646,7 @@ end
 ### Hooks and predefined objects are resolved once, at load time
 
 `midi.onMessage` is read from the `midi` object **exactly once**;
-`rack.onLoad`, `rack.onUnload`, and `rack.onSave` from the `rack` object; and
+`rack.onLoad` and `rack.onUnload` from the `rack` object; and
 `trig.onTrigger`/`trig.onTipsyMessage` from the `trig` object — all right
 after the script's top-level code finishes running. **Reassigning any of them
 afterward, from inside a callback or anywhere else, has no effect.** The
@@ -657,7 +657,10 @@ load time but assigns it later (e.g. from inside `trig.onTrigger`) never has
 that later definition called — the "no `midi.onMessage` defined" warning
 logged at load time is the last word on it. (`trig.enableIn()` is not a hook —
 it's a live API call like `param.enable()`, so calling it at any time takes
-effect for subsequent trigger dispatch.)
+effect for subsequent trigger dispatch. `rack.getConfig()`/`rack.setConfig()`
+are likewise live calls, not hooks — see [Persistence](#persistence) — so
+unlike the hooks above, calling them from inside a callback, or any number of
+times, works exactly as it looks like it should.)
 
 This is a deliberate, permanent design choice: resolving hooks once, rather
 than looking them up by name on every incoming MIDI message or trigger tick,
@@ -683,8 +686,10 @@ technique.
 | `rack.overlay(s1 [, s2 [, s3]])` | show up to 3 lines in the on-panel overlay |
 | `rack.getFrame()` | the current engine frame number (`APP->engine->getFrame()`) |
 | `rack.random()` | a random number in [0, 1), drawn from Rack's own RNG (`rack::random::uniform()`), so it shares the patch's seed/determinism |
+| `rack.getConfig(key [, default])` | read a persisted value, or `default` (`undefined`/`nil` if omitted) when `key` is unset. Rejects a malformed key the same way as `setConfig()` — see [Persistence](#persistence) |
+| `rack.setConfig(key, value)` | persist `value` under `key`, or remove the key if `value` is `undefined`/`nil`. Rejects a malformed key, a non-JSON-serializable value, one nested too deeply, or one that would push the whole config past its size cap — see [Persistence](#persistence) |
 
-`rack.onLoad`/`rack.onUnload`/`rack.onSave` (script lifecycle) and
+`rack.onLoad`/`rack.onUnload` (script lifecycle) and
 `rack.registerContextMenu` (below) are documented in their own subsections.
 
 #### Context menu — `rack.registerContextMenu`
@@ -752,91 +757,111 @@ Notes:
 
 ### Persistence
 
-`rack.onLoad`, `rack.onUnload`, and `rack.onSave` cover a script's whole
-lifecycle. All three may call `midi.create()`/`midiOut.send()` like
-`midi.onMessage` can; messages sent from any of them are flushed the same way,
-except `onSave()`'s (see below).
+`rack.getConfig(key [, default])` and `rack.setConfig(key, value)` are how a
+script persists settings across a patch save/reload. They are a plain
+key/value store, not hooks (see [Hooks and predefined objects are resolved
+once, at load time](#hooks-and-predefined-objects-are-resolved-once-at-load-time)):
+call them from anywhere — top-level code, `rack.onLoad()`, `rack.onUnload()`,
+`midi.onMessage`, a context-menu `onChange` — at any time, as many times as
+you like.
 
-- **`rack.onLoad([persistedConfig])`** runs once, right after top-level code,
-  when the script has parsed and loaded successfully. If a config was
-  persisted by a previous save, it is deserialized from JSON and passed as
-  `persistedConfig` (a JavaScript object in QuickJs, a Lua table in Lua);
-  otherwise the argument is `undefined` (QuickJs) / `nil` (Lua) and the script
-  initializes from its own defaults.
-- **`rack.onUnload()`** runs every time the *current* script's state is torn
-  down for real — it's about to be replaced by another script, the module was
-  reset, or the module is being removed from the patch. This is the only
-  place a script can reliably clean up: sending an all-notes-off for anything
-  it left sounding is the main use case, since nothing else ever gets a
-  chance to release those notes once the script's state is gone. **Its return
-  value is ignored** — it is teardown-only and not part of the persistence
-  contract. Scripts written before `rack.onSave()` existed that only returned
-  their config from `onUnload()` will persist nothing until migrated; there is
-  no automatic fallback.
-- **`rack.onSave()`** is the config-bearing hook: if it returns a value, that
-  value is serialized to JSON and stored with the module's patch data. It
-  **must be side-effect-free** — it may be called repeatedly (e.g. on every
-  explicit patch save) without tearing down or otherwise disturbing the
-  script's state, so it should only read state, never mutate it or send MIDI
-  messages meant to have an audible effect (any it does send are discarded,
-  see below).
+- **`rack.setConfig(key, value)`** persists `value` under `key`, overwriting
+  whatever was there before. Call it the moment a setting changes — a
+  context-menu `onChange` is the most common place — rather than waiting for
+  some later "save" step, because there isn't one: whatever was last written
+  is what a patch save writes out.
+- **`rack.getConfig(key)`** returns the persisted value, or `undefined`
+  (QuickJs) / `nil` (Lua) if `key` was never set.
+- **`rack.getConfig(key, default)`** returns the persisted value, or
+  `default` if `key` was never set. Reading every setting this way at
+  top-level (or in `rack.onLoad()`) needs no read-modify-write step, so there
+  is nothing to get wrong the way a merge-over-defaults could (forgetting a
+  key, merging in the wrong order):
 
-The persisted value must be a plain JSON-serializable object (booleans,
-numbers, strings, arrays, and nested objects); functions and other
-non-serializable values are silently dropped. If `onSave()` returns nothing
-(or a non-serializable value), no config is persisted and `onLoad()` receives
-`undefined`/`nil`.
+  ```js
+  let config = {
+      channel:     rack.getConfig("channel", 1),
+      passThrough: rack.getConfig("passThrough", false)
+  };
+  ```
 
-A typical pattern:
+  ```lua
+  local config = {
+      channel     = rack.getConfig("channel", 1),
+      passThrough = rack.getConfig("passThrough", false)
+  }
+  ```
+
+  `rack.onLoad()`/`rack.onUnload()` still exist and cover the rest of a
+  script's lifecycle (initializing runtime state, sending an all-notes-off on
+  teardown), while `getConfig`/`setConfig` cover persistence alone.
+
+- **`rack.setConfig(key, undefined)`** (JS) / **`rack.setConfig(key, nil)`**
+  (Lua) removes `key` from the persisted config.
+
+**Keys** must start with a letter or underscore and contain only letters,
+digits, and underscores, up to 64 characters — `channel`, `_scale`,
+`noteLength2`. A key containing anything else, including a dot, is
+rejected; `.` is reserved.
+
+**Values** may be a boolean, number, string, array, or plain object. Nested
+values are supported up to **4 levels** deep. The whole config is capped at
+**64 KB** once serialized.
+
+An invalid key, a value that is not JSON-serializable (a function), a cyclic
+value, one exceeding the nesting depth, or one that would push the config
+past the size cap is **rejected**: the config keeps its previous contents
+and one line is written to the module log.
+
+A typical pattern, with a context-menu setting persisted the moment it
+changes:
 
 ```js
-let config = { channel: 1, passThrough: false };
+let config = {
+    channel:     rack.getConfig("channel", 1),
+    passThrough: rack.getConfig("passThrough", false)
+};
 
-rack.onLoad = function(persistedConfig) {
-    if (persistedConfig) {
-        config = Object.assign({}, config, persistedConfig);
+rack.registerContextMenu({
+    type: "boolean",
+    label: "Pass through",
+    onGetValue: function() { return config.passThrough; },
+    onChange: function(checked) {
+        config.passThrough = checked;
+        rack.setConfig("passThrough", checked);
     }
-};
-
-rack.onSave = function() {
-    return config;
-};
+});
 ```
 
 ```lua
-config = { channel = 1, passThrough = false }
+local config = {
+    channel     = rack.getConfig("channel", 1),
+    passThrough = rack.getConfig("passThrough", false)
+}
 
-rack.onLoad = function(persistedConfig)
-    if persistedConfig then
-        for k, v in pairs(persistedConfig) do
-            config[k] = v
-        end
+rack.registerContextMenu({
+    type = "boolean",
+    label = "Pass through",
+    onGetValue = function() return config.passThrough end,
+    onChange = function(checked)
+        config.passThrough = checked
+        rack.setConfig("passThrough", checked)
     end
-end
-
-rack.onSave = function()
-    return config
-end
+})
 ```
 
-Timing notes:
+Notes:
 
-- On a patch save, the module snapshots the config by running `onSave()`
-  synchronously on the GUI thread, without touching `onUnload()` or tearing
-  the script down — the script keeps running and the return value reflects
-  live state (e.g. the latest context-menu setting). Because `onSave()` must
-  be side-effect-free, it may be called on every save (including the
-  periodic autosave) with no audible effect; any messages it sends anyway are
-  **discarded**.
-- When the script is actually replaced, the module reset, or the module
-  removed, `rack.onUnload()` runs as a real teardown and its messages (e.g.
-  an all-notes-off) **are** delivered — but its return value, even if
-  present, is never persisted. `onUnload()` can run more than once over a
-  script's lifetime (e.g. on module reset followed by removal), so keep any
-  side effects idempotent rather than assuming it runs exactly once.
-- The persisted config is only written when Rack serializes the module
-  (`dataToJson()`, i.e. on patch save); replacing/removing the module or
-  script does not by itself save it.
+- Config is written when the script writes it; a patch save stores whatever
+  was last written. There is no separate "capture" step and nothing to time
+  out — `setConfig()` only updates engine-owned state, so it is free to call
+  as often as you like.
+- Calling `setConfig()`/`getConfig()` is a script-thread-only operation, same
+  as every other `rack.*`/`midi.*`/`trig.*` call — there is nothing special
+  to do to make it safe from any of the callback contexts listed above.
+- Switching to a different script (loading a new one over the current one)
+  starts that script with an empty config — persisted settings belong to the
+  script that wrote them and are not carried over.
 
 ### `number.*`
 `rescale(x, xMin, xMax, yMin, yMax [, curve])`,
@@ -1120,7 +1145,7 @@ whatever `midiOut.selectPort()` last selected (port 1 if it was never called):
 **A message can only be sent once per callback.** `midiOut.send(msg)` (and the
 `sendAfter*` variants) mark the handle as sent; the actual enqueue happens once
 per handle in the post-callback flush, so a second `send` of the *same* handle
-within one `midi.onMessage`/`rack.onLoad`/`rack.onUnload`/`rack.onSave` is not a second message — only
+within one `midi.onMessage`/`rack.onLoad`/`rack.onUnload` is not a second message — only
 one goes out, and if the message body was changed in between, the last change
 wins. To send the same bytes twice, build a fresh handle first with
 `midi.create()` or `midi.clone(msg)` and send that. Each message sent consumes
@@ -1139,11 +1164,10 @@ rather than decoding this by hand).
   created them — the store resets each callback invocation. Creating a
   message at top level (outside `midi.onMessage`) logs a warning and the
   handle is discarded as soon as the next MIDI message arrives, so build
-  messages inside the callback. `rack.onLoad()`/`rack.onUnload()`/`rack.onSave()`/`trig.onTrigger()`
+  messages inside the callback. `rack.onLoad()`/`rack.onUnload()`/`trig.onTrigger()`
   are full callbacks in this sense too — a message created and sent inside
-  any of them is delivered normally (except `onSave()`'s, which are always
-  discarded — see [Persistence](#persistence)), and (unlike bare top-level
-  code) doesn't warn.
+  any of them is delivered normally, and (unlike bare top-level code) doesn't
+  warn.
 - `midi.setCc14bit`/`setNRPN` split a 14-bit value across two 7-bit CC
   messages (`cc` = MSB, `cc + 32` = LSB per the NRPN/14-bit CC convention);
   see [nrpn_to_cc.js](nrpn_to_cc.js)/[nrpn_to_cc.lua](nrpn_to_cc.lua) for a

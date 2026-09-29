@@ -1,12 +1,10 @@
 #pragma once
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "MidiKit.cpp"
 
 using namespace StoermelderPackOne::MidiKit;
 using StoermelderPackOne::MidiScript::MidiScriptEngine;
 
-SYNC_MODEL(modelMidiKit, "MidiKit");
 Test::TestContext<> testContext;
 
 // ── Shared helpers ───────────────────────────────────────────────────────
@@ -70,6 +68,15 @@ static MidiKitModule* createModule(std::shared_ptr<StoermelderPackOne::ITaskWork
 	return m;
 }
 
+// RAII owner for modules under test (see Test::ModuleScaffold for why bare
+// create/destroy is unsafe once an assertion can fail). Binds to this suite's
+// createModule() shadow so every scaffolded module gets the injected
+// SyncTaskWorker — the dylib factory (Test::createModule) would use the
+// module's default async worker instead.
+struct ModuleScaffold : Test::ModuleScaffold<MidiKitModule> {
+	ModuleScaffold() : Test::ModuleScaffold<MidiKitModule>([]() { return createModule(); }) {}
+};
+
 // A real background worker, for the few tests that must distinguish async
 // dispatch from blocking dispatch.
 //
@@ -122,15 +129,17 @@ static void barrier(std::shared_ptr<StoermelderPackOne::ITaskWorker> worker, dou
 	}
 }
 
-// captureConfig() as a plain value, for tests asserting on the config a script
-// produced. REQUIREs a true return: under SyncTaskWorker the task always runs
-// inline, so false means the dispatch itself failed and should fail the test
-// loudly rather than read as an empty config. Nothing to persist (no script, or
-// no onSave()) returns true with an empty string and is fine here.
-static std::string captureConfig(MidiScriptEngine* se) {
-	std::string out;
-	REQUIRE(se->captureConfig(out));
-	return out;
+// The engine's last-published config, as a JSON string — what
+// dataToJson() would embed as "scriptConfig" if a save happened right now.
+// Under SyncTaskWorker every rack.setConfig() call publishes synchronously
+// inline, so this always reflects the most recent one with no round-trip.
+static std::string publishedConfigJson(MidiScriptEngine* se) {
+	const std::shared_ptr<json_t>& cfg = se->peekConfig();
+	if (!cfg) return "";
+	char* s = json_dumps(cfg.get(), JSON_COMPACT);
+	std::string result = s ? s : "";
+	if (s) free(s);
+	return result;
 }
 
 // Reads one pending message off the module's MIDI out-queue, oldest first —

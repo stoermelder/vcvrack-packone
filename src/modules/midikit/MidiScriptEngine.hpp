@@ -1,10 +1,13 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "../../utils/SpscLatestValue.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../midi/MidiProcessor.hpp"
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <jansson.h>
+#include <memory>
 #include <thread>
 
 namespace StoermelderPackOne {
@@ -170,12 +173,98 @@ struct MidiScriptEngine {
 	// module-facing callback (log/overlay/input/trig/param) routes through it.
 	MidiScriptEngineHandler* handler;
 
-	// Whether the loaded script defines rack.onSave(). Written on the worker as
-	// part of load/teardown, read on the UI thread by captureConfig() to skip
-	// the round-trip when there is nothing to ask for. Atomic because it is the
-	// only script-derived state crossing threads — the interpreter and its
-	// cached hook refs stay worker-owned.
-	std::atomic<bool> hasOnSave{false};
+	// rack.setConfig()/getConfig() limits — shared constants so the two
+	// engines can't drift on what they accept.
+	//
+	// Depth 1 is the value passed to setConfig() itself; the cap is also what
+	// makes cyclic Lua tables/JS objects terminate, since depth is the only
+	// defence the converters apply without tracking visited nodes.
+	static const int configMaxDepth = 4;
+	// Total serialized size of the whole config, checked after conversion
+	// against the prospective new config (not the single value being written).
+	static const size_t configMaxBytes = 65536;
+
+	// Wraps a json_t* (already owned/incref'd by the caller) in a shared_ptr
+	// whose deleter decrefs it.
+	static std::shared_ptr<json_t> ownJson(json_t* j) {
+		return std::shared_ptr<json_t>(j, [](json_t* p) { json_decref(p); });
+	}
+
+	// The engine-owned working copy of the script's config (a flat JSON
+	// object; values may nest). setConfig() mutates it, getConfig() reads it —
+	// both run on the script thread, so this needs no synchronization at all.
+	// Never null once constructed.
+	std::shared_ptr<json_t> workingConfig = ownJson(json_object());
+
+	// Published config, script thread -> UI thread.
+	//
+	// The published json_t is IMMUTABLE: setConfig() mutates the working copy,
+	// then publishes a fresh copy, so a reader holding a shared_ptr can walk
+	// its version safely while the script writes the next one. Mutating an
+	// already-published object instead would race dataToJson() inside
+	// json_dumps(): jansson's refcount is atomic but its containers are not.
+	//
+	// Single writer (the script thread), single reader (dataToJson()).
+	// getConfig() must NOT read through this — it reads the working copy
+	// directly, since SpscLatestValue permits only one reader.
+	SpscLatestValue<std::shared_ptr<json_t>> publishedConfig{ownJson(json_object())};
+
+	// Script thread. Mutates the working copy, then publishes a copy of it.
+	// `value` is owned (may be null, meaning "delete key").
+	//
+	// json_copy() (shallow) suffices rather than json_deep_copy(): the copy
+	// shares child *values* with the working copy, and those are only ever
+	// replaced wholesale by json_object_set_new, never mutated in place.
+	void setConfigValue(const char* key, json_t* value /* owned, may be null */) {
+		assert(onWorkerThread());
+		if (!value) json_object_del(workingConfig.get(), key);
+		else        json_object_set_new(workingConfig.get(), key, value);
+		std::shared_ptr<json_t> copy = ownJson(json_copy(workingConfig.get()));
+		publishedConfig.store(std::move(copy));
+	}
+
+	// Script thread. Returns a borrowed pointer (no incref) into workingConfig,
+	// or NULL if `key` is unset.
+	json_t* getConfigValue(const char* key) const {
+		assert(onWorkerThread());
+		return json_object_get(workingConfig.get(), key);
+	}
+
+	// Replaces workingConfig wholesale (patch load, script switch, reset) and
+	// publishes it immediately, so dataToJson() never observes a stale config
+	// from the previous script/state. `initial` is owned (may be null, meaning
+	// "start empty").
+	void installConfig(json_t* initial /* owned, may be null */) {
+		assert(onWorkerThread());
+		workingConfig = ownJson(initial ? initial : json_object());
+		std::shared_ptr<json_t> copy = ownJson(json_copy(workingConfig.get()));
+		publishedConfig.store(std::move(copy));
+	}
+
+	// UI thread. Returns a reference into the SpscLatestValue slot, not a
+	// copy: peek() returns const T&, stable until the next load()/peek()/
+	// load_if_new() call on this (the only) reader thread.
+	const std::shared_ptr<json_t>& peekConfig() {
+		return publishedConfig.peek();
+	}
+
+	// Validates a setConfig()/getConfig() key: [A-Za-z_][A-Za-z0-9_]{0,63}.
+	// Rejecting anything else (including '.') reserves '.' for a possible
+	// future path-addressing form instead of silently accepting a flat key
+	// that looks like a nested one.
+	static bool isValidConfigKey(const char* key) {
+		if (!key || key[0] == '\0') return false;
+		size_t len = strlen(key);
+		if (len > 64) return false;
+		char c0 = key[0];
+		if (!((c0 >= 'A' && c0 <= 'Z') || (c0 >= 'a' && c0 <= 'z') || c0 == '_')) return false;
+		for (size_t i = 1; i < len; i++) {
+			char c = key[i];
+			bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+			if (!ok) return false;
+		}
+		return true;
+	}
 
 	int inputCount;
 	int inputTrigCount;
@@ -202,18 +291,17 @@ struct MidiScriptEngine {
 	}
 
 	// True on the thread script code runs on. All script execution happens there
-	// — dispatch, onSave, load/teardown — so the interpreter and contextMenus are
-	// only ever touched from it, and the call sites assert that. Always true
-	// under SyncTaskWorker (tests), which runs tasks inline.
+	// — dispatch, load/teardown, setConfig()/getConfig() — so the interpreter and
+	// contextMenus are only ever touched from it, and the call sites assert that.
+	// Always true under SyncTaskWorker (tests), which runs tasks inline.
 	bool onWorkerThread() const {
 		return taskWorker && taskWorker->isWorkerThread();
 	}
 
 	// Runs `task` (script code) on the worker thread and blocks until done.
 	//
-	// Returns false, leaving `out` untouched, if the task never ran. Callers MUST
-	// NOT treat that as an empty result: in captureConfig() it would erase the
-	// user's settings on save.
+	// Returns false, leaving `out` untouched, if the task never ran.
+	// closeState() is the only caller left, and it discards the result.
 	//
 	// The wait is bounded for liveness, not latency: ~MpmcTaskWorker discards
 	// pending tasks, which breaks the promise (hence the catch), so the timeout
@@ -247,8 +335,11 @@ struct MidiScriptEngine {
 	virtual bool testScript(const std::string& script) = 0;
 
 
-	// persistedConfigJson, if non-empty, is parsed and passed to rack.onLoad()
-	// to restore config; otherwise onLoad() gets no argument (script defaults).
+	// initialConfigJson, if non-empty, is parsed and installed on the engine as
+	// the script's workingConfig BEFORE any script code runs — top-level code
+	// and onLoad() see it via rack.getConfig(). Empty installs a fresh, empty
+	// config (script switch). This is an install, not an argument to a hook:
+	// getConfig()/setConfig() are live calls, not hooks.
 	//
 	// Asynchronous, with no completion signal by design: the engine is NOT loaded
 	// when this returns, and load messages/parse errors reach the user via
@@ -258,20 +349,24 @@ struct MidiScriptEngine {
 	// engine down and loading another) still run in call order.
 	//
 	// `script` is copied, so the caller's buffer need not outlive this call.
-	void loadScript(const char* script, const std::string& persistedConfigJson = "") {
+	void loadScript(const char* script, const std::string& initialConfigJson = "") {
 		std::string s = script ? script : "";
-		runAsync([this, s, persistedConfigJson]() {
-			loadScriptOnWorker(s.c_str(), persistedConfigJson);
+		runAsync([this, s, initialConfigJson]() {
+			loadScriptOnWorker(s.c_str(), initialConfigJson);
 		});
 	}
 
 	// The load itself, always on the worker thread. Tears down any previous
 	// script (via closeStateOnWorker()) before loading the new one; callers
 	// already on the worker invoke this directly rather than loadScript().
-	virtual void loadScriptOnWorker(const char* script, const std::string& persistedConfigJson) = 0;
+	// Implementations must installConfig() from initialConfigJson at the top,
+	// before any script code runs.
+	virtual void loadScriptOnWorker(const char* script, const std::string& initialConfigJson) = 0;
 
 	// Tears down script state, running rack.onUnload() first (e.g. all-notes-off).
-	// onUnload()'s return value is ignored — config is captureConfig()'s job.
+	// onUnload()'s return value is ignored — config comes from rack.setConfig(),
+	// not from teardown. publishedConfig is deliberately left untouched: a save
+	// racing this teardown still persists the last known config.
 	// Always returns "".
 	//
 	// Blocks, unlike loadScript(): the caller (MidiKitModule's destructor) is
@@ -294,21 +389,6 @@ struct MidiScriptEngine {
 	// their interpreter here; callers already on the worker (loadScriptOnWorker,
 	// including its error paths) invoke this directly rather than closeState().
 	virtual void closeStateOnWorker() = 0;
-
-	// Runs rack.onSave() and writes its return value (the config to persist) as
-	// JSON into `out` without disturbing script state. onSave() is expected
-	// side-effect-free and may be called repeatedly (e.g. every explicit save);
-	// used by toJson() at save time. Messages onSave() queues are discarded (a
-	// save must have no audible effect).
-	//
-	// Returns false, leaving `out` untouched, only when the dispatch failed:
-	// callers keep their previous value then, since overwriting it with "" would
-	// erase the user's settings. Having nothing to persist — no script, or a
-	// script without onSave() — is a definite answer, not a failure, so it
-	// returns true with an empty `out` and the caller clears its stored config.
-	//
-	// Callable from any thread; implementations dispatch via runSync().
-	virtual bool captureConfig(std::string& out) = 0;
 
 	// Main interface for message processing. Takes the decoded form so the
 	// assembly the module already performed (NRPN/RPN/14-bit CC) travels with
