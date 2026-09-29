@@ -25,6 +25,8 @@ enum class LOG_FORMAT {
 	TEXT
 };
 
+// TPORTS is the number of trigger inputs of the module, one tick clock each.
+template <int TPORTS = 1>
 struct MidiOutput : midi::Output {
 	struct FrameSchedule {
 		midi::Message msg;
@@ -32,7 +34,7 @@ struct MidiOutput : midi::Output {
 			return msg.frame > other.msg.frame;
 		}
 	};
-	
+
 	struct TickSchedule {
 		midi::Message msg;
 		uint64_t tick;
@@ -42,10 +44,17 @@ struct MidiOutput : midi::Output {
 	};
 
 	std::priority_queue<FrameSchedule> frameQueue;
-	// One tick queue per polyphonic channel: sendAfterTrigger() schedules a
-	// message against a specific channel's trigger clock, and only that
-	// channel's clock advancing can flush it.
-	std::priority_queue<TickSchedule> tickQueue[PORT_MAX_CHANNELS];
+	// One tick queue per (trigger input, polyphonic channel), flattened as
+	// trigPort * PORT_MAX_CHANNELS + channel: sendAfterTrigger() schedules a
+	// message against a specific trigger input channel's clock, and only that
+	// clock advancing can flush it. The first trigger input's channels come
+	// first, so tickQueue[channel] is trigger input 1.
+	std::priority_queue<TickSchedule> tickQueue[TPORTS * PORT_MAX_CHANNELS];
+
+	static int tickQueueIndex(uint8_t channel, int trigPort) {
+		if (trigPort < 0 || trigPort >= TPORTS) trigPort = 0;
+		return trigPort * PORT_MAX_CHANNELS + (channel < PORT_MAX_CHANNELS ? channel : 0);
+	}
 
 	std::vector<int> getChannels() override {
 		std::vector<int> channels;
@@ -55,21 +64,26 @@ struct MidiOutput : midi::Output {
 		return channels;
 	}
 
+	// Drops every message waiting for a trigger tick.
+	void clearTickQueues() {
+		for (int i = 0; i < TPORTS * PORT_MAX_CHANNELS; i++) {
+			while (!tickQueue[i].empty()) tickQueue[i].pop();
+		}
+	}
+
 	void reset() {
 		Output::reset();
 		while (!frameQueue.empty()) frameQueue.pop();
-		for (int i = 0; i < PORT_MAX_CHANNELS; i++) {
-			while (!tickQueue[i].empty()) tickQueue[i].pop();
-		}
+		clearTickQueues();
 		channel = -1;
 	}
 
-	void send(midi::Message& msg, uint8_t channel, uint64_t tick) {
+	void send(midi::Message& msg, uint8_t channel, uint64_t tick, int trigPort = 0) {
 		if (tick != 0) {
 			TickSchedule s;
 			s.msg = msg;
 			s.tick = tick;
-			tickQueue[channel < PORT_MAX_CHANNELS ? channel : 0].push(s);
+			tickQueue[tickQueueIndex(channel, trigPort)].push(s);
 			return;
 		}
 
@@ -102,11 +116,12 @@ struct MidiOutput : midi::Output {
 		}
 	}
 
-	void processTick(uint8_t channel, uint64_t tick) {
-		// Each channel's messages are only ever drained by that channel's own
-		// clock — a message scheduled against channel N must not fire on
-		// another channel's trigger, so its queue is touched only when N fires.
-		auto& q = tickQueue[channel < PORT_MAX_CHANNELS ? channel : 0];
+	void processTick(uint8_t channel, uint64_t tick, int trigPort = 0) {
+		// Each (trigger input, channel) queue is only ever drained by that
+		// clock — a message scheduled against channel N of trigger input P must
+		// not fire on another channel's or input's trigger, so its queue is
+		// touched only when that clock fires.
+		auto& q = tickQueue[tickQueueIndex(channel, trigPort)];
 		while (true) {
 			if (q.size() == 0) return;
 			TickSchedule s = q.top();
@@ -521,8 +536,8 @@ struct PortCounts {
 // 1 MIDI in/out.
 struct MidiKitConfig {
 	static constexpr int cvInputs = 4;
-	static constexpr int trigInputs = 1;
-	static constexpr int trigOutputs = 1;
+	static constexpr int trigInputs = 2;
+	static constexpr int trigOutputs = 2;
 	static constexpr int params = 4;
 	static constexpr int midiInputs = 1;
 	static constexpr int midiOutputs = 1;
@@ -862,13 +877,13 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	MidiInputPort midiInputs[CONFIG::midiInputs];
 
 	/** [Stored to Json] */
-	MidiOutput midiOutputs[CONFIG::midiOutputs];
+	MidiOutput<CONFIG::trigInputs> midiOutputs[CONFIG::midiOutputs];
 
 	// The first MIDI input/output, for the single-port code paths and the
 	// test suite. Declared after the arrays they alias.
 	midi::InputQueue& midiInput = midiInputs[0].queue;
 	MidiProcessor& midiProcessor = midiInputs[0].processor;
-	MidiOutput& midiOutput = midiOutputs[0];
+	MidiOutput<CONFIG::trigInputs>& midiOutput = midiOutputs[0];
 
 	// Script log + overlay, in their own struct (see ScriptLog for the
 	// threading contract).
@@ -884,12 +899,18 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// to whichever engine happened to be active when they were queued. Written
 	// by sendMidi() (worker thread), drained by process() (audio thread) and by
 	// onRemove() at teardown.
-	dsp::RingBuffer<std::tuple<int, MidiScript::Message, uint8_t, uint64_t>, 128> midiOutQueue;
+	dsp::RingBuffer<std::tuple<int, MidiScript::Message, uint8_t, uint64_t, int>, 128> midiOutQueue;
 	// Set (worker thread) when sendMidi() drops a group for lack of room;
 	// cleared and reported once (audio thread) in process(). A saturated output
 	// must not flood the log through the same bottleneck that is already
 	// saturated.
 	std::atomic<bool> midiOutOverflow{false};
+	// Set by loadScript() (UI thread), consumed by process() (audio thread):
+	// messages the outgoing script scheduled with sendAfterTrigger() are still
+	// waiting in the outputs' tick queues, but the tick counters they were
+	// counted against restart at 0, so they would fire at an arbitrary tick of
+	// the new script. The queues belong to the audio thread, hence the hand-off.
+	std::atomic<bool> clearTickQueuesPending{false};
 
 	// ── Tipsy protocol over the trigger CV (TipsyInput/TipsyOutput) ──────────
 	// All Tipsy encode/decode state lives in the TipsyOutput/TipsyInput structs;
@@ -1028,7 +1049,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	}
 
 	// MidiScriptEngineHandler
-	bool sendMidi(int midiPort, const MidiScript::Message* msgs, size_t count, uint8_t channel, uint64_t tick) override {
+	bool sendMidi(int midiPort, const MidiScript::Message* msgs, size_t count, uint8_t channel, uint64_t tick, int trigPort = 0) override {
 		if (midiPort < 0 || midiPort >= MIDI_OUTPUTS) return false;
 		// Capacity is checked for the whole group, so a multi-message value — an
 		// NRPN quad or a 14-bit CC pair — is never half-emitted.
@@ -1039,7 +1060,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 			return false;
 		}
 		for (size_t i = 0; i < count; i++) {
-			midiOutQueue.push(std::make_tuple(midiPort, msgs[i], channel, tick));
+			midiOutQueue.push(std::make_tuple(midiPort, msgs[i], channel, tick, trigPort));
 		}
 		return true;
 	}
@@ -1079,13 +1100,36 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		triggersOut.process(port, sampleTime);
 	}
 
+	// Audio thread — carries out a loadScript() request to drop the messages
+	// still waiting for a trigger tick (see clearTickQueuesPending). Runs
+	// before anything of this sample is drained, so what the new script
+	// schedules from rack.onLoad is queued afterwards and survives.
+	void processTickQueueReset() {
+		if (clearTickQueuesPending.exchange(false)) {
+			for (int i = 0; i < MIDI_OUTPUTS; i++) midiOutputs[i].clearTickQueues();
+		}
+	}
+
+	// Audio thread — one sample of every connected trigger output.
+	void processTriggerOutputs(float sampleTime) {
+		for (int i = 0; i < TRIG_OUTPUTS; i++) {
+			if (!outputs[OUTPUT_TRIG + i].isConnected()) continue;
+			processTriggerOutput(i, sampleTime);
+			// Drains the Tipsy queue regardless of activeEngine, for the same
+			// reason as the MIDI out-queue in process(): messages queued by a
+			// script's onUnload() must still reach the output after the engine
+			// is gone. Tipsy always goes to the first trigger output.
+			if (i == 0) processTipsyOutput(0);
+		}
+	}
+
 	// Trigger detection, per channel: a rising edge advances that channel's
 	// tick clock and drains its tick-scheduled (sendAfterTrigger) messages.
 	// Skipped entirely with no active engine — the SchmittTriggers are only
 	// stepped while a script is loaded. Gated on trig.enableIn(); while a
 	// Tipsy stream owns channel 0 its encoded voltages are stepped but not
 	// counted.
-	void processTriggerInput() {
+	void processTriggerInputs() {
 		if (host.getActiveEngine()) {
 			for (int port = 0; port < TRIG_INPUTS; port++) {
 				int channels = triggersIn.input[port].getChannels();
@@ -1094,11 +1138,10 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 				triggersIn.process(port, channels, tipsyIn.claimed() == port,
 					[&](uint8_t c, uint64_t tick) {
 						// Scheduled MIDI messages (sendAfterTrigger) run on the
-						// tick clock of trigger port 0 only, for every output.
-						if (port == 0) {
-							for (int o = 0; o < MIDI_OUTPUTS; o++) {
-								midiOutputs[o].processTick(c, tick);
-							}
+						// tick clock of the trigger input they were scheduled
+						// against, for every output.
+						for (int o = 0; o < MIDI_OUTPUTS; o++) {
+							midiOutputs[o].processTick(c, tick, port);
 						}
 						host.queueTick(port, c);
 					});
@@ -1329,7 +1372,8 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 			return;
 		*/
 
-		processTriggerInput();
+		processTickQueueReset();
+		processTriggerInputs();
 
 		// Every sample, not under processDivider: the sender emits one encoded
 		// float per sample, so a divided read would drop most of the stream.
@@ -1362,20 +1406,12 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 				auto t = midiOutQueue.shift();
 				midi::Message msg = std::get<1>(t);
 				uint8_t channel = std::get<2>(t);
-				midiOutputs[std::get<0>(t)].send(msg, channel, std::get<3>(t));
+				midiOutputs[std::get<0>(t)].send(msg, channel, std::get<3>(t), std::get<4>(t));
 			}
 			for (int i = 0; i < MIDI_OUTPUTS; i++) midiOutputs[i].processFrame(args.frame);
 		}
 
-		for (int i = 0; i < TRIG_OUTPUTS; i++) {
-			if (!outputs[OUTPUT_TRIG + i].isConnected()) continue;
-			processTriggerOutput(i, args.sampleTime);
-			// Drains the Tipsy queue regardless of activeEngine, for the same
-			// reason as the MIDI out-queue above: messages queued by a script's
-			// onUnload() must still reach the output after the engine is gone.
-			// Tipsy always goes to the first trigger output.
-			if (i == 0) processTipsyOutput(0);
-		}
+		processTriggerOutputs(args.sampleTime);
 
 		sample++;
 	}
@@ -1459,6 +1495,9 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		// for the extended-CC enables: they belong to the outgoing script, not
 		// to the module.
 		triggersIn.reset();
+		// Raised before the load, so anything the new script schedules from
+		// rack.onLoad reaches the outputs after the audio thread has cleared.
+		clearTickQueuesPending.store(true);
 		for (int i = 0; i < MIDI_INPUTS; i++) midiInputs[i].extendedCc.clear();
 		// Disable the outgoing script's ports/params before loading the new one.
 		bindPortParamEngine(nullptr);
@@ -1915,19 +1954,22 @@ using MidiKitModule = MidiKitModuleBase<MidiKitConfig>;
 
 struct MidiKitWidget : MidiKitWidgetBase<MidiKitConfig> {
 	MidiKitWidget(MidiKitModule* module) : MidiKitWidgetBase<MidiKitConfig>(module, "MidiKit") {
-		addMidiInputDisplay(0, Rect(Vec(0.f, 36.4f), Vec(180.f, 44.6f)));
-		addLogDisplay(Rect(Vec(0.f, 81.0f), Vec(180.f, 140.6f)));
-		addMidiOutputDisplay(0, Rect(Vec(0.f, 221.6f), Vec(180.f, 44.6f)));
+		addMidiInputDisplay(0, Rect(Vec(0.f, 36.4f), Vec(195.f, 44.6f)));
+		addLogDisplay(Rect(Vec(0.f, 81.0f), Vec(195.f, 140.6f)));
+		addMidiOutputDisplay(0, Rect(Vec(0.f, 221.6f), Vec(195.f, 44.6f)));
 
-		static const float x[] = { 24.7f, 56.2f, 87.6f, 119.1f };
+		static const float x[] = { 56.7f, 83.9f, 111.0f, 138.2f };
 		for (int i = 0; i < MidiKitConfig::params; i++) {
-			addParam(createParamCentered<StoermelderTrimpot>(Vec(x[i], 287.3f), module, MidiKitModule::PARAM + i));
+			addParam(createParamCentered<StoermelderTrimpot>(Vec(x[i], 295.9f), module, MidiKitModule::PARAM + i));
 		}
 		for (int i = 0; i < MidiKitConfig::cvInputs; i++) {
-			addInput(createInputCentered<StoermelderPort>(Vec(x[i], 328.4f), module, MidiKitModule::INPUT + i));
+			addInput(createInputCentered<StoermelderPort>(Vec(x[i], 326.1f), module, MidiKitModule::INPUT + i));
 		}
-		addOutput(createOutputCentered<StoermelderPort>(Vec(156.f, 287.3f), module, MidiKitModule::OUTPUT_TRIG));
-		addInput(createInputCentered<StoermelderPort>(Vec(156.f, 328.4f), module, MidiKitModule::INPUT_TRIG));
+		
+		addInput(createInputCentered<StoermelderPort>(Vec(21.4f, 295.9f), module, MidiKitModule::INPUT_TRIG + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(21.4f, 326.1f), module, MidiKitModule::INPUT_TRIG + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(173.6, 295.9f), module, MidiKitModule::OUTPUT_TRIG + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(173.6f, 326.1f), module, MidiKitModule::OUTPUT_TRIG + 1));
 	}
 };
 
@@ -1944,8 +1986,8 @@ struct MidiKitMicroWidget : MidiKitWidgetBase<MidiKitMicroConfig> {
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 206.0f), module, MidiKitMicroModule::INPUT + 0));
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 242.7f), module, MidiKitMicroModule::INPUT + 1));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 284.3f), module, MidiKitMicroModule::OUTPUT_TRIG));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 328.4f), module, MidiKitMicroModule::INPUT_TRIG));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 284.3f), module, MidiKitMicroModule::INPUT_TRIG));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 328.4f), module, MidiKitMicroModule::OUTPUT_TRIG));
 	}
 
 	void appendStatusMenuItems(Menu* menu) override {

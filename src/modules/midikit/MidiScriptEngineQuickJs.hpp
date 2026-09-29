@@ -37,6 +37,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		bool isCc14bit = false;
 		bool send = false;
 		uint8_t channel = 0;   // trigger input channel, for sendAfterTrigger() scheduling
+		int trigPort = 0;      // 0-based trigger input, for sendAfterTrigger() scheduling
 		uint64_t tick = 0;
 		// Monotonic stamp assigned when midiOut.send() is called, so the out
 		// queue can be flushed in send() order rather than handle order.
@@ -389,9 +390,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// only; config comes from rack.setConfig(), not from teardown. Messages are
 	// NOT flushed here: closeState() flushes them for teardown.
 	JSValue callOnUnload() {
+		// Reset first: closeStateOnWorker() flushes the store after this even
+		// without an onUnload, and would otherwise send the last callback's
+		// messages a second time.
+		msgCount = 0;
 		if (!JS_IsFunction(ctx, onUnloadFn)) return JS_UNDEFINED;
 
-		msgCount = 0;
 		inCallback = true;
 		beginScriptExecution();
 		JSValue r = JS_Call(ctx, onUnloadFn, rackObj, 0, NULL);
@@ -596,17 +600,17 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 					msgStore[i].in.msg, msgStore[i + 1].in.msg,
 					msgStore[i + 2].in.msg, msgStore[i + 3].in.msg
 				};
-				handler->sendMidi(msgStore[i].midiPort, group, 4, msgStore[i].channel, msgStore[i].tick);
+				handler->sendMidi(msgStore[i].midiPort, group, 4, msgStore[i].channel, msgStore[i].tick, msgStore[i].trigPort);
 			}
 			else if (msgStore[i].isCc14bit) {
 				// A 14-bit CC pair is 2 consecutive entries in msgStore (CC cc /
 				// CC cc+32), emitted atomically — a receiver must never see the
 				// MSB without its LSB.
 				const Message group[2] = { msgStore[i].in.msg, msgStore[i + 1].in.msg };
-				handler->sendMidi(msgStore[i].midiPort, group, 2, msgStore[i].channel, msgStore[i].tick);
+				handler->sendMidi(msgStore[i].midiPort, group, 2, msgStore[i].channel, msgStore[i].tick, msgStore[i].trigPort);
 			}
 			else {
-				handler->sendMidi(msgStore[i].midiPort, &msgStore[i].in.msg, 1, msgStore[i].channel, msgStore[i].tick);
+				handler->sendMidi(msgStore[i].midiPort, &msgStore[i].in.msg, 1, msgStore[i].channel, msgStore[i].tick, msgStore[i].trigPort);
 			}
 		}
 	}
@@ -2173,6 +2177,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		s.midiPort = getEngine(ctx)->selectedPort;
 		int64_t currentTicks = getEngine(ctx)->handler->getTrigTicks(trigPort - 1, channel - 1);
 		s.channel = (uint8_t)(channel - 1);
+		s.trigPort = trigPort - 1;
 		s.send = true;
 		s.sendOrder = getEngine(ctx)->sendCounter++;
 		s.tick = currentTicks + ticks;

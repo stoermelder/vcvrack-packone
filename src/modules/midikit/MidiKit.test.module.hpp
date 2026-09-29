@@ -20,13 +20,12 @@ TEST_CASE("Construction and initialization", "[MidiKit]") {
 
 	REQUIRE(m != nullptr);
 	REQUIRE(m->NUM_PARAMS == 4);
-	REQUIRE(m->NUM_INPUTS == 5);   // 4 voltage + 1 trigger
-	REQUIRE(m->NUM_OUTPUTS == 1);  // trigger out
+	REQUIRE(m->NUM_INPUTS == 6);   // 4 voltage + 2 trigger
+	REQUIRE(m->NUM_OUTPUTS == 2);  // 2 trigger out
 	REQUIRE(m->NUM_LIGHTS == 0);
 	REQUIRE(m->host.script == "");
 	REQUIRE(m->sample == 0);
 	REQUIRE(m->triggersIn.triggerTick[0][0] == 0);
-
 }
 
 
@@ -54,7 +53,6 @@ TEST_CASE("Preset JSON null-guards", "[MidiKit][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 
@@ -70,7 +68,6 @@ TEST_CASE("process() does not crash with no script", "[MidiKit]") {
 	}
 
 	REQUIRE(m->sample == 20);
-
 }
 
 TEST_CASE("Default engine it not set", "[MidiKit]") {
@@ -78,7 +75,6 @@ TEST_CASE("Default engine it not set", "[MidiKit]") {
 	MidiKitModule* m = mods.create("MidiKit");
 
 	REQUIRE(m->host.getActiveEngine() == nullptr);
-
 }
 
 TEST_CASE("@engine minilua@v1 header selects Lua engine", "[MidiKit]") {
@@ -88,7 +84,6 @@ TEST_CASE("@engine minilua@v1 header selects Lua engine", "[MidiKit]") {
 	m->loadScript(LUA_SCRIPT);
 
 	REQUIRE(m->host.isLuaEngine());
-
 }
 
 TEST_CASE("QuickJs header keeps QuickJs engine active", "[MidiKit]") {
@@ -101,7 +96,6 @@ TEST_CASE("QuickJs header keeps QuickJs engine active", "[MidiKit]") {
 
 	m->loadScript(QUICKJS_SCRIPT);
 	REQUIRE(m->host.isQuickJsEngine());
-
 }
 
 TEST_CASE("clearScript resets to empty and restores no engine", "[MidiKit]") {
@@ -115,7 +109,6 @@ TEST_CASE("clearScript resets to empty and restores no engine", "[MidiKit]") {
 
 	REQUIRE(m->host.script == "");
 	REQUIRE(m->host.getActiveEngine() == nullptr);
-
 }
 
 TEST_CASE("Trigger input increments triggerTick", "[MidiKit]") {
@@ -147,7 +140,6 @@ TEST_CASE("Trigger input increments triggerTick", "[MidiKit]") {
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(3));
 	REQUIRE(m->triggersIn.triggerTick[0][0] == 2);
-
 }
 
 TEST_CASE("Trigger input is not processed until the trigger is enabled", "[MidiKit]") {
@@ -181,7 +173,6 @@ TEST_CASE("Trigger input is not processed until the trigger is enabled", "[MidiK
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(5));
 	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
-
 }
 
 TEST_CASE("Polyphonic trigger input counts ticks per channel", "[MidiKit]") {
@@ -214,7 +205,6 @@ TEST_CASE("Polyphonic trigger input counts ticks per channel", "[MidiKit]") {
 
 	REQUIRE(m->triggersIn.triggerTick[0][0] == 2);
 	REQUIRE(m->triggersIn.triggerTick[0][1] == 1);
-
 }
 
 TEST_CASE("JSON round-trip preserves panelTheme and script", "[MidiKit]") {
@@ -236,7 +226,6 @@ TEST_CASE("JSON round-trip preserves panelTheme and script", "[MidiKit]") {
 	REQUIRE(m->panelTheme == 2);
 	REQUIRE(m->host.script == LUA_SCRIPT);
 	REQUIRE(m->host.isLuaEngine());
-
 }
 
 TEST_CASE("process() does not crash with Lua script loaded", "[MidiKit]") {
@@ -248,7 +237,6 @@ TEST_CASE("process() does not crash with Lua script loaded", "[MidiKit]") {
 	for (int i = 0; i < 20; i++) {
 		REQUIRE_NOTHROW(m->process(Test::makeProcessArgs(i + 1)));
 	}
-
 }
 
 
@@ -270,7 +258,7 @@ static midi::Message makeCc() {
 }
 
 TEST_CASE("processTick sends a message on its exact tick", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 
 	out.send(msg, 0, 5);
@@ -284,7 +272,7 @@ TEST_CASE("processTick sends a message on its exact tick", "[MidiKit]") {
 }
 
 TEST_CASE("processTick sends a message whose tick has already passed", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 
 	// process() calls processTick() before draining the engine out-queue, so a
@@ -297,7 +285,7 @@ TEST_CASE("processTick sends a message whose tick has already passed", "[MidiKit
 }
 
 TEST_CASE("processTick drains every due message in one call", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 
 	out.send(msg, 0, 3);
@@ -314,7 +302,7 @@ TEST_CASE("processTick drains every due message in one call", "[MidiKit]") {
 }
 
 TEST_CASE("processTick: a stale entry does not block later messages", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 
 	// tickQueue is ordered smallest-tick-first, so the stale entry sits at the
@@ -328,7 +316,7 @@ TEST_CASE("processTick: a stale entry does not block later messages", "[MidiKit]
 }
 
 TEST_CASE("processTick leaves not-yet-due messages queued", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 
 	out.send(msg, 0, 10);
@@ -343,7 +331,7 @@ TEST_CASE("processTick leaves not-yet-due messages queued", "[MidiKit]") {
 }
 
 TEST_CASE("processFrame sends a message on its exact frame", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 	msg.frame = 5;
 
@@ -358,7 +346,7 @@ TEST_CASE("processFrame sends a message on its exact frame", "[MidiKit]") {
 }
 
 TEST_CASE("processFrame sends a message whose frame has already passed", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 	msg.frame = 5;
 
@@ -370,7 +358,7 @@ TEST_CASE("processFrame sends a message whose frame has already passed", "[MidiK
 }
 
 TEST_CASE("processFrame drains every due message in one call", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 
 	msg.frame = 3;
@@ -390,7 +378,7 @@ TEST_CASE("processFrame drains every due message in one call", "[MidiKit]") {
 }
 
 TEST_CASE("processFrame leaves not-yet-due messages queued", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 	msg.frame = 10;
 
@@ -736,7 +724,7 @@ TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKi
 	// The stale entry sorts to the head, so with "==" it blocks both forever.
 	midi::Message msg = makeCc();
 	m->midiOutput.send(msg, 0, 2);
-	m->midiOutput.tickQueue[0].push(MidiOutput::TickSchedule{msg, 0});
+	m->midiOutput.tickQueue[0].push(std::remove_reference<decltype(m->midiOutput)>::type::TickSchedule{msg, 0});
 	REQUIRE(m->midiOutput.tickQueue[0].size() == 2);
 
 	int64_t frame = 1;
@@ -749,7 +737,6 @@ TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKi
 
 	REQUIRE(m->triggersIn.triggerTick[0][0] == 3);
 	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
-
 }
 
 TEST_CASE("sendAfterTrigger on one channel is only drained by that channel's clock", "[MidiKit]") {
@@ -766,14 +753,15 @@ TEST_CASE("sendAfterTrigger on one channel is only drained by that channel's clo
 
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 2;
 
-	// Schedule a message against channel 2's clock at tick 2.
-	midi::Message msg = makeCc();
-	m->midiOutput.send(msg, 1, 2);   // channel index 1 = script channel 2
-
-	// Prime both SchmittTriggers LOW.
+	// Prime both SchmittTriggers LOW. This first process() also carries out the
+	// script load's request to drop older scheduled messages, so schedule after.
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 1);
 	m->process(Test::makeProcessArgs(0));
+
+	// Schedule a message against channel 2's clock at tick 2.
+	midi::Message msg = makeCc();
+	m->midiOutput.send(msg, 1, 2);   // channel index 1 = script channel 2
 
 	// Two pulses on channel 1 must NOT drain channel 2's queue.
 	for (int pulse = 0; pulse < 2; pulse++) {
@@ -795,7 +783,6 @@ TEST_CASE("sendAfterTrigger on one channel is only drained by that channel's clo
 	}
 	REQUIRE(m->triggersIn.triggerTick[0][1] == 2);
 	REQUIRE(m->midiOutput.tickQueue[1].size() == 0);   // drained
-
 }
 
 // --- Logging (midiLogMessages) ------------------------------------------------
@@ -814,7 +801,6 @@ TEST_CASE("Log queue preserves FIFO order", "[MidiKit][Log]") {
 	for (int i = 0; i < 10; i++) {
 		REQUIRE(std::get<1>(entries[i]) == "line" + std::to_string(i));
 	}
-
 }
 
 
@@ -839,7 +825,6 @@ TEST_CASE("Log accepts entries from multiple producers", "[MidiKit][Log]") {
 	REQUIRE(std::get<0>(entries[0]) == LOG_FORMAT::TIMESTAMP);
 	REQUIRE(std::get<0>(entries[1]) == LOG_FORMAT::TEXT);
 	REQUIRE(std::get<0>(entries[2]) == LOG_FORMAT::TEXT);
-
 }
 
 
@@ -854,7 +839,6 @@ TEST_CASE("LoadScript emits a RESET log entry", "[MidiKit][Log]") {
 	REQUIRE(!entries.empty());
 	// loadScript() pushes the RESET marker before any script output.
 	REQUIRE(std::get<0>(entries[0]) == LOG_FORMAT::RESET);
-
 }
 
 
@@ -876,7 +860,6 @@ TEST_CASE("Log queue drops entries when full", "[MidiKit][Log]") {
 	// Every accepted entry is still drained out (no loss of accepted entries).
 	auto entries = drainLogEntries(m);
 	REQUIRE(entries.size() == 512);
-
 }
 
 
@@ -1423,5 +1406,4 @@ TEST_CASE("The processor decodes the module's own queue, not a private one", "[M
 
 	REQUIRE(m->midiProcessor.ownedInput == nullptr);
 	REQUIRE(&m->midiProcessor.getInput() == &m->midiInput);
-
 }

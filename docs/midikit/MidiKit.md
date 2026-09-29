@@ -32,13 +32,13 @@ Lua:
 
 The header is parsed line-by-line and may also be used to set `@author` and `@description` metadata, which is shown in the module's log on load.
 
-MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the selected MIDI input, a trigger arrives on the CV trigger input (`trig.onTrigger`, once enabled with `trig.enableIn()`), or a [Tipsy](SCRIPTING.md#trig-dedicated-triggergate-ports) message finishes decoding on the trigger input (`trig.onTipsyMessage`). The scripting API lets you create new MIDI messages; a single incoming event may result in up to 32 outgoing messages (the message-handle store holds 32 handles per callback — creating more raises a script error, see [midi](SCRIPTING.md#midi-message-constructioninspection)). Incoming MIDI messages are not passed through automatically — scripts must explicitly call `midiOut.send()` to forward messages.
+MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the selected MIDI input, a trigger arrives on one of the two CV trigger inputs (`trig.onTrigger`, once enabled with `trig.enableIn()`), or a [Tipsy](SCRIPTING.md#trig-dedicated-triggergate-ports) message finishes decoding on trigger input 1 (`trig.onTipsyMessage`). The scripting API lets you create new MIDI messages; a single incoming event may result in up to 32 outgoing messages (the message-handle store holds 32 handles per callback — creating more raises a script error, see [midi](SCRIPTING.md#midi-message-constructioninspection)). Incoming MIDI messages are not passed through automatically — scripts must explicitly call `midiOut.send()` to forward messages.
 
 The module also exposes four CV inputs and four panel parameters that can be read from scripts to add modulation or dynamic configuration.
 
 Scripts can persist their configuration across patch saves and reloads via `rack.getConfig()`/`rack.setConfig()` (see [Persistence](SCRIPTING.md#persistence)).
 
-`midi.onMessage` (on the `midi` object), `rack.onLoad`/`rack.onUnload`, and `trig.onTrigger`/`trig.onTipsyMessage` (on the `trig` object) are only ever read once, right after the script loads — assign each exactly once, at the top level. Reassigning one later, or defining it late, has no effect (see [Hooks and predefined objects are resolved once, at load time](SCRIPTING.md#hooks-and-predefined-objects-are-resolved-once-at-load-time)). `trig.enableIn()`, by contrast, is a live API call — the trigger input does nothing until it is called. `rack.getConfig()`/`rack.setConfig()` are likewise live calls, not hooks.
+`midi.onMessage` (on the `midi` object), `rack.onLoad`/`rack.onUnload`, and `trig.onTrigger`/`trig.onTipsyMessage` (on the `trig` object) are only ever read once, right after the script loads — assign each exactly once, at the top level. Reassigning one later, or defining it late, has no effect (see [Hooks and predefined objects are resolved once, at load time](SCRIPTING.md#hooks-and-predefined-objects-are-resolved-once-at-load-time)). `trig.enableIn()`, by contrast, is a live API call — a trigger input does nothing until it is called. `rack.getConfig()`/`rack.setConfig()` are likewise live calls, not hooks.
 
 You can use MIDI-KIT as an insert effect via VCV Rack's built-in MIDI Loopback driver. This lets you process incoming messages before they reach other MIDI modules (for example, MIDI‑CC, MIDI‑CV, MIDI‑MAP, or MIDI‑CAT), and likewise process outgoing messages.
 
@@ -128,8 +128,10 @@ The module's panel and right-click context menu are laid out as follows.
   output and script load/error messages.
 - Four CV **inputs** and four panel **parameters**, readable from scripts via
   `input.*` and `param.*`.
-- One CV **trigger input** and one **trigger output**, driven by the script's
-  `trig.*` functions.
+- Two CV **trigger inputs** and two **trigger outputs** ("Trigger 1" and
+  "Trigger 2", addressed 1-based as `trigPort` / `i` in the script's `trig.*`
+  functions), each polyphonic. Tipsy uses the first trigger input and the
+  first trigger output only.
 
 **Right-click context menu**
 

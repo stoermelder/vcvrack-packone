@@ -5,10 +5,10 @@
  * @description Sends a Program Change message for each trigger on up to 16 trigger channels, with a configurable program number per channel
  */
 
-// MIDI-KIT has a single polyphonic trigger input; each of its poly channels
+// This script listens on trigger input 1 only (MIDI-KIT has two); each of its poly channels
 // (up to 16) acts as its own trigger here. A rising edge on channel N sends
 // a Program Change with the program number configured for N.
-// Feed the input with a poly cable (e.g. from a merge module) - a mono
+// Feed trigger input 1 with a poly cable (e.g. from a merge module) - a mono
 // cable only drives channel 1. Channels without an entry in
 // config.programs are not enabled and do nothing.
 

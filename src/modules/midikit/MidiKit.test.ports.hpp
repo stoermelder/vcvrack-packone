@@ -227,7 +227,7 @@ TEST_CASE("Variant: each trigger input has its own tick clock", "[MidiKit][Varia
 	REQUIRE(m->getTrigTicks(0, 0) == 0);
 }
 
-TEST_CASE("Variant: scheduled MIDI flushes on trigger input 0 only", "[MidiKit][Variant]") {
+TEST_CASE("Variant: scheduled MIDI flushes on the clock of its own trigger input", "[MidiKit][Variant]") {
 	MultiScaffold mods;
 	MultiModule* m = mods.create();
 	m->loadScript(QUICKJS_EMPTY);
@@ -236,25 +236,29 @@ TEST_CASE("Variant: scheduled MIDI flushes on trigger input 0 only", "[MidiKit][
 	m->inputs[MultiModule::INPUT_TRIG + 0].channels = 1;
 	m->inputs[MultiModule::INPUT_TRIG + 1].channels = 1;
 
-	// Due at tick 1 on both outputs.
-	midi::Message msg = ccMsg(0, 7, 100);
-	m->midiOutputs[0].send(msg, 0, 1);
-	m->midiOutputs[1].send(msg, 0, 1);
+	// The first process() carries out the script load's request to drop older
+	// scheduled messages and primes the triggers LOW; schedule after it.
 	int64_t frame = 0;
-	m->process(Test::makeProcessArgs(frame++));   // prime LOW
+	m->process(Test::makeProcessArgs(frame++));
 
-	// A rising edge on trigger input 1 counts a tick, but flushes nothing.
+	// Due at tick 1: on output 1 against trigger input 2, on output 2 against
+	// trigger input 1. tickQueue is flattened trigPort * 16 + channel.
+	midi::Message msg = ccMsg(0, 7, 100);
+	m->midiOutputs[0].send(msg, 0, 1, 1);
+	m->midiOutputs[1].send(msg, 0, 1, 0);
+	const int P2 = PORT_MAX_CHANNELS;
+
+	// A rising edge on trigger input 2 flushes only what was scheduled on it.
 	m->inputs[MultiModule::INPUT_TRIG + 1].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(frame++));
 	REQUIRE(m->triggersIn.triggerTick[1][0] == 1);
-	REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 1);
+	REQUIRE(m->midiOutputs[0].tickQueue[P2].size() == 0);
 	REQUIRE(m->midiOutputs[1].tickQueue[0].size() == 1);
 
-	// A rising edge on trigger input 0 flushes every MIDI output.
+	// A rising edge on trigger input 1 flushes the rest.
 	m->inputs[MultiModule::INPUT_TRIG + 0].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(frame++));
 	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
-	REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 0);
 	REQUIRE(m->midiOutputs[1].tickQueue[0].size() == 0);
 }
 
@@ -265,6 +269,695 @@ TEST_CASE("Variant: trigger outputs are addressed by index", "[MidiKit][Variant]
 	m->setTrigVoltage(1, 0, 4.f);
 	REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 1].getVoltage(0) == 4.f);
 	REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 0].getVoltage(0) == 0.f);
+}
+
+// ── Trigger ports through the script API ────────────────────────────────────
+//
+// The cases above drive the module directly. These load real scripts (both
+// engines) and check that the 1-based `trigPort` argument of every trig.*
+// call lands on the matching 0-based port.
+
+// Tokens of the form `tag...` (up to the next whitespace) in the log, in order.
+static std::vector<std::string> logTokens(MultiModule* m, const std::string& tag) {
+	std::string all = probes(m);
+	std::vector<std::string> out;
+	for (size_t pos = all.find(tag); pos != std::string::npos; pos = all.find(tag, pos + 1)) {
+		size_t end = all.find_first_of(" \r\n", pos);
+		out.push_back(all.substr(pos, end == std::string::npos ? std::string::npos : end - pos));
+	}
+	return out;
+}
+
+// Both trigger inputs polyphonic (2 channels), both trigger outputs connected.
+static void wireTrigPorts(MultiModule* m) {
+	for (int p = 0; p < 2; p++) {
+		m->inputs[MultiModule::INPUT_TRIG + p].channels = 2;
+		m->outputs[MultiModule::OUTPUT_TRIG + p].channels = 4;
+	}
+}
+
+// Sets one channel of one trigger input and lets the module process it.
+static void driveTrig(MultiModule* m, int64_t& frame, int port, int ch, float v) {
+	m->inputs[MultiModule::INPUT_TRIG + port].setVoltage(v, ch);
+	pump(m, frame);
+}
+
+static const char* JS_TRIG_PORT_ROUTING = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+trig.enableIn(2, 1);
+trig.enableIn(2, 2);
+trig.onTrigger = function(port, ch) {
+    rack.log("T:" + port + ":" + ch + ":" + trig.getTicks(port, ch));
+};
+)";
+
+static const char* LUA_TRIG_PORT_ROUTING = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableIn(1, 1)
+trig.enableIn(2, 1)
+trig.enableIn(2, 2)
+trig.onTrigger = function(port, ch)
+    rack.log("T:" .. port .. ":" .. ch .. ":" .. trig.getTicks(port, ch))
+end
+)";
+
+TEST_CASE("Variant: trig.onTrigger reports the trigger port and channel that fired", "[MidiKit][Variant][TrigPorts]") {
+	for (const char* script : {JS_TRIG_PORT_ROUTING, LUA_TRIG_PORT_ROUTING}) {
+		CATCH_INFO(script);
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		wireTrigPorts(m);
+		m->loadScript(script);
+		probes(m);
+		int64_t frame = 1;
+
+		pump(m, frame);   // prime every enabled channel LOW
+		driveTrig(m, frame, 1, 0, 10.f);   // port 2, channel 1
+		driveTrig(m, frame, 0, 0, 10.f);   // port 1, channel 1
+		driveTrig(m, frame, 1, 1, 10.f);   // port 2, channel 2
+		driveTrig(m, frame, 1, 0, 0.f);
+		driveTrig(m, frame, 1, 0, 10.f);   // port 2, channel 1 again
+
+		// Each (port, channel) has its own tick counter.
+		REQUIRE(logTokens(m, "T:") == std::vector<std::string>{"T:2:1:1", "T:1:1:1", "T:2:2:1", "T:2:1:2"});
+	}
+}
+
+TEST_CASE("Variant: trig.enableIn arms only the addressed port", "[MidiKit][Variant][TrigPorts]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(2, 1);
+trig.onTrigger = function(port, ch) { rack.log("T:" + port + ":" + ch); };
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableIn(2, 1)
+trig.onTrigger = function(port, ch) rack.log("T:" .. port .. ":" .. ch) end
+)";
+	for (const char* script : {js, lua}) {
+		CATCH_INFO(script);
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		wireTrigPorts(m);
+		m->loadScript(script);
+		probes(m);
+		int64_t frame = 1;
+
+		REQUIRE_FALSE(m->triggersIn.isEnabled(0, 0));
+		REQUIRE(m->triggersIn.isEnabled(1, 0));
+		REQUIRE_FALSE(m->triggersIn.isEnabled(1, 1));
+
+		pump(m, frame);
+		driveTrig(m, frame, 0, 0, 10.f);   // port 1: never enabled
+		driveTrig(m, frame, 1, 1, 10.f);   // port 2, channel 2: never enabled
+		REQUIRE(logTokens(m, "T:").empty());
+		REQUIRE(m->getTrigTicks(0, 0) == 0);
+		REQUIRE(m->getTrigTicks(1, 1) == 0);
+
+		driveTrig(m, frame, 1, 0, 10.f);
+		REQUIRE(logTokens(m, "T:") == std::vector<std::string>{"T:2:1"});
+	}
+}
+
+TEST_CASE("Variant: trig.isHigh/isLow read the addressed trigger input", "[MidiKit][Variant][TrigPorts]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(2, 1);
+function b(v) { return v ? 1 : 0; }
+trig.onTrigger = function(port, ch) {
+    rack.log("H:" + b(trig.isHigh(1)) + b(trig.isHigh(2)) + b(trig.isLow(1)) + b(trig.isLow(2)) + b(trig.isHigh(2, 2)));
+};
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableIn(2, 1)
+local function b(v) if v then return 1 end return 0 end
+trig.onTrigger = function(port, ch)
+    rack.log("H:" .. b(trig.isHigh(1)) .. b(trig.isHigh(2)) .. b(trig.isLow(1)) .. b(trig.isLow(2)) .. b(trig.isHigh(2, 2)))
+end
+)";
+	for (const char* script : {js, lua}) {
+		CATCH_INFO(script);
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		wireTrigPorts(m);
+		m->loadScript(script);
+		probes(m);
+		int64_t frame = 1;
+
+		pump(m, frame);
+		driveTrig(m, frame, 1, 0, 10.f);
+		// Port 1 low, port 2 (channel 1) high, port 2 channel 2 low.
+		REQUIRE(logTokens(m, "H:") == std::vector<std::string>{"H:01100"});
+	}
+}
+
+// One call per script, each on trigger output 2 (and channel 3 for the last).
+struct TrigOutCase {
+	const char* js;
+	const char* lua;
+	// Voltage expected at output 2 / output 1 on the tested channel.
+	int channel;
+	float out2;
+	float out1;
+};
+
+TEST_CASE("Variant: trig output calls address the matching trigger output", "[MidiKit][Variant][TrigPorts]") {
+	static const TrigOutCase cases[] = {
+		{"trig.setHigh(2);",       "trig.setHigh(2)",       0, 10.f, 0.f},
+		{"trig.setHigh(2, 3);",    "trig.setHigh(2, 3)",    2, 10.f, 0.f},
+		{"trig.setTrigger(2);",    "trig.setTrigger(2)",    0, 10.f, 0.f},
+		{"trig.setGate(2, 50);",   "trig.setGate(2, 50)",   0, 10.f, 0.f},
+		{"trig.setGate(2, 4, 50);", "trig.setGate(2, 4, 50)", 3, 10.f, 0.f},
+		{"trig.setHigh(1);",       "trig.setHigh(1)",       0, 0.f, 10.f},
+	};
+	for (const TrigOutCase& c : cases) {
+		for (int engine = 0; engine < 2; engine++) {
+			std::string script = engine == 0
+				? std::string("/**\n * @engine QuickJs@v1\n */\n") + c.js + "\n"
+				: std::string("--[[\n@engine minilua@v1\n--]]\n") + c.lua + "\n";
+			CATCH_INFO(script);
+			MultiScaffold mods;
+			MultiModule* m = mods.create();
+			wireTrigPorts(m);
+			m->loadScript(script);
+			int64_t frame = 1;
+			pump(m, frame);
+
+			REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 1].getVoltage(c.channel) == c.out2);
+			REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 0].getVoltage(c.channel) == c.out1);
+		}
+	}
+}
+
+TEST_CASE("Variant: trig.setLow drops only the addressed trigger output", "[MidiKit][Variant][TrigPorts]") {
+	for (int engine = 0; engine < 2; engine++) {
+		std::string script = engine == 0
+			? "/**\n * @engine QuickJs@v1\n */\ntrig.setHigh(1);\ntrig.setHigh(2);\ntrig.setLow(2);\n"
+			: "--[[\n@engine minilua@v1\n--]]\ntrig.setHigh(1)\ntrig.setHigh(2)\ntrig.setLow(2)\n";
+		CATCH_INFO(script);
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		wireTrigPorts(m);
+		m->loadScript(script);
+		int64_t frame = 1;
+		pump(m, frame);
+
+		REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 0].getVoltage(0) == 10.f);
+		REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 1].getVoltage(0) == 0.f);
+	}
+}
+
+TEST_CASE("Variant: a trigger pulse on output 2 leaves output 1 quiet and ends on time", "[MidiKit][Variant][TrigPorts]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	wireTrigPorts(m);
+	m->loadScript("/**\n * @engine QuickJs@v1\n */\ntrig.setGate(2, 10);\n");
+
+	// 10 ms @ 44.1 kHz = 441 samples.
+	int high1 = 0, high2 = 0;
+	for (int i = 0; i < 1000; i++) {
+		m->process(Test::makeProcessArgs(i));
+		if (m->outputs[MultiModule::OUTPUT_TRIG + 0].getVoltage(0) > 5.f) high1++;
+		if (m->outputs[MultiModule::OUTPUT_TRIG + 1].getVoltage(0) > 5.f) high2++;
+	}
+	REQUIRE(high1 == 0);
+	REQUIRE(high2 > 400);
+	REQUIRE(high2 < 480);
+}
+
+TEST_CASE("Variant: a trigger port beyond the module's ports is rejected by both engines", "[MidiKit][Variant][TrigPorts]") {
+	// Port 3 does not exist on a 2-port module. Nothing must be armed, driven
+	// or written out of bounds.
+	const char* js[] = {
+		"trig.enableIn(3);", "trig.getTicks(3);", "trig.isHigh(3);", "trig.isLow(3);",
+		"trig.setGate(3, 10);", "trig.setHigh(3);", "trig.setLow(3);", "trig.setTrigger(3);",
+		"trig.enableIn(0);", "trig.setHigh(0);",
+	};
+	const char* lua[] = {
+		"trig.enableIn(3)", "trig.getTicks(3)", "trig.isHigh(3)", "trig.isLow(3)",
+		"trig.setGate(3, 10)", "trig.setHigh(3)", "trig.setLow(3)", "trig.setTrigger(3)",
+		"trig.enableIn(0)", "trig.setHigh(0)",
+	};
+	for (int engine = 0; engine < 2; engine++) {
+		for (size_t i = 0; i < sizeof(js) / sizeof(js[0]); i++) {
+			std::string script = engine == 0
+				? std::string("/**\n * @engine QuickJs@v1\n */\n") + js[i] + "\n"
+				: std::string("--[[\n@engine minilua@v1\n--]]\n") + lua[i] + "\n";
+			CATCH_INFO(script);
+			MultiScaffold mods;
+			MultiModule* m = mods.create();
+			wireTrigPorts(m);
+			m->loadScript(script);
+			int64_t frame = 1;
+			pump(m, frame);
+
+			for (int p = 0; p < 2; p++) {
+				REQUIRE(m->triggersIn.enabledMask[p].load() == 0);
+				REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + p].getVoltage(0) == 0.f);
+			}
+		}
+	}
+}
+
+TEST_CASE("Variant: sendTipsy always uses trigger output 1", "[MidiKit][Variant][TrigPorts][Tipsy]") {
+	for (int engine = 0; engine < 2; engine++) {
+		std::string script = engine == 0
+			? "/**\n * @engine QuickJs@v1\n */\ntrig.sendTipsy(\"Hello\");\n"
+			: "--[[\n@engine minilua@v1\n--]]\ntrig.sendTipsy(\"Hello\")\n";
+		CATCH_INFO(script);
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		wireTrigPorts(m);
+		m->loadScript(script);
+
+		int64_t frame = 1;
+		int nonZero1 = 0, nonZero2 = 0;
+		for (int i = 0; i < 400; i++) {
+			m->process(Test::makeProcessArgs(frame++));
+			if (m->outputs[MultiModule::OUTPUT_TRIG + 0].getVoltage(0) != 0.f) nonZero1++;
+			if (m->outputs[MultiModule::OUTPUT_TRIG + 1].getVoltage(0) != 0.f) nonZero2++;
+		}
+		REQUIRE(nonZero1 > 0);
+		REQUIRE(nonZero2 == 0);
+	}
+}
+
+TEST_CASE("Variant: trig.enableTipsyIn claims trigger input 1 only", "[MidiKit][Variant][TrigPorts][Tipsy]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableTipsyIn();
+trig.enableIn(1, 1);
+trig.enableIn(2, 1);
+trig.onTrigger = function(port, ch) { rack.log("T:" + port + ":" + ch); };
+trig.onTipsyMessage = function(data, mimeType) {};
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableTipsyIn()
+trig.enableIn(1, 1)
+trig.enableIn(2, 1)
+trig.onTrigger = function(port, ch) rack.log("T:" .. port .. ":" .. ch) end
+trig.onTipsyMessage = function(data, mimeType) end
+)";
+	for (const char* script : {js, lua}) {
+		CATCH_INFO(script);
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		wireTrigPorts(m);
+		m->loadScript(script);
+		probes(m);
+		REQUIRE(m->tipsyIn.claimed() == 0);
+		int64_t frame = 1;
+
+		pump(m, frame);
+		driveTrig(m, frame, 0, 0, 10.f);   // claimed: not a trigger
+		REQUIRE(logTokens(m, "T:").empty());
+		REQUIRE(m->getTrigVoltage(0, 0) == 0.f);   // reads 0 while claimed
+
+		driveTrig(m, frame, 1, 0, 10.f);   // port 2 is an ordinary trigger input
+		REQUIRE(logTokens(m, "T:") == std::vector<std::string>{"T:2:1"});
+		REQUIRE(m->getTrigVoltage(1, 0) == 10.f);
+		REQUIRE(m->getTrigTicks(1, 0) == 1);
+		REQUIRE(m->getTrigTicks(0, 0) == 0);
+	}
+}
+
+TEST_CASE("Variant: a script reload forgets trigger enables and ticks on every port", "[MidiKit][Variant][TrigPorts]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	wireTrigPorts(m);
+	m->loadScript(JS_TRIG_PORT_ROUTING);
+	int64_t frame = 1;
+	pump(m, frame);
+	driveTrig(m, frame, 0, 0, 10.f);
+	driveTrig(m, frame, 1, 0, 10.f);
+	REQUIRE(m->getTrigTicks(0, 0) == 1);
+	REQUIRE(m->getTrigTicks(1, 0) == 1);
+
+	m->loadScript(QUICKJS_EMPTY);
+	for (int p = 0; p < 2; p++) {
+		REQUIRE(m->triggersIn.enabledMask[p].load() == 0);
+		REQUIRE(m->getTrigTicks(p, 0) == 0);
+	}
+}
+
+TEST_CASE("Variant: the default MidiKit has two trigger inputs and two trigger outputs", "[MidiKit][Variant][TrigPorts]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+	m->model = modelMidiKit;
+
+	REQUIRE(m->NUM_INPUTS == 4 + 2);
+	REQUIRE(m->NUM_OUTPUTS == 2);
+	REQUIRE(MidiKitModule::INPUT_TRIG == 4);
+	REQUIRE(MidiKitModule::OUTPUT_TRIG == 0);
+	REQUIRE(m->host.seLua.inputTrigCount == 2);
+	REQUIRE(m->host.seLua.outputTrigCount == 2);
+	REQUIRE(m->host.seQuickJs.inputTrigCount == 2);
+	REQUIRE(m->host.seQuickJs.outputTrigCount == 2);
+
+	// Both trigger ports are named and reachable on the panel.
+	REQUIRE(m->inputInfos[MidiKitModule::INPUT_TRIG + 0]->name == "Trigger 1");
+	REQUIRE(m->inputInfos[MidiKitModule::INPUT_TRIG + 1]->name == "Trigger 2");
+	REQUIRE(m->outputInfos[MidiKitModule::OUTPUT_TRIG + 0]->name == "Trigger 1");
+	REQUIRE(m->outputInfos[MidiKitModule::OUTPUT_TRIG + 1]->name == "Trigger 2");
+
+	MidiKitWidget* mw = Test::createWidget<MidiKitWidget>(m);
+	REQUIRE(mw->getInputs().size() == 4 + 2);
+	REQUIRE(mw->getOutputs().size() == 2);
+	Test::destroyWidget(mw);
+}
+
+// sendAfterTrigger(msg, ticks, trigPort): the delay counts the ticks of that
+// trigger input, so only that input's clock releases the message.
+TEST_CASE("Variant: sendAfterTrigger counts the ticks of the trigger input it names", "[MidiKit][Variant][TrigPorts]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+trig.enableIn(2, 1);
+midi.onMessage = function(port, msg) { midiOut.sendAfterTrigger(msg, 2, 2); };
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableIn(1, 1)
+trig.enableIn(2, 1)
+midi.onMessage = function(port, msg) midiOut.sendAfterTrigger(msg, 2, 2) end
+)";
+	const int P2 = PORT_MAX_CHANNELS;
+	for (const char* script : {js, lua}) {
+		CATCH_INFO(script);
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		wireTrigPorts(m);
+		m->loadScript(script);
+		int64_t frame = 1;
+		pump(m, frame);   // prime both LOW
+
+		m->midiInputs[0].queue.onMessage(ccMsg(0, 7, 100));
+		pump(m, frame);
+		// Parked against trigger input 2 (port index 1), not input 1.
+		REQUIRE(m->midiOutputs[0].tickQueue[P2].size() == 1);
+		REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 0);
+
+		// Any number of ticks on trigger input 1 releases nothing.
+		for (int i = 0; i < 4; i++) {
+			driveTrig(m, frame, 0, 0, 10.f);
+			driveTrig(m, frame, 0, 0, 0.f);
+		}
+		REQUIRE(m->getTrigTicks(0, 0) == 4);
+		REQUIRE(m->midiOutputs[0].tickQueue[P2].size() == 1);
+
+		// Two ticks on trigger input 2 do.
+		driveTrig(m, frame, 1, 0, 10.f);
+		REQUIRE(m->midiOutputs[0].tickQueue[P2].size() == 1);
+		driveTrig(m, frame, 1, 0, 0.f);
+		driveTrig(m, frame, 1, 0, 10.f);
+		REQUIRE(m->midiOutputs[0].tickQueue[P2].size() == 0);
+	}
+}
+
+TEST_CASE("Variant: sendAfterTrigger on trigger input 1 is unaffected by input 2", "[MidiKit][Variant][TrigPorts]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+trig.enableIn(2, 1);
+midi.onMessage = function(port, msg) { midiOut.sendAfterTrigger(msg, 1); };
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableIn(1, 1)
+trig.enableIn(2, 1)
+midi.onMessage = function(port, msg) midiOut.sendAfterTrigger(msg, 1) end
+)";
+	for (const char* script : {js, lua}) {
+		CATCH_INFO(script);
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		wireTrigPorts(m);
+		m->loadScript(script);
+		int64_t frame = 1;
+		pump(m, frame);
+
+		m->midiInputs[0].queue.onMessage(ccMsg(0, 7, 100));
+		pump(m, frame);
+		REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 1);
+
+		driveTrig(m, frame, 1, 0, 10.f);   // input 2: not its clock
+		REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 1);
+		driveTrig(m, frame, 0, 0, 10.f);
+		REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 0);
+	}
+}
+
+// ── End-to-end: interleaved schedules on both trigger inputs ────────────────
+
+// Records what MidiOutput really sends. midi::Output::sendMessage() forwards to
+// `outputDevice`, so attaching one is enough to observe the sends without a
+// driver.
+struct RecordingOutputDevice : midi::OutputDevice {
+	std::vector<std::pair<int, int>> sent;   // (controller, value)
+	void sendMessage(const midi::Message& msg) override {
+		sent.push_back(std::make_pair(int(msg.getNote()), int(msg.getValue())));
+	}
+};
+
+// One rising edge on (port, channel), then back low so the next one is an edge.
+static void pulseTrig(MultiModule* m, int64_t& frame, int port, int ch) {
+	driveTrig(m, frame, port, ch, 10.f);
+	driveTrig(m, frame, port, ch, 0.f);
+}
+
+// The controller number selects the schedule, the value is just a payload:
+//   cc 1: 3 ticks on input 1          cc 4: 2 ticks on input 1
+//   cc 2: 1 tick  on input 2          cc 5: 2 ticks on input 2, channel 2
+//   cc 3: 3 ticks on input 2          cc 6: 2 ticks on input 1, channel 2
+static const char* JS_TRIG_SCHEDULES = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+trig.enableIn(1, 2);
+trig.enableIn(2, 1);
+trig.enableIn(2, 2);
+midi.onMessage = function(port, msg) {
+    let cc = midi.getControl(msg);
+    if (cc === 1) midiOut.sendAfterTrigger(msg, 3, 1);
+    else if (cc === 2) midiOut.sendAfterTrigger(msg, 1, 2);
+    else if (cc === 3) midiOut.sendAfterTrigger(msg, 3, 2);
+    else if (cc === 4) midiOut.sendAfterTrigger(msg, 2, 1);
+    else if (cc === 5) midiOut.sendAfterTrigger(msg, 2, 2, 2);
+    else if (cc === 6) midiOut.sendAfterTrigger(msg, 2, 1, 2);
+};
+)";
+
+static const char* LUA_TRIG_SCHEDULES = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableIn(1, 1)
+trig.enableIn(1, 2)
+trig.enableIn(2, 1)
+trig.enableIn(2, 2)
+midi.onMessage = function(port, msg)
+    local cc = midi.getControl(msg)
+    if cc == 1 then midiOut.sendAfterTrigger(msg, 3, 1)
+    elseif cc == 2 then midiOut.sendAfterTrigger(msg, 1, 2)
+    elseif cc == 3 then midiOut.sendAfterTrigger(msg, 3, 2)
+    elseif cc == 4 then midiOut.sendAfterTrigger(msg, 2, 1)
+    elseif cc == 5 then midiOut.sendAfterTrigger(msg, 2, 2, 2)
+    elseif cc == 6 then midiOut.sendAfterTrigger(msg, 2, 1, 2)
+    end
+end
+)";
+
+typedef std::vector<std::pair<int, int>> Sent;
+
+TEST_CASE("Variant: interleaved sendAfterTrigger schedules on both trigger inputs release in clock order", "[MidiKit][Variant][TrigPorts]") {
+	for (const char* script : {JS_TRIG_SCHEDULES, LUA_TRIG_SCHEDULES}) {
+		CATCH_INFO(script);
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		wireTrigPorts(m);
+		RecordingOutputDevice dev1, dev2;
+		m->midiOutputs[0].outputDevice = &dev1;
+		m->midiOutputs[1].outputDevice = &dev2;
+		m->midiOutputs[0].channel = -1;
+		m->midiOutputs[1].channel = -1;
+		m->loadScript(script);
+		int64_t frame = 1;
+		pump(m, frame);   // prime every enabled channel LOW
+
+		// Schedule all six; each value is 10x its controller.
+		for (int cc = 1; cc <= 6; cc++) m->midiInputs[0].queue.onMessage(ccMsg(0, cc, cc * 10));
+		pump(m, frame);
+		REQUIRE(dev1.sent.empty());
+
+		// Trigger inputs and channels tick in an interleaved order. Only the
+		// clock a message was scheduled on can release it, and only once that
+		// clock has counted the message's own number of ticks.
+		pulseTrig(m, frame, 1, 0);   // in 2 ch1, tick 1: cc 2 (1 tick)
+		REQUIRE(dev1.sent == Sent{{2, 20}});
+		pulseTrig(m, frame, 0, 0);   // in 1 ch1, tick 1: nothing due
+		pulseTrig(m, frame, 1, 1);   // in 2 ch2, tick 1: nothing due
+		REQUIRE(dev1.sent == Sent{{2, 20}});
+		pulseTrig(m, frame, 0, 0);   // in 1 ch1, tick 2: cc 4
+		REQUIRE(dev1.sent == Sent({{2, 20}, {4, 40}}));
+		pulseTrig(m, frame, 1, 0);   // in 2 ch1, tick 2: nothing due
+		pulseTrig(m, frame, 0, 1);   // in 1 ch2, tick 1: nothing due
+		REQUIRE(dev1.sent == Sent({{2, 20}, {4, 40}}));
+		pulseTrig(m, frame, 1, 1);   // in 2 ch2, tick 2: cc 5
+		REQUIRE(dev1.sent == Sent({{2, 20}, {4, 40}, {5, 50}}));
+		pulseTrig(m, frame, 0, 0);   // in 1 ch1, tick 3: cc 1 (cc 3 also has 3 ticks, but on input 2)
+		REQUIRE(dev1.sent == Sent({{2, 20}, {4, 40}, {5, 50}, {1, 10}}));
+		pulseTrig(m, frame, 0, 1);   // in 1 ch2, tick 2: cc 6
+		REQUIRE(dev1.sent == Sent({{2, 20}, {4, 40}, {5, 50}, {1, 10}, {6, 60}}));
+		pulseTrig(m, frame, 1, 0);   // in 2 ch1, tick 3: cc 3
+		REQUIRE(dev1.sent == Sent({{2, 20}, {4, 40}, {5, 50}, {1, 10}, {6, 60}, {3, 30}}));
+
+		// Delays count from the tick a message is scheduled at, not from zero.
+		// Input 1 ch1 is now at 3 ticks, input 2 ch1 at 3.
+		m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 11));   // input 1: due at 6
+		m->midiInputs[0].queue.onMessage(ccMsg(0, 2, 22));   // input 2: due at 4
+		pump(m, frame);
+		pulseTrig(m, frame, 0, 0);   // in 1 ch1, tick 4: not due
+		pulseTrig(m, frame, 0, 0);   // in 1 ch1, tick 5: not due
+		REQUIRE(dev1.sent.size() == 6);
+		pulseTrig(m, frame, 1, 0);   // in 2 ch1, tick 4: cc 2
+		REQUIRE(dev1.sent.size() == 7);
+		REQUIRE(dev1.sent.back() == std::make_pair(2, 22));
+		pulseTrig(m, frame, 0, 0);   // in 1 ch1, tick 6: cc 1
+		REQUIRE(dev1.sent.size() == 8);
+		REQUIRE(dev1.sent.back() == std::make_pair(1, 11));
+
+		// Everything went to the first MIDI output and nothing is left queued.
+		REQUIRE(dev2.sent.empty());
+		for (int i = 0; i < 2 * PORT_MAX_CHANNELS; i++) {
+			REQUIRE(m->midiOutputs[0].tickQueue[i].empty());
+		}
+	}
+}
+
+TEST_CASE("Variant: a script reload drops sendAfterTrigger messages pending on either trigger input", "[MidiKit][Variant][TrigPorts]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	wireTrigPorts(m);
+	RecordingOutputDevice dev;
+	m->midiOutputs[0].outputDevice = &dev;
+	m->midiOutputs[0].channel = -1;
+	m->loadScript(JS_TRIG_SCHEDULES);
+	int64_t frame = 1;
+	pump(m, frame);
+
+	m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 10));   // input 1, 3 ticks
+	m->midiInputs[0].queue.onMessage(ccMsg(0, 3, 30));   // input 2, 3 ticks
+	pump(m, frame);
+	pulseTrig(m, frame, 1, 0);
+	REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 1);
+	REQUIRE(m->midiOutputs[0].tickQueue[PORT_MAX_CHANNELS].size() == 1);
+
+	// The old script's pending messages must not fire on the new script's clocks.
+	m->loadScript(JS_TRIG_SCHEDULES);
+	pump(m, frame);
+	for (int i = 0; i < 2 * PORT_MAX_CHANNELS; i++) {
+		REQUIRE(m->midiOutputs[0].tickQueue[i].empty());
+	}
+	for (int i = 0; i < 4; i++) {
+		pulseTrig(m, frame, 0, 0);
+		pulseTrig(m, frame, 1, 0);
+	}
+	REQUIRE(dev.sent.empty());
+}
+
+TEST_CASE("Variant: a script reload keeps what the new script schedules in rack.onLoad", "[MidiKit][Variant][TrigPorts]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(2, 1);
+rack.onLoad = function() {
+    let msg = midi.create();
+    midi.setCc(msg, 1, 7, 1);
+    midiOut.sendAfterTrigger(msg, 1, 2);
+};
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableIn(2, 1)
+rack.onLoad = function()
+    local msg = midi.create()
+    midi.setCc(msg, 1, 7, 1)
+    midiOut.sendAfterTrigger(msg, 1, 2)
+end
+)";
+	for (const char* script : {js, lua}) {
+		CATCH_INFO(script);
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		wireTrigPorts(m);
+		RecordingOutputDevice dev;
+		m->midiOutputs[0].outputDevice = &dev;
+		m->midiOutputs[0].channel = -1;
+		m->loadScript(JS_TRIG_SCHEDULES);
+		int64_t frame = 1;
+		pump(m, frame);
+		m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 10));   // stale: input 1, 3 ticks
+		pump(m, frame);
+		REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 1);
+
+		m->loadScript(script);
+		pump(m, frame);
+		REQUIRE(m->midiOutputs[0].tickQueue[0].empty());
+		REQUIRE(m->midiOutputs[0].tickQueue[PORT_MAX_CHANNELS].size() == 1);
+
+		pump(m, frame);   // prime input 2 LOW
+		pulseTrig(m, frame, 1, 0);
+		REQUIRE(dev.sent == Sent{{7, 1}});
+	}
+}
+
+// A script without onUnload must not re-send its last callback's messages when
+// it is closed: the teardown flush used to find them still in the message store.
+TEST_CASE("Variant: closing a script without onUnload does not send its last messages again", "[MidiKit][Variant]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) { midiOut.send(msg); };
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(port, msg) midiOut.send(msg) end
+)";
+	for (const char* script : {js, lua}) {
+		CATCH_INFO(script);
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		RecordingOutputDevice dev;
+		m->midiOutputs[0].outputDevice = &dev;
+		m->midiOutputs[0].channel = -1;
+		m->loadScript(script);
+		int64_t frame = 1;
+		pump(m, frame);
+
+		m->midiInputs[0].queue.onMessage(ccMsg(0, 7, 100));
+		pump(m, frame);
+		REQUIRE(dev.sent == Sent{{7, 100}});
+
+		m->loadScript(QUICKJS_EMPTY);
+		pump(m, frame);
+		REQUIRE(dev.sent == Sent{{7, 100}});
+	}
 }
 
 TEST_CASE("Variant: CV inputs and params are addressed by index", "[MidiKit][Variant]") {

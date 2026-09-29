@@ -149,7 +149,7 @@ struct MidiScriptEngineHandler {
 	// point and one bounds check rather than two.
 	//
 	// Output saturation is expected, so callers treat false as normal, not an error.
-	virtual bool sendMidi(int midiPort, const Message* msgs, size_t count, uint8_t channel, uint64_t tick) = 0;
+	virtual bool sendMidi(int midiPort, const Message* msgs, size_t count, uint8_t channel, uint64_t tick, int trigPort = 0) = 0;
 
 	// Queues a Tipsy protocol message for output on the module's trigger CV.
 	// Called from the worker thread; the module encodes and emits it on the
