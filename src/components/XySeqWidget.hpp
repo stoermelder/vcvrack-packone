@@ -1,6 +1,7 @@
 #pragma once
 #include <rack.hpp>
 #include "LedTextDisplay.hpp"
+#include "XySeqGenerator.hpp"
 #include <random>
 
 
@@ -23,24 +24,7 @@ enum class XYSEQ_INTERPOLATE {
 	CUBIC = 1
 };
 
-enum class XYSEQ_PRESET {
-	CIRCLE,
-	SPIRAL,
-	SAW,
-	SINE,
-	EIGHT,
-	ROSE
-};
-
-static const int XYSEQ_LENGTH = 128;
 static const int XYSEQ_COUNT = 16;
-
-
-struct XySeqItem {
-	float x[XYSEQ_LENGTH];
-	float y[XYSEQ_LENGTH];
-	int length = 0;
-};
 
 
 template <int PORTS>
@@ -231,87 +215,6 @@ struct XySeqModule {
 			seqData[port][seqSelected[port]].y[c] = pY;
 		}
 		seqData[port][seqSelected[port]].length = l;
-	}
-
-	void seqPreset(int port, XYSEQ_PRESET preset, float x, float y, int parameter) {
-		auto _x = [x](float v) { return (v - 0.5f) * x + 0.5f; };
-		auto _y = [y](float v) { return (v - 0.5f) * y + 0.5f; };
-		
- 		switch (preset) {
-			case XYSEQ_PRESET::CIRCLE: {
-				seqData[port][seqSelected[port]].length = 0;
-				int l = XYSEQ_LENGTH / 4;
-				float p = 2.f * M_PI / (l - 1);
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(sin(i * p) / 2.f + 0.5f);
-					seqData[port][seqSelected[port]].y[i] = _y(cos(i * p) / 2.f + 0.5f);
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-			case XYSEQ_PRESET::SPIRAL: {
-				auto _s = [](float v, float s) { return (v - 0.5f) * s + 0.5f; };
-				seqData[port][seqSelected[port]].length = 0;
-				int l = XYSEQ_LENGTH;
-				float p = parameter * 2.f * M_PI / (l - 1);
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(_s(sin(i * p) / 2.f + 0.5f, 1.f / l * i));
-					seqData[port][seqSelected[port]].y[i] = _y(_s(cos(i * p) / 2.f + 0.5f, 1.f / l * i));
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-			case XYSEQ_PRESET::SAW: {
-				seqData[port][seqSelected[port]].length = 0;
-				seqData[port][seqSelected[port]].x[0] = _x(0.f);
-				seqData[port][seqSelected[port]].y[0] = _y(1.f);
-				int c = parameter;
-				for (int i = 0; i < c; i++) {
-					seqData[port][seqSelected[port]].x[i + 1] = _x(1.f / (c + 1) * (i + 1));
-					seqData[port][seqSelected[port]].y[i + 1] = _y(i % 2);
-				}
-				seqData[port][seqSelected[port]].x[c + 1] = _x(1.f);
-				seqData[port][seqSelected[port]].y[c + 1] = _y(0.f);
-				seqData[port][seqSelected[port]].length = c + 2;
-				break;
-			}
-			case XYSEQ_PRESET::SINE: {
-				seqData[port][seqSelected[port]].length = 0;
-				int l = XYSEQ_LENGTH;
-				float p = parameter * 2.f * M_PI / (l - 1);
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(1.f / l * i);
-					seqData[port][seqSelected[port]].y[i] = _y(sin(i * p) / 2.f + 0.5f);
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-			case XYSEQ_PRESET::EIGHT: {
-				auto _s = [](float v, float s) { return v / s + 0.5f; };
-				seqData[port][seqSelected[port]].length = 0;
-				int l = XYSEQ_LENGTH / 2.f;
-				float p = 2.f * M_PI / (l - 1);
-				float o = - M_PI / 2.f;
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(_s(std::cos(i * p + o), 2.f));
-					seqData[port][seqSelected[port]].y[i] = _y(_s(std::cos(i * p + o) * std::sin(i * p + o), 1.f));
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-			case XYSEQ_PRESET::ROSE: {
-				auto _s = [](float v) { return v / 2.f + 0.5f; };
-				seqData[port][seqSelected[port]].length = 0;
-				int l = XYSEQ_LENGTH;
-				float p = (parameter % 2 == 1 ? 2.f : 1.f) * 2.f * M_PI / (l - 1);
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(_s(std::cos(parameter / 2.f * i * p) * std::cos(i * p)));
-					seqData[port][seqSelected[port]].y[i] = _y(_s(std::cos(parameter / 2.f * i * p) * std::sin(i * p)));
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-		}
 	}
 
 	void seqRotate(int port, float angle) {
@@ -532,198 +435,13 @@ struct XySeqTriggerMenuItem : MenuItem {
 };
 
 template <typename MODULE>
-ui::MenuItem* XySeqPresetMenuItem(MODULE* module) {
-	struct XySeqPresetMenuItem_ : MenuItem {
-		MODULE* module;
-
-		float x = 1.0f;
-		float y = 1.0f;
-		int parameter = 6;
-
-		XySeqPresetMenuItem_(MODULE* module) {
-			this->module = module;
-			text = "Preset";
-			rightText = RIGHT_ARROW;
-		}
-
-		struct XSlider : ui::Slider {
-			struct XQuantity : Quantity {
-				XySeqPresetMenuItem_* item;
-
-				XQuantity(XySeqPresetMenuItem_* item) {
-					this->item = item;
-				}
-				void setValue(float value) override {
-					item->x = math::clamp(value, 0.f, 1.f);
-				}
-				float getValue() override {
-					return item->x;
-				}
-				float getDefaultValue() override {
-					return 0.5;
-				}
-				float getDisplayValue() override {
-					return getValue() * 100;
-				}
-				void setDisplayValue(float displayValue) override {
-					setValue(displayValue / 100);
-				}
-				std::string getLabel() override {
-					return "Scale x";
-				}
-				std::string getUnit() override {
-					return "%";
-				}
-			};
-
-			XSlider(XySeqPresetMenuItem_* item) {
-				quantity = new XQuantity(item);
-			}
-			~XSlider() {
-				delete quantity;
-			}
-		};
-
-		struct YSlider : ui::Slider {
-			struct YQuantity : Quantity {
-				XySeqPresetMenuItem_* item;
-
-				YQuantity(XySeqPresetMenuItem_* item) {
-					this->item = item;
-				}
-				void setValue(float value) override {
-					item->y = math::clamp(value, 0.f, 1.f);
-				}
-				float getValue() override {
-					return item->y;
-				}
-				float getDefaultValue() override {
-					return 0.5;
-				}
-				float getDisplayValue() override {
-					return getValue() * 100;
-				}
-				void setDisplayValue(float displayValue) override {
-					setValue(displayValue / 100);
-				}
-				std::string getLabel() override {
-					return "Scale y";
-				}
-				std::string getUnit() override {
-					return "%";
-				}
-			};
-
-			YSlider(XySeqPresetMenuItem_* item) {
-				quantity = new YQuantity(item);
-			}
-			~YSlider() {
-				delete quantity;
-			}
-		};
-
-		struct ParameterSlider : ui::Slider {
-			struct ParameterQuantity : Quantity {
-				XySeqPresetMenuItem_* item;
-				float v = -1.f;
-
-				ParameterQuantity(XySeqPresetMenuItem_* item) {
-					this->item = item;
-				}
-				void setValue(float value) override {
-					v = clamp(value, 2.f, 12.f);
-					item->parameter = int(v);
-				}
-				float getValue() override {
-					if (v < 0.f) v = item->parameter;
-					return v;
-				}
-				float getDefaultValue() override {
-					return 6.f;
-				}
-				float getMinValue() override {
-					return 2.f;
-				}
-				float getMaxValue() override {
-					return 12.f;
-				}
-				float getDisplayValue() override {
-					return getValue();
-				}
-				std::string getDisplayValueString() override {
-					int i = int(getValue());
-					return string::f("%i", i);
-				}
-				void setDisplayValue(float displayValue) override {
-					setValue(displayValue);
-				}
-				std::string getLabel() override {
-					return "Parameter";
-				}
-				std::string getUnit() override {
-					return "";
-				}
-			};
-
-			ParameterSlider(XySeqPresetMenuItem_* item) {
-				quantity = new ParameterQuantity(item);
-			}
-			~ParameterSlider() {
-				delete quantity;
-			}
-			void onDragMove(const event::DragMove& e) override {
-				if (quantity) {
-					quantity->moveScaledValue(0.002f * e.mouseDelta.x);
-				}
-			}
-		};
-
-		Menu* createChildMenu() override {
-			Menu* menu = new Menu;
-
-			auto h = [=](XYSEQ_PRESET preset) {
-				XySeqChangeAction<MODULE>* h = new XySeqChangeAction<MODULE>;
-				h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
-				h->name += " preset";
-				module->seqPreset(module->seqEdit, preset, this->x, this->y, this->parameter);
-				h->setNew(module);
-				APP->history->push(h);
-			};
-
-			menu->addChild(createMenuItem("Circle", "", [=] { h(XYSEQ_PRESET::CIRCLE); }));
-			menu->addChild(createMenuItem("Spiral", "", [=] { h(XYSEQ_PRESET::SPIRAL); }));
-			menu->addChild(createMenuItem("Saw", "", [=] { h(XYSEQ_PRESET::SAW); }));
-			menu->addChild(createMenuItem("Sine", "", [=] { h(XYSEQ_PRESET::SINE); }));
-			menu->addChild(createMenuItem("Eight", "", [=] { h(XYSEQ_PRESET::EIGHT); }));
-			menu->addChild(createMenuItem("Rose", "", [=] { h(XYSEQ_PRESET::ROSE); }));
-
-			XSlider* xSlider = new XSlider(this);
-			xSlider->box.size.x = 120.0f;
-			menu->addChild(xSlider);
-
-			YSlider* ySlider = new YSlider(this);
-			ySlider->box.size.x = 120.0f;
-			menu->addChild(ySlider);
-
-			ParameterSlider* parameterSlider = new ParameterSlider(this);
-			parameterSlider->box.size.x = 120.0f;
-			menu->addChild(parameterSlider);
-
-			return menu;
-		}
-	};
-
-	return new XySeqPresetMenuItem_(module);
-}
-
-
-template <typename MODULE>
 struct XySeqEditDragWidget : OpaqueWidget {
-	const float radius = 8.f;
-	const float fontsize = 13.0f;
+	const float radius = 5.f;
 
 	MODULE* module;
-	NVGcolor color = color::RED;
+	// Same amber as XySeqLedDisplay's active state -- both mark "recording
+	// this motion sequence" and should read as the same color.
+	NVGcolor color = nvgRGB(0xff, 0xa5, 0x28);
 	int id = -1;
 	int seq = -1;
 
@@ -773,23 +491,35 @@ struct XySeqEditDragWidget : OpaqueWidget {
 		if (layer == 1 && id >= 0) {
 			Vec c = Vec(box.size.x / 2.f, box.size.y / 2.f);
 
+			// Glow halo, drawn first so the opaque disc and circle below
+			// sit on top of it.
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+			float oradius = 2.2f * radius;
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, c.x - oradius, c.y - oradius, 2.f * oradius, 2.f * oradius);
+			NVGpaint paint = nvgRadialGradient(args.vg, c.x, c.y, radius * 0.5f, oradius, color::mult(color, 0.35f), nvgRGBA(0, 0, 0, 0));
+			nvgFillPaint(args.vg, paint);
+			nvgFill(args.vg);
+
+			// Opaque backing disc (normal blend) so the node covers the
+			// raw automation line's end instead of the additive fill
+			// below just tinting it, leaving the line visible through.
+			nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+			nvgBeginPath(args.vg);
+			nvgCircle(args.vg, c.x, c.y, radius);
+			nvgFillColor(args.vg, nvgRGB(0x12, 0x12, 0x12));
+			nvgFill(args.vg);
 
 			// Draw circle
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 			nvgBeginPath(args.vg);
 			nvgCircle(args.vg, c.x, c.y, radius);
 			nvgStrokeColor(args.vg, color);
 			nvgStrokeWidth(args.vg, 1.f);
 			nvgStroke(args.vg);
-			nvgFillColor(args.vg, color::mult(color, 0.5f));
+			nvgFillColor(args.vg, color::mult(color, 0.3f));
 			nvgFill(args.vg);
-
-			// Draw label
-			std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-			nvgFontSize(args.vg, fontsize);
-			nvgFontFaceId(args.vg, font->handle);
-			nvgFillColor(args.vg, color);
-			nvgTextBox(args.vg, c.x - 3.f, c.y + 4.f, 120, string::f("%i", id + 1).c_str(), NULL);
+			nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
 		}
 		OpaqueWidget::drawLayer(args, layer);
 	}
@@ -822,6 +552,7 @@ struct XySeqEditDragWidget : OpaqueWidget {
 
 		dragPos = APP->scene->rack->getMousePos().minus(box.pos);
 		timerClear = true;
+		index = 0;
 		module->seqData[id][seq].length = 0;
 
 		// history
@@ -931,9 +662,10 @@ struct XySeqEditWidget : OpaqueWidget {
 				nvgFillColor(args.vg, c);
 				nvgTextBox(args.vg, box.size.x - 78.f, box.size.y - 6.f, 120, "SEQ-EDIT", NULL);
 
-				OpaqueWidget::drawLayer(args, layer);
-
-				// Draw raw automation line
+				// Draw raw automation line first so the recording node
+				// (drawn after, via OpaqueWidget::drawLayer below) sits on
+				// top and caps the line's end instead of the line cutting
+				// straight across it.
 				XySeqItem* s = &module->seqData[lastSeqId][lastSeqSelected];
 				if (s->length > 1) {
 					float sizeX = box.size.x - recWidget->box.size.x;
@@ -955,6 +687,8 @@ struct XySeqEditWidget : OpaqueWidget {
 					nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 					nvgStroke(args.vg);
 				}
+
+				OpaqueWidget::drawLayer(args, layer);
 			}
 
 			if (module->seqEdit < 0 && module->seqPreview >= 0) {
@@ -1003,7 +737,7 @@ struct XySeqEditWidget : OpaqueWidget {
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
 
-		auto h = [=](const char* suffix, std::function<void()> action) {
+		auto undoWrap = [=](const char* suffix, std::function<void()> action) {
 			XySeqChangeAction<MODULE>* h = new XySeqChangeAction<MODULE>;
 			h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
 			h->name += " " + std::string(suffix);
@@ -1019,17 +753,19 @@ struct XySeqEditWidget : OpaqueWidget {
 		menu->addChild(new XySeqInterpolateMenuItem<MODULE>(module, module->seqEdit));
 		menu->addChild(new XySeqTriggerMenuItem<MODULE>(module, module->seqEdit));
 		menu->addChild(construct<MenuSeparator>());
-		menu->addChild(createMenuItem("Clear", "", [=] { h("clear", [=] { module->seqClear(module->seqEdit); }); }));
-		menu->addChild(createMenuItem("Flip horizontally", "", [=] { h("flip horizontally", [=] { module->seqFlipHorizontally(module->seqEdit); }); }));
-		menu->addChild(createMenuItem("Flip vertically", "", [=] { h("flip vertically", [=] { module->seqFlipVertically(module->seqEdit); }); }));
-		menu->addChild(createMenuItem("Rotate 45 degrees", "", [=] { h("rotate", [=] { module->seqRotate(module->seqEdit, M_PI / 4.f); }); }));
-		menu->addChild(createMenuItem("Rotate 90 degrees", "", [=] { h("rotate", [=] { module->seqRotate(module->seqEdit, M_PI / 2.f); }); }));
+		menu->addChild(createMenuItem("Clear", "", [=] { undoWrap("clear", [=] { module->seqClear(module->seqEdit); }); }));
+		menu->addChild(createMenuItem("Flip horizontally", "", [=] { undoWrap("flip horizontally", [=] { module->seqFlipHorizontally(module->seqEdit); }); }));
+		menu->addChild(createMenuItem("Flip vertically", "", [=] { undoWrap("flip vertically", [=] { module->seqFlipVertically(module->seqEdit); }); }));
+		menu->addChild(createMenuItem("Rotate 45 degrees", "", [=] { undoWrap("rotate", [=] { module->seqRotate(module->seqEdit, M_PI / 4.f); }); }));
+		menu->addChild(createMenuItem("Rotate 90 degrees", "", [=] { undoWrap("rotate", [=] { module->seqRotate(module->seqEdit, M_PI / 2.f); }); }));
 		menu->addChild(construct<MenuSeparator>());
-		menu->addChild(createMenuItem("Random motion", "", [=] { h("randomize", [=] { module->seqRandomize(module->seqEdit); }); }));
-		menu->addChild(XySeqPresetMenuItem(module));
+		menu->addChild(createMenuItem("Random motion", "", [=] { undoWrap("randomize", [=] { module->seqRandomize(module->seqEdit); }); }));
+		menu->addChild(xySeqPresetMenuItem([=](const XySeqItem& seqItem) {
+			undoWrap("preset", [=] { module->seqData[module->seqEdit][module->seqSelected[module->seqEdit]] = seqItem; });
+		}));
 		menu->addChild(construct<MenuSeparator>());
 		menu->addChild(createMenuItem("Copy", "", [=] { XySeqEditWidget::module->seqCopy(module->seqEdit); }));
-		menu->addChild(createMenuItem("Paste", "", [=] { h("paste", [=] { module->seqPaste(module->seqEdit); }); }));
+		menu->addChild(createMenuItem("Paste", "", [=] { undoWrap("paste", [=] { module->seqPaste(module->seqEdit); }); }));
 	}
 };
 
@@ -1046,7 +782,9 @@ struct XySeqLedDisplay : StoermelderLedDisplay {
 	void step() override {
 		if (module) {
 			text = module->seqPortHidden(id) ? "" : string::f("%02d", module->seqSelected[id] + 1);
-			color = module->seqEdit == id ? color::RED : nvgRGB(0xf0, 0xf0, 0xf0);
+			// A warm amber instead of pure red keeps the halo below from
+			// reading as a harsh red-on-red glare.
+			color = module->seqEdit == id ? nvgRGB(0xff, 0xa5, 0x28) : nvgRGB(0xf0, 0xf0, 0xf0);
 		}
 		else {
 			text = "00";
@@ -1072,26 +810,34 @@ struct XySeqLedDisplay : StoermelderLedDisplay {
 		StoermelderLedDisplay::onButton(e);
 	}
 
-	void draw(const DrawArgs& args) override {
-		StoermelderLedDisplay::draw(args);
-		if (module && module->seqEdit == id) {
-			drawRedHalo(args);
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer == 1 && module && module->seqEdit == id) {
+			drawAmberHalo(args);
 		}
+		StoermelderLedDisplay::drawLayer(args, layer);
 	}
 
-	void drawRedHalo(const DrawArgs& args) {
-		float radiusX = box.size.x / 2.f;
-		float radiusY = box.size.y / 2.f;
-		float oradiusX = 2.f * radiusX;
-		float oradiusY = 2.f * radiusY;
-		nvgBeginPath(args.vg);
-		nvgRect(args.vg, radiusX - oradiusX, radiusY - oradiusY, 2.f * oradiusX, 2.f * oradiusY);
+	void drawAmberHalo(const DrawArgs& args) {
+		// A box gradient (not a radial one) so the glow follows this
+		// display's own rectangular aspect ratio instead of a circle
+		// squeezed/off-center inside it. The gradient's own box is the
+		// display's bounds -- feather is how far it fades out beyond that,
+		// not an extra offset added to the fill rect.
+		float feather = box.size.y * 1.5f;
+		float pad = 2.f * feather;
+		float x = -pad;
+		float y = -pad;
+		float w = box.size.x + 2.f * pad;
+		float h = box.size.y + 2.f * pad;
 
 		NVGpaint paint;
-		NVGcolor icol = color::mult(color, 0.65f);
-		NVGcolor ocol = nvgRGB(0.f, 0.f, 0.f);
+		NVGcolor icol = color::mult(color, 0.3f);
+		NVGcolor ocol = nvgRGBA(0, 0, 0, 0);
 
-		paint = nvgRadialGradient(args.vg, radiusX, radiusY, 0.2f, oradiusY, icol, ocol);
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, x, y, w, h);
+
+		paint = nvgBoxGradient(args.vg, 0.f, 0.f, box.size.x, box.size.y, box.size.y / 2.f, feather, icol, ocol);
 		nvgFillPaint(args.vg, paint);
 		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 		nvgFill(args.vg);

@@ -156,8 +156,8 @@ TEST_CASE("KeyCombo::matches distinguishes Shift+M from bare M", "[Keymap]") {
 TEST_CASE("first use with no file writes registered defaults to disk", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
-	km->registerAction("a.two", "Two", "Group", "Ctrl+Z");
+	km->registerAction("a.one", "One", "Context", "1");
+	km->registerAction("a.two", "Two", "Context", "Ctrl+Z");
 	km->save();
 
 	std::string path = Keymaps::pathFor(SLUG);
@@ -166,7 +166,7 @@ TEST_CASE("first use with no file writes registered defaults to disk", "[Keymap]
 	std::string data;
 	REQUIRE(f.mock.fs.read(path, data));
 	std::string error;
-	json_t* root = vcv::parseJson(data, error);
+	json_t* root = vcv::parseJson(stripLineComments(data), error);
 	REQUIRE(root != nullptr);
 	json_t* bindingsJ = json_object_get(root, "bindings");
 	REQUIRE(bindingsJ != nullptr);
@@ -175,13 +175,80 @@ TEST_CASE("first use with no file writes registered defaults to disk", "[Keymap]
 	json_decref(root);
 }
 
+TEST_CASE("the written file has a description comment above every binding", "[Keymap]") {
+	Fixture f;
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.one", "One", "Context", "1");
+	km->registerAction("a.none", "None", "Other");
+	km->save();
+
+	std::string data;
+	REQUIRE(f.mock.fs.read(Keymaps::pathFor(SLUG), data));
+	CHECK(data.find("// One (Context)\n    \"a.one\": \"1\"") != std::string::npos);
+	CHECK(data.find("// None (Other)\n    \"a.none\": null") != std::string::npos);
+}
+
+TEST_CASE("keymap files live at <slug>.jsonc", "[Keymap]") {
+	Fixture f;
+	std::string path = Keymaps::pathFor(SLUG);
+	CHECK(path.substr(path.size() - 6) == ".jsonc");
+}
+
+TEST_CASE("a hand-written file with comments is honoured", "[Keymap]") {
+	Fixture f;
+	f.mock.fs.files[Keymaps::pathFor(SLUG)] =
+		"{\n"
+		"  // a comment in the header\n"
+		"  \"slug\": \"TestModule\",\n"
+		"  \"version\": 1,\n"
+		"  \"bindings\": {\n"
+		"    // One (Context)\n"
+		"    \"a.one\": \"Q\" // trailing comment\n"
+		"  }\n"
+		"}\n";
+
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.one", "One", "Context", "1");
+	km->save();
+
+	CHECK(km->lookup(GLFW_KEY_Q, 0, GLFW_PRESS) == "a.one");
+	CHECK(f.mock.fs.writes.empty());
+}
+
+TEST_CASE("stripLineComments leaves slashes inside strings alone", "[Keymap]") {
+	CHECK(stripLineComments("{\"a//b\": \"c\"} // gone\n") == "{\"a//b\": \"c\"} \n");
+	CHECK(stripLineComments("\"esc\\\" // still string\"\n") == "\"esc\\\" // still string\"\n");
+	CHECK(stripLineComments("// only a comment") == "");
+	CHECK(stripLineComments("a\n// x\nb") == "a\n\nb");
+}
+
+TEST_CASE("an unregistered id is written back with its own comment and stays loadable", "[Keymap]") {
+	Fixture f;
+	std::string path = Keymaps::pathFor(SLUG);
+	f.mock.fs.files[path] = R"({"slug":"TestModule","version":1,"bindings":{"a.ghost":["G","H"]}})";
+
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.one", "One", "Context", "1");   // forces a rewrite
+	km->save();
+
+	std::string data;
+	REQUIRE(f.mock.fs.read(path, data));
+	CHECK(data.find("\"a.ghost\": [\"G\",\"H\"]") != std::string::npos);
+
+	Keymaps::resetForTest();
+	auto again = Keymaps::open(SLUG);
+	again->registerAction("a.one", "One", "Context", "1");
+	again->save();
+	CHECK(f.mock.fs.writes.size() == 1);
+}
+
 TEST_CASE("a pre-seeded file with a non-default binding is honoured and not rewritten", "[Keymap]") {
 	Fixture f;
 	std::string path = Keymaps::pathFor(SLUG);
 	f.mock.fs.files[path] = R"({"slug":"TestModule","version":1,"bindings":{"a.one":"Q"}})";
 
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.one", "One", "Context", "1");
 	km->save();
 
 	CHECK(km->lookup(GLFW_KEY_Q, 0, GLFW_PRESS) == "a.one");
@@ -195,7 +262,7 @@ TEST_CASE("a pre-seeded file with a non-default binding is honoured and not rewr
 TEST_CASE("the no-default overload leaves an action unmapped", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group");
+	km->registerAction("a.one", "One", "Context");
 	km->save();
 
 	CHECK(km->has("a.one"));
@@ -209,7 +276,7 @@ TEST_CASE("a no-default action already recorded null in the file is not rewritte
 	f.mock.fs.files[path] = R"({"slug":"TestModule","version":1,"bindings":{"a.none":null}})";
 
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.none", "None", "Group");
+	km->registerAction("a.none", "None", "Context");
 	km->save();
 
 	CHECK(km->shortcutText("a.none") == "");
@@ -219,15 +286,15 @@ TEST_CASE("a no-default action already recorded null in the file is not rewritte
 TEST_CASE("a no-default action is written as a null binding", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");   // forces a rewrite so save() runs
-	km->registerAction("a.none", "None", "Group");
+	km->registerAction("a.one", "One", "Context", "1");   // forces a rewrite so save() runs
+	km->registerAction("a.none", "None", "Context");
 	km->save();
 
 	std::string path = Keymaps::pathFor(SLUG);
 	std::string data;
 	REQUIRE(f.mock.fs.read(path, data));
 	std::string error;
-	json_t* root = vcv::parseJson(data, error);
+	json_t* root = vcv::parseJson(stripLineComments(data), error);
 	REQUIRE(root != nullptr);
 	json_t* bindingsJ = json_object_get(root, "bindings");
 	json_t* noneJ = json_object_get(bindingsJ, "a.none");
@@ -239,7 +306,7 @@ TEST_CASE("a no-default action is written as a null binding", "[Keymap]") {
 TEST_CASE("a no-default action can still be bound by the user and reset back to unmapped", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.none", "None", "Group");
+	km->registerAction("a.none", "None", "Context");
 
 	km->bind("a.none", KeyCombo("Q"));
 	CHECK(km->lookup(GLFW_KEY_Q, 0, GLFW_PRESS) == "a.none");
@@ -256,19 +323,19 @@ TEST_CASE("a no-default action can still be bound by the user and reset back to 
 TEST_CASE("re-registering a no-default action is idempotent and does not assert", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.none", "None", "Group");
+	km->registerAction("a.none", "None", "Context");
 	km->bind("a.none", KeyCombo("Q"));
 
 	// Second widget re-registers the same vocabulary; must not reset the user's binding or trip
 	// the disagreement assert in registerAction().
-	km->registerAction("a.none", "None", "Group");
+	km->registerAction("a.none", "None", "Context");
 	CHECK(km->lookup(GLFW_KEY_Q, 0, GLFW_PRESS) == "a.none");
 }
 
 TEST_CASE("reload() preserves a no-default action instead of dropping it", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.none", "None", "Group");
+	km->registerAction("a.none", "None", "Context");
 	CHECK(km->has("a.none"));
 
 	Keymaps::reload(SLUG);
@@ -284,7 +351,7 @@ TEST_CASE("reload() preserves a no-default action instead of dropping it", "[Key
 TEST_CASE("a second open() for the same slug returns the same instance", "[Keymap]") {
 	Fixture f;
 	auto km1 = Keymaps::open(SLUG);
-	km1->registerAction("a.one", "One", "Group", "1");
+	km1->registerAction("a.one", "One", "Context", "1");
 	auto km2 = Keymaps::open(SLUG);
 	CHECK(km1 == km2);
 }
@@ -292,11 +359,11 @@ TEST_CASE("a second open() for the same slug returns the same instance", "[Keyma
 TEST_CASE("re-registration after a rebind does not reset the changed binding", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.one", "One", "Context", "1");
 	km->bind("a.one", KeyCombo("Q"));
 
 	// Second widget re-registers the same vocabulary.
-	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.one", "One", "Context", "1");
 
 	CHECK(km->lookup(GLFW_KEY_Q, 0, GLFW_PRESS) == "a.one");
 	CHECK(km->lookup(GLFW_KEY_1, 0, GLFW_PRESS) == "");
@@ -311,8 +378,8 @@ TEST_CASE("an id newly added to the vocabulary takes its default and the file is
 	f.mock.fs.files[path] = R"({"slug":"TestModule","version":1,"bindings":{"a.one":"Q"}})";
 
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
-	km->registerAction("a.two", "Two", "Group", "2");   // new since the file was written
+	km->registerAction("a.one", "One", "Context", "1");
+	km->registerAction("a.two", "Two", "Context", "2");   // new since the file was written
 	km->save();
 
 	CHECK(km->lookup(GLFW_KEY_2, 0, GLFW_PRESS) == "a.two");
@@ -325,7 +392,7 @@ TEST_CASE("a null binding in the file stays unbound and triggers no rewrite", "[
 	f.mock.fs.files[path] = R"({"slug":"TestModule","version":1,"bindings":{"a.one":null}})";
 
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.one", "One", "Context", "1");
 	km->save();
 
 	CHECK(km->lookup(GLFW_KEY_1, 0, GLFW_PRESS) == "");
@@ -339,14 +406,14 @@ TEST_CASE("an id nobody registers is preserved verbatim across a write", "[Keyma
 	f.mock.fs.files[path] = R"({"slug":"TestModule","version":1,"bindings":{"a.one":"Q","a.ghost":"G"}})";
 
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
-	km->registerAction("a.new", "New", "Group", "N");   // forces a rewrite
+	km->registerAction("a.one", "One", "Context", "1");
+	km->registerAction("a.new", "New", "Context", "N");   // forces a rewrite
 	km->save();
 
 	std::string data;
 	REQUIRE(f.mock.fs.read(path, data));
 	std::string error;
-	json_t* root = vcv::parseJson(data, error);
+	json_t* root = vcv::parseJson(stripLineComments(data), error);
 	REQUIRE(root != nullptr);
 	json_t* bindingsJ = json_object_get(root, "bindings");
 	json_t* ghostJ = json_object_get(bindingsJ, "a.ghost");
@@ -364,7 +431,7 @@ TEST_CASE("a corrupt file falls back to defaults in memory and is left untouched
 	f.mock.fs.files[path] = "{ not json";
 
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.one", "One", "Context", "1");
 	km->save();
 
 	CHECK(km->lookup(GLFW_KEY_1, 0, GLFW_PRESS) == "a.one");
@@ -378,7 +445,7 @@ TEST_CASE("a read-only filesystem still yields a usable keymap", "[Keymap]") {
 	f.mock.fs.denyWrites = true;
 
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.one", "One", "Context", "1");
 	km->save();   // should not throw/crash despite write() returning false
 
 	CHECK(km->lookup(GLFW_KEY_1, 0, GLFW_PRESS) == "a.one");
@@ -390,8 +457,8 @@ TEST_CASE("a read-only filesystem still yields a usable keymap", "[Keymap]") {
 TEST_CASE("conflictsFor finds the shadowed action and lookup favours registration order", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "Q");
-	km->registerAction("a.two", "Two", "Group", "W");
+	km->registerAction("a.one", "One", "Context", "Q");
+	km->registerAction("a.two", "Two", "Context", "W");
 	km->bind("a.two", KeyCombo("Q"));   // now shadows a.one
 
 	auto conflicts = km->conflictsFor(KeyCombo("Q"), "a.two");
@@ -402,10 +469,42 @@ TEST_CASE("conflictsFor finds the shadowed action and lookup favours registratio
 	CHECK(km->lookup(GLFW_KEY_Q, 0, GLFW_PRESS) == "a.one");
 }
 
+TEST_CASE("lookup restricted to contexts ignores actions in other contexts", "[Keymap]") {
+	Fixture f;
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.first",  "First",  "ContextA", "Ctrl+F");
+	km->registerAction("b.second", "Second", "ContextB", "Ctrl+F");
+
+	// Unfiltered: first registration wins, as before.
+	CHECK(km->lookup(GLFW_KEY_F, RACK_MOD_CTRL, GLFW_PRESS) == "a.first");
+	CHECK(km->lookup(GLFW_KEY_F, RACK_MOD_CTRL, GLFW_PRESS, {"ContextB"}) == "b.second");
+	CHECK(km->lookup(GLFW_KEY_F, RACK_MOD_CTRL, GLFW_PRESS, {"ContextA"}) == "a.first");
+	CHECK(km->lookup(GLFW_KEY_F, RACK_MOD_CTRL, GLFW_PRESS, {"ContextC"}) == "");
+	CHECK(km->lookup(GLFW_KEY_F, RACK_MOD_CTRL, GLFW_PRESS, {"ContextC", "ContextB"}) == "b.second");
+}
+
+TEST_CASE("handlers restricted to a context do not see a same-key action from another context", "[Keymap]") {
+	Fixture f;
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.first",  "First",  "ContextA", "Ctrl+F");
+	km->registerAction("b.second", "Second", "ContextB", "Ctrl+F");
+
+	int a = 0, b = 0;
+	KeymapHandlers inA(km, {"ContextA"});
+	KeymapHandlers inB(km, {"ContextB"});
+	inA.on("a.first", [&]{ a++; });
+	inB.on("b.second", [&]{ b++; });
+
+	CHECK(inB.dispatch(GLFW_KEY_F, RACK_MOD_CTRL, GLFW_PRESS));
+	CHECK((a == 0 && b == 1));
+	CHECK(inA.dispatch(GLFW_KEY_F, RACK_MOD_CTRL, GLFW_PRESS));
+	CHECK((a == 1 && b == 1));
+}
+
 TEST_CASE("resetAction and resetToDefaults restore and mark the file for rewrite", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.one", "One", "Context", "1");
 	km->save();
 	f.mock.fs.writes.clear();
 
@@ -424,7 +523,7 @@ TEST_CASE("resetAction and resetToDefaults restore and mark the file for rewrite
 TEST_CASE("save() is idempotent: two calls with no change in between write once", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.one", "One", "Context", "1");
 	km->save();
 	km->save();
 	CHECK(f.mock.fs.writes.size() == 1);
@@ -436,7 +535,7 @@ TEST_CASE("save() on a keymap loaded clean from an existing file does not write"
 	f.mock.fs.files[path] = R"({"slug":"TestModule","version":1,"bindings":{"a.one":"1"}})";
 
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.one", "One", "Context", "1");
 	km->save();
 	CHECK(f.mock.fs.writes.empty());
 }
@@ -447,7 +546,7 @@ TEST_CASE("save() on a keymap loaded clean from an existing file does not write"
 TEST_CASE("a GLFW_PRESS-only action does not fire on repeat", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");   // default trigger: GLFW_PRESS
+	km->registerAction("a.one", "One", "Context", "1");   // default trigger: GLFW_PRESS
 	CHECK(km->lookup(GLFW_KEY_1, 0, GLFW_PRESS) == "a.one");
 	CHECK(km->lookup(GLFW_KEY_1, 0, GLFW_REPEAT) == "");
 }
@@ -455,7 +554,7 @@ TEST_CASE("a GLFW_PRESS-only action does not fire on repeat", "[Keymap]") {
 TEST_CASE("a GLFW_REPEAT action matches both press and repeat", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("cursor.up", "Up", "Group", "Up", GLFW_REPEAT);
+	km->registerAction("cursor.up", "Up", "Context", "Up", GLFW_REPEAT);
 	CHECK(km->lookup(GLFW_KEY_UP, 0, GLFW_PRESS) == "cursor.up");
 	CHECK(km->lookup(GLFW_KEY_UP, 0, GLFW_REPEAT) == "cursor.up");
 }
@@ -463,7 +562,7 @@ TEST_CASE("a GLFW_REPEAT action matches both press and repeat", "[Keymap]") {
 TEST_CASE("GLFW_RELEASE never matches anything", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("cursor.up", "Up", "Group", "Up", GLFW_REPEAT);
+	km->registerAction("cursor.up", "Up", "Context", "Up", GLFW_REPEAT);
 	CHECK(km->lookup(GLFW_KEY_UP, 0, GLFW_RELEASE) == "");
 }
 
@@ -479,8 +578,8 @@ TEST_CASE("RACK_HELD never matches anything, even a GLFW_REPEAT action", "[Keyma
 	// GLFW_REPEAT ones alike.
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");                    // GLFW_PRESS trigger
-	km->registerAction("cursor.up", "Up", "Group", "Up", GLFW_REPEAT);   // GLFW_REPEAT trigger
+	km->registerAction("a.one", "One", "Context", "1");                    // GLFW_PRESS trigger
+	km->registerAction("cursor.up", "Up", "Context", "Up", GLFW_REPEAT);   // GLFW_REPEAT trigger
 
 	CHECK(km->lookup(GLFW_KEY_1, 0, RACK_HELD) == "");
 	CHECK(km->lookup(GLFW_KEY_UP, 0, RACK_HELD) == "");
@@ -492,7 +591,7 @@ TEST_CASE("RACK_HELD never matches anything, even a GLFW_REPEAT action", "[Keyma
 TEST_CASE("reload() picks up a hand-edit without invalidating existing shared_ptrs", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.one", "One", "Context", "1");
 	CHECK(km->lookup(GLFW_KEY_1, 0, GLFW_PRESS) == "a.one");
 
 	std::string path = Keymaps::pathFor(SLUG);
@@ -510,7 +609,7 @@ TEST_CASE("reload() picks up a hand-edit without invalidating existing shared_pt
 TEST_CASE("a scoped handler runs only when its predicate passes", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.one", "One", "Context", "1");
 	KeymapHandlers h(km);
 
 	bool enabled = false;
@@ -528,7 +627,7 @@ TEST_CASE("a scoped handler runs only when its predicate passes", "[Keymap]") {
 TEST_CASE("an unscoped handler cannot shadow a scoped one, regardless of registration order", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("bank.toggle", "Toggle", "Group", "Tab");
+	km->registerAction("bank.toggle", "Toggle", "Context", "Tab");
 	KeymapHandlers h(km);
 
 	int unscopedFired = 0, scopedFired = 0;
@@ -549,7 +648,7 @@ TEST_CASE("an unscoped handler cannot shadow a scoped one, regardless of registr
 TEST_CASE("onTry declining passes to the next handler; returning true stops the walk", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("node.edit", "Edit", "Group", "Enter");
+	km->registerAction("node.edit", "Edit", "Context", "Enter");
 	KeymapHandlers h(km);
 
 	bool canEdit = false;
@@ -574,7 +673,7 @@ TEST_CASE("onTry declining passes to the next handler; returning true stops the 
 TEST_CASE("dispatch on an unbound key returns false", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.one", "One", "Context", "1");
 	KeymapHandlers h(km);
 	int fired = 0;
 	h.on("a.one", [&]{ fired++; });
@@ -589,7 +688,7 @@ TEST_CASE("dispatch on an unbound key returns false", "[Keymap]") {
 TEST_CASE("an exclusive scope's own handler still runs normally when its predicate passes", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.one", "One", "Context", "1");
 	KeymapHandlers h(km);
 	int fired = 0;
 	auto picker = h.scope([]{ return true; }, /* exclusive */ true);
@@ -602,8 +701,8 @@ TEST_CASE("an exclusive scope's own handler still runs normally when its predica
 TEST_CASE("an exclusive scope swallows an id it doesn't bind, unlike an ordinary scope", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
-	km->registerAction("a.two", "Two", "Group", "2");
+	km->registerAction("a.one", "One", "Context", "1");
+	km->registerAction("a.two", "Two", "Context", "2");
 	KeymapHandlers h(km);
 	int globalFired = 0;
 	bool pickerOpen = true;
@@ -625,7 +724,7 @@ TEST_CASE("an exclusive scope swallows an id it doesn't bind, unlike an ordinary
 TEST_CASE("an exclusive scope swallows even a completely unbound key", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.one", "One", "Context", "1");
 	KeymapHandlers h(km);
 	auto picker = h.scope([]{ return true; }, /* exclusive */ true);
 	picker.on("a.one", [&]{});
@@ -637,7 +736,7 @@ TEST_CASE("an exclusive scope swallows even a completely unbound key", "[Keymap]
 TEST_CASE("dispatch behaves like an ordinary (non-exclusive) scope when its predicate is false", "[Keymap]") {
 	Fixture f;
 	auto km = Keymaps::open(SLUG);
-	km->registerAction("a.two", "Two", "Group", "2");
+	km->registerAction("a.two", "Two", "Context", "2");
 	KeymapHandlers h(km);
 	int globalFired = 0;
 	auto picker = h.scope([]{ return false; }, /* exclusive */ true);

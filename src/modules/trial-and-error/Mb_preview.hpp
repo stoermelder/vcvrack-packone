@@ -1,5 +1,6 @@
 #pragma once
 #include "Mb.hpp"
+#include "MbKeymap.hpp"
 #include "../../plugin.hpp"
 #include "../../vcv/ui.hpp"
 #include "../../pluginsettings.hpp"
@@ -1350,20 +1351,26 @@ struct ModelBoxBase : widget::OpaqueWidget {
 			}
 		}));
 		menu->addChild(createMenuItem(string::f("Filter by \"%s\"", model->plugin->brand.c_str()), "",
-			[this]() { filterBrowserByBrand(); }));
+			[this]() {
+				filterBrowserByBrand();
+			}));
 
 		appendFilterMenuItems(menu);
 
 		menu->addChild(new MenuSeparator);
-		menu->addChild(createCheckMenuItem("Favorite", RACK_MOD_CTRL_NAME "+F",
-			[this]() { return isModelFavorite(model); },
+		menu->addChild(createCheckMenuItem("Favorite", registerActions()->shortcutText("modelbox.favorite.toggle"),
+			[this]() {
+				return isModelFavorite(model);
+			},
 			[this]() {
 				toggleModelFavorite(model);
 				refreshBrowser(true);
 			}
 		));
-		menu->addChild(createCheckMenuItem("Hidden", RACK_MOD_CTRL_NAME "+H",
-			[this]() { return modelHidden; },
+		menu->addChild(createCheckMenuItem("Hidden", registerActions()->shortcutText("modelbox.hidden.toggle"),
+			[this]() {
+				return modelHidden;
+			},
 			[this]() {
 				toggleModelHidden(model);
 				refreshBrowser(false);
@@ -1435,23 +1442,24 @@ struct ModelBoxBase : widget::OpaqueWidget {
 		);
 	}
 
-	// Ctrl+F toggles favorite, Ctrl+H toggles hidden, on the box under the cursor.
+	// Favorite / hidden toggles apply to the box under the cursor. Handlers are built on the
+	// first key press, as browsers hold thousands of boxes that never see one.
+	KeymapHandlers keyHandlers{nullptr};
+
 	void onHoverKey(const event::HoverKey& e) override {
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
-			switch (e.key) {
-				case GLFW_KEY_F: {
+		if (e.action == GLFW_PRESS) {
+			if (!keyHandlers.keymap) {
+				keyHandlers = KeymapHandlers(registerActions(), {"ModelBox"});
+				keyHandlers.on("modelbox.favorite.toggle", [this]{
 					toggleModelFavorite(model);
 					refreshBrowser(true);
-					e.consume(this);
-					break;
-				}
-				case GLFW_KEY_H: {
+				});
+				keyHandlers.on("modelbox.hidden.toggle", [this]{
 					toggleModelHidden(model);
 					refreshBrowser();
-					e.consume(this);
-					break;
-				}
+				});
 			}
+			if (keyHandlers.dispatch(e.key, e.mods, e.action)) e.consume(this);
 		}
 		OpaqueWidget::onHoverKey(e);
 	}

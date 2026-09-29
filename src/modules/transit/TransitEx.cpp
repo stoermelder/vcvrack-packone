@@ -97,7 +97,7 @@ struct TransitExWidget : ThemedModuleWidget<TransitExModule<NUM_PRESETS>> {
 			ledButton->module = module;
 			ledButton->id = i;
 			BASE::addParam(ledButton);
-			BASE::addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(15.0f, 46.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
+			BASE::addChild(createLightCentered<MediumSimpleLight<TransitLedLightWidget>>(Vec(15.0f, 46.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
 		}
 	}
 };

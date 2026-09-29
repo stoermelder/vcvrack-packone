@@ -6,6 +6,8 @@
 #include "../../utils/SpscLatestValue.hpp"
 #include "../../components/Knobs.hpp"
 #include "../../components/ParamHandleIndicator.hpp"
+#include "../../components/MenuColorLabel.hpp"
+#include "../../components/MenuColorPicker.hpp"
 #include "TransitBase.hpp"
 #include "tipsy-encoder/include/tipsy/tipsy.h"
 #include <random>
@@ -14,6 +16,8 @@ namespace StoermelderPackOne {
 namespace Transit {
 
 const int MAX_EXPANDERS = 15;
+
+static const NVGcolor MAPPING_INDICATOR_COLOR_DEFAULT = nvgRGB(0x40, 0xff, 0xff);
 
 enum class SLOTCVMODE {
 	OFF = -1,
@@ -121,6 +125,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 	/** [Stored to JSON] */
 	bool mappingIndicatorHidden = false;
 	/** [Stored to JSON] */
+	NVGcolor mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
+	/** [Stored to JSON] */
 	int presetProcessDivision;
 	ClockDividerEx presetProcessDivider;
 	ClockDividerEx padProcessDivider;
@@ -133,6 +139,12 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 	std::vector<ParamHandleEx*> sourceHandles;
 	/*  Snapshot published for UI thread (engine writes, UI reads). */
 	SpscLatestValue<std::vector<ParamHandleEx*>> sourceHandlesPtr;
+
+	// Reused across presetProcessXyPad() calls to avoid heap allocation on the DSP thread.
+	// .first = accumulated value, .second = accumulated weight, one pair per sourceHandles entry.
+	std::vector<std::pair<float, float>> xyPadVWeight;
+	// Reused across process() light-update calls to avoid heap allocation on the DSP thread.
+	std::vector<bool> xyPadActiveSlot;
 
 	/** [Stored to JSON] */
 	bool parameterChangesDirect = false;
@@ -251,6 +263,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 		outEocPulseGenerator.reset();
 
 		mappingIndicatorHidden = false;
+		mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
 		presetProcessDivision = settings::isPlugin ? 256 : 64;
 		presetProcessDivider.setDivision(presetProcessDivision);
 		presetProcessDivider.reset();
@@ -373,7 +386,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 			float st = args.sampleTime * handleDivider.division;
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
 				ParamHandleEx* sourceHandle = sourceHandles[i];
-				sourceHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0x40, 0xff, 0xff);
+				sourceHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : mappingIndicatorColor;
 				sourceHandle->process(st);
 			}
 		}
@@ -602,12 +615,11 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 			float intpart;
 			float frac = std::modf(presetPhaseLast, &intpart);
 			bool xyPadActive = padOverride;
-			std::vector<bool> padActiveSlot;
 			if (xyPadActive) {
-				padActiveSlot.resize(presetTotal, false);
+				xyPadActiveSlot.assign(presetTotal, false);
 				for (auto& source : transitPad->getPadFactors()) {
 					if (source.id >= 0 && source.id < presetTotal && source.weight > 0.f) {
-						padActiveSlot[source.id] = true;
+						xyPadActiveSlot[source.id] = true;
 					}
 				}
 			}
@@ -644,7 +656,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 					}
 				}
 				else if (xyPadActive) {
-					bool active = padActiveSlot[i];
+					bool active = xyPadActiveSlot[i];
 					bool b = active && lightBlink;
 					float b1 = active ? (b ? (u ? 1.0f : 0.05f) : 0.f) : (presetFirst <= i && i < presetLast ? (u ? 0.4f : 0.05f) : 0.f);
 					if (slot->isColorSet()) {
@@ -908,12 +920,11 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 		if (padProcessDivider.process()) {
 			const auto& snapshots = transitPad->getPadFactors();
 
-			std::vector<float> v(sourceHandles.size(), 0.f);
 			// Per-parameter, not global: a parameter bound after the last save
 			// (bindAddParameterRequest(..., presetLoading = true)) has no entry
 			// in an older slot's preset, so it must not receive a share of that
 			// slot's weight even though other, longer-lived parameters do.
-			std::vector<float> weight(sourceHandles.size(), 0.f);
+			xyPadVWeight.assign(sourceHandles.size(), std::pair<float, float>(0.f, 0.f));
 			for (auto snapshot : snapshots) {
 				if (snapshot.id < 0) continue;
 				SLOT* slot1 = getSlot(snapshot.id);
@@ -925,19 +936,23 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 					if (!pq) continue;
 					if (preset1.size() <= i) break;
 					float v1 = preset1[i];
-					v[i] += v1 * snapshot.weight;
-					weight[i] += snapshot.weight;
+					xyPadVWeight[i].first += v1 * snapshot.weight;
+					xyPadVWeight[i].second += snapshot.weight;
 				}
 			}
 
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
-				if (weight[i] <= 0.f) continue;
+				float v = xyPadVWeight[i].first;
+				float weight = xyPadVWeight[i].second;
+				if (weight <= 0.f) continue;
 				ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 				if (!pq) continue;
-				if (settings::isPlugin && parameterChangesDirect)
-					pq->setValue(v[i] / weight[i]);
-				else
-					pq->getParam()->setValue(v[i] / weight[i]);
+				if (settings::isPlugin && parameterChangesDirect) {
+					pq->setValue(v / weight);
+				}
+				else {
+					pq->getParam()->setValue(v / weight);
+				}
 			}
 
 			BASE::outputs[OUTPUT].setVoltage(0.f);
@@ -1387,6 +1402,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 	json_t* dataToJson() override {
 		json_t* rootJ = BASE::dataToJson();
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
+		json_object_set_new(rootJ, "mappingIndicatorColor", json_string(color::toHexString(mappingIndicatorColor).c_str()));
 		json_object_set_new(rootJ, "presetProcessDivision", json_integer(getProcessDivision()));
 
 		json_object_set_new(rootJ, "slotCvMode", json_integer((int)slotCvMode));
@@ -1415,6 +1431,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, TransitCtrlMa
 		BASE::panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
 		if (mappingIndicatorHiddenJ) mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
+		json_t* mappingIndicatorColorJ = json_object_get(rootJ, "mappingIndicatorColor");
+		if (mappingIndicatorColorJ && json_is_string(mappingIndicatorColorJ)) mappingIndicatorColor = color::fromHexString(json_string_value(mappingIndicatorColorJ));
 		json_t* presetProcessDivisionJ = json_object_get(rootJ, "presetProcessDivision");
 		if (presetProcessDivisionJ) setProcessDivision(json_integer_value(presetProcessDivisionJ));
 
@@ -1626,7 +1644,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			ledButton->module = module;
 			ledButton->id = i;
 			BASE::addParam(ledButton);
-			BASE::addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(60.0f, 46.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
+			BASE::addChild(createLightCentered<MediumSimpleLight<TransitLedLightWidget>>(Vec(60.0f, 46.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
 		}
 
 		if (module) {
@@ -1750,7 +1768,14 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
+		menu->addChild(createSubmenuItem("Mapping indicators", "", [=](Menu* menu) {
+			menu->addChild(createBoolPtrMenuItem("Hide", "", &module->mappingIndicatorHidden));
+			menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->mappingIndicatorColor));
+			menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->mappingIndicatorColor));
+			menu->addChild(createMenuItem("Reset color", "", [=]() {
+				module->mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
+			}));
+		}));
 		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<int>("Precision", {
 				{ 1, string::f("Audio rate (%i Hz)", sampleRate / 1) },
 				{ 8, string::f("Lower CPU (%i Hz)", sampleRate / 8) },
@@ -1786,76 +1811,119 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			}
 		));
 
-		menu->addChild(createSubmenuItem("Port CV mode", "", [=](Menu* menu) { 
-			struct SlotCvModeItem : MenuItem {
-				MODULE* module;
-				SLOTCVMODE slotCvMode;
-				std::string rightTextEx = "";
-				void onAction(const event::Action& e) override {
-					module->setCvMode(slotCvMode);
-				}
-				void step() override {
-					rightText = string::f("%s %s", module->slotCvMode == slotCvMode ? "✔" : "", rightTextEx.c_str());
-					MenuItem::step();
-				}
-			};
-
+		auto slotCvModeLabel = [](SLOTCVMODE m) {
+			switch (m) {
+				case SLOTCVMODE::OFF: return "Off";
+				case SLOTCVMODE::TRIG_FWD: return "Trigger forward";
+				case SLOTCVMODE::TRIG_REV: return "Trigger reverse";
+				case SLOTCVMODE::TRIG_PINGPONG: return "Trigger pingpong";
+				case SLOTCVMODE::TRIG_ALT: return "Trigger alternating";
+				case SLOTCVMODE::TRIG_RANDOM: return "Trigger random";
+				case SLOTCVMODE::TRIG_RANDOM_WO_REPEAT: return "Trigger pseudo-random";
+				case SLOTCVMODE::TRIG_RANDOM_WALK: return "Trigger random walk";
+				case SLOTCVMODE::TRIG_SHUFFLE: return "Trigger shuffle";
+				case SLOTCVMODE::VOLT: return "0..10V";
+				case SLOTCVMODE::C4: return "C4";
+				case SLOTCVMODE::ARM: return "Arm";
+				case SLOTCVMODE::PHASE: return "Phase";
+				default: return "";
+			}
+		};
+		menu->addChild(createSubmenuItem("Port CV mode", slotCvModeLabel(module->slotCvMode), [=](Menu* menu) {
 			bool xyMode = module->isXyPadActive();
-			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger forward", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_FWD, &SlotCvModeItem::disabled, xyMode));
-			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger reverse", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_REV, &SlotCvModeItem::disabled, xyMode));
-			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_PINGPONG, &SlotCvModeItem::disabled, xyMode));
-			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger alternating", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_ALT, &SlotCvModeItem::disabled, xyMode));
-			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM, &SlotCvModeItem::disabled, xyMode));
-			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pseudo-random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WO_REPEAT, &SlotCvModeItem::disabled, xyMode));
-			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random walk", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WALK, &SlotCvModeItem::disabled, xyMode));
-			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger shuffle", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_SHUFFLE, &SlotCvModeItem::disabled, xyMode));
-			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::VOLT, &SlotCvModeItem::disabled, xyMode));
-			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::C4, &SlotCvModeItem::disabled, xyMode));
-			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::ARM, &SlotCvModeItem::disabled, xyMode));
+			auto slotCvModeItem = [=](SLOTCVMODE m, bool disabled, std::string rightTextEx = "") {
+				struct SlotCvModeItem : MenuItem {
+					MODULE* module;
+					SLOTCVMODE slotCvMode;
+					std::string rightTextEx = "";
+					void onAction(const event::Action& e) override {
+						module->setCvMode(slotCvMode);
+					}
+					void step() override {
+						rightText = string::f("%s %s", module->slotCvMode == slotCvMode ? "✔" : "", rightTextEx.c_str());
+						MenuItem::step();
+					}
+				};
+				return construct<SlotCvModeItem>(&MenuItem::text, slotCvModeLabel(m), &SlotCvModeItem::rightTextEx, rightTextEx,
+					&SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, m, &SlotCvModeItem::disabled, disabled);
+			};
+			menu->addChild(slotCvModeItem(SLOTCVMODE::TRIG_FWD, xyMode));
+			menu->addChild(slotCvModeItem(SLOTCVMODE::TRIG_REV, xyMode));
+			menu->addChild(slotCvModeItem(SLOTCVMODE::TRIG_PINGPONG, xyMode));
+			menu->addChild(slotCvModeItem(SLOTCVMODE::TRIG_ALT, xyMode));
+			menu->addChild(slotCvModeItem(SLOTCVMODE::TRIG_RANDOM, xyMode));
+			menu->addChild(slotCvModeItem(SLOTCVMODE::TRIG_RANDOM_WO_REPEAT, xyMode));
+			menu->addChild(slotCvModeItem(SLOTCVMODE::TRIG_RANDOM_WALK, xyMode));
+			menu->addChild(slotCvModeItem(SLOTCVMODE::TRIG_SHUFFLE, xyMode));
+			menu->addChild(slotCvModeItem(SLOTCVMODE::VOLT, xyMode));
+			menu->addChild(slotCvModeItem(SLOTCVMODE::C4, xyMode));
+			menu->addChild(slotCvModeItem(SLOTCVMODE::ARM, xyMode));
 			menu->addChild(new MenuSeparator);
-			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Phase", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::PHASE, &SlotCvModeItem::disabled, xyMode));
+			menu->addChild(slotCvModeItem(SLOTCVMODE::PHASE, xyMode));
 			menu->addChild(new MenuSeparator);
-			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Off", &SlotCvModeItem::rightTextEx, RACK_MOD_SHIFT_NAME "+Q", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::OFF));
+			menu->addChild(slotCvModeItem(SLOTCVMODE::OFF, false, RACK_MOD_SHIFT_NAME "+Q"));
 		}));
 
-		menu->addChild(createSubmenuItem("Port OUT mode", "", [=](Menu* menu) {
-			struct OutModeItem : MenuItem {
-				MODULE* module;
-				OUTMODE outMode;
-				void onAction(const event::Action& e) override {
-					module->setOutMode(outMode);
-				}
-				void step() override {
-					rightText = module->outMode == outMode ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
+		auto outModeLabel = [](OUTMODE m) {
+			switch (m) {
+				case OUTMODE::OFF: return "Off";
+				case OUTMODE::POLY: return "Polyphonic";
+				case OUTMODE::ENV: return "Envelope";
+				case OUTMODE::GATE: return "Gate";
+				case OUTMODE::TRIG_SNAPSHOT: return "Trigger snapshot change";
+				case OUTMODE::TRIG_SOC: return "Trigger fade start";
+				case OUTMODE::TRIG_EOC: return "Trigger fade end";
+				case OUTMODE::PHASE: return "Phase";
+				case OUTMODE::TIPSY: return "Tipsy";
+				default: return "";
+			}
+		};
+		menu->addChild(createSubmenuItem("Port OUT mode", outModeLabel(module->outMode), [=](Menu* menu) {
 			bool phaseMode = module->slotCvMode == SLOTCVMODE::PHASE;
 			bool xyMode = module->isXyPadActive();
-
-			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Envelope", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::ENV, &OutModeItem::disabled, phaseMode || xyMode));
-			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Gate", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::GATE, &OutModeItem::disabled, phaseMode || xyMode));
-			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger snapshot change", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SNAPSHOT, &OutModeItem::disabled, phaseMode || xyMode));
-			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade start", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SOC, &OutModeItem::disabled, phaseMode || xyMode));
-			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade end", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_EOC, &OutModeItem::disabled, phaseMode || xyMode));
+			auto outModeItem = [=](OUTMODE m, bool disabled = false) {
+				struct OutModeItem : MenuItem {
+					MODULE* module;
+					OUTMODE outMode;
+					void onAction(const event::Action& e) override {
+						module->setOutMode(outMode);
+					}
+					void step() override {
+						rightText = module->outMode == outMode ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+				return construct<OutModeItem>(&MenuItem::text, outModeLabel(m), &OutModeItem::module, module, &OutModeItem::outMode, m, &OutModeItem::disabled, disabled);
+			};
+			menu->addChild(outModeItem(OUTMODE::ENV, phaseMode || xyMode));
+			menu->addChild(outModeItem(OUTMODE::GATE, phaseMode || xyMode));
+			menu->addChild(outModeItem(OUTMODE::TRIG_SNAPSHOT, phaseMode || xyMode));
+			menu->addChild(outModeItem(OUTMODE::TRIG_SOC, phaseMode || xyMode));
+			menu->addChild(outModeItem(OUTMODE::TRIG_EOC, phaseMode || xyMode));
 			menu->addChild(new MenuSeparator);
-			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Polyphonic", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::POLY, &OutModeItem::disabled, phaseMode || xyMode));
+			menu->addChild(outModeItem(OUTMODE::POLY, phaseMode || xyMode));
 			menu->addChild(new MenuSeparator);
-			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Phase", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::PHASE, &OutModeItem::disabled, !phaseMode || xyMode));
+			menu->addChild(outModeItem(OUTMODE::PHASE, !phaseMode || xyMode));
 			menu->addChild(new MenuSeparator);
-			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Off", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::OFF));
+			menu->addChild(outModeItem(OUTMODE::OFF));
 			menu->addChild(new MenuSeparator);
-			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Tipsy", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TIPSY, &OutModeItem::disabled, phaseMode));
+			menu->addChild(outModeItem(OUTMODE::TIPSY, phaseMode || xyMode));
 		}));
 		menu->addChild(createBoolPtrMenuItem("Clamp Fade CV input", "", &module->clampFadeCv));
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuItem("Bind module (left)", "", [=]() { disableLearn(); module->bindAddModuleExpanderRequest(); }));
-		menu->addChild(createMenuItem("Bind module (select)", "", [=]() { enableLearn(1); }));
+		menu->addChild(createMenuItem("Bind module (left)", "", [=]() {
+			disableLearn();
+			module->bindAddModuleExpanderRequest();
+		}));
+		menu->addChild(createMenuItem("Bind module (select)", "", [=]() {
+			enableLearn(1);
+		}));
 		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind single parameter", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+B", &BindParameterItem::widget, this, &BindParameterItem::mode, 2));
 		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind multiple parameters", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+A", &BindParameterItem::widget, this, &BindParameterItem::mode, 3));
-		menu->addChild(createMenuItem("Bind parameters by selection", "", [=]() { selectionWidget->enableLearn(); }));
+		menu->addChild(createMenuItem("Bind parameters by selection", "", [=]() {
+			selectionWidget->enableLearn();
+		}));
 
 		const auto& snap = module->sourceHandlesPtr.peek();
 		if (snap.size() > 0) {
@@ -1893,20 +1961,28 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 					if (paramWidget) {
 						std::string text = string::f("%s %s", moduleWidget->model->name.c_str(), paramWidget->getParamQuantity()->getLabel().c_str());
 						menu->addChild(createSubmenuItem(text, "", [=](Menu* menu) {
-							menu->addChild(createMenuItem("Locate and indicate", "", [=]() { handle->indicate(APP->scene->rack->getModule(handle->moduleId)); }));
-							menu->addChild(createMenuItem("Unbind", "", [=]() { APP->engine->updateParamHandle(handle, -1, 0, true); }));
+							menu->addChild(createMenuItem("Locate and indicate", "", [=]() {
+								handle->indicate(APP->scene->rack->getModule(handle->moduleId));
+							}));
+							menu->addChild(createMenuItem("Unbind", "", [=]() {
+								APP->engine->updateParamHandle(handle, -1, 0, true);
+							}));
 						}));
 					}
 					else {
 						std::string text = string::f("%s <hidden parameter>", moduleWidget->model->name.c_str());
 						menu->addChild(createSubmenuItem(text, "", [=](Menu* menu) {
-							menu->addChild(createMenuItem("Unbind", "", [=]() { APP->engine->updateParamHandle(handle, -1, 0, true); }));
+							menu->addChild(createMenuItem("Unbind", "", [=]() {
+								APP->engine->updateParamHandle(handle, -1, 0, true);
+							}));
 						}));
 					}
 				}
 			}));
 
-			menu->addChild(createMenuItem("Clean invalid parameters up", "", [=]() { module->presetCleanUpRequest(); }));
+			menu->addChild(createMenuItem("Clean invalid parameters up", "", [=]() {
+				module->presetCleanUpRequest();
+			}));
 		}
 	}
 };

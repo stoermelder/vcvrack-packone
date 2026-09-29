@@ -232,6 +232,20 @@ static TransitPadXyScreenWidget<TransitPadModule<>>* findPadScreenWidget(rack::a
 	return found;
 }
 
+// Helper: find the pad's SEQ-EDIT drag/record widget (XySeqWidget.hpp).
+static StoermelderPackOne::XySeqEditDragWidget<TransitPadModule<>>* findSeqEditDragWidget(rack::app::ModuleWidget* padWidget) {
+	StoermelderPackOne::XySeqEditDragWidget<TransitPadModule<>>* found = nullptr;
+	Test::traversal::walk(padWidget, [&](const Test::traversal::Visit& v) {
+		auto* w = dynamic_cast<StoermelderPackOne::XySeqEditDragWidget<TransitPadModule<>>*>(v.widget);
+		if (w) {
+			found = w;
+			return false;
+		}
+		return true;
+	});
+	return found;
+}
+
 // Helper: count the ui::MenuOverlay children currently on the scene.
 // Always compared as a delta — earlier test cases in the same process leave
 // overlays behind, so the absolute count is not meaningful.
@@ -397,6 +411,27 @@ TEST_CASE("Space toggles pad active, modifier+space toggles visualize mode", "[T
 		REQUIRE(pad->vizMode == false);
 	}
 
+	SECTION("Visualize overlay hides while seq-edit is active, even with vizMode on") {
+		Test::Harness h;
+		TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+		TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+		REQUIRE(padWidget->vizOverlay != nullptr);
+
+		pad->vizMode = true;
+		padWidget->step();
+		REQUIRE(padWidget->vizOverlay->visible == true);
+
+		// Splines would otherwise clutter the pad while it's showing the
+		// recorded motion-sequence path instead.
+		pad->seqEdit = 0;
+		padWidget->step();
+		REQUIRE(padWidget->vizOverlay->visible == false);
+
+		pad->seqEdit = -1;
+		padWidget->step();
+		REQUIRE(padWidget->vizOverlay->visible == true);
+	}
+
 	SECTION("A different modifier held with space is neither shortcut") {
 		Test::Harness h;
 		TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
@@ -427,6 +462,80 @@ TEST_CASE("Space toggles pad active, modifier+space toggles visualize mode", "[T
 		REQUIRE_NOTHROW(padWidget->onHoverKey(e));
 		Test::destroyWidget(padWidget);
 	}
+}
+
+TEST_CASE("Shift+L toggles Lock pad", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	REQUIRE(pad->locked == false);
+
+	event::HoverKey e;
+	rack::widget::EventContext c;
+	e.context = &c;
+	e.key = GLFW_KEY_L;
+	e.action = GLFW_PRESS;
+	e.mods = GLFW_MOD_SHIFT;
+	padWidget->onHoverKey(e);
+	REQUIRE(pad->locked == true);
+	REQUIRE(c.target == padWidget);
+
+	// A second press toggles it back off.
+	rack::widget::EventContext c2;
+	e.context = &c2;
+	padWidget->onHoverKey(e);
+	REQUIRE(pad->locked == false);
+}
+
+TEST_CASE("L without Shift does not toggle Lock pad", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	event::HoverKey e;
+	rack::widget::EventContext c;
+	e.context = &c;
+	e.key = GLFW_KEY_L;
+	e.action = GLFW_PRESS;
+	e.mods = 0;
+	padWidget->onHoverKey(e);
+	REQUIRE(pad->locked == false);
+}
+
+TEST_CASE("Number keys 1-8 select the matching snapshot-set", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	REQUIRE(pad->currentSet == 0);
+
+	for (int key = GLFW_KEY_1; key <= GLFW_KEY_8; key++) {
+		event::HoverKey e;
+		rack::widget::EventContext c;
+		e.context = &c;
+		e.key = key;
+		e.action = GLFW_PRESS;
+		e.mods = 0;
+		padWidget->onHoverKey(e);
+		REQUIRE(pad->currentSet == key - GLFW_KEY_1);
+		REQUIRE(c.target == padWidget);
+	}
+}
+
+TEST_CASE("A modifier held with a number key does not select a snapshot-set", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	event::HoverKey e;
+	rack::widget::EventContext c;
+	e.context = &c;
+	e.key = GLFW_KEY_3;
+	e.action = GLFW_PRESS;
+	e.mods = RACK_MOD_CTRL;
+	padWidget->onHoverKey(e);
+	REQUIRE(pad->currentSet == 0);
 }
 
 // Regression: StoermelderLedDisplay derives from LightWidget/TransparentWidget,
@@ -520,13 +629,11 @@ TEST_CASE("Amount/Radius slider reset values match the node defaults", "[Transit
 	}
 }
 
-// ============================================================
 // Context menus: node ("Bind snapshot"/"Unbind snapshot"), screen
 // ("Snapshot-set node positions" -> "Off"), its module-level mirror, and
 // the set-button menu ("Store positions", the set-label field, "Reset").
 // Reuses connectPad() (TransitPad.test.expander.hpp) and
 // findPadNodeWidget()/findPadScreenWidget() (above) -- same file/namespace.
-// ============================================================
 
 // Finds a direct MenuItem child by its label text, matching Ahab's
 // findMenuItemByText(): menu items are added as plain widget::Widget
@@ -549,9 +656,7 @@ static TransitPadSetButton<TransitPadModule<>>* findSetButton(rack::app::ModuleW
 }
 
 
-// ============================================================
 // Node context menu: "Bind snapshot" / "Unbind snapshot"
-// ============================================================
 
 TEST_CASE("Node menu: Bind snapshot binds to getSelectedSlot()", "[TransitPad][widget]") {
 	Test::Harness h;
@@ -769,9 +874,7 @@ TEST_CASE("Node menu: Load snapshot switches Pad active off, then applies the bo
 }
 
 
-// ============================================================
 // Screen context menu: "Snapshot-set node positions" -> "Off"
-// ============================================================
 
 // Regression covered elsewhere by calling clearNodePositions() directly; this
 // drives the same action through the actual menu item a user clicks.
@@ -792,7 +895,7 @@ TEST_CASE("Screen menu: 'Node positions' -> Off calls clearNodePositions() throu
 	ui::Menu menu;
 	screen->appendContextMenu(&menu);
 
-	auto* nodePositions = findMenuItemByText(&menu, "Snapshot-set node positions");
+	auto* nodePositions = findMenuItemByText(&menu, "Store node positions");
 	REQUIRE(nodePositions != nullptr);
 	ui::Menu* submenu = nodePositions->createChildMenu();
 	REQUIRE(submenu != nullptr);
@@ -823,7 +926,7 @@ TEST_CASE("Module menu mirrors the screen's node-positions submenu, including Of
 	ui::Menu menu;
 	padWidget->appendContextMenu(&menu);
 
-	auto* nodePositions = findMenuItemByText(&menu, "Snapshot-set node positions");
+	auto* nodePositions = findMenuItemByText(&menu, "Store node positions");
 	REQUIRE(nodePositions != nullptr);
 	ui::Menu* submenu = nodePositions->createChildMenu();
 	REQUIRE(submenu != nullptr);
@@ -838,7 +941,7 @@ TEST_CASE("Module menu mirrors the screen's node-positions submenu, including Of
 	// The rest of the mirrored menu is present too, not just this one item.
 	REQUIRE(findMenuItemByText(&menu, "Visualize") != nullptr);
 	REQUIRE(findMenuItemByText(&menu, "Lock pad") != nullptr);
-	REQUIRE(findMenuItemByText(&menu, "Snapshot-set CV mode") != nullptr);
+	REQUIRE(findMenuItemByText(&menu, "CV port mode") != nullptr);
 }
 
 TEST_CASE("Module menu mirror is a no-op without a module (browser preview)", "[TransitPad][widget]") {
@@ -847,15 +950,82 @@ TEST_CASE("Module menu mirror is a no-op without a module (browser preview)", "[
 
 	ui::Menu menu;
 	REQUIRE_NOTHROW(padWidget->appendContextMenu(&menu));
-	REQUIRE(findMenuItemByText(&menu, "Snapshot-set node positions") == nullptr);
+	REQUIRE(findMenuItemByText(&menu, "Store node positions") == nullptr);
 
 	Test::destroyWidget(padWidget);
 }
 
 
-// ============================================================
+// Screen context menu: "Snapshot-set motion sequence" toggle
+
+TEST_CASE("Screen menu: 'Store motion sequence' toggles seqSwitchMode", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+	auto* screen = findPadScreenWidget(padWidget);
+	REQUIRE(screen != nullptr);
+
+	REQUIRE(pad->seqSwitchMode == false);
+
+	ui::Menu menu;
+	screen->appendContextMenu(&menu);
+	auto* item = findMenuItemByText(&menu, "Store motion-sequence");
+	REQUIRE(item != nullptr);
+
+	item->onAction(*(new event::Action));
+	REQUIRE(pad->seqSwitchMode == true);
+
+	ui::Menu menu2;
+	screen->appendContextMenu(&menu2);
+	auto* item2 = findMenuItemByText(&menu2, "Store motion-sequence");
+	REQUIRE(item2 != nullptr);
+	item2->onAction(*(new event::Action));
+	REQUIRE(pad->seqSwitchMode == false);
+}
+
+// Regression-shaped: turning the mode on must seed every set from whichever
+// sequence is live right now, or every set the user hasn't visited yet would
+// silently jump to sequence 0 the moment it becomes active.
+TEST_CASE("Screen menu: enabling 'Store motion-sequence' seeds every set from the live selection", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+	auto* screen = findPadScreenWidget(padWidget);
+	REQUIRE(screen != nullptr);
+
+	pad->seqSelected[0] = 6;
+
+	ui::Menu menu;
+	screen->appendContextMenu(&menu);
+	auto* item = findMenuItemByText(&menu, "Store motion-sequence");
+	REQUIRE(item != nullptr);
+	item->onAction(*(new event::Action));
+
+	REQUIRE(pad->seqSwitchMode == true);
+	// Every set, not just the current one, now carries the live selection --
+	// switching to any of them must not jump back to sequence 0.
+	for (uint8_t s = 0; s < pad->getSetCount(); s++) {
+		pad->changeSet(s);
+		REQUIRE(pad->seqSelected[0] == 6);
+	}
+}
+
+TEST_CASE("Module menu mirrors the screen's 'Store motion-sequence' toggle", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	ui::Menu menu;
+	padWidget->appendContextMenu(&menu);
+	auto* item = findMenuItemByText(&menu, "Store motion-sequence");
+	REQUIRE(item != nullptr);
+
+	item->onAction(*(new event::Action));
+	REQUIRE(pad->seqSwitchMode == true);
+}
+
+
 // Set-button menu: "Store positions", label field, "Reset"
-// ============================================================
 
 TEST_CASE("Set-button menu: Store positions is enabled only in Store mode", "[TransitPad][widget]") {
 	Test::Harness h;
@@ -987,10 +1157,438 @@ TEST_CASE("Set-button menu: Reset clears the set's label", "[TransitPad][widget]
 	ui::Menu* submenu = label->createChildMenu();
 	REQUIRE(submenu != nullptr);
 
-	auto* reset = findMenuItemByText(submenu, "Reset");
+	auto* reset = findMenuItemByText(submenu, "Reset label");
 	REQUIRE(reset != nullptr);
 
 	reset->onAction(*(new event::Action));
 
 	REQUIRE(pad->setLabel[4] == "");
+}
+
+// Set-button menu: "Copy" / "Paste"
+// PasteItem's step() override chains into MenuItem::step(), which measures
+// text via APP->window->vg -- null in every test binary (see FRAMEWORK.md's
+// headless-window traps). So these tests drive the enable/disable + rightText
+// logic through onAction()'s effects rather than calling step() directly.
+
+TEST_CASE("Set-button menu: Copy records the set", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+	auto* button = findSetButton(padWidget, 0);
+	REQUIRE(button != nullptr);
+
+	REQUIRE(pad->setCopy == -1);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* copy = findMenuItemByText(&menu, "Copy");
+	REQUIRE(copy != nullptr);
+	copy->onAction(*(new event::Action));
+
+	REQUIRE(pad->setCopy == 0);
+}
+
+TEST_CASE("Set-button menu: Paste copies snapshot bindings but not color or label", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->snapshots[1][0].id = 5;
+	pad->setColor[1] = nvgRGBA(0x11, 0x22, 0x33, 0xff);
+	pad->setLabel[1] = "Verse";
+	pad->setCopy = 1;
+
+	NVGcolor origColor = pad->setColor[6];
+	pad->setLabel[6] = "Untouched";
+
+	auto* button = findSetButton(padWidget, 6);
+	REQUIRE(button != nullptr);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* paste = findMenuItemByText(&menu, "Paste");
+	REQUIRE(paste != nullptr);
+
+	paste->onAction(*(new event::Action));
+
+	REQUIRE(pad->snapshots[6][0].id == 5);
+	// Color and label are per-set identity, not "content" -- Paste must leave
+	// them alone.
+	REQUIRE(pad->setColor[6].r == Catch::Approx(origColor.r));
+	REQUIRE(pad->setColor[6].g == Catch::Approx(origColor.g));
+	REQUIRE(pad->setColor[6].b == Catch::Approx(origColor.b));
+	REQUIRE(pad->setLabel[6] == "Untouched");
+}
+
+TEST_CASE("Set-button menu: Paste copies pad-point geometry only in a position-store mode", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->snapshots[1][0].id = 5;
+	pad->snapshots[1][0].x = 0.11f;
+	pad->snapshots[1][0].y = 0.22f;
+	pad->snapshots[1][0].radius = 0.33f;
+	pad->snapshots[1][0].amount = 0.44f;
+	pad->mixX[1] = 0.55f;
+	pad->mixY[1] = 0.66f;
+	pad->setCopy = 1;
+
+	auto* button = findSetButton(padWidget, 6);
+	REQUIRE(button != nullptr);
+
+	SECTION("nodePosMode Off: bindings copy, geometry is left alone") {
+		pad->nodePosMode = NODEPOSMODE::OFF;
+		float origX = pad->snapshots[6][0].x;
+		float origMixX = pad->mixX[6];
+
+		ui::Menu menu;
+		button->appendContextMenu(&menu);
+		auto* paste = findMenuItemByText(&menu, "Paste");
+		REQUIRE(paste != nullptr);
+		paste->onAction(*(new event::Action));
+
+		REQUIRE(pad->snapshots[6][0].id == 5);
+		REQUIRE(pad->snapshots[6][0].x == origX);
+		REQUIRE(pad->mixX[6] == origMixX);
+	}
+
+	SECTION("nodePosMode Store: bindings and geometry both copy") {
+		pad->nodePosMode = NODEPOSMODE::STORE;
+
+		ui::Menu menu;
+		button->appendContextMenu(&menu);
+		auto* paste = findMenuItemByText(&menu, "Paste");
+		REQUIRE(paste != nullptr);
+		paste->onAction(*(new event::Action));
+
+		REQUIRE(pad->snapshots[6][0].id == 5);
+		REQUIRE(pad->snapshots[6][0].x == 0.11f);
+		REQUIRE(pad->snapshots[6][0].y == 0.22f);
+		REQUIRE(pad->snapshots[6][0].radius == 0.33f);
+		REQUIRE(pad->snapshots[6][0].amount == 0.44f);
+		REQUIRE(pad->mixX[6] == 0.55f);
+		REQUIRE(pad->mixY[6] == 0.66f);
+	}
+}
+
+// Regression: same issue as resetSet() above -- copySet() only touched the
+// stored snapshots[t]/mixX/mixY[t] data. Pasting onto the *currently active*
+// set while node-position mode is on left the live pad points showing the
+// stale pre-paste layout until the user switched sets and back.
+TEST_CASE("Set-button menu: Paste onto the active set reloads the live pad layout", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->nodePosMode = NODEPOSMODE::STORE;
+	pad->snapshots[1][0].x = 0.11f;
+	pad->snapshots[1][0].y = 0.22f;
+	pad->setCopy = 1;
+
+	pad->currentSet = 2;
+	pad->nodes.setXyImmediate(0, 0.9f, 0.9f);
+
+	auto* button = findSetButton(padWidget, 2);
+	REQUIRE(button != nullptr);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* paste = findMenuItemByText(&menu, "Paste");
+	REQUIRE(paste != nullptr);
+	paste->onAction(*(new event::Action));
+
+	REQUIRE(pad->nodes.getXFinal(0) == 0.11f);
+	REQUIRE(pad->nodes.getYFinal(0) == 0.22f);
+}
+
+TEST_CASE("Set-button menu: Paste onto an inactive set leaves the live pad layout alone", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->nodePosMode = NODEPOSMODE::STORE;
+	pad->snapshots[1][0].x = 0.11f;
+	pad->snapshots[1][0].y = 0.22f;
+	pad->setCopy = 1;
+
+	pad->currentSet = 2;
+	pad->nodes.setXyImmediate(0, 0.9f, 0.9f);
+
+	auto* button = findSetButton(padWidget, 5);
+	REQUIRE(button != nullptr);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* paste = findMenuItemByText(&menu, "Paste");
+	REQUIRE(paste != nullptr);
+	paste->onAction(*(new event::Action));
+
+	REQUIRE(pad->nodes.getXFinal(0) == 0.9f);
+}
+
+TEST_CASE("Set-button menu: Paste copies the selected motion sequence only when seqSwitchMode is on", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->seqSwitchMode = true;
+	pad->changeSet(1);
+	pad->seqSelected[0] = 4;
+	pad->changeSet(0);
+	pad->setCopy = 1;
+
+	auto* button = findSetButton(padWidget, 6);
+	REQUIRE(button != nullptr);
+
+	SECTION("seqSwitchMode off: selection is left alone") {
+		pad->seqSwitchMode = false;
+
+		ui::Menu menu;
+		button->appendContextMenu(&menu);
+		auto* paste = findMenuItemByText(&menu, "Paste");
+		REQUIRE(paste != nullptr);
+		paste->onAction(*(new event::Action));
+
+		pad->seqSwitchMode = true;
+		pad->changeSet(6);
+		REQUIRE(pad->seqSelected[0] != 4);
+	}
+
+	SECTION("seqSwitchMode on: selection is copied") {
+		ui::Menu menu;
+		button->appendContextMenu(&menu);
+		auto* paste = findMenuItemByText(&menu, "Paste");
+		REQUIRE(paste != nullptr);
+		paste->onAction(*(new event::Action));
+
+		pad->changeSet(6);
+		REQUIRE(pad->seqSelected[0] == 4);
+	}
+}
+
+// Set-button menu: top-level "Reset" -- resets the whole set (bindings,
+// geometry, Mix cursor, color, label) back to factory defaults, distinct
+// from the "Reset" nested inside the "Label" submenu, which only clears the
+// label.
+TEST_CASE("Set-button menu: Reset restores the whole set to factory defaults", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+	auto* button = findSetButton(padWidget, 3);
+	REQUIRE(button != nullptr);
+
+	pad->snapshots[3][0].id = 7;
+	pad->snapshots[3][4].id = 2;
+	pad->snapshots[3][0].x = 0.9f;
+	pad->snapshots[3][0].y = 0.9f;
+	pad->snapshots[3][0].radius = 0.1f;
+	pad->snapshots[3][0].amount = 0.1f;
+	pad->mixX[3] = 0.9f;
+	pad->mixY[3] = 0.9f;
+	pad->setColor[3] = nvgRGBA(0x11, 0x22, 0x33, 0xff);
+	pad->setLabel[3] = "Bridge";
+	pad->seqSwitchMode = true;
+	pad->changeSet(3);
+	pad->seqSelected[0] = 6;
+	pad->changeSet(0);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* reset = findMenuItemByText(&menu, "Reset");
+	REQUIRE(reset != nullptr);
+
+	reset->onAction(*(new event::Action));
+
+	REQUIRE(pad->snapshots[3][0].id == 0);
+	REQUIRE(pad->snapshots[3][4].id == -1);
+	REQUIRE(pad->snapshots[3][0].x == pad->getNodePqX(0)->getDefaultValue());
+	REQUIRE(pad->snapshots[3][0].y == pad->getNodePqY(0)->getDefaultValue());
+	REQUIRE(pad->snapshots[3][0].radius == pad->getNodeRadiusDefault(0));
+	REQUIRE(pad->snapshots[3][0].amount == pad->Sc::getNodeAmountDefault(0));
+	REQUIRE(pad->mixX[3] == pad->paramQuantities[TransitPadModule<>::OUT_X_POS]->getDefaultValue());
+	REQUIRE(pad->mixY[3] == pad->paramQuantities[TransitPadModule<>::OUT_Y_POS]->getDefaultValue());
+	REQUIRE(pad->setLabel[3] == "");
+	pad->changeSet(3);
+	REQUIRE(pad->seqSelected[0] == 0);
+
+	NVGcolor expected = colors[3 % colors.size()].first;
+	REQUIRE(pad->setColor[3].r == Catch::Approx(expected.r));
+	REQUIRE(pad->setColor[3].g == Catch::Approx(expected.g));
+	REQUIRE(pad->setColor[3].b == Catch::Approx(expected.b));
+}
+
+TEST_CASE("Set-button menu: Reset only affects the targeted set", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+	auto* button = findSetButton(padWidget, 3);
+	REQUIRE(button != nullptr);
+
+	pad->snapshots[3][0].id = 7;
+	pad->snapshots[5][0].id = 6;
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* reset = findMenuItemByText(&menu, "Reset");
+	REQUIRE(reset != nullptr);
+	reset->onAction(*(new event::Action));
+
+	REQUIRE(pad->snapshots[3][0].id == 0);
+	REQUIRE(pad->snapshots[5][0].id == 6);
+}
+
+// Regression: resetSet() used to only touch the stored snapshots[s]/mixX/
+// mixY[s] data. Resetting the *currently active* set while node-position mode
+// is on left the live pad points showing the stale pre-reset layout until the
+// user switched sets and back -- the screen never reflected the reset.
+TEST_CASE("Set-button menu: Reset on the active set reloads the live pad layout", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->nodePosMode = NODEPOSMODE::STORE;
+	pad->currentSet = 2;
+	pad->nodes.setXyImmediate(0, 0.9f, 0.9f);
+	pad->storeNodePositions(2);
+	REQUIRE(pad->nodes.getXFinal(0) == 0.9f);
+
+	auto* button = findSetButton(padWidget, 2);
+	REQUIRE(button != nullptr);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* reset = findMenuItemByText(&menu, "Reset");
+	REQUIRE(reset != nullptr);
+	reset->onAction(*(new event::Action));
+
+	REQUIRE(pad->nodes.getXFinal(0) == pad->getNodePqX(0)->getDefaultValue());
+	REQUIRE(pad->nodes.getYFinal(0) == pad->getNodePqY(0)->getDefaultValue());
+}
+
+TEST_CASE("Set-button menu: Reset on an inactive set leaves the live pad layout alone", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->nodePosMode = NODEPOSMODE::STORE;
+	pad->currentSet = 2;
+	pad->nodes.setXyImmediate(0, 0.9f, 0.9f);
+
+	auto* button = findSetButton(padWidget, 5);
+	REQUIRE(button != nullptr);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* reset = findMenuItemByText(&menu, "Reset");
+	REQUIRE(reset != nullptr);
+	reset->onAction(*(new event::Action));
+
+	REQUIRE(pad->nodes.getXFinal(0) == 0.9f);
+}
+
+TEST_CASE("Set-button menu: Reset on the active set does not reload the pad layout when node-position mode is off", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	pad->nodePosMode = NODEPOSMODE::OFF;
+	pad->currentSet = 2;
+	pad->nodes.setXyImmediate(0, 0.9f, 0.9f);
+
+	auto* button = findSetButton(padWidget, 2);
+	REQUIRE(button != nullptr);
+
+	ui::Menu menu;
+	button->appendContextMenu(&menu);
+	auto* reset = findMenuItemByText(&menu, "Reset");
+	REQUIRE(reset != nullptr);
+	reset->onAction(*(new event::Action));
+
+	REQUIRE(pad->nodes.getXFinal(0) == 0.9f);
+}
+
+// Set-button ParamQuantity: "Active" tooltip
+
+TEST_CASE("Set ParamQuantity reports Active only for the current set", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	h.addWidget<TransitPadWidget>(pad);
+
+	REQUIRE(pad->currentSet == 0);
+	REQUIRE(pad->paramQuantities[TransitPadModule<>::SET_PARAM + 0]->getDisplayValueString() == "Active");
+	REQUIRE(pad->paramQuantities[TransitPadModule<>::SET_PARAM + 1]->getDisplayValueString() == "");
+
+	pad->changeSet(1);
+
+	REQUIRE(pad->paramQuantities[TransitPadModule<>::SET_PARAM + 0]->getDisplayValueString() == "");
+	REQUIRE(pad->paramQuantities[TransitPadModule<>::SET_PARAM + 1]->getDisplayValueString() == "Active");
+}
+
+// SEQ-EDIT: "Clear" followed by a fresh drag (XySeqWidget.hpp)
+// Bug: the module-level "Clear" menu item only zeroes seqData[...].length; it
+// never touches XySeqEditDragWidget::index, the widget's own write cursor
+// into seqData[...].x/y[]. A drag recorded before Clear could leave index at,
+// say, 40; onDragMove() then starts overwriting x[40]/y[40] onward instead of
+// x[0]/y[0], so length grows straight past the old, still-populated tail
+// waypoints, and the pre-Clear path reappears once the new drag is long
+// enough to reach them. onDragStart() already reset length to 0 for the same
+// reason -- it just forgot to reset index alongside it.
+
+TEST_CASE("SEQ-EDIT: a fresh drag after Clear doesn't resurrect the old path's tail", "[TransitPad][widget]") {
+	Test::Harness h;
+	TransitPadModule<>* pad = h.addModule<TransitPadModule<>>("TransitPad");
+	TransitPadWidget* padWidget = h.addWidget<TransitPadWidget>(pad);
+
+	auto* rec = findSeqEditDragWidget(padWidget);
+	REQUIRE(rec != nullptr);
+	// ThemedModuleWidget::step() no-ops under settings::headless (true in every
+	// test binary), so XySeqEditWidget::step() -- which applies module->seqEdit
+	// to recWidget via init() -- never runs through padWidget->step(). Step the
+	// parent XySeqEditWidget directly instead.
+	pad->seqEdit = 0;
+	auto* parentSeqEditWidget = dynamic_cast<StoermelderPackOne::XySeqEditWidget<TransitPadModule<>>*>(rec->parent);
+	REQUIRE(parentSeqEditWidget != nullptr);
+	parentSeqEditWidget->step();
+	REQUIRE(rec->id == 0);
+
+	// Simulate a long recorded drag leaving a stale, non-zero index -- as a
+	// real drag of 40+ points (well under XYSEQ_LENGTH) would.
+	for (int i = 0; i < 40; i++) {
+		pad->seqData[0][0].x[i] = 0.9f;
+		pad->seqData[0][0].y[i] = 0.9f;
+	}
+	pad->seqData[0][0].length = 40;
+	rec->index = 40;
+
+	// Clear via the module call the context menu item uses directly
+	// (XySeqWidget.hpp's createContextMenu()), bypassing rec->clear().
+	pad->seqClear(0);
+	REQUIRE(pad->seqLength(0) == 0);
+
+	// A fresh drag: onDragStart() resets the recording state, then
+	// onDragMove() writes the first waypoint immediately (timerClear from
+	// onDragStart() lets it bypass the ~65ms recording-interval gate that
+	// throttles every subsequent move within a real drag).
+	Vec scenePos = rec->getAbsoluteOffset(Vec());
+	h.events().hover(scenePos);
+
+	event::DragStart eStart;
+	eStart.button = GLFW_MOUSE_BUTTON_LEFT;
+	rec->onDragStart(eStart);
+	REQUIRE(rec->index == 0);
+
+	h.events().hover(scenePos.plus(Vec(10.f, 10.f)));
+	event::DragMove eMove;
+	eMove.button = GLFW_MOUSE_BUTTON_LEFT;
+	rec->onDragMove(eMove);
+
+	// Only the recorded point from this drag -- none of the stale 0.9f/0.9f
+	// tail from before Clear.
+	REQUIRE(pad->seqLength(0) == 1);
+	REQUIRE(pad->seqData[0][0].x[0] != 0.9f);
+	REQUIRE(pad->seqData[0][0].y[0] != 0.9f);
+
+	rec->dragChange = nullptr;
 }

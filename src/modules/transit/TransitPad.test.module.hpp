@@ -300,7 +300,7 @@ TEST_CASE("Snapshot-set node positions", "[TransitPad]") {
 	SECTION("Capturing a node above snapshotsUsed stores the real values") {
 		// process() refreshes radius[]/amount[] only for j < snapshotsUsed, so
 		// node 6 is never refreshed no matter how long the module runs.
-		m->snapshotsUsed = 4;
+		m->setSnapshotsUsed(4);
 		m->nodes.setRadiusImmediate(6, 0.5f);
 		m->nodes.setAmountImmediate(6, 0.6f);
 		h.dspSteps(50);
@@ -496,6 +496,208 @@ TEST_CASE("Snapshot-set node positions", "[TransitPad]") {
 		REQUIRE(m->nodes.getXFinal(0) == 0.05f);
 		REQUIRE(m->nodes.getYFinal(0) == 0.05f);
 	}
+}
+
+
+// Most sections below flip the raw seqSwitchMode field directly rather than
+// through setSeqSwitchMode(), to isolate changeSet()/copySet()/resetSet()'s
+// own behavior from setSeqSwitchMode(true)'s one-time seeding side effect
+// (every set starts at sequence 0, matching a freshly constructed module).
+// setSeqSwitchMode() itself is covered separately, in the widget-level menu
+// tests and the JSON round-trip test below.
+TEST_CASE("Snapshot-set motion sequence", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	SECTION("Off (default): switching sets does not change the selected sequence") {
+		m->seqSelected[0] = 5;
+		REQUIRE(m->seqSwitchMode == false);
+
+		m->changeSet(3);
+
+		REQUIRE(m->currentSet == 3);
+		REQUIRE(m->seqSelected[0] == 5);
+	}
+
+	SECTION("changeSet() captures the outgoing set's selection and loads the incoming one") {
+		m->seqSwitchMode = true;
+		// Give set 3 its own selection by visiting it and picking a sequence
+		// there first, then coming back to set 0.
+		m->changeSet(3);
+		m->seqSelected[0] = 7;
+		m->changeSet(0);
+		m->seqSelected[0] = 2;
+
+		m->changeSet(3);
+
+		REQUIRE(m->currentSet == 3);
+		// Set 3's earlier selection is live again...
+		REQUIRE(m->seqSelected[0] == 7);
+
+		// ...and set 0's selection (2, picked just before leaving it) was
+		// captured, not discarded.
+		m->changeSet(0);
+		REQUIRE(m->seqSelected[0] == 2);
+	}
+
+	SECTION("changeSet() back and forth round-trips both sets' selections") {
+		m->seqSwitchMode = true;
+		m->seqSelected[0] = 1;
+
+		m->changeSet(5);
+		m->seqSelected[0] = 9;
+
+		m->changeSet(0);
+		REQUIRE(m->seqSelected[0] == 1);
+
+		m->changeSet(5);
+		REQUIRE(m->seqSelected[0] == 9);
+	}
+
+	SECTION("A no-op changeSet() (same set) does not touch the live selection") {
+		m->seqSwitchMode = true;
+		m->seqSelected[0] = 8;
+
+		m->changeSet(0);
+
+		REQUIRE(m->seqSelected[0] == 8);
+	}
+
+	SECTION("reloadCurrentSet() restores the set's selection, discarding an unsaved change") {
+		m->seqSwitchMode = true;
+		// Give set 0 a selection distinct from the one about to be discarded.
+		m->seqSelected[0] = 3;
+		m->changeSet(1);
+		m->changeSet(0);
+		// An unsaved change to the live sequence selection, as if the user had
+		// just picked a different slot without switching sets.
+		m->seqSelected[0] = 6;
+
+		m->reloadCurrentSet();
+
+		REQUIRE(m->seqSelected[0] == 3);
+	}
+
+	SECTION("reloadCurrentSet() is a no-op when the mode is off") {
+		m->seqSelected[0] = 6;
+
+		m->reloadCurrentSet();
+
+		REQUIRE(m->seqSelected[0] == 6);
+	}
+
+	SECTION("copySet() propagates the selection to another set only when the mode is on") {
+		m->seqSwitchMode = true;
+		m->changeSet(1);
+		m->seqSelected[0] = 4;
+		m->changeSet(0);
+
+		SECTION("Off: selection is left untouched") {
+			m->seqSwitchMode = false;
+			m->copySet(1, 6);
+			m->changeSet(6);
+			REQUIRE(m->seqSelected[0] != 4);
+		}
+
+		SECTION("On: selection is copied") {
+			m->copySet(1, 6);
+			m->changeSet(6);
+			REQUIRE(m->seqSelected[0] == 4);
+		}
+	}
+
+	SECTION("copySet() onto the active set applies the copied selection live") {
+		m->seqSwitchMode = true;
+		m->changeSet(1);
+		m->seqSelected[0] = 4;
+		m->changeSet(6);
+		m->seqSelected[0] = 2;
+
+		m->copySet(1, 6);
+
+		REQUIRE(m->seqSelected[0] == 4);
+	}
+
+	SECTION("copySet() onto an inactive set does not touch the live selection") {
+		m->seqSwitchMode = true;
+		m->changeSet(1);
+		m->seqSelected[0] = 4;
+		m->changeSet(2);
+		m->seqSelected[0] = 9;
+
+		m->copySet(1, 6);
+
+		REQUIRE(m->seqSelected[0] == 9);
+	}
+
+	SECTION("resetSet() resets a set's selection back to the first sequence") {
+		m->seqSwitchMode = true;
+		m->changeSet(3);
+		m->seqSelected[0] = 5;
+		m->changeSet(0);
+
+		m->resetSet(3);
+
+		m->changeSet(3);
+		REQUIRE(m->seqSelected[0] == 0);
+	}
+
+	SECTION("resetSet() on the active set applies the reset selection live, only when the mode is on") {
+		m->seqSwitchMode = true;
+		m->currentSet = 3;
+		m->seqSelected[0] = 5;
+
+		m->resetSet(3);
+
+		REQUIRE(m->seqSelected[0] == 0);
+	}
+
+	SECTION("resetSet() on the active set leaves the live selection alone when the mode is off") {
+		m->currentSet = 3;
+		m->seqSelected[0] = 5;
+
+		m->resetSet(3);
+
+		REQUIRE(m->seqSelected[0] == 5);
+	}
+}
+
+
+// setSeqSwitchMode() is the entry point the context menu calls (as opposed to
+// writing seqSwitchMode directly, which is only done above to isolate other
+// behavior). Enabling it must seed every set from whatever sequence is live
+// right now, or every not-yet-visited set would silently jump to sequence 0
+// the moment it becomes active.
+TEST_CASE("setSeqSwitchMode(true) seeds every set from the live selection", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	m->seqSelected[0] = 6;
+	m->setSeqSwitchMode(true);
+
+	REQUIRE(m->seqSwitchMode == true);
+	// Every set, not just the current one, now carries the live selection --
+	// observable by visiting each and checking nothing resets to 0.
+	for (uint8_t s = 0; s < m->getSetCount(); s++) {
+		m->changeSet(s);
+		REQUIRE(m->seqSelected[0] == 6);
+	}
+}
+
+TEST_CASE("setSeqSwitchMode(false) turns the mode off without touching the live selection", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	m->setSeqSwitchMode(true);
+	m->seqSelected[0] = 6;
+
+	m->setSeqSwitchMode(false);
+
+	REQUIRE(m->seqSwitchMode == false);
+	REQUIRE(m->seqSelected[0] == 6);
+	// With the mode off again, switching sets no longer changes the selection.
+	m->changeSet(4);
+	REQUIRE(m->seqSelected[0] == 6);
 }
 
 
@@ -830,9 +1032,9 @@ TEST_CASE("JSON round-trip preserves snapshotsUsed", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
 
-	m->snapshotsUsed = 6;
+	m->setSnapshotsUsed(6);
 	json_t* j = m->dataToJson();
-	m->snapshotsUsed = 4;
+	m->setSnapshotsUsed(4);
 	m->dataFromJson(j);
 	json_decref(j);
 
@@ -1082,6 +1284,101 @@ TEST_CASE("JSON round-trip preserves per-set snapshot x/y/radius/amount in Store
 }
 
 
+// Every other JSON round-trip test in this file only ever reads/writes
+// snapshots[s][0] -- a bug affecting any other snapshot index (1..SNAPSHOTS-1),
+// in any set, would ship undetected. Cover every index, including the last
+// one, across multiple sets.
+TEST_CASE("JSON round-trip preserves per-set snapshot data at every snapshot index", "[TransitPad][JSON]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	m->nodePosMode = NODEPOSMODE::STORE;
+	// All 8 points must be active, or dataToJson() only serializes up to
+	// snapshotsUsed (indices past it are unused and intentionally dropped).
+	m->setSnapshotsUsed(8);
+
+	auto expectedX = [](uint8_t s, uint8_t i) { return 0.01f * s + 0.001f * i; };
+	auto expectedY = [](uint8_t s, uint8_t i) { return 0.02f * s + 0.001f * i; };
+	auto expectedRadius = [](uint8_t s, uint8_t i) { return 0.03f * s + 0.001f * i; };
+	auto expectedAmount = [](uint8_t s, uint8_t i) { return 0.04f * s + 0.001f * i; };
+	auto expectedId = [](uint8_t s, uint8_t i) { return (int)(s * 10 + i); };
+
+	for (uint8_t s = 0; s < 8; s++) {
+		for (uint8_t i = 0; i < 8; i++) {
+			m->snapshots[s][i].id = expectedId(s, i);
+			m->snapshots[s][i].x = expectedX(s, i);
+			m->snapshots[s][i].y = expectedY(s, i);
+			m->snapshots[s][i].radius = expectedRadius(s, i);
+			m->snapshots[s][i].amount = expectedAmount(s, i);
+		}
+	}
+
+	json_t* j = m->dataToJson();
+	for (uint8_t s = 0; s < 8; s++) {
+		for (uint8_t i = 0; i < 8; i++) {
+			m->snapshots[s][i].id = 0;
+			m->snapshots[s][i].x = 0.f;
+			m->snapshots[s][i].y = 0.f;
+			m->snapshots[s][i].radius = 0.f;
+			m->snapshots[s][i].amount = 0.f;
+		}
+	}
+	m->dataFromJson(j);
+	json_decref(j);
+
+	for (uint8_t s = 0; s < 8; s++) {
+		for (uint8_t i = 0; i < 8; i++) {
+			REQUIRE(m->snapshots[s][i].id == expectedId(s, i));
+			REQUIRE(m->snapshots[s][i].x == Catch::Approx(expectedX(s, i)));
+			REQUIRE(m->snapshots[s][i].y == Catch::Approx(expectedY(s, i)));
+			REQUIRE(m->snapshots[s][i].radius == Catch::Approx(expectedRadius(s, i)));
+			REQUIRE(m->snapshots[s][i].amount == Catch::Approx(expectedAmount(s, i)));
+		}
+	}
+}
+
+
+// dataToJson() only serializes the snapshotsUsed-active points (both the
+// top-level "nodes" array and each set's "snapshots" array) so an unused
+// point never inflates the patch, in every set -- not just the current one.
+TEST_CASE("dataToJson only serializes nodes/snapshots up to snapshotsUsed", "[TransitPad][JSON]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+	m->setSnapshotsUsed(3);
+
+	json_t* rootJ = m->dataToJson();
+
+	json_t* nodesJ = json_object_get(rootJ, "nodes");
+	REQUIRE(json_array_size(nodesJ) == 3);
+
+	json_t* setsJ = json_object_get(rootJ, "sets");
+	REQUIRE(json_array_size(setsJ) == 8);
+	for (size_t s = 0; s < json_array_size(setsJ); s++) {
+		json_t* snapshotsJ = json_object_get(json_array_get(setsJ, s), "snapshots");
+		REQUIRE(json_array_size(snapshotsJ) == 3);
+	}
+
+	json_decref(rootJ);
+}
+
+TEST_CASE("dataFromJson leaves points past a trimmed save at their defaults", "[TransitPad][JSON]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+	m->setSnapshotsUsed(3);
+	m->snapshots[0][0].id = 7;
+
+	json_t* rootJ = m->dataToJson();
+	m->dataFromJson(rootJ);
+	json_decref(rootJ);
+
+	REQUIRE(m->snapshotsUsed == 3);
+	REQUIRE(m->snapshots[0][0].id == 7);
+	// Never serialized (index >= snapshotsUsed), so dataFromJson leaves the
+	// pre-load default (A-D pre-bound, everything else unbound) untouched.
+	REQUIRE(m->snapshots[0][4].id == -1);
+	REQUIRE(m->snapshots[7][4].id == -1);
+}
+
 TEST_CASE("JSON round-trip preserves a custom setColor", "[TransitPad][JSON]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
@@ -1143,6 +1440,86 @@ TEST_CASE("JSON round-trip preserves the motion sequence under 'output'", "[Tran
 }
 
 
+// seqSwitchMode gates a per-set "seqSelected" field the same way nodePosMode
+// gates the per-set x/y/radius/amount fields (see the Golden JSON test above):
+// omitted to keep the patch slim when the feature isn't used, present per set
+// once it is.
+TEST_CASE("JSON round-trip preserves seqSwitchMode and the per-set selected sequence", "[TransitPad][JSON]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+
+	SECTION("seqSwitchMode itself survives save/load") {
+		m->seqSwitchMode = true;
+		json_t* j = m->dataToJson();
+		m->seqSwitchMode = false;
+		m->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(m->seqSwitchMode == true);
+	}
+
+	SECTION("Off (default): 'seqSelected' is omitted from every set's JSON") {
+		m->changeSet(2);
+		m->seqSelected[0] = 5;
+		m->changeSet(0);
+
+		json_t* rootJ = m->dataToJson();
+		json_t* setsJ = json_object_get(rootJ, "sets");
+		json_t* set2J = json_array_get(setsJ, 2);
+		REQUIRE(json_object_get(set2J, "seqSelected") == nullptr);
+		json_decref(rootJ);
+	}
+
+	SECTION("On: each set's selection is restored on load") {
+		m->setSeqSwitchMode(true);
+		m->changeSet(2);
+		m->seqSelected[0] = 5;
+		m->changeSet(6);
+		m->seqSelected[0] = 11;
+		m->changeSet(0);
+
+		json_t* rootJ = m->dataToJson();
+		// The wire format stores it under "seqSelected" per set.
+		json_t* setsJ = json_object_get(rootJ, "sets");
+		json_t* set2J = json_array_get(setsJ, 2);
+		REQUIRE(json_integer_value(json_object_get(set2J, "seqSelected")) == 5);
+
+		m->dataFromJson(rootJ);
+		json_decref(rootJ);
+
+		m->changeSet(2);
+		REQUIRE(m->seqSelected[0] == 5);
+		m->changeSet(6);
+		REQUIRE(m->seqSelected[0] == 11);
+	}
+
+	SECTION("On load, the current set's stored selection is applied to the live sequence") {
+		m->seqSwitchMode = true;
+		m->changeSet(4);
+		m->seqSelected[0] = 9;
+		// changeSet() only captures the *outgoing* set's live selection, same
+		// as nodePosMode's Auto capture -- leave and come back so set 4's
+		// edit is actually persisted before saving.
+		m->changeSet(0);
+		m->changeSet(4);
+
+		json_t* j = m->dataToJson();
+		m->seqSelected[0] = 0;
+		m->dataFromJson(j);
+		json_decref(j);
+
+		REQUIRE(m->seqSelected[0] == 9);
+	}
+
+	SECTION("Missing 'seqSwitchMode' key on load leaves the flag unchanged (back-compat)") {
+		m->seqSwitchMode = true;
+		json_t* j = json_object();
+		m->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(m->seqSwitchMode == true);
+	}
+}
+
+
 TEST_CASE("onReset clears setLabel", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
@@ -1161,7 +1538,7 @@ TEST_CASE("onReset restores defaults", "[TransitPad]") {
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
 
 	m->currentSet = 6;
-	m->snapshotsUsed = 8;
+	m->setSnapshotsUsed(8);
 	Module::ResetEvent re;
 	m->onReset(re);
 
@@ -1182,11 +1559,14 @@ TEST_CASE("Reset and randomize go through the event-form handlers", "[TransitPad
 
 	SECTION("ResetEvent restores defaults") {
 		m->currentSet = 5;
-		m->snapshotsUsed = 7;
+		m->setSnapshotsUsed(7);
 		m->locked = true;
 		m->setLabel[2] = "custom";
 		m->setCvMode = SETCVMODE::C4;
 		m->nodePosMode = NODEPOSMODE::AUTO;
+		m->seqSwitchMode = true;
+		m->changeSet(2);
+		m->seqSelected[0] = 5;
 
 		Module::ResetEvent e;
 		m->onReset(e);
@@ -1197,6 +1577,13 @@ TEST_CASE("Reset and randomize go through the event-form handlers", "[TransitPad
 		REQUIRE(m->setLabel[2] == "");
 		REQUIRE(m->setCvMode == SETCVMODE::TRIG_FWD);
 		REQUIRE(m->nodePosMode == NODEPOSMODE::OFF);
+		REQUIRE(m->seqSwitchMode == false);
+		// Set 2's stored selection was wiped back to the default too, though
+		// with seqSwitchMode now off it can only be observed by turning the
+		// mode on again and visiting the set.
+		m->seqSwitchMode = true;
+		m->changeSet(2);
+		REQUIRE(m->seqSelected[0] == 0);
 	}
 
 	SECTION("RandomizeEvent moves the snapshot node positions") {
@@ -1376,7 +1763,7 @@ TEST_CASE("A mapped OUT_X_POS/OUT_Y_POS is not overwritten by the stale UI-drag 
 TEST_CASE("Snapshot weights: point inside radius gets nonzero weight", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
-	m->snapshotsUsed = 1;
+	m->setSnapshotsUsed(1);
 
 	// Default positions: snapshot 0 at (0, 0), mix point at (0.5, 0.5)
 	// Distance = sqrt(0.5^2 + 0.5^2) ≈ 0.707, default radius = 1.0 → inside
@@ -1389,7 +1776,7 @@ TEST_CASE("Snapshot weights: point inside radius gets nonzero weight", "[Transit
 TEST_CASE("Snapshot weights: point outside radius gets zero weight", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
-	m->snapshotsUsed = 1;
+	m->setSnapshotsUsed(1);
 
 	// Move mix point to (0.9, 0.9) via the filter state so process() respects it.
 	// Snapshot 0 defaults to (0, 0).
@@ -1404,7 +1791,7 @@ TEST_CASE("Snapshot weights: point outside radius gets zero weight", "[TransitPa
 TEST_CASE("Snapshot weights are written to the active set", "[TransitPad]") {
 	Test::Harness h;
 	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
-	m->snapshotsUsed = 1;
+	m->setSnapshotsUsed(1);
 
 	// Default positions: snapshot 0 at (0, 0), mix at (0.5, 0.5) → nonzero weight
 	m->currentSet = 0;
@@ -1417,4 +1804,68 @@ TEST_CASE("Snapshot weights are written to the active set", "[TransitPad]") {
 	m->currentSet = 3;
 	h.dspSteps(5);
 	REQUIRE(m->snapshots[3][0].weight > 0.f);
+}
+
+
+// setSnapshotsUsed() is what the "Number of snapshots" menu item calls
+// (TransitPad.cpp's appendContextMenu). Raising the count re-activates points
+// that were previously hidden/undraggable and could hold stale binding or
+// geometry from an earlier time they were active, in any set -- not just the
+// current one.
+TEST_CASE("Raising the snapshot count resets newly-activated points to defaults, in every set", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+	m->setSnapshotsUsed(4);
+
+	// Leave stale, non-default data on point 5 (index 4, inactive at count 4)
+	// across two different sets.
+	for (uint8_t s : {(uint8_t)1, (uint8_t)6}) {
+		m->snapshots[s][4].id = 3;
+		m->snapshots[s][4].weight = 0.42f;
+		m->snapshots[s][4].x = 0.9f;
+		m->snapshots[s][4].y = 0.9f;
+		m->snapshots[s][4].radius = 0.1f;
+		m->snapshots[s][4].amount = 0.1f;
+	}
+
+	m->setSnapshotsUsed(6);
+
+	for (uint8_t s : {(uint8_t)1, (uint8_t)6}) {
+		REQUIRE(m->snapshots[s][4].id == -1);
+		REQUIRE(m->snapshots[s][4].weight == 0.f);
+		REQUIRE(m->snapshots[s][4].x == m->getNodePqX(4)->getDefaultValue());
+		REQUIRE(m->snapshots[s][4].y == m->getNodePqY(4)->getDefaultValue());
+		REQUIRE(m->snapshots[s][4].radius == m->getNodeRadiusDefault(4));
+		REQUIRE(m->snapshots[s][4].amount == m->Sc::getNodeAmountDefault(4));
+	}
+	REQUIRE(m->snapshotsUsed == 6);
+}
+
+TEST_CASE("Raising the snapshot count doesn't touch points already active", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+	m->setSnapshotsUsed(4);
+
+	m->snapshots[2][0].x = 0.33f;
+	m->snapshots[2][0].y = 0.44f;
+
+	m->setSnapshotsUsed(6);
+
+	REQUIRE(m->snapshots[2][0].x == 0.33f);
+	REQUIRE(m->snapshots[2][0].y == 0.44f);
+}
+
+TEST_CASE("Lowering the snapshot count doesn't reset any point", "[TransitPad]") {
+	Test::Harness h;
+	TransitPadModule<>* m = h.addModule<TransitPadModule<>>("TransitPad");
+	m->setSnapshotsUsed(6);
+
+	m->snapshots[0][5].x = 0.33f;
+	m->snapshots[0][5].y = 0.44f;
+
+	m->setSnapshotsUsed(4);
+
+	REQUIRE(m->snapshots[0][5].x == 0.33f);
+	REQUIRE(m->snapshots[0][5].y == 0.44f);
+	REQUIRE(m->snapshotsUsed == 4);
 }

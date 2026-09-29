@@ -20,6 +20,9 @@ namespace __ui {
 namespace __modelbox {
 	#include "Mb.test.modelbox.hpp"
 }
+namespace __keymap {
+	#include "Mb.test.keymap.hpp"
+}
 
 void testPluginInit(rack::Plugin* p) {
 	pluginInstance = p;

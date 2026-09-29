@@ -161,7 +161,7 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)
 - v2.4.1
     - Fixed crash on patch autosave and on preset-loading
-- v2.x.x
+- v2.7.0
     - Fixed inefficient implementation of _Safe mode_/_Unsafe mode_/_Unsafe fast mode_
     - Fixed crash in Rack plugin for certain modules if no plugin-window is open
     - Fixed a background worker that could stall indefinitely

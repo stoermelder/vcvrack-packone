@@ -33,10 +33,10 @@ enum class NODEPOSMODE {
 	AUTO = 2
 };
 
-/** True for every NODEPOSMODE value a valid preset can contain. An unknown
- * value must not be stored: changeSet() tests `!= OFF` and `== AUTO`, so it
- * would silently behave as Store while no context-menu entry shows a
- * checkmark, leaving the user no way to see or change the active mode. */
+// True for every NODEPOSMODE value a valid preset can contain. An unknown
+// value must not be stored: changeSet() tests `!= OFF` and `== AUTO`, so it
+// would silently behave as Store while no context-menu entry shows a
+// checkmark, leaving the user no way to see or change the active mode.
 inline bool isValidNodePosMode(int mode) {
 	return mode == (int)NODEPOSMODE::OFF
 		|| mode == (int)NODEPOSMODE::STORE
@@ -52,6 +52,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		std::string getLabel() override {
 			if (tpModule && id >= 0) return tpModule->getSetLabel(id);
 			return name;
+		}
+
+		std::string getDisplayValueString() override {
+			if (tpModule && id >= 0 && tpModule->currentSet == id) return "Active";
+			return "";
 		}
 	};
 
@@ -87,13 +92,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	typedef XyScreenModule<SNAPSHOTS> Sc;
 	typedef XySeqModule<1> Seq;
 
-	/** [Stored to JSON] */
+	// [Stored to JSON]
 	int panelTheme = 0;
 
-	/** [Stored to JSON]
-	 *  Written from the UI thread (context menu via createValuePtrMenuItem, dataFromJson)
-	 *  and read from the engine thread (process())
-	 */
+	// [Stored to JSON] Written from the UI thread (context menu via
+	// createValuePtrMenuItem, dataFromJson) and read from the engine thread (process())
 	std::atomic<int> snapshotsUsed{SNAPSHOTS};
 
 	float dist[SNAPSHOTS];
@@ -106,34 +109,42 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	float outUiY, outInY;
 	dsp::ExponentialFilter outYfilter;
 
-	/** [Stored to JSON]
-	 *  Written by the engine thread (process(): set-CV and the button scan) and
-	 *  the UI thread (dataFromJson); read by the UI thread (context menus,
-	 *  drawLayer, getItemLabel) and by TRANSIT's engine-side presetProcessXyPad
-	 *  through getPadFactors(). The most actively written of the shared fields,
-	 *  so it is atomic like snapshotsUsed and setCvMode.
-	 */
+	// [Stored to JSON] Written by the engine thread (process(): set-CV and
+	// the button scan) and the UI thread (dataFromJson); read by the UI thread
+	// (context menus, drawLayer, getItemLabel) and by TRANSIT's engine-side
+	// presetProcessXyPad through getPadFactors(). The most actively written of
+	// the shared fields, so it is atomic like snapshotsUsed and setCvMode.
 	std::atomic<int> currentSet{0};
-	/** [Stored to JSON]
-	 *  Written from the UI thread (context menu via createValuePtrMenuItem, dataFromJson)
-	 *  and read from the engine thread (process()).
-	 */
+	// [Stored to JSON] Written from the UI thread (context menu via 
+	// createValuePtrMenuItem, dataFromJson) and read from the engine thread (process()).
 	std::atomic<SETCVMODE> setCvMode{SETCVMODE::TRIG_FWD};
 	dsp::SchmittTrigger setCvTrigger;
-	/** Set last selected by the VOLT/C4 CV, or -1 to apply the CV on the next tick. */
+	// Set last selected by the VOLT/C4 CV, or -1 to apply the CV on the next tick.
 	int setCvLast = -1;
-	/** [Stored to JSON] written from the UI thread (context menu, dataFromJson),
-	 *  read from the engine thread (process(), on set change) and the UI thread. */
+	// [Stored to JSON] written from the UI thread (context menu, dataFromJson),
+	// read from the engine thread (process(), on set change) and the UI thread.
 	std::atomic<NODEPOSMODE> nodePosMode{NODEPOSMODE::OFF};
 	std::vector<TransitPadSource> snapshots[SETS];
-	/** [Stored to JSON] per-set Mix-cursor position; used only when nodePosMode != OFF. */
+	// [Stored to JSON] per-set Mix-cursor position; used only when nodePosMode != OFF.
 	float mixX[SETS], mixY[SETS];
 	NVGcolor setColor[SETS];
-	/** [Stored to JSON] per-set custom label; empty string means "use default" */
+	// [Stored to JSON] per-set custom label; empty string means "use default"
 	std::string setLabel[SETS];
+	// Set last copied via the "Copy" context-menu item, or -1. Not persisted.
+	int setCopy = -1;
 
-	/** [Stored to JSON] when true, pad drag and drop-binding are disabled */
+	// [Stored to JSON] when true, pad drag and drop-binding are disabled.
 	bool locked = false;
+
+	// [Stored to JSON] written from the UI thread (context menu, dataFromJson),
+	// read from the engine thread (process(), on set change) and the UI thread.
+	// When true, the selected motion sequence (Seq::seqSelected[0]) is captured
+	// per set on changeSet(), same as nodePosMode's AUTO behaviour for pad
+	// geometry.
+	bool seqSwitchMode = false;
+	// [Stored to JSON] per-set selected motion sequence; used only when
+	// seqSwitchMode is true.
+	int setSeqSelected[SETS];
 
 	ClockDividerEx buttonDivider;
 	ClockDividerEx lightDivider;
@@ -150,17 +161,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
-		// Listen on the same "Transit" topic Transit/TransitEx already broadcast
-		// on every connect/disconnect anywhere in the patch (Transit.cpp,
-		// TransitEx.cpp), so masterModule can be re-verified by walking left
-		// through the chain in process() below -- not just from this pad's own
-		// direct-neighbour onExpanderChange, which never fires when a +T between
-		// this pad and its host Transit is what actually changed.
 		registerModuleListener("Transit", this);
 		moduleChangedFlag = true;
 
-		// Seed LOW, not the trigger's default UNINITIALIZED, since SET_PARAM
-		// always starts at 0.f (see configSwitch below).
 		for (uint8_t s = 0; s < SETS; s++) {
 			setButtonTrigger[s].s = dsp::BooleanTrigger::LOW;
 		}
@@ -169,15 +172,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			TransitPadSetParamQuantity* q = configSwitch<TransitPadSetParamQuantity>(SET_PARAM + s, 0.0f, 1.0f, 0.0f, string::f("Snapshot-set #%i", s + 1));
 			q->tpModule = this;
 			q->id = s;
-			// Momentary: randomizing it would silently latch a set change on the
-			// next buttonDivider tick.
 			q->randomizeEnabled = false;
 		}
 
-		// randomizeEnabled = false throughout: onRandomize() below drives position
-		// itself, bounded to the active snapshotsUsed nodes -- Module::onRandomize()'s
-		// own per-param sweep has no notion of that bound and would otherwise
-		// also randomize every inactive node's position independently.
 		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 0, 0.0f, 1.0f, 0.0f, "Snapshot A x-pos")->randomizeEnabled = false;
 		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 0, 0.0f, 1.0f, 0.0f, "Snapshot A y-pos")->randomizeEnabled = false;
 		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 1, 0.0f, 1.0f, 1.0f, "Snapshot B x-pos")->randomizeEnabled = false;
@@ -235,31 +232,6 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		notifyModuleListeners("Transit");
 	}
 
-	// Walks left through any chain of +T (TransitEx) expanders looking for the
-	// host TRANSIT, mirroring Transit::process()'s own rightward walk. Needed
-	// because TransitModule's destructor never clears a pad's masterModule
-	// (TransitBase has no notion of which pad, if any, is downstream of it),
-	// and onExpanderChange only fires on this pad's own direct neighbour: in
-	// Transit -> +T -> Pad, removing Transit only changes the +T's neighbour,
-	// so the pad is never told directly and masterModule would otherwise keep
-	// pointing at freed memory. Run whenever this pad -- or anything else
-	// carrying a Transit/+T -- last changed anywhere in the patch.
-	void updateMasterModule() {
-		Module* m = leftExpander.module;
-		int c = 0;
-		while (m) {
-			if (m->model == modelTransit) {
-				masterModule = dynamic_cast<TransitPadMaster*>(m);
-				return;
-			}
-			if (m->model != modelTransitEx) break;
-			m = m->leftExpander.module;
-			c++;
-			if (c > 15) break;
-		}
-		masterModule = nullptr;
-	}
-
 	void onReset(const ResetEvent& e) override {
 		Sc::selection = XyScreenSelection();
 		init();
@@ -268,9 +240,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		setCvMode.store(SETCVMODE::TRIG_FWD, std::memory_order_relaxed);
 		nodePosMode.store(NODEPOSMODE::OFF, std::memory_order_relaxed);
 		locked = false;
+		seqSwitchMode = false;
 
 		for (uint8_t s = 0; s < SETS; s++) {
 			setLabel[s] = "";
+			setSeqSelected[s] = 0;
 		}
 
 		Sc::resetNodes();
@@ -281,7 +255,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	void onRandomize(const RandomizeEvent& e) override {
 		// Only the active pad points, matching the rest of the module's
 		// convention that anything at id >= snapshotsUsed is neither drawn nor
-		// draggable and must not be touched (see process()'s weight-reset loop).
+		// draggable and must not be touched (see setSnapshotsUsed()).
 		const int n = snapshotsUsed.load(std::memory_order_relaxed);
 		for (int i = 0; i < n; i++) {
 			Sc::nodes.setXyImmediate(i, random::uniform(), random::uniform());
@@ -310,6 +284,26 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 
 		Module::onRandomize(e);
+	}
+
+	// Walks left through any chain of +T expanders to find the host TRANSIT.
+	// Needed because removing a Transit two or more hops away only notifies
+	// its direct +T neighbour via onExpanderChange, not this pad, so
+	// masterModule must be re-resolved rather than cleared by the destructor.
+	void updateMasterModule() {
+		Module* m = leftExpander.module;
+		int c = 0;
+		while (m) {
+			if (m->model == modelTransit) {
+				masterModule = dynamic_cast<TransitPadMaster*>(m);
+				return;
+			}
+			if (m->model != modelTransitEx) break;
+			m = m->leftExpander.module;
+			c++;
+			if (c > 15) break;
+		}
+		masterModule = nullptr;
 	}
 
 	void init() {
@@ -352,19 +346,116 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		setCursorXyImmediate(0, mixX[s], mixY[s]);
 	}
 
+	// Resets snapshot i of set s to its factory pad-point geometry (x/y/radius/
+	// amount), the part shared by every "reset to defaults" call site below.
+	void resetSnapshotGeometry(uint8_t s, uint8_t i) {
+		snapshots[s][i].x = getNodePqX(i)->getDefaultValue();
+		snapshots[s][i].y = getNodePqY(i)->getDefaultValue();
+		snapshots[s][i].radius = getNodeRadiusDefault(i);
+		snapshots[s][i].amount = Sc::getNodeAmountDefault(i);
+	}
+
+	// Resets snapshot i of set s to full factory defaults: binding (A-D ->
+	// slots 0-3, the rest unbound), weight, and pad-point geometry.
+	void resetSnapshotDefaults(uint8_t s, uint8_t i) {
+		snapshots[s][i].id = i < 4 ? i : -1;
+		snapshots[s][i].weight = 0.f;
+		resetSnapshotGeometry(s, i);
+	}
+
+	// Copies set s's snapshot bindings into set t -- not color or label, which
+	// stay per-set identity, not part of the "content" of a set. The pad-point
+	// geometry and Mix cursor (x/y/radius/amount, mixX/mixY) are only
+	// meaningful while node-position mode is on, so they're copied along with
+	// the bindings in that case and left untouched otherwise. Same for the
+	// stored motion-sequence selection under seqSwitchMode.
+	void copySet(uint8_t s, uint8_t t) {
+		bool copyPositions = nodePosMode.load(std::memory_order_relaxed) != NODEPOSMODE::OFF;
+		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+			snapshots[t][i].id = snapshots[s][i].id;
+			if (copyPositions) {
+				snapshots[t][i].x = snapshots[s][i].x;
+				snapshots[t][i].y = snapshots[s][i].y;
+				snapshots[t][i].radius = snapshots[s][i].radius;
+				snapshots[t][i].amount = snapshots[s][i].amount;
+			}
+		}
+		if (copyPositions) {
+			mixX[t] = mixX[s];
+			mixY[t] = mixY[s];
+		}
+		if (seqSwitchMode) {
+			setSeqSelected[t] = setSeqSelected[s];
+		}
+
+		if (t == currentSet) {
+			if (copyPositions) loadNodePositions(t);
+			if (seqSwitchMode) Seq::seqSelected[0] = setSeqSelected[t];
+		}
+	}
+
+	// Resets set s back to the same factory defaults initExtra() seeds a
+	// freshly constructed module with: snapshot bindings (A-D -> slots 0-3,
+	// the rest unbound), pad-point geometry, the set's Mix cursor position,
+	// its default palette color, its label, and its stored motion-sequence
+	// selection.
+	void resetSet(uint8_t s) {
+		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+			resetSnapshotDefaults(s, i);
+		}
+		mixX[s] = paramQuantities[OUT_X_POS]->getDefaultValue();
+		mixY[s] = paramQuantities[OUT_Y_POS]->getDefaultValue();
+		setColor[s] = colors[s % colors.size()].first;
+		setLabel[s] = "";
+		setSeqSelected[s] = 0;
+
+		if (s == currentSet) {
+			if (nodePosMode.load(std::memory_order_relaxed) != NODEPOSMODE::OFF) loadNodePositions(s);
+			if (seqSwitchMode) Seq::seqSelected[0] = setSeqSelected[s];
+		}
+	}
+
+	// Changes the number of active snapshot points. Newly-activated ones (in
+	// every set) reset to defaults; deactivated ones keep their geometry but
+	// have their weight cleared, since nothing else re-derives it.
+	void setSnapshotsUsed(int n) {
+		int oldUsed = snapshotsUsed.load(std::memory_order_relaxed);
+		snapshotsUsed = n;
+		for (int i = oldUsed; i < n; i++) {
+			for (uint8_t s = 0; s < SETS; s++) {
+				resetSnapshotDefaults(s, i);
+			}
+		}
+		for (int i = n; i < oldUsed; i++) {
+			for (uint8_t s = 0; s < SETS; s++) {
+				snapshots[s][i].weight = 0.f;
+			}
+		}
+	}
+
 	// Reset every set's stored layout to defaults, so switching mode to Off
 	// doesn't leave stale geometry a later Store/Auto could resurrect.
 	void clearNodePositions() {
 		for (uint8_t s = 0; s < SETS; s++) {
 			for (uint8_t i = 0; i < SNAPSHOTS; i++) {
-				snapshots[s][i].x = getNodePqX(i)->getDefaultValue();
-				snapshots[s][i].y = getNodePqY(i)->getDefaultValue();
-				snapshots[s][i].radius = getNodeRadiusDefault(i);
-				snapshots[s][i].amount = Sc::getNodeAmountDefault(i);
+				resetSnapshotGeometry(s, i);
 			}
 			mixX[s] = paramQuantities[OUT_X_POS]->getDefaultValue();
 			mixY[s] = paramQuantities[OUT_Y_POS]->getDefaultValue();
 		}
+	}
+
+	// Toggles seqSwitchMode. Enabling it seeds every set's stored selection
+	// from whatever sequence is live right now, so switching this on doesn't
+	// yank unrelated (not-yet-visited) sets back to sequence 0 the moment the
+	// user first changes sets.
+	void setSeqSwitchMode(bool on) {
+		if (on) {
+			for (uint8_t s = 0; s < SETS; s++) {
+				setSeqSelected[s] = Seq::seqSelected[0];
+			}
+		}
+		seqSwitchMode = on;
 	}
 
 	// Switches the active set. A no-op when newSet == currentSet, so a
@@ -374,8 +465,10 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		if (newSet == currentSet) return;
 		NODEPOSMODE m = nodePosMode.load(std::memory_order_relaxed);
 		if (m == NODEPOSMODE::AUTO) storeNodePositions(currentSet);
+		if (seqSwitchMode) setSeqSelected[currentSet] = Seq::seqSelected[0];
 		currentSet = newSet;
 		if (m != NODEPOSMODE::OFF) loadNodePositions(currentSet);
+		if (seqSwitchMode) Seq::seqSelected[0] = setSeqSelected[currentSet];
 	}
 
 	// VOLT/C4 CV paths: follow the CV only when the set it selects changes, so a
@@ -388,9 +481,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	}
 
 	// Reloads the current set's stored layout without changing currentSet or
-	// capturing first, so unsaved pad edits are discarded on a re-press.
+	// capturing first, so unsaved pad edits (and, under seqSwitchMode, an
+	// unsaved sequence-selection change) are discarded on a re-press.
 	void reloadCurrentSet() {
 		if (nodePosMode.load(std::memory_order_relaxed) != NODEPOSMODE::OFF) loadNodePositions(currentSet);
+		if (seqSwitchMode) Seq::seqSelected[0] = setSeqSelected[currentSet];
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -520,14 +615,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			}
 		}
 
-		// Snapshots above the active count are not drawn and not draggable, so they
-		// must not keep contributing either: without this, lowering "Number of
-		// snapshots" (or loading a patch with a lower count) leaves whatever weight
-		// they last earned in place, and TRANSIT keeps blending a pad point the user
-		// can no longer see or move.
+		// Snapshots above the active count are not drawn and not draggable, so
+		// their connector-line distance must not read as in-range either. Their
+		// weight is cleared once, when they're deactivated -- see setSnapshotsUsed().
 		for (int j = n; j < SNAPSHOTS; j++) {
 			dist[j] = std::numeric_limits<float>::infinity();
-			snapshots[currentSet][j].weight = 0.f;
 		}
 
 		if (lightDivider.process()) {
@@ -537,12 +629,12 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 	}
 
-	/** XySeqModule: the only motion-sequence port is the Out cursor's (index 0). */
+	// XySeqModule: the only motion-sequence port is the Out cursor's (index 0).
 	bool seqPortHidden(int port) override {
 		return port != 0;
 	}
 
-	/** XyScreenModule: one-time setup for the Out (cursor) point, called from initNodes(). */
+	// XyScreenModule: one-time setup for the Out (cursor) point, called from initNodes().
 	void initExtra() override {
 		setCursorXyImmediate(0, paramQuantities[OUT_X_POS]->getDefaultValue(), paramQuantities[OUT_Y_POS]->getDefaultValue());
 		outXfilter.setTau(0.05f);
@@ -550,13 +642,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		for (uint8_t s = 0; s < SETS; s++) {
 			for (uint8_t i = 0; i < SNAPSHOTS; i++) {
 				dist[i] = std::numeric_limits<float>::infinity();
-				snapshots[s][i].id = i < 4 ? i : -1;
-				snapshots[s][i].weight = 0.f;
 				// Sc::nodes isn't reset yet here, so seed from the defaults directly.
-				snapshots[s][i].x = getNodePqX(i)->getDefaultValue();
-				snapshots[s][i].y = getNodePqY(i)->getDefaultValue();
-				snapshots[s][i].radius = getNodeRadiusDefault(i);
-				snapshots[s][i].amount = Sc::getNodeAmountDefault(i);
+				resetSnapshotDefaults(s, i);
 			}
 			mixX[s] = paramQuantities[OUT_X_POS]->getDefaultValue();
 			mixY[s] = paramQuantities[OUT_Y_POS]->getDefaultValue();
@@ -565,42 +652,39 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 	}
 
-	/** XyScreenModule: how many of the SNAPSHOTS nodes are currently active. */
+	// XyScreenModule: how many of the SNAPSHOTS nodes are currently active. */
 	inline uint8_t nodeCountActive() override {
 		return (uint8_t)snapshotsUsed.load(std::memory_order_relaxed);
 	}
 
-	/** XyScreenModule: the node (snapshot) x-position param. */
+	// XyScreenModule: the node (snapshot) x-position param.
 	engine::ParamQuantity* getNodePqX(uint8_t id) override {
 		return paramQuantities[SNAPSHOT_X_POS + id];
 	}
 
-	/** XyScreenModule: the node (snapshot) y-position param. */
+	// XyScreenModule: the node (snapshot) y-position param.
 	engine::ParamQuantity* getNodePqY(uint8_t id) override {
 		return paramQuantities[SNAPSHOT_Y_POS + id];
 	}
 
-	/** XyScreenCursor: the single Out cursor. */
+	// XyScreenCursor: the single Out cursor.
 	uint8_t cursorCount() const override {
 		return 1;
 	}
 
-	/** XyScreenCursor: the param-backed x-position the Out cursor widget draws. */
+	// XyScreenCursor: the param-backed x-position the Out cursor widget draws.
 	float getCursorXFinal(uint8_t id) const override {
 		return paramQuantities[OUT_X_POS]->getParam()->getValue();
 	}
 
-	/** XyScreenCursor: the param-backed y-position the Out cursor widget draws. */
+	// XyScreenCursor: the param-backed y-position the Out cursor widget draws.
 	float getCursorYFinal(uint8_t id) const override {
 		return paramQuantities[OUT_Y_POS]->getParam()->getValue();
 	}
 
-	/** XyScreenCursor: write the Out cursor's position immediately (drag end, undo/redo).
-	 * Out-of-range id is a silent no-op, matching XyScreenNodes's bounds
-	 * checks and the rest of the codebase's convention for bad indices.
-	 * (There is only one cursor here, always at id 0, so the array-overrun
-	 * risk this guards against elsewhere doesn't apply — but an id != 0
-	 * still shouldn't silently act as if it addressed the Out cursor.) */
+	// XyScreenCursor: write the Out cursor's position immediately (drag end,
+	// undo/redo). Only id 0 (the one cursor) is valid; anything else is a
+	// silent no-op, matching the codebase's convention for bad indices.
 	void setCursorXyImmediate(uint8_t id, float x, float y) override {
 		if (id >= 1) return;
 		paramQuantities[OUT_X_POS]->getParam()->setValue(x);
@@ -609,24 +693,24 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		outYfilter.out = outUiY = y;
 	}
 
-	/** XyScreenCursor: write the Out cursor's position through the UI filter (live drag). */
+	// XyScreenCursor: write the Out cursor's position through the UI filter (live drag).
 	void setCursorXyFiltered(uint8_t id, float x, float y) override {
 		if (id >= 1) return;
 		outUiX = x;
 		outUiY = y;
 	}
 
-	/** XyScreenModule: distance from the Out cursor to a snapshot node, for the connector-line draw. */
+	// XyScreenModule: distance from the Out cursor to a snapshot node, for the connector-line draw.
 	inline float getCursorToNodeDistance(uint8_t cursorId, uint8_t nodeId) override {
 		return dist[nodeId];
 	}
 
-	/** XyScreenModule: default radius for a new snapshot node. */
+	// XyScreenModule: default radius for a new snapshot node.
 	inline float getNodeRadiusDefault(uint8_t id) override {
 		return 1.f;
 	}
 
-	/** XyScreenModule: color a snapshot node is drawn with — the active set's color. */
+	// XyScreenModule: color a snapshot node is drawn with — the active set's color.
 	virtual inline NVGcolor getNodeColor(uint8_t id) override {
 		return setColor[currentSet];
 	}
@@ -658,14 +742,17 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	}
 
 	std::string getItemLabel(uint8_t s, uint8_t id) {
-		if (masterModule == nullptr)
+		if (masterModule == nullptr) {
 			return "<No TRANSIT module>";
+		}
 		if (snapshots[s][id].id >= 0) {
 			std::string custom = masterModule->getSlotLabel(snapshots[s][id].id);
-			if (custom != "")
+			if (custom != "") {
 				return string::f("Snapshot #%i: %s", snapshots[s][id].id + 1, custom.c_str());
-			else
+			}
+			else {
 				return string::f("Snapshot #%i", snapshots[s][id].id + 1);
+			}
 		}
 		else {
 			return "No snapshot";
@@ -680,10 +767,15 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		json_object_set_new(rootJ, "nodePosMode", json_integer((int)nodePosMode.load(std::memory_order_relaxed)));
 		json_object_set_new(rootJ, "currentSet", json_integer(currentSet));
 		json_object_set_new(rootJ, "locked", json_boolean(locked));
+		json_object_set_new(rootJ, "seqSwitchMode", json_boolean(seqSwitchMode));
 
-		// Live pad-point layout, independent of any set.
+		// Live pad-point layout, independent of any set. Only the active points
+		// are meaningful -- anything at or beyond snapshotsUsed is neither drawn
+		// nor draggable, and setSnapshotsUsed() resets it to defaults whenever it
+		// becomes active again, so persisting it would only inflate the patch.
+		int used = snapshotsUsed.load(std::memory_order_relaxed);
 		json_t* nodesJ = json_array();
-		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+		for (uint8_t i = 0; i < used; i++) {
 			json_t* nodeJ = json_object();
 			Sc::nodes.dataToJson(nodeJ, i);
 			json_array_append_new(nodesJ, nodeJ);
@@ -695,7 +787,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		for (uint8_t s = 0; s < SETS; s++) {
 			json_t* setJ = json_object();
 			json_t* snapshotsJ = json_array();
-			for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+			for (uint8_t i = 0; i < used; i++) {
 				json_t* snapshotJ = json_object();
 				json_object_set_new(snapshotJ, "id", json_integer(snapshots[s][i].id));
 				if (storeNodePos) {
@@ -714,6 +806,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			json_object_set_new(setJ, "color", json_string(color::toHexString(setColor[s]).c_str()));
 			if (!setLabel[s].empty()) {
 				json_object_set_new(setJ, "label", json_string(setLabel[s].c_str()));
+			}
+			if (seqSwitchMode) {
+				json_object_set_new(setJ, "seqSelected", json_integer(setSeqSelected[s]));
 			}
 			json_array_append_new(setsJ, setJ);
 		}
@@ -744,8 +839,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		json_t* lockedJ = json_object_get(rootJ, "locked");
 		if (lockedJ) locked = json_is_true(lockedJ);
 
+		json_t* seqSwitchModeJ = json_object_get(rootJ, "seqSwitchMode");
+		if (seqSwitchModeJ) seqSwitchMode = json_is_true(seqSwitchModeJ);
+
 		int su = json_integer_value(json_object_get(rootJ, "snapshotsUsed"));
-		snapshotsUsed = std::max(1, std::min(su, (int)SNAPSHOTS));
+		setSnapshotsUsed(std::max(1, std::min(su, (int)SNAPSHOTS)));
 
 		json_t* nodesJ = json_object_get(rootJ, "nodes");
 		size_t maxNodes = std::min((size_t)SNAPSHOTS, json_array_size(nodesJ));
@@ -783,10 +881,18 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			if (const char* color = json_string_value(colorJ)) setColor[s] = color::fromHexString(color);
 			json_t* labelJ = json_object_get(setJ, "label");
 			if (const char* label = json_string_value(labelJ)) setLabel[s] = label;
+			json_t* seqSelectedJ = json_object_get(setJ, "seqSelected");
+			if (seqSelectedJ) setSeqSelected[s] = json_integer_value(seqSelectedJ);
 		}
 
 		json_t* outputJ = json_object_get(rootJ, "output");
 		Seq::dataFromJson(outputJ, 0);
+
+		// Like the pad-point layout, Seq::seqSelected[0] as restored above is
+		// XySeqModule's own single global value; with seqSwitchMode on, the
+		// active set's stored selection must win, same as loadNodePositions()
+		// wins for the cursor/nodes.
+		if (seqSwitchMode) Seq::seqSelected[0] = setSeqSelected[currentSet];
 
 		// Resync the UI-shadow cursor state (outUiX/outXfilter) that process()
 		// reads instead of the param; Rack's own param restore doesn't touch it.
@@ -833,17 +939,26 @@ struct TransitPadSnapshotDragWidget : XyScreenNodeDragWidget<MODULE> {
 		}
 	}
 
-	/** XyScreenDragWidgetBase: single-character label drawn inside this node. */
+	// XyScreenDragWidgetBase: single-character label drawn inside this node.
 	char getItemChar() override {
 		return 'A' + AW::id;
 	}
 
-	/** XyScreenDragWidgetBase: label shown in this node's context menu and tooltip. */
+	// XyScreenDragWidgetBase: the base class's default (a dark navy) reads
+	// poorly against the pad's own set colors; pick black or white by the
+	// node color's own luminance so it stays legible against all of them,
+	// including white/bright set colors where a fixed white would not.
+	NVGcolor getSelectedTextColor(NVGcolor cc) override {
+		float brightness = cc.r * 0.299f + cc.g * 0.587f + cc.b * 0.114f;
+		return brightness > 0.5f ? nvgRGB(0x08, 0x08, 0x08) : nvgRGB(0xf0, 0xf0, 0xf0);
+	}
+
+	// XyScreenDragWidgetBase: label shown in this node's context menu and tooltip.
  	std::string getItemName() override {
 		return AW::module->getItemLabel(AW::module->currentSet, AW::id);
 	}
 
-	/** XyScreenDragWidgetBase: items prepended to this node's context menu. */
+	// XyScreenDragWidgetBase: items prepended to this node's context menu.
 	void prependContextMenu(Menu* menu) override {
 		menu->addChild(createMenuItem("Bind snapshot", "", [=]() {
 			// Re-check masterModule inside the lambda; Transit may have been
@@ -966,17 +1081,17 @@ struct TransitPadOutDragWidget : XyScreenCursorDragWidget<MODULE> {
 		}
 	}
 
-	/** XyScreenDragWidgetBase: label shown in this cursor's context menu and tooltip. */
+	// XyScreenDragWidgetBase: label shown in this cursor's context menu and tooltip.
  	std::string getItemName() override {
 		return "Mix";
 	}
 
-	/** XyScreenDragWidgetBase: single-character label drawn inside this cursor. */
+	// XyScreenDragWidgetBase: single-character label drawn inside this cursor.
 	char getItemChar() override {
 		return '+';
 	}
 
-	/** XyScreenDragWidgetBase: extra items appended to this cursor's context menu. */
+	// XyScreenDragWidgetBase: extra items appended to this cursor's context menu.
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Motion-Sequence"));
@@ -1016,12 +1131,16 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 		uint8_t t1 = module ? module->cursorCount() : 1;
 		this->template createCursorWidgets<TransitPadOutDragWidget<MODULE>>(module, t1);
 		// The surrounding TransitPadScreenBevel takes the space of the usual bleed.
-		this->bleed = 0.f;
+		this->bleed = 3.f;
 	}
 
-	// Thin border like the LED window of TransitPadSetButton, instead of the
-	// default bevel strokes.
+	// Thin border like the LED window of TransitPadSetButton, layered on top
+	// of the base class's usual bevel strokes (the same ones Arena's screen
+	// draws) -- the surrounding TransitPadScreenBevel is a separate, outer rim
+	// and doesn't replace this inner one.
 	void drawFrame(const Widget::DrawArgs& args, math::Rect r, NVGcolor bottomColor) override {
+		XyScreenWidget<MODULE>::drawFrame(args, r, bottomColor);
+
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, RECT_ARGS(r));
 		nvgStrokeWidth(args.vg, 0.5f);
@@ -1034,8 +1153,9 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 			// Preview interpolated automation line if mixport is selected
 			this->module->seqPreview = -1;
 			for (uint8_t i = 0; i < this->module->cursorCountActive(); i++) {
-				if (this->module->selection.isCursor(i))
+				if (this->module->selection.isCursor(i)) {
 					this->module->seqPreview = i;
+				}
 			}
 		}
 		XyScreenWidget<MODULE>::step();
@@ -1051,7 +1171,21 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 
 	void drawLayer(const Widget::DrawArgs& args, int layer) override {
 		XyScreenWidget<MODULE>::drawLayer(args, layer);
-		if (layer != 1 || !this->module) return;
+		if (layer != 1) return;
+
+		// Corner vignette
+		math::Rect r = this->box.zeroPos().grow(Vec(this->bleed, this->bleed));
+		NVGpaint vignette = nvgRadialGradient(args.vg,
+			r.size.x * 0.5f, r.size.y * 0.5f,
+			r.size.x * 0.35f, r.size.x * 0.75f,
+			nvgRGBAf(0.f, 0.f, 0.f, 0.0f),
+			nvgRGBAf(0.f, 0.f, 0.f, 0.15f));
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, RECT_ARGS(r));
+		nvgFillPaint(args.vg, vignette);
+		nvgFill(args.vg);
+
+		if (!this->module) return;
 
 		if (this->module->isLocked()) {
 			// Small padlock badge in the top-right corner of the screen so the
@@ -1096,43 +1230,67 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 		}
 	}
 
-	/** XyScreenWidget: extra items appended to the whole screen's context menu. */
+	// XyScreenWidget: extra items appended to the whole screen's context menu.
 	void appendContextMenu(Menu* menu) override {
 		using StoermelderPackOne::Rack::createAtomicValuePtrMenuItem;
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Visualize", "Shift+Space", &this->module->vizMode));
+		menu->addChild(createMenuLabel("Snapshot-sets"));
 		menu->addChild(createSubmenuItem("Number of snapshots", string::f("%i", this->module->snapshotsUsed.load(std::memory_order_relaxed)),
 			[=](Menu* menu) {
-				for (int i = 0; i < this->module->nodeCount(); i++) {
+				MODULE* m = this->module;
+				for (int i = 0; i < m->nodeCount(); i++) {
 					const int target = i + 1;
-					menu->addChild(createAtomicValuePtrMenuItem(string::f("%i", target), &this->module->snapshotsUsed, target));
+					bool checked = m->snapshotsUsed.load(std::memory_order_relaxed) == target;
+					menu->addChild(createMenuItem(string::f("%i", target), CHECKMARK(checked), [=]() { m->setSnapshotsUsed(target); }));
 				}
 			}
 		));
-		menu->addChild(createSubmenuItem("Snapshot-set CV mode", "",
+		auto setCvModeLabel = [](SETCVMODE m) {
+			switch (m) {
+				case SETCVMODE::OFF: return "Off";
+				case SETCVMODE::TRIG_FWD: return "Trigger forward";
+				case SETCVMODE::VOLT: return "0..10V";
+				case SETCVMODE::C4: return "C4";
+				default: return "";
+			}
+		};
+		menu->addChild(createSubmenuItem("CV port mode", setCvModeLabel(this->module->setCvMode.load(std::memory_order_relaxed)),
 			[=](Menu* menu) {
-				menu->addChild(createAtomicValuePtrMenuItem("Off", &this->module->setCvMode, SETCVMODE::OFF));
+				menu->addChild(createAtomicValuePtrMenuItem(setCvModeLabel(SETCVMODE::OFF), &this->module->setCvMode, SETCVMODE::OFF));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(createAtomicValuePtrMenuItem("Trigger forward", &this->module->setCvMode, SETCVMODE::TRIG_FWD));
-				menu->addChild(createAtomicValuePtrMenuItem("0..10V", &this->module->setCvMode, SETCVMODE::VOLT));
-				menu->addChild(createAtomicValuePtrMenuItem("C4", &this->module->setCvMode, SETCVMODE::C4));
+				menu->addChild(createAtomicValuePtrMenuItem(setCvModeLabel(SETCVMODE::TRIG_FWD), &this->module->setCvMode, SETCVMODE::TRIG_FWD));
+				menu->addChild(createAtomicValuePtrMenuItem(setCvModeLabel(SETCVMODE::VOLT), &this->module->setCvMode, SETCVMODE::VOLT));
+				menu->addChild(createAtomicValuePtrMenuItem(setCvModeLabel(SETCVMODE::C4), &this->module->setCvMode, SETCVMODE::C4));
 			}
 		));
-		menu->addChild(createSubmenuItem("Snapshot-set node positions", "",
+		auto nodePosModeLabel = [](NODEPOSMODE m) {
+			switch (m) {
+				case NODEPOSMODE::OFF: return "Off";
+				case NODEPOSMODE::STORE: return "Store (manual)";
+				case NODEPOSMODE::AUTO: return "Auto (on set change)";
+				default: return "";
+			}
+		};
+		menu->addChild(createSubmenuItem("Store node positions", nodePosModeLabel(this->module->nodePosMode.load(std::memory_order_relaxed)),
 			[=](Menu* menu) {
 				MODULE* m = this->module;
 				bool isOff = m->nodePosMode.load(std::memory_order_relaxed) == NODEPOSMODE::OFF;
-				menu->addChild(createMenuItem("Off", CHECKMARK(isOff), [=]() {
+				menu->addChild(createMenuItem(nodePosModeLabel(NODEPOSMODE::OFF), CHECKMARK(isOff), [=]() {
 					m->nodePosMode.store(NODEPOSMODE::OFF, std::memory_order_relaxed);
 					m->clearNodePositions();
 				}));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(createAtomicValuePtrMenuItem("Store (manual)", &m->nodePosMode, NODEPOSMODE::STORE));
-				menu->addChild(createAtomicValuePtrMenuItem("Auto (on set change)", &m->nodePosMode, NODEPOSMODE::AUTO));
+				menu->addChild(createAtomicValuePtrMenuItem(nodePosModeLabel(NODEPOSMODE::STORE), &m->nodePosMode, NODEPOSMODE::STORE));
+				menu->addChild(createAtomicValuePtrMenuItem(nodePosModeLabel(NODEPOSMODE::AUTO), &m->nodePosMode, NODEPOSMODE::AUTO));
 			}
 		));
+		menu->addChild(createBoolMenuItem("Store motion-sequence", "",
+			[=]() { return this->module->seqSwitchMode; },
+			[=](bool on) { this->module->setSeqSwitchMode(on); }
+		));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Lock pad", "", &this->module->locked));
+		menu->addChild(createBoolPtrMenuItem("Visualize", "Shift+Space", &this->module->vizMode));
+		menu->addChild(createBoolPtrMenuItem("Lock pad", RACK_MOD_SHIFT_NAME "+L", &this->module->locked));
 	}
 };
 
@@ -1180,7 +1338,7 @@ struct TransitPadXySeqLedDisplay : XySeqLedDisplay<MODULE> {
 		}
 	}
 
-	/** XySeqLedDisplay: label shown for this port's motion-sequence editor. */
+	// XySeqLedDisplay: label shown for this port's motion-sequence editor.
 	std::string getPortName() override {
 		return "Mix";
 	}
@@ -1299,7 +1457,7 @@ struct TransitPadSetButton : app::Switch {
 		if (layer == 1) {
 			// Inactive sets stay faintly visible in their own color.
 			float brightness = module ? module->lights[MODULE::SET_LIGHT + setIndex].getBrightness() : 1.f;
-			NVGcolor col = module ? module->setColor[setIndex] : color::WHITE;
+			NVGcolor col = module ? module->setColor[setIndex] : colors[setIndex % colors.size()].first;
 			col = color::mult(col, 0.12f + 0.88f * brightness);
 			col.a = 1.f;
 			math::Rect rl = getLedRect();
@@ -1315,7 +1473,7 @@ struct TransitPadSetButton : app::Switch {
 			// Halo, following LightWidget::drawHalo but shaped by the rectangle
 			const float halo = settings::haloBrightness;
 			if (!args.fb && halo > 0.f) {
-				float feather = std::min(rl.size.y * 2.f, 15.f);
+				float feather = std::min(rl.size.y * 2.5f, 30.f);
 				nvgBeginPath(args.vg);
 				nvgRect(args.vg, RECT_ARGS(rl.grow(Vec(feather, feather))));
 				nvgFillPaint(args.vg, nvgBoxGradient(args.vg, RECT_ARGS(rl), 1.5f, feather, color::mult(col, halo), nvgRGBA(0, 0, 0, 0)));
@@ -1366,13 +1524,31 @@ struct TransitPadSetButton : app::Switch {
 			labelField->setIndex = s;
 			menu->addChild(labelField);
 
-			menu->addChild(createMenuItem("Reset", "", [=]() { m->setLabel[s] = ""; }));
+			menu->addChild(createMenuItem("Reset label", "", [=]() { m->setLabel[s] = ""; }));
 		}));
 		NODEPOSMODE nodePosMode = module->nodePosMode.load(std::memory_order_relaxed);
 		if (nodePosMode != NODEPOSMODE::OFF) {
 			// Disabled outside manual Store mode: Auto already captures on switch.
 			menu->addChild(createMenuItem("Store positions", "", [=]() { m->storeNodePositions(s); }, nodePosMode != NODEPOSMODE::STORE));
 		}
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuItem("Copy", "", [=]() { m->setCopy = s; }));
+
+		struct PasteItem : MenuItem {
+			MODULE* module;
+			size_t setIndex;
+			void step() override {
+				int i = module->setCopy;
+				rightText = i >= 0 ? string::f("Set %d", i + 1) : "";
+				disabled = i < 0 || (size_t)i == setIndex;
+				MenuItem::step();
+			}
+			void onAction(const event::Action& e) override {
+				module->copySet(module->setCopy, setIndex);
+			}
+		};
+		menu->addChild(construct<PasteItem>(&MenuItem::text, "Paste", &PasteItem::module, m, &PasteItem::setIndex, s));
+		menu->addChild(createMenuItem("Reset", "", [=]() { m->resetSet(s); }));
 		menu->addChild(new MenuSeparator());
 		for (size_t i = 0; i < module->nodeCountActive(); i++) {
 			menu->addChild(createMenuLabel(module->getItemLabel(setIndex, i)));
@@ -1574,19 +1750,17 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		addInput(createInputCentered<StoermelderPort>(Vec(84.5f, 327.0f), module, MODULE::MIX_X_INPUT));
 		addInput(createInputCentered<StoermelderPort>(Vec(140.5f, 327.0f), module, MODULE::MIX_Y_INPUT));
 
-		//addParam(createParamCentered<XyScreenDummyMapButton>(Vec(77.6f, 309.8f), module, MODULE::OUT_X_POS));
-		//addParam(createParamCentered<XyScreenDummyMapButton>(Vec(147.4f, 309.8f), module, MODULE::OUT_Y_POS));
 		addParam(createParamCentered<XyScreenMapWidget<StoermelderTrimpot>>(Vec(60.5f, 327.0f), module, MODULE::OUT_X_POS));
 		addParam(createParamCentered<XyScreenMapWidget<StoermelderTrimpot>>(Vec(164.5f, 327.0f), module, MODULE::OUT_Y_POS));
 
 		screenWidget = new TransitPadXyScreenWidget<MODULE>(module, MODULE::SNAPSHOT_X_POS, MODULE::SNAPSHOT_Y_POS, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
 		screenWidget->box.pos = Vec(8.8f, 40.0f);
 		screenWidget->box.size = Vec(207.4f, 207.4f);
-		screenWidget->box = screenWidget->box.shrink(1.f);
+		screenWidget->box = screenWidget->box.shrink(4.f);
 
 		// Button row on top, starting where the screen's bevel used to start,
 		// with the screen moved down below it.
-		const float bevel = 4.f;
+		const float bevel = 7.f;
 		const float gap = 7.f;
 		TransitPadButtonRow<MODULE>* buttonRow = new TransitPadButtonRow<MODULE>(module);
 		buttonRow->box.pos = Vec(screenWidget->box.pos.x, screenWidget->box.pos.y - bevel);
@@ -1631,7 +1805,9 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 	}
 
 	void step() override {
-		if (vizOverlay && module) vizOverlay->visible = module->vizMode;
+		// Hidden while seq-edit is active: the splines would otherwise clutter
+		// the pad while it shows the recorded motion-sequence path instead.
+		if (vizOverlay && module) vizOverlay->visible = module->vizMode && module->seqEdit < 0;
 		ThemedModuleWidget<TransitPadModule<>>::step();
 	}
 
@@ -1648,13 +1824,19 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 				return;
 			}
 		}
+		if (module && e.key == GLFW_KEY_L && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+			module->locked = !module->locked;
+			e.consume(this);
+			return;
+		}
+		if (module && e.key >= GLFW_KEY_1 && e.key <= GLFW_KEY_8 && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == 0) {
+			module->changeSet(e.key - GLFW_KEY_1);
+			e.consume(this);
+			return;
+		}
 		ThemedModuleWidget<MODULE>::onHoverKey(e);
 	}
 
-	// Snapshot-set options (number of snapshots, set CV mode, node-position
-	// mode, lock) live on the screen widget's own context menu, but a user
-	// right-clicking the module elsewhere shouldn't have to find the screen
-	// first -- so mirror them here too.
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
 		if (module && screenWidget) screenWidget->appendContextMenu(menu);
