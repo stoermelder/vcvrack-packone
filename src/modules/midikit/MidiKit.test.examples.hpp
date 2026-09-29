@@ -210,6 +210,7 @@ static const PresetInfo PRESETS[] = {
 	{"", "Micro scale", true},
 	{"", "Arpeggiator", false},   // trigger-clocked; emits nothing for MIDI traffic
 	{"", "Volca Sample", true},
+	{"", "Program Change Trigger", true},
 	{"creative/", "Euclidean rhythm generator", true},
 	{"creative/", "Keyboard split", true},
 	{"creative/", "Bouncing ball delay", true},
@@ -2876,6 +2877,61 @@ TEST_CASE("'Volca Sample.js/.lua' releases active notes on unload", "[MidiKit][V
 	bool hasCh6 = (ev[0].channel == 6 && ev[0].note == 60) || (ev[1].channel == 6 && ev[1].note == 60);
 	REQUIRE(hasCh0);
 	REQUIRE(hasCh6);
+
+	Test::destroyModule(m);
+}
+
+// Program Change Trigger: poly trigger channel N (1-4) sends the Program
+// Change configured for N. The trigger is dispatched to the engine per
+// channel, exactly as the module does for a rising edge on a poly channel.
+static std::vector<OutEvent> feedTrigChannel(MidiKitModule* m, int trigChannel) {
+	m->host.getActiveEngine()->processInTick(0, static_cast<uint8_t>(trigChannel - 1));
+	m->host.getActiveEngine()->process();
+	return drainOut(m);
+}
+
+TEST_CASE("'Program Change Trigger.js/.lua' each trigger channel sends its own program", "[MidiKit][TriggerProgramChange]") {
+	std::string path = GENERATE(presetPaths("Program Change Trigger"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Default config: channels 1..4 -> programs 0..3 on MIDI channel 1.
+	for (int ch = 1; ch <= 4; ch++) {
+		auto ev = feedTrigChannel(m, ch);
+		REQUIRE(ev.size() == 1);
+		REQUIRE(ev[0].status == 0xc);
+		REQUIRE(ev[0].channel == 0);
+		REQUIRE(ev[0].note == ch - 1);
+		REQUIRE(ev[0].ticks == 0);
+	}
+
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Program Change Trigger.js/.lua' ignores trigger channels beyond the fourth", "[MidiKit][TriggerProgramChange]") {
+	std::string path = GENERATE(presetPaths("Program Change Trigger"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	// Channels 5+ were never enabled, so they produce nothing.
+	REQUIRE(feedTrigChannel(m, 5).empty());
+	REQUIRE(feedTrigChannel(m, 8).empty());
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Program Change Trigger.js/.lua' passes MIDI in through unchanged", "[MidiKit][TriggerProgramChange]") {
+	std::string path = GENERATE(presetPaths("Program Change Trigger"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	auto ev = feedCollect(m, noteOn(3, 60, 100));
+	REQUIRE(ev.size() == 1);
+	REQUIRE(ev[0] == (OutEvent{0x9, 3, 60, 100, 0}));
 
 	Test::destroyModule(m);
 }
