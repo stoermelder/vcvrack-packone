@@ -103,6 +103,7 @@ TEST_CASE("Variant: sendMidi routes to the addressed MIDI output", "[MidiKit][Va
 	MultiScaffold mods;
 	MultiModule* m = mods.create();
 	m->loadScript(QUICKJS_EMPTY);
+	m->enableMidiOut(2);
 	int64_t frame = 1;
 
 	midi::Message msg = ccMsg(0, 7, 100);
@@ -133,6 +134,7 @@ TEST_CASE("Variant: flushOutput sends to the queued port without crashing", "[Mi
 	MultiModule* m = mods.create();
 	m->loadScript(QUICKJS_EMPTY);
 
+	m->enableMidiOut(2);
 	midi::Message msg = ccMsg(0, 7, 100);
 	REQUIRE(m->sendMidi(1, &msg, 1, 0, 0));
 	m->flushOutput();
@@ -144,6 +146,7 @@ TEST_CASE("Variant: flushOutput sends to the queued port without crashing", "[Mi
 static const char* JS_PORT_PROBE = R"(/**
  * @engine QuickJs@v1
  */
+midi.enablePorts(2);
 midi.onMessage = function(midiPort, msg) {
     rack.log("P:" + midiPort);
 };
@@ -152,6 +155,7 @@ midi.onMessage = function(midiPort, msg) {
 static const char* LUA_PORT_PROBE = R"(--[[
 @engine minilua@v1
 --]]
+midi.enablePorts(2)
 midi.onMessage = function(midiPort, msg)
     rack.log("P:" .. midiPort)
 end
@@ -206,6 +210,167 @@ TEST_CASE("Variant: extended-CC enables are per MIDI input", "[MidiKit][Variant]
 	REQUIRE_FALSE(m->isCc14bitEnabled(2, 7, 0));
 }
 
+// ── Port enabling (midi.enablePorts / midiOut.enablePorts) ──────────────────
+
+static const char* JS_PORTS_DEFAULT = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(midiPort, msg) {
+    rack.log("P:" + midiPort);
+};
+)";
+
+static const char* LUA_PORTS_DEFAULT = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(midiPort, msg)
+    rack.log("P:" .. midiPort)
+end
+)";
+
+TEST_CASE("Variant: only MIDI input 1 is enabled until a script enables more", "[MidiKit][Variant]") {
+	for (const char* script : {JS_PORTS_DEFAULT, LUA_PORTS_DEFAULT}) {
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		m->loadScript(script);
+		probes(m);
+		int64_t frame = 1;
+
+		m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 10));
+		m->midiInputs[1].queue.onMessage(ccMsg(0, 2, 20));
+		pump(m, frame);
+
+		std::string log = probes(m);
+		CATCH_INFO(script);
+		CATCH_INFO(log);
+		REQUIRE(log.find("P:1") != std::string::npos);
+		REQUIRE(log.find("P:2") == std::string::npos);
+	}
+}
+
+TEST_CASE("Variant: sendMidi drops a MIDI output that is not enabled, logging once", "[MidiKit][Variant]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	m->loadScript(QUICKJS_EMPTY);
+	probes(m);
+
+	midi::Message msg = ccMsg(0, 7, 100);
+	REQUIRE_FALSE(m->sendMidi(1, &msg, 1, 0, 5));
+	REQUIRE_FALSE(m->sendMidi(1, &msg, 1, 0, 5));
+	REQUIRE(m->midiOutQueue.empty());
+	std::string log = probes(m);
+	CATCH_INFO(log);
+	REQUIRE(log.find("MIDI output 2 is not enabled") != std::string::npos);
+	REQUIRE(log.find("MIDI output 2 is not enabled") == log.rfind("MIDI output 2 is not enabled"));
+
+	// Port 1 is always on.
+	REQUIRE(m->sendMidi(0, &msg, 1, 0, 5));
+
+	m->enableMidiOut(2);
+	REQUIRE(m->sendMidi(1, &msg, 1, 0, 5));
+}
+
+static const char* JS_PORTS_OUT = R"(/**
+ * @engine QuickJs@v1
+ */
+midiOut.enablePorts(2);
+midi.onMessage = function(midiPort, msg) {
+    midiOut.selectPort(2);
+    midiOut.sendAfterTrigger(msg, 5);
+};
+)";
+
+static const char* LUA_PORTS_OUT = R"(--[[
+@engine minilua@v1
+--]]
+midiOut.enablePorts(2)
+midi.onMessage = function(midiPort, msg)
+    midiOut.selectPort(2)
+    midiOut.sendAfterTrigger(msg, 5)
+end
+)";
+
+TEST_CASE("Variant: midiOut.enablePorts lets a script send on that output", "[MidiKit][Variant]") {
+	for (const char* script : {JS_PORTS_OUT, LUA_PORTS_OUT}) {
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		m->loadScript(script);
+		int64_t frame = 1;
+
+		CATCH_INFO(script);
+		m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 10));
+		pump(m, frame);
+		REQUIRE(m->midiOutputs[1].tickQueue[0].size() == 1);
+		REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 0);
+	}
+}
+
+TEST_CASE("Variant: the enabled port count is a consecutive run that only grows", "[MidiKit][Variant]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	REQUIRE(m->midiInCount.load() == 1);
+	REQUIRE(m->midiOutCount.load() == 1);
+
+	m->enableMidiIn(2);
+	m->enableMidiIn(1);   // enabling never shrinks
+	REQUIRE(m->midiInCount.load() == 2);
+	m->enableMidiOut(9);  // clamped to the ports the module has
+	REQUIRE(m->midiOutCount.load() == 2);
+
+	m->onReset();
+	REQUIRE(m->midiInCount.load() == 1);
+	REQUIRE(m->midiOutCount.load() == 1);
+}
+
+TEST_CASE("Variant: an input beyond the count is drained, not queued for later", "[MidiKit][Variant]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	m->loadScript(JS_PORTS_DEFAULT);
+	probes(m);
+	int64_t frame = 1;
+
+	m->midiInputs[1].queue.onMessage(ccMsg(0, 2, 20));
+	pump(m, frame);
+	m->enableMidiIn(2);
+	pump(m, frame);
+	REQUIRE(probes(m).find("P:2") == std::string::npos);
+}
+
+TEST_CASE("Variant: a script's port enables are forgotten on reload and reset", "[MidiKit][Variant]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	m->loadScript(JS_PORTS_OUT);
+	midi::Message msg = ccMsg(0, 7, 100);
+	REQUIRE(m->sendMidi(1, &msg, 1, 0, 5));
+
+	m->loadScript(QUICKJS_EMPTY);
+	REQUIRE_FALSE(m->sendMidi(1, &msg, 1, 0, 5));
+
+	m->loadScript(JS_PORTS_OUT);
+	REQUIRE(m->sendMidi(1, &msg, 1, 0, 5));
+	m->onReset();
+	REQUIRE_FALSE(m->sendMidi(1, &msg, 1, 0, 5));
+}
+
+TEST_CASE("Variant: enablePorts rejects an out-of-range port", "[MidiKit][Variant]") {
+	for (const char* fn : {"midi.enablePorts", "midiOut.enablePorts"}) {
+		for (bool js : {true, false}) {
+			for (int bad : {0, 3}) {
+				MultiScaffold mods;
+				MultiModule* m = mods.create();
+				std::string script = js
+					? std::string("/**\n * @engine QuickJs@v1\n */\n") + fn + "(" + std::to_string(bad) + ");\n"
+					: std::string("--[[\n@engine minilua@v1\n--]]\n") + fn + "(" + std::to_string(bad) + ")\n";
+				m->loadScript(script);
+				std::string log = probes(m);
+				CATCH_INFO(script);
+				CATCH_INFO(log);
+				REQUIRE(log.find("rror") != std::string::npos);
+			}
+		}
+	}
+}
+
 // ── Trigger ports ───────────────────────────────────────────────────────────
 
 TEST_CASE("Variant: each trigger input has its own tick clock", "[MidiKit][Variant]") {
@@ -231,6 +396,7 @@ TEST_CASE("Variant: scheduled MIDI flushes on the clock of its own trigger input
 	MultiScaffold mods;
 	MultiModule* m = mods.create();
 	m->loadScript(QUICKJS_EMPTY);
+	m->enableMidiOut(2);
 	m->enableTrigger(0, 0);
 	m->enableTrigger(1, 0);
 	m->inputs[MultiModule::INPUT_TRIG + 0].channels = 1;
@@ -982,6 +1148,8 @@ TEST_CASE("Variant: CV inputs and params are addressed by index", "[MidiKit][Var
 TEST_CASE("Variant: MIDI port JSON keys keep the first port's legacy key", "[MidiKit][Variant][JSON]") {
 	MultiScaffold mods;
 	MultiModule* m = mods.create();
+	m->enableMidiIn(2);
+	m->enableMidiOut(2);
 
 	json_t* rootJ = m->dataToJson();
 	REQUIRE(json_object_get(rootJ, "midiInput") != nullptr);
@@ -1003,6 +1171,74 @@ TEST_CASE("Variant: MIDI port JSON keys keep the first port's legacy key", "[Mid
 	REQUIRE(m2->midiInputs[1].queue.channel == 5);
 	REQUIRE(m2->midiOutputs[1].channel == 7);
 	REQUIRE(m2->midiInputs[0].queue.channel == m->midiInputs[0].queue.channel);
+}
+
+TEST_CASE("Variant: only enabled MIDI ports are serialized", "[MidiKit][Variant][JSON]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+
+	json_t* rootJ = m->dataToJson();
+	REQUIRE(json_object_get(rootJ, "midiInput") != nullptr);
+	REQUIRE(json_object_get(rootJ, "midiOutput") != nullptr);
+	REQUIRE(json_object_get(rootJ, "midiInput2") == nullptr);
+	REQUIRE(json_object_get(rootJ, "midiOutput2") == nullptr);
+	json_decref(rootJ);
+
+	m->loadScript(JS_PORTS_OUT);   // midiOut.enablePorts(2)
+	rootJ = m->dataToJson();
+	REQUIRE(json_object_get(rootJ, "midiInput2") == nullptr);
+	REQUIRE(json_object_get(rootJ, "midiOutput2") != nullptr);
+	json_decref(rootJ);
+}
+
+TEST_CASE("Variant: reloading a script keeps the settings of MIDI ports it stops using", "[MidiKit][Variant][JSON]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	m->loadScript(JS_PORT_PROBE);   // midi.enablePorts(2)
+	m->loadScript(JS_PORTS_OUT);
+	m->midiInputs[1].queue.channel = 5;
+	m->midiOutputs[1].channel = 7;
+	m->midiInputs[1].queue.setDriverId(0);
+	m->midiOutputs[1].setDriverId(0);
+	int inDriver = m->midiInputs[1].queue.getDriverId();
+	int outDriver = m->midiOutputs[1].getDriverId();
+
+	// A script that enables nothing: the ports are off, their settings stay.
+	m->loadScript(QUICKJS_EMPTY);
+	REQUIRE_FALSE(m->isMidiInEnabled(1));
+	REQUIRE_FALSE(m->isMidiOutEnabled(1));
+	REQUIRE(m->midiInputs[1].queue.channel == 5);
+	REQUIRE(m->midiOutputs[1].channel == 7);
+	REQUIRE(m->midiInputs[1].queue.getDriverId() == inDriver);
+	REQUIRE(m->midiOutputs[1].getDriverId() == outDriver);
+
+	m->clearScript();
+	REQUIRE(m->midiInputs[1].queue.channel == 5);
+	REQUIRE(m->midiOutputs[1].channel == 7);
+
+	// Enabling them again brings the user's selection back, and it is saved.
+	m->loadScript(JS_PORT_PROBE);
+	m->loadScript(JS_PORTS_OUT);
+	REQUIRE(m->midiInputs[1].queue.channel == 5);
+	REQUIRE(m->midiOutputs[1].channel == 7);
+	json_t* rootJ = m->dataToJson();
+	REQUIRE(json_object_get(rootJ, "midiOutput2") != nullptr);
+	json_decref(rootJ);
+}
+
+TEST_CASE("Variant: a patch restores a MIDI port's settings before the script enables it", "[MidiKit][Variant][JSON]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	m->loadScript(JS_PORTS_OUT);
+	m->midiOutputs[1].channel = 7;
+	json_t* rootJ = m->dataToJson();
+
+	MultiScaffold mods2;
+	MultiModule* m2 = mods2.create();
+	m2->dataFromJson(rootJ);
+	json_decref(rootJ);
+	REQUIRE(m2->isMidiOutEnabled(1));
+	REQUIRE(m2->midiOutputs[1].channel == 7);
 }
 
 TEST_CASE("Variant: a single-port patch loads into the first port", "[MidiKit][Variant][JSON]") {
@@ -1044,9 +1280,11 @@ static rack::ui::Menu* createLogSubmenu(rack::ui::Menu* menu) {
 	return nullptr;
 }
 
-TEST_CASE("Variant: context menu lists every MIDI port", "[MidiKit][Variant][ContextMenu]") {
+TEST_CASE("Variant: context menu lists every MIDI port once all are enabled", "[MidiKit][Variant][ContextMenu]") {
 	MultiScaffold mods;
 	MultiModule* m = mods.create();
+	m->enableMidiIn(2);
+	m->enableMidiOut(2);
 	MultiWidget* mw = new MultiWidget(m);
 
 	rack::ui::Menu* menu = new rack::ui::Menu;
@@ -1090,9 +1328,9 @@ TEST_CASE("Log display context menu copies the whole log to the clipboard and cl
 	// Empty log: both entries are there but disabled.
 	rack::ui::Menu* menu = new rack::ui::Menu;
 	mw->logDisplay->appendContextMenu(menu);
-	REQUIRE(findMenuItem(menu, "Copy") != nullptr);
+	REQUIRE(findMenuItem(menu, "Copy to clipboard") != nullptr);
 	REQUIRE(findMenuItem(menu, "Clear") != nullptr);
-	REQUIRE(findMenuItem(menu, "Copy")->disabled);
+	REQUIRE(findMenuItem(menu, "Copy to clipboard")->disabled);
 	REQUIRE(findMenuItem(menu, "Clear")->disabled);
 	delete menu;
 
@@ -1102,8 +1340,8 @@ TEST_CASE("Log display context menu copies the whole log to the clipboard and cl
 	mw->step();
 	menu = new rack::ui::Menu;
 	mw->logDisplay->appendContextMenu(menu);
-	REQUIRE_FALSE(findMenuItem(menu, "Copy")->disabled);
-	findMenuItem(menu, "Copy")->doAction(false);
+	REQUIRE_FALSE(findMenuItem(menu, "Copy to clipboard")->disabled);
+	findMenuItem(menu, "Copy to clipboard")->doAction(false);
 	REQUIRE(spy.sets == 1);
 	REQUIRE(spy.text.find("line0\n") != std::string::npos);
 	REQUIRE(spy.text.find("line39\n") != std::string::npos);
@@ -1119,7 +1357,7 @@ TEST_CASE("Log display context menu copies the whole log to the clipboard and cl
 	// Nothing left: the entries are disabled again.
 	menu = new rack::ui::Menu;
 	mw->logDisplay->appendContextMenu(menu);
-	REQUIRE(findMenuItem(menu, "Copy")->disabled);
+	REQUIRE(findMenuItem(menu, "Copy to clipboard")->disabled);
 	REQUIRE(findMenuItem(menu, "Clear")->disabled);
 	delete menu;
 
@@ -1127,7 +1365,35 @@ TEST_CASE("Log display context menu copies the whole log to the clipboard and cl
 	Test::destroyWidget(mw);
 }
 
-TEST_CASE("Variant: single-port MidiKit context menu has unnumbered MIDI items", "[MidiKit][Variant][ContextMenu]") {
+TEST_CASE("Variant: context menu lists MIDI ports 2+ only while the script enables them", "[MidiKit][Variant][ContextMenu]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	MultiWidget* mw = new MultiWidget(m);   // no registered model, so built directly
+
+	auto count = [&](const std::string& text) {
+		rack::ui::Menu* menu = new rack::ui::Menu;
+		mw->appendContextMenu(menu);
+		int n = countMenuEntries(menu, text);
+		delete menu;
+		return n;
+	};
+	REQUIRE(count("MIDI input 1") == 1);
+	REQUIRE(count("MIDI output 1") == 1);
+	REQUIRE(count("MIDI input 2") == 0);
+	REQUIRE(count("MIDI output 2") == 0);
+
+	m->loadScript(JS_PORTS_OUT);   // outputs only
+	REQUIRE(count("MIDI input 2") == 0);
+	REQUIRE(count("MIDI output 2") == 1);
+
+	m->loadScript(JS_PORT_PROBE);  // inputs only
+	REQUIRE(count("MIDI input 2") == 1);
+	REQUIRE(count("MIDI output 2") == 0);
+
+	Test::destroyWidget(mw);
+}
+
+TEST_CASE("Variant: MidiKit context menu lists only MIDI port 1 by default", "[MidiKit][Variant][ContextMenu]") {
 	ModuleScaffold mods;
 	MidiKitModule* m = mods.create();
 	m->model = modelMidiKit;
@@ -1135,8 +1401,10 @@ TEST_CASE("Variant: single-port MidiKit context menu has unnumbered MIDI items",
 
 	rack::ui::Menu* menu = new rack::ui::Menu;
 	mw->appendContextMenu(menu);
-	REQUIRE(countMenuEntries(menu, "MIDI input") == 1);
-	REQUIRE(countMenuEntries(menu, "MIDI output") == 1);
+	REQUIRE(countMenuEntries(menu, "MIDI input 1") == 1);
+	REQUIRE(countMenuEntries(menu, "MIDI output 1") == 1);
+	REQUIRE(countMenuEntries(menu, "MIDI input 2") == 0);   // not enabled by the script
+	REQUIRE(countMenuEntries(menu, "MIDI output 2") == 0);
 	REQUIRE(countMenuEntries(menu, "Log") == 0);   // only MidiKitMicro has it
 
 	delete menu;
@@ -1214,8 +1482,10 @@ TEST_CASE("Variant: MidiKitMicro widget works without a log display", "[MidiKit]
 	// It still has the MIDI menu and the base's script menu.
 	rack::ui::Menu* menu = new rack::ui::Menu;
 	mw->appendContextMenu(menu);
-	REQUIRE(countMenuEntries(menu, "MIDI input") == 1);
-	REQUIRE(countMenuEntries(menu, "MIDI output") == 1);
+	REQUIRE(countMenuEntries(menu, "MIDI input 1") == 1);
+	REQUIRE(countMenuEntries(menu, "MIDI output 1") == 1);
+	REQUIRE(countMenuEntries(menu, "MIDI input 2") == 0);
+	REQUIRE(countMenuEntries(menu, "MIDI output 2") == 0);
 	REQUIRE(countMenuEntries(menu, "Log") == 1);
 
 	delete menu;

@@ -1902,7 +1902,7 @@ static const char* JS_SELECT_PORT_INVALID = R"(/**
  * @engine QuickJs@v1
  */
 midi.onMessage = function(port, msg) {
-    midiOut.selectPort(2);
+    midiOut.selectPort(5);
 };
 )";
 
@@ -1910,7 +1910,7 @@ static const char* LUA_SELECT_PORT_INVALID = R"(--[[
 @engine minilua@v1
 --]]
 midi.onMessage = function(midiPort, msg)
-    midiOut.selectPort(2)
+    midiOut.selectPort(5)
 end
 )";
 

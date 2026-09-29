@@ -213,6 +213,7 @@ static const PresetInfo PRESETS[] = {
 	{"", "Program Change Trigger", true},
 	{"", "Program Change CV", true},
 	{"", "Bank Select", true},
+	{"", "MIDI router", true},
 	{"creative/", "Euclidean rhythm generator", true},
 	{"creative/", "Keyboard split", true},
 	{"creative/", "Bouncing ball delay", true},
@@ -3148,5 +3149,156 @@ TEST_CASE("'Bank Select.js/.lua' passes MIDI in through unchanged", "[MidiKit][M
 	REQUIRE(ev.size() == 1);
 	REQUIRE(ev[0] == (OutEvent{0x9, 3, 60, 100, 0}));
 
+	Test::destroyModule(m);
+}
+
+
+// MIDI router: input 1 -> up to four outputs, by MIDI channel. Default config:
+// ch 1,2 -> out 1, ch 3,5 -> out 2, ch 4 -> out 3, out 4 unused.
+struct RoutedEvent {
+	int port;  // 0-based output
+	OutEvent ev;
+};
+
+static std::vector<RoutedEvent> feedRouted(MidiKitModule* m, midi::Message msg) {
+	m->host.getActiveEngine()->processInMessage(0, msg);
+	m->host.getActiveEngine()->process();
+	std::vector<RoutedEvent> events;
+	int port, ticks;
+	midi::Message out;
+	while (processOutMessage(m, port, out, ticks)) {
+		events.push_back({port, {out.getStatus(), out.getChannel(), out.getNote(), out.getValue(), ticks}});
+	}
+	return events;
+}
+
+// Channels below are the script's 1-based ones; the message helpers take Rack's
+// 0-based channel, hence the `- 1` / `ch - 1` when feeding.
+
+// Loads the router with `from` replaced by the matching JS or Lua text of
+// `to`, so a test can vary the config without a second copy of the script.
+static MidiKitModule* loadRouter(const std::string& path, const std::string& jsFrom, const std::string& jsTo,
+                                 const std::string& luaFrom, const std::string& luaTo) {
+	std::string script = readFile(repoRoot() + "/" + path);
+	bool js = path.find(".js") != std::string::npos;
+	const std::string& from = js ? jsFrom : luaFrom;
+	const std::string& to = js ? jsTo : luaTo;
+	size_t pos = script.find(from);
+	CATCH_INFO("config text not found: " << from);
+	REQUIRE(pos != std::string::npos);
+	script.replace(pos, from.size(), to);
+
+	MidiKitModule* m = createModule();
+	m->loadScript(script);
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	return m;
+}
+
+TEST_CASE("'MIDI router.js/.lua' routes each channel to the output configured for it", "[MidiKit][Router]") {
+	std::string path = GENERATE(presetPaths("MIDI router"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	struct Case { int ch; int port; };
+	const Case cases[] = { {1, 0}, {2, 0}, {3, 1}, {5, 1}, {4, 2} };
+	for (const Case& c : cases) {
+		auto ev = feedRouted(m, noteOn(c.ch - 1, 60, 100));
+		CATCH_INFO("channel " << c.ch);
+		REQUIRE(ev.size() == 1);
+		REQUIRE(ev[0].port == c.port);
+		REQUIRE(ev[0].ev == (OutEvent{0x9, uint8_t(c.ch - 1), 60, 100, 0}));
+	}
+
+	// Channels in no route are dropped, and nothing ever reaches output 4.
+	REQUIRE(feedRouted(m, noteOn(5, 60, 100)).empty());
+	REQUIRE(feedRouted(m, noteOn(15, 60, 100)).empty());
+
+	// Every message type follows its channel, not just notes.
+	auto ev = feedRouted(m, cc(3, 7, 99));
+	REQUIRE(ev.size() == 1);
+	REQUIRE(ev[0].port == 2);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'MIDI router.js/.lua' enables exactly the configured outputs", "[MidiKit][Router]") {
+	std::string path = GENERATE(presetPaths("MIDI router"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	REQUIRE(m->midiOutCount.load() == 4);
+	REQUIRE(m->midiInCount.load() == 1);
+	Test::destroyModule(m);
+
+	// Two entries in routes -> two outputs.
+	m = loadRouter(path,
+		"        [4],      // output 3\n        []        // output 4\n", "",
+		"        { 4 },      -- output 3\n        {}          -- output 4\n", "");
+	REQUIRE(m->midiOutCount.load() == 2);
+	REQUIRE(m->midiInCount.load() == 1);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'MIDI router.js/.lua' sends channel-less messages to every output", "[MidiKit][Router]") {
+	std::string path = GENERATE(presetPaths("MIDI router"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	auto ev = feedRouted(m, clockTick());
+	REQUIRE(ev.size() == 4);
+	for (int i = 0; i < 4; i++) {
+		REQUIRE(ev[i].port == i);
+		REQUIRE(ev[i].ev.status == 0xf);
+	}
+	Test::destroyModule(m);
+
+	m = loadRouter(path, "systemToAll: true", "systemToAll: false", "systemToAll = true", "systemToAll = false");
+	REQUIRE(feedRouted(m, clockTick()).empty());
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'MIDI router.js/.lua' copies a channel that is in several routes", "[MidiKit][Router]") {
+	std::string path = GENERATE(presetPaths("MIDI router"));
+	CATCH_INFO("preset: " << path);
+
+	// Output 2 now takes channels 1 and 3, so channel 1 goes to outputs 1 and 2.
+	MidiKitModule* m = loadRouter(path, "[3, 5],", "[1, 3],", "{ 3, 5 },", "{ 1, 3 },");
+	auto ev = feedRouted(m, noteOn(0, 64, 90));
+	REQUIRE(ev.size() == 2);
+	REQUIRE(ev[0].port == 0);
+	REQUIRE(ev[1].port == 1);
+	REQUIRE(ev[0].ev == ev[1].ev);
+	REQUIRE(ev[0].ev == (OutEvent{0x9, 0, 64, 90, 0}));
+
+	// Channel 5 lost its route.
+	REQUIRE(feedRouted(m, noteOn(4, 64, 90)).empty());
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'MIDI router.js/.lua' sends unrouted channels to the fallback output", "[MidiKit][Router]") {
+	std::string path = GENERATE(presetPaths("MIDI router"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadRouter(path, "fallbackOutput: 0", "fallbackOutput: 4", "fallbackOutput = 0", "fallbackOutput = 4");
+	auto ev = feedRouted(m, noteOn(5, 60, 100));
+	REQUIRE(ev.size() == 1);
+	REQUIRE(ev[0].port == 3);
+	// Routed channels are unaffected.
+	ev = feedRouted(m, noteOn(2, 60, 100));
+	REQUIRE(ev.size() == 1);
+	REQUIRE(ev[0].port == 1);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'MIDI router.js/.lua' ignores invalid channels in the config", "[MidiKit][Router]") {
+	std::string path = GENERATE(presetPaths("MIDI router"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadRouter(path, "[4],      // output 3", "[4, 17],      // output 3", "{ 4 },      -- output 3", "{ 4, 17 },      -- output 3");
+	std::string log = drainLog(m);
+	auto ev = feedRouted(m, noteOn(3, 60, 100));
+	REQUIRE(ev.size() == 1);
+	REQUIRE(ev[0].port == 2);
 	Test::destroyModule(m);
 }

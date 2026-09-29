@@ -906,11 +906,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midi, "setValue", JS_NewCFunction(ctx, js_midi_setValue, "setValue", 2));
 		JS_SetPropertyStr(ctx, _midi, "enableNrpnIn", JS_NewCFunction(ctx, js_midi_enableNrpnIn, "enableNrpnIn", 2));
 		JS_SetPropertyStr(ctx, _midi, "enableRpnIn", JS_NewCFunction(ctx, js_midi_enableRpnIn, "enableRpnIn", 2));
+		JS_SetPropertyStr(ctx, _midi, "enablePorts", JS_NewCFunction(ctx, js_midi_enablePorts, "enablePorts", 1));
 		JS_SetPropertyStr(ctx, _midi, "enableCc14bitIn", JS_NewCFunction(ctx, js_midi_enableCc14bitIn, "enableCc14bitIn", 3));
 
 		// midiOut
 		JSValue _midiOut = JS_NewObject(ctx);
 		JS_SetPropertyStr(ctx, glob, "midiOut", _midiOut);
+		JS_SetPropertyStr(ctx, _midiOut, "enablePorts", JS_NewCFunction(ctx, js_midiOut_enablePorts, "enablePorts", 1));
 		JS_SetPropertyStr(ctx, _midiOut, "selectPort", JS_NewCFunction(ctx, js_midiOut_selectPort, "selectPort", 1));
 		JS_SetPropertyStr(ctx, _midiOut, "send", JS_NewCFunction(ctx, js_midiOut_send, "send", 1));
 		JS_SetPropertyStr(ctx, _midiOut, "sendAfterMs", JS_NewCFunction(ctx, js_midiOut_sendAfterMs, "sendAfterMs", 2));
@@ -1582,6 +1584,24 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			e->handler->writeLog(string::f("%s: called outside a callback; the message "
 				"is discarded when the next MIDI message arrives", fn), false);
 		}
+	}
+
+	// midi.enablePorts(count) — enables MIDI inputs 1..count.
+	static JSValue js_midi_enablePorts(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		if (argc != 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "midi.enablePorts: bad args");
+		int count = static_cast<int>(argNum(ctx, argv[0]));
+		if (count < 1 || count > getEngine(ctx)->midiInputCount) return jsThrow(ctx, "midi.enablePorts: invalid input count");
+		getEngine(ctx)->handler->enableMidiIn(count);
+		return JS_UNDEFINED;
+	}
+
+	// midiOut.enablePorts(count) — enables MIDI outputs 1..count.
+	static JSValue js_midiOut_enablePorts(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		if (argc != 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "midiOut.enablePorts: bad args");
+		int count = static_cast<int>(argNum(ctx, argv[0]));
+		if (count < 1 || count > getEngine(ctx)->midiOutputCount) return jsThrow(ctx, "midiOut.enablePorts: invalid output count");
+		getEngine(ctx)->handler->enableMidiOut(count);
+		return JS_UNDEFINED;
 	}
 
 	static JSValue js_midiOut_selectPort(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {

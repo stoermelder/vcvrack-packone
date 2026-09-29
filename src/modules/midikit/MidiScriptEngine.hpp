@@ -97,6 +97,16 @@ struct MidiScriptEngineHandler {
 	virtual void writeOverlay(const std::string& s1, const std::string& s2, const std::string& s3) = 0;
 	virtual void enableInput(int i) = 0;
 
+	// Enables the first `count` MIDI inputs / outputs (count >= 1), from the
+	// script-facing midi.enablePorts() / midiOut.enablePorts() bindings (worker
+	// thread). Enabling never shrinks the count. Only a consecutive run starting
+	// at port 1 can be in use, and only port 1 is by default; ports beyond the
+	// count are dropped — incoming messages never reach the script, outgoing
+	// messages are discarded. The count belongs to the script and is forgotten
+	// on load/reset.
+	virtual void enableMidiIn(int count) = 0;
+	virtual void enableMidiOut(int count) = 0;
+
 	// Marks trigger input (port, channel) as enabled, from the script-facing
 	// trig.enableIn() binding (worker thread). Disabled channels get no tick
 	// processing (counting, sendAfterTrigger drains, or trig.onTrigger).

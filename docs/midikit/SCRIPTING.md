@@ -111,7 +111,7 @@ counted, no `sendAfterTrigger` messages drained, no callback dispatched.
 
 ## Part 2 — Examples
 
-**Note:** Channels are 1..16, parameter and input indices are 1..4, trigger input and output indices are 1..2. The main entry point is `midi.onMessage(midiPort, msg)`; in this version `midiPort` is always *1*.
+**Note:** Channels are 1..16, parameter and input indices are 1..4, trigger input and output indices are 1..2. The main entry point is `midi.onMessage(midiPort, msg)`, where `midiPort` is the 1-based MIDI input the message arrived on. Only MIDI input and output 1 are enabled by default; see [Enabling MIDI ports](#enabling-midi-ports).
 
 Examples build up roughly from simplest to most involved: basic pass-through
 and filtering first, then message construction (NRPN, 14-bit CC, SysEx, raw),
@@ -1060,6 +1060,7 @@ the engine can assemble them for you — the mirror image of `midi.setNRPN()` /
 
 | Function | Effect |
 | --- | --- |
+| `midi.enablePorts(count)` | enable MIDI inputs 1..`count`; input 1 is always enabled |
 | `midi.enableNrpnIn(midiPort [, channel])` | assemble NRPN (kind 0) parameter changes on `midiPort` into `midi.onNrpn` calls. `channel` is 1-based (default: all) |
 | `midi.enableRpnIn(midiPort [, channel])` | same, for RPN (kind 1) into `midi.onRpn` |
 | `midi.enableCc14bitIn(midiPort [, cc] [, channel])` | assemble 14-bit CC pairs on `midiPort` into `midi.onCc14bit` calls. `cc` is the MSB controller number 0-31 (its LSB is implicitly `cc + 32`); omit it to enable every 14-bit CC |
@@ -1120,15 +1121,34 @@ message mid-quad, the consumed components are gone. Rules:
   `midi.setNRPN()` / `midi.setCc14bit()` to rebuild the full sequence on the
   way out.
 
+### Enabling MIDI ports
+
+MIDI-KIT has four MIDI inputs and four MIDI outputs, but only input 1 and
+output 1 are enabled by default. A script that wants any other port calls, at
+top level (like `param.enable()` / `trig.enableIn()`):
+
+```js
+midi.enablePorts(3);      // deliver messages from MIDI inputs 1-3 to midi.onMessage
+midiOut.enablePorts(2);   // allow sending on MIDI outputs 1-2
+```
+
+`midi.enablePorts(n)` and `midiOut.enablePorts(n)` enable the first `n` ports
+(`n` is 1..4; `1` is a no-op, anything else out of range is an error). Until a port is enabled, messages arriving on that input
+never reach the script, and messages sent to that output are dropped (logged
+once per output). Enabled ports are forgotten when the script is reloaded,
+cleared or the module is reset, so they always reflect what the loaded script
+asked for.
+
 ### `midiOut.*` — sending
 
+- `midiOut.enablePorts(count)` — enables MIDI outputs 1..`count`.
+  Output 1 is always enabled; a message sent to any other output is dropped
+  (with a one-time log line) until the script enables it. See
+  [Enabling MIDI ports](#enabling-midi-ports).
 - `midiOut.selectPort(midiPort)` — selects the output port (1-based) that every
   subsequent `midiOut.*` call sends on, until `selectPort` is called again.
   The selection is sticky across `midi.onMessage` invocations, not reset per
-  callback. MIDI-KIT currently exposes a single output, so
-  `midiOut.selectPort(1)` is a no-op today beyond validating the index — it
-  exists so scripts written against a future multi-output engine don't need to
-  change their sending code.
+  callback. An out-of-range index is an error.
 
 The sending functions below take no port argument — the destination is
 whatever `midiOut.selectPort()` last selected (port 1 if it was never called):

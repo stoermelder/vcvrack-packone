@@ -1120,10 +1120,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("enableNrpnIn",    lua_midi_enableNrpnIn);
 		setTableFunc("enableRpnIn",     lua_midi_enableRpnIn);
 		setTableFunc("enableCc14bitIn", lua_midi_enableCc14bitIn);
+		setTableFunc("enablePorts",     lua_midi_enablePorts);
 		lua_setglobal(L, "midi");
 
 		// ── midiOut table ────────────────────────────────────────────────────
 		lua_newtable(L);
+		setTableFunc("enablePorts",        lua_midiOut_enablePorts);
 		setTableFunc("selectPort",         lua_midiOut_selectPort);
 		setTableFunc("send",               lua_midiOut_send);
 		setTableFunc("sendAfterMs",        lua_midiOut_sendAfterMs);
@@ -1587,6 +1589,24 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			e->handler->writeLog(string::f("%s: called outside a callback; the message "
 				"is discarded when the next MIDI message arrives", fn), false);
 		}
+	}
+
+	// midi.enablePorts(count) — enables MIDI inputs 1..count.
+	static int lua_midi_enablePorts(lua_State* L) {
+		auto* e = getEngine(L);
+		int count = static_cast<int>(luaL_checkinteger(L, 1));
+		if (count < 1 || count > e->midiInputCount) luaL_argerror(L, 1, "invalid input port count");
+		e->handler->enableMidiIn(count);
+		return 0;
+	}
+
+	// midiOut.enablePorts(count) — enables MIDI outputs 1..count.
+	static int lua_midiOut_enablePorts(lua_State* L) {
+		auto* e = getEngine(L);
+		int count = static_cast<int>(luaL_checkinteger(L, 1));
+		if (count < 1 || count > e->midiOutputCount) luaL_argerror(L, 1, "invalid output port count");
+		e->handler->enableMidiOut(count);
+		return 0;
 	}
 
 	static int lua_midiOut_selectPort(lua_State* L) {

@@ -539,8 +539,8 @@ struct MidiKitConfig {
 	static constexpr int trigInputs = 2;
 	static constexpr int trigOutputs = 2;
 	static constexpr int params = 4;
-	static constexpr int midiInputs = 1;
-	static constexpr int midiOutputs = 1;
+	static constexpr int midiInputs = 4;
+	static constexpr int midiOutputs = 4;
 };
 
 // MidiKitMicro: MidiKit with 2 CV inputs and 2 params, without a log display.
@@ -549,8 +549,8 @@ struct MidiKitMicroConfig {
 	static constexpr int trigInputs = 1;
 	static constexpr int trigOutputs = 1;
 	static constexpr int params = 2;
-	static constexpr int midiInputs = 1;
-	static constexpr int midiOutputs = 1;
+	static constexpr int midiInputs = 4;
+	static constexpr int midiOutputs = 4;
 };
 
 
@@ -876,6 +876,17 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	};
 	MidiInputPort midiInputs[CONFIG::midiInputs];
 
+	// Number of MIDI inputs/outputs in use: ports 0..count-1. Always at least
+	// 1; the script raises it with midi.enablePorts/midiOut.enablePorts. Only a
+	// consecutive run from the first port can be in use, so the per-sample
+	// loops run to this count instead of MIDI_INPUTS/MIDI_OUTPUTS. Written by
+	// the worker, read by the audio thread (inputs) and the worker (outputs).
+	std::atomic<int> midiInCount{1};
+	std::atomic<int> midiOutCount{1};
+	// Outputs already reported as dropping messages, so a
+	// script sending to a disabled port logs once, not per message.
+	std::atomic<uint32_t> midiOutDropLogged{0};
+
 	/** [Stored to Json] */
 	MidiOutput<CONFIG::trigInputs> midiOutputs[CONFIG::midiOutputs];
 
@@ -969,6 +980,32 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->enabled = true;
 	}
 
+	// MidiScriptEngineHandler — midi.enablePorts() / midiOut.enablePorts()
+	// bindings (worker thread).
+	void enableMidiIn(int count) override {
+		if (count > MIDI_INPUTS) count = MIDI_INPUTS;
+		if (count > midiInCount.load(std::memory_order_relaxed)) midiInCount.store(count, std::memory_order_relaxed);
+	}
+	void enableMidiOut(int count) override {
+		if (count > MIDI_OUTPUTS) count = MIDI_OUTPUTS;
+		if (count > midiOutCount.load(std::memory_order_relaxed)) midiOutCount.store(count, std::memory_order_relaxed);
+	}
+
+	// Port 0 is always in use; the others once a script enabled them.
+	bool isMidiInEnabled(int port) const {
+		return port < midiInCount.load(std::memory_order_relaxed);
+	}
+	bool isMidiOutEnabled(int port) const {
+		return port < midiOutCount.load(std::memory_order_relaxed);
+	}
+
+	// Back to "only port 1 of each" — what a script starts with.
+	void resetMidiPortEnables() {
+		midiInCount.store(1, std::memory_order_relaxed);
+		midiOutCount.store(1, std::memory_order_relaxed);
+		midiOutDropLogged.store(0, std::memory_order_relaxed);
+	}
+
 	// MidiScriptEngineHandler — trig.enableIn() binding (worker thread).
 	void enableTrigger(int port, uint8_t channel) override {
 		triggersIn.enable(port, channel);
@@ -1051,6 +1088,13 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// MidiScriptEngineHandler
 	bool sendMidi(int midiPort, const MidiScript::Message* msgs, size_t count, uint8_t channel, uint64_t tick, int trigPort = 0) override {
 		if (midiPort < 0 || midiPort >= MIDI_OUTPUTS) return false;
+		if (!isMidiOutEnabled(midiPort)) {
+			uint32_t bit = uint32_t(1) << midiPort;
+			if (!(midiOutDropLogged.fetch_or(bit) & bit)) {
+				writeLog(string::f("MIDI output %d is not enabled, message(s) dropped; call midiOut.enablePorts(%d)", midiPort + 1, midiPort + 1), false);
+			}
+			return false;
+		}
 		// Capacity is checked for the whole group, so a multi-message value — an
 		// NRPN quad or a 14-bit CC pair — is never half-emitted.
 		// dsp::RingBuffer::push() does not bounds-check: on a full
@@ -1140,7 +1184,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 						// Scheduled MIDI messages (sendAfterTrigger) run on the
 						// tick clock of the trigger input they were scheduled
 						// against, for every output.
-						for (int o = 0; o < MIDI_OUTPUTS; o++) {
+						for (int o = 0, n = midiOutCount.load(std::memory_order_relaxed); o < n; o++) {
 							midiOutputs[o].processTick(c, tick, port);
 						}
 						host.queueTick(port, c);
@@ -1271,6 +1315,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		}
 		for (int i = 0; i < MIDI_OUTPUTS; i++) midiOutputs[i].reset();
 		sample = 0;
+		resetMidiPortEnables();
 		// No script claims the trigger input until its trig.enableIn() runs.
 		triggersIn.reset();
 		// Likewise no NRPN/RPN/14-bit assembly until midi.enableNrpnIn() and
@@ -1318,6 +1363,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// Returning false keeps the message available to any other handler.
 	bool processMidi(int port, const MessageEx& m) {
 		if (!host.getActiveEngine()) return false;
+		if (!isMidiInEnabled(port)) return false;
 		ExtendedCcEnables& extendedCc = midiInputs[port].extendedCc;
 
 		switch (m.type) {
@@ -1385,10 +1431,16 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 			// dispatched inline: processMessage() notifies processMidi() below
 			// synchronously, and script code never runs on the audio thread.
 			midi::Message msg;
-			for (int i = 0; i < MIDI_INPUTS; i++) {
+			int inCount = midiInCount.load(std::memory_order_relaxed);
+			for (int i = 0; i < inCount; i++) {
 				while (midiInputs[i].queue.tryPop(&msg, args.frame)) {
 					midiInputs[i].processor.processMessage(msg);
 				}
+			}
+			// Unused inputs are not processed, but a device selected on one must
+			// not pile up messages that would flood the script once it is enabled.
+			for (int i = inCount; i < MIDI_INPUTS; i++) {
+				while (midiInputs[i].queue.tryPop(&msg, args.frame)) {}
 			}
 
 			host.process();
@@ -1408,7 +1460,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 				uint8_t channel = std::get<2>(t);
 				midiOutputs[std::get<0>(t)].send(msg, channel, std::get<3>(t), std::get<4>(t));
 			}
-			for (int i = 0; i < MIDI_OUTPUTS; i++) midiOutputs[i].processFrame(args.frame);
+			for (int i = 0, n = midiOutCount.load(std::memory_order_relaxed); i < n; i++) midiOutputs[i].processFrame(args.frame);
 		}
 
 		processTriggerOutputs(args.sampleTime);
@@ -1429,10 +1481,14 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
-		for (int i = 0; i < MIDI_INPUTS; i++) {
+		// Only the ports the script uses are written. The others keep their
+		// driver/device/channel in memory (a script reload never touches them),
+		// so they come back once a script enables them again, but a patch does
+		// not carry settings of ports nobody uses.
+		for (int i = 0, n = midiInCount.load(); i < n; i++) {
 			json_object_set_new(rootJ, midiInputKey(i).c_str(), midiInputs[i].queue.toJson());
 		}
-		for (int i = 0; i < MIDI_OUTPUTS; i++) {
+		for (int i = 0, n = midiOutCount.load(); i < n; i++) {
 			json_object_set_new(rootJ, midiOutputKey(i).c_str(), midiOutputs[i].toJson());
 		}
 		json_object_set_new(rootJ, "script", json_string(host.script.c_str()));
@@ -1495,6 +1551,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		// for the extended-CC enables: they belong to the outgoing script, not
 		// to the module.
 		triggersIn.reset();
+		resetMidiPortEnables();
 		// Raised before the load, so anything the new script schedules from
 		// rack.onLoad reaches the outputs after the audio thread has cleared.
 		clearTickQueuesPending.store(true);
@@ -1761,10 +1818,11 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		if (!module) return;
 
 		menu->addChild(new MenuSeparator());
-		for (int i = 0; i < CONFIG::midiInputs; i++) {
+		// Ports 2+ are only configurable while the script has enabled them.
+		for (int i = 0, n = module->midiInCount.load(); i < n; i++) {
 			menu->addChild(Rack::createStickyMidiMenuItem(CONFIG::midiInputs > 1 ? string::f("MIDI input %d", i + 1) : "MIDI input", &module->midiInputs[i].queue));
 		}
-		for (int i = 0; i < CONFIG::midiOutputs; i++) {
+		for (int i = 0, n = module->midiOutCount.load(); i < n; i++) {
 			menu->addChild(Rack::createStickyMidiMenuItem(CONFIG::midiOutputs > 1 ? string::f("MIDI output %d", i + 1) : "MIDI output", &module->midiOutputs[i]));
 		}
 
