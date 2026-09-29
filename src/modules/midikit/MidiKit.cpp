@@ -5,6 +5,7 @@
 #include "../../components/MidiWidget.hpp"
 #include "../../components/LedTextField.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
+#include "../../vcv/ui.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
 #include "../midi/MidiProcessor.hpp"
 #include "tipsy-encoder/include/tipsy/tipsy.h"
@@ -492,6 +493,52 @@ struct TipsyInput {
 };
 
 
+// ── Module variants ─────────────────────────────────────────────────────────
+// A MidiKit variant is a Config struct with the port/param counts of the
+// module. MidiKitModuleBase is templated over it. The widget base class
+// MidiKitWidgetBase holds everything but the layout: a variant derives from it,
+// adds its own controls in its constructor (see MidiKitWidget) and is
+// registered with its own panel, model and plugin.json entry.
+//
+// Config contract:
+//   static constexpr int cvInputs, trigInputs, trigOutputs, params,
+//                        midiInputs, midiOutputs;
+// The trigger and MIDI input/output counts must be at least 1 (Tipsy always
+// runs on trigger input/output 0, and the module aliases MIDI port 0); the CV
+// input and param counts may be zero.
+
+// Port/param counts injected into the script engines at construction.
+struct PortCounts {
+	int cvInputs;
+	int trigInputs;
+	int trigOutputs;
+	int params;
+	int midiInputs;
+	int midiOutputs;
+};
+
+// The original single-panel MidiKit: 4 CV inputs, 4 params, 1 trigger in/out,
+// 1 MIDI in/out.
+struct MidiKitConfig {
+	static constexpr int cvInputs = 4;
+	static constexpr int trigInputs = 1;
+	static constexpr int trigOutputs = 1;
+	static constexpr int params = 4;
+	static constexpr int midiInputs = 1;
+	static constexpr int midiOutputs = 1;
+};
+
+// MidiKitMicro: MidiKit with 2 CV inputs and 2 params, without a log display.
+struct MidiKitMicroConfig {
+	static constexpr int cvInputs = 2;
+	static constexpr int trigInputs = 1;
+	static constexpr int trigOutputs = 1;
+	static constexpr int params = 2;
+	static constexpr int midiInputs = 1;
+	static constexpr int midiOutputs = 1;
+};
+
+
 // ── Script host: engines + live script, one per module ─────────────────────
 // Owns the two engine instances and which one is live, plus the script source
 // and its persisted config. Every call into script code goes through here, so
@@ -506,14 +553,6 @@ struct TipsyInput {
 // The port/param `se` pointers (module-side) are re-bound by the module after
 // load().
 struct ScriptHost {
-	// Port/param counts injected into both engines at construction.
-	static constexpr int inputCount = 4;
-	static constexpr int inputTrigCount = 1;
-	static constexpr int outputTrigCount = 1;
-	static constexpr int paramCount = 4;
-	static constexpr int midiInputCount = 1;
-	static constexpr int midiOutputCount = 1;
-
 	// The engine currently selected to run the loaded script, or null. Written
 	// only by load()/closeState(); read via getActiveEngine().
 	MidiScript::MidiScriptEngine* activeEngine = nullptr;
@@ -526,9 +565,9 @@ struct ScriptHost {
 	/** [Stored to JSON] */
 	std::string script = "";
 
-	ScriptHost(MidiScript::MidiScriptEngineHandler* handler)
-		: seLua(handler, inputCount, inputTrigCount, outputTrigCount, paramCount, midiInputCount, midiOutputCount),
-		  seQuickJs(handler, inputCount, inputTrigCount, outputTrigCount, paramCount, midiInputCount, midiOutputCount) {}
+	ScriptHost(MidiScript::MidiScriptEngineHandler* handler, const PortCounts& c)
+		: seLua(handler, c.cvInputs, c.trigInputs, c.trigOutputs, c.params, c.midiInputs, c.midiOutputs),
+		  seQuickJs(handler, c.cvInputs, c.trigInputs, c.trigOutputs, c.params, c.midiInputs, c.midiOutputs) {}
 
 	// UI thread: wires the shared worker into both engines.
 	void setWorker(std::shared_ptr<ITaskWorker> worker) {
@@ -626,9 +665,10 @@ struct ScriptHost {
 // (defaults to 1 — the module's single trigger input).
 template <int TPORTS = 1>
 struct TriggerInputs {
-	// Wired by the module to inputs[INPUT_TRIG] so process() can read the
-	// trigger voltages directly. Set once in the constructor after config()
-	// sizes the port vector.
+	// Wired by the module to &inputs[INPUT_TRIG] -- the first of TPORTS
+	// consecutive ports -- so process() can read the trigger voltages
+	// directly. Set once in the constructor after config() sizes the port
+	// vector.
 	rack::engine::Input* input = nullptr;
 
 	// One SchmittTrigger and tick counter per (port, channel) of the trigger
@@ -680,7 +720,7 @@ struct TriggerInputs {
 	void process(int port, int channels, bool tipsyClaimed, TickFn&& onTick) {
 		for (uint8_t c = 0; c < channels; c++) {
 			bool tipsyOnChannel = (c == 0) && tipsyClaimed;
-			if (isEnabled(port, c) && trigger[port][c].process(input->getVoltage(c)) && !tipsyOnChannel) {
+			if (isEnabled(port, c) && trigger[port][c].process(input[port].getVoltage(c)) && !tipsyOnChannel) {
 				triggerTick[port][c]++;
 				onTick(c, triggerTick[port][c]);
 			}
@@ -695,8 +735,9 @@ struct TriggerInputs {
 // (defaults to 1 — the module's single trigger output).
 template <int TPORTS = 1>
 struct TriggerOutputs {
-	// Wired by the module to outputs[OUTPUT_TRIG] so process() can write
-	// the trigger voltages directly. Set once in the constructor.
+	// Wired by the module to &outputs[OUTPUT_TRIG] -- the first of TPORTS
+	// consecutive ports -- so process() can write the trigger voltages
+	// directly. Set once in the constructor.
 	rack::engine::Output* output = nullptr;
 
 	bool triggerActive[TPORTS][PORT_MAX_CHANNELS];
@@ -734,7 +775,7 @@ struct TriggerOutputs {
 		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
 			bool s = pulseGenerator[port][i].process(sampleTime);
 			if (triggerActive[port][i]) {
-				output->setVoltage(s ? 10.f : 0.f, i);
+				output[port].setVoltage(s ? 10.f : 0.f, i);
 			}
 		}
 	}
@@ -758,18 +799,26 @@ static std::shared_ptr<ITaskWorker> defaultWorker() {
 	return shared.lock();
 }
 
-struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcessorHandler {
+template <typename CONFIG>
+struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
+	static constexpr int CV_INPUTS = CONFIG::cvInputs;
+	static constexpr int TRIG_INPUTS = CONFIG::trigInputs;
+	static constexpr int TRIG_OUTPUTS = CONFIG::trigOutputs;
+	static constexpr int PARAMS = CONFIG::params;
+	static constexpr int MIDI_INPUTS = CONFIG::midiInputs;
+	static constexpr int MIDI_OUTPUTS = CONFIG::midiOutputs;
+
 	enum ParamIds {
-		ENUMS(PARAM, 4),
+		ENUMS(PARAM, CONFIG::params),
 		NUM_PARAMS
 	};
 	enum InputIds {
-		ENUMS(INPUT, 4),
-		INPUT_TRIG,
+		ENUMS(INPUT, CONFIG::cvInputs),
+		ENUMS(INPUT_TRIG, CONFIG::trigInputs),
 		NUM_INPUTS
 	};
 	enum OutputIds {
-		OUTPUT_TRIG,
+		ENUMS(OUTPUT_TRIG, CONFIG::trigOutputs),
 		NUM_OUTPUTS
 	};
 	enum LightIds {
@@ -779,22 +828,47 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
-	/** [Stored to Json] */
-	midi::InputQueue midiInput;
-
-	// Decodes the incoming stream into semantic events (NRPN/RPN/14-bit CC
-	// assembly) before it reaches the script. The queue is injected rather than
-	// owned: midiInput stays the module's, keeping its widget binding and JSON
-	// exactly as they were. MUST stay declared after midiInput so destruction
-	// order keeps the queue alive for the processor's whole lifetime.
+	// One MIDI input: the queue, the decoder for its stream and the extended-CC
+	// enables of the script for it.
+	//
+	// The decoder turns the incoming stream into semantic events (NRPN/RPN/
+	// 14-bit CC assembly) before it reaches the script. The queue is injected
+	// rather than owned: it stays the module's, keeping its widget binding and
+	// JSON. MUST stay declared after the queue so destruction order keeps the
+	// queue alive for the processor's whole lifetime.
 	//
 	// Only processMessage() is used -- never process(): the module pumps the
 	// queue itself under processDivider, and each decoded message has to be
 	// queued for the worker thread rather than dispatched inline.
-	MidiProcessor midiProcessor{&midiInput};
+	//
+	// Extended-CC input enables (midi.enableNrpnIn/enableRpnIn/enableCc14bitIn):
+	// atomic masks written by the worker from the enable bindings, read by the
+	// audio thread in processMidi().
+	struct MidiInputPort : MidiProcessorHandler {
+		/** [Stored to Json] */
+		midi::InputQueue queue;
+		MidiProcessor processor{&queue};
+		ExtendedCcEnables extendedCc;
+
+		MidiKitModuleBase* module = nullptr;
+		int port = 0;
+
+		// MidiProcessorHandler: routes the decoded message into the module
+		// together with the port it arrived on.
+		bool processMidi(const MessageEx& m) override {
+			return module->processMidi(port, m);
+		}
+	};
+	MidiInputPort midiInputs[CONFIG::midiInputs];
 
 	/** [Stored to Json] */
-	MidiOutput midiOutput;
+	MidiOutput midiOutputs[CONFIG::midiOutputs];
+
+	// The first MIDI input/output, for the single-port code paths and the
+	// test suite. Declared after the arrays they alias.
+	midi::InputQueue& midiInput = midiInputs[0].queue;
+	MidiProcessor& midiProcessor = midiInputs[0].processor;
+	MidiOutput& midiOutput = midiOutputs[0];
 
 	// Script log + overlay, in their own struct (see ScriptLog for the
 	// threading contract).
@@ -829,13 +903,10 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	// Trigger inputs and outputs, in their own structs (see TriggerInputs /
 	// TriggerOutputs for the threading contract). Their port pointers are wired
 	// in the constructor, once config() has sized the port vectors.
-	TriggerInputs<> triggersIn;
-	TriggerOutputs<> triggersOut;
-
-	// Extended-CC input enables (midi.enableNrpnIn/enableRpnIn/enableCc14bitIn),
-	// in their own struct. Atomic masks written by the worker from the enable
-	// bindings, read by the audio thread in processMidi().
-	ExtendedCcEnables extendedCc;
+	static_assert(CONFIG::trigInputs >= 1 && CONFIG::trigOutputs >= 1, "a variant needs at least one trigger input and output");
+	static_assert(CONFIG::midiInputs >= 1 && CONFIG::midiOutputs >= 1, "a variant needs at least one MIDI input and output");
+	TriggerInputs<CONFIG::trigInputs> triggersIn;
+	TriggerOutputs<CONFIG::trigOutputs> triggersOut;
 
 	uint64_t sample = 0;
 	float sampleRate = 0.f;
@@ -845,13 +916,15 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	// enabled (a script re-enables via its bindings). Called at construction, on
 	// reset, before a script loads (null), and after loadScript() selects it.
 	void bindPortParamEngine(MidiScript::MidiScriptEngine* engine) {
-		for (int i = 0; i < 4; i++) {
-			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->se = engine;
-			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->se = engine;
-			if (!engine) {
-				reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
-				reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
-			}
+		for (int i = 0; i < CV_INPUTS; i++) {
+			MidiScript::MidiScriptEnginePortInfo* info = reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i]);
+			info->se = engine;
+			if (!engine) info->enabled = false;
+		}
+		for (int i = 0; i < PARAMS; i++) {
+			MidiScript::MidiScriptEngineParamQuantity* pq = reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i]);
+			pq->se = engine;
+			if (!engine) pq->enabled = false;
 		}
 	}
 
@@ -872,7 +945,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 
 	// MidiScriptEngineHandler
 	void enableInput(int i) override {
-		reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = true;
+		reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->enabled = true;
 	}
 
 	// MidiScriptEngineHandler — trig.enableIn() binding (worker thread).
@@ -882,7 +955,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 
 	// MidiScriptEngineHandler
 	float getInputVoltage(int i, uint8_t ch) override {
-		if (reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled)
+		if (reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->enabled)
 			return inputs[INPUT + i].getVoltage(ch);
 		return 0.f;
 	}
@@ -894,26 +967,27 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	}
 
 	// MidiScriptEngineHandler — midi.enableNrpnIn()/enableRpnIn() binding
-	// (worker thread). midiPort 0 is the only MIDI input.
+	// (worker thread).
 	void enableNrpnIn(int midiPort, int kind, int channel) override {
-		if (midiPort != 0) return;
-		extendedCc.enableNrpn(kind, channel);
+		if (midiPort < 0 || midiPort >= MIDI_INPUTS) return;
+		midiInputs[midiPort].extendedCc.enableNrpn(kind, channel);
 	}
 
 	// MidiScriptEngineHandler — midi.enableCc14bitIn() binding (worker thread).
 	void enableCc14bitIn(int midiPort, int cc, int channel) override {
-		if (midiPort != 0) return;
-		extendedCc.enableCc14bit(cc, channel);
+		if (midiPort < 0 || midiPort >= MIDI_INPUTS) return;
+		midiInputs[midiPort].extendedCc.enableCc14bit(cc, channel);
 	}
 
 	// Whether the script asked for assembled events of each kind on this MIDI
-	// channel. Audio thread. Delegates to extendedCc; kept here because the
-	// test suite inspects these on the module directly.
-	bool isNrpnEnabled(uint8_t ch, bool isRpn) const {
-		return extendedCc.isNrpnEnabled(ch, isRpn);
+	// channel of MIDI input `port`. Audio thread. Delegates to the port's
+	// extendedCc; kept here because the test suite inspects these on the
+	// module directly.
+	bool isNrpnEnabled(uint8_t ch, bool isRpn, int port = 0) const {
+		return midiInputs[port].extendedCc.isNrpnEnabled(ch, isRpn);
 	}
-	bool isCc14bitEnabled(uint8_t ch, uint8_t cc) const {
-		return extendedCc.isCc14bitEnabled(ch, cc);
+	bool isCc14bitEnabled(uint8_t ch, uint8_t cc, int port = 0) const {
+		return midiInputs[port].extendedCc.isCc14bitEnabled(ch, cc);
 	}
 
 	// MidiScriptEngineHandler
@@ -932,12 +1006,12 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 
 	// MidiScriptEngineHandler
 	void enableParam(int i) override {
-		reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = true;
+		reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i])->enabled = true;
 	}
 
 	// MidiScriptEngineHandler
 	float getParamValue(int i) override {
-		if (reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled)
+		if (reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i])->enabled)
 			return params[PARAM + i].getValue();
 		return 0.f;
 	}
@@ -950,11 +1024,12 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	// MidiScriptEngineHandler
 	void setTrigVoltage(int i, uint8_t ch, float voltage) override {
 		triggersOut.setGateVoltage(i, ch);
-		outputs[OUTPUT_TRIG].setVoltage(voltage, ch);
+		outputs[OUTPUT_TRIG + i].setVoltage(voltage, ch);
 	}
 
 	// MidiScriptEngineHandler
 	bool sendMidi(int midiPort, const MidiScript::Message* msgs, size_t count, uint8_t channel, uint64_t tick) override {
+		if (midiPort < 0 || midiPort >= MIDI_OUTPUTS) return false;
 		// Capacity is checked for the whole group, so a multi-message value — an
 		// NRPN quad or a 14-bit CC pair — is never half-emitted.
 		// dsp::RingBuffer::push() does not bounds-check: on a full
@@ -1000,8 +1075,8 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	}
 
 
-	void processTriggerOutput(float sampleTime) {
-		triggersOut.process(0, sampleTime);
+	void processTriggerOutput(int port, float sampleTime) {
+		triggersOut.process(port, sampleTime);
 	}
 
 	// Trigger detection, per channel: a rising edge advances that channel's
@@ -1012,13 +1087,22 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	// counted.
 	void processTriggerInput() {
 		if (host.getActiveEngine()) {
-			int channels = triggersIn.input->getChannels();
-			if (channels <= 0) channels = 1;
-			triggersIn.process(0, channels, tipsyIn.claimed() >= 0,
-				[&](uint8_t c, uint64_t tick) {
-					midiOutput.processTick(c, tick);
-					host.queueTick(0, c);
-				});
+			for (int port = 0; port < TRIG_INPUTS; port++) {
+				int channels = triggersIn.input[port].getChannels();
+				if (channels <= 0) channels = 1;
+				// Only the claimed port carries the Tipsy stream.
+				triggersIn.process(port, channels, tipsyIn.claimed() == port,
+					[&](uint8_t c, uint64_t tick) {
+						// Scheduled MIDI messages (sendAfterTrigger) run on the
+						// tick clock of trigger port 0 only, for every output.
+						if (port == 0) {
+							for (int o = 0; o < MIDI_OUTPUTS; o++) {
+								midiOutputs[o].processTick(c, tick);
+							}
+						}
+						host.queueTick(port, c);
+					});
+			}
 		}
 	}
 
@@ -1055,7 +1139,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	// trigger input via trig.enableTipsyIn().
 	bool processTipsyInput() {
 		int port = tipsyIn.claimed();
-		if (port < 0 || !host.getActiveEngine()) return false;
+		if (port < 0 || port >= TRIG_INPUTS || !host.getActiveEngine()) return false;
 		if (!inputs[INPUT_TRIG + port].isConnected()) return false;
 
 		return tipsyIn.process(inputs[INPUT_TRIG + port].getVoltage(0),
@@ -1067,20 +1151,30 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	}
 
 
-	MidiKitModule() : MidiKitModule(defaultWorker()) {}
-	explicit MidiKitModule(std::shared_ptr<ITaskWorker> worker)
-		: host(this) {
+	static PortCounts portCounts() {
+		return PortCounts{ CONFIG::cvInputs, CONFIG::trigInputs, CONFIG::trigOutputs, CONFIG::params, CONFIG::midiInputs, CONFIG::midiOutputs };
+	}
+
+	MidiKitModuleBase() : MidiKitModuleBase(defaultWorker()) {}
+	explicit MidiKitModuleBase(std::shared_ptr<ITaskWorker> worker)
+		: host(this, portCounts()) {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		// Wire the trigger ports into TriggerInputs/TriggerOutputs so they can
 		// read/write them directly; the vectors are fully sized by config() and
-		// never resized.
-		triggersIn.input = &inputs[INPUT_TRIG];
-		triggersOut.output = &outputs[OUTPUT_TRIG];
-		configInput(INPUT_TRIG, "Trigger");
-		configOutput(OUTPUT_TRIG, "Trigger");
-		for (int i = 0; i < 4; i++) {
+		// never resized. The ports of each kind are consecutive.
+		if (TRIG_INPUTS > 0) triggersIn.input = &inputs[INPUT_TRIG];
+		if (TRIG_OUTPUTS > 0) triggersOut.output = &outputs[OUTPUT_TRIG];
+		for (int i = 0; i < TRIG_INPUTS; i++) {
+			configInput(INPUT_TRIG + i, TRIG_INPUTS > 1 ? string::f("Trigger %d", i + 1) : "Trigger");
+		}
+		for (int i = 0; i < TRIG_OUTPUTS; i++) {
+			configOutput(OUTPUT_TRIG + i, TRIG_OUTPUTS > 1 ? string::f("Trigger %d", i + 1) : "Trigger");
+		}
+		for (int i = 0; i < CV_INPUTS; i++) {
 			configInput<MidiScript::MidiScriptEnginePortInfo>(INPUT + i);
+		}
+		for (int i = 0; i < PARAMS; i++) {
 			configParam<MidiScript::MidiScriptEngineParamQuantity>(PARAM + i, 0.f, 1.f, 0.f);
 		}
 		// No engine is loaded yet — bind to null (clears the UI state); it is
@@ -1091,7 +1185,11 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		// Routes decoded messages into processMidi() below. Without this the
 		// processor decodes into an empty handler list and nothing reaches the
 		// engine at all.
-		midiProcessor.subscribe(this);
+		for (int i = 0; i < MIDI_INPUTS; i++) {
+			midiInputs[i].module = this;
+			midiInputs[i].port = i;
+			midiInputs[i].processor.subscribe(&midiInputs[i]);
+		}
 		host.setWorker(worker);
 		onReset();
 	}
@@ -1114,23 +1212,26 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 			auto t = midiOutQueue.shift();
 			midi::Message msg = std::get<1>(t);
 			msg.frame = -1;
-			midiOutput.sendMessage(msg);
+			midiOutputs[std::get<0>(t)].sendMessage(msg);
 		}
 	}
 
 	void onReset() override {
-		midiInput.reset();
-		// Emptying the queue leaves the stream discontinuous, so drop any
-		// half-received NRPN/RPN/14-bit CC state with it: a parameter still armed
-		// from before the reset would capture the next data entry that arrives.
-		midiProcessor.reset();
-		midiOutput.reset();
+		for (int i = 0; i < MIDI_INPUTS; i++) {
+			midiInputs[i].queue.reset();
+			// Emptying the queue leaves the stream discontinuous, so drop any
+			// half-received NRPN/RPN/14-bit CC state with it: a parameter still
+			// armed from before the reset would capture the next data entry that
+			// arrives.
+			midiInputs[i].processor.reset();
+			midiInputs[i].extendedCc.clear();
+		}
+		for (int i = 0; i < MIDI_OUTPUTS; i++) midiOutputs[i].reset();
 		sample = 0;
 		// No script claims the trigger input until its trig.enableIn() runs.
 		triggersIn.reset();
 		// Likewise no NRPN/RPN/14-bit assembly until midi.enableNrpnIn() and
-		// friends run.
-		extendedCc.clear();
+		// friends run (cleared with the MIDI inputs above).
 		// A script claims the trigger input for Tipsy explicitly, so a reset
 		// releases it and re-arms the decoder's data store (safe: nothing is
 		// decoding at reset, and provideDataBuffer() refuses mid-body).
@@ -1155,8 +1256,8 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		sampleRate = e.sampleRate;
 	}
 
-	// MidiProcessorHandler. Called synchronously from midiProcessor.processMessage()
-	// on the AUDIO thread, so it stays a pure enqueue -- script code runs on the
+	// Called via MidiInputPort::processMidi() synchronously from that port's
+	// processor.processMessage() on the AUDIO thread, so it stays a pure enqueue -- script code runs on the
 	// shared worker and must never be entered from here.
 	//
 	// A CC belonging to an extended message is notified TWICE: once as Type::CC
@@ -1172,8 +1273,9 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	//    script that enabled only 14-bit CC still wants to see CC 98 raw.
 	//
 	// Returning false keeps the message available to any other handler.
-	bool processMidi(const MessageEx& m) override {
+	bool processMidi(int port, const MessageEx& m) {
 		if (!host.getActiveEngine()) return false;
+		ExtendedCcEnables& extendedCc = midiInputs[port].extendedCc;
 
 		switch (m.type) {
 			case MessageEx::Type::NRPN:
@@ -1202,14 +1304,16 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		q.paramNumber = m.paramNumber;
 		q.extraValue = m.extraValue;
 		q.isComponent = m.isComponent;
-		host.queueMessage(0, q);
+		host.queueMessage(port, q);
 		return false;
 	}
 
 	void processBypass(const ProcessArgs& args) override {
 		midi::Message msg;
-		while (midiInput.tryPop(&msg, args.frame)) {
-			(void)0;
+		for (int i = 0; i < MIDI_INPUTS; i++) {
+			while (midiInputs[i].queue.tryPop(&msg, args.frame)) {
+				(void)0;
+			}
 		}
 		Module::processBypass(args);
 	}
@@ -1237,10 +1341,12 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 			// dispatched inline: processMessage() notifies processMidi() below
 			// synchronously, and script code never runs on the audio thread.
 			midi::Message msg;
-			while (midiInput.tryPop(&msg, args.frame)) {
-				midiProcessor.processMessage(msg);
+			for (int i = 0; i < MIDI_INPUTS; i++) {
+				while (midiInputs[i].queue.tryPop(&msg, args.frame)) {
+					midiInputs[i].processor.processMessage(msg);
+				}
 			}
-	
+
 			host.process();
 
 			// Drains the module's own out-queue regardless of activeEngine, so a
@@ -1256,28 +1362,43 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 				auto t = midiOutQueue.shift();
 				midi::Message msg = std::get<1>(t);
 				uint8_t channel = std::get<2>(t);
-				midiOutput.send(msg, channel, std::get<3>(t));
+				midiOutputs[std::get<0>(t)].send(msg, channel, std::get<3>(t));
 			}
-			midiOutput.processFrame(args.frame);
+			for (int i = 0; i < MIDI_OUTPUTS; i++) midiOutputs[i].processFrame(args.frame);
 		}
 
-		if (outputs[OUTPUT_TRIG].isConnected()) {
-			processTriggerOutput(args.sampleTime);
+		for (int i = 0; i < TRIG_OUTPUTS; i++) {
+			if (!outputs[OUTPUT_TRIG + i].isConnected()) continue;
+			processTriggerOutput(i, args.sampleTime);
 			// Drains the Tipsy queue regardless of activeEngine, for the same
 			// reason as the MIDI out-queue above: messages queued by a script's
 			// onUnload() must still reach the output after the engine is gone.
-			processTipsyOutput(0);
+			// Tipsy always goes to the first trigger output.
+			if (i == 0) processTipsyOutput(0);
 		}
 
 		sample++;
+	}
+
+	// JSON keys of the MIDI ports. The first keeps the single-port module's key
+	// ("midiInput"/"midiOutput") so existing patches load unchanged.
+	static std::string midiInputKey(int i) {
+		return i == 0 ? "midiInput" : string::f("midiInput%d", i + 1);
+	}
+	static std::string midiOutputKey(int i) {
+		return i == 0 ? "midiOutput" : string::f("midiOutput%d", i + 1);
 	}
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
-		json_object_set_new(rootJ, "midiInput", midiInput.toJson());
-		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
+		for (int i = 0; i < MIDI_INPUTS; i++) {
+			json_object_set_new(rootJ, midiInputKey(i).c_str(), midiInputs[i].queue.toJson());
+		}
+		for (int i = 0; i < MIDI_OUTPUTS; i++) {
+			json_object_set_new(rootJ, midiOutputKey(i).c_str(), midiOutputs[i].toJson());
+		}
 		json_object_set_new(rootJ, "script", json_string(host.script.c_str()));
 
 		// The script publishes its config as it changes (rack.setConfig), so this is a
@@ -1302,10 +1423,14 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
 		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
-		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
-		if (midiInputJ && json_is_object(midiInputJ)) midiInput.fromJson(midiInputJ);
-		json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
-		if (midiOutputJ && json_is_object(midiOutputJ)) midiOutput.fromJson(midiOutputJ);
+		for (int i = 0; i < MIDI_INPUTS; i++) {
+			json_t* midiInputJ = json_object_get(rootJ, midiInputKey(i).c_str());
+			if (midiInputJ && json_is_object(midiInputJ)) midiInputs[i].queue.fromJson(midiInputJ);
+		}
+		for (int i = 0; i < MIDI_OUTPUTS; i++) {
+			json_t* midiOutputJ = json_object_get(rootJ, midiOutputKey(i).c_str());
+			if (midiOutputJ && json_is_object(midiOutputJ)) midiOutputs[i].fromJson(midiOutputJ);
+		}
 
 		json_t* scriptJ = json_object_get(rootJ, "script");
 		if (scriptJ && json_is_string(scriptJ)) {
@@ -1334,7 +1459,7 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 		// for the extended-CC enables: they belong to the outgoing script, not
 		// to the module.
 		triggersIn.reset();
-		extendedCc.clear();
+		for (int i = 0; i < MIDI_INPUTS; i++) midiInputs[i].extendedCc.clear();
 		// Disable the outgoing script's ports/params before loading the new one.
 		bindPortParamEngine(nullptr);
 		log.push(LOG_FORMAT::RESET, 0.f, std::string(""));
@@ -1352,6 +1477,22 @@ struct MidiKitModule : Module, MidiScript::MidiScriptEngineHandler, MidiProcesso
 	}
 };
 
+
+// One log entry as a display line (without a trailing newline); empty for
+// entries that print nothing (RESET).
+static std::string formatLogEntry(const std::tuple<LOG_FORMAT, float, std::string>& s) {
+	const std::string& text = std::get<2>(s);
+	switch (std::get<0>(s)) {
+		case LOG_FORMAT::TIMESTAMP:
+			return string::f("[%9.4f] %s", std::get<1>(s), text.c_str());
+		case LOG_FORMAT::TEXT:
+			return text;
+		case LOG_FORMAT::INDENTED:
+			return "     " + text;
+		default:
+			return "";
+	}
+}
 
 struct LogDisplay : LedTextDisplay {
 	std::list<std::tuple<LOG_FORMAT, float, std::string>>* buffer;
@@ -1373,21 +1514,8 @@ struct LogDisplay : LedTextDisplay {
 			size_t i = 0;
 			for (const auto& s : *buffer) {
 				if (i >= size) break;
-				LOG_FORMAT f = std::get<0>(s);
-				float timestamp = std::get<1>(s);
-				switch (f) {
-					case LOG_FORMAT::TIMESTAMP:
-						text += string::f("[%9.4f] %s\n", timestamp, std::get<2>(s).c_str());
-						break;
-					case LOG_FORMAT::TEXT:
-						text += string::f("%s\n", std::get<2>(s).c_str());
-						break;
-					case LOG_FORMAT::INDENTED:
-						text += string::f("     %s\n", std::get<2>(s).c_str());
-						break;
-					default:
-						break;
-				};
+				if (std::get<0>(s) == LOG_FORMAT::RESET) continue;
+				text += formatLogEntry(s) + "\n";
 				i++;
 			}
 			dirty = false;
@@ -1404,16 +1532,17 @@ struct LogDisplay : LedTextDisplay {
 // (rack.registerContextMenu) asynchronously. getContextMenus() evaluates each
 // item's onGetValue callback on the worker thread and then invokes its
 // callback with the evaluated specs.
+template <typename MODULE>
 struct ScriptContextMenuItems : ui::MenuEntry {
 	struct Context {
 		std::vector<MidiScript::ScriptMenuItem> specs;
 		std::atomic<bool> loaded{false};
 	};
-	MidiKitModule* module;
+	MODULE* module;
 	std::shared_ptr<Context> ctx;
 	bool built = false;
 
-	ScriptContextMenuItems(MidiKitModule* module) : module(module) {
+	ScriptContextMenuItems(MODULE* module) : module(module) {
 		ctx = std::make_shared<Context>();
 		// Capture a local copy: Apple's Clang rejects capturing the data
 		// member `ctx` by name in a capture list.
@@ -1439,7 +1568,7 @@ struct ScriptContextMenuItems : ui::MenuEntry {
 	void buildItems() {
 		Menu* menu = dynamic_cast<Menu*>(parent);
 		if (!menu) return;
-		MidiKitModule* m = module;
+		MODULE* m = module;
 		Widget* anchor = this;
 		for (const MidiScript::ScriptMenuItem& spec : ctx->specs) {
 			Widget* item;
@@ -1463,15 +1592,34 @@ struct ScriptContextMenuItems : ui::MenuEntry {
 	}
 };
 
-struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider {
+// Widget base for all variants: log display, overlay, script menu and file
+// handling. Derived widgets add their controls after construction using the
+// add*() helpers below.
+template <typename CONFIG>
+struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, OverlayMessageProvider {
+	using MODULE = MidiKitModuleBase<CONFIG>;
+	using BASE = ThemedModuleWidget<MODULE>;
+	using ScriptContextMenuItems = ScriptContextMenuItems<MODULE>;
+	// Members of the dependent base need an explicit qualifier.
+	using BASE::module;
+	using BASE::box;
+	using BASE::addChild;
+	using BASE::addParam;
+	using BASE::addInput;
+	using BASE::addOutput;
+
 	const size_t BUFFERSIZE = 800;
-	LogDisplay* logDisplay;
+	// Null for variants without a log display (no addLogDisplay() call).
+	LogDisplay* logDisplay = nullptr;
+	// How many log entries the widget keeps; variants without a log display
+	// can lower this to what they show elsewhere.
+	size_t bufferLimit = BUFFERSIZE;
 	std::list<std::tuple<LOG_FORMAT, float, std::string>> buffer;
 	std::string filename = "";
 
-	MidiKitWidget(MidiKitModule *module)
-		: ThemedModuleWidget<MidiKitModule>(module, "MidiKit") {
-		setModule(module);
+	MidiKitWidgetBase(MODULE* module, const std::string& slug)
+		: BASE(module, slug) {
+		this->setModule(module);
 		this->module = module;
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
@@ -1479,13 +1627,29 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MidiWidget<>* display1 = createWidget<MidiWidget<>>(Vec(0.f, 36.4f));
-		display1->box.size = Vec(180.0f, 44.6f);
-		display1->setMidiPort(module ? &module->midiInput : NULL, "In");
-		addChild(display1);
+		if (module) {
+			OverlayMessageWidget::registerProvider(this);
+		}
+	}
 
-		LedDisplay* textDisplay = createWidget<LedDisplay>(Vec(0.f, 81.0f));
-		textDisplay->box.size = Vec(180.f, 140.6f);
+	// Layout helpers for derived widgets' constructors.
+	void addMidiInputDisplay(int i, Rect r) {
+		MidiWidget<>* display = createWidget<MidiWidget<>>(r.pos);
+		display->box.size = r.size;
+		display->setMidiPort(module ? &module->midiInputs[i].queue : NULL, CONFIG::midiInputs > 1 ? string::f("In %d", i + 1) : "In");
+		addChild(display);
+	}
+
+	void addMidiOutputDisplay(int i, Rect r) {
+		MidiWidget<>* display = createWidget<MidiWidget<>>(r.pos);
+		display->box.size = r.size;
+		display->setMidiPort(module ? &module->midiOutputs[i] : NULL, CONFIG::midiOutputs > 1 ? string::f("Out %d", i + 1) : "Out");
+		addChild(display);
+	}
+
+	void addLogDisplay(Rect r) {
+		LedDisplay* textDisplay = createWidget<LedDisplay>(r.pos);
+		textDisplay->box.size = r.size;
 		addChild(textDisplay);
 
 		logDisplay = createWidget<LogDisplay>(Vec());
@@ -1493,61 +1657,46 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 		logDisplay->box.size = textDisplay->box.size.minus(Vec(0.f, 6.f));
 		logDisplay->fontSize = 7.2f;
 		textDisplay->addChild(logDisplay);
-
-		MidiWidget<>* display2 = createWidget<MidiWidget<>>(Vec(0.f, 221.6f));
-		display2->box.size = Vec(180.0f, 44.6f);
-		display2->setMidiPort(module ? &module->midiOutput : NULL, "Out");
-		addChild(display2);
-
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(24.7f, 287.3f), module, MidiKitModule::PARAM + 0));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(56.2f, 287.3f), module, MidiKitModule::PARAM + 1));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(87.6f, 287.3f), module, MidiKitModule::PARAM + 2));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(119.1f, 287.3f), module, MidiKitModule::PARAM + 3));
-
-		addInput(createInputCentered<StoermelderPort>(Vec(24.7f, 328.4f), module, MidiKitModule::INPUT + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(56.2f, 328.4f), module, MidiKitModule::INPUT + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(87.6f, 328.4f), module, MidiKitModule::INPUT + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(119.1f, 328.4f), module, MidiKitModule::INPUT + 3));
-
-		addOutput(createOutputCentered<StoermelderPort>(Vec(156.f, 287.3f), module, MidiKitModule::OUTPUT_TRIG));
-
-		addInput(createInputCentered<StoermelderPort>(Vec(156.f, 328.4f), module, MidiKitModule::INPUT_TRIG));
-
-		if (module) {
-			OverlayMessageWidget::registerProvider(this);
-		}
 	}
 
-	~MidiKitWidget() {
+	~MidiKitWidgetBase() {
 		if (module) {
 			OverlayMessageWidget::unregisterProvider(this);
 		}
 	}
 
 	void step() override {
-		ThemedModuleWidget<MidiKitModule>::step();
+		BASE::step();
 		if (!module) return;
 		std::tuple<LOG_FORMAT, float, std::string> s;
 		while (module->log.midiLogMessages.try_pop(s)) {
-			if (buffer.size() == BUFFERSIZE) buffer.pop_back();
+			if (buffer.size() >= bufferLimit) buffer.pop_back();
 			if (std::get<0>(s) == LOG_FORMAT::RESET) {
 				resetLog();
 			}
 			else {
 				buffer.push_front(s);
-				logDisplay->dirty = true;
+				if (logDisplay) logDisplay->dirty = true;
 			}
 		}
 	}
 
 	void resetLog() {
 		buffer.clear();
-		logDisplay->reset();
+		if (logDisplay) logDisplay->reset();
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		ThemedModuleWidget<MidiKitModule>::appendContextMenu(menu);
+		BASE::appendContextMenu(menu);
 		if (!module) return;
+
+		menu->addChild(new MenuSeparator());
+		for (int i = 0; i < CONFIG::midiInputs; i++) {
+			menu->addChild(Rack::createStickyMidiMenuItem(CONFIG::midiInputs > 1 ? string::f("MIDI input %d", i + 1) : "MIDI input", &module->midiInputs[i].queue));
+		}
+		for (int i = 0; i < CONFIG::midiOutputs; i++) {
+			menu->addChild(Rack::createStickyMidiMenuItem(CONFIG::midiOutputs > 1 ? string::f("MIDI output %d", i + 1) : "MIDI output", &module->midiOutputs[i]));
+		}
 
 		if (module->host.getActiveEngine()) {
 			menu->addChild(new MenuSeparator());
@@ -1569,6 +1718,7 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 			}
 
 			menu->addChild(new ScriptContextMenuItems(module));
+			appendStatusMenuItems(menu);
 		}
 
 		menu->addChild(new MenuSeparator());
@@ -1586,6 +1736,9 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 		menu->addChild(createMenuItem("Reload", RACK_MOD_ALT_NAME "+Y", [=]() { loadJs(filename); }, filename.empty()));
 		menu->addChild(createMenuItem("Save as", "", [=]() { saveScriptDialog(); }));
 	}
+
+	// Hook for variants: extra entries at the end of the "Script" section.
+	virtual void appendStatusMenuItems(Menu* menu) {}
 
 	int nextOverlayMessageId() override {
 		if (!module || module->log.overlayQueue.empty())
@@ -1718,7 +1871,7 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 			loadJs(e.paths[0]);
 			e.consume(this);
 		}
-		ThemedModuleWidget<MidiKitModule>::onPathDrop(e);
+		BASE::onPathDrop(e);
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
@@ -1742,7 +1895,7 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 				e.consume(this);
 			}
 		}
-		ThemedModuleWidget<MidiKitModule>::onHoverKey(e);
+		BASE::onHoverKey(e);
 	}
 
 	void pasteJsClipboard() {
@@ -1758,7 +1911,97 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 };
 
 
+using MidiKitModule = MidiKitModuleBase<MidiKitConfig>;
+
+struct MidiKitWidget : MidiKitWidgetBase<MidiKitConfig> {
+	MidiKitWidget(MidiKitModule* module) : MidiKitWidgetBase<MidiKitConfig>(module, "MidiKit") {
+		addMidiInputDisplay(0, Rect(Vec(0.f, 36.4f), Vec(180.f, 44.6f)));
+		addLogDisplay(Rect(Vec(0.f, 81.0f), Vec(180.f, 140.6f)));
+		addMidiOutputDisplay(0, Rect(Vec(0.f, 221.6f), Vec(180.f, 44.6f)));
+
+		static const float x[] = { 24.7f, 56.2f, 87.6f, 119.1f };
+		for (int i = 0; i < MidiKitConfig::params; i++) {
+			addParam(createParamCentered<StoermelderTrimpot>(Vec(x[i], 287.3f), module, MidiKitModule::PARAM + i));
+		}
+		for (int i = 0; i < MidiKitConfig::cvInputs; i++) {
+			addInput(createInputCentered<StoermelderPort>(Vec(x[i], 328.4f), module, MidiKitModule::INPUT + i));
+		}
+		addOutput(createOutputCentered<StoermelderPort>(Vec(156.f, 287.3f), module, MidiKitModule::OUTPUT_TRIG));
+		addInput(createInputCentered<StoermelderPort>(Vec(156.f, 328.4f), module, MidiKitModule::INPUT_TRIG));
+	}
+};
+
+
+using MidiKitMicroModule = MidiKitModuleBase<MidiKitMicroConfig>;
+
+struct MidiKitMicroWidget : MidiKitWidgetBase<MidiKitMicroConfig> {
+	MidiKitMicroWidget(MidiKitMicroModule* module) : MidiKitWidgetBase<MidiKitMicroConfig>(module, "MidiKitMicro") {
+		// No log display: the last few log lines are shown in the context menu.
+		bufferLimit = 5;
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 129.7f), module, MidiKitMicroModule::PARAM + 0));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 158.8f), module, MidiKitMicroModule::PARAM + 1));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 206.0f), module, MidiKitMicroModule::INPUT + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 242.7f), module, MidiKitMicroModule::INPUT + 1));
+
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 284.3f), module, MidiKitMicroModule::OUTPUT_TRIG));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 328.4f), module, MidiKitMicroModule::INPUT_TRIG));
+	}
+
+	void appendStatusMenuItems(Menu* menu) override {
+		// Menu entry with word-wrapped text at a fixed width; its height follows the
+		// wrapped text. ui::MenuLabel is always one line as wide as its text, which is
+		// unusable for long log lines.
+		struct MenuMultilineLabel : ui::MenuEntry {
+			float WIDTH = 320.f;
+			float FONT_SIZE = 12.f;
+			float PADDING_X = 10.f;
+			float PADDING_Y = 3.f;
+
+			std::string text;
+			// The text the current height was measured for.
+			std::string measuredText;
+			bool measured = false;
+
+			MenuMultilineLabel(const std::string& text) : text(text) {
+				box.size = Vec(WIDTH, 20.f);
+			}
+
+			void step() override {
+				if (!measured || measuredText != text) {
+					math::Vec size = vcv::ui::measureTextBox(text, FONT_SIZE, WIDTH - 2.f * PADDING_X);
+					box.size = Vec(WIDTH, std::max(20.f, size.y + 2.f * PADDING_Y));
+					measuredText = text;
+					measured = true;
+				}
+				ui::MenuEntry::step();
+			}
+
+			void draw(const DrawArgs& args) override {
+				nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+				nvgFontSize(args.vg, FONT_SIZE);
+				nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+				// Same line height as vcv::ui::measureTextBox() measures with.
+				nvgTextLineHeight(args.vg, 1.2f);
+				nvgFillColor(args.vg, bndGetTheme()->menuTheme.textColor);
+				nvgTextBox(args.vg, PADDING_X, PADDING_Y, WIDTH - 2.f * PADDING_X, text.c_str(), nullptr);
+			}
+		};
+
+		menu->addChild(createSubmenuItem("Log", "", [=](Menu* menu) {
+			bool any = false;
+			for (const auto& entry : buffer) {
+				if (std::get<0>(entry) == LOG_FORMAT::RESET) continue;
+				menu->addChild(new MenuMultilineLabel(formatLogEntry(entry)));
+				any = true;
+			}
+			if (!any) menu->addChild(createMenuLabel("(empty)"));
+		}));
+	}
+};
+
 } // namespace MidiKit
 } // namespace StoermelderPackOne
 
 Model* modelMidiKit = createModel<StoermelderPackOne::MidiKit::MidiKitModule, StoermelderPackOne::MidiKit::MidiKitWidget>("MidiKit");
+Model* modelMidiKitMicro = createModel<StoermelderPackOne::MidiKit::MidiKitMicroModule, StoermelderPackOne::MidiKit::MidiKitMicroWidget>("MidiKitMicro");

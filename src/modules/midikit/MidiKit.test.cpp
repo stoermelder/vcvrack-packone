@@ -36,6 +36,10 @@ namespace __tipsy {
 	namespace Catch = ::Catch;
 	#include "MidiKit.test.tipsy.hpp"
 }
+namespace __ports {
+	namespace Catch = ::Catch;
+	#include "MidiKit.test.ports.hpp"
+}
 
 // The examples header's OutEvent StringMaker specialization has to live at
 // global scope — the namespace alias above makes `namespace Catch { ... }`
@@ -58,4 +62,5 @@ namespace Catch {
 void testPluginInit(rack::Plugin* p) {
 	pluginInstance = p;
 	p->addModel(modelMidiKit);
+	p->addModel(modelMidiKitMicro);
 }

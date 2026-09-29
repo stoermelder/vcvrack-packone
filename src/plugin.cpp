@@ -64,6 +64,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelMidiKey);
 	p->addModel(modelPanicRoom);
 	p->addModel(modelMidiKit);
+	p->addModel(modelMidiKitMicro);
 	p->addModel(modelMidiEsx);
 	p->addModel(modelAhab);
 	p->addModel(modelSpliceKit);

@@ -24,6 +24,15 @@
 			"manualUrl": ""
 		},
 		{
+			"slug": "MidiKitMicro",
+			"name": "µMIDI-KIT",
+			"description": "",
+			"tags": [
+				"MIDI", "Utility"
+			],
+			"manualUrl": ""
+		},
+		{
 			"slug": "SpliceKit",
 			"name": "SPLICE-KIT",
 			"description": "8x8 matrix patch-bay for creating and removing cables by pressing button pairs.\nStores up to eight independent scenes per instance, with full MIDI control and feedback for playing your patch from a grid controller.",
