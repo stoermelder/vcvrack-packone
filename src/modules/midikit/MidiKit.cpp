@@ -1404,6 +1404,9 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 				(void)0;
 			}
 		}
+		// The context menu's script items are a UI query that only the engine's
+		// pump answers; a bypassed module must still be able to show them.
+		host.process();
 		Module::processBypass(args);
 	}
 

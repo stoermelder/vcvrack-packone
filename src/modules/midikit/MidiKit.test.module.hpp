@@ -944,7 +944,7 @@ rack.registerContextMenu({
 // appendContextMenu() inserts an async placeholder that builds the real menu
 // items once the worker has evaluated onGetValue — driven by the
 // placeholder's step(), which the tests call via buildScriptMenuItems() (the
-// worker is inline under SyncTaskWorker). Clicking an item through
+// worker is inline under SyncTaskWorker, after an engine process() pump). Clicking an item through
 // MenuItem::doAction() fires the script callback. The widget behaviour is
 // engine-independent: each case builds the menu for a fresh module+widget per
 // engine script.
@@ -998,6 +998,7 @@ TEST_CASE("Context menu: boolean item is built and click fires the callback", "[
 		// as Rack's Menu::step() would, so clicking below runs against the
 		// freed placeholder (its callbacks must capture the module, not
 		// `this`). The whole menu can't be stepped without a window.
+		m->host.getActiveEngine()->process();   // the menu query is low priority: answered on the next pump
 		buildScriptMenuItems(menu);
 
 		rack::ui::MenuItem* item = nullptr;
@@ -1032,6 +1033,7 @@ TEST_CASE("Context menu: options submenu is built and click fires the callback",
 		// See the boolean test case: step the async placeholder so it builds
 		// the real items, then free the placeholder (Rack's Menu::step()
 		// behaviour) so the submenu callbacks run without `this`.
+		m->host.getActiveEngine()->process();   // the menu query is low priority: answered on the next pump
 		buildScriptMenuItems(menu);
 
 		rack::ui::MenuItem* sub = nullptr;

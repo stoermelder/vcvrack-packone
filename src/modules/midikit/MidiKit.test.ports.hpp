@@ -371,6 +371,147 @@ TEST_CASE("Variant: enablePorts rejects an out-of-range port", "[MidiKit][Varian
 	}
 }
 
+// ── UI queries run behind MIDI (MidiScriptEngine::runLowPriority) ───────────
+
+static const char* JS_UI_QUERY = R"(/**
+ * @engine QuickJs@v1
+ */
+input.enable(1);
+input.getName = function(i) { rack.log("Q"); return "Name"; };
+midi.onMessage = function(midiPort, msg) { rack.log("M"); };
+)";
+
+// Collects tasks instead of running them, so a test decides when the worker gets to them.
+struct DeferredWorker : StoermelderPackOne::ITaskWorker {
+	std::vector<std::function<void()>> tasks;
+	std::atomic<bool> cancel{false};
+	bool work(std::function<void()> t) override { tasks.push_back(std::move(t)); return true; }
+	bool work(std::function<void()> t, Context*) override { tasks.push_back(std::move(t)); return true; }
+	bool work(std::function<void(std::atomic<bool>&)> t) override { tasks.push_back([this, t]() { t(cancel); }); return true; }
+	bool work(std::function<void(std::atomic<bool>&)> t, Context*) override { tasks.push_back([this, t]() { t(cancel); }); return true; }
+	bool isWorkerThread() const override { return true; }
+};
+
+TEST_CASE("Variant: a UI query is answered by the next process() when nothing else is pending", "[MidiKit][Variant][UiQuery]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	m->loadScript(JS_UI_QUERY);
+	probes(m);
+	int64_t frame = 1;
+
+	auto* info = m->inputInfos[MultiModule::INPUT];
+	REQUIRE(info->getName().empty());          // queued, not run yet
+	REQUIRE(probes(m).find("Q") == std::string::npos);
+
+	pump(m, frame);
+	REQUIRE(probes(m).find("Q") != std::string::npos);
+	REQUIRE(info->getName() == "Name");
+}
+
+TEST_CASE("Variant: a pending UI query runs after the MIDI message, never before", "[MidiKit][Variant][UiQuery]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	m->loadScript(JS_UI_QUERY);
+	probes(m);
+	int64_t frame = 1;
+
+	m->inputInfos[MultiModule::INPUT]->getName();   // queues the query first
+	m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 10));
+	pump(m, frame);
+
+	std::string log = probes(m);
+	CATCH_INFO(log);
+	REQUIRE(log.find("M") != std::string::npos);
+	REQUIRE(log.find("Q") != std::string::npos);
+	REQUIRE(log.find("M") < log.find("Q"));
+}
+
+TEST_CASE("Variant: UI queries are drained one per task and never flood the worker", "[MidiKit][Variant][UiQuery]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	auto worker = std::make_shared<DeferredWorker>();
+	StoermelderPackOne::MidiScript::MidiScriptEngine& e = m->host.seQuickJs;
+	e.setWorker(worker);
+
+	int ran = 0;
+	for (int i = 0; i < 3; i++) REQUIRE(e.runLowPriority([&]() { ran++; }));
+
+	// process() runs every few samples; however often it runs, one drain task waits.
+	for (int i = 0; i < 5; i++) e.process();
+	REQUIRE(worker->tasks.size() == 1);
+	REQUIRE(ran == 0);
+
+	// Each drain task runs a single query and lets the next one be scheduled.
+	worker->tasks[0]();
+	REQUIRE(ran == 1);
+	e.process();
+	REQUIRE(worker->tasks.size() == 2);
+	worker->tasks[1]();
+	e.process();
+	worker->tasks[2]();
+	REQUIRE(ran == 3);
+	e.process();
+	REQUIRE(worker->tasks.size() == 3);   // lane empty: nothing more scheduled
+}
+
+TEST_CASE("Variant: a full UI query lane drops instead of blocking", "[MidiKit][Variant][UiQuery]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	StoermelderPackOne::MidiScript::MidiScriptEngine& e = m->host.seQuickJs;
+
+	int accepted = 0;
+	for (int i = 0; i < 100; i++) if (e.runLowPriority([]() {})) accepted++;
+	REQUIRE(accepted > 0);
+	REQUIRE(accepted < 100);
+}
+
+static const char* JS_MENU_QUERY = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.registerContextMenu({
+	type: "boolean",
+	label: "Item",
+	onGetValue: function() { rack.log("Q"); return false; },
+	onChange: function(v) {}
+});
+midi.onMessage = function(midiPort, msg) { rack.log("M"); };
+)";
+
+TEST_CASE("Variant: the context menu query is low priority", "[MidiKit][Variant][UiQuery]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	m->loadScript(JS_MENU_QUERY);
+	probes(m);
+	int64_t frame = 1;
+	auto* e = m->host.getActiveEngine();
+
+	// Deferred until the engine pumps, and behind a pending MIDI message.
+	int calls = 0;
+	e->getContextMenus([&](const std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem>& specs) {
+		calls++;
+		REQUIRE(specs.size() == 1);
+	});
+	REQUIRE(calls == 0);
+	m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 10));
+	pump(m, frame);
+	REQUIRE(calls == 1);
+	std::string log = probes(m);
+	CATCH_INFO(log);
+	REQUIRE(log.find("M") < log.find("Q"));
+}
+
+TEST_CASE("Variant: a bypassed module still answers UI queries", "[MidiKit][Variant][UiQuery]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	m->loadScript(JS_MENU_QUERY);
+
+	int calls = 0;
+	m->host.getActiveEngine()->getContextMenus([&](const std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem>&) { calls++; });
+	REQUIRE(calls == 0);
+	m->processBypass(Test::makeProcessArgs(1));
+	REQUIRE(calls == 1);
+}
+
 // ── Trigger ports ───────────────────────────────────────────────────────────
 
 TEST_CASE("Variant: each trigger input has its own tick clock", "[MidiKit][Variant]") {

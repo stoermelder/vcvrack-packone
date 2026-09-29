@@ -723,7 +723,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	void getContextMenus(const std::function<void(const std::vector<ScriptMenuItem>&)>& callback) override {
 		// The whole snapshot (incl. each onGetValue ref) is built on the worker
 		// thread, so no copy is needed on the UI thread.
-		runAsync([this, callback]() {
+		// A UI query: runs behind MIDI dispatch (see runLowPriority).
+		runLowPriority([this, callback]() {
 			assert(onWorkerThread());
 			if (!L) return;
 			struct Snapshot { int id; ScriptMenuItem spec; int onGetValueRef; };

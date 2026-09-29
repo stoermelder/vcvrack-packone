@@ -837,6 +837,7 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' output channel menu changes the 
 	// "Output channel" option index 1 -> MIDI channel 2 (internal 1).
 	std::vector<ScriptMenuItem> specs;
 	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
 	REQUIRE(specs.size() == 1);
 	REQUIRE(specs[0].label == "Output channel");
 	m->host.getActiveEngine()->invokeContextMenuCallback(specs[0].callbackId, 1);
@@ -1006,6 +1007,7 @@ TEST_CASE("'Keyboard split.js/.lua' the preset menu switches the active preset",
 
 	std::vector<ScriptMenuItem> specs;
 	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
 	REQUIRE(specs.size() == 1);
 	REQUIRE(specs[0].label == "Preset");
 	REQUIRE(specs[0].options.size() == 3);
@@ -1487,6 +1489,7 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 
 	std::vector<ScriptMenuItem> specs;
 	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
 	REQUIRE(specs.size() == 3);
 	REQUIRE(specs[1].label == "Channel");
 	REQUIRE(specs[2].label == "Round up on ties");
@@ -1530,6 +1533,7 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	// time, before onLoad() restored the persisted config).
 	std::vector<ScriptMenuItem> restoredSpecs;
 	m2->host.getActiveEngine()->getContextMenus([&restoredSpecs](const std::vector<ScriptMenuItem>& s) { restoredSpecs = s; });
+	m2->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
 	REQUIRE(restoredSpecs.size() == 3);
 	REQUIRE(restoredSpecs[1].label == "Channel");
 	REQUIRE(restoredSpecs[2].label == "Round up on ties");
@@ -1824,6 +1828,7 @@ TEST_CASE("'Micro scale.js/.lua' alwaysSendBend forces a bend even for the tonic
 
 	std::vector<ScriptMenuItem> specs;
 	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
 	REQUIRE(specs.size() == 2);
 	REQUIRE(specs[0].label == "Input channel");
 	REQUIRE(specs[1].label == "Always send pitch bend");
@@ -1861,6 +1866,7 @@ TEST_CASE("'Micro scale.js/.lua' input-channel filter retunes only the chosen ch
 
 	std::vector<ScriptMenuItem> specs;
 	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
 	// "Input channel" option index 1 selects script channel 1. The script's
 	// channels are 1-based (midi.getChannel returns the Rack nibble + 1), so
 	// the matching note is fed as noteOn(0, ...) and the non-matching one as
@@ -2564,6 +2570,7 @@ TEST_CASE("'NRPN Generator.js/.lua' context menu changes ticks per step and chan
 
 	std::vector<ScriptMenuItem> specs;
 	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
 	REQUIRE(specs.size() == 2);
 	REQUIRE(specs[0].label == "Channel");
 	REQUIRE(specs[1].label == "Ticks per step");
@@ -2580,6 +2587,7 @@ TEST_CASE("'NRPN Generator.js/.lua' context menu changes ticks per step and chan
 	// The menus report the new selections (read back through onGetValue).
 	std::vector<ScriptMenuItem> after;
 	m->host.getActiveEngine()->getContextMenus([&after](const std::vector<ScriptMenuItem>& s) { after = s; });
+	m->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
 	REQUIRE(after[0].selected == 1);
 	REQUIRE(after[1].selected == 1);
 

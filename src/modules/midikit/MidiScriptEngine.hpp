@@ -300,6 +300,24 @@ struct MidiScriptEngine {
 		return taskWorker->work(task, APP);
 	}
 
+	// Low-priority lane for queries the UI makes into the script (port names,
+	// param labels). The worker is one FIFO shared by every MidiKit module, so
+	// queueing these with runAsync() would put them in line ahead of later
+	// MIDI/trigger dispatch and use up its few slots. Instead they wait here,
+	// and process() runs them only behind dispatch work: one at the tail of
+	// each dispatch task, or on their own when there is no dispatch to do. A
+	// query therefore delays MIDI by at most one script call, and never the
+	// other way round.
+	//
+	// UI thread only (single producer); drained on the worker (single
+	// consumer). Returns false, dropping the task, if the lane is full —
+	// callers retry on their next redraw.
+	bool runLowPriority(std::function<void()> task) {
+		if (uiQueryQueue.full()) return false;
+		uiQueryQueue.push(std::move(task));
+		return true;
+	}
+
 	// True on the thread script code runs on. All script execution happens there
 	// — dispatch, load/teardown, setConfig()/getConfig() — so the interpreter and
 	// contextMenus are only ever touched from it, and the call sites assert that.
@@ -413,6 +431,21 @@ struct MidiScriptEngine {
 	// tipsyOutQueue.
 	dsp::RingBuffer<TipsyMessage, 8> tipsyInQueue;
 
+	// Pending runLowPriority() tasks. See there.
+	dsp::RingBuffer<std::function<void()>, 16> uiQueryQueue;
+	// A stand-alone drain task is in the worker's queue. Keeps process(), which
+	// runs every few samples, from flooding the shared worker while it waits.
+	std::atomic<bool> uiDrainScheduled{false};
+
+	// Worker thread. Runs at most one pending UI query, so the time MIDI can
+	// wait behind this is a single script call.
+	void drainUiQuery() {
+		if (!uiQueryQueue.empty()) {
+			std::function<void()> task = uiQueryQueue.shift();
+			task();
+		}
+	}
+
 	// Dispatches queued midiInQueue/tickInQueue/tipsyInQueue onto the engine via
 	// runAsync(). Virtual so tests can override it to observe call counts.
 	virtual void process() {
@@ -443,7 +476,16 @@ struct MidiScriptEngine {
 					TipsyMessage msg = tipsyInQueue.shift();
 					dispatchTipsyMessage(msg);
 				}
+				// After everything above, so queries never hold up MIDI.
+				drainUiQuery();
 			});
+		}
+		else if (!uiQueryQueue.empty() && !uiDrainScheduled.exchange(true)) {
+			bool queued = runAsync([this]() {
+				uiDrainScheduled.store(false);
+				drainUiQuery();
+			});
+			if (!queued) uiDrainScheduled.store(false);
 		}
 	}
 
@@ -491,7 +533,7 @@ struct MidiScriptEnginePortInfo : PortInfo {
 		if (enabled) {
 			bool expected = false;
 			if (queryInFlight.compare_exchange_strong(expected, true)) {
-				bool queued = se->runAsync([=] {
+				bool queued = se->runLowPriority([=] {
 					bufferedName = se->getInputName(portId);
 					queryInFlight.store(false);
 				});
@@ -520,7 +562,7 @@ struct MidiScriptEngineParamQuantity : ParamQuantity {
 		if (enabled) {
 			bool expected = false;
 			if (queryInFlight.compare_exchange_strong(expected, true)) {
-				bool queued = se->runAsync([=] {
+				bool queued = se->runLowPriority([=] {
 					bufferedLabel = se->getParamName(paramId);
 					bufferedDisplayValue = se->getParamFormatValue(paramId);
 					queryInFlight.store(false);

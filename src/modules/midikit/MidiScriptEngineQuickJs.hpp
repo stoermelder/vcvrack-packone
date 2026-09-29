@@ -676,7 +676,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// needs no copy on the UI thread. Each onGetValue function is dup'd
 		// here — QuickJS refcounts aren't atomic, so JS_DupValue only runs on
 		// the worker thread.
-		runAsync([this, callback]() {
+		// A UI query: runs behind MIDI dispatch (see runLowPriority).
+		runLowPriority([this, callback]() {
 			assert(onWorkerThread());
 			if (!ctx) return;
 			struct Snapshot { int id; ScriptMenuItem spec; JSValue onGetValueFn; };

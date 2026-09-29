@@ -3281,6 +3281,7 @@ TEST_CASE("setConfig() persists when called from top-level, onLoad, onUnload, mi
 		// Context-menu onChange.
 		std::vector<ScriptMenuItem> specs;
 		m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+		m->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
 		REQUIRE(specs.size() == 1);
 		m->host.getActiveEngine()->invokeContextMenuCallback(specs[0].callbackId, 1);
 		REQUIRE(configBool(cfg(), "menu") == true);
@@ -3387,6 +3388,7 @@ TEST_CASE("Full patch round-trip: setConfig -> dataToJson -> new module -> dataF
 		// only visible inside onLoad().
 		std::vector<ScriptMenuItem> specs;
 		m2->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+		m2->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
 		REQUIRE(specs.size() == 1);
 		REQUIRE(specs[0].selected == 7);
 
@@ -3838,14 +3840,15 @@ static MenuResult runMenu(const std::string& script, int clickId = -1, int click
 	r.loadLog = drainLog(m);
 	if (r.loaded) {
 		// getContextMenus is asynchronous: the worker evaluates onGetValue and
-		// then invokes the callback with the evaluated specs. The tests use a
-		// SyncTaskWorker, which runs the worker task inline on the calling
-		// thread, so the callback has already fired by the time getContextMenus
-		// returns and r.specs is filled synchronously.
+		// then invokes the callback with the evaluated specs. It is a
+		// low-priority UI query, which the engine runs on its next pump; the
+		// tests use a SyncTaskWorker, so process() runs it inline and r.specs
+		// is filled by the time process() returns.
 		auto queryMenus = [&]() {
 			m->host.getActiveEngine()->getContextMenus([&r](const std::vector<ScriptMenuItem>& specs) {
 				r.specs = specs;
 			});
+			m->host.getActiveEngine()->process();
 		};
 		queryMenus();
 		if (clickId >= 0) {
