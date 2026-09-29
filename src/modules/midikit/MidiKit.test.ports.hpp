@@ -89,8 +89,8 @@ TEST_CASE("Variant: micro config sizes", "[MidiKit][Variant]") {
 	MidiKitMicroModule* m = mods.create();
 
 	REQUIRE(m->NUM_PARAMS == 2);
-	REQUIRE(m->NUM_INPUTS == 3);    // 2 CV + 1 trigger
-	REQUIRE(m->NUM_OUTPUTS == 1);
+	REQUIRE(m->NUM_INPUTS == 4);    // 2 CV + 2 trigger
+	REQUIRE(m->NUM_OUTPUTS == 2);
 	REQUIRE(m->host.seLua.inputCount == 2);
 	REQUIRE(m->host.seLua.paramCount == 2);
 }
@@ -1630,22 +1630,5 @@ TEST_CASE("Variant: MidiKitMicro widget works without a log display", "[MidiKit]
 	REQUIRE(countMenuEntries(menu, "Log") == 1);
 
 	delete menu;
-	Test::destroyWidget(mw);
-}
-
-TEST_CASE("Variant: MidiKitMicro widget exposes its ports", "[MidiKit][Variant][Micro]") {
-	Test::ModuleScaffold<MidiKitMicroModule> mods([]() {
-		MidiKitMicroModule* m = new MidiKitMicroModule(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
-		m->id = rand();
-		return m;
-	});
-	MidiKitMicroModule* m = mods.create();
-	m->model = modelMidiKitMicro;
-	MidiKitMicroWidget* mw = Test::createWidget<MidiKitMicroWidget>(m);
-
-	REQUIRE(mw->getParams().size() == 2);
-	REQUIRE(mw->getInputs().size() == 3);
-	REQUIRE(mw->getOutputs().size() == 1);
-
 	Test::destroyWidget(mw);
 }

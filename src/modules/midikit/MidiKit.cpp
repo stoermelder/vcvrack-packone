@@ -546,8 +546,8 @@ struct MidiKitConfig {
 // MidiKitMicro: MidiKit with 2 CV inputs and 2 params, without a log display.
 struct MidiKitMicroConfig {
 	static constexpr int cvInputs = 2;
-	static constexpr int trigInputs = 1;
-	static constexpr int trigOutputs = 1;
+	static constexpr int trigInputs = 2;
+	static constexpr int trigOutputs = 2;
 	static constexpr int params = 2;
 	static constexpr int midiInputs = 4;
 	static constexpr int midiOutputs = 4;
@@ -2091,14 +2091,17 @@ struct MidiKitMicroWidget : MidiKitWidgetBase<MidiKitMicroConfig> {
 	MidiKitMicroWidget(MidiKitMicroModule* module) : MidiKitWidgetBase<MidiKitMicroConfig>(module, "MidiKitMicro") {
 		// No log display: the last few log lines are shown in the context menu.
 		bufferLimit = 5;
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 129.7f), module, MidiKitMicroModule::PARAM + 0));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 158.8f), module, MidiKitMicroModule::PARAM + 1));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 85.1f), module, MidiKitMicroModule::PARAM + 0));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 110.7f), module, MidiKitMicroModule::PARAM + 1));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 206.0f), module, MidiKitMicroModule::INPUT + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 242.7f), module, MidiKitMicroModule::INPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 155.4f), module, MidiKitMicroModule::INPUT + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 186.0f), module, MidiKitMicroModule::INPUT + 1));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 284.3f), module, MidiKitMicroModule::INPUT_TRIG));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.5f), module, MidiKitMicroModule::OUTPUT_TRIG));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 223.2f), module, MidiKitMicroModule::INPUT_TRIG + 0));	
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 253.7f), module, MidiKitMicroModule::INPUT_TRIG + 1));
+
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 296.9f), module, MidiKitMicroModule::OUTPUT_TRIG + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.5f), module, MidiKitMicroModule::OUTPUT_TRIG + 1));
 	}
 
 	void appendStatusMenuItems(Menu* menu) override {
