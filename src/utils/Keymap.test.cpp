@@ -166,13 +166,80 @@ TEST_CASE("first use with no file writes registered defaults to disk", "[Keymap]
 	std::string data;
 	REQUIRE(f.mock.fs.read(path, data));
 	std::string error;
-	json_t* root = vcv::parseJson(data, error);
+	json_t* root = vcv::parseJson(stripLineComments(data), error);
 	REQUIRE(root != nullptr);
 	json_t* bindingsJ = json_object_get(root, "bindings");
 	REQUIRE(bindingsJ != nullptr);
 	CHECK(std::string(json_string_value(json_object_get(bindingsJ, "a.one"))) == "1");
 	CHECK(std::string(json_string_value(json_object_get(bindingsJ, "a.two"))) == "Ctrl+Z");
 	json_decref(root);
+}
+
+TEST_CASE("the written file has a description comment above every binding", "[Keymap]") {
+	Fixture f;
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.one", "One", "Group", "1");
+	km->registerAction("a.none", "None", "Other");
+	km->save();
+
+	std::string data;
+	REQUIRE(f.mock.fs.read(Keymaps::pathFor(SLUG), data));
+	CHECK(data.find("// One (Group)\n    \"a.one\": \"1\"") != std::string::npos);
+	CHECK(data.find("// None (Other)\n    \"a.none\": null") != std::string::npos);
+}
+
+TEST_CASE("keymap files live at <slug>.jsonc", "[Keymap]") {
+	Fixture f;
+	std::string path = Keymaps::pathFor(SLUG);
+	CHECK(path.substr(path.size() - 6) == ".jsonc");
+}
+
+TEST_CASE("a hand-written file with comments is honoured", "[Keymap]") {
+	Fixture f;
+	f.mock.fs.files[Keymaps::pathFor(SLUG)] =
+		"{\n"
+		"  // a comment in the header\n"
+		"  \"slug\": \"TestModule\",\n"
+		"  \"version\": 1,\n"
+		"  \"bindings\": {\n"
+		"    // One (Group)\n"
+		"    \"a.one\": \"Q\" // trailing comment\n"
+		"  }\n"
+		"}\n";
+
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.one", "One", "Group", "1");
+	km->save();
+
+	CHECK(km->lookup(GLFW_KEY_Q, 0, GLFW_PRESS) == "a.one");
+	CHECK(f.mock.fs.writes.empty());
+}
+
+TEST_CASE("stripLineComments leaves slashes inside strings alone", "[Keymap]") {
+	CHECK(stripLineComments("{\"a//b\": \"c\"} // gone\n") == "{\"a//b\": \"c\"} \n");
+	CHECK(stripLineComments("\"esc\\\" // still string\"\n") == "\"esc\\\" // still string\"\n");
+	CHECK(stripLineComments("// only a comment") == "");
+	CHECK(stripLineComments("a\n// x\nb") == "a\n\nb");
+}
+
+TEST_CASE("an unregistered id is written back with its own comment and stays loadable", "[Keymap]") {
+	Fixture f;
+	std::string path = Keymaps::pathFor(SLUG);
+	f.mock.fs.files[path] = R"({"slug":"TestModule","version":1,"bindings":{"a.ghost":["G","H"]}})";
+
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.one", "One", "Group", "1");   // forces a rewrite
+	km->save();
+
+	std::string data;
+	REQUIRE(f.mock.fs.read(path, data));
+	CHECK(data.find("\"a.ghost\": [\"G\",\"H\"]") != std::string::npos);
+
+	Keymaps::resetForTest();
+	auto again = Keymaps::open(SLUG);
+	again->registerAction("a.one", "One", "Group", "1");
+	again->save();
+	CHECK(f.mock.fs.writes.size() == 1);
 }
 
 TEST_CASE("a pre-seeded file with a non-default binding is honoured and not rewritten", "[Keymap]") {
@@ -227,7 +294,7 @@ TEST_CASE("a no-default action is written as a null binding", "[Keymap]") {
 	std::string data;
 	REQUIRE(f.mock.fs.read(path, data));
 	std::string error;
-	json_t* root = vcv::parseJson(data, error);
+	json_t* root = vcv::parseJson(stripLineComments(data), error);
 	REQUIRE(root != nullptr);
 	json_t* bindingsJ = json_object_get(root, "bindings");
 	json_t* noneJ = json_object_get(bindingsJ, "a.none");
@@ -346,7 +413,7 @@ TEST_CASE("an id nobody registers is preserved verbatim across a write", "[Keyma
 	std::string data;
 	REQUIRE(f.mock.fs.read(path, data));
 	std::string error;
-	json_t* root = vcv::parseJson(data, error);
+	json_t* root = vcv::parseJson(stripLineComments(data), error);
 	REQUIRE(root != nullptr);
 	json_t* bindingsJ = json_object_get(root, "bindings");
 	json_t* ghostJ = json_object_get(bindingsJ, "a.ghost");

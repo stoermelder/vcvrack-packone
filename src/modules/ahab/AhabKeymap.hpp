@@ -2,7 +2,7 @@
 #include "../../utils/Keymap.hpp"
 
 // Ahab's keyboard shortcuts. The bindings below are only the defaults: the actual bindings
-// live in <Rack user folder>/Stoermelder-P1/keymaps/Ahab.json (see Keymaps::open()). No in-app
+// live in <Rack user folder>/Stoermelder-P1/keymaps/Ahab.jsonc (see Keymaps::open()). No in-app
 // rebinding menu yet; hand-editing that file is the only way to change a shortcut.
 
 namespace StoermelderPackOne {
