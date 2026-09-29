@@ -30,8 +30,8 @@ inline std::shared_ptr<Keymap> registerActions() {
 	km->registerAlias("browser.hidden.toggle", KeyCombo("Ctrl+Space"));
 
 	// Applies to the ModelBox under the cursor (v1 and v2).
-	km->registerAction("modelbox.favorite.toggle", "Toggle favorite (hovered module)", "Module", "Ctrl+F");
-	km->registerAction("modelbox.hidden.toggle",   "Toggle hidden (hovered module)",   "Module", "Ctrl+H");
+	km->registerAction("modelbox.favorite.toggle", "Toggle favorite (hovered module)", "ModelBox", "Ctrl+F");
+	km->registerAction("modelbox.hidden.toggle",   "Toggle hidden (hovered module)",   "ModelBox", "Ctrl+H");
 
 	// v2 only (hence the "v2" in the ids, as the JSON file shows nothing else): arrow-key result navigation. Up/Down are always active; Left/Right are gated
 	// behind pluginSettings.mbArrowKeyNavigation at the call site.

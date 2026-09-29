@@ -1449,7 +1449,7 @@ struct ModelBoxBase : widget::OpaqueWidget {
 	void onHoverKey(const event::HoverKey& e) override {
 		if (e.action == GLFW_PRESS) {
 			if (!keyHandlers.keymap) {
-				keyHandlers = KeymapHandlers(registerActions());
+				keyHandlers = KeymapHandlers(registerActions(), {"ModelBox"});
 				keyHandlers.on("modelbox.favorite.toggle", [this]{
 					toggleModelFavorite(model);
 					refreshBrowser(true);
