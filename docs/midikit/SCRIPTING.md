@@ -690,7 +690,7 @@ technique.
 | `rack.setConfig(key, value)` | persist `value` under `key`, or remove the key if `value` is `undefined`/`nil`. Rejects a malformed key, a non-JSON-serializable value, one nested too deeply, or one that would push the whole config past its size cap — see [Persistence](#persistence) |
 
 `rack.onLoad`/`rack.onUnload` (script lifecycle) and
-`rack.registerContextMenu` (below) are documented in their own subsections.
+`rack.registerContextMenu`/`rack.unregisterContextMenu` (below) are documented in their own subsections.
 
 #### Context menu — `rack.registerContextMenu`
 
@@ -753,6 +753,14 @@ Notes:
 - The module's presentation state (checkmark/selection) is updated as soon as
   the item is clicked, so the menu reflects the change immediately even
   before the callback has run.
+- Registering an item whose `label` is already registered **replaces** that
+  item instead of adding a second one: it keeps its position in the menu, and
+  the new `type`, `options`, `onGetValue` and `onChange` take over. This is how
+  a script changes the entries of a menu at runtime, e.g. re-registering
+  "Active input" with a different number of options when a setting changes.
+- `rack.unregisterContextMenu(label)` removes the item registered under
+  `label` and returns `true`, or returns `false` if there was none. Registering
+  the label again afterwards adds a new item at the end of the menu.
 - All registered items are cleared when the script is reloaded or cleared.
 
 ### Persistence

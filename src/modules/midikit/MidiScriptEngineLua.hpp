@@ -1020,6 +1020,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("getFrame", lua_rack_getFrame);
 		setTableFunc("random",   lua_rack_random);
 		setTableFunc("registerContextMenu", lua_rack_registerContextMenu);
+		setTableFunc("unregisterContextMenu", lua_rack_unregisterContextMenu);
 		setTableFunc("getConfig", lua_rack_getConfig);
 		setTableFunc("setConfig", lua_rack_setConfig);
 		lua_setglobal(L, "rack");
@@ -1265,8 +1266,28 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		assert(e->onWorkerThread());
-		spec.callbackId = e->nextContextMenuCallbackId++;
 		int ref = luaL_ref(L, LUA_REGISTRYINDEX); // pops the onChange function
+
+		// Registering a label that is already there replaces that item in place
+		// (same position, same callback id) instead of adding a second one - this
+		// is how a script updates the options of a menu at runtime. The old refs
+		// are released; a callback that is running right now has its function on
+		// the Lua stack (see invokeContextMenuCallback()), so it stays alive.
+		for (auto& kv : e->contextMenus) {
+			if (kv.second.spec.label != spec.label) continue;
+			luaL_unref(L, LUA_REGISTRYINDEX, kv.second.callbackRef);
+			if (kv.second.onGetValueRef != LUA_NOREF) {
+				luaL_unref(L, LUA_REGISTRYINDEX, kv.second.onGetValueRef);
+			}
+			spec.callbackId = kv.first;
+			kv.second.spec = spec;
+			kv.second.callbackRef = ref;
+			kv.second.onGetValueRef = onGetValueRef;
+			lua_pushboolean(L, 1);
+			return 1;
+		}
+
+		spec.callbackId = e->nextContextMenuCallbackId++;
 		ContextMenuEntry entry;
 		entry.spec = spec;
 		entry.callbackRef = ref;
@@ -1274,6 +1295,34 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		e->contextMenus[spec.callbackId] = entry;
 
 		lua_pushboolean(L, 1);
+		return 1;
+	}
+
+	// rack.unregisterContextMenu(label) — removes the item registered under
+	// `label`. Returns true if there was one, false otherwise. The item's refs
+	// are released; a callback that is running right now has its function on the
+	// Lua stack (see invokeContextMenuCallback()), so it stays alive.
+	static int lua_rack_unregisterContextMenu(lua_State* L) {
+		auto* e = getEngine(L);
+		if (lua_gettop(L) < 1 || lua_type(L, 1) != LUA_TSTRING) {
+			return luaL_error(L, "unregisterContextMenu: label must be a string");
+		}
+		size_t len;
+		const char* s = lua_tolstring(L, 1, &len);
+		std::string label(s, len);
+
+		assert(e->onWorkerThread());
+		for (auto it = e->contextMenus.begin(); it != e->contextMenus.end(); ++it) {
+			if (it->second.spec.label != label) continue;
+			luaL_unref(L, LUA_REGISTRYINDEX, it->second.callbackRef);
+			if (it->second.onGetValueRef != LUA_NOREF) {
+				luaL_unref(L, LUA_REGISTRYINDEX, it->second.onGetValueRef);
+			}
+			e->contextMenus.erase(it);
+			lua_pushboolean(L, 1);
+			return 1;
+		}
+		lua_pushboolean(L, 0);
 		return 1;
 	}
 

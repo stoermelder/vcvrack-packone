@@ -809,6 +809,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _rack, "getFrame", JS_NewCFunction(ctx, js_rack_getFrame, "getFrame", 0));
 		JS_SetPropertyStr(ctx, _rack, "random", JS_NewCFunction(ctx, js_rack_random, "random", 0));
 		JS_SetPropertyStr(ctx, _rack, "registerContextMenu", JS_NewCFunction(ctx, js_rack_registerContextMenu, "registerContextMenu", 1));
+		JS_SetPropertyStr(ctx, _rack, "unregisterContextMenu", JS_NewCFunction(ctx, js_rack_unregisterContextMenu, "unregisterContextMenu", 1));
 		JS_SetPropertyStr(ctx, _rack, "getConfig", JS_NewCFunction(ctx, js_rack_getConfig, "getConfig", 2));
 		JS_SetPropertyStr(ctx, _rack, "setConfig", JS_NewCFunction(ctx, js_rack_setConfig, "setConfig", 2));
 
@@ -1017,7 +1018,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	//   { type: "options", label, options: [..], onGetValue: fn() -> int, onChange: fn(idx, label) }
 	// onGetValue is optional (defaults to 0) and evaluated lazily on the worker
 	// thread when the menu is built, so it always reflects the live config —
-	// unlike a value captured at registration. Returns true on success.
+	// unlike a value captured at registration. Returns true on success. An item
+	// whose label is already registered is replaced, not added again.
 	// Callbacks are stored (owned) by the engine and fired on the worker thread.
 	static JSValue js_rack_registerContextMenu(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		MidiScriptEngineQuickJs* e = getEngine(ctx);
@@ -1086,6 +1088,23 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 
 		assert(e->onWorkerThread());
+
+		// Registering a label that is already there replaces that item in place
+		// (same position, same callback id) instead of adding a second one - this
+		// is how a script updates the options of a menu at runtime. The old
+		// callbacks are released; one that is running right now holds its own
+		// reference (see invokeContextMenuCallback()).
+		for (auto& kv : e->contextMenus) {
+			if (kv.second.spec.label != spec.label) continue;
+			JS_FreeValue(ctx, kv.second.callbackFn);
+			JS_FreeValue(ctx, kv.second.onGetValueFn);
+			spec.callbackId = kv.first;
+			kv.second.spec = spec;
+			kv.second.callbackFn = onChangeV;
+			kv.second.onGetValueFn = onGetValueV;
+			return JS_NewBool(ctx, true);
+		}
+
 		spec.callbackId = e->nextContextMenuCallbackId++;
 		ContextMenuEntry entry;
 		entry.spec = spec;
@@ -1096,6 +1115,26 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		e->contextMenus[spec.callbackId] = entry;
 
 		return JS_NewBool(ctx, true);
+	}
+
+	// rack.unregisterContextMenu(label) — removes the item registered under
+	// `label`. Returns true if there was one, false otherwise. The item's
+	// callbacks are released; one that is running right now holds its own
+	// reference (see invokeContextMenuCallback()).
+	static JSValue js_rack_unregisterContextMenu(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		MidiScriptEngineQuickJs* e = getEngine(ctx);
+		if (argc < 1 || !JS_IsString(argv[0])) return jsThrow(ctx, "unregisterContextMenu: label must be a string");
+		std::string label = e->jsToStdString(argv[0]);
+
+		assert(e->onWorkerThread());
+		for (auto it = e->contextMenus.begin(); it != e->contextMenus.end(); ++it) {
+			if (it->second.spec.label != label) continue;
+			JS_FreeValue(ctx, it->second.callbackFn);
+			JS_FreeValue(ctx, it->second.onGetValueFn);
+			e->contextMenus.erase(it);
+			return JS_NewBool(ctx, true);
+		}
+		return JS_NewBool(ctx, false);
 	}
 
 	// ── rack.getConfig()/setConfig() JSON conversion ─────────────────────────

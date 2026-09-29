@@ -4033,6 +4033,92 @@ TEST_CASE("Multiple registerContextMenu calls keep registration order", "[MidiKi
 	REQUIRE(lua.specs[0].callbackId < lua.specs[1].callbackId);
 }
 
+// Registering a label twice replaces the first item in place: same position and
+// callback id, new options/callbacks - the way a script changes a menu at runtime.
+static const char* JS_REGISTER_REPLACE = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.registerContextMenu({ type: "options", label: "Pick", options: ["a", "b", "c"], onGetValue: function() { return 2; }, onChange: function(i, l) { rack.log("old ", l); } });
+rack.registerContextMenu({ type: "boolean", label: "Other", onChange: function() {} });
+rack.registerContextMenu({ type: "options", label: "Pick", options: ["x", "y"], onGetValue: function() { return 1; }, onChange: function(i, l) { rack.log("new ", l); } });
+)";
+
+static const char* LUA_REGISTER_REPLACE = R"(--[[
+@engine minilua@v1
+--]]
+rack.registerContextMenu({ type = "options", label = "Pick", options = {"a", "b", "c"}, onGetValue = function() return 2 end, onChange = function(i, l) rack.log("old ", l) end })
+rack.registerContextMenu({ type = "boolean", label = "Other", onChange = function() end })
+rack.registerContextMenu({ type = "options", label = "Pick", options = {"x", "y"}, onGetValue = function() return 1 end, onChange = function(i, l) rack.log("new ", l) end })
+)";
+
+TEST_CASE("registerContextMenu with an existing label replaces the item", "[MidiKit][CrossEngine]") {
+	MenuResult js = runMenu(JS_REGISTER_REPLACE);
+	MenuResult lua = runMenu(LUA_REGISTER_REPLACE);
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	requireSameMenus(js.specs, lua.specs);
+
+	// Still two items, "Pick" keeps its first position with the new content.
+	REQUIRE(js.specs.size() == 2);
+	REQUIRE(js.specs[0].label == "Pick");
+	REQUIRE(js.specs[1].label == "Other");
+	REQUIRE(js.specs[0].options == std::vector<std::string>{"x", "y"});
+	REQUIRE(js.specs[0].selected == 1);
+	REQUIRE(js.specs[0].callbackId < js.specs[1].callbackId);
+	REQUIRE(lua.specs[0].callbackId < lua.specs[1].callbackId);
+
+	// A click runs the new onChange, not the replaced one.
+	MenuResult jsClick = runMenu(JS_REGISTER_REPLACE, js.specs[0].callbackId, 1);
+	MenuResult luaClick = runMenu(LUA_REGISTER_REPLACE, lua.specs[0].callbackId, 1);
+	REQUIRE(jsClick.log.find("new y") != std::string::npos);
+	REQUIRE(luaClick.log.find("new y") != std::string::npos);
+	REQUIRE(jsClick.log.find("old") == std::string::npos);
+	REQUIRE(luaClick.log.find("old") == std::string::npos);
+}
+
+// rack.unregisterContextMenu(label) removes the item and reports whether one
+// existed; the remaining items keep their order.
+static const char* JS_REGISTER_UNREGISTER = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.registerContextMenu({ type: "boolean", label: "A", onChange: function() {} });
+rack.registerContextMenu({ type: "boolean", label: "B", onChange: function() {} });
+rack.registerContextMenu({ type: "boolean", label: "C", onChange: function() {} });
+rack.log("removed B: ", rack.unregisterContextMenu("B"));
+rack.log("removed B again: ", rack.unregisterContextMenu("B"));
+rack.registerContextMenu({ type: "boolean", label: "B", onChange: function() {} });
+)";
+
+static const char* LUA_REGISTER_UNREGISTER = R"(--[[
+@engine minilua@v1
+--]]
+rack.registerContextMenu({ type = "boolean", label = "A", onChange = function() end })
+rack.registerContextMenu({ type = "boolean", label = "B", onChange = function() end })
+rack.registerContextMenu({ type = "boolean", label = "C", onChange = function() end })
+rack.log("removed B: ", rack.unregisterContextMenu("B"))
+rack.log("removed B again: ", rack.unregisterContextMenu("B"))
+rack.registerContextMenu({ type = "boolean", label = "B", onChange = function() end })
+)";
+
+TEST_CASE("unregisterContextMenu removes the item and reports whether it existed", "[MidiKit][CrossEngine]") {
+	MenuResult js = runMenu(JS_REGISTER_UNREGISTER);
+	MenuResult lua = runMenu(LUA_REGISTER_UNREGISTER);
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	requireSameMenus(js.specs, lua.specs);
+
+	REQUIRE(js.loadLog.find("removed B: true") != std::string::npos);
+	REQUIRE(lua.loadLog.find("removed B: true") != std::string::npos);
+	REQUIRE(js.loadLog.find("removed B again: false") != std::string::npos);
+	REQUIRE(lua.loadLog.find("removed B again: false") != std::string::npos);
+
+	// B was removed and registered again: it now sits after C.
+	REQUIRE(js.specs.size() == 3);
+	REQUIRE(js.specs[0].label == "A");
+	REQUIRE(js.specs[1].label == "C");
+	REQUIRE(js.specs[2].label == "B");
+}
+
 static const char* JS_REGISTER_THROW = R"(/**
  * @engine QuickJs@v1
  */
