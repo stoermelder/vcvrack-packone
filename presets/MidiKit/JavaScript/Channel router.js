@@ -56,7 +56,7 @@ let allOutputs = [];
 rack.onLoad = function() {
     outputCount = Math.min(config.routes.length, MAX_OUTPUTS);
     if (config.routes.length > MAX_OUTPUTS) {
-        rack.log("MIDI router: only " + MAX_OUTPUTS + " outputs exist, ignoring the rest of config.routes");
+        rack.log("Channel router: only " + MAX_OUTPUTS + " outputs exist, ignoring the rest of config.routes");
     }
     midiOut.enablePorts(Math.max(1, outputCount));
 
@@ -68,12 +68,12 @@ rack.onLoad = function() {
         for (let i = 0; i < channels.length; i++) {
             const ch = channels[i];
             if (ch < 1 || ch > 16) {
-                rack.log("MIDI router: ignoring invalid channel " + ch + " for output " + out);
+                rack.log("Channel router: ignoring invalid channel " + ch + " for output " + out);
                 continue;
             }
             if (dest[ch].indexOf(out) < 0) dest[ch].push(out);
         }
-        rack.log("MIDI router: output " + out + " <- channels " + (channels.length ? channels.join(", ") : "none"));
+        rack.log("Channel router: output " + out + " <- channels " + (channels.length ? channels.join(", ") : "none"));
     }
 
     fallback = config.fallbackOutput >= 1 && config.fallbackOutput <= outputCount ? [config.fallbackOutput] : [];

@@ -63,7 +63,7 @@ local allOutputs = {}
 rack.onLoad = function()
     outputCount = math.min(#config.routes, MAX_OUTPUTS)
     if #config.routes > MAX_OUTPUTS then
-        rack.log("MIDI router: only " .. MAX_OUTPUTS .. " outputs exist, ignoring the rest of config.routes")
+        rack.log("Channel router: only " .. MAX_OUTPUTS .. " outputs exist, ignoring the rest of config.routes")
     end
     midiOut.enablePorts(math.max(1, outputCount))
 
@@ -74,12 +74,12 @@ rack.onLoad = function()
         local channels = config.routes[out]
         for _, ch in ipairs(channels) do
             if ch < 1 or ch > 16 then
-                rack.log("MIDI router: ignoring invalid channel " .. ch .. " for output " .. out)
+                rack.log("Channel router: ignoring invalid channel " .. ch .. " for output " .. out)
             elseif not contains(dest[ch], out) then
                 table.insert(dest[ch], out)
             end
         end
-        rack.log("MIDI router: output " .. out .. " <- channels " .. (#channels > 0 and table.concat(channels, ", ") or "none"))
+        rack.log("Channel router: output " .. out .. " <- channels " .. (#channels > 0 and table.concat(channels, ", ") or "none"))
     end
 
     fallback = {}

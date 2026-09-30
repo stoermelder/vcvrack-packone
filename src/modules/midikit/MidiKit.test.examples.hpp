@@ -213,7 +213,9 @@ static const PresetInfo PRESETS[] = {
 	{"", "Program Change Trigger", true},
 	{"", "Program Change CV", true},
 	{"", "Bank Select", true},
-	{"", "MIDI router", true},
+	{"", "Channel router", true},
+	{"", "Smart merge", true},
+	{"", "Port router", true},
 	{"creative/", "Euclidean rhythm generator", true},
 	{"creative/", "Keyboard split", true},
 	{"creative/", "Bouncing ball delay", true},
@@ -3161,7 +3163,7 @@ TEST_CASE("'Bank Select.js/.lua' passes MIDI in through unchanged", "[MidiKit][M
 }
 
 
-// MIDI router: input 1 -> up to four outputs, by MIDI channel. Default config:
+// Channel router: input 1 -> up to four outputs, by MIDI channel. Default config:
 // ch 1,2 -> out 1, ch 3,5 -> out 2, ch 4 -> out 3, out 4 unused.
 struct RoutedEvent {
 	int port;  // 0-based output
@@ -3202,8 +3204,8 @@ static MidiKitModule* loadRouter(const std::string& path, const std::string& jsF
 	return m;
 }
 
-TEST_CASE("'MIDI router.js/.lua' routes each channel to the output configured for it", "[MidiKit][Router]") {
-	std::string path = GENERATE(presetPaths("MIDI router"));
+TEST_CASE("'Channel router.js/.lua' routes each channel to the output configured for it", "[MidiKit][Router]") {
+	std::string path = GENERATE(presetPaths("Channel router"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -3230,8 +3232,8 @@ TEST_CASE("'MIDI router.js/.lua' routes each channel to the output configured fo
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'MIDI router.js/.lua' enables exactly the configured outputs", "[MidiKit][Router]") {
-	std::string path = GENERATE(presetPaths("MIDI router"));
+TEST_CASE("'Channel router.js/.lua' enables exactly the configured outputs", "[MidiKit][Router]") {
+	std::string path = GENERATE(presetPaths("Channel router"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -3248,8 +3250,8 @@ TEST_CASE("'MIDI router.js/.lua' enables exactly the configured outputs", "[Midi
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'MIDI router.js/.lua' sends channel-less messages to every output", "[MidiKit][Router]") {
-	std::string path = GENERATE(presetPaths("MIDI router"));
+TEST_CASE("'Channel router.js/.lua' sends channel-less messages to every output", "[MidiKit][Router]") {
+	std::string path = GENERATE(presetPaths("Channel router"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -3266,8 +3268,8 @@ TEST_CASE("'MIDI router.js/.lua' sends channel-less messages to every output", "
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'MIDI router.js/.lua' copies a channel that is in several routes", "[MidiKit][Router]") {
-	std::string path = GENERATE(presetPaths("MIDI router"));
+TEST_CASE("'Channel router.js/.lua' copies a channel that is in several routes", "[MidiKit][Router]") {
+	std::string path = GENERATE(presetPaths("Channel router"));
 	CATCH_INFO("preset: " << path);
 
 	// Output 2 now takes channels 1 and 3, so channel 1 goes to outputs 1 and 2.
@@ -3284,8 +3286,8 @@ TEST_CASE("'MIDI router.js/.lua' copies a channel that is in several routes", "[
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'MIDI router.js/.lua' sends unrouted channels to the fallback output", "[MidiKit][Router]") {
-	std::string path = GENERATE(presetPaths("MIDI router"));
+TEST_CASE("'Channel router.js/.lua' sends unrouted channels to the fallback output", "[MidiKit][Router]") {
+	std::string path = GENERATE(presetPaths("Channel router"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadRouter(path, "fallbackOutput: 0", "fallbackOutput: 4", "fallbackOutput = 0", "fallbackOutput = 4");
@@ -3299,8 +3301,8 @@ TEST_CASE("'MIDI router.js/.lua' sends unrouted channels to the fallback output"
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'MIDI router.js/.lua' ignores invalid channels in the config", "[MidiKit][Router]") {
-	std::string path = GENERATE(presetPaths("MIDI router"));
+TEST_CASE("'Channel router.js/.lua' ignores invalid channels in the config", "[MidiKit][Router]") {
+	std::string path = GENERATE(presetPaths("Channel router"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadRouter(path, "[4],      // output 3", "[4, 17],      // output 3", "{ 4 },      -- output 3", "{ 4, 17 },      -- output 3");
@@ -3308,5 +3310,222 @@ TEST_CASE("'MIDI router.js/.lua' ignores invalid channels in the config", "[Midi
 	auto ev = feedRouted(m, noteOn(3, 60, 100));
 	REQUIRE(ev.size() == 1);
 	REQUIRE(ev[0].port == 2);
+	Test::destroyModule(m);
+}
+
+
+// Smart merge: 2 inputs by default, the trigger on trigger input 1 steps to the
+// next input. All inputs are tracked; a switch releases the old input's held
+// notes and replays the new input's CCs and held notes.
+static std::vector<OutEvent> feedPort(MidiKitModule* m, int port, midi::Message msg) {
+	m->host.getActiveEngine()->processInMessage(port, msg);
+	m->host.getActiveEngine()->process();
+	return drainOut(m);
+}
+
+static std::vector<OutEvent> feedSwitchTrigger(MidiKitModule* m) {
+	m->host.getActiveEngine()->processInTick(0, 0);
+	m->host.getActiveEngine()->process();
+	return drainOut(m);
+}
+
+TEST_CASE("'Smart merge.js/.lua' forwards only the active input", "[MidiKit][SmartMerge]") {
+	std::string path = GENERATE(presetPaths("Smart merge"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	auto active = feedPort(m, 0, noteOn(1, 60, 100));
+	REQUIRE(active == std::vector<OutEvent>{{0x9, 1, 60, 100, 0}});
+	auto inactive = feedPort(m, 1, noteOn(1, 64, 90));
+	REQUIRE(inactive.empty());
+
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Smart merge.js/.lua' switch releases the old notes and replays the new state in order", "[MidiKit][SmartMerge]") {
+	std::string path = GENERATE(presetPaths("Smart merge"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	feedPort(m, 0, noteOn(1, 60, 100));
+	feedPort(m, 0, noteOn(1, 62, 100));
+	feedPort(m, 0, noteOff(1, 60));                 // only 62 is still held on input 1
+
+	// Input 2 sends state while inactive: CC 7 first, then CC 10, CC 7 again
+	// (the value updates, the position stays), and two notes.
+	feedPort(m, 1, cc(2, 7, 10));
+	feedPort(m, 1, cc(2, 10, 64));
+	feedPort(m, 1, cc(2, 7, 99));
+	feedPort(m, 1, noteOn(3, 70, 80));
+	feedPort(m, 1, noteOn(3, 72, 81));
+
+	auto ev = feedSwitchTrigger(m);
+	REQUIRE(ev == std::vector<OutEvent>{
+		{0x8, 1, 62, 0, 0},                          // old input's held note
+		{0xb, 2, 7, 99, 0}, {0xb, 2, 10, 64, 0},     // CCs, first-seen order
+		{0x9, 3, 70, 80, 0}, {0x9, 3, 72, 81, 0}});  // held notes, press order
+
+	// Input 2 is active now, input 1 is not forwarded any more.
+	REQUIRE(feedPort(m, 0, noteOn(1, 50, 100)).empty());
+	REQUIRE(feedPort(m, 1, noteOff(3, 70)) == std::vector<OutEvent>{{0x8, 3, 70, 0, 0}});
+
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Smart merge.js/.lua' the trigger wraps around after the last input", "[MidiKit][SmartMerge]") {
+	std::string path = GENERATE(presetPaths("Smart merge"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	feedSwitchTrigger(m);                                        // input 2
+	REQUIRE(feedPort(m, 1, noteOn(1, 60, 100)).size() == 1);
+	feedSwitchTrigger(m);                                        // back to input 1
+	// The note held on input 2 is released on the way out.
+	REQUIRE(feedPort(m, 0, noteOn(1, 61, 100)) == std::vector<OutEvent>{{0x9, 1, 61, 100, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Smart merge.js/.lua' a switch replays at most 128 messages", "[MidiKit][SmartMerge]") {
+	std::string path = GENERATE(presetPaths("Smart merge"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	for (int c = 0; c < 160; c++) feedPort(m, 1, cc(1 + c / 128, c % 128, 1));
+	auto ev = feedSwitchTrigger(m);
+	REQUIRE(ev.size() == 128);
+	REQUIRE(drainLog(m).find("dropped") != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+static std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem> smartMergeMenus(MidiKitModule* m) {
+	std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem> result;
+	m->host.getActiveEngine()->getContextMenus([&](const std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem>& specs) {
+		result = specs;
+	});
+	m->host.getActiveEngine()->process();
+	return result;
+}
+
+TEST_CASE("'Smart merge.js/.lua' the Active input menu follows the number of inputs", "[MidiKit][SmartMerge]") {
+	std::string path = GENERATE(presetPaths("Smart merge"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+
+	auto menus = smartMergeMenus(m);
+	REQUIRE(menus.size() == 2);
+	REQUIRE(menus[0].label == "Number of inputs");
+	REQUIRE(menus[1].label == "Active input");
+	REQUIRE(menus[1].options.size() == 2);
+
+	// "Number of inputs" -> 4: the Active input list grows in place, no third item.
+	m->host.getActiveEngine()->invokeContextMenuCallback(menus[0].callbackId, 2);
+	m->host.getActiveEngine()->process();
+	menus = smartMergeMenus(m);
+	REQUIRE(menus.size() == 2);
+	REQUIRE(menus[1].label == "Active input");
+	REQUIRE(menus[1].options.size() == 4);
+
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	Test::destroyModule(m);
+}
+
+
+// Port router: input 1 -> exactly one of the first n outputs (2 by
+// default); the trigger on trigger input 1 steps to the next output.
+TEST_CASE("'Port router.js/.lua' sends everything to the active output only", "[MidiKit][PortRouter]") {
+	std::string path = GENERATE(presetPaths("Port router"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	REQUIRE(m->midiOutCount.load() == 2);
+	REQUIRE(m->midiInCount.load() == 1);
+
+	// Any channel, any message type - nothing is filtered, all go to output 1.
+	const midi::Message msgs[] = { noteOn(0, 60, 100), noteOn(9, 36, 90), cc(3, 7, 99), clockTick() };
+	for (const midi::Message& msg : msgs) {
+		auto ev = feedRouted(m, msg);
+		REQUIRE(ev.size() == 1);
+		REQUIRE(ev[0].port == 0);
+	}
+	auto ev = feedRouted(m, cc(2, 10, 64));
+	REQUIRE(ev[0].ev == (OutEvent{0xb, 2, 10, 64, 0}));
+
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Port router.js/.lua' a trigger releases held notes and steps to the next output", "[MidiKit][PortRouter]") {
+	std::string path = GENERATE(presetPaths("Port router"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	feedRouted(m, noteOn(2, 60, 100));
+	feedRouted(m, noteOn(9, 62, 100));
+	feedRouted(m, noteOn(2, 64, 100));
+	feedRouted(m, noteOff(2, 64));   // released by the player - not released again
+
+	auto off = feedSwitchTrigger(m);
+	REQUIRE(off == std::vector<OutEvent>{{0x8, 2, 60, 0, 0}, {0x8, 9, 62, 0, 0}});
+
+	auto ev = feedRouted(m, noteOn(0, 64, 90));
+	REQUIRE(ev.size() == 1);
+	REQUIRE(ev[0].port == 1);
+
+	// Wraps around after the last output.
+	REQUIRE(feedSwitchTrigger(m) == std::vector<OutEvent>{{0x8, 0, 64, 0, 0}});
+	ev = feedRouted(m, noteOn(0, 65, 90));
+	REQUIRE(ev.size() == 1);
+	REQUIRE(ev[0].port == 0);
+
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Port router.js/.lua' the Active output menu follows the number of outputs", "[MidiKit][PortRouter]") {
+	std::string path = GENERATE(presetPaths("Port router"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	auto menus = smartMergeMenus(m);
+	REQUIRE(menus.size() == 2);
+	REQUIRE(menus[0].label == "Number of outputs");
+	REQUIRE(menus[1].label == "Active output");
+	REQUIRE(menus[1].options.size() == 2);
+
+	// "Number of outputs" -> 4: the list grows in place, no third item.
+	m->host.getActiveEngine()->invokeContextMenuCallback(menus[0].callbackId, 2);
+	m->host.getActiveEngine()->process();
+	menus = smartMergeMenus(m);
+	REQUIRE(menus.size() == 2);
+	REQUIRE(menus[1].options.size() == 4);
+	REQUIRE(m->midiOutCount.load() == 4);
+
+	// Active output -> 4: only that output receives messages.
+	m->host.getActiveEngine()->invokeContextMenuCallback(menus[1].callbackId, 3);
+	m->host.getActiveEngine()->process();
+	drainOut(m);
+	auto ev = feedRouted(m, noteOn(0, 60, 100));
+	REQUIRE(ev.size() == 1);
+	REQUIRE(ev[0].port == 3);
+
+	// "Number of outputs" -> 2 drops the active output 4: back to output 2.
+	menus = smartMergeMenus(m);
+	m->host.getActiveEngine()->invokeContextMenuCallback(menus[0].callbackId, 0);
+	m->host.getActiveEngine()->process();
+	drainOut(m);
+	ev = feedRouted(m, noteOn(0, 61, 100));
+	REQUIRE(ev.size() == 1);
+	REQUIRE(ev[0].port == 1);
+
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
 	Test::destroyModule(m);
 }
