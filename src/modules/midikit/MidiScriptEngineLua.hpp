@@ -48,7 +48,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		size_t sendOrder = 0;
 	};
 
-	static const int msgStoreSize = 32;
 	MessageEx msgStore[msgStoreSize];
 	size_t msgCount = 0;
 	// Next MessageEx::sendOrder value. Never reset: only needs to be monotonic

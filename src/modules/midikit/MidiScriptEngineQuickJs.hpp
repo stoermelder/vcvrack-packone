@@ -56,7 +56,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	static const size_t memoryLimit = 1024 * 1024;
 
-	const static int msgStoreSize = 32;
 	MessageEx msgStore[msgStoreSize];
 	// Must be initialised: top-level script code runs during loadScript(),
 	// before process() sets this to 1; it bounds every msgStore check.

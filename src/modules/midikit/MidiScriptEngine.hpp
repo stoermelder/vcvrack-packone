@@ -179,6 +179,10 @@ struct MidiScriptEngine {
 	// for the handler's fixed-size out-queue.
 	static const int sysExMaxPayloadLength = 256;
 
+	// Message handles a script can hold live per callback (slot 0 is the
+	// incoming message). Shared so both engines create the same number.
+	static const int msgStoreSize = 128;
+
 	// The handler this engine runs inside, injected at construction. Every
 	// module-facing callback (log/overlay/input/trig/param) routes through it.
 	MidiScriptEngineHandler* handler;

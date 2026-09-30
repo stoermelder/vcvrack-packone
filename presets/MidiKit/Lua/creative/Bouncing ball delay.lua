@@ -31,7 +31,7 @@
 -- The echo interval starts at config.initialInterval ms and each echo's gate
 -- is config.gateMs long (capped at half the current interval so echoes never
 -- bleed into the next bounce). Each ball is capped at config.maxEchoes echoes
--- because the engine allows 32 live message handles per callback and each echo
+-- because the engine allows 128 live message handles per callback and each echo
 -- needs two (a Note-On and a Note-Off).
 
 -- Configuration - change these values as needed
@@ -44,7 +44,7 @@ local config = {
     gateMs = 40,
 
     -- Safety cap on echoes per ball - each echo uses two message handles
-    -- (Note-On + Note-Off) against the engine's 32-handle per-callback limit.
+    -- (Note-On + Note-Off) against the engine's 128-handle per-callback limit.
     maxEchoes = 12
 }
 

@@ -958,13 +958,13 @@ is in [Tipsy protocol — send and receive over CV](#tipsy-protocol--send-and-re
 - Override `param.getName(i)` and `param.getValueFormat(i)` for panel display.
 
 ### `midi.*` — message construction/inspection
-Messages are opaque handles (indices into an internal store, max 32 live per
+Messages are opaque handles (indices into an internal store, max 128 live per
 callback) created with `midi.create()`, `midi.createNRPN()`, or
 `midi.createCc14bit()`; `midi.onMessage`
 also receives the incoming message as handle `0`/implicit first arg (Lua:
 index `0`, QuickJs: same convention).
 
-**The store holds at most 32 live handles per callback.** Once it is full,
+**The store holds at most 128 live handles per callback.** Once it is full,
 `midi.create()`, `midi.clone()`, `midi.createNRPN()`, and `midi.createCc14bit()`
 raise a script error
 that aborts the rest of the callback. Messages already marked for send before
@@ -1178,7 +1178,7 @@ within one `midi.onMessage`/`rack.onLoad`/`rack.onUnload` is not a second messag
 one goes out, and if the message body was changed in between, the last change
 wins. To send the same bytes twice, build a fresh handle first with
 `midi.create()` or `midi.clone(msg)` and send that. Each message sent consumes
-one store slot against the 32-handle cap, so one handle per message is the
+one store slot against the 128-handle cap, so one handle per message is the
 correct idiom.
 
 ### MIDI status/type reference used internally
