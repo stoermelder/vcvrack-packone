@@ -2099,6 +2099,28 @@ TEST_CASE("midi.create inside midi.onMessage does not warn in either engine", "[
 }
 
 
+// A message built and sent in the top-level code is never emitted, whichever
+// send call is used: the send calls only mark an entry in the message store,
+// which is flushed after a callback and reset when the next one starts. The
+// warning at midi.create() is what tells the script author.
+TEST_CASE("A send from top-level code is discarded with a warning, for every send call", "[MidiKit][CrossEngine]") {
+	const char* calls[] = { "midiOut.send(m)", "midiOut.sendAfterMs(m, 10)", "midiOut.sendAtFrame(m, 200)", "midiOut.sendAfterTrigger(m, 1)" };
+	for (const char* call : calls) {
+		// An empty onMessage, so a callback does run and would flush a stale entry.
+		std::string js = std::string("/**\n * @engine QuickJs@v1\n */\ntrig.enableIn(1, 1);\nlet m = midi.create();\nmidi.setNoteOn(m, 1, 60, 100);\n")
+			+ call + ";\nmidi.onMessage = function(port, msg) {};\n";
+		std::string lua = std::string("--[[\n@engine minilua@v1\n--]]\ntrig.enableIn(1, 1)\nlocal m = midi.create()\nmidi.setNoteOn(m, 1, 60, 100)\n")
+			+ call + "\nmidi.onMessage = function(port, msg) end\n";
+		for (const std::string& script : { js, lua }) {
+			CATCH_INFO(script);
+			EngineResult r = run(script, noteOn(0, 60, 100));
+			REQUIRE(r.sent.empty());
+			REQUIRE(r.loadLog.find(OUTSIDE_CALLBACK_WARNING) != std::string::npos);
+		}
+	}
+}
+
+
 // --- onLoad ----------------------------------------------------------------
 
 static const char* JS_ON_LOAD = R"(/**
