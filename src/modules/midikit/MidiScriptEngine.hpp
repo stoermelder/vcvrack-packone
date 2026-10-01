@@ -503,6 +503,14 @@ struct MidiScriptEngine {
 	// tipsyOutQueue.
 	dsp::RingBuffer<TipsyMessage, 8> tipsyInQueue;
 
+	// Worker thread, after each dispatch pass: lets an engine refresh state the UI
+	// reads through atomics (e.g. memory usage).
+	virtual void publishMemoryUsage() {}
+
+	// UI thread. Bytes in use by the loaded script's heap and the limit it is
+	// held to, or false if no script is loaded. Reads only atomics.
+	virtual bool getMemoryUsage(size_t& used, size_t& total) = 0;
+
 	// Pending runLowPriority() tasks. See there.
 	dsp::RingBuffer<std::function<void()>, 16> uiQueryQueue;
 	// A stand-alone drain task is in the worker's queue. Keeps process(), which
@@ -553,12 +561,14 @@ struct MidiScriptEngine {
 				}
 				// After everything above, so queries never hold up MIDI.
 				drainUiQuery();
+				publishMemoryUsage();
 			});
 		}
 		else if (!uiQueryQueue.empty() && !uiDrainScheduled.exchange(true)) {
 			bool queued = runAsync([this]() {
 				uiDrainScheduled.store(false);
 				drainUiQuery();
+				publishMemoryUsage();
 			});
 			if (!queued) uiDrainScheduled.store(false);
 		}

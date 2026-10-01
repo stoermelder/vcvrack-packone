@@ -829,7 +829,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// notices and tears the state down after the fact — but it's the same
 	// number the watchdog acts on, so showing it alongside `used` (matching
 	// the QuickJS UI) tells the user how close a script is to being stopped.
-	bool getMemoryUsage(size_t& used, size_t& total) {
+	bool getMemoryUsage(size_t& used, size_t& total) override {
 		if (!L) return false;
 		used = allocatedBytes.load(std::memory_order_relaxed);
 		total = memoryLimit;

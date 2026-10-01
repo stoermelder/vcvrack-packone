@@ -289,6 +289,7 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Quick
 	}
 
 	JS_RunGC(m->host.seQuickJs.rt);
+	m->host.seQuickJs.publishMemoryUsage();   // the snapshot is taken after dispatch, not after the GC
 	size_t used0, total;
 	REQUIRE(m->host.seQuickJs.getMemoryUsage(used0, total));
 
@@ -298,6 +299,7 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Quick
 	}
 
 	JS_RunGC(m->host.seQuickJs.rt);
+	m->host.seQuickJs.publishMemoryUsage();   // the snapshot is taken after dispatch, not after the GC
 	size_t used1, total1;
 	REQUIRE(m->host.seQuickJs.getMemoryUsage(used1, total1));
 
@@ -350,6 +352,7 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][QuickJs][GC]") {
 	}
 
 	JS_RunGC(m->host.seQuickJs.rt);
+	m->host.seQuickJs.publishMemoryUsage();   // the snapshot is taken after dispatch, not after the GC
 	size_t used0, total;
 	REQUIRE(m->host.seQuickJs.getMemoryUsage(used0, total));
 
@@ -359,6 +362,7 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][QuickJs][GC]") {
 	}
 
 	JS_RunGC(m->host.seQuickJs.rt);
+	m->host.seQuickJs.publishMemoryUsage();   // the snapshot is taken after dispatch, not after the GC
 	size_t used1, total1;
 	REQUIRE(m->host.seQuickJs.getMemoryUsage(used1, total1));
 

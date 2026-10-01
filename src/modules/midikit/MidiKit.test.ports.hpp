@@ -251,6 +251,28 @@ TEST_CASE("Variant: engine input queues drop on overflow instead of corrupting",
 	}
 }
 
+TEST_CASE("Variant: QuickJS memory usage is a snapshot published by the worker", "[MidiKit][Variant]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	size_t used = 0, total = 0;
+	REQUIRE_FALSE(m->host.seQuickJs.getMemoryUsage(used, total));
+
+	m->loadScript(QUICKJS_EMPTY);
+	REQUIRE(m->host.seQuickJs.getMemoryUsage(used, total));
+	REQUIRE(used > 0);
+	REQUIRE(total > used);
+
+	// The load publishes a snapshot of the runtime's own accounting
+	// (single-threaded here, so walking the runtime is safe).
+	JSMemoryUsage s;
+	JS_ComputeMemoryUsage(m->host.seQuickJs.rt, &s);
+	REQUIRE(used == size_t(s.malloc_size));
+
+	// Nothing is reported once the runtime is gone.
+	m->clearScript();
+	REQUIRE_FALSE(m->host.seQuickJs.getMemoryUsage(used, total));
+}
+
 TEST_CASE("Variant: extended-CC enables are per MIDI input", "[MidiKit][Variant]") {
 	MultiScaffold mods;
 	MultiModule* m = mods.create();

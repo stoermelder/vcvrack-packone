@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <mutex>
 #include <regex>
+#include <atomic>
 #include <unordered_map>
 
 namespace StoermelderPackOne {
@@ -55,6 +56,21 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	JSContext* ctx = NULL;
 
 	static const size_t memoryLimit = 1024 * 1024;
+
+	// Bytes in use by the QuickJS heap, snapshotted by publishMemoryUsage() on the
+	// worker thread and read by getMemoryUsage() on the UI thread. The UI must
+	// not walk the runtime itself (JS_ComputeMemoryUsage iterates lists the
+	// worker mutates, and the runtime can be freed under it). Non-zero exactly
+	// while a runtime exists, as its own struct is an allocation.
+	std::atomic<size_t> heapBytes{0};
+
+	// Worker thread, after each dispatch pass (MidiScriptEngine::publishMemoryUsage).
+	void publishMemoryUsage() override {
+		if (!rt) return;
+		JSMemoryUsage s;
+		JS_ComputeMemoryUsage(rt, &s);
+		heapBytes.store(size_t(s.malloc_size), std::memory_order_relaxed);
+	}
 
 	MessageEx msgStore[msgStoreSize];
 	// Must be initialised: top-level script code runs during loadScript(),
@@ -306,6 +322,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			// into workingConfig before load, above), not passed as a hook
 			// parameter.
 			callOnLoad();
+			publishMemoryUsage();
 		}
 	}
 
@@ -359,6 +376,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JS_FreeRuntime(rt);
 			ctx = NULL;
 			rt = NULL;
+			heapBytes.store(0, std::memory_order_relaxed);
 		}
 	}
 
@@ -790,12 +808,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// Current/total bytes in use by the QuickJS heap, or false if no script is
-	// loaded.
-	bool getMemoryUsage(size_t& used, size_t& total) {
-		if (!ctx) return false;
-		JSMemoryUsage s;
-		JS_ComputeMemoryUsage(rt, &s);
-		used = s.malloc_size;
+	// loaded. UI thread: reads only the mirrored counter, never the runtime.
+	bool getMemoryUsage(size_t& used, size_t& total) override {
+		used = heapBytes.load(std::memory_order_relaxed);
+		if (used == 0) return false;
 		total = memoryLimit;
 		return true;
 	}

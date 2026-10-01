@@ -2050,22 +2050,15 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	// context-menu items and the variant's status entries. Nothing (and false)
 	// without a running script. Shared by the module's menu and the log display's.
 	bool appendRunningScriptItems(Menu* menu) {
-		if (!module || !module->host.getActiveEngine()) return false;
-		if (module->host.isLuaEngine()) {
-			menu->addChild(createMenuLabel("Running Script (Lua)"));
-			size_t used, total;
-			if (module->host.seLua.getMemoryUsage(used, total)) {
-				float pct = total > 0 ? 100.f * used / total : 0.f;
-				menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
-			}
-		}
-		if (module->host.isQuickJsEngine()) {
-			menu->addChild(createMenuLabel("Running Script (QuickJs)"));
-			size_t used, total;
-			if (module->host.seQuickJs.getMemoryUsage(used, total)) {
-				float pct = total > 0 ? 100.f * used / total : 0.f;
-				menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
-			}
+		if (!module) return false;
+		MidiScript::MidiScriptEngine* engine = module->host.getActiveEngine();
+		if (!engine) return false;
+		if (module->host.isLuaEngine()) menu->addChild(createMenuLabel("Running Script (Lua)"));
+		if (module->host.isQuickJsEngine()) menu->addChild(createMenuLabel("Running Script (QuickJs)"));
+		size_t used, total;
+		if (engine->getMemoryUsage(used, total)) {
+			float pct = total > 0 ? 100.f * used / total : 0.f;
+			menu->addChild(createMenuLabel(string::f("RAM usage: %zu / %zu KB (%.0f%%)", used / 1024, total / 1024, pct)));
 		}
 
 		menu->addChild(new ScriptContextMenuItems(module));

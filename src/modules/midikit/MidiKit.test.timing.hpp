@@ -627,6 +627,7 @@ struct FrameProbeEngine : MidiScriptEngine {
 		callback(empty);
 	}
 	void invokeContextMenuCallback(int callbackId, int value) override { }
+	bool getMemoryUsage(size_t& used, size_t& total) override { return false; } 
 };
 
 struct ProbeRig {
