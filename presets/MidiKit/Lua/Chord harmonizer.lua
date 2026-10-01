@@ -36,10 +36,10 @@
 local config = {
     -- Semitone offsets added for every played note. Include 0 to keep the
     -- original note; omit it to hear only the harmony voices.
-    intervals = { 0, 4, 7 },
+    intervals = rack.getConfig("intervals", { 0, 4, 7 }),
 
     -- Only harmonize this channel; 0 = every channel
-    channel = 0,
+    channel = rack.getConfig("channel", 0),
 
     -- Velocity scaling for the added voices, relative to the played note.
     -- The 0-offset voice is always sent at full velocity.
@@ -123,6 +123,7 @@ rack.onLoad = function()
         end,
         onChange = function(idx)
             config.intervals = CHORD_INTERVALS[idx + 1]
+            rack.setConfig("intervals", config.intervals)
             rack.log("Chord: ", CHORD_LABELS[idx + 1], " (", #config.intervals, " voices)")
         end
     })
@@ -136,6 +137,7 @@ rack.onLoad = function()
         end,
         onChange = function(idx)
             config.channel = idx
+            rack.setConfig("channel", config.channel)
             rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
         end
     })

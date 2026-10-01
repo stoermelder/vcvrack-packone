@@ -33,16 +33,16 @@
 -- Configuration - change these values as needed
 local config = {
     -- Fixed note length, in ticks of the trigger input's clock
-    lengthTicks = 12,
+    lengthTicks = rack.getConfig("lengthTicks", 12),
 
     -- Only quantise this channel; set to 0 to quantise every channel
-    channel = 0,
+    channel = rack.getConfig("channel", 0),
 
     -- Forward non-note messages (CC, pitch bend, clock, ...) unchanged
-    passThroughOther = true,
+    passThroughOther = rack.getConfig("passThroughOther", true),
 
     -- Log each quantised note
-    verbose = false
+    verbose = rack.getConfig("verbose", false)
 }
 
 -- Internal state.
@@ -97,6 +97,7 @@ rack.onLoad = function()
         end,
         onChange = function(idx)
             config.lengthTicks = LENGTH_TICKS[idx + 1]
+            rack.setConfig("lengthTicks", config.lengthTicks)
             rack.log("Length: ", config.lengthTicks, " ticks")
         end
     })
@@ -110,6 +111,7 @@ rack.onLoad = function()
         end,
         onChange = function(idx)
             config.channel = idx
+            rack.setConfig("channel", config.channel)
             rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
         end
     })
@@ -122,6 +124,7 @@ rack.onLoad = function()
         end,
         onChange = function(checked)
             config.passThroughOther = checked
+            rack.setConfig("passThroughOther", config.passThroughOther)
         end
     })
 
@@ -133,6 +136,7 @@ rack.onLoad = function()
         end,
         onChange = function(checked)
             config.verbose = checked
+            rack.setConfig("verbose", config.verbose)
         end
     })
 

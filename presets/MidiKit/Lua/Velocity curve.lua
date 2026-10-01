@@ -41,7 +41,7 @@ local config = {
     curveAmount = 2,
 
     -- Only process this channel; 0 = every channel
-    channel = 0
+    channel = rack.getConfig("channel", 0)
 }
 
 -- Context menu choices
@@ -85,6 +85,7 @@ rack.onLoad = function()
         end,
         onChange = function(idx)
             config.channel = idx
+            rack.setConfig("channel", config.channel)
             rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
         end
     })

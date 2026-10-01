@@ -30,7 +30,7 @@ let config = {
     ],
 
     // Optional: CC channel (1-16, default: 1)
-    ccChannel: 1
+    ccChannel: rack.getConfig("ccChannel", 1)
 };
 
 // Context menu choices
@@ -62,6 +62,7 @@ rack.onLoad = function() {
         },
         onChange: function(idx) {
             config.ccChannel = idx + 1;
+            rack.setConfig("ccChannel", config.ccChannel);
             rack.log("CC channel: ", config.ccChannel);
         }
     });

@@ -31,13 +31,13 @@
 // Configuration - change these values as needed
 let config = {
     // Forward every Nth clock tick (1 = pass everything through)
-    divisor: 6,
+    divisor: rack.getConfig("divisor", 6),
 
     // Also emit a trigger on trigger output 1 for every forwarded tick
-    emitTrigger: true,
+    emitTrigger: rack.getConfig("emitTrigger", true),
 
     // Forward all non-clock messages (notes, CC, ...) unchanged
-    passThroughOther: true
+    passThroughOther: rack.getConfig("passThroughOther", true)
 };
 
 // Internal state
@@ -74,6 +74,7 @@ rack.onLoad = function() {
         },
         onChange: function(idx) {
             config.divisor = DIVISORS[idx];
+            rack.setConfig("divisor", config.divisor);
             rack.log("Divisor: ", config.divisor, " (24 ppqn / ", config.divisor, ")");
         }
     });
@@ -86,6 +87,7 @@ rack.onLoad = function() {
         },
         onChange: function(checked) {
             config.emitTrigger = checked;
+            rack.setConfig("emitTrigger", config.emitTrigger);
             rack.log("Emit trigger: ", checked);
         }
     });
@@ -98,6 +100,7 @@ rack.onLoad = function() {
         },
         onChange: function(checked) {
             config.passThroughOther = checked;
+            rack.setConfig("passThroughOther", config.passThroughOther);
         }
     });
 

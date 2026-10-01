@@ -67,7 +67,8 @@ for i = 0, #config.presets - 1 do PRESET_LABELS[i + 1] = presetLabel(i) end
 
 -- Setup
 rack.onLoad = function()
-    state.active = config.initialPreset
+    -- The last active preset is persisted; initialPreset applies on first load.
+    state.active = rack.getConfig("activePreset", config.initialPreset)
     if state.active < 0 or state.active >= #config.presets then state.active = 0 end
 
     -- Context menu - right-click the module to switch the active preset manually.
@@ -81,6 +82,7 @@ rack.onLoad = function()
         end,
         onChange = function(idx)
             state.active = idx
+            rack.setConfig("activePreset", idx)
             rack.log("Preset: ", PRESET_LABELS[idx + 1])
         end
     })
@@ -103,6 +105,7 @@ midi.onMessage = function(midiPort, msg)
             if config.presets[i].cc == cc then
                 if midi.getValue(msg) > 0 then
                     state.active = i - 1
+                    rack.setConfig("activePreset", i - 1)
                     rack.log("Preset: ", presetLabel(i - 1))
                 end
                 return

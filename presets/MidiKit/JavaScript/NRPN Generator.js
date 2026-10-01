@@ -18,13 +18,13 @@
 // Configuration - change these values as needed
 let config = {
     // MIDI channel used for the NRPN message (1-16, default: 1)
-    channel: 1,
+    channel: rack.getConfig("channel", 1),
 
     // NRPN parameter number to send (0-16383, default: 0)
     nrpnNumber: 0,
 
     // Clock ticks per step (24 ppqn, default: 8)
-    ticksPerStep: 8,
+    ticksPerStep: rack.getConfig("ticksPerStep", 8),
 
     // Amount the 14-bit value changes per step
     stepSize: 16,
@@ -86,6 +86,7 @@ rack.onLoad = function() {
         },
         onChange: function(idx) {
             config.channel = idx + 1;
+            rack.setConfig("channel", config.channel);
             rack.log("Channel: ", config.channel);
         }
     });
@@ -99,6 +100,7 @@ rack.onLoad = function() {
         },
         onChange: function(idx) {
             config.ticksPerStep = TICKS_PER_STEP[idx];
+            rack.setConfig("ticksPerStep", config.ticksPerStep);
             rack.log("Ticks per step: ", config.ticksPerStep);
         }
     });

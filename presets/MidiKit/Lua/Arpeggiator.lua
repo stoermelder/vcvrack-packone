@@ -37,10 +37,10 @@
 -- Configuration - change these values as needed
 local config = {
     -- Only arpeggiate notes on this channel; 0 = every channel
-    channel = 0,
+    channel = rack.getConfig("channel", 0),
 
     -- Output channel for arpeggiated notes; 0 = same as input note's channel
-    outChannel = 0
+    outChannel = rack.getConfig("outChannel", 0)
 }
 
 -- Clock division choices, in trigger ticks per arp step (fewer ticks = faster)
@@ -161,6 +161,7 @@ rack.onLoad = function()
         end,
         onChange = function(idx)
             config.channel = idx
+            rack.setConfig("channel", config.channel)
             rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
         end
     })
@@ -174,6 +175,7 @@ rack.onLoad = function()
         end,
         onChange = function(idx)
             config.outChannel = idx
+            rack.setConfig("outChannel", config.outChannel)
             rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx + 1])
         end
     })

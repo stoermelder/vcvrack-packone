@@ -87,10 +87,10 @@ local config = {
     -- Always send a pitch bend on every Note-On, even when unchanged. Off
     -- relies on the receiver remembering the last bend per channel (smaller
     -- stream); turn on only if the receiving device plays wrong notes.
-    alwaysSendBend = false,
+    alwaysSendBend = rack.getConfig("alwaysSendBend", false),
 
     -- Only process this input channel; 0 = every channel
-    channel = 0
+    channel = rack.getConfig("channel", 0)
 }
 
 -- Context menu choices
@@ -265,6 +265,7 @@ rack.onLoad = function()
         end,
         onChange = function(idx)
             config.channel = idx
+            rack.setConfig("channel", config.channel)
             rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
         end
     })
@@ -277,6 +278,7 @@ rack.onLoad = function()
         end,
         onChange = function(checked)
             config.alwaysSendBend = checked
+            rack.setConfig("alwaysSendBend", config.alwaysSendBend)
         end
     })
 

@@ -2651,8 +2651,16 @@ static MidiKitModule* loadNrpnGen(const std::string& relPath, int channel, int n
 	std::string script = readFile(repoRoot() + "/" + relPath);
 	const char* sep = (relPath.find("Lua/") != std::string::npos) ? " = " : ": ";
 	auto set = [&script, sep](const char* name, int oldVal, int newVal) {
+		// Settings behind a context menu are persisted, so the shipped default
+		// sits inside rack.getConfig("name", default).
+		std::string wrapped = std::string("rack.getConfig(\"") + name + "\", ";
 		std::string from = std::string(name) + sep + std::to_string(oldVal);
-		size_t at = script.find(from);
+		size_t at = script.find(wrapped + std::to_string(oldVal));
+		if (at != std::string::npos) {
+			script.replace(at, wrapped.size() + std::to_string(oldVal).size(), wrapped + std::to_string(newVal));
+			return;
+		}
+		at = script.find(from);
 		REQUIRE(at != std::string::npos);
 		script.replace(at, from.size(), std::string(name) + sep + std::to_string(newVal));
 	};
@@ -3953,6 +3961,61 @@ TEST_CASE("param.getValue falls back only above the param count", "[MidiKit][Mic
 	REQUIRE(log.find("fallback 0.25") != std::string::npos);
 	REQUIRE(log.find("plain false") != std::string::npos);   // no fallback given: still an error
 	REQUIRE(log.find("zero false") != std::string::npos);    // index 0 is never a fallback case
+
+	Test::destroyModule(m);
+}
+
+
+// Every context-menu setting of these presets must survive a save/reload: flip
+// each menu item, save, load the patch into a fresh module and compare what the
+// rebuilt menus report. A preset that never calls rack.setConfig() for an item
+// forgets it here.
+TEST_CASE("Preset context-menu settings survive a save/reload round-trip", "[MidiKit][Presets][JSON]") {
+	const char* name = GENERATE(
+		"Arpeggiator", "Chord harmonizer", "Clock divider", "Clock multiplier",
+		"MPE to single channel", "Micro scale", "NRPN Generator", "NRPN to CC",
+		"NRPN to CC (assembled)", "Note length quantiser", "Velocity curve",
+		"Euclidean rhythm generator", "Keyboard split");
+	const char* engine = GENERATE("JavaScript", "Lua");
+	std::string path = presetPath(requirePreset(name), engine);
+	CATCH_INFO("preset: " << path);
+
+	ModuleScaffold mods;
+	MidiKitModule* m = loadPreset(path);
+
+	std::vector<ScriptMenuItem> specs;
+	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
+	REQUIRE(!specs.empty());
+
+	// Move every item to a different value than the one it loaded with.
+	std::vector<int> expected;
+	for (const ScriptMenuItem& item : specs) {
+		int next;
+		if (item.type == ScriptMenuItem::Type::Boolean) next = item.checked ? 0 : 1;
+		else next = (item.selected + 1) % (int)item.options.size();
+		expected.push_back(next);
+		m->host.getActiveEngine()->invokeContextMenuCallback(item.callbackId, next);
+	}
+	drainLog(m);
+
+	rack::engine::Module::SaveEvent saveEvent;
+	m->onSave(saveEvent);
+	json_t* rootJ = m->dataToJson();
+
+	MidiKitModule* m2 = mods.create();
+	m2->dataFromJson(rootJ);
+	json_decref(rootJ);
+
+	std::vector<ScriptMenuItem> restored;
+	m2->host.getActiveEngine()->getContextMenus([&restored](const std::vector<ScriptMenuItem>& s) { restored = s; });
+	m2->host.getActiveEngine()->process();
+	REQUIRE(restored.size() == specs.size());
+	for (size_t i = 0; i < specs.size(); i++) {
+		CATCH_INFO("menu item: " << specs[i].label);
+		int got = specs[i].type == ScriptMenuItem::Type::Boolean ? (restored[i].checked ? 1 : 0) : restored[i].selected;
+		REQUIRE(got == expected[i]);
+	}
 
 	Test::destroyModule(m);
 }

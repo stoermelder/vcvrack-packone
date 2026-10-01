@@ -37,7 +37,7 @@
 // Configuration - change these values as needed
 let config = {
     // Output channel for the generated notes (1-16)
-    outChannel: 1
+    outChannel: rack.getConfig("outChannel", 1)
 };
 
 // Internal state.
@@ -178,6 +178,7 @@ rack.onLoad = function() {
         },
         onChange: function(idx) {
             config.outChannel = idx + 1;
+            rack.setConfig("outChannel", config.outChannel);
             rack.log("Output channel: ", config.outChannel);
         }
     });

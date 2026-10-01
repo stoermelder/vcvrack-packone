@@ -46,7 +46,7 @@
 // Configuration - change these values as needed
 let config = {
     // MIDI clock pulses per input tick; 24 for a clock ticking once per beat
-    ratio: 24
+    ratio: rack.getConfig("ratio", 24)
 };
 
 // Internal state
@@ -90,6 +90,7 @@ rack.onLoad = function() {
         },
         onChange: function(idx) {
             config.ratio = RATIOS[idx];
+            rack.setConfig("ratio", config.ratio);
             rack.log("Multiplier: ", RATIO_LABELS[idx]);
         }
     });
