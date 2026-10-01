@@ -273,6 +273,53 @@ TEST_CASE("Variant: QuickJS memory usage is a snapshot published by the worker",
 	REQUIRE_FALSE(m->host.seQuickJs.getMemoryUsage(used, total));
 }
 
+// rack.onUnload() runs after the script was replaced or reset; the params and
+// inputs it enabled must still read live values there, and be disabled after.
+static const char* JS_UNLOAD_READS_PARAM = R"(/**
+ * @engine QuickJs@v1
+ */
+param.enable(1);
+rack.onUnload = function() {
+    rack.log("U:" + number.toString(param.getValue(1)));
+};
+)";
+
+static const char* LUA_UNLOAD_READS_PARAM = R"(--[[
+@engine minilua@v1
+--]]
+param.enable(1)
+rack.onUnload = function()
+    rack.log("U:" .. number.toString(param.getValue(1)))
+end
+)";
+
+TEST_CASE("Variant: onUnload() still reads the params its script enabled", "[MidiKit][Variant]") {
+	using StoermelderPackOne::MidiScript::MidiScriptEngineParamQuantity;
+	for (const char* script : {JS_UNLOAD_READS_PARAM, LUA_UNLOAD_READS_PARAM}) {
+		for (int viaReset = 0; viaReset < 2; viaReset++) {
+			CATCH_INFO(script);
+			std::string how = viaReset ? "onReset()" : "loadScript()";
+			CATCH_INFO(how);
+			MultiScaffold mods;
+			MultiModule* m = mods.create();
+			m->loadScript(script);
+			probes(m);   // drop load-time entries
+			auto* pq = reinterpret_cast<MidiScriptEngineParamQuantity*>(m->paramQuantities[MultiModule::PARAM]);
+			REQUIRE(pq->enabled);
+			m->params[MultiModule::PARAM].setValue(0.5f);
+
+			if (viaReset) m->onReset();
+			else m->loadScript(QUICKJS_EMPTY);
+
+			std::string log = probes(m);
+			CATCH_INFO(log);
+			REQUIRE(log.find("U:0.5") != std::string::npos);
+			// Disabled again once the outgoing script is gone.
+			REQUIRE_FALSE(pq->enabled);
+		}
+	}
+}
+
 TEST_CASE("Variant: extended-CC enables are per MIDI input", "[MidiKit][Variant]") {
 	MultiScaffold mods;
 	MultiModule* m = mods.create();

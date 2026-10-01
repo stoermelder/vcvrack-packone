@@ -1054,17 +1054,26 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// Points every per-CV-port/param engine back-pointer at the active engine.
 	// Passing null clears instead — no active engine means no port/param can be
 	// enabled (a script re-enables via its bindings). Called at construction, on
-	// reset, before a script loads (null), and after loadScript() selects it.
-	void bindPortParamEngine(MidiScript::MidiScriptEngine* engine) {
+	// reset, and after loadScript() selects the engine.
+	void bindPortsAndParams(MidiScript::MidiScriptEngine* engine) {
 		for (int i = 0; i < CV_INPUTS; i++) {
-			MidiScript::MidiScriptEnginePortInfo* info = reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i]);
-			info->se = engine;
-			if (!engine) info->enabled = false;
+			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->se = engine;
 		}
 		for (int i = 0; i < PARAMS; i++) {
-			MidiScript::MidiScriptEngineParamQuantity* pq = reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i]);
-			pq->se = engine;
-			if (!engine) pq->enabled = false;
+			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i])->se = engine;
+		}
+		if (!engine) disablePortsAndParams();
+	}
+
+	// Every input/param back to disabled; the next script re-enables the ones it
+	// uses. Must not run before the outgoing script's onUnload() has finished,
+	// which still reads them (see resetScriptState()).
+	void disablePortsAndParams() {
+		for (int i = 0; i < CV_INPUTS; i++) {
+			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->enabled = false;
+		}
+		for (int i = 0; i < PARAMS; i++) {
+			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i])->enabled = false;
 		}
 	}
 
@@ -1137,6 +1146,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// MidiScriptEngineHandler — after the outgoing script's onUnload (worker thread).
 	void resetScriptState() override {
 		resetMidiPortEnables();
+		disablePortsAndParams();
 		tipsyOut.reset();
 	}
 
@@ -1407,7 +1417,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		}
 		// No engine is loaded yet — bind to null (clears the UI state); it is
 		// bound to the active engine by loadScript() once a script loads.
-		bindPortParamEngine(nullptr);
+		bindPortsAndParams(nullptr);
 
 		processDivider.setDivision(8);
 		for (int i = 0; i < MIDI_OUTPUTS; i++) {
@@ -1472,9 +1482,6 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		// releases it and re-arms the decoder's data store (safe: nothing is
 		// decoding at reset, and provideDataBuffer() refuses mid-body).
 		tipsyIn.reset();
-		// No engine is active after a reset (host.closeState() nulls it), so
-		// bind to null — it is rebound by the next loadScript().
-		bindPortParamEngine(nullptr);
 		triggersOut.reset();
 		// Only the previously active engine can have real state — loadScript()
 		// maintains that invariant by only ever loading one engine at a time and
@@ -1483,8 +1490,11 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		// same reasoning as loadScript(): once this returns, activeEngine is
 		// again the only engine that can have any outstanding worker task.
 		host.closeState();
-		// After the closing script's onUnload(), which may send to an enabled port.
+		// After the closing script's onUnload(), which may send to an enabled port
+		// and read its params/inputs. No engine is active after a reset, so bind to
+		// null — it is rebound by the next loadScript().
 		resetMidiPortEnables();
+		bindPortsAndParams(nullptr);
 
 		log.push(LOG_FORMAT::RESET, 0.f, std::string(""));
 		log.push(LOG_FORMAT::TEXT, 0.f, std::string("No script"));
@@ -1734,27 +1744,27 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		// Likewise the trigger outputs drop back to mono until the new script
 		// writes a higher channel.
 		triggersOut.resetChannels();
-		// The port enables are not reset here: the outgoing script's onUnload() still
-		// needs them. The engines reset them once it has run (resetScriptState()).
+		// The port enables and the enabled params/inputs are not reset here: the
+		// outgoing script's onUnload() still needs them. The engines reset them
+		// once it has run (resetScriptState()).
 		// Raised before the load, so anything the new script schedules from
 		// rack.onLoad reaches the outputs after the audio thread has cleared.
 		// Also drops the half-received NRPN/RPN/14-bit CC state of every input:
 		// assembly belongs to the script's view of the stream, not to the module.
 		clearPending.store(true);
 		for (int i = 0; i < MIDI_INPUTS; i++) midiInputs[i].extendedCc.clear();
-		// Disable the outgoing script's ports/params before loading the new one.
-		bindPortParamEngine(nullptr);
 		log.push(LOG_FORMAT::RESET, 0.f, std::string(""));
 
 		// Select the engine for the script and load it, closing the outgoing
 		// engine (blocking) — see ScriptHost::load().
 		MidiScript::MidiScriptEngine* engine = host.load(s, configJson);
 		// No engine will load, so nothing resets them on the worker; the outgoing
-		// engine has already been closed.
+		// engine has already been closed. (Binding null below disables the
+		// params/inputs.)
 		if (!engine) resetMidiPortEnables();
 
 		// Keep port/param info pointers in sync with the active engine
-		bindPortParamEngine(engine);
+		bindPortsAndParams(engine);
 	}
 
 	void clearScript() {
