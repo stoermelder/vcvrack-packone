@@ -119,10 +119,11 @@ struct MidiScriptEngineHandler {
 	virtual float getSampleRate() const = 0;
 	virtual bool isTimingEnabled() const = 0;
 
-	// midiOut.enableTiming() binding (worker thread): outgoing messages keep
-	// their frame and Rack places them, at the cost of one block of latency.
-	// Forgotten on load/reset, like the port enables.
-	virtual void enableTiming() = 0;
+	// midiOut.enableTiming([reportLate]) binding (worker thread): outgoing
+	// messages keep their frame and Rack places them, at the cost of one block of
+	// latency. With reportLate the module logs messages that reached Rack too late
+	// to be placed. Forgotten on load/reset, like the port enables.
+	virtual void enableTiming(bool reportLate) = 0;
 
 	// Marks trigger input (port, channel) as enabled, from the script-facing
 	// trig.enableIn() binding (worker thread). Disabled channels get no tick

@@ -403,7 +403,7 @@ TEST_CASE("Timing: a group sent with sendAfterTrigger is released in order", "[M
 // The scripts above with the opt-in prepended; the legacy tests stay as they are.
 
 // Inserts midiOut.enableTiming() after the header comment, for either engine.
-static std::string withTiming(const char* script) {
+static std::string withTiming(const char* script, const char* arg = "") {
 	std::string s = script;
 	size_t at = s.find("*/\n");
 	if (at != std::string::npos) at += 3;
@@ -413,7 +413,8 @@ static std::string withTiming(const char* script) {
 		at += 5;
 	}
 	bool lua = s.find("minilua") != std::string::npos;
-	return s.substr(0, at) + (lua ? "midiOut.enableTiming()\n" : "midiOut.enableTiming();\n") + s.substr(at);
+	std::string call = std::string("midiOut.enableTiming(") + arg + (lua ? ")\n" : ");\n");
+	return s.substr(0, at) + call + s.substr(at);
 }
 
 // What Rack's unstable queue needs: a frame on every message, strictly increasing.
@@ -1069,4 +1070,109 @@ midi.onMessage = function(port, msg) {
 		REQUIRE(controllers(rig.rec) == std::vector<int>{60, 61});
 		if (timing) requireOrderedFrames(rig.rec);
 	}
+}
+
+// ── Late-message report: midiOut.enableTiming(true) ─────────────────────────
+// Rack places a framed message one block after its frame, so a message handed
+// over a whole block past its frame is already late. The engine's block start
+// and size are zero headless, so a mock supplies them.
+
+struct BlockMock : StoermelderPackOne::vcv::EngineAccess {
+	int64_t blockFrame = 0;
+	int64_t blockFrames = 0;
+	int64_t getBlockFrame() const override { return blockFrame; }
+	int64_t getBlockFrames() const override { return blockFrames; }
+};
+
+struct BlockMockScope {
+	BlockMock mock;
+	StoermelderPackOne::vcv::EngineAccess* previous;
+	BlockMockScope(int64_t blockFrame, int64_t blockFrames) : previous(StoermelderPackOne::vcv::engineAccess) {
+		mock.blockFrame = blockFrame;
+		mock.blockFrames = blockFrames;
+		StoermelderPackOne::vcv::engineAccess = &mock;
+	}
+	~BlockMockScope() { StoermelderPackOne::vcv::engineAccess = previous; }
+};
+
+static size_t countOf(const std::string& text, const std::string& what) {
+	size_t n = 0;
+	for (size_t at = text.find(what); at != std::string::npos; at = text.find(what, at + 1)) n++;
+	return n;
+}
+
+TEST_CASE("Timing report: a message handed over a block past its frame is logged", "[MidiKit][timing]") {
+	for (const char* script : TIMING_SCRIPTS) {
+		CATCH_INFO(script);
+		// The block being processed started at 1000; the reply is for frame 20.
+		BlockMockScope blocks(1000, 256);
+		TimingRig rig(withTiming(script, "true").c_str());
+		rig.inject(noteOn(0, 60, 100), 20);
+		rig.run(40);
+
+		std::string log = drainLog(rig.m);
+		REQUIRE(countOf(log, "reached the output too late") == 1);
+		REQUIRE(log.find("1 message(s)") != std::string::npos);
+		// 1000 - (20 + 256) = 724 frames.
+		REQUIRE(log.find("worst by 16.4 ms") != std::string::npos);
+	}
+}
+
+TEST_CASE("Timing report: a message with time left is not logged", "[MidiKit][timing]") {
+	BlockMockScope blocks(100, 256);
+	TimingRig rig(withTiming(JS_PASS_THROUGH, "true").c_str());
+	rig.inject(noteOn(0, 60, 100), 20);
+	rig.run(40);
+
+	REQUIRE(countOf(drainLog(rig.m), "reached the output too late") == 0);
+}
+
+TEST_CASE("Timing report: nothing is logged unless the script asked for it", "[MidiKit][timing]") {
+	BlockMockScope blocks(1000, 256);
+
+	SECTION("enableTiming() without the flag") {
+		TimingRig rig(withTiming(JS_PASS_THROUGH).c_str());
+		rig.inject(noteOn(0, 60, 100), 20);
+		rig.run(40);
+		REQUIRE(rig.rec.sent.size() == 1);
+		REQUIRE(countOf(drainLog(rig.m), "reached the output too late") == 0);
+	}
+
+	SECTION("legacy mode") {
+		TimingRig rig(JS_PASS_THROUGH);
+		rig.inject(noteOn(0, 60, 100), 20);
+		rig.run(40);
+		REQUIRE(rig.rec.sent.size() == 1);
+		REQUIRE(countOf(drainLog(rig.m), "reached the output too late") == 0);
+	}
+
+	SECTION("the flag is forgotten on reload") {
+		TimingRig rig(withTiming(JS_PASS_THROUGH, "true").c_str());
+		rig.m->loadScript(withTiming(JS_PASS_THROUGH));
+		rig.inject(noteOn(0, 60, 100), 20);
+		rig.run(40);
+		REQUIRE(countOf(drainLog(rig.m), "reached the output too late") == 0);
+	}
+}
+
+TEST_CASE("Timing report: a script that keeps falling behind is logged once per second", "[MidiKit][timing]") {
+	BlockMockScope blocks(1000000, 256);
+	TimingRig rig(withTiming(JS_PASS_THROUGH, "true").c_str());
+	int64_t second = int64_t(rig.m->sampleRate.load());
+
+	rig.inject(noteOn(0, 60, 100), 20);
+	rig.inject(noteOn(0, 61, 100), 30);
+	rig.inject(noteOn(0, 62, 100), 40);
+	rig.run(200);
+	// One line for the first; the other two wait for the next second.
+	std::string first = drainLog(rig.m);
+	REQUIRE(countOf(first, "reached the output too late") == 1);
+	REQUIRE(first.find("1 message(s)") != std::string::npos);
+
+	// The two that waited are logged as soon as the second is over.
+	rig.inject(noteOn(0, 63, 100), second + 100);
+	rig.run(second + 200);
+	std::string later = drainLog(rig.m);
+	REQUIRE(countOf(later, "reached the output too late") == 1);
+	REQUIRE(later.find("2 message(s)") != std::string::npos);
 }

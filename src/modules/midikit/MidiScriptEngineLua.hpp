@@ -1659,9 +1659,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 0;
 	}
 
-	// midiOut.enableTiming() — sample-accurate output for this script.
+	// midiOut.enableTiming([reportLate]) — sample-accurate output for this script.
 	static int lua_midiOut_enableTiming(lua_State* L) {
-		getEngine(L)->handler->enableTiming();
+		getEngine(L)->handler->enableTiming(lua_toboolean(L, 1) != 0);
 		return 0;
 	}
 

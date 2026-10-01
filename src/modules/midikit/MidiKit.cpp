@@ -6,6 +6,7 @@
 #include "../../components/LedTextField.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "../../vcv/ui.hpp"
+#include "../../vcv/engine.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
 #include "../midi/MidiProcessor.hpp"
 #include "tipsy-encoder/include/tipsy/tipsy.h"
@@ -55,9 +56,26 @@ struct MidiOutput : midi::Output {
 	// The module's midiOut.enableTiming() flag; null or clear = legacy mode.
 	const std::atomic<bool>* timing = nullptr;
 	int64_t lastHandOffFrame = -1;
+	// Set (by the module) when the script asked for late messages to be reported.
+	const std::atomic<bool>* reportLate = nullptr;
+	// Messages handed over too late since the module last took the count, and the
+	// worst of them in frames. Audio thread.
+	uint32_t lateCount = 0;
+	int64_t lateWorst = 0;
 
 	bool timingOn() const {
 		return timing != nullptr && timing->load(std::memory_order_relaxed);
+	}
+
+	// Rack's output thread places a framed message one block after its frame, so
+	// once the block being processed starts a whole block past `f` the message is
+	// already late and goes out at once. Counted against the block start, which
+	// never flags a message that still has time.
+	void countIfLate(int64_t f) {
+		int64_t late = vcv::engine::getBlockFrame() - (f + vcv::engine::getBlockFrames());
+		if (late <= 0) return;
+		lateCount++;
+		if (late > lateWorst) lateWorst = late;
 	}
 
 	// Timing mode: where a message is handed to Rack, which schedules it by
@@ -71,6 +89,7 @@ struct MidiOutput : midi::Output {
 		if (f <= lastHandOffFrame) f = lastHandOffFrame + 1;
 		lastHandOffFrame = f;
 		msg.frame = f;
+		if (reportLate != nullptr && reportLate->load(std::memory_order_relaxed)) countIfLate(f);
 		sendMessage(msg);
 	}
 
@@ -106,6 +125,8 @@ struct MidiOutput : midi::Output {
 		while (!frameQueue.empty()) frameQueue.pop();
 		clearTickQueues();
 		lastHandOffFrame = -1;
+		lateCount = 0;
+		lateWorst = 0;
 		channel = -1;
 	}
 
@@ -939,6 +960,10 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// MidiOutput::handOff()). Worker writes, audio thread reads; reset with the
 	// port enables.
 	std::atomic<bool> timingEnabled{false};
+	// midiOut.enableTiming(true): log messages that reached Rack too late.
+	std::atomic<bool> timingReportLate{false};
+	// Audio thread: `sample` of the last late-message log line, -1 for none yet.
+	int64_t lateLoggedAt = -1;
 	// Frame of the latest process() call, for code without ProcessArgs.
 	std::atomic<int64_t> currentFrame{0};
 
@@ -1062,7 +1087,8 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	}
 
 	// MidiScriptEngineHandler — midiOut.enableTiming() binding (worker thread).
-	void enableTiming() override {
+	void enableTiming(bool reportLate) override {
+		timingReportLate.store(reportLate, std::memory_order_relaxed);
 		timingEnabled.store(true, std::memory_order_relaxed);
 	}
 
@@ -1079,6 +1105,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		midiInCount.store(1, std::memory_order_relaxed);
 		midiOutCount.store(1, std::memory_order_relaxed);
 		timingEnabled.store(false, std::memory_order_relaxed);
+		timingReportLate.store(false, std::memory_order_relaxed);
 		midiOutDropLogged.store(0, std::memory_order_relaxed);
 	}
 
@@ -1349,6 +1376,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		processDivider.setDivision(8);
 		for (int i = 0; i < MIDI_OUTPUTS; i++) {
 			midiOutputs[i].timing = &timingEnabled;
+			midiOutputs[i].reportLate = &timingReportLate;
 		}
 		// Routes decoded messages into processMidi() below. Without this the
 		// processor decodes into an empty handler list and nothing reaches the
@@ -1403,6 +1431,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		}
 		for (int i = 0; i < MIDI_OUTPUTS; i++) midiOutputs[i].reset();
 		sample = 0;
+		lateLoggedAt = -1;
 		resetMidiPortEnables();
 		// No script claims the trigger input until its trig.enableIn() runs.
 		triggersIn.reset();
@@ -1486,6 +1515,30 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		return false;
 	}
 
+	// Audio thread. Logs the messages the outputs handed over too late, at most
+	// once per second of audio so a script that falls behind does not flood the log.
+	void reportLateMessages() {
+		if (!timingReportLate.load(std::memory_order_relaxed)) return;
+		uint32_t count = 0;
+		int64_t worst = 0;
+		int n = midiOutCount.load(std::memory_order_relaxed);
+		for (int i = 0; i < n; i++) {
+			count += midiOutputs[i].lateCount;
+			worst = std::max(worst, midiOutputs[i].lateWorst);
+		}
+		float sr = sampleRate;
+		if (count == 0 || sr <= 0.f) return;
+		if (lateLoggedAt >= 0 && int64_t(sample) - lateLoggedAt < int64_t(sr)) return;
+
+		for (int i = 0; i < n; i++) {
+			midiOutputs[i].lateCount = 0;
+			midiOutputs[i].lateWorst = 0;
+		}
+		lateLoggedAt = int64_t(sample);
+		log.push(LOG_FORMAT::TEXT, float(sample) / sr,
+			string::f("Timing: %u message(s) reached the output too late, worst by %.1f ms", count, 1000.f * float(worst) / sr));
+	}
+
 	void processBypass(const ProcessArgs& args) override {
 		midi::Message msg;
 		for (int i = 0; i < MIDI_INPUTS; i++) {
@@ -1554,6 +1607,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 				midiOutputs[std::get<0>(t)].send(msg, channel, std::get<3>(t), std::get<4>(t), args.frame);
 			}
 			for (int i = 0, n = midiOutCount.load(std::memory_order_relaxed); i < n; i++) midiOutputs[i].processFrame(args.frame);
+			reportLateMessages();
 		}
 
 		processTriggerOutputs(args.sampleTime);
@@ -1635,6 +1689,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 	void loadScript(std::string s, std::string configJson = "") {
 		sample = 0;
+		lateLoggedAt = -1;
 		// The incoming script inherits no half-received NRPN/RPN/14-bit CC state
 		// from the previous one: assembly belongs to the script's view of the
 		// stream, not to the module.

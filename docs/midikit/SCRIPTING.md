@@ -1219,7 +1219,8 @@ asked for.
   Output 1 is always enabled; a message sent to any other output is dropped
   (with a one-time log line) until the script enables it. See
   [Enabling MIDI ports](#enabling-midi-ports).
-- `midiOut.enableTiming()` — opts the script into sample-accurate output; see
+- `midiOut.enableTiming([reportLate])` — opts the script into sample-accurate
+  output; with `true`, messages that arrive too late are logged. See
   [Enabling sample-accurate timing](#enabling-sample-accurate-timing).
 - `midiOut.selectPort(midiPort)` — selects the output port (1-based) that every
   subsequent `midiOut.*` call sends on, until `selectPort` is called again.
@@ -1302,6 +1303,22 @@ clock multiplier measures the distance between two trigger edges and spreads
 pulses over it (see
 [Multiply a clock into MIDI clock](#multiply-a-clock-into-midi-clock-sample-accurately)). A frame is a
 sample count: one second is as many frames as the sample rate.
+
+**Finding out when it does not hold.** Rack can only place a message that reaches
+it in time, one audio block after its frame at the latest. A script that is too
+slow, or a busy worker thread that runs all MIDI-KIT scripts in the patch, makes
+messages arrive late; Rack then sends them at once, which is the timing you had
+without `enableTiming()`, and nothing tells you. `midiOut.enableTiming(true)`
+logs such messages, at most one line per second, with how many there were and
+the worst delay:
+
+```
+Timing: 3 message(s) reached the output too late, worst by 16.4 ms
+```
+
+The report is off by default and costs nothing when off. A message that is only
+a few samples behind its frame is not late: waiting for the script is normal and
+Rack's block of delay absorbs it.
 
 **Order.** Messages sent on the same frame are moved one sample apart, in the
 order they were sent, so an NRPN, a 14-bit CC pair or a note-off followed by a
