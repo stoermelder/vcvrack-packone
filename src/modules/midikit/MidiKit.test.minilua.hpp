@@ -481,3 +481,30 @@ TEST_CASE("Script within the memory limit keeps running", "[MidiKit][Lua][Memory
 	REQUIRE(m->host.seLua.L != nullptr);
 	REQUIRE(drainLog(m).find("memory limit and was stopped") == std::string::npos);
 }
+
+// A script travels inside the patch file, so it must not read files from disk
+// or load precompiled bytecode.
+static const char* LUA_SANDBOX = R"(--[[
+@engine minilua@v1
+--]]
+rack.onLoad = function()
+	rack.log("dofile=" .. type(dofile))
+	rack.log("loadfile=" .. type(loadfile))
+	rack.log("load=" .. type(load))
+	rack.log("dump=" .. type(string.dump))
+end
+)";
+
+TEST_CASE("Lua sandbox removes file and bytecode loaders", "[MidiKit][Lua]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+
+	m->loadScript(LUA_SANDBOX);
+	REQUIRE(m->host.seLua.L != nullptr);
+
+	std::string log = drainLog(m);
+	REQUIRE(log.find("dofile=nil") != std::string::npos);
+	REQUIRE(log.find("loadfile=nil") != std::string::npos);
+	REQUIRE(log.find("load=nil") != std::string::npos);
+	REQUIRE(log.find("dump=nil") != std::string::npos);
+}

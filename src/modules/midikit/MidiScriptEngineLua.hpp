@@ -299,6 +299,19 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		luaL_requiref(L, "string",   luaopen_string, 1); lua_pop(L, 1);
 		luaL_requiref(L, "table",    luaopen_table,  1); lua_pop(L, 1);
 
+		// luaopen_base/string still register functions that read files or accept
+		// precompiled bytecode, which the VM doesn't verify. A script travels inside
+		// the patch file, so remove them. load goes too: it defaults to mode "bt".
+		static const char* const removedGlobals[] = { "dofile", "loadfile", "load" };
+		for (const char* name : removedGlobals) {
+			lua_pushnil(L);
+			lua_setglobal(L, name);
+		}
+		lua_getglobal(L, "string");
+		lua_pushnil(L);
+		lua_setfield(L, -2, "dump");
+		lua_pop(L, 1);
+
 		// ── Script execution budget ─────────────────────────────────────────
 		// Install the count hook. hookArmed stays false until the first
 		// beginScriptExecution(), so registerAPI()'s trusted stubs aren't budgeted.
