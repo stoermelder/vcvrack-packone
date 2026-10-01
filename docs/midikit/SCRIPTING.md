@@ -91,6 +91,7 @@ The callbacks a script can define, and when each runs:
 | Callback | Runs … | Needs |
 | --- | --- | --- |
 | `midi.onMessage(midiPort, msg)` | on every incoming MIDI message | — |
+| `midi.onNrpn(midiPort, msg)` / `midi.onRpn(midiPort, msg)` / `midi.onCc14bit(midiPort, msg)` | on every completed NRPN / RPN / 14-bit CC parameter change | `midi.enableNrpnIn()` / `enableRpnIn()` / `enableCc14bitIn()` |
 | `trig.onTrigger(trigPort, channel)` | on every rising edge of an *enabled* trigger channel | `trig.enableIn()` |
 | `trig.onTipsyMessage(data, mimeType)` | on every complete [Tipsy](#tipsy) message decoded from trigger input 1 | `trig.enableTipsyIn()` |
 | `rack.onLoad()` / `rack.onUnload()` | script [lifecycle](#persistence) — load, teardown | — |
@@ -104,6 +105,14 @@ time](#hooks-and-predefined-objects-are-resolved-once-at-load-time) for why.
 A script that never defines `midi.onMessage` loads fine but silently ignores
 all MIDI (logged once at load); the other hooks warn only for `midi.onMessage`
 — omitting the rest is silent.
+
+**The return value of `midi.onMessage` is ignored and reserved.** Today every
+message is handled the same way whatever the callback returns: nothing is
+dropped, consumed or forwarded because of it. A future version may give a
+return value a meaning (for example "consumed"), so don't write a callback that
+returns something by accident, such as `return midiOut.send(msg)` or an
+implicit return from a helper. End it with a bare `return` (or no `return`).
+Messages are passed on only through the `midiOut.send*` calls.
 
 `trig.onTrigger` additionally needs `trig.enableIn(trigPort, [channel])` — the
 trigger input is otherwise not processed at all on that port and channel: no ticks
@@ -364,6 +373,8 @@ end
 
 `rack.onUnload()` runs right before the script's state is torn down — the script is being replaced, the module is reset, or the module is removed from the patch. It's the only reliable place to clean up notes a script left sounding, since nothing runs afterward to release them. It never runs on a plain patch save — a save is not a lifecycle event at all (see [Persistence](#persistence): a save just writes out whatever `rack.setConfig()` last published). Note the JavaScript version assigns it to the `rack` object — `rack.onUnload = function() {...}` — like the other hooks (see [Hooks and predefined objects are resolved once, at load time](#hooks-and-predefined-objects-are-resolved-once-at-load-time)).
 
+The example sends CC 123 (All Notes Off) on all 16 channels, which takes 16 handles instead of one note-off per note. It sends them with `midiOut.sendAfterMs(msg, -1)`, which holds the message back behind anything Rack still has queued, so the all-notes-off can't overtake a note-on and leave a note stuck (see [Enabling sample-accurate timing](#enabling-sample-accurate-timing)).
+
 JavaScript:
 ```js
 midi.onMessage = function(midiPort, msg) {
@@ -373,10 +384,10 @@ midi.onMessage = function(midiPort, msg) {
 };
 
 rack.onUnload = function() {
-   for (let note = 0; note < 128; note++) {
+   for (let ch = 1; ch <= 16; ch++) {
       let off = midi.create();
-      midi.setNoteOff(off, 1, note);
-      midiOut.send(off);
+      midi.setCc(off, ch, 123, 0);
+      midiOut.sendAfterMs(off, -1);
    }
 };
 ```
@@ -390,10 +401,10 @@ midi.onMessage = function(midiPort, msg)
 end
 
 rack.onUnload = function()
-   for note = 0, 127 do
+   for ch = 1, 16 do
       local off = midi.create()
-      midi.setNoteOff(off, 1, note)
-      midiOut.send(off)
+      midi.setCc(off, ch, 123, 0)
+      midiOut.sendAfterMs(off, -1)
    end
 end
 ```
@@ -725,7 +736,8 @@ local length = param.getValue(3, 0.5)   -- 0.5 on µKIT, where param 3 doesn't e
 
 ### Hooks and predefined objects are resolved once, at load time
 
-`midi.onMessage` is read from the `midi` object **exactly once**;
+`midi.onMessage`, `midi.onNrpn`, `midi.onRpn` and `midi.onCc14bit` are read
+from the `midi` object **exactly once**;
 `rack.onLoad` and `rack.onUnload` from the `rack` object; and
 `trig.onTrigger`/`trig.onTipsyMessage` from the `trig` object — all right
 after the script's top-level code finishes running. **Reassigning any of them
@@ -741,6 +753,10 @@ effect for subsequent trigger dispatch. `rack.getConfig()`/`rack.setConfig()`
 are likewise live calls, not hooks — see [Persistence](#persistence) — so
 unlike the hooks above, calling them from inside a callback, or any number of
 times, works exactly as it looks like it should.)
+
+The tooltip functions `input.getName`, `param.getName` and `param.getValueFormat`
+are the exception: they are looked up by name each time a tooltip is shown, so
+assigning them later does work.
 
 This is a deliberate, permanent design choice: resolving hooks once, rather
 than looking them up by name on every incoming MIDI message or trigger tick,
@@ -762,7 +778,7 @@ technique.
 
 | Function | Effect |
 | --- | --- |
-| `rack.log(value [, value ...])` | write a line to the module's log/console. Any number of arguments are concatenated (no separator) into one line, each coerced the same way as a single value: strings logged verbatim (no added quotes), numbers formatted like `number.toString()` (so `rack.log(1 / 3)` prints `0.333333`), booleans as `true`/`false`, `null`/`undefined` (QuickJs) / `nil` (Lua) as `null`/`undefined`. Other values (objects, arrays, tables, functions) use each engine's own stringification — scalars are guaranteed to format identically in both engines |
+| `rack.log(value [, value ...])` | write a line to the module's log/console. Any number of arguments are concatenated (no separator) into one line, each coerced the same way as a single value: strings logged verbatim (no added quotes), numbers formatted like `number.toString()` (so `rack.log(1 / 3)` prints `0.333333`, and whole numbers print exactly however large: `rack.log(rack.getEventFrame())` shows every digit), booleans as `true`/`false`, `null`/`undefined` (QuickJs) / `nil` (Lua) as `null`/`undefined`. Other values (objects, arrays, tables, functions) use each engine's own stringification — scalars are guaranteed to format identically in both engines |
 | `rack.overlay(s1 [, s2 [, s3]])` | show up to 3 lines in the on-panel overlay |
 | `rack.getEventFrame()` | the engine frame (sample counter) of the event being handled: the arrival frame in `midi.onMessage` (of the last message for assembled NRPN/RPN/14-bit events), the frame of the edge in `trig.onTrigger`, the frame the message completed on in `trig.onTipsyMessage`. `-1` outside an event (top level, `rack.onLoad`, `rack.onUnload`, context-menu callbacks). Use with `midiOut.sendAtFrame()` — see [Enabling sample-accurate timing](#enabling-sample-accurate-timing) |
 | `rack.random()` | a random number in [0, 1), drawn from Rack's own RNG (`rack::random::uniform()`), so it shares the patch's seed/determinism |
@@ -988,6 +1004,10 @@ these even though `math.*` is also available, for script portability).
 - `trig.setHigh(i [, ch])`, `trig.setLow(i [, ch])`, `trig.setTrigger(i [, ch])`
   (momentary trigger), `trig.setGate(i [, ch], durationMs)` — drive trigger
   output `i` (1 or 2). An index beyond the module's two ports is a script error.
+  **These are not frame-accurate**, even with `midiOut.enableTiming()`: the
+  output changes when the script runs on the worker thread, not on the frame of
+  the event, so it jitters by the worker latency (at least one process divider, often
+  an audio block) and can lead MIDI sent with `enableTiming()` for the same event.
 - `trig.inCount`, `trig.outCount` — number of trigger inputs and outputs (2 and 2 on both variants).
 
 #### Tipsy
@@ -1067,7 +1087,9 @@ batches (one handle per message, per the send-once rule below).
   [Script structure](#script-structure)): called with each incoming message
   that nothing else claimed (see
   [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc)
-  for the callbacks that receive assembled parameter changes instead).
+  for the callbacks that receive assembled parameter changes instead). Its
+  return value is ignored and reserved, see
+  [Script structure](#script-structure).
 - `midi.onNrpn(midiPort, msg)` / `midi.onRpn(midiPort, msg)` /
   `midi.onCc14bit(midiPort, msg)` — called with an assembled NRPN/RPN
   parameter change or 14-bit controller change (see
@@ -1100,8 +1122,8 @@ batches (one handle per message, per the send-once rule below).
 | `getControl(msg)` | see [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc) for the type-aware behavior on assembled messages |
 | `getNote(msg)` | note number (or, on a plain CC, the controller number — the older spelling of `getControl`) |
 | `getValue(msg)` | type-aware: raw 7-bit data byte, or the combined 14-bit value on an assembled NRPN/RPN/14-bit CC |
-| `getLength(msg)` | note length |
-| `getPitchWheel(msg)` | pitch-wheel value |
+| `getLength(msg)` | size of the message in bytes (a SysEx message counts its `f0`/`f7` framing; compare `getSysExLength`) |
+| `getPitchWheel(msg)` | pitch-wheel value, 0-16383 (centre 8192) |
 | `getProgramChange(msg)` | program number |
 | `getSysEx(msg)` | hex string, payload only — without the `f0`/`f7` framing |
 | `getSysExLength(msg)` | payload length in bytes, framing excluded — check before reading with `getSysEx` |
@@ -1117,8 +1139,9 @@ true only for assembled extended messages (see
 
 #### Setters
 
-Every `ch` argument below is a MIDI channel and is silently clamped to 1-16
-(e.g. `setNoteOn(msg, -5, ...)` is treated as channel 1).
+Every `ch` argument below is a MIDI channel, 1-16. Pass values in that range:
+a channel above 16 is clamped to 16, and a value below 1 is not reliable (Lua
+clamps it to 1, but the JavaScript engine can end up on a different channel).
 
 | Function | Notes |
 | --- | --- |
@@ -1132,15 +1155,16 @@ Every `ch` argument below is a MIDI channel and is silently clamped to 1-16
 | `setNoteOn(msg, ch, note, vel)` | `vel` clamped to 0-127 |
 | `setNoteOff(msg, ch, note [, vel])` | release velocity defaults to 0, clamped to 0-127; read back with `getValue` |
 | `setNRPN(nrpnHandle, ch, number, value)` | `number`/`value` are 14-bit, 0-16383 |
-| `setPitchWheel(msg, ch, value)` | |
+| `setPitchWheel(msg, ch, value)` | `value` is 14-bit, 0-16383; 8192 is the centre (no bend) |
 | `setProgramChange(msg, ch, program)` | |
 | `setSysEx(msg, hexString)` | payload only — `f0`/`f7` framing added automatically, so pass e.g. `"43104c0000"` rather than `"f043104c0000f7"`; capped at 256 bytes, every byte must be 7-bit (`00`-`7f`) |
 | `setRaw(msg, hexString)` | writes the exact bytes with no framing added, e.g. `"f11a"` for an MTC quarter-frame — use for message types with no dedicated setter |
 | `setValue(msg, value)` | |
 
 Both `setCc14bit` forms take `value` as a float (MSB = integer part,
-LSB = fractional part × 128) — see `nrpn_to_cc.js`/`.lua` for the canonical
-use.
+LSB = fractional part × 128) — see the `NRPN to CC` preset
+([JavaScript](../../presets/MidiKit/JavaScript/NRPN%20to%20CC.js),
+[Lua](../../presets/MidiKit/Lua/NRPN%20to%20CC.lua)) for the canonical use.
 
 #### Assembled extended input (NRPN / RPN / 14-bit CC)
 
@@ -1156,7 +1180,6 @@ the engine can assemble them for you — the mirror image of `midi.setNRPN()` /
 
 | Function | Effect |
 | --- | --- |
-| `midi.enablePorts(count)` | enable MIDI inputs 1..`count`; input 1 is always enabled |
 | `midi.enableNrpnIn(midiPort [, channel])` | assemble NRPN (kind 0) parameter changes on `midiPort` into `midi.onNrpn` calls. `channel` is 1-based (default: all) |
 | `midi.enableRpnIn(midiPort [, channel])` | same, for RPN (kind 1) into `midi.onRpn` |
 | `midi.enableCc14bitIn(midiPort [, cc] [, channel])` | assemble 14-bit CC pairs on `midiPort` into `midi.onCc14bit` calls. `cc` is the MSB controller number 0-31 (its LSB is implicitly `cc + 32`); omit it to enable every 14-bit CC |
@@ -1291,6 +1314,8 @@ That is the lowest latency, but the moment a message leaves jitters by up to one
 audio block (5.3 ms at 256 samples and 48 kHz) — fine for a filter, a merge or a
 panic button, audible in a clock, an arpeggiator or a sequencer.
 
+`enableTiming()` only affects MIDI. The trigger outputs (`trig.setTrigger`, `setGate`, `setHigh`, `setLow`) are written when the script runs and are not placed on a frame.
+
 A script that needs better calls `midiOut.enableTiming()` once, in `rack.onLoad`
 or at top level:
 
@@ -1388,9 +1413,11 @@ rather than decoding this by hand).
   warn.
 - `midi.setCc14bit`/`setNRPN` split a 14-bit value across two 7-bit CC
   messages (`cc` = MSB, `cc + 32` = LSB per the NRPN/14-bit CC convention);
-  see [nrpn_to_cc.js](nrpn_to_cc.js)/[nrpn_to_cc.lua](nrpn_to_cc.lua) for a
-  full worked example, and [nrpn_generator.js](nrpn_generator.js)/
-  [nrpn_generator.lua](nrpn_generator.lua) for constructing NRPN messages.
+  see the `NRPN to CC` preset
+  ([JS](../../presets/MidiKit/JavaScript/NRPN%20to%20CC.js)/[Lua](../../presets/MidiKit/Lua/NRPN%20to%20CC.lua))
+  for a full worked example, and the `NRPN Generator` preset
+  ([JS](../../presets/MidiKit/JavaScript/NRPN%20Generator.js)/[Lua](../../presets/MidiKit/Lua/NRPN%20Generator.lua))
+  for constructing NRPN messages.
   Use `midi.createCc14bit()` + the 4-arg `setCc14bit` for a 14-bit CC pair
   that must land atomically; the two-handle form sends two independent
   messages.
