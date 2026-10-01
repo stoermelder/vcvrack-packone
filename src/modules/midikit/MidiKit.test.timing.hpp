@@ -282,3 +282,120 @@ TEST_CASE("Timing: messages sharing an input frame leave in arrival order", "[Mi
 	REQUIRE(rig.rec.sent[1].note == 61);
 	REQUIRE(rig.rec.sent[2].note == 62);
 }
+
+// Multi-message groups
+// An NRPN is four CCs and a 14-bit CC two, emitted atomically. Only the first
+// message of a group passes through a send binding, so the others must follow
+// its schedule — and keep their order while they wait, since they all share it.
+
+static const char* JS_GROUP_AFTER_MS = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    if (midi.getNote(msg) === 1) {
+        let nrpn = midi.createNRPN();
+        midi.setNRPN(nrpn, 1, 130, 1000);
+        midiOut.sendAfterMs(nrpn, 10);
+    }
+    else {
+        let cc14 = midi.createCc14bit();
+        midi.setCc14bit(cc14, 1, 1, 100.5);
+        midiOut.sendAfterMs(cc14, 10);
+    }
+};
+)";
+
+static const char* LUA_GROUP_AFTER_MS = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(port, msg)
+    if midi.getNote(msg) == 1 then
+        local nrpn = midi.createNRPN()
+        midi.setNRPN(nrpn, 1, 130, 1000)
+        midiOut.sendAfterMs(nrpn, 10)
+    else
+        local cc14 = midi.createCc14bit()
+        midi.setCc14bit(cc14, 1, 1, 100.5)
+        midiOut.sendAfterMs(cc14, 10)
+    end
+end
+)";
+
+static const char* JS_GROUP_AFTER_TRIGGER = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+midi.onMessage = function(port, msg) {
+    if (midi.getNote(msg) === 1) {
+        let nrpn = midi.createNRPN();
+        midi.setNRPN(nrpn, 1, 130, 1000);
+        midiOut.sendAfterTrigger(nrpn, 1);
+    }
+    else {
+        let cc14 = midi.createCc14bit();
+        midi.setCc14bit(cc14, 1, 1, 100.5);
+        midiOut.sendAfterTrigger(cc14, 1);
+    }
+};
+)";
+
+static std::vector<int> controllers(const TimingRecorder& rec) {
+	std::vector<int> result;
+	for (auto& s : rec.sent) result.push_back(s.note);
+	return result;
+}
+
+TEST_CASE("Timing: a group sent with sendAfterMs is held and released whole, in order", "[MidiKit][timing]") {
+	const int64_t delay = int64_t(0.010 * Test::sampleRate());
+
+	for (const char* script : { JS_GROUP_AFTER_MS, LUA_GROUP_AFTER_MS }) {
+		CATCH_INFO(script);
+
+		SECTION("NRPN") {
+			TimingRig rig(script);
+			rig.inject(noteOn(0, 1, 100), 20);
+			rig.run(40);
+
+			// Every member waits for the delay; none escapes ahead of the leader.
+			REQUIRE(rig.rec.sent.empty());
+			REQUIRE(rig.m->midiOutput.frameQueue.size() == 4);
+
+			rig.run(20 + delay + 40);
+			REQUIRE(controllers(rig.rec) == std::vector<int>{99, 98, 6, 38});
+			// One release frame for the whole group.
+			for (auto& s : rig.rec.sent) REQUIRE(s.releasedAt == rig.rec.sent[0].releasedAt);
+		}
+
+		SECTION("14-bit CC") {
+			TimingRig rig(script);
+			rig.inject(noteOn(0, 2, 100), 20);
+			rig.run(40);
+
+			REQUIRE(rig.rec.sent.empty());
+			REQUIRE(rig.m->midiOutput.frameQueue.size() == 2);
+
+			rig.run(20 + delay + 40);
+			REQUIRE(controllers(rig.rec) == std::vector<int>{1, 33});
+			REQUIRE(rig.rec.sent[0].releasedAt == rig.rec.sent[1].releasedAt);
+		}
+	}
+}
+
+TEST_CASE("Timing: a group sent with sendAfterTrigger is released in order", "[MidiKit][timing]") {
+	TimingRig rig(JS_GROUP_AFTER_TRIGGER);
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	rig.run(8);
+	rig.inject(noteOn(0, 1, 100), 8);
+	rig.inject(noteOn(0, 2, 100), 8);
+	rig.run(45);
+	REQUIRE(rig.rec.sent.empty());
+
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+	rig.step();
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+
+	// Both groups sit on the same tick, so they are released together; each stays
+	// contiguous and in order.
+	REQUIRE(controllers(rig.rec) == std::vector<int>{99, 98, 6, 38, 1, 33});
+}

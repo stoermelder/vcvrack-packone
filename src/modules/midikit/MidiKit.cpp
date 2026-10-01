@@ -30,20 +30,27 @@ template <int TPORTS = 1>
 struct MidiOutput : midi::Output {
 	struct FrameSchedule {
 		midi::Message msg;
+		// Send order, so messages sharing a frame keep it: std::priority_queue
+		// is not stable, and a group (NRPN, 14-bit CC) shares one frame.
+		uint64_t seq;
 		bool operator<(const FrameSchedule& other) const {
-			return msg.frame > other.msg.frame;
+			if (msg.frame != other.msg.frame) return msg.frame > other.msg.frame;
+			return seq > other.seq;
 		}
 	};
 
 	struct TickSchedule {
 		midi::Message msg;
 		uint64_t tick;
+		uint64_t seq;
 		bool operator<(const TickSchedule& other) const {
-			return tick > other.tick;
+			if (tick != other.tick) return tick > other.tick;
+			return seq > other.seq;
 		}
 	};
 
 	std::priority_queue<FrameSchedule> frameQueue;
+	uint64_t nextSeq = 0;
 	// One tick queue per (trigger input, polyphonic channel), flattened as
 	// trigPort * PORT_MAX_CHANNELS + channel: sendAfterTrigger() schedules a
 	// message against a specific trigger input channel's clock, and only that
@@ -83,6 +90,7 @@ struct MidiOutput : midi::Output {
 			TickSchedule s;
 			s.msg = msg;
 			s.tick = tick;
+			s.seq = nextSeq++;
 			tickQueue[tickQueueIndex(channel, trigPort)].push(s);
 			return;
 		}
@@ -90,6 +98,7 @@ struct MidiOutput : midi::Output {
 		if (msg.frame != -1) {
 			FrameSchedule s;
 			s.msg = msg;
+			s.seq = nextSeq++;
 			frameQueue.push(s);
 			return;
 		}

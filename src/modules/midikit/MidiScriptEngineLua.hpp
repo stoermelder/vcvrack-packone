@@ -667,17 +667,21 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		for (size_t i : order) {
 			if (msgStore[i].isNrpn) {
 				// NRPN is 4 consecutive entries in msgStore, emitted atomically.
-				const Message group[4] = {
+				Message group[4] = {
 					msgStore[i].in.msg, msgStore[i + 1].in.msg,
 					msgStore[i + 2].in.msg, msgStore[i + 3].in.msg
 				};
+				// Only the leader went through a send binding, so only it carries
+				// a frame; the rest must follow it or the group is torn apart in time.
+				for (int k = 1; k < 4; k++) group[k].frame = group[0].frame;
 				handler->sendMidi(msgStore[i].midiPort, group, 4, msgStore[i].channel, msgStore[i].tick, msgStore[i].trigPort);
 			}
 			else if (msgStore[i].isCc14bit) {
 				// A 14-bit CC pair is 2 consecutive entries in msgStore (CC cc /
 				// CC cc+32), emitted atomically — a receiver must never see the
 				// MSB without its LSB.
-				const Message group[2] = { msgStore[i].in.msg, msgStore[i + 1].in.msg };
+				Message group[2] = { msgStore[i].in.msg, msgStore[i + 1].in.msg };
+				group[1].frame = group[0].frame;
 				handler->sendMidi(msgStore[i].midiPort, group, 2, msgStore[i].channel, msgStore[i].tick, msgStore[i].trigPort);
 			}
 			else {
