@@ -612,6 +612,32 @@ TEST_CASE("Variant: trigger outputs are addressed by index", "[MidiKit][Variant]
 	REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 0].getVoltage(0) == 0.f);
 }
 
+TEST_CASE("Variant: trigger outputs widen to the highest channel a script wrote", "[MidiKit][Variant]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	int64_t frame = 1;
+	auto step = [&]() { m->process(Test::makeProcessArgs(frame++)); };
+	// Rack gives a freshly connected output 1 channel.
+	for (int p = 0; p < 2; p++) m->outputs[MultiModule::OUTPUT_TRIG + p].channels = 1;
+	step();
+	REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 0].getChannels() == 1);
+
+	// Channel 4 of port 1 (0-based 3) via a held voltage, channel 2 of port 2 via a gate.
+	m->setTrigVoltage(0, 3, 4.f);
+	m->setTrig(1, 1, 1.f);
+	step();
+	REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 0].getChannels() == 4);
+	REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 0].getVoltage(3) == 4.f);
+	REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 1].getChannels() == 2);
+	REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 1].getVoltage(1) == 10.f);
+
+	// A script load starts mono again.
+	m->loadScript("");
+	step();
+	REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 0].getChannels() == 1);
+	REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 1].getChannels() == 1);
+}
+
 // ── Trigger ports through the script API ────────────────────────────────────
 //
 // The cases above drive the module directly. These load real scripts (both

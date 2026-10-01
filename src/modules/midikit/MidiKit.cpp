@@ -837,9 +837,20 @@ struct TriggerOutputs {
 	bool triggerActive[TPORTS][PORT_MAX_CHANNELS];
 	dsp::PulseGenerator pulseGenerator[TPORTS][PORT_MAX_CHANNELS];
 
+	// Worker side — widens the port to cover `channel`
+	void useChannel(int port, uint8_t channel) {
+		if (channel + 1 > output[port].getChannels()) output[port].setChannels(channel + 1);
+	}
+
+	// Script load — the outgoing script's channels are not the new one's.
+	void resetChannels() {
+		for (int p = 0; p < TPORTS; p++) output[p].setChannels(1);
+	}
+
 	// Worker side — trig.setGate(): marks channel active and arms its pulse.
 	void setGate(int port, uint8_t channel, float duration) {
 		if (port < 0 || port >= TPORTS) return;
+		useChannel(port, channel);
 		triggerActive[port][channel] = true;
 		pulseGenerator[port][channel].trigger(duration);
 	}
@@ -848,6 +859,7 @@ struct TriggerOutputs {
 	// raw voltage the caller writes wins on the output.
 	void setGateVoltage(int port, uint8_t channel) {
 		if (port < 0 || port >= TPORTS) return;
+		useChannel(port, channel);
 		triggerActive[port][channel] = false;
 	}
 
@@ -859,6 +871,7 @@ struct TriggerOutputs {
 				pulseGenerator[p][i].reset();
 			}
 		}
+		resetChannels();
 	}
 
 	// Audio thread — one sample of the output pulse loop for `port`. Writes
@@ -1718,6 +1731,9 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		// for the extended-CC enables: they belong to the outgoing script, not
 		// to the module.
 		triggersIn.reset();
+		// Likewise the trigger outputs drop back to mono until the new script
+		// writes a higher channel.
+		triggersOut.resetChannels();
 		// The port enables are not reset here: the outgoing script's onUnload() still
 		// needs them. The engines reset them once it has run (resetScriptState()).
 		// Raised before the load, so anything the new script schedules from
