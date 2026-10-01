@@ -733,6 +733,14 @@ end
 
 TEST_CASE("setProgramChange produces identical wire bytes", "[MidiKit][CrossEngine]") {
 	requireEquivalent(JS_PROGRAM_CHANGE, LUA_PROGRAM_CHANGE);
+
+	// Literal bytes too: equivalence alone passes with both engines wrong.
+	for (const char* script : {JS_PROGRAM_CHANGE, LUA_PROGRAM_CHANGE}) {
+		CATCH_INFO(script);
+		EngineResult r = run(script);
+		REQUIRE(r.sent.size() == 1);
+		REQUIRE(r.sent[0].bytes == std::vector<uint8_t>{0xc3, 10});
+	}
 }
 
 
@@ -791,6 +799,13 @@ end
 
 TEST_CASE("setChanPressure produces identical 2-byte wire message", "[MidiKit][CrossEngine]") {
 	requireEquivalent(JS_CHAN_PRESSURE, LUA_CHAN_PRESSURE);
+
+	for (const char* script : {JS_CHAN_PRESSURE, LUA_CHAN_PRESSURE}) {
+		CATCH_INFO(script);
+		EngineResult r = run(script);
+		REQUIRE(r.sent.size() == 1);
+		REQUIRE(r.sent[0].bytes == std::vector<uint8_t>{0xd4, 80});
+	}
 }
 
 

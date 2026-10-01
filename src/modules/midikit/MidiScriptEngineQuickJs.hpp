@@ -2118,7 +2118,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		MessageEx& s = getEngine(ctx)->msgStore[idx];
 		uint8_t ch = std::max(static_cast<uint8_t>(1), std::min(static_cast<uint8_t>(16), static_cast<uint8_t>(argNum(ctx, argv[1]))));
 		uint8_t prg = static_cast<uint8_t>(argNum(ctx, argv[2]));
-		if (s.in.msg.getSize() != 3) s.in.msg.setSize(3);
+		// Program Change is a 2-byte message (status + program), not 3: a stray
+		// third byte goes out as a second Program Change to program 0 on ALSA.
+		if (s.in.msg.getSize() != 2) s.in.msg.setSize(2);
 		s.in.msg.setStatus(0xc);
 		s.in.msg.setChannel(ch - 1);
 		s.in.msg.setNote(prg);

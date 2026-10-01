@@ -2116,7 +2116,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		MessageEx* m = getMsg(L, 1);
 		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
 		uint8_t prg = static_cast<uint8_t>(luaL_checkinteger(L, 3));
-		if (m->in.msg.getSize() != 3) m->in.msg.setSize(3);
+		// Program Change is a 2-byte message (status + program), not 3: a stray
+		// third byte goes out as a second Program Change to program 0 on ALSA.
+		if (m->in.msg.getSize() != 2) m->in.msg.setSize(2);
 		m->in.msg.setStatus(0xc);
 		m->in.msg.setChannel(ch - 1);
 		m->in.msg.setNote(prg);
