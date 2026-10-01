@@ -1014,7 +1014,9 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// waiting in the outputs' tick queues, but the tick counters they were
 	// counted against restart at 0, so they would fire at an arbitrary tick of
 	// the new script. The queues belong to the audio thread, hence the hand-off.
-	std::atomic<bool> clearTickQueuesPending{false};
+	// The same request also resets every input's decoder: its NRPN/RPN state is
+	// non-atomic and owned by the audio thread, so the UI thread must not touch it.
+	std::atomic<bool> clearPending{false};
 
 	// ── Tipsy protocol over the trigger CV (TipsyInput/TipsyOutput) ──────────
 	// All Tipsy encode/decode state lives in the TipsyOutput/TipsyInput structs;
@@ -1266,13 +1268,15 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		triggersOut.process(port, sampleTime);
 	}
 
-	// Audio thread — carries out a loadScript() request to drop the messages
-	// still waiting for a trigger tick (see clearTickQueuesPending). Runs
-	// before anything of this sample is drained, so what the new script
-	// schedules from rack.onLoad is queued afterwards and survives.
+	// Audio thread — carries out a loadScript() request (see
+	// clearPending): drops the messages still waiting for a trigger
+	// tick and the half-received NRPN/RPN/14-bit CC state of every input. Runs
+	// before anything of this sample is drained or decoded, so what the new
+	// script schedules from rack.onLoad is queued afterwards and survives.
 	void processTickQueueReset() {
-		if (clearTickQueuesPending.exchange(false)) {
+		if (clearPending.exchange(false)) {
 			for (int i = 0; i < MIDI_OUTPUTS; i++) midiOutputs[i].clearTickQueues();
+			for (int i = 0; i < MIDI_INPUTS; i++) midiInputs[i].processor.reset();
 		}
 	}
 
@@ -1709,10 +1713,6 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		seedTiming();
 		sample = 0;
 		timingLateLoggedAt = -1;
-		// The incoming script inherits no half-received NRPN/RPN/14-bit CC state
-		// from the previous one: assembly belongs to the script's view of the
-		// stream, not to the module.
-		midiProcessor.reset();
 		// Forgets every trig.enableIn()d channel (and its tick counter) BEFORE
 		// the new script loads, so it starts with all callbacks disabled. Same
 		// for the extended-CC enables: they belong to the outgoing script, not
@@ -1722,7 +1722,9 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		// needs them. The engines reset them once it has run (resetScriptState()).
 		// Raised before the load, so anything the new script schedules from
 		// rack.onLoad reaches the outputs after the audio thread has cleared.
-		clearTickQueuesPending.store(true);
+		// Also drops the half-received NRPN/RPN/14-bit CC state of every input:
+		// assembly belongs to the script's view of the stream, not to the module.
+		clearPending.store(true);
 		for (int i = 0; i < MIDI_INPUTS; i++) midiInputs[i].extendedCc.clear();
 		// Disable the outgoing script's ports/params before loading the new one.
 		bindPortParamEngine(nullptr);

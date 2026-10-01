@@ -767,6 +767,7 @@ TEST_CASE("Script reload clears enables and decoder state", "[MidiKit][MidiProce
 	// Reload with a script that defines the callbacks but does not enable.
 	m->loadScript(JS_RELOAD_B);
 	drainLog(m);   // discard reload chatter
+	feedMidiPump(m, {});   // the audio thread carries out the decoder reset
 
 	// The enable belongs to the outgoing script, and the decoder stream is
 	// discontinuous — both are cleared.

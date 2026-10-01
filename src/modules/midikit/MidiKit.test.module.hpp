@@ -1440,6 +1440,8 @@ TEST_CASE("Decoder state is cleared on reset and script load", "[MidiKit][MidiPr
 		// virtuals on it during module destruction, after it has gone out of scope.
 		m->host.getActiveEngine() = nullptr;
 		m->loadScript(LUA_SCRIPT);
+		// The reset is a request the audio thread carries out on its next sample.
+		m->process(Test::makeProcessArgs(frame++));
 		REQUIRE(m->midiProcessor.ccNrpnParam[0] == -1);
 	}
 

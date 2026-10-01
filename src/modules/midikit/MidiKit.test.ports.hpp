@@ -190,6 +190,35 @@ TEST_CASE("Variant: incoming MIDI reaches the script with its 1-based port", "[M
 	}
 }
 
+TEST_CASE("Variant: loadScript() drops half-received NRPN state on every MIDI input", "[MidiKit][Variant]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	m->loadScript(QUICKJS_EMPTY);
+	int64_t frame = 1;
+
+	// Arm an NRPN select (4/5) on each input. The enable is checked per input, so
+	// switch it on for all of them (the module has 2 inputs here)..
+	m->enableMidiIn(MultiModule::MIDI_INPUTS);
+	for (int i = 0; i < MultiModule::MIDI_INPUTS; i++) m->enableNrpnIn(i, 0, 3);
+	for (int i = 0; i < MultiModule::MIDI_INPUTS; i++) {
+		m->midiInputs[i].queue.onMessage(ccMsg(0, 99, 4));
+		m->midiInputs[i].queue.onMessage(ccMsg(0, 98, 5));
+	}
+	pump(m, frame);
+	for (int i = 0; i < MultiModule::MIDI_INPUTS; i++) {
+		CATCH_INFO("input " << i);
+		REQUIRE(m->midiInputs[i].processor.ccNrpnParam[0] == 4 * 128 + 5);
+	}
+
+	// The reset is a request the audio thread carries out on its next sample.
+	m->loadScript(QUICKJS_EMPTY);
+	pump(m, frame);
+	for (int i = 0; i < MultiModule::MIDI_INPUTS; i++) {
+		CATCH_INFO("input " << i);
+		REQUIRE(m->midiInputs[i].processor.ccNrpnParam[0] == -1);
+	}
+}
+
 TEST_CASE("Variant: extended-CC enables are per MIDI input", "[MidiKit][Variant]") {
 	MultiScaffold mods;
 	MultiModule* m = mods.create();
