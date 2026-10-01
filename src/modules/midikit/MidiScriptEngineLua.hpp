@@ -1556,7 +1556,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_trig_setGate(lua_State* L) {
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
-		if (n < 2) luaL_error(L, "trig.setGate: expected (port [,ch], duration)");
+		if (n < 2 || n > 3) luaL_error(L, "trig.setGate: expected (port [,ch], duration)");
 		int i = static_cast<int>(luaL_checkinteger(L, 1));
 		if (i < 1 || i > e->outputTrigCount) luaL_argerror(L, 1, "trig index out of range");
 		int ch = 1;
@@ -2136,6 +2136,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 		if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
 			luaL_error(L, "midi.setRaw: invalid hex string");
+		}
+		if (data.length() / 2 > static_cast<size_t>(MidiScriptEngine::sysExMaxPayloadLength) + 2) {
+			luaL_error(L, "midi.setRaw: message exceeds maximum of %d bytes", MidiScriptEngine::sysExMaxPayloadLength + 2);
 		}
 		m->in.msg.setSize(static_cast<int>(data.length() / 2));
 		for (size_t i = 0; i < data.length(); i += 2) {

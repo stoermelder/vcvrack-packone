@@ -848,7 +848,7 @@ struct TriggerOutputs {
 
 	// Worker side — trig.setGate(): marks channel active and arms its pulse.
 	void setGate(int port, uint8_t channel, float duration) {
-		if (port < 0 || port >= TPORTS) return;
+		if (port < 0 || port >= TPORTS || channel >= PORT_MAX_CHANNELS) return;
 		useChannel(port, channel);
 		triggerActive[port][channel] = true;
 		pulseGenerator[port][channel].trigger(duration);
@@ -857,7 +857,7 @@ struct TriggerOutputs {
 	// Worker side — trig.setHigh()/trig.setLow(): deactivates the pulse so the
 	// raw voltage the caller writes wins on the output.
 	void setGateVoltage(int port, uint8_t channel) {
-		if (port < 0 || port >= TPORTS) return;
+		if (port < 0 || port >= TPORTS || channel >= PORT_MAX_CHANNELS) return;
 		useChannel(port, channel);
 		triggerActive[port][channel] = false;
 	}
@@ -1093,6 +1093,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 	// MidiScriptEngineHandler
 	void enableInput(int i) override {
+		if (i < 0 || i >= CV_INPUTS) return;
 		reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->enabled = true;
 	}
 
@@ -1165,6 +1166,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 	// MidiScriptEngineHandler
 	float getInputVoltage(int i, uint8_t ch) override {
+		if (i < 0 || i >= CV_INPUTS || ch >= PORT_MAX_CHANNELS) return 0.f;
 		if (reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->enabled)
 			return inputs[INPUT + i].getVoltage(ch);
 		return 0.f;
@@ -1202,6 +1204,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 	// MidiScriptEngineHandler
 	float getTrigVoltage(int i, uint8_t ch) override {
+		if (i < 0 || i >= TRIG_INPUTS || ch >= PORT_MAX_CHANNELS) return 0.f;
 		// Only channel 0 of the claimed trigger input carries the Tipsy stream:
 		// that channel reads as 0 — the raw encoded voltages are protocol, not
 		// a gate a script should act on. Other channels are unaffected.
@@ -1216,11 +1219,13 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 	// MidiScriptEngineHandler
 	void enableParam(int i) override {
+		if (i < 0 || i >= PARAMS) return;
 		reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i])->enabled = true;
 	}
 
 	// MidiScriptEngineHandler
 	float getParamValue(int i) override {
+		if (i < 0 || i >= PARAMS) return 0.f;
 		if (reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i])->enabled)
 			return params[PARAM + i].getValue();
 		return 0.f;
@@ -1228,11 +1233,13 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 	// MidiScriptEngineHandler
 	void setTrig(int i, uint8_t ch, float duration = 1e-3f) override {
+		if (i < 0 || i >= TRIG_OUTPUTS || ch >= PORT_MAX_CHANNELS) return;
 		triggersOut.setGate(i, ch, duration);
 	}
 
 	// MidiScriptEngineHandler
 	void setTrigVoltage(int i, uint8_t ch, float voltage) override {
+		if (i < 0 || i >= TRIG_OUTPUTS || ch >= PORT_MAX_CHANNELS) return;
 		triggersOut.setGateVoltage(i, ch);
 		outputs[OUTPUT_TRIG + i].setVoltage(voltage, ch);
 	}
@@ -2107,11 +2114,14 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	}
 
 	void loadJs(std::string filename) {
-		resetLog();
-
-		// Read file; an unreadable one is ignored, like before
+		// Read first: an unreadable file leaves the running script and its log alone.
 		std::string script;
-		if (!vcv::fs::read(filename, script)) return;
+		if (!vcv::fs::read(filename, script)) {
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK,
+				string::f("Could not read the script file %s", filename.c_str()));
+			return;
+		}
+		resetLog();
 		module->loadScript(script);
 	}
 

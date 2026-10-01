@@ -1519,25 +1519,27 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	static JSValue js_trig_setLow(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc < 1 || argc > 2 || !argIsNumber(ctx, argv[0]) || (argc == 2 && !argIsNumber(ctx, argv[1])))
-			return jsThrow(ctx, "trig.setHigh: bad args");
+		if (argc < 1 || argc > 2 || !argIsNumber(ctx, argv[0]) || (argc == 2 && !argIsNumber(ctx, argv[1]))) {
+			return jsThrow(ctx, "trig.setLow: bad args");
+		}
 		int i = static_cast<int>(argNum(ctx, argv[0]));
 		if (i < 1 || i > getEngine(ctx)->outputTrigCount) return jsThrow(ctx, "trig.setLow: bad index");
 		int ch = 1;
 		if (argc == 2) ch = static_cast<int>(argNum(ctx, argv[1]));
-		if (ch < 1 || ch > PORT_MAX_CHANNELS) return jsThrow(ctx, "trig.setHigh: bad channel");
+		if (ch < 1 || ch > PORT_MAX_CHANNELS) return jsThrow(ctx, "trig.setLow: bad channel");
 		getEngine(ctx)->handler->setTrigVoltage(i - 1, ch - 1, 0.f);
 		return JS_UNDEFINED;
 	}
 
 	static JSValue js_trig_setTrigger(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc < 1 || argc > 2 || !argIsNumber(ctx, argv[0]) || (argc == 2 && !argIsNumber(ctx, argv[1])))
-			return jsThrow(ctx, "trig.setHigh: bad args");
+		if (argc < 1 || argc > 2 || !argIsNumber(ctx, argv[0]) || (argc == 2 && !argIsNumber(ctx, argv[1]))) {
+			return jsThrow(ctx, "trig.setTrigger: bad args");
+		}
 		int i = static_cast<int>(argNum(ctx, argv[0]));
 		if (i < 1 || i > getEngine(ctx)->outputTrigCount) return jsThrow(ctx, "trig.setTrigger: bad index");
 		int ch = 1;
 		if (argc == 2) ch = static_cast<int>(argNum(ctx, argv[1]));
-		if (ch < 1 || ch > PORT_MAX_CHANNELS) return jsThrow(ctx, "trig.setHigh: bad channel");
+		if (ch < 1 || ch > PORT_MAX_CHANNELS) return jsThrow(ctx, "trig.setTrigger: bad channel");
 		getEngine(ctx)->handler->setTrig(i - 1, ch - 1);
 		return JS_UNDEFINED;
 	}
@@ -2153,6 +2155,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 		if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
 			return jsThrow(ctx, "midi.setRaw: invalid hexstring");
+		}
+		// Same cap as setSysEx (plus its F0/F7 framing): the message is copied on the
+		// audio thread and must fit the out-queue's fixed-size entries.
+		if (data.length() / 2 > MidiScriptEngine::sysExMaxPayloadLength + 2) {
+			return jsThrow(ctx, string::f("midi.setRaw: message exceeds maximum of %d bytes", MidiScriptEngine::sysExMaxPayloadLength + 2).c_str());
 		}
 		s.in.msg.setSize(data.length() / 2);
 		for (size_t i = 0; i < data.length(); i += 2) {

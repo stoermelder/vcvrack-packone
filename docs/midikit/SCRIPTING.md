@@ -816,6 +816,11 @@ Notes:
   menu item is clicked, and may call any other `rack.*` function. Exceptions
   inside it are logged as `Context menu callback error: ...` without
   crashing.
+- **MIDI cannot be sent from `onChange` or `onGetValue`.** Neither is a MIDI
+  callback: a message created there is never sent (the log shows `called
+  outside a callback; the message is discarded`). To act on a menu choice with
+  MIDI, store it (a variable, or `rack.setConfig()`) and send from the next
+  `midi.onMessage` or `trig.onTrigger`.
 - The module's presentation state (checkmark/selection) is updated as soon as
   the item is clicked, so the menu reflects the change immediately even
   before the callback has run.

@@ -15,6 +15,13 @@ namespace __tipsy {
 namespace __engine {
 	namespace Catch = ::Catch;
 	#include "MidiKit.test.engine.hpp"
+	#include "MidiKit.test.engine.messages.hpp"
+	#include "MidiKit.test.engine.extended.hpp"
+	#include "MidiKit.test.engine.io.hpp"
+	#include "MidiKit.test.engine.lifecycle.hpp"
+	#include "MidiKit.test.engine.config.hpp"
+	#include "MidiKit.test.engine.callbacks.hpp"
+	#include "MidiKit.test.engine.robustness.hpp"
 }
 namespace __minilua {
 	namespace Catch = ::Catch;
