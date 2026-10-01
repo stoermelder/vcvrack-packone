@@ -2203,7 +2203,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		MessageEx* m = getPortMsg(L);
 		m->send = true;
 		m->sendOrder = getEngine(L)->sendCounter++;
-		m->in.msg.frame = -1;
+		m->in.msg.frame = getEngine(L)->frameForSend();
 		m->tick = 0;
 		return 0;
 	}

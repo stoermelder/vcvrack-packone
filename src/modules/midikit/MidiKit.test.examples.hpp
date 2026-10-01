@@ -198,6 +198,7 @@ struct PresetInfo {
 static const PresetInfo PRESETS[] = {
 	{"", "MPE to single channel", true},
 	{"", "Clock divider", true},
+	{"", "Clock multiplier", false},   // trigger-clocked; emits nothing for MIDI traffic
 	{"", "Note length quantiser", true},
 	{"", "Velocity curve", true},
 	{"", "Scale quantiser", true},
@@ -2083,6 +2084,89 @@ TEST_CASE("'Clock divider.js/.lua' passes non-clock messages through unchanged",
 	auto ev = feedCollect(m, cc(1, 20, 100));
 	REQUIRE(ev == std::vector<OutEvent>{{0xb, 1, 20, 100, 0}});
 
+	Test::destroyModule(m);
+}
+
+// Behavioural tests for the Clock multiplier preset. Unlike the divider, it is
+// clocked by the trigger input and enables sample-accurate timing, so these run
+// the module's process() sample by sample and read what reaches the output
+// device: the frame each clock pulse carries.
+
+// Records the frame of every message that reaches the device.
+struct PulseRecorder : midi::OutputDevice {
+	std::vector<int64_t> frames;
+	std::vector<int> statuses;
+	void sendMessage(const midi::Message& msg) override {
+		frames.push_back(msg.frame);
+		statuses.push_back(msg.getStatus());
+	}
+};
+
+// Steps the module from frame `from` to `until`, driving trigger input 1 with a
+// one-frame pulse on each of `edges`.
+static void driveClockEdges(MidiKitModule* m, const std::vector<int64_t>& edges, int64_t from, int64_t until) {
+	size_t next = 0;
+	for (int64_t f = from; f < until; f++) {
+		bool high = next < edges.size() && edges[next] == f;
+		if (high) next++;
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(high ? 10.f : 0.f);
+		m->process(Test::makeProcessArgs(f));
+	}
+}
+
+TEST_CASE("'Clock multiplier.js/.lua' spaces its pulses over the previous period", "[MidiKit][ClockMultiplier]") {
+	std::string path = GENERATE(presetPaths("Clock multiplier"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	PulseRecorder rec;
+	m->midiOutput.outputDevice = &rec;
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	// Starts past 2^24, where a float would no longer hold every frame exactly.
+	const int64_t base = (int64_t(1) << 25) + 1;
+
+	// Default multiplier 24, input period 480: three edges.
+	driveClockEdges(m, { base + 100, base + 580, base + 1060 }, base, base + 1600);
+
+	// The first edge sends its own pulse only, the period is not known yet. Each
+	// later edge sends one on its own frame and 23 more, 20 frames apart.
+	std::vector<int64_t> expected = { base + 100 };
+	for (int64_t edge : { base + 580, base + 1060 }) {
+		expected.push_back(edge);
+		for (int k = 1; k < 24; k++) expected.push_back(edge + k * 20);
+	}
+	REQUIRE(rec.frames == expected);
+	for (int status : rec.statuses) REQUIRE(status == 0xf);
+
+	m->midiOutput.outputDevice = nullptr;
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Clock multiplier.js/.lua' treats a long gap as a restart", "[MidiKit][ClockMultiplier]") {
+	std::string path = GENERATE(presetPaths("Clock multiplier"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	PulseRecorder rec;
+	m->midiOutput.outputDevice = &rec;
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	// The third edge is 8 periods after the second: the clock was stopped.
+	driveClockEdges(m, { 100, 580, 4420, 4900 }, 0, 6000);
+
+	// Only the pulse for the restart edge itself follows it, none of the pulses a
+	// slow tempo would have scattered over the next 3800 frames.
+	auto at = std::find(rec.frames.begin(), rec.frames.end(), 4420);
+	REQUIRE(at != rec.frames.end());
+	REQUIRE(*(at + 1) == 4900);
+
+	// The edge after it measures the new period (480) and subdivides again.
+	for (int k = 1; k < 24; k++) {
+		REQUIRE(std::find(rec.frames.begin(), rec.frames.end(), 4900 + k * 20) != rec.frames.end());
+	}
+
+	m->midiOutput.outputDevice = nullptr;
 	Test::destroyModule(m);
 }
 

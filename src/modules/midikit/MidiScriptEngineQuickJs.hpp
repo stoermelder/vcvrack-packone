@@ -2194,7 +2194,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		s.midiPort = getEngine(ctx)->selectedPort;
 		s.send = true;
 		s.sendOrder = getEngine(ctx)->sendCounter++;
-		s.in.msg.frame = -1;
+		s.in.msg.frame = getEngine(ctx)->frameForSend();
 		return JS_UNDEFINED;
 	}
 

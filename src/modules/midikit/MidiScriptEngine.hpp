@@ -333,6 +333,12 @@ struct MidiScriptEngine {
 		return base + int64_t(sr > 0.f ? ms / 1000.0 * sr : 0.0);
 	}
 
+	// The frame for send: the causing event's in timing mode (-1 outside an
+	// event), always -1 otherwise.
+	int64_t frameForSend() const {
+		return handler->isTimingEnabled() ? currentInFrame : -1;
+	}
+
 	// The frame for sendAtFrame. Negative values collide with the -1 "no frame"
 	// encoding, so they all mean "no frame".
 	static int64_t frameAtFrame(double frame) {

@@ -443,7 +443,7 @@ TEST_CASE("Timing mode: the opt-in is per script and forgotten on reload", "[Mid
 	}
 }
 
-TEST_CASE("Timing mode: a reply carries a frame instead of -1", "[MidiKit][timing]") {
+TEST_CASE("Timing mode: a reply carries the frame of the message it answers", "[MidiKit][timing]") {
 	for (const char* script : TIMING_SCRIPTS) {
 		CATCH_INFO(script);
 		TimingRig rig(withTiming(script).c_str());
@@ -452,8 +452,9 @@ TEST_CASE("Timing mode: a reply carries a frame instead of -1", "[MidiKit][timin
 		rig.run(40);
 
 		REQUIRE(rig.rec.sent.size() == 1);
-		// Stamped with the hand-over frame, so Rack places it.
-		REQUIRE(rig.rec.sent[0].frameField == rig.rec.sent[0].releasedAt);
+		// The arrival frame, not the later frame the script ran on.
+		REQUIRE(rig.rec.sent[0].frameField == 20);
+		REQUIRE(rig.rec.sent[0].releasedAt == 23);
 		REQUIRE(rig.rec.sent[0].note == 60);
 	}
 }
@@ -488,6 +489,8 @@ TEST_CASE("Timing mode: messages sharing a frame get strictly increasing frames 
 		REQUIRE(rig.rec.sent[1].note == 60);
 		REQUIRE(rig.rec.sent[2].note == 64);
 		REQUIRE(rig.rec.sent[3].note == 67);
+		// All answer frame 20, spread one sample apart in send order.
+		for (int i = 0; i < 4; i++) REQUIRE(rig.rec.sent[i].frameField == 20 + i);
 	}
 }
 
@@ -954,4 +957,60 @@ rack.onLoad = function() {
 
 	REQUIRE(m->midiOutput.frameQueue.size() == 1);
 	REQUIRE(m->midiOutput.frameQueue.top().msg.frame == 1000 + delay);
+}
+
+TEST_CASE("Timing mode: send() takes the frame of the event it runs in", "[MidiKit][timing]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midiOut.enableTiming();
+trig.enableIn(1, 1);
+trig.onTrigger = function(port, ch) {
+    let m = midi.create();
+    midi.setNoteOn(m, 1, 61, 100);
+    midiOut.send(m);
+};
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+midiOut.enableTiming()
+trig.enableIn(1, 1)
+trig.onTrigger = function(port, ch)
+    local m = midi.create()
+    midi.setNoteOn(m, 1, 61, 100)
+    midiOut.send(m)
+end
+)";
+	for (const char* script : { js, lua }) {
+		CATCH_INFO(script);
+		TimingRig rig(script);
+		rig.m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+		rig.run(30);
+		rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+		rig.step();   // the edge is on frame 30
+		rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+		rig.run(50);
+
+		REQUIRE(rig.rec.sent.size() == 1);
+		REQUIRE(rig.rec.sent[0].frameField == 30);
+	}
+}
+
+TEST_CASE("Timing mode: send() outside an event goes out stamped with the current frame", "[MidiKit][timing]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midiOut.enableTiming();
+rack.onLoad = function() {
+    let m = midi.create();
+    midi.setNoteOn(m, 1, 60, 100);
+    midiOut.send(m);
+};
+)";
+	TimingRig rig(js);
+	rig.run(20);
+
+	REQUIRE(rig.rec.sent.size() == 1);
+	REQUIRE(rig.rec.sent[0].frameField == rig.rec.sent[0].releasedAt);
 }
