@@ -12,6 +12,7 @@
 #include "../midi/MidiProcessor.hpp"
 #include "tipsy-encoder/include/tipsy/tipsy.h"
 #include <atomic>
+#include <queue>
 
 namespace StoermelderPackOne {
 namespace MidiKit {
