@@ -154,6 +154,10 @@ for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
 
 -- Setup
 rack.onLoad = function()
+    -- Notes leave on the frame of the clock edge instead of a block boundary.
+    -- Costs one audio block of latency.
+    midiOut.enableTiming()
+
     param.enable(1)
     param.enable(2)
     param.enable(3)

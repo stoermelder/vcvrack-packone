@@ -100,6 +100,10 @@ function spawnBall(ch, note, vel) {
 
 // Setup
 rack.onLoad = function() {
+    // Echoes leave on their exact frame instead of a block boundary, which keeps
+    // the shrinking gaps even. Costs one audio block of latency, dry note included.
+    midiOut.enableTiming();
+
     param.enable(1);
     param.enable(2);
     param.enable(3);

@@ -2096,9 +2096,11 @@ TEST_CASE("'Clock divider.js/.lua' passes non-clock messages through unchanged",
 struct PulseRecorder : midi::OutputDevice {
 	std::vector<int64_t> frames;
 	std::vector<int> statuses;
+	std::vector<int> notes;
 	void sendMessage(const midi::Message& msg) override {
 		frames.push_back(msg.frame);
 		statuses.push_back(msg.getStatus());
+		notes.push_back(msg.getNote());
 	}
 };
 
@@ -3611,5 +3613,123 @@ TEST_CASE("'Port router.js/.lua' the Active output menu follows the number of ou
 	REQUIRE(ev[0].port == 1);
 
 	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	Test::destroyModule(m);
+}
+
+
+// Behavioural tests for the presets that switch on sample-accurate timing
+// (Bouncing ball delay, Arpeggiator, Euclidean rhythm generator). They run the
+// module's process() and read the frame each message carries at the output
+// device, which is where timing is decided: with timing on, a note sits on the
+// frame of the clock edge or of the note that caused it, instead of leaving at
+// whatever block boundary came next.
+
+static void sendInputAt(MidiKitModule* m, midi::Message msg, int64_t frame) {
+	msg.frame = frame;
+	m->midiInput.onMessage(msg);
+}
+
+TEST_CASE("'Euclidean rhythm generator.js/.lua' places its notes on the clock edges", "[MidiKit][EuclidRhythm][Timing]") {
+	std::string path = GENERATE(presetPaths("Euclidean rhythm generator"));
+	CATCH_INFO("preset: " << path);
+
+	// 4 steps, 2 fills: hits on ticks 2, 4, 6 and 8.
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(0.2f);
+	m->params[MidiKitModule::PARAM + 1].setValue(0.5f);
+	m->params[MidiKitModule::PARAM + 2].setValue(0.5f);
+	m->params[MidiKitModule::PARAM + 3].setValue(0.25f);
+	drainLog(m);
+	PulseRecorder rec;
+	m->midiOutput.outputDevice = &rec;
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	std::vector<int64_t> edges;
+	for (int i = 0; i < 8; i++) edges.push_back(1000 + 480 * i);
+	driveClockEdges(m, edges, 0, 5000);
+
+	// A hit on tick i cuts the previous note and starts the next one on the same
+	// edge, so the note-on follows the note-off one sample later.
+	std::vector<int64_t> onFrames;
+	for (size_t i = 0; i < rec.frames.size(); i++) {
+		REQUIRE(rec.frames[i] >= 0);
+		if (rec.statuses[i] == 0x9) onFrames.push_back(rec.frames[i]);
+	}
+	REQUIRE(onFrames.size() == 4);
+	REQUIRE(onFrames[0] == edges[1]);
+	for (int k = 0; k < 4; k++) {
+		int64_t late = onFrames[k] - edges[1 + 2 * k];
+		REQUIRE(late >= 0);
+		REQUIRE(late <= 1);
+	}
+
+	m->midiOutput.outputDevice = nullptr;
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Arpeggiator.js/.lua' places its notes and note-offs on the clock edges", "[MidiKit][Arpeggiator][Timing]") {
+	std::string path = GENERATE(presetPaths("Arpeggiator"));
+	CATCH_INFO("preset: " << path);
+
+	// 4 ticks per step, half-length notes (2 ticks), one octave, Up.
+	MidiKitModule* m = loadArp(path, 0.35f, 0.f, 0.5f, 0.f);
+	PulseRecorder rec;
+	m->midiOutput.outputDevice = &rec;
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	sendInputAt(m, noteOn(1, 60, 100), 100);
+	std::vector<int64_t> edges;
+	for (int i = 0; i < 9; i++) edges.push_back(1000 + 480 * i);
+	driveClockEdges(m, edges, 0, 6000);
+
+	// The first note starts on the 4th edge and its note-off, scheduled two ticks
+	// ahead, leaves on the frame of the 6th. The next step cuts the note on the
+	// 8th edge and starts the next one a sample behind it.
+	REQUIRE(rec.statuses == std::vector<int>{0x9, 0x8, 0x8, 0x9});
+	REQUIRE(rec.frames[0] == edges[3]);
+	REQUIRE(rec.frames[1] == edges[5]);
+	REQUIRE(rec.frames[2] == edges[7]);
+	REQUIRE(rec.frames[3] == edges[7] + 1);
+
+	m->midiOutput.outputDevice = nullptr;
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Bouncing ball delay.js/.lua' places its echoes on exact frames from the note", "[MidiKit][BouncingBall][Timing]") {
+	std::string path = GENERATE(presetPaths("Bouncing ball delay"));
+	CATCH_INFO("preset: " << path);
+
+	// Gravity 0 (even gaps of 250 ms), no velocity decay: the 12-echo cap.
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(0.f);
+	m->params[MidiKitModule::PARAM + 1].setValue(1.f);
+	m->params[MidiKitModule::PARAM + 2].setValue(0.f);
+	drainLog(m);
+	PulseRecorder rec;
+	m->midiOutput.outputDevice = &rec;
+
+	const int64_t arrival = 5000;
+	double sr = m->sampleRate.load();
+	auto after = [&](double ms) { return arrival + int64_t(ms / 1000.0 * sr); };
+
+	sendInputAt(m, noteOn(1, 60, 100), arrival);
+	driveClockEdges(m, {}, 0, after(12 * 250 + 40) + 200);
+
+	// The dry note is on the frame of its input; echo k starts 250 ms * k later
+	// and its 40 ms gate ends after that.
+	std::vector<int64_t> expectedOn = { arrival };
+	std::vector<int64_t> expectedOff;
+	for (int k = 1; k <= 12; k++) {
+		expectedOn.push_back(after(250.0 * k));
+		expectedOff.push_back(after(250.0 * k + 40.0));
+	}
+	std::vector<int64_t> on, off;
+	for (size_t i = 0; i < rec.frames.size(); i++) {
+		(rec.statuses[i] == 0x9 ? on : off).push_back(rec.frames[i]);
+	}
+	REQUIRE(on == expectedOn);
+	REQUIRE(off == expectedOff);
+
+	m->midiOutput.outputDevice = nullptr;
 	Test::destroyModule(m);
 }
