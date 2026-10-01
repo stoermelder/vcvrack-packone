@@ -6,12 +6,11 @@
 #include "../../components/LedTextField.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "../../vcv/ui.hpp"
+#include "../../vcv/fs.hpp"
 #include "../../vcv/engine.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
 #include "../midi/MidiProcessor.hpp"
 #include "tipsy-encoder/include/tipsy/tipsy.h"
-#include <osdialog.h>
-#include <fstream>
 #include <queue>
 #include <atomic>
 
@@ -2043,10 +2042,10 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Script"));
 		menu->addChild(createSubmenuItem("Examples (JavaScript)", "", [=](Menu* menu) {
-			appendExampleItems(menu, asset::plugin(pluginInstance, "presets/MidiKit/JavaScript"), ".js");
+			appendExampleItems(menu, vcv::fs::getPluginDirectory("presets/MidiKit/JavaScript"), ".js");
 		}));
 		menu->addChild(createSubmenuItem("Examples (Lua)", "", [=](Menu* menu) {
-			appendExampleItems(menu, asset::plugin(pluginInstance, "presets/MidiKit/Lua"), ".lua");
+			appendExampleItems(menu, vcv::fs::getPluginDirectory("presets/MidiKit/Lua"), ".lua");
 		}));
 		menu->addChild(createMenuItem("Clear", "", [=]() { module->clearScript(); }));
 		menu->addChild(createMenuItem("Paste from clipboard", RACK_MOD_ALT_NAME "+V", [=]() { pasteJsClipboard(); }));
@@ -2080,8 +2079,9 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	virtual void appendStatusMenuItems(Menu* menu) {}
 
 	int nextOverlayMessageId() override {
-		if (!module || module->log.overlayQueue.empty())
+		if (!module || module->log.overlayQueue.empty()) {
 			return -1;
+		}
 		return module->log.overlayQueue.shift();
 	}
 
@@ -2093,19 +2093,11 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	}
 
 	void loadJsDialog() {
-		osdialog_filters* filters = osdialog_filters_parse("MIDI-KIT file:js,lua");
-		DEFER({
-			osdialog_filters_free(filters);
-		});
-
-		char* path = osdialog_file(OSDIALOG_OPEN, "", NULL, filters);
-		if (!path) {
+		std::string path = vcv::ui::openDialog("MIDI-KIT file:js,lua", "");
+		if (path.empty()) {
 			// No path selected
 			return;
 		}
-		DEFER({
-			free(path);
-		});
 
 		filename = path;
 		loadJs(path);
@@ -2114,31 +2106,22 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	void loadJs(std::string filename) {
 		resetLog();
 
-		// Read file
-		std::ifstream file;
-		file.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-		try {
-			file.open(filename);
-			std::stringstream buffer;
-			buffer << file.rdbuf();
-			std::string script = buffer.str();
-			module->loadScript(script);
-		}
-		catch (const std::runtime_error& err) {
-			// Fail silently
-		}
+		// Read file; an unreadable one is ignored, like before
+		std::string script;
+		if (!vcv::fs::read(filename, script)) return;
+		module->loadScript(script);
 	}
 
 	// Returns true if dir (or any of its subfolders, recursively) contains at
 	// least one script file with the given extension. Used to avoid creating
 	// empty submenus for folders that hold no scripts of the active engine.
 	bool hasExampleScripts(std::string dir, std::string ext) {
-		if (!system::isDirectory(dir)) return false;
-		for (std::string path : system::getEntries(dir)) {
-			if (system::isDirectory(path)) {
+		if (!vcv::fs::isDirectory(dir)) return false;
+		for (std::string path : vcv::fs::getEntries(dir)) {
+			if (vcv::fs::isDirectory(path)) {
 				if (hasExampleScripts(path, ext)) return true;
 			}
-			else if (system::getExtension(path) == ext) {
+			else if (vcv::fs::getExtension(path) == ext) {
 				return true;
 			}
 		}
@@ -2152,25 +2135,25 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	// ignored. Subfolders are listed before files within each directory.
 	void appendExampleItems(Menu* menu, std::string dir, std::string ext) {
 		bool hasExamples = false;
-		if (system::isDirectory(dir)) {
-			std::vector<std::string> entries = system::getEntries(dir);
+		if (vcv::fs::isDirectory(dir)) {
+			std::vector<std::string> entries = vcv::fs::getEntries(dir);
 			std::sort(entries.begin(), entries.end());
 			// Subfolders first (sorted)
 			for (std::string path : entries) {
-				if (!system::isDirectory(path)) continue;
+				if (!vcv::fs::isDirectory(path)) continue;
 				if (!hasExampleScripts(path, ext)) continue;
 				hasExamples = true;
-				std::string name = system::getFilename(path);
+				std::string name = vcv::fs::getFilename(path);
 				menu->addChild(createSubmenuItem(name, "", [=](Menu* menu) {
 					appendExampleItems(menu, path, ext);
 				}));
 			}
 			// Files second (sorted)
 			for (std::string path : entries) {
-				if (system::isDirectory(path)) continue;
-				if (system::getExtension(path) != ext) continue;
+				if (vcv::fs::isDirectory(path)) continue;
+				if (vcv::fs::getExtension(path) != ext) continue;
 				hasExamples = true;
-				std::string name = system::getStem(path);
+				std::string name = vcv::fs::getStem(path);
 				menu->addChild(createMenuItem(name, "", [=]() {
 					filename = path;
 					loadJs(path);
@@ -2183,25 +2166,26 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	}
 
 	void saveScriptDialog() {
-		if (module->host.script == "")
-			return;
-
-		std::string dir = asset::userDir;
-		std::string filename = "script.js";
-		char* newPathC = osdialog_file(OSDIALOG_SAVE, dir.c_str(), filename.c_str(), NULL);
-		if (!newPathC) {
+		if (module->host.script == "") {
 			return;
 		}
-		std::string newPath = newPathC;
-		std::free(newPathC);
-		// Add extension if user didn't specify one
-		std::string newExt = system::getExtension(system::getFilename(newPath));
-		if (newExt == "") newPath += ".js";
 
-		// Write and close file
-		{
-			std::ofstream f(newPath);
-			f << module->host.script;
+		const std::string& script = module->host.script;
+		std::string ext = module->host.isLuaEngine() ? ".lua" : ".js";
+
+		std::string dir = vcv::fs::getUserDirectory("");
+		std::string filename = "script" + ext;
+		std::string newPath = vcv::ui::saveDialog("", dir, filename);
+		if (newPath.empty()) {
+			return;
+		}
+		// Add extension if user didn't specify one
+		std::string newExt = vcv::fs::getExtension(vcv::fs::getFilename(newPath));
+		if (newExt == "") newPath += ext;
+
+		if (!vcv::fs::write(newPath, script)) {
+			std::string msg = string::f("Could not save the script to %s", newPath.c_str());
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, msg);
 		}
 	}
 
@@ -2238,14 +2222,13 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	}
 
 	void pasteJsClipboard() {
-		const char* script = glfwGetClipboardString(APP->window->win);
-		if (!module || !script) return;
+		std::string script = vcv::ui::getClipboard();
+		if (!module || script.empty()) return;
 		module->loadScript(script);
 	}
 
 	void copyJsClipboard() {
-		const char* script = module->host.script.c_str();
-		glfwSetClipboardString(APP->window->win, script);
+		vcv::ui::setClipboard(module->host.script);
 	}
 };
 
