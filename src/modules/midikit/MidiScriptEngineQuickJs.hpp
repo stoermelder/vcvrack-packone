@@ -162,7 +162,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	void loadScriptOnWorker(const char* script, const std::string& initialConfigJson) override {
 		assert(onWorkerThread());
 		closeStateOnWorker();
-		handler->sendTipsyOutReset();
+		handler->resetScriptState();
 
 		// Install the initial config as part of THIS queued task, before any
 		// script code runs — loadScript() is fire-and-forget, so a separate

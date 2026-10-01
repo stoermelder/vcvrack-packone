@@ -1354,3 +1354,39 @@ end
 		}
 	}
 }
+
+TEST_CASE("sendAfterMs with -1 waits two blocks and a frame after the base frame", "[MidiKit][timing]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    midiOut.sendAfterMs(msg, -1);
+};
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(port, msg)
+    midiOut.sendAfterMs(msg, -1)
+end
+)";
+	for (const char* script : { js, lua }) {
+		for (int64_t block : { 64, 256, 2048 }) {
+			for (bool timing : { false, true }) {
+				CATCH_INFO(script);
+				CATCH_INFO(block);
+				CATCH_INFO(timing);
+				BlockMockScope blocks(0, block);
+				TimingRig rig(timing ? withTiming(script).c_str() : script);
+				rig.inject(noteOn(0, 60, 100), 20);
+				rig.run(40);
+
+				// Input at 20, dispatched on the divider tick at 23: timing mode counts
+				// from the input, legacy mode from the frame the script ran on.
+				int64_t base = timing ? 20 : 23;
+				REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
+				REQUIRE(rig.m->midiOutput.frameQueue.top().msg.frame == base + 2 * block + 1);
+			}
+		}
+	}
+}

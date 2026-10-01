@@ -970,9 +970,11 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// midiOut.enableTiming(true): log messages that reached Rack too late.
 	std::atomic<bool> timingReportLate{false};
 	// Audio thread: `sample` of the last late-message log line, -1 for none yet.
-	int64_t lateLoggedAt = -1;
+	int64_t timingLateLoggedAt = -1;
 	// Frame of the latest process() call, for code without ProcessArgs.
-	std::atomic<int64_t> currentFrame{0};
+	std::atomic<int64_t> timingCurrentFrame{0};
+	// The engine's block size, published from the audio thread.
+	std::atomic<int64_t> timingBlockFrames{0};
 
 	// Outputs already reported as dropping messages, so a
 	// script sending to a disabled port logs once, not per message.
@@ -1082,16 +1084,19 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		if (count > midiOutCount.load(std::memory_order_relaxed)) midiOutCount.store(count, std::memory_order_relaxed);
 	}
 
-	// process() publishes currentFrame, but a script loads asynchronously and its
+	// process() publishes timingCurrentFrame, but a script loads asynchronously and its
 	// rack.onLoad can run before the first process(), so loadScript() seeds it
 	// from the engine. UI thread.
-	void seedCurrentFrame() {
-		currentFrame.store(vcv::engine::getFrame(), std::memory_order_relaxed);
+	void seedTiming() {
+		timingCurrentFrame.store(vcv::engine::getFrame(), std::memory_order_relaxed);
 	}
 
 	// MidiScriptEngineHandler
-	int64_t getCurrentFrame() const override {
-		return currentFrame.load(std::memory_order_relaxed);
+	int64_t getTimingCurrentFrame() const override {
+		return timingCurrentFrame.load(std::memory_order_relaxed);
+	}
+	int64_t getTimingBlockFrames() const override {
+		return timingBlockFrames.load(std::memory_order_relaxed);
 	}
 	float getSampleRate() const override {
 		return sampleRate.load(std::memory_order_relaxed);
@@ -1112,6 +1117,12 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	}
 	bool isMidiOutEnabled(int port) const {
 		return port < midiOutCount.load(std::memory_order_relaxed);
+	}
+
+	// MidiScriptEngineHandler — after the outgoing script's onUnload (worker thread).
+	void resetScriptState() override {
+		resetMidiPortEnables();
+		tipsyOut.reset();
 	}
 
 	// Back to "only port 1 of each" — what a script starts with.
@@ -1251,12 +1262,6 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		return true;
 	}
 
-	// MidiScriptEngineHandler
-	void sendTipsyOutReset() override {
-		tipsyOut.reset();
-	}
-
-
 	void processTriggerOutput(int port, float sampleTime) {
 		triggersOut.process(port, sampleTime);
 	}
@@ -1302,9 +1307,9 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 						// tick clock of the trigger input they were scheduled
 						// against, for every output.
 						for (int o = 0, n = midiOutCount.load(std::memory_order_relaxed); o < n; o++) {
-							midiOutputs[o].processTick(c, tick, port, currentFrame.load(std::memory_order_relaxed));
+							midiOutputs[o].processTick(c, tick, port, timingCurrentFrame.load(std::memory_order_relaxed));
 						}
-						host.queueTick(port, c, currentFrame.load(std::memory_order_relaxed));
+						host.queueTick(port, c, timingCurrentFrame.load(std::memory_order_relaxed));
 					});
 			}
 		}
@@ -1350,7 +1355,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 			[&](const TipsyInput::TipsyMessage& m) {
 				if (host.getActiveEngine()->tipsyInQueue.full()) return false;
 				TipsyInput::TipsyMessage q = m;
-				q.frame = currentFrame.load(std::memory_order_relaxed);
+				q.frame = timingCurrentFrame.load(std::memory_order_relaxed);
 				host.getActiveEngine()->tipsyInQueue.push(q);
 				return true;
 			});
@@ -1441,8 +1446,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		}
 		for (int i = 0; i < MIDI_OUTPUTS; i++) midiOutputs[i].reset();
 		sample = 0;
-		lateLoggedAt = -1;
-		resetMidiPortEnables();
+		timingLateLoggedAt = -1;
 		// No script claims the trigger input until its trig.enableIn() runs.
 		triggersIn.reset();
 		// Likewise no NRPN/RPN/14-bit assembly until midi.enableNrpnIn() and
@@ -1462,6 +1466,8 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		// same reasoning as loadScript(): once this returns, activeEngine is
 		// again the only engine that can have any outstanding worker task.
 		host.closeState();
+		// After the closing script's onUnload(), which may send to an enabled port.
+		resetMidiPortEnables();
 
 		log.push(LOG_FORMAT::RESET, 0.f, std::string(""));
 		log.push(LOG_FORMAT::TEXT, 0.f, std::string("No script"));
@@ -1538,13 +1544,13 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		}
 		float sr = sampleRate;
 		if (count == 0 || sr <= 0.f) return;
-		if (lateLoggedAt >= 0 && int64_t(sample) - lateLoggedAt < int64_t(sr)) return;
+		if (timingLateLoggedAt >= 0 && int64_t(sample) - timingLateLoggedAt < int64_t(sr)) return;
 
 		for (int i = 0; i < n; i++) {
 			midiOutputs[i].lateCount = 0;
 			midiOutputs[i].lateWorst = 0;
 		}
-		lateLoggedAt = int64_t(sample);
+		timingLateLoggedAt = int64_t(sample);
 		log.push(LOG_FORMAT::TEXT, float(sample) / sr,
 			string::f("Timing: %u message(s) reached the output too late, worst by %.1f ms", count, 1000.f * float(worst) / sr));
 	}
@@ -1573,7 +1579,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 			return;
 		*/
 
-		currentFrame.store(args.frame, std::memory_order_relaxed);
+		timingCurrentFrame.store(args.frame, std::memory_order_relaxed);
 		processTickQueueReset();
 		processTriggerInputs();
 
@@ -1582,6 +1588,8 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		processTipsyInput();
 
 		if (processDivider.process()) {
+			timingBlockFrames.store(vcv::engine::getBlockFrames(), std::memory_order_relaxed);
+
 			// Pumped here rather than via midiProcessor.process() because each
 			// decoded message must be queued for the worker thread, not
 			// dispatched inline: processMessage() notifies processMidi() below
@@ -1698,9 +1706,9 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	}
 
 	void loadScript(std::string s, std::string configJson = "") {
-		seedCurrentFrame();
+		seedTiming();
 		sample = 0;
-		lateLoggedAt = -1;
+		timingLateLoggedAt = -1;
 		// The incoming script inherits no half-received NRPN/RPN/14-bit CC state
 		// from the previous one: assembly belongs to the script's view of the
 		// stream, not to the module.
@@ -1710,7 +1718,8 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		// for the extended-CC enables: they belong to the outgoing script, not
 		// to the module.
 		triggersIn.reset();
-		resetMidiPortEnables();
+		// The port enables are not reset here: the outgoing script's onUnload() still
+		// needs them. The engines reset them once it has run (resetScriptState()).
 		// Raised before the load, so anything the new script schedules from
 		// rack.onLoad reaches the outputs after the audio thread has cleared.
 		clearTickQueuesPending.store(true);
@@ -1722,6 +1731,9 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		// Select the engine for the script and load it, closing the outgoing
 		// engine (blocking) — see ScriptHost::load().
 		MidiScript::MidiScriptEngine* engine = host.load(s, configJson);
+		// No engine will load, so nothing resets them on the worker; the outgoing
+		// engine has already been closed.
+		if (!engine) resetMidiPortEnables();
 
 		// Keep port/param info pointers in sync with the active engine
 		bindPortParamEngine(engine);

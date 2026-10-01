@@ -199,7 +199,15 @@ param.getValueFormat = function(i)
 end
 
 rack.onUnload = function()
-    releaseSounding()
+    -- Not releaseSounding(): a note-on sent just before may still be waiting in
+    -- Rack's output queue (see midiOut.enableTiming()), and an immediate note-off
+    -- would overtake it and leave the note stuck. -1 sends after that queue.
+    if state.soundingNote >= 0 then
+        local off = midi.create()
+        midi.setNoteOff(off, state.soundingChannel, state.soundingNote)
+        midiOut.sendAfterMs(off, -1)
+        state.soundingNote = -1
+    end
 end
 
 midi.onMessage = function(midiPort, msg)

@@ -3733,3 +3733,99 @@ TEST_CASE("'Bouncing ball delay.js/.lua' places its echoes on exact frames from 
 	m->midiOutput.outputDevice = nullptr;
 	Test::destroyModule(m);
 }
+
+// On unload the generators send their note-off after Rack's output queue
+// (sendAfterMs(msg, -1)). A note-on handed to Rack just before may still be
+// waiting in it, and an immediate note-off would overtake it. The wait is two
+// blocks and a frame, so it follows the engine's block size.
+
+// Makes the engine report a frame and a block size. loadScript() seeds the
+// published frame from the frame, process() publishes the block size.
+struct EngineMock : StoermelderPackOne::vcv::EngineAccess {
+	int64_t frame = 0;
+	int64_t blockFrames = 0;
+	int64_t getFrame() const override { return frame; }
+	int64_t getBlockFrames() const override { return blockFrames; }
+};
+
+struct EngineMockScope {
+	EngineMock mock;
+	StoermelderPackOne::vcv::EngineAccess* previous;
+	explicit EngineMockScope(int64_t blockFrames) : previous(StoermelderPackOne::vcv::engineAccess) {
+		mock.blockFrames = blockFrames;
+		StoermelderPackOne::vcv::engineAccess = &mock;
+	}
+	~EngineMockScope() { StoermelderPackOne::vcv::engineAccess = previous; }
+};
+
+// Unloads the script at `unloadFrame` and returns the frame, relative to it, on
+// which the first note-off after the unload reaches the device (-1 if none).
+static int64_t unloadNoteOffDelay(MidiKitModule* m, PulseRecorder& rec, EngineMockScope& engine, int64_t unloadFrame) {
+	size_t before = rec.statuses.size();
+	engine.mock.frame = unloadFrame;
+	m->loadScript("");
+	for (int64_t f = unloadFrame; f < unloadFrame + 10000; f++) {
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+		m->process(Test::makeProcessArgs(f));
+		for (size_t i = before; i < rec.statuses.size(); i++) {
+			if (rec.statuses[i] == 0x8) return f - unloadFrame;
+		}
+	}
+	return -1;
+}
+
+TEST_CASE("'Euclidean rhythm generator.js/.lua' releases its note two blocks after unloading", "[MidiKit][EuclidRhythm]") {
+	std::string path = GENERATE(presetPaths("Euclidean rhythm generator"));
+	int64_t block = GENERATE(256, 2048);
+	CATCH_INFO("preset: " << path);
+	CATCH_INFO("block: " << block);
+
+	EngineMockScope engine(block);
+	MidiKitModule* m = loadPreset(path);
+	m->params[MidiKitModule::PARAM + 0].setValue(0.2f);   // 4 steps, 2 fills: hits on ticks 2, 4, ...
+	m->params[MidiKitModule::PARAM + 1].setValue(0.5f);
+	m->params[MidiKitModule::PARAM + 2].setValue(0.5f);
+	m->params[MidiKitModule::PARAM + 3].setValue(0.25f);
+	drainLog(m);
+	PulseRecorder rec;
+	m->midiOutput.outputDevice = &rec;
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	driveClockEdges(m, { 1000, 1480 }, 0, 1600);   // the hit on tick 2 sounds a note
+	REQUIRE(std::count(rec.statuses.begin(), rec.statuses.end(), 0x9) == 1);
+	REQUIRE(std::count(rec.statuses.begin(), rec.statuses.end(), 0x8) == 0);
+
+	// Two blocks and a frame, released on the next divider tick (up to 8 later).
+	int64_t delay = unloadNoteOffDelay(m, rec, engine, 1600);
+	REQUIRE(delay >= 2 * block + 1);
+	REQUIRE(delay <= 2 * block + 1 + 8);
+
+	m->midiOutput.outputDevice = nullptr;
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Arpeggiator.js/.lua' releases its note two blocks after unloading", "[MidiKit][Arpeggiator]") {
+	std::string path = GENERATE(presetPaths("Arpeggiator"));
+	int64_t block = GENERATE(256, 2048);
+	CATCH_INFO("preset: " << path);
+	CATCH_INFO("block: " << block);
+
+	// 4 ticks per step: the first note starts on the 4th edge.
+	EngineMockScope engine(block);
+	MidiKitModule* m = loadArp(path, 0.35f, 0.f, 0.5f, 0.f);
+	PulseRecorder rec;
+	m->midiOutput.outputDevice = &rec;
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	sendInputAt(m, noteOn(1, 60, 100), 100);
+	driveClockEdges(m, { 1000, 1480, 1960, 2440 }, 0, 2600);
+	REQUIRE(std::count(rec.statuses.begin(), rec.statuses.end(), 0x9) == 1);
+	REQUIRE(std::count(rec.statuses.begin(), rec.statuses.end(), 0x8) == 0);
+
+	int64_t delay = unloadNoteOffDelay(m, rec, engine, 2600);
+	REQUIRE(delay >= 2 * block + 1);
+	REQUIRE(delay <= 2 * block + 1 + 8);
+
+	m->midiOutput.outputDevice = nullptr;
+	Test::destroyModule(m);
+}

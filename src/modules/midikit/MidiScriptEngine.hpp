@@ -113,9 +113,18 @@ struct MidiScriptEngineHandler {
 	virtual void enableMidiIn(int count) = 0;
 	virtual void enableMidiOut(int count) = 0;
 
-	// The audio thread's latest process() frame and the sample rate, published
-	// atomically for the worker, which must not read APP->engine.
-	virtual int64_t getCurrentFrame() const = 0;
+	// Drops the module-side state that belongs to the outgoing script: what it
+	// enabled (MIDI ports, timing) and its queued Tipsy messages, which are marked
+	// stale (a message already being encoded still completes). Worker thread,
+	// called by loadScriptOnWorker() right after the outgoing script's onUnload()
+	// has run, so the output of that onUnload() to an enabled port still goes out.
+	virtual void resetScriptState() = 0;
+
+	// The audio thread's latest process() frame, the engine's block size and the
+	// sample rate, published atomically for the worker, which must not read
+	// APP->engine.
+	virtual int64_t getTimingCurrentFrame() const = 0;
+	virtual int64_t getTimingBlockFrames() const = 0;
 	virtual float getSampleRate() const = 0;
 	virtual bool isTimingEnabled() const = 0;
 
@@ -184,11 +193,6 @@ struct MidiScriptEngineHandler {
 	// audio thread. Returns false if the payload was rejected or there was no
 	// room — like sendMidi(), saturation is normal rather than an error.
 	virtual bool sendTipsyOut(const char* mimeType, const unsigned char* data, uint32_t dataBytes) = 0;
-
-	// Marks every Tipsy message queued so far as stale, so the module discards
-	// them instead of emitting them (a script reload happened). A message
-	// already being encoded still completes. Worker thread.
-	virtual void sendTipsyOutReset() = 0;
 };
 
 
@@ -327,10 +331,14 @@ struct MidiScriptEngine {
 
 	// The frame for sendAfterMs: `ms` after the causing event in timing mode,
 	// otherwise (and with no event) after the module's latest process() frame.
-	// Shared by both engines.
+	// A negative `ms` (-1) means "after Rack's output queue": a framed message
+	// handed over late in a block is transmitted up to two blocks after that
+	// block starts, so a frame-less message released two blocks (and a frame) on
+	// goes out behind everything Rack still holds. Shared by both engines.
 	int64_t frameAfterMs(double ms) const {
+		int64_t base = handler->isTimingEnabled() && currentInFrame >= 0 ? currentInFrame : handler->getTimingCurrentFrame();
+		if (ms < 0.0) return base + 2 * handler->getTimingBlockFrames() + 1;
 		float sr = handler->getSampleRate();
-		int64_t base = handler->isTimingEnabled() && currentInFrame >= 0 ? currentInFrame : handler->getCurrentFrame();
 		return base + int64_t(sr > 0.f ? ms / 1000.0 * sr : 0.0);
 	}
 

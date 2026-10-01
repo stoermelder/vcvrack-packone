@@ -135,7 +135,7 @@ midi.onMessage = function(midiPort, msg) {
 	REQUIRE_FALSE(m->sendTipsyOut(nullptr, data, 4));
 	REQUIRE_FALSE(m->sendTipsyOut("text/plain", nullptr, 4));
 	// An empty mime type is rejected: it would be indistinguishable from the
-	// discard sentinel sendTipsyOutReset() enqueues.
+	// discard sentinel tipsyOut.reset() enqueues.
 	REQUIRE_FALSE(m->sendTipsyOut("", data, 4));
 	REQUIRE(m->tipsyOut.outQueue.empty());
 
@@ -176,7 +176,7 @@ midi.onMessage = function(midiPort, msg) {
 	REQUIRE(m->tipsyOut.outQueue.size() == 7);
 
 	// The reserved slot is still available to a discard, even when full.
-	m->sendTipsyOutReset();
+	m->tipsyOut.reset();
 	REQUIRE(m->tipsyOut.outQueue.full());
 
 	// Draining frees slots so new messages can be queued again. The pending
@@ -187,7 +187,7 @@ midi.onMessage = function(midiPort, msg) {
 	REQUIRE(m->tipsyOut.outQueue.size() == 1);
 }
 
-TEST_CASE("sendTipsyOutReset drops queued messages but completes the current one", "[MidiKit][Tipsy]") {
+TEST_CASE("tipsyOut.reset() drops queued messages but completes the current one", "[MidiKit][Tipsy]") {
 	ModuleScaffold mods;
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
@@ -212,7 +212,7 @@ midi.onMessage = function(midiPort, msg) {
 	// Start encoding the first message, then discard mid-stream.
 	REQUIRE(m->processTipsyOutput(0));
 	REQUIRE_FALSE(m->tipsyOut.encoder.isDormant());
-	m->sendTipsyOutReset();
+	m->tipsyOut.reset();
 
 	// The in-flight message still finishes: voltages keep coming until the
 	// encoder goes dormant of its own accord.
@@ -258,9 +258,9 @@ midi.onMessage = function(midiPort, msg) {
 
 	const unsigned char* data = reinterpret_cast<const unsigned char*>("data");
 	REQUIRE(m->sendTipsyOut("text/plain", data, 4));
-	m->sendTipsyOutReset();
+	m->tipsyOut.reset();
 	REQUIRE(m->sendTipsyOut("text/plain", data, 4));
-	m->sendTipsyOutReset();
+	m->tipsyOut.reset();
 
 	// Nothing is emitted: both batches sit ahead of an unconsumed sentinel.
 	REQUIRE_FALSE(m->processTipsyOutput(0));

@@ -1238,7 +1238,10 @@ whatever `midiOut.selectPort()` last selected (port 1 if it was never called):
   automatically flushes the whole group in order.
 - `midiOut.sendAfterMs(msg, ms)` — delayed send. The delay counts from the
   latest frame the module had processed when the script ran, or, with
-  `midiOut.enableTiming()`, from the frame of the event being handled.
+  `midiOut.enableTiming()`, from the frame of the event being handled. `-1` instead
+  of a time means "after Rack's output queue": two audio blocks and a frame, for
+  the messages of `rack.onUnload` (see
+  [Enabling sample-accurate timing](#enabling-sample-accurate-timing)).
 - `midiOut.sendAtFrame(msg, frame)` — send at an absolute engine frame, held
   until then. A negative frame means "now". Frames come from
   `rack.getEventFrame()`.
@@ -1305,6 +1308,15 @@ clock multiplier measures the distance between two trigger edges and spreads
 pulses over it (see
 [Multiply a clock into MIDI clock](#multiply-a-clock-into-midi-clock-sample-accurately)). A frame is a
 sample count: one second is as many frames as the sample rate.
+
+**Unloading.** A note-on sent just before a reload may still be waiting in Rack's
+output queue, up to one audio block. A message `rack.onUnload` sends with
+`midiOut.send()` goes out at once and can overtake it, which leaves the note
+stuck. A script that plays notes should send its note-offs and all-notes-off from
+`rack.onUnload` with `midiOut.sendAfterMs(msg, -1)`: the message then waits two
+audio blocks and a frame, whatever the block size, which puts it behind everything
+Rack still holds. The `Arpeggiator` and `Euclidean rhythm generator` presets do
+this.
 
 **Finding out when it does not hold.** Rack can only place a message that reaches
 it in time, one audio block after its frame at the latest. A script that is too

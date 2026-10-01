@@ -54,6 +54,11 @@ static const char* QUICKJS_EMPTY =
 	" * @engine QuickJs@v1\n"
 	" */\n";
 
+static const char* LUA_EMPTY =
+	"--[[\n"
+	"@engine minilua@v1\n"
+	"--]]\n";
+
 static std::string probes(MultiModule* m) {
 	std::string all, out;
 	std::tuple<LOG_FORMAT, float, std::string> t;
@@ -1631,4 +1636,68 @@ TEST_CASE("Variant: MidiKitMicro widget works without a log display", "[MidiKit]
 
 	delete menu;
 	Test::destroyWidget(mw);
+}
+// ── The outgoing script's rack.onUnload output ──────────────────────────────
+
+static const char* JS_UNLOAD_ON_OUTPUT_2 = R"(/**
+ * @engine QuickJs@v1
+ */
+midiOut.enablePorts(2);
+rack.onUnload = function() {
+    midiOut.selectPort(2);
+    let m = midi.create();
+    midi.setCc(m, 1, 9, 77);
+    midiOut.send(m);
+};
+)";
+
+static const char* LUA_UNLOAD_ON_OUTPUT_2 = R"(--[[
+@engine minilua@v1
+--]]
+midiOut.enablePorts(2)
+rack.onUnload = function()
+    midiOut.selectPort(2)
+    local m = midi.create()
+    midi.setCc(m, 1, 9, 77)
+    midiOut.send(m)
+end
+)";
+
+// The port enables belong to the script, but only until its onUnload has run: an
+// all-notes-off to output 2 must still reach it when the script is replaced,
+// cleared or the module reset.
+TEST_CASE("Variant: rack.onUnload output on a second port survives reload, clear and reset", "[MidiKit][Variant]") {
+	enum Action { RELOAD_SAME_ENGINE, RELOAD_OTHER_ENGINE, CLEAR, RESET };
+	for (const char* script : { JS_UNLOAD_ON_OUTPUT_2, LUA_UNLOAD_ON_OUTPUT_2 }) {
+		for (Action action : { RELOAD_SAME_ENGINE, RELOAD_OTHER_ENGINE, CLEAR, RESET }) {
+			CATCH_INFO(script);
+			CATCH_INFO(action);
+			MultiScaffold mods;
+			MultiModule* m = mods.create();
+			RecordingOutputDevice dev2;
+			m->midiOutputs[1].outputDevice = &dev2;
+			m->midiOutputs[1].channel = -1;
+			m->loadScript(script);
+			int64_t frame = 1;
+			pump(m, frame);
+			REQUIRE(dev2.sent.empty());
+
+			bool js = std::string(script).find("QuickJs") != std::string::npos;
+			switch (action) {
+				case RELOAD_SAME_ENGINE: m->loadScript(js ? QUICKJS_EMPTY : LUA_EMPTY); break;
+				case RELOAD_OTHER_ENGINE: m->loadScript(js ? LUA_EMPTY : QUICKJS_EMPTY); break;
+				case CLEAR: m->loadScript(""); break;
+				case RESET:
+					m->onReset();
+					// A reset also detaches the MIDI outputs from their devices.
+					m->midiOutputs[1].outputDevice = &dev2;
+					break;
+			}
+			pump(m, frame);
+
+			REQUIRE(dev2.sent == Sent{{9, 77}});
+			// ...and the new script starts with only output 1 enabled again.
+			REQUIRE_FALSE(m->isMidiOutEnabled(1));
+		}
+	}
 }
