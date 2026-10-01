@@ -1288,11 +1288,13 @@ about one block later than without timing. Do not use it where the lowest
 possible latency matters more than a steady rhythm.
 
 **Which frame a message gets.** The calls below differ only in how they choose
-the frame; a message always leaves in the order it was sent.
+the frame. Messages for the same frame leave in the order they were sent; a
+message for an earlier frame leaves before one for a later frame, whatever the
+order of the calls.
 
 | Call | Without `enableTiming()` | With `enableTiming()` |
 | --- | --- | --- |
-| `midiOut.send(msg)` | immediately | on the frame of the event being handled: the arrival frame of the MIDI message in `midi.onMessage`, the frame of the edge in `trig.onTrigger`, the frame the last byte arrived on in `trig.onTipsyMessage`. Anywhere else (`rack.onLoad`, `rack.onUnload`, context-menu callbacks) as soon as possible, in order |
+| `midiOut.send(msg)` | immediately | on the frame of the event being handled: the arrival frame of the MIDI message in `midi.onMessage`, the frame of the edge in `trig.onTrigger`, the frame the last byte arrived on in `trig.onTipsyMessage`. Anywhere else (`rack.onLoad`, `rack.onUnload`, context-menu callbacks) as soon as possible, on the current frame |
 | `midiOut.sendAfterMs(msg, ms)` | `ms` after the latest frame the module had processed when the script ran | `ms` after the frame of the event being handled (after the latest frame processed, outside an event) |
 | `midiOut.sendAtFrame(msg, frame)` | held until `frame`, then sent immediately | on `frame` |
 | `midiOut.sendAfterTrigger(msg, ticks, ...)` | when the tick is reached, immediately | on the frame of the trigger edge that reaches the tick |
@@ -1324,7 +1326,9 @@ Rack's block of delay absorbs it.
 order they were sent, so an NRPN, a 14-bit CC pair or a note-off followed by a
 note-on of the same note always arrives in order. Messages that are only a few
 samples apart can swap places if Rack hands them to its output thread in
-different audio blocks; Rack's own MIDI-CV and CV-MIDI have the same limit.
+different audio blocks; Rack's own MIDI-CV and CV-MIDI have the same limit. The
+order is kept per MIDI output of the module: two outputs, or two modules, sending
+to the same device are not ordered against each other.
 
 **Output devices.** Only drivers that honour a message's frame place it; a driver
 that ignores it sends the message when MIDI-KIT hands it over, which is the same

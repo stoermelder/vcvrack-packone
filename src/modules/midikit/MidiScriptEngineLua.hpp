@@ -2210,7 +2210,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midiOut_sendAfterMs(lua_State* L) {
 		// midiOut.sendAfterMs(msg, ms)
-		float ms = static_cast<float>(luaL_checknumber(L, 2));
+		double ms = luaL_checknumber(L, 2);
 
 		MessageEx* m = getPortMsg(L);
 		m->send = true;

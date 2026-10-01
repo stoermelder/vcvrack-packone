@@ -531,6 +531,8 @@ midi.onMessage = function(port, msg) {
 
 	REQUIRE(rig.rec.sent.size() == 4);
 	requireOrderedFrames(rig.rec);
+	// By frame: the note sent at 450, the delayed one due at 461, then the pair at 470.
+	REQUIRE(controllers(rig.rec) == std::vector<int>{2, 1, 2, 2});
 }
 
 TEST_CASE("Timing mode: a sendAfterTrigger message is stamped with the edge's frame", "[MidiKit][timing]") {
@@ -937,6 +939,22 @@ TEST_CASE("Timing mode: sendAfterMs counts from the causing event", "[MidiKit][t
 	REQUIRE(rig.m->midiOutput.frameQueue.top().msg.frame == 20 + delay);
 }
 
+// Makes the engine report a frame, for code that reads it before any process().
+struct EngineFrameMock : StoermelderPackOne::vcv::EngineAccess {
+	int64_t frame = 0;
+	int64_t getFrame() const override { return frame; }
+};
+
+struct EngineFrameScope {
+	EngineFrameMock mock;
+	StoermelderPackOne::vcv::EngineAccess* previous;
+	explicit EngineFrameScope(int64_t frame) : previous(StoermelderPackOne::vcv::engineAccess) {
+		mock.frame = frame;
+		StoermelderPackOne::vcv::engineAccess = &mock;
+	}
+	~EngineFrameScope() { StoermelderPackOne::vcv::engineAccess = previous; }
+};
+
 TEST_CASE("Timing mode: sendAfterMs with no event counts from the published frame", "[MidiKit][timing]") {
 	const char* script = R"(/**
  * @engine QuickJs@v1
@@ -948,9 +966,9 @@ rack.onLoad = function() {
     midiOut.sendAfterMs(m, 10);
 };
 )";
+	EngineFrameScope engine(1000);
 	ModuleScaffold mods;
 	MidiKitModule* m = mods.create("MidiKit");
-	m->currentFrame.store(1000);
 	m->loadScript(script);
 	int64_t delay = int64_t(10.0 / 1000.0 * m->sampleRate.load());
 
@@ -1176,4 +1194,163 @@ TEST_CASE("Timing report: a script that keeps falling behind is logged once per 
 	std::string later = drainLog(rig.m);
 	REQUIRE(countOf(later, "reached the output too late") == 1);
 	REQUIRE(later.find("2 message(s)") != std::string::npos);
+}
+
+TEST_CASE("Timing mode: a frame-less message does not overtake earlier messages of the same callback", "[MidiKit][timing]") {
+	// The first message carries the arrival frame, the second has no frame. The
+	// frames increase either way, so the message sequence is what is compared.
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midiOut.enableTiming();
+midi.onMessage = function(port, msg) {
+    let a = midi.create();
+    midi.setNoteOn(a, 1, 60, 100);
+    midiOut.send(a);
+    let b = midi.create();
+    midi.setNoteOn(b, 1, 61, 100);
+    midiOut.sendAtFrame(b, -1);
+};
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+midiOut.enableTiming()
+midi.onMessage = function(port, msg)
+    local a = midi.create()
+    midi.setNoteOn(a, 1, 60, 100)
+    midiOut.send(a)
+    local b = midi.create()
+    midi.setNoteOn(b, 1, 61, 100)
+    midiOut.sendAtFrame(b, -1)
+end
+)";
+	for (const char* script : { js, lua }) {
+		CATCH_INFO(script);
+		TimingRig rig(script);
+		rig.inject(noteOn(0, 1, 100), 20);
+		rig.run(40);
+
+		REQUIRE(controllers(rig.rec) == std::vector<int>{60, 61});
+		requireOrderedFrames(rig.rec);
+	}
+}
+
+TEST_CASE("sendAfterMs from rack.onLoad counts from the engine frame when no process() has run yet", "[MidiKit][timing]") {
+	// The script loads before the module's first process(), with Rack already
+	// well into the session: counting from frame 0 would make the message due at
+	// once.
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onLoad = function() {
+    let m = midi.create();
+    midi.setNoteOn(m, 1, 60, 100);
+    midiOut.sendAfterMs(m, 10);
+};
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+rack.onLoad = function()
+    local m = midi.create()
+    midi.setNoteOn(m, 1, 60, 100)
+    midiOut.sendAfterMs(m, 10)
+end
+)";
+	for (const char* script : { js, lua }) {
+		for (bool timing : { false, true }) {
+			CATCH_INFO(script);
+			CATCH_INFO(timing);
+			EngineFrameScope engine(1000000);
+			TimingRig rig(timing ? withTiming(script).c_str() : script);
+			int64_t delay = int64_t(10.0 / 1000.0 * rig.m->sampleRate.load());
+
+			rig.frame = 1000000;
+			rig.run(1000010);
+
+			REQUIRE(rig.rec.sent.empty());
+			REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
+			REQUIRE(rig.m->midiOutput.frameQueue.top().msg.frame == 1000000 + delay);
+		}
+	}
+}
+
+TEST_CASE("sendAfterMs keeps full precision in both engines", "[MidiKit][timing]") {
+	// 16777217 ms (4.7 hours) has no float representation; both engines must
+	// land on the same frame.
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midiOut.enableTiming();
+midi.onMessage = function(port, msg) {
+    midiOut.sendAfterMs(msg, 16777217);
+};
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+midiOut.enableTiming()
+midi.onMessage = function(port, msg)
+    midiOut.sendAfterMs(msg, 16777217)
+end
+)";
+	for (const char* script : { js, lua }) {
+		CATCH_INFO(script);
+		TimingRig rig(script);
+		double sr = rig.m->sampleRate.load();
+		rig.inject(noteOn(0, 60, 100), 20);
+		rig.run(40);
+
+		REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
+		REQUIRE(rig.m->midiOutput.frameQueue.top().msg.frame == 20 + int64_t(16777217.0 / 1000.0 * sr));
+	}
+}
+
+TEST_CASE("The last send call on a handle decides how it is scheduled, in both engines", "[MidiKit][timing]") {
+	// sendAfterTrigger() schedules by tick; a later send, sendAfterMs or sendAtFrame
+	// on the same handle must replace that, not stay tick-scheduled.
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+midi.onMessage = function(port, msg) {
+    let n = midi.getNote(msg);
+    let m = midi.clone(msg);
+    midiOut.sendAfterTrigger(m, 5);
+    if (n === 1) midiOut.send(m);
+    else if (n === 2) midiOut.sendAfterMs(m, 10);
+    else midiOut.sendAtFrame(m, 200);
+};
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableIn(1, 1)
+midi.onMessage = function(port, msg)
+    local n = midi.getNote(msg)
+    local m = midi.clone(msg)
+    midiOut.sendAfterTrigger(m, 5)
+    if n == 1 then midiOut.send(m)
+    elseif n == 2 then midiOut.sendAfterMs(m, 10)
+    else midiOut.sendAtFrame(m, 200) end
+end
+)";
+	for (const char* script : { js, lua }) {
+		for (int note : { 1, 2, 3 }) {
+			CATCH_INFO(script);
+			CATCH_INFO(note);
+			TimingRig rig(script);
+			rig.m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+			rig.run(8);
+			rig.inject(noteOn(0, note, 100), 8);
+			rig.run(40);
+
+			size_t ticks = 0;
+			for (int i = 0; i < 2 * PORT_MAX_CHANNELS; i++) ticks += rig.m->midiOutput.tickQueue[i].size();
+			REQUIRE(ticks == 0);
+			// Sent at once, or held in the frame queue until its frame.
+			REQUIRE(rig.rec.sent.size() + rig.m->midiOutput.frameQueue.size() == 1);
+		}
+	}
 }

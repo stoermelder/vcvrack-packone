@@ -2195,6 +2195,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		s.send = true;
 		s.sendOrder = getEngine(ctx)->sendCounter++;
 		s.in.msg.frame = getEngine(ctx)->frameForSend();
+		s.tick = 0;
 		return JS_UNDEFINED;
 	}
 
@@ -2207,6 +2208,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		s.send = true;
 		s.sendOrder = getEngine(ctx)->sendCounter++;
 		s.in.msg.frame = getEngine(ctx)->frameAfterMs(ms);
+		s.tick = 0;
 		return JS_UNDEFINED;
 	}
 
@@ -2219,6 +2221,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		s.send = true;
 		s.sendOrder = getEngine(ctx)->sendCounter++;
 		s.in.msg.frame = frameAtFrame(argNum(ctx, argv[1]));
+		s.tick = 0;
 		return JS_UNDEFINED;
 	}
 

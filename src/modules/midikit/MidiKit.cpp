@@ -141,6 +141,13 @@ struct MidiOutput : midi::Output {
 			return;
 		}
 
+		// Timing mode: a frame-less message takes the current frame and is queued
+		// like the rest, so (frame, seq) keeps it behind earlier messages that are
+		// still waiting for the end of this pump.
+		if (msg.frame < 0 && now >= 0 && timingOn()) {
+			msg.frame = now;
+		}
+
 		if (msg.frame != -1) {
 			FrameSchedule s;
 			s.msg = msg;
@@ -1075,6 +1082,13 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		if (count > midiOutCount.load(std::memory_order_relaxed)) midiOutCount.store(count, std::memory_order_relaxed);
 	}
 
+	// process() publishes currentFrame, but a script loads asynchronously and its
+	// rack.onLoad can run before the first process(), so loadScript() seeds it
+	// from the engine. UI thread.
+	void seedCurrentFrame() {
+		currentFrame.store(vcv::engine::getFrame(), std::memory_order_relaxed);
+	}
+
 	// MidiScriptEngineHandler
 	int64_t getCurrentFrame() const override {
 		return currentFrame.load(std::memory_order_relaxed);
@@ -1684,6 +1698,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	}
 
 	void loadScript(std::string s, std::string configJson = "") {
+		seedCurrentFrame();
 		sample = 0;
 		lateLoggedAt = -1;
 		// The incoming script inherits no half-received NRPN/RPN/14-bit CC state
