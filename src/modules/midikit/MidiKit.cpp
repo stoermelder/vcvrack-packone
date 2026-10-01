@@ -1408,14 +1408,10 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 			auto t = midiOutQueue.shift();
 			midi::Message msg = std::get<1>(t);
 			msg.frame = -1;
-			// Timing mode: stay behind messages Rack still holds.
-			auto& out = midiOutputs[std::get<0>(t)];
-			if (timingEnabled.load(std::memory_order_relaxed)) {
-				out.handOff(msg, currentFrame.load(std::memory_order_relaxed));
-			}
-			else {
-				out.sendMessage(msg);
-			}
+			// Immediate in timing mode too: a framed message would wait in Rack's
+			// output queue, which is dropped when this module held the last
+			// subscription to the device and is about to release it.
+			midiOutputs[std::get<0>(t)].sendMessage(msg);
 		}
 	}
 

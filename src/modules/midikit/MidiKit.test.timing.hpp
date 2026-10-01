@@ -552,7 +552,7 @@ TEST_CASE("Timing mode: a sendAfterTrigger message is stamped with the edge's fr
 	REQUIRE(rig.rec.sent[0].releasedAt == 45);
 }
 
-TEST_CASE("Teardown flush is frame-less in legacy mode and stamped in timing mode", "[MidiKit][timing]") {
+TEST_CASE("Teardown flush is sent immediately in both modes", "[MidiKit][timing]") {
 	auto script = [](bool timing) {
 		std::string s = "/**\n * @engine QuickJs@v1\n */\n";
 		if (timing) s += "midiOut.enableTiming();\n";
@@ -576,8 +576,9 @@ TEST_CASE("Teardown flush is frame-less in legacy mode and stamped in timing mod
 
 		REQUIRE(rig.rec.sent.size() == 1);
 		REQUIRE(rig.rec.sent[0].status == 0x8);
-		if (timing) REQUIRE(rig.rec.sent[0].frameField >= 0);
-		else REQUIRE(rig.rec.sent[0].frameField == -1);
+		// Frame-less even in timing mode: a framed message would sit in Rack's output
+		// queue, which goes away with the device when this module releases it.
+		REQUIRE(rig.rec.sent[0].frameField == -1);
 	}
 }
 
