@@ -1296,13 +1296,13 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// Audio thread — one sample of every connected trigger output.
 	void processTriggerOutputs(float sampleTime) {
 		for (int i = 0; i < TRIG_OUTPUTS; i++) {
-			if (!outputs[OUTPUT_TRIG + i].isConnected()) continue;
-			processTriggerOutput(i, sampleTime);
 			// Drains the Tipsy queue regardless of activeEngine, for the same
 			// reason as the MIDI out-queue in process(): messages queued by a
 			// script's onUnload() must still reach the output after the engine
 			// is gone. Tipsy always goes to the first trigger output.
 			if (i == 0) processTipsyOutput(0);
+			if (!outputs[OUTPUT_TRIG + i].isConnected()) continue;
+			processTriggerOutput(i, sampleTime);
 		}
 	}
 

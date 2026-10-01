@@ -187,6 +187,42 @@ midi.onMessage = function(midiPort, msg) {
 	REQUIRE(m->tipsyOut.outQueue.size() == 1);
 }
 
+TEST_CASE("Tipsy output queue keeps draining while the trigger output is unpatched", "[MidiKit][Tipsy]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+	m->loadScript(R"(/**
+ * @engine QuickJs@v1
+ */
+)");
+	const unsigned char* data = reinterpret_cast<const unsigned char*>("data");
+	int64_t frame = 1;
+	auto step = [&]() { m->process(Test::makeProcessArgs(frame++)); };
+	// Output 1 is not connected (channels == 0 by default).
+	REQUIRE_FALSE(m->outputs[MidiKitModule::OUTPUT_TRIG].isConnected());
+
+	// Developing a Tipsy script with nothing patched: messages pile up, the
+	// script reloads repeatedly. The queue must never overflow.
+	for (int round = 0; round < 4; round++) {
+		for (int i = 0; i < 7; i++) m->sendTipsyOut("text/plain", data, 4);
+		m->tipsyOut.reset();
+		step();
+		REQUIRE(m->tipsyOut.outQueue.size() <= 8);
+		REQUIRE(m->tipsyOut.outQueue.empty());
+	}
+
+	// Patching a cable afterwards finds nothing left over from before.
+	m->outputs[MidiKitModule::OUTPUT_TRIG].channels = 1;
+	for (int i = 0; i < 20; i++) step();
+	REQUIRE(m->tipsyOut.encoder.isDormant());
+	REQUIRE(m->outputs[MidiKitModule::OUTPUT_TRIG].getVoltage(0) == 0.f);
+
+	// And the output works normally from then on.
+	REQUIRE(m->sendTipsyOut("text/plain", data, 4));
+	std::vector<float> voltages = drainTipsy(m);
+	REQUIRE(voltages.size() > 0);
+	REQUIRE(voltages[0] == tipsy::kMessageBeginSentinel);
+}
+
 TEST_CASE("tipsyOut.reset() drops queued messages but completes the current one", "[MidiKit][Tipsy]") {
 	ModuleScaffold mods;
 	const char* JS_SCRIPT = R"(/**
