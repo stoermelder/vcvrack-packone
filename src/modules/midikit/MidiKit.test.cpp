@@ -40,6 +40,10 @@ namespace __ports {
 	namespace Catch = ::Catch;
 	#include "MidiKit.test.ports.hpp"
 }
+namespace __timing {
+	namespace Catch = ::Catch;
+	#include "MidiKit.test.timing.hpp"
+}
 
 // The examples header's OutEvent StringMaker specialization has to live at
 // global scope — the namespace alias above makes `namespace Catch { ... }`

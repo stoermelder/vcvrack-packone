@@ -1,0 +1,284 @@
+#include "MidiKit.test.hpp"
+
+// Frame-accuracy harness for MIDI-KIT output timing.
+//
+// These tests answer the question no other suite asks: "on which sample did a
+// message leave, and which frame did it carry?". MidiKit.test.module.hpp tests
+// queue mechanics, MidiKit.perf.cpp measures wall-clock worker latency.
+//
+// The seam is a midi::OutputDevice attached to the module's real output.
+// midi::Output::sendMessage() is non-virtual and forwards to `outputDevice`, so
+// the recorder observes the production path end to end and sees the `frame`
+// field exactly as Rack's RtMidiOutputDevice would — a recording subclass of
+// MidiOutput would observe the module's intent one call earlier and could not
+// see what the last step does to the frame.
+//
+// STATUS QUO: every test below pins what the module does TODAY, so the suite is
+// green and a later step shows up as a deliberate, reviewed flip of one
+// assertion. Each such assertion is marked "status quo". Everything is exact integer arithmetic over a
+// synthetic frame counter — nothing here is wall-clock.
+//
+// Run alone: ./build/test/MidiKit.test "[timing]"
+
+// Records every message that reaches the device: the frame field it carried and
+// the process() frame it was handed over on.
+struct TimingRecorder : midi::OutputDevice {
+	struct Sent {
+		int64_t frameField;   // Message::frame as the device sees it; -1 = "now"
+		int64_t releasedAt;   // the engine frame of the process() call that sent it
+		uint8_t status;
+		uint8_t note;
+		uint8_t value;
+	};
+	std::vector<Sent> sent;
+	int64_t now = 0;
+
+	void sendMessage(const midi::Message& msg) override {
+		Sent s;
+		s.frameField = msg.frame;
+		s.releasedAt = now;
+		s.status = msg.getStatus();
+		s.note = msg.getNote();
+		s.value = msg.getValue();
+		sent.push_back(s);
+	}
+};
+
+// Steps one module sample by sample with a synthetic frame counter. Frames
+// start at 0 and advance by one per process() call, which is what Rack does
+// within a block, so the module's divider phase is a pure function of frame.
+struct TimingRig {
+	ModuleScaffold mods;
+	MidiKitModule* m;
+	TimingRecorder rec;
+	int64_t frame = 0;
+
+	explicit TimingRig(const char* script) {
+		m = mods.create("MidiKit");
+		m->midiOutput.outputDevice = &rec;
+		m->midiOutput.channel = -1;
+		m->loadScript(script);
+	}
+
+	~TimingRig() {
+		// The recorder is a member and dies before `mods` destroys the module;
+		// onRemove() flushes output through the device.
+		m->midiOutput.outputDevice = nullptr;
+	}
+
+	void step() {
+		rec.now = frame;
+		m->process(Test::makeProcessArgs(frame));
+		frame++;
+	}
+
+	void run(int64_t untilFrame) {
+		while (frame < untilFrame) step();
+	}
+
+	// Queues an inbound message that Rack would release at `atFrame`.
+	void inject(midi::Message msg, int64_t atFrame) {
+		msg.frame = atFrame;
+		m->midiInput.onMessage(msg);
+	}
+};
+
+static const char* JS_PASS_THROUGH = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    midiOut.send(msg);
+};
+)";
+
+static const char* LUA_PASS_THROUGH = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(port, msg)
+    midiOut.send(msg)
+end
+)";
+
+static const char* JS_AFTER_MS = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    midiOut.sendAfterMs(msg, 10);
+};
+)";
+
+static const char* JS_AFTER_TRIGGER = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+midi.onMessage = function(port, msg) {
+    midiOut.sendAfterTrigger(msg, 1);
+};
+)";
+
+static const char* TIMING_SCRIPTS[] = { JS_PASS_THROUGH, LUA_PASS_THROUGH };
+
+// The module's divider period. A message due at frame N is popped, dispatched
+// and drained on the first divider tick at or after N.
+static constexpr int64_t DIVIDER = 8;
+
+// The first divider tick at or after `frame`, given the rig starts at frame 0:
+// dsp::ClockDivider fires on every 8th call, i.e. frames 7, 15, 23, ...
+static int64_t nextDividerTick(int64_t frame) {
+	return ((frame + 1 + DIVIDER - 1) / DIVIDER) * DIVIDER - 1;
+}
+
+TEST_CASE("Timing: a pass-through reply carries no frame", "[MidiKit][timing]") {
+	for (const char* script : TIMING_SCRIPTS) {
+		CATCH_INFO(script);
+		TimingRig rig(script);
+
+		rig.inject(noteOn(0, 60, 100), 20);
+		rig.run(40);
+
+		REQUIRE(rig.rec.sent.size() == 1);
+		// status quo: send() clears the frame, so Rack's
+		// output thread is never asked to schedule anything.
+		REQUIRE(rig.rec.sent[0].frameField == -1);
+		REQUIRE(rig.rec.sent[0].note == 60);
+	}
+}
+
+TEST_CASE("Timing: a reply leaves on the first divider tick after the input frame", "[MidiKit][timing]") {
+	for (const char* script : TIMING_SCRIPTS) {
+		CATCH_INFO(script);
+		TimingRig rig(script);
+
+		// Input due at 20 → popped on the divider tick at 23.
+		rig.inject(noteOn(0, 60, 100), 20);
+		rig.run(40);
+
+		REQUIRE(rig.rec.sent.size() == 1);
+		// status quo: up to DIVIDER-1 samples of avoidable lag.
+		REQUIRE(rig.rec.sent[0].releasedAt == nextDividerTick(20));
+		REQUIRE(rig.rec.sent[0].releasedAt == 23);
+	}
+}
+
+TEST_CASE("Timing: a message due exactly on a divider tick is not delayed", "[MidiKit][timing]") {
+	TimingRig rig(JS_PASS_THROUGH);
+
+	rig.inject(noteOn(0, 60, 100), 23);
+	rig.run(40);
+
+	REQUIRE(rig.rec.sent.size() == 1);
+	REQUIRE(rig.rec.sent[0].releasedAt == 23);
+}
+
+TEST_CASE("Timing: a message is never released before its input frame", "[MidiKit][timing]") {
+	TimingRig rig(JS_PASS_THROUGH);
+
+	rig.inject(noteOn(0, 60, 100), 100);
+	rig.run(99);
+	REQUIRE(rig.rec.sent.empty());
+
+	rig.run(120);
+	REQUIRE(rig.rec.sent.size() == 1);
+	REQUIRE(rig.rec.sent[0].releasedAt >= 100);
+}
+
+TEST_CASE("Timing: sendAfterMs holds the message and strips its frame", "[MidiKit][timing]") {
+	TimingRig rig(JS_AFTER_MS);
+	const int64_t delay = int64_t(0.010 * Test::sampleRate());
+
+	rig.inject(noteOn(0, 60, 100), 20);
+	rig.run(40);
+	// Held in the frame queue, not sent with the pass-through's latency.
+	REQUIRE(rig.rec.sent.empty());
+	REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
+
+	rig.run(20 + delay + 40);
+	REQUIRE(rig.rec.sent.size() == 1);
+	REQUIRE(rig.m->midiOutput.frameQueue.empty());
+	// status quo: the frame is cleared at release.
+	REQUIRE(rig.rec.sent[0].frameField == -1);
+}
+
+TEST_CASE("Timing: sendAfterTrigger releases on the exact edge sample", "[MidiKit][timing]") {
+	TimingRig rig(JS_AFTER_TRIGGER);
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	rig.run(8);                         // prime the trigger input low
+	rig.inject(noteOn(0, 60, 100), 8);
+	rig.run(45);
+	REQUIRE(rig.rec.sent.empty());      // scheduled, waiting for the clock
+
+	// Edge at frame 45, which is not a divider tick (those are 7 mod 8).
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+	rig.step();
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+
+	REQUIRE(rig.rec.sent.size() == 1);
+	// The edge is detected per sample, so release is exact — the module
+	// already has perfect timing here and discards it.
+	REQUIRE(rig.rec.sent[0].releasedAt == 45);
+	// status quo: sendAfterTrigger() never touches the
+	// frame, so the message reaches the device carrying the stale arrival frame
+	// of the input it was copied from (8) — not the edge's frame, and not -1.
+	// Rack would treat that as long past and send immediately.
+	REQUIRE(rig.rec.sent[0].frameField == 8);
+}
+
+TEST_CASE("Timing: release jitter over a metronomic stream is the divider quantisation", "[MidiKit][timing]") {
+	for (const char* script : TIMING_SCRIPTS) {
+		CATCH_INFO(script);
+		TimingRig rig(script);
+
+		// One message every 37 frames. 37 is coprime to the divider period, so
+		// over any DIVIDER consecutive messages every phase occurs exactly once
+		// and the lateness distribution is exactly uniform over 0..DIVIDER-1.
+		const int64_t period = 37;
+		const int count = 64;
+		std::vector<int64_t> intended;
+		for (int i = 0; i < count; i++) {
+			int64_t f = 100 + i * period;
+			intended.push_back(f);
+			rig.inject(noteOn(0, 40 + (i % 40), 100), f);
+		}
+		rig.run(100 + count * period + 40);
+
+		REQUIRE(rig.rec.sent.size() == size_t(count));
+
+		int64_t minLate = INT64_MAX, maxLate = 0, sum = 0;
+		int64_t histogram[DIVIDER] = {};
+		for (int i = 0; i < count; i++) {
+			int64_t late = rig.rec.sent[i].releasedAt - intended[i];
+			REQUIRE(late >= 0);
+			REQUIRE(late < DIVIDER);
+			minLate = std::min(minLate, late);
+			maxLate = std::max(maxLate, late);
+			sum += late;
+			histogram[late]++;
+			// status quo: nothing carries a usable frame, so Rack cannot correct.
+			REQUIRE(rig.rec.sent[i].frameField == -1);
+		}
+		CATCH_INFO("min=" << minLate << " max=" << maxLate << " mean=" << double(sum) / count);
+
+		// status quo: min=0 / max=7 / mean=3.5.
+		REQUIRE(minLate == 0);
+		REQUIRE(maxLate == DIVIDER - 1);
+		REQUIRE(sum * 2 == count * (DIVIDER - 1));
+		for (int b = 0; b < DIVIDER; b++) {
+			REQUIRE(histogram[b] == count / DIVIDER);
+		}
+	}
+}
+
+TEST_CASE("Timing: messages sharing an input frame leave in arrival order", "[MidiKit][timing]") {
+	TimingRig rig(JS_PASS_THROUGH);
+
+	rig.inject(noteOn(0, 60, 100), 20);
+	rig.inject(noteOn(0, 61, 100), 20);
+	rig.inject(noteOn(0, 62, 100), 20);
+	rig.run(40);
+
+	REQUIRE(rig.rec.sent.size() == 3);
+	REQUIRE(rig.rec.sent[0].note == 60);
+	REQUIRE(rig.rec.sent[1].note == 61);
+	REQUIRE(rig.rec.sent[2].note == 62);
+}
