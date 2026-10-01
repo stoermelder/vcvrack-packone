@@ -219,6 +219,38 @@ TEST_CASE("Variant: loadScript() drops half-received NRPN state on every MIDI in
 	}
 }
 
+TEST_CASE("Variant: engine input queues drop on overflow instead of corrupting", "[MidiKit][Variant]") {
+	for (const char* script : {QUICKJS_EMPTY, LUA_EMPTY}) {
+		CATCH_INFO(script);
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		m->loadScript(script);
+		probes(m);   // drop load-time entries
+		StoermelderPackOne::MidiScript::MidiScriptEngine* engine = m->host.getActiveEngine();
+		REQUIRE(engine != nullptr);
+
+		// More ticks than the queue holds, none drained: a polyphonic clock with
+		// every channel firing on several samples before the next drain.
+		const size_t cap = engine->tickInQueue.capacity();
+		for (size_t i = 0; i < cap + 40; i++) m->host.queueTick(0, uint8_t(i % PORT_MAX_CHANNELS), int64_t(i));
+		REQUIRE(engine->tickInQueue.size() == cap);   // not size() > capacity
+
+		// Same for MIDI messages.
+		const size_t mcap = engine->midiInQueue.capacity();
+		for (size_t i = 0; i < mcap + 10; i++) {
+			StoermelderPackOne::MidiScript::QueuedMessage q;
+			q.msg = ccMsg(0, 1, 10);
+			m->host.queueMessage(0, q);
+		}
+		REQUIRE(engine->midiInQueue.size() == mcap);
+
+		int64_t frame = 1;
+		pump(m, frame);
+		REQUIRE(engine->tickInQueue.empty());
+		REQUIRE(engine->midiInQueue.empty());
+	}
+}
+
 TEST_CASE("Variant: extended-CC enables are per MIDI input", "[MidiKit][Variant]") {
 	MultiScaffold mods;
 	MultiModule* m = mods.create();

@@ -315,8 +315,18 @@ struct MidiScriptEngine {
 	std::shared_ptr<ITaskWorker> taskWorker;
 	dsp::RingBuffer<std::tuple<int, QueuedMessage>, 128> midiInQueue;
 	// (trigPort, channel, frame) — the trigger input is polyphonic, so each tick
-	// carries the channel that fired and the frame of its edge.
-	dsp::RingBuffer<std::tuple<int, uint8_t, int64_t>, 4> tickInQueue;
+	// carries the channel that fired and the frame of its edge. Sized for the
+	// worst case between two drains (every 8th sample): all trigger channels of
+	// the largest variant (2 ports x 16 channels) firing on each of 8 samples.
+	dsp::RingBuffer<std::tuple<int, uint8_t, int64_t>, 256> tickInQueue;
+
+	// Audio thread. dsp::RingBuffer::push() does not bounds-check: on a full
+	// buffer it overwrites unread entries and leaves size() > capacity, after
+	// which empty()/full() misreport. Drops the new event instead.
+	template <typename Q, typename T>
+	void pushInQueue(Q& queue, T&& value) {
+		if (!queue.full()) queue.push(std::forward<T>(value));
+	}
 
 	// Worker thread: the frame of the event being dispatched, -1 outside one.
 	int64_t currentInFrame = -1;

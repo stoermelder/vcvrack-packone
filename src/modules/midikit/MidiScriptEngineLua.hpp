@@ -638,13 +638,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	void processInMessage(int midiPort, const MidiScript::QueuedMessage& msg) override {
 		if (L) {
-			midiInQueue.push(std::make_tuple(midiPort, msg));
+			pushInQueue(midiInQueue, std::make_tuple(midiPort, msg));
 		}
 	}
 
 	void processInTick(int trigPort, uint8_t channel, int64_t frame) override {
 		if (L) {
-			tickInQueue.push(std::make_tuple(trigPort, channel, frame));
+			pushInQueue(tickInQueue, std::make_tuple(trigPort, channel, frame));
 		}
 	}
 
