@@ -596,14 +596,14 @@ trig.onTipsyMessage = function(data, mimeType) {};
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
 	m->process(Test::makeProcessArgs(2));
 	m->host.getActiveEngine()->process();
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 0);
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 0);
 	REQUIRE(drainLog(m).find("trigger") == std::string::npos);
 
 	// ...but channel 2 is an ordinary gate and still fires.
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 1);
 	m->process(Test::makeProcessArgs(3));
 	m->host.getActiveEngine()->process();
-	REQUIRE(m->triggersIn.triggerTick[0][1] == 1);
+	REQUIRE(m->triggerIns.triggerTick[0][1] == 1);
 	REQUIRE(drainLog(m).find("trigger2") != std::string::npos);
 
 	// Releasing restores normal trigger behavior on channel 1.
@@ -613,7 +613,7 @@ trig.onTipsyMessage = function(data, mimeType) {};
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
 	m->process(Test::makeProcessArgs(5));
 	m->host.getActiveEngine()->process();
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 1);
 	REQUIRE(drainLog(m).find("trigger1") != std::string::npos);
 }
 

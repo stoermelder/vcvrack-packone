@@ -368,7 +368,7 @@ TEST_CASE("Switching engines closes the outgoing engine before returning", "[Mid
 
 TEST_CASE("onRemove() waits for onUnload before draining", "[MidiKit][CrossEngine][Async]") {
 	// Teardown's ordering contract: closeState() blocks, so by the time
-	// flushOutput() runs the worker has finished producing. If the close were
+	// out.flush() runs the worker has finished producing. If the close were
 	// async, the drain would race it and run on an empty queue, leaving
 	// onUnload()'s message stranded — a hung note on module removal.
 	auto check = [](const std::string& script) {
@@ -385,7 +385,7 @@ TEST_CASE("onRemove() waits for onUnload before draining", "[MidiKit][CrossEngin
 		std::string log = drainLog(m);
 		REQUIRE(log.find("onUnload ran") != std::string::npos);
 
-		// Drained by flushOutput(), not left queued.
+		// Drained by out.flush(), not left queued.
 		int port, ticks;
 		midi::Message out;
 		REQUIRE_FALSE(processOutMessage(m, port, out, ticks));
@@ -451,12 +451,12 @@ TEST_CASE("process() drains the out-queue after the script is cleared", "[MidiKi
 
 		m->clearScript();
 		REQUIRE(m->host.getActiveEngine() == nullptr);
-		REQUIRE_FALSE(m->midiOutQueue.empty());   // onUnload()'s message is queued
+		REQUIRE_FALSE(m->midiOuts.queue.empty());   // onUnload()'s message is queued
 
 		processOneDividerPeriod(m);
 
 		// process() moved it out of the module queue even with no active engine.
-		REQUIRE(m->midiOutQueue.empty());
+		REQUIRE(m->midiOuts.queue.empty());
 
 		Test::destroyModule(m);
 	};
@@ -468,20 +468,20 @@ TEST_CASE("process() drains the out-queue after the script is cleared", "[MidiKi
 TEST_CASE("process() drains a tick-scheduled message into midiOutput", "[MidiKit]") {
 	ModuleScaffold mods;
 	// End-to-end for the drain: a message the engine queued with a non-zero tick
-	// must reach midiOutput's tick queue, not merely leave the module queue.
+	// must reach out.ports[0]'s tick queue, not merely leave the module queue.
 	// midi::Output::sendMessage() no-ops without a subscribed device, so
-	// midiOutput's scheduling queues are the observable endpoint.
+	// out.ports[0]'s scheduling queues are the observable endpoint.
 	MidiKitModule* m = mods.create();
 	midi::Message msg = noteOn(1, 60, 100);
 
 	REQUIRE(m->sendMidi(0, &msg, 1, 0, 5));   // tick 5: lands in tickQueue
-	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 0);
 
 	processOneDividerPeriod(m);
 
-	REQUIRE(m->midiOutQueue.empty());
-	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);
-	REQUIRE(m->midiOutput.tickQueue[0].top().tick == 5);
+	REQUIRE(m->midiOuts.queue.empty());
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 1);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].top().tick == 5);
 
 }
 
@@ -539,8 +539,8 @@ TEST_CASE("An NRPN group is queued whole and in order", "[MidiKit]") {
 
 
 TEST_CASE("onRemove() flushes teardown output immediately, bypassing scheduling", "[MidiKit]") {
-	// flushOutput() sets frame = -1 and calls midiOutput.sendMessage() directly
-	// rather than midiOutput.send(): the frame and tick queues are drained only
+	// out.flush() sets frame = -1 and calls out.ports[0].sendMessage() directly
+	// rather than out.ports[0].send(): the frame and tick queues are drained only
 	// by process(), which will never run again. A tick-scheduled message left to
 	// send() would land in tickQueue and never be emitted.
 	MidiKitModule* m = createModule();
@@ -551,10 +551,10 @@ TEST_CASE("onRemove() flushes teardown output immediately, bypassing scheduling"
 	Module::RemoveEvent eRemove;
 	m->onRemove(eRemove);
 
-	REQUIRE(m->midiOutQueue.empty());
+	REQUIRE(m->midiOuts.queue.empty());
 	// Sent immediately instead of being parked in a queue nothing will drain.
-	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
-	REQUIRE(m->midiOutput.frameQueue.size() == 0);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 0);
+	REQUIRE(m->midiOuts.ports[0].frameQueue.size() == 0);
 
 	delete m;
 }
@@ -570,17 +570,17 @@ TEST_CASE("MIDI output overflow drops without corrupting the queue", "[MidiKit]"
 	MidiKitModule* m = mods.create();
 	midi::Message msg = noteOn(1, 60, 100);
 
-	size_t capacity = m->midiOutQueue.capacity();
+	size_t capacity = m->midiOuts.queue.capacity();
 	for (size_t i = 0; i < capacity; i++) {
 		REQUIRE(m->sendMidi(0, &msg, 1, 0, 0));
 	}
-	REQUIRE(m->midiOutQueue.full());
+	REQUIRE(m->midiOuts.queue.full());
 
 	// One more push has no room: dropped, not overwritten.
 	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0, 0));
-	REQUIRE(m->midiOutQueue.full());
-	REQUIRE(m->midiOutQueue.size() == capacity);
-	REQUIRE_FALSE(m->midiOutQueue.empty());
+	REQUIRE(m->midiOuts.queue.full());
+	REQUIRE(m->midiOuts.queue.size() == capacity);
+	REQUIRE_FALSE(m->midiOuts.queue.empty());
 
 }
 
@@ -590,12 +590,12 @@ TEST_CASE("MIDI output overflow is reported once per episode, not once per drop"
 	MidiKitModule* m = mods.create();
 	midi::Message msg = noteOn(1, 60, 100);
 
-	size_t capacity = m->midiOutQueue.capacity();
+	size_t capacity = m->midiOuts.queue.capacity();
 	for (size_t i = 0; i < capacity; i++) {
 		REQUIRE(m->sendMidi(0, &msg, 1, 0, 0));
 	}
 	// Several drops in the same episode — only one log line should result once
-	// process() next runs and consumes the rising edge of midiOutOverflow.
+	// process() next runs and consumes the rising edge of out.overflow.
 	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0, 0));
 	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0, 0));
 	REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0, 0));
@@ -623,7 +623,7 @@ TEST_CASE("MIDI output overflow is reported again after the queue recovers", "[M
 	midi::Message msg = noteOn(1, 60, 100);
 
 	auto fillAndOverflow = [&]() {
-		while (m->midiOutQueue.capacity() > 0) {
+		while (m->midiOuts.queue.capacity() > 0) {
 			REQUIRE(m->sendMidi(0, &msg, 1, 0, 0));
 		}
 		REQUIRE_FALSE(m->sendMidi(0, &msg, 1, 0, 0));
@@ -639,7 +639,7 @@ TEST_CASE("MIDI output overflow is reported again after the queue recovers", "[M
 	fillAndOverflow();
 	processOneDividerPeriod(m, 0);            // drains the queue, logs once
 	REQUIRE(countDropLines() == 1);
-	REQUIRE(m->midiOutQueue.empty());
+	REQUIRE(m->midiOuts.queue.empty());
 
 	// A quiet period with no drops must log nothing. This is what pins the
 	// CLEARING of the flag: a latched flag would keep reporting here.
@@ -665,17 +665,17 @@ TEST_CASE("An NRPN group is dropped whole, never truncated, when free capacity i
 	midi::Message msg = noteOn(1, 60, 100);
 
 	// Leave exactly 3 free slots — one short of the 4-message group.
-	size_t capacity = m->midiOutQueue.capacity();
+	size_t capacity = m->midiOuts.queue.capacity();
 	for (size_t i = 0; i < capacity - 3; i++) {
 		REQUIRE(m->sendMidi(0, &msg, 1, 0, 0));
 	}
-	REQUIRE(m->midiOutQueue.capacity() == 3);
+	REQUIRE(m->midiOuts.queue.capacity() == 3);
 
 	midi::Message group[4] = {msg, msg, msg, msg};
 	REQUIRE_FALSE(m->sendMidi(0, group, 4, 0, 0));
 	// Rejected as a whole: the 3 free slots are still free, not partially
 	// consumed by the first 3 messages of the group.
-	REQUIRE(m->midiOutQueue.capacity() == 3);
+	REQUIRE(m->midiOuts.queue.capacity() == 3);
 
 }
 

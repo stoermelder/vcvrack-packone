@@ -64,7 +64,7 @@ static std::vector<midi::Message> nrpnQuadThenCc() {
 	return v;
 }
 
-// ─── Harness ────────────────────────────────────────────────────────────────
+// Harness
 
 // Feeds raw MIDI into the module's real input queue and pumps process() past
 // the divider (8), so the queue is actually decoded and dispatched. Under
@@ -72,7 +72,7 @@ static std::vector<midi::Message> nrpnQuadThenCc() {
 // has fired and its log entries are queued.
 static void feedMidiPump(MidiKitModule* m, const std::vector<midi::Message>& msgs) {
 	int64_t frame = 1;
-	for (const auto& msg : msgs) m->midiInput.onMessage(msg);
+	for (const auto& msg : msgs) m->midiIns.ports[0].queue.onMessage(msg);
 	for (int i = 0; i < 9; i++) m->process(Test::makeProcessArgs(frame++));
 }
 
@@ -164,7 +164,7 @@ static void assertProbes(const EngineVariant& v, const std::vector<midi::Message
 	REQUIRE(r.probes == expected);
 }
 
-// ─── Enable-binding validation helpers ──────────────────────────────────────
+// Enable-binding validation helpers
 
 // Builds a minimal engine-tagged script whose body is the single call `call`.
 // The enable-validation cases differ only in the argument list, so a full
@@ -228,8 +228,8 @@ TEST_CASE("enableNrpnIn accepts channel 16 and arms bit 15", "[MidiKit][MidiProc
 	MidiKitModule* m = mods.create();
 	m->loadScript(v.script);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
-	REQUIRE(m->isNrpnEnabled(15, false));
-	REQUIRE(!m->isNrpnEnabled(0, false));
+	REQUIRE(m->midiIns.isNrpnEnabled(15, false));
+	REQUIRE(!m->midiIns.isNrpnEnabled(0, false));
 }
 
 TEST_CASE("enableCc14bitIn accepts channel 16 and arms bit 15", "[MidiKit][MidiProcessor]") {
@@ -239,12 +239,12 @@ TEST_CASE("enableCc14bitIn accepts channel 16 and arms bit 15", "[MidiKit][MidiP
 	MidiKitModule* m = mods.create();
 	m->loadScript(v.script);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
-	REQUIRE(m->isCc14bitEnabled(15, 7));
-	REQUIRE(!m->isCc14bitEnabled(0, 7));
+	REQUIRE(m->midiIns.isCc14bitEnabled(15, 7));
+	REQUIRE(!m->midiIns.isCc14bitEnabled(0, 7));
 }
 
 
-// ─── Tests ──────────────────────────────────────────────────────────────────
+// Tests
 
 
 // Enables NRPN, logs the assembled-type flags inside onNrpn.
@@ -315,7 +315,7 @@ TEST_CASE("A plain message after an assembled one reads its own value", "[MidiKi
 
 
 
-// Pins the §3.0 split on one handle: getControl/getValue/getNote return three
+// getControl/getValue/getNote return three
 // different things for the same assembled message.
 static const char* JS_THREE = R"(/**
  * @engine QuickJs@v1
@@ -761,8 +761,8 @@ TEST_CASE("Script reload clears enables and decoder state", "[MidiKit][MidiProce
 
 	// Arm an NRPN parameter (select only).
 	feedMidiPump(m, {makeCc(0, 99, 4), makeCc(0, 98, 5)});
-	REQUIRE(m->midiProcessor.ccNrpnParam[0] == 517);
-	REQUIRE(m->isNrpnEnabled(0, false));
+	REQUIRE(m->midiIns.ports[0].processor.ccNrpnParam[0] == 517);
+	REQUIRE(m->midiIns.isNrpnEnabled(0, false));
 
 	// Reload with a script that defines the callbacks but does not enable.
 	m->loadScript(JS_RELOAD_B);
@@ -771,8 +771,8 @@ TEST_CASE("Script reload clears enables and decoder state", "[MidiKit][MidiProce
 
 	// The enable belongs to the outgoing script, and the decoder stream is
 	// discontinuous — both are cleared.
-	REQUIRE(m->midiProcessor.ccNrpnParam[0] == -1);
-	REQUIRE(!m->isNrpnEnabled(0, false));
+	REQUIRE(m->midiIns.ports[0].processor.ccNrpnParam[0] == -1);
+	REQUIRE(!m->midiIns.isNrpnEnabled(0, false));
 
 	// Data entry after the reload is neither captured (no armed parameter) nor
 	// consumed (no enable): the raw CCs reach onMessage, and onNrpn never fires.
@@ -790,15 +790,15 @@ TEST_CASE("onReset clears decoder state and enables", "[MidiKit][MidiProcessor]"
 
 	// Arm an NRPN parameter.
 	feedMidiPump(m, {makeCc(0, 99, 4), makeCc(0, 98, 5)});
-	REQUIRE(m->midiProcessor.ccNrpnParam[0] == 517);
-	REQUIRE(m->isNrpnEnabled(0, false));
+	REQUIRE(m->midiIns.ports[0].processor.ccNrpnParam[0] == 517);
+	REQUIRE(m->midiIns.isNrpnEnabled(0, false));
 
 	m->onReset();
 
 	// Same invariants as a script reload: no half-read stream state, no enables.
-	REQUIRE(m->midiProcessor.ccNrpnParam[0] == -1);
-	REQUIRE(!m->isNrpnEnabled(0, false));
-	REQUIRE(!m->isCc14bitEnabled(0, 7));
+	REQUIRE(m->midiIns.ports[0].processor.ccNrpnParam[0] == -1);
+	REQUIRE(!m->midiIns.isNrpnEnabled(0, false));
+	REQUIRE(!m->midiIns.isCc14bitEnabled(0, 7));
 
 	// onReset() tears the engine down, so reload one to observe the behaviour:
 	// a parameter armed before the reset does not capture data entry after it,
@@ -837,11 +837,11 @@ TEST_CASE("enableCc14bitIn without cc enables all 32 MSBs on every channel", "[M
 
 	for (int ch = 0; ch < 16; ch++) {
 		for (int cc = 0; cc < 32; cc++) {
-			REQUIRE(m->isCc14bitEnabled(ch, cc));
+			REQUIRE(m->midiIns.isCc14bitEnabled(ch, cc));
 		}
 	}
 	// Out of the valid 0-31 MSB range there is nothing to enable.
-	REQUIRE(!m->isCc14bitEnabled(0, 32));
+	REQUIRE(!m->midiIns.isCc14bitEnabled(0, 32));
 
 }
 
@@ -881,9 +881,9 @@ TEST_CASE("enableCc14bitIn honours a per-channel argument", "[MidiKit][MidiProce
 	MidiKitModule* m = mods.create();
 	m->loadScript(v.script);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
-	REQUIRE(m->isCc14bitEnabled(2, 7));
-	REQUIRE(!m->isCc14bitEnabled(0, 7));
-	REQUIRE(!m->isCc14bitEnabled(2, 8));
+	REQUIRE(m->midiIns.isCc14bitEnabled(2, 7));
+	REQUIRE(!m->midiIns.isCc14bitEnabled(0, 7));
+	REQUIRE(!m->midiIns.isCc14bitEnabled(2, 8));
 }
 
 TEST_CASE("enableNrpnIn honours a per-channel argument", "[MidiKit][MidiProcessor]") {
@@ -894,8 +894,8 @@ TEST_CASE("enableNrpnIn honours a per-channel argument", "[MidiKit][MidiProcesso
 	MidiKitModule* m = mods.create();
 	m->loadScript(v.script);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
-	REQUIRE(m->isNrpnEnabled(2, false));
-	REQUIRE(!m->isNrpnEnabled(0, false));
+	REQUIRE(m->midiIns.isNrpnEnabled(2, false));
+	REQUIRE(!m->midiIns.isNrpnEnabled(0, false));
 }
 
 
@@ -929,9 +929,9 @@ TEST_CASE("enableRpnIn honours a per-channel argument and arms the RPN mask", "[
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
 	// midi.enableRpnIn(1, 3) → channel 3 (0-based 2), RPN mask only.
-	REQUIRE(m->isNrpnEnabled(2, true));    // RPN mask bit set
-	REQUIRE(!m->isNrpnEnabled(2, false));  // NRPN mask bit NOT set
-	REQUIRE(!m->isNrpnEnabled(0, true));   // other channels untouched
+	REQUIRE(m->midiIns.isNrpnEnabled(2, true));    // RPN mask bit set
+	REQUIRE(!m->midiIns.isNrpnEnabled(2, false));  // NRPN mask bit NOT set
+	REQUIRE(!m->midiIns.isNrpnEnabled(0, true));   // other channels untouched
 
 }
 

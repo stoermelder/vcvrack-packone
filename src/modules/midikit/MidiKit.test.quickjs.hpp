@@ -226,7 +226,7 @@ TEST_CASE("midi.createNRPN/setNRPN queue all four CC messages in order", "[MidiK
 	m->host.seQuickJs.processInMessage(0, msg);
 	m->host.seQuickJs.process();
 
-	REQUIRE(m->midiOutQueue.size() == 4);
+	REQUIRE(m->midiOuts.queue.size() == 4);
 	int expectedNote[4] = {99, 98, 6, 38};
 	for (int i = 0; i < 4; i++) {
 		int port, ticks;

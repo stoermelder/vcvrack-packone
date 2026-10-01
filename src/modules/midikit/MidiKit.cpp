@@ -11,7 +11,6 @@
 #include "../../utils/MpmcTaskWorker.hpp"
 #include "../midi/MidiProcessor.hpp"
 #include "tipsy-encoder/include/tipsy/tipsy.h"
-#include <queue>
 #include <atomic>
 
 namespace StoermelderPackOne {
@@ -219,14 +218,13 @@ struct MidiOutput : midi::Output {
 };
 
 
-// ── Extended-CC input enables, one per module ──────────────────────────────
+// Extended-CC input enables, one per module
 // Per-MIDI-channel bitmasks of what the script asked to have assembled
 // (midi.enableNrpnIn/enableRpnIn/enableCc14bitIn). Bit c = MIDI channel c;
 // "all channels" sets every bit. Nothing is assembled for the script until it
 // asks, matching trig.enableIn()/trig.enableTipsyIn().
-//
 // Threading: the masks are atomic because the worker thread writes them from
-// the enable bindings while the audio thread reads them in processMidi().
+// the enable bindings while the audio thread reads them in MidiInputs::Port::accepts().
 struct ExtendedCcEnables {
 	std::atomic<uint16_t> nrpnEnabledMask{0};
 	std::atomic<uint16_t> rpnEnabledMask{0};
@@ -316,17 +314,15 @@ struct ExtendedCcEnables {
 };
 
 
-// ── Script log + overlay, one per module ───────────────────────────────────
+// Script log + overlay, one per module
 // Everything the module tells the widget about: the runtime log and the
 // current overlay message. Touched from three threads, which is why the
 // contract is stated here once rather than inferred from call sites:
-//
 //   - worker thread: writeLog()/writeOverlay() produce log entries + overlay;
 //   - audio thread: overflow reporting in process() produces log entries;
 //   - loadScript()/onReset() callers produce RESET markers and "No script";
 //   - UI thread: the widget drains the log (midiLogMessages.try_pop) and the
 //     overlay ring (nextOverlayMessageId/getOverlayMessage).
-//
 // midiLogMessages is an MPMC queue because the log has concurrent producers;
 // overlayQueue is a single-producer ring (worker) drained by the widget.
 struct ScriptLog {
@@ -344,6 +340,21 @@ struct ScriptLog {
 		midiLogMessages.try_push(std::make_tuple(format, timestamp, text));
 	}
 
+	// Plain text line. The timestamp is not displayed.
+	void pushText(const std::string& text, float timestamp = 0.f) {
+		push(LOG_FORMAT::TEXT, timestamp, text);
+	}
+
+	// Line prefixed with the timestamp (seconds).
+	void pushTimestamped(float timestamp, const std::string& text) {
+		push(LOG_FORMAT::TIMESTAMP, timestamp, text);
+	}
+
+	// Marks a script load/reset; the widget clears its display on it.
+	void pushReset() {
+		push(LOG_FORMAT::RESET, 0.f, std::string(""));
+	}
+
 	// Worker side — writeOverlay(). Marks one overlay slot with the current
 	// message.
 	void pushOverlay(const std::string& s1, const std::string& s2, const std::string& s3) {
@@ -353,11 +364,350 @@ struct ScriptLog {
 };
 
 
-// ── Tipsy output: encoding onto the trigger CV, one per module ─────────────
-// Encodes queued Tipsy messages onto the trigger CV output. The worker thread
-// enqueues outbound messages (send/reset); the audio thread drains one
-// encoded float per call (process). The only boundaries to the rest of
-// the module are the output voltage and lastInitErrorCode for the log line.
+// MIDI inputs: ports, decoders and the script's extended-CC enables ──────
+// The input side of the module. Each port has its queue, the decoder turning
+// its stream into semantic events (NRPN/RPN/14-bit CC assembly) and the
+// extended-CC enables the script set for it.
+// Threading: the worker calls enable*(); the audio thread calls pump(),
+// discard() and resetDecoders(). The UI thread must not touch the decoders.
+// A decoded message that passes the filter is handed to `onMessage`, so this
+// struct never sees the script host. Set it once, before the first pump.
+template <int NIN>
+struct MidiInputs {
+	// MUST keep the queue declared before the processor, so the queue outlives
+	// it. The queue is injected rather than owned: it keeps its widget binding
+	// and JSON. Only processMessage() is used, never process(): decoded messages
+	// are queued for the worker, not dispatched inline.
+	struct Port : MidiProcessorHandler {
+		/** [Stored to Json] */
+		midi::InputQueue queue;
+		MidiProcessor processor{&queue};
+		ExtendedCcEnables extendedCc;
+
+		MidiInputs* owner = nullptr;
+		int index = 0;
+
+		// Whether a decoded message should reach the script.
+		//
+		// A CC belonging to an extended message is notified TWICE: once as
+		// Type::CC (isComponent set) and again as NRPN/RPN/CC_14BIT once
+		// assembled. What the script asked for decides which it sees:
+		//  - assembled events pass only when the matching enable is set;
+		//  - a raw component CC is dropped when the script enabled the kind of
+		//    assembly it belongs to. isComponent alone must not decide: a script
+		//    that enabled only 14-bit CC still wants to see CC 98 raw.
+		bool accepts(const MessageEx& m) const {
+			switch (m.type) {
+				case MessageEx::Type::NRPN:
+				case MessageEx::Type::RPN: {
+					bool isRpn = (m.type == MessageEx::Type::RPN);
+					// Parameter-select notifications carry no value (extraValue < 0),
+					// and the RPN 127/127 reset carries paramNumber < 0. Neither is a
+					// parameter change.
+					if (!m.hasValue() || m.getParamNumber() < 0) return false;
+					return extendedCc.isNrpnEnabled(m.getChannel(), isRpn);
+				}
+				case MessageEx::Type::CC_14BIT:
+					return extendedCc.isCc14bitEnabled(m.getChannel(), uint8_t(m.getParamNumber()));
+				case MessageEx::Type::CC:
+					return !(m.isComponent && extendedCc.isComponentEnabled(m));
+				default:
+					return true;
+			}
+		}
+
+		// MidiProcessorHandler. Audio thread, synchronously from processMessage().
+		bool processMidi(const MessageEx& m) override {
+			return owner->dispatch(index, m);
+		}
+	};
+
+	Port ports[NIN];
+
+	// Inputs in use are ports 0..count-1 (at least 1), raised by the script's
+	// midi.enablePorts(). Written by the worker, read by the audio thread.
+	std::atomic<int> count{1};
+
+	using Sink = std::function<void(int port, const MidiScript::QueuedMessage&)>;
+	Sink onMessage;
+
+	MidiInputs() {
+		// Without this the processor decodes into an empty handler list and
+		// nothing reaches the script.
+		for (int i = 0; i < NIN; i++) {
+			ports[i].owner = this;
+			ports[i].index = i;
+			ports[i].processor.subscribe(&ports[i]);
+		}
+	}
+
+	// ── Enables (worker thread) ──
+	void enablePorts(int n) {
+		if (n > NIN) n = NIN;
+		if (n > count.load(std::memory_order_relaxed)) count.store(n, std::memory_order_relaxed);
+	}
+	int enabledCount() const {
+		return count.load(std::memory_order_relaxed);
+	}
+	bool isEnabled(int port) const {
+		return port < count.load(std::memory_order_relaxed);
+	}
+	void enableNrpn(int port, int kind, int channel) {
+		if (port < 0 || port >= NIN) return;
+		ports[port].extendedCc.enableNrpn(kind, channel);
+	}
+	void enableCc14bit(int port, int cc, int channel) {
+		if (port < 0 || port >= NIN) return;
+		ports[port].extendedCc.enableCc14bit(cc, channel);
+	}
+	// Audio thread.
+	bool isNrpnEnabled(uint8_t ch, bool isRpn, int port = 0) const {
+		return ports[port].extendedCc.isNrpnEnabled(ch, isRpn);
+	}
+	bool isCc14bitEnabled(uint8_t ch, uint8_t cc, int port = 0) const {
+		return ports[port].extendedCc.isCc14bitEnabled(ch, cc);
+	}
+
+	// Back to "only port 1 in use" — what a script starts with.
+	void resetEnables() {
+		count.store(1, std::memory_order_relaxed);
+	}
+	// Forgets every extended-CC enable: they belong to the script, not the module.
+	void clearExtendedCc() {
+		for (int i = 0; i < NIN; i++) ports[i].extendedCc.clear();
+	}
+
+	// Audio thread. Decodes the messages due at `frame` on the ports in use. The
+	// others are only emptied: a device selected on an unused input must not pile
+	// up messages that would flood the script once it is enabled.
+	void process(int64_t frame) {
+		midi::Message msg;
+		int n = count.load(std::memory_order_relaxed);
+		for (int i = 0; i < n; i++) {
+			while (ports[i].queue.tryPop(&msg, frame)) {
+				ports[i].processor.processMessage(msg);
+			}
+		}
+		for (int i = n; i < NIN; i++) {
+			while (ports[i].queue.tryPop(&msg, frame)) {}
+		}
+	}
+
+	// Audio thread. Empties every queue without decoding (bypass).
+	void processBypass(int64_t frame) {
+		midi::Message msg;
+		for (int i = 0; i < NIN; i++) {
+			while (ports[i].queue.tryPop(&msg, frame)) {}
+		}
+	}
+
+	// Audio thread. Drops the half-received NRPN/RPN/14-bit CC state of every
+	// port; the decoders are not thread-safe, so the UI thread must not do this.
+	void resetDecoders() {
+		for (int i = 0; i < NIN; i++) ports[i].processor.reset();
+	}
+
+	// Module reset. The emptied queue leaves the stream discontinuous, so the
+	// decoder state goes with it: a parameter still armed from before would
+	// capture the next data entry.
+	void reset() {
+		for (int i = 0; i < NIN; i++) {
+			ports[i].queue.reset();
+			ports[i].processor.reset();
+			ports[i].extendedCc.clear();
+		}
+	}
+
+	// Audio thread, from a port's processMessage(): a pure enqueue — script code
+	// runs on the worker and must never be entered from here.
+	bool dispatch(int port, const MessageEx& m) {
+		if (!isEnabled(port) || !ports[port].accepts(m)) return false;
+		MidiScript::QueuedMessage q;
+		q.msg = m.msg;
+		q.type = m.type;
+		q.paramNumber = m.paramNumber;
+		q.extraValue = m.extraValue;
+		q.isComponent = m.isComponent;
+		q.frame = m.frame;
+		if (onMessage) onMessage(port, q);
+		// false keeps the message available to any other handler.
+		return false;
+	}
+};
+
+
+// MIDI outputs: ports, timing mode and the worker → audio hand-off
+// The output side of the module: ports, port enables, the worker -> audio
+// queue and the timing mode with its late-message report.
+// Threading: the worker calls enqueue() and enable*(); the audio thread calls
+// drain(), onTick() and flush(). The queue is owned here, not by an engine, so
+// it outlives engine switches and clearScript().
+// NOUT = MIDI outputs, TPORTS = trigger inputs (one tick clock each). Frame and
+// sample rate are passed in; log lines go to the ScriptLog given at construction.
+template <int NOUT, int TPORTS>
+struct MidiOutputs {
+	using Port = MidiOutput<TPORTS>;
+	// port, message, channel, tick, trigger input
+	using Entry = std::tuple<int, MidiScript::Message, uint8_t, uint64_t, int>;
+
+	/** [Stored to Json] */
+	Port ports[NOUT];
+
+	std::atomic<int> count{1};
+	// Bit per port already reported as dropping messages (log once).
+	std::atomic<uint32_t> dropLogged{0};
+	// Worker -> audio hand-off.
+	dsp::RingBuffer<Entry, 128> queue;
+	// Set by enqueue() on a full queue; cleared and logged by drain().
+	std::atomic<bool> overflow{false};
+	// midiOut.enableTiming(reportLate). Worker writes, audio thread reads.
+	std::atomic<bool> timingEnabled{false};
+	std::atomic<bool> timingReportLate{false};
+	// Audio thread: frame of the last late-message log line, -1 for none.
+	int64_t timingLateLoggedAt = -1;
+	ScriptLog* log;
+
+	explicit MidiOutputs(ScriptLog* log) : log(log) {
+		for (int i = 0; i < NOUT; i++) {
+			ports[i].timing = &timingEnabled;
+			ports[i].reportLate = &timingReportLate;
+		}
+	}
+
+	// Port enables
+	// Outputs in use are ports 0..count-1 (at least 1), raised by the script's
+	// midiOut.enablePorts(). The per-sample loops run to this count.
+	void enablePorts(int n) {
+		if (n > NOUT) n = NOUT;
+		if (n > count.load(std::memory_order_relaxed)) count.store(n, std::memory_order_relaxed);
+	}
+	int enabledCount() const {
+		return count.load(std::memory_order_relaxed);
+	}
+	bool isEnabled(int port) const {
+		return port < count.load(std::memory_order_relaxed);
+	}
+
+	// Timing mode
+	// Outgoing messages keep their frame (see MidiOutput::handOff()).
+	void enableTiming(bool reportLate) {
+		timingReportLate.store(reportLate, std::memory_order_relaxed);
+		timingEnabled.store(true, std::memory_order_relaxed);
+	}
+	bool isTimingEnabled() const {
+		return timingEnabled.load(std::memory_order_relaxed);
+	}
+
+	// What a script starts with: port 1 only, no timing mode.
+	void resetEnables() {
+		count.store(1, std::memory_order_relaxed);
+		timingEnabled.store(false, std::memory_order_relaxed);
+		timingReportLate.store(false, std::memory_order_relaxed);
+		dropLogged.store(0, std::memory_order_relaxed);
+	}
+
+	// Worker. Queues a group of messages; false (group dropped) for an unknown or
+	// disabled port, or a full queue.
+	bool enqueue(int port, const MidiScript::Message* msgs, size_t n, uint8_t channel, uint64_t tick, int trigPort = 0) {
+		if (port < 0 || port >= NOUT) return false;
+		if (!isEnabled(port)) {
+			// Once per port, not per message.
+			uint32_t bit = uint32_t(1) << port;
+			if (!(dropLogged.fetch_or(bit) & bit)) {
+				log->pushText(string::f("MIDI output %d is not enabled, message(s) dropped; call midiOut.enablePorts(%d)", port + 1, port + 1));
+			}
+			return false;
+		}
+		// Whole group or nothing, so an NRPN quad or 14-bit CC pair is never
+		// half-emitted. RingBuffer::push() does not bounds-check.
+		if (queue.capacity() < n) {
+			overflow.store(true, std::memory_order_relaxed);
+			return false;
+		}
+		for (size_t i = 0; i < n; i++) {
+			queue.push(std::make_tuple(port, msgs[i], channel, tick, trigPort));
+		}
+		return true;
+	}
+
+	// Audio thread. Queued messages go to their ports, then due frame-scheduled
+	// ones are sent. Independent of the active engine, so a cleared script's
+	// onUnload() output still reaches the device. Call after the script dispatch.
+	void process(int64_t frame, float sampleRate) {
+		// Once per drain: a saturated output must not flood the log.
+		if (overflow.exchange(false, std::memory_order_relaxed)) {
+			log->pushText("MIDI output queue full, message(s) dropped");
+		}
+		while (!queue.empty()) {
+			Entry t = queue.shift();
+			midi::Message msg = std::get<1>(t);
+			ports[std::get<0>(t)].send(msg, std::get<2>(t), std::get<3>(t), std::get<4>(t), frame);
+		}
+		// All ports, not just enabled ones: a replaced script may have left framed
+		// messages behind.
+		for (int i = 0; i < NOUT; i++) ports[i].processFrame(frame);
+		reportLateMessages(frame, sampleRate);
+	}
+
+	// Audio thread. A trigger channel's clock ticked: releases its
+	// sendAfterTrigger() messages on every output in use.
+	void onTick(uint8_t channel, uint64_t tick, int trigPort, int64_t frame) {
+		for (int o = 0, n = count.load(std::memory_order_relaxed); o < n; o++) {
+			ports[o].processTick(channel, tick, trigPort, frame);
+		}
+	}
+
+	// Audio thread. Drops messages waiting for a tick; the counters restart with
+	// a new script.
+	void clearTickQueues() {
+		for (int i = 0; i < NOUT; i++) ports[i].clearTickQueues();
+	}
+
+	// Teardown: sends what is left in the queue immediately, ignoring frame/tick
+	// scheduling. Only after the worker has stopped.
+	void flush() {
+		while (!queue.empty()) {
+			Entry t = queue.shift();
+			midi::Message msg = std::get<1>(t);
+			msg.frame = -1;
+			// Immediate in timing mode too: Rack's output queue may be dropped
+			// with the device.
+			ports[std::get<0>(t)].sendMessage(msg);
+		}
+	}
+
+	// Every port back to its initial state.
+	void reset() {
+		for (int i = 0; i < NOUT; i++) ports[i].reset();
+		timingLateLoggedAt = -1;
+	}
+
+	// Audio thread. Logs late messages, at most once per second of audio.
+	void reportLateMessages(int64_t frame, float sampleRate) {
+		if (!timingReportLate.load(std::memory_order_relaxed)) return;
+		uint32_t late = 0;
+		int64_t worst = 0;
+		int n = count.load(std::memory_order_relaxed);
+		for (int i = 0; i < n; i++) {
+			late += ports[i].lateCount;
+			worst = std::max(worst, ports[i].lateWorst);
+		}
+		if (late == 0 || sampleRate <= 0.f) return;
+		if (timingLateLoggedAt >= 0 && frame - timingLateLoggedAt < int64_t(sampleRate)) return;
+
+		for (int i = 0; i < n; i++) {
+			ports[i].lateCount = 0;
+			ports[i].lateWorst = 0;
+		}
+		timingLateLoggedAt = frame;
+		log->pushText(string::f("Timing: %u message(s) reached the output too late, worst by %.1f ms", late, 1000.f * float(worst) / sampleRate));
+	}
+};
+
+
+// Tipsy output: encoding onto the trigger CV, one per module
+// Encodes queued Tipsy messages onto the trigger CV output. The worker enqueues
+// (send/reset); the audio thread encodes one float per process() call.
 struct TipsyOutput {
 	using TipsyMessage = MidiScript::TipsyMessage;
 
@@ -369,42 +719,28 @@ struct TipsyOutput {
 		ENCODE_ERROR  // getNextMessageFloat() failed; message terminated
 	};
 
-	// Encodes Tipsy messages onto the trigger CV output. Audio thread only.
+	// Audio thread only.
 	tipsy::ProtocolEncoder encoder;
 
-	// SPSC queue of pending Tipsy messages (worker → audio). send() only
-	// copies the payload; encoding happens in process() on the audio
-	// thread, which owns the encoder.
-	//
-	// Never cleared: clear() writes `start`, the consumer's index, so calling it
-	// from the worker would break the single-consumer contract. Discarding goes
-	// through discardCount + a queued sentinel instead.
+	// SPSC queue of pending messages (worker -> audio); only the audio thread
+	// encodes. Never cleared (clear() writes the consumer's index): discarding
+	// goes through discardCount and a queued sentinel instead.
 	dsp::RingBuffer<TipsyMessage, 8> outQueue;
 
-	// Discard sentinels enqueued so far. Written by reset() (worker), read
-	// by process() (audio); discardSeen is the audio thread's private
-	// count of the ones it has consumed.
-	//
-	// A counter rather than a flag: two reloads in quick succession must discard
-	// both batches, and a bool cleared after the first sentinel would let the
-	// second play. The queued sentinel supplies the position the counter lacks —
-	// anything pushed after it is new and survives.
+	// Discard sentinels enqueued (worker) and consumed (discardSeen, audio).
+	// A counter, not a flag, so two quick reloads discard both batches; the
+	// queued sentinel marks where the new script's messages begin.
 	std::atomic<uint32_t> discardCount{0};
 	uint32_t discardSeen = 0;
 
-	// The message the encoder is streaming out. The encoder holds pointers into
-	// its buffers for the whole (multi-cycle) message, so it must outlive the
-	// encoding — a member, not a local (shift() hands out copies). Only ever
-	// overwritten while the encoder is dormant, so an in-flight message is never
-	// pulled out from under it.
+	// The message being streamed out. The encoder points into it for the whole
+	// message, so it is a member; only overwritten while the encoder is dormant.
 	TipsyMessage currentMessage;
 
-	// Encoder result code from the last INIT_ERROR, for the module's log line.
+	// Result code of the last INIT_ERROR, for the log line.
 	int lastInitErrorCode = 0;
 
-	// Worker side. Enqueues a validated message; keeps the last slot free so
-	// reset() can always enqueue its sentinel. Returns false (without
-	// queuing) when the queue has no room — the caller logs the drop.
+	// Worker. Keeps the last slot free for reset()'s sentinel; false when full.
 	bool send(const char* mimeType, const unsigned char* data, uint32_t bytes) {
 		if (outQueue.capacity() <= 1) return false;
 		TipsyMessage p;
@@ -416,10 +752,9 @@ struct TipsyOutput {
 		return true;
 	}
 
-	// Worker side — queues a discard sentinel for the audio thread to drain.
+	// Worker. Queues a discard sentinel.
 	void reset() {
-		// Order matters: the sentinel goes in first, so the audio thread can
-		// never see the raised count without the sentinel that bounds it.
+		// Sentinel first, so the raised count never outruns it.
 		TipsyMessage p;
 		p.mimeSize = 0;
 		p.dataSize = 0;
@@ -427,21 +762,18 @@ struct TipsyOutput {
 		discardCount.fetch_add(1, std::memory_order_relaxed);
 	}
 
-	// Audio side. If the encoder is idle, drops any stale messages, starts the
-	// next pending one, then drains one encoded float. WROTE sets voltageOut.
+	// Audio thread. If idle, drops stale messages and starts the next one, then
+	// encodes one float (WROTE sets voltageOut).
 	Output process(float& voltageOut) {
 		if (encoder.isDormant()) {
-			// Everything ahead of an unconsumed sentinel was queued by a script
-			// that has since been replaced. Only done while dormant, so a message
-			// already going out still completes. Bounded by the queue size, and
-			// Tipsy messages are rare, so draining the run in one call is fine.
+			// Everything ahead of an unconsumed sentinel is from a replaced script.
+			// Only while dormant, so a message already going out completes.
 			while (discardSeen < discardCount.load(std::memory_order_relaxed) && !outQueue.empty()) {
 				if (outQueue.shift().mimeSize == 0) discardSeen++;
 			}
 
 			if (!outQueue.empty()) {
-				// Copy into the member the encoder points into for the whole message
-				// (shift() returns a copy, so not a local).
+				// Into the member the encoder points into.
 				currentMessage = outQueue.shift();
 				auto initResult = encoder.initiateMessage(currentMessage.mime, currentMessage.dataSize, currentMessage.data);
 				if (encoder.isError(initResult)) {
@@ -464,60 +796,47 @@ struct TipsyOutput {
 	}
 };
 
-// ── Tipsy input: decoding the trigger CV, one per module ───────────────────
-// Decodes the trigger CV input back into completed messages. The worker thread
-// claims the input (claim); the audio thread feeds one sample per call
-// (process), delivering completed messages through a callback and reporting
-// drops (overflow/error) into the module's ScriptLog. The only boundaries to
-// the rest of the module are the input voltage and the log pointer.
+// Tipsy input: decoding the trigger CV, one per module
+// Decodes the trigger CV input into messages. The worker claims the input; the
+// audio thread feeds one sample per process() call, completed messages go to a
+// callback and drops are reported to the ScriptLog.
 struct TipsyInput {
 	using TipsyMessage = MidiScript::TipsyMessage;
 
-	// Which trigger input carries the Tipsy stream, or -1 when disabled. Written
-	// by claim() (worker), read by claimed() (audio).
+	// Trigger input carrying the stream, -1 when disabled. Worker writes, audio reads.
 	std::atomic<int> inPort{-1};
 
-	// Decodes voltages back into messages. Audio thread only.
+	// Audio thread only.
 	tipsy::ProtocolDecoder decoder;
 
-	// The decoder writes the payload here, so it must outlive the message being
-	// assembled. Handed over once via provideDataBuffer() — which refuses while
-	// a body is in flight, so it is only ever called when the decoder is idle.
+	// Payload store of the decoder (see provideDataBuffer()).
 	unsigned char buffer[MidiScript::tipsyMaxPayloadLength];
 
-	// Completed message copied out of decoder's reusable buffer, then handed to
-	// the enqueue callback — never returned to the caller, so it stays valid.
+	// Completed message, copied out of the decoder's reusable buffer.
 	TipsyMessage currentMessage;
 
-	// Wired by the module to its ScriptLog so overflow/error can be reported.
-	// Set once in the constructor.
 	ScriptLog* log = nullptr;
 
-	// Last reported state of each condition (audio thread only). Logging is
-	// edge-triggered: an episode that persists across many samples — a noisy
-	// port, a saturated queue — logs once on its rising edge, not per sample
-	// (a divider-tick drain would still flood the log, this does not).
+	// Audio thread. Logging is edge-triggered: an episode spanning many samples
+	// logs once, on its rising edge.
 	bool overflowActive = false;
 	bool errorActive = false;
 
 	TipsyInput(ScriptLog* log) : log(log) {}
 
-	// Worker side — midi.enableTipsyIn() binding. -1 releases the input.
+	// Worker, midi.enableTipsyIn(). -1 releases the input.
 	void claim(int port) {
 		inPort.store(port, std::memory_order_relaxed);
 	}
 
-	// Audio thread reads this every sample.
+	// Audio thread, every sample.
 	int claimed() const {
 		return inPort.load(std::memory_order_relaxed);
 	}
 
-	// Audio side. Feeds one sample into the decoder. On a completed message,
-	// delivers it through enqueue(msg), which returns true if the message was
-	// accepted (e.g. pushed into the engine's queue) and false if it was
-	// dropped — the overflow the module used to report separately. Returns
-	// whether a completed message was accepted this call. The decoder resyncs
-	// on its own at the next message-begin sentinel.
+	// Audio thread. Feeds one sample; a completed message goes to enqueue(msg),
+	// which returns false if it dropped it. Returns whether a message was
+	// accepted. The decoder resyncs itself at the next message-begin sentinel.
 	template <typename EnqueueFn>
 	bool process(float voltage, EnqueueFn&& enqueue) {
 		auto result = decoder.readFloat(voltage);
@@ -526,19 +845,16 @@ struct TipsyInput {
 			reportError();
 			return false;
 		}
-		// A clean sample ends the malformed-stream episode, so a re-degradation
-		// can log again.
+		// A clean sample ends the episode, so a new one can log again.
 		errorActive = false;
 
 		if (result != tipsy::ProtocolDecoder::DecoderResult::BODY_READY) return false;
 
-		// BODY_READY: the payload is complete in buffer, which the decoder
-		// reuses for the next message — so copy it out now.
+		// Payload complete; copy out before the decoder reuses the buffer.
 		size_t mimeSize = strnlen(decoder.getMimeType(), MidiScript::tipsyMaxMimeTypeSize - 1);
 		uint32_t dataSize = decoder.getDataSize();
 		if (dataSize > MidiScript::tipsyMaxPayloadLength) {
-			// provideDataBuffer() sized the store, so the decoder should have
-			// rejected this as ERROR_DATA_TOO_LARGE already. Defensive.
+			// Defensive: the decoder should have rejected it already.
 			reportError();
 			return false;
 		}
@@ -554,31 +870,24 @@ struct TipsyInput {
 			reportOverflow();
 			return false;
 		}
-		// A successful enqueue ends the dropped-message episode.
 		overflowActive = false;
 		return true;
 	}
 
-	// Audio thread — marks the malformed-stream episode active and logs on its
-	// rising edge, so a stream that stays broken reports once, not per sample.
 	void reportError() {
 		if (errorActive) return;
 		errorActive = true;
-		if (log) log->push(LOG_FORMAT::TEXT, 0.f, std::string("Tipsy input: malformed stream"));
+		if (log) log->pushText("Tipsy input: malformed stream");
 	}
 
-	// Audio thread — marks the dropped-message episode active and logs on its
-	// rising edge, so a queue that stays full reports once, not per message.
 	void reportOverflow() {
 		if (overflowActive) return;
 		overflowActive = true;
-		if (log) log->push(LOG_FORMAT::TEXT, 0.f, std::string("Tipsy input queue full, message(s) dropped"));
+		if (log) log->pushText("Tipsy input queue full, message(s) dropped");
 	}
 
-	// Releases the input claim and re-arms the decoder's data store. Safe: no
-	// decoding happens at reset, and provideDataBuffer() refuses mid-body. The
-	// output side is deliberately untouched — stale queued output is discarded
-	// by the sentinel protocol on script reload instead.
+	// Releases the claim and re-arms the data store (nothing decodes at reset).
+	// The output side is untouched: stale output goes via the sentinel protocol.
 	void reset() {
 		inPort.store(-1, std::memory_order_relaxed);
 		decoder.provideDataBuffer(buffer, sizeof(buffer));
@@ -586,13 +895,12 @@ struct TipsyInput {
 };
 
 
-// ── Module variants ─────────────────────────────────────────────────────────
+// Module variants
 // A MidiKit variant is a Config struct with the port/param counts of the
 // module. MidiKitModuleBase is templated over it. The widget base class
 // MidiKitWidgetBase holds everything but the layout: a variant derives from it,
 // adds its own controls in its constructor (see MidiKitWidget) and is
 // registered with its own panel, model and plugin.json entry.
-//
 // Config contract:
 //   static constexpr int cvInputs, trigInputs, trigOutputs, params,
 //                        midiInputs, midiOutputs;
@@ -632,26 +940,21 @@ struct MidiKitMicroConfig {
 };
 
 
-// ── Script host: engines + live script, one per module ─────────────────────
-// Owns the two engine instances and which one is live, plus the script source
-// and its persisted config. Every call into script code goes through here, so
-// the "is there an active engine?" check lives in one place instead of at
-// eight call sites.
-//
-// Threading: the engines are worker-thread-owned once loaded (interpreter and
-// cached hook refs); the module's audio thread only enqueues into their SPSC
-// queues (queueMessage/queueTick) and drains via pump(). load()/closeState()
-// run on the UI thread and BLOCK — closeState() must complete before the active
-// pointer is reassigned, so only one engine ever has outstanding worker tasks.
-// The port/param `se` pointers (module-side) are re-bound by the module after
-// load().
+// Script host: engines + live script, one per module
+// Owns the two engines, which one is live, and the script source. Every call
+// into script code goes through here, so the "active engine?" check lives in
+// one place.
+// Threading: a loaded engine belongs to the worker; the audio thread only
+// enqueues into its SPSC queues (queueMessage/queueTick) and calls process().
+// load()/closeState() run on the UI thread and BLOCK, so only one engine ever
+// has outstanding worker tasks.
 struct ScriptHost {
-	// The engine currently selected to run the loaded script, or null. Written
-	// only by load()/closeState(); read via getActiveEngine().
+	// The engine running the loaded script, or null. Written only by
+	// load()/closeState().
 	MidiScript::MidiScriptEngine* activeEngine = nullptr;
 
-	// The two engines. Only one is ever loaded (activeEngine); the other is
-	// closed on switch. Widget/tests reach these directly (RAM usage, state).
+	// Only one is ever loaded; the other is closed on switch. Widget/tests reach
+	// them directly.
 	MidiScript::Lua::MidiScriptEngineLua seLua;
 	MidiScript::QuickJs::MidiScriptEngineQuickJs seQuickJs;
 
@@ -668,32 +971,25 @@ struct ScriptHost {
 		seQuickJs.setWorker(worker);
 	}
 
-	// The engine currently selected to run the loaded script, or null.
 	MidiScript::MidiScriptEngine* getActiveEngine() const {
 		return activeEngine;
 	}
-	// Non-const accessor returning the pointer by reference, so tests can inject
-	// a mock engine (m->host.getActiveEngine() = &mock).
+	// By reference, so tests can inject a mock engine.
 	MidiScript::MidiScriptEngine*& getActiveEngine() {
 		return activeEngine;
 	}
 
-	// Whether the loaded script is running on the Lua engine.
 	bool isLuaEngine() const {
 		return activeEngine == &seLua;
 	}
-	// Whether the loaded script is running on the QuickJs engine.
 	bool isQuickJsEngine() const {
 		return activeEngine == &seQuickJs;
 	}
 
-	// Selects the engine for `src`, closes the previously active one (blocking,
-	// so only one engine ever has outstanding worker tasks), and starts loading
-	// the new script into it, installing `configJson` as its initial config —
-	// empty means a fresh, empty config (script switch), not "carry over the
-	// previous script's config". Returns the newly selected
-	// engine (null if the script matched neither engine). The port/param `se`
-	// pointers are the module's to re-bind after this returns.
+	// Selects the engine for `src`, closes the previous one (blocking) and loads
+	// the script with `configJson` as its initial config (empty = fresh config,
+	// not the previous script's). Returns the new engine, null if neither matches.
+	// The module re-binds its port/param pointers afterwards.
 	MidiScript::MidiScriptEngine* load(const std::string& src, const std::string& configJson) {
 		script = src;
 		MidiScript::MidiScriptEngine* prevEngine = activeEngine;
@@ -701,25 +997,20 @@ struct ScriptHost {
 		if (seLua.testScript(src)) activeEngine = &seLua;
 		if (seQuickJs.testScript(src)) activeEngine = &seQuickJs;
 
-		// Close the engine that is no longer active (silently — the caller has
-		// already pushed the RESET marker). Blocking rather than the async
-		// loadScript("") this used to be: once this call returns, activeEngine is
-		// again the only engine that can have any state or outstanding worker
-		// task, which is the invariant onRemove() (and onReset()) rely on to know
-		// what needs tearing down.
+		// Blocking: afterwards activeEngine is the only engine with state or
+		// worker tasks, which onRemove()/onReset() rely on.
 		if (prevEngine && prevEngine != activeEngine) prevEngine->closeState();
 
 		if (activeEngine) activeEngine->loadScript(script.c_str(), configJson);
 		return activeEngine;
 	}
 
-	// Closes the active engine and nulls the pointer, so process() stops
-	// dispatching. Blocking: closeState() runs onUnload() to completion. Rack
-	// dispatches onRemove()/onReset() with the engine mutex held, so process()
-	// cannot run concurrently.
+	// Closes the active engine (blocking: runs onUnload() to completion) and
+	// nulls the pointer. Rack holds the engine mutex across onRemove()/onReset(),
+	// so process() cannot run concurrently.
 	void closeState() {
 		MidiScript::MidiScriptEngine* engine = activeEngine;
-		activeEngine = nullptr;   // stop process() dispatching
+		activeEngine = nullptr;
 		if (engine) engine->closeState();
 	}
 
@@ -730,19 +1021,14 @@ struct ScriptHost {
 	void queueTick(int trigPort, uint8_t channel, int64_t frame = -1) {
 		if (activeEngine) activeEngine->processInTick(trigPort, channel, frame);
 	}
-	// Audio thread: runs one pump of the active engine's queued work.
+	// Audio thread: one pump of the active engine's queued work.
 	void process() {
 		if (activeEngine) activeEngine->process();
 	}
 
-	// UI thread: the active engine's last-published config, or null if
-	// nothing is loaded. A plain read (by reference — see
-	// MidiScriptEngine::peekConfig()) — no interpreter round-trip, nothing to
-	// time out. See MidiKit.cpp's dataToJson().
-	//
-	// A static empty fallback (rather than returning by value) so this can
-	// still return a reference when there's no active engine to peek into;
-	// the caller only ever reads through it for the duration of one embed.
+	// UI thread: the active engine's last-published config, null if nothing is
+	// loaded. A plain read by reference, no interpreter round-trip (see
+	// MidiScriptEngine::peekConfig()); the static fallback keeps it a reference.
 	const std::shared_ptr<json_t>& peekConfig() const {
 		static const std::shared_ptr<json_t> none;
 		return activeEngine ? activeEngine->peekConfig() : none;
@@ -750,46 +1036,37 @@ struct ScriptHost {
 };
 
 
-// ── Trigger inputs, one per module ─────────────────────────────────────────
-// The trigger CV input side: per-port, per-channel SchmittTriggers and tick
-// counters, and the enable mask that gates input processing. Worker thread
-// writes the mask (trig.enableIn); the audio thread reads it and steps the
-// triggers in process(). Templated over the number of trigger input ports
-// (defaults to 1 — the module's single trigger input).
+// Trigger inputs, one per module
+// Per-port, per-channel SchmittTriggers and tick counters, gated by the
+// script's enable mask. The worker writes the mask (trig.enableIn); the audio
+// thread steps the triggers.
 template <int TPORTS = 1>
 struct TriggerInputs {
-	// Wired by the module to &inputs[INPUT_TRIG] -- the first of TPORTS
-	// consecutive ports -- so process() can read the trigger voltages
-	// directly. Set once in the constructor after config() sizes the port
-	// vector.
+	// First of TPORTS consecutive trigger inputs; set once by the module.
 	rack::engine::Input* input = nullptr;
 
-	// One SchmittTrigger and tick counter per (port, channel) of the trigger
-	// input — trig.onTrigger/trig.getTicks() are channel-aware.
+	// One per (port, channel).
 	dsp::SchmittTrigger trigger[TPORTS][PORT_MAX_CHANNELS];
 	uint64_t triggerTick[TPORTS][PORT_MAX_CHANNELS];
 
-	// Trigger inputs enabled by the script (trig.enableIn()), one mask per
-	// port: bit c = channel c. Atomic: written by the worker (trig.enableIn()),
-	// read by the audio thread (process()).
+	// Enabled channels by trig.enableIn(), bit c = channel c. Worker writes,
+	// audio thread reads.
 	std::atomic<uint16_t> enabledMask[TPORTS];
 
-	// Worker side — trig.enableIn() binding.
+	// Worker, trig.enableIn().
 	void enable(int port, uint8_t channel) {
 		if (port < 0 || port >= TPORTS) return;
 		if (channel >= PORT_MAX_CHANNELS) return;
 		enabledMask[port].fetch_or(static_cast<uint16_t>(1) << channel, std::memory_order_relaxed);
 	}
 
-	// Audio thread — whether channel of `port` is enabled.
 	bool isEnabled(int port, uint8_t channel) const {
 		if (port < 0 || port >= TPORTS) return false;
 		if (channel >= PORT_MAX_CHANNELS) return false;
 		return (enabledMask[port].load(std::memory_order_relaxed) >> channel) & 1;
 	}
 
-	// Forgets every enabled channel on script load/reset, and with it the tick
-	// counters: the enables belong to the script, not the module.
+	// Forgets the enabled channels and tick counters: they belong to the script.
 	void reset() {
 		for (int p = 0; p < TPORTS; p++) {
 			for (int i = 0; i < PORT_MAX_CHANNELS; i++) triggerTick[p][i] = 0;
@@ -797,18 +1074,16 @@ struct TriggerInputs {
 		}
 	}
 
-	// Audio thread — the tick counter for a channel, for trig.getTicks().
+	// Audio thread, for trig.getTicks().
 	uint64_t getTicks(int port, uint8_t channel) const {
 		if (port < 0 || port >= TPORTS) return 0;
 		if (channel >= PORT_MAX_CHANNELS) return 0;
 		return triggerTick[port][channel];
 	}
 
-	// Audio thread — one sample of input detection for `port`. Steps each
-	// channel's SchmittTrigger and calls onTick(channel, tick) for every rising
-	// edge. The SchmittTriggers are always stepped for enabled channels so
-	// their states stay current; while a Tipsy stream owns channel 0
-	// (tipsyClaimed), that channel is stepped but never fires.
+	// Audio thread. Steps the enabled channels and calls onTick(channel, tick)
+	// per rising edge. While a Tipsy stream owns channel 0 (tipsyClaimed), it is
+	// stepped but never fires.
 	template <typename TickFn>
 	void process(int port, int channels, bool tipsyClaimed, TickFn&& onTick) {
 		for (uint8_t c = 0; c < channels; c++) {
@@ -821,32 +1096,28 @@ struct TriggerInputs {
 	}
 };
 
-// ── Trigger outputs, one per module ────────────────────────────────────────
-// The trigger CV output side: per-port, per-channel pulse generators. Worker
-// thread arms/clears pulses (setGate/setGateVoltage); the audio thread
-// steps them in process(). Templated over the number of trigger output ports
-// (defaults to 1 — the module's single trigger output).
+// Trigger outputs, one per module
+// Per-port, per-channel pulse generators. The worker arms them
+// (setGate/setGateVoltage); the audio thread steps them.
 template <int TPORTS = 1>
 struct TriggerOutputs {
-	// Wired by the module to &outputs[OUTPUT_TRIG] -- the first of TPORTS
-	// consecutive ports -- so process() can write the trigger voltages
-	// directly. Set once in the constructor.
+	// First of TPORTS consecutive trigger outputs; set once by the module.
 	rack::engine::Output* output = nullptr;
 
 	bool triggerActive[TPORTS][PORT_MAX_CHANNELS];
 	dsp::PulseGenerator pulseGenerator[TPORTS][PORT_MAX_CHANNELS];
 
-	// Worker side — widens the port to cover `channel`
+	// Worker. Widens the port to cover `channel`.
 	void useChannel(int port, uint8_t channel) {
 		if (channel + 1 > output[port].getChannels()) output[port].setChannels(channel + 1);
 	}
 
-	// Script load — the outgoing script's channels are not the new one's.
+	// Script load: back to mono.
 	void resetChannels() {
 		for (int p = 0; p < TPORTS; p++) output[p].setChannels(1);
 	}
 
-	// Worker side — trig.setGate(): marks channel active and arms its pulse.
+	// Worker, trig.setGate(): arms the pulse.
 	void setGate(int port, uint8_t channel, float duration) {
 		if (port < 0 || port >= TPORTS || channel >= PORT_MAX_CHANNELS) return;
 		useChannel(port, channel);
@@ -854,15 +1125,13 @@ struct TriggerOutputs {
 		pulseGenerator[port][channel].trigger(duration);
 	}
 
-	// Worker side — trig.setHigh()/trig.setLow(): deactivates the pulse so the
-	// raw voltage the caller writes wins on the output.
+	// Worker, trig.setHigh()/setLow(): the raw voltage the caller writes wins.
 	void setGateVoltage(int port, uint8_t channel) {
 		if (port < 0 || port >= TPORTS || channel >= PORT_MAX_CHANNELS) return;
 		useChannel(port, channel);
 		triggerActive[port][channel] = false;
 	}
 
-	// Resets per-channel output state (onReset()).
 	void reset() {
 		for (int p = 0; p < TPORTS; p++) {
 			for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
@@ -873,9 +1142,8 @@ struct TriggerOutputs {
 		resetChannels();
 	}
 
-	// Audio thread — one sample of the output pulse loop for `port`. Writes
-	// 10 V / 0 V to each active channel's gate pulse; channels not in a pulse
-	// keep whatever setGateVoltage() last wrote.
+	// Audio thread. Writes 10 V / 0 V for active pulses; the others keep what
+	// setGateVoltage() wrote.
 	void process(int port, float sampleTime) {
 		if (port < 0 || port >= TPORTS) return;
 		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
@@ -888,13 +1156,8 @@ struct TriggerOutputs {
 };
 
 
-// Returns the one shared async worker for all MidiKit modules.
-// The weak_ptr lets it be destroyed when the last module is removed.
-//
-// No mutex guards the expired()/make_shared/assignment sequence below. This is
-// safe because modules are constructed on the UI thread, which is a single
-// thread, so defaultWorker() is never called concurrently -- the static
-// weak_ptr is only ever touched from that one thread.
+// The one async worker shared by all MidiKit modules; the weak_ptr lets it die
+// with the last module. Unguarded: modules are constructed on the UI thread only.
 static std::shared_ptr<ITaskWorker> defaultWorker() {
 	static std::weak_ptr<ITaskWorker> shared;
 	if (shared.expired()) {
@@ -934,72 +1197,13 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
-	// One MIDI input: the queue, the decoder for its stream and the extended-CC
-	// enables of the script for it.
-	//
-	// The decoder turns the incoming stream into semantic events (NRPN/RPN/
-	// 14-bit CC assembly) before it reaches the script. The queue is injected
-	// rather than owned: it stays the module's, keeping its widget binding and
-	// JSON. MUST stay declared after the queue so destruction order keeps the
-	// queue alive for the processor's whole lifetime.
-	//
-	// Only processMessage() is used -- never process(): the module pumps the
-	// queue itself under processDivider, and each decoded message has to be
-	// queued for the worker thread rather than dispatched inline.
-	//
-	// Extended-CC input enables (midi.enableNrpnIn/enableRpnIn/enableCc14bitIn):
-	// atomic masks written by the worker from the enable bindings, read by the
-	// audio thread in processMidi().
-	struct MidiInputPort : MidiProcessorHandler {
-		/** [Stored to Json] */
-		midi::InputQueue queue;
-		MidiProcessor processor{&queue};
-		ExtendedCcEnables extendedCc;
+	// The MIDI inputs (see MidiInputs for the threading contract).
+	MidiInputs<CONFIG::midiInputs> midiIns;
 
-		MidiKitModuleBase* module = nullptr;
-		int port = 0;
-
-		// MidiProcessorHandler: routes the decoded message into the module
-		// together with the port it arrived on.
-		bool processMidi(const MessageEx& m) override {
-			return module->processMidi(port, m);
-		}
-	};
-	MidiInputPort midiInputs[CONFIG::midiInputs];
-
-	// Number of MIDI inputs/outputs in use: ports 0..count-1. Always at least
-	// 1; the script raises it with midi.enablePorts/midiOut.enablePorts. Only a
-	// consecutive run from the first port can be in use, so the per-sample
-	// loops run to this count instead of MIDI_INPUTS/MIDI_OUTPUTS. Written by
-	// the worker, read by the audio thread (inputs) and the worker (outputs).
-	std::atomic<int> midiInCount{1};
-	std::atomic<int> midiOutCount{1};
-
-	// midiOut.enableTiming(): outgoing messages keep their frame (see
-	// MidiOutput::handOff()). Worker writes, audio thread reads; reset with the
-	// port enables.
-	std::atomic<bool> timingEnabled{false};
-	// midiOut.enableTiming(true): log messages that reached Rack too late.
-	std::atomic<bool> timingReportLate{false};
-	// Audio thread: `sample` of the last late-message log line, -1 for none yet.
-	int64_t timingLateLoggedAt = -1;
 	// Frame of the latest process() call, for code without ProcessArgs.
 	std::atomic<int64_t> timingCurrentFrame{0};
 	// The engine's block size, published from the audio thread.
 	std::atomic<int64_t> timingBlockFrames{0};
-
-	// Outputs already reported as dropping messages, so a
-	// script sending to a disabled port logs once, not per message.
-	std::atomic<uint32_t> midiOutDropLogged{0};
-
-	/** [Stored to Json] */
-	MidiOutput<CONFIG::trigInputs> midiOutputs[CONFIG::midiOutputs];
-
-	// The first MIDI input/output, for the single-port code paths and the
-	// test suite. Declared after the arrays they alias.
-	midi::InputQueue& midiInput = midiInputs[0].queue;
-	MidiProcessor& midiProcessor = midiInputs[0].processor;
-	MidiOutput<CONFIG::trigInputs>& midiOutput = midiOutputs[0];
 
 	// Script log + overlay, in their own struct (see ScriptLog for the
 	// threading contract).
@@ -1010,17 +1214,9 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	/** [Stored to Json] */
 	ScriptHost host;
 
-	// MIDI output queue, owned by the module rather than either engine, so its
-	// contents outlive engine switches and clearScript() rather than being tied
-	// to whichever engine happened to be active when they were queued. Written
-	// by sendMidi() (worker thread), drained by process() (audio thread) and by
-	// onRemove() at teardown.
-	dsp::RingBuffer<std::tuple<int, MidiScript::Message, uint8_t, uint64_t, int>, 128> midiOutQueue;
-	// Set (worker thread) when sendMidi() drops a group for lack of room;
-	// cleared and reported once (audio thread) in process(). A saturated output
-	// must not flood the log through the same bottleneck that is already
-	// saturated.
-	std::atomic<bool> midiOutOverflow{false};
+	// The MIDI outputs (see MidiOutputs for the threading contract).
+	MidiOutputs<CONFIG::midiOutputs, CONFIG::trigInputs> midiOuts{&log};
+
 	// Set by loadScript() (UI thread), consumed by process() (audio thread):
 	// messages the outgoing script scheduled with sendAfterTrigger() are still
 	// waiting in the outputs' tick queues, but the tick counters they were
@@ -1037,15 +1233,14 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	TipsyInput tipsyIn{&log};
 
 	dsp::ClockDivider processDivider;
-	dsp::Timer rateLimiterTimer;
 
 	// Trigger inputs and outputs, in their own structs (see TriggerInputs /
 	// TriggerOutputs for the threading contract). Their port pointers are wired
 	// in the constructor, once config() has sized the port vectors.
 	static_assert(CONFIG::trigInputs >= 1 && CONFIG::trigOutputs >= 1, "a variant needs at least one trigger input and output");
 	static_assert(CONFIG::midiInputs >= 1 && CONFIG::midiOutputs >= 1, "a variant needs at least one MIDI input and output");
-	TriggerInputs<CONFIG::trigInputs> triggersIn;
-	TriggerOutputs<CONFIG::trigOutputs> triggersOut;
+	TriggerInputs<CONFIG::trigInputs> triggerIns;
+	TriggerOutputs<CONFIG::trigOutputs> triggerOuts;
 
 	uint64_t sample = 0;
 	std::atomic<float> sampleRate{0.f};
@@ -1076,14 +1271,14 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		}
 	}
 
-	// ── MidiScriptEngineHandler ──────────────────────────────────────────────
-	// The engines call back into the module through these methods for every
-	// module-facing operation (log/overlay/input/trig/param).
-
 	// MidiScriptEngineHandler
 	void writeLog(const std::string& text, bool useTimestamp = true) override {
-		float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
-		log.push(useTimestamp ? LOG_FORMAT::TIMESTAMP : LOG_FORMAT::TEXT, timestamp, text);
+		if (useTimestamp) {
+			log.pushTimestamped(sampleRate != 0.f ? float(sample) / sampleRate : 0.f, text);
+		}
+		else {
+			log.pushText(text);
+		}
 	}
 
 	// MidiScriptEngineHandler
@@ -1100,12 +1295,10 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// MidiScriptEngineHandler — midi.enablePorts() / midiOut.enablePorts()
 	// bindings (worker thread).
 	void enableMidiIn(int count) override {
-		if (count > MIDI_INPUTS) count = MIDI_INPUTS;
-		if (count > midiInCount.load(std::memory_order_relaxed)) midiInCount.store(count, std::memory_order_relaxed);
+		midiIns.enablePorts(count);
 	}
 	void enableMidiOut(int count) override {
-		if (count > MIDI_OUTPUTS) count = MIDI_OUTPUTS;
-		if (count > midiOutCount.load(std::memory_order_relaxed)) midiOutCount.store(count, std::memory_order_relaxed);
+		midiOuts.enablePorts(count);
 	}
 
 	// process() publishes timingCurrentFrame, but a script loads asynchronously and its
@@ -1126,21 +1319,12 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		return sampleRate.load(std::memory_order_relaxed);
 	}
 	bool isTimingEnabled() const override {
-		return timingEnabled.load(std::memory_order_relaxed);
+		return midiOuts.isTimingEnabled();
 	}
 
 	// MidiScriptEngineHandler — midiOut.enableTiming() binding (worker thread).
 	void enableTiming(bool reportLate) override {
-		timingReportLate.store(reportLate, std::memory_order_relaxed);
-		timingEnabled.store(true, std::memory_order_relaxed);
-	}
-
-	// Port 0 is always in use; the others once a script enabled them.
-	bool isMidiInEnabled(int port) const {
-		return port < midiInCount.load(std::memory_order_relaxed);
-	}
-	bool isMidiOutEnabled(int port) const {
-		return port < midiOutCount.load(std::memory_order_relaxed);
+		midiOuts.enableTiming(reportLate);
 	}
 
 	// MidiScriptEngineHandler — after the outgoing script's onUnload (worker thread).
@@ -1152,16 +1336,13 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 	// Back to "only port 1 of each" — what a script starts with.
 	void resetMidiPortEnables() {
-		midiInCount.store(1, std::memory_order_relaxed);
-		midiOutCount.store(1, std::memory_order_relaxed);
-		timingEnabled.store(false, std::memory_order_relaxed);
-		timingReportLate.store(false, std::memory_order_relaxed);
-		midiOutDropLogged.store(0, std::memory_order_relaxed);
+		midiIns.resetEnables();
+		midiOuts.resetEnables();
 	}
 
 	// MidiScriptEngineHandler — trig.enableIn() binding (worker thread).
 	void enableTrigger(int port, uint8_t channel) override {
-		triggersIn.enable(port, channel);
+		triggerIns.enable(port, channel);
 	}
 
 	// MidiScriptEngineHandler
@@ -1181,25 +1362,12 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// MidiScriptEngineHandler — midi.enableNrpnIn()/enableRpnIn() binding
 	// (worker thread).
 	void enableNrpnIn(int midiPort, int kind, int channel) override {
-		if (midiPort < 0 || midiPort >= MIDI_INPUTS) return;
-		midiInputs[midiPort].extendedCc.enableNrpn(kind, channel);
+		midiIns.enableNrpn(midiPort, kind, channel);
 	}
 
 	// MidiScriptEngineHandler — midi.enableCc14bitIn() binding (worker thread).
 	void enableCc14bitIn(int midiPort, int cc, int channel) override {
-		if (midiPort < 0 || midiPort >= MIDI_INPUTS) return;
-		midiInputs[midiPort].extendedCc.enableCc14bit(cc, channel);
-	}
-
-	// Whether the script asked for assembled events of each kind on this MIDI
-	// channel of MIDI input `port`. Audio thread. Delegates to the port's
-	// extendedCc; kept here because the test suite inspects these on the
-	// module directly.
-	bool isNrpnEnabled(uint8_t ch, bool isRpn, int port = 0) const {
-		return midiInputs[port].extendedCc.isNrpnEnabled(ch, isRpn);
-	}
-	bool isCc14bitEnabled(uint8_t ch, uint8_t cc, int port = 0) const {
-		return midiInputs[port].extendedCc.isCc14bitEnabled(ch, cc);
+		midiIns.enableCc14bit(midiPort, cc, channel);
 	}
 
 	// MidiScriptEngineHandler
@@ -1214,7 +1382,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 	// MidiScriptEngineHandler
 	uint64_t getTrigTicks(int i, uint8_t ch) override {
-		return triggersIn.getTicks(i, ch);
+		return triggerIns.getTicks(i, ch);
 	}
 
 	// MidiScriptEngineHandler
@@ -1234,38 +1402,19 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// MidiScriptEngineHandler
 	void setTrig(int i, uint8_t ch, float duration = 1e-3f) override {
 		if (i < 0 || i >= TRIG_OUTPUTS || ch >= PORT_MAX_CHANNELS) return;
-		triggersOut.setGate(i, ch, duration);
+		triggerOuts.setGate(i, ch, duration);
 	}
 
 	// MidiScriptEngineHandler
 	void setTrigVoltage(int i, uint8_t ch, float voltage) override {
 		if (i < 0 || i >= TRIG_OUTPUTS || ch >= PORT_MAX_CHANNELS) return;
-		triggersOut.setGateVoltage(i, ch);
+		triggerOuts.setGateVoltage(i, ch);
 		outputs[OUTPUT_TRIG + i].setVoltage(voltage, ch);
 	}
 
 	// MidiScriptEngineHandler
 	bool sendMidi(int midiPort, const MidiScript::Message* msgs, size_t count, uint8_t channel, uint64_t tick, int trigPort = 0) override {
-		if (midiPort < 0 || midiPort >= MIDI_OUTPUTS) return false;
-		if (!isMidiOutEnabled(midiPort)) {
-			uint32_t bit = uint32_t(1) << midiPort;
-			if (!(midiOutDropLogged.fetch_or(bit) & bit)) {
-				writeLog(string::f("MIDI output %d is not enabled, message(s) dropped; call midiOut.enablePorts(%d)", midiPort + 1, midiPort + 1), false);
-			}
-			return false;
-		}
-		// Capacity is checked for the whole group, so a multi-message value — an
-		// NRPN quad or a 14-bit CC pair — is never half-emitted.
-		// dsp::RingBuffer::push() does not bounds-check: on a full
-		// buffer it overwrites unread entries and leaves size() > capacity.
-		if (midiOutQueue.capacity() < count) {
-			midiOutOverflow.store(true, std::memory_order_relaxed);
-			return false;
-		}
-		for (size_t i = 0; i < count; i++) {
-			midiOutQueue.push(std::make_tuple(midiPort, msgs[i], channel, tick, trigPort));
-		}
-		return true;
+		return midiOuts.enqueue(midiPort, msgs, count, channel, tick, trigPort);
 	}
 
 	// MidiScriptEngineHandler
@@ -1293,22 +1442,6 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		return true;
 	}
 
-	void processTriggerOutput(int port, float sampleTime) {
-		triggersOut.process(port, sampleTime);
-	}
-
-	// Audio thread — carries out a loadScript() request (see
-	// clearPending): drops the messages still waiting for a trigger
-	// tick and the half-received NRPN/RPN/14-bit CC state of every input. Runs
-	// before anything of this sample is drained or decoded, so what the new
-	// script schedules from rack.onLoad is queued afterwards and survives.
-	void processTickQueueReset() {
-		if (clearPending.exchange(false)) {
-			for (int i = 0; i < MIDI_OUTPUTS; i++) midiOutputs[i].clearTickQueues();
-			for (int i = 0; i < MIDI_INPUTS; i++) midiInputs[i].processor.reset();
-		}
-	}
-
 	// Audio thread — one sample of every connected trigger output.
 	void processTriggerOutputs(float sampleTime) {
 		for (int i = 0; i < TRIG_OUTPUTS; i++) {
@@ -1318,7 +1451,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 			// is gone. Tipsy always goes to the first trigger output.
 			if (i == 0) processTipsyOutput(0);
 			if (!outputs[OUTPUT_TRIG + i].isConnected()) continue;
-			processTriggerOutput(i, sampleTime);
+			triggerOuts.process(i, sampleTime);
 		}
 	}
 
@@ -1331,23 +1464,21 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	void processTriggerInputs() {
 		if (host.getActiveEngine()) {
 			for (int port = 0; port < TRIG_INPUTS; port++) {
-				int channels = triggersIn.input[port].getChannels();
+				int channels = triggerIns.input[port].getChannels();
 				if (channels <= 0) channels = 1;
 				// Only the claimed port carries the Tipsy stream.
-				triggersIn.process(port, channels, tipsyIn.claimed() == port,
+				triggerIns.process(port, channels, tipsyIn.claimed() == port,
 					[&](uint8_t c, uint64_t tick) {
 						// Scheduled MIDI messages (sendAfterTrigger) run on the
 						// tick clock of the trigger input they were scheduled
 						// against, for every output.
-						for (int o = 0, n = midiOutCount.load(std::memory_order_relaxed); o < n; o++) {
-							midiOutputs[o].processTick(c, tick, port, timingCurrentFrame.load(std::memory_order_relaxed));
-						}
-						host.queueTick(port, c, timingCurrentFrame.load(std::memory_order_relaxed));
+						int64_t frame = timingCurrentFrame.load(std::memory_order_relaxed);
+						midiOuts.onTick(c, tick, port, frame);
+						host.queueTick(port, c, frame);
 					});
 			}
 		}
 	}
-
 
 	// Outputs the next Tipsy-encoded voltage on the trigger output (audio
 	// thread). Delegates the encode to TipsyOutput and turns its status into the
@@ -1375,7 +1506,6 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// engine's tipsyInQueue for the worker to dispatch and returns whether it
 	// was accepted (false = queue full, which tipsyIn reports as overflow).
 	// Returns true if a message completed and was enqueued on this sample.
-	//
 	// The Tipsy stream is always carried on channel 0 of the trigger input —
 	// other channels are never decoded. No-op unless a script claimed the
 	// trigger input via trig.enableTipsyIn().
@@ -1407,8 +1537,8 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		// Wire the trigger ports into TriggerInputs/TriggerOutputs so they can
 		// read/write them directly; the vectors are fully sized by config() and
 		// never resized. The ports of each kind are consecutive.
-		if (TRIG_INPUTS > 0) triggersIn.input = &inputs[INPUT_TRIG];
-		if (TRIG_OUTPUTS > 0) triggersOut.output = &outputs[OUTPUT_TRIG];
+		if (TRIG_INPUTS > 0) triggerIns.input = &inputs[INPUT_TRIG];
+		if (TRIG_OUTPUTS > 0) triggerOuts.output = &outputs[OUTPUT_TRIG];
 		for (int i = 0; i < TRIG_INPUTS; i++) {
 			configInput(INPUT_TRIG + i, TRIG_INPUTS > 1 ? string::f("Trigger %d", i + 1) : "Trigger");
 		}
@@ -1426,18 +1556,9 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		bindPortsAndParams(nullptr);
 
 		processDivider.setDivision(8);
-		for (int i = 0; i < MIDI_OUTPUTS; i++) {
-			midiOutputs[i].timing = &timingEnabled;
-			midiOutputs[i].reportLate = &timingReportLate;
-		}
-		// Routes decoded messages into processMidi() below. Without this the
-		// processor decodes into an empty handler list and nothing reaches the
-		// engine at all.
-		for (int i = 0; i < MIDI_INPUTS; i++) {
-			midiInputs[i].module = this;
-			midiInputs[i].port = i;
-			midiInputs[i].processor.subscribe(&midiInputs[i]);
-		}
+		midiIns.onMessage = [this](int port, const MidiScript::QueuedMessage& q) {
+			host.queueMessage(port, q);
+		};
 		host.setWorker(worker);
 		onReset();
 	}
@@ -1445,156 +1566,39 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// Closes the active engine and drains whatever its onUnload() queued. Rack
 	// dispatches this before the module leaves the engine and holds the engine
 	// mutex across it, so process() cannot run concurrently.
-	//
 	// closeState() blocks, so the worker has stopped producing before the drain
 	// — preserve that order, it is what makes the drain safe.
 	void onRemove(const RemoveEvent& e) override {
 		host.closeState();        // closes + nulls the active engine (blocking)
-		flushOutput();            // drains the module queue; no engine needed
-	}
-
-	// Sends whatever is left in the module's out-queue straight to the device,
-	// ignoring frame/tick scheduling — teardown is the last chance to emit.
-	void flushOutput() {
-		while (!midiOutQueue.empty()) {
-			auto t = midiOutQueue.shift();
-			midi::Message msg = std::get<1>(t);
-			msg.frame = -1;
-			// Immediate in timing mode too: a framed message would wait in Rack's
-			// output queue, which is dropped when this module held the last
-			// subscription to the device and is about to release it.
-			midiOutputs[std::get<0>(t)].sendMessage(msg);
-		}
+		midiOuts.flush();         // drains the module queue; no engine needed
 	}
 
 	void onReset() override {
-		for (int i = 0; i < MIDI_INPUTS; i++) {
-			midiInputs[i].queue.reset();
-			// Emptying the queue leaves the stream discontinuous, so drop any
-			// half-received NRPN/RPN/14-bit CC state with it: a parameter still
-			// armed from before the reset would capture the next data entry that
-			// arrives.
-			midiInputs[i].processor.reset();
-			midiInputs[i].extendedCc.clear();
-		}
-		for (int i = 0; i < MIDI_OUTPUTS; i++) midiOutputs[i].reset();
+		midiIns.reset();
+		midiOuts.reset();
 		sample = 0;
-		timingLateLoggedAt = -1;
-		// No script claims the trigger input until its trig.enableIn() runs.
-		triggersIn.reset();
-		// Likewise no NRPN/RPN/14-bit assembly until midi.enableNrpnIn() and
-		// friends run (cleared with the MIDI inputs above).
-		// A script claims the trigger input for Tipsy explicitly, so a reset
-		// releases it and re-arms the decoder's data store (safe: nothing is
-		// decoding at reset, and provideDataBuffer() refuses mid-body).
+		// Enables belong to the script: none until it runs trig.enableIn() etc.
+		triggerIns.reset();
+		// Releases a Tipsy claim and re-arms the decoder (nothing decodes at reset).
 		tipsyIn.reset();
-		triggersOut.reset();
-		// Only the previously active engine can have real state — loadScript()
-		// maintains that invariant by only ever loading one engine at a time and
-		// closing the other on switch — so that is the only one that needs
-		// tearing down here. Blocking (closeState()) rather than fire-and-forget,
-		// same reasoning as loadScript(): once this returns, activeEngine is
-		// again the only engine that can have any outstanding worker task.
+		triggerOuts.reset();
+		// Blocking, like loadScript(): afterwards no worker task is outstanding.
 		host.closeState();
-		// After the closing script's onUnload(), which may send to an enabled port
-		// and read its params/inputs. No engine is active after a reset, so bind to
-		// null — it is rebound by the next loadScript().
+		// After the closing script's onUnload(), which still reads the enables.
+		// No engine is active now, so bind to null until the next loadScript().
 		resetMidiPortEnables();
 		bindPortsAndParams(nullptr);
 
-		log.push(LOG_FORMAT::RESET, 0.f, std::string(""));
-		log.push(LOG_FORMAT::TEXT, 0.f, std::string("No script"));
+		log.pushReset();
+		log.pushText("No script");
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		sampleRate = e.sampleRate;
 	}
 
-	// Called via MidiInputPort::processMidi() synchronously from that port's
-	// processor.processMessage() on the AUDIO thread, so it stays a pure enqueue -- script code runs on the
-	// shared worker and must never be entered from here.
-	//
-	// A CC belonging to an extended message is notified TWICE: once as Type::CC
-	// (with isComponent set) and again as NRPN/RPN/CC_14BIT once assembled. What
-	// the script asked for decides which of the two it sees:
-	//
-	//  - Assembled events are queued only when the matching enable is set,
-	//    otherwise dropped. Queuing unconditionally would fire callbacks the
-	//    script never asked for, and (before the callbacks existed) double-fire
-	//    onMessage for every component.
-	//  - The raw CC is dropped when it is a component AND the script enabled the
-	//    kind of assembly it belongs to. isComponent alone must not decide: a
-	//    script that enabled only 14-bit CC still wants to see CC 98 raw.
-	//
-	// Returning false keeps the message available to any other handler.
-	bool processMidi(int port, const MessageEx& m) {
-		if (!host.getActiveEngine()) return false;
-		if (!isMidiInEnabled(port)) return false;
-		ExtendedCcEnables& extendedCc = midiInputs[port].extendedCc;
-
-		switch (m.type) {
-			case MessageEx::Type::NRPN:
-			case MessageEx::Type::RPN: {
-				bool isRpn = (m.type == MessageEx::Type::RPN);
-				// Parameter-select notifications carry no value (extraValue < 0),
-				// and the RPN 127/127 reset carries paramNumber < 0. Neither is a
-				// parameter change, so neither reaches the script.
-				if (!m.hasValue() || m.getParamNumber() < 0) return false;
-				if (!extendedCc.isNrpnEnabled(m.getChannel(), isRpn)) return false;
-				break;
-			}
-			case MessageEx::Type::CC_14BIT:
-				if (!extendedCc.isCc14bitEnabled(m.getChannel(), uint8_t(m.getParamNumber()))) return false;
-				break;
-			case MessageEx::Type::CC:
-				if (m.isComponent && extendedCc.isComponentEnabled(m)) return false;
-				break;
-			default:
-				break;
-		}
-
-		MidiScript::QueuedMessage q;
-		q.msg = m.msg;
-		q.type = m.type;
-		q.paramNumber = m.paramNumber;
-		q.extraValue = m.extraValue;
-		q.isComponent = m.isComponent;
-		q.frame = m.frame;
-		host.queueMessage(port, q);
-		return false;
-	}
-
-	// Audio thread. Logs the messages the outputs handed over too late, at most
-	// once per second of audio so a script that falls behind does not flood the log.
-	void reportLateMessages() {
-		if (!timingReportLate.load(std::memory_order_relaxed)) return;
-		uint32_t count = 0;
-		int64_t worst = 0;
-		int n = midiOutCount.load(std::memory_order_relaxed);
-		for (int i = 0; i < n; i++) {
-			count += midiOutputs[i].lateCount;
-			worst = std::max(worst, midiOutputs[i].lateWorst);
-		}
-		float sr = sampleRate;
-		if (count == 0 || sr <= 0.f) return;
-		if (timingLateLoggedAt >= 0 && int64_t(sample) - timingLateLoggedAt < int64_t(sr)) return;
-
-		for (int i = 0; i < n; i++) {
-			midiOutputs[i].lateCount = 0;
-			midiOutputs[i].lateWorst = 0;
-		}
-		timingLateLoggedAt = int64_t(sample);
-		log.push(LOG_FORMAT::TEXT, float(sample) / sr,
-			string::f("Timing: %u message(s) reached the output too late, worst by %.1f ms", count, 1000.f * float(worst) / sr));
-	}
-
 	void processBypass(const ProcessArgs& args) override {
-		midi::Message msg;
-		for (int i = 0; i < MIDI_INPUTS; i++) {
-			while (midiInputs[i].queue.tryPop(&msg, args.frame)) {
-				(void)0;
-			}
-		}
+		midiIns.processBypass(args.frame);
 		// The context menu's script items are a UI query that only the engine's
 		// pump answers; a bypassed module must still be able to show them.
 		host.process();
@@ -1602,18 +1606,17 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	}
 
 	void process(const ProcessArgs& args) override {
-		/*
-		// play it safe and limit MIDI output rate to 200 Hz.
-		const float rateLimiterPeriod = 1 / 200.f;
-		bool rateLimiterTriggered = (rateLimiterTimer.process(args.sampleTime) >= rateLimiterPeriod);
-		if (rateLimiterTriggered)
-			rateLimiterTimer.time -= rateLimiterPeriod;
-		else
-			return;
-		*/
-
 		timingCurrentFrame.store(args.frame, std::memory_order_relaxed);
-		processTickQueueReset();
+		// carries out a loadScript() request (see
+		// clearPending): drops the messages still waiting for a trigger
+		// tick and the half-received NRPN/RPN/14-bit CC state of every input. Runs
+		// before anything of this sample is drained or decoded, so what the new
+		// script schedules from rack.onLoad is queued afterwards and survives.
+		if (clearPending.exchange(false)) {
+			midiOuts.clearTickQueues();
+			midiIns.resetDecoders();
+		}
+
 		processTriggerInputs();
 
 		// Every sample, not under processDivider: the sender emits one encoded
@@ -1623,45 +1626,13 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		if (processDivider.process()) {
 			timingBlockFrames.store(vcv::engine::getBlockFrames(), std::memory_order_relaxed);
 
-			// Pumped here rather than via midiProcessor.process() because each
-			// decoded message must be queued for the worker thread, not
-			// dispatched inline: processMessage() notifies processMidi() below
-			// synchronously, and script code never runs on the audio thread.
-			midi::Message msg;
-			int inCount = midiInCount.load(std::memory_order_relaxed);
-			for (int i = 0; i < inCount; i++) {
-				while (midiInputs[i].queue.tryPop(&msg, args.frame)) {
-					midiInputs[i].processor.processMessage(msg);
-				}
-			}
-			// Unused inputs are not processed, but a device selected on one must
-			// not pile up messages that would flood the script once it is enabled.
-			for (int i = inCount; i < MIDI_INPUTS; i++) {
-				while (midiInputs[i].queue.tryPop(&msg, args.frame)) {}
-			}
+			// Not via MidiProcessor::process(): each decoded message is queued for
+			// the worker, never dispatched inline.
+			midiIns.process(args.frame);
 
 			host.process();
 
-			// Drains the module's own out-queue regardless of activeEngine, so a
-			// cleared script's onUnload() output (queued while activeEngine was
-			// still set) still reaches the device even though activeEngine is now
-			// null. Runs after dispatch so output produced by this tick's
-			// activeEngine->process() above still drains this same tick.
-			if (midiOutOverflow.exchange(false, std::memory_order_relaxed)) {
-				float timestamp = sampleRate != 0.f ? float(sample) / sampleRate : 0.f;
-				log.push(LOG_FORMAT::TEXT, timestamp, std::string("MIDI output queue full, message(s) dropped"));
-			}
-			while (!midiOutQueue.empty()) {
-				auto t = midiOutQueue.shift();
-				midi::Message msg = std::get<1>(t);
-				uint8_t channel = std::get<2>(t);
-				midiOutputs[std::get<0>(t)].send(msg, channel, std::get<3>(t), std::get<4>(t), args.frame);
-			}
-			// All outputs, not just the enabled ones: a script that used a port
-			// before being replaced may have left framed messages behind, which
-			// must not wait for a later script to enable the port again.
-			for (int i = 0; i < MIDI_OUTPUTS; i++) midiOutputs[i].processFrame(args.frame);
-			reportLateMessages();
+			midiOuts.process(args.frame, sampleRate.load(std::memory_order_relaxed));
 		}
 
 		processTriggerOutputs(args.sampleTime);
@@ -1686,11 +1657,11 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		// driver/device/channel in memory (a script reload never touches them),
 		// so they come back once a script enables them again, but a patch does
 		// not carry settings of ports nobody uses.
-		for (int i = 0, n = midiInCount.load(); i < n; i++) {
-			json_object_set_new(rootJ, midiInputKey(i).c_str(), midiInputs[i].queue.toJson());
+		for (int i = 0, n = midiIns.enabledCount(); i < n; i++) {
+			json_object_set_new(rootJ, midiInputKey(i).c_str(), midiIns.ports[i].queue.toJson());
 		}
-		for (int i = 0, n = midiOutCount.load(); i < n; i++) {
-			json_object_set_new(rootJ, midiOutputKey(i).c_str(), midiOutputs[i].toJson());
+		for (int i = 0, n = midiOuts.enabledCount(); i < n; i++) {
+			json_object_set_new(rootJ, midiOutputKey(i).c_str(), midiOuts.ports[i].toJson());
 		}
 		json_object_set_new(rootJ, "script", json_string(host.script.c_str()));
 
@@ -1700,7 +1671,6 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		// rack.onSave() design, which fetched the config synchronously here and had to
 		// distinguish "no config" from "the fetch failed" to avoid erasing the user's
 		// settings on a slow save.
-		//
 		// By reference: peekConfig() returns a bare reference into the
 		// SpscLatestValue slot (no shared_ptr copy), stable until the next
 		// load()/peek()/load_if_new() call on this (the UI/reader) thread —
@@ -1718,11 +1688,11 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 		for (int i = 0; i < MIDI_INPUTS; i++) {
 			json_t* midiInputJ = json_object_get(rootJ, midiInputKey(i).c_str());
-			if (midiInputJ && json_is_object(midiInputJ)) midiInputs[i].queue.fromJson(midiInputJ);
+			if (midiInputJ && json_is_object(midiInputJ)) midiIns.ports[i].queue.fromJson(midiInputJ);
 		}
 		for (int i = 0; i < MIDI_OUTPUTS; i++) {
 			json_t* midiOutputJ = json_object_get(rootJ, midiOutputKey(i).c_str());
-			if (midiOutputJ && json_is_object(midiOutputJ)) midiOutputs[i].fromJson(midiOutputJ);
+			if (midiOutputJ && json_is_object(midiOutputJ)) midiOuts.ports[i].fromJson(midiOutputJ);
 		}
 
 		json_t* scriptJ = json_object_get(rootJ, "script");
@@ -1744,35 +1714,22 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	void loadScript(std::string s, std::string configJson = "") {
 		seedTiming();
 		sample = 0;
-		timingLateLoggedAt = -1;
-		// Forgets every trig.enableIn()d channel (and its tick counter) BEFORE
-		// the new script loads, so it starts with all callbacks disabled. Same
-		// for the extended-CC enables: they belong to the outgoing script, not
-		// to the module.
-		triggersIn.reset();
-		// Likewise the trigger outputs drop back to mono until the new script
-		// writes a higher channel.
-		triggersOut.resetChannels();
-		// The port enables and the enabled params/inputs are not reset here: the
-		// outgoing script's onUnload() still needs them. The engines reset them
-		// once it has run (resetScriptState()).
-		// Raised before the load, so anything the new script schedules from
-		// rack.onLoad reaches the outputs after the audio thread has cleared.
-		// Also drops the half-received NRPN/RPN/14-bit CC state of every input:
-		// assembly belongs to the script's view of the stream, not to the module.
+		// Before the load, so the new script starts with all callbacks disabled.
+		triggerIns.reset();
+		triggerOuts.resetChannels();
+		// Port enables and enabled params/inputs stay: the outgoing script's
+		// onUnload() still needs them (the engines reset them via resetScriptState()).
+		// Raised before the load, so what the new script schedules from rack.onLoad
+		// survives the audio thread's clear (tick queues, decoder state).
 		clearPending.store(true);
-		for (int i = 0; i < MIDI_INPUTS; i++) midiInputs[i].extendedCc.clear();
-		log.push(LOG_FORMAT::RESET, 0.f, std::string(""));
+		midiIns.clearExtendedCc();
+		log.pushReset();
 
-		// Select the engine for the script and load it, closing the outgoing
-		// engine (blocking) — see ScriptHost::load().
+		// Closes the outgoing engine (blocking) and loads the new one.
 		MidiScript::MidiScriptEngine* engine = host.load(s, configJson);
-		// No engine will load, so nothing resets them on the worker; the outgoing
-		// engine has already been closed. (Binding null below disables the
-		// params/inputs.)
+		// No engine loaded, so nothing resets the enables on the worker.
 		if (!engine) resetMidiPortEnables();
 
-		// Keep port/param info pointers in sync with the active engine
 		bindPortsAndParams(engine);
 	}
 
@@ -1934,6 +1891,7 @@ struct ScriptContextMenuItems : ui::MenuEntry {
 	}
 };
 
+
 // Widget base for all variants: log display, overlay, script menu and file
 // handling. Derived widgets add their controls after construction using the
 // add*() helpers below.
@@ -1978,14 +1936,14 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	void addMidiInputDisplay(int i, Rect r) {
 		MidiWidget<>* display = createWidget<MidiWidget<>>(r.pos);
 		display->box.size = r.size;
-		display->setMidiPort(module ? &module->midiInputs[i].queue : NULL, CONFIG::midiInputs > 1 ? string::f("In %d", i + 1) : "In");
+		display->setMidiPort(module ? &module->midiIns.ports[i].queue : NULL, CONFIG::midiInputs > 1 ? string::f("In %d", i + 1) : "In");
 		addChild(display);
 	}
 
 	void addMidiOutputDisplay(int i, Rect r) {
 		MidiWidget<>* display = createWidget<MidiWidget<>>(r.pos);
 		display->box.size = r.size;
-		display->setMidiPort(module ? &module->midiOutputs[i] : NULL, CONFIG::midiOutputs > 1 ? string::f("Out %d", i + 1) : "Out");
+		display->setMidiPort(module ? &module->midiOuts.ports[i] : NULL, CONFIG::midiOutputs > 1 ? string::f("Out %d", i + 1) : "Out");
 		addChild(display);
 	}
 
@@ -2037,11 +1995,11 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 
 		menu->addChild(new MenuSeparator());
 		// Ports 2+ are only configurable while the script has enabled them.
-		for (int i = 0, n = module->midiInCount.load(); i < n; i++) {
-			menu->addChild(Rack::createStickyMidiMenuItem(CONFIG::midiInputs > 1 ? string::f("MIDI input %d", i + 1) : "MIDI input", &module->midiInputs[i].queue));
+		for (int i = 0, n = module->midiIns.enabledCount(); i < n; i++) {
+			menu->addChild(Rack::createStickyMidiMenuItem(CONFIG::midiInputs > 1 ? string::f("MIDI input %d", i + 1) : "MIDI input", &module->midiIns.ports[i].queue));
 		}
-		for (int i = 0, n = module->midiOutCount.load(); i < n; i++) {
-			menu->addChild(Rack::createStickyMidiMenuItem(CONFIG::midiOutputs > 1 ? string::f("MIDI output %d", i + 1) : "MIDI output", &module->midiOutputs[i]));
+		for (int i = 0, n = module->midiOuts.enabledCount(); i < n; i++) {
+			menu->addChild(Rack::createStickyMidiMenuItem(CONFIG::midiOutputs > 1 ? string::f("MIDI output %d", i + 1) : "MIDI output", &module->midiOuts.ports[i]));
 		}
 
 		if (module->host.getActiveEngine()) {
@@ -2104,11 +2062,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 
 	void loadJsDialog() {
 		std::string path = vcv::ui::openDialog("MIDI-KIT file:js,lua", "");
-		if (path.empty()) {
-			// No path selected
-			return;
-		}
-
+		if (path.empty()) return;
 		filename = path;
 		loadJs(path);
 	}

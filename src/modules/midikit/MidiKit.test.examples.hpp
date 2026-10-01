@@ -168,13 +168,13 @@ static std::vector<OutEvent> feedCollect(MidiKitModule* m, midi::Message msg) {
 // bypass MidiProcessor; scripts that opt in via midi.enableNrpnIn() and
 // friends need this instead.
 static void feedDecoded(MidiKitModule* m, midi::Message msg) {
-	m->midiProcessor.processMessage(msg);
+	m->midiIns.ports[0].processor.processMessage(msg);
 	m->host.getActiveEngine()->process();
 }
 
 // feedDecoded() plus a drain of the out-queue, for the behavioural tests.
 static std::vector<OutEvent> feedDecodedCollect(MidiKitModule* m, midi::Message msg) {
-	m->midiProcessor.processMessage(msg);
+	m->midiIns.ports[0].processor.processMessage(msg);
 	m->host.getActiveEngine()->process();
 	return drainOut(m);
 }
@@ -356,7 +356,7 @@ static MidiKitModule* loadArp(const std::string& relPath, float clockDivision, f
 	return m;
 }
 
-// --- Up mode, 1 tick/step, 1 octave: plain ascending replay of the held chord ---
+// Up mode, 1 tick/step, 1 octave: plain ascending replay of the held chord
 TEST_CASE("'Arpeggiator.js/.lua' Up mode steps the held chord in press order", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
@@ -386,7 +386,7 @@ TEST_CASE("'Arpeggiator.js/.lua' Up mode steps the held chord in press order", "
 	Test::destroyModule(m);
 }
 
-// --- Down mode: exact reverse of press order ---
+// Down mode: exact reverse of press order
 TEST_CASE("'Arpeggiator.js/.lua' Down mode steps the held chord in reverse", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
@@ -413,7 +413,7 @@ TEST_CASE("'Arpeggiator.js/.lua' Down mode steps the held chord in reverse", "[M
 	Test::destroyModule(m);
 }
 
-// --- Up-Down mode: ascends then descends without repeating the two end notes ---
+// Up-Down mode: ascends then descends without repeating the two end notes
 TEST_CASE("'Arpeggiator.js/.lua' Up-Down mode does not repeat the end notes", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
@@ -442,7 +442,7 @@ TEST_CASE("'Arpeggiator.js/.lua' Up-Down mode does not repeat the end notes", "[
 	Test::destroyModule(m);
 }
 
-// --- Octave range doubles the pattern upward before it cycles ---
+// Octave range doubles the pattern upward before it cycles
 TEST_CASE("'Arpeggiator.js/.lua' octave range repeats the chord one octave higher", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
@@ -468,7 +468,7 @@ TEST_CASE("'Arpeggiator.js/.lua' octave range repeats the chord one octave highe
 	Test::destroyModule(m);
 }
 
-// --- Clock division: steps only advance every Nth trigger tick ---
+// Clock division: steps only advance every Nth trigger tick
 TEST_CASE("'Arpeggiator.js/.lua' clock division holds the step across intermediate ticks", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
@@ -500,7 +500,7 @@ TEST_CASE("'Arpeggiator.js/.lua' clock division holds the step across intermedia
 	Test::destroyModule(m);
 }
 
-// --- Note length: the scheduled Note-Off must always land before the next Note-On ---
+// Note length: the scheduled Note-Off must always land before the next Note-On
 TEST_CASE("'Arpeggiator.js/.lua' note length never overruns into the next step", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
@@ -538,7 +538,7 @@ TEST_CASE("'Arpeggiator.js/.lua' note length never overruns into the next step",
 	Test::destroyModule(m);
 }
 
-// --- Releasing all held notes stops the arp; no further Note-On is sent ---
+// Releasing all held notes stops the arp; no further Note-On is sent
 TEST_CASE("'Arpeggiator.js/.lua' stops stepping once every note is released", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
@@ -564,7 +564,7 @@ TEST_CASE("'Arpeggiator.js/.lua' stops stepping once every note is released", "[
 	Test::destroyModule(m);
 }
 
-// --- onUnload releases whatever note the arp is currently sustaining ---
+// onUnload releases whatever note the arp is currently sustaining
 TEST_CASE("'Arpeggiator.js/.lua' releases the sounding note on unload", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
@@ -599,12 +599,12 @@ TEST_CASE("'Arpeggiator.js/.lua' releases the sounding note on unload", "[MidiKi
 }
 
 
-// --- Dynamic chords: adding/removing a held note mid-arp rebuilds the pattern
+// Dynamic chords: adding/removing a held note mid-arp rebuilds the pattern
 // for the next step without corrupting the step position. rebuildPattern()
 // only resets the step when it has run past the (possibly shrunken) pattern's
 // end: adding keeps the current step and folds the note in at its press-order
 // position; removing can clamp the step back to 0. These two cases pin the
-// difference. ---
+// difference.
 TEST_CASE("'Arpeggiator.js/.lua' folds a note added mid-arp into the pattern from the current step", "[MidiKit][Arpeggiator]") {
 	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
@@ -1313,7 +1313,7 @@ TEST_CASE("'Gravity well.js/.lua' releases the held bent note on unload", "[Midi
 // script.
 
 
-// --- [0,4,7] triad with 0.8 harmony velocity ---
+// [0,4,7] triad with 0.8 harmony velocity
 TEST_CASE("'Chord harmonizer.js/.lua' expands a single note into a scaled triad", "[MidiKit][ChordHarmonizer]") {
 	std::string path = GENERATE(presetPaths("Chord harmonizer"));
 	CATCH_INFO("preset: " << path);
@@ -1332,7 +1332,7 @@ TEST_CASE("'Chord harmonizer.js/.lua' expands a single note into a scaled triad"
 	Test::destroyModule(m);
 }
 
-// --- reference-counting: two notes transposing onto the same target ---
+// reference-counting: two notes transposing onto the same target
 TEST_CASE("'Chord harmonizer.js/.lua' releases a colliding voice exactly once", "[MidiKit][ChordHarmonizer]") {
 	std::string path = GENERATE(presetPaths("Chord harmonizer"));
 	CATCH_INFO("preset: " << path);
@@ -1357,7 +1357,7 @@ TEST_CASE("'Chord harmonizer.js/.lua' releases a colliding voice exactly once", 
 	Test::destroyModule(m);
 }
 
-// --- onUnload releases every still-sounding voice ---
+// onUnload releases every still-sounding voice
 TEST_CASE("'Chord harmonizer.js/.lua' releases all sounding voices on unload", "[MidiKit][ChordHarmonizer]") {
 	std::string path = GENERATE(presetPaths("Chord harmonizer"));
 	CATCH_INFO("preset: " << path);
@@ -1742,11 +1742,11 @@ TEST_CASE("'Micro scale.js/.lua' parses a mixed scl with ratios, cents, comments
 	Test::destroyModule(m);
 }
 
-// --- A unison (the same note played twice) must release in press order, one
+// A unison (the same note played twice) must release in press order, one
 // voice per Note-Off - the queueOfNote FIFO is the part of the script most
 // likely to regress. Round-robin sends the first voice to channel 1 and the
 // second to channel 2; the two Note-Offs must then release channel 1 first and
-// channel 2 second, not the other way round and not both at once. ---
+// channel 2 second, not the other way round and not both at once.
 TEST_CASE("'Micro scale.js/.lua' releases a unison's voices in press order", "[MidiKit][MicroScale]") {
 	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
@@ -1770,11 +1770,11 @@ TEST_CASE("'Micro scale.js/.lua' releases a unison's voices in press order", "[M
 	Test::destroyModule(m);
 }
 
-// --- Voice stealing with the default 8 output channels: when every channel
+// Voice stealing with the default 8 output channels: when every channel
 // is busy the 9th note displaces the round-robin next channel, and the
 // displaced note's later Note-Off must be dropped so it can't release the
 // thief. An equal-temperament scale makes every note pass through unchanged,
-// so the test observes channel allocation alone. ---
+// so the test observes channel allocation alone.
 TEST_CASE("'Micro scale.js/.lua' steals a busy channel and drops the displaced note", "[MidiKit][MicroScale]") {
 	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
@@ -1819,10 +1819,10 @@ TEST_CASE("'Micro scale.js/.lua' steals a busy channel and drops the displaced n
 	Test::destroyModule(m);
 }
 
-// --- The "Always send pitch bend" context-menu option: off (default) the
+// The "Always send pitch bend" context-menu option: off (default) the
 // tonic sits on the centre bend and no wheel is emitted; on, the centre bend
 // is sent anyway. This is the script's only alwaysSendBend code path and
-// nothing else in the suite exercises it. ---
+// nothing else in the suite exercises it.
 TEST_CASE("'Micro scale.js/.lua' alwaysSendBend forces a bend even for the tonic", "[MidiKit][MicroScale]") {
 	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
@@ -1857,10 +1857,10 @@ TEST_CASE("'Micro scale.js/.lua' alwaysSendBend forces a bend even for the tonic
 	Test::destroyModule(m);
 }
 
-// --- The "Input channel" context-menu option filters which input channel is
+// The "Input channel" context-menu option filters which input channel is
 // retuned. Notes on the chosen channel are retuned; notes on other channels
 // pass through untouched and untracked (their Note-Offs pass as the raw
-// note). Non-note messages pass through on all channels. ---
+// note). Non-note messages pass through on all channels.
 TEST_CASE("'Micro scale.js/.lua' input-channel filter retunes only the chosen channel", "[MidiKit][MicroScale]") {
 	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
@@ -1918,7 +1918,7 @@ TEST_CASE("'Note length quantiser.js/.lua' schedules the Note-Off lengthTicks af
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
-	m->triggersIn.triggerTick[0][0] = 40;
+	m->triggerIns.triggerTick[0][0] = 40;
 
 	// Note-On passes through, and its Note-Off is scheduled at 40 + 12.
 	auto ev = feedCollect(m, noteOn(1, 60, 100));
@@ -1946,7 +1946,7 @@ TEST_CASE("'Note length quantiser.js/.lua' cuts a retriggered note before re-art
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
-	m->triggersIn.triggerTick[0][0] = 40;
+	m->triggerIns.triggerTick[0][0] = 40;
 	feedCollect(m, noteOn(1, 60, 100));   // drains [on, off@52]; sounding[60] stays true
 
 	// Retriggering 60 while it's still sounding cuts the old note immediately
@@ -2122,7 +2122,7 @@ TEST_CASE("'Clock multiplier.js/.lua' spaces its pulses over the previous period
 
 	MidiKitModule* m = loadPreset(path);
 	PulseRecorder rec;
-	m->midiOutput.outputDevice = &rec;
+	m->midiOuts.ports[0].outputDevice = &rec;
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
 
 	// Starts past 2^24, where a float would no longer hold every frame exactly.
@@ -2141,7 +2141,7 @@ TEST_CASE("'Clock multiplier.js/.lua' spaces its pulses over the previous period
 	REQUIRE(rec.frames == expected);
 	for (int status : rec.statuses) REQUIRE(status == 0xf);
 
-	m->midiOutput.outputDevice = nullptr;
+	m->midiOuts.ports[0].outputDevice = nullptr;
 	Test::destroyModule(m);
 }
 
@@ -2151,7 +2151,7 @@ TEST_CASE("'Clock multiplier.js/.lua' treats a long gap as a restart", "[MidiKit
 
 	MidiKitModule* m = loadPreset(path);
 	PulseRecorder rec;
-	m->midiOutput.outputDevice = &rec;
+	m->midiOuts.ports[0].outputDevice = &rec;
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
 
 	// The third edge is 8 periods after the second: the clock was stopped.
@@ -2168,7 +2168,7 @@ TEST_CASE("'Clock multiplier.js/.lua' treats a long gap as a restart", "[MidiKit
 		REQUIRE(std::find(rec.frames.begin(), rec.frames.end(), 4900 + k * 20) != rec.frames.end());
 	}
 
-	m->midiOutput.outputDevice = nullptr;
+	m->midiOuts.ports[0].outputDevice = nullptr;
 	Test::destroyModule(m);
 }
 
@@ -3323,16 +3323,16 @@ TEST_CASE("'Channel router.js/.lua' enables exactly the configured outputs", "[M
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
-	REQUIRE(m->midiOutCount.load() == 4);
-	REQUIRE(m->midiInCount.load() == 1);
+	REQUIRE(m->midiOuts.enabledCount() == 4);
+	REQUIRE(m->midiIns.enabledCount() == 1);
 	Test::destroyModule(m);
 
 	// Two entries in routes -> two outputs.
 	m = loadRouter(path,
 		"        [4],      // output 3\n        []        // output 4\n", "",
 		"        { 4 },      -- output 3\n        {}          -- output 4\n", "");
-	REQUIRE(m->midiOutCount.load() == 2);
-	REQUIRE(m->midiInCount.load() == 1);
+	REQUIRE(m->midiOuts.enabledCount() == 2);
+	REQUIRE(m->midiIns.enabledCount() == 1);
 	Test::destroyModule(m);
 }
 
@@ -3532,8 +3532,8 @@ TEST_CASE("'Port router.js/.lua' sends everything to the active output only", "[
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
-	REQUIRE(m->midiOutCount.load() == 2);
-	REQUIRE(m->midiInCount.load() == 1);
+	REQUIRE(m->midiOuts.enabledCount() == 2);
+	REQUIRE(m->midiIns.enabledCount() == 1);
 
 	// Any channel, any message type - nothing is filtered, all go to output 1.
 	const midi::Message msgs[] = { noteOn(0, 60, 100), noteOn(9, 36, 90), cc(3, 7, 99), clockTick() };
@@ -3593,7 +3593,7 @@ TEST_CASE("'Port router.js/.lua' the Active output menu follows the number of ou
 	menus = smartMergeMenus(m);
 	REQUIRE(menus.size() == 2);
 	REQUIRE(menus[1].options.size() == 4);
-	REQUIRE(m->midiOutCount.load() == 4);
+	REQUIRE(m->midiOuts.enabledCount() == 4);
 
 	// Active output -> 4: only that output receives messages.
 	m->host.getActiveEngine()->invokeContextMenuCallback(menus[1].callbackId, 3);
@@ -3626,7 +3626,7 @@ TEST_CASE("'Port router.js/.lua' the Active output menu follows the number of ou
 
 static void sendInputAt(MidiKitModule* m, midi::Message msg, int64_t frame) {
 	msg.frame = frame;
-	m->midiInput.onMessage(msg);
+	m->midiIns.ports[0].queue.onMessage(msg);
 }
 
 TEST_CASE("'Euclidean rhythm generator.js/.lua' places its notes on the clock edges", "[MidiKit][EuclidRhythm][Timing]") {
@@ -3641,7 +3641,7 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' places its notes on the clock ed
 	m->params[MidiKitModule::PARAM + 3].setValue(0.25f);
 	drainLog(m);
 	PulseRecorder rec;
-	m->midiOutput.outputDevice = &rec;
+	m->midiOuts.ports[0].outputDevice = &rec;
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
 
 	std::vector<int64_t> edges;
@@ -3663,7 +3663,7 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' places its notes on the clock ed
 		REQUIRE(late <= 1);
 	}
 
-	m->midiOutput.outputDevice = nullptr;
+	m->midiOuts.ports[0].outputDevice = nullptr;
 	Test::destroyModule(m);
 }
 
@@ -3674,7 +3674,7 @@ TEST_CASE("'Arpeggiator.js/.lua' places its notes and note-offs on the clock edg
 	// 4 ticks per step, half-length notes (2 ticks), one octave, Up.
 	MidiKitModule* m = loadArp(path, 0.35f, 0.f, 0.5f, 0.f);
 	PulseRecorder rec;
-	m->midiOutput.outputDevice = &rec;
+	m->midiOuts.ports[0].outputDevice = &rec;
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
 
 	sendInputAt(m, noteOn(1, 60, 100), 100);
@@ -3691,7 +3691,7 @@ TEST_CASE("'Arpeggiator.js/.lua' places its notes and note-offs on the clock edg
 	REQUIRE(rec.frames[2] == edges[7]);
 	REQUIRE(rec.frames[3] == edges[7] + 1);
 
-	m->midiOutput.outputDevice = nullptr;
+	m->midiOuts.ports[0].outputDevice = nullptr;
 	Test::destroyModule(m);
 }
 
@@ -3706,7 +3706,7 @@ TEST_CASE("'Bouncing ball delay.js/.lua' places its echoes on exact frames from 
 	m->params[MidiKitModule::PARAM + 2].setValue(0.f);
 	drainLog(m);
 	PulseRecorder rec;
-	m->midiOutput.outputDevice = &rec;
+	m->midiOuts.ports[0].outputDevice = &rec;
 
 	const int64_t arrival = 5000;
 	double sr = m->sampleRate.load();
@@ -3730,7 +3730,7 @@ TEST_CASE("'Bouncing ball delay.js/.lua' places its echoes on exact frames from 
 	REQUIRE(on == expectedOn);
 	REQUIRE(off == expectedOff);
 
-	m->midiOutput.outputDevice = nullptr;
+	m->midiOuts.ports[0].outputDevice = nullptr;
 	Test::destroyModule(m);
 }
 
@@ -3788,7 +3788,7 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' releases its note two blocks aft
 	m->params[MidiKitModule::PARAM + 3].setValue(0.25f);
 	drainLog(m);
 	PulseRecorder rec;
-	m->midiOutput.outputDevice = &rec;
+	m->midiOuts.ports[0].outputDevice = &rec;
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
 
 	driveClockEdges(m, { 1000, 1480 }, 0, 1600);   // the hit on tick 2 sounds a note
@@ -3800,7 +3800,7 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' releases its note two blocks aft
 	REQUIRE(delay >= 2 * block + 1);
 	REQUIRE(delay <= 2 * block + 1 + 8);
 
-	m->midiOutput.outputDevice = nullptr;
+	m->midiOuts.ports[0].outputDevice = nullptr;
 	Test::destroyModule(m);
 }
 
@@ -3814,7 +3814,7 @@ TEST_CASE("'Arpeggiator.js/.lua' releases its note two blocks after unloading", 
 	EngineMockScope engine(block);
 	MidiKitModule* m = loadArp(path, 0.35f, 0.f, 0.5f, 0.f);
 	PulseRecorder rec;
-	m->midiOutput.outputDevice = &rec;
+	m->midiOuts.ports[0].outputDevice = &rec;
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
 
 	sendInputAt(m, noteOn(1, 60, 100), 100);
@@ -3826,6 +3826,6 @@ TEST_CASE("'Arpeggiator.js/.lua' releases its note two blocks after unloading", 
 	REQUIRE(delay >= 2 * block + 1);
 	REQUIRE(delay <= 2 * block + 1 + 8);
 
-	m->midiOutput.outputDevice = nullptr;
+	m->midiOuts.ports[0].outputDevice = nullptr;
 	Test::destroyModule(m);
 }

@@ -55,15 +55,15 @@ struct TimingRig {
 
 	explicit TimingRig(const char* script) {
 		m = mods.create("MidiKit");
-		m->midiOutput.outputDevice = &rec;
-		m->midiOutput.channel = -1;
+		m->midiOuts.ports[0].outputDevice = &rec;
+		m->midiOuts.ports[0].channel = -1;
 		m->loadScript(script);
 	}
 
 	~TimingRig() {
 		// The recorder is a member and dies before `mods` destroys the module;
 		// onRemove() flushes output through the device.
-		m->midiOutput.outputDevice = nullptr;
+		m->midiOuts.ports[0].outputDevice = nullptr;
 	}
 
 	void step() {
@@ -79,7 +79,7 @@ struct TimingRig {
 	// Queues an inbound message that Rack would release at `atFrame`.
 	void inject(midi::Message msg, int64_t atFrame) {
 		msg.frame = atFrame;
-		m->midiInput.onMessage(msg);
+		m->midiIns.ports[0].queue.onMessage(msg);
 	}
 };
 
@@ -190,11 +190,11 @@ TEST_CASE("Timing: sendAfterMs holds the message and strips its frame", "[MidiKi
 	rig.run(40);
 	// Held in the frame queue, not sent with the pass-through's latency.
 	REQUIRE(rig.rec.sent.empty());
-	REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
+	REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == 1);
 
 	rig.run(20 + delay + 40);
 	REQUIRE(rig.rec.sent.size() == 1);
-	REQUIRE(rig.m->midiOutput.frameQueue.empty());
+	REQUIRE(rig.m->midiOuts.ports[0].frameQueue.empty());
 	// status quo: the frame is cleared at release.
 	REQUIRE(rig.rec.sent[0].frameField == -1);
 }
@@ -357,7 +357,7 @@ TEST_CASE("Timing: a group sent with sendAfterMs is held and released whole, in 
 
 			// Every member waits for the delay; none escapes ahead of the leader.
 			REQUIRE(rig.rec.sent.empty());
-			REQUIRE(rig.m->midiOutput.frameQueue.size() == 4);
+			REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == 4);
 
 			rig.run(20 + delay + 40);
 			REQUIRE(controllers(rig.rec) == std::vector<int>{99, 98, 6, 38});
@@ -371,7 +371,7 @@ TEST_CASE("Timing: a group sent with sendAfterMs is held and released whole, in 
 			rig.run(40);
 
 			REQUIRE(rig.rec.sent.empty());
-			REQUIRE(rig.m->midiOutput.frameQueue.size() == 2);
+			REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == 2);
 
 			rig.run(20 + delay + 40);
 			REQUIRE(controllers(rig.rec) == std::vector<int>{1, 33});
@@ -431,11 +431,11 @@ TEST_CASE("Timing mode: the opt-in is per script and forgotten on reload", "[Mid
 	for (const char* script : TIMING_SCRIPTS) {
 		CATCH_INFO(script);
 		TimingRig rig(withTiming(script).c_str());
-		REQUIRE(rig.m->timingEnabled.load());
+		REQUIRE(rig.m->midiOuts.isTimingEnabled());
 
 		// A script without the call is back in legacy mode.
 		rig.m->loadScript(script);
-		REQUIRE_FALSE(rig.m->timingEnabled.load());
+		REQUIRE_FALSE(rig.m->midiOuts.isTimingEnabled());
 
 		rig.inject(noteOn(0, 60, 100), 20);
 		rig.run(40);
@@ -574,7 +574,7 @@ TEST_CASE("Teardown flush is sent immediately in both modes", "[MidiKit][timing]
 
 		// As onRemove() does.
 		rig.m->host.closeState();
-		rig.m->flushOutput();
+		rig.m->midiOuts.flush();
 
 		REQUIRE(rig.rec.sent.size() == 1);
 		REQUIRE(rig.rec.sent[0].status == 0x8);
@@ -584,7 +584,7 @@ TEST_CASE("Teardown flush is sent immediately in both modes", "[MidiKit][timing]
 	}
 }
 
-// ── Frames carried to the script ────────────────────────────────────────────
+// Frames carried to the script
 // Every dispatch runs with currentInFrame set to the frame of the event that
 // caused it. Nothing reads it yet; these pin the plumbing.
 
@@ -651,7 +651,7 @@ TEST_CASE("Frames: a message dispatches under its arrival frame", "[MidiKit][tim
 	ProbeRig rig;
 	midi::Message msg = noteOn(0, 60, 100);
 	msg.frame = 20;
-	rig.m->midiInput.onMessage(msg);
+	rig.m->midiIns.ports[0].queue.onMessage(msg);
 	rig.run(40);
 
 	REQUIRE(rig.eng.seen.size() == 1);
@@ -668,7 +668,7 @@ TEST_CASE("Frames: an assembled NRPN carries its last component's frame", "[Midi
 	const int ccs[4][2] = { {99, 1}, {98, 2}, {6, 3}, {38, 4} };
 	for (int i = 0; i < 4; i++) {
 		midi::Message msg = Test::makeMidiMessage(0xb, 0, ccs[i][0], ccs[i][1], 20 + i * 3);
-		rig.m->midiInput.onMessage(msg);
+		rig.m->midiIns.ports[0].queue.onMessage(msg);
 	}
 	rig.run(60);
 
@@ -726,12 +726,12 @@ TEST_CASE("Frames: sendAfterMs counts from the frame the script was dispatched o
 	rig.run(40);
 
 	// Dispatched on the divider tick at 23, not from the engine's own counter.
-	REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
+	REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == 1);
 	int64_t delay = int64_t(10.0 / 1000.0 * rig.m->sampleRate.load());
-	REQUIRE(rig.m->midiOutput.frameQueue.top().msg.frame == 23 + delay);
+	REQUIRE(rig.m->midiOuts.ports[0].frameQueue.top().msg.frame == 23 + delay);
 }
 
-// ── sendAtFrame, rack.getEventFrame() and the sendAfterMs base ──────────────
+// sendAtFrame, rack.getEventFrame() and the sendAfterMs base
 
 static const char* JS_AT_FRAME = R"(/**
  * @engine QuickJs@v1
@@ -804,7 +804,7 @@ TEST_CASE("sendAtFrame holds a message until its frame; legacy strips it, timing
 			rig.inject(noteOn(0, 60, 100), 20);
 			rig.run(190);
 			REQUIRE(rig.rec.sent.empty());
-			REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
+			REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == 1);
 
 			rig.run(220);
 			REQUIRE(rig.rec.sent.size() == 1);
@@ -833,7 +833,7 @@ TEST_CASE("sendAtFrame treats a negative frame as 'now'", "[MidiKit][timing]") {
 
 		// Sent at once, not parked in the frame queue ahead of everything else.
 		REQUIRE(rig.rec.sent.size() == 1);
-		REQUIRE(rig.m->midiOutput.frameQueue.empty());
+		REQUIRE(rig.m->midiOuts.ports[0].frameQueue.empty());
 		REQUIRE(rig.rec.sent[0].frameField == -1);
 	}
 }
@@ -882,8 +882,8 @@ TEST_CASE("rack.getEventFrame() is the frame of the event being handled", "[Midi
 			TimingRig rig(script);
 			rig.inject(noteOn(0, 60, 100), 20);
 			rig.run(40);
-			REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
-			REQUIRE(rig.m->midiOutput.frameQueue.top().msg.frame == 120);
+			REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == 1);
+			REQUIRE(rig.m->midiOuts.ports[0].frameQueue.top().msg.frame == 120);
 		}
 
 		SECTION("trigger edge") {
@@ -894,8 +894,8 @@ TEST_CASE("rack.getEventFrame() is the frame of the event being handled", "[Midi
 			rig.step();   // the edge is on frame 30
 			rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
 			rig.run(50);
-			REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
-			REQUIRE(rig.m->midiOutput.frameQueue.top().msg.frame == 130);
+			REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == 1);
+			REQUIRE(rig.m->midiOuts.ports[0].frameQueue.top().msg.frame == 130);
 		}
 	}
 }
@@ -924,8 +924,8 @@ end
 		TimingRig rig(script);
 		rig.run(20);
 		// -1 + 500
-		REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
-		REQUIRE(rig.m->midiOutput.frameQueue.top().msg.frame == 499);
+		REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == 1);
+		REQUIRE(rig.m->midiOuts.ports[0].frameQueue.top().msg.frame == 499);
 	}
 }
 
@@ -936,8 +936,8 @@ TEST_CASE("Timing mode: sendAfterMs counts from the causing event", "[MidiKit][t
 	// Input at 20 is dispatched on the tick at 23; the delay counts from 20.
 	rig.inject(noteOn(0, 60, 100), 20);
 	rig.run(40);
-	REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
-	REQUIRE(rig.m->midiOutput.frameQueue.top().msg.frame == 20 + delay);
+	REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == 1);
+	REQUIRE(rig.m->midiOuts.ports[0].frameQueue.top().msg.frame == 20 + delay);
 }
 
 // Makes the engine report a frame, for code that reads it before any process().
@@ -976,8 +976,8 @@ rack.onLoad = function() {
 	m->process(Test::makeProcessArgs(1000));
 	for (int64_t f = 1001; f < 1010; f++) m->process(Test::makeProcessArgs(f));
 
-	REQUIRE(m->midiOutput.frameQueue.size() == 1);
-	REQUIRE(m->midiOutput.frameQueue.top().msg.frame == 1000 + delay);
+	REQUIRE(m->midiOuts.ports[0].frameQueue.size() == 1);
+	REQUIRE(m->midiOuts.ports[0].frameQueue.top().msg.frame == 1000 + delay);
 }
 
 TEST_CASE("Timing mode: send() takes the frame of the event it runs in", "[MidiKit][timing]") {
@@ -1036,7 +1036,7 @@ rack.onLoad = function() {
 	REQUIRE(rig.rec.sent[0].frameField == rig.rec.sent[0].releasedAt);
 }
 
-// ── Tick-scheduled messages ─────────────────────────────────────────────────
+// Tick-scheduled messages
 
 TEST_CASE("Timing mode: a tick-scheduled group leaves in order from the edge's frame", "[MidiKit][timing]") {
 	TimingRig rig(withTiming(JS_GROUP_AFTER_TRIGGER).c_str());
@@ -1092,7 +1092,7 @@ midi.onMessage = function(port, msg) {
 	}
 }
 
-// ── Late-message report: midiOut.enableTiming(true) ─────────────────────────
+// Late-message report: midiOut.enableTiming(true)
 // Rack places a framed message one block after its frame, so a message handed
 // over a whole block past its frame is already late. The engine's block start
 // and size are zero headless, so a mock supplies them.
@@ -1271,8 +1271,8 @@ end
 			rig.run(1000010);
 
 			REQUIRE(rig.rec.sent.empty());
-			REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
-			REQUIRE(rig.m->midiOutput.frameQueue.top().msg.frame == 1000000 + delay);
+			REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == 1);
+			REQUIRE(rig.m->midiOuts.ports[0].frameQueue.top().msg.frame == 1000000 + delay);
 		}
 	}
 }
@@ -1303,8 +1303,8 @@ end
 		rig.inject(noteOn(0, 60, 100), 20);
 		rig.run(40);
 
-		REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
-		REQUIRE(rig.m->midiOutput.frameQueue.top().msg.frame == 20 + int64_t(16777217.0 / 1000.0 * sr));
+		REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == 1);
+		REQUIRE(rig.m->midiOuts.ports[0].frameQueue.top().msg.frame == 20 + int64_t(16777217.0 / 1000.0 * sr));
 	}
 }
 
@@ -1348,10 +1348,10 @@ end
 			rig.run(40);
 
 			size_t ticks = 0;
-			for (int i = 0; i < 2 * PORT_MAX_CHANNELS; i++) ticks += rig.m->midiOutput.tickQueue[i].size();
+			for (int i = 0; i < 2 * PORT_MAX_CHANNELS; i++) ticks += rig.m->midiOuts.ports[0].tickQueue[i].size();
 			REQUIRE(ticks == 0);
 			// Sent at once, or held in the frame queue until its frame.
-			REQUIRE(rig.rec.sent.size() + rig.m->midiOutput.frameQueue.size() == 1);
+			REQUIRE(rig.rec.sent.size() + rig.m->midiOuts.ports[0].frameQueue.size() == 1);
 		}
 	}
 }
@@ -1385,8 +1385,8 @@ end
 				// Input at 20, dispatched on the divider tick at 23: timing mode counts
 				// from the input, legacy mode from the frame the script ran on.
 				int64_t base = timing ? 20 : 23;
-				REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
-				REQUIRE(rig.m->midiOutput.frameQueue.top().msg.frame == base + 2 * block + 1);
+				REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == 1);
+				REQUIRE(rig.m->midiOuts.ports[0].frameQueue.top().msg.frame == base + 2 * block + 1);
 			}
 		}
 	}

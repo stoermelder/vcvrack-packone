@@ -149,8 +149,8 @@ static std::string publishedConfigJson(MidiScriptEngine* se) {
 // only need m->activeEngine->processOutMessage(...) / engine->processOutMessage(...)
 // rewritten to m->processOutMessage(...).
 static bool processOutMessage(MidiKitModule* m, int& midiPort, midi::Message& msg, int& ticks) {
-	if (m->midiOutQueue.empty()) return false;
-	auto t = m->midiOutQueue.shift();
+	if (m->midiOuts.queue.empty()) return false;
+	auto t = m->midiOuts.queue.shift();
 	midiPort = std::get<0>(t);
 	msg = std::get<1>(t);
 	ticks = (int)std::get<3>(t);

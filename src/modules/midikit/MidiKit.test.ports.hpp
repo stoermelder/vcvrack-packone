@@ -114,13 +114,13 @@ TEST_CASE("Variant: sendMidi routes to the addressed MIDI output", "[MidiKit][Va
 	midi::Message msg = ccMsg(0, 7, 100);
 	REQUIRE(m->sendMidi(1, &msg, 1, 0, 5));
 	pump(m, frame);
-	REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 0);
-	REQUIRE(m->midiOutputs[1].tickQueue[0].size() == 1);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 0);
+	REQUIRE(m->midiOuts.ports[1].tickQueue[0].size() == 1);
 
 	REQUIRE(m->sendMidi(0, &msg, 1, 0, 5));
 	pump(m, frame);
-	REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 1);
-	REQUIRE(m->midiOutputs[1].tickQueue[0].size() == 1);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 1);
+	REQUIRE(m->midiOuts.ports[1].tickQueue[0].size() == 1);
 }
 
 TEST_CASE("Variant: sendMidi drops an out-of-range MIDI port", "[MidiKit][Variant]") {
@@ -131,10 +131,10 @@ TEST_CASE("Variant: sendMidi drops an out-of-range MIDI port", "[MidiKit][Varian
 	midi::Message msg = ccMsg(0, 7, 100);
 	REQUIRE_FALSE(m->sendMidi(2, &msg, 1, 0, 5));
 	REQUIRE_FALSE(m->sendMidi(-1, &msg, 1, 0, 5));
-	REQUIRE(m->midiOutQueue.empty());
+	REQUIRE(m->midiOuts.queue.empty());
 }
 
-TEST_CASE("Variant: flushOutput sends to the queued port without crashing", "[MidiKit][Variant]") {
+TEST_CASE("Variant: out.flush sends to the queued port without crashing", "[MidiKit][Variant]") {
 	MultiScaffold mods;
 	MultiModule* m = mods.create();
 	m->loadScript(QUICKJS_EMPTY);
@@ -142,8 +142,8 @@ TEST_CASE("Variant: flushOutput sends to the queued port without crashing", "[Mi
 	m->enableMidiOut(2);
 	midi::Message msg = ccMsg(0, 7, 100);
 	REQUIRE(m->sendMidi(1, &msg, 1, 0, 0));
-	m->flushOutput();
-	REQUIRE(m->midiOutQueue.empty());
+	m->midiOuts.flush();
+	REQUIRE(m->midiOuts.queue.empty());
 }
 
 // ── MIDI input routing ──────────────────────────────────────────────────────
@@ -174,9 +174,9 @@ TEST_CASE("Variant: incoming MIDI reaches the script with its 1-based port", "[M
 		probes(m);   // drop load-time entries
 		int64_t frame = 1;
 
-		m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 10));
-		m->midiInputs[1].queue.onMessage(ccMsg(0, 2, 20));
-		m->midiInputs[1].queue.onMessage(ccMsg(0, 3, 30));
+		m->midiIns.ports[0].queue.onMessage(ccMsg(0, 1, 10));
+		m->midiIns.ports[1].queue.onMessage(ccMsg(0, 2, 20));
+		m->midiIns.ports[1].queue.onMessage(ccMsg(0, 3, 30));
 		pump(m, frame);
 
 		std::string log = probes(m);
@@ -201,13 +201,13 @@ TEST_CASE("Variant: loadScript() drops half-received NRPN state on every MIDI in
 	m->enableMidiIn(MultiModule::MIDI_INPUTS);
 	for (int i = 0; i < MultiModule::MIDI_INPUTS; i++) m->enableNrpnIn(i, 0, 3);
 	for (int i = 0; i < MultiModule::MIDI_INPUTS; i++) {
-		m->midiInputs[i].queue.onMessage(ccMsg(0, 99, 4));
-		m->midiInputs[i].queue.onMessage(ccMsg(0, 98, 5));
+		m->midiIns.ports[i].queue.onMessage(ccMsg(0, 99, 4));
+		m->midiIns.ports[i].queue.onMessage(ccMsg(0, 98, 5));
 	}
 	pump(m, frame);
 	for (int i = 0; i < MultiModule::MIDI_INPUTS; i++) {
 		CATCH_INFO("input " << i);
-		REQUIRE(m->midiInputs[i].processor.ccNrpnParam[0] == 4 * 128 + 5);
+		REQUIRE(m->midiIns.ports[i].processor.ccNrpnParam[0] == 4 * 128 + 5);
 	}
 
 	// The reset is a request the audio thread carries out on its next sample.
@@ -215,7 +215,7 @@ TEST_CASE("Variant: loadScript() drops half-received NRPN state on every MIDI in
 	pump(m, frame);
 	for (int i = 0; i < MultiModule::MIDI_INPUTS; i++) {
 		CATCH_INFO("input " << i);
-		REQUIRE(m->midiInputs[i].processor.ccNrpnParam[0] == -1);
+		REQUIRE(m->midiIns.ports[i].processor.ccNrpnParam[0] == -1);
 	}
 }
 
@@ -330,16 +330,16 @@ TEST_CASE("Variant: framed messages are not stranded on a port that is no longer
 	msg.frame = 100;
 	REQUIRE(m->sendMidi(1, &msg, 1, 0, 0));
 	pump(m, frame);   // moves it from the module's queue into port 2's frame queue
-	REQUIRE(m->midiOutputs[1].frameQueue.size() == 1);
+	REQUIRE(m->midiOuts.ports[1].frameQueue.size() == 1);
 
 	// The script that used port 2 is replaced by one that does not.
 	m->resetMidiPortEnables();
-	REQUIRE_FALSE(m->isMidiOutEnabled(1));
+	REQUIRE_FALSE(m->midiOuts.isEnabled(1));
 
 	// Once the frame is due it is sent anyway, not left for a later script.
 	frame = 200;
 	pump(m, frame);
-	REQUIRE(m->midiOutputs[1].frameQueue.empty());
+	REQUIRE(m->midiOuts.ports[1].frameQueue.empty());
 }
 
 TEST_CASE("Variant: extended-CC enables are per MIDI input", "[MidiKit][Variant]") {
@@ -348,23 +348,23 @@ TEST_CASE("Variant: extended-CC enables are per MIDI input", "[MidiKit][Variant]
 	m->loadScript(QUICKJS_EMPTY);
 
 	m->enableNrpnIn(1, 0, 3);
-	REQUIRE(m->isNrpnEnabled(3, false, 1));
-	REQUIRE_FALSE(m->isNrpnEnabled(3, false, 0));
+	REQUIRE(m->midiIns.isNrpnEnabled(3, false, 1));
+	REQUIRE_FALSE(m->midiIns.isNrpnEnabled(3, false, 0));
 
 	m->enableCc14bitIn(0, 7, 2);
-	REQUIRE(m->isCc14bitEnabled(2, 7, 0));
-	REQUIRE_FALSE(m->isCc14bitEnabled(2, 7, 1));
+	REQUIRE(m->midiIns.isCc14bitEnabled(2, 7, 0));
+	REQUIRE_FALSE(m->midiIns.isCc14bitEnabled(2, 7, 1));
 
 	// A port the module doesn't have is ignored.
 	m->enableNrpnIn(2, 0, 5);
 	m->enableNrpnIn(-1, 0, 5);
-	REQUIRE_FALSE(m->isNrpnEnabled(5, false, 0));
-	REQUIRE_FALSE(m->isNrpnEnabled(5, false, 1));
+	REQUIRE_FALSE(m->midiIns.isNrpnEnabled(5, false, 0));
+	REQUIRE_FALSE(m->midiIns.isNrpnEnabled(5, false, 1));
 
 	// A reset drops the enables of every port.
 	m->onReset();
-	REQUIRE_FALSE(m->isNrpnEnabled(3, false, 1));
-	REQUIRE_FALSE(m->isCc14bitEnabled(2, 7, 0));
+	REQUIRE_FALSE(m->midiIns.isNrpnEnabled(3, false, 1));
+	REQUIRE_FALSE(m->midiIns.isCc14bitEnabled(2, 7, 0));
 }
 
 // ── Port enabling (midi.enablePorts / midiOut.enablePorts) ──────────────────
@@ -393,8 +393,8 @@ TEST_CASE("Variant: only MIDI input 1 is enabled until a script enables more", "
 		probes(m);
 		int64_t frame = 1;
 
-		m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 10));
-		m->midiInputs[1].queue.onMessage(ccMsg(0, 2, 20));
+		m->midiIns.ports[0].queue.onMessage(ccMsg(0, 1, 10));
+		m->midiIns.ports[1].queue.onMessage(ccMsg(0, 2, 20));
 		pump(m, frame);
 
 		std::string log = probes(m);
@@ -414,7 +414,7 @@ TEST_CASE("Variant: sendMidi drops a MIDI output that is not enabled, logging on
 	midi::Message msg = ccMsg(0, 7, 100);
 	REQUIRE_FALSE(m->sendMidi(1, &msg, 1, 0, 5));
 	REQUIRE_FALSE(m->sendMidi(1, &msg, 1, 0, 5));
-	REQUIRE(m->midiOutQueue.empty());
+	REQUIRE(m->midiOuts.queue.empty());
 	std::string log = probes(m);
 	CATCH_INFO(log);
 	REQUIRE(log.find("MIDI output 2 is not enabled") != std::string::npos);
@@ -455,28 +455,28 @@ TEST_CASE("Variant: midiOut.enablePorts lets a script send on that output", "[Mi
 		int64_t frame = 1;
 
 		CATCH_INFO(script);
-		m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 10));
+		m->midiIns.ports[0].queue.onMessage(ccMsg(0, 1, 10));
 		pump(m, frame);
-		REQUIRE(m->midiOutputs[1].tickQueue[0].size() == 1);
-		REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 0);
+		REQUIRE(m->midiOuts.ports[1].tickQueue[0].size() == 1);
+		REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 0);
 	}
 }
 
 TEST_CASE("Variant: the enabled port count is a consecutive run that only grows", "[MidiKit][Variant]") {
 	MultiScaffold mods;
 	MultiModule* m = mods.create();
-	REQUIRE(m->midiInCount.load() == 1);
-	REQUIRE(m->midiOutCount.load() == 1);
+	REQUIRE(m->midiIns.enabledCount() == 1);
+	REQUIRE(m->midiOuts.enabledCount() == 1);
 
 	m->enableMidiIn(2);
 	m->enableMidiIn(1);   // enabling never shrinks
-	REQUIRE(m->midiInCount.load() == 2);
+	REQUIRE(m->midiIns.enabledCount() == 2);
 	m->enableMidiOut(9);  // clamped to the ports the module has
-	REQUIRE(m->midiOutCount.load() == 2);
+	REQUIRE(m->midiOuts.enabledCount() == 2);
 
 	m->onReset();
-	REQUIRE(m->midiInCount.load() == 1);
-	REQUIRE(m->midiOutCount.load() == 1);
+	REQUIRE(m->midiIns.enabledCount() == 1);
+	REQUIRE(m->midiOuts.enabledCount() == 1);
 }
 
 TEST_CASE("Variant: an input beyond the count is drained, not queued for later", "[MidiKit][Variant]") {
@@ -486,7 +486,7 @@ TEST_CASE("Variant: an input beyond the count is drained, not queued for later",
 	probes(m);
 	int64_t frame = 1;
 
-	m->midiInputs[1].queue.onMessage(ccMsg(0, 2, 20));
+	m->midiIns.ports[1].queue.onMessage(ccMsg(0, 2, 20));
 	pump(m, frame);
 	m->enableMidiIn(2);
 	pump(m, frame);
@@ -573,7 +573,7 @@ TEST_CASE("Variant: a pending UI query runs after the MIDI message, never before
 	int64_t frame = 1;
 
 	m->inputInfos[MultiModule::INPUT]->getName();   // queues the query first
-	m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 10));
+	m->midiIns.ports[0].queue.onMessage(ccMsg(0, 1, 10));
 	pump(m, frame);
 
 	std::string log = probes(m);
@@ -649,7 +649,7 @@ TEST_CASE("Variant: the context menu query is low priority", "[MidiKit][Variant]
 		REQUIRE(specs.size() == 1);
 	});
 	REQUIRE(calls == 0);
-	m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 10));
+	m->midiIns.ports[0].queue.onMessage(ccMsg(0, 1, 10));
 	pump(m, frame);
 	REQUIRE(calls == 1);
 	std::string log = probes(m);
@@ -669,7 +669,7 @@ TEST_CASE("Variant: a bypassed module still answers UI queries", "[MidiKit][Vari
 	REQUIRE(calls == 1);
 }
 
-// ── Trigger ports ───────────────────────────────────────────────────────────
+// Trigger ports
 
 TEST_CASE("Variant: each trigger input has its own tick clock", "[MidiKit][Variant]") {
 	MultiScaffold mods;
@@ -684,8 +684,8 @@ TEST_CASE("Variant: each trigger input has its own tick clock", "[MidiKit][Varia
 	m->process(Test::makeProcessArgs(frame++));   // prime both LOW
 	m->inputs[MultiModule::INPUT_TRIG + 1].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(frame++));
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 0);
-	REQUIRE(m->triggersIn.triggerTick[1][0] == 1);
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 0);
+	REQUIRE(m->triggerIns.triggerTick[1][0] == 1);
 	REQUIRE(m->getTrigTicks(1, 0) == 1);
 	REQUIRE(m->getTrigTicks(0, 0) == 0);
 }
@@ -708,22 +708,22 @@ TEST_CASE("Variant: scheduled MIDI flushes on the clock of its own trigger input
 	// Due at tick 1: on output 1 against trigger input 2, on output 2 against
 	// trigger input 1. tickQueue is flattened trigPort * 16 + channel.
 	midi::Message msg = ccMsg(0, 7, 100);
-	m->midiOutputs[0].send(msg, 0, 1, 1);
-	m->midiOutputs[1].send(msg, 0, 1, 0);
+	m->midiOuts.ports[0].send(msg, 0, 1, 1);
+	m->midiOuts.ports[1].send(msg, 0, 1, 0);
 	const int P2 = PORT_MAX_CHANNELS;
 
 	// A rising edge on trigger input 2 flushes only what was scheduled on it.
 	m->inputs[MultiModule::INPUT_TRIG + 1].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(frame++));
-	REQUIRE(m->triggersIn.triggerTick[1][0] == 1);
-	REQUIRE(m->midiOutputs[0].tickQueue[P2].size() == 0);
-	REQUIRE(m->midiOutputs[1].tickQueue[0].size() == 1);
+	REQUIRE(m->triggerIns.triggerTick[1][0] == 1);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[P2].size() == 0);
+	REQUIRE(m->midiOuts.ports[1].tickQueue[0].size() == 1);
 
 	// A rising edge on trigger input 1 flushes the rest.
 	m->inputs[MultiModule::INPUT_TRIG + 0].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(frame++));
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
-	REQUIRE(m->midiOutputs[1].tickQueue[0].size() == 0);
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 1);
+	REQUIRE(m->midiOuts.ports[1].tickQueue[0].size() == 0);
 }
 
 TEST_CASE("Variant: trigger outputs are addressed by index", "[MidiKit][Variant]") {
@@ -761,7 +761,7 @@ TEST_CASE("Variant: trigger outputs widen to the highest channel a script wrote"
 	REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 1].getChannels() == 1);
 }
 
-// ── Trigger ports through the script API ────────────────────────────────────
+// Trigger ports through the script API
 //
 // The cases above drive the module directly. These load real scripts (both
 // engines) and check that the 1-based `trigPort` argument of every trig.*
@@ -858,9 +858,9 @@ trig.onTrigger = function(port, ch) rack.log("T:" .. port .. ":" .. ch) end
 		probes(m);
 		int64_t frame = 1;
 
-		REQUIRE_FALSE(m->triggersIn.isEnabled(0, 0));
-		REQUIRE(m->triggersIn.isEnabled(1, 0));
-		REQUIRE_FALSE(m->triggersIn.isEnabled(1, 1));
+		REQUIRE_FALSE(m->triggerIns.isEnabled(0, 0));
+		REQUIRE(m->triggerIns.isEnabled(1, 0));
+		REQUIRE_FALSE(m->triggerIns.isEnabled(1, 1));
 
 		pump(m, frame);
 		driveTrig(m, frame, 0, 0, 10.f);   // port 1: never enabled
@@ -1010,7 +1010,7 @@ TEST_CASE("Variant: a trigger port beyond the module's ports is rejected by both
 			pump(m, frame);
 
 			for (int p = 0; p < 2; p++) {
-				REQUIRE(m->triggersIn.enabledMask[p].load() == 0);
+				REQUIRE(m->triggerIns.enabledMask[p].load() == 0);
 				REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + p].getVoltage(0) == 0.f);
 			}
 		}
@@ -1096,7 +1096,7 @@ TEST_CASE("Variant: a script reload forgets trigger enables and ticks on every p
 
 	m->loadScript(QUICKJS_EMPTY);
 	for (int p = 0; p < 2; p++) {
-		REQUIRE(m->triggersIn.enabledMask[p].load() == 0);
+		REQUIRE(m->triggerIns.enabledMask[p].load() == 0);
 		REQUIRE(m->getTrigTicks(p, 0) == 0);
 	}
 }
@@ -1154,11 +1154,11 @@ midi.onMessage = function(port, msg) midiOut.sendAfterTrigger(msg, 2, 2) end
 		int64_t frame = 1;
 		pump(m, frame);   // prime both LOW
 
-		m->midiInputs[0].queue.onMessage(ccMsg(0, 7, 100));
+		m->midiIns.ports[0].queue.onMessage(ccMsg(0, 7, 100));
 		pump(m, frame);
 		// Parked against trigger input 2 (port index 1), not input 1.
-		REQUIRE(m->midiOutputs[0].tickQueue[P2].size() == 1);
-		REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 0);
+		REQUIRE(m->midiOuts.ports[0].tickQueue[P2].size() == 1);
+		REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 0);
 
 		// Any number of ticks on trigger input 1 releases nothing.
 		for (int i = 0; i < 4; i++) {
@@ -1166,14 +1166,14 @@ midi.onMessage = function(port, msg) midiOut.sendAfterTrigger(msg, 2, 2) end
 			driveTrig(m, frame, 0, 0, 0.f);
 		}
 		REQUIRE(m->getTrigTicks(0, 0) == 4);
-		REQUIRE(m->midiOutputs[0].tickQueue[P2].size() == 1);
+		REQUIRE(m->midiOuts.ports[0].tickQueue[P2].size() == 1);
 
 		// Two ticks on trigger input 2 do.
 		driveTrig(m, frame, 1, 0, 10.f);
-		REQUIRE(m->midiOutputs[0].tickQueue[P2].size() == 1);
+		REQUIRE(m->midiOuts.ports[0].tickQueue[P2].size() == 1);
 		driveTrig(m, frame, 1, 0, 0.f);
 		driveTrig(m, frame, 1, 0, 10.f);
-		REQUIRE(m->midiOutputs[0].tickQueue[P2].size() == 0);
+		REQUIRE(m->midiOuts.ports[0].tickQueue[P2].size() == 0);
 	}
 }
 
@@ -1201,18 +1201,18 @@ midi.onMessage = function(port, msg) midiOut.sendAfterTrigger(msg, 1) end
 		int64_t frame = 1;
 		pump(m, frame);
 
-		m->midiInputs[0].queue.onMessage(ccMsg(0, 7, 100));
+		m->midiIns.ports[0].queue.onMessage(ccMsg(0, 7, 100));
 		pump(m, frame);
-		REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 1);
+		REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 1);
 
 		driveTrig(m, frame, 1, 0, 10.f);   // input 2: not its clock
-		REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 1);
+		REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 1);
 		driveTrig(m, frame, 0, 0, 10.f);
-		REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 0);
+		REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 0);
 	}
 }
 
-// ── End-to-end: interleaved schedules on both trigger inputs ────────────────
+// End-to-end: interleaved schedules on both trigger inputs
 
 // Records what MidiOutput really sends. midi::Output::sendMessage() forwards to
 // `outputDevice`, so attaching one is enough to observe the sends without a
@@ -1280,16 +1280,16 @@ TEST_CASE("Variant: interleaved sendAfterTrigger schedules on both trigger input
 		MultiModule* m = mods.create();
 		wireTrigPorts(m);
 		RecordingOutputDevice dev1, dev2;
-		m->midiOutputs[0].outputDevice = &dev1;
-		m->midiOutputs[1].outputDevice = &dev2;
-		m->midiOutputs[0].channel = -1;
-		m->midiOutputs[1].channel = -1;
+		m->midiOuts.ports[0].outputDevice = &dev1;
+		m->midiOuts.ports[1].outputDevice = &dev2;
+		m->midiOuts.ports[0].channel = -1;
+		m->midiOuts.ports[1].channel = -1;
 		m->loadScript(script);
 		int64_t frame = 1;
 		pump(m, frame);   // prime every enabled channel LOW
 
 		// Schedule all six; each value is 10x its controller.
-		for (int cc = 1; cc <= 6; cc++) m->midiInputs[0].queue.onMessage(ccMsg(0, cc, cc * 10));
+		for (int cc = 1; cc <= 6; cc++) m->midiIns.ports[0].queue.onMessage(ccMsg(0, cc, cc * 10));
 		pump(m, frame);
 		REQUIRE(dev1.sent.empty());
 
@@ -1317,8 +1317,8 @@ TEST_CASE("Variant: interleaved sendAfterTrigger schedules on both trigger input
 
 		// Delays count from the tick a message is scheduled at, not from zero.
 		// Input 1 ch1 is now at 3 ticks, input 2 ch1 at 3.
-		m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 11));   // input 1: due at 6
-		m->midiInputs[0].queue.onMessage(ccMsg(0, 2, 22));   // input 2: due at 4
+		m->midiIns.ports[0].queue.onMessage(ccMsg(0, 1, 11));   // input 1: due at 6
+		m->midiIns.ports[0].queue.onMessage(ccMsg(0, 2, 22));   // input 2: due at 4
 		pump(m, frame);
 		pulseTrig(m, frame, 0, 0);   // in 1 ch1, tick 4: not due
 		pulseTrig(m, frame, 0, 0);   // in 1 ch1, tick 5: not due
@@ -1333,7 +1333,7 @@ TEST_CASE("Variant: interleaved sendAfterTrigger schedules on both trigger input
 		// Everything went to the first MIDI output and nothing is left queued.
 		REQUIRE(dev2.sent.empty());
 		for (int i = 0; i < 2 * PORT_MAX_CHANNELS; i++) {
-			REQUIRE(m->midiOutputs[0].tickQueue[i].empty());
+			REQUIRE(m->midiOuts.ports[0].tickQueue[i].empty());
 		}
 	}
 }
@@ -1343,24 +1343,24 @@ TEST_CASE("Variant: a script reload drops sendAfterTrigger messages pending on e
 	MultiModule* m = mods.create();
 	wireTrigPorts(m);
 	RecordingOutputDevice dev;
-	m->midiOutputs[0].outputDevice = &dev;
-	m->midiOutputs[0].channel = -1;
+	m->midiOuts.ports[0].outputDevice = &dev;
+	m->midiOuts.ports[0].channel = -1;
 	m->loadScript(JS_TRIG_SCHEDULES);
 	int64_t frame = 1;
 	pump(m, frame);
 
-	m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 10));   // input 1, 3 ticks
-	m->midiInputs[0].queue.onMessage(ccMsg(0, 3, 30));   // input 2, 3 ticks
+	m->midiIns.ports[0].queue.onMessage(ccMsg(0, 1, 10));   // input 1, 3 ticks
+	m->midiIns.ports[0].queue.onMessage(ccMsg(0, 3, 30));   // input 2, 3 ticks
 	pump(m, frame);
 	pulseTrig(m, frame, 1, 0);
-	REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 1);
-	REQUIRE(m->midiOutputs[0].tickQueue[PORT_MAX_CHANNELS].size() == 1);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 1);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[PORT_MAX_CHANNELS].size() == 1);
 
 	// The old script's pending messages must not fire on the new script's clocks.
 	m->loadScript(JS_TRIG_SCHEDULES);
 	pump(m, frame);
 	for (int i = 0; i < 2 * PORT_MAX_CHANNELS; i++) {
-		REQUIRE(m->midiOutputs[0].tickQueue[i].empty());
+		REQUIRE(m->midiOuts.ports[0].tickQueue[i].empty());
 	}
 	for (int i = 0; i < 4; i++) {
 		pulseTrig(m, frame, 0, 0);
@@ -1396,19 +1396,19 @@ end
 		MultiModule* m = mods.create();
 		wireTrigPorts(m);
 		RecordingOutputDevice dev;
-		m->midiOutputs[0].outputDevice = &dev;
-		m->midiOutputs[0].channel = -1;
+		m->midiOuts.ports[0].outputDevice = &dev;
+		m->midiOuts.ports[0].channel = -1;
 		m->loadScript(JS_TRIG_SCHEDULES);
 		int64_t frame = 1;
 		pump(m, frame);
-		m->midiInputs[0].queue.onMessage(ccMsg(0, 1, 10));   // stale: input 1, 3 ticks
+		m->midiIns.ports[0].queue.onMessage(ccMsg(0, 1, 10));   // stale: input 1, 3 ticks
 		pump(m, frame);
-		REQUIRE(m->midiOutputs[0].tickQueue[0].size() == 1);
+		REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 1);
 
 		m->loadScript(script);
 		pump(m, frame);
-		REQUIRE(m->midiOutputs[0].tickQueue[0].empty());
-		REQUIRE(m->midiOutputs[0].tickQueue[PORT_MAX_CHANNELS].size() == 1);
+		REQUIRE(m->midiOuts.ports[0].tickQueue[0].empty());
+		REQUIRE(m->midiOuts.ports[0].tickQueue[PORT_MAX_CHANNELS].size() == 1);
 
 		pump(m, frame);   // prime input 2 LOW
 		pulseTrig(m, frame, 1, 0);
@@ -1434,13 +1434,13 @@ midi.onMessage = function(port, msg) midiOut.send(msg) end
 		MultiScaffold mods;
 		MultiModule* m = mods.create();
 		RecordingOutputDevice dev;
-		m->midiOutputs[0].outputDevice = &dev;
-		m->midiOutputs[0].channel = -1;
+		m->midiOuts.ports[0].outputDevice = &dev;
+		m->midiOuts.ports[0].channel = -1;
 		m->loadScript(script);
 		int64_t frame = 1;
 		pump(m, frame);
 
-		m->midiInputs[0].queue.onMessage(ccMsg(0, 7, 100));
+		m->midiIns.ports[0].queue.onMessage(ccMsg(0, 7, 100));
 		pump(m, frame);
 		REQUIRE(dev.sent == Sent{{7, 100}});
 
@@ -1467,7 +1467,7 @@ TEST_CASE("Variant: CV inputs and params are addressed by index", "[MidiKit][Var
 	REQUIRE(m->getParamValue(0) == 0.5f);
 }
 
-// ── Persistence ─────────────────────────────────────────────────────────────
+// Persistence
 
 TEST_CASE("Variant: MIDI port JSON keys keep the first port's legacy key", "[MidiKit][Variant][JSON]") {
 	MultiScaffold mods;
@@ -1483,8 +1483,8 @@ TEST_CASE("Variant: MIDI port JSON keys keep the first port's legacy key", "[Mid
 	REQUIRE(json_object_get(rootJ, "midiInput3") == nullptr);
 
 	// Round trip: the second input's channel survives.
-	m->midiInputs[1].queue.channel = 5;
-	m->midiOutputs[1].channel = 7;
+	m->midiIns.ports[1].queue.channel = 5;
+	m->midiOuts.ports[1].channel = 7;
 	json_decref(rootJ);
 	rootJ = m->dataToJson();
 
@@ -1492,9 +1492,9 @@ TEST_CASE("Variant: MIDI port JSON keys keep the first port's legacy key", "[Mid
 	MultiModule* m2 = mods2.create();
 	m2->dataFromJson(rootJ);
 	json_decref(rootJ);
-	REQUIRE(m2->midiInputs[1].queue.channel == 5);
-	REQUIRE(m2->midiOutputs[1].channel == 7);
-	REQUIRE(m2->midiInputs[0].queue.channel == m->midiInputs[0].queue.channel);
+	REQUIRE(m2->midiIns.ports[1].queue.channel == 5);
+	REQUIRE(m2->midiOuts.ports[1].channel == 7);
+	REQUIRE(m2->midiIns.ports[0].queue.channel == m->midiIns.ports[0].queue.channel);
 }
 
 TEST_CASE("Variant: only enabled MIDI ports are serialized", "[MidiKit][Variant][JSON]") {
@@ -1520,31 +1520,31 @@ TEST_CASE("Variant: reloading a script keeps the settings of MIDI ports it stops
 	MultiModule* m = mods.create();
 	m->loadScript(JS_PORT_PROBE);   // midi.enablePorts(2)
 	m->loadScript(JS_PORTS_OUT);
-	m->midiInputs[1].queue.channel = 5;
-	m->midiOutputs[1].channel = 7;
-	m->midiInputs[1].queue.setDriverId(0);
-	m->midiOutputs[1].setDriverId(0);
-	int inDriver = m->midiInputs[1].queue.getDriverId();
-	int outDriver = m->midiOutputs[1].getDriverId();
+	m->midiIns.ports[1].queue.channel = 5;
+	m->midiOuts.ports[1].channel = 7;
+	m->midiIns.ports[1].queue.setDriverId(0);
+	m->midiOuts.ports[1].setDriverId(0);
+	int inDriver = m->midiIns.ports[1].queue.getDriverId();
+	int outDriver = m->midiOuts.ports[1].getDriverId();
 
 	// A script that enables nothing: the ports are off, their settings stay.
 	m->loadScript(QUICKJS_EMPTY);
-	REQUIRE_FALSE(m->isMidiInEnabled(1));
-	REQUIRE_FALSE(m->isMidiOutEnabled(1));
-	REQUIRE(m->midiInputs[1].queue.channel == 5);
-	REQUIRE(m->midiOutputs[1].channel == 7);
-	REQUIRE(m->midiInputs[1].queue.getDriverId() == inDriver);
-	REQUIRE(m->midiOutputs[1].getDriverId() == outDriver);
+	REQUIRE_FALSE(m->midiIns.isEnabled(1));
+	REQUIRE_FALSE(m->midiOuts.isEnabled(1));
+	REQUIRE(m->midiIns.ports[1].queue.channel == 5);
+	REQUIRE(m->midiOuts.ports[1].channel == 7);
+	REQUIRE(m->midiIns.ports[1].queue.getDriverId() == inDriver);
+	REQUIRE(m->midiOuts.ports[1].getDriverId() == outDriver);
 
 	m->clearScript();
-	REQUIRE(m->midiInputs[1].queue.channel == 5);
-	REQUIRE(m->midiOutputs[1].channel == 7);
+	REQUIRE(m->midiIns.ports[1].queue.channel == 5);
+	REQUIRE(m->midiOuts.ports[1].channel == 7);
 
 	// Enabling them again brings the user's selection back, and it is saved.
 	m->loadScript(JS_PORT_PROBE);
 	m->loadScript(JS_PORTS_OUT);
-	REQUIRE(m->midiInputs[1].queue.channel == 5);
-	REQUIRE(m->midiOutputs[1].channel == 7);
+	REQUIRE(m->midiIns.ports[1].queue.channel == 5);
+	REQUIRE(m->midiOuts.ports[1].channel == 7);
 	json_t* rootJ = m->dataToJson();
 	REQUIRE(json_object_get(rootJ, "midiOutput2") != nullptr);
 	json_decref(rootJ);
@@ -1554,15 +1554,15 @@ TEST_CASE("Variant: a patch restores a MIDI port's settings before the script en
 	MultiScaffold mods;
 	MultiModule* m = mods.create();
 	m->loadScript(JS_PORTS_OUT);
-	m->midiOutputs[1].channel = 7;
+	m->midiOuts.ports[1].channel = 7;
 	json_t* rootJ = m->dataToJson();
 
 	MultiScaffold mods2;
 	MultiModule* m2 = mods2.create();
 	m2->dataFromJson(rootJ);
 	json_decref(rootJ);
-	REQUIRE(m2->isMidiOutEnabled(1));
-	REQUIRE(m2->midiOutputs[1].channel == 7);
+	REQUIRE(m2->midiOuts.isEnabled(1));
+	REQUIRE(m2->midiOuts.ports[1].channel == 7);
 }
 
 TEST_CASE("Variant: a single-port patch loads into the first port", "[MidiKit][Variant][JSON]") {
@@ -1572,15 +1572,15 @@ TEST_CASE("Variant: a single-port patch loads into the first port", "[MidiKit][V
 	// The single-port MidiKit saves only "midiInput"/"midiOutput".
 	Test::ModuleScaffold<MidiKitModule> single([]() { return createModule(); });
 	MidiKitModule* s = single.create();
-	s->midiInput.channel = 9;
+	s->midiIns.ports[0].queue.channel = 9;
 	json_t* rootJ = s->dataToJson();
 	m->dataFromJson(rootJ);
 	json_decref(rootJ);
 
-	REQUIRE(m->midiInputs[0].queue.channel == 9);
+	REQUIRE(m->midiIns.ports[0].queue.channel == 9);
 }
 
-// ── Widgets ─────────────────────────────────────────────────────────────────
+// Widgets
 
 static int countMenuEntries(rack::ui::Menu* menu, const std::string& text) {
 	int n = 0;
@@ -1623,7 +1623,7 @@ TEST_CASE("Variant: context menu lists every MIDI port once all are enabled", "[
 	Test::destroyWidget(mw);
 }
 
-// ── Log display context menu ────────────────────────────────────────────────
+// Log display context menu
 
 struct ClipboardSpy : StoermelderPackOne::vcv::UiAccess {
 	std::string text;
@@ -1853,8 +1853,8 @@ TEST_CASE("Variant: rack.onUnload output on a second port survives reload, clear
 			MultiScaffold mods;
 			MultiModule* m = mods.create();
 			RecordingOutputDevice dev2;
-			m->midiOutputs[1].outputDevice = &dev2;
-			m->midiOutputs[1].channel = -1;
+			m->midiOuts.ports[1].outputDevice = &dev2;
+			m->midiOuts.ports[1].channel = -1;
 			m->loadScript(script);
 			int64_t frame = 1;
 			pump(m, frame);
@@ -1868,14 +1868,14 @@ TEST_CASE("Variant: rack.onUnload output on a second port survives reload, clear
 				case RESET:
 					m->onReset();
 					// A reset also detaches the MIDI outputs from their devices.
-					m->midiOutputs[1].outputDevice = &dev2;
+					m->midiOuts.ports[1].outputDevice = &dev2;
 					break;
 			}
 			pump(m, frame);
 
 			REQUIRE(dev2.sent == Sent{{9, 77}});
 			// ...and the new script starts with only output 1 enabled again.
-			REQUIRE_FALSE(m->isMidiOutEnabled(1));
+			REQUIRE_FALSE(m->midiOuts.isEnabled(1));
 		}
 	}
 }
