@@ -1014,3 +1014,59 @@ rack.onLoad = function() {
 	REQUIRE(rig.rec.sent.size() == 1);
 	REQUIRE(rig.rec.sent[0].frameField == rig.rec.sent[0].releasedAt);
 }
+
+// ── Tick-scheduled messages ─────────────────────────────────────────────────
+
+TEST_CASE("Timing mode: a tick-scheduled group leaves in order from the edge's frame", "[MidiKit][timing]") {
+	TimingRig rig(withTiming(JS_GROUP_AFTER_TRIGGER).c_str());
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	rig.run(8);
+	rig.inject(noteOn(0, 1, 100), 8);   // an NRPN, due on the next tick
+	rig.run(45);
+	REQUIRE(rig.rec.sent.empty());
+
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+	rig.step();   // the edge is on frame 45
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+
+	REQUIRE(controllers(rig.rec) == std::vector<int>{99, 98, 6, 38});
+	// The first member sits on the edge, the others one sample apart behind it.
+	for (int i = 0; i < 4; i++) REQUIRE(rig.rec.sent[i].frameField == 45 + i);
+}
+
+// On a sample where a trigger edge and a divider tick coincide, the tick queue
+// drains before the script's out-queue, so a tick-scheduled message reaches the
+// device ahead of an immediate one produced on that same sample. The two are
+// unrelated, so this is fine; it is pinned so that a change to process() cannot
+// swap it unnoticed.
+TEST_CASE("Tick-scheduled messages are released before the immediate messages of the same sample", "[MidiKit][timing]") {
+	const char* script = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+midi.onMessage = function(port, msg) {
+    if (midi.getNote(msg) === 60) midiOut.sendAfterTrigger(msg, 1);
+    else midiOut.send(msg);
+};
+)";
+	for (bool timing : { false, true }) {
+		CATCH_INFO(timing);
+		TimingRig rig(timing ? withTiming(script).c_str() : script);
+		rig.m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+		rig.run(8);
+		rig.inject(noteOn(0, 60, 100), 8);    // waits for the edge
+		rig.inject(noteOn(0, 61, 100), 20);   // sent at once, on the tick at 23
+		rig.run(23);
+		REQUIRE(rig.rec.sent.empty());
+
+		// Frame 23 is a divider tick and carries the edge.
+		rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+		rig.step();
+		rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+
+		REQUIRE(controllers(rig.rec) == std::vector<int>{60, 61});
+		if (timing) requireOrderedFrames(rig.rec);
+	}
+}

@@ -14,7 +14,7 @@ from the header, not the file extension.
   pass-through to context menus and assembled NRPN input
 - [Part 3 — API reference](#part-3--api-reference): every `rack.*` /
   `input.*` / `trig.*` / `param.*` / `midi.*` / `midiOut.*` / `number.*`
-  function, persistence, and the MIDI status/type reference
+  function, persistence, sample-accurate timing, and the MIDI status/type reference
 - [Part 4 — Gotchas](#part-4--gotchas)
 
 ## Part 1 — Writing a script
@@ -424,6 +424,72 @@ trig.onTrigger = function(trigPort, channel)
 end
 ```
 
+### Multiply a clock into MIDI clock, sample-accurately
+
+A Rack clock usually ticks once per beat, MIDI clock needs 24 pulses per beat. Hardware that syncs to MIDI clock exposes any timing jitter at once, so this is a case for [sample-accurate timing](#enabling-sample-accurate-timing): `midiOut.enableTiming()` makes every pulse leave on its own frame. The pulse for the input tick goes out on the tick's frame, the other 23 are spread over the next period with `midiOut.sendAtFrame()`, using the previous period as the prediction (as every clock multiplier has to). `rack.getEventFrame()` is the frame of the tick being handled.
+
+JavaScript:
+```js
+let lastEdge = -1;
+let period = 0;
+
+rack.onLoad = function() {
+   midiOut.enableTiming();
+   trig.enableIn(1);
+};
+
+function pulse() {
+   let clock = midi.create();
+   midi.setRaw(clock, "f8");
+   return clock;
+}
+
+trig.onTrigger = function(trigPort, channel) {
+   let edge = rack.getEventFrame();
+   if (lastEdge >= 0) period = edge - lastEdge;
+   lastEdge = edge;
+
+   midiOut.send(pulse());   // on the frame of the tick
+   if (period > 0) {
+      for (let k = 1; k < 24; k++) {
+         midiOut.sendAtFrame(pulse(), edge + Math.round(k * period / 24));
+      }
+   }
+};
+```
+
+Lua:
+```lua
+local lastEdge = -1
+local period = 0
+
+rack.onLoad = function()
+   midiOut.enableTiming()
+   trig.enableIn(1)
+end
+
+local function pulse()
+   local clock = midi.create()
+   midi.setRaw(clock, "f8")
+   return clock
+end
+
+trig.onTrigger = function(trigPort, channel)
+   local edge = rack.getEventFrame()
+   if lastEdge >= 0 then period = edge - lastEdge end
+   lastEdge = edge
+
+   midiOut.send(pulse())   -- on the frame of the tick
+   if period > 0 then
+      for k = 1, 23 do
+         midiOut.sendAtFrame(pulse(), edge + math.floor(k * period / 24 + 0.5))
+      end
+   end
+end
+```
+
+The shipped `Clock multiplier` preset adds a multiplier menu (for clocks that tick on 8th or 16th notes) and treats a long gap, when the clock was stopped, as a restart instead of stretching the pulses over the gap.
+
 ### Tipsy protocol — send and receive over CV
 
 Tipsy is a protocol for exchanging arbitrary data between modules as a stream
@@ -684,6 +750,7 @@ technique.
 | --- | --- |
 | `rack.log(value [, value ...])` | write a line to the module's log/console. Any number of arguments are concatenated (no separator) into one line, each coerced the same way as a single value: strings logged verbatim (no added quotes), numbers formatted like `number.toString()` (so `rack.log(1 / 3)` prints `0.333333`), booleans as `true`/`false`, `null`/`undefined` (QuickJs) / `nil` (Lua) as `null`/`undefined`. Other values (objects, arrays, tables, functions) use each engine's own stringification — scalars are guaranteed to format identically in both engines |
 | `rack.overlay(s1 [, s2 [, s3]])` | show up to 3 lines in the on-panel overlay |
+| `rack.getEventFrame()` | the engine frame (sample counter) of the event being handled: the arrival frame in `midi.onMessage` (of the last message for assembled NRPN/RPN/14-bit events), the frame of the edge in `trig.onTrigger`, the frame the message completed on in `trig.onTipsyMessage`. `-1` outside an event (top level, `rack.onLoad`, `rack.onUnload`, context-menu callbacks). Use with `midiOut.sendAtFrame()` — see [Enabling sample-accurate timing](#enabling-sample-accurate-timing) |
 | `rack.random()` | a random number in [0, 1), drawn from Rack's own RNG (`rack::random::uniform()`), so it shares the patch's seed/determinism |
 | `rack.getConfig(key [, default])` | read a persisted value, or `default` (`undefined`/`nil` if omitted) when `key` is unset. Rejects a malformed key the same way as `setConfig()` — see [Persistence](#persistence) |
 | `rack.setConfig(key, value)` | persist `value` under `key`, or remove the key if `value` is `undefined`/`nil`. Rejects a malformed key, a non-JSON-serializable value, one nested too deeply, or one that would push the whole config past its size cap — see [Persistence](#persistence) |
@@ -1152,6 +1219,8 @@ asked for.
   Output 1 is always enabled; a message sent to any other output is dropped
   (with a one-time log line) until the script enables it. See
   [Enabling MIDI ports](#enabling-midi-ports).
+- `midiOut.enableTiming()` — opts the script into sample-accurate output; see
+  [Enabling sample-accurate timing](#enabling-sample-accurate-timing).
 - `midiOut.selectPort(midiPort)` — selects the output port (1-based) that every
   subsequent `midiOut.*` call sends on, until `selectPort` is called again.
   The selection is sticky across `midi.onMessage` invocations, not reset per
@@ -1160,12 +1229,18 @@ asked for.
 The sending functions below take no port argument — the destination is
 whatever `midiOut.selectPort()` last selected (port 1 if it was never called):
 
-- `midiOut.send(msg)` — send immediately.
+- `midiOut.send(msg)` — send immediately; with
+  [`midiOut.enableTiming()`](#enabling-sample-accurate-timing), on the frame of
+  the event being handled.
 - `midiOut.send(nrpnHandle)` / `midiOut.send(cc14Handle)` — sending the first
   handle of an NRPN quad (4 messages) or a 14-bit CC pair (2 messages)
   automatically flushes the whole group in order.
-- `midiOut.sendAfterMs(msg, ms)` — delayed send, scheduled from the current
-  engine frame.
+- `midiOut.sendAfterMs(msg, ms)` — delayed send. The delay counts from the
+  latest frame the module had processed when the script ran, or, with
+  `midiOut.enableTiming()`, from the frame of the event being handled.
+- `midiOut.sendAtFrame(msg, frame)` — send at an absolute engine frame, held
+  until then. A negative frame means "now". Frames come from
+  `rack.getEventFrame()`.
 - `midiOut.sendAfterTrigger(msg, ticks [, trigPort [, channel]])` — send
   after `ticks` clock ticks counted from `trigPort` (1-based, defaults to
   trig input 1) on polyphonic `channel` (defaults to 1).
@@ -1179,6 +1254,64 @@ wins. To send the same bytes twice, build a fresh handle first with
 `midi.create()` or `midi.clone(msg)` and send that. Each message sent consumes
 one store slot against the 128-handle cap, so one handle per message is the
 correct idiom.
+
+### Enabling sample-accurate timing
+
+By default MIDI-KIT writes a message to the MIDI output as soon as it has it,
+from the audio thread, at the first audio block boundary after the script ran.
+That is the lowest latency, but the moment a message leaves jitters by up to one
+audio block (5.3 ms at 256 samples and 48 kHz) — fine for a filter, a merge or a
+panic button, audible in a clock, an arpeggiator or a sequencer.
+
+A script that needs better calls `midiOut.enableTiming()` once, in `rack.onLoad`
+or at top level:
+
+```js
+rack.onLoad = function() {
+   midiOut.enableTiming();
+};
+```
+
+With it, every message leaves with an *engine frame* (Rack's sample counter) and
+Rack's MIDI output thread transmits it at exactly that frame, to within about
+100 µs, instead of MIDI-KIT writing it at a block boundary. A script that does
+not call it behaves exactly as before. `enableTiming()` applies to the messages
+sent after it, there is no way to switch it off again, and, like the port
+enables, it is forgotten when the script is reloaded, cleared or the module is
+reset.
+
+**What it costs.** Rack delays framed output by one audio block (5.3 ms at 256
+samples and 48 kHz). Every message is delayed by the same amount, so a clock or
+a sequence keeps its shape, but a script that answers a MIDI message answers
+about one block later than without timing. Do not use it where the lowest
+possible latency matters more than a steady rhythm.
+
+**Which frame a message gets.** The calls below differ only in how they choose
+the frame; a message always leaves in the order it was sent.
+
+| Call | Without `enableTiming()` | With `enableTiming()` |
+| --- | --- | --- |
+| `midiOut.send(msg)` | immediately | on the frame of the event being handled: the arrival frame of the MIDI message in `midi.onMessage`, the frame of the edge in `trig.onTrigger`, the frame the last byte arrived on in `trig.onTipsyMessage`. Anywhere else (`rack.onLoad`, `rack.onUnload`, context-menu callbacks) as soon as possible, in order |
+| `midiOut.sendAfterMs(msg, ms)` | `ms` after the latest frame the module had processed when the script ran | `ms` after the frame of the event being handled (after the latest frame processed, outside an event) |
+| `midiOut.sendAtFrame(msg, frame)` | held until `frame`, then sent immediately | on `frame` |
+| `midiOut.sendAfterTrigger(msg, ticks, ...)` | when the tick is reached, immediately | on the frame of the trigger edge that reaches the tick |
+
+`rack.getEventFrame()` returns the frame of the event being handled, so a script
+can place messages relative to it with `midiOut.sendAtFrame()` — for example a
+clock multiplier measures the distance between two trigger edges and spreads
+pulses over it (see
+[Multiply a clock into MIDI clock](#multiply-a-clock-into-midi-clock-sample-accurately)). A frame is a
+sample count: one second is as many frames as the sample rate.
+
+**Order.** Messages sent on the same frame are moved one sample apart, in the
+order they were sent, so an NRPN, a 14-bit CC pair or a note-off followed by a
+note-on of the same note always arrives in order. Messages that are only a few
+samples apart can swap places if Rack hands them to its output thread in
+different audio blocks; Rack's own MIDI-CV and CV-MIDI have the same limit.
+
+**Output devices.** Only drivers that honour a message's frame place it; a driver
+that ignores it sends the message when MIDI-KIT hands it over, which is the same
+as not using timing.
 
 ### MIDI status/type reference used internally
 CC=0xb, NoteOn=0x9, NoteOff=0x8, KeyPressure=0xa, ChanPressure=0xd,
