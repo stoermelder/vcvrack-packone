@@ -30,6 +30,12 @@ struct EngineAccess {
 	// The engine's current frame counter. Production is APP->engine->getFrame(). Mock answers
 	// whatever a test harness's own DSP clock is currently at.
 	virtual int64_t getFrame() const { return 0; }
+
+	// The frame the engine's current audio block started at, and the block size.
+	// Rack's MIDI output thread delays a framed message by one block, so a message
+	// older than that when it is handed over is already late. Mock: 0.
+	virtual int64_t getBlockFrame() const { return 0; }
+	virtual int64_t getBlockFrames() const { return 0; }
 };
 
 
@@ -37,6 +43,8 @@ struct EngineAccess {
 // build's call sites see the concrete type and devirtualize. See cables.hpp.
 struct RealEngineAccess final : EngineAccess {
 	int64_t getFrame() const override;
+	int64_t getBlockFrame() const override;
+	int64_t getBlockFrames() const override;
 };
 // The shared production instance, defined in the .cpp.
 extern RealEngineAccess realEngineAccess;
@@ -58,6 +66,16 @@ namespace engine {
 P1_UNUSED
 static int64_t getFrame() {
 	return engineAccessFor().getFrame();
+}
+
+P1_UNUSED
+static int64_t getBlockFrame() {
+	return engineAccessFor().getBlockFrame();
+}
+
+P1_UNUSED
+static int64_t getBlockFrames() {
+	return engineAccessFor().getBlockFrames();
 }
 
 } // namespace engine

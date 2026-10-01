@@ -7,6 +7,14 @@ int64_t RealEngineAccess::getFrame() const {
 	return APP->engine->getFrame();
 }
 
+int64_t RealEngineAccess::getBlockFrame() const {
+	return APP->engine->getBlockFrame();
+}
+
+int64_t RealEngineAccess::getBlockFrames() const {
+	return APP->engine->getBlockFrames();
+}
+
 // The shared production instance; namespace-scope so no __cxa_guard is tested on access.
 // In a release build this is what the engineAccessFor() macro names directly.
 RealEngineAccess realEngineAccess;
