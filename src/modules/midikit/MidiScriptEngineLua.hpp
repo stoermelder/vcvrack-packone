@@ -1131,6 +1131,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// ── midiOut table ────────────────────────────────────────────────────
 		lua_newtable(L);
 		setTableFunc("enablePorts",        lua_midiOut_enablePorts);
+		setTableFunc("enableTiming",       lua_midiOut_enableTiming);
 		setTableFunc("selectPort",         lua_midiOut_selectPort);
 		setTableFunc("send",               lua_midiOut_send);
 		setTableFunc("sendAfterMs",        lua_midiOut_sendAfterMs);
@@ -1659,6 +1660,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		int count = static_cast<int>(luaL_checkinteger(L, 1));
 		if (count < 1 || count > e->midiOutputCount) luaL_argerror(L, 1, "invalid output port count");
 		e->handler->enableMidiOut(count);
+		return 0;
+	}
+
+	// midiOut.enableTiming() — sample-accurate output for this script.
+	static int lua_midiOut_enableTiming(lua_State* L) {
+		getEngine(L)->handler->enableTiming();
 		return 0;
 	}
 

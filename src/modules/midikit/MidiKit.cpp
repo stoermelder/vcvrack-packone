@@ -51,6 +51,29 @@ struct MidiOutput : midi::Output {
 
 	std::priority_queue<FrameSchedule> frameQueue;
 	uint64_t nextSeq = 0;
+
+	// The module's midiOut.enableTiming() flag; null or clear = legacy mode.
+	const std::atomic<bool>* timing = nullptr;
+	int64_t lastHandOffFrame = -1;
+
+	bool timingOn() const {
+		return timing != nullptr && timing->load(std::memory_order_relaxed);
+	}
+
+	// Timing mode: where a message is handed to Rack, which schedules it by
+	// frame. Two rules keep order through Rack's unstable queue:
+	//  - never hand over -1 (it bypasses the queue and overtakes framed
+	//    messages), use the current frame instead;
+	//  - frames are strictly increasing per output, so equal frames are moved
+	//    one sample apart.
+	void handOff(midi::Message& msg, int64_t now) {
+		int64_t f = msg.frame < 0 ? now : msg.frame;
+		if (f <= lastHandOffFrame) f = lastHandOffFrame + 1;
+		lastHandOffFrame = f;
+		msg.frame = f;
+		sendMessage(msg);
+	}
+
 	// One tick queue per (trigger input, polyphonic channel), flattened as
 	// trigPort * PORT_MAX_CHANNELS + channel: sendAfterTrigger() schedules a
 	// message against a specific trigger input channel's clock, and only that
@@ -82,10 +105,12 @@ struct MidiOutput : midi::Output {
 		Output::reset();
 		while (!frameQueue.empty()) frameQueue.pop();
 		clearTickQueues();
+		lastHandOffFrame = -1;
 		channel = -1;
 	}
 
-	void send(midi::Message& msg, uint8_t channel, uint64_t tick, int trigPort = 0) {
+	// `now`: the current engine frame, for frame-less messages in timing mode.
+	void send(midi::Message& msg, uint8_t channel, uint64_t tick, int trigPort = 0, int64_t now = -1) {
 		if (tick != 0) {
 			TickSchedule s;
 			s.msg = msg;
@@ -103,7 +128,12 @@ struct MidiOutput : midi::Output {
 			return;
 		}
 
-		sendMessage(msg);
+		if (timingOn()) {
+			handOff(msg, now);
+		}
+		else {
+			sendMessage(msg);
+		}
 	}
 
 	void processFrame(int64_t frame) {
@@ -116,8 +146,13 @@ struct MidiOutput : midi::Output {
 			// call — one divider period later. Mirrors the processTick() fix.
 			if (frame >= s.msg.frame) {
 				frameQueue.pop();
-				s.msg.frame = -1;
-				sendMessage(s.msg);
+				if (timingOn()) {
+					handOff(s.msg, frame);
+				}
+				else {
+					s.msg.frame = -1;
+					sendMessage(s.msg);
+				}
 			}
 			else {
 				return;
@@ -125,7 +160,7 @@ struct MidiOutput : midi::Output {
 		}
 	}
 
-	void processTick(uint8_t channel, uint64_t tick, int trigPort = 0) {
+	void processTick(uint8_t channel, uint64_t tick, int trigPort = 0, int64_t now = -1) {
 		// Each (trigger input, channel) queue is only ever drained by that
 		// clock — a message scheduled against channel N of trigger input P must
 		// not fire on another channel's or input's trigger, so its queue is
@@ -140,7 +175,14 @@ struct MidiOutput : midi::Output {
 			// queue is ordered smallest-tick-first, it blocks every later one behind it.
 			if (tick >= s.tick) {
 				q.pop();
-				sendMessage(s.msg);
+				if (timingOn()) {
+					// Drop the stale arrival frame; it is due now.
+					s.msg.frame = -1;
+					handOff(s.msg, now);
+				}
+				else {
+					sendMessage(s.msg);
+				}
 			}
 			else {
 				return;
@@ -892,6 +934,14 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// the worker, read by the audio thread (inputs) and the worker (outputs).
 	std::atomic<int> midiInCount{1};
 	std::atomic<int> midiOutCount{1};
+
+	// midiOut.enableTiming(): outgoing messages keep their frame (see
+	// MidiOutput::handOff()). Worker writes, audio thread reads; reset with the
+	// port enables.
+	std::atomic<bool> timingEnabled{false};
+	// Frame of the latest process() call, for code without ProcessArgs.
+	std::atomic<int64_t> currentFrame{0};
+
 	// Outputs already reported as dropping messages, so a
 	// script sending to a disabled port logs once, not per message.
 	std::atomic<uint32_t> midiOutDropLogged{0};
@@ -1000,6 +1050,11 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		if (count > midiOutCount.load(std::memory_order_relaxed)) midiOutCount.store(count, std::memory_order_relaxed);
 	}
 
+	// MidiScriptEngineHandler — midiOut.enableTiming() binding (worker thread).
+	void enableTiming() override {
+		timingEnabled.store(true, std::memory_order_relaxed);
+	}
+
 	// Port 0 is always in use; the others once a script enabled them.
 	bool isMidiInEnabled(int port) const {
 		return port < midiInCount.load(std::memory_order_relaxed);
@@ -1012,6 +1067,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	void resetMidiPortEnables() {
 		midiInCount.store(1, std::memory_order_relaxed);
 		midiOutCount.store(1, std::memory_order_relaxed);
+		timingEnabled.store(false, std::memory_order_relaxed);
 		midiOutDropLogged.store(0, std::memory_order_relaxed);
 	}
 
@@ -1194,7 +1250,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 						// tick clock of the trigger input they were scheduled
 						// against, for every output.
 						for (int o = 0, n = midiOutCount.load(std::memory_order_relaxed); o < n; o++) {
-							midiOutputs[o].processTick(c, tick, port);
+							midiOutputs[o].processTick(c, tick, port, currentFrame.load(std::memory_order_relaxed));
 						}
 						host.queueTick(port, c);
 					});
@@ -1278,6 +1334,9 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		bindPortParamEngine(nullptr);
 
 		processDivider.setDivision(8);
+		for (int i = 0; i < MIDI_OUTPUTS; i++) {
+			midiOutputs[i].timing = &timingEnabled;
+		}
 		// Routes decoded messages into processMidi() below. Without this the
 		// processor decodes into an empty handler list and nothing reaches the
 		// engine at all.
@@ -1308,7 +1367,14 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 			auto t = midiOutQueue.shift();
 			midi::Message msg = std::get<1>(t);
 			msg.frame = -1;
-			midiOutputs[std::get<0>(t)].sendMessage(msg);
+			// Timing mode: stay behind messages Rack still holds.
+			auto& out = midiOutputs[std::get<0>(t)];
+			if (timingEnabled.load(std::memory_order_relaxed)) {
+				out.handOff(msg, currentFrame.load(std::memory_order_relaxed));
+			}
+			else {
+				out.sendMessage(msg);
+			}
 		}
 	}
 
@@ -1430,6 +1496,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 			return;
 		*/
 
+		currentFrame.store(args.frame, std::memory_order_relaxed);
 		processTickQueueReset();
 		processTriggerInputs();
 
@@ -1470,7 +1537,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 				auto t = midiOutQueue.shift();
 				midi::Message msg = std::get<1>(t);
 				uint8_t channel = std::get<2>(t);
-				midiOutputs[std::get<0>(t)].send(msg, channel, std::get<3>(t), std::get<4>(t));
+				midiOutputs[std::get<0>(t)].send(msg, channel, std::get<3>(t), std::get<4>(t), args.frame);
 			}
 			for (int i = 0, n = midiOutCount.load(std::memory_order_relaxed); i < n; i++) midiOutputs[i].processFrame(args.frame);
 		}

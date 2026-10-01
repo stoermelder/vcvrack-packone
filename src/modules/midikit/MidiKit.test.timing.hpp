@@ -284,9 +284,8 @@ TEST_CASE("Timing: messages sharing an input frame leave in arrival order", "[Mi
 }
 
 // Multi-message groups
-// An NRPN is four CCs and a 14-bit CC two, emitted atomically. Only the first
-// message of a group passes through a send binding, so the others must follow
-// its schedule — and keep their order while they wait, since they all share it.
+// Only the first message of a group passes through a send binding, so the
+// others must follow its schedule and keep their order while they share it.
 
 static const char* JS_GROUP_AFTER_MS = R"(/**
  * @engine QuickJs@v1
@@ -398,4 +397,182 @@ TEST_CASE("Timing: a group sent with sendAfterTrigger is released in order", "[M
 	// Both groups sit on the same tick, so they are released together; each stays
 	// contiguous and in order.
 	REQUIRE(controllers(rig.rec) == std::vector<int>{99, 98, 6, 38, 1, 33});
+}
+
+// ── Timing mode (midiOut.enableTiming()) ────────────────────────────────────
+// The scripts above with the opt-in prepended; the legacy tests stay as they are.
+
+// Inserts midiOut.enableTiming() after the header comment, for either engine.
+static std::string withTiming(const char* script) {
+	std::string s = script;
+	size_t at = s.find("*/\n");
+	if (at != std::string::npos) at += 3;
+	else {
+		at = s.find("--]]\n");
+		REQUIRE(at != std::string::npos);
+		at += 5;
+	}
+	bool lua = s.find("minilua") != std::string::npos;
+	return s.substr(0, at) + (lua ? "midiOut.enableTiming()\n" : "midiOut.enableTiming();\n") + s.substr(at);
+}
+
+// What Rack's unstable queue needs: a frame on every message, strictly increasing.
+static void requireOrderedFrames(const TimingRecorder& rec) {
+	int64_t last = -1;
+	for (auto& s : rec.sent) {
+		REQUIRE(s.frameField >= 0);
+		REQUIRE(s.frameField > last);
+		last = s.frameField;
+	}
+}
+
+TEST_CASE("Timing mode: the opt-in is per script and forgotten on reload", "[MidiKit][timing]") {
+	for (const char* script : TIMING_SCRIPTS) {
+		CATCH_INFO(script);
+		TimingRig rig(withTiming(script).c_str());
+		REQUIRE(rig.m->timingEnabled.load());
+
+		// A script without the call is back in legacy mode.
+		rig.m->loadScript(script);
+		REQUIRE_FALSE(rig.m->timingEnabled.load());
+
+		rig.inject(noteOn(0, 60, 100), 20);
+		rig.run(40);
+		REQUIRE(rig.rec.sent.size() == 1);
+		REQUIRE(rig.rec.sent[0].frameField == -1);
+	}
+}
+
+TEST_CASE("Timing mode: a reply carries a frame instead of -1", "[MidiKit][timing]") {
+	for (const char* script : TIMING_SCRIPTS) {
+		CATCH_INFO(script);
+		TimingRig rig(withTiming(script).c_str());
+
+		rig.inject(noteOn(0, 60, 100), 20);
+		rig.run(40);
+
+		REQUIRE(rig.rec.sent.size() == 1);
+		// Stamped with the hand-over frame, so Rack places it.
+		REQUIRE(rig.rec.sent[0].frameField == rig.rec.sent[0].releasedAt);
+		REQUIRE(rig.rec.sent[0].note == 60);
+	}
+}
+
+TEST_CASE("Timing mode: sendAfterMs hands its scheduled frame to the device", "[MidiKit][timing]") {
+	TimingRig rig(withTiming(JS_AFTER_MS).c_str());
+	const int64_t delay = int64_t(0.010 * Test::sampleRate());
+
+	rig.inject(noteOn(0, 60, 100), 20);
+	rig.run(20 + delay + 40);
+
+	REQUIRE(rig.rec.sent.size() == 1);
+	REQUIRE(rig.rec.sent[0].frameField > 0);
+	REQUIRE(rig.rec.sent[0].frameField <= rig.rec.sent[0].releasedAt);
+}
+
+TEST_CASE("Timing mode: messages sharing a frame get strictly increasing frames in send order", "[MidiKit][timing]") {
+	for (const char* script : TIMING_SCRIPTS) {
+		CATCH_INFO(script);
+		TimingRig rig(withTiming(script).c_str());
+
+		// A retrigger plus two more notes, all on one input frame.
+		rig.inject(noteOff(0, 60), 20);
+		rig.inject(noteOn(0, 60, 100), 20);
+		rig.inject(noteOn(0, 64, 100), 20);
+		rig.inject(noteOn(0, 67, 100), 20);
+		rig.run(40);
+
+		REQUIRE(rig.rec.sent.size() == 4);
+		requireOrderedFrames(rig.rec);
+		REQUIRE(rig.rec.sent[0].status == 0x8);
+		REQUIRE(rig.rec.sent[1].note == 60);
+		REQUIRE(rig.rec.sent[2].note == 64);
+		REQUIRE(rig.rec.sent[3].note == 67);
+	}
+}
+
+TEST_CASE("Timing mode: a group keeps its order and gets one frame per message", "[MidiKit][timing]") {
+	const int64_t delay = int64_t(0.010 * Test::sampleRate());
+
+	for (const char* script : { JS_GROUP_AFTER_MS, LUA_GROUP_AFTER_MS }) {
+		CATCH_INFO(script);
+		TimingRig rig(withTiming(script).c_str());
+		rig.inject(noteOn(0, 1, 100), 20);
+		rig.run(20 + delay + 40);
+
+		REQUIRE(controllers(rig.rec) == std::vector<int>{99, 98, 6, 38});
+		requireOrderedFrames(rig.rec);
+	}
+}
+
+TEST_CASE("Timing mode: scheduled and immediate messages never go out of order", "[MidiKit][timing]") {
+	// Note 1 is delayed, note 2 is sent at once; the device must see ordered frames.
+	const char* script = R"(/**
+ * @engine QuickJs@v1
+ */
+midiOut.enableTiming();
+midi.onMessage = function(port, msg) {
+    if (midi.getNote(msg) === 1) midiOut.sendAfterMs(msg, 10);
+    else midiOut.send(msg);
+};
+)";
+	const int64_t delay = int64_t(0.010 * Test::sampleRate());
+	TimingRig rig(script);
+
+	rig.inject(noteOn(0, 1, 100), 20);
+	rig.inject(noteOn(0, 2, 100), 450);
+	rig.inject(noteOn(0, 2, 100), 470);
+	rig.inject(noteOn(0, 2, 100), 470);
+	rig.run(20 + delay + 100);
+
+	REQUIRE(rig.rec.sent.size() == 4);
+	requireOrderedFrames(rig.rec);
+}
+
+TEST_CASE("Timing mode: a sendAfterTrigger message is stamped with the edge's frame", "[MidiKit][timing]") {
+	TimingRig rig(withTiming(JS_AFTER_TRIGGER).c_str());
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	rig.run(8);
+	rig.inject(noteOn(0, 60, 100), 8);
+	rig.run(45);
+	REQUIRE(rig.rec.sent.empty());
+
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+	rig.step();
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+
+	REQUIRE(rig.rec.sent.size() == 1);
+	// Not the stale arrival frame (8).
+	REQUIRE(rig.rec.sent[0].frameField == 45);
+	REQUIRE(rig.rec.sent[0].releasedAt == 45);
+}
+
+TEST_CASE("Teardown flush is frame-less in legacy mode and stamped in timing mode", "[MidiKit][timing]") {
+	auto script = [](bool timing) {
+		std::string s = "/**\n * @engine QuickJs@v1\n */\n";
+		if (timing) s += "midiOut.enableTiming();\n";
+		s += "rack.onUnload = function() {\n"
+		     "    let m = midi.create();\n"
+		     "    midi.setNoteOff(m, 1, 60, 0);\n"
+		     "    midiOut.send(m);\n"
+		     "};\n";
+		return s;
+	};
+
+	for (bool timing : { false, true }) {
+		CATCH_INFO(timing);
+		TimingRig rig(script(timing).c_str());
+		rig.run(40);
+		REQUIRE(rig.rec.sent.empty());
+
+		// As onRemove() does.
+		rig.m->host.closeState();
+		rig.m->flushOutput();
+
+		REQUIRE(rig.rec.sent.size() == 1);
+		REQUIRE(rig.rec.sent[0].status == 0x8);
+		if (timing) REQUIRE(rig.rec.sent[0].frameField >= 0);
+		else REQUIRE(rig.rec.sent[0].frameField == -1);
+	}
 }

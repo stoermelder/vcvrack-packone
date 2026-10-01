@@ -107,6 +107,11 @@ struct MidiScriptEngineHandler {
 	virtual void enableMidiIn(int count) = 0;
 	virtual void enableMidiOut(int count) = 0;
 
+	// midiOut.enableTiming() binding (worker thread): outgoing messages keep
+	// their frame and Rack places them, at the cost of one block of latency.
+	// Forgotten on load/reset, like the port enables.
+	virtual void enableTiming() = 0;
+
 	// Marks trigger input (port, channel) as enabled, from the script-facing
 	// trig.enableIn() binding (worker thread). Disabled channels get no tick
 	// processing (counting, sendAfterTrigger drains, or trig.onTrigger).

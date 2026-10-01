@@ -918,6 +918,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JSValue _midiOut = JS_NewObject(ctx);
 		JS_SetPropertyStr(ctx, glob, "midiOut", _midiOut);
 		JS_SetPropertyStr(ctx, _midiOut, "enablePorts", JS_NewCFunction(ctx, js_midiOut_enablePorts, "enablePorts", 1));
+		JS_SetPropertyStr(ctx, _midiOut, "enableTiming", JS_NewCFunction(ctx, js_midiOut_enableTiming, "enableTiming", 0));
 		JS_SetPropertyStr(ctx, _midiOut, "selectPort", JS_NewCFunction(ctx, js_midiOut_selectPort, "selectPort", 1));
 		JS_SetPropertyStr(ctx, _midiOut, "send", JS_NewCFunction(ctx, js_midiOut_send, "send", 1));
 		JS_SetPropertyStr(ctx, _midiOut, "sendAfterMs", JS_NewCFunction(ctx, js_midiOut_sendAfterMs, "sendAfterMs", 2));
@@ -1644,6 +1645,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		int count = static_cast<int>(argNum(ctx, argv[0]));
 		if (count < 1 || count > getEngine(ctx)->midiOutputCount) return jsThrow(ctx, "midiOut.enablePorts: invalid output count");
 		getEngine(ctx)->handler->enableMidiOut(count);
+		return JS_UNDEFINED;
+	}
+
+	// midiOut.enableTiming() — sample-accurate output for this script.
+	static JSValue js_midiOut_enableTiming(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		getEngine(ctx)->handler->enableTiming();
 		return JS_UNDEFINED;
 	}
 
