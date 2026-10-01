@@ -809,6 +809,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, glob, "rack", _rack);
 		JS_SetPropertyStr(ctx, _rack, "log", JS_NewCFunction(ctx, js_rack_log, "log", 1));
 		JS_SetPropertyStr(ctx, _rack, "overlay", JS_NewCFunction(ctx, js_rack_overlay, "overlay", 3));
+		JS_SetPropertyStr(ctx, _rack, "getEventFrame", JS_NewCFunction(ctx, js_rack_getEventFrame, "getEventFrame", 0));
 		JS_SetPropertyStr(ctx, _rack, "random", JS_NewCFunction(ctx, js_rack_random, "random", 0));
 		JS_SetPropertyStr(ctx, _rack, "registerContextMenu", JS_NewCFunction(ctx, js_rack_registerContextMenu, "registerContextMenu", 1));
 		JS_SetPropertyStr(ctx, _rack, "unregisterContextMenu", JS_NewCFunction(ctx, js_rack_unregisterContextMenu, "unregisterContextMenu", 1));
@@ -921,6 +922,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midiOut, "selectPort", JS_NewCFunction(ctx, js_midiOut_selectPort, "selectPort", 1));
 		JS_SetPropertyStr(ctx, _midiOut, "send", JS_NewCFunction(ctx, js_midiOut_send, "send", 1));
 		JS_SetPropertyStr(ctx, _midiOut, "sendAfterMs", JS_NewCFunction(ctx, js_midiOut_sendAfterMs, "sendAfterMs", 2));
+		JS_SetPropertyStr(ctx, _midiOut, "sendAtFrame", JS_NewCFunction(ctx, js_midiOut_sendAtFrame, "sendAtFrame", 2));
 		JS_SetPropertyStr(ctx, _midiOut, "sendAfterTrigger", JS_NewCFunction(ctx, js_midiOut_sendAfterTrigger, "sendAfterTrigger", 3));
 
 		JS_FreeValue(ctx, glob);
@@ -2206,6 +2208,23 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		s.sendOrder = getEngine(ctx)->sendCounter++;
 		s.in.msg.frame = getEngine(ctx)->frameAfterMs(ms);
 		return JS_UNDEFINED;
+	}
+
+	// midiOut.sendAtFrame(msg, frame) — send at an absolute engine frame.
+	static JSValue js_midiOut_sendAtFrame(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		size_t idx;
+		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midiOut.sendAtFrame: bad args");
+		MessageEx& s = getEngine(ctx)->msgStore[idx];
+		s.midiPort = getEngine(ctx)->selectedPort;
+		s.send = true;
+		s.sendOrder = getEngine(ctx)->sendCounter++;
+		s.in.msg.frame = frameAtFrame(argNum(ctx, argv[1]));
+		return JS_UNDEFINED;
+	}
+
+	// rack.getEventFrame() — frame of the event being handled, -1 outside one.
+	static JSValue js_rack_getEventFrame(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		return JS_NewFloat64(ctx, double(getEngine(ctx)->currentInFrame));
 	}
 
 	static JSValue js_midiOut_sendAfterTrigger(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {

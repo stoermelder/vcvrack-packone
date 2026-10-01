@@ -117,6 +117,7 @@ struct MidiScriptEngineHandler {
 	// atomically for the worker, which must not read APP->engine.
 	virtual int64_t getCurrentFrame() const = 0;
 	virtual float getSampleRate() const = 0;
+	virtual bool isTimingEnabled() const = 0;
 
 	// midiOut.enableTiming() binding (worker thread): outgoing messages keep
 	// their frame and Rack places them, at the cost of one block of latency.
@@ -323,11 +324,19 @@ struct MidiScriptEngine {
 		~InFrameScope() { slot = prev; }
 	};
 
-	// The frame `ms` after the module's latest process() frame. Shared by both
-	// engines' sendAfterMs.
+	// The frame for sendAfterMs: `ms` after the causing event in timing mode,
+	// otherwise (and with no event) after the module's latest process() frame.
+	// Shared by both engines.
 	int64_t frameAfterMs(double ms) const {
 		float sr = handler->getSampleRate();
-		return handler->getCurrentFrame() + int64_t(sr > 0.f ? ms / 1000.0 * sr : 0.0);
+		int64_t base = handler->isTimingEnabled() && currentInFrame >= 0 ? currentInFrame : handler->getCurrentFrame();
+		return base + int64_t(sr > 0.f ? ms / 1000.0 * sr : 0.0);
+	}
+
+	// The frame for sendAtFrame. Negative values collide with the -1 "no frame"
+	// encoding, so they all mean "no frame".
+	static int64_t frameAtFrame(double frame) {
+		return frame < 0.0 ? -1 : int64_t(frame);
 	}
 
 	void setWorker(std::shared_ptr<ITaskWorker> w) {

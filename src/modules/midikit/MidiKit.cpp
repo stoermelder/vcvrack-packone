@@ -1057,6 +1057,9 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	float getSampleRate() const override {
 		return sampleRate.load(std::memory_order_relaxed);
 	}
+	bool isTimingEnabled() const override {
+		return timingEnabled.load(std::memory_order_relaxed);
+	}
 
 	// MidiScriptEngineHandler — midiOut.enableTiming() binding (worker thread).
 	void enableTiming() override {

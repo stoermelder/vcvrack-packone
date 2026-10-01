@@ -1020,6 +1020,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_newtable(L);
 		setTableFunc("log",      lua_rack_log);
 		setTableFunc("overlay",  lua_rack_overlay);
+		setTableFunc("getEventFrame", lua_rack_getEventFrame);
 		setTableFunc("random",   lua_rack_random);
 		setTableFunc("registerContextMenu", lua_rack_registerContextMenu);
 		setTableFunc("unregisterContextMenu", lua_rack_unregisterContextMenu);
@@ -1134,6 +1135,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("selectPort",         lua_midiOut_selectPort);
 		setTableFunc("send",               lua_midiOut_send);
 		setTableFunc("sendAfterMs",        lua_midiOut_sendAfterMs);
+		setTableFunc("sendAtFrame",        lua_midiOut_sendAtFrame);
 		setTableFunc("sendAfterTrigger",   lua_midiOut_sendAfterTrigger);
 		lua_setglobal(L, "midiOut");
 	}
@@ -2216,6 +2218,24 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		m->in.msg.frame = getEngine(L)->frameAfterMs(ms);
 		m->tick = 0;
 		return 0;
+	}
+
+	// midiOut.sendAtFrame(msg, frame) — send at an absolute engine frame.
+	static int lua_midiOut_sendAtFrame(lua_State* L) {
+		double frame = luaL_checknumber(L, 2);
+
+		MessageEx* m = getPortMsg(L);
+		m->send = true;
+		m->sendOrder = getEngine(L)->sendCounter++;
+		m->in.msg.frame = frameAtFrame(frame);
+		m->tick = 0;
+		return 0;
+	}
+
+	// rack.getEventFrame() — frame of the event being handled, -1 outside one.
+	static int lua_rack_getEventFrame(lua_State* L) {
+		lua_pushnumber(L, static_cast<lua_Number>(getEngine(L)->currentInFrame));
+		return 1;
 	}
 
 	static int lua_midiOut_sendAfterTrigger(lua_State* L) {
