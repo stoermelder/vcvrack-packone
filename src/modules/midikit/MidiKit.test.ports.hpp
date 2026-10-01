@@ -320,6 +320,28 @@ TEST_CASE("Variant: onUnload() still reads the params its script enabled", "[Mid
 	}
 }
 
+TEST_CASE("Variant: framed messages are not stranded on a port that is no longer enabled", "[MidiKit][Variant]") {
+	MultiScaffold mods;
+	MultiModule* m = mods.create();
+	m->enableMidiOut(2);
+	int64_t frame = 1;
+
+	midi::Message msg = ccMsg(0, 7, 100);
+	msg.frame = 100;
+	REQUIRE(m->sendMidi(1, &msg, 1, 0, 0));
+	pump(m, frame);   // moves it from the module's queue into port 2's frame queue
+	REQUIRE(m->midiOutputs[1].frameQueue.size() == 1);
+
+	// The script that used port 2 is replaced by one that does not.
+	m->resetMidiPortEnables();
+	REQUIRE_FALSE(m->isMidiOutEnabled(1));
+
+	// Once the frame is due it is sent anyway, not left for a later script.
+	frame = 200;
+	pump(m, frame);
+	REQUIRE(m->midiOutputs[1].frameQueue.empty());
+}
+
 TEST_CASE("Variant: extended-CC enables are per MIDI input", "[MidiKit][Variant]") {
 	MultiScaffold mods;
 	MultiModule* m = mods.create();

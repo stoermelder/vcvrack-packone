@@ -1650,7 +1650,10 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 				uint8_t channel = std::get<2>(t);
 				midiOutputs[std::get<0>(t)].send(msg, channel, std::get<3>(t), std::get<4>(t), args.frame);
 			}
-			for (int i = 0, n = midiOutCount.load(std::memory_order_relaxed); i < n; i++) midiOutputs[i].processFrame(args.frame);
+			// All outputs, not just the enabled ones: a script that used a port
+			// before being replaced may have left framed messages behind, which
+			// must not wait for a later script to enable the port again.
+			for (int i = 0; i < MIDI_OUTPUTS; i++) midiOutputs[i].processFrame(args.frame);
 			reportLateMessages();
 		}
 
