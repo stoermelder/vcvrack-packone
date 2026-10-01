@@ -446,7 +446,7 @@ struct RecordingEngine : MidiScriptEngine {
 		received.push_back(msg);
 		events.push_back(MESSAGE);
 	}
-	void processInTick(int trigPort, uint8_t channel) override {
+	void processInTick(int trigPort, uint8_t channel, int64_t frame) override {
 		events.push_back(TICK);
 	}
 	void dispatchMidiMessage(int midiPort, midi::Message& msg) override { }

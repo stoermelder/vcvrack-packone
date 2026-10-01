@@ -36,6 +36,8 @@ struct TipsyMessage {
 	uint16_t dataSize;
 	char mime[tipsyMaxMimeTypeSize];
 	unsigned char data[tipsyMaxPayloadLength];
+	// Inbound only: the engine frame the final byte decoded on, -1 if unknown.
+	int64_t frame = -1;
 };
 
 
@@ -59,6 +61,10 @@ struct QueuedMessage {
 	// Set by the module on the audio thread; the worker uses it to decide whether
 	// the script should see the raw CC as well as the assembled event.
 	bool isComponent = false;
+	// The engine frame Rack assigned on arrival (the completing component's, for
+	// assembled events), -1 if unknown. Not msg.frame: that one is an outbound
+	// request that the send bindings overwrite on the handle a script holds.
+	int64_t frame = -1;
 
 	QueuedMessage() {}
 	// Deliberately implicit: a bare Message IS an undecoded QueuedMessage, and
@@ -106,6 +112,11 @@ struct MidiScriptEngineHandler {
 	// on load/reset.
 	virtual void enableMidiIn(int count) = 0;
 	virtual void enableMidiOut(int count) = 0;
+
+	// The audio thread's latest process() frame and the sample rate, published
+	// atomically for the worker, which must not read APP->engine.
+	virtual int64_t getCurrentFrame() const = 0;
+	virtual float getSampleRate() const = 0;
 
 	// midiOut.enableTiming() binding (worker thread): outgoing messages keep
 	// their frame and Rack places them, at the cost of one block of latency.
@@ -297,9 +308,27 @@ struct MidiScriptEngine {
 
 	std::shared_ptr<ITaskWorker> taskWorker;
 	dsp::RingBuffer<std::tuple<int, QueuedMessage>, 128> midiInQueue;
-	// (trigPort, channel) — the trigger input is polyphonic, so each tick
-	// carries the channel that fired.
-	dsp::RingBuffer<std::tuple<int, uint8_t>, 4> tickInQueue;
+	// (trigPort, channel, frame) — the trigger input is polyphonic, so each tick
+	// carries the channel that fired and the frame of its edge.
+	dsp::RingBuffer<std::tuple<int, uint8_t, int64_t>, 4> tickInQueue;
+
+	// Worker thread: the frame of the event being dispatched, -1 outside one.
+	int64_t currentInFrame = -1;
+	// Sets currentInFrame for a scope and restores the previous value, so a
+	// dispatch cannot leak its frame into unrelated work.
+	struct InFrameScope {
+		int64_t& slot;
+		int64_t prev;
+		InFrameScope(int64_t& slot, int64_t frame) : slot(slot), prev(slot) { slot = frame; }
+		~InFrameScope() { slot = prev; }
+	};
+
+	// The frame `ms` after the module's latest process() frame. Shared by both
+	// engines' sendAfterMs.
+	int64_t frameAfterMs(double ms) const {
+		float sr = handler->getSampleRate();
+		return handler->getCurrentFrame() + int64_t(sr > 0.f ? ms / 1000.0 * sr : 0.0);
+	}
 
 	void setWorker(std::shared_ptr<ITaskWorker> w) {
 		taskWorker = std::move(w);
@@ -431,7 +460,7 @@ struct MidiScriptEngine {
 	// assembly the module already performed (NRPN/RPN/14-bit CC) travels with
 	// the raw message instead of being redone on the worker.
 	virtual void processInMessage(int midiPort, const QueuedMessage& msg) = 0;
-	virtual void processInTick(int trigPort, uint8_t channel) = 0;
+	virtual void processInTick(int trigPort, uint8_t channel, int64_t frame = -1) = 0;
 
 	// Decoded Tipsy messages awaiting dispatch. Engine-owned, like midiInQueue:
 	// the decoding is the module's job but dispatching into script code is the
@@ -464,6 +493,7 @@ struct MidiScriptEngine {
 					auto t = midiInQueue.shift();
 					int midiPort = std::get<0>(t);
 					QueuedMessage q = std::get<1>(t);
+					InFrameScope scope(currentInFrame, q.frame);
 					switch (q.type) {
 						case MessageEx::Type::NRPN:
 						case MessageEx::Type::RPN:
@@ -479,10 +509,12 @@ struct MidiScriptEngine {
 				}
 				while (!tickInQueue.empty()) {
 					auto t = tickInQueue.shift();
+					InFrameScope scope(currentInFrame, std::get<2>(t));
 					dispatchTrigger(std::get<0>(t), std::get<1>(t));
 				}
 				while (!tipsyInQueue.empty()) {
 					TipsyMessage msg = tipsyInQueue.shift();
+					InFrameScope scope(currentInFrame, msg.frame);
 					dispatchTipsyMessage(msg);
 				}
 				// After everything above, so queries never hold up MIDI.

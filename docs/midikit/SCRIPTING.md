@@ -684,7 +684,6 @@ technique.
 | --- | --- |
 | `rack.log(value [, value ...])` | write a line to the module's log/console. Any number of arguments are concatenated (no separator) into one line, each coerced the same way as a single value: strings logged verbatim (no added quotes), numbers formatted like `number.toString()` (so `rack.log(1 / 3)` prints `0.333333`), booleans as `true`/`false`, `null`/`undefined` (QuickJs) / `nil` (Lua) as `null`/`undefined`. Other values (objects, arrays, tables, functions) use each engine's own stringification — scalars are guaranteed to format identically in both engines |
 | `rack.overlay(s1 [, s2 [, s3]])` | show up to 3 lines in the on-panel overlay |
-| `rack.getFrame()` | the current engine frame number (`APP->engine->getFrame()`) |
 | `rack.random()` | a random number in [0, 1), drawn from Rack's own RNG (`rack::random::uniform()`), so it shares the patch's seed/determinism |
 | `rack.getConfig(key [, default])` | read a persisted value, or `default` (`undefined`/`nil` if omitted) when `key` is unset. Rejects a malformed key the same way as `setConfig()` — see [Persistence](#persistence) |
 | `rack.setConfig(key, value)` | persist `value` under `key`, or remove the key if `value` is `undefined`/`nil`. Rejects a malformed key, a non-JSON-serializable value, one nested too deeply, or one that would push the whole config past its size cap — see [Persistence](#persistence) |

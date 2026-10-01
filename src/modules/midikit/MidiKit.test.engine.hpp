@@ -320,38 +320,6 @@ TEST_CASE("rack.random stays within [0, 1) in both engines", "[MidiKit][CrossEng
 }
 
 
-// --- rack.getFrame ----------------------------------------------------------
-//
-// getFrame wraps APP->engine->getFrame(), the engine's sample-frame counter.
-// Both engines must return it as a plain number. The script's top-level code
-// runs inside loadScript() — before any engine processing could advance the
-// counter — so the value it logs must match the counter read back in the test.
-
-static const char* JS_RACK_GET_FRAME = R"(/**
- * @engine QuickJs@v1
- */
-rack.log("PROBE:" + number.toString(rack.getFrame()));
-)";
-
-static const char* LUA_RACK_GET_FRAME = R"(--[[
-@engine minilua@v1
---]]
-rack.log("PROBE:" .. number.toString(rack.getFrame()))
-)";
-
-TEST_CASE("rack.getFrame returns the engine frame counter in both engines", "[MidiKit][CrossEngine]") {
-	auto frameLogged = [](const std::string& script) {
-		auto lines = loadAndDrainLog(script);
-		REQUIRE(lines.size() == 1);
-		return static_cast<uint64_t>(std::stoull(lines[0]));
-	};
-
-	uint64_t frame = APP->engine->getFrame();
-	REQUIRE(frameLogged(JS_RACK_GET_FRAME) == frame);
-	REQUIRE(frameLogged(LUA_RACK_GET_FRAME) == frame);
-}
-
-
 // --- rack.log coercion ---------------------------------------------------
 //
 // rack.log() takes any value, not just a string — numbers, booleans and

@@ -700,8 +700,8 @@ struct ScriptHost {
 	void queueMessage(int port, const MidiScript::QueuedMessage& msg) {
 		if (activeEngine) activeEngine->processInMessage(port, msg);
 	}
-	void queueTick(int trigPort, uint8_t channel) {
-		if (activeEngine) activeEngine->processInTick(trigPort, channel);
+	void queueTick(int trigPort, uint8_t channel, int64_t frame = -1) {
+		if (activeEngine) activeEngine->processInTick(trigPort, channel, frame);
 	}
 	// Audio thread: runs one pump of the active engine's queued work.
 	void process() {
@@ -1000,7 +1000,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	TriggerOutputs<CONFIG::trigOutputs> triggersOut;
 
 	uint64_t sample = 0;
-	float sampleRate = 0.f;
+	std::atomic<float> sampleRate{0.f};
 
 	// Points every per-CV-port/param engine back-pointer at the active engine.
 	// Passing null clears instead — no active engine means no port/param can be
@@ -1048,6 +1048,14 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	void enableMidiOut(int count) override {
 		if (count > MIDI_OUTPUTS) count = MIDI_OUTPUTS;
 		if (count > midiOutCount.load(std::memory_order_relaxed)) midiOutCount.store(count, std::memory_order_relaxed);
+	}
+
+	// MidiScriptEngineHandler
+	int64_t getCurrentFrame() const override {
+		return currentFrame.load(std::memory_order_relaxed);
+	}
+	float getSampleRate() const override {
+		return sampleRate.load(std::memory_order_relaxed);
 	}
 
 	// MidiScriptEngineHandler — midiOut.enableTiming() binding (worker thread).
@@ -1252,7 +1260,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 						for (int o = 0, n = midiOutCount.load(std::memory_order_relaxed); o < n; o++) {
 							midiOutputs[o].processTick(c, tick, port, currentFrame.load(std::memory_order_relaxed));
 						}
-						host.queueTick(port, c);
+						host.queueTick(port, c, currentFrame.load(std::memory_order_relaxed));
 					});
 			}
 		}
@@ -1297,7 +1305,9 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		return tipsyIn.process(inputs[INPUT_TRIG + port].getVoltage(0),
 			[&](const TipsyInput::TipsyMessage& m) {
 				if (host.getActiveEngine()->tipsyInQueue.full()) return false;
-				host.getActiveEngine()->tipsyInQueue.push(m);
+				TipsyInput::TipsyMessage q = m;
+				q.frame = currentFrame.load(std::memory_order_relaxed);
+				host.getActiveEngine()->tipsyInQueue.push(q);
 				return true;
 			});
 	}
@@ -1468,6 +1478,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		q.paramNumber = m.paramNumber;
 		q.extraValue = m.extraValue;
 		q.isComponent = m.isComponent;
+		q.frame = m.frame;
 		host.queueMessage(port, q);
 		return false;
 	}

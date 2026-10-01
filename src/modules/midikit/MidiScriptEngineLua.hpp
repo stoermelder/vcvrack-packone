@@ -642,9 +642,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 	}
 
-	void processInTick(int trigPort, uint8_t channel) override {
+	void processInTick(int trigPort, uint8_t channel, int64_t frame) override {
 		if (L) {
-			tickInQueue.push(std::make_tuple(trigPort, channel));
+			tickInQueue.push(std::make_tuple(trigPort, channel, frame));
 		}
 	}
 
@@ -1020,7 +1020,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_newtable(L);
 		setTableFunc("log",      lua_rack_log);
 		setTableFunc("overlay",  lua_rack_overlay);
-		setTableFunc("getFrame", lua_rack_getFrame);
 		setTableFunc("random",   lua_rack_random);
 		setTableFunc("registerContextMenu", lua_rack_registerContextMenu);
 		setTableFunc("unregisterContextMenu", lua_rack_unregisterContextMenu);
@@ -1197,11 +1196,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		const char* s3 = n >= 3 ? luaL_checkstring(L, 3) : "";
 		getEngine(L)->handler->writeOverlay(s1, s2, s3);
 		return 0;
-	}
-
-	static int lua_rack_getFrame(lua_State* L) {
-		lua_pushnumber(L, static_cast<lua_Number>(APP->engine->getFrame()));
-		return 1;
 	}
 
 	// rack.registerContextMenu(options) — registers one item in the module's
@@ -2217,11 +2211,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		float ms = static_cast<float>(luaL_checknumber(L, 2));
 
 		MessageEx* m = getPortMsg(L);
-		int64_t currentFrame = APP->engine->getFrame();
-		int64_t frame = static_cast<int64_t>(ms / 1000.f / APP->engine->getSampleTime());
 		m->send = true;
 		m->sendOrder = getEngine(L)->sendCounter++;
-		m->in.msg.frame = currentFrame + frame;
+		m->in.msg.frame = getEngine(L)->frameAfterMs(ms);
 		m->tick = 0;
 		return 0;
 	}

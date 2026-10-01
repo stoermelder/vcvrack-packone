@@ -576,3 +576,149 @@ TEST_CASE("Teardown flush is frame-less in legacy mode and stamped in timing mod
 		else REQUIRE(rig.rec.sent[0].frameField == -1);
 	}
 }
+
+// ── Frames carried to the script ────────────────────────────────────────────
+// Every dispatch runs with currentInFrame set to the frame of the event that
+// caused it. Nothing reads it yet; these pin the plumbing.
+
+using StoermelderPackOne::MidiScript::QueuedMessage;
+using StoermelderPackOne::MidiScript::TipsyMessage;
+
+// Dispatches through the engine's real queues and records the frame each
+// callback runs under.
+struct FrameProbeEngine : MidiScriptEngine {
+	struct Seen {
+		const char* kind;
+		int64_t frame;
+	};
+	std::vector<Seen> seen;
+
+	explicit FrameProbeEngine(MidiKitModule* module) : MidiScriptEngine(module, 4, 1, 1, 4, 1, 1) {
+		setWorker(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+	}
+
+	void processInMessage(int midiPort, const QueuedMessage& msg) override {
+		midiInQueue.push(std::make_tuple(midiPort, msg));
+	}
+	void processInTick(int trigPort, uint8_t channel, int64_t frame) override {
+		tickInQueue.push(std::make_tuple(trigPort, channel, frame));
+	}
+	void dispatchMidiMessage(int midiPort, midi::Message& msg) override { seen.push_back({"message", currentInFrame}); }
+	void dispatchNrpn(int midiPort, const QueuedMessage& q, bool isRpn) override { seen.push_back({"nrpn", currentInFrame}); }
+	void dispatchCc14bit(int midiPort, const QueuedMessage& q) override { seen.push_back({"cc14", currentInFrame}); }
+	void dispatchTrigger(int trigPort, uint8_t channel) override { seen.push_back({"trigger", currentInFrame}); }
+	void dispatchTipsyMessage(const TipsyMessage& msg) override { seen.push_back({"tipsy", currentInFrame}); }
+
+	void loadScriptOnWorker(const char* script, const std::string& initialConfigJson) override { }
+	bool testScript(const std::string& script) override { return false; }
+	void closeStateOnWorker() override { }
+	std::string getInputName(int i) override { return ""; }
+	std::string getParamName(int i) override { return ""; }
+	std::string getParamFormatValue(int i) override { return ""; }
+	void getContextMenus(const std::function<void(const std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem>&)>& callback) override {
+		std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem> empty;
+		callback(empty);
+	}
+	void invokeContextMenuCallback(int callbackId, int value) override { }
+};
+
+struct ProbeRig {
+	ModuleScaffold mods;
+	MidiKitModule* m;
+	FrameProbeEngine eng;
+	int64_t frame = 0;
+
+	ProbeRig() : m(mods.create("MidiKit")), eng(m) {
+		m->host.getActiveEngine() = &eng;
+	}
+	// The scaffold destroys the module after eng; detach first.
+	~ProbeRig() { m->host.getActiveEngine() = nullptr; }
+
+	void run(int64_t untilFrame) {
+		while (frame < untilFrame) m->process(Test::makeProcessArgs(frame++));
+	}
+};
+
+TEST_CASE("Frames: a message dispatches under its arrival frame", "[MidiKit][timing]") {
+	ProbeRig rig;
+	midi::Message msg = noteOn(0, 60, 100);
+	msg.frame = 20;
+	rig.m->midiInput.onMessage(msg);
+	rig.run(40);
+
+	REQUIRE(rig.eng.seen.size() == 1);
+	REQUIRE(rig.eng.seen[0].frame == 20);
+	// Not left set once the dispatch is over.
+	REQUIRE(rig.eng.currentInFrame == -1);
+}
+
+TEST_CASE("Frames: an assembled NRPN carries its last component's frame", "[MidiKit][timing]") {
+	ProbeRig rig;
+	rig.m->enableNrpnIn(0, 0, -1);
+
+	// The four CCs arrive on different frames; the value is known on the last.
+	const int ccs[4][2] = { {99, 1}, {98, 2}, {6, 3}, {38, 4} };
+	for (int i = 0; i < 4; i++) {
+		midi::Message msg = Test::makeMidiMessage(0xb, 0, ccs[i][0], ccs[i][1], 20 + i * 3);
+		rig.m->midiInput.onMessage(msg);
+	}
+	rig.run(60);
+
+	REQUIRE(rig.eng.seen.size() == 1);
+	REQUIRE(rig.eng.seen[0].kind == std::string("nrpn"));
+	REQUIRE(rig.eng.seen[0].frame == 29);
+}
+
+TEST_CASE("Frames: a trigger dispatches under the frame of its edge", "[MidiKit][timing]") {
+	ProbeRig rig;
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+	rig.m->enableTrigger(0, 0);
+
+	rig.run(30);
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+	rig.run(31);   // the edge is on frame 30
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+	rig.run(50);
+
+	REQUIRE(rig.eng.seen.size() == 1);
+	REQUIRE(rig.eng.seen[0].kind == std::string("trigger"));
+	REQUIRE(rig.eng.seen[0].frame == 30);
+}
+
+TEST_CASE("Frames: a Tipsy message dispatches under the frame it completed on", "[MidiKit][timing]") {
+	ProbeRig rig;
+	rig.m->enableTipsyIn(0);
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+	const std::string data = "hello";
+	REQUIRE(rig.m->sendTipsyOut("text/plain", reinterpret_cast<const unsigned char*>(data.data()), (uint32_t)data.size()));
+	std::vector<float> voltages;
+	float v;
+	while (rig.m->tipsyOut.process(v) == TipsyOutput::Output::WROTE) voltages.push_back(v);
+	REQUIRE(voltages.size() > 0);
+
+	// One voltage per frame; the last one completes the message.
+	for (float volt : voltages) {
+		rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(volt, 0);
+		rig.m->process(Test::makeProcessArgs(rig.frame++));
+	}
+	int64_t lastFrame = rig.frame - 1;
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);   // a held level would re-decode
+	rig.run(rig.frame + 16);
+
+	REQUIRE(rig.eng.seen.size() == 1);
+	REQUIRE(rig.eng.seen[0].kind == std::string("tipsy"));
+	REQUIRE(rig.eng.seen[0].frame == lastFrame);
+}
+
+TEST_CASE("Frames: sendAfterMs counts from the frame the script was dispatched on", "[MidiKit][timing]") {
+	TimingRig rig(JS_AFTER_MS);
+
+	rig.inject(noteOn(0, 60, 100), 20);
+	rig.run(40);
+
+	// Dispatched on the divider tick at 23, not from the engine's own counter.
+	REQUIRE(rig.m->midiOutput.frameQueue.size() == 1);
+	int64_t delay = int64_t(10.0 / 1000.0 * rig.m->sampleRate.load());
+	REQUIRE(rig.m->midiOutput.frameQueue.top().msg.frame == 23 + delay);
+}

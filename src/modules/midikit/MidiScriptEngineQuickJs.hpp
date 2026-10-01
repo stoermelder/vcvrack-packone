@@ -416,9 +416,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 	}
 
-	void processInTick(int trigPort, uint8_t channel) override {
+	void processInTick(int trigPort, uint8_t channel, int64_t frame) override {
 		if (ctx) {
-			tickInQueue.push(std::make_tuple(trigPort, channel));
+			tickInQueue.push(std::make_tuple(trigPort, channel, frame));
 		}
 	}
 
@@ -809,7 +809,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, glob, "rack", _rack);
 		JS_SetPropertyStr(ctx, _rack, "log", JS_NewCFunction(ctx, js_rack_log, "log", 1));
 		JS_SetPropertyStr(ctx, _rack, "overlay", JS_NewCFunction(ctx, js_rack_overlay, "overlay", 3));
-		JS_SetPropertyStr(ctx, _rack, "getFrame", JS_NewCFunction(ctx, js_rack_getFrame, "getFrame", 0));
 		JS_SetPropertyStr(ctx, _rack, "random", JS_NewCFunction(ctx, js_rack_random, "random", 0));
 		JS_SetPropertyStr(ctx, _rack, "registerContextMenu", JS_NewCFunction(ctx, js_rack_registerContextMenu, "registerContextMenu", 1));
 		JS_SetPropertyStr(ctx, _rack, "unregisterContextMenu", JS_NewCFunction(ctx, js_rack_unregisterContextMenu, "unregisterContextMenu", 1));
@@ -994,10 +993,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		std::string s3 = argc >= 3 ? getEngine(ctx)->jsToStdString(argv[2]) : "";
 		getEngine(ctx)->handler->writeOverlay(s1, s2, s3);
 		return JS_UNDEFINED;
-	}
-
-	static JSValue js_rack_getFrame(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		return JS_NewFloat64(ctx, double(APP->engine->getFrame()));
 	}
 
 	// number
@@ -2207,11 +2202,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		MessageEx& s = getEngine(ctx)->msgStore[idx];
 		s.midiPort = getEngine(ctx)->selectedPort;
 		double ms = argNum(ctx, argv[1]);
-		int64_t currentFrame = APP->engine->getFrame();
-		int64_t frame = ms / 1000.f / APP->engine->getSampleTime();
 		s.send = true;
 		s.sendOrder = getEngine(ctx)->sendCounter++;
-		s.in.msg.frame = currentFrame + frame;
+		s.in.msg.frame = getEngine(ctx)->frameAfterMs(ms);
 		return JS_UNDEFINED;
 	}
 
