@@ -274,6 +274,10 @@ rack.log("PROBE:" + number.toString(3.14));
 rack.log("PROBE:" + number.toString(-100));
 rack.log("PROBE:" + number.toString(1 / 3));
 rack.log("PROBE:" + number.toString(0));
+rack.log("PROBE:" + number.toString(16777217));
+rack.log("PROBE:" + number.toString(123456789012));
+rack.log("PROBE:" + number.toString(-16777219));
+rack.log("PROBE:" + number.toString(1e20));
 )";
 
 static const char* LUA_NUMBER_TOSTRING = R"(--[[
@@ -284,10 +288,16 @@ rack.log("PROBE:" .. number.toString(3.14))
 rack.log("PROBE:" .. number.toString(-100))
 rack.log("PROBE:" .. number.toString(1 / 3))
 rack.log("PROBE:" .. number.toString(0))
+rack.log("PROBE:" .. number.toString(16777217))
+rack.log("PROBE:" .. number.toString(123456789012))
+rack.log("PROBE:" .. number.toString(-16777219))
+rack.log("PROBE:" .. number.toString(1e20))
 )";
 
 TEST_CASE("number.toString is identical", "[MidiKit][CrossEngine]") {
-	requireLoggedValues(JS_NUMBER_TOSTRING, LUA_NUMBER_TOSTRING, {"42", "3.14", "-100", "0.333333", "0"});
+	requireLoggedValues(JS_NUMBER_TOSTRING, LUA_NUMBER_TOSTRING, {"42", "3.14", "-100", "0.333333", "0",
+		// integers above 2^24 stay exact (a float would round them)
+		"16777217", "123456789012", "-16777219", "1e+20"});
 }
 
 

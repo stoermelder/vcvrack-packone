@@ -5,6 +5,7 @@
 #include "../midi/MidiProcessor.hpp"
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <future>
 #include <jansson.h>
 #include <memory>

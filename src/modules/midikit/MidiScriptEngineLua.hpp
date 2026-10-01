@@ -1188,7 +1188,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			switch (lua_type(L, i)) {
 				case LUA_TNUMBER: {
 					char buf[32];
-					formatNumber(static_cast<float>(lua_tonumber(L, i)), buf, sizeof(buf));
+					formatNumber(lua_tonumber(L, i), buf, sizeof(buf));
 					log += buf;
 					break;
 				}
@@ -1461,20 +1461,28 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 1;
 	}
 
-	// Formats f with up to 6 decimals, trimming trailing zeros (and a trailing
-	// '.') so 42.0 prints as "42" — matching the old %i/%f split without two
-	// branches — and non-integers print only the decimals they actually have.
-	static void formatNumber(float f, char* buf, size_t bufSize) {
-		snprintf(buf, bufSize, "%f", f);
+	// Formats d like a plain number: integral values below 2^53 print exactly
+	// ("%.0f", so frame counters stay exact — a float would round above 2^24),
+	// other values with up to 6 decimals, trailing zeros (and a trailing '.')
+	// trimmed. Very large magnitudes use "%g" so they can't overflow the buffer.
+	static void formatNumber(double d, char* buf, size_t bufSize) {
+		if (std::fabs(d) >= 1e15) {
+			snprintf(buf, bufSize, "%g", d);
+			return;
+		}
+		if (d == std::floor(d)) {
+			snprintf(buf, bufSize, "%.0f", d);
+			return;
+		}
+		snprintf(buf, bufSize, "%f", d);
 		char* end = buf + strlen(buf) - 1;
 		while (end > buf && *end == '0') { *end = '\0'; end--; }
 		if (end > buf && *end == '.') { *end = '\0'; }
 	}
 
 	static int lua_number_toString(lua_State* L) {
-		float f = static_cast<float>(luaL_checknumber(L, 1));
 		char buf[32];
-		formatNumber(f, buf, sizeof(buf));
+		formatNumber(luaL_checknumber(L, 1), buf, sizeof(buf));
 		lua_pushstring(L, buf);
 		return 1;
 	}

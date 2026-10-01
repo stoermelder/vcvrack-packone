@@ -1386,11 +1386,20 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 	}
 
-	// Formats f with up to 6 decimals, trimming trailing zeros (and a trailing
-	// '.') so 42.0 prints as "42" — matching the old %i/%f split without two
-	// branches — and non-integers print only the decimals they actually have.
-	static void formatNumber(float f, char* str, size_t strSize) {
-		snprintf(str, strSize, "%f", f);
+	// Formats d like a plain number: integral values below 2^53 print exactly
+	// ("%.0f", so frame counters stay exact — a float would round above 2^24),
+	// other values with up to 6 decimals, trailing zeros (and a trailing '.')
+	// trimmed. Very large magnitudes use "%g" so they can't overflow the buffer.
+	static void formatNumber(double d, char* str, size_t strSize) {
+		if (std::fabs(d) >= 1e15) {
+			snprintf(str, strSize, "%g", d);
+			return;
+		}
+		if (d == std::floor(d)) {
+			snprintf(str, strSize, "%.0f", d);
+			return;
+		}
+		snprintf(str, strSize, "%f", d);
 		char* end = str + strlen(str) - 1;
 		while (end > str && *end == '0') { *end = '\0'; end--; }
 		if (end > str && *end == '.') { *end = '\0'; }
@@ -1398,9 +1407,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	static JSValue js_number_toString(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		if (argc < 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "number.toString: bad args");
-		float f = argNum(ctx, argv[0]);
 		char str[32];
-		formatNumber(f, str, sizeof(str));
+		formatNumber(argNum(ctx, argv[0]), str, sizeof(str));
 		return JS_NewString(ctx, str);
 	}
 
