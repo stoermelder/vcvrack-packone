@@ -23,6 +23,9 @@
 //   the next step).
 // param 4 - Playmode: Up / Down / Up-Down.
 //
+// MIDI-µKIT has only 2 params: params 3 and 4 are unavailable there, so the
+// note length is half a step and the playmode is Up.
+//
 // Notes are only advanced on a trigger tick that lands on a step boundary
 // (i.e. every clockDivision-th tick), so the trigger input can run at a
 // finer resolution than the arp itself - the same divide-down idea as
@@ -81,7 +84,7 @@ function octaveRange() {
 };
 
 function playmodeIndex() {
-    let idx = Math.floor(param.getValue(4) * PLAYMODES.length);
+    let idx = Math.floor(param.getValue(4, 0) * PLAYMODES.length);
     if (idx >= PLAYMODES.length) idx = PLAYMODES.length - 1;
     return idx;
 };
@@ -142,10 +145,7 @@ rack.onLoad = function() {
     // Costs one audio block of latency.
     midiOut.enableTiming();
 
-    param.enable(1);
-    param.enable(2);
-    param.enable(3);
-    param.enable(4);
+    for (let i = 1; i <= param.count && i <= 4; i++) param.enable(i);
 
     // Clock the arp from trigger channel 1 only: trig.onTrigger fires per poly
     // channel, and trig.enableIn() gates it — enabling just channel 1 means the
@@ -195,7 +195,7 @@ param.getName = function(i) {
 param.getValueFormat = function(i) {
     if (i === 1) return DIVISIONS[divisionIndex()] + " ticks/step";
     if (i === 2) return octaveRange() + " oct";
-    if (i === 3) return (param.getValue(3) * 100).toFixed(0) + " %";
+    if (i === 3) return (param.getValue(3, 0.5) * 100).toFixed(0) + " %";
     if (i === 4) return PLAYMODES[playmodeIndex()];
     return number.toString(param.getValue(i));
 };
@@ -268,7 +268,7 @@ trig.onTrigger = function(trigPort, channel) {
     midi.setNoteOn(on, ch, note, 100);
     midiOut.send(on);
 
-    let lengthTicks = Math.floor(division * param.getValue(3));
+    let lengthTicks = Math.floor(division * param.getValue(3, 0.5));
     if (lengthTicks < 1) lengthTicks = 1;
     if (lengthTicks > division - 1) lengthTicks = division > 1 ? division - 1 : 1;
 

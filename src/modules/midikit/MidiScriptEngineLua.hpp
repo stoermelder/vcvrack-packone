@@ -1061,6 +1061,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("getVoltage", lua_input_getVoltage);
 		setTableFunc("isHigh",     lua_input_isHigh);
 		setTableFunc("isLow",      lua_input_isLow);
+		setTableInt("count",       inputCount);
 		lua_pop(L, 1);
 
 		// ── trig table ───────────────────────────────────────────────────────
@@ -1075,6 +1076,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("setTrigger",  lua_trig_setTrigger);
 		setTableFunc("sendTipsy",   lua_trig_sendTipsy);
 		setTableFunc("enableTipsyIn", lua_trig_enableTipsyIn);
+		setTableInt("inCount",      inputTrigCount);
+		setTableInt("outCount",     outputTrigCount);
 		lua_setglobal(L, "trig");
 
 		// ── param table ──────────────────────────────────────────────────────
@@ -1087,6 +1090,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_getglobal(L, "param");
 		setTableFunc("enable",   lua_param_enable);
 		setTableFunc("getValue", lua_param_getValue);
+		setTableInt("count",     paramCount);
 		lua_pop(L, 1);
 
 		// ── midi table ───────────────────────────────────────────────────────
@@ -1139,6 +1143,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("enableRpnIn",     lua_midi_enableRpnIn);
 		setTableFunc("enableCc14bitIn", lua_midi_enableCc14bitIn);
 		setTableFunc("enablePorts",     lua_midi_enablePorts);
+		setTableInt("portCount",        midiInputCount);
 		lua_setglobal(L, "midi");
 
 		// ── midiOut table ────────────────────────────────────────────────────
@@ -1150,7 +1155,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("sendAfterMs",        lua_midiOut_sendAfterMs);
 		setTableFunc("sendAtFrame",        lua_midiOut_sendAtFrame);
 		setTableFunc("sendAfterTrigger",   lua_midiOut_sendAfterTrigger);
+		setTableInt("portCount",           midiOutputCount);
 		lua_setglobal(L, "midiOut");
+	}
+
+	// Helper: set an integer field on the table currently at the top of the stack
+	void setTableInt(const char* name, int value) {
+		lua_pushinteger(L, value);
+		lua_setfield(L, -2, name);
 	}
 
 	// Helper: push a C function as a field on the table currently at the top of the stack
@@ -1637,6 +1649,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_param_getValue(lua_State* L) {
 		auto* e = getEngine(L);
 		int i = static_cast<int>(luaL_checkinteger(L, 1));
+		// Optional fallback for an index above the variant's param count
+		// (e.g. param 3 on MIDI-µKIT), so a script needn't check param.count.
+		if (i > e->paramCount && i >= 1 && lua_gettop(L) >= 2) {
+			lua_pushnumber(L, luaL_checknumber(L, 2));
+			return 1;
+		}
 		if (i < 1 || i > e->paramCount) luaL_argerror(L, 1, "param index out of range");
 		lua_pushnumber(L, e->handler->getParamValue(i - 1));
 		return 1;

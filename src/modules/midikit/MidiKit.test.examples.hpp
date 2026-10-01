@@ -322,6 +322,86 @@ TEST_CASE("Lua preset loads and runs without errors", "[MidiKit][Presets]") {
 	checkPreset(p, "Lua");
 }
 
+
+// MIDI-µKIT has 2 params and 2 CV inputs instead of 4. Every shipped preset must
+// still load there; a preset that indexes a missing param or input in onLoad
+// aborts before enabling anything and goes silent.
+static void checkPresetOnMicro(const PresetInfo& p, const char* engine) {
+	std::string relPath = presetPath(p, engine);
+	CATCH_INFO("preset: " << relPath);
+	std::string source = readFile(repoRoot() + "/" + relPath);
+
+	MidiKitMicroModule* m = new MidiKitMicroModule(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+	m->id = rand();
+	Module::SampleRateChangeEvent e{44100.f, 1.f / 44100.f};
+	m->onSampleRateChange(e);
+	m->loadScript(source);
+
+	std::string loadLog;
+	std::tuple<LOG_FORMAT, float, std::string> t;
+	while (m->log.midiLogMessages.try_pop(t)) loadLog += std::get<2>(t) + "\n";
+	CATCH_INFO("load log:\n" << loadLog);
+	REQUIRE(loadLog.find("rror") == std::string::npos);
+	REQUIRE(loadLog.find("Script loaded") != std::string::npos);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("JavaScript preset loads on MIDI-µKIT", "[MidiKit][Presets][Micro]") {
+	PresetInfo p = GENERATE(from_range(std::begin(PRESETS), std::end(PRESETS)));
+	checkPresetOnMicro(p, "JavaScript");
+}
+
+TEST_CASE("Lua preset loads on MIDI-µKIT", "[MidiKit][Presets][Micro]") {
+	PresetInfo p = GENERATE(from_range(std::begin(PRESETS), std::end(PRESETS)));
+	checkPresetOnMicro(p, "Lua");
+}
+
+// Scripts adapt to the variant through these read-only counts.
+static const char* COUNTS_SCRIPT_LUA = R"(--[[
+@engine minilua@v1
+--]]
+rack.onLoad = function()
+	rack.log(string.format("counts %d %d %d %d %d %d", param.count, input.count,
+		trig.inCount, trig.outCount, midi.portCount, midiOut.portCount))
+end
+)";
+
+static const char* COUNTS_SCRIPT_JS = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onLoad = function() {
+	rack.log("counts " + [param.count, input.count, trig.inCount, trig.outCount,
+		midi.portCount, midiOut.portCount].join(" "));
+};
+)";
+
+TEST_CASE("Scripts can read the port counts of the variant they run on", "[MidiKit][Micro]") {
+	const char* script = GENERATE(COUNTS_SCRIPT_LUA, COUNTS_SCRIPT_JS);
+
+	SECTION("MIDI-KIT") {
+		ModuleScaffold mods;
+		MidiKitModule* m = mods.create();
+		m->loadScript(script);
+		REQUIRE(drainLog(m).find("counts 4 4 2 2 4 4") != std::string::npos);
+	}
+
+	SECTION("MIDI-µKIT") {
+		MidiKitMicroModule* m = new MidiKitMicroModule(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+		m->id = rand();
+		Module::SampleRateChangeEvent e{44100.f, 1.f / 44100.f};
+		m->onSampleRateChange(e);
+		m->loadScript(script);
+
+		std::string log;
+		std::tuple<LOG_FORMAT, float, std::string> t;
+		while (m->log.midiLogMessages.try_pop(t)) log += std::get<2>(t) + "\n";
+		REQUIRE(log.find("counts 2 2 2 2 4 4") != std::string::npos);
+
+		Test::destroyModule(m);
+	}
+}
+
 // Behavioural tests for the Arpeggiator preset. It is clocked by trig.onTrigger
 // (the CV trigger input) rather than MIDI, and its four params are read live
 // from the module's Param objects. Each case sets params directly, builds a
@@ -3827,5 +3907,52 @@ TEST_CASE("'Arpeggiator.js/.lua' releases its note two blocks after unloading", 
 	REQUIRE(delay <= 2 * block + 1 + 8);
 
 	m->midiOuts.ports[0].outputDevice = nullptr;
+	Test::destroyModule(m);
+}
+
+
+// param.getValue(i, fallback) returns the fallback for an index above the
+// variant's param count, so presets don't have to check param.count.
+static const char* FALLBACK_SCRIPT_LUA = R"(--[[
+@engine minilua@v1
+--]]
+rack.onLoad = function()
+	rack.log("fallback " .. param.getValue(3, 0.25))
+	local ok = pcall(param.getValue, 3)
+	rack.log("plain " .. tostring(ok))
+	rack.log("zero " .. tostring(pcall(param.getValue, 0, 0.25)))
+end
+)";
+
+static const char* FALLBACK_SCRIPT_JS = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onLoad = function() {
+	rack.log("fallback " + param.getValue(3, 0.25));
+	let ok = true;
+	try { param.getValue(3); } catch (e) { ok = false; }
+	rack.log("plain " + ok);
+	let zero = true;
+	try { param.getValue(0, 0.25); } catch (e) { zero = false; }
+	rack.log("zero " + zero);
+};
+)";
+
+TEST_CASE("param.getValue falls back only above the param count", "[MidiKit][Micro]") {
+	const char* script = GENERATE(FALLBACK_SCRIPT_LUA, FALLBACK_SCRIPT_JS);
+
+	MidiKitMicroModule* m = new MidiKitMicroModule(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+	m->id = rand();
+	Module::SampleRateChangeEvent e{44100.f, 1.f / 44100.f};
+	m->onSampleRateChange(e);
+	m->loadScript(script);
+
+	std::string log;
+	std::tuple<LOG_FORMAT, float, std::string> t;
+	while (m->log.midiLogMessages.try_pop(t)) log += std::get<2>(t) + "\n";
+	REQUIRE(log.find("fallback 0.25") != std::string::npos);
+	REQUIRE(log.find("plain false") != std::string::npos);   // no fallback given: still an error
+	REQUIRE(log.find("zero false") != std::string::npos);    // index 0 is never a fallback case
+
 	Test::destroyModule(m);
 }

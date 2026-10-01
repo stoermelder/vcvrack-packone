@@ -23,6 +23,9 @@
 --   the next step).
 -- param 4 - Playmode: Up / Down / Up-Down.
 --
+-- MIDI-µKIT has only 2 params: params 3 and 4 are unavailable there, so the
+-- note length is half a step and the playmode is Up.
+--
 -- Notes are only advanced on a trigger tick that lands on a step boundary
 -- (i.e. every clockDivision-th tick), so the trigger input can run at a
 -- finer resolution than the arp itself - the same divide-down idea as
@@ -81,7 +84,7 @@ local function octaveRange()
 end
 
 local function playmodeIndex()
-    local idx = math.floor(param.getValue(4) * #PLAYMODES) + 1
+    local idx = math.floor(param.getValue(4, 0) * #PLAYMODES) + 1
     if idx > #PLAYMODES then idx = #PLAYMODES end
     return idx
 end
@@ -140,10 +143,7 @@ rack.onLoad = function()
     -- Costs one audio block of latency.
     midiOut.enableTiming()
 
-    param.enable(1)
-    param.enable(2)
-    param.enable(3)
-    param.enable(4)
+    for i = 1, math.min(param.count, 4) do param.enable(i) end
 
     -- Clock the arp from trigger channel 1 only: trig.onTrigger fires per poly
     -- channel, and trig.enableIn() gates it — enabling just channel 1 means the
@@ -193,7 +193,7 @@ end
 param.getValueFormat = function(i)
     if i == 1 then return number.toString(DIVISIONS[divisionIndex()]) .. " ticks/step" end
     if i == 2 then return number.toString(octaveRange()) .. " oct" end
-    if i == 3 then return string.format("%.0f", param.getValue(3) * 100) .. " %" end
+    if i == 3 then return string.format("%.0f", param.getValue(3, 0.5) * 100) .. " %" end
     if i == 4 then return PLAYMODES[playmodeIndex()] end
     return number.toString(param.getValue(i))
 end
@@ -266,7 +266,7 @@ trig.onTrigger = function(trigPort, channel)
     midi.setNoteOn(on, ch, note, 100)
     midiOut.send(on)
 
-    local lengthTicks = math.floor(division * param.getValue(3))
+    local lengthTicks = math.floor(division * param.getValue(3, 0.5))
     if lengthTicks < 1 then lengthTicks = 1 end
     if lengthTicks > division - 1 then
         lengthTicks = division > 1 and (division - 1) or 1

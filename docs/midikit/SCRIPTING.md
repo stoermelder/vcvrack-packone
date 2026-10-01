@@ -111,7 +111,7 @@ counted, no `sendAfterTrigger` messages drained, no callback dispatched.
 
 ## Part 2 — Examples
 
-**Note:** Channels are 1..16, parameter and input indices are 1..4, trigger input and output indices are 1..2. The main entry point is `midi.onMessage(midiPort, msg)`, where `midiPort` is the 1-based MIDI input the message arrived on. Only MIDI input and output 1 are enabled by default; see [Enabling MIDI ports](#enabling-midi-ports).
+**Note:** Channels are 1..16, parameter and input indices are 1..4 (1..2 on MIDI-µKIT, see [Module variants](#module-variants)), trigger input and output indices are 1..2. The main entry point is `midi.onMessage(midiPort, msg)`, where `midiPort` is the 1-based MIDI input the message arrived on. Only MIDI input and output 1 are enabled by default; see [Enabling MIDI ports](#enabling-midi-ports).
 
 Examples build up roughly from simplest to most involved: basic pass-through
 and filtering first, then message construction (NRPN, 14-bit CC, SysEx, raw),
@@ -709,6 +709,20 @@ end
 
 ## Part 3 — API reference
 
+### Module variants
+
+MIDI-µKIT is the compact variant of the module with **2** CV inputs and **2** knobs instead of 4; the trigger ports and the four MIDI inputs and outputs are the same. Scripts run unchanged on both, but a script that uses param or input indices 3 and 4 has to adapt. Read the read-only counts `param.count`, `input.count`, `trig.inCount`, `trig.outCount`, `midi.portCount` and `midiOut.portCount`; they are set when the script loads:
+
+```js
+for (let i = 1; i <= param.count && i <= 4; i++) param.enable(i);
+let length = param.getValue(3, 0.5);   // 0.5 on µKIT, where param 3 doesn't exist
+```
+
+```lua
+for i = 1, math.min(param.count, 4) do param.enable(i) end
+local length = param.getValue(3, 0.5)   -- 0.5 on µKIT, where param 3 doesn't exist
+```
+
 ### Hooks and predefined objects are resolved once, at load time
 
 `midi.onMessage` is read from the `midi` object **exactly once**;
@@ -952,6 +966,7 @@ these even though `math.*` is also available, for script portability).
 - `input.getVoltage(i [, ch])`, `input.isHigh(i [, ch])`, `input.isLow(i [, ch])`
   (channel defaults to 1; high/low threshold is 0.7V).
 - Override `input.getName(i)` to customize the panel label.
+- `input.count` — number of CV inputs on this module variant (4, or 2 on MIDI-µKIT).
 
 ### `trig.*` (dedicated trigger/gate ports)
 - `trig.enableIn(trigPort [, ch])` — enable trigger input `trigPort` (polyphonic
@@ -973,6 +988,7 @@ these even though `math.*` is also available, for script portability).
 - `trig.setHigh(i [, ch])`, `trig.setLow(i [, ch])`, `trig.setTrigger(i [, ch])`
   (momentary trigger), `trig.setGate(i [, ch], durationMs)` — drive trigger
   output `i` (1 or 2). An index beyond the module's two ports is a script error.
+- `trig.inCount`, `trig.outCount` — number of trigger inputs and outputs (2 and 2 on both variants).
 
 #### Tipsy
 
@@ -1025,8 +1041,9 @@ is in [Tipsy protocol — send and receive over CV](#tipsy-protocol--send-and-re
 
 ### `param.*` (panel knobs)
 - `param.enable(i)` — activate param `i`.
-- `param.getValue(i)` — normalized 0..1 value.
+- `param.getValue(i [, fallback])` — normalized 0..1 value. If `i` is above `param.count` (e.g. param 3 on MIDI-µKIT) and a `fallback` is given, the fallback is returned instead of raising an error.
 - Override `param.getName(i)` and `param.getValueFormat(i)` for panel display.
+- `param.count` — number of panel knobs on this module variant (4, or 2 on MIDI-µKIT). An index above it is a script error: check `param.count` before `param.enable(i)`, and pass a fallback to `param.getValue(i, fallback)`.
 
 ### `midi.*` — message construction/inspection
 Messages are opaque handles (indices into an internal store, max 128 live per
@@ -1219,6 +1236,8 @@ cleared or the module is reset, so they always reflect what the loaded script
 asked for.
 
 ### `midiOut.*` — sending
+
+`midiOut.portCount` — number of MIDI output ports (4). `midi.portCount` is the same for MIDI inputs.
 
 - `midiOut.enablePorts(count)` — enables MIDI outputs 1..`count`.
   Output 1 is always enabled; a message sent to any other output is dropped

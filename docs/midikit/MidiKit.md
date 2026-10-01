@@ -133,6 +133,11 @@ The module's panel and right-click context menu are laid out as follows.
   functions), each polyphonic. Tipsy uses the first trigger input and the
   first trigger output only.
 
+**MIDI-µKIT** is the compact variant with two CV inputs and two panel
+parameters instead of four (no log display); everything else is the same. Scripts
+read `param.count` and `input.count` to adapt, see
+[Module variants](SCRIPTING.md#module-variants).
+
 **Right-click context menu**
 
 - When a script is running, a **"Running Script (Lua)"** or

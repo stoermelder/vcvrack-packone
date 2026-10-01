@@ -26,7 +26,8 @@
 --   damping). 1 keeps the echoes at full velocity forever (the train then
 --   stops only at the echo cap), lower values fade the ball out quickly.
 -- param 3 - Min velocity: echoes stop once their velocity falls below this
---   threshold - the "settle" point.
+--   threshold - the "settle" point. Not available on MIDI-µKIT (2 params),
+--   where echoes settle at velocity 14.
 --
 -- The echo interval starts at config.initialInterval ms and each echo's gate
 -- is config.gateMs long (capped at half the current interval so echoes never
@@ -62,7 +63,7 @@ end
 
 -- Echoes settle below this velocity: 1..127.
 local function minVelocityParam()
-    local m = math.floor(param.getValue(3) * 126 + 0.5) + 1
+    local m = math.floor(param.getValue(3, 0.1) * 126 + 0.5) + 1
     if m < 1 then m = 1 end
     if m > 127 then m = 127 end
     return m
@@ -106,9 +107,7 @@ rack.onLoad = function()
     -- the shrinking gaps even. Costs one audio block of latency, dry note included.
     midiOut.enableTiming()
 
-    param.enable(1)
-    param.enable(2)
-    param.enable(3)
+    for i = 1, math.min(param.count, 3) do param.enable(i) end
 
     rack.log("Bouncing ball delay initialized")
     rack.log("Gravity: ", number.toString(gravityParam()), " | Bounciness: ", string.format("%.0f", bouncinessParam() * 100), "% | Min velocity: ", minVelocityParam())

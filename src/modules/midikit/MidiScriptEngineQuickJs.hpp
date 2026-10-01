@@ -848,6 +848,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			"	getName: function(i) { return \"Port \" + number.toString(i); }"
 			"}; })();"), "<input>", JS_EVAL_TYPE_GLOBAL);
 		JS_SetPropertyStr(ctx, glob, "input", _input);
+		JS_SetPropertyStr(ctx, _input, "count", JS_NewInt32(ctx, inputCount));
 		JS_SetPropertyStr(ctx, _input, "enable", JS_NewCFunction(ctx, js_input_enable, "enable", 1));
 		JS_SetPropertyStr(ctx, _input, "getVoltage", JS_NewCFunction(ctx, js_input_getVoltage, "getVoltage", 2));
 		JS_SetPropertyStr(ctx, _input, "isHigh", JS_NewCFunction(ctx, js_input_isHigh, "isHigh", 2));
@@ -856,6 +857,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// trig
 		JSValue _trig = JS_NewObject(ctx);
 		JS_SetPropertyStr(ctx, glob, "trig", _trig);
+		JS_SetPropertyStr(ctx, _trig, "inCount", JS_NewInt32(ctx, inputTrigCount));
+		JS_SetPropertyStr(ctx, _trig, "outCount", JS_NewInt32(ctx, outputTrigCount));
 		JS_SetPropertyStr(ctx, _trig, "enableIn", JS_NewCFunction(ctx, js_trig_enableIn, "enableIn", 2));
 		JS_SetPropertyStr(ctx, _trig, "getTicks", JS_NewCFunction(ctx, js_trig_getTicks, "getTicks", 1));
 		JS_SetPropertyStr(ctx, _trig, "isHigh", JS_NewCFunction(ctx, js_trig_isHigh, "isHigh", 2));
@@ -875,12 +878,14 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			"}; })();";
 		JSValue _param = JS_Eval(ctx, paramSrc, strlen(paramSrc), "<param>", JS_EVAL_TYPE_GLOBAL);
 		JS_SetPropertyStr(ctx, glob, "param", _param);
+		JS_SetPropertyStr(ctx, _param, "count", JS_NewInt32(ctx, paramCount));
 		JS_SetPropertyStr(ctx, _param, "enable", JS_NewCFunction(ctx, js_param_enable, "enable", 1));
 		JS_SetPropertyStr(ctx, _param, "getValue", JS_NewCFunction(ctx, js_param_getValue, "getValue", 1));
 
 		// midi
 		JSValue _midi = JS_NewObject(ctx);
 		JS_SetPropertyStr(ctx, glob, "midi", _midi);
+		JS_SetPropertyStr(ctx, _midi, "portCount", JS_NewInt32(ctx, midiInputCount));
 		JS_SetPropertyStr(ctx, _midi, "create", JS_NewCFunction(ctx, js_midi_create, "create", 0));
 		JS_SetPropertyStr(ctx, _midi, "clone", JS_NewCFunction(ctx, js_midi_clone, "clone", 1));
 		JS_SetPropertyStr(ctx, _midi, "createNRPN", JS_NewCFunction(ctx, js_midi_createNrpn, "createNRPN", 0));
@@ -933,6 +938,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// midiOut
 		JSValue _midiOut = JS_NewObject(ctx);
 		JS_SetPropertyStr(ctx, glob, "midiOut", _midiOut);
+		JS_SetPropertyStr(ctx, _midiOut, "portCount", JS_NewInt32(ctx, midiOutputCount));
 		JS_SetPropertyStr(ctx, _midiOut, "enablePorts", JS_NewCFunction(ctx, js_midiOut_enablePorts, "enablePorts", 1));
 		JS_SetPropertyStr(ctx, _midiOut, "enableTiming", JS_NewCFunction(ctx, js_midiOut_enableTiming, "enableTiming", 1));
 		JS_SetPropertyStr(ctx, _midiOut, "selectPort", JS_NewCFunction(ctx, js_midiOut_selectPort, "selectPort", 1));
@@ -1557,6 +1563,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	static JSValue js_param_getValue(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		if (argc < 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "param.getValue: bad args");
 		int i = static_cast<int>(argNum(ctx, argv[0]));
+		// Optional fallback for an index above the variant's param count
+		// (e.g. param 3 on MIDI-µKIT), so a script needn't check param.count.
+		if (i > getEngine(ctx)->paramCount && i >= 1 && argc >= 2) {
+			if (!argIsNumber(ctx, argv[1])) return jsThrow(ctx, "param.getValue: bad args");
+			return JS_NewFloat64(ctx, argNum(ctx, argv[1]));
+		}
 		if (i < 1 || i > getEngine(ctx)->paramCount) return jsThrow(ctx, "param.getValue: bad index");
 		return JS_NewFloat64(ctx, getEngine(ctx)->handler->getParamValue(i - 1));
 	}

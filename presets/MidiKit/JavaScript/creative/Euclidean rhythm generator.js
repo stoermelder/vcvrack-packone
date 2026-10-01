@@ -25,6 +25,9 @@
 // param 3 - Note: MIDI note number fired on each hit, 0-127.
 // param 4 - Velocity: velocity of each hit, 1-127.
 //
+// MIDI-µKIT has only 2 params: params 3 and 4 are unavailable there, so each
+// hit plays note 36 at velocity 100.
+//
 // All four params are read live and the pattern is recomputed on every trigger
 // tick, so moving a knob changes the rhythm/note/velocity immediately.
 //
@@ -64,14 +67,14 @@ function fillsParam() {
 };
 
 function noteParam() {
-    let n = Math.round(param.getValue(3) * 127);
+    let n = Math.round(param.getValue(3, 36 / 127) * 127);
     if (n < 0) n = 0;
     if (n > 127) n = 127;
     return n;
 };
 
 function velocityParam() {
-    let v = Math.round(param.getValue(4) * 126) + 1;
+    let v = Math.round(param.getValue(4, 99 / 126) * 126) + 1;
     if (v < 1) v = 1;
     if (v > 127) v = 127;
     return v;
@@ -157,10 +160,7 @@ rack.onLoad = function() {
     // Costs one audio block of latency.
     midiOut.enableTiming();
 
-    param.enable(1);
-    param.enable(2);
-    param.enable(3);
-    param.enable(4);
+    for (let i = 1; i <= param.count && i <= 4; i++) param.enable(i);
 
     // Step the rhythm from trigger channel 1 only: trig.onTrigger fires per poly
     // channel, and trig.enableIn() gates it — enabling just channel 1 means the
