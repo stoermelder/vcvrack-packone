@@ -37,6 +37,15 @@ static const T& peekRing(const dsp::RingBuffer<T, S>& ring) {
 	return ring.data[ring.start % S];
 }
 
+// The oldest entry of a dsp::RingBuffer, still in its slot, so the consumer can
+// move out of it: RingBuffer::shift() returns a copy, and copying a
+// midi::Message allocates its bytes. Same rules as peekRing(); the caller
+// advances with `ring.start++` once it is done with the slot's contents.
+template <typename T, size_t S>
+static T& frontRing(dsp::RingBuffer<T, S>& ring) {
+	return ring.data[ring.start % S];
+}
+
 
 enum class LOG_FORMAT {
 	RESET,
@@ -61,9 +70,34 @@ struct MidiOutput : midi::Output {
 		}
 	};
 
-	// Can drop entries in place; the vector keeps its capacity, so this does not
-	// allocate on the audio thread.
-	struct FrameQueue : std::priority_queue<FrameSchedule> {
+	// Messages that can wait for their frame, per output. Beyond it a message
+	// goes out at once (see send()).
+	static constexpr size_t FRAME_QUEUE_MAX = 256;
+	// Messages that can wait for a trigger tick, per (trigger input, channel).
+	static constexpr size_t TICK_QUEUE_MAX = 32;
+
+	// A priority queue that is reserved up front and never grows past MAX, so it
+	// never reallocates on the audio thread (the caller checks full() before a
+	// push). Dropping entries in place keeps the capacity too.
+	template <typename T, size_t MAX>
+	struct BoundedQueue : std::priority_queue<T> {
+		BoundedQueue() {
+			this->c.reserve(MAX);
+		}
+		bool full() const {
+			return this->c.size() >= MAX;
+		}
+		// Takes the front element out by move: top() is const, so copying it out
+		// would allocate (midi::Message::bytes) on the audio thread.
+		T popTop() {
+			std::pop_heap(this->c.begin(), this->c.end(), this->comp);
+			T t = std::move(this->c.back());
+			this->c.pop_back();
+			return t;
+		}
+	};
+
+	struct FrameQueue : BoundedQueue<FrameSchedule, FRAME_QUEUE_MAX> {
 		template <typename Pred>
 		void removeIf(Pred pred) {
 			this->c.erase(std::remove_if(this->c.begin(), this->c.end(), pred), this->c.end());
@@ -81,6 +115,8 @@ struct MidiOutput : midi::Output {
 		}
 	};
 
+	using TickQueue = BoundedQueue<TickSchedule, TICK_QUEUE_MAX>;
+
 	FrameQueue frameQueue;
 	uint64_t nextSeq = 0;
 
@@ -93,6 +129,9 @@ struct MidiOutput : midi::Output {
 	// worst of them in frames. Audio thread.
 	uint32_t lateCount = 0;
 	int64_t lateWorst = 0;
+	// Set when a scheduling queue was full and a message went out at once
+	// instead; read and cleared by MidiOutputs. Audio thread.
+	bool scheduleFull = false;
 
 	bool timingOn() const {
 		return timing != nullptr && timing->load(std::memory_order_relaxed);
@@ -129,7 +168,7 @@ struct MidiOutput : midi::Output {
 	// message against a specific trigger input channel's clock, and only that
 	// clock advancing can flush it. The first trigger input's channels come
 	// first, so tickQueue[channel] is trigger input 1.
-	std::priority_queue<TickSchedule> tickQueue[TPORTS * PORT_MAX_CHANNELS];
+	TickQueue tickQueue[TPORTS * PORT_MAX_CHANNELS];
 
 	static int tickQueueIndex(uint8_t channel, int trigPort) {
 		if (trigPort < 0 || trigPort >= TPORTS) trigPort = 0;
@@ -165,19 +204,26 @@ struct MidiOutput : midi::Output {
 		lastHandOffFrame = -1;
 		lateCount = 0;
 		lateWorst = 0;
+		scheduleFull = false;
 		channel = -1;
 	}
 
 	// `now`: the current engine frame, for frame-less messages in timing mode.
 	// `unload`: see FrameSchedule::unload.
+	// `msg` is consumed (moved into a queue).
 	void send(midi::Message& msg, uint8_t channel, uint64_t tick, int trigPort = 0, int64_t now = -1, bool unload = false) {
 		if (tick != 0) {
-			TickSchedule s;
-			s.msg = msg;
-			s.tick = tick;
-			s.seq = nextSeq++;
-			tickQueue[tickQueueIndex(channel, trigPort)].push(s);
-			return;
+			TickQueue& q = tickQueue[tickQueueIndex(channel, trigPort)];
+			if (!q.full()) {
+				// Built from the moved message: a default-constructed
+				// midi::Message allocates its bytes.
+				q.push(TickSchedule{std::move(msg), tick, nextSeq++});
+				return;
+			}
+			// A full queue sends at once, as a message without a schedule would
+			// go: dropping it could lose a Note-Off.
+			scheduleFull = true;
+			msg.frame = -1;
 		}
 
 		// Timing mode: a frame-less message takes the current frame and is queued
@@ -188,12 +234,12 @@ struct MidiOutput : midi::Output {
 		}
 
 		if (msg.frame != -1) {
-			FrameSchedule s;
-			s.msg = msg;
-			s.seq = nextSeq++;
-			s.unload = unload;
-			frameQueue.push(s);
-			return;
+			if (!frameQueue.full()) {
+				frameQueue.push(FrameSchedule{std::move(msg), nextSeq++, unload});
+				return;
+			}
+			scheduleFull = true;
+			msg.frame = -1;
 		}
 
 		if (timingOn()) {
@@ -207,13 +253,13 @@ struct MidiOutput : midi::Output {
 	void processFrame(int64_t frame) {
 		while (true) {
 			if (frameQueue.size() == 0) return;
-			FrameSchedule s = frameQueue.top();
+			const FrameSchedule& top = frameQueue.top();
 			// ">=" and not ">": s.msg.frame is the engine frame the message is
 			// intended to be processed at (midi.hpp). With ">" a message due
 			// exactly at the current frame is deferred to the next processFrame()
 			// call — one divider period later. Mirrors the processTick() fix.
-			if (frame >= s.msg.frame) {
-				frameQueue.pop();
+			if (frame >= top.msg.frame) {
+				FrameSchedule s = frameQueue.popTop();
 				if (timingOn()) {
 					handOff(s.msg, frame);
 				}
@@ -236,13 +282,13 @@ struct MidiOutput : midi::Output {
 		auto& q = tickQueue[tickQueueIndex(channel, trigPort)];
 		while (true) {
 			if (q.size() == 0) return;
-			TickSchedule s = q.top();
+			const TickSchedule& top = q.top();
 			// ">=" and not "==": process() calls processTick() before draining the
 			// engine's out-queue, so a script can schedule for a tick the counter has
 			// already consumed. With "==" such a message is never sent and, since the
 			// queue is ordered smallest-tick-first, it blocks every later one behind it.
-			if (tick >= s.tick) {
-				q.pop();
+			if (tick >= top.tick) {
+				TickSchedule s = q.popTop();
 				if (timingOn()) {
 					// Drop the stale arrival frame; it is due now.
 					s.msg.frame = -1;
@@ -608,6 +654,9 @@ struct MidiOutputs {
 	std::atomic<bool> timingReportLate{false};
 	// Audio thread: frame of the last late-message log line, -1 for none.
 	int64_t timingLateLoggedAt = -1;
+	// Audio thread: reportScheduleFull() has logged for the current script (cleared
+	// by clearScheduled() on a script swap, and by reset()).
+	bool scheduleFullLogged = false;
 	ScriptLog* log;
 
 	explicit MidiOutputs(ScriptLog* log) : log(log) {
@@ -695,15 +744,26 @@ struct MidiOutputs {
 		while (!queue.empty()) {
 			int32_t age = genAge(std::get<5>(peekRing(queue)), gen);
 			if (age > 0) break;
-			Entry t = queue.shift();
+			// Taken from the slot by move: copying the entry out (shift())
+			// would allocate the message's bytes on this thread.
+			Entry& t = frontRing(queue);
 			bool unload = std::get<6>(t);
-			if (age < 0 && !unload && !isDue(t, frame)) continue;
-			midi::Message msg = std::get<1>(t);
-			ports[std::get<0>(t)].send(msg, std::get<2>(t), std::get<3>(t), std::get<4>(t), frame, unload);
+			if (age < 0 && !unload && !isDue(t, frame)) {
+				queue.start++;
+				continue;
+			}
+			midi::Message msg = std::move(std::get<1>(t));
+			int port = std::get<0>(t);
+			uint8_t channel = std::get<2>(t);
+			uint64_t tick = std::get<3>(t);
+			int trigPort = std::get<4>(t);
+			queue.start++;
+			ports[port].send(msg, channel, tick, trigPort, frame, unload);
 		}
 		// All ports, not just enabled ones: a replaced script may have left framed
 		// messages behind.
 		for (int i = 0; i < NOUT; i++) ports[i].processFrame(frame);
+		reportScheduleFull();
 		reportLateMessages(frame, sampleRate);
 	}
 
@@ -718,7 +778,12 @@ struct MidiOutputs {
 	// Audio thread, script swap. Drops what the replaced script scheduled for a
 	// later frame or a trigger tick (whose counters restart).
 	void clearScheduled() {
-		for (int i = 0; i < NOUT; i++) ports[i].clearScheduled();
+		for (int i = 0; i < NOUT; i++) {
+			ports[i].clearScheduled();
+			// The new script gets its own "schedule queue full" line.
+			ports[i].scheduleFull = false;
+		}
+		scheduleFullLogged = false;
 	}
 
 	// Teardown: sends what is left in the queue immediately. The closed script's
@@ -727,13 +792,18 @@ struct MidiOutputs {
 	// Only after the worker has stopped.
 	void flush(int64_t now) {
 		while (!queue.empty()) {
-			Entry t = queue.shift();
-			if (!std::get<6>(t) && !isDue(t, now)) continue;
-			midi::Message msg = std::get<1>(t);
+			Entry& t = frontRing(queue);
+			if (!std::get<6>(t) && !isDue(t, now)) {
+				queue.start++;
+				continue;
+			}
+			midi::Message msg = std::move(std::get<1>(t));
+			int port = std::get<0>(t);
+			queue.start++;
 			msg.frame = -1;
 			// Immediate in timing mode too: Rack's output queue may be dropped
 			// with the device.
-			ports[std::get<0>(t)].sendMessage(msg);
+			ports[port].sendMessage(msg);
 		}
 	}
 
@@ -741,6 +811,20 @@ struct MidiOutputs {
 	void reset() {
 		for (int i = 0; i < NOUT; i++) ports[i].reset();
 		timingLateLoggedAt = -1;
+		scheduleFullLogged = false;
+	}
+
+	// Audio thread. Logs, once per script, that a scheduling queue was full and
+	// messages went out at once instead of at their time.
+	void reportScheduleFull() {
+		bool full = false;
+		for (int i = 0; i < NOUT; i++) {
+			full = full || ports[i].scheduleFull;
+			ports[i].scheduleFull = false;
+		}
+		if (!full || scheduleFullLogged) return;
+		scheduleFullLogged = true;
+		log->pushText(string::f("MIDI schedule queue full (%d messages per output waiting for a frame, %d per trigger clock), message(s) sent at once instead of delayed", int(Port::FRAME_QUEUE_MAX), int(Port::TICK_QUEUE_MAX)));
 	}
 
 	// Audio thread. Logs late messages, at most once per second of audio.

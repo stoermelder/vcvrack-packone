@@ -1505,3 +1505,93 @@ TEST_CASE("Timing: a script reload drops stamped trigger writes that are still p
 	rig.run(200);
 	REQUIRE(m.outputs[MidiKitModule::OUTPUT_TRIG + 0].getVoltage(0) == 0.f);
 }
+
+
+// The scheduling queues are reserved up front and bounded, so scheduling itself
+// never allocates on the audio thread (the one copy left is Rack's own
+// Output::sendMessage(), on its side). A message that doesn't fit goes out at once
+// instead of being dropped (a dropped Note-Off would leave a note stuck), and
+// the log says so once.
+
+TEST_CASE("A full frame-scheduling queue sends the overflow at once and logs it once", "[MidiKit][timing]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    for (let i = 0; i < 100; i++) midiOut.sendAfterMs(msg, 10000);
+};
+)";
+	TimingRig rig(js);
+	const size_t cap = MidiOutput<1>::FRAME_QUEUE_MAX;
+	REQUIRE(cap == 256);
+	// 4 callbacks x 100 = 400 scheduled; each callback fits the 128-entry
+	// hand-off ring, and the audio thread drains it in between.
+	for (int i = 0; i < 4; i++) {
+		rig.inject(noteOn(0, 60 + i, 100), 10 + 20 * i);
+	}
+	rig.run(120);
+
+	REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == cap);
+	REQUIRE(rig.rec.sent.size() == 400 - cap);
+
+	std::string log = drainLog(rig.m);
+	size_t first = log.find("schedule queue full");
+	REQUIRE(first != std::string::npos);
+	REQUIRE(log.find("schedule queue full", first + 1) == std::string::npos);
+}
+
+TEST_CASE("A full trigger-tick queue sends the overflow at once and logs it once", "[MidiKit][timing]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+midi.onMessage = function(port, msg) {
+    for (let i = 0; i < 20; i++) midiOut.sendAfterTrigger(msg, 1000);
+};
+)";
+	TimingRig rig(js);
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+	const size_t cap = MidiOutput<1>::TICK_QUEUE_MAX;
+	REQUIRE(cap == 32);
+	rig.run(8);
+	// 3 callbacks x 20 = 60 scheduled against the same trigger clock.
+	for (int i = 0; i < 3; i++) {
+		rig.inject(noteOn(0, 60 + i, 100), 10 + 20 * i);
+	}
+	rig.run(100);
+
+	REQUIRE(rig.m->midiOuts.ports[0].tickQueue[0].size() == cap);
+	REQUIRE(rig.rec.sent.size() == 60 - cap);
+
+	std::string log = drainLog(rig.m);
+	REQUIRE(log.find("schedule queue full") != std::string::npos);
+}
+
+TEST_CASE("A script swap re-arms the schedule-queue-full log line", "[MidiKit][timing]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    for (let i = 0; i < 100; i++) midiOut.sendAfterMs(msg, 10000);
+};
+)";
+	TimingRig rig(js);
+	auto overflow = [&](int64_t from) {
+		for (int i = 0; i < 4; i++) rig.inject(noteOn(0, 60 + i, 100), from + 10 + 20 * i);
+		rig.run(from + 120);
+	};
+
+	overflow(0);
+	REQUIRE(drainLog(rig.m).find("schedule queue full") != std::string::npos);
+
+	// More overflow under the same script stays quiet.
+	overflow(rig.frame);
+	REQUIRE(drainLog(rig.m).find("schedule queue full") == std::string::npos);
+
+	// A reload is a new script: its first overflow is reported again.
+	rig.m->loadScript(js);
+	rig.run(rig.frame + 8);   // the audio thread catches up with the new generation
+	drainLog(rig.m);
+	overflow(rig.frame);
+	REQUIRE(drainLog(rig.m).find("schedule queue full") != std::string::npos);
+}

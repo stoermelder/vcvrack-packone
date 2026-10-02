@@ -1335,7 +1335,14 @@ followed by `send(msg)` sends two messages. To send the same bytes on several
 ports, change `midiOut.selectPort()` between the calls. Messages reach the
 output queue while the callback runs, in call order; a very long callback can
 have its first messages on the wire before it returns. What doesn't fit in the
-output queue (128 entries between two audio blocks) is dropped and logged.
+output queue (128 entries between two drains, which happen every 8 samples) is dropped and logged.
+
+Delayed messages wait in queues of fixed size: up to 256 per output for
+`sendAfterMs()`/`sendAtFrame()`, and up to 32 per trigger input channel for
+`sendAfterTrigger()`. A message that finds its queue full is sent at once
+instead of being dropped (a dropped Note-Off would leave a note hanging), and
+the log says so once per script. Release a long tail of delayed notes in
+steps, or keep the number of pending messages below these limits.
 
 ### Enabling sample-accurate timing
 
