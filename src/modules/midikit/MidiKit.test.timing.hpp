@@ -1391,3 +1391,115 @@ end
 		}
 	}
 }
+
+
+// Trigger output writes made inside an event are stamped with the event's
+// frame plus one block in timing mode, and applied on the audio thread when that
+// frame comes up, instead of whenever the worker ran the script.
+static const char* JS_TRIG_STAMP = R"(/**
+ * @engine QuickJs@v1
+ */
+midiOut.enableTiming();
+midi.onMessage = function(port, msg) {
+    trig.setHigh(1);
+};
+)";
+
+static const char* LUA_TRIG_STAMP = R"(--[[
+@engine minilua@v1
+--]]
+midiOut.enableTiming()
+midi.onMessage = function(port, msg)
+    trig.setHigh(1)
+end
+)";
+
+static const char* JS_TRIG_NO_TIMING = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    trig.setHigh(1);
+};
+)";
+
+// The first frame (after `from`) on which trigger output 1 reads high.
+static int64_t firstHighFrame(TimingRig& rig, int64_t from, int64_t until) {
+	while (rig.frame < until) {
+		int64_t f = rig.frame;
+		rig.step();
+		if (f >= from && rig.m->outputs[MidiKitModule::OUTPUT_TRIG + 0].getVoltage(0) > 5.f) return f;
+	}
+	return -1;
+}
+
+TEST_CASE("Timing: a trigger written in an event is applied on its stamped frame", "[MidiKit][timing]") {
+	// Headless the block size is 0, which would make a stamp indistinguishable
+	// from the divider tick the script runs on; a 64-frame block separates them.
+	BlockMockScope blocks(0, 64);
+	for (const char* script : {JS_TRIG_STAMP, LUA_TRIG_STAMP}) {
+		CATCH_INFO(script);
+		TimingRig rig(script);
+
+		// Input due at 20 → the script runs on the divider tick at 23, but the
+		// write is stamped 20 + one block, whatever frame the worker was at.
+		rig.inject(noteOn(0, 60, 100), 20);
+		REQUIRE(firstHighFrame(rig, 0, 2000) == 20 + 64);
+	}
+}
+
+TEST_CASE("Timing: without enableTiming a trigger is written when the script runs", "[MidiKit][timing]") {
+	TimingRig rig(JS_TRIG_NO_TIMING);
+
+	rig.inject(noteOn(0, 60, 100), 20);
+	// status quo for unstamped writes: the divider tick that dispatched it.
+	REQUIRE(firstHighFrame(rig, 0, 200) == nextDividerTick(20));
+}
+
+TEST_CASE("Timing: stamped trigger writes are applied in frame order", "[MidiKit][timing]") {
+	TimingRig rig(JS_TRIG_STAMP);
+	auto& m = *rig.m;
+	rig.step();   // the first process() carries out the load's clearPending
+
+	// Two writes pushed out of order: the earlier frame must win its slot, so the
+	// output ends low (the later write is setLow).
+	m.setTrigVoltage(0, 0, 0.f, 120);
+	m.setTrigVoltage(0, 0, 10.f, 100);
+	rig.run(110);
+	REQUIRE(m.outputs[MidiKitModule::OUTPUT_TRIG + 0].getVoltage(0) == 10.f);
+	rig.run(130);
+	REQUIRE(m.outputs[MidiKitModule::OUTPUT_TRIG + 0].getVoltage(0) == 0.f);
+}
+
+TEST_CASE("Timing: stamped trigger writes for the same frame keep the order written", "[MidiKit][timing]") {
+	TimingRig rig(JS_TRIG_STAMP);
+	auto& m = *rig.m;
+	rig.step();   // the first process() carries out the load's clearPending
+
+	// High then low for frame 100: the low must win, as in an unstamped script.
+	m.setTrigVoltage(0, 0, 10.f, 100);
+	m.setTrigVoltage(0, 0, 0.f, 100);
+	rig.run(120);
+	REQUIRE(m.outputs[MidiKitModule::OUTPUT_TRIG + 0].getVoltage(0) == 0.f);
+
+	// And low then high ends high.
+	m.setTrigVoltage(0, 0, 0.f, 140);
+	m.setTrigVoltage(0, 0, 10.f, 140);
+	rig.run(160);
+	REQUIRE(m.outputs[MidiKitModule::OUTPUT_TRIG + 0].getVoltage(0) == 10.f);
+}
+
+TEST_CASE("Timing: a script reload drops stamped trigger writes that are still pending", "[MidiKit][timing]") {
+	TimingRig rig(JS_TRIG_STAMP);
+	auto& m = *rig.m;
+	rig.step();   // the first process() carries out the load's clearPending
+
+	// One write ends up in the pending queue (the step moves it there), the other
+	// is still in the ring when the reload comes; both must be dropped.
+	m.setTrigVoltage(0, 0, 10.f, 100);
+	rig.step();
+	m.setTrigVoltage(0, 0, 10.f, 110);
+
+	m.loadScript(JS_TRIG_STAMP);
+	rig.run(200);
+	REQUIRE(m.outputs[MidiKitModule::OUTPUT_TRIG + 0].getVoltage(0) == 0.f);
+}

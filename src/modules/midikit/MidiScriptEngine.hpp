@@ -173,8 +173,10 @@ struct MidiScriptEngineHandler {
 	virtual uint64_t getTrigTicks(int i, uint8_t ch) = 0;
 	virtual void enableParam(int i) = 0;
 	virtual float getParamValue(int i) = 0;
-	virtual void setTrig(int i, uint8_t ch, float duration = 1e-3f) = 0;
-	virtual void setTrigVoltage(int i, uint8_t ch, float voltage) = 0;
+	// `frame` >= 0 stamps the write: the module applies it on the audio thread
+	// when that frame comes up instead of right away (see frameForTrig()).
+	virtual void setTrig(int i, uint8_t ch, float duration = 1e-3f, int64_t frame = -1) = 0;
+	virtual void setTrigVoltage(int i, uint8_t ch, float voltage, int64_t frame = -1) = 0;
 
 	// Queues `count` MIDI messages for output, all sharing one tick and the same
 	// trigger-input channel (only meaningful for tick-scheduled messages from
@@ -368,6 +370,16 @@ struct MidiScriptEngine {
 		float sr = handler->getSampleRate();
 		if (std::isnan(frames) || !(sr > 0.f)) return 0.0;
 		return frames / sr * 1000.0;
+	}
+
+	// The stamp for a trigger output write (trig.setTrigger/setGate/setHigh/
+	// setLow). In timing mode, inside an event, the write is applied on the audio
+	// thread at the event's frame plus one audio block: the same offset Rack puts
+	// on framed MIDI, so a trigger and the MIDI it belongs to stay together.
+	// -1 (apply when the script runs) otherwise.
+	int64_t frameForTrig() const {
+		if (!handler->isTimingEnabled() || currentInFrame < 0) return -1;
+		return currentInFrame + handler->getTimingBlockFrames();
 	}
 
 	// The frame for send: the causing event's in timing mode (-1 outside an

@@ -1525,7 +1525,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// The script API is milliseconds (per docs); dsp::PulseGenerator::trigger()
 		// takes seconds, so convert here.
 		float duration = argNum(ctx, argv[argc - 1]);
-		getEngine(ctx)->handler->setTrig(i - 1, ch - 1, duration / 1000.f);
+		getEngine(ctx)->handler->setTrig(i - 1, ch - 1, duration / 1000.f, getEngine(ctx)->frameForTrig());
 		return JS_UNDEFINED;
 	}
 
@@ -1537,7 +1537,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		int ch = 1;
 		if (argc == 2) ch = static_cast<int>(argNum(ctx, argv[1]));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) return jsThrow(ctx, "trig.setHigh: bad channel");
-		getEngine(ctx)->handler->setTrigVoltage(i - 1, ch - 1, 10.f);
+		getEngine(ctx)->handler->setTrigVoltage(i - 1, ch - 1, 10.f, getEngine(ctx)->frameForTrig());
 		return JS_UNDEFINED;
 	}
 
@@ -1550,7 +1550,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		int ch = 1;
 		if (argc == 2) ch = static_cast<int>(argNum(ctx, argv[1]));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) return jsThrow(ctx, "trig.setLow: bad channel");
-		getEngine(ctx)->handler->setTrigVoltage(i - 1, ch - 1, 0.f);
+		getEngine(ctx)->handler->setTrigVoltage(i - 1, ch - 1, 0.f, getEngine(ctx)->frameForTrig());
 		return JS_UNDEFINED;
 	}
 
@@ -1563,7 +1563,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		int ch = 1;
 		if (argc == 2) ch = static_cast<int>(argNum(ctx, argv[1]));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) return jsThrow(ctx, "trig.setTrigger: bad channel");
-		getEngine(ctx)->handler->setTrig(i - 1, ch - 1);
+		getEngine(ctx)->handler->setTrig(i - 1, ch - 1, 1e-3f, getEngine(ctx)->frameForTrig());
 		return JS_UNDEFINED;
 	}
 

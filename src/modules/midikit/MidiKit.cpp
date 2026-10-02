@@ -1099,14 +1099,48 @@ struct TriggerInputs {
 
 // Trigger outputs, one per module
 // Per-port, per-channel pulse generators. The worker arms them
-// (setGate/setGateVoltage); the audio thread steps them.
+// (setGate/setVoltage); the audio thread steps them.
 template <int TPORTS = 1>
 struct TriggerOutputs {
+	static constexpr int STAMPED_MAX = 32;
+
 	// First of TPORTS consecutive trigger outputs; set once by the module.
 	rack::engine::Output* output = nullptr;
 
 	bool triggerActive[TPORTS][PORT_MAX_CHANNELS];
 	dsp::PulseGenerator pulseGenerator[TPORTS][PORT_MAX_CHANNELS];
+
+	// Stamped writes (timing mode, see MidiScriptEngine::frameForTrig()). The
+	// worker pushes into stampedIn; the audio thread moves them into `pending`,
+	// ordered by frame because events reach the worker out of frame order (MIDI
+	// before triggers). A full ring or pending queue applies the write at once,
+	// which is what an unstamped write does anyway.
+	struct Stamped {
+		int64_t frame;
+		int port;
+		uint8_t channel;
+		bool gate;      // true: setGate(duration); false: setVoltage(value)
+		float value;    // pulse length in seconds, or the voltage
+		uint64_t seq;   // order of arrival, so equal frames keep the order written
+	};
+	struct StampedLater {
+		bool operator()(const Stamped& a, const Stamped& b) const {
+			return a.frame != b.frame ? a.frame > b.frame : a.seq > b.seq;
+		}
+	};
+	// std::priority_queue over a vector reserved up front: the cap below keeps it
+	// from ever reallocating on the audio thread.
+	struct StampedQueue : std::priority_queue<Stamped, std::vector<Stamped>, StampedLater> {
+		StampedQueue() {
+			this->c.reserve(STAMPED_MAX);
+		}
+	};
+	dsp::RingBuffer<Stamped, STAMPED_MAX> stampedIn;
+	StampedQueue pending;
+	uint64_t stampedSeq = 0;
+	// reset() runs on the worker, but the ring's consumer side and `pending` belong
+	// to the audio thread: reset() only raises this, processStamped() clears.
+	std::atomic<bool> clearStampedRequested{false};
 
 	// Worker. Widens the port to cover `channel`.
 	void useChannel(int port, uint8_t channel) {
@@ -1118,19 +1152,66 @@ struct TriggerOutputs {
 		for (int p = 0; p < TPORTS; p++) output[p].setChannels(1);
 	}
 
-	// Worker, trig.setGate(): arms the pulse.
-	void setGate(int port, uint8_t channel, float duration) {
+	// Worker, trig.setGate(): arms the pulse. `frame` >= 0 stamps the write: the
+	// audio thread applies it when that frame comes up (see processStamped()).
+	void setGate(int port, uint8_t channel, float duration, int64_t frame = -1) {
 		if (port < 0 || port >= TPORTS || channel >= PORT_MAX_CHANNELS) return;
+		if (frame >= 0 && !stampedIn.full()) {
+			stampedIn.push(Stamped{frame, port, channel, true, duration, 0});
+			return;
+		}
+		applyGate(port, channel, duration);
+	}
+
+	// Worker, trig.setHigh()/setLow(): the raw voltage the caller writes wins.
+	// Stamped like setGate().
+	void setVoltage(int port, uint8_t channel, float voltage, int64_t frame = -1) {
+		if (port < 0 || port >= TPORTS || channel >= PORT_MAX_CHANNELS) return;
+		if (frame >= 0 && !stampedIn.full()) {
+			stampedIn.push(Stamped{frame, port, channel, false, voltage, 0});
+			return;
+		}
+		applyVoltage(port, channel, voltage);
+	}
+
+	// Audio thread, once per sample before process(): takes in new stamped writes
+	// and applies those due at `frame`, in frame order (same frame: in the order
+	// they were written).
+	void processStamped(int64_t frame) {
+		if (clearStampedRequested.exchange(false, std::memory_order_acquire)) {
+			while (!stampedIn.empty()) stampedIn.shift();
+			while (!pending.empty()) pending.pop();
+		}
+		while (!stampedIn.empty()) {
+			Stamped w = stampedIn.shift();
+			if (pending.size() >= STAMPED_MAX) {
+				apply(w);
+				continue;
+			}
+			w.seq = stampedSeq++;
+			pending.push(w);
+		}
+		while (!pending.empty() && pending.top().frame <= frame) {
+			apply(pending.top());
+			pending.pop();
+		}
+	}
+
+	void applyGate(int port, uint8_t channel, float duration) {
 		useChannel(port, channel);
 		triggerActive[port][channel] = true;
 		pulseGenerator[port][channel].trigger(duration);
 	}
 
-	// Worker, trig.setHigh()/setLow(): the raw voltage the caller writes wins.
-	void setGateVoltage(int port, uint8_t channel) {
-		if (port < 0 || port >= TPORTS || channel >= PORT_MAX_CHANNELS) return;
+	void applyVoltage(int port, uint8_t channel, float voltage) {
 		useChannel(port, channel);
 		triggerActive[port][channel] = false;
+		output[port].setVoltage(voltage, channel);
+	}
+
+	void apply(const Stamped& w) {
+		if (w.gate) applyGate(w.port, w.channel, w.value);
+		else applyVoltage(w.port, w.channel, w.value);
 	}
 
 	void reset() {
@@ -1140,13 +1221,23 @@ struct TriggerOutputs {
 				pulseGenerator[p][i].reset();
 			}
 		}
+		clearStampedRequested.store(true, std::memory_order_release);
 		resetChannels();
 	}
 
-	// Audio thread. Writes 10 V / 0 V for active pulses; the others keep what
-	// setGateVoltage() wrote.
-	void process(int port, float sampleTime) {
-		if (port < 0 || port >= TPORTS) return;
+	// Audio thread, once per sample: applies the stamped writes due at `frame`,
+	// then steps every connected output.
+	void process(int64_t frame, float sampleTime) {
+		processStamped(frame);
+		for (int p = 0; p < TPORTS; p++) {
+			if (!output[p].isConnected()) continue;
+			step(p, sampleTime);
+		}
+	}
+
+	// Writes 10 V / 0 V for the active pulses of one port; the others keep what
+	// setVoltage() wrote.
+	void step(int port, float sampleTime) {
 		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
 			bool s = pulseGenerator[port][i].process(sampleTime);
 			if (triggerActive[port][i]) {
@@ -1333,6 +1424,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		resetMidiPortEnables();
 		disablePortsAndParams();
 		tipsyOut.reset();
+		triggerOuts.reset();
 	}
 
 	// Back to "only port 1 of each" — what a script starts with.
@@ -1401,16 +1493,15 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	}
 
 	// MidiScriptEngineHandler
-	void setTrig(int i, uint8_t ch, float duration = 1e-3f) override {
+	void setTrig(int i, uint8_t ch, float duration = 1e-3f, int64_t frame = -1) override {
 		if (i < 0 || i >= TRIG_OUTPUTS || ch >= PORT_MAX_CHANNELS) return;
-		triggerOuts.setGate(i, ch, duration);
+		triggerOuts.setGate(i, ch, duration, frame);
 	}
 
 	// MidiScriptEngineHandler
-	void setTrigVoltage(int i, uint8_t ch, float voltage) override {
+	void setTrigVoltage(int i, uint8_t ch, float voltage, int64_t frame = -1) override {
 		if (i < 0 || i >= TRIG_OUTPUTS || ch >= PORT_MAX_CHANNELS) return;
-		triggerOuts.setGateVoltage(i, ch);
-		outputs[OUTPUT_TRIG + i].setVoltage(voltage, ch);
+		triggerOuts.setVoltage(i, ch, voltage, frame);
 	}
 
 	// MidiScriptEngineHandler
@@ -1444,16 +1535,13 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	}
 
 	// Audio thread — one sample of every connected trigger output.
-	void processTriggerOutputs(float sampleTime) {
-		for (int i = 0; i < TRIG_OUTPUTS; i++) {
-			// Drains the Tipsy queue regardless of activeEngine, for the same
-			// reason as the MIDI out-queue in process(): messages queued by a
-			// script's onUnload() must still reach the output after the engine
-			// is gone. Tipsy always goes to the first trigger output.
-			if (i == 0) processTipsyOutput(0);
-			if (!outputs[OUTPUT_TRIG + i].isConnected()) continue;
-			triggerOuts.process(i, sampleTime);
-		}
+	void processTriggerOutputs(float sampleTime, int64_t frame) {
+		// Drains the Tipsy queue regardless of activeEngine, for the same reason as
+		// the MIDI out-queue in process(): messages queued by a script's onUnload()
+		// must still reach the output after the engine is gone. Tipsy always goes
+		// to the first trigger output, connected or not.
+		processTipsyOutput(0);
+		triggerOuts.process(frame, sampleTime);
 	}
 
 	// Trigger detection, per channel: a rising edge advances that channel's
@@ -1636,7 +1724,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 			midiOuts.process(args.frame, sampleRate.load(std::memory_order_relaxed));
 		}
 
-		processTriggerOutputs(args.sampleTime);
+		processTriggerOutputs(args.sampleTime, args.frame);
 
 		sample++;
 	}
@@ -1716,8 +1804,9 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		seedTiming();
 		sample = 0;
 		// Before the load, so the new script starts with all callbacks disabled.
+		// The trigger outputs are reset by resetScriptState(), once the outgoing
+		// script's onUnload() has run.
 		triggerIns.reset();
-		triggerOuts.resetChannels();
 		// Port enables and enabled params/inputs stay: the outgoing script's
 		// onUnload() still needs them (the engines reset them via resetScriptState()).
 		// Raised before the load, so what the new script schedules from rack.onLoad
@@ -1728,8 +1817,11 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 		// Closes the outgoing engine (blocking) and loads the new one.
 		MidiScript::MidiScriptEngine* engine = host.load(s, configJson);
-		// No engine loaded, so nothing resets the enables on the worker.
-		if (!engine) resetMidiPortEnables();
+		// No engine loaded, so nothing resets the enables and outputs on the worker.
+		if (!engine) {
+			resetMidiPortEnables();
+			triggerOuts.reset();
+		}
 
 		bindPortsAndParams(engine);
 	}

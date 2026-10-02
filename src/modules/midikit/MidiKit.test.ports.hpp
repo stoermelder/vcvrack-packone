@@ -761,6 +761,31 @@ TEST_CASE("Variant: trigger outputs widen to the highest channel a script wrote"
 	REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 1].getChannels() == 1);
 }
 
+TEST_CASE("Variant: a script reload drops held trigger voltages and running pulses", "[MidiKit][Variant]") {
+	for (const char* next : {"", QUICKJS_EMPTY}) {
+		MultiScaffold mods;
+		MultiModule* m = mods.create();
+		int64_t frame = 1;
+		auto step = [&]() { m->process(Test::makeProcessArgs(frame++)); };
+		for (int p = 0; p < 2; p++) m->outputs[MultiModule::OUTPUT_TRIG + p].channels = 1;
+		step();
+
+		// Held high on output 1, a long pulse on output 2.
+		m->setTrigVoltage(0, 0, 10.f);
+		m->setTrig(1, 0, 10.f);
+		step();
+		REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 0].getVoltage(0) == 10.f);
+		REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 1].getVoltage(0) == 10.f);
+
+		// Both the "no engine matches" and the "engine loads" paths start low.
+		m->loadScript(next);
+		step();
+		CATCH_INFO(std::string("next script: '") + next + "'");
+		REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 0].getVoltage(0) == 0.f);
+		REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 1].getVoltage(0) == 0.f);
+	}
+}
+
 // Trigger ports through the script API
 //
 // The cases above drive the module directly. These load real scripts (both

@@ -1021,10 +1021,13 @@ these even though `math.*` is also available, for script portability).
 - `trig.setHigh(i [, ch])`, `trig.setLow(i [, ch])`, `trig.setTrigger(i [, ch])`
   (momentary trigger), `trig.setGate(i [, ch], durationMs)` — drive trigger
   output `i` (1 or 2). An index beyond the module's two ports is a script error.
-  **These are not frame-accurate**, even with `midiOut.enableTiming()`: the
-  output changes when the script runs on the worker thread, not on the frame of
-  the event, so it jitters by the worker latency (at least one process divider, often
-  an audio block) and can lead MIDI sent with `enableTiming()` for the same event.
+  Without `midiOut.enableTiming()` the output changes when the script runs on
+  the worker thread, so it jitters by the worker latency (at least one process
+  divider, often an audio block). With `enableTiming()`, a write made while
+  handling an event is stamped with the event's frame plus one audio block and
+  applied on exactly that frame — the same offset as the MIDI sent for the same
+  event, so the two stay together. See
+  [Enabling sample-accurate timing](#enabling-sample-accurate-timing).
 - `trig.inCount`, `trig.outCount` — number of trigger inputs and outputs (2 and 2 on both variants).
 
 #### Tipsy
@@ -1338,7 +1341,7 @@ That is the lowest latency, but the moment a message leaves jitters by up to one
 audio block (5.3 ms at 256 samples and 48 kHz) — fine for a filter, a merge or a
 panic button, audible in a clock, an arpeggiator or a sequencer.
 
-`enableTiming()` only affects MIDI. The trigger outputs (`trig.setTrigger`, `setGate`, `setHigh`, `setLow`) are written when the script runs and are not placed on a frame.
+**Trigger outputs.** With `enableTiming()`, `trig.setTrigger`, `setGate`, `setHigh` and `setLow` are stamped too when they are called inside an event (`midi.onMessage`, `trig.onTrigger`, `trig.onTipsyMessage` and the other event callbacks): the module applies the write on the audio thread at the event's frame plus one audio block, which is the delay Rack puts on framed MIDI. A "MIDI note to trigger" script therefore produces trigger and note together, without the worker's jitter. Outside an event (`rack.onLoad`, `rack.onUnload`, context-menu callbacks) a write happens when the script runs, as without timing. A write whose frame has already passed (a slow script) is applied at once. Up to 64 stamped writes can be pending; beyond that a write is applied immediately instead.
 
 A script that needs better calls `midiOut.enableTiming()` once, in `rack.onLoad`
 or at top level:

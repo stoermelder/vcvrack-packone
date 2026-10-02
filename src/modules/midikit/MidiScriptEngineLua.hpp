@@ -1614,7 +1614,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
 		// The script API is milliseconds (per docs); dsp::PulseGenerator::trigger()
 		// takes seconds, so convert here.
-		e->handler->setTrig(i - 1, ch - 1, duration / 1000.f);
+		e->handler->setTrig(i - 1, ch - 1, duration / 1000.f, e->frameForTrig());
 		return 0;
 	}
 
@@ -1626,7 +1626,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		int ch = 1;
 		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
-		e->handler->setTrigVoltage(i - 1, ch - 1, 10.f);
+		e->handler->setTrigVoltage(i - 1, ch - 1, 10.f, e->frameForTrig());
 		return 0;
 	}
 
@@ -1638,7 +1638,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		int ch = 1;
 		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
-		e->handler->setTrigVoltage(i - 1, ch - 1, 0.f);
+		e->handler->setTrigVoltage(i - 1, ch - 1, 0.f, e->frameForTrig());
 		return 0;
 	}
 
@@ -1650,7 +1650,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		int ch = 1;
 		if (n >= 2) ch = static_cast<int>(luaL_checkinteger(L, 2));
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) luaL_argerror(L, 2, "channel out of range");
-		e->handler->setTrig(i - 1, ch - 1);
+		e->handler->setTrig(i - 1, ch - 1, 1e-3f, e->frameForTrig());
 		return 0;
 	}
 
