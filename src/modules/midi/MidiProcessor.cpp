@@ -4,15 +4,18 @@
 namespace StoermelderPackOne {
 
 MessageEx::MessageEx(const rack::midi::Message& msg) {
-	this->msg = msg;
-	this->frame = msg.frame;
+	source = &msg;
+	frame = msg.frame;
+	size = msg.getSize();
+	for (int i = 0; i < 3 && i < size; i++) bytes[i] = msg.bytes[i];
 }
 
+// Same fallbacks as rack::midi::Message for messages shorter than the accessor.
 uint8_t MessageEx::getChannel() const {
-	return msg.getChannel();
+	return size < 1 ? 0 : (bytes[0] & 0xf);
 }
 uint8_t MessageEx::getNote() const {
-	return msg.getNote();
+	return size < 2 ? 0 : bytes[1];
 }
 
 int16_t MessageEx::getValue() const {
@@ -24,7 +27,7 @@ int16_t MessageEx::getValue() const {
 		case Type::SONG_POINTER:
 			return extraValue;
 		default:
-			return msg.getValue();
+			return size < 3 ? 0 : bytes[2];
 	}
 }
 int16_t MessageEx::getParamNumber() const {
@@ -36,15 +39,15 @@ bool MessageEx::hasValue() const {
 }
 
 int MessageEx::getSysExSize() const {
-	return type == Type::SYSEX ? msg.getSize() : 0;
+	return type == Type::SYSEX ? size : 0;
 }
 
 unsigned char MessageEx::getSysExByte(int i) const {
-	return type == Type::SYSEX ? msg.bytes[i] : 0;
+	return type == Type::SYSEX ? source->bytes[i] : 0;
 }
 
 std::vector<unsigned char> MessageEx::getSysExBytes() const {
-	return type == Type::SYSEX ? msg.bytes : std::vector<unsigned char>();
+	return type == Type::SYSEX ? source->bytes : std::vector<unsigned char>();
 }
 
 // ownedInput is initialized first (members initialize in declaration order), so

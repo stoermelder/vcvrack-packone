@@ -29,7 +29,14 @@ struct MessageEx {
         RESET
     };
 
-    rack::midi::Message msg;
+    // The leading bytes of the message, copied. A rack::midi::Message owns a
+    // heap vector that its default constructor allocates, so holding one here
+    // cost an allocation per decoded event on the audio thread.
+    uint8_t bytes[3] = {0, 0, 0};
+    int size = 0;
+    // The full message, for SysEx bytes only. Not owned: valid for as long as
+    // the Message this was constructed from, which is the duration of the notify.
+    const rack::midi::Message* source = nullptr;
     Type type = Type::RESET;
     int64_t frame = 0;
     int16_t paramNumber = -1;
