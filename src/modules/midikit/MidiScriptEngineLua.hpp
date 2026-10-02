@@ -623,7 +623,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	void processInMessage(int midiPort, const MidiScript::QueuedMessage& msg) override {
 		if (L) {
-			pushInQueue(midiInQueue, std::make_tuple(midiPort, msg));
+			midiInQueue.tryPush(midiPort, msg);
 		}
 	}
 

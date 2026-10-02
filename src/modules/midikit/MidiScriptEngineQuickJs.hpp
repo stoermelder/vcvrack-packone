@@ -402,7 +402,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	void processInMessage(int midiPort, const MidiScript::QueuedMessage& msg) override {
 		if (ctx) {
-			pushInQueue(midiInQueue, std::make_tuple(midiPort, msg));
+			midiInQueue.tryPush(midiPort, msg);
 		}
 	}
 

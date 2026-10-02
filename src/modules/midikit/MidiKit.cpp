@@ -557,6 +557,9 @@ struct MidiInputs {
 
 	using Sink = std::function<void(int port, const MidiScript::QueuedMessage&)>;
 	Sink onMessage;
+	// Audio thread: dispatch()'s working message, kept so its byte vector is
+	// allocated once.
+	MidiScript::QueuedMessage scratch;
 
 	MidiInputs() {
 		// Without this the processor decodes into an empty handler list and
@@ -649,7 +652,8 @@ struct MidiInputs {
 	// runs on the worker and must never be entered from here.
 	bool dispatch(int port, const MessageEx& m) {
 		if (!isEnabled(port) || !ports[port].accepts(m)) return false;
-		MidiScript::QueuedMessage q;
+		// Reused: a fresh QueuedMessage would allocate its byte vector every time.
+		MidiScript::QueuedMessage& q = scratch;
 		q.msg = *m.source;
 		q.type = m.type;
 		q.paramNumber = m.paramNumber;

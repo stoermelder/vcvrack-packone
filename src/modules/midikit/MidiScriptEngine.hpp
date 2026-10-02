@@ -1,5 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "../../utils/SlotQueue.hpp"
 #include "../../utils/SpscLatestValue.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../midi/MidiProcessor.hpp"
@@ -10,6 +11,7 @@
 #include <memory>
 #include <sstream>
 #include <thread>
+#include <tuple>
 
 namespace StoermelderPackOne {
 namespace MidiScript {
@@ -74,6 +76,28 @@ struct QueuedMessage {
 	QueuedMessage(const Message& msg) : msg(msg) {}
 };
 
+
+// A message for the worker, with the input port it arrived on.
+struct InMessage {
+	int port = 0;
+	QueuedMessage msg;
+};
+
+// Audio thread -> worker queue of incoming messages. A SlotQueue because a
+// QueuedMessage owns a byte vector (see SlotQueue). Each slot reserves room for
+// ordinary SysEx; a longer message grows its slot once and the slot keeps that.
+struct MidiInQueue : SlotQueue<InMessage, 128> {
+	enum { SLOT_BYTES = 64 };
+
+	MidiInQueue() : SlotQueue<InMessage, 128>([](InMessage& m) { m.msg.msg.bytes.reserve(SLOT_BYTES); }) {}
+
+	bool tryPush(int port, const QueuedMessage& msg) {
+		return tryPushWith([&](InMessage& slot) {
+			slot.port = port;
+			slot.msg = msg;
+		});
+	}
+};
 
 // A context-menu item registered via rack.registerContextMenu(). Carries
 // presentation data only — the onChange/onGetValue callbacks live in the
@@ -445,10 +469,11 @@ struct MidiScriptEngine {
 	int midiOutputCount;
 
 	MidiScriptEngine(MidiScriptEngineHandler* handler, int inputCount, int inputTrigCount, int outputTrigCount, int paramCount, int midiInputCount, int midiOutputCount)
-		: handler(handler), inputCount(inputCount), inputTrigCount(inputTrigCount), outputTrigCount(outputTrigCount), paramCount(paramCount), midiInputCount(midiInputCount), midiOutputCount(midiOutputCount) {}
+		: handler(handler), inputCount(inputCount), inputTrigCount(inputTrigCount), outputTrigCount(outputTrigCount), paramCount(paramCount), midiInputCount(midiInputCount), midiOutputCount(midiOutputCount) {
+	}
 
 	std::shared_ptr<ITaskWorker> taskWorker;
-	dsp::RingBuffer<std::tuple<int, QueuedMessage>, 128> midiInQueue;
+	MidiInQueue midiInQueue;
 	// (trigPort, channel, frame) — the trigger input is polyphonic, so each tick
 	// carries the channel that fired and the frame of its edge. Sized for the
 	// worst case between two drains (every 8th sample): all trigger channels of
@@ -466,7 +491,7 @@ struct MidiScriptEngine {
 	// Worker thread (the consumer of the in-queues), from unloadScriptOnWorker():
 	// events captured for the closed script must not reach the next one.
 	void discardInQueues() {
-		while (!midiInQueue.empty()) midiInQueue.shift();
+		while (!midiInQueue.empty()) midiInQueue.pop();
 		while (!tickInQueue.empty()) tickInQueue.shift();
 		while (!tipsyInQueue.empty()) tipsyInQueue.shift();
 	}
@@ -734,8 +759,8 @@ struct MidiScriptEngine {
 			runAsync([this]() {
 				while (!midiInQueue.empty()) {
 					auto t = midiInQueue.shift();
-					int midiPort = std::get<0>(t);
-					QueuedMessage q = std::get<1>(t);
+					int midiPort = t.port;
+					QueuedMessage q = std::move(t.msg);
 					InFrameScope scope(currentInFrame, q.frame);
 					switch (q.type) {
 						case MessageEx::Type::NRPN:

@@ -604,7 +604,7 @@ struct FrameProbeEngine : MidiScriptEngine {
 	}
 
 	void processInMessage(int midiPort, const QueuedMessage& msg) override {
-		midiInQueue.push(std::make_tuple(midiPort, msg));
+		midiInQueue.tryPush(midiPort, msg);
 	}
 	void processInTick(int trigPort, uint8_t channel, int64_t frame) override {
 		tickInQueue.push(std::make_tuple(trigPort, channel, frame));
