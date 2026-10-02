@@ -615,3 +615,21 @@ TEST_CASE("hasValue() separates parameter select from data entry", "[MidiProcess
 		REQUIRE(cc14->hasValue() == true);
 	}
 }
+
+TEST_CASE("A MidiCProcessor pumps in place, in frame order", "[MidiProcessor][input]") {
+	MidiCProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	mp.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 61, 100, 50));
+	mp.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 60, 100, 10));
+
+	mp.process(20);
+	REQUIRE(countType(h.msgs, MessageEx::Type::NOTE_ON) == 1);
+	REQUIRE(h.msgs.back().getNote() == 60);
+	REQUIRE(mp.getInput().size() == 1);
+
+	mp.processBypass(50);
+	REQUIRE(mp.getInput().size() == 0);
+	REQUIRE(countType(h.msgs, MessageEx::Type::NOTE_ON) == 1);
+}
