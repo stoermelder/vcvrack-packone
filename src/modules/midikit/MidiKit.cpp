@@ -125,10 +125,9 @@ struct MidiOutput : midi::Output {
 	int64_t lastHandOffFrame = -1;
 	// Set (by the module) when the script asked for late messages to be reported.
 	const std::atomic<bool>* reportLate = nullptr;
-	// Messages handed over too late since the module last took the count, and the
-	// worst of them in frames. Audio thread.
-	uint32_t lateCount = 0;
-	int64_t lateWorst = 0;
+	// A message was handed over too late since the module last took the flag.
+	// Audio thread.
+	bool late = false;
 	// Set when a scheduling queue was full and a message went out at once
 	// instead; read and cleared by MidiOutputs. Audio thread.
 	bool scheduleFull = false;
@@ -142,10 +141,7 @@ struct MidiOutput : midi::Output {
 	// already late and goes out at once. Counted against the block start, which
 	// never flags a message that still has time.
 	void countIfLate(int64_t f) {
-		int64_t late = vcv::engine::getBlockFrame() - (f + vcv::engine::getBlockFrames());
-		if (late <= 0) return;
-		lateCount++;
-		if (late > lateWorst) lateWorst = late;
+		if (vcv::engine::getBlockFrame() - (f + vcv::engine::getBlockFrames()) > 0) late = true;
 	}
 
 	// Timing mode: where a message is handed to Rack, which schedules it by
@@ -202,8 +198,7 @@ struct MidiOutput : midi::Output {
 		while (!frameQueue.empty()) frameQueue.pop();
 		clearTickQueues();
 		lastHandOffFrame = -1;
-		lateCount = 0;
-		lateWorst = 0;
+		late = false;
 		scheduleFull = false;
 		channel = -1;
 	}
@@ -407,15 +402,16 @@ struct ExtendedCcEnables {
 // current overlay message. Touched from three threads, which is why the
 // contract is stated here once rather than inferred from call sites:
 //   - worker thread: writeLog()/writeOverlay() produce log entries + overlay;
-//   - audio thread: overflow reporting in process() produces log entries;
+//   - audio thread: raises notices (ScriptLog::raise), which become log lines
+//     when the log is drained;
 //   - loadScript()/onReset() callers produce RESET markers and "No script";
-//   - UI thread: the widget drains the log (midiLogMessages.try_pop) and the
+//   - UI thread: the widget drains the log (ScriptLog::tryPop) and the
 //     overlay ring (nextOverlayMessageId/getOverlayMessage).
 // midiLogMessages is an MPMC queue because the log has concurrent producers;
 // overlayQueue is a single-producer ring (worker) drained by the widget.
 struct ScriptLog {
-	// Log entries, FIFO. MPMC: pushed by the worker (writeLog), the audio
-	// thread (overflow reporting), and the loadScript/onReset callers.
+	// Log entries, FIFO. MPMC: pushed by the worker (writeLog) and the
+	// loadScript/onReset callers (and the drain, for raised notices).
 	rigtorp::MPMCQueue<std::tuple<LOG_FORMAT, float, std::string>> midiLogMessages{512};
 
 	// Overlay ring + current message. Single-producer (worker via writeOverlay),
@@ -423,9 +419,52 @@ struct ScriptLog {
 	dsp::RingBuffer<int, 8> overlayQueue;
 	std::tuple<std::string, std::string, std::string> overlayMessage;
 
+	// Notices raised from the audio thread. Building a log line allocates, which
+	// the audio thread must not do, so it only raises the notice: a flag set,
+	// nothing else. The text is a std::string made once, off the audio thread
+	// (in the constructor), and becomes a log line when tryPop() next runs on
+	// the thread that drains the log. Repeats before that are one line.
+	enum Notice {
+		OUTPUT_QUEUE_FULL,
+		SCHEDULE_QUEUE_FULL,
+		TRIGGER_QUEUE_FULL,
+		TIPSY_INPUT_MALFORMED,
+		TIPSY_INPUT_QUEUE_FULL,
+		TIMING_LATE,
+		NOTICE_COUNT
+	};
+	struct NoticeSlot {
+		std::atomic<bool> pending{false};
+		std::string text;
+	};
+	NoticeSlot notices[NOTICE_COUNT];
+
+	ScriptLog() {
+		notices[OUTPUT_QUEUE_FULL].text = "MIDI output queue full, message(s) dropped";
+		notices[SCHEDULE_QUEUE_FULL].text = "MIDI schedule queue full, message(s) sent at once";
+		notices[TRIGGER_QUEUE_FULL].text = "Trigger output queue full, write(s) dropped";
+		notices[TIPSY_INPUT_MALFORMED].text = "Tipsy input: malformed stream";
+		notices[TIPSY_INPUT_QUEUE_FULL].text = "Tipsy input queue full, message(s) dropped";
+		notices[TIMING_LATE].text = "Timing: message(s) reached the output too late";
+	}
+
+	// Any thread, allocation-free.
+	void raise(Notice n) {
+		notices[n].pending.store(true, std::memory_order_release);
+	}
+
 	// Worker side — writeLog(). Enqueues one entry.
 	void push(LOG_FORMAT format, float timestamp, const std::string& text) {
 		midiLogMessages.try_push(std::make_tuple(format, timestamp, text));
+	}
+
+	// Takes the next log entry, after turning the notices raised since the last
+	// call into lines. For the thread that drains the log (the widget; tests).
+	bool tryPop(std::tuple<LOG_FORMAT, float, std::string>& entry) {
+		for (int i = 0; i < NOTICE_COUNT; i++) {
+			if (notices[i].pending.exchange(false, std::memory_order_acquire)) pushText(notices[i].text);
+		}
+		return midiLogMessages.try_pop(entry);
 	}
 
 	// Plain text line. The timestamp is not displayed.
@@ -755,7 +794,7 @@ struct MidiOutputs {
 	void process(int64_t frame, float sampleRate, uint32_t gen = 0) {
 		// Once per drain: a saturated output must not flood the log.
 		if (overflow.exchange(false, std::memory_order_relaxed)) {
-			log->pushText("MIDI output queue full, message(s) dropped");
+			log->raise(ScriptLog::OUTPUT_QUEUE_FULL);
 		}
 		// The budget counts skipped stale entries too, so it bounds the work of
 		// one call whatever the queue holds.
@@ -844,28 +883,22 @@ struct MidiOutputs {
 		}
 		if (!full || scheduleFullLogged) return;
 		scheduleFullLogged = true;
-		log->pushText(string::f("MIDI schedule queue full (%d messages per output waiting for a frame, %d per trigger clock), message(s) sent at once instead of delayed", int(Port::FRAME_QUEUE_MAX), int(Port::TICK_QUEUE_MAX)));
+		log->raise(ScriptLog::SCHEDULE_QUEUE_FULL);
 	}
 
-	// Audio thread. Logs late messages, at most once per second of audio.
+	// Audio thread. Reports that a message was late, at most once per second of
+	// audio.
 	void reportLateMessages(int64_t frame, float sampleRate) {
 		if (!timingReportLate.load(std::memory_order_relaxed)) return;
-		uint32_t late = 0;
-		int64_t worst = 0;
+		bool late = false;
 		int n = count.load(std::memory_order_relaxed);
-		for (int i = 0; i < n; i++) {
-			late += ports[i].lateCount;
-			worst = std::max(worst, ports[i].lateWorst);
-		}
-		if (late == 0 || sampleRate <= 0.f) return;
+		for (int i = 0; i < n; i++) late = late || ports[i].late;
+		if (!late || sampleRate <= 0.f) return;
 		if (timingLateLoggedAt >= 0 && frame - timingLateLoggedAt < int64_t(sampleRate)) return;
 
-		for (int i = 0; i < n; i++) {
-			ports[i].lateCount = 0;
-			ports[i].lateWorst = 0;
-		}
+		for (int i = 0; i < n; i++) ports[i].late = false;
 		timingLateLoggedAt = frame;
-		log->pushText(string::f("Timing: %u message(s) reached the output too late, worst by %.1f ms", late, 1000.f * float(worst) / sampleRate));
+		log->raise(ScriptLog::TIMING_LATE);
 	}
 };
 
@@ -1042,13 +1075,13 @@ struct TipsyInput {
 	void reportError() {
 		if (errorActive) return;
 		errorActive = true;
-		if (log) log->pushText("Tipsy input: malformed stream");
+		if (log) log->raise(ScriptLog::TIPSY_INPUT_MALFORMED);
 	}
 
 	void reportOverflow() {
 		if (overflowActive) return;
 		overflowActive = true;
-		if (log) log->pushText("Tipsy input queue full, message(s) dropped");
+		if (log) log->raise(ScriptLog::TIPSY_INPUT_QUEUE_FULL);
 	}
 
 	// Releases the claim and re-arms the data store (nothing decodes at reset).
@@ -2035,7 +2068,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 			midiOuts.process(args.frame, sampleRate.load(std::memory_order_relaxed), audioGen.load(std::memory_order_relaxed));
 			// Once per drain: a saturated queue must not flood the log.
 			if (triggerOuts.overflow.exchange(false, std::memory_order_relaxed)) {
-				log.pushText("Trigger output queue full, write(s) dropped");
+				log.raise(ScriptLog::TRIGGER_QUEUE_FULL);
 			}
 		}
 
@@ -2361,7 +2394,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		BASE::step();
 		if (!module) return;
 		std::tuple<LOG_FORMAT, float, std::string> s;
-		while (module->log.midiLogMessages.try_pop(s)) {
+		while (module->log.tryPop(s)) {
 			if (buffer.size() >= bufferLimit) buffer.pop_back();
 			if (std::get<0>(s) == LOG_FORMAT::RESET) {
 				resetLog();

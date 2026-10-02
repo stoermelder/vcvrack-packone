@@ -1131,9 +1131,6 @@ TEST_CASE("Timing report: a message handed over a block past its frame is logged
 
 		std::string log = drainLog(rig.m);
 		REQUIRE(countOf(log, "reached the output too late") == 1);
-		REQUIRE(log.find("1 message(s)") != std::string::npos);
-		// 1000 - (20 + 256) = 724 frames.
-		REQUIRE(log.find("worst by 16.4 ms") != std::string::npos);
 	}
 }
 
@@ -1186,14 +1183,12 @@ TEST_CASE("Timing report: a script that keeps falling behind is logged once per 
 	// One line for the first; the other two wait for the next second.
 	std::string first = drainLog(rig.m);
 	REQUIRE(countOf(first, "reached the output too late") == 1);
-	REQUIRE(first.find("1 message(s)") != std::string::npos);
 
-	// The two that waited are logged as soon as the second is over.
+	// The two that waited are reported as soon as the second is over.
 	rig.inject(noteOn(0, 63, 100), second + 100);
 	rig.run(second + 200);
 	std::string later = drainLog(rig.m);
 	REQUIRE(countOf(later, "reached the output too late") == 1);
-	REQUIRE(later.find("2 message(s)") != std::string::npos);
 }
 
 TEST_CASE("Timing mode: a frame-less message does not overtake earlier messages of the same callback", "[MidiKit][timing]") {

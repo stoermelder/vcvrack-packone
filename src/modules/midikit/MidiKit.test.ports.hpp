@@ -62,7 +62,7 @@ static const char* LUA_EMPTY =
 static std::string probes(MultiModule* m) {
 	std::string all, out;
 	std::tuple<LOG_FORMAT, float, std::string> t;
-	while (m->log.midiLogMessages.try_pop(t)) all += std::get<2>(t) + "\n";
+	while (m->log.tryPop(t)) all += std::get<2>(t) + "\n";
 	return all;
 }
 
@@ -1780,7 +1780,7 @@ TEST_CASE("Variant: MidiKitMicro widget works without a log display", "[MidiKit]
 	for (int i = 0; i < 8; i++) m->writeLog("line" + std::to_string(i), false);
 	mw->step();
 	std::tuple<LOG_FORMAT, float, std::string> t;
-	REQUIRE_FALSE(m->log.midiLogMessages.try_pop(t));
+	REQUIRE_FALSE(m->log.tryPop(t));
 	REQUIRE(mw->buffer.size() == 5);
 
 	// The last lines are in the "Log" submenu, newest first.

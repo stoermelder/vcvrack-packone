@@ -1519,11 +1519,10 @@ it in time, one audio block after its frame at the latest. A script that is too
 slow, or a busy worker thread that runs all MIDI-KIT scripts in the patch, makes
 messages arrive late; Rack then sends them at once, which is the timing you had
 without `enableTiming()`, and nothing tells you. `midiOut.enableTiming(true)`
-logs such messages, at most one line per second, with how many there were and
-the worst delay:
+logs such messages, at most one line per second:
 
 ```
-Timing: 3 message(s) reached the output too late, worst by 16.4 ms
+Timing: message(s) reached the output too late
 ```
 
 The report is off by default and costs nothing when off. A message that is only
