@@ -384,7 +384,9 @@ end
 
 `rack.onUnload()` runs right before the script's state is torn down — the script is being replaced, the module is reset, or the module is removed from the patch. It's the only reliable place to clean up notes a script left sounding, since nothing runs afterward to release them. It never runs on a plain patch save — a save is not a lifecycle event at all (see [Persistence](#persistence): a save just writes out whatever `rack.setConfig()` last published). Note the JavaScript version assigns it to the `rack` object — `rack.onUnload = function() {...}` — like the other hooks (see [Hooks and predefined objects are resolved once, at load time](#hooks-and-predefined-objects-are-resolved-once-at-load-time)).
 
-The example sends CC 123 (All Notes Off) on all 16 channels, which takes 16 handles instead of one note-off per note. It sends them with `midiOut.sendAfterMs(msg, -1)`, which holds the message back behind anything Rack still has queued, so the all-notes-off can't overtake a note-on and leave a note stuck (see [Enabling sample-accurate timing](#enabling-sample-accurate-timing)).
+When the script is replaced or the module is reset, `rack.onUnload()` may only send MIDI right away with `midiOut.send()`; that output always goes out. Everything else it does that would outlive the script is ignored: messages scheduled for later (`sendAfterMs`, `sendAtFrame`, `sendAfterTrigger`), trigger output writes and `trig.sendTipsy()`. Whatever the script scheduled earlier and is still waiting is dropped with it, and the trigger outputs go back to 0 V.
+
+The example sends CC 123 (All Notes Off) on all 16 channels, which takes 16 handles instead of one note-off per note. With `midiOut.enableTiming()` a note-on sent just before may still be waiting in Rack's output queue; the module holds what `rack.onUnload()` sends behind it, so the all-notes-off can't overtake a note-on and leave a note stuck (see [Enabling sample-accurate timing](#enabling-sample-accurate-timing)).
 
 JavaScript:
 ```js
@@ -398,7 +400,7 @@ rack.onUnload = function() {
    for (let ch = 1; ch <= 16; ch++) {
       let off = midi.create();
       midi.setCc(off, ch, 123, 0);
-      midiOut.sendAfterMs(off, -1);
+      midiOut.send(off);
    }
 };
 ```
@@ -415,7 +417,7 @@ rack.onUnload = function()
    for ch = 1, 16 do
       local off = midi.create()
       midi.setCc(off, ch, 123, 0)
-      midiOut.sendAfterMs(off, -1)
+      midiOut.send(off)
    end
 end
 ```
@@ -1313,8 +1315,7 @@ whatever `midiOut.selectPort()` last selected (port 1 if it was never called):
 - `midiOut.sendAfterMs(msg, ms)` — delayed send. The delay counts from the
   latest frame the module had processed when the script ran, or, with
   `midiOut.enableTiming()`, from the frame of the event being handled. `-1` instead
-  of a time means "after Rack's output queue": two audio blocks and a frame, for
-  the messages of `rack.onUnload` (see
+  of a time means "after Rack's output queue": two audio blocks and a frame (see
   [Enabling sample-accurate timing](#enabling-sample-accurate-timing)).
 - `midiOut.sendAtFrame(msg, frame)` — send at an absolute engine frame, held
   until then. A negative frame means "now". Frames come from
@@ -1341,7 +1342,7 @@ That is the lowest latency, but the moment a message leaves jitters by up to one
 audio block (5.3 ms at 256 samples and 48 kHz) — fine for a filter, a merge or a
 panic button, audible in a clock, an arpeggiator or a sequencer.
 
-**Trigger outputs.** With `enableTiming()`, `trig.setTrigger`, `setGate`, `setHigh` and `setLow` are stamped too when they are called inside an event (`midi.onMessage`, `trig.onTrigger`, `trig.onTipsyMessage` and the other event callbacks): the module applies the write on the audio thread at the event's frame plus one audio block, which is the delay Rack puts on framed MIDI. A "MIDI note to trigger" script therefore produces trigger and note together, without the worker's jitter. Outside an event (`rack.onLoad`, `rack.onUnload`, context-menu callbacks) a write happens when the script runs, as without timing. A write whose frame has already passed (a slow script) is applied at once. Up to 64 stamped writes can be pending; beyond that a write is applied immediately instead.
+**Trigger outputs.** With `enableTiming()`, `trig.setTrigger`, `setGate`, `setHigh` and `setLow` are stamped too when they are called inside an event (`midi.onMessage`, `trig.onTrigger`, `trig.onTipsyMessage` and the other event callbacks): the module applies the write on the audio thread at the event's frame plus one audio block, which is the delay Rack puts on framed MIDI. A "MIDI note to trigger" script therefore produces trigger and note together, without the worker's jitter. Outside an event (`rack.onLoad`, context-menu callbacks) a write happens when the script runs, as without timing; in `rack.onUnload` it is ignored. A write whose frame has already passed (a slow script) is applied at once. Up to 64 stamped writes can be pending; beyond that a write is applied immediately instead.
 
 A script that needs better calls `midiOut.enableTiming()` once, in `rack.onLoad`
 or at top level:
@@ -1373,7 +1374,7 @@ order of the calls.
 
 | Call | Without `enableTiming()` | With `enableTiming()` |
 | --- | --- | --- |
-| `midiOut.send(msg)` | immediately | on the frame of the event being handled: the arrival frame of the MIDI message in `midi.onMessage`, the frame of the edge in `trig.onTrigger`, the frame the last byte arrived on in `trig.onTipsyMessage`. Anywhere else (`rack.onLoad`, `rack.onUnload`, context-menu callbacks) as soon as possible, on the current frame |
+| `midiOut.send(msg)` | immediately | on the frame of the event being handled: the arrival frame of the MIDI message in `midi.onMessage`, the frame of the edge in `trig.onTrigger`, the frame the last byte arrived on in `trig.onTipsyMessage`. Anywhere else (`rack.onLoad`, context-menu callbacks) as soon as possible, on the current frame. In `rack.onUnload`, behind everything Rack's output queue still holds (two blocks and a frame) |
 | `midiOut.sendAfterMs(msg, ms)` | `ms` after the latest frame the module had processed when the script ran | `ms` after the frame of the event being handled (after the latest frame processed, outside an event) |
 | `midiOut.sendAtFrame(msg, frame)` | held until `frame`, then sent immediately | on `frame` |
 | `midiOut.sendAfterTrigger(msg, ticks, ...)` | when the tick is reached, immediately | on the frame of the trigger edge that reaches the tick |
@@ -1472,13 +1473,13 @@ end
 ```
 
 **Unloading.** A note-on sent just before a reload may still be waiting in Rack's
-output queue, up to one audio block. A message `rack.onUnload` sends with
-`midiOut.send()` goes out at once and can overtake it, which leaves the note
-stuck. A script that plays notes should send its note-offs and all-notes-off from
-`rack.onUnload` with `midiOut.sendAfterMs(msg, -1)`: the message then waits two
-audio blocks and a frame, whatever the block size, which puts it behind everything
-Rack still holds. The `Arpeggiator` and `Euclidean rhythm generator` presets do
-this.
+output queue, up to one audio block. A note-off sent at once would overtake it and
+leave the note stuck, so the module holds what `rack.onUnload` sends with
+`midiOut.send()` for two audio blocks and a frame, whatever the block size, which
+puts it behind everything Rack still holds. A script that plays notes just sends
+its note-offs and all-notes-off from `rack.onUnload`, as the `Arpeggiator` and
+`Euclidean rhythm generator` presets do. When the module is removed the messages
+go out at once: Rack's output queue goes away with the device.
 
 **Finding out when it does not hold.** Rack can only place a message that reaches
 it in time, one audio block after its frame at the latest. A script that is too

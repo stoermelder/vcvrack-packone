@@ -573,8 +573,8 @@ TEST_CASE("Teardown flush is sent immediately in both modes", "[MidiKit][timing]
 		REQUIRE(rig.rec.sent.empty());
 
 		// As onRemove() does.
-		rig.m->host.closeState();
-		rig.m->midiOuts.flush();
+		rig.m->host.unload();
+		rig.m->flushMidiOut();
 
 		REQUIRE(rig.rec.sent.size() == 1);
 		REQUIRE(rig.rec.sent[0].status == 0x8);
@@ -618,7 +618,7 @@ struct FrameProbeEngine : MidiScriptEngine {
 
 	void loadScriptOnWorker(const char* script, const std::string& initialConfigJson) override { }
 	bool testScript(const std::string& script) override { return false; }
-	void closeStateOnWorker() override { }
+	void unloadScriptOnWorker() override { }
 	std::string getInputName(int i) override { return ""; }
 	std::string getParamName(int i) override { return ""; }
 	std::string getParamFormatValue(int i) override { return ""; }
@@ -1458,7 +1458,7 @@ TEST_CASE("Timing: without enableTiming a trigger is written when the script run
 TEST_CASE("Timing: stamped trigger writes are applied in frame order", "[MidiKit][timing]") {
 	TimingRig rig(JS_TRIG_STAMP);
 	auto& m = *rig.m;
-	rig.step();   // the first process() carries out the load's clearPending
+	rig.step();   // the first process() carries out the audio thread's half of the load
 
 	// Two writes pushed out of order: the earlier frame must win its slot, so the
 	// output ends low (the later write is setLow).
@@ -1473,7 +1473,7 @@ TEST_CASE("Timing: stamped trigger writes are applied in frame order", "[MidiKit
 TEST_CASE("Timing: stamped trigger writes for the same frame keep the order written", "[MidiKit][timing]") {
 	TimingRig rig(JS_TRIG_STAMP);
 	auto& m = *rig.m;
-	rig.step();   // the first process() carries out the load's clearPending
+	rig.step();   // the first process() carries out the audio thread's half of the load
 
 	// High then low for frame 100: the low must win, as in an unstamped script.
 	m.setTrigVoltage(0, 0, 10.f, 100);
@@ -1491,7 +1491,7 @@ TEST_CASE("Timing: stamped trigger writes for the same frame keep the order writ
 TEST_CASE("Timing: a script reload drops stamped trigger writes that are still pending", "[MidiKit][timing]") {
 	TimingRig rig(JS_TRIG_STAMP);
 	auto& m = *rig.m;
-	rig.step();   // the first process() carries out the load's clearPending
+	rig.step();   // the first process() carries out the audio thread's half of the load
 
 	// One write ends up in the pending queue (the step moves it there), the other
 	// is still in the ring when the reload comes; both must be dropped.

@@ -417,6 +417,8 @@ static int feedTipsy(MidiKitModule* m, int port, const std::vector<float>& volta
 	int completed = 0;
 	for (float v : voltages) {
 		m->inputs[MidiKitModule::INPUT_TRIG + port].setVoltage(v, 0);
+		// What process() does first: catch up with a script load.
+		m->syncScriptGen();
 		if (m->processTipsyInput()) completed++;
 	}
 	return completed;

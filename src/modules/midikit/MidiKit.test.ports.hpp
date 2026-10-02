@@ -142,7 +142,7 @@ TEST_CASE("Variant: out.flush sends to the queued port without crashing", "[Midi
 	m->enableMidiOut(2);
 	midi::Message msg = ccMsg(0, 7, 100);
 	REQUIRE(m->sendMidi(1, &msg, 1, 0, 0));
-	m->midiOuts.flush();
+	m->flushMidiOut();
 	REQUIRE(m->midiOuts.queue.empty());
 }
 
@@ -333,7 +333,7 @@ TEST_CASE("Variant: framed messages are not stranded on a port that is no longer
 	REQUIRE(m->midiOuts.ports[1].frameQueue.size() == 1);
 
 	// The script that used port 2 is replaced by one that does not.
-	m->resetMidiPortEnables();
+	m->midiOuts.resetEnables();
 	REQUIRE_FALSE(m->midiOuts.isEnabled(1));
 
 	// Once the frame is due it is sent anyway, not left for a later script.
@@ -730,7 +730,9 @@ TEST_CASE("Variant: trigger outputs are addressed by index", "[MidiKit][Variant]
 	MultiScaffold mods;
 	MultiModule* m = mods.create();
 
+	// Applied by the audio thread.
 	m->setTrigVoltage(1, 0, 4.f);
+	m->process(Test::makeProcessArgs(1));
 	REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 1].getVoltage(0) == 4.f);
 	REQUIRE(m->outputs[MultiModule::OUTPUT_TRIG + 0].getVoltage(0) == 0.f);
 }

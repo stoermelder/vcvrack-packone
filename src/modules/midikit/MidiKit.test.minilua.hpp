@@ -44,7 +44,7 @@ TEST_CASE("QuickJs-tagged script is rejected by Lua engine", "[MidiKit][Lua]") {
 	ModuleScaffold mods;
 	MidiKitModule* m = mods.create();
 
-	m->host.seLua.loadScript(QUICKJS_HEADER);
+	m->host.seLua.loadScriptOnWorker(QUICKJS_HEADER, "");
 
 	REQUIRE(m->host.seLua.L == nullptr);
 }
@@ -60,7 +60,7 @@ TEST_CASE("Syntax error is handled gracefully", "[MidiKit][Lua]") {
 	ModuleScaffold mods;
 	MidiKitModule* m = mods.create();
 
-	m->host.seLua.loadScript(LUA_BAD_SYNTAX);
+	m->host.seLua.loadScriptOnWorker(LUA_BAD_SYNTAX, "");
 
 	REQUIRE(m->host.seLua.L == nullptr);
 }
@@ -163,7 +163,7 @@ end
 TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua]") {
 	ModuleScaffold mods;
 	// See the matching QuickJs test for why this can only assert "doesn't crash":
-	// MidiKitModule's destructor calls closeState() (which runs onUnload())
+	// MidiKitModule's destructor calls host.unload() (which runs onUnload())
 	// while the module — the engines' handler — is still fully alive, so that
 	// callbacks like writeLog/trig.*/input.*/param.* resolve through the
 	// handler. Calling them from ~MidiScriptEngineLua() itself, after the

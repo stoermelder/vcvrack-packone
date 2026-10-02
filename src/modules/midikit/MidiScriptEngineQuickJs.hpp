@@ -74,7 +74,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	MessageEx msgStore[msgStoreSize];
-	// Must be initialised: top-level script code runs during loadScript(),
+	// Must be initialised: top-level script code runs during loadScriptOnWorker(),
 	// before process() sets this to 1; it bounds every msgStore check.
 	size_t msgCount = 0;
 	// Next MessageEx::sendOrder value. Never reset: only needs to be monotonic
@@ -178,11 +178,15 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	void loadScriptOnWorker(const char* script, const std::string& initialConfigJson) override {
 		assert(onWorkerThread());
-		closeStateOnWorker();
-		handler->resetScriptState();
+		// The caller closed the previous script (unloadScriptOnWorker()): its
+		// interpreter, hooks and menu entries are gone and the module's script
+		// state is reset.
+		assert(ctx == NULL && rt == NULL);
+		assert(JS_IsUndefined(rackObj) && JS_IsUndefined(onLoadFn) && JS_IsUndefined(onUnloadFn) && JS_IsUndefined(onMessageFn) && JS_IsUndefined(onTriggerFn));
+		assert(contextMenus.empty());
 
 		// Install the initial config as part of THIS queued task, before any
-		// script code runs — loadScript() is fire-and-forget, so a separate
+		// script code runs — ScriptHost::load() is fire-and-forget, so a separate
 		// call could race top-level code that already called rack.getConfig().
 		// Empty means "fresh, empty config" (script switch), not "leave
 		// whatever was there" — config belongs to the script that wrote it.
@@ -263,10 +267,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
 			JSValue exc = JS_GetException(ctx);
-			handler->writeLog("Error while loading script", false);
-			handler->writeLog(formatError(exc), false);
+			std::string message = formatError(exc);
 			JS_FreeValue(ctx, exc);
-			closeStateOnWorker();
+			// Logged after the close, which resets the log.
+			unloadScriptOnWorker();
+			handler->writeLog("Error while loading script", false);
+			handler->writeLog(message, false);
 		}
 		else {
 			JS_FreeValue(ctx, r);
@@ -339,10 +345,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// Frees the QuickJS runtime/context. See
-	// MidiScriptEngine::closeStateOnWorker().
-	void closeStateOnWorker() override {
+	// MidiScriptEngine::unloadScriptOnWorker().
+	void unloadScriptOnWorker() override {
 		assert(onWorkerThread());
 		if (ctx != NULL) {
+			// From here on only immediate MIDI gets out (see beginUnload()).
+			handler->beginUnload();
 			JSValue ret = callOnUnload();
 			JS_FreeValue(ctx, ret);
 			// onUnload()'s teardown messages (e.g. all-notes-off) must go out.
@@ -381,6 +389,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			rt = NULL;
 			heapBytes.store(0, std::memory_order_relaxed);
 		}
+		discardInQueues();
+		handler->endUnload();
 	}
 
 	// Runs the script's onLoad() hook. No argument: config is restored via
@@ -408,9 +418,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	// Runs onUnload(). Its return value is discarded by the caller — teardown-
 	// only; config comes from rack.setConfig(), not from teardown. Messages are
-	// NOT flushed here: closeState() flushes them for teardown.
+	// NOT flushed here: unloadScriptOnWorker() flushes them for teardown.
 	JSValue callOnUnload() {
-		// Reset first: closeStateOnWorker() flushes the store after this even
+		// Reset first: unloadScriptOnWorker() flushes the store after this even
 		// without an onUnload, and would otherwise send the last callback's
 		// messages a second time.
 		msgCount = 0;
@@ -681,7 +691,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return callGlobalStringFn("param", "getValueFormat", i);
 	}
 
-	// Frees the stored script callbacks. Called only from closeStateOnWorker(),
+	// Frees the stored script callbacks. Called only from unloadScriptOnWorker(),
 	// so like every other toucher of contextMenus this runs on the worker
 	// thread — hence no lock.
 	void clearContextMenus() {

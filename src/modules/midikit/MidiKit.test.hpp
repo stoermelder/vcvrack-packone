@@ -81,9 +81,9 @@ struct ModuleScaffold : Test::ModuleScaffold<MidiKitModule> {
 // dispatch from blocking dispatch.
 //
 // SyncTaskWorker runs every task inline on the calling thread, which makes
-// loadScript() (fire-and-forget) and closeState() (blocking) behave
+// loadScript() (fire-and-forget) and host.unload() (blocking) behave
 // identically. That is fine for tests about what a script computes, but it
-// erases the very property teardown depends on: that closeState() has finished
+// erases the very property teardown depends on: that host.unload() has finished
 // running onUnload() by the time it returns. Tests asserting on teardown
 // ordering must use this instead, or they pass against code that never waits.
 static std::shared_ptr<StoermelderPackOne::ITaskWorker> asyncWorker() {

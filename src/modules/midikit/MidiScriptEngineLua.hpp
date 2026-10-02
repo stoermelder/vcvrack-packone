@@ -98,7 +98,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// but invisible to lua_gc(LUA_GCCOUNT)) — so the only reliable footprint is
 	// the allocator's own net byte count. Rather than fail individual
 	// allocations, the engine watches that count after every user callback and,
-	// once past memoryLimit, tears the state down (closeStateOnWorker()): the
+	// once past memoryLimit, tears the state down (unloadScriptOnWorker()): the
 	// script stops running and its memory is freed instead of the process being
 	// ground down. Mirrors the QuickJS engine's JS_SetMemoryLimit(1 MiB) cap in
 	// spirit (same threshold).
@@ -156,8 +156,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (!L || memoryLimitExceeded) return;
 		if (allocatedBytes.load(std::memory_order_relaxed) > memoryLimit) {
 			memoryLimitExceeded = true;
+			// After the close, which resets the log.
+			unloadScriptOnWorker();
 			handler->writeLog(string::f("Script exceeded the %d KB memory limit and was stopped", (int)(memoryLimit / 1024)));
-			closeStateOnWorker();
 		}
 	}
 
@@ -218,11 +219,15 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	void loadScriptOnWorker(const char* script, const std::string& initialConfigJson) override {
 		assert(onWorkerThread());
-		closeStateOnWorker();
-		handler->resetScriptState();
+		// The caller closed the previous script (unloadScriptOnWorker()): its
+		// interpreter, hooks and menu entries are gone and the module's script
+		// state is reset.
+		assert(L == nullptr);
+		assert(onLoadRef == LUA_NOREF && onUnloadRef == LUA_NOREF && onMessageRef == LUA_NOREF && onTriggerRef == LUA_NOREF);
+		assert(contextMenus.empty());
 
 		// Install the initial config as part of THIS queued task, before any
-		// script code runs — loadScript() is fire-and-forget, so a separate
+		// script code runs — ScriptHost::load() is fire-and-forget, so a separate
 		// call could race top-level code that already called rack.getConfig().
 		// Empty means "fresh, empty config" (script switch), not "leave
 		// whatever was there" — config belongs to the script that wrote it.
@@ -333,9 +338,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (luaL_loadbuffer(L, script, strlen(script), CHUNK_NAME) != LUA_OK ||
 		    lua_pcall(L, 0, LUA_MULTRET, 0) != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			handler->writeLog(string::f("Error loading script: %s", err ? err : "(unknown)"), false);
+			std::string message = string::f("Error loading script: %s", err ? err : "(unknown)");
 			lua_pop(L, 1);
-			closeStateOnWorker();
+			// Logged after the close, which resets the log.
+			unloadScriptOnWorker();
+			handler->writeLog(message, false);
 			return;
 		}
 
@@ -390,10 +397,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return luaL_ref(L, LUA_REGISTRYINDEX); // pops the function, returns its ref
 	}
 
-	// Tears down the Lua state. See MidiScriptEngine::closeStateOnWorker().
-	void closeStateOnWorker() override {
+	// Tears down the Lua state. See MidiScriptEngine::unloadScriptOnWorker().
+	void unloadScriptOnWorker() override {
 		assert(onWorkerThread());
 		if (L) {
+			// From here on only immediate MIDI gets out (see beginUnload()).
+			handler->beginUnload();
 			callOnUnload();
 			// onUnload()'s teardown messages (e.g. all-notes-off) must go out.
 			flushMsgStore();
@@ -416,6 +425,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			// relying on every allocatedBytes reader to guard on L itself.
 			allocatedBytes.store(0, std::memory_order_relaxed);
 		}
+		discardInQueues();
+		handler->endUnload();
 	}
 
 	// Runs the script's onLoad() hook. No argument: config is restored via
@@ -439,9 +450,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// Runs onUnload(). Its return value is discarded — teardown-only; config
 	// comes from rack.setConfig(), not from teardown. Messages are NOT flushed
-	// here: closeState() flushes them for teardown.
+	// here: unloadScriptOnWorker() flushes them for teardown.
 	void callOnUnload() {
-		// Reset first: closeStateOnWorker() flushes the store after this even
+		// Reset first: unloadScriptOnWorker() flushes the store after this even
 		// without an onUnload, and would otherwise send the last callback's
 		// messages a second time.
 		msgCount = 0;
@@ -723,7 +734,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	// Releases the stored script callbacks. Called only from
-	// closeStateOnWorker(), so like every other toucher of contextMenus this
+	// unloadScriptOnWorker(), so like every other toucher of contextMenus this
 	// runs on the worker thread — hence no lock.
 	void clearContextMenus() {
 		assert(onWorkerThread());

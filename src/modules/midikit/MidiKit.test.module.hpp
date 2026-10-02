@@ -24,7 +24,6 @@ TEST_CASE("Construction and initialization", "[MidiKit]") {
 	REQUIRE(m->NUM_OUTPUTS == 2);  // 2 trigger out
 	REQUIRE(m->NUM_LIGHTS == 0);
 	REQUIRE(m->host.script == "");
-	REQUIRE(m->sample == 0);
 	REQUIRE(m->triggerIns.triggerTick[0][0] == 0);
 }
 
@@ -62,12 +61,12 @@ TEST_CASE("process() does not crash with no script", "[MidiKit]") {
 
 	// With no engine loaded, the dispatch path (processInMessage/processInTick/
 	// activeEngine->process()) is skipped, but the module's own out-queue drain
-	// and sample counting are unconditional — it must simply not crash.
+	// is unconditional — it must simply not crash.
 	for (int i = 0; i < 20; i++) {
 		REQUIRE_NOTHROW(m->process(Test::makeProcessArgs(i + 1)));
 	}
 
-	REQUIRE(m->sample == 20);
+	REQUIRE(m->timingCurrentFrame.load() == 20);
 }
 
 TEST_CASE("Default engine it not set", "[MidiKit]") {
@@ -417,7 +416,7 @@ struct RecordingEngine : MidiScriptEngine {
 	// sendMidi() reaches the same module out-queue process() drains — the queue
 	// is module-owned now, so a double would have to reimplement the thing
 	// under test. A worker is not optional: every engine needs one before any
-	// dispatch path (including closeState() from onRemove()) can run.
+	// dispatch path (including host.unload() from onRemove()) can run.
 	explicit RecordingEngine(MidiKitModule* module) : MidiScriptEngine(module, 4, 1, 1, 4, 1, 1), module(module) {
 		setWorker(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
 	}
@@ -436,7 +435,7 @@ struct RecordingEngine : MidiScriptEngine {
 	// Unused by these tests — stubbed only to satisfy the interface.
 	void loadScriptOnWorker(const char* script, const std::string& initialConfigJson) override { }
 	bool testScript(const std::string& script) override { return false; }
-	void closeStateOnWorker() override { }
+	void unloadScriptOnWorker() override { }
 	// Everything the module handed over, in order, so tests can assert on the
 	// decode result the audio thread produced.
 	std::vector<StoermelderPackOne::MidiScript::QueuedMessage> received;
@@ -499,7 +498,7 @@ TEST_CASE("process() runs the engine only on divider ticks", "[MidiKit]") {
 	// Detach the recorder before this stack-allocated RecordingEngine goes out
 	// of scope: mods's destructor runs after eng's (mods was declared first,
 	// so it's destroyed last) and calls Test::destroyModule -> onRemove() ->
-	// host.closeState(), which touches the active engine.
+	// host.unload(), which touches the active engine.
 	m->host.getActiveEngine() = nullptr;
 }
 
@@ -528,7 +527,7 @@ TEST_CASE("process() drains the engine out-queue on a divider tick", "[MidiKit]"
 	// Detach the recorder before this stack-allocated RecordingEngine goes out
 	// of scope: mods's destructor runs after eng's (mods was declared first,
 	// so it's destroyed last) and calls Test::destroyModule -> onRemove() ->
-	// host.closeState(), which touches the active engine.
+	// host.unload(), which touches the active engine.
 	m->host.getActiveEngine() = nullptr;
 }
 
@@ -577,7 +576,7 @@ TEST_CASE("process() consumes the tick before the engine schedules on it", "[Mid
 	// Detach the recorder before this stack-allocated RecordingEngine goes out
 	// of scope: mods's destructor runs after eng's (mods was declared first,
 	// so it's destroyed last) and calls Test::destroyModule -> onRemove() ->
-	// host.closeState(), which touches the active engine.
+	// host.unload(), which touches the active engine.
 	m->host.getActiveEngine() = nullptr;
 }
 
@@ -612,17 +611,21 @@ TEST_CASE("process() handles triggers arriving between divider ticks", "[MidiKit
 	// Detach the recorder before this stack-allocated RecordingEngine goes out
 	// of scope: mods's destructor runs after eng's (mods was declared first,
 	// so it's destroyed last) and calls Test::destroyModule -> onRemove() ->
-	// host.closeState(), which touches the active engine.
+	// host.unload(), which touches the active engine.
 	m->host.getActiveEngine() = nullptr;
 }
 
 TEST_CASE("process() sends frame-scheduled messages on divider ticks only", "[MidiKit]") {
-	Test::ModuleScaffold<MidiKitModule> mods;
-	MidiKitModule* m = mods.create("MidiKit");
+	// The synchronous worker: the test depends on the load having landed.
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	// With no default engine, load a script so process() runs past the
 	// `if (!activeEngine) return;` guard.
 	m->loadScript(QUICKJS_SCRIPT);
+	// The audio thread's half of the load, which would clear the message below;
+	// without a process() call, so the divider phase stays where it is.
+	m->syncScriptGen();
 
 	// ticks == 0 with a set frame routes to frameQueue rather than tickQueue.
 	midi::Message msg = makeCc();
@@ -700,13 +703,14 @@ TEST_CASE("process() orders trigger, inbound, and outbound effects in one call",
 	// Detach the recorder before this stack-allocated RecordingEngine goes out
 	// of scope: mods's destructor runs after eng's (mods was declared first,
 	// so it's destroyed last) and calls Test::destroyModule -> onRemove() ->
-	// host.closeState(), which touches the active engine.
+	// host.unload(), which touches the active engine.
 	m->host.getActiveEngine() = nullptr;
 }
 
 TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKit]") {
-	Test::ModuleScaffold<MidiKitModule> mods;
-	MidiKitModule* m = mods.create("MidiKit");
+	// The synchronous worker: the test depends on the load having landed.
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	// With no default engine, load a script so process() runs past the
 	// `if (!activeEngine) return;` guard. The trigger is enabled directly here
@@ -739,8 +743,9 @@ TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKi
 }
 
 TEST_CASE("sendAfterTrigger on one channel is only drained by that channel's clock", "[MidiKit]") {
-	Test::ModuleScaffold<MidiKitModule> mods;
-	MidiKitModule* m = mods.create("MidiKit");
+	// The synchronous worker: the test depends on the load having landed.
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	// With no default engine, load a script so process() runs past the
 	// `if (!activeEngine) return;` guard. Enable both trigger channels (as the
@@ -828,8 +833,9 @@ TEST_CASE("Log accepts entries from multiple producers", "[MidiKit][Log]") {
 
 
 TEST_CASE("LoadScript emits a RESET log entry", "[MidiKit][Log]") {
-	Test::ModuleScaffold<MidiKitModule> mods;
-	MidiKitModule* m = mods.create("MidiKit");
+	// The synchronous worker: the test depends on the load having landed.
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	drainLogEntries(m);  // discard construction-time entries
 
 	m->loadScript(QUICKJS_SCRIPT);
@@ -1407,15 +1413,16 @@ TEST_CASE("Incoming MIDI is decoded before reaching the engine", "[MidiKit][Midi
 	// Detach the recorder before this stack-allocated RecordingEngine goes out
 	// of scope: mods's destructor runs after eng's local destructor (mods was
 	// declared first, so it's destroyed last), and it calls Test::destroyModule
-	// -> onRemove() -> host.closeState(), which touches the active engine.
+	// -> onRemove() -> host.unload(), which touches the active engine.
 	// Leaving eng attached would call virtuals on it after it has already been
 	// destroyed (see the same note on "Decoder state is cleared..." below).
 	m->host.getActiveEngine() = nullptr;
 }
 
 TEST_CASE("Decoder state is cleared on reset and script load", "[MidiKit][MidiProcessor]") {
-	Test::ModuleScaffold<MidiKitModule> mods;
-	MidiKitModule* m = mods.create("MidiKit");
+	// The synchronous worker: the test depends on the load having landed.
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	RecordingEngine eng(m);
 	m->host.getActiveEngine() = &eng;
 	int64_t frame = 1;
@@ -1444,7 +1451,7 @@ TEST_CASE("Decoder state is cleared on reset and script load", "[MidiKit][MidiPr
 	// Detach the recorder before this stack-allocated RecordingEngine goes out
 	// of scope: mods's destructor runs after eng's (mods was declared first,
 	// so it's destroyed last) and calls Test::destroyModule -> onRemove() ->
-	// host.closeState(), which touches the active engine. A no-op when the
+	// host.unload(), which touches the active engine. A no-op when the
 	// "loadScript()" SECTION already detached it above.
 	m->host.getActiveEngine() = nullptr;
 }

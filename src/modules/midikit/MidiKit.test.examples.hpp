@@ -265,6 +265,8 @@ static void checkPreset(const PresetInfo& p, const char* engine) {
 
 	MidiKitModule* m = createModule();
 	m->loadScript(source);
+	// The audio thread's half of the load (see loadPreset()).
+	m->syncScriptGen();
 
 	std::string loadLog = drainLog(m);
 	CATCH_INFO("load log:\n" << loadLog);
@@ -422,6 +424,9 @@ TEST_CASE("Scripts can read the port counts of the variant they run on", "[MidiK
 static MidiKitModule* loadPreset(const std::string& relPath) {
 	MidiKitModule* m = createModule();
 	m->loadScript(readFile(repoRoot() + "/" + relPath));
+	// The audio thread's half of the load, as the first process() would do it:
+	// these tests mostly drive the engine directly.
+	m->syncScriptGen();
 
 	std::string loadLog = drainLog(m);
 	CATCH_INFO("preset: " << relPath);
@@ -3829,10 +3834,10 @@ TEST_CASE("'Bouncing ball delay.js/.lua' places its echoes on exact frames from 
 	Test::destroyModule(m);
 }
 
-// On unload the generators send their note-off after Rack's output queue
-// (sendAfterMs(msg, -1)). A note-on handed to Rack just before may still be
-// waiting in it, and an immediate note-off would overtake it. The wait is two
-// blocks and a frame, so it follows the engine's block size.
+// On unload the generators send their note-off with midiOut.send(), which the
+// module holds behind Rack's output queue. A note-on handed to Rack just before
+// may still be waiting in it, and an immediate note-off would overtake it. The
+// wait is two blocks and a frame, so it follows the engine's block size.
 
 // Makes the engine report a frame and a block size. loadScript() seeds the
 // published frame from the frame, process() publishes the block size.

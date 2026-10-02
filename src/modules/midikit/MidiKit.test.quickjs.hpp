@@ -43,7 +43,7 @@ TEST_CASE("Lua-tagged script is rejected by QuickJs engine", "[MidiKit][QuickJs]
 	ModuleScaffold mods;
 	MidiKitModule* m = mods.create();
 
-	m->host.seQuickJs.loadScript(LUA_HEADER);
+	m->host.seQuickJs.loadScriptOnWorker(LUA_HEADER, "");
 
 	REQUIRE(m->host.seQuickJs.ctx == nullptr);
 }
@@ -59,7 +59,7 @@ TEST_CASE("JS syntax error is handled gracefully", "[MidiKit][QuickJs]") {
 	ModuleScaffold mods;
 	MidiKitModule* m = mods.create();
 
-	m->host.seQuickJs.loadScript(QJS_BAD_SYNTAX);
+	m->host.seQuickJs.loadScriptOnWorker(QJS_BAD_SYNTAX, "");
 
 	REQUIRE(m->host.seQuickJs.ctx == nullptr);
 }
@@ -151,7 +151,7 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Qui
 	// onUnload from ~MidiScriptEngineQuickJs() itself would route those
 	// callbacks through a handler that is already destroyed — undefined
 	// behaviour that crashes as "pure virtual function called". MidiKitModule
-	// has its own destructor that calls closeState() first, while the module
+	// has its own destructor that calls host.unload() first, while the module
 	// (the handler) is still fully alive, specifically to avoid that. This
 	// test does not (and cannot) assert a log/message result — it can only
 	// prove destroyModule() doesn't crash, which is what it's for.

@@ -272,7 +272,7 @@ TEST_CASE("onRemove() sends onUnload's message to the device rather than leaving
 
 TEST_CASE("onRemove() twice does not crash or re-run onUnload", "[MidiKit][CrossEngine]") {
 	// The null-then-check in onRemove() (capture activeEngine, null it, only
-	// then closeState()) makes a second call a no-op: activeEngine is already
+	// then host.unload()) makes a second call a no-op: activeEngine is already
 	// null, so there is no engine left to close. Undo/redo can plausibly
 	// produce a repeat RemoveEvent dispatch, so this must be safe.
 	auto check = [](const std::string& script) {
@@ -302,7 +302,7 @@ TEST_CASE("switching engines keeps the outgoing engine's onUnload output", "[Mid
 	// once activeEngine moved on. With a module-owned queue nothing is keyed on
 	// which engine is active, so the message is still observable here.
 	//
-	// This does NOT cover the switch being a blocking closeState() rather than
+	// This does NOT cover the switch being a blocking host.unload() rather than
 	// an async loadScript("") — under SyncTaskWorker both run onUnload() inline,
 	// so the message lands either way. See the async-worker test below.
 	MidiKitModule* m = mods.create();
@@ -328,46 +328,72 @@ TEST_CASE("switching engines keeps the outgoing engine's onUnload output", "[Mid
 // async-worker teardown
 // These use a real background worker rather than SyncTaskWorker. Under
 // SyncTaskWorker every dispatch runs inline, so a fire-and-forget loadScript()
-// and a blocking closeState() are indistinguishable — a test written against it
+// and a blocking host.unload() are indistinguishable — a test written against it
 // passes whether or not teardown actually waits. The whole point of the switch
-// and teardown paths using closeState() is that they DO wait, which only a real
+// and teardown paths using host.unload() is that they DO wait, which only a real
 // worker can show.
 
-TEST_CASE("Switching engines closes the outgoing engine before returning", "[MidiKit][CrossEngine][Async]") {
-	// loadScript() used to close the outgoing engine with an async
-	// loadScript(""), so the switch returned while onUnload() had not run yet.
-	// It is now a blocking closeState(): once loadScript() returns, the outgoing
-	// engine's onUnload() has finished and its output is already queued.
-	//
-	// No barrier() before the assertions — that is the point. If the outgoing
-	// close were async again, the log and the queue would both still be empty
-	// here and this fails.
+TEST_CASE("Switching engines runs the outgoing onUnload() before the new script, in one worker task", "[MidiKit][CrossEngine][Async]") {
+	// A switch, a reload into the same engine and a clear all queue ONE worker
+	// task: onUnload(), endUnload(), then the new script. The outgoing
+	// onUnload() therefore runs with its port enables intact (port 2 here) and
+	// its log lines come before the reset; the new script's come after it.
+	static const char* JS_UNLOAD_PORT2 = R"(/**
+ * @engine QuickJs@v1
+ */
+midiOut.enablePorts(2);
+rack.onUnload = function() {
+    rack.log("onUnload ran");
+    let msg = midi.create();
+    midi.setNoteOff(msg, 1, 60);
+    midiOut.selectPort(2);
+    midiOut.send(msg);
+};
+)";
+	static const char* LUA_LOGS_ON_LOAD = R"(--[[
+@engine minilua@v1
+--]]
+rack.onLoad = function()
+    rack.log("onLoad ran")
+end
+)";
 	auto worker = asyncWorker();
 	MidiKitModule* m = createModule(worker);
 
-	m->loadScript(JS_ON_UNLOAD);
-	barrier(worker);                 // the LOAD is still async; wait for it
+	m->loadScript(JS_UNLOAD_PORT2);
+	barrier(worker);
 	drainLog(m);
 	REQUIRE(m->host.isQuickJsEngine());
 
-	m->loadScript(LUA_ON_UNLOAD);    // switch: closes QuickJs synchronously
+	m->loadScript(LUA_LOGS_ON_LOAD);
+	barrier(worker);
 
-	std::string log = drainLog(m);
-	REQUIRE(log.find("onUnload ran") != std::string::npos);
+	std::vector<std::tuple<LOG_FORMAT, std::string>> log = drainLogEntries(m);
+	int unloadAt = -1, resetAt = -1, loadAt = -1;
+	for (int i = 0; i < (int)log.size(); i++) {
+		const std::string& text = std::get<1>(log[i]);
+		if (text.find("onUnload ran") != std::string::npos) unloadAt = i;
+		if (std::get<0>(log[i]) == LOG_FORMAT::RESET) resetAt = i;
+		if (text.find("onLoad ran") != std::string::npos) loadAt = i;
+	}
+	REQUIRE(unloadAt >= 0);
+	REQUIRE(unloadAt < resetAt);
+	REQUIRE(resetAt < loadAt);
 
+	// Sent on port 2: the enable was still in place when onUnload() ran.
 	int port, ticks;
 	midi::Message out;
 	REQUIRE(processOutMessage(m, port, out, ticks));
+	REQUIRE(port == 1);
 	REQUIRE(out.getStatus() == 0x8);   // note off
 	REQUIRE(out.getNote() == 60);
 
-	barrier(worker);                 // let the pending Lua load finish
 	Test::destroyModule(m);
 }
 
 
 TEST_CASE("onRemove() waits for onUnload before draining", "[MidiKit][CrossEngine][Async]") {
-	// Teardown's ordering contract: closeState() blocks, so by the time
+	// Teardown's ordering contract: host.unload() blocks, so by the time
 	// out.flush() runs the worker has finished producing. If the close were
 	// async, the drain would race it and run on an empty queue, leaving
 	// onUnload()'s message stranded — a hung note on module removal.
@@ -399,9 +425,9 @@ TEST_CASE("onRemove() waits for onUnload before draining", "[MidiKit][CrossEngin
 
 TEST_CASE("onReset() closes the active engine synchronously", "[MidiKit][CrossEngine][Async]") {
 	// onReset() switched from two async loadScript("") calls to a single
-	// blocking closeState() on the active engine. Same ordering contract as the
-	// switch path: once onReset() returns, onUnload() has run and its output is
-	// queued rather than still in flight.
+	// blocking host.unload() on the active engine: once onReset() returns,
+	// onUnload() has run and its output has been flushed, before the ports were
+	// reset (a reset port has no device left to send to).
 	auto check = [](const std::string& script) {
 		auto worker = asyncWorker();
 		MidiKitModule* m = createModule(worker);
@@ -415,10 +441,10 @@ TEST_CASE("onReset() closes the active engine synchronously", "[MidiKit][CrossEn
 		REQUIRE(log.find("onUnload ran") != std::string::npos);
 		REQUIRE(m->host.getActiveEngine() == nullptr);
 
+		// Flushed by onReset(), not left for a reset port.
 		int port, ticks;
 		midi::Message out;
-		REQUIRE(processOutMessage(m, port, out, ticks));
-		REQUIRE(out.getStatus() == 0x8);   // note off
+		REQUIRE_FALSE(processOutMessage(m, port, out, ticks));
 
 		Test::destroyModule(m);
 	};
@@ -538,11 +564,11 @@ TEST_CASE("An NRPN group is queued whole and in order", "[MidiKit]") {
 }
 
 
-TEST_CASE("onRemove() flushes teardown output immediately, bypassing scheduling", "[MidiKit]") {
+TEST_CASE("onRemove() flushes due output immediately and drops what is scheduled", "[MidiKit]") {
 	// out.flush() sets frame = -1 and calls out.ports[0].sendMessage() directly
 	// rather than out.ports[0].send(): the frame and tick queues are drained only
-	// by process(), which will never run again. A tick-scheduled message left to
-	// send() would land in tickQueue and never be emitted.
+	// by process(), which will never run again. A tick-scheduled message belongs
+	// to the script being removed and is dropped with it, not parked in a queue.
 	MidiKitModule* m = createModule();
 	midi::Message msg = noteOn(1, 60, 100);
 
@@ -552,7 +578,7 @@ TEST_CASE("onRemove() flushes teardown output immediately, bypassing scheduling"
 	m->onRemove(eRemove);
 
 	REQUIRE(m->midiOuts.queue.empty());
-	// Sent immediately instead of being parked in a queue nothing will drain.
+	// Dropped instead of being parked in a queue nothing will drain.
 	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 0);
 	REQUIRE(m->midiOuts.ports[0].frameQueue.size() == 0);
 
@@ -716,7 +742,7 @@ TEST_CASE("onUnload's return value is ignored on real teardown and does not touc
 
 		// clearScript() tears the script down for real (the onUnload() path).
 		// A save racing teardown must still see the last setConfig()'d value —
-		// closeState()/closeStateOnWorker() leave publishedConfig untouched,
+		// unloadScriptOnWorker() leaves publishedConfig untouched,
 		// unlike workingConfig which is destroyed with the engine.
 		std::string beforeUnload = publishedConfigJson(m->host.getActiveEngine());
 		REQUIRE(configInt(beforeUnload, "real") == 42);

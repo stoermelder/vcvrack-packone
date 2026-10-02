@@ -4,9 +4,7 @@
 #include "../../utils/TaskWorker.hpp"
 #include "../midi/MidiProcessor.hpp"
 #include <atomic>
-#include <chrono>
 #include <cmath>
-#include <future>
 #include <jansson.h>
 #include <map>
 #include <memory>
@@ -116,12 +114,23 @@ struct MidiScriptEngineHandler {
 	virtual void enableMidiIn(int count) = 0;
 	virtual void enableMidiOut(int count) = 0;
 
+	// Worker thread, from unloadScriptOnWorker() right before a running script's
+	// onUnload(); endUnload() follows. Until then only immediate MIDI
+	// messages are accepted, and they go out even though the script is gone (in
+	// timing mode behind everything Rack's output queue still holds, so a
+	// note-off cannot overtake its note-on). Whatever onUnload() schedules for
+	// later (sendAfterMs, sendAtFrame, sendAfterTrigger), trigger output writes
+	// and Tipsy messages are ignored.
+	virtual void beginUnload() = 0;
+
 	// Drops the module-side state that belongs to the outgoing script: what it
-	// enabled (MIDI ports, timing) and its queued Tipsy messages, which are marked
-	// stale (a message already being encoded still completes). Worker thread,
-	// called by loadScriptOnWorker() right after the outgoing script's onUnload()
-	// has run, so the output of that onUnload() to an enabled port still goes out.
-	virtual void resetScriptState() = 0;
+	// enabled (MIDI ports, timing, trigger inputs, extended CC, Tipsy input), its
+	// queued Tipsy messages (a message already being encoded still completes) and
+	// whatever it scheduled for later; resets the log. Worker thread, at the end
+	// of every unloadScriptOnWorker(), so after onUnload(), which still runs with
+	// everything the script set up, and before any new script. Safe to call when
+	// nothing was running.
+	virtual void endUnload() = 0;
 
 	// The audio thread's latest process() frame, the engine's block size and the
 	// sample rate, published atomically for the worker, which must not read
@@ -333,6 +342,14 @@ struct MidiScriptEngine {
 		if (!queue.full()) queue.push(std::forward<T>(value));
 	}
 
+	// Worker thread (the consumer of the in-queues), from unloadScriptOnWorker():
+	// events captured for the closed script must not reach the next one.
+	void discardInQueues() {
+		while (!midiInQueue.empty()) midiInQueue.shift();
+		while (!tickInQueue.empty()) tickInQueue.shift();
+		while (!tipsyInQueue.empty()) tipsyInQueue.shift();
+	}
+
 	// Worker thread: the frame of the event being dispatched, -1 outside one.
 	int64_t currentInFrame = -1;
 	// Sets currentInFrame for a scope and restores the previous value, so a
@@ -446,38 +463,6 @@ struct MidiScriptEngine {
 		return taskWorker && taskWorker->isWorkerThread();
 	}
 
-	// Runs `task` (script code) on the worker thread and blocks until done.
-	//
-	// Returns false, leaving `out` untouched, if the task never ran.
-	// closeState() is the only caller left, and it discards the result.
-	//
-	// The wait is bounded for liveness, not latency: ~MpmcTaskWorker discards
-	// pending tasks, which breaks the promise (hence the catch), so the timeout
-	// only covers a wedged-but-alive worker. The shared_ptr keeps the promise
-	// alive for a worker still running past it.
-	bool runSync(std::function<std::string()> task, std::string& out) {
-		auto promise = std::make_shared<std::promise<std::string>>();
-		std::future<std::string> future = promise->get_future();
-
-		bool queued = runAsync([task, promise]() {
-			promise->set_value(task());
-		});
-		if (!queued) return false;
-
-		// Function-local: wait_for() takes its duration by reference, so a static
-		// constexpr member would be odr-used and need an out-of-line definition.
-		const std::chrono::milliseconds timeout{500};
-
-		if (future.wait_for(timeout) != std::future_status::ready) return false;
-		try {
-			out = future.get();
-		}
-		catch (const std::future_error&) {
-			return false;
-		}
-		return true;
-	}
-
 	// Parses the value of a "@requires" tag: space-separated key=value pairs,
 	// currently only "params=N" (the script needs at least N panel params, e.g. 4
 	// does not fit MIDI-µKIT's 2). `params` is 0 when the tag doesn't ask for any.
@@ -544,60 +529,29 @@ struct MidiScriptEngine {
 	virtual bool testScript(const std::string& script) = 0;
 
 
+	// The load, always on the worker thread (ScriptHost::load() queues it), into
+	// an unloaded engine: the caller ends any previous script with
+	// unloadScriptOnWorker() first (implementations assert it).
+	//
 	// initialConfigJson, if non-empty, is parsed and installed on the engine as
 	// the script's workingConfig BEFORE any script code runs — top-level code
 	// and onLoad() see it via rack.getConfig(). Empty installs a fresh, empty
 	// config (script switch). This is an install, not an argument to a hook:
-	// getConfig()/setConfig() are live calls, not hooks.
+	// getConfig()/setConfig() are live calls, not hooks. Implementations must
+	// installConfig() from it at the top, before any script code runs.
 	//
-	// Asynchronous, with no completion signal by design: the engine is NOT loaded
-	// when this returns, and load messages/parse errors reach the user via
-	// handler->writeLog() from the worker. Callers must not read engine state
-	// expecting the new script — the dispatch paths no-op until the load lands.
-	// The worker queue is FIFO, so successive calls (a script switch tearing one
-	// engine down and loading another) still run in call order.
-	//
-	// `script` is copied, so the caller's buffer need not outlive this call.
-	void loadScript(const char* script, const std::string& initialConfigJson = "") {
-		std::string s = script ? script : "";
-		runAsync([this, s, initialConfigJson]() {
-			loadScriptOnWorker(s.c_str(), initialConfigJson);
-		});
-	}
-
-	// The load itself, always on the worker thread. Tears down any previous
-	// script (via closeStateOnWorker()) before loading the new one; callers
-	// already on the worker invoke this directly rather than loadScript().
-	// Implementations must installConfig() from initialConfigJson at the top,
-	// before any script code runs.
+	// Load messages and parse errors reach the user via handler->writeLog().
 	virtual void loadScriptOnWorker(const char* script, const std::string& initialConfigJson) = 0;
 
-	// Tears down script state, running rack.onUnload() first (e.g. all-notes-off).
-	// onUnload()'s return value is ignored — config comes from rack.setConfig(),
-	// not from teardown. publishedConfig is deliberately left untouched: a save
-	// racing this teardown still persists the last known config.
-	// Always returns "".
-	//
-	// Blocks, unlike loadScript(): the caller (MidiKitModule's destructor) is
-	// about to destroy the handler and these engines. UI thread only —
-	// worker-side code calls closeStateOnWorker() directly.
-	//
-	// A failed dispatch is deliberately ignored rather than retried inline: the
-	// worker may be wedged inside the interpreter, and freeing it here would put
-	// two threads in it at once. Leaking it is the lesser evil.
-	std::string closeState() {
-		std::string ignored;
-		runSync([this]() -> std::string {
-			closeStateOnWorker();
-			return "";
-		}, ignored);
-		return "";
-	}
-
-	// The teardown itself, always on the worker thread. Implementations free
-	// their interpreter here; callers already on the worker (loadScriptOnWorker,
-	// including its error paths) invoke this directly rather than closeState().
-	virtual void closeStateOnWorker() = 0;
+	// The end of a script, however it ends (replaced, cleared, reset, removed,
+	// memory limit, load error), always on the worker thread. Implementations run
+	// rack.onUnload() after handler->beginUnload() and free their interpreter if
+	// a script is running, then always discardInQueues() and
+	// handler->endUnload(). onUnload()'s return value is ignored: config comes
+	// from rack.setConfig(), not from teardown. publishedConfig is deliberately
+	// left untouched, so a save racing this teardown still persists the last
+	// known config.
+	virtual void unloadScriptOnWorker() = 0;
 
 	// Main interface for message processing. Takes the decoded form so the
 	// assembly the module already performed (NRPN/RPN/14-bit CC) travels with
