@@ -51,20 +51,7 @@ std::vector<unsigned char> MessageEx::getSysExBytes() const {
 	return type == Type::SYSEX ? source->bytes : std::vector<unsigned char>();
 }
 
-// ownedInput is initialized first (members initialize in declaration order), so
-// its get() below is valid. Allocated only when nothing is injected.
-MidiProcessor::MidiProcessor(rack::midi::InputQueue* injected)
-	: ownedInput(injected ? nullptr : new rack::midi::InputQueue())
-	, input(injected ? injected : ownedInput.get()) {
-	reset();
-}
-
-MidiProcessor::MidiProcessor(DecodeOnly)
-	: input(nullptr) {
-	reset();
-}
-
-void MidiProcessor::reset() {
+void MidiDecoder::reset() {
 	for (int i = 0; i < 16; ++i) {
 		ccNrpnParam[i] = -1;
 		ccRpnParam[i] = -1;
@@ -75,31 +62,7 @@ void MidiProcessor::reset() {
 	}
 }
 
-rack::midi::InputQueue& MidiProcessor::getInput() {
-	assert(input);
-	return *input;
-}
-
-
-void MidiProcessor::processBypass(int64_t frame) {
-	// Reuse the member scratch message so the audio thread never heap-allocates
-	// a `midi::Message` per pump.
-	assert(input);
-	rack::midi::Message& msg = scratchMidiMessage;
-	while (input->tryPop(&msg, frame)) {
-		(void)0;
-	}
-}
-
-void MidiProcessor::process(int64_t frame) {
-	assert(input);
-	rack::midi::Message& msg = scratchMidiMessage;
-	while (input->tryPop(&msg, frame)) {
-		processMessage(msg);
-	}
-}
-
-void MidiProcessor::processMessage(const rack::midi::Message& msg) {
+void MidiDecoder::processMessage(const rack::midi::Message& msg) {
 	uint8_t status = msg.getStatus();
 	MessageEx m = MessageEx(msg);
 	switch (status) {
@@ -185,7 +148,7 @@ void MidiProcessor::processMessage(const rack::midi::Message& msg) {
 	}
 }
 
-bool MidiProcessor::isComponentCc(const rack::midi::Message& msg) const {
+bool MidiDecoder::isComponentCc(const rack::midi::Message& msg) const {
 	uint8_t ch = msg.getChannel();
 	uint8_t cc = msg.getNote();
 
@@ -201,7 +164,7 @@ bool MidiProcessor::isComponentCc(const rack::midi::Message& msg) const {
 	return false;
 }
 
-void MidiProcessor::processCc(const rack::midi::Message& msg) {
+void MidiDecoder::processCc(const rack::midi::Message& msg) {
 	uint8_t ch = msg.getChannel();
 	uint8_t cc = msg.getNote();
 	uint8_t value = msg.bytes[2];
@@ -316,18 +279,18 @@ void MidiProcessor::processCc(const rack::midi::Message& msg) {
 	}
 }
 
-void MidiProcessor::notify(const MessageEx& m) {
+void MidiDecoder::notify(const MessageEx& m) {
 	for (auto& handler : handlers) {
 		bool b = handler->processMidi(m);
 		if (b) break;
 	}
 }
 
-void MidiProcessor::subscribe(MidiProcessorHandler* handler) {
+void MidiDecoder::subscribe(MidiProcessorHandler* handler) {
 	handlers.push_back(handler);
 }
 
-void MidiProcessor::unsubscribe(MidiProcessorHandler* handler) {
+void MidiDecoder::unsubscribe(MidiProcessorHandler* handler) {
 	auto it = std::find(handlers.begin(), handlers.end(), handler);
 	if (it != handlers.end()) {
 		handlers.erase(it);

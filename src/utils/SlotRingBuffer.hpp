@@ -27,7 +27,7 @@ struct SlotRingBuffer {
 	// has shifted again, which it does only once it is done with this one.
 	enum { SLOTS = N + 1 };
 	T slots[SLOTS];
-	dsp::RingBuffer<int, N> ring;
+	rack::dsp::RingBuffer<int, N> ring;
 	// Producer only.
 	int next = 0;
 
