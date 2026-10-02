@@ -19,7 +19,7 @@ namespace StoermelderPackOne {
  * T must be default-constructible and copy-assignable.
  */
 template <typename T, size_t N>
-struct SlotQueue {
+struct SlotRingBuffer {
 	// One slot more than the ring holds: shift() frees the ring entry before the
 	// consumer has copied the element out, and the producer may fill that ring
 	// space at once. Slots are written in FIFO order, so the one still being read
@@ -31,11 +31,11 @@ struct SlotQueue {
 	// Producer only.
 	int next = 0;
 
-	SlotQueue() {}
+	SlotRingBuffer() {}
 
 	/** Calls init(T&) on every slot once, e.g. to reserve their storage. */
 	template <typename F>
-	explicit SlotQueue(F init) {
+	explicit SlotRingBuffer(F init) {
 		for (auto& slot : slots) init(slot);
 	}
 
