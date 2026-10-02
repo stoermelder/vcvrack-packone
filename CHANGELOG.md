@@ -36,6 +36,8 @@
     - Added option to pre-warm module previews
     - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Mb.jsonc)
     - Fixed "Newest" module manifest download if Rack user folder is on different disk
+- Module [MIDI-MON](./docs/midi/MidiMon.md)
+    - Improved performance (no more memory allocation on dsp)
 - Module [SIREN](./docs/siren/Siren.md)
     - Fixed a background worker that could stall indefinitely
     - Fixed broken "Cancel tag classification"

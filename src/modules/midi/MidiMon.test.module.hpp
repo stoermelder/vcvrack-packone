@@ -231,6 +231,23 @@ TEST_CASE("SysEx logging", "[MidiMon]") {
 		REQUIRE(textOf(entries[1]).find("f7") != std::string::npos);
 	}
 
+	SECTION("A long message is one hex line, whatever the chunking") {
+		rack::midi::Message big;
+		big.bytes.clear(); // Message starts with 3 default bytes
+		big.bytes.push_back(0xf0);
+		for (int i = 0; i < 60; i++) big.bytes.push_back(uint8_t(i));
+		big.bytes.push_back(0xf7);
+		module->showSysExMsg = true;
+		module->showSysExData = true;
+		module->processMidi(makeEx(MType::SYSEX, big));
+		auto entries = drain(module);
+		REQUIRE(entries.size() == 2);
+		REQUIRE(textOf(entries[0]) == "sysex (60 data bytes)");
+		REQUIRE(textOf(entries[1]).size() == 62 * 3);
+		REQUIRE(textOf(entries[1]).substr(0, 6) == "f0 00 ");
+		REQUIRE(textOf(entries[1]).substr(61 * 3) == "f7 ");
+	}
+
 	SECTION("Nothing logged when SysEx display is off") {
 		module->showSysExMsg = false;
 		module->showSysExData = false;
