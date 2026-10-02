@@ -796,6 +796,8 @@ technique.
 | `rack.log(value [, value ...])` | write a line to the module's log/console. Any number of arguments are concatenated (no separator) into one line, each coerced the same way as a single value: strings logged verbatim (no added quotes), numbers formatted like `number.toString()` (so `rack.log(1 / 3)` prints `0.333333`, and whole numbers print exactly however large: `rack.log(rack.getEventFrame())` shows every digit), booleans as `true`/`false`, `null`/`undefined` (QuickJs) / `nil` (Lua) as `null`/`undefined`. Other values (objects, arrays, tables, functions) use each engine's own stringification — scalars are guaranteed to format identically in both engines |
 | `rack.overlay(s1 [, s2 [, s3]])` | show up to 3 lines in the on-panel overlay |
 | `rack.getEventFrame()` | the engine frame (sample counter) of the event being handled: the arrival frame in `midi.onMessage` (of the last message for assembled NRPN/RPN/14-bit events), the frame of the edge in `trig.onTrigger`, the frame the message completed on in `trig.onTipsyMessage`. `-1` outside an event (top level, `rack.onLoad`, `rack.onUnload`, context-menu callbacks). Use with `midiOut.sendAtFrame()` — see [Enabling sample-accurate timing](#enabling-sample-accurate-timing) |
+| `rack.msToFrames(ms)` | the number of frames in `ms` milliseconds at the current sample rate, rounded to a whole frame (`rack.msToFrames(10)` is 441 at 44.1 kHz). Use it to place messages relative to `rack.getEventFrame()` |
+| `rack.framesToMs(frames)` | the inverse: milliseconds in `frames` frames, not rounded. For example, a measured clock period in frames becomes a time (and a BPM) |
 | `rack.random()` | a random number in [0, 1), drawn from Rack's own RNG (`rack::random::uniform()`), so it shares the patch's seed/determinism |
 | `rack.getConfig(key [, default])` | read a persisted value, or `default` (`undefined`/`nil` if omitted) when `key` is unset. Rejects a malformed key the same way as `setConfig()` — see [Persistence](#persistence) |
 | `rack.setConfig(key, value)` | persist `value` under `key`, or remove the key if `value` is `undefined`/`nil`. Rejects a malformed key, a non-JSON-serializable value, one nested too deeply, or one that would push the whole config past its size cap — see [Persistence](#persistence) |
@@ -1379,6 +1381,92 @@ clock multiplier measures the distance between two trigger edges and spreads
 pulses over it (see
 [Multiply a clock into MIDI clock](#multiply-a-clock-into-midi-clock-sample-accurately)). A frame is a
 sample count: one second is as many frames as the sample rate.
+
+**Converting between milliseconds and frames.** Frames depend on the sample rate
+(441 frames are 10 ms at 44.1 kHz, 480 at 48 kHz), so a script should not hard-code
+them. Two functions convert at the sample rate the module currently runs at:
+
+- `rack.msToFrames(ms)` returns a whole number of frames for `ms` milliseconds
+  (rounded to the nearest frame; negative values stay negative).
+- `rack.framesToMs(frames)` returns the milliseconds for `frames` frames, as a
+  float (not rounded).
+
+Neither needs an event or `midiOut.enableTiming()`; they only read the sample
+rate, so they also work in `rack.onLoad`. Use them whenever a script mixes
+time with frame numbers. `midiOut.sendAfterMs(msg, ms)` already does "event
+plus *N* ms" by itself, so reach for `msToFrames` when the offset is combined
+with other frame arithmetic, as in the swing example below, and for
+`framesToMs` when a measured distance has to become a time.
+
+*Show the tempo of a clock and detect that it stopped.* The script measures
+the distance between two trigger edges in frames, turns it into a tempo (the
+input is a clock with one tick per beat) and treats a gap of more than two
+seconds as a stopped clock:
+
+JavaScript:
+```js
+let lastEdge = -1;
+
+rack.onLoad = function() {
+   trig.enableIn(1);
+};
+
+trig.onTrigger = function(trigPort, channel) {
+   let edge = rack.getEventFrame();
+   if (lastEdge >= 0) {
+      let ms = rack.framesToMs(edge - lastEdge);
+      if (ms > 2000) {
+         rack.overlay("Clock restarted");
+      } else {
+         rack.overlay("Tempo", (60000 / ms).toFixed(1) + " BPM");
+      }
+   }
+   lastEdge = edge;
+};
+```
+
+Lua:
+```lua
+local lastEdge = -1
+
+rack.onLoad = function()
+   trig.enableIn(1)
+end
+
+trig.onTrigger = function(trigPort, channel)
+   local edge = rack.getEventFrame()
+   if lastEdge >= 0 then
+      local ms = rack.framesToMs(edge - lastEdge)
+      if ms > 2000 then
+         rack.overlay("Clock restarted")
+      else
+         rack.overlay("Tempo", string.format("%.1f BPM", 60000 / ms))
+      end
+   end
+   lastEdge = edge
+end
+```
+
+*Swing.* In the [clock multiplier](#multiply-a-clock-into-midi-clock-sample-accurately)
+above, delay every second pulse by a fixed time. The loop already works in
+frames (the period is measured in frames), so the time offset is converted once
+and added:
+
+```js
+let swing = rack.msToFrames(8);   // 8 ms, whatever the sample rate
+for (let k = 1; k < 24; k++) {
+   let offset = Math.round(k * period / 24) + (k % 2 == 0 ? swing : 0);
+   midiOut.sendAtFrame(pulse(), edge + offset);
+}
+```
+
+```lua
+local swing = rack.msToFrames(8)   -- 8 ms, whatever the sample rate
+for k = 1, 23 do
+   local offset = math.floor(k * period / 24 + 0.5) + (k % 2 == 0 and swing or 0)
+   midiOut.sendAtFrame(pulse(), edge + offset)
+end
+```
 
 **Unloading.** A note-on sent just before a reload may still be waiting in Rack's
 output queue, up to one audio block. A message `rack.onUnload` sends with

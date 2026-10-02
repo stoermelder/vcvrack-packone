@@ -159,7 +159,7 @@ and the worked examples are in [SCRIPTING.md](SCRIPTING.md).
 | `trig.*` | the dedicated trigger/gate ports: `enableIn`, `onTrigger`, `onTipsyMessage`, `getTicks`, `isHigh`, `isLow`, `setGate`/`setHigh`/`setLow`/`setTrigger`, `sendTipsy`, `enableTipsyIn` | [trig.*](SCRIPTING.md#trig-dedicated-triggergate-ports) |
 | `param.*` | read the module's panel parameters: `enable`, `getValue`, `getName`, `getValueFormat` | [param.*](SCRIPTING.md#param-panel-knobs) |
 | `number.*` | numeric helpers: `rescale`, `crossfade`, `toString` | [number.*](SCRIPTING.md#number) |
-| `rack.*` | module services: `log`, `overlay`, `random`, `getEventFrame`, `registerContextMenu`, `getConfig`/`setConfig` (persistence), and the `onLoad`/`onUnload` hooks | [rack.*](SCRIPTING.md#rack) · [Persistence](SCRIPTING.md#persistence) |
+| `rack.*` | module services: `log`, `overlay`, `random`, `getEventFrame`, `msToFrames`/`framesToMs`, `registerContextMenu`, `getConfig`/`setConfig` (persistence), and the `onLoad`/`onUnload` hooks | [rack.*](SCRIPTING.md#rack) · [Persistence](SCRIPTING.md#persistence) |
 
 Full documentation of every function and the scripting examples are in
 [SCRIPTING.md](SCRIPTING.md).

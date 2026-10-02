@@ -1039,6 +1039,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("log",      lua_rack_log);
 		setTableFunc("overlay",  lua_rack_overlay);
 		setTableFunc("getEventFrame", lua_rack_getEventFrame);
+		setTableFunc("msToFrames",    lua_rack_msToFrames);
+		setTableFunc("framesToMs",    lua_rack_framesToMs);
 		setTableFunc("random",   lua_rack_random);
 		setTableFunc("registerContextMenu", lua_rack_registerContextMenu);
 		setTableFunc("unregisterContextMenu", lua_rack_unregisterContextMenu);
@@ -2306,6 +2308,18 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// rack.getEventFrame() — frame of the event being handled, -1 outside one.
 	static int lua_rack_getEventFrame(lua_State* L) {
 		lua_pushnumber(L, static_cast<lua_Number>(getEngine(L)->currentInFrame));
+		return 1;
+	}
+
+	// rack.msToFrames(ms) — whole frames in `ms` milliseconds at the current sample rate.
+	static int lua_rack_msToFrames(lua_State* L) {
+		lua_pushinteger(L, static_cast<lua_Integer>(getEngine(L)->msToFrames(luaL_checknumber(L, 1))));
+		return 1;
+	}
+
+	// rack.framesToMs(frames) — milliseconds in `frames` frames at the current sample rate.
+	static int lua_rack_framesToMs(lua_State* L) {
+		lua_pushnumber(L, getEngine(L)->framesToMs(luaL_checknumber(L, 1)));
 		return 1;
 	}
 

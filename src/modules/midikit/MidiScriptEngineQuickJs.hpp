@@ -831,6 +831,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _rack, "log", JS_NewCFunction(ctx, js_rack_log, "log", 1));
 		JS_SetPropertyStr(ctx, _rack, "overlay", JS_NewCFunction(ctx, js_rack_overlay, "overlay", 3));
 		JS_SetPropertyStr(ctx, _rack, "getEventFrame", JS_NewCFunction(ctx, js_rack_getEventFrame, "getEventFrame", 0));
+		JS_SetPropertyStr(ctx, _rack, "msToFrames", JS_NewCFunction(ctx, js_rack_msToFrames, "msToFrames", 1));
+		JS_SetPropertyStr(ctx, _rack, "framesToMs", JS_NewCFunction(ctx, js_rack_framesToMs, "framesToMs", 1));
 		JS_SetPropertyStr(ctx, _rack, "random", JS_NewCFunction(ctx, js_rack_random, "random", 0));
 		JS_SetPropertyStr(ctx, _rack, "registerContextMenu", JS_NewCFunction(ctx, js_rack_registerContextMenu, "registerContextMenu", 1));
 		JS_SetPropertyStr(ctx, _rack, "unregisterContextMenu", JS_NewCFunction(ctx, js_rack_unregisterContextMenu, "unregisterContextMenu", 1));
@@ -2311,6 +2313,18 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// rack.getEventFrame() — frame of the event being handled, -1 outside one.
 	static JSValue js_rack_getEventFrame(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		return JS_NewFloat64(ctx, double(getEngine(ctx)->currentInFrame));
+	}
+
+	// rack.msToFrames(ms) — whole frames in `ms` milliseconds at the current sample rate.
+	static JSValue js_rack_msToFrames(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		if (argc != 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "rack.msToFrames: bad args");
+		return JS_NewFloat64(ctx, getEngine(ctx)->msToFrames(argNum(ctx, argv[0])));
+	}
+
+	// rack.framesToMs(frames) — milliseconds in `frames` frames at the current sample rate.
+	static JSValue js_rack_framesToMs(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		if (argc != 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "rack.framesToMs: bad args");
+		return JS_NewFloat64(ctx, getEngine(ctx)->framesToMs(argNum(ctx, argv[0])));
 	}
 
 	static JSValue js_midiOut_sendAfterTrigger(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {

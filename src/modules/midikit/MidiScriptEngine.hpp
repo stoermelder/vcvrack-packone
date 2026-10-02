@@ -355,6 +355,21 @@ struct MidiScriptEngine {
 		return base + int64_t(sr > 0.f ? ms / 1000.0 * sr : 0.0);
 	}
 
+	// rack.msToFrames() / rack.framesToMs(): conversion at the current sample
+	// rate, which is read on every call because it can change while a script is
+	// loaded. Frames are rounded to a whole number, milliseconds are not. NaN
+	// and an unknown (zero) sample rate give 0. Shared by both engines.
+	double msToFrames(double ms) const {
+		float sr = handler->getSampleRate();
+		if (std::isnan(ms) || !(sr > 0.f)) return 0.0;
+		return std::round(ms / 1000.0 * sr);
+	}
+	double framesToMs(double frames) const {
+		float sr = handler->getSampleRate();
+		if (std::isnan(frames) || !(sr > 0.f)) return 0.0;
+		return frames / sr * 1000.0;
+	}
+
 	// The frame for send: the causing event's in timing mode (-1 outside an
 	// event), always -1 otherwise.
 	int64_t frameForSend() const {

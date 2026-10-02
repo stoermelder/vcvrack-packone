@@ -635,6 +635,47 @@ TEST_CASE("setNRPN and setRPN reject each other's handles", "[MidiKit][CrossEngi
 }
 
 
+// rack.msToFrames / rack.framesToMs at the test module's 44100 Hz.
+TEST_CASE("rack.msToFrames and framesToMs convert at the sample rate", "[MidiKit][CrossEngine]") {
+	struct Case { const char* expr; const char* expected; };
+	const Case cases[] = {
+		{"rack.msToFrames(10)", "441"},
+		{"rack.msToFrames(0)", "0"},
+		{"rack.msToFrames(-10)", "-441"},
+		{"rack.msToFrames(0.5)", "22"},          // 22.05 rounds to a whole frame
+		{"rack.msToFrames(1000)", "44100"},
+		{"rack.framesToMs(44100)", "1000"},
+		{"rack.framesToMs(441)", "10"},
+		{"rack.framesToMs(0)", "0"},
+	};
+	for (const Case& c : cases) {
+		CATCH_INFO(c.expr);
+		EngineResult js = run(jsOnMessage(std::string("rack.log(") + c.expr + ");"));
+		EngineResult lua = run(luaOnMessage(std::string("rack.log(") + c.expr + ")"));
+		CATCH_INFO(js.log);
+		CATCH_INFO(lua.log);
+		REQUIRE(js.log.find(c.expected) != std::string::npos);
+		REQUIRE(lua.log.find(c.expected) != std::string::npos);
+	}
+
+	// Usable with sendAtFrame: 10 ms after the event is still the event's frame
+	// plus 441, so the message is sent (identically in both engines).
+	requireEquivalent(
+		jsOnMessage("let m = midi.create(); midi.setNoteOn(m, 1, 60, 100); midiOut.sendAtFrame(m, rack.getEventFrame() + rack.msToFrames(10));"),
+		luaOnMessage("local m = midi.create(); midi.setNoteOn(m, 1, 60, 100); midiOut.sendAtFrame(m, rack.getEventFrame() + rack.msToFrames(10))"));
+
+	// Non-numbers are rejected rather than treated as 0.
+	for (const char* fn : {"msToFrames", "framesToMs"}) {
+		EngineResult js = run(jsOnMessage(std::string("rack.") + fn + "(\"x\");"));
+		EngineResult lua = run(luaOnMessage(std::string("rack.") + fn + "(\"x\")"));
+		CATCH_INFO(js.log);
+		CATCH_INFO(lua.log);
+		REQUIRE(js.log.find(fn) != std::string::npos);
+		REQUIRE(!lua.log.empty());
+	}
+}
+
+
 // midi.clone
 // clone(msg) must produce an independent copy: same MIDI payload, but a
 // fresh, unsent message. Editing the clone must not touch the source (a
