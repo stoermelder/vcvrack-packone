@@ -650,7 +650,7 @@ struct MidiInputs {
 	bool dispatch(int port, const MessageEx& m) {
 		if (!isEnabled(port) || !ports[port].accepts(m)) return false;
 		MidiScript::QueuedMessage q;
-		q.msg = m.msg;
+		q.msg = *m.source;
 		q.type = m.type;
 		q.paramNumber = m.paramNumber;
 		q.extraValue = m.extraValue;
