@@ -3816,7 +3816,7 @@ TEST_CASE("'Port router.js/.lua' the Active output menu follows the number of ou
 
 static void sendInputAt(MidiKitModule* m, midi::Message msg, int64_t frame) {
 	msg.frame = frame;
-	m->midiIns.ports[0].queue.onMessage(msg);
+	m->midiIns.ports[0].processor.getInput().onMessage(msg);
 }
 
 TEST_CASE("'Euclidean rhythm generator.js/.lua' places its notes on the clock edges", "[MidiKit][EuclidRhythm][Timing]") {

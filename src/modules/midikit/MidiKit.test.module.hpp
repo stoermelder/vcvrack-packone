@@ -675,7 +675,7 @@ TEST_CASE("process() orders trigger, inbound, and outbound effects in one call",
 	// outbound message the engine emits during its pump, scheduled for the tick
 	// just consumed.
 	midi::Message in = makeCc();
-	m->midiIns.ports[0].queue.onMessage(in);
+	m->midiIns.ports[0].processor.getInput().onMessage(in);
 	eng.pending = {1};
 	step(m, 10.f, 7);
 
@@ -1348,7 +1348,7 @@ TEST_CASE("appendExampleItems shows 'None found' when nothing matches", "[MidiKi
 // Feeds raw MIDI into the module's real input queue and runs process() enough
 // times to clear the divider (8), so the queue is actually pumped.
 static void feedMidi(MidiKitModule* m, std::vector<midi::Message> msgs, int64_t& frame) {
-	for (auto& msg : msgs) m->midiIns.ports[0].queue.onMessage(msg);
+	for (auto& msg : msgs) m->midiIns.ports[0].processor.getInput().onMessage(msg);
 	for (int i = 0; i < 9; i++) m->process(Test::makeProcessArgs(frame++));
 }
 
@@ -1456,14 +1456,14 @@ TEST_CASE("Decoder state is cleared on reset and script load", "[MidiKit][MidiPr
 	m->host.getActiveEngine() = nullptr;
 }
 
-TEST_CASE("The port's processor only decodes and owns no queue", "[MidiKit][MidiProcessor]") {
+TEST_CASE("The port's processor owns the queue it pumps", "[MidiKit][MidiProcessor]") {
 	Test::ModuleScaffold<MidiKitModule> mods;
-	// The module's RtInputQueue is drained by MidiInputs::process() via peek()/pop();
-	// the processor is decode-only, so no second queue was allocated behind it.
+	// The queue lives in the processor: no second queue sits beside it, and
+	// getInput() (JSON, widget binding, test injection) is the one it pumps.
 	MidiKitModule* m = mods.create("MidiKit");
 
-	REQUIRE(m->midiIns.ports[0].processor.ownedInput == nullptr);
-	REQUIRE(m->midiIns.ports[0].processor.input == nullptr);
+	REQUIRE(m->midiIns.ports[0].processor.ownedInput != nullptr);
+	REQUIRE(&m->midiIns.ports[0].processor.getInput() == m->midiIns.ports[0].processor.ownedInput.get());
 }
 
 // Notices raised from the audio thread: a flag set, no string built there. They

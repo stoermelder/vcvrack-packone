@@ -490,8 +490,7 @@ struct MidiInputs {
 	// are queued for the worker, not dispatched inline.
 	struct Port : MidiProcessorHandler {
 		/** [Stored to Json] */
-		MidiCInputQueue<> queue;
-		MidiProcessor processor{MidiProcessor::DecodeOnly{}};
+		MidiCProcessor processor;
 		ExtendedCcEnables extendedCc;
 
 		MidiInputs* owner = nullptr;
@@ -598,13 +597,10 @@ struct MidiInputs {
 	void process(int64_t frame) {
 		int n = count.load(std::memory_order_relaxed);
 		for (int i = 0; i < NIN; i++) {
-			// Decoded in place: dispatch() copies what it keeps before pop().
-			while (const midi::Message* m = ports[i].queue.peek(frame)) {
-				if (i < n) ports[i].processor.processMessage(*m);
-				ports[i].queue.pop();
-			}
+			if (i < n) ports[i].processor.process(frame);
+			else ports[i].processor.processBypass(frame);
 			// Once per drain: a saturated queue must not flood the log.
-			if (ports[i].queue.overflow.exchange(false, std::memory_order_relaxed)) {
+			if (ports[i].processor.getInput().overflow.exchange(false, std::memory_order_relaxed)) {
 				log->raise(ScriptLog::INPUT_QUEUE_FULL);
 			}
 		}
@@ -612,9 +608,7 @@ struct MidiInputs {
 
 	// Audio thread. Empties every queue without decoding (bypass).
 	void processBypass(int64_t frame) {
-		for (int i = 0; i < NIN; i++) {
-			while (ports[i].queue.peek(frame)) ports[i].queue.pop();
-		}
+		for (int i = 0; i < NIN; i++) ports[i].processor.processBypass(frame);
 	}
 
 	// Audio thread. Drops the half-received NRPN/RPN/14-bit CC state of every
@@ -629,8 +623,8 @@ struct MidiInputs {
 	void reset() {
 		for (int i = 0; i < NIN; i++) {
 			// reset() only deselects the device; clear() drops what is queued.
-			ports[i].queue.reset();
-			ports[i].queue.clear();
+			ports[i].processor.getInput().reset();
+			ports[i].processor.getInput().clear();
 			ports[i].processor.reset();
 			ports[i].extendedCc.clear();
 		}
@@ -2085,7 +2079,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		// so they come back once a script enables them again, but a patch does
 		// not carry settings of ports nobody uses.
 		for (int i = 0, n = midiIns.enabledCount(); i < n; i++) {
-			json_object_set_new(rootJ, midiInputKey(i).c_str(), midiIns.ports[i].queue.toJson());
+			json_object_set_new(rootJ, midiInputKey(i).c_str(), midiIns.ports[i].processor.getInput().toJson());
 		}
 		for (int i = 0, n = midiOuts.enabledCount(); i < n; i++) {
 			json_object_set_new(rootJ, midiOutputKey(i).c_str(), midiOuts.ports[i].toJson());
@@ -2115,7 +2109,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 		for (int i = 0; i < MIDI_INPUTS; i++) {
 			json_t* midiInputJ = json_object_get(rootJ, midiInputKey(i).c_str());
-			if (midiInputJ && json_is_object(midiInputJ)) midiIns.ports[i].queue.fromJson(midiInputJ);
+			if (midiInputJ && json_is_object(midiInputJ)) midiIns.ports[i].processor.getInput().fromJson(midiInputJ);
 		}
 		for (int i = 0; i < MIDI_OUTPUTS; i++) {
 			json_t* midiOutputJ = json_object_get(rootJ, midiOutputKey(i).c_str());
@@ -2350,7 +2344,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	void addMidiInputDisplay(int i, Rect r) {
 		MidiWidget<>* display = createWidget<MidiWidget<>>(r.pos);
 		display->box.size = r.size;
-		display->setMidiPort(module ? &module->midiIns.ports[i].queue : NULL, CONFIG::midiInputs > 1 ? string::f("In %d", i + 1) : "In");
+		display->setMidiPort(module ? &module->midiIns.ports[i].processor.getInput() : NULL, CONFIG::midiInputs > 1 ? string::f("In %d", i + 1) : "In");
 		addChild(display);
 	}
 
@@ -2410,7 +2404,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		menu->addChild(new MenuSeparator());
 		// Ports 2+ are only configurable while the script has enabled them.
 		for (int i = 0, n = module->midiIns.enabledCount(); i < n; i++) {
-			menu->addChild(Rack::createStickyMidiMenuItem(CONFIG::midiInputs > 1 ? string::f("MIDI input %d", i + 1) : "MIDI input", &module->midiIns.ports[i].queue));
+			menu->addChild(Rack::createStickyMidiMenuItem(CONFIG::midiInputs > 1 ? string::f("MIDI input %d", i + 1) : "MIDI input", &module->midiIns.ports[i].processor.getInput()));
 		}
 		for (int i = 0, n = module->midiOuts.enabledCount(); i < n; i++) {
 			menu->addChild(Rack::createStickyMidiMenuItem(CONFIG::midiOutputs > 1 ? string::f("MIDI output %d", i + 1) : "MIDI output", &module->midiOuts.ports[i]));

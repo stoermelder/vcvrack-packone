@@ -72,7 +72,7 @@ static std::vector<midi::Message> nrpnQuadThenCc() {
 // has fired and its log entries are queued.
 static void feedMidiPump(MidiKitModule* m, const std::vector<midi::Message>& msgs) {
 	int64_t frame = 1;
-	for (const auto& msg : msgs) m->midiIns.ports[0].queue.onMessage(msg);
+	for (const auto& msg : msgs) m->midiIns.ports[0].processor.getInput().onMessage(msg);
 	for (int i = 0; i < 9; i++) m->process(Test::makeProcessArgs(frame++));
 }
 

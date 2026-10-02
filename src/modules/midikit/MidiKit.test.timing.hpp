@@ -79,7 +79,7 @@ struct TimingRig {
 	// Queues an inbound message that Rack would release at `atFrame`.
 	void inject(midi::Message msg, int64_t atFrame) {
 		msg.frame = atFrame;
-		m->midiIns.ports[0].queue.onMessage(msg);
+		m->midiIns.ports[0].processor.getInput().onMessage(msg);
 	}
 };
 
@@ -650,7 +650,7 @@ TEST_CASE("Frames: a message dispatches under its arrival frame", "[MidiKit][tim
 	ProbeRig rig;
 	midi::Message msg = noteOn(0, 60, 100);
 	msg.frame = 20;
-	rig.m->midiIns.ports[0].queue.onMessage(msg);
+	rig.m->midiIns.ports[0].processor.getInput().onMessage(msg);
 	rig.run(40);
 
 	REQUIRE(rig.eng.seen.size() == 1);
@@ -667,7 +667,7 @@ TEST_CASE("Frames: an assembled NRPN carries its last component's frame", "[Midi
 	const int ccs[4][2] = { {99, 1}, {98, 2}, {6, 3}, {38, 4} };
 	for (int i = 0; i < 4; i++) {
 		midi::Message msg = Test::makeMidiMessage(0xb, 0, ccs[i][0], ccs[i][1], 20 + i * 3);
-		rig.m->midiIns.ports[0].queue.onMessage(msg);
+		rig.m->midiIns.ports[0].processor.getInput().onMessage(msg);
 	}
 	rig.run(60);
 
