@@ -33,16 +33,16 @@
 // Configuration - change these values as needed
 let config = {
     // Fixed note length, in ticks of the trigger input's clock
-    lengthTicks: 12,
+    lengthTicks: rack.getConfig("lengthTicks", 12),
 
     // Only quantise this channel; set to 0 to quantise every channel
-    channel: 0,
+    channel: rack.getConfig("channel", 0),
 
     // Forward non-note messages (CC, pitch bend, clock, ...) unchanged
-    passThroughOther: true,
+    passThroughOther: rack.getConfig("passThroughOther", true),
 
     // Log each quantised note
-    verbose: false
+    verbose: rack.getConfig("verbose", false)
 };
 
 // Internal state.
@@ -51,15 +51,95 @@ let state = {
     sounding: []
 };
 
-// The scheduled Note-Offs are counted in ticks of the trigger input's clock,
-// so that clock must be enabled — without trig.enableIn() the module does not
-// process the trigger input at all and the scheduled sends never fire.
-trig.enableIn(1, 1);
+// Context menu choices
+let LENGTH_TICKS = [6, 12, 24, 48];
+let LENGTH_LABELS = ["6 (16th)", "12 (8th)", "24 (quarter)", "48 (half)"];
+let CHANNEL_LABELS = ["All"];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
 
+function lengthTicksIndex() {
+    for (let i = 0; i < LENGTH_TICKS.length; i++) {
+        if (LENGTH_TICKS[i] === config.lengthTicks) return i;
+    }
+    return 0;
+};
+
+function matchesChannel(ch) {
+    return config.channel === 0 || ch === config.channel;
+};
+
+// Builds and schedules the Note-Off that ends a quantised note.
+function scheduleNoteOff(ch, note) {
+    let off = midi.create();
+    midi.setNoteOff(off, ch, note);
+    midiOut.sendAfterTrigger(off, config.lengthTicks);
+};
+
+// Setup
 rack.onLoad = function() {
+    // The scheduled Note-Offs are counted in ticks of the trigger input's clock,
+    // so that clock must be enabled — without trig.enableIn() the module does not
+    // process the trigger input at all and the scheduled sends never fire.
+    trig.enableIn(1, 1);
+
     for (let n = 0; n < 128; n++) {
         state.sounding[n] = false;
     }
+
+    // Context menu - right-click the module to change these settings live.
+    // Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type: "options",
+        label: "Note length",
+        options: LENGTH_LABELS,
+        onGetValue: function() {
+            return lengthTicksIndex();
+        },
+        onChange: function(idx) {
+            config.lengthTicks = LENGTH_TICKS[idx];
+            rack.setConfig("lengthTicks", config.lengthTicks);
+            rack.log("Length: ", config.lengthTicks, " ticks");
+        }
+    });
+
+    rack.registerContextMenu({
+        type: "options",
+        label: "Channel",
+        options: CHANNEL_LABELS,
+        onGetValue: function() {
+            return config.channel;
+        },
+        onChange: function(idx) {
+            config.channel = idx;
+            rack.setConfig("channel", config.channel);
+            rack.log("Channel: ", CHANNEL_LABELS[idx]);
+        }
+    });
+
+    rack.registerContextMenu({
+        type: "boolean",
+        label: "Pass through other messages",
+        onGetValue: function() {
+            return config.passThroughOther;
+        },
+        onChange: function(checked) {
+            config.passThroughOther = checked;
+            rack.setConfig("passThroughOther", config.passThroughOther);
+        }
+    });
+
+    rack.registerContextMenu({
+        type: "boolean",
+        label: "Log quantised notes",
+        onGetValue: function() {
+            return config.verbose;
+        },
+        onChange: function(checked) {
+            config.verbose = checked;
+            rack.setConfig("verbose", config.verbose);
+        }
+    });
+
     rack.log("Note length quantiser initialized");
     rack.log("Length: ", config.lengthTicks, " ticks");
     if (config.channel === 0) {
@@ -69,6 +149,8 @@ rack.onLoad = function() {
         rack.log("Channel: ", config.channel);
     }
 };
+
+// Callbacks
 
 // Releases every note with a still-pending scheduled Note-Off. Without this,
 // a note whose release hasn't fired yet at the moment the script is replaced,
@@ -88,79 +170,6 @@ rack.onUnload = function() {
         }
     }
 };
-
-function matchesChannel(ch) {
-    return config.channel === 0 || ch === config.channel;
-};
-
-// Builds and schedules the Note-Off that ends a quantised note.
-function scheduleNoteOff(ch, note) {
-    let off = midi.create();
-    midi.setNoteOff(off, ch, note);
-    midiOut.sendAfterTrigger(off, config.lengthTicks);
-};
-
-// Context menu - right-click the module to change these settings live.
-// Each menu mirrors a `config` value above; onChange applies the choice.
-let LENGTH_TICKS = [6, 12, 24, 48];
-let LENGTH_LABELS = ["6 (16th)", "12 (8th)", "24 (quarter)", "48 (half)"];
-let CHANNEL_LABELS = ["All"];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
-
-function lengthTicksIndex() {
-    for (let i = 0; i < LENGTH_TICKS.length; i++) {
-        if (LENGTH_TICKS[i] === config.lengthTicks) return i;
-    }
-    return 0;
-};
-
-rack.registerContextMenu({
-    type: "options",
-    label: "Note length",
-    options: LENGTH_LABELS,
-    onGetValue: function() {
-        return lengthTicksIndex();
-    },
-    onChange: function(idx) {
-        config.lengthTicks = LENGTH_TICKS[idx];
-        rack.log("Length: ", config.lengthTicks, " ticks");
-    }
-});
-
-rack.registerContextMenu({
-    type: "options",
-    label: "Channel",
-    options: CHANNEL_LABELS,
-    onGetValue: function() {
-        return config.channel;
-    },
-    onChange: function(idx) {
-        config.channel = idx;
-        rack.log("Channel: ", CHANNEL_LABELS[idx]);
-    }
-});
-
-rack.registerContextMenu({
-    type: "boolean",
-    label: "Pass through other messages",
-    onGetValue: function() {
-        return config.passThroughOther;
-    },
-    onChange: function(checked) {
-        config.passThroughOther = checked;
-    }
-});
-
-rack.registerContextMenu({
-    type: "boolean",
-    label: "Log quantised notes",
-    onGetValue: function() {
-        return config.verbose;
-    },
-    onChange: function(checked) {
-        config.verbose = checked;
-    }
-});
 
 midi.onMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);

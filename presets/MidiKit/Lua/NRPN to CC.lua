@@ -36,7 +36,7 @@ local config = {
     },
 
     -- Optional: CC channel (1-16, default: 1)
-    ccChannel = 1
+    ccChannel = rack.getConfig("ccChannel", 1)
 }
 
 -- Internal state
@@ -50,6 +50,10 @@ local state = {
     hasValueLsb = false,
     hasValueMsb = false
 }
+
+-- Context menu choices
+local CHANNEL_LABELS = {}
+for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
 
 -- Returns the CC number mapped to nrpnNumber, or -1 if not mapped
 local function findCcNumber(nrpnNumber)
@@ -70,30 +74,30 @@ local function resetState()
     state.hasValueMsb = false
 end
 
+-- Setup
 rack.onLoad = function()
+    -- Context menu - right-click the module to change the output channel live.
+    -- The menu mirrors the `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type = "options",
+        label = "CC channel",
+        options = CHANNEL_LABELS,
+        onGetValue = function()
+            return config.ccChannel - 1
+        end,
+        onChange = function(idx)
+            config.ccChannel = idx + 1
+            rack.setConfig("ccChannel", config.ccChannel)
+            rack.log("CC channel: ", config.ccChannel)
+        end
+    })
+
     rack.log("NRPN to CC converter initialized")
     rack.log("Mapped NRPN numbers: ", #config.map)
     rack.log("Channel: ", config.ccChannel)
 end
 
--- Context menu - right-click the module to change these settings live.
--- Each menu mirrors a `config` value above; onChange applies the choice.
-local CHANNEL_LABELS = {}
-for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
-
-rack.registerContextMenu({
-    type = "options",
-    label = "CC channel",
-    options = CHANNEL_LABELS,
-    onGetValue = function()
-        return config.ccChannel - 1
-    end,
-    onChange = function(idx)
-        config.ccChannel = idx + 1
-        rack.log("CC channel: ", config.ccChannel)
-    end
-})
-
+-- Callbacks
 midi.onMessage = function(midiPort, msg)
     if not midi.isCc(msg) then
         return

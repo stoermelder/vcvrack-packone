@@ -36,7 +36,7 @@ let config = {
     ],
 
     // Optional: CC channel (1-16, default: 1)
-    ccChannel: 1
+    ccChannel: rack.getConfig("ccChannel", 1)
 };
 
 // Internal state
@@ -51,11 +51,9 @@ let state = {
     hasValueMsb: false
 };
 
-rack.onLoad = function() {
-    rack.log("NRPN to CC converter initialized");
-    rack.log("Mapped NRPN numbers: ", config.map.length);
-    rack.log("Channel: ", config.ccChannel);
-};
+// Context menu choices
+let CHANNEL_LABELS = [];
+for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
 
 // Returns the CC number mapped to nrpnNumber, or -1 if not mapped
 function findCcNumber(nrpnNumber) {
@@ -76,23 +74,30 @@ function resetState() {
     state.hasValueMsb = false;
 };
 
-// Context menu - right-click the module to change these settings live.
-// Each menu mirrors a `config` value above; onChange applies the choice.
-let CHANNEL_LABELS = [];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+// Setup
+rack.onLoad = function() {
+    // Context menu - right-click the module to change the output channel live.
+    // The menu mirrors the `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type: "options",
+        label: "CC channel",
+        options: CHANNEL_LABELS,
+        onGetValue: function() {
+            return config.ccChannel - 1;
+        },
+        onChange: function(idx) {
+            config.ccChannel = idx + 1;
+            rack.setConfig("ccChannel", config.ccChannel);
+            rack.log("CC channel: ", config.ccChannel);
+        }
+    });
 
-rack.registerContextMenu({
-    type: "options",
-    label: "CC channel",
-    options: CHANNEL_LABELS,
-    onGetValue: function() {
-        return config.ccChannel - 1;
-    },
-    onChange: function(idx) {
-        config.ccChannel = idx + 1;
-        rack.log("CC channel: ", config.ccChannel);
-    }
-});
+    rack.log("NRPN to CC converter initialized");
+    rack.log("Mapped NRPN numbers: ", config.map.length);
+    rack.log("Channel: ", config.ccChannel);
+};
+
+// Callbacks
 
 // Called when a MIDI message is received
 midi.onMessage = function(midiPort, msg) {

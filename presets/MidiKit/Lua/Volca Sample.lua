@@ -31,9 +31,9 @@
 -- All other messages (CC, aftertouch, program change, clock, etc.) pass
 -- through unchanged so they reach the Volca directly.
 
--- ---------------------------------------------------------------------------
+
 -- Configuration – edit these values to match your setup
--- ---------------------------------------------------------------------------
+
 local config = {
     -- MIDI channel for single-channel poly mode (1-16).  Set to 0 to disable.
     polyChannel = 16,
@@ -62,10 +62,10 @@ local config = {
     pbOutMax = 70
 }
 
--- ---------------------------------------------------------------------------
+
 -- Speed table – reconstructed from the Volca Sample's internal pitch mapping.
 -- Index 1 = MIDI note 36 (C2), value = CC 43 speed for that pitch.
--- ---------------------------------------------------------------------------
+
 local SPEED_TABLE = {
     19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,   -- C2 – B2   (36-47)
     32, 34, 37, 40, 43, 45, 48, 51, 53, 56, 59, 61,   -- C3 – B3   (48-59)
@@ -74,9 +74,9 @@ local SPEED_TABLE = {
    112                                                  -- C6        (84)
 }
 
--- ---------------------------------------------------------------------------
+
 -- Internal state
--- ---------------------------------------------------------------------------
+
 local state = {
     -- Current voice channel (round-robin, advances on each Note-On in poly mode)
     voiceChan = config.firstVoice,
@@ -86,9 +86,8 @@ local state = {
     activeNotes = {}
 }
 
--- ---------------------------------------------------------------------------
+
 -- Helpers
--- ---------------------------------------------------------------------------
 
 -- Returns the CC 43 speed value for a MIDI note, or -1 if out of range.
 local function speedForNote(note)
@@ -125,9 +124,9 @@ local function nextVoice()
     end
 end
 
--- ---------------------------------------------------------------------------
+
 -- Lifecycle
--- ---------------------------------------------------------------------------
+
 rack.onLoad = function()
     rack.log("Volca Sample initialized")
 
@@ -161,14 +160,14 @@ rack.onUnload = function()
     end
 end
 
--- ---------------------------------------------------------------------------
+
 -- MIDI processing
--- ---------------------------------------------------------------------------
+
 midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
     local isPoly = config.polyChannel > 0 and ch == config.polyChannel
 
-    -- -- Pitch bend → CC 44 ------------------------------------------------
+    -- Pitch bend → CC 44
     if midi.isPitchWheel(msg) then
         -- midi.getValue() returns the MSB (0-127) for pitch-bend messages,
         -- matching the Arduino's data[2] byte.
@@ -188,7 +187,7 @@ midi.onMessage = function(midiPort, msg)
         return  -- consume pitch bend
     end
 
-    -- -- Note On -----------------------------------------------------------
+    -- Note On
     if midi.isNoteOn(msg) and midi.getValue(msg) > 0 then
         local note = midi.getNote(msg)
         local velocity = midi.getValue(msg)
@@ -220,7 +219,7 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    -- -- Note Off ----------------------------------------------------------
+    -- Note Off
     if midi.isNoteOff(msg) or (midi.isNoteOn(msg) and midi.getValue(msg) == 0) then
         local note = midi.getNote(msg)
 

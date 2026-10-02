@@ -32,15 +32,14 @@
 -- at that moment would hang forever, since nothing else remembers those
 -- note numbers are down once this script's state is gone.
 
-
 -- Configuration - change these values as needed
 local config = {
     -- Semitone offsets added for every played note. Include 0 to keep the
     -- original note; omit it to hear only the harmony voices.
-    intervals = { 0, 4, 7 },
+    intervals = rack.getConfig("intervals", { 0, 4, 7 }),
 
     -- Only harmonize this channel; 0 = every channel
-    channel = 0,
+    channel = rack.getConfig("channel", 0),
 
     -- Velocity scaling for the added voices, relative to the played note.
     -- The 0-offset voice is always sent at full velocity.
@@ -56,24 +55,18 @@ local state = {
     voicesOf = {}
 }
 
-rack.onLoad = function()
-    for n = 0, 127 do
-        state.refCount[n] = 0
-        state.voicesOf[n] = {}
-    end
-    rack.log("Chord harmonizer initialized")
-    rack.log("Voices per note: ", #config.intervals)
-end
-
-rack.onUnload = function()
-    for n = 0, 127 do
-        if state.refCount[n] > 0 then
-            local off = midi.create()
-            midi.setNoteOff(off, 1, n)
-            midiOut.send(off)
-        end
-    end
-end
+-- Context menu choices
+local CHORD_INTERVALS = {
+    { 0, 4, 7 },     -- Major triad
+    { 0, 3, 7 },     -- Minor triad
+    { 0, 3, 7, 10 }, -- Minor seventh
+    { 0, 7 },        -- Power chord
+    { 0, 12 },       -- Octave doubling
+    { 0, -12, 12 }   -- Three octaves
+}
+local CHORD_LABELS = { "Major triad", "Minor triad", "Minor seventh", "Power chord", "Octave doubling", "Three octaves" }
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
 
 local function matchesChannel(ch)
     return config.channel == 0 or ch == config.channel
@@ -99,20 +92,6 @@ local function releaseVoices(ch, note)
     state.voicesOf[note] = {}
 end
 
--- Context menu - right-click the module to change these settings live.
--- Each menu mirrors a `config` value above; onChange applies the choice.
-local CHORD_INTERVALS = {
-    { 0, 4, 7 },     -- Major triad
-    { 0, 3, 7 },     -- Minor triad
-    { 0, 3, 7, 10 }, -- Minor seventh
-    { 0, 7 },        -- Power chord
-    { 0, 12 },       -- Octave doubling
-    { 0, -12, 12 }   -- Three octaves
-}
-local CHORD_LABELS = { "Major triad", "Minor triad", "Minor seventh", "Power chord", "Octave doubling", "Three octaves" }
-local CHANNEL_LABELS = { "All" }
-for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
-
 local function chordIndex()
     for i = 1, #CHORD_INTERVALS do
         if #config.intervals == #CHORD_INTERVALS[i] then
@@ -126,31 +105,57 @@ local function chordIndex()
     return 0
 end
 
-rack.registerContextMenu({
-    type = "options",
-    label = "Chord",
-    options = CHORD_LABELS,
-    onGetValue = function()
-        return chordIndex()
-    end,
-    onChange = function(idx)
-        config.intervals = CHORD_INTERVALS[idx + 1]
-        rack.log("Chord: ", CHORD_LABELS[idx + 1], " (", #config.intervals, " voices)")
+-- Setup
+rack.onLoad = function()
+    for n = 0, 127 do
+        state.refCount[n] = 0
+        state.voicesOf[n] = {}
     end
-})
 
-rack.registerContextMenu({
-    type = "options",
-    label = "Channel",
-    options = CHANNEL_LABELS,
-    onGetValue = function()
-        return config.channel
-    end,
-    onChange = function(idx)
-        config.channel = idx
-        rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
+    -- Context menu - right-click the module to change these settings live.
+    -- Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type = "options",
+        label = "Chord",
+        options = CHORD_LABELS,
+        onGetValue = function()
+            return chordIndex()
+        end,
+        onChange = function(idx)
+            config.intervals = CHORD_INTERVALS[idx + 1]
+            rack.setConfig("intervals", config.intervals)
+            rack.log("Chord: ", CHORD_LABELS[idx + 1], " (", #config.intervals, " voices)")
+        end
+    })
+
+    rack.registerContextMenu({
+        type = "options",
+        label = "Channel",
+        options = CHANNEL_LABELS,
+        onGetValue = function()
+            return config.channel
+        end,
+        onChange = function(idx)
+            config.channel = idx
+            rack.setConfig("channel", config.channel)
+            rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
+        end
+    })
+
+    rack.log("Chord harmonizer initialized")
+    rack.log("Voices per note: ", #config.intervals)
+end
+
+-- Callbacks
+rack.onUnload = function()
+    for n = 0, 127 do
+        if state.refCount[n] > 0 then
+            local off = midi.create()
+            midi.setNoteOff(off, 1, n)
+            midiOut.send(off)
+        end
     end
-})
+end
 
 midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)

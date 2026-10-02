@@ -20,13 +20,11 @@ TEST_CASE("Construction and initialization", "[MidiKit]") {
 
 	REQUIRE(m != nullptr);
 	REQUIRE(m->NUM_PARAMS == 4);
-	REQUIRE(m->NUM_INPUTS == 5);   // 4 voltage + 1 trigger
-	REQUIRE(m->NUM_OUTPUTS == 1);  // trigger out
+	REQUIRE(m->NUM_INPUTS == 6);   // 4 voltage + 2 trigger
+	REQUIRE(m->NUM_OUTPUTS == 2);  // 2 trigger out
 	REQUIRE(m->NUM_LIGHTS == 0);
 	REQUIRE(m->host.script == "");
-	REQUIRE(m->sample == 0);
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 0);
-
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 0);
 }
 
 
@@ -54,7 +52,6 @@ TEST_CASE("Preset JSON null-guards", "[MidiKit][JSON]") {
 		Test::testPresetOversizedArrays(module, rootJ);
 		json_decref(rootJ);
 	}
-
 }
 
 
@@ -64,13 +61,12 @@ TEST_CASE("process() does not crash with no script", "[MidiKit]") {
 
 	// With no engine loaded, the dispatch path (processInMessage/processInTick/
 	// activeEngine->process()) is skipped, but the module's own out-queue drain
-	// and sample counting are unconditional — it must simply not crash.
+	// is unconditional — it must simply not crash.
 	for (int i = 0; i < 20; i++) {
 		REQUIRE_NOTHROW(m->process(Test::makeProcessArgs(i + 1)));
 	}
 
-	REQUIRE(m->sample == 20);
-
+	REQUIRE(m->timingCurrentFrame.load() == 20);
 }
 
 TEST_CASE("Default engine it not set", "[MidiKit]") {
@@ -78,7 +74,6 @@ TEST_CASE("Default engine it not set", "[MidiKit]") {
 	MidiKitModule* m = mods.create("MidiKit");
 
 	REQUIRE(m->host.getActiveEngine() == nullptr);
-
 }
 
 TEST_CASE("@engine minilua@v1 header selects Lua engine", "[MidiKit]") {
@@ -88,7 +83,6 @@ TEST_CASE("@engine minilua@v1 header selects Lua engine", "[MidiKit]") {
 	m->loadScript(LUA_SCRIPT);
 
 	REQUIRE(m->host.isLuaEngine());
-
 }
 
 TEST_CASE("QuickJs header keeps QuickJs engine active", "[MidiKit]") {
@@ -101,7 +95,6 @@ TEST_CASE("QuickJs header keeps QuickJs engine active", "[MidiKit]") {
 
 	m->loadScript(QUICKJS_SCRIPT);
 	REQUIRE(m->host.isQuickJsEngine());
-
 }
 
 TEST_CASE("clearScript resets to empty and restores no engine", "[MidiKit]") {
@@ -115,7 +108,6 @@ TEST_CASE("clearScript resets to empty and restores no engine", "[MidiKit]") {
 
 	REQUIRE(m->host.script == "");
 	REQUIRE(m->host.getActiveEngine() == nullptr);
-
 }
 
 TEST_CASE("Trigger input increments triggerTick", "[MidiKit]") {
@@ -137,17 +129,16 @@ TEST_CASE("Trigger input increments triggerTick", "[MidiKit]") {
 	// Rising edge → tick increments
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(1));
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 1);
 
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
 	m->process(Test::makeProcessArgs(2));
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);  // no change on falling edge
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 1);  // no change on falling edge
 
 	// Second pulse
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(3));
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 2);
-
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 2);
 }
 
 TEST_CASE("Trigger input is not processed until the trigger is enabled", "[MidiKit]") {
@@ -171,7 +162,7 @@ TEST_CASE("Trigger input is not processed until the trigger is enabled", "[MidiK
 	m->process(Test::makeProcessArgs(2));
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(3));
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 0);
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 0);
 
 	// Enabling the channel (as the script's trig.enableIn(1) would do) turns
 	// trigger processing on — the next rising edge counts a tick.
@@ -180,8 +171,7 @@ TEST_CASE("Trigger input is not processed until the trigger is enabled", "[MidiK
 	m->process(Test::makeProcessArgs(4));
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
 	m->process(Test::makeProcessArgs(5));
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
-
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 1);
 }
 
 TEST_CASE("Polyphonic trigger input counts ticks per channel", "[MidiKit]") {
@@ -212,9 +202,8 @@ TEST_CASE("Polyphonic trigger input counts ticks per channel", "[MidiKit]") {
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 1);
 	m->process(Test::makeProcessArgs(4));
 
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 2);
-	REQUIRE(m->triggersIn.triggerTick[0][1] == 1);
-
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 2);
+	REQUIRE(m->triggerIns.triggerTick[0][1] == 1);
 }
 
 TEST_CASE("JSON round-trip preserves panelTheme and script", "[MidiKit]") {
@@ -236,7 +225,6 @@ TEST_CASE("JSON round-trip preserves panelTheme and script", "[MidiKit]") {
 	REQUIRE(m->panelTheme == 2);
 	REQUIRE(m->host.script == LUA_SCRIPT);
 	REQUIRE(m->host.isLuaEngine());
-
 }
 
 TEST_CASE("process() does not crash with Lua script loaded", "[MidiKit]") {
@@ -248,12 +236,10 @@ TEST_CASE("process() does not crash with Lua script loaded", "[MidiKit]") {
 	for (int i = 0; i < 20; i++) {
 		REQUIRE_NOTHROW(m->process(Test::makeProcessArgs(i + 1)));
 	}
-
 }
 
 
 // MidiOutput::processTick — tick-scheduled sends
-//
 // midi::Output::sendMessage is non-virtual and no-ops without a subscribed
 // device, so a send is not directly observable here. These tests assert on
 // queue drainage instead: an entry leaves tickQueue exactly when it is sent,
@@ -270,7 +256,7 @@ static midi::Message makeCc() {
 }
 
 TEST_CASE("processTick sends a message on its exact tick", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 
 	out.send(msg, 0, 5);
@@ -284,7 +270,7 @@ TEST_CASE("processTick sends a message on its exact tick", "[MidiKit]") {
 }
 
 TEST_CASE("processTick sends a message whose tick has already passed", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 
 	// process() calls processTick() before draining the engine out-queue, so a
@@ -297,7 +283,7 @@ TEST_CASE("processTick sends a message whose tick has already passed", "[MidiKit
 }
 
 TEST_CASE("processTick drains every due message in one call", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 
 	out.send(msg, 0, 3);
@@ -314,7 +300,7 @@ TEST_CASE("processTick drains every due message in one call", "[MidiKit]") {
 }
 
 TEST_CASE("processTick: a stale entry does not block later messages", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 
 	// tickQueue is ordered smallest-tick-first, so the stale entry sits at the
@@ -328,7 +314,7 @@ TEST_CASE("processTick: a stale entry does not block later messages", "[MidiKit]
 }
 
 TEST_CASE("processTick leaves not-yet-due messages queued", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 
 	out.send(msg, 0, 10);
@@ -343,7 +329,7 @@ TEST_CASE("processTick leaves not-yet-due messages queued", "[MidiKit]") {
 }
 
 TEST_CASE("processFrame sends a message on its exact frame", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 	msg.frame = 5;
 
@@ -358,7 +344,7 @@ TEST_CASE("processFrame sends a message on its exact frame", "[MidiKit]") {
 }
 
 TEST_CASE("processFrame sends a message whose frame has already passed", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 	msg.frame = 5;
 
@@ -370,7 +356,7 @@ TEST_CASE("processFrame sends a message whose frame has already passed", "[MidiK
 }
 
 TEST_CASE("processFrame drains every due message in one call", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 
 	msg.frame = 3;
@@ -390,7 +376,7 @@ TEST_CASE("processFrame drains every due message in one call", "[MidiKit]") {
 }
 
 TEST_CASE("processFrame leaves not-yet-due messages queued", "[MidiKit]") {
-	MidiOutput out;
+	MidiOutput<1> out;
 	midi::Message msg = makeCc();
 	msg.frame = 10;
 
@@ -407,7 +393,6 @@ TEST_CASE("processFrame leaves not-yet-due messages queued", "[MidiKit]") {
 }
 
 // process() ordering and the divider boundary
-//
 // The engine interface is virtual, so a recording stub can observe exactly
 // which process() calls reach the engine and what frame each one saw. That
 // makes the trigger/divider interleaving assertable rather than inferred from
@@ -431,7 +416,7 @@ struct RecordingEngine : MidiScriptEngine {
 	// sendMidi() reaches the same module out-queue process() drains — the queue
 	// is module-owned now, so a double would have to reimplement the thing
 	// under test. A worker is not optional: every engine needs one before any
-	// dispatch path (including closeState() from onRemove()) can run.
+	// dispatch path (including host.unload() from onRemove()) can run.
 	explicit RecordingEngine(MidiKitModule* module) : MidiScriptEngine(module, 4, 1, 1, 4, 1, 1), module(module) {
 		setWorker(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
 	}
@@ -442,7 +427,7 @@ struct RecordingEngine : MidiScriptEngine {
 		for (int ticks : pending) {
 			midi::Message msg = makeCc();
 			handler->sendMidi(0, &msg, 1, 0, ticks);
-			tickAtEmit.push_back(module->triggersIn.triggerTick[0][0]);
+			tickAtEmit.push_back(module->triggerIns.triggerTick[0][0]);
 		}
 		pending.clear();
 	}
@@ -450,7 +435,7 @@ struct RecordingEngine : MidiScriptEngine {
 	// Unused by these tests — stubbed only to satisfy the interface.
 	void loadScriptOnWorker(const char* script, const std::string& initialConfigJson) override { }
 	bool testScript(const std::string& script) override { return false; }
-	void closeStateOnWorker() override { }
+	void unloadScriptOnWorker() override { }
 	// Everything the module handed over, in order, so tests can assert on the
 	// decode result the audio thread produced.
 	std::vector<StoermelderPackOne::MidiScript::QueuedMessage> received;
@@ -458,7 +443,7 @@ struct RecordingEngine : MidiScriptEngine {
 		received.push_back(msg);
 		events.push_back(MESSAGE);
 	}
-	void processInTick(int trigPort, uint8_t channel) override {
+	void processInTick(int trigPort, uint8_t channel, int64_t frame) override {
 		events.push_back(TICK);
 	}
 	void dispatchMidiMessage(int midiPort, midi::Message& msg) override { }
@@ -474,6 +459,7 @@ struct RecordingEngine : MidiScriptEngine {
 		callback(empty);
 	}
 	void invokeContextMenuCallback(int callbackId, int value) override { }
+	bool getMemoryUsage(size_t& used, size_t& total) override { return false; } 
 };
 
 // Drives one full sample through process() with the trigger input held at the
@@ -512,7 +498,7 @@ TEST_CASE("process() runs the engine only on divider ticks", "[MidiKit]") {
 	// Detach the recorder before this stack-allocated RecordingEngine goes out
 	// of scope: mods's destructor runs after eng's (mods was declared first,
 	// so it's destroyed last) and calls Test::destroyModule -> onRemove() ->
-	// host.closeState(), which touches the active engine.
+	// host.unload(), which touches the active engine.
 	m->host.getActiveEngine() = nullptr;
 }
 
@@ -531,17 +517,17 @@ TEST_CASE("process() drains the engine out-queue on a divider tick", "[MidiKit]"
 		step(m, 0.f, f);
 	}
 	REQUIRE(eng.pending.size() == 3);
-	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 0);
 
 	step(m, 0.f, 7);
 
 	REQUIRE(eng.pending.empty());
-	REQUIRE(m->midiOutput.tickQueue[0].size() == 3);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 3);
 
 	// Detach the recorder before this stack-allocated RecordingEngine goes out
 	// of scope: mods's destructor runs after eng's (mods was declared first,
 	// so it's destroyed last) and calls Test::destroyModule -> onRemove() ->
-	// host.closeState(), which touches the active engine.
+	// host.unload(), which touches the active engine.
 	m->host.getActiveEngine() = nullptr;
 }
 
@@ -570,27 +556,27 @@ TEST_CASE("process() consumes the tick before the engine schedules on it", "[Mid
 	step(m, 10.f, 7);
 	REQUIRE(eng.processCalls == 1);
 
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 1);
 	REQUIRE(eng.tickAtEmit.size() == 1);
 	REQUIRE(eng.tickAtEmit[0] == 1);       // emitted after the tick was consumed
-	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);
-	REQUIRE(m->midiOutput.tickQueue[0].top().tick == 1);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 1);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].top().tick == 1);
 
 	// The next trigger drains it rather than stranding it behind the counter.
 	// The entry sits at tick 1 while the counter moves to 2, so only ">=" can
 	// pop it — "==" strands it here permanently.
 	step(m, 0.f, 8);
-	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);   // falling edge: no tick
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 1);   // falling edge: no tick
 	step(m, 10.f, 9);
 
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 2);
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 2);
 	REQUIRE(eng.tickAtEmit.size() == 1);           // engine emitted only once
-	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 0);
 
 	// Detach the recorder before this stack-allocated RecordingEngine goes out
 	// of scope: mods's destructor runs after eng's (mods was declared first,
 	// so it's destroyed last) and calls Test::destroyModule -> onRemove() ->
-	// host.closeState(), which touches the active engine.
+	// host.unload(), which touches the active engine.
 	m->host.getActiveEngine() = nullptr;
 }
 
@@ -609,39 +595,43 @@ TEST_CASE("process() handles triggers arriving between divider ticks", "[MidiKit
 	for (int64_t f = 0; f < 8; f++) {
 		step(m, 0.f, f);
 	}
-	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 1);
 
 	// Triggers are handled every sample, independent of the divider. These land
 	// between divider boundaries and must not send the tick-2 message early.
 	step(m, 10.f, 8);
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
-	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 1);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 1);
 
 	step(m, 0.f, 9);
 	step(m, 10.f, 10);
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 2);
-	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 2);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 0);
 
 	// Detach the recorder before this stack-allocated RecordingEngine goes out
 	// of scope: mods's destructor runs after eng's (mods was declared first,
 	// so it's destroyed last) and calls Test::destroyModule -> onRemove() ->
-	// host.closeState(), which touches the active engine.
+	// host.unload(), which touches the active engine.
 	m->host.getActiveEngine() = nullptr;
 }
 
 TEST_CASE("process() sends frame-scheduled messages on divider ticks only", "[MidiKit]") {
-	Test::ModuleScaffold<MidiKitModule> mods;
-	MidiKitModule* m = mods.create("MidiKit");
+	// The synchronous worker: the test depends on the load having landed.
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	// With no default engine, load a script so process() runs past the
 	// `if (!activeEngine) return;` guard.
 	m->loadScript(QUICKJS_SCRIPT);
+	// The audio thread's half of the load, which would clear the message below;
+	// without a process() call, so the divider phase stays where it is.
+	m->syncScriptGen();
 
 	// ticks == 0 with a set frame routes to frameQueue rather than tickQueue.
 	midi::Message msg = makeCc();
 	msg.frame = 9;
-	m->midiOutput.send(msg, 0, 0);
-	REQUIRE(m->midiOutput.frameQueue.size() == 1);
+	m->midiOuts.ports[0].send(msg, 0, 0);
+	REQUIRE(m->midiOuts.ports[0].frameQueue.size() == 1);
 
 	// Divider ticks land on call indices 7 and 15, and processFrame() is only
 	// reached inside that branch. The frame-9 message is therefore still queued
@@ -650,11 +640,11 @@ TEST_CASE("process() sends frame-scheduled messages on divider ticks only", "[Mi
 	for (int64_t f = 0; f <= 14; f++) {
 		step(m, 0.f, f);
 	}
-	REQUIRE(m->midiOutput.frameQueue.size() == 1);
+	REQUIRE(m->midiOuts.ports[0].frameQueue.size() == 1);
 
 	// The next divider tick drains it.
 	step(m, 0.f, 15);
-	REQUIRE(m->midiOutput.frameQueue.size() == 0);
+	REQUIRE(m->midiOuts.ports[0].frameQueue.size() == 0);
 
 }
 
@@ -685,7 +675,7 @@ TEST_CASE("process() orders trigger, inbound, and outbound effects in one call",
 	// outbound message the engine emits during its pump, scheduled for the tick
 	// just consumed.
 	midi::Message in = makeCc();
-	m->midiInput.onMessage(in);
+	m->midiIns.ports[0].queue.onMessage(in);
 	eng.pending = {1};
 	step(m, 10.f, 7);
 
@@ -702,24 +692,25 @@ TEST_CASE("process() orders trigger, inbound, and outbound effects in one call",
 	// The side effects that order produces: the edge was consumed, the inbound
 	// reached the engine, and the engine's outbound landed after the tick was
 	// consumed (so it stays queued until the next trigger).
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 1);
 	REQUIRE(eng.received.size() == 1);
 	REQUIRE(eng.received[0].type == StoermelderPackOne::MessageEx::Type::CC);
 	REQUIRE(eng.tickAtEmit.size() == 1);
 	REQUIRE(eng.tickAtEmit[0] == 1);
-	REQUIRE(m->midiOutput.tickQueue[0].size() == 1);
-	REQUIRE(m->midiOutput.tickQueue[0].top().tick == 1);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 1);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].top().tick == 1);
 
 	// Detach the recorder before this stack-allocated RecordingEngine goes out
 	// of scope: mods's destructor runs after eng's (mods was declared first,
 	// so it's destroyed last) and calls Test::destroyModule -> onRemove() ->
-	// host.closeState(), which touches the active engine.
+	// host.unload(), which touches the active engine.
 	m->host.getActiveEngine() = nullptr;
 }
 
 TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKit]") {
-	Test::ModuleScaffold<MidiKitModule> mods;
-	MidiKitModule* m = mods.create("MidiKit");
+	// The synchronous worker: the test depends on the load having landed.
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	// With no default engine, load a script so process() runs past the
 	// `if (!activeEngine) return;` guard. The trigger is enabled directly here
@@ -735,9 +726,9 @@ TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKi
 	// happens when a script schedules for a tick the counter already consumed.
 	// The stale entry sorts to the head, so with "==" it blocks both forever.
 	midi::Message msg = makeCc();
-	m->midiOutput.send(msg, 0, 2);
-	m->midiOutput.tickQueue[0].push(MidiOutput::TickSchedule{msg, 0});
-	REQUIRE(m->midiOutput.tickQueue[0].size() == 2);
+	m->midiOuts.ports[0].send(msg, 0, 2);
+	m->midiOuts.ports[0].tickQueue[0].push(std::remove_reference<decltype(m->midiOuts.ports[0])>::type::TickSchedule{msg, 0, 0});
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 2);
 
 	int64_t frame = 1;
 	for (int pulse = 0; pulse < 3; pulse++) {
@@ -747,14 +738,14 @@ TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKi
 		m->process(Test::makeProcessArgs(frame++));
 	}
 
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 3);
-	REQUIRE(m->midiOutput.tickQueue[0].size() == 0);
-
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 3);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 0);
 }
 
 TEST_CASE("sendAfterTrigger on one channel is only drained by that channel's clock", "[MidiKit]") {
-	Test::ModuleScaffold<MidiKitModule> mods;
-	MidiKitModule* m = mods.create("MidiKit");
+	// The synchronous worker: the test depends on the load having landed.
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 
 	// With no default engine, load a script so process() runs past the
 	// `if (!activeEngine) return;` guard. Enable both trigger channels (as the
@@ -766,14 +757,15 @@ TEST_CASE("sendAfterTrigger on one channel is only drained by that channel's clo
 
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 2;
 
-	// Schedule a message against channel 2's clock at tick 2.
-	midi::Message msg = makeCc();
-	m->midiOutput.send(msg, 1, 2);   // channel index 1 = script channel 2
-
-	// Prime both SchmittTriggers LOW.
+	// Prime both SchmittTriggers LOW. This first process() also carries out the
+	// script load's request to drop older scheduled messages, so schedule after.
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 1);
 	m->process(Test::makeProcessArgs(0));
+
+	// Schedule a message against channel 2's clock at tick 2.
+	midi::Message msg = makeCc();
+	m->midiOuts.ports[0].send(msg, 1, 2);   // channel index 1 = script channel 2
 
 	// Two pulses on channel 1 must NOT drain channel 2's queue.
 	for (int pulse = 0; pulse < 2; pulse++) {
@@ -782,9 +774,9 @@ TEST_CASE("sendAfterTrigger on one channel is only drained by that channel's clo
 		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
 		m->process(Test::makeProcessArgs(pulse * 2 + 2));
 	}
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 2);
-	REQUIRE(m->triggersIn.triggerTick[0][1] == 0);
-	REQUIRE(m->midiOutput.tickQueue[1].size() == 1);   // still queued
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 2);
+	REQUIRE(m->triggerIns.triggerTick[0][1] == 0);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[1].size() == 1);   // still queued
 
 	// Two pulses on channel 2 drain it (tick 2 reached).
 	for (int pulse = 0; pulse < 2; pulse++) {
@@ -793,12 +785,11 @@ TEST_CASE("sendAfterTrigger on one channel is only drained by that channel's clo
 		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 1);
 		m->process(Test::makeProcessArgs(pulse * 2 + 11));
 	}
-	REQUIRE(m->triggersIn.triggerTick[0][1] == 2);
-	REQUIRE(m->midiOutput.tickQueue[1].size() == 0);   // drained
-
+	REQUIRE(m->triggerIns.triggerTick[0][1] == 2);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[1].size() == 0);   // drained
 }
 
-// --- Logging (midiLogMessages) ------------------------------------------------
+// Logging (midiLogMessages)
 
 TEST_CASE("Log queue preserves FIFO order", "[MidiKit][Log]") {
 	Test::ModuleScaffold<MidiKitModule> mods;
@@ -814,7 +805,6 @@ TEST_CASE("Log queue preserves FIFO order", "[MidiKit][Log]") {
 	for (int i = 0; i < 10; i++) {
 		REQUIRE(std::get<1>(entries[i]) == "line" + std::to_string(i));
 	}
-
 }
 
 
@@ -839,13 +829,13 @@ TEST_CASE("Log accepts entries from multiple producers", "[MidiKit][Log]") {
 	REQUIRE(std::get<0>(entries[0]) == LOG_FORMAT::TIMESTAMP);
 	REQUIRE(std::get<0>(entries[1]) == LOG_FORMAT::TEXT);
 	REQUIRE(std::get<0>(entries[2]) == LOG_FORMAT::TEXT);
-
 }
 
 
 TEST_CASE("LoadScript emits a RESET log entry", "[MidiKit][Log]") {
-	Test::ModuleScaffold<MidiKitModule> mods;
-	MidiKitModule* m = mods.create("MidiKit");
+	// The synchronous worker: the test depends on the load having landed.
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	drainLogEntries(m);  // discard construction-time entries
 
 	m->loadScript(QUICKJS_SCRIPT);
@@ -854,7 +844,6 @@ TEST_CASE("LoadScript emits a RESET log entry", "[MidiKit][Log]") {
 	REQUIRE(!entries.empty());
 	// loadScript() pushes the RESET marker before any script output.
 	REQUIRE(std::get<0>(entries[0]) == LOG_FORMAT::RESET);
-
 }
 
 
@@ -876,11 +865,10 @@ TEST_CASE("Log queue drops entries when full", "[MidiKit][Log]") {
 	// Every accepted entry is still drained out (no loss of accepted entries).
 	auto entries = drainLogEntries(m);
 	REQUIRE(entries.size() == 512);
-
 }
 
 
-// ─── rack.registerContextMenu(): module lifecycle ───────────────────────────
+// rack.registerContextMenu(): module lifecycle
 // The module-level consequences of script-registered context menus: clearing
 // the script or switching engines drops the previous engine's registered
 // items. These behaviours are engine-independent: each case drives both
@@ -957,15 +945,14 @@ rack.registerContextMenu({
 })
 )";
 
-// ─── rack.registerContextMenu(): widget integration ─────────────────────────
+// rack.registerContextMenu(): widget integration
 // appendContextMenu() inserts an async placeholder that builds the real menu
 // items once the worker has evaluated onGetValue — driven by the
 // placeholder's step(), which the tests call via buildScriptMenuItems() (the
-// worker is inline under SyncTaskWorker). Clicking an item through
+// worker is inline under SyncTaskWorker, after an engine process() pump). Clicking an item through
 // MenuItem::doAction() fires the script callback. The widget behaviour is
 // engine-independent: each case builds the menu for a fresh module+widget per
 // engine script.
-
 // Drive the async placeholder (ScriptContextMenuItems) that builds the
 // script-registered items, then remove and delete the placeholder exactly as
 // Rack's Menu::step() would once it has requested deletion. Only the
@@ -1015,6 +1002,7 @@ TEST_CASE("Context menu: boolean item is built and click fires the callback", "[
 		// as Rack's Menu::step() would, so clicking below runs against the
 		// freed placeholder (its callbacks must capture the module, not
 		// `this`). The whole menu can't be stepped without a window.
+		m->host.getActiveEngine()->process();   // the menu query is low priority: answered on the next pump
 		buildScriptMenuItems(menu);
 
 		rack::ui::MenuItem* item = nullptr;
@@ -1036,6 +1024,58 @@ TEST_CASE("Context menu: boolean item is built and click fires the callback", "[
 	}
 }
 
+TEST_CASE("Context menu: the log display's menu starts with the running script's section", "[MidiKit][ContextMenu]") {
+	ModuleScaffold mods;
+	for (const char* script : {QJS_BOOL, LUA_BOOL}) {
+		MidiKitModule* m = mods.create();
+		m->model = modelMidiKit;
+		MidiKitWidget* mw = Test::createWidget<MidiKitWidget>(m);
+		REQUIRE(mw->logDisplay != nullptr);
+
+		auto findItem = [](rack::ui::Menu* menu) {
+			for (rack::Widget* child : menu->children) {
+				if (auto* mi = dynamic_cast<rack::ui::MenuItem*>(child)) {
+					if (mi->text == "Velocity to CC") return mi;
+				}
+			}
+			return (rack::ui::MenuItem*)nullptr;
+		};
+
+		// No script, no script items (and no placeholder to build them).
+		rack::ui::Menu* menu = new rack::ui::Menu;
+		mw->logDisplay->appendContextMenu(menu);
+		size_t plain = menu->children.size();
+		REQUIRE(findItem(menu) == nullptr);
+		delete menu;
+
+		m->loadScript(script);
+		menu = new rack::ui::Menu;
+		mw->logDisplay->appendContextMenu(menu);
+		REQUIRE(menu->children.size() > plain);   // engine section + separator
+		m->host.getActiveEngine()->process();     // the menu query is low priority
+		buildScriptMenuItems(menu);
+
+		// The running-script section comes first, then the log's own entries.
+		auto* first = dynamic_cast<rack::ui::MenuLabel*>(menu->children.front());
+		REQUIRE(first != nullptr);
+		REQUIRE(first->text.find("Running Script") == 0);
+		rack::ui::MenuItem* item = findItem(menu);
+		REQUIRE(item != nullptr);
+		size_t itemPos = 0, logPos = 0, i = 0;
+		for (rack::Widget* child : menu->children) {
+			if (child == item) itemPos = i;
+			if (auto* l = dynamic_cast<rack::ui::MenuLabel*>(child)) if (l->text == "Log") logPos = i;
+			i++;
+		}
+		REQUIRE(itemPos < logPos);
+		item->doAction(true);
+		REQUIRE(drainLog(m).find("onChange: true") != std::string::npos);
+
+		delete menu;
+		Test::destroyWidget(mw);
+	}
+}
+
 TEST_CASE("Context menu: options submenu is built and click fires the callback", "[MidiKit][ContextMenu]") {
 	ModuleScaffold mods;
 	for (const char* script : {QJS_OPTIONS, LUA_OPTIONS}) {
@@ -1049,6 +1089,7 @@ TEST_CASE("Context menu: options submenu is built and click fires the callback",
 		// See the boolean test case: step the async placeholder so it builds
 		// the real items, then free the placeholder (Rack's Menu::step()
 		// behaviour) so the submenu callbacks run without `this`.
+		m->host.getActiveEngine()->process();   // the menu query is low priority: answered on the next pump
 		buildScriptMenuItems(menu);
 
 		rack::ui::MenuItem* sub = nullptr;
@@ -1088,14 +1129,13 @@ TEST_CASE("Context menu: options submenu is built and click fires the callback",
 }
 
 
-// ─── Example-script submenus (appendExampleItems / hasExampleScripts) ───────
+// Example-script submenus (appendExampleItems / hasExampleScripts)
 // appendExampleItems() and hasExampleScripts() scan a real directory on disk,
 // so these tests build a throwaway tree under the system temp dir (see
 // TempExampleDir) and point the menu builder at it. They assert on the menu
 // structure — leaf items for matching scripts, nested submenus for subfolders,
 // empty subfolders skipped, "None found" when nothing matches — and on the
 // click-through: a leaf's action loads the script into the module via loadJs().
-
 // Creates a unique, writable directory tree for one test case and removes it on
 // destruction. Names come from a static counter, which keeps every concurrently
 // live tree unique; a stale leftover from a crashed run is removed first, and
@@ -1301,15 +1341,14 @@ TEST_CASE("appendExampleItems shows 'None found' when nothing matches", "[MidiKi
 	Test::destroyModule(m);
 }
 
-// ─── MidiProcessor integration ───────────────────────────────────────────────
+// MidiProcessor integration
 // The module decodes the incoming stream through MidiProcessor before it
 // reaches the engine, so NRPN/RPN/14-bit CC assembly happens once on the audio
 // thread rather than in every script.
-
 // Feeds raw MIDI into the module's real input queue and runs process() enough
 // times to clear the divider (8), so the queue is actually pumped.
 static void feedMidi(MidiKitModule* m, std::vector<midi::Message> msgs, int64_t& frame) {
-	for (auto& msg : msgs) m->midiInput.onMessage(msg);
+	for (auto& msg : msgs) m->midiIns.ports[0].queue.onMessage(msg);
 	for (int i = 0; i < 9; i++) m->process(Test::makeProcessArgs(frame++));
 }
 
@@ -1374,26 +1413,27 @@ TEST_CASE("Incoming MIDI is decoded before reaching the engine", "[MidiKit][Midi
 	// Detach the recorder before this stack-allocated RecordingEngine goes out
 	// of scope: mods's destructor runs after eng's local destructor (mods was
 	// declared first, so it's destroyed last), and it calls Test::destroyModule
-	// -> onRemove() -> host.closeState(), which touches the active engine.
+	// -> onRemove() -> host.unload(), which touches the active engine.
 	// Leaving eng attached would call virtuals on it after it has already been
 	// destroyed (see the same note on "Decoder state is cleared..." below).
 	m->host.getActiveEngine() = nullptr;
 }
 
 TEST_CASE("Decoder state is cleared on reset and script load", "[MidiKit][MidiProcessor]") {
-	Test::ModuleScaffold<MidiKitModule> mods;
-	MidiKitModule* m = mods.create("MidiKit");
+	// The synchronous worker: the test depends on the load having landed.
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
 	RecordingEngine eng(m);
 	m->host.getActiveEngine() = &eng;
 	int64_t frame = 1;
 
 	// Arm an NRPN parameter, leaving the decoder mid-sequence.
 	feedMidi(m, { cc(0, 99, 4), cc(0, 98, 5) }, frame);
-	REQUIRE(m->midiProcessor.ccNrpnParam[0] == (4 * 128 + 5));
+	REQUIRE(m->midiIns.ports[0].processor.ccNrpnParam[0] == (4 * 128 + 5));
 
 	SECTION("onReset() drops it") {
 		m->onReset();
-		REQUIRE(m->midiProcessor.ccNrpnParam[0] == -1);
+		REQUIRE(m->midiIns.ports[0].processor.ccNrpnParam[0] == -1);
 	}
 
 	SECTION("loadScript() drops it, so a new script inherits no half-read state") {
@@ -1403,25 +1443,26 @@ TEST_CASE("Decoder state is cleared on reset and script load", "[MidiKit][MidiPr
 		// virtuals on it during module destruction, after it has gone out of scope.
 		m->host.getActiveEngine() = nullptr;
 		m->loadScript(LUA_SCRIPT);
-		REQUIRE(m->midiProcessor.ccNrpnParam[0] == -1);
+		// The reset is a request the audio thread carries out on its next sample.
+		m->process(Test::makeProcessArgs(frame++));
+		REQUIRE(m->midiIns.ports[0].processor.ccNrpnParam[0] == -1);
 	}
 
 	// Detach the recorder before this stack-allocated RecordingEngine goes out
 	// of scope: mods's destructor runs after eng's (mods was declared first,
 	// so it's destroyed last) and calls Test::destroyModule -> onRemove() ->
-	// host.closeState(), which touches the active engine. A no-op when the
+	// host.unload(), which touches the active engine. A no-op when the
 	// "loadScript()" SECTION already detached it above.
 	m->host.getActiveEngine() = nullptr;
 }
 
 TEST_CASE("The processor decodes the module's own queue, not a private one", "[MidiKit][MidiProcessor]") {
 	Test::ModuleScaffold<MidiKitModule> mods;
-	// The queue is injected rather than owned, so midiInput keeps its widget
+	// The queue is injected rather than owned, so midiInputs[0].queue keeps its widget
 	// binding and JSON. Pins that wiring: no separate queue was allocated, and
 	// getInput() resolves to the module's member.
 	MidiKitModule* m = mods.create("MidiKit");
 
-	REQUIRE(m->midiProcessor.ownedInput == nullptr);
-	REQUIRE(&m->midiProcessor.getInput() == &m->midiInput);
-
+	REQUIRE(m->midiIns.ports[0].processor.ownedInput == nullptr);
+	REQUIRE(&m->midiIns.ports[0].processor.getInput() == &m->midiIns.ports[0].queue);
 }

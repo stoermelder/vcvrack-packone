@@ -14,7 +14,6 @@ TEST_CASE("Lua-tagged script loads and creates Lua state", "[MidiKit][Lua]") {
 
 	REQUIRE(m->host.seLua.L != nullptr);
 	REQUIRE(m->host.isLuaEngine());
-
 }
 
 
@@ -33,7 +32,6 @@ TEST_CASE("Script can override input.getName", "[MidiKit][Lua]") {
 
 	REQUIRE(m->host.seLua.getInputName(0) == "CV-1");
 	REQUIRE(m->host.seLua.getInputName(3) == "CV-4");
-
 }
 
 
@@ -46,10 +44,9 @@ TEST_CASE("QuickJs-tagged script is rejected by Lua engine", "[MidiKit][Lua]") {
 	ModuleScaffold mods;
 	MidiKitModule* m = mods.create();
 
-	m->host.seLua.loadScript(QUICKJS_HEADER);
+	m->host.seLua.loadScriptOnWorker(QUICKJS_HEADER, "");
 
 	REQUIRE(m->host.seLua.L == nullptr);
-
 }
 
 
@@ -63,10 +60,9 @@ TEST_CASE("Syntax error is handled gracefully", "[MidiKit][Lua]") {
 	ModuleScaffold mods;
 	MidiKitModule* m = mods.create();
 
-	m->host.seLua.loadScript(LUA_BAD_SYNTAX);
+	m->host.seLua.loadScriptOnWorker(LUA_BAD_SYNTAX, "");
 
 	REQUIRE(m->host.seLua.L == nullptr);
-
 }
 
 
@@ -99,7 +95,6 @@ TEST_CASE("Load error reports a clean chunk name and line", "[MidiKit][Lua]") {
 	REQUIRE(log.find("script:7:") != std::string::npos);
 	// The old chunk name dumped the script into the message
 	REQUIRE(log.find("[string \"") == std::string::npos);
-
 }
 
 
@@ -133,7 +128,6 @@ TEST_CASE("Runtime error reports a clean chunk name and line", "[MidiKit][Lua]")
 	// x.field is on line 7
 	REQUIRE(log.find("script:7:") != std::string::npos);
 	REQUIRE(log.find("[string \"") == std::string::npos);
-
 }
 
 
@@ -148,7 +142,6 @@ TEST_CASE("Successful load reports no error position", "[MidiKit][Lua]") {
 	std::string log = drainLog(m);
 	REQUIRE(log.find("script:") == std::string::npos);
 	REQUIRE(log.find("Script loaded") != std::string::npos);
-
 }
 
 
@@ -170,7 +163,7 @@ end
 TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua]") {
 	ModuleScaffold mods;
 	// See the matching QuickJs test for why this can only assert "doesn't crash":
-	// MidiKitModule's destructor calls closeState() (which runs onUnload())
+	// MidiKitModule's destructor calls host.unload() (which runs onUnload())
 	// while the module — the engines' handler — is still fully alive, so that
 	// callbacks like writeLog/trig.*/input.*/param.* resolve through the
 	// handler. Calling them from ~MidiScriptEngineLua() itself, after the
@@ -178,7 +171,6 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua
 	MidiKitModule* m = mods.create();
 	m->loadScript(LUA_ON_UNLOAD_CRASH);
 	REQUIRE(m->host.seLua.L != nullptr);
-
 }
 
 
@@ -247,7 +239,6 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Lua][
 	// per-callback allocation pattern (measured noise here is a few KB); a
 	// per-callback leak would grow the heap by tens of kilobytes over this run.
 	REQUIRE(used1 <= used0 + 16384);
-
 }
 
 // Sensitivity control for the test above: a script that DOES retain its
@@ -305,7 +296,6 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][Lua][GC]") {
 	// against the automatic GC's equilibrium noise (measured here ~34KB of
 	// growth vs ~5KB of noise).
 	REQUIRE(used1 > used0 + 16384);
-
 }
 
 
@@ -351,7 +341,6 @@ TEST_CASE("Infinite loop in onMessage is interrupted, not a hang", "[MidiKit][Lu
 	m->host.getActiveEngine()->process();
 	std::string log2 = drainLog(m);
 	REQUIRE(log2.find("exceeded execution budget") != std::string::npos);
-
 }
 
 TEST_CASE("Infinite loop in onMessage does not wedge the shared worker", "[MidiKit][Lua][Async]") {
@@ -406,7 +395,6 @@ TEST_CASE("Infinite loop at script top level fails the load, and the module reco
 	m->host.getActiveEngine()->process();
 	std::string reloadLog = drainLog(m);
 	REQUIRE(reloadLog.find("recovered") != std::string::npos);
-
 }
 
 // ── Memory limit ────────────────────────────────────────────────────────────
@@ -441,7 +429,6 @@ TEST_CASE("Script that exceeds the memory limit at load is stopped", "[MidiKit][
 	m->host.seLua.processInMessage(0, in);
 	m->host.seLua.process();
 	REQUIRE(drainLog(m).find("recovered") != std::string::npos);
-
 }
 
 // Retains 4 KiB per onMessage in a global table, so the heap crosses the limit
@@ -475,7 +462,6 @@ TEST_CASE("Retaining script is stopped when it exceeds the memory limit", "[Midi
 	REQUIRE(m->host.seLua.L == nullptr);
 	std::string log = drainLog(m);
 	REQUIRE(log.find("memory limit and was stopped") != std::string::npos);
-
 }
 
 // A script that stays within the limit must NOT be stopped.
@@ -494,5 +480,31 @@ TEST_CASE("Script within the memory limit keeps running", "[MidiKit][Lua][Memory
 
 	REQUIRE(m->host.seLua.L != nullptr);
 	REQUIRE(drainLog(m).find("memory limit and was stopped") == std::string::npos);
+}
 
+// A script travels inside the patch file, so it must not read files from disk
+// or load precompiled bytecode.
+static const char* LUA_SANDBOX = R"(--[[
+@engine minilua@v1
+--]]
+rack.onLoad = function()
+	rack.log("dofile=" .. type(dofile))
+	rack.log("loadfile=" .. type(loadfile))
+	rack.log("load=" .. type(load))
+	rack.log("dump=" .. type(string.dump))
+end
+)";
+
+TEST_CASE("Lua sandbox removes file and bytecode loaders", "[MidiKit][Lua]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+
+	m->loadScript(LUA_SANDBOX);
+	REQUIRE(m->host.seLua.L != nullptr);
+
+	std::string log = drainLog(m);
+	REQUIRE(log.find("dofile=nil") != std::string::npos);
+	REQUIRE(log.find("loadfile=nil") != std::string::npos);
+	REQUIRE(log.find("load=nil") != std::string::npos);
+	REQUIRE(log.find("dump=nil") != std::string::npos);
 }

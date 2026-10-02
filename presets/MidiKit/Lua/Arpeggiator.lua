@@ -1,6 +1,7 @@
 --[[
 @target stoermelder MIDI-KIT
 @engine minilua@v1
+@requires params=4
 @author stoermelder
 @description Arpeggiator clocked by the trigger input, with clock division, octave range, note length and playmode params
 --]]
@@ -23,6 +24,9 @@
 --   the next step).
 -- param 4 - Playmode: Up / Down / Up-Down.
 --
+-- MIDI-µKIT has only 2 params: params 3 and 4 are unavailable there, so the
+-- note length is half a step and the playmode is Up.
+--
 -- Notes are only advanced on a trigger tick that lands on a step boundary
 -- (i.e. every clockDivision-th tick), so the trigger input can run at a
 -- finer resolution than the arp itself - the same divide-down idea as
@@ -31,14 +35,13 @@
 -- Silence (no keys held) simply stops stepping; the next Note-On restarts
 -- the pattern from its first note on the next step boundary.
 
-
 -- Configuration - change these values as needed
 local config = {
     -- Only arpeggiate notes on this channel; 0 = every channel
-    channel = 0,
+    channel = rack.getConfig("channel", 0),
 
     -- Output channel for arpeggiated notes; 0 = same as input note's channel
-    outChannel = 0
+    outChannel = rack.getConfig("outChannel", 0)
 }
 
 -- Clock division choices, in trigger ticks per arp step (fewer ticks = faster)
@@ -63,23 +66,11 @@ local state = {
     soundingChannel = 1
 }
 
-param.enable(1)
-param.enable(2)
-param.enable(3)
-param.enable(4)
-
--- Clock the arp from trigger channel 1 only: trig.onTrigger fires per poly
--- channel, and trig.enableIn() gates it — enabling just channel 1 means the
--- other channels are ignored.
-trig.enableIn(1, 1)
-
-param.getName = function(i)
-    if i == 1 then return "Clock division" end
-    if i == 2 then return "Octave range" end
-    if i == 3 then return "Note length" end
-    if i == 4 then return "Playmode" end
-    return ""
-end
+-- Context menu choices
+local CHANNEL_LABELS = { "All" }
+for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+local OUT_CHANNEL_LABELS = { "Same as input" }
+for c = 1, 16 do OUT_CHANNEL_LABELS[c + 1] = tostring(c) end
 
 local function divisionIndex()
     local idx = math.floor(param.getValue(1) * #DIVISIONS) + 1
@@ -94,17 +85,9 @@ local function octaveRange()
 end
 
 local function playmodeIndex()
-    local idx = math.floor(param.getValue(4) * #PLAYMODES) + 1
+    local idx = math.floor(param.getValue(4, 0) * #PLAYMODES) + 1
     if idx > #PLAYMODES then idx = #PLAYMODES end
     return idx
-end
-
-param.getValueFormat = function(i)
-    if i == 1 then return number.toString(DIVISIONS[divisionIndex()]) .. " ticks/step" end
-    if i == 2 then return number.toString(octaveRange()) .. " oct" end
-    if i == 3 then return string.format("%.0f", param.getValue(3) * 100) .. " %" end
-    if i == 4 then return PLAYMODES[playmodeIndex()] end
-    return number.toString(param.getValue(i))
 end
 
 local function matchesChannel(ch)
@@ -155,46 +138,74 @@ local function releaseSounding()
     end
 end
 
+-- Setup
 rack.onLoad = function()
+    -- Notes leave on the frame of the clock edge instead of a block boundary.
+    -- Costs one audio block of latency.
+    midiOut.enableTiming()
+
+    for i = 1, math.min(param.count, 4) do param.enable(i) end
+
+    -- Clock the arp from trigger channel 1 only: trig.onTrigger fires per poly
+    -- channel, and trig.enableIn() gates it — enabling just channel 1 means the
+    -- other channels are ignored.
+    trig.enableIn(1, 1)
+
+    -- Context menu - right-click the module to change these settings live.
+    -- Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type = "options",
+        label = "Input channel",
+        options = CHANNEL_LABELS,
+        onGetValue = function()
+            return config.channel
+        end,
+        onChange = function(idx)
+            config.channel = idx
+            rack.setConfig("channel", config.channel)
+            rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
+        end
+    })
+
+    rack.registerContextMenu({
+        type = "options",
+        label = "Output channel",
+        options = OUT_CHANNEL_LABELS,
+        onGetValue = function()
+            return config.outChannel
+        end,
+        onChange = function(idx)
+            config.outChannel = idx
+            rack.setConfig("outChannel", config.outChannel)
+            rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx + 1])
+        end
+    })
+
     rack.log("Arpeggiator initialized")
 end
 
-rack.onUnload = function()
-    releaseSounding()
+-- Callbacks
+param.getName = function(i)
+    if i == 1 then return "Clock division" end
+    if i == 2 then return "Octave range" end
+    if i == 3 then return "Note length" end
+    if i == 4 then return "Playmode" end
+    return ""
 end
 
--- Context menu - right-click the module to change these settings live.
--- Each menu mirrors a `config` value above; onChange applies the choice.
-local CHANNEL_LABELS = { "All" }
-for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
-local OUT_CHANNEL_LABELS = { "Same as input" }
-for c = 1, 16 do OUT_CHANNEL_LABELS[c + 1] = tostring(c) end
+param.getValueFormat = function(i)
+    if i == 1 then return number.toString(DIVISIONS[divisionIndex()]) .. " ticks/step" end
+    if i == 2 then return number.toString(octaveRange()) .. " oct" end
+    if i == 3 then return string.format("%.0f", param.getValue(3, 0.5) * 100) .. " %" end
+    if i == 4 then return PLAYMODES[playmodeIndex()] end
+    return number.toString(param.getValue(i))
+end
 
-rack.registerContextMenu({
-    type = "options",
-    label = "Input channel",
-    options = CHANNEL_LABELS,
-    onGetValue = function() 
-        return config.channel
-    end,
-    onChange = function(idx)
-        config.channel = idx
-        rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
-    end
-})
-
-rack.registerContextMenu({
-    type = "options",
-    label = "Output channel",
-    options = OUT_CHANNEL_LABELS,
-    onGetValue = function()
-        return config.outChannel
-    end,
-    onChange = function(idx)
-        config.outChannel = idx
-        rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx + 1])
-    end
-})
+rack.onUnload = function()
+    -- With midiOut.enableTiming() the module holds this note-off behind any
+    -- note-on still waiting in Rack's output queue, so it cannot overtake it.
+    releaseSounding()
+end
 
 midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
@@ -235,7 +246,7 @@ midi.onMessage = function(midiPort, msg)
     midiOut.send(msg)
 end
 
-function trig.onTrigger(trigPort, channel)
+trig.onTrigger = function(trigPort, channel)
     local division = DIVISIONS[divisionIndex()]
     state.tickCount = state.tickCount + 1
     if state.tickCount < division then return end
@@ -252,7 +263,7 @@ function trig.onTrigger(trigPort, channel)
     midi.setNoteOn(on, ch, note, 100)
     midiOut.send(on)
 
-    local lengthTicks = math.floor(division * param.getValue(3))
+    local lengthTicks = math.floor(division * param.getValue(3, 0.5))
     if lengthTicks < 1 then lengthTicks = 1 end
     if lengthTicks > division - 1 then
         lengthTicks = division > 1 and (division - 1) or 1

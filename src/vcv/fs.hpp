@@ -56,6 +56,8 @@ struct FileAccess {
 	// Environment / applications.
 	virtual std::string getTempDirectory() { return ""; }
 	virtual std::string getUserDirectory(const std::string& path) { return ""; }
+	// `path` inside this plugin's own folder (bundled presets, res/, ...).
+	virtual std::string getPluginDirectory(const std::string& path) { return ""; }
 	virtual double getTime() { return 0.0; }
 	virtual void openDirectory(const std::string& path) {}
 };
@@ -84,6 +86,7 @@ struct RealFileAccess final : FileAccess {
 	int removeRecursively(const std::string& path) override;
 	std::string getTempDirectory() override;
 	std::string getUserDirectory(const std::string& path) override;
+	std::string getPluginDirectory(const std::string& path) override;
 	double getTime() override;
 	void openDirectory(const std::string& path) override;
 };
@@ -202,6 +205,11 @@ static std::string getTempDirectory() {
 P1_UNUSED
 static std::string getUserDirectory(const std::string& path) {
 	return fileAccessFor().getUserDirectory(path);
+}
+
+P1_UNUSED
+static std::string getPluginDirectory(const std::string& path) {
+	return fileAccessFor().getPluginDirectory(path);
 }
 
 P1_UNUSED

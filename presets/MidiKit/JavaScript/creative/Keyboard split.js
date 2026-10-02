@@ -59,31 +59,38 @@ function targetChannel(note) {
     return note < p.splitPoint ? p.channelA : p.channelB;
 };
 
+// Context menu choices
+let PRESET_LABELS = [];
+for (let i = 0; i < config.presets.length; i++) PRESET_LABELS[PRESET_LABELS.length] = presetLabel(i);
+
+// Setup
 rack.onLoad = function() {
-    state.active = config.initialPreset;
+    // The last active preset is persisted; initialPreset applies on first load.
+    state.active = rack.getConfig("activePreset", config.initialPreset);
     if (state.active < 0 || state.active >= config.presets.length) state.active = 0;
+
+    // Context menu - right-click the module to switch the active preset manually.
+    // Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type: "options",
+        label: "Preset",
+        options: PRESET_LABELS,
+        onGetValue: function() {
+            return state.active;
+        },
+        onChange: function(idx) {
+            state.active = idx;
+            rack.setConfig("activePreset", idx);
+            rack.log("Preset: ", PRESET_LABELS[idx]);
+        }
+    });
+
     rack.log("Keyboard split initialized");
     rack.log("Presets: ", config.presets.length);
     rack.log("Active preset: ", presetLabel(state.active));
 };
 
-// Context menu - right-click the module to switch the active preset manually.
-let PRESET_LABELS = [];
-for (let i = 0; i < config.presets.length; i++) PRESET_LABELS[PRESET_LABELS.length] = presetLabel(i);
-
-rack.registerContextMenu({
-    type: "options",
-    label: "Preset",
-    options: PRESET_LABELS,
-    onGetValue: function() {
-        return state.active;
-    },
-    onChange: function(idx) {
-        state.active = idx;
-        rack.log("Preset: ", PRESET_LABELS[idx]);
-    }
-});
-
+// Callbacks
 midi.onMessage = function(midiPort, msg) {
     let ch = midi.getChannel(msg);
 
@@ -96,6 +103,7 @@ midi.onMessage = function(midiPort, msg) {
             if (config.presets[i].cc === cc) {
                 if (midi.getValue(msg) > 0) {
                     state.active = i;
+                    rack.setConfig("activePreset", i);
                     rack.log("Preset: ", presetLabel(i));
                 }
                 return;

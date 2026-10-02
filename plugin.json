@@ -17,20 +17,20 @@
 		{
 			"slug": "MidiKit",
 			"name": "MIDI-KIT",
-			"description": "",
+			"description": "Scripting module for altering, filtering, delaying and generating MIDI messages.\nWrite scripts in JavaScript or Lua, with four MIDI inputs and outputs, CV inputs, trigger ports and panel knobs.",
 			"tags": [
 				"MIDI", "Utility"
 			],
-			"manualUrl": ""
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/midikit/MidiKit.md"
 		},
 		{
 			"slug": "MidiKitMicro",
-			"name": "µMIDI-KIT",
-			"description": "",
+			"name": "MIDI-µKIT",
+			"description": "Compact version of MIDI-KIT with two CV inputs and two knobs: a scripting module for altering, filtering, delaying and generating MIDI messages.\nWrite scripts in JavaScript or Lua, with four MIDI inputs and outputs, CV inputs, trigger ports and panel knobs.",
 			"tags": [
 				"MIDI", "Utility"
 			],
-			"manualUrl": ""
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/midikit/MidiKit.md"
 		},
 		{
 			"slug": "FlowerSeq",

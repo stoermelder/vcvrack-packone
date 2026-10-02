@@ -28,17 +28,16 @@
 -- The divided clock is also mirrored to the module's trigger output, so it can
 -- drive Rack clock inputs directly without a MIDI-to-CV round trip.
 
-
 -- Configuration - change these values as needed
 local config = {
     -- Forward every Nth clock tick (1 = pass everything through)
-    divisor = 6,
+    divisor = rack.getConfig("divisor", 6),
 
     -- Also emit a trigger on trigger output 1 for every forwarded tick
-    emitTrigger = true,
+    emitTrigger = rack.getConfig("emitTrigger", true),
 
     -- Forward all non-clock messages (notes, CC, ...) unchanged
-    passThroughOther = true
+    passThroughOther = rack.getConfig("passThroughOther", true)
 }
 
 -- Internal state
@@ -47,19 +46,13 @@ local state = {
     running = false
 }
 
-rack.onLoad = function()
-    rack.log("Clock divider initialized")
-    rack.log("Divisor: ", config.divisor, " (24 ppqn / ", config.divisor, ")")
-end
+-- Context menu choices
+local DIVISORS = { 1, 2, 3, 6, 12, 24 }
+local DIVISOR_LABELS = { "1 (24 ppqn)", "2 (12 ppqn)", "3 (8 ppq)", "6 (16th)", "12 (8th)", "24 (quarter)" }
 
 local function resetPhase()
     state.tickCount = 0
 end
-
--- Context menu - right-click the module to change these settings live.
--- Each menu mirrors a `config` value above; onChange applies the choice.
-local DIVISORS = { 1, 2, 3, 6, 12, 24 }
-local DIVISOR_LABELS = { "1 (24 ppqn)", "2 (12 ppqn)", "3 (8 ppq)", "6 (16th)", "12 (8th)", "24 (quarter)" }
 
 local function divisorIndex()
     for i = 1, #DIVISORS do
@@ -68,42 +61,54 @@ local function divisorIndex()
     return 0
 end
 
-rack.registerContextMenu({
-    type = "options",
-    label = "Divisor",
-    options = DIVISOR_LABELS,
-    onGetValue = function()
-        return divisorIndex()
-    end,
-    onChange = function(idx)
-        config.divisor = DIVISORS[idx + 1]
-        rack.log("Divisor: ", config.divisor, " (24 ppqn / ", config.divisor, ")")
-    end
-})
+-- Setup
+rack.onLoad = function()
+    -- Context menu - right-click the module to change these settings live.
+    -- Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type = "options",
+        label = "Divisor",
+        options = DIVISOR_LABELS,
+        onGetValue = function()
+            return divisorIndex()
+        end,
+        onChange = function(idx)
+            config.divisor = DIVISORS[idx + 1]
+            rack.setConfig("divisor", config.divisor)
+            rack.log("Divisor: ", config.divisor, " (24 ppqn / ", config.divisor, ")")
+        end
+    })
 
-rack.registerContextMenu({
-    type = "boolean",
-    label = "Emit trigger output",
-    onGetValue = function()
-        return config.emitTrigger
-    end,
-    onChange = function(checked)
-        config.emitTrigger = checked
-        rack.log("Emit trigger: ", checked)
-    end
-})
+    rack.registerContextMenu({
+        type = "boolean",
+        label = "Emit trigger output",
+        onGetValue = function()
+            return config.emitTrigger
+        end,
+        onChange = function(checked)
+            config.emitTrigger = checked
+            rack.setConfig("emitTrigger", config.emitTrigger)
+            rack.log("Emit trigger: ", checked)
+        end
+    })
 
-rack.registerContextMenu({
-    type = "boolean",
-    label = "Pass through other messages",
-    onGetValue = function()
-        return config.passThroughOther
-    end,
-    onChange = function(checked)
-        config.passThroughOther = checked
-    end
-})
+    rack.registerContextMenu({
+        type = "boolean",
+        label = "Pass through other messages",
+        onGetValue = function()
+            return config.passThroughOther
+        end,
+        onChange = function(checked)
+            config.passThroughOther = checked
+            rack.setConfig("passThroughOther", config.passThroughOther)
+        end
+    })
 
+    rack.log("Clock divider initialized")
+    rack.log("Divisor: ", config.divisor, " (24 ppqn / ", config.divisor, ")")
+end
+
+-- Callbacks
 midi.onMessage = function(midiPort, msg)
     if midi.isStart(msg) then
         resetPhase()

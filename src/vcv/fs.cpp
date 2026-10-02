@@ -98,6 +98,10 @@ std::string RealFileAccess::getUserDirectory(const std::string& path) {
 	return rack::asset::user(path);
 }
 
+std::string RealFileAccess::getPluginDirectory(const std::string& path) {
+	return rack::asset::plugin(pluginInstance, path);
+}
+
 double RealFileAccess::getTime() {
 	return rack::system::getTime();
 }

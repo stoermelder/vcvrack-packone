@@ -15,7 +15,7 @@
 -- Configuration - change these values as needed
 local config = {
     -- MIDI channel (1-16) the Program Change messages are sent on
-    channel = 1,
+    channel = rack.getConfig("channel", 1),
 
     -- Show each sent program in the on-panel overlay
     showOverlay = true
@@ -23,17 +23,40 @@ local config = {
 
 -- Note name of a program number under the same mapping (0 = C0)
 local NOTE_NAMES = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }
+local CHANNEL_LABELS = {}
+for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
+
 local function noteName(program)
     return NOTE_NAMES[program % 12 + 1] .. math.floor(program / 12)
 end
 
-input.enable(1)
+-- Setup
+rack.onLoad = function()
+    input.enable(1)
+    trig.enableIn(1, 1)
+
+    -- Context menu - right-click the module to change the MIDI channel live.
+    rack.registerContextMenu({
+        type = "options",
+        label = "Channel",
+        options = CHANNEL_LABELS,
+        onGetValue = function()
+            return config.channel - 1
+        end,
+        onChange = function(idx)
+            config.channel = idx + 1
+            rack.setConfig("channel", config.channel)
+            rack.log("Channel: ", config.channel)
+        end
+    })
+end
+
+-- Callbacks
 input.getName = function(port)
     if port == 1 then return "Program (V/Oct)" end
     return ""
 end
 
-trig.enableIn(1, 1)
 trig.onTrigger = function(trigPort, channel)
     local program = math.floor(input.getVoltage(1) * 12 + 0.5)
     if program < 0 then program = 0 end

@@ -43,16 +43,18 @@ let scales = {
     wholeTone:  [0, 2, 4, 6, 8, 10]
 };
 
-// Configuration - defaults used when nothing has been persisted yet (or a
-// setting was never touched). Each is read from the persisted config via
-// rack.getConfig(key, default) below, and each context-menu handler pushes
-// its change back with rack.setConfig() as soon as the user makes it -
-// there's no separate "save" step to remember.
+// Context menu choices
 let SCALE_NAMES = ["chromatic", "major", "minor", "harmonic", "dorian", "phrygian", "lydian", "mixolydian", "pentatonic", "minorPenta", "blues", "wholeTone"];
 let SCALE_LABELS = ["Chromatic", "Major", "Minor", "Harmonic", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Pentatonic", "Minor pentatonic", "Blues", "Whole tone"];
 let CHANNEL_LABELS = ["All"];
 for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
 
+
+// Configuration - defaults used when nothing has been persisted yet (or a
+// setting was never touched). Each is read from the persisted config via
+// rack.getConfig(key, default), and each context-menu handler pushes its
+// change back with rack.setConfig() as soon as the user makes it - there's no
+// separate "save" step to remember.
 // Persist the scale by NAME, not as the semitone-offset array itself. The
 // array form used to require re-matching a persisted array back to one of
 // the named scales by comparing elements (arraysEqual), purely so the
@@ -75,51 +77,11 @@ let config = {
     preferUpward: rack.getConfig("preferUpward", false)
 };
 
-// The root note is taken live from CV input 1: 0V = C, +1V = one octave up
-// (standard VCV pitch CV). Unpatched, the input reads 0V, so the scale is
-// rooted on C.
-input.enable(1);
-input.getName = function(port) {
-    if (port === 1) return "Root (1V/oct)";
-    return "";
-};
-
 // Internal state.
 // playedAs[n] is the note number actually sent for incoming note n, so the
 // matching Note-Off can be rewritten the same way.
 let state = {
     playedAs: []
-};
-
-// config is already restored by the time onLoad() runs (rack.getConfig()
-// reads were made at top level, above) - onLoad() only needs to initialize
-// the per-note release-tracking state.
-rack.onLoad = function() {
-    for (let n = 0; n < 128; n++) {
-        state.playedAs[n] = -1;
-    }
-    rack.log("Scale quantiser initialized");
-    rack.log("Root from input 1: 0V = C, 1V/oct");
-    rack.log("Scale degrees: ", config.scale.length);
-};
-
-// Releases every note still substituted in state.playedAs. Without this, a
-// held note that has been remapped to a different scale degree would hang
-// forever once the script is replaced, the module is reset, or the module is
-// removed - the substitution needed to release it correctly lives only in
-// this script's state. state.playedAs isn't channel-indexed (only one scale
-// is active at a time), so this releases on config.channel if fixed, or
-// channel 1 when config.channel is 0 (every channel) - the same best-effort
-// choice Chord harmonizer makes for the same reason.
-rack.onUnload = function() {
-    let ch = config.channel === 0 ? 1 : config.channel;
-    for (let n = 0; n < 128; n++) {
-        if (state.playedAs[n] >= 0) {
-            let off = midi.create();
-            midi.setNoteOff(off, ch, state.playedAs[n]);
-            midiOut.send(off);
-        }
-    }
 };
 
 function matchesChannel(ch) {
@@ -194,11 +156,6 @@ function quantise(note) {
     return out;
 };
 
-// Context menu - right-click the module to change these settings live.
-// Each menu mirrors a `config` value above; onChange applies the choice and
-// persists it with rack.setConfig() (SCALE_NAMES/SCALE_LABELS/CHANNEL_LABELS
-// are declared with `config` near the top of the script).
-
 function scaleIndex() {
     for (let i = 0; i < SCALE_NAMES.length; i++) {
         if (config.scale === scales[SCALE_NAMES[i]]) return i;
@@ -206,45 +163,91 @@ function scaleIndex() {
     return 0;
 };
 
-rack.registerContextMenu({
-    type: "options",
-    label: "Scale",
-    options: SCALE_LABELS,
-    onGetValue: function() {
-        return scaleIndex();
-    },
-    onChange: function(idx) {
-        config.scale = scales[SCALE_NAMES[idx]];
-        rack.setConfig("scale", SCALE_NAMES[idx]);
-        rack.log("Scale: ", SCALE_LABELS[idx]);
-    }
-});
+// Setup
+rack.onLoad = function() {
+    // The root note is taken live from CV input 1: 0V = C, +1V = one octave up
+    // (standard VCV pitch CV). Unpatched, the input reads 0V, so the scale is
+    // rooted on C.
+    input.enable(1);
 
-rack.registerContextMenu({
-    type: "options",
-    label: "Channel",
-    options: CHANNEL_LABELS,
-    onGetValue: function() {
-        return config.channel;
-    },
-    onChange: function(idx) {
-        config.channel = idx;
-        rack.setConfig("channel", idx);
-        rack.log("Channel: ", CHANNEL_LABELS[idx]);
+    // config is already restored (rack.getConfig() reads were made at top level,
+    // above), so only the per-note release-tracking state needs initializing.
+    for (let n = 0; n < 128; n++) {
+        state.playedAs[n] = -1;
     }
-});
 
-rack.registerContextMenu({
-    type: "boolean",
-    label: "Round up on ties",
-    onGetValue: function() {
-        return config.preferUpward;
-    },
-    onChange: function(checked) {
-        config.preferUpward = checked;
-        rack.setConfig("preferUpward", checked);
+    // Context menu - right-click the module to change these settings live.
+    // Each menu mirrors a `config` value above; onChange applies the choice and
+    // persists it with rack.setConfig().
+    rack.registerContextMenu({
+        type: "options",
+        label: "Scale",
+        options: SCALE_LABELS,
+        onGetValue: function() {
+            return scaleIndex();
+        },
+        onChange: function(idx) {
+            config.scale = scales[SCALE_NAMES[idx]];
+            rack.setConfig("scale", SCALE_NAMES[idx]);
+            rack.log("Scale: ", SCALE_LABELS[idx]);
+        }
+    });
+
+    rack.registerContextMenu({
+        type: "options",
+        label: "Channel",
+        options: CHANNEL_LABELS,
+        onGetValue: function() {
+            return config.channel;
+        },
+        onChange: function(idx) {
+            config.channel = idx;
+            rack.setConfig("channel", idx);
+            rack.log("Channel: ", CHANNEL_LABELS[idx]);
+        }
+    });
+
+    rack.registerContextMenu({
+        type: "boolean",
+        label: "Round up on ties",
+        onGetValue: function() {
+            return config.preferUpward;
+        },
+        onChange: function(checked) {
+            config.preferUpward = checked;
+            rack.setConfig("preferUpward", checked);
+        }
+    });
+
+    rack.log("Scale quantiser initialized");
+    rack.log("Root from input 1: 0V = C, 1V/oct");
+    rack.log("Scale degrees: ", config.scale.length);
+};
+
+// Callbacks
+input.getName = function(port) {
+    if (port === 1) return "Root (1V/oct)";
+    return "";
+};
+
+// Releases every note still substituted in state.playedAs. Without this, a
+// held note that has been remapped to a different scale degree would hang
+// forever once the script is replaced, the module is reset, or the module is
+// removed - the substitution needed to release it correctly lives only in
+// this script's state. state.playedAs isn't channel-indexed (only one scale
+// is active at a time), so this releases on config.channel if fixed, or
+// channel 1 when config.channel is 0 (every channel) - the same best-effort
+// choice Chord harmonizer makes for the same reason.
+rack.onUnload = function() {
+    let ch = config.channel === 0 ? 1 : config.channel;
+    for (let n = 0; n < 128; n++) {
+        if (state.playedAs[n] >= 0) {
+            let off = midi.create();
+            midi.setNoteOff(off, ch, state.playedAs[n]);
+            midiOut.send(off);
+        }
     }
-});
+};
 
 midi.onMessage = function(midiPort, msg) {
     if (!matchesChannel(midi.getChannel(msg))) {

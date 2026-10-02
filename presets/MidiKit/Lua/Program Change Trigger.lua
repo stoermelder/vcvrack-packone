@@ -5,17 +5,17 @@
 @description Sends a Program Change message for each trigger on up to 16 trigger channels, with a configurable program number per channel
 --]]
 
--- MIDI-KIT has a single polyphonic trigger input; each of its poly channels
+-- This script listens on trigger input 1 only (MIDI-KIT has two); each of its poly channels
 -- (up to 16) acts as its own trigger here. A rising edge on channel N sends
 -- a Program Change with the program number configured for N.
--- Feed the input with a poly cable (e.g. from a merge module) - a mono
+-- Feed trigger input 1 with a poly cable (e.g. from a merge module) - a mono
 -- cable only drives channel 1. Channels without an entry in
 -- config.programs are not enabled and do nothing.
 
 -- Configuration - change these values as needed
 local config = {
     -- MIDI channel (1-16) the Program Change messages are sent on
-    channel = 1,
+    channel = rack.getConfig("channel", 1),
 
     -- Show each sent program in the on-panel overlay
     showOverlay = true,
@@ -24,8 +24,32 @@ local config = {
     programs = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }
 }
 
--- Logs the active mapping ("trigger=program") on load
+local CHANNEL_LABELS = {}
+for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
+
+-- Setup
 rack.onLoad = function()
+    -- trig.onTrigger is only called for enabled trigger channels
+    for ch = 1, #config.programs do
+        trig.enableIn(1, ch)
+    end
+
+    -- Context menu - right-click the module to change the MIDI channel live.
+    rack.registerContextMenu({
+        type = "options",
+        label = "Channel",
+        options = CHANNEL_LABELS,
+        onGetValue = function()
+            return config.channel - 1
+        end,
+        onChange = function(idx)
+            config.channel = idx + 1
+            rack.setConfig("channel", config.channel)
+            rack.log("Channel: ", config.channel)
+        end
+    })
+
+    -- Log the active mapping ("trigger=program")
     local pairs = {}
     for ch = 1, #config.programs do
         pairs[#pairs + 1] = ch .. "=" .. config.programs[ch]
@@ -33,11 +57,7 @@ rack.onLoad = function()
     rack.log("MIDI ch " .. config.channel .. ": " .. table.concat(pairs, " "))
 end
 
--- trig.onTrigger is only called for enabled trigger channels
-for ch = 1, #config.programs do
-    trig.enableIn(1, ch)
-end
-
+-- Callbacks
 trig.onTrigger = function(trigPort, channel)
     local program = config.programs[channel]
     if program == nil then return end

@@ -34,7 +34,7 @@
 -- Configuration - change these values as needed
 local config = {
     -- Channel the flattened output is sent on (1-16)
-    outChannel = 1,
+    outChannel = rack.getConfig("outChannel", 1),
 
     -- First and last MPE member channel (Lower Zone default: 2-16)
     memberLow = 2,
@@ -46,10 +46,10 @@ local config = {
     bendRange = 48,
 
     -- Forward channel pressure as channel pressure on the output channel
-    forwardPressure = true,
+    forwardPressure = rack.getConfig("forwardPressure", true),
 
     -- Forward CC 74 (timbre / slide) on the output channel
-    forwardTimbre = true,
+    forwardTimbre = rack.getConfig("forwardTimbre", true),
 
     -- Log every fold decision. Noisy - for setup only.
     verbose = false
@@ -126,6 +126,7 @@ rack.registerContextMenu({
     end,
     onChange = function(idx)
         config.outChannel = idx + 1
+        rack.setConfig("outChannel", config.outChannel)
         rack.log("Output channel: ", config.outChannel)
     end
 })
@@ -138,6 +139,7 @@ rack.registerContextMenu({
     end,
     onChange = function(checked)
         config.forwardPressure = checked
+        rack.setConfig("forwardPressure", config.forwardPressure)
     end
 })
 
@@ -149,6 +151,7 @@ rack.registerContextMenu({
     end,
     onChange = function(checked)
         config.forwardTimbre = checked
+        rack.setConfig("forwardTimbre", config.forwardTimbre)
     end
 })
 

@@ -26,12 +26,13 @@
 //   damping). 1 keeps the echoes at full velocity forever (the train then
 //   stops only at the echo cap), lower values fade the ball out quickly.
 // param 3 - Min velocity: echoes stop once their velocity falls below this
-//   threshold - the "settle" point.
+//   threshold - the "settle" point. Not available on MIDI-µKIT (2 params),
+//   where echoes settle at velocity 14.
 //
 // The echo interval starts at config.initialInterval ms and each echo's gate
 // is config.gateMs long (capped at half the current interval so echoes never
 // bleed into the next bounce). Each ball is capped at config.maxEchoes echoes
-// because the engine allows 32 live message handles per callback and each echo
+// because the engine allows 128 live message handles per callback and each echo
 // needs two (a Note-On and a Note-Off).
 
 // Configuration - change these values as needed
@@ -44,19 +45,8 @@ let config = {
     gateMs: 40,
 
     // Safety cap on echoes per ball - each echo uses two message handles
-    // (Note-On + Note-Off) against the engine's 32-handle per-callback limit.
+    // (Note-On + Note-Off) against the engine's 128-handle per-callback limit.
     maxEchoes: 12
-};
-
-param.enable(1);
-param.enable(2);
-param.enable(3);
-
-param.getName = function(i) {
-    if (i === 1) return "Gravity";
-    if (i === 2) return "Bounciness";
-    if (i === 3) return "Min velocity";
-    return "";
 };
 
 // Interval shrink per bounce: 0..0.4, so intervals stay at 100%..60%.
@@ -73,22 +63,10 @@ function bouncinessParam() {
 
 // Echoes settle below this velocity: 1..127.
 function minVelocityParam() {
-    let m = Math.round(param.getValue(3) * 126) + 1;
+    let m = Math.round(param.getValue(3, 0.1) * 126) + 1;
     if (m < 1) m = 1;
     if (m > 127) m = 127;
     return m;
-};
-
-param.getValueFormat = function(i) {
-    if (i === 1) return number.toString(gravityParam());
-    if (i === 2) return Math.round(bouncinessParam() * 100) + " %";
-    if (i === 3) return number.toString(minVelocityParam());
-    return number.toString(param.getValue(i));
-};
-
-rack.onLoad = function() {
-    rack.log("Bouncing ball delay initialized");
-    rack.log("Gravity: ", number.toString(gravityParam()), " | Bounciness: ", Math.round(bouncinessParam() * 100), "% | Min velocity: ", minVelocityParam());
 };
 
 // Schedules the echo train for one ball started by the given Note-On. The
@@ -119,6 +97,33 @@ function spawnBall(ch, note, vel) {
         t += interval;
         count++;
     }
+};
+
+// Setup
+rack.onLoad = function() {
+    // Echoes leave on their exact frame instead of a block boundary, which keeps
+    // the shrinking gaps even. Costs one audio block of latency, dry note included.
+    midiOut.enableTiming();
+
+    for (let i = 1; i <= param.count && i <= 3; i++) param.enable(i);
+
+    rack.log("Bouncing ball delay initialized");
+    rack.log("Gravity: ", number.toString(gravityParam()), " | Bounciness: ", Math.round(bouncinessParam() * 100), "% | Min velocity: ", minVelocityParam());
+};
+
+// Callbacks
+param.getName = function(i) {
+    if (i === 1) return "Gravity";
+    if (i === 2) return "Bounciness";
+    if (i === 3) return "Min velocity";
+    return "";
+};
+
+param.getValueFormat = function(i) {
+    if (i === 1) return number.toString(gravityParam());
+    if (i === 2) return Math.round(bouncinessParam() * 100) + " %";
+    if (i === 3) return number.toString(minVelocityParam());
+    return number.toString(param.getValue(i));
 };
 
 midi.onMessage = function(midiPort, msg) {

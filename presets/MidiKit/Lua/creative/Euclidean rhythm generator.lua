@@ -25,17 +25,19 @@
 -- param 3 - Note: MIDI note number fired on each hit, 0-127.
 -- param 4 - Velocity: velocity of each hit, 1-127.
 --
+-- MIDI-µKIT has only 2 params: params 3 and 4 are unavailable there, so each
+-- hit plays note 36 at velocity 100.
+--
 -- All four params are read live and the pattern is recomputed on every trigger
 -- tick, so moving a knob changes the rhythm/note/velocity immediately.
 --
 -- Everything arriving on MIDI IN is passed through unchanged - this script is
 -- a pure generator and does not want to swallow the rest of a MIDI chain.
 
-
 -- Configuration - change these values as needed
 local config = {
     -- Output channel for the generated notes (1-16)
-    outChannel = 1
+    outChannel = rack.getConfig("outChannel", 1)
 }
 
 -- Internal state.
@@ -50,24 +52,6 @@ local state = {
     soundingNote = -1,
     soundingChannel = 1
 }
-
-param.enable(1)
-param.enable(2)
-param.enable(3)
-param.enable(4)
-
--- Step the rhythm from trigger channel 1 only: trig.onTrigger fires per poly
--- channel, and trig.enableIn() gates it — enabling just channel 1 means the
--- other channels are ignored.
-trig.enableIn(1, 1)
-
-param.getName = function(i)
-    if i == 1 then return "Steps" end
-    if i == 2 then return "Fills" end
-    if i == 3 then return "Note" end
-    if i == 4 then return "Velocity" end
-    return ""
-end
 
 local function stepsParam()
     local s = math.floor(param.getValue(1) * 15 + 0.5) + 1
@@ -84,14 +68,14 @@ local function fillsParam()
 end
 
 local function noteParam()
-    local n = math.floor(param.getValue(3) * 127 + 0.5)
+    local n = math.floor(param.getValue(3, 36 / 127) * 127 + 0.5)
     if n < 0 then n = 0 end
     if n > 127 then n = 127 end
     return n
 end
 
 local function velocityParam()
-    local v = math.floor(param.getValue(4) * 126 + 0.5) + 1
+    local v = math.floor(param.getValue(4, 99 / 126) * 126 + 0.5) + 1
     if v < 1 then v = 1 end
     if v > 127 then v = 127 end
     return v
@@ -102,14 +86,6 @@ local NOTE_NAMES = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#",
 
 local function noteName(n)
     return NOTE_NAMES[n % 12 + 1] .. (math.floor(n / 12) - 1)
-end
-
-param.getValueFormat = function(i)
-    if i == 1 then return number.toString(stepsParam()) .. " steps" end
-    if i == 2 then return number.toString(fillsParam()) .. " / " .. number.toString(stepsParam()) .. " hits" end
-    if i == 3 then return number.toString(noteParam()) .. " (" .. noteName(noteParam()) .. ")" end
-    if i == 4 then return number.toString(velocityParam()) end
-    return number.toString(param.getValue(i))
 end
 
 -- Bjorklund's algorithm: distributes `hits` pulses as evenly as possible
@@ -175,30 +151,64 @@ local function releaseSounding()
     end
 end
 
-rack.onLoad = function()
-    rack.log("Euclidean rhythm generator initialized")
-end
-
-rack.onUnload = function()
-    releaseSounding()
-end
-
--- Context menu - right-click the module to change these settings live.
+-- Context menu choices
 local CHANNEL_LABELS = {}
 for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
 
-rack.registerContextMenu({
-    type = "options",
-    label = "Output channel",
-    options = CHANNEL_LABELS,
-    onGetValue = function()
-        return config.outChannel - 1
-    end,
-    onChange = function(idx)
-        config.outChannel = idx + 1
-        rack.log("Output channel: ", config.outChannel)
-    end
-})
+-- Setup
+rack.onLoad = function()
+    -- Notes leave on the frame of the clock edge instead of a block boundary.
+    -- Costs one audio block of latency.
+    midiOut.enableTiming()
+
+    for i = 1, math.min(param.count, 4) do param.enable(i) end
+
+    -- Step the rhythm from trigger channel 1 only: trig.onTrigger fires per poly
+    -- channel, and trig.enableIn() gates it — enabling just channel 1 means the
+    -- other channels are ignored.
+    trig.enableIn(1, 1)
+
+    -- Context menu - right-click the module to change these settings live.
+    -- Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type = "options",
+        label = "Output channel",
+        options = CHANNEL_LABELS,
+        onGetValue = function()
+            return config.outChannel - 1
+        end,
+        onChange = function(idx)
+            config.outChannel = idx + 1
+            rack.setConfig("outChannel", config.outChannel)
+            rack.log("Output channel: ", config.outChannel)
+        end
+    })
+
+    rack.log("Euclidean rhythm generator initialized")
+end
+
+-- Callbacks
+param.getName = function(i)
+    if i == 1 then return "Steps" end
+    if i == 2 then return "Fills" end
+    if i == 3 then return "Note" end
+    if i == 4 then return "Velocity" end
+    return ""
+end
+
+param.getValueFormat = function(i)
+    if i == 1 then return number.toString(stepsParam()) .. " steps" end
+    if i == 2 then return number.toString(fillsParam()) .. " / " .. number.toString(stepsParam()) .. " hits" end
+    if i == 3 then return number.toString(noteParam()) .. " (" .. noteName(noteParam()) .. ")" end
+    if i == 4 then return number.toString(velocityParam()) end
+    return number.toString(param.getValue(i))
+end
+
+rack.onUnload = function()
+    -- With midiOut.enableTiming() the module holds this note-off behind any
+    -- note-on still waiting in Rack's output queue, so it cannot overtake it.
+    releaseSounding()
+end
 
 midi.onMessage = function(midiPort, msg)
     -- Pure generator - pass everything from MIDI IN through unchanged so the

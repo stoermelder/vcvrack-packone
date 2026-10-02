@@ -32,13 +32,13 @@ Lua:
 
 The header is parsed line-by-line and may also be used to set `@author` and `@description` metadata, which is shown in the module's log on load.
 
-MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the selected MIDI input, a trigger arrives on the CV trigger input (`trig.onTrigger`, once enabled with `trig.enableIn()`), or a [Tipsy](SCRIPTING.md#trig-dedicated-triggergate-ports) message finishes decoding on the trigger input (`trig.onTipsyMessage`). The scripting API lets you create new MIDI messages; a single incoming event may result in up to 32 outgoing messages (the message-handle store holds 32 handles per callback — creating more raises a script error, see [midi](SCRIPTING.md#midi-message-constructioninspection)). Incoming MIDI messages are not passed through automatically — scripts must explicitly call `midiOut.send()` to forward messages.
+MIDI-KIT is event-driven: it runs only when a MIDI message arrives on an enabled MIDI input (four are available, input 1 is enabled by default, see [Enabling MIDI ports](SCRIPTING.md#enabling-midi-ports)), a trigger arrives on one of the two CV trigger inputs (`trig.onTrigger`, once enabled with `trig.enableIn()`), or a [Tipsy](SCRIPTING.md#trig-dedicated-triggergate-ports) message finishes decoding on trigger input 1 (`trig.onTipsyMessage`). The scripting API lets you create new MIDI messages; a single incoming event may result in up to 128 outgoing messages (the message-handle store holds 128 handles per callback — creating more raises a script error, see [midi](SCRIPTING.md#midi-message-constructioninspection)). Incoming MIDI messages are not passed through automatically — scripts must explicitly call `midiOut.send()` to forward messages.
 
 The module also exposes four CV inputs and four panel parameters that can be read from scripts to add modulation or dynamic configuration.
 
 Scripts can persist their configuration across patch saves and reloads via `rack.getConfig()`/`rack.setConfig()` (see [Persistence](SCRIPTING.md#persistence)).
 
-`midi.onMessage` (on the `midi` object), `rack.onLoad`/`rack.onUnload`, and `trig.onTrigger`/`trig.onTipsyMessage` (on the `trig` object) are only ever read once, right after the script loads — assign each exactly once, at the top level. Reassigning one later, or defining it late, has no effect (see [Hooks and predefined objects are resolved once, at load time](SCRIPTING.md#hooks-and-predefined-objects-are-resolved-once-at-load-time)). `trig.enableIn()`, by contrast, is a live API call — the trigger input does nothing until it is called. `rack.getConfig()`/`rack.setConfig()` are likewise live calls, not hooks.
+`midi.onMessage`, `midi.onNrpn`/`midi.onRpn`/`midi.onCc14bit` (on the `midi` object), `rack.onLoad`/`rack.onUnload`, and `trig.onTrigger`/`trig.onTipsyMessage` (on the `trig` object) are only ever read once, right after the script loads — assign each exactly once, at the top level. Reassigning one later, or defining it late, has no effect (see [Hooks and predefined objects are resolved once, at load time](SCRIPTING.md#hooks-and-predefined-objects-are-resolved-once-at-load-time)). `trig.enableIn()`, by contrast, is a live API call — a trigger input does nothing until it is called. `rack.getConfig()`/`rack.setConfig()` are likewise live calls, not hooks.
 
 You can use MIDI-KIT as an insert effect via VCV Rack's built-in MIDI Loopback driver. This lets you process incoming messages before they reach other MIDI modules (for example, MIDI‑CC, MIDI‑CV, MIDI‑MAP, or MIDI‑CAT), and likewise process outgoing messages.
 
@@ -55,7 +55,7 @@ the module's context menu) are the same scripts on disk under
 
 ## Language reference
 
-MIDI-KIT supports two scripting languages. The JavaScript engine is [QuickJS](https://bellard.org/quickjs/) (a full ES2020 engine); the Lua engine is a bundled [MiniLua](https://github.com/edubart/minilua). QuickJS ships with the full standard JavaScript library; MiniLua is trimmed to a safe subset. The `midi` / `midiOut` / `input` / `trig` / `param` / `number` / `rack` API is identical across the two engines, so picking an engine is mostly a matter of personal taste.
+MIDI-KIT supports two scripting languages. The JavaScript engine is [QuickJS](https://bellard.org/quickjs/) (a full ES2020 engine); the Lua engine is a bundled [MiniLua](https://github.com/edubart/minilua). QuickJS ships with the full standard JavaScript library; MiniLua runs the full Lua 5.4 language with a trimmed set of libraries. The `midi` / `midiOut` / `input` / `trig` / `param` / `number` / `rack` API is identical across the two engines, so picking an engine is mostly a matter of personal taste.
 
 ### Quick comparison
 
@@ -85,36 +85,28 @@ Strings are binary data chunks; their length counts bytes rather than Unicode co
 
 ### Lua (MiniLua)
 
-#### Supported features
+#### Language and libraries
 
-- Numeric and string literals: `12`, `12.3`, `"hello"`, `'hello'`, `true`, `false`, `nil`
-- Arithmetic: `+`, `-`, `*`, `/`, `%`, unary `-`
-- Comparisons: `==`, `~=`, `<`, `<=`, `>`, `>=` (no implicit conversion)
-- Logical operators: `and`, `or`, `not` (short-circuit)
-- String concatenation: `..` — e.g. `'Port ' .. i`
-- Local variables: `local x = 1`
-- Tables (associative + array) with index access: `t.k`, `t["k"]`, `t[1]`
-- Functions: `local f = function(x) return x * 2 end` and `function f(x) ... end`
-- Numeric and generic `for` loops:
-  ```
-  for i = 1, 10 do ... end             -- numeric
-  for k, v in pairs(t) do ... end       -- generic
-  ```
-- `if ... then ... else ... end` (also `elseif`)
-- `repeat ... until cond`
-- Multi-return values; `tostring(n)`, `tonumber(s)`, `math.*` (a subset of the standard `math` library is available)
-- `pcall` for protected calls
-- Strings are binary data chunks: their length counts bytes, not Unicode code points — `'Київ':len() == 8`.
+The Lua engine runs the full Lua 5.4 language: `goto` and labels, metatables
+(`setmetatable`), closures, integer and float arithmetic, and `string`
+functions with patterns and captures (`string.find`, `match`, `gmatch`, `gsub`,
+`format`). Only the standard *libraries* are trimmed to what is safe to run
+inside a patch:
 
-#### Not supported features
+- Available: the base library (`pairs`, `ipairs`, `pcall`, `tostring`,
+  `tonumber`, `select`, `setmetatable`, …), `math`, `string` and `table`.
+- Removed from the base library: `dofile`, `loadfile`, `load` and `string.dump`
+  (no file access, no precompiled bytecode).
+- Not available: `io`, `os`, `package` / `require`, `debug`, `coroutine`, `utf8`.
 
-- No `goto` and no labels
-- No pattern matching with captures (only plain `string.find` is exposed)
-- No `os`, `io`, `package`, `require` or `debug` libraries — the engine only opens the safe subset (`_G`, `math`, `string`, `table`) needed to host user scripts
-- No coroutines (`coroutine.*`)
-- No metamethods / metatables beyond what `string` and `table` need internally
+Strings are binary data chunks: their length counts bytes, not Unicode code
+points — `'Київ':len() == 8`.
 
-There is no implicit number-to-string coercion outside `..` concatenation — numbers are auto-converted to strings in `..` (e.g. `'Port ' .. i`); everywhere else use `tostring(n)` or the MIDI-KIT helper `number.toString(n)`. For everything else, the standard Lua 5.x semantics apply; please refer to the [Lua reference manual](https://www.lua.org/manual/5.4/) for details.
+There is no implicit number-to-string coercion outside `..` concatenation —
+numbers are auto-converted to strings in `..` (e.g. `'Port ' .. i`); everywhere
+else use `tostring(n)` or the MIDI-KIT helper `number.toString(n)`. For
+everything else, the standard Lua 5.4 semantics apply; please refer to the
+[Lua reference manual](https://www.lua.org/manual/5.4/) for details.
 
 ## Settings
 
@@ -122,14 +114,21 @@ The module's panel and right-click context menu are laid out as follows.
 
 **Panel**
 
-- A **MIDI input** device selector and a **MIDI output** device selector.
+- A **MIDI input** and a **MIDI output** device selector for port 1. MIDI-KIT has four inputs and four outputs; inputs and outputs 2-4 appear in the right-click menu (as "MIDI input 2", …) once the script enables them with `midi.enablePorts()` / `midiOut.enablePorts()`.
 - A text display that serves as the **script editor** (type or paste the
   script directly into it) and also shows the module's **log** — `rack.log()`
   output and script load/error messages.
 - Four CV **inputs** and four panel **parameters**, readable from scripts via
   `input.*` and `param.*`.
-- One CV **trigger input** and one **trigger output**, driven by the script's
-  `trig.*` functions.
+- Two CV **trigger inputs** and two **trigger outputs** ("Trigger 1" and
+  "Trigger 2", addressed 1-based as `trigPort` / `i` in the script's `trig.*`
+  functions), each polyphonic. Tipsy uses the first trigger input and the
+  first trigger output only.
+
+**MIDI-µKIT** is the compact variant with two CV inputs and two panel
+parameters instead of four (no log display); everything else is the same. Scripts
+read `param.count` and `input.count` to adapt, see
+[Module variants](SCRIPTING.md#module-variants).
 
 **Right-click context menu**
 
@@ -154,13 +153,13 @@ and the worked examples are in [SCRIPTING.md](SCRIPTING.md).
 
 | Group | What it does | Details |
 | --- | --- | --- |
-| `midi.*` | message construction/inspection: `onMessage`, the assembled-input callbacks `onNrpn`/`onRpn`/`onCc14bit` (enabled with `enableNrpnIn`/`enableRpnIn`/`enableCc14bitIn`), constructors `create`/`createNRPN`/`createCc14bit`/`clone`, getters (`getChannel`, `getControl`, `getValue`, …), type predicates (`isCc`, `isNrpn`, …), and setters (`setCc`, `setCc14bit`, `setNRPN`, …) | [midi.*](SCRIPTING.md#midi-message-constructioninspection) |
-| `midiOut.*` | sending on the selected output port: `selectPort`, `send`, `sendAfterMs`, `sendAfterTrigger` | [midiOut.*](SCRIPTING.md#midiout-sending) |
+| `midi.*` | message construction/inspection: `onMessage`, the assembled-input callbacks `onNrpn`/`onRpn`/`onCc14bit` (enabled with `enableNrpnIn`/`enableRpnIn`/`enableCc14bitIn`), `enablePorts(count)` for more MIDI inputs, constructors `create`/`createNRPN`/`createRPN`/`createCc14bit`/`clone`, getters (`getChannel`, `getControl`, `getValue`, …), type predicates (`isCc`, `isNrpn`, …), and setters (`setCc`, `setCc14bit`, `setNRPN`, `setRPN`, …) | [midi.*](SCRIPTING.md#midi-message-constructioninspection) |
+| `midiOut.*` | sending on the selected output port: `enablePorts(count)` (more outputs), `selectPort`, `send`, `sendAfterMs`, `sendAtFrame`, `sendAfterTrigger`, and `enableTiming([reportLate])` for [sample-accurate output](SCRIPTING.md#enabling-sample-accurate-timing) | [midiOut.*](SCRIPTING.md#midiout-sending) |
 | `input.*` | read the module's CV inputs: `enable`, `getVoltage`, `isHigh`, `isLow`, `getName` | [input.*](SCRIPTING.md#input-cv-inputs-on-the-module-1-based) |
 | `trig.*` | the dedicated trigger/gate ports: `enableIn`, `onTrigger`, `onTipsyMessage`, `getTicks`, `isHigh`, `isLow`, `setGate`/`setHigh`/`setLow`/`setTrigger`, `sendTipsy`, `enableTipsyIn` | [trig.*](SCRIPTING.md#trig-dedicated-triggergate-ports) |
 | `param.*` | read the module's panel parameters: `enable`, `getValue`, `getName`, `getValueFormat` | [param.*](SCRIPTING.md#param-panel-knobs) |
 | `number.*` | numeric helpers: `rescale`, `crossfade`, `toString` | [number.*](SCRIPTING.md#number) |
-| `rack.*` | module services: `log`, `overlay`, `getFrame`, `random`, `registerContextMenu`, `getConfig`/`setConfig` (persistence), and the `onLoad`/`onUnload` hooks | [rack.*](SCRIPTING.md#rack) · [Persistence](SCRIPTING.md#persistence) |
+| `rack.*` | module services: `log`, `overlay`, `random`, `getEventFrame`, `msToFrames`/`framesToMs`, `registerContextMenu`, `getConfig`/`setConfig` (persistence), and the `onLoad`/`onUnload` hooks | [rack.*](SCRIPTING.md#rack) · [Persistence](SCRIPTING.md#persistence) |
 
 Full documentation of every function and the scripting examples are in
 [SCRIPTING.md](SCRIPTING.md).

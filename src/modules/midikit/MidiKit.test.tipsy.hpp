@@ -135,7 +135,7 @@ midi.onMessage = function(midiPort, msg) {
 	REQUIRE_FALSE(m->sendTipsyOut(nullptr, data, 4));
 	REQUIRE_FALSE(m->sendTipsyOut("text/plain", nullptr, 4));
 	// An empty mime type is rejected: it would be indistinguishable from the
-	// discard sentinel sendTipsyOutReset() enqueues.
+	// discard sentinel tipsyOut.reset() enqueues.
 	REQUIRE_FALSE(m->sendTipsyOut("", data, 4));
 	REQUIRE(m->tipsyOut.outQueue.empty());
 
@@ -176,7 +176,7 @@ midi.onMessage = function(midiPort, msg) {
 	REQUIRE(m->tipsyOut.outQueue.size() == 7);
 
 	// The reserved slot is still available to a discard, even when full.
-	m->sendTipsyOutReset();
+	m->tipsyOut.reset();
 	REQUIRE(m->tipsyOut.outQueue.full());
 
 	// Draining frees slots so new messages can be queued again. The pending
@@ -187,7 +187,43 @@ midi.onMessage = function(midiPort, msg) {
 	REQUIRE(m->tipsyOut.outQueue.size() == 1);
 }
 
-TEST_CASE("sendTipsyOutReset drops queued messages but completes the current one", "[MidiKit][Tipsy]") {
+TEST_CASE("Tipsy output queue keeps draining while the trigger output is unpatched", "[MidiKit][Tipsy]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+	m->loadScript(R"(/**
+ * @engine QuickJs@v1
+ */
+)");
+	const unsigned char* data = reinterpret_cast<const unsigned char*>("data");
+	int64_t frame = 1;
+	auto step = [&]() { m->process(Test::makeProcessArgs(frame++)); };
+	// Output 1 is not connected (channels == 0 by default).
+	REQUIRE_FALSE(m->outputs[MidiKitModule::OUTPUT_TRIG].isConnected());
+
+	// Developing a Tipsy script with nothing patched: messages pile up, the
+	// script reloads repeatedly. The queue must never overflow.
+	for (int round = 0; round < 4; round++) {
+		for (int i = 0; i < 7; i++) m->sendTipsyOut("text/plain", data, 4);
+		m->tipsyOut.reset();
+		step();
+		REQUIRE(m->tipsyOut.outQueue.size() <= 8);
+		REQUIRE(m->tipsyOut.outQueue.empty());
+	}
+
+	// Patching a cable afterwards finds nothing left over from before.
+	m->outputs[MidiKitModule::OUTPUT_TRIG].channels = 1;
+	for (int i = 0; i < 20; i++) step();
+	REQUIRE(m->tipsyOut.encoder.isDormant());
+	REQUIRE(m->outputs[MidiKitModule::OUTPUT_TRIG].getVoltage(0) == 0.f);
+
+	// And the output works normally from then on.
+	REQUIRE(m->sendTipsyOut("text/plain", data, 4));
+	std::vector<float> voltages = drainTipsy(m);
+	REQUIRE(voltages.size() > 0);
+	REQUIRE(voltages[0] == tipsy::kMessageBeginSentinel);
+}
+
+TEST_CASE("tipsyOut.reset() drops queued messages but completes the current one", "[MidiKit][Tipsy]") {
 	ModuleScaffold mods;
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
@@ -212,7 +248,7 @@ midi.onMessage = function(midiPort, msg) {
 	// Start encoding the first message, then discard mid-stream.
 	REQUIRE(m->processTipsyOutput(0));
 	REQUIRE_FALSE(m->tipsyOut.encoder.isDormant());
-	m->sendTipsyOutReset();
+	m->tipsyOut.reset();
 
 	// The in-flight message still finishes: voltages keep coming until the
 	// encoder goes dormant of its own accord.
@@ -258,9 +294,9 @@ midi.onMessage = function(midiPort, msg) {
 
 	const unsigned char* data = reinterpret_cast<const unsigned char*>("data");
 	REQUIRE(m->sendTipsyOut("text/plain", data, 4));
-	m->sendTipsyOutReset();
+	m->tipsyOut.reset();
 	REQUIRE(m->sendTipsyOut("text/plain", data, 4));
-	m->sendTipsyOutReset();
+	m->tipsyOut.reset();
 
 	// Nothing is emitted: both batches sit ahead of an unconsumed sentinel.
 	REQUIRE_FALSE(m->processTipsyOutput(0));
@@ -363,8 +399,8 @@ TEST_CASE("bundled Tipsy output example scripts work", "[MidiKit][Tipsy]") {
 		Test::destroyModule(m);
 	};
 
-	runExample("presets/MidiKit/JavaScript/Tipsy.js");
-	runExample("presets/MidiKit/Lua/Tipsy.lua");
+	runExample("presets/MidiKit/JavaScript/basic/Tipsy.js");
+	runExample("presets/MidiKit/Lua/basic/Tipsy.lua");
 }
 
 
@@ -381,6 +417,8 @@ static int feedTipsy(MidiKitModule* m, int port, const std::vector<float>& volta
 	int completed = 0;
 	for (float v : voltages) {
 		m->inputs[MidiKitModule::INPUT_TRIG + port].setVoltage(v, 0);
+		// What process() does first: catch up with a script load.
+		m->syncScriptGen();
 		if (m->processTipsyInput()) completed++;
 	}
 	return completed;
@@ -560,14 +598,14 @@ trig.onTipsyMessage = function(data, mimeType) {};
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
 	m->process(Test::makeProcessArgs(2));
 	m->host.getActiveEngine()->process();
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 0);
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 0);
 	REQUIRE(drainLog(m).find("trigger") == std::string::npos);
 
 	// ...but channel 2 is an ordinary gate and still fires.
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 1);
 	m->process(Test::makeProcessArgs(3));
 	m->host.getActiveEngine()->process();
-	REQUIRE(m->triggersIn.triggerTick[0][1] == 1);
+	REQUIRE(m->triggerIns.triggerTick[0][1] == 1);
 	REQUIRE(drainLog(m).find("trigger2") != std::string::npos);
 
 	// Releasing restores normal trigger behavior on channel 1.
@@ -577,7 +615,7 @@ trig.onTipsyMessage = function(data, mimeType) {};
 	m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
 	m->process(Test::makeProcessArgs(5));
 	m->host.getActiveEngine()->process();
-	REQUIRE(m->triggersIn.triggerTick[0][0] == 1);
+	REQUIRE(m->triggerIns.triggerTick[0][0] == 1);
 	REQUIRE(drainLog(m).find("trigger1") != std::string::npos);
 }
 
@@ -671,6 +709,6 @@ TEST_CASE("bundled Tipsy input example scripts work", "[MidiKit][Tipsy]") {
 		Test::destroyModule(m);
 	};
 
-	runExample("presets/MidiKit/JavaScript/TipsyIn.js", "{\"value\":42}", "application/json");
-	runExample("presets/MidiKit/Lua/TipsyIn.lua", "42", "text/plain");
+	runExample("presets/MidiKit/JavaScript/basic/TipsyIn.js", "{\"value\":42}", "application/json");
+	runExample("presets/MidiKit/Lua/basic/TipsyIn.lua", "42", "text/plain");
 }

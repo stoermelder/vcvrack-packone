@@ -15,7 +15,6 @@ TEST_CASE("QuickJs-tagged script loads and creates a context", "[MidiKit][QuickJ
 
 	REQUIRE(m->host.seQuickJs.ctx != nullptr);
 	REQUIRE(m->host.isQuickJsEngine());
-
 }
 
 
@@ -32,7 +31,6 @@ TEST_CASE("QuickJs script loads with @engine as the only header tag", "[MidiKit]
 
 	REQUIRE(m->host.seQuickJs.ctx != nullptr);
 	REQUIRE(m->host.isQuickJsEngine());
-
 }
 
 
@@ -45,10 +43,9 @@ TEST_CASE("Lua-tagged script is rejected by QuickJs engine", "[MidiKit][QuickJs]
 	ModuleScaffold mods;
 	MidiKitModule* m = mods.create();
 
-	m->host.seQuickJs.loadScript(LUA_HEADER);
+	m->host.seQuickJs.loadScriptOnWorker(LUA_HEADER, "");
 
 	REQUIRE(m->host.seQuickJs.ctx == nullptr);
-
 }
 
 
@@ -62,10 +59,9 @@ TEST_CASE("JS syntax error is handled gracefully", "[MidiKit][QuickJs]") {
 	ModuleScaffold mods;
 	MidiKitModule* m = mods.create();
 
-	m->host.seQuickJs.loadScript(QJS_BAD_SYNTAX);
+	m->host.seQuickJs.loadScriptOnWorker(QJS_BAD_SYNTAX, "");
 
 	REQUIRE(m->host.seQuickJs.ctx == nullptr);
-
 }
 
 
@@ -95,7 +91,6 @@ TEST_CASE("Parse error reports the line it failed on", "[MidiKit][QuickJs]") {
 	REQUIRE(log.find("Error while loading script") != std::string::npos);
 	// QuickJS reports the offending line number in the exception's stack trace
 	REQUIRE(log.find(":6:") != std::string::npos);
-
 }
 
 
@@ -119,7 +114,6 @@ TEST_CASE("Parse error line number tracks the error position", "[MidiKit][QuickJ
 	std::string log = drainLog(m);
 	REQUIRE(log.find(":5:") != std::string::npos);
 	REQUIRE(log.find(":6:") == std::string::npos);
-
 }
 
 
@@ -134,7 +128,6 @@ TEST_CASE("Successful load reports no error", "[MidiKit][QuickJs]") {
 	std::string log = drainLog(m);
 	REQUIRE(log.find("rror") == std::string::npos);
 	REQUIRE(log.find("Script loaded") != std::string::npos);
-
 }
 
 
@@ -158,14 +151,13 @@ TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Qui
 	// onUnload from ~MidiScriptEngineQuickJs() itself would route those
 	// callbacks through a handler that is already destroyed — undefined
 	// behaviour that crashes as "pure virtual function called". MidiKitModule
-	// has its own destructor that calls closeState() first, while the module
+	// has its own destructor that calls host.unload() first, while the module
 	// (the handler) is still fully alive, specifically to avoid that. This
 	// test does not (and cannot) assert a log/message result — it can only
 	// prove destroyModule() doesn't crash, which is what it's for.
 	MidiKitModule* m = mods.create();
 	m->loadScript(QJS_ON_UNLOAD);
 	REQUIRE(m->host.seQuickJs.ctx != nullptr);
-
 }
 
 
@@ -210,7 +202,6 @@ TEST_CASE("midi.onMessage dispatch round-trips a CC message through midi.*/midiO
 
 	std::string log = drainLog(m);
 	REQUIRE(log.find("got cc 99") != std::string::npos);
-
 }
 
 
@@ -235,7 +226,7 @@ TEST_CASE("midi.createNRPN/setNRPN queue all four CC messages in order", "[MidiK
 	m->host.seQuickJs.processInMessage(0, msg);
 	m->host.seQuickJs.process();
 
-	REQUIRE(m->midiOutQueue.size() == 4);
+	REQUIRE(m->midiOuts.queue.size() == 4);
 	int expectedNote[4] = {99, 98, 6, 38};
 	for (int i = 0; i < 4; i++) {
 		int port, ticks;
@@ -244,7 +235,6 @@ TEST_CASE("midi.createNRPN/setNRPN queue all four CC messages in order", "[MidiK
 		REQUIRE(out.getStatus() == 0xb);
 		REQUIRE(out.getNote() == expectedNote[i]);
 	}
-
 }
 
 
@@ -299,6 +289,7 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Quick
 	}
 
 	JS_RunGC(m->host.seQuickJs.rt);
+	m->host.seQuickJs.publishMemoryUsage();   // the snapshot is taken after dispatch, not after the GC
 	size_t used0, total;
 	REQUIRE(m->host.seQuickJs.getMemoryUsage(used0, total));
 
@@ -308,6 +299,7 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Quick
 	}
 
 	JS_RunGC(m->host.seQuickJs.rt);
+	m->host.seQuickJs.publishMemoryUsage();   // the snapshot is taken after dispatch, not after the GC
 	size_t used1, total1;
 	REQUIRE(m->host.seQuickJs.getMemoryUsage(used1, total1));
 
@@ -322,7 +314,6 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Quick
 	// tracking the callback count instead of staying flat.
 	REQUIRE(used1 < total1);
 	REQUIRE(used1 <= used0 + 64 * 1024);
-
 }
 
 
@@ -361,6 +352,7 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][QuickJs][GC]") {
 	}
 
 	JS_RunGC(m->host.seQuickJs.rt);
+	m->host.seQuickJs.publishMemoryUsage();   // the snapshot is taken after dispatch, not after the GC
 	size_t used0, total;
 	REQUIRE(m->host.seQuickJs.getMemoryUsage(used0, total));
 
@@ -370,6 +362,7 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][QuickJs][GC]") {
 	}
 
 	JS_RunGC(m->host.seQuickJs.rt);
+	m->host.seQuickJs.publishMemoryUsage();   // the snapshot is taken after dispatch, not after the GC
 	size_t used1, total1;
 	REQUIRE(m->host.seQuickJs.getMemoryUsage(used1, total1));
 
@@ -378,7 +371,6 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][QuickJs][GC]") {
 
 	// 200 retained strings + their array slots must be clearly visible.
 	REQUIRE(used1 > used0 + 2048);
-
 }
 
 
@@ -424,7 +416,6 @@ TEST_CASE("Infinite loop in onMessage is interrupted, not a hang", "[MidiKit][Qu
 	m->host.getActiveEngine()->process();
 	std::string log2 = drainLog(m);
 	REQUIRE(log2.find("interrupted") != std::string::npos);
-
 }
 
 TEST_CASE("Infinite loop in onMessage does not wedge the shared worker", "[MidiKit][QuickJs][Async]") {
@@ -479,5 +470,4 @@ TEST_CASE("Infinite loop at script top level fails the load, and the module reco
 	m->host.getActiveEngine()->process();
 	std::string reloadLog = drainLog(m);
 	REQUIRE(reloadLog.find("recovered") != std::string::npos);
-
 }

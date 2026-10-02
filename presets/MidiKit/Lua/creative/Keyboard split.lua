@@ -61,31 +61,38 @@ local function targetChannel(note)
     return p.channelB
 end
 
+-- Context menu choices
+local PRESET_LABELS = {}
+for i = 0, #config.presets - 1 do PRESET_LABELS[i + 1] = presetLabel(i) end
+
+-- Setup
 rack.onLoad = function()
-    state.active = config.initialPreset
+    -- The last active preset is persisted; initialPreset applies on first load.
+    state.active = rack.getConfig("activePreset", config.initialPreset)
     if state.active < 0 or state.active >= #config.presets then state.active = 0 end
+
+    -- Context menu - right-click the module to switch the active preset manually.
+    -- Each menu mirrors a `config` value above; onChange applies the choice.
+    rack.registerContextMenu({
+        type = "options",
+        label = "Preset",
+        options = PRESET_LABELS,
+        onGetValue = function()
+            return state.active
+        end,
+        onChange = function(idx)
+            state.active = idx
+            rack.setConfig("activePreset", idx)
+            rack.log("Preset: ", PRESET_LABELS[idx + 1])
+        end
+    })
+
     rack.log("Keyboard split initialized")
     rack.log("Presets: ", #config.presets)
     rack.log("Active preset: ", presetLabel(state.active))
 end
 
--- Context menu - right-click the module to switch the active preset manually.
-local PRESET_LABELS = {}
-for i = 0, #config.presets - 1 do PRESET_LABELS[i + 1] = presetLabel(i) end
-
-rack.registerContextMenu({
-    type = "options",
-    label = "Preset",
-    options = PRESET_LABELS,
-    onGetValue = function()
-        return state.active
-    end,
-    onChange = function(idx)
-        state.active = idx
-        rack.log("Preset: ", PRESET_LABELS[idx + 1])
-    end
-})
-
+-- Callbacks
 midi.onMessage = function(midiPort, msg)
     local ch = midi.getChannel(msg)
 
@@ -98,6 +105,7 @@ midi.onMessage = function(midiPort, msg)
             if config.presets[i].cc == cc then
                 if midi.getValue(msg) > 0 then
                     state.active = i - 1
+                    rack.setConfig("activePreset", i - 1)
                     rack.log("Preset: ", presetLabel(i - 1))
                 end
                 return
