@@ -22,9 +22,9 @@
 //      were first seen.
 //   3. Note-Ons for the notes currently held on the new input, in press order.
 //
-// Only 128 messages can be created per callback, so a switch replays at most 128
-// messages in total (Note-Offs first); if more are needed the rest is dropped
-// and a line is written to the log.
+// One message handle is reused for all of them. A very large state can overflow
+// the module's output queue; the module then drops the rest and says so in the
+// log.
 //
 // Set config.numInputs (2-4) below or in the "Number of inputs" context menu;
 // the choice is remembered with the patch. The MIDI inputs 1..n are enabled
@@ -35,9 +35,6 @@ let config = {
     // Number of MIDI inputs to merge (2-4)
     numInputs: rack.getConfig("numInputs", 2)
 };
-
-// Most messages that can be created in one callback (engine limit)
-const MAX_MESSAGES = 128;
 
 // Context menu choices
 let INPUT_COUNT_LABELS = ["2", "3", "4"];
@@ -101,40 +98,27 @@ function track(idx, msg) {
 
 // Brings the output from the state of input `from` to the state of input `to`.
 function replayState(from, to) {
-    let left = MAX_MESSAGES;
-    let dropped = 0;
     let old = state.inputs[from];
     let next = state.inputs[to];
+    // Sending copies the message, so one handle serves every message below.
+    let m = midi.create();
 
     for (let i = 0; i < old.noteOrder.length; i++) {
-        if (left === 0) { dropped++; continue; }
         let key = old.noteOrder[i];
-        let off = midi.create();
-        midi.setNoteOff(off, channelOf(key), numberOf(key));
-        midiOut.send(off);
-        left--;
+        midi.setNoteOff(m, channelOf(key), numberOf(key));
+        midiOut.send(m);
     }
 
     for (let i = 0; i < next.ccOrder.length; i++) {
-        if (left === 0) { dropped++; continue; }
         let key = next.ccOrder[i];
-        let cc = midi.create();
-        midi.setCc(cc, channelOf(key), numberOf(key), next.ccValue[key]);
-        midiOut.send(cc);
-        left--;
+        midi.setCc(m, channelOf(key), numberOf(key), next.ccValue[key]);
+        midiOut.send(m);
     }
 
     for (let i = 0; i < next.noteOrder.length; i++) {
-        if (left === 0) { dropped++; continue; }
         let key = next.noteOrder[i];
-        let on = midi.create();
-        midi.setNoteOn(on, channelOf(key), numberOf(key), next.noteVel[key]);
-        midiOut.send(on);
-        left--;
-    }
-
-    if (dropped > 0) {
-        rack.log("Switch replayed ", MAX_MESSAGES, " messages, ", dropped, " dropped (limit per callback)");
+        midi.setNoteOn(m, channelOf(key), numberOf(key), next.noteVel[key]);
+        midiOut.send(m);
     }
 };
 
@@ -214,9 +198,9 @@ rack.onLoad = function() {
 rack.onUnload = function() {
     let held = state.inputs[state.active];
     if (!held) return;
-    for (let i = 0; i < held.noteOrder.length && i < MAX_MESSAGES; i++) {
+    let off = midi.create();
+    for (let i = 0; i < held.noteOrder.length; i++) {
         let key = held.noteOrder[i];
-        let off = midi.create();
         midi.setNoteOff(off, channelOf(key), numberOf(key));
         midiOut.send(off);
     }

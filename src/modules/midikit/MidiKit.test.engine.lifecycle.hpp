@@ -3,14 +3,36 @@
 // Part of the cross-engine suite: included into the __engine namespace by
 // MidiKit.test.cpp after MidiKit.test.engine.hpp, which defines the shared helpers.
 
-// midi.create() / midi.createNRPN() outside midi.onMessage()
-// The message store is reset on every callback, so a handle created at top
-// level is silently invalidated before it can be used. That reset is
-// documented and intended; these tests pin the warning that makes it
-// visible, and that the two engines use the same wording for it (unlike
-// parse-error text, which #13's write-up notes differs deliberately).
+// midi.create() / midi.createNRPN() outside a callback
+// A message handle is only valid inside the callback that created it, so a
+// creator called anywhere else (top level, param.getName, ...) raises. At top
+// level that fails the load with the script line. These tests pin the error
+// and that the two engines use the same wording for it (unlike parse-error
+// text, which #13's write-up notes differs deliberately).
 
-static const char* OUTSIDE_CALLBACK_WARNING = "called outside a callback";
+static const char* OUTSIDE_CALLBACK_ERROR = "only allowed inside a callback";
+
+// The whole log of loading `script`, errors included (run() insists on none).
+static std::string loadLogOf(const std::string& script) {
+	MidiKitModule* m = createModule();
+	m->loadScript(script);
+	std::string log = drainLog(m);
+	Test::destroyModule(m);
+	return log;
+}
+
+static void requireLoadError(const std::string& js, const std::string& lua, const char* needle) {
+	CATCH_INFO("JS:\n" << js);
+	CATCH_INFO("Lua:\n" << lua);
+	std::string jsLog = loadLogOf(js);
+	std::string luaLog = loadLogOf(lua);
+	CATCH_INFO("JS log:\n" << jsLog);
+	CATCH_INFO("Lua log:\n" << luaLog);
+	REQUIRE(jsLog.find("Error loading script") != std::string::npos);
+	REQUIRE(luaLog.find("Error loading script") != std::string::npos);
+	REQUIRE(jsLog.find(needle) != std::string::npos);
+	REQUIRE(luaLog.find(needle) != std::string::npos);
+}
 
 static const char* JS_TOPLEVEL_CREATE = R"(/**
  * @engine QuickJs@v1
@@ -24,8 +46,8 @@ static const char* LUA_TOPLEVEL_CREATE = R"(--[[
 g = midi.create()
 )";
 
-TEST_CASE("midi.create outside midi.onMessage warns identically", "[MidiKit][CrossEngine]") {
-	requireEquivalentLog(JS_TOPLEVEL_CREATE, LUA_TOPLEVEL_CREATE, OUTSIDE_CALLBACK_WARNING, true);
+TEST_CASE("midi.create at top level fails the load identically", "[MidiKit][CrossEngine]") {
+	requireLoadError(JS_TOPLEVEL_CREATE, LUA_TOPLEVEL_CREATE, OUTSIDE_CALLBACK_ERROR);
 }
 
 
@@ -41,8 +63,8 @@ static const char* LUA_TOPLEVEL_CREATE_NRPN = R"(--[[
 g = midi.createNRPN()
 )";
 
-TEST_CASE("midi.createNRPN outside midi.onMessage warns identically", "[MidiKit][CrossEngine]") {
-	requireEquivalentLog(JS_TOPLEVEL_CREATE_NRPN, LUA_TOPLEVEL_CREATE_NRPN, OUTSIDE_CALLBACK_WARNING, true);
+TEST_CASE("midi.createNRPN at top level fails the load identically", "[MidiKit][CrossEngine]") {
+	requireLoadError(JS_TOPLEVEL_CREATE_NRPN, LUA_TOPLEVEL_CREATE_NRPN, OUTSIDE_CALLBACK_ERROR);
 }
 
 
@@ -66,28 +88,30 @@ midi.onMessage = function(midiPort, msg)
 end
 )";
 
-TEST_CASE("midi.create inside midi.onMessage does not warn in either engine", "[MidiKit][CrossEngine]") {
-	requireEquivalentLog(JS_CALLBACK_CREATE, LUA_CALLBACK_CREATE, OUTSIDE_CALLBACK_WARNING, false);
+TEST_CASE("midi.create inside midi.onMessage does not fail in either engine", "[MidiKit][CrossEngine]") {
+	requireEquivalentLog(JS_CALLBACK_CREATE, LUA_CALLBACK_CREATE, OUTSIDE_CALLBACK_ERROR, false);
 }
 
 
-// A message built and sent in the top-level code is never emitted, whichever
-// send call is used: the send calls only mark an entry in the message store,
-// which is flushed after a callback and reset when the next one starts. The
-// warning at midi.create() is what tells the script author.
-TEST_CASE("A send from top-level code is discarded with a warning, for every send call", "[MidiKit][CrossEngine]") {
+// A message can't be built at top level, so a send from there can't happen
+// either: the script fails at midi.create() and nothing is emitted, whichever
+// send call follows it.
+TEST_CASE("A send from top-level code fails the load and emits nothing, for every send call", "[MidiKit][CrossEngine]") {
 	const char* calls[] = { "midiOut.send(m)", "midiOut.sendAfterMs(m, 10)", "midiOut.sendAtFrame(m, 200)", "midiOut.sendAfterTrigger(m, 1)" };
 	for (const char* call : calls) {
-		// An empty onMessage, so a callback does run and would flush a stale entry.
 		std::string js = std::string("/**\n * @engine QuickJs@v1\n */\ntrig.enableIn(1, 1);\nlet m = midi.create();\nmidi.setNoteOn(m, 1, 60, 100);\n")
 			+ call + ";\nmidi.onMessage = function(port, msg) {};\n";
 		std::string lua = std::string("--[[\n@engine minilua@v1\n--]]\ntrig.enableIn(1, 1)\nlocal m = midi.create()\nmidi.setNoteOn(m, 1, 60, 100)\n")
 			+ call + "\nmidi.onMessage = function(port, msg) end\n";
+		requireLoadError(js, lua, OUTSIDE_CALLBACK_ERROR);
 		for (const std::string& script : { js, lua }) {
-			CATCH_INFO(script);
-			EngineResult r = run(script, noteOn(0, 60, 100));
-			REQUIRE(r.sent.empty());
-			REQUIRE(r.loadLog.find(OUTSIDE_CALLBACK_WARNING) != std::string::npos);
+			MidiKitModule* m = createModule();
+			m->loadScript(script);
+			drainLog(m);
+			int port, ticks;
+			midi::Message out;
+			REQUIRE(!processOutMessage(m, port, out, ticks));
+			Test::destroyModule(m);
 		}
 	}
 }
@@ -160,11 +184,8 @@ TEST_CASE("Script without onLoad loads without any onLoad log noise in either en
 }
 
 
-// top-level message handle survives a load with no onLoad
-// onLoad must only reset the message store when the script actually
-// overrides the default no-op — otherwise a handle a script builds at top
-// level (a documented, intentional pattern) would be discarded before the
-// script ever gets to use it.
+// A top-level message handle can't be built at all: the script fails at
+// midi.create() instead of getting a handle that dies with the next callback.
 
 static const char* JS_TOPLEVEL_SYSEX = R"(/**
  * @engine QuickJs@v1
@@ -182,8 +203,10 @@ midi.setSysEx(msg, "43104c0000")
 rack.log("PROBE:" .. (midi.isSysEx(msg) and "yes" or "no"))
 )";
 
-TEST_CASE("Top-level message handle survives a load with no onLoad in both engines (#D4)", "[MidiKit][CrossEngine]") {
-	requireLoggedValues(JS_TOPLEVEL_SYSEX, LUA_TOPLEVEL_SYSEX, {"yes"});
+TEST_CASE("A top-level message handle fails the load in both engines (#D4)", "[MidiKit][CrossEngine]") {
+	requireLoadError(JS_TOPLEVEL_SYSEX, LUA_TOPLEVEL_SYSEX, OUTSIDE_CALLBACK_ERROR);
+	REQUIRE(loadLogOf(JS_TOPLEVEL_SYSEX).find("PROBE:") == std::string::npos);
+	REQUIRE(loadLogOf(LUA_TOPLEVEL_SYSEX).find("PROBE:") == std::string::npos);
 }
 
 
@@ -662,20 +685,31 @@ TEST_CASE("MIDI output overflow is reported again after the queue recovers", "[M
 		return count;
 	};
 
+	// One drain hands the ports at most DRAIN_BUDGET entries, so emptying a full
+	// ring takes several divider periods.
+	int64_t frame = 0;
+	auto drainAll = [&]() {
+		while (!m->midiOuts.queue.empty()) {
+			processOneDividerPeriod(m, frame);
+			frame += 8;
+		}
+	};
+
 	fillAndOverflow();
-	processOneDividerPeriod(m, 0);            // drains the queue, logs once
+	drainAll();                               // logs once, at the first drain
 	REQUIRE(countDropLines() == 1);
 	REQUIRE(m->midiOuts.queue.empty());
 
 	// A quiet period with no drops must log nothing. This is what pins the
 	// CLEARING of the flag: a latched flag would keep reporting here.
-	processOneDividerPeriod(m, 8);
+	processOneDividerPeriod(m, frame);
+	frame += 8;
 	REQUIRE(countDropLines() == 0);
 
 	// Second, independent episode: reports again rather than staying silent
 	// after the first — the flag re-arms.
 	fillAndOverflow();
-	processOneDividerPeriod(m, 16);
+	drainAll();
 	REQUIRE(countDropLines() == 1);
 
 	Test::destroyModule(m);

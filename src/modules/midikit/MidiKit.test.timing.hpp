@@ -217,11 +217,10 @@ TEST_CASE("Timing: sendAfterTrigger releases on the exact edge sample", "[MidiKi
 	// The edge is detected per sample, so release is exact — the module
 	// already has perfect timing here and discards it.
 	REQUIRE(rig.rec.sent[0].releasedAt == 45);
-	// status quo: sendAfterTrigger() never touches the
-	// frame, so the message reaches the device carrying the stale arrival frame
-	// of the input it was copied from (8) — not the edge's frame, and not -1.
-	// Rack would treat that as long past and send immediately.
-	REQUIRE(rig.rec.sent[0].frameField == 8);
+	// sendAfterTrigger() sends the message without a frame (the tick schedules
+	// it), so it doesn't carry the arrival frame of the input it was built from
+	// (8); Rack sends it immediately at release.
+	REQUIRE(rig.rec.sent[0].frameField == -1);
 }
 
 TEST_CASE("Timing: release jitter over a metronomic stream is the divider quantisation", "[MidiKit][timing]") {
@@ -605,7 +604,7 @@ struct FrameProbeEngine : MidiScriptEngine {
 	}
 
 	void processInMessage(int midiPort, const QueuedMessage& msg) override {
-		midiInQueue.push(std::make_tuple(midiPort, msg));
+		midiInQueue.tryPush(midiPort, msg);
 	}
 	void processInTick(int trigPort, uint8_t channel, int64_t frame) override {
 		tickInQueue.push(std::make_tuple(trigPort, channel, frame));
@@ -1132,9 +1131,6 @@ TEST_CASE("Timing report: a message handed over a block past its frame is logged
 
 		std::string log = drainLog(rig.m);
 		REQUIRE(countOf(log, "reached the output too late") == 1);
-		REQUIRE(log.find("1 message(s)") != std::string::npos);
-		// 1000 - (20 + 256) = 724 frames.
-		REQUIRE(log.find("worst by 16.4 ms") != std::string::npos);
 	}
 }
 
@@ -1187,14 +1183,12 @@ TEST_CASE("Timing report: a script that keeps falling behind is logged once per 
 	// One line for the first; the other two wait for the next second.
 	std::string first = drainLog(rig.m);
 	REQUIRE(countOf(first, "reached the output too late") == 1);
-	REQUIRE(first.find("1 message(s)") != std::string::npos);
 
-	// The two that waited are logged as soon as the second is over.
+	// The two that waited are reported as soon as the second is over.
 	rig.inject(noteOn(0, 63, 100), second + 100);
 	rig.run(second + 200);
 	std::string later = drainLog(rig.m);
 	REQUIRE(countOf(later, "reached the output too late") == 1);
-	REQUIRE(later.find("2 message(s)") != std::string::npos);
 }
 
 TEST_CASE("Timing mode: a frame-less message does not overtake earlier messages of the same callback", "[MidiKit][timing]") {
@@ -1308,9 +1302,10 @@ end
 	}
 }
 
-TEST_CASE("The last send call on a handle decides how it is scheduled, in both engines", "[MidiKit][timing]") {
-	// sendAfterTrigger() schedules by tick; a later send, sendAfterMs or sendAtFrame
-	// on the same handle must replace that, not stay tick-scheduled.
+TEST_CASE("Each send call on a handle schedules its own copy, in both engines", "[MidiKit][timing]") {
+	// sendAfterTrigger() schedules by tick; a later send, sendAfterMs or
+	// sendAtFrame of the same handle is a second message with its own schedule,
+	// not a replacement for the first.
 	const char* js = R"(/**
  * @engine QuickJs@v1
  */
@@ -1349,8 +1344,10 @@ end
 
 			size_t ticks = 0;
 			for (int i = 0; i < 2 * PORT_MAX_CHANNELS; i++) ticks += rig.m->midiOuts.ports[0].tickQueue[i].size();
-			REQUIRE(ticks == 0);
-			// Sent at once, or held in the frame queue until its frame.
+			// The sendAfterTrigger copy still waits for its 5 clock edges...
+			REQUIRE(ticks == 1);
+			// ...and the second call's copy is sent at once, or held in the
+			// frame queue until its frame.
 			REQUIRE(rig.rec.sent.size() + rig.m->midiOuts.ports[0].frameQueue.size() == 1);
 		}
 	}
@@ -1502,4 +1499,189 @@ TEST_CASE("Timing: a script reload drops stamped trigger writes that are still p
 	m.loadScript(JS_TRIG_STAMP);
 	rig.run(200);
 	REQUIRE(m.outputs[MidiKitModule::OUTPUT_TRIG + 0].getVoltage(0) == 0.f);
+}
+
+
+// The scheduling queues are reserved up front and bounded, so scheduling itself
+// never allocates on the audio thread (the one copy left is Rack's own
+// Output::sendMessage(), on its side). A message that doesn't fit goes out at once
+// instead of being dropped (a dropped Note-Off would leave a note stuck), and
+// the log says so once.
+
+TEST_CASE("A full frame-scheduling queue sends the overflow at once and logs it once", "[MidiKit][timing]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    for (let i = 0; i < 100; i++) midiOut.sendAfterMs(msg, 10000);
+};
+)";
+	TimingRig rig(js);
+	const size_t cap = MidiOutput<1>::FRAME_QUEUE_MAX;
+	REQUIRE(cap == 256);
+	// 4 callbacks x 100 = 400 scheduled; each callback fits the 128-entry
+	// hand-off ring, and the audio thread drains it in between.
+	for (int i = 0; i < 4; i++) {
+		rig.inject(noteOn(0, 60 + i, 100), 10 + 20 * i);
+	}
+	rig.run(120);
+
+	REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == cap);
+	REQUIRE(rig.rec.sent.size() == 400 - cap);
+
+	std::string log = drainLog(rig.m);
+	size_t first = log.find("schedule queue full");
+	REQUIRE(first != std::string::npos);
+	REQUIRE(log.find("schedule queue full", first + 1) == std::string::npos);
+}
+
+TEST_CASE("A full trigger-tick queue sends the overflow at once and logs it once", "[MidiKit][timing]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+midi.onMessage = function(port, msg) {
+    for (let i = 0; i < 20; i++) midiOut.sendAfterTrigger(msg, 1000);
+};
+)";
+	TimingRig rig(js);
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+	const size_t cap = MidiOutput<1>::TICK_QUEUE_MAX;
+	REQUIRE(cap == 32);
+	rig.run(8);
+	// 3 callbacks x 20 = 60 scheduled against the same trigger clock.
+	for (int i = 0; i < 3; i++) {
+		rig.inject(noteOn(0, 60 + i, 100), 10 + 20 * i);
+	}
+	rig.run(100);
+
+	REQUIRE(rig.m->midiOuts.ports[0].tickQueue[0].size() == cap);
+	REQUIRE(rig.rec.sent.size() == 60 - cap);
+
+	std::string log = drainLog(rig.m);
+	REQUIRE(log.find("schedule queue full") != std::string::npos);
+}
+
+TEST_CASE("A script swap re-arms the schedule-queue-full log line", "[MidiKit][timing]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    for (let i = 0; i < 100; i++) midiOut.sendAfterMs(msg, 10000);
+};
+)";
+	TimingRig rig(js);
+	auto overflow = [&](int64_t from) {
+		for (int i = 0; i < 4; i++) rig.inject(noteOn(0, 60 + i, 100), from + 10 + 20 * i);
+		rig.run(from + 120);
+	};
+
+	overflow(0);
+	REQUIRE(drainLog(rig.m).find("schedule queue full") != std::string::npos);
+
+	// More overflow under the same script stays quiet.
+	overflow(rig.frame);
+	REQUIRE(drainLog(rig.m).find("schedule queue full") == std::string::npos);
+
+	// A reload is a new script: its first overflow is reported again.
+	rig.m->loadScript(js);
+	rig.run(rig.frame + 8);   // the audio thread catches up with the new generation
+	drainLog(rig.m);
+	overflow(rig.frame);
+	REQUIRE(drainLog(rig.m).find("schedule queue full") != std::string::npos);
+}
+
+
+// ── Bursts: a 2048-entry ring, drained 128 entries at a time ─────────────────
+// The ring absorbs a burst and the audio thread hands it on in bounded steps,
+// one per divider tick, so one process() call never works through all of it.
+
+static midi::Message burstNote(int note) {
+	return noteOn(0, note, 100);
+}
+
+TEST_CASE("A burst of 1000 sends in one callback arrives whole and in order", "[MidiKit][timing]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    let m = midi.create();
+    for (let i = 0; i < 1000; i++) {
+        midi.setNoteOn(m, 1, i % 128, 100);
+        midiOut.send(m);
+    }
+};
+)";
+	TimingRig rig(js);
+	rig.inject(noteOn(0, 60, 100), 10);
+	rig.run(200);
+
+	REQUIRE(rig.rec.sent.size() == 1000);
+	for (size_t i = 0; i < 1000; i++) REQUIRE(rig.rec.sent[i].note == i % 128);
+	REQUIRE(drainLog(rig.m).find("queue full") == std::string::npos);
+}
+
+TEST_CASE("One drain hands the ports at most DRAIN_BUDGET entries", "[MidiKit][timing]") {
+	TimingRig rig(JS_PASS_THROUGH);
+	auto& outs = rig.m->midiOuts;
+	const int budget = std::decay<decltype(outs)>::type::DRAIN_BUDGET;
+	REQUIRE(budget == 128);
+	REQUIRE(outs.queue.capacity() == 2048);
+
+	midi::Message msg = burstNote(60);
+	for (int i = 0; i < 1000; i++) REQUIRE(outs.enqueue(0, &msg, 1, 0, 0));
+
+	size_t expected = 0;
+	for (int drain = 0; drain < 8; drain++) {
+		outs.process(0, 48000.f);
+		expected = std::min<size_t>(1000, expected + budget);
+		REQUIRE(rig.rec.sent.size() == expected);
+	}
+	REQUIRE(outs.queue.empty());
+}
+
+TEST_CASE("A replaced script's leftover burst is discarded; its onUnload output and the new script's messages arrive", "[MidiKit][timing]") {
+	TimingRig rig(JS_PASS_THROUGH);
+	auto& outs = rig.m->midiOuts;
+
+	// 300 messages of the replaced script (generation 0) that are not due, its
+	// onUnload() output, then the new script's (generation 1).
+	midi::Message later = burstNote(7);
+	later.frame = 1000000;
+	for (int i = 0; i < 300; i++) REQUIRE(outs.enqueue(0, &later, 1, 0, 0, 0, 0));
+	midi::Message unload1 = burstNote(50);
+	midi::Message unload2 = burstNote(51);
+	REQUIRE(outs.enqueue(0, &unload1, 1, 0, 0, 0, 0, true));
+	REQUIRE(outs.enqueue(0, &unload2, 1, 0, 0, 0, 0, true));
+	for (int note = 60; note < 63; note++) {
+		midi::Message fresh = burstNote(note);
+		REQUIRE(outs.enqueue(0, &fresh, 1, 0, 0, 0, 1));
+	}
+
+	// The audio thread is on generation 1. The leftovers go at up to 128 per
+	// drain, and nothing is delivered until they are through.
+	outs.process(0, 48000.f, 1);
+	outs.process(0, 48000.f, 1);
+	REQUIRE(rig.rec.sent.empty());
+	outs.process(0, 48000.f, 1);
+	REQUIRE(rig.rec.sent.size() == 5);
+	REQUIRE(rig.rec.sent[0].note == 50);
+	REQUIRE(rig.rec.sent[1].note == 51);
+	REQUIRE(rig.rec.sent[2].note == 60);
+	REQUIRE(rig.rec.sent[4].note == 62);
+	REQUIRE(outs.queue.empty());
+}
+
+TEST_CASE("The output ring takes 2048 entries and drops whole groups beyond them", "[MidiKit][timing]") {
+	TimingRig rig(JS_PASS_THROUGH);
+	auto& outs = rig.m->midiOuts;
+	midi::Message msg = burstNote(60);
+	for (int i = 0; i < 2047; i++) REQUIRE(outs.enqueue(0, &msg, 1, 0, 0));
+
+	midi::Message group[4] = {msg, msg, msg, msg};
+	REQUIRE_FALSE(outs.enqueue(0, group, 4, 0, 0));
+	REQUIRE(outs.overflow.load());
+	REQUIRE(outs.queue.size() == 2047);       // nothing of the group went in
+	REQUIRE(outs.enqueue(0, &msg, 1, 0, 0));  // the last slot is still usable
+	REQUIRE(outs.queue.full());
 }

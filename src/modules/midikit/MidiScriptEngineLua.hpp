@@ -20,49 +20,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	MidiScriptEngineLua(MidiScriptEngineHandler* handler, int inputCount, int inputTrigCount, int outputTrigCount, int paramCount, int midiInputCount, int midiOutputCount)
 		: MidiScriptEngine(handler, inputCount, inputTrigCount, outputTrigCount, paramCount, midiInputCount, midiOutputCount) {}
 
-	// ─── Message store ────────────────────────────────────────────────────────
-
-	struct MessageEx {
-		int midiPort = 0;
-		// The message itself, plus the decode result when it came in assembled
-		// (NRPN/RPN/14-bit CC). Reusing MidiScript::QueuedMessage rather than
-		// restating its fields: it already carries exactly what an incoming
-		// message needs, and sharing the type means midi.getControl()/getValue()
-		// read the same struct the module filled in — no field-by-field copy to
-		// drift.
-		//
-		// `in` also holds the message a script BUILDS for output; the decode
-		// fields simply stay at their defaults there.
-		QueuedMessage in;
-		// Outgoing chain markers, set by createNRPN()/createCc14bit(). Note these
-		// are about a message being built for SEND, unlike in.type which reports
-		// how a received message was decoded — same words, opposite direction.
-		bool isNrpn = false;
-		bool isRpn = false;    // with isNrpn: the 4-message chain is an RPN (CC 101/100)
-		bool isCc14bit = false;
-		bool send = false;
-		uint8_t channel = 0;   // trigger input channel, for sendAfterTrigger() scheduling
-		int trigPort = 0;      // 0-based trigger input, for sendAfterTrigger() scheduling
-		uint64_t tick = 0;
-		// Monotonic stamp assigned when midiOut.send() is called, so the out
-		// queue can be flushed in send() order rather than handle order.
-		size_t sendOrder = 0;
-	};
-
-	MessageEx msgStore[msgStoreSize];
-	size_t msgCount = 0;
-	// Next MessageEx::sendOrder value. Never reset: only needs to be monotonic
-	// within a single callback (the store resets per callback).
-	size_t sendCounter = 0;
-	// True only inside a script callback. The store resets every callback, so
-	// handles created outside one are silently invalidated — lets midi.create()
-	// warn instead of failing quietly.
-	bool inCallback = false;
-	// Sticky output port selected via midiOut.selectPort(), 0-based. Stays in
-	// effect across callbacks until changed again.
-	int selectedPort = 0;
-
-	// ── Script execution budget ──────────────────────────────────────────────
+	// Script execution budget
 	// A count hook (lua_sethook, LUA_MASKCOUNT) fires every interruptInterval
 	// instructions; past interruptCountLimit countHook() aborts the script via
 	// luaL_error(), so a `while true do end` can't wedge the shared worker.
@@ -225,6 +183,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		assert(L == nullptr);
 		assert(onLoadRef == LUA_NOREF && onUnloadRef == LUA_NOREF && onMessageRef == LUA_NOREF && onTriggerRef == LUA_NOREF);
 		assert(contextMenus.empty());
+
+		// The store goes back to its default size first, so a script that was
+		// refused (or asks for less) never inherits the previous script's.
+		sizeStore(0);
 
 		// Install the initial config as part of THIS queued task, before any
 		// script code runs — ScriptHost::load() is fire-and-forget, so a separate
@@ -404,8 +366,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			// From here on only immediate MIDI gets out (see beginUnload()).
 			handler->beginUnload();
 			callOnUnload();
-			// onUnload()'s teardown messages (e.g. all-notes-off) must go out.
-			flushMsgStore();
 			clearContextMenus();
 			// lua_close invalidates these anyway; reset for hygiene.
 			onMessageRef = LUA_NOREF;
@@ -435,7 +395,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	void callOnLoad() {
 		if (onLoadRef == LUA_NOREF) return;
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onLoadRef);
-		msgCount = 0;
+		beginStore(0);
 		inCallback = true;
 		beginScriptExecution();
 		int status = lua_pcall(L, 0, 0, 0);
@@ -445,17 +405,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			handler->writeLog(string::f("onLoad error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
-		flushMsgStore();
 	}
 
 	// Runs onUnload(). Its return value is discarded — teardown-only; config
-	// comes from rack.setConfig(), not from teardown. Messages are NOT flushed
-	// here: unloadScriptOnWorker() flushes them for teardown.
+	// comes from rack.setConfig(), not from teardown. Messages it sends (e.g.
+	// all-notes-off) go out as it calls them, between the caller's
+	// beginUnload() and endUnload().
 	void callOnUnload() {
-		// Reset first: unloadScriptOnWorker() flushes the store after this even
-		// without an onUnload, and would otherwise send the last callback's
-		// messages a second time.
-		msgCount = 0;
+		// Start with an empty store like every callback: handles from the last
+		// callback are invalid here.
+		beginStore(0);
 		if (onUnloadRef == LUA_NOREF) return;
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onUnloadRef);
 		inCallback = true;
@@ -466,7 +425,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			const char* err = lua_tostring(L, -1);
 			handler->writeLog(string::f("onUnload error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
-			flushMsgStore();
 			return;
 		}
 		lua_pop(L, 1); // pop (and discard) the return value
@@ -665,7 +623,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	void processInMessage(int midiPort, const MidiScript::QueuedMessage& msg) override {
 		if (L) {
-			pushInQueue(midiInQueue, std::make_tuple(midiPort, msg));
+			midiInQueue.tryPush(midiPort, msg);
 		}
 	}
 
@@ -674,49 +632,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			pushInQueue(tickInQueue, std::make_tuple(trigPort, channel, frame));
 		}
 	}
-
-	// Sends every message emitted during the callback that just ran through the
-	// handler, in send() order, not handle-creation order: a script may create
-	// several messages and send them in a different order, and the receiver
-	// must observe send() order.
-	//
-	// Return values are ignored: a drop is expected under output saturation,
-	// and the module already reports it once per episode. The engine has no
-	// better response than to carry on.
-	void flushMsgStore() {
-		std::vector<size_t> order;
-		for (size_t i = 0; i < msgCount; i++) {
-			if (msgStore[i].send) order.push_back(i);
-		}
-		std::sort(order.begin(), order.end(), [this](size_t a, size_t b) {
-			return msgStore[a].sendOrder < msgStore[b].sendOrder;
-		});
-		for (size_t i : order) {
-			if (msgStore[i].isNrpn) {
-				// NRPN is 4 consecutive entries in msgStore, emitted atomically.
-				Message group[4] = {
-					msgStore[i].in.msg, msgStore[i + 1].in.msg,
-					msgStore[i + 2].in.msg, msgStore[i + 3].in.msg
-				};
-				// Only the leader went through a send binding, so only it carries
-				// a frame; the rest must follow it or the group is torn apart in time.
-				for (int k = 1; k < 4; k++) group[k].frame = group[0].frame;
-				handler->sendMidi(msgStore[i].midiPort, group, 4, msgStore[i].channel, msgStore[i].tick, msgStore[i].trigPort);
-			}
-			else if (msgStore[i].isCc14bit) {
-				// A 14-bit CC pair is 2 consecutive entries in msgStore (CC cc /
-				// CC cc+32), emitted atomically — a receiver must never see the
-				// MSB without its LSB.
-				Message group[2] = { msgStore[i].in.msg, msgStore[i + 1].in.msg };
-				group[1].frame = group[0].frame;
-				handler->sendMidi(msgStore[i].midiPort, group, 2, msgStore[i].channel, msgStore[i].tick, msgStore[i].trigPort);
-			}
-			else {
-				handler->sendMidi(msgStore[i].midiPort, &msgStore[i].in.msg, 1, msgStore[i].channel, msgStore[i].tick, msgStore[i].trigPort);
-			}
-		}
-	}
-
 
 	std::string getInputName(int i) override {
 		if (!L) return "";
@@ -836,8 +751,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 				lua_pushlstring(L, label.c_str(), label.size());
 				nargs = 2;
 			}
+			// A callback like onLoad: MIDI it sends goes out as it calls midiOut.*.
+			beginStore(0);
+			inCallback = true;
 			beginScriptExecution();
 			int status = lua_pcall(L, nargs, 0, 0);
+			inCallback = false;
 			if (status != LUA_OK) {
 				const char* err = lua_tostring(L, -1);
 				handler->writeLog(string::f("Context menu callback error: %s", err ? err : "(unknown)"));
@@ -871,22 +790,20 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// fields to their defaults, so a plain message cannot report the type or
 		// parameter of an assembled one that used slot 0 before it.
 		msgStore[0].in = QueuedMessage(msg);
-		msgStore[0].send = false;
-		msgStore[0].tick = 0;
 		// Slot 0 is reused for the incoming message, but it can have been a
 		// chain leader (NRPN/14-bit CC) in an onLoad/onUnload callback whose
-		// store started at 0 — clear both leader flags so a stale one can't
-		// make the flush emit a chain from the incoming message.
+		// store started at 0 — clear the leader flags so a stale one can't
+		// make a send emit a chain from the incoming message.
 		msgStore[0].isNrpn = false;
 		msgStore[0].isRpn = false;
 		msgStore[0].isCc14bit = false;
-		msgCount = 1;
+		beginStore(1);
 
 		// Calls the cached onMessageRef. No-op if never defined (LUA_NOREF).
 		if (onMessageRef == LUA_NOREF) return;
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onMessageRef);
 		lua_pushinteger(L, midiPort + 1);
-		lua_pushinteger(L, 0);
+		lua_pushinteger(L, static_cast<lua_Integer>(slotToHandle(0)));
 		inCallback = true;
 		beginScriptExecution();
 		int status = lua_pcall(L, 2, 0, 0);
@@ -897,7 +814,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			lua_pop(L, 1); // pop error message
 		}
 
-		flushMsgStore();
 		checkMemoryLimit();
 	}
 
@@ -910,7 +826,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onTriggerRef);
 		lua_pushinteger(L, trigPort + 1);
 		lua_pushinteger(L, channel + 1);
-		msgCount = 0;
+		beginStore(0);
 		inCallback = true;
 		beginScriptExecution();
 		int status = lua_pcall(L, 2, 0, 0);
@@ -921,13 +837,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			lua_pop(L, 1); // pop error message
 		}
 
-		flushMsgStore();
 		checkMemoryLimit();
 	}
 
 	// Dispatches an assembled message to onNrpn/onRpn/onCc14bit as a handle,
 	// exactly like dispatchMidiMessage() does for onMessage: the message lands in
-	// store slot 0 and the callback receives (midiPort, 0), reading it through
+	// store slot 0 and the callback receives (midiPort, handle), reading it through
 	// midi.getControl()/getValue()/getChannel(). No-op if the hook was never
 	// defined.
 	void dispatchAssembled(int ref, const char* name, int midiPort, const QueuedMessage& q) {
@@ -937,18 +852,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// The whole QueuedMessage lands in the slot, so the decode result travels
 		// with the bytes and no field-by-field copy can drift.
 		msgStore[0].in = q;
-		msgStore[0].send = false;
-		msgStore[0].tick = 0;
 		// Slot 0 is reused across callbacks, so clear the outgoing chain flags for
 		// the same reason dispatchMidiMessage() does.
 		msgStore[0].isNrpn = false;
 		msgStore[0].isRpn = false;
 		msgStore[0].isCc14bit = false;
-		msgCount = 1;
+		beginStore(1);
 
 		lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
 		lua_pushinteger(L, midiPort + 1);
-		lua_pushinteger(L, 0);   // handle 0 — the message just stored
+		lua_pushinteger(L, static_cast<lua_Integer>(slotToHandle(0)));   // the message just stored
 		inCallback = true;
 		beginScriptExecution();
 		int status = lua_pcall(L, 2, 0, 0);
@@ -959,7 +872,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			lua_pop(L, 1); // pop error message
 		}
 
-		flushMsgStore();
 		checkMemoryLimit();
 	}
 
@@ -981,7 +893,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onTipsyMessageRef);
 		lua_pushlstring(L, reinterpret_cast<const char*>(msg.data), msg.dataSize);
 		lua_pushstring(L, msg.mime);
-		msgCount = 0;
+		beginStore(0);
 		inCallback = true;
 		beginScriptExecution();
 		int status = lua_pcall(L, 2, 0, 0);
@@ -992,7 +904,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			lua_pop(L, 1); // pop error message
 		}
 
-		flushMsgStore();
 		checkMemoryLimit();
 	}
 
@@ -1028,19 +939,38 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return e;
 	}
 
-	// Validate a msgStore index (stack arg at `stackPos`, 0-based)
-	static MessageEx* getMsg(lua_State* L, int stackPos) {
+	// The store slot of the message handle at `stackPos`, or luaL_argerror for
+	// anything that is not a live handle of the running callback: a handle
+	// from an earlier callback, one used outside a callback (top level,
+	// param.getName, ...), out of range.
+	static size_t checkHandle(lua_State* L, int stackPos, const char* what = "invalid message index") {
 		auto* e = getEngine(L);
 		if (!lua_isinteger(L, stackPos) && !lua_isnumber(L, stackPos)) {
 			luaL_argerror(L, stackPos, "message index expected");
-			return nullptr;
 		}
-		int idx = static_cast<int>(lua_tointeger(L, stackPos));
-		if (idx < 0 || static_cast<size_t>(idx) >= e->msgCount) {
-			luaL_argerror(L, stackPos, "invalid message index");
-			return nullptr;
-		}
-		return &e->msgStore[idx];
+		long slot = e->handleToSlot(static_cast<int64_t>(lua_tointeger(L, stackPos)));
+		if (slot < 0) luaL_argerror(L, stackPos, what);
+		return static_cast<size_t>(slot);
+	}
+
+	// Validate a message handle (stack arg at `stackPos`) and return its slot.
+	static ScriptMessage* getMsg(lua_State* L, int stackPos) {
+		return &getEngine(L)->msgStore[checkHandle(L, stackPos)];
+	}
+
+	// Raises "<fn>: message store full (N handles; ...)". The text is formatted
+	// into a plain buffer: luaL_error longjmps past C++ destructors.
+	static void luaStoreFull(lua_State* L, const char* fn) {
+		char buf[192];
+		getEngine(L)->storeFullMessage(buf, sizeof buf, fn);
+		luaL_error(L, "%s", buf);
+	}
+
+	// A message handle is only valid inside the callback that created it, so
+	// the creators refuse to run anywhere else (top level, param.getName, ...).
+	// Raised before the store is touched.
+	static void requireCallback(lua_State* L, const char* fn) {
+		if (!getEngine(L)->inCallback) luaL_error(L, "%s: only allowed inside a callback", fn);
 	}
 
 
@@ -1691,16 +1621,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// ── midi.* ────────────────────────────────────────────────────────────────
 
-	// Warns when a message is created outside a callback — the store resets
-	// every callback, silently invalidating such a handle (see midi.create()
-	// in SCRIPTING.md).
-	static void warnIfOutsideCallback(MidiScriptEngineLua* e, const char* fn) {
-		if (!e->inCallback) {
-			e->handler->writeLog(string::f("%s: called outside a callback; the message "
-				"is discarded when the next MIDI message arrives", fn), false);
-		}
-	}
-
 	// midi.enablePorts(count) — enables MIDI inputs 1..count.
 	static int lua_midi_enablePorts(lua_State* L) {
 		auto* e = getEngine(L);
@@ -1735,30 +1655,26 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_create(lua_State* L) {
 		auto* e = getEngine(L);
-		warnIfOutsideCallback(e, "midi.create");
+		requireCallback(L, "midi.create");
 		size_t* s = &e->msgCount;
-		if (*s >= static_cast<size_t>(msgStoreSize)) {
-			luaL_error(L, "midi.create: message store full");
-		}
-		e->msgStore[*s] = MessageEx();
-		lua_pushinteger(L, static_cast<lua_Integer>((*s)++));
+		if (*s >= e->msgStore.size()) luaStoreFull(L, "midi.create");
+		e->msgStore[*s] = ScriptMessage();
+		lua_pushinteger(L, static_cast<lua_Integer>(e->slotToHandle((*s)++)));
 		return 1;
 	}
 
 	static int lua_midi_clone(lua_State* L) {
 		auto* e = getEngine(L);
-		MessageEx* src = getMsg(L, 1);
-		warnIfOutsideCallback(e, "midi.clone");
+		requireCallback(L, "midi.clone");
+		ScriptMessage* src = getMsg(L, 1);
 		size_t* s = &e->msgCount;
-		if (*s >= static_cast<size_t>(msgStoreSize)) {
-			luaL_error(L, "midi.clone: message store full");
-		}
+		if (*s >= e->msgStore.size()) luaStoreFull(L, "midi.clone");
 		// Copy only the MIDI payload; the clone starts fresh and unsent (all
 		// fields at defaults) so it can be modified and sent independently.
-		MessageEx clone;
+		ScriptMessage clone;
 		clone.in.msg = src->in.msg;
 		e->msgStore[*s] = clone;
-		lua_pushinteger(L, static_cast<lua_Integer>((*s)++));
+		lua_pushinteger(L, static_cast<lua_Integer>(e->slotToHandle((*s)++)));
 		return 1;
 	}
 
@@ -1767,18 +1683,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int luaCreateParam(lua_State* L, bool rpn) {
 		auto* e = getEngine(L);
 		const char* name = rpn ? "midi.createRPN" : "midi.createNRPN";
-		warnIfOutsideCallback(e, name);
+		requireCallback(L, name);
 		size_t* s = &e->msgCount;
-		if (*s + 4 > static_cast<size_t>(msgStoreSize)) {
-			luaL_error(L, "%s: message store full", name);
-		}
-		e->msgStore[*s + 0] = MessageEx();
+		if (*s + 4 > e->msgStore.size()) luaStoreFull(L, name);
+		e->msgStore[*s + 0] = ScriptMessage();
 		e->msgStore[*s + 0].isNrpn = true;
 		e->msgStore[*s + 0].isRpn = rpn;
-		e->msgStore[*s + 1] = MessageEx();
-		e->msgStore[*s + 2] = MessageEx();
-		e->msgStore[*s + 3] = MessageEx();
-		lua_Integer idx = static_cast<lua_Integer>(*s);
+		e->msgStore[*s + 1] = ScriptMessage();
+		e->msgStore[*s + 2] = ScriptMessage();
+		e->msgStore[*s + 3] = ScriptMessage();
+		lua_Integer idx = static_cast<lua_Integer>(e->slotToHandle(*s));
 		*s += 4;
 		lua_pushinteger(L, idx);
 		return 1;
@@ -1793,30 +1707,28 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_createCc14bit(lua_State* L) {
 		auto* e = getEngine(L);
-		warnIfOutsideCallback(e, "midi.createCc14bit");
+		requireCallback(L, "midi.createCc14bit");
 		size_t* s = &e->msgCount;
-		if (*s + 2 > static_cast<size_t>(msgStoreSize)) {
-			luaL_error(L, "midi.createCc14bit: message store full");
-		}
+		if (*s + 2 > e->msgStore.size()) luaStoreFull(L, "midi.createCc14bit");
 		// 2 consecutive entries, filled by setCc14bit: CC cc (value MSB) and
-		// CC cc+32 (value LSB), flushed atomically as a pair.
-		e->msgStore[*s + 0] = MessageEx();
+		// CC cc+32 (value LSB), sent atomically as a pair.
+		e->msgStore[*s + 0] = ScriptMessage();
 		e->msgStore[*s + 0].isCc14bit = true;
-		e->msgStore[*s + 1] = MessageEx();
-		lua_Integer idx = static_cast<lua_Integer>(*s);
+		e->msgStore[*s + 1] = ScriptMessage();
+		lua_Integer idx = static_cast<lua_Integer>(e->slotToHandle(*s));
 		*s += 2;
 		lua_pushinteger(L, idx);
 		return 1;
 	}
 
 	static int lua_midi_getChanPressure(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushinteger(L, m->in.msg.getNote());
 		return 1;
 	}
 
 	static int lua_midi_getChannel(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		// Status 0xf (realtime/SysEx) carries no channel; the low nibble is a
 		// sub-type selector, so "+ 1" returned a meaningless channel (#A4).
 		// -1 is unambiguous: 1-16 is the only valid range, so a script can
@@ -1830,32 +1742,32 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	static int lua_midi_getLength(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushinteger(L, m->in.msg.getSize());
 		return 1;
 	}
 
 	static int lua_midi_getNote(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushinteger(L, m->in.msg.getNote());
 		return 1;
 	}
 
 	static int lua_midi_getPitchWheel(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		uint16_t value = (static_cast<uint16_t>(m->in.msg.getValue()) << 7) | m->in.msg.getNote();
 		lua_pushinteger(L, value);
 		return 1;
 	}
 
 	static int lua_midi_getProgramChange(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushinteger(L, m->in.msg.getNote());
 		return 1;
 	}
 
 	static int lua_midi_getSysEx(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		std::ostringstream ss;
 		ss << std::hex;
 		for (int i = 1; i < m->in.msg.getSize() - 1; i++) {
@@ -1867,14 +1779,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	static int lua_midi_getSysExLength(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		// Payload length only — f0/f7 framing excluded.
 		lua_pushinteger(L, std::max(0, m->in.msg.getSize() - 2));
 		return 1;
 	}
 
 	static int lua_midi_getRaw(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		std::ostringstream ss;
 		ss << std::hex;
 		for (int i = 0; i < m->in.msg.getSize(); i++) {
@@ -1890,7 +1802,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// byte on everything else. Assembled messages are new, so no existing script
 	// can be relying on the old answer for one.
 	static int lua_midi_getValue(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		if (isAssembled(m)) lua_pushinteger(L, m->in.extraValue);
 		else lua_pushinteger(L, m->in.msg.getValue());
 		return 1;
@@ -1902,7 +1814,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// Answers for plain CCs too, so scripts have one spelling for "which knob
 	// moved" regardless of how the device encodes it.
 	static int lua_midi_getControl(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		if (isAssembled(m)) lua_pushinteger(L, m->in.paramNumber);
 		else if (m->in.msg.getStatus() == 0xb) lua_pushinteger(L, m->in.msg.getNote());
 		else lua_pushinteger(L, -1);
@@ -1911,7 +1823,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	// True when the message carries a decode result from MidiProcessor, i.e. it
 	// arrived assembled rather than as a raw CC.
-	static bool isAssembled(const MessageEx* m) {
+	static bool isAssembled(const ScriptMessage* m) {
 		switch (m->in.type) {
 			case StoermelderPackOne::MessageEx::Type::NRPN:
 			case StoermelderPackOne::MessageEx::Type::RPN:
@@ -1923,79 +1835,79 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	static int lua_midi_isNrpn(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.type == StoermelderPackOne::MessageEx::Type::NRPN);
 		return 1;
 	}
 	static int lua_midi_isRpn(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.type == StoermelderPackOne::MessageEx::Type::RPN);
 		return 1;
 	}
 	static int lua_midi_isCc14bit(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.type == StoermelderPackOne::MessageEx::Type::CC_14BIT);
 		return 1;
 	}
 
 	// is-type helpers
 	static int lua_midi_isCc(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.msg.getStatus() == 0xb);
 		return 1;
 	}
 	static int lua_midi_isChanPressure(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.msg.getStatus() == 0xd);
 		return 1;
 	}
 	static int lua_midi_isClock(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.msg.getStatus() == 0xf && m->in.msg.getChannel() == 0x8);
 		return 1;
 	}
 	static int lua_midi_isContinue(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.msg.getStatus() == 0xf && m->in.msg.getChannel() == 0xb);
 		return 1;
 	}
 	static int lua_midi_isKeyPressure(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.msg.getStatus() == 0xa);
 		return 1;
 	}
 	static int lua_midi_isNoteOff(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.msg.getStatus() == 0x8);
 		return 1;
 	}
 	static int lua_midi_isNoteOn(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.msg.getStatus() == 0x9);
 		return 1;
 	}
 	static int lua_midi_isPitchWheel(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.msg.getStatus() == 0xe);
 		return 1;
 	}
 	static int lua_midi_isProgramChange(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.msg.getStatus() == 0xc);
 		return 1;
 	}
 	static int lua_midi_isStart(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.msg.getStatus() == 0xf && m->in.msg.getChannel() == 0xa);
 		return 1;
 	}
 	static int lua_midi_isStop(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.msg.getStatus() == 0xf && m->in.msg.getChannel() == 0xc);
 		return 1;
 	}
 	static int lua_midi_isSysEx(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.msg.getStatus() == 0xf && m->in.msg.getChannel() == 0x0);
 		return 1;
 	}
@@ -2004,7 +1916,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setCc(lua_State* L) {
 		// midi.setCc(msg, channel, cc, value)
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint8_t cc = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 		uint8_t value = clampInt<uint8_t>(luaL_checknumber(L, 4), 0, 127);
@@ -2022,10 +1934,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (lua_gettop(L) == 4) {
 			// midi.setCc14bit(msg, channel, cc, value) — msg is the first
 			// handle of a createCc14bit() pair; both CCs are filled and sent
-			// atomically when the pair is flushed.
-			MessageEx* m1 = getMsg(L, 1);
+			// atomically when the pair is sent.
+			ScriptMessage* m1 = getMsg(L, 1);
 			if (!m1->isCc14bit) luaL_argerror(L, 1, "message is not a 14-bit CC pair");
-			MessageEx* m2 = &e->msgStore[static_cast<size_t>(m1 - e->msgStore) + 1];
+			ScriptMessage* m2 = &e->msgStore[static_cast<size_t>(m1 - e->msgStore.data()) + 1];
 			uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 			uint8_t cc = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 			double value = clampCc14bitValue(luaL_checknumber(L, 4));
@@ -2043,10 +1955,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		// midi.setCc14bit(msg1, msg2, channel, cc, value) — two independent
 		// handles, sent as separate messages (no atomicity).
-		MessageEx* m1 = getMsg(L, 1);
-		int idx2 = static_cast<int>(luaL_checkinteger(L, 2));
-		if (idx2 < 0 || static_cast<size_t>(idx2) >= e->msgCount) luaL_argerror(L, 2, "invalid msg2 index");
-		MessageEx* m2 = &e->msgStore[idx2];
+		ScriptMessage* m1 = getMsg(L, 1);
+		ScriptMessage* m2 = &e->msgStore[checkHandle(L, 2, "invalid msg2 index")];
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 3), 1, 16);
 		uint8_t cc = clampInt<uint8_t>(luaL_checknumber(L, 4), 0, 127);
 		double value = clampCc14bitValue(luaL_checknumber(L, 5));
@@ -2063,7 +1973,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	static int lua_midi_setChannel(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		m->in.msg.setChannel(ch - 1);
 		return 0;
@@ -2071,7 +1981,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setChanPressure(lua_State* L) {
 		// midi.setChanPressure(msg, channel, value)
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint8_t val = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 		// Channel pressure is a 2-byte message (status + pressure), not 3 —
@@ -2085,7 +1995,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setKeyPressure(lua_State* L) {
 		// midi.setKeyPressure(msg, channel, note, velocity)
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint8_t note = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 		uint8_t vel = clampInt<uint8_t>(luaL_checknumber(L, 4), 0, 127);
@@ -2098,7 +2008,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	static int lua_midi_setNote(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		uint8_t value = clampInt<uint8_t>(luaL_checknumber(L, 2), 0, 127);
 		m->in.msg.setNote(value);
 		return 0;
@@ -2106,7 +2016,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setNoteOff(lua_State* L) {
 		// midi.setNoteOff(msg, channel, note [, velocity])
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint8_t note = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 		uint8_t vel = clampInt<uint8_t>(luaL_optnumber(L, 4, 0), 0, 127);
@@ -2120,7 +2030,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setNoteOn(lua_State* L) {
 		// midi.setNoteOn(msg, channel, note, velocity)
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint8_t note = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 		uint8_t vel = clampInt<uint8_t>(luaL_checknumber(L, 4), 0, 127);
@@ -2136,20 +2046,19 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// An RPN selects with CC 101/100 instead of 99/98; data entry is the same.
 	static int luaSetParam(lua_State* L, bool rpn) {
 		auto* e = getEngine(L);
-		int idx = static_cast<int>(luaL_checkinteger(L, 1));
-		if (idx < 0 || static_cast<size_t>(idx) >= e->msgCount) luaL_argerror(L, 1, "invalid nrpn index");
-		MessageEx* s1 = &e->msgStore[idx];
+		size_t idx = checkHandle(L, 1, "invalid nrpn index");
+		ScriptMessage* s1 = &e->msgStore[idx];
 		if (!s1->isNrpn || s1->isRpn != rpn) luaL_argerror(L, 1, rpn ? "message is not an RPN" : "message is not an NRPN");
-		MessageEx* s2 = &e->msgStore[idx + 1];
-		MessageEx* s3 = &e->msgStore[idx + 2];
-		MessageEx* s4 = &e->msgStore[idx + 3];
+		ScriptMessage* s2 = &e->msgStore[idx + 1];
+		ScriptMessage* s3 = &e->msgStore[idx + 2];
+		ScriptMessage* s4 = &e->msgStore[idx + 3];
 
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint16_t number = clampInt<uint16_t>(luaL_checknumber(L, 3), 0, 16383);
 		uint16_t value = clampInt<uint16_t>(luaL_checknumber(L, 4), 0, 16383);
 
 		// Spec order: NRPN/RPN MSB, NRPN/RPN LSB, Data Entry MSB, Data Entry LSB.
-		// flushMsgStore() sends s1..s4 in this order, as MidiProcessor's NRPN
+		// sendEntry() sends s1..s4 in this order, as MidiProcessor's NRPN
 		// state machine requires (CC99/98 select the number, CC6/38 the value).
 		s1->in.msg.setStatus(0xb);
 		s1->in.msg.setChannel(ch - 1);
@@ -2179,7 +2088,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setPitchWheel(lua_State* L) {
 		// midi.setPitchWheel(msg, channel, value)
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint16_t value = clampInt<uint16_t>(luaL_checknumber(L, 3), 0, 16383);
 		if (m->in.msg.getSize() != 3) m->in.msg.setSize(3);
@@ -2192,7 +2101,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setProgramChange(lua_State* L) {
 		// midi.setProgramChange(msg, channel, program)
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint8_t prg = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 		// Program Change is a 2-byte message (status + program), not 3: a stray
@@ -2206,7 +2115,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setRaw(lua_State* L) {
 		// midi.setRaw(msg, hexstring)
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		size_t len;
 		const char* raw = luaL_checklstring(L, 2, &len);
 		std::string data(raw, len);
@@ -2229,7 +2138,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setSysEx(lua_State* L) {
 		// midi.setSysEx(msg, hexstring)
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		size_t len;
 		const char* raw = luaL_checklstring(L, 2, &len);
 		std::string data(raw, len);
@@ -2259,7 +2168,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	static int lua_midi_setValue(lua_State* L) {
-		MessageEx* m = getMsg(L, 1);
+		ScriptMessage* m = getMsg(L, 1);
 		uint8_t value = clampInt<uint8_t>(luaL_checknumber(L, 2), 0, 127);
 		m->in.msg.setValue(value);
 		return 0;
@@ -2269,50 +2178,34 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// Output port is set via midiOut.selectPort(n) and applied to every message
 	// sent until selectPort() is called again.
 
-	// Returns the message at stack position 1, stamped with the selected output
-	// port, or luaL_error on bad args.
-	static MessageEx* getPortMsg(lua_State* L) {
-		auto* e = getEngine(L);
-		int idx = static_cast<int>(luaL_checkinteger(L, 1));
-		if (idx < 0 || static_cast<size_t>(idx) >= e->msgCount) {
-			luaL_error(L, "midiOut: invalid message index");
-		}
-
-		e->msgStore[idx].midiPort = e->selectedPort;
-		return &e->msgStore[idx];
-	}
-
+	// The send bindings check every argument (checkHandle() raises) before the
+	// one sendEntry() call, which never does: luaL_error longjmps past C++
+	// destructors.
 	static int lua_midiOut_send(lua_State* L) {
 		// midiOut.send(msg)
-		MessageEx* m = getPortMsg(L);
-		m->send = true;
-		m->sendOrder = getEngine(L)->sendCounter++;
-		m->in.msg.frame = getEngine(L)->frameForSend();
-		m->tick = 0;
+		auto* e = getEngine(L);
+		size_t idx = checkHandle(L, 1);
+		e->sendEntry(e->msgStore[idx], e->selectedPort, e->frameForSend());
 		return 0;
 	}
 
 	static int lua_midiOut_sendAfterMs(lua_State* L) {
 		// midiOut.sendAfterMs(msg, ms)
+		auto* e = getEngine(L);
 		double ms = luaL_checknumber(L, 2);
 
-		MessageEx* m = getPortMsg(L);
-		m->send = true;
-		m->sendOrder = getEngine(L)->sendCounter++;
-		m->in.msg.frame = getEngine(L)->frameAfterMs(ms);
-		m->tick = 0;
+		size_t idx = checkHandle(L, 1);
+		e->sendEntry(e->msgStore[idx], e->selectedPort, e->frameAfterMs(ms));
 		return 0;
 	}
 
 	// midiOut.sendAtFrame(msg, frame) — send at an absolute engine frame.
 	static int lua_midiOut_sendAtFrame(lua_State* L) {
+		auto* e = getEngine(L);
 		double frame = luaL_checknumber(L, 2);
 
-		MessageEx* m = getPortMsg(L);
-		m->send = true;
-		m->sendOrder = getEngine(L)->sendCounter++;
-		m->in.msg.frame = frameAtFrame(frame);
-		m->tick = 0;
+		size_t idx = checkHandle(L, 1);
+		e->sendEntry(e->msgStore[idx], e->selectedPort, frameAtFrame(frame));
 		return 0;
 	}
 
@@ -2357,14 +2250,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			luaL_argerror(L, 4, "channel out of range");
 		}
 
-		MessageEx* m = getPortMsg(L);
+		size_t idx = checkHandle(L, 1);
+		// Read now, so the schedule is relative to the tick count at the call.
 		int64_t currentTicks = e->handler->getTrigTicks(trigPort - 1, channel - 1);
-		m->channel = (uint8_t)(channel - 1);
-		m->trigPort = trigPort - 1;
-		m->send = true;
-		m->sendOrder = e->sendCounter++;
-		m->in.msg.frame = -1;
-		m->tick = currentTicks + ticks;
+		e->sendEntry(e->msgStore[idx], e->selectedPort, -1, uint8_t(channel - 1), uint64_t(currentTicks + ticks), trigPort - 1);
 		return 0;
 	}
 

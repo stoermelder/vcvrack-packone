@@ -1466,3 +1466,42 @@ TEST_CASE("The processor decodes the module's own queue, not a private one", "[M
 	REQUIRE(m->midiIns.ports[0].processor.ownedInput == nullptr);
 	REQUIRE(&m->midiIns.ports[0].processor.getInput() == &m->midiIns.ports[0].queue);
 }
+
+// Notices raised from the audio thread: a flag set, no string built there. They
+// become log lines when the log is drained, and repeats before that are one.
+TEST_CASE("Raised log notices become one line each when the log is drained", "[MidiKit][Log]") {
+	ScriptLog log;
+	std::tuple<LOG_FORMAT, float, std::string> t;
+
+	REQUIRE_FALSE(log.tryPop(t));
+
+	log.raise(ScriptLog::OUTPUT_QUEUE_FULL);
+	log.raise(ScriptLog::OUTPUT_QUEUE_FULL);
+	log.raise(ScriptLog::TRIGGER_QUEUE_FULL);
+	REQUIRE(log.tryPop(t));
+	REQUIRE(std::get<2>(t) == "MIDI output queue full, message(s) dropped");
+	REQUIRE(log.tryPop(t));
+	REQUIRE(std::get<2>(t) == "Trigger output queue full, write(s) dropped");
+	REQUIRE_FALSE(log.tryPop(t));
+
+	// Raising again after the drain reports again.
+	log.raise(ScriptLog::OUTPUT_QUEUE_FULL);
+	REQUIRE(log.tryPop(t));
+
+	log.raise(ScriptLog::TIMING_LATE);
+	log.raise(ScriptLog::TIMING_LATE);
+	REQUIRE(log.tryPop(t));
+	REQUIRE(std::get<2>(t) == "Timing: message(s) reached the output too late");
+	REQUIRE_FALSE(log.tryPop(t));
+
+	log.raise(ScriptLog::TIPSY_INPUT_MALFORMED);
+	log.raise(ScriptLog::TIPSY_INPUT_QUEUE_FULL);
+	REQUIRE(log.tryPop(t));
+	REQUIRE(std::get<2>(t) == "Tipsy input: malformed stream");
+	REQUIRE(log.tryPop(t));
+	REQUIRE(std::get<2>(t) == "Tipsy input queue full, message(s) dropped");
+
+	log.raise(ScriptLog::SCHEDULE_QUEUE_FULL);
+	REQUIRE(log.tryPop(t));
+	REQUIRE(std::get<2>(t) == "MIDI schedule queue full, message(s) sent at once");
+}

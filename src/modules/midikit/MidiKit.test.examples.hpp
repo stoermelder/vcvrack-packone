@@ -213,7 +213,8 @@ static const PresetInfo PRESETS[] = {
 	{"", "Volca Sample", true},
 	{"", "Program Change Trigger", true},
 	{"", "Program Change CV", true},
-	{"", "Bank Select", true},
+	{"", "Bank Select (param)", true},
+	{"", "Bank Select (menu)", false},   // sends only from menu clicks (own test); no reaction to MIDI traffic
 	{"", "Channel router", true},
 	{"", "Smart merge", true},
 	{"", "Port router", true},
@@ -341,7 +342,7 @@ static void checkPresetOnMicro(const PresetInfo& p, const char* engine) {
 
 	std::string loadLog;
 	std::tuple<LOG_FORMAT, float, std::string> t;
-	while (m->log.midiLogMessages.try_pop(t)) loadLog += std::get<2>(t) + "\n";
+	while (m->log.tryPop(t)) loadLog += std::get<2>(t) + "\n";
 	CATCH_INFO("load log:\n" << loadLog);
 	if (std::string(p.name) == "Arpeggiator") {
 		// Declares @requires params=4: µKIT must refuse it with a clear message.
@@ -404,7 +405,7 @@ TEST_CASE("Scripts can read the port counts of the variant they run on", "[MidiK
 
 		std::string log;
 		std::tuple<LOG_FORMAT, float, std::string> t;
-		while (m->log.midiLogMessages.try_pop(t)) log += std::get<2>(t) + "\n";
+		while (m->log.tryPop(t)) log += std::get<2>(t) + "\n";
 		REQUIRE(log.find("counts 2 2 2 2 4 4") != std::string::npos);
 
 		Test::destroyModule(m);
@@ -430,6 +431,19 @@ static MidiKitModule* loadPreset(const std::string& relPath) {
 
 	std::string loadLog = drainLog(m);
 	CATCH_INFO("preset: " << relPath);
+	CATCH_INFO("load log:\n" << loadLog);
+	REQUIRE(loadLog.find("rror") == std::string::npos);
+	REQUIRE(loadLog.find("Script loaded") != std::string::npos);
+	return m;
+}
+
+// Loads script text into a fresh module and asserts it loaded cleanly, like
+// loadPreset() does for a file.
+static MidiKitModule* loadScriptModule(const std::string& script) {
+	MidiKitModule* m = createModule();
+	m->loadScript(script);
+	m->syncScriptGen();
+	std::string loadLog = drainLog(m);
 	CATCH_INFO("load log:\n" << loadLog);
 	REQUIRE(loadLog.find("rror") == std::string::npos);
 	REQUIRE(loadLog.find("Script loaded") != std::string::npos);
@@ -2043,7 +2057,7 @@ TEST_CASE("'Note length quantiser.js/.lua' cuts a retriggered note before re-art
 
 	// Retriggering 60 while it's still sounding cuts the old note immediately
 	// (Note-Off, tick 0), then sends the fresh Note-On and its scheduled
-	// Note-Off. The engine flushes in send() order: cut, Note-On, scheduled
+	// Note-Off. The engine sends in send() order: cut, Note-On, scheduled
 	// Note-Off.
 	auto ev = feedCollect(m, noteOn(1, 60, 100));
 	REQUIRE(ev == std::vector<OutEvent>{{0x8, 1, 60, 0, 0}, {0x9, 1, 60, 100, 0}, {0x8, 1, 60, 0, 52}});
@@ -2833,7 +2847,7 @@ TEST_CASE("'Copy Ch1 CC to Ch2.js/.lua' duplicates a channel-1 CC onto channel 2
 
 	// A CC on MIDI channel 1 (internal 0) is copied to channel 2 (internal 1).
 	// The script calls send(copy) before send(original), and the engine now
-	// flushes in send() order, so the copy on channel 2 comes out first, then
+	// sends in send() order, so the copy on channel 2 comes out first, then
 	// the original on channel 1.
 	auto ev = feedCollect(m, cc(0, 20, 100));
 	REQUIRE(ev == std::vector<OutEvent>{{0xb, 1, 20, 100, 0}, {0xb, 0, 20, 100, 0}});
@@ -3207,8 +3221,8 @@ static void requireMicrofreakMessages(const std::vector<OutEvent>& ev, int bank,
 	REQUIRE(ev[2].note == program);
 }
 
-TEST_CASE("'Bank Select.js/.lua' trigger sends Bank Select CC 0/32 then Program Change", "[MidiKit][Microfreak]") {
-	std::string path = GENERATE(presetPaths("Bank Select"));
+TEST_CASE("'Bank Select (param).js/.lua' trigger sends Bank Select CC 0/32 then Program Change", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (param)"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -3229,8 +3243,8 @@ TEST_CASE("'Bank Select.js/.lua' trigger sends Bank Select CC 0/32 then Program 
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'Bank Select.js/.lua' bank boundaries and preset extremes", "[MidiKit][Microfreak]") {
-	std::string path = GENERATE(presetPaths("Bank Select"));
+TEST_CASE("'Bank Select (param).js/.lua' bank boundaries and preset extremes", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (param)"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -3249,8 +3263,8 @@ TEST_CASE("'Bank Select.js/.lua' bank boundaries and preset extremes", "[MidiKit
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'Bank Select.js/.lua' number of banks comes from the config", "[MidiKit][Microfreak]") {
-	std::string path = GENERATE(presetPaths("Bank Select"));
+TEST_CASE("'Bank Select (param).js/.lua' number of banks comes from the config", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (param)"));
 	CATCH_INFO("preset: " << path);
 
 	// JS "banks: 4," / Lua "banks = 4,"
@@ -3279,8 +3293,8 @@ TEST_CASE("'Bank Select.js/.lua' number of banks comes from the config", "[MidiK
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'Bank Select.js/.lua' trigger 1 logs the preset change", "[MidiKit][Microfreak]") {
-	std::string path = GENERATE(presetPaths("Bank Select"));
+TEST_CASE("'Bank Select (param).js/.lua' trigger 1 logs the preset change", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (param)"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -3292,8 +3306,82 @@ TEST_CASE("'Bank Select.js/.lua' trigger 1 logs the preset change", "[MidiKit][M
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'Bank Select.js/.lua' trigger 2 steps to the next preset", "[MidiKit][Microfreak]") {
-	std::string path = GENERATE(presetPaths("Bank Select"));
+// Bank Select (menu): the context menu is the only input. Items in
+// registration order: Channel (id 1), Bank (2), Program group (3), Program (4).
+TEST_CASE("'Bank Select (menu).js/.lua' sends from the context menu only", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (menu)"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	auto click = [&](int id, int value) {
+		m->host.getActiveEngine()->invokeContextMenuCallback(id, value);
+		m->host.getActiveEngine()->process();
+		return drainOut(m);
+	};
+
+	// Nothing is sent on load.
+	REQUIRE(drainOut(m).empty());
+
+	// Bank 2 with program 0
+	requireMicrofreakMessages(click(2, 2), 2, 0);
+	// Changing the group sends nothing; it only re-lists the Program item.
+	REQUIRE(click(3, 3).empty());
+	// The Program item now lists group 3 (48-63): entry 5 is program 53
+	requireMicrofreakMessages(click(4, 5), 2, 53);
+	REQUIRE(drainLog(m).find("Preset 309 (bank 2, program 53") != std::string::npos);
+
+	// Another group keeps the position within it (5), still without sending
+	REQUIRE(click(3, 7).empty());
+	requireMicrofreakMessages(click(4, 5), 2, 117);
+
+	// Channel change sends nothing; the next send uses it.
+	REQUIRE(click(1, 4).empty());
+	auto ev = click(2, 1);
+	REQUIRE(ev.size() == 3);
+	REQUIRE(ev[0].channel == 4);
+	REQUIRE(ev[2].channel == 4);
+
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	Test::destroyModule(m);
+}
+
+// Config numbers come back as floats after a reload; the Program labels must
+// still be plain integers ("53", not "53.0").
+TEST_CASE("'Bank Select (menu).js/.lua' restores its selection with integer labels", "[MidiKit][Microfreak][JSON]") {
+	std::string path = GENERATE(presetPaths("Bank Select (menu)"));
+	CATCH_INFO("preset: " << path);
+
+	ModuleScaffold mods;
+	MidiKitModule* m = loadPreset(path);
+	m->host.getActiveEngine()->invokeContextMenuCallback(2, 3);
+	m->host.getActiveEngine()->invokeContextMenuCallback(3, 3);
+	m->host.getActiveEngine()->invokeContextMenuCallback(4, 5);
+	drainLog(m);
+
+	rack::engine::Module::SaveEvent saveEvent;
+	m->onSave(saveEvent);
+	json_t* rootJ = m->dataToJson();
+	MidiKitModule* m2 = mods.create();
+	m2->dataFromJson(rootJ);
+	json_decref(rootJ);
+
+	std::vector<ScriptMenuItem> specs;
+	m2->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m2->host.getActiveEngine()->process();
+	REQUIRE(specs.size() == 4);
+	REQUIRE(specs[1].selected == 3);                       // Bank
+	REQUIRE(specs[2].selected == 3);                       // Program group
+	REQUIRE(specs[3].selected == 5);                       // Program
+	REQUIRE(specs[3].options.size() == 16);
+	REQUIRE(specs[3].options[0] == "48");
+	REQUIRE(specs[3].options[15] == "63");
+	REQUIRE(drainOut(m2).empty());                         // nothing sent on load
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Bank Select (param).js/.lua' trigger 2 steps to the next preset", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (param)"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -3321,8 +3409,8 @@ TEST_CASE("'Bank Select.js/.lua' trigger 2 steps to the next preset", "[MidiKit]
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'Bank Select.js/.lua' turning the knobs alone sends nothing", "[MidiKit][Microfreak]") {
-	std::string path = GENERATE(presetPaths("Bank Select"));
+TEST_CASE("'Bank Select (param).js/.lua' turning the knobs alone sends nothing", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (param)"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -3335,8 +3423,8 @@ TEST_CASE("'Bank Select.js/.lua' turning the knobs alone sends nothing", "[MidiK
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'Bank Select.js/.lua' passes MIDI in through unchanged", "[MidiKit][Microfreak]") {
-	std::string path = GENERATE(presetPaths("Bank Select"));
+TEST_CASE("'Bank Select (param).js/.lua' passes MIDI in through unchanged", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (param)"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -3577,7 +3665,9 @@ TEST_CASE("'Smart merge.js/.lua' the trigger wraps around after the last input",
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'Smart merge.js/.lua' a switch replays at most 128 messages", "[MidiKit][SmartMerge]") {
+// The script has no bound of its own: a state of more than 128 messages (one
+// drain's budget) arrives whole, over several drains.
+TEST_CASE("'Smart merge.js/.lua' a switch of more than 128 messages arrives whole", "[MidiKit][SmartMerge]") {
 	std::string path = GENERATE(presetPaths("Smart merge"));
 	CATCH_INFO("preset: " << path);
 
@@ -3585,8 +3675,8 @@ TEST_CASE("'Smart merge.js/.lua' a switch replays at most 128 messages", "[MidiK
 
 	for (int c = 0; c < 160; c++) feedPort(m, 1, cc(1 + c / 128, c % 128, 1));
 	auto ev = feedSwitchTrigger(m);
-	REQUIRE(ev.size() == 128);
-	REQUIRE(drainLog(m).find("dropped") != std::string::npos);
+	REQUIRE(ev.size() == 160);
+	REQUIRE_FALSE(m->midiOuts.overflow.load());
 
 	Test::destroyModule(m);
 }
@@ -3969,7 +4059,7 @@ TEST_CASE("param.getValue falls back only above the param count", "[MidiKit][Mic
 
 	std::string log;
 	std::tuple<LOG_FORMAT, float, std::string> t;
-	while (m->log.midiLogMessages.try_pop(t)) log += std::get<2>(t) + "\n";
+	while (m->log.tryPop(t)) log += std::get<2>(t) + "\n";
 	REQUIRE(log.find("fallback 0.25") != std::string::npos);
 	REQUIRE(log.find("plain false") != std::string::npos);   // no fallback given: still an error
 	REQUIRE(log.find("zero false") != std::string::npos);    // index 0 is never a fallback case
@@ -3996,7 +4086,7 @@ static std::string loadAndDrainLog(const std::string& script) {
 	m->loadScript(script);
 	std::string log;
 	std::tuple<LOG_FORMAT, float, std::string> t;
-	while (m->log.midiLogMessages.try_pop(t)) log += std::get<2>(t) + "\n";
+	while (m->log.tryPop(t)) log += std::get<2>(t) + "\n";
 	Test::destroyModule(m);
 	return log;
 }
@@ -4026,6 +4116,178 @@ TEST_CASE("@requires params refuses scripts the variant can't run", "[MidiKit][M
 	REQUIRE(bad.find("invalid @requires value") != std::string::npos);
 }
 
+
+// @requires messages=N: the store holds max(N, default) handles, refused beyond
+// the maximum. onLoad starts with an empty store, so `count` creates there fill
+// exactly `count` slots.
+static std::string storeScript(bool lua, const std::string& tag, int count) {
+	std::string n = std::to_string(count);
+	std::string body = lua ? "rack.onLoad = function() for i = 1, " + n + " do midi.create() end rack.log('creates-ok') end"
+	                       : "rack.onLoad = function() { for (let i = 0; i < " + n + "; i++) midi.create(); rack.log('creates-ok'); };";
+	std::string requires = tag.empty() ? "" : (lua ? "@requires " + tag + "\n" : " * @requires " + tag + "\n");
+	if (lua) return "--[[\n@engine minilua@v1\n" + requires + "--]]\n" + body + "\n";
+	return "/**\n * @engine QuickJs@v1\n" + requires + " */\n" + body + "\n";
+}
+
+// Whether `count` creates fit in the store a script with `tag` gets.
+static bool storeFits(bool lua, const std::string& tag, int count) {
+	std::string log = loadAndDrainLog<MidiKitModule>(storeScript(lua, tag, count));
+	return log.find("creates-ok") != std::string::npos && log.find("message store full") == std::string::npos;
+}
+
+TEST_CASE("@requires messages sizes the message store", "[MidiKit][CrossEngine]") {
+	bool lua = GENERATE(true, false);
+	CATCH_INFO(std::string(lua ? "Lua" : "JS"));
+	using StoermelderPackOne::MidiScript::MidiScriptEngine;
+	const int def = MidiScriptEngine::msgStoreDefault;
+	const int max = MidiScriptEngine::msgStoreMax;
+
+	// No tag: the default.
+	REQUIRE(storeFits(lua, "", def));
+	REQUIRE(!storeFits(lua, "", def + 1));
+
+	// A minimum, not an exact size: smaller values keep the default.
+	REQUIRE(storeFits(lua, "messages=16", def));
+	REQUIRE(!storeFits(lua, "messages=16", def + 1));
+	REQUIRE(storeFits(lua, "messages=64", 64));
+	REQUIRE(!storeFits(lua, "messages=64", 65));
+	REQUIRE(storeFits(lua, "messages=512", 512));
+	REQUIRE(!storeFits(lua, "messages=512", 513));
+	REQUIRE(storeFits(lua, "messages=" + std::to_string(max), max));
+
+	// The store-full error names the fix.
+	std::string log = loadAndDrainLog<MidiKitModule>(storeScript(lua, "", def + 1));
+	REQUIRE(log.find("message store full (32 handles; reuse a handle or raise it with @requires messages=N)") != std::string::npos);
+}
+
+// The chain creators need 4 (NRPN/RPN) or 2 (14-bit CC) consecutive slots, so
+// their last valid position depends on the store size.
+TEST_CASE("Chain creators fit exactly at the end of a larger store", "[MidiKit][CrossEngine]") {
+	bool lua = GENERATE(true, false);
+	CATCH_INFO(std::string(lua ? "Lua" : "JS"));
+	const int size = 512;
+	auto fits = [&](const char* create, int before) {
+		std::string n = std::to_string(before);
+		std::string body = lua ? "rack.onLoad = function() for i = 1, " + n + " do midi.create() end midi." + create + "() rack.log('creates-ok') end"
+		                       : "rack.onLoad = function() { for (let i = 0; i < " + n + "; i++) midi.create(); midi." + create + "(); rack.log('creates-ok'); };";
+		std::string script = lua ? "--[[\n@engine minilua@v1\n@requires messages=512\n--]]\n" + body + "\n"
+		                         : "/**\n * @engine QuickJs@v1\n * @requires messages=512\n */\n" + body + "\n";
+		std::string log = loadAndDrainLog<MidiKitModule>(script);
+		return log.find("creates-ok") != std::string::npos && log.find("message store full") == std::string::npos;
+	};
+	REQUIRE(fits("createNRPN", size - 4));
+	REQUIRE(!fits("createNRPN", size - 3));
+	REQUIRE(fits("createRPN", size - 4));
+	REQUIRE(!fits("createRPN", size - 3));
+	REQUIRE(fits("createCc14bit", size - 2));
+	REQUIRE(!fits("createCc14bit", size - 1));
+}
+
+TEST_CASE("@requires messages refuses what it can't give", "[MidiKit][CrossEngine]") {
+	bool lua = GENERATE(true, false);
+	CATCH_INFO(std::string(lua ? "Lua" : "JS"));
+
+	std::string tooBig = loadAndDrainLog<MidiKitModule>(storeScript(lua, "messages=5000", 1));
+	REQUIRE(tooBig.find("Script not loaded: @requires messages=5000 exceeds the maximum of 512") != std::string::npos);
+	REQUIRE(tooBig.find("creates-ok") == std::string::npos);
+	REQUIRE(loadAndDrainLog<MidiKitModule>(storeScript(lua, "messages=4097", 1)).find("exceeds the maximum") != std::string::npos);
+
+	for (const char* bad : {"messages=-1", "messages=abc", "messages="}) {
+		CATCH_INFO(bad);
+		std::string log = loadAndDrainLog<MidiKitModule>(storeScript(lua, bad, 1));
+		REQUIRE(log.find("invalid @requires value") != std::string::npos);
+		REQUIRE(log.find("creates-ok") == std::string::npos);
+	}
+}
+
+TEST_CASE("@requires params and messages combine in one tag", "[MidiKit][CrossEngine]") {
+	bool lua = GENERATE(true, false);
+	CATCH_INFO(std::string(lua ? "Lua" : "JS"));
+
+	REQUIRE(storeFits(lua, "params=4 messages=512", 512));
+	REQUIRE(!storeFits(lua, "params=4 messages=512", 513));
+
+	// A 2-param variant still refuses the script for params.
+	std::string micro = loadAndDrainLog<MidiKitMicroModule>(storeScript(lua, "params=4 messages=512", 1));
+	REQUIRE(micro.find("requires 4 params, this module has 2") != std::string::npos);
+	REQUIRE(micro.find("creates-ok") == std::string::npos);
+}
+
+// The size lasts for the script's lifetime: every load sets it again.
+TEST_CASE("The message store goes back to its default on the next load", "[MidiKit][CrossEngine]") {
+	bool lua = GENERATE(true, false);
+	CATCH_INFO(std::string(lua ? "Lua" : "JS"));
+	using StoermelderPackOne::MidiScript::MidiScriptEngine;
+	const int def = MidiScriptEngine::msgStoreDefault;
+
+	for (const char* first : {"messages=512", "messages=5000"}) {   // loaded big, refused
+		CATCH_INFO(first);
+		MidiKitModule* m = new MidiKitModule(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+		m->id = rand();
+		Module::SampleRateChangeEvent e{44100.f, 1.f / 44100.f};
+		m->onSampleRateChange(e);
+		m->loadScript(storeScript(lua, first, 1));
+		drainLog(m);
+		m->loadScript(storeScript(lua, "", def + 1));
+		std::string log = drainLog(m);
+		REQUIRE(log.find("message store full") != std::string::npos);
+		m->loadScript(storeScript(lua, "", def));
+		REQUIRE(drainLog(m).find("message store full") == std::string::npos);
+		Test::destroyModule(m);
+	}
+}
+
+// Handles advance past what the previous callback used, not by a fixed stride:
+// a callback that issued none must not let an older handle become valid again.
+TEST_CASE("A handle stays invalid across a callback that created nothing", "[MidiKit][CrossEngine]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+let n = 0;
+let kept = -1;
+trig.onTrigger = function(trigPort, channel) {
+    n++;
+    if (n === 1) {
+        kept = midi.create();
+        midi.setNoteOn(kept, 1, 60, 100);
+    }
+    else if (n === 3) {
+        let fresh = midi.create();
+        midi.setNoteOn(fresh, 1, 99, 100);
+        midiOut.send(kept);
+    }
+};
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableIn(1, 1)
+local n = 0
+local kept = -1
+trig.onTrigger = function(trigPort, channel)
+    n = n + 1
+    if n == 1 then
+        kept = midi.create()
+        midi.setNoteOn(kept, 1, 60, 100)
+    elseif n == 3 then
+        local fresh = midi.create()
+        midi.setNoteOn(fresh, 1, 99, 100)
+        midiOut.send(kept)
+    end
+end
+)";
+	for (const char* script : {js, lua}) {
+		CATCH_INFO(script);
+		MidiKitModule* m = loadScriptModule(script);
+		feedTrigChannel(m, 1);
+		feedTrigChannel(m, 1);
+		auto ev = feedTrigChannel(m, 1);
+		REQUIRE(ev.empty());
+		REQUIRE(drainLog(m).find("onTrigger error") != std::string::npos);
+		Test::destroyModule(m);
+	}
+}
 
 // The Examples menu greys out scripts by reading the same tag.
 TEST_CASE("requiredParams reads @requires params for the Examples menu", "[MidiKit][Micro]") {

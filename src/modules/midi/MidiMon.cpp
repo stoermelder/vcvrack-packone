@@ -20,7 +20,117 @@ enum class LOG_FORMAT {
 	TEXT
 };
 
+/** A formatted log line, as shown by the widget. */
 using LogEntry = std::tuple<LOG_FORMAT, float, int64_t, std::string>;
+
+/** A log line as the dsp thread records it: plain data, no strings. Building a
+ *  std::string allocates, which the dsp thread must not do, so the text is only
+ *  assembled from this on the UI thread (LogDecoder). */
+struct RawEntry {
+	enum class Kind : uint8_t {
+		DATE,				// frame = time_t
+		SAMPLE_RATE,		// x = sample rate
+		NOTE_ON,			// channel, x = note, y = velocity
+		NOTE_OFF,
+		KEY_PRESSURE,
+		CC,					// channel, x = cc, y = value
+		CC_14BIT,
+		RPN_RESET,			// channel
+		RPN_VALUE,			// channel, x = param, y = value
+		RPN_PARAM,			// channel, x = param
+		NRPN_VALUE,
+		NRPN_PARAM,
+		PROGRAM_CHANGE,		// channel, x = program
+		CHANNEL_PRESSURE,	// channel, x = value
+		PITCH_BEND,			// channel, x = value
+		SYSEX,				// x = data bytes
+		SYSEX_DATA,			// bytes[0..count), more = the line continues in the next entry
+		SONG_POINTER,		// x = value
+		SONG_SELECT,		// x = song
+		CLOCK,
+		START,
+		CONTINUE,
+		STOP,
+		RESET
+	};
+	enum { SYSEX_CHUNK = 24 };
+
+	Kind kind = Kind::RESET;
+	LOG_FORMAT format = LOG_FORMAT::TIMESTAMP;
+	bool more = false;
+	uint8_t channel = 0;
+	uint8_t count = 0;
+	float timestamp = 0.f;
+	int64_t frame = 0;
+	int32_t x = 0;
+	int32_t y = 0;
+	uint8_t bytes[SYSEX_CHUNK];
+};
+
+/** Turns RawEntry records into LogEntry lines. UI thread (or tests) only. */
+struct LogDecoder {
+	std::string sysexLine;
+
+	template <typename F>
+	void decode(const RawEntry& r, F emit) {
+		using K = RawEntry::Kind;
+		const int ch = r.channel + 1;
+		std::string s;
+		switch (r.kind) {
+			case K::DATE: {
+				std::time_t t = (std::time_t)r.frame;
+				char buf[100] = {0};
+				std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+				s = buf;
+				break;
+			}
+			case K::SAMPLE_RATE:      s = string::f("sample rate %i", r.x); break;
+			case K::NOTE_ON:          s = string::f("ch%02d note on  %i vel %i", ch, r.x, r.y); break;
+			case K::NOTE_OFF:         s = string::f("ch%02d note off %i vel %i", ch, r.x, r.y); break;
+			case K::KEY_PRESSURE:     s = string::f("ch%02d key-pressure %i vel %i", ch, r.x, r.y); break;
+			case K::CC:               s = string::f("ch%02d cc%i=%i", ch, r.x, r.y); break;
+			case K::CC_14BIT:         s = string::f("ch%02d 14-bit cc%i=%i", ch, r.x, r.y); break;
+			case K::RPN_RESET:        s = string::f("ch%02d rpn/nrpn reset", ch); break;
+			case K::RPN_VALUE:        s = string::f("ch%02d rpn param=%i value=%i", ch, r.x, r.y); break;
+			case K::RPN_PARAM:
+				switch (r.x) {
+					case 0: s = string::f("ch%02d rpn param=0 (Pitch Bend Sensitivity)", ch); break;
+					case 1: s = string::f("ch%02d rpn param=1 (Fine Tuning)", ch); break;
+					case 2: s = string::f("ch%02d rpn param=2 (Coarse Tuning)", ch); break;
+					case 3: s = string::f("ch%02d rpn param=3 (Tuning Program Select)", ch); break;
+					case 4: s = string::f("ch%02d rpn param=4 (Tuning Bank Select)", ch); break;
+					default: break;
+				}
+				break;
+			case K::NRPN_VALUE:       s = string::f("ch%02d nrpn param=%i value=%i", ch, r.x, r.y); break;
+			case K::NRPN_PARAM:       s = string::f("ch%02d nrpn param=%i selected", ch, r.x); break;
+			case K::PROGRAM_CHANGE:   s = string::f("ch%02d program=%i", ch, r.x); break;
+			case K::CHANNEL_PRESSURE: s = string::f("ch%02d channel-pressure=%i", ch, r.x); break;
+			case K::PITCH_BEND:       s = string::f("ch%02d pitchbend=%i", ch, r.x); break;
+			case K::SYSEX:            s = string::f("sysex (%i data bytes)", r.x); break;
+			case K::SYSEX_DATA: {
+				std::ostringstream ss;
+				ss << std::hex;
+				for (int i = 0; i < r.count; i++) {
+					ss << std::setw(2) << std::setfill('0') << static_cast<int>(r.bytes[i]) << " ";
+				}
+				sysexLine += ss.str();
+				if (r.more) return;
+				s = std::move(sysexLine);
+				sysexLine.clear();
+				break;
+			}
+			case K::SONG_POINTER:     s = string::f("song pointer=%i", r.x); break;
+			case K::SONG_SELECT:      s = string::f("song select=%i", r.x); break;
+			case K::CLOCK:            s = "clock tick"; break;
+			case K::START:            s = "start"; break;
+			case K::CONTINUE:         s = "continue"; break;
+			case K::STOP:             s = "stop"; break;
+			case K::RESET:            s = "reset"; break;
+		}
+		emit(LogEntry(r.format, r.timestamp, r.kind == RawEntry::Kind::DATE ? 0LL : r.frame, std::move(s)));
+	}
+};
 
 struct MidiMonModule : Module, MidiProcessorHandler {
 	enum ParamIds {
@@ -72,7 +182,7 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 	MidiProcessor midiProcessor;
 
 	ClockDividerEx processDivider;
-	dsp::RingBuffer<LogEntry, 4096> midiLogMessages;
+	dsp::RingBuffer<RawEntry, 4096> midiLogMessages;
 	bool isProcessing = false;
 
 	MidiMonModule() {
@@ -126,122 +236,108 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		}
 	}
 
-	void logMessage(bool showMessage, LOG_FORMAT logFormat, float timestamp, int64_t frame, std::string s) {
-		if (!midiLogMessages.full() && showMessage) {
-			midiLogMessages.push(std::make_tuple(logFormat, timestamp, frame, s));
-		}
+	/** Dsp thread: plain data only, no allocation. */
+	void logMessage(bool showMessage, RawEntry::Kind kind, LOG_FORMAT format, const MessageEx& m, int x = 0, int y = 0) {
+		if (!showMessage || midiLogMessages.full()) return;
+		RawEntry r;
+		r.kind = kind;
+		r.format = format;
+		r.channel = m.getChannel();
+		r.timestamp = format == LOG_FORMAT::TIMESTAMP ? float(m.frame) / APP->engine->getSampleRate() : 0.f;
+		r.frame = format == LOG_FORMAT::TIMESTAMP ? m.frame : 0LL;
+		r.x = x;
+		r.y = y;
+		midiLogMessages.push(r);
 	}
 
 	void logTimestampReset() {
-		std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-		char buf[100] = {0};
-		std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
-		logMessage(true, LOG_FORMAT::TIMESTAMP, 0.f, 0LL, std::string(buf));
-		logMessage(true, LOG_FORMAT::TIMESTAMP, 0.f, 0LL, string::f("sample rate %i", int(APP->engine->getSampleRate())));
+		RawEntry r;
+		r.format = LOG_FORMAT::TIMESTAMP;
+		r.kind = RawEntry::Kind::DATE;
+		r.frame = (int64_t)std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+		if (!midiLogMessages.full()) midiLogMessages.push(r);
+		r.kind = RawEntry::Kind::SAMPLE_RATE;
+		r.frame = 0;
+		r.x = int(APP->engine->getSampleRate());
+		if (!midiLogMessages.full()) midiLogMessages.push(r);
 	}
 
 	// MidiProcessorHandler
 	bool processMidi(const MessageEx& m) override {
-		std::string s;
-		float timestamp = float(m.frame) / APP->engine->getSampleRate();
-		int64_t frame = m.frame;
+		using K = RawEntry::Kind;
+		const LOG_FORMAT TS = LOG_FORMAT::TIMESTAMP;
+		const LOG_FORMAT IND = LOG_FORMAT::INDENTED;
 		switch (m.type) {
 			case MessageEx::Type::NOTE_ON:
-				s = string::f("ch%02d note on  %i vel %i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showNoteMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
+				logMessage(showNoteMsg, K::NOTE_ON, TS, m, m.getNote(), m.getValue());
 				break;
 			case MessageEx::Type::NOTE_OFF:
-				s = string::f("ch%02d note off %i vel %i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showNoteMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
+				logMessage(showNoteMsg, K::NOTE_OFF, TS, m, m.getNote(), m.getValue());
 				break;
 			case MessageEx::Type::KEY_PRESSURE:
-				s = string::f("ch%02d key-pressure %i vel %i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showKeyPressure, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
+				logMessage(showKeyPressure, K::KEY_PRESSURE, TS, m, m.getNote(), m.getValue());
 				break;
 			case MessageEx::Type::CC:
-				s = string::f("ch%02d cc%i=%i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showCcMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
+				logMessage(showCcMsg, K::CC, TS, m, m.getNote(), m.getValue());
 				break;
 			case MessageEx::Type::CC_14BIT:
-				s = string::f("ch%02d 14-bit cc%i=%i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showCcExMsg, LOG_FORMAT::INDENTED, 0.f, 0LL, s);
+				logMessage(showCcExMsg, K::CC_14BIT, IND, m, m.getNote(), m.getValue());
 				break;
 			case MessageEx::Type::RPN:
-				if (m.getParamNumber() < 0) {
-					s = string::f("ch%02d rpn/nrpn reset", m.getChannel() + 1);
-				}
-				else if (m.hasValue()) {
-					s = string::f("ch%02d rpn param=%i value=%i", m.getChannel() + 1, m.getParamNumber(), m.getValue());
-				}
-				else if (m.getParamNumber() == 0) {
-					s = string::f("ch%02d rpn param=0 (Pitch Bend Sensitivity)", m.getChannel() + 1);
-				}
-				else if (m.getParamNumber() == 1) {
-					s = string::f("ch%02d rpn param=1 (Fine Tuning)", m.getChannel() + 1);
-				}
-				else if (m.getParamNumber() == 2) {
-					s = string::f("ch%02d rpn param=2 (Coarse Tuning)", m.getChannel() + 1);
-				}
-				else if (m.getParamNumber() == 3) {
-					s = string::f("ch%02d rpn param=3 (Tuning Program Select)", m.getChannel() + 1);
-				}
-				else if (m.getParamNumber() == 4) {
-					s = string::f("ch%02d rpn param=4 (Tuning Bank Select)", m.getChannel() + 1);
-				}
-				logMessage(showRpnNrpnMsg, LOG_FORMAT::INDENTED, 0.f, 0LL, s);
+				if (m.getParamNumber() < 0) logMessage(showRpnNrpnMsg, K::RPN_RESET, IND, m);
+				else if (m.hasValue()) logMessage(showRpnNrpnMsg, K::RPN_VALUE, IND, m, m.getParamNumber(), m.getValue());
+				else logMessage(showRpnNrpnMsg, K::RPN_PARAM, IND, m, m.getParamNumber());
 				break;
 			case MessageEx::Type::NRPN:
-				if (m.hasValue()) {
-					s = string::f("ch%02d nrpn param=%i value=%i", m.getChannel() + 1, m.getParamNumber(), m.getValue());
-				}
-				else {
-					s = string::f("ch%02d nrpn param=%i selected", m.getChannel() + 1, m.getParamNumber());
-				}
-				logMessage(showRpnNrpnMsg, LOG_FORMAT::INDENTED, 0.f, 0LL, s);
+				if (m.hasValue()) logMessage(showRpnNrpnMsg, K::NRPN_VALUE, IND, m, m.getParamNumber(), m.getValue());
+				else logMessage(showRpnNrpnMsg, K::NRPN_PARAM, IND, m, m.getParamNumber());
 				break;
 			case MessageEx::Type::PROGRAM_CHANGE:
-				s = string::f("ch%02d program=%i", m.getChannel() + 1, m.getNote());
-				logMessage(showProgChangeMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
+				logMessage(showProgChangeMsg, K::PROGRAM_CHANGE, TS, m, m.getNote());
 				break;
 			case MessageEx::Type::CHANNEL_PRESSURE:
-				s = string::f("ch%02d channel-pressure=%i", m.getChannel() + 1, m.getNote());
-				logMessage(showChannelPressurelMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
+				logMessage(showChannelPressurelMsg, K::CHANNEL_PRESSURE, TS, m, m.getNote());
 				break;
 			case MessageEx::Type::PITCH_BEND:
-				s = string::f("ch%02d pitchbend=%i", m.getChannel() + 1, m.getValue());
-				logMessage(showPitchWheelMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
+				logMessage(showPitchWheelMsg, K::PITCH_BEND, TS, m, m.getValue());
 				break;
-			case MessageEx::Type::SYSEX:
-				logMessage(showSysExMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, string::f("sysex (%i data bytes)", m.getSysExSize() - 2));
-				if (showSysExData) {
-					std::ostringstream ss;
-					ss << std::hex;
-					for (int i = 0; i < m.getSysExSize(); i++) {
-						ss << std::setw(2) << std::setfill('0') << static_cast<int>(m.getSysExByte(i)) << " ";
-					}
-					logMessage(true, LOG_FORMAT::TEXT, 0.f, 0LL, ss.str());
+			case MessageEx::Type::SYSEX: {
+				int size = m.getSysExSize();
+				int chunks = showSysExData ? (size + RawEntry::SYSEX_CHUNK - 1) / RawEntry::SYSEX_CHUNK : 0;
+				// All or nothing: a partial data line would glue onto the next entry.
+				if (midiLogMessages.capacity() < (size_t)(chunks + (showSysExMsg ? 1 : 0))) break;
+				logMessage(showSysExMsg, K::SYSEX, TS, m, size - 2);
+				for (int i = 0; i < chunks; i++) {
+					RawEntry r;
+					r.kind = K::SYSEX_DATA;
+					r.format = LOG_FORMAT::TEXT;
+					r.count = (uint8_t)std::min((int)RawEntry::SYSEX_CHUNK, size - i * (int)RawEntry::SYSEX_CHUNK);
+					r.more = i + 1 < chunks;
+					for (int j = 0; j < r.count; j++) r.bytes[j] = m.getSysExByte(i * RawEntry::SYSEX_CHUNK + j);
+					midiLogMessages.push(r);
 				}
 				break;
+			}
 			case MessageEx::Type::SONG_POINTER:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, string::f("song pointer=%i", m.getValue()));
+				logMessage(showSystemMsg, K::SONG_POINTER, TS, m, m.getValue());
 				break;
 			case MessageEx::Type::SONG_SELECT:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, string::f("song select=%i", m.getNote()));
+				logMessage(showSystemMsg, K::SONG_SELECT, TS, m, m.getNote());
 				break;
 			case MessageEx::Type::CLOCK:
-				logMessage(showClockMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "clock tick");
+				logMessage(showClockMsg, K::CLOCK, TS, m);
 				break;
 			case MessageEx::Type::START:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "start");
+				logMessage(showSystemMsg, K::START, TS, m);
 				break;
 			case MessageEx::Type::CONTINUE:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "continue");
+				logMessage(showSystemMsg, K::CONTINUE, TS, m);
 				break;
 			case MessageEx::Type::STOP:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "stop");
+				logMessage(showSystemMsg, K::STOP, TS, m);
 				break;
 			case MessageEx::Type::RESET:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "reset");
+				logMessage(showSystemMsg, K::RESET, TS, m);
 				break;
 			default:
 				break;
@@ -363,7 +459,8 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 	MidiMonModule* module;
 	LogDisplay* logDisplay;
 	std::list<LogEntry> buffer;
-	
+	LogDecoder decoder;
+
 	MidiMonWidget(MidiMonModule* module)
 		: ThemedModuleWidget<MidiMonModule>(module, "MidiMon") {
 		this->module = module;
@@ -408,9 +505,11 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		if (!module) return;
 		logDisplay->showFrame = &module->showFrame;
 		while (!module->midiLogMessages.empty()) {
-			if (buffer.size() == BUFFERSIZE) buffer.pop_back();
-			auto s = module->midiLogMessages.shift();
-			buffer.push_front(s);
+			RawEntry r = module->midiLogMessages.shift();
+			decoder.decode(r, [&](LogEntry&& e) {
+				if (buffer.size() == BUFFERSIZE) buffer.pop_back();
+				buffer.push_front(std::move(e));
+			});
 		}
 		logDisplay->dirty = true;
 		logDisplay->setSize(Vec(240.f, std::max(236.0f, buffer.size() * 16.f)));

@@ -197,29 +197,33 @@ TEST_CASE("setSysEx frames the payload identically", "[MidiKit][CrossEngine]") {
 static const char* JS_GET_SYSEX = R"(/**
  * @engine QuickJs@v1
  */
-let m1 = midi.create();
-midi.setSysEx(m1, "43104c0000");
-rack.log("PROBE:" + number.toString(midi.getSysExLength(m1)));
-rack.log("PROBE:" + midi.getSysEx(m1));
+rack.onLoad = function() {
+    let m1 = midi.create();
+    midi.setSysEx(m1, "43104c0000");
+    rack.log("PROBE:" + number.toString(midi.getSysExLength(m1)));
+    rack.log("PROBE:" + midi.getSysEx(m1));
 
-let m2 = midi.create();
-midi.setSysEx(m2, "");
-rack.log("PROBE:" + number.toString(midi.getSysExLength(m2)));
-rack.log("PROBE:[" + midi.getSysEx(m2) + "]");
+    let m2 = midi.create();
+    midi.setSysEx(m2, "");
+    rack.log("PROBE:" + number.toString(midi.getSysExLength(m2)));
+    rack.log("PROBE:[" + midi.getSysEx(m2) + "]");
+};
 )";
 
 static const char* LUA_GET_SYSEX = R"(--[[
 @engine minilua@v1
 --]]
-local m1 = midi.create()
-midi.setSysEx(m1, "43104c0000")
-rack.log("PROBE:" .. number.toString(midi.getSysExLength(m1)))
-rack.log("PROBE:" .. midi.getSysEx(m1))
+rack.onLoad = function()
+    local m1 = midi.create()
+    midi.setSysEx(m1, "43104c0000")
+    rack.log("PROBE:" .. number.toString(midi.getSysExLength(m1)))
+    rack.log("PROBE:" .. midi.getSysEx(m1))
 
-local m2 = midi.create()
-midi.setSysEx(m2, "")
-rack.log("PROBE:" .. number.toString(midi.getSysExLength(m2)))
-rack.log("PROBE:[" .. midi.getSysEx(m2) .. "]")
+    local m2 = midi.create()
+    midi.setSysEx(m2, "")
+    rack.log("PROBE:" .. number.toString(midi.getSysExLength(m2)))
+    rack.log("PROBE:[" .. midi.getSysEx(m2) .. "]")
+end
 )";
 
 TEST_CASE("getSysEx returns the payload and getSysExLength the size", "[MidiKit][CrossEngine]") {
@@ -382,25 +386,29 @@ TEST_CASE("setProgramChange produces identical wire bytes", "[MidiKit][CrossEngi
 static const char* JS_GET_PROGRAM_CHANGE = R"(/**
  * @engine QuickJs@v1
  */
-let low = midi.create();
-midi.setProgramChange(low, 4, 0);
-rack.log("PROBE:" + number.toString(midi.getProgramChange(low)));
+rack.onLoad = function() {
+    let low = midi.create();
+    midi.setProgramChange(low, 4, 0);
+    rack.log("PROBE:" + number.toString(midi.getProgramChange(low)));
 
-let high = midi.create();
-midi.setProgramChange(high, 4, 127);
-rack.log("PROBE:" + number.toString(midi.getProgramChange(high)));
+    let high = midi.create();
+    midi.setProgramChange(high, 4, 127);
+    rack.log("PROBE:" + number.toString(midi.getProgramChange(high)));
+};
 )";
 
 static const char* LUA_GET_PROGRAM_CHANGE = R"(--[[
 @engine minilua@v1
 --]]
-local low = midi.create()
-midi.setProgramChange(low, 4, 0)
-rack.log("PROBE:" .. number.toString(midi.getProgramChange(low)))
+rack.onLoad = function()
+    local low = midi.create()
+    midi.setProgramChange(low, 4, 0)
+    rack.log("PROBE:" .. number.toString(midi.getProgramChange(low)))
 
-local high = midi.create()
-midi.setProgramChange(high, 4, 127)
-rack.log("PROBE:" .. number.toString(midi.getProgramChange(high)))
+    local high = midi.create()
+    midi.setProgramChange(high, 4, 127)
+    rack.log("PROBE:" .. number.toString(midi.getProgramChange(high)))
+end
 )";
 
 TEST_CASE("getProgramChange round-trips the program number", "[MidiKit][CrossEngine]") {
@@ -798,29 +806,33 @@ TEST_CASE("setNoteOff with velocity produces identical wire bytes", "[MidiKit][C
 static const char* JS_NOTE_OFF_VEL_PROBE = R"(/**
  * @engine QuickJs@v1
  */
-let a = midi.create();
-midi.setNoteOff(a, 7, 48, 100);
-rack.log("PROBE:" + number.toString(midi.getValue(a)));
-midi.setNoteOff(a, 7, 48);
-rack.log("PROBE:" + number.toString(midi.getValue(a)));
-midi.setNoteOff(a, 7, 48, 500);
-rack.log("PROBE:" + number.toString(midi.getValue(a)));
-midi.setNoteOff(a, 7, 48, -5);
-rack.log("PROBE:" + number.toString(midi.getValue(a)));
+rack.onLoad = function() {
+    let a = midi.create();
+    midi.setNoteOff(a, 7, 48, 100);
+    rack.log("PROBE:" + number.toString(midi.getValue(a)));
+    midi.setNoteOff(a, 7, 48);
+    rack.log("PROBE:" + number.toString(midi.getValue(a)));
+    midi.setNoteOff(a, 7, 48, 500);
+    rack.log("PROBE:" + number.toString(midi.getValue(a)));
+    midi.setNoteOff(a, 7, 48, -5);
+    rack.log("PROBE:" + number.toString(midi.getValue(a)));
+};
 )";
 
 static const char* LUA_NOTE_OFF_VEL_PROBE = R"(--[[
 @engine minilua@v1
 --]]
-local a = midi.create()
-midi.setNoteOff(a, 7, 48, 100)
-rack.log("PROBE:" .. number.toString(midi.getValue(a)))
-midi.setNoteOff(a, 7, 48)
-rack.log("PROBE:" .. number.toString(midi.getValue(a)))
-midi.setNoteOff(a, 7, 48, 500)
-rack.log("PROBE:" .. number.toString(midi.getValue(a)))
-midi.setNoteOff(a, 7, 48, -5)
-rack.log("PROBE:" .. number.toString(midi.getValue(a)))
+rack.onLoad = function()
+    local a = midi.create()
+    midi.setNoteOff(a, 7, 48, 100)
+    rack.log("PROBE:" .. number.toString(midi.getValue(a)))
+    midi.setNoteOff(a, 7, 48)
+    rack.log("PROBE:" .. number.toString(midi.getValue(a)))
+    midi.setNoteOff(a, 7, 48, 500)
+    rack.log("PROBE:" .. number.toString(midi.getValue(a)))
+    midi.setNoteOff(a, 7, 48, -5)
+    rack.log("PROBE:" .. number.toString(midi.getValue(a)))
+end
 )";
 
 TEST_CASE("setNoteOff velocity round-trips via getValue and clamps", "[MidiKit][CrossEngine]") {

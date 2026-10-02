@@ -115,13 +115,16 @@ trig.onTrigger = function(trigPort, channel) {
         }
     }
 
+    // One pulse message serves all of them: sending copies it.
+    let pulse = clockPulse();
+
     // The pulse for the edge itself, on the edge's frame
-    midiOut.send(clockPulse());
+    midiOut.send(pulse);
 
     // The pulses up to the next edge, spaced over the previous period
     if (state.period > 0) {
         for (let k = 1; k < config.ratio; k++) {
-            midiOut.sendAtFrame(clockPulse(), edge + Math.round(k * state.period / config.ratio));
+            midiOut.sendAtFrame(pulse, edge + Math.round(k * state.period / config.ratio));
         }
     }
 };
