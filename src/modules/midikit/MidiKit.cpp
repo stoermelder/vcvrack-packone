@@ -9,6 +9,8 @@
 #include "../../vcv/fs.hpp"
 #include "../../vcv/engine.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
+#include "../../utils/BoundedPriorityQueue.hpp"
+#include "../midi/MidiCInputQueue.hpp"
 #include "../midi/MidiProcessor.hpp"
 #include "tipsy-encoder/include/tipsy/tipsy.h"
 #include <algorithm>
@@ -76,28 +78,7 @@ struct MidiOutput : midi::Output {
 	// Messages that can wait for a trigger tick, per (trigger input, channel).
 	static constexpr size_t TICK_QUEUE_MAX = 32;
 
-	// A priority queue that is reserved up front and never grows past MAX, so it
-	// never reallocates on the audio thread (the caller checks full() before a
-	// push). Dropping entries in place keeps the capacity too.
-	template <typename T, size_t MAX>
-	struct BoundedQueue : std::priority_queue<T> {
-		BoundedQueue() {
-			this->c.reserve(MAX);
-		}
-		bool full() const {
-			return this->c.size() >= MAX;
-		}
-		// Takes the front element out by move: top() is const, so copying it out
-		// would allocate (midi::Message::bytes) on the audio thread.
-		T popTop() {
-			std::pop_heap(this->c.begin(), this->c.end(), this->comp);
-			T t = std::move(this->c.back());
-			this->c.pop_back();
-			return t;
-		}
-	};
-
-	struct FrameQueue : BoundedQueue<FrameSchedule, FRAME_QUEUE_MAX> {
+	struct FrameQueue : BoundedPriorityQueue<FrameSchedule, FRAME_QUEUE_MAX> {
 		template <typename Pred>
 		void removeIf(Pred pred) {
 			this->c.erase(std::remove_if(this->c.begin(), this->c.end(), pred), this->c.end());
@@ -115,7 +96,7 @@ struct MidiOutput : midi::Output {
 		}
 	};
 
-	using TickQueue = BoundedQueue<TickSchedule, TICK_QUEUE_MAX>;
+	using TickQueue = BoundedPriorityQueue<TickSchedule, TICK_QUEUE_MAX>;
 
 	FrameQueue frameQueue;
 	uint64_t nextSeq = 0;
@@ -428,6 +409,7 @@ struct ScriptLog {
 		OUTPUT_QUEUE_FULL,
 		SCHEDULE_QUEUE_FULL,
 		TRIGGER_QUEUE_FULL,
+		INPUT_QUEUE_FULL,
 		TIPSY_INPUT_MALFORMED,
 		TIPSY_INPUT_QUEUE_FULL,
 		TIMING_LATE,
@@ -443,6 +425,7 @@ struct ScriptLog {
 		notices[OUTPUT_QUEUE_FULL].text = "MIDI output queue full, message(s) dropped";
 		notices[SCHEDULE_QUEUE_FULL].text = "MIDI schedule queue full, message(s) sent at once";
 		notices[TRIGGER_QUEUE_FULL].text = "Trigger output queue full, write(s) dropped";
+		notices[INPUT_QUEUE_FULL].text = "MIDI input queue full, message(s) dropped";
 		notices[TIPSY_INPUT_MALFORMED].text = "Tipsy input: malformed stream";
 		notices[TIPSY_INPUT_QUEUE_FULL].text = "Tipsy input queue full, message(s) dropped";
 		notices[TIMING_LATE].text = "Timing: message(s) reached the output too late";
@@ -507,8 +490,8 @@ struct MidiInputs {
 	// are queued for the worker, not dispatched inline.
 	struct Port : MidiProcessorHandler {
 		/** [Stored to Json] */
-		midi::InputQueue queue;
-		MidiProcessor processor{&queue};
+		MidiCInputQueue<> queue;
+		MidiProcessor processor{MidiProcessor::DecodeOnly{}};
 		ExtendedCcEnables extendedCc;
 
 		MidiInputs* owner = nullptr;
@@ -557,11 +540,13 @@ struct MidiInputs {
 
 	using Sink = std::function<void(int port, const MidiScript::QueuedMessage&)>;
 	Sink onMessage;
+	ScriptLog* log;
 	// Audio thread: dispatch()'s working message, kept so its byte vector is
 	// allocated once.
 	MidiScript::QueuedMessage scratch;
 
-	MidiInputs() {
+	// Log lines (queue overflow) go to `log`, which must outlive this.
+	explicit MidiInputs(ScriptLog* log) : log(log) {
 		// Without this the processor decodes into an empty handler list and
 		// nothing reaches the script.
 		for (int i = 0; i < NIN; i++) {
@@ -611,23 +596,24 @@ struct MidiInputs {
 	// others are only emptied: a device selected on an unused input must not pile
 	// up messages that would flood the script once it is enabled.
 	void process(int64_t frame) {
-		midi::Message msg;
 		int n = count.load(std::memory_order_relaxed);
-		for (int i = 0; i < n; i++) {
-			while (ports[i].queue.tryPop(&msg, frame)) {
-				ports[i].processor.processMessage(msg);
+		for (int i = 0; i < NIN; i++) {
+			// Decoded in place: dispatch() copies what it keeps before pop().
+			while (const midi::Message* m = ports[i].queue.peek(frame)) {
+				if (i < n) ports[i].processor.processMessage(*m);
+				ports[i].queue.pop();
 			}
-		}
-		for (int i = n; i < NIN; i++) {
-			while (ports[i].queue.tryPop(&msg, frame)) {}
+			// Once per drain: a saturated queue must not flood the log.
+			if (ports[i].queue.overflow.exchange(false, std::memory_order_relaxed)) {
+				log->raise(ScriptLog::INPUT_QUEUE_FULL);
+			}
 		}
 	}
 
 	// Audio thread. Empties every queue without decoding (bypass).
 	void processBypass(int64_t frame) {
-		midi::Message msg;
 		for (int i = 0; i < NIN; i++) {
-			while (ports[i].queue.tryPop(&msg, frame)) {}
+			while (ports[i].queue.peek(frame)) ports[i].queue.pop();
 		}
 	}
 
@@ -642,7 +628,9 @@ struct MidiInputs {
 	// capture the next data entry.
 	void reset() {
 		for (int i = 0; i < NIN; i++) {
+			// reset() only deselects the device; clear() drops what is queued.
 			ports[i].queue.reset();
+			ports[i].queue.clear();
 			ports[i].processor.reset();
 			ports[i].extendedCc.clear();
 		}
@@ -1565,7 +1553,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	int panelTheme = 0;
 
 	// The MIDI inputs (see MidiInputs for the threading contract).
-	MidiInputs<CONFIG::midiInputs> midiIns;
+	MidiInputs<CONFIG::midiInputs> midiIns{&log};
 
 	// Frame of the latest process() call, for code without ProcessArgs.
 	std::atomic<int64_t> timingCurrentFrame{0};

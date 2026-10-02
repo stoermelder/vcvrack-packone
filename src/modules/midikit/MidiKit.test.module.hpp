@@ -1456,15 +1456,14 @@ TEST_CASE("Decoder state is cleared on reset and script load", "[MidiKit][MidiPr
 	m->host.getActiveEngine() = nullptr;
 }
 
-TEST_CASE("The processor decodes the module's own queue, not a private one", "[MidiKit][MidiProcessor]") {
+TEST_CASE("The port's processor only decodes and owns no queue", "[MidiKit][MidiProcessor]") {
 	Test::ModuleScaffold<MidiKitModule> mods;
-	// The queue is injected rather than owned, so midiInputs[0].queue keeps its widget
-	// binding and JSON. Pins that wiring: no separate queue was allocated, and
-	// getInput() resolves to the module's member.
+	// The module's RtInputQueue is drained by MidiInputs::process() via peek()/pop();
+	// the processor is decode-only, so no second queue was allocated behind it.
 	MidiKitModule* m = mods.create("MidiKit");
 
 	REQUIRE(m->midiIns.ports[0].processor.ownedInput == nullptr);
-	REQUIRE(&m->midiIns.ports[0].processor.getInput() == &m->midiIns.ports[0].queue);
+	REQUIRE(m->midiIns.ports[0].processor.input == nullptr);
 }
 
 // Notices raised from the audio thread: a flag set, no string built there. They

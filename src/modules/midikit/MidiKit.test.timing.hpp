@@ -1685,3 +1685,36 @@ TEST_CASE("The output ring takes 2048 entries and drops whole groups beyond them
 	REQUIRE(outs.enqueue(0, &msg, 1, 0, 0));  // the last slot is still usable
 	REQUIRE(outs.queue.full());
 }
+
+TEST_CASE("Timing: frames arriving out of order are released by frame", "[MidiKit][timing]") {
+	for (const char* script : TIMING_SCRIPTS) {
+		CATCH_INFO(script);
+		TimingRig rig(script);
+
+		// The later frame arrives first; it must not hold the earlier one back.
+		rig.inject(noteOn(0, 61, 100), 64);
+		rig.inject(noteOn(0, 60, 100), 8);
+		rig.run(100);
+
+		REQUIRE(rig.rec.sent.size() == 2);
+		REQUIRE(rig.rec.sent[0].note == 60);
+		REQUIRE(rig.rec.sent[0].releasedAt == nextDividerTick(8));
+		REQUIRE(rig.rec.sent[1].note == 61);
+		REQUIRE(rig.rec.sent[1].releasedAt == nextDividerTick(64));
+	}
+}
+
+TEST_CASE("Input queue overflow raises one notice per saturation", "[MidiKit][timing]") {
+	TimingRig rig(JS_PASS_THROUGH);
+
+	// Past the arrival ring's capacity within one drain.
+	for (int i = 0; i < 300; i++) rig.inject(noteOn(0, 60, 100), 1000000);
+	rig.run(40);
+
+	int lines = 0;
+	std::tuple<LOG_FORMAT, float, std::string> t;
+	while (rig.m->log.tryPop(t)) {
+		if (std::get<2>(t) == "MIDI input queue full, message(s) dropped") lines++;
+	}
+	REQUIRE(lines == 1);
+}
