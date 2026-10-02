@@ -91,9 +91,9 @@ combined: `@requires params=4 messages=512`.
 
 A larger store lets a callback hold more distinct messages *at once*. It does not
 raise how much a callback can *send*: everything goes through the output queue,
-which takes 128 entries between two drains (every 8 samples), and what doesn't
-fit is dropped and logged. So `messages=512` doesn't fix dropped output; reusing
-one handle does as well for most scripts.
+which holds 2048 messages and hands them on 128 at a time, one batch every
+8 samples. A larger store doesn't raise that limit, and reusing one handle
+does as well for most scripts.
 
 Engine selection is a plain substring search for `@engine <name>@vN` in the
 header comment block — not the file extension, and not scanned past the
@@ -1356,8 +1356,9 @@ handle doesn't affect what was already sent, and `sendAfterTrigger(msg, 5)`
 followed by `send(msg)` sends two messages. To send the same bytes on several
 ports, change `midiOut.selectPort()` between the calls. Messages reach the
 output queue while the callback runs, in call order; a very long callback can
-have its first messages on the wire before it returns. What doesn't fit in the
-output queue (128 entries between two drains, which happen every 8 samples) is dropped and logged.
+have its first messages on the wire before it returns. Up to 2048 messages are queued
+for output. A burst goes out at up to 128 messages every 8 samples (about 2.7 ms
+for 2048 at 48 kHz). What doesn't fit in the queue is dropped and logged.
 
 Delayed messages wait in queues of fixed size: up to 256 per output for
 `sendAfterMs()`/`sendAtFrame()`, and up to 32 per trigger input channel for

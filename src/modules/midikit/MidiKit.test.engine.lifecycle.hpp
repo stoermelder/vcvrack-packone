@@ -685,20 +685,31 @@ TEST_CASE("MIDI output overflow is reported again after the queue recovers", "[M
 		return count;
 	};
 
+	// One drain hands the ports at most DRAIN_BUDGET entries, so emptying a full
+	// ring takes several divider periods.
+	int64_t frame = 0;
+	auto drainAll = [&]() {
+		while (!m->midiOuts.queue.empty()) {
+			processOneDividerPeriod(m, frame);
+			frame += 8;
+		}
+	};
+
 	fillAndOverflow();
-	processOneDividerPeriod(m, 0);            // drains the queue, logs once
+	drainAll();                               // logs once, at the first drain
 	REQUIRE(countDropLines() == 1);
 	REQUIRE(m->midiOuts.queue.empty());
 
 	// A quiet period with no drops must log nothing. This is what pins the
 	// CLEARING of the flag: a latched flag would keep reporting here.
-	processOneDividerPeriod(m, 8);
+	processOneDividerPeriod(m, frame);
+	frame += 8;
 	REQUIRE(countDropLines() == 0);
 
 	// Second, independent episode: reports again rather than staying silent
 	// after the first — the flag re-arms.
 	fillAndOverflow();
-	processOneDividerPeriod(m, 16);
+	drainAll();
 	REQUIRE(countDropLines() == 1);
 
 	Test::destroyModule(m);

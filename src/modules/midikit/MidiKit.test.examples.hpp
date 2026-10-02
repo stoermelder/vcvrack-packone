@@ -3665,9 +3665,9 @@ TEST_CASE("'Smart merge.js/.lua' the trigger wraps around after the last input",
 	Test::destroyModule(m);
 }
 
-// The script has no bound of its own: a state larger than the output queue
-// (128 entries between two drains) is cut by the module, which logs it.
-TEST_CASE("'Smart merge.js/.lua' a switch larger than the output queue is cut by the module", "[MidiKit][SmartMerge]") {
+// The script has no bound of its own: a state of more than 128 messages (one
+// drain's budget) arrives whole, over several drains.
+TEST_CASE("'Smart merge.js/.lua' a switch of more than 128 messages arrives whole", "[MidiKit][SmartMerge]") {
 	std::string path = GENERATE(presetPaths("Smart merge"));
 	CATCH_INFO("preset: " << path);
 
@@ -3675,10 +3675,8 @@ TEST_CASE("'Smart merge.js/.lua' a switch larger than the output queue is cut by
 
 	for (int c = 0; c < 160; c++) feedPort(m, 1, cc(1 + c / 128, c % 128, 1));
 	auto ev = feedSwitchTrigger(m);
-	REQUIRE(ev.size() == 128);
-	// The module's overflow flag, which its next audio drain turns into the
-	// "MIDI output queue full" log line (these tests drain the queue directly).
-	REQUIRE(m->midiOuts.overflow.load());
+	REQUIRE(ev.size() == 160);
+	REQUIRE_FALSE(m->midiOuts.overflow.load());
 
 	Test::destroyModule(m);
 }

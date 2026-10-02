@@ -151,9 +151,9 @@ static std::string publishedConfigJson(MidiScriptEngine* se) {
 static bool processOutMessage(MidiKitModule* m, int& midiPort, midi::Message& msg, int& ticks) {
 	if (m->midiOuts.queue.empty()) return false;
 	auto t = m->midiOuts.queue.shift();
-	midiPort = std::get<0>(t);
-	msg = std::get<1>(t);
-	ticks = (int)std::get<3>(t);
+	midiPort = t.port;
+	msg = t.msg;
+	ticks = (int)t.tick;
 	return true;
 }
 

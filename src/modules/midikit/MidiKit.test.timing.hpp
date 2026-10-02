@@ -1595,3 +1595,98 @@ midi.onMessage = function(port, msg) {
 	overflow(rig.frame);
 	REQUIRE(drainLog(rig.m).find("schedule queue full") != std::string::npos);
 }
+
+
+// ── Bursts: a 2048-entry ring, drained 128 entries at a time ─────────────────
+// The ring absorbs a burst and the audio thread hands it on in bounded steps,
+// one per divider tick, so one process() call never works through all of it.
+
+static midi::Message burstNote(int note) {
+	return noteOn(0, note, 100);
+}
+
+TEST_CASE("A burst of 1000 sends in one callback arrives whole and in order", "[MidiKit][timing]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    let m = midi.create();
+    for (let i = 0; i < 1000; i++) {
+        midi.setNoteOn(m, 1, i % 128, 100);
+        midiOut.send(m);
+    }
+};
+)";
+	TimingRig rig(js);
+	rig.inject(noteOn(0, 60, 100), 10);
+	rig.run(200);
+
+	REQUIRE(rig.rec.sent.size() == 1000);
+	for (size_t i = 0; i < 1000; i++) REQUIRE(rig.rec.sent[i].note == i % 128);
+	REQUIRE(drainLog(rig.m).find("queue full") == std::string::npos);
+}
+
+TEST_CASE("One drain hands the ports at most DRAIN_BUDGET entries", "[MidiKit][timing]") {
+	TimingRig rig(JS_PASS_THROUGH);
+	auto& outs = rig.m->midiOuts;
+	const int budget = std::decay<decltype(outs)>::type::DRAIN_BUDGET;
+	REQUIRE(budget == 128);
+	REQUIRE(outs.queue.capacity() == 2048);
+
+	midi::Message msg = burstNote(60);
+	for (int i = 0; i < 1000; i++) REQUIRE(outs.enqueue(0, &msg, 1, 0, 0));
+
+	size_t expected = 0;
+	for (int drain = 0; drain < 8; drain++) {
+		outs.process(0, 48000.f);
+		expected = std::min<size_t>(1000, expected + budget);
+		REQUIRE(rig.rec.sent.size() == expected);
+	}
+	REQUIRE(outs.queue.empty());
+}
+
+TEST_CASE("A replaced script's leftover burst is discarded; its onUnload output and the new script's messages arrive", "[MidiKit][timing]") {
+	TimingRig rig(JS_PASS_THROUGH);
+	auto& outs = rig.m->midiOuts;
+
+	// 300 messages of the replaced script (generation 0) that are not due, its
+	// onUnload() output, then the new script's (generation 1).
+	midi::Message later = burstNote(7);
+	later.frame = 1000000;
+	for (int i = 0; i < 300; i++) REQUIRE(outs.enqueue(0, &later, 1, 0, 0, 0, 0));
+	midi::Message unload1 = burstNote(50);
+	midi::Message unload2 = burstNote(51);
+	REQUIRE(outs.enqueue(0, &unload1, 1, 0, 0, 0, 0, true));
+	REQUIRE(outs.enqueue(0, &unload2, 1, 0, 0, 0, 0, true));
+	for (int note = 60; note < 63; note++) {
+		midi::Message fresh = burstNote(note);
+		REQUIRE(outs.enqueue(0, &fresh, 1, 0, 0, 0, 1));
+	}
+
+	// The audio thread is on generation 1. The leftovers go at up to 128 per
+	// drain, and nothing is delivered until they are through.
+	outs.process(0, 48000.f, 1);
+	outs.process(0, 48000.f, 1);
+	REQUIRE(rig.rec.sent.empty());
+	outs.process(0, 48000.f, 1);
+	REQUIRE(rig.rec.sent.size() == 5);
+	REQUIRE(rig.rec.sent[0].note == 50);
+	REQUIRE(rig.rec.sent[1].note == 51);
+	REQUIRE(rig.rec.sent[2].note == 60);
+	REQUIRE(rig.rec.sent[4].note == 62);
+	REQUIRE(outs.queue.empty());
+}
+
+TEST_CASE("The output ring takes 2048 entries and drops whole groups beyond them", "[MidiKit][timing]") {
+	TimingRig rig(JS_PASS_THROUGH);
+	auto& outs = rig.m->midiOuts;
+	midi::Message msg = burstNote(60);
+	for (int i = 0; i < 2047; i++) REQUIRE(outs.enqueue(0, &msg, 1, 0, 0));
+
+	midi::Message group[4] = {msg, msg, msg, msg};
+	REQUIRE_FALSE(outs.enqueue(0, group, 4, 0, 0));
+	REQUIRE(outs.overflow.load());
+	REQUIRE(outs.queue.size() == 2047);       // nothing of the group went in
+	REQUIRE(outs.enqueue(0, &msg, 1, 0, 0));  // the last slot is still usable
+	REQUIRE(outs.queue.full());
+}
