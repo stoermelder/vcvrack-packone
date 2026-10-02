@@ -38,6 +38,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// are about a message being built for SEND, unlike in.type which reports
 		// how a received message was decoded — same words, opposite direction.
 		bool isNrpn = false;
+		bool isRpn = false;    // with isNrpn: the 4-message chain is an RPN (CC 101/100)
 		bool isCc14bit = false;
 		bool send = false;
 		uint8_t channel = 0;   // trigger input channel, for sendAfterTrigger() scheduling
@@ -866,6 +867,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// store started at 0 — clear both leader flags so a stale one can't
 		// make the flush emit a chain from the incoming message.
 		msgStore[0].isNrpn = false;
+		msgStore[0].isRpn = false;
 		msgStore[0].isCc14bit = false;
 		msgCount = 1;
 
@@ -929,6 +931,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// Slot 0 is reused across callbacks, so clear the outgoing chain flags for
 		// the same reason dispatchMidiMessage() does.
 		msgStore[0].isNrpn = false;
+		msgStore[0].isRpn = false;
 		msgStore[0].isCc14bit = false;
 		msgCount = 1;
 
@@ -1100,6 +1103,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("create",          lua_midi_create);
 		setTableFunc("clone",           lua_midi_clone);
 		setTableFunc("createNRPN",      lua_midi_createNrpn);
+		setTableFunc("createRPN",       lua_midi_createRpn);
 		setTableFunc("createCc14bit",   lua_midi_createCc14bit);
 		setTableFunc("getChanPressure", lua_midi_getChanPressure);
 		setTableFunc("getChannel",      lua_midi_getChannel);
@@ -1136,6 +1140,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("setNoteOff",      lua_midi_setNoteOff);
 		setTableFunc("setNoteOn",       lua_midi_setNoteOn);
 		setTableFunc("setNRPN",         lua_midi_setNrpn);
+		setTableFunc("setRPN",          lua_midi_setRpn);
 		setTableFunc("setPitchWheel",   lua_midi_setPitchWheel);
 		setTableFunc("setProgramChange",lua_midi_setProgramChange);
 		setTableFunc("setRaw",          lua_midi_setRaw);
@@ -1744,15 +1749,19 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 1;
 	}
 
-	static int lua_midi_createNrpn(lua_State* L) {
+	// Shared by midi.createNRPN() and midi.createRPN(): the same 4-handle chain,
+	// filled with CC 99/98 or CC 101/100 by the matching setter.
+	static int luaCreateParam(lua_State* L, bool rpn) {
 		auto* e = getEngine(L);
-		warnIfOutsideCallback(e, "midi.createNRPN");
+		const char* name = rpn ? "midi.createRPN" : "midi.createNRPN";
+		warnIfOutsideCallback(e, name);
 		size_t* s = &e->msgCount;
 		if (*s + 4 > static_cast<size_t>(msgStoreSize)) {
-			luaL_error(L, "midi.createNRPN: message store full");
+			luaL_error(L, "%s: message store full", name);
 		}
 		e->msgStore[*s + 0] = MessageEx();
 		e->msgStore[*s + 0].isNrpn = true;
+		e->msgStore[*s + 0].isRpn = rpn;
 		e->msgStore[*s + 1] = MessageEx();
 		e->msgStore[*s + 2] = MessageEx();
 		e->msgStore[*s + 3] = MessageEx();
@@ -1760,6 +1769,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		*s += 4;
 		lua_pushinteger(L, idx);
 		return 1;
+	}
+
+	static int lua_midi_createNrpn(lua_State* L) {
+		return luaCreateParam(L, false);
+	}
+	static int lua_midi_createRpn(lua_State* L) {
+		return luaCreateParam(L, true);
 	}
 
 	static int lua_midi_createCc14bit(lua_State* L) {
@@ -2103,13 +2119,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 0;
 	}
 
-	static int lua_midi_setNrpn(lua_State* L) {
-		// midi.setNRPN(nrpn, channel, number, value)
+	// Shared by midi.setNRPN() and midi.setRPN(): (handle, channel, number, value).
+	// An RPN selects with CC 101/100 instead of 99/98; data entry is the same.
+	static int luaSetParam(lua_State* L, bool rpn) {
 		auto* e = getEngine(L);
 		int idx = static_cast<int>(luaL_checkinteger(L, 1));
 		if (idx < 0 || static_cast<size_t>(idx) >= e->msgCount) luaL_argerror(L, 1, "invalid nrpn index");
 		MessageEx* s1 = &e->msgStore[idx];
-		if (!s1->isNrpn) luaL_argerror(L, 1, "message is not an NRPN");
+		if (!s1->isNrpn || s1->isRpn != rpn) luaL_argerror(L, 1, rpn ? "message is not an RPN" : "message is not an NRPN");
 		MessageEx* s2 = &e->msgStore[idx + 1];
 		MessageEx* s3 = &e->msgStore[idx + 2];
 		MessageEx* s4 = &e->msgStore[idx + 3];
@@ -2118,16 +2135,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		uint16_t number = clampInt<uint16_t>(luaL_checknumber(L, 3), 0, 16383);
 		uint16_t value = clampInt<uint16_t>(luaL_checknumber(L, 4), 0, 16383);
 
-		// Spec order: NRPN MSB, NRPN LSB, Data Entry MSB, Data Entry LSB.
+		// Spec order: NRPN/RPN MSB, NRPN/RPN LSB, Data Entry MSB, Data Entry LSB.
 		// flushMsgStore() sends s1..s4 in this order, as MidiProcessor's NRPN
 		// state machine requires (CC99/98 select the number, CC6/38 the value).
 		s1->in.msg.setStatus(0xb);
 		s1->in.msg.setChannel(ch - 1);
-		s1->in.msg.setNote(99);
+		s1->in.msg.setNote(rpn ? 101 : 99);
 		s1->in.msg.setValue((number >> 7) & 0x7f);
 		s2->in.msg.setStatus(0xb);
 		s2->in.msg.setChannel(ch - 1);
-		s2->in.msg.setNote(98);
+		s2->in.msg.setNote(rpn ? 100 : 98);
 		s2->in.msg.setValue(number & 0x7f);
 		s3->in.msg.setStatus(0xb);
 		s3->in.msg.setChannel(ch - 1);
@@ -2138,6 +2155,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		s4->in.msg.setNote(38);
 		s4->in.msg.setValue(value & 0x7f);
 		return 0;
+	}
+
+	static int lua_midi_setNrpn(lua_State* L) {
+		return luaSetParam(L, false);
+	}
+	static int lua_midi_setRpn(lua_State* L) {
+		return luaSetParam(L, true);
 	}
 
 	static int lua_midi_setPitchWheel(lua_State* L) {

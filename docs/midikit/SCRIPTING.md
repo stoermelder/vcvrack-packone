@@ -1082,13 +1082,13 @@ is in [Tipsy protocol — send and receive over CV](#tipsy-protocol--send-and-re
 
 ### `midi.*` — message construction/inspection
 Messages are opaque handles (indices into an internal store, max 128 live per
-callback) created with `midi.create()`, `midi.createNRPN()`, or
+callback) created with `midi.create()`, `midi.createNRPN()`, `midi.createRPN()`, or
 `midi.createCc14bit()`; `midi.onMessage`
 also receives the incoming message as handle `0`/implicit first arg (Lua:
 index `0`, QuickJs: same convention).
 
 **The store holds at most 128 live handles per callback.** Once it is full,
-`midi.create()`, `midi.clone()`, `midi.createNRPN()`, and `midi.createCc14bit()`
+`midi.create()`, `midi.clone()`, `midi.createNRPN()`, `midi.createRPN()`, and `midi.createCc14bit()`
 raise a script error
 that aborts the rest of the callback. Messages already marked for send before
 the error are still flushed, so a multi-message sequence (e.g. an NRPN pair,
@@ -1124,6 +1124,9 @@ batches (one handle per message, per the send-once rule below).
   `createCc14bit()` handle is a single plain message, not a chained group.
 - `midi.createNRPN()` → 4 chained handles (param LSB/MSB + value LSB/MSB),
   used only with `midi.setNRPN`.
+- `midi.createRPN()` → the same 4-handle chain for a *registered* parameter
+  (CC 101/100 select it), used only with `midi.setRPN`. Sending RPN 0 sets a
+  synth's pitch-bend range.
 - `midi.createCc14bit()` → 2 chained handles (value MSB at CC `cc`, value LSB
   at CC `cc + 32`), used only with `midi.setCc14bit`; the pair is sent
   atomically — a receiver never sees the MSB without its LSB.
@@ -1173,6 +1176,7 @@ JavaScript. `NaN` clamps to the lower bound.
 | `setNoteOn(msg, ch, note, vel)` | |
 | `setNoteOff(msg, ch, note [, vel])` | release velocity defaults to 0; read back with `getValue` |
 | `setNRPN(nrpnHandle, ch, number, value)` | `number`/`value` are 14-bit, 0-16383 |
+| `setRPN(rpnHandle, ch, number, value)` | like `setNRPN` but for a handle from `midi.createRPN()`; e.g. `setRPN(h, 1, 0, 12 << 7)` sets a 12-semitone bend range (RPN 0: MSB = semitones, LSB = cents) |
 | `setPitchWheel(msg, ch, value)` | `value` is 14-bit, 0-16383; 8192 is the centre (no bend) |
 | `setProgramChange(msg, ch, program)` | |
 | `setSysEx(msg, hexString)` | payload only — `f0`/`f7` framing added automatically, so pass e.g. `"43104c0000"` rather than `"f043104c0000f7"`; capped at 256 bytes, every byte must be 7-bit (`00`-`7f`) |

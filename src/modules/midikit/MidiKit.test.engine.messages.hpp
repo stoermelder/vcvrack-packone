@@ -597,6 +597,44 @@ TEST_CASE("setCc14bit clamps its value to 7-bit data bytes", "[MidiKit][CrossEng
 }
 
 
+// Send-side RPN: the NRPN chain with CC 101/100 selecting the parameter.
+TEST_CASE("createRPN/setRPN send RPN select + data entry identically", "[MidiKit][CrossEngine]") {
+	// RPN 0 (pitch-bend sensitivity) = 12 semitones on channel 2.
+	std::string call = "midi.setRPN(m, 2, 0, 12); midiOut.send(m);";
+	EngineResult js = run(jsOnMessage("let m = midi.createRPN(); " + call));
+	EngineResult lua = run(luaOnMessage("local m = midi.createRPN(); " + call));
+	CATCH_INFO(js.log);
+	CATCH_INFO(lua.log);
+	const std::vector<std::vector<uint8_t>> expected = {
+		{0xb1, 101, 0}, {0xb1, 100, 0}, {0xb1, 6, 0}, {0xb1, 38, 12}
+	};
+	REQUIRE(js.sent.size() == 4);
+	REQUIRE(lua.sent.size() == 4);
+	for (size_t i = 0; i < 4; i++) {
+		REQUIRE(js.sent[i].bytes == expected[i]);
+		REQUIRE(lua.sent[i].bytes == expected[i]);
+	}
+}
+
+TEST_CASE("setNRPN and setRPN reject each other's handles", "[MidiKit][CrossEngine]") {
+	struct Case { const char* create; const char* set; const char* error; };
+	const Case cases[] = {
+		{"midi.createRPN()", "midi.setNRPN", "not an NRPN"},
+		{"midi.createNRPN()", "midi.setRPN", "not an RPN"},
+	};
+	for (const Case& c : cases) {
+		std::string call = std::string(c.set) + "(m, 1, 0, 0);";
+		EngineResult lua = run(luaOnMessage(std::string("local m = ") + c.create + "; " + call));
+		CATCH_INFO(lua.log);
+		REQUIRE(lua.log.find(c.error) != std::string::npos);
+		// JS names the same misuse "invalid nrpn/rpn message".
+		EngineResult js = run(jsOnMessage(std::string("let m = ") + c.create + "; " + call));
+		CATCH_INFO(js.log);
+		REQUIRE(js.log.find("invalid") != std::string::npos);
+	}
+}
+
+
 // midi.clone
 // clone(msg) must produce an independent copy: same MIDI payload, but a
 // fresh, unsent message. Editing the clone must not touch the source (a

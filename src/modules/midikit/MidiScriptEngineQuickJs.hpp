@@ -35,6 +35,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// are about a message being built for SEND, unlike in.type which reports
 		// how a received message was decoded — same words, opposite direction.
 		bool isNrpn = false;
+		bool isRpn = false;    // with isNrpn: the 4-message chain is an RPN (CC 101/100)
 		bool isCc14bit = false;
 		bool send = false;
 		uint8_t channel = 0;   // trigger input channel, for sendAfterTrigger() scheduling
@@ -455,6 +456,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			// store started at 0 — clear both leader flags so a stale one can't
 			// make the flush emit a chain from the incoming message.
 			msgStore[0].isNrpn = false;
+		msgStore[0].isRpn = false;
 			msgStore[0].isCc14bit = false;
 			msgCount = 1;
 
@@ -504,6 +506,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// Slot 0 is reused across callbacks, so clear the outgoing chain flags for
 		// the same reason dispatchMidiMessage() does.
 		msgStore[0].isNrpn = false;
+		msgStore[0].isRpn = false;
 		msgStore[0].isCc14bit = false;
 		msgCount = 1;
 
@@ -891,6 +894,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midi, "create", JS_NewCFunction(ctx, js_midi_create, "create", 0));
 		JS_SetPropertyStr(ctx, _midi, "clone", JS_NewCFunction(ctx, js_midi_clone, "clone", 1));
 		JS_SetPropertyStr(ctx, _midi, "createNRPN", JS_NewCFunction(ctx, js_midi_createNrpn, "createNRPN", 0));
+		JS_SetPropertyStr(ctx, _midi, "createRPN", JS_NewCFunction(ctx, js_midi_createRpn, "createRPN", 0));
 		JS_SetPropertyStr(ctx, _midi, "createCc14bit", JS_NewCFunction(ctx, js_midi_createCc14bit, "createCc14bit", 0));
 		JS_SetPropertyStr(ctx, _midi, "getChanPressure", JS_NewCFunction(ctx, js_midi_getChanPressure, "getChanPressure", 1));
 		JS_SetPropertyStr(ctx, _midi, "getChannel", JS_NewCFunction(ctx, js_midi_getChannel, "getChannel", 1));
@@ -927,6 +931,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midi, "setNoteOff", JS_NewCFunction(ctx, js_midi_setNoteOff, "setNoteOff", 4));
 		JS_SetPropertyStr(ctx, _midi, "setNoteOn", JS_NewCFunction(ctx, js_midi_setNoteOn, "setNoteOn", 4));
 		JS_SetPropertyStr(ctx, _midi, "setNRPN", JS_NewCFunction(ctx, js_midi_setNrpn, "setNRPN", 4));
+		JS_SetPropertyStr(ctx, _midi, "setRPN", JS_NewCFunction(ctx, js_midi_setRpn, "setRPN", 4));
 		JS_SetPropertyStr(ctx, _midi, "setPitchWheel", JS_NewCFunction(ctx, js_midi_setPitchWheel, "setPitchWheel", 3));
 		JS_SetPropertyStr(ctx, _midi, "setProgramChange", JS_NewCFunction(ctx, js_midi_setProgramChange, "setProgramChange", 3));
 		JS_SetPropertyStr(ctx, _midi, "setRaw", JS_NewCFunction(ctx, js_midi_setRaw, "setRaw", 2));
@@ -1722,19 +1727,30 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return JS_NewFloat64(ctx, double((*s)++));
 	}
 
-	static JSValue js_midi_createNrpn(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		if (argc != 0) return jsThrow(ctx, "midi.createNrpn: bad args");
-		warnIfOutsideCallback(ctx, "midi.createNRPN");
+	// Shared by midi.createNRPN() and midi.createRPN(): the same 4-handle chain,
+	// filled with CC 99/98 or CC 101/100 by the matching setter.
+	static JSValue jsCreateParam(JSContext* ctx, int argc, bool rpn) {
+		const char* name = rpn ? "midi.createRPN" : "midi.createNRPN";
+		if (argc != 0) return jsThrow(ctx, std::string(name) + ": bad args");
+		warnIfOutsideCallback(ctx, name);
 		size_t* s = &getEngine(ctx)->msgCount;
-		if (*s + 4 > msgStoreSize) return jsThrow(ctx, "midi.createNRPN: message store full");
+		if (*s + 4 > msgStoreSize) return jsThrow(ctx, std::string(name) + ": message store full");
 		getEngine(ctx)->msgStore[*s + 0] = MessageEx();
 		getEngine(ctx)->msgStore[*s + 0].isNrpn = true;
+		getEngine(ctx)->msgStore[*s + 0].isRpn = rpn;
 		getEngine(ctx)->msgStore[*s + 1] = MessageEx();
 		getEngine(ctx)->msgStore[*s + 2] = MessageEx();
 		getEngine(ctx)->msgStore[*s + 3] = MessageEx();
 		size_t _s = *s;
 		(*s) += 4;
 		return JS_NewFloat64(ctx, double(_s));
+	}
+
+	static JSValue js_midi_createNrpn(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		return jsCreateParam(ctx, argc, false);
+	}
+	static JSValue js_midi_createRpn(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		return jsCreateParam(ctx, argc, true);
 	}
 
 	static JSValue js_midi_createCc14bit(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
@@ -2108,13 +2124,16 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return JS_UNDEFINED;
 	}
 
-	static JSValue js_midi_setNrpn(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+	// Shared by midi.setNRPN() and midi.setRPN(): (handle, channel, number, value).
+	// An RPN selects with CC 101/100 instead of 99/98; data entry is the same.
+	static JSValue jsSetParam(JSContext* ctx, int argc, JSValueConst* argv, bool rpn) {
+		const char* name = rpn ? "midi.setRpn" : "midi.setNrpn";
 		size_t idx;
 		if (argc < 4 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1]) || !argIsNumber(ctx, argv[2]) || !argIsNumber(ctx, argv[3])) {
-			return jsThrow(ctx, "midi.setNrpn: invalid args");
+			return jsThrow(ctx, std::string(name) + ": invalid args");
 		}
 		MessageEx* s1 = &getEngine(ctx)->msgStore[idx];
-		if (!s1->isNrpn) return jsThrow(ctx, "midi.setNrpn: invalid nrpn message");
+		if (!s1->isNrpn || s1->isRpn != rpn) return jsThrow(ctx, std::string(name) + (rpn ? ": invalid rpn message" : ": invalid nrpn message"));
 		MessageEx* s2 = &getEngine(ctx)->msgStore[idx + 1];
 		MessageEx* s3 = &getEngine(ctx)->msgStore[idx + 2];
 		MessageEx* s4 = &getEngine(ctx)->msgStore[idx + 3];
@@ -2127,11 +2146,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// state machine requires (CC99/98 select the number, CC6/38 the value).
 		s1->in.msg.setStatus(0xb);
 		s1->in.msg.setChannel(ch - 1);
-		s1->in.msg.setNote(99);
+		s1->in.msg.setNote(rpn ? 101 : 99);
 		s1->in.msg.setValue((number >> 7) & 0x7f);
 		s2->in.msg.setStatus(0xb);
 		s2->in.msg.setChannel(ch - 1);
-		s2->in.msg.setNote(98);
+		s2->in.msg.setNote(rpn ? 100 : 98);
 		s2->in.msg.setValue(number & 0x7f);
 		s3->in.msg.setStatus(0xb);
 		s3->in.msg.setChannel(ch - 1);
@@ -2142,6 +2161,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		s4->in.msg.setNote(38);
 		s4->in.msg.setValue(value & 0x7f);
 		return JS_UNDEFINED;
+	}
+
+	static JSValue js_midi_setNrpn(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		return jsSetParam(ctx, argc, argv, false);
+	}
+	static JSValue js_midi_setRpn(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		return jsSetParam(ctx, argc, argv, true);
 	}
 
 	static JSValue js_midi_setPitchWheel(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
