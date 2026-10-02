@@ -63,6 +63,11 @@ struct SlotRingBuffer {
 		return true;
 	}
 
+	/** Consumer. The oldest element, still in its slot, valid until pop(). The queue must not be empty. */
+	const T& front() const {
+		return slots[ring.data[ring.start % N]];
+	}
+
 	/** Consumer. Drops the oldest element without copying it. The queue must not be empty. */
 	void pop() {
 		ring.shift();

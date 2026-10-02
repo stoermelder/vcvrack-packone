@@ -1,5 +1,6 @@
 #include "MidiProcessor.hpp"
 #include <algorithm>
+#include <cassert>
 
 namespace StoermelderPackOne {
 
@@ -58,6 +59,11 @@ MidiProcessor::MidiProcessor(rack::midi::InputQueue* injected)
 	reset();
 }
 
+MidiProcessor::MidiProcessor(DecodeOnly)
+	: input(nullptr) {
+	reset();
+}
+
 void MidiProcessor::reset() {
 	for (int i = 0; i < 16; ++i) {
 		ccNrpnParam[i] = -1;
@@ -70,6 +76,7 @@ void MidiProcessor::reset() {
 }
 
 rack::midi::InputQueue& MidiProcessor::getInput() {
+	assert(input);
 	return *input;
 }
 
@@ -77,6 +84,7 @@ rack::midi::InputQueue& MidiProcessor::getInput() {
 void MidiProcessor::processBypass(int64_t frame) {
 	// Reuse the member scratch message so the audio thread never heap-allocates
 	// a `midi::Message` per pump.
+	assert(input);
 	rack::midi::Message& msg = scratchMidiMessage;
 	while (input->tryPop(&msg, frame)) {
 		(void)0;
@@ -84,6 +92,7 @@ void MidiProcessor::processBypass(int64_t frame) {
 }
 
 void MidiProcessor::process(int64_t frame) {
+	assert(input);
 	rack::midi::Message& msg = scratchMidiMessage;
 	while (input->tryPop(&msg, frame)) {
 		processMessage(msg);

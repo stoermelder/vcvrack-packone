@@ -84,7 +84,8 @@ struct MidiProcessor {
     // Queue owned by this processor, allocated only when none is injected --
     // so an injecting consumer carries no unused queue. Null when injecting.
     std::unique_ptr<rack::midi::InputQueue> ownedInput;
-    // The queue actually pumped: ownedInput, or the injected one. Never null.
+    // The queue actually pumped: ownedInput, or the injected one. Null for a
+    // decode-only processor.
     rack::midi::InputQueue* input;
 
     std::vector<MidiProcessorHandler*> handlers;
@@ -112,6 +113,11 @@ struct MidiProcessor {
     // already owns a MIDI port (with its own widget binding and JSON) reuse the
     // decoding without transplanting ownership.
     explicit MidiProcessor(rack::midi::InputQueue* injected = nullptr);
+
+    // No queue at all: only processMessage() and the state calls may be used.
+    // process(), processBypass() and getInput() assert that there is a queue.
+    struct DecodeOnly {};
+    explicit MidiProcessor(DecodeOnly);
 
     rack::midi::InputQueue& getInput();
 
