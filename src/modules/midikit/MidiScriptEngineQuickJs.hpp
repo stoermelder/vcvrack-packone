@@ -145,6 +145,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		assert(JS_IsUndefined(rackObj) && JS_IsUndefined(onLoadFn) && JS_IsUndefined(onUnloadFn) && JS_IsUndefined(onMessageFn) && JS_IsUndefined(onTriggerFn));
 		assert(contextMenus.empty());
 
+		// The store goes back to its default size first, so a script that was
+		// refused (or asks for less) never inherits the previous script's.
+		sizeStore(0);
+
 		// Install the initial config as part of THIS queued task, before any
 		// script code runs — ScriptHost::load() is fire-and-forget, so a separate
 		// call could race top-level code that already called rack.getConfig().
@@ -1587,6 +1591,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return JS_NewBool(ctx, s.in.msg.getStatus() == t);
 	}
 
+	// Raises "<fn>: message store full (N handles; ...)".
+	static JSValue jsStoreFull(JSContext* ctx, const char* fn) {
+		char buf[192];
+		getEngine(ctx)->storeFullMessage(buf, sizeof buf, fn);
+		return jsThrow(ctx, buf);
+	}
+
 	// A message handle is only valid inside the callback that created it, so
 	// the creators refuse to run anywhere else (top level, param.getName, ...).
 	// Raised before the store is touched.
@@ -1633,7 +1644,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JSValue exc;
 		if (!inCallbackOrThrow(ctx, "midi.create", exc)) return exc;
 		size_t* s = &getEngine(ctx)->msgCount;
-		if (*s == msgStoreSize) return jsThrow(ctx, "midi.create: message store full");
+		if (*s >= getEngine(ctx)->msgStore.size()) return jsStoreFull(ctx, "midi.create");
 		getEngine(ctx)->msgStore[*s] = ScriptMessage();
 		return JS_NewFloat64(ctx, double(getEngine(ctx)->slotToHandle((*s)++)));
 	}
@@ -1644,7 +1655,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t idx;
 		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.clone: invalid msg");
 		size_t* s = &getEngine(ctx)->msgCount;
-		if (*s == msgStoreSize) return jsThrow(ctx, "midi.clone: message store full");
+		if (*s >= getEngine(ctx)->msgStore.size()) return jsStoreFull(ctx, "midi.clone");
 		// Copy only the MIDI payload; the clone starts fresh and unsent (all
 		// fields at defaults) so it can be modified and sent independently.
 		ScriptMessage clone;
@@ -1661,7 +1672,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JSValue exc;
 		if (!inCallbackOrThrow(ctx, name, exc)) return exc;
 		size_t* s = &getEngine(ctx)->msgCount;
-		if (*s + 4 > msgStoreSize) return jsThrow(ctx, std::string(name) + ": message store full");
+		if (*s + 4 > getEngine(ctx)->msgStore.size()) return jsStoreFull(ctx, name);
 		getEngine(ctx)->msgStore[*s + 0] = ScriptMessage();
 		getEngine(ctx)->msgStore[*s + 0].isNrpn = true;
 		getEngine(ctx)->msgStore[*s + 0].isRpn = rpn;
@@ -1685,7 +1696,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JSValue exc;
 		if (!inCallbackOrThrow(ctx, "midi.createCc14bit", exc)) return exc;
 		size_t* s = &getEngine(ctx)->msgCount;
-		if (*s + 2 > msgStoreSize) return jsThrow(ctx, "midi.createCc14bit: message store full");
+		if (*s + 2 > getEngine(ctx)->msgStore.size()) return jsStoreFull(ctx, "midi.createCc14bit");
 		// 2 consecutive entries, filled by setCc14bit: CC cc (value MSB) and
 		// CC cc+32 (value LSB), sent atomically as a pair.
 		getEngine(ctx)->msgStore[*s + 0] = ScriptMessage();

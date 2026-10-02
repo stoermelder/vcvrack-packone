@@ -3,13 +3,24 @@
 // Part of the cross-engine suite: included into the __engine namespace by
 // MidiKit.test.cpp after MidiKit.test.engine.hpp, which defines the shared helpers.
 
-// 128-handle store cap
-// midi.create()/midi.clone()/midi.createNRPN() fail once the 128-handle
-// per-callback store is full, aborting the rest of the callback. The error
+// Store cap (msgStoreDefault handles)
+// midi.create()/midi.clone()/midi.createNRPN() fail once the per-callback
+// store is full, aborting the rest of the callback. The error
 // wording is identical in both engines (unified: "midi.create: message store
 // full" etc.). Per A3, messages sent before the error have already gone out —
 // a multi-message sequence can be emitted partially — while anything created
 // after the error is dropped.
+
+// Store size of a script without "@requires messages": counts below come from
+// it, so the next change of the default needs no new numbers. Scripts carry
+// "{N}" where a loop count goes.
+static const int STORE = StoermelderPackOne::MidiScript::MidiScriptEngine::msgStoreDefault;
+
+static std::string fillN(const char* script, int n) {
+	std::string s = script;
+	for (size_t pos; (pos = s.find("{N}")) != std::string::npos;) s.replace(pos, 3, std::to_string(n));
+	return s;
+}
 
 static const char* JS_STORE_FULL = R"(/**
  * @engine QuickJs@v1
@@ -23,11 +34,11 @@ midi.onMessage = function(midiPort, msg) {
     midi.setCc(m2, 1, 20, 100);
     midiOut.send(m2);
 
-    // Handle 0 is the incoming message (msgCount starts at 1) and m1/m2
-    // above each consume a slot, so this loop crosses the 128-handle cap and
+    // Slot 0 is the incoming message (msgCount starts at 1) and m1/m2 above
+    // each consume a slot, so this loop crosses the store's cap and
     // midi.create() throws mid-callback. The exact overflow point doesn't
     // matter — the point is that it throws here.
-    for (let i = 0; i < 129; i++) {
+    for (let i = 0; i < {N}; i++) {
         midi.create();
     }
 
@@ -49,7 +60,7 @@ midi.onMessage = function(midiPort, msg)
     midi.setCc(m2, 1, 20, 100)
     midiOut.send(m2)
 
-    for i = 1, 129 do
+    for i = 1, {N} do
         midi.create()
     end
 
@@ -59,9 +70,9 @@ midi.onMessage = function(midiPort, msg)
 end
 )";
 
-TEST_CASE("midi.create past the 128-handle cap errors and keeps the sends made before it", "[MidiKit][CrossEngine]") {
-	EngineResult js = run(JS_STORE_FULL);
-	EngineResult lua = run(LUA_STORE_FULL);
+TEST_CASE("midi.create past the store cap errors and keeps the sends made before it", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(fillN(JS_STORE_FULL, STORE + 1));
+	EngineResult lua = run(fillN(LUA_STORE_FULL, STORE + 1));
 
 	// Identical error wording in both engines (unified wording).
 	CATCH_INFO("JS log:\n" << js.log);
@@ -82,9 +93,9 @@ TEST_CASE("midi.create past the 128-handle cap errors and keeps the sends made b
 
 
 // createNRPN/createCc14bit store-boundary
-// Slot 0 of the 128-slot store is the incoming message, so msgCount starts at
-// 1 inside onMessage. createNRPN() needs 4 consecutive slots and
-// createCc14bit() 2; the last valid starting positions are 124 and 126. The
+// Slot 0 of the store is the incoming message, so msgCount starts at 1 inside
+// onMessage. createNRPN() needs 4 consecutive slots and createCc14bit() 2; the
+// last valid starting positions are STORE - 4 and STORE - 2. The
 // QuickJS bounds checks used >= instead of >, wrongly rejecting those last
 // valid positions (Lua was already correct). These pin the boundary: at the
 // last valid slot the calls succeed and emit spec-compliant bytes; one slot
@@ -94,8 +105,8 @@ static const char* JS_NRPN_AT_BOUNDARY = R"(/**
  * @engine QuickJs@v1
  */
 midi.onMessage = function(port, msg) {
-    // 123 creates -> msgCount 124; createNRPN() at slot 124 (slots 124-127) fits.
-    for (let i = 0; i < 123; i++) {
+    // The creates fill every slot but the last 4; createNRPN() fits in those.
+    for (let i = 0; i < {N}; i++) {
         midi.create();
     }
     let nrpn = midi.createNRPN();
@@ -108,7 +119,7 @@ static const char* LUA_NRPN_AT_BOUNDARY = R"(--[[
 @engine minilua@v1
 --]]
 midi.onMessage = function(midiPort, msg)
-    for i = 1, 123 do
+    for i = 1, {N} do
         midi.create()
     end
     local nrpn = midi.createNRPN()
@@ -121,8 +132,8 @@ static const char* JS_CC14_AT_BOUNDARY = R"(/**
  * @engine QuickJs@v1
  */
 midi.onMessage = function(port, msg) {
-    // 125 creates -> msgCount 126; createCc14bit() at slot 126 (slots 126-127) fits.
-    for (let i = 0; i < 125; i++) {
+    // The creates fill every slot but the last 2; createCc14bit() fits in those.
+    for (let i = 0; i < {N}; i++) {
         midi.create();
     }
     let cc14 = midi.createCc14bit();
@@ -135,7 +146,7 @@ static const char* LUA_CC14_AT_BOUNDARY = R"(--[[
 @engine minilua@v1
 --]]
 midi.onMessage = function(midiPort, msg)
-    for i = 1, 125 do
+    for i = 1, {N} do
         midi.create()
     end
     local cc14 = midi.createCc14bit()
@@ -148,10 +159,10 @@ static const char* JS_NRPN_PAST_BOUNDARY = R"(/**
  * @engine QuickJs@v1
  */
 midi.onMessage = function(port, msg) {
-    for (let i = 0; i < 124; i++) {
+    for (let i = 0; i < {N}; i++) {
         midi.create();
     }
-    midi.createNRPN();   // slot 125 needs slots 125-128; only 125-127 exist
+    midi.createNRPN();   // needs 4 slots; only 3 are left
 };
 )";
 
@@ -159,7 +170,7 @@ static const char* LUA_NRPN_PAST_BOUNDARY = R"(--[[
 @engine minilua@v1
 --]]
 midi.onMessage = function(midiPort, msg)
-    for i = 1, 124 do
+    for i = 1, {N} do
         midi.create()
     end
     midi.createNRPN()
@@ -170,10 +181,10 @@ static const char* JS_CC14_PAST_BOUNDARY = R"(/**
  * @engine QuickJs@v1
  */
 midi.onMessage = function(port, msg) {
-    for (let i = 0; i < 126; i++) {
+    for (let i = 0; i < {N}; i++) {
         midi.create();
     }
-    midi.createCc14bit();   // slot 127 needs slots 127-128; only 127 exists
+    midi.createCc14bit();   // needs 2 slots; only 1 is left
 };
 )";
 
@@ -181,7 +192,7 @@ static const char* LUA_CC14_PAST_BOUNDARY = R"(--[[
 @engine minilua@v1
 --]]
 midi.onMessage = function(midiPort, msg)
-    for i = 1, 126 do
+    for i = 1, {N} do
         midi.create()
     end
     midi.createCc14bit()
@@ -189,8 +200,8 @@ end
 )";
 
 TEST_CASE("createNRPN at the last valid store slot succeeds in both engines", "[MidiKit][CrossEngine]") {
-	EngineResult js = run(JS_NRPN_AT_BOUNDARY);
-	EngineResult lua = run(LUA_NRPN_AT_BOUNDARY);
+	EngineResult js = run(fillN(JS_NRPN_AT_BOUNDARY, STORE - 5));
+	EngineResult lua = run(fillN(LUA_NRPN_AT_BOUNDARY, STORE - 5));
 	CATCH_INFO("JS log:\n" << js.log);
 	CATCH_INFO("Lua log:\n" << lua.log);
 	REQUIRE(js.log.find("message store full") == std::string::npos);
@@ -206,8 +217,8 @@ TEST_CASE("createNRPN at the last valid store slot succeeds in both engines", "[
 }
 
 TEST_CASE("createCc14bit at the last valid store slot succeeds in both engines", "[MidiKit][CrossEngine]") {
-	EngineResult js = run(JS_CC14_AT_BOUNDARY);
-	EngineResult lua = run(LUA_CC14_AT_BOUNDARY);
+	EngineResult js = run(fillN(JS_CC14_AT_BOUNDARY, STORE - 3));
+	EngineResult lua = run(fillN(LUA_CC14_AT_BOUNDARY, STORE - 3));
 	REQUIRE(js.log.find("message store full") == std::string::npos);
 	REQUIRE(lua.log.find("message store full") == std::string::npos);
 	// ch 8, cc=1 value=100.5 -> CC1=100 (MSB), CC33=64 (LSB)
@@ -222,8 +233,8 @@ TEST_CASE("createCc14bit at the last valid store slot succeeds in both engines",
 }
 
 TEST_CASE("createNRPN one slot past the boundary errors in both engines", "[MidiKit][CrossEngine]") {
-	EngineResult js = run(JS_NRPN_PAST_BOUNDARY);
-	EngineResult lua = run(LUA_NRPN_PAST_BOUNDARY);
+	EngineResult js = run(fillN(JS_NRPN_PAST_BOUNDARY, STORE - 4));
+	EngineResult lua = run(fillN(LUA_NRPN_PAST_BOUNDARY, STORE - 4));
 	REQUIRE(js.log.find("midi.createNRPN: message store full") != std::string::npos);
 	REQUIRE(lua.log.find("midi.createNRPN: message store full") != std::string::npos);
 	REQUIRE(js.sent.empty());
@@ -231,8 +242,8 @@ TEST_CASE("createNRPN one slot past the boundary errors in both engines", "[Midi
 }
 
 TEST_CASE("createCc14bit one slot past the boundary errors in both engines", "[MidiKit][CrossEngine]") {
-	EngineResult js = run(JS_CC14_PAST_BOUNDARY);
-	EngineResult lua = run(LUA_CC14_PAST_BOUNDARY);
+	EngineResult js = run(fillN(JS_CC14_PAST_BOUNDARY, STORE - 2));
+	EngineResult lua = run(fillN(LUA_CC14_PAST_BOUNDARY, STORE - 2));
 	REQUIRE(js.log.find("midi.createCc14bit: message store full") != std::string::npos);
 	REQUIRE(lua.log.find("midi.createCc14bit: message store full") != std::string::npos);
 	REQUIRE(js.sent.empty());
@@ -869,7 +880,7 @@ midi.onMessage = function(port, msg)
 end
 )";
 
-TEST_CASE("One handle can be sent past the 128-handle cap in both engines", "[MidiKit][CrossEngine]") {
+TEST_CASE("One handle can be sent past the store cap in both engines", "[MidiKit][CrossEngine]") {
 	// The cap limits distinct live messages, not messages sent. The out queue
 	// bounds the output instead: what doesn't fit is dropped and logged.
 	EngineResult js = run(JS_REUSE_HANDLE);

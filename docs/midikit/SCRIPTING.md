@@ -80,6 +80,21 @@ fallback (see [Module variants](#module-variants)). The tag sits in the header
 block next to `@engine`. The **Examples** menus grey out such scripts on a variant
 that can't run them and show "needs N params" next to the name.
 
+`@requires messages=N` is optional and asks for a message store of at least `N`
+handles (see [`midi.*`](#midi-message-constructioninspection)). The default is
+32, the maximum 512, and `N` is a minimum: `messages=16` keeps 32, `messages=64`
+gives 64. A value above 512, or a malformed one, refuses the script
+("Script not loaded: @requires messages=5000 exceeds the maximum of 512"). The
+store is sized once, before the script's top-level code runs, and every load
+sets it again, so a following script without the tag gets 32. Both keys can be
+combined: `@requires params=4 messages=512`.
+
+A larger store lets a callback hold more distinct messages *at once*. It does not
+raise how much a callback can *send*: everything goes through the output queue,
+which takes 128 entries between two drains (every 8 samples), and what doesn't
+fit is dropped and logged. So `messages=512` doesn't fix dropped output; reusing
+one handle does as well for most scripts.
+
 Engine selection is a plain substring search for `@engine <name>@vN` in the
 header comment block — not the file extension, and not scanned past the
 block. Keep the `@engine` tag inside the leading comment, or the script can be
@@ -386,7 +401,7 @@ end
 
 When the script is replaced or the module is reset, `rack.onUnload()` may only send MIDI right away with `midiOut.send()`; that output always goes out. Everything else it does that would outlive the script is ignored: messages scheduled for later (`sendAfterMs`, `sendAtFrame`, `sendAfterTrigger`), trigger output writes and `trig.sendTipsy()`. Whatever the script scheduled earlier and is still waiting is dropped with it, and the trigger outputs go back to 0 V.
 
-The example sends CC 123 (All Notes Off) on all 16 channels, which takes 16 handles instead of one note-off per note. With `midiOut.enableTiming()` a note-on sent just before may still be waiting in Rack's output queue; the module holds what `rack.onUnload()` sends behind it, so the all-notes-off can't overtake a note-on and leave a note stuck (see [Enabling sample-accurate timing](#enabling-sample-accurate-timing)).
+The example sends CC 123 (All Notes Off) on all 16 channels with one reused handle, instead of one note-off per note. With `midiOut.enableTiming()` a note-on sent just before may still be waiting in Rack's output queue; the module holds what `rack.onUnload()` sends behind it, so the all-notes-off can't overtake a note-on and leave a note stuck (see [Enabling sample-accurate timing](#enabling-sample-accurate-timing)).
 
 JavaScript:
 ```js
@@ -397,8 +412,8 @@ midi.onMessage = function(midiPort, msg) {
 };
 
 rack.onUnload = function() {
+   let off = midi.create();
    for (let ch = 1; ch <= 16; ch++) {
-      let off = midi.create();
       midi.setCc(off, ch, 123, 0);
       midiOut.send(off);
    }
@@ -414,8 +429,8 @@ midi.onMessage = function(midiPort, msg)
 end
 
 rack.onUnload = function()
+   local off = midi.create()
    for ch = 1, 16 do
-      local off = midi.create()
       midi.setCc(off, ch, 123, 0)
       midiOut.send(off)
    end
@@ -1088,23 +1103,30 @@ is in [Tipsy protocol — send and receive over CV](#tipsy-protocol--send-and-re
 - `param.count` — number of panel knobs on this module variant (4, or 2 on MIDI-µKIT). An index above it is a script error: check `param.count` before `param.enable(i)`, and pass a fallback to `param.getValue(i, fallback)`.
 
 ### `midi.*` — message construction/inspection
-Messages are opaque handles (into an internal store, max 128 live per
-callback) created with `midi.create()`, `midi.createNRPN()`, `midi.createRPN()`, or
+Messages are opaque handles (into an internal store, 32 live per callback by
+default, see `@requires messages=N`) created with `midi.create()`, `midi.createNRPN()`, `midi.createRPN()`, or
 `midi.createCc14bit()`; `midi.onMessage` also receives the incoming message as
 a handle (its `msg` argument). Treat handle values as opaque: they are not small
 numbers, and a handle is only valid inside the callback that got or created it.
 Using one in a later callback, or outside any callback, is a script error
 rather than silently reading whatever message that callback built.
 
-**The store holds at most 128 live handles per callback.** Once it is full,
-`midi.create()`, `midi.clone()`, `midi.createNRPN()`, `midi.createRPN()`, and `midi.createCc14bit()`
-raise a script error
-that aborts the rest of the callback. Messages sent before the error have
-already gone out, so a multi-message sequence (e.g. an NRPN pair, or a wide
-chord release) can be emitted partially — a message created but never sent is
-dropped. The cap limits *distinct live messages*, not messages sent: a handle
-can be changed and sent again (see below), so a loop over a chord can reuse one
-handle.
+**Reuse a handle instead of creating one per message.** Sending copies the
+message, so a handle can be changed and sent again (see below): a loop over a
+chord, a clock burst or an all-notes-off needs one `midi.create()` and then
+`midi.setNoteOff(m, ...)` / `midiOut.send(m)` per message. That is the normal way
+to send many messages.
+
+**The store holds 32 live handles per callback by default** (slot 0 of the
+incoming-MIDI callbacks is the incoming message). A script that really needs
+more *distinct* messages at once asks for them with
+`@requires messages=N` in its header, up to 512. Once the store is full,
+`midi.create()`, `midi.clone()`, `midi.createNRPN()`, `midi.createRPN()`, and
+`midi.createCc14bit()` raise a script error that aborts the rest of the callback
+("midi.create: message store full (32 handles; reuse a handle or raise it with
+@requires messages=N)"). Messages sent before the error have already gone out, so
+a multi-message sequence (e.g. an NRPN pair, or a wide chord release) can be
+emitted partially — a message created but never sent is dropped.
 
 #### Entry points
 

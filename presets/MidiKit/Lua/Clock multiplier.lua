@@ -114,13 +114,16 @@ trig.onTrigger = function(trigPort, channel)
         end
     end
 
+    -- One pulse message serves all of them: sending copies it.
+    local pulse = clockPulse()
+
     -- The pulse for the edge itself, on the edge's frame
-    midiOut.send(clockPulse())
+    midiOut.send(pulse)
 
     -- The pulses up to the next edge, spaced over the previous period
     if state.period > 0 then
         for k = 1, config.ratio - 1 do
-            midiOut.sendAtFrame(clockPulse(), edge + math.floor(k * state.period / config.ratio + 0.5))
+            midiOut.sendAtFrame(pulse, edge + math.floor(k * state.period / config.ratio + 0.5))
         end
     end
 end

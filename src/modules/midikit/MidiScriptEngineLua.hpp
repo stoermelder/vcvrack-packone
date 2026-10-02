@@ -184,6 +184,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		assert(onLoadRef == LUA_NOREF && onUnloadRef == LUA_NOREF && onMessageRef == LUA_NOREF && onTriggerRef == LUA_NOREF);
 		assert(contextMenus.empty());
 
+		// The store goes back to its default size first, so a script that was
+		// refused (or asks for less) never inherits the previous script's.
+		sizeStore(0);
+
 		// Install the initial config as part of THIS queued task, before any
 		// script code runs — ScriptHost::load() is fire-and-forget, so a separate
 		// call could race top-level code that already called rack.getConfig().
@@ -954,6 +958,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return &getEngine(L)->msgStore[checkHandle(L, stackPos)];
 	}
 
+	// Raises "<fn>: message store full (N handles; ...)". The text is formatted
+	// into a plain buffer: luaL_error longjmps past C++ destructors.
+	static void luaStoreFull(lua_State* L, const char* fn) {
+		char buf[192];
+		getEngine(L)->storeFullMessage(buf, sizeof buf, fn);
+		luaL_error(L, "%s", buf);
+	}
+
 	// A message handle is only valid inside the callback that created it, so
 	// the creators refuse to run anywhere else (top level, param.getName, ...).
 	// Raised before the store is touched.
@@ -1645,9 +1657,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		auto* e = getEngine(L);
 		requireCallback(L, "midi.create");
 		size_t* s = &e->msgCount;
-		if (*s >= static_cast<size_t>(msgStoreSize)) {
-			luaL_error(L, "midi.create: message store full");
-		}
+		if (*s >= e->msgStore.size()) luaStoreFull(L, "midi.create");
 		e->msgStore[*s] = ScriptMessage();
 		lua_pushinteger(L, static_cast<lua_Integer>(e->slotToHandle((*s)++)));
 		return 1;
@@ -1658,9 +1668,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		requireCallback(L, "midi.clone");
 		ScriptMessage* src = getMsg(L, 1);
 		size_t* s = &e->msgCount;
-		if (*s >= static_cast<size_t>(msgStoreSize)) {
-			luaL_error(L, "midi.clone: message store full");
-		}
+		if (*s >= e->msgStore.size()) luaStoreFull(L, "midi.clone");
 		// Copy only the MIDI payload; the clone starts fresh and unsent (all
 		// fields at defaults) so it can be modified and sent independently.
 		ScriptMessage clone;
@@ -1677,9 +1685,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		const char* name = rpn ? "midi.createRPN" : "midi.createNRPN";
 		requireCallback(L, name);
 		size_t* s = &e->msgCount;
-		if (*s + 4 > static_cast<size_t>(msgStoreSize)) {
-			luaL_error(L, "%s: message store full", name);
-		}
+		if (*s + 4 > e->msgStore.size()) luaStoreFull(L, name);
 		e->msgStore[*s + 0] = ScriptMessage();
 		e->msgStore[*s + 0].isNrpn = true;
 		e->msgStore[*s + 0].isRpn = rpn;
@@ -1703,9 +1709,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		auto* e = getEngine(L);
 		requireCallback(L, "midi.createCc14bit");
 		size_t* s = &e->msgCount;
-		if (*s + 2 > static_cast<size_t>(msgStoreSize)) {
-			luaL_error(L, "midi.createCc14bit: message store full");
-		}
+		if (*s + 2 > e->msgStore.size()) luaStoreFull(L, "midi.createCc14bit");
 		// 2 consecutive entries, filled by setCc14bit: CC cc (value MSB) and
 		// CC cc+32 (value LSB), sent atomically as a pair.
 		e->msgStore[*s + 0] = ScriptMessage();
@@ -1933,7 +1937,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			// atomically when the pair is sent.
 			ScriptMessage* m1 = getMsg(L, 1);
 			if (!m1->isCc14bit) luaL_argerror(L, 1, "message is not a 14-bit CC pair");
-			ScriptMessage* m2 = &e->msgStore[static_cast<size_t>(m1 - e->msgStore) + 1];
+			ScriptMessage* m2 = &e->msgStore[static_cast<size_t>(m1 - e->msgStore.data()) + 1];
 			uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 			uint8_t cc = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 			double value = clampCc14bitValue(luaL_checknumber(L, 4));

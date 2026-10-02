@@ -216,11 +216,14 @@ struct MidiScriptEngine {
 	static const int sysExMaxPayloadLength = 256;
 
 	// Message handles a script can hold live per callback (slot 0 is the
-	// incoming message). Shared so both engines create the same number.
-	static const int msgStoreSize = 128;
+	// incoming message): msgStoreDefault unless its header asks for more with
+	// "@requires messages=N", never more than msgStoreMax. Shared so both
+	// engines create the same number.
+	static const int msgStoreDefault = 32;
+	static const int msgStoreMax = 512;
 
 	// ── Message handles ──────────────────────────────────────────────────────
-	// A script message is a handle into the engine's store of msgStoreSize
+	// A script message is a handle into the engine's store of msgStore.size()
 	// slots. The store and everything around it is here, once, for both engines.
 
 	// One slot of the store: a message a script holds a handle to, either the
@@ -245,8 +248,33 @@ struct MidiScriptEngine {
 	};
 
 	// The store behind the handles. Only the engines' binding code reads and
-	// writes it, on the worker thread.
-	ScriptMessage msgStore[msgStoreSize];
+	// writes it, on the worker thread. Sized by sizeStore() at load, before any
+	// script code runs, and never resized while bindings run, so no pointer into
+	// it outlives a resize.
+	std::vector<ScriptMessage> msgStore = std::vector<ScriptMessage>(msgStoreDefault);
+
+	// Sets the store to max(requested, msgStoreDefault) empty slots. Worker, in
+	// an unloaded engine, before the script's top-level code (see
+	// loadScriptOnWorker()). Releases memory when the new size is smaller, so
+	// one big script doesn't pin it for the next.
+	void sizeStore(int requested) {
+		// By value: std::max would take the constants by reference, which needs
+		// an out-of-class definition in C++11.
+		int minimum = msgStoreDefault;
+		size_t n = size_t(requested > minimum ? requested : minimum);
+		bool shrink = n < msgStore.size();
+		msgStore.assign(n, ScriptMessage());
+		if (shrink) msgStore.shrink_to_fit();
+		msgCount = 0;
+	}
+
+	// Writes "midi.create: message store full (32 handles; ...)" into `buf`: it
+	// names the fix, so it can be found from the log alone. A plain buffer, not a
+	// std::string, because the Lua bindings raise it with luaL_error, which
+	// longjmps past destructors.
+	void storeFullMessage(char* buf, size_t size, const char* fn) const {
+		snprintf(buf, size, "%s: message store full (%d handles; reuse a handle or raise it with @requires messages=N)", fn, int(msgStore.size()));
+	}
 
 	// Slots in use in the current callback. Must be initialised: top-level
 	// script code runs during loadScriptOnWorker(), before any callback starts
@@ -256,9 +284,10 @@ struct MidiScriptEngine {
 	// callback that created it, so midi.create() and every use of a handle is
 	// an error outside one.
 	bool inCallback = false;
-	// Added to the slot index to make a handle. Advanced by msgStoreSize at
-	// every callback start, so a handle is never issued twice and one kept from
-	// an earlier callback can't alias a new message at the same slot.
+	// Added to the slot index to make a handle. Advanced past the handles the
+	// previous callback issued at every callback start, so a handle is never
+	// issued twice and one kept from an earlier callback can't alias a new
+	// message at the same slot.
 	int64_t handleBase = 0;
 	// Sticky output port selected via midiOut.selectPort(), 0-based. Stays in
 	// effect across callbacks until changed again.
@@ -269,7 +298,10 @@ struct MidiScriptEngine {
 	// Callbacks never nest (the worker runs them one at a time), so a single
 	// handleBase is enough.
 	void beginStore(size_t used) {
-		handleBase += msgStoreSize;
+		// Every handle the previous callback issued is below the new base. A
+		// callback that issued none leaves it where it was, which is as safe: the
+		// older handles are already below it.
+		handleBase += int64_t(msgCount);
 		msgCount = used;
 	}
 
@@ -292,7 +324,7 @@ struct MidiScriptEngine {
 	// `port`. Works on copies, so the script's handle is left as it was and can
 	// be changed and sent again. `first` must be a slot returned by
 	// handleToSlot(): the chain flags are only ever set on a leader with its
-	// followers reserved below msgStoreSize.
+	// followers reserved below msgStore.size().
 	//
 	// Never raises. The Lua bindings rely on that: luaL_error longjmps past C++
 	// destructors, so every check must come before this call.
@@ -552,30 +584,40 @@ struct MidiScriptEngine {
 		return taskWorker && taskWorker->isWorkerThread();
 	}
 
+	// What a script's "@requires" tag asks for; 0 for a key the tag doesn't have.
+	struct Requires {
+		// The script needs at least N panel params (e.g. 4 does not fit MIDI-µKIT's 2).
+		int params = 0;
+		// The script needs a message store of at least N slots (a minimum, like
+		// params: smaller values keep msgStoreDefault). Checked against
+		// msgStoreMax in checkRequires(), so the error can name the limit.
+		int messages = 0;
+	};
+
 	// Parses the value of a "@requires" tag: space-separated key=value pairs,
-	// currently only "params=N" (the script needs at least N panel params, e.g. 4
-	// does not fit MIDI-µKIT's 2). `params` is 0 when the tag doesn't ask for any.
-	// Returns false with `error` set for an unknown key or a malformed value: a
-	// requirement that can't be checked can't be assumed met.
-	static bool parseRequires(const std::string& value, int& params, std::string& error) {
-		params = 0;
+	// "params=N" and "messages=N". Returns false with `error` set for an unknown
+	// key or a malformed value: a requirement that can't be checked can't be
+	// assumed met.
+	static bool parseRequires(const std::string& value, Requires& req, std::string& error) {
+		req = Requires();
 		std::istringstream ss(value);
 		std::string token;
 		while (ss >> token) {
 			size_t eq = token.find('=');
 			std::string key = token.substr(0, eq);
 			std::string number = eq == std::string::npos ? "" : token.substr(eq + 1);
-			if (key != "params") {
-				error = string::f("unknown @requires key \"%s\" (supported: params)", key.c_str());
+			if (key != "params" && key != "messages") {
+				error = string::f("unknown @requires key \"%s\" (supported: params, messages)", key.c_str());
 				return false;
 			}
 			char* end = nullptr;
 			long n = std::strtol(number.c_str(), &end, 10);
-			if (number.empty() || *end != '\0' || n < 0 || n > 1000) {
+			long limit = key == "params" ? 1000 : 1000000;
+			if (number.empty() || *end != '\0' || n < 0 || n > limit) {
 				error = string::f("invalid @requires value \"%s\"", token.c_str());
 				return false;
 			}
-			params = static_cast<int>(n);
+			(key == "params" ? req.params : req.messages) = static_cast<int>(n);
 		}
 		return true;
 	}
@@ -589,27 +631,34 @@ struct MidiScriptEngine {
 		if (tag == std::string::npos) return 0;
 		size_t start = tag + std::string("@requires").size();
 		size_t eol = header.find('\n', start);
-		int params;
+		Requires req;
 		std::string error;
-		return parseRequires(header.substr(start, eol == std::string::npos ? std::string::npos : eol - start), params, error) ? params : 0;
+		return parseRequires(header.substr(start, eol == std::string::npos ? std::string::npos : eol - start), req, error) ? req.params : 0;
 	}
 
-	// Checks the optional "@requires" header tag against this module variant.
-	// Logs why and returns false when the script must not load. Called by both
-	// engines right after the "@engine" check.
+	// Checks the optional "@requires" header tag against this module variant and
+	// sizes the message store for it. Logs why and returns false when the script
+	// must not load. Called by both engines right after the "@engine" check.
+	// The store is already at its default (loadScriptOnWorker() resets it first),
+	// so a refused script never leaves a big one behind.
 	bool checkRequires(const std::map<std::string, std::string>& topics) {
 		auto it = topics.find("requires");
 		if (it == topics.end()) return true;
-		int params;
+		Requires req;
 		std::string error;
-		if (!parseRequires(it->second, params, error)) {
+		if (!parseRequires(it->second, req, error)) {
 			handler->writeLog("Script not loaded: " + error, false);
 			return false;
 		}
-		if (params > paramCount) {
-			handler->writeLog(string::f("Script not loaded: it requires %d params, this module has %d", params, paramCount), false);
+		if (req.params > paramCount) {
+			handler->writeLog(string::f("Script not loaded: it requires %d params, this module has %d", req.params, paramCount), false);
 			return false;
 		}
+		if (req.messages > msgStoreMax) {
+			handler->writeLog(string::f("Script not loaded: @requires messages=%d exceeds the maximum of %d", req.messages, msgStoreMax), false);
+			return false;
+		}
+		sizeStore(req.messages);
 		return true;
 	}
 

@@ -22,9 +22,9 @@
 --      were first seen.
 --   3. Note-Ons for the notes currently held on the new input, in press order.
 --
--- Only 128 messages can be created per callback, so a switch replays at most 128
--- messages in total (Note-Offs first); if more are needed the rest is dropped
--- and a line is written to the log.
+-- One message handle is reused for all of them. A very large state can overflow
+-- the module's output queue; the module then drops the rest and says so in the
+-- log.
 --
 -- Set config.numInputs (2-4) below or in the "Number of inputs" context menu;
 -- the choice is remembered with the patch. The MIDI inputs 1..n are enabled
@@ -35,9 +35,6 @@ local config = {
     -- Number of MIDI inputs to merge (2-4)
     numInputs = rack.getConfig("numInputs", 2)
 }
-
--- Most messages that can be created in one callback (engine limit)
-local MAX_MESSAGES = 128
 
 -- Context menu choices
 local INPUT_COUNT_LABELS = { "2", "3", "4" }
@@ -103,49 +100,27 @@ end
 
 -- Brings the output from the state of input `from` to the state of input `to`.
 local function replayState(from, to)
-    local left = MAX_MESSAGES
-    local dropped = 0
     local old = state.inputs[from]
     local nxt = state.inputs[to]
+    -- Sending copies the message, so one handle serves every message below.
+    local m = midi.create()
 
     for i = 1, #old.noteOrder do
-        if left == 0 then
-            dropped = dropped + 1
-        else
-            local key = old.noteOrder[i]
-            local off = midi.create()
-            midi.setNoteOff(off, channelOf(key), numberOf(key))
-            midiOut.send(off)
-            left = left - 1
-        end
+        local key = old.noteOrder[i]
+        midi.setNoteOff(m, channelOf(key), numberOf(key))
+        midiOut.send(m)
     end
 
     for i = 1, #nxt.ccOrder do
-        if left == 0 then
-            dropped = dropped + 1
-        else
-            local key = nxt.ccOrder[i]
-            local cc = midi.create()
-            midi.setCc(cc, channelOf(key), numberOf(key), nxt.ccValue[key])
-            midiOut.send(cc)
-            left = left - 1
-        end
+        local key = nxt.ccOrder[i]
+        midi.setCc(m, channelOf(key), numberOf(key), nxt.ccValue[key])
+        midiOut.send(m)
     end
 
     for i = 1, #nxt.noteOrder do
-        if left == 0 then
-            dropped = dropped + 1
-        else
-            local key = nxt.noteOrder[i]
-            local on = midi.create()
-            midi.setNoteOn(on, channelOf(key), numberOf(key), nxt.noteVel[key])
-            midiOut.send(on)
-            left = left - 1
-        end
-    end
-
-    if dropped > 0 then
-        rack.log("Switch replayed ", MAX_MESSAGES, " messages, ", dropped, " dropped (limit per callback)")
+        local key = nxt.noteOrder[i]
+        midi.setNoteOn(m, channelOf(key), numberOf(key), nxt.noteVel[key])
+        midiOut.send(m)
     end
 end
 
@@ -225,9 +200,9 @@ end
 rack.onUnload = function()
     local held = state.inputs[state.active]
     if not held then return end
-    for i = 1, math.min(#held.noteOrder, MAX_MESSAGES) do
+    local off = midi.create()
+    for i = 1, #held.noteOrder do
         local key = held.noteOrder[i]
-        local off = midi.create()
         midi.setNoteOff(off, channelOf(key), numberOf(key))
         midiOut.send(off)
     end
