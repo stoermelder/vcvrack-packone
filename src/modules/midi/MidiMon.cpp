@@ -7,7 +7,6 @@
 #include <iomanip>
 #include <chrono>
 #include "MidiProcessor.hpp"
-#include "MidiCInputQueue.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiMon {
@@ -181,7 +180,7 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 
 	/** [Stored to JSON] */
 	// The lock-free input queue: the audio thread never takes a lock or frees here.
-	MidiProcessorT<MidiCInputQueue<>> midiProcessor;
+	MidiCProcessor midiProcessor;
 
 	ClockDividerEx processDivider;
 	dsp::RingBuffer<RawEntry, 4096> midiLogMessages;

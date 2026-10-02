@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <memory>
 #include <cassert>
+#include "MidiCInputQueue.hpp"
 
 namespace StoermelderPackOne {
 
@@ -94,6 +95,8 @@ struct MidiDecoder {
     int16_t pendingRpnMsb[16];
     int16_t pendingNrpnMsb[16];
 
+    struct DecodeOnly {};
+
     MidiDecoder() {
         reset();
     }
@@ -118,17 +121,13 @@ struct MidiDecoder {
 };
 
 
-// A decoder plus the input queue it pumps. `Queue` is the type of the MIDI input
-// port: rack::midi::InputQueue, or any drop-in with the same tryPop() contract
-// (e.g. MidiCInputQueue<>) for a lock-free audio thread.
-template <typename Queue>
-struct MidiProcessorT : MidiDecoder {
+struct MidiProcessor : MidiDecoder {
     // Queue owned by this processor, allocated only when none is injected --
     // so an injecting consumer carries no unused queue. Null when injecting.
-    std::unique_ptr<Queue> ownedInput;
+    std::unique_ptr<rack::midi::InputQueue> ownedInput;
     // The queue actually pumped: ownedInput, or the injected one. Null for a
     // decode-only processor.
-    Queue* input;
+    rack::midi::InputQueue* input;
 
     // Reusable scratch MIDI message for the audio thread. `midi::Message`
     // heap-allocates its internal byte vector on construction, so creating one
@@ -143,16 +142,15 @@ struct MidiProcessorT : MidiDecoder {
     // the queue first so destruction order guarantees it. Lets a consumer that
     // already owns a MIDI port (with its own widget binding and JSON) reuse the
     // decoding without transplanting ownership.
-    explicit MidiProcessorT(Queue* injected = nullptr)
-        : ownedInput(injected ? nullptr : new Queue())
+    explicit MidiProcessor(rack::midi::InputQueue* injected = nullptr)
+        : ownedInput(injected ? nullptr : new rack::midi::InputQueue())
         , input(injected ? injected : ownedInput.get()) {}
 
     // No queue at all: only processMessage() and the state calls may be used.
     // process(), processBypass() and getInput() assert that there is a queue.
-    struct DecodeOnly {};
-    explicit MidiProcessorT(DecodeOnly) : input(nullptr) {}
+    explicit MidiProcessor(DecodeOnly) : input(nullptr) {}
 
-    Queue& getInput() {
+    rack::midi::InputQueue& getInput() {
         assert(input);
         return *input;
     }
@@ -172,6 +170,46 @@ struct MidiProcessorT : MidiDecoder {
     }
 };
 
-using MidiProcessor = MidiProcessorT<rack::midi::InputQueue>;
+// The decoder over a MidiCInputQueue: the audio thread takes no lock and
+// allocates nothing, and decodes straight out of the queue's slots instead of
+// copying each message.
+struct MidiCProcessor : MidiDecoder {
+    // Queue owned by this processor, allocated only when none is injected.
+    std::unique_ptr<MidiCInputQueue<>> ownedInput;
+    // The queue actually pumped: ownedInput, or the injected one. Null for a
+    // decode-only processor.
+    MidiCInputQueue<>* input;
+
+    // Injected: the CALLER owns the queue and must keep it alive for at least as
+    // long as this processor.
+    explicit MidiCProcessor(MidiCInputQueue<>* injected = nullptr)
+        : ownedInput(injected ? nullptr : new MidiCInputQueue<>())
+        , input(injected ? injected : ownedInput.get()) {}
+
+    // No queue at all: only processMessage() and the state calls may be used.
+    // process(), processBypass() and getInput() assert that there is a queue.
+    explicit MidiCProcessor(DecodeOnly) : input(nullptr) {}
+
+    MidiCInputQueue<>& getInput() {
+        assert(input);
+        return *input;
+    }
+
+    // Empties the queue of what is due at `frame`, without decoding.
+    void processBypass(int64_t frame) {
+        assert(input);
+        while (input->peek(frame)) input->pop();
+    }
+
+    // Decodes what is due at `frame`, in frame order. Handlers copy what they
+    // keep before the message is popped.
+    void process(int64_t frame) {
+        assert(input);
+        while (const rack::midi::Message* msg = input->peek(frame)) {
+            processMessage(*msg);
+            input->pop();
+        }
+    }
+};
 
 } // namespace StoermelderPackOne
