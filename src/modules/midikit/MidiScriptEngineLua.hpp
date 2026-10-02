@@ -836,13 +836,18 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 				lua_pushlstring(L, label.c_str(), label.size());
 				nargs = 2;
 			}
+			// A callback like onLoad: MIDI created in it is sent when it returns.
+			msgCount = 0;
+			inCallback = true;
 			beginScriptExecution();
 			int status = lua_pcall(L, nargs, 0, 0);
+			inCallback = false;
 			if (status != LUA_OK) {
 				const char* err = lua_tostring(L, -1);
 				handler->writeLog(string::f("Context menu callback error: %s", err ? err : "(unknown)"));
 				lua_pop(L, 1); // pop error message
 			}
+			flushMsgStore();
 			checkMemoryLimit();
 		});
 	}

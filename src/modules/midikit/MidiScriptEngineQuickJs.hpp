@@ -806,8 +806,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				args[1] = JS_NewString(ctx, label.c_str());
 				argc = 2;
 			}
+			// A callback like onLoad: MIDI created in it is sent when it returns.
+			msgCount = 0;
+			inCallback = true;
 			beginScriptExecution();
 			JSValue r = JS_Call(ctx, fn, rackObj, argc, args);
+			inCallback = false;
 			for (int i = 0; i < argc; i++) JS_FreeValue(ctx, args[i]);
 			JS_FreeValue(ctx, fn);
 			if (JS_IsException(r)) {
@@ -819,6 +823,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			else {
 				JS_FreeValue(ctx, r);
 			}
+			flushMsgStore();
 		});
 	}
 

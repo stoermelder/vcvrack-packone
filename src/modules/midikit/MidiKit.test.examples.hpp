@@ -213,7 +213,8 @@ static const PresetInfo PRESETS[] = {
 	{"", "Volca Sample", true},
 	{"", "Program Change Trigger", true},
 	{"", "Program Change CV", true},
-	{"", "Bank Select", true},
+	{"", "Bank Select (param)", true},
+	{"", "Bank Select (menu)", false},   // sends only from menu clicks (own test); no reaction to MIDI traffic
 	{"", "Channel router", true},
 	{"", "Smart merge", true},
 	{"", "Port router", true},
@@ -3207,8 +3208,8 @@ static void requireMicrofreakMessages(const std::vector<OutEvent>& ev, int bank,
 	REQUIRE(ev[2].note == program);
 }
 
-TEST_CASE("'Bank Select.js/.lua' trigger sends Bank Select CC 0/32 then Program Change", "[MidiKit][Microfreak]") {
-	std::string path = GENERATE(presetPaths("Bank Select"));
+TEST_CASE("'Bank Select (param).js/.lua' trigger sends Bank Select CC 0/32 then Program Change", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (param)"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -3229,8 +3230,8 @@ TEST_CASE("'Bank Select.js/.lua' trigger sends Bank Select CC 0/32 then Program 
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'Bank Select.js/.lua' bank boundaries and preset extremes", "[MidiKit][Microfreak]") {
-	std::string path = GENERATE(presetPaths("Bank Select"));
+TEST_CASE("'Bank Select (param).js/.lua' bank boundaries and preset extremes", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (param)"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -3249,8 +3250,8 @@ TEST_CASE("'Bank Select.js/.lua' bank boundaries and preset extremes", "[MidiKit
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'Bank Select.js/.lua' number of banks comes from the config", "[MidiKit][Microfreak]") {
-	std::string path = GENERATE(presetPaths("Bank Select"));
+TEST_CASE("'Bank Select (param).js/.lua' number of banks comes from the config", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (param)"));
 	CATCH_INFO("preset: " << path);
 
 	// JS "banks: 4," / Lua "banks = 4,"
@@ -3279,8 +3280,8 @@ TEST_CASE("'Bank Select.js/.lua' number of banks comes from the config", "[MidiK
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'Bank Select.js/.lua' trigger 1 logs the preset change", "[MidiKit][Microfreak]") {
-	std::string path = GENERATE(presetPaths("Bank Select"));
+TEST_CASE("'Bank Select (param).js/.lua' trigger 1 logs the preset change", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (param)"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -3292,8 +3293,82 @@ TEST_CASE("'Bank Select.js/.lua' trigger 1 logs the preset change", "[MidiKit][M
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'Bank Select.js/.lua' trigger 2 steps to the next preset", "[MidiKit][Microfreak]") {
-	std::string path = GENERATE(presetPaths("Bank Select"));
+// Bank Select (menu): the context menu is the only input. Items in
+// registration order: Channel (id 1), Bank (2), Program group (3), Program (4).
+TEST_CASE("'Bank Select (menu).js/.lua' sends from the context menu only", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (menu)"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	auto click = [&](int id, int value) {
+		m->host.getActiveEngine()->invokeContextMenuCallback(id, value);
+		m->host.getActiveEngine()->process();
+		return drainOut(m);
+	};
+
+	// Nothing is sent on load.
+	REQUIRE(drainOut(m).empty());
+
+	// Bank 2 with program 0
+	requireMicrofreakMessages(click(2, 2), 2, 0);
+	// Changing the group sends nothing; it only re-lists the Program item.
+	REQUIRE(click(3, 3).empty());
+	// The Program item now lists group 3 (48-63): entry 5 is program 53
+	requireMicrofreakMessages(click(4, 5), 2, 53);
+	REQUIRE(drainLog(m).find("Preset 309 (bank 2, program 53") != std::string::npos);
+
+	// Another group keeps the position within it (5), still without sending
+	REQUIRE(click(3, 7).empty());
+	requireMicrofreakMessages(click(4, 5), 2, 117);
+
+	// Channel change sends nothing; the next send uses it.
+	REQUIRE(click(1, 4).empty());
+	auto ev = click(2, 1);
+	REQUIRE(ev.size() == 3);
+	REQUIRE(ev[0].channel == 4);
+	REQUIRE(ev[2].channel == 4);
+
+	REQUIRE(drainLog(m).find("rror") == std::string::npos);
+	Test::destroyModule(m);
+}
+
+// Config numbers come back as floats after a reload; the Program labels must
+// still be plain integers ("53", not "53.0").
+TEST_CASE("'Bank Select (menu).js/.lua' restores its selection with integer labels", "[MidiKit][Microfreak][JSON]") {
+	std::string path = GENERATE(presetPaths("Bank Select (menu)"));
+	CATCH_INFO("preset: " << path);
+
+	ModuleScaffold mods;
+	MidiKitModule* m = loadPreset(path);
+	m->host.getActiveEngine()->invokeContextMenuCallback(2, 3);
+	m->host.getActiveEngine()->invokeContextMenuCallback(3, 3);
+	m->host.getActiveEngine()->invokeContextMenuCallback(4, 5);
+	drainLog(m);
+
+	rack::engine::Module::SaveEvent saveEvent;
+	m->onSave(saveEvent);
+	json_t* rootJ = m->dataToJson();
+	MidiKitModule* m2 = mods.create();
+	m2->dataFromJson(rootJ);
+	json_decref(rootJ);
+
+	std::vector<ScriptMenuItem> specs;
+	m2->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m2->host.getActiveEngine()->process();
+	REQUIRE(specs.size() == 4);
+	REQUIRE(specs[1].selected == 3);                       // Bank
+	REQUIRE(specs[2].selected == 3);                       // Program group
+	REQUIRE(specs[3].selected == 5);                       // Program
+	REQUIRE(specs[3].options.size() == 16);
+	REQUIRE(specs[3].options[0] == "48");
+	REQUIRE(specs[3].options[15] == "63");
+	REQUIRE(drainOut(m2).empty());                         // nothing sent on load
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Bank Select (param).js/.lua' trigger 2 steps to the next preset", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (param)"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -3321,8 +3396,8 @@ TEST_CASE("'Bank Select.js/.lua' trigger 2 steps to the next preset", "[MidiKit]
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'Bank Select.js/.lua' turning the knobs alone sends nothing", "[MidiKit][Microfreak]") {
-	std::string path = GENERATE(presetPaths("Bank Select"));
+TEST_CASE("'Bank Select (param).js/.lua' turning the knobs alone sends nothing", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (param)"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
@@ -3335,8 +3410,8 @@ TEST_CASE("'Bank Select.js/.lua' turning the knobs alone sends nothing", "[MidiK
 	Test::destroyModule(m);
 }
 
-TEST_CASE("'Bank Select.js/.lua' passes MIDI in through unchanged", "[MidiKit][Microfreak]") {
-	std::string path = GENERATE(presetPaths("Bank Select"));
+TEST_CASE("'Bank Select (param).js/.lua' passes MIDI in through unchanged", "[MidiKit][Microfreak]") {
+	std::string path = GENERATE(presetPaths("Bank Select (param)"));
 	CATCH_INFO("preset: " << path);
 
 	MidiKitModule* m = loadPreset(path);
