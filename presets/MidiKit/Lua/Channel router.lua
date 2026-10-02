@@ -91,13 +91,11 @@ rack.onLoad = function()
     for out = 1, outputCount do allOutputs[out] = out end
 end
 
--- Sends msg to each of the given outputs. A handle can only be sent once, so
--- every output after the first gets its own copy.
+-- Sends msg to each of the given outputs.
 local function sendTo(msg, outputs)
     for i, out in ipairs(outputs) do
-        local m = (i == 1) and msg or midi.clone(msg)
         midiOut.selectPort(out)
-        midiOut.send(m)
+        midiOut.send(msg)
     end
 end
 

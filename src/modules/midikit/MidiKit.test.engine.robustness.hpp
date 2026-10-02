@@ -7,15 +7,15 @@
 // midi.create()/midi.clone()/midi.createNRPN() fail once the 128-handle
 // per-callback store is full, aborting the rest of the callback. The error
 // wording is identical in both engines (unified: "midi.create: message store
-// full" etc.). Per A3, messages already sent before the error are still
-// flushed — a multi-message sequence can be emitted partially — while
-// anything created after the error is dropped.
+// full" etc.). Per A3, messages sent before the error have already gone out —
+// a multi-message sequence can be emitted partially — while anything created
+// after the error is dropped.
 
 static const char* JS_STORE_FULL = R"(/**
  * @engine QuickJs@v1
  */
 midi.onMessage = function(midiPort, msg) {
-    // Two messages sent before the overflow — these must still be flushed.
+    // Two messages sent before the overflow — these have already gone out.
     let m1 = midi.create();
     midi.setNoteOn(m1, 1, 60, 100);
     midiOut.send(m1);
@@ -59,7 +59,7 @@ midi.onMessage = function(midiPort, msg)
 end
 )";
 
-TEST_CASE("midi.create past the 128-handle cap errors and flushes only pre-error sends", "[MidiKit][CrossEngine]") {
+TEST_CASE("midi.create past the 128-handle cap errors and keeps the sends made before it", "[MidiKit][CrossEngine]") {
 	EngineResult js = run(JS_STORE_FULL);
 	EngineResult lua = run(LUA_STORE_FULL);
 
@@ -69,7 +69,7 @@ TEST_CASE("midi.create past the 128-handle cap errors and flushes only pre-error
 	REQUIRE(js.log.find("midi.create: message store full") != std::string::npos);
 	REQUIRE(lua.log.find("midi.create: message store full") != std::string::npos);
 
-	// Partial flush (A3): both pre-error messages go out, identically, with
+	// Partial output (A3): both pre-error messages went out, identically, with
 	// the exact bytes the scripts requested. size == 2 also proves the
 	// message created after the error never went out.
 	REQUIRE(js.sent.size() == 2);
@@ -720,4 +720,315 @@ TEST_CASE("dataToJson() concurrent with setConfig() on the worker thread always 
 	};
 	check(JS_HAMMER_SETCONFIG);
 	check(LUA_HAMMER_SETCONFIG);
+}
+
+
+// ── Sending at call time, and handle lifetime ────────────────────────────────
+// midiOut.send*() copies the message and sends it right away, so a handle keeps
+// its contents and can be sent again. A handle is only valid inside the
+// callback that created it: using one from an earlier callback is an error,
+// not an alias of whatever the new callback built at the same slot.
+
+// Feeds `count` Note-Ons (notes 60, 61, ...) one callback at a time and returns
+// everything sent plus the log.
+static EngineResult runMessages(const std::string& script, int count) {
+	MidiKitModule* m = createModule();
+	m->loadScript(script);
+
+	EngineResult r;
+	r.loadLog = drainLog(m);
+	CATCH_INFO("load log:\n" << r.loadLog);
+	REQUIRE(r.loadLog.find("rror") == std::string::npos);
+
+	for (int i = 0; i < count; i++) {
+		midi::Message in = noteOn(1, 60 + i, 100);
+		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->process();
+	}
+	int port, ticks;
+	midi::Message out;
+	while (processOutMessage(m, port, out, ticks)) {
+		r.sent.push_back(toSent(port, ticks, out));
+	}
+	r.log = drainLog(m);
+	Test::destroyModule(m);
+	return r;
+}
+
+static const char* JS_SEND_TWICE = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    let m = midi.create();
+    midi.setNoteOn(m, 1, 60, 100);
+    midiOut.send(m);
+    midiOut.send(m);
+};
+)";
+
+static const char* LUA_SEND_TWICE = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(port, msg)
+    local m = midi.create()
+    midi.setNoteOn(m, 1, 60, 100)
+    midiOut.send(m)
+    midiOut.send(m)
+end
+)";
+
+TEST_CASE("Sending the same handle twice sends two identical messages in both engines", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(JS_SEND_TWICE);
+	EngineResult lua = run(LUA_SEND_TWICE);
+	REQUIRE(js.sent.size() == 2);
+	REQUIRE(js.sent[0].bytes == js.sent[1].bytes);
+	requireEquivalent(js, lua);
+}
+
+static const char* JS_CHANGE_AFTER_SEND = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    let m = midi.create();
+    midi.setNoteOn(m, 1, 60, 100);
+    midiOut.send(m);
+    midi.setNote(m, 62);
+    midiOut.send(m);
+};
+)";
+
+static const char* LUA_CHANGE_AFTER_SEND = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(port, msg)
+    local m = midi.create()
+    midi.setNoteOn(m, 1, 60, 100)
+    midiOut.send(m)
+    midi.setNote(m, 62)
+    midiOut.send(m)
+end
+)";
+
+TEST_CASE("A change after send() does not affect what was sent, in both engines", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(JS_CHANGE_AFTER_SEND);
+	EngineResult lua = run(LUA_CHANGE_AFTER_SEND);
+	for (const EngineResult* r : { &js, &lua }) {
+		REQUIRE(r->sent.size() == 2);
+		REQUIRE(r->sent[0].bytes == std::vector<uint8_t>({0x90, 60, 100}));
+		REQUIRE(r->sent[1].bytes == std::vector<uint8_t>({0x90, 62, 100}));
+	}
+}
+
+static const char* JS_NRPN_TWICE = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    let n = midi.createNRPN();
+    midi.setNRPN(n, 1, 1, 100);
+    midiOut.send(n);
+    midiOut.send(n);
+};
+)";
+
+static const char* LUA_NRPN_TWICE = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(port, msg)
+    local n = midi.createNRPN()
+    midi.setNRPN(n, 1, 1, 100)
+    midiOut.send(n)
+    midiOut.send(n)
+end
+)";
+
+TEST_CASE("An NRPN leader sent twice sends two complete quads in both engines", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(JS_NRPN_TWICE);
+	EngineResult lua = run(LUA_NRPN_TWICE);
+	REQUIRE(js.sent.size() == 8);
+	for (size_t i = 0; i < 4; i++) REQUIRE(js.sent[i].bytes == js.sent[i + 4].bytes);
+	requireEquivalent(js, lua);
+}
+
+static const char* JS_REUSE_HANDLE = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    let m = midi.create();
+    midi.setNoteOn(m, 1, 60, 100);
+    for (let i = 0; i < 200; i++) midiOut.send(m);
+};
+)";
+
+static const char* LUA_REUSE_HANDLE = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(port, msg)
+    local m = midi.create()
+    midi.setNoteOn(m, 1, 60, 100)
+    for i = 1, 200 do midiOut.send(m) end
+end
+)";
+
+TEST_CASE("One handle can be sent past the 128-handle cap in both engines", "[MidiKit][CrossEngine]") {
+	// The cap limits distinct live messages, not messages sent. The out queue
+	// bounds the output instead: what doesn't fit is dropped and logged.
+	EngineResult js = run(JS_REUSE_HANDLE);
+	EngineResult lua = run(LUA_REUSE_HANDLE);
+	for (const EngineResult* r : { &js, &lua }) {
+		REQUIRE(r->log.find("store full") == std::string::npos);
+		REQUIRE(r->sent.size() >= 100);
+	}
+	REQUIRE(js.sent.size() == lua.sent.size());
+}
+
+// Handle lifetime
+
+static const char* JS_STALE_HANDLE = R"(/**
+ * @engine QuickJs@v1
+ */
+let kept = -1;
+midi.onMessage = function(port, msg) {
+    if (kept < 0) {
+        let m = midi.create();
+        midi.setNoteOn(m, 1, 60, 100);
+        kept = m;
+        midiOut.send(m);
+    }
+    else {
+        // Same slot as `kept` had in the first callback.
+        let other = midi.create();
+        midi.setNoteOn(other, 1, 99, 100);
+        midiOut.send(kept);
+    }
+};
+)";
+
+static const char* LUA_STALE_HANDLE = R"(--[[
+@engine minilua@v1
+--]]
+local kept = -1
+midi.onMessage = function(port, msg)
+    if kept < 0 then
+        local m = midi.create()
+        midi.setNoteOn(m, 1, 60, 100)
+        kept = m
+        midiOut.send(m)
+    else
+        local other = midi.create()
+        midi.setNoteOn(other, 1, 99, 100)
+        midiOut.send(kept)
+    end
+end
+)";
+
+TEST_CASE("A handle from an earlier callback is an error, not an alias, in both engines", "[MidiKit][CrossEngine]") {
+	for (const char* script : { JS_STALE_HANDLE, LUA_STALE_HANDLE }) {
+		CATCH_INFO(script);
+		EngineResult r = runMessages(script, 2);
+		CATCH_INFO("log:\n" << r.log);
+		REQUIRE(r.log.find("onMessage error") != std::string::npos);
+		// Only the first callback's message went out.
+		REQUIRE(r.sent.size() == 1);
+		REQUIRE(r.sent[0].bytes == std::vector<uint8_t>({0x90, 60, 100}));
+	}
+}
+
+static const char* JS_ONLOAD_HANDLE = R"(/**
+ * @engine QuickJs@v1
+ */
+let h = -1;
+rack.onLoad = function() {
+    h = midi.create();
+    midi.setNoteOn(h, 1, 60, 100);
+};
+midi.onMessage = function(port, msg) {
+    midiOut.send(h);
+};
+)";
+
+static const char* LUA_ONLOAD_HANDLE = R"(--[[
+@engine minilua@v1
+--]]
+local h = -1
+rack.onLoad = function()
+    h = midi.create()
+    midi.setNoteOn(h, 1, 60, 100)
+end
+midi.onMessage = function(port, msg)
+    midiOut.send(h)
+end
+)";
+
+TEST_CASE("A handle stored in onLoad can't be used in onMessage in either engine", "[MidiKit][CrossEngine]") {
+	for (const char* script : { JS_ONLOAD_HANDLE, LUA_ONLOAD_HANDLE }) {
+		CATCH_INFO(script);
+		EngineResult r = runMessages(script, 1);
+		REQUIRE(r.log.find("onMessage error") != std::string::npos);
+		REQUIRE(r.sent.empty());
+	}
+}
+
+static const char* JS_INCOMING_HANDLE = R"(/**
+ * @engine QuickJs@v1
+ */
+let prev = -1;
+midi.onMessage = function(port, msg) {
+    if (prev >= 0) midiOut.send(prev);
+    prev = msg;
+};
+)";
+
+static const char* LUA_INCOMING_HANDLE = R"(--[[
+@engine minilua@v1
+--]]
+local prev = -1
+midi.onMessage = function(port, msg)
+    if prev >= 0 then midiOut.send(prev) end
+    prev = msg
+end
+)";
+
+TEST_CASE("The incoming message handle of one onMessage is invalid in the next, in both engines", "[MidiKit][CrossEngine]") {
+	for (const char* script : { JS_INCOMING_HANDLE, LUA_INCOMING_HANDLE }) {
+		CATCH_INFO(script);
+		EngineResult r = runMessages(script, 2);
+		REQUIRE(r.log.find("onMessage error") != std::string::npos);
+		REQUIRE(r.sent.empty());
+	}
+}
+
+static const char* JS_GETNAME_CREATE = R"(/**
+ * @engine QuickJs@v1
+ */
+param.getName = function(i) {
+    if (i === 1) {
+        let m = midi.create();
+        return "A";
+    }
+    return "B";
+};
+)";
+
+static const char* LUA_GETNAME_CREATE = R"(--[[
+@engine minilua@v1
+--]]
+param.getName = function(i)
+    if i == 1 then
+        local m = midi.create()
+        return "A"
+    end
+    return "B"
+end
+)";
+
+TEST_CASE("midi.create inside param.getName raises and the name falls back, in both engines", "[MidiKit][CrossEngine]") {
+	for (const char* script : { JS_GETNAME_CREATE, LUA_GETNAME_CREATE }) {
+		CATCH_INFO(script);
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		drainLog(m);
+		REQUIRE(m->host.getActiveEngine()->getParamName(0) == "");
+		REQUIRE(m->host.getActiveEngine()->getParamName(1) == "B");
+		Test::destroyModule(m);
+	}
 }

@@ -88,7 +88,7 @@ TEST_CASE("Parse error reports the line it failed on", "[MidiKit][QuickJs]") {
 	REQUIRE(m->host.seQuickJs.ctx == nullptr);
 
 	std::string log = drainLog(m);
-	REQUIRE(log.find("Error while loading script") != std::string::npos);
+	REQUIRE(log.find("Error loading script") != std::string::npos);
 	// QuickJS reports the offending line number in the exception's stack trace
 	REQUIRE(log.find(":6:") != std::string::npos);
 }
@@ -458,7 +458,7 @@ TEST_CASE("Infinite loop at script top level fails the load, and the module reco
 	// Load runs inline; the interrupt aborts the top-level JS_Eval.
 	m->loadScript(JS_WHILE_TRUE_TOPLEVEL);
 	std::string log = drainLog(m);
-	REQUIRE(log.find("Error while loading script") != std::string::npos);
+	REQUIRE(log.find("Error loading script") != std::string::npos);
 	REQUIRE(log.find("interrupted") != std::string::npos);
 
 	// The module survives the failed load.

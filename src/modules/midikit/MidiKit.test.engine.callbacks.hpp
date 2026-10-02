@@ -229,7 +229,7 @@ TEST_CASE("trig.enableIn gates trig.onTrigger per channel, in both engines", "[M
 
 
 // send() order, not handle-creation order
-// Regression test for the flush-order bug: the engine used to push the
+// Regression test for the send-order bug: the engine used to push the
 // out-queue in msgStore index (handle-creation) order, so a script that
 // created several messages and then sent them in a different order had them
 // reordered on the wire. The receiver must observe send() order. This
@@ -268,7 +268,7 @@ midi.onMessage = function(midiPort, msg)
 end
 )";
 
-TEST_CASE("out-queue flushes in send() order, not handle-creation order, in both engines", "[MidiKit][CrossEngine]") {
+TEST_CASE("out-queue is in send() order, not handle-creation order, in both engines", "[MidiKit][CrossEngine]") {
 	EngineResult js = run(JS_SEND_ORDER);
 	EngineResult lua = run(LUA_SEND_ORDER);
 
@@ -695,7 +695,7 @@ TEST_CASE("Context-menu onChange sends MIDI identically in both engines", "[Midi
 		m->host.getActiveEngine()->invokeContextMenuCallback(1, 1);
 		std::string log = drainLog(m);
 		// No "discarded" warning: onChange counts as a callback.
-		REQUIRE(log.find("called outside a callback") == std::string::npos);
+		REQUIRE(log.find("only allowed inside a callback") == std::string::npos);
 
 		int port, ticks;
 		midi::Message out;

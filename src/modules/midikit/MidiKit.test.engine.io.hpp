@@ -417,9 +417,6 @@ TEST_CASE("param.getValue reads identical value in both engines", "[MidiKit][Cro
 static const char* JS_SELECT_PORT = R"(/**
  * @engine QuickJs@v1
  */
-let msg = midi.create();
-midi.setNoteOn(msg, 1, 60, 100);
-
 midi.onMessage = function(port, msg) {
     midiOut.selectPort(1);
     midiOut.send(msg);
@@ -429,9 +426,6 @@ midi.onMessage = function(port, msg) {
 static const char* LUA_SELECT_PORT = R"(--[[
 @engine minilua@v1
 --]]
-msg = midi.create()
-midi.setNoteOn(msg, 1, 60, 100)
-
 midi.onMessage = function(midiPort, msg)
     midiOut.selectPort(1)
     midiOut.send(msg)
@@ -502,9 +496,6 @@ TEST_CASE("midiOut.selectPort rejects an out-of-range port identically", "[MidiK
 static const char* JS_SEND_AFTER_MS = R"(/**
  * @engine QuickJs@v1
  */
-let msg = midi.create();
-midi.setNoteOn(msg, 1, 60, 100);
-
 midi.onMessage = function(port, msg) {
     midiOut.sendAfterMs(msg, 100);
 };
@@ -513,9 +504,6 @@ midi.onMessage = function(port, msg) {
 static const char* LUA_SEND_AFTER_MS = R"(--[[
 @engine minilua@v1
 --]]
-msg = midi.create()
-midi.setNoteOn(msg, 1, 60, 100)
-
 midi.onMessage = function(midiPort, msg)
     midiOut.sendAfterMs(msg, 100)
 end
@@ -556,9 +544,6 @@ TEST_CASE("midiOut.sendAfterMs schedules an identical future-frame message", "[M
 static const char* JS_SEND_AFTER_TRIGGER_SELECTED_PORT = R"(/**
  * @engine QuickJs@v1
  */
-let msg = midi.create();
-midi.setNoteOn(msg, 1, 60, 100);
-
 midi.onMessage = function(port, msg) {
     midiOut.selectPort(1);
     midiOut.sendAfterTrigger(msg, 10);
@@ -568,9 +553,6 @@ midi.onMessage = function(port, msg) {
 static const char* LUA_SEND_AFTER_TRIGGER_SELECTED_PORT = R"(--[[
 @engine minilua@v1
 --]]
-msg = midi.create()
-midi.setNoteOn(msg, 1, 60, 100)
-
 midi.onMessage = function(midiPort, msg)
     midiOut.selectPort(1)
     midiOut.sendAfterTrigger(msg, 10)
@@ -585,9 +567,6 @@ TEST_CASE("sendAfterTrigger uses the selected port identically", "[MidiKit][Cros
 static const char* JS_SEND_AFTER_TRIGGER_TRIGPORT = R"(/**
  * @engine QuickJs@v1
  */
-let msg = midi.create();
-midi.setNoteOn(msg, 1, 60, 100);
-
 midi.onMessage = function(port, msg) {
     midiOut.selectPort(1);
     midiOut.sendAfterTrigger(msg, 10, 1);
@@ -597,9 +576,6 @@ midi.onMessage = function(port, msg) {
 static const char* LUA_SEND_AFTER_TRIGGER_TRIGPORT = R"(--[[
 @engine minilua@v1
 --]]
-msg = midi.create()
-midi.setNoteOn(msg, 1, 60, 100)
-
 midi.onMessage = function(midiPort, msg)
     midiOut.selectPort(1)
     midiOut.sendAfterTrigger(msg, 10, 1)
@@ -614,9 +590,6 @@ TEST_CASE("sendAfterTrigger with explicit trigPort (3 args) is identical", "[Mid
 static const char* JS_SEND_AFTER_TRIGGER_CHANNEL = R"(/**
  * @engine QuickJs@v1
  */
-let msg = midi.create();
-midi.setNoteOn(msg, 1, 60, 100);
-
 midi.onMessage = function(port, msg) {
     midiOut.selectPort(1);
     midiOut.sendAfterTrigger(msg, 10, 1, 2);
@@ -626,9 +599,6 @@ midi.onMessage = function(port, msg) {
 static const char* LUA_SEND_AFTER_TRIGGER_CHANNEL = R"(--[[
 @engine minilua@v1
 --]]
-msg = midi.create()
-midi.setNoteOn(msg, 1, 60, 100)
-
 midi.onMessage = function(midiPort, msg)
     midiOut.selectPort(1)
     midiOut.sendAfterTrigger(msg, 10, 1, 2)

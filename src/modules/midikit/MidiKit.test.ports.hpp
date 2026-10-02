@@ -1444,7 +1444,7 @@ end
 }
 
 // A script without onUnload must not re-send its last callback's messages when
-// it is closed: the teardown flush used to find them still in the message store.
+// it is closed: the teardown used to find them still in the message store and send them again.
 TEST_CASE("Variant: closing a script without onUnload does not send its last messages again", "[MidiKit][Variant]") {
 	const char* js = R"(/**
  * @engine QuickJs@v1

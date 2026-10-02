@@ -217,11 +217,10 @@ TEST_CASE("Timing: sendAfterTrigger releases on the exact edge sample", "[MidiKi
 	// The edge is detected per sample, so release is exact — the module
 	// already has perfect timing here and discards it.
 	REQUIRE(rig.rec.sent[0].releasedAt == 45);
-	// status quo: sendAfterTrigger() never touches the
-	// frame, so the message reaches the device carrying the stale arrival frame
-	// of the input it was copied from (8) — not the edge's frame, and not -1.
-	// Rack would treat that as long past and send immediately.
-	REQUIRE(rig.rec.sent[0].frameField == 8);
+	// sendAfterTrigger() sends the message without a frame (the tick schedules
+	// it), so it doesn't carry the arrival frame of the input it was built from
+	// (8); Rack sends it immediately at release.
+	REQUIRE(rig.rec.sent[0].frameField == -1);
 }
 
 TEST_CASE("Timing: release jitter over a metronomic stream is the divider quantisation", "[MidiKit][timing]") {
@@ -1308,9 +1307,10 @@ end
 	}
 }
 
-TEST_CASE("The last send call on a handle decides how it is scheduled, in both engines", "[MidiKit][timing]") {
-	// sendAfterTrigger() schedules by tick; a later send, sendAfterMs or sendAtFrame
-	// on the same handle must replace that, not stay tick-scheduled.
+TEST_CASE("Each send call on a handle schedules its own copy, in both engines", "[MidiKit][timing]") {
+	// sendAfterTrigger() schedules by tick; a later send, sendAfterMs or
+	// sendAtFrame of the same handle is a second message with its own schedule,
+	// not a replacement for the first.
 	const char* js = R"(/**
  * @engine QuickJs@v1
  */
@@ -1349,8 +1349,10 @@ end
 
 			size_t ticks = 0;
 			for (int i = 0; i < 2 * PORT_MAX_CHANNELS; i++) ticks += rig.m->midiOuts.ports[0].tickQueue[i].size();
-			REQUIRE(ticks == 0);
-			// Sent at once, or held in the frame queue until its frame.
+			// The sendAfterTrigger copy still waits for its 5 clock edges...
+			REQUIRE(ticks == 1);
+			// ...and the second call's copy is sent at once, or held in the
+			// frame queue until its frame.
 			REQUIRE(rig.rec.sent.size() + rig.m->midiOuts.ports[0].frameQueue.size() == 1);
 		}
 	}

@@ -82,13 +82,11 @@ rack.onLoad = function() {
     for (let out = 1; out <= outputCount; out++) allOutputs.push(out);
 };
 
-// Sends msg to each of the given outputs. A handle can only be sent once, so
-// every output after the first gets its own copy.
+// Sends msg to each of the given outputs.
 function sendTo(msg, outputs) {
     for (let i = 0; i < outputs.length; i++) {
-        const m = i === 0 ? msg : midi.clone(msg);
         midiOut.selectPort(outputs[i]);
-        midiOut.send(m);
+        midiOut.send(msg);
     }
 }
 

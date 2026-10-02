@@ -1,4 +1,4 @@
-// 14-bit CC and NRPN message construction and flush order, the midi.is* predicates and midi.getChannel.
+// 14-bit CC and NRPN message construction and send order, the midi.is* predicates and midi.getChannel.
 //
 // Part of the cross-engine suite: included into the __engine namespace by
 // MidiKit.test.cpp after MidiKit.test.engine.hpp, which defines the shared helpers.
@@ -34,9 +34,9 @@ TEST_CASE("setCc14bit produces identical MSB/LSB wire messages", "[MidiKit][Cros
 }
 
 
-// setCc14bit on a createCc14bit() pair (atomic 2-message flush)
+// setCc14bit on a createCc14bit() pair (atomic 2-message send)
 // The two-handle form above sends two independent messages. A
-// createCc14bit() pair is the atomic alternative: midiOut.send(cc14) flushes
+// createCc14bit() pair is the atomic alternative: midiOut.send(cc14) sends
 // both underlying CC messages in order when passed the first handle of the
 // pair (per SCRIPTING.md), so sending it is what exercises the pair end to
 // end.
@@ -66,7 +66,7 @@ TEST_CASE("createCc14bit pair produces identical MSB/LSB wire messages", "[MidiK
 }
 
 // Cross-engine equivalence only pins JS and Lua to each other — it can't
-// catch a bug shared by both (the NRPN quad once flushed MSB-after-LSB in
+// catch a bug shared by both (the NRPN quad once went out MSB-after-LSB in
 // both engines). This asserts the actual wire bytes/order against the
 // 14-bit CC convention: CC 1 (value MSB), then CC 33 (value LSB).
 TEST_CASE("createCc14bit pair wire order is spec-compliant (MSB before LSB)", "[MidiKit]") {
@@ -79,7 +79,7 @@ TEST_CASE("createCc14bit pair wire order is spec-compliant (MSB before LSB)", "[
 
 
 // 14-bit CC pair send() order
-// A 14-bit CC pair flushes as a unit when the group leader is sent. This
+// A 14-bit CC pair is sent as a unit when the group leader is sent. This
 // verifies the send-order fix also applies across pairs: two pairs are
 // created (p1, then p2) but sent in the opposite order (p2, then p1), and
 // the wire must carry p2's whole pair before p1's whole pair — the pairs
@@ -112,7 +112,7 @@ midi.onMessage = function(midiPort, msg)
 end
 )";
 
-TEST_CASE("14-bit CC pairs flush in send() order, not handle-creation order, in both engines", "[MidiKit][CrossEngine]") {
+TEST_CASE("14-bit CC pairs are sent in send() order, not handle-creation order, in both engines", "[MidiKit][CrossEngine]") {
 	EngineResult js = run(JS_CC_14BIT_SEND_ORDER);
 	EngineResult lua = run(LUA_CC_14BIT_SEND_ORDER);
 
@@ -139,7 +139,7 @@ TEST_CASE("14-bit CC pairs flush in send() order, not handle-creation order, in 
 
 
 // setNRPN (4 chained CC messages)
-// midiOut.send(nrpnHandle) flushes all 4 underlying CC messages in order
+// midiOut.send(nrpnHandle) sends all 4 underlying CC messages in order
 // when passed the first handle of an NRPN quad (per SCRIPTING.md), so
 // sending it is what actually exercises setNRPN's byte layout end to end.
 
@@ -168,7 +168,7 @@ TEST_CASE("setNRPN produces identical 4-message wire sequence", "[MidiKit][Cross
 }
 
 // Cross-engine equivalence above only pins JS and Lua to each other — it
-// can't catch a bug shared by both (as happened: both engines flushed the
+// can't catch a bug shared by both (as happened: both engines sent the
 // quad as CC98/CC99/CC38/CC6, MSB-after-LSB for both pairs, which desyncs
 // MidiProcessor::processCc's NRPN state machine and corrupts every value
 // after the first). This asserts the actual wire bytes/order against the
@@ -185,7 +185,7 @@ TEST_CASE("setNRPN wire order is spec-compliant (MSB before LSB)", "[MidiKit]") 
 
 
 // NRPN send() order
-// An NRPN is a quad of 4 CC messages that flush as a unit when the group
+// An NRPN is a quad of 4 CC messages that are sent as a unit when the group
 // leader is sent. This verifies that the send-order fix also applies across
 // NRPN groups: two NRPNs are created (n1, then n2) but sent in the opposite
 // order (n2, then n1), and the wire must carry n2's whole quad before n1's
@@ -218,7 +218,7 @@ midi.onMessage = function(midiPort, msg)
 end
 )";
 
-TEST_CASE("NRPN quads flush in send() order, not handle-creation order, in both engines", "[MidiKit][CrossEngine]") {
+TEST_CASE("NRPN quads are sent in send() order, not handle-creation order, in both engines", "[MidiKit][CrossEngine]") {
 	EngineResult js = run(JS_NRPN_SEND_ORDER);
 	EngineResult lua = run(LUA_NRPN_SEND_ORDER);
 
@@ -258,51 +258,55 @@ TEST_CASE("NRPN quads flush in send() order, not handle-creation order, in both 
 static const char* JS_IS_TYPES = R"(/**
  * @engine QuickJs@v1
  */
-let msgNoteOn = midi.create();
-midi.setNoteOn(msgNoteOn, 1, 60, 100);
-let msgCc = midi.create();
-midi.setCc(msgCc, 1, 10, 64);
-let msgSysEx = midi.create();
-midi.setSysEx(msgSysEx, "43104c0000");
+rack.onLoad = function() {
+    let msgNoteOn = midi.create();
+    midi.setNoteOn(msgNoteOn, 1, 60, 100);
+    let msgCc = midi.create();
+    midi.setCc(msgCc, 1, 10, 64);
+    let msgSysEx = midi.create();
+    midi.setSysEx(msgSysEx, "43104c0000");
 
-let bits = "" +
-    (midi.isNoteOn(msgNoteOn) ? "1" : "0") +
-    (midi.isNoteOff(msgNoteOn) ? "1" : "0") +
-    (midi.isCc(msgNoteOn) ? "1" : "0") +
-    (midi.isCc(msgCc) ? "1" : "0") +
-    (midi.isSysEx(msgCc) ? "1" : "0") +
-    (midi.isSysEx(msgSysEx) ? "1" : "0") +
-    (midi.isClock(msgNoteOn) ? "1" : "0") +
-    (midi.isStart(msgNoteOn) ? "1" : "0") +
-    (midi.isStop(msgNoteOn) ? "1" : "0") +
-    (midi.isContinue(msgNoteOn) ? "1" : "0");
-rack.log("PROBE:" + bits);
+    let bits = "" +
+        (midi.isNoteOn(msgNoteOn) ? "1" : "0") +
+        (midi.isNoteOff(msgNoteOn) ? "1" : "0") +
+        (midi.isCc(msgNoteOn) ? "1" : "0") +
+        (midi.isCc(msgCc) ? "1" : "0") +
+        (midi.isSysEx(msgCc) ? "1" : "0") +
+        (midi.isSysEx(msgSysEx) ? "1" : "0") +
+        (midi.isClock(msgNoteOn) ? "1" : "0") +
+        (midi.isStart(msgNoteOn) ? "1" : "0") +
+        (midi.isStop(msgNoteOn) ? "1" : "0") +
+        (midi.isContinue(msgNoteOn) ? "1" : "0");
+    rack.log("PROBE:" + bits);
+};
 )";
 
 static const char* LUA_IS_TYPES = R"(--[[
 @engine minilua@v1
 --]]
-local function b(v) if v then return "1" else return "0" end end
+rack.onLoad = function()
+    local function b(v) if v then return "1" else return "0" end end
 
-local msgNoteOn = midi.create()
-midi.setNoteOn(msgNoteOn, 1, 60, 100)
-local msgCc = midi.create()
-midi.setCc(msgCc, 1, 10, 64)
-local msgSysEx = midi.create()
-midi.setSysEx(msgSysEx, "43104c0000")
+    local msgNoteOn = midi.create()
+    midi.setNoteOn(msgNoteOn, 1, 60, 100)
+    local msgCc = midi.create()
+    midi.setCc(msgCc, 1, 10, 64)
+    local msgSysEx = midi.create()
+    midi.setSysEx(msgSysEx, "43104c0000")
 
-local bits =
-    b(midi.isNoteOn(msgNoteOn)) ..
-    b(midi.isNoteOff(msgNoteOn)) ..
-    b(midi.isCc(msgNoteOn)) ..
-    b(midi.isCc(msgCc)) ..
-    b(midi.isSysEx(msgCc)) ..
-    b(midi.isSysEx(msgSysEx)) ..
-    b(midi.isClock(msgNoteOn)) ..
-    b(midi.isStart(msgNoteOn)) ..
-    b(midi.isStop(msgNoteOn)) ..
-    b(midi.isContinue(msgNoteOn))
-rack.log("PROBE:" .. bits)
+    local bits =
+        b(midi.isNoteOn(msgNoteOn)) ..
+        b(midi.isNoteOff(msgNoteOn)) ..
+        b(midi.isCc(msgNoteOn)) ..
+        b(midi.isCc(msgCc)) ..
+        b(midi.isSysEx(msgCc)) ..
+        b(midi.isSysEx(msgSysEx)) ..
+        b(midi.isClock(msgNoteOn)) ..
+        b(midi.isStart(msgNoteOn)) ..
+        b(midi.isStop(msgNoteOn)) ..
+        b(midi.isContinue(msgNoteOn))
+    rack.log("PROBE:" .. bits)
+end
 )";
 
 TEST_CASE("midi.is* predicates agree on every message type", "[MidiKit][CrossEngine]") {
@@ -320,25 +324,29 @@ TEST_CASE("midi.is* predicates agree on every message type", "[MidiKit][CrossEng
 static const char* JS_GET_CHANNEL_SENTINEL = R"(/**
  * @engine QuickJs@v1
  */
-let note = midi.create();
-midi.setNoteOn(note, 5, 60, 100);
-rack.log("PROBE:" + number.toString(midi.getChannel(note)));
+rack.onLoad = function() {
+    let note = midi.create();
+    midi.setNoteOn(note, 5, 60, 100);
+    rack.log("PROBE:" + number.toString(midi.getChannel(note)));
 
-let clock = midi.create();
-midi.setSysEx(clock, "");
-rack.log("PROBE:" + number.toString(midi.getChannel(clock)));
+    let clock = midi.create();
+    midi.setSysEx(clock, "");
+    rack.log("PROBE:" + number.toString(midi.getChannel(clock)));
+};
 )";
 
 static const char* LUA_GET_CHANNEL_SENTINEL = R"(--[[
 @engine minilua@v1
 --]]
-local note = midi.create()
-midi.setNoteOn(note, 5, 60, 100)
-rack.log("PROBE:" .. number.toString(midi.getChannel(note)))
+rack.onLoad = function()
+    local note = midi.create()
+    midi.setNoteOn(note, 5, 60, 100)
+    rack.log("PROBE:" .. number.toString(midi.getChannel(note)))
 
-local clock = midi.create()
-midi.setSysEx(clock, "")
-rack.log("PROBE:" .. number.toString(midi.getChannel(clock)))
+    local clock = midi.create()
+    midi.setSysEx(clock, "")
+    rack.log("PROBE:" .. number.toString(midi.getChannel(clock)))
+end
 )";
 
 TEST_CASE("midi.getChannel returns -1 on realtime/SysEx, the real channel otherwise", "[MidiKit][CrossEngine]") {

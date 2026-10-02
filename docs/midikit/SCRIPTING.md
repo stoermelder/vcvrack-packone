@@ -1048,8 +1048,7 @@ is in [Tipsy protocol — send and receive over CV](#tipsy-protocol--send-and-re
   protocol (such as [TRANSIT](../../transit/Transit.md)) and temporarily
   takes over trigger output 1 while it is being transmitted. Unlike the
   `midiOut.*` senders, `sendTipsy` sends no MIDI: it is not routed through
-  `midiOut.selectPort()`, does not consume a message-handle slot, and is not
-  subject to the "sent once per callback" rule.
+  `midiOut.selectPort()` and does not consume a message-handle slot.
   ```js
   trig.enableIn(1);
   trig.onTrigger = function(trigPort, channel) {
@@ -1089,20 +1088,23 @@ is in [Tipsy protocol — send and receive over CV](#tipsy-protocol--send-and-re
 - `param.count` — number of panel knobs on this module variant (4, or 2 on MIDI-µKIT). An index above it is a script error: check `param.count` before `param.enable(i)`, and pass a fallback to `param.getValue(i, fallback)`.
 
 ### `midi.*` — message construction/inspection
-Messages are opaque handles (indices into an internal store, max 128 live per
+Messages are opaque handles (into an internal store, max 128 live per
 callback) created with `midi.create()`, `midi.createNRPN()`, `midi.createRPN()`, or
-`midi.createCc14bit()`; `midi.onMessage`
-also receives the incoming message as handle `0`/implicit first arg (Lua:
-index `0`, QuickJs: same convention).
+`midi.createCc14bit()`; `midi.onMessage` also receives the incoming message as
+a handle (its `msg` argument). Treat handle values as opaque: they are not small
+numbers, and a handle is only valid inside the callback that got or created it.
+Using one in a later callback, or outside any callback, is a script error
+rather than silently reading whatever message that callback built.
 
 **The store holds at most 128 live handles per callback.** Once it is full,
 `midi.create()`, `midi.clone()`, `midi.createNRPN()`, `midi.createRPN()`, and `midi.createCc14bit()`
 raise a script error
-that aborts the rest of the callback. Messages already marked for send before
-the error are still flushed, so a multi-message sequence (e.g. an NRPN pair,
-or a wide chord release) can be emitted partially — a message created but
-never sent is dropped. Keep callbacks within the cap, or create/send in
-batches (one handle per message, per the send-once rule below).
+that aborts the rest of the callback. Messages sent before the error have
+already gone out, so a multi-message sequence (e.g. an NRPN pair, or a wide
+chord release) can be emitted partially — a message created but never sent is
+dropped. The cap limits *distinct live messages*, not messages sent: a handle
+can be changed and sent again (see below), so a loop over a chord can reuse one
+handle.
 
 #### Entry points
 
@@ -1312,7 +1314,7 @@ whatever `midiOut.selectPort()` last selected (port 1 if it was never called):
   the event being handled.
 - `midiOut.send(nrpnHandle)` / `midiOut.send(cc14Handle)` — sending the first
   handle of an NRPN quad (4 messages) or a 14-bit CC pair (2 messages)
-  automatically flushes the whole group in order.
+  sends the whole group in order.
 - `midiOut.sendAfterMs(msg, ms)` — delayed send. The delay counts from the
   latest frame the module had processed when the script ran, or, with
   `midiOut.enableTiming()`, from the frame of the event being handled. `-1` instead
@@ -1325,15 +1327,15 @@ whatever `midiOut.selectPort()` last selected (port 1 if it was never called):
   after `ticks` clock ticks counted from `trigPort` (1-based, defaults to
   trig input 1) on polyphonic `channel` (defaults to 1).
 
-**A message can only be sent once per callback.** `midiOut.send(msg)` (and the
-`sendAfter*` variants) mark the handle as sent; the actual enqueue happens once
-per handle in the post-callback flush, so a second `send` of the *same* handle
-within one `midi.onMessage`/`rack.onLoad`/`rack.onUnload` is not a second message — only
-one goes out, and if the message body was changed in between, the last change
-wins. To send the same bytes twice, build a fresh handle first with
-`midi.create()` or `midi.clone(msg)` and send that. Each message sent consumes
-one store slot against the 128-handle cap, so one handle per message is the
-correct idiom.
+**Every send call sends the message as it is at that moment.** `midiOut.send(msg)`
+(and the `sendAfter*` variants) copy the message and send the copy right away,
+with its own schedule. Calling it again sends again, a later change to the
+handle doesn't affect what was already sent, and `sendAfterTrigger(msg, 5)`
+followed by `send(msg)` sends two messages. To send the same bytes on several
+ports, change `midiOut.selectPort()` between the calls. Messages reach the
+output queue while the callback runs, in call order; a very long callback can
+have its first messages on the wire before it returns. What doesn't fit in the
+output queue (128 entries between two audio blocks) is dropped and logged.
 
 ### Enabling sample-accurate timing
 
@@ -1518,14 +1520,14 @@ Clock=0xF8, Start=0xFA, Continue=0xFB, Stop=0xFC (encoded as status 0xf with
 rather than decoding this by hand).
 
 ## Part 4 — Gotchas
-- Message handles are only valid within the `midi.onMessage` call that
-  created them — the store resets each callback invocation. Creating a
-  message at top level (outside `midi.onMessage`) logs a warning and the
-  handle is discarded as soon as the next MIDI message arrives, so build
-  messages inside the callback. `rack.onLoad()`/`rack.onUnload()`/`trig.onTrigger()`
-  are full callbacks in this sense too — a message created and sent inside
-  any of them is delivered normally, and (unlike bare top-level code) doesn't
-  warn.
+- Message handles are only valid within the callback that got or created
+  them — the store resets each callback invocation. Creating a message at top
+  level, or in `param.getName`/`input.getName`/`onGetValue`, is an error (the
+  load fails with the script line at top level), and using a handle from an
+  earlier callback is an error too, so build messages inside the callback that
+  sends them. `rack.onLoad()`/`rack.onUnload()`/`trig.onTrigger()` and
+  context-menu `onChange` are full callbacks in this sense — a message created
+  and sent inside any of them is delivered normally.
 - `midi.setCc14bit`/`setNRPN` split a 14-bit value across two 7-bit CC
   messages (`cc` = MSB, `cc + 32` = LSB per the NRPN/14-bit CC convention);
   see the `NRPN to CC` preset

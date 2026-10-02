@@ -64,7 +64,7 @@ struct QueuedMessage {
 	bool isComponent = false;
 	// The engine frame Rack assigned on arrival (the completing component's, for
 	// assembled events), -1 if unknown. Not msg.frame: that one is an outbound
-	// request that the send bindings overwrite on the handle a script holds.
+	// request that the send bindings stamp on the copy they send.
 	int64_t frame = -1;
 
 	QueuedMessage() {}
@@ -218,6 +218,95 @@ struct MidiScriptEngine {
 	// Message handles a script can hold live per callback (slot 0 is the
 	// incoming message). Shared so both engines create the same number.
 	static const int msgStoreSize = 128;
+
+	// ── Message handles ──────────────────────────────────────────────────────
+	// A script message is a handle into the engine's store of msgStoreSize
+	// slots. The store and everything around it is here, once, for both engines.
+
+	// One slot of the store: a message a script holds a handle to, either the
+	// incoming one (slot 0 in a MIDI callback) or one it builds for output.
+	struct ScriptMessage {
+		// The message itself, plus the decode result when it came in assembled
+		// (NRPN/RPN/14-bit CC). Reusing MidiScript::QueuedMessage rather than
+		// restating its fields: it already carries exactly what an incoming
+		// message needs, and sharing the type means midi.getControl()/getValue()
+		// read the same struct the module filled in — no field-by-field copy to
+		// drift.
+		//
+		// `in` also holds the message a script BUILDS for output; the decode
+		// fields simply stay at their defaults there.
+		QueuedMessage in;
+		// Outgoing chain markers, set by createNRPN()/createCc14bit(). Note these
+		// are about a message being built for SEND, unlike in.type which reports
+		// how a received message was decoded — same words, opposite direction.
+		bool isNrpn = false;
+		bool isRpn = false;    // with isNrpn: the 4-message chain is an RPN (CC 101/100)
+		bool isCc14bit = false;
+	};
+
+	// The store behind the handles. Only the engines' binding code reads and
+	// writes it, on the worker thread.
+	ScriptMessage msgStore[msgStoreSize];
+
+	// Slots in use in the current callback. Must be initialised: top-level
+	// script code runs during loadScriptOnWorker(), before any callback starts
+	// the store, and it bounds every slot check.
+	size_t msgCount = 0;
+	// True only inside a script callback. A handle is only valid inside the
+	// callback that created it, so midi.create() and every use of a handle is
+	// an error outside one.
+	bool inCallback = false;
+	// Added to the slot index to make a handle. Advanced by msgStoreSize at
+	// every callback start, so a handle is never issued twice and one kept from
+	// an earlier callback can't alias a new message at the same slot.
+	int64_t handleBase = 0;
+	// Sticky output port selected via midiOut.selectPort(), 0-based. Stays in
+	// effect across callbacks until changed again.
+	int selectedPort = 0;
+
+	// Start of a callback: an empty store (or slot 0 taken by the incoming
+	// message, used = 1), and handle numbers no earlier callback has issued.
+	// Callbacks never nest (the worker runs them one at a time), so a single
+	// handleBase is enough.
+	void beginStore(size_t used) {
+		handleBase += msgStoreSize;
+		msgCount = used;
+	}
+
+	// The handle for store slot `slot` in the current callback.
+	int64_t slotToHandle(size_t slot) const {
+		return handleBase + int64_t(slot);
+	}
+
+	// Handle -> store slot, or -1 for anything that is not a live handle of
+	// this callback: outside a callback, from an earlier one, out of range.
+	long handleToSlot(int64_t h) const {
+		if (!inCallback || h < handleBase) return -1;
+		int64_t slot = h - handleBase;
+		return slot < int64_t(msgCount) ? long(slot) : -1;
+	}
+
+	// Worker, from a midiOut.send*() binding: sends the message at `first` now,
+	// with the 3 entries after it when it leads an NRPN/RPN chain or the 1 after
+	// it when it leads a 14-bit CC pair, as one group, all of it on `frame`, to
+	// `port`. Works on copies, so the script's handle is left as it was and can
+	// be changed and sent again. `first` must be a slot returned by
+	// handleToSlot(): the chain flags are only ever set on a leader with its
+	// followers reserved below msgStoreSize.
+	//
+	// Never raises. The Lua bindings rely on that: luaL_error longjmps past C++
+	// destructors, so every check must come before this call.
+	void sendEntry(const ScriptMessage& first, int port, int64_t frame, uint8_t channel = 0, uint64_t tick = 0, int trigPort = 0) {
+		size_t n = first.isNrpn ? 4 : first.isCc14bit ? 2 : 1;
+		Message group[4];
+		for (size_t k = 0; k < n; k++) {
+			group[k] = (&first)[k].in.msg;
+			group[k].frame = frame;
+		}
+		// Return value ignored: a drop is expected under output saturation, and
+		// the module already reports it once per episode.
+		handler->sendMidi(port, group, n, channel, tick, trigPort);
+	}
 
 	// The handler this engine runs inside, injected at construction. Every
 	// module-facing callback (log/overlay/input/trig/param) routes through it.
