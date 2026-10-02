@@ -268,6 +268,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			return;
 		}
 
+		if (!checkRequires(topics)) return;
+
 		if (topics.find("author") != topics.end()) {
 			handler->writeLog(string::f("Author: %s", topics["author"].c_str()), false);
 		}

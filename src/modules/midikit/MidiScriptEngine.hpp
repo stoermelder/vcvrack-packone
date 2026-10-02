@@ -8,7 +8,9 @@
 #include <cmath>
 #include <future>
 #include <jansson.h>
+#include <map>
 #include <memory>
+#include <sstream>
 #include <thread>
 
 namespace StoermelderPackOne {
@@ -444,6 +446,67 @@ struct MidiScriptEngine {
 			out = future.get();
 		}
 		catch (const std::future_error&) {
+			return false;
+		}
+		return true;
+	}
+
+	// Parses the value of a "@requires" tag: space-separated key=value pairs,
+	// currently only "params=N" (the script needs at least N panel params, e.g. 4
+	// does not fit MIDI-µKIT's 2). `params` is 0 when the tag doesn't ask for any.
+	// Returns false with `error` set for an unknown key or a malformed value: a
+	// requirement that can't be checked can't be assumed met.
+	static bool parseRequires(const std::string& value, int& params, std::string& error) {
+		params = 0;
+		std::istringstream ss(value);
+		std::string token;
+		while (ss >> token) {
+			size_t eq = token.find('=');
+			std::string key = token.substr(0, eq);
+			std::string number = eq == std::string::npos ? "" : token.substr(eq + 1);
+			if (key != "params") {
+				error = string::f("unknown @requires key \"%s\" (supported: params)", key.c_str());
+				return false;
+			}
+			char* end = nullptr;
+			long n = std::strtol(number.c_str(), &end, 10);
+			if (number.empty() || *end != '\0' || n < 0 || n > 1000) {
+				error = string::f("invalid @requires value \"%s\"", token.c_str());
+				return false;
+			}
+			params = static_cast<int>(n);
+		}
+		return true;
+	}
+
+	// The params a script's "@requires" tag asks for, 0 when absent or invalid.
+	// Only for UI hints (greying out example scripts a variant can't run);
+	// checkRequires() is what enforces the tag at load time.
+	static int requiredParams(const std::string& script) {
+		std::string header = script.substr(0, 2048);
+		size_t tag = header.find("@requires");
+		if (tag == std::string::npos) return 0;
+		size_t start = tag + std::string("@requires").size();
+		size_t eol = header.find('\n', start);
+		int params;
+		std::string error;
+		return parseRequires(header.substr(start, eol == std::string::npos ? std::string::npos : eol - start), params, error) ? params : 0;
+	}
+
+	// Checks the optional "@requires" header tag against this module variant.
+	// Logs why and returns false when the script must not load. Called by both
+	// engines right after the "@engine" check.
+	bool checkRequires(const std::map<std::string, std::string>& topics) {
+		auto it = topics.find("requires");
+		if (it == topics.end()) return true;
+		int params;
+		std::string error;
+		if (!parseRequires(it->second, params, error)) {
+			handler->writeLog("Script not loaded: " + error, false);
+			return false;
+		}
+		if (params > paramCount) {
+			handler->writeLog(string::f("Script not loaded: it requires %d params, this module has %d", params, paramCount), false);
 			return false;
 		}
 		return true;

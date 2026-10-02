@@ -69,6 +69,17 @@ revision, so a future breaking change can bump it (`@v2`) without silently
 misbehaving old scripts. `@author`/`@description` are optional and get echoed
 to the module's log on load. `@target` is conventional but not checked.
 
+`@requires params=N` is optional and declares that the script needs at least `N`
+panel params, for example `@requires params=4` for a script that reads params
+3 and 4. A module with fewer params (MIDI-µKIT has 2) refuses to load the script
+and logs "Script not loaded: it requires 4 params, this module has 2", instead
+of failing later when the script touches a param that isn't there. An unknown
+key or a malformed value also refuses the script. A script can still adapt
+instead of refusing by checking `param.count` or by giving `param.getValue` a
+fallback (see [Module variants](#module-variants)). The tag sits in the header
+block next to `@engine`. The **Examples** menus grey out such scripts on a variant
+that can't run them and show "needs N params" next to the name.
+
 Engine selection is a plain substring search for `@engine <name>@vN` in the
 header comment block — not the file extension, and not scanned past the
 block. Keep the `@engine` tag inside the leading comment, or the script can be
@@ -95,7 +106,7 @@ The callbacks a script can define, and when each runs:
 | `trig.onTrigger(trigPort, channel)` | on every rising edge of an *enabled* trigger channel | `trig.enableIn()` |
 | `trig.onTipsyMessage(data, mimeType)` | on every complete [Tipsy](#tipsy) message decoded from trigger input 1 | `trig.enableTipsyIn()` |
 | `rack.onLoad()` / `rack.onUnload()` | script [lifecycle](#persistence) — load, teardown | — |
-| `input.getName(i)` / `param.getName(i)` / `param.getValueFormat(i)` | when a panel tooltip is shown | — |
+| `input.getName(i)` / `param.getName(i)` / `param.getValueFormat(i)` | when a panel tooltip is shown; looked up live, so they may be reassigned at runtime | — |
 
 All hooks are assigned as plain fields on their object (`midi.onMessage =
 function(midiPort, msg) {...}` in JS, `function(...) end` in Lua) and must be
@@ -756,7 +767,11 @@ times, works exactly as it looks like it should.)
 
 The tooltip functions `input.getName`, `param.getName` and `param.getValueFormat`
 are the exception: they are looked up by name each time a tooltip is shown, so
-assigning them later does work.
+assigning them later does work. A script can therefore reassign them at runtime,
+for example from `midi.onMessage`, to change a tooltip as its state changes. This
+is supported, unlike reassigning any other hook. The cost is a name lookup per
+tooltip, which is negligible because a tooltip is shown only while the pointer
+hovers over a parameter or port.
 
 This is a deliberate, permanent design choice: resolving hooks once, rather
 than looking them up by name on every incoming MIDI message or trigger tick,

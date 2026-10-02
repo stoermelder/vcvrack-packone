@@ -2122,10 +2122,17 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 				if (vcv::fs::getExtension(path) != ext) continue;
 				hasExamples = true;
 				std::string name = vcv::fs::getStem(path);
-				menu->addChild(createMenuItem(name, "", [=]() {
+				// Grey out scripts that declare "@requires params=N" for more params
+				// than this variant has; loading one would be refused anyway.
+				std::string source;
+				int needed = vcv::fs::read(path, source) ? MidiScript::MidiScriptEngine::requiredParams(source) : 0;
+				bool unsupported = needed > CONFIG::params;
+				MenuItem* item = createMenuItem(name, unsupported ? string::f("needs %d params", needed) : "", [=]() {
 					filename = path;
 					loadJs(path);
-				}));
+				});
+				item->disabled = unsupported;
+				menu->addChild(item);
 			}
 		}
 		if (!hasExamples) {

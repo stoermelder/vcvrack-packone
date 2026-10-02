@@ -341,8 +341,15 @@ static void checkPresetOnMicro(const PresetInfo& p, const char* engine) {
 	std::tuple<LOG_FORMAT, float, std::string> t;
 	while (m->log.midiLogMessages.try_pop(t)) loadLog += std::get<2>(t) + "\n";
 	CATCH_INFO("load log:\n" << loadLog);
-	REQUIRE(loadLog.find("rror") == std::string::npos);
-	REQUIRE(loadLog.find("Script loaded") != std::string::npos);
+	if (std::string(p.name) == "Arpeggiator") {
+		// Declares @requires params=4: µKIT must refuse it with a clear message.
+		REQUIRE(loadLog.find("requires 4 params, this module has 2") != std::string::npos);
+		REQUIRE(loadLog.find("Script loaded") == std::string::npos);
+	}
+	else {
+		REQUIRE(loadLog.find("rror") == std::string::npos);
+		REQUIRE(loadLog.find("Script loaded") != std::string::npos);
+	}
 
 	Test::destroyModule(m);
 }
@@ -3963,6 +3970,71 @@ TEST_CASE("param.getValue falls back only above the param count", "[MidiKit][Mic
 	REQUIRE(log.find("zero false") != std::string::npos);    // index 0 is never a fallback case
 
 	Test::destroyModule(m);
+}
+
+
+// @requires params=N: a script that needs more params than the variant has is
+// refused with a message instead of loading and failing later.
+static std::string requiresScript(bool lua, const std::string& tag) {
+	std::string body = lua ? "rack.onLoad = function() rack.log('onload-ran') end"
+	                       : "rack.onLoad = function() { rack.log('onload-ran'); };";
+	if (lua) return "--[[\n@engine minilua@v1\n@requires " + tag + "\n--]]\n" + body + "\n";
+	return "/**\n * @engine QuickJs@v1\n * @requires " + tag + "\n */\n" + body + "\n";
+}
+
+template <typename MODULE>
+static std::string loadAndDrainLog(const std::string& script) {
+	MODULE* m = new MODULE(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+	m->id = rand();
+	Module::SampleRateChangeEvent e{44100.f, 1.f / 44100.f};
+	m->onSampleRateChange(e);
+	m->loadScript(script);
+	std::string log;
+	std::tuple<LOG_FORMAT, float, std::string> t;
+	while (m->log.midiLogMessages.try_pop(t)) log += std::get<2>(t) + "\n";
+	Test::destroyModule(m);
+	return log;
+}
+
+TEST_CASE("@requires params refuses scripts the variant can't run", "[MidiKit][Micro]") {
+	bool lua = GENERATE(true, false);
+	CATCH_INFO(std::string(lua ? "Lua" : "JS"));
+
+	// Micro has 2 params.
+	std::string ok = loadAndDrainLog<MidiKitMicroModule>(requiresScript(lua, "params=2"));
+	REQUIRE(ok.find("onload-ran") != std::string::npos);
+
+	std::string tooMany = loadAndDrainLog<MidiKitMicroModule>(requiresScript(lua, "params=4"));
+	REQUIRE(tooMany.find("onload-ran") == std::string::npos);
+	REQUIRE(tooMany.find("requires 4 params, this module has 2") != std::string::npos);
+
+	// The same script loads on the full module, which has at least 4.
+	std::string full = loadAndDrainLog<MidiKitModule>(requiresScript(lua, "params=4"));
+	REQUIRE(full.find("onload-ran") != std::string::npos);
+
+	// Unverifiable requirements refuse rather than assume.
+	std::string unknown = loadAndDrainLog<MidiKitModule>(requiresScript(lua, "api=2"));
+	REQUIRE(unknown.find("onload-ran") == std::string::npos);
+	REQUIRE(unknown.find("unknown @requires key") != std::string::npos);
+	std::string bad = loadAndDrainLog<MidiKitModule>(requiresScript(lua, "params=x"));
+	REQUIRE(bad.find("onload-ran") == std::string::npos);
+	REQUIRE(bad.find("invalid @requires value") != std::string::npos);
+}
+
+
+// The Examples menu greys out scripts by reading the same tag.
+TEST_CASE("requiredParams reads @requires params for the Examples menu", "[MidiKit][Micro]") {
+	using StoermelderPackOne::MidiScript::MidiScriptEngine;
+	REQUIRE(MidiScriptEngine::requiredParams(requiresScript(true, "params=4")) == 4);
+	REQUIRE(MidiScriptEngine::requiredParams(requiresScript(false, "params=3")) == 3);
+	REQUIRE(MidiScriptEngine::requiredParams(requiresScript(false, "params=x")) == 0);
+	REQUIRE(MidiScriptEngine::requiredParams("/**\n * @engine QuickJs@v1\n */\n") == 0);
+	for (const char* engine : {"JavaScript", "Lua"}) {
+		PresetInfo arp = {"", "Arpeggiator", false};
+		PresetInfo scale = {"", "Scale quantiser", true};
+		REQUIRE(MidiScriptEngine::requiredParams(readFile(repoRoot() + "/" + presetPath(arp, engine))) == 4);
+		REQUIRE(MidiScriptEngine::requiredParams(readFile(repoRoot() + "/" + presetPath(scale, engine))) == 0);
+	}
 }
 
 

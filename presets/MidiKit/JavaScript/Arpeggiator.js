@@ -1,6 +1,7 @@
 /**
  * @target stoermelder MIDI-KIT
  * @engine QuickJs@v1
+ * @requires params=4
  * @author stoermelder
  * @description Arpeggiator clocked by the trigger input, with clock division, octave range, note length and playmode params
  */
