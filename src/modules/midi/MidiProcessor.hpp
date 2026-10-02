@@ -4,6 +4,7 @@
 #include <functional>
 #include <algorithm>
 #include <memory>
+#include <cassert>
 
 namespace StoermelderPackOne {
 
@@ -78,16 +79,10 @@ struct MidiProcessorHandler {
     virtual bool processMidi(const MessageEx& msg) { return false; }
 };
 
-struct MidiProcessor {
+// The decoder: turns a stream of raw messages into semantic events (NRPN/RPN/
+// 14-bit CC assembly) for its handlers. Knows nothing about where messages come from.
+struct MidiDecoder {
     // Public members so other modules/tests can inspect state when necessary
-
-    // Queue owned by this processor, allocated only when none is injected --
-    // so an injecting consumer carries no unused queue. Null when injecting.
-    std::unique_ptr<rack::midi::InputQueue> ownedInput;
-    // The queue actually pumped: ownedInput, or the injected one. Null for a
-    // decode-only processor.
-    rack::midi::InputQueue* input;
-
     std::vector<MidiProcessorHandler*> handlers;
     // All carry -1 as "not set". int16_t rather than int8_t so the sentinel and
     // the 0-127 data range never share a signed narrow type, and so the 14-bit
@@ -98,6 +93,42 @@ struct MidiProcessor {
     int16_t ccDataEntryMsb[16];
     int16_t pendingRpnMsb[16];
     int16_t pendingNrpnMsb[16];
+
+    MidiDecoder() {
+        reset();
+    }
+
+    void reset();
+
+    // Decodes one message and notifies handlers. MidiProcessorT::process() is
+    // just the pump that feeds this; call it directly to decode messages
+    // obtained some other way, without this processor touching a queue at all.
+    void processMessage(const rack::midi::Message& msg);
+
+    void processCc(const rack::midi::Message& msg);
+
+    // Whether `msg` (a CC) currently participates in an extended message; see
+    // MessageEx::isComponent. Pure query -- it must be called BEFORE processCc()
+    // updates the state, so it reports the state as of the message's arrival.
+    bool isComponentCc(const rack::midi::Message& msg) const;
+
+    void notify(const MessageEx& m);
+    void subscribe(MidiProcessorHandler* handler);
+    void unsubscribe(MidiProcessorHandler* handler);
+};
+
+
+// A decoder plus the input queue it pumps. `Queue` is the type of the MIDI input
+// port: rack::midi::InputQueue, or any drop-in with the same tryPop() contract
+// (e.g. MidiCInputQueue<>) for a lock-free audio thread.
+template <typename Queue>
+struct MidiProcessorT : MidiDecoder {
+    // Queue owned by this processor, allocated only when none is injected --
+    // so an injecting consumer carries no unused queue. Null when injecting.
+    std::unique_ptr<Queue> ownedInput;
+    // The queue actually pumped: ownedInput, or the injected one. Null for a
+    // decode-only processor.
+    Queue* input;
 
     // Reusable scratch MIDI message for the audio thread. `midi::Message`
     // heap-allocates its internal byte vector on construction, so creating one
@@ -112,35 +143,35 @@ struct MidiProcessor {
     // the queue first so destruction order guarantees it. Lets a consumer that
     // already owns a MIDI port (with its own widget binding and JSON) reuse the
     // decoding without transplanting ownership.
-    explicit MidiProcessor(rack::midi::InputQueue* injected = nullptr);
+    explicit MidiProcessorT(Queue* injected = nullptr)
+        : ownedInput(injected ? nullptr : new Queue())
+        , input(injected ? injected : ownedInput.get()) {}
 
     // No queue at all: only processMessage() and the state calls may be used.
     // process(), processBypass() and getInput() assert that there is a queue.
     struct DecodeOnly {};
-    explicit MidiProcessor(DecodeOnly);
+    explicit MidiProcessorT(DecodeOnly) : input(nullptr) {}
 
-    rack::midi::InputQueue& getInput();
+    Queue& getInput() {
+        assert(input);
+        return *input;
+    }
 
-    void reset();
+    void processBypass(int64_t frame) {
+        assert(input);
+        rack::midi::Message& msg = scratchMidiMessage;
+        while (input->tryPop(&msg, frame)) {}
+    }
 
-    void processBypass(int64_t frame);
-    void process(int64_t frame);
-
-    // Decodes one message and notifies handlers. process() is just the pump that
-    // feeds this; call it directly to decode messages obtained some other way,
-    // without this processor touching a queue at all.
-    void processMessage(const rack::midi::Message& msg);
-
-    void processCc(const rack::midi::Message& msg);
-
-    // Whether `msg` (a CC) currently participates in an extended message; see
-    // MessageEx::isComponent. Pure query -- it must be called BEFORE processCc()
-    // updates the state, so it reports the state as of the message's arrival.
-    bool isComponentCc(const rack::midi::Message& msg) const;
-
-    void notify(const MessageEx& m);
-    void subscribe(MidiProcessorHandler* handler);
-    void unsubscribe(MidiProcessorHandler* handler);
+    void process(int64_t frame) {
+        assert(input);
+        rack::midi::Message& msg = scratchMidiMessage;
+        while (input->tryPop(&msg, frame)) {
+            processMessage(msg);
+        }
+    }
 };
+
+using MidiProcessor = MidiProcessorT<rack::midi::InputQueue>;
 
 } // namespace StoermelderPackOne
