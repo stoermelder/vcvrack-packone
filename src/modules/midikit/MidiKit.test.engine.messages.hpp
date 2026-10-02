@@ -535,6 +535,68 @@ TEST_CASE("setNoteOn clamps out-of-range velocity identically (#A5)", "[MidiKit]
 }
 
 
+// Setter arguments: rounded to an integer and clamped, never wrapped (review 1.3).
+// Expected bytes are asserted outright, since both engines agreeing on garbage
+// would pass requireEquivalent.
+
+TEST_CASE("setters clamp and round out-of-range arguments identically", "[MidiKit][CrossEngine]") {
+	struct Case {
+		const char* call;
+		std::vector<uint8_t> bytes;
+	};
+	const Case cases[] = {
+		{"midi.setNoteOn(m, -5, 60, 100)", {0x90, 60, 100}},
+		{"midi.setNoteOn(m, 99, 60, 100)", {0x9f, 60, 100}},
+		{"midi.setNoteOn(m, 1, 132, 100)", {0x90, 127, 100}},
+		{"midi.setNoteOn(m, 1, -3, 100)", {0x90, 0, 100}},
+		{"midi.setNoteOn(m, 1, 60.4, 100)", {0x90, 60, 100}},
+		{"midi.setNoteOn(m, 1, 60.5, 100)", {0x90, 61, 100}},
+		{"midi.setNoteOn(m, 1, 60, 1000000)", {0x90, 60, 127}},
+		{"midi.setCc(m, 1, 130, 200)", {0xb0, 127, 127}},
+		{"midi.setProgramChange(m, 1, 130)", {0xc0, 127}},
+		{"midi.setChanPressure(m, 1, 300)", {0xd0, 127}},
+		{"midi.setPitchWheel(m, 1, -100)", {0xe0, 0, 0}},
+		{"midi.setPitchWheel(m, 1, 20000)", {0xe0, 0x7f, 0x7f}},
+		{"midi.setPitchWheel(m, 1, 8192.4)", {0xe0, 0, 0x40}},
+		{"midi.setNote(m, 128)", {0x90, 127, 100}},
+		{"midi.setValue(m, 255)", {0x90, 60, 127}},
+	};
+	for (const Case& c : cases) {
+		std::string call = c.call;
+		// setNote/setValue modify an existing message, so build a NoteOn first.
+		std::string pre = "midi.setNoteOn(m, 1, 60, 100); ";
+		bool needsPre = call.find("setNote(") != std::string::npos || call.find("setValue(") != std::string::npos;
+		std::string body = (needsPre ? pre : "") + call + "; midiOut.send(m);";
+		EngineResult js = run(jsOnMessage("let m = midi.create(); " + body));
+		EngineResult lua = run(luaOnMessage("local m = midi.create(); " + body));
+		CATCH_INFO(c.call);
+		CATCH_INFO(js.log);
+		CATCH_INFO(lua.log);
+		REQUIRE(js.sent.size() == 1);
+		REQUIRE(lua.sent.size() == 1);
+		REQUIRE(js.sent[0].bytes == c.bytes);
+		REQUIRE(lua.sent[0].bytes == c.bytes);
+	}
+}
+
+TEST_CASE("setCc14bit clamps its value to 7-bit data bytes", "[MidiKit][CrossEngine]") {
+	for (const char* v : {"1000", "-5"}) {
+		std::string args = std::string("midi.setCc14bit(m, 1, 1, ") + v + ");";
+		EngineResult js = run(jsOnMessage("let m = midi.createCc14bit(); " + args + " midiOut.send(m);"));
+		EngineResult lua = run(luaOnMessage("local m = midi.createCc14bit(); " + args + " midiOut.send(m)"));
+		CATCH_INFO(js.log);
+		CATCH_INFO(lua.log);
+		REQUIRE(!js.sent.empty());
+		REQUIRE(js.sent.size() == lua.sent.size());
+		for (size_t i = 0; i < js.sent.size(); i++) {
+			REQUIRE(js.sent[i].bytes == lua.sent[i].bytes);
+			REQUIRE(js.sent[i].bytes.size() == 3);
+			REQUIRE(js.sent[i].bytes[2] < 0x80);
+		}
+	}
+}
+
+
 // midi.clone
 // clone(msg) must produce an independent copy: same MIDI payload, but a
 // fresh, unsent message. Editing the clone must not touch the source (a

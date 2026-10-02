@@ -1234,8 +1234,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// Callbacks are stored as registry refs and fired on the worker thread.
 	static int lua_rack_registerContextMenu(lua_State* L) {
 		auto* e = getEngine(L);
-		if (lua_gettop(L) < 1 || !lua_istable(L, 1))
+		if (lua_gettop(L) < 1 || !lua_istable(L, 1)) {
 			return luaL_error(L, "registerContextMenu: expected a table");
+		}
 
 		ScriptMenuItem spec;
 
@@ -1973,9 +1974,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setCc(lua_State* L) {
 		// midi.setCc(msg, channel, cc, value)
 		MessageEx* m = getMsg(L, 1);
-		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
-		uint8_t cc = static_cast<uint8_t>(luaL_checkinteger(L, 3));
-		uint8_t value = static_cast<uint8_t>(std::max(0, std::min(127, static_cast<int>(luaL_checkinteger(L, 4)))));
+		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
+		uint8_t cc = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
+		uint8_t value = clampInt<uint8_t>(luaL_checknumber(L, 4), 0, 127);
 		if (m->in.msg.getSize() != 3) m->in.msg.setSize(3);
 		m->in.msg.setStatus(0xb);
 		m->in.msg.setChannel(ch - 1);
@@ -1994,9 +1995,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			MessageEx* m1 = getMsg(L, 1);
 			if (!m1->isCc14bit) luaL_argerror(L, 1, "message is not a 14-bit CC pair");
 			MessageEx* m2 = &e->msgStore[static_cast<size_t>(m1 - e->msgStore) + 1];
-			uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
-			uint8_t cc = static_cast<uint8_t>(luaL_checkinteger(L, 3));
-			double value = luaL_checknumber(L, 4);
+			uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
+			uint8_t cc = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
+			double value = clampCc14bitValue(luaL_checknumber(L, 4));
 			if (m1->in.msg.getSize() != 3) m1->in.msg.setSize(3);
 			if (m2->in.msg.getSize() != 3) m2->in.msg.setSize(3);
 			m1->in.msg.setStatus(0xb); m2->in.msg.setStatus(0xb);
@@ -2015,9 +2016,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		int idx2 = static_cast<int>(luaL_checkinteger(L, 2));
 		if (idx2 < 0 || static_cast<size_t>(idx2) >= e->msgCount) luaL_argerror(L, 2, "invalid msg2 index");
 		MessageEx* m2 = &e->msgStore[idx2];
-		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 3)))));
-		uint8_t cc = static_cast<uint8_t>(luaL_checkinteger(L, 4));
-		double value = luaL_checknumber(L, 5);
+		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 3), 1, 16);
+		uint8_t cc = clampInt<uint8_t>(luaL_checknumber(L, 4), 0, 127);
+		double value = clampCc14bitValue(luaL_checknumber(L, 5));
 		if (m1->in.msg.getSize() != 3) m1->in.msg.setSize(3);
 		if (m2->in.msg.getSize() != 3) m2->in.msg.setSize(3);
 		m1->in.msg.setStatus(0xb); m2->in.msg.setStatus(0xb);
@@ -2032,7 +2033,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setChannel(lua_State* L) {
 		MessageEx* m = getMsg(L, 1);
-		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
+		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		m->in.msg.setChannel(ch - 1);
 		return 0;
 	}
@@ -2040,8 +2041,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setChanPressure(lua_State* L) {
 		// midi.setChanPressure(msg, channel, value)
 		MessageEx* m = getMsg(L, 1);
-		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
-		uint8_t val = static_cast<uint8_t>(luaL_checkinteger(L, 3));
+		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
+		uint8_t val = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 		// Channel pressure is a 2-byte message (status + pressure), not 3 —
 		// the pressure lives in bytes[1], read back via getChanPressure/getNote.
 		if (m->in.msg.getSize() != 2) m->in.msg.setSize(2);
@@ -2054,9 +2055,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setKeyPressure(lua_State* L) {
 		// midi.setKeyPressure(msg, channel, note, velocity)
 		MessageEx* m = getMsg(L, 1);
-		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
-		uint8_t note = static_cast<uint8_t>(luaL_checkinteger(L, 3));
-		uint8_t vel = static_cast<uint8_t>(std::max(0, std::min(127, static_cast<int>(luaL_checkinteger(L, 4)))));
+		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
+		uint8_t note = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
+		uint8_t vel = clampInt<uint8_t>(luaL_checknumber(L, 4), 0, 127);
 		if (m->in.msg.getSize() != 3) m->in.msg.setSize(3);
 		m->in.msg.setStatus(0xa);
 		m->in.msg.setChannel(ch - 1);
@@ -2067,7 +2068,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setNote(lua_State* L) {
 		MessageEx* m = getMsg(L, 1);
-		uint8_t value = static_cast<uint8_t>(luaL_checkinteger(L, 2));
+		uint8_t value = clampInt<uint8_t>(luaL_checknumber(L, 2), 0, 127);
 		m->in.msg.setNote(value);
 		return 0;
 	}
@@ -2075,9 +2076,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setNoteOff(lua_State* L) {
 		// midi.setNoteOff(msg, channel, note [, velocity])
 		MessageEx* m = getMsg(L, 1);
-		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
-		uint8_t note = static_cast<uint8_t>(luaL_checkinteger(L, 3));
-		uint8_t vel = static_cast<uint8_t>(std::max(0, std::min(127, static_cast<int>(luaL_optinteger(L, 4, 0)))));
+		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
+		uint8_t note = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
+		uint8_t vel = clampInt<uint8_t>(luaL_optnumber(L, 4, 0), 0, 127);
 		if (m->in.msg.getSize() != 3) m->in.msg.setSize(3);
 		m->in.msg.setStatus(0x8);
 		m->in.msg.setChannel(ch - 1);
@@ -2089,9 +2090,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setNoteOn(lua_State* L) {
 		// midi.setNoteOn(msg, channel, note, velocity)
 		MessageEx* m = getMsg(L, 1);
-		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
-		uint8_t note = static_cast<uint8_t>(luaL_checkinteger(L, 3));
-		uint8_t vel = static_cast<uint8_t>(std::max(0, std::min(127, static_cast<int>(luaL_checkinteger(L, 4)))));
+		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
+		uint8_t note = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
+		uint8_t vel = clampInt<uint8_t>(luaL_checknumber(L, 4), 0, 127);
 		if (m->in.msg.getSize() != 3) m->in.msg.setSize(3);
 		m->in.msg.setStatus(0x9);
 		m->in.msg.setChannel(ch - 1);
@@ -2111,9 +2112,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		MessageEx* s3 = &e->msgStore[idx + 2];
 		MessageEx* s4 = &e->msgStore[idx + 3];
 
-		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
-		uint16_t number = static_cast<uint16_t>(luaL_checkinteger(L, 3));
-		uint16_t value = static_cast<uint16_t>(luaL_checkinteger(L, 4));
+		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
+		uint16_t number = clampInt<uint16_t>(luaL_checknumber(L, 3), 0, 16383);
+		uint16_t value = clampInt<uint16_t>(luaL_checknumber(L, 4), 0, 16383);
 
 		// Spec order: NRPN MSB, NRPN LSB, Data Entry MSB, Data Entry LSB.
 		// flushMsgStore() sends s1..s4 in this order, as MidiProcessor's NRPN
@@ -2140,8 +2141,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setPitchWheel(lua_State* L) {
 		// midi.setPitchWheel(msg, channel, value)
 		MessageEx* m = getMsg(L, 1);
-		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
-		uint16_t value = static_cast<uint16_t>(luaL_checkinteger(L, 3));
+		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
+		uint16_t value = clampInt<uint16_t>(luaL_checknumber(L, 3), 0, 16383);
 		if (m->in.msg.getSize() != 3) m->in.msg.setSize(3);
 		m->in.msg.setStatus(0xe);
 		m->in.msg.setChannel(ch - 1);
@@ -2153,8 +2154,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setProgramChange(lua_State* L) {
 		// midi.setProgramChange(msg, channel, program)
 		MessageEx* m = getMsg(L, 1);
-		uint8_t ch = static_cast<uint8_t>(std::max(1, std::min(16, static_cast<int>(luaL_checkinteger(L, 2)))));
-		uint8_t prg = static_cast<uint8_t>(luaL_checkinteger(L, 3));
+		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
+		uint8_t prg = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 		// Program Change is a 2-byte message (status + program), not 3: a stray
 		// third byte goes out as a second Program Change to program 0 on ALSA.
 		if (m->in.msg.getSize() != 2) m->in.msg.setSize(2);
@@ -2220,7 +2221,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setValue(lua_State* L) {
 		MessageEx* m = getMsg(L, 1);
-		uint8_t value = static_cast<uint8_t>(luaL_checkinteger(L, 2));
+		uint8_t value = clampInt<uint8_t>(luaL_checknumber(L, 2), 0, 127);
 		m->in.msg.setValue(value);
 		return 0;
 	}

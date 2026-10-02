@@ -365,6 +365,24 @@ struct MidiScriptEngine {
 		return frame < 0.0 ? -1 : int64_t(frame);
 	}
 
+	// Setter-argument rule shared by both engines: a number is rounded to the
+	// nearest integer and clamped to [lo, hi], never wrapped. Clamping happens in
+	// double before the integer conversion (an out-of-range float -> integer
+	// cast is undefined behaviour); NaN maps to lo.
+	// T is the result type (uint8_t/uint16_t for MIDI fields); lo and hi must fit it.
+	template <typename T = int>
+	static T clampInt(double v, int lo, int hi) {
+		if (std::isnan(v)) return static_cast<T>(lo);
+		return static_cast<T>(std::max(static_cast<double>(lo), std::min(static_cast<double>(hi), std::round(v))));
+	}
+
+	// The 14-bit CC value is 0..127.992 (MSB plus a fraction in 1/128 steps), so
+	// it is clamped but not rounded.
+	static double clampCc14bitValue(double v) {
+		if (std::isnan(v)) return 0.0;
+		return std::max(0.0, std::min(127.0 + 127.0 / 128.0, v));
+	}
+
 	void setWorker(std::shared_ptr<ITaskWorker> w) {
 		taskWorker = std::move(w);
 	}

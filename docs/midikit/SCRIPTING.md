@@ -1139,21 +1139,24 @@ true only for assembled extended messages (see
 
 #### Setters
 
-Every `ch` argument below is a MIDI channel, 1-16. Pass values in that range:
-a channel above 16 is clamped to 16, and a value below 1 is not reliable (Lua
-clamps it to 1, but the JavaScript engine can end up on a different channel).
+Setter arguments are never wrapped. A number is rounded to the nearest integer
+and clamped to the field's range: channels to 1-16, 7-bit fields (`cc`, `note`,
+`value`, `vel`, `program`, pressure) to 0-127, and 14-bit fields (`setNRPN`
+number/value, `setPitchWheel` value) to 0-16383. So `setNote(msg, 132)` gives
+note 127, not note 4, and `setNote(msg, 60.5)` gives note 61 in both Lua and
+JavaScript. `NaN` clamps to the lower bound.
 
 | Function | Notes |
 | --- | --- |
-| `setCc(msg, ch, cc, value)` | `value` clamped to 0-127 |
+| `setCc(msg, ch, cc, value)` | |
 | `setCc14bit(msgMsb, msgLsb, ch, cc, value)` | fills two independent handles, sent as two separate messages with no atomicity |
 | `setCc14bit(cc14, ch, cc, value)` | `cc14` is the first handle of a `midi.createCc14bit()` pair; both CCs sent atomically as a unit |
 | `setChannel(msg, ch)` | |
 | `setChanPressure(msg, ch, value)` | 2-byte message; read back with `getChanPressure`, not `getValue` |
-| `setKeyPressure(msg, ch, note, vel)` | `vel` clamped to 0-127 |
+| `setKeyPressure(msg, ch, note, vel)` | |
 | `setNote(msg, note)` | |
-| `setNoteOn(msg, ch, note, vel)` | `vel` clamped to 0-127 |
-| `setNoteOff(msg, ch, note [, vel])` | release velocity defaults to 0, clamped to 0-127; read back with `getValue` |
+| `setNoteOn(msg, ch, note, vel)` | |
+| `setNoteOff(msg, ch, note [, vel])` | release velocity defaults to 0; read back with `getValue` |
 | `setNRPN(nrpnHandle, ch, number, value)` | `number`/`value` are 14-bit, 0-16383 |
 | `setPitchWheel(msg, ch, value)` | `value` is 14-bit, 0-16383; 8192 is the centre (no bend) |
 | `setProgramChange(msg, ch, program)` | |
@@ -1162,7 +1165,7 @@ clamps it to 1, but the JavaScript engine can end up on a different channel).
 | `setValue(msg, value)` | |
 
 Both `setCc14bit` forms take `value` as a float (MSB = integer part,
-LSB = fractional part × 128) — see the `NRPN to CC` preset
+LSB = fractional part × 128), clamped to 0-127.99 and not rounded — see the `NRPN to CC` preset
 ([JavaScript](../../presets/MidiKit/JavaScript/NRPN%20to%20CC.js),
 [Lua](../../presets/MidiKit/Lua/NRPN%20to%20CC.lua)) for the canonical use.
 
