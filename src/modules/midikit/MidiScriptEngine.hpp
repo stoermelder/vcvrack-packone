@@ -1,6 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
-#include "../../utils/SlotQueue.hpp"
+#include "../../utils/SlotRingBuffer.hpp"
 #include "../../utils/SpscLatestValue.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../midi/MidiProcessor.hpp"
@@ -86,10 +86,10 @@ struct InMessage {
 // Audio thread -> worker queue of incoming messages. A SlotQueue because a
 // QueuedMessage owns a byte vector (see SlotQueue). Each slot reserves room for
 // ordinary SysEx; a longer message grows its slot once and the slot keeps that.
-struct MidiInQueue : SlotQueue<InMessage, 128> {
+struct MidiInRingBuffer : SlotRingBuffer<InMessage, 128> {
 	enum { SLOT_BYTES = 64 };
 
-	MidiInQueue() : SlotQueue<InMessage, 128>([](InMessage& m) { m.msg.msg.bytes.reserve(SLOT_BYTES); }) {}
+	MidiInRingBuffer() : SlotRingBuffer<InMessage, 128>([](InMessage& m) {m.msg.msg.bytes.reserve(SLOT_BYTES); }) {}
 
 	bool tryPush(int port, const QueuedMessage& msg) {
 		return tryPushWith([&](InMessage& slot) {
@@ -473,7 +473,7 @@ struct MidiScriptEngine {
 	}
 
 	std::shared_ptr<ITaskWorker> taskWorker;
-	MidiInQueue midiInQueue;
+	MidiInRingBuffer midiInQueue;
 	// (trigPort, channel, frame) — the trigger input is polyphonic, so each tick
 	// carries the channel that fired and the frame of its edge. Sized for the
 	// worst case between two drains (every 8th sample): all trigger channels of
