@@ -1,3 +1,4 @@
+#include "LogDispatcher.hpp"
 #include "MidiScriptEngine.hpp"
 #include "MidiScriptEngineLua.hpp"
 #include "MidiScriptEngineQuickJs.hpp"
@@ -5,6 +6,7 @@
 #include "../../components/MidiWidget.hpp"
 #include "../../components/LedTextField.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
+#include "../../ui/ScriptEditor.hpp"
 #include "../../vcv/ui.hpp"
 #include "../../vcv/fs.hpp"
 #include "../../vcv/engine.hpp"
@@ -2141,6 +2143,26 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		bindPortsAndParams(engine);
 	}
 
+	// UI thread: the running script's published config as a JSON string, empty if it
+	// has none. What dataToJson() writes as "scriptConfig", in the form loadScript()
+	// takes.
+	std::string peekConfigJson() {
+		const std::shared_ptr<json_t>& cfg = host.peekConfig();
+		if (!cfg || json_object_size(cfg.get()) == 0) return "";
+		char* s = json_dumps(cfg.get(), JSON_COMPACT);
+		std::string result = s ? s : "";
+		free(s);
+		return result;
+	}
+
+	// Loads a new script text but hands the running script's config over to it, so an
+	// edit that is applied does not reset what the script saved (rack.setConfig).
+	// The config is read here, before load() queues the swap that tears it down.
+	void loadScriptKeepingConfig(std::string s) {
+		std::string configJson = peekConfigJson();
+		loadScript(std::move(s), configJson);
+	}
+
 	void clearScript() {
 		loadScript("");
 	}
@@ -2316,14 +2338,22 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	using BASE::addInput;
 	using BASE::addOutput;
 
+	using LogEntry = std::tuple<LOG_FORMAT, float, std::string>;
 	const size_t BUFFERSIZE = 800;
 	// Null for variants without a log display (no addLogDisplay() call).
 	LogDisplay* logDisplay = nullptr;
 	// How many log entries the widget keeps; variants without a log display
 	// can lower this to what they show elsewhere.
 	size_t bufferLimit = BUFFERSIZE;
-	std::list<std::tuple<LOG_FORMAT, float, std::string>> buffer;
+	std::list<LogEntry> buffer;
 	std::string filename = "";
+	// Everything that wants to see the module's log subscribes here: the log display's
+	// buffer, the script editor's log area. step() pumps the module's log through it.
+	LogDispatcher<LogEntry> logs;
+
+	// The open script editor, if any. Weak: the overlay lives on APP->scene and
+	// can go away on its own (it closes itself).
+	WeakPtr<editor::ScriptEditorOverlay> editorOverlay;
 
 	MidiKitWidgetBase(MODULE* module, const std::string& slug)
 		: BASE(module, slug) {
@@ -2337,6 +2367,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 
 		if (module) {
 			OverlayMessageWidget::registerProvider(this);
+			logs.add([this](const LogEntry& s) { bufferLogEntry(s); });
 		}
 	}
 
@@ -2371,6 +2402,9 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	}
 
 	~MidiKitWidgetBase() {
+		// The editor's apply callback targets this module, so it must not outlive it.
+		// Unapplied text is dropped without asking: there is nothing left to apply it to.
+		if (editorOverlay) editorOverlay->dismiss();
 		if (module) {
 			OverlayMessageWidget::unregisterProvider(this);
 		}
@@ -2379,16 +2413,18 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	void step() override {
 		BASE::step();
 		if (!module) return;
-		std::tuple<LOG_FORMAT, float, std::string> s;
-		while (module->log.tryPop(s)) {
-			if (buffer.size() >= bufferLimit) buffer.pop_back();
-			if (std::get<0>(s) == LOG_FORMAT::RESET) {
-				resetLog();
-			}
-			else {
-				buffer.push_front(s);
-				if (logDisplay) logDisplay->dirty = true;
-			}
+		logs.pump(module->log);
+	}
+
+	// The log display's side: keeps the newest entries, first in the list.
+	void bufferLogEntry(const LogEntry& s) {
+		if (buffer.size() >= bufferLimit) buffer.pop_back();
+		if (std::get<0>(s) == LOG_FORMAT::RESET) {
+			resetLog();
+		}
+		else {
+			buffer.push_front(s);
+			if (logDisplay) logDisplay->dirty = true;
 		}
 	}
 
@@ -2416,13 +2452,15 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		}
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuLabel("Script"));
 		menu->addChild(createSubmenuItem("Examples (JavaScript)", "", [=](Menu* menu) {
 			appendExampleItems(menu, vcv::fs::getPluginDirectory("presets/MidiKit/JavaScript"), ".js");
 		}));
 		menu->addChild(createSubmenuItem("Examples (Lua)", "", [=](Menu* menu) {
 			appendExampleItems(menu, vcv::fs::getPluginDirectory("presets/MidiKit/Lua"), ".lua");
 		}));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuLabel("Script"));
+		menu->addChild(createMenuItem("Edit…", RACK_MOD_ALT_NAME "+E", [=]() { openEditor(); }));
 		menu->addChild(createMenuItem("Clear", "", [=]() { module->clearScript(); }));
 		menu->addChild(createMenuItem("Paste from clipboard", RACK_MOD_ALT_NAME "+V", [=]() { pasteJsClipboard(); }));
 		menu->addChild(createMenuItem("Copy to clipboard", RACK_MOD_ALT_NAME "+C", [=]() { copyJsClipboard(); }));
@@ -2589,6 +2627,10 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 				pasteJsClipboard();
 				e.consume(this);
 			}
+			if (e.keyName == "e") {
+				openEditor();
+				e.consume(this);
+			}
 			if (e.keyName == "l") {
 				loadJsDialog();
 				e.consume(this);
@@ -2601,6 +2643,57 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 			}
 		}
 		BASE::onHoverKey(e);
+	}
+
+	// The script editor's view of this module: Apply loads the buffer like "Paste from
+	// clipboard" does, and the editor never touches `filename`. Owned by the editor
+	// dialog, which ~MidiKitWidgetBase() dismisses before the module can go away.
+	struct EditorHost : editor::ScriptEditorHost {
+		MODULE* m;
+		// Weak: the editor can outlive the widget by the one frame its deletion takes.
+		WeakPtr<MidiKitWidgetBase> widget;
+		int logListenerId = -1;
+
+		EditorHost(MidiKitWidgetBase* w) : m(w->module), widget(w) {}
+		~EditorHost() {
+			detachLog();
+		}
+		void detachLog() {
+			if (widget && logListenerId >= 0) widget->logs.remove(logListenerId);
+			logListenerId = -1;
+		}
+		void attachLog(std::function<void(const std::string&)> append, std::function<void()> clear) override {
+			if (!widget) return;
+			// What the log display shows so far, oldest first (its buffer keeps the newest first).
+			for (auto it = widget->buffer.rbegin(); it != widget->buffer.rend(); ++it) {
+				append(formatLogEntry(*it));
+			}
+			logListenerId = widget->logs.add([append, clear](const LogEntry& s) {
+				if (std::get<0>(s) == LOG_FORMAT::RESET) clear();
+				else append(formatLogEntry(s));
+			});
+		}
+		void onEditorClosed() override {
+			detachLog();
+		}
+		void apply(const std::string& text) override {
+			m->loadScriptKeepingConfig(text);
+		}
+		std::string runningScript() override {
+			return m->host.script;
+		}
+		std::string headerSuffix() override {
+			if (m->host.isQuickJsEngine()) return "QuickJs";
+			if (m->host.isLuaEngine()) return "Lua";
+			return "";
+		}
+	};
+
+	// Opens the script editor on the applied script.
+	void openEditor() {
+		if (!module || editorOverlay) return;
+		editorOverlay = editor::openScriptEditor(
+			module->host.script, std::unique_ptr<editor::ScriptEditorHost>(new EditorHost(this)));
 	}
 
 	void pasteJsClipboard() {

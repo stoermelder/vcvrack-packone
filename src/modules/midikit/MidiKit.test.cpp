@@ -55,6 +55,14 @@ namespace __swap {
 	namespace Catch = ::Catch;
 	#include "MidiKit.test.swap.hpp"
 }
+namespace __log {
+	namespace Catch = ::Catch;
+	#include "MidiKit.test.log.hpp"
+}
+namespace __editor {
+	namespace Catch = ::Catch;
+	#include "MidiKit.test.editor.hpp"
+}
 
 // The examples header's OutEvent StringMaker specialization has to live at
 // global scope — the namespace alias above makes `namespace Catch { ... }`
