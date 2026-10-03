@@ -492,12 +492,6 @@ struct MidiScriptEngine {
 		return static_cast<T>(std::max(static_cast<double>(lo), std::min(static_cast<double>(hi), std::round(v))));
 	}
 
-	// A 14-bit CC value is 0..127.992 (1/128 steps): clamped, not rounded.
-	static double clampCc14bitValue(double v) {
-		if (std::isnan(v)) return 0.0;
-		return std::max(0.0, std::min(127.0 + 127.0 / 128.0, v));
-	}
-
 	void setDomain(WorkerDomain* d) {
 		domain = d;
 	}

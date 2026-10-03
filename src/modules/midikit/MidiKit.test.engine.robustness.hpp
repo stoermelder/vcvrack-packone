@@ -137,7 +137,7 @@ midi.onMessage = function(port, msg) {
         midi.create();
     }
     let cc14 = midi.createCc14bit();
-    midi.setCc14bit(cc14, 8, 1, 100.5);
+    midi.setCc14bit(cc14, 8, 1, 12864);
     midiOut.send(cc14);
 };
 )";
@@ -150,7 +150,7 @@ midi.onMessage = function(midiPort, msg)
         midi.create()
     end
     local cc14 = midi.createCc14bit()
-    midi.setCc14bit(cc14, 8, 1, 100.5)
+    midi.setCc14bit(cc14, 8, 1, 12864)
     midiOut.send(cc14)
 end
 )";

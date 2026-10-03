@@ -143,7 +143,7 @@ midi.onMessage = function(midiPort, msg) {
         rack.log("nrpn #", nrpnNumber, ": value=", nrpnValue, " -> cc", ccNumber);
 
         let cc14 = midi.createCc14bit();
-        midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue / 128);
+        midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue);
         // The pair (CC ccNumber = MSB, CC ccNumber + 32 = LSB) is sent atomically.
         midiOut.send(cc14);
     }

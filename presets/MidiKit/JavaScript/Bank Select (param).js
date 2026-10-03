@@ -67,7 +67,7 @@ function sendPreset(index) {
 
     // Bank Select: CC 0 = MSB (bank), CC 32 = LSB (0), sent as an atomic pair
     const bankMsg = midi.createCc14bit();
-    midi.setCc14bit(bankMsg, config.channel, 0, bank);
+    midi.setCc14bit(bankMsg, config.channel, 0, bank * 128);
     midiOut.send(bankMsg);
 
     const programMsg = midi.create();

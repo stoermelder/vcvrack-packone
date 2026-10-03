@@ -11,7 +11,7 @@ static const char* JS_CC_14BIT = R"(/**
 midi.onMessage = function(port, msg) {
     let msb = midi.create();
     let lsb = midi.create();
-    midi.setCc14bit(msb, lsb, 8, 1, 100.5);
+    midi.setCc14bit(msb, lsb, 8, 1, 12864);
     midiOut.send(msb);
     midiOut.send(lsb);
 };
@@ -23,7 +23,7 @@ static const char* LUA_CC_14BIT = R"(--[[
 midi.onMessage = function(midiPort, msg)
     local msb = midi.create()
     local lsb = midi.create()
-    midi.setCc14bit(msb, lsb, 8, 1, 100.5)
+    midi.setCc14bit(msb, lsb, 8, 1, 12864)
     midiOut.send(msb)
     midiOut.send(lsb)
 end
@@ -46,7 +46,7 @@ static const char* JS_CC_14BIT_PAIR = R"(/**
  */
 midi.onMessage = function(port, msg) {
     let cc14 = midi.createCc14bit();
-    midi.setCc14bit(cc14, 8, 1, 100.5);
+    midi.setCc14bit(cc14, 8, 1, 12864);
     midiOut.send(cc14);
 };
 )";
@@ -56,7 +56,7 @@ static const char* LUA_CC_14BIT_PAIR = R"(--[[
 --]]
 midi.onMessage = function(midiPort, msg)
     local cc14 = midi.createCc14bit()
-    midi.setCc14bit(cc14, 8, 1, 100.5)
+    midi.setCc14bit(cc14, 8, 1, 12864)
     midiOut.send(cc14)
 end
 )";
@@ -91,9 +91,9 @@ static const char* JS_CC_14BIT_SEND_ORDER = R"(/**
  */
 midi.onMessage = function(port, msg) {
     let p1 = midi.createCc14bit();
-    midi.setCc14bit(p1, 9, 1, 100.5);
+    midi.setCc14bit(p1, 9, 1, 12864);
     let p2 = midi.createCc14bit();
-    midi.setCc14bit(p2, 9, 2, 3.5);
+    midi.setCc14bit(p2, 9, 2, 448);
     midiOut.send(p2);   // created second, sent first
     midiOut.send(p1);   // created first, sent last
 };
@@ -104,9 +104,9 @@ static const char* LUA_CC_14BIT_SEND_ORDER = R"(--[[
 --]]
 midi.onMessage = function(midiPort, msg)
     local p1 = midi.createCc14bit()
-    midi.setCc14bit(p1, 9, 1, 100.5)
+    midi.setCc14bit(p1, 9, 1, 12864)
     local p2 = midi.createCc14bit()
-    midi.setCc14bit(p2, 9, 2, 3.5)
+    midi.setCc14bit(p2, 9, 2, 448)
     midiOut.send(p2)
     midiOut.send(p1)
 end

@@ -134,7 +134,7 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 		ApiFunction("isCc14bit", kPredicates, {{"msg", MSG}}),
 
 		ApiFunction("setCc", kSetters, {{"msg", MSG}, {"ch", CH}, {"cc", "controller number 0-127"}, {"value", "value 0-127"}}),
-		ApiFunction("setCc14bit", kSetters, {{"cc14", "handle from midi.createCc14bit()"}, {"ch", CH}, {"cc", "MSB controller 0-31, the LSB is cc + 32"}, {"value", "float 0-127.99, the fraction is the LSB"}}),
+		ApiFunction("setCc14bit", kSetters, {{"cc14", "handle from midi.createCc14bit()"}, {"ch", CH}, {"cc", "MSB controller 0-31, the LSB is cc + 32"}, {"value", "14-bit value 0-16383, MSB is value / 128"}}),
 		ApiFunction("setChannel", kSetters, {{"msg", "message handle, on an NRPN, RPN or 14-bit CC handle every message of the group is set"}, {"ch", CH}}),
 		ApiFunction("setChanPressure", kSetters, {{"msg", MSG}, {"ch", CH}, {"value", "pressure 0-127"}}),
 		ApiFunction("setKeyPressure", kSetters, {{"msg", MSG}, {"ch", CH}, {"note", "note number 0-127"}, {"vel", "pressure 0-127"}}),

@@ -2008,11 +2008,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (!e->msgStore[idx1].isCc14bit) return jsThrow(ctx, "midi.setCc14bit: message is not a 14-bit CC pair");
 			uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 			uint8_t cc = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 31);
-			double value = clampCc14bitValue(argNum(ctx, argv[3]));
-			// MSB = integer part, LSB = fraction * 128, as one 14-bit value.
-			int msb = static_cast<int8_t>(value);
-			int lsb = static_cast<int8_t>((value - msb) * 128.f);
-			e->fillGroup(idx1, OutGroup::CC14, ch - 1, cc, uint16_t(msb * 128 + lsb));
+			uint16_t value = clampInt<uint16_t>(argNum(ctx, argv[3]), 0, 16383);
+			e->fillGroup(idx1, OutGroup::CC14, ch - 1, cc, value);
 			return JS_UNDEFINED;
 		}
 
@@ -2029,7 +2026,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (const char* groupErr = groupSetterError(s2)) return jsThrow(ctx, string::f("midi.setCc14bit: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[2]), 1, 16);
 		uint8_t cc = clampInt<uint8_t>(argNum(ctx, argv[3]), 0, 31);
-		double value = clampCc14bitValue(argNum(ctx, argv[4]));
+		uint16_t value = clampInt<uint16_t>(argNum(ctx, argv[4]), 0, 16383);
 		if (s1.in.msg.getSize() != 3) s1.in.msg.setSize(3);
 		if (s2.in.msg.getSize() != 3) s2.in.msg.setSize(3);
 		s1.in.msg.setStatus(0xb);
@@ -2038,8 +2035,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		s2.in.msg.setChannel(ch - 1);
 		s1.in.msg.setNote(cc);
 		s2.in.msg.setNote(cc + 32);
-		s1.in.msg.setValue(static_cast<int8_t>(value));
-		s2.in.msg.setValue(static_cast<int8_t>((value - static_cast<int8_t>(value)) * 128.f));
+		s1.in.msg.setValue((value >> 7) & 0x7f);
+		s2.in.msg.setValue(value & 0x7f);
 		return JS_UNDEFINED;
 	}
 

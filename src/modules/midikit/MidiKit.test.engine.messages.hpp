@@ -598,8 +598,8 @@ TEST_CASE("setCc14bit clamps its MSB controller to 0-31, so the LSB is always cc
 		const std::vector<uint8_t> lsbBytes = {0xb0, uint8_t(c.msb + 32), 64};
 
 		// Pair handle: sent as one group.
-		EngineResult js = run(jsOnMessage(std::string("let m = midi.createCc14bit(); midi.setCc14bit(m, 1, ") + c.cc + ", 64.5); midiOut.send(m);"));
-		EngineResult lua = run(luaOnMessage(std::string("local m = midi.createCc14bit(); midi.setCc14bit(m, 1, ") + c.cc + ", 64.5); midiOut.send(m)"));
+		EngineResult js = run(jsOnMessage(std::string("let m = midi.createCc14bit(); midi.setCc14bit(m, 1, ") + c.cc + ", 8256); midiOut.send(m);"));
+		EngineResult lua = run(luaOnMessage(std::string("local m = midi.createCc14bit(); midi.setCc14bit(m, 1, ") + c.cc + ", 8256); midiOut.send(m)"));
 		CATCH_INFO(js.log);
 		CATCH_INFO(lua.log);
 		REQUIRE(js.sent.size() == 2);
@@ -610,8 +610,8 @@ TEST_CASE("setCc14bit clamps its MSB controller to 0-31, so the LSB is always cc
 		}
 
 		// Two independent handles.
-		EngineResult js2 = run(jsOnMessage(std::string("let a = midi.create(); let b = midi.create(); midi.setCc14bit(a, b, 1, ") + c.cc + ", 64.5); midiOut.send(a); midiOut.send(b);"));
-		EngineResult lua2 = run(luaOnMessage(std::string("local a = midi.create(); local b = midi.create(); midi.setCc14bit(a, b, 1, ") + c.cc + ", 64.5); midiOut.send(a); midiOut.send(b)"));
+		EngineResult js2 = run(jsOnMessage(std::string("let a = midi.create(); let b = midi.create(); midi.setCc14bit(a, b, 1, ") + c.cc + ", 8256); midiOut.send(a); midiOut.send(b);"));
+		EngineResult lua2 = run(luaOnMessage(std::string("local a = midi.create(); local b = midi.create(); midi.setCc14bit(a, b, 1, ") + c.cc + ", 8256); midiOut.send(a); midiOut.send(b)"));
 		CATCH_INFO(js2.log);
 		CATCH_INFO(lua2.log);
 		REQUIRE(js2.sent.size() == 2);
@@ -623,8 +623,8 @@ TEST_CASE("setCc14bit clamps its MSB controller to 0-31, so the LSB is always cc
 	}
 }
 
-TEST_CASE("setCc14bit clamps its value to 7-bit data bytes", "[MidiKit][CrossEngine]") {
-	for (const char* v : {"1000", "-5"}) {
+TEST_CASE("setCc14bit rounds and clamps its value to 14 bits", "[MidiKit][CrossEngine]") {
+	for (const char* v : {"20000", "-5"}) {
 		std::string args = std::string("midi.setCc14bit(m, 1, 1, ") + v + ");";
 		EngineResult js = run(jsOnMessage("let m = midi.createCc14bit(); " + args + " midiOut.send(m);"));
 		EngineResult lua = run(luaOnMessage("local m = midi.createCc14bit(); " + args + " midiOut.send(m)"));
@@ -897,8 +897,8 @@ const GroupKind GROUP_KINDS[] = {
 	{ "RPN", "let g = midi.createRPN(); midi.setRPN(g, 1, 300, 1000);",
 	         "local g = midi.createRPN(); midi.setRPN(g, 1, 300, 1000)",
 	  4, "message is an RPN; use midi.setRPN()" },
-	{ "14-bit CC", "let g = midi.createCc14bit(); midi.setCc14bit(g, 1, 5, 100.5);",
-	               "local g = midi.createCc14bit(); midi.setCc14bit(g, 1, 5, 100.5)",
+	{ "14-bit CC", "let g = midi.createCc14bit(); midi.setCc14bit(g, 1, 5, 12864);",
+	               "local g = midi.createCc14bit(); midi.setCc14bit(g, 1, 5, 12864)",
 	  2, "message is a 14-bit CC; use midi.setCc14bit()" },
 };
 
@@ -1101,7 +1101,7 @@ TEST_CASE("A created group handle answers isNrpn, getControl and getValue", "[Mi
 		{ "RPN", "let g = midi.createRPN();", "local g = midi.createRPN()", "false true false -1 -1",
 		  "midi.setRPN(g, 2, 300, 1000);" },
 		{ "14-bit CC", "let g = midi.createCc14bit();", "local g = midi.createCc14bit()", "false false true -1 -1",
-		  "midi.setCc14bit(g, 2, 300, 100.5);" },
+		  "midi.setCc14bit(g, 2, 300, 12864);" },
 	};
 	const char* setExpected[] = { "true false false 300 1000 2", "false true false 300 1000 2", "false false true 31 12864 2" };
 	// 14-bit CC: cc 300 clamps to 31, value 100.5 -> MSB 100, LSB 64 -> 100 * 128 + 64.
@@ -1137,7 +1137,7 @@ TEST_CASE("setValue on a group sets the combined 14-bit value and keeps number a
 		  { {0xb4, 99, 2}, {0xb4, 98, 44}, {0xb4, 6, 39}, {0xb4, 38, 8} } },
 		{ "RPN", "let g = midi.createRPN(); midi.setRPN(g, 1, 300, 1000);", "local g = midi.createRPN(); midi.setRPN(g, 1, 300, 1000)",
 		  { {0xb4, 101, 2}, {0xb4, 100, 44}, {0xb4, 6, 39}, {0xb4, 38, 8} } },
-		{ "14-bit CC", "let g = midi.createCc14bit(); midi.setCc14bit(g, 1, 5, 100.5);", "local g = midi.createCc14bit(); midi.setCc14bit(g, 1, 5, 100.5)",
+		{ "14-bit CC", "let g = midi.createCc14bit(); midi.setCc14bit(g, 1, 5, 12864);", "local g = midi.createCc14bit(); midi.setCc14bit(g, 1, 5, 12864)",
 		  { {0xb4, 5, 39}, {0xb4, 37, 8} } },
 	};
 	for (const Case& c : cases) {

@@ -299,7 +299,7 @@ JavaScript:
 midi.onMessage = function(midiPort, msg) {
    if (midi.isNoteOn(msg)) {
       let cc14 = midi.createCc14bit();
-      midi.setCc14bit(cc14, 1, 1, 100.5);  // CC 1 = 100 (MSB), CC 33 = 64 (LSB)
+      midi.setCc14bit(cc14, 1, 1, 12864);  // 100 * 128 + 64: CC 1 = 100 (MSB), CC 33 = 64 (LSB)
       midiOut.send(cc14);
    }
 };
@@ -310,7 +310,7 @@ Lua:
 midi.onMessage = function(midiPort, msg)
    if midi.isNoteOn(msg) then
       local cc14 = midi.createCc14bit()
-      midi.setCc14bit(cc14, 1, 1, 100.5)   -- CC 1 = 100 (MSB), CC 33 = 64 (LSB)
+      midi.setCc14bit(cc14, 1, 1, 12864)   -- 100 * 128 + 64: CC 1 = 100 (MSB), CC 33 = 64 (LSB)
       midiOut.send(cc14)
    end
 end
@@ -679,7 +679,7 @@ midi.onNrpn = function(midiPort, msg) {
    if (ccNumber < 0) return;   // not in config.map — ignore
 
    let cc14 = midi.createCc14bit();
-   midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue / 128);
+   midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue);
    midiOut.send(cc14);
 };
 ```
@@ -716,7 +716,7 @@ midi.onNrpn = function(midiPort, msg)
    if ccNumber < 0 then return end   -- not in config.map, ignore
 
    local cc14 = midi.createCc14bit()
-   midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue / 128)
+   midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue)
    midiOut.send(cc14)
 end
 ```
@@ -1291,7 +1291,7 @@ Messages are opaque **handles** into an internal message store. Create one with 
 | `getChanPressure(msg)` | channel-pressure value |
 | `getControl(msg)` | see [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc) for the type-aware behavior on assembled messages |
 | `getNote(msg)` | note number (or, on a plain CC, the controller number — the older spelling of `getControl`) |
-| `getValue(msg)` | type-aware: raw 7-bit data byte, or the combined 14-bit value on an assembled NRPN/RPN/14-bit CC |
+| `getValue(msg)` | type-aware: raw 7-bit data byte, or the combined 14-bit value (0-16383) on an NRPN/RPN/14-bit CC, assembled or created. `setCc14bit`, `setNRPN` and `setValue` take the same 0-16383 |
 | `getLength(msg)` | size of the message in bytes (a SysEx message counts its `f0`/`f7` framing; compare `getSysExLength`) |
 | `getPitchWheel(msg)` | pitch-wheel value, 0-16383 (centre 8192) |
 | `getProgramChange(msg)` | program number |
@@ -1337,10 +1337,11 @@ JavaScript. `NaN` clamps to the lower bound.
 | `setRaw(msg, hexString)` | writes the exact bytes with no framing added, e.g. `"f11a"` for an MTC quarter-frame — use for message types with no dedicated setter |
 | `setValue(msg, value)` | on an NRPN, RPN or 14-bit CC handle whose setter has run: the combined 14-bit value, 0-16383, keeping its channel and number (the mirror of `getValue`). On such a handle that has not been set yet it raises an error |
 
-**Group handles.** A handle from `midi.createNRPN()`, `midi.createRPN()` or `midi.createCc14bit()` stands for a whole group of messages. It answers `midi.isNrpn()`, `isRpn()` or `isCc14bit()` from the moment it is created. After its setter has run (`setNRPN`, `setRPN`, `setCc14bit`), `midi.getControl()` returns the parameter number (the MSB controller for a 14-bit CC) and `midi.getValue()` the combined 14-bit value (0-16383, while `setCc14bit` takes the value as MSB plus a fraction); before that both return -1. Besides its own setter, `setChannel` sets the channel of every message in the group and `setValue` sets the combined value. Any other setter writes just one message of the group and would leave a broken group on the wire, so it raises a script error and leaves the handle unchanged, for example `midi.setNote: message is an NRPN; use midi.setNRPN()` (an RPN names `midi.setRPN()`, a 14-bit CC `midi.setCc14bit()`). The same goes for the five-argument `setCc14bit` with a group handle as either message.
+**Group handles.** A handle from `midi.createNRPN()`, `midi.createRPN()` or `midi.createCc14bit()` stands for a whole group of messages. It answers `midi.isNrpn()`, `isRpn()` or `isCc14bit()` from the moment it is created. After its setter has run (`setNRPN`, `setRPN`, `setCc14bit`), `midi.getControl()` returns the parameter number (the MSB controller for a 14-bit CC) and `midi.getValue()` the combined 14-bit value (0-16383, the same range `setCc14bit` and `setValue` take); before that both return -1. Besides its own setter, `setChannel` sets the channel of every message in the group and `setValue` sets the combined value. Any other setter writes just one message of the group and would leave a broken group on the wire, so it raises a script error and leaves the handle unchanged, for example `midi.setNote: message is an NRPN; use midi.setNRPN()` (an RPN names `midi.setRPN()`, a 14-bit CC `midi.setCc14bit()`). The same goes for the five-argument `setCc14bit` with a group handle as either message.
 
-Both `setCc14bit` forms take `value` as a float (MSB = integer part,
-LSB = fractional part × 128), clamped to 0-127.99 and not rounded — see the `NRPN to CC` preset
+Both `setCc14bit` forms take `value` as one 14-bit number, 0-16383 (MSB = `value >> 7`,
+LSB = `value & 127`), rounded and clamped like `setNRPN`'s value, so a received 14-bit value
+can be passed straight on — see the `NRPN to CC` preset
 ([JavaScript](../../presets/MidiKit/JavaScript/NRPN%20to%20CC.js),
 [Lua](../../presets/MidiKit/Lua/NRPN%20to%20CC.lua)) for the canonical use.
 

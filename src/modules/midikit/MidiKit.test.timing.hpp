@@ -297,7 +297,7 @@ midi.onMessage = function(port, msg) {
     }
     else {
         let cc14 = midi.createCc14bit();
-        midi.setCc14bit(cc14, 1, 1, 100.5);
+        midi.setCc14bit(cc14, 1, 1, 12864);
         midiOut.sendAfterMs(cc14, 10);
     }
 };
@@ -313,7 +313,7 @@ midi.onMessage = function(port, msg)
         midiOut.sendAfterMs(nrpn, 10)
     else
         local cc14 = midi.createCc14bit()
-        midi.setCc14bit(cc14, 1, 1, 100.5)
+        midi.setCc14bit(cc14, 1, 1, 12864)
         midiOut.sendAfterMs(cc14, 10)
     end
 end
@@ -331,7 +331,7 @@ midi.onMessage = function(port, msg) {
     }
     else {
         let cc14 = midi.createCc14bit();
-        midi.setCc14bit(cc14, 1, 1, 100.5);
+        midi.setCc14bit(cc14, 1, 1, 12864);
         midiOut.sendAfterTrigger(cc14, 1);
     }
 };
@@ -2152,11 +2152,11 @@ TEST_CASE("Cancel: 14-bit CC and RPN handles go through the bindings as groups",
 midi.onMessage = function(port, msg) {
     let k = midi.getNote(msg);
     if (k <= 3) {
-        let h = midi.createCc14bit(); midi.setCc14bit(h, 1, 5, 100.5);
+        let h = midi.createCc14bit(); midi.setCc14bit(h, 1, 5, 12864);
         midiOut.sendAfterMs(h, 10);
         if (k == 1) midiOut.cancel(h);
         else if (k == 2) { let c = midi.create(); midi.setCc(c, 1, 5, 1); midiOut.cancel(c); }
-        else { let o = midi.createCc14bit(); midi.setCc14bit(o, 1, 6, 100.5); midiOut.cancel(o); }
+        else { let o = midi.createCc14bit(); midi.setCc14bit(o, 1, 6, 12864); midiOut.cancel(o); }
     } else {
         let h = midi.createRPN(); midi.setRPN(h, 1, 300, 1000);
         midiOut.sendAfterMs(h, 10);
@@ -2168,11 +2168,11 @@ midi.onMessage = function(port, msg) {
 midi.onMessage = function(port, msg)
     local k = midi.getNote(msg)
     if k <= 3 then
-        local h = midi.createCc14bit(); midi.setCc14bit(h, 1, 5, 100.5)
+        local h = midi.createCc14bit(); midi.setCc14bit(h, 1, 5, 12864)
         midiOut.sendAfterMs(h, 10)
         if k == 1 then midiOut.cancel(h)
         elseif k == 2 then local c = midi.create(); midi.setCc(c, 1, 5, 1); midiOut.cancel(c)
-        else local o = midi.createCc14bit(); midi.setCc14bit(o, 1, 6, 100.5); midiOut.cancel(o) end
+        else local o = midi.createCc14bit(); midi.setCc14bit(o, 1, 6, 12864); midiOut.cancel(o) end
     else
         local h = midi.createRPN(); midi.setRPN(h, 1, 300, 1000)
         midiOut.sendAfterMs(h, 10)
