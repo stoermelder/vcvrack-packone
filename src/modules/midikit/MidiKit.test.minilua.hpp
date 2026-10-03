@@ -615,3 +615,63 @@ TEST_CASE("Lua sandbox removes file and bytecode loaders", "[MidiKit][Lua]") {
 	REQUIRE(log.find("load=nil") != std::string::npos);
 	REQUIRE(log.find("dump=nil") != std::string::npos);
 }
+
+
+// Each input index runs one string.split case; the tooltip shows count and pieces as "n:a|b|c".
+static const char* LUA_SPLIT_CASES = R"LUA(--[[
+@engine minilua@v1
+--]]
+local function show(t)
+  return #t .. ":" .. table.concat(t, "|")
+end
+local cases = {
+  function() return show(string.split("a,b,c", ",")) end,
+  function() return show(("a,,b"):split(",")) end,
+  function() return show(("a,b,"):split(",")) end,
+  function() return show((",a"):split(",")) end,
+  function() return show((""):split(",")) end,
+  function() return show((""):split("")) end,
+  function() return show(("abc"):split("")) end,
+  function() return show(("abc"):split()) end,
+  function() return show(("a, b, c"):split(", ")) end,
+  function() return show(("a.b.c"):split(".")) end,
+  function() return show(("a1b22c"):split("%d")) end,
+  function() return show(("a,b,c,d"):split(",", 2)) end,
+  function() return show(("a,b,c"):split(",", 0)) end,
+  function() return show(("a,b,c"):split(",", 10)) end,
+  function() return show(("abc"):split("", 2)) end,
+  function() return show(("nocomma"):split(",")) end,
+  function() local ok = pcall(string.split, "a", 5) return tostring(ok) end,
+  function() local ok = pcall(string.split, nil, ",") return tostring(ok) end,
+  function() local ok = pcall(string.split, "a", ",", "x") return tostring(ok) end,
+}
+input.onTooltip = function(i) return cases[i]() end
+)LUA";
+
+TEST_CASE("Lua string.split follows JavaScript's split", "[MidiKit][Lua][Split]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+	m->loadScript(LUA_SPLIT_CASES);
+	REQUIRE(m->host.seLua.L != nullptr);
+	auto c = [&](int n) { return m->host.seLua.getInputName(n - 1); };
+
+	REQUIRE(c(1) == "3:a|b|c");
+	REQUIRE(c(2) == "3:a||b");        // empty fields are kept
+	REQUIRE(c(3) == "3:a|b|");        // trailing separator gives a final empty piece
+	REQUIRE(c(4) == "2:|a");          // leading too
+	REQUIRE(c(5) == "1:");            // "".split(",") is [""]
+	REQUIRE(c(6) == "0:");            // "".split("") is []
+	REQUIRE(c(7) == "3:a|b|c");       // empty separator: single bytes
+	REQUIRE(c(8) == "1:abc");         // no separator: the whole string
+	REQUIRE(c(9) == "3:a|b|c");       // multi-character separator
+	REQUIRE(c(10) == "3:a|b|c");      // "." is plain text, not a pattern
+	REQUIRE(c(11) == "1:a1b22c");     // "%d" is plain text too
+	REQUIRE(c(12) == "2:a|b");        // limit truncates the result
+	REQUIRE(c(13) == "0:");
+	REQUIRE(c(14) == "3:a|b|c");
+	REQUIRE(c(15) == "2:a|b");
+	REQUIRE(c(16) == "1:nocomma");
+	REQUIRE(c(17) == "false");        // separator must be a string
+	REQUIRE(c(18) == "false");
+	REQUIRE(c(19) == "false");        // limit must be a number
+}

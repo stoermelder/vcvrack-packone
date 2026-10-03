@@ -3,6 +3,7 @@ extern "C" {
 	#include "minilua.h"
 }
 #include "minilua.json.hpp"
+#include "minilua.util.hpp"
 #include <jansson.h>
 #include "../../utils/TaskWorker.hpp"
 #include <algorithm>
@@ -1039,6 +1040,15 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("rescale",   lua_number_rescale);
 		setTableFunc("toString",  lua_number_toString);
 		lua_setglobal(L, "number");
+
+		// ── string.split ─────────────────────────────────────────────────────
+		// Modelled on JavaScript's str.split(sep, limit): sep is a plain string, not
+		// a pattern; empty fields are kept ("a,,b" gives three); an empty sep gives
+		// the single bytes; no sep gives the whole string. Also callable as s:split(sep).
+		if (luaL_dostring(L, LUA_STRING_SPLIT_SOURCE) != LUA_OK) {
+			handler->writeLog("Error loading string.split", false);
+			lua_pop(L, 1);
+		}
 
 		// ── json table ───────────────────────────────────────────────────────
 		// Pure-Lua library (json.encode/json.decode); it returns its table.

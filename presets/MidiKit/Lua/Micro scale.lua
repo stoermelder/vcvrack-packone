@@ -149,7 +149,8 @@ end
 local function parseScl(content)
     -- Non-comment, non-empty lines, in order.
     local lines = {}
-    for raw in content:gmatch("[^\r\n]+") do
+    -- A trailing \r (Windows line endings) is trimmed together with the other whitespace.
+    for _, raw in ipairs(tostring(content):split("\n")) do
         local s = raw:gsub("^%s+", ""):gsub("%s+$", "")
         if s ~= "" and s:sub(1, 1) ~= "!" then
             lines[#lines + 1] = s
