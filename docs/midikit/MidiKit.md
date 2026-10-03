@@ -117,7 +117,9 @@ The module's panel and right-click context menu are laid out as follows.
 - A **MIDI input** and a **MIDI output** device selector for port 1. MIDI-KIT has four inputs and four outputs; inputs and outputs 2-4 appear in the right-click menu (as "MIDI input 2", …) once the script enables them with `midi.enablePorts()` / `midiOut.enablePorts()`.
 - A text display that serves as the **script editor** (type or paste the
   script directly into it) and also shows the module's **log** — `rack.log()`
-  output and script load/error messages.
+  output and script load/error messages. Each line starts with the seconds since
+  the script was loaded; the log's context menu (**Timestamp**) switches this to the
+  engine frame, as in MIDI-MON, or to no timestamp at all. The setting is saved with the patch.
 - Four CV **inputs** and four panel **parameters**, readable from scripts via
   `input.*` and `param.*`.
 - Two CV **trigger inputs** and two **trigger outputs** ("Trigger 1" and

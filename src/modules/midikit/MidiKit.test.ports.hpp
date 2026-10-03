@@ -61,7 +61,7 @@ static const char* LUA_EMPTY =
 
 static std::string probes(MultiModule* m) {
 	std::string all, out;
-	std::tuple<LOG_FORMAT, float, std::string> t;
+	ScriptLog::Entry t;
 	while (m->log.tryPop(t)) all += std::get<2>(t) + "\n";
 	return all;
 }
@@ -1783,7 +1783,7 @@ TEST_CASE("Variant: MidiKitMicro widget works without a log display", "[MidiKit]
 	m->loadScript(QUICKJS_EMPTY);   // pushes a RESET, clearing older entries
 	for (int i = 0; i < 8; i++) m->writeLog("line" + std::to_string(i), false);
 	mw->step();
-	std::tuple<LOG_FORMAT, float, std::string> t;
+	ScriptLog::Entry t;
 	REQUIRE_FALSE(m->log.tryPop(t));
 	REQUIRE(mw->buffer.size() == 5);
 

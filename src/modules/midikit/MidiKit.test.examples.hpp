@@ -343,7 +343,7 @@ static void checkPresetOnMicro(const PresetInfo& p, const char* engine) {
 	m->loadScript(source);
 
 	std::string loadLog;
-	std::tuple<LOG_FORMAT, float, std::string> t;
+	ScriptLog::Entry t;
 	while (m->log.tryPop(t)) loadLog += std::get<2>(t) + "\n";
 	CATCH_INFO("load log:\n" << loadLog);
 	if (std::string(p.name) == "Arpeggiator") {
@@ -406,7 +406,7 @@ TEST_CASE("Scripts can read the port counts of the variant they run on", "[MidiK
 		m->loadScript(script);
 
 		std::string log;
-		std::tuple<LOG_FORMAT, float, std::string> t;
+		ScriptLog::Entry t;
 		while (m->log.tryPop(t)) log += std::get<2>(t) + "\n";
 		REQUIRE(log.find("counts 2 2 2 2 4 4") != std::string::npos);
 
@@ -4060,7 +4060,7 @@ TEST_CASE("param.getValue falls back only above the param count", "[MidiKit][Mic
 	m->loadScript(script);
 
 	std::string log;
-	std::tuple<LOG_FORMAT, float, std::string> t;
+	ScriptLog::Entry t;
 	while (m->log.tryPop(t)) log += std::get<2>(t) + "\n";
 	REQUIRE(log.find("fallback 0.25") != std::string::npos);
 	REQUIRE(log.find("plain false") != std::string::npos);   // no fallback given: still an error
@@ -4087,7 +4087,7 @@ static std::string loadAndDrainLog(const std::string& script) {
 	m->onSampleRateChange(e);
 	m->loadScript(script);
 	std::string log;
-	std::tuple<LOG_FORMAT, float, std::string> t;
+	ScriptLog::Entry t;
 	while (m->log.tryPop(t)) log += std::get<2>(t) + "\n";
 	Test::destroyModule(m);
 	return log;

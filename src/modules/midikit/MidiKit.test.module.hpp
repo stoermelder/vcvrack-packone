@@ -801,7 +801,7 @@ TEST_CASE("Log queue preserves FIFO order", "[MidiKit][Log]") {
 	drainLogEntries(m);  // discard construction-time entries
 
 	for (int i = 0; i < 10; i++) {
-		m->log.midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, std::string("line") + std::to_string(i)));
+		m->log.midiLogMessages.try_push(ScriptLog::Entry(LOG_FORMAT::TEXT, 0.f, std::string("line") + std::to_string(i), 0));
 	}
 
 	auto entries = drainLogEntries(m);
@@ -820,7 +820,7 @@ TEST_CASE("Log accepts entries from multiple producers", "[MidiKit][Log]") {
 	// Producer A: the module's handler writeLog (the worker-thread path).
 	m->writeLog("from-engine", true);
 	// Producer B: a direct push (the loadScript/onReset path).
-	m->log.midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, std::string("from-direct")));
+	m->log.midiLogMessages.try_push(ScriptLog::Entry(LOG_FORMAT::TEXT, 0.f, std::string("from-direct"), 0));
 	// Producer A again.
 	m->writeLog("from-engine-2", false);
 
@@ -860,7 +860,7 @@ TEST_CASE("Log queue drops entries when full", "[MidiKit][Log]") {
 	// returns false) rather than block.
 	int pushed = 0;
 	for (int i = 0; i < 1000; i++) {
-		if (m->log.midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, std::string("x")))) {
+		if (m->log.midiLogMessages.try_push(ScriptLog::Entry(LOG_FORMAT::TEXT, 0.f, std::string("x"), 0))) {
 			pushed++;
 		}
 	}
@@ -1474,7 +1474,7 @@ TEST_CASE("The port's processor owns the queue it pumps", "[MidiKit][MidiProcess
 // become log lines when the log is drained, and repeats before that are one.
 TEST_CASE("Raised log notices become one line each when the log is drained", "[MidiKit][Log]") {
 	ScriptLog log;
-	std::tuple<LOG_FORMAT, float, std::string> t;
+	ScriptLog::Entry t;
 
 	REQUIRE_FALSE(log.tryPop(t));
 

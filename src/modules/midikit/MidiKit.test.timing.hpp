@@ -1715,7 +1715,7 @@ TEST_CASE("Input queue overflow raises one notice per saturation", "[MidiKit][ti
 	rig.run(40);
 
 	int lines = 0;
-	std::tuple<LOG_FORMAT, float, std::string> t;
+	ScriptLog::Entry t;
 	while (rig.m->log.tryPop(t)) {
 		if (std::get<2>(t) == "MIDI input queue full, message(s) dropped") lines++;
 	}

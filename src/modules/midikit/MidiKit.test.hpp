@@ -160,7 +160,7 @@ static bool processOutMessage(MidiKitModule* m, int& midiPort, midi::Message& ms
 // Drains the module log and returns it as one string.
 static std::string drainLog(MidiKitModule* m) {
 	std::string all;
-	std::tuple<LOG_FORMAT, float, std::string> t;
+	ScriptLog::Entry t;
 	while (m->log.tryPop(t)) {
 		all += std::get<2>(t) + "\n";
 	}
@@ -172,7 +172,7 @@ static std::string drainLog(MidiKitModule* m) {
 // the logging tests need to assert on RESET/TIMESTAMP/TEXT and exact counts.
 static std::vector<std::tuple<LOG_FORMAT, std::string>> drainLogEntries(MidiKitModule* m) {
 	std::vector<std::tuple<LOG_FORMAT, std::string>> out;
-	std::tuple<LOG_FORMAT, float, std::string> t;
+	ScriptLog::Entry t;
 	while (m->log.tryPop(t)) {
 		out.push_back(std::make_tuple(std::get<0>(t), std::get<2>(t)));
 	}

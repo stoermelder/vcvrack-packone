@@ -1,4 +1,5 @@
 #include "LogDispatcher.hpp"
+#include "Logging.hpp"
 #include "MidiScriptEngine.hpp"
 #include "MidiScriptUi.hpp"
 #include "MidiScriptEngineLua.hpp"
@@ -51,13 +52,6 @@ static T& frontRing(dsp::RingBuffer<T, S>& ring) {
 	return ring.data[ring.start % S];
 }
 
-
-enum class LOG_FORMAT {
-	RESET,
-	TIMESTAMP,
-	INDENTED,
-	TEXT
-};
 
 // TPORTS is the number of trigger inputs of the module, one tick clock each.
 template <int TPORTS = 1>
@@ -377,102 +371,6 @@ struct ExtendedCcEnables {
 		nrpnEnabledMask.store(0, std::memory_order_relaxed);
 		rpnEnabledMask.store(0, std::memory_order_relaxed);
 		for (int i = 0; i < 32; i++) cc14bitEnabledMask[i].store(0, std::memory_order_relaxed);
-	}
-};
-
-
-// Script log + overlay, one per module
-// Everything the module tells the widget about: the runtime log and the
-// current overlay message. Touched from three threads, which is why the
-// contract is stated here once rather than inferred from call sites:
-//   - worker thread: writeLog()/writeOverlay() produce log entries + overlay;
-//   - audio thread: raises notices (ScriptLog::raise), which become log lines
-//     when the log is drained;
-//   - loadScript()/onReset() callers produce RESET markers and "No script";
-//   - UI thread: the widget drains the log (ScriptLog::tryPop) and the
-//     overlay ring (nextOverlayMessageId/getOverlayMessage).
-// midiLogMessages is an MPMC queue because the log has concurrent producers;
-// overlayQueue is a single-producer ring (worker) drained by the widget.
-struct ScriptLog {
-	// Log entries, FIFO. MPMC: pushed by the worker (writeLog) and the
-	// loadScript/onReset callers (and the drain, for raised notices).
-	rigtorp::MPMCQueue<std::tuple<LOG_FORMAT, float, std::string>> midiLogMessages{512};
-
-	// Overlay ring + current message. Single-producer (worker via writeOverlay),
-	// single-consumer (widget).
-	dsp::RingBuffer<int, 8> overlayQueue;
-	std::tuple<std::string, std::string, std::string> overlayMessage;
-
-	// Notices raised from the audio thread. Building a log line allocates, which
-	// the audio thread must not do, so it only raises the notice: a flag set,
-	// nothing else. The text is a std::string made once, off the audio thread
-	// (in the constructor), and becomes a log line when tryPop() next runs on
-	// the thread that drains the log. Repeats before that are one line.
-	enum Notice {
-		OUTPUT_QUEUE_FULL,
-		SCHEDULE_QUEUE_FULL,
-		TRIGGER_QUEUE_FULL,
-		INPUT_QUEUE_FULL,
-		TIPSY_INPUT_MALFORMED,
-		TIPSY_INPUT_QUEUE_FULL,
-		TIMING_LATE,
-		NOTICE_COUNT
-	};
-	struct NoticeSlot {
-		std::atomic<bool> pending{false};
-		std::string text;
-	};
-	NoticeSlot notices[NOTICE_COUNT];
-
-	ScriptLog() {
-		notices[OUTPUT_QUEUE_FULL].text = "MIDI output queue full, message(s) dropped";
-		notices[SCHEDULE_QUEUE_FULL].text = "MIDI schedule queue full, message(s) sent at once";
-		notices[TRIGGER_QUEUE_FULL].text = "Trigger output queue full, write(s) dropped";
-		notices[INPUT_QUEUE_FULL].text = "MIDI input queue full, message(s) dropped";
-		notices[TIPSY_INPUT_MALFORMED].text = "Tipsy input: malformed stream";
-		notices[TIPSY_INPUT_QUEUE_FULL].text = "Tipsy input queue full, message(s) dropped";
-		notices[TIMING_LATE].text = "Timing: message(s) reached the output too late";
-	}
-
-	// Any thread, allocation-free.
-	void raise(Notice n) {
-		notices[n].pending.store(true, std::memory_order_release);
-	}
-
-	// Worker side — writeLog(). Enqueues one entry.
-	void push(LOG_FORMAT format, float timestamp, const std::string& text) {
-		midiLogMessages.try_push(std::make_tuple(format, timestamp, text));
-	}
-
-	// Takes the next log entry, after turning the notices raised since the last
-	// call into lines. For the thread that drains the log (the widget; tests).
-	bool tryPop(std::tuple<LOG_FORMAT, float, std::string>& entry) {
-		for (int i = 0; i < NOTICE_COUNT; i++) {
-			if (notices[i].pending.exchange(false, std::memory_order_acquire)) pushText(notices[i].text);
-		}
-		return midiLogMessages.try_pop(entry);
-	}
-
-	// Plain text line. The timestamp is not displayed.
-	void pushText(const std::string& text, float timestamp = 0.f) {
-		push(LOG_FORMAT::TEXT, timestamp, text);
-	}
-
-	// Line prefixed with the timestamp (seconds).
-	void pushTimestamped(float timestamp, const std::string& text) {
-		push(LOG_FORMAT::TIMESTAMP, timestamp, text);
-	}
-
-	// Marks a script load/reset; the widget clears its display on it.
-	void pushReset() {
-		push(LOG_FORMAT::RESET, 0.f, std::string(""));
-	}
-
-	// Worker side — writeOverlay(). Marks one overlay slot with the current
-	// message.
-	void pushOverlay(const std::string& s1, const std::string& s2, const std::string& s3) {
-		overlayQueue.push(0);
-		overlayMessage = std::make_tuple(s1, s2, s3);
 	}
 };
 
@@ -1570,6 +1468,8 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
+	/** [Stored to JSON] */
+	LOG_TIME logTime = LOG_TIME::TIMESTAMP;
 
 	// The MIDI inputs (see MidiInputs for the threading contract).
 	MidiInputs<CONFIG::midiInputs> midiIns{&log};
@@ -1655,7 +1555,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		if (useTimestamp) {
 			float sr = sampleRate.load(std::memory_order_relaxed);
 			int64_t frames = getTimingCurrentFrame() - scriptStartFrame.load(std::memory_order_relaxed);
-			log.pushTimestamped(sr != 0.f ? float(frames) / sr : 0.f, text);
+			log.pushTimestamped(sr != 0.f ? float(frames) / sr : 0.f, text, getTimingCurrentFrame());
 		}
 		else {
 			log.pushText(text);
@@ -2103,6 +2003,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "logTime", json_integer((int)logTime));
 
 		// Only the ports the script uses are written. The others keep their
 		// driver/device/channel in memory (a script reload never touches them),
@@ -2136,6 +2037,11 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	void dataFromJson(json_t* rootJ) override {
 		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
 		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* logTimeJ = json_object_get(rootJ, "logTime");
+		if (logTimeJ) {
+			int v = json_integer_value(logTimeJ);
+			logTime = v >= 0 && v <= (int)LOG_TIME::OFF ? (LOG_TIME)v : LOG_TIME::TIMESTAMP;
+		}
 
 		for (int i = 0; i < MIDI_INPUTS; i++) {
 			json_t* midiInputJ = json_object_get(rootJ, midiInputKey(i).c_str());
@@ -2197,93 +2103,6 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 };
 
 
-// One log entry as a display line (without a trailing newline); empty for
-// entries that print nothing (RESET).
-static std::string formatLogEntry(const std::tuple<LOG_FORMAT, float, std::string>& s) {
-	const std::string& text = std::get<2>(s);
-	switch (std::get<0>(s)) {
-		case LOG_FORMAT::TIMESTAMP:
-			return string::f("[%9.4f] %s", std::get<1>(s), text.c_str());
-		case LOG_FORMAT::TEXT:
-			return text;
-		case LOG_FORMAT::INDENTED:
-			return "     " + text;
-		default:
-			return "";
-	}
-}
-
-struct LogDisplay : LedTextDisplay {
-	std::list<std::tuple<LOG_FORMAT, float, std::string>>* buffer;
-	bool dirty = true;
-	// Set by the widget: adds the running script's section (engine, RAM usage,
-	// rack.registerContextMenu items, ...) to the top of this menu and returns
-	// whether it added anything. Kept as a hook because that needs the module,
-	// which the display knows nothing about.
-	std::function<bool(Menu*)> appendScriptItems;
-
-	LogDisplay() {
-		color = nvgRGB(0xf0, 0xf0, 0xf0);
-		bgColor.a = 0.f;
-		fontSize = 9.2f;
-		textOffset.y += 2.f;
-	}
-
-	void step() override {
-		LedTextDisplay::step();
-		if (dirty) {
-			text = "";
-			// Cap to the number of lines that vertically fit.
-			size_t size = std::min(buffer->size(), static_cast<size_t>(box.size.y / fontSize) + 1);
-			size_t i = 0;
-			for (const auto& s : *buffer) {
-				if (i >= size) break;
-				if (std::get<0>(s) == LOG_FORMAT::RESET) continue;
-				text += formatLogEntry(s) + "\n";
-				i++;
-			}
-			dirty = false;
-		}
-	}
-
-	void reset() {
-		buffer->clear();
-		dirty = true;
-	}
-
-	// The whole buffer as text, oldest line first (the display itself shows the
-	// newest first, capped to what fits).
-	std::string toText() const {
-		std::string out;
-		for (auto it = buffer->rbegin(); it != buffer->rend(); ++it) {
-			if (std::get<0>(*it) == LOG_FORMAT::RESET) continue;
-			out += formatLogEntry(*it) + "\n";
-		}
-		return out;
-	}
-
-	void appendContextMenu(Menu* menu) {
-		bool empty = buffer->empty();
-		if (appendScriptItems && appendScriptItems(menu)) menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuLabel("Log"));
-		menu->addChild(createMenuItem("Copy to clipboard", "", [=]() {
-			StoermelderPackOne::vcv::ui::setClipboard(toText());
-		}, empty));
-		menu->addChild(createMenuItem("Clear", "", [=]() {
-			reset();
-		}, empty));
-	}
-
-	void onButton(const ButtonEvent& e) override {
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			appendContextMenu(createMenu());
-			e.consume(this);
-			return;
-		}
-		LedTextDisplay::onButton(e);
-	}
-};
-
 // Widget base for all variants: log display, overlay, script menu and file
 // handling. Derived widgets add their controls after construction using the
 // add*() helpers below.
@@ -2300,18 +2119,17 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	using BASE::addInput;
 	using BASE::addOutput;
 
-	using LogEntry = std::tuple<LOG_FORMAT, float, std::string>;
 	const size_t BUFFERSIZE = 800;
 	// Null for variants without a log display (no addLogDisplay() call).
 	LogDisplay* logDisplay = nullptr;
 	// How many log entries the widget keeps; variants without a log display
 	// can lower this to what they show elsewhere.
 	size_t bufferLimit = BUFFERSIZE;
-	std::list<LogEntry> buffer;
+	std::list<ScriptLog::Entry> buffer;
 	std::string filename = "";
 	// Everything that wants to see the module's log subscribes here: the log display's
 	// buffer, the script editor's log area. step() pumps the module's log through it.
-	LogDispatcher<LogEntry> logs;
+	LogDispatcher<ScriptLog::Entry> logs;
 
 	// The open script editor, if any. Weak: the overlay lives on APP->scene and
 	// can go away on its own (it closes itself).
@@ -2329,7 +2147,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 
 		if (module) {
 			OverlayMessageWidget::registerProvider(this);
-			logs.add([this](const LogEntry& s) { bufferLogEntry(s); });
+			logs.add([this](const ScriptLog::Entry& s) { bufferLogEntry(s); });
 		}
 	}
 
@@ -2355,6 +2173,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 
 		logDisplay = createWidget<LogDisplay>(Vec());
 		logDisplay->buffer = &buffer;
+		if (module) logDisplay->logTime = &module->logTime;
 		logDisplay->box.size = textDisplay->box.size.minus(Vec(0.f, 6.f));
 		logDisplay->fontSize = 7.2f;
 		logDisplay->appendScriptItems = [this](Menu* menu) {
@@ -2378,8 +2197,12 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		logs.pump(module->log);
 	}
 
+	LOG_TIME logTimeMode() const {
+		return module ? module->logTime : LOG_TIME::TIMESTAMP;
+	}
+
 	// The log display's side: keeps the newest entries, first in the list.
-	void bufferLogEntry(const LogEntry& s) {
+	void bufferLogEntry(const ScriptLog::Entry& s) {
 		if (buffer.size() >= bufferLimit) buffer.pop_back();
 		if (std::get<0>(s) == LOG_FORMAT::RESET) {
 			resetLog();
@@ -2628,11 +2451,11 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 			if (!widget) return;
 			// What the log display shows so far, oldest first (its buffer keeps the newest first).
 			for (auto it = widget->buffer.rbegin(); it != widget->buffer.rend(); ++it) {
-				append(formatLogEntry(*it));
+				append(formatLogEntry(*it, widget->logTimeMode()));
 			}
-			logListenerId = widget->logs.add([append, clear](const LogEntry& s) {
+			logListenerId = widget->logs.add([this, append, clear](const ScriptLog::Entry& s) {
 				if (std::get<0>(s) == LOG_FORMAT::RESET) clear();
-				else append(formatLogEntry(s));
+				else append(formatLogEntry(s, widget->logTimeMode()));
 			});
 		}
 		void onEditorClosed() override {
@@ -2757,7 +2580,7 @@ struct MidiKitMicroWidget : MidiKitWidgetBase<MidiKitMicroConfig> {
 			bool any = false;
 			for (const auto& entry : buffer) {
 				if (std::get<0>(entry) == LOG_FORMAT::RESET) continue;
-				menu->addChild(new MenuMultilineLabel(formatLogEntry(entry)));
+				menu->addChild(new MenuMultilineLabel(formatLogEntry(entry, logTimeMode())));
 				any = true;
 			}
 			if (!any) menu->addChild(createMenuLabel("(empty)"));

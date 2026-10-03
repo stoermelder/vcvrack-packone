@@ -65,3 +65,48 @@ TEST_CASE("LogDispatcher: no listeners drops entries without trouble", "[MidiKit
 	src.items = {1, 2, 3};
 	REQUIRE(d.pump(src) == 3);
 }
+
+// ── Log time display ─────────────────────────────────────────────────────────
+
+TEST_CASE("A timestamped log line shows seconds, the engine frame, or nothing", "[MidiKit][Log][LogTime]") {
+	ScriptLog::Entry e(LOG_FORMAT::TIMESTAMP, 1.5f, "hello", 123456);
+	REQUIRE(formatLogEntry(e) == "[   1.5000] hello");
+	REQUIRE(formatLogEntry(e, LOG_TIME::TIMESTAMP) == "[   1.5000] hello");
+	REQUIRE(formatLogEntry(e, LOG_TIME::FRAME) == "[   123456] hello");
+	REQUIRE(formatLogEntry(e, LOG_TIME::OFF) == "hello");
+
+	// Untimed lines are unaffected.
+	ScriptLog::Entry text(LOG_FORMAT::TEXT, 0.f, "plain", 0);
+	for (LOG_TIME t : {LOG_TIME::TIMESTAMP, LOG_TIME::FRAME, LOG_TIME::OFF}) {
+		REQUIRE(formatLogEntry(text, t) == "plain");
+	}
+}
+
+TEST_CASE("writeLog records the engine frame it ran on", "[MidiKit][Log][LogTime]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+	drainLog(m);
+	m->timingCurrentFrame.store(5000, std::memory_order_relaxed);
+	m->writeLog("late");
+	ScriptLog::Entry e;
+	REQUIRE(m->log.tryPop(e));
+	REQUIRE(std::get<2>(e) == "late");
+	REQUIRE(std::get<3>(e) == 5000);
+}
+
+TEST_CASE("The log time setting is stored in the patch", "[MidiKit][Log][LogTime]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+	REQUIRE(m->logTime == LOG_TIME::TIMESTAMP);
+	m->logTime = LOG_TIME::FRAME;
+	json_t* j = m->dataToJson();
+	MidiKitModule* other = mods.create();
+	other->dataFromJson(j);
+	REQUIRE(other->logTime == LOG_TIME::FRAME);
+
+	// An out-of-range value falls back to the default.
+	json_object_set_new(j, "logTime", json_integer(99));
+	other->dataFromJson(j);
+	REQUIRE(other->logTime == LOG_TIME::TIMESTAMP);
+	json_decref(j);
+}
