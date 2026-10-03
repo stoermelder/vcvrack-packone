@@ -782,18 +782,24 @@ TEST_CASE("Editor: the script language is that of the running engine", "[MidiKit
 	REQUIRE(e.field->syntax().statementEnd == "");
 }
 
+// Removes the most recently opened overlay, i.e. a context menu opened on top of the editor.
+static void removeNewestOverlay() {
+	rack::widget::Widget* menu = nullptr;
+	for (rack::widget::Widget* c : APP->scene->children) {
+		if (dynamic_cast<rack::ui::MenuOverlay*>(c)) menu = c;
+	}
+	REQUIRE(menu != nullptr);
+	APP->event->finalizeWidget(menu);
+	APP->scene->removeChild(menu);
+	delete menu;
+}
+
 // Right-clicks, then removes the menu that opened, which would otherwise cover the next click.
 static void rightClickClosingMenu(Test::Harness& h, rack::math::Vec pos) {
 	size_t before = menuOverlayCount();
 	REQUIRE(h.events().rightClick(pos));
 	REQUIRE(menuOverlayCount() == before + 1);
-	rack::widget::Widget* menu = nullptr;
-	for (rack::widget::Widget* c : APP->scene->children) {
-		if (dynamic_cast<rack::ui::MenuOverlay*>(c)) menu = c;
-	}
-	APP->event->finalizeWidget(menu);
-	APP->scene->removeChild(menu);
-	delete menu;
+	removeNewestOverlay();
 }
 
 TEST_CASE("Editor: a right click moves the caret there, unless it hits the selection", "[MidiKit][Editor][Api]") {
@@ -826,6 +832,44 @@ TEST_CASE("Editor: a right click moves the caret there, unless it hits the selec
 	rightClickClosingMenu(h, second);
 	REQUIRE(e.field->cursor == e.field->selection);
 	REQUIRE(e.field->cursor == 8);
+}
+
+TEST_CASE("Editor: header templates are inserted at the top and the engine accepts them", "[MidiKit][Editor][Api]") {
+	Test::Harness h;
+	EditorCleanup cleanup;
+	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
+	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	OpenEditor e = openEditorOn(h, mw);
+
+	for (const char* name : {"Insert QuickJs header", "Insert Lua header"}) {
+		const bool js = std::string(name).find("QuickJs") != std::string::npos;
+		e.field->setText("log(1);\n");
+		e.field->clearHistory();
+		// Wherever the caret is, the header goes in front.
+		e.field->cursor = e.field->selection = (int)e.field->text.size();
+		h.events().rightClick(e.field);
+		rack::ui::MenuItem* item = menuItemNamed(newestMenu(), name);
+		clickMenuItem(item);
+
+		const std::string text = e.field->text;
+		REQUIRE(text.size() > 8);
+		REQUIRE(text.substr(text.size() - 8) == "log(1);\n");
+		REQUIRE(text.find(js ? "@engine QuickJs@v1" : "@engine minilua@v1") != std::string::npos);
+		// The header is selected, and one undo step removes it.
+		REQUIRE(e.field->getSelectedText() == text.substr(0, text.size() - 8));
+		e.field->undo();
+		REQUIRE(e.field->text == "log(1);\n");
+
+		// The loader accepts what was inserted.
+		ModuleScaffold mods;
+		MidiKitModule* tm = mods.create();
+		tm->loadScript(text);
+		REQUIRE((js ? tm->host.isQuickJsEngine() : tm->host.isLuaEngine()));
+		REQUIRE(drainLog(tm).find("not compatible") == std::string::npos);
+
+		// Close the menu so the next round's click reaches the field.
+		removeNewestOverlay();
+	}
 }
 
 TEST_CASE("Editor: the API table is complete and matches what both engines expose", "[MidiKit][Editor][Api]") {

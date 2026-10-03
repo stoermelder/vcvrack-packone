@@ -2476,6 +2476,9 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		std::vector<ui::editor::scripttext::ApiGroup> apiReference() override {
 			return MidiScript::apiReference();
 		}
+		std::vector<ui::editor::scripttext::ScriptTemplate> templates() override {
+			return MidiScript::scriptTemplates();
+		}
 		// JavaScript for QuickJs, Lua otherwise.
 		ui::editor::scripttext::ScriptSyntax syntax() override {
 			if (m->host.isQuickJsEngine()) return ui::editor::scripttext::ScriptSyntax("//", ";");

@@ -315,6 +315,8 @@ struct ScriptEditField : TextField {
 	// The owner's API reference (see ScriptEditorHost::apiReference); each group is a
 	// submenu of the context menu whose items insert a call to the function.
 	std::vector<scripttext::ApiGroup> api;
+	// The owner's templates (see ScriptEditorHost::templates()), offered at the end of the menu.
+	std::vector<scripttext::ScriptTemplate> templates;
 	// The script language, from the owner (ScriptEditorHost::syntax()).
 	std::function<scripttext::ScriptSyntax()> syntaxProvider;
 
@@ -334,6 +336,16 @@ struct ScriptEditField : TextField {
 		// insertText() leaves the caret behind the snippet; select the snippet instead.
 		selection = at;
 		cursor = at + (int)snippet.size();
+		APP->event->setSelectedWidget(this);
+	}
+
+	// A template is a header or similar, which belongs at the very top: it goes in front of
+	// the buffer, wherever the caret is, and is selected afterwards like an API snippet.
+	void insertTemplate(const scripttext::ScriptTemplate& t) {
+		cursor = selection = 0;
+		insertText(t.text);
+		selection = 0;
+		cursor = (int)t.text.size();
 		APP->event->setSelectedWidget(this);
 	}
 
@@ -357,9 +369,7 @@ struct ScriptEditField : TextField {
 			selectAll();
 			APP->event->setSelectedWidget(this);
 		}));
-		if (api.empty()) return;
-
-		menu->addChild(new rack::ui::MenuSeparator);
+		if (!api.empty()) menu->addChild(new rack::ui::MenuSeparator);
 		for (size_t g = 0; g < api.size(); g++) {
 			menu->addChild(createSubmenuItem(api[g].name + ".*", "", [this, g](rack::ui::Menu* menu) {
 				const scripttext::ApiGroup& group = api[g];
@@ -383,6 +393,11 @@ struct ScriptEditField : TextField {
 					}));
 				}
 			}));
+		}
+
+		if (!templates.empty()) menu->addChild(new rack::ui::MenuSeparator);
+		for (const scripttext::ScriptTemplate& t : templates) {
+			menu->addChild(createMenuItem("Insert " + t.name, "", [this, t]() { insertTemplate(t); }));
 		}
 	}
 
@@ -930,6 +945,10 @@ struct ScriptEditorHost {
 		return scripttext::apiSnippet(group.name, f, syntax(), indent);
 	}
 
+	// Templates for the context menu, each inserted at the top of the buffer: a file
+	// header, say. Called once, when the editor opens.
+	virtual std::vector<scripttext::ScriptTemplate> templates() { return {}; }
+
 	// The editor closed itself (Close, Apply & Close, Esc). Not called when the owner
 	// dismisses it.
 	virtual void onEditorClosed() {}
@@ -1364,6 +1383,7 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 		field->clearHistory();
 		if (host) {
 			field->api = host->apiReference();
+			field->templates = host->templates();
 			ScriptEditorHost* h = host.get();
 			field->syntaxProvider = [h]() { return h->syntax(); };
 			field->snippetProvider = [h](const scripttext::ApiGroup& g, const scripttext::ApiFunction& f, const std::string& indent) {

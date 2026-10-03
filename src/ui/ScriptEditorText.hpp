@@ -558,6 +558,14 @@ struct ScriptSyntax {
 		: lineComment(lineComment), statementEnd(statementEnd) {}
 };
 
+// A ready-made piece of script the owner offers, e.g. a file header. `name` is what the
+// menu item says, `text` what is inserted.
+struct ScriptTemplate {
+	std::string name;
+	std::string text;
+	ScriptTemplate(const std::string& name, const std::string& text) : name(name), text(text) {}
+};
+
 // ── Script API reference ──
 // What the owner tells the editor about the functions a script can call, so the editor
 // can offer them as snippets. Plain data: the editor knows no engine or module.

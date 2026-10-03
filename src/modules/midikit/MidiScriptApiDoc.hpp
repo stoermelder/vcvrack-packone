@@ -1,6 +1,7 @@
 #pragma once
 #include "../../ui/ScriptEditorText.hpp"
 
+// What the script editor's context menu offers (templates and API reference).
 // The script API as the editor's context menu lists it (docs/midikit/SCRIPTING.md,
 // Part 3). Both engines expose the same objects and function names, so one table
 // serves QuickJs and Lua. Hooks (rack.onLoad, midi.onMessage, ...) are not listed:
@@ -9,6 +10,28 @@
 
 namespace StoermelderPackOne {
 namespace MidiScript {
+
+// The file headers of docs/midikit/SCRIPTING.md ("Required file header"). Only the
+// leading comment block is scanned for tags, so each goes at the top of the script.
+inline std::vector<ui::editor::scripttext::ScriptTemplate> scriptTemplates() {
+	using ui::editor::scripttext::ScriptTemplate;
+	std::vector<ScriptTemplate> t;
+	t.push_back(ScriptTemplate("QuickJs header",
+		"/**\n"
+		" * @target stoermelder MIDI-KIT\n"
+		" * @engine QuickJs@v1\n"
+		" * @author yourname\n"
+		" * @description One-line summary shown in the module log on load\n"
+		" */\n\n"));
+	t.push_back(ScriptTemplate("Lua header",
+		"--[[\n"
+		"@target stoermelder MIDI-KIT\n"
+		"@engine minilua@v1\n"
+		"@author yourname\n"
+		"@description One-line summary shown in the module log on load\n"
+		"--]]\n\n"));
+	return t;
+}
 
 inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 	using ui::editor::scripttext::ApiFunction;
